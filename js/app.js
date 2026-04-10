@@ -1,0 +1,928 @@
+// MOS Admin — app.js
+// Full app logic: navigation, views, charts, CRUD
+
+const MOS = (() => {
+  // ── STATE ────────────────────────────────────────────────────
+  let S = {
+    view: 'dashboard',
+    catTab: 'base',
+    almTab: 'stock',
+    provSelId: null,
+    productos: [],
+    proveedores: [],
+    stock: [],
+    mermas: [],
+    vencimientos: { criticos: [], alertas: [] },
+    envasados: [],
+    alertas: [],
+    charts: {},
+    loaded: {}
+  };
+
+  // ── HELPERS ─────────────────────────────────────────────────
+  const $  = id => document.getElementById(id);
+  const fmtMoney = v => 'S/. ' + parseFloat(v || 0).toFixed(2);
+  const fmtDate  = v => v ? String(v).substring(0, 10) : '—';
+  const today    = () => new Date().toISOString().substring(0, 10);
+
+  function toast(msg, type = 'info') {
+    const el = $('toast');
+    el.textContent = msg;
+    el.style.background = type === 'error' ? '#450a0a' : type === 'ok' ? '#052e16' : '#1e293b';
+    el.style.borderColor = type === 'error' ? '#7f1d1d' : type === 'ok' ? '#14532d' : '#334155';
+    el.style.color        = type === 'error' ? '#fca5a5' : type === 'ok' ? '#86efac'  : '#e2e8f0';
+    el.classList.remove('hide');
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.classList.add('hide'), 3500);
+  }
+
+  function setStatus(connected) {
+    const dot   = $('statusDot');
+    const label = $('statusLabel');
+    const dotM  = $('statusDotMob');
+    const cls   = connected ? 'dot-green' : 'dot-gray';
+    if (dot)   { dot.className = cls; }
+    if (dotM)  { dotM.className = cls; }
+    if (label) { label.textContent = connected ? 'Conectado' : 'Sin configurar'; }
+  }
+
+  function renderChart(id, config) {
+    const canvas = $(id);
+    if (!canvas) return;
+    if (S.charts[id]) S.charts[id].destroy();
+    S.charts[id] = new Chart(canvas, config);
+  }
+
+  // ── NAVIGATION ──────────────────────────────────────────────
+  function nav(viewName) {
+    if (S.view === viewName) return;
+
+    document.querySelectorAll('.view').forEach(v => {
+      v.classList.remove('active');
+      v.classList.add('hidden');
+    });
+    const tgt = $('view-' + viewName);
+    if (tgt) { tgt.classList.remove('hidden'); tgt.classList.add('active'); }
+
+    // Sidebar items
+    document.querySelectorAll('#sidebar .nav-item').forEach(b =>
+      b.classList.toggle('active', b.dataset.view === viewName));
+
+    // Bottom nav
+    document.querySelectorAll('#bottomnav .bnav-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.view === viewName));
+
+    const titles = { dashboard:'Dashboard', catalogo:'Catálogo', almacen:'Almacén', proveedores:'Proveedores', zonas:'Zonas' };
+    const t = titles[viewName] || viewName;
+    const pt = $('pageTitle'); if (pt) pt.textContent = t;
+    const ptd = $('pageTitleDesktop'); if (ptd) ptd.textContent = t;
+
+    // FAB visibility
+    const fab = $('fab');
+    if (fab) fab.classList.toggle('visible', ['catalogo','proveedores'].includes(viewName));
+
+    S.view = viewName;
+    if (!S.loaded[viewName]) loadView(viewName);
+  }
+
+  function fabAction() {
+    if (S.view === 'catalogo')    abrirModalProducto(null);
+    if (S.view === 'proveedores') abrirModalProveedor(null);
+  }
+
+  // ── INIT ────────────────────────────────────────────────────
+  function init() {
+    Chart.defaults.color = '#64748b';
+    Chart.defaults.borderColor = '#1e293b';
+    Chart.defaults.font.family = 'system-ui, -apple-system, sans-serif';
+
+    if (!API.isConfigured()) {
+      const b = $('bannerNoUrl'); if (b) b.classList.remove('hidden');
+      setStatus(false);
+    } else {
+      setStatus(true);
+    }
+
+    // Set today on date inputs
+    const pf = $('pagoFecha'); if (pf) pf.value = today();
+
+    // Initial view
+    nav('dashboard');
+    loadView('dashboard');
+  }
+
+  async function loadView(viewName) {
+    S.loaded[viewName] = true;
+    try {
+      switch (viewName) {
+        case 'dashboard':    await loadDashboard();   break;
+        case 'catalogo':     await loadCatalogo();    break;
+        case 'almacen':      await loadAlmacen();     break;
+        case 'proveedores':  await loadProveedores();  break;
+      }
+    } catch (e) {
+      // Reload allowed next time
+      S.loaded[viewName] = false;
+      if (e.message && e.message.includes('URL no configurada')) {
+        // already showing banner
+      } else {
+        toast('Error al cargar ' + viewName + ': ' + e.message, 'error');
+      }
+    }
+  }
+
+  function refresh() {
+    S.loaded[S.view] = false;
+    S.loaded['dashboard'] = false;
+    loadView(S.view);
+    if (S.view !== 'dashboard') loadView('dashboard');
+  }
+
+  // ── DASHBOARD ───────────────────────────────────────────────
+  async function loadDashboard() {
+    if (!API.isConfigured()) return;
+
+    // Load in parallel
+    const [rotRes, alertasRes, mermasRes, prodRes] = await Promise.allSettled([
+      API.get('getRotacion', {}),
+      API.get('getAlertasWarehouse', {}),
+      API.get('getMermasWarehouse', { estado: 'PENDIENTE' }),
+      API.get('getProductos', { estado: '1' })
+    ]);
+
+    // Ecosystem status
+    const ecoWhDot   = $('ecoWhDot');
+    const ecoWhLabel = $('ecoWhLabel');
+
+    // KPI — stock bajo
+    const rot = rotRes.status === 'fulfilled' ? rotRes.value : [];
+    const stockBajo = Array.isArray(rot) ? rot.filter(r => r.alertaMinimo).length : 0;
+    const kpiSV = $('kpiStockVal');
+    if (kpiSV) { kpiSV.textContent = stockBajo; }
+    if (stockBajo > 0) {
+      const b = $('kpiStockBadge'); if (b) b.classList.remove('hidden');
+    }
+
+    // Update ecosystem WH status
+    if (ecoWhDot && ecoWhLabel) {
+      if (rotRes.status === 'fulfilled') {
+        ecoWhDot.className = 'dot-green'; ecoWhLabel.textContent = 'Conectado';
+        setStatus(true);
+      } else {
+        ecoWhDot.className = 'dot-red';
+        ecoWhLabel.textContent = rotRes.reason?.message?.includes('WH_SS_ID') ? 'Sin configurar' : 'Error';
+      }
+    }
+
+    // KPI — vencimientos
+    const alertas = alertasRes.status === 'fulfilled' ? alertasRes.value : { criticos: [], alertas: [] };
+    const criticos = (alertas.criticos || []).length;
+    const kpiVV = $('kpiVencVal');
+    if (kpiVV) kpiVV.textContent = criticos;
+    if (criticos > 0) { const b = $('kpiVencBadge'); if (b) b.classList.remove('hidden'); }
+
+    // KPI — mermas
+    const mermas = mermasRes.status === 'fulfilled' ? (mermasRes.value || []) : [];
+    const kpiMV = $('kpiMermasVal'); if (kpiMV) kpiMV.textContent = mermas.length;
+
+    // KPI — productos
+    const prods = prodRes.status === 'fulfilled' ? (prodRes.value || []) : [];
+    const kpiPV = $('kpiProductosVal'); if (kpiPV) kpiPV.textContent = prods.length;
+    S.productos = prods;
+
+    // Charts
+    renderRotacionChart(rot);
+    renderStockChart(rot);
+
+    // Alertas list
+    renderAlertas([
+      ...((alertas.criticos || []).slice(0, 3).map(a => ({ tipo: 'CRITICO', msg: (a.codigoProducto || a.descripcion || '—') + ' vence en ' + (a.diasRestantes || 0) + 'd' }))),
+      ...((alertas.alertas  || []).slice(0, 2).map(a => ({ tipo: 'ALERTA',  msg: (a.codigoProducto || a.descripcion || '—') + ' vence en ' + (a.diasRestantes || 0) + 'd' }))),
+      ...(mermas.slice(0, 2).map(m => ({ tipo: 'MERMA', msg: 'Merma pendiente: ' + (m.codigoProducto || '—') })))
+    ].slice(0, 6));
+  }
+
+  function renderRotacionChart(rot) {
+    if (!rot || !rot.length) {
+      const e = $('chartRotacionEmpty'); if (e) { e.classList.remove('hidden'); }
+      return;
+    }
+    const top = rot.filter(r => r.diasCobertura !== null).slice(0, 8);
+    if (!top.length) { const e = $('chartRotacionEmpty'); if (e) e.classList.remove('hidden'); return; }
+
+    const labels = top.map(r => (r.descripcion || r.codigoProducto || '').substring(0, 20));
+    const dias   = top.map(r => r.diasCobertura);
+    const colors = dias.map(d => d <= 7 ? '#f87171' : d <= 15 ? '#fbbf24' : '#4ade80');
+
+    renderChart('chartRotacion', {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{ label: 'Días de cobertura', data: dias, backgroundColor: colors, borderRadius: 6, borderWidth: 0 }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: '#1e293b' }, ticks: { color: '#64748b', font: { size: 11 } } },
+          y: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 11 } } }
+        }
+      }
+    });
+  }
+
+  function renderStockChart(rot) {
+    if (!rot || !rot.length) {
+      const e = $('chartStockEmpty'); if (e) e.classList.remove('hidden');
+      return;
+    }
+    // Show top products near or below minimum
+    const near = rot.filter(r => r.alertaMinimo || (r.diasCobertura !== null && r.diasCobertura < 20)).slice(0, 8);
+    if (!near.length) { const e = $('chartStockEmpty'); if (e) e.classList.remove('hidden'); return; }
+
+    const labels = near.map(r => (r.descripcion || r.codigoProducto || '').substring(0, 18));
+    renderChart('chartStock', {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Stock actual', data: near.map(r => parseFloat(r.stockActual) || 0), backgroundColor: '#6366f1', borderRadius: 5, borderWidth: 0 },
+          { label: 'Stock mínimo', data: near.map(() => 0), backgroundColor: '#ef4444', borderRadius: 5, borderWidth: 0, type: 'line', borderColor: '#ef4444', borderDash: [4,3], pointRadius: 0 }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: true, labels: { color: '#64748b', font: { size: 11 }, boxWidth: 12 } } },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 10 }, maxRotation: 35 } },
+          y: { grid: { color: '#1e293b' }, ticks: { color: '#64748b', font: { size: 11 } } }
+        }
+      }
+    });
+  }
+
+  function renderAlertas(items) {
+    const el = $('listAlertas');
+    if (!el) return;
+    if (!items.length) { el.innerHTML = '<p class="text-slate-500 text-sm text-center py-4">Sin alertas activas</p>'; return; }
+    el.innerHTML = items.map(a => {
+      const color = a.tipo === 'CRITICO' ? 'badge-red' : a.tipo === 'MERMA' ? 'badge-yellow' : 'badge-yellow';
+      const icon  = a.tipo === 'CRITICO' ? '🔴' : a.tipo === 'MERMA' ? '🗑️' : '🟡';
+      return `<div class="flex items-start gap-2 text-sm">
+        <span>${icon}</span>
+        <span class="text-slate-300 flex-1">${a.msg}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // ── CATÁLOGO ────────────────────────────────────────────────
+  async function loadCatalogo() {
+    if (!API.isConfigured()) {
+      $('listCatalogo').innerHTML = '<p class="text-slate-500 text-sm text-center py-8">Configura el GAS URL para ver el catálogo.</p>';
+      return;
+    }
+    try {
+      const [prods] = await Promise.all([API.get('getProductos', {})]);
+      S.productos = prods || [];
+      // Load categories
+      try {
+        const cats = await API.get('getProductos', { soloCategoria: '1' });
+      } catch(e) {}
+      populateCatFiltro();
+      renderCatalogo();
+    } catch (e) {
+      $('listCatalogo').innerHTML = `<p class="text-red-400 text-sm text-center py-8">${e.message}</p>`;
+      throw e;
+    }
+  }
+
+  function populateCatFiltro() {
+    const sel = $('filtroCategoria');
+    if (!sel) return;
+    const cats = [...new Set(S.productos.map(p => p.idCategoria).filter(Boolean))].sort();
+    sel.innerHTML = '<option value="">Todas las categorías</option>' +
+      cats.map(c => `<option value="${c}">${c}</option>`).join('');
+
+    // Also fill product category select in modal
+    const prodCat = $('prodCategoria');
+    if (prodCat) {
+      prodCat.innerHTML = '<option value="">— seleccionar —</option>' +
+        cats.map(c => `<option value="${c}">${c}</option>`).join('');
+    }
+  }
+
+  function filterCatalogo() { renderCatalogo(); }
+
+  function setCatTab(tab) {
+    S.catTab = tab;
+    ['base','deriv','todos'].forEach(t => {
+      const b = $('tab' + (t === 'base' ? 'Base' : t === 'deriv' ? 'Deriv' : 'Todos') + 'Btn');
+      if (b) b.classList.toggle('active', t === tab);
+    });
+    renderCatalogo();
+  }
+
+  function renderCatalogo() {
+    const container = $('listCatalogo');
+    if (!container) return;
+
+    const q    = ($('searchCatalogo')?.value || '').toLowerCase();
+    const cat  = $('filtroCategoria')?.value || '';
+
+    let prods = S.productos.filter(p => {
+      if (cat && p.idCategoria !== cat) return false;
+      if (q) {
+        const hay = ((p.descripcion || '') + (p.codigoBarra || '') + (p.skuBase || '') + (p.marca || '')).toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+
+    if (S.catTab === 'base')  prods = prods.filter(p => !p.codigoProductoBase || p.codigoProductoBase === '');
+    if (S.catTab === 'deriv') prods = prods.filter(p => p.codigoProductoBase && p.codigoProductoBase !== '');
+
+    if (!prods.length) {
+      container.innerHTML = '<p class="text-slate-500 text-sm text-center py-12">Sin resultados</p>';
+      return;
+    }
+
+    // Group: base products + their presentaciones
+    if (S.catTab === 'base' || S.catTab === 'todos') {
+      const bases      = prods.filter(p => !p.codigoProductoBase || p.codigoProductoBase === '');
+      const derivados  = S.productos.filter(p => p.codigoProductoBase && p.codigoProductoBase !== '');
+
+      container.innerHTML = bases.map(base => {
+        const derivs = derivados.filter(d => d.codigoProductoBase === base.idProducto);
+        return `
+          <div class="card mb-2 overflow-hidden">
+            <div class="flex items-center gap-3 p-3 cursor-pointer hover:bg-slate-800/30" onclick="MOS.toggleDerivs('${base.idProducto}')">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="font-medium text-slate-200 text-sm">${base.descripcion || '—'}</span>
+                  ${base.marca ? `<span class="text-xs text-slate-500">${base.marca}</span>` : ''}
+                  <span class="badge badge-blue text-xs">${base.unidad || ''}</span>
+                  ${!base.estado || base.estado == '1' ? '' : '<span class="badge badge-gray">inactivo</span>'}
+                </div>
+                <div class="flex items-center gap-3 mt-1">
+                  <span class="text-xs text-slate-500">${base.idProducto}</span>
+                  ${base.codigoBarra ? `<span class="text-xs text-slate-600">☰ ${base.codigoBarra}</span>` : ''}
+                </div>
+              </div>
+              <div class="flex items-center gap-3 shrink-0">
+                <div class="text-right hidden sm:block">
+                  <div class="text-sm font-semibold text-indigo-400">${fmtMoney(base.precioVenta)}</div>
+                  <div class="text-xs text-slate-500">Costo: ${fmtMoney(base.precioCosto)}</div>
+                </div>
+                <button onclick="event.stopPropagation();MOS.abrirModalPrecio('${base.idProducto}')" class="text-xs text-slate-400 hover:text-indigo-400 px-2 py-1 rounded border border-slate-700 hover:border-indigo-500 transition-colors">💰</button>
+                <button onclick="event.stopPropagation();MOS.abrirModalProducto('${base.idProducto}')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700 hover:border-slate-500 transition-colors">✏️</button>
+              </div>
+            </div>
+            ${derivs.length ? `
+              <div id="derivs-${base.idProducto}" class="hidden border-t border-slate-800 px-3 py-2">
+                <div class="text-xs text-slate-500 mb-2">Presentaciones (${derivs.length})</div>
+                <div class="flex flex-wrap gap-2">
+                  ${derivs.map(d => `
+                    <div class="presentacion-chip cursor-pointer hover:bg-indigo-500/20" onclick="MOS.abrirModalProducto('${d.idProducto}')">
+                      ${d.descripcion || d.idProducto}
+                      <span class="text-indigo-300 ml-1">${fmtMoney(d.precioVenta)}</span>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+    } else {
+      container.innerHTML = prods.map(p => `
+        <div class="card mb-2 p-3 flex items-center gap-3 hover:bg-slate-800/20">
+          <div class="flex-1 min-w-0">
+            <div class="font-medium text-slate-200 text-sm">${p.descripcion || '—'}</div>
+            <div class="flex items-center gap-2 mt-0.5">
+              <span class="text-xs text-slate-500">${p.idProducto}</span>
+              ${p.codigoProductoBase ? `<span class="text-xs text-slate-600">Base: ${p.codigoProductoBase}</span>` : ''}
+            </div>
+          </div>
+          <div class="text-sm font-semibold text-indigo-400 shrink-0">${fmtMoney(p.precioVenta)}</div>
+          <button onclick="MOS.abrirModalPrecio('${p.idProducto}')" class="text-xs text-slate-400 hover:text-indigo-400 px-2 py-1 rounded border border-slate-700">💰</button>
+          <button onclick="MOS.abrirModalProducto('${p.idProducto}')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700">✏️</button>
+        </div>
+      `).join('');
+    }
+  }
+
+  function toggleDerivs(baseId) {
+    const el = $('derivs-' + baseId);
+    if (el) el.classList.toggle('hidden');
+  }
+
+  // ── ALMACÉN ─────────────────────────────────────────────────
+  async function loadAlmacen() {
+    if (!API.isConfigured()) return;
+    const [stockRes, alertasRes, mermasRes, envRes] = await Promise.allSettled([
+      API.get('getStockWarehouse', {}),
+      API.get('getAlertasWarehouse', {}),
+      API.get('getMermasWarehouse', {}),
+      API.get('getEnvasadosWarehouse', { limit: '50' })
+    ]);
+    if (stockRes.status === 'fulfilled') S.stock = stockRes.value || [];
+    if (alertasRes.status === 'fulfilled') S.vencimientos = alertasRes.value || { criticos: [], alertas: [] };
+    if (mermasRes.status === 'fulfilled') S.mermas = mermasRes.value || [];
+    if (envRes.status === 'fulfilled')    S.envasados = envRes.value || [];
+    renderAlmTab(S.almTab);
+  }
+
+  function setAlmTab(tab) {
+    S.almTab = tab;
+    ['stock','venc','merma','env'].forEach(t => {
+      const b = $('almTab' + t.charAt(0).toUpperCase() + t.slice(1));
+      if (b) b.classList.toggle('active', t === tab);
+      const p = $('almPanel' + t.charAt(0).toUpperCase() + t.slice(1));
+      if (p) p.classList.toggle('hidden', t !== tab);
+    });
+    if (!S.loaded['almacen']) { loadAlmacen(); return; }
+    renderAlmTab(tab);
+  }
+
+  function renderAlmTab(tab) {
+    if (tab === 'stock') renderStockTable();
+    if (tab === 'venc')  renderVencTable();
+    if (tab === 'merma') renderMermasTable();
+    if (tab === 'env')   renderEnvTable();
+  }
+
+  function renderStockTable() {
+    const tbody = $('tbodyStock');
+    if (!tbody) return;
+    if (!S.stock.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-slate-500 text-sm">Sin datos. Conecta warehouseMos.</td></tr>';
+      return;
+    }
+    const sorted = [...S.stock].sort((a, b) => (a.alertaMinimo ? 0 : 1) - (b.alertaMinimo ? 0 : 1));
+    tbody.innerHTML = sorted.map(s => {
+      const badge = s.alertaMinimo
+        ? '<span class="badge badge-red">Bajo</span>'
+        : '<span class="badge badge-green">OK</span>';
+      const dias = s.diasCobertura !== undefined && s.diasCobertura !== null
+        ? `<span class="${s.diasCobertura <= 7 ? 'text-red-400' : s.diasCobertura <= 15 ? 'text-yellow-400' : 'text-slate-400'}">${s.diasCobertura}d</span>`
+        : '<span class="text-slate-600">—</span>';
+      return `<tr>
+        <td><div class="font-medium text-slate-200 text-xs sm:text-sm">${s.descripcion || s.codigoProducto}</div></td>
+        <td class="hidden sm:table-cell text-xs text-slate-500">${s.codigoProducto}</td>
+        <td class="font-semibold">${parseFloat(s.cantidadDisponible || 0).toLocaleString()}</td>
+        <td class="text-slate-500">${s.stockMinimo || 0}</td>
+        <td>${dias}</td>
+        <td>${badge}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function renderVencTable() {
+    const listC = $('listVencCrit');
+    const listA = $('listVencAlerta');
+    if (listC) {
+      listC.innerHTML = (S.vencimientos.criticos || []).length === 0
+        ? '<p class="text-slate-600">Sin vencimientos críticos</p>'
+        : (S.vencimientos.criticos || []).map(l =>
+            `<div class="flex justify-between items-center p-2 rounded bg-red-950/30 border border-red-900/30">
+              <span class="text-red-300 text-xs">${l.codigoProducto} — Lote ${l.idLote || '—'}</span>
+              <span class="badge badge-red">${l.diasRestantes}d</span>
+            </div>`
+          ).join('');
+    }
+    if (listA) {
+      listA.innerHTML = (S.vencimientos.alertas || []).length === 0
+        ? '<p class="text-slate-600">Sin alertas de vencimiento</p>'
+        : (S.vencimientos.alertas || []).map(l =>
+            `<div class="flex justify-between items-center p-2 rounded" style="background:rgba(245,158,11,.05);border:1px solid rgba(245,158,11,.15)">
+              <span class="text-yellow-300 text-xs">${l.codigoProducto} — Lote ${l.idLote || '—'}</span>
+              <span class="badge badge-yellow">${l.diasRestantes}d</span>
+            </div>`
+          ).join('');
+    }
+  }
+
+  function renderMermasTable() {
+    const tbody = $('tbodyMermas');
+    if (!tbody) return;
+    if (!S.mermas.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-slate-500 text-sm">Sin mermas registradas</td></tr>';
+      return;
+    }
+    tbody.innerHTML = S.mermas.map(m => {
+      const badge = m.estado === 'PENDIENTE' ? '<span class="badge badge-yellow">Pendiente</span>'
+                  : m.estado === 'PROCESADA'  ? '<span class="badge badge-green">Procesada</span>'
+                  : '<span class="badge badge-gray">' + m.estado + '</span>';
+      return `<tr>
+        <td class="text-xs text-slate-400">${fmtDate(m.fechaIngreso)}</td>
+        <td class="text-xs sm:text-sm text-slate-200">${m.codigoProducto}</td>
+        <td class="text-xs text-slate-400">${m.origen || '—'}</td>
+        <td class="hidden sm:table-cell text-xs">${parseFloat(m.cantidadPendiente || 0)}</td>
+        <td>${badge}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function renderEnvTable() {
+    const tbody = $('tbodyEnv');
+    if (!tbody) return;
+    if (!S.envasados.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-slate-500 text-sm">Sin envasados recientes</td></tr>';
+      return;
+    }
+    tbody.innerHTML = S.envasados.slice(-20).reverse().map(e => {
+      const ef = parseFloat(e.eficienciaPct || 0);
+      const color = ef >= 98 ? 'text-green-400' : ef >= 90 ? 'text-yellow-400' : 'text-red-400';
+      return `<tr>
+        <td class="text-xs text-slate-400">${fmtDate(e.fecha)}</td>
+        <td class="text-xs sm:text-sm text-slate-200">${e.codigoProductoBase} → ${e.codigoProductoEnvasado || '—'}</td>
+        <td class="hidden sm:table-cell">${e.unidadesProducidas || 0}</td>
+        <td class="${color} font-semibold">${ef.toFixed(1)}%</td>
+        <td><span class="badge ${e.estado === 'COMPLETADO' ? 'badge-green' : 'badge-gray'}">${e.estado || '—'}</span></td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── PROVEEDORES ─────────────────────────────────────────────
+  async function loadProveedores() {
+    if (!API.isConfigured()) {
+      $('listProveedores').innerHTML = '<p class="text-slate-500 text-sm text-center py-8">Configura el GAS URL.</p>';
+      return;
+    }
+    S.proveedores = await API.get('getProveedores', {});
+    const cnt = $('provCount'); if (cnt) cnt.textContent = S.proveedores.length;
+    renderProveedores();
+  }
+
+  function renderProveedores() {
+    const el = $('listProveedores');
+    if (!el) return;
+    if (!S.proveedores.length) {
+      el.innerHTML = '<p class="text-slate-500 text-sm text-center py-8">Sin proveedores</p>';
+      return;
+    }
+    el.innerHTML = S.proveedores.map(p => `
+      <div class="card mb-2 p-3 cursor-pointer hover:border-indigo-500/30 transition-colors ${S.provSelId === p.idProveedor ? 'border-indigo-500/50' : ''}"
+           onclick="MOS.selectProveedor('${p.idProveedor}')">
+        <div class="flex items-start justify-between gap-2">
+          <div>
+            <div class="font-medium text-sm text-slate-200">${p.nombre}</div>
+            <div class="text-xs text-slate-500 mt-0.5">${p.ruc || '—'}</div>
+          </div>
+          <span class="badge ${p.estado == '1' ? 'badge-green' : 'badge-gray'} shrink-0">${p.estado == '1' ? 'Activo' : 'Inactivo'}</span>
+        </div>
+        <div class="flex items-center gap-3 mt-2 text-xs text-slate-500">
+          ${p.telefono ? `<span>📞 ${p.telefono}</span>` : ''}
+          ${p.formaPago ? `<span>${p.formaPago === 'CREDITO' ? `Crédito ${p.plazoCredito}d` : 'Contado'}</span>` : ''}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  async function selectProveedor(id) {
+    S.provSelId = id;
+    renderProveedores();
+
+    const prov = S.proveedores.find(p => p.idProveedor === id);
+    if (!prov) return;
+
+    const detailEl = $('proveedorDetail');
+    if (!detailEl) return;
+    detailEl.innerHTML = `
+      <div class="flex items-start justify-between mb-4">
+        <div>
+          <h3 class="font-bold text-white">${prov.nombre}</h3>
+          <p class="text-sm text-slate-400">${prov.ruc || ''} — ${prov.email || ''}</p>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn-ghost text-xs" onclick="MOS.abrirModalProveedor('${id}')">✏️ Editar</button>
+        </div>
+      </div>
+      <div class="grid sm:grid-cols-2 gap-3 mb-4">
+        <div class="card-sm p-3 text-sm"><span class="text-slate-500">Banco: </span><span class="text-slate-200">${prov.banco || '—'}</span></div>
+        <div class="card-sm p-3 text-sm"><span class="text-slate-500">Cuenta: </span><span class="text-slate-200">${prov.numeroCuenta || '—'}</span></div>
+        <div class="card-sm p-3 text-sm"><span class="text-slate-500">Día pago: </span><span class="text-slate-200">${prov.diaPago || '—'}</span></div>
+        <div class="card-sm p-3 text-sm"><span class="text-slate-500">Categoría: </span><span class="text-slate-200">${prov.categoriaProducto || '—'}</span></div>
+      </div>
+      <div class="flex items-center justify-between mb-3">
+        <h4 class="font-semibold text-sm text-slate-300">Pagos registrados</h4>
+        <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalPago('${id}')">+ Pago</button>
+      </div>
+      <div id="listPagos" class="mb-4 text-sm text-slate-400">Cargando...</div>
+      <div class="flex items-center justify-between mb-3">
+        <h4 class="font-semibold text-sm text-slate-300">Pedidos de compra</h4>
+        <button class="btn-ghost text-xs px-3 py-1.5" onclick="MOS.abrirModalPedido('${id}')">+ Pedido</button>
+      </div>
+      <div id="listPedidos" class="text-sm text-slate-400">Cargando...</div>
+    `;
+
+    // Load pagos + pedidos
+    try {
+      const [pagos, pedidos] = await Promise.all([
+        API.get('getPagos', { idProveedor: id }),
+        API.get('getPedidos', { idProveedor: id })
+      ]);
+      renderPagos(pagos || []);
+      renderPedidos(pedidos || []);
+    } catch (e) {
+      const lp = $('listPagos'); if (lp) lp.textContent = 'Error: ' + e.message;
+    }
+  }
+
+  function renderPagos(pagos) {
+    const el = $('listPagos');
+    if (!el) return;
+    if (!pagos.length) { el.innerHTML = '<p class="text-slate-600">Sin pagos registrados</p>'; return; }
+    const total = pagos.reduce((s, p) => s + parseFloat(p.monto || 0), 0);
+    el.innerHTML = `<p class="text-xs text-slate-500 mb-2">Total: <span class="text-indigo-400 font-semibold">${fmtMoney(total)}</span></p>` +
+      pagos.slice(-5).reverse().map(p => `
+        <div class="flex justify-between items-center py-1.5 border-b border-slate-800/50">
+          <div><span class="text-slate-300">${fmtDate(p.fecha)}</span><span class="text-slate-500 ml-2 text-xs">${p.numeroFactura || ''}</span></div>
+          <span class="font-semibold text-green-400">${fmtMoney(p.monto)}</span>
+        </div>
+      `).join('');
+  }
+
+  function renderPedidos(pedidos) {
+    const el = $('listPedidos');
+    if (!el) return;
+    if (!pedidos.length) { el.innerHTML = '<p class="text-slate-600">Sin pedidos registrados</p>'; return; }
+    el.innerHTML = pedidos.slice(-5).reverse().map(p => {
+      const badge = p.estado === 'BORRADOR' ? 'badge-gray' : p.estado === 'CONFIRMADO' ? 'badge-blue' : 'badge-green';
+      return `<div class="flex justify-between items-center py-1.5 border-b border-slate-800/50">
+        <div><span class="text-slate-300 text-xs">${p.idPedido}</span><span class="text-slate-500 ml-2 text-xs">${fmtDate(p.fechaCreacion)}</span></div>
+        <div class="flex items-center gap-2">
+          <span class="text-slate-300">${fmtMoney(p.montoEstimado)}</span>
+          <span class="badge ${badge}">${p.estado}</span>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // ── MODALS ──────────────────────────────────────────────────
+  function openModal(id)  { const el = $(id); if (el) el.classList.add('open'); }
+  function closeModal(id) { const el = $(id); if (el) el.classList.remove('open'); }
+
+  function openConfig() {
+    const inp = $('cfgGasUrl');
+    if (inp) inp.value = API.getUrl();
+    const tr = $('cfgTestResult');
+    if (tr) { tr.classList.add('hidden'); tr.textContent = ''; }
+    openModal('modalConfig');
+  }
+
+  function saveConfig() {
+    const url = ($('cfgGasUrl')?.value || '').trim();
+    API.setUrl(url);
+    closeModal('modalConfig');
+    setStatus(!!url);
+    if (url) {
+      toast('URL guardada. Actualizando datos...', 'ok');
+      S.loaded = {};
+      loadView(S.view);
+    } else {
+      const b = $('bannerNoUrl'); if (b) b.classList.remove('hidden');
+    }
+  }
+
+  async function testConnection() {
+    const url = ($('cfgGasUrl')?.value || '').trim();
+    if (!url) { toast('Ingresa la URL primero', 'error'); return; }
+    API.setUrl(url);
+    const tr = $('cfgTestResult');
+    if (tr) { tr.classList.remove('hidden'); tr.style.background = '#0f172a'; tr.textContent = 'Probando...'; }
+    try {
+      const d = await API.get('getConfig', {});
+      if (tr) {
+        tr.style.background = '#052e16'; tr.style.border = '1px solid #14532d'; tr.style.color = '#86efac';
+        tr.textContent = '✓ Conexión exitosa — ' + (d?.EMPRESA_NOMBRE || 'MOS');
+      }
+    } catch (e) {
+      if (tr) {
+        tr.style.background = '#450a0a'; tr.style.border = '1px solid #7f1d1d'; tr.style.color = '#fca5a5';
+        tr.textContent = '✗ Error: ' + e.message;
+      }
+    }
+  }
+
+  // Product modal
+  function abrirModalProducto(id) {
+    const campos = ['Id','Descripcion','CodigoBarra','Marca','Categoria','Unidad',
+                    'PrecioVenta','PrecioCosto','StockMin','StockMax','Zona',
+                    'Base','Factor','Merma','EsEnvasable','CodTributo','IGV','CodSUNAT','TipoIGV'];
+    campos.forEach(c => { const el = $('prod' + c); if (el && el.tagName !== 'SELECT') el.value = ''; });
+
+    if (id) {
+      const p = S.productos.find(x => x.idProducto === id);
+      if (!p) return;
+      $('modalProdTitle').textContent = 'Editar Producto';
+      $('prodId').value              = p.idProducto;
+      $('prodDescripcion').value     = p.descripcion || '';
+      $('prodCodigoBarra').value     = p.codigoBarra || '';
+      $('prodMarca').value           = p.marca || '';
+      $('prodCategoria').value       = p.idCategoria || '';
+      $('prodUnidad').value          = p.unidad || 'UNIDAD';
+      $('prodPrecioVenta').value     = p.precioVenta || '';
+      $('prodPrecioCosto').value     = p.precioCosto || '';
+      $('prodStockMin').value        = p.stockMinimo || '';
+      $('prodStockMax').value        = p.stockMaximo || '';
+      $('prodZona').value            = p.zona || '';
+      $('prodBase').value            = p.codigoProductoBase || '';
+      $('prodFactor').value          = p.factorConversion || '';
+      $('prodMerma').value           = p.mermaEsperadaPct || '';
+      $('prodEsEnvasable').value     = p.esEnvasable || '0';
+      $('prodCodTributo').value      = p.Cod_Tributo || '';
+      $('prodIGV').value             = p.IGV_Porcentaje || '';
+      $('prodCodSUNAT').value        = p.Cod_SUNAT || '';
+      $('prodTipoIGV').value         = p.Tipo_IGV || '';
+    } else {
+      $('modalProdTitle').textContent = 'Nuevo Producto';
+      $('prodId').value = '';
+      $('prodUnidad').value = 'UNIDAD';
+      $('prodEsEnvasable').value = '0';
+    }
+    openModal('modalProducto');
+  }
+
+  async function guardarProducto() {
+    const params = {
+      idProducto:          $('prodId')?.value || undefined,
+      descripcion:         $('prodDescripcion')?.value || '',
+      codigoBarra:         $('prodCodigoBarra')?.value || '',
+      marca:               $('prodMarca')?.value || '',
+      idCategoria:         $('prodCategoria')?.value || '',
+      unidad:              $('prodUnidad')?.value || 'UNIDAD',
+      precioVenta:         $('prodPrecioVenta')?.value || 0,
+      precioCosto:         $('prodPrecioCosto')?.value || 0,
+      stockMinimo:         $('prodStockMin')?.value || 0,
+      stockMaximo:         $('prodStockMax')?.value || 0,
+      zona:                $('prodZona')?.value || '',
+      codigoProductoBase:  $('prodBase')?.value || '',
+      factorConversion:    $('prodFactor')?.value || '',
+      mermaEsperadaPct:    $('prodMerma')?.value || '',
+      esEnvasable:         $('prodEsEnvasable')?.value || '0',
+      Cod_Tributo:         $('prodCodTributo')?.value || '',
+      IGV_Porcentaje:      $('prodIGV')?.value || '',
+      Cod_SUNAT:           $('prodCodSUNAT')?.value || '',
+      Tipo_IGV:            $('prodTipoIGV')?.value || ''
+    };
+
+    if (!params.descripcion) { toast('La descripción es requerida', 'error'); return; }
+
+    try {
+      const action = params.idProducto ? 'actualizarProducto' : 'crearProducto';
+      await API.post(action, params);
+      toast(params.idProducto ? 'Producto actualizado' : 'Producto creado', 'ok');
+      closeModal('modalProducto');
+      S.loaded['catalogo'] = false;
+      await loadCatalogo();
+    } catch (e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  // Price modal
+  function abrirModalPrecio(id) {
+    const p = S.productos.find(x => x.idProducto === id);
+    if (!p) { toast('Producto no encontrado', 'error'); return; }
+    $('precioIdProducto').value = id;
+    $('precioInfoProd').textContent = p.descripcion + (p.codigoBarra ? ' — ' + p.codigoBarra : '');
+    $('precioActual').textContent = fmtMoney(p.precioVenta);
+    $('precioNuevo').value = p.precioVenta || '';
+    $('precioMotivo').value = '';
+    $('precioMembretes').checked = false;
+    openModal('modalPrecio');
+  }
+
+  async function publicarPrecio() {
+    const id     = $('precioIdProducto')?.value;
+    const nuevo  = parseFloat($('precioNuevo')?.value || 0);
+    const motivo = $('precioMotivo')?.value || '';
+    const memb   = $('precioMembretes')?.checked;
+
+    if (!nuevo || nuevo <= 0) { toast('Ingresa un precio válido', 'error'); return; }
+
+    const p = S.productos.find(x => x.idProducto === id);
+    try {
+      await API.post('publicarPrecio', {
+        idProducto: id, skuBase: p?.skuBase, codigoBarra: p?.codigoBarra,
+        descripcion: p?.descripcion, precioNuevo: nuevo,
+        motivo, imprimirMembretes: memb
+      });
+      toast('Precio publicado: ' + fmtMoney(nuevo), 'ok');
+      closeModal('modalPrecio');
+      S.loaded['catalogo'] = false;
+      await loadCatalogo();
+    } catch (e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  // Proveedor modal
+  function abrirModalProveedor(id) {
+    ['Id','Nombre','Ruc','Tel','Email','FormaPago','Plazo','Categoria','Banco','Cuenta'].forEach(c => {
+      const el = $('prov' + c);
+      if (el && el.tagName !== 'SELECT') el.value = '';
+    });
+    if (id) {
+      const p = S.proveedores.find(x => x.idProveedor === id);
+      if (!p) return;
+      $('modalProvTitle').textContent = 'Editar Proveedor';
+      $('provId').value        = p.idProveedor;
+      $('provNombre').value    = p.nombre || '';
+      $('provRuc').value       = p.ruc || '';
+      $('provTel').value       = p.telefono || '';
+      $('provEmail').value     = p.email || '';
+      $('provFormaPago').value = p.formaPago || 'CONTADO';
+      $('provPlazo').value     = p.plazoCredito || '';
+      $('provCategoria').value = p.categoriaProducto || '';
+      $('provBanco').value     = p.banco || '';
+      $('provCuenta').value    = p.numeroCuenta || '';
+    } else {
+      $('modalProvTitle').textContent = 'Nuevo Proveedor';
+      $('provId').value = '';
+      $('provFormaPago').value = 'CONTADO';
+    }
+    openModal('modalProveedor');
+  }
+
+  async function guardarProveedor() {
+    const params = {
+      idProveedor:      $('provId')?.value || undefined,
+      nombre:           $('provNombre')?.value || '',
+      ruc:              $('provRuc')?.value || '',
+      telefono:         $('provTel')?.value || '',
+      email:            $('provEmail')?.value || '',
+      formaPago:        $('provFormaPago')?.value || 'CONTADO',
+      plazoCredito:     $('provPlazo')?.value || 0,
+      categoriaProducto:$('provCategoria')?.value || '',
+      banco:            $('provBanco')?.value || '',
+      numeroCuenta:     $('provCuenta')?.value || ''
+    };
+    if (!params.nombre) { toast('El nombre es requerido', 'error'); return; }
+    try {
+      const action = params.idProveedor ? 'actualizarProveedor' : 'crearProveedor';
+      await API.post(action, params);
+      toast(params.idProveedor ? 'Proveedor actualizado' : 'Proveedor creado', 'ok');
+      closeModal('modalProveedor');
+      S.loaded['proveedores'] = false;
+      await loadProveedores();
+    } catch (e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  // Pago modal
+  function abrirModalPago(idProveedor) {
+    $('pagoIdProveedor').value = idProveedor;
+    $('pagoMonto').value  = '';
+    $('pagoFactura').value = '';
+    $('pagoFecha').value  = today();
+    $('pagoObs').value    = '';
+    openModal('modalPago');
+  }
+
+  async function guardarPago() {
+    const params = {
+      idProveedor:    $('pagoIdProveedor')?.value,
+      monto:          $('pagoMonto')?.value,
+      numeroFactura:  $('pagoFactura')?.value || '',
+      fecha:          $('pagoFecha')?.value || today(),
+      observacion:    $('pagoObs')?.value || ''
+    };
+    if (!params.monto || parseFloat(params.monto) <= 0) { toast('Ingresa un monto válido', 'error'); return; }
+    try {
+      await API.post('registrarPago', params);
+      toast('Pago registrado: ' + fmtMoney(params.monto), 'ok');
+      closeModal('modalPago');
+      if (S.provSelId) selectProveedor(S.provSelId);
+    } catch (e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  function abrirModalPedido(idProveedor) {
+    toast('Pedidos: próximamente desde esta vista', 'info');
+  }
+
+  // Close modal on backdrop click
+  document.addEventListener('click', e => {
+    if (e.target.classList.contains('modal-backdrop')) {
+      e.target.classList.remove('open');
+    }
+  });
+
+  // ── PUBLIC API ───────────────────────────────────────────────
+  return {
+    init, nav, refresh, fabAction,
+    openConfig, saveConfig, testConnection, closeModal,
+    filterCatalogo, setCatTab, toggleDerivs,
+    abrirModalProducto, guardarProducto,
+    abrirModalPrecio, publicarPrecio,
+    setAlmTab,
+    loadProveedores, selectProveedor, renderProveedores,
+    abrirModalProveedor, guardarProveedor,
+    abrirModalPago, guardarPago, abrirModalPedido
+  };
+})();

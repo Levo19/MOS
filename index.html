@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="theme-color" content="#020817">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>MOS — Admin</title>
+  <link rel="manifest" href="manifest.json">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root { --accent: #6366f1; --accent2: #8b5cf6; }
+    * { box-sizing: border-box; }
+    body { background: #020817; color: #e2e8f0; font-family: system-ui, -apple-system, sans-serif; }
+
+    /* Sidebar */
+    #sidebar { background: #060d1f; border-right: 1px solid #1e293b; }
+    .nav-item { transition: background .15s, color .15s; }
+    .nav-item.active, .nav-item:hover { background: rgba(99,102,241,.15); color: #a5b4fc; }
+    .nav-item.active { color: #a5b4fc; font-weight: 600; }
+    .nav-item.active .nav-dot { opacity: 1; }
+    .nav-dot { width: 3px; height: 20px; background: var(--accent); border-radius: 2px; opacity: 0; transition: opacity .15s; }
+
+    /* Bottom nav (mobile) */
+    #bottomnav { background: #060d1f; border-top: 1px solid #1e293b; }
+    .bnav-btn { transition: color .15s; }
+    .bnav-btn.active { color: #a5b4fc; }
+    .bnav-btn .bnav-bar { height: 2px; background: var(--accent); border-radius: 1px; margin: 0 auto; width: 0; transition: width .2s; }
+    .bnav-btn.active .bnav-bar { width: 24px; }
+
+    /* Views */
+    .view { display: none; }
+    .view.active { display: block; animation: fadeIn .2s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+    /* Cards */
+    .card { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; }
+    .card-sm { background: #0d1526; border: 1px solid #1e293b; border-radius: 10px; }
+
+    /* KPI cards */
+    .kpi-card { background: linear-gradient(135deg, #0f172a 0%, #0d1a2e 100%); border: 1px solid #1e293b; border-radius: 12px; transition: border-color .2s; }
+    .kpi-card:hover { border-color: #334155; }
+
+    /* Tables */
+    .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .tbl th { padding: 10px 12px; text-align: left; font-weight: 600; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid #1e293b; white-space: nowrap; }
+    .tbl td { padding: 10px 12px; border-bottom: 1px solid #0f172a; vertical-align: middle; }
+    .tbl tr:hover td { background: rgba(255,255,255,.02); }
+
+    /* Badges */
+    .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; }
+    .badge-red    { background: rgba(239,68,68,.15); color: #f87171; }
+    .badge-yellow { background: rgba(245,158,11,.15); color: #fbbf24; }
+    .badge-green  { background: rgba(34,197,94,.15); color: #4ade80; }
+    .badge-blue   { background: rgba(99,102,241,.15); color: #818cf8; }
+    .badge-gray   { background: rgba(100,116,139,.15); color: #94a3b8; }
+
+    /* Buttons */
+    .btn-primary { background: var(--accent); color: white; border-radius: 8px; padding: 8px 16px; font-size: 14px; font-weight: 500; transition: opacity .15s; cursor: pointer; border: none; }
+    .btn-primary:hover { opacity: .85; }
+    .btn-ghost { background: transparent; color: #94a3b8; border: 1px solid #1e293b; border-radius: 8px; padding: 8px 16px; font-size: 14px; cursor: pointer; transition: all .15s; }
+    .btn-ghost:hover { border-color: #334155; color: #e2e8f0; }
+
+    /* Modal */
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 100; display: none; align-items: center; justify-content: center; padding: 16px; }
+    .modal-backdrop.open { display: flex; }
+    .modal-box { background: #0f172a; border: 1px solid #1e293b; border-radius: 16px; width: 100%; max-width: 540px; max-height: 90vh; overflow-y: auto; }
+
+    /* Form inputs */
+    .inp { background: #020817; border: 1px solid #1e293b; border-radius: 8px; padding: 8px 12px; color: #e2e8f0; font-size: 14px; width: 100%; transition: border-color .15s; outline: none; }
+    .inp:focus { border-color: var(--accent); }
+    .inp::placeholder { color: #475569; }
+    select.inp option { background: #0f172a; }
+    label.lbl { display: block; font-size: 12px; font-weight: 500; color: #94a3b8; margin-bottom: 4px; }
+
+    /* Toast */
+    #toast { transition: opacity .3s, transform .3s; }
+    #toast.hide { opacity: 0; transform: translateY(-8px); pointer-events: none; }
+
+    /* Tabs */
+    .tab-bar { display: flex; gap: 2px; background: #0d1526; border-radius: 10px; padding: 3px; }
+    .tab-btn { flex: 1; padding: 7px 12px; font-size: 13px; font-weight: 500; border-radius: 7px; border: none; background: transparent; color: #64748b; cursor: pointer; transition: all .15s; }
+    .tab-btn.active { background: #1e293b; color: #e2e8f0; }
+
+    /* Loading skeleton */
+    .skel { background: linear-gradient(90deg, #1e293b 25%, #2d3f5a 50%, #1e293b 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 6px; }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+    /* Product tree */
+    .prod-base { cursor: pointer; }
+    .prod-base:hover { background: rgba(255,255,255,.02); }
+    .presentacion-chip { display: inline-flex; align-items: center; gap: 4px; background: rgba(99,102,241,.1); border: 1px solid rgba(99,102,241,.2); border-radius: 6px; padding: 3px 8px; font-size: 12px; color: #a5b4fc; }
+
+    /* Status dot */
+    .dot-green { width: 8px; height: 8px; background: #22c55e; border-radius: 50%; display: inline-block; box-shadow: 0 0 6px #22c55e; }
+    .dot-red   { width: 8px; height: 8px; background: #ef4444; border-radius: 50%; display: inline-block; box-shadow: 0 0 6px #ef4444; }
+    .dot-gray  { width: 8px; height: 8px; background: #475569; border-radius: 50%; display: inline-block; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+
+    /* Chart container */
+    .chart-wrap { position: relative; height: 220px; }
+    @media (min-width: 1024px) { .chart-wrap { height: 260px; } }
+
+    /* FAB */
+    .fab { position: fixed; bottom: 80px; right: 20px; width: 52px; height: 52px; border-radius: 50%; background: var(--accent); color: white; border: none; font-size: 22px; cursor: pointer; box-shadow: 0 4px 20px rgba(99,102,241,.5); transition: transform .2s, box-shadow .2s; z-index: 30; display: none; }
+    .fab:hover { transform: scale(1.1); box-shadow: 0 6px 28px rgba(99,102,241,.6); }
+    .fab.visible { display: flex; align-items: center; justify-content: center; }
+    @media (min-width: 1024px) { .fab { bottom: 24px; } }
+
+    /* Ecosystem status */
+    .eco-card { background: #0d1526; border: 1px solid #1e293b; border-radius: 10px; padding: 16px; }
+  </style>
+</head>
+<body class="h-full">
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- DESKTOP SIDEBAR                                            -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<aside id="sidebar" class="hidden lg:flex fixed inset-y-0 left-0 w-60 flex-col z-30">
+  <!-- Logo -->
+  <div class="px-5 py-5 border-b border-slate-800">
+    <div class="flex items-center gap-2">
+      <div class="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)">M</div>
+      <div>
+        <div class="font-bold text-white text-base leading-none">MOS</div>
+        <div class="text-xs text-slate-500">InversionMos</div>
+      </div>
+    </div>
+  </div>
+  <!-- Nav -->
+  <nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+    <button data-view="dashboard"   class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('dashboard')">
+      <div class="nav-dot"></div><span class="text-base">📊</span><span>Dashboard</span>
+    </button>
+    <button data-view="catalogo"    class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('catalogo')">
+      <div class="nav-dot"></div><span class="text-base">📦</span><span>Catálogo</span>
+    </button>
+    <button data-view="almacen"     class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('almacen')">
+      <div class="nav-dot"></div><span class="text-base">🏭</span><span>Almacén</span>
+    </button>
+    <button data-view="proveedores" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('proveedores')">
+      <div class="nav-dot"></div><span class="text-base">🤝</span><span>Proveedores</span>
+    </button>
+    <div class="mt-2 pt-2 border-t border-slate-800">
+      <button data-view="zonas" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-500 text-sm" onclick="MOS.nav('zonas')">
+        <div class="nav-dot"></div><span class="text-base">🗺️</span><span>Zonas <span class="text-xs bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded ml-1">Phase 2</span></span>
+      </button>
+    </div>
+  </nav>
+  <!-- Footer -->
+  <div class="px-3 py-3 border-t border-slate-800">
+    <button onclick="MOS.openConfig()" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 text-sm">
+      <span class="text-base">⚙️</span><span>Configuración</span>
+    </button>
+    <div id="connStatus" class="flex items-center gap-2 px-3 mt-2">
+      <span class="dot-gray" id="statusDot"></span>
+      <span class="text-xs text-slate-500" id="statusLabel">Sin configurar</span>
+    </div>
+  </div>
+</aside>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- MOBILE TOP BAR                                             -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<header class="lg:hidden fixed top-0 left-0 right-0 flex items-center justify-between px-4 py-3 z-30" style="background:#060d1f;border-bottom:1px solid #1e293b;">
+  <div class="flex items-center gap-2">
+    <div class="w-7 h-7 rounded-md flex items-center justify-center text-white font-bold text-xs" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)">M</div>
+    <span id="pageTitle" class="font-semibold text-white text-sm">Dashboard</span>
+  </div>
+  <div class="flex items-center gap-2">
+    <span id="statusDotMob" class="dot-gray"></span>
+    <button onclick="MOS.openConfig()" class="text-slate-400 p-1">⚙️</button>
+  </div>
+</header>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- MAIN CONTENT                                               -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<main class="lg:ml-60 pt-14 lg:pt-0 pb-20 lg:pb-6 min-h-screen">
+  <div class="max-w-7xl mx-auto px-4 py-4 lg:py-6">
+
+    <!-- Desktop page header -->
+    <div class="hidden lg:flex items-center justify-between mb-6">
+      <h1 id="pageTitleDesktop" class="text-2xl font-bold text-white">Dashboard</h1>
+      <button onclick="MOS.refresh()" class="btn-ghost text-xs px-3 py-1.5">↺ Actualizar</button>
+    </div>
+
+    <!-- No URL Banner -->
+    <div id="bannerNoUrl" class="hidden mb-4 p-4 rounded-xl text-sm flex items-center gap-3" style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);">
+      <span class="text-yellow-400 text-lg">⚠️</span>
+      <span class="text-yellow-300 flex-1">GAS URL no configurada — los datos no se cargarán.</span>
+      <button onclick="MOS.openConfig()" class="text-yellow-400 underline text-xs whitespace-nowrap">Configurar →</button>
+    </div>
+
+    <!-- ═══ VIEW: DASHBOARD ═══════════════════════════════════ -->
+    <section id="view-dashboard" class="view active">
+
+      <!-- KPI Grid -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+        <div class="kpi-card p-4" id="kpi-stock">
+          <div class="flex items-start justify-between mb-3">
+            <div class="text-2xl">📦</div>
+            <span id="kpiStockBadge" class="badge badge-yellow hidden">!</span>
+          </div>
+          <div id="kpiStockVal" class="text-3xl font-bold text-white mb-1">—</div>
+          <div class="text-xs text-slate-500">Stock bajo mínimo</div>
+        </div>
+        <div class="kpi-card p-4" id="kpi-venc">
+          <div class="flex items-start justify-between mb-3">
+            <div class="text-2xl">⏰</div>
+            <span id="kpiVencBadge" class="badge badge-red hidden">!</span>
+          </div>
+          <div id="kpiVencVal" class="text-3xl font-bold text-white mb-1">—</div>
+          <div class="text-xs text-slate-500">Venc. críticos (≤7d)</div>
+        </div>
+        <div class="kpi-card p-4">
+          <div class="flex items-start justify-between mb-3">
+            <div class="text-2xl">🗑️</div>
+          </div>
+          <div id="kpiMermasVal" class="text-3xl font-bold text-white mb-1">—</div>
+          <div class="text-xs text-slate-500">Mermas pendientes</div>
+        </div>
+        <div class="kpi-card p-4">
+          <div class="flex items-start justify-between mb-3">
+            <div class="text-2xl">📋</div>
+          </div>
+          <div id="kpiProductosVal" class="text-3xl font-bold text-white mb-1">—</div>
+          <div class="text-xs text-slate-500">Productos activos</div>
+        </div>
+      </div>
+
+      <!-- Charts Row -->
+      <div class="grid lg:grid-cols-2 gap-4 mb-5">
+        <div class="card p-4">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-semibold text-sm text-slate-200">Rotación de Productos</h3>
+            <span class="text-xs text-slate-500">días cobertura</span>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="chartRotacion"></canvas>
+          </div>
+          <div id="chartRotacionEmpty" class="hidden text-center py-10 text-slate-500 text-sm">
+            Conecta warehouseMos para ver rotación
+          </div>
+        </div>
+        <div class="card p-4">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-semibold text-sm text-slate-200">Stock vs Mínimo</h3>
+            <span class="text-xs text-slate-500">top alertas</span>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="chartStock"></canvas>
+          </div>
+          <div id="chartStockEmpty" class="hidden text-center py-10 text-slate-500 text-sm">
+            Conecta warehouseMos para ver stock
+          </div>
+        </div>
+      </div>
+
+      <!-- Ecosystem Status + Alerts -->
+      <div class="grid lg:grid-cols-2 gap-4">
+        <div class="card p-4">
+          <h3 class="font-semibold text-sm text-slate-200 mb-3">Estado del Ecosistema</h3>
+          <div class="space-y-2">
+            <div class="eco-card flex items-center justify-between">
+              <div class="flex items-center gap-3">
+                <span class="text-lg">🏭</span>
+                <div>
+                  <div class="text-sm font-medium text-slate-200">warehouseMos</div>
+                  <div class="text-xs text-slate-500">Almacén central</div>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="dot-gray" id="ecoWhDot"></span>
+                <span class="text-xs text-slate-400" id="ecoWhLabel">—</span>
+              </div>
+            </div>
+            <div class="eco-card flex items-center justify-between opacity-50">
+              <div class="flex items-center gap-3">
+                <span class="text-lg">🛒</span>
+                <div>
+                  <div class="text-sm font-medium text-slate-200">MosExpress</div>
+                  <div class="text-xs text-slate-500">Punto de venta</div>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="dot-gray"></span>
+                <span class="text-xs text-slate-400">Phase 2</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card p-4">
+          <h3 class="font-semibold text-sm text-slate-200 mb-3">Alertas Recientes</h3>
+          <div id="listAlertas" class="space-y-2">
+            <div class="text-center py-6 text-slate-500 text-sm">Cargando...</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ VIEW: CATÁLOGO ════════════════════════════════════ -->
+    <section id="view-catalogo" class="view">
+      <!-- Toolbar -->
+      <div class="flex flex-col sm:flex-row gap-2 mb-4">
+        <input id="searchCatalogo" type="search" class="inp flex-1" placeholder="🔍 Buscar producto, código o marca..."
+               oninput="MOS.filterCatalogo()">
+        <select id="filtroCategoria" class="inp w-full sm:w-40" onchange="MOS.filterCatalogo()">
+          <option value="">Todas las categorías</option>
+        </select>
+        <button class="btn-primary whitespace-nowrap hidden lg:flex items-center gap-1" onclick="MOS.abrirModalProducto(null)">
+          + Nuevo
+        </button>
+      </div>
+      <!-- Toggle base/todas -->
+      <div class="tab-bar mb-4 w-fit">
+        <button class="tab-btn active" id="tabBaseBtn" onclick="MOS.setCatTab('base')">Base/Granel</button>
+        <button class="tab-btn" id="tabDerivBtn" onclick="MOS.setCatTab('deriv')">Presentaciones</button>
+        <button class="tab-btn" id="tabTodosBtn" onclick="MOS.setCatTab('todos')">Todos</button>
+      </div>
+      <!-- Product list -->
+      <div id="listCatalogo">
+        <div class="space-y-2" id="skelCatalogo">
+          <div class="skel h-16 rounded-xl"></div>
+          <div class="skel h-16 rounded-xl"></div>
+          <div class="skel h-16 rounded-xl"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ VIEW: ALMACÉN ════════════════════════════════════ -->
+    <section id="view-almacen" class="view">
+      <div class="tab-bar mb-4">
+        <button class="tab-btn active" id="almTabStock" onclick="MOS.setAlmTab('stock')">📦 Stock</button>
+        <button class="tab-btn" id="almTabVenc"  onclick="MOS.setAlmTab('venc')">⏰ Venc.</button>
+        <button class="tab-btn" id="almTabMerma" onclick="MOS.setAlmTab('merma')">🗑️ Mermas</button>
+        <button class="tab-btn" id="almTabEnv"   onclick="MOS.setAlmTab('env')">🏷️ Envasados</button>
+      </div>
+
+      <!-- Stock tab -->
+      <div id="almPanelStock">
+        <div class="card overflow-x-auto">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>Producto</th>
+                <th class="hidden sm:table-cell">Código</th>
+                <th>Stock</th>
+                <th>Mínimo</th>
+                <th>Rotación</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyStock">
+              <tr><td colspan="6" class="text-center py-8 text-slate-500 text-sm">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Vencimientos tab -->
+      <div id="almPanelVenc" class="hidden">
+        <div class="grid sm:grid-cols-2 gap-4">
+          <div class="card p-4">
+            <h3 class="font-semibold text-sm text-red-400 mb-3">🔴 Críticos (≤7 días)</h3>
+            <div id="listVencCrit" class="space-y-2 text-sm text-slate-400">Cargando...</div>
+          </div>
+          <div class="card p-4">
+            <h3 class="font-semibold text-sm text-yellow-400 mb-3">🟡 Alertas (≤30 días)</h3>
+            <div id="listVencAlerta" class="space-y-2 text-sm text-slate-400">Cargando...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mermas tab -->
+      <div id="almPanelMerma" class="hidden">
+        <div class="card overflow-x-auto">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Producto</th>
+                <th>Origen</th>
+                <th class="hidden sm:table-cell">Cantidad</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyMermas">
+              <tr><td colspan="5" class="text-center py-8 text-slate-500 text-sm">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Envasados tab -->
+      <div id="almPanelEnv" class="hidden">
+        <div class="card overflow-x-auto">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Base → Envasado</th>
+                <th class="hidden sm:table-cell">Uds. prod.</th>
+                <th>Eficiencia</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyEnv">
+              <tr><td colspan="5" class="text-center py-8 text-slate-500 text-sm">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ VIEW: ZONAS (Phase 2) ════════════════════════════ -->
+    <section id="view-zonas" class="view">
+      <div class="card p-8 text-center max-w-lg mx-auto">
+        <div class="text-5xl mb-4">🗺️</div>
+        <h2 class="text-xl font-bold text-white mb-2">Zonas — Phase 2</h2>
+        <p class="text-slate-400 text-sm mb-6">La gestión de zonas se activa cuando MosExpress se conecte a MOS.</p>
+        <div class="text-left space-y-3 text-sm">
+          <div class="flex items-start gap-3 p-3 rounded-lg" style="background:#0d1526">
+            <span class="text-green-400 mt-0.5">✓</span>
+            <div><div class="font-medium text-slate-200">Desplegar MOS como Web App</div><div class="text-slate-500 text-xs">Execute as Me, Anyone with link</div></div>
+          </div>
+          <div class="flex items-start gap-3 p-3 rounded-lg" style="background:#0d1526">
+            <span class="text-slate-500 mt-0.5">2</span>
+            <div><div class="font-medium text-slate-400">Auditar PRODUCTOS de MosExpress</div><div class="text-slate-500 text-xs">Verificar columnas vs PRODUCTOS_MASTER</div></div>
+          </div>
+          <div class="flex items-start gap-3 p-3 rounded-lg" style="background:#0d1526">
+            <span class="text-slate-500 mt-0.5">3</span>
+            <div><div class="font-medium text-slate-400">Migrar PRODUCTOS + EQUIVALENCIAS</div><div class="text-slate-500 text-xs">De MosExpress → PRODUCTOS_MASTER en MOS</div></div>
+          </div>
+          <div class="flex items-start gap-3 p-3 rounded-lg" style="background:#0d1526">
+            <span class="text-slate-500 mt-0.5">4</span>
+            <div><div class="font-medium text-slate-400">Configurar ME_SS_ID + ME_GAS_URL</div><div class="text-slate-500 text-xs">En Script Properties de ProyectoMOS</div></div>
+          </div>
+          <div class="flex items-start gap-3 p-3 rounded-lg" style="background:#0d1526">
+            <span class="text-slate-500 mt-0.5">5</span>
+            <div><div class="font-medium text-slate-400">Test en paralelo (2 semanas)</div><div class="text-slate-500 text-xs">MosExpress lee MOS pero mantiene copia local</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ VIEW: PROVEEDORES ════════════════════════════════ -->
+    <section id="view-proveedores" class="view">
+      <div class="flex items-center justify-between mb-4">
+        <div class="text-sm text-slate-400"><span id="provCount">0</span> proveedores</div>
+        <button class="btn-primary text-sm hidden lg:block" onclick="MOS.abrirModalProveedor(null)">+ Nuevo proveedor</button>
+      </div>
+      <div class="grid lg:grid-cols-3 gap-4">
+        <!-- Proveedor list -->
+        <div class="lg:col-span-1">
+          <div id="listProveedores" class="space-y-2">
+            <div class="skel h-20 rounded-xl"></div>
+            <div class="skel h-20 rounded-xl"></div>
+          </div>
+        </div>
+        <!-- Proveedor detail -->
+        <div class="lg:col-span-2">
+          <div id="proveedorDetail" class="card p-6 text-center text-slate-500 text-sm">
+            Selecciona un proveedor para ver pagos y pedidos
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div><!-- /max-w -->
+</main>
+
+<!-- FAB (mobile) -->
+<button class="fab" id="fab" onclick="MOS.fabAction()">+</button>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- MOBILE BOTTOM NAV                                          -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<nav id="bottomnav" class="lg:hidden fixed bottom-0 left-0 right-0 flex z-30">
+  <button data-view="dashboard"   class="bnav-btn active flex-1 flex flex-col items-center py-3 text-slate-400 text-xs" onclick="MOS.nav('dashboard')">
+    <div class="bnav-bar mb-1"></div><span class="text-xl mb-0.5">📊</span><span>Dashboard</span>
+  </button>
+  <button data-view="catalogo"    class="bnav-btn flex-1 flex flex-col items-center py-3 text-slate-400 text-xs" onclick="MOS.nav('catalogo')">
+    <div class="bnav-bar mb-1"></div><span class="text-xl mb-0.5">📦</span><span>Catálogo</span>
+  </button>
+  <button data-view="almacen"     class="bnav-btn flex-1 flex flex-col items-center py-3 text-slate-400 text-xs" onclick="MOS.nav('almacen')">
+    <div class="bnav-bar mb-1"></div><span class="text-xl mb-0.5">🏭</span><span>Almacén</span>
+  </button>
+  <button data-view="proveedores" class="bnav-btn flex-1 flex flex-col items-center py-3 text-slate-400 text-xs" onclick="MOS.nav('proveedores')">
+    <div class="bnav-bar mb-1"></div><span class="text-xl mb-0.5">🤝</span><span>Proveedores</span>
+  </button>
+  <button data-view="zonas"       class="bnav-btn flex-1 flex flex-col items-center py-3 text-slate-400 text-xs" onclick="MOS.nav('zonas')">
+    <div class="bnav-bar mb-1"></div><span class="text-xl mb-0.5">🗺️</span><span>Zonas</span>
+  </button>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- MODALS                                                     -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+
+<!-- Config Modal -->
+<div class="modal-backdrop" id="modalConfig">
+  <div class="modal-box p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="font-bold text-lg text-white">⚙️ Configuración</h2>
+      <button onclick="MOS.closeModal('modalConfig')" class="text-slate-400 hover:text-white text-xl">×</button>
+    </div>
+    <div class="space-y-4">
+      <div>
+        <label class="lbl">URL del Web App de MOS (GAS)</label>
+        <input id="cfgGasUrl" class="inp" type="url" placeholder="https://script.google.com/macros/s/...">
+        <p class="text-xs text-slate-500 mt-1">Obtenla en Implementar → Web App en tu proyecto GAS de ProyectoMOS.</p>
+      </div>
+      <div id="cfgTestResult" class="hidden text-xs p-3 rounded-lg"></div>
+      <div class="flex gap-2 pt-2">
+        <button onclick="MOS.testConnection()" class="btn-ghost flex-1">Probar conexión</button>
+        <button onclick="MOS.saveConfig()" class="btn-primary flex-1">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Producto Modal -->
+<div class="modal-backdrop" id="modalProducto">
+  <div class="modal-box p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 id="modalProdTitle" class="font-bold text-lg text-white">Nuevo Producto</h2>
+      <button onclick="MOS.closeModal('modalProducto')" class="text-slate-400 hover:text-white text-xl">×</button>
+    </div>
+    <input type="hidden" id="prodId">
+    <div class="grid grid-cols-2 gap-3">
+      <div class="col-span-2">
+        <label class="lbl">Descripción *</label>
+        <input id="prodDescripcion" class="inp" placeholder="Arroz Extra 1kg">
+      </div>
+      <div>
+        <label class="lbl">Código de Barras</label>
+        <input id="prodCodigoBarra" class="inp" placeholder="7501234...">
+      </div>
+      <div>
+        <label class="lbl">Marca</label>
+        <input id="prodMarca" class="inp" placeholder="El Sol">
+      </div>
+      <div>
+        <label class="lbl">Categoría</label>
+        <select id="prodCategoria" class="inp">
+          <option value="">— seleccionar —</option>
+        </select>
+      </div>
+      <div>
+        <label class="lbl">Unidad</label>
+        <select id="prodUnidad" class="inp">
+          <option value="UNIDAD">UNIDAD</option>
+          <option value="BOLSA">BOLSA</option>
+          <option value="SOBRE">SOBRE</option>
+          <option value="SACO">SACO</option>
+          <option value="KG">KG</option>
+          <option value="LITRO">LITRO</option>
+          <option value="CAJA">CAJA</option>
+        </select>
+      </div>
+      <div>
+        <label class="lbl">Precio Venta (S/.)</label>
+        <input id="prodPrecioVenta" class="inp" type="number" step="0.01" placeholder="0.00">
+      </div>
+      <div>
+        <label class="lbl">Precio Costo (S/.)</label>
+        <input id="prodPrecioCosto" class="inp" type="number" step="0.01" placeholder="0.00">
+      </div>
+      <div>
+        <label class="lbl">Stock Mínimo</label>
+        <input id="prodStockMin" class="inp" type="number" placeholder="0">
+      </div>
+      <div>
+        <label class="lbl">Stock Máximo</label>
+        <input id="prodStockMax" class="inp" type="number" placeholder="0">
+      </div>
+      <div>
+        <label class="lbl">Zona</label>
+        <input id="prodZona" class="inp" placeholder="A-1">
+      </div>
+      <div class="col-span-2 pt-1 border-t border-slate-800">
+        <p class="text-xs text-slate-500 mb-2">Presentación (dejar vacío si es producto base/granel)</p>
+      </div>
+      <div>
+        <label class="lbl">Producto Base (ID)</label>
+        <input id="prodBase" class="inp" placeholder="P001">
+      </div>
+      <div>
+        <label class="lbl">Factor Conversión</label>
+        <input id="prodFactor" class="inp" type="number" step="0.01" placeholder="50">
+      </div>
+      <div>
+        <label class="lbl">Merma Esperada (%)</label>
+        <input id="prodMerma" class="inp" type="number" step="0.1" placeholder="2">
+      </div>
+      <div>
+        <label class="lbl">¿Envasable?</label>
+        <select id="prodEsEnvasable" class="inp">
+          <option value="0">No (Derivado/Final)</option>
+          <option value="1">Sí (Base para envasar)</option>
+        </select>
+      </div>
+      <div class="col-span-2 pt-1 border-t border-slate-800">
+        <p class="text-xs text-slate-500 mb-2">Fiscal (SUNAT / NubeFact)</p>
+      </div>
+      <div>
+        <label class="lbl">Cod. Tributo</label>
+        <select id="prodCodTributo" class="inp">
+          <option value="">—</option>
+          <option value="1000">1000 — IGV</option>
+          <option value="9998">9998 — Inafecto</option>
+          <option value="9997">9997 — Exonerado</option>
+        </select>
+      </div>
+      <div>
+        <label class="lbl">IGV %</label>
+        <input id="prodIGV" class="inp" type="number" placeholder="18">
+      </div>
+      <div>
+        <label class="lbl">Cod. SUNAT</label>
+        <input id="prodCodSUNAT" class="inp" placeholder="Ej: 1212001">
+      </div>
+      <div>
+        <label class="lbl">Tipo IGV</label>
+        <select id="prodTipoIGV" class="inp">
+          <option value="">—</option>
+          <option value="gravado">Gravado</option>
+          <option value="exonerado">Exonerado</option>
+          <option value="inafecto">Inafecto</option>
+        </select>
+      </div>
+    </div>
+    <div class="flex gap-2 mt-5">
+      <button onclick="MOS.closeModal('modalProducto')" class="btn-ghost flex-1">Cancelar</button>
+      <button onclick="MOS.guardarProducto()" class="btn-primary flex-1">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Precio Modal -->
+<div class="modal-backdrop" id="modalPrecio">
+  <div class="modal-box p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="font-bold text-lg text-white">💰 Publicar Precio</h2>
+      <button onclick="MOS.closeModal('modalPrecio')" class="text-slate-400 hover:text-white text-xl">×</button>
+    </div>
+    <input type="hidden" id="precioIdProducto">
+    <div class="space-y-3">
+      <div id="precioInfoProd" class="card-sm p-3 text-sm text-slate-300">—</div>
+      <div>
+        <label class="lbl">Precio actual</label>
+        <div id="precioActual" class="text-xl font-bold text-slate-200 mb-1">S/. —</div>
+      </div>
+      <div>
+        <label class="lbl">Nuevo Precio (S/.) *</label>
+        <input id="precioNuevo" class="inp text-lg" type="number" step="0.01" placeholder="0.00">
+      </div>
+      <div>
+        <label class="lbl">Motivo</label>
+        <input id="precioMotivo" class="inp" placeholder="Ajuste de precio, oferta, etc.">
+      </div>
+      <div class="flex items-center gap-2">
+        <input id="precioMembretes" type="checkbox" class="w-4 h-4 accent-indigo-500">
+        <label for="precioMembretes" class="text-sm text-slate-300">Generar alerta para imprimir membretes en almacén</label>
+      </div>
+      <div class="flex gap-2 pt-2">
+        <button onclick="MOS.closeModal('modalPrecio')" class="btn-ghost flex-1">Cancelar</button>
+        <button onclick="MOS.publicarPrecio()" class="btn-primary flex-1">Publicar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Proveedor Modal -->
+<div class="modal-backdrop" id="modalProveedor">
+  <div class="modal-box p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 id="modalProvTitle" class="font-bold text-lg text-white">Nuevo Proveedor</h2>
+      <button onclick="MOS.closeModal('modalProveedor')" class="text-slate-400 hover:text-white text-xl">×</button>
+    </div>
+    <input type="hidden" id="provId">
+    <div class="grid grid-cols-2 gap-3">
+      <div class="col-span-2">
+        <label class="lbl">Nombre / Razón social *</label>
+        <input id="provNombre" class="inp" placeholder="Molinos El Sol SAC">
+      </div>
+      <div>
+        <label class="lbl">RUC</label>
+        <input id="provRuc" class="inp" placeholder="20100456789">
+      </div>
+      <div>
+        <label class="lbl">Teléfono</label>
+        <input id="provTel" class="inp" placeholder="987654321">
+      </div>
+      <div>
+        <label class="lbl">Email</label>
+        <input id="provEmail" class="inp" type="email" placeholder="ventas@empresa.pe">
+      </div>
+      <div>
+        <label class="lbl">Forma de pago</label>
+        <select id="provFormaPago" class="inp">
+          <option value="CONTADO">Contado</option>
+          <option value="CREDITO">Crédito</option>
+        </select>
+      </div>
+      <div>
+        <label class="lbl">Plazo crédito (días)</label>
+        <input id="provPlazo" class="inp" type="number" placeholder="30">
+      </div>
+      <div>
+        <label class="lbl">Categoría producto</label>
+        <input id="provCategoria" class="inp" placeholder="Granos, Especias...">
+      </div>
+      <div>
+        <label class="lbl">Banco</label>
+        <input id="provBanco" class="inp" placeholder="BCP, Interbank...">
+      </div>
+      <div class="col-span-2">
+        <label class="lbl">Número de cuenta</label>
+        <input id="provCuenta" class="inp" placeholder="19200345678">
+      </div>
+    </div>
+    <div class="flex gap-2 mt-5">
+      <button onclick="MOS.closeModal('modalProveedor')" class="btn-ghost flex-1">Cancelar</button>
+      <button onclick="MOS.guardarProveedor()" class="btn-primary flex-1">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Pago Modal -->
+<div class="modal-backdrop" id="modalPago">
+  <div class="modal-box p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="font-bold text-lg text-white">Registrar Pago</h2>
+      <button onclick="MOS.closeModal('modalPago')" class="text-slate-400 hover:text-white text-xl">×</button>
+    </div>
+    <input type="hidden" id="pagoIdProveedor">
+    <div class="space-y-3">
+      <div>
+        <label class="lbl">Monto (S/.) *</label>
+        <input id="pagoMonto" class="inp" type="number" step="0.01" placeholder="0.00">
+      </div>
+      <div>
+        <label class="lbl">Número de Factura</label>
+        <input id="pagoFactura" class="inp" placeholder="FAC-001-00234">
+      </div>
+      <div>
+        <label class="lbl">Fecha</label>
+        <input id="pagoFecha" class="inp" type="date">
+      </div>
+      <div>
+        <label class="lbl">Observación</label>
+        <input id="pagoObs" class="inp" placeholder="Pago mensual, adelanto, etc.">
+      </div>
+      <div class="flex gap-2 pt-2">
+        <button onclick="MOS.closeModal('modalPago')" class="btn-ghost flex-1">Cancelar</button>
+        <button onclick="MOS.guardarPago()" class="btn-primary flex-1">Registrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="hide fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-xl text-white" style="background:#1e293b;border:1px solid #334155;max-width:320px;"></div>
+
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+<script>MOS.init();</script>
+</body>
+</html>
