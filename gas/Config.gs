@@ -239,3 +239,16 @@ function actualizarPersonalMaster(params) {
   }
   return { ok: false, error: 'Personal no encontrado: ' + params.idPersonal };
 }
+
+function verificarPinPersonal(params) {
+  if (!params.idPersonal || !params.pin) return { ok: false, error: 'Requiere idPersonal y pin' };
+  var rows = _sheetToObjects(getSheet('PERSONAL_MASTER'));
+  var persona = rows.find(function(r) {
+    return r.idPersonal === params.idPersonal &&
+           r.appOrigen  === 'MOS' &&
+           String(r.estado) === '1';
+  });
+  if (!persona) return { ok: false, error: 'Usuario no encontrado' };
+  if (String(persona.pin) !== String(params.pin)) return { ok: true, data: { autorizado: false } };
+  return { ok: true, data: { autorizado: true, nombre: persona.nombre, rol: persona.rol } };
+}

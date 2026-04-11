@@ -2,11 +2,11 @@
 // Thin wrapper around the MOS GAS Web App URL
 
 const API = (() => {
-  const URL_KEY = 'MOS_GAS_URL';
+  const GAS_URL = 'https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec';
 
-  function getUrl()      { return localStorage.getItem(URL_KEY) || ''; }
-  function setUrl(url)   { localStorage.setItem(URL_KEY, url.trim()); }
-  function isConfigured(){ return !!getUrl(); }
+  function getUrl()      { return GAS_URL; }
+  function setUrl()      { /* URL fija en código */ }
+  function isConfigured(){ return true; }
 
   async function _fetch(method, params) {
     const url = getUrl();

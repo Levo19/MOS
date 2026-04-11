@@ -3,6 +3,7 @@
 
 const MOS = (() => {
   // ── STATE ────────────────────────────────────────────────────
+  const SESSION_KEY = 'MOS_SESSION';
   let S = {
     view: 'dashboard',
     catTab: 'base',
@@ -16,8 +17,13 @@ const MOS = (() => {
     envasados: [],
     alertas: [],
     charts: {},
-    loaded: {}
+    loaded: {},
+    session: null
   };
+
+  function _getSession()      { try { return JSON.parse(localStorage.getItem(SESSION_KEY)); } catch { return null; } }
+  function _saveSession(s)    { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }
+  function _clearSession()    { localStorage.removeItem(SESSION_KEY); }
 
   // ── HELPERS ─────────────────────────────────────────────────
   const $  = id => document.getElementById(id);
@@ -101,19 +107,131 @@ const MOS = (() => {
     Chart.defaults.borderColor = '#1e293b';
     Chart.defaults.font.family = 'system-ui, -apple-system, sans-serif';
 
-    if (!API.isConfigured()) {
-      const b = $('bannerNoUrl'); if (b) b.classList.remove('hidden');
-      setStatus(false);
-    } else {
-      setStatus(true);
-    }
+    setStatus(true);
 
     // Set today on date inputs
     const pf = $('pagoFecha'); if (pf) pf.value = today();
 
-    // Initial view
-    nav('dashboard');
-    loadView('dashboard');
+    // Session check
+    const saved = _getSession();
+    if (saved && saved.idPersonal && saved.nombre) {
+      S.session = saved;
+      _applySession();
+      const overlay = $('loginOverlay');
+      if (overlay) overlay.classList.add('hidden');
+      nav('dashboard');
+      loadView('dashboard');
+    } else {
+      _showLogin();
+    }
+  }
+
+  // ── LOGIN ────────────────────────────────────────────────────
+  let _loginPersonal = [];
+  let _loginSelectedId = null;
+
+  async function _showLogin() {
+    const overlay = $('loginOverlay');
+    if (overlay) overlay.classList.remove('hidden');
+    $('loginStep1')?.classList.remove('hidden');
+    $('loginStep2')?.classList.add('hidden');
+    try {
+      _loginPersonal = await API.get('getPersonalMaster', { appOrigen: 'MOS', estado: '1' });
+      _renderLoginPersonal();
+    } catch(e) {
+      const err = $('loginStep1Error');
+      if (err) err.textContent = 'Error al cargar usuarios: ' + e.message;
+    }
+  }
+
+  function _renderLoginPersonal() {
+    const grid = $('loginPersonalGrid');
+    if (!grid) return;
+    if (!_loginPersonal || !_loginPersonal.length) {
+      grid.innerHTML = '<p class="col-span-3 text-slate-400 text-sm text-center py-4">No hay usuarios MOS. Agrégalos en Configuración → Personal.</p>';
+      return;
+    }
+    grid.innerHTML = _loginPersonal.map(p => {
+      const ini = ((p.nombre||'?')[0] + (p.apellido||'?')[0]).toUpperCase();
+      const rolCls = p.rol === 'master' ? 'badge-yellow' : 'badge-blue';
+      return `<button onclick="MOS.seleccionarUsuario('${p.idPersonal}')"
+        class="flex flex-col items-center gap-2 p-4 rounded-xl border border-slate-700 hover:border-indigo-500 transition-colors cursor-pointer"
+        style="background:#0d1526">
+        <div class="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg"
+             style="background:${p.color||'#6366f1'}">${ini}</div>
+        <div class="text-sm font-medium text-slate-200">${p.nombre}</div>
+        <span class="badge ${rolCls} text-xs">${p.rol}</span>
+      </button>`;
+    }).join('');
+  }
+
+  function seleccionarUsuario(id) {
+    _loginSelectedId = id;
+    const p = _loginPersonal.find(x => x.idPersonal === id);
+    if (!p) return;
+    $('loginStep1')?.classList.add('hidden');
+    $('loginStep2')?.classList.remove('hidden');
+    const ini = ((p.nombre||'?')[0] + (p.apellido||'?')[0]).toUpperCase();
+    const av = $('loginUserAvatar');
+    if (av) { av.textContent = ini; av.style.background = p.color || '#6366f1'; }
+    const nm = $('loginUserName'); if (nm) nm.textContent = p.nombre;
+    const rl = $('loginUserRol');  if (rl) { rl.textContent = p.rol; rl.className = 'badge text-xs mt-1 ' + (p.rol==='master'?'badge-yellow':'badge-blue'); }
+    const inp = $('loginPinInput'); if (inp) { inp.value = ''; inp.focus(); }
+    const err = $('loginPinError'); if (err) err.textContent = '';
+  }
+
+  function loginVolver() {
+    _loginSelectedId = null;
+    $('loginStep1')?.classList.remove('hidden');
+    $('loginStep2')?.classList.add('hidden');
+    const err = $('loginPinError'); if (err) err.textContent = '';
+  }
+
+  async function confirmarPin() {
+    const pin = $('loginPinInput')?.value || '';
+    if (pin.length < 4) { const e=$('loginPinError'); if(e) e.textContent='Mínimo 4 dígitos'; return; }
+    const btn = $('loginPinBtn');
+    if (btn) btn.disabled = true;
+    try {
+      const res = await API.post('verificarPinPersonal', { idPersonal: _loginSelectedId, pin });
+      if (!res?.autorizado) {
+        const e = $('loginPinError'); if (e) e.textContent = 'PIN incorrecto';
+        if (btn) btn.disabled = false;
+        return;
+      }
+      S.session = { idPersonal: _loginSelectedId, nombre: res.nombre, rol: res.rol };
+      _saveSession(S.session);
+      _applySession();
+      $('loginOverlay')?.classList.add('hidden');
+      nav('dashboard');
+      loadView('dashboard');
+    } catch(e) {
+      const err = $('loginPinError'); if (err) err.textContent = e.message;
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function _applySession() {
+    if (!S.session) return;
+    const isMaster = S.session.rol === 'master';
+    // Sidebar session display
+    const av = $('sessionAvatar');
+    const nm = $('sessionName');
+    const rl = $('sessionRol');
+    if (av) { av.textContent = ((S.session.nombre||'?')[0]).toUpperCase(); }
+    if (nm) nm.textContent = S.session.nombre;
+    if (rl) rl.textContent = S.session.rol;
+    // Hide Config for admin role
+    document.querySelectorAll('[data-view="config"]').forEach(b => {
+      b.style.display = isMaster ? '' : 'none';
+    });
+  }
+
+  function logout() {
+    _clearSession();
+    S.session = null;
+    S.loaded = {};
+    _showLogin();
   }
 
   async function loadView(viewName) {
@@ -914,21 +1032,22 @@ const MOS = (() => {
   }
 
   // ── CONFIGURACIÓN ────────────────────────────────────────────
-  let cfgData = { estaciones: [], impresoras: [], personal: [], series: [] };
+  let cfgData = { estaciones: [], impresoras: [], personal: [], personalMOS: [], series: [] };
 
   async function loadConfig() {
-    if (!API.isConfigured()) return;
     S.cfgTab = S.cfgTab || 'estaciones';
-    const [estRes, impRes, persRes, serRes] = await Promise.allSettled([
+    const [estRes, impRes, persRes, persMOSRes, serRes] = await Promise.allSettled([
       API.get('getEstaciones', {}),
       API.get('getImpresoras', {}),
-      API.get('getPersonalMaster', { tipo: 'OPERADOR' }),
+      API.get('getPersonalMaster', { appOrigen: 'warehouseMos' }),
+      API.get('getPersonalMaster', { appOrigen: 'MOS' }),
       API.get('getSeries', {})
     ]);
-    cfgData.estaciones = estRes.status === 'fulfilled' ? (estRes.value || []) : [];
-    cfgData.impresoras = impRes.status === 'fulfilled' ? (impRes.value || []) : [];
-    cfgData.personal   = persRes.status === 'fulfilled' ? (persRes.value || []) : [];
-    cfgData.series     = serRes.status === 'fulfilled' ? (serRes.value || []) : [];
+    cfgData.estaciones  = estRes.status      === 'fulfilled' ? (estRes.value      || []) : [];
+    cfgData.impresoras  = impRes.status      === 'fulfilled' ? (impRes.value      || []) : [];
+    cfgData.personal    = persRes.status     === 'fulfilled' ? (persRes.value     || []) : [];
+    cfgData.personalMOS = persMOSRes.status  === 'fulfilled' ? (persMOSRes.value  || []) : [];
+    cfgData.series      = serRes.status      === 'fulfilled' ? (serRes.value      || []) : [];
     renderCfgTab(S.cfgTab);
   }
 
@@ -1003,6 +1122,31 @@ const MOS = (() => {
   }
 
   function renderPersonal() {
+    // MOS users
+    const elMOS = $('listUsuariosMOS');
+    if (elMOS) {
+      if (!cfgData.personalMOS.length) {
+        elMOS.innerHTML = '<p class="text-slate-500 text-sm text-center py-4">Sin usuarios MOS</p>';
+      } else {
+        elMOS.innerHTML = cfgData.personalMOS.map(p => {
+          const ini = ((p.nombre||'?')[0] + (p.apellido||'?')[0]).toUpperCase();
+          const rolCls = p.rol === 'master' ? 'badge-yellow' : 'badge-blue';
+          return `<div class="flex items-center gap-3 p-3 rounded-lg" style="background:#0d1526;border:1px solid #1e293b">
+            <div class="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
+                 style="background:${p.color||'#6366f1'}">${ini}</div>
+            <div class="flex-1 min-w-0">
+              <div class="font-medium text-sm text-slate-200">${p.nombre} ${p.apellido||''}</div>
+              <span class="badge ${rolCls} text-xs">${p.rol}</span>
+            </div>
+            <div class="flex items-center gap-1">
+              <span class="badge ${p.estado=='1'?'badge-green':'badge-gray'} text-xs">${p.estado=='1'?'Activo':'Inactivo'}</span>
+              <button onclick="MOS.abrirModalPersonal('${p.idPersonal}','MOS')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700 ml-1">✏️</button>
+            </div>
+          </div>`;
+        }).join('');
+      }
+    }
+    // WH operadores
     const el = $('listOperadores');
     if (!el) return;
     if (!cfgData.personal.length) {
@@ -1024,7 +1168,7 @@ const MOS = (() => {
         </div>
         <div class="flex items-center gap-1">
           <span class="badge ${p.estado == '1' ? 'badge-green' : 'badge-gray'} text-xs">${p.estado == '1' ? 'Activo' : 'Inactivo'}</span>
-          <button onclick="MOS.abrirModalPersonal('${p.idPersonal}')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700 ml-1">✏️</button>
+          <button onclick="MOS.abrirModalPersonal('${p.idPersonal}','warehouseMos')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700 ml-1">✏️</button>
         </div>
       </div>`;
     }).join('');
@@ -1166,49 +1310,69 @@ const MOS = (() => {
     } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
 
-  function abrirModalPersonal(id) {
-    ['Id','Nombre','Apellido','Pin','Tarifa','Monto'].forEach(f => {
+  function abrirModalPersonal(id, appOrigen = 'warehouseMos') {
+    ['Nombre','Apellido','Pin','Tarifa','Monto'].forEach(f => {
       const el = $('pers' + f); if (el && el.tagName !== 'SELECT') el.value = '';
     });
+    $('persId').value = '';
+    $('persAppOrigen').value = appOrigen;
+    const isMOS = appOrigen === 'MOS';
+    // Show/hide WH-only fields
+    const tw = $('persTarifaWrap'); if (tw) tw.style.display = isMOS ? 'none' : '';
+    const mw = $('persMontoWrap');  if (mw) mw.style.display = isMOS ? 'none' : '';
+    // Set rol options based on app
+    const rolSel = $('persRol');
+    if (rolSel) {
+      rolSel.innerHTML = isMOS
+        ? '<option value="master">master (acceso total)</option><option value="admin">admin (sin configuración)</option>'
+        : '<option value="ALMACENERO">ALMACENERO</option><option value="ENVASADOR">ENVASADOR</option><option value="SUPERVISOR">SUPERVISOR</option>';
+    }
+    $('persColor').value = '#6366f1';
+
+    const source = isMOS ? cfgData.personalMOS : cfgData.personal;
     if (id) {
-      const p = cfgData.personal.find(x => x.idPersonal === id);
+      const p = source.find(x => x.idPersonal === id);
       if (!p) return;
-      $('modalPersTitle').textContent = 'Editar Operador';
+      $('modalPersTitle').textContent = isMOS ? 'Editar Usuario MOS' : 'Editar Operador';
       $('persId').value       = p.idPersonal;
       $('persNombre').value   = p.nombre || '';
       $('persApellido').value = p.apellido || '';
-      $('persRol').value      = p.rol || 'ALMACENERO';
+      if (rolSel) rolSel.value = p.rol || (isMOS ? 'admin' : 'ALMACENERO');
       $('persColor').value    = p.color || '#6366f1';
-      $('persTarifa').value   = p.tarifaHora || '';
-      $('persMonto').value    = p.montoBase || '';
+      if (!isMOS) {
+        $('persTarifa').value = p.tarifaHora || '';
+        $('persMonto').value  = p.montoBase  || '';
+      }
     } else {
-      $('modalPersTitle').textContent = 'Nuevo Operador';
-      $('persId').value = '';
-      $('persRol').value = 'ALMACENERO';
-      $('persColor').value = '#6366f1';
+      $('modalPersTitle').textContent = isMOS ? 'Nuevo Usuario MOS' : 'Nuevo Operador';
+      if (rolSel) rolSel.value = isMOS ? 'admin' : 'ALMACENERO';
     }
     openModal('modalPersonal');
   }
 
   async function guardarPersonal() {
+    const appOrigen = $('persAppOrigen')?.value || 'warehouseMos';
+    const isMOS = appOrigen === 'MOS';
     const params = {
       idPersonal:  $('persId')?.value || undefined,
       nombre:      $('persNombre')?.value || '',
       apellido:    $('persApellido')?.value || '',
-      rol:         $('persRol')?.value || 'ALMACENERO',
+      rol:         $('persRol')?.value || (isMOS ? 'admin' : 'ALMACENERO'),
       color:       $('persColor')?.value || '#6366f1',
-      tarifaHora:  $('persTarifa')?.value || 0,
-      montoBase:   $('persMonto')?.value || 0,
       tipo:        'OPERADOR',
-      appOrigen:   'warehouseMos'
+      appOrigen:   appOrigen
     };
+    if (!isMOS) {
+      params.tarifaHora = $('persTarifa')?.value || 0;
+      params.montoBase  = $('persMonto')?.value  || 0;
+    }
     const pin = $('persPin')?.value;
     if (pin) params.pin = pin;
     if (!params.nombre) { toast('Nombre requerido', 'error'); return; }
-    if (!params.idPersonal && !pin) { toast('PIN requerido para nuevos operadores', 'error'); return; }
+    if (!params.idPersonal && !pin) { toast('PIN requerido', 'error'); return; }
     try {
       await API.post(params.idPersonal ? 'actualizarPersonalMaster' : 'crearPersonalMaster', params);
-      toast(params.idPersonal ? 'Operador actualizado' : 'Operador creado', 'ok');
+      toast(params.idPersonal ? 'Actualizado' : 'Creado', 'ok');
       closeModal('modalPersonal');
       S.loaded['config'] = false;
       await loadConfig();
@@ -1504,6 +1668,8 @@ const MOS = (() => {
     abrirModalSerie, guardarSerie,
     guardarPinEstacion, guardarPinWH,
     // Cajas
-    loadCajas
+    loadCajas,
+    // Login / sesión
+    seleccionarUsuario, loginVolver, confirmarPin, logout
   };
 })();

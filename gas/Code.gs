@@ -80,6 +80,7 @@ function _route(method, e) {
       case 'getPersonalMaster':         return getPersonalMaster(params);
       case 'crearPersonalMaster':       return crearPersonalMaster(params);
       case 'actualizarPersonalMaster':  return actualizarPersonalMaster(params);
+      case 'verificarPinPersonal':      return verificarPinPersonal(params);
 
       // ── Cajas MosExpress ────────────────────────────────────
       case 'getCierresCaja':            return getCierresCaja(params);

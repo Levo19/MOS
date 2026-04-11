@@ -157,15 +157,56 @@
   </nav>
   <!-- Footer -->
   <div class="px-3 py-3 border-t border-slate-800">
-    <button onclick="MOS.openConfig()" class="nav-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 text-sm">
-      <span class="text-base">⚙️</span><span>Configuración</span>
-    </button>
-    <div id="connStatus" class="flex items-center gap-2 px-3 mt-2">
+    <div class="flex items-center gap-2 px-2 py-2 rounded-lg mb-2" style="background:#0d1526;border:1px solid #1e293b">
+      <div id="sessionAvatar" class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0" style="background:#6366f1">?</div>
+      <div class="flex-1 min-w-0">
+        <div id="sessionName" class="text-xs font-medium text-slate-200 truncate">—</div>
+        <div id="sessionRol" class="text-xs text-slate-500">—</div>
+      </div>
+      <button onclick="MOS.logout()" class="text-slate-500 hover:text-red-400 text-xs px-1" title="Cerrar sesión">⏻</button>
+    </div>
+    <div id="connStatus" class="flex items-center gap-2 px-3">
       <span class="dot-gray" id="statusDot"></span>
-      <span class="text-xs text-slate-500" id="statusLabel">Sin configurar</span>
+      <span class="text-xs text-slate-500" id="statusLabel">Conectado</span>
     </div>
   </div>
 </aside>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- LOGIN OVERLAY                                              -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div id="loginOverlay" class="fixed inset-0 z-50 flex items-center justify-center px-4" style="background:#020817">
+  <div class="w-full max-w-sm">
+    <div class="text-center mb-8">
+      <div class="w-14 h-14 rounded-2xl mx-auto mb-4 flex items-center justify-center text-white font-bold text-2xl" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)">M</div>
+      <h1 class="text-2xl font-bold text-white mb-1">MOS Admin</h1>
+      <p class="text-slate-400 text-sm">Selecciona tu perfil</p>
+    </div>
+    <!-- Step 1: Seleccionar usuario -->
+    <div id="loginStep1">
+      <div id="loginPersonalGrid" class="grid grid-cols-3 gap-3 mb-3">
+        <div class="col-span-3 text-center py-6 text-slate-500 text-sm">Cargando usuarios...</div>
+      </div>
+      <p id="loginStep1Error" class="text-red-400 text-xs text-center mt-2 min-h-4"></p>
+    </div>
+    <!-- Step 2: Ingresar PIN -->
+    <div id="loginStep2" class="hidden">
+      <div class="flex flex-col items-center mb-5">
+        <div id="loginUserAvatar" class="w-14 h-14 rounded-full flex items-center justify-center text-white font-bold text-xl mb-2" style="background:#6366f1">--</div>
+        <div id="loginUserName" class="font-semibold text-white"></div>
+        <span id="loginUserRol" class="badge badge-gray text-xs mt-1"></span>
+      </div>
+      <input id="loginPinInput" type="password" maxlength="6" placeholder="••••••"
+             class="inp text-center text-2xl tracking-[0.5em] w-full mb-3"
+             onkeydown="if(event.key==='Enter')MOS.confirmarPin()">
+      <p id="loginPinError" class="text-red-400 text-xs text-center mb-3 min-h-4"></p>
+      <div class="flex gap-3">
+        <button onclick="MOS.loginVolver()" class="btn-ghost flex-1">← Volver</button>
+        <button id="loginPinBtn" onclick="MOS.confirmarPin()" class="btn-primary flex-1">Ingresar</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
 <!-- MOBILE TOP BAR                                             -->
@@ -193,12 +234,6 @@
       <button onclick="MOS.refresh()" class="btn-ghost text-xs px-3 py-1.5">↺ Actualizar</button>
     </div>
 
-    <!-- No URL Banner -->
-    <div id="bannerNoUrl" class="hidden mb-4 p-4 rounded-xl text-sm flex items-center gap-3" style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);">
-      <span class="text-yellow-400 text-lg">⚠️</span>
-      <span class="text-yellow-300 flex-1">GAS URL no configurada — los datos no se cargarán.</span>
-      <button onclick="MOS.openConfig()" class="text-yellow-400 underline text-xs whitespace-nowrap">Configurar →</button>
-    </div>
 
     <!-- ═══ VIEW: DASHBOARD ═══════════════════════════════════ -->
     <section id="view-dashboard" class="view active">
@@ -467,25 +502,36 @@
 
       <!-- Personal -->
       <div id="cfgPanelPersonal" class="hidden">
-        <div class="grid lg:grid-cols-2 gap-4">
+        <div class="grid lg:grid-cols-3 gap-4">
+          <!-- MOS Admin users -->
+          <div class="card p-4">
+            <div class="flex items-center justify-between mb-3">
+              <div>
+                <h3 class="font-semibold text-sm text-white">🔐 Usuarios — MOS Admin</h3>
+                <p class="text-xs text-slate-500 mt-0.5">Acceso con PIN · roles master/admin</p>
+              </div>
+              <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalPersonal(null,'MOS')">+ Agregar</button>
+            </div>
+            <div id="listUsuariosMOS" class="space-y-2"><div class="text-center py-4 text-slate-500 text-sm">Cargando...</div></div>
+          </div>
+          <!-- WH Operadores -->
           <div class="card p-4">
             <div class="flex items-center justify-between mb-3">
               <div>
                 <h3 class="font-semibold text-sm text-white">👷 Operadores — warehouseMos</h3>
-                <p class="text-xs text-slate-500 mt-0.5">Empleados fijos · PIN de acceso · rol asignado</p>
+                <p class="text-xs text-slate-500 mt-0.5">Empleados fijos · PIN de acceso</p>
               </div>
-              <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalPersonal(null)">+ Agregar</button>
+              <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalPersonal(null,'warehouseMos')">+ Agregar</button>
             </div>
             <div id="listOperadores" class="space-y-2"><div class="text-center py-4 text-slate-500 text-sm">Cargando...</div></div>
           </div>
+          <!-- ME Vendedores -->
           <div class="card p-4">
             <h3 class="font-semibold text-sm text-white mb-1">🛒 Vendedores — MosExpress</h3>
-            <p class="text-xs text-slate-500 mb-4">Alta rotación → ingresan con nombre libre, sin cuenta</p>
+            <p class="text-xs text-slate-500 mb-4">Alta rotación · nombre libre · sin cuenta</p>
             <div class="card-sm p-5 text-center">
               <div class="text-3xl mb-2">🔄</div>
-              <p class="text-sm text-slate-300 mb-2">Sin cuentas de usuario</p>
-              <p class="text-xs text-slate-500">Los cajeros escriben su nombre al iniciar turno en MosExpress. El historial queda en los reportes de caja.</p>
-              <p class="text-xs text-indigo-400 mt-3">Phase 2: MosExpress leerá PERSONAL_MASTER para sugerencias de nombre.</p>
+              <p class="text-xs text-slate-500">Los cajeros escriben su nombre al abrir caja. El historial queda en los reportes.</p>
             </div>
           </div>
         </div>
@@ -1041,6 +1087,7 @@
       <button onclick="MOS.closeModal('modalPersonal')" class="text-slate-400 hover:text-white text-xl">×</button>
     </div>
     <input type="hidden" id="persId">
+    <input type="hidden" id="persAppOrigen" value="warehouseMos">
     <div class="grid grid-cols-2 gap-3">
       <div><label class="lbl">Nombre *</label><input id="persNombre" class="inp" placeholder="Carlos"></div>
       <div><label class="lbl">Apellido</label><input id="persApellido" class="inp" placeholder="Ramos"></div>
@@ -1050,12 +1097,14 @@
           <option value="ALMACENERO">ALMACENERO</option>
           <option value="ENVASADOR">ENVASADOR</option>
           <option value="SUPERVISOR">SUPERVISOR</option>
+          <option value="master">master (acceso total)</option>
+          <option value="admin">admin (sin configuración)</option>
         </select>
       </div>
       <div><label class="lbl">PIN (4–6 dígitos)</label><input id="persPin" class="inp" type="password" maxlength="6" placeholder="••••"></div>
       <div><label class="lbl">Color</label><input id="persColor" class="inp" type="color" value="#6366f1"></div>
-      <div><label class="lbl">Tarifa/hora (S/.)</label><input id="persTarifa" class="inp" type="number" step="0.50" placeholder="5.00"></div>
-      <div class="col-span-2"><label class="lbl">Monto base mensual (S/.)</label><input id="persMonto" class="inp" type="number" placeholder="1200"></div>
+      <div id="persTarifaWrap"><label class="lbl">Tarifa/hora (S/.)</label><input id="persTarifa" class="inp" type="number" step="0.50" placeholder="5.00"></div>
+      <div id="persMontoWrap" class="col-span-2"><label class="lbl">Monto base mensual (S/.)</label><input id="persMonto" class="inp" type="number" placeholder="1200"></div>
     </div>
     <div class="flex gap-2 mt-5">
       <button onclick="MOS.closeModal('modalPersonal')" class="btn-ghost flex-1">Cancelar</button>
