@@ -146,6 +146,9 @@
     <button data-view="proveedores" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('proveedores')">
       <div class="nav-dot"></div><span class="text-base">🤝</span><span>Proveedores</span>
     </button>
+    <button data-view="cajas" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('cajas')">
+      <div class="nav-dot"></div><span class="text-base">🗃️</span><span>Cajas</span>
+    </button>
     <div class="mt-2 pt-2 border-t border-slate-800">
       <button data-view="config" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('config')">
         <div class="nav-dot"></div><span class="text-base">⚙️</span><span>Configuración</span>
@@ -577,6 +580,9 @@
   <button data-view="proveedores" class="bnav-btn flex-1 flex flex-col items-center py-3 text-slate-400 text-xs" onclick="MOS.nav('proveedores')">
     <div class="bnav-bar mb-1"></div><span class="text-xl mb-0.5">🤝</span><span>Proveedores</span>
   </button>
+  <button data-view="cajas"        class="bnav-btn flex-1 flex flex-col items-center py-3 text-slate-400 text-xs" onclick="MOS.nav('cajas')">
+    <div class="bnav-bar mb-1"></div><span class="text-xl mb-0.5">🗃️</span><span>Cajas</span>
+  </button>
   <button data-view="config"       class="bnav-btn flex-1 flex flex-col items-center py-3 text-slate-400 text-xs" onclick="MOS.nav('config')">
     <div class="bnav-bar mb-1"></div><span class="text-xl mb-0.5">⚙️</span><span>Config</span>
   </button>
@@ -980,6 +986,74 @@
     </div>
   </div>
 </div>
+
+<!-- ═══ VIEW: CAJAS ══════════════════════════════════════════ -->
+<section id="view-cajas" class="view hidden">
+
+  <!-- Filtros -->
+  <div class="flex flex-wrap items-center gap-3 mb-5">
+    <select id="cajasZonaFiltro" class="inp" style="max-width:180px" onchange="MOS.loadCajas()">
+      <option value="">Todas las zonas</option>
+    </select>
+    <button onclick="MOS.loadCajas(true)" class="btn-ghost text-xs px-3 py-1.5">↺ Actualizar</button>
+    <span id="cajasCount" class="text-xs text-slate-500 ml-auto"></span>
+  </div>
+
+  <!-- KPI summary -->
+  <div id="cajasKpis" class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5 hidden">
+    <div class="kpi-card p-4">
+      <div class="text-xl mb-2">🗃️</div>
+      <div id="cajasKpiTotal" class="text-2xl font-bold text-white">—</div>
+      <div class="text-xs text-slate-500">Cierres totales</div>
+    </div>
+    <div class="kpi-card p-4">
+      <div class="text-xl mb-2">💰</div>
+      <div id="cajasKpiVentas" class="text-2xl font-bold text-white">—</div>
+      <div class="text-xs text-slate-500">Monto final acumulado</div>
+    </div>
+    <div class="kpi-card p-4">
+      <div class="text-xl mb-2">✅</div>
+      <div id="cajasKpiOk" class="text-2xl font-bold text-white">—</div>
+      <div class="text-xs text-slate-500">Cuadradas / sobrante</div>
+    </div>
+    <div class="kpi-card p-4">
+      <div class="text-xl mb-2">❌</div>
+      <div id="cajasKpiFaltante" class="text-2xl font-bold text-white">—</div>
+      <div class="text-xs text-slate-500">Con faltante</div>
+    </div>
+  </div>
+
+  <!-- Chart -->
+  <div id="cajaChartWrap" class="card p-4 mb-5 hidden">
+    <h3 class="font-semibold text-sm text-slate-200 mb-3">Monto Final por Cierre (últimos 30)</h3>
+    <div style="position:relative;height:200px"><canvas id="chartCajas"></canvas></div>
+  </div>
+
+  <!-- Tabla de cierres -->
+  <div class="card overflow-hidden">
+    <div id="cajasLoading" class="text-center py-12 text-slate-500 text-sm">
+      <div class="skel h-4 w-32 mx-auto mb-3 rounded"></div>
+      <div class="skel h-4 w-48 mx-auto rounded"></div>
+    </div>
+    <div id="cajasEmpty" class="hidden text-center py-12 text-slate-500 text-sm">
+      Sin cierres de caja registrados
+    </div>
+    <table id="cajasTbl" class="tbl hidden">
+      <thead>
+        <tr>
+          <th>Fecha cierre</th>
+          <th>Vendedor</th>
+          <th>Zona</th>
+          <th>Apertura</th>
+          <th>Declarado</th>
+          <th>Diferencia</th>
+          <th>Reporte</th>
+        </tr>
+      </thead>
+      <tbody id="cajasTbody"></tbody>
+    </table>
+  </div>
+</section>
 
 <!-- Toast -->
 <div id="toast" class="hide fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-xl text-white" style="background:#1e293b;border:1px solid #334155;max-width:320px;"></div>

@@ -1,0 +1,13 @@
+{
+  "name": "proyectomos-admin",
+  "version": "1.0.0",
+  "description": "MOS Admin PWA — InversionMos ecosystem hub",
+  "scripts": {
+    "dev": "npx live-server --port=3030 --open=/ --no-browser=false --ignore=gas,node_modules",
+    "start": "npx serve . -p 3030"
+  },
+  "devDependencies": {
+    "live-server": "^1.2.2",
+    "serve": "^14.2.6"
+  }
+}

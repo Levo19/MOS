@@ -81,6 +81,9 @@ function _route(method, e) {
       case 'crearPersonalMaster':       return crearPersonalMaster(params);
       case 'actualizarPersonalMaster':  return actualizarPersonalMaster(params);
 
+      // ── Cajas MosExpress ────────────────────────────────────
+      case 'getCierresCaja':            return getCierresCaja(params);
+
       default:
         return { ok: false, error: 'Acción no reconocida: ' + action };
     }})();

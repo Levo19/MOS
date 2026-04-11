@@ -55,6 +55,7 @@ function crearProductoMaster(params) {
     params.IGV_Porcentaje !== undefined ? parseFloat(params.IGV_Porcentaje) : '',
     params.Cod_SUNAT            || '',
     params.Tipo_IGV             || '',
+    params.Unidad_Medida        || 'NIU',
     '1',
     params.esEnvasable          || '0',
     params.codigoProductoBase   || '',
@@ -89,7 +90,7 @@ function actualizarProductoMaster(params) {
 
     var campos = ['skuBase','codigoBarra','descripcion','marca','idCategoria','unidad',
                   'precioVenta','precioCosto','Cod_Tributo','IGV_Porcentaje','Cod_SUNAT','Tipo_IGV',
-                  'estado','esEnvasable','codigoProductoBase',
+                  'Unidad_Medida','estado','esEnvasable','codigoProductoBase',
                   'factorConversion','mermaEsperadaPct','stockMinimo','stockMaximo','zona'];
     campos.forEach(function(campo) {
       if (params[campo] !== undefined) {

@@ -27,10 +27,12 @@ var MOS_HEADERS = {
   // Catálogo maestro de productos
   // skuBase: clave de agrupación para MosExpress (= codigoBarra en derivados)
   // codigoBarra: barcode individual (detalle para warehouseMos)
+  // unidad: unidad de almacén (BOLSA/SACO/KG) — para warehouseMos
+  // Unidad_Medida: código SUNAT (NIU/KGM/ZZ) — para MosExpress / NubeFact
   PRODUCTOS_MASTER:  ['idProducto','skuBase','codigoBarra','descripcion','marca',
                       'idCategoria','unidad','precioVenta','precioCosto',
-                      'Cod_Tributo','IGV_Porcentaje','Cod_SUNAT','Tipo_IGV','estado',
-                      'esEnvasable','codigoProductoBase','factorConversion',
+                      'Cod_Tributo','IGV_Porcentaje','Cod_SUNAT','Tipo_IGV','Unidad_Medida',
+                      'estado','esEnvasable','codigoProductoBase','factorConversion',
                       'mermaEsperadaPct','stockMinimo','stockMaximo','zona',
                       'fechaCreacion','creadoPor'],
 
@@ -97,6 +99,8 @@ function setupMOS() {
   _crearHojasMOS(ss);
   _seedConfigMOS(ss);
   _seedConexiones(ss);
+  _seedProductosMaster(ss);
+  _seedProveedoresMaster(ss);
   _seedEstaciones(ss);
   _seedImpresoras(ss);
   _seedSeriesDocumentales(ss);
@@ -229,6 +233,110 @@ function _seedPersonalMaster(ss) {
     ['OP003','Luis',  'Medina','OPERADOR','warehouseMos','ALMACENERO','9012','#f59e0b',5.00,1200,'1',hoy,'']
   ];
   sheet.getRange(2, 1, rows.length, MOS_HEADERS.PERSONAL_MASTER.length).setValues(rows);
+}
+
+// ============================================================
+// SEED — PRODUCTOS MASTER
+// Ejemplos de prueba: 3 productos base (granel) + 6 presentaciones.
+// Reemplazar con datos reales antes de producción.
+//
+// Columnas (24):
+//   idProducto | skuBase | codigoBarra | descripcion | marca | idCategoria
+//   | unidad | precioVenta | precioCosto
+//   | Cod_Tributo | IGV_Porcentaje | Cod_SUNAT | Tipo_IGV | Unidad_Medida
+//   | estado | esEnvasable | codigoProductoBase | factorConversion
+//   | mermaEsperadaPct | stockMinimo | stockMaximo | zona | fechaCreacion | creadoPor
+//
+// Tipo_IGV: 1=Gravado 18% | 2=Exonerado | 3=Inafecto
+// Unidad_Medida (SUNAT): NIU=unidad | KGM=kilogramo | LTR=litro | ZZ=servicio
+// Cod_Tributo: '1000'=IGV (gravado) | '9997'=Exonerado | '9998'=Inafecto
+// ============================================================
+function _seedProductosMaster(ss) {
+  var sheet = ss.getSheetByName(MOS_SHEET_NAMES.PRODUCTOS_MASTER);
+  var hoy = new Date();
+
+  // ── Productos BASE (granel — codigoProductoBase vacío, no se venden en ME) ──
+  // precioVenta=0 porque la venta en ME se hace por la presentación, no el granel
+  var base = [
+    // AZUCAR GRANEL — gravado IGV
+    ['P-AZUCAR','P-AZUCAR','','AZUCAR GRANEL','VARIOS','ABARROTES',
+     'KG',0,3.20,'1000',18,'17049000',1,'KGM',
+     '1','1','','',0.5,200,5000,'ALMACEN',hoy,'SETUP'],
+
+    // ACEITE VEGETAL GRANEL — gravado IGV
+    ['P-ACEITE','P-ACEITE','','ACEITE VEGETAL GRANEL','VARIOS','ABARROTES',
+     'LT',0,8.50,'1000',18,'15179099',1,'LTR',
+     '1','1','','',0.2,100,2000,'ALMACEN',hoy,'SETUP'],
+
+    // SAL GRANEL — Exonerado de IGV (alimento básico SUNAT)
+    ['P-SAL','P-SAL','','SAL GRANEL','VARIOS','ABARROTES',
+     'KG',0,0.60,'9997',0,'25010000',2,'KGM',
+     '1','1','','',0.3,50,1000,'ALMACEN',hoy,'SETUP']
+  ];
+
+  // ── Productos DERIVADOS (presentaciones — tienen codigoBarra para escanear en ME) ──
+  // factorConversion = cuántas unidades del granel consume esta presentación
+  var derivados = [
+    // AZUCAR —————————————————————————————————————————————————
+    // Bolsa 1kg
+    ['P-AZUCAR-B1KG','P-AZUCAR','7501000111001','AZUCAR BOLSA 1KG','VARIOS','ABARROTES',
+     'BOLSA',4.50,3.20,'1000',18,'17049000',1,'NIU',
+     '1','0','P-AZUCAR',1,0,0,0,'',hoy,'SETUP'],
+
+    // Saco 50kg — venta mayorista
+    ['P-AZUCAR-S50','P-AZUCAR','7501000111050','AZUCAR SACO 50KG','VARIOS','ABARROTES',
+     'SACO',195.00,160.00,'1000',18,'17049000',1,'NIU',
+     '1','0','P-AZUCAR',50,0,0,0,'',hoy,'SETUP'],
+
+    // ACEITE —————————————————————————————————————————————————
+    // Botella 1 litro
+    ['P-ACEITE-B1L','P-ACEITE','7501000222001','ACEITE VEGETAL BOTELLA 1L','VARIOS','ABARROTES',
+     'BOTELLA',11.00,8.50,'1000',18,'15179099',1,'NIU',
+     '1','0','P-ACEITE',1,0,0,0,'',hoy,'SETUP'],
+
+    // Galón 5 litros
+    ['P-ACEITE-G5L','P-ACEITE','7501000222005','ACEITE VEGETAL GALON 5L','VARIOS','ABARROTES',
+     'GALON',50.00,42.50,'1000',18,'15179099',1,'NIU',
+     '1','0','P-ACEITE',5,0,0,0,'',hoy,'SETUP'],
+
+    // SAL — Exonerado ————————————————————————————————————————
+    // Bolsa 1kg
+    ['P-SAL-B1KG','P-SAL','7501000333001','SAL BOLSA 1KG','VARIOS','ABARROTES',
+     'BOLSA',1.00,0.60,'9997',0,'25010000',2,'NIU',
+     '1','0','P-SAL',1,0,0,0,'',hoy,'SETUP'],
+
+    // Saco 25kg
+    ['P-SAL-S25','P-SAL','7501000333025','SAL SACO 25KG','VARIOS','ABARROTES',
+     'SACO',20.00,15.00,'9997',0,'25010000',2,'NIU',
+     '1','0','P-SAL',25,0,0,0,'',hoy,'SETUP']
+  ];
+
+  var todas = base.concat(derivados);
+  sheet.getRange(2, 1, todas.length, MOS_HEADERS.PRODUCTOS_MASTER.length).setValues(todas);
+}
+
+// ============================================================
+// SEED — PROVEEDORES MASTER
+// Ejemplos de prueba. Reemplazar con datos reales.
+// ============================================================
+function _seedProveedoresMaster(ss) {
+  var sheet = ss.getSheetByName(MOS_SHEET_NAMES.PROVEEDORES_MASTER);
+  var hoy = new Date();
+  // idProveedor | nombre | ruc | imagen | telefono | banco | numeroCuenta | cci | email
+  // | diaPedido | diaPago | diaEntrega | formaPago | plazoCredito
+  // | responsable | categoriaProducto | estado
+  var rows = [
+    ['PROV001','Distribuidora XYZ SAC','20501234567','',
+     '999888777','BCP','191-123456789','00219100112345678900','ventas@xyz.com',
+     'LUNES','VIERNES','MIERCOLES','CREDITO',30,
+     'Juan Pérez','ABARROTES','1'],
+
+    ['PROV002','Comercial ABC EIRL','20609876543','',
+     '998111222','BBVA','','','pedidos@abc.com',
+     'MARTES','MARTES','JUEVES','CONTADO',0,
+     'María García','ABARROTES','1']
+  ];
+  sheet.getRange(2, 1, rows.length, MOS_HEADERS.PROVEEDORES_MASTER.length).setValues(rows);
 }
 
 function _seedConexiones(ss) {

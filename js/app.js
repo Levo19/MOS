@@ -72,7 +72,7 @@ const MOS = (() => {
     document.querySelectorAll('#bottomnav .bnav-btn').forEach(b =>
       b.classList.toggle('active', b.dataset.view === viewName));
 
-    const titles = { dashboard:'Dashboard', catalogo:'Catálogo', almacen:'Almacén', proveedores:'Proveedores', config:'Configuración' };
+    const titles = { dashboard:'Dashboard', catalogo:'Catálogo', almacen:'Almacén', proveedores:'Proveedores', cajas:'Cajas', config:'Configuración' };
     const t = titles[viewName] || viewName;
     const pt = $('pageTitle'); if (pt) pt.textContent = t;
     const ptd = $('pageTitleDesktop'); if (ptd) ptd.textContent = t;
@@ -125,6 +125,7 @@ const MOS = (() => {
         case 'almacen':      await loadAlmacen();     break;
         case 'config':       await loadConfig();      break;
         case 'proveedores':  await loadProveedores();  break;
+        case 'cajas':        await loadCajas();        break;
       }
     } catch (e) {
       // Reload allowed next time
@@ -1286,6 +1287,125 @@ const MOS = (() => {
     }
   });
 
+  // ── CAJAS ────────────────────────────────────────────────────
+  async function loadCajas(force) {
+    if (!force && S.loaded['cajas']) return;
+    S.loaded['cajas'] = true;
+
+    const loading = $('cajasLoading');
+    const empty   = $('cajasEmpty');
+    const tbl     = $('cajasTbl');
+    const tbody   = $('cajasTbody');
+
+    if (loading) loading.classList.remove('hidden');
+    if (empty)   empty.classList.add('hidden');
+    if (tbl)     tbl.classList.add('hidden');
+    if (tbody)   tbody.innerHTML = '';
+
+    try {
+      const zona = $('cajasZonaFiltro')?.value || '';
+      const res  = await API.get('getCierresCaja', zona ? { zona } : {});
+      if (!res.ok) throw new Error(res.error);
+
+      const data = res.data || [];
+      if (loading) loading.classList.add('hidden');
+
+      if (data.length === 0) {
+        if (empty) empty.classList.remove('hidden');
+        return;
+      }
+
+      // Poblar filtro de zonas
+      const zonaFiltro = $('cajasZonaFiltro');
+      if (zonaFiltro) {
+        const zonas = [...new Set(data.map(c => c.zona).filter(Boolean))];
+        const current = zonaFiltro.value;
+        zonaFiltro.innerHTML = '<option value="">Todas las zonas</option>';
+        zonas.forEach(z => {
+          const opt = document.createElement('option');
+          opt.value = z; opt.textContent = z;
+          if (z === current) opt.selected = true;
+          zonaFiltro.appendChild(opt);
+        });
+      }
+
+      // KPIs
+      const totalMonto  = data.reduce((a, c) => a + (c.montoFinal || 0), 0);
+      // Diferencia: montoFinal - montoInicial (aproximación rápida sin ventas)
+      const cuadradas   = data.filter(c => c.montoFinal >= c.montoInicial).length;
+      const faltantes   = data.length - cuadradas;
+
+      const kpis = $('cajasKpis');
+      if (kpis) {
+        kpis.classList.remove('hidden');
+        const ki = id => $(id);
+        if (ki('cajasKpiTotal'))    ki('cajasKpiTotal').textContent    = data.length;
+        if (ki('cajasKpiVentas'))   ki('cajasKpiVentas').textContent   = fmtMoney(totalMonto);
+        if (ki('cajasKpiOk'))       ki('cajasKpiOk').textContent       = cuadradas;
+        if (ki('cajasKpiFaltante')) ki('cajasKpiFaltante').textContent = faltantes;
+      }
+      if ($('cajasCount')) $('cajasCount').textContent = data.length + ' cierres';
+
+      // Chart: monto final por cierre (últimos 30)
+      const chartData = data.slice(0, 30).reverse();
+      const chartWrap = $('cajaChartWrap');
+      if (chartWrap && chartData.length > 0) {
+        chartWrap.classList.remove('hidden');
+        renderChart('chartCajas', {
+          type: 'bar',
+          data: {
+            labels: chartData.map(c => {
+              const f = c.fechaCierre || '';
+              return f.substring(5, 16); // MM-DD HH:MM
+            }),
+            datasets: [{
+              label: 'Monto Final',
+              data: chartData.map(c => c.montoFinal || 0),
+              backgroundColor: '#6366f1',
+              borderRadius: 4
+            }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { x: { ticks: { font: { size: 10 } } }, y: { ticks: { font: { size: 11 } } } }
+          }
+        });
+      }
+
+      // Tabla
+      tbl.classList.remove('hidden');
+      tbody.innerHTML = data.map(c => {
+        const dif     = (c.montoFinal || 0) - (c.montoInicial || 0);
+        const difCls  = dif >= 0 ? 'badge-green' : 'badge-red';
+        const difStr  = (dif >= 0 ? '+' : '') + fmtMoney(dif);
+        const fecha   = fmtDate(c.fechaCierre);
+        const apert   = fmtDate(c.fechaApertura);
+        return `<tr>
+          <td class="font-medium">${fecha}</td>
+          <td>${c.vendedor || '—'}</td>
+          <td><span class="badge badge-blue">${c.zona || c.estacion || '—'}</span></td>
+          <td class="text-slate-400 text-xs">${apert}</td>
+          <td class="font-semibold">${fmtMoney(c.montoFinal)}</td>
+          <td><span class="badge ${difCls}">${difStr}</span></td>
+          <td>
+            <a href="${c.urlReporte}" target="_blank" rel="noopener"
+               class="btn-primary text-xs px-3 py-1.5 inline-block"
+               style="text-decoration:none">
+              📊 Ver reporte
+            </a>
+          </td>
+        </tr>`;
+      }).join('');
+
+    } catch(e) {
+      if (loading) loading.classList.add('hidden');
+      if (empty) { empty.textContent = 'Error: ' + e.message; empty.classList.remove('hidden'); }
+      S.loaded['cajas'] = false;
+      toast('Error cargando cajas: ' + e.message, 'error');
+    }
+  }
+
   // ── PUBLIC API ───────────────────────────────────────────────
   return {
     init, nav, refresh, fabAction,
@@ -1303,6 +1423,8 @@ const MOS = (() => {
     abrirModalImpresora, guardarImpresora,
     abrirModalPersonal, guardarPersonal,
     abrirModalSerie, guardarSerie,
-    guardarPinEstacion, guardarPinWH
+    guardarPinEstacion, guardarPinWH,
+    // Cajas
+    loadCajas
   };
 })();
