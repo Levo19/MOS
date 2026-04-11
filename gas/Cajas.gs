@@ -30,8 +30,8 @@ function getCierresCaja(params) {
       c.urlReporte = meGasUrl + '?accion=ver_cierre&id_caja=' + encodeURIComponent(c.idCaja);
     });
 
-    return { ok: true, kpis: json.kpis, abiertas: json.abiertas,
-             cerradas: json.cerradas, generadoEn: json.generadoEn };
+    return { ok: true, data: { kpis: json.kpis, abiertas: json.abiertas,
+             cerradas: json.cerradas, generadoEn: json.generadoEn } };
   } catch(err) {
     return { ok: false, error: err.message };
   }

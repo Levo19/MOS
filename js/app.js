@@ -1301,12 +1301,12 @@ const MOS = (() => {
 
     try {
       const res = await API.get('getCierresCaja', {});
-      if (!res.ok) throw new Error(res.error);
+      // API.get ya desenvuelve d.data, así que res = { kpis, abiertas, cerradas, generadoEn }
 
       loading?.classList.add('hidden');
       content?.classList.remove('hidden');
 
-      const { kpis, abiertas = [], cerradas = [], generadoEn } = res;
+      const { kpis, abiertas = [], cerradas = [], generadoEn } = res || {};
 
       // Timestamp
       const ts = $('cajasTimestamp');
