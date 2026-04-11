@@ -60,6 +60,27 @@ function _route(method, e) {
       case 'getConfig':            return getConfigMos();
       case 'setConfig':            return setConfigMos(params);
 
+      // ── Estaciones ─────────────────────────────────────────
+      case 'getEstaciones':        return getEstaciones(params);
+      case 'crearEstacion':        return crearEstacion(params);
+      case 'actualizarEstacion':   return actualizarEstacion(params);
+      case 'verificarPinEstacion': return verificarPinEstacion(params);
+
+      // ── Impresoras ─────────────────────────────────────────
+      case 'getImpresoras':        return getImpresoras(params);
+      case 'crearImpresora':       return crearImpresora(params);
+      case 'actualizarImpresora':  return actualizarImpresora(params);
+
+      // ── Series documentales ────────────────────────────────
+      case 'getSeries':            return getSeries(params);
+      case 'crearSerie':           return crearSerie(params);
+      case 'actualizarSerie':      return actualizarSerie(params);
+
+      // ── Personal master ────────────────────────────────────
+      case 'getPersonalMaster':         return getPersonalMaster(params);
+      case 'crearPersonalMaster':       return crearPersonalMaster(params);
+      case 'actualizarPersonalMaster':  return actualizarPersonalMaster(params);
+
       default:
         return { ok: false, error: 'Acción no reconocida: ' + action };
     }})();

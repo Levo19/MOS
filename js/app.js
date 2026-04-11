@@ -72,7 +72,7 @@ const MOS = (() => {
     document.querySelectorAll('#bottomnav .bnav-btn').forEach(b =>
       b.classList.toggle('active', b.dataset.view === viewName));
 
-    const titles = { dashboard:'Dashboard', catalogo:'Catálogo', almacen:'Almacén', proveedores:'Proveedores', zonas:'Zonas' };
+    const titles = { dashboard:'Dashboard', catalogo:'Catálogo', almacen:'Almacén', proveedores:'Proveedores', config:'Configuración' };
     const t = titles[viewName] || viewName;
     const pt = $('pageTitle'); if (pt) pt.textContent = t;
     const ptd = $('pageTitleDesktop'); if (ptd) ptd.textContent = t;
@@ -80,6 +80,11 @@ const MOS = (() => {
     // FAB visibility
     const fab = $('fab');
     if (fab) fab.classList.toggle('visible', ['catalogo','proveedores'].includes(viewName));
+
+    // Config: show first panel
+    if (viewName === 'config') {
+      setCfgTab(S.cfgTab || 'estaciones');
+    }
 
     S.view = viewName;
     if (!S.loaded[viewName]) loadView(viewName);
@@ -118,6 +123,7 @@ const MOS = (() => {
         case 'dashboard':    await loadDashboard();   break;
         case 'catalogo':     await loadCatalogo();    break;
         case 'almacen':      await loadAlmacen();     break;
+        case 'config':       await loadConfig();      break;
         case 'proveedores':  await loadProveedores();  break;
       }
     } catch (e) {
@@ -906,6 +912,373 @@ const MOS = (() => {
     toast('Pedidos: próximamente desde esta vista', 'info');
   }
 
+  // ── CONFIGURACIÓN ────────────────────────────────────────────
+  let cfgData = { estaciones: [], impresoras: [], personal: [], series: [] };
+
+  async function loadConfig() {
+    if (!API.isConfigured()) return;
+    S.cfgTab = S.cfgTab || 'estaciones';
+    const [estRes, impRes, persRes, serRes] = await Promise.allSettled([
+      API.get('getEstaciones', {}),
+      API.get('getImpresoras', {}),
+      API.get('getPersonalMaster', { tipo: 'OPERADOR' }),
+      API.get('getSeries', {})
+    ]);
+    cfgData.estaciones = estRes.status === 'fulfilled' ? (estRes.value || []) : [];
+    cfgData.impresoras = impRes.status === 'fulfilled' ? (impRes.value || []) : [];
+    cfgData.personal   = persRes.status === 'fulfilled' ? (persRes.value || []) : [];
+    cfgData.series     = serRes.status === 'fulfilled' ? (serRes.value || []) : [];
+    renderCfgTab(S.cfgTab);
+  }
+
+  function setCfgTab(tab) {
+    S.cfgTab = tab;
+    const tabs = ['estaciones','impresoras','personal','series','seguridad'];
+    tabs.forEach(t => {
+      const btn = $('cfgTab' + t.charAt(0).toUpperCase() + t.slice(1));
+      if (btn) btn.classList.toggle('active', t === tab);
+      const panel = $('cfgPanel' + t.charAt(0).toUpperCase() + t.slice(1));
+      if (panel) panel.classList.toggle('hidden', t !== tab);
+    });
+    renderCfgTab(tab);
+  }
+
+  function renderCfgTab(tab) {
+    switch (tab) {
+      case 'estaciones': renderEstaciones();  break;
+      case 'impresoras': renderImpresoras();  break;
+      case 'personal':   renderPersonal();    break;
+      case 'series':     renderSeries();      break;
+      case 'seguridad':  renderSeguridad();   break;
+    }
+  }
+
+  function renderEstaciones() {
+    const tbody = $('tbodyEstaciones');
+    if (!tbody) return;
+    if (!cfgData.estaciones.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Sin estaciones. Configura el GAS URL.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = cfgData.estaciones.map(e => {
+      const tipoBadge = e.tipo === 'CAJA' ? 'badge-blue' : 'badge-yellow';
+      const appColor  = e.appOrigen === 'mosExpress' ? 'text-indigo-400' : 'text-orange-400';
+      return `<tr>
+        <td><div class="font-medium text-sm text-slate-200">${e.nombre}</div><div class="text-xs text-slate-500">${e.idEstacion}</div></td>
+        <td class="text-slate-400 text-xs">${e.idZona || '—'}</td>
+        <td><span class="badge ${tipoBadge}">${e.tipo}</span></td>
+        <td class="${appColor} text-xs font-medium">${e.appOrigen}</td>
+        <td class="hidden sm:table-cell text-slate-500 text-xs">${e.descripcion || '—'}</td>
+        <td><span class="badge ${e.activo == '1' ? 'badge-green' : 'badge-gray'}">${e.activo == '1' ? 'Activa' : 'Inactiva'}</span></td>
+        <td><button onclick="MOS.abrirModalEstacion('${e.idEstacion}')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700">✏️</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  function renderImpresoras() {
+    const tbody = $('tbodyImpresoras');
+    if (!tbody) return;
+    if (!cfgData.impresoras.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Sin impresoras registradas.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = cfgData.impresoras.map(imp => {
+      const tipoBadge = imp.tipo === 'TICKET' ? 'badge-blue' : imp.tipo === 'ADHESIVO' ? 'badge-yellow' : 'badge-gray';
+      const hasPrintId = imp.printNodeId && imp.printNodeId !== '';
+      return `<tr>
+        <td><div class="font-medium text-sm text-slate-200">${imp.nombre}</div></td>
+        <td>
+          ${hasPrintId
+            ? `<code class="text-indigo-400 text-xs bg-indigo-500/10 px-2 py-0.5 rounded">${imp.printNodeId}</code>`
+            : `<span class="text-yellow-400 text-xs">⚠️ Sin configurar</span>`}
+        </td>
+        <td><span class="badge ${tipoBadge}">${imp.tipo}</span></td>
+        <td class="text-slate-500 text-xs">${imp.idEstacion || '—'}</td>
+        <td class="${imp.appOrigen === 'mosExpress' ? 'text-indigo-400' : 'text-orange-400'} text-xs">${imp.appOrigen}</td>
+        <td><span class="badge ${imp.activo == '1' ? 'badge-green' : 'badge-gray'}">${imp.activo == '1' ? 'Activa' : 'Inactiva'}</span></td>
+        <td><button onclick="MOS.abrirModalImpresora('${imp.idImpresora}')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700">✏️</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  function renderPersonal() {
+    const el = $('listOperadores');
+    if (!el) return;
+    if (!cfgData.personal.length) {
+      el.innerHTML = '<p class="text-slate-500 text-sm text-center py-4">Sin operadores registrados</p>';
+      return;
+    }
+    el.innerHTML = cfgData.personal.map(p => {
+      const initials = (p.nombre || '?').charAt(0) + (p.apellido || '?').charAt(0);
+      const rolBadge = p.rol === 'ENVASADOR' ? 'badge-yellow' : p.rol === 'SUPERVISOR' ? 'badge-blue' : 'badge-gray';
+      return `<div class="flex items-center gap-3 p-3 rounded-lg" style="background:#0d1526;border:1px solid #1e293b">
+        <div class="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
+             style="background:${p.color || '#6366f1'}">${initials}</div>
+        <div class="flex-1 min-w-0">
+          <div class="font-medium text-sm text-slate-200">${p.nombre} ${p.apellido || ''}</div>
+          <div class="flex items-center gap-2 mt-0.5">
+            <span class="badge ${rolBadge} text-xs">${p.rol}</span>
+            <span class="text-xs text-slate-500">${p.tarifaHora ? 'S/.' + parseFloat(p.tarifaHora).toFixed(2) + '/h' : ''}</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-1">
+          <span class="badge ${p.estado == '1' ? 'badge-green' : 'badge-gray'} text-xs">${p.estado == '1' ? 'Activo' : 'Inactivo'}</span>
+          <button onclick="MOS.abrirModalPersonal('${p.idPersonal}')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700 ml-1">✏️</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderSeries() {
+    const tbody = $('tbodySeries');
+    if (!tbody) return;
+    if (!cfgData.series.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Sin series configuradas.</td></tr>';
+      return;
+    }
+    const tipoBadge = { NOTA_VENTA: 'badge-gray', BOLETA: 'badge-blue', FACTURA: 'badge-yellow' };
+    tbody.innerHTML = cfgData.series.map(s => `<tr>
+      <td class="text-slate-300 text-xs font-medium">${s.idEstacion}</td>
+      <td class="text-slate-500 text-xs">${s.idZona || '—'}</td>
+      <td><span class="badge ${tipoBadge[s.tipoDocumento] || 'badge-gray'}">${s.tipoDocumento}</span></td>
+      <td><code class="text-indigo-400 text-xs bg-indigo-500/10 px-2 py-0.5 rounded">${s.serie}</code></td>
+      <td class="font-semibold text-slate-200">${s.correlativo}</td>
+      <td><span class="badge ${s.activo == '1' ? 'badge-green' : 'badge-gray'}">${s.activo == '1' ? 'Activa' : 'Inactiva'}</span></td>
+      <td><button onclick="MOS.abrirModalSerie('${s.idSerie}')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700">✏️</button></td>
+    </tr>`).join('');
+  }
+
+  function renderSeguridad() {
+    // PINs por estación (solo ME cajas)
+    const listPins = $('listPinsEstaciones');
+    if (!listPins) return;
+    const cajasMe = cfgData.estaciones.filter(e => e.appOrigen === 'mosExpress' && e.tipo === 'CAJA');
+    if (!cajasMe.length) {
+      listPins.innerHTML = '<p class="text-slate-500 text-sm text-center py-4">Sin estaciones de tipo CAJA.</p>';
+    } else {
+      listPins.innerHTML = cajasMe.map(e => `
+        <div class="flex items-center justify-between p-3 rounded-lg" style="background:#0d1526;border:1px solid #1e293b">
+          <div>
+            <div class="text-sm font-medium text-slate-200">${e.nombre}</div>
+            <div class="text-xs text-slate-500">${e.idZona} · ${e.idEstacion}</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <input class="inp w-24 text-center" type="password" maxlength="6"
+                   placeholder="••••" id="pin_${e.idEstacion}"
+                   title="Nuevo PIN para ${e.nombre}">
+            <button onclick="MOS.guardarPinEstacion('${e.idEstacion}')"
+                    class="btn-primary text-xs px-2 py-1">Guardar</button>
+          </div>
+        </div>
+      `).join('');
+    }
+  }
+
+  // Config CRUD
+  function abrirModalEstacion(id) {
+    ['Id','Nombre','Zona','Tipo','App','Pin','Desc'].forEach(f => {
+      const el = $('est' + f); if (el && el.tagName !== 'SELECT') el.value = '';
+    });
+    if (id) {
+      const e = cfgData.estaciones.find(x => x.idEstacion === id);
+      if (!e) return;
+      $('modalEstTitle').textContent = 'Editar Estación';
+      $('estId').value     = e.idEstacion;
+      $('estNombre').value = e.nombre || '';
+      $('estZona').value   = e.idZona || '';
+      $('estTipo').value   = e.tipo || 'CAJA';
+      $('estApp').value    = e.appOrigen || 'mosExpress';
+      $('estDesc').value   = e.descripcion || '';
+    } else {
+      $('modalEstTitle').textContent = 'Nueva Estación';
+      $('estId').value = '';
+      $('estTipo').value = 'CAJA';
+      $('estApp').value = 'mosExpress';
+    }
+    openModal('modalEstacion');
+  }
+
+  async function guardarEstacion() {
+    const params = {
+      idEstacion:  $('estId')?.value || undefined,
+      nombre:      $('estNombre')?.value || '',
+      idZona:      $('estZona')?.value || '',
+      tipo:        $('estTipo')?.value || 'CAJA',
+      appOrigen:   $('estApp')?.value || 'mosExpress',
+      adminPin:    $('estPin')?.value || undefined,
+      descripcion: $('estDesc')?.value || ''
+    };
+    if (!params.nombre) { toast('Nombre requerido', 'error'); return; }
+    if (!params.adminPin) delete params.adminPin; // no sobreescribir PIN si está vacío
+    try {
+      await API.post(params.idEstacion ? 'actualizarEstacion' : 'crearEstacion', params);
+      toast('Estación guardada', 'ok');
+      closeModal('modalEstacion');
+      S.loaded['config'] = false;
+      await loadConfig();
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  function abrirModalImpresora(id) {
+    ['Id','Nombre','PrintNodeId','Estacion','Zona','Desc'].forEach(f => {
+      const el = $('imp' + f); if (el && el.tagName !== 'SELECT') el.value = '';
+    });
+    if (id) {
+      const imp = cfgData.impresoras.find(x => x.idImpresora === id);
+      if (!imp) return;
+      $('modalImpTitle').textContent = 'Editar Impresora';
+      $('impId').value          = imp.idImpresora;
+      $('impNombre').value      = imp.nombre || '';
+      $('impPrintNodeId').value = imp.printNodeId || '';
+      $('impTipo').value        = imp.tipo || 'TICKET';
+      $('impEstacion').value    = imp.idEstacion || '';
+      $('impZona').value        = imp.idZona || '';
+      $('impApp').value         = imp.appOrigen || 'mosExpress';
+      $('impDesc').value        = imp.descripcion || '';
+    } else {
+      $('modalImpTitle').textContent = 'Nueva Impresora';
+      $('impId').value = '';
+      $('impTipo').value = 'TICKET';
+      $('impApp').value = 'mosExpress';
+    }
+    openModal('modalImpresora');
+  }
+
+  async function guardarImpresora() {
+    const params = {
+      idImpresora:  $('impId')?.value || undefined,
+      nombre:       $('impNombre')?.value || '',
+      printNodeId:  $('impPrintNodeId')?.value || '',
+      tipo:         $('impTipo')?.value || 'TICKET',
+      idEstacion:   $('impEstacion')?.value || '',
+      idZona:       $('impZona')?.value || '',
+      appOrigen:    $('impApp')?.value || 'mosExpress',
+      descripcion:  $('impDesc')?.value || ''
+    };
+    if (!params.nombre) { toast('Nombre requerido', 'error'); return; }
+    try {
+      await API.post(params.idImpresora ? 'actualizarImpresora' : 'crearImpresora', params);
+      toast('Impresora guardada', 'ok');
+      closeModal('modalImpresora');
+      S.loaded['config'] = false;
+      await loadConfig();
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  function abrirModalPersonal(id) {
+    ['Id','Nombre','Apellido','Pin','Tarifa','Monto'].forEach(f => {
+      const el = $('pers' + f); if (el && el.tagName !== 'SELECT') el.value = '';
+    });
+    if (id) {
+      const p = cfgData.personal.find(x => x.idPersonal === id);
+      if (!p) return;
+      $('modalPersTitle').textContent = 'Editar Operador';
+      $('persId').value       = p.idPersonal;
+      $('persNombre').value   = p.nombre || '';
+      $('persApellido').value = p.apellido || '';
+      $('persRol').value      = p.rol || 'ALMACENERO';
+      $('persColor').value    = p.color || '#6366f1';
+      $('persTarifa').value   = p.tarifaHora || '';
+      $('persMonto').value    = p.montoBase || '';
+    } else {
+      $('modalPersTitle').textContent = 'Nuevo Operador';
+      $('persId').value = '';
+      $('persRol').value = 'ALMACENERO';
+      $('persColor').value = '#6366f1';
+    }
+    openModal('modalPersonal');
+  }
+
+  async function guardarPersonal() {
+    const params = {
+      idPersonal:  $('persId')?.value || undefined,
+      nombre:      $('persNombre')?.value || '',
+      apellido:    $('persApellido')?.value || '',
+      rol:         $('persRol')?.value || 'ALMACENERO',
+      color:       $('persColor')?.value || '#6366f1',
+      tarifaHora:  $('persTarifa')?.value || 0,
+      montoBase:   $('persMonto')?.value || 0,
+      tipo:        'OPERADOR',
+      appOrigen:   'warehouseMos'
+    };
+    const pin = $('persPin')?.value;
+    if (pin) params.pin = pin;
+    if (!params.nombre) { toast('Nombre requerido', 'error'); return; }
+    if (!params.idPersonal && !pin) { toast('PIN requerido para nuevos operadores', 'error'); return; }
+    try {
+      await API.post(params.idPersonal ? 'actualizarPersonalMaster' : 'crearPersonalMaster', params);
+      toast(params.idPersonal ? 'Operador actualizado' : 'Operador creado', 'ok');
+      closeModal('modalPersonal');
+      S.loaded['config'] = false;
+      await loadConfig();
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  function abrirModalSerie(id) {
+    ['Id','Estacion','Zona','Serie','Correlativo'].forEach(f => {
+      const el = $('serie' + f); if (el && el.tagName !== 'SELECT') el.value = '';
+    });
+    if (id) {
+      const s = cfgData.series.find(x => x.idSerie === id);
+      if (!s) return;
+      $('modalSerieTitle').textContent = 'Editar Serie';
+      $('serieId').value          = s.idSerie;
+      $('serieEstacion').value    = s.idEstacion || '';
+      $('serieZona').value        = s.idZona || '';
+      $('serieTipo').value        = s.tipoDocumento || 'BOLETA';
+      $('serieSerie').value       = s.serie || '';
+      $('serieCorrelativo').value = s.correlativo || 1;
+    } else {
+      $('modalSerieTitle').textContent = 'Nueva Serie';
+      $('serieId').value = '';
+      $('serieCorrelativo').value = 1;
+    }
+    openModal('modalSerie');
+  }
+
+  async function guardarSerie() {
+    const params = {
+      idSerie:       $('serieId')?.value || undefined,
+      idEstacion:    $('serieEstacion')?.value || '',
+      idZona:        $('serieZona')?.value || '',
+      tipoDocumento: $('serieTipo')?.value || 'BOLETA',
+      serie:         $('serieSerie')?.value || '',
+      correlativo:   parseInt($('serieCorrelativo')?.value || 1)
+    };
+    if (!params.idEstacion || !params.serie) { toast('Estación y Serie son requeridos', 'error'); return; }
+    try {
+      await API.post(params.idSerie ? 'actualizarSerie' : 'crearSerie', params);
+      toast('Serie guardada', 'ok');
+      closeModal('modalSerie');
+      S.loaded['config'] = false;
+      await loadConfig();
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  async function guardarPinEstacion(idEstacion) {
+    const inp = $('pin_' + idEstacion);
+    const pin = inp?.value || '';
+    if (!pin || pin.length < 4) { toast('PIN debe tener al menos 4 dígitos', 'error'); return; }
+    try {
+      await API.post('actualizarEstacion', { idEstacion, adminPin: pin });
+      toast('PIN actualizado', 'ok');
+      if (inp) inp.value = '';
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  async function guardarPinWH() {
+    const pin  = $('pinWH')?.value || '';
+    const conf = $('pinWHConfirm')?.value || '';
+    if (!pin || pin.length < 4)  { toast('PIN debe tener al menos 4 dígitos', 'error'); return; }
+    if (pin !== conf)             { toast('Los PINs no coinciden', 'error'); return; }
+    try {
+      await API.post('setConfig', { clave: 'PIN_ADMIN_WH', valor: pin, descripcion: 'PIN administrador warehouseMos' });
+      toast('PIN admin warehouseMos actualizado', 'ok');
+      const pw = $('pinWH'); if (pw) pw.value = '';
+      const pc = $('pinWHConfirm'); if (pc) pc.value = '';
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+
   // Close modal on backdrop click
   document.addEventListener('click', e => {
     if (e.target.classList.contains('modal-backdrop')) {
@@ -923,6 +1296,13 @@ const MOS = (() => {
     setAlmTab,
     loadProveedores, selectProveedor, renderProveedores,
     abrirModalProveedor, guardarProveedor,
-    abrirModalPago, guardarPago, abrirModalPedido
+    abrirModalPago, guardarPago, abrirModalPedido,
+    // Config
+    setCfgTab,
+    abrirModalEstacion, guardarEstacion,
+    abrirModalImpresora, guardarImpresora,
+    abrirModalPersonal, guardarPersonal,
+    abrirModalSerie, guardarSerie,
+    guardarPinEstacion, guardarPinWH
   };
 })();

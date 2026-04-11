@@ -147,8 +147,8 @@
       <div class="nav-dot"></div><span class="text-base">🤝</span><span>Proveedores</span>
     </button>
     <div class="mt-2 pt-2 border-t border-slate-800">
-      <button data-view="zonas" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-500 text-sm" onclick="MOS.nav('zonas')">
-        <div class="nav-dot"></div><span class="text-base">🗺️</span><span>Zonas <span class="text-xs bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded ml-1">Phase 2</span></span>
+      <button data-view="config" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('config')">
+        <div class="nav-dot"></div><span class="text-base">⚙️</span><span>Configuración</span>
       </button>
     </div>
   </nav>
@@ -418,32 +418,115 @@
       </div>
     </section>
 
-    <!-- ═══ VIEW: ZONAS (Phase 2) ════════════════════════════ -->
-    <section id="view-zonas" class="view">
-      <div class="card p-8 text-center max-w-lg mx-auto">
-        <div class="text-5xl mb-4">🗺️</div>
-        <h2 class="text-xl font-bold text-white mb-2">Zonas — Phase 2</h2>
-        <p class="text-slate-400 text-sm mb-6">La gestión de zonas se activa cuando MosExpress se conecte a MOS.</p>
-        <div class="text-left space-y-3 text-sm">
-          <div class="flex items-start gap-3 p-3 rounded-lg" style="background:#0d1526">
-            <span class="text-green-400 mt-0.5">✓</span>
-            <div><div class="font-medium text-slate-200">Desplegar MOS como Web App</div><div class="text-slate-500 text-xs">Execute as Me, Anyone with link</div></div>
+    <!-- ═══ VIEW: CONFIGURACIÓN ══════════════════════════════ -->
+    <section id="view-config" class="view hidden">
+      <!-- Tab bar (scrollable en mobile) -->
+      <div class="overflow-x-auto pb-1 mb-4">
+        <div class="tab-bar w-max">
+          <button class="tab-btn active" id="cfgTabEstaciones" onclick="MOS.setCfgTab('estaciones')">📍 Estaciones</button>
+          <button class="tab-btn" id="cfgTabImpresoras"        onclick="MOS.setCfgTab('impresoras')">🖨️ Impresoras</button>
+          <button class="tab-btn" id="cfgTabPersonal"          onclick="MOS.setCfgTab('personal')">👥 Personal</button>
+          <button class="tab-btn" id="cfgTabSeries"            onclick="MOS.setCfgTab('series')">📄 Series</button>
+          <button class="tab-btn" id="cfgTabSeguridad"         onclick="MOS.setCfgTab('seguridad')">🔐 Seguridad</button>
+        </div>
+      </div>
+
+      <!-- Estaciones -->
+      <div id="cfgPanelEstaciones">
+        <div class="flex items-center justify-between mb-3">
+          <p class="text-xs text-slate-500">Cajas MosExpress + almacenes warehouseMos</p>
+          <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalEstacion(null)">+ Nueva</button>
+        </div>
+        <div class="card overflow-x-auto">
+          <table class="tbl">
+            <thead><tr><th>Estación</th><th>Zona</th><th>Tipo</th><th>App</th><th class="hidden sm:table-cell">Descripción</th><th>Estado</th><th></th></tr></thead>
+            <tbody id="tbodyEstaciones"><tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Impresoras -->
+      <div id="cfgPanelImpresoras" class="hidden">
+        <div class="flex items-center justify-between mb-3">
+          <p class="text-xs text-slate-500">PrintNode IDs por estación — agrega nuevos dispositivos aquí</p>
+          <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalImpresora(null)">+ Nueva</button>
+        </div>
+        <div class="card overflow-x-auto">
+          <table class="tbl">
+            <thead><tr><th>Nombre</th><th>PrintNode ID</th><th>Tipo</th><th>Estación</th><th>App</th><th>Estado</th><th></th></tr></thead>
+            <tbody id="tbodyImpresoras"><tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+        <div class="mt-3 p-3 rounded-lg text-xs text-slate-400" style="background:#0d1526;border:1px solid #1e293b;">
+          ℹ️ Las API keys de PrintNode se mantienen en <strong class="text-slate-300">Script Properties</strong> de cada app (warehouseMos / MosExpress) por seguridad. Aquí solo se gestionan los PrintNode IDs.
+        </div>
+      </div>
+
+      <!-- Personal -->
+      <div id="cfgPanelPersonal" class="hidden">
+        <div class="grid lg:grid-cols-2 gap-4">
+          <div class="card p-4">
+            <div class="flex items-center justify-between mb-3">
+              <div>
+                <h3 class="font-semibold text-sm text-white">👷 Operadores — warehouseMos</h3>
+                <p class="text-xs text-slate-500 mt-0.5">Empleados fijos · PIN de acceso · rol asignado</p>
+              </div>
+              <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalPersonal(null)">+ Agregar</button>
+            </div>
+            <div id="listOperadores" class="space-y-2"><div class="text-center py-4 text-slate-500 text-sm">Cargando...</div></div>
           </div>
-          <div class="flex items-start gap-3 p-3 rounded-lg" style="background:#0d1526">
-            <span class="text-slate-500 mt-0.5">2</span>
-            <div><div class="font-medium text-slate-400">Auditar PRODUCTOS de MosExpress</div><div class="text-slate-500 text-xs">Verificar columnas vs PRODUCTOS_MASTER</div></div>
+          <div class="card p-4">
+            <h3 class="font-semibold text-sm text-white mb-1">🛒 Vendedores — MosExpress</h3>
+            <p class="text-xs text-slate-500 mb-4">Alta rotación → ingresan con nombre libre, sin cuenta</p>
+            <div class="card-sm p-5 text-center">
+              <div class="text-3xl mb-2">🔄</div>
+              <p class="text-sm text-slate-300 mb-2">Sin cuentas de usuario</p>
+              <p class="text-xs text-slate-500">Los cajeros escriben su nombre al iniciar turno en MosExpress. El historial queda en los reportes de caja.</p>
+              <p class="text-xs text-indigo-400 mt-3">Phase 2: MosExpress leerá PERSONAL_MASTER para sugerencias de nombre.</p>
+            </div>
           </div>
-          <div class="flex items-start gap-3 p-3 rounded-lg" style="background:#0d1526">
-            <span class="text-slate-500 mt-0.5">3</span>
-            <div><div class="font-medium text-slate-400">Migrar PRODUCTOS + EQUIVALENCIAS</div><div class="text-slate-500 text-xs">De MosExpress → PRODUCTOS_MASTER en MOS</div></div>
+        </div>
+      </div>
+
+      <!-- Series Documentales -->
+      <div id="cfgPanelSeries" class="hidden">
+        <div class="flex items-center justify-between mb-3">
+          <p class="text-xs text-slate-500">Series NV / Boleta / Factura por estación — NubeFact / SUNAT</p>
+          <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalSerie(null)">+ Nueva serie</button>
+        </div>
+        <div class="card overflow-x-auto">
+          <table class="tbl">
+            <thead><tr><th>Estación</th><th>Zona</th><th>Tipo doc.</th><th>Serie</th><th>Correlativo</th><th>Estado</th><th></th></tr></thead>
+            <tbody id="tbodySeries"><tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Seguridad -->
+      <div id="cfgPanelSeguridad" class="hidden">
+        <div class="grid lg:grid-cols-2 gap-4">
+          <!-- PINs por estación -->
+          <div class="card p-4">
+            <h3 class="font-semibold text-sm text-white mb-1">🔐 PINs por Estación — MosExpress</h3>
+            <p class="text-xs text-slate-500 mb-4">Autoriza anulaciones y notas de crédito en cada caja</p>
+            <div id="listPinsEstaciones" class="space-y-2"><div class="text-center py-4 text-slate-500 text-sm">Cargando...</div></div>
           </div>
-          <div class="flex items-start gap-3 p-3 rounded-lg" style="background:#0d1526">
-            <span class="text-slate-500 mt-0.5">4</span>
-            <div><div class="font-medium text-slate-400">Configurar ME_SS_ID + ME_GAS_URL</div><div class="text-slate-500 text-xs">En Script Properties de ProyectoMOS</div></div>
-          </div>
-          <div class="flex items-start gap-3 p-3 rounded-lg" style="background:#0d1526">
-            <span class="text-slate-500 mt-0.5">5</span>
-            <div><div class="font-medium text-slate-400">Test en paralelo (2 semanas)</div><div class="text-slate-500 text-xs">MosExpress lee MOS pero mantiene copia local</div></div>
+          <!-- PIN admin WH -->
+          <div class="card p-4">
+            <h3 class="font-semibold text-sm text-white mb-1">🏭 PIN Admin — warehouseMos</h3>
+            <p class="text-xs text-slate-500 mb-4">Autoriza ajustes de stock, auditorías y edición de documentos</p>
+            <div class="space-y-3">
+              <div>
+                <label class="lbl">Nuevo PIN (4–6 dígitos)</label>
+                <input id="pinWH" class="inp" type="password" maxlength="6" placeholder="••••">
+              </div>
+              <div>
+                <label class="lbl">Confirmar PIN</label>
+                <input id="pinWHConfirm" class="inp" type="password" maxlength="6" placeholder="••••">
+              </div>
+              <button onclick="MOS.guardarPinWH()" class="btn-primary w-full">Actualizar PIN</button>
+              <p class="text-xs text-slate-500 mt-1">Se guarda en CONFIG_MOS y warehouseMos lo lee como <code class="text-indigo-400">PIN_ADMIN_WH</code>.</p>
+            </div>
           </div>
         </div>
       </div>
@@ -494,8 +577,8 @@
   <button data-view="proveedores" class="bnav-btn flex-1 flex flex-col items-center py-3 text-slate-400 text-xs" onclick="MOS.nav('proveedores')">
     <div class="bnav-bar mb-1"></div><span class="text-xl mb-0.5">🤝</span><span>Proveedores</span>
   </button>
-  <button data-view="zonas"       class="bnav-btn flex-1 flex flex-col items-center py-3 text-slate-400 text-xs" onclick="MOS.nav('zonas')">
-    <div class="bnav-bar mb-1"></div><span class="text-xl mb-0.5">🗺️</span><span>Zonas</span>
+  <button data-view="config"       class="bnav-btn flex-1 flex flex-col items-center py-3 text-slate-400 text-xs" onclick="MOS.nav('config')">
+    <div class="bnav-bar mb-1"></div><span class="text-xl mb-0.5">⚙️</span><span>Config</span>
   </button>
 </nav>
 
@@ -762,6 +845,138 @@
         <button onclick="MOS.closeModal('modalPago')" class="btn-ghost flex-1">Cancelar</button>
         <button onclick="MOS.guardarPago()" class="btn-primary flex-1">Registrar</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Estación -->
+<div class="modal-backdrop" id="modalEstacion">
+  <div class="modal-box p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 id="modalEstTitle" class="font-bold text-lg text-white">Nueva Estación</h2>
+      <button onclick="MOS.closeModal('modalEstacion')" class="text-slate-400 hover:text-white text-xl">×</button>
+    </div>
+    <input type="hidden" id="estId">
+    <div class="grid grid-cols-2 gap-3">
+      <div class="col-span-2"><label class="lbl">Nombre *</label><input id="estNombre" class="inp" placeholder="Caja Central 01"></div>
+      <div><label class="lbl">Zona ID</label><input id="estZona" class="inp" placeholder="ZONA-01"></div>
+      <div>
+        <label class="lbl">Tipo</label>
+        <select id="estTipo" class="inp">
+          <option value="CAJA">CAJA (MosExpress)</option>
+          <option value="ALMACEN">ALMACEN (warehouseMos)</option>
+        </select>
+      </div>
+      <div>
+        <label class="lbl">App origen</label>
+        <select id="estApp" class="inp">
+          <option value="mosExpress">MosExpress</option>
+          <option value="warehouseMos">warehouseMos</option>
+        </select>
+      </div>
+      <div><label class="lbl">Admin PIN</label><input id="estPin" class="inp" type="password" maxlength="6" placeholder="••••"></div>
+      <div class="col-span-2"><label class="lbl">Descripción</label><input id="estDesc" class="inp" placeholder="POS estación principal..."></div>
+    </div>
+    <div class="flex gap-2 mt-5">
+      <button onclick="MOS.closeModal('modalEstacion')" class="btn-ghost flex-1">Cancelar</button>
+      <button onclick="MOS.guardarEstacion()" class="btn-primary flex-1">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Impresora -->
+<div class="modal-backdrop" id="modalImpresora">
+  <div class="modal-box p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 id="modalImpTitle" class="font-bold text-lg text-white">Nueva Impresora</h2>
+      <button onclick="MOS.closeModal('modalImpresora')" class="text-slate-400 hover:text-white text-xl">×</button>
+    </div>
+    <input type="hidden" id="impId">
+    <div class="grid grid-cols-2 gap-3">
+      <div class="col-span-2"><label class="lbl">Nombre *</label><input id="impNombre" class="inp" placeholder="Ticket Caja 01"></div>
+      <div><label class="lbl">PrintNode ID *</label><input id="impPrintNodeId" class="inp" placeholder="75338007"></div>
+      <div>
+        <label class="lbl">Tipo</label>
+        <select id="impTipo" class="inp">
+          <option value="TICKET">TICKET</option>
+          <option value="ADHESIVO">ADHESIVO</option>
+          <option value="AMBAS">AMBAS</option>
+        </select>
+      </div>
+      <div><label class="lbl">ID Estación</label><input id="impEstacion" class="inp" placeholder="ES001"></div>
+      <div><label class="lbl">Zona ID</label><input id="impZona" class="inp" placeholder="ZONA-01"></div>
+      <div>
+        <label class="lbl">App origen</label>
+        <select id="impApp" class="inp">
+          <option value="mosExpress">MosExpress</option>
+          <option value="warehouseMos">warehouseMos</option>
+        </select>
+      </div>
+      <div class="col-span-2"><label class="lbl">Descripción</label><input id="impDesc" class="inp" placeholder="Impresora ticket caja..."></div>
+    </div>
+    <div class="flex gap-2 mt-5">
+      <button onclick="MOS.closeModal('modalImpresora')" class="btn-ghost flex-1">Cancelar</button>
+      <button onclick="MOS.guardarImpresora()" class="btn-primary flex-1">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Personal -->
+<div class="modal-backdrop" id="modalPersonal">
+  <div class="modal-box p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 id="modalPersTitle" class="font-bold text-lg text-white">Nuevo Operador</h2>
+      <button onclick="MOS.closeModal('modalPersonal')" class="text-slate-400 hover:text-white text-xl">×</button>
+    </div>
+    <input type="hidden" id="persId">
+    <div class="grid grid-cols-2 gap-3">
+      <div><label class="lbl">Nombre *</label><input id="persNombre" class="inp" placeholder="Carlos"></div>
+      <div><label class="lbl">Apellido</label><input id="persApellido" class="inp" placeholder="Ramos"></div>
+      <div>
+        <label class="lbl">Rol</label>
+        <select id="persRol" class="inp">
+          <option value="ALMACENERO">ALMACENERO</option>
+          <option value="ENVASADOR">ENVASADOR</option>
+          <option value="SUPERVISOR">SUPERVISOR</option>
+        </select>
+      </div>
+      <div><label class="lbl">PIN (4–6 dígitos)</label><input id="persPin" class="inp" type="password" maxlength="6" placeholder="••••"></div>
+      <div><label class="lbl">Color</label><input id="persColor" class="inp" type="color" value="#6366f1"></div>
+      <div><label class="lbl">Tarifa/hora (S/.)</label><input id="persTarifa" class="inp" type="number" step="0.50" placeholder="5.00"></div>
+      <div class="col-span-2"><label class="lbl">Monto base mensual (S/.)</label><input id="persMonto" class="inp" type="number" placeholder="1200"></div>
+    </div>
+    <div class="flex gap-2 mt-5">
+      <button onclick="MOS.closeModal('modalPersonal')" class="btn-ghost flex-1">Cancelar</button>
+      <button onclick="MOS.guardarPersonal()" class="btn-primary flex-1">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Serie Documental -->
+<div class="modal-backdrop" id="modalSerie">
+  <div class="modal-box p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 id="modalSerieTitle" class="font-bold text-lg text-white">Nueva Serie</h2>
+      <button onclick="MOS.closeModal('modalSerie')" class="text-slate-400 hover:text-white text-xl">×</button>
+    </div>
+    <input type="hidden" id="serieId">
+    <div class="grid grid-cols-2 gap-3">
+      <div><label class="lbl">ID Estación *</label><input id="serieEstacion" class="inp" placeholder="ES001"></div>
+      <div><label class="lbl">Zona ID</label><input id="serieZona" class="inp" placeholder="ZONA-01"></div>
+      <div>
+        <label class="lbl">Tipo documento *</label>
+        <select id="serieTipo" class="inp">
+          <option value="NOTA_VENTA">NOTA_VENTA</option>
+          <option value="BOLETA">BOLETA</option>
+          <option value="FACTURA">FACTURA</option>
+        </select>
+      </div>
+      <div><label class="lbl">Serie *</label><input id="serieSerie" class="inp" placeholder="B001"></div>
+      <div class="col-span-2"><label class="lbl">Correlativo actual</label><input id="serieCorrelativo" class="inp" type="number" placeholder="1"></div>
+    </div>
+    <div class="flex gap-2 mt-5">
+      <button onclick="MOS.closeModal('modalSerie')" class="btn-ghost flex-1">Cancelar</button>
+      <button onclick="MOS.guardarSerie()" class="btn-primary flex-1">Guardar</button>
     </div>
   </div>
 </div>
