@@ -125,7 +125,7 @@ const MOS = (() => {
         case 'almacen':      await loadAlmacen();     break;
         case 'config':       await loadConfig();      break;
         case 'proveedores':  await loadProveedores();  break;
-        case 'cajas':        await loadCajas();        break;
+        case 'cajas':        await loadCajas(true);    break;
       }
     } catch (e) {
       // Reload allowed next time
