@@ -1292,118 +1292,190 @@ const MOS = (() => {
     if (!force && S.loaded['cajas']) return;
     S.loaded['cajas'] = true;
 
-    const loading = $('cajasLoading');
-    const empty   = $('cajasEmpty');
-    const tbl     = $('cajasTbl');
-    const tbody   = $('cajasTbody');
+    const loading  = $('cajasLoading');
+    const content  = $('cajasContent');
+    const empty    = $('cajasEmpty');
 
-    if (loading) loading.classList.remove('hidden');
-    if (empty)   empty.classList.add('hidden');
-    if (tbl)     tbl.classList.add('hidden');
-    if (tbody)   tbody.innerHTML = '';
+    loading?.classList.remove('hidden');
+    content?.classList.add('hidden');
 
     try {
-      const zona = $('cajasZonaFiltro')?.value || '';
-      const res  = await API.get('getCierresCaja', zona ? { zona } : {});
+      const res = await API.get('getCierresCaja', {});
       if (!res.ok) throw new Error(res.error);
 
-      const data = res.data || [];
-      if (loading) loading.classList.add('hidden');
+      loading?.classList.add('hidden');
+      content?.classList.remove('hidden');
 
-      if (data.length === 0) {
-        if (empty) empty.classList.remove('hidden');
-        return;
+      const { kpis, abiertas = [], cerradas = [], generadoEn } = res;
+
+      // Timestamp
+      const ts = $('cajasTimestamp');
+      if (ts) ts.textContent = 'Actualizado: ' + (generadoEn || '—');
+
+      // ── KPIs ────────────────────────────────────────────────
+      const set = (id, v) => { const el=$(id); if(el) el.textContent=v; };
+      set('cajasKpiVentas',   fmtMoney(kpis?.totalDia || 0));
+      set('cajasKpiTickets',  kpis?.ticketsDia || 0);
+      set('cajasKpiAbiertas', kpis?.cajasAbiertas || 0);
+      set('cajasKpiCerradas', kpis?.cajasCerradas || 0);
+      set('cajasKpiAnulados', kpis?.anuladosDia   || 0);
+
+      const todosVacios = abiertas.length === 0 && cerradas.length === 0;
+      if (todosVacios) { empty?.classList.remove('hidden'); return; }
+      empty?.classList.add('hidden');
+
+      // ── Cajas ABIERTAS en vivo ───────────────────────────────
+      const vivoWrap  = $('cajasVivoWrap');
+      const vivoGrid  = $('cajasVivoGrid');
+      const vivoCount = $('cajasVivoCount');
+      if (abiertas.length > 0 && vivoWrap && vivoGrid) {
+        vivoWrap.classList.remove('hidden');
+        if (vivoCount) vivoCount.textContent = abiertas.length;
+        vivoGrid.innerHTML = abiertas.map(c => {
+          const elapsed  = _cajaElapsed(c.fechaApertura);
+          const pctEfect = c.totalVentas > 0 ? Math.round(c.efectivo / c.totalVentas * 100) : 0;
+          const pctOtros = 100 - pctEfect;
+          const metodos  = Object.entries(c.byMetodo || {})
+            .sort((a,b) => b[1]-a[1])
+            .map(([k,v]) => `<span class="text-xs text-slate-400">${k}: <span class="text-slate-200 font-medium">${fmtMoney(v)}</span></span>`)
+            .join('');
+          return `
+          <div class="card p-4" style="border-left:3px solid #22c55e">
+            <div class="flex items-start justify-between mb-3">
+              <div>
+                <div class="font-semibold text-white text-base">${c.vendedor || '—'}</div>
+                <div class="text-xs text-slate-400">${c.zona || c.estacion || '—'} · <span class="text-emerald-400">⏱ ${elapsed}</span></div>
+              </div>
+              <span class="badge badge-green">ABIERTA</span>
+            </div>
+            <div class="grid grid-cols-3 gap-2 mb-3">
+              <div class="card-sm p-2 text-center">
+                <div class="text-lg font-bold text-white">${fmtMoney(c.totalVentas)}</div>
+                <div class="text-xs text-slate-500">Total</div>
+              </div>
+              <div class="card-sm p-2 text-center">
+                <div class="text-lg font-bold text-emerald-400">${c.tickets}</div>
+                <div class="text-xs text-slate-500">Tickets</div>
+              </div>
+              <div class="card-sm p-2 text-center">
+                <div class="text-lg font-bold ${c.anulados > 0 ? 'text-red-400' : 'text-slate-400'}">${c.anulados}</div>
+                <div class="text-xs text-slate-500">Anulados</div>
+              </div>
+            </div>
+            <!-- Mini barra efectivo vs otros -->
+            <div class="mb-2">
+              <div class="flex justify-between text-xs text-slate-500 mb-1">
+                <span>Efectivo ${pctEfect}%</span><span>Otros ${pctOtros}%</span>
+              </div>
+              <div class="flex rounded-full overflow-hidden h-2" style="background:#1e293b">
+                <div style="width:${pctEfect}%;background:#22c55e"></div>
+                <div style="width:${pctOtros}%;background:#6366f1"></div>
+              </div>
+            </div>
+            <div class="flex flex-wrap gap-x-3 gap-y-1 mt-2">${metodos}</div>
+            ${c.sinCobrar > 0 ? `<div class="mt-2 text-xs text-yellow-400">⏳ ${c.sinCobrar} sin cobrar</div>` : ''}
+          </div>`;
+        }).join('');
+      } else if (vivoWrap) {
+        vivoWrap.classList.add('hidden');
       }
 
-      // Poblar filtro de zonas
-      const zonaFiltro = $('cajasZonaFiltro');
-      if (zonaFiltro) {
-        const zonas = [...new Set(data.map(c => c.zona).filter(Boolean))];
-        const current = zonaFiltro.value;
-        zonaFiltro.innerHTML = '<option value="">Todas las zonas</option>';
-        zonas.forEach(z => {
-          const opt = document.createElement('option');
-          opt.value = z; opt.textContent = z;
-          if (z === current) opt.selected = true;
-          zonaFiltro.appendChild(opt);
-        });
-      }
+      // ── Gráficos ─────────────────────────────────────────────
+      const chartsWrap = $('cajasChartsWrap');
+      const todos      = [...abiertas, ...cerradas];
+      if (todos.length > 0 && chartsWrap) {
+        chartsWrap.classList.remove('hidden');
 
-      // KPIs
-      const totalMonto  = data.reduce((a, c) => a + (c.montoFinal || 0), 0);
-      // Diferencia: montoFinal - montoInicial (aproximación rápida sin ventas)
-      const cuadradas   = data.filter(c => c.montoFinal >= c.montoInicial).length;
-      const faltantes   = data.length - cuadradas;
-
-      const kpis = $('cajasKpis');
-      if (kpis) {
-        kpis.classList.remove('hidden');
-        const ki = id => $(id);
-        if (ki('cajasKpiTotal'))    ki('cajasKpiTotal').textContent    = data.length;
-        if (ki('cajasKpiVentas'))   ki('cajasKpiVentas').textContent   = fmtMoney(totalMonto);
-        if (ki('cajasKpiOk'))       ki('cajasKpiOk').textContent       = cuadradas;
-        if (ki('cajasKpiFaltante')) ki('cajasKpiFaltante').textContent = faltantes;
-      }
-      if ($('cajasCount')) $('cajasCount').textContent = data.length + ' cierres';
-
-      // Chart: monto final por cierre (últimos 30)
-      const chartData = data.slice(0, 30).reverse();
-      const chartWrap = $('cajaChartWrap');
-      if (chartWrap && chartData.length > 0) {
-        chartWrap.classList.remove('hidden');
-        renderChart('chartCajas', {
+        // Bar: ventas por cajero
+        renderChart('chartCajasBars', {
           type: 'bar',
           data: {
-            labels: chartData.map(c => {
-              const f = c.fechaCierre || '';
-              return f.substring(5, 16); // MM-DD HH:MM
-            }),
+            labels:   todos.map(c => c.vendedor || c.idCaja),
             datasets: [{
-              label: 'Monto Final',
-              data: chartData.map(c => c.montoFinal || 0),
-              backgroundColor: '#6366f1',
-              borderRadius: 4
+              label: 'Vendido',
+              data:  todos.map(c => c.totalVentas),
+              backgroundColor: todos.map(c => c.estado === 'ABIERTA' ? '#22c55e' : '#6366f1'),
+              borderRadius: 5
             }]
           },
           options: {
             responsive: true, maintainAspectRatio: false,
             plugins: { legend: { display: false } },
-            scales: { x: { ticks: { font: { size: 10 } } }, y: { ticks: { font: { size: 11 } } } }
+            scales: { y: { ticks: { callback: v => 'S/'+v, font: { size: 11 } } },
+                      x: { ticks: { font: { size: 11 } } } }
           }
         });
+
+        // Donut: métodos de pago acumulados del día
+        const metAcum = {};
+        todos.forEach(c => Object.entries(c.byMetodo || {}).forEach(([k,v]) => {
+          metAcum[k] = (metAcum[k] || 0) + v;
+        }));
+        const metKeys = Object.keys(metAcum);
+        if (metKeys.length > 0) {
+          renderChart('chartCajasMetodo', {
+            type: 'doughnut',
+            data: {
+              labels: metKeys,
+              datasets: [{ data: metKeys.map(k => metAcum[k]),
+                backgroundColor: ['#22c55e','#6366f1','#f59e0b','#ef4444','#0ea5e9'],
+                borderWidth: 2, borderColor: '#0f172a' }]
+            },
+            options: {
+              responsive: true, maintainAspectRatio: false,
+              plugins: { legend: { position: 'bottom', labels: { font:{ size:11 }, padding:8, boxWidth:12 } } }
+            }
+          });
+        }
       }
 
-      // Tabla
-      tbl.classList.remove('hidden');
-      tbody.innerHTML = data.map(c => {
-        const dif     = (c.montoFinal || 0) - (c.montoInicial || 0);
-        const difCls  = dif >= 0 ? 'badge-green' : 'badge-red';
-        const difStr  = (dif >= 0 ? '+' : '') + fmtMoney(dif);
-        const fecha   = fmtDate(c.fechaCierre);
-        const apert   = fmtDate(c.fechaApertura);
-        return `<tr>
-          <td class="font-medium">${fecha}</td>
-          <td>${c.vendedor || '—'}</td>
-          <td><span class="badge badge-blue">${c.zona || c.estacion || '—'}</span></td>
-          <td class="text-slate-400 text-xs">${apert}</td>
-          <td class="font-semibold">${fmtMoney(c.montoFinal)}</td>
-          <td><span class="badge ${difCls}">${difStr}</span></td>
-          <td>
-            <a href="${c.urlReporte}" target="_blank" rel="noopener"
-               class="btn-primary text-xs px-3 py-1.5 inline-block"
-               style="text-decoration:none">
-              📊 Ver reporte
-            </a>
-          </td>
-        </tr>`;
-      }).join('');
+      // ── Historial cierres del día ─────────────────────────────
+      const histWrap  = $('cajasHistorialWrap');
+      const histTbody = $('cajasHistTbody');
+      if (cerradas.length > 0 && histWrap && histTbody) {
+        histWrap.classList.remove('hidden');
+        histTbody.innerHTML = cerradas.map(c => {
+          const dif    = c.diferencia;
+          const difCls = dif === null ? 'badge-gray' : dif > 0.05 ? 'badge-green' : dif < -0.05 ? 'badge-red' : 'badge-green';
+          const difStr = dif === null ? '—' : (dif >= 0 ? '+' : '') + fmtMoney(dif);
+          const hora   = s => (s || '').substring(11, 16);
+          return `<tr>
+            <td class="font-medium">${c.vendedor || '—'}</td>
+            <td><span class="badge badge-blue">${c.zona || c.estacion || '—'}</span></td>
+            <td class="text-slate-400 text-xs">${hora(c.fechaApertura)} → ${hora(c.fechaCierre)}</td>
+            <td class="font-semibold">${fmtMoney(c.totalVentas)}</td>
+            <td class="text-center">${c.tickets}</td>
+            <td><span class="badge ${difCls}">${difStr}</span></td>
+            <td>
+              <a href="${c.urlReporte}" target="_blank" rel="noopener"
+                 class="btn-primary text-xs px-3 py-1.5 inline-block" style="text-decoration:none">
+                📊 Reporte
+              </a>
+            </td>
+          </tr>`;
+        }).join('');
+      } else if (histWrap) {
+        histWrap.classList.add('hidden');
+      }
 
     } catch(e) {
-      if (loading) loading.classList.add('hidden');
-      if (empty) { empty.textContent = 'Error: ' + e.message; empty.classList.remove('hidden'); }
+      loading?.classList.add('hidden');
+      content?.classList.remove('hidden');
+      empty?.classList.remove('hidden');
+      if (empty) empty.innerHTML = `<div class="text-4xl mb-3">⚠️</div><div class="text-red-400 font-medium mb-1">Error al cargar</div><div class="text-xs text-slate-500">${e.message}</div>`;
       S.loaded['cajas'] = false;
-      toast('Error cargando cajas: ' + e.message, 'error');
     }
+  }
+
+  function _cajaElapsed(fechaApertura) {
+    if (!fechaApertura) return '—';
+    try {
+      const inicio = new Date(fechaApertura.replace(' ', 'T'));
+      const mins   = Math.floor((Date.now() - inicio.getTime()) / 60000);
+      if (mins < 60)  return mins + ' min';
+      const h = Math.floor(mins / 60), m = mins % 60;
+      return h + 'h ' + (m < 10 ? '0' : '') + m + 'm';
+    } catch { return '—'; }
   }
 
   // ── PUBLIC API ───────────────────────────────────────────────

@@ -990,69 +990,112 @@
 <!-- ═══ VIEW: CAJAS ══════════════════════════════════════════ -->
 <section id="view-cajas" class="view hidden">
 
-  <!-- Filtros -->
-  <div class="flex flex-wrap items-center gap-3 mb-5">
-    <select id="cajasZonaFiltro" class="inp" style="max-width:180px" onchange="MOS.loadCajas()">
-      <option value="">Todas las zonas</option>
-    </select>
+  <!-- Header bar -->
+  <div class="flex items-center justify-between mb-5">
+    <div>
+      <div id="cajasTimestamp" class="text-xs text-slate-500">—</div>
+    </div>
     <button onclick="MOS.loadCajas(true)" class="btn-ghost text-xs px-3 py-1.5">↺ Actualizar</button>
-    <span id="cajasCount" class="text-xs text-slate-500 ml-auto"></span>
   </div>
 
-  <!-- KPI summary -->
-  <div id="cajasKpis" class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5 hidden">
-    <div class="kpi-card p-4">
-      <div class="text-xl mb-2">🗃️</div>
-      <div id="cajasKpiTotal" class="text-2xl font-bold text-white">—</div>
-      <div class="text-xs text-slate-500">Cierres totales</div>
-    </div>
-    <div class="kpi-card p-4">
-      <div class="text-xl mb-2">💰</div>
-      <div id="cajasKpiVentas" class="text-2xl font-bold text-white">—</div>
-      <div class="text-xs text-slate-500">Monto final acumulado</div>
-    </div>
-    <div class="kpi-card p-4">
-      <div class="text-xl mb-2">✅</div>
-      <div id="cajasKpiOk" class="text-2xl font-bold text-white">—</div>
-      <div class="text-xs text-slate-500">Cuadradas / sobrante</div>
-    </div>
-    <div class="kpi-card p-4">
-      <div class="text-xl mb-2">❌</div>
-      <div id="cajasKpiFaltante" class="text-2xl font-bold text-white">—</div>
-      <div class="text-xs text-slate-500">Con faltante</div>
-    </div>
+  <!-- Loading -->
+  <div id="cajasLoading" class="text-center py-16 text-slate-500 text-sm">
+    <div class="skel h-4 w-40 mx-auto mb-3 rounded"></div>
+    <div class="skel h-4 w-56 mx-auto rounded"></div>
   </div>
 
-  <!-- Chart -->
-  <div id="cajaChartWrap" class="card p-4 mb-5 hidden">
-    <h3 class="font-semibold text-sm text-slate-200 mb-3">Monto Final por Cierre (últimos 30)</h3>
-    <div style="position:relative;height:200px"><canvas id="chartCajas"></canvas></div>
-  </div>
+  <!-- Contenido (oculto hasta cargar) -->
+  <div id="cajasContent" class="hidden">
 
-  <!-- Tabla de cierres -->
-  <div class="card overflow-hidden">
-    <div id="cajasLoading" class="text-center py-12 text-slate-500 text-sm">
-      <div class="skel h-4 w-32 mx-auto mb-3 rounded"></div>
-      <div class="skel h-4 w-48 mx-auto rounded"></div>
+    <!-- KPIs del día -->
+    <div class="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-5">
+      <div class="kpi-card p-4">
+        <div class="flex items-start justify-between mb-2">
+          <span class="text-2xl">💰</span>
+          <span class="badge badge-green text-xs" id="cajasKpiBadgeVentas"></span>
+        </div>
+        <div id="cajasKpiVentas" class="text-3xl font-bold text-white mb-1">—</div>
+        <div class="text-xs text-slate-500">Total vendido hoy</div>
+      </div>
+      <div class="kpi-card p-4">
+        <div class="flex items-start justify-between mb-2">
+          <span class="text-2xl">🧾</span>
+        </div>
+        <div id="cajasKpiTickets" class="text-3xl font-bold text-white mb-1">—</div>
+        <div class="text-xs text-slate-500">Tickets cobrados</div>
+      </div>
+      <div class="kpi-card p-4 col-span-2 lg:col-span-1">
+        <div class="flex items-start justify-between mb-2">
+          <span class="text-2xl">🏪</span>
+        </div>
+        <div class="flex gap-4 mt-1">
+          <div>
+            <div id="cajasKpiAbiertas" class="text-2xl font-bold text-emerald-400">—</div>
+            <div class="text-xs text-slate-500">Abiertas</div>
+          </div>
+          <div>
+            <div id="cajasKpiCerradas" class="text-2xl font-bold text-slate-400">—</div>
+            <div class="text-xs text-slate-500">Cerradas hoy</div>
+          </div>
+          <div>
+            <div id="cajasKpiAnulados" class="text-2xl font-bold text-red-400">—</div>
+            <div class="text-xs text-slate-500">Anulados</div>
+          </div>
+        </div>
+      </div>
     </div>
-    <div id="cajasEmpty" class="hidden text-center py-12 text-slate-500 text-sm">
-      Sin cierres de caja registrados
+
+    <!-- Cajas ABIERTAS en vivo -->
+    <div id="cajasVivoWrap" class="mb-5 hidden">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="dot-green"></span>
+        <h3 class="font-semibold text-sm text-slate-200">Cajas Abiertas Ahora</h3>
+        <span id="cajasVivoCount" class="badge badge-green text-xs">0</span>
+      </div>
+      <div id="cajasVivoGrid" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4"></div>
     </div>
-    <table id="cajasTbl" class="tbl hidden">
-      <thead>
-        <tr>
-          <th>Fecha cierre</th>
-          <th>Vendedor</th>
-          <th>Zona</th>
-          <th>Apertura</th>
-          <th>Declarado</th>
-          <th>Diferencia</th>
-          <th>Reporte</th>
-        </tr>
-      </thead>
-      <tbody id="cajasTbody"></tbody>
-    </table>
-  </div>
+
+    <!-- Gráficos -->
+    <div id="cajasChartsWrap" class="grid lg:grid-cols-2 gap-4 mb-5 hidden">
+      <div class="card p-4">
+        <h3 class="font-semibold text-sm text-slate-200 mb-3">Ventas por Caja (hoy)</h3>
+        <div style="position:relative;height:200px"><canvas id="chartCajasBars"></canvas></div>
+      </div>
+      <div class="card p-4">
+        <h3 class="font-semibold text-sm text-slate-200 mb-3">Métodos de Pago (hoy)</h3>
+        <div style="position:relative;height:200px"><canvas id="chartCajasMetodo"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Historial del día (cajas cerradas) -->
+    <div id="cajasHistorialWrap" class="hidden">
+      <h3 class="font-semibold text-sm text-slate-300 mb-3">Cierres de Hoy</h3>
+      <div class="card overflow-hidden">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>Cajero</th>
+              <th>Zona</th>
+              <th>Apertura → Cierre</th>
+              <th>Vendido</th>
+              <th>Tickets</th>
+              <th>Diferencia</th>
+              <th>Reporte</th>
+            </tr>
+          </thead>
+          <tbody id="cajasHistTbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Empty state -->
+    <div id="cajasEmpty" class="hidden text-center py-16 text-slate-500 text-sm">
+      <div class="text-4xl mb-3">🗃️</div>
+      <div class="font-medium text-slate-400 mb-1">Sin actividad de cajas hoy</div>
+      <div class="text-xs">Las cajas aparecerán aquí en tiempo real cuando se abran</div>
+    </div>
+
+  </div><!-- /cajasContent -->
 </section>
 
 <!-- Toast -->
