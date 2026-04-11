@@ -1429,18 +1429,25 @@ const MOS = (() => {
         }
       }
 
-      // ── Historial cierres del día ─────────────────────────────
+      // ── Historial cierres (últimos 30 días) ──────────────────
       const histWrap  = $('cajasHistorialWrap');
       const histTbody = $('cajasHistTbody');
+      const histTitle = $('cajasHistTitle');
       if (cerradas.length > 0 && histWrap && histTbody) {
         histWrap.classList.remove('hidden');
+        if (histTitle) histTitle.textContent = 'Historial de Cierres (' + cerradas.length + ')';
         histTbody.innerHTML = cerradas.map(c => {
           const dif    = c.diferencia;
           const difCls = dif === null ? 'badge-gray' : dif > 0.05 ? 'badge-green' : dif < -0.05 ? 'badge-red' : 'badge-green';
           const difStr = dif === null ? '—' : (dif >= 0 ? '+' : '') + fmtMoney(dif);
+          const fecha  = s => (s || '').substring(0, 16).replace('T', ' ');
           const hora   = s => (s || '').substring(11, 16);
+          const esHoy  = (c.fechaCierre || '').startsWith(new Date().toISOString().substring(0,10));
           return `<tr>
-            <td class="font-medium">${c.vendedor || '—'}</td>
+            <td>
+              <div class="font-medium">${c.vendedor || '—'}</div>
+              <div class="text-xs text-slate-500">${esHoy ? 'Hoy ' + hora(c.fechaCierre) : fecha(c.fechaCierre)}</div>
+            </td>
             <td><span class="badge badge-blue">${c.zona || c.estacion || '—'}</span></td>
             <td class="text-slate-400 text-xs">${hora(c.fechaApertura)} → ${hora(c.fechaCierre)}</td>
             <td class="font-semibold">${fmtMoney(c.totalVentas)}</td>
