@@ -213,7 +213,7 @@ const MOS = (() => {
 
   function _applySession() {
     if (!S.session) return;
-    const isMaster = S.session.rol === 'master';
+    const isMaster = (S.session.rol || '').toLowerCase() === 'master';
     // Sidebar session display
     const av = $('sessionAvatar');
     const nm = $('sessionName');
