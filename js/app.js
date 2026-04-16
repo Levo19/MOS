@@ -18,7 +18,10 @@ const MOS = (() => {
     alertas: [],
     charts: {},
     loaded: {},
-    session: null
+    session: null,
+    equivMap: {},
+    _editingPrecioId: null,
+    _ecoData: null
   };
 
   function _getSession()      { try { return JSON.parse(localStorage.getItem(SESSION_KEY)); } catch { return null; } }
@@ -85,7 +88,7 @@ const MOS = (() => {
 
     // FAB visibility
     const fab = $('fab');
-    if (fab) fab.classList.toggle('visible', ['catalogo','proveedores'].includes(viewName));
+    if (fab) fab.classList.toggle('visible', viewName === 'proveedores');
 
     // Config: show first panel
     if (viewName === 'config') {
@@ -214,6 +217,9 @@ const MOS = (() => {
   function _applySession() {
     if (!S.session) return;
     const isMaster = (S.session.rol || '').toLowerCase() === 'master';
+    // Iniciar pre-carga en background al autenticar
+    _startCajasRefresh();
+    _startCatRefresh();
     // Sidebar session display
     const av = $('sessionAvatar');
     const nm = $('sessionName');
@@ -228,9 +234,12 @@ const MOS = (() => {
   }
 
   function logout() {
+    _stopCajasRefresh();
+    _stopCatRefresh();
     _clearSession();
     S.session = null;
     S.loaded = {};
+    S._cajasLoaded = false; S._todasCajas = null; S._todosTickets = null;
     _showLogin();
   }
 
@@ -263,11 +272,77 @@ const MOS = (() => {
     if (S.view !== 'dashboard') loadView('dashboard');
   }
 
+  // ── ECO STATUS (llamada independiente, se puede refrescar sola) ─
+  let _ecoRefreshTimer = null;
+
+  function _setEcoDots(eco) {
+    const ecoWhDot   = $('ecoWhDot');
+    const ecoWhLabel = $('ecoWhLabel');
+    const ecoMeDot   = $('ecoMeDot');
+    const ecoMeLabel = $('ecoMeLabel');
+
+    const _colorClass = c => c === 'green' ? 'dot-green' : c === 'yellow' ? 'dot-yellow' : c === 'red' ? 'dot-red' : 'dot-gray';
+    const _colorLabel = (c, err) => {
+      if (err) return err.includes('_SS_ID') || err.includes('no configurado') ? 'Sin configurar' : 'Error';
+      return c === 'green' ? 'Activo' : c === 'yellow' ? 'Sin actividad' : c === 'red' ? 'Error' : '—';
+    };
+
+    if (eco && eco.wh) {
+      if (ecoWhDot) ecoWhDot.className = _colorClass(eco.wh.color);
+      if (ecoWhLabel) ecoWhLabel.textContent = _colorLabel(eco.wh.color, eco.wh.error);
+      if (eco.wh.color !== 'red') setStatus(true);
+    } else {
+      if (ecoWhDot) { ecoWhDot.className = 'dot-red'; }
+      if (ecoWhLabel) ecoWhLabel.textContent = 'Error';
+    }
+
+    if (eco && eco.me) {
+      if (ecoMeDot) ecoMeDot.className = _colorClass(eco.me.color);
+      if (ecoMeLabel) ecoMeLabel.textContent = _colorLabel(eco.me.color, eco.me.error);
+    } else {
+      if (ecoMeDot) { ecoMeDot.className = 'dot-red'; }
+      if (ecoMeLabel) ecoMeLabel.textContent = 'Error';
+    }
+  }
+
+  function _setEcoLoading() {
+    const ecoWhDot   = $('ecoWhDot');
+    const ecoWhLabel = $('ecoWhLabel');
+    const ecoMeDot   = $('ecoMeDot');
+    const ecoMeLabel = $('ecoMeLabel');
+    if (ecoWhDot)   ecoWhDot.className = 'dot-loading';
+    if (ecoWhLabel) ecoWhLabel.textContent = 'Conectando...';
+    if (ecoMeDot)   ecoMeDot.className = 'dot-loading';
+    if (ecoMeLabel) ecoMeLabel.textContent = 'Conectando...';
+  }
+
+  async function _refreshEcoStatus() {
+    try {
+      const eco = await API.get('getEcoStatus', {});
+      S._ecoData = eco || null;
+      _setEcoDots(eco);
+    } catch(e) {
+      S._ecoData = null;
+      const ecoWhDot = $('ecoWhDot'); if (ecoWhDot) ecoWhDot.className = 'dot-red';
+      const ecoWhLabel = $('ecoWhLabel'); if (ecoWhLabel) ecoWhLabel.textContent = 'Error';
+      const ecoMeDot = $('ecoMeDot'); if (ecoMeDot) ecoMeDot.className = 'dot-red';
+      const ecoMeLabel = $('ecoMeLabel'); if (ecoMeLabel) ecoMeLabel.textContent = 'Error';
+    }
+  }
+
+  function _startEcoAutoRefresh() {
+    if (_ecoRefreshTimer) clearInterval(_ecoRefreshTimer);
+    _ecoRefreshTimer = setInterval(_refreshEcoStatus, 60000); // cada 60s
+  }
+
   // ── DASHBOARD ───────────────────────────────────────────────
   async function loadDashboard() {
     if (!API.isConfigured()) return;
 
-    // Load in parallel
+    // Mostrar "Conectando..." inmediatamente en los dots
+    _setEcoLoading();
+
+    // Load in parallel (eco independiente para no bloquear KPIs)
     const [rotRes, alertasRes, mermasRes, prodRes] = await Promise.allSettled([
       API.get('getRotacion', {}),
       API.get('getAlertasWarehouse', {}),
@@ -275,9 +350,9 @@ const MOS = (() => {
       API.get('getProductos', { estado: '1' })
     ]);
 
-    // Ecosystem status
-    const ecoWhDot   = $('ecoWhDot');
-    const ecoWhLabel = $('ecoWhLabel');
+    // Eco status en paralelo pero sin bloquear el resto
+    _refreshEcoStatus();
+    _startEcoAutoRefresh();
 
     // KPI — stock bajo
     const rot = rotRes.status === 'fulfilled' ? rotRes.value : [];
@@ -286,17 +361,6 @@ const MOS = (() => {
     if (kpiSV) { kpiSV.textContent = stockBajo; }
     if (stockBajo > 0) {
       const b = $('kpiStockBadge'); if (b) b.classList.remove('hidden');
-    }
-
-    // Update ecosystem WH status
-    if (ecoWhDot && ecoWhLabel) {
-      if (rotRes.status === 'fulfilled') {
-        ecoWhDot.className = 'dot-green'; ecoWhLabel.textContent = 'Conectado';
-        setStatus(true);
-      } else {
-        ecoWhDot.className = 'dot-red';
-        ecoWhLabel.textContent = rotRes.reason?.message?.includes('WH_SS_ID') ? 'Sin configurar' : 'Error';
-      }
     }
 
     // KPI — vencimientos
@@ -401,145 +465,889 @@ const MOS = (() => {
     }).join('');
   }
 
-  // ── CATÁLOGO ────────────────────────────────────────────────
+  // ── CATÁLOGO ─────────────────────────────────────────────────
+  const CAT_CACHE_KEY = 'MOS_CAT_CACHE';
+  let _catTimer  = null;
+  let _catGroups = {}; // { [skuBase]: { base, pres[] } } — para acceso desde guardarPrecioRapido
+
   async function loadCatalogo() {
-    if (!API.isConfigured()) {
-      $('listCatalogo').innerHTML = '<p class="text-slate-500 text-sm text-center py-8">Configura el GAS URL para ver el catálogo.</p>';
-      return;
-    }
-    try {
-      const [prods] = await Promise.all([API.get('getProductos', {})]);
-      S.productos = prods || [];
-      // Load categories
-      try {
-        const cats = await API.get('getProductos', { soloCategoria: '1' });
-      } catch(e) {}
+    // Si el timer ya precargó datos frescos, renderizar al instante sin fetch
+    if (S.productos && S.productos.length > 0) {
       populateCatFiltro();
       renderCatalogo();
-    } catch (e) {
-      $('listCatalogo').innerHTML = `<p class="text-red-400 text-sm text-center py-8">${e.message}</p>`;
-      throw e;
+      return;
     }
+
+    // Fallback: cache local → render inmediato, luego fetch fresco
+    const cached = _catLoadCache();
+    if (cached) {
+      S.productos = cached.productos || cached;
+      S.equivMap  = cached.equivMap  || {};
+      populateCatFiltro();
+      renderCatalogo();
+    }
+
+    // Fetch fresco (si no lo hizo el timer aún)
+    try {
+      const [freshProd, freshEquiv] = await Promise.all([
+        API.get('getProductos', {}),
+        API.get('getEquivalencias', { activo: '1' }).catch(() => [])
+      ]);
+      const productos = freshProd || [];
+      const equivMap  = {};
+      (freshEquiv || []).forEach(e => {
+        const k = e.skuBase || e.idProducto;
+        if (k) equivMap[k] = (equivMap[k] || 0) + 1;
+      });
+      const changed = JSON.stringify(productos) !== JSON.stringify(S.productos);
+      S.productos = productos;
+      S.equivMap  = equivMap;
+      _catSaveCache({ productos, equivMap });
+      if (changed || !cached) { populateCatFiltro(); renderCatalogo(); }
+    } catch(e) {
+      if (!cached && !(S.productos && S.productos.length)) {
+        const el = $('listCatalogo');
+        if (el) el.innerHTML = `<p class="text-red-400 text-sm text-center py-8">${e.message}</p>`;
+        throw e;
+      }
+    }
+  }
+
+  // ── Refresh silencioso del catálogo cada 60s ────────────────
+  let _catRefreshTimer = null;
+
+  async function _catalogoRefreshSilencioso() {
+    if (!API.isConfigured()) return;
+    try {
+      const [freshProd, freshEquiv] = await Promise.all([
+        API.get('getProductos', {}),
+        API.get('getEquivalencias', { activo: '1' }).catch(() => [])
+      ]);
+      const productos = freshProd || [];
+
+      // Reconstruir equivMap
+      const equivMap = {};
+      (freshEquiv || []).forEach(e => {
+        const k = e.skuBase || e.idProducto;
+        if (k) equivMap[k] = (equivMap[k] || 0) + 1;
+      });
+
+      // ── Diff: qué cambió ──────────────────────────────────
+      const prevMap = {};
+      (S.productos || []).forEach(p => { prevMap[p.idProducto] = p; });
+      const prevIds = new Set(Object.keys(prevMap));
+      const newIds  = new Set(productos.map(p => p.idProducto));
+
+      const added   = productos.filter(p => !prevIds.has(p.idProducto));
+      const removed = (S.productos||[]).filter(p => !newIds.has(p.idProducto));
+      const changed = productos.filter(p => {
+        const prev = prevMap[p.idProducto];
+        if (!prev) return false;
+        return String(prev.precioVenta) !== String(p.precioVenta)
+            || String(prev.precioCosto) !== String(p.precioCosto)
+            || String(prev.descripcion) !== String(p.descripcion)
+            || String(prev.estado)      !== String(p.estado);
+      });
+
+      const sinCambios = added.length === 0 && removed.length === 0 && changed.length === 0
+                      && JSON.stringify(equivMap) === JSON.stringify(S.equivMap);
+      if (sinCambios) return; // nada que hacer
+
+      // ── Actualizar estado ─────────────────────────────────
+      S.productos = productos;
+      S.equivMap  = equivMap;
+      _catSaveCache({ productos, equivMap });
+
+      // ── Actualizar dashboard KPI si visible ───────────────
+      const kpiProd = $('dashTotalProductos');
+      if (kpiProd) {
+        const activos = productos.filter(p => !p.estado || String(p.estado) === '1').length;
+        _setVal('dashTotalProductos', activos, kpiProd.textContent !== String(activos));
+      }
+
+      // ── Si no estamos en catálogo, terminar aquí ──────────
+      if (S.view !== 'catalogo') return;
+
+      const container = $('listCatalogo');
+      if (!container) return;
+
+      // ── Actualización in-place (solo precios/costos) ──────
+      // Si no hay nuevos ni eliminados, actualizar solo las celdas que cambiaron
+      if (added.length === 0 && removed.length === 0 && changed.length > 0) {
+        let allInPlace = true;
+        changed.forEach(p => {
+          const priceEl = document.querySelector(`[data-cat-precio="${p.idProducto}"]`);
+          const costoEl = document.querySelector(`[data-cat-costo="${p.idProducto}"]`);
+          const cardEl  = document.querySelector(`[data-cat-id="${p.idProducto}"]`);
+          if (priceEl) {
+            const nuevo = fmtMoney(p.precioVenta);
+            if (priceEl.textContent !== nuevo) {
+              priceEl.textContent = nuevo;
+              priceEl.classList.remove('val-flash'); priceEl.offsetHeight; priceEl.classList.add('val-flash');
+            }
+          } else { allInPlace = false; } // no está visible (filtrado/fuera de viewport)
+          if (costoEl) {
+            const nuevo = 'Costo: ' + fmtMoney(p.precioCosto);
+            if (costoEl.textContent !== nuevo) { costoEl.textContent = nuevo; }
+          }
+          // Si cambió estado (activo/inactivo), actualizar clase de la card
+          if (cardEl) {
+            const activo = !p.estado || String(p.estado) === '1';
+            cardEl.classList.toggle('cat-inactive', !activo);
+          }
+        });
+
+        // Si todos los cambios fueron in-place, solo notificar discretamente
+        if (allInPlace || changed.length <= 5) {
+          const msg = changed.length === 1
+            ? `Precio actualizado: ${changed[0].descripcion || changed[0].idProducto}`
+            : `${changed.length} precios actualizados`;
+          toast(msg, 'ok');
+          return;
+        }
+      }
+
+      // ── Re-render suave (nuevos, eliminados, o cambios masivos) ──
+      const scrollY = container.scrollTop;
+      container.style.transition = 'opacity .18s ease';
+      container.style.opacity    = '0';
+      await new Promise(r => setTimeout(r, 180));
+
+      populateCatFiltro();
+      renderCatalogo();
+      container.scrollTop = scrollY;
+
+      // Fade in
+      container.style.opacity = '1';
+      setTimeout(() => { container.style.transition = ''; }, 200);
+
+      // Highlight cards nuevas
+      added.forEach(p => {
+        const card = document.querySelector(`[data-cat-id="${p.idProducto}"]`);
+        if (card) { card.style.animation = 'cardSlideIn .4s ease'; }
+      });
+
+      // Toast informativo
+      const msgs = [];
+      if (added.length)   msgs.push(`+${added.length} nuevo${added.length>1?'s':''}`);
+      if (removed.length) msgs.push(`−${removed.length} eliminado${removed.length>1?'s':''}`);
+      if (changed.length && !added.length && !removed.length) msgs.push(`${changed.length} precio${changed.length>1?'s':''} actualizado${changed.length>1?'s':''}`);
+      if (msgs.length) toast('Catálogo: ' + msgs.join(', '), 'ok');
+
+    } catch(e) { console.warn('[CatRefresh]', e.message); }
+  }
+
+  function _startCatRefresh() {
+    _stopCatRefresh();
+    _catalogoRefreshSilencioso(); // precarga inmediata
+    _catRefreshTimer = setInterval(_catalogoRefreshSilencioso, 60000);
+  }
+  function _stopCatRefresh() {
+    if (_catRefreshTimer) { clearInterval(_catRefreshTimer); _catRefreshTimer = null; }
+  }
+
+  function _catLoadCache() {
+    try {
+      const raw = localStorage.getItem(CAT_CACHE_KEY);
+      if (!raw) return null;
+      const obj = JSON.parse(raw);
+      // TTL: 30 minutos
+      if (!obj || !obj.ts || !obj.data || Date.now() - obj.ts > 30 * 60 * 1000) return null;
+      return obj.data;
+    } catch { return null; }
+  }
+  function _catSaveCache(data) {
+    try { localStorage.setItem(CAT_CACHE_KEY, JSON.stringify({ ts: Date.now(), data })); } catch {}
   }
 
   function populateCatFiltro() {
-    const sel = $('filtroCategoria');
-    if (!sel) return;
     const cats = [...new Set(S.productos.map(p => p.idCategoria).filter(Boolean))].sort();
-    sel.innerHTML = '<option value="">Todas las categorías</option>' +
-      cats.map(c => `<option value="${c}">${c}</option>`).join('');
-
-    // Also fill product category select in modal
+    const opts = '<option value="">Todas las categorías</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
+    const sel = $('filtroCategoria'); if (sel) sel.innerHTML = opts;
     const prodCat = $('prodCategoria');
-    if (prodCat) {
-      prodCat.innerHTML = '<option value="">— seleccionar —</option>' +
-        cats.map(c => `<option value="${c}">${c}</option>`).join('');
-    }
+    if (prodCat) prodCat.innerHTML = '<option value="">— seleccionar —</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
   }
 
-  function filterCatalogo() { renderCatalogo(); }
+  function filterCatalogo() {
+    clearTimeout(_catTimer);
+    _catTimer = setTimeout(() => renderCatalogo(), 160);
+  }
 
-  function setCatTab(tab) {
-    S.catTab = tab;
-    ['base','deriv','todos'].forEach(t => {
-      const b = $('tab' + (t === 'base' ? 'Base' : t === 'deriv' ? 'Deriv' : 'Todos') + 'Btn');
-      if (b) b.classList.toggle('active', t === tab);
+  function setCatTab(tab) { S.catTab = tab; renderCatalogo(); } // kept for compat
+
+  // ── Search scoring ──────────────────────────────────────────
+  function _norm(s) {
+    return (s || '').toString().toLowerCase().normalize('NFD').replace(/\p{Mn}/gu, '');
+  }
+  function _catScore(p, qn, words) {
+    if (!qn) return 1;
+    const desc = _norm(p.descripcion);
+    const cb   = _norm(p.codigoBarra);
+    const sku  = _norm(p.skuBase || p.idProducto);
+    if (cb === qn || sku === qn)                         return 100;
+    if (cb.startsWith(qn))                               return 93;
+    if (desc === qn)                                     return 88;
+    if (desc.startsWith(qn))                             return 82;
+    if (words.length > 1 && words.every(w => desc.includes(w))) return 76;
+    if (cb.includes(qn))                                 return 68;
+    if (desc.includes(qn))                               return 62;
+    if (_norm(p.idCategoria).includes(qn))               return 38;
+    if (words.some(w => desc.includes(w) || cb.includes(w))) return 22;
+    return 0;
+  }
+  function _highlight(text, words) {
+    if (!words.length || !text) return text || '';
+    let r = String(text);
+    words.forEach(w => {
+      if (!w) return;
+      const re = new RegExp('(' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+      r = r.replace(re, '<mark>$1</mark>');
     });
-    renderCatalogo();
+    return r;
   }
 
+  // ── Render ──────────────────────────────────────────────────
   function renderCatalogo() {
     const container = $('listCatalogo');
     if (!container) return;
 
-    const q    = ($('searchCatalogo')?.value || '').toLowerCase();
+    const rawQ = ($('searchCatalogo')?.value || '').trim();
     const cat  = $('filtroCategoria')?.value || '';
+    const qn   = _norm(rawQ);
+    const words = qn.split(/\s+/).filter(Boolean);
 
-    let prods = S.productos.filter(p => {
-      if (cat && p.idCategoria !== cat) return false;
-      if (q) {
-        const hay = ((p.descripcion || '') + (p.codigoBarra || '') + (p.skuBase || '') + (p.marca || '')).toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
+    // Build groups: agrupar por skuBase
+    // Base = producto donde idProducto === skuBase (auto-referencia)
+    // Presentación = producto donde skuBase apunta a otro idProducto
+    const groups = {};
+    S.productos.forEach(p => {
+      const sku = String(p.skuBase || p.idProducto).trim();
+      if (!groups[sku]) groups[sku] = { base: null, pres: [] };
+      // Es base si: idProducto === skuBase (auto-ref) O factor = 1 o vacío (unidad mínima)
+      const factor = parseFloat(p.factorConversion) || 1;
+      const esBase = String(p.idProducto).trim() === sku ||
+                     !p.skuBase ||
+                     (factor === 1 && !groups[sku].base);
+      if (esBase) groups[sku].base = p;
+      else        groups[sku].pres.push(p);
+    });
+    // Ordenar presentaciones por factor ascendente
+    Object.values(groups).forEach(g => {
+      if (!g.base && g.pres.length) g.base = g.pres.shift();
+      g.pres.sort((a, b) => (parseFloat(a.factorConversion)||1) - (parseFloat(b.factorConversion)||1));
+    });
+    _catGroups = groups; // guardar para acceso externo (ajuste de precios)
+
+    // Score and filter
+    let result = Object.values(groups).filter(g => g.base).map(g => {
+      if (cat && g.base.idCategoria !== cat) return null;
+      const baseScore = _catScore(g.base, qn, words);
+      const presScore = g.pres.reduce((mx, p) => Math.max(mx, _catScore(p, qn, words)), 0);
+      const score = Math.max(baseScore, presScore);
+      if (qn && score === 0) return null;
+      return { ...g, score };
+    }).filter(Boolean);
+
+    // Sort: by score desc, then by description
+    result.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const da = String(a.base.descripcion || '');
+      const db = String(b.base.descripcion || '');
+      return da < db ? -1 : da > db ? 1 : 0;
     });
 
-    if (S.catTab === 'base')  prods = prods.filter(p => !p.codigoProductoBase || p.codigoProductoBase === '');
-    if (S.catTab === 'deriv') prods = prods.filter(p => p.codigoProductoBase && p.codigoProductoBase !== '');
+    // Stats
+    const stats = $('catStats');
+    if (stats) {
+      const total = Object.keys(groups).filter(k => groups[k].base).length;
+      stats.textContent = qn
+        ? `${result.length} resultado${result.length !== 1 ? 's' : ''} de ${total} productos`
+        : `${total} grupos · ${S.productos.length} ítems`;
+    }
 
-    if (!prods.length) {
-      container.innerHTML = '<p class="text-slate-500 text-sm text-center py-12">Sin resultados</p>';
+    if (!result.length) {
+      container.innerHTML = `<div class="text-center py-16 text-slate-500">
+        <div class="text-4xl mb-3">🔍</div>
+        <div class="font-medium">Sin resultados para "<span class="text-slate-300">${rawQ}</span>"</div>
+        <div class="text-xs mt-1">Prueba con el código de barra o parte del nombre</div>
+      </div>`;
       return;
     }
 
-    // Group: base products + their presentaciones
-    if (S.catTab === 'base' || S.catTab === 'todos') {
-      const bases      = prods.filter(p => !p.codigoProductoBase || p.codigoProductoBase === '');
-      const derivados  = S.productos.filter(p => p.codigoProductoBase && p.codigoProductoBase !== '');
+    container.innerHTML = result.map(({ base, pres, score }) => {
+      const eid   = CSS.escape(base.idProducto);
+      const activo = !base.estado || String(base.estado) === '1';
+      const hlDesc = _highlight(base.descripcion || '—', words);
 
-      container.innerHTML = bases.map(base => {
-        const derivs = derivados.filter(d => d.codigoProductoBase === base.idProducto);
-        return `
-          <div class="card mb-2 overflow-hidden">
-            <div class="flex items-center gap-3 p-3 cursor-pointer hover:bg-slate-800/30" onclick="MOS.toggleDerivs('${base.idProducto}')">
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2 flex-wrap">
-                  <span class="font-medium text-slate-200 text-sm">${base.descripcion || '—'}</span>
-                  ${base.marca ? `<span class="text-xs text-slate-500">${base.marca}</span>` : ''}
-                  <span class="badge badge-blue text-xs">${base.unidad || ''}</span>
-                  ${!base.estado || base.estado == '1' ? '' : '<span class="badge badge-gray">inactivo</span>'}
-                </div>
-                <div class="flex items-center gap-3 mt-1">
-                  <span class="text-xs text-slate-500">${base.idProducto}</span>
-                  ${base.codigoBarra ? `<span class="text-xs text-slate-600">☰ ${base.codigoBarra}</span>` : ''}
-                </div>
-              </div>
-              <div class="flex items-center gap-3 shrink-0">
-                <div class="text-right hidden sm:block">
-                  <div class="text-sm font-semibold text-indigo-400">${fmtMoney(base.precioVenta)}</div>
-                  <div class="text-xs text-slate-500">Costo: ${fmtMoney(base.precioCosto)}</div>
-                </div>
-                <button onclick="event.stopPropagation();MOS.abrirModalPrecio('${base.idProducto}')" class="text-xs text-slate-400 hover:text-indigo-400 px-2 py-1 rounded border border-slate-700 hover:border-indigo-500 transition-colors">💰</button>
-                <button onclick="event.stopPropagation();MOS.abrirModalProducto('${base.idProducto}')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700 hover:border-slate-500 transition-colors">✏️</button>
-              </div>
-            </div>
-            ${derivs.length ? `
-              <div id="derivs-${base.idProducto}" class="hidden border-t border-slate-800 px-3 py-2">
-                <div class="text-xs text-slate-500 mb-2">Presentaciones (${derivs.length})</div>
-                <div class="flex flex-wrap gap-2">
-                  ${derivs.map(d => `
-                    <div class="presentacion-chip cursor-pointer hover:bg-indigo-500/20" onclick="MOS.abrirModalProducto('${d.idProducto}')">
-                      ${d.descripcion || d.idProducto}
-                      <span class="text-indigo-300 ml-1">${fmtMoney(d.precioVenta)}</span>
+      // Badges
+      const badgeCat  = base.idCategoria ? `<span class="badge badge-gray text-xs">${base.idCategoria}</span>` : '';
+      const badgeEnv  = base.esEnvasable == '1' ? `<span class="badge badge-yellow text-xs">⚗️ Envasable</span>` : '';
+      const badgePres = pres.length ? `<span class="badge badge-blue text-xs cursor-pointer" onclick="event.stopPropagation();MOS.togglePresentaciones('${base.idProducto}')">📦 ${pres.length} presentacion${pres.length !== 1 ? 'es' : ''}</span>` : '';
+      const badgeInac = activo ? '' : `<span class="badge badge-gray text-xs">Inactivo</span>`;
+
+      // Equivalencias count para el skuBase
+      const equivCount = S.equivMap[base.skuBase || base.idProducto] || 0;
+
+      // Meta tags: barcode + equivalencias + brand
+      const barcodeTag = base.codigoBarra
+        ? `<span class="cat-barcode">▌${base.codigoBarra}</span>` : '';
+      const equivTag   = equivCount > 0
+        ? `<span class="cat-equiv">+${equivCount} equiv.</span>` : '';
+      const brandTag   = base.marca
+        ? `<span class="cat-brand">${base.marca}</span>` : '';
+
+      // Pre-computar alertas de cada presentación
+      const presInfo = pres.map(d => {
+        const factor         = parseFloat(d.factorConversion) || 1;
+        const precioActual   = parseFloat(d.precioVenta) || 0;
+        const precioEsperado = parseFloat(base.precioVenta) * factor;
+        const coherente      = precioEsperado <= 0 || factor >= 1 || precioActual >= precioEsperado * 0.95;
+        const factorRep      = factor === 1 && (d.codigoBarra || '') !== (base.codigoBarra || '');
+        return { d, factor, precioActual, precioEsperado, coherente, factorRep };
+      });
+      const hasAnyAlert = presInfo.some(a => !a.coherente || a.factorRep);
+
+      // Presentaciones con expand animado
+      const presHtml = pres.length ? `
+        <div class="pres-wrap" id="pres-${eid}">
+          <div class="pres-inner">
+            <div class="px-4 pb-4 pt-3 border-t border-slate-800/80 space-y-2">
+              <div class="text-xs text-slate-500 font-medium mb-2">📦 Presentaciones (${pres.length})</div>
+              ${presInfo.map(({ d, factor, precioActual, precioEsperado, coherente, factorRep }) => {
+                const hlD       = _highlight(d.descripcion || d.idProducto, words);
+                const hasAlert  = !coherente || factorRep;
+                const precioClass = coherente ? 'pres-price-ok' : 'pres-price-err';
+                const alertHtml = [
+                  !coherente ? `<span class="pres-alert-badge">⚠ precio bajo</span><span class="pres-suggest">esperado: ${fmtMoney(precioEsperado)}</span>` : '',
+                  factorRep  ? `<span class="pres-alert-badge pres-alert-dup">⚠ factor repetido</span>` : ''
+                ].filter(Boolean).join('');
+                return `<div class="pres-chip${hasAlert ? ' border-amber-900/50' : ''}">
+                  <div class="min-w-0 flex-1">
+                    <div class="text-xs font-semibold text-slate-200 truncate">${hlD}</div>
+                    <div class="flex items-center gap-2 mt-0.5">
+                      ${d.codigoBarra ? `<span class="pres-code">▌${d.codigoBarra}</span>` : ''}
+                      <span class="pres-factor">×${factor}</span>
                     </div>
-                  `).join('')}
-                </div>
-              </div>
-            ` : ''}
-          </div>
-        `;
-      }).join('');
-    } else {
-      container.innerHTML = prods.map(p => `
-        <div class="card mb-2 p-3 flex items-center gap-3 hover:bg-slate-800/20">
-          <div class="flex-1 min-w-0">
-            <div class="font-medium text-slate-200 text-sm">${p.descripcion || '—'}</div>
-            <div class="flex items-center gap-2 mt-0.5">
-              <span class="text-xs text-slate-500">${p.idProducto}</span>
-              ${p.codigoProductoBase ? `<span class="text-xs text-slate-600">Base: ${p.codigoProductoBase}</span>` : ''}
+                    ${alertHtml ? `<div class="flex flex-wrap items-center gap-1 mt-0.5">${alertHtml}</div>` : ''}
+                  </div>
+                  <div class="flex items-center gap-2 shrink-0">
+                    <div class="${precioClass}">${fmtMoney(precioActual)}</div>
+                    <button class="cat-btn cat-btn-edit sm" onclick="event.stopPropagation();MOS.abrirModalProducto('${d.idProducto}')" title="Editar">✏️</button>
+                    <button class="cat-btn cat-btn-price sm" onclick="event.stopPropagation();MOS.abrirModalPrecioRapido('${d.idProducto}')" title="Precio">💰</button>
+                  </div>
+                </div>`;
+              }).join('')}
             </div>
           </div>
-          <div class="text-sm font-semibold text-indigo-400 shrink-0">${fmtMoney(p.precioVenta)}</div>
-          <button onclick="MOS.abrirModalPrecio('${p.idProducto}')" class="text-xs text-slate-400 hover:text-indigo-400 px-2 py-1 rounded border border-slate-700">💰</button>
-          <button onclick="MOS.abrirModalProducto('${p.idProducto}')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700">✏️</button>
+        </div>` : '';
+
+      return `<div class="cat-card mb-3${activo ? '' : ' cat-inactive'}" id="fc-${eid}" data-cat-id="${base.idProducto}">
+        <!-- Header -->
+        <div class="p-4 cursor-pointer select-none" onclick="MOS.togglePresentaciones('${base.idProducto}')">
+          <div class="flex items-start gap-3">
+            <div class="flex-1 min-w-0">
+              <div class="flex flex-wrap gap-1 mb-2">${badgeCat}${badgeEnv}${badgePres}${badgeInac}</div>
+              <div class="font-semibold text-slate-100 text-sm leading-snug mb-2">${hlDesc}</div>
+              <div class="flex flex-wrap items-center gap-1.5">
+                ${barcodeTag}${equivTag}${brandTag}
+              </div>
+            </div>
+            <div class="flex flex-col items-end gap-1.5 shrink-0 ml-2">
+              <div class="flex items-center gap-1.5">
+                ${hasAnyAlert ? `<span class="cat-alert-icon" title="Hay alertas en presentaciones">⚠</span>` : ''}
+                <div class="cat-price" data-cat-precio="${base.idProducto}">${fmtMoney(base.precioVenta)}</div>
+              </div>
+              ${base.precioCosto > 0 ? `<div class="cat-cost" data-cat-costo="${base.idProducto}">Costo: ${fmtMoney(base.precioCosto)}</div>` : ''}
+              <div class="flex gap-1.5 mt-1">
+                <button class="cat-btn cat-btn-edit"
+                        onclick="event.stopPropagation();MOS.abrirModalProducto('${base.idProducto}')"
+                        title="Editar producto">✏️</button>
+                <button class="cat-btn cat-btn-price"
+                        onclick="event.stopPropagation();MOS.abrirModalPrecioRapido('${base.idProducto}')"
+                        title="Cambiar precio">💰</button>
+                <button class="cat-btn" style="font-size:.8rem"
+                        onclick="event.stopPropagation();MOS.abrirAnalitica('${base.idProducto}')"
+                        title="Ver analítica" style="border-color:rgba(99,102,241,.3)">📊</button>
+              </div>
+            </div>
+          </div>
         </div>
-      `).join('');
+        ${presHtml}
+      </div>`;
+    }).join('');
+  }
+
+  function togglePresentaciones(idProducto) {
+    const el = document.getElementById('pres-' + CSS.escape(idProducto));
+    if (el) el.classList.toggle('open');
+  }
+
+  function toggleDerivs(id) { togglePresentaciones(id); } // backward compat
+
+  function abrirModalPrecioRapido(idProducto) {
+    const prod = S.productos.find(p => p.idProducto === idProducto);
+    if (!prod) return;
+    S._editingPrecioId = idProducto;
+    const nombre = $('qpNombre');
+    const inp    = $('qpInput');
+    if (nombre) nombre.textContent = prod.descripcion || idProducto;
+    if (inp) { inp.value = parseFloat(prod.precioVenta || 0).toFixed(2); }
+    const overlay = $('modalPrecioRapido');
+    if (overlay) overlay.classList.add('active');
+    setTimeout(() => { if (inp) { inp.focus(); inp.select(); } }, 280);
+  }
+
+  function cerrarModalPrecioRapido() {
+    const overlay = $('modalPrecioRapido');
+    if (overlay) overlay.classList.remove('active');
+    S._editingPrecioId = null;
+  }
+
+  async function guardarPrecioRapido() {
+    const idProducto = S._editingPrecioId;
+    if (!idProducto) return;
+    const inp    = $('qpInput');
+    const precio = parseFloat(inp ? inp.value : '');
+    if (isNaN(precio) || precio < 0) { toast('Precio inválido', 'error'); return; }
+
+    // Optimistic update
+    const prod = S.productos.find(p => p.idProducto === idProducto);
+    const prevPrecio = prod ? prod.precioVenta : null;
+    if (prod) prod.precioVenta = precio;
+    _catSaveCache({ productos: S.productos, equivMap: S.equivMap });
+    cerrarModalPrecioRapido();
+
+    try {
+      await API.post('publicarPrecio', { idProducto, nuevoPrecio: precio });
+      toast('Precio actualizado', 'ok');
+      renderCatalogo();
+      // Si es producto base y tiene presentaciones → ofrecer ajuste
+      const sku   = prod ? (prod.skuBase || prod.idProducto) : idProducto;
+      const grupo = _catGroups[sku];
+      // Solo aplica cuando el id guardado ES el base (mismo id que skuBase)
+      if (grupo && grupo.pres && grupo.pres.length && grupo.base && grupo.base.idProducto === idProducto) {
+        _abrirAjustePrecios(idProducto, precio, grupo.pres);
+      }
+    } catch(e) {
+      if (prod && prevPrecio !== null) prod.precioVenta = prevPrecio;
+      toast('Error: ' + e.message, 'error');
+      renderCatalogo();
     }
   }
 
-  function toggleDerivs(baseId) {
-    const el = $('derivs-' + baseId);
-    if (el) el.classList.toggle('hidden');
+  function _abrirAjustePrecios(idBase, nuevoPrecioBase, presentaciones) {
+    $('ajusteBasePrecio').textContent = fmtMoney(nuevoPrecioBase);
+    S._ajusteBase = { idBase, nuevoPrecioBase };
+    const list = $('ajusteList');
+    list.innerHTML = presentaciones.map((p, i) => {
+      const factor   = parseFloat(p.factorConversion) || 1;
+      const sugerido = nuevoPrecioBase * factor;
+      const actual   = parseFloat(p.precioVenta) || 0;
+      const id       = `ajCheck${i}`;
+      return `<label class="ajuste-row cursor-pointer" for="${id}">
+        <input type="checkbox" class="ajuste-check" id="${id}"
+               data-id="${p.idProducto}" data-precio="${sugerido.toFixed(2)}" checked>
+        <div class="ajuste-info min-w-0">
+          <div class="ajuste-name truncate">${p.descripcion || p.idProducto}</div>
+          <div class="ajuste-factor">Factor ×${factor} · ${p.unidad || 'UND'}</div>
+        </div>
+        <div class="ajuste-prices">
+          <div class="ajuste-current">${fmtMoney(actual)}</div>
+          <div class="ajuste-suggest">→ ${fmtMoney(sugerido)}</div>
+        </div>
+      </label>`;
+    }).join('');
+    openModal('modalAjustePrecios');
+  }
+
+  async function guardarAjustePrecios() {
+    const checks = document.querySelectorAll('#ajusteList input[type=checkbox]:checked');
+    if (!checks.length) { closeModal('modalAjustePrecios'); return; }
+    const updates = [];
+    checks.forEach(cb => updates.push({ idProducto: cb.dataset.id, precio: parseFloat(cb.dataset.precio) }));
+
+    try {
+      await Promise.all(updates.map(u =>
+        API.post('publicarPrecio', { idProducto: u.idProducto, nuevoPrecio: u.precio })
+          .then(() => {
+            const p = S.productos.find(x => x.idProducto === u.idProducto);
+            if (p) p.precioVenta = u.precio;
+          })
+      ));
+      _catSaveCache({ productos: S.productos, equivMap: S.equivMap });
+      toast(`${updates.length} precio${updates.length > 1 ? 's' : ''} actualizados`, 'ok');
+      closeModal('modalAjustePrecios');
+      renderCatalogo();
+    } catch(e) {
+      toast('Error al actualizar: ' + e.message, 'error');
+    }
+  }
+
+  // ── ANALÍTICA DE PRODUCTO ───────────────────────────────────
+  let _anState = { idProducto: null, dias: 30, data: null, charts: {} };
+
+  function _anCurrentId() { return _anState.idProducto; }
+
+  function stepperInc(id, step) {
+    const el = $(id); if (!el) return;
+    el.value = (parseFloat(el.value) || 0) + step;
+    el.dispatchEvent(new Event('input'));
+  }
+  function stepperDec(id, step) {
+    const el = $(id); if (!el) return;
+    el.value = Math.max(0, (parseFloat(el.value) || 0) - step);
+    el.dispatchEvent(new Event('input'));
+  }
+
+  function abrirAnalitica(idProducto) {
+    _anState.idProducto = idProducto;
+    _anState.dias = 30;
+    _anState.data = null;
+    // Mostrar nombre mientras carga
+    const prod = S.productos.find(p => p.idProducto === idProducto);
+    const lbl  = $('anLoadLabel');
+    if (lbl && prod) lbl.textContent = prod.descripcion || 'Cargando analítica…';
+    // Reset period buttons
+    ['7','30','90'].forEach(d => {
+      const b = $('anP' + d);
+      if (b) b.classList.toggle('active', d === '30');
+    });
+    // Mostrar overlay
+    const overlay = $('viewAnalitica');
+    if (overlay) overlay.classList.add('active');
+    document.body.style.overflow = 'hidden';
+    // Mostrar loading
+    $('anLoading').classList.remove('hidden');
+    $('anContent').classList.add('hidden');
+    _cargarAnalitica();
+  }
+
+  function cerrarAnalitica() {
+    const overlay = $('viewAnalitica');
+    if (overlay) overlay.classList.remove('active');
+    document.body.style.overflow = '';
+    // Destruir charts para liberar memoria
+    Object.values(_anState.charts).forEach(c => { try { c.destroy(); } catch {} });
+    _anState.charts = {};
+  }
+
+  function setAnPeriodo(dias) {
+    _anState.dias = dias;
+    ['7','30','90'].forEach(d => {
+      const b = $('anP' + d);
+      if (b) b.classList.toggle('active', String(d) === String(dias));
+    });
+    $('anLoading').classList.remove('hidden');
+    $('anContent').classList.add('hidden');
+    _cargarAnalitica();
+  }
+
+  async function _cargarAnalitica() {
+    try {
+      const d = await API.get('getAnaliticaProducto', {
+        idProducto: _anState.idProducto,
+        dias:       String(_anState.dias)
+      });
+      _anState.data = d;
+      _renderAnalitica(d);
+    } catch(e) {
+      $('anLoading').innerHTML = `<div class="text-red-400 text-sm">Error: ${e.message}</div>`;
+    }
+  }
+
+  function _renderAnalitica(d) {
+    const p = d.producto;
+
+    // Header
+    $('anNombreProd').textContent  = p.descripcion;
+    $('anSubtitleProd').textContent = `${p.idCategoria || 'Producto'} · ${_anState.dias}D`;
+
+    // Conexiones badges
+    const cb = $('anConexBadges');
+    if (cb) {
+      cb.classList.remove('hidden');
+      cb.innerHTML = `
+        <span class="an-conn-badge ${d.conexiones.me ? 'an-conn-on' : 'an-conn-off'}">ME ${d.conexiones.me ? '●' : '○'}</span>
+        <span class="an-conn-badge ${d.conexiones.wh ? 'an-conn-on' : 'an-conn-off'}">WH ${d.conexiones.wh ? '●' : '○'}</span>`;
+    }
+
+    // Stock min/max en action bar
+    const ami = $('anEditStockMin'), amx = $('anEditStockMax');
+    if (ami) ami.value = p.stockMinimo || 0;
+    if (amx) amx.value = p.stockMaximo || 0;
+    ['anUndMin','anUndMax'].forEach(id => { const el = $(id); if (el) el.textContent = p.unidad; });
+
+    // ── KPIs ────────────────────────────────────────────────────
+    const dias = _anState.dias;
+    const prom = d.ventas.totalUnidades > 0 ? (d.ventas.totalImporte / d.ventas.totalUnidades).toFixed(2) : '—';
+    const margenColor = d.financiero.margenPct >= 30 ? '#22c55e' : d.financiero.margenPct >= 15 ? '#f59e0b' : '#ef4444';
+    const stockColor  = d.stock.total <= d.stock.minimo ? '#ef4444'
+                      : d.stock.total < d.stock.maximo  ? '#f59e0b' : '#22c55e';
+    const cobColor    = !d.proyeccion.coberturaDias ? '#64748b'
+                      : d.proyeccion.coberturaDias < 7  ? '#ef4444'
+                      : d.proyeccion.coberturaDias < 14 ? '#f59e0b' : '#22c55e';
+
+    $('anKpis').innerHTML = [
+      { label: `Vendidas (${dias}D)`, value: _fmt(d.ventas.totalUnidades, 1), sub: `${p.unidad} · ${d.ventas.promDia.toFixed(1)}/día`, color: '#6366f1', icon: '📦' },
+      { label: `Ingresos (${dias}D)`, value: fmtMoney(d.ventas.totalImporte), sub: `S/. ${prom} precio prom.`, color: '#f59e0b', icon: '💵' },
+      { label: 'Utilidad bruta',      value: fmtMoney(d.financiero.utilidadBruta), sub: `${d.financiero.margenPct.toFixed(1)}% margen`, color: margenColor, icon: '📊' },
+      { label: 'Stock actual',         value: _fmt(d.stock.total, 1), sub: `Min ${d.stock.minimo} · Max ${d.stock.maximo}`, color: stockColor, icon: '🏭' },
+      { label: 'Cobertura',            value: d.proyeccion.coberturaDias !== null ? d.proyeccion.coberturaDias + 'd' : 'N/D', sub: `Proyección ${_fmt(d.proyeccion.unidades30dias,0)} uds/30D`, color: cobColor, icon: '📅' }
+    ].map(k => `
+      <div class="an-kpi" style="--kpi-color:${k.color}">
+        <div class="an-kpi-icon">${k.icon}</div>
+        <div class="an-kpi-label">${k.label}</div>
+        <div class="an-kpi-value">${k.value}</div>
+        <div class="an-kpi-sub">${k.sub}</div>
+      </div>`).join('');
+
+    // ── Chart Ventas ────────────────────────────────────────────
+    if (_anState.charts.ventas) { _anState.charts.ventas.destroy(); delete _anState.charts.ventas; }
+    const ctxV = $('chartVentas');
+    if (ctxV) {
+      const labels = d.ventas.serie.map(v => v.fecha.substring(5));
+      const gradU  = ctxV.getContext('2d').createLinearGradient(0, 0, 0, 180);
+      gradU.addColorStop(0, 'rgba(99,102,241,.35)');
+      gradU.addColorStop(1, 'rgba(99,102,241,.01)');
+      _anState.charts.ventas = new Chart(ctxV.getContext('2d'), {
+        data: {
+          labels,
+          datasets: [
+            { type: 'bar',  label: 'Unidades', data: d.ventas.serie.map(v => v.u),
+              backgroundColor: 'rgba(99,102,241,.3)', borderColor: '#6366f1', borderRadius: 3, borderWidth: 1, yAxisID: 'y' },
+            { type: 'line', label: 'Ingresos',  data: d.ventas.serie.map(v => v.imp),
+              borderColor: '#f59e0b', tension: .45, pointRadius: 0, borderWidth: 2,
+              fill: false, yAxisID: 'y2' }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#0f172a', borderColor: '#334155', borderWidth: 1,
+              callbacks: {
+                label: ctx => ctx.datasetIndex === 0
+                  ? ` ${ctx.parsed.y.toFixed(1)} ${p.unidad}`
+                  : ` S/. ${ctx.parsed.y.toFixed(2)}`
+              }
+            }
+          },
+          scales: {
+            x:  { grid: { color: '#0d1526' }, ticks: { color: '#475569', font: { size: 10 }, maxRotation: 0, maxTicksLimit: 8 } },
+            y:  { grid: { color: '#1e293b' }, ticks: { color: '#6366f1', font: { size: 10 } }, beginAtZero: true },
+            y2: { position: 'right', grid: { display: false }, ticks: { color: '#f59e0b', font: { size: 10 } }, beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    // ── Stock Gauge ─────────────────────────────────────────────
+    const maximo  = d.stock.maximo || Math.max(d.stock.total * 1.5, 1);
+    const fill    = Math.min(100, d.stock.total / maximo * 100);
+    const minPct  = Math.min(100, d.stock.minimo / maximo * 100);
+    const fillEl  = $('anGaugeFill');
+    const numEl   = $('anStockNum');
+    if (fillEl)   { fillEl.style.width = fill + '%'; fillEl.style.background = stockColor; }
+    if (numEl)    { numEl.textContent = _fmt(d.stock.total, 1); numEl.style.color = stockColor; }
+    const undEl = $('anStockUnd'); if (undEl) undEl.textContent = p.unidad;
+    const zEl   = $('anStockZonas'); if (zEl) zEl.textContent = d.stock.zonas.length ? `${d.stock.zonas.length} zona${d.stock.zonas.length > 1 ? 's' : ''}` : 'Sin datos de WH';
+    const minM  = $('anGaugeMin'); if (minM) { minM.style.left = minPct + '%'; $('anGaugeMinLbl').textContent = 'Mín ' + d.stock.minimo; }
+    const maxM  = $('anGaugeMax');
+    if (maxM) { maxM.style.left = '100%'; $('anGaugeMaxLbl').textContent = 'Máx ' + (d.stock.maximo || '—'); }
+
+    const zonasList = $('anStockZonasList');
+    if (zonasList) {
+      zonasList.innerHTML = d.stock.zonas.length
+        ? d.stock.zonas.map(z => `
+            <div class="flex justify-between items-center text-xs py-1 border-b border-slate-800/60">
+              <span class="text-slate-400">${z.idZona || 'Zona'}</span>
+              <span class="font-bold text-slate-200">${_fmt(z.cantidadDisponible, 1)} ${p.unidad}</span>
+            </div>`).join('')
+        : '<div class="text-xs text-slate-600 italic">warehouseMos no conectado</div>';
+    }
+
+    // ── Ring margen ─────────────────────────────────────────────
+    const ring = $('anRingFill');
+    if (ring) {
+      const circ = 251.2;
+      const offset = circ - (Math.min(100, d.financiero.margenPct) / 100 * circ);
+      ring.style.strokeDashoffset = offset;
+      ring.style.stroke = margenColor;
+    }
+    $('anMargenPct').textContent = d.financiero.margenPct.toFixed(1) + '%';
+    $('anRentRows').innerHTML = [
+      { label: 'Precio venta',   value: fmtMoney(p.precioVenta) },
+      { label: 'Precio costo',   value: fmtMoney(p.precioCosto) },
+      { label: 'Utilidad/unidad',value: fmtMoney(p.precioVenta - p.precioCosto) },
+      { label: `Utilidad (${dias}D)`, value: fmtMoney(d.financiero.utilidadBruta), bold: true }
+    ].map(r => `
+      <div class="an-proj-row">
+        <span class="an-proj-label">${r.label}</span>
+        <span class="an-proj-val${r.bold ? ' highlight' : ''}">${r.value}</span>
+      </div>`).join('');
+
+    // ── Proyección ───────────────────────────────────────────────
+    const proy = d.proyeccion;
+    const sugerClass = proy.sugerirComprar > 0 ? 'danger' : 'ok';
+    $('anProyRows').innerHTML = [
+      { label: 'Promedio diario',    value: proy.promDia.toFixed(1) + ' ' + p.unidad + '/día' },
+      { label: 'Proyección 30 días', value: _fmt(proy.unidades30dias, 0) + ' ' + p.unidad, bold: true },
+      { label: 'Stock hoy',          value: _fmt(d.stock.total, 1) + ' ' + p.unidad },
+      { label: 'Sugerir comprar',    value: _fmt(proy.sugerirComprar, 0) + ' ' + p.unidad, cls: sugerClass, bold: true },
+      { label: 'Cobertura estimada', value: proy.coberturaDias !== null ? proy.coberturaDias + ' días' : 'Sin ventas', cls: cobColor === '#ef4444' ? 'danger' : cobColor === '#f59e0b' ? 'highlight' : 'ok' }
+    ].map(r => `
+      <div class="an-proj-row">
+        <span class="an-proj-label">${r.label}</span>
+        <span class="an-proj-val${r.bold ? ' font-bold' : ''} ${r.cls || ''}">${r.value}</span>
+      </div>`).join('');
+
+    // ── Chart Precios ────────────────────────────────────────────
+    if (_anState.charts.precios) { _anState.charts.precios.destroy(); delete _anState.charts.precios; }
+    const ctxPr = $('chartPrecios');
+    if (ctxPr && d.historialPrecios.length > 1) {
+      _anState.charts.precios = new Chart(ctxPr.getContext('2d'), {
+        type: 'line',
+        data: {
+          labels: d.historialPrecios.map(h => String(h.fecha || '').substring(5)),
+          datasets: [
+            { label: 'Precio venta', data: d.historialPrecios.map(h => h.nuevoPrecio || h.precioVenta || 0),
+              borderColor: '#818cf8', tension: .3, pointRadius: 3, borderWidth: 2, fill: false }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { grid: { color: '#0d1526' }, ticks: { color: '#475569', font: { size: 9 } } },
+            y: { grid: { color: '#1e293b' }, ticks: { color: '#475569', font: { size: 9 } } }
+          }
+        }
+      });
+    } else if (ctxPr) {
+      ctxPr.closest('.an-card').querySelector('.an-card-title').insertAdjacentHTML('afterend',
+        '<div class="text-xs text-slate-600 italic py-4 text-center">Sin historial de precios</div>');
+      ctxPr.style.display = 'none';
+    }
+
+    // ── Compras ──────────────────────────────────────────────────
+    const comprasEl = $('anComprasList');
+    if (comprasEl) {
+      const pedidos = d.compras.pedidos;
+      $('anComprasCount').textContent = pedidos.length ? `(${pedidos.length})` : '';
+      if (!pedidos.length) {
+        comprasEl.innerHTML = '<div class="text-xs text-slate-600 italic py-3">Sin pedidos registrados en el período</div>';
+      } else {
+        comprasEl.innerHTML = pedidos.map(ped => {
+          const estadoClass = ped.estado === 'RECIBIDO' ? 'badge-green' : ped.estado === 'BORRADOR' ? 'badge-gray' : 'badge-yellow';
+          return `<div class="an-compra-row">
+            <span class="an-compra-fecha">${ped.fecha.substring(5) || '—'}</span>
+            <span class="an-compra-qty">${_fmt(ped.cantidad, 1)} uds</span>
+            <span class="an-compra-cost">${ped.costo > 0 ? fmtMoney(ped.costo) : '—'}</span>
+            <span class="an-compra-estado badge ${estadoClass}">${ped.estado || 'BORRADOR'}</span>
+          </div>`;
+        }).join('');
+
+        // Mini chart de compras si hay suficientes datos
+        if (pedidos.length >= 3) {
+          const cwrap = $('chartComprasWrap');
+          if (cwrap) cwrap.style.display = 'block';
+          if (_anState.charts.compras) { _anState.charts.compras.destroy(); delete _anState.charts.compras; }
+          const ctxC = $('chartCompras');
+          if (ctxC) {
+            _anState.charts.compras = new Chart(ctxC.getContext('2d'), {
+              type: 'bar',
+              data: {
+                labels: pedidos.slice(0,10).map(p => p.fecha.substring(5)),
+                datasets: [
+                  { label: 'Cant. comprada', data: pedidos.slice(0,10).map(p => p.cantidad),
+                    backgroundColor: 'rgba(245,158,11,.3)', borderColor: '#f59e0b', borderWidth: 1, borderRadius: 3 }
+                ]
+              },
+              options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                  x: { grid: { display: false }, ticks: { color: '#475569', font: { size: 9 } } },
+                  y: { grid: { color: '#1e293b' }, ticks: { color: '#f59e0b', font: { size: 9 } }, beginAtZero: true }
+                }
+              }
+            });
+          }
+        }
+      }
+    }
+
+    // ── Proveedores ──────────────────────────────────────────────
+    const provEl = $('anProvList');
+    const provColors = ['#6366f1','#f59e0b','#22c55e','#ec4899','#14b8a6'];
+    if (provEl) {
+      if (!d.compras.proveedores.length) {
+        provEl.innerHTML = '<div class="text-xs text-slate-600 italic py-3">Sin proveedores vinculados en pedidos</div>';
+      } else {
+        provEl.innerHTML = d.compras.proveedores.map((pr, i) => `
+          <div class="an-prov-row">
+            <div class="an-prov-dot" style="background:${provColors[i % provColors.length]}"></div>
+            <span class="an-prov-name">${pr.nombre}</span>
+            <span class="an-prov-forma">${pr.formaPago || '—'}</span>
+          </div>`).join('');
+      }
+    }
+
+    // Costo prom histórico proveedores
+    const psEl = $('anProvStats');
+    if (psEl && d.compras.pedidos.length) {
+      const costos = d.compras.pedidos.filter(p => p.costo > 0).map(p => p.costo);
+      if (costos.length) {
+        const promCosto = costos.reduce((a, b) => a + b, 0) / costos.length;
+        const minCosto  = Math.min(...costos);
+        const maxCosto  = Math.max(...costos);
+        psEl.innerHTML = `
+          <div class="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-2">Histórico de costos</div>
+          <div class="flex gap-3 flex-wrap">
+            <div><div class="text-xs text-slate-600">Mínimo</div><div class="text-sm font-bold text-green-400">${fmtMoney(minCosto)}</div></div>
+            <div><div class="text-xs text-slate-600">Promedio</div><div class="text-sm font-bold text-slate-200">${fmtMoney(promCosto)}</div></div>
+            <div><div class="text-xs text-slate-600">Máximo</div><div class="text-sm font-bold text-red-400">${fmtMoney(maxCosto)}</div></div>
+          </div>`;
+      }
+    }
+
+    // Mostrar contenido
+    $('anLoading').classList.add('hidden');
+    $('anContent').classList.remove('hidden');
+  }
+
+  async function guardarStockMinMax() {
+    const id  = _anState.idProducto;
+    const min = parseFloat($('anEditStockMin')?.value) || 0;
+    const max = parseFloat($('anEditStockMax')?.value) || 0;
+    if (!id) return;
+    if (max > 0 && min > max) { toast('El mínimo no puede superar el máximo', 'error'); return; }
+    try {
+      await API.post('actualizarProducto', { idProducto: id, stockMinimo: min, stockMaximo: max });
+      // Actualizar en memoria
+      const p = S.productos.find(x => x.idProducto === id);
+      if (p) { p.stockMinimo = min; p.stockMaximo = max; }
+      toast('Stock mín/máx actualizado', 'ok');
+      // Recargar analítica para reflejar cambio en gauge
+      if (_anState.data) {
+        _anState.data.producto.stockMinimo = min;
+        _anState.data.producto.stockMaximo = max;
+        _anState.data.stock.minimo = min;
+        _anState.data.stock.maximo = max;
+        _renderAnalitica(_anState.data);
+      }
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  // Helpers
+  function _fmt(val, decimals) {
+    const n = parseFloat(val || 0);
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
+    return n.toFixed(decimals);
   }
 
   // ── ALMACÉN ─────────────────────────────────────────────────
@@ -789,6 +1597,154 @@ const MOS = (() => {
   function openModal(id)  { const el = $(id); if (el) el.classList.add('open'); }
   function closeModal(id) { const el = $(id); if (el) el.classList.remove('open'); }
 
+  function openEcoModal(app) {
+    const eco = S._ecoData;
+    const titleEl = $('ecoModalTitle');
+    const bodyEl  = $('ecoModalBody');
+    if (!titleEl || !bodyEl) return;
+
+    // Si aún no llegaron datos (primera carga), esperar y reintentar
+    if (!eco) {
+      titleEl.textContent = app === 'wh' ? 'warehouseMos' : 'MosExpress';
+      bodyEl.innerHTML = `<div class="flex items-center gap-3 py-4 text-slate-400 text-sm">
+        <span class="dot-loading" style="width:10px;height:10px"></span>Cargando datos...</div>`;
+      openModal('modalEcosistema');
+      // Reintentar en 2s por si la llamada GAS aún está en vuelo
+      setTimeout(() => {
+        if (S._ecoData && $('modalEcosistema')?.classList.contains('open')) {
+          closeModal('modalEcosistema');
+          openEcoModal(app);
+        }
+      }, 2000);
+      return;
+    }
+
+    const _fmt = n => new Intl.NumberFormat('es-PE', { minimumFractionDigits: 2 }).format(n || 0);
+    const _dot = c => `<span class="inline-block w-2.5 h-2.5 rounded-full ${c === 'green' ? 'bg-green-400' : c === 'yellow' ? 'bg-yellow-400' : c === 'red' ? 'bg-red-400' : 'bg-slate-500'}"></span>`;
+
+    // Paleta de colores para zonas (se repite si hay muchas)
+    const ZONA_PALETA = [
+      { bg: 'bg-indigo-900/60',  border: 'border-indigo-500/40',  badge: 'bg-indigo-500/20 text-indigo-300',  dot: 'bg-indigo-400' },
+      { bg: 'bg-emerald-900/50', border: 'border-emerald-500/40', badge: 'bg-emerald-500/20 text-emerald-300', dot: 'bg-emerald-400' },
+      { bg: 'bg-amber-900/40',   border: 'border-amber-500/40',   badge: 'bg-amber-500/20 text-amber-300',    dot: 'bg-amber-400'  },
+      { bg: 'bg-rose-900/40',    border: 'border-rose-500/40',    badge: 'bg-rose-500/20 text-rose-300',      dot: 'bg-rose-400'   },
+      { bg: 'bg-cyan-900/40',    border: 'border-cyan-500/40',    badge: 'bg-cyan-500/20 text-cyan-300',      dot: 'bg-cyan-400'   },
+    ];
+
+    if (app === 'me') {
+      const d = eco.me;
+      titleEl.innerHTML = `🛒 MosExpress &nbsp;${_dot(d?.color)}`;
+      if (!d || d.error) {
+        bodyEl.innerHTML = `<p class="text-red-400 text-sm">${d?.error || 'Sin datos'}</p>`;
+      } else {
+        // ── KPIs globales ──
+        let html = `
+          <div class="grid grid-cols-2 gap-3 mb-5">
+            <div class="bg-slate-800 rounded-xl p-3">
+              <div class="text-2xl font-bold text-white">${d.ventasHoy}</div>
+              <div class="text-xs text-slate-400 mt-0.5">Ventas hoy</div>
+            </div>
+            <div class="bg-slate-800 rounded-xl p-3">
+              <div class="text-2xl font-bold text-white">S/ ${_fmt(d.totalHoy)}</div>
+              <div class="text-xs text-slate-400 mt-0.5">Total hoy · ${d.ultimaVenta}</div>
+            </div>
+          </div>`;
+
+        // ── Zonas ──
+        const zonas = d.zonas || [];
+        if (zonas.length) {
+          html += `<div class="text-xs text-slate-400 uppercase tracking-widest font-semibold mb-2">Por zona</div>
+          <div class="space-y-2 mb-5">`;
+          zonas.forEach((z, idx) => {
+            const pal = ZONA_PALETA[idx % ZONA_PALETA.length];
+            html += `
+            <div class="rounded-xl border ${pal.bg} ${pal.border} p-3">
+              <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full ${pal.dot} inline-block"></span>
+                  <span class="text-sm font-semibold text-slate-100">${z.zona}</span>
+                </div>
+                <span class="text-xs px-2 py-0.5 rounded-full ${pal.badge}">${z.ventas} venta${z.ventas !== 1 ? 's' : ''}</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-lg font-bold text-white">S/ ${_fmt(z.total)}</span>
+                <span class="text-xs text-slate-400">${z.ultimaVenta}</span>
+              </div>
+            </div>`;
+          });
+          html += `</div>`;
+        }
+
+        // ── Personal del día ──
+        const personal = d.personal || [];
+        const activos  = personal.filter(p => p.estado === 'activo');
+        const cerrados = personal.filter(p => p.estado === 'cerrado');
+
+        html += `<div class="text-xs text-slate-400 uppercase tracking-widest font-semibold mb-2">
+          Personal hoy <span class="ml-1 text-slate-500 normal-case">(${personal.length} turno${personal.length !== 1 ? 's' : ''})</span>
+        </div>`;
+
+        if (!personal.length) {
+          html += `<p class="text-xs text-slate-500 py-2">Sin registros hoy</p>`;
+        } else {
+          html += `<div class="space-y-1.5">`;
+          // Activos primero
+          personal.forEach(p => {
+            const zonaPal = ZONA_PALETA[zonas.findIndex(z => z.zona === p.zona) % ZONA_PALETA.length] || ZONA_PALETA[0];
+            const esActivo = p.estado === 'activo';
+            html += `
+            <div class="flex items-center gap-2.5 rounded-lg px-3 py-2 ${esActivo ? 'bg-slate-700/60' : 'bg-slate-800/40'}">
+              <span class="inline-block w-2 h-2 rounded-full flex-shrink-0 ${esActivo ? 'bg-green-400' : 'bg-slate-500'}"></span>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm text-slate-100 font-medium truncate">${p.nombre}</div>
+                <div class="text-xs text-slate-400">${p.estacion}${p.zona && p.zona !== '—' ? ' · <span class="' + zonaPal.badge.split(' ')[1] + '">' + p.zona + '</span>' : ''}</div>
+              </div>
+              <div class="text-right flex-shrink-0">
+                ${esActivo
+                  ? `<span class="text-xs text-green-400 font-medium">Activo</span><div class="text-xs text-slate-500">desde ${p.desde}</div>`
+                  : `<span class="text-xs text-slate-500">Cerró ${p.hasta || '—'}</span><div class="text-xs text-slate-600">abrió ${p.desde}</div>`
+                }
+              </div>
+            </div>`;
+          });
+          html += `</div>`;
+        }
+
+        bodyEl.innerHTML = html;
+      }
+    } else {
+      const d = eco.wh;
+      titleEl.innerHTML = `🏭 warehouseMos &nbsp;${_dot(d?.color)}`;
+      if (!d || d.error) {
+        bodyEl.innerHTML = `<p class="text-red-400 text-sm">${d?.error || 'Sin datos'}</p>`;
+      } else {
+        const sesion = d.sesionActiva
+          ? `<span class="text-green-300">${d.sesionActiva.usuario} (${d.sesionActiva.rol}) · desde ${d.sesionActiva.desde}</span>`
+          : '<span class="text-slate-500">Ninguna activa</span>';
+        bodyEl.innerHTML = `
+          <div class="grid grid-cols-3 gap-3 mb-4">
+            <div class="bg-slate-800 rounded-xl p-3">
+              <div class="text-2xl font-bold text-white">${d.entradasHoy}</div>
+              <div class="text-xs text-slate-400 mt-0.5">Entradas hoy</div>
+            </div>
+            <div class="bg-slate-800 rounded-xl p-3">
+              <div class="text-2xl font-bold text-white">${d.salidasHoy}</div>
+              <div class="text-xs text-slate-400 mt-0.5">Salidas hoy</div>
+            </div>
+            <div class="bg-slate-800 rounded-xl p-3">
+              <div class="text-2xl font-bold ${d.stockCritico > 0 ? 'text-red-400' : 'text-white'}">${d.stockCritico}</div>
+              <div class="text-xs text-slate-400 mt-0.5">Stock crítico</div>
+            </div>
+          </div>
+          <div class="mb-1 text-xs text-slate-400 uppercase tracking-widest font-semibold">Última guía</div>
+          <p class="text-sm text-slate-200 mb-4">${d.ultimaGuia || '—'}</p>
+          <div class="mb-1 text-xs text-slate-400 uppercase tracking-widest font-semibold">Sesión activa</div>
+          <p class="text-sm mb-0">${sesion}</p>`;
+      }
+    }
+    openModal('modalEcosistema');
+  }
+
   function openConfig() {
     const inp = $('cfgGasUrl');
     if (inp) inp.value = API.getUrl();
@@ -831,12 +1787,19 @@ const MOS = (() => {
     }
   }
 
-  // Product modal
+  // ── Product modal ──────────────────────────────────────────
   function abrirModalProducto(id) {
     const campos = ['Id','Descripcion','CodigoBarra','Marca','Categoria','Unidad',
                     'PrecioVenta','PrecioCosto','StockMin','StockMax','Zona',
                     'Base','Factor','Merma','EsEnvasable','CodTributo','IGV','CodSUNAT','TipoIGV'];
     campos.forEach(c => { const el = $('prod' + c); if (el && el.tagName !== 'SELECT') el.value = ''; });
+
+    const equivSection = $('modalEquivSection');
+    const equivList    = $('equivList');
+    const equivForm    = $('equivAddForm');
+    if (equivSection) equivSection.classList.add('hidden');
+    if (equivList)    equivList.innerHTML = '';
+    if (equivForm)    equivForm.classList.add('hidden');
 
     if (id) {
       const p = S.productos.find(x => x.idProducto === id);
@@ -853,7 +1816,7 @@ const MOS = (() => {
       $('prodStockMin').value        = p.stockMinimo || '';
       $('prodStockMax').value        = p.stockMaximo || '';
       $('prodZona').value            = p.zona || '';
-      $('prodBase').value            = p.codigoProductoBase || '';
+      $('prodBase').value            = p.skuBase !== p.idProducto ? (p.skuBase || '') : '';
       $('prodFactor').value          = p.factorConversion || '';
       $('prodMerma').value           = p.mermaEsperadaPct || '';
       $('prodEsEnvasable').value     = p.esEnvasable || '0';
@@ -861,6 +1824,9 @@ const MOS = (() => {
       $('prodIGV').value             = p.IGV_Porcentaje || '';
       $('prodCodSUNAT').value        = p.Cod_SUNAT || '';
       $('prodTipoIGV').value         = p.Tipo_IGV || '';
+      // Cargar equivalencias en background
+      if (equivSection) equivSection.classList.remove('hidden');
+      _loadEquivModal(p.skuBase || p.idProducto);
     } else {
       $('modalProdTitle').textContent = 'Nuevo Producto';
       $('prodId').value = '';
@@ -868,6 +1834,86 @@ const MOS = (() => {
       $('prodEsEnvasable').value = '0';
     }
     openModal('modalProducto');
+  }
+
+  // Carga y renderiza equivalencias dentro del modal
+  async function _loadEquivModal(skuBase) {
+    const list = $('equivList');
+    if (!list) return;
+    list.innerHTML = '<div class="text-xs text-slate-600 italic py-1 px-1">Cargando...</div>';
+    try {
+      const rows = (await API.get('getEquivalencias', { skuBase })) || [];
+      // Actualizar equivMap también
+      S.equivMap[skuBase] = rows.filter(r => String(r.activo) === '1').length;
+      _renderEquivList(rows, skuBase);
+    } catch(e) {
+      list.innerHTML = `<div class="text-xs text-red-400 py-1 px-1">Error: ${e.message}</div>`;
+    }
+  }
+
+  function _renderEquivList(rows, skuBase) {
+    const list = $('equivList');
+    if (!list) return;
+    if (!rows.length) {
+      list.innerHTML = '<div class="text-xs text-slate-600 italic py-1 px-1">Sin equivalencias registradas</div>';
+      return;
+    }
+    list.innerHTML = rows.map(r => {
+      const on = String(r.activo) === '1';
+      return `<div class="equiv-row${on ? '' : ' inactive'}" data-id="${r.idEquiv}">
+        <span class="equiv-code">▌${r.codigoBarra}</span>
+        <span class="equiv-desc truncate">${r.descripcion || ''}</span>
+        <button class="equiv-toggle ${on ? 'on' : 'off'}"
+                onclick="MOS.toggleEquivActivo('${r.idEquiv}','${skuBase}','${on ? '0' : '1'}')"
+                title="${on ? 'Desactivar' : 'Activar'}">
+          ${on ? '✓ Activo' : '✗ Inactivo'}
+        </button>
+      </div>`;
+    }).join('');
+  }
+
+  function toggleAddEquiv() {
+    const form = $('equivAddForm');
+    if (!form) return;
+    const opening = form.classList.toggle('hidden');
+    if (!opening) { // se acaba de mostrar
+      const inp = $('equivCodigo');
+      if (inp) { inp.value = ''; inp.focus(); }
+      const d = $('equivDesc'); if (d) d.value = '';
+    }
+  }
+
+  async function crearEquivalenciaModal() {
+    const skuBase  = S.productos.find(p => p.idProducto === $('prodId')?.value);
+    const sku      = skuBase ? (skuBase.skuBase || skuBase.idProducto) : '';
+    const codigo   = ($('equivCodigo')?.value || '').trim();
+    const desc     = ($('equivDesc')?.value   || '').trim();
+    if (!sku)    { toast('Abre un producto primero', 'error'); return; }
+    if (!codigo) { toast('Ingresa el código de barras', 'error'); return; }
+
+    const btn = $('equivAddForm')?.querySelector('button');
+    if (btn) btn.disabled = true;
+    try {
+      await API.post('crearEquivalencia', { skuBase: sku, codigoBarra: codigo, descripcion: desc });
+      toast('Equivalencia guardada', 'ok');
+      const f = $('equivAddForm'); if (f) f.classList.add('hidden');
+      await _loadEquivModal(sku);
+      renderCatalogo(); // actualiza badges en tarjetas
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function toggleEquivActivo(idEquiv, skuBase, nuevoActivo) {
+    try {
+      await API.post('actualizarEquivalencia', { idEquiv, activo: nuevoActivo });
+      await _loadEquivModal(skuBase);
+      renderCatalogo();
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    }
   }
 
   async function guardarProducto() {
@@ -929,6 +1975,10 @@ const MOS = (() => {
     if (!nuevo || nuevo <= 0) { toast('Ingresa un precio válido', 'error'); return; }
 
     const p = S.productos.find(x => x.idProducto === id);
+    const prevPrecio = p?.precioVenta;
+    // Optimistic update
+    if (p) { p.precioVenta = nuevo; _catSaveCache(S.productos); renderCatalogo(); }
+    closeModal('modalPrecio');
     try {
       await API.post('publicarPrecio', {
         idProducto: id, skuBase: p?.skuBase, codigoBarra: p?.codigoBarra,
@@ -936,10 +1986,10 @@ const MOS = (() => {
         motivo, imprimirMembretes: memb
       });
       toast('Precio publicado: ' + fmtMoney(nuevo), 'ok');
-      closeModal('modalPrecio');
       S.loaded['catalogo'] = false;
-      await loadCatalogo();
+      loadCatalogo(); // background refresh
     } catch (e) {
+      if (p && prevPrecio !== undefined) { p.precioVenta = prevPrecio; renderCatalogo(); }
       toast('Error: ' + e.message, 'error');
     }
   }
@@ -1451,6 +2501,85 @@ const MOS = (() => {
     }
   });
 
+  // Renderiza la vista de Cajas usando S._todasCajas / S._todosTickets ya cargados
+  function _renderCajasDesdeEstado() {
+    const abiertas  = (S._todasCajas||[]).filter(c=>c.estado==='ABIERTA');
+    const cerradas  = (S._todasCajas||[]).filter(c=>c.estado!=='ABIERTA');
+    const tkAll     = S._todosTickets||[];
+    const todayStr  = new Date().toISOString().substring(0,10);
+
+    // KPIs (recalcular localmente)
+    const hoyKpis   = S._cajasHoy||[];
+    const totalDia  = hoyKpis.reduce((s,c)=>s+c.totalVentas,0);
+    const ticketsDia= hoyKpis.reduce((s,c)=>s+c.tickets,0);
+    const setQ = (id,v)=>{ const el=$(id); if(el) el.textContent=v; };
+    setQ('cajasKpiVentas', fmtMoney(totalDia));
+
+    // Tickets KPIs desde S._todosTickets
+    const hoy  = todayStr;
+    let nvH=0,bH=0,fH=0,totH=0,nvM=0,bM=0,fM=0,totM=0;
+    tkAll.forEach(t => {
+      const an = t.estado==='ANULADO';
+      if (!an) {
+        totM++; if(t.tipo==='NV') nvM++; else if(t.tipo==='B') bM++; else if(t.tipo==='F') fM++;
+        if(t.fecha===hoy){ totH++; if(t.tipo==='NV') nvH++; else if(t.tipo==='B') bH++; else if(t.tipo==='F') fH++; }
+      }
+    });
+    setQ('cajasKpiTicketsHoy', totH); setQ('cajasKpiTicketsMes', totM);
+    setQ('cajasKpiNV', nvH); setQ('cajasKpiBoleta', bH); setQ('cajasKpiFactura', fH);
+
+    // Cajas abiertas
+    const vivoWrap  = $('cajasVivoWrap');
+    const vivoGrid  = $('cajasVivoGrid');
+    const vivoCount = $('cajasVivoCount');
+    if (abiertas.length>0 && vivoGrid) {
+      vivoWrap?.classList.remove('hidden');
+      if (vivoCount) vivoCount.textContent = abiertas.length;
+      vivoGrid.innerHTML = abiertas.map(c=>_buildCajaCard(c)).join('');
+    } else { vivoWrap?.classList.add('hidden'); }
+
+    // Gráficos
+    const chartsWrap = $('cajasChartsWrap');
+    S._todasCajas = S._todasCajas||[];
+    if (S._todasCajas.length>0 && chartsWrap) {
+      chartsWrap.classList.remove('hidden');
+      _renderChartCajasCompacto(7); _renderChartMetodosHoy();
+    }
+
+    // Historial
+    const histWrap  = $('cajasHistorialWrap');
+    const histTbody = $('cajasHistTbody');
+    const histTitle = $('cajasHistTitle');
+    if (cerradas.length>0 && histWrap && histTbody) {
+      histWrap.classList.remove('hidden');
+      if (histTitle) histTitle.textContent = 'Historial de Cierres ('+cerradas.length+')';
+      const hora  = s=>(s||'').substring(11,16);
+      const fecha = s=>(s||'').substring(0,16).replace('T',' ');
+      histTbody.innerHTML = cerradas.map(c=>{
+        const dif=c.diferencia;
+        const difCls=dif===null?'badge-gray':dif>0.05?'badge-green':dif<-0.05?'badge-red':'badge-green';
+        const difStr=dif===null?'—':(dif>=0?'+':'')+fmtMoney(dif);
+        const esHoy=(c.fechaCierre||'').startsWith(todayStr);
+        return `<tr data-caja-row="${c.idCaja}">
+          <td><div class="font-medium">${c.vendedor||'—'}</div><div class="text-xs text-slate-500">${esHoy?'Hoy '+hora(c.fechaCierre):fecha(c.fechaCierre)}</div></td>
+          <td><span class="badge badge-blue">${c.zona||c.estacion||'—'}</span></td>
+          <td class="text-slate-400 text-xs">${hora(c.fechaApertura)} → ${hora(c.fechaCierre)}</td>
+          <td id="hr-total-${c.idCaja}" class="font-semibold">${fmtMoney(c.totalVentas)}</td>
+          <td id="hr-tickets-${c.idCaja}" class="text-center">${c.tickets}</td>
+          <td id="hr-dif-${c.idCaja}"><span class="badge ${difCls}">${difStr}</span></td>
+          <td><a href="${c.urlReporte||'#'}" target="_blank" rel="noopener" class="btn-primary text-xs px-3 py-1.5 inline-block" style="text-decoration:none">📊 Reporte</a></td>
+        </tr>`;
+      }).join('');
+    } else { histWrap?.classList.add('hidden'); }
+
+    const empty = $('cajasEmpty');
+    if (abiertas.length===0 && cerradas.length===0) empty?.classList.remove('hidden');
+    else empty?.classList.add('hidden');
+
+    const ts = $('cajasTimestamp');
+    if (ts && S._cajasGenTs) ts.textContent = 'Actualizado: ' + S._cajasGenTs;
+  }
+
   // ── CAJAS ────────────────────────────────────────────────────
   async function loadCajas(force) {
     if (!force && S.loaded['cajas']) return;
@@ -1460,17 +2589,34 @@ const MOS = (() => {
     const content  = $('cajasContent');
     const empty    = $('cajasEmpty');
 
+    // Si ya tenemos datos precargados del timer, renderizar inmediatamente sin spinner
+    if (S._cajasLoaded && S._todasCajas && S._todasCajas.length >= 0 && !force) {
+      loading?.classList.add('hidden');
+      content?.classList.remove('hidden');
+      _renderCajasDesdeEstado();
+      return;
+    }
+
     loading?.classList.remove('hidden');
     content?.classList.add('hidden');
 
     try {
       const res = await API.get('getCierresCaja', {});
-      // API.get ya desenvuelve d.data, así que res = { kpis, abiertas, cerradas, generadoEn }
 
       loading?.classList.add('hidden');
       content?.classList.remove('hidden');
 
       const { kpis, abiertas = [], cerradas = [], generadoEn } = res || {};
+
+      // Guardar cajas de hoy en estado para el panel de desglose
+      const todayStr = new Date().toISOString().substring(0, 10);
+      S._cajasHoy = [
+        ...abiertas,
+        ...(cerradas || []).filter(c =>
+          (c.fechaApertura || '').startsWith(todayStr) ||
+          (c.fechaCierre   || '').startsWith(todayStr)
+        )
+      ];
 
       // Timestamp
       const ts = $('cajasTimestamp');
@@ -1478,11 +2624,15 @@ const MOS = (() => {
 
       // ── KPIs ────────────────────────────────────────────────
       const set = (id, v) => { const el=$(id); if(el) el.textContent=v; };
-      set('cajasKpiVentas',   fmtMoney(kpis?.totalDia || 0));
-      set('cajasKpiTickets',  kpis?.ticketsDia || 0);
-      set('cajasKpiAbiertas', kpis?.cajasAbiertas || 0);
-      set('cajasKpiCerradas', kpis?.cajasCerradas || 0);
-      set('cajasKpiAnulados', kpis?.anuladosDia   || 0);
+      const { kpisTickets = {}, todosTickets: tkAll = [] } = res || {};
+      S._todosTickets = tkAll;
+
+      set('cajasKpiVentas',      fmtMoney(kpis?.totalDia || 0));
+      set('cajasKpiTicketsHoy',  kpisTickets.hoy?.total    || 0);
+      set('cajasKpiTicketsMes',  kpisTickets.mes?.total    || 0);
+      set('cajasKpiNV',          kpisTickets.hoy?.NV       || 0);
+      set('cajasKpiBoleta',      kpisTickets.hoy?.B        || 0);
+      set('cajasKpiFactura',     kpisTickets.hoy?.F        || 0);
 
       const todosVacios = abiertas.length === 0 && cerradas.length === 0;
       if (todosVacios) { empty?.classList.remove('hidden'); return; }
@@ -1495,102 +2645,18 @@ const MOS = (() => {
       if (abiertas.length > 0 && vivoWrap && vivoGrid) {
         vivoWrap.classList.remove('hidden');
         if (vivoCount) vivoCount.textContent = abiertas.length;
-        vivoGrid.innerHTML = abiertas.map(c => {
-          const elapsed  = _cajaElapsed(c.fechaApertura);
-          const pctEfect = c.totalVentas > 0 ? Math.round(c.efectivo / c.totalVentas * 100) : 0;
-          const pctOtros = 100 - pctEfect;
-          const metodos  = Object.entries(c.byMetodo || {})
-            .sort((a,b) => b[1]-a[1])
-            .map(([k,v]) => `<span class="text-xs text-slate-400">${k}: <span class="text-slate-200 font-medium">${fmtMoney(v)}</span></span>`)
-            .join('');
-          return `
-          <div class="card p-4" style="border-left:3px solid #22c55e">
-            <div class="flex items-start justify-between mb-3">
-              <div>
-                <div class="font-semibold text-white text-base">${c.vendedor || '—'}</div>
-                <div class="text-xs text-slate-400">${c.zona || c.estacion || '—'} · <span class="text-emerald-400">⏱ ${elapsed}</span></div>
-              </div>
-              <span class="badge badge-green">ABIERTA</span>
-            </div>
-            <div class="grid grid-cols-3 gap-2 mb-3">
-              <div class="card-sm p-2 text-center">
-                <div class="text-lg font-bold text-white">${fmtMoney(c.totalVentas)}</div>
-                <div class="text-xs text-slate-500">Total</div>
-              </div>
-              <div class="card-sm p-2 text-center">
-                <div class="text-lg font-bold text-emerald-400">${c.tickets}</div>
-                <div class="text-xs text-slate-500">Tickets</div>
-              </div>
-              <div class="card-sm p-2 text-center">
-                <div class="text-lg font-bold ${c.anulados > 0 ? 'text-red-400' : 'text-slate-400'}">${c.anulados}</div>
-                <div class="text-xs text-slate-500">Anulados</div>
-              </div>
-            </div>
-            <!-- Mini barra efectivo vs otros -->
-            <div class="mb-2">
-              <div class="flex justify-between text-xs text-slate-500 mb-1">
-                <span>Efectivo ${pctEfect}%</span><span>Otros ${pctOtros}%</span>
-              </div>
-              <div class="flex rounded-full overflow-hidden h-2" style="background:#1e293b">
-                <div style="width:${pctEfect}%;background:#22c55e"></div>
-                <div style="width:${pctOtros}%;background:#6366f1"></div>
-              </div>
-            </div>
-            <div class="flex flex-wrap gap-x-3 gap-y-1 mt-2">${metodos}</div>
-            ${c.sinCobrar > 0 ? `<div class="mt-2 text-xs text-yellow-400">⏳ ${c.sinCobrar} sin cobrar</div>` : ''}
-          </div>`;
-        }).join('');
+        vivoGrid.innerHTML = abiertas.map(c => _buildCajaCard(c)).join('');
       } else if (vivoWrap) {
         vivoWrap.classList.add('hidden');
       }
 
       // ── Gráficos ─────────────────────────────────────────────
       const chartsWrap = $('cajasChartsWrap');
-      const todos      = [...abiertas, ...cerradas];
-      if (todos.length > 0 && chartsWrap) {
+      S._todasCajas = [...abiertas, ...cerradas];
+      if (S._todasCajas.length > 0 && chartsWrap) {
         chartsWrap.classList.remove('hidden');
-
-        // Bar: ventas por cajero
-        renderChart('chartCajasBars', {
-          type: 'bar',
-          data: {
-            labels:   todos.map(c => c.vendedor || c.idCaja),
-            datasets: [{
-              label: 'Vendido',
-              data:  todos.map(c => c.totalVentas),
-              backgroundColor: todos.map(c => c.estado === 'ABIERTA' ? '#22c55e' : '#6366f1'),
-              borderRadius: 5
-            }]
-          },
-          options: {
-            responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: { y: { ticks: { callback: v => 'S/'+v, font: { size: 11 } } },
-                      x: { ticks: { font: { size: 11 } } } }
-          }
-        });
-
-        // Donut: métodos de pago acumulados del día
-        const metAcum = {};
-        todos.forEach(c => Object.entries(c.byMetodo || {}).forEach(([k,v]) => {
-          metAcum[k] = (metAcum[k] || 0) + v;
-        }));
-        const metKeys = Object.keys(metAcum);
-        if (metKeys.length > 0) {
-          renderChart('chartCajasMetodo', {
-            type: 'doughnut',
-            data: {
-              labels: metKeys,
-              datasets: [{ data: metKeys.map(k => metAcum[k]),
-                backgroundColor: ['#22c55e','#6366f1','#f59e0b','#ef4444','#0ea5e9'],
-                borderWidth: 2, borderColor: '#0f172a' }]
-            },
-            options: {
-              responsive: true, maintainAspectRatio: false,
-              plugins: { legend: { position: 'bottom', labels: { font:{ size:11 }, padding:8, boxWidth:12 } } }
-            }
-          });
-        }
+        _renderChartCajasCompacto(7);
+        _renderChartMetodosHoy();
       }
 
       // ── Historial cierres (últimos 30 días) ──────────────────
@@ -1607,16 +2673,16 @@ const MOS = (() => {
           const fecha  = s => (s || '').substring(0, 16).replace('T', ' ');
           const hora   = s => (s || '').substring(11, 16);
           const esHoy  = (c.fechaCierre || '').startsWith(new Date().toISOString().substring(0,10));
-          return `<tr>
+          return `<tr data-caja-row="${c.idCaja}">
             <td>
               <div class="font-medium">${c.vendedor || '—'}</div>
               <div class="text-xs text-slate-500">${esHoy ? 'Hoy ' + hora(c.fechaCierre) : fecha(c.fechaCierre)}</div>
             </td>
             <td><span class="badge badge-blue">${c.zona || c.estacion || '—'}</span></td>
             <td class="text-slate-400 text-xs">${hora(c.fechaApertura)} → ${hora(c.fechaCierre)}</td>
-            <td class="font-semibold">${fmtMoney(c.totalVentas)}</td>
-            <td class="text-center">${c.tickets}</td>
-            <td><span class="badge ${difCls}">${difStr}</span></td>
+            <td id="hr-total-${c.idCaja}" class="font-semibold">${fmtMoney(c.totalVentas)}</td>
+            <td id="hr-tickets-${c.idCaja}" class="text-center">${c.tickets}</td>
+            <td id="hr-dif-${c.idCaja}"><span class="badge ${difCls}">${difStr}</span></td>
             <td>
               <a href="${c.urlReporte}" target="_blank" rel="noopener"
                  class="btn-primary text-xs px-3 py-1.5 inline-block" style="text-decoration:none">
@@ -1638,6 +2704,978 @@ const MOS = (() => {
     }
   }
 
+  // ── Auto-refresh silencioso de cajas cada 60s ───────────────
+  let _cajasRefreshTimer = null;
+
+  // ── Construye el HTML de una card de caja abierta ───────────
+  function _buildCajaCard(c) {
+    const elapsed   = _cajaElapsed(c.fechaApertura);
+    const pctEfect  = c.totalVentas > 0 ? Math.round(c.efectivo / c.totalVentas * 100) : 0;
+    const pctOtros  = 100 - pctEfect;
+    const metodos   = Object.entries(c.byMetodo || {}).sort((a,b)=>b[1]-a[1])
+      .map(([k,v])=>`<span class="text-xs text-slate-400">${k}: <span class="text-slate-200 font-medium">${fmtMoney(v)}</span></span>`).join('');
+    const tkList    = c.ticketsList || [];
+    const exList    = c.extrasList  || [];
+
+    const estadoBadge = est => {
+      if (est==='ANULADO')    return '<span class="badge badge-red" style="font-size:10px">ANULADO</span>';
+      if (est==='POR_COBRAR') return '<span class="badge badge-yellow" style="font-size:10px">POR COBRAR</span>';
+      if (est==='CREDITO')    return '<span class="badge badge-blue" style="font-size:10px">CRÉDITO</span>';
+      return '';
+    };
+    const metodoBadge = m => {
+      const cls = m==='EFECTIVO'?'badge-green':m==='POR_COBRAR'?'badge-yellow':m==='ANULADO'?'badge-red':'badge-blue';
+      return `<span class="badge ${cls}" style="font-size:10px">${m}</span>`;
+    };
+    const ticketRows = tkList.map(t => {
+      const an = t.estado==='ANULADO';
+      return `<div class="flex items-center gap-2 py-1.5 border-b border-slate-800/60 ${an?'opacity-40':''}">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="text-xs font-mono ${an?'line-through text-slate-500':'text-slate-200'}">${t.correlativo||t.idVenta}</span>
+            ${estadoBadge(t.estado)}
+          </div>
+          <div class="text-xs text-slate-500 truncate mt-0.5">${t.clienteNom||t.clienteDoc||'Sin cliente'} · <span class="text-slate-600">${t.tipoDoc}</span>${t.hora?' · '+t.hora:''}</div>
+        </div>
+        <div class="text-right shrink-0">
+          <div class="text-sm font-semibold ${an?'line-through text-slate-600':'text-white'}">${fmtMoney(t.total)}</div>
+          <div class="mt-0.5">${metodoBadge(t.metodo)}</div>
+        </div>
+      </div>`;
+    }).join('');
+    const extraRows = exList.map(ex=>`
+      <div class="flex items-center justify-between py-1 text-xs border-b border-slate-800/40 last:border-0">
+        <div class="flex items-center gap-1.5">
+          <span class="${ex.tipo==='INGRESO'?'text-emerald-400':'text-red-400'} font-bold">${ex.tipo==='INGRESO'?'▲':'▼'}</span>
+          <span class="text-slate-300">${ex.concepto||ex.tipo}</span>
+          ${ex.hora?`<span class="text-slate-600">${ex.hora}</span>`:''}
+        </div>
+        <span class="font-semibold ${ex.tipo==='INGRESO'?'text-emerald-400':'text-red-400'}">${ex.tipo==='INGRESO'?'+':'-'}${fmtMoney(ex.monto)}</span>
+      </div>`).join('');
+
+    return `
+    <div class="card p-4" id="cajacard-${c.idCaja}" style="border-left:3px solid #22c55e">
+      <div class="flex items-start justify-between mb-3">
+        <div>
+          <div class="font-semibold text-white text-base">${c.vendedor||'—'}</div>
+          <div class="text-xs text-slate-400">${c.zona||c.estacion||'—'} · <span class="text-emerald-400">⏱ ${elapsed}</span></div>
+        </div>
+        <span class="badge badge-green">ABIERTA</span>
+      </div>
+      <div class="grid grid-cols-4 gap-2 mb-3">
+        <div class="card-sm p-2 text-center"><div id="cv-total-${c.idCaja}" class="text-base font-bold text-white">${fmtMoney(c.totalVentas)}</div><div class="text-xs text-slate-500">Total</div></div>
+        <div class="card-sm p-2 text-center"><div id="cv-tickets-${c.idCaja}" class="text-base font-bold text-emerald-400">${c.tickets}</div><div class="text-xs text-slate-500">Tickets</div></div>
+        <div class="card-sm p-2 text-center"><div id="cv-anulados-${c.idCaja}" class="text-base font-bold ${c.anulados>0?'text-red-400':'text-slate-500'}">${c.anulados}</div><div class="text-xs text-slate-500">Anulados</div></div>
+        <div class="card-sm p-2 text-center"><div id="cv-porcobrar-${c.idCaja}" class="text-base font-bold ${c.sinCobrar>0?'text-yellow-400':'text-slate-500'}">${c.sinCobrar}</div><div class="text-xs text-slate-500">Por cobrar</div></div>
+      </div>
+      <div class="mb-2">
+        <div class="flex justify-between text-xs text-slate-500 mb-1">
+          <span id="cv-barlbl-${c.idCaja}">Efectivo ${pctEfect}%</span><span>Otros ${pctOtros}%</span>
+        </div>
+        <div class="flex rounded-full overflow-hidden h-1.5" style="background:#1e293b">
+          <div id="cv-barefect-${c.idCaja}" style="width:${pctEfect}%;background:#22c55e;transition:width .5s"></div>
+          <div id="cv-barotros-${c.idCaja}" style="width:${pctOtros}%;background:#6366f1;transition:width .5s"></div>
+        </div>
+      </div>
+      <div id="cv-metodos-${c.idCaja}" class="flex flex-wrap gap-x-3 gap-y-1 mb-3">${metodos}</div>
+      <button id="cajabtn-${c.idCaja}" onclick="MOS.toggleCajaDetail('${c.idCaja}')"
+        class="w-full text-xs text-slate-400 py-1.5 rounded-lg border border-slate-800 hover:border-indigo-600 hover:text-indigo-400 transition-all flex items-center justify-center gap-1.5">
+        <span id="cajabtn-icon-${c.idCaja}">▼</span>
+        <span id="cajabtn-label-${c.idCaja}">Ver ${tkList.length} ticket${tkList.length!==1?'s':''}</span>
+      </button>
+      <div id="cajadetail-${c.idCaja}" class="hidden mt-3 pt-3 border-t border-slate-800">
+        <div class="flex items-center justify-between mb-2">
+          <span id="cajatickets-label-${c.idCaja}" class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Tickets (${tkList.length})</span>
+        </div>
+        ${tkList.length>0?`<div class="mb-4">${ticketRows}</div>`:`<div class="text-xs text-slate-600 mb-4">Sin tickets aún</div>`}
+        ${exList.length>0?`<div class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Movimientos extra (${exList.length})</div><div class="card-sm p-2 mb-4">${extraRows}</div>`:''}
+        <div class="card-sm p-3 text-xs">
+          <div class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Arqueo estimado</div>
+          <div class="text-xs text-slate-500 mb-1">💵 Físico (en caja)</div>
+          <div class="flex justify-between py-0.5"><span class="text-slate-500">Apertura</span><span>${fmtMoney(c.montoInicial)}</span></div>
+          <div class="flex justify-between py-0.5"><span class="text-slate-500">+ Ventas efectivo</span><span class="text-emerald-400">+${fmtMoney(c.efectivo)}</span></div>
+          ${c.entradas>0?`<div class="flex justify-between py-0.5"><span class="text-slate-500">+ Ingresos extra</span><span class="text-emerald-400">+${fmtMoney(c.entradas)}</span></div>`:''}
+          ${c.salidas>0?`<div class="flex justify-between py-0.5"><span class="text-slate-500">- Salidas extra</span><span class="text-red-400">-${fmtMoney(c.salidas)}</span></div>`:''}
+          <div class="flex justify-between font-bold border-t border-slate-700 pt-1.5 mt-1 mb-3">
+            <span class="text-slate-200">= Esperado físico</span><span class="text-emerald-400">${fmtMoney(c.efectivoEsperado)}</span>
+          </div>
+          ${c.otros>0?`<div class="text-xs text-slate-500 mb-1">📲 Virtual</div>
+          ${Object.entries(c.byMetodo||{}).filter(([k])=>k!=='EFECTIVO').sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="flex justify-between py-0.5"><span class="text-slate-500">${k}</span><span class="text-indigo-400">${fmtMoney(v)}</span></div>`).join('')}
+          <div class="flex justify-between font-bold border-t border-slate-700 pt-1.5 mt-1"><span class="text-slate-200">= Total virtual</span><span class="text-indigo-400">${fmtMoney(c.otros)}</span></div>`:''}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // Helper: actualizar texto de un elemento solo si cambió, con flash opcional
+  function _setVal(id, newVal, flash) {
+    const el = $(id); if (!el) return;
+    const str = String(newVal);
+    if (el.textContent === str) return;
+    el.textContent = str;
+    if (flash) { el.classList.remove('val-flash'); el.offsetHeight; el.classList.add('val-flash'); }
+  }
+
+  // Smart update de una card de caja abierta (solo toca los valores que cambiaron)
+  function _updateCajaCard(c) {
+    const card = $('cajacard-' + c.idCaja);
+    if (!card) return false; // no existe → hay que crearla
+    const pct  = c.totalVentas > 0 ? Math.round(c.efectivo / c.totalVentas * 100) : 0;
+    const metosHtml = Object.entries(c.byMetodo || {}).sort((a,b)=>b[1]-a[1])
+      .map(([k,v])=>`<span class="text-xs text-slate-400">${k}: <span class="text-slate-200 font-medium">${fmtMoney(v)}</span></span>`).join('');
+
+    _setVal('cv-total-'    + c.idCaja, fmtMoney(c.totalVentas), true);
+    _setVal('cv-tickets-'  + c.idCaja, c.tickets, true);
+    _setVal('cv-anulados-' + c.idCaja, c.anulados, c.anulados > 0);
+    _setVal('cv-porcobrar-'+ c.idCaja, c.sinCobrar, c.sinCobrar > 0);
+
+    const barEf = $('cv-barefect-' + c.idCaja);
+    const barOt = $('cv-barotros-' + c.idCaja);
+    if (barEf) barEf.style.width = pct + '%';
+    if (barOt) barOt.style.width = (100-pct) + '%';
+    _setVal('cv-barlbl-'   + c.idCaja, `Efectivo ${pct}%`);
+
+    const metDiv = $('cv-metodos-' + c.idCaja);
+    if (metDiv && metDiv.innerHTML !== metosHtml) metDiv.innerHTML = metosHtml;
+
+    // Actualizar elapsed (siempre cambia)
+    const cabeceraEl = card.querySelector('.text-xs.text-slate-400');
+    if (cabeceraEl) {
+      const el = cabeceraEl.querySelector('span.text-emerald-400');
+      if (el) el.textContent = '⏱ ' + _cajaElapsed(c.fechaApertura);
+    }
+    return true;
+  }
+
+  // Smart update del historial (filas cerradas)
+  function _updateHistorialRow(c) {
+    const row = document.querySelector('[data-caja-row="' + c.idCaja + '"]');
+    if (!row) return false;
+    const dif    = c.diferencia;
+    const difCls = dif === null ? 'badge-gray' : dif > 0.05 ? 'badge-green' : dif < -0.05 ? 'badge-red' : 'badge-green';
+    const difStr = dif === null ? '—' : (dif >= 0 ? '+' : '') + fmtMoney(dif);
+    _setVal('hr-total-'   + c.idCaja, fmtMoney(c.totalVentas), true);
+    _setVal('hr-tickets-' + c.idCaja, c.tickets, true);
+    const difEl = $('hr-dif-' + c.idCaja);
+    if (difEl) difEl.innerHTML = `<span class="badge ${difCls}">${difStr}</span>`;
+    return true;
+  }
+
+  async function _cajasRefreshSilencioso() {
+    if (!API.isConfigured()) return;
+    try {
+      const res = await API.get('getCierresCaja', {});
+      const { kpis, abiertas = [], cerradas = [], kpisTickets = {}, todosTickets: tkAll = [], generadoEn } = res || {};
+
+      // ── Detectar cambios en tickets ──────────────────────────
+      const prevIds  = new Set((S._todosTickets || []).map(t => t.idVenta));
+      const nuevos   = (tkAll || []).filter(t => !prevIds.has(t.idVenta));
+
+      // ── Actualizar estado global ─────────────────────────────
+      S._todosTickets = tkAll;
+      const todayStr  = new Date().toISOString().substring(0, 10);
+      S._cajasHoy  = [...abiertas, ...(cerradas || []).filter(c =>
+        (c.fechaApertura||'').startsWith(todayStr)||(c.fechaCierre||'').startsWith(todayStr))];
+      S._todasCajas = [...abiertas, ...cerradas];
+      S._cajasLoaded = true;
+      S._cajasGenTs  = generadoEn || '';
+
+      // ── KPIs ─────────────────────────────────────────────────
+      _setVal('cajasKpiVentas',     fmtMoney(kpis?.totalDia||0), true);
+      _setVal('cajasKpiTicketsHoy', kpisTickets.hoy?.total||0,   nuevos.length > 0);
+      _setVal('cajasKpiTicketsMes', kpisTickets.mes?.total||0,   false);
+      _setVal('cajasKpiNV',         kpisTickets.hoy?.NV||0,      false);
+      _setVal('cajasKpiBoleta',     kpisTickets.hoy?.B||0,       false);
+      _setVal('cajasKpiFactura',    kpisTickets.hoy?.F||0,       false);
+      const ts = $('cajasTimestamp');
+      if (ts) ts.textContent = 'Actualizado: ' + (generadoEn||'—');
+
+      // ── Cards cajas abiertas ──────────────────────────────────
+      const vivoGrid = $('cajasVivoGrid');
+      if (vivoGrid) {
+        const prevCardIds = new Set([...vivoGrid.querySelectorAll('[id^="cajacard-"]')].map(el=>el.id.replace('cajacard-','')));
+        const newIds      = new Set(abiertas.map(c=>c.idCaja));
+
+        // Actualizar o crear cards
+        abiertas.forEach(c => {
+          const existed = _updateCajaCard(c);
+          if (!existed) {
+            // Nueva caja abierta → crear card y prependla
+            const tmp = document.createElement('div');
+            tmp.innerHTML = _buildCajaCard(c);
+            const newCard = tmp.firstElementChild;
+            newCard.style.animation = 'cardSlideIn .4s ease';
+            vivoGrid.prepend(newCard);
+            if ($('cajasVivoWrap')) $('cajasVivoWrap').classList.remove('hidden');
+          }
+        });
+
+        // Cards de cajas que ya cerraron → fade out y remover
+        prevCardIds.forEach(id => {
+          if (!newIds.has(id)) {
+            const card = $('cajacard-' + id);
+            if (card) { card.style.transition='opacity .4s'; card.style.opacity='0'; setTimeout(()=>card.remove(),400); }
+          }
+        });
+
+        // Actualizar contador
+        const vivoCount = $('cajasVivoCount');
+        if (vivoCount) vivoCount.textContent = abiertas.length;
+        if (vivoGrid.parentElement) vivoGrid.parentElement.classList.toggle('hidden', abiertas.length === 0);
+      }
+
+      // ── Historial (cajas cerradas) ────────────────────────────
+      const histWrap  = $('cajasHistorialWrap');
+      const histTbody = $('cajasHistTbody');
+      if (histTbody && cerradas.length > 0) {
+        histWrap?.classList.remove('hidden');
+        const hora  = s => (s||'').substring(11,16);
+        const fecha = s => (s||'').substring(0,16).replace('T',' ');
+        cerradas.forEach(c => {
+          const existed = _updateHistorialRow(c);
+          if (!existed) {
+            // Nueva fila → prepend con flash
+            const dif    = c.diferencia;
+            const difCls = dif===null?'badge-gray':dif>0.05?'badge-green':dif<-0.05?'badge-red':'badge-green';
+            const difStr = dif===null?'—':(dif>=0?'+':'')+fmtMoney(dif);
+            const esHoy  = (c.fechaCierre||'').startsWith(todayStr);
+            const tr = document.createElement('tr');
+            tr.setAttribute('data-caja-row', c.idCaja);
+            tr.style.animation = 'ticketFadeIn .5s ease';
+            tr.innerHTML = `
+              <td><div class="font-medium">${c.vendedor||'—'}</div><div class="text-xs text-slate-500">${esHoy?'Hoy '+hora(c.fechaCierre):fecha(c.fechaCierre)}</div></td>
+              <td><span class="badge badge-blue">${c.zona||c.estacion||'—'}</span></td>
+              <td class="text-slate-400 text-xs">${hora(c.fechaApertura)} → ${hora(c.fechaCierre)}</td>
+              <td id="hr-total-${c.idCaja}" class="font-semibold">${fmtMoney(c.totalVentas)}</td>
+              <td id="hr-tickets-${c.idCaja}" class="text-center">${c.tickets}</td>
+              <td id="hr-dif-${c.idCaja}"><span class="badge ${difCls}">${difStr}</span></td>
+              <td><a href="${c.urlReporte||'#'}" target="_blank" rel="noopener" class="btn-primary text-xs px-3 py-1.5 inline-block" style="text-decoration:none">📊 Reporte</a></td>`;
+            histTbody.prepend(tr);
+            const histTitle = $('cajasHistTitle');
+            if (histTitle) histTitle.textContent = 'Historial de Cierres (' + cerradas.length + ')';
+          }
+        });
+      }
+
+      // ── Panel tickets (si está abierto) ──────────────────────
+      if (!$('cajasTicketsPanel')?.classList.contains('hidden')) {
+        if (nuevos.length > 0) {
+          _renderTicketList();
+          nuevos.forEach(t => {
+            const row = document.querySelector('[data-ticket-id="' + t.idVenta + '"]');
+            if (row) { row.classList.remove('val-flash'); row.offsetHeight; row.classList.add('val-flash'); }
+          });
+          toast(`↑ ${nuevos.length} ticket${nuevos.length>1?'s':''} nuevo${nuevos.length>1?'s':''}`, 'ok');
+        } else {
+          _renderTicketList();
+        }
+      }
+
+      // ── Panel desglose ventas (si está abierto) ───────────────
+      if (!$('cajasKpiDetalle')?.classList.contains('hidden')) toggleKpiVentas(), toggleKpiVentas();
+
+      // ── Gráficos ─────────────────────────────────────────────
+      if ($('cajasChartsWrap') && !$('cajasChartsWrap').classList.contains('hidden')) {
+        if (!$('modalHistorialCajas') || $('modalHistorialCajas').classList.contains('hidden')) {
+          _renderChartCajasCompacto(_chartCajasPeriodo);
+          _renderChartMetodosHoy();
+        }
+      }
+
+    } catch(e) { console.warn('[CajasRefresh]', e.message); }
+  }
+
+  function _startCajasRefresh() {
+    _stopCajasRefresh();
+    _cajasRefreshSilencioso(); // fetch inmediato
+    _cajasRefreshTimer = setInterval(_cajasRefreshSilencioso, 60000);
+  }
+  function _stopCajasRefresh() {
+    if (_cajasRefreshTimer) { clearInterval(_cajasRefreshTimer); _cajasRefreshTimer = null; }
+  }
+
+  // ── Charts de cajas ─────────────────────────────────────────
+  const _CHART_COLORES = ['#6366f1','#f59e0b','#0ea5e9','#a855f7','#ef4444','#14b8a6','#f97316'];
+  let _chartCajasPeriodo      = 7;
+  let _chartCajasModalPeriodo = 7;
+
+  function _cajasFiltradas(dias) {
+    const todas  = S._todasCajas || [];
+    const desde  = new Date(Date.now() - dias * 86400000).toISOString().substring(0, 10);
+    return todas.filter(c =>
+      (c.fechaApertura || '').substring(0, 10) >= desde ||
+      (c.fechaCierre   || '').substring(0, 10) >= desde
+    );
+  }
+
+  // Chart compacto: barras verticales, eje X = cajeros, agrupado por vendedor
+  function _renderChartCajasCompacto(dias) {
+    const cajas    = _cajasFiltradas(dias);
+    const hoy      = new Date().toISOString().substring(0, 10);
+    const byVend   = {};
+    cajas.forEach(c => {
+      const k = c.vendedor || c.idCaja;
+      if (!byVend[k]) byVend[k] = { total: 0, active: false };
+      byVend[k].total += c.totalVentas;
+      if (c.estado === 'ABIERTA') byVend[k].active = true;
+    });
+    const labels = Object.keys(byVend);
+    const data   = labels.map(k => Math.round(byVend[k].total * 100) / 100);
+    const colors = labels.map(k => byVend[k].active ? '#22c55e' : '#6366f1');
+
+    renderChart('chartCajasBars', {
+      type: 'bar',
+      data: { labels, datasets: [{ data, backgroundColor: colors, borderRadius: 5, barThickness: 32 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title: ctx => ctx[0].label,
+              label: ctx => ` S/. ${ctx.raw.toFixed(2)}`,
+              afterLabel: ctx => {
+                const v    = labels[ctx.dataIndex];
+                const cajs = _cajasFiltradas(dias).filter(c => (c.vendedor || c.idCaja) === v);
+                const ef   = cajs.reduce((s,c) => s + c.efectivo, 0);
+                const virt = cajs.reduce((s,c) => s + c.otros, 0);
+                const tk   = cajs.reduce((s,c) => s + c.tickets, 0);
+                return [` Efectivo: S/.${ef.toFixed(2)}`, ` Virtual:  S/.${virt.toFixed(2)}`, ` Tickets: ${tk}`];
+              }
+            }
+          }
+        },
+        scales: {
+          y: { ticks: { callback: v => 'S/' + v, font: { size: 10 }, color: '#64748b' }, grid: { color: '#1e293b' } },
+          x: { ticks: { font: { size: 11 }, color: '#94a3b8' }, grid: { display: false } }
+        }
+      }
+    });
+  }
+
+  // Chart modal: barras apiladas, eje X = fechas (días), por cajero
+  function _renderChartCajasModal(dias) {
+    const cajas  = _cajasFiltradas(dias);
+    const hoy    = new Date().toISOString().substring(0, 10);
+
+    // Generar rango de fechas
+    const dates = [];
+    for (let d = dias - 1; d >= 0; d--) {
+      dates.push(new Date(Date.now() - d * 86400000).toISOString().substring(0, 10));
+    }
+
+    // Cajas por fecha
+    const cajasByDate = {};
+    cajas.forEach(c => {
+      const f = (c.fechaApertura || c.fechaCierre || '').substring(0, 10);
+      if (!cajasByDate[f]) cajasByDate[f] = [];
+      cajasByDate[f].push(c);
+    });
+
+    // Vendedores únicos
+    const vendedores = [...new Set(cajas.map(c => c.vendedor || c.idCaja))];
+
+    const datasets = vendedores.map((v, i) => ({
+      label: v,
+      data: dates.map(d => {
+        const cs = (cajasByDate[d] || []).filter(c => (c.vendedor || c.idCaja) === v);
+        return Math.round(cs.reduce((s,c) => s + c.totalVentas, 0) * 100) / 100;
+      }),
+      backgroundColor: dates.map(d => {
+        if (d !== hoy) return _CHART_COLORES[i % _CHART_COLORES.length] + '99';
+        const cs = (cajasByDate[d] || []).filter(c => (c.vendedor || c.idCaja) === v);
+        return cs.some(c => c.estado === 'ABIERTA') ? '#22c55e' : _CHART_COLORES[i % _CHART_COLORES.length];
+      }),
+      borderRadius: 3,
+      stack: 'cajas'
+    }));
+
+    renderChart('chartCajasModal', {
+      type: 'bar',
+      data: {
+        labels: dates.map(d => {
+          const day = parseInt(d.substring(8));
+          return d === hoy ? day + '*' : String(day);
+        }),
+        datasets
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { font:{ size:10 }, padding:8, boxWidth:10, color:'#94a3b8' } },
+          tooltip: {
+            mode: 'index', intersect: false,
+            callbacks: {
+              title: ctx => {
+                const d = dates[ctx[0].dataIndex];
+                return d === hoy ? `Hoy ${d}` : d;
+              },
+              label: ctx => ctx.raw > 0 ? ` ${ctx.dataset.label}: ${fmtMoney(ctx.raw)}` : null,
+              footer: ctx => {
+                const total = ctx.reduce((s,c) => s + c.raw, 0);
+                return total > 0 ? `Total del día: ${fmtMoney(total)}` : '';
+              }
+            }
+          }
+        },
+        scales: {
+          y: { stacked: true, ticks: { callback: v => 'S/' + v, font:{ size:10 }, color:'#64748b' }, grid:{ color:'#1e293b' } },
+          x: { stacked: true, ticks: { font:{ size:11 }, color:'#94a3b8' }, grid:{ display:false } }
+        }
+      }
+    });
+  }
+
+  function _renderChartMetodosHoy() {
+    const hoy      = new Date().toISOString().substring(0, 10);
+    const cajasHoy = (S._todasCajas || []).filter(c =>
+      (c.fechaApertura || '').startsWith(hoy) || (c.fechaCierre || '').startsWith(hoy)
+    );
+    const metAcum  = {};
+    cajasHoy.forEach(c => Object.entries(c.byMetodo || {}).forEach(([k,v]) => {
+      metAcum[k] = (metAcum[k] || 0) + v;
+    }));
+    const metKeys  = Object.keys(metAcum).sort((a,b) => metAcum[b] - metAcum[a]);
+    const totalMet = metKeys.reduce((s,k) => s + metAcum[k], 0);
+    if (!metKeys.length) return;
+
+    renderChart('chartCajasMetodo', {
+      type: 'doughnut',
+      data: {
+        labels: metKeys,
+        datasets: [{ data: metKeys.map(k => metAcum[k]),
+          backgroundColor: _CHART_COLORES, borderWidth: 2, borderColor: '#0f172a', hoverOffset: 6 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: {
+            label: ctx => ` ${ctx.label}: ${fmtMoney(ctx.raw)} (${Math.round(ctx.raw / totalMet * 100)}%)`
+          }}
+        }
+      }
+    });
+
+    const det = $('cajasMetodoDetalle');
+    if (det) det.innerHTML = metKeys.map((k, i) => `
+      <div class="flex items-center justify-between text-xs">
+        <div class="flex items-center gap-1.5">
+          <span class="inline-block w-2.5 h-2.5 rounded-sm shrink-0" style="background:${_CHART_COLORES[i] || '#64748b'}"></span>
+          <span class="text-slate-400">${k}</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-slate-500">${Math.round(metAcum[k] / totalMet * 100)}%</span>
+          <span class="font-semibold text-white">${fmtMoney(metAcum[k])}</span>
+        </div>
+      </div>`).join('');
+  }
+
+  function setChartCajasPeriodo(dias) {
+    _chartCajasPeriodo = dias;
+    [7, 30, 90].forEach(d => {
+      const el = $('ccp' + d); if (el) el.classList.toggle('active', d === dias);
+    });
+    _renderChartCajasCompacto(dias);
+  }
+
+  function setChartCajasModalPeriodo(dias) {
+    _chartCajasModalPeriodo = dias;
+    [7, 30, 90].forEach(d => {
+      const el = $('ccm' + d); if (el) el.classList.toggle('active', d === dias);
+    });
+    _renderChartCajasModal(dias);
+  }
+
+  function abrirModalHistorialCajas() {
+    const modal = $('modalHistorialCajas'); if (!modal) return;
+    modal.classList.remove('hidden');
+    setTimeout(() => _renderChartCajasModal(_chartCajasModalPeriodo), 50);
+  }
+
+  function cerrarModalHistorialCajas() {
+    const modal = $('modalHistorialCajas'); if (modal) modal.classList.add('hidden');
+  }
+
+  // ── Historial de tickets ────────────────────────────────────
+  let _tkFiltroFecha  = 'hoy';
+  let _tkFiltroEstado = '';
+  let _tkFiltroTipo   = '';
+  let _modalTicketId  = null;
+
+  function toggleKpiTickets() {
+    const panel = $('cajasTicketsPanel');
+    const arrow = $('cajasKpiTicketsArrow');
+    if (!panel) return;
+    const opening = panel.classList.contains('hidden');
+    panel.classList.toggle('hidden', !opening);
+    if (arrow) arrow.textContent = opening ? '▲' : '▼';
+    if (opening) _renderTicketList();
+  }
+
+  function setTicketFiltroFecha(v) {
+    _tkFiltroFecha = v;
+    ['hoy','semana','mes','todos'].forEach(k => {
+      const el = $('tf' + k.charAt(0).toUpperCase() + k.slice(1));
+      if (el) el.classList.toggle('active', k === v);
+    });
+    _renderTicketList();
+  }
+
+  function setTicketFiltroEstado(v) {
+    _tkFiltroEstado = v;
+    _tkFiltroTipo   = '';
+    ['All','Com','Pend','Anu'].forEach(k => { const el=$('te'+k); if(el) el.classList.remove('active'); });
+    ['NV','B','F'].forEach(k => { const el=$('tt'+k); if(el) el.classList.remove('active'); });
+    const map = {'':'All','COMPLETADO':'Com','POR_COBRAR':'Pend','ANULADO':'Anu'};
+    const el = $('te' + (map[v] || 'All')); if(el) el.classList.add('active');
+    _renderTicketList();
+  }
+
+  function setTicketFiltroTipo(v) {
+    _tkFiltroTipo   = v;
+    _tkFiltroEstado = '';
+    ['All','Com','Pend','Anu'].forEach(k => { const el=$('te'+k); if(el) el.classList.remove('active'); });
+    ['NV','B','F'].forEach(k => { const el=$('tt'+k); if(el) el.classList.remove('active'); });
+    const el = $('tt' + v); if(el) el.classList.add('active');
+    _renderTicketList();
+  }
+
+  function _renderTicketList() {
+    const container = $('cajasTicketsList');
+    if (!container) return;
+    const hoy    = new Date().toISOString().substring(0, 10);
+    const semana = new Date(Date.now() - 7  * 86400000).toISOString().substring(0, 10);
+    const mes    = new Date(Date.now() - 30 * 86400000).toISOString().substring(0, 10);
+    const desde  = _tkFiltroFecha === 'hoy' ? hoy : _tkFiltroFecha === 'semana' ? semana : _tkFiltroFecha === 'mes' ? mes : '0000-00-00';
+
+    let lista = (S._todosTickets || []).filter(t => {
+      if (t.fecha < desde) return false;
+      if (_tkFiltroEstado && t.estado !== _tkFiltroEstado) return false;
+      if (_tkFiltroTipo   && t.tipo   !== _tkFiltroTipo)   return false;
+      return true;
+    });
+
+    if (!lista.length) {
+      container.innerHTML = '<div class="text-xs text-slate-600 py-4 text-center">Sin tickets para los filtros seleccionados</div>';
+      return;
+    }
+
+    const metodoBadge = m => {
+      const cls = m === 'EFECTIVO' ? 'badge-green' : m === 'POR_COBRAR' ? 'badge-yellow' : m === 'ANULADO' ? 'badge-red' : 'badge-blue';
+      return `<span class="badge ${cls}" style="font-size:10px">${m}</span>`;
+    };
+    const estadoIcon = s => s === 'ANULADO' ? '🚫' : s === 'POR_COBRAR' ? '⏳' : s === 'CREDITO' ? '💳' : '✅';
+    const tipoIcon   = t => t === 'F' ? '📋' : t === 'B' ? '📄' : '🧾';
+
+    container.innerHTML = lista.map(t => {
+      const anulado = t.estado === 'ANULADO';
+      const label   = t.correlativo || t.idVenta;
+      const esHoy   = t.fecha === hoy;
+      const fechaStr = esHoy ? `hoy ${t.hora}` : `${t.fecha} ${t.hora}`;
+      return `
+      <div data-ticket-id="${t.idVenta}" class="border-b border-slate-800/60 py-2.5 ${anulado ? 'opacity-50' : ''}">
+        <div class="flex items-start justify-between gap-2">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="text-sm">${tipoIcon(t.tipo)}</span>
+              <span class="text-xs font-mono font-semibold ${anulado ? 'line-through text-slate-500' : 'text-slate-200'}">${label}</span>
+              <span class="text-xs text-slate-600">${fechaStr}</span>
+            </div>
+            <div class="text-xs text-slate-500 mt-0.5 truncate">
+              ${estadoIcon(t.estado)} ${t.vendedor || '—'} · ${t.zona || '—'}
+              ${t.clienteNom ? ' · ' + t.clienteNom : t.clienteDoc ? ' · ' + t.clienteDoc : ''}
+            </div>
+          </div>
+          <div class="text-right shrink-0">
+            <div class="text-sm font-bold ${anulado ? 'line-through text-slate-600' : 'text-white'}">${fmtMoney(t.total)}</div>
+            <div class="mt-0.5">${metodoBadge(t.metodo)}</div>
+          </div>
+        </div>
+        <!-- Botones de acción -->
+        ${!anulado ? `
+        <div class="flex gap-1.5 mt-1.5">
+          <button onclick="MOS.confirmarAnularTicket('${t.idVenta}','${label}')"
+            class="text-xs px-2.5 py-1 rounded-md border border-red-900/50 text-red-400 hover:bg-red-900/20 transition-colors">
+            🚫 Anular
+          </button>
+          <button onclick="MOS.abrirModalMetodo('${t.idVenta}','${label}','${t.metodo}',${t.total})"
+            class="text-xs px-2.5 py-1 rounded-md border border-slate-700 text-slate-400 hover:border-indigo-600 hover:text-indigo-400 transition-colors">
+            💳 Cambiar método
+          </button>
+        </div>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  async function confirmarAnularTicket(idVenta, label, desdeModal) {
+    if (!idVenta) { toast('ID de ticket inválido', 'error'); return; }
+    if (!confirm(`¿Anular el ticket ${label}?\nEsta acción no se puede deshacer.`)) return;
+    if (desdeModal) cerrarModalMetodo();
+    const id = String(idVenta).trim();
+    try {
+      await API.post('anularTicketME', { idVenta: id });
+      toast('Ticket anulado', 'ok');
+      // Actualizar local inmediatamente
+      if (S._todosTickets) {
+        S._todosTickets.forEach(t => {
+          if (String(t.idVenta).trim() === id) { t.metodo = 'ANULADO'; t.estado = 'ANULADO'; }
+        });
+      }
+      _renderTicketList();
+      setTimeout(() => _cajasRefreshSilencioso(), 1000);
+    } catch(e) { toast(e.message, 'error'); }
+  }
+
+  // ── Modal cambiar método (replica flujo ME) ─────────────────
+  let _modalTicketTotal  = 0;
+  let _modalMetodoSel    = 'EFECTIVO';
+  let _modalLabel        = '';
+
+  function abrirModalMetodo(idVenta, label, metodoActual, total) {
+    if (!idVenta) { toast('ID de ticket inválido', 'error'); return; }
+    _modalTicketId    = String(idVenta).trim();
+    _modalLabel       = label || idVenta;
+    _modalTicketTotal = parseFloat(total) || 0;
+    // Si no viene total buscar en S._todosTickets
+    if (!_modalTicketTotal) {
+      const tk = (S._todosTickets || []).find(t => String(t.idVenta).trim() === _modalTicketId);
+      if (tk) _modalTicketTotal = tk.total;
+    }
+    _modalMetodoSel = metodoActual === 'POR_COBRAR' ? 'EFECTIVO' : (metodoActual || 'EFECTIVO');
+    _renderModalMetodo();
+    const modal = $('modalCambiarMetodo');
+    if (modal) modal.classList.remove('hidden');
+  }
+
+  function _renderModalMetodo() {
+    const box = $('modalCambiarMetodoBox');
+    if (!box) return;
+    const total = _modalTicketTotal;
+    const sel   = _modalMetodoSel;
+
+    // Sección dinámica según método seleccionado
+    let seccion = '';
+    if (sel === 'MIXTO') {
+      const virt = parseFloat($('mmVirtual')?.value) || 0;
+      const efec = Math.max(0, total - virt);
+      const valido = virt > 0 && virt < total;
+      seccion = `
+        <div class="mt-3 space-y-2">
+          <div>
+            <label class="lbl text-sky-400">📲 Monto virtual (S/.)</label>
+            <input id="mmVirtual" type="number" step="0.10" min="0.01" max="${(total - 0.01).toFixed(2)}"
+              placeholder="0.00" value="${virt || ''}"
+              oninput="MOS._onMixtoInput()"
+              class="inp text-center text-xl font-bold" style="border-color:#7c3aed">
+            ${virt > 0 && virt >= total ? '<p class="text-xs text-amber-400 mt-1">El monto virtual cubre el total — usa VIRTUAL</p>' : ''}
+          </div>
+          <div class="flex justify-between items-center px-1 py-1.5 rounded-lg" style="background:#0d1526">
+            <span class="text-sm text-slate-400">💵 Efectivo</span>
+            <span class="text-lg font-bold ${efec > 0 ? 'text-emerald-400' : 'text-slate-600'}">S/. ${efec.toFixed(2)}</span>
+          </div>
+          <button onclick="MOS.aplicarCambioMetodo('MIXTO')" ${!valido ? 'disabled' : ''}
+            class="w-full py-3.5 rounded-xl font-bold text-sm transition-all ${valido ? 'bg-purple-600 hover:bg-purple-500 text-white' : 'bg-slate-800 text-slate-600 cursor-not-allowed'}">
+            Confirmar MIXTO · S/. ${total.toFixed(2)}
+          </button>
+        </div>`;
+    } else if (sel === 'EFECTIVO') {
+      seccion = `
+        <div class="mt-3">
+          <div class="flex justify-between items-center px-3 py-3 rounded-xl mb-3" style="background:#0d1526">
+            <span class="text-slate-400">💵 Cobrar en efectivo</span>
+            <span class="text-xl font-bold text-emerald-400">S/. ${total.toFixed(2)}</span>
+          </div>
+          <button onclick="MOS.aplicarCambioMetodo('EFECTIVO')"
+            class="w-full py-3.5 rounded-xl font-bold text-sm bg-emerald-700 hover:bg-emerald-600 text-white transition-all">
+            Confirmar EFECTIVO · S/. ${total.toFixed(2)}
+          </button>
+        </div>`;
+    } else { // VIRTUAL
+      seccion = `
+        <div class="mt-3">
+          <div class="flex justify-between items-center px-3 py-3 rounded-xl mb-3" style="background:#0d1526">
+            <span class="text-slate-400">📲 Cobro virtual</span>
+            <span class="text-xl font-bold text-sky-400">S/. ${total.toFixed(2)}</span>
+          </div>
+          <button onclick="MOS.aplicarCambioMetodo('VIRTUAL')"
+            class="w-full py-3.5 rounded-xl font-bold text-sm bg-sky-700 hover:bg-sky-600 text-white transition-all">
+            Confirmar VIRTUAL · S/. ${total.toFixed(2)}
+          </button>
+        </div>`;
+    }
+
+    const metodoBtns = ['EFECTIVO','VIRTUAL','MIXTO'].map(m => {
+      const cfg = { EFECTIVO:{icon:'💵',active:'border-emerald-500 text-emerald-400 bg-emerald-900/20'},
+                    VIRTUAL: {icon:'📲',active:'border-sky-500 text-sky-400 bg-sky-900/20'},
+                    MIXTO:   {icon:'🔀',active:'border-purple-500 text-purple-400 bg-purple-900/20'} }[m];
+      const cls = (m === sel) ? cfg.active : 'border-slate-700 text-slate-500 hover:border-slate-500 hover:text-slate-300';
+      return `<button onclick="MOS._selMetodo('${m}')"
+        class="flex flex-col items-center justify-center gap-1.5 py-4 rounded-xl border-2 transition-all ${cls}">
+        <span class="text-xl">${cfg.icon}</span>
+        <span class="text-xs font-bold tracking-wide">${m}</span>
+      </button>`;
+    }).join('');
+
+    box.innerHTML = `
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="font-semibold text-slate-200">Cambiar método de pago</div>
+          <div class="text-xs text-slate-500 mt-0.5 font-mono">${_modalLabel}</div>
+        </div>
+        <button onclick="MOS.cerrarModalMetodo()" class="text-slate-600 hover:text-slate-300 text-xl leading-none">✕</button>
+      </div>
+
+      <!-- Total prominente -->
+      <div class="rounded-xl p-3 mb-4 text-center" style="background:#0d1526;border:1px solid #1e293b">
+        <div class="text-xs text-slate-500 uppercase tracking-widest mb-1">Total a cobrar</div>
+        <div class="text-3xl font-black text-white">S/. ${total.toFixed(2)}</div>
+      </div>
+
+      <!-- 3 botones método -->
+      <div class="grid grid-cols-3 gap-2">${metodoBtns}</div>
+
+      <!-- Sección dinámica -->
+      ${seccion}
+
+      <!-- Anular -->
+      <div class="mt-3 pt-3 border-t border-slate-800">
+        <button onclick="MOS.confirmarAnularTicket('${_modalTicketId}','${_modalLabel}',true)"
+          class="w-full py-2.5 rounded-xl text-sm font-semibold border border-red-900/50 text-red-400 hover:bg-red-900/20 transition-all">
+          🚫 Anular ticket
+        </button>
+      </div>`;
+  }
+
+  function _selMetodo(m) {
+    _modalMetodoSel = m;
+    _renderModalMetodo();
+    // Focus en input virtual si es MIXTO
+    if (m === 'MIXTO') setTimeout(() => $('mmVirtual')?.focus(), 50);
+  }
+
+  function _onMixtoInput() { _renderModalMetodo(); }
+
+  function cerrarModalMetodo() {
+    const modal = $('modalCambiarMetodo'); if (modal) modal.classList.add('hidden');
+    _modalTicketId = null;
+  }
+
+  async function aplicarCambioMetodo(metodo) {
+    if (!_modalTicketId) return;
+    const id = _modalTicketId;
+    cerrarModalMetodo();
+    try {
+      await API.post('cambiarMetodoME', { idVenta: id, metodo });
+      toast('Método actualizado: ' + metodo, 'ok');
+      if (S._todosTickets) {
+        S._todosTickets.forEach(t => {
+          if (String(t.idVenta).trim() === id) { t.metodo = metodo; t.estado = 'COMPLETADO'; }
+        });
+      }
+      _renderTicketList();
+      setTimeout(() => _cajasRefreshSilencioso(), 1200);
+    } catch(e) { toast(e.message, 'error'); }
+  }
+
+  function toggleKpiVentas() {
+    const panel = $('cajasKpiDetalle');
+    const arrow = $('cajasKpiVentasArrow');
+    if (!panel) return;
+    const opening = panel.classList.contains('hidden');
+    panel.classList.toggle('hidden', !opening);
+    if (arrow) arrow.textContent = opening ? '▲' : '▼';
+    if (!opening) return; // solo renderiza al abrir
+
+    const cajas = S._cajasHoy || [];
+    const body  = $('cajasKpiDetalleBody');
+    if (!body) return;
+
+    if (!cajas.length) {
+      body.innerHTML = '<div class="text-xs text-slate-500">Sin cajas registradas hoy.</div>';
+      return;
+    }
+
+    body.innerHTML = cajas.map(c => {
+      const esAbierta  = c.estado === 'ABIERTA';
+      const badgeCls   = esAbierta ? 'badge-green' : 'badge-gray';
+      const badgeTxt   = esAbierta ? 'ABIERTA' : 'CERRADA';
+      const horaApert  = (c.fechaApertura || '').substring(11, 16);
+      const horaCierre = (c.fechaCierre   || '').substring(11, 16);
+      const rango      = horaCierre ? `${horaApert} → ${horaCierre}` : `desde ${horaApert}`;
+
+      // Métodos virtuales (no efectivo)
+      const virtuales = Object.entries(c.byMetodo || {}).filter(([k]) => k !== 'EFECTIVO').sort((a,b) => b[1]-a[1]);
+
+      return `
+      <div class="border-b border-slate-800 py-3 last:border-0">
+        <!-- Cabecera caja -->
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2">
+            <span class="badge ${badgeCls} text-xs">${badgeTxt}</span>
+            <span class="font-medium text-sm text-white">${c.vendedor || '—'}</span>
+            <span class="text-xs text-slate-500">${c.zona || c.estacion || ''}</span>
+          </div>
+          <span class="text-xs text-slate-600">${rango}</span>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+          <!-- Físico -->
+          <div class="card-sm p-2">
+            <div class="text-slate-500 mb-1">💵 Físico</div>
+            <div class="flex justify-between py-0.5"><span class="text-slate-500">Apertura</span><span>${fmtMoney(c.montoInicial)}</span></div>
+            <div class="flex justify-between py-0.5"><span class="text-slate-500">+ Efectivo ventas</span><span class="text-emerald-400">+${fmtMoney(c.efectivo)}</span></div>
+            ${c.entradas > 0 ? `<div class="flex justify-between py-0.5"><span class="text-slate-500">+ Ingresos extra</span><span class="text-emerald-400">+${fmtMoney(c.entradas)}</span></div>` : ''}
+            ${c.salidas  > 0 ? `<div class="flex justify-between py-0.5"><span class="text-slate-500">- Salidas extra</span><span class="text-red-400">-${fmtMoney(c.salidas)}</span></div>` : ''}
+            <div class="flex justify-between font-bold border-t border-slate-700 pt-1 mt-1">
+              <span class="text-slate-300">Esperado físico</span>
+              <span class="text-emerald-400">${fmtMoney(c.efectivoEsperado)}</span>
+            </div>
+          </div>
+
+          <!-- Virtual -->
+          <div class="card-sm p-2">
+            <div class="text-slate-500 mb-1">📲 Virtual</div>
+            ${virtuales.length > 0
+              ? virtuales.map(([k,v]) => `<div class="flex justify-between py-0.5"><span class="text-slate-500">${k}</span><span class="text-indigo-400">${fmtMoney(v)}</span></div>`).join('')
+              : '<div class="text-slate-600 py-0.5">Sin pagos virtuales</div>'
+            }
+            ${virtuales.length > 0 ? `
+            <div class="flex justify-between font-bold border-t border-slate-700 pt-1 mt-1">
+              <span class="text-slate-300">Total virtual</span>
+              <span class="text-indigo-400">${fmtMoney(c.otros)}</span>
+            </div>` : ''}
+          </div>
+        </div>
+
+        <!-- Total caja -->
+        <div class="flex justify-between items-center mt-2 pt-1">
+          <span class="text-xs text-slate-500">Total vendido (efectivo + virtual)</span>
+          <span class="font-bold text-white text-sm">${fmtMoney(c.totalVentas)}</span>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  async function toggleCajaDetail(idCaja) {
+    const detail    = $('cajadetail-' + idCaja);
+    const iconEl    = $('cajabtn-icon-'  + idCaja);
+    const labelEl   = $('cajabtn-label-' + idCaja);
+    const headerLbl = $('cajatickets-label-' + idCaja);
+    if (!detail) return;
+
+    const opening = detail.classList.contains('hidden');
+    detail.classList.toggle('hidden', !opening);
+
+    if (!opening) {
+      // Cerrando
+      if (iconEl)  iconEl.textContent  = '▼';
+      if (labelEl) {
+        const rows = detail.querySelectorAll('[data-ticket-row]').length;
+        labelEl.textContent = `Ver ${rows || ''} ticket${rows !== 1 ? 's' : ''}`;
+      }
+      return;
+    }
+
+    // Abriendo → refresh silencioso de esta caja
+    if (iconEl) { iconEl.innerHTML = '<span class="spin" style="display:inline-block;font-size:13px">↻</span>'; iconEl.style.animation = ''; }
+    if (labelEl) labelEl.textContent = 'Actualizando…';
+
+    try {
+      const res = await API.get('getCierresCaja', {});
+      const { abiertas = [], cerradas = [], todosTickets: tkAll = [],
+              kpis, kpisTickets = {}, generadoEn } = res || {};
+
+      // Actualizar estado global silencioso
+      S._todosTickets = tkAll;
+      const todayStr  = new Date().toISOString().substring(0, 10);
+      S._todasCajas   = [...abiertas, ...cerradas];
+      S._cajasHoy     = [...abiertas, ...(cerradas || []).filter(c =>
+        (c.fechaApertura || '').startsWith(todayStr) || (c.fechaCierre || '').startsWith(todayStr))];
+
+      // KPIs
+      const setQ = (id, v) => { const el=$(id); if(el) el.textContent = v; };
+      setQ('cajasKpiVentas',     fmtMoney(kpis?.totalDia || 0));
+      setQ('cajasKpiTicketsHoy', kpisTickets.hoy?.total || 0);
+      setQ('cajasKpiTicketsMes', kpisTickets.mes?.total || 0);
+      setQ('cajasKpiNV',         kpisTickets.hoy?.NV    || 0);
+      setQ('cajasKpiBoleta',     kpisTickets.hoy?.B     || 0);
+      setQ('cajasKpiFactura',    kpisTickets.hoy?.F     || 0);
+      const ts = $('cajasTimestamp');
+      if (ts) ts.textContent = 'Actualizado: ' + (generadoEn || '—');
+
+      // Actualizar solo el contenido de ESTA caja
+      const cajaDatos = [...abiertas, ...cerradas].find(c => c.idCaja === idCaja);
+      if (cajaDatos) {
+        const tkList = cajaDatos.ticketsList || [];
+        const exList = cajaDatos.extrasList  || [];
+        _renderCajaTicketRows(idCaja, tkList, exList, cajaDatos);
+        const count = tkList.length;
+        if (labelEl) labelEl.textContent = `${count} ticket${count !== 1 ? 's' : ''} ▲`;
+        if (headerLbl) headerLbl.textContent = `Tickets (${count})`;
+      } else {
+        if (labelEl) labelEl.textContent = 'Sin datos ▲';
+      }
+    } catch(e) {
+      if (labelEl) labelEl.textContent = 'Error · intentar de nuevo ▲';
+      console.warn('[CajaDetail]', e.message);
+    } finally {
+      if (iconEl) { iconEl.innerHTML = ''; iconEl.style.animation = ''; }
+    }
+  }
+
+  // Re-renderiza solo las filas de tickets de una caja abierta sin tocar el resto del DOM
+  function _renderCajaTicketRows(idCaja, tkList, exList, cajaDatos) {
+    const detail = $('cajadetail-' + idCaja);
+    if (!detail) return;
+
+    const estadoBadge = est => {
+      if (est === 'ANULADO')    return '<span class="badge badge-red" style="font-size:10px">ANULADO</span>';
+      if (est === 'POR_COBRAR') return '<span class="badge badge-yellow" style="font-size:10px">POR COBRAR</span>';
+      if (est === 'CREDITO')    return '<span class="badge badge-blue" style="font-size:10px">CRÉDITO</span>';
+      return '';
+    };
+    const metodoBadge = m => {
+      const cls = m === 'EFECTIVO' ? 'badge-green' : m === 'ANULADO' ? 'badge-red' : m === 'POR_COBRAR' ? 'badge-yellow' : 'badge-blue';
+      return `<span class="badge ${cls}" style="font-size:10px">${m}</span>`;
+    };
+
+    const ticketRowsHtml = tkList.map(t => {
+      const anulado = t.estado === 'ANULADO';
+      return `
+      <div data-ticket-row="${t.idVenta}" class="flex items-center gap-2 py-1.5 border-b border-slate-800/60 ${anulado ? 'opacity-40' : ''}">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="text-xs font-mono ${anulado ? 'line-through text-slate-500' : 'text-slate-200'}">${t.correlativo || t.idVenta}</span>
+            ${estadoBadge(t.estado)}
+          </div>
+          <div class="text-xs text-slate-500 truncate mt-0.5">${t.clienteNom || t.clienteDoc || 'Sin cliente'} · <span class="text-slate-600">${t.tipoDoc}</span>${t.hora ? ' · ' + t.hora : ''}</div>
+        </div>
+        <div class="text-right shrink-0">
+          <div class="text-sm font-semibold ${anulado ? 'line-through text-slate-600' : 'text-white'}">${fmtMoney(t.total)}</div>
+          <div class="mt-0.5">${metodoBadge(t.metodo)}</div>
+        </div>
+      </div>`;
+    }).join('');
+
+    // Buscar o crear contenedor de rows
+    let rowsDiv = detail.querySelector('.caja-ticket-rows');
+    if (!rowsDiv) {
+      rowsDiv = document.createElement('div');
+      rowsDiv.className = 'caja-ticket-rows mb-4';
+      detail.insertBefore(rowsDiv, detail.firstChild.nextSibling);
+    }
+
+    if (tkList.length > 0) {
+      rowsDiv.innerHTML = ticketRowsHtml;
+      // Fade-in en toda la lista como confirmación visual
+      rowsDiv.style.animation = 'none'; rowsDiv.offsetHeight;
+      rowsDiv.style.animation = 'fadeIn .3s ease';
+    } else {
+      rowsDiv.innerHTML = '<div class="text-xs text-slate-600 mb-4">Sin tickets registrados aún</div>';
+    }
+  }
+
   function _cajaElapsed(fechaApertura) {
     if (!fechaApertura) return '—';
     try {
@@ -1652,9 +3690,13 @@ const MOS = (() => {
   // ── PUBLIC API ───────────────────────────────────────────────
   return {
     init, nav, refresh, fabAction,
-    openConfig, saveConfig, testConnection, closeModal,
-    filterCatalogo, setCatTab, toggleDerivs,
+    openConfig, saveConfig, testConnection, closeModal, openEcoModal,
+    filterCatalogo, setCatTab, toggleDerivs, togglePresentaciones, guardarPrecioRapido,
+    abrirModalPrecioRapido, cerrarModalPrecioRapido,
+    abrirAnalitica, cerrarAnalitica, setAnPeriodo, guardarStockMinMax, _anCurrentId,
+    guardarAjustePrecios, stepperInc, stepperDec,
     abrirModalProducto, guardarProducto,
+    toggleAddEquiv, crearEquivalenciaModal, toggleEquivActivo,
     abrirModalPrecio, publicarPrecio,
     setAlmTab,
     loadProveedores, selectProveedor, renderProveedores,
@@ -1668,7 +3710,10 @@ const MOS = (() => {
     abrirModalSerie, guardarSerie,
     guardarPinEstacion, guardarPinWH,
     // Cajas
-    loadCajas,
+    loadCajas, toggleCajaDetail, toggleKpiVentas,
+    toggleKpiTickets, setTicketFiltroFecha, setTicketFiltroEstado, setTicketFiltroTipo,
+    confirmarAnularTicket, abrirModalMetodo, cerrarModalMetodo, aplicarCambioMetodo,
+    _selMetodo, _onMixtoInput, _renderModalMetodo,
     // Login / sesión
     seleccionarUsuario, loginVolver, confirmarPin, logout
   };

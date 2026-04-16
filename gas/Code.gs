@@ -29,10 +29,12 @@ function _route(method, e) {
       // ── Catálogo maestro (Productos) ───────────────────────
       case 'getProductos':         return getProductosMaster(params);
       case 'getProducto':          return getProductoMaster(params.codigo);
+      case 'getProductoPorCodigo': return getProductoPorCodigo(params);
       case 'crearProducto':        return crearProductoMaster(params);
       case 'actualizarProducto':   return actualizarProductoMaster(params);
-      case 'getEquivalencias':     return getEquivalencias(params);
-      case 'crearEquivalencia':    return crearEquivalencia(params);
+      case 'getEquivalencias':       return getEquivalencias(params);
+      case 'crearEquivalencia':      return crearEquivalencia(params);
+      case 'actualizarEquivalencia': return actualizarEquivalencia(params);
       case 'getHistorialPrecios':  return getHistorialPrecios(params);
       case 'publicarPrecio':       return publicarPrecio(params);
 
@@ -52,9 +54,11 @@ function _route(method, e) {
       case 'getEnvasadosWarehouse':return getEnvasadosWarehouse(params);
       case 'getGuiasWarehouse':    return getGuiasWarehouse(params);
       case 'getVentasMosExpress':  return getVentasMosExpress(params);
-      case 'getRotacion':          return getRotacionProductos(params);
+      case 'getRotacion':            return getRotacionProductos(params);
+      case 'getAnaliticaProducto':   return getAnaliticaProducto(params);
       case 'getConexiones':        return getConexiones();
       case 'setConexion':          return setConexion(params);
+      case 'getEcoStatus':         return getEcoStatus();
 
       // ── Config ─────────────────────────────────────────────
       case 'getConfig':            return getConfigMos();
@@ -84,6 +88,8 @@ function _route(method, e) {
 
       // ── Cajas MosExpress ────────────────────────────────────
       case 'getCierresCaja':            return getCierresCaja(params);
+      case 'anularTicketME':            return anularTicketME(params);
+      case 'cambiarMetodoME':           return cambiarMetodoME(params);
 
       default:
         return { ok: false, error: 'Acción no reconocida: ' + action };
@@ -99,10 +105,11 @@ function _route(method, e) {
 function _sheetToObjects(sheet) {
   var data = sheet.getDataRange().getValues();
   if (data.length < 2) return [];
-  var headers = data[0];
+  var headers = data[0].map(function(h) { return String(h).trim(); });
   return data.slice(1).map(function(row) {
     var obj = {};
     headers.forEach(function(h, i) {
+      if (!h) return;
       var v = row[i];
       obj[h] = v instanceof Date
         ? Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd')

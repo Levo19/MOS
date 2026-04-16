@@ -32,7 +32,13 @@
     /* Views */
     .view { display: none; }
     .view.active { display: block; animation: fadeIn .2s ease; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    @keyframes fadeIn       { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    @keyframes cardSlideIn  { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+    @keyframes ticketFadeIn { from { opacity: 0; background: rgba(99,102,241,.12); } to { opacity: 1; background: transparent; } }
+    @keyframes valueFlash   { 0%{ background: rgba(99,102,241,.25); border-radius:4px; } 100%{ background: transparent; } }
+    @keyframes spin         { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .spin      { display:inline-block; animation: spin .7s linear infinite; }
+    .val-flash { animation: valueFlash .8s ease; }
 
     /* Cards */
     .card { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; }
@@ -93,9 +99,12 @@
     .presentacion-chip { display: inline-flex; align-items: center; gap: 4px; background: rgba(99,102,241,.1); border: 1px solid rgba(99,102,241,.2); border-radius: 6px; padding: 3px 8px; font-size: 12px; color: #a5b4fc; }
 
     /* Status dot */
-    .dot-green { width: 8px; height: 8px; background: #22c55e; border-radius: 50%; display: inline-block; box-shadow: 0 0 6px #22c55e; }
-    .dot-red   { width: 8px; height: 8px; background: #ef4444; border-radius: 50%; display: inline-block; box-shadow: 0 0 6px #ef4444; }
-    .dot-gray  { width: 8px; height: 8px; background: #475569; border-radius: 50%; display: inline-block; }
+    .dot-green   { width: 8px; height: 8px; background: #22c55e; border-radius: 50%; display: inline-block; box-shadow: 0 0 6px #22c55e; }
+    .dot-yellow  { width: 8px; height: 8px; background: #facc15; border-radius: 50%; display: inline-block; box-shadow: 0 0 6px #facc15; }
+    .dot-red     { width: 8px; height: 8px; background: #ef4444; border-radius: 50%; display: inline-block; box-shadow: 0 0 6px #ef4444; }
+    .dot-gray    { width: 8px; height: 8px; background: #475569; border-radius: 50%; display: inline-block; }
+    @keyframes dotPulse { 0%,100% { opacity: 0.3; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1.1); } }
+    .dot-loading { width: 8px; height: 8px; background: #64748b; border-radius: 50%; display: inline-block; animation: dotPulse 1.2s ease-in-out infinite; }
 
     /* Scrollbar */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -114,6 +123,331 @@
 
     /* Ecosystem status */
     .eco-card { background: #0d1526; border: 1px solid #1e293b; border-radius: 10px; padding: 16px; }
+
+    /* ── Catalog cards ──────────────────────────────────── */
+    .cat-card {
+      background: #0f172a; border: 1px solid #1e293b; border-radius: 14px; overflow: hidden;
+      transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+    }
+    .cat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(99,102,241,.13); border-color: #2d3f5a; }
+    .cat-card.cat-inactive { opacity: .5; }
+
+    /* Action buttons */
+    .cat-btn {
+      width: 32px; height: 32px; border-radius: 9px;
+      border: 1px solid #1e293b; background: transparent;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; font-size: .88rem; flex-shrink: 0;
+      transition: transform .15s ease, border-color .15s ease, background .15s ease;
+    }
+    .cat-btn:active { transform: scale(.9); }
+    .cat-btn-edit:hover  { border-color: #6366f1; background: rgba(99,102,241,.12); }
+    .cat-btn-price:hover { border-color: #f59e0b; background: rgba(245,158,11,.1); }
+    .cat-btn.sm { width: 26px; height: 26px; border-radius: 7px; font-size: .75rem; }
+
+    /* Price display */
+    .cat-price { font-size: 1.05rem; font-weight: 700; color: #818cf8; letter-spacing: -.02em; }
+    .cat-cost  { font-size: .7rem; color: #475569; }
+
+    /* Barcode tag */
+    .cat-barcode {
+      display: inline-flex; align-items: center; gap: .25rem;
+      font-family: 'Courier New', monospace; font-size: .68rem; letter-spacing: .03em;
+      background: #060d1f; border: 1px solid #1e293b;
+      padding: .15rem .5rem; border-radius: 5px; color: #64748b;
+    }
+    /* Equivalencias badge */
+    .cat-equiv {
+      display: inline-flex; align-items: center; gap: .2rem;
+      font-size: .68rem; font-weight: 600;
+      color: #818cf8; background: rgba(99,102,241,.1);
+      padding: .15rem .45rem; border-radius: 5px; border: 1px solid rgba(99,102,241,.2);
+    }
+    /* Brand */
+    .cat-brand { font-size: .68rem; color: #475569; }
+
+    /* Presentations smooth expand (grid trick) */
+    .pres-wrap {
+      display: grid; grid-template-rows: 0fr;
+      transition: grid-template-rows .28s cubic-bezier(.4,0,.2,1);
+    }
+    .pres-wrap.open { grid-template-rows: 1fr; }
+    .pres-wrap > .pres-inner { overflow: hidden; }
+
+    /* Presentation chips */
+    .pres-chip {
+      display: flex; align-items: center; gap: .6rem;
+      padding: .55rem .7rem; background: #060d1f; border: 1px solid #1e293b;
+      border-radius: 9px; transition: border-color .15s, background .15s;
+    }
+    .pres-chip:hover { border-color: #334155; background: #0d1526; }
+    .pres-code   { font-family: 'Courier New', monospace; font-size: .65rem; color: #475569; }
+    .pres-factor { font-size: .65rem; font-weight: 600; color: #64748b;
+                   background: #1e293b; padding: .1rem .35rem; border-radius: 4px; }
+
+    /* ── Price quick modal (bottom sheet) ──────────────── */
+    .qp-overlay {
+      position: fixed; inset: 0; z-index: 150;
+      background: rgba(0,0,0,.65); backdrop-filter: blur(6px);
+      display: flex; align-items: flex-end; justify-content: center;
+      opacity: 0; pointer-events: none;
+      transition: opacity .22s ease;
+    }
+    .qp-overlay.active { opacity: 1; pointer-events: all; }
+    .qp-sheet {
+      width: 100%; max-width: 460px;
+      background: #0f172a; border: 1px solid #334155;
+      border-bottom: none; border-radius: 20px 20px 0 0;
+      padding: 1.25rem 1.25rem 2.5rem;
+      transform: translateY(110%);
+      transition: transform .28s cubic-bezier(.4,0,.2,1);
+    }
+    .qp-overlay.active .qp-sheet { transform: translateY(0); }
+    .qp-handle {
+      width: 36px; height: 4px; background: #334155; border-radius: 2px;
+      margin: 0 auto 1.1rem;
+    }
+
+    /* Equivalencias in modal */
+    .equiv-row {
+      display: flex; align-items: center; gap: .6rem;
+      padding: .45rem .65rem; background: #060d1f; border: 1px solid #1e293b;
+      border-radius: 8px; transition: border-color .15s;
+    }
+    .equiv-row:hover { border-color: #334155; }
+    .equiv-row.inactive { opacity: .45; }
+    .equiv-code { font-family: 'Courier New', monospace; font-size: .72rem; font-weight: 600; color: #94a3b8; }
+    .equiv-desc { font-size: .72rem; color: #64748b; flex: 1; min-width: 0; truncate: true; }
+    .equiv-toggle {
+      font-size: .65rem; padding: .15rem .45rem; border-radius: 5px; border: 1px solid;
+      cursor: pointer; transition: all .15s; background: transparent; flex-shrink: 0;
+    }
+    .equiv-toggle.on  { color: #4ade80; border-color: rgba(74,222,128,.3); }
+    .equiv-toggle.off { color: #f87171; border-color: rgba(248,113,113,.3); }
+    .equiv-toggle:hover { opacity: .75; }
+
+    /* Search highlight */
+    mark { background: rgba(99,102,241,.3); color: #c7d2fe; border-radius: 2px; padding: 0 2px; }
+    /* Cat stats bar */
+    #catStats { min-height: 18px; }
+
+    /* ═══ ANALÍTICA DE PRODUCTO ═════════════════════════════════ */
+    .an-overlay {
+      position: fixed; inset: 0; z-index: 250;
+      background: #020817;
+      transform: translateX(100%);
+      transition: transform .32s cubic-bezier(.4,0,.2,1);
+      overflow-y: auto; overflow-x: hidden;
+      display: flex; flex-direction: column;
+    }
+    .an-overlay.active { transform: translateX(0); }
+
+    /* Header */
+    .an-header {
+      position: sticky; top: 0; z-index: 10;
+      background: rgba(2,8,23,.92); backdrop-filter: blur(12px);
+      border-bottom: 1px solid #1e293b;
+      padding: .75rem 1rem;
+      display: flex; align-items: center; gap: .75rem;
+    }
+    .an-back {
+      width: 34px; height: 34px; border-radius: 9px;
+      border: 1px solid #1e293b; background: transparent;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; color: #94a3b8; font-size: 1rem;
+      transition: all .15s; flex-shrink: 0;
+    }
+    .an-back:hover { border-color: #6366f1; color: #a5b4fc; }
+    .an-header-title { flex: 1; min-width: 0; }
+    .an-header-title h2 { font-size: .95rem; font-weight: 700; color: #f1f5f9; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .an-header-title p  { font-size: .7rem; color: #475569; margin-top: 1px; }
+    .an-period { display: flex; gap: 3px; background: #0d1526; border-radius: 8px; padding: 3px; flex-shrink: 0; }
+    .an-period-btn { padding: 4px 10px; font-size: .72rem; font-weight: 600; border-radius: 5px; border: none; background: transparent; color: #64748b; cursor: pointer; transition: all .15s; }
+    .an-period-btn.active { background: #1e293b; color: #a5b4fc; }
+
+    /* Body padding */
+    .an-body { padding: 1rem; display: flex; flex-direction: column; gap: 1rem; max-width: 1200px; margin: 0 auto; width: 100%; }
+
+    /* KPI strip */
+    .an-kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: .65rem; }
+    @media (min-width: 640px)  { .an-kpis { grid-template-columns: repeat(3, 1fr); } }
+    @media (min-width: 1024px) { .an-kpis { grid-template-columns: repeat(5, 1fr); } }
+
+    .an-kpi {
+      background: #0f172a; border: 1px solid #1e293b; border-radius: 12px;
+      padding: .85rem .9rem; position: relative; overflow: hidden;
+      transition: border-color .2s;
+    }
+    .an-kpi::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: var(--kpi-color, #6366f1); border-radius: 2px 2px 0 0;
+    }
+    .an-kpi:hover { border-color: #334155; }
+    .an-kpi-label { font-size: .65rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: #475569; margin-bottom: .3rem; }
+    .an-kpi-value { font-size: 1.35rem; font-weight: 800; color: #f1f5f9; line-height: 1; letter-spacing: -.03em; }
+    .an-kpi-sub   { font-size: .68rem; color: #475569; margin-top: .25rem; }
+    .an-kpi-icon  { position: absolute; right: .75rem; top: .75rem; font-size: 1.3rem; opacity: .18; }
+
+    /* Grid de secciones */
+    .an-grid { display: grid; gap: 1rem; grid-template-columns: 1fr; }
+    @media (min-width: 1024px) { .an-grid-2 { grid-template-columns: 2fr 1fr; } .an-grid-3 { grid-template-columns: 1fr 1fr 1fr; } }
+
+    /* Sección card */
+    .an-card {
+      background: #0f172a; border: 1px solid #1e293b; border-radius: 14px;
+      padding: 1.1rem 1.1rem .9rem; overflow: hidden;
+    }
+    .an-card-title {
+      font-size: .7rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .07em; color: #475569; margin-bottom: .85rem;
+      display: flex; align-items: center; gap: .4rem;
+    }
+    .an-card-title span { font-size: .9rem; }
+    .an-chart-wrap { position: relative; height: 180px; }
+    @media (min-width: 1024px) { .an-chart-wrap { height: 210px; } }
+    .an-chart-wrap-sm { position: relative; height: 130px; }
+
+    /* Gauge de stock */
+    .stock-gauge-wrap { padding: .5rem 0 0; }
+    .stock-gauge-bar  { position: relative; height: 10px; border-radius: 5px; background: #1e293b; overflow: visible; margin: .5rem 0 1.2rem; }
+    .stock-gauge-fill { height: 100%; border-radius: 5px; transition: width .6s cubic-bezier(.4,0,.2,1); }
+    .stock-gauge-marker {
+      position: absolute; top: -4px; width: 2px; height: 18px;
+      background: #f59e0b; border-radius: 1px;
+      transform: translateX(-50%);
+    }
+    .stock-gauge-marker.max-marker { background: #22c55e; }
+    .stock-gauge-label {
+      position: absolute; top: 18px; font-size: .6rem; color: #64748b;
+      transform: translateX(-50%); white-space: nowrap;
+    }
+    .stock-val-row { display: flex; align-items: baseline; gap: .4rem; margin-bottom: .3rem; }
+    .stock-val-num { font-size: 2rem; font-weight: 800; line-height: 1; letter-spacing: -.04em; }
+    .stock-val-unit { font-size: .75rem; color: #64748b; }
+
+    /* Margin card central */
+    .an-margin-ring { position: relative; width: 100px; height: 100px; margin: 0 auto .75rem; }
+    .an-margin-ring svg { transform: rotate(-90deg); }
+    .an-margin-pct { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 1.3rem; font-weight: 800; color: #f1f5f9; }
+
+    /* Proyección */
+    .an-proj-row { display: flex; justify-content: space-between; align-items: center; padding: .55rem 0; border-bottom: 1px solid #1e293b; }
+    .an-proj-row:last-child { border-bottom: none; }
+    .an-proj-label { font-size: .72rem; color: #64748b; }
+    .an-proj-val   { font-size: .85rem; font-weight: 700; color: #f1f5f9; }
+    .an-proj-val.highlight { color: #f59e0b; }
+    .an-proj-val.ok { color: #22c55e; }
+    .an-proj-val.danger { color: #ef4444; }
+
+    /* Proveedores list */
+    .an-prov-row { display: flex; align-items: center; gap: .65rem; padding: .55rem 0; border-bottom: 1px solid #0d1526; }
+    .an-prov-row:last-child { border-bottom: none; }
+    .an-prov-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .an-prov-name { font-size: .8rem; font-weight: 600; color: #e2e8f0; flex: 1; }
+    .an-prov-forma { font-size: .68rem; color: #475569; }
+
+    /* Compras history */
+    .an-compra-row { display: flex; align-items: center; gap: .65rem; padding: .5rem 0; border-bottom: 1px solid #0d1526; }
+    .an-compra-row:last-child { border-bottom: none; }
+    .an-compra-fecha { font-size: .68rem; color: #64748b; min-width: 60px; }
+    .an-compra-qty   { font-size: .8rem; font-weight: 700; color: #f1f5f9; }
+    .an-compra-cost  { font-size: .75rem; color: #818cf8; margin-left: auto; }
+    .an-compra-estado{ font-size: .62rem; padding: .1rem .4rem; border-radius: 4px; }
+
+    /* Action bar */
+    .an-actions {
+      position: sticky; bottom: 0;
+      background: rgba(2,8,23,.95); backdrop-filter: blur(12px);
+      border-top: 1px solid #1e293b;
+      padding: .85rem 1rem;
+    }
+    .an-actions-inner { max-width: 1200px; margin: 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; }
+    .an-action-group { display: flex; align-items: center; gap: .4rem; background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: .4rem .65rem; }
+    .an-action-group label { font-size: .65rem; font-weight: 600; text-transform: uppercase; color: #64748b; white-space: nowrap; }
+    .an-action-group input { width: 64px; background: transparent; border: none; outline: none; color: #f1f5f9; font-size: .85rem; font-weight: 700; text-align: center; }
+
+    /* Conexión badge */
+    .an-conn-badge { font-size: .65rem; padding: .15rem .5rem; border-radius: 9999px; font-weight: 600; }
+    .an-conn-on  { background: rgba(34,197,94,.12); color: #4ade80; border: 1px solid rgba(34,197,94,.2); }
+    .an-conn-off { background: rgba(100,116,139,.1); color: #64748b; border: 1px solid #1e293b; }
+
+    /* ── Analytics skeleton loader ────────────────────────── */
+    .an-skeleton-kpi { height: 80px; border-radius: 12px; }
+    .an-skeleton-chart { height: 200px; border-radius: 14px; }
+    .an-skeleton-sm { height: 120px; border-radius: 14px; }
+    .an-spin {
+      width: 40px; height: 40px; border-radius: 50%;
+      border: 3px solid #1e293b; border-top-color: #6366f1;
+      animation: spin .7s linear infinite; flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .an-load-pulse {
+      background: linear-gradient(90deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+      background-size: 200% 100%; animation: shimmer 1.6s infinite;
+    }
+
+    /* ── Custom number stepper ───────────────────────────── */
+    .stepper {
+      display: inline-flex; align-items: center;
+      background: #020817; border: 1px solid #1e293b;
+      border-radius: 10px; overflow: hidden; transition: border-color .15s;
+    }
+    .stepper:focus-within { border-color: #6366f1; }
+    .stepper-btn {
+      width: 34px; height: 38px; background: transparent; border: none;
+      color: #64748b; font-size: 1.1rem; cursor: pointer; flex-shrink: 0;
+      transition: background .15s, color .15s;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .stepper-btn:hover { background: rgba(99,102,241,.12); color: #a5b4fc; }
+    .stepper-btn:active { background: rgba(99,102,241,.2); }
+    .stepper-input {
+      width: 64px; background: transparent; border: none; outline: none;
+      color: #f1f5f9; font-size: .9rem; font-weight: 700;
+      text-align: center; padding: 0;
+      -moz-appearance: textfield;
+    }
+    .stepper-input::-webkit-outer-spin-button,
+    .stepper-input::-webkit-inner-spin-button { -webkit-appearance: none; }
+    .stepper.lg .stepper-btn { width: 42px; height: 46px; font-size: 1.2rem; }
+    .stepper.lg .stepper-input { width: 90px; font-size: 1.1rem; }
+
+    /* ── Price coherence alert on pres-chip ──────────────── */
+    .pres-price-ok   { color: #818cf8; font-size: .85rem; font-weight: 700; }
+    .pres-price-warn { color: #f59e0b; font-size: .85rem; font-weight: 700; }
+    .pres-price-err  { color: #ef4444; font-size: .85rem; font-weight: 700; }
+    .pres-alert-badge {
+      display: inline-flex; align-items: center; gap: .2rem;
+      font-size: .62rem; font-weight: 700; padding: .1rem .4rem;
+      border-radius: 5px; background: rgba(239,68,68,.12);
+      color: #f87171; border: 1px solid rgba(239,68,68,.25);
+      cursor: default; white-space: nowrap;
+    }
+    .pres-suggest { font-size: .62rem; color: #64748b; margin-top: 1px; }
+    .pres-alert-dup {
+      background: rgba(245,158,11,.12); color: #fbbf24;
+      border-color: rgba(245,158,11,.3);
+    }
+    .cat-alert-icon {
+      font-size: .8rem; color: #fbbf24; line-height: 1;
+      opacity: .9; cursor: default;
+    }
+
+    /* ── Modal ajuste de precios ─────────────────────────── */
+    .ajuste-row {
+      display: flex; align-items: center; gap: .75rem;
+      padding: .65rem .75rem; border-radius: 10px;
+      border: 1px solid #1e293b; background: #060d1f;
+      transition: border-color .15s, background .15s;
+    }
+    .ajuste-row:has(input:checked) { border-color: rgba(99,102,241,.4); background: rgba(99,102,241,.05); }
+    .ajuste-check { width: 18px; height: 18px; accent-color: #6366f1; flex-shrink: 0; cursor: pointer; }
+    .ajuste-info { flex: 1; min-width: 0; }
+    .ajuste-name { font-size: .78rem; font-weight: 600; color: #e2e8f0; truncate: true; }
+    .ajuste-factor { font-size: .65rem; color: #64748b; }
+    .ajuste-prices { text-align: right; flex-shrink: 0; }
+    .ajuste-current { font-size: .7rem; color: #64748b; text-decoration: line-through; }
+    .ajuste-suggest { font-size: .9rem; font-weight: 700; color: #818cf8; }
   </style>
 </head>
 <body class="h-full">
@@ -305,7 +639,7 @@
         <div class="card p-4">
           <h3 class="font-semibold text-sm text-slate-200 mb-3">Estado del Ecosistema</h3>
           <div class="space-y-2">
-            <div class="eco-card flex items-center justify-between">
+            <div class="eco-card flex items-center justify-between cursor-pointer hover:bg-slate-700/40 transition-colors" onclick="MOS.openEcoModal('wh')">
               <div class="flex items-center gap-3">
                 <span class="text-lg">🏭</span>
                 <div>
@@ -316,9 +650,10 @@
               <div class="flex items-center gap-2">
                 <span class="dot-gray" id="ecoWhDot"></span>
                 <span class="text-xs text-slate-400" id="ecoWhLabel">—</span>
+                <svg class="w-3.5 h-3.5 text-slate-600 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
               </div>
             </div>
-            <div class="eco-card flex items-center justify-between opacity-50">
+            <div class="eco-card flex items-center justify-between cursor-pointer hover:bg-slate-700/40 transition-colors" id="ecoMeCard" onclick="MOS.openEcoModal('me')">
               <div class="flex items-center gap-3">
                 <span class="text-lg">🛒</span>
                 <div>
@@ -327,8 +662,9 @@
                 </div>
               </div>
               <div class="flex items-center gap-2">
-                <span class="dot-gray"></span>
-                <span class="text-xs text-slate-400">Phase 2</span>
+                <span class="dot-gray" id="ecoMeDot"></span>
+                <span class="text-xs text-slate-400" id="ecoMeLabel">—</span>
+                <svg class="w-3.5 h-3.5 text-slate-600 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
               </div>
             </div>
           </div>
@@ -345,29 +681,26 @@
     <!-- ═══ VIEW: CATÁLOGO ════════════════════════════════════ -->
     <section id="view-catalogo" class="view">
       <!-- Toolbar -->
-      <div class="flex flex-col sm:flex-row gap-2 mb-4">
-        <input id="searchCatalogo" type="search" class="inp flex-1" placeholder="🔍 Buscar producto, código o marca..."
-               oninput="MOS.filterCatalogo()">
-        <select id="filtroCategoria" class="inp w-full sm:w-40" onchange="MOS.filterCatalogo()">
+      <div class="flex flex-col sm:flex-row gap-2 mb-3">
+        <div class="relative flex-1">
+          <input id="searchCatalogo" type="search" class="inp w-full pl-9"
+                 placeholder="Buscar por nombre, código de barra, SKU..."
+                 oninput="MOS.filterCatalogo()" autocomplete="off">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">🔍</span>
+        </div>
+        <select id="filtroCategoria" class="inp w-full sm:w-44" onchange="MOS.filterCatalogo()">
           <option value="">Todas las categorías</option>
         </select>
         <button class="btn-primary whitespace-nowrap hidden lg:flex items-center gap-1" onclick="MOS.abrirModalProducto(null)">
           + Nuevo
         </button>
       </div>
-      <!-- Toggle base/todas -->
-      <div class="tab-bar mb-4 w-fit">
-        <button class="tab-btn active" id="tabBaseBtn" onclick="MOS.setCatTab('base')">Base/Granel</button>
-        <button class="tab-btn" id="tabDerivBtn" onclick="MOS.setCatTab('deriv')">Presentaciones</button>
-        <button class="tab-btn" id="tabTodosBtn" onclick="MOS.setCatTab('todos')">Todos</button>
-      </div>
-      <!-- Product list -->
-      <div id="listCatalogo">
-        <div class="space-y-2" id="skelCatalogo">
-          <div class="skel h-16 rounded-xl"></div>
-          <div class="skel h-16 rounded-xl"></div>
-          <div class="skel h-16 rounded-xl"></div>
-        </div>
+      <div id="catStats" class="text-xs text-slate-500 mb-3"></div>
+      <!-- Product cards -->
+      <div id="listCatalogo" class="space-y-3">
+        <div class="skel h-24 rounded-xl"></div>
+        <div class="skel h-24 rounded-xl"></div>
+        <div class="skel h-24 rounded-xl"></div>
       </div>
     </section>
 
@@ -625,39 +958,101 @@
       <div id="cajasContent" class="hidden">
 
         <!-- KPIs del día -->
-        <div class="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-5">
-          <div class="kpi-card p-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+
+          <!-- Card 1: Total vendido hoy -->
+          <div class="kpi-card p-4 cursor-pointer select-none" onclick="MOS.toggleKpiVentas()" title="Ver desglose por caja">
             <div class="flex items-start justify-between mb-2">
               <span class="text-2xl">💰</span>
               <span class="badge badge-green text-xs" id="cajasKpiBadgeVentas"></span>
             </div>
             <div id="cajasKpiVentas" class="text-3xl font-bold text-white mb-1">—</div>
-            <div class="text-xs text-slate-500">Total vendido hoy</div>
-          </div>
-          <div class="kpi-card p-4">
-            <div class="flex items-start justify-between mb-2">
-              <span class="text-2xl">🧾</span>
+            <div class="flex items-center gap-1 text-xs text-slate-500">
+              Total vendido hoy <span id="cajasKpiVentasArrow" class="text-slate-600">▼</span>
             </div>
-            <div id="cajasKpiTickets" class="text-3xl font-bold text-white mb-1">—</div>
-            <div class="text-xs text-slate-500">Tickets cobrados</div>
           </div>
-          <div class="kpi-card p-4 col-span-2 lg:col-span-1">
+
+          <!-- Card 2: Historial de Tickets -->
+          <div class="kpi-card p-4 cursor-pointer select-none" onclick="MOS.toggleKpiTickets()" title="Ver historial de tickets">
             <div class="flex items-start justify-between mb-2">
-              <span class="text-2xl">🏪</span>
+              <span class="text-xl">🧾</span>
+              <span class="text-xs text-slate-600">▼ ver todos</span>
             </div>
-            <div class="flex gap-4 mt-1">
-              <div>
-                <div id="cajasKpiAbiertas" class="text-2xl font-bold text-emerald-400">—</div>
-                <div class="text-xs text-slate-500">Abiertas</div>
+            <!-- Números principales: hoy / 30d -->
+            <div class="flex items-baseline gap-2 mb-2">
+              <span id="cajasKpiTicketsHoy" class="text-3xl font-bold text-white">—</span>
+              <span class="text-sm text-slate-500">hoy &nbsp;/&nbsp; <span id="cajasKpiTicketsMes" class="text-slate-400">—</span> <span class="text-slate-600">30d</span></span>
+            </div>
+            <!-- Conteos por tipo -->
+            <div class="flex items-center gap-4 mb-2">
+              <div class="flex items-center gap-1">
+                <span class="text-base">🧾</span>
+                <div>
+                  <div class="text-xs text-slate-500">Notas</div>
+                  <div id="cajasKpiNV" class="text-sm font-bold text-white">—</div>
+                </div>
               </div>
-              <div>
-                <div id="cajasKpiCerradas" class="text-2xl font-bold text-slate-400">—</div>
-                <div class="text-xs text-slate-500">Cerradas hoy</div>
+              <div class="flex items-center gap-1">
+                <span class="text-base">📄</span>
+                <div>
+                  <div class="text-xs text-slate-500">Boletas</div>
+                  <div id="cajasKpiBoleta" class="text-sm font-bold text-white">—</div>
+                </div>
               </div>
-              <div>
-                <div id="cajasKpiAnulados" class="text-2xl font-bold text-red-400">—</div>
-                <div class="text-xs text-slate-500">Anulados</div>
+              <div class="flex items-center gap-1">
+                <span class="text-base">📋</span>
+                <div>
+                  <div class="text-xs text-slate-500">Facturas</div>
+                  <div id="cajasKpiFactura" class="text-sm font-bold text-white">—</div>
+                </div>
               </div>
+            </div>
+            <div class="flex items-center gap-1 text-xs text-slate-500">
+              Historial de tickets <span id="cajasKpiTicketsArrow" class="text-slate-600">▼</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Panel desglose Total vendido hoy -->
+        <div id="cajasKpiDetalle" class="hidden mb-5">
+          <div class="card p-4">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-semibold text-sm text-slate-200">Desglose por caja — hoy</h3>
+              <button onclick="MOS.toggleKpiVentas()" class="text-slate-600 hover:text-slate-300 text-xs">✕ cerrar</button>
+            </div>
+            <div id="cajasKpiDetalleBody"></div>
+          </div>
+        </div>
+
+        <!-- Panel historial de tickets -->
+        <div id="cajasTicketsPanel" class="hidden mb-5">
+          <div class="card p-4">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-semibold text-sm text-slate-200">Historial de Tickets</h3>
+              <button onclick="MOS.toggleKpiTickets()" class="text-slate-600 hover:text-slate-300 text-xs">✕ cerrar</button>
+            </div>
+            <!-- Filtros fecha -->
+            <div class="flex gap-1 mb-2 flex-wrap">
+              <button onclick="MOS.setTicketFiltroFecha('hoy')"   id="tfHoy"   class="tab-btn active text-xs py-1 px-3">Hoy</button>
+              <button onclick="MOS.setTicketFiltroFecha('semana')" id="tfSemana" class="tab-btn text-xs py-1 px-3">Semana</button>
+              <button onclick="MOS.setTicketFiltroFecha('mes')"   id="tfMes"   class="tab-btn text-xs py-1 px-3">Mes</button>
+              <button onclick="MOS.setTicketFiltroFecha('todos')" id="tfTodos" class="tab-btn text-xs py-1 px-3">Todos (30d)</button>
+            </div>
+            <!-- Filtros estado / tipo -->
+            <div class="flex gap-1 mb-3 flex-wrap">
+              <button onclick="MOS.setTicketFiltroEstado('')"           id="teAll"  class="tab-btn active text-xs py-1 px-3">Todos</button>
+              <button onclick="MOS.setTicketFiltroEstado('COMPLETADO')" id="teCom"  class="tab-btn text-xs py-1 px-3">✅ Cobrado</button>
+              <button onclick="MOS.setTicketFiltroEstado('POR_COBRAR')" id="tePend" class="tab-btn text-xs py-1 px-3">⏳ Por cobrar</button>
+              <button onclick="MOS.setTicketFiltroEstado('ANULADO')"    id="teAnu"  class="tab-btn text-xs py-1 px-3">🚫 Anulado</button>
+              <button onclick="MOS.setTicketFiltroTipo('NV')"  id="ttNV"  class="tab-btn text-xs py-1 px-3">🧾 NV</button>
+              <button onclick="MOS.setTicketFiltroTipo('B')"   id="ttB"   class="tab-btn text-xs py-1 px-3">📄 Boleta</button>
+              <button onclick="MOS.setTicketFiltroTipo('F')"   id="ttF"   class="tab-btn text-xs py-1 px-3">📋 Factura</button>
+            </div>
+            <!-- Lista -->
+            <div id="cajasTicketsList"></div>
+            <!-- Modal cambiar método -->
+            <div id="modalCambiarMetodo" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style="background:rgba(0,0,0,.75)">
+              <div id="modalCambiarMetodoBox" class="card p-5 w-full max-w-sm"></div>
             </div>
           </div>
         </div>
@@ -674,13 +1069,52 @@
 
         <!-- Gráficos -->
         <div id="cajasChartsWrap" class="grid lg:grid-cols-2 gap-4 mb-5 hidden">
+
+          <!-- Historial de cajas (compacto) -->
           <div class="card p-4">
-            <h3 class="font-semibold text-sm text-slate-200 mb-3">Ventas por Caja (hoy)</h3>
-            <div style="position:relative;height:200px"><canvas id="chartCajasBars"></canvas></div>
+            <div class="flex items-center justify-between mb-2">
+              <button onclick="MOS.abrirModalHistorialCajas()" class="font-semibold text-sm text-slate-200 hover:text-indigo-400 transition-colors flex items-center gap-1">
+                Historial de Cajas <span class="text-slate-600 text-xs">↗ expandir</span>
+              </button>
+              <div class="flex gap-1">
+                <button onclick="MOS.setChartCajasPeriodo(7)"  id="ccp7"  class="tab-btn active text-xs py-0.5 px-2">7D</button>
+                <button onclick="MOS.setChartCajasPeriodo(30)" id="ccp30" class="tab-btn text-xs py-0.5 px-2">30D</button>
+                <button onclick="MOS.setChartCajasPeriodo(90)" id="ccp90" class="tab-btn text-xs py-0.5 px-2">90D</button>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 mb-2 text-xs text-slate-600">
+              <span><span class="inline-block w-2 h-2 rounded-sm mr-1" style="background:#22c55e"></span>Activa</span>
+              <span><span class="inline-block w-2 h-2 rounded-sm mr-1" style="background:#6366f1"></span>Cerrada</span>
+            </div>
+            <div style="position:relative;height:180px"><canvas id="chartCajasBars"></canvas></div>
           </div>
+
+          <!-- Métodos de pago hoy -->
           <div class="card p-4">
-            <h3 class="font-semibold text-sm text-slate-200 mb-3">Métodos de Pago (hoy)</h3>
-            <div style="position:relative;height:200px"><canvas id="chartCajasMetodo"></canvas></div>
+            <h3 class="font-semibold text-sm text-slate-200 mb-1">Métodos de Pago <span class="text-xs text-slate-500 font-normal">— solo hoy</span></h3>
+            <div style="position:relative;height:180px"><canvas id="chartCajasMetodo"></canvas></div>
+            <div id="cajasMetodoDetalle" class="mt-2 space-y-1"></div>
+          </div>
+        </div>
+
+        <!-- Modal historial cajas expandido -->
+        <div id="modalHistorialCajas" class="hidden fixed inset-0 z-50 flex items-center justify-center p-3" style="background:rgba(0,0,0,.85)">
+          <div class="card p-5 w-full" style="max-width:800px;max-height:90vh;overflow-y:auto">
+            <div class="flex items-center justify-between mb-3">
+              <div>
+                <h3 class="font-semibold text-slate-200">Historial de Cajas — por fecha</h3>
+                <p class="text-xs text-slate-500 mt-0.5">Eje X = día · 🟢 verde = caja activa ahora · hover para detalle</p>
+              </div>
+              <div class="flex items-center gap-2">
+                <div class="flex gap-1">
+                  <button onclick="MOS.setChartCajasModalPeriodo(7)"  id="ccm7"  class="tab-btn active text-xs py-0.5 px-2">7D</button>
+                  <button onclick="MOS.setChartCajasModalPeriodo(30)" id="ccm30" class="tab-btn text-xs py-0.5 px-2">30D</button>
+                  <button onclick="MOS.setChartCajasModalPeriodo(90)" id="ccm90" class="tab-btn text-xs py-0.5 px-2">90D</button>
+                </div>
+                <button onclick="MOS.cerrarModalHistorialCajas()" class="text-slate-500 hover:text-white text-xl ml-1">✕</button>
+              </div>
+            </div>
+            <div style="position:relative;height:380px"><canvas id="chartCajasModal"></canvas></div>
           </div>
         </div>
 
@@ -744,6 +1178,19 @@
 <!-- MODALS                                                     -->
 <!-- ═══════════════════════════════════════════════════════════ -->
 
+<!-- Modal Ecosistema -->
+<div class="modal-backdrop" id="modalEcosistema">
+  <div class="modal-box" style="max-width:420px; padding:0; display:flex; flex-direction:column;">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-slate-800 sticky top-0 bg-slate-900 rounded-t-2xl z-10">
+      <h2 class="font-bold text-base text-white" id="ecoModalTitle">Estado Operacional</h2>
+      <button onclick="MOS.closeModal('modalEcosistema')" class="text-slate-400 hover:text-white text-2xl leading-none w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-700">×</button>
+    </div>
+    <div id="ecoModalBody" class="text-slate-300 px-5 py-4 overflow-y-auto">
+      <p class="text-slate-500 text-sm">Cargando...</p>
+    </div>
+  </div>
+</div>
+
 <!-- Config Modal -->
 <div class="modal-backdrop" id="modalConfig">
   <div class="modal-box p-6">
@@ -763,6 +1210,29 @@
         <button onclick="MOS.saveConfig()" class="btn-primary flex-1">Guardar</button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- ── Precio Rápido (bottom sheet) ─────────────────────── -->
+<div class="qp-overlay" id="modalPrecioRapido" onclick="if(event.target===this)MOS.cerrarModalPrecioRapido()">
+  <div class="qp-sheet">
+    <div class="qp-handle"></div>
+    <div class="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-1">Precio de venta</div>
+    <div id="qpNombre" class="font-semibold text-slate-100 text-base mb-4 truncate">—</div>
+    <div class="flex gap-2 mb-3">
+      <div class="flex items-center gap-2 flex-1">
+        <span class="text-slate-500 font-semibold text-sm shrink-0">S/.</span>
+        <div class="stepper lg flex-1">
+          <button class="stepper-btn" onclick="MOS.stepperDec('qpInput',0.50)">−</button>
+          <input id="qpInput" type="number" step="0.01" min="0" class="stepper-input"
+                 style="width:auto;flex:1"
+                 onkeydown="if(event.key==='Enter')MOS.guardarPrecioRapido()">
+          <button class="stepper-btn" onclick="MOS.stepperInc('qpInput',0.50)">+</button>
+        </div>
+      </div>
+      <button onclick="MOS.guardarPrecioRapido()" class="btn-primary px-5 text-base font-semibold">Guardar</button>
+    </div>
+    <button onclick="MOS.cerrarModalPrecioRapido()" class="btn-ghost w-full text-sm">Cancelar</button>
   </div>
 </div>
 
@@ -875,6 +1345,33 @@
           <option value="exonerado">Exonerado</option>
           <option value="inafecto">Inafecto</option>
         </select>
+      </div>
+    </div>
+    <!-- ── Equivalencias (solo en edición) ────────────────── -->
+    <div id="modalEquivSection" class="hidden mt-4 pt-4 border-t border-slate-800">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Códigos equivalentes</span>
+        <button onclick="MOS.toggleAddEquiv()" class="text-xs text-indigo-400 hover:text-white font-medium transition-colors">+ Agregar código</button>
+      </div>
+      <div id="equivList" class="space-y-1.5 mb-2 min-h-0"></div>
+      <!-- Form nueva equivalencia -->
+      <div id="equivAddForm" class="hidden rounded-xl border border-slate-700 bg-slate-900/80 p-3 space-y-2">
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="lbl">Código de barras *</label>
+            <input id="equivCodigo" class="inp text-sm" placeholder="1234567890123"
+                   onkeydown="if(event.key==='Enter')MOS.crearEquivalenciaModal()">
+          </div>
+          <div>
+            <label class="lbl">Descripción (opcional)</label>
+            <input id="equivDesc" class="inp text-sm" placeholder="Ej: bolsa proveedor B"
+                   onkeydown="if(event.key==='Enter')MOS.crearEquivalenciaModal()">
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="MOS.crearEquivalenciaModal()" class="btn-primary text-xs flex-1">💾 Guardar</button>
+          <button onclick="MOS.toggleAddEquiv()" class="btn-ghost text-xs px-4">Cancelar</button>
+        </div>
       </div>
     </div>
     <div class="flex gap-2 mt-5">
@@ -1138,6 +1635,230 @@
     <div class="flex gap-2 mt-5">
       <button onclick="MOS.closeModal('modalSerie')" class="btn-ghost flex-1">Cancelar</button>
       <button onclick="MOS.guardarSerie()" class="btn-primary flex-1">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- ANALÍTICA DE PRODUCTO — full-screen overlay               -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div id="viewAnalitica" class="an-overlay">
+
+  <!-- Header sticky -->
+  <div class="an-header">
+    <button class="an-back" onclick="MOS.cerrarAnalitica()">←</button>
+    <div class="an-header-title">
+      <h2 id="anNombreProd">—</h2>
+      <p id="anSubtitleProd">Catálogo → Análisis</p>
+    </div>
+    <div id="anConexBadges" class="hidden items-center gap-1 mr-2 lg:flex"></div>
+    <div class="an-period">
+      <button class="an-period-btn" id="anP7"  onclick="MOS.setAnPeriodo(7)">7D</button>
+      <button class="an-period-btn active" id="anP30" onclick="MOS.setAnPeriodo(30)">30D</button>
+      <button class="an-period-btn" id="anP90" onclick="MOS.setAnPeriodo(90)">90D</button>
+    </div>
+  </div>
+
+  <!-- Body scrollable -->
+  <div class="an-body" id="anBody">
+
+    <!-- Skeleton / loading -->
+    <div id="anLoading">
+      <!-- Spinner + texto -->
+      <div class="flex items-center gap-3 mb-6 px-1">
+        <div class="an-spin"></div>
+        <div>
+          <div class="text-sm font-semibold text-slate-300" id="anLoadLabel">Cargando analítica…</div>
+          <div class="text-xs text-slate-600 mt-0.5">Consultando ventas, stock y compras</div>
+        </div>
+      </div>
+      <!-- KPI skeletons -->
+      <div class="an-kpis mb-4">
+        <div class="an-skeleton-kpi skel"></div>
+        <div class="an-skeleton-kpi skel"></div>
+        <div class="an-skeleton-kpi skel" style="opacity:.7"></div>
+        <div class="an-skeleton-kpi skel" style="opacity:.5"></div>
+        <div class="an-skeleton-kpi skel" style="opacity:.35"></div>
+      </div>
+      <!-- Chart skeletons -->
+      <div class="an-grid an-grid-2 mb-4">
+        <div class="an-skeleton-chart skel"></div>
+        <div class="an-skeleton-sm skel"></div>
+      </div>
+      <div class="an-grid an-grid-3">
+        <div class="an-skeleton-sm skel"></div>
+        <div class="an-skeleton-sm skel" style="opacity:.7"></div>
+        <div class="an-skeleton-sm skel" style="opacity:.5"></div>
+      </div>
+    </div>
+
+    <!-- Contenido (oculto hasta que cargue) -->
+    <div id="anContent" class="hidden flex flex-col gap-4">
+
+      <!-- ── 5 KPIs ── -->
+      <div class="an-kpis" id="anKpis"></div>
+
+      <!-- ── Fila 1: Ventas (grande) + Stock ── -->
+      <div class="an-grid an-grid-2">
+        <!-- Ventas -->
+        <div class="an-card">
+          <div class="an-card-title"><span>📈</span> Comportamiento de ventas</div>
+          <div class="an-chart-wrap">
+            <canvas id="chartVentas"></canvas>
+          </div>
+          <div class="flex gap-3 mt-3 pt-3 border-t border-slate-800">
+            <div class="flex items-center gap-1.5 text-xs text-slate-500">
+              <div class="w-3 h-0.5 rounded bg-indigo-400"></div> Unidades
+            </div>
+            <div class="flex items-center gap-1.5 text-xs text-slate-500">
+              <div class="w-3 h-0.5 rounded bg-amber-400"></div> Ingresos (S/.)
+            </div>
+          </div>
+        </div>
+
+        <!-- Stock gauge -->
+        <div class="an-card">
+          <div class="an-card-title"><span>📦</span> Stock actual</div>
+          <div class="stock-gauge-wrap" id="anStockGauge">
+            <div class="stock-val-row">
+              <span class="stock-val-num" id="anStockNum" style="color:#22c55e">0</span>
+              <span class="stock-val-unit" id="anStockUnd">UND</span>
+            </div>
+            <div class="text-xs text-slate-500 mb-3" id="anStockZonas">—</div>
+            <div class="stock-gauge-bar" id="anGaugeBar">
+              <div class="stock-gauge-fill" id="anGaugeFill" style="width:0%;background:#22c55e"></div>
+              <div class="stock-gauge-marker" id="anGaugeMin" style="left:0">
+                <span class="stock-gauge-label" id="anGaugeMinLbl">Min</span>
+              </div>
+              <div class="stock-gauge-marker max-marker" id="anGaugeMax" style="left:100%">
+                <span class="stock-gauge-label" id="anGaugeMaxLbl">Max</span>
+              </div>
+            </div>
+            <!-- Mini zonas -->
+            <div id="anStockZonasList" class="mt-3 space-y-1.5"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Fila 2: Margen / Proyección / Compras ── -->
+      <div class="an-grid an-grid-3">
+
+        <!-- Margen bruto (ring) -->
+        <div class="an-card">
+          <div class="an-card-title"><span>💰</span> Rentabilidad</div>
+          <div class="an-margin-ring">
+            <svg viewBox="0 0 100 100" width="100" height="100">
+              <circle cx="50" cy="50" r="40" fill="none" stroke="#1e293b" stroke-width="12"/>
+              <circle id="anRingFill" cx="50" cy="50" r="40" fill="none" stroke="#6366f1"
+                      stroke-width="12" stroke-linecap="round"
+                      stroke-dasharray="251.2" stroke-dashoffset="251.2"
+                      style="transition: stroke-dashoffset .8s cubic-bezier(.4,0,.2,1)"/>
+            </svg>
+            <div class="an-margin-pct" id="anMargenPct">0%</div>
+          </div>
+          <div id="anRentRows" class="space-y-0"></div>
+        </div>
+
+        <!-- Proyección -->
+        <div class="an-card">
+          <div class="an-card-title"><span>🔮</span> Proyección 30 días</div>
+          <div id="anProyRows"></div>
+        </div>
+
+        <!-- Historial precios -->
+        <div class="an-card">
+          <div class="an-card-title"><span>🏷️</span> Historial de precios</div>
+          <div class="an-chart-wrap-sm">
+            <canvas id="chartPrecios"></canvas>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ── Fila 3: Compras + Proveedores ── -->
+      <div class="an-grid an-grid-2">
+
+        <!-- Últimas compras -->
+        <div class="an-card">
+          <div class="an-card-title"><span>🛒</span> Historial de compras <span id="anComprasCount" class="text-indigo-400 normal-case font-normal text-xs ml-1"></span></div>
+          <div id="anComprasList" class="overflow-y-auto" style="max-height:200px"></div>
+          <!-- Mini chart compras si hay datos -->
+          <div class="an-chart-wrap-sm mt-3" id="chartComprasWrap" style="display:none">
+            <canvas id="chartCompras"></canvas>
+          </div>
+        </div>
+
+        <!-- Proveedores -->
+        <div class="an-card">
+          <div class="an-card-title"><span>🤝</span> Proveedores activos</div>
+          <div id="anProvList"></div>
+          <div class="mt-4 pt-3 border-t border-slate-800" id="anProvStats"></div>
+        </div>
+
+      </div>
+
+    </div><!-- /anContent -->
+  </div><!-- /an-body -->
+
+  <!-- Action bar sticky bottom -->
+  <div class="an-actions">
+    <div class="an-actions-inner">
+      <span class="text-xs text-slate-500 font-semibold hidden sm:block">Configurar:</span>
+
+      <div class="flex items-center gap-1.5">
+        <span class="text-xs text-slate-500 whitespace-nowrap">Mín</span>
+        <div class="stepper">
+          <button class="stepper-btn" onclick="MOS.stepperDec('anEditStockMin',1)">−</button>
+          <input id="anEditStockMin" type="number" min="0" class="stepper-input">
+          <button class="stepper-btn" onclick="MOS.stepperInc('anEditStockMin',1)">+</button>
+        </div>
+        <span class="text-xs text-slate-600" id="anUndMin">UND</span>
+      </div>
+
+      <div class="flex items-center gap-1.5">
+        <span class="text-xs text-slate-500 whitespace-nowrap">Máx</span>
+        <div class="stepper">
+          <button class="stepper-btn" onclick="MOS.stepperDec('anEditStockMax',10)">−</button>
+          <input id="anEditStockMax" type="number" min="0" class="stepper-input">
+          <button class="stepper-btn" onclick="MOS.stepperInc('anEditStockMax',10)">+</button>
+        </div>
+        <span class="text-xs text-slate-600" id="anUndMax">UND</span>
+      </div>
+
+      <button onclick="MOS.guardarStockMinMax()" class="btn-primary text-xs px-4">Guardar</button>
+
+      <div class="flex-1"></div>
+
+      <button onclick="MOS.abrirModalProducto(MOS._anCurrentId())"
+              class="btn-ghost text-xs px-3">✏️ Editar producto</button>
+      <button onclick="MOS.abrirModalPrecioRapido(MOS._anCurrentId())"
+              class="btn-ghost text-xs px-3">💰 Precio</button>
+    </div>
+  </div>
+
+</div><!-- /viewAnalitica -->
+
+<!-- ── Modal Ajuste de Precios ───────────────────────────── -->
+<div class="modal-backdrop" id="modalAjustePrecios">
+  <div class="modal-box p-6" style="max-width:480px">
+    <div class="flex items-start justify-between mb-1">
+      <div>
+        <h2 class="font-bold text-lg text-white">Ajuste de presentaciones</h2>
+        <p class="text-xs text-slate-500 mt-0.5">El precio base cambió. Revisa y confirma cada presentación.</p>
+      </div>
+      <button onclick="MOS.closeModal('modalAjustePrecios')" class="text-slate-400 hover:text-white text-xl ml-4 shrink-0">×</button>
+    </div>
+    <!-- Precio base nuevo -->
+    <div id="ajusteBaseInfo" class="flex items-center justify-between rounded-lg bg-indigo-900/20 border border-indigo-800/40 px-4 py-2.5 mb-4 mt-3">
+      <span class="text-xs font-semibold text-indigo-300">Producto base (nuevo precio)</span>
+      <span id="ajusteBasePrecio" class="text-base font-bold text-indigo-300">S/. —</span>
+    </div>
+    <!-- Lista de presentaciones -->
+    <div id="ajusteList" class="space-y-2 max-h-72 overflow-y-auto mb-4"></div>
+    <!-- Acciones -->
+    <div class="flex gap-2">
+      <button onclick="MOS.closeModal('modalAjustePrecios')" class="btn-ghost flex-1 text-sm">Solo precio base</button>
+      <button onclick="MOS.guardarAjustePrecios()" class="btn-primary flex-1 text-sm">✓ Aplicar seleccionados</button>
     </div>
   </div>
 </div>
