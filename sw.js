@@ -2,7 +2,7 @@
 // MOS Admin — Service Worker
 // Cambia VERSION en cada deploy para invalidar caché
 // ============================================================
-const VERSION = '1.0.2';
+const VERSION = '1.0.3';
 const CACHE   = 'mos-v' + VERSION;
 const ASSETS  = [
   './',
@@ -13,12 +13,14 @@ const ASSETS  = [
   './version.json'
 ];
 
-// ── Instalar: cachear todos los assets ──────────────────────
+// ── Instalar: cachear todos los assets (no-cache para ignorar CDN) ──
 self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE)
-      .then(c => c.addAll(ASSETS))
-      .then(() => self.skipWaiting()) // activar de inmediato
+      .then(c => c.addAll(
+        ASSETS.map(url => new Request(url, { cache: 'no-store' }))
+      ))
+      .then(() => self.skipWaiting())
   );
 });
 
