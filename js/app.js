@@ -208,6 +208,8 @@ const MOS = (() => {
       $('loginOverlay')?.classList.add('hidden');
       nav('dashboard');
       loadView('dashboard');
+      // Check diario de nueva versión (no bloquea el flujo)
+      if (window._SWDailyCheck) window._SWDailyCheck();
     } catch(e) {
       const err = $('loginPinError'); if (err) err.textContent = e.message;
       if (btn) btn.disabled = false;
@@ -2556,9 +2558,6 @@ const MOS = (() => {
       const hora  = s=>(s||'').substring(11,16);
       const fecha = s=>(s||'').substring(0,16).replace('T',' ');
       histTbody.innerHTML = cerradas.map(c=>{
-        const dif=c.diferencia;
-        const difCls=dif===null?'badge-gray':dif>0.05?'badge-green':dif<-0.05?'badge-red':'badge-green';
-        const difStr=dif===null?'—':(dif>=0?'+':'')+fmtMoney(dif);
         const esHoy=(c.fechaCierre||'').startsWith(todayStr);
         return `<tr data-caja-row="${c.idCaja}">
           <td><div class="font-medium">${c.vendedor||'—'}</div><div class="text-xs text-slate-500">${esHoy?'Hoy '+hora(c.fechaCierre):fecha(c.fechaCierre)}</div></td>
@@ -2566,8 +2565,10 @@ const MOS = (() => {
           <td class="text-slate-400 text-xs">${hora(c.fechaApertura)} → ${hora(c.fechaCierre)}</td>
           <td id="hr-total-${c.idCaja}" class="font-semibold">${fmtMoney(c.totalVentas)}</td>
           <td id="hr-tickets-${c.idCaja}" class="text-center">${c.tickets}</td>
-          <td id="hr-dif-${c.idCaja}"><span class="badge ${difCls}">${difStr}</span></td>
-          <td><a href="${c.urlReporte||'#'}" target="_blank" rel="noopener" class="btn-primary text-xs px-3 py-1.5 inline-block" style="text-decoration:none">📊 Reporte</a></td>
+          <td class="flex gap-1.5 items-center flex-wrap">
+            <a href="${c.urlReporte||'#'}" target="_blank" rel="noopener" class="btn-primary text-xs px-3 py-1.5 inline-block" style="text-decoration:none">📊 Reporte</a>
+            <button onclick="MOS.abrirModalTicketZ('${c.idCaja}')" class="btn-ghost text-xs px-3 py-1.5">🖨 Z</button>
+          </td>
         </tr>`;
       }).join('');
     } else { histWrap?.classList.add('hidden'); }
@@ -2589,11 +2590,13 @@ const MOS = (() => {
     const content  = $('cajasContent');
     const empty    = $('cajasEmpty');
 
-    // Si ya tenemos datos precargados del timer, renderizar inmediatamente sin spinner
-    if (S._cajasLoaded && S._todasCajas && S._todasCajas.length >= 0 && !force) {
+    // Si ya tenemos datos precargados del timer, renderizar inmediatamente
+    // y luego refrescar en background (sin bloquear ni mostrar spinner)
+    if (S._cajasLoaded && S._todasCajas) {
       loading?.classList.add('hidden');
       content?.classList.remove('hidden');
       _renderCajasDesdeEstado();
+      if (force) _cajasRefreshSilencioso(); // actualizar en bg sin spinner
       return;
     }
 
@@ -2667,9 +2670,6 @@ const MOS = (() => {
         histWrap.classList.remove('hidden');
         if (histTitle) histTitle.textContent = 'Historial de Cierres (' + cerradas.length + ')';
         histTbody.innerHTML = cerradas.map(c => {
-          const dif    = c.diferencia;
-          const difCls = dif === null ? 'badge-gray' : dif > 0.05 ? 'badge-green' : dif < -0.05 ? 'badge-red' : 'badge-green';
-          const difStr = dif === null ? '—' : (dif >= 0 ? '+' : '') + fmtMoney(dif);
           const fecha  = s => (s || '').substring(0, 16).replace('T', ' ');
           const hora   = s => (s || '').substring(11, 16);
           const esHoy  = (c.fechaCierre || '').startsWith(new Date().toISOString().substring(0,10));
@@ -2682,12 +2682,12 @@ const MOS = (() => {
             <td class="text-slate-400 text-xs">${hora(c.fechaApertura)} → ${hora(c.fechaCierre)}</td>
             <td id="hr-total-${c.idCaja}" class="font-semibold">${fmtMoney(c.totalVentas)}</td>
             <td id="hr-tickets-${c.idCaja}" class="text-center">${c.tickets}</td>
-            <td id="hr-dif-${c.idCaja}"><span class="badge ${difCls}">${difStr}</span></td>
-            <td>
+            <td class="flex gap-1.5 items-center flex-wrap">
               <a href="${c.urlReporte}" target="_blank" rel="noopener"
                  class="btn-primary text-xs px-3 py-1.5 inline-block" style="text-decoration:none">
                 📊 Reporte
               </a>
+              <button onclick="MOS.abrirModalTicketZ('${c.idCaja}')" class="btn-ghost text-xs px-3 py-1.5">🖨 Z</button>
             </td>
           </tr>`;
         }).join('');
@@ -2851,13 +2851,8 @@ const MOS = (() => {
   function _updateHistorialRow(c) {
     const row = document.querySelector('[data-caja-row="' + c.idCaja + '"]');
     if (!row) return false;
-    const dif    = c.diferencia;
-    const difCls = dif === null ? 'badge-gray' : dif > 0.05 ? 'badge-green' : dif < -0.05 ? 'badge-red' : 'badge-green';
-    const difStr = dif === null ? '—' : (dif >= 0 ? '+' : '') + fmtMoney(dif);
     _setVal('hr-total-'   + c.idCaja, fmtMoney(c.totalVentas), true);
     _setVal('hr-tickets-' + c.idCaja, c.tickets, true);
-    const difEl = $('hr-dif-' + c.idCaja);
-    if (difEl) difEl.innerHTML = `<span class="badge ${difCls}">${difStr}</span>`;
     return true;
   }
 
@@ -2935,9 +2930,6 @@ const MOS = (() => {
           const existed = _updateHistorialRow(c);
           if (!existed) {
             // Nueva fila → prepend con flash
-            const dif    = c.diferencia;
-            const difCls = dif===null?'badge-gray':dif>0.05?'badge-green':dif<-0.05?'badge-red':'badge-green';
-            const difStr = dif===null?'—':(dif>=0?'+':'')+fmtMoney(dif);
             const esHoy  = (c.fechaCierre||'').startsWith(todayStr);
             const tr = document.createElement('tr');
             tr.setAttribute('data-caja-row', c.idCaja);
@@ -2948,8 +2940,10 @@ const MOS = (() => {
               <td class="text-slate-400 text-xs">${hora(c.fechaApertura)} → ${hora(c.fechaCierre)}</td>
               <td id="hr-total-${c.idCaja}" class="font-semibold">${fmtMoney(c.totalVentas)}</td>
               <td id="hr-tickets-${c.idCaja}" class="text-center">${c.tickets}</td>
-              <td id="hr-dif-${c.idCaja}"><span class="badge ${difCls}">${difStr}</span></td>
-              <td><a href="${c.urlReporte||'#'}" target="_blank" rel="noopener" class="btn-primary text-xs px-3 py-1.5 inline-block" style="text-decoration:none">📊 Reporte</a></td>`;
+              <td class="flex gap-1.5 items-center flex-wrap">
+                <a href="${c.urlReporte||'#'}" target="_blank" rel="noopener" class="btn-primary text-xs px-3 py-1.5 inline-block" style="text-decoration:none">📊 Reporte</a>
+                <button onclick="MOS.abrirModalTicketZ('${c.idCaja}')" class="btn-ghost text-xs px-3 py-1.5">🖨 Z</button>
+              </td>`;
             histTbody.prepend(tr);
             const histTitle = $('cajasHistTitle');
             if (histTitle) histTitle.textContent = 'Historial de Cierres (' + cerradas.length + ')';
@@ -3687,6 +3681,118 @@ const MOS = (() => {
     } catch { return '—'; }
   }
 
+  // ── TICKET Z — REIMPRESION ───────────────────────────────────
+  let _ticketZCajaId = null;
+
+  async function abrirModalTicketZ(idCaja) {
+    if (!idCaja) { toast('Sin idCaja', 'error'); return; }
+    _ticketZCajaId = idCaja;
+
+    // Buscar la caja en los datos ya cargados
+    const caja = (S._todasCajas || []).find(c => c.idCaja === idCaja);
+
+    // Cargar impresoras/estaciones si aún no están disponibles
+    if (!cfgData.impresoras.length || !cfgData.estaciones.length) {
+      try {
+        const [impRes, estRes] = await Promise.all([
+          API.get('getImpresoras', {}),
+          API.get('getEstaciones', {})
+        ]);
+        cfgData.impresoras = impRes || [];
+        cfgData.estaciones = estRes || [];
+      } catch(e) { /* se manejará luego como lista vacía */ }
+    }
+
+    // ── Previsualización: mostrar loading y abrir modal ya ──────
+    const prev = $('tzPreview');
+    if (prev) {
+      prev.innerHTML = `<div class="tz-ticket" style="text-align:center;color:#999;padding:24px 0">
+        <div style="font-size:1.2rem;margin-bottom:6px">⏳</div>
+        <div style="font-size:11px">Cargando ticket...</div>
+      </div>`;
+    }
+    openModal('modalTicketZ');
+
+    // ── Cargar texto completo del ticket desde GAS ──────────────
+    try {
+      const res = await API.get('getTicketZTexto', { idCaja });
+      if (prev) {
+        if (res?.texto) {
+          // Escapar HTML para mostrar en <pre>
+          const escaped = res.texto
+            .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+          prev.innerHTML = `<div class="tz-ticket tz-ticket-pre"><pre class="tz-pre">${escaped}</pre></div>`;
+        } else {
+          prev.innerHTML = `<div class="tz-ticket"><div class="tz-note">${res?.error || 'Sin datos'}</div></div>`;
+        }
+      }
+    } catch(e) {
+      if (prev) prev.innerHTML = `<div class="tz-ticket"><div class="tz-note">Error: ${e.message}</div></div>`;
+    }
+
+    // ── Botones de estaciones (impresoras TICKET activas) ────────
+    const btns = $('tzEstacionBtns');
+    if (btns) {
+      const ticketPrinters = cfgData.impresoras.filter(
+        i => i.tipo === 'TICKET' && i.printNodeId && String(i.activo) === '1'
+      );
+      if (ticketPrinters.length === 0) {
+        btns.innerHTML = '<p class="text-slate-500 text-sm text-center py-3">Sin impresoras TICKET activas configuradas.</p>';
+      } else {
+        btns.innerHTML = ticketPrinters.map(imp => {
+          const est   = cfgData.estaciones.find(e => e.idEstacion === imp.idEstacion);
+          const label = est ? est.nombre : imp.nombre;
+          const sub   = est ? imp.nombre : '';
+          const zona  = imp.idZona || '';
+          return `<button onclick="MOS.imprimirTicketZ('${imp.printNodeId}','${(est?.nombre||'').replace(/'/g,"\\'")}','${imp.idImpresora}')"
+                    class="tz-imp-btn" data-pid="${imp.printNodeId}">
+                    <span class="tz-imp-icon">🖨</span>
+                    <span class="tz-imp-info">
+                      <span class="tz-imp-name">${label}</span>
+                      ${sub ? `<span class="tz-imp-sub">${sub}</span>` : ''}
+                    </span>
+                    ${zona ? `<span class="tz-imp-zona">${zona}</span>` : ''}
+                  </button>`;
+        }).join('');
+      }
+    }
+  }
+
+  async function imprimirTicketZ(printerId, estacionNombre, idImpresora) {
+    if (!printerId) { toast('Sin impresora', 'error'); return; }
+    if (!_ticketZCajaId) { toast('Sin caja seleccionada', 'error'); return; }
+
+    // Deshabilitar todos los botones mientras imprime
+    const allBtns = $('tzEstacionBtns')?.querySelectorAll('button') || [];
+    allBtns.forEach(b => { b.disabled = true; });
+    const activeBtn = $('tzEstacionBtns')?.querySelector(`[data-pid="${printerId}"]`);
+    if (activeBtn) activeBtn.textContent = '⏳ Enviando...';
+
+    try {
+      await API.post('imprimirTicketZCierre', {
+        idCaja: _ticketZCajaId,
+        printerId,
+        estacion: estacionNombre || ''
+      });
+      toast('Ticket Z enviado ✓', 'ok');
+      closeModal('modalTicketZ');
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+      allBtns.forEach(b => { b.disabled = false; });
+      if (activeBtn) {
+        const est = cfgData.estaciones.find(en => {
+          const imp = cfgData.impresoras.find(i => i.idImpresora === idImpresora);
+          return imp && en.idEstacion === imp.idEstacion;
+        });
+        activeBtn.innerHTML = `<span class="tz-imp-icon">🖨</span><span class="tz-imp-info"><span class="tz-imp-name">${estacionNombre || printerId}</span></span>`;
+      }
+    }
+  }
+
+  // ── Sync / Update ────────────────────────────────────────────
+  function syncApp()           { if (window._SWControl) window._SWControl.sync(); }
+  function applyPendingUpdate(){ if (window._SWControl) window._SWControl.applyPending(); }
+
   // ── PUBLIC API ───────────────────────────────────────────────
   return {
     init, nav, refresh, fabAction,
@@ -3714,7 +3820,9 @@ const MOS = (() => {
     toggleKpiTickets, setTicketFiltroFecha, setTicketFiltroEstado, setTicketFiltroTipo,
     confirmarAnularTicket, abrirModalMetodo, cerrarModalMetodo, aplicarCambioMetodo,
     _selMetodo, _onMixtoInput, _renderModalMetodo,
+    abrirModalTicketZ, imprimirTicketZ,
     // Login / sesión
-    seleccionarUsuario, loginVolver, confirmarPin, logout
+    seleccionarUsuario, loginVolver, confirmarPin, logout,
+    syncApp, applyPendingUpdate
   };
 })();

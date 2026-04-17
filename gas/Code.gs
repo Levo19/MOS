@@ -90,6 +90,8 @@ function _route(method, e) {
       case 'getCierresCaja':            return getCierresCaja(params);
       case 'anularTicketME':            return anularTicketME(params);
       case 'cambiarMetodoME':           return cambiarMetodoME(params);
+      case 'imprimirTicketZCierre':     return imprimirTicketZCierre(params);
+      case 'getTicketZTexto':           return getTicketZTexto(params);
 
       default:
         return { ok: false, error: 'Acción no reconocida: ' + action };

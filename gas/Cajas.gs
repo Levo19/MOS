@@ -290,3 +290,314 @@ function cambiarMetodoME(params) {
   }
   return { ok: false, error: 'Ticket no encontrado: ' + buscarId };
 }
+
+// ============================================================
+// imprimirTicketZCierre — regenera el Ticket Z de cualquier
+// turno y lo envía a PrintNode.
+// Requiere Script Property: PRINTNODE_API_KEY en ProyectoMOS.
+// params: { idCaja, printerId, estacion? }
+// Modo preview: params.preview = true  → devuelve { ok, texto } sin imprimir
+// ============================================================
+function getTicketZTexto(params) {
+  return imprimirTicketZCierre(Object.assign({}, params, { preview: true, printerId: 'preview' }));
+}
+
+function imprimirTicketZCierre(params) {
+  if (!params || !params.idCaja)  return { ok: false, error: 'idCaja requerido' };
+  var isPreview = params.preview === true;
+  if (!isPreview && !params.printerId) return { ok: false, error: 'printerId requerido' };
+
+  var pnKey;
+  if (!isPreview) {
+    pnKey = PropertiesService.getScriptProperties().getProperty('PRINTNODE_API_KEY');
+    if (!pnKey) return { ok: false, error: 'PRINTNODE_API_KEY no configurado en Script Properties de ProyectoMOS' };
+  }
+
+  var ss;
+  try { ss = _meSS(); } catch(e) { return { ok: false, error: e.message }; }
+
+  var tz     = Session.getScriptTimeZone();
+  var idCaja = String(params.idCaja);
+
+  // ── 1. Leer CAJAS ────────────────────────────────────────────
+  var cajasSheet = ss.getSheetByName('CAJAS');
+  if (!cajasSheet) return { ok: false, error: 'Hoja CAJAS no encontrada en MosExpress' };
+  var caja = null;
+  var cd   = cajasSheet.getDataRange().getValues();
+  for (var r = 1; r < cd.length; r++) {
+    if (String(cd[r][0]) === idCaja) {
+      caja = {
+        cajero:      String(cd[r][1] || ''),
+        estacion:    String(params.estacion || cd[r][2] || ''),
+        fechaApert:  cd[r][3] instanceof Date ? Utilities.formatDate(cd[r][3], tz, 'dd/MM/yyyy HH:mm') : String(cd[r][3] || ''),
+        montoInicial:parseFloat(cd[r][4]) || 0,
+        montoFinal:  parseFloat(cd[r][6]) || 0,
+        fechaCierre: cd[r][7] instanceof Date ? Utilities.formatDate(cd[r][7], tz, 'dd/MM/yyyy HH:mm') : String(cd[r][7] || '')
+      };
+      break;
+    }
+  }
+  if (!caja) return { ok: false, error: 'Caja no encontrada: ' + idCaja };
+
+  // ── 2. Leer VENTAS_CABECERA ──────────────────────────────────
+  var tickets = [];
+  var vSheet  = ss.getSheetByName('VENTAS_CABECERA');
+  if (vSheet) {
+    var vd = vSheet.getDataRange().getValues();
+    for (var v = 1; v < vd.length; v++) {
+      if (String(vd[v][10]) !== idCaja) continue;
+      tickets.push({
+        vendedor:    String(vd[v][2]  || ''),
+        total:       parseFloat(vd[v][6]) || 0,
+        tipoDoc:     String(vd[v][7]  || 'NOTA_DE_VENTA'),
+        metodo:      String(vd[v][8]  || 'EFECTIVO'),
+        correlativo: String(vd[v][9]  || ''),
+        obs:         String(vd[v][14] || '')
+      });
+    }
+  }
+
+  // ── 3. Leer MOVIMIENTOS_EXTRA ────────────────────────────────
+  var extras = [];
+  var eSheet = ss.getSheetByName('MOVIMIENTOS_EXTRA');
+  if (eSheet) {
+    var ed = eSheet.getDataRange().getValues();
+    for (var ei = 1; ei < ed.length; ei++) {
+      if (String(ed[ei][1]) !== idCaja) continue;
+      extras.push({
+        tipo:     String(ed[ei][3] || 'EGRESO'),
+        monto:    parseFloat(ed[ei][4]) || 0,
+        concepto: String(ed[ei][5] || ''),
+        hora:     ed[ei][2] instanceof Date ? Utilities.formatDate(ed[ei][2], tz, 'HH:mm') : ''
+      });
+    }
+  }
+
+  // ── 4. Calcular ──────────────────────────────────────────────
+  var anulados  = tickets.filter(function(t){ return t.metodo === 'ANULADO'; });
+  var cobrados  = tickets.filter(function(t){ return t.metodo !== 'ANULADO' && t.metodo !== 'POR_COBRAR'; });
+  var creditos  = tickets.filter(function(t){ return t.metodo === 'CREDITO'; });
+  var noAnul    = tickets.filter(function(t){ return t.metodo !== 'ANULADO'; });
+
+  var tEfectivo  = cobrados.filter(function(t){ return t.metodo==='EFECTIVO'; }).reduce(function(s,t){return s+t.total;},0);
+  var tVirtual   = cobrados.filter(function(t){ return t.metodo!=='EFECTIVO' && t.metodo!=='CREDITO'; }).reduce(function(s,t){return s+t.total;},0);
+  var tCredito   = creditos.reduce(function(s,t){return s+t.total;},0);
+  var tAnulTotal = anulados.reduce(function(s,t){return s+t.total;},0);
+  var tEntradas  = extras.filter(function(x){return x.tipo==='INGRESO';}).reduce(function(s,x){return s+x.monto;},0);
+  var tSalidas   = extras.filter(function(x){return x.tipo==='EGRESO'; }).reduce(function(s,x){return s+x.monto;},0);
+  var montoFinal = caja.montoInicial + tEfectivo + tEntradas - tSalidas;
+
+  var TLBL = { 'NOTA_DE_VENTA':'Notas V.', 'BOLETA':'Boletas ', 'FACTURA':'Facturas' };
+  var corrPorTipo = {};
+  noAnul.forEach(function(t) {
+    if (!t.tipoDoc || !t.correlativo) return;
+    if (!corrPorTipo[t.tipoDoc]) corrPorTipo[t.tipoDoc] = [];
+    corrPorTipo[t.tipoDoc].push(t.correlativo);
+  });
+
+  var pMap = {};
+  noAnul.forEach(function(t) {
+    var n = t.vendedor || 'Sin nombre';
+    if (!pMap[n]) pMap[n] = { tks:0, total:0 };
+    pMap[n].tks++;
+    pMap[n].total += t.total;
+  });
+  var pKeys     = Object.keys(pMap).sort(function(a,b){ return pMap[b].total - pMap[a].total; });
+  var pTotal    = pKeys.reduce(function(s,k){return s+pMap[k].total;},0);
+  var pTotalTks = pKeys.reduce(function(s,k){return s+pMap[k].tks;},0);
+
+  var vnMap = {}; var vendedoresList = [];
+  noAnul.forEach(function(t) {
+    if (t.vendedor && t.vendedor !== caja.cajero && !vnMap[t.vendedor]) {
+      vnMap[t.vendedor] = true; vendedoresList.push(t.vendedor);
+    }
+  });
+
+  // ── 5. Helpers ESC/POS ───────────────────────────────────────
+  var W = 48;
+  function _rep(ch, n) { var r=''; for(var i=0;i<n;i++) r+=ch; return r; }
+  function _pEnd(s,w)  { s=String(s||'').substring(0,w); while(s.length<w) s+=' '; return s; }
+  function _pSt(s,w)   { s=String(s||''); while(s.length<w) s=' '+s; return s; }
+  function _amtP(n,w)  { return _pSt('S/'+(parseFloat(n)||0).toFixed(2),w); }
+  function _amtN(n,w)  { var val=parseFloat(n)||0; return _pSt((val<0?'-':' ')+'S/'+Math.abs(val).toFixed(2),w); }
+  function _norm(str)  { return String(str||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^\x20-\x7E]/g,'?'); }
+  function _sHdr(t)    { var s=' '+t+' '; var l=Math.floor((W-s.length)/2); return _rep('=',l)+s+_rep('=',W-s.length-l)+'\n'; }
+  function _sRow(lb,e,vi){ return _pEnd(lb,14)+_amtN(e,17)+_amtN(vi,17)+'\n'; }
+  function _mkBar(pct) { var f=Math.round(pct*26/100); if(f<0)f=0; if(f>26)f=26; return '  ['+_rep('#',f)+_rep('-',26-f)+'] '+_pSt(String(Math.round(pct)),3)+'%\n'; }
+
+  var SEP  = _rep('=',W)+'\n';
+  var SEPd = _rep('-',W)+'\n';
+
+  // ── 6. Construir ticket Z ────────────────────────────────────
+  var txt = '\x1b\x40';
+
+  // PARTE 1: CABECERA
+  txt += '\x1b\x61\x01';
+  txt += '\x1b\x21\x30MOSexpress\x1b\x21\x00\n';
+  txt += '\x1b\x45\x01\x1b\x21\x10CIERRE DE TURNO (Z)\x1b\x21\x00\x1b\x45\x00\n';
+  txt += SEP;
+  txt += '\x1b\x61\x00';
+  txt += 'CAJERO  : ' + _norm(caja.cajero) + '\n';
+  txt += 'ESTACION: ' + _norm(caja.estacion) + '\n';
+  txt += 'APERTURA: ' + caja.fechaApert + '\n';
+  txt += 'CIERRE  : ' + caja.fechaCierre + '\n';
+  txt += SEPd;
+  if (vendedoresList.length > 0) {
+    txt += 'VENDEDORES A CARGO:\n';
+    vendedoresList.forEach(function(vn){ txt += '  + ' + _norm(vn) + '\n'; });
+  }
+  txt += 'TICKETS COBRADOS : ' + cobrados.length + '\n';
+  txt += 'ANULADOS         : ' + anulados.length + '\n';
+  txt += 'CREDITOS(c/p)    : ' + creditos.length + '\n';
+
+  // PARTE 2: MONTO A RECIBIR
+  txt += SEP;
+  txt += '\x1b\x61\x01';
+  txt += '\n\x1b\x45\x01-- SE DEBE RECIBIR --\x1b\x45\x00\n\n';
+  txt += '\x1b\x21\x30S/ ' + montoFinal.toFixed(2) + '\x1b\x21\x00\n\n';
+  txt += 'EFECTIVO EN CAJON\n';
+  txt += '\x1b\x61\x00';
+  if (tVirtual > 0) {
+    txt += SEPd;
+    txt += '\x1b\x61\x01VIRTUAL RECIBIDO:\n';
+    txt += '\x1b\x21\x10S/ ' + tVirtual.toFixed(2) + '\x1b\x21\x00\n';
+    txt += '\x1b\x61\x00';
+  }
+
+  // PARTE 3: RESUMEN
+  txt += _sHdr('RESUMEN DEL TURNO');
+  txt += _pEnd('CONCEPTO',14) + '  EFECTIVO         VIRTUAL\n';
+  txt += SEPd;
+  txt += _sRow('Base inicial',    caja.montoInicial, 0);
+  txt += _sRow('Ventas cobradas', tEfectivo,         tVirtual);
+  if (tEntradas > 0 || tSalidas > 0)
+    txt += _sRow('Extras neto',   tEntradas-tSalidas, 0);
+  txt += SEPd;
+  txt += '\x1b\x45\x01';
+  txt += _sRow('EFECTIVO FINAL',  montoFinal,        tVirtual);
+  txt += '\x1b\x45\x00';
+  if (tCredito > 0) txt += '  +Credito pendiente: ' + _amtP(tCredito,8) + ' (no en caja)\n';
+
+  // PARTE 4: CORRELATIVOS
+  txt += _sHdr('CORRELATIVOS DEL TURNO');
+  var tiposCorr = Object.keys(corrPorTipo);
+  if (tiposCorr.length === 0) {
+    txt += '  Sin comprobantes emitidos en este turno\n';
+  } else {
+    tiposCorr.forEach(function(tipo) {
+      var corrs  = corrPorTipo[tipo];
+      var sorted = corrs.slice().sort();
+      txt += _pEnd(TLBL[tipo]||tipo,9) + ': ' + sorted[0] + '\n';
+      if (sorted.length > 1) txt += '           a: ' + sorted[sorted.length-1] + '\n';
+      txt += '  Total: ' + corrs.length + ' comprobante' + (corrs.length!==1?'s':'') + '\n';
+    });
+  }
+
+  // PARTE 5: ANULADOS
+  txt += _sHdr('ANULADOS (' + anulados.length + ')');
+  if (anulados.length > 0) {
+    txt += _pEnd('CORRELATIVO',22) + _pSt('MONTO',10) + '\n' + SEPd;
+    anulados.forEach(function(t){ txt += _pEnd(t.correlativo,22) + _amtN(-t.total,10) + '  ANULADO\n'; });
+    txt += SEPd;
+    txt += _pEnd('TOTAL ANULADO',22) + _amtN(-tAnulTotal,10) + '\n';
+  } else {
+    txt += '  Sin anulados en este turno\n';
+  }
+
+  // PARTE 6: CREDITOS
+  txt += _sHdr('CREDITOS PENDIENTES (' + creditos.length + ')');
+  if (creditos.length > 0) {
+    creditos.forEach(function(t){
+      txt += _pEnd(t.correlativo,18) + _amtP(t.total,12) + '\n';
+      if (t.obs) txt += '  A: ' + _norm(t.obs).substring(0,43) + '\n';
+    });
+    txt += SEPd;
+    txt += _pEnd('TOTAL CREDITO',18) + _amtP(tCredito,12) + '\n';
+    txt += '  ** No incluido en caja -- deuda pendiente\n';
+  } else {
+    txt += '  Sin creditos otorgados en este turno\n';
+  }
+
+  // PARTE 7: EXTRAS
+  txt += _sHdr('EXTRAS DEL TURNO (' + extras.length + ')');
+  if (extras.length > 0) {
+    extras.forEach(function(ex){
+      var mEx = ex.tipo==='INGRESO' ? parseFloat(ex.monto) : -parseFloat(ex.monto);
+      txt += (ex.tipo==='INGRESO'?'+':'-') + ' ' + _pEnd(_norm(ex.concepto),22) + _amtN(mEx,12) + '\n';
+    });
+    txt += SEPd;
+    if (tEntradas>0) txt += '+ INGRESOS       ' + _amtP(tEntradas,14) + '\n';
+    if (tSalidas>0)  txt += '- EGRESOS        ' + _amtN(-tSalidas,14) + '\n';
+    txt += '\x1b\x45\x01';
+    txt += '  NETO EXTRAS    ' + _amtN(tEntradas-tSalidas,14) + '\n';
+    txt += '\x1b\x45\x00';
+  } else {
+    txt += '  Sin movimientos extra en este turno\n';
+  }
+
+  // PARTE 8: DESEMPENO
+  txt += _sHdr('DESEMPENO DEL TURNO');
+  if (pKeys.length > 0) {
+    txt += _pEnd('VENDEDOR',17) + _pSt('TKS',5) + ' ' + _pSt('TOTAL VENDIDO',17) + '\n';
+    txt += SEPd;
+    pKeys.forEach(function(nombre) {
+      var p = pMap[nombre];
+      txt += _pEnd(_norm(nombre),17) + _pSt(String(p.tks),5) + ' ' + _amtP(p.total,17) + '\n';
+      if (pTotal > 0) txt += _mkBar(Math.round(p.total*100/pTotal));
+    });
+    txt += SEPd;
+    txt += '\x1b\x45\x01';
+    txt += _pEnd('TOTAL TURNO',17) + _pSt(String(pTotalTks),5) + ' ' + _amtP(pTotal,17) + '\n';
+    txt += '\x1b\x45\x00';
+  } else {
+    txt += '  Sin datos de vendedores en este turno\n';
+  }
+
+  // PIE
+  txt += SEP;
+  txt += '\x1b\x61\x01';
+  txt += '\x1b\x45\x01*** FIN DE TURNO ***\x1b\x45\x00\n';
+  txt += '  (Reimpresion desde ProyectoMOS)\n';
+  txt += '\n\n\n\n\n\x1d\x56\x00\x1b\x6d\x1b\x69\x1b\x42\x05\x02';
+
+  // ── 7. Modo preview: devolver texto plano ───────────────────
+  if (isPreview) {
+    var plain = txt
+      .replace(/\x1b\x21[\x00-\xff]/g, '')
+      .replace(/\x1b\x61[\x00-\xff]/g, '')
+      .replace(/\x1b\x45[\x00-\xff]/g, '')
+      .replace(/\x1b\x40/g, '')
+      .replace(/\x1d[\x00-\xff][\x00-\xff]/g, '')
+      .replace(/\x1b[\x00-\xff]/g, '')
+      .replace(/[^\x0a\x20-\x7e]/g, '');
+    return { ok: true, data: { texto: plain } };
+  }
+
+  // ── 8. Enviar a PrintNode ────────────────────────────────────
+  var bytes = [];
+  for (var ci = 0; ci < txt.length; ci++) bytes.push(txt.charCodeAt(ci) & 0xFF);
+  var content = Utilities.base64Encode(bytes);
+
+  try {
+    var resp = UrlFetchApp.fetch('https://api.printnode.com/printjobs', {
+      method:      'post',
+      headers:     { 'Authorization': 'Basic ' + Utilities.base64Encode(pnKey + ':') },
+      contentType: 'application/json',
+      payload:     JSON.stringify({
+        printerId:   parseInt(String(params.printerId), 10),
+        title:       'Ticket Z - ' + caja.cajero + ' ' + caja.fechaCierre,
+        contentType: 'raw_base64',
+        content:     content,
+        source:      'ProyectoMOS'
+      }),
+      muteHttpExceptions: true
+    });
+    var code = resp.getResponseCode();
+    if (code !== 201) {
+      return { ok: false, error: 'PrintNode respondio ' + code + ': ' + resp.getContentText().substring(0,200) };
+    }
+    return { ok: true, printJobId: resp.getContentText() };
+  } catch(e) {
+    return { ok: false, error: 'Error PrintNode: ' + e.message };
+  }
+}

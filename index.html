@@ -124,6 +124,71 @@
     /* Ecosystem status */
     .eco-card { background: #0d1526; border: 1px solid #1e293b; border-radius: 10px; padding: 16px; }
 
+    /* ── Sync button ────────────────────────────────────── */
+    .sync-btn {
+      display:flex;align-items:center;gap:5px;
+      font-size:.68rem;font-weight:600;color:#64748b;
+      background:rgba(255,255,255,.04);border:1px solid #1e293b;
+      border-radius:7px;padding:4px 9px;cursor:pointer;
+      transition:color .15s,background .15s,border-color .15s;
+    }
+    .sync-btn:hover { color:#a5b4fc; background:rgba(99,102,241,.1); border-color:rgba(99,102,241,.3); }
+    .sync-btn svg { transition:transform .6s; }
+    .sync-btn.spinning svg { animation: spinOnce .7s linear infinite; }
+    @keyframes spinOnce { to { transform:rotate(360deg); } }
+
+    /* ── New version badge ───────────────────────────────── */
+    .upd-new-badge {
+      display:flex;align-items:center;justify-content:space-between;gap:6px;
+      font-size:.68rem;color:#fbbf24;
+      background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.2);
+      border-radius:7px;padding:5px 8px;
+    }
+    .upd-new-apply {
+      font-size:.68rem;font-weight:700;color:#020817;
+      background:#fbbf24;border:none;border-radius:5px;
+      padding:2px 8px;cursor:pointer;white-space:nowrap;
+    }
+    .upd-new-apply:hover { background:#fcd34d; }
+
+    /* ── Update overlay ─────────────────────────────────── */
+    .upd-logo {
+      width:64px;height:64px;border-radius:18px;
+      background:linear-gradient(135deg,#6366f1,#8b5cf6);
+      display:flex;align-items:center;justify-content:center;
+      font-size:2rem;font-weight:700;color:#fff;
+      margin:0 auto 28px;
+      box-shadow:0 0 0 0 rgba(99,102,241,.5);
+      animation:logoPulse 2s ease-in-out infinite;
+    }
+    @keyframes logoPulse {
+      0%,100%{ box-shadow:0 0 0 0 rgba(99,102,241,.4); }
+      50%    { box-shadow:0 0 0 16px rgba(99,102,241,0); }
+    }
+    .upd-ring {
+      width:72px;height:72px;border-radius:50%;
+      border:3px solid transparent;
+      border-top-color:#6366f1;border-right-color:#8b5cf6;
+      animation:spin .9s linear infinite;
+      margin:-84px auto 20px;
+      position:relative;z-index:-1;
+      opacity:.7;
+    }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .upd-title { font-size:1.25rem;font-weight:700;color:#f1f5f9;margin:0 0 6px; }
+    .upd-sub   { font-size:.8rem;color:#64748b;margin:0 0 24px; }
+    .upd-dots  { display:flex;gap:8px;justify-content:center; }
+    .upd-dots span {
+      width:7px;height:7px;border-radius:50%;background:#6366f1;opacity:.3;
+      animation:dotPulse 1.2s ease-in-out infinite;
+    }
+    .upd-dots span:nth-child(2) { animation-delay:.2s; }
+    .upd-dots span:nth-child(3) { animation-delay:.4s; }
+    @keyframes dotPulse {
+      0%,80%,100%{ opacity:.2;transform:scale(.8); }
+      40%        { opacity:1; transform:scale(1.2); }
+    }
+
     /* ── Catalog cards ──────────────────────────────────── */
     .cat-card {
       background: #0f172a; border: 1px solid #1e293b; border-radius: 14px; overflow: hidden;
@@ -499,9 +564,26 @@
       </div>
       <button onclick="MOS.logout()" class="text-slate-500 hover:text-red-400 text-xs px-1" title="Cerrar sesión">⏻</button>
     </div>
-    <div id="connStatus" class="flex items-center gap-2 px-3">
-      <span class="dot-gray" id="statusDot"></span>
-      <span class="text-xs text-slate-500" id="statusLabel">Conectado</span>
+    <!-- Status + Sync -->
+    <div id="connStatus" class="flex items-center justify-between px-2 mt-1">
+      <div class="flex items-center gap-2">
+        <span class="dot-gray" id="statusDot"></span>
+        <span class="text-xs text-slate-500" id="statusLabel">Conectado</span>
+      </div>
+      <button id="syncBtn" onclick="MOS.syncApp()" title="Buscar actualización"
+        class="sync-btn">
+        <svg id="syncIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13">
+          <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>
+        <span id="syncLabel">Sync</span>
+      </button>
+    </div>
+    <div id="syncVersionTip" class="hidden px-2 mt-1">
+      <div class="upd-new-badge">
+        ✦ Nueva versión disponible
+        <button onclick="MOS.applyPendingUpdate()" class="upd-new-apply">Actualizar ahora</button>
+      </div>
     </div>
   </div>
 </aside>
@@ -1126,7 +1208,7 @@
               <thead>
                 <tr>
                   <th>Cajero</th><th>Zona</th><th>Apertura → Cierre</th>
-                  <th>Vendido</th><th>Tickets</th><th>Diferencia</th><th>Reporte</th>
+                  <th>Vendido</th><th>Tickets</th><th>Reporte</th>
                 </tr>
               </thead>
               <tbody id="cajasHistTbody"></tbody>
@@ -1863,11 +1945,212 @@
   </div>
 </div>
 
+<!-- Modal Ticket Z (reimpresión desde MOS) -->
+<div class="modal-backdrop" id="modalTicketZ">
+  <div class="modal-box" style="max-width:480px;padding:0;overflow:hidden">
+    <!-- Header -->
+    <div style="padding:18px 20px 14px;border-bottom:1px solid #1e293b;display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <h2 style="font-weight:700;font-size:1rem;color:#f1f5f9;margin:0">🖨 Reimprimir Ticket Z</h2>
+        <p style="font-size:0.7rem;color:#64748b;margin:2px 0 0">Vista previa del cierre de turno</p>
+      </div>
+      <button onclick="MOS.closeModal('modalTicketZ')" style="color:#64748b;font-size:1.4rem;line-height:1;background:none;border:none;cursor:pointer;padding:4px 8px">×</button>
+    </div>
+    <!-- Ticket preview + station buttons en scroll -->
+    <div style="padding:20px;max-height:78vh;overflow-y:auto">
+      <!-- Ticket preview -->
+      <div id="tzPreview" style="margin-bottom:20px"></div>
+      <!-- Station buttons label -->
+      <p style="font-size:0.7rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin:0 0 10px">Imprimir en...</p>
+      <!-- Buttons -->
+      <div id="tzEstacionBtns" style="display:flex;flex-direction:column;gap:8px"></div>
+    </div>
+    <!-- Footer cancel -->
+    <div style="padding:12px 20px;border-top:1px solid #1e293b;text-align:right">
+      <button onclick="MOS.closeModal('modalTicketZ')" class="btn-ghost text-sm px-5">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<style>
+/* ── Ticket Z preview ─────────────────────────────────── */
+.tz-ticket {
+  background: #fff;
+  color: #111;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  border-radius: 6px;
+  padding: 14px 12px;
+  max-width: 320px;
+  margin: 0 auto;
+  box-shadow: 0 2px 16px rgba(0,0,0,.45);
+}
+.tz-ticket-pre {
+  padding: 14px 0;
+  max-height: 340px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: #ccc #f5f5f5;
+}
+.tz-pre {
+  margin: 0;
+  padding: 0 12px;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre;
+  color: #111;
+}
+.tz-note  { text-align:center; font-size:10px; color:#999; margin-top:6px; }
+/* ── Printer buttons ──────────────────────────────────── */
+.tz-imp-btn {
+  display:flex;align-items:center;gap:12px;
+  width:100%;text-align:left;
+  background:#0f172a;border:1px solid #334155;
+  border-radius:10px;padding:11px 14px;
+  cursor:pointer;transition:background .15s,border-color .15s;
+  color:#f1f5f9;
+}
+.tz-imp-btn:hover:not(:disabled)  { background:#1e293b; border-color:#6366f1; }
+.tz-imp-btn:active:not(:disabled) { background:#1e293b; }
+.tz-imp-btn:disabled { opacity:.5; cursor:not-allowed; }
+.tz-imp-icon { font-size:1.3rem; flex-shrink:0; }
+.tz-imp-info { display:flex; flex-direction:column; gap:1px; flex:1; min-width:0; }
+.tz-imp-name { font-size:.88rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tz-imp-sub  { font-size:.72rem; color:#64748b; }
+.tz-imp-zona {
+  margin-left:auto;
+  flex-shrink:0;
+  font-size:.68rem;
+  font-weight:700;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  color:#818cf8;
+  background:rgba(99,102,241,.12);
+  border:1px solid rgba(99,102,241,.25);
+  border-radius:6px;
+  padding:3px 8px;
+  white-space:nowrap;
+  align-self:center;
+}
+</style>
+
+<!-- ── Overlay de actualización ─────────────────────────── -->
+<div id="updateOverlay" class="hidden fixed inset-0 z-[60] flex flex-col items-center justify-center" style="background:#020817">
+  <div style="text-align:center">
+    <div class="upd-logo">M</div>
+    <div class="upd-ring"></div>
+    <h2 class="upd-title">Actualizando MOS</h2>
+    <p class="upd-sub">Instalando nueva versión · Por favor espera</p>
+    <div class="upd-dots">
+      <span></span><span></span><span></span>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div id="toast" class="hide fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-xl text-white" style="background:#1e293b;border:1px solid #334155;max-width:320px;"></div>
 
 <script src="js/api.js"></script>
 <script src="js/app.js"></script>
-<script>MOS.init();</script>
+
+<!-- ── Service Worker + Update Logic ────────────────────── -->
+<script>
+(function() {
+  if (!('serviceWorker' in navigator)) { MOS.init(); return; }
+
+  let _reg = null;
+
+  // Muestra el overlay de "Actualizando..."
+  function _showUpdateOverlay() {
+    const el = document.getElementById('updateOverlay');
+    if (el) el.classList.remove('hidden');
+  }
+
+  // Muestra el badge "Nueva versión disponible" en el sidebar
+  function _showNewVersionBadge() {
+    const tip = document.getElementById('syncVersionTip');
+    if (tip) tip.classList.remove('hidden');
+  }
+
+  // Activa el SW en espera y recarga
+  function _activateWaiting(worker) {
+    _showUpdateOverlay();
+    worker.postMessage('SKIP_WAITING');
+    // La recarga la dispara el evento controllerchange
+  }
+
+  // Exponer para el botón sidebar y para app.js
+  window._SWControl = {
+    // Forzar búsqueda de actualización
+    sync: async function() {
+      if (!_reg) { window.location.reload(); return; }
+      const btn = document.getElementById('syncBtn');
+      if (btn) btn.classList.add('spinning');
+      try {
+        await _reg.update();
+        if (_reg.waiting) {
+          _activateWaiting(_reg.waiting);
+        } else {
+          if (btn) btn.classList.remove('spinning');
+          // Toast via MOS si está disponible
+          if (window.MOS) {
+            const lbl = document.getElementById('syncLabel');
+            if (lbl) { lbl.textContent = '✓ Al día'; setTimeout(() => { lbl.textContent = 'Sync'; }, 2500); }
+          }
+        }
+      } catch(e) {
+        if (btn) btn.classList.remove('spinning');
+      }
+    },
+    // Aplicar update pendiente (desde el badge)
+    applyPending: function() {
+      if (_reg && _reg.waiting) _activateWaiting(_reg.waiting);
+      else window.location.reload();
+    }
+  };
+
+  // Check diario de versión (se llama al hacer login)
+  window._SWDailyCheck = async function() {
+    if (!_reg) return;
+    const KEY   = 'mos_sw_check';
+    const today = new Date().toISOString().substring(0, 10);
+    if (localStorage.getItem(KEY) === today) return;
+    localStorage.setItem(KEY, today);
+    try { await _reg.update(); } catch(e) {}
+  };
+
+  // Registrar SW
+  navigator.serviceWorker.register('./sw.js').then(reg => {
+    _reg = reg;
+
+    // ¿Ya hay uno esperando? (recarga previa con nueva versión)
+    if (reg.waiting) {
+      _showNewVersionBadge();
+    }
+
+    // Detectar nueva versión durante la sesión
+    reg.addEventListener('updatefound', () => {
+      const nw = reg.installing;
+      nw.addEventListener('statechange', () => {
+        if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+          // Hay una versión nueva lista — mostrar badge discreto
+          _showNewVersionBadge();
+        }
+      });
+    });
+
+    // Cuando el controller cambia (skipWaiting aplicado) → recargar
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      window.location.reload();
+    });
+
+  }).catch(e => console.warn('[SW register]', e)).finally(() => {
+    MOS.init();
+  });
+})();
+</script>
 </body>
 </html>
