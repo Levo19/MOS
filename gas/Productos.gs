@@ -30,6 +30,80 @@ function getProductoMaster(codigo) {
   return { ok: true, data: prod };
 }
 
+// ── LOOKUP POR CÓDIGO DE BARRAS (para MosExpress en venta) ───
+// Recibe el código escaneado → devuelve el producto base + info de presentación.
+// ME debe mostrar el BASE en el carrito y guardar el codigoBarra original en DETALLE_VENTAS.
+function getProductoPorCodigo(params) {
+  var codigo = String(params.codigo || '').trim();
+  if (!codigo) return { ok: false, error: 'Requiere codigo' };
+
+  var productos = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
+  var activos   = productos.filter(function(p){ return String(p.estado) === '1'; });
+
+  // 1. Coincidencia directa en PRODUCTOS_MASTER
+  var match = activos.find(function(p){ return p.codigoBarra === codigo; });
+
+  // 2. Si no hay match directo, buscar en EQUIVALENCIAS
+  var esEquivalencia = false;
+  if (!match) {
+    var equivs = _sheetToObjects(getSheet('EQUIVALENCIAS')).filter(function(e){
+      return String(e.activo) === '1' && e.codigoBarra === codigo;
+    });
+    if (equivs.length) {
+      match = activos.find(function(p){ return p.idProducto === equivs[0].skuBase; });
+      if (match) esEquivalencia = true;
+    }
+  }
+
+  if (!match) return { ok: false, error: 'Código no encontrado: ' + codigo };
+
+  // 3. Subir al producto base si se escaneó una presentación
+  var presentacion = null;
+  var base = match;
+  if (match.skuBase && match.skuBase !== match.idProducto) {
+    var b = activos.find(function(p){ return p.idProducto === match.skuBase; });
+    if (b) { base = b; presentacion = match; }
+  }
+
+  // 4. Todas las presentaciones del grupo (para que ME muestre opciones si las hay)
+  var presentaciones = activos.filter(function(p){
+    return p.skuBase === base.idProducto && p.idProducto !== base.idProducto;
+  });
+
+  return {
+    ok: true,
+    data: {
+      // Lo que ME debe mostrar en el carrito:
+      base: {
+        idProducto:      base.idProducto,
+        skuBase:         base.skuBase || base.idProducto,
+        descripcion:     base.descripcion,
+        precioVenta:     base.precioVenta,
+        precioCosto:     base.precioCosto,
+        unidad:          base.unidad,
+        idCategoria:     base.idCategoria,
+        factorConversion: presentacion ? parseFloat(presentacion.factorConversion) || 1 : 1,
+        Cod_Tributo:     base.Cod_Tributo,
+        IGV_Porcentaje:  base.IGV_Porcentaje,
+        Tipo_IGV:        base.Tipo_IGV,
+        Unidad_Medida:   base.Unidad_Medida
+      },
+      // Lo que ME debe guardar en DETALLE_VENTAS para ajuste de stock:
+      codigoEscaneado:  codigo,
+      esEquivalencia:   esEquivalencia,
+      esPresentacion:   !!presentacion,
+      presentacion:     presentacion ? {
+        idProducto:      presentacion.idProducto,
+        descripcion:     presentacion.descripcion,
+        factorConversion: parseFloat(presentacion.factorConversion) || 1
+      } : null,
+      todasPresentaciones: presentaciones.map(function(p){
+        return { idProducto: p.idProducto, descripcion: p.descripcion, factorConversion: parseFloat(p.factorConversion) || 1, precioVenta: p.precioVenta };
+      })
+    }
+  };
+}
+
 function crearProductoMaster(params) {
   var sheet = getSheet('PRODUCTOS_MASTER');
   var id = params.idProducto || _generateId('P');
@@ -92,10 +166,16 @@ function actualizarProductoMaster(params) {
                   'precioVenta','precioCosto','Cod_Tributo','IGV_Porcentaje','Cod_SUNAT','Tipo_IGV',
                   'Unidad_Medida','estado','esEnvasable','codigoProductoBase',
                   'factorConversion','mermaEsperadaPct','stockMinimo','stockMaximo','zona'];
+    var _numCampos = ['precioVenta','precioCosto','factorConversion','mermaEsperadaPct',
+                      'stockMinimo','stockMaximo','IGV_Porcentaje'];
     campos.forEach(function(campo) {
       if (params[campo] !== undefined) {
         var col = hdrs.indexOf(campo);
-        if (col >= 0) sheet.getRange(i + 1, col + 1).setValue(params[campo]);
+        if (col < 0) return;
+        var val = (_numCampos.indexOf(campo) >= 0 && params[campo] !== '')
+          ? parseFloat(params[campo])
+          : params[campo];
+        sheet.getRange(i + 1, col + 1).setValue(isNaN(val) ? params[campo] : val);
       }
     });
 
@@ -132,6 +212,25 @@ function crearEquivalencia(params) {
   return { ok: true, data: { idEquiv: id } };
 }
 
+function actualizarEquivalencia(params) {
+  if (!params.idEquiv) return { ok: false, error: 'Requiere idEquiv' };
+  var sheet = getSheet('EQUIVALENCIAS');
+  var data  = sheet.getDataRange().getValues();
+  var hdrs  = data[0];
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) !== String(params.idEquiv)) continue;
+    var campos = ['codigoBarra', 'descripcion', 'activo'];
+    campos.forEach(function(c) {
+      if (params[c] !== undefined) {
+        var col = hdrs.indexOf(c);
+        if (col >= 0) sheet.getRange(i + 1, col + 1).setValue(params[c]);
+      }
+    });
+    return { ok: true };
+  }
+  return { ok: false, error: 'Equivalencia no encontrada: ' + params.idEquiv };
+}
+
 // ── HISTORIAL DE PRECIOS ─────────────────────────────────────
 function getHistorialPrecios(params) {
   var rows = _sheetToObjects(getSheet('HISTORIAL_PRECIOS'));
@@ -143,7 +242,8 @@ function getHistorialPrecios(params) {
 
 // Publicar precio: actualiza catálogo + registra historial + genera alerta para imprimir membretes
 function publicarPrecio(params) {
-  if (!params.precioNuevo) return { ok: false, error: 'Requiere precioNuevo' };
+  var _precioNuevo = parseFloat(params.precioNuevo);
+  if (!_precioNuevo || _precioNuevo <= 0) return { ok: false, error: 'Requiere precioNuevo válido' };
   if (!params.idProducto && !params.codigoBarra && !params.skuBase) {
     return { ok: false, error: 'Requiere idProducto, codigoBarra o skuBase' };
   }
@@ -151,7 +251,7 @@ function publicarPrecio(params) {
   var res = actualizarProductoMaster({
     idProducto:   params.idProducto,
     codigoBarra:  params.codigoBarra,
-    precioVenta:  params.precioNuevo,
+    precioVenta:  _precioNuevo,
     usuario:      params.usuario,
     motivoPrecio: params.motivo || 'Publicación de precio'
   });
