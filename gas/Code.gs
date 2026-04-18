@@ -108,14 +108,20 @@ function _sheetToObjects(sheet) {
   var data = sheet.getDataRange().getValues();
   if (data.length < 2) return [];
   var headers = data[0].map(function(h) { return String(h).trim(); });
+  var tz = Session.getScriptTimeZone();
   return data.slice(1).map(function(row) {
     var obj = {};
     headers.forEach(function(h, i) {
       if (!h) return;
       var v = row[i];
-      obj[h] = v instanceof Date
-        ? Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd')
-        : v;
+      if (v instanceof Date) {
+        obj[h] = Utilities.formatDate(v, tz, 'yyyy-MM-dd');
+      } else if (typeof v === 'string' && /^\d+,\d+$/.test(v.trim())) {
+        // Celda guardada como texto con separador decimal de coma (ej: "4,5" → 4.5)
+        obj[h] = parseFloat(v.trim().replace(',', '.'));
+      } else {
+        obj[h] = v;
+      }
     });
     return obj;
   }).filter(function(obj) {
