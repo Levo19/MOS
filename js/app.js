@@ -920,7 +920,7 @@ const MOS = (() => {
     cerrarModalPrecioRapido();
 
     try {
-      await API.post('publicarPrecio', { idProducto, nuevoPrecio: precio });
+      await API.post('publicarPrecio', { idProducto, precioNuevo: precio });
       toast('Precio actualizado', 'ok');
       renderCatalogo();
       // Si es producto base y tiene presentaciones → ofrecer ajuste

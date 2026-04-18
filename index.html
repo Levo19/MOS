@@ -258,6 +258,9 @@
       opacity: 0; pointer-events: none;
       transition: opacity .22s ease;
     }
+    @media (min-width: 1024px) {
+      .qp-overlay { left: 15rem; } /* compensa el sidebar fijo (w-60) */
+    }
     .qp-overlay.active { opacity: 1; pointer-events: all; }
     .qp-sheet {
       width: 100%; max-width: 460px;
