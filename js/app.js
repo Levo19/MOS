@@ -893,7 +893,8 @@ const MOS = (() => {
     const nombre = $('qpNombre');
     const inp    = $('qpInput');
     if (nombre) nombre.textContent = prod.descripcion || idProducto;
-    if (inp) { inp.value = parseFloat(prod.precioVenta || 0).toFixed(2); }
+    if (inp) inp.value = parseFloat(prod.precioVenta || 0).toFixed(2);
+    _qpRenderPresentaciones();
     const overlay = $('modalPrecioRapido');
     if (overlay) overlay.classList.add('active');
     setTimeout(() => { if (inp) { inp.focus(); inp.select(); } }, 280);
@@ -905,6 +906,61 @@ const MOS = (() => {
     S._editingPrecioId = null;
   }
 
+  // Renderiza las filas de presentaciones (llamado al abrir el modal)
+  function _qpRenderPresentaciones() {
+    const idProducto = S._editingPrecioId;
+    const section = $('qpPresSection');
+    const list    = $('qpPresList');
+    if (!section || !list) return;
+
+    const prod  = S.productos.find(p => p.idProducto === idProducto);
+    const sku   = prod ? (prod.skuBase || prod.idProducto) : idProducto;
+    const grupo = _catGroups ? _catGroups[sku] : null;
+
+    if (!grupo || !grupo.pres || !grupo.pres.length || !grupo.base || grupo.base.idProducto !== idProducto) {
+      section.classList.add('hidden');
+      list.innerHTML = '';
+      return;
+    }
+
+    const precioBase = parseFloat($('qpInput')?.value || '0') || 0;
+    section.classList.remove('hidden');
+    list.innerHTML = grupo.pres.map((p, i) => {
+      const factor   = parseFloat(p.factorConversion) || 1;
+      const sugerido = precioBase * factor;
+      const actual   = parseFloat(p.precioVenta) || 0;
+      return `<label class="ajuste-row cursor-pointer" style="padding:.4rem .65rem">
+        <input type="checkbox" class="ajuste-check" id="qpPres${i}"
+               data-id="${p.idProducto}" data-factor="${factor}" checked>
+        <div class="ajuste-info min-w-0">
+          <div class="ajuste-name truncate" style="font-size:.74rem">${p.descripcion || p.idProducto}</div>
+          <div class="ajuste-factor">×${factor}</div>
+        </div>
+        <div class="ajuste-prices">
+          <div class="ajuste-current">${fmtMoney(actual)}</div>
+          <div class="ajuste-suggest" id="qpSug${i}">→ ${fmtMoney(sugerido)}</div>
+        </div>
+      </label>`;
+    }).join('');
+  }
+
+  // Actualiza solo los precios sugeridos mientras el usuario escribe (sin re-renderizar)
+  function _qpSyncPresentaciones() {
+    const idProducto = S._editingPrecioId;
+    if (!idProducto) return;
+    const precio = parseFloat($('qpInput')?.value || '0') || 0;
+    const prod   = S.productos.find(p => p.idProducto === idProducto);
+    const sku    = prod ? (prod.skuBase || prod.idProducto) : idProducto;
+    const grupo  = _catGroups ? _catGroups[sku] : null;
+    if (!grupo || !grupo.pres) return;
+    grupo.pres.forEach((p, i) => {
+      const factor   = parseFloat(p.factorConversion) || 1;
+      const sugerido = precio * factor;
+      const sug = $(`qpSug${i}`);
+      if (sug) sug.textContent = '→ ' + fmtMoney(sugerido);
+    });
+  }
+
   async function guardarPrecioRapido() {
     const idProducto = S._editingPrecioId;
     if (!idProducto) return;
@@ -912,27 +968,44 @@ const MOS = (() => {
     const precio = parseFloat(inp ? inp.value : '');
     if (isNaN(precio) || precio < 0) { toast('Precio inválido', 'error'); return; }
 
-    // Optimistic update
-    const prod = S.productos.find(p => p.idProducto === idProducto);
-    const prevPrecio = prod ? prod.precioVenta : null;
-    if (prod) prod.precioVenta = precio;
+    // Recoger presentaciones seleccionadas
+    const checks = document.querySelectorAll('#qpPresList input[type=checkbox]:checked');
+    const updates = [{ idProducto, precio }];
+    checks.forEach(cb => {
+      const factor   = parseFloat(cb.dataset.factor) || 1;
+      updates.push({ idProducto: cb.dataset.id, precio: parseFloat((precio * factor).toFixed(2)) });
+    });
+
+    // Snapshot para rollback
+    const prev = updates.map(u => {
+      const p = S.productos.find(x => x.idProducto === u.idProducto);
+      return { idProducto: u.idProducto, precio: p ? p.precioVenta : null };
+    });
+
+    // Optimistic update inmediato — todo en memoria de golpe
+    updates.forEach(u => {
+      const p = S.productos.find(x => x.idProducto === u.idProducto);
+      if (p) p.precioVenta = u.precio;
+    });
     _catSaveCache({ productos: S.productos, equivMap: S.equivMap });
     cerrarModalPrecioRapido();
+    renderCatalogo(); // inmediato, sin esperar al GAS
 
+    // API en paralelo en background
     try {
-      await API.post('publicarPrecio', { idProducto, precioNuevo: precio });
-      toast('Precio actualizado', 'ok');
-      renderCatalogo();
-      // Si es producto base y tiene presentaciones → ofrecer ajuste
-      const sku   = prod ? (prod.skuBase || prod.idProducto) : idProducto;
-      const grupo = _catGroups[sku];
-      // Solo aplica cuando el id guardado ES el base (mismo id que skuBase)
-      if (grupo && grupo.pres && grupo.pres.length && grupo.base && grupo.base.idProducto === idProducto) {
-        _abrirAjustePrecios(idProducto, precio, grupo.pres);
-      }
+      await Promise.all(updates.map(u =>
+        API.post('publicarPrecio', { idProducto: u.idProducto, precioNuevo: u.precio })
+      ));
+      const n = updates.length;
+      toast(n > 1 ? `${n} precios actualizados` : 'Precio actualizado', 'ok');
     } catch(e) {
-      if (prod && prevPrecio !== null) prod.precioVenta = prevPrecio;
-      toast('Error: ' + e.message, 'error');
+      prev.forEach(snap => {
+        if (snap.precio === null) return;
+        const p = S.productos.find(x => x.idProducto === snap.idProducto);
+        if (p) p.precioVenta = snap.precio;
+      });
+      _catSaveCache({ productos: S.productos, equivMap: S.equivMap });
+      toast('Error al guardar: ' + e.message, 'error');
       renderCatalogo();
     }
   }
@@ -970,7 +1043,7 @@ const MOS = (() => {
 
     try {
       await Promise.all(updates.map(u =>
-        API.post('publicarPrecio', { idProducto: u.idProducto, nuevoPrecio: u.precio })
+        API.post('publicarPrecio', { idProducto: u.idProducto, precioNuevo: u.precio })
           .then(() => {
             const p = S.productos.find(x => x.idProducto === u.idProducto);
             if (p) p.precioVenta = u.precio;
@@ -3798,7 +3871,7 @@ const MOS = (() => {
     init, nav, refresh, fabAction,
     openConfig, saveConfig, testConnection, closeModal, openEcoModal,
     filterCatalogo, setCatTab, toggleDerivs, togglePresentaciones, guardarPrecioRapido,
-    abrirModalPrecioRapido, cerrarModalPrecioRapido,
+    abrirModalPrecioRapido, cerrarModalPrecioRapido, _qpSyncPresentaciones,
     abrirAnalitica, cerrarAnalitica, setAnPeriodo, guardarStockMinMax, _anCurrentId,
     guardarAjustePrecios, stepperInc, stepperDec,
     abrirModalProducto, guardarProducto,
