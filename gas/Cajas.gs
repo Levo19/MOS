@@ -95,7 +95,14 @@ function getCierresCaja(params) {
           vc.sinCobrar++; vc.tickets++;
         } else {
           vc.total += total; vc.tickets++;
-          if (metodo === 'EFECTIVO') vc.efectivo += total; else vc.otros += total;
+          if (metodo === 'EFECTIVO') { vc.efectivo += total; }
+          else if (metodo.indexOf('MIXTO') === 0) {
+            var _efeM = metodo.match(/EFE:([\d.]+)/i);
+            var _virM = metodo.match(/VIR:([\d.]+)/i);
+            var _efe = _efeM ? parseFloat(_efeM[1]) : 0;
+            var _vir = _virM ? parseFloat(_virM[1]) : total - _efe;
+            vc.efectivo += _efe; vc.otros += _vir;
+          } else { vc.otros += total; }
           vc.byMetodo[metodo] = (vc.byMetodo[metodo] || 0) + total;
           vc.byDoc[tipoDoc]   = (vc.byDoc[tipoDoc]   || 0) + total;
         }
@@ -379,8 +386,28 @@ function imprimirTicketZCierre(params) {
   var creditos  = tickets.filter(function(t){ return t.metodo === 'CREDITO'; });
   var noAnul    = tickets.filter(function(t){ return t.metodo !== 'ANULADO'; });
 
-  var tEfectivo  = cobrados.filter(function(t){ return t.metodo==='EFECTIVO'; }).reduce(function(s,t){return s+t.total;},0);
-  var tVirtual   = cobrados.filter(function(t){ return t.metodo!=='EFECTIVO' && t.metodo!=='CREDITO'; }).reduce(function(s,t){return s+t.total;},0);
+  var _parseMetodo = function(metodo, total) {
+    var m = String(metodo || '').toUpperCase().trim();
+    if (!m || m === 'POR_COBRAR' || m === 'CREDITO') return { efe: 0, vir: 0 };
+    if (m === 'EFECTIVO') return { efe: total, vir: 0 };
+    if (m === 'VIRTUAL')  return { efe: 0, vir: total };
+    if (m.indexOf('MIXTO') === 0) {
+      var virM = metodo.match(/VIR:([\d.]+)/i);
+      var efeM = metodo.match(/EFE:([\d.]+)/i);
+      var vir  = virM ? parseFloat(virM[1]) : 0;
+      var efe  = efeM ? parseFloat(efeM[1]) : Math.round((total - vir) * 100) / 100;
+      return { efe: efe, vir: vir };
+    }
+    return { efe: 0, vir: total };
+  };
+  var tEfectivo = 0, tVirtual = 0;
+  cobrados.filter(function(t){ return t.metodo !== 'CREDITO'; }).forEach(function(t) {
+    var r = _parseMetodo(t.metodo, t.total);
+    tEfectivo += r.efe;
+    tVirtual  += r.vir;
+  });
+  tEfectivo = Math.round(tEfectivo * 100) / 100;
+  tVirtual  = Math.round(tVirtual  * 100) / 100;
   var tCredito   = creditos.reduce(function(s,t){return s+t.total;},0);
   var tAnulTotal = anulados.reduce(function(s,t){return s+t.total;},0);
   var tEntradas  = extras.filter(function(x){return x.tipo==='INGRESO';}).reduce(function(s,x){return s+x.monto;},0);
