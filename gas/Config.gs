@@ -252,3 +252,72 @@ function verificarPinPersonal(params) {
   if (String(persona.pin) !== String(params.pin)) return { ok: true, data: { autorizado: false } };
   return { ok: true, data: { autorizado: true, nombre: persona.nombre, rol: persona.rol } };
 }
+
+// ════════════════════════════════════════════════
+// DISPOSITIVOS
+// Gestión centralizada de dispositivos autorizados por app
+// Columnas: ID_Dispositivo | Nombre_Equipo | App | Estado | Ultima_Conexion
+// ════════════════════════════════════════════════
+
+function getDispositivos(params) {
+  var rows = _sheetToObjects(getSheet('DISPOSITIVOS'));
+  if (params && params.app)    rows = rows.filter(function(r){ return r.App === params.app; });
+  if (params && params.estado) rows = rows.filter(function(r){ return r.Estado === params.estado; });
+  return { ok: true, data: rows };
+}
+
+function crearDispositivo(params) {
+  if (!params.ID_Dispositivo) return { ok: false, error: 'Requiere ID_Dispositivo' };
+  if (!params.Nombre_Equipo)  return { ok: false, error: 'Requiere Nombre_Equipo' };
+  var sheet = getSheet('DISPOSITIVOS');
+  // Verificar duplicado
+  var dup = _sheetToObjects(sheet).find(function(d){ return d.ID_Dispositivo === params.ID_Dispositivo; });
+  if (dup) return { ok: false, error: 'Dispositivo ya registrado: ' + params.ID_Dispositivo };
+  var tz = Session.getScriptTimeZone();
+  sheet.appendRow([
+    params.ID_Dispositivo,
+    params.Nombre_Equipo,
+    params.App    || 'mosExpress',
+    params.Estado || 'ACTIVO',
+    Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss')
+  ]);
+  return { ok: true, data: { ID_Dispositivo: params.ID_Dispositivo } };
+}
+
+function actualizarDispositivo(params) {
+  if (!params.ID_Dispositivo) return { ok: false, error: 'Requiere ID_Dispositivo' };
+  var sheet = getSheet('DISPOSITIVOS');
+  var data  = sheet.getDataRange().getValues();
+  var hdrs  = data[0];
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) !== String(params.ID_Dispositivo)) continue;
+    var campos = ['Nombre_Equipo', 'App', 'Estado'];
+    campos.forEach(function(c) {
+      if (params[c] !== undefined) {
+        var col = hdrs.indexOf(c);
+        if (col >= 0) sheet.getRange(i + 1, col + 1).setValue(params[c]);
+      }
+    });
+    return { ok: true };
+  }
+  return { ok: false, error: 'Dispositivo no encontrado: ' + params.ID_Dispositivo };
+}
+
+// Registrar última conexión — llamado por MosExpress al verificar con éxito
+function registrarConexionDispositivo(params) {
+  if (!params.ID_Dispositivo) return { ok: false, error: 'Requiere ID_Dispositivo' };
+  var sheet = getSheet('DISPOSITIVOS');
+  var data  = sheet.getDataRange().getValues();
+  var hdrs  = data[0];
+  var colUC = hdrs.indexOf('Ultima_Conexion');
+  if (colUC < 0) return { ok: false, error: 'Columna Ultima_Conexion no encontrada' };
+  var tz = Session.getScriptTimeZone();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) !== String(params.ID_Dispositivo)) continue;
+    sheet.getRange(i + 1, colUC + 1).setValue(
+      Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss')
+    );
+    return { ok: true };
+  }
+  return { ok: false, error: 'Dispositivo no encontrado: ' + params.ID_Dispositivo };
+}

@@ -2157,28 +2157,30 @@ const MOS = (() => {
   }
 
   // ── CONFIGURACIÓN ────────────────────────────────────────────
-  let cfgData = { estaciones: [], impresoras: [], personal: [], personalMOS: [], series: [] };
+  let cfgData = { estaciones: [], impresoras: [], personal: [], personalMOS: [], series: [], dispositivos: [] };
 
   async function loadConfig() {
     S.cfgTab = S.cfgTab || 'estaciones';
-    const [estRes, impRes, persRes, persMOSRes, serRes] = await Promise.allSettled([
+    const [estRes, impRes, persRes, persMOSRes, serRes, dispRes] = await Promise.allSettled([
       API.get('getEstaciones', {}),
       API.get('getImpresoras', {}),
       API.get('getPersonalMaster', { appOrigen: 'warehouseMos' }),
       API.get('getPersonalMaster', { appOrigen: 'MOS' }),
-      API.get('getSeries', {})
+      API.get('getSeries', {}),
+      API.get('getDispositivos', {})
     ]);
-    cfgData.estaciones  = estRes.status      === 'fulfilled' ? (estRes.value      || []) : [];
-    cfgData.impresoras  = impRes.status      === 'fulfilled' ? (impRes.value      || []) : [];
-    cfgData.personal    = persRes.status     === 'fulfilled' ? (persRes.value     || []) : [];
-    cfgData.personalMOS = persMOSRes.status  === 'fulfilled' ? (persMOSRes.value  || []) : [];
-    cfgData.series      = serRes.status      === 'fulfilled' ? (serRes.value      || []) : [];
+    cfgData.estaciones   = estRes.status     === 'fulfilled' ? (estRes.value     || []) : [];
+    cfgData.impresoras   = impRes.status     === 'fulfilled' ? (impRes.value     || []) : [];
+    cfgData.personal     = persRes.status    === 'fulfilled' ? (persRes.value    || []) : [];
+    cfgData.personalMOS  = persMOSRes.status === 'fulfilled' ? (persMOSRes.value || []) : [];
+    cfgData.series       = serRes.status     === 'fulfilled' ? (serRes.value     || []) : [];
+    cfgData.dispositivos = dispRes.status    === 'fulfilled' ? (dispRes.value    || []) : [];
     renderCfgTab(S.cfgTab);
   }
 
   function setCfgTab(tab) {
     S.cfgTab = tab;
-    const tabs = ['estaciones','impresoras','personal','series','seguridad'];
+    const tabs = ['estaciones','impresoras','personal','series','seguridad','dispositivos'];
     tabs.forEach(t => {
       const btn = $('cfgTab' + t.charAt(0).toUpperCase() + t.slice(1));
       if (btn) btn.classList.toggle('active', t === tab);
@@ -2190,11 +2192,12 @@ const MOS = (() => {
 
   function renderCfgTab(tab) {
     switch (tab) {
-      case 'estaciones': renderEstaciones();  break;
-      case 'impresoras': renderImpresoras();  break;
-      case 'personal':   renderPersonal();    break;
-      case 'series':     renderSeries();      break;
-      case 'seguridad':  renderSeguridad();   break;
+      case 'estaciones':   renderEstaciones();   break;
+      case 'impresoras':   renderImpresoras();   break;
+      case 'personal':     renderPersonal();     break;
+      case 'series':       renderSeries();       break;
+      case 'seguridad':    renderSeguridad();    break;
+      case 'dispositivos': renderDispositivos(); break;
     }
   }
 
@@ -2342,6 +2345,36 @@ const MOS = (() => {
         </div>
       `).join('');
     }
+  }
+
+  function renderDispositivos() {
+    const tbody = $('tbodyDispositivos');
+    if (!tbody) return;
+    if (!cfgData.dispositivos.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-slate-500 text-sm">Sin dispositivos registrados.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = cfgData.dispositivos.map(d => {
+      const isActivo = d.Estado === 'ACTIVO';
+      const appColor = d.App === 'mosExpress' ? 'text-indigo-400' : 'text-orange-400';
+      const uc = d.Ultima_Conexion || '—';
+      return `<tr>
+        <td>
+          <div class="font-medium text-sm text-slate-200">${d.Nombre_Equipo || '—'}</div>
+          <div class="text-xs text-slate-600 font-mono truncate max-w-[180px]">${d.ID_Dispositivo}</div>
+        </td>
+        <td class="${appColor} text-xs font-medium">${d.App || '—'}</td>
+        <td><span class="badge ${isActivo ? 'badge-green' : 'badge-gray'}">${isActivo ? 'Activo' : 'Inactivo'}</span></td>
+        <td class="text-slate-500 text-xs">${uc}</td>
+        <td>
+          <button onclick="MOS.toggleEstadoDispositivo('${d.ID_Dispositivo}','${isActivo ? 'INACTIVO' : 'ACTIVO'}')"
+                  class="text-xs px-2 py-1 rounded border ${isActivo ? 'border-red-700 text-red-400 hover:bg-red-900/30' : 'border-green-700 text-green-400 hover:bg-green-900/30'}">
+            ${isActivo ? 'Desactivar' : 'Activar'}
+          </button>
+        </td>
+        <td><button onclick="MOS.abrirModalDispositivo('${d.ID_Dispositivo}')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700">✏️</button></td>
+      </tr>`;
+    }).join('');
   }
 
   // Config CRUD
@@ -3862,6 +3895,73 @@ const MOS = (() => {
     }
   }
 
+  // ── DISPOSITIVOS CRUD ────────────────────────────────────────
+  function abrirModalDispositivo(id) {
+    const modal = $('modalDispositivo');
+    if (!modal) return;
+    $('dispId').value = '';
+    $('dispNombre').value = '';
+    $('dispApp').value = 'mosExpress';
+    $('dispEstado').value = 'ACTIVO';
+    const wrap = $('dispIdNuevoWrap');
+    const nuevoInput = $('dispIdNuevo');
+    if (nuevoInput) nuevoInput.value = '';
+    if (id) {
+      const d = cfgData.dispositivos.find(x => x.ID_Dispositivo === id);
+      if (d) {
+        $('dispId').value     = d.ID_Dispositivo;
+        $('dispNombre').value = d.Nombre_Equipo || '';
+        $('dispApp').value    = d.App    || 'mosExpress';
+        $('dispEstado').value = d.Estado || 'ACTIVO';
+      }
+      if (wrap) wrap.classList.add('hidden');
+    } else {
+      if (wrap) wrap.classList.remove('hidden');
+    }
+    modal.classList.remove('hidden');
+  }
+
+  function cerrarModalDispositivo() {
+    const modal = $('modalDispositivo');
+    if (modal) modal.classList.add('hidden');
+  }
+
+  async function guardarDispositivo() {
+    const id     = $('dispId').value.trim();
+    const nombre = $('dispNombre').value.trim();
+    const app    = $('dispApp').value;
+    const estado = $('dispEstado').value;
+    if (!nombre) { toast('El nombre del equipo es obligatorio', 'warn'); return; }
+    try {
+      if (id) {
+        await API.post('actualizarDispositivo', { ID_Dispositivo: id, Nombre_Equipo: nombre, App: app, Estado: estado });
+      } else {
+        const newId = $('dispIdNuevo')?.value.trim();
+        if (!newId) { toast('Pega el ID del dispositivo (UUID)', 'warn'); return; }
+        await API.post('crearDispositivo', { ID_Dispositivo: newId, Nombre_Equipo: nombre, App: app, Estado: estado });
+      }
+      toast('Dispositivo guardado', 'ok');
+      cerrarModalDispositivo();
+      await loadConfig();
+    } catch(e) {
+      toast(e.message || 'Error al guardar dispositivo', 'error');
+    }
+  }
+
+  async function toggleEstadoDispositivo(id, nuevoEstado) {
+    const d = cfgData.dispositivos.find(x => x.ID_Dispositivo === id);
+    if (d) d.Estado = nuevoEstado;
+    renderDispositivos();
+    try {
+      await API.post('actualizarDispositivo', { ID_Dispositivo: id, Estado: nuevoEstado });
+      toast(nuevoEstado === 'ACTIVO' ? 'Dispositivo activado' : 'Dispositivo desactivado', 'ok');
+    } catch(e) {
+      if (d) d.Estado = nuevoEstado === 'ACTIVO' ? 'INACTIVO' : 'ACTIVO';
+      renderDispositivos();
+      toast(e.message || 'Error al actualizar', 'error');
+    }
+  }
+
   // ── Sync / Update ────────────────────────────────────────────
   function syncApp()           { if (window._SWControl) window._SWControl.sync(); }
   function applyPendingUpdate(){ if (window._SWControl) window._SWControl.applyPending(); }
@@ -3888,6 +3988,7 @@ const MOS = (() => {
     abrirModalPersonal, guardarPersonal,
     abrirModalSerie, guardarSerie,
     guardarPinEstacion, guardarPinWH,
+    abrirModalDispositivo, cerrarModalDispositivo, guardarDispositivo, toggleEstadoDispositivo,
     // Cajas
     loadCajas, toggleCajaDetail, toggleKpiVentas,
     toggleKpiTickets, setTicketFiltroFecha, setTicketFiltroEstado, setTicketFiltroTipo,

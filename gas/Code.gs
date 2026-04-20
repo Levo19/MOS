@@ -64,6 +64,12 @@ function _route(method, e) {
       case 'getConfig':            return getConfigMos();
       case 'setConfig':            return setConfigMos(params);
 
+      // ── Dispositivos ───────────────────────────────────────
+      case 'getDispositivos':          return getDispositivos(params);
+      case 'crearDispositivo':         return crearDispositivo(params);
+      case 'actualizarDispositivo':    return actualizarDispositivo(params);
+      case 'registrarConexion':        return registrarConexionDispositivo(params);
+
       // ── Estaciones ─────────────────────────────────────────
       case 'getEstaciones':        return getEstaciones(params);
       case 'crearEstacion':        return crearEstacion(params);

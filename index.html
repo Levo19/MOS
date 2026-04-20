@@ -884,6 +884,7 @@
           <button class="tab-btn" id="cfgTabPersonal"          onclick="MOS.setCfgTab('personal')">👥 Personal</button>
           <button class="tab-btn" id="cfgTabSeries"            onclick="MOS.setCfgTab('series')">📄 Series</button>
           <button class="tab-btn" id="cfgTabSeguridad"         onclick="MOS.setCfgTab('seguridad')">🔐 Seguridad</button>
+          <button class="tab-btn" id="cfgTabDispositivos"     onclick="MOS.setCfgTab('dispositivos')">📱 Dispositivos</button>
         </div>
       </div>
 
@@ -997,7 +998,64 @@
           </div>
         </div>
       </div>
+
+      <!-- Dispositivos -->
+      <div id="cfgPanelDispositivos" class="hidden">
+        <div class="flex items-center justify-between mb-3">
+          <p class="text-xs text-slate-500">Dispositivos autorizados por app — MosExpress · warehouseMos</p>
+          <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalDispositivo(null)">+ Nuevo</button>
+        </div>
+        <div class="card overflow-x-auto">
+          <table class="tbl">
+            <thead><tr><th>Equipo / ID</th><th>App</th><th>Estado</th><th>Última conexión</th><th></th><th></th></tr></thead>
+            <tbody id="tbodyDispositivos"><tr><td colspan="6" class="text-center py-8 text-slate-500 text-sm">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+        <div class="mt-3 p-3 rounded-lg text-xs text-slate-400" style="background:#0d1526;border:1px solid #1e293b;">
+          ℹ️ El <strong class="text-slate-300">ID del dispositivo</strong> se genera automáticamente en cada equipo (localStorage). Cópialo del dispositivo y regístralo aquí para autorizar el acceso.
+        </div>
+      </div>
     </section>
+
+    <!-- ── Modal: Dispositivo ──────────────────────────────── -->
+    <div id="modalDispositivo" class="modal-overlay hidden" onclick="if(event.target===this)MOS.cerrarModalDispositivo()">
+      <div class="modal-box">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="font-semibold text-white text-base">📱 Dispositivo</h3>
+          <button onclick="MOS.cerrarModalDispositivo()" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+        </div>
+        <input type="hidden" id="dispId">
+        <!-- Campo ID solo para nuevo dispositivo -->
+        <div id="dispIdNuevoWrap">
+          <label class="lbl">ID del Dispositivo <span class="text-slate-500">(UUID del equipo)</span></label>
+          <input id="dispIdNuevo" class="inp font-mono text-xs" placeholder="Pega aquí el ID generado en el dispositivo">
+        </div>
+        <div class="mt-3">
+          <label class="lbl">Nombre del Equipo</label>
+          <input id="dispNombre" class="inp" placeholder="Ej: Caja Principal, iPad Almacén">
+        </div>
+        <div class="mt-3 grid grid-cols-2 gap-3">
+          <div>
+            <label class="lbl">App</label>
+            <select id="dispApp" class="inp">
+              <option value="mosExpress">MosExpress</option>
+              <option value="warehouseMos">warehouseMos</option>
+            </select>
+          </div>
+          <div>
+            <label class="lbl">Estado</label>
+            <select id="dispEstado" class="inp">
+              <option value="ACTIVO">Activo</option>
+              <option value="INACTIVO">Inactivo</option>
+            </select>
+          </div>
+        </div>
+        <div class="flex gap-2 mt-5">
+          <button onclick="MOS.cerrarModalDispositivo()" class="btn-ghost flex-1">Cancelar</button>
+          <button onclick="MOS.guardarDispositivo()" class="btn-primary flex-1">Guardar</button>
+        </div>
+      </div>
+    </div>
 
     <!-- ═══ VIEW: PROVEEDORES ════════════════════════════════ -->
     <section id="view-proveedores" class="view">
