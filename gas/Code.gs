@@ -70,6 +70,11 @@ function _route(method, e) {
       case 'actualizarDispositivo':    return actualizarDispositivo(params);
       case 'registrarConexion':        return registrarConexionDispositivo(params);
 
+      // ── Zonas (puntos de venta) ────────────────────────────
+      case 'getZonas':             return getZonas(params);
+      case 'crearZona':            return crearZona(params);
+      case 'actualizarZona':       return actualizarZona(params);
+
       // ── Estaciones ─────────────────────────────────────────
       case 'getEstaciones':        return getEstaciones(params);
       case 'crearEstacion':        return crearEstacion(params);

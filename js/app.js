@@ -92,7 +92,7 @@ const MOS = (() => {
 
     // Config: show first panel
     if (viewName === 'config') {
-      setCfgTab(S.cfgTab || 'estaciones');
+      setCfgTab(S.cfgTab || 'zonas');
     }
 
     S.view = viewName;
@@ -2167,11 +2167,12 @@ const MOS = (() => {
   }
 
   // ── CONFIGURACIÓN ────────────────────────────────────────────
-  let cfgData = { estaciones: [], impresoras: [], personal: [], personalMOS: [], series: [], dispositivos: [] };
+  let cfgData = { zonas: [], estaciones: [], impresoras: [], personal: [], personalMOS: [], series: [], dispositivos: [] };
 
   async function loadConfig() {
-    S.cfgTab = S.cfgTab || 'estaciones';
-    const [estRes, impRes, persRes, persMOSRes, serRes, dispRes] = await Promise.allSettled([
+    S.cfgTab = S.cfgTab || 'zonas';
+    const [zonRes, estRes, impRes, persRes, persMOSRes, serRes, dispRes] = await Promise.allSettled([
+      API.get('getZonas', {}),
       API.get('getEstaciones', {}),
       API.get('getImpresoras', {}),
       API.get('getPersonalMaster', { appOrigen: 'warehouseMos' }),
@@ -2179,18 +2180,19 @@ const MOS = (() => {
       API.get('getSeries', {}),
       API.get('getDispositivos', {})
     ]);
-    cfgData.estaciones   = estRes.status     === 'fulfilled' ? (estRes.value     || []) : [];
-    cfgData.impresoras   = impRes.status     === 'fulfilled' ? (impRes.value     || []) : [];
-    cfgData.personal     = persRes.status    === 'fulfilled' ? (persRes.value    || []) : [];
-    cfgData.personalMOS  = persMOSRes.status === 'fulfilled' ? (persMOSRes.value || []) : [];
-    cfgData.series       = serRes.status     === 'fulfilled' ? (serRes.value     || []) : [];
-    cfgData.dispositivos = dispRes.status    === 'fulfilled' ? (dispRes.value    || []) : [];
+    cfgData.zonas        = zonRes.status      === 'fulfilled' ? (zonRes.value      || []) : [];
+    cfgData.estaciones   = estRes.status      === 'fulfilled' ? (estRes.value      || []) : [];
+    cfgData.impresoras   = impRes.status      === 'fulfilled' ? (impRes.value      || []) : [];
+    cfgData.personal     = persRes.status     === 'fulfilled' ? (persRes.value     || []) : [];
+    cfgData.personalMOS  = persMOSRes.status  === 'fulfilled' ? (persMOSRes.value  || []) : [];
+    cfgData.series       = serRes.status      === 'fulfilled' ? (serRes.value      || []) : [];
+    cfgData.dispositivos = dispRes.status     === 'fulfilled' ? (dispRes.value     || []) : [];
     renderCfgTab(S.cfgTab);
   }
 
   function setCfgTab(tab) {
     S.cfgTab = tab;
-    const tabs = ['estaciones','impresoras','personal','series','seguridad','dispositivos'];
+    const tabs = ['zonas','estaciones','impresoras','personal','series','seguridad','dispositivos'];
     tabs.forEach(t => {
       const btn = $('cfgTab' + t.charAt(0).toUpperCase() + t.slice(1));
       if (btn) btn.classList.toggle('active', t === tab);
@@ -2202,6 +2204,7 @@ const MOS = (() => {
 
   function renderCfgTab(tab) {
     switch (tab) {
+      case 'zonas':        renderZonas();        break;
       case 'estaciones':   renderEstaciones();   break;
       case 'impresoras':   renderImpresoras();   break;
       case 'personal':     renderPersonal();     break;
@@ -2209,6 +2212,70 @@ const MOS = (() => {
       case 'seguridad':    renderSeguridad();    break;
       case 'dispositivos': renderDispositivos(); break;
     }
+  }
+
+  function renderZonas() {
+    const tbody = $('tbodyZonas');
+    if (!tbody) return;
+    if (!cfgData.zonas.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Sin zonas registradas. Crea la primera.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = cfgData.zonas.map(z => {
+      const estCount = cfgData.estaciones.filter(e => e.idZona === z.idZona).length;
+      return `<tr>
+        <td class="font-mono text-xs text-slate-400">${z.idZona}</td>
+        <td class="font-medium text-white">${z.nombre}</td>
+        <td class="hidden sm:table-cell text-slate-400 text-xs">${z.direccion || '—'}</td>
+        <td class="hidden md:table-cell text-slate-400 text-xs">${z.responsable || '—'}</td>
+        <td class="text-center"><span class="text-xs px-2 py-0.5 rounded-full bg-indigo-900 text-indigo-300">${estCount} est.</span></td>
+        <td><span class="text-xs px-2 py-0.5 rounded-full ${z.estado === '1' || z.estado === 1 ? 'bg-emerald-900 text-emerald-300' : 'bg-slate-700 text-slate-400'}">${z.estado === '1' || z.estado === 1 ? 'Activa' : 'Inactiva'}</span></td>
+        <td><button onclick="MOS.abrirModalZona('${z.idZona}')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700">✏️</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  function abrirModalZona(id) {
+    ['Id','Nombre','Direccion','Responsable','Desc'].forEach(f => {
+      const el = $('zona' + f); if (el) el.value = '';
+    });
+    if (id) {
+      const z = cfgData.zonas.find(x => x.idZona === id);
+      if (!z) return;
+      $('modalZonaTitle').textContent = 'Editar Zona';
+      $('zonaId').value          = z.idZona;
+      $('zonaNombre').value      = z.nombre || '';
+      $('zonaDireccion').value   = z.direccion || '';
+      $('zonaResponsable').value = z.responsable || '';
+      $('zonaEstado').value      = String(z.estado ?? '1');
+      $('zonaDesc').value        = z.descripcion || '';
+    } else {
+      $('modalZonaTitle').textContent = 'Nueva Zona';
+      $('zonaId').value = '';
+      $('zonaEstado').value = '1';
+    }
+    openModal('modalZona');
+  }
+
+  async function guardarZona() {
+    const nombre = $('zonaNombre')?.value.trim();
+    if (!nombre) { toast('Nombre requerido', 'error'); return; }
+    const params = {
+      idZona:      $('zonaId')?.value || undefined,
+      nombre,
+      descripcion: $('zonaDesc')?.value || '',
+      direccion:   $('zonaDireccion')?.value || '',
+      responsable: $('zonaResponsable')?.value || '',
+      estado:      $('zonaEstado')?.value ?? '1'
+    };
+    if (!params.idZona) delete params.idZona;
+    try {
+      await API.post(params.idZona ? 'actualizarZona' : 'crearZona', params);
+      toast('Zona guardada', 'ok');
+      closeModal('modalZona');
+      S.loaded['config'] = false;
+      await loadConfig();
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
 
   function renderEstaciones() {
@@ -2389,16 +2456,24 @@ const MOS = (() => {
 
   // Config CRUD
   function abrirModalEstacion(id) {
-    ['Id','Nombre','Zona','Tipo','App','Pin','Desc'].forEach(f => {
+    ['Id','Nombre','Tipo','App','Pin','Desc'].forEach(f => {
       const el = $('est' + f); if (el && el.tagName !== 'SELECT') el.value = '';
     });
+    // Poblar select de zonas dinámicamente
+    const zonaSelect = $('estZona');
+    if (zonaSelect) {
+      zonaSelect.innerHTML = '<option value="">— Sin zona —</option>' +
+        cfgData.zonas.filter(z => z.estado === '1' || z.estado === 1).map(z =>
+          `<option value="${z.idZona}">${z.nombre}</option>`
+        ).join('');
+    }
     if (id) {
       const e = cfgData.estaciones.find(x => x.idEstacion === id);
       if (!e) return;
       $('modalEstTitle').textContent = 'Editar Estación';
       $('estId').value     = e.idEstacion;
       $('estNombre').value = e.nombre || '';
-      $('estZona').value   = e.idZona || '';
+      if (zonaSelect) zonaSelect.value = e.idZona || '';
       $('estTipo').value   = e.tipo || 'CAJA';
       $('estApp').value    = e.appOrigen || 'mosExpress';
       $('estDesc').value   = e.descripcion || '';
@@ -4140,6 +4215,7 @@ const MOS = (() => {
     abrirModalPago, guardarPago, abrirModalPedido,
     // Config
     setCfgTab,
+    abrirModalZona, guardarZona,
     abrirModalEstacion, guardarEstacion,
     abrirModalImpresora, guardarImpresora,
     abrirModalPersonal, guardarPersonal,

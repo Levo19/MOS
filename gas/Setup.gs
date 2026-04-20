@@ -15,7 +15,8 @@ var MOS_SHEET_NAMES = {
   CONEXIONES:           'CONEXIONES',
   ALERTAS_LOG:          'ALERTAS_LOG',
   // ── Configuración centralizada del ecosistema ──────────────
-  ESTACIONES:           'ESTACIONES',          // Zonas/cajas ME + almacenes WH
+  ZONAS:                'ZONAS',               // Puntos de venta (padre de ESTACIONES)
+  ESTACIONES:           'ESTACIONES',          // Cajas/despachos dentro de cada zona
   IMPRESORAS:           'IMPRESORAS',           // PrintNode IDs por estación
   SERIES_DOCUMENTALES:  'SERIES_DOCUMENTALES', // NV/Boleta/Factura por estación
   PERSONAL_MASTER:      'PERSONAL_MASTER'      // OPERADORES(WH) + VENDEDORES(ME)
@@ -61,6 +62,9 @@ var MOS_HEADERS = {
 
   // Log de alertas generadas para las apps hijas o admins
   ALERTAS_LOG:       ['id','tipo','urgencia','mensaje','appOrigen','datos','fecha','leida'],
+
+  // Puntos de venta — cada zona agrupa 1 o más estaciones
+  ZONAS:               ['idZona','nombre','descripcion','direccion','responsable','estado'],
 
   // Estaciones físicas: cajas MosExpress + almacenes warehouseMos
   // adminPin: PIN para anulaciones/créditos en ME, o edición sensible en WH

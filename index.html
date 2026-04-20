@@ -1111,7 +1111,8 @@
       <!-- Tab bar (scrollable en mobile) -->
       <div class="overflow-x-auto pb-1 mb-4">
         <div class="tab-bar w-max">
-          <button class="tab-btn active" id="cfgTabEstaciones" onclick="MOS.setCfgTab('estaciones')">📍 Estaciones</button>
+          <button class="tab-btn active" id="cfgTabZonas"      onclick="MOS.setCfgTab('zonas')">🏪 Zonas</button>
+          <button class="tab-btn" id="cfgTabEstaciones" onclick="MOS.setCfgTab('estaciones')">📍 Estaciones</button>
           <button class="tab-btn" id="cfgTabImpresoras"        onclick="MOS.setCfgTab('impresoras')">🖨️ Impresoras</button>
           <button class="tab-btn" id="cfgTabPersonal"          onclick="MOS.setCfgTab('personal')">👥 Personal</button>
           <button class="tab-btn" id="cfgTabSeries"            onclick="MOS.setCfgTab('series')">📄 Series</button>
@@ -1120,8 +1121,22 @@
         </div>
       </div>
 
+      <!-- Zonas -->
+      <div id="cfgPanelZonas">
+        <div class="flex items-center justify-between mb-3">
+          <p class="text-xs text-slate-500">Puntos de venta — cada zona agrupa 1 o más estaciones de despacho</p>
+          <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalZona(null)">+ Nueva zona</button>
+        </div>
+        <div class="card overflow-x-auto">
+          <table class="tbl">
+            <thead><tr><th>ID</th><th>Nombre</th><th class="hidden sm:table-cell">Dirección</th><th class="hidden md:table-cell">Responsable</th><th>Estaciones</th><th>Estado</th><th></th></tr></thead>
+            <tbody id="tbodyZonas"><tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- Estaciones -->
-      <div id="cfgPanelEstaciones">
+      <div id="cfgPanelEstaciones" class="hidden">
         <div class="flex items-center justify-between mb-3">
           <p class="text-xs text-slate-500">Cajas MosExpress + almacenes warehouseMos</p>
           <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalEstacion(null)">+ Nueva</button>
@@ -1913,6 +1928,34 @@
 </div>
 
 <!-- Modal Estación -->
+<!-- Modal Zona -->
+<div class="modal-backdrop" id="modalZona">
+  <div class="modal-box p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 id="modalZonaTitle" class="font-bold text-lg text-white">Nueva Zona</h2>
+      <button onclick="MOS.closeModal('modalZona')" class="text-slate-400 hover:text-white text-xl">×</button>
+    </div>
+    <input type="hidden" id="zonaId">
+    <div class="grid grid-cols-2 gap-3">
+      <div class="col-span-2"><label class="lbl">Nombre *</label><input id="zonaNombre" class="inp" placeholder="Local Norte, Tienda Centro..."></div>
+      <div class="col-span-2"><label class="lbl">Dirección</label><input id="zonaDireccion" class="inp" placeholder="Av. Principal 123"></div>
+      <div><label class="lbl">Responsable</label><input id="zonaResponsable" class="inp" placeholder="Nombre del encargado"></div>
+      <div>
+        <label class="lbl">Estado</label>
+        <select id="zonaEstado" class="inp">
+          <option value="1">Activo</option>
+          <option value="0">Inactivo</option>
+        </select>
+      </div>
+      <div class="col-span-2"><label class="lbl">Descripción</label><input id="zonaDesc" class="inp" placeholder="Descripción opcional..."></div>
+    </div>
+    <div class="flex gap-2 mt-5">
+      <button onclick="MOS.closeModal('modalZona')" class="btn-ghost flex-1">Cancelar</button>
+      <button onclick="MOS.guardarZona()" class="btn-primary flex-1">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="modalEstacion">
   <div class="modal-box p-6">
     <div class="flex items-center justify-between mb-5">
@@ -1922,7 +1965,10 @@
     <input type="hidden" id="estId">
     <div class="grid grid-cols-2 gap-3">
       <div class="col-span-2"><label class="lbl">Nombre *</label><input id="estNombre" class="inp" placeholder="Caja Central 01"></div>
-      <div><label class="lbl">Zona ID</label><input id="estZona" class="inp" placeholder="ZONA-01"></div>
+      <div>
+        <label class="lbl">Zona (punto de venta)</label>
+        <select id="estZona" class="inp"><option value="">— Sin zona —</option></select>
+      </div>
       <div>
         <label class="lbl">Tipo</label>
         <select id="estTipo" class="inp">
