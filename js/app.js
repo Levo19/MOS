@@ -1899,6 +1899,9 @@ const MOS = (() => {
       $('prodZona').value            = p.zona || '';
       $('prodBase').value            = p.skuBase !== p.idProducto ? (p.skuBase || '') : '';
       $('prodFactor').value          = p.factorConversion || '';
+      $('prodFactorConvBase').value  = p.factorConversionBase || '';
+      const _fcbRow = $('prodFactorConvBaseRow');
+      if (_fcbRow) _fcbRow.style.display = $('prodBase').value ? '' : 'none';
       $('prodMerma').value           = p.mermaEsperadaPct || '';
       $('prodEsEnvasable').value     = p.esEnvasable || '0';
       $('prodCodTributo').value      = p.Cod_Tributo || '';
@@ -2010,9 +2013,10 @@ const MOS = (() => {
       stockMinimo:         parseFloat($('prodStockMin')?.value)    || 0,
       stockMaximo:         parseFloat($('prodStockMax')?.value)    || 0,
       zona:                $('prodZona')?.value || '',
-      codigoProductoBase:  $('prodBase')?.value || '',
-      factorConversion:    $('prodFactor')?.value    ? parseFloat($('prodFactor')?.value)    : '',
-      mermaEsperadaPct:    $('prodMerma')?.value     ? parseFloat($('prodMerma')?.value)     : '',
+      codigoProductoBase:    $('prodBase')?.value || '',
+      factorConversion:      $('prodFactor')?.value         ? parseFloat($('prodFactor')?.value)         : '',
+      factorConversionBase:  $('prodFactorConvBase')?.value ? parseFloat($('prodFactorConvBase')?.value) : '',
+      mermaEsperadaPct:      $('prodMerma')?.value          ? parseFloat($('prodMerma')?.value)          : '',
       esEnvasable:         $('prodEsEnvasable')?.value || '0',
       Cod_Tributo:         $('prodCodTributo')?.value || '',
       IGV_Porcentaje:      $('prodIGV')?.value        ? parseFloat($('prodIGV')?.value)        : '',

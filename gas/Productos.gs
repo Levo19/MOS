@@ -133,8 +133,9 @@ function crearProductoMaster(params) {
     '1',
     params.esEnvasable          || '0',
     params.codigoProductoBase   || '',
-    parseFloat(params.factorConversion)  || '',
-    parseFloat(params.mermaEsperadaPct)  || '',
+    parseFloat(params.factorConversion)     || '',
+    parseFloat(params.factorConversionBase) || '',
+    parseFloat(params.mermaEsperadaPct)     || '',
     parseFloat(params.stockMinimo) || 0,
     parseFloat(params.stockMaximo) || 0,
     params.zona                 || '',
@@ -165,9 +166,10 @@ function actualizarProductoMaster(params) {
     var campos = ['skuBase','codigoBarra','descripcion','marca','idCategoria','unidad',
                   'precioVenta','precioCosto','Cod_Tributo','IGV_Porcentaje','Cod_SUNAT','Tipo_IGV',
                   'Unidad_Medida','estado','esEnvasable','codigoProductoBase',
-                  'factorConversion','mermaEsperadaPct','stockMinimo','stockMaximo','zona'];
-    var _numCampos = ['precioVenta','precioCosto','factorConversion','mermaEsperadaPct',
-                      'stockMinimo','stockMaximo','IGV_Porcentaje'];
+                  'factorConversion','factorConversionBase','mermaEsperadaPct',
+                  'stockMinimo','stockMaximo','zona'];
+    var _numCampos = ['precioVenta','precioCosto','factorConversion','factorConversionBase',
+                      'mermaEsperadaPct','stockMinimo','stockMaximo','IGV_Porcentaje'];
     campos.forEach(function(campo) {
       if (params[campo] !== undefined) {
         var col = hdrs.indexOf(campo);
