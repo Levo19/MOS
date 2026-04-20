@@ -77,9 +77,12 @@ const MOS = (() => {
     document.querySelectorAll('#sidebar .nav-item').forEach(b =>
       b.classList.toggle('active', b.dataset.view === viewName));
 
-    // Bottom nav
+    // Bottom nav — botones normales
     document.querySelectorAll('#bottomnav .bnav-btn').forEach(b =>
       b.classList.toggle('active', b.dataset.view === viewName));
+    // Centro elevado (almacén)
+    const bnavCenter = document.querySelector('#bottomnav .bnav-center-fab');
+    if (bnavCenter) bnavCenter.classList.toggle('active', viewName === 'almacen');
 
     const titles = { dashboard:'Dashboard', catalogo:'Catálogo', almacen:'Almacén', proveedores:'Proveedores', cajas:'Cajas', config:'Configuración' };
     const t = titles[viewName] || viewName;
@@ -226,9 +229,13 @@ const MOS = (() => {
     const av = $('sessionAvatar');
     const nm = $('sessionName');
     const rl = $('sessionRol');
-    if (av) { av.textContent = ((S.session.nombre||'?')[0]).toUpperCase(); }
+    const initial = ((S.session.nombre||'?')[0]).toUpperCase();
+    if (av) { av.textContent = initial; av.style.background = S.session.color || '#6366f1'; }
     if (nm) nm.textContent = S.session.nombre;
     if (rl) rl.textContent = S.session.rol;
+    // Sync avatar en header móvil
+    const avMob = $('sessionAvatarMob');
+    if (avMob) { avMob.textContent = initial; avMob.style.background = S.session.color || '#6366f1'; }
     // Hide Config for admin role
     document.querySelectorAll('[data-view="config"]').forEach(b => {
       b.style.display = isMaster ? '' : 'none';
@@ -3900,23 +3907,25 @@ const MOS = (() => {
     const modal = $('modalDispositivo');
     if (!modal) return;
     $('dispId').value = '';
+    $('dispIdVisible').value = '';
     $('dispNombre').value = '';
     $('dispApp').value = 'mosExpress';
     $('dispEstado').value = 'ACTIVO';
-    const wrap = $('dispIdNuevoWrap');
-    const nuevoInput = $('dispIdNuevo');
-    if (nuevoInput) nuevoInput.value = '';
+    const lbl = $('dispIdLabel');
     if (id) {
       const d = cfgData.dispositivos.find(x => x.ID_Dispositivo === id);
       if (d) {
-        $('dispId').value     = d.ID_Dispositivo;
-        $('dispNombre').value = d.Nombre_Equipo || '';
-        $('dispApp').value    = d.App    || 'mosExpress';
-        $('dispEstado').value = d.Estado || 'ACTIVO';
+        $('dispId').value        = d.ID_Dispositivo;
+        $('dispIdVisible').value = d.ID_Dispositivo;
+        $('dispNombre').value    = d.Nombre_Equipo || '';
+        $('dispApp').value       = d.App    || 'mosExpress';
+        $('dispEstado').value    = d.Estado || 'ACTIVO';
       }
-      if (wrap) wrap.classList.add('hidden');
+      if (lbl) lbl.innerHTML = 'ID del Dispositivo <span class="text-slate-500">(editable — el nuevo UUID reemplazará el anterior)</span>';
+      $('dispIdVisible').readOnly = false;
     } else {
-      if (wrap) wrap.classList.remove('hidden');
+      if (lbl) lbl.innerHTML = 'ID del Dispositivo <span class="text-slate-500">(UUID del equipo)</span>';
+      $('dispIdVisible').readOnly = false;
     }
     modal.classList.remove('hidden');
   }
@@ -3927,18 +3936,24 @@ const MOS = (() => {
   }
 
   async function guardarDispositivo() {
-    const id     = $('dispId').value.trim();
-    const nombre = $('dispNombre').value.trim();
-    const app    = $('dispApp').value;
-    const estado = $('dispEstado').value;
+    const idOriginal = $('dispId').value.trim();
+    const idNuevo    = ($('dispIdVisible')?.value || '').trim();
+    const nombre     = $('dispNombre').value.trim();
+    const app        = $('dispApp').value;
+    const estado     = $('dispEstado').value;
     if (!nombre) { toast('El nombre del equipo es obligatorio', 'warn'); return; }
+    if (!idNuevo) { toast('Pega el ID del dispositivo (UUID)', 'warn'); return; }
     try {
-      if (id) {
-        await API.post('actualizarDispositivo', { ID_Dispositivo: id, Nombre_Equipo: nombre, App: app, Estado: estado });
+      if (idOriginal) {
+        // Edición: si cambió el ID, crear con nuevo ID y borrar el anterior (no hay rename en Sheets)
+        if (idOriginal !== idNuevo) {
+          await API.post('crearDispositivo', { ID_Dispositivo: idNuevo, Nombre_Equipo: nombre, App: app, Estado: estado });
+          await API.post('actualizarDispositivo', { ID_Dispositivo: idOriginal, Estado: 'INACTIVO' });
+        } else {
+          await API.post('actualizarDispositivo', { ID_Dispositivo: idOriginal, Nombre_Equipo: nombre, App: app, Estado: estado });
+        }
       } else {
-        const newId = $('dispIdNuevo')?.value.trim();
-        if (!newId) { toast('Pega el ID del dispositivo (UUID)', 'warn'); return; }
-        await API.post('crearDispositivo', { ID_Dispositivo: newId, Nombre_Equipo: nombre, App: app, Estado: estado });
+        await API.post('crearDispositivo', { ID_Dispositivo: idNuevo, Nombre_Equipo: nombre, App: app, Estado: estado });
       }
       toast('Dispositivo guardado', 'ok');
       cerrarModalDispositivo();
@@ -3960,6 +3975,51 @@ const MOS = (() => {
       renderDispositivos();
       toast(e.message || 'Error al actualizar', 'error');
     }
+  }
+
+  // ── PWA Install ──────────────────────────────────────────────
+  let _installPrompt = null;
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    _installPrompt = e;
+    const btn = document.getElementById('installAppBtn');
+    if (btn) btn.classList.remove('hidden');
+  });
+  window.addEventListener('appinstalled', () => {
+    _installPrompt = null;
+    const btn = document.getElementById('installAppBtn');
+    if (btn) btn.classList.add('hidden');
+  });
+
+  function installPWA() {
+    if (!_installPrompt) { toast('La app ya está instalada o el navegador no lo permite', 'info'); return; }
+    _installPrompt.prompt();
+    _installPrompt.userChoice.then(r => {
+      if (r.outcome === 'accepted') toast('App instalada correctamente', 'ok');
+      _installPrompt = null;
+    });
+    closeAvatarMenu();
+  }
+
+  // ── Avatar dropdown ──────────────────────────────────────────
+  function toggleAvatarMenu() {
+    const menu = $('avatarMenu');
+    if (!menu) return;
+    const isHidden = menu.classList.contains('hidden');
+    if (isHidden) {
+      menu.classList.remove('hidden');
+      setTimeout(() => document.addEventListener('click', _closeAvatarOnOutside, { once: true }), 0);
+    } else {
+      menu.classList.add('hidden');
+    }
+  }
+  function closeAvatarMenu() {
+    const menu = $('avatarMenu');
+    if (menu) menu.classList.add('hidden');
+  }
+  function _closeAvatarOnOutside(e) {
+    const wrap = $('avatarWrap');
+    if (wrap && !wrap.contains(e.target)) closeAvatarMenu();
   }
 
   // ── Sync / Update ────────────────────────────────────────────
@@ -3989,6 +4049,7 @@ const MOS = (() => {
     abrirModalSerie, guardarSerie,
     guardarPinEstacion, guardarPinWH,
     abrirModalDispositivo, cerrarModalDispositivo, guardarDispositivo, toggleEstadoDispositivo,
+    toggleAvatarMenu, closeAvatarMenu, installPWA,
     // Cajas
     loadCajas, toggleCajaDetail, toggleKpiVentas,
     toggleKpiTickets, setTicketFiltroFecha, setTicketFiltroEstado, setTicketFiltroTipo,

@@ -14,20 +14,137 @@
     * { box-sizing: border-box; }
     body { background: #020817; color: #e2e8f0; font-family: system-ui, -apple-system, sans-serif; }
 
-    /* Sidebar */
-    #sidebar { background: #060d1f; border-right: 1px solid #1e293b; }
+    /* ── Sidebar ─────────────────────────────────────────────── */
+    #sidebar {
+      background: #060d1f; border-right: 1px solid #1e293b;
+      width: 4rem; /* collapsed on tablet */
+      transition: width .28s cubic-bezier(.4,0,.2,1), box-shadow .28s;
+      overflow: hidden;
+    }
+    /* Tablet: hover expands (overlays content) */
+    @media (min-width: 768px) and (max-width: 1023px) {
+      #sidebar:hover {
+        width: 15rem;
+        box-shadow: 8px 0 40px rgba(0,0,0,.55);
+      }
+      #sidebar:not(:hover) .nav-label  { opacity: 0; width: 0; pointer-events: none; overflow: hidden; white-space: nowrap; }
+      #sidebar:not(:hover) .nav-item   { justify-content: center; padding-left: 0; padding-right: 0; }
+      #sidebar:not(:hover) .nav-dot    { display: none; }
+      #sidebar:not(:hover) .sidebar-text { opacity: 0; width: 0; overflow: hidden; }
+    }
+    /* Desktop: always expanded */
+    @media (min-width: 1024px) {
+      #sidebar { width: 15rem; overflow: visible; }
+    }
+
     .nav-item { transition: background .15s, color .15s; }
     .nav-item.active, .nav-item:hover { background: rgba(99,102,241,.15); color: #a5b4fc; }
     .nav-item.active { color: #a5b4fc; font-weight: 600; }
     .nav-item.active .nav-dot { opacity: 1; }
     .nav-dot { width: 3px; height: 20px; background: var(--accent); border-radius: 2px; opacity: 0; transition: opacity .15s; }
+    .nav-label { transition: opacity .2s, width .2s; }
 
-    /* Bottom nav (mobile) */
-    #bottomnav { background: #060d1f; border-top: 1px solid #1e293b; }
-    .bnav-btn { transition: color .15s; }
+    /* ── MOS Logo ────────────────────────────────────────────── */
+    .mos-logo-icon {
+      width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
+      position: relative; overflow: hidden;
+      background: linear-gradient(135deg, #312e81 0%, #4c1d95 50%, #1e3a8a 100%);
+      animation: logoGlow 4s ease-in-out infinite;
+    }
+    @keyframes logoGlow {
+      0%,100% { box-shadow: 0 0 10px rgba(99,102,241,.4), 0 0 20px rgba(99,102,241,.15); }
+      50%      { box-shadow: 0 0 18px rgba(139,92,246,.6), 0 0 36px rgba(139,92,246,.25); }
+    }
+    .mos-logo-img {
+      width: 100%; height: 100%; object-fit: cover; border-radius: 10px;
+      transition: transform .3s;
+    }
+    .mos-logo-icon:hover .mos-logo-img { transform: scale(1.08); }
+    /* Constellation overlay on logo */
+    .mos-logo-icon::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: radial-gradient(circle at 60% 35%, rgba(251,191,36,.22) 0%, transparent 65%);
+      pointer-events: none;
+    }
+    /* Big login logo */
+    .mos-login-logo {
+      width: 80px; height: 80px; border-radius: 22px; margin: 0 auto 1.25rem;
+      position: relative; overflow: hidden;
+      animation: logoGlow 4s ease-in-out infinite;
+    }
+    .mos-login-logo img { width: 100%; height: 100%; object-fit: cover; }
+    .mos-login-logo::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: radial-gradient(circle at 60% 35%, rgba(251,191,36,.25) 0%, transparent 65%);
+    }
+    /* MOS text gradient */
+    .mos-title-gradient {
+      background: linear-gradient(135deg, #a5b4fc, #818cf8, #c4b5fd);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text; font-weight: 800; letter-spacing: -.02em;
+    }
+
+    /* ── User avatar / session ──────────────────────────────── */
+    .session-dot {
+      position: absolute; bottom: -1px; right: -1px;
+      width: 10px; height: 10px; border-radius: 50%;
+      border: 2px solid #060d1f;
+    }
+    .avatar-trigger {
+      width: 100%; display: flex; align-items: center; gap: 10px;
+      padding: 8px; border-radius: 10px; border: 1px solid #1e293b;
+      background: #0d1526; cursor: pointer; transition: border-color .15s;
+    }
+    .avatar-trigger:hover { border-color: rgba(99,102,241,.4); }
+    .avatar-menu {
+      position: absolute; bottom: calc(100% + 6px); left: 0; right: 0;
+      background: #0f172a; border: 1px solid #1e293b; border-radius: 12px;
+      padding: 6px; z-index: 60; animation: fadeIn .15s ease;
+      box-shadow: 0 -8px 32px rgba(0,0,0,.5);
+    }
+    .avatar-menu.hidden { display: none; }
+    .avatar-menu-btn {
+      width: 100%; display: flex; align-items: center; gap: 8px;
+      text-align: left; padding: 9px 10px; font-size: 12px; font-weight: 500;
+      border-radius: 8px; border: none; background: transparent; color: #94a3b8;
+      cursor: pointer; transition: all .12s;
+    }
+    .avatar-menu-btn:hover { background: rgba(99,102,241,.1); color: #a5b4fc; }
+    .avatar-menu-btn.danger:hover { background: rgba(239,68,68,.1); color: #f87171; }
+    .avatar-menu-sep { height: 1px; background: #1e293b; margin: 4px 0; }
+
+    /* ── Bottom nav (mobile only) ───────────────────────────── */
+    #bottomnav {
+      background: rgba(6,13,31,.92); border-top: 1px solid #1e293b;
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    }
+    .bnav-inner { display: flex; align-items: flex-end; }
+    .bnav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 10px 4px 8px; transition: color .15s; color: #475569; position: relative; }
     .bnav-btn.active { color: #a5b4fc; }
-    .bnav-btn .bnav-bar { height: 2px; background: var(--accent); border-radius: 1px; margin: 0 auto; width: 0; transition: width .2s; }
-    .bnav-btn.active .bnav-bar { width: 24px; }
+    .bnav-btn .bnav-icon { font-size: 1.35rem; margin-bottom: 3px; transition: transform .2s; }
+    .bnav-btn.active .bnav-icon { transform: translateY(-2px); }
+    .bnav-btn .bnav-lbl { font-size: .6rem; font-weight: 600; letter-spacing: .02em; }
+    .bnav-btn.active::before {
+      content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+      width: 28px; height: 2px; border-radius: 0 0 2px 2px;
+      background: linear-gradient(90deg,#6366f1,#8b5cf6);
+    }
+    /* Central elevated button */
+    .bnav-center {
+      flex: 1.3; display: flex; flex-direction: column; align-items: center; padding: 4px 4px 8px;
+      position: relative; color: #475569; cursor: pointer; border: none; background: transparent;
+    }
+    .bnav-center-fab {
+      width: 52px; height: 52px; border-radius: 16px; margin-bottom: 3px; margin-top: -14px;
+      background: linear-gradient(135deg,#6366f1,#8b5cf6); border: none;
+      display: flex; align-items: center; justify-content: center; cursor: pointer;
+      font-size: 1.4rem; color: white; transition: transform .2s, box-shadow .2s;
+      box-shadow: 0 4px 20px rgba(99,102,241,.45);
+    }
+    .bnav-center-fab.active, .bnav-center-fab:active { transform: scale(.93); }
+    .bnav-center-lbl { font-size: .6rem; font-weight: 600; letter-spacing: .02em; color: #a5b4fc; }
 
     /* Views */
     .view { display: none; }
@@ -119,7 +236,7 @@
     .fab { position: fixed; bottom: 80px; right: 20px; width: 52px; height: 52px; border-radius: 50%; background: var(--accent); color: white; border: none; font-size: 22px; cursor: pointer; box-shadow: 0 4px 20px rgba(99,102,241,.5); transition: transform .2s, box-shadow .2s; z-index: 30; display: none; }
     .fab:hover { transform: scale(1.1); box-shadow: 0 6px 28px rgba(99,102,241,.6); }
     .fab.visible { display: flex; align-items: center; justify-content: center; }
-    @media (min-width: 1024px) { .fab { bottom: 24px; } }
+    @media (min-width: 768px) { .fab { bottom: 24px; } }
 
     /* Ecosystem status */
     .eco-card { background: #0d1526; border: 1px solid #1e293b; border-radius: 10px; padding: 16px; }
@@ -258,9 +375,8 @@
       opacity: 0; pointer-events: none;
       transition: opacity .22s ease;
     }
-    @media (min-width: 1024px) {
-      .qp-overlay { left: 15rem; } /* compensa el sidebar fijo (w-60) */
-    }
+    @media (min-width: 768px)  { .qp-overlay { left: 4rem; } }   /* tablet: sidebar colapsado */
+    @media (min-width: 1024px) { .qp-overlay { left: 15rem; } } /* desktop: sidebar completo */
     .qp-overlay.active { opacity: 1; pointer-events: all; }
     .qp-sheet {
       width: 100%; max-width: 460px;
@@ -523,58 +639,78 @@
 <!-- ═══════════════════════════════════════════════════════════ -->
 <!-- DESKTOP SIDEBAR                                            -->
 <!-- ═══════════════════════════════════════════════════════════ -->
-<aside id="sidebar" class="hidden lg:flex fixed inset-y-0 left-0 w-60 flex-col z-30">
+<aside id="sidebar" class="hidden md:flex fixed inset-y-0 left-0 flex-col z-30">
   <!-- Logo -->
-  <div class="px-5 py-5 border-b border-slate-800">
-    <div class="flex items-center gap-2">
-      <div class="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)">M</div>
-      <div>
-        <div class="font-bold text-white text-base leading-none">MOS</div>
-        <div class="text-xs text-slate-500">InversionMos</div>
-      </div>
+  <div class="px-3 py-4 border-b border-slate-800 flex items-center gap-3 overflow-hidden" style="min-height:68px">
+    <div class="mos-logo-icon shrink-0">
+      <img src="icons/icon-512.png" class="mos-logo-img" alt="MOS">
+    </div>
+    <div class="sidebar-text" style="transition:opacity .2s">
+      <div class="mos-title-gradient text-base leading-none">MOS</div>
+      <div class="text-xs text-slate-500 mt-0.5">InversionMos</div>
     </div>
   </div>
   <!-- Nav -->
-  <nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+  <nav class="flex-1 px-2 py-4 space-y-0.5 overflow-y-auto overflow-x-hidden">
     <button data-view="dashboard"   class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('dashboard')">
-      <div class="nav-dot"></div><span class="text-base">📊</span><span>Dashboard</span>
+      <div class="nav-dot"></div><span class="text-base shrink-0">📊</span><span class="nav-label whitespace-nowrap">Dashboard</span>
     </button>
     <button data-view="catalogo"    class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('catalogo')">
-      <div class="nav-dot"></div><span class="text-base">📦</span><span>Catálogo</span>
+      <div class="nav-dot"></div><span class="text-base shrink-0">📦</span><span class="nav-label whitespace-nowrap">Catálogo</span>
     </button>
     <button data-view="almacen"     class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('almacen')">
-      <div class="nav-dot"></div><span class="text-base">🏭</span><span>Almacén</span>
+      <div class="nav-dot"></div><span class="text-base shrink-0">🏭</span><span class="nav-label whitespace-nowrap">Almacén</span>
     </button>
     <button data-view="proveedores" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('proveedores')">
-      <div class="nav-dot"></div><span class="text-base">🤝</span><span>Proveedores</span>
+      <div class="nav-dot"></div><span class="text-base shrink-0">🤝</span><span class="nav-label whitespace-nowrap">Proveedores</span>
     </button>
     <button data-view="cajas" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('cajas')">
-      <div class="nav-dot"></div><span class="text-base">🗃️</span><span>Cajas</span>
+      <div class="nav-dot"></div><span class="text-base shrink-0">🗃️</span><span class="nav-label whitespace-nowrap">Cajas</span>
     </button>
     <div class="mt-2 pt-2 border-t border-slate-800">
       <button data-view="config" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('config')">
-        <div class="nav-dot"></div><span class="text-base">⚙️</span><span>Configuración</span>
+        <div class="nav-dot"></div><span class="text-base shrink-0">⚙️</span><span class="nav-label whitespace-nowrap">Configuración</span>
       </button>
     </div>
   </nav>
-  <!-- Footer -->
-  <div class="px-3 py-3 border-t border-slate-800">
-    <div class="flex items-center gap-2 px-2 py-2 rounded-lg mb-2" style="background:#0d1526;border:1px solid #1e293b">
-      <div id="sessionAvatar" class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0" style="background:#6366f1">?</div>
-      <div class="flex-1 min-w-0">
-        <div id="sessionName" class="text-xs font-medium text-slate-200 truncate">—</div>
-        <div id="sessionRol" class="text-xs text-slate-500">—</div>
+  <!-- Footer: usuario + dropdown -->
+  <div class="px-2 py-3 border-t border-slate-800 overflow-hidden">
+    <div class="relative" id="avatarWrap">
+      <button class="avatar-trigger" onclick="MOS.toggleAvatarMenu()">
+        <div class="relative shrink-0">
+          <div id="sessionAvatar" class="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold" style="background:#6366f1">?</div>
+          <span id="avatarStatusDot" class="session-dot dot-green"></span>
+        </div>
+        <div class="sidebar-text flex-1 min-w-0 text-left" style="transition:opacity .2s">
+          <div id="sessionName" class="text-xs font-semibold text-slate-200 truncate">—</div>
+          <div id="sessionRol" class="text-xs text-slate-500">—</div>
+        </div>
+        <span class="sidebar-text nav-label text-slate-600 text-xs">▾</span>
+      </button>
+      <!-- Dropdown menu -->
+      <div id="avatarMenu" class="avatar-menu hidden">
+        <button class="avatar-menu-btn" onclick="MOS.syncApp();MOS.closeAvatarMenu()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          Sync / Actualizar
+        </button>
+        <button id="installAppBtn" class="avatar-menu-btn hidden" onclick="MOS.installPWA()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Instalar app
+        </button>
+        <div class="avatar-menu-sep"></div>
+        <button class="avatar-menu-btn danger" onclick="MOS.logout()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Cerrar sesión
+        </button>
       </div>
-      <button onclick="MOS.logout()" class="text-slate-500 hover:text-red-400 text-xs px-1" title="Cerrar sesión">⏻</button>
     </div>
     <!-- Status + Sync -->
-    <div id="connStatus" class="flex items-center justify-between px-2 mt-1">
-      <div class="flex items-center gap-2">
+    <div id="connStatus" class="flex items-center justify-between px-1 mt-2 sidebar-text overflow-hidden" style="transition:opacity .2s">
+      <div class="flex items-center gap-1.5">
         <span class="dot-gray" id="statusDot"></span>
-        <span class="text-xs text-slate-500" id="statusLabel">Conectado</span>
+        <span class="text-xs text-slate-500 whitespace-nowrap" id="statusLabel">Conectado</span>
       </div>
-      <button id="syncBtn" onclick="MOS.syncApp()" title="Buscar actualización"
-        class="sync-btn">
+      <button id="syncBtn" onclick="MOS.syncApp()" title="Buscar actualización" class="sync-btn">
         <svg id="syncIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13">
           <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/>
           <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
@@ -597,9 +733,11 @@
 <div id="loginOverlay" class="fixed inset-0 z-50 flex items-center justify-center px-4" style="background:#020817">
   <div class="w-full max-w-sm">
     <div class="text-center mb-8">
-      <div class="w-14 h-14 rounded-2xl mx-auto mb-4 flex items-center justify-center text-white font-bold text-2xl" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)">M</div>
-      <h1 class="text-2xl font-bold text-white mb-1">MOS Admin</h1>
-      <p class="text-slate-400 text-sm">Selecciona tu perfil</p>
+      <div class="mos-login-logo">
+        <img src="icons/icon-512.png" alt="MOS">
+      </div>
+      <h1 class="text-2xl font-bold text-white mb-1"><span class="mos-title-gradient">MOS</span> Admin</h1>
+      <p class="text-slate-400 text-sm">InversionMos · Selecciona tu perfil</p>
     </div>
     <!-- Step 1: Seleccionar usuario -->
     <div id="loginStep1">
@@ -630,21 +768,26 @@
 <!-- ═══════════════════════════════════════════════════════════ -->
 <!-- MOBILE TOP BAR                                             -->
 <!-- ═══════════════════════════════════════════════════════════ -->
-<header class="lg:hidden fixed top-0 left-0 right-0 flex items-center justify-between px-4 py-3 z-30" style="background:#060d1f;border-bottom:1px solid #1e293b;">
+<header class="md:hidden fixed top-0 left-0 right-0 flex items-center justify-between px-4 py-3 z-30" style="background:rgba(6,13,31,.92);border-bottom:1px solid #1e293b;backdrop-filter:blur(12px)">
   <div class="flex items-center gap-2">
-    <div class="w-7 h-7 rounded-md flex items-center justify-center text-white font-bold text-xs" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)">M</div>
+    <div class="mos-logo-icon w-7 h-7 rounded-lg overflow-hidden" style="width:28px;height:28px;border-radius:8px">
+      <img src="icons/icon-512.png" style="width:100%;height:100%;object-fit:cover">
+    </div>
     <span id="pageTitle" class="font-semibold text-white text-sm">Dashboard</span>
   </div>
   <div class="flex items-center gap-2">
     <span id="statusDotMob" class="dot-gray"></span>
-    <button onclick="MOS.openConfig()" class="text-slate-400 p-1">⚙️</button>
+    <button onclick="MOS.toggleAvatarMenu()" class="relative">
+      <div id="sessionAvatarMob" class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold" style="background:#6366f1">?</div>
+      <span class="session-dot dot-green" style="border-color:rgba(6,13,31,.92)"></span>
+    </button>
   </div>
 </header>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
 <!-- MAIN CONTENT                                               -->
 <!-- ═══════════════════════════════════════════════════════════ -->
-<main class="lg:ml-60 pt-14 lg:pt-0 pb-20 lg:pb-6 min-h-screen">
+<main class="md:ml-16 lg:ml-60 pt-14 md:pt-0 pb-24 md:pb-6 min-h-screen">
   <div class="max-w-7xl mx-auto px-4 py-4 lg:py-6">
 
     <!-- Desktop page header -->
@@ -1025,10 +1168,14 @@
           <button onclick="MOS.cerrarModalDispositivo()" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
         </div>
         <input type="hidden" id="dispId">
-        <!-- Campo ID solo para nuevo dispositivo -->
-        <div id="dispIdNuevoWrap">
-          <label class="lbl">ID del Dispositivo <span class="text-slate-500">(UUID del equipo)</span></label>
-          <input id="dispIdNuevo" class="inp font-mono text-xs" placeholder="Pega aquí el ID generado en el dispositivo">
+        <!-- ID siempre visible (editable en nuevo, solo lectura en edición) -->
+        <div>
+          <label class="lbl" id="dispIdLabel">ID del Dispositivo <span class="text-slate-500">(UUID del equipo)</span></label>
+          <div class="flex gap-2">
+            <input id="dispIdVisible" class="inp font-mono text-xs flex-1" placeholder="Pega aquí el UUID generado en el dispositivo">
+            <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('dispIdVisible').value).then(()=>MOS.toast&&MOS.toast('ID copiado','ok'))"
+                    class="btn-ghost text-xs px-2 shrink-0" title="Copiar UUID">⎘</button>
+          </div>
         </div>
         <div class="mt-3">
           <label class="lbl">Nombre del Equipo</label>
@@ -1296,25 +1443,26 @@
 <!-- ═══════════════════════════════════════════════════════════ -->
 <!-- MOBILE BOTTOM NAV                                          -->
 <!-- ═══════════════════════════════════════════════════════════ -->
-<nav id="bottomnav" class="lg:hidden fixed bottom-0 left-0 right-0 flex z-30">
-  <button data-view="dashboard"   class="bnav-btn active flex-1 flex flex-col items-center py-3 text-slate-400 text-xs" onclick="MOS.nav('dashboard')">
-    <div class="bnav-bar mb-1"></div><span class="text-xl mb-0.5">📊</span><span>Dashboard</span>
-  </button>
-  <button data-view="catalogo"    class="bnav-btn flex-1 flex flex-col items-center py-3 text-slate-400 text-xs" onclick="MOS.nav('catalogo')">
-    <div class="bnav-bar mb-1"></div><span class="text-xl mb-0.5">📦</span><span>Catálogo</span>
-  </button>
-  <button data-view="almacen"     class="bnav-btn flex-1 flex flex-col items-center py-3 text-slate-400 text-xs" onclick="MOS.nav('almacen')">
-    <div class="bnav-bar mb-1"></div><span class="text-xl mb-0.5">🏭</span><span>Almacén</span>
-  </button>
-  <button data-view="proveedores" class="bnav-btn flex-1 flex flex-col items-center py-3 text-slate-400 text-xs" onclick="MOS.nav('proveedores')">
-    <div class="bnav-bar mb-1"></div><span class="text-xl mb-0.5">🤝</span><span>Proveedores</span>
-  </button>
-  <button data-view="cajas"        class="bnav-btn flex-1 flex flex-col items-center py-3 text-slate-400 text-xs" onclick="MOS.nav('cajas')">
-    <div class="bnav-bar mb-1"></div><span class="text-xl mb-0.5">🗃️</span><span>Cajas</span>
-  </button>
-  <button data-view="config"       class="bnav-btn flex-1 flex flex-col items-center py-3 text-slate-400 text-xs" onclick="MOS.nav('config')">
-    <div class="bnav-bar mb-1"></div><span class="text-xl mb-0.5">⚙️</span><span>Config</span>
-  </button>
+<nav id="bottomnav" class="md:hidden fixed bottom-0 left-0 right-0 z-30">
+  <div class="bnav-inner px-1" style="padding-bottom:env(safe-area-inset-bottom,0)">
+    <button data-view="dashboard"   class="bnav-btn active" onclick="MOS.nav('dashboard')">
+      <span class="bnav-icon">📊</span><span class="bnav-lbl">Dashboard</span>
+    </button>
+    <button data-view="catalogo"    class="bnav-btn" onclick="MOS.nav('catalogo')">
+      <span class="bnav-icon">📦</span><span class="bnav-lbl">Catálogo</span>
+    </button>
+    <!-- Centro elevado -->
+    <div class="bnav-center" onclick="MOS.nav('almacen')">
+      <button data-view="almacen" class="bnav-center-fab">🏭</button>
+      <span class="bnav-center-lbl">Almacén</span>
+    </div>
+    <button data-view="cajas"        class="bnav-btn" onclick="MOS.nav('cajas')">
+      <span class="bnav-icon">🗃️</span><span class="bnav-lbl">Cajas</span>
+    </button>
+    <button data-view="config"       class="bnav-btn" onclick="MOS.nav('config')">
+      <span class="bnav-icon">⚙️</span><span class="bnav-lbl">Config</span>
+    </button>
+  </div>
 </nav>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
