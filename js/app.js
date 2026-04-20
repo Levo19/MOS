@@ -4001,25 +4001,48 @@ const MOS = (() => {
     closeAvatarMenu();
   }
 
-  // ── Avatar dropdown ──────────────────────────────────────────
+  // ── Avatar dropdown (fixed, fuera del sidebar) ───────────────
   function toggleAvatarMenu() {
     const menu = $('avatarMenu');
     if (!menu) return;
-    const isHidden = menu.classList.contains('hidden');
-    if (isHidden) {
-      menu.classList.remove('hidden');
-      setTimeout(() => document.addEventListener('click', _closeAvatarOnOutside, { once: true }), 0);
-    } else {
+    if (!menu.classList.contains('hidden')) {
       menu.classList.add('hidden');
+      return;
     }
+    // Buscar el trigger más cercano visible (sidebar o header móvil)
+    const trigger = document.querySelector('.avatar-trigger') || $('sessionAvatarMob');
+    if (trigger) {
+      const rect = trigger.getBoundingClientRect();
+      const menuW = 200;
+      // Posicionar encima del trigger
+      const top = rect.top - 10; // provisional — se ajusta al conocer altura del menu
+      menu.style.left  = Math.max(8, Math.min(rect.left, window.innerWidth - menuW - 8)) + 'px';
+      menu.style.right = 'auto';
+      menu.style.bottom = 'auto';
+      menu.style.top = '0px'; // temporal para medir
+      menu.classList.remove('hidden');
+      // Medir y reposicionar por encima
+      const menuH = menu.offsetHeight;
+      const ideal = rect.top - menuH - 10;
+      menu.style.top = Math.max(8, ideal) + 'px';
+    } else {
+      menu.classList.remove('hidden');
+    }
+    setTimeout(() => document.addEventListener('click', _closeAvatarOnOutside, { once: true }), 0);
   }
   function closeAvatarMenu() {
     const menu = $('avatarMenu');
     if (menu) menu.classList.add('hidden');
   }
   function _closeAvatarOnOutside(e) {
+    const menu = $('avatarMenu');
     const wrap = $('avatarWrap');
-    if (wrap && !wrap.contains(e.target)) closeAvatarMenu();
+    const mobTrigger = $('sessionAvatarMob');
+    if (menu && !menu.contains(e.target) &&
+        (!wrap || !wrap.contains(e.target)) &&
+        (!mobTrigger || !mobTrigger.contains(e.target))) {
+      closeAvatarMenu();
+    }
   }
 
   // ── Sync / Update ────────────────────────────────────────────

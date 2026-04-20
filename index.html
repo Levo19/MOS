@@ -45,46 +45,71 @@
     .nav-label { transition: opacity .2s, width .2s; }
 
     /* ── MOS Logo ────────────────────────────────────────────── */
-    .mos-logo-icon {
+    /* ── MOS Logo — icono "M" colapsado ─────────────────────── */
+    .mos-m-bg {
       width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
-      position: relative; overflow: hidden;
-      background: linear-gradient(135deg, #312e81 0%, #4c1d95 50%, #1e3a8a 100%);
-      animation: logoGlow 4s ease-in-out infinite;
+      background: linear-gradient(145deg, #0d0a1a, #1a1040);
+      border: 1px solid rgba(255,200,0,.22);
+      display: flex; align-items: center; justify-content: center;
+      animation: mIconGlow 4s ease-in-out infinite;
     }
-    @keyframes logoGlow {
-      0%,100% { box-shadow: 0 0 10px rgba(99,102,241,.4), 0 0 20px rgba(99,102,241,.15); }
-      50%      { box-shadow: 0 0 18px rgba(139,92,246,.6), 0 0 36px rgba(139,92,246,.25); }
+    @keyframes mIconGlow {
+      0%,100% { box-shadow: 0 0 8px rgba(255,200,0,.12); border-color: rgba(255,200,0,.2); }
+      50%      { box-shadow: 0 0 20px rgba(255,200,0,.38); border-color: rgba(255,200,0,.45); }
     }
-    .mos-logo-img {
-      width: 100%; height: 100%; object-fit: cover; border-radius: 10px;
-      transition: transform .3s;
+    .mos-m-letter {
+      font-weight: 900; font-size: 1.1rem; line-height: 1;
+      background: linear-gradient(180deg, #ffe87c 0%, #ffd700 45%, #c9a227 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
     }
-    .mos-logo-icon:hover .mos-logo-img { transform: scale(1.08); }
-    /* Constellation overlay on logo */
-    .mos-logo-icon::after {
-      content: '';
-      position: absolute; inset: 0;
-      background: radial-gradient(circle at 60% 35%, rgba(251,191,36,.22) 0%, transparent 65%);
-      pointer-events: none;
+
+    /* ── MOS wordmark — texto dorado brillo espejo ──────────── */
+    .mos-wordmark {
+      font-weight: 900; font-size: 1.35rem; letter-spacing: .06em; line-height: 1;
+      display: inline-block;
+      background: linear-gradient(90deg,
+        #c9a227 0%, #ffd700 22%, #ffe87c 40%, #fffde0 50%, #ffe87c 60%, #ffd700 78%, #c9a227 100%
+      );
+      background-size: 300% auto;
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      animation: goldShimmer 2.8s ease-in-out infinite, goldPulse 4s ease-in-out infinite;
+      -webkit-box-reflect: below 1px linear-gradient(transparent 55%, rgba(255,210,0,.16) 100%);
     }
-    /* Big login logo */
-    .mos-login-logo {
-      width: 80px; height: 80px; border-radius: 22px; margin: 0 auto 1.25rem;
-      position: relative; overflow: hidden;
-      animation: logoGlow 4s ease-in-out infinite;
+    @keyframes goldShimmer {
+      0%   { background-position: 200% center; }
+      100% { background-position: -100% center; }
     }
-    .mos-login-logo img { width: 100%; height: 100%; object-fit: cover; }
-    .mos-login-logo::after {
-      content: '';
-      position: absolute; inset: 0;
-      background: radial-gradient(circle at 60% 35%, rgba(251,191,36,.25) 0%, transparent 65%);
+    @keyframes goldPulse {
+      0%,100% { filter: drop-shadow(0 0 5px rgba(255,200,0,.22)); transform: scale(1); }
+      50%      { filter: drop-shadow(0 0 16px rgba(255,210,0,.62)); transform: scale(1.05); }
     }
-    /* MOS text gradient */
-    .mos-title-gradient {
-      background: linear-gradient(135deg, #a5b4fc, #818cf8, #c4b5fd);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      background-clip: text; font-weight: 800; letter-spacing: -.02em;
+
+    /* ── MOS login — grande con más impacto ─────────────────── */
+    .mos-login-wordmark {
+      font-weight: 900; font-size: 3.5rem; letter-spacing: .1em; line-height: 1;
+      display: inline-block;
+      background: linear-gradient(90deg,
+        #c9a227 0%, #ffd700 22%, #ffe87c 40%, #fffde0 50%, #ffe87c 60%, #ffd700 78%, #c9a227 100%
+      );
+      background-size: 300% auto;
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      animation: goldShimmer 2.5s ease-in-out infinite, goldPulseLogin 5s ease-in-out infinite;
+      -webkit-box-reflect: below 3px linear-gradient(transparent 48%, rgba(255,210,0,.18) 100%);
     }
+    @keyframes goldPulseLogin {
+      0%,100% { filter: drop-shadow(0 0 10px rgba(255,200,0,.28)); transform: scale(1); }
+      50%      { filter: drop-shadow(0 0 30px rgba(255,210,0,.72)); transform: scale(1.035); }
+    }
+
+    /* ── Avatar menu GLOBAL — position fixed fuera del sidebar ─ */
+    #avatarMenu {
+      position: fixed; z-index: 300; min-width: 195px;
+      background: #0f172a; border: 1px solid rgba(255,200,0,.14);
+      border-radius: 14px; padding: 6px;
+      box-shadow: 0 12px 48px rgba(0,0,0,.7), 0 0 0 1px rgba(255,200,0,.06);
+      animation: fadeIn .18s ease;
+    }
+    #avatarMenu.hidden { display: none; }
 
     /* ── User avatar / session ──────────────────────────────── */
     .session-dot {
@@ -642,12 +667,14 @@
 <aside id="sidebar" class="hidden md:flex fixed inset-y-0 left-0 flex-col z-30">
   <!-- Logo -->
   <div class="px-3 py-4 border-b border-slate-800 flex items-center gap-3 overflow-hidden" style="min-height:68px">
-    <div class="mos-logo-icon shrink-0">
-      <img src="icons/icon-512.png" class="mos-logo-img" alt="MOS">
+    <!-- Icono M (visible solo en estado colapsado tablet) -->
+    <div class="mos-m-bg">
+      <span class="mos-m-letter">M</span>
     </div>
-    <div class="sidebar-text" style="transition:opacity .2s">
-      <div class="mos-title-gradient text-base leading-none">MOS</div>
-      <div class="text-xs text-slate-500 mt-0.5">InversionMos</div>
+    <!-- Wordmark completo (visible en expandido) -->
+    <div class="sidebar-text whitespace-nowrap" style="transition:opacity .2s">
+      <div class="mos-wordmark">MOS</div>
+      <div class="text-xs text-slate-500 mt-0.5 tracking-wide">InversionMos</div>
     </div>
   </div>
   <!-- Nav -->
@@ -687,22 +714,7 @@
         </div>
         <span class="sidebar-text nav-label text-slate-600 text-xs">▾</span>
       </button>
-      <!-- Dropdown menu -->
-      <div id="avatarMenu" class="avatar-menu hidden">
-        <button class="avatar-menu-btn" onclick="MOS.syncApp();MOS.closeAvatarMenu()">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-          Sync / Actualizar
-        </button>
-        <button id="installAppBtn" class="avatar-menu-btn hidden" onclick="MOS.installPWA()">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Instalar app
-        </button>
-        <div class="avatar-menu-sep"></div>
-        <button class="avatar-menu-btn danger" onclick="MOS.logout()">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-          Cerrar sesión
-        </button>
-      </div>
+      <!-- (menu movido fuera del sidebar para evitar overflow:hidden) -->
     </div>
     <!-- Status + Sync -->
     <div id="connStatus" class="flex items-center justify-between px-1 mt-2 sidebar-text overflow-hidden" style="transition:opacity .2s">
@@ -733,11 +745,11 @@
 <div id="loginOverlay" class="fixed inset-0 z-50 flex items-center justify-center px-4" style="background:#020817">
   <div class="w-full max-w-sm">
     <div class="text-center mb-8">
-      <div class="mos-login-logo">
-        <img src="icons/icon-512.png" alt="MOS">
+      <div class="mb-4">
+        <span class="mos-login-wordmark">MOS</span>
       </div>
-      <h1 class="text-2xl font-bold text-white mb-1"><span class="mos-title-gradient">MOS</span> Admin</h1>
-      <p class="text-slate-400 text-sm">InversionMos · Selecciona tu perfil</p>
+      <h1 class="text-lg font-semibold text-slate-300 mb-1 tracking-widest uppercase">Admin Panel</h1>
+      <p class="text-slate-500 text-sm">InversionMos · Selecciona tu perfil</p>
     </div>
     <!-- Step 1: Seleccionar usuario -->
     <div id="loginStep1">
@@ -770,8 +782,8 @@
 <!-- ═══════════════════════════════════════════════════════════ -->
 <header class="md:hidden fixed top-0 left-0 right-0 flex items-center justify-between px-4 py-3 z-30" style="background:rgba(6,13,31,.92);border-bottom:1px solid #1e293b;backdrop-filter:blur(12px)">
   <div class="flex items-center gap-2">
-    <div class="mos-logo-icon w-7 h-7 rounded-lg overflow-hidden" style="width:28px;height:28px;border-radius:8px">
-      <img src="icons/icon-512.png" style="width:100%;height:100%;object-fit:cover">
+    <div class="mos-m-bg" style="width:28px;height:28px;border-radius:8px">
+      <span class="mos-m-letter" style="font-size:.85rem">M</span>
     </div>
     <span id="pageTitle" class="font-semibold text-white text-sm">Dashboard</span>
   </div>
@@ -2367,5 +2379,22 @@
   });
 })();
 </script>
+
+<!-- ── Avatar Dropdown (global, fuera del sidebar para evitar overflow clip) ── -->
+<div id="avatarMenu" class="hidden">
+  <button class="avatar-menu-btn" onclick="MOS.syncApp();MOS.closeAvatarMenu()">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+    Sync / Actualizar
+  </button>
+  <button id="installAppBtn" class="avatar-menu-btn hidden" onclick="MOS.installPWA()">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    Instalar app
+  </button>
+  <div class="avatar-menu-sep"></div>
+  <button class="avatar-menu-btn danger" onclick="MOS.logout();MOS.closeAvatarMenu()">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+    Cerrar sesión
+  </button>
+</div>
 </body>
 </html>
