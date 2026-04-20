@@ -233,6 +233,8 @@ const MOS = (() => {
     // Sync avatar en header móvil
     const avMob = $('sessionAvatarMob');
     if (avMob) { avMob.textContent = initial; avMob.style.background = S.session.color || '#6366f1'; }
+    // Init SVG traveling border on sidebar avatar
+    requestAnimationFrame(() => _initAvatarTrigSvg());
     // Hide Config for admin role
     document.querySelectorAll('[data-view="config"]').forEach(b => {
       b.style.display = isMaster ? '' : 'none';
@@ -3999,6 +4001,66 @@ const MOS = (() => {
   }
 
   // ── Avatar dropdown (fixed, fuera del sidebar) ───────────────
+  // ── SVG traveling border + dot en sidebar avatar ─────────
+  function _initAvatarTrigSvg() {
+    const outer   = document.getElementById('avatarTrigOuter');
+    const svg     = document.getElementById('avatarTrigSvg');
+    const bRect   = document.getElementById('avatarTrigBorderRect');
+    const bBase   = document.getElementById('avatarTrigBaseRect');
+    const dotPath = document.getElementById('avatarTrigRectPath');
+    if (!outer || !svg || !bRect || !dotPath) return;
+
+    const W = outer.offsetWidth;
+    const H = outer.offsetHeight;
+    if (!W || !H) return;
+
+    const pad = 3, rx = 11;
+    const svgW = W + pad * 2, svgH = H + pad * 2;
+    svg.setAttribute('viewBox', `0 0 ${svgW} ${svgH}`);
+
+    // Rect coords (button area offset by pad)
+    [bRect, bBase].forEach(el => {
+      el.setAttribute('x',      pad);
+      el.setAttribute('y',      pad);
+      el.setAttribute('width',  W);
+      el.setAttribute('height', H);
+      el.setAttribute('rx',     rx);
+      el.setAttribute('ry',     rx);
+    });
+
+    // Perimeter → dasharray para segmento viajero
+    const perim = Math.round(2 * (W + H) - 8 * rx + 2 * Math.PI * rx);
+    const seg   = 72;
+    bRect.style.strokeDasharray  = `${seg} ${perim - seg}`;
+    bRect.style.strokeDashoffset = '0';
+
+    // Inyectar keyframe con perimeter correcto
+    const kfId = 'mos-trig-kf';
+    let kfEl = document.getElementById(kfId);
+    if (!kfEl) { kfEl = document.createElement('style'); kfEl.id = kfId; document.head.appendChild(kfEl); }
+    kfEl.textContent = `@keyframes travelBorder{from{stroke-dashoffset:0}to{stroke-dashoffset:${-perim}}}`;
+    bRect.style.animation = 'travelBorder 3s linear infinite';
+
+    // Path para el punto verde (sigue el mismo rectángulo)
+    const x = pad, y = pad;
+    const d = `M ${x+rx} ${y} L ${x+W-rx} ${y} Q ${x+W} ${y} ${x+W} ${y+rx} ` +
+              `L ${x+W} ${y+H-rx} Q ${x+W} ${y+H} ${x+W-rx} ${y+H} ` +
+              `L ${x+rx} ${y+H} Q ${x} ${y+H} ${x} ${y+H-rx} ` +
+              `L ${x} ${y+rx} Q ${x} ${y} ${x+rx} ${y} Z`;
+    dotPath.setAttribute('d', d);
+  }
+
+  // Re-calcula al cambiar ancho del sidebar (hover tablet)
+  (function _watchSidebarResize() {
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar || typeof ResizeObserver === 'undefined') return;
+    let _trig;
+    new ResizeObserver(() => {
+      clearTimeout(_trig);
+      _trig = setTimeout(_initAvatarTrigSvg, 60);
+    }).observe(sidebar);
+  })();
+
   function toggleAvatarMenu() {
     const menu = $('avatarMenu');
     if (!menu) return;
