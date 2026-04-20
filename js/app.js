@@ -4014,19 +4014,23 @@ const MOS = (() => {
       const rect   = trigger.getBoundingClientRect();
       const menuW  = 205;
       const midY   = window.innerHeight / 2;
-      const left   = Math.max(8, Math.min(rect.left, window.innerWidth - menuW - 8));
-      menu.style.left   = left + 'px';
-      menu.style.right  = 'auto';
       menu.style.top    = '0px'; // temporal para medir
+      menu.style.left   = '0px';
+      menu.style.right  = 'auto';
       menu.style.bottom = 'auto';
       menu.classList.remove('hidden');
       const menuH = menu.offsetHeight;
       if (rect.top < midY) {
-        // trigger en mitad superior → desplegar DEBAJO
-        menu.style.top = (rect.bottom + 8) + 'px';
+        // trigger en mitad superior (header mobile) → abre DEBAJO alineado a la DERECHA del botón
+        const rightOffset = window.innerWidth - rect.right;
+        menu.style.right = Math.max(8, rightOffset) + 'px';
+        menu.style.left  = 'auto';
+        menu.style.top   = (rect.bottom + 8) + 'px';
       } else {
-        // trigger en mitad inferior → desplegar ENCIMA
-        menu.style.top = Math.max(8, rect.top - menuH - 8) + 'px';
+        // trigger en mitad inferior (sidebar) → abre ENCIMA alineado a la IZQUIERDA
+        menu.style.left  = Math.max(8, rect.left) + 'px';
+        menu.style.right = 'auto';
+        menu.style.top   = Math.max(8, rect.top - menuH - 8) + 'px';
       }
     } else {
       menu.classList.remove('hidden');

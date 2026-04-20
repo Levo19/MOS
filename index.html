@@ -119,6 +119,43 @@
       width: 10px; height: 10px; border-radius: 50%;
       border: 2px solid #060d1f;
     }
+
+    /* ── Mobile avatar — gold spin ring + orbit dot ─────────── */
+    .avatar-mob-outer {
+      position: relative; width: 30px; height: 30px; flex-shrink: 0;
+    }
+    .avatar-mob-spin-ring {
+      position: absolute; inset: -2.5px; border-radius: 50%;
+      background: conic-gradient(from 0deg,#ffd700 0deg,#c9a227 80deg,rgba(201,162,39,.05) 180deg,#c9a227 280deg,#ffd700 360deg);
+      animation: goldRingSpin 2.8s linear infinite;
+    }
+    @keyframes goldRingSpin { to { transform: rotate(360deg); } }
+    .avatar-mob-inner {
+      position: relative; z-index: 2;
+      width: 30px; height: 30px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .avatar-orbit-dot {
+      position: absolute; width: 7px; height: 7px;
+      background: #22c55e; border-radius: 50%;
+      border: 1.5px solid rgba(6,13,31,.95);
+      box-shadow: 0 0 6px #22c55e;
+      top: calc(50% - 3.5px); left: calc(50% - 3.5px);
+      z-index: 3;
+      animation: avatarOrbit 3.8s linear infinite, orbitGlow 1.6s ease-in-out infinite;
+    }
+    @keyframes avatarOrbit {
+      from { transform: rotate(0deg)   translateX(18px); }
+      to   { transform: rotate(360deg) translateX(18px); }
+    }
+    @keyframes orbitGlow {
+      0%,100% { box-shadow: 0 0 4px #22c55e; }
+      50%      { box-shadow: 0 0 10px #22c55e, 0 0 3px #4ade80; }
+    }
+    .avatar-mob-chevron {
+      position: absolute; bottom: -4px; left: 1px; z-index: 4; pointer-events: none;
+      opacity: .65;
+    }
     .avatar-trigger {
       width: 100%; display: flex; align-items: center; gap: 10px;
       padding: 8px; border-radius: 10px; border: 1px solid #1e293b;
@@ -788,10 +825,15 @@
     <span id="pageTitle" class="font-semibold text-white text-sm">Dashboard</span>
   </div>
   <div class="flex items-center gap-2">
-    <span id="statusDotMob" class="dot-gray"></span>
-    <button onclick="MOS.toggleAvatarMenu()" class="relative">
-      <div id="sessionAvatarMob" class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold" style="background:#6366f1">?</div>
-      <span class="session-dot dot-green" style="border-color:rgba(6,13,31,.92)"></span>
+    <button onclick="MOS.toggleAvatarMenu()" class="relative p-0 border-0 bg-transparent" id="avatarMobBtn" style="cursor:pointer">
+      <div class="avatar-mob-outer">
+        <div class="avatar-mob-spin-ring"></div>
+        <div id="sessionAvatarMob" class="avatar-mob-inner text-white text-xs font-bold" style="background:#6366f1">?</div>
+        <span class="avatar-orbit-dot" id="avatarOrbitDot"></span>
+        <svg class="avatar-mob-chevron" width="9" height="6" viewBox="0 0 9 6" fill="none">
+          <path d="M1 1.5l3.5 3 3.5-3" stroke="#ffd700" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
     </button>
   </div>
 </header>
