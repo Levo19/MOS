@@ -77,12 +77,9 @@ const MOS = (() => {
     document.querySelectorAll('#sidebar .nav-item').forEach(b =>
       b.classList.toggle('active', b.dataset.view === viewName));
 
-    // Bottom nav — botones normales
+    // Bottom nav
     document.querySelectorAll('#bottomnav .bnav-btn').forEach(b =>
       b.classList.toggle('active', b.dataset.view === viewName));
-    // Centro elevado (almacén)
-    const bnavCenter = document.querySelector('#bottomnav .bnav-center-fab');
-    if (bnavCenter) bnavCenter.classList.toggle('active', viewName === 'almacen');
 
     const titles = { dashboard:'Dashboard', catalogo:'Catálogo', almacen:'Almacén', proveedores:'Proveedores', cajas:'Cajas', config:'Configuración' };
     const t = titles[viewName] || viewName;
@@ -4009,7 +4006,11 @@ const MOS = (() => {
       menu.classList.add('hidden');
       return;
     }
-    const trigger = document.querySelector('.avatar-trigger') || $('sessionAvatarMob');
+    // Buscar trigger visible: sidebar en desktop, botón mobile en móvil
+    let trigger = document.querySelector('.avatar-trigger');
+    if (!trigger || trigger.getBoundingClientRect().width === 0) {
+      trigger = $('avatarMobBtn') || $('sessionAvatarMob');
+    }
     if (trigger) {
       const rect   = trigger.getBoundingClientRect();
       const menuW  = 205;
