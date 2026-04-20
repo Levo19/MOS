@@ -4009,22 +4009,25 @@ const MOS = (() => {
       menu.classList.add('hidden');
       return;
     }
-    // Buscar el trigger más cercano visible (sidebar o header móvil)
     const trigger = document.querySelector('.avatar-trigger') || $('sessionAvatarMob');
     if (trigger) {
-      const rect = trigger.getBoundingClientRect();
-      const menuW = 200;
-      // Posicionar encima del trigger
-      const top = rect.top - 10; // provisional — se ajusta al conocer altura del menu
-      menu.style.left  = Math.max(8, Math.min(rect.left, window.innerWidth - menuW - 8)) + 'px';
-      menu.style.right = 'auto';
+      const rect   = trigger.getBoundingClientRect();
+      const menuW  = 205;
+      const midY   = window.innerHeight / 2;
+      const left   = Math.max(8, Math.min(rect.left, window.innerWidth - menuW - 8));
+      menu.style.left   = left + 'px';
+      menu.style.right  = 'auto';
+      menu.style.top    = '0px'; // temporal para medir
       menu.style.bottom = 'auto';
-      menu.style.top = '0px'; // temporal para medir
       menu.classList.remove('hidden');
-      // Medir y reposicionar por encima
       const menuH = menu.offsetHeight;
-      const ideal = rect.top - menuH - 10;
-      menu.style.top = Math.max(8, ideal) + 'px';
+      if (rect.top < midY) {
+        // trigger en mitad superior → desplegar DEBAJO
+        menu.style.top = (rect.bottom + 8) + 'px';
+      } else {
+        // trigger en mitad inferior → desplegar ENCIMA
+        menu.style.top = Math.max(8, rect.top - menuH - 8) + 'px';
+      }
     } else {
       menu.classList.remove('hidden');
     }

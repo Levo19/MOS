@@ -38,11 +38,13 @@
     }
 
     .nav-item { transition: background .15s, color .15s; }
-    .nav-item.active, .nav-item:hover { background: rgba(99,102,241,.15); color: #a5b4fc; }
-    .nav-item.active { color: #a5b4fc; font-weight: 600; }
+    .nav-item.active, .nav-item:hover { background: rgba(201,162,39,.1); color: #ffd700; }
+    .nav-item.active { color: #ffd700; font-weight: 600; }
     .nav-item.active .nav-dot { opacity: 1; }
-    .nav-dot { width: 3px; height: 20px; background: var(--accent); border-radius: 2px; opacity: 0; transition: opacity .15s; }
-    .nav-label { transition: opacity .2s, width .2s; }
+    .nav-dot { width: 3px; height: 20px; background: linear-gradient(180deg,#ffd700,#c9a227); border-radius: 2px; opacity: 0; transition: opacity .15s; }
+    .nav-label { transition: opacity .2s, width .2s; font-weight: 500; letter-spacing: .02em; }
+    .nav-item.active .nav-label { color: #ffd700; font-weight: 700; }
+    .nav-icon { width: 20px; height: 20px; flex-shrink: 0; }
 
     /* ── MOS Logo ────────────────────────────────────────────── */
     /* ── MOS Logo — icono "M" colapsado ─────────────────────── */
@@ -147,14 +149,14 @@
     }
     .bnav-inner { display: flex; align-items: flex-end; }
     .bnav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 10px 4px 8px; transition: color .15s; color: #475569; position: relative; }
-    .bnav-btn.active { color: #a5b4fc; }
-    .bnav-btn .bnav-icon { font-size: 1.35rem; margin-bottom: 3px; transition: transform .2s; }
+    .bnav-btn.active { color: #ffd700; }
+    .bnav-btn .bnav-icon { display: flex; align-items: center; justify-content: center; margin-bottom: 0; transition: transform .2s; }
     .bnav-btn.active .bnav-icon { transform: translateY(-2px); }
-    .bnav-btn .bnav-lbl { font-size: .6rem; font-weight: 600; letter-spacing: .02em; }
+    .bnav-btn .bnav-lbl { display: none; }
     .bnav-btn.active::before {
       content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
       width: 28px; height: 2px; border-radius: 0 0 2px 2px;
-      background: linear-gradient(90deg,#6366f1,#8b5cf6);
+      background: linear-gradient(90deg,#c9a227,#ffd700);
     }
     /* Central elevated button */
     .bnav-center {
@@ -162,14 +164,14 @@
       position: relative; color: #475569; cursor: pointer; border: none; background: transparent;
     }
     .bnav-center-fab {
-      width: 52px; height: 52px; border-radius: 16px; margin-bottom: 3px; margin-top: -14px;
-      background: linear-gradient(135deg,#6366f1,#8b5cf6); border: none;
+      width: 52px; height: 52px; border-radius: 16px; margin-bottom: 0; margin-top: -14px;
+      background: linear-gradient(135deg,#c9a227,#ffd700); border: none;
       display: flex; align-items: center; justify-content: center; cursor: pointer;
-      font-size: 1.4rem; color: white; transition: transform .2s, box-shadow .2s;
-      box-shadow: 0 4px 20px rgba(99,102,241,.45);
+      color: #020817; transition: transform .2s, box-shadow .2s;
+      box-shadow: 0 4px 20px rgba(201,162,39,.5);
     }
     .bnav-center-fab.active, .bnav-center-fab:active { transform: scale(.93); }
-    .bnav-center-lbl { font-size: .6rem; font-weight: 600; letter-spacing: .02em; color: #a5b4fc; }
+    .bnav-center-lbl { display: none; }
 
     /* Views */
     .view { display: none; }
@@ -680,23 +682,35 @@
   <!-- Nav -->
   <nav class="flex-1 px-2 py-4 space-y-0.5 overflow-y-auto overflow-x-hidden">
     <button data-view="dashboard"   class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('dashboard')">
-      <div class="nav-dot"></div><span class="text-base shrink-0">📊</span><span class="nav-label whitespace-nowrap">Dashboard</span>
+      <div class="nav-dot"></div>
+      <svg class="nav-icon shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+      <span class="nav-label whitespace-nowrap">Dashboard</span>
     </button>
     <button data-view="catalogo"    class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('catalogo')">
-      <div class="nav-dot"></div><span class="text-base shrink-0">📦</span><span class="nav-label whitespace-nowrap">Catálogo</span>
+      <div class="nav-dot"></div>
+      <svg class="nav-icon shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="10" y1="7" x2="16" y2="7"/><line x1="10" y1="11" x2="16" y2="11"/></svg>
+      <span class="nav-label whitespace-nowrap">Catálogo</span>
     </button>
     <button data-view="almacen"     class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('almacen')">
-      <div class="nav-dot"></div><span class="text-base shrink-0">🏭</span><span class="nav-label whitespace-nowrap">Almacén</span>
+      <div class="nav-dot"></div>
+      <svg class="nav-icon shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-6 9 6v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg>
+      <span class="nav-label whitespace-nowrap">Almacén</span>
     </button>
     <button data-view="proveedores" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('proveedores')">
-      <div class="nav-dot"></div><span class="text-base shrink-0">🤝</span><span class="nav-label whitespace-nowrap">Proveedores</span>
+      <div class="nav-dot"></div>
+      <svg class="nav-icon shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><line x1="12" y1="8" x2="5" y2="16"/><line x1="12" y1="8" x2="19" y2="16"/></svg>
+      <span class="nav-label whitespace-nowrap">Proveedores</span>
     </button>
     <button data-view="cajas" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('cajas')">
-      <div class="nav-dot"></div><span class="text-base shrink-0">🗃️</span><span class="nav-label whitespace-nowrap">Cajas</span>
+      <div class="nav-dot"></div>
+      <svg class="nav-icon shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="12" r="4"/><line x1="3" y1="9" x2="6" y2="9"/><line x1="18" y1="9" x2="21" y2="9"/><line x1="16.24" y1="7.76" x2="17.66" y2="6.34"/></svg>
+      <span class="nav-label whitespace-nowrap">Cajas</span>
     </button>
     <div class="mt-2 pt-2 border-t border-slate-800">
       <button data-view="config" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('config')">
-        <div class="nav-dot"></div><span class="text-base shrink-0">⚙️</span><span class="nav-label whitespace-nowrap">Configuración</span>
+        <div class="nav-dot"></div>
+        <svg class="nav-icon shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="8" cy="6" r="2.5"/><circle cx="16" cy="12" r="2.5"/><circle cx="10" cy="18" r="2.5"/></svg>
+        <span class="nav-label whitespace-nowrap">Configuración</span>
       </button>
     </div>
   </nav>
@@ -716,21 +730,7 @@
       </button>
       <!-- (menu movido fuera del sidebar para evitar overflow:hidden) -->
     </div>
-    <!-- Status + Sync -->
-    <div id="connStatus" class="flex items-center justify-between px-1 mt-2 sidebar-text overflow-hidden" style="transition:opacity .2s">
-      <div class="flex items-center gap-1.5">
-        <span class="dot-gray" id="statusDot"></span>
-        <span class="text-xs text-slate-500 whitespace-nowrap" id="statusLabel">Conectado</span>
-      </div>
-      <button id="syncBtn" onclick="MOS.syncApp()" title="Buscar actualización" class="sync-btn">
-        <svg id="syncIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13">
-          <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/>
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-        </svg>
-        <span id="syncLabel">Sync</span>
-      </button>
-    </div>
-    <div id="syncVersionTip" class="hidden px-2 mt-1">
+    <div id="syncVersionTip" class="hidden px-2 mt-2">
       <div class="upd-new-badge">
         ✦ Nueva versión disponible
         <button onclick="MOS.applyPendingUpdate()" class="upd-new-apply">Actualizar ahora</button>
@@ -1457,22 +1457,21 @@
 <!-- ═══════════════════════════════════════════════════════════ -->
 <nav id="bottomnav" class="md:hidden fixed bottom-0 left-0 right-0 z-30">
   <div class="bnav-inner px-1" style="padding-bottom:env(safe-area-inset-bottom,0)">
-    <button data-view="dashboard"   class="bnav-btn active" onclick="MOS.nav('dashboard')">
-      <span class="bnav-icon">📊</span><span class="bnav-lbl">Dashboard</span>
+    <button data-view="dashboard" class="bnav-btn active" onclick="MOS.nav('dashboard')">
+      <span class="bnav-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>
     </button>
-    <button data-view="catalogo"    class="bnav-btn" onclick="MOS.nav('catalogo')">
-      <span class="bnav-icon">📦</span><span class="bnav-lbl">Catálogo</span>
+    <button data-view="catalogo" class="bnav-btn" onclick="MOS.nav('catalogo')">
+      <span class="bnav-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="10" y1="7" x2="16" y2="7"/><line x1="10" y1="11" x2="16" y2="11"/></svg></span>
     </button>
     <!-- Centro elevado -->
     <div class="bnav-center" onclick="MOS.nav('almacen')">
-      <button data-view="almacen" class="bnav-center-fab">🏭</button>
-      <span class="bnav-center-lbl">Almacén</span>
+      <button data-view="almacen" class="bnav-center-fab"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-6 9 6v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg></button>
     </div>
-    <button data-view="cajas"        class="bnav-btn" onclick="MOS.nav('cajas')">
-      <span class="bnav-icon">🗃️</span><span class="bnav-lbl">Cajas</span>
+    <button data-view="cajas" class="bnav-btn" onclick="MOS.nav('cajas')">
+      <span class="bnav-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="12" r="4"/><line x1="3" y1="9" x2="6" y2="9"/><line x1="18" y1="9" x2="21" y2="9"/><line x1="16.24" y1="7.76" x2="17.66" y2="6.34"/></svg></span>
     </button>
-    <button data-view="config"       class="bnav-btn" onclick="MOS.nav('config')">
-      <span class="bnav-icon">⚙️</span><span class="bnav-lbl">Config</span>
+    <button data-view="config" class="bnav-btn" onclick="MOS.nav('config')">
+      <span class="bnav-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="8" cy="6" r="2.5"/><circle cx="16" cy="12" r="2.5"/><circle cx="10" cy="18" r="2.5"/></svg></span>
     </button>
   </div>
 </nav>
