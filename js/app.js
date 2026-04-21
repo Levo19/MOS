@@ -4257,13 +4257,23 @@ const MOS = (() => {
       if (v) v.style.color = pl.utilidadNeta >= 0 ? '#a5b4fc' : '#f87171';
     }
 
-    // Alerta productos sin costo
-    const alertEl = $('finAlerta');
+    // KPI Productos vendidos
+    _setText('finKpiUnidades',   pl.unidadesVendidas ?? '—');
+    _setText('finKpiSkus',       pl.skusDistintos    ?? '—');
+    _setText('finKpiTicketProm', pl.ticketPromedio   ? 'S/ ' + parseFloat(pl.ticketPromedio).toFixed(2) : '—');
+
+    // Alerta productos sin costo con chips editables
+    const alertEl   = $('finAlerta');
+    const chipsEl   = $('finSinCostoChips');
     if (alertEl) {
-      if (pl.productosSinCosto && pl.productosSinCosto.length) {
+      const sinC = pl.productosSinCosto || [];
+      if (sinC.length) {
         alertEl.classList.remove('hidden');
-        _setText('finAlertaSkus', pl.productosSinCosto.slice(0, 5).join(', ') +
-                 (pl.productosSinCosto.length > 5 ? ' …' : ''));
+        if (chipsEl) chipsEl.innerHTML = sinC.map(sku =>
+          `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-900/60 text-amber-200 text-xs font-mono">
+            ${sku}
+            <button onclick="MOS.finEditarCostoSku('${sku}')" class="text-amber-400 hover:text-white ml-0.5" title="Editar costo">✎</button>
+          </span>`).join('');
       } else {
         alertEl.classList.add('hidden');
       }
@@ -4533,6 +4543,35 @@ const MOS = (() => {
     } catch(e) { toast('Error importando cajas: ' + e.message, 'error'); }
   }
 
+  // ── Editor de costo inline (desde alerta sin costo) ─────────
+  let _finEditSku = null;
+
+  function finEditarCostoSku(sku) {
+    _finEditSku = sku;
+    _setText('finCostoEditorSku', sku);
+    const inp = $('finCostoEditorInput');
+    if (inp) { inp.value = ''; }
+    $('finCostoEditorWrap')?.classList.remove('hidden');
+    inp?.focus();
+  }
+
+  function finCerrarCostoEditor() {
+    _finEditSku = null;
+    $('finCostoEditorWrap')?.classList.add('hidden');
+  }
+
+  async function finGuardarCostoSku() {
+    if (!_finEditSku) return;
+    const costo = parseFloat($('finCostoEditorInput')?.value);
+    if (!costo || costo <= 0) { toast('Ingresa un costo válido', 'error'); return; }
+    try {
+      await API.post('actualizarCostoPorSku', { sku: _finEditSku, precioCosto: costo });
+      finCerrarCostoEditor();
+      toast('Costo actualizado', 'ok');
+      finCargar();
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+
   // Helpers
   function _setText(id, val) { const el = $(id); if (el) el.textContent = val; }
   function _fechaOffset(fechaStr, dias) {
@@ -4578,6 +4617,7 @@ const MOS = (() => {
     // Finanzas
     finCargar, finDia, finAbrirModalGasto, finAbrirModalJornada, finGuardarGasto,
     finGuardarJornada, finEliminarGasto, finEliminarJornada, finImportarCajas,
-    cerrarModalFin
+    cerrarModalFin,
+    finEditarCostoSku, finCerrarCostoEditor, finGuardarCostoSku
   };
 })();

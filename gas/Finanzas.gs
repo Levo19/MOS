@@ -252,20 +252,26 @@ function _calcularCostoVentas(fecha, detalleIds) {
 
   var costoTotal = 0;
   var sinCosto   = [];
+  var unidades   = 0;
+  var skusSet    = {};
 
   items_dia.forEach(function(d) {
     var sku   = String(d.SKU || '');
+    var cant  = parseFloat(d.Cantidad || 0);
     var prod  = productos.find(function(p){ return p.skuBase === sku || p.codigoBarra === sku || p.idProducto === sku; });
     var costo = prod ? parseFloat(prod.precioCosto || 0) : 0;
-    var cant  = parseFloat(d.Cantidad || 0);
     costoTotal += costo * cant;
+    unidades   += cant;
+    if (sku) skusSet[sku] = true;
     if (!prod || !costo) sinCosto.push(sku);
   });
 
   return {
-    total:    _r2(costoTotal),
-    items:    items_dia.length,
-    sinCosto: sinCosto.filter(function(v,i,a){ return v && a.indexOf(v)===i; }) // únicos
+    total:        _r2(costoTotal),
+    items:        items_dia.length,
+    sinCosto:     sinCosto.filter(function(v,i,a){ return v && a.indexOf(v)===i; }),
+    unidades:     Math.round(unidades),
+    skusDistintos: Object.keys(skusSet).length
   };
 }
 
@@ -276,8 +282,8 @@ function _calcularPersonal(fecha) {
   var total = rows.reduce(function(s, r){ return s + (parseFloat(r.montoJornal) || 0); }, 0);
 
   var detalle = rows.map(function(r){
-    return { nombre: r.nombre, rol: r.rol || '', zona: r.zona || '',
-             monto: parseFloat(r.montoJornal) || 0, fuente: r.fuente || 'MANUAL' };
+    return { idJornada: r.idJornada || '', nombre: r.nombre, rol: r.rol || '',
+             zona: r.zona || '', monto: parseFloat(r.montoJornal) || 0, fuente: r.fuente || 'MANUAL' };
   });
 
   return { total: _r2(total), personas: rows.length, detalle: detalle };
@@ -337,6 +343,8 @@ function _armarPL(fecha, ing, cos, per, gas) {
     // Costos
     costoVentas:    costoVentas,
     itemsVendidos:  cos.items,
+    unidadesVendidas: cos.unidades,
+    skusDistintos:  cos.skusDistintos,
     productosSinCosto: cos.sinCosto,
     // Utilidad bruta
     utilidadBruta:  utilidadBruta,
@@ -382,6 +390,65 @@ function _diasEnRango(desde, hasta) {
     cur.setDate(cur.getDate() + 1);
   }
   return dias;
+}
+
+// ════════════════════════════════════════════════════════════
+// COSTOS MANUALES
+// ════════════════════════════════════════════════════════════
+
+// Permite asignar precioCosto a un producto desde el módulo Finanzas,
+// buscando por SKU / codigoBarra / idProducto en PRODUCTOS_MASTER.
+function actualizarCostoPorSku(params) {
+  var sku   = String(params.sku || '').trim();
+  var costo = parseFloat(params.precioCosto);
+  if (!sku || isNaN(costo) || costo < 0) return { ok: false, error: 'Requiere sku y precioCosto >= 0' };
+
+  var sheet = getSheet('PRODUCTOS_MASTER');
+  var data  = sheet.getDataRange().getValues();
+  var hdrs  = data[0].map(function(h){ return String(h).trim(); });
+  var idxSku   = hdrs.indexOf('skuBase');
+  var idxCod   = hdrs.indexOf('codigoBarra');
+  var idxId    = hdrs.indexOf('idProducto');
+  var idxCosto = hdrs.indexOf('precioCosto');
+
+  if (idxCosto < 0) return { ok: false, error: 'Columna precioCosto no encontrada en PRODUCTOS_MASTER' };
+
+  for (var i = 1; i < data.length; i++) {
+    var match = (idxSku >= 0 && String(data[i][idxSku]) === sku)
+             || (idxCod >= 0 && String(data[i][idxCod]) === sku)
+             || (idxId  >= 0 && String(data[i][idxId])  === sku);
+    if (match) {
+      sheet.getRange(i + 1, idxCosto + 1).setValue(costo);
+      return { ok: true };
+    }
+  }
+  return { ok: false, error: 'Producto no encontrado: ' + sku };
+}
+
+// ════════════════════════════════════════════════════════════
+// REGISTRO AUTOMÁTICO DE JORNADAS (llamado desde apps hijas)
+// ════════════════════════════════════════════════════════════
+
+// Registra una jornada en JORNADAS de este spreadsheet con idempotencia por (nombre + fecha).
+// Las apps hijas (MosExpress, warehouseMos) lo llaman directamente abriendo este spreadsheet
+// via MOS_SS_ID en sus Script Properties.
+function _registrarJornadaIdempotente(nombre, rol, montoJornal, appOrigen, fecha) {
+  nombre = String(nombre || '').trim();
+  if (!nombre) return;
+  fecha  = fecha || _hoy();
+
+  var sheet = getSheet('JORNADAS');
+  var data  = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][3]).toLowerCase() === nombre.toLowerCase() &&
+        String(data[i][1]).substring(0, 10) === fecha) return; // ya existe
+  }
+  sheet.appendRow([
+    _generateId('JOR'), fecha, '', nombre,
+    rol || 'VENDEDOR', appOrigen || 'AUTO', '',
+    parseFloat(montoJornal) || 0, '', 'AUTO',
+    appOrigen === 'warehouseMos' ? 'AUTO_LOGIN' : 'AUTO_VENTA'
+  ]);
 }
 
 // _sheetToObjectsLocal está definida en Conexiones.gs (compartida en el mismo proyecto GAS)

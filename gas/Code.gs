@@ -107,6 +107,7 @@ function _route(method, e) {
       case 'getGastos':                  return getGastos(params);
       case 'registrarGasto':             return registrarGasto(params);
       case 'eliminarGasto':              return eliminarGasto(params);
+      case 'actualizarCostoPorSku':      return actualizarCostoPorSku(params);
 
       // ── Cajas MosExpress ────────────────────────────────────
       case 'getCierresCaja':            return getCierresCaja(params);
