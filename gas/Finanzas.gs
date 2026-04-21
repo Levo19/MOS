@@ -384,21 +384,4 @@ function _diasEnRango(desde, hasta) {
   return dias;
 }
 
-// Lee hojas de MosExpress (usa _abrirMeSheet de Conexiones.gs)
-function _sheetToObjectsLocal(sheet) {
-  var data = sheet.getDataRange().getValues();
-  if (data.length < 2) return [];
-  var headers = data[0].map(function(h){ return String(h).trim(); });
-  var tz = Session.getScriptTimeZone();
-  return data.slice(1).map(function(row) {
-    var obj = {};
-    headers.forEach(function(h, i) {
-      if (!h) return;
-      var v = row[i];
-      obj[h] = (v instanceof Date)
-        ? Utilities.formatDate(v, tz, 'yyyy-MM-dd HH:mm:ss')
-        : v;
-    });
-    return obj;
-  }).filter(function(o){ return Object.values(o).some(function(v){ return v !== '' && v !== null && v !== undefined; }); });
-}
+// _sheetToObjectsLocal está definida en Conexiones.gs (compartida en el mismo proyecto GAS)
