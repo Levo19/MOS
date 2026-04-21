@@ -19,7 +19,10 @@ var MOS_SHEET_NAMES = {
   ESTACIONES:           'ESTACIONES',          // Cajas/despachos dentro de cada zona
   IMPRESORAS:           'IMPRESORAS',           // PrintNode IDs por estación
   SERIES_DOCUMENTALES:  'SERIES_DOCUMENTALES', // NV/Boleta/Factura por estación
-  PERSONAL_MASTER:      'PERSONAL_MASTER'      // OPERADORES(WH) + VENDEDORES(ME)
+  PERSONAL_MASTER:      'PERSONAL_MASTER',     // OPERADORES(WH) + VENDEDORES(ME)
+  // ── Módulo Finanzas ────────────────────────────────────────
+  JORNADAS:             'JORNADAS',            // Quién trabajó cada día y cuánto cobró
+  GASTOS:               'GASTOS'               // Gastos operativos y administrativos del día
 };
 
 var MOS_HEADERS = {
@@ -78,7 +81,16 @@ var MOS_HEADERS = {
   SERIES_DOCUMENTALES: ['idSerie','idEstacion','idZona','tipoDocumento','serie','correlativo','activo'],
 
   // Personal unificado: OPERADORES(WH, PIN fijo) + vendedores(ME, nombre libre, sin cuenta)
-  PERSONAL_MASTER:     ['idPersonal','nombre','apellido','tipo','appOrigen','rol','pin','color','tarifaHora','montoBase','estado','fechaIngreso','foto']
+  PERSONAL_MASTER:     ['idPersonal','nombre','apellido','tipo','appOrigen','rol','pin','color','tarifaHora','montoBase','estado','fechaIngreso','foto'],
+
+  // Registro de quién trabajó cada día y cuánto cobró
+  // fuente: MANUAL | AUTO_CAJAS (importado automáticamente desde apertura de caja ME)
+  JORNADAS:            ['idJornada','fecha','idPersonal','nombre','rol','appOrigen','zona','montoJornal','observacion','registradoPor','fuente'],
+
+  // Gastos operativos y administrativos
+  // categoria: ALQUILER | SERVICIOS | TRANSPORTE | MANTENIMIENTO | MARKETING | SUMINISTROS | OTROS
+  // tipo: FIJO | VARIABLE
+  GASTOS:              ['idGasto','fecha','categoria','tipo','descripcion','monto','comprobante','registradoPor']
 };
 
 // ============================================================
@@ -341,6 +353,33 @@ function _seedProveedoresMaster(ss) {
      'María García','ABARROTES','1']
   ];
   sheet.getRange(2, 1, rows.length, MOS_HEADERS.PROVEEDORES_MASTER.length).setValues(rows);
+}
+
+// ============================================================
+// SETUP FINANZAS — ejecutar en spreadsheets ya existentes
+// Crea JORNADAS y GASTOS si no existen todavía.
+// ============================================================
+function setupFinanzas() {
+  var ss = getSpreadsheet();
+  var nuevas = [];
+
+  ['JORNADAS','GASTOS'].forEach(function(nombre) {
+    if (!ss.getSheetByName(nombre)) {
+      var sheet = ss.insertSheet(nombre);
+      var hdrs  = MOS_HEADERS[nombre];
+      sheet.getRange(1, 1, 1, hdrs.length).setValues([hdrs]);
+      sheet.getRange(1, 1, 1, hdrs.length)
+           .setBackground('#0f3460').setFontColor('#e2e8f0')
+           .setFontWeight('bold').setFontSize(10);
+      sheet.setFrozenRows(1);
+      sheet.setColumnWidths(1, hdrs.length, 150);
+      nuevas.push(nombre);
+    }
+  });
+
+  Logger.log(nuevas.length
+    ? '✅ Creadas: ' + nuevas.join(', ')
+    : '⚠️ JORNADAS y GASTOS ya existen — nada que hacer.');
 }
 
 function _seedConexiones(ss) {

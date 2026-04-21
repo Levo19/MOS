@@ -81,7 +81,7 @@ const MOS = (() => {
     document.querySelectorAll('#bottomnav .bnav-btn').forEach(b =>
       b.classList.toggle('active', b.dataset.view === viewName));
 
-    const titles = { dashboard:'Dashboard', catalogo:'Catálogo', almacen:'Almacén', proveedores:'Proveedores', cajas:'Cajas', config:'Configuración' };
+    const titles = { dashboard:'Dashboard', catalogo:'Catálogo', almacen:'Almacén', proveedores:'Proveedores', cajas:'Cajas', finanzas:'Finanzas', config:'Configuración' };
     const t = titles[viewName] || viewName;
     const pt = $('pageTitle'); if (pt) pt.textContent = t;
     const ptd = $('pageTitleDesktop'); if (ptd) ptd.textContent = t;
@@ -261,6 +261,7 @@ const MOS = (() => {
         case 'config':       await loadConfig();      break;
         case 'proveedores':  await loadProveedores();  break;
         case 'cajas':        await loadCajas(true);    break;
+        case 'finanzas':     await _loadFinanzas();    break;
       }
     } catch (e) {
       // Reload allowed next time
@@ -4194,9 +4195,351 @@ const MOS = (() => {
     }
   }
 
+  async function _loadFinanzas() {
+    const inp = $('finFecha');
+    if (inp && !inp.value) inp.value = today();
+    await finCargar();
+  }
+
   // ── Sync / Update ────────────────────────────────────────────
   function syncApp()           { if (window._SWControl) window._SWControl.sync(); }
   function applyPendingUpdate(){ if (window._SWControl) window._SWControl.applyPending(); }
+
+  // ════════════════════════════════════════════════════════════
+  // MÓDULO FINANZAS
+  // ════════════════════════════════════════════════════════════
+  let _finPL = null;  // último P&L cargado
+
+  async function finCargar() {
+    const fecha = $('finFecha')?.value || today();
+    try {
+      _finPL = await API.get('getFinanzasDia', { fecha });
+      _finRender(_finPL, fecha);
+      // Cargar tendencia 7 días en paralelo
+      const hasta  = fecha;
+      const desde7 = _fechaOffset(fecha, -6);
+      const rango  = await API.get('getFinanzasRango', { desde: desde7, hasta });
+      _finRender7d(rango);
+    } catch(e) {
+      toast('Error Finanzas: ' + e.message, 'error');
+    }
+  }
+
+  function finDia(delta) {
+    const inp = $('finFecha');
+    if (!inp) return;
+    const d = new Date(inp.value + 'T00:00:00');
+    d.setDate(d.getDate() + delta);
+    inp.value = d.toISOString().substring(0, 10);
+    finCargar();
+  }
+
+  function _finRender(pl, fecha) {
+    const fmt  = v => 'S/ ' + parseFloat(v || 0).toFixed(2);
+    const pct  = v => parseFloat(v || 0).toFixed(1) + '%';
+
+    // KPI cards
+    _setText('finKpiVentas',  fmt(pl.ventasNetas));
+    _setText('finKpiTickets', pl.tickets + ' ticket' + (pl.tickets !== 1 ? 's' : '') +
+             (pl.anulados ? ' · ' + pl.anulados + ' anulado' + (pl.anulados > 1 ? 's' : '') : ''));
+    _setText('finKpiCosto',   fmt(pl.costoVentas));
+    _setText('finKpiMargenB', 'Margen bruto ' + pct(pl.margenBrutoPct));
+    _setText('finKpiGastos',  fmt(pl.totalGastos));
+    _setText('finKpiPersonas', pl.personas + ' persona' + (pl.personas !== 1 ? 's' : ''));
+    _setText('finKpiUtil',    fmt(pl.utilidadNeta));
+    _setText('finKpiMargenN', 'Margen neto ' + pct(pl.margenNetoPct));
+
+    // Color de la card de utilidad
+    const card = $('finKpiUtilCard');
+    if (card) {
+      card.className = 'fin-card ' + (pl.utilidadNeta >= 0 ? 'fin-card-indigo' : 'fin-card-red');
+      const v = $('finKpiUtil');
+      if (v) v.style.color = pl.utilidadNeta >= 0 ? '#a5b4fc' : '#f87171';
+    }
+
+    // Alerta productos sin costo
+    const alertEl = $('finAlerta');
+    if (alertEl) {
+      if (pl.productosSinCosto && pl.productosSinCosto.length) {
+        alertEl.classList.remove('hidden');
+        _setText('finAlertaSkus', pl.productosSinCosto.slice(0, 5).join(', ') +
+                 (pl.productosSinCosto.length > 5 ? ' …' : ''));
+      } else {
+        alertEl.classList.add('hidden');
+      }
+    }
+
+    // Break-even
+    _setText('finBEMeta',       pl.breakEvenVentas ? 'Meta: ' + fmt(pl.breakEvenVentas) : 'Sin datos');
+    _setText('finBEVentas',     'Ventas: ' + fmt(pl.ventasNetas));
+    _setText('finBECostosFijos', fmt(pl.costosFijos));
+    _setText('finBEMargenC',    pct(pl.margenContribPct));
+    const badge = $('finBEBadge');
+    if (badge) {
+      badge.textContent    = pl.superaBreakEven ? '✅ Alcanzado' : '⏳ Pendiente';
+      badge.className      = 'text-xs font-bold px-2 py-0.5 rounded-full ' +
+        (pl.superaBreakEven ? 'bg-emerald-900 text-emerald-300' : 'bg-slate-800 text-slate-400');
+    }
+    const barV = $('finBEBarVentas');
+    const linBE = $('finBELinea');
+    if (barV) barV.style.width = Math.min(pl.breakEvenPct || 0, 100) + '%';
+    if (linBE && pl.breakEvenVentas && pl.ventasNetas) {
+      const bePct = Math.min(pl.breakEvenVentas / Math.max(pl.ventasNetas, pl.breakEvenVentas) * 100, 100);
+      linBE.style.left = bePct.toFixed(1) + '%';
+    }
+
+    // Waterfall chart
+    _finRenderWaterfall(pl);
+
+    // Personal list
+    _finRenderPersonal(pl, fecha);
+
+    // Gastos list
+    _finRenderGastos(pl, fecha);
+  }
+
+  function _finRenderWaterfall(pl) {
+    const labels = ['Ventas', 'Costo V.', 'Util. Bruta', 'Personal', 'Gastos', 'Util. Neta'];
+    // Floating bars [min, max]
+    const utilBruta = pl.utilidadBruta;
+    const utilNeta  = pl.utilidadNeta;
+    const gastosOtros = pl.gastoOtros;
+    const gastoPer  = pl.gastoPersonal;
+
+    const data = [
+      [0, pl.ventasNetas],                               // Ventas
+      [utilBruta, pl.ventasNetas],                        // Costo V. (baja desde ventas)
+      [0, utilBruta],                                     // Util Bruta (resultado)
+      [utilBruta - gastoPer, utilBruta],                  // Personal (baja)
+      [utilBruta - gastoPer - gastosOtros, utilBruta - gastoPer], // Gastos (baja)
+      [0, utilNeta]                                       // Util Neta (resultado final)
+    ];
+    const colors = [
+      '#10b981','#f87171','#34d399','#f59e0b','#fb923c',
+      utilNeta >= 0 ? '#818cf8' : '#f87171'
+    ];
+
+    renderChart('finChartWaterfall', {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{ data, backgroundColor: colors, borderRadius: 5, borderSkipped: false }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: ctx => {
+                const [min, max] = ctx.raw;
+                return 'S/ ' + Math.abs(max - min).toFixed(2);
+              }
+            }
+          }
+        },
+        scales: {
+          x: { grid: { color: '#1e293b' }, ticks: { color: '#64748b', font: { size: 11 } } },
+          y: { grid: { color: '#1e293b' }, ticks: { color: '#64748b',
+               callback: v => 'S/' + v.toFixed(0) } }
+        }
+      }
+    });
+  }
+
+  function _finRender7d(rango) {
+    if (!rango || !rango.serie) return;
+    const labels = rango.serie.map(d => {
+      const dt = new Date(d.fecha + 'T00:00:00');
+      return dt.toLocaleDateString('es-PE', { weekday:'short', day:'numeric' });
+    });
+    const ventas  = rango.serie.map(d => d.ventasNetas);
+    const costos  = rango.serie.map(d => d.costoVentas);
+    const gastos  = rango.serie.map(d => d.totalGastos);
+    const util    = rango.serie.map(d => d.utilidadNeta);
+
+    const totalUtil = rango.totales?.utilidadNeta || 0;
+    _setText('fin7dTotal', (totalUtil >= 0 ? '+' : '') + 'S/ ' + totalUtil.toFixed(2) + ' neto');
+
+    renderChart('finChart7d', {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Ventas',    data: ventas, backgroundColor: 'rgba(16,185,129,.5)',  borderRadius: 4 },
+          { label: 'Costo V.',  data: costos, backgroundColor: 'rgba(248,113,113,.5)', borderRadius: 4 },
+          { label: 'Gastos',    data: gastos, backgroundColor: 'rgba(245,158,11,.5)',  borderRadius: 4 },
+          { label: 'Util.Neta', data: util,   backgroundColor: 'rgba(129,140,248,.85)',borderRadius: 4, type: 'line', tension: 0.35, pointRadius: 4, fill: false }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#64748b', boxWidth: 10, font: { size: 11 } } } },
+        scales: {
+          x: { stacked: false, grid: { color: '#1e293b' }, ticks: { color: '#64748b', font: { size: 10 } } },
+          y: { grid: { color: '#1e293b' }, ticks: { color: '#64748b', callback: v => 'S/'+v } }
+        }
+      }
+    });
+  }
+
+  function _finRenderPersonal(pl, fecha) {
+    const cont = $('finPersonalList');
+    const tot  = $('finPersonalTotal');
+    if (!cont) return;
+    if (tot) tot.textContent = 'S/ ' + (pl.gastoPersonal || 0).toFixed(2);
+    if (!pl.personalDetalle || !pl.personalDetalle.length) {
+      cont.innerHTML = '<p class="text-slate-500 text-xs">Sin registros — usa "+ Jornada" o "⬇ Cajas"</p>';
+      return;
+    }
+    cont.innerHTML = pl.personalDetalle.map(p => `
+      <div class="fin-row">
+        <div class="flex items-center gap-2">
+          <div class="w-7 h-7 rounded-full bg-indigo-900 text-indigo-300 flex items-center justify-center text-xs font-bold">${(p.nombre||'?')[0].toUpperCase()}</div>
+          <div>
+            <div class="text-slate-200 font-medium text-sm">${p.nombre}</div>
+            <div class="text-xs text-slate-500">${p.rol || '—'} ${p.zona ? '· ' + p.zona : ''} ${p.fuente === 'AUTO_CAJAS' ? '<span class="fin-tag fin-tag-green ml-1">auto</span>' : ''}</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-emerald-400 font-semibold text-sm">S/ ${parseFloat(p.monto||0).toFixed(2)}</span>
+          <button class="fin-del" onclick="MOS.finEliminarJornada('${p.idJornada || ''}','${fecha}')" title="Eliminar">×</button>
+        </div>
+      </div>`).join('');
+  }
+
+  function _finRenderGastos(pl, fecha) {
+    const listEl  = $('finGastosList');
+    const categEl = $('finGastosCateg');
+    const totEl   = $('finGastosTotal');
+    if (!listEl) return;
+    if (totEl) totEl.textContent = 'S/ ' + (pl.gastoOtros || 0).toFixed(2);
+
+    // Por categoría
+    if (categEl) {
+      const cats = pl.gastosByCategoria || {};
+      const keys = Object.keys(cats);
+      categEl.innerHTML = keys.length ? keys.map(cat => `
+        <div class="flex justify-between text-xs">
+          <span class="text-slate-400">${cat}</span>
+          <span class="text-slate-200 font-semibold">S/ ${cats[cat].toFixed(2)}</span>
+        </div>`).join('') : '';
+    }
+
+    if (!pl.gastosDetalle || !pl.gastosDetalle.length) {
+      listEl.innerHTML = '<p class="text-slate-500 text-xs">Sin gastos registrados</p>';
+      return;
+    }
+    const tagColor = t => t === 'FIJO' ? 'fin-tag-amber' : 'fin-tag-green';
+    listEl.innerHTML = '<div class="border-t border-slate-800 pt-2 mt-1">' +
+      pl.gastosDetalle.map(g => `
+        <div class="fin-row">
+          <div>
+            <div class="text-slate-200 text-sm">${g.descripcion || '—'}</div>
+            <div class="text-xs text-slate-500">${g.categoria || ''} <span class="fin-tag ${tagColor(g.tipo)} ml-1">${g.tipo||'VAR'}</span> ${g.comprobante ? '· ' + g.comprobante : ''}</div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <span class="text-amber-400 font-semibold text-sm">S/ ${parseFloat(g.monto||0).toFixed(2)}</span>
+            <button class="fin-del" onclick="MOS.finEliminarGasto('${g.idGasto || ''}','${fecha}')" title="Eliminar">×</button>
+          </div>
+        </div>`).join('') +
+      '</div>';
+  }
+
+  // ── Modales ──────────────────────────────────────────────────
+  function finAbrirModalGasto() {
+    const f = $('finFecha')?.value || today();
+    const inp = $('finGastoFecha'); if (inp) inp.value = f;
+    const m = $('modalFinGasto'); if (m) { m.classList.remove('hidden'); m.classList.add('open'); }
+  }
+
+  function finAbrirModalJornada() {
+    const f = $('finFecha')?.value || today();
+    const inp = $('finJorFecha'); if (inp) inp.value = f;
+    const m = $('modalFinJornada'); if (m) { m.classList.remove('hidden'); m.classList.add('open'); }
+  }
+
+  function cerrarModalFin(id) {
+    const m = $(id); if (m) { m.classList.add('hidden'); m.classList.remove('open'); }
+  }
+
+  async function finGuardarGasto() {
+    const monto = parseFloat($('finGastoMonto')?.value);
+    const desc  = $('finGastoDesc')?.value?.trim();
+    const categ = $('finGastoCateg')?.value;
+    const tipo  = $('finGastoTipo')?.value;
+    const fecha = $('finGastoFecha')?.value;
+    const comp  = $('finGastoComp')?.value?.trim();
+    if (!monto || monto <= 0) { toast('Ingresa un monto válido', 'error'); return; }
+    if (!desc)               { toast('Ingresa una descripción', 'error'); return; }
+    try {
+      await API.post('registrarGasto', {
+        fecha, categoria: categ, tipo, descripcion: desc,
+        monto, comprobante: comp, registradoPor: S.session?.nombre || ''
+      });
+      cerrarModalFin('modalFinGasto');
+      toast('Gasto registrado', 'ok');
+      finCargar();
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  async function finGuardarJornada() {
+    const nombre = $('finJorNombre')?.value?.trim();
+    const monto  = parseFloat($('finJorMonto')?.value);
+    const fecha  = $('finJorFecha')?.value;
+    const rol    = $('finJorRol')?.value?.trim();
+    const zona   = $('finJorZona')?.value?.trim();
+    const obs    = $('finJorObs')?.value?.trim();
+    if (!nombre)             { toast('Ingresa el nombre del trabajador', 'error'); return; }
+    if (!monto || monto <= 0){ toast('Ingresa un jornal válido', 'error'); return; }
+    try {
+      await API.post('registrarJornada', {
+        fecha, nombre, rol, zona, montoJornal: monto, observacion: obs,
+        appOrigen: 'MOS', registradoPor: S.session?.nombre || ''
+      });
+      cerrarModalFin('modalFinJornada');
+      toast('Jornada registrada', 'ok');
+      finCargar();
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  async function finEliminarGasto(idGasto, fecha) {
+    if (!idGasto || !confirm('¿Eliminar este gasto?')) return;
+    try {
+      await API.post('eliminarGasto', { idGasto });
+      toast('Gasto eliminado', 'ok');
+      finCargar();
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  async function finEliminarJornada(idJornada, fecha) {
+    if (!idJornada || !confirm('¿Eliminar esta jornada?')) return;
+    try {
+      await API.post('eliminarJornada', { idJornada });
+      toast('Jornada eliminada', 'ok');
+      finCargar();
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  async function finImportarCajas() {
+    const fecha = $('finFecha')?.value || today();
+    try {
+      const res = await API.post('importarJornadasDesdeCajas', {
+        fecha, montoDefault: 0, registradoPor: S.session?.nombre || ''
+      });
+      toast(res.importados > 0
+        ? res.importados + ' jornada(s) importada(s) desde cajas'
+        : 'Sin cajas nuevas para importar este día', 'ok');
+      if (res.importados > 0) finCargar();
+    } catch(e) { toast('Error importando cajas: ' + e.message, 'error'); }
+  }
+
+  // Helpers
+  function _setText(id, val) { const el = $(id); if (el) el.textContent = val; }
+  function _fechaOffset(fechaStr, dias) {
+    const d = new Date(fechaStr + 'T00:00:00');
+    d.setDate(d.getDate() + dias);
+    return d.toISOString().substring(0, 10);
+  }
 
   // ── PUBLIC API ───────────────────────────────────────────────
   return {
@@ -4231,6 +4574,10 @@ const MOS = (() => {
     abrirModalTicketZ, imprimirTicketZ,
     // Login / sesión
     seleccionarUsuario, loginVolver, confirmarPin, logout,
-    syncApp, applyPendingUpdate
+    syncApp, applyPendingUpdate,
+    // Finanzas
+    finCargar, finDia, finAbrirModalGasto, finAbrirModalJornada, finGuardarGasto,
+    finGuardarJornada, finEliminarGasto, finEliminarJornada, finImportarCajas,
+    cerrarModalFin
   };
 })();

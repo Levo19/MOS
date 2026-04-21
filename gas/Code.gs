@@ -97,6 +97,17 @@ function _route(method, e) {
       case 'actualizarPersonalMaster':  return actualizarPersonalMaster(params);
       case 'verificarPinPersonal':      return verificarPinPersonal(params);
 
+      // ── Finanzas ────────────────────────────────────────────
+      case 'getFinanzasDia':             return getFinanzasDia(params);
+      case 'getFinanzasRango':           return getFinanzasRango(params);
+      case 'getJornadas':                return getJornadas(params);
+      case 'registrarJornada':           return registrarJornada(params);
+      case 'eliminarJornada':            return eliminarJornada(params);
+      case 'importarJornadasDesdeCajas': return importarJornadasDesdeCajas(params);
+      case 'getGastos':                  return getGastos(params);
+      case 'registrarGasto':             return registrarGasto(params);
+      case 'eliminarGasto':              return eliminarGasto(params);
+
       // ── Cajas MosExpress ────────────────────────────────────
       case 'getCierresCaja':            return getCierresCaja(params);
       case 'anularTicketME':            return anularTicketME(params);
