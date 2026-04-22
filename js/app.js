@@ -43,7 +43,7 @@ const MOS = (() => {
     el.style.color        = type === 'error' ? '#fca5a5' : type === 'ok' ? '#86efac'  : '#e2e8f0';
     el.classList.remove('hide');
     clearTimeout(el._t);
-    el._t = setTimeout(() => el.classList.add('hide'), 3500);
+    el._t = setTimeout(() => el.classList.add('hide'), type === 'error' ? 10000 : 3500);
   }
 
   function setStatus(connected) {
@@ -5108,7 +5108,7 @@ const MOS = (() => {
       console.log('[Push] token registrado en GAS ✅');
     } catch(e) {
       console.error('[Push] ERROR:', e.message);
-      toast('Push error: ' + e.message, 'err');
+      toast('Push error: ' + e.message, 'error');
     }
   }
 
