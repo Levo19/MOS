@@ -160,10 +160,12 @@ function getCierresCaja(params) {
       var tipo2 = String(ed[i][3] || 'EGRESO');
       var mto  = parseFloat(ed[i][4]) || 0;
       var fEx  = ed[i][2];
-      if (!extrasPorCaja[ec])     extrasPorCaja[ec]     = { entradas:0, salidas:0 };
+      if (!extrasPorCaja[ec])     extrasPorCaja[ec]     = { entradas:0, salidas:0, entradasVirtual:0, salidasVirtual:0 };
       if (!extrasListPorCaja[ec]) extrasListPorCaja[ec] = [];
-      if (tipo2 === 'INGRESO') extrasPorCaja[ec].entradas += mto;
-      else                     extrasPorCaja[ec].salidas  += mto;
+      if      (tipo2 === 'INGRESO')         extrasPorCaja[ec].entradas        += mto;
+      else if (tipo2 === 'INGRESO_VIRTUAL') extrasPorCaja[ec].entradasVirtual += mto;
+      else if (tipo2 === 'EGRESO')          extrasPorCaja[ec].salidas         += mto;
+      else if (tipo2 === 'EGRESO_VIRTUAL')  extrasPorCaja[ec].salidasVirtual  += mto;
       extrasListPorCaja[ec].push({
         tipo: tipo2, monto: mto,
         concepto: String(ed[i][5] || ''),
