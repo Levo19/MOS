@@ -35,6 +35,8 @@ const API = (() => {
     setUrl,
     isConfigured,
     get:  (action, p = {}) => _fetch('GET',  { action, ...p }),
-    post: (action, p = {}) => _fetch('POST', { action, ...p })
+    post: (action, p = {}) => _fetch('POST', { action, ...p }),
+    getProductosNuevosWH: (p = {}) => _fetch('GET',  { action: 'getProductosNuevosWH', ...p }),
+    lanzarProductoNuevo:  (p = {}) => _fetch('POST', { action: 'lanzarProductoNuevo',  ...p }),
   };
 })();

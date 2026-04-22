@@ -752,7 +752,10 @@
     </button>
     <button data-view="catalogo"    class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('catalogo')">
       <div class="nav-dot"></div>
-      <svg class="nav-icon shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="10" y1="7" x2="16" y2="7"/><line x1="10" y1="11" x2="16" y2="11"/></svg>
+      <span class="relative shrink-0">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="10" y1="7" x2="16" y2="7"/><line x1="10" y1="11" x2="16" y2="11"/></svg>
+        <span id="pnNavBadge" style="display:none;position:absolute;top:-4px;right:-5px;background:#dc2626;color:#fff;font-size:9px;font-weight:700;min-width:14px;height:14px;border-radius:7px;display:none;align-items:center;justify-content:center;padding:0 3px;line-height:1"></span>
+      </span>
       <span class="nav-label whitespace-nowrap">Catálogo</span>
     </button>
     <button data-view="almacen"     class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('almacen')">
@@ -1037,6 +1040,10 @@
         </button>
       </div>
       <div id="catStats" class="text-xs text-slate-500 mb-3"></div>
+
+      <!-- PN pending banner -->
+      <div id="pnBannerCat" style="display:none" class="mb-4"></div>
+
       <!-- Product cards -->
       <div id="listCatalogo" class="space-y-3">
         <div class="skel h-24 rounded-xl"></div>
@@ -1879,7 +1886,10 @@
     </button>
     <button data-view="catalogo" class="bnav-btn" onclick="MOS.nav('catalogo')">
       <div class="bnav-pill">
-        <span class="bnav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></span>
+        <span class="bnav-icon" style="position:relative">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+          <span id="pnNavBadgeMob" style="display:none;position:absolute;top:-4px;right:-5px;background:#dc2626;color:#fff;font-size:9px;font-weight:700;min-width:14px;height:14px;border-radius:7px;align-items:center;justify-content:center;padding:0 3px;line-height:1"></span>
+        </span>
         <span class="bnav-lbl">Catálogo</span>
       </div>
     </button>
@@ -1975,6 +1985,90 @@
       <div id="qpPresList" class="space-y-1.5"></div>
     </div>
     <button onclick="MOS.cerrarModalPrecioRapido()" class="btn-ghost w-full text-sm">Cancelar</button>
+  </div>
+</div>
+
+<!-- ══ Modal: Aprobar Producto Nuevo (WH) ═══════════════════════ -->
+<div class="modal-backdrop hidden" id="modalPN" onclick="if(event.target===this)MOS.cerrarModalPN()">
+  <div class="modal-box p-6" style="max-width:540px">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="font-bold text-lg text-white">Producto Nuevo — Aprobación</h2>
+      <button onclick="MOS.cerrarModalPN()" class="text-slate-400 hover:text-white text-xl">×</button>
+    </div>
+
+    <!-- Info guía + foto -->
+    <div class="flex gap-4 mb-4">
+      <div id="pnFotoPreview" style="width:80px;height:80px;border-radius:10px;background:#1e293b;border:1px solid #334155;overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="text-xs text-slate-500 mb-1">Guía de ingreso</div>
+        <div id="pnGuiaInfo" class="text-sm text-slate-300 font-medium mb-1"></div>
+        <div class="text-xs text-slate-500">Código WH: <span id="pnCodigoWH" class="font-mono text-amber-400"></span></div>
+        <div class="text-xs text-slate-500 mt-0.5">Cant. registrada: <span id="pnCantidad" class="text-white"></span></div>
+        <div class="text-xs text-slate-500 mt-0.5">Vencimiento: <span id="pnFechaVenc" class="text-white"></span></div>
+      </div>
+    </div>
+    <div id="pnObservaciones" class="text-xs text-slate-400 italic mb-4" style="display:none"></div>
+
+    <input type="hidden" id="pnId">
+    <input type="hidden" id="pnIdGuia">
+    <input type="hidden" id="pnUsuario">
+
+    <div class="grid grid-cols-2 gap-3">
+      <!-- Descripción -->
+      <div class="col-span-2">
+        <label class="block text-xs text-slate-400 mb-1">Descripción *</label>
+        <input id="pnDesc" class="inp w-full" placeholder="Nombre del producto" autocomplete="off">
+      </div>
+      <!-- Marca -->
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Marca</label>
+        <input id="pnMarca" class="inp w-full" placeholder="Marca" autocomplete="off">
+      </div>
+      <!-- Unidad -->
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Unidad *</label>
+        <select id="pnUnidad" class="inp w-full">
+          <option value="UND">UND</option>
+          <option value="KG">KG</option>
+          <option value="L">L</option>
+          <option value="CAJA">CAJA</option>
+          <option value="BOLSA">BOLSA</option>
+          <option value="PAQUETE">PAQUETE</option>
+        </select>
+      </div>
+      <!-- Categoría -->
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Categoría *</label>
+        <select id="pnCategoria" class="inp w-full">
+          <option value="">— elegir —</option>
+        </select>
+      </div>
+      <!-- Precio venta -->
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Precio venta</label>
+        <input id="pnPrecioVenta" type="number" step="0.01" min="0" class="inp w-full" placeholder="0.00">
+      </div>
+      <!-- Precio costo -->
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Precio costo</label>
+        <input id="pnPrecioCosto" type="number" step="0.01" min="0" class="inp w-full" placeholder="0.00">
+      </div>
+      <!-- Stock mín -->
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Stock mínimo</label>
+        <input id="pnStockMin" type="number" step="1" min="0" class="inp w-full" placeholder="0">
+      </div>
+    </div>
+
+    <div id="pnError" class="text-red-400 text-xs mt-3" style="display:none"></div>
+    <div class="flex gap-3 mt-5">
+      <button onclick="MOS.cerrarModalPN()" class="btn flex-1">Cancelar</button>
+      <button id="btnLanzarPN" onclick="MOS.lanzarAProduccion()" class="flex-1 py-2.5 px-4 rounded-lg font-semibold text-sm" style="background:#16a34a;color:#fff">
+        Lanzar a producción
+      </button>
+    </div>
   </div>
 </div>
 

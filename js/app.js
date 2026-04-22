@@ -21,7 +21,8 @@ const MOS = (() => {
     session: null,
     equivMap: {},
     _editingPrecioId: null,
-    _ecoData: null
+    _ecoData: null,
+    pnPendientes: []
   };
 
   function _getSession()      { try { return JSON.parse(localStorage.getItem(SESSION_KEY)); } catch { return null; } }
@@ -523,6 +524,8 @@ const MOS = (() => {
         throw e;
       }
     }
+    // PN pendientes (fire-and-forget — no bloquea)
+    _refreshPNPendientes();
   }
 
   // ── Refresh silencioso del catálogo cada 60s ────────────────
@@ -675,9 +678,12 @@ const MOS = (() => {
   function populateCatFiltro() {
     const cats = [...new Set(S.productos.map(p => p.idCategoria).filter(Boolean))].sort();
     const opts = '<option value="">Todas las categorías</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
+    const catOpts = '<option value="">— elegir —</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
     const sel = $('filtroCategoria'); if (sel) sel.innerHTML = opts;
     const prodCat = $('prodCategoria');
     if (prodCat) prodCat.innerHTML = '<option value="">— seleccionar —</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
+    const pnCat = $('pnCategoria');
+    if (pnCat) pnCat.innerHTML = catOpts;
   }
 
   function filterCatalogo() {
@@ -895,6 +901,175 @@ const MOS = (() => {
   }
 
   function toggleDerivs(id) { togglePresentaciones(id); } // backward compat
+
+  // ── Productos Nuevos (aprobación desde WH) ──────────────────
+
+  async function _refreshPNPendientes() {
+    try {
+      const lista = await API.getProductosNuevosWH({ estado: 'PENDIENTE' });
+      S.pnPendientes = lista || [];
+    } catch(e) {
+      S.pnPendientes = S.pnPendientes || [];
+    }
+    _updatePNBadge();
+    renderPNBanner();
+  }
+
+  function _updatePNBadge() {
+    const n = (S.pnPendientes || []).length;
+    const txt = n > 0 ? String(n > 99 ? '99+' : n) : '';
+    ['pnNavBadge', 'pnNavBadgeMob'].forEach(id => {
+      const el = $(id);
+      if (!el) return;
+      if (n > 0) {
+        el.textContent = txt;
+        el.style.display = 'flex';
+      } else {
+        el.style.display = 'none';
+      }
+    });
+  }
+
+  function renderPNBanner() {
+    const banner = $('pnBannerCat');
+    if (!banner) return;
+    const lista = S.pnPendientes || [];
+    if (!lista.length) { banner.style.display = 'none'; banner.innerHTML = ''; return; }
+
+    banner.style.display = 'block';
+    banner.innerHTML = `
+      <div style="border:1px solid rgba(217,119,6,.35);background:rgba(120,53,15,.12);border-radius:12px;padding:12px 14px;margin-bottom:4px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <span style="background:#92400e;color:#fde68a;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px">N ${lista.length}</span>
+          <span style="font-size:13px;font-weight:600;color:#fcd34d">Productos nuevos pendientes de aprobación</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${lista.map(pn => {
+            const guiaLabel = pn.guia ? `Guía ${pn.guia.tipo || ''} · ${pn.guia.fecha || ''}` : `Guía ${pn.idGuia}`;
+            const fotoHtml = pn.foto
+              ? `<img src="${pn.foto}" style="width:42px;height:42px;border-radius:8px;object-fit:cover;flex-shrink:0">`
+              : `<div style="width:42px;height:42px;border-radius:8px;background:#1e293b;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px">📦</div>`;
+            return `<div style="display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.2);border-radius:8px;padding:8px 10px">
+              ${fotoHtml}
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13px;font-weight:600;color:#f1f5f9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${pn.descripcion || '(sin nombre)'}</div>
+                <div style="font-size:11px;color:#94a3b8;margin-top:1px">${pn.codigoBarra || 'sin código'} · ${pn.marca || ''}</div>
+                <div style="font-size:11px;color:#64748b">${guiaLabel}</div>
+              </div>
+              <button onclick="MOS.abrirModalPN('${pn.idProductoNuevo}')" style="flex-shrink:0;background:#b45309;color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">Revisar</button>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+  }
+
+  function abrirModalPN(idProductoNuevo) {
+    const pn = (S.pnPendientes || []).find(p => String(p.idProductoNuevo) === String(idProductoNuevo));
+    if (!pn) return;
+
+    $('pnId').value       = pn.idProductoNuevo;
+    $('pnIdGuia').value   = pn.idGuia || '';
+    $('pnUsuario').value  = pn.usuario || '';
+    $('pnDesc').value     = pn.descripcion || '';
+    $('pnMarca').value    = pn.marca || '';
+    $('pnCodigoWH').textContent   = pn.codigoBarra || '—';
+    $('pnCantidad').textContent   = pn.cantidad != null ? pn.cantidad : '—';
+    $('pnFechaVenc').textContent  = pn.fechaVencimiento || '—';
+
+    const guiaLabel = pn.guia ? `${pn.guia.tipo || 'Guía'} · ${pn.guia.fecha || ''} · ${pn.guia.estado || ''}` : `Guía ${pn.idGuia}`;
+    $('pnGuiaInfo').textContent = guiaLabel;
+
+    const obs = $('pnObservaciones');
+    if (pn.observaciones) { obs.textContent = pn.observaciones; obs.style.display = 'block'; }
+    else obs.style.display = 'none';
+
+    const fotoBox = $('pnFotoPreview');
+    if (pn.foto) {
+      fotoBox.innerHTML = `<img src="${pn.foto}" style="width:100%;height:100%;object-fit:cover">`;
+    } else {
+      fotoBox.innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg>`;
+    }
+
+    $('pnPrecioVenta').value = '';
+    $('pnPrecioCosto').value = '';
+    $('pnStockMin').value    = '';
+
+    const errEl = $('pnError'); if (errEl) errEl.style.display = 'none';
+    const btn = $('btnLanzarPN'); if (btn) { btn.disabled = false; btn.textContent = 'Lanzar a producción'; }
+
+    populateCatFiltro(); // repopulates pnCategoria from S.productos
+    const catSel = $('pnCategoria');
+    if (catSel && pn.idCategoria) catSel.value = pn.idCategoria;
+    const unidSel = $('pnUnidad');
+    if (unidSel && pn.unidad) unidSel.value = pn.unidad;
+
+    const modal = $('modalPN');
+    if (modal) { modal.classList.remove('hidden'); modal.classList.add('open'); }
+  }
+
+  function cerrarModalPN() {
+    const modal = $('modalPN');
+    if (modal) { modal.classList.add('hidden'); modal.classList.remove('open'); }
+  }
+
+  async function lanzarAProduccion() {
+    const btn = $('btnLanzarPN');
+    const errEl = $('pnError');
+    if (errEl) errEl.style.display = 'none';
+
+    const idProductoNuevo = $('pnId')?.value?.trim();
+    const desc     = $('pnDesc')?.value?.trim();
+    const marca    = $('pnMarca')?.value?.trim();
+    const unidad   = $('pnUnidad')?.value;
+    const catId    = $('pnCategoria')?.value;
+    const pVenta   = parseFloat($('pnPrecioVenta')?.value || '0') || 0;
+    const pCosto   = parseFloat($('pnPrecioCosto')?.value || '0') || 0;
+    const stockMin = parseInt($('pnStockMin')?.value || '0') || 0;
+    const usuario  = $('pnUsuario')?.value || (S.session?.nombre || 'MOS');
+    const idGuia   = $('pnIdGuia')?.value || '';
+
+    if (!desc)  { mostrarPNError('La descripción es obligatoria'); return; }
+    if (!catId) { mostrarPNError('Selecciona una categoría'); return; }
+
+    const pn = (S.pnPendientes || []).find(p => String(p.idProductoNuevo) === String(idProductoNuevo));
+    const codigoBarra = pn?.codigoBarra || '';
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Procesando...'; }
+    try {
+      await API.lanzarProductoNuevo({
+        idProductoNuevo,
+        codigoBarra,
+        descripcion: desc,
+        marca,
+        idCategoria: catId,
+        unidad,
+        precioVenta: pVenta,
+        precioCosto: pCosto,
+        stockMinimo: stockMin,
+        stockMaximo: 0,
+        esEnvasable: '0',
+        usuario,
+        aprobadoPor: S.session?.nombre || usuario,
+        idGuia
+      });
+
+      S.pnPendientes = (S.pnPendientes || []).filter(p => String(p.idProductoNuevo) !== String(idProductoNuevo));
+      _updatePNBadge();
+      renderPNBanner();
+      cerrarModalPN();
+      toast('Producto lanzado a producción', 'ok');
+      // Refrescar catálogo para mostrar el nuevo producto
+      setTimeout(() => loadCatalogo(), 800);
+    } catch(e) {
+      mostrarPNError(e.message || 'Error al lanzar producto');
+      if (btn) { btn.disabled = false; btn.textContent = 'Lanzar a producción'; }
+    }
+  }
+
+  function mostrarPNError(msg) {
+    const el = $('pnError');
+    if (el) { el.textContent = msg; el.style.display = 'block'; }
+  }
 
   function abrirModalPrecioRapido(idProducto) {
     const prod = S.productos.find(p => p.idProducto === idProducto);
@@ -4799,6 +4974,7 @@ const MOS = (() => {
     init, nav, refresh, fabAction,
     openConfig, saveConfig, testConnection, closeModal, openEcoModal,
     filterCatalogo, setCatTab, toggleDerivs, togglePresentaciones, guardarPrecioRapido,
+    abrirModalPN, cerrarModalPN, lanzarAProduccion,
     abrirModalPrecioRapido, cerrarModalPrecioRapido, _qpSyncPresentaciones,
     abrirAnalitica, cerrarAnalitica, setAnPeriodo, guardarStockMinMax, _anCurrentId,
     guardarAjustePrecios, stepperInc, stepperDec,

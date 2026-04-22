@@ -404,6 +404,92 @@ function getAnaliticaProducto(params) {
 }
 
 // ════════════════════════════════════════════════
+// PRODUCTOS NUEVOS (desde warehouseMos)
+// ════════════════════════════════════════════════
+
+function getProductosNuevosWarehouse(params) {
+  try {
+    var pns = _sheetToObjectsLocal(_abrirWhSheet('PRODUCTO_NUEVO'));
+    if (params && params.estado) {
+      pns = pns.filter(function(p){ return String(p.estado) === String(params.estado); });
+    } else {
+      pns = pns.filter(function(p){ return String(p.estado) === 'PENDIENTE'; });
+    }
+
+    // Enriquecer con guía origen
+    var guias = [];
+    try { guias = _sheetToObjectsLocal(_abrirWhSheet('GUIAS')); } catch(e) {}
+    var guiaMap = {};
+    guias.forEach(function(g){ guiaMap[g.idGuia] = g; });
+
+    pns = pns.map(function(pn) {
+      var g = pn.idGuia ? guiaMap[pn.idGuia] : null;
+      return {
+        idProductoNuevo:  pn.idProductoNuevo,
+        codigoBarra:      String(pn.codigoBarra  || ''),
+        descripcion:      String(pn.descripcion  || ''),
+        marca:            String(pn.marca        || ''),
+        idCategoria:      String(pn.idCategoria  || ''),
+        unidad:           String(pn.unidad       || ''),
+        cantidad:         pn.cantidad            || 0,
+        fechaVencimiento: String(pn.fechaVencimiento || ''),
+        foto:             String(pn.foto         || ''),
+        estado:           String(pn.estado       || ''),
+        usuario:          String(pn.usuario      || ''),
+        fechaRegistro:    String(pn.fechaRegistro || ''),
+        idGuia:           String(pn.idGuia       || ''),
+        guia: g ? { idGuia: g.idGuia, tipo: g.tipo, estado: g.estado, fecha: g.fecha } : null
+      };
+    });
+
+    return { ok: true, data: pns };
+  } catch(e) {
+    return { ok: false, error: 'warehouseMos no conectado: ' + e.message };
+  }
+}
+
+function lanzarProductoNuevo(params) {
+  // 1. Crear en PRODUCTOS_MASTER de MOS
+  var resultCrear = crearProductoMaster({
+    codigoBarra:        params.codigoBarra       || '',
+    descripcion:        params.descripcion       || '',
+    marca:              params.marca             || '',
+    idCategoria:        params.idCategoria       || '',
+    unidad:             params.unidad            || 'UNIDAD',
+    precioVenta:        parseFloat(params.precioVenta)  || 0,
+    precioCosto:        parseFloat(params.precioCosto)  || 0,
+    stockMinimo:        parseFloat(params.stockMinimo)  || 0,
+    stockMaximo:        parseFloat(params.stockMaximo)  || 0,
+    esEnvasable:        params.esEnvasable        || '0',
+    codigoProductoBase: params.codigoProductoBase || '',
+    factorConversion:   params.factorConversion   || '',
+    mermaEsperadaPct:   params.mermaEsperadaPct   || '',
+    zona:               params.zona               || '',
+    usuario:            params.usuario            || 'MOS'
+  });
+  if (!resultCrear.ok) return resultCrear;
+
+  // 2. Notificar a warehouseMos: marcar PN como APROBADO
+  var whResult = postToWarehouse('aprobarProductoNuevo', {
+    idProductoNuevo:  params.idProductoNuevo,
+    aprobadoPor:      params.usuario || 'MOS',
+    descripcion:      params.descripcion,
+    idCategoria:      params.idCategoria || '',
+    unidad:           params.unidad || 'UNIDAD',
+    idProducto:       resultCrear.data.idProducto
+  });
+
+  return {
+    ok:         true,
+    data: {
+      idProducto:      resultCrear.data.idProducto,
+      aprobadoEnWH:    whResult.ok,
+      whError:         whResult.ok ? '' : (whResult.error || '')
+    }
+  };
+}
+
+// ════════════════════════════════════════════════
 // ESCRITURA HACIA warehouseMos (vía GAS URL)
 // Usar solo cuando la operación debe pasar por
 // la lógica de negocio de warehouseMos

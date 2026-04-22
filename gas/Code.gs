@@ -53,6 +53,8 @@ function _route(method, e) {
       case 'getMermasWarehouse':   return getMermasWarehouse(params);
       case 'getEnvasadosWarehouse':return getEnvasadosWarehouse(params);
       case 'getGuiasWarehouse':    return getGuiasWarehouse(params);
+      case 'getProductosNuevosWH': return getProductosNuevosWarehouse(params);
+      case 'lanzarProductoNuevo':  return lanzarProductoNuevo(params);
       case 'getVentasMosExpress':  return getVentasMosExpress(params);
       case 'getRotacion':            return getRotacionProductos(params);
       case 'getAnaliticaProducto':   return getAnaliticaProducto(params);
