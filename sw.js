@@ -2,7 +2,7 @@
 // MOS Admin — Service Worker
 // Cambia VERSION en cada deploy para invalidar caché
 // ============================================================
-const VERSION = '1.3.2';
+const VERSION = '1.3.3';
 const CACHE   = 'mos-v' + VERSION;
 const ASSETS  = [
   './',

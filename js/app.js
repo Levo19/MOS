@@ -4657,15 +4657,20 @@ const MOS = (() => {
         ? `<button onclick="MOS.finEditarCostoProd('${p.sku}')" class="text-amber-400 hover:text-amber-200 px-1" title="Asignar costo">✎</button>`
         : `<button onclick="MOS.finEditarCostoProd('${p.sku}')" class="text-slate-600 hover:text-slate-300 px-1" title="Editar costo">✎</button>`;
       return `<tr class="hover:bg-slate-800/30 transition-colors">
-        <td class="px-4 py-2">
-          <div class="flex items-center gap-1.5">${alertBadge}<span class="font-mono text-slate-300">${p.sku}</span></div>
-          <div class="text-slate-500 truncate max-w-[200px]">${p.nombre || '—'}</div>
+        <td class="px-3 py-2">
+          <div class="flex items-start gap-1.5">
+            ${alertBadge}
+            <div>
+              <div class="text-slate-200 text-xs leading-snug">${p.nombre || p.sku}</div>
+              <div class="font-mono text-slate-500 text-xs">${p.sku}</div>
+            </div>
+          </div>
         </td>
-        <td class="px-4 py-2 text-right font-bold text-slate-200">${p.cantidad}</td>
-        <td class="px-4 py-2 text-right text-slate-400">${fmtM(p.precio)}</td>
-        <td class="px-4 py-2 text-right">${costoUnitStr}</td>
-        <td class="px-4 py-2 text-right">${costoTotalStr}</td>
-        <td class="px-2 py-2">${editBtn}</td>
+        <td class="px-2 py-2 text-right font-bold text-slate-200 whitespace-nowrap">${p.cantidad}</td>
+        <td class="px-2 py-2 text-right text-slate-400 whitespace-nowrap hidden sm:table-cell">${fmtM(p.precio)}</td>
+        <td class="px-2 py-2 text-right whitespace-nowrap hidden sm:table-cell">${costoUnitStr}</td>
+        <td class="px-2 py-2 text-right whitespace-nowrap">${costoTotalStr}</td>
+        <td class="px-1 py-2">${editBtn}</td>
       </tr>`;
     }).join('') || '<tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">Sin datos</td></tr>';
   }
@@ -4773,10 +4778,11 @@ const MOS = (() => {
     list.innerHTML = lista.map(t => {
       const anulado = t.estado === 'ANULADO';
       const met = metodoLabel(t.formaPago);
+      const corrLabel = t.correlativo || t.idVenta.split('-').pop() || '—';
       return `<div class="flex items-center justify-between px-4 py-3 ${anulado ? 'opacity-50' : 'hover:bg-slate-800/30'} transition-colors">
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
-            <span class="font-mono text-slate-300 text-xs">${t.idVenta.split('-').pop() || t.idVenta}</span>
+            <span class="text-slate-200 text-xs font-semibold">${corrLabel}</span>
             <span class="text-slate-500 text-xs">${docLabel[t.tipoDoc] || t.tipoDoc}</span>
             ${anulado ? '<span class="text-xs bg-red-900/40 text-red-400 px-1.5 py-0.5 rounded">ANULADO</span>' : ''}
           </div>
