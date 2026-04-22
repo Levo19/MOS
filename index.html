@@ -1620,22 +1620,24 @@
         </div>
       </div>
 
-      <!-- ── KPI Productos Vendidos ──────────────────────────────── -->
-      <div class="fin-panel mb-5 flex flex-wrap gap-6 items-center justify-between">
-        <div>
-          <div class="fin-card-label mb-1">Productos Vendidos</div>
-          <div class="flex items-baseline gap-3">
+      <!-- ── KPI Productos Vendidos + Ticket Promedio (clickables) ── -->
+      <div class="fin-panel mb-5 grid grid-cols-2 gap-0 p-0 overflow-hidden">
+        <button onclick="MOS.finAbrirModalProductos()"
+                class="text-left p-4 hover:bg-slate-700/40 transition-colors rounded-l-xl border-r border-slate-700/50 active:bg-slate-700/60">
+          <div class="fin-card-label mb-1 flex items-center gap-1">Productos Vendidos <span class="text-slate-500 text-xs">↗</span></div>
+          <div class="flex items-baseline gap-2 flex-wrap">
             <span id="finKpiUnidades" class="text-3xl font-bold text-indigo-300">—</span>
-            <span class="text-slate-400 text-sm">unidades</span>
-            <span class="text-slate-600 mx-1">·</span>
+            <span class="text-slate-400 text-sm">uds</span>
+            <span class="text-slate-600 mx-0.5">·</span>
             <span id="finKpiSkus" class="text-3xl font-bold text-indigo-300">—</span>
             <span class="text-slate-400 text-sm">SKUs</span>
           </div>
-        </div>
-        <div class="text-right">
-          <div class="fin-card-label mb-1">Ticket Promedio</div>
+        </button>
+        <button onclick="MOS.finAbrirModalTickets()"
+                class="text-right p-4 hover:bg-slate-700/40 transition-colors rounded-r-xl active:bg-slate-700/60">
+          <div class="fin-card-label mb-1 flex items-center justify-end gap-1">Ticket Promedio <span class="text-slate-500 text-xs">↗</span></div>
           <div id="finKpiTicketProm" class="text-2xl font-bold text-slate-200">—</div>
-        </div>
+        </button>
       </div>
 
       <!-- ── Punto de Equilibrio ──────────────────────────────────── -->
@@ -1812,6 +1814,68 @@
 
   </div><!-- /max-w -->
 </main>
+
+<!-- ══ Modal: Productos Vendidos ═══════════════════════════════ -->
+<div class="modal-backdrop hidden" id="finModalProductos" onclick="if(event.target===this)MOS.cerrarModalFin('finModalProductos')">
+  <div class="modal-box p-0" style="max-width:740px">
+    <!-- header -->
+    <div class="flex items-center justify-between p-4 border-b border-slate-800">
+      <div class="flex items-center gap-3 flex-wrap">
+        <span class="text-white font-bold text-sm">Productos Vendidos</span>
+        <button id="finProdBtnSinCosto" onclick="MOS.finToggleFiltroSinCosto()"
+                class="text-xs px-2 py-0.5 rounded-full border border-amber-500/50 text-amber-400 hover:bg-amber-900/30 transition-colors hidden">
+          ⚠ Sin costo
+        </button>
+        <span id="finProdConteo" class="text-xs text-slate-500"></span>
+      </div>
+      <button onclick="MOS.cerrarModalFin('finModalProductos')" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+    </div>
+    <!-- inline cost editor dentro del modal -->
+    <div id="finProdCostoWrap" class="hidden p-3 border-b border-amber-900/40 bg-amber-950/20 flex items-center gap-2 flex-wrap">
+      <span class="text-xs text-slate-400">Nuevo costo para</span>
+      <span id="finProdCostoSku" class="font-mono text-amber-300 text-xs font-bold"></span>
+      <input id="finProdCostoInput" type="number" step="0.01" min="0" placeholder="0.00"
+             class="inp text-xs py-1 w-24" onkeydown="if(event.key==='Enter')MOS.finGuardarCostoProd()">
+      <button onclick="MOS.finGuardarCostoProd()" class="btn-primary text-xs px-2 py-1">Guardar</button>
+      <button onclick="MOS.finCerrarCostoProd()" class="btn-ghost text-xs px-2 py-1">×</button>
+    </div>
+    <!-- tabla -->
+    <div class="overflow-y-auto" style="max-height:65vh">
+      <table class="w-full text-xs">
+        <thead class="sticky top-0 bg-slate-900/95">
+          <tr class="text-slate-500 text-left">
+            <th class="px-4 py-2 font-medium">SKU / Nombre</th>
+            <th class="px-4 py-2 font-medium text-right">Cant</th>
+            <th class="px-4 py-2 font-medium text-right">Precio</th>
+            <th class="px-4 py-2 font-medium text-right">Costo u.</th>
+            <th class="px-4 py-2 font-medium text-right">Costo total</th>
+            <th class="px-2 py-2"></th>
+          </tr>
+        </thead>
+        <tbody id="finProdTableBody" class="divide-y divide-slate-800/40"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Modal: Tickets del Día ══════════════════════════════════ -->
+<div class="modal-backdrop hidden" id="finModalTickets" onclick="if(event.target===this)MOS.cerrarModalFin('finModalTickets')">
+  <div class="modal-box p-0" style="max-width:580px">
+    <div class="flex items-center justify-between p-4 border-b border-slate-800">
+      <div class="flex items-center gap-2">
+        <span class="text-white font-bold text-sm">Tickets del Día</span>
+        <span id="finTicketConteo" class="text-xs text-slate-500"></span>
+      </div>
+      <button onclick="MOS.cerrarModalFin('finModalTickets')" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+    </div>
+    <!-- filtros -->
+    <div class="p-3 border-b border-slate-800 flex flex-wrap gap-1.5" id="finTicketFiltros"></div>
+    <!-- lista -->
+    <div class="overflow-y-auto" style="max-height:65vh">
+      <div id="finTicketList" class="divide-y divide-slate-800/40 text-xs"></div>
+    </div>
+  </div>
+</div>
 
 <!-- FAB (mobile) -->
 <button class="fab" id="fab" onclick="MOS.fabAction()">+</button>

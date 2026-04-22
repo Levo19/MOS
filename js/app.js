@@ -4611,6 +4611,188 @@ const MOS = (() => {
     } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
 
+  // ── Modal Productos Vendidos ─────────────────────────────────
+  let _finProdFiltroSinCosto = false;
+  let _finProdEditSku = null;
+
+  function finAbrirModalProductos() {
+    const m = $('finModalProductos');
+    if (!m) return;
+    m.classList.remove('hidden'); m.classList.add('open');
+    _finProdFiltroSinCosto = false;
+    _finRenderProductos();
+  }
+
+  function finToggleFiltroSinCosto() {
+    _finProdFiltroSinCosto = !_finProdFiltroSinCosto;
+    const btn = $('finProdBtnSinCosto');
+    if (btn) {
+      btn.classList.toggle('bg-amber-900/40', _finProdFiltroSinCosto);
+      btn.classList.toggle('text-amber-200', _finProdFiltroSinCosto);
+    }
+    _finRenderProductos();
+  }
+
+  function _finRenderProductos() {
+    const pl = _finPL;
+    if (!pl) return;
+    const fmtM = v => 'S/ ' + parseFloat(v || 0).toFixed(2);
+    const todos = pl.detalleProductos || [];
+    const haySinCosto = todos.some(p => p.sinCosto);
+    const btn = $('finProdBtnSinCosto');
+    if (btn) btn.classList.toggle('hidden', !haySinCosto);
+    const lista = _finProdFiltroSinCosto ? todos.filter(p => p.sinCosto) : todos;
+    const conteo = $('finProdConteo');
+    if (conteo) conteo.textContent = lista.length + ' de ' + todos.length + ' SKUs';
+    const tbody = $('finProdTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = lista.map(p => {
+      const alertBadge = p.sinCosto
+        ? `<span class="text-amber-400 font-bold" title="Sin costo">⚠</span>` : '';
+      const costoUnitStr = p.sinCosto
+        ? `<span class="text-amber-400/60">—</span>` : fmtM(p.costoUnit);
+      const costoTotalStr = p.sinCosto
+        ? `<span class="text-amber-400/60">—</span>` : fmtM(p.costoTotal);
+      const editBtn = p.sinCosto
+        ? `<button onclick="MOS.finEditarCostoProd('${p.sku}')" class="text-amber-400 hover:text-amber-200 px-1" title="Asignar costo">✎</button>`
+        : `<button onclick="MOS.finEditarCostoProd('${p.sku}')" class="text-slate-600 hover:text-slate-300 px-1" title="Editar costo">✎</button>`;
+      return `<tr class="hover:bg-slate-800/30 transition-colors">
+        <td class="px-4 py-2">
+          <div class="flex items-center gap-1.5">${alertBadge}<span class="font-mono text-slate-300">${p.sku}</span></div>
+          <div class="text-slate-500 truncate max-w-[200px]">${p.nombre || '—'}</div>
+        </td>
+        <td class="px-4 py-2 text-right font-bold text-slate-200">${p.cantidad}</td>
+        <td class="px-4 py-2 text-right text-slate-400">${fmtM(p.precio)}</td>
+        <td class="px-4 py-2 text-right">${costoUnitStr}</td>
+        <td class="px-4 py-2 text-right">${costoTotalStr}</td>
+        <td class="px-2 py-2">${editBtn}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">Sin datos</td></tr>';
+  }
+
+  function finEditarCostoProd(sku) {
+    _finProdEditSku = sku;
+    _setText('finProdCostoSku', sku);
+    const inp = $('finProdCostoInput');
+    if (inp) { inp.value = ''; inp.focus(); }
+    $('finProdCostoWrap')?.classList.remove('hidden');
+  }
+  function finCerrarCostoProd() {
+    _finProdEditSku = null;
+    $('finProdCostoWrap')?.classList.add('hidden');
+  }
+  async function finGuardarCostoProd() {
+    if (!_finProdEditSku) return;
+    const costo = parseFloat($('finProdCostoInput')?.value);
+    if (!costo || costo <= 0) { toast('Ingresa un costo válido', 'error'); return; }
+    try {
+      await API.post('actualizarCostoPorSku', { sku: _finProdEditSku, precioCosto: costo });
+      finCerrarCostoProd();
+      toast('Costo actualizado', 'ok');
+      await finCargar(); // refresca _finPL
+      _finRenderProductos();
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  // ── Modal Tickets del Día ─────────────────────────────────────
+  let _finTicketFiltro = 'todos';
+
+  const _FIN_FILTROS = [
+    { key: 'todos',   label: 'Todos' },
+    { key: 'boleta',  label: 'Boleta' },
+    { key: 'nota',    label: 'Nota' },
+    { key: 'factura', label: 'Factura' },
+    { key: 'credito', label: 'Crédito' },
+    { key: 'efectivo',label: 'Efectivo' },
+    { key: 'virtual', label: 'Virtual' },
+    { key: 'anulado', label: 'Anulado' },
+  ];
+
+  function finAbrirModalTickets() {
+    const m = $('finModalTickets');
+    if (!m) return;
+    m.classList.remove('hidden'); m.classList.add('open');
+    _finTicketFiltro = 'todos';
+    _finRenderFiltrosBtns();
+    _finRenderTickets();
+  }
+
+  function finSetTicketFiltro(key) {
+    _finTicketFiltro = key;
+    _finRenderFiltrosBtns();
+    _finRenderTickets();
+  }
+
+  function _finRenderFiltrosBtns() {
+    const wrap = $('finTicketFiltros');
+    if (!wrap) return;
+    wrap.innerHTML = _FIN_FILTROS.map(f => {
+      const active = f.key === _finTicketFiltro;
+      const cls = active
+        ? 'text-xs px-2.5 py-1 rounded-full bg-indigo-600 text-white font-semibold'
+        : 'text-xs px-2.5 py-1 rounded-full bg-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-700';
+      return `<button onclick="MOS.finSetTicketFiltro('${f.key}')" class="${cls} transition-colors">${f.label}</button>`;
+    }).join('');
+  }
+
+  function _finApplyTicketFiltro(tickets) {
+    const f = _finTicketFiltro;
+    if (f === 'todos')    return tickets;
+    if (f === 'boleta')   return tickets.filter(t => t.tipoDoc === 'BOLETA');
+    if (f === 'nota')     return tickets.filter(t => t.tipoDoc === 'NOTA_DE_VENTA');
+    if (f === 'factura')  return tickets.filter(t => t.tipoDoc === 'FACTURA');
+    if (f === 'credito')  return tickets.filter(t => t.formaPago === 'POR_COBRAR');
+    if (f === 'efectivo') return tickets.filter(t => t.formaPago === 'EFECTIVO' && t.estado !== 'ANULADO');
+    if (f === 'virtual')  return tickets.filter(t =>
+      t.formaPago !== 'EFECTIVO' && !t.formaPago.startsWith('MIXTO') && t.formaPago !== 'POR_COBRAR' && t.estado !== 'ANULADO');
+    if (f === 'anulado')  return tickets.filter(t => t.estado === 'ANULADO');
+    return tickets;
+  }
+
+  function _finRenderTickets() {
+    const pl = _finPL;
+    if (!pl) return;
+    const fmtM = v => 'S/ ' + parseFloat(v || 0).toFixed(2);
+    const todos = pl.detalleTickets || [];
+    const lista = _finApplyTicketFiltro(todos);
+    const totalFiltrado = lista.reduce((s, t) => s + (t.estado === 'ANULADO' ? 0 : t.total), 0);
+    const conteo = $('finTicketConteo');
+    if (conteo) conteo.textContent = lista.length + ' ticket' + (lista.length !== 1 ? 's' : '') +
+      (lista.length < todos.length ? ' · Total: ' + fmtM(totalFiltrado) : '');
+    const list = $('finTicketList');
+    if (!list) return;
+
+    const docLabel = { 'BOLETA': 'Boleta', 'NOTA_DE_VENTA': 'Nota', 'FACTURA': 'Factura' };
+    const metodoLabel = m => {
+      if (m === 'EFECTIVO')    return { txt: 'Efectivo', cls: 'text-emerald-400' };
+      if (m === 'POR_COBRAR')  return { txt: 'Crédito',  cls: 'text-amber-400' };
+      if (m.startsWith('MIXTO')) return { txt: 'Mixto',  cls: 'text-blue-400' };
+      return { txt: m, cls: 'text-purple-400' };
+    };
+
+    list.innerHTML = lista.map(t => {
+      const anulado = t.estado === 'ANULADO';
+      const met = metodoLabel(t.formaPago);
+      return `<div class="flex items-center justify-between px-4 py-3 ${anulado ? 'opacity-50' : 'hover:bg-slate-800/30'} transition-colors">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-mono text-slate-300 text-xs">${t.idVenta.split('-').pop() || t.idVenta}</span>
+            <span class="text-slate-500 text-xs">${docLabel[t.tipoDoc] || t.tipoDoc}</span>
+            ${anulado ? '<span class="text-xs bg-red-900/40 text-red-400 px-1.5 py-0.5 rounded">ANULADO</span>' : ''}
+          </div>
+          <div class="flex items-center gap-2 mt-0.5 flex-wrap">
+            <span class="text-slate-500">${t.hora || ''}</span>
+            ${t.vendedor ? `<span class="text-slate-600">· ${t.vendedor}</span>` : ''}
+            <span class="${met.cls}">${met.txt}</span>
+          </div>
+        </div>
+        <div class="text-right pl-3">
+          <div class="font-bold ${anulado ? 'line-through text-slate-600' : 'text-slate-200'}">${fmtM(t.total)}</div>
+        </div>
+      </div>`;
+    }).join('') || '<div class="px-4 py-8 text-center text-slate-500">Sin tickets</div>';
+  }
+
   // Helpers
   function _setText(id, val) { const el = $(id); if (el) el.textContent = val; }
   function _fechaOffset(fechaStr, dias) {
@@ -4657,6 +4839,10 @@ const MOS = (() => {
     finCargar, finDia, finAbrirModalGasto, finAbrirModalJornada, finGuardarGasto,
     finGuardarJornada, finEliminarGasto, finEliminarJornada, finImportarCajas,
     cerrarModalFin,
-    finEditarCostoSku, finCerrarCostoEditor, finGuardarCostoSku
+    finEditarCostoSku, finCerrarCostoEditor, finGuardarCostoSku,
+    // Finanzas — modales detalle
+    finAbrirModalProductos, finToggleFiltroSinCosto,
+    finEditarCostoProd, finCerrarCostoProd, finGuardarCostoProd,
+    finAbrirModalTickets, finSetTicketFiltro
   };
 })();

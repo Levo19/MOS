@@ -230,15 +230,31 @@ function _calcularIngresos(fecha) {
   var detalleIds = {};
   completadas.forEach(function(v){ detalleIds[String(v.ID_Venta || '')] = true; });
 
+  // Detalle individual de cada ticket (completadas + anuladas, más recientes primero)
+  var detalleTickets = del_dia.map(function(v) {
+    var f = String(v.Fecha || '');
+    return {
+      idVenta:   String(v.ID_Venta || ''),
+      total:     parseFloat(v.Total) || 0,
+      tipoDoc:   String(v.Tipo_Doc || v.tipoDoc || 'NOTA_DE_VENTA'),
+      formaPago: String(v.FormaPago || v.metodo || 'EFECTIVO'),
+      estado:    String(v.Estado_Envio || 'COMPLETADO'),
+      vendedor:  String(v.Vendedor || ''),
+      correlativo: String(v.Correlativo || ''),
+      hora:      f.length >= 16 ? f.substring(11, 16) : f.substring(0, 16)
+    };
+  }).sort(function(a, b) { return a.hora < b.hora ? 1 : -1; });
+
   return {
-    ventasBrutas:  _r2(ventasBrutas),
-    ventasNetas:   _r2(ventasBrutas),
-    tickets:       completadas.length,
-    anulados:      anuladas.length,
+    ventasBrutas:   _r2(ventasBrutas),
+    ventasNetas:    _r2(ventasBrutas),
+    tickets:        completadas.length,
+    anulados:       anuladas.length,
     ticketPromedio: completadas.length > 0 ? _r2(ventasBrutas / completadas.length) : 0,
-    byDoc:         byDoc,
-    byMetodo:      byMetodo,
-    detalleIds:    detalleIds
+    byDoc:          byDoc,
+    byMetodo:       byMetodo,
+    detalleIds:     detalleIds,
+    detalleTickets: detalleTickets
   };
 }
 
@@ -254,24 +270,41 @@ function _calcularCostoVentas(fecha, detalleIds) {
   var sinCosto   = [];
   var unidades   = 0;
   var skusSet    = {};
+  var bySkuMap   = {};
 
   items_dia.forEach(function(d) {
-    var sku   = String(d.SKU || '');
-    var cant  = parseFloat(d.Cantidad || 0);
-    var prod  = productos.find(function(p){ return p.skuBase === sku || p.codigoBarra === sku || p.idProducto === sku; });
-    var costo = prod ? parseFloat(prod.precioCosto || 0) : 0;
+    var sku    = String(d.SKU || '');
+    var nombre = String(d.Nombre || '');
+    var cant   = parseFloat(d.Cantidad || 0);
+    var precio = parseFloat(d.Precio || 0);
+    var prod   = productos.find(function(p){ return p.skuBase === sku || p.codigoBarra === sku || p.idProducto === sku; });
+    var costo  = prod ? parseFloat(prod.precioCosto || 0) : 0;
     costoTotal += costo * cant;
     unidades   += cant;
     if (sku) skusSet[sku] = true;
     if (!prod || !costo) sinCosto.push(sku);
+    // Agrupado por SKU para detalleProductos
+    if (sku) {
+      if (!bySkuMap[sku]) bySkuMap[sku] = { sku: sku, nombre: nombre, cantidad: 0, precio: precio, costoUnit: costo, sinCosto: !costo };
+      bySkuMap[sku].cantidad += cant;
+      if (!bySkuMap[sku].nombre && nombre) bySkuMap[sku].nombre = nombre;
+    }
   });
 
+  var detalleProductos = Object.keys(bySkuMap).map(function(k) {
+    var p = bySkuMap[k];
+    return { sku: p.sku, nombre: p.nombre, cantidad: Math.round(p.cantidad * 100) / 100,
+             precio: p.precio, costoUnit: p.costoUnit,
+             costoTotal: _r2(p.costoUnit * p.cantidad), sinCosto: p.sinCosto };
+  }).sort(function(a, b) { return b.cantidad - a.cantidad; });
+
   return {
-    total:        _r2(costoTotal),
-    items:        items_dia.length,
-    sinCosto:     sinCosto.filter(function(v,i,a){ return v && a.indexOf(v)===i; }),
-    unidades:     Math.round(unidades),
-    skusDistintos: Object.keys(skusSet).length
+    total:           _r2(costoTotal),
+    items:           items_dia.length,
+    sinCosto:        sinCosto.filter(function(v,i,a){ return v && a.indexOf(v)===i; }),
+    unidades:        Math.round(unidades),
+    skusDistintos:   Object.keys(skusSet).length,
+    detalleProductos: detalleProductos
   };
 }
 
@@ -340,12 +373,14 @@ function _armarPL(fecha, ing, cos, per, gas) {
     ticketPromedio: ing.ticketPromedio,
     byDoc:          ing.byDoc,
     byMetodo:       ing.byMetodo,
+    detalleTickets: ing.detalleTickets,
     // Costos
     costoVentas:    costoVentas,
     itemsVendidos:  cos.items,
     unidadesVendidas: cos.unidades,
     skusDistintos:  cos.skusDistintos,
-    productosSinCosto: cos.sinCosto,
+    productosSinCosto:  cos.sinCosto,
+    detalleProductos:   cos.detalleProductos,
     // Utilidad bruta
     utilidadBruta:  utilidadBruta,
     margenBrutoPct: margenBrutoPct,
