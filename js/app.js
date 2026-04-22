@@ -222,6 +222,7 @@ const MOS = (() => {
     // Iniciar pre-carga en background al autenticar
     _startCajasRefresh();
     _startCatRefresh();
+    _startFinanzasRefresh();
     // Sidebar session display
     const av = $('sessionAvatar');
     const nm = $('sessionName');
@@ -244,6 +245,8 @@ const MOS = (() => {
   function logout() {
     _stopCajasRefresh();
     _stopCatRefresh();
+    _stopFinanzasRefresh();
+    _finPL = null;
     _clearSession();
     S.session = null;
     S.loaded = {};
@@ -4198,6 +4201,18 @@ const MOS = (() => {
   async function _loadFinanzas() {
     const inp = $('finFecha');
     if (inp && !inp.value) inp.value = today();
+    // Si ya hay datos precargados, renderizar inmediatamente sin fetch extra
+    if (_finPL) {
+      const fecha = inp?.value || today();
+      _finRender(_finPL, fecha);
+      const hasta  = fecha;
+      const desde7 = _fechaOffset(fecha, -6);
+      try {
+        const rango = await API.get('getFinanzasRango', { desde: desde7, hasta });
+        _finRender7d(rango);
+      } catch(_) {}
+      return;
+    }
     await finCargar();
   }
 
@@ -4209,6 +4224,30 @@ const MOS = (() => {
   // MÓDULO FINANZAS
   // ════════════════════════════════════════════════════════════
   let _finPL = null;  // último P&L cargado
+  let _finanzasRefreshTimer = null;
+
+  function _startFinanzasRefresh() {
+    _stopFinanzasRefresh();
+    _finanzasRefreshSilencioso(); // fetch inmediato al autenticar
+    _finanzasRefreshTimer = setInterval(_finanzasRefreshSilencioso, 60000);
+  }
+  function _stopFinanzasRefresh() {
+    if (_finanzasRefreshTimer) { clearInterval(_finanzasRefreshTimer); _finanzasRefreshTimer = null; }
+  }
+  async function _finanzasRefreshSilencioso() {
+    try {
+      const fecha  = $('finFecha')?.value || today();
+      const pl     = await API.get('getFinanzasDia', { fecha });
+      _finPL = pl;
+      if (S.view === 'finanzas') {
+        _finRender(pl, fecha);
+        const hasta  = fecha;
+        const desde7 = _fechaOffset(fecha, -6);
+        const rango  = await API.get('getFinanzasRango', { desde: desde7, hasta });
+        _finRender7d(rango);
+      }
+    } catch(_) { /* silencioso */ }
+  }
 
   async function finCargar() {
     const fecha = $('finFecha')?.value || today();
