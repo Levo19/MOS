@@ -107,8 +107,14 @@ function importarJornadasDesdeCajas(params) {
     var cajas    = _sheetToObjectsLocal(_abrirMeSheet('CAJAS'));
     var personal = _sheetToObjects(getSheet('PERSONAL_MASTER'));
     var jSheet   = getSheet('JORNADAS');
+    var tz3 = Session.getScriptTimeZone();
     var jornadasExist = _sheetToObjects(jSheet)
-      .filter(function(j){ return String(j.fecha).substring(0,10) === fecha; })
+      .filter(function(j) {
+        var f = j.fecha instanceof Date
+          ? Utilities.formatDate(j.fecha, tz3, 'yyyy-MM-dd')
+          : String(j.fecha || '').substring(0, 10);
+        return f === fecha;
+      })
       .map(function(j){ return String(j.nombre).toLowerCase(); });
 
     var cajasHoy = cajas.filter(function(c) {
@@ -309,17 +315,34 @@ function _calcularCostoVentas(fecha, detalleIds) {
 }
 
 function _calcularPersonal(fecha) {
+  var tz   = Session.getScriptTimeZone();
   var rows = _sheetToObjects(getSheet('JORNADAS'))
-    .filter(function(r){ return String(r.fecha).substring(0,10) === fecha; });
+    .filter(function(r) {
+      var f = r.fecha instanceof Date
+        ? Utilities.formatDate(r.fecha, tz, 'yyyy-MM-dd')
+        : String(r.fecha || '').substring(0, 10);
+      return f === fecha;
+    });
 
-  var total = rows.reduce(function(s, r){ return s + (parseFloat(r.montoJornal) || 0); }, 0);
+  // Deduplicar: mismo nombre puede aparecer por AUTO_VENTA + AUTO_CAJAS + manual.
+  // Prioridad: MANUAL(0) > AUTO_CAJAS(1) > AUTO_VENTA(2) > AUTO_LOGIN(3)
+  var prioridad = { 'MANUAL': 0, 'AUTO_CAJAS': 1, 'AUTO_VENTA': 2, 'AUTO_LOGIN': 3 };
+  var seen = {};
+  rows.forEach(function(r) {
+    var key = String(r.nombre || '').trim().toLowerCase();
+    if (!key) return;
+    var p = prioridad[String(r.fuente || '')] !== undefined ? prioridad[String(r.fuente)] : 99;
+    if (!seen[key] || p < seen[key].p) seen[key] = { r: r, p: p };
+  });
+  var deduped = Object.keys(seen).map(function(k) { return seen[k].r; });
 
-  var detalle = rows.map(function(r){
+  var total   = deduped.reduce(function(s, r){ return s + (parseFloat(r.montoJornal) || 0); }, 0);
+  var detalle = deduped.map(function(r){
     return { idJornada: r.idJornada || '', nombre: r.nombre, rol: r.rol || '',
              zona: r.zona || '', monto: parseFloat(r.montoJornal) || 0, fuente: r.fuente || 'MANUAL' };
   });
 
-  return { total: _r2(total), personas: rows.length, detalle: detalle };
+  return { total: _r2(total), personas: deduped.length, detalle: detalle };
 }
 
 function _calcularGastos(fecha) {
@@ -473,10 +496,13 @@ function _registrarJornadaIdempotente(nombre, rol, montoJornal, appOrigen, fecha
   fecha  = fecha || _hoy();
 
   var sheet = getSheet('JORNADAS');
+  var tz2   = Session.getScriptTimeZone();
   var data  = sheet.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
-    if (String(data[i][3]).toLowerCase() === nombre.toLowerCase() &&
-        String(data[i][1]).substring(0, 10) === fecha) return; // ya existe
+    var fechaFila = data[i][1] instanceof Date
+      ? Utilities.formatDate(data[i][1], tz2, 'yyyy-MM-dd')
+      : String(data[i][1] || '').substring(0, 10);
+    if (String(data[i][3]).toLowerCase() === nombre.toLowerCase() && fechaFila === fecha) return;
   }
   sheet.appendRow([
     _generateId('JOR'), fecha, '', nombre,
