@@ -5108,6 +5108,7 @@ const MOS = (() => {
       console.log('[Push] token registrado en GAS ✅');
     } catch(e) {
       console.error('[Push] ERROR:', e.message);
+      toast('Push error: ' + e.message, 'err');
     }
   }
 
