@@ -32,7 +32,7 @@ const MOS = (() => {
   const $  = id => document.getElementById(id);
   const fmtMoney = v => 'S/. ' + parseFloat(v || 0).toFixed(2);
   const fmtDate  = v => v ? String(v).substring(0, 10) : '—';
-  const today    = () => new Date().toISOString().substring(0, 10);
+  const today    = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); };
 
   function toast(msg, type = 'info') {
     const el = $('toast');
@@ -2703,7 +2703,7 @@ const MOS = (() => {
     const abiertas  = (S._todasCajas||[]).filter(c=>c.estado==='ABIERTA');
     const cerradas  = (S._todasCajas||[]).filter(c=>c.estado!=='ABIERTA');
     const tkAll     = S._todosTickets||[];
-    const todayStr  = new Date().toISOString().substring(0,10);
+    const todayStr  = today();
 
     // KPIs (recalcular localmente)
     const hoyKpis   = S._cajasHoy||[];
@@ -2807,7 +2807,7 @@ const MOS = (() => {
       const { kpis, abiertas = [], cerradas = [], generadoEn } = res || {};
 
       // Guardar cajas de hoy en estado para el panel de desglose
-      const todayStr = new Date().toISOString().substring(0, 10);
+      const todayStr = today();
       S._cajasHoy = [
         ...abiertas,
         ...(cerradas || []).filter(c =>
@@ -2867,7 +2867,7 @@ const MOS = (() => {
         histTbody.innerHTML = cerradas.map(c => {
           const fecha  = s => (s || '').substring(0, 16).replace('T', ' ');
           const hora   = s => (s || '').substring(11, 16);
-          const esHoy  = (c.fechaCierre || '').startsWith(new Date().toISOString().substring(0,10));
+          const esHoy  = (c.fechaCierre || '').startsWith(today());
           return `<tr data-caja-row="${c.idCaja}">
             <td>
               <div class="font-medium">${c.vendedor || '—'}</div>
@@ -3063,7 +3063,7 @@ const MOS = (() => {
 
       // ── Actualizar estado global ─────────────────────────────
       S._todosTickets = tkAll;
-      const todayStr  = new Date().toISOString().substring(0, 10);
+      const todayStr  = today();
       S._cajasHoy  = [...abiertas, ...(cerradas || []).filter(c =>
         (c.fechaApertura||'').startsWith(todayStr)||(c.fechaCierre||'').startsWith(todayStr))];
       S._todasCajas = [...abiertas, ...cerradas];
@@ -3190,7 +3190,7 @@ const MOS = (() => {
 
   function _cajasFiltradas(dias) {
     const todas  = S._todasCajas || [];
-    const desde  = new Date(Date.now() - dias * 86400000).toISOString().substring(0, 10);
+    const desde  = _fechaOffset(today(), -dias);
     return todas.filter(c =>
       (c.fechaApertura || '').substring(0, 10) >= desde ||
       (c.fechaCierre   || '').substring(0, 10) >= desde
@@ -3200,7 +3200,7 @@ const MOS = (() => {
   // Chart compacto: barras verticales, eje X = cajeros, agrupado por vendedor
   function _renderChartCajasCompacto(dias) {
     const cajas    = _cajasFiltradas(dias);
-    const hoy      = new Date().toISOString().substring(0, 10);
+    const hoy      = today();
     const byVend   = {};
     cajas.forEach(c => {
       const k = c.vendedor || c.idCaja;
@@ -3245,12 +3245,12 @@ const MOS = (() => {
   // Chart modal: barras apiladas, eje X = fechas (días), por cajero
   function _renderChartCajasModal(dias) {
     const cajas  = _cajasFiltradas(dias);
-    const hoy    = new Date().toISOString().substring(0, 10);
+    const hoy    = today();
 
     // Generar rango de fechas
     const dates = [];
     for (let d = dias - 1; d >= 0; d--) {
-      dates.push(new Date(Date.now() - d * 86400000).toISOString().substring(0, 10));
+      dates.push(_fechaOffset(today(), -d));
     }
 
     // Cajas por fecha
@@ -3316,7 +3316,7 @@ const MOS = (() => {
   }
 
   function _renderChartMetodosHoy() {
-    const hoy      = new Date().toISOString().substring(0, 10);
+    const hoy      = today();
     const cajasHoy = (S._todasCajas || []).filter(c =>
       (c.fechaApertura || '').startsWith(hoy) || (c.fechaCierre || '').startsWith(hoy)
     );
@@ -3433,9 +3433,9 @@ const MOS = (() => {
   function _renderTicketList() {
     const container = $('cajasTicketsList');
     if (!container) return;
-    const hoy    = new Date().toISOString().substring(0, 10);
-    const semana = new Date(Date.now() - 7  * 86400000).toISOString().substring(0, 10);
-    const mes    = new Date(Date.now() - 30 * 86400000).toISOString().substring(0, 10);
+    const hoy    = today();
+    const semana = _fechaOffset(today(), -7);
+    const mes    = _fechaOffset(today(), -30);
     const desde  = _tkFiltroFecha === 'hoy' ? hoy : _tkFiltroFecha === 'semana' ? semana : _tkFiltroFecha === 'mes' ? mes : '0000-00-00';
 
     let lista = (S._todosTickets || []).filter(t => {
@@ -3777,7 +3777,7 @@ const MOS = (() => {
 
       // Actualizar estado global silencioso
       S._todosTickets = tkAll;
-      const todayStr  = new Date().toISOString().substring(0, 10);
+      const todayStr  = today();
       S._todasCajas   = [...abiertas, ...cerradas];
       S._cajasHoy     = [...abiertas, ...(cerradas || []).filter(c =>
         (c.fechaApertura || '').startsWith(todayStr) || (c.fechaCierre || '').startsWith(todayStr))];
@@ -4269,7 +4269,7 @@ const MOS = (() => {
     if (!inp) return;
     const d = new Date(inp.value + 'T00:00:00');
     d.setDate(d.getDate() + delta);
-    inp.value = d.toISOString().substring(0, 10);
+    inp.value = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
     finCargar();
   }
 
@@ -4791,7 +4791,7 @@ const MOS = (() => {
   function _fechaOffset(fechaStr, dias) {
     const d = new Date(fechaStr + 'T00:00:00');
     d.setDate(d.getDate() + dias);
-    return d.toISOString().substring(0, 10);
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
   }
 
   // ── PUBLIC API ───────────────────────────────────────────────
