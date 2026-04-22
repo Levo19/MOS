@@ -1582,20 +1582,6 @@
         </div>
       </div>
 
-      <!-- ── Alerta sin costo ────────────────────────────────────────── -->
-      <div id="finAlerta" class="hidden mb-4 p-3 rounded-lg border border-amber-800 bg-amber-950">
-        <div class="text-xs text-amber-300 mb-2">⚠ Algunos productos no tienen costo registrado — el margen puede estar inflado.</div>
-        <div id="finSinCostoChips" class="flex flex-wrap gap-2"></div>
-        <div id="finCostoEditorWrap" class="hidden mt-2 flex items-center gap-2 flex-wrap">
-          <span class="text-xs text-slate-400">Costo para</span>
-          <span id="finCostoEditorSku" class="font-mono text-amber-300 text-xs font-bold"></span>
-          <input id="finCostoEditorInput" type="number" step="0.01" min="0" placeholder="0.00"
-                 class="inp text-xs py-1 w-24" onkeydown="if(event.key==='Enter')MOS.finGuardarCostoSku()">
-          <button onclick="MOS.finGuardarCostoSku()" class="btn-primary text-xs px-2 py-1">Guardar</button>
-          <button onclick="MOS.finCerrarCostoEditor()" class="btn-ghost text-xs px-2 py-1">×</button>
-        </div>
-      </div>
-
       <!-- ── KPI Cards ────────────────────────────────────────────── -->
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
         <div class="fin-card fin-card-green">
@@ -1624,7 +1610,7 @@
       <div class="fin-panel mb-5 grid grid-cols-2 gap-0 p-0 overflow-hidden">
         <button onclick="MOS.finAbrirModalProductos()"
                 class="text-left p-4 hover:bg-slate-700/40 transition-colors rounded-l-xl border-r border-slate-700/50 active:bg-slate-700/60">
-          <div class="fin-card-label mb-1 flex items-center gap-1">Productos Vendidos <span class="text-slate-500 text-xs">↗</span></div>
+          <div class="fin-card-label mb-1 flex items-center gap-1.5">Productos Vendidos <span id="finSinCostoAlerta" class="hidden text-amber-400 text-sm" title="Hay productos sin costo">⚠</span><span class="text-slate-500 text-xs">↗</span></div>
           <div class="flex items-baseline gap-2 flex-wrap">
             <span id="finKpiUnidades" class="text-3xl font-bold text-indigo-300">—</span>
             <span class="text-slate-400 text-sm">uds</span>

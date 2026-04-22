@@ -4301,22 +4301,9 @@ const MOS = (() => {
     _setText('finKpiSkus',       pl.skusDistintos    ?? '—');
     _setText('finKpiTicketProm', pl.ticketPromedio   ? 'S/ ' + parseFloat(pl.ticketPromedio).toFixed(2) : '—');
 
-    // Alerta productos sin costo con chips editables
-    const alertEl   = $('finAlerta');
-    const chipsEl   = $('finSinCostoChips');
-    if (alertEl) {
-      const sinC = pl.productosSinCosto || [];
-      if (sinC.length) {
-        alertEl.classList.remove('hidden');
-        if (chipsEl) chipsEl.innerHTML = sinC.map(sku =>
-          `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-900/60 text-amber-200 text-xs font-mono">
-            ${sku}
-            <button onclick="MOS.finEditarCostoSku('${sku}')" class="text-amber-400 hover:text-white ml-0.5" title="Editar costo">✎</button>
-          </span>`).join('');
-      } else {
-        alertEl.classList.add('hidden');
-      }
-    }
+    // ⚠ inline junto a "Productos Vendidos" si hay SKUs sin costo
+    const sinCostoIcon = $('finSinCostoAlerta');
+    if (sinCostoIcon) sinCostoIcon.classList.toggle('hidden', !(pl.productosSinCosto?.length));
 
     // Break-even
     _setText('finBEMeta',       pl.breakEvenVentas ? 'Meta: ' + fmt(pl.breakEvenVentas) : 'Sin datos');
