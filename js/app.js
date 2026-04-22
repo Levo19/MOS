@@ -2251,7 +2251,7 @@ const MOS = (() => {
       return;
     }
     sel.innerHTML = '<option value="">— seleccionar envasable —</option>'
-      + items.map(p => `<option value="${p.idProducto}"${cur===p.idProducto?' selected':''}>${p.descripcion||p.idProducto}</option>`).join('');
+      + items.map(p => { const val = p.skuBase || p.idProducto; return `<option value="${val}"${cur===val?' selected':''}>${p.descripcion||p.idProducto}</option>`; }).join('');
     if (cur) sel.value = cur;
   }
 
@@ -2411,9 +2411,9 @@ const MOS = (() => {
 
       // Determinar tipo
       let tipo = 'normal';
-      if (String(p.esEnvasable) === '1') tipo = 'envasable';
+      if (_esEnvasable(p))               tipo = 'envasable';
       else if (p.codigoProductoBase)     tipo = 'derivado';
-      else if (p.skuBase && p.skuBase !== p.idProducto) tipo = 'presentacion';
+      else if (p.skuBase && p.skuBase !== p.idProducto && parseFloat(p.factorConversion) > 0) tipo = 'presentacion';
       setProdTipo(tipo);
 
       if (tipo === 'derivado') {
@@ -2548,7 +2548,7 @@ const MOS = (() => {
       params.codigoProductoBase  = $('prodCodigoProductoBase')?.value || '';
       params.factorConversionBase= $('prodFactorConvBase')?.value ? parseFloat($('prodFactorConvBase').value) : '';
       params.mermaEsperadaPct    = $('prodMerma')?.value           ? parseFloat($('prodMerma').value)          : '';
-      params.factorConversion = ''; params.skuBase = '';
+      params.factorConversion = '';
     } else if (_prodTipo === 'presentacion') {
       params.esEnvasable = '0';
       params.skuBase          = $('prodSkuBase')?.value || '';
