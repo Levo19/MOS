@@ -505,6 +505,18 @@
     mark { background: rgba(99,102,241,.3); color: #c7d2fe; border-radius: 2px; padding: 0 2px; }
     /* Cat stats bar */
     #catStats { min-height: 18px; }
+    /* Filtros catálogo */
+    #catFiltroPanel { min-width: 260px; }
+    .cat-chip { display:inline-flex; align-items:center; gap:5px; padding:3px 10px 3px 10px; border-radius:9999px; font-size:11px; font-weight:600; background:rgba(99,102,241,.18); color:#a5b4fc; border:1px solid rgba(99,102,241,.3); }
+    .cat-chip button { background:none; border:none; color:#818cf8; cursor:pointer; font-size:13px; line-height:1; padding:0 0 0 2px; }
+    .cat-chip-clear { background:rgba(239,68,68,.1); color:#f87171; border-color:rgba(239,68,68,.2); }
+    .cat-chip-clear button { color:#f87171; }
+    .filtro-radio { display:flex; align-items:center; gap:8px; padding:4px 8px; border-radius:8px; cursor:pointer; font-size:13px; color:#cbd5e1; transition:background .15s; }
+    .filtro-radio:hover { background:rgba(99,102,241,.1); }
+    .filtro-radio.active { color:#a5b4fc; font-weight:600; background:rgba(99,102,241,.12); }
+    .filtro-check { display:flex; align-items:center; gap:8px; padding:5px 8px; border-radius:8px; cursor:pointer; font-size:13px; color:#cbd5e1; transition:background .15s; }
+    .filtro-check:hover { background:rgba(99,102,241,.1); }
+    .filtro-check.active { color:#a5b4fc; font-weight:600; }
 
     /* ═══ ANALÍTICA DE PRODUCTO ═════════════════════════════════ */
     .an-overlay {
@@ -1132,13 +1144,37 @@
                  oninput="MOS.filterCatalogo()" autocomplete="off">
           <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">🔍</span>
         </div>
-        <select id="filtroCategoria" class="inp w-full sm:w-44" onchange="MOS.filterCatalogo()">
-          <option value="">Todas las categorías</option>
-        </select>
+        <!-- Filtros dropdown -->
+        <div class="relative shrink-0" id="catFiltroWrap">
+          <button id="btnFiltrosCat" onclick="MOS.toggleFiltroCat()" class="inp flex items-center gap-2 whitespace-nowrap w-full sm:w-auto">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
+            Filtros
+            <span id="filtrosBadge" class="hidden bg-indigo-500 text-white text-xs rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center leading-none">0</span>
+          </button>
+          <!-- Panel -->
+          <div id="catFiltroPanel" class="hidden absolute right-0 top-full mt-1 z-40 rounded-xl shadow-2xl p-4 w-72" style="background:#1e293b;border:1px solid #334155">
+            <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Categoría</div>
+            <div id="filtroCategList" class="max-h-44 overflow-y-auto space-y-0.5 mb-4"></div>
+            <div style="border-top:1px solid #334155" class="pt-3 mt-1">
+              <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Tipo de producto</div>
+              <div class="space-y-0.5">
+                <label class="filtro-check" id="fchkEnvasable" onclick="MOS.toggleFiltroTipo('envasable')"><span>⚗️</span> Envasable</label>
+                <label class="filtro-check" id="fchkConPres"   onclick="MOS.toggleFiltroTipo('conPres')"><span>📦</span> Con presentaciones</label>
+                <label class="filtro-check" id="fchkDerivado"  onclick="MOS.toggleFiltroTipo('derivado')"><span>🔗</span> Derivado</label>
+                <label class="filtro-check" id="fchkInactivo"  onclick="MOS.toggleFiltroTipo('inactivo')"><span>🚫</span> Inactivos</label>
+              </div>
+            </div>
+            <div style="border-top:1px solid #334155" class="pt-3 mt-3">
+              <button onclick="MOS.limpiarFiltrosCat()" class="text-xs text-slate-500 hover:text-red-400 transition-colors">Limpiar filtros</button>
+            </div>
+          </div>
+        </div>
         <button class="btn-primary whitespace-nowrap hidden lg:flex items-center gap-1" onclick="MOS.abrirModalProducto(null)">
           + Nuevo
         </button>
       </div>
+      <!-- Chips de filtros activos -->
+      <div id="catFiltroChips" class="hidden flex flex-wrap gap-1 mb-2"></div>
       <div id="catStats" class="text-xs text-slate-500 mb-3"></div>
 
       <!-- PN pending banner -->

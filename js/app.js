@@ -762,15 +762,88 @@ const MOS = (() => {
     try { localStorage.setItem(CAT_CACHE_KEY, JSON.stringify({ ts: Date.now(), data })); } catch {}
   }
 
+  // ── Estado de filtros del catálogo ─────────────────────────
+  const _catFiltros = { categoria: '', tipos: new Set() };
+
   function populateCatFiltro() {
     const cats = [...new Set(S.productos.map(p => p.idCategoria).filter(Boolean))].sort();
-    const opts = '<option value="">Todas las categorías</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
     const catOpts = '<option value="">— elegir —</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
-    const sel = $('filtroCategoria'); if (sel) sel.innerHTML = opts;
     const prodCat = $('prodCategoria');
     if (prodCat) prodCat.innerHTML = '<option value="">— seleccionar —</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
     const pnCat = $('pnCategoria');
     if (pnCat) pnCat.innerHTML = catOpts;
+    _renderFiltroCategList(cats);
+  }
+
+  function _renderFiltroCategList(cats) {
+    const list = $('filtroCategList');
+    if (!list) return;
+    const cur = _catFiltros.categoria;
+    list.innerHTML = `<div class="filtro-radio${!cur ? ' active' : ''}" onclick="MOS.setFiltroCategoria('')">Todas las categorías</div>`
+      + cats.map(c => `<div class="filtro-radio${cur === c ? ' active' : ''}" onclick="MOS.setFiltroCategoria('${c}')">${c}</div>`).join('');
+  }
+
+  function _updateFiltroBadge() {
+    const count = (_catFiltros.categoria ? 1 : 0) + _catFiltros.tipos.size;
+    const badge = $('filtrosBadge');
+    if (badge) { badge.textContent = count; badge.classList.toggle('hidden', count === 0); }
+
+    const tipoLabels = { envasable:'⚗️ Envasable', conPres:'📦 Con pres.', derivado:'🔗 Derivado', inactivo:'🚫 Inactivos' };
+    const chips = $('catFiltroChips');
+    if (chips) {
+      const parts = [];
+      if (_catFiltros.categoria) parts.push(`<span class="cat-chip">📂 ${_catFiltros.categoria} <button onclick="MOS.setFiltroCategoria('')">×</button></span>`);
+      _catFiltros.tipos.forEach(t => parts.push(`<span class="cat-chip">${tipoLabels[t]} <button onclick="MOS.toggleFiltroTipo('${t}')">×</button></span>`));
+      if (count > 1) parts.push(`<span class="cat-chip cat-chip-clear">Limpiar todo <button onclick="MOS.limpiarFiltrosCat()">×</button></span>`);
+      chips.innerHTML = parts.join('');
+      chips.classList.toggle('hidden', count === 0);
+    }
+
+    ['envasable','conPres','derivado','inactivo'].forEach(t => {
+      const el = $('fchk' + t.charAt(0).toUpperCase() + t.slice(1));
+      if (el) el.classList.toggle('active', _catFiltros.tipos.has(t));
+    });
+  }
+
+  function toggleFiltroCat() {
+    const panel = $('catFiltroPanel');
+    if (!panel) return;
+    const isOpen = !panel.classList.contains('hidden');
+    if (isOpen) { panel.classList.add('hidden'); return; }
+    const cats = [...new Set(S.productos.map(p => p.idCategoria).filter(Boolean))].sort();
+    _renderFiltroCategList(cats);
+    panel.classList.remove('hidden');
+    setTimeout(() => document.addEventListener('click', _closeFiltroOnOutside, { once: true }), 0);
+  }
+  function _closeFiltroOnOutside(e) {
+    const wrap = $('catFiltroWrap');
+    if (wrap && !wrap.contains(e.target)) $('catFiltroPanel')?.classList.add('hidden');
+    else setTimeout(() => document.addEventListener('click', _closeFiltroOnOutside, { once: true }), 0);
+  }
+
+  function setFiltroCategoria(cat) {
+    _catFiltros.categoria = cat;
+    _updateFiltroBadge();
+    const cats = [...new Set(S.productos.map(p => p.idCategoria).filter(Boolean))].sort();
+    _renderFiltroCategList(cats);
+    renderCatalogo();
+  }
+
+  function toggleFiltroTipo(tipo) {
+    if (_catFiltros.tipos.has(tipo)) _catFiltros.tipos.delete(tipo);
+    else _catFiltros.tipos.add(tipo);
+    _updateFiltroBadge();
+    renderCatalogo();
+  }
+
+  function limpiarFiltrosCat() {
+    _catFiltros.categoria = '';
+    _catFiltros.tipos.clear();
+    _updateFiltroBadge();
+    const cats = [...new Set(S.productos.map(p => p.idCategoria).filter(Boolean))].sort();
+    _renderFiltroCategList(cats);
+    renderCatalogo();
+    $('catFiltroPanel')?.classList.add('hidden');
   }
 
   function filterCatalogo() {
@@ -817,7 +890,6 @@ const MOS = (() => {
     if (!container) return;
 
     const rawQ = ($('searchCatalogo')?.value || '').trim();
-    const cat  = $('filtroCategoria')?.value || '';
     const qn   = _norm(rawQ);
     const words = qn.split(/\s+/).filter(Boolean);
 
@@ -844,8 +916,22 @@ const MOS = (() => {
     _catGroups = groups; // guardar para acceso externo (ajuste de precios)
 
     // Score and filter
+    const _tipos = _catFiltros.tipos;
     let result = Object.values(groups).filter(g => g.base).map(g => {
-      if (cat && g.base.idCategoria !== cat) return null;
+      // Filtro categoría
+      if (_catFiltros.categoria && g.base.idCategoria !== _catFiltros.categoria) return null;
+      // Filtro tipo (OR entre los seleccionados)
+      if (_tipos.size > 0) {
+        const isEnvasable = String(g.base.esEnvasable) === '1';
+        const hasConPres  = g.pres.length > 0;
+        const isDeriv     = !!(g.base.codigoProductoBase);
+        const isInactivo  = !(!g.base.estado || String(g.base.estado) === '1');
+        const ok = (_tipos.has('envasable') && isEnvasable) ||
+                   (_tipos.has('conPres')   && hasConPres)  ||
+                   (_tipos.has('derivado')  && isDeriv)     ||
+                   (_tipos.has('inactivo')  && isInactivo);
+        if (!ok) return null;
+      }
       const baseScore = _catScore(g.base, qn, words);
       const presScore = g.pres.reduce((mx, p) => Math.max(mx, _catScore(p, qn, words)), 0);
       const score = Math.max(baseScore, presScore);
@@ -5138,6 +5224,7 @@ const MOS = (() => {
     guardarPinEstacion, guardarPinWH,
     abrirModalDispositivo, cerrarModalDispositivo, guardarDispositivo, toggleEstadoDispositivo,
     toggleAvatarMenu, closeAvatarMenu, installPWA,
+    toggleFiltroCat, setFiltroCategoria, toggleFiltroTipo, limpiarFiltrosCat,
     // Cajas
     loadCajas, toggleCajaDetail, toggleKpiVentas,
     toggleKpiTickets, setTicketFiltroFecha, setTicketFiltroEstado, setTicketFiltroTipo,
