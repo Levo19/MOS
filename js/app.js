@@ -130,22 +130,83 @@ const MOS = (() => {
     }
   }
 
-  // ── LOGIN ────────────────────────────────────────────────────
-  let _loginPersonal = [];
+  // ── LOGIN / LOCK ─────────────────────────────────────────────
+  let _loginPersonal   = [];
   let _loginSelectedId = null;
+  let _pinValue        = '';
+  let _pinMode         = 'login'; // 'login' | 'lock'
+  const _PIN_MAX       = 6;
+
+  // ── Numpad ───────────────────────────────────────────────────
+  function _np(key) {
+    if (key === 'del') {
+      _pinValue = _pinValue.slice(0, -1);
+      _updatePinDots();
+    } else if (key === 'ok') {
+      confirmarPin();
+    } else {
+      if (_pinValue.length >= _PIN_MAX) return;
+      _pinValue += key;
+      _updatePinDots();
+      if (_pinValue.length === _PIN_MAX) setTimeout(confirmarPin, 130);
+    }
+  }
+
+  function _updatePinDots() {
+    const isLock = _pinMode === 'lock';
+    const id = isLock ? 'lockPinDots' : 'loginPinDots';
+    const el = $(id); if (!el) return;
+    el.innerHTML = Array.from({ length: _PIN_MAX }, (_, i) =>
+      `<div class="pin-dot${i < _pinValue.length ? (isLock ? ' filled lock' : ' filled') : ''}"></div>`
+    ).join('');
+  }
+
+  // Keyboard support (desktop)
+  document.addEventListener('keydown', e => {
+    const overlay = $('loginOverlay');
+    if (!overlay || overlay.classList.contains('hidden')) return;
+    if (_pinMode === 'login' && $('loginStep1') && !$('loginStep1').classList.contains('hidden')) return;
+    if (e.key >= '0' && e.key <= '9') _np(e.key);
+    else if (e.key === 'Backspace') _np('del');
+    else if (e.key === 'Enter') _np('ok');
+  });
 
   async function _showLogin() {
+    _pinValue = '';
     const overlay = $('loginOverlay');
     if (overlay) overlay.classList.remove('hidden');
-    $('loginStep1')?.classList.remove('hidden');
-    $('loginStep2')?.classList.add('hidden');
-    try {
-      _loginPersonal = await API.get('getPersonalMaster', { appOrigen: 'MOS', estado: '1' });
-      _renderLoginPersonal();
-    } catch(e) {
-      const err = $('loginStep1Error');
-      if (err) err.textContent = 'Error al cargar usuarios: ' + e.message;
+
+    if (S.session && S.session.idPersonal) {
+      // Mostrar pantalla de bloqueo
+      _pinMode = 'lock';
+      $('scLogin')?.classList.add('hidden');
+      $('scLock')?.classList.remove('hidden');
+      const ini = (S.session.nombre || '?')[0].toUpperCase();
+      const av = $('lockUserAvatar');
+      if (av) { av.textContent = ini; av.style.background = S.session.color || '#6366f1'; }
+      const nm = $('lockUserName'); if (nm) nm.textContent = S.session.nombre;
+      const err = $('lockPinError'); if (err) err.textContent = '';
+      _updatePinDots();
+    } else {
+      // Mostrar pantalla de login
+      _pinMode = 'login';
+      $('scLogin')?.classList.remove('hidden');
+      $('scLock')?.classList.add('hidden');
+      $('loginStep1')?.classList.remove('hidden');
+      $('loginStep2')?.classList.add('hidden');
+      try {
+        _loginPersonal = await API.get('getPersonalMaster', { appOrigen: 'MOS', estado: '1' });
+        _renderLoginPersonal();
+      } catch(e) {
+        const err = $('loginStep1Error');
+        if (err) err.textContent = 'Error al cargar usuarios: ' + e.message;
+      }
     }
+  }
+
+  function lockScreen() {
+    if (!S.session) return;
+    _showLogin(); // con sesión activa muestra el lock
   }
 
   function _renderLoginPersonal() {
@@ -171,6 +232,7 @@ const MOS = (() => {
 
   function seleccionarUsuario(id) {
     _loginSelectedId = id;
+    _pinValue = '';
     const p = _loginPersonal.find(x => x.idPersonal === id);
     if (!p) return;
     $('loginStep1')?.classList.add('hidden');
@@ -179,41 +241,63 @@ const MOS = (() => {
     const av = $('loginUserAvatar');
     if (av) { av.textContent = ini; av.style.background = p.color || '#6366f1'; }
     const nm = $('loginUserName'); if (nm) nm.textContent = p.nombre;
-    const rl = $('loginUserRol');  if (rl) { rl.textContent = p.rol; rl.className = 'badge text-xs mt-1 ' + (p.rol==='master'?'badge-yellow':'badge-blue'); }
-    const inp = $('loginPinInput'); if (inp) { inp.value = ''; inp.focus(); }
+    const rl = $('loginUserRol');
+    if (rl) { rl.textContent = p.rol; rl.className = 'badge text-xs ' + (p.rol==='master'?'badge-yellow':'badge-blue'); }
     const err = $('loginPinError'); if (err) err.textContent = '';
+    _updatePinDots();
   }
 
   function loginVolver() {
     _loginSelectedId = null;
+    _pinValue = '';
     $('loginStep1')?.classList.remove('hidden');
     $('loginStep2')?.classList.add('hidden');
     const err = $('loginPinError'); if (err) err.textContent = '';
   }
 
   async function confirmarPin() {
-    const pin = $('loginPinInput')?.value || '';
-    if (pin.length < 4) { const e=$('loginPinError'); if(e) e.textContent='Mínimo 4 dígitos'; return; }
-    const btn = $('loginPinBtn');
-    if (btn) btn.disabled = true;
-    try {
-      const res = await API.post('verificarPinPersonal', { idPersonal: _loginSelectedId, pin });
-      if (!res?.autorizado) {
-        const e = $('loginPinError'); if (e) e.textContent = 'PIN incorrecto';
-        if (btn) btn.disabled = false;
-        return;
+    if (_pinValue.length < 4) {
+      const eid = _pinMode === 'lock' ? 'lockPinError' : 'loginPinError';
+      const e = $(eid); if (e) e.textContent = 'Mínimo 4 dígitos';
+      return;
+    }
+    const pin    = _pinValue;
+    const userId = _pinMode === 'lock' ? S.session?.idPersonal : _loginSelectedId;
+
+    if (_pinMode === 'lock') {
+      const err = $('lockPinError'); if (err) err.textContent = '';
+      try {
+        const res = await API.post('verificarPinPersonal', { idPersonal: userId, pin });
+        if (!res?.autorizado) {
+          _pinValue = ''; _updatePinDots();
+          const e = $('lockPinError'); if (e) e.textContent = 'PIN incorrecto';
+          return;
+        }
+        $('loginOverlay')?.classList.add('hidden');
+      } catch(e) {
+        _pinValue = ''; _updatePinDots();
+        const err = $('lockPinError'); if (err) err.textContent = e.message;
       }
-      S.session = { idPersonal: _loginSelectedId, nombre: res.nombre, rol: res.rol };
-      _saveSession(S.session);
-      _applySession();
-      $('loginOverlay')?.classList.add('hidden');
-      nav('dashboard');
-      loadView('dashboard');
-      // Check diario de nueva versión (no bloquea el flujo)
-      if (window._SWDailyCheck) window._SWDailyCheck();
-    } catch(e) {
-      const err = $('loginPinError'); if (err) err.textContent = e.message;
-      if (btn) btn.disabled = false;
+    } else {
+      const err = $('loginPinError'); if (err) err.textContent = '';
+      try {
+        const res = await API.post('verificarPinPersonal', { idPersonal: userId, pin });
+        if (!res?.autorizado) {
+          _pinValue = ''; _updatePinDots();
+          const e = $('loginPinError'); if (e) e.textContent = 'PIN incorrecto';
+          return;
+        }
+        S.session = { idPersonal: userId, nombre: res.nombre, rol: res.rol };
+        _saveSession(S.session);
+        _applySession();
+        $('loginOverlay')?.classList.add('hidden');
+        nav('dashboard');
+        loadView('dashboard');
+        if (window._SWDailyCheck) window._SWDailyCheck();
+      } catch(e) {
+        _pinValue = ''; _updatePinDots();
+        const err = $('loginPinError'); if (err) err.textContent = e.message;
+      }
     }
   }
 
@@ -5002,7 +5086,7 @@ const MOS = (() => {
     _selMetodo, _onMixtoInput, _renderModalMetodo,
     abrirModalTicketZ, imprimirTicketZ,
     // Login / sesión
-    seleccionarUsuario, loginVolver, confirmarPin, logout,
+    seleccionarUsuario, loginVolver, confirmarPin, logout, lockScreen, _np,
     syncApp, applyPendingUpdate,
     // Finanzas
     finCargar, finDia, finAbrirModalGasto, finAbrirModalJornada, finGuardarGasto,
