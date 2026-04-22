@@ -2235,11 +2235,21 @@ const MOS = (() => {
     if (tipo === 'presentacion') _poblarBasesSelect();
   }
 
+  function _esEnvasable(p) {
+    const v = p.esEnvasable;
+    return v === 1 || v === '1' || v === true || v === 'true' || v === 'Sí';
+  }
+
   function _poblarEnvasablesSelect() {
     const sel = $('prodCodigoProductoBase');
     if (!sel) return;
     const cur = sel.value;
-    const items = S.productos.filter(p => String(p.esEnvasable) === '1' && (!p.skuBase || p.skuBase === p.idProducto));
+    const items = S.productos.filter(p => _esEnvasable(p));
+    if (!items.length) {
+      sel.innerHTML = '<option value="">— sin productos envasables registrados —</option>';
+      toast('No hay productos marcados como Envasable aún', 'error');
+      return;
+    }
     sel.innerHTML = '<option value="">— seleccionar envasable —</option>'
       + items.map(p => `<option value="${p.idProducto}"${cur===p.idProducto?' selected':''}>${p.descripcion||p.idProducto}</option>`).join('');
     if (cur) sel.value = cur;
