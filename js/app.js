@@ -5154,6 +5154,7 @@ const MOS = (() => {
     // Finanzas — modales detalle
     finAbrirModalProductos, finToggleFiltroSinCosto,
     finEditarCostoProd, finCerrarCostoProd, finGuardarCostoProd,
-    finAbrirModalTickets, finSetTicketFiltro
+    finAbrirModalTickets, finSetTicketFiltro,
+    activarPush: () => _pushInit(S.session?.nombre || '', S.session?.rol || '', true)
   };
 })();
