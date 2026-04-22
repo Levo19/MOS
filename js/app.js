@@ -310,6 +310,7 @@ const MOS = (() => {
     _startCajasRefresh();
     _startCatRefresh();
     _startFinanzasRefresh();
+    _pushInit(S.session.nombre, S.session.rol);
     // Sidebar session display
     const av = $('sessionAvatar');
     const nm = $('sessionName');
@@ -5065,15 +5066,22 @@ const MOS = (() => {
   };
 
   async function _pushInit(nombre, rol) {
-    if (!window.firebase || !('Notification' in window) || !('serviceWorker' in navigator)) return;
+    console.log('[Push] init — firebase:', !!window.firebase, '| Notification:', typeof Notification !== 'undefined' ? Notification.permission : 'N/A');
+    if (!window.firebase || !('Notification' in window) || !('serviceWorker' in navigator)) {
+      console.warn('[Push] requisitos no cumplidos, saliendo');
+      return;
+    }
     try {
       if (!firebase.apps.length) firebase.initializeApp(_PUSH_CONFIG);
       const messaging  = firebase.messaging();
       const permission = await Notification.requestPermission();
+      console.log('[Push] permission:', permission);
       if (permission !== 'granted') return;
 
       const swReg = await navigator.serviceWorker.ready;
+      console.log('[Push] SW activo:', swReg.active?.scriptURL);
       const token = await messaging.getToken({ vapidKey: _PUSH_VAPID, serviceWorkerRegistration: swReg });
+      console.log('[Push] token obtenido:', token ? token.substring(0,20)+'...' : 'null');
       if (!token) return;
 
       // Guardar token en GAS
@@ -5095,8 +5103,9 @@ const MOS = (() => {
         const b = payload.notification?.body  || '';
         toast('🔔 ' + t + (b ? ': ' + b : ''), 'ok');
       });
+      console.log('[Push] token registrado en GAS ✅');
     } catch(e) {
-      console.log('Push init:', e.message);
+      console.error('[Push] ERROR:', e.message);
     }
   }
 
