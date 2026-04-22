@@ -2220,54 +2220,209 @@ const MOS = (() => {
     }
   }
 
-  // ── Product modal ──────────────────────────────────────────
-  function abrirModalProducto(id) {
-    const campos = ['Id','Descripcion','CodigoBarra','Marca','Categoria','Unidad',
-                    'PrecioVenta','PrecioCosto','StockMin','StockMax','Zona',
-                    'Base','Factor','Merma','EsEnvasable','CodTributo','IGV','CodSUNAT','TipoIGV'];
-    campos.forEach(c => { const el = $('prod' + c); if (el && el.tagName !== 'SELECT') el.value = ''; });
+  // ── Product modal — helpers ────────────────────────────────
+  let _prodTipo = 'normal';
 
-    const equivSection = $('modalEquivSection');
-    const equivList    = $('equivList');
-    const equivForm    = $('equivAddForm');
-    if (equivSection) equivSection.classList.add('hidden');
-    if (equivList)    equivList.innerHTML = '';
-    if (equivForm)    equivForm.classList.add('hidden');
+  function setProdTipo(tipo) {
+    _prodTipo = tipo;
+    ['normal','envasable','derivado','presentacion'].forEach(t => {
+      const btn = $('pt' + t.charAt(0).toUpperCase() + t.slice(1));
+      if (btn) btn.classList.toggle('active', t === tipo);
+    });
+    $('prodSecDerivado')?.classList.toggle('hidden', tipo !== 'derivado');
+    $('prodSecPresentacion')?.classList.toggle('hidden', tipo !== 'presentacion');
+    if (tipo === 'derivado')     _poblarEnvasablesSelect();
+    if (tipo === 'presentacion') _poblarBasesSelect();
+  }
+
+  function _poblarEnvasablesSelect() {
+    const sel = $('prodCodigoProductoBase');
+    if (!sel) return;
+    const cur = sel.value;
+    const items = S.productos.filter(p => String(p.esEnvasable) === '1' && (!p.skuBase || p.skuBase === p.idProducto));
+    sel.innerHTML = '<option value="">— seleccionar envasable —</option>'
+      + items.map(p => `<option value="${p.idProducto}"${cur===p.idProducto?' selected':''}>${p.descripcion||p.idProducto}</option>`).join('');
+    if (cur) sel.value = cur;
+  }
+
+  function _poblarBasesSelect() {
+    const sel = $('prodSkuBase');
+    if (!sel) return;
+    const cur = sel.value;
+    const bases = S.productos.filter(p => !p.skuBase || p.skuBase === p.idProducto);
+    sel.innerHTML = '<option value="">— seleccionar producto base —</option>'
+      + bases.map(p => `<option value="${p.idProducto}"${cur===p.idProducto?' selected':''}>${p.descripcion||p.idProducto}</option>`).join('');
+    if (cur) sel.value = cur;
+  }
+
+  function prodAutogenBarcode() {
+    const ts   = Date.now().toString().slice(-6);
+    const rand = Math.floor(Math.random() * 900 + 100);
+    const cb = $('prodCodigoBarra');
+    if (cb) cb.value = 'NMLEV' + ts + rand;
+  }
+
+  function prodToggleEstado() {
+    const hidden = $('prodEstado');
+    const btn    = $('prodEstadoToggle');
+    if (!hidden || !btn) return;
+    const activo = hidden.value !== '1';
+    hidden.value = activo ? '1' : '0';
+    btn.classList.toggle('on', activo);
+    btn.querySelector('.prod-toggle-lbl').textContent = activo ? 'Activo' : 'Inactivo';
+  }
+
+  function prodToggleCosto() {
+    const row = $('prodCostoRow');
+    const ch  = $('costoChevron');
+    if (!row) return;
+    const wasHidden = row.classList.toggle('hidden');
+    if (ch) ch.textContent = wasHidden ? '▶' : '▼';
+  }
+
+  function prodCalcMargen() {
+    const v    = parseFloat($('prodPrecioVenta')?.value)  || 0;
+    const c    = parseFloat($('prodPrecioCosto')?.value)  || 0;
+    const bar  = $('prodMargenBar');
+    const lbl  = $('prodMargenLabel');
+    const fill = $('prodMargenFill');
+    if (!bar) return;
+    if (v > 0 && c > 0 && v >= c) {
+      const m = (v - c) / v * 100;
+      bar.classList.remove('hidden');
+      if (lbl)  lbl.textContent  = m.toFixed(1) + '%';
+      if (fill) { fill.style.width = Math.min(m, 100) + '%'; fill.style.background = m > 30 ? '#22c55e' : m > 15 ? '#f59e0b' : '#ef4444'; }
+    } else {
+      bar.classList.add('hidden');
+    }
+  }
+
+  function prodOnRange() {
+    const minEl = $('prodStockMinRange');
+    const maxEl = $('prodStockMaxRange');
+    if (!minEl || !maxEl) return;
+    let min = parseInt(minEl.value), max = parseInt(maxEl.value);
+    if (min > max) { if (document.activeElement === minEl) { minEl.value = max; min = max; } else { maxEl.value = min; max = min; } }
+    if ($('prodStockMin')) $('prodStockMin').value = min;
+    if ($('prodStockMax')) $('prodStockMax').value = max;
+    if ($('stockMinLabel')) $('stockMinLabel').textContent = min;
+    if ($('stockMaxLabel')) $('stockMaxLabel').textContent = max;
+    const rMax = parseInt(minEl.max) || 500;
+    const fill = $('prodRangeFill');
+    if (fill) { fill.style.left = (min/rMax*100)+'%'; fill.style.width = ((max-min)/rMax*100)+'%'; }
+  }
+
+  function _setStockSlider(min, max) {
+    const minEl = $('prodStockMinRange');
+    const maxEl = $('prodStockMaxRange');
+    if (minEl) minEl.value = min;
+    if (maxEl) maxEl.value = max;
+    if ($('prodStockMin')) $('prodStockMin').value = min;
+    if ($('prodStockMax')) $('prodStockMax').value = max;
+    if ($('stockMinLabel')) $('stockMinLabel').textContent = min;
+    if ($('stockMaxLabel')) $('stockMaxLabel').textContent = max;
+    const rMax = minEl ? parseInt(minEl.max) : 500;
+    const fill = $('prodRangeFill');
+    if (fill) { fill.style.left = (min/rMax*100)+'%'; fill.style.width = ((max-min)/rMax*100)+'%'; }
+  }
+
+  function prodToggleSunat() {
+    const sec = $('prodSecSunat');
+    const ch  = $('sunatChevron');
+    if (!sec) return;
+    const h = sec.classList.toggle('hidden');
+    if (ch) ch.textContent = h ? '▶' : '▼';
+  }
+
+  function prodToggleEquiv() {
+    const sec = $('equivContent');
+    const ch  = $('equivChevron');
+    if (!sec) return;
+    const h = sec.classList.toggle('hidden');
+    if (ch) ch.textContent = h ? '▶' : '▼';
+  }
+
+  // ── Product modal — abrir ─────────────────────────────────
+  function abrirModalProducto(id) {
+    // Reset
+    ['prodDescripcion','prodCodigoBarra','prodMarca','prodPrecioVenta','prodPrecioCosto',
+     'prodFactorConvBase','prodMerma','prodFactor','prodIGV','prodCodSUNAT'].forEach(i => { const el=$(i); if(el) el.value=''; });
+    $('prodId').value = '';
+    $('prodEstado').value = '1';
+    const toggle = $('prodEstadoToggle');
+    if (toggle) { toggle.classList.add('on'); toggle.querySelector('.prod-toggle-lbl').textContent = 'Activo'; }
+    $('prodCostoRow')?.classList.add('hidden');
+    const ch = $('costoChevron'); if (ch) ch.textContent = '▶';
+    $('prodMargenBar')?.classList.add('hidden');
+    _setStockSlider(0, 0);
+    setProdTipo('normal');
+    $('modalEquivSection')?.classList.add('hidden');
+    $('equivContent')?.classList.add('hidden');
+    const ech = $('equivChevron'); if (ech) ech.textContent = '▶';
+    $('equivList') && ($('equivList').innerHTML = '');
+    $('equivAddForm')?.classList.add('hidden');
+    $('prodSecSunat')?.classList.add('hidden');
+    const sch = $('sunatChevron'); if (sch) sch.textContent = '▶';
 
     if (id) {
       const p = S.productos.find(x => x.idProducto === id);
       if (!p) return;
       $('modalProdTitle').textContent = 'Editar Producto';
-      $('prodId').value              = p.idProducto;
-      $('prodDescripcion').value     = p.descripcion || '';
-      $('prodCodigoBarra').value     = p.codigoBarra || '';
-      $('prodMarca').value           = p.marca || '';
-      $('prodCategoria').value       = p.idCategoria || '';
-      $('prodUnidad').value          = p.unidad || 'UNIDAD';
-      $('prodPrecioVenta').value     = p.precioVenta || '';
-      $('prodPrecioCosto').value     = p.precioCosto || '';
-      $('prodStockMin').value        = p.stockMinimo || '';
-      $('prodStockMax').value        = p.stockMaximo || '';
-      $('prodZona').value            = p.zona || '';
-      $('prodBase').value            = p.skuBase !== p.idProducto ? (p.skuBase || '') : '';
-      $('prodFactor').value          = p.factorConversion || '';
-      $('prodFactorConvBase').value  = p.factorConversionBase || '';
-      const _fcbRow = $('prodFactorConvBaseRow');
-      if (_fcbRow) _fcbRow.style.display = $('prodBase').value ? '' : 'none';
-      $('prodMerma').value           = p.mermaEsperadaPct || '';
-      $('prodEsEnvasable').value     = p.esEnvasable || '0';
-      $('prodCodTributo').value      = p.Cod_Tributo || '';
-      $('prodIGV').value             = p.IGV_Porcentaje || '';
-      $('prodCodSUNAT').value        = p.Cod_SUNAT || '';
-      $('prodTipoIGV').value         = p.Tipo_IGV || '';
-      // Cargar equivalencias en background
-      if (equivSection) equivSection.classList.remove('hidden');
+      $('prodId').value          = p.idProducto;
+      $('prodDescripcion').value = p.descripcion   || '';
+      $('prodCodigoBarra').value = p.codigoBarra   || '';
+      $('prodMarca').value       = p.marca         || '';
+      $('prodCategoria').value   = p.idCategoria   || '';
+      $('prodUnidad').value      = p.unidad        || 'UNIDAD';
+
+      // Estado
+      const activo = !p.estado || String(p.estado) === '1';
+      $('prodEstado').value = activo ? '1' : '0';
+      if (toggle) { toggle.classList.toggle('on', activo); toggle.querySelector('.prod-toggle-lbl').textContent = activo ? 'Activo' : 'Inactivo'; }
+
+      // Precios
+      $('prodPrecioVenta').value = p.precioVenta || '';
+      if (p.precioCosto) {
+        $('prodPrecioCosto').value = p.precioCosto;
+        $('prodCostoRow')?.classList.remove('hidden');
+        if (ch) ch.textContent = '▼';
+      }
+      prodCalcMargen();
+
+      // Stock
+      _setStockSlider(parseFloat(p.stockMinimo)||0, parseFloat(p.stockMaximo)||0);
+
+      // SUNAT
+      $('prodTipoIGV').value     = p.Tipo_IGV       || '';
+      $('prodCodTributo').value  = p.Cod_Tributo     || '';
+      $('prodIGV').value         = p.IGV_Porcentaje  || '';
+      $('prodUnidadMedida').value= p.Unidad_Medida   || 'NIU';
+      $('prodCodSUNAT').value    = p.Cod_SUNAT       || '';
+
+      // Determinar tipo
+      let tipo = 'normal';
+      if (String(p.esEnvasable) === '1') tipo = 'envasable';
+      else if (p.codigoProductoBase)     tipo = 'derivado';
+      else if (p.skuBase && p.skuBase !== p.idProducto) tipo = 'presentacion';
+      setProdTipo(tipo);
+
+      if (tipo === 'derivado') {
+        $('prodCodigoProductoBase').value = p.codigoProductoBase || '';
+        $('prodFactorConvBase').value     = p.factorConversionBase || '';
+        $('prodMerma').value              = p.mermaEsperadaPct || '';
+      }
+      if (tipo === 'presentacion') {
+        $('prodSkuBase').value = p.skuBase || '';
+        $('prodFactor').value  = p.factorConversion || '';
+      }
+
+      // Equivalencias
+      $('modalEquivSection')?.classList.remove('hidden');
       _loadEquivModal(p.skuBase || p.idProducto);
     } else {
       $('modalProdTitle').textContent = 'Nuevo Producto';
-      $('prodId').value = '';
-      $('prodUnidad').value = 'UNIDAD';
-      $('prodEsEnvasable').value = '0';
+      $('prodUnidad').value      = 'UNIDAD';
+      $('prodUnidadMedida').value = 'NIU';
     }
     openModal('modalProducto');
   }
@@ -2353,39 +2508,54 @@ const MOS = (() => {
   }
 
   async function guardarProducto() {
+    const desc = ($('prodDescripcion')?.value || '').trim();
+    if (!desc) { toast('La descripción es requerida', 'error'); return; }
+
     const params = {
-      idProducto:          $('prodId')?.value || undefined,
-      descripcion:         $('prodDescripcion')?.value || '',
-      codigoBarra:         $('prodCodigoBarra')?.value || '',
-      marca:               $('prodMarca')?.value || '',
-      idCategoria:         $('prodCategoria')?.value || '',
-      unidad:              $('prodUnidad')?.value || 'UNIDAD',
-      precioVenta:         parseFloat($('prodPrecioVenta')?.value) || 0,
-      precioCosto:         parseFloat($('prodPrecioCosto')?.value) || 0,
-      stockMinimo:         parseFloat($('prodStockMin')?.value)    || 0,
-      stockMaximo:         parseFloat($('prodStockMax')?.value)    || 0,
-      zona:                $('prodZona')?.value || '',
-      codigoProductoBase:    $('prodBase')?.value || '',
-      factorConversion:      $('prodFactor')?.value         ? parseFloat($('prodFactor')?.value)         : '',
-      factorConversionBase:  $('prodFactorConvBase')?.value ? parseFloat($('prodFactorConvBase')?.value) : '',
-      mermaEsperadaPct:      $('prodMerma')?.value          ? parseFloat($('prodMerma')?.value)          : '',
-      esEnvasable:         $('prodEsEnvasable')?.value || '0',
-      Cod_Tributo:         $('prodCodTributo')?.value || '',
-      IGV_Porcentaje:      $('prodIGV')?.value        ? parseFloat($('prodIGV')?.value)        : '',
-      Cod_SUNAT:           $('prodCodSUNAT')?.value || '',
-      Tipo_IGV:            $('prodTipoIGV')?.value || ''
+      idProducto:    $('prodId')?.value     || undefined,
+      descripcion:   desc,
+      codigoBarra:   $('prodCodigoBarra')?.value  || '',
+      marca:         $('prodMarca')?.value        || '',
+      idCategoria:   $('prodCategoria')?.value    || '',
+      unidad:        $('prodUnidad')?.value       || 'UNIDAD',
+      precioVenta:   parseFloat($('prodPrecioVenta')?.value) || 0,
+      precioCosto:   $('prodPrecioCosto')?.value  ? parseFloat($('prodPrecioCosto').value) : '',
+      stockMinimo:   parseInt($('prodStockMin')?.value)  || 0,
+      stockMaximo:   parseInt($('prodStockMax')?.value)  || 0,
+      estado:        $('prodEstado')?.value       || '1',
+      Tipo_IGV:      $('prodTipoIGV')?.value      || '',
+      Cod_Tributo:   $('prodCodTributo')?.value   || '',
+      IGV_Porcentaje:$('prodIGV')?.value          ? parseFloat($('prodIGV').value) : '',
+      Unidad_Medida: $('prodUnidadMedida')?.value || 'NIU',
+      Cod_SUNAT:     $('prodCodSUNAT')?.value     || '',
     };
 
-    if (!params.descripcion) { toast('La descripción es requerida', 'error'); return; }
+    // Campos según tipo
+    if (_prodTipo === 'envasable') {
+      params.esEnvasable = '1'; params.codigoProductoBase = ''; params.factorConversion = ''; params.factorConversionBase = ''; params.mermaEsperadaPct = '';
+    } else if (_prodTipo === 'derivado') {
+      params.esEnvasable = '0';
+      params.codigoProductoBase  = $('prodCodigoProductoBase')?.value || '';
+      params.factorConversionBase= $('prodFactorConvBase')?.value ? parseFloat($('prodFactorConvBase').value) : '';
+      params.mermaEsperadaPct    = $('prodMerma')?.value           ? parseFloat($('prodMerma').value)          : '';
+      params.factorConversion = ''; params.skuBase = '';
+    } else if (_prodTipo === 'presentacion') {
+      params.esEnvasable = '0';
+      params.skuBase          = $('prodSkuBase')?.value || '';
+      params.factorConversion = $('prodFactor')?.value  ? parseFloat($('prodFactor').value) : '';
+      params.codigoProductoBase = ''; params.factorConversionBase = ''; params.mermaEsperadaPct = '';
+    } else { // normal
+      params.esEnvasable = '0'; params.codigoProductoBase = ''; params.factorConversion = ''; params.factorConversionBase = ''; params.mermaEsperadaPct = '';
+    }
 
     try {
       const action = params.idProducto ? 'actualizarProducto' : 'crearProducto';
       await API.post(action, params);
-      toast(params.idProducto ? 'Producto actualizado' : 'Producto creado', 'ok');
+      toast(params.idProducto ? 'Producto actualizado ✓' : 'Producto creado ✓', 'ok');
       closeModal('modalProducto');
       S.loaded['catalogo'] = false;
       await loadCatalogo();
-    } catch (e) {
+    } catch(e) {
       toast('Error: ' + e.message, 'error');
     }
   }
@@ -5208,6 +5378,8 @@ const MOS = (() => {
     abrirAnalitica, cerrarAnalitica, setAnPeriodo, guardarStockMinMax, _anCurrentId,
     guardarAjustePrecios, stepperInc, stepperDec,
     abrirModalProducto, guardarProducto,
+    setProdTipo, prodAutogenBarcode, prodToggleEstado, prodToggleCosto,
+    prodCalcMargen, prodOnRange, prodToggleSunat, prodToggleEquiv,
     toggleAddEquiv, crearEquivalenciaModal, toggleEquivActivo,
     abrirModalPrecio, publicarPrecio,
     setAlmTab,

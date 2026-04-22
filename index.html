@@ -261,6 +261,29 @@
     .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 100; display: none; align-items: center; justify-content: center; padding: 16px; }
     .modal-backdrop.open { display: flex; }
     .modal-box { background: #0f172a; border: 1px solid #1e293b; border-radius: 16px; width: 100%; max-width: 540px; max-height: 90vh; overflow-y: auto; }
+    /* ── Modal Producto rediseñado ── */
+    .prod-tipo-bar { display:flex; border-bottom:1px solid #1e293b; background:#070f1a; overflow-x:auto; flex-shrink:0; }
+    .prod-tipo-btn { flex:1; padding:10px 6px; font-size:11px; font-weight:700; color:#475569; border-bottom:2px solid transparent; white-space:nowrap; transition:all .15s; min-width:72px; }
+    .prod-tipo-btn.active { color:#a5b4fc; border-bottom-color:#6366f1; background:rgba(99,102,241,.07); }
+    .prod-tipo-btn:hover:not(.active) { color:#94a3b8; background:rgba(255,255,255,.03); }
+    .prod-section-title { font-size:10px; font-weight:800; color:#475569; text-transform:uppercase; letter-spacing:.08em; margin-bottom:10px; }
+    .prod-section-toggle { display:flex; width:100%; align-items:center; justify-content:space-between; padding:9px 0; font-size:12px; font-weight:700; color:#64748b; transition:color .15s; border-top:1px solid #1e293b; }
+    .prod-section-toggle:hover { color:#e2e8f0; }
+    .prod-toggle { display:inline-flex; align-items:center; gap:8px; padding:5px 12px 5px 5px; border-radius:9999px; border:1px solid #334155; background:#1e293b; cursor:pointer; transition:all .2s; }
+    .prod-toggle.on { border-color:rgba(34,197,94,.4); background:rgba(34,197,94,.08); }
+    .prod-toggle-knob { width:20px; height:20px; border-radius:50%; background:#334155; transition:background .2s; flex-shrink:0; }
+    .prod-toggle.on .prod-toggle-knob { background:#22c55e; }
+    .prod-toggle-lbl { font-size:12px; font-weight:600; color:#64748b; transition:color .2s; }
+    .prod-toggle.on .prod-toggle-lbl { color:#86efac; }
+    .prod-margen-track { height:5px; background:#1e293b; border-radius:3px; overflow:hidden; }
+    .prod-margen-fill { height:100%; border-radius:3px; transition:width .3s,background .3s; background:#6366f1; }
+    .prod-dual-range { position:relative; height:32px; display:flex; align-items:center; margin-top:4px; }
+    .prod-range-track { position:absolute; left:0; right:0; height:4px; background:#334155; border-radius:2px; pointer-events:none; }
+    .prod-range-fill { position:absolute; height:100%; background:#6366f1; border-radius:2px; }
+    .prod-range { position:absolute; width:100%; height:100%; appearance:none; -webkit-appearance:none; background:transparent; cursor:pointer; }
+    .prod-range::-webkit-slider-thumb { -webkit-appearance:none; width:18px; height:18px; border-radius:50%; background:#818cf8; border:2px solid #fff; cursor:grab; box-shadow:0 1px 4px rgba(0,0,0,.5); }
+    .prod-range::-moz-range-thumb { width:18px; height:18px; border-radius:50%; background:#818cf8; border:2px solid #fff; cursor:grab; box-shadow:0 1px 4px rgba(0,0,0,.5); }
+    .prod-sec-box { border-radius:12px; padding:14px; border:1px solid rgba(99,102,241,.2); background:rgba(99,102,241,.04); }
 
     /* ── Módulo Finanzas ─────────────────────────────────────────── */
     .fin-panel { background: #0a1628; border: 1px solid #1e293b; border-radius: 14px; padding: 18px; }
@@ -2210,154 +2233,239 @@
 
 <!-- Producto Modal -->
 <div class="modal-backdrop" id="modalProducto">
-  <div class="modal-box p-6">
-    <div class="flex items-center justify-between mb-5">
-      <h2 id="modalProdTitle" class="font-bold text-lg text-white">Nuevo Producto</h2>
-      <button onclick="MOS.closeModal('modalProducto')" class="text-slate-400 hover:text-white text-xl">×</button>
+  <div class="modal-box" style="padding:0;display:flex;flex-direction:column;max-height:92vh;overflow:hidden">
+    <!-- Header -->
+    <div class="flex items-center justify-between px-5 py-4 flex-shrink-0" style="border-bottom:1px solid #1e293b">
+      <h2 id="modalProdTitle" class="font-bold text-base text-white">Nuevo Producto</h2>
+      <button onclick="MOS.closeModal('modalProducto')" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
     </div>
     <input type="hidden" id="prodId">
-    <div class="grid grid-cols-2 gap-3">
-      <div class="col-span-2">
-        <label class="lbl">Descripción *</label>
-        <input id="prodDescripcion" class="inp" placeholder="Arroz Extra 1kg">
-      </div>
-      <div>
-        <label class="lbl">Código de Barras</label>
-        <input id="prodCodigoBarra" class="inp" placeholder="7501234...">
-      </div>
-      <div>
-        <label class="lbl">Marca</label>
-        <input id="prodMarca" class="inp" placeholder="El Sol">
-      </div>
-      <div>
-        <label class="lbl">Categoría</label>
-        <select id="prodCategoria" class="inp">
-          <option value="">— seleccionar —</option>
-        </select>
-      </div>
-      <div>
-        <label class="lbl">Unidad</label>
-        <select id="prodUnidad" class="inp">
-          <option value="UNIDAD">UNIDAD</option>
-          <option value="BOLSA">BOLSA</option>
-          <option value="SOBRE">SOBRE</option>
-          <option value="SACO">SACO</option>
-          <option value="KG">KG</option>
-          <option value="LITRO">LITRO</option>
-          <option value="CAJA">CAJA</option>
-        </select>
-      </div>
-      <div>
-        <label class="lbl">Precio Venta (S/.)</label>
-        <input id="prodPrecioVenta" class="inp" type="number" step="0.01" placeholder="0.00">
-      </div>
-      <div>
-        <label class="lbl">Precio Costo (S/.)</label>
-        <input id="prodPrecioCosto" class="inp" type="number" step="0.01" placeholder="0.00">
-      </div>
-      <div>
-        <label class="lbl">Stock Mínimo</label>
-        <input id="prodStockMin" class="inp" type="number" placeholder="0">
-      </div>
-      <div>
-        <label class="lbl">Stock Máximo</label>
-        <input id="prodStockMax" class="inp" type="number" placeholder="0">
-      </div>
-      <div>
-        <label class="lbl">Zona</label>
-        <input id="prodZona" class="inp" placeholder="A-1">
-      </div>
-      <div class="col-span-2 pt-1 border-t border-slate-800">
-        <p class="text-xs text-slate-500 mb-2">Presentación / Envasado (dejar vacío si es producto base/granel)</p>
-      </div>
-      <div>
-        <label class="lbl">Producto Base (ID)</label>
-        <input id="prodBase" class="inp" placeholder="P001"
-               oninput="document.getElementById('prodFactorConvBaseRow').style.display=this.value.trim()?'':'none'">
-      </div>
-      <div>
-        <label class="lbl">Factor Conversión <span style="font-size:10px;color:#64748b">(presentación)</span></label>
-        <input id="prodFactor" class="inp" type="number" step="0.01" placeholder="50">
-      </div>
-      <!-- Factor Conversión Base — solo visible cuando hay codigoProductoBase -->
-      <div id="prodFactorConvBaseRow" class="col-span-2" style="display:none">
-        <label class="lbl">Factor Conv. Base
-          <span style="font-size:10px;color:#f59e0b;font-weight:600"> WH — unidades por granel</span>
-        </label>
-        <input id="prodFactorConvBase" class="inp" type="number" step="0.001" min="0"
-               placeholder="Ej: 80 → de 1 unidad de granel salen 80 unidades WH">
-      </div>
-      <div>
-        <label class="lbl">Merma Esperada (%)</label>
-        <input id="prodMerma" class="inp" type="number" step="0.1" placeholder="2">
-      </div>
-      <div>
-        <label class="lbl">¿Envasable?</label>
-        <select id="prodEsEnvasable" class="inp">
-          <option value="0">No (Derivado/Final)</option>
-          <option value="1">Sí (Base para envasar)</option>
-        </select>
-      </div>
-      <div class="col-span-2 pt-1 border-t border-slate-800">
-        <p class="text-xs text-slate-500 mb-2">Fiscal (SUNAT / NubeFact)</p>
-      </div>
-      <div>
-        <label class="lbl">Cod. Tributo</label>
-        <select id="prodCodTributo" class="inp">
-          <option value="">—</option>
-          <option value="1000">1000 — IGV</option>
-          <option value="9998">9998 — Inafecto</option>
-          <option value="9997">9997 — Exonerado</option>
-        </select>
-      </div>
-      <div>
-        <label class="lbl">IGV %</label>
-        <input id="prodIGV" class="inp" type="number" placeholder="18">
-      </div>
-      <div>
-        <label class="lbl">Cod. SUNAT</label>
-        <input id="prodCodSUNAT" class="inp" placeholder="Ej: 1212001">
-      </div>
-      <div>
-        <label class="lbl">Tipo IGV</label>
-        <select id="prodTipoIGV" class="inp">
-          <option value="">—</option>
-          <option value="gravado">Gravado</option>
-          <option value="exonerado">Exonerado</option>
-          <option value="inafecto">Inafecto</option>
-        </select>
-      </div>
+    <input type="hidden" id="prodEstado" value="1">
+
+    <!-- Selector de tipo -->
+    <div class="prod-tipo-bar">
+      <button id="ptNormal"       class="prod-tipo-btn active" onclick="MOS.setProdTipo('normal')">Normal</button>
+      <button id="ptEnvasable"    class="prod-tipo-btn"        onclick="MOS.setProdTipo('envasable')">⚗️ Envasable</button>
+      <button id="ptDerivado"     class="prod-tipo-btn"        onclick="MOS.setProdTipo('derivado')">🔗 Derivado</button>
+      <button id="ptPresentacion" class="prod-tipo-btn"        onclick="MOS.setProdTipo('presentacion')">📦 Presentación</button>
     </div>
-    <!-- ── Equivalencias (solo en edición) ────────────────── -->
-    <div id="modalEquivSection" class="hidden mt-4 pt-4 border-t border-slate-800">
-      <div class="flex items-center justify-between mb-2">
-        <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Códigos equivalentes</span>
-        <button onclick="MOS.toggleAddEquiv()" class="text-xs text-indigo-400 hover:text-white font-medium transition-colors">+ Agregar código</button>
-      </div>
-      <div id="equivList" class="space-y-1.5 mb-2 min-h-0"></div>
-      <!-- Form nueva equivalencia -->
-      <div id="equivAddForm" class="hidden rounded-xl border border-slate-700 bg-slate-900/80 p-3 space-y-2">
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="lbl">Código de barras *</label>
-            <input id="equivCodigo" class="inp text-sm" placeholder="1234567890123"
-                   onkeydown="if(event.key==='Enter')MOS.crearEquivalenciaModal()">
+
+    <!-- Contenido scrollable -->
+    <div class="overflow-y-auto flex-1 px-5 py-4 space-y-5">
+
+      <!-- ── Identificación ── -->
+      <div>
+        <div class="prod-section-title">Identificación</div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="col-span-2">
+            <label class="lbl">Descripción *</label>
+            <input id="prodDescripcion" class="inp" placeholder="Ej: Arroz Extra 1kg">
+          </div>
+          <div class="col-span-2">
+            <label class="lbl">Código de barras</label>
+            <div class="flex gap-2">
+              <input id="prodCodigoBarra" class="inp flex-1" placeholder="Escanea o escribe...">
+              <button onclick="MOS.prodAutogenBarcode()" class="btn-ghost text-xs px-3 whitespace-nowrap" title="Generar código interno NMLEV">⚡ Auto</button>
+            </div>
           </div>
           <div>
-            <label class="lbl">Descripción (opcional)</label>
-            <input id="equivDesc" class="inp text-sm" placeholder="Ej: bolsa proveedor B"
-                   onkeydown="if(event.key==='Enter')MOS.crearEquivalenciaModal()">
+            <label class="lbl">Marca</label>
+            <input id="prodMarca" class="inp" placeholder="El Sol">
+          </div>
+          <div>
+            <label class="lbl">Categoría</label>
+            <select id="prodCategoria" class="inp"><option value="">— seleccionar —</option></select>
+          </div>
+          <div>
+            <label class="lbl">Unidad</label>
+            <select id="prodUnidad" class="inp">
+              <option value="UNIDAD">UNIDAD</option>
+              <option value="BOLSA">BOLSA</option>
+              <option value="SOBRE">SOBRE</option>
+              <option value="SACO">SACO</option>
+              <option value="KG">KG</option>
+              <option value="LITRO">LITRO</option>
+              <option value="CAJA">CAJA</option>
+            </select>
+          </div>
+          <div class="flex flex-col justify-end">
+            <label class="lbl">Estado</label>
+            <button id="prodEstadoToggle" onclick="MOS.prodToggleEstado()" class="prod-toggle on self-start">
+              <span class="prod-toggle-knob"></span>
+              <span class="prod-toggle-lbl">Activo</span>
+            </button>
           </div>
         </div>
-        <div class="flex gap-2">
-          <button onclick="MOS.crearEquivalenciaModal()" class="btn-primary text-xs flex-1">💾 Guardar</button>
-          <button onclick="MOS.toggleAddEquiv()" class="btn-ghost text-xs px-4">Cancelar</button>
+      </div>
+
+      <!-- ── Precios & Stock ── -->
+      <div>
+        <div class="prod-section-title">Precios & Stock</div>
+        <div class="space-y-3">
+          <div>
+            <label class="lbl">Precio venta (S/.)</label>
+            <input id="prodPrecioVenta" class="inp" type="number" step="0.01" placeholder="0.00" oninput="MOS.prodCalcMargen()">
+          </div>
+          <!-- Margen -->
+          <div id="prodMargenBar" class="hidden">
+            <div class="flex justify-between text-xs text-slate-500 mb-1">
+              <span>Margen estimado</span>
+              <span id="prodMargenLabel" class="font-semibold text-slate-300">—</span>
+            </div>
+            <div class="prod-margen-track"><div id="prodMargenFill" class="prod-margen-fill" style="width:0%"></div></div>
+          </div>
+          <!-- Precio costo colapsable -->
+          <div>
+            <button onclick="MOS.prodToggleCosto()" class="flex items-center gap-1.5 text-xs text-slate-500 hover:text-indigo-400 transition-colors">
+              <span id="costoChevron" style="font-size:9px">▶</span>
+              <span>Precio costo (opcional — sale de compras)</span>
+            </button>
+            <div id="prodCostoRow" class="hidden mt-2">
+              <input id="prodPrecioCosto" class="inp" type="number" step="0.01" placeholder="0.00" oninput="MOS.prodCalcMargen()">
+            </div>
+          </div>
+          <!-- Dual range stock -->
+          <div>
+            <label class="lbl">Stock mínimo / máximo</label>
+            <div class="flex justify-between text-xs text-slate-400 mb-1 mt-1">
+              <span>Mín: <b id="stockMinLabel" class="text-slate-200">0</b></span>
+              <span>Máx: <b id="stockMaxLabel" class="text-slate-200">0</b></span>
+            </div>
+            <div class="prod-dual-range">
+              <div class="prod-range-track"><div id="prodRangeFill" class="prod-range-fill" style="left:0%;width:0%"></div></div>
+              <input id="prodStockMinRange" type="range" class="prod-range" min="0" max="500" value="0" oninput="MOS.prodOnRange()">
+              <input id="prodStockMaxRange" type="range" class="prod-range" min="0" max="500" value="0" oninput="MOS.prodOnRange()">
+            </div>
+            <input type="hidden" id="prodStockMin" value="0">
+            <input type="hidden" id="prodStockMax" value="0">
+          </div>
         </div>
       </div>
-    </div>
-    <div class="flex gap-2 mt-5">
+
+      <!-- ── Sección Derivado ── -->
+      <div id="prodSecDerivado" class="hidden prod-sec-box">
+        <div class="prod-section-title" style="margin-bottom:12px">🔗 Relación con envasable</div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="col-span-2">
+            <label class="lbl">¿De qué envasable proviene?</label>
+            <select id="prodCodigoProductoBase" class="inp">
+              <option value="">— seleccionar envasable —</option>
+            </select>
+          </div>
+          <div>
+            <label class="lbl">Factor conv. WH <span class="text-amber-400 text-xs font-normal">uds por granel</span></label>
+            <input id="prodFactorConvBase" class="inp" type="number" step="0.001" placeholder="Ej: 80">
+          </div>
+          <div>
+            <label class="lbl">Merma esperada (%)</label>
+            <input id="prodMerma" class="inp" type="number" step="0.1" placeholder="2">
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Sección Presentación ── -->
+      <div id="prodSecPresentacion" class="hidden prod-sec-box">
+        <div class="prod-section-title" style="margin-bottom:12px">📦 Presentación</div>
+        <div class="space-y-3">
+          <div>
+            <label class="lbl">¿A qué producto pertenece? <span class="text-slate-500 font-normal text-xs">(define el grupo en catálogo)</span></label>
+            <select id="prodSkuBase" class="inp">
+              <option value="">— seleccionar producto base —</option>
+            </select>
+          </div>
+          <div>
+            <label class="lbl">Factor de conversión <span class="text-slate-500 font-normal text-xs">ej: 12 si esta presentación = 12 uds base</span></label>
+            <input id="prodFactor" class="inp" type="number" step="0.01" placeholder="1">
+          </div>
+        </div>
+      </div>
+
+      <!-- ── SUNAT colapsable ── -->
+      <div>
+        <button onclick="MOS.prodToggleSunat()" class="prod-section-toggle">
+          <span>🧾 SUNAT / Fiscal</span>
+          <span id="sunatChevron" style="font-size:10px">▶</span>
+        </button>
+        <div id="prodSecSunat" class="hidden pt-3 grid grid-cols-2 gap-3">
+          <div>
+            <label class="lbl">Tipo IGV</label>
+            <select id="prodTipoIGV" class="inp">
+              <option value="">—</option>
+              <option value="gravado">Gravado (18%)</option>
+              <option value="exonerado">Exonerado</option>
+              <option value="inafecto">Inafecto</option>
+            </select>
+          </div>
+          <div>
+            <label class="lbl">Cod. Tributo</label>
+            <select id="prodCodTributo" class="inp">
+              <option value="">—</option>
+              <option value="1000">1000 — IGV</option>
+              <option value="9998">9998 — Inafecto</option>
+              <option value="9997">9997 — Exonerado</option>
+            </select>
+          </div>
+          <div>
+            <label class="lbl">IGV %</label>
+            <input id="prodIGV" class="inp" type="number" placeholder="18">
+          </div>
+          <div>
+            <label class="lbl">Unidad medida SUNAT</label>
+            <select id="prodUnidadMedida" class="inp">
+              <option value="NIU">NIU — Unidad</option>
+              <option value="KGM">KGM — Kilogramo</option>
+              <option value="LTR">LTR — Litro</option>
+              <option value="ZZ">ZZ — Servicio</option>
+              <option value="BG">BG — Bolsa</option>
+              <option value="BX">BX — Caja</option>
+            </select>
+          </div>
+          <div class="col-span-2">
+            <label class="lbl">Cod. SUNAT</label>
+            <input id="prodCodSUNAT" class="inp" placeholder="Ej: 1212001">
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Equivalencias (solo edición, colapsable) ── -->
+      <div id="modalEquivSection" class="hidden">
+        <button onclick="MOS.prodToggleEquiv()" class="prod-section-toggle">
+          <span>🔀 Equivalencias / Códigos alternativos</span>
+          <span id="equivChevron" style="font-size:10px">▶</span>
+        </button>
+        <div id="equivContent" class="hidden pt-3">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs text-slate-500">Códigos de barras adicionales que apuntan a este producto</span>
+            <button onclick="MOS.toggleAddEquiv()" class="text-xs text-indigo-400 hover:text-white font-medium">+ Agregar</button>
+          </div>
+          <div id="equivList" class="space-y-1.5 mb-2"></div>
+          <div id="equivAddForm" class="hidden rounded-xl border border-slate-700 bg-slate-900/80 p-3 space-y-2">
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="lbl">Código de barras *</label>
+                <input id="equivCodigo" class="inp text-sm" placeholder="1234567890123"
+                       onkeydown="if(event.key==='Enter')MOS.crearEquivalenciaModal()">
+              </div>
+              <div>
+                <label class="lbl">Descripción (opcional)</label>
+                <input id="equivDesc" class="inp text-sm" placeholder="Ej: bolsa proveedor B"
+                       onkeydown="if(event.key==='Enter')MOS.crearEquivalenciaModal()">
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <button onclick="MOS.crearEquivalenciaModal()" class="btn-primary text-xs flex-1">💾 Guardar</button>
+              <button onclick="MOS.toggleAddEquiv()" class="btn-ghost text-xs px-4">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- fin scroll -->
+
+    <!-- Footer -->
+    <div class="flex gap-2 px-5 py-4 flex-shrink-0" style="border-top:1px solid #1e293b">
       <button onclick="MOS.closeModal('modalProducto')" class="btn-ghost flex-1">Cancelar</button>
-      <button onclick="MOS.guardarProducto()" class="btn-primary flex-1">Guardar</button>
+      <button onclick="MOS.guardarProducto()" class="btn-primary flex-1">💾 Guardar</button>
     </div>
   </div>
 </div>
