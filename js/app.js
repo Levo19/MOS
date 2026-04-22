@@ -294,8 +294,8 @@ const MOS = (() => {
         nav('dashboard');
         loadView('dashboard');
         if (window._SWDailyCheck) window._SWDailyCheck();
-        // Push: notificar login + registrar token
-        _pushInit(res.nombre, res.rol);
+        // Push: notificar login + registrar token (askPermission=true porque viene de gesto del usuario)
+        _pushInit(res.nombre, res.rol, true);
       } catch(e) {
         _pinValue = ''; _updatePinDots();
         const err = $('loginPinError'); if (err) err.textContent = e.message;
@@ -5065,8 +5065,8 @@ const MOS = (() => {
     appId:             '1:328735199478:web:947f338ae9716a7c049cd7'
   };
 
-  async function _pushInit(nombre, rol) {
-    console.log('[Push] init — firebase:', !!window.firebase, '| Notification:', typeof Notification !== 'undefined' ? Notification.permission : 'N/A');
+  async function _pushInit(nombre, rol, askPermission = false) {
+    console.log('[Push] init — firebase:', !!window.firebase, '| Notification:', typeof Notification !== 'undefined' ? Notification.permission : 'N/A', '| ask:', askPermission);
     if (!window.firebase || !('Notification' in window) || !('serviceWorker' in navigator)) {
       console.warn('[Push] requisitos no cumplidos, saliendo');
       return;
@@ -5074,7 +5074,9 @@ const MOS = (() => {
     try {
       if (!firebase.apps.length) firebase.initializeApp(_PUSH_CONFIG);
       const messaging  = firebase.messaging();
-      const permission = await Notification.requestPermission();
+      const permission = askPermission
+        ? await Notification.requestPermission()
+        : Notification.permission;
       console.log('[Push] permission:', permission);
       if (permission !== 'granted') return;
 

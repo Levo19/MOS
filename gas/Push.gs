@@ -163,8 +163,14 @@ function configurarTriggerResumen() {
 
 // ── Test manual desde el editor GAS ───────────────────────────
 function testPush() {
+  var sheet = _getPushTokensSheet();
+  var rows  = sheet.getDataRange().getValues();
+  Logger.log('PUSH_TOKENS filas (sin header): ' + (rows.length - 1));
+  for (var i = 1; i < rows.length; i++) {
+    Logger.log('  [' + i + '] usuario=' + rows[i][2] + '  token=' + String(rows[i][1]).substring(0, 30) + '...');
+  }
   _enviarPushTodos('🔔 Test MOS', 'Si ves esto, las notificaciones funcionan correctamente ✅');
-  Logger.log('Push de prueba enviado');
+  Logger.log('Push de prueba enviado a ' + (rows.length - 1) + ' token(s)');
 }
 
 // ── Helper: obtener/crear hoja PUSH_TOKENS ─────────────────────
