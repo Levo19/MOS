@@ -111,6 +111,10 @@ function _route(method, e) {
       case 'eliminarGasto':              return eliminarGasto(params);
       case 'actualizarCostoPorSku':      return actualizarCostoPorSku(params);
 
+      // ── Push notifications ─────────────────────────────────────
+      case 'registrarPushToken':        return registrarPushToken(params);
+      case 'enviarPushNotif':           return enviarPushNotif(params);
+
       // ── Cajas MosExpress ────────────────────────────────────
       case 'getCierresCaja':            return getCierresCaja(params);
       case 'anularTicketME':            return anularTicketME(params);

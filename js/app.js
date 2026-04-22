@@ -294,6 +294,8 @@ const MOS = (() => {
         nav('dashboard');
         loadView('dashboard');
         if (window._SWDailyCheck) window._SWDailyCheck();
+        // Push: notificar login + registrar token
+        _pushInit(res.nombre, res.rol);
       } catch(e) {
         _pinValue = ''; _updatePinDots();
         const err = $('loginPinError'); if (err) err.textContent = e.message;
@@ -5051,6 +5053,51 @@ const MOS = (() => {
     const d = new Date(fechaStr + 'T00:00:00');
     d.setDate(d.getDate() + dias);
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+
+  // ── Push Notifications (FCM) ─────────────────────────────────
+  const _PUSH_VAPID = 'BB_Nhb8wPlFpObGxR93tzRfWw7VncQsJoyJYe6wv8r5yqcrhA53LEM9wPkvhtG19LmMEl30VaBFCPIClBBPKQgo';
+  const _PUSH_CONFIG = {
+    apiKey:            'AIzaSyA_gfynRxAmlbGgHWoioaj5aeaxnnywP88',
+    projectId:         'proyectomos-push',
+    messagingSenderId: '328735199478',
+    appId:             '1:328735199478:web:947f338ae9716a7c049cd7'
+  };
+
+  async function _pushInit(nombre, rol) {
+    if (!window.firebase || !('Notification' in window) || !('serviceWorker' in navigator)) return;
+    try {
+      if (!firebase.apps.length) firebase.initializeApp(_PUSH_CONFIG);
+      const messaging  = firebase.messaging();
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') return;
+
+      const swReg = await navigator.serviceWorker.ready;
+      const token = await messaging.getToken({ vapidKey: _PUSH_VAPID, serviceWorkerRegistration: swReg });
+      if (!token) return;
+
+      // Guardar token en GAS
+      API.post('registrarPushToken', {
+        token, usuario: nombre, appOrigen: 'MOS',
+        dispositivo: navigator.userAgent.substring(0, 150)
+      }).catch(() => {});
+
+      // Notificar ingreso a todos los demás
+      const hora = new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+      API.post('enviarPushNotif', {
+        titulo: '👤 ' + nombre + ' ingresó a MOS',
+        cuerpo: (rol || '') + ' · ' + hora
+      }).catch(() => {});
+
+      // Mostrar notificaciones en primer plano como toast
+      messaging.onMessage(payload => {
+        const t = payload.notification?.title || '';
+        const b = payload.notification?.body  || '';
+        toast('🔔 ' + t + (b ? ': ' + b : ''), 'ok');
+      });
+    } catch(e) {
+      console.log('Push init:', e.message);
+    }
   }
 
   // ── PUBLIC API ───────────────────────────────────────────────
