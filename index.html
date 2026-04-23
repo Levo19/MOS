@@ -2264,9 +2264,10 @@
           <div class="col-span-2">
             <label class="lbl">Código de barras</label>
             <div class="flex gap-2">
-              <input id="prodCodigoBarra" class="inp flex-1" placeholder="Escanea o escribe...">
+              <input id="prodCodigoBarra" class="inp flex-1" placeholder="Escanea o escribe..." onblur="MOS.prodValidarCodigoBarra()">
               <button onclick="MOS.prodAutogenBarcode()" class="btn-ghost text-xs px-3 whitespace-nowrap" title="Generar código interno NMLEV">⚡ Auto</button>
             </div>
+            <div id="prodCodigoBarraFeedback" class="hidden text-xs mt-1"></div>
           </div>
           <div>
             <label class="lbl">Marca</label>

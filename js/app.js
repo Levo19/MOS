@@ -2269,7 +2269,33 @@ const MOS = (() => {
     const ts   = Date.now().toString().slice(-6);
     const rand = Math.floor(Math.random() * 900 + 100);
     const cb = $('prodCodigoBarra');
-    if (cb) cb.value = 'NMLEV' + ts + rand;
+    if (cb) { cb.value = 'NMLEV' + ts + rand; prodValidarCodigoBarra(); }
+  }
+
+  function prodValidarCodigoBarra() {
+    const inp = $('prodCodigoBarra');
+    const fb  = $('prodCodigoBarraFeedback');
+    if (!inp || !fb) return true;
+    const val   = inp.value.trim();
+    const curId = $('prodId')?.value || '';
+    if (!val) {
+      fb.className = 'hidden text-xs mt-1';
+      inp.classList.remove('!border-red-500');
+      return true;
+    }
+    const dup = (S.productos || []).find(p =>
+      p.codigoBarra && p.codigoBarra === val && String(p.idProducto) !== curId
+    );
+    if (dup) {
+      fb.textContent = `⚠ Ya existe en: ${dup.descripcion} (${dup.idProducto})`;
+      fb.className   = 'text-xs mt-1 text-red-400';
+      inp.classList.add('!border-red-500');
+      return false;
+    }
+    fb.textContent = '✓ Disponible';
+    fb.className   = 'text-xs mt-1 text-green-400';
+    inp.classList.remove('!border-red-500');
+    return true;
   }
 
   function prodToggleEstado() {
@@ -2361,6 +2387,9 @@ const MOS = (() => {
     $('prodEstado').value = '1';
     const toggle = $('prodEstadoToggle');
     if (toggle) { toggle.classList.add('on'); toggle.querySelector('.prod-toggle-lbl').textContent = 'Activo'; }
+    const fb = $('prodCodigoBarraFeedback');
+    if (fb) { fb.className = 'hidden text-xs mt-1'; fb.textContent = ''; }
+    $('prodCodigoBarra')?.classList.remove('!border-red-500');
     $('prodCostoRow')?.classList.add('hidden');
     const ch = $('costoChevron'); if (ch) ch.textContent = '▶';
     $('prodMargenBar')?.classList.add('hidden');
@@ -2557,6 +2586,8 @@ const MOS = (() => {
     } else { // normal
       params.esEnvasable = '0'; params.codigoProductoBase = ''; params.factorConversion = ''; params.factorConversionBase = ''; params.mermaEsperadaPct = '';
     }
+
+    if (!prodValidarCodigoBarra()) { toast('El código de barras ya pertenece a otro producto', 'error'); return; }
 
     try {
       const action = params.idProducto ? 'actualizarProducto' : 'crearProducto';
@@ -5388,7 +5419,7 @@ const MOS = (() => {
     abrirAnalitica, cerrarAnalitica, setAnPeriodo, guardarStockMinMax, _anCurrentId,
     guardarAjustePrecios, stepperInc, stepperDec,
     abrirModalProducto, guardarProducto,
-    setProdTipo, prodAutogenBarcode, prodToggleEstado, prodToggleCosto,
+    setProdTipo, prodAutogenBarcode, prodValidarCodigoBarra, prodToggleEstado, prodToggleCosto,
     prodCalcMargen, prodOnRange, prodToggleSunat, prodToggleEquiv,
     toggleAddEquiv, crearEquivalenciaModal, toggleEquivActivo,
     abrirModalPrecio, publicarPrecio,
