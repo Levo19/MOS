@@ -597,7 +597,7 @@ const MOS = (() => {
       const equivMap  = {};
       (freshEquiv || []).forEach(e => {
         const k = e.skuBase || e.idProducto;
-        if (k) equivMap[k] = (equivMap[k] || 0) + 1;
+        if (k && e.codigoBarra) { if (!equivMap[k]) equivMap[k] = []; equivMap[k].push(e.codigoBarra); }
       });
       const changed = JSON.stringify(productos) !== JSON.stringify(S.productos);
       S.productos = productos;
@@ -631,7 +631,7 @@ const MOS = (() => {
       const equivMap = {};
       (freshEquiv || []).forEach(e => {
         const k = e.skuBase || e.idProducto;
-        if (k) equivMap[k] = (equivMap[k] || 0) + 1;
+        if (k && e.codigoBarra) { if (!equivMap[k]) equivMap[k] = []; equivMap[k].push(e.codigoBarra); }
       });
 
       // ── Diff: qué cambió ──────────────────────────────────
@@ -976,14 +976,15 @@ const MOS = (() => {
       const badgePres = pres.length ? `<span class="badge badge-blue text-xs cursor-pointer" onclick="event.stopPropagation();MOS.togglePresentaciones('${base.idProducto}')">📦 ${pres.length} presentacion${pres.length !== 1 ? 'es' : ''}</span>` : '';
       const badgeInac = activo ? '' : `<span class="badge badge-gray text-xs">Inactivo</span>`;
 
-      // Equivalencias count para el skuBase
-      const equivCount = S.equivMap[base.skuBase || base.idProducto] || 0;
+      // Equivalencias para el skuBase
+      const equivList = S.equivMap[base.skuBase || base.idProducto] || [];
 
-      // Meta tags: barcode + equivalencias + brand
+      // Meta tags: barcode + equivalencias con colores + brand
       const barcodeTag = base.codigoBarra
         ? `<span class="cat-barcode">▌${base.codigoBarra}</span>` : '';
-      const equivTag   = equivCount > 0
-        ? `<span class="cat-equiv">+${equivCount} equiv.</span>` : '';
+      const equivTags  = equivList.map((cb, i) =>
+        `<span class="cat-equiv-bar cat-equiv-bar-${Math.min(i, 3)}" title="Equivalencia">▌${cb}</span>`
+      ).join('');
       const brandTag   = base.marca
         ? `<span class="cat-brand">${base.marca}</span>` : '';
 
@@ -1040,7 +1041,7 @@ const MOS = (() => {
               <div class="flex flex-wrap gap-1 mb-2">${badgeCat}${badgeEnv}${badgePres}${badgeInac}</div>
               <div class="font-semibold text-slate-100 text-sm leading-snug mb-2">${hlDesc}</div>
               <div class="flex flex-wrap items-center gap-1.5">
-                ${barcodeTag}${equivTag}${brandTag}
+                ${barcodeTag}${equivTags}${brandTag}
               </div>
             </div>
             <div class="flex flex-col items-end gap-1.5 shrink-0 ml-2">
@@ -2474,7 +2475,7 @@ const MOS = (() => {
     try {
       const rows = (await API.get('getEquivalencias', { skuBase })) || [];
       // Actualizar equivMap también
-      S.equivMap[skuBase] = rows.filter(r => String(r.activo) === '1').length;
+      S.equivMap[skuBase] = rows.filter(r => String(r.activo) === '1').map(r => r.codigoBarra).filter(Boolean);
       _renderEquivList(rows, skuBase);
     } catch(e) {
       list.innerHTML = `<div class="text-xs text-red-400 py-1 px-1">Error: ${e.message}</div>`;

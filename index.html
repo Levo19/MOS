@@ -452,13 +452,16 @@
       background: #060d1f; border: 1px solid #1e293b;
       padding: .15rem .5rem; border-radius: 5px; color: #64748b;
     }
-    /* Equivalencias badge */
-    .cat-equiv {
-      display: inline-flex; align-items: center; gap: .2rem;
-      font-size: .68rem; font-weight: 600;
-      color: #818cf8; background: rgba(99,102,241,.1);
-      padding: .15rem .45rem; border-radius: 5px; border: 1px solid rgba(99,102,241,.2);
+    /* Equivalencias badges — un color por índice */
+    .cat-equiv-bar {
+      display: inline-flex; align-items: center; gap: .25rem;
+      font-family: 'Courier New', monospace; font-size: .68rem; letter-spacing: .03em;
+      padding: .15rem .5rem; border-radius: 5px;
     }
+    .cat-equiv-bar-0 { background: rgba(99,102,241,.13); border: 1px solid rgba(99,102,241,.3);  color: #818cf8; }
+    .cat-equiv-bar-1 { background: rgba(245,158,11,.13); border: 1px solid rgba(245,158,11,.35); color: #fbbf24; }
+    .cat-equiv-bar-2 { background: rgba(20,184,166,.13); border: 1px solid rgba(20,184,166,.35); color: #2dd4bf; }
+    .cat-equiv-bar-3 { background: rgba(236,72,153,.13); border: 1px solid rgba(236,72,153,.3);  color: #f472b6; }
     /* Brand */
     .cat-brand { font-size: .68rem; color: #475569; }
 
