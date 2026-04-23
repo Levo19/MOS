@@ -5363,15 +5363,40 @@ const MOS = (() => {
     appId:             '1:328735199478:web:947f338ae9716a7c049cd7'
   };
 
+  let _pushMsgHandlerSet = false;
+
   async function _pushInit(nombre, rol, askPermission = false) {
     console.log('[Push] init — firebase:', !!window.firebase, '| Notification:', typeof Notification !== 'undefined' ? Notification.permission : 'N/A', '| ask:', askPermission);
     if (!window.firebase || !('Notification' in window) || !('serviceWorker' in navigator)) {
       console.warn('[Push] requisitos no cumplidos, saliendo');
       return;
     }
+
+    if (!firebase.apps.length) firebase.initializeApp(_PUSH_CONFIG);
+    const messaging = firebase.messaging();
+
+    // Handler de primer plano — registrar UNA sola vez, independiente de si getToken falla
+    if (!_pushMsgHandlerSet) {
+      _pushMsgHandlerSet = true;
+      messaging.onMessage(async payload => {
+        const t = payload.notification?.title || '';
+        const b = payload.notification?.body  || '';
+        toast('🔔 ' + t + (b ? ': ' + b : ''), 'ok', 8000);
+        // Mostrar también como notificación del sistema (visible aunque la app esté al frente)
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          reg.showNotification(t, {
+            body: b,
+            icon:  'https://levo19.github.io/MOS/icon-192.png',
+            badge: 'https://levo19.github.io/MOS/icon-192.png',
+            vibrate: [200, 100, 200],
+            tag: 'mos-push'
+          });
+        } catch(_) {}
+      });
+    }
+
     try {
-      if (!firebase.apps.length) firebase.initializeApp(_PUSH_CONFIG);
-      const messaging  = firebase.messaging();
       const permission = askPermission
         ? await Notification.requestPermission()
         : Notification.permission;
@@ -5397,16 +5422,11 @@ const MOS = (() => {
         cuerpo: (rol || '') + ' · ' + hora
       }).catch(() => {});
 
-      // Mostrar notificaciones en primer plano como toast
-      messaging.onMessage(payload => {
-        const t = payload.notification?.title || '';
-        const b = payload.notification?.body  || '';
-        toast('🔔 ' + t + (b ? ': ' + b : ''), 'ok');
-      });
       console.log('[Push] token registrado en GAS ✅');
     } catch(e) {
       console.error('[Push] ERROR:', e.message);
-      toast('Push error: ' + e.message, 'error');
+      // No mostrar toast de error en session restore (solo en acción del usuario)
+      if (askPermission) toast('Push error: ' + e.message, 'error');
     }
   }
 
