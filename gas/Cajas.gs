@@ -301,6 +301,181 @@ function cambiarMetodoME(params) {
 }
 
 // ============================================================
+// datosTurno — devuelve JSON con todos los datos del turno
+// para el visor HTML turno.html
+// params: { idCaja }
+// ============================================================
+function datosTurno(params) {
+  if (!params || !params.idCaja) return { ok: false, error: 'idCaja requerido' };
+  var ss;
+  try { ss = _meSS(); } catch(e) { return { ok: false, error: e.message }; }
+
+  var tz     = Session.getScriptTimeZone();
+  var idCaja = String(params.idCaja);
+
+  // ── 1. Leer CAJAS ────────────────────────────────────────────
+  var cajasSheet = ss.getSheetByName('CAJAS');
+  if (!cajasSheet) return { ok: false, error: 'Hoja CAJAS no encontrada' };
+  var caja = null;
+  var cd = cajasSheet.getDataRange().getValues();
+  for (var r = 1; r < cd.length; r++) {
+    if (String(cd[r][0]) === idCaja) {
+      caja = {
+        idCaja:       idCaja,
+        cajero:       String(cd[r][1] || ''),
+        estacion:     String(cd[r][2] || ''),
+        zona:         String(cd[r][8] || ''),
+        fechaApert:   cd[r][3] instanceof Date ? Utilities.formatDate(cd[r][3], tz, 'dd/MM/yyyy HH:mm') : String(cd[r][3] || ''),
+        montoInicial: parseFloat(cd[r][4]) || 0,
+        estado:       String(cd[r][5] || ''),
+        montoFinal:   parseFloat(cd[r][6]) || 0,
+        fechaCierre:  cd[r][7] instanceof Date ? Utilities.formatDate(cd[r][7], tz, 'dd/MM/yyyy HH:mm') : String(cd[r][7] || '')
+      };
+      break;
+    }
+  }
+  if (!caja) return { ok: false, error: 'Caja no encontrada: ' + idCaja };
+
+  // ── 2. Leer VENTAS_CABECERA ──────────────────────────────────
+  var tickets = [];
+  var vSheet = ss.getSheetByName('VENTAS_CABECERA');
+  if (vSheet) {
+    var vd = vSheet.getDataRange().getValues();
+    for (var v = 1; v < vd.length; v++) {
+      if (String(vd[v][10]) !== idCaja) continue;
+      tickets.push({
+        idVenta:     String(vd[v][0]  || ''),
+        hora:        vd[v][1] instanceof Date ? Utilities.formatDate(vd[v][1], tz, 'HH:mm') : '',
+        vendedor:    String(vd[v][2]  || ''),
+        clienteDoc:  String(vd[v][4]  || ''),
+        clienteNom:  String(vd[v][5]  || ''),
+        total:       parseFloat(vd[v][6]) || 0,
+        tipoDoc:     String(vd[v][7]  || 'NOTA_DE_VENTA'),
+        metodo:      String(vd[v][8]  || 'EFECTIVO'),
+        correlativo: String(vd[v][9]  || ''),
+        estado:      String(vd[v][12] || 'COMPLETADO'),
+        obs:         String(vd[v][14] || '')
+      });
+    }
+  }
+
+  // ── 3. Leer MOVIMIENTOS_EXTRA ────────────────────────────────
+  var extras = [];
+  var eSheet = ss.getSheetByName('MOVIMIENTOS_EXTRA');
+  if (eSheet) {
+    var ed = eSheet.getDataRange().getValues();
+    for (var ei = 1; ei < ed.length; ei++) {
+      if (String(ed[ei][1]) !== idCaja) continue;
+      extras.push({
+        tipo:     String(ed[ei][3] || 'EGRESO'),
+        monto:    parseFloat(ed[ei][4]) || 0,
+        concepto: String(ed[ei][5] || ''),
+        hora:     ed[ei][2] instanceof Date ? Utilities.formatDate(ed[ei][2], tz, 'HH:mm') : ''
+      });
+    }
+  }
+
+  // ── 4. Calcular totales ──────────────────────────────────────
+  var _parseMetodo = function(metodo, total) {
+    var m = String(metodo || '').toUpperCase().trim();
+    if (!m || m === 'POR_COBRAR' || m === 'CREDITO' || m === 'ANULADO') return { efe: 0, vir: 0 };
+    if (m === 'EFECTIVO') return { efe: total, vir: 0 };
+    if (m === 'VIRTUAL')  return { efe: 0, vir: total };
+    if (m.indexOf('MIXTO') === 0) {
+      var virM = metodo.match(/VIR:([\d.]+)/i);
+      var efeM = metodo.match(/EFE:([\d.]+)/i);
+      var vir  = virM ? parseFloat(virM[1]) : 0;
+      var efe  = efeM ? parseFloat(efeM[1]) : Math.round((total - vir) * 100) / 100;
+      return { efe: efe, vir: vir };
+    }
+    return { efe: 0, vir: total };
+  };
+
+  var anulados   = tickets.filter(function(t){ return t.metodo === 'ANULADO'; });
+  var sinCobrar  = tickets.filter(function(t){ return t.metodo === 'POR_COBRAR'; });
+  var creditos   = tickets.filter(function(t){ return t.metodo === 'CREDITO'; });
+  var cobrados   = tickets.filter(function(t){ return t.metodo !== 'ANULADO' && t.metodo !== 'POR_COBRAR'; });
+  var noAnul     = tickets.filter(function(t){ return t.metodo !== 'ANULADO'; });
+
+  var tEfectivo = 0, tVirtual = 0;
+  cobrados.filter(function(t){ return t.metodo !== 'CREDITO'; }).forEach(function(t) {
+    var r = _parseMetodo(t.metodo, t.total);
+    tEfectivo += r.efe;
+    tVirtual  += r.vir;
+  });
+  tEfectivo = Math.round(tEfectivo * 100) / 100;
+  tVirtual  = Math.round(tVirtual  * 100) / 100;
+
+  var tExtrasIngreso        = extras.filter(function(x){ return x.tipo === 'INGRESO';         }).reduce(function(s,x){ return s+x.monto; }, 0);
+  var tExtrasEgreso         = extras.filter(function(x){ return x.tipo === 'EGRESO';          }).reduce(function(s,x){ return s+x.monto; }, 0);
+  var tExtrasIngresoVirtual = extras.filter(function(x){ return x.tipo === 'INGRESO_VIRTUAL'; }).reduce(function(s,x){ return s+x.monto; }, 0);
+  var tExtrasEgresoVirtual  = extras.filter(function(x){ return x.tipo === 'EGRESO_VIRTUAL';  }).reduce(function(s,x){ return s+x.monto; }, 0);
+
+  var montoFinalEfe  = Math.round((caja.montoInicial + tEfectivo + tExtrasIngreso - tExtrasEgreso) * 100) / 100;
+  var virtualFinal   = Math.round((tVirtual + tExtrasIngresoVirtual - tExtrasEgresoVirtual) * 100) / 100;
+  var tCredito       = creditos.reduce(function(s,t){ return s+t.total; }, 0);
+  var tAnulTotal     = anulados.reduce(function(s,t){ return s+t.total; }, 0);
+  var tSinCobrarTotal= sinCobrar.reduce(function(s,t){ return s+t.total; }, 0);
+
+  // ── 5. Correlativos por tipo ─────────────────────────────────
+  var corrPorTipo = {};
+  noAnul.forEach(function(t) {
+    if (!t.tipoDoc || !t.correlativo) return;
+    if (!corrPorTipo[t.tipoDoc]) corrPorTipo[t.tipoDoc] = [];
+    corrPorTipo[t.tipoDoc].push(t.correlativo);
+  });
+
+  // ── 6. Vendedores y desempeño ────────────────────────────────
+  var pMap = {};
+  noAnul.forEach(function(t) {
+    var n = t.vendedor || 'Sin nombre';
+    if (!pMap[n]) pMap[n] = { tks: 0, total: 0 };
+    pMap[n].tks++;
+    pMap[n].total += t.total;
+  });
+  var pTotal = Object.keys(pMap).reduce(function(s,k){ return s + pMap[k].total; }, 0);
+
+  var vendedoresList = [];
+  var vnSeen = {};
+  noAnul.forEach(function(t) {
+    if (t.vendedor && t.vendedor !== caja.cajero && !vnSeen[t.vendedor]) {
+      vnSeen[t.vendedor] = true;
+      vendedoresList.push(t.vendedor);
+    }
+  });
+
+  return {
+    ok: true,
+    data: {
+      caja:       caja,
+      tickets:    tickets,
+      anulados:   anulados,
+      sinCobrar:  sinCobrar,
+      creditos:   creditos,
+      cobrados:   cobrados,
+      extras:     extras,
+      corrPorTipo: corrPorTipo,
+      vendedores: vendedoresList,
+      pMap:       pMap,
+      pTotal:     pTotal,
+      totales: {
+        efectivo:             tEfectivo,
+        virtual:              tVirtual,
+        credito:              tCredito,
+        anulados:             tAnulTotal,
+        sinCobrar:            tSinCobrarTotal,
+        extrasIngreso:        tExtrasIngreso,
+        extrasEgreso:         tExtrasEgreso,
+        extrasIngresoVirtual: tExtrasIngresoVirtual,
+        extrasEgresoVirtual:  tExtrasEgresoVirtual,
+        montoFinalEfe:        montoFinalEfe,
+        virtualFinal:         virtualFinal
+      }
+    }
+  };
+}
+
+// ============================================================
 // imprimirTicketZCierre — regenera el Ticket Z de cualquier
 // turno y lo envía a PrintNode.
 // Requiere Script Property: PRINTNODE_API_KEY en ProyectoMOS.

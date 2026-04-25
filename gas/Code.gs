@@ -121,6 +121,7 @@ function _route(method, e) {
       case 'cambiarMetodoME':           return cambiarMetodoME(params);
       case 'imprimirTicketZCierre':     return imprimirTicketZCierre(params);
       case 'getTicketZTexto':           return getTicketZTexto(params);
+      case 'datosTurno':               return datosTurno(params);
 
       default:
         return { ok: false, error: 'Acción no reconocida: ' + action };

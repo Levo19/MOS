@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Turno Z · MOSexpress</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg:#020817; --bg2:#0f172a; --border:#1e293b; --border2:#334155;
+  --text:#e2e8f0; --muted:#64748b; --muted2:#94a3b8;
+  --indigo:#6366f1; --indigo-light:#818cf8; --indigo-dim:rgba(99,102,241,0.12);
+  --green:#22c55e; --green-dim:rgba(34,197,94,0.12);
+  --amber:#f59e0b; --amber-dim:rgba(245,158,11,0.12);
+  --red:#ef4444; --red-dim:rgba(239,68,68,0.12);
+  --blue:#3b82f6; --blue-dim:rgba(59,130,246,0.12);
+  --purple:#a78bfa; --purple-dim:rgba(167,139,250,0.12);
+  --radius:14px; --radius-sm:10px;
+}
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; padding:14px; }
+.glass { background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); }
+
+/* Header */
+.hdr { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; gap:10px; flex-wrap:wrap; }
+.hdr-logo { font-size:22px; font-weight:900; color:var(--indigo-light); letter-spacing:-0.5px; }
+.hdr-sub  { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:2px; margin-top:2px; }
+.hdr-right { text-align:right; }
+.hdr-id   { font-size:13px; font-weight:700; color:var(--text); }
+.hdr-ref  { font-size:11px; color:var(--muted); margin-top:2px; }
+.countdown { color:var(--indigo-light); font-weight:700; }
+
+/* Botones */
+.btn-bar { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
+.btn { padding:9px 14px; border-radius:var(--radius-sm); font-size:13px; font-weight:700; cursor:pointer; border:1px solid var(--border); display:flex; align-items:center; gap:6px; white-space:nowrap; background:var(--bg2); color:var(--muted2); }
+.btn-wa  { background:rgba(37,211,102,0.12); color:#25d366; border-color:rgba(37,211,102,0.3); }
+.btn-prt { background:var(--bg2); color:var(--muted2); }
+
+/* KPI "Se debe recibir" */
+.recibir-wrap { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px; }
+.recibir-card { padding:18px; border-radius:var(--radius); border:1px solid; }
+.recibir-label { font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.1em; margin-bottom:6px; opacity:.7; }
+.recibir-val   { font-size:28px; font-weight:900; line-height:1; }
+.recibir-sub   { font-size:10px; margin-top:5px; opacity:.6; }
+.rc-efe { background:var(--green-dim); border-color:rgba(34,197,94,0.3); }
+.rc-vir { background:var(--blue-dim);  border-color:rgba(59,130,246,0.3);  }
+
+/* Tabla resumen */
+.resumen-table { width:100%; border-collapse:collapse; font-size:12px; }
+.resumen-table th { padding:7px 10px; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); text-align:left; border-bottom:1px solid var(--border); }
+.resumen-table th:not(:first-child) { text-align:right; }
+.resumen-table td { padding:7px 10px; border-bottom:1px solid rgba(255,255,255,0.03); }
+.resumen-table td:not(:first-child) { text-align:right; font-weight:700; }
+.resumen-table tfoot td { border-top:1px solid var(--border2); font-weight:800; padding-top:9px; }
+.resumen-table tr:last-child td { border-bottom:none; }
+
+/* Secciones colapsables */
+.sec { margin-bottom:12px; }
+.sec-hdr { display:flex; align-items:center; justify-content:space-between; padding:12px 14px; cursor:pointer; user-select:none; border-radius:var(--radius-sm); background:var(--bg2); border:1px solid var(--border); gap:8px; }
+.sec-hdr:hover { border-color:var(--border2); }
+.sec-title { font-size:12px; font-weight:700; display:flex; align-items:center; gap:7px; }
+.sec-badge { font-size:10px; font-weight:800; padding:2px 8px; border-radius:20px; background:var(--indigo-dim); color:var(--indigo-light); }
+.sec-total { font-size:13px; font-weight:800; }
+.sec-chev  { font-size:11px; color:var(--muted); transition:transform .2s; }
+.sec-body  { display:none; border:1px solid var(--border); border-top:none; border-radius:0 0 var(--radius-sm) var(--radius-sm); overflow:hidden; }
+.sec-body.open { display:block; }
+
+/* Tabla genérica */
+.tbl { width:100%; border-collapse:collapse; font-size:12px; }
+.tbl th { padding:8px 12px; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); background:rgba(255,255,255,0.02); border-bottom:1px solid var(--border); text-align:left; }
+.tbl td { padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.03); vertical-align:middle; }
+.tbl tr:last-child td { border-bottom:none; }
+.tbl tr:hover td { background:rgba(255,255,255,0.02); }
+
+/* Badges */
+.badge { display:inline-block; padding:2px 7px; border-radius:4px; font-size:10px; font-weight:700; }
+.b-nv  { background:rgba(99,102,241,0.15); color:var(--indigo-light); }
+.b-bo  { background:rgba(34,197,94,0.12);  color:var(--green); }
+.b-fa  { background:rgba(245,158,11,0.12); color:var(--amber); }
+.b-an  { background:rgba(239,68,68,0.12);  color:var(--red); }
+.b-cr  { background:rgba(167,139,250,0.12);color:var(--purple); }
+.b-pc  { background:rgba(245,158,11,0.12); color:var(--amber); }
+.b-ef  { background:rgba(34,197,94,0.12);  color:var(--green); }
+.b-vir { background:rgba(59,130,246,0.12); color:var(--blue); }
+
+/* Correlativos */
+.corr-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:8px; margin-bottom:14px; }
+.corr-card { padding:12px 14px; border-radius:var(--radius-sm); background:var(--bg2); border:1px solid var(--border); }
+.corr-tipo { font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:4px; }
+.corr-val  { font-size:13px; font-weight:800; color:var(--text); }
+.corr-sub  { font-size:10px; color:var(--muted); margin-top:2px; }
+
+/* Desempeño vendedor */
+.vend-row  { padding:10px 14px; border-bottom:1px solid rgba(255,255,255,0.04); }
+.vend-row:last-child { border-bottom:none; }
+.vend-top  { display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; }
+.vend-name { font-size:13px; font-weight:700; }
+.vend-meta { font-size:10px; color:var(--muted); }
+.vend-bar-wrap { height:5px; background:rgba(255,255,255,0.06); border-radius:3px; overflow:hidden; }
+.vend-bar { height:100%; border-radius:3px; background:linear-gradient(90deg,var(--indigo),var(--indigo-light)); transition:width .5s; }
+
+/* Extras */
+.extra-row { display:flex; align-items:center; gap:10px; padding:8px 14px; border-bottom:1px solid rgba(255,255,255,0.03); font-size:12px; }
+.extra-row:last-child { border-bottom:none; }
+.extra-hora { color:var(--muted); width:36px; flex-shrink:0; font-size:11px; }
+.extra-concepto { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.extra-monto { font-weight:800; flex-shrink:0; }
+
+/* Neto box */
+.neto-box { display:flex; gap:10px; padding:10px 14px; background:rgba(255,255,255,0.02); border-top:1px solid var(--border); flex-wrap:wrap; }
+.neto-item { flex:1; min-width:100px; }
+.neto-lbl  { font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); margin-bottom:3px; }
+.neto-val  { font-size:16px; font-weight:900; }
+
+/* Spinner */
+.loading { display:flex; align-items:center; justify-content:center; height:200px; flex-direction:column; gap:14px; }
+.spin { width:28px; height:28px; border:2px solid var(--border); border-top-color:var(--indigo); border-radius:50%; animation:spin .7s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* Sección header genérico */
+.section { margin-bottom:14px; }
+.sec-label { font-size:10px; font-weight:800; color:var(--indigo-light); text-transform:uppercase; letter-spacing:.08em; margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid var(--border); }
+
+/* Footer */
+.footer { text-align:center; padding:20px 0 8px; font-size:11px; color:var(--muted); }
+
+/* Print */
+@media print {
+  body { background:#fff; color:#000; padding:8px; font-size:11px; }
+  .btn-bar, .no-print { display:none !important; }
+  .glass, .sec-hdr, .sec-body, .corr-card { background:#f9f9f9 !important; border-color:#ddd !important; }
+  .sec-body { display:block !important; }
+  .recibir-card { background:#f9f9f9 !important; }
+  @page { size: 80mm auto; margin: 4mm; }
+}
+
+/* Mobile */
+@media(max-width:500px) {
+  .recibir-wrap { grid-template-columns:1fr; }
+  .recibir-val  { font-size:24px; }
+  .corr-grid    { grid-template-columns:repeat(2,1fr); }
+}
+</style>
+</head>
+<body>
+<div id="root">
+  <div class="loading"><div class="spin"></div><p style="color:var(--muted);font-size:13px;">Cargando turno…</p></div>
+</div>
+
+<script>
+const params  = new URLSearchParams(location.search);
+const idCaja  = params.get('idCaja') || params.get('id_caja') || '';
+const API_URL = params.get('api') || '';
+const REFRESH = 60;
+let countdown = REFRESH, timer = null;
+
+const $ = id => document.getElementById(id);
+const fm  = v => 'S/ ' + (parseFloat(v)||0).toFixed(2);
+const fmt = v => (parseFloat(v)||0).toLocaleString('es-PE',{minimumFractionDigits:2,maximumFractionDigits:2});
+const S   = v => 'S/ ' + fmt(v);
+const pct = (a,b) => b > 0 ? Math.min(100,(a/b*100)) : 0;
+
+if (!idCaja || !API_URL) {
+  document.getElementById('root').innerHTML = `
+    <div style="text-align:center;padding:80px 20px;color:var(--muted);">
+      <div style="font-size:40px;margin-bottom:16px;">⚠️</div>
+      <p style="font-size:14px;">Parámetros incompletos.<br>Abre este reporte desde MOS → Cajas.</p>
+    </div>`;
+} else {
+  loadData();
+}
+
+async function loadData() {
+  try {
+    const url = new URL(API_URL);
+    url.searchParams.set('action', 'datosTurno');
+    url.searchParams.set('idCaja', idCaja);
+    const r = await fetch(url.toString(), { cache:'no-store' });
+    const json = await r.json();
+    if (json.ok) render(json.data);
+    else renderError('GAS: ' + (json.error || 'Error desconocido'));
+  } catch(e) { renderError('Sin conexión: ' + e.message); }
+}
+
+function startCountdown() {
+  clearInterval(timer);
+  countdown = REFRESH;
+  timer = setInterval(() => {
+    countdown--;
+    const el = $('countdown');
+    if (el) el.textContent = '0:' + String(countdown).padStart(2,'0');
+    if (countdown <= 0) { loadData(); countdown = REFRESH; }
+  }, 1000);
+}
+
+function whatsappShare(data) {
+  const t = data.totales;
+  const c = data.caja;
+  const lines = [
+    `📊 Turno Z — ${c.cajero}`,
+    `🏪 ${c.zona || c.estacion} · ${c.fechaCierre || 'Abierto'}`,
+    ``,
+    `💵 SE DEBE RECIBIR: ${fm(t.montoFinalEfe)}`,
+    t.virtualFinal > 0 ? `📲 Virtual: ${fm(t.virtualFinal)}` : '',
+    t.credito > 0      ? `🔁 Crédito: ${fm(t.credito)}` : '',
+    ``,
+    `🎫 Tickets cobrados: ${data.cobrados.length}`,
+    data.anulados.length   > 0 ? `❌ Anulados: ${data.anulados.length} (${fm(t.anulados)})` : '',
+    data.sinCobrar.length  > 0 ? `⏳ Sin cobrar: ${data.sinCobrar.length} (${fm(t.sinCobrar)})` : '',
+  ].filter(Boolean).join('\n');
+
+  if (navigator.share) {
+    navigator.share({ text: lines }).catch(err => {
+      if (err.name !== 'AbortError') _waFallback(lines);
+    });
+  } else {
+    _waFallback(lines);
+  }
+}
+function _waFallback(text) {
+  window.location.href = 'whatsapp://send?text=' + encodeURIComponent(text);
+}
+
+function toggleSec(id) {
+  const body = $(id);
+  const chev = $('chev-' + id);
+  if (!body) return;
+  const open = body.classList.toggle('open');
+  if (chev) chev.style.transform = open ? 'rotate(180deg)' : '';
+}
+
+function badgeDoc(tipoDoc) {
+  const map = { 'NOTA_DE_VENTA':'b-nv','BOLETA':'b-bo','FACTURA':'b-fa' };
+  const lbl = { 'NOTA_DE_VENTA':'NV','BOLETA':'Bol','FACTURA':'Fac' };
+  const cls = map[tipoDoc] || 'b-nv';
+  return `<span class="badge ${cls}">${lbl[tipoDoc]||tipoDoc}</span>`;
+}
+
+function metodoBadge(metodo) {
+  const m = String(metodo||'').toUpperCase();
+  if (m === 'EFECTIVO')   return `<span class="badge b-ef">Efectivo</span>`;
+  if (m === 'CREDITO')    return `<span class="badge b-cr">Crédito</span>`;
+  if (m === 'POR_COBRAR') return `<span class="badge b-pc">Por cobrar</span>`;
+  if (m === 'ANULADO')    return `<span class="badge b-an">Anulado</span>`;
+  if (m.startsWith('MIXTO')) return `<span class="badge b-vir">Mixto</span>`;
+  return `<span class="badge b-vir">${metodo}</span>`;
+}
+
+function render(data) {
+  const { caja, tickets, anulados, sinCobrar, creditos, cobrados, extras,
+          corrPorTipo, vendedores, pMap, pTotal, totales } = data;
+  const t = totales;
+
+  // ── Correlativos ──────────────────────────────────────────────
+  const tipoLabels = { 'NOTA_DE_VENTA':'Notas de Venta','BOLETA':'Boletas','FACTURA':'Facturas' };
+  const corrHtml = Object.keys(corrPorTipo).length > 0
+    ? Object.entries(corrPorTipo).map(([tipo, corrs]) => {
+        const sorted = [...corrs].sort();
+        const label  = tipoLabels[tipo] || tipo;
+        const rango  = sorted.length > 1 ? `${sorted[0]} → ${sorted[sorted.length-1]}` : sorted[0];
+        return `<div class="corr-card">
+          <div class="corr-tipo">${label}</div>
+          <div class="corr-val">${sorted.length}</div>
+          <div class="corr-sub">${rango}</div>
+        </div>`;
+      }).join('')
+    : '<div style="color:var(--muted);font-size:12px;padding:4px 0;">Sin comprobantes emitidos.</div>';
+
+  // ── Tabla resumen ─────────────────────────────────────────────
+  const extrasNetoEfe = t.extrasIngreso - t.extrasEgreso;
+  const extrasNetoVir = t.extrasIngresoVirtual - t.extrasEgresoVirtual;
+  const hayExtras = t.extrasIngreso > 0 || t.extrasEgreso > 0 || t.extrasIngresoVirtual > 0 || t.extrasEgresoVirtual > 0;
+
+  const resumenHtml = `
+  <div style="overflow-x:auto;">
+  <table class="resumen-table">
+    <thead><tr><th>Concepto</th><th>Efectivo</th><th>Virtual</th></tr></thead>
+    <tbody>
+      <tr>
+        <td style="color:var(--muted);">Base inicial</td>
+        <td style="color:var(--muted2);">${S(caja.montoInicial)}</td>
+        <td style="color:var(--muted);opacity:.4;">—</td>
+      </tr>
+      <tr>
+        <td>Ventas cobradas</td>
+        <td style="color:var(--green);">${S(t.efectivo)}</td>
+        <td style="color:var(--blue);">${t.virtual > 0 ? S(t.virtual) : '<span style="opacity:.4">—</span>'}</td>
+      </tr>
+      ${hayExtras ? `<tr>
+        <td style="color:var(--muted);">Extras neto</td>
+        <td style="color:${extrasNetoEfe >= 0 ? 'var(--green)' : 'var(--red)'};">${extrasNetoEfe !== 0 ? (extrasNetoEfe > 0 ? '+' : '') + S(extrasNetoEfe) : '<span style="opacity:.4">—</span>'}</td>
+        <td style="color:${extrasNetoVir >= 0 ? 'var(--blue)' : 'var(--red)'};">${extrasNetoVir !== 0 ? (extrasNetoVir > 0 ? '+' : '') + S(extrasNetoVir) : '<span style="opacity:.4">—</span>'}</td>
+      </tr>` : ''}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td style="color:var(--text);">TOTAL FINAL</td>
+        <td style="color:var(--green);font-size:15px;">${S(t.montoFinalEfe)}</td>
+        <td style="color:var(--blue);font-size:15px;">${t.virtualFinal > 0 ? S(t.virtualFinal) : '<span style="opacity:.4">—</span>'}</td>
+      </tr>
+      ${t.credito > 0 ? `<tr><td style="color:var(--muted);font-size:10px;">+ Crédito pendiente</td><td colspan="2" style="color:var(--purple);font-size:11px;">${S(t.credito)} (no en caja)</td></tr>` : ''}
+    </tfoot>
+  </table>
+  </div>`;
+
+  // ── Anulados ──────────────────────────────────────────────────
+  const anuladosHtml = anulados.length > 0
+    ? `<table class="tbl"><thead><tr><th>Correlativo</th><th>Cliente</th><th style="text-align:right">Monto</th></tr></thead><tbody>
+        ${anulados.map(t => `<tr>
+          <td>${badgeDoc(t.tipoDoc)} <span style="font-size:11px;color:var(--muted);">${t.correlativo||'—'}</span></td>
+          <td style="color:var(--muted2);font-size:11px;">${t.clienteNom||t.clienteDoc||'—'}</td>
+          <td style="text-align:right;color:var(--red);font-weight:700;">${fm(t.total)}</td>
+        </tr>`).join('')}
+       </tbody></table>`
+    : '<div style="text-align:center;padding:16px;color:var(--muted);font-size:12px;">Sin anulados ✓</div>';
+
+  // ── Sin cobrar ────────────────────────────────────────────────
+  const sinCobrarHtml = sinCobrar.length > 0
+    ? `<table class="tbl"><thead><tr><th>Correlativo</th><th>Cliente</th><th style="text-align:right">Monto</th></tr></thead><tbody>
+        ${sinCobrar.map(t => `<tr>
+          <td>${badgeDoc(t.tipoDoc)} <span style="font-size:11px;color:var(--muted);">${t.correlativo||'—'}</span></td>
+          <td style="color:var(--muted2);font-size:11px;">${t.clienteNom||t.clienteDoc||'—'}</td>
+          <td style="text-align:right;color:var(--amber);font-weight:700;">${fm(t.total)}</td>
+        </tr>`).join('')}
+       </tbody></table>`
+    : '<div style="text-align:center;padding:16px;color:var(--muted);font-size:12px;">Sin tickets por cobrar ✓</div>';
+
+  // ── Créditos ──────────────────────────────────────────────────
+  const creditosHtml = creditos.length > 0
+    ? `<table class="tbl"><thead><tr><th>Correlativo</th><th>Cliente</th><th style="text-align:right">Monto</th></tr></thead><tbody>
+        ${creditos.map(t => `<tr>
+          <td>${badgeDoc(t.tipoDoc)} <span style="font-size:11px;color:var(--muted);">${t.correlativo||'—'}</span></td>
+          <td style="color:var(--muted2);font-size:11px;">${t.clienteNom||t.clienteDoc||'—'}</td>
+          <td style="text-align:right;color:var(--purple);font-weight:700;">${fm(t.total)}</td>
+        </tr>`).join('')}
+       </tbody></table>`
+    : '';
+
+  // ── Extras ────────────────────────────────────────────────────
+  const extrasListHtml = extras.length > 0
+    ? extras.map(ex => {
+        const isVir = ex.tipo.endsWith('_VIRTUAL');
+        const isIng = ex.tipo.startsWith('INGRESO');
+        const color = isIng ? (isVir ? 'var(--blue)' : 'var(--green)') : 'var(--red)';
+        const signo = isIng ? '+' : '−';
+        return `<div class="extra-row">
+          <span class="extra-hora">${ex.hora||'—'}</span>
+          <span class="extra-concepto">${ex.concepto}</span>
+          ${isVir ? '<span style="font-size:10px;color:var(--blue);">📲</span>' : ''}
+          <span class="extra-monto" style="color:${color};">${signo} ${fm(ex.monto)}</span>
+        </div>`;
+      }).join('')
+    : '<div style="text-align:center;padding:16px;color:var(--muted);font-size:12px;">Sin movimientos extra.</div>';
+
+  const netoEfe = t.extrasIngreso - t.extrasEgreso;
+  const netoVir = t.extrasIngresoVirtual - t.extrasEgresoVirtual;
+  const extrasNetoHtml = extras.length > 0 ? `
+    <div class="neto-box">
+      <div class="neto-item">
+        <div class="neto-lbl">💵 Neto efectivo</div>
+        <div class="neto-val" style="color:${netoEfe>=0?'var(--green)':'var(--red)'};">${netoEfe>=0?'+':''}${fm(netoEfe)}</div>
+      </div>
+      ${netoVir !== 0 ? `<div class="neto-item">
+        <div class="neto-lbl">📲 Neto virtual</div>
+        <div class="neto-val" style="color:${netoVir>=0?'var(--blue)':'var(--red)'};">${netoVir>=0?'+':''}${fm(netoVir)}</div>
+      </div>` : ''}
+    </div>` : '';
+
+  // ── Desempeño vendedores ──────────────────────────────────────
+  const pKeys = Object.keys(pMap).sort((a,b) => pMap[b].total - pMap[a].total);
+  const vendHtml = pKeys.length > 0
+    ? pKeys.map(nombre => {
+        const p  = pMap[nombre];
+        const pc = pct(p.total, pTotal);
+        const esCaj = nombre === caja.cajero;
+        return `<div class="vend-row">
+          <div class="vend-top">
+            <div>
+              <span class="vend-name">${nombre}${esCaj ? ' <span style="font-size:9px;background:var(--indigo-dim);color:var(--indigo-light);border-radius:4px;padding:1px 5px;">cajero</span>' : ''}</span>
+              <div class="vend-meta">${p.tks} ticket${p.tks!==1?'s':''}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:14px;font-weight:800;color:var(--text);">${fm(p.total)}</div>
+              <div style="font-size:10px;color:var(--muted);">${pc.toFixed(1)}% del turno</div>
+            </div>
+          </div>
+          <div class="vend-bar-wrap"><div class="vend-bar" style="width:${pc.toFixed(1)}%"></div></div>
+        </div>`;
+      }).join('')
+    : '<div style="text-align:center;padding:16px;color:var(--muted);font-size:12px;">Sin datos de vendedores.</div>';
+
+  // ── Armar HTML completo ───────────────────────────────────────
+  const estaAbierto = !caja.fechaCierre || caja.fechaCierre === '' || caja.estado === 'ABIERTA';
+
+  document.getElementById('root').innerHTML = `
+  <div class="hdr">
+    <div>
+      <div class="hdr-logo">MOSexpress</div>
+      <div class="hdr-sub">Ticket Z · Turno</div>
+    </div>
+    <div class="hdr-right">
+      <div class="hdr-id">${caja.cajero || '—'}</div>
+      <div class="hdr-ref">${caja.zona || caja.estacion || '—'} · ${estaAbierto
+        ? '<span style="color:var(--green);">● Abierto</span>'
+        : caja.fechaCierre}
+      </div>
+      <div class="hdr-ref" style="margin-top:2px;">
+        Actualiza en <span class="countdown" id="countdown">1:00</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="btn-bar no-print">
+    <button class="btn btn-wa" onclick="whatsappShare(${JSON.stringify(data).replace(/</g,'\\u003c')})">💬 WhatsApp</button>
+    <button class="btn btn-prt" onclick="window.print()">🖨 Imprimir</button>
+  </div>
+
+  <!-- Cabecera info turno -->
+  <div class="glass" style="padding:14px;margin-bottom:14px;">
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border);">
+      <div style="flex:1;min-width:140px;">
+        <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:3px;">Apertura</div>
+        <div style="font-size:13px;font-weight:700;">${caja.fechaApert || '—'}</div>
+      </div>
+      <div style="flex:1;min-width:140px;">
+        <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:3px;">Cierre</div>
+        <div style="font-size:13px;font-weight:700;color:${estaAbierto?'var(--green)':'var(--text)'};">${estaAbierto ? '● Turno abierto' : caja.fechaCierre}</div>
+      </div>
+      <div style="flex:1;min-width:120px;">
+        <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:3px;">Tickets</div>
+        <div style="font-size:13px;font-weight:700;">${cobrados.length} cobrados${anulados.length > 0 ? ' · <span style="color:var(--red)">'+anulados.length+' anulados</span>' : ''}</div>
+      </div>
+    </div>
+    ${vendedores.length > 0 ? `<div style="font-size:11px;color:var(--muted);">Vendedores: ${vendedores.join(', ')}</div>` : ''}
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:${vendedores.length>0?'6':'0'}px;">
+      ${creditos.length  > 0 ? `<span style="font-size:11px;color:var(--purple);">🔁 ${creditos.length} crédito${creditos.length>1?'s':''}</span>` : ''}
+      ${sinCobrar.length > 0 ? `<span style="font-size:11px;color:var(--amber);">⏳ ${sinCobrar.length} sin cobrar</span>` : ''}
+    </div>
+  </div>
+
+  <!-- SE DEBE RECIBIR -->
+  <div class="recibir-wrap">
+    <div class="recibir-card rc-efe">
+      <div class="recibir-label" style="color:var(--green);">💵 Se debe recibir</div>
+      <div class="recibir-val" style="color:var(--green);">${S(t.montoFinalEfe)}</div>
+      <div class="recibir-sub">Efectivo en cajón</div>
+    </div>
+    <div class="recibir-card rc-vir">
+      <div class="recibir-label" style="color:var(--blue);">📲 Virtual recibido</div>
+      <div class="recibir-val" style="color:var(--blue);">${S(t.virtualFinal)}</div>
+      <div class="recibir-sub">Yape · Plin · Transf.</div>
+    </div>
+  </div>
+
+  <!-- Tabla resumen -->
+  <div class="glass" style="padding:14px;margin-bottom:14px;">
+    <div class="sec-label">📊 Resumen del turno</div>
+    ${resumenHtml}
+  </div>
+
+  <!-- Correlativos -->
+  <div class="section">
+    <div class="sec-label">🎫 Correlativos del turno</div>
+    <div class="corr-grid">${corrHtml}</div>
+  </div>
+
+  <!-- Anulados -->
+  <div class="sec">
+    <div class="sec-hdr" onclick="toggleSec('sec-anulados')">
+      <div class="sec-title">❌ Anulados <span class="sec-badge">${anulados.length}</span></div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span class="sec-total" style="color:var(--red);">${anulados.length > 0 ? fm(t.anulados) : '—'}</span>
+        <span class="sec-chev" id="chev-sec-anulados">▾</span>
+      </div>
+    </div>
+    <div class="sec-body" id="sec-anulados">${anuladosHtml}</div>
+  </div>
+
+  <!-- Sin cobrar -->
+  <div class="sec">
+    <div class="sec-hdr" onclick="toggleSec('sec-sincobrar')">
+      <div class="sec-title">⏳ Sin cobrar <span class="sec-badge" style="background:var(--amber-dim);color:var(--amber);">${sinCobrar.length}</span></div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span class="sec-total" style="color:var(--amber);">${sinCobrar.length > 0 ? fm(t.sinCobrar) : '—'}</span>
+        <span class="sec-chev" id="chev-sec-sincobrar">▾</span>
+      </div>
+    </div>
+    <div class="sec-body" id="sec-sincobrar">${sinCobrarHtml}</div>
+  </div>
+
+  ${creditos.length > 0 ? `
+  <div class="sec">
+    <div class="sec-hdr" onclick="toggleSec('sec-creditos')">
+      <div class="sec-title">🔁 Créditos <span class="sec-badge" style="background:var(--purple-dim);color:var(--purple);">${creditos.length}</span></div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span class="sec-total" style="color:var(--purple);">${fm(t.credito)}</span>
+        <span class="sec-chev" id="chev-sec-creditos">▾</span>
+      </div>
+    </div>
+    <div class="sec-body" id="sec-creditos">${creditosHtml}</div>
+  </div>` : ''}
+
+  <!-- Extras -->
+  <div class="sec">
+    <div class="sec-hdr" onclick="toggleSec('sec-extras')">
+      <div class="sec-title">💰 Extras del turno <span class="sec-badge">${extras.length}</span></div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span class="sec-total" style="color:${netoEfe>=0?'var(--green)':'var(--red)'};">${extras.length > 0 ? (netoEfe>=0?'+':'')+fm(netoEfe) : '—'}</span>
+        <span class="sec-chev" id="chev-sec-extras">▾</span>
+      </div>
+    </div>
+    <div class="sec-body" id="sec-extras">${extrasListHtml}${extrasNetoHtml}</div>
+  </div>
+
+  <!-- Desempeño vendedores -->
+  <div class="sec">
+    <div class="sec-hdr" onclick="toggleSec('sec-vend')">
+      <div class="sec-title">👤 Desempeño del turno <span class="sec-badge">${pKeys.length}</span></div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span class="sec-total">${fm(pTotal)}</span>
+        <span class="sec-chev" id="chev-sec-vend">▾</span>
+      </div>
+    </div>
+    <div class="sec-body open" id="sec-vend" style="background:var(--bg2);">${vendHtml}</div>
+  </div>
+
+  <div class="footer no-print">
+    MOSexpress · ${caja.idCaja} · Generado ${new Date().toLocaleString('es-PE')}
+  </div>`;
+
+  startCountdown();
+}
+
+function renderError(msg) {
+  document.getElementById('root').innerHTML = `
+  <div style="text-align:center;padding:80px 20px;color:var(--muted);">
+    <div style="font-size:40px;margin-bottom:16px;">⚠️</div>
+    <p style="font-size:14px;">${msg}</p>
+    <button onclick="loadData()" style="margin-top:20px;padding:10px 24px;background:var(--indigo-dim);border:1px solid var(--border);border-radius:10px;color:var(--text);cursor:pointer;font-size:14px;">
+      Reintentar
+    </button>
+  </div>`;
+}
+</script>
+</body>
+</html>

@@ -3322,6 +3322,7 @@ const MOS = (() => {
           <td id="hr-tickets-${c.idCaja}" class="text-center">${c.tickets}</td>
           <td class="flex gap-1.5 items-center flex-wrap">
             <a href="${c.urlReporte||'#'}" target="_blank" rel="noopener" class="btn-primary text-xs px-3 py-1.5 inline-block" style="text-decoration:none">📊 Reporte</a>
+            <button onclick="window.open('./turno.html?idCaja=${c.idCaja}&api='+encodeURIComponent(API.getUrl()),'_blank')" class="btn-ghost text-xs px-3 py-1.5">📋 Turno</button>
             <button onclick="MOS.abrirModalTicketZ('${c.idCaja}')" class="btn-ghost text-xs px-3 py-1.5">🖨 Z</button>
           </td>
         </tr>`;
@@ -3442,6 +3443,7 @@ const MOS = (() => {
                  class="btn-primary text-xs px-3 py-1.5 inline-block" style="text-decoration:none">
                 📊 Reporte
               </a>
+              <button onclick="window.open('./turno.html?idCaja=${c.idCaja}&api='+encodeURIComponent(API.getUrl()),'_blank')" class="btn-ghost text-xs px-3 py-1.5">📋 Turno</button>
               <button onclick="MOS.abrirModalTicketZ('${c.idCaja}')" class="btn-ghost text-xs px-3 py-1.5">🖨 Z</button>
             </td>
           </tr>`;
@@ -3697,6 +3699,7 @@ const MOS = (() => {
               <td id="hr-tickets-${c.idCaja}" class="text-center">${c.tickets}</td>
               <td class="flex gap-1.5 items-center flex-wrap">
                 <a href="${c.urlReporte||'#'}" target="_blank" rel="noopener" class="btn-primary text-xs px-3 py-1.5 inline-block" style="text-decoration:none">📊 Reporte</a>
+                <button onclick="window.open('./turno.html?idCaja=${c.idCaja}&api='+encodeURIComponent(API.getUrl()),'_blank')" class="btn-ghost text-xs px-3 py-1.5">📋 Turno</button>
                 <button onclick="MOS.abrirModalTicketZ('${c.idCaja}')" class="btn-ghost text-xs px-3 py-1.5">🖨 Z</button>
               </td>`;
             histTbody.prepend(tr);

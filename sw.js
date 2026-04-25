@@ -27,11 +27,12 @@ _fcmMsg.onBackgroundMessage(payload => {
   });
 });
 
-const VERSION = '1.3.15';
+const VERSION = '1.3.16';
 const CACHE   = 'mos-v' + VERSION;
 const ASSETS  = [
   './',
   './index.html',
+  './turno.html',
   './js/app.js',
   './js/api.js',
   './manifest.json',
