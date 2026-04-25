@@ -468,6 +468,34 @@ function datosTurno(params) {
     }
   });
 
+  // ── 7. Leer IMPRESORAS activas TICKET con PrintNode ID ───────
+  var impresoras = [];
+  var impSheet = ss.getSheetByName('IMPRESORAS');
+  if (impSheet) {
+    var impData = impSheet.getDataRange().getValues();
+    var impHdrs = impData[0].map(function(h){ return String(h).trim(); });
+    var iIdIdx   = impHdrs.indexOf('idImpresora');
+    var iNomIdx  = impHdrs.indexOf('nombre');
+    var iPnIdx   = impHdrs.indexOf('printNodeId');
+    var iTipoIdx = impHdrs.indexOf('tipo');
+    var iZonaIdx = impHdrs.indexOf('idZona');
+    var iActIdx  = impHdrs.indexOf('activo');
+    for (var ii = 1; ii < impData.length; ii++) {
+      var ir = impData[ii];
+      var activo = String(ir[iActIdx] || '').toLowerCase();
+      if (activo !== '1' && activo !== 'true') continue;
+      if (String(ir[iTipoIdx] || '').toUpperCase() !== 'TICKET') continue;
+      var pnId = String(ir[iPnIdx] || '').trim();
+      if (!pnId) continue;
+      impresoras.push({
+        id:          String(ir[iIdIdx]  || ''),
+        nombre:      String(ir[iNomIdx] || ''),
+        printNodeId: pnId,
+        zona:        String(ir[iZonaIdx] || '')
+      });
+    }
+  }
+
   return {
     ok: true,
     data: {
@@ -482,6 +510,7 @@ function datosTurno(params) {
       vendedores: vendedoresList,
       pMap:       pMap,
       pTotal:     pTotal,
+      impresoras: impresoras,
       totales: {
         efectivo:             tEfectivo,
         virtual:              tVirtual,

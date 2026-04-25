@@ -34,7 +34,25 @@ body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:
 .btn-bar { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
 .btn { padding:9px 14px; border-radius:var(--radius-sm); font-size:13px; font-weight:700; cursor:pointer; border:1px solid var(--border); display:flex; align-items:center; gap:6px; white-space:nowrap; background:var(--bg2); color:var(--muted2); }
 .btn-wa  { background:rgba(37,211,102,0.12); color:#25d366; border-color:rgba(37,211,102,0.3); }
-.btn-prt { background:var(--bg2); color:var(--muted2); }
+.btn-prt { background:var(--indigo-dim); color:var(--indigo-light); border-color:rgba(99,102,241,0.35); }
+
+/* Print modal */
+#prtOverlay { display:none;position:fixed;inset:0;background:rgba(2,8,23,0.85);z-index:200;align-items:flex-end;justify-content:center; }
+#prtOverlay.open { display:flex; }
+#prtSheet { background:var(--bg2);border-radius:20px 20px 0 0;border:1px solid var(--border);padding:20px;width:100%;max-width:480px;max-height:80vh;overflow-y:auto; }
+.prt-title { font-size:15px;font-weight:900;margin-bottom:4px; }
+.prt-sub   { font-size:11px;color:var(--muted);margin-bottom:16px; }
+.prt-zone-hdr { font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;padding:4px 10px;border-radius:20px;display:inline-block;margin:10px 0 6px; }
+.prt-btn { width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;font-weight:700;cursor:pointer;text-align:left;display:flex;align-items:center;gap:10px;margin-bottom:6px;transition:background .15s; }
+.prt-btn:hover { background:var(--indigo-dim);border-color:rgba(99,102,241,0.4); }
+.prt-btn .prt-icon { font-size:20px; }
+.prt-btn .prt-name { flex:1; }
+.prt-btn .prt-id   { font-size:10px;color:var(--muted);font-weight:400; }
+.prt-cancel { width:100%;padding:11px;border-radius:12px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:13px;font-weight:700;cursor:pointer;margin-top:8px; }
+
+/* Toast */
+#toast { position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px 20px;font-size:13px;font-weight:700;z-index:300;transition:transform .3s,opacity .3s;opacity:0;white-space:nowrap; }
+#toast.show { transform:translateX(-50%) translateY(0);opacity:1; }
 
 /* KPI "Se debe recibir" */
 .recibir-wrap { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px; }
@@ -158,8 +176,8 @@ body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:
 #pkt { display:none; }
 #pkt-pre {
   font-family:'Courier New',Courier,monospace;
-  font-size:9.5pt; line-height:1.35;
-  white-space:pre; word-break:break-all;
+  font-size:7.5pt; line-height:1.3;
+  white-space:pre;
   color:#000;
 }
 
@@ -522,7 +540,7 @@ function render(data) {
 
   <div class="btn-bar no-print">
     <button class="btn btn-wa" onclick="whatsappShare(window._turnoData)">💬 WhatsApp</button>
-    <button class="btn btn-prt" onclick="buildPrintTicket(window._turnoData);window.print()">🖨 Imprimir</button>
+    <button class="btn btn-prt" onclick="openPrintModal()">🖨 Imprimir</button>
   </div>
 
   <!-- Cabecera info turno -->
@@ -648,7 +666,7 @@ function buildPrintTicket(data) {
   const { caja, cobrados, anulados, sinCobrar, creditos, extras,
           corrPorTipo, vendedores, pMap, pTotal, totales } = data;
   const t = totales;
-  const W = 32;
+  const W = 48;
 
   const dbl = () => '='.repeat(W);
   const sep = () => '-'.repeat(W);
@@ -803,6 +821,83 @@ function buildPrintTicket(data) {
   pre.textContent = L.join('\n');
 }
 
+// ── Zone color palette ────────────────────────────────────────
+const ZONE_PALETTE = [
+  { bg:'rgba(99,102,241,0.15)', color:'#818cf8', border:'rgba(99,102,241,0.4)' },
+  { bg:'rgba(34,197,94,0.12)',  color:'#4ade80', border:'rgba(34,197,94,0.35)' },
+  { bg:'rgba(245,158,11,0.12)', color:'#fbbf24', border:'rgba(245,158,11,0.35)' },
+  { bg:'rgba(239,68,68,0.12)',  color:'#f87171', border:'rgba(239,68,68,0.35)' },
+  { bg:'rgba(167,139,250,0.12)',color:'#c4b5fd', border:'rgba(167,139,250,0.35)' },
+];
+
+function openPrintModal() {
+  const data = window._turnoData;
+  if (!data) return;
+  const impresoras = data.impresoras || [];
+  const list = document.getElementById('prtList');
+  if (!impresoras.length) {
+    list.innerHTML = '<p style="color:var(--muted);font-size:12px;text-align:center;padding:20px 0;">No hay impresoras activas configuradas.<br>Revisa la hoja IMPRESORAS en ProyectoMOS.</p>';
+  } else {
+    // Group by zone
+    const zones = {};
+    impresoras.forEach(p => {
+      const z = p.zona || 'Sin zona';
+      if (!zones[z]) zones[z] = [];
+      zones[z].push(p);
+    });
+    let html = '';
+    const zKeys = Object.keys(zones);
+    zKeys.forEach((z, zi) => {
+      const pal = ZONE_PALETTE[zi % ZONE_PALETTE.length];
+      html += `<div class="prt-zone-hdr" style="background:${pal.bg};color:${pal.color};border:1px solid ${pal.border};">${esc(z)}</div>`;
+      zones[z].forEach(p => {
+        html += `<button class="prt-btn" onclick="doPrint('${esc(p.printNodeId)}')">
+          <span class="prt-icon">🖨</span>
+          <span class="prt-name">${esc(p.nombre)}</span>
+          <span class="prt-id">ID ${esc(p.printNodeId)}</span>
+        </button>`;
+      });
+    });
+    list.innerHTML = html;
+  }
+  document.getElementById('prtOverlay').classList.add('open');
+}
+
+function closePrintModal() {
+  document.getElementById('prtOverlay').classList.remove('open');
+}
+
+async function doPrint(printNodeId) {
+  closePrintModal();
+  showToast('⏳ Enviando a impresora…', 'info');
+  try {
+    const url = new URL(API_URL);
+    url.searchParams.set('action', 'imprimirTicketZCierre');
+    url.searchParams.set('idCaja', idCaja);
+    url.searchParams.set('printerId', printNodeId);
+    const r = await fetch(url.toString(), { cache:'no-store' });
+    const json = await r.json();
+    if (json.ok) {
+      showToast('✅ Ticket enviado a imprimir', 'ok');
+    } else {
+      showToast('❌ ' + (json.error || 'Error al imprimir'), 'err');
+    }
+  } catch(e) {
+    showToast('❌ Error de red: ' + e.message, 'err');
+  }
+}
+
+let _toastTimer = null;
+function showToast(msg, type) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.borderColor = type === 'ok' ? 'rgba(34,197,94,0.5)' : type === 'err' ? 'rgba(239,68,68,0.5)' : 'var(--border)';
+  el.style.color = type === 'ok' ? '#4ade80' : type === 'err' ? '#f87171' : 'var(--text)';
+  el.classList.add('show');
+  if (_toastTimer) clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), 3500);
+}
+
 function renderError(msg) {
   document.getElementById('root').innerHTML = `
   <div style="text-align:center;padding:80px 20px;color:var(--muted);">
@@ -814,5 +909,18 @@ function renderError(msg) {
   </div>`;
 }
 </script>
+<!-- Printer modal -->
+<div id="prtOverlay" onclick="if(event.target===this)closePrintModal()">
+  <div id="prtSheet">
+    <div class="prt-title">🖨 Seleccionar impresora</div>
+    <div class="prt-sub">El ticket Z se enviará directo por PrintNode</div>
+    <div id="prtList"></div>
+    <button class="prt-cancel" onclick="closePrintModal()">Cancelar</button>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
 </body>
 </html>
