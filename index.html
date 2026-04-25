@@ -420,6 +420,38 @@
       40%        { opacity:1; transform:scale(1.2); }
     }
 
+    /* ── Update banner (nueva versión disponible) ───────── */
+    #mosUpdateBanner {
+      position:fixed;bottom:80px;left:50%;
+      transform:translateX(-50%) translateY(150px);
+      z-index:9997;width:calc(100% - 32px);max-width:420px;
+      transition:transform .45s cubic-bezier(.34,1.56,.64,1);
+    }
+    #mosUpdateBanner.visible { transform:translateX(-50%) translateY(0); }
+    .mos-upd-inner {
+      background:linear-gradient(135deg,#1a1040,#0f172a);
+      border:1px solid #6366f1;border-radius:16px;padding:14px 16px;
+      display:flex;align-items:center;gap:12px;
+      box-shadow:0 8px 32px rgba(99,102,241,.35);
+      animation:mosGlow 3s ease-in-out infinite;
+    }
+    @keyframes mosGlow {
+      0%,100%{ box-shadow:0 8px 32px rgba(99,102,241,.35); }
+      50%    { box-shadow:0 8px 44px rgba(99,102,241,.65); }
+    }
+    .mos-upd-icon { font-size:1.5rem;animation:mosIconBounce 1.8s ease-in-out infinite; }
+    @keyframes mosIconBounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
+    .mos-upd-text  { flex:1; }
+    .mos-upd-title { font-size:.9rem;font-weight:700;color:#e2e8f0; }
+    .mos-upd-sub   { font-size:.72rem;color:#94a3b8;margin-top:2px; }
+    .mos-upd-btn {
+      background:linear-gradient(135deg,#6366f1,#8b5cf6);
+      color:#fff;border:none;border-radius:10px;
+      padding:8px 16px;font-size:.82rem;font-weight:700;
+      cursor:pointer;white-space:nowrap;transition:opacity .15s;
+    }
+    .mos-upd-btn:hover { opacity:.85; }
+
     /* ── Catalog cards ──────────────────────────────────── */
     .cat-card {
       background: #0f172a; border: 1px solid #1e293b; border-radius: 14px; overflow: hidden;
@@ -3079,6 +3111,18 @@
 }
 </style>
 
+<!-- ── Banner nueva versión ──────────────────────────────── -->
+<div id="mosUpdateBanner">
+  <div class="mos-upd-inner">
+    <div class="mos-upd-icon">🚀</div>
+    <div class="mos-upd-text">
+      <div class="mos-upd-title">Nueva versión disponible</div>
+      <div class="mos-upd-sub" id="mosUpdateBannerSub">Preparando actualización…</div>
+    </div>
+    <button class="mos-upd-btn" onclick="window._applyMosUpdate()">Actualizar</button>
+  </div>
+</div>
+
 <!-- ── Overlay de actualización ─────────────────────────── -->
 <div id="updateOverlay" class="hidden fixed inset-0 z-[60] flex flex-col items-center justify-center" style="background:#020817">
   <div style="text-align:center">
@@ -3106,7 +3150,7 @@
 (function() {
   if (!('serviceWorker' in navigator)) { MOS.init(); return; }
 
-  let _reg = null;
+  let _reg = null, _waitingWorker = null;
 
   // Muestra el overlay de "Actualizando..."
   function _showUpdateOverlay() {
@@ -3114,14 +3158,35 @@
     if (el) el.classList.remove('hidden');
   }
 
-  // Muestra el badge "Nueva versión disponible" en el sidebar
-  function _showNewVersionBadge() {
-    const tip = document.getElementById('syncVersionTip');
-    if (tip) tip.classList.remove('hidden');
+  // Oculta el banner deslizante
+  function _hideBanner() {
+    const b = document.getElementById('mosUpdateBanner');
+    if (b) b.classList.remove('visible');
   }
+
+  // Muestra el banner deslizante con versión
+  function _showUpdateBanner(worker) {
+    _waitingWorker = worker;
+    fetch('./version.json?t=' + Date.now())
+      .then(r => r.json())
+      .then(v => {
+        const sub = document.getElementById('mosUpdateBannerSub');
+        if (sub) sub.textContent = 'v' + v.version + (v.build ? ' · ' + v.build : '');
+      }).catch(() => {});
+    const b = document.getElementById('mosUpdateBanner');
+    if (b) setTimeout(() => b.classList.add('visible'), 200);
+  }
+
+  // Aplicar update desde el banner
+  window._applyMosUpdate = function() {
+    _hideBanner();
+    _showUpdateOverlay();
+    if (_waitingWorker) _waitingWorker.postMessage('SKIP_WAITING');
+  };
 
   // Activa el SW en espera y recarga
   function _activateWaiting(worker) {
+    _hideBanner();
     _showUpdateOverlay();
     worker.postMessage('SKIP_WAITING');
     // La recarga la dispara el evento controllerchange
@@ -3173,7 +3238,7 @@
 
     // ¿Ya hay uno esperando? (recarga previa con nueva versión)
     if (reg.waiting) {
-      _showNewVersionBadge();
+      _showUpdateBanner(reg.waiting);
     }
 
     // Detectar nueva versión durante la sesión
@@ -3181,8 +3246,7 @@
       const nw = reg.installing;
       nw.addEventListener('statechange', () => {
         if (nw.state === 'installed' && navigator.serviceWorker.controller) {
-          // Hay una versión nueva lista — mostrar badge discreto
-          _showNewVersionBadge();
+          _showUpdateBanner(nw);
         }
       });
     });
@@ -3191,6 +3255,9 @@
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       window.location.reload();
     });
+
+    // Polling cada 5 min para detectar actualizaciones en segundo plano
+    setInterval(() => _reg?.update().catch(() => {}), 5 * 60 * 1000);
 
   }).catch(e => console.warn('[SW register]', e)).finally(() => {
     MOS.init();
