@@ -42,15 +42,16 @@ function _getFcmAccessToken() {
 
 // ── Enviar push a una lista de tokens ──────────────────────────
 function _enviarPushTokens(titulo, cuerpo, tokens) {
-  if (!tokens || tokens.length === 0) return;
+  if (!tokens || tokens.length === 0) { Logger.log('[Push] Sin tokens — abortando'); return; }
   var projectId   = PropertiesService.getScriptProperties().getProperty('FCM_PROJECT_ID');
   var accessToken = _getFcmAccessToken();
   var url = 'https://fcm.googleapis.com/v1/projects/' + projectId + '/messages:send';
+  Logger.log('[Push] Enviando "' + titulo + '" a ' + tokens.length + ' token(s)');
 
-  tokens.forEach(function(token) {
+  tokens.forEach(function(token, idx) {
     if (!token) return;
     try {
-      UrlFetchApp.fetch(url, {
+      var resp = UrlFetchApp.fetch(url, {
         method: 'post',
         contentType: 'application/json',
         headers: { 'Authorization': 'Bearer ' + accessToken },
@@ -71,21 +72,81 @@ function _enviarPushTokens(titulo, cuerpo, tokens) {
         }),
         muteHttpExceptions: true
       });
+      var code = resp.getResponseCode();
+      if (code !== 200) {
+        Logger.log('[Push] Token[' + idx + '] HTTP ' + code + ': ' + resp.getContentText());
+      } else {
+        Logger.log('[Push] Token[' + idx + '] OK');
+      }
     } catch(e) {
-      Logger.log('Push error: ' + e.message);
+      Logger.log('[Push] Token[' + idx + '] excepcion: ' + e.message);
     }
   });
 }
 
-// ── Enviar a TODOS los tokens registrados ──────────────────────
+// ── Enviar a TODOS los tokens activos + auto-limpiar los inválidos ─
 function _enviarPushTodos(titulo, cuerpo) {
   try {
-    var sheet = _getPushTokensSheet();
-    var rows  = _sheetToObjects(sheet).filter(function(r) {
-      return r.activo !== false && String(r.activo) !== '0' && String(r.activo) !== 'false';
-    });
-    var tokens = rows.map(function(r) { return String(r.token || ''); }).filter(Boolean);
-    if (tokens.length > 0) _enviarPushTokens(titulo, cuerpo, tokens);
+    var sheet       = _getPushTokensSheet();
+    var data        = sheet.getDataRange().getValues();
+    var projectId   = PropertiesService.getScriptProperties().getProperty('FCM_PROJECT_ID');
+    var accessToken = _getFcmAccessToken();
+    var url = 'https://fcm.googleapis.com/v1/projects/' + projectId + '/messages:send';
+    // headers: idToken(0) token(1) usuario(2) dispositivo(3) appOrigen(4) fecha(5) ultimaVez(6) activo(7)
+
+    var sent = 0, cleaned = 0;
+
+    for (var i = 1; i < data.length; i++) {
+      var token  = String(data[i][1] || '');
+      var activo = data[i][7];
+      if (!token || activo === false || String(activo) === '0' || String(activo) === 'false') continue;
+
+      try {
+        var resp = UrlFetchApp.fetch(url, {
+          method: 'post',
+          contentType: 'application/json',
+          headers: { 'Authorization': 'Bearer ' + accessToken },
+          payload: JSON.stringify({
+            message: {
+              token: token,
+              notification: { title: titulo, body: cuerpo },
+              webpush: {
+                notification: {
+                  title: titulo, body: cuerpo,
+                  icon:  'https://levo19.github.io/MOS/icon-192.png',
+                  badge: 'https://levo19.github.io/MOS/icon-192.png',
+                  vibrate: [200, 100, 200]
+                }
+              }
+            }
+          }),
+          muteHttpExceptions: true
+        });
+
+        var code = resp.getResponseCode();
+        if (code === 200) {
+          sent++;
+          Logger.log('[Push] OK → ' + (data[i][2] || 'desconocido') + ' (' + (data[i][3] || '') + ')');
+        } else {
+          var errCode = '';
+          try {
+            var body = JSON.parse(resp.getContentText());
+            errCode = (body.error && body.error.details && body.error.details[0] && body.error.details[0].errorCode) || '';
+          } catch(_) {}
+          if (errCode === 'UNREGISTERED' || code === 404) {
+            // Token expirado/inválido — marcar como inactivo para no volver a usarlo
+            sheet.getRange(i + 1, 8).setValue(false);
+            cleaned++;
+            Logger.log('[Push] UNREGISTERED → desactivado: ' + token.substring(0, 20) + '...');
+          } else {
+            Logger.log('[Push] Error HTTP ' + code + ': ' + resp.getContentText().substring(0, 120));
+          }
+        }
+      } catch(e) {
+        Logger.log('[Push] excepcion token[' + i + ']: ' + e.message);
+      }
+    }
+    Logger.log('[Push] Resumen: ' + sent + ' enviados, ' + cleaned + ' tokens limpiados');
   } catch(e) {
     Logger.log('_enviarPushTodos error: ' + e.message);
   }
