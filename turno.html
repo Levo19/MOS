@@ -213,14 +213,15 @@ body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:
 <div id="pkt"><pre id="pkt-pre"></pre></div>
 
 <script>
-const params  = new URLSearchParams(location.search);
-const idCaja  = params.get('idCaja') || params.get('id_caja') || '';
-const API_URL = params.get('api') || '';
-const REFRESH = 60;
+const params    = new URLSearchParams(location.search);
+const idCaja    = params.get('idCaja') || params.get('id_caja') || '';
+const API_URL   = params.get('api') || '';
+const autoPrint = params.get('autoprint') === '1';
+const REFRESH   = 60;
 let countdown = REFRESH, timer = null;
 
 // ── Auto-update check: compara version.json con la versión embebida ──
-const _TURNO_VERSION = '1.3.29';
+const _TURNO_VERSION = '1.3.31';
 (async function _checkVersion() {
   try {
     const r = await fetch('./version.json?t=' + Date.now(), { cache: 'no-store' });
@@ -260,8 +261,10 @@ async function loadData() {
     url.searchParams.set('idCaja', idCaja);
     const r = await fetch(url.toString(), { cache:'no-store' });
     const json = await r.json();
-    if (json.ok) render(json.data);
-    else renderError('GAS: ' + (json.error || 'Error desconocido'));
+    if (json.ok) {
+      render(json.data);
+      if (autoPrint) _triggerAutoPrint(json.data);
+    } else renderError('GAS: ' + (json.error || 'Error desconocido'));
   } catch(e) { renderError('Sin conexión: ' + e.message); }
 }
 
@@ -713,7 +716,7 @@ function render(data) {
 
   <div class="btn-bar no-print">
     <button class="btn btn-wa" onclick="whatsappShare(window._turnoData)">💬 WhatsApp</button>
-    <button class="btn btn-prt" onclick="openPrintModal()">🖨 Imprimir</button>
+    ${autoPrint ? '' : '<button class="btn btn-prt" onclick="openPrintModal()">🖨 Imprimir</button>'}
   </div>
 
   <!-- Cabecera info turno -->
@@ -1086,6 +1089,15 @@ async function doPrint(printNodeId) {
     }
   } catch(e) {
     showToast('❌ Error de red: ' + e.message, 'err');
+  }
+}
+
+function _triggerAutoPrint(data) {
+  const impresoras  = data.impresoras || [];
+  const estacionCaja = (data.caja && data.caja.estacion) ? data.caja.estacion : '';
+  const imp = impresoras.find(function(p) { return p.estacion === estacionCaja; });
+  if (imp && imp.printNodeId) {
+    setTimeout(function() { doPrint(imp.printNodeId); }, 800);
   }
 }
 
