@@ -27,7 +27,7 @@ _fcmMsg.onBackgroundMessage(payload => {
   });
 });
 
-const VERSION = '1.3.20';
+const VERSION = '1.3.21';
 const CACHE   = 'mos-v' + VERSION;
 const ASSETS  = [
   './',
@@ -67,8 +67,8 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   // No cachear llamadas externas (GAS, etc.)
   if (url.origin !== self.location.origin) return;
-  // No cachear version.json — siempre desde red para detectar cambios
-  if (url.pathname.endsWith('version.json')) {
+  // Siempre desde red: version.json y turno.html (se actualizan frecuentemente)
+  if (url.pathname.endsWith('version.json') || url.pathname.endsWith('turno.html')) {
     e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
     return;
   }

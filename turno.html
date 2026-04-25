@@ -280,18 +280,21 @@ function parseMetodo(metodo) {
   return { label: metodo, cls:'b-vir', detail: null };
 }
 
+const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
 function ticketDetailHtml(tk, alwaysObs) {
-  const mp    = parseMetodo(tk.metodo);
-  const hasObs = tk.obs && tk.obs.trim();
-  const cliente = [tk.clienteNom, tk.clienteDoc].filter(Boolean).join(' · ') || '—';
+  const mp     = parseMetodo(tk.metodo);
+  const obsRaw = tk.obs ? tk.obs.trim() : '';
+  const hasObs = obsRaw.length > 0;
+  const cliente = [tk.clienteNom, tk.clienteDoc].filter(Boolean).map(esc).join(' · ') || '—';
   return `
-    <div class="tk-info-row"><span class="tk-info-lbl">Hora</span><span>${tk.hora||'—'}</span></div>
-    <div class="tk-info-row"><span class="tk-info-lbl">Vendedor</span><span>${tk.vendedor||'—'}</span></div>
+    <div class="tk-info-row"><span class="tk-info-lbl">Hora</span><span>${esc(tk.hora)||'—'}</span></div>
+    <div class="tk-info-row"><span class="tk-info-lbl">Vendedor</span><span>${esc(tk.vendedor)||'—'}</span></div>
     <div class="tk-info-row"><span class="tk-info-lbl">Cliente</span><span>${cliente}</span></div>
     <div class="tk-info-row"><span class="tk-info-lbl">Tipo</span><span>${badgeDoc(tk.tipoDoc)}</span></div>
     <div class="tk-info-row"><span class="tk-info-lbl">Pago</span><span><span class="badge ${mp.cls}">${mp.label}</span>${mp.detail ? ' ' + mp.detail : ''}</span></div>
     <div class="tk-info-row"><span class="tk-info-lbl">Total</span><span style="font-weight:900;font-size:14px;">${fm(tk.total)}</span></div>
-    ${(alwaysObs || hasObs) ? `<div class="tk-obs"><div class="tk-obs-lbl">Comentario</div>${hasObs ? tk.obs : '<em style="opacity:.5">Sin comentarios</em>'}</div>` : ''}
+    ${(alwaysObs || hasObs) ? `<div class="tk-obs"><div class="tk-obs-lbl">Comentario</div>${hasObs ? esc(obsRaw) : '<em style="opacity:.5">Sin comentarios</em>'}</div>` : ''}
   `;
 }
 
@@ -435,7 +438,7 @@ function render(data) {
           </div>
           <div class="tk-obs" style="margin-top:6px;">
             <div class="tk-obs-lbl">Comentario</div>
-            ${ex.concepto || '<em style="opacity:.5">Sin descripción</em>'}
+            ${ex.concepto ? esc(ex.concepto) : '<em style="opacity:.5">Sin descripción</em>'}
           </div>
         </div>`;
       }).join('')
