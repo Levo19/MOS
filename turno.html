@@ -126,12 +126,17 @@ body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:
 
 /* Print */
 @media print {
-  body { background:#fff; color:#000; padding:8px; font-size:11px; }
-  .btn-bar, .no-print { display:none !important; }
-  .glass, .sec-hdr, .sec-body, .corr-card { background:#f9f9f9 !important; border-color:#ddd !important; }
-  .sec-body { display:block !important; }
-  .recibir-card { background:#f9f9f9 !important; }
-  @page { size: 80mm auto; margin: 4mm; }
+  body { background:#fff; color:#000; padding:0; margin:0; }
+  #root, .no-print { display:none !important; }
+  #pkt  { display:block !important; }
+  @page { size:80mm auto; margin:2mm; }
+}
+#pkt { display:none; }
+#pkt-pre {
+  font-family:'Courier New',Courier,monospace;
+  font-size:9.5pt; line-height:1.35;
+  white-space:pre; word-break:break-all;
+  color:#000;
 }
 
 /* Mobile */
@@ -146,6 +151,9 @@ body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:
 <div id="root">
   <div class="loading"><div class="spin"></div><p style="color:var(--muted);font-size:13px;">Cargando turno…</p></div>
 </div>
+
+<!-- Contenedor ticket imprimible (oculto en pantalla) -->
+<div id="pkt"><pre id="pkt-pre"></pre></div>
 
 <script>
 const params  = new URLSearchParams(location.search);
@@ -194,31 +202,35 @@ function startCountdown() {
 }
 
 function whatsappShare(data) {
-  const t = data.totales;
-  const c = data.caja;
+  const t = data.totales, c = data.caja;
+  const pKeys = Object.keys(data.pMap||{}).sort((a,b) => data.pMap[b].total - data.pMap[a].total);
+  const vendLines = pKeys.map(n => {
+    const p = data.pMap[n];
+    return `  👤 ${n}: ${fm(p.total)} (${p.tks} tkt)`;
+  });
   const lines = [
-    `📊 Turno Z — ${c.cajero}`,
-    `🏪 ${c.zona || c.estacion} · ${c.fechaCierre || 'Abierto'}`,
+    `📊 *Turno Z — ${c.cajero}*`,
+    `🏪 ${c.zona || c.estacion || '—'} · ${c.fechaCierre || 'Abierto'}`,
     ``,
-    `💵 SE DEBE RECIBIR: ${fm(t.montoFinalEfe)}`,
-    t.virtualFinal > 0 ? `📲 Virtual: ${fm(t.virtualFinal)}` : '',
-    t.credito > 0      ? `🔁 Crédito: ${fm(t.credito)}` : '',
+    `💵 *EFECTIVO:  ${fm(t.montoFinalEfe)}*`,
+    t.virtualFinal > 0 ? `📲 *VIRTUAL:   ${fm(t.virtualFinal)}*` : '',
+    t.credito > 0      ? `🔁 Crédito:  ${fm(t.credito)} (pendiente)` : '',
     ``,
-    `🎫 Tickets cobrados: ${data.cobrados.length}`,
-    data.anulados.length   > 0 ? `❌ Anulados: ${data.anulados.length} (${fm(t.anulados)})` : '',
-    data.sinCobrar.length  > 0 ? `⏳ Sin cobrar: ${data.sinCobrar.length} (${fm(t.sinCobrar)})` : '',
-  ].filter(Boolean).join('\n');
+    `🎫 Cobrados:  ${data.cobrados.length}`,
+    data.anulados.length  > 0 ? `❌ Anulados:  ${data.anulados.length} (${fm(t.anulados)})` : '',
+    data.sinCobrar.length > 0 ? `⏳ Sin cobrar: ${data.sinCobrar.length}` : '',
+    vendLines.length > 0 ? `\n👥 Vendedores:` : '',
+    ...vendLines,
+  ].filter(l => l !== '').join('\n');
 
-  if (navigator.share) {
-    navigator.share({ text: lines }).catch(err => {
-      if (err.name !== 'AbortError') _waFallback(lines);
-    });
-  } else {
-    _waFallback(lines);
-  }
-}
-function _waFallback(text) {
-  window.location.href = 'whatsapp://send?text=' + encodeURIComponent(text);
+  // Abre WhatsApp nativo directamente (preserva emojis)
+  window.location.href = 'whatsapp://send?text=' + encodeURIComponent(lines);
+  // Fallback a web.whatsapp si el esquema no abre (desktop)
+  setTimeout(() => {
+    if (document.hasFocus()) {
+      window.open('https://wa.me/?text=' + encodeURIComponent(lines), '_blank');
+    }
+  }, 1800);
 }
 
 function toggleSec(id) {
@@ -247,6 +259,7 @@ function metodoBadge(metodo) {
 }
 
 function render(data) {
+  window._turnoData = data;
   const { caja, tickets, anulados, sinCobrar, creditos, cobrados, extras,
           corrPorTipo, vendedores, pMap, pTotal, totales } = data;
   const t = totales;
@@ -411,8 +424,8 @@ function render(data) {
   </div>
 
   <div class="btn-bar no-print">
-    <button class="btn btn-wa" onclick="whatsappShare(${JSON.stringify(data).replace(/</g,'\\u003c')})">💬 WhatsApp</button>
-    <button class="btn btn-prt" onclick="window.print()">🖨 Imprimir</button>
+    <button class="btn btn-wa" onclick="whatsappShare(window._turnoData)">💬 WhatsApp</button>
+    <button class="btn btn-prt" onclick="buildPrintTicket(window._turnoData);window.print()">🖨 Imprimir</button>
   </div>
 
   <!-- Cabecera info turno -->
@@ -528,7 +541,109 @@ function render(data) {
     MOSexpress · ${caja.idCaja} · Generado ${new Date().toLocaleString('es-PE')}
   </div>`;
 
+  buildPrintTicket(data);
   startCountdown();
+}
+
+function buildPrintTicket(data) {
+  const pre = document.getElementById('pkt-pre');
+  if (!pre) return;
+  const { caja, cobrados, anulados, sinCobrar, creditos, extras,
+          corrPorTipo, pMap, pTotal, totales } = data;
+  const t = totales;
+  const W = 32;
+  const dbl  = () => '='.repeat(W);
+  const sep  = () => '-'.repeat(W);
+  const ctr  = s => { const p = Math.max(0, Math.floor((W - s.length) / 2)); return ' '.repeat(p) + s; };
+  const lr   = (l, r) => { const sp = Math.max(1, W - l.length - String(r).length); return l + ' '.repeat(sp) + r; };
+  const amtF = v => ('S/ ' + (parseFloat(v)||0).toFixed(2)).padStart(11);
+  const estaAbierto = !caja.fechaCierre || caja.estado === 'ABIERTA';
+  const tipoL = { 'NOTA_DE_VENTA':'NV','BOLETA':'BOL','FACTURA':'FAC' };
+
+  const L = [];
+  const a = s => L.push(s);
+
+  a(dbl());
+  a(ctr('MOSexpress'));
+  a(ctr('-- TICKET Z --'));
+  a(dbl());
+  a(lr('Cajero:',   caja.cajero || '---'));
+  a(lr('Estacion:', caja.estacion || caja.zona || '---'));
+  a(lr('Zona:',     caja.zona || '---'));
+  a(lr('Apertura:', caja.fechaApert || '---'));
+  a(lr('Cierre:',   estaAbierto ? 'ABIERTO' : caja.fechaCierre));
+  a(dbl());
+  a(ctr('SE DEBE RECIBIR'));
+  a(dbl());
+  a(lr('EFECTIVO:', amtF(t.montoFinalEfe)));
+  if (t.virtualFinal > 0) a(lr('VIRTUAL:', amtF(t.virtualFinal)));
+  if (t.credito > 0)      a(lr('CREDITO (pend.):', amtF(t.credito)));
+  a(sep());
+  a(ctr('RESUMEN'));
+  a(sep());
+  a(lr('Base inicial:', amtF(caja.montoInicial)));
+  a(lr('Ventas efectivo:', amtF(t.efectivo)));
+  if (t.virtual > 0) a(lr('Ventas virtual:', amtF(t.virtual)));
+  const netoEfe = t.extrasIngreso - t.extrasEgreso;
+  const netoVir = t.extrasIngresoVirtual - t.extrasEgresoVirtual;
+  if (netoEfe !== 0) a(lr('Extras neto efe:', amtF(netoEfe)));
+  if (netoVir !== 0) a(lr('Extras neto vir:', amtF(netoVir)));
+  a(sep());
+  a(lr('TOTAL EFECTIVO:', amtF(t.montoFinalEfe)));
+  if (t.virtualFinal > 0) a(lr('TOTAL VIRTUAL:', amtF(t.virtualFinal)));
+  a(sep());
+  a(ctr('COMPROBANTES'));
+  a(sep());
+  const ckeys = Object.keys(corrPorTipo);
+  if (ckeys.length > 0) {
+    ckeys.forEach(tipo => {
+      const corrs = [...corrPorTipo[tipo]].sort();
+      const rng = corrs.length > 1 ? corrs[0] + '-' + corrs[corrs.length-1] : corrs[0];
+      a(lr((tipoL[tipo]||tipo) + ' (' + corrs.length + '):', rng));
+    });
+  } else {
+    a(ctr('Sin comprobantes'));
+  }
+  a(sep());
+  a(ctr('TICKETS'));
+  a(sep());
+  a(lr('Cobrados:', String(cobrados.length)));
+  if (anulados.length  > 0) a(lr('Anulados:', anulados.length + ' (' + (parseFloat(t.anulados)||0).toFixed(2) + ')'));
+  if (sinCobrar.length > 0) a(lr('Sin cobrar:', String(sinCobrar.length)));
+  if (creditos.length  > 0) a(lr('Creditos:', creditos.length + ' (' + (parseFloat(t.credito)||0).toFixed(2) + ')'));
+  a(sep());
+  const pKeys = Object.keys(pMap).sort((x,y) => pMap[y].total - pMap[x].total);
+  if (pKeys.length > 0) {
+    a(ctr('VENDEDORES'));
+    a(sep());
+    pKeys.forEach(n => {
+      const p = pMap[n];
+      const tag = n === caja.cajero ? ' (cajero)' : '';
+      a(n + tag);
+      a('  ' + p.tks + ' tkt' + (p.tks!==1?'s':'') + amtF(p.total));
+    });
+    a(sep());
+  }
+  if (extras.length > 0) {
+    a(ctr('EXTRAS'));
+    a(sep());
+    extras.forEach(ex => {
+      const isIng = ex.tipo.startsWith('INGRESO');
+      const isVir = ex.tipo.endsWith('_VIRTUAL');
+      const tag = isVir ? '[VIR]' : '[EFE]';
+      const con = ex.concepto.substring(0, 14);
+      a((isIng?'+':'-') + amtF(ex.monto) + ' ' + tag + ' ' + con);
+    });
+    a(lr('Neto EFE:', amtF(netoEfe)));
+    if (netoVir !== 0) a(lr('Neto VIR:', amtF(netoVir)));
+    a(sep());
+  }
+  a(dbl());
+  a(ctr('MOSexpress - ProyectoMOS'));
+  a(ctr(new Date().toLocaleString('es-PE')));
+  a(dbl());
+
+  pre.textContent = L.join('\n');
 }
 
 function renderError(msg) {
