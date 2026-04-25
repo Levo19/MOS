@@ -394,6 +394,7 @@ function datosTurno(params) {
         tipo:     String(ed[ei][3] || 'EGRESO'),
         monto:    parseFloat(ed[ei][4]) || 0,
         concepto: String(ed[ei][5] || ''),
+        obs:      String(ed[ei][6] || ''),
         hora:     ed[ei][2] instanceof Date ? Utilities.formatDate(ed[ei][2], tz, 'HH:mm') : ''
       });
     }

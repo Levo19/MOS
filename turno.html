@@ -473,8 +473,10 @@ function render(data) {
             <span class="extra-monto" style="color:${color};">${signo} ${fm(ex.monto)}</span>
           </div>
           <div class="tk-obs" style="margin-top:6px;">
-            <div class="tk-obs-lbl">Comentario</div>
-            ${ex.concepto ? esc(ex.concepto) : '<em style="opacity:.5">Sin descripción</em>'}
+            <div class="tk-obs-lbl">Descripción</div>
+            ${(ex.concepto || ex.obs)
+              ? [ex.concepto, ex.obs].filter(Boolean).map(esc).join(' · ')
+              : '<em style="opacity:.5">Sin descripción</em>'}
           </div>
         </div>`;
       }).join('')
