@@ -211,7 +211,7 @@ const REFRESH = 60;
 let countdown = REFRESH, timer = null;
 
 // ── Auto-update check: compara version.json con la versión embebida ──
-const _TURNO_VERSION = '1.3.27';
+const _TURNO_VERSION = '1.3.28';
 (async function _checkVersion() {
   try {
     const r = await fetch('./version.json?t=' + Date.now(), { cache: 'no-store' });
@@ -980,7 +980,7 @@ function openPrintModal() {
         html += `<button class="prt-btn" onclick="doPrint('${esc(p.printNodeId)}')">
           <span class="prt-icon">🖨</span>
           <span class="prt-name">${esc(p.nombre)}</span>
-          <span class="prt-id">ID ${esc(p.printNodeId)}</span>
+          <span class="prt-id">${esc(p.estacion || '')}</span>
         </button>`;
       });
     });

@@ -469,10 +469,26 @@ function datosTurno(params) {
     }
   });
 
-  // ── 7. Leer IMPRESORAS activas TICKET con PrintNode ID ───────
-  // IMPRESORAS vive en ProyectoMOS_DB (este GAS), no en MosExpress
+  // ── 7. Leer IMPRESORAS + nombre de estación ──────────────────
+  // Ambas hojas viven en ProyectoMOS_DB (este GAS), no en MosExpress
   var impresoras = [];
-  var impSheet = getSpreadsheet().getSheetByName('IMPRESORAS');
+  var mosSS = getSpreadsheet();
+
+  // Mapa idEstacion → nombre
+  var estNomMap = {};
+  var estSheet = mosSS.getSheetByName('ESTACIONES');
+  if (estSheet) {
+    var estData = estSheet.getDataRange().getValues();
+    var estHdrs = estData[0].map(function(h){ return String(h).trim(); });
+    var eIdIdx  = estHdrs.indexOf('idEstacion');
+    var eNomIdx = estHdrs.indexOf('nombre');
+    for (var ei2 = 1; ei2 < estData.length; ei2++) {
+      var eid = String(estData[ei2][eIdIdx] || '').trim();
+      if (eid) estNomMap[eid] = String(estData[ei2][eNomIdx] || '');
+    }
+  }
+
+  var impSheet = mosSS.getSheetByName('IMPRESORAS');
   if (impSheet) {
     var impData = impSheet.getDataRange().getValues();
     var impHdrs = impData[0].map(function(h){ return String(h).trim(); });
@@ -481,6 +497,7 @@ function datosTurno(params) {
     var iPnIdx   = impHdrs.indexOf('printNodeId');
     var iTipoIdx = impHdrs.indexOf('tipo');
     var iZonaIdx = impHdrs.indexOf('idZona');
+    var iEstIdx  = impHdrs.indexOf('idEstacion');
     var iActIdx  = impHdrs.indexOf('activo');
     for (var ii = 1; ii < impData.length; ii++) {
       var ir = impData[ii];
@@ -489,11 +506,13 @@ function datosTurno(params) {
       if (String(ir[iTipoIdx] || '').toUpperCase() !== 'TICKET') continue;
       var pnId = String(ir[iPnIdx] || '').trim();
       if (!pnId) continue;
+      var idEst = String(ir[iEstIdx] || '').trim();
       impresoras.push({
         id:          String(ir[iIdIdx]  || ''),
         nombre:      String(ir[iNomIdx] || ''),
         printNodeId: pnId,
-        zona:        String(ir[iZonaIdx] || '')
+        zona:        String(ir[iZonaIdx] || ''),
+        estacion:    estNomMap[idEst] || idEst
       });
     }
   }
