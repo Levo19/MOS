@@ -100,11 +100,27 @@ body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:
 .vend-bar { height:100%; border-radius:3px; background:linear-gradient(90deg,var(--indigo),var(--indigo-light)); transition:width .5s; }
 
 /* Extras */
-.extra-row { display:flex; align-items:center; gap:10px; padding:8px 14px; border-bottom:1px solid rgba(255,255,255,0.03); font-size:12px; }
+.extra-row { padding:10px 14px; border-bottom:1px solid rgba(255,255,255,0.03); }
 .extra-row:last-child { border-bottom:none; }
+.extra-top  { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .extra-hora { color:var(--muted); width:36px; flex-shrink:0; font-size:11px; }
-.extra-concepto { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.extra-monto { font-weight:800; flex-shrink:0; }
+.extra-concepto { flex:1; font-size:12px; font-weight:600; min-width:80px; }
+.extra-monto { font-weight:800; flex-shrink:0; margin-left:auto; }
+
+/* Ticket expandable cards */
+.tk-card { border-bottom:1px solid rgba(255,255,255,0.04); }
+.tk-card:last-child { border-bottom:none; }
+.tk-hdr { display:flex;align-items:center;gap:7px;padding:10px 14px;cursor:pointer;user-select:none;flex-wrap:wrap;transition:background .12s; }
+.tk-hdr:hover { background:rgba(255,255,255,0.03); }
+.tk-corr { font-size:12px;font-weight:700;flex:1;min-width:60px; }
+.tk-total { font-size:13px;font-weight:800; }
+.tk-chev { font-size:11px;color:var(--muted);transition:transform .2s;flex-shrink:0; }
+.tk-body { display:none;padding:10px 14px 12px;background:rgba(0,0,0,0.2);border-top:1px solid rgba(255,255,255,0.04); }
+.tk-body.open { display:block; }
+.tk-info-row { display:flex;align-items:baseline;gap:8px;padding:3px 0;font-size:12px;flex-wrap:wrap; }
+.tk-info-lbl { font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);min-width:60px;flex-shrink:0; }
+.tk-obs { margin-top:8px;padding:8px 10px;border-radius:8px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);font-size:11px;color:var(--amber);line-height:1.5; }
+.tk-obs-lbl { font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--amber);opacity:.7;margin-bottom:3px; }
 
 /* Neto box */
 .neto-box { display:flex; gap:10px; padding:10px 14px; background:rgba(255,255,255,0.02); border-top:1px solid var(--border); flex-wrap:wrap; }
@@ -241,6 +257,59 @@ function toggleSec(id) {
   if (chev) chev.style.transform = open ? 'rotate(180deg)' : '';
 }
 
+function toggleTk(id) {
+  const body = $('tkb-' + id);
+  const chev = $('tkc-' + id);
+  if (!body) return;
+  const open = body.classList.toggle('open');
+  if (chev) chev.style.transform = open ? 'rotate(180deg)' : '';
+}
+
+function parseMetodo(metodo) {
+  const m = String(metodo || '').toUpperCase();
+  if (m === 'EFECTIVO')    return { label:'Efectivo',    cls:'b-ef',  detail: null };
+  if (m === 'CREDITO')     return { label:'Crédito',     cls:'b-cr',  detail: null };
+  if (m === 'POR_COBRAR')  return { label:'Por cobrar',  cls:'b-pc',  detail: null };
+  if (m === 'ANULADO')     return { label:'Anulado',     cls:'b-an',  detail: null };
+  if (m.startsWith('MIXTO')) {
+    const eM = m.match(/EFE:([\d.]+)/), vM = m.match(/VIR:([\d.]+)/);
+    const efe = eM ? parseFloat(eM[1]) : 0, vir = vM ? parseFloat(vM[1]) : 0;
+    return { label:'Mixto', cls:'b-vir',
+      detail: `<span class="badge b-ef" style="font-size:9px;">💵 ${fm(efe)}</span> + <span class="badge b-vir" style="font-size:9px;">📲 ${fm(vir)}</span>` };
+  }
+  return { label: metodo, cls:'b-vir', detail: null };
+}
+
+function ticketDetailHtml(tk, alwaysObs) {
+  const mp    = parseMetodo(tk.metodo);
+  const hasObs = tk.obs && tk.obs.trim();
+  const cliente = [tk.clienteNom, tk.clienteDoc].filter(Boolean).join(' · ') || '—';
+  return `
+    <div class="tk-info-row"><span class="tk-info-lbl">Hora</span><span>${tk.hora||'—'}</span></div>
+    <div class="tk-info-row"><span class="tk-info-lbl">Vendedor</span><span>${tk.vendedor||'—'}</span></div>
+    <div class="tk-info-row"><span class="tk-info-lbl">Cliente</span><span>${cliente}</span></div>
+    <div class="tk-info-row"><span class="tk-info-lbl">Tipo</span><span>${badgeDoc(tk.tipoDoc)}</span></div>
+    <div class="tk-info-row"><span class="tk-info-lbl">Pago</span><span><span class="badge ${mp.cls}">${mp.label}</span>${mp.detail ? ' ' + mp.detail : ''}</span></div>
+    <div class="tk-info-row"><span class="tk-info-lbl">Total</span><span style="font-weight:900;font-size:14px;">${fm(tk.total)}</span></div>
+    ${(alwaysObs || hasObs) ? `<div class="tk-obs"><div class="tk-obs-lbl">Comentario</div>${hasObs ? tk.obs : '<em style="opacity:.5">Sin comentarios</em>'}</div>` : ''}
+  `;
+}
+
+function ticketCard(tk, idx, prefix, color, alwaysObs) {
+  const id = prefix + idx;
+  const mp = parseMetodo(tk.metodo);
+  return `<div class="tk-card">
+    <div class="tk-hdr" onclick="toggleTk('${id}')">
+      <span class="tk-corr">${tk.correlativo || '—'}</span>
+      ${badgeDoc(tk.tipoDoc)}
+      <span class="badge ${mp.cls}">${mp.label}</span>
+      <span class="tk-total" style="color:${color};">${fm(tk.total)}</span>
+      <span class="tk-chev" id="tkc-${id}">▾</span>
+    </div>
+    <div class="tk-body" id="tkb-${id}">${ticketDetailHtml(tk, alwaysObs)}</div>
+  </div>`;
+}
+
 function badgeDoc(tipoDoc) {
   const map = { 'NOTA_DE_VENTA':'b-nv','BOLETA':'b-bo','FACTURA':'b-fa' };
   const lbl = { 'NOTA_DE_VENTA':'NV','BOLETA':'Bol','FACTURA':'Fac' };
@@ -264,20 +333,37 @@ function render(data) {
           corrPorTipo, vendedores, pMap, pTotal, totales } = data;
   const t = totales;
 
-  // ── Correlativos ──────────────────────────────────────────────
+  // ── Correlativos expandibles por tipo ────────────────────────
   const tipoLabels = { 'NOTA_DE_VENTA':'Notas de Venta','BOLETA':'Boletas','FACTURA':'Facturas' };
-  const corrHtml = Object.keys(corrPorTipo).length > 0
-    ? Object.entries(corrPorTipo).map(([tipo, corrs]) => {
-        const sorted = [...corrs].sort();
+  const tipoIcons  = { 'NOTA_DE_VENTA':'🧾','BOLETA':'🟢','FACTURA':'🔵' };
+  // Agrupar cobrados por tipoDoc
+  const cobradosPorTipo = {};
+  cobrados.forEach(tk => {
+    const key = tk.tipoDoc || 'NOTA_DE_VENTA';
+    if (!cobradosPorTipo[key]) cobradosPorTipo[key] = [];
+    cobradosPorTipo[key].push(tk);
+  });
+  const corrHtml = Object.keys(cobradosPorTipo).length > 0
+    ? Object.entries(cobradosPorTipo).map(([tipo, tks]) => {
+        const sorted = [...tks].sort((a,b) => (a.correlativo||'').localeCompare(b.correlativo||''));
         const label  = tipoLabels[tipo] || tipo;
-        const rango  = sorted.length > 1 ? `${sorted[0]} → ${sorted[sorted.length-1]}` : sorted[0];
-        return `<div class="corr-card">
-          <div class="corr-tipo">${label}</div>
-          <div class="corr-val">${sorted.length}</div>
-          <div class="corr-sub">${rango}</div>
+        const icon   = tipoIcons[tipo]  || '🎫';
+        const first  = sorted[0].correlativo, last = sorted[sorted.length-1].correlativo;
+        const rango  = sorted.length > 1 ? `${first} → ${last}` : first;
+        const secId  = 'corr-' + tipo;
+        const tkCards = sorted.map((tk, i) => ticketCard(tk, i, 'ct-'+tipo+'-', 'var(--green)', false)).join('');
+        return `<div class="sec" style="margin-bottom:8px;">
+          <div class="sec-hdr" onclick="toggleSec('${secId}')">
+            <div class="sec-title">${icon} ${label} <span class="sec-badge">${tks.length}</span></div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span style="font-size:11px;color:var(--muted);">${rango}</span>
+              <span class="sec-chev" id="chev-${secId}">▾</span>
+            </div>
+          </div>
+          <div class="sec-body" id="${secId}" style="background:var(--bg);">${tkCards}</div>
         </div>`;
       }).join('')
-    : '<div style="color:var(--muted);font-size:12px;padding:4px 0;">Sin comprobantes emitidos.</div>';
+    : '<div style="color:var(--muted);font-size:12px;padding:8px 0;">Sin comprobantes emitidos.</div>';
 
   // ── Tabla resumen ─────────────────────────────────────────────
   const extrasNetoEfe = t.extrasIngreso - t.extrasEgreso;
@@ -318,49 +404,39 @@ function render(data) {
 
   // ── Anulados ──────────────────────────────────────────────────
   const anuladosHtml = anulados.length > 0
-    ? `<table class="tbl"><thead><tr><th>Correlativo</th><th>Cliente</th><th style="text-align:right">Monto</th></tr></thead><tbody>
-        ${anulados.map(t => `<tr>
-          <td>${badgeDoc(t.tipoDoc)} <span style="font-size:11px;color:var(--muted);">${t.correlativo||'—'}</span></td>
-          <td style="color:var(--muted2);font-size:11px;">${t.clienteNom||t.clienteDoc||'—'}</td>
-          <td style="text-align:right;color:var(--red);font-weight:700;">${fm(t.total)}</td>
-        </tr>`).join('')}
-       </tbody></table>`
+    ? `<div style="background:var(--bg);">${anulados.map((tk,i) => ticketCard(tk, i, 'anl-', 'var(--red)', false)).join('')}</div>`
     : '<div style="text-align:center;padding:16px;color:var(--muted);font-size:12px;">Sin anulados ✓</div>';
 
   // ── Sin cobrar ────────────────────────────────────────────────
   const sinCobrarHtml = sinCobrar.length > 0
-    ? `<table class="tbl"><thead><tr><th>Correlativo</th><th>Cliente</th><th style="text-align:right">Monto</th></tr></thead><tbody>
-        ${sinCobrar.map(t => `<tr>
-          <td>${badgeDoc(t.tipoDoc)} <span style="font-size:11px;color:var(--muted);">${t.correlativo||'—'}</span></td>
-          <td style="color:var(--muted2);font-size:11px;">${t.clienteNom||t.clienteDoc||'—'}</td>
-          <td style="text-align:right;color:var(--amber);font-weight:700;">${fm(t.total)}</td>
-        </tr>`).join('')}
-       </tbody></table>`
+    ? `<div style="background:var(--bg);">${sinCobrar.map((tk,i) => ticketCard(tk, i, 'sc-', 'var(--amber)', false)).join('')}</div>`
     : '<div style="text-align:center;padding:16px;color:var(--muted);font-size:12px;">Sin tickets por cobrar ✓</div>';
 
-  // ── Créditos ──────────────────────────────────────────────────
+  // ── Créditos (siempre muestra obs) ────────────────────────────
   const creditosHtml = creditos.length > 0
-    ? `<table class="tbl"><thead><tr><th>Correlativo</th><th>Cliente</th><th style="text-align:right">Monto</th></tr></thead><tbody>
-        ${creditos.map(t => `<tr>
-          <td>${badgeDoc(t.tipoDoc)} <span style="font-size:11px;color:var(--muted);">${t.correlativo||'—'}</span></td>
-          <td style="color:var(--muted2);font-size:11px;">${t.clienteNom||t.clienteDoc||'—'}</td>
-          <td style="text-align:right;color:var(--purple);font-weight:700;">${fm(t.total)}</td>
-        </tr>`).join('')}
-       </tbody></table>`
+    ? `<div style="background:var(--bg);">${creditos.map((tk,i) => ticketCard(tk, i, 'crd-', 'var(--purple)', true)).join('')}</div>`
     : '';
 
-  // ── Extras ────────────────────────────────────────────────────
+  // ── Extras con caja de comentarios ───────────────────────────
   const extrasListHtml = extras.length > 0
     ? extras.map(ex => {
         const isVir = ex.tipo.endsWith('_VIRTUAL');
         const isIng = ex.tipo.startsWith('INGRESO');
         const color = isIng ? (isVir ? 'var(--blue)' : 'var(--green)') : 'var(--red)';
         const signo = isIng ? '+' : '−';
+        const badge = isVir
+          ? `<span class="badge b-vir" style="font-size:9px;">📲 Virtual</span>`
+          : `<span class="badge b-ef"  style="font-size:9px;">💵 Efectivo</span>`;
         return `<div class="extra-row">
-          <span class="extra-hora">${ex.hora||'—'}</span>
-          <span class="extra-concepto">${ex.concepto}</span>
-          ${isVir ? '<span style="font-size:10px;color:var(--blue);">📲</span>' : ''}
-          <span class="extra-monto" style="color:${color};">${signo} ${fm(ex.monto)}</span>
+          <div class="extra-top">
+            <span class="extra-hora">${ex.hora||'—'}</span>
+            ${badge}
+            <span class="extra-monto" style="color:${color};">${signo} ${fm(ex.monto)}</span>
+          </div>
+          <div class="tk-obs" style="margin-top:6px;">
+            <div class="tk-obs-lbl">Comentario</div>
+            ${ex.concepto || '<em style="opacity:.5">Sin descripción</em>'}
+          </div>
         </div>`;
       }).join('')
     : '<div style="text-align:center;padding:16px;color:var(--muted);font-size:12px;">Sin movimientos extra.</div>';
@@ -474,7 +550,7 @@ function render(data) {
   <!-- Correlativos -->
   <div class="section">
     <div class="sec-label">🎫 Correlativos del turno</div>
-    <div class="corr-grid">${corrHtml}</div>
+    ${corrHtml}
   </div>
 
   <!-- Anulados -->
