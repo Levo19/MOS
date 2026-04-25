@@ -226,8 +226,8 @@ const REFRESH   = 60;
 let countdown = REFRESH, timer = null;
 
 // ── Auto-update check: compara version.json con la versión embebida ──
-const _TURNO_VERSION = '1.3.32';
-(async function _checkVersion() {
+const _TURNO_VERSION = '1.3.33';
+async function _checkVersion() {
   try {
     const r = await fetch('./version.json?t=' + Date.now(), { cache: 'no-store' });
     const v = await r.json();
@@ -239,9 +239,26 @@ const _TURNO_VERSION = '1.3.32';
       }
     }
   } catch(e) {}
-  // Volver a revisar cada 2 minutos
   setTimeout(_checkVersion, 2 * 60 * 1000);
-})();
+}
+// Primera check a los 45s — evita falso positivo si version.json
+// llega al CDN antes que turno.html (propagación asíncrona de GitHub Pages)
+setTimeout(_checkVersion, 45 * 1000);
+
+// ── Forzar activación del SW nuevo + recarga limpia ──────────────
+async function actualizarTurno() {
+  try {
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.ready;
+      await reg.update();
+      if (reg.waiting) {
+        reg.waiting.postMessage('SKIP_WAITING');
+        await new Promise(res => navigator.serviceWorker.addEventListener('controllerchange', res, { once: true }));
+      }
+    }
+  } catch(e) {}
+  location.reload(true);
+}
 
 const $ = id => document.getElementById(id);
 const fm  = v => 'S/ ' + (parseFloat(v)||0).toFixed(2);
@@ -1131,7 +1148,7 @@ function renderError(msg) {
 <!-- Update bar -->
 <div id="turnoUpdateBar">
   <span class="tub-msg">🚀 Nueva versión disponible <span class="tub-ver"></span></span>
-  <button class="tub-btn" onclick="location.reload(true)">Actualizar</button>
+  <button class="tub-btn" onclick="actualizarTurno()">Actualizar</button>
 </div>
 
 <!-- Printer modal -->
