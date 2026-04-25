@@ -119,13 +119,16 @@ body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:
 .tk-body.open { display:block; }
 .tk-info-row { display:flex;align-items:baseline;gap:8px;padding:3px 0;font-size:12px;flex-wrap:wrap; }
 .tk-info-lbl { font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);min-width:60px;flex-shrink:0; }
+.tk-meta { font-size:11px;color:var(--muted);display:flex;flex-wrap:wrap;align-items:center;gap:3px;padding-bottom:4px; }
+.tk-sep { opacity:.35;margin:0 1px; }
 .tk-obs { margin-top:8px;padding:8px 10px;border-radius:8px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);font-size:11px;color:var(--amber);line-height:1.5; }
 .tk-obs-lbl { font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--amber);opacity:.7;margin-bottom:3px; }
-.tk-items { margin-top:8px;border-radius:8px;overflow:hidden;border:1px solid rgba(99,102,241,0.15); }
-.tk-items-hdr { display:grid;grid-template-columns:1fr auto auto auto;gap:4px;padding:5px 8px;background:rgba(99,102,241,0.1);font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--indigo); }
-.tk-item-row { display:grid;grid-template-columns:1fr auto auto auto;gap:4px;padding:4px 8px;font-size:11px;border-top:1px solid rgba(99,102,241,0.08); }
+.tk-items { margin-top:8px;display:flex;flex-direction:column;gap:2px; }
+.tk-item-row { display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:12px;padding:2px 0; }
+.tk-item-left { display:flex;align-items:baseline;gap:5px;min-width:0; }
+.tk-item-cant { font-weight:800;color:var(--indigo);white-space:nowrap;font-size:11px; }
 .tk-item-nom { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
-.tk-item-num { text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums; }
+.tk-item-sub { text-align:right;white-space:nowrap;font-weight:700;font-variant-numeric:tabular-nums;flex-shrink:0; }
 
 /* Neto box */
 .neto-box { display:flex; gap:10px; padding:10px 14px; background:rgba(255,255,255,0.02); border-top:1px solid var(--border); flex-wrap:wrap; }
@@ -288,31 +291,29 @@ function parseMetodo(metodo) {
 const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
 function ticketDetailHtml(tk, alwaysObs) {
-  const mp     = parseMetodo(tk.metodo);
   const obsRaw = tk.obs ? tk.obs.trim() : '';
   const hasObs = obsRaw.length > 0;
-  const cliente = [tk.clienteNom, tk.clienteDoc].filter(Boolean).map(esc).join(' · ') || '—';
-  const itemsHtml = tk.items && tk.items.length > 0
-    ? `<div class="tk-items">
-        <div class="tk-items-hdr"><span>Producto</span><span>Cant.</span><span>Precio</span><span>Total</span></div>
-        ${tk.items.map(it => `<div class="tk-item-row">
-          <span class="tk-item-nom">${esc(it.nombre)||esc(it.sku)}</span>
-          <span class="tk-item-num">${it.cantidad}</span>
-          <span class="tk-item-num">${fm(it.precio)}</span>
-          <span class="tk-item-num">${fm(it.subtotal)}</span>
-        </div>`).join('')}
-      </div>`
+  const parts = [];
+  if (tk.hora)       parts.push(esc(tk.hora));
+  if (tk.vendedor)   parts.push(esc(tk.vendedor));
+  if (tk.clienteNom) parts.push(esc(tk.clienteNom));
+  if (tk.clienteDoc) parts.push(`<span style="opacity:.6">${esc(tk.clienteDoc)}</span>`);
+  const metaHtml = parts.length
+    ? `<div class="tk-meta">${parts.join('<span class="tk-sep">·</span>')}</div>`
     : '';
-  return `
-    <div class="tk-info-row"><span class="tk-info-lbl">Hora</span><span>${esc(tk.hora)||'—'}</span></div>
-    <div class="tk-info-row"><span class="tk-info-lbl">Vendedor</span><span>${esc(tk.vendedor)||'—'}</span></div>
-    <div class="tk-info-row"><span class="tk-info-lbl">Cliente</span><span>${cliente}</span></div>
-    <div class="tk-info-row"><span class="tk-info-lbl">Tipo</span><span>${badgeDoc(tk.tipoDoc)}</span></div>
-    <div class="tk-info-row"><span class="tk-info-lbl">Pago</span><span><span class="badge ${mp.cls}">${mp.label}</span>${mp.detail ? ' ' + mp.detail : ''}</span></div>
-    <div class="tk-info-row"><span class="tk-info-lbl">Total</span><span style="font-weight:900;font-size:14px;">${fm(tk.total)}</span></div>
-    ${itemsHtml}
-    ${(alwaysObs || hasObs) ? `<div class="tk-obs"><div class="tk-obs-lbl">Comentario</div>${hasObs ? esc(obsRaw) : '<em style="opacity:.5">Sin comentarios</em>'}</div>` : ''}
-  `;
+  const obsHtml = (alwaysObs || hasObs)
+    ? `<div class="tk-obs"><div class="tk-obs-lbl">Comentario</div>${hasObs ? esc(obsRaw) : '<em style="opacity:.5">Sin comentarios</em>'}</div>`
+    : '';
+  const itemsHtml = tk.items && tk.items.length > 0
+    ? `<div class="tk-items">${tk.items.map(it => {
+        const nom = esc(it.nombre) || esc(it.sku);
+        return `<div class="tk-item-row">
+          <span class="tk-item-left"><span class="tk-item-cant">${it.cantidad}×</span><span class="tk-item-nom">${nom}</span></span>
+          <span class="tk-item-sub">${fm(it.subtotal)}</span>
+        </div>`;
+      }).join('')}</div>`
+    : '';
+  return metaHtml + obsHtml + itemsHtml;
 }
 
 function ticketCard(tk, idx, prefix, color, alwaysObs) {
