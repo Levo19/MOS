@@ -244,34 +244,134 @@ function startCountdown() {
 }
 
 function whatsappShare(data) {
-  const t = data.totales, c = data.caja;
-  const pKeys = Object.keys(data.pMap||{}).sort((a,b) => data.pMap[b].total - data.pMap[a].total);
-  const vendLines = pKeys.map(n => {
-    const p = data.pMap[n];
-    return `  👤 ${n}: ${fm(p.total)} (${p.tks} tkt)`;
-  });
-  const lines = [
-    `📊 *Turno Z — ${c.cajero}*`,
-    `🏪 ${c.zona || c.estacion || '—'} · ${c.fechaCierre || 'Abierto'}`,
-    ``,
-    `💵 *EFECTIVO:  ${fm(t.montoFinalEfe)}*`,
-    t.virtualFinal > 0 ? `📲 *VIRTUAL:   ${fm(t.virtualFinal)}*` : '',
-    t.credito > 0      ? `🔁 Crédito:  ${fm(t.credito)} (pendiente)` : '',
-    ``,
-    `🎫 Cobrados:  ${data.cobrados.length}`,
-    data.anulados.length  > 0 ? `❌ Anulados:  ${data.anulados.length} (${fm(t.anulados)})` : '',
-    data.sinCobrar.length > 0 ? `⏳ Sin cobrar: ${data.sinCobrar.length}` : '',
-    vendLines.length > 0 ? `\n👥 Vendedores:` : '',
-    ...vendLines,
-  ].filter(l => l !== '').join('\n');
+  const t  = data.totales, c = data.caja;
+  const SEP  = '─────────────────────';
+  const estaAbierto = !c.fechaCierre || c.estado === 'ABIERTA';
+  const tipoL = { NOTA_DE_VENTA:'NV', BOLETA:'BOL', FACTURA:'FAC' };
+  const L = [];
+  const a  = s => L.push(s);
+  const sp = () => a('');
 
-  // Abre WhatsApp nativo directamente (preserva emojis)
-  window.location.href = 'whatsapp://send?text=' + encodeURIComponent(lines);
-  // Fallback a web.whatsapp si el esquema no abre (desktop)
+  // ── 1. CABECERA ────────────────────────────────────────────────
+  a(`📋 *TURNO Z — CIERRE*`);
+  a(`👤 Cajero:   ${c.cajero || '—'}`);
+  a(`🏪 Estación: ${c.estacion || c.zona || '—'}`);
+  a(`📅 Apertura: ${c.fechaApert || '—'}`);
+  a(`🔒 Cierre:   ${estaAbierto ? 'ABIERTO' : c.fechaCierre}`);
+  if ((data.vendedores || []).length) {
+    a(`👥 Vendedores: ${data.vendedores.join(', ')}`);
+  }
+  a(`🎫 Cobrados: ${data.cobrados.length}  ❌ Anulados: ${data.anulados.length}  🔁 Créditos: ${data.creditos.length}`);
+  a(SEP);
+
+  // ── 2. SE DEBE RECIBIR ─────────────────────────────────────────
+  sp(); a(`💰 *SE DEBE RECIBIR*`);
+  a(`💵  *${fm(t.montoFinalEfe)}*  efectivo en cajón`);
+  if (t.virtualFinal > 0) a(`📲  *${fm(t.virtualFinal)}*  virtual recibido`);
+  a(SEP);
+
+  // ── 3. RESUMEN ────────────────────────────────────────────────
+  sp(); a(`📊 *RESUMEN DEL TURNO*`);
+  a(`Base inicial:      ${fm(c.montoInicial)}`);
+  a(`Ventas efectivo:   ${fm(t.efectivo)}`);
+  if (t.virtual > 0) a(`Ventas virtual:    ${fm(t.virtual)}`);
+  const netoE = t.extrasIngreso - t.extrasEgreso;
+  const netoV = t.extrasIngresoVirtual - t.extrasEgresoVirtual;
+  if (netoE !== 0) a(`Extras efe:        ${netoE > 0 ? '+' : ''}${fm(netoE)}`);
+  if (netoV !== 0) a(`Extras vir:        ${netoV > 0 ? '+' : ''}${fm(netoV)}`);
+  a(`━━`);
+  a(`✅ *Total efe:  ${fm(t.montoFinalEfe)}*`);
+  if (t.virtualFinal > 0) a(`✅ *Total vir:  ${fm(t.virtualFinal)}*`);
+  if (t.credito > 0)      a(`🔁 Crédito (pendiente): ${fm(t.credito)}`);
+  a(SEP);
+
+  // ── 4. CORRELATIVOS ───────────────────────────────────────────
+  sp(); a(`🎫 *CORRELATIVOS*`);
+  const ckeys = Object.keys(data.corrPorTipo || {});
+  if (ckeys.length === 0) {
+    a(`  Sin comprobantes emitidos`);
+  } else {
+    ckeys.forEach(tipo => {
+      const corrs = [...data.corrPorTipo[tipo]].sort();
+      const lbl = tipoL[tipo] || tipo;
+      const rango = corrs.length > 1 ? `${corrs[0]} → ${corrs[corrs.length-1]}` : corrs[0];
+      a(`  📄 ${lbl}: ${rango}  (${corrs.length})`);
+    });
+  }
+  a(SEP);
+
+  // ── 5. ANULADOS ───────────────────────────────────────────────
+  sp(); a(`❌ *ANULADOS (${data.anulados.length})*`);
+  if (data.anulados.length > 0) {
+    data.anulados.forEach(tk => a(`  ${tk.correlativo || '—'}  −${fm(tk.total)}`));
+    a(`  Total anulado: −${fm(t.anulados)}`);
+  } else {
+    a(`  Sin anulados`);
+  }
+  a(SEP);
+
+  // ── 5b. SIN COBRAR ────────────────────────────────────────────
+  if (data.sinCobrar.length > 0) {
+    sp(); a(`⏳ *SIN COBRAR (${data.sinCobrar.length})*`);
+    data.sinCobrar.forEach(tk => a(`  ${tk.correlativo || '—'}  ${fm(tk.total)}`));
+    a(`  Total: ${fm(t.sinCobrar || 0)}`);
+    a(SEP);
+  }
+
+  // ── 6. CRÉDITOS ───────────────────────────────────────────────
+  sp(); a(`🔁 *CRÉDITOS PENDIENTES (${data.creditos.length})*`);
+  if (data.creditos.length > 0) {
+    data.creditos.forEach(tk => {
+      a(`  ${tk.correlativo || '—'}  ${fm(tk.total)}${tk.obs ? '  · ' + tk.obs : ''}`);
+    });
+    a(`  Total: ${fm(t.credito)}`);
+  } else {
+    a(`  Sin créditos`);
+  }
+  a(SEP);
+
+  // ── 7. EXTRAS ─────────────────────────────────────────────────
+  const extraList = data.extras || [];
+  sp(); a(`💸 *EXTRAS DEL TURNO (${extraList.length})*`);
+  if (extraList.length > 0) {
+    extraList.forEach(ex => {
+      const isIng = ex.tipo.startsWith('INGRESO');
+      const isVir = ex.tipo.endsWith('_VIRTUAL');
+      const signo = isIng ? '➕' : '➖';
+      const tag   = isVir ? '📲' : '💵';
+      const desc  = [ex.concepto, ex.obs].filter(Boolean).join(' · ') || '—';
+      a(`  ${signo}${tag} ${desc}  ${fm(ex.monto)}`);
+    });
+    if (netoE !== 0) a(`  Neto efe: ${netoE > 0 ? '+' : ''}${fm(netoE)}`);
+    if (netoV !== 0) a(`  Neto vir: ${netoV > 0 ? '+' : ''}${fm(netoV)}`);
+  } else {
+    a(`  Sin movimientos extra`);
+  }
+  a(SEP);
+
+  // ── 8. DESEMPEÑO ──────────────────────────────────────────────
+  sp(); a(`🏆 *DESEMPEÑO DEL TURNO*`);
+  const pKeys = Object.keys(data.pMap || {}).sort((a,b) => data.pMap[b].total - data.pMap[a].total);
+  if (pKeys.length > 0) {
+    pKeys.forEach(n => {
+      const p = data.pMap[n];
+      const pct = data.pTotal > 0 ? Math.round(p.total / data.pTotal * 100) : 0;
+      const bars = Math.round(pct / 10);
+      a(`  👤 ${n}`);
+      a(`     ${fm(p.total)}  (${p.tks} tkt)  ${'█'.repeat(bars)}${'░'.repeat(10-bars)} ${pct}%`);
+    });
+    a(`  ─`);
+    a(`  *Total turno: ${fm(data.pTotal)}*`);
+  } else {
+    a(`  Sin datos`);
+  }
+  a(SEP);
+  a(`_ProyectoMOS · ${new Date().toLocaleString('es-PE')}_`);
+
+  const txt = L.join('\n');
+  window.location.href = 'whatsapp://send?text=' + encodeURIComponent(txt);
   setTimeout(() => {
-    if (document.hasFocus()) {
-      window.open('https://wa.me/?text=' + encodeURIComponent(lines), '_blank');
-    }
+    if (document.hasFocus()) window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');
   }, 1800);
 }
 
