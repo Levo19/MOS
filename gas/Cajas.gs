@@ -611,6 +611,7 @@ function imprimirTicketZCierre(params) {
         cajero:      String(cd[r][1] || ''),
         estacion:    String(params.estacion || cd[r][2] || ''),
         fechaApert:  cd[r][3] instanceof Date ? Utilities.formatDate(cd[r][3], tz, 'dd/MM/yyyy HH:mm') : String(cd[r][3] || ''),
+        fechaDia:    cd[r][3] instanceof Date ? Utilities.formatDate(cd[r][3], tz, 'yyyy-MM-dd') : String(cd[r][3] || '').substring(0, 10),
         montoInicial:parseFloat(cd[r][4]) || 0,
         montoFinal:  parseFloat(cd[r][6]) || 0,
         fechaCierre: cd[r][7] instanceof Date ? Utilities.formatDate(cd[r][7], tz, 'dd/MM/yyyy HH:mm') : String(cd[r][7] || '')
@@ -852,6 +853,41 @@ function imprimirTicketZCierre(params) {
     txt += '\x1b\x45\x00';
   } else {
     txt += '  Sin datos de vendedores en este turno\n';
+  }
+
+  // PARTE 8b: AUDITORÍAS DEL DÍA
+  var auditMapZ = {};
+  var META_Z    = 30;
+  var auditSheetZ = ss.getSheetByName('AUDITORIA');
+  if (auditSheetZ && caja.fechaDia) {
+    var auditDataZ = auditSheetZ.getDataRange().getValues();
+    var auditHdrsZ = auditDataZ[0].map(function(h){ return String(h).trim(); });
+    var aFechaIdxZ = auditHdrsZ.indexOf('Fecha');
+    var aVendIdxZ  = auditHdrsZ.indexOf('Vendedor');
+    for (var aiZ = 1; aiZ < auditDataZ.length; aiZ++) {
+      var aFechaZ    = auditDataZ[aiZ][aFechaIdxZ];
+      var aFechaStrZ = aFechaZ instanceof Date
+        ? Utilities.formatDate(aFechaZ, tz, 'yyyy-MM-dd')
+        : String(aFechaZ || '').substring(0, 10);
+      if (aFechaStrZ !== caja.fechaDia) continue;
+      var aVendZ = String(auditDataZ[aiZ][aVendIdxZ] || '').trim();
+      if (!aVendZ) continue;
+      auditMapZ[aVendZ] = (auditMapZ[aVendZ] || 0) + 1;
+    }
+  }
+  var auditPersonasZ = Object.keys(pMap).slice();
+  if (caja.cajero && auditPersonasZ.indexOf(caja.cajero) === -1) auditPersonasZ.unshift(caja.cajero);
+  if (auditPersonasZ.length > 0) {
+    txt += _sHdr('AUDITORIAS DEL DIA (META:' + META_Z + ')');
+    txt += _pEnd('VENDEDOR', W-14) + _pSt('AUDIT', 7) + _pSt('ESTADO', 7) + '\n';
+    txt += SEPd;
+    auditPersonasZ.forEach(function(n) {
+      var cnt    = auditMapZ[n] || 0;
+      var estado = cnt >= META_Z ? 'CUMPLE' : cnt >= 20 ? 'PARCIAL' : 'FALTA ';
+      var fill   = Math.min(20, Math.max(0, Math.round(cnt / META_Z * 20)));
+      txt += _pEnd(_norm(n), W-14) + _pSt(cnt+'/'+META_Z, 7) + _pSt(estado, 7) + '\n';
+      txt += '  [' + _rep('#', fill) + _rep('-', 20-fill) + '] ' + Math.round(cnt/META_Z*100) + '%\n';
+    });
   }
 
   // PIE
