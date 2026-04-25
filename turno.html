@@ -625,97 +625,157 @@ function buildPrintTicket(data) {
   const pre = document.getElementById('pkt-pre');
   if (!pre) return;
   const { caja, cobrados, anulados, sinCobrar, creditos, extras,
-          corrPorTipo, pMap, pTotal, totales } = data;
+          corrPorTipo, vendedores, pMap, pTotal, totales } = data;
   const t = totales;
   const W = 32;
-  const dbl  = () => '='.repeat(W);
-  const sep  = () => '-'.repeat(W);
-  const ctr  = s => { const p = Math.max(0, Math.floor((W - s.length) / 2)); return ' '.repeat(p) + s; };
-  const lr   = (l, r) => { const sp = Math.max(1, W - l.length - String(r).length); return l + ' '.repeat(sp) + r; };
-  const amtF = v => ('S/ ' + (parseFloat(v)||0).toFixed(2)).padStart(11);
-  const estaAbierto = !caja.fechaCierre || caja.estado === 'ABIERTA';
-  const tipoL = { 'NOTA_DE_VENTA':'NV','BOLETA':'BOL','FACTURA':'FAC' };
+
+  const dbl = () => '='.repeat(W);
+  const sep = () => '-'.repeat(W);
+  const ctr = s => { const p = Math.max(0,Math.floor((W-s.length)/2)); return ' '.repeat(p)+s; };
+  const lr  = (l,r) => { r=String(r); const sp=Math.max(1,W-l.length-r.length); return l+' '.repeat(sp)+r; };
+  const sHdr = title => { const s=' '+title+' '; const l=Math.max(0,Math.floor((W-s.length)/2)); return '='.repeat(l)+s+'='.repeat(Math.max(0,W-s.length-l)); };
+  const amtS = v => 'S/'+Math.abs(parseFloat(v)||0).toFixed(2);
+  const estaAbierto = !caja.fechaCierre || caja.estado==='ABIERTA';
+  const tipoL = {'NOTA_DE_VENTA':'NV','BOLETA':'BOL','FACTURA':'FAC'};
+
+  // Separar extras efe vs virtual
+  const extEfe = extras.filter(e => !e.tipo.endsWith('_VIRTUAL'));
+  const extVir = extras.filter(e =>  e.tipo.endsWith('_VIRTUAL'));
+  const tEntradas = extEfe.filter(e=>e.tipo==='INGRESO').reduce((s,e)=>s+e.monto,0);
+  const tSalidas  = extEfe.filter(e=>e.tipo==='EGRESO' ).reduce((s,e)=>s+e.monto,0);
+  const tVirIng   = extVir.filter(e=>e.tipo.startsWith('INGRESO')).reduce((s,e)=>s+e.monto,0);
+  const tVirEgr   = extVir.filter(e=>e.tipo.startsWith('EGRESO') ).reduce((s,e)=>s+e.monto,0);
+  const netoEfe   = t.extrasIngreso - t.extrasEgreso;
+  const netoVir   = t.extrasIngresoVirtual - t.extrasEgresoVirtual;
+
+  const pKeys = Object.keys(pMap).sort((a,b)=>pMap[b].total-pMap[a].total);
 
   const L = [];
   const a = s => L.push(s);
 
-  a(dbl());
-  a(ctr('MOSexpress'));
-  a(ctr('-- TICKET Z --'));
-  a(dbl());
-  a(lr('Cajero:',   caja.cajero || '---'));
-  a(lr('Estacion:', caja.estacion || caja.zona || '---'));
-  a(lr('Zona:',     caja.zona || '---'));
-  a(lr('Apertura:', caja.fechaApert || '---'));
-  a(lr('Cierre:',   estaAbierto ? 'ABIERTO' : caja.fechaCierre));
-  a(dbl());
-  a(ctr('SE DEBE RECIBIR'));
-  a(dbl());
-  a(lr('EFECTIVO:', amtF(t.montoFinalEfe)));
-  if (t.virtualFinal > 0) a(lr('VIRTUAL:', amtF(t.virtualFinal)));
-  if (t.credito > 0)      a(lr('CREDITO (pend.):', amtF(t.credito)));
+  // ── PARTE 1: CABECERA ─────────────────────────────────────────
+  a(dbl()); a(ctr('MOSexpress')); a(ctr('CIERRE DE TURNO (Z)')); a(dbl());
+  a(lr('CAJERO  :', String(caja.cajero||'---')));
+  a(lr('ESTACION:', String(caja.estacion||caja.zona||'---')));
+  a(lr('APERTURA:', String(caja.fechaApert||'---')));
+  a(lr('CIERRE  :', estaAbierto ? 'ABIERTO' : String(caja.fechaCierre)));
   a(sep());
-  a(ctr('RESUMEN'));
-  a(sep());
-  a(lr('Base inicial:', amtF(caja.montoInicial)));
-  a(lr('Ventas efectivo:', amtF(t.efectivo)));
-  if (t.virtual > 0) a(lr('Ventas virtual:', amtF(t.virtual)));
-  const netoEfe = t.extrasIngreso - t.extrasEgreso;
-  const netoVir = t.extrasIngresoVirtual - t.extrasEgresoVirtual;
-  if (netoEfe !== 0) a(lr('Extras neto efe:', amtF(netoEfe)));
-  if (netoVir !== 0) a(lr('Extras neto vir:', amtF(netoVir)));
-  a(sep());
-  a(lr('TOTAL EFECTIVO:', amtF(t.montoFinalEfe)));
-  if (t.virtualFinal > 0) a(lr('TOTAL VIRTUAL:', amtF(t.virtualFinal)));
-  a(sep());
-  a(ctr('COMPROBANTES'));
-  a(sep());
-  const ckeys = Object.keys(corrPorTipo);
-  if (ckeys.length > 0) {
-    ckeys.forEach(tipo => {
-      const corrs = [...corrPorTipo[tipo]].sort();
-      const rng = corrs.length > 1 ? corrs[0] + '-' + corrs[corrs.length-1] : corrs[0];
-      a(lr((tipoL[tipo]||tipo) + ' (' + corrs.length + '):', rng));
-    });
-  } else {
-    a(ctr('Sin comprobantes'));
+  if ((vendedores||[]).length > 0) {
+    a('VENDEDORES A CARGO:');
+    vendedores.forEach(v => a('  + '+v));
   }
+  a(lr('TICKETS COBRADOS :', String(cobrados.length)));
+  a(lr('ANULADOS         :', String(anulados.length)));
+  a(lr('CREDITOS (c/p)   :', String(creditos.length)));
+
+  // ── PARTE 2: SE DEBE RECIBIR ───────────────────────────────────
+  a(dbl()); a(''); a(ctr('-- SE DEBE RECIBIR --')); a('');
+  a(ctr('S/'+(parseFloat(t.montoFinalEfe)||0).toFixed(2)));
+  a(ctr('EFECTIVO EN CAJON')); a('');
+  if (t.virtualFinal > 0) {
+    a(sep()); a(ctr('VIRTUAL RECIBIDO:'));
+    a(ctr('S/'+(parseFloat(t.virtualFinal)||0).toFixed(2))); a('');
+  }
+
+  // ── PARTE 3: RESUMEN ──────────────────────────────────────────
+  a(sHdr('RESUMEN DEL TURNO'));
+  const C1=14,C2=9,C3=9;
+  const sRow = (lbl,e,v) => {
+    const es=(parseFloat(e)||0)!==0?amtS(e):'---';
+    const vs=(parseFloat(v)||0)!==0?amtS(v):'---';
+    return lbl.padEnd(C1)+es.padStart(C2)+vs.padStart(C3);
+  };
+  a('CONCEPTO'.padEnd(C1)+'EFECTIVO'.padStart(C2)+'VIRTUAL'.padStart(C3));
   a(sep());
-  a(ctr('TICKETS'));
+  a(sRow('Base inicial',  caja.montoInicial, 0));
+  a(sRow('Ventas cobradas', t.efectivo, t.virtual));
+  if (netoEfe!==0||netoVir!==0) a(sRow('Extras neto', netoEfe, netoVir));
   a(sep());
-  a(lr('Cobrados:', String(cobrados.length)));
-  if (anulados.length  > 0) a(lr('Anulados:', anulados.length + ' (' + (parseFloat(t.anulados)||0).toFixed(2) + ')'));
-  if (sinCobrar.length > 0) a(lr('Sin cobrar:', String(sinCobrar.length)));
-  if (creditos.length  > 0) a(lr('Creditos:', creditos.length + ' (' + (parseFloat(t.credito)||0).toFixed(2) + ')'));
-  a(sep());
-  const pKeys = Object.keys(pMap).sort((x,y) => pMap[y].total - pMap[x].total);
-  if (pKeys.length > 0) {
-    a(ctr('VENDEDORES'));
+  a(sRow('EFECTIVO FINAL', t.montoFinalEfe, t.virtualFinal));
+  if (t.credito>0) a('  +Credito pend.: '+amtS(t.credito));
+
+  // ── PARTE 4: CORRELATIVOS ────────────────────────────────────
+  a(sHdr('CORRELATIVOS DEL TURNO'));
+  const ckeys = Object.keys(corrPorTipo);
+  if (ckeys.length===0) {
+    a('  Sin comprobantes emitidos en este turno');
+  } else {
+    ckeys.forEach(tipo => {
+      const corrs=[...corrPorTipo[tipo]].sort();
+      a((tipoL[tipo]||tipo).padEnd(9)+': '+corrs[0]);
+      if (corrs.length>1) a('           a: '+corrs[corrs.length-1]);
+      a('  Total: '+corrs.length+' comprobante'+(corrs.length!==1?'s':''));
+    });
+  }
+
+  // ── PARTE 5: ANULADOS ────────────────────────────────────────
+  a(sHdr('ANULADOS ('+anulados.length+')'));
+  if (anulados.length>0) {
+    a('CORRELATIVO'.padEnd(20)+'MONTO'.padStart(W-20)); a(sep());
+    anulados.forEach(tk => a((tk.correlativo||'---').padEnd(20)+('-'+amtS(tk.total)).padStart(W-20)));
+    a(sep());
+    a(lr('TOTAL ANULADO', '-'+amtS(t.anulados)));
+  } else { a('  Sin anulados en este turno'); }
+
+  // ── PARTE 5b: SIN COBRAR ────────────────────────────────────
+  if (sinCobrar.length>0) {
+    a(sHdr('SIN COBRAR ('+sinCobrar.length+')'));
+    sinCobrar.forEach(tk => a((tk.correlativo||'---').padEnd(20)+amtS(tk.total).padStart(W-20)));
+    a(sep());
+    a(lr('TOTAL SIN COBRAR', amtS(t.sinCobrar||0)));
+  }
+
+  // ── PARTE 6: CRÉDITOS ────────────────────────────────────────
+  a(sHdr('CREDITOS PENDIENTES ('+creditos.length+')'));
+  if (creditos.length>0) {
+    creditos.forEach(tk => {
+      a((tk.correlativo||'---').padEnd(20)+amtS(tk.total).padStart(W-20));
+      if (tk.obs && tk.obs.trim()) a('  A: '+tk.obs.substring(0,W-5));
+    });
+    a(sep());
+    a(lr('TOTAL CREDITO', amtS(t.credito)));
+    a('  ** No incluido en caja -- deuda pendiente');
+  } else { a('  Sin creditos otorgados en este turno'); }
+
+  // ── PARTE 7: EXTRAS ──────────────────────────────────────────
+  a(sHdr('EXTRAS DEL TURNO ('+extras.length+')'));
+  if (extras.length>0) {
+    extras.forEach(ex => {
+      const isIng=ex.tipo.startsWith('INGRESO');
+      const isVir=ex.tipo.endsWith('_VIRTUAL');
+      const pfx=(isIng?'+':'-')+(isVir?'[VIR]':'[EFE]')+' ';
+      const monto=amtS(ex.monto);
+      const maxC=W-pfx.length-monto.length-1;
+      a(pfx+(ex.concepto||'').substring(0,maxC).padEnd(maxC)+' '+monto);
+    });
+    a(sep());
+    if (tEntradas>0) a(lr('+ INGRESOS EFE', amtS(tEntradas)));
+    if (tSalidas >0) a(lr('- EGRESOS EFE',  amtS(tSalidas)));
+    if (tVirIng  >0) a(lr('+ INGRESOS VIR', amtS(tVirIng)));
+    if (tVirEgr  >0) a(lr('- EGRESOS VIR',  amtS(tVirEgr)));
+    a(sep());
+    a(lr('  NETO EFE', amtS(netoEfe)));
+    if (tVirIng>0||tVirEgr>0) a(lr('  NETO VIR', amtS(netoVir)));
+  } else { a('  Sin movimientos extra en este turno'); }
+
+  // ── PARTE 8: DESEMPEÑO ───────────────────────────────────────
+  a(sHdr('DESEMPENO DEL TURNO'));
+  if (pKeys.length>0) {
+    a('VENDEDOR'.padEnd(17)+'TKS'.padStart(4)+' '+'TOTAL'.padStart(W-22));
     a(sep());
     pKeys.forEach(n => {
-      const p = pMap[n];
-      const tag = n === caja.cajero ? ' (cajero)' : '';
-      a(n + tag);
-      a('  ' + p.tks + ' tkt' + (p.tks!==1?'s':'') + amtF(p.total));
+      const p=pMap[n]; const fill=pTotal>0?Math.round(p.total/pTotal*22):0;
+      a(n.substring(0,17).padEnd(17)+String(p.tks).padStart(4)+' '+amtS(p.total).padStart(W-22));
+      a('  ['+'#'.repeat(fill)+'-'.repeat(Math.max(0,22-fill))+'] '+
+        (pTotal>0?Math.round(p.total*100/pTotal):0)+'%');
     });
     a(sep());
-  }
-  if (extras.length > 0) {
-    a(ctr('EXTRAS'));
-    a(sep());
-    extras.forEach(ex => {
-      const isIng = ex.tipo.startsWith('INGRESO');
-      const isVir = ex.tipo.endsWith('_VIRTUAL');
-      const tag = isVir ? '[VIR]' : '[EFE]';
-      const con = ex.concepto.substring(0, 14);
-      a((isIng?'+':'-') + amtF(ex.monto) + ' ' + tag + ' ' + con);
-    });
-    a(lr('Neto EFE:', amtF(netoEfe)));
-    if (netoVir !== 0) a(lr('Neto VIR:', amtF(netoVir)));
-    a(sep());
-  }
-  a(dbl());
-  a(ctr('MOSexpress - ProyectoMOS'));
+    a(lr('TOTAL TURNO', amtS(pTotal)));
+  } else { a('  Sin datos de vendedores en este turno'); }
+
+  // ── PIE ──────────────────────────────────────────────────────
+  a(dbl()); a(ctr('*** FIN DE TURNO ***'));
+  a(ctr('ProyectoMOS'));
   a(ctr(new Date().toLocaleString('es-PE')));
   a(dbl());
 
