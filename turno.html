@@ -121,6 +121,11 @@ body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:
 .tk-info-lbl { font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);min-width:60px;flex-shrink:0; }
 .tk-obs { margin-top:8px;padding:8px 10px;border-radius:8px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);font-size:11px;color:var(--amber);line-height:1.5; }
 .tk-obs-lbl { font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--amber);opacity:.7;margin-bottom:3px; }
+.tk-items { margin-top:8px;border-radius:8px;overflow:hidden;border:1px solid rgba(99,102,241,0.15); }
+.tk-items-hdr { display:grid;grid-template-columns:1fr auto auto auto;gap:4px;padding:5px 8px;background:rgba(99,102,241,0.1);font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--indigo); }
+.tk-item-row { display:grid;grid-template-columns:1fr auto auto auto;gap:4px;padding:4px 8px;font-size:11px;border-top:1px solid rgba(99,102,241,0.08); }
+.tk-item-nom { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.tk-item-num { text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums; }
 
 /* Neto box */
 .neto-box { display:flex; gap:10px; padding:10px 14px; background:rgba(255,255,255,0.02); border-top:1px solid var(--border); flex-wrap:wrap; }
@@ -287,6 +292,17 @@ function ticketDetailHtml(tk, alwaysObs) {
   const obsRaw = tk.obs ? tk.obs.trim() : '';
   const hasObs = obsRaw.length > 0;
   const cliente = [tk.clienteNom, tk.clienteDoc].filter(Boolean).map(esc).join(' · ') || '—';
+  const itemsHtml = tk.items && tk.items.length > 0
+    ? `<div class="tk-items">
+        <div class="tk-items-hdr"><span>Producto</span><span>Cant.</span><span>Precio</span><span>Total</span></div>
+        ${tk.items.map(it => `<div class="tk-item-row">
+          <span class="tk-item-nom">${esc(it.nombre)||esc(it.sku)}</span>
+          <span class="tk-item-num">${it.cantidad}</span>
+          <span class="tk-item-num">${fm(it.precio)}</span>
+          <span class="tk-item-num">${fm(it.subtotal)}</span>
+        </div>`).join('')}
+      </div>`
+    : '';
   return `
     <div class="tk-info-row"><span class="tk-info-lbl">Hora</span><span>${esc(tk.hora)||'—'}</span></div>
     <div class="tk-info-row"><span class="tk-info-lbl">Vendedor</span><span>${esc(tk.vendedor)||'—'}</span></div>
@@ -294,6 +310,7 @@ function ticketDetailHtml(tk, alwaysObs) {
     <div class="tk-info-row"><span class="tk-info-lbl">Tipo</span><span>${badgeDoc(tk.tipoDoc)}</span></div>
     <div class="tk-info-row"><span class="tk-info-lbl">Pago</span><span><span class="badge ${mp.cls}">${mp.label}</span>${mp.detail ? ' ' + mp.detail : ''}</span></div>
     <div class="tk-info-row"><span class="tk-info-lbl">Total</span><span style="font-weight:900;font-size:14px;">${fm(tk.total)}</span></div>
+    ${itemsHtml}
     ${(alwaysObs || hasObs) ? `<div class="tk-obs"><div class="tk-obs-lbl">Comentario</div>${hasObs ? esc(obsRaw) : '<em style="opacity:.5">Sin comentarios</em>'}</div>` : ''}
   `;
 }

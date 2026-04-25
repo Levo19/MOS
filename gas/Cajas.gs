@@ -359,6 +359,30 @@ function datosTurno(params) {
     }
   }
 
+  // ── 2b. Leer VENTAS_DETALLE y adjuntar ítems a cada ticket ──
+  var ventasIds = {};
+  tickets.forEach(function(tk) { ventasIds[tk.idVenta] = true; });
+  var dSheet2 = ss.getSheetByName('VENTAS_DETALLE');
+  if (dSheet2) {
+    var dd = dSheet2.getDataRange().getValues();
+    var itemsMap = {};
+    for (var di = 1; di < dd.length; di++) {
+      var dId = String(dd[di][0] || '');
+      if (!ventasIds[dId]) continue;
+      if (!itemsMap[dId]) itemsMap[dId] = [];
+      itemsMap[dId].push({
+        sku:      String(dd[di][1] || ''),
+        nombre:   String(dd[di][2] || ''),
+        cantidad: parseFloat(dd[di][3]) || 0,
+        precio:   parseFloat(dd[di][4]) || 0,
+        subtotal: parseFloat(dd[di][5]) || 0
+      });
+    }
+    tickets.forEach(function(tk) { tk.items = itemsMap[tk.idVenta] || []; });
+  } else {
+    tickets.forEach(function(tk) { tk.items = []; });
+  }
+
   // ── 3. Leer MOVIMIENTOS_EXTRA ────────────────────────────────
   var extras = [];
   var eSheet = ss.getSheetByName('MOVIMIENTOS_EXTRA');
