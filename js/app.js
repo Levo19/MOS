@@ -3320,10 +3320,8 @@ const MOS = (() => {
           <td class="text-slate-400 text-xs">${hora(c.fechaApertura)} → ${hora(c.fechaCierre)}</td>
           <td id="hr-total-${c.idCaja}" class="font-semibold">${fmtMoney(c.totalVentas)}</td>
           <td id="hr-tickets-${c.idCaja}" class="text-center">${c.tickets}</td>
-          <td class="flex gap-1.5 items-center flex-wrap">
-            <a href="${c.urlReporte||'#'}" target="_blank" rel="noopener" class="btn-primary text-xs px-3 py-1.5 inline-block" style="text-decoration:none">📊 Reporte</a>
+          <td>
             <button onclick="window.open('./turno.html?idCaja=${c.idCaja}&api='+encodeURIComponent(API.getUrl()),'_blank')" class="btn-ghost text-xs px-3 py-1.5">📋 Turno</button>
-            <button onclick="MOS.abrirModalTicketZ('${c.idCaja}')" class="btn-ghost text-xs px-3 py-1.5">🖨 Z</button>
           </td>
         </tr>`;
       }).join('');
@@ -3438,13 +3436,8 @@ const MOS = (() => {
             <td class="text-slate-400 text-xs">${hora(c.fechaApertura)} → ${hora(c.fechaCierre)}</td>
             <td id="hr-total-${c.idCaja}" class="font-semibold">${fmtMoney(c.totalVentas)}</td>
             <td id="hr-tickets-${c.idCaja}" class="text-center">${c.tickets}</td>
-            <td class="flex gap-1.5 items-center flex-wrap">
-              <a href="${c.urlReporte}" target="_blank" rel="noopener"
-                 class="btn-primary text-xs px-3 py-1.5 inline-block" style="text-decoration:none">
-                📊 Reporte
-              </a>
+            <td>
               <button onclick="window.open('./turno.html?idCaja=${c.idCaja}&api='+encodeURIComponent(API.getUrl()),'_blank')" class="btn-ghost text-xs px-3 py-1.5">📋 Turno</button>
-              <button onclick="MOS.abrirModalTicketZ('${c.idCaja}')" class="btn-ghost text-xs px-3 py-1.5">🖨 Z</button>
             </td>
           </tr>`;
         }).join('');
@@ -3697,10 +3690,8 @@ const MOS = (() => {
               <td class="text-slate-400 text-xs">${hora(c.fechaApertura)} → ${hora(c.fechaCierre)}</td>
               <td id="hr-total-${c.idCaja}" class="font-semibold">${fmtMoney(c.totalVentas)}</td>
               <td id="hr-tickets-${c.idCaja}" class="text-center">${c.tickets}</td>
-              <td class="flex gap-1.5 items-center flex-wrap">
-                <a href="${c.urlReporte||'#'}" target="_blank" rel="noopener" class="btn-primary text-xs px-3 py-1.5 inline-block" style="text-decoration:none">📊 Reporte</a>
+              <td>
                 <button onclick="window.open('./turno.html?idCaja=${c.idCaja}&api='+encodeURIComponent(API.getUrl()),'_blank')" class="btn-ghost text-xs px-3 py-1.5">📋 Turno</button>
-                <button onclick="MOS.abrirModalTicketZ('${c.idCaja}')" class="btn-ghost text-xs px-3 py-1.5">🖨 Z</button>
               </td>`;
             histTbody.prepend(tr);
             const histTitle = $('cajasHistTitle');
@@ -4439,113 +4430,6 @@ const MOS = (() => {
     } catch { return '—'; }
   }
 
-  // ── TICKET Z — REIMPRESION ───────────────────────────────────
-  let _ticketZCajaId = null;
-
-  async function abrirModalTicketZ(idCaja) {
-    if (!idCaja) { toast('Sin idCaja', 'error'); return; }
-    _ticketZCajaId = idCaja;
-
-    // Buscar la caja en los datos ya cargados
-    const caja = (S._todasCajas || []).find(c => c.idCaja === idCaja);
-
-    // Cargar impresoras/estaciones si aún no están disponibles
-    if (!cfgData.impresoras.length || !cfgData.estaciones.length) {
-      try {
-        const [impRes, estRes] = await Promise.all([
-          API.get('getImpresoras', {}),
-          API.get('getEstaciones', {})
-        ]);
-        cfgData.impresoras = impRes || [];
-        cfgData.estaciones = estRes || [];
-      } catch(e) { /* se manejará luego como lista vacía */ }
-    }
-
-    // ── Previsualización: mostrar loading y abrir modal ya ──────
-    const prev = $('tzPreview');
-    if (prev) {
-      prev.innerHTML = `<div class="tz-ticket" style="text-align:center;color:#999;padding:24px 0">
-        <div style="font-size:1.2rem;margin-bottom:6px">⏳</div>
-        <div style="font-size:11px">Cargando ticket...</div>
-      </div>`;
-    }
-    openModal('modalTicketZ');
-
-    // ── Cargar texto completo del ticket desde GAS ──────────────
-    try {
-      const res = await API.get('getTicketZTexto', { idCaja });
-      if (prev) {
-        if (res?.texto) {
-          // Escapar HTML para mostrar en <pre>
-          const escaped = res.texto
-            .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-          prev.innerHTML = `<div class="tz-ticket tz-ticket-pre"><pre class="tz-pre">${escaped}</pre></div>`;
-        } else {
-          prev.innerHTML = `<div class="tz-ticket"><div class="tz-note">${res?.error || 'Sin datos'}</div></div>`;
-        }
-      }
-    } catch(e) {
-      if (prev) prev.innerHTML = `<div class="tz-ticket"><div class="tz-note">Error: ${e.message}</div></div>`;
-    }
-
-    // ── Botones de estaciones (impresoras TICKET activas) ────────
-    const btns = $('tzEstacionBtns');
-    if (btns) {
-      const ticketPrinters = cfgData.impresoras.filter(
-        i => i.tipo === 'TICKET' && i.printNodeId && String(i.activo) === '1'
-      );
-      if (ticketPrinters.length === 0) {
-        btns.innerHTML = '<p class="text-slate-500 text-sm text-center py-3">Sin impresoras TICKET activas configuradas.</p>';
-      } else {
-        btns.innerHTML = ticketPrinters.map(imp => {
-          const est   = cfgData.estaciones.find(e => e.idEstacion === imp.idEstacion);
-          const label = est ? est.nombre : imp.nombre;
-          const sub   = est ? imp.nombre : '';
-          const zona  = imp.idZona || '';
-          return `<button onclick="MOS.imprimirTicketZ('${imp.printNodeId}','${(est?.nombre||'').replace(/'/g,"\\'")}','${imp.idImpresora}')"
-                    class="tz-imp-btn" data-pid="${imp.printNodeId}">
-                    <span class="tz-imp-icon">🖨</span>
-                    <span class="tz-imp-info">
-                      <span class="tz-imp-name">${label}</span>
-                      ${sub ? `<span class="tz-imp-sub">${sub}</span>` : ''}
-                    </span>
-                    ${zona ? `<span class="tz-imp-zona">${zona}</span>` : ''}
-                  </button>`;
-        }).join('');
-      }
-    }
-  }
-
-  async function imprimirTicketZ(printerId, estacionNombre, idImpresora) {
-    if (!printerId) { toast('Sin impresora', 'error'); return; }
-    if (!_ticketZCajaId) { toast('Sin caja seleccionada', 'error'); return; }
-
-    // Deshabilitar todos los botones mientras imprime
-    const allBtns = $('tzEstacionBtns')?.querySelectorAll('button') || [];
-    allBtns.forEach(b => { b.disabled = true; });
-    const activeBtn = $('tzEstacionBtns')?.querySelector(`[data-pid="${printerId}"]`);
-    if (activeBtn) activeBtn.textContent = '⏳ Enviando...';
-
-    try {
-      await API.post('imprimirTicketZCierre', {
-        idCaja: _ticketZCajaId,
-        printerId,
-        estacion: estacionNombre || ''
-      });
-      toast('Ticket Z enviado ✓', 'ok');
-      closeModal('modalTicketZ');
-    } catch(e) {
-      toast('Error: ' + e.message, 'error');
-      allBtns.forEach(b => { b.disabled = false; });
-      if (activeBtn) {
-        const est = cfgData.estaciones.find(en => {
-          const imp = cfgData.impresoras.find(i => i.idImpresora === idImpresora);
-          return imp && en.idEstacion === imp.idEstacion;
-        });
-        activeBtn.innerHTML = `<span class="tz-imp-icon">🖨</span><span class="tz-imp-info"><span class="tz-imp-name">${estacionNombre || printerId}</span></span>`;
-      }
-    }
-  }
 
   // ── DISPOSITIVOS CRUD ────────────────────────────────────────
   function abrirModalDispositivo(id) {
@@ -5467,7 +5351,6 @@ const MOS = (() => {
     toggleKpiTickets, setTicketFiltroFecha, setTicketFiltroEstado, setTicketFiltroTipo,
     confirmarAnularTicket, abrirModalMetodo, cerrarModalMetodo, aplicarCambioMetodo,
     _selMetodo, _onMixtoInput, _renderModalMetodo,
-    abrirModalTicketZ, imprimirTicketZ,
     // Login / sesión
     seleccionarUsuario, loginVolver, confirmarPin, logout, lockScreen, _np,
     syncApp, applyPendingUpdate,

@@ -1745,7 +1745,7 @@
               <thead>
                 <tr>
                   <th>Cajero</th><th>Zona</th><th>Apertura → Cierre</th>
-                  <th>Vendido</th><th>Tickets</th><th>Reporte</th>
+                  <th>Vendido</th><th>Tickets</th><th>Turno</th>
                 </tr>
               </thead>
               <tbody id="cajasHistTbody"></tbody>
@@ -3019,97 +3019,6 @@
   </div>
 </div>
 
-<!-- Modal Ticket Z (reimpresión desde MOS) -->
-<div class="modal-backdrop" id="modalTicketZ">
-  <div class="modal-box" style="max-width:480px;padding:0;overflow:hidden">
-    <!-- Header -->
-    <div style="padding:18px 20px 14px;border-bottom:1px solid #1e293b;display:flex;align-items:center;justify-content:space-between">
-      <div>
-        <h2 style="font-weight:700;font-size:1rem;color:#f1f5f9;margin:0">🖨 Reimprimir Ticket Z</h2>
-        <p style="font-size:0.7rem;color:#64748b;margin:2px 0 0">Vista previa del cierre de turno</p>
-      </div>
-      <button onclick="MOS.closeModal('modalTicketZ')" style="color:#64748b;font-size:1.4rem;line-height:1;background:none;border:none;cursor:pointer;padding:4px 8px">×</button>
-    </div>
-    <!-- Ticket preview + station buttons en scroll -->
-    <div style="padding:20px;max-height:78vh;overflow-y:auto">
-      <!-- Ticket preview -->
-      <div id="tzPreview" style="margin-bottom:20px"></div>
-      <!-- Station buttons label -->
-      <p style="font-size:0.7rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin:0 0 10px">Imprimir en...</p>
-      <!-- Buttons -->
-      <div id="tzEstacionBtns" style="display:flex;flex-direction:column;gap:8px"></div>
-    </div>
-    <!-- Footer cancel -->
-    <div style="padding:12px 20px;border-top:1px solid #1e293b;text-align:right">
-      <button onclick="MOS.closeModal('modalTicketZ')" class="btn-ghost text-sm px-5">Cancelar</button>
-    </div>
-  </div>
-</div>
-
-<style>
-/* ── Ticket Z preview ─────────────────────────────────── */
-.tz-ticket {
-  background: #fff;
-  color: #111;
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 12px;
-  line-height: 1.55;
-  border-radius: 6px;
-  padding: 14px 12px;
-  max-width: 320px;
-  margin: 0 auto;
-  box-shadow: 0 2px 16px rgba(0,0,0,.45);
-}
-.tz-ticket-pre {
-  padding: 14px 0;
-  max-height: 340px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: thin;
-  scrollbar-color: #ccc #f5f5f5;
-}
-.tz-pre {
-  margin: 0;
-  padding: 0 12px;
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 11.5px;
-  line-height: 1.5;
-  white-space: pre;
-  color: #111;
-}
-.tz-note  { text-align:center; font-size:10px; color:#999; margin-top:6px; }
-/* ── Printer buttons ──────────────────────────────────── */
-.tz-imp-btn {
-  display:flex;align-items:center;gap:12px;
-  width:100%;text-align:left;
-  background:#0f172a;border:1px solid #334155;
-  border-radius:10px;padding:11px 14px;
-  cursor:pointer;transition:background .15s,border-color .15s;
-  color:#f1f5f9;
-}
-.tz-imp-btn:hover:not(:disabled)  { background:#1e293b; border-color:#6366f1; }
-.tz-imp-btn:active:not(:disabled) { background:#1e293b; }
-.tz-imp-btn:disabled { opacity:.5; cursor:not-allowed; }
-.tz-imp-icon { font-size:1.3rem; flex-shrink:0; }
-.tz-imp-info { display:flex; flex-direction:column; gap:1px; flex:1; min-width:0; }
-.tz-imp-name { font-size:.88rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.tz-imp-sub  { font-size:.72rem; color:#64748b; }
-.tz-imp-zona {
-  margin-left:auto;
-  flex-shrink:0;
-  font-size:.68rem;
-  font-weight:700;
-  letter-spacing:.04em;
-  text-transform:uppercase;
-  color:#818cf8;
-  background:rgba(99,102,241,.12);
-  border:1px solid rgba(99,102,241,.25);
-  border-radius:6px;
-  padding:3px 8px;
-  white-space:nowrap;
-  align-self:center;
-}
-</style>
 
 <!-- ── Banner nueva versión ──────────────────────────────── -->
 <div id="mosUpdateBanner">
