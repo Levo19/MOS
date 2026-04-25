@@ -470,8 +470,9 @@ function datosTurno(params) {
   });
 
   // ── 7. Leer IMPRESORAS activas TICKET con PrintNode ID ───────
+  // IMPRESORAS vive en ProyectoMOS_DB (este GAS), no en MosExpress
   var impresoras = [];
-  var impSheet = ss.getSheetByName('IMPRESORAS');
+  var impSheet = getSpreadsheet().getSheetByName('IMPRESORAS');
   if (impSheet) {
     var impData = impSheet.getDataRange().getValues();
     var impHdrs = impData[0].map(function(h){ return String(h).trim(); });
