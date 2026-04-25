@@ -123,6 +123,15 @@ body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:
 .vend-bar-wrap { height:5px; background:rgba(255,255,255,0.06); border-radius:3px; overflow:hidden; }
 .vend-bar { height:100%; border-radius:3px; background:linear-gradient(90deg,var(--indigo),var(--indigo-light)); transition:width .5s; }
 
+/* Auditorías */
+.audit-row { padding:10px 14px; border-bottom:1px solid rgba(255,255,255,0.03); }
+.audit-row:last-child { border-bottom:none; }
+.audit-top { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+.audit-name { font-size:12px; font-weight:700; }
+.audit-cnt  { font-size:12px; font-weight:800; }
+.audit-bar-wrap { height:5px; background:rgba(255,255,255,0.06); border-radius:3px; overflow:hidden; }
+.audit-bar { height:100%; border-radius:3px; transition:width .5s; }
+
 /* Extras */
 .extra-row { padding:10px 14px; border-bottom:1px solid rgba(255,255,255,0.03); }
 .extra-row:last-child { border-bottom:none; }
@@ -211,7 +220,7 @@ const REFRESH = 60;
 let countdown = REFRESH, timer = null;
 
 // ── Auto-update check: compara version.json con la versión embebida ──
-const _TURNO_VERSION = '1.3.28';
+const _TURNO_VERSION = '1.3.29';
 (async function _checkVersion() {
   try {
     const r = await fetch('./version.json?t=' + Date.now(), { cache: 'no-store' });
@@ -386,6 +395,24 @@ function whatsappShare(data) {
     });
     a(`  ─`);
     a(`  *Total turno: ${fm(data.pTotal)}*`);
+  } else {
+    a(`  Sin datos`);
+  }
+  a(SEP);
+
+  // ── 9. AUDITORÍAS ─────────────────────────────────────────────
+  const auditMapW = data.auditorias || {};
+  const META_W    = data.metaAudit  || 30;
+  const auditPersonasW = [...new Set([...Object.keys(data.pMap || {}), c.cajero].filter(Boolean))];
+  sp(); a(`📋 *AUDITORÍAS DEL DÍA (meta: ${META_W})*`);
+  if (auditPersonasW.length > 0) {
+    auditPersonasW.forEach(n => {
+      const cnt   = auditMapW[n] || 0;
+      const pctW  = Math.round(cnt / META_W * 100);
+      const barsW = Math.min(10, Math.round(pctW / 10));
+      const icon  = cnt >= META_W ? '✅' : cnt >= 20 ? '⚠️' : '❌';
+      a(`  ${icon} ${n}: ${cnt}/${META_W}  ${'█'.repeat(barsW)}${'░'.repeat(10-barsW)} ${pctW}%`);
+    });
   } else {
     a(`  Sin datos`);
   }
@@ -643,6 +670,26 @@ function render(data) {
       }).join('')
     : '<div style="text-align:center;padding:16px;color:var(--muted);font-size:12px;">Sin datos de vendedores.</div>';
 
+  // ── Auditorías del día ────────────────────────────────────────
+  const auditMap  = data.auditorias || {};
+  const META_AUD  = data.metaAudit  || 30;
+  const auditPersonas = [...new Set([...Object.keys(pMap), caja.cajero].filter(Boolean))];
+  const auditHtml = auditPersonas.length > 0
+    ? auditPersonas.map(nombre => {
+        const cnt  = auditMap[nombre] || 0;
+        const pc   = Math.min(100, cnt / META_AUD * 100);
+        const color = cnt >= META_AUD ? 'var(--green)' : cnt >= 20 ? 'var(--amber)' : 'var(--red)';
+        const icon  = cnt >= META_AUD ? '✅' : cnt >= 20 ? '⚠️' : '❌';
+        return `<div class="audit-row">
+          <div class="audit-top">
+            <span class="audit-name">${esc(nombre)}</span>
+            <span class="audit-cnt" style="color:${color};">${icon} ${cnt}/${META_AUD}</span>
+          </div>
+          <div class="audit-bar-wrap"><div class="audit-bar" style="width:${pc.toFixed(1)}%;background:${color};"></div></div>
+        </div>`;
+      }).join('')
+    : '<div style="text-align:center;padding:16px;color:var(--muted);font-size:12px;">Sin datos de auditorías.</div>';
+
   // ── Armar HTML completo ───────────────────────────────────────
   const estaAbierto = !caja.fechaCierre || caja.fechaCierre === '' || caja.estado === 'ABIERTA';
 
@@ -776,6 +823,18 @@ function render(data) {
       </div>
     </div>
     <div class="sec-body open" id="sec-vend" style="background:var(--bg2);">${vendHtml}</div>
+  </div>
+
+  <!-- Auditorías del día -->
+  <div class="sec">
+    <div class="sec-hdr" onclick="toggleSec('sec-audit')">
+      <div class="sec-title">📋 Auditorías del día <span class="sec-badge">meta: ${META_AUD}</span></div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span class="sec-total" style="font-size:11px;color:var(--muted);">${auditPersonas.filter(n=>(auditMap[n]||0)>=META_AUD).length}/${auditPersonas.length} cumplieron</span>
+        <span class="sec-chev" id="chev-sec-audit">▾</span>
+      </div>
+    </div>
+    <div class="sec-body open" id="sec-audit" style="background:var(--bg2);">${auditHtml}</div>
   </div>
 
   <div class="footer no-print">
@@ -937,6 +996,23 @@ function buildPrintTicket(data) {
     a(sep());
     a(lr('TOTAL TURNO', amtS(pTotal)));
   } else { a('  Sin datos de vendedores en este turno'); }
+
+  // ── PARTE 8b: AUDITORÍAS ──────────────────────────────────────
+  const auditMapP = data.auditorias || {};
+  const META_P    = data.metaAudit  || 30;
+  const auditPersonasP = [...new Set([...Object.keys(pMap), caja.cajero].filter(Boolean))];
+  if (auditPersonasP.length > 0) {
+    a(sHdr('AUDITORIAS DEL DIA (META:'+META_P+')'));
+    a('VENDEDOR'.padEnd(W-14)+'AUDIT'.padStart(7)+'ESTADO'.padStart(7));
+    a(sep());
+    auditPersonasP.forEach(n => {
+      const cnt   = auditMapP[n] || 0;
+      const estado = cnt >= META_P ? 'CUMPLE' : cnt >= 20 ? 'PARCIAL' : 'FALTA ';
+      const fill  = Math.round(Math.min(cnt, META_P) / META_P * 20);
+      a(n.substring(0, W-14).padEnd(W-14) + (cnt+'/'+META_P).padStart(7) + estado.padStart(7));
+      a('  [' + '#'.repeat(fill) + '-'.repeat(20-fill) + '] ' + Math.round(cnt/META_P*100) + '%');
+    });
+  }
 
   // ── PIE ──────────────────────────────────────────────────────
   a(dbl()); a(ctr('*** FIN DE TURNO ***'));

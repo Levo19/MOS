@@ -326,6 +326,7 @@ function datosTurno(params) {
         estacion:     String(cd[r][2] || ''),
         zona:         String(cd[r][8] || ''),
         fechaApert:   cd[r][3] instanceof Date ? Utilities.formatDate(cd[r][3], tz, 'dd/MM/yyyy HH:mm') : String(cd[r][3] || ''),
+        fechaDia:     cd[r][3] instanceof Date ? Utilities.formatDate(cd[r][3], tz, 'yyyy-MM-dd') : '',
         montoInicial: parseFloat(cd[r][4]) || 0,
         estado:       String(cd[r][5] || ''),
         montoFinal:   parseFloat(cd[r][6]) || 0,
@@ -517,6 +518,26 @@ function datosTurno(params) {
     }
   }
 
+  // ── 8. Auditorías del día (meta 30 por persona) ───────────────
+  var auditorias = {};
+  var auditSheet = ss.getSheetByName('AUDITORIA');
+  if (auditSheet && caja.fechaDia) {
+    var auditData = auditSheet.getDataRange().getValues();
+    var auditHdrs = auditData[0].map(function(h){ return String(h).trim(); });
+    var aFechaIdx = auditHdrs.indexOf('Fecha');
+    var aVendIdx  = auditHdrs.indexOf('Vendedor');
+    for (var ai = 1; ai < auditData.length; ai++) {
+      var aFecha = auditData[ai][aFechaIdx];
+      var aFechaStr = aFecha instanceof Date
+        ? Utilities.formatDate(aFecha, tz, 'yyyy-MM-dd')
+        : String(aFecha || '').substring(0, 10);
+      if (aFechaStr !== caja.fechaDia) continue;
+      var aVend = String(auditData[ai][aVendIdx] || '').trim();
+      if (!aVend) continue;
+      auditorias[aVend] = (auditorias[aVend] || 0) + 1;
+    }
+  }
+
   return {
     ok: true,
     data: {
@@ -531,7 +552,9 @@ function datosTurno(params) {
       vendedores: vendedoresList,
       pMap:       pMap,
       pTotal:     pTotal,
-      impresoras: impresoras,
+      impresoras:  impresoras,
+      auditorias:  auditorias,
+      metaAudit:   30,
       totales: {
         efectivo:             tEfectivo,
         virtual:              tVirtual,
