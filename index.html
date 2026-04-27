@@ -939,8 +939,31 @@
       border-color: rgba(245,158,11,.3);
     }
     .cat-alert-icon {
-      font-size: .8rem; color: #fbbf24; line-height: 1;
-      opacity: .9; cursor: default;
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 22px; height: 22px; border-radius: 50%;
+      font-size: .78rem; line-height: 1; cursor: help;
+      color: #fbbf24;
+      background: radial-gradient(circle at 30% 30%, rgba(255,215,0,.35), rgba(245,158,11,.15));
+      border: 1.5px solid #fbbf24;
+      animation: catAlertPulse 1.3s ease-in-out infinite,
+                 catAlertGlow  2s   ease-in-out infinite;
+      filter: drop-shadow(0 0 4px rgba(255,215,0,.6));
+    }
+    @keyframes catAlertPulse {
+      0%,100% { transform: scale(1);    }
+      50%     { transform: scale(1.18); }
+    }
+    @keyframes catAlertGlow {
+      0%,100% {
+        background: radial-gradient(circle at 30% 30%, rgba(255,215,0,.25), rgba(245,158,11,.1));
+        box-shadow: 0 0 0 0 rgba(255,215,0,.55);
+        color: #fbbf24;
+      }
+      50% {
+        background: radial-gradient(circle at 30% 30%, #ffd700, #f59e0b);
+        box-shadow: 0 0 14px rgba(255,215,0,.8), 0 0 0 5px rgba(255,215,0,0);
+        color: #020817;
+      }
     }
 
     /* ── Modal ajuste de precios ─────────────────────────── */
