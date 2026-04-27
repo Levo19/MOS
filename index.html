@@ -519,7 +519,65 @@
       40%        { opacity:1; transform:scale(1.2); }
     }
 
-    /* ── Botón de alertas en catálogo (dorado, punto orbital) ── */
+    /* ── Badge de alerta en íconos de módulos ──────────────── */
+    .nav-alert-badge {
+      position: absolute; top: -5px; right: -7px;
+      width: 16px; height: 16px; border-radius: 50%;
+      background: linear-gradient(135deg, #f59e0b, #ffd700);
+      color: #020817; font-size: 9px; font-weight: 900;
+      display: flex !important; align-items: center; justify-content: center;
+      box-shadow: 0 0 8px rgba(255,215,0,.7);
+      animation: navAlertPulse 1.4s ease-in-out infinite;
+      pointer-events: none;
+      line-height: 1;
+    }
+    .nav-alert-badge[style*="display:none"], .nav-alert-badge[style*="display: none"] { display: none !important; }
+    @keyframes navAlertPulse {
+      0%,100% { transform: scale(1);    box-shadow: 0 0 6px rgba(255,215,0,.6); }
+      50%     { transform: scale(1.18); box-shadow: 0 0 14px rgba(255,215,0,.9); }
+    }
+
+    /* ── Toolbar del catálogo: una sola fila + búsqueda expandible ── */
+    .cat-toolbar {
+      display: flex; flex-direction: row; align-items: center;
+      gap: 8px; margin-bottom: 12px;
+    }
+    .cat-toolbar > .cat-search-wrap { flex: 1 1 auto; min-width: 0; position: relative; }
+    .cat-toolbar > .cat-search-wrap input {
+      width: 100%;
+      transition: box-shadow .25s ease, border-color .25s ease;
+    }
+    .cat-toolbar > .cat-search-wrap input:focus {
+      border-color: #c9a227;
+      box-shadow: 0 0 0 3px rgba(255,215,0,.18), 0 0 18px rgba(255,215,0,.25);
+    }
+    .cat-toolbar > .cat-tool-btn {
+      flex-shrink: 0;
+      max-width: 200px; opacity: 1;
+      transition:
+        max-width .35s cubic-bezier(.4,0,.2,1),
+        opacity   .25s ease,
+        margin    .35s ease,
+        padding   .35s ease,
+        transform .25s ease;
+      transform-origin: right center;
+      overflow: hidden;
+    }
+    .cat-toolbar.search-active > .cat-tool-btn {
+      max-width: 0 !important;
+      opacity: 0;
+      margin: 0 !important;
+      padding-left: 0 !important; padding-right: 0 !important;
+      transform: scale(.7);
+      pointer-events: none;
+    }
+    /* En mobile el botón "+" muestra solo "+" sin "Nuevo" */
+    @media (max-width: 640px) {
+      .cat-btn-new-lbl { display: none; }
+      .cat-btn-new { padding: 0 12px !important; }
+    }
+
+    /* ── Botón de alertas en catálogo (dorado, palpita y salta) ── */
     .alert-btn {
       position: relative;
       display: inline-flex; align-items: center; gap: 6px;
@@ -1048,6 +1106,7 @@
       <span class="relative shrink-0">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="10" y1="7" x2="16" y2="7"/><line x1="10" y1="11" x2="16" y2="11"/></svg>
         <span id="pnNavBadge" style="display:none;position:absolute;top:-4px;right:-5px;background:#dc2626;color:#fff;font-size:9px;font-weight:700;min-width:14px;height:14px;border-radius:7px;display:none;align-items:center;justify-content:center;padding:0 3px;line-height:1"></span>
+        <span id="catAlertBadge" class="nav-alert-badge" style="display:none">⚠</span>
       </span>
       <span class="nav-label whitespace-nowrap">Catálogo</span>
     </button>
@@ -1370,23 +1429,23 @@
     <!-- ═══ VIEW: CATÁLOGO ════════════════════════════════════ -->
     <section id="view-catalogo" class="view">
       <!-- Toolbar -->
-      <div class="flex flex-col sm:flex-row gap-2 mb-3">
-        <div class="relative flex-1">
+      <div class="cat-toolbar">
+        <div class="cat-search-wrap">
           <input id="searchCatalogo" type="search" class="inp w-full pl-9"
-                 placeholder="Buscar por nombre, código de barra, SKU..."
+                 placeholder="Buscar por nombre, código, SKU..."
                  oninput="MOS.filterCatalogo()" autocomplete="off">
           <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">🔍</span>
         </div>
         <!-- Botón Alertas (solo visible si hay productos con alertas) -->
-        <button id="btnAlertasCat" onclick="MOS.toggleFiltroAlertas()" class="alert-btn hidden shrink-0" title="Productos con alertas — click para filtrar">
+        <button id="btnAlertasCat" onclick="MOS.toggleFiltroAlertas()" class="alert-btn hidden cat-tool-btn" title="Productos con alertas — click para filtrar">
           <span class="alert-btn-icon">⚠</span>
           <span class="alert-btn-count" id="alertaCount">0</span>
         </button>
         <!-- Filtros dropdown -->
-        <div class="relative shrink-0" id="catFiltroWrap">
-          <button id="btnFiltrosCat" onclick="MOS.toggleFiltroCat()" class="inp flex items-center gap-2 whitespace-nowrap w-full sm:w-auto">
+        <div class="relative cat-tool-btn" id="catFiltroWrap">
+          <button id="btnFiltrosCat" onclick="MOS.toggleFiltroCat()" class="inp flex items-center gap-2 whitespace-nowrap">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
-            Filtros
+            <span class="cat-btn-new-lbl">Filtros</span>
             <span id="filtrosBadge" class="hidden bg-indigo-500 text-white text-xs rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center leading-none">0</span>
           </button>
           <!-- Panel -->
@@ -1407,8 +1466,8 @@
             </div>
           </div>
         </div>
-        <button class="btn-primary whitespace-nowrap hidden lg:flex items-center gap-1" onclick="MOS.abrirModalProducto(null)">
-          + Nuevo
+        <button class="btn-primary whitespace-nowrap flex items-center gap-1 cat-tool-btn cat-btn-new" onclick="MOS.abrirModalProducto(null)">
+          <span>+</span><span class="cat-btn-new-lbl">Nuevo</span>
         </button>
       </div>
       <!-- Chips de filtros activos -->
@@ -2263,6 +2322,7 @@
         <span class="bnav-icon" style="position:relative">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
           <span id="pnNavBadgeMob" style="display:none;position:absolute;top:-4px;right:-5px;background:#dc2626;color:#fff;font-size:9px;font-weight:700;min-width:14px;height:14px;border-radius:7px;align-items:center;justify-content:center;padding:0 3px;line-height:1"></span>
+          <span id="catAlertBadgeMob" class="nav-alert-badge" style="display:none">⚠</span>
         </span>
         <span class="bnav-lbl">Catálogo</span>
       </div>

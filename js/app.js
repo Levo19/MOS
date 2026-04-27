@@ -116,6 +116,16 @@ const MOS = (() => {
     // Set today on date inputs
     const pf = $('pagoFecha'); if (pf) pf.value = today();
 
+    // Búsqueda catálogo: expandir al focus, contraer al blur si está vacío
+    const searchInp = $('searchCatalogo');
+    if (searchInp) {
+      const toolbar = searchInp.closest('.cat-toolbar');
+      if (toolbar) {
+        searchInp.addEventListener('focus', () => toolbar.classList.add('search-active'));
+        searchInp.addEventListener('blur',  () => { if (!searchInp.value) toolbar.classList.remove('search-active'); });
+      }
+    }
+
     // Session check
     const saved = _getSession();
     if (saved && saved.idPersonal && saved.nombre) {
@@ -937,7 +947,7 @@ const MOS = (() => {
     });
     _catGroups = groups; // guardar para acceso externo (ajuste de precios)
 
-    // Calcular alertas globalmente (independiente de filtros) para el botón
+    // Calcular alertas globalmente (independiente de filtros) para el botón y badge nav
     const allGroups = Object.values(groups).filter(g => g.base);
     let totalAlertas = 0;
     allGroups.forEach(g => { g.__hasAlert = _groupHasAlert(g); if (g.__hasAlert) totalAlertas++; });
@@ -945,6 +955,11 @@ const MOS = (() => {
     const cntAlert = $('alertaCount');
     if (btnAlert) btnAlert.classList.toggle('hidden', totalAlertas === 0);
     if (cntAlert) cntAlert.textContent = totalAlertas;
+    // Badge de alerta en íconos del nav (sidebar y mobile)
+    ['catAlertBadge', 'catAlertBadgeMob'].forEach(id => {
+      const el = $(id);
+      if (el) el.style.display = totalAlertas > 0 ? 'flex' : 'none';
+    });
     // Si se desactivan todas las alertas, también apagar el filtro
     if (totalAlertas === 0 && _catFiltros.soloAlertas) {
       _catFiltros.soloAlertas = false;
