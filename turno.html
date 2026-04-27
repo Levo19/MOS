@@ -226,7 +226,7 @@ const REFRESH   = 60;
 let countdown = REFRESH, timer = null;
 
 // ── Auto-update check: compara version.json con la versión embebida ──
-const _TURNO_VERSION = '1.3.33';
+const _TURNO_VERSION = '1.3.34';
 async function _checkVersion() {
   try {
     const r = await fetch('./version.json?t=' + Date.now(), { cache: 'no-store' });
@@ -309,6 +309,17 @@ function whatsappShare(data) {
   const L = [];
   const a  = s => L.push(s);
   const sp = () => a('');
+  const wrapW = (text, maxW) => {
+    const words = String(text || '').split(' ');
+    const lines = []; let cur = [];
+    words.forEach(w => {
+      if (!w) return;
+      if ([...cur, w].join(' ').length <= maxW) { cur.push(w); }
+      else { if (cur.length) lines.push(cur.join(' ')); cur = [w]; }
+    });
+    if (cur.length) lines.push(cur.join(' '));
+    return lines.length ? lines : [''];
+  };
 
   // ── 1. CABECERA ────────────────────────────────────────────────
   a(`📋 *TURNO Z — CIERRE*`);
@@ -380,7 +391,8 @@ function whatsappShare(data) {
   sp(); a(`🔁 *CRÉDITOS PENDIENTES (${data.creditos.length})*`);
   if (data.creditos.length > 0) {
     data.creditos.forEach(tk => {
-      a(`  ${tk.correlativo || '—'}  ${fm(tk.total)}${tk.obs ? '  · ' + tk.obs : ''}`);
+      a(`  ${tk.correlativo || '—'}  ${fm(tk.total)}`);
+      if (tk.obs) wrapW(tk.obs, 43).forEach((l, i) => a(`    ${i === 0 ? '↳' : ' '} ${l}`));
     });
     a(`  Total: ${fm(t.credito)}`);
   } else {
@@ -398,7 +410,16 @@ function whatsappShare(data) {
       const signo = isIng ? '➕' : '➖';
       const tag   = isVir ? '📲' : '💵';
       const desc  = [ex.concepto, ex.obs].filter(Boolean).join(' · ') || '—';
-      a(`  ${signo}${tag} ${desc}  ${fm(ex.monto)}`);
+      const amtStr = fm(ex.monto);
+      const fullLine = `  ${signo}${tag} ${desc}  ${amtStr}`;
+      if (fullLine.length <= 47) {
+        a(fullLine);
+      } else {
+        const pfx0 = `  ${signo}${tag} `; const pfxN = ' '.repeat(pfx0.length);
+        const dlines = wrapW(desc, 40);
+        dlines.forEach((l, i) => a(`${i === 0 ? pfx0 : pfxN}${l}`));
+        a(`${pfxN}${amtStr}`);
+      }
     });
     if (netoE !== 0) a(`  Neto efe: ${netoE > 0 ? '+' : ''}${fm(netoE)}`);
     if (netoV !== 0) a(`  Neto vir: ${netoV > 0 ? '+' : ''}${fm(netoV)}`);
@@ -884,6 +905,19 @@ function buildPrintTicket(data) {
   const lr  = (l,r) => { r=String(r); const sp=Math.max(1,W-l.length-r.length); return l+' '.repeat(sp)+r; };
   const sHdr = title => { const s=' '+title+' '; const l=Math.max(0,Math.floor((W-s.length)/2)); return '='.repeat(l)+s+'='.repeat(Math.max(0,W-s.length-l)); };
   const amtS = v => 'S/'+Math.abs(parseFloat(v)||0).toFixed(2);
+  const wrapL = (text, maxW, pfx, cont) => {
+    const p1 = pfx || ''; const pC = cont !== undefined ? cont : ' '.repeat(p1.length);
+    const words = String(text || '').split(' ');
+    const lines = []; let cur = []; let first = true;
+    words.forEach(w => {
+      if (!w) return;
+      const lim = first ? maxW - p1.length : maxW - pC.length;
+      if ([...cur, w].join(' ').length <= lim) { cur.push(w); }
+      else { if (cur.length) { lines.push((first ? p1 : pC) + cur.join(' ')); first = false; } cur = [w]; }
+    });
+    if (cur.length) lines.push((first ? p1 : pC) + cur.join(' '));
+    return lines;
+  };
   const estaAbierto = !caja.fechaCierre || caja.estado==='ABIERTA';
   const tipoL = {'NOTA_DE_VENTA':'NV','BOLETA':'BOL','FACTURA':'FAC'};
 
@@ -979,7 +1013,7 @@ function buildPrintTicket(data) {
   if (creditos.length>0) {
     creditos.forEach(tk => {
       a((tk.correlativo||'---').padEnd(20)+amtS(tk.total).padStart(W-20));
-      if (tk.obs && tk.obs.trim()) a('  A: '+tk.obs.substring(0,W-5));
+      if (tk.obs && tk.obs.trim()) wrapL(tk.obs, W, '  A: ').forEach(l => a(l));
     });
     a(sep());
     a(lr('TOTAL CREDITO', amtS(t.credito)));
@@ -996,6 +1030,7 @@ function buildPrintTicket(data) {
       const monto=amtS(ex.monto);
       const maxC=W-pfx.length-monto.length-1;
       a(pfx+(ex.concepto||'').substring(0,maxC).padEnd(maxC)+' '+monto);
+      if (ex.obs && ex.obs.trim()) wrapL(ex.obs, W, '  > ').forEach(l => a(l));
     });
     a(sep());
     if (tEntradas>0) a(lr('+ INGRESOS EFE', amtS(tEntradas)));

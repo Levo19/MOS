@@ -326,7 +326,7 @@ function datosTurno(params) {
         estacion:     String(cd[r][2] || ''),
         zona:         String(cd[r][8] || ''),
         fechaApert:   cd[r][3] instanceof Date ? Utilities.formatDate(cd[r][3], tz, 'dd/MM/yyyy HH:mm') : String(cd[r][3] || ''),
-        fechaDia:     cd[r][3] instanceof Date ? Utilities.formatDate(cd[r][3], tz, 'yyyy-MM-dd') : '',
+        fechaDia:     cd[r][3] instanceof Date ? Utilities.formatDate(cd[r][3], tz, 'yyyy-MM-dd') : String(cd[r][3] || '').substring(0, 10),
         montoInicial: parseFloat(cd[r][4]) || 0,
         estado:       String(cd[r][5] || ''),
         montoFinal:   parseFloat(cd[r][6]) || 0,
@@ -520,7 +520,7 @@ function datosTurno(params) {
 
   // ── 8. Auditorías del día (meta 30 por persona) ───────────────
   var auditorias = {};
-  var auditSheet = ss.getSheetByName('AUDITORIA');
+  var auditSheet = ss.getSheetByName('AUDITORIAS');
   if (auditSheet && caja.fechaDia) {
     var auditData = auditSheet.getDataRange().getValues();
     var auditHdrs = auditData[0].map(function(h){ return String(h).trim(); });
@@ -650,6 +650,7 @@ function imprimirTicketZCierre(params) {
         tipo:     String(ed[ei][3] || 'EGRESO'),
         monto:    parseFloat(ed[ei][4]) || 0,
         concepto: String(ed[ei][5] || ''),
+        obs:      String(ed[ei][6] || ''),
         hora:     ed[ei][2] instanceof Date ? Utilities.formatDate(ed[ei][2], tz, 'HH:mm') : ''
       });
     }
@@ -726,6 +727,20 @@ function imprimirTicketZCierre(params) {
   function _sHdr(t)    { var s=' '+t+' '; var l=Math.floor((W-s.length)/2); return _rep('=',l)+s+_rep('=',W-s.length-l)+'\n'; }
   function _sRow(lb,e,vi){ return _pEnd(lb,14)+_amtN(e,17)+_amtN(vi,17)+'\n'; }
   function _mkBar(pct) { var f=Math.round(pct*26/100); if(f<0)f=0; if(f>26)f=26; return '  ['+_rep('#',f)+_rep('-',26-f)+'] '+_pSt(String(Math.round(pct)),3)+'%\n'; }
+  function _wrap(text, maxW, prefix, contPrefix) {
+    var p1 = String(prefix || ''); var pC = (contPrefix !== undefined) ? String(contPrefix) : _rep(' ', p1.length);
+    var lim1 = maxW - p1.length; var limC = maxW - pC.length;
+    var words = _norm(String(text || '')).split(' ');
+    var result = ''; var cur = []; var isFirst = true;
+    for (var wi = 0; wi < words.length; wi++) {
+      var w = words[wi]; if (!w) continue;
+      var lim = isFirst ? lim1 : limC;
+      if (cur.concat([w]).join(' ').length <= lim) { cur.push(w); }
+      else { if (cur.length) { result += (isFirst?p1:pC) + cur.join(' ') + '\n'; isFirst = false; } cur = [w]; }
+    }
+    if (cur.length) result += (isFirst?p1:pC) + cur.join(' ') + '\n';
+    return result;
+  }
 
   var SEP  = _rep('=',W)+'\n';
   var SEPd = _rep('-',W)+'\n';
@@ -811,7 +826,7 @@ function imprimirTicketZCierre(params) {
   if (creditos.length > 0) {
     creditos.forEach(function(t){
       txt += _pEnd(t.correlativo,18) + _amtP(t.total,12) + '\n';
-      if (t.obs) txt += '  A: ' + _norm(t.obs).substring(0,43) + '\n';
+      if (t.obs) txt += _wrap(t.obs, W, '  A: ');
     });
     txt += SEPd;
     txt += _pEnd('TOTAL CREDITO',18) + _amtP(tCredito,12) + '\n';
@@ -826,6 +841,7 @@ function imprimirTicketZCierre(params) {
     extras.forEach(function(ex){
       var mEx = ex.tipo==='INGRESO' ? parseFloat(ex.monto) : -parseFloat(ex.monto);
       txt += (ex.tipo==='INGRESO'?'+':'-') + ' ' + _pEnd(_norm(ex.concepto),22) + _amtN(mEx,12) + '\n';
+      if (ex.obs) txt += _wrap(ex.obs, W, '  > ');
     });
     txt += SEPd;
     if (tEntradas>0) txt += '+ INGRESOS       ' + _amtP(tEntradas,14) + '\n';
@@ -858,7 +874,7 @@ function imprimirTicketZCierre(params) {
   // PARTE 8b: AUDITORÍAS DEL DÍA
   var auditMapZ = {};
   var META_Z    = 30;
-  var auditSheetZ = ss.getSheetByName('AUDITORIA');
+  var auditSheetZ = ss.getSheetByName('AUDITORIAS');
   if (auditSheetZ && caja.fechaDia) {
     var auditDataZ = auditSheetZ.getDataRange().getValues();
     var auditHdrsZ = auditDataZ[0].map(function(h){ return String(h).trim(); });
