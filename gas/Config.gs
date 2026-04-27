@@ -17,7 +17,7 @@
 // ════════════════════════════════════════════════
 
 function getEstacionesParaApp(params) {
-  var appOrigen = (params && params.appOrigen) ? String(params.appOrigen) : '';
+  var appOrigen = (params && params.appOrigen) ? String(params.appOrigen).toLowerCase() : '';
 
   var estRows = _sheetToObjects(getSheet('ESTACIONES')).filter(function(r){
     var act = String(r.activo).toLowerCase();
@@ -25,7 +25,7 @@ function getEstacionesParaApp(params) {
   });
   if (appOrigen) {
     estRows = estRows.filter(function(r){
-      return String(r.appOrigen || '').toLowerCase() === appOrigen.toLowerCase();
+      return String(r.appOrigen || '').toLowerCase() === appOrigen;
     });
   }
 
@@ -36,9 +36,15 @@ function getEstacionesParaApp(params) {
   });
   if (appOrigen) {
     impRows = impRows.filter(function(r){
-      return String(r.appOrigen || '').toLowerCase() === appOrigen.toLowerCase();
+      return String(r.appOrigen || '').toLowerCase() === appOrigen;
     });
   }
+
+  // Series documentales — case-insensitive y normaliza tipoDocumento
+  var serRows = _sheetToObjects(getSheet('SERIES_DOCUMENTALES')).filter(function(r){
+    var act = String(r.activo).toLowerCase();
+    return act === '1' || act === 'true';
+  });
 
   var impByEstacion = {};
   impRows.forEach(function(p) {
@@ -46,12 +52,41 @@ function getEstacionesParaApp(params) {
     if (eid && !impByEstacion[eid]) impByEstacion[eid] = String(p.printNodeId || '');
   });
 
+  // Series por estación (preferencia) o por zona (fallback)
+  var seriesByEstacion = {};
+  var seriesByZona     = {};
+  serRows.forEach(function(s) {
+    var eid  = String(s.idEstacion || '');
+    var zid  = String(s.idZona     || '');
+    var tipo = String(s.tipoDocumento || '').toUpperCase().replace(/[\s_-]/g, '');
+    var serie = String(s.serie || '');
+    var key = '';
+    if (tipo === 'NOTAVENTA' || tipo === 'NV' || tipo === 'NOTADEVENTA' || tipo === 'NOTA') key = 'Serie_Nota';
+    else if (tipo === 'BOLETA' || tipo === 'BOL' || tipo === 'B')                              key = 'Serie_Boleta';
+    else if (tipo === 'FACTURA' || tipo === 'FAC' || tipo === 'F')                             key = 'Serie_Factura';
+    if (!key) return;
+    if (eid) {
+      if (!seriesByEstacion[eid]) seriesByEstacion[eid] = {};
+      seriesByEstacion[eid][key] = serie;
+    } else if (zid) {
+      if (!seriesByZona[zid]) seriesByZona[zid] = {};
+      seriesByZona[zid][key] = serie;
+    }
+  });
+
   var data = estRows.map(function(e) {
+    var eid = String(e.idEstacion || '');
+    var zid = String(e.idZona || '');
+    var s = seriesByEstacion[eid] || seriesByZona[zid] || {};
     return {
-      idEstacion:      String(e.idEstacion || ''),
+      idEstacion:      eid,
       Estacion_Nombre: String(e.nombre || ''),
-      Zona_ID:         String(e.idZona || ''),
-      PrintNode_ID:    impByEstacion[String(e.idEstacion || '')] || '',
+      Zona_ID:         zid,
+      PrintNode_ID:    impByEstacion[eid] || '',
+      Serie_Nota:      s.Serie_Nota    || '',
+      Serie_Boleta:    s.Serie_Boleta  || '',
+      Serie_Factura:   s.Serie_Factura || '',
+      Admin_PIN:       String(e.adminPin || ''),
       tipo:            String(e.tipo || ''),
       appOrigen:       String(e.appOrigen || '')
     };
