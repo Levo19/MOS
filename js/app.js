@@ -776,23 +776,61 @@ const MOS = (() => {
   const _catFiltros = { categoria: '', tipos: new Set(), soloAlertas: false };
 
   // ¿Este grupo tiene alguna alerta?
-  // Tipo 1: falta producto base canónico (ningún idProducto === skuBase)
-  // Tipo 2: presentación con precio incoherente
-  // Tipo 3: presentación con factor=1 y codigoBarra distinto al base
+  // El producto canónico es el que tiene factor=1. Solo puede haber 1 por grupo.
+  // Tipo A: múltiples canónicos (>1 con factor=1)
+  // Tipo B: sin canónico (0 con factor=1)
+  // Tipo C: presentación con precio incoherente vs (canónico × factor)
   function _groupHasAlert(g) {
     if (!g.base) return false;
-    if (g.__missingBase) return true;
+    const canonicos = g.__canonicos || [];
+    if (canonicos.length === 0) return true;
+    if (canonicos.length > 1)   return true;
     if (!g.pres || !g.pres.length) return false;
     const basePrecio = parseFloat(g.base.precioVenta) || 0;
-    const baseCB = g.base.codigoBarra || '';
     return g.pres.some(d => {
       const factor = parseFloat(d.factorConversion) || 1;
+      if (factor <= 1) return false;
       const precioActual = parseFloat(d.precioVenta) || 0;
       const precioEsperado = basePrecio * factor;
-      const coherente = precioEsperado <= 0 || factor >= 1 || precioActual >= precioEsperado * 0.95;
-      const factorRep = factor === 1 && (d.codigoBarra || '') !== baseCB;
-      return !coherente || factorRep;
+      return precioEsperado > 0 && precioActual < precioEsperado * 0.95;
     });
+  }
+
+  // Construye la lista detallada de alertas para mostrar en el popover
+  function _groupAlertList(g) {
+    const list = [];
+    if (!g.base) return list;
+    const canonicos = g.__canonicos || [];
+    if (canonicos.length === 0) {
+      list.push({
+        titulo: 'Sin producto base',
+        detalle: 'Ningún producto del grupo tiene factor = 1 (la unidad base)'
+      });
+    }
+    if (canonicos.length > 1) {
+      const nombres = canonicos.map(p => p.descripcion || p.codigoBarra || p.idProducto).join(' · ');
+      list.push({
+        titulo: 'Múltiples canónicos (' + canonicos.length + ')',
+        detalle: 'Solo puede existir un producto con factor=1. Encontrados: ' + nombres
+      });
+    }
+    if (g.pres && g.pres.length) {
+      const basePrecio = parseFloat(g.base.precioVenta) || 0;
+      g.pres.forEach(d => {
+        const factor = parseFloat(d.factorConversion) || 1;
+        if (factor <= 1) return;
+        const precioActual = parseFloat(d.precioVenta) || 0;
+        const precioEsperado = basePrecio * factor;
+        if (precioEsperado > 0 && precioActual < precioEsperado * 0.95) {
+          const nombre = d.descripcion || d.codigoBarra || d.idProducto;
+          list.push({
+            titulo: 'Precio incoherente · ' + nombre,
+            detalle: 'Cobra ' + fmtMoney(precioActual) + ' · esperado ≈ ' + fmtMoney(precioEsperado) + ' (factor ' + factor + ')'
+          });
+        }
+      });
+    }
+    return list;
   }
 
   function toggleFiltroAlertas() {
@@ -801,6 +839,21 @@ const MOS = (() => {
     if (btn) btn.classList.toggle('active', _catFiltros.soloAlertas);
     renderCatalogo();
   }
+
+  // Mostrar/ocultar popover de detalle de alertas en una card
+  function toggleAlertPop(eid) {
+    const id = 'alertPop-' + eid;
+    const target = document.getElementById(id);
+    if (!target) return;
+    const wasOpen = target.classList.contains('show');
+    document.querySelectorAll('.cat-alert-pop.show').forEach(el => el.classList.remove('show'));
+    if (!wasOpen) target.classList.add('show');
+  }
+  // Click fuera cierra todos los popovers
+  document.addEventListener('click', e => {
+    if (e.target.closest('.cat-alert-pop, .cat-alert-icon')) return;
+    document.querySelectorAll('.cat-alert-pop.show').forEach(el => el.classList.remove('show'));
+  });
 
   function populateCatFiltro() {
     const cats = [...new Set(S.productos.map(p => p.idCategoria).filter(Boolean))].sort();
@@ -936,23 +989,20 @@ const MOS = (() => {
     const groups = {};
     S.productos.forEach(p => {
       const sku = String(p.skuBase || p.idProducto).trim();
-      if (!groups[sku]) groups[sku] = { base: null, pres: [], __hasCanonical: false };
-      // Es base si: idProducto === skuBase (auto-ref) O factor = 1 o vacío (unidad mínima)
+      if (!groups[sku]) groups[sku] = { base: null, pres: [], __canonicos: [] };
       const factor = parseFloat(p.factorConversion) || 1;
-      const isCanonical = String(p.idProducto).trim() === sku;
-      if (isCanonical) groups[sku].__hasCanonical = true;
-      const esBase = isCanonical ||
-                     !p.skuBase ||
-                     (factor === 1 && !groups[sku].base);
-      if (esBase) groups[sku].base = p;
-      else        groups[sku].pres.push(p);
+      // El canónico del grupo es el que tiene factor=1 (la unidad base)
+      const esCanonico = factor === 1;
+      if (esCanonico) groups[sku].__canonicos.push(p);
+      // Base = primer canónico encontrado (o se decide en fallback)
+      if (esCanonico && !groups[sku].base) groups[sku].base = p;
+      else if (!esCanonico)                 groups[sku].pres.push(p);
+      else                                  groups[sku].pres.push(p); // canónico extra → también va a pres para que se muestre
     });
-    // Ordenar presentaciones + marcar grupos sin base canónica
+    // Fallback + orden de presentaciones por factor
     Object.values(groups).forEach(g => {
       if (!g.base && g.pres.length) g.base = g.pres.shift();
       g.pres.sort((a, b) => (parseFloat(a.factorConversion)||1) - (parseFloat(b.factorConversion)||1));
-      // Falta base canónica: el grupo tiene skuBase real pero ningún idProducto coincide
-      g.__missingBase = !g.__hasCanonical && !!(g.base && g.base.skuBase);
     });
     _catGroups = groups; // guardar para acceso externo (ajuste de precios)
 
@@ -1027,7 +1077,8 @@ const MOS = (() => {
       return;
     }
 
-    container.innerHTML = result.map(({ base, pres, score, __missingBase }) => {
+    container.innerHTML = result.map(g => {
+      const { base, pres, score } = g;
       const eid   = CSS.escape(base.idProducto);
       const activo = !base.estado || String(base.estado) === '1';
       const hlDesc = _highlight(base.descripcion || '—', words);
@@ -1059,11 +1110,22 @@ const MOS = (() => {
         const factorRep      = factor === 1 && (d.codigoBarra || '') !== (base.codigoBarra || '');
         return { d, factor, precioActual, precioEsperado, coherente, factorRep };
       });
-      const hasPresAlert = presInfo.some(a => !a.coherente || a.factorRep);
-      const hasAnyAlert  = !!__missingBase || hasPresAlert;
-      const alertTitle   = __missingBase
-        ? (hasPresAlert ? 'Falta producto base + alertas en presentaciones' : 'Falta producto base (sku canónico)')
-        : 'Hay alertas en presentaciones';
+      const alertList = _groupAlertList(g);
+      const hasAnyAlert = alertList.length > 0;
+      const alertPopHtml = hasAnyAlert ? `
+        <div class="cat-alert-pop" id="alertPop-${eid}" onclick="event.stopPropagation()">
+          <div class="cat-alert-pop-head">
+            <span>⚠</span> ${alertList.length} alerta${alertList.length !== 1 ? 's' : ''}
+          </div>
+          <div class="cat-alert-pop-body">
+            ${alertList.map(a => `
+              <div class="cat-alert-item">
+                <div class="cat-alert-item-title">${a.titulo}</div>
+                <div class="cat-alert-item-detail">${a.detalle}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>` : '';
 
       // Presentaciones con expand animado
       const presHtml = pres.length ? `
@@ -1112,7 +1174,7 @@ const MOS = (() => {
             </div>
             <div class="flex flex-col items-end gap-1.5 shrink-0 ml-2">
               <div class="flex items-center gap-1.5">
-                ${hasAnyAlert ? `<span class="cat-alert-icon" title="${alertTitle}">⚠</span>` : ''}
+                ${hasAnyAlert ? `<span class="cat-alert-wrap"><button type="button" class="cat-alert-icon" onclick="event.stopPropagation();MOS.toggleAlertPop('${eid}')" aria-label="Ver detalle de alertas">⚠</button>${alertPopHtml}</span>` : ''}
                 <div class="cat-price" data-cat-precio="${base.idProducto}">${fmtMoney(base.precioVenta)}</div>
               </div>
               ${base.precioCosto > 0 ? `<div class="cat-cost" data-cat-costo="${base.idProducto}">Costo: ${fmtMoney(base.precioCosto)}</div>` : ''}
@@ -5411,7 +5473,7 @@ const MOS = (() => {
     guardarPinEstacion, guardarPinWH,
     abrirModalDispositivo, cerrarModalDispositivo, guardarDispositivo, toggleEstadoDispositivo,
     toggleAvatarMenu, closeAvatarMenu, installPWA,
-    toggleFiltroCat, setFiltroCategoria, toggleFiltroTipo, limpiarFiltrosCat, toggleFiltroAlertas,
+    toggleFiltroCat, setFiltroCategoria, toggleFiltroTipo, limpiarFiltrosCat, toggleFiltroAlertas, toggleAlertPop,
     // Cajas
     loadCajas, toggleCajaDetail, toggleKpiVentas,
     toggleKpiTickets, setTicketFiltroFecha, setTicketFiltroEstado, setTicketFiltroTipo,

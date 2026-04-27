@@ -983,16 +983,62 @@
       background: rgba(245,158,11,.12); color: #fbbf24;
       border-color: rgba(245,158,11,.3);
     }
+    .cat-alert-wrap { position: relative; display: inline-flex; }
     .cat-alert-icon {
       display: inline-flex; align-items: center; justify-content: center;
       width: 22px; height: 22px; border-radius: 50%;
-      font-size: .78rem; line-height: 1; cursor: help;
-      color: #fbbf24;
+      font-size: .78rem; line-height: 1; cursor: pointer;
+      color: #fbbf24; padding: 0;
       background: radial-gradient(circle at 30% 30%, rgba(255,215,0,.35), rgba(245,158,11,.15));
       border: 1.5px solid #fbbf24;
       animation: catAlertPulse 1.3s ease-in-out infinite,
                  catAlertGlow  2s   ease-in-out infinite;
       filter: drop-shadow(0 0 4px rgba(255,215,0,.6));
+    }
+    .cat-alert-icon:hover { transform: scale(1.1); }
+    /* Popover de detalle de alertas */
+    .cat-alert-pop {
+      position: absolute; top: calc(100% + 10px); right: -4px;
+      z-index: 30; width: 280px; max-width: calc(100vw - 32px);
+      background: linear-gradient(135deg, #1a1503, #0f172a);
+      border: 1px solid rgba(255,215,0,.35); border-radius: 12px;
+      box-shadow: 0 12px 32px rgba(0,0,0,.55), 0 0 22px rgba(255,215,0,.15);
+      display: none; cursor: default;
+      animation: catAlertPopIn .22s cubic-bezier(.34,1.56,.64,1);
+      text-align: left;
+    }
+    .cat-alert-pop.show { display: block; }
+    @keyframes catAlertPopIn {
+      from { opacity: 0; transform: translateY(-6px) scale(.96); }
+      to   { opacity: 1; transform: translateY(0) scale(1);     }
+    }
+    /* Flecha apuntando al ícono */
+    .cat-alert-pop::before {
+      content: ''; position: absolute; top: -6px; right: 12px;
+      width: 12px; height: 12px;
+      background: #1a1503; border-top: 1px solid rgba(255,215,0,.35);
+      border-left: 1px solid rgba(255,215,0,.35);
+      transform: rotate(45deg);
+    }
+    .cat-alert-pop-head {
+      padding: 10px 14px; border-bottom: 1px solid rgba(255,215,0,.18);
+      font-size: .76rem; font-weight: 800; color: #ffd700;
+      letter-spacing: .03em; text-transform: uppercase;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .cat-alert-pop-body {
+      padding: 8px 0; max-height: 320px; overflow-y: auto;
+    }
+    .cat-alert-item {
+      padding: 8px 14px; border-bottom: 1px solid rgba(255,215,0,.08);
+    }
+    .cat-alert-item:last-child { border-bottom: none; }
+    .cat-alert-item-title {
+      font-size: .78rem; font-weight: 700; color: #fef3c7;
+      margin-bottom: 2px;
+    }
+    .cat-alert-item-detail {
+      font-size: .7rem; color: #94a3b8; line-height: 1.4;
     }
     @keyframes catAlertPulse {
       0%,100% { transform: scale(1);    }
