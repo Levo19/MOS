@@ -570,9 +570,9 @@ const MOS = (() => {
   let _catTimer  = null;
   let _catGroups = {}; // { [skuBase]: { base, pres[] } } — para acceso desde guardarPrecioRapido
 
-  async function loadCatalogo() {
-    // Si el timer ya precargó datos frescos, renderizar al instante sin fetch
-    if (S.productos && S.productos.length > 0) {
+  async function loadCatalogo(force = false) {
+    // Si el timer ya precargó datos frescos y no se forzó, renderizar sin fetch
+    if (!force && S.productos && S.productos.length > 0) {
       populateCatFiltro();
       renderCatalogo();
       return;
@@ -580,14 +580,14 @@ const MOS = (() => {
 
     // Fallback: cache local → render inmediato, luego fetch fresco
     const cached = _catLoadCache();
-    if (cached) {
+    if (!force && cached) {
       S.productos = cached.productos || cached;
       S.equivMap  = cached.equivMap  || {};
       populateCatFiltro();
       renderCatalogo();
     }
 
-    // Fetch fresco (si no lo hizo el timer aún)
+    // Fetch fresco (si no lo hizo el timer aún, o si se forzó)
     try {
       const [freshProd, freshEquiv] = await Promise.all([
         API.get('getProductos', {}),
@@ -603,7 +603,7 @@ const MOS = (() => {
       S.productos = productos;
       S.equivMap  = equivMap;
       _catSaveCache({ productos, equivMap });
-      if (changed || !cached) { populateCatFiltro(); renderCatalogo(); }
+      if (force || changed || !cached) { populateCatFiltro(); renderCatalogo(); }
     } catch(e) {
       if (!cached && !(S.productos && S.productos.length)) {
         const el = $('listCatalogo');
@@ -1271,7 +1271,7 @@ const MOS = (() => {
       cerrarModalPN();
       toast('Producto lanzado a producción', 'ok');
       // Refrescar catálogo para mostrar el nuevo producto
-      setTimeout(() => loadCatalogo(), 800);
+      setTimeout(() => loadCatalogo(true), 800);
     } catch(e) {
       mostrarPNError(e.message || 'Error al lanzar producto');
       if (btn) { btn.disabled = false; btn.textContent = 'Lanzar a producción'; }
@@ -2634,7 +2634,7 @@ const MOS = (() => {
       toast(params.idProducto ? 'Producto actualizado ✓' : 'Producto creado ✓', 'ok');
       closeModal('modalProducto');
       S.loaded['catalogo'] = false;
-      await loadCatalogo();
+      await loadCatalogo(true);
     } catch(e) {
       toast('Error: ' + e.message, 'error');
     }
@@ -2674,7 +2674,7 @@ const MOS = (() => {
       });
       toast('Precio publicado: ' + fmtMoney(nuevo), 'ok');
       S.loaded['catalogo'] = false;
-      loadCatalogo(); // background refresh
+      loadCatalogo(true); // background refresh
     } catch (e) {
       if (p && prevPrecio !== undefined) { p.precioVenta = prevPrecio; renderCatalogo(); }
       toast('Error: ' + e.message, 'error');
