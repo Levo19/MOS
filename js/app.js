@@ -779,7 +779,9 @@ const MOS = (() => {
   // El producto canónico es el que tiene factor=1. Solo puede haber 1 por grupo.
   // Tipo A: múltiples canónicos (>1 con factor=1)
   // Tipo B: sin canónico (0 con factor=1)
-  // Tipo C: presentación con precio incoherente vs (canónico × factor)
+  // Tipo C1: factor<1 → precioActual < canónico × factor (vendiendo muy barato la fracción)
+  // Tipo C2: factor>1 → precioActual > canónico × factor (no tiene sentido cobrar más)
+  // Tipo C3: factor>1 → precioActual ≤ costo × factor (vendes a pérdida)
   function _groupHasAlert(g) {
     if (!g.base) return false;
     const canonicos = g.__canonicos || [];
@@ -787,12 +789,20 @@ const MOS = (() => {
     if (canonicos.length > 1)   return true;
     if (!g.pres || !g.pres.length) return false;
     const basePrecio = parseFloat(g.base.precioVenta) || 0;
+    const baseCosto  = parseFloat(g.base.precioCosto) || 0;
     return g.pres.some(d => {
       const factor = parseFloat(d.factorConversion) || 1;
-      if (factor <= 1) return false;
+      if (factor === 1) return false;
       const precioActual = parseFloat(d.precioVenta) || 0;
-      const precioEsperado = basePrecio * factor;
-      return precioEsperado > 0 && precioActual < precioEsperado * 0.95;
+      if (factor < 1) {
+        const minimo = basePrecio * factor;
+        return basePrecio > 0 && precioActual < minimo;
+      }
+      const maximo      = basePrecio * factor;
+      const minimoCosto = baseCosto  * factor;
+      if (basePrecio > 0 && precioActual > maximo) return true;
+      if (baseCosto  > 0 && precioActual <= minimoCosto) return true;
+      return false;
     });
   }
 
@@ -816,17 +826,36 @@ const MOS = (() => {
     }
     if (g.pres && g.pres.length) {
       const basePrecio = parseFloat(g.base.precioVenta) || 0;
+      const baseCosto  = parseFloat(g.base.precioCosto) || 0;
       g.pres.forEach(d => {
         const factor = parseFloat(d.factorConversion) || 1;
-        if (factor <= 1) return;
+        if (factor === 1) return;
         const precioActual = parseFloat(d.precioVenta) || 0;
-        const precioEsperado = basePrecio * factor;
-        if (precioEsperado > 0 && precioActual < precioEsperado * 0.95) {
-          const nombre = d.descripcion || d.codigoBarra || d.idProducto;
-          list.push({
-            titulo: 'Precio incoherente · ' + nombre,
-            detalle: 'Cobra ' + fmtMoney(precioActual) + ' · esperado ≈ ' + fmtMoney(precioEsperado) + ' (factor ' + factor + ')'
-          });
+        const nombre = d.descripcion || d.codigoBarra || d.idProducto;
+
+        if (factor < 1) {
+          const minimo = basePrecio * factor;
+          if (basePrecio > 0 && precioActual < minimo) {
+            list.push({
+              titulo: 'Precio bajo · ' + nombre,
+              detalle: 'Cobra ' + fmtMoney(precioActual) + ' · mínimo ' + fmtMoney(minimo) + ' (canónico × ' + factor + ')'
+            });
+          }
+        } else {
+          const maximo      = basePrecio * factor;
+          const minimoCosto = baseCosto  * factor;
+          if (basePrecio > 0 && precioActual > maximo) {
+            list.push({
+              titulo: 'Precio alto · ' + nombre,
+              detalle: 'Cobra ' + fmtMoney(precioActual) + ' · máximo ' + fmtMoney(maximo) + ' (canónico × ' + factor + '). No tiene sentido cobrar más al por mayor.'
+            });
+          }
+          if (baseCosto > 0 && precioActual <= minimoCosto) {
+            list.push({
+              titulo: 'Bajo el costo · ' + nombre,
+              detalle: 'Cobra ' + fmtMoney(precioActual) + ' ≤ ' + fmtMoney(minimoCosto) + ' (costo × ' + factor + '). Estás vendiendo a pérdida.'
+            });
+          }
         }
       });
     }
