@@ -1027,7 +1027,7 @@ const MOS = (() => {
       return;
     }
 
-    container.innerHTML = result.map(({ base, pres, score }) => {
+    container.innerHTML = result.map(({ base, pres, score, __missingBase }) => {
       const eid   = CSS.escape(base.idProducto);
       const activo = !base.estado || String(base.estado) === '1';
       const hlDesc = _highlight(base.descripcion || '—', words);
@@ -1060,8 +1060,8 @@ const MOS = (() => {
         return { d, factor, precioActual, precioEsperado, coherente, factorRep };
       });
       const hasPresAlert = presInfo.some(a => !a.coherente || a.factorRep);
-      const hasAnyAlert  = !!g.__missingBase || hasPresAlert;
-      const alertTitle   = g.__missingBase
+      const hasAnyAlert  = !!__missingBase || hasPresAlert;
+      const alertTitle   = __missingBase
         ? (hasPresAlert ? 'Falta producto base + alertas en presentaciones' : 'Falta producto base (sku canónico)')
         : 'Hay alertas en presentaciones';
 
