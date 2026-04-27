@@ -382,7 +382,107 @@
     }
     .upd-new-apply:hover { background:#fcd34d; }
 
-    /* ── Update overlay ─────────────────────────────────── */
+    /* ── Update overlay (rediseñado · hermoso) ──────────── */
+    #updateOverlay {
+      background: radial-gradient(ellipse at top, #1e1b4b 0%, #020617 60%);
+      overflow: hidden;
+    }
+    #updateOverlay::before {
+      content: ''; position:absolute; inset:0;
+      background:
+        radial-gradient(circle at 20% 30%, rgba(99,102,241,.15), transparent 40%),
+        radial-gradient(circle at 80% 70%, rgba(139,92,246,.12), transparent 40%);
+      animation: updFloat 8s ease-in-out infinite alternate;
+    }
+    @keyframes updFloat {
+      from { transform: translate(0,0) scale(1); }
+      to   { transform: translate(-20px,15px) scale(1.05); }
+    }
+    .upd-stage {
+      position:relative; z-index:1;
+      display:flex; flex-direction:column; align-items:center;
+      padding: 28px; max-width: 360px; width: 90%;
+    }
+    .upd-brand {
+      position:relative; margin-bottom: 28px;
+      display:flex; align-items:center; justify-content:center;
+    }
+    .upd-glow {
+      position:absolute; inset:-30px; border-radius:50%;
+      background: radial-gradient(circle, rgba(99,102,241,.4), transparent 65%);
+      animation: updGlowPulse 2.4s ease-in-out infinite;
+      filter: blur(8px);
+    }
+    @keyframes updGlowPulse {
+      0%,100% { opacity:.5; transform: scale(.9); }
+      50%     { opacity:1;  transform: scale(1.1); }
+    }
+    .upd-version {
+      display:inline-flex; align-items:center; gap:6px;
+      font-size:.7rem; font-weight:600; letter-spacing:.05em;
+      color:#a78bfa; background: rgba(139,92,246,.12);
+      border:1px solid rgba(139,92,246,.3); border-radius: 999px;
+      padding: 4px 12px; margin-bottom: 28px;
+      text-transform: uppercase;
+    }
+    .upd-version::before {
+      content:''; width:6px; height:6px; border-radius:50%;
+      background:#a78bfa; box-shadow: 0 0 8px #a78bfa;
+      animation: updVerPulse 1.4s ease-in-out infinite;
+    }
+    @keyframes updVerPulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+    .upd-progress {
+      width: 100%; height: 6px;
+      background: rgba(99,102,241,.1); border-radius: 999px;
+      overflow:hidden; margin-bottom: 24px; position:relative;
+    }
+    .upd-progress-fill {
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg,#6366f1,#8b5cf6,#ec4899);
+      background-size: 200% 100%;
+      border-radius: 999px;
+      animation: updShimmer 2s linear infinite;
+      transition: width .8s ease;
+    }
+    .upd-progress.animate .upd-progress-fill { width: 100%; transition: width 4.5s cubic-bezier(.4,0,.2,1); }
+    @keyframes updShimmer { from { background-position: 200% 0 } to { background-position: -200% 0 } }
+    .upd-steps {
+      list-style:none; padding:0; margin: 0 0 24px; width:100%;
+      display:flex; flex-direction:column; gap: 10px;
+    }
+    .upd-step {
+      display:flex; align-items:center; gap:12px;
+      font-size:.82rem; color:#475569;
+      transition: color .3s ease;
+    }
+    .upd-step.active { color:#e2e8f0; }
+    .upd-step.done   { color:#a78bfa; }
+    .upd-step-dot {
+      width:18px; height:18px; border-radius:50%;
+      border:2px solid #334155; flex-shrink:0;
+      display:flex; align-items:center; justify-content:center;
+      transition: all .3s ease; position:relative;
+    }
+    .upd-step.active .upd-step-dot {
+      border-color:#6366f1;
+      box-shadow: 0 0 0 4px rgba(99,102,241,.15);
+    }
+    .upd-step.active .upd-step-dot::after {
+      content:''; width:8px; height:8px; border-radius:50%;
+      background:#6366f1;
+      animation: updDotPulse 1s ease-in-out infinite;
+    }
+    @keyframes updDotPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(.6)} }
+    .upd-step.done .upd-step-dot {
+      border-color:#a78bfa; background:#a78bfa;
+    }
+    .upd-step.done .upd-step-dot::after {
+      content:'✓'; color:#fff; font-size:.7rem; font-weight:900;
+    }
+    .upd-hint {
+      font-size:.7rem; color:#475569; margin: 0;
+      letter-spacing:.03em;
+    }
     .upd-logo {
       width:64px;height:64px;border-radius:18px;
       background:linear-gradient(135deg,#6366f1,#8b5cf6);
@@ -3033,15 +3133,33 @@
 </div>
 
 <!-- ── Overlay de actualización ─────────────────────────── -->
-<div id="updateOverlay" class="hidden fixed inset-0 z-[60] flex flex-col items-center justify-center" style="background:#020817">
-  <div style="text-align:center">
-    <div class="upd-logo">M</div>
-    <div class="upd-ring"></div>
-    <h2 class="upd-title">Actualizando MOS</h2>
-    <p class="upd-sub">Instalando nueva versión · Por favor espera</p>
-    <div class="upd-dots">
-      <span></span><span></span><span></span>
+<div id="updateOverlay" class="hidden fixed inset-0 z-[60] flex flex-col items-center justify-center">
+  <div class="upd-stage">
+    <div class="upd-brand">
+      <div class="upd-glow"></div>
+      <div class="upd-logo">M</div>
+      <div class="upd-ring"></div>
     </div>
+    <h2 class="upd-title">Actualizando MOS</h2>
+    <div class="upd-version" id="updateOverlayVersion">Nueva versión</div>
+    <div class="upd-progress" id="updateOverlayBar">
+      <div class="upd-progress-fill"></div>
+    </div>
+    <ul class="upd-steps" id="updateOverlaySteps">
+      <li class="upd-step active" data-step="1">
+        <span class="upd-step-dot"></span>
+        <span class="upd-step-label">Descargando archivos</span>
+      </li>
+      <li class="upd-step" data-step="2">
+        <span class="upd-step-dot"></span>
+        <span class="upd-step-label">Instalando recursos</span>
+      </li>
+      <li class="upd-step" data-step="3">
+        <span class="upd-step-dot"></span>
+        <span class="upd-step-label">Aplicando cambios</span>
+      </li>
+    </ul>
+    <p class="upd-hint">No cierres la aplicación · Esto toma unos segundos</p>
   </div>
 </div>
 
@@ -3061,10 +3179,31 @@
 
   let _reg = null, _waitingWorker = null;
 
-  // Muestra el overlay de "Actualizando..."
+  // Muestra el overlay de "Actualizando..." con pasos progresivos + versión
   function _showUpdateOverlay() {
     const el = document.getElementById('updateOverlay');
-    if (el) el.classList.remove('hidden');
+    if (!el) return;
+    el.classList.remove('hidden');
+
+    // Cargar versión nueva desde version.json
+    fetch('./version.json?t=' + Date.now())
+      .then(r => r.json())
+      .then(v => {
+        const verEl = document.getElementById('updateOverlayVersion');
+        if (verEl) verEl.textContent = 'v' + v.version + (v.build ? ' · ' + v.build : '');
+      }).catch(() => {});
+
+    // Animar barra de progreso
+    const bar = document.getElementById('updateOverlayBar');
+    if (bar) setTimeout(() => bar.classList.add('animate'), 50);
+
+    // Activar pasos secuencialmente
+    const steps = document.querySelectorAll('#updateOverlaySteps .upd-step');
+    if (steps.length === 3) {
+      setTimeout(() => { steps[0].classList.remove('active'); steps[0].classList.add('done'); steps[1].classList.add('active'); }, 1500);
+      setTimeout(() => { steps[1].classList.remove('active'); steps[1].classList.add('done'); steps[2].classList.add('active'); }, 3000);
+      setTimeout(() => { steps[2].classList.remove('active'); steps[2].classList.add('done'); }, 4400);
+    }
   }
 
   // Oculta el banner deslizante
