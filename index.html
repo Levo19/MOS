@@ -630,10 +630,14 @@
 
     /* ── Update banner (nueva versión disponible) ───────── */
     #mosUpdateBanner {
-      position:fixed;bottom:80px;left:50%;
-      transform:translateX(-50%) translateY(150px);
+      position:fixed;bottom:24px;left:50%;
+      transform:translateX(-50%) translateY(180px);
       z-index:9997;width:calc(100% - 32px);max-width:420px;
       transition:transform .45s cubic-bezier(.34,1.56,.64,1);
+    }
+    @media (max-width: 767px) {
+      /* En mobile dejar espacio para el bottom nav + safe area */
+      #mosUpdateBanner { bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
     }
     #mosUpdateBanner.visible { transform:translateX(-50%) translateY(0); }
     .mos-upd-inner {
