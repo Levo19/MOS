@@ -12,6 +12,55 @@
 // ============================================================
 
 // ════════════════════════════════════════════════
+// CONSULTA CONVENIENCE PARA APPS CLIENTES
+// (devuelve estaciones activas + su impresora TICKET unidas)
+// ════════════════════════════════════════════════
+
+function getEstacionesParaApp(params) {
+  var appOrigen = (params && params.appOrigen) ? String(params.appOrigen) : '';
+
+  var estRows = _sheetToObjects(getSheet('ESTACIONES')).filter(function(r){
+    var act = String(r.activo).toLowerCase();
+    return act === '1' || act === 'true';
+  });
+  if (appOrigen) {
+    estRows = estRows.filter(function(r){
+      return String(r.appOrigen || '').toLowerCase() === appOrigen.toLowerCase();
+    });
+  }
+
+  var impRows = _sheetToObjects(getSheet('IMPRESORAS')).filter(function(r){
+    var act = String(r.activo).toLowerCase();
+    var tipo = String(r.tipo || '').toUpperCase();
+    return (act === '1' || act === 'true') && tipo === 'TICKET';
+  });
+  if (appOrigen) {
+    impRows = impRows.filter(function(r){
+      return String(r.appOrigen || '').toLowerCase() === appOrigen.toLowerCase();
+    });
+  }
+
+  var impByEstacion = {};
+  impRows.forEach(function(p) {
+    var eid = String(p.idEstacion || '');
+    if (eid && !impByEstacion[eid]) impByEstacion[eid] = String(p.printNodeId || '');
+  });
+
+  var data = estRows.map(function(e) {
+    return {
+      idEstacion:      String(e.idEstacion || ''),
+      Estacion_Nombre: String(e.nombre || ''),
+      Zona_ID:         String(e.idZona || ''),
+      PrintNode_ID:    impByEstacion[String(e.idEstacion || '')] || '',
+      tipo:            String(e.tipo || ''),
+      appOrigen:       String(e.appOrigen || '')
+    };
+  });
+
+  return { ok: true, data: data };
+}
+
+// ════════════════════════════════════════════════
 // ESTACIONES
 // ════════════════════════════════════════════════
 

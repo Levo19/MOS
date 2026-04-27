@@ -82,6 +82,7 @@ function _route(method, e) {
       case 'crearEstacion':        return crearEstacion(params);
       case 'actualizarEstacion':   return actualizarEstacion(params);
       case 'verificarPinEstacion': return verificarPinEstacion(params);
+      case 'getEstacionesParaApp': return getEstacionesParaApp(params);
 
       // ── Impresoras ─────────────────────────────────────────
       case 'getImpresoras':        return getImpresoras(params);
