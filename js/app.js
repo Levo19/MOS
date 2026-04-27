@@ -775,9 +775,14 @@ const MOS = (() => {
   // ── Estado de filtros del catálogo ─────────────────────────
   const _catFiltros = { categoria: '', tipos: new Set(), soloAlertas: false };
 
-  // ¿Este grupo tiene alguna alerta? (precio incoherente o factor=1 con codigoBarra distinto)
+  // ¿Este grupo tiene alguna alerta?
+  // Tipo 1: falta producto base canónico (ningún idProducto === skuBase)
+  // Tipo 2: presentación con precio incoherente
+  // Tipo 3: presentación con factor=1 y codigoBarra distinto al base
   function _groupHasAlert(g) {
-    if (!g.base || !g.pres || !g.pres.length) return false;
+    if (!g.base) return false;
+    if (g.__missingBase) return true;
+    if (!g.pres || !g.pres.length) return false;
     const basePrecio = parseFloat(g.base.precioVenta) || 0;
     const baseCB = g.base.codigoBarra || '';
     return g.pres.some(d => {
@@ -931,19 +936,23 @@ const MOS = (() => {
     const groups = {};
     S.productos.forEach(p => {
       const sku = String(p.skuBase || p.idProducto).trim();
-      if (!groups[sku]) groups[sku] = { base: null, pres: [] };
+      if (!groups[sku]) groups[sku] = { base: null, pres: [], __hasCanonical: false };
       // Es base si: idProducto === skuBase (auto-ref) O factor = 1 o vacío (unidad mínima)
       const factor = parseFloat(p.factorConversion) || 1;
-      const esBase = String(p.idProducto).trim() === sku ||
+      const isCanonical = String(p.idProducto).trim() === sku;
+      if (isCanonical) groups[sku].__hasCanonical = true;
+      const esBase = isCanonical ||
                      !p.skuBase ||
                      (factor === 1 && !groups[sku].base);
       if (esBase) groups[sku].base = p;
       else        groups[sku].pres.push(p);
     });
-    // Ordenar presentaciones por factor ascendente
+    // Ordenar presentaciones + marcar grupos sin base canónica
     Object.values(groups).forEach(g => {
       if (!g.base && g.pres.length) g.base = g.pres.shift();
       g.pres.sort((a, b) => (parseFloat(a.factorConversion)||1) - (parseFloat(b.factorConversion)||1));
+      // Falta base canónica: el grupo tiene skuBase real pero ningún idProducto coincide
+      g.__missingBase = !g.__hasCanonical && !!(g.base && g.base.skuBase);
     });
     _catGroups = groups; // guardar para acceso externo (ajuste de precios)
 
@@ -1050,7 +1059,11 @@ const MOS = (() => {
         const factorRep      = factor === 1 && (d.codigoBarra || '') !== (base.codigoBarra || '');
         return { d, factor, precioActual, precioEsperado, coherente, factorRep };
       });
-      const hasAnyAlert = presInfo.some(a => !a.coherente || a.factorRep);
+      const hasPresAlert = presInfo.some(a => !a.coherente || a.factorRep);
+      const hasAnyAlert  = !!g.__missingBase || hasPresAlert;
+      const alertTitle   = g.__missingBase
+        ? (hasPresAlert ? 'Falta producto base + alertas en presentaciones' : 'Falta producto base (sku canónico)')
+        : 'Hay alertas en presentaciones';
 
       // Presentaciones con expand animado
       const presHtml = pres.length ? `
@@ -1099,7 +1112,7 @@ const MOS = (() => {
             </div>
             <div class="flex flex-col items-end gap-1.5 shrink-0 ml-2">
               <div class="flex items-center gap-1.5">
-                ${hasAnyAlert ? `<span class="cat-alert-icon" title="Hay alertas en presentaciones">⚠</span>` : ''}
+                ${hasAnyAlert ? `<span class="cat-alert-icon" title="${alertTitle}">⚠</span>` : ''}
                 <div class="cat-price" data-cat-precio="${base.idProducto}">${fmtMoney(base.precioVenta)}</div>
               </div>
               ${base.precioCosto > 0 ? `<div class="cat-cost" data-cat-costo="${base.idProducto}">Costo: ${fmtMoney(base.precioCosto)}</div>` : ''}
