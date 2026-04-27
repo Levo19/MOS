@@ -807,12 +807,14 @@ const MOS = (() => {
   }
 
   // Construye la lista detallada de alertas para mostrar en el popover
+  // tipo: 'sinbase' | 'dup' | 'bajo' | 'alto' | 'perdida'
   function _groupAlertList(g) {
     const list = [];
     if (!g.base) return list;
     const canonicos = g.__canonicos || [];
     if (canonicos.length === 0) {
       list.push({
+        tipo: 'sinbase', tag: 'SIN BASE', nombre: '',
         titulo: 'Sin producto base',
         detalle: 'Ningún producto del grupo tiene factor = 1 (la unidad base)'
       });
@@ -820,6 +822,7 @@ const MOS = (() => {
     if (canonicos.length > 1) {
       const nombres = canonicos.map(p => p.descripcion || p.codigoBarra || p.idProducto).join(' · ');
       list.push({
+        tipo: 'dup', tag: 'DUPLICADO', nombre: '',
         titulo: 'Múltiples canónicos (' + canonicos.length + ')',
         detalle: 'Solo puede existir un producto con factor=1. Encontrados: ' + nombres
       });
@@ -837,7 +840,8 @@ const MOS = (() => {
           const minimo = basePrecio * factor;
           if (basePrecio > 0 && precioActual < minimo) {
             list.push({
-              titulo: 'Precio bajo · ' + nombre,
+              tipo: 'bajo', tag: 'BAJO', nombre,
+              titulo: nombre,
               detalle: 'Cobra ' + fmtMoney(precioActual) + ' · mínimo ' + fmtMoney(minimo) + ' (canónico × ' + factor + ')'
             });
           }
@@ -846,14 +850,16 @@ const MOS = (() => {
           const minimoCosto = baseCosto  * factor;
           if (basePrecio > 0 && precioActual > maximo) {
             list.push({
-              titulo: 'Precio alto · ' + nombre,
-              detalle: 'Cobra ' + fmtMoney(precioActual) + ' · máximo ' + fmtMoney(maximo) + ' (canónico × ' + factor + '). No tiene sentido cobrar más al por mayor.'
+              tipo: 'alto', tag: 'ALTO', nombre,
+              titulo: nombre,
+              detalle: 'Cobra ' + fmtMoney(precioActual) + ' · máximo ' + fmtMoney(maximo) + ' (canónico × ' + factor + ')'
             });
           }
           if (baseCosto > 0 && precioActual <= minimoCosto) {
             list.push({
-              titulo: 'Bajo el costo · ' + nombre,
-              detalle: 'Cobra ' + fmtMoney(precioActual) + ' ≤ ' + fmtMoney(minimoCosto) + ' (costo × ' + factor + '). Estás vendiendo a pérdida.'
+              tipo: 'perdida', tag: 'PÉRDIDA', nombre,
+              titulo: nombre,
+              detalle: 'Cobra ' + fmtMoney(precioActual) + ' ≤ ' + fmtMoney(minimoCosto) + ' (costo × ' + factor + '). Vendes a pérdida.'
             });
           }
         }
@@ -1148,8 +1154,11 @@ const MOS = (() => {
           </div>
           <div class="cat-alert-pop-body">
             ${alertList.map(a => `
-              <div class="cat-alert-item">
-                <div class="cat-alert-item-title">${a.titulo}</div>
+              <div class="cat-alert-item cat-alert-${a.tipo}">
+                <div class="cat-alert-item-title">
+                  <span class="cat-alert-tag">${a.tag}</span>
+                  <span>${a.titulo}</span>
+                </div>
                 <div class="cat-alert-item-detail">${a.detalle}</div>
               </div>
             `).join('')}
