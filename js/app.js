@@ -763,7 +763,29 @@ const MOS = (() => {
   }
 
   // ── Estado de filtros del catálogo ─────────────────────────
-  const _catFiltros = { categoria: '', tipos: new Set() };
+  const _catFiltros = { categoria: '', tipos: new Set(), soloAlertas: false };
+
+  // ¿Este grupo tiene alguna alerta? (precio incoherente o factor=1 con codigoBarra distinto)
+  function _groupHasAlert(g) {
+    if (!g.base || !g.pres || !g.pres.length) return false;
+    const basePrecio = parseFloat(g.base.precioVenta) || 0;
+    const baseCB = g.base.codigoBarra || '';
+    return g.pres.some(d => {
+      const factor = parseFloat(d.factorConversion) || 1;
+      const precioActual = parseFloat(d.precioVenta) || 0;
+      const precioEsperado = basePrecio * factor;
+      const coherente = precioEsperado <= 0 || factor >= 1 || precioActual >= precioEsperado * 0.95;
+      const factorRep = factor === 1 && (d.codigoBarra || '') !== baseCB;
+      return !coherente || factorRep;
+    });
+  }
+
+  function toggleFiltroAlertas() {
+    _catFiltros.soloAlertas = !_catFiltros.soloAlertas;
+    const btn = $('btnAlertasCat');
+    if (btn) btn.classList.toggle('active', _catFiltros.soloAlertas);
+    renderCatalogo();
+  }
 
   function populateCatFiltro() {
     const cats = [...new Set(S.productos.map(p => p.idCategoria).filter(Boolean))].sort();
@@ -915,11 +937,27 @@ const MOS = (() => {
     });
     _catGroups = groups; // guardar para acceso externo (ajuste de precios)
 
+    // Calcular alertas globalmente (independiente de filtros) para el botón
+    const allGroups = Object.values(groups).filter(g => g.base);
+    let totalAlertas = 0;
+    allGroups.forEach(g => { g.__hasAlert = _groupHasAlert(g); if (g.__hasAlert) totalAlertas++; });
+    const btnAlert = $('btnAlertasCat');
+    const cntAlert = $('alertaCount');
+    if (btnAlert) btnAlert.classList.toggle('hidden', totalAlertas === 0);
+    if (cntAlert) cntAlert.textContent = totalAlertas;
+    // Si se desactivan todas las alertas, también apagar el filtro
+    if (totalAlertas === 0 && _catFiltros.soloAlertas) {
+      _catFiltros.soloAlertas = false;
+      btnAlert?.classList.remove('active');
+    }
+
     // Score and filter
     const _tipos = _catFiltros.tipos;
-    let result = Object.values(groups).filter(g => g.base).map(g => {
+    let result = allGroups.map(g => {
       // Filtro categoría
       if (_catFiltros.categoria && g.base.idCategoria !== _catFiltros.categoria) return null;
+      // Filtro alertas
+      if (_catFiltros.soloAlertas && !g.__hasAlert) return null;
       // Filtro tipo (OR entre los seleccionados)
       if (_tipos.size > 0) {
         const isEnvasable = String(g.base.esEnvasable) === '1';
@@ -5345,7 +5383,7 @@ const MOS = (() => {
     guardarPinEstacion, guardarPinWH,
     abrirModalDispositivo, cerrarModalDispositivo, guardarDispositivo, toggleEstadoDispositivo,
     toggleAvatarMenu, closeAvatarMenu, installPWA,
-    toggleFiltroCat, setFiltroCategoria, toggleFiltroTipo, limpiarFiltrosCat,
+    toggleFiltroCat, setFiltroCategoria, toggleFiltroTipo, limpiarFiltrosCat, toggleFiltroAlertas,
     // Cajas
     loadCajas, toggleCajaDetail, toggleKpiVentas,
     toggleKpiTickets, setTicketFiltroFecha, setTicketFiltroEstado, setTicketFiltroTipo,

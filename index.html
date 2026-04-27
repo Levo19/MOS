@@ -520,6 +520,64 @@
       40%        { opacity:1; transform:scale(1.2); }
     }
 
+    /* ── Botón de alertas en catálogo ────────────────────── */
+    .alert-btn {
+      position: relative;
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 0 12px; height: 38px;
+      background: linear-gradient(135deg, rgba(245,158,11,.15), rgba(239,68,68,.12));
+      border: 1.5px solid #f59e0b;
+      border-radius: 10px;
+      color: #fbbf24; font-weight: 700; font-size: .85rem;
+      cursor: pointer; overflow: visible;
+      animation: alertBtnShake 1.6s ease-in-out infinite, alertBtnGlow 2s ease-in-out infinite;
+      transition: transform .15s ease;
+    }
+    .alert-btn::before {
+      content: ''; position: absolute; inset: -2px;
+      border-radius: 11px; padding: 2px;
+      background: conic-gradient(from 0deg, #f59e0b, #ef4444, #f59e0b, #fbbf24, #f59e0b);
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor; mask-composite: exclude;
+      animation: alertBtnRotate 3s linear infinite;
+      opacity: .8; pointer-events: none;
+    }
+    @keyframes alertBtnShake {
+      0%,100% { transform: translateX(0) rotate(0); }
+      15%     { transform: translateX(-2px) rotate(-1.5deg); }
+      30%     { transform: translateX(2px)  rotate(1.5deg); }
+      45%     { transform: translateX(-1px) rotate(-.5deg); }
+      60%     { transform: translateX(1px)  rotate(.5deg); }
+    }
+    @keyframes alertBtnGlow {
+      0%,100% { box-shadow: 0 0 0 0 rgba(245,158,11,.5),  0 4px 12px rgba(245,158,11,.25); }
+      50%     { box-shadow: 0 0 0 6px rgba(245,158,11,0),  0 4px 18px rgba(245,158,11,.4); }
+    }
+    @keyframes alertBtnRotate { to { transform: rotate(360deg); } }
+    .alert-btn:hover { transform: scale(1.05); }
+    .alert-btn:active { transform: scale(.95); }
+    .alert-btn-icon {
+      font-size: 1rem; line-height: 1;
+      animation: alertIconBounce 1s ease-in-out infinite;
+    }
+    @keyframes alertIconBounce {
+      0%,100% { transform: scale(1); }
+      50%     { transform: scale(1.2); }
+    }
+    .alert-btn-count {
+      background: #ef4444; color: #fff;
+      min-width: 20px; height: 20px; padding: 0 5px;
+      border-radius: 999px; font-size: .7rem;
+      display: inline-flex; align-items: center; justify-content: center;
+      box-shadow: 0 0 0 2px #0f172a;
+    }
+    .alert-btn.active {
+      background: linear-gradient(135deg, #f59e0b, #ef4444);
+      color: #fff;
+      animation: alertBtnGlow 2s ease-in-out infinite;
+    }
+    .alert-btn.active .alert-btn-count { background: #fff; color: #ef4444; }
+
     /* ── Update banner (nueva versión disponible) ───────── */
     #mosUpdateBanner {
       position:fixed;bottom:80px;left:50%;
@@ -1302,6 +1360,11 @@
                  oninput="MOS.filterCatalogo()" autocomplete="off">
           <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">🔍</span>
         </div>
+        <!-- Botón Alertas (solo visible si hay productos con alertas) -->
+        <button id="btnAlertasCat" onclick="MOS.toggleFiltroAlertas()" class="alert-btn hidden shrink-0" title="Productos con alertas — click para filtrar">
+          <span class="alert-btn-icon">⚠</span>
+          <span class="alert-btn-count" id="alertaCount">0</span>
+        </button>
         <!-- Filtros dropdown -->
         <div class="relative shrink-0" id="catFiltroWrap">
           <button id="btnFiltrosCat" onclick="MOS.toggleFiltroCat()" class="inp flex items-center gap-2 whitespace-nowrap w-full sm:w-auto">
