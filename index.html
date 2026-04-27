@@ -532,19 +532,6 @@
       animation: alertBtnShake 1.6s ease-in-out infinite, alertBtnGoldGlow 2.2s ease-in-out infinite;
       transition: transform .15s ease, border-color .15s ease;
     }
-    /* Punto dorado orbitando el perímetro del botón */
-    .alert-btn-orbit {
-      position: absolute;
-      width: 8px; height: 8px; border-radius: 50%;
-      background: #ffd700;
-      box-shadow: 0 0 6px #ffd700, 0 0 14px rgba(255,215,0,.7);
-      offset-path: inset(-3px round 13px);
-      offset-anchor: center;
-      offset-distance: 0%;
-      animation: alertOrbitPath 3.2s linear infinite;
-      pointer-events: none; z-index: 2;
-    }
-    @keyframes alertOrbitPath { to { offset-distance: 100%; } }
     @keyframes alertBtnShake {
       0%,100% { transform: translateX(0) rotate(0); }
       15%     { transform: translateX(-1.5px) rotate(-1deg); }
@@ -1392,7 +1379,6 @@
         </div>
         <!-- Botón Alertas (solo visible si hay productos con alertas) -->
         <button id="btnAlertasCat" onclick="MOS.toggleFiltroAlertas()" class="alert-btn hidden shrink-0" title="Productos con alertas — click para filtrar">
-          <span class="alert-btn-orbit"></span>
           <span class="alert-btn-icon">⚠</span>
           <span class="alert-btn-count" id="alertaCount">0</span>
         </button>
