@@ -5789,9 +5789,10 @@ const MOS = (() => {
               <span>${score}%</span>
             </div>
             <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2 mb-1">
+              <div class="flex items-center gap-2 mb-1 flex-wrap">
                 <div class="font-semibold text-slate-100 text-sm truncate">${r.nombre}</div>
                 <span class="badge-rol ${rolClass}">${r.rol || ''}</span>
+                ${r.virtual ? '<span class="badge-rol badge-rol-default" title="Detectado de MosExpress (no en master)">⚡ del sistema</span>' : ''}
               </div>
               <div class="text-xs text-slate-500 mb-1">${kpiTxt}</div>
               <div class="flex items-center gap-2 flex-wrap">
