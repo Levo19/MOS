@@ -1000,10 +1000,10 @@
       filter: drop-shadow(0 0 4px rgba(255,215,0,.6));
     }
     .cat-alert-icon:hover { transform: scale(1.1); }
-    /* Popover de detalle de alertas */
+    /* Popover de detalle de alertas — fixed para escapar overflow:hidden de la card */
     .cat-alert-pop {
-      position: absolute; top: calc(100% + 10px); right: -4px;
-      z-index: 30; width: 280px; max-width: calc(100vw - 32px);
+      position: fixed;
+      z-index: 9998; width: 280px; max-width: calc(100vw - 32px);
       background: linear-gradient(135deg, #1a1503, #0f172a);
       border: 1px solid rgba(255,215,0,.35); border-radius: 12px;
       box-shadow: 0 12px 32px rgba(0,0,0,.55), 0 0 22px rgba(255,215,0,.15);
@@ -1015,14 +1015,6 @@
     @keyframes catAlertPopIn {
       from { opacity: 0; transform: translateY(-6px) scale(.96); }
       to   { opacity: 1; transform: translateY(0) scale(1);     }
-    }
-    /* Flecha apuntando al ícono */
-    .cat-alert-pop::before {
-      content: ''; position: absolute; top: -6px; right: 12px;
-      width: 12px; height: 12px;
-      background: #1a1503; border-top: 1px solid rgba(255,215,0,.35);
-      border-left: 1px solid rgba(255,215,0,.35);
-      transform: rotate(45deg);
     }
     .cat-alert-pop-head {
       padding: 10px 14px; border-bottom: 1px solid rgba(255,215,0,.18);

@@ -875,20 +875,77 @@ const MOS = (() => {
     renderCatalogo();
   }
 
-  // Mostrar/ocultar popover de detalle de alertas en una card
-  function toggleAlertPop(eid) {
-    const id = 'alertPop-' + eid;
-    const target = document.getElementById(id);
-    if (!target) return;
-    const wasOpen = target.classList.contains('show');
-    document.querySelectorAll('.cat-alert-pop.show').forEach(el => el.classList.remove('show'));
-    if (!wasOpen) target.classList.add('show');
+  // Cache de alertas por eid (poblada en renderCatalogo)
+  const _catAlertCache = new Map();
+
+  // Crear el popover global una sola vez (evita problemas con overflow:hidden de la card)
+  function _ensureGlobalAlertPop() {
+    let el = document.getElementById('globalAlertPop');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'globalAlertPop';
+      el.className = 'cat-alert-pop';
+      el.addEventListener('click', e => e.stopPropagation());
+      document.body.appendChild(el);
+    }
+    return el;
   }
-  // Click fuera cierra todos los popovers
+
+  function toggleAlertPop(eid, ev) {
+    const target = _ensureGlobalAlertPop();
+    const sameOpen = target.classList.contains('show') && target.dataset.eid === eid;
+    target.classList.remove('show');
+    if (sameOpen) return;
+
+    const list = _catAlertCache.get(eid) || [];
+    if (!list.length) return;
+
+    target.innerHTML = `
+      <div class="cat-alert-pop-head">
+        <span>⚠</span> ${list.length} alerta${list.length !== 1 ? 's' : ''}
+      </div>
+      <div class="cat-alert-pop-body">
+        ${list.map(a => `
+          <div class="cat-alert-item cat-alert-${a.tipo}">
+            <div class="cat-alert-item-title">
+              <span class="cat-alert-tag">${a.tag}</span>
+              <span>${a.titulo}</span>
+            </div>
+            <div class="cat-alert-item-detail">${a.detalle}</div>
+          </div>
+        `).join('')}
+      </div>`;
+    target.dataset.eid = eid;
+
+    // Posicionar relativo al botón clickeado
+    const btn = ev?.currentTarget || ev?.target?.closest?.('.cat-alert-icon');
+    if (btn) {
+      const rect = btn.getBoundingClientRect();
+      const popW = 280, margin = 10;
+      let top  = rect.bottom + 10;
+      let left = rect.right - popW;
+      if (left < margin) left = margin;
+      if (left + popW > window.innerWidth - margin) left = window.innerWidth - popW - margin;
+      const popH = Math.min(360, list.length * 70 + 60);
+      if (top + popH > window.innerHeight - margin) {
+        top = rect.top - popH - 10;
+        if (top < margin) top = margin;
+      }
+      target.style.top  = top + 'px';
+      target.style.left = left + 'px';
+    }
+    target.classList.add('show');
+  }
+
+  // Click fuera cierra
   document.addEventListener('click', e => {
-    if (e.target.closest('.cat-alert-pop, .cat-alert-icon')) return;
-    document.querySelectorAll('.cat-alert-pop.show').forEach(el => el.classList.remove('show'));
+    if (e.target.closest('#globalAlertPop, .cat-alert-icon')) return;
+    document.getElementById('globalAlertPop')?.classList.remove('show');
   });
+  // Scroll cierra (la posición fixed quedaría desfasada)
+  window.addEventListener('scroll', () => {
+    document.getElementById('globalAlertPop')?.classList.remove('show');
+  }, { passive: true, capture: true });
 
   function populateCatFiltro() {
     const cats = [...new Set(S.productos.map(p => p.idCategoria).filter(Boolean))].sort();
@@ -1147,23 +1204,8 @@ const MOS = (() => {
       });
       const alertList = _groupAlertList(g);
       const hasAnyAlert = alertList.length > 0;
-      const alertPopHtml = hasAnyAlert ? `
-        <div class="cat-alert-pop" id="alertPop-${eid}" onclick="event.stopPropagation()">
-          <div class="cat-alert-pop-head">
-            <span>⚠</span> ${alertList.length} alerta${alertList.length !== 1 ? 's' : ''}
-          </div>
-          <div class="cat-alert-pop-body">
-            ${alertList.map(a => `
-              <div class="cat-alert-item cat-alert-${a.tipo}">
-                <div class="cat-alert-item-title">
-                  <span class="cat-alert-tag">${a.tag}</span>
-                  <span>${a.titulo}</span>
-                </div>
-                <div class="cat-alert-item-detail">${a.detalle}</div>
-              </div>
-            `).join('')}
-          </div>
-        </div>` : '';
+      if (hasAnyAlert) _catAlertCache.set(eid, alertList);
+      else             _catAlertCache.delete(eid);
 
       // Presentaciones con expand animado
       const presHtml = pres.length ? `
@@ -1212,7 +1254,7 @@ const MOS = (() => {
             </div>
             <div class="flex flex-col items-end gap-1.5 shrink-0 ml-2">
               <div class="flex items-center gap-1.5">
-                ${hasAnyAlert ? `<span class="cat-alert-wrap"><button type="button" class="cat-alert-icon" onclick="event.stopPropagation();MOS.toggleAlertPop('${eid}')" aria-label="Ver detalle de alertas">⚠</button>${alertPopHtml}</span>` : ''}
+                ${hasAnyAlert ? `<button type="button" class="cat-alert-icon" onclick="event.stopPropagation();MOS.toggleAlertPop('${eid}', event)" aria-label="Ver detalle de alertas">⚠</button>` : ''}
                 <div class="cat-price" data-cat-precio="${base.idProducto}">${fmtMoney(base.precioVenta)}</div>
               </div>
               ${base.precioCosto > 0 ? `<div class="cat-cost" data-cat-costo="${base.idProducto}">Costo: ${fmtMoney(base.precioCosto)}</div>` : ''}
