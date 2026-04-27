@@ -672,7 +672,61 @@
       transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
     }
     .cat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(99,102,241,.13); border-color: #2d3f5a; }
-    .cat-card.cat-inactive { opacity: .5; }
+    /* Inactivo: enmallado diagonal + opacidad reducida */
+    .cat-card.cat-inactive {
+      opacity: .72;
+      background-image:
+        repeating-linear-gradient(45deg,
+          transparent 0, transparent 8px,
+          rgba(100,116,139,.09) 8px, rgba(100,116,139,.09) 9px),
+        linear-gradient(135deg, #0f172a, #0f172a);
+      filter: grayscale(.45);
+      border-color: #334155;
+    }
+    .cat-card.cat-inactive:hover { transform: none; box-shadow: none; }
+    .pres-chip.pres-inactive {
+      opacity: .65;
+      background-image:
+        repeating-linear-gradient(45deg,
+          transparent 0, transparent 6px,
+          rgba(100,116,139,.1) 6px, rgba(100,116,139,.1) 7px),
+        linear-gradient(135deg, #060d1f, #060d1f);
+      filter: grayscale(.4);
+    }
+
+    /* Toggle switch (estado activo/inactivo) */
+    .toggle-sw {
+      position: relative;
+      display: inline-block;
+      width: 38px; height: 22px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 999px;
+      cursor: pointer; padding: 0;
+      transition: background .25s, border-color .25s;
+      flex-shrink: 0;
+    }
+    .toggle-sw.on {
+      background: linear-gradient(135deg, #c9a227, #ffd700);
+      border-color: #ffd700;
+      box-shadow: 0 0 10px rgba(255,215,0,.3);
+    }
+    .toggle-sw-knob {
+      position: absolute;
+      top: 2px; left: 2px;
+      width: 16px; height: 16px;
+      background: #64748b;
+      border-radius: 50%;
+      transition: transform .25s cubic-bezier(.34,1.56,.64,1), background .25s;
+    }
+    .toggle-sw.on .toggle-sw-knob {
+      transform: translateX(15px);
+      background: #020817;
+    }
+    .toggle-sw:hover { filter: brightness(1.1); }
+    .toggle-sw.sm { width: 32px; height: 18px; }
+    .toggle-sw.sm .toggle-sw-knob { width: 12px; height: 12px; top: 2px; left: 2px; }
+    .toggle-sw.sm.on .toggle-sw-knob { transform: translateX(13px); }
 
     /* Action buttons */
     .cat-btn {
@@ -3371,6 +3425,32 @@
       </li>
     </ul>
     <p class="upd-hint">No cierres la aplicación · Esto toma unos segundos</p>
+  </div>
+</div>
+
+<!-- Modal: Confirmar apagar producto base + cascada -->
+<div id="modalApagarBase" class="modal-overlay hidden" onclick="if(event.target===this)MOS.closeModal('modalApagarBase')">
+  <div class="modal-box" style="max-width:420px">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-semibold text-amber-400 text-base">⚠ Apagar producto</h3>
+      <button onclick="MOS.closeModal('modalApagarBase')" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+    </div>
+    <input type="hidden" id="apagarBaseId">
+    <input type="hidden" id="apagarBaseSku">
+    <p class="text-sm text-slate-300 mb-3">
+      Vas a apagar <span id="apagarBaseTitle" class="font-semibold text-amber-300">—</span>.
+    </p>
+    <div class="text-xs text-slate-400 mb-1">Esto también apagará:</div>
+    <div class="border border-slate-800 rounded-lg p-3 mb-4 max-h-64 overflow-y-auto" style="background:#060d1f">
+      <div class="text-xs font-bold text-slate-300 mb-1">📦 <span id="apagarBasePresCount">0</span> presentaciones</div>
+      <ul id="apagarBasePresList" class="text-xs text-slate-500 mb-3 space-y-0.5"></ul>
+      <div class="text-xs font-bold text-slate-300 mb-1">▌ <span id="apagarBaseEqCount">0</span> equivalencias</div>
+      <ul id="apagarBaseEqList" class="text-xs text-slate-500 space-y-0.5"></ul>
+    </div>
+    <div class="flex gap-2">
+      <button onclick="MOS.closeModal('modalApagarBase')" class="btn-ghost flex-1">Cancelar</button>
+      <button onclick="MOS.confirmarApagarBase()" id="btnConfirmarApagar" class="btn-primary flex-1" style="background:linear-gradient(135deg,#ef4444,#dc2626);border-color:#ef4444;color:#fff">Apagar todo</button>
+    </div>
   </div>
 </div>
 

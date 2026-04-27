@@ -1231,11 +1231,12 @@ const MOS = (() => {
               ${presInfo.map(({ d, factor, precioActual, alerts }) => {
                 const hlD       = _highlight(d.descripcion || d.idProducto, words);
                 const hasAlert  = alerts.length > 0;
+                const presActivo = !d.estado || String(d.estado) === '1';
                 const precioClass = hasAlert ? 'pres-price-err' : 'pres-price-ok';
                 const alertHtml = alerts.map(a =>
                   `<span class="pres-alert-pill cat-alert-${a.tipo}"><span class="cat-alert-tag">${a.tag}</span>${a.sufijo}</span>`
                 ).join('');
-                return `<div class="pres-chip${hasAlert ? ' border-amber-900/50' : ''}">
+                return `<div class="pres-chip${hasAlert ? ' border-amber-900/50' : ''}${presActivo ? '' : ' pres-inactive'}">
                   <div class="min-w-0 flex-1">
                     <div class="text-xs font-semibold text-slate-200 truncate">${hlD}</div>
                     <div class="flex items-center gap-2 mt-0.5">
@@ -1246,6 +1247,9 @@ const MOS = (() => {
                   </div>
                   <div class="flex items-center gap-2 shrink-0">
                     <div class="${precioClass}">${fmtMoney(precioActual)}</div>
+                    <button type="button" class="toggle-sw sm ${presActivo ? 'on' : ''}"
+                            onclick="event.stopPropagation();MOS.toggleProductoActivo('${d.idProducto}', false)"
+                            title="${presActivo ? 'Apagar' : 'Prender'}"><span class="toggle-sw-knob"></span></button>
                     <button class="cat-btn cat-btn-edit sm" onclick="event.stopPropagation();MOS.abrirModalProducto('${d.idProducto}')" title="Editar">✏️</button>
                     <button class="cat-btn cat-btn-price sm" onclick="event.stopPropagation();MOS.abrirModalPrecioRapido('${d.idProducto}')" title="Precio">💰</button>
                   </div>
@@ -1272,7 +1276,12 @@ const MOS = (() => {
                 <div class="cat-price" data-cat-precio="${base.idProducto}">${fmtMoney(base.precioVenta)}</div>
               </div>
               ${base.precioCosto > 0 ? `<div class="cat-cost" data-cat-costo="${base.idProducto}">Costo: ${fmtMoney(base.precioCosto)}</div>` : ''}
-              <div class="flex gap-1.5 mt-1">
+              <div class="flex gap-1.5 mt-1 items-center">
+                <button type="button" class="toggle-sw ${activo ? 'on' : ''}"
+                        onclick="event.stopPropagation();MOS.toggleProductoActivo('${base.idProducto}', true)"
+                        title="${activo ? 'Apagar producto' : 'Prender producto'}">
+                  <span class="toggle-sw-knob"></span>
+                </button>
                 <button class="cat-btn cat-btn-edit"
                         onclick="event.stopPropagation();MOS.abrirModalProducto('${base.idProducto}')"
                         title="Editar producto">✏️</button>
@@ -2756,6 +2765,125 @@ const MOS = (() => {
       toast('Error: ' + e.message, 'error');
     } finally {
       if (btn) btn.disabled = false;
+    }
+  }
+
+  // ── Toggle estado activo/inactivo de producto ────────────────
+  // esBase=true: si apagas → confirmación + cascada. Si prendes → cascada directa.
+  // esBase=false: solo toggle local (presentación independiente).
+  async function toggleProductoActivo(idProducto, esBase) {
+    const p = S.productos.find(x => x.idProducto === idProducto);
+    if (!p) return;
+    const activoActual = !p.estado || String(p.estado) === '1';
+
+    if (esBase && activoActual) {
+      _pedirApagarBase(idProducto);
+      return;
+    }
+
+    const nuevoEstado = activoActual ? '0' : '1';
+    try {
+      await API.post('actualizarProducto', { idProducto, estado: nuevoEstado });
+      p.estado = nuevoEstado;
+
+      if (esBase && nuevoEstado === '1') {
+        await _prenderHijos(p);
+        toast('Producto y todos sus hijos prendidos ✓', 'ok');
+      } else {
+        toast(nuevoEstado === '1' ? 'Activado ✓' : 'Apagado ✓', 'ok');
+      }
+      renderCatalogo();
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  async function _prenderHijos(baseProd) {
+    const skuBase = baseProd.skuBase || baseProd.idProducto;
+    const presentaciones = S.productos.filter(p =>
+      (p.skuBase || p.idProducto) === skuBase && p.idProducto !== baseProd.idProducto
+    );
+    await Promise.all(presentaciones.map(async pp => {
+      if (String(pp.estado) === '1' || !pp.estado) return;
+      await API.post('actualizarProducto', { idProducto: pp.idProducto, estado: '1' });
+      pp.estado = '1';
+    }));
+    try {
+      const equivs = await API.get('getEquivalencias', { skuBase });
+      const inactivas = (equivs || []).filter(e => {
+        const v = e.activo;
+        return !(v === '1' || v === 1 || v === true || String(v).toLowerCase() === 'true');
+      });
+      await Promise.all(inactivas.map(e =>
+        API.post('actualizarEquivalencia', { idEquiv: e.idEquiv, activo: '1' })
+      ));
+    } catch(_) {}
+  }
+
+  function _pedirApagarBase(idProducto) {
+    const p = S.productos.find(x => x.idProducto === idProducto);
+    if (!p) return;
+    const skuBase = p.skuBase || idProducto;
+    const presentaciones = S.productos.filter(pp =>
+      (pp.skuBase || pp.idProducto) === skuBase && pp.idProducto !== idProducto
+    );
+    $('apagarBaseId').value = idProducto;
+    $('apagarBaseSku').value = skuBase;
+    $('apagarBaseTitle').textContent = p.descripcion || idProducto;
+    $('apagarBasePresCount').textContent = presentaciones.length;
+    $('apagarBasePresList').innerHTML = presentaciones.length > 0
+      ? presentaciones.map(pp => `<li>— ${pp.descripcion || pp.idProducto}</li>`).join('')
+      : '<li class="italic">— sin presentaciones —</li>';
+    $('apagarBaseEqCount').textContent = '…';
+    $('apagarBaseEqList').innerHTML = '<li class="italic">— cargando —</li>';
+    const modal = $('modalApagarBase');
+    modal.dataset.equivs = '[]';
+    openModal('modalApagarBase');
+
+    API.get('getEquivalencias', { skuBase }).then(equivs => {
+      const activas = (equivs || []).filter(e => {
+        const v = e.activo;
+        return v === '1' || v === 1 || v === true || String(v).toLowerCase() === 'true';
+      });
+      $('apagarBaseEqCount').textContent = activas.length;
+      $('apagarBaseEqList').innerHTML = activas.length > 0
+        ? activas.map(e => `<li>— ▌${e.codigoBarra}${e.descripcion ? ' (' + e.descripcion + ')' : ''}</li>`).join('')
+        : '<li class="italic">— sin equivalencias activas —</li>';
+      modal.dataset.equivs = JSON.stringify(activas.map(e => e.idEquiv));
+    }).catch(() => {
+      $('apagarBaseEqCount').textContent = '?';
+      $('apagarBaseEqList').innerHTML = '<li class="italic text-red-400">— error al cargar —</li>';
+    });
+  }
+
+  async function confirmarApagarBase() {
+    const idProducto = $('apagarBaseId').value;
+    const skuBase    = $('apagarBaseSku').value;
+    const equivIds   = JSON.parse($('modalApagarBase').dataset.equivs || '[]');
+    if (!idProducto) return;
+    const btn = $('btnConfirmarApagar');
+    if (btn) { btn.disabled = true; btn.textContent = 'Apagando...'; }
+    try {
+      const productos = S.productos.filter(pp =>
+        (pp.skuBase || pp.idProducto) === skuBase || pp.idProducto === idProducto
+      );
+      await Promise.all(productos.map(async pp => {
+        if (String(pp.estado) === '0') return;
+        await API.post('actualizarProducto', { idProducto: pp.idProducto, estado: '0' });
+        pp.estado = '0';
+      }));
+      await Promise.all(equivIds.map(idEquiv =>
+        API.post('actualizarEquivalencia', { idEquiv, activo: '0' })
+      ));
+      closeModal('modalApagarBase');
+      toast('Apagado ' + productos.length + ' productos y ' + equivIds.length + ' equivalencias ✓', 'ok');
+      renderCatalogo();
+      // Refresh equivMap del cache
+      loadCatalogo(true).catch(() => {});
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Apagar todo'; }
     }
   }
 
@@ -5552,6 +5680,7 @@ const MOS = (() => {
     setProdTipo, prodAutogenBarcode, prodValidarCodigoBarra, prodToggleEstado, prodToggleCosto,
     prodCalcMargen, prodOnRange, prodToggleSunat, prodToggleEquiv,
     toggleAddEquiv, crearEquivalenciaModal, toggleEquivActivo,
+    toggleProductoActivo, confirmarApagarBase,
     abrirModalPrecio, publicarPrecio,
     setAlmTab,
     loadProveedores, selectProveedor, renderProveedores,
