@@ -382,16 +382,16 @@
     }
     .upd-new-apply:hover { background:#fcd34d; }
 
-    /* ── Update overlay (rediseñado · hermoso) ──────────── */
+    /* ── Update overlay (rediseñado · dorado elegante) ──── */
     #updateOverlay {
-      background: radial-gradient(ellipse at top, #1e1b4b 0%, #020617 60%);
+      background: radial-gradient(ellipse at top, #1a1503 0%, #020617 65%);
       overflow: hidden;
     }
     #updateOverlay::before {
       content: ''; position:absolute; inset:0;
       background:
-        radial-gradient(circle at 20% 30%, rgba(99,102,241,.15), transparent 40%),
-        radial-gradient(circle at 80% 70%, rgba(139,92,246,.12), transparent 40%);
+        radial-gradient(circle at 20% 30%, rgba(201,162,39,.18), transparent 40%),
+        radial-gradient(circle at 80% 70%, rgba(255,215,0,.12),  transparent 40%);
       animation: updFloat 8s ease-in-out infinite alternate;
     }
     @keyframes updFloat {
@@ -409,9 +409,9 @@
     }
     .upd-glow {
       position:absolute; inset:-30px; border-radius:50%;
-      background: radial-gradient(circle, rgba(99,102,241,.4), transparent 65%);
+      background: radial-gradient(circle, rgba(255,215,0,.45), transparent 65%);
       animation: updGlowPulse 2.4s ease-in-out infinite;
-      filter: blur(8px);
+      filter: blur(10px);
     }
     @keyframes updGlowPulse {
       0%,100% { opacity:.5; transform: scale(.9); }
@@ -419,30 +419,31 @@
     }
     .upd-version {
       display:inline-flex; align-items:center; gap:6px;
-      font-size:.7rem; font-weight:600; letter-spacing:.05em;
-      color:#a78bfa; background: rgba(139,92,246,.12);
-      border:1px solid rgba(139,92,246,.3); border-radius: 999px;
+      font-size:.7rem; font-weight:700; letter-spacing:.05em;
+      color:#ffd700; background: rgba(255,215,0,.08);
+      border:1px solid rgba(255,215,0,.35); border-radius: 999px;
       padding: 4px 12px; margin-bottom: 28px;
       text-transform: uppercase;
     }
     .upd-version::before {
       content:''; width:6px; height:6px; border-radius:50%;
-      background:#a78bfa; box-shadow: 0 0 8px #a78bfa;
+      background:#ffd700; box-shadow: 0 0 8px #ffd700;
       animation: updVerPulse 1.4s ease-in-out infinite;
     }
     @keyframes updVerPulse { 0%,100%{opacity:1} 50%{opacity:.3} }
     .upd-progress {
       width: 100%; height: 6px;
-      background: rgba(99,102,241,.1); border-radius: 999px;
+      background: rgba(201,162,39,.1); border-radius: 999px;
       overflow:hidden; margin-bottom: 24px; position:relative;
     }
     .upd-progress-fill {
       height: 100%; width: 0%;
-      background: linear-gradient(90deg,#6366f1,#8b5cf6,#ec4899);
+      background: linear-gradient(90deg,#c9a227,#ffd700,#fbbf24,#ffd700,#c9a227);
       background-size: 200% 100%;
       border-radius: 999px;
       animation: updShimmer 2s linear infinite;
       transition: width .8s ease;
+      box-shadow: 0 0 8px rgba(255,215,0,.4);
     }
     .upd-progress.animate .upd-progress-fill { width: 100%; transition: width 4.5s cubic-bezier(.4,0,.2,1); }
     @keyframes updShimmer { from { background-position: 200% 0 } to { background-position: -200% 0 } }
@@ -455,8 +456,8 @@
       font-size:.82rem; color:#475569;
       transition: color .3s ease;
     }
-    .upd-step.active { color:#e2e8f0; }
-    .upd-step.done   { color:#a78bfa; }
+    .upd-step.active { color:#fef3c7; }
+    .upd-step.done   { color:#c9a227; }
     .upd-step-dot {
       width:18px; height:18px; border-radius:50%;
       border:2px solid #334155; flex-shrink:0;
@@ -464,20 +465,20 @@
       transition: all .3s ease; position:relative;
     }
     .upd-step.active .upd-step-dot {
-      border-color:#6366f1;
-      box-shadow: 0 0 0 4px rgba(99,102,241,.15);
+      border-color:#ffd700;
+      box-shadow: 0 0 0 4px rgba(255,215,0,.15);
     }
     .upd-step.active .upd-step-dot::after {
       content:''; width:8px; height:8px; border-radius:50%;
-      background:#6366f1;
+      background:#ffd700;
       animation: updDotPulse 1s ease-in-out infinite;
     }
     @keyframes updDotPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(.6)} }
     .upd-step.done .upd-step-dot {
-      border-color:#a78bfa; background:#a78bfa;
+      border-color:#c9a227; background:linear-gradient(135deg,#c9a227,#ffd700);
     }
     .upd-step.done .upd-step-dot::after {
-      content:'✓'; color:#fff; font-size:.7rem; font-weight:900;
+      content:'✓'; color:#020817; font-size:.7rem; font-weight:900;
     }
     .upd-hint {
       font-size:.7rem; color:#475569; margin: 0;
@@ -485,32 +486,30 @@
     }
     .upd-logo {
       width:64px;height:64px;border-radius:18px;
-      background:linear-gradient(135deg,#6366f1,#8b5cf6);
+      background:linear-gradient(135deg,#c9a227,#ffd700);
       display:flex;align-items:center;justify-content:center;
-      font-size:2rem;font-weight:700;color:#fff;
-      margin:0 auto 28px;
-      box-shadow:0 0 0 0 rgba(99,102,241,.5);
+      font-size:2rem;font-weight:800;color:#020817;
+      box-shadow:0 0 0 0 rgba(255,215,0,.5);
       animation:logoPulse 2s ease-in-out infinite;
     }
     @keyframes logoPulse {
-      0%,100%{ box-shadow:0 0 0 0 rgba(99,102,241,.4); }
-      50%    { box-shadow:0 0 0 16px rgba(99,102,241,0); }
+      0%,100%{ box-shadow:0 0 0 0 rgba(255,215,0,.5); }
+      50%    { box-shadow:0 0 0 16px rgba(255,215,0,0); }
     }
     .upd-ring {
-      width:72px;height:72px;border-radius:50%;
+      position:absolute; inset:-8px;
+      width:80px;height:80px;border-radius:50%;
       border:3px solid transparent;
-      border-top-color:#6366f1;border-right-color:#8b5cf6;
+      border-top-color:#ffd700;border-right-color:#c9a227;
       animation:spin .9s linear infinite;
-      margin:-84px auto 20px;
-      position:relative;z-index:-1;
-      opacity:.7;
+      opacity:.85;
     }
     @keyframes spin { to { transform:rotate(360deg); } }
-    .upd-title { font-size:1.25rem;font-weight:700;color:#f1f5f9;margin:0 0 6px; }
-    .upd-sub   { font-size:.8rem;color:#64748b;margin:0 0 24px; }
+    .upd-title { font-size:1.25rem;font-weight:700;color:#fef3c7;margin:0 0 6px; }
+    .upd-sub   { font-size:.8rem;color:#c9a227;margin:0 0 24px; }
     .upd-dots  { display:flex;gap:8px;justify-content:center; }
     .upd-dots span {
-      width:7px;height:7px;border-radius:50%;background:#6366f1;opacity:.3;
+      width:7px;height:7px;border-radius:50%;background:#ffd700;opacity:.3;
       animation:dotPulse 1.2s ease-in-out infinite;
     }
     .upd-dots span:nth-child(2) { animation-delay:.2s; }
@@ -520,63 +519,69 @@
       40%        { opacity:1; transform:scale(1.2); }
     }
 
-    /* ── Botón de alertas en catálogo ────────────────────── */
+    /* ── Botón de alertas en catálogo (dorado, punto orbital) ── */
     .alert-btn {
       position: relative;
       display: inline-flex; align-items: center; gap: 6px;
       padding: 0 12px; height: 38px;
-      background: linear-gradient(135deg, rgba(245,158,11,.15), rgba(239,68,68,.12));
-      border: 1.5px solid #f59e0b;
+      background: linear-gradient(135deg, rgba(201,162,39,.1), rgba(255,215,0,.05));
+      border: 1.5px solid rgba(201,162,39,.55);
       border-radius: 10px;
-      color: #fbbf24; font-weight: 700; font-size: .85rem;
+      color: #ffd700; font-weight: 700; font-size: .85rem;
       cursor: pointer; overflow: visible;
-      animation: alertBtnShake 1.6s ease-in-out infinite, alertBtnGlow 2s ease-in-out infinite;
-      transition: transform .15s ease;
+      animation: alertBtnShake 1.6s ease-in-out infinite, alertBtnGoldGlow 2.2s ease-in-out infinite;
+      transition: transform .15s ease, border-color .15s ease;
     }
-    .alert-btn::before {
-      content: ''; position: absolute; inset: -2px;
-      border-radius: 11px; padding: 2px;
-      background: conic-gradient(from 0deg, #f59e0b, #ef4444, #f59e0b, #fbbf24, #f59e0b);
-      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-      -webkit-mask-composite: xor; mask-composite: exclude;
-      animation: alertBtnRotate 3s linear infinite;
-      opacity: .8; pointer-events: none;
+    /* Punto dorado orbitando el perímetro del botón */
+    .alert-btn-orbit {
+      position: absolute;
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #ffd700;
+      box-shadow: 0 0 6px #ffd700, 0 0 14px rgba(255,215,0,.7);
+      offset-path: inset(-3px round 13px);
+      offset-anchor: center;
+      offset-distance: 0%;
+      animation: alertOrbitPath 3.2s linear infinite;
+      pointer-events: none; z-index: 2;
     }
+    @keyframes alertOrbitPath { to { offset-distance: 100%; } }
     @keyframes alertBtnShake {
       0%,100% { transform: translateX(0) rotate(0); }
-      15%     { transform: translateX(-2px) rotate(-1.5deg); }
-      30%     { transform: translateX(2px)  rotate(1.5deg); }
-      45%     { transform: translateX(-1px) rotate(-.5deg); }
-      60%     { transform: translateX(1px)  rotate(.5deg); }
+      15%     { transform: translateX(-1.5px) rotate(-1deg); }
+      30%     { transform: translateX(1.5px)  rotate(1deg); }
+      45%     { transform: translateX(-.5px)  rotate(-.3deg); }
+      60%     { transform: translateX(.5px)   rotate(.3deg); }
     }
-    @keyframes alertBtnGlow {
-      0%,100% { box-shadow: 0 0 0 0 rgba(245,158,11,.5),  0 4px 12px rgba(245,158,11,.25); }
-      50%     { box-shadow: 0 0 0 6px rgba(245,158,11,0),  0 4px 18px rgba(245,158,11,.4); }
+    @keyframes alertBtnGoldGlow {
+      0%,100% { box-shadow: 0 0 0 0 rgba(255,215,0,.45), 0 4px 12px rgba(201,162,39,.25); }
+      50%     { box-shadow: 0 0 0 6px rgba(255,215,0,0),  0 4px 18px rgba(201,162,39,.5);  }
     }
-    @keyframes alertBtnRotate { to { transform: rotate(360deg); } }
-    .alert-btn:hover { transform: scale(1.05); }
+    .alert-btn:hover { transform: scale(1.05); border-color: #ffd700; }
     .alert-btn:active { transform: scale(.95); }
     .alert-btn-icon {
       font-size: 1rem; line-height: 1;
       animation: alertIconBounce 1s ease-in-out infinite;
+      filter: drop-shadow(0 0 4px rgba(255,215,0,.5));
     }
     @keyframes alertIconBounce {
       0%,100% { transform: scale(1); }
-      50%     { transform: scale(1.2); }
+      50%     { transform: scale(1.18); }
     }
     .alert-btn-count {
-      background: #ef4444; color: #fff;
+      background: linear-gradient(135deg, #c9a227, #ffd700);
+      color: #020817;
       min-width: 20px; height: 20px; padding: 0 5px;
-      border-radius: 999px; font-size: .7rem;
+      border-radius: 999px; font-size: .7rem; font-weight: 800;
       display: inline-flex; align-items: center; justify-content: center;
-      box-shadow: 0 0 0 2px #0f172a;
+      box-shadow: 0 0 0 2px #0f172a, 0 0 8px rgba(255,215,0,.4);
     }
     .alert-btn.active {
-      background: linear-gradient(135deg, #f59e0b, #ef4444);
-      color: #fff;
-      animation: alertBtnGlow 2s ease-in-out infinite;
+      background: linear-gradient(135deg, #c9a227, #ffd700);
+      color: #020817;
+      border-color: #ffd700;
     }
-    .alert-btn.active .alert-btn-count { background: #fff; color: #ef4444; }
+    .alert-btn.active .alert-btn-icon { filter: none; }
+    .alert-btn.active .alert-btn-count { background: #020817; color: #ffd700; box-shadow: 0 0 0 2px #ffd700; }
 
     /* ── Update banner (nueva versión disponible) ───────── */
     #mosUpdateBanner {
@@ -587,28 +592,30 @@
     }
     #mosUpdateBanner.visible { transform:translateX(-50%) translateY(0); }
     .mos-upd-inner {
-      background:linear-gradient(135deg,#1a1040,#0f172a);
-      border:1px solid #6366f1;border-radius:16px;padding:14px 16px;
+      background:linear-gradient(135deg,#1a1503,#0f172a);
+      border:1px solid #c9a227;border-radius:16px;padding:14px 16px;
       display:flex;align-items:center;gap:12px;
-      box-shadow:0 8px 32px rgba(99,102,241,.35);
+      box-shadow:0 8px 32px rgba(201,162,39,.35);
       animation:mosGlow 3s ease-in-out infinite;
     }
     @keyframes mosGlow {
-      0%,100%{ box-shadow:0 8px 32px rgba(99,102,241,.35); }
-      50%    { box-shadow:0 8px 44px rgba(99,102,241,.65); }
+      0%,100%{ box-shadow:0 8px 32px rgba(201,162,39,.35); }
+      50%    { box-shadow:0 8px 44px rgba(255,215,0,.55);   }
     }
-    .mos-upd-icon { font-size:1.5rem;animation:mosIconBounce 1.8s ease-in-out infinite; }
+    .mos-upd-icon { font-size:1.5rem;animation:mosIconBounce 1.8s ease-in-out infinite;
+                    filter: drop-shadow(0 0 6px rgba(255,215,0,.5)); }
     @keyframes mosIconBounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
     .mos-upd-text  { flex:1; }
-    .mos-upd-title { font-size:.9rem;font-weight:700;color:#e2e8f0; }
-    .mos-upd-sub   { font-size:.72rem;color:#94a3b8;margin-top:2px; }
+    .mos-upd-title { font-size:.9rem;font-weight:700;color:#fef3c7; }
+    .mos-upd-sub   { font-size:.72rem;color:#c9a227;margin-top:2px;font-weight:600;letter-spacing:.02em; }
     .mos-upd-btn {
-      background:linear-gradient(135deg,#6366f1,#8b5cf6);
-      color:#fff;border:none;border-radius:10px;
-      padding:8px 16px;font-size:.82rem;font-weight:700;
-      cursor:pointer;white-space:nowrap;transition:opacity .15s;
+      background:linear-gradient(135deg,#c9a227,#ffd700);
+      color:#020817;border:none;border-radius:10px;
+      padding:8px 16px;font-size:.82rem;font-weight:800;
+      cursor:pointer;white-space:nowrap;transition:filter .15s, transform .15s;
+      box-shadow: 0 2px 8px rgba(201,162,39,.4);
     }
-    .mos-upd-btn:hover { opacity:.85; }
+    .mos-upd-btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
 
     /* ── Catalog cards ──────────────────────────────────── */
     .cat-card {
@@ -1362,6 +1369,7 @@
         </div>
         <!-- Botón Alertas (solo visible si hay productos con alertas) -->
         <button id="btnAlertasCat" onclick="MOS.toggleFiltroAlertas()" class="alert-btn hidden shrink-0" title="Productos con alertas — click para filtrar">
+          <span class="alert-btn-orbit"></span>
           <span class="alert-btn-icon">⚠</span>
           <span class="alert-btn-count" id="alertaCount">0</span>
         </button>
