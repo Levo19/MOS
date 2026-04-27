@@ -116,6 +116,13 @@ function _route(method, e) {
       case 'registrarPushToken':        return registrarPushToken(params);
       case 'enviarPushNotif':           return enviarPushNotif(params);
 
+      // ── Evaluaciones de personal ──────────────────────────────
+      case 'crearEvaluacion':           return crearEvaluacion(params);
+      case 'getEvaluacionesDia':        return getEvaluacionesDia(params);
+      case 'getResumenDia':             return getResumenDia(params);
+      case 'getResumenTodosDia':        return getResumenTodosDia(params);
+      case 'getLiquidacionSemana':      return getLiquidacionSemana(params);
+
       // ── Cajas MosExpress ────────────────────────────────────
       case 'getCierresCaja':            return getCierresCaja(params);
       case 'anularTicketME':            return anularTicketME(params);

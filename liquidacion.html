@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Liquidación Semanal · MOS</title>
+  <link rel="manifest" href="manifest.json">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 24px 16px;
+      background: #020817; color: #e2e8f0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px; line-height: 1.5;
+    }
+    .container {
+      max-width: 720px; margin: 0 auto;
+      background: #0f172a; border: 1px solid #1e293b;
+      border-radius: 12px; overflow: hidden;
+    }
+    .liq-head {
+      padding: 20px 24px;
+      background: linear-gradient(135deg,#1a1503,#0f172a);
+      border-bottom: 1px solid rgba(255,215,0,.25);
+    }
+    .liq-head h1 {
+      margin: 0 0 4px; font-size: 18px; color: #ffd700;
+      letter-spacing: .03em;
+    }
+    .liq-head p { margin: 0; font-size: 12px; color: #94a3b8; }
+    .liq-body { padding: 18px 24px; }
+    h2 {
+      font-size: 13px; font-weight: 800;
+      color: #fbbf24; text-transform: uppercase;
+      letter-spacing: .05em; margin: 18px 0 10px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid rgba(255,215,0,.15);
+    }
+    table {
+      width: 100%; border-collapse: collapse; font-size: 13px;
+    }
+    th, td {
+      text-align: left; padding: 8px 6px;
+      border-bottom: 1px solid #1e293b;
+    }
+    th {
+      font-size: 11px; font-weight: 700; color: #94a3b8;
+      text-transform: uppercase; letter-spacing: .03em;
+    }
+    .right { text-align: right; }
+    .center { text-align: center; }
+    .total-row {
+      font-weight: 800; background: rgba(255,215,0,.05);
+      color: #fef3c7;
+    }
+    .total-row td { border-top: 2px solid rgba(255,215,0,.3); border-bottom: none; }
+    .total-summary {
+      padding: 14px 16px; background: #060d1f;
+      border: 1px solid rgba(255,215,0,.25); border-radius: 8px;
+      margin-top: 14px;
+    }
+    .total-summary .row {
+      display: flex; justify-content: space-between;
+      padding: 4px 0; font-size: 13px;
+    }
+    .total-summary .row.big {
+      font-size: 18px; font-weight: 800; color: #ffd700;
+      padding-top: 10px; margin-top: 8px;
+      border-top: 1px solid rgba(255,215,0,.3);
+    }
+    .pill {
+      display: inline-block; padding: 2px 8px;
+      border-radius: 999px; font-size: 11px; font-weight: 700;
+      background: rgba(34,197,94,.15); color: #4ade80;
+      border: 1px solid rgba(34,197,94,.3);
+    }
+    .pill.gray {
+      background: rgba(100,116,139,.15); color: #94a3b8;
+      border-color: rgba(100,116,139,.3);
+    }
+    .pill.amber {
+      background: rgba(251,191,36,.15); color: #fbbf24;
+      border-color: rgba(251,191,36,.3);
+    }
+    .deficiencias {
+      background: rgba(239,68,68,.06); border: 1px solid rgba(239,68,68,.2);
+      border-radius: 8px; padding: 12px 14px; margin-top: 14px;
+      font-size: 12px;
+    }
+    .deficiencias h3 {
+      margin: 0 0 6px; font-size: 11px; color: #f87171;
+      text-transform: uppercase; letter-spacing: .05em;
+    }
+    .deficiencias ul { margin: 0; padding-left: 16px; color: #cbd5e1; }
+    .actions {
+      padding: 14px 24px;
+      background: #060d1f; border-top: 1px solid #1e293b;
+      display: flex; gap: 8px; flex-wrap: wrap;
+    }
+    .btn {
+      padding: 9px 16px; border-radius: 8px;
+      border: 1px solid #334155; background: #1e293b;
+      color: #cbd5e1; font-size: 13px; font-weight: 600;
+      cursor: pointer;
+    }
+    .btn:hover { background: #334155; }
+    .btn-primary {
+      background: linear-gradient(135deg,#c9a227,#ffd700);
+      color: #020817; border-color: #ffd700;
+    }
+    .btn-primary:hover { filter: brightness(1.08); }
+    pre.plain {
+      background: #060d1f; border: 1px solid #1e293b;
+      border-radius: 8px; padding: 14px; font-size: 12px;
+      color: #cbd5e1; overflow-x: auto; white-space: pre;
+      font-family: 'Courier New', monospace;
+      margin: 14px 0 0;
+    }
+    .empty {
+      text-align: center; color: #64748b;
+      padding: 60px 20px; font-size: 14px;
+    }
+    @media print {
+      body { background: #fff; color: #000; padding: 0; }
+      .container { background: #fff; border: none; max-width: 100%; }
+      .liq-head, .actions { background: #fff; border-color: #ddd; }
+      .liq-head h1, h2 { color: #000; }
+      table th { color: #444; }
+      .total-row, .total-summary { background: #f5f5f5; color: #000; }
+      .total-summary .row.big { color: #000; }
+      .actions { display: none; }
+      pre.plain { background: #f5f5f5; color: #000; }
+    }
+  </style>
+</head>
+<body>
+<div class="container" id="root">
+  <div class="empty">Cargando liquidación...</div>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+  const params = new URLSearchParams(location.search);
+  const idPersonal  = params.get('id');
+  const fechaInicio = params.get('inicio');
+
+  function fmt(n) {
+    return 'S/' + (parseFloat(n || 0).toFixed(2));
+  }
+  function pill(score, evaluado) {
+    if (!evaluado) return '<span class="pill gray">No eval</span>';
+    if (score >= 85) return '<span class="pill">' + score + '%</span>';
+    if (score >= 60) return '<span class="pill amber">' + score + '%</span>';
+    return '<span class="pill" style="background:rgba(239,68,68,.15);color:#f87171;border-color:rgba(239,68,68,.3)">' + score + '%</span>';
+  }
+
+  function render(d) {
+    const fmtRange = (() => {
+      const fi = new Date(fechaInicio + 'T00:00:00');
+      const ff = new Date(fi); ff.setDate(ff.getDate() + 6);
+      const opt = { day: '2-digit', month: 'short' };
+      return fi.toLocaleDateString('es-PE', opt) + ' – ' + ff.toLocaleDateString('es-PE', { ...opt, year: 'numeric' });
+    })();
+
+    const filas = (d.dias || []).map(x => `
+      <tr>
+        <td><strong>${x.diaSemana}</strong> <span style="color:#64748b">${x.fecha.substring(8,10)}/${x.fecha.substring(5,7)}</span></td>
+        <td class="center">${pill(x.score, x.evaluado)}</td>
+        <td class="right">${fmt(x.montoBase)}</td>
+        <td class="right" style="color:${x.bonusScore > 0 ? '#fbbf24' : '#475569'}">${x.bonusScore > 0 ? '+' + fmt(x.bonusScore) : '—'}</td>
+        <td class="right" style="color:${x.bonoMeta > 0 ? '#4ade80' : '#475569'}">${x.bonoMeta > 0 ? '+' + fmt(x.bonoMeta) : '—'}</td>
+        <td class="right"><strong>${fmt(x.totalDia)}</strong></td>
+      </tr>
+    `).join('');
+
+    const defKeys = Object.keys(d.deficiencias || {});
+    const defHtml = defKeys.length ? `
+      <div class="deficiencias">
+        <h3>📈 Áreas de mejora</h3>
+        <ul>
+          ${defKeys.map(k => {
+            const labels = {
+              limpieza_estacion: 'Limpieza de estación bajo 70%',
+              limpieza_profunda: 'Limpieza profunda bajo 70%'
+            };
+            return `<li>${labels[k] || k}: ${d.deficiencias[k]} día${d.deficiencias[k] !== 1 ? 's' : ''}</li>`;
+          }).join('')}
+        </ul>
+      </div>` : '';
+
+    const t = d.totales || {};
+    document.getElementById('root').innerHTML = `
+      <div class="liq-head">
+        <h1>💰 Liquidación Semanal</h1>
+        <p>${d.nombre} · ${d.rol} · ${d.appOrigen}</p>
+        <p style="margin-top:6px"><strong style="color:#fef3c7">${fmtRange}</strong></p>
+      </div>
+      <div class="liq-body">
+        <h2>Detalle diario</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Día</th>
+              <th class="center">Score</th>
+              <th class="right">Base</th>
+              <th class="right">Bonus%</th>
+              <th class="right">Meta</th>
+              <th class="right">Total</th>
+            </tr>
+          </thead>
+          <tbody>${filas}</tbody>
+        </table>
+        <div class="total-summary">
+          <div class="row"><span>Base total</span><span>${fmt(t.base)}</span></div>
+          <div class="row"><span>Bonus por score</span><span style="color:#fbbf24">+${fmt(t.bonus)}</span></div>
+          <div class="row"><span>Bonos por meta</span><span style="color:#4ade80">+${fmt(t.meta)}</span></div>
+          <div class="row big"><span>A cobrar</span><span>${fmt(t.aCobrar)}</span></div>
+        </div>
+        ${defHtml}
+        <pre class="plain" id="planoTxt"></pre>
+      </div>
+      <div class="actions">
+        <button class="btn-primary btn" onclick="window.print()">🖨 Imprimir</button>
+        <button class="btn" onclick="copiarPlano()">📋 Copiar texto plano</button>
+        <button class="btn" onclick="window.close()">Cerrar</button>
+      </div>`;
+
+    // Texto plano
+    const lineas = [
+      'LIQUIDACION SEMANAL',
+      '===================',
+      d.nombre,
+      d.rol + ' · ' + d.appOrigen,
+      fmtRange,
+      ''
+    ];
+    (d.dias || []).forEach(x => {
+      lineas.push(
+        x.diaSemana.padEnd(4) + ' ' + x.fecha +
+        '  ' + (x.evaluado ? (x.score + '%').padStart(5) : '  --').padStart(5) +
+        '  base ' + fmt(x.montoBase) +
+        '  bono ' + fmt(x.bonusScore) +
+        '  meta ' + fmt(x.bonoMeta) +
+        '  =>  ' + fmt(x.totalDia)
+      );
+    });
+    lineas.push('');
+    lineas.push('Base total: ' + fmt(t.base));
+    lineas.push('Bonus:      ' + fmt(t.bonus));
+    lineas.push('Meta:       ' + fmt(t.meta));
+    lineas.push('A COBRAR:   ' + fmt(t.aCobrar));
+    document.getElementById('planoTxt').textContent = lineas.join('\n');
+  }
+
+  function copiarPlano() {
+    const txt = document.getElementById('planoTxt').textContent;
+    navigator.clipboard.writeText(txt).then(() => alert('Texto copiado'));
+  }
+
+  if (!idPersonal || !fechaInicio) {
+    document.getElementById('root').innerHTML = '<div class="empty">Faltan parámetros: id y inicio (yyyy-MM-dd)</div>';
+  } else {
+    API.get('getLiquidacionSemana', { idPersonal, fechaInicio })
+      .then(d => render(d))
+      .catch(e => {
+        document.getElementById('root').innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
+      });
+  }
+</script>
+</body>
+</html>

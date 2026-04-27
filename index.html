@@ -628,6 +628,113 @@
     .alert-btn.active .alert-btn-icon { filter: none; }
     .alert-btn.active .alert-btn-count { background: #020817; color: #ffd700; box-shadow: 0 0 0 2px #ffd700; }
 
+    /* ── Evaluación de personal ──────────────────────────── */
+    .eval-pill {
+      padding: 6px 14px; border-radius: 999px;
+      background: #0f172a; border: 1px solid #1e293b;
+      color: #94a3b8; font-size: .75rem; font-weight: 600;
+      cursor: pointer; white-space: nowrap;
+      transition: all .15s;
+    }
+    .eval-pill:hover { border-color: #334155; }
+    .eval-pill.active {
+      background: linear-gradient(135deg,#c9a227,#ffd700);
+      border-color: #ffd700; color: #020817;
+    }
+    .eval-card {
+      background: #0f172a; border: 1px solid #1e293b; border-radius: 12px;
+      padding: 14px; transition: border-color .15s, transform .15s;
+    }
+    .eval-card:hover { border-color: #334155; }
+    .eval-score-circle {
+      width: 56px; height: 56px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: .95rem; flex-shrink: 0;
+      background: conic-gradient(var(--score-color, #475569) calc(var(--score, 0) * 1%), #1e293b 0);
+      position: relative;
+    }
+    .eval-score-circle::before {
+      content: ''; position: absolute; inset: 4px;
+      background: #0f172a; border-radius: 50%;
+    }
+    .eval-score-circle > span { position: relative; z-index: 1; }
+    .eval-score-low  { --score-color: #ef4444; color: #f87171; }
+    .eval-score-mid  { --score-color: #f59e0b; color: #fbbf24; }
+    .eval-score-high { --score-color: #ffd700; color: #ffd700; }
+    .eval-card .badge-rol {
+      display: inline-block; padding: 2px 8px;
+      border-radius: 999px; font-size: .62rem; font-weight: 700;
+      letter-spacing: .03em; text-transform: uppercase;
+    }
+    .eval-card .badge-rol-cajero    { background: rgba(251,191,36,.15);  color: #fbbf24; border: 1px solid rgba(251,191,36,.3); }
+    .eval-card .badge-rol-almacen   { background: rgba(99,102,241,.15);  color: #818cf8; border: 1px solid rgba(99,102,241,.3); }
+    .eval-card .badge-rol-envasador { background: rgba(168,85,247,.15);  color: #c084fc; border: 1px solid rgba(168,85,247,.3); }
+    .eval-card .badge-rol-default   { background: rgba(100,116,139,.15); color: #cbd5e1; border: 1px solid rgba(100,116,139,.3); }
+    .audit-count-pill {
+      display: inline-flex; align-items: center; gap: 3px;
+      padding: 2px 7px; border-radius: 999px;
+      font-size: .65rem; font-weight: 700;
+      background: rgba(255,215,0,.1); color: #ffd700;
+      border: 1px solid rgba(255,215,0,.3);
+    }
+    /* Botones de calificación rápida */
+    .rate-btn {
+      padding: 8px 4px;
+      background: #0f172a; border: 1px solid #1e293b;
+      border-radius: 8px; color: #94a3b8;
+      font-size: .72rem; font-weight: 700;
+      cursor: pointer; transition: all .15s;
+      font-family: monospace;
+    }
+    .rate-btn:hover { border-color: #334155; }
+    .rate-btn.active {
+      background: linear-gradient(135deg,#c9a227,#ffd700);
+      border-color: #ffd700; color: #020817;
+    }
+    /* Checklist control total */
+    .audit-check-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 10px; border-radius: 8px;
+      background: #060d1f; border: 1px solid transparent;
+      cursor: pointer; transition: all .15s;
+      font-size: .8rem; color: #cbd5e1;
+    }
+    .audit-check-row:hover { border-color: #334155; }
+    .audit-check-row.checked {
+      background: rgba(255,215,0,.06);
+      border-color: rgba(255,215,0,.25);
+      color: #fef3c7;
+    }
+    .audit-check-box {
+      width: 18px; height: 18px; border-radius: 5px;
+      border: 1.5px solid #475569; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      transition: all .15s;
+    }
+    .audit-check-row.checked .audit-check-box {
+      background: linear-gradient(135deg,#c9a227,#ffd700);
+      border-color: #ffd700;
+    }
+    .audit-check-row.checked .audit-check-box::after {
+      content: '✓'; color: #020817; font-size: .75rem; font-weight: 900;
+    }
+    /* KPI auto en modal */
+    .audit-kpi-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 10px; background: #060d1f; border: 1px solid #1e293b;
+      border-radius: 8px;
+    }
+    .audit-kpi-label { font-size: .72rem; color: #94a3b8; }
+    .audit-kpi-val   { font-size: .85rem; font-weight: 700; color: #fbbf24; }
+    .audit-kpi-bar   {
+      height: 4px; background: #1e293b; border-radius: 999px;
+      margin-top: 4px; overflow: hidden;
+    }
+    .audit-kpi-bar > div {
+      height: 100%; background: linear-gradient(90deg,#c9a227,#ffd700);
+      transition: width .3s ease;
+    }
+
     /* ── Update banner (nueva versión disponible) ───────── */
     #mosUpdateBanner {
       position:fixed;bottom:24px;left:50%;
@@ -1254,6 +1361,11 @@
       <div class="nav-dot"></div>
       <svg class="nav-icon shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
       <span class="nav-label whitespace-nowrap">Finanzas</span>
+    </button>
+    <button data-view="evaluacion" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('evaluacion')">
+      <div class="nav-dot"></div>
+      <svg class="nav-icon shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      <span class="nav-label whitespace-nowrap">Evaluación</span>
     </button>
     <div class="mt-2 pt-2 border-t border-slate-800">
       <button data-view="config" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('config')">
@@ -2263,6 +2375,122 @@
       </div>
 
     </section><!-- /view-finanzas -->
+
+    <!-- ═══ VIEW: EVALUACIÓN DE PERSONAL ═══════════════════════════ -->
+    <section id="view-evaluacion" class="view hidden">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="text-lg font-bold text-slate-100">Evaluación de Personal</h2>
+          <p class="text-xs text-slate-500" id="evalFechaLbl">—</p>
+        </div>
+        <button onclick="MOS.refreshEvaluacion()" class="btn-ghost text-sm">↻ Actualizar</button>
+      </div>
+
+      <!-- Filtro app origen -->
+      <div class="flex gap-2 mb-3 overflow-x-auto" id="evalAppFilter">
+        <button class="eval-pill active" data-app="all" onclick="MOS.evalSetApp('all')">Todos</button>
+        <button class="eval-pill" data-app="warehouseMos" onclick="MOS.evalSetApp('warehouseMos')">⚙ Warehouse</button>
+        <button class="eval-pill" data-app="mosExpress"   onclick="MOS.evalSetApp('mosExpress')">💰 MosExpress</button>
+      </div>
+
+      <!-- Lista de empleados -->
+      <div id="evalListPersonal" class="space-y-3">
+        <div class="skel h-24 rounded-xl"></div>
+        <div class="skel h-24 rounded-xl"></div>
+        <div class="skel h-24 rounded-xl"></div>
+      </div>
+
+      <!-- Liquidación semanal -->
+      <div class="mt-6 pt-4 border-t border-slate-800">
+        <h3 class="text-sm font-bold text-slate-300 mb-2">📊 Liquidación semanal</h3>
+        <p class="text-xs text-slate-500 mb-3">Domingo cierra automáticamente a las 8 PM. Imprime para pagar.</p>
+        <div class="flex flex-wrap gap-2">
+          <input type="date" id="liqFechaInicio" class="inp text-xs" style="max-width:170px">
+          <select id="liqPersona" class="inp text-xs flex-1" style="min-width:160px"></select>
+          <button onclick="MOS.abrirLiquidacion()" class="btn-primary text-xs">Ver liquidación</button>
+        </div>
+      </div>
+    </section><!-- /view-evaluacion -->
+
+    <!-- ── Modal: Auditar empleado ─────────────────────────────────── -->
+    <div class="modal-backdrop hidden" id="modalAuditar">
+      <div class="modal-box p-0 max-w-md w-full" style="max-height:90vh;display:flex;flex-direction:column">
+        <div class="px-5 pt-5 pb-3 flex items-center justify-between border-b border-slate-800">
+          <div>
+            <h3 class="font-semibold text-white text-base" id="auditTitle">Auditar</h3>
+            <p class="text-xs text-slate-500" id="auditSubtitle">—</p>
+          </div>
+          <button onclick="MOS.cerrarAuditar()" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+        </div>
+        <div class="overflow-y-auto px-5 py-4 space-y-4" style="flex:1">
+          <input type="hidden" id="auditIdPersonal">
+          <input type="hidden" id="auditRol">
+
+          <!-- Auto KPIs -->
+          <div>
+            <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">⚙ Automático del sistema</div>
+            <div id="auditKpis" class="space-y-2"></div>
+          </div>
+
+          <!-- Limpieza estación -->
+          <div>
+            <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">🧹 Limpieza de estación</div>
+            <div class="flex gap-1 mb-2" id="auditLimpiezaBtns">
+              <button class="rate-btn flex-1" data-val="0">  0%</button>
+              <button class="rate-btn flex-1" data-val="25"> 25%</button>
+              <button class="rate-btn flex-1" data-val="50"> 50%</button>
+              <button class="rate-btn flex-1" data-val="75"> 75%</button>
+              <button class="rate-btn flex-1" data-val="100">100%</button>
+            </div>
+            <input type="hidden" id="auditLimpieza" value="0">
+          </div>
+
+          <!-- Limpieza profunda -->
+          <div>
+            <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">✨ Limpieza profunda</div>
+            <div class="flex gap-1 mb-2" id="auditLimpiezaProfBtns">
+              <button class="rate-btn flex-1" data-val="0">  0%</button>
+              <button class="rate-btn flex-1" data-val="25"> 25%</button>
+              <button class="rate-btn flex-1" data-val="50"> 50%</button>
+              <button class="rate-btn flex-1" data-val="75"> 75%</button>
+              <button class="rate-btn flex-1" data-val="100">100%</button>
+            </div>
+            <input type="hidden" id="auditLimpiezaProf" value="0">
+          </div>
+
+          <!-- Control total -->
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <div class="text-xs font-bold text-slate-400 uppercase tracking-wider">✅ Control total</div>
+              <button onclick="MOS.auditCheckAll()" class="text-xs text-amber-400 hover:text-amber-300">Marcar todos</button>
+            </div>
+            <div id="auditControlList" class="space-y-1"></div>
+          </div>
+
+          <!-- Comentario -->
+          <div>
+            <label class="lbl">Comentario</label>
+            <textarea id="auditComentario" class="inp" rows="2" placeholder="Observaciones, méritos, incidencias..."></textarea>
+          </div>
+
+          <!-- Toggles comisión -->
+          <div class="space-y-2 pt-2 border-t border-slate-800">
+            <label class="flex items-center justify-between text-sm cursor-pointer">
+              <span class="text-slate-300">Aplicar a comisión del día</span>
+              <button type="button" id="auditTogComision" class="toggle-sw on" onclick="MOS.auditToggle('auditTogComision')"><span class="toggle-sw-knob"></span></button>
+            </label>
+            <label class="flex items-center justify-between text-sm cursor-pointer">
+              <span class="text-slate-300">Aplicar bono por meta</span>
+              <button type="button" id="auditTogMeta" class="toggle-sw on" onclick="MOS.auditToggle('auditTogMeta')"><span class="toggle-sw-knob"></span></button>
+            </label>
+          </div>
+        </div>
+        <div class="px-5 py-3 border-t border-slate-800 flex gap-2">
+          <button onclick="MOS.cerrarAuditar()" class="btn-ghost flex-1">Cancelar</button>
+          <button onclick="MOS.guardarAuditoria()" class="btn-primary flex-1" id="auditSaveBtn">Registrar</button>
+        </div>
+      </div>
+    </div>
 
     <!-- ── Modal: Nuevo Gasto ─────────────────────────────────────── -->
     <div class="modal-backdrop hidden" id="modalFinGasto">

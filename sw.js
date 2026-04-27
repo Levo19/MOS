@@ -27,12 +27,13 @@ _fcmMsg.onBackgroundMessage(payload => {
   });
 });
 
-const VERSION = '1.3.50';
+const VERSION = '1.3.51';
 const CACHE   = 'mos-v' + VERSION;
 const ASSETS  = [
   './',
   './index.html',
   './turno.html',
+  './liquidacion.html',
   './js/app.js',
   './js/api.js',
   './manifest.json',
@@ -68,7 +69,7 @@ self.addEventListener('fetch', e => {
   // No cachear llamadas externas (GAS, etc.)
   if (url.origin !== self.location.origin) return;
   // Siempre desde red: version.json y turno.html (se actualizan frecuentemente)
-  if (url.pathname.endsWith('version.json') || url.pathname.endsWith('turno.html')) {
+  if (url.pathname.endsWith('version.json') || url.pathname.endsWith('turno.html') || url.pathname.endsWith('liquidacion.html')) {
     e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
     return;
   }

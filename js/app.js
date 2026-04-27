@@ -363,6 +363,7 @@ const MOS = (() => {
         case 'proveedores':  await loadProveedores();  break;
         case 'cajas':        await loadCajas(true);    break;
         case 'finanzas':     await _loadFinanzas();    break;
+        case 'evaluacion':   await loadEvaluacion();   break;
       }
     } catch (e) {
       // Reload allowed next time
@@ -5667,6 +5668,317 @@ const MOS = (() => {
     }
   }
 
+  // ============================================================
+  // ── EVALUACIÓN DE PERSONAL ────────────────────────────────────
+  // ============================================================
+  const _evalState = {
+    appFilter: 'all',
+    resumenes: [],
+    fecha: today(),
+    auditChecks: {},
+    rolItems: {
+      CAJERO: [
+        'Atención al cliente cordial y rápida',
+        'Sigue procedimiento de cobro',
+        'Maneja efectivo correctamente',
+        'Cuadre de caja sin diferencias',
+        'Estación limpia y ordenada',
+        'Reporta incidencias y anomalías',
+        'Uniforme y presentación adecuada',
+        'Puntualidad de entrada/salida'
+      ],
+      VENDEDOR: [
+        'Atención al cliente cordial y rápida',
+        'Sigue procedimiento de cobro',
+        'Maneja efectivo correctamente',
+        'Cuadre de caja sin diferencias',
+        'Estación limpia y ordenada',
+        'Reporta incidencias y anomalías',
+        'Uniforme y presentación adecuada',
+        'Puntualidad de entrada/salida'
+      ],
+      ALMACENERO: [
+        'Productos con membretes correctos',
+        'Stock organizado por zonas',
+        'Productos en buen estado / sin deterioro',
+        'Rotación FIFO respetada',
+        'Equipos de seguridad usados',
+        'Reporte de mermas / anomalías',
+        'Estación limpia y ordenada',
+        'Puntualidad de entrada/salida'
+      ],
+      ENVASADOR: [
+        'Envasado uniforme (peso/volumen)',
+        'Sellado correcto (sin fugas)',
+        'Etiquetado completo (lote, fecha, código)',
+        'Preservación e higiene de insumos',
+        'Equipos de seguridad usados',
+        'Limpieza tras cada envasado',
+        'Reporte de mermas',
+        'Puntualidad de entrada/salida'
+      ]
+    }
+  };
+
+  function _evalScoreClass(score) {
+    if (score >= 85) return 'eval-score-high';
+    if (score >= 60) return 'eval-score-mid';
+    return 'eval-score-low';
+  }
+
+  function _evalRolBadgeClass(rol) {
+    rol = String(rol || '').toUpperCase();
+    if (rol === 'CAJERO' || rol === 'VENDEDOR') return 'badge-rol-cajero';
+    if (rol === 'ALMACENERO')                    return 'badge-rol-almacen';
+    if (rol === 'ENVASADOR')                     return 'badge-rol-envasador';
+    return 'badge-rol-default';
+  }
+
+  async function loadEvaluacion() {
+    const lbl = $('evalFechaLbl');
+    if (lbl) lbl.textContent = 'Hoy ' + new Date(_evalState.fecha + 'T00:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' });
+    await refreshEvaluacion();
+    _ensureLiqDefaults();
+  }
+
+  async function refreshEvaluacion() {
+    const list = $('evalListPersonal');
+    if (list) list.innerHTML = '<div class="skel h-24 rounded-xl"></div><div class="skel h-24 rounded-xl"></div><div class="skel h-24 rounded-xl"></div>';
+    try {
+      const res = await API.get('getResumenTodosDia', { fecha: _evalState.fecha });
+      _evalState.resumenes = Array.isArray(res) ? res : [];
+      _renderEvalLista();
+      _renderLiqDropdown();
+    } catch (e) {
+      if (list) list.innerHTML = `<p class="text-sm text-red-400 text-center py-6">Error: ${e.message}</p>`;
+    }
+  }
+
+  function evalSetApp(app) {
+    _evalState.appFilter = app;
+    document.querySelectorAll('#evalAppFilter .eval-pill').forEach(b => {
+      b.classList.toggle('active', b.dataset.app === app);
+    });
+    _renderEvalLista();
+  }
+
+  function _renderEvalLista() {
+    const list = $('evalListPersonal');
+    if (!list) return;
+    const filtered = _evalState.resumenes.filter(r =>
+      _evalState.appFilter === 'all' || r.appOrigen === _evalState.appFilter
+    );
+    if (!filtered.length) {
+      list.innerHTML = '<p class="text-sm text-slate-500 text-center py-8">No hay personal para mostrar.</p>';
+      return;
+    }
+    // Ordenar por appOrigen y rol
+    filtered.sort((a, b) => (a.appOrigen || '').localeCompare(b.appOrigen || '') || (a.rol || '').localeCompare(b.rol || ''));
+
+    list.innerHTML = filtered.map(r => {
+      const score = r.scoreFinal || 0;
+      const scoreClass = _evalScoreClass(score);
+      const rolClass = _evalRolBadgeClass(r.rol);
+      const evalCount = r.evaluacionesCount || 0;
+      const kpiTxt = _evalKpiSummary(r);
+      const totalDia = (r.totalDia || r.montoBase || 0).toFixed(2);
+      return `
+        <div class="eval-card" data-id="${r.idPersonal}">
+          <div class="flex items-center gap-3">
+            <div class="eval-score-circle ${scoreClass}" style="--score:${score}">
+              <span>${score}%</span>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-1">
+                <div class="font-semibold text-slate-100 text-sm truncate">${r.nombre}</div>
+                <span class="badge-rol ${rolClass}">${r.rol || ''}</span>
+              </div>
+              <div class="text-xs text-slate-500 mb-1">${kpiTxt}</div>
+              <div class="flex items-center gap-2 flex-wrap">
+                ${evalCount > 0 ? `<span class="audit-count-pill">${evalCount} auditoría${evalCount !== 1 ? 's' : ''} hoy</span>` : `<span class="text-xs text-slate-500">Sin auditar</span>`}
+                <span class="text-xs text-slate-400">Pago día: <strong class="text-amber-400">S/${totalDia}</strong></span>
+              </div>
+            </div>
+            <button onclick="MOS.abrirAuditar('${r.idPersonal}')" class="btn-primary text-xs whitespace-nowrap shrink-0">Auditar</button>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  function _evalKpiSummary(r) {
+    const k = r.kpis || {};
+    const rol = String(r.rol || '').toUpperCase();
+    if (rol === 'CAJERO' || rol === 'VENDEDOR') {
+      return `Ventas S/${(k.ventasReales || 0).toFixed(2)}`;
+    }
+    if (rol === 'ENVASADOR') {
+      return `Envasados ${k.envasados || 0} uds`;
+    }
+    if (rol === 'ALMACENERO') {
+      return `${k.guias || 0} guías`;
+    }
+    return '—';
+  }
+
+  // ── Modal Auditar ────────────────────────────────────────────
+  async function abrirAuditar(idPersonal) {
+    const r = _evalState.resumenes.find(x => x.idPersonal === idPersonal);
+    if (!r) { toast('Personal no encontrado', 'error'); return; }
+    $('auditTitle').textContent = '🎯 Auditar · ' + r.nombre;
+    $('auditSubtitle').textContent = `${r.rol} · evaluaciones hoy: ${r.evaluacionesCount || 0}`;
+    $('auditIdPersonal').value = r.idPersonal;
+    $('auditRol').value = r.rol || '';
+    $('auditComentario').value = '';
+    $('auditLimpieza').value = '0';
+    $('auditLimpiezaProf').value = '0';
+    document.querySelectorAll('#auditLimpiezaBtns .rate-btn').forEach(b => b.classList.toggle('active', b.dataset.val === '0'));
+    document.querySelectorAll('#auditLimpiezaProfBtns .rate-btn').forEach(b => b.classList.toggle('active', b.dataset.val === '0'));
+    $('auditTogComision').classList.add('on');
+    $('auditTogMeta').classList.add('on');
+    _evalState.auditChecks = {};
+    _renderAuditKpis(r);
+    _renderAuditChecklist(r.rol);
+    _bindRateBtns();
+    openModal('modalAuditar');
+  }
+
+  function _renderAuditKpis(r) {
+    const cont = $('auditKpis');
+    if (!cont) return;
+    const k = r.kpis || {};
+    const rol = String(r.rol || '').toUpperCase();
+    let rows = [];
+    if (rol === 'CAJERO' || rol === 'VENDEDOR') {
+      rows.push(_kpiRow('Ventas del día', `S/${(k.ventasReales || 0).toFixed(2)}`, k.ventasPct || 0));
+    } else if (rol === 'ENVASADOR') {
+      rows.push(_kpiRow('Unidades envasadas', `${k.envasados || 0}`, k.ventasPct || 0));
+    } else if (rol === 'ALMACENERO') {
+      rows.push(_kpiRow('Guías procesadas', `${k.guias || 0}`, k.ventasPct || 0));
+    }
+    rows.push(_kpiRow('Score acumulado del día', `${r.scoreFinal || 0}%`, r.scoreFinal || 0));
+    cont.innerHTML = rows.join('');
+  }
+
+  function _kpiRow(label, val, pct) {
+    return `<div class="audit-kpi-row" style="flex-direction:column;align-items:stretch;gap:4px">
+      <div class="flex items-center justify-between">
+        <span class="audit-kpi-label">${label}</span>
+        <span class="audit-kpi-val">${val}</span>
+      </div>
+      <div class="audit-kpi-bar"><div style="width:${Math.min(100, pct)}%"></div></div>
+    </div>`;
+  }
+
+  function _renderAuditChecklist(rol) {
+    const cont = $('auditControlList');
+    if (!cont) return;
+    const items = _evalState.rolItems[String(rol || '').toUpperCase()] || _evalState.rolItems.CAJERO;
+    cont.innerHTML = items.map((txt, i) => `
+      <div class="audit-check-row" data-key="c${i}" onclick="MOS.auditToggleCheck('c${i}')">
+        <div class="audit-check-box"></div>
+        <span>${txt}</span>
+      </div>
+    `).join('');
+  }
+
+  function auditToggleCheck(key) {
+    _evalState.auditChecks[key] = !_evalState.auditChecks[key];
+    const row = document.querySelector(`#auditControlList .audit-check-row[data-key="${key}"]`);
+    if (row) row.classList.toggle('checked', !!_evalState.auditChecks[key]);
+  }
+
+  function auditCheckAll() {
+    document.querySelectorAll('#auditControlList .audit-check-row').forEach(row => {
+      const k = row.dataset.key;
+      _evalState.auditChecks[k] = true;
+      row.classList.add('checked');
+    });
+  }
+
+  function _bindRateBtns() {
+    document.querySelectorAll('#auditLimpiezaBtns .rate-btn').forEach(b => {
+      b.onclick = () => {
+        document.querySelectorAll('#auditLimpiezaBtns .rate-btn').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        $('auditLimpieza').value = b.dataset.val;
+      };
+    });
+    document.querySelectorAll('#auditLimpiezaProfBtns .rate-btn').forEach(b => {
+      b.onclick = () => {
+        document.querySelectorAll('#auditLimpiezaProfBtns .rate-btn').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        $('auditLimpiezaProf').value = b.dataset.val;
+      };
+    });
+  }
+
+  function auditToggle(id) {
+    const el = $(id);
+    if (el) el.classList.toggle('on');
+  }
+
+  function cerrarAuditar() { closeModal('modalAuditar'); }
+
+  async function guardarAuditoria() {
+    const idPersonal = $('auditIdPersonal').value;
+    const rol = $('auditRol').value;
+    if (!idPersonal || !rol) { toast('Datos incompletos', 'error'); return; }
+    const params = {
+      idPersonal,
+      rol,
+      fecha: _evalState.fecha,
+      limpiezaPct: parseFloat($('auditLimpieza').value) || 0,
+      limpiezaProfPct: parseFloat($('auditLimpiezaProf').value) || 0,
+      controlChecks: JSON.stringify(_evalState.auditChecks),
+      comentario: $('auditComentario').value || '',
+      evaluadoPor: S.session?.nombre || '',
+      aplicaComision: $('auditTogComision').classList.contains('on'),
+      aplicaBonoMeta: $('auditTogMeta').classList.contains('on')
+    };
+    const btn = $('auditSaveBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+    try {
+      await API.post('crearEvaluacion', params);
+      toast('Auditoría registrada ✓', 'ok');
+      closeModal('modalAuditar');
+      await refreshEvaluacion();
+    } catch (e) {
+      toast('Error: ' + e.message, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Registrar'; }
+    }
+  }
+
+  // ── Liquidación ──────────────────────────────────────────────
+  function _renderLiqDropdown() {
+    const sel = $('liqPersona');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">— elegir persona —</option>'
+      + _evalState.resumenes.map(r =>
+          `<option value="${r.idPersonal}">${r.nombre} · ${r.rol}</option>`
+        ).join('');
+  }
+
+  function _ensureLiqDefaults() {
+    const inp = $('liqFechaInicio');
+    if (inp && !inp.value) {
+      // Default: lunes de la semana actual
+      const d = new Date();
+      const day = d.getDay() || 7; // domingo=7
+      d.setDate(d.getDate() - day + 1);
+      inp.value = d.toISOString().substring(0, 10);
+    }
+  }
+
+  function abrirLiquidacion() {
+    const id = $('liqPersona')?.value;
+    const fechaInicio = $('liqFechaInicio')?.value;
+    if (!id) { toast('Elige una persona', 'error'); return; }
+    if (!fechaInicio) { toast('Elige fecha inicio (lunes)', 'error'); return; }
+    const url = `liquidacion.html?id=${encodeURIComponent(id)}&inicio=${encodeURIComponent(fechaInicio)}`;
+    window.open(url, '_blank');
+  }
+
   // ── PUBLIC API ───────────────────────────────────────────────
   return {
     init, nav, refresh, fabAction,
@@ -5681,6 +5993,11 @@ const MOS = (() => {
     prodCalcMargen, prodOnRange, prodToggleSunat, prodToggleEquiv,
     toggleAddEquiv, crearEquivalenciaModal, toggleEquivActivo,
     toggleProductoActivo, confirmarApagarBase,
+    // Evaluación de personal
+    loadEvaluacion, refreshEvaluacion, evalSetApp,
+    abrirAuditar, cerrarAuditar, guardarAuditoria,
+    auditToggleCheck, auditCheckAll, auditToggle,
+    abrirLiquidacion,
     abrirModalPrecio, publicarPrecio,
     setAlmTab,
     loadProveedores, selectProveedor, renderProveedores,
