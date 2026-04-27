@@ -1193,14 +1193,29 @@ const MOS = (() => {
       const brandTag   = base.marca
         ? `<span class="cat-brand">${base.marca}</span>` : '';
 
-      // Pre-computar alertas de cada presentación
+      // Pre-computar alertas de cada presentación con la nueva lógica
+      const basePrecio = parseFloat(base.precioVenta) || 0;
+      const baseCosto  = parseFloat(base.precioCosto) || 0;
       const presInfo = pres.map(d => {
-        const factor         = parseFloat(d.factorConversion) || 1;
-        const precioActual   = parseFloat(d.precioVenta) || 0;
-        const precioEsperado = parseFloat(base.precioVenta) * factor;
-        const coherente      = precioEsperado <= 0 || factor >= 1 || precioActual >= precioEsperado * 0.95;
-        const factorRep      = factor === 1 && (d.codigoBarra || '') !== (base.codigoBarra || '');
-        return { d, factor, precioActual, precioEsperado, coherente, factorRep };
+        const factor       = parseFloat(d.factorConversion) || 1;
+        const precioActual = parseFloat(d.precioVenta) || 0;
+        const alerts       = [];
+        if (factor < 1) {
+          const minimo = basePrecio * factor;
+          if (basePrecio > 0 && precioActual < minimo) {
+            alerts.push({ tipo: 'bajo', tag: 'BAJO', sufijo: 'mín ' + fmtMoney(minimo) });
+          }
+        } else if (factor > 1) {
+          const maximo      = basePrecio * factor;
+          const minimoCosto = baseCosto  * factor;
+          if (basePrecio > 0 && precioActual > maximo) {
+            alerts.push({ tipo: 'alto', tag: 'ALTO', sufijo: 'máx ' + fmtMoney(maximo) });
+          }
+          if (baseCosto > 0 && precioActual <= minimoCosto) {
+            alerts.push({ tipo: 'perdida', tag: 'PÉRDIDA', sufijo: '≤ ' + fmtMoney(minimoCosto) });
+          }
+        }
+        return { d, factor, precioActual, alerts };
       });
       const alertList = _groupAlertList(g);
       const hasAnyAlert = alertList.length > 0;
@@ -1213,14 +1228,13 @@ const MOS = (() => {
           <div class="pres-inner">
             <div class="px-4 pb-4 pt-3 border-t border-slate-800/80 space-y-2">
               <div class="text-xs text-slate-500 font-medium mb-2">📦 Presentaciones (${pres.length})</div>
-              ${presInfo.map(({ d, factor, precioActual, precioEsperado, coherente, factorRep }) => {
+              ${presInfo.map(({ d, factor, precioActual, alerts }) => {
                 const hlD       = _highlight(d.descripcion || d.idProducto, words);
-                const hasAlert  = !coherente || factorRep;
-                const precioClass = coherente ? 'pres-price-ok' : 'pres-price-err';
-                const alertHtml = [
-                  !coherente ? `<span class="pres-alert-badge">⚠ precio bajo</span><span class="pres-suggest">esperado: ${fmtMoney(precioEsperado)}</span>` : '',
-                  factorRep  ? `<span class="pres-alert-badge pres-alert-dup">⚠ factor repetido</span>` : ''
-                ].filter(Boolean).join('');
+                const hasAlert  = alerts.length > 0;
+                const precioClass = hasAlert ? 'pres-price-err' : 'pres-price-ok';
+                const alertHtml = alerts.map(a =>
+                  `<span class="pres-alert-pill cat-alert-${a.tipo}"><span class="cat-alert-tag">${a.tag}</span>${a.sufijo}</span>`
+                ).join('');
                 return `<div class="pres-chip${hasAlert ? ' border-amber-900/50' : ''}">
                   <div class="min-w-0 flex-1">
                     <div class="text-xs font-semibold text-slate-200 truncate">${hlD}</div>
@@ -1228,7 +1242,7 @@ const MOS = (() => {
                       ${d.codigoBarra ? `<span class="pres-code">▌${d.codigoBarra}</span>` : ''}
                       <span class="pres-factor">×${factor}</span>
                     </div>
-                    ${alertHtml ? `<div class="flex flex-wrap items-center gap-1 mt-0.5">${alertHtml}</div>` : ''}
+                    ${alertHtml ? `<div class="flex flex-wrap items-center gap-1 mt-1">${alertHtml}</div>` : ''}
                   </div>
                   <div class="flex items-center gap-2 shrink-0">
                     <div class="${precioClass}">${fmtMoney(precioActual)}</div>

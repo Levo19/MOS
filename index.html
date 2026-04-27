@@ -983,10 +983,16 @@
       cursor: default; white-space: nowrap;
     }
     .pres-suggest { font-size: .62rem; color: #64748b; margin-top: 1px; }
-    .pres-alert-dup {
-      background: rgba(245,158,11,.12); color: #fbbf24;
-      border-color: rgba(245,158,11,.3);
+    /* Pill de alerta por presentación — usa los colores de .cat-alert-{tipo} */
+    .pres-alert-pill {
+      display: inline-flex; align-items: center; gap: .35rem;
+      font-size: .64rem; font-weight: 600;
+      padding: .15rem .45rem .15rem .25rem;
+      border-radius: 5px;
+      border-left: 3px solid transparent;
+      white-space: nowrap;
     }
+    .pres-alert-pill .cat-alert-tag { font-size: .55rem; padding: 1px 5px; }
     .cat-alert-wrap { position: relative; display: inline-flex; }
     .cat-alert-icon {
       display: inline-flex; align-items: center; justify-content: center;
