@@ -677,7 +677,7 @@
       background: rgba(255,215,0,.1); color: #ffd700;
       border: 1px solid rgba(255,215,0,.3);
     }
-    /* Botones de calificación rápida */
+    /* Botones de calificación rápida (legacy) */
     .rate-btn {
       padding: 8px 4px;
       background: #0f172a; border: 1px solid #1e293b;
@@ -690,6 +690,62 @@
     .rate-btn.active {
       background: linear-gradient(135deg,#c9a227,#ffd700);
       border-color: #ffd700; color: #020817;
+    }
+    /* Slider draggable con bola dorada (de 10 en 10) */
+    .rate-slider-wrap {
+      display: flex; flex-direction: column; gap: 8px;
+      padding: 10px 14px 8px;
+      background: #060d1f; border: 1px solid #1e293b; border-radius: 10px;
+    }
+    .rate-slider-row {
+      display: flex; align-items: center; gap: 12px;
+    }
+    .rate-slider {
+      -webkit-appearance: none; appearance: none;
+      flex: 1; height: 8px; padding: 0; margin: 0;
+      background: #1e293b;
+      border-radius: 999px; outline: none;
+      cursor: pointer; position: relative;
+    }
+    /* Track activo dorado mediante background-image dinámico via JS */
+    .rate-slider::-webkit-slider-runnable-track {
+      height: 8px; background: transparent; border-radius: 999px;
+    }
+    .rate-slider::-moz-range-track {
+      height: 8px; background: #1e293b; border-radius: 999px;
+    }
+    .rate-slider::-moz-range-progress {
+      height: 8px; background: linear-gradient(90deg,#c9a227,#ffd700);
+      border-radius: 999px;
+    }
+    .rate-slider::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none;
+      width: 24px; height: 24px; border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, #ffe87c, #c9a227);
+      border: 2px solid #ffd700;
+      box-shadow: 0 0 12px rgba(255,215,0,.5), 0 2px 6px rgba(0,0,0,.4);
+      cursor: grab; margin-top: -8px;
+      transition: transform .12s;
+    }
+    .rate-slider::-webkit-slider-thumb:active { cursor: grabbing; transform: scale(1.18); }
+    .rate-slider::-moz-range-thumb {
+      width: 24px; height: 24px; border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, #ffe87c, #c9a227);
+      border: 2px solid #ffd700;
+      box-shadow: 0 0 12px rgba(255,215,0,.5);
+      cursor: grab;
+    }
+    .rate-slider-val {
+      min-width: 50px; text-align: right;
+      font-size: 1rem; font-weight: 800;
+      font-family: monospace; color: #ffd700;
+      letter-spacing: .02em;
+    }
+    .rate-slider-ticks {
+      display: flex; justify-content: space-between;
+      font-size: .55rem; color: #475569;
+      padding: 0 4px; margin-top: 2px;
+      font-family: monospace; font-weight: 600;
     }
     /* Checklist control total */
     .audit-check-row {
@@ -2383,7 +2439,10 @@
           <h2 class="text-lg font-bold text-slate-100">Evaluación de Personal</h2>
           <p class="text-xs text-slate-500" id="evalFechaLbl">—</p>
         </div>
-        <button onclick="MOS.refreshEvaluacion()" class="btn-ghost text-sm">↻ Actualizar</button>
+        <div class="flex gap-2">
+          <button onclick="MOS.abrirConfigEval()" class="btn-ghost text-sm" title="Configurar metas y bonos">⚙</button>
+          <button onclick="MOS.refreshEvaluacion()" class="btn-ghost text-sm">↻ Actualizar</button>
+        </div>
       </div>
 
       <!-- Filtro app origen -->
@@ -2435,27 +2494,29 @@
           <!-- Limpieza estación -->
           <div>
             <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">🧹 Limpieza de estación</div>
-            <div class="flex gap-1 mb-2" id="auditLimpiezaBtns">
-              <button class="rate-btn flex-1" data-val="0">  0%</button>
-              <button class="rate-btn flex-1" data-val="25"> 25%</button>
-              <button class="rate-btn flex-1" data-val="50"> 50%</button>
-              <button class="rate-btn flex-1" data-val="75"> 75%</button>
-              <button class="rate-btn flex-1" data-val="100">100%</button>
+            <div class="rate-slider-wrap">
+              <div class="rate-slider-row">
+                <input type="range" min="0" max="100" step="10" value="0" id="auditLimpieza" class="rate-slider" oninput="MOS.updateRateSlider('auditLimpieza','auditLimpiezaVal')">
+                <span class="rate-slider-val" id="auditLimpiezaVal">0%</span>
+              </div>
+              <div class="rate-slider-ticks">
+                <span>0</span><span>20</span><span>40</span><span>60</span><span>80</span><span>100</span>
+              </div>
             </div>
-            <input type="hidden" id="auditLimpieza" value="0">
           </div>
 
           <!-- Limpieza profunda -->
           <div>
             <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">✨ Limpieza profunda</div>
-            <div class="flex gap-1 mb-2" id="auditLimpiezaProfBtns">
-              <button class="rate-btn flex-1" data-val="0">  0%</button>
-              <button class="rate-btn flex-1" data-val="25"> 25%</button>
-              <button class="rate-btn flex-1" data-val="50"> 50%</button>
-              <button class="rate-btn flex-1" data-val="75"> 75%</button>
-              <button class="rate-btn flex-1" data-val="100">100%</button>
+            <div class="rate-slider-wrap">
+              <div class="rate-slider-row">
+                <input type="range" min="0" max="100" step="10" value="0" id="auditLimpiezaProf" class="rate-slider" oninput="MOS.updateRateSlider('auditLimpiezaProf','auditLimpiezaProfVal')">
+                <span class="rate-slider-val" id="auditLimpiezaProfVal">0%</span>
+              </div>
+              <div class="rate-slider-ticks">
+                <span>0</span><span>20</span><span>40</span><span>60</span><span>80</span><span>100</span>
+              </div>
             </div>
-            <input type="hidden" id="auditLimpiezaProf" value="0">
           </div>
 
           <!-- Control total -->
@@ -2488,6 +2549,58 @@
         <div class="px-5 py-3 border-t border-slate-800 flex gap-2">
           <button onclick="MOS.cerrarAuditar()" class="btn-ghost flex-1">Cancelar</button>
           <button onclick="MOS.guardarAuditoria()" class="btn-primary flex-1" id="auditSaveBtn">Registrar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Modal: Configuración de evaluación ──────────────────────── -->
+    <div class="modal-backdrop hidden" id="modalConfigEval">
+      <div class="modal-box p-0 max-w-md w-full" style="max-height:90vh;display:flex;flex-direction:column">
+        <div class="px-5 pt-5 pb-3 flex items-center justify-between border-b border-slate-800">
+          <h3 class="font-semibold text-amber-400 text-base">⚙ Configuración de evaluación</h3>
+          <button onclick="MOS.closeModal('modalConfigEval')" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+        </div>
+        <div class="overflow-y-auto px-5 py-4 space-y-4" style="flex:1">
+          <div>
+            <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">🎯 Metas diarias</div>
+            <div class="space-y-2">
+              <div>
+                <label class="lbl">Meta cajero/vendedor (S/)</label>
+                <input type="number" step="50" id="cfgMetaCajero" class="inp" placeholder="2000">
+              </div>
+              <div>
+                <label class="lbl">Meta envasador (uds)</label>
+                <input type="number" step="50" id="cfgMetaEnvasador" class="inp" placeholder="500">
+              </div>
+              <div>
+                <label class="lbl">Meta almacenero (guías)</label>
+                <input type="number" step="1" id="cfgMetaAlmacenero" class="inp" placeholder="15">
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">💰 Bonos por cumplir meta</div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="lbl">Meta simple (S/)</label>
+                <input type="number" step="1" id="cfgBonoMetaBase" class="inp" placeholder="8">
+              </div>
+              <div>
+                <label class="lbl">Meta doble (S/)</label>
+                <input type="number" step="1" id="cfgBonoMetaDoble" class="inp" placeholder="15">
+              </div>
+            </div>
+          </div>
+          <div class="pt-2 border-t border-slate-800">
+            <div class="text-xs text-slate-500">
+              Tramos de bonus por score (no editables aquí):<br>
+              <span class="text-slate-400">&lt;50% = 0% · 50-69% = +3% · 70-84% = +7% · 85-94% = +12% · 95+ = +18%</span>
+            </div>
+          </div>
+        </div>
+        <div class="px-5 py-3 border-t border-slate-800 flex gap-2">
+          <button onclick="MOS.closeModal('modalConfigEval')" class="btn-ghost flex-1">Cancelar</button>
+          <button onclick="MOS.guardarConfigEval()" class="btn-primary flex-1" id="cfgEvalSaveBtn">Guardar</button>
         </div>
       </div>
     </div>

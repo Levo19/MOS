@@ -5837,10 +5837,12 @@ const MOS = (() => {
     $('auditComentario').value = '';
 
     // Pre-cargar acumulado del día (MAX/OR) para que el admin continúe, no empiece de cero
-    const limpAcum = (r.manual && r.manual.limpiezaPct) || 0;
-    const limpProfAcum = (r.manual && r.manual.limpiezaProfPct) || 0;
+    const limpAcum = Math.round(((r.manual && r.manual.limpiezaPct) || 0) / 10) * 10;
+    const limpProfAcum = Math.round(((r.manual && r.manual.limpiezaProfPct) || 0) / 10) * 10;
     $('auditLimpieza').value = String(limpAcum);
     $('auditLimpiezaProf').value = String(limpProfAcum);
+    updateRateSlider('auditLimpieza', 'auditLimpiezaVal');
+    updateRateSlider('auditLimpiezaProf', 'auditLimpiezaProfVal');
 
     // Pre-marcar checks ya cumplidos en evaluaciones previas
     _evalState.auditChecks = Object.assign({}, (r.manual && r.manual.checksAcum) || {});
@@ -5849,24 +5851,18 @@ const MOS = (() => {
     $('auditTogMeta').classList.add('on');
     _renderAuditKpis(r);
     _renderAuditChecklist(r.rol);
-    _bindRateBtns();
-    // Marcar el botón de rate-btn más cercano al valor acumulado
-    _setActiveRateBtn('auditLimpiezaBtns', limpAcum);
-    _setActiveRateBtn('auditLimpiezaProfBtns', limpProfAcum);
     openModal('modalAuditar');
   }
 
-  function _setActiveRateBtn(containerId, val) {
-    const btns = document.querySelectorAll('#' + containerId + ' .rate-btn');
-    let bestBtn = null;
-    let bestDiff = Infinity;
-    btns.forEach(b => {
-      const v = parseFloat(b.dataset.val) || 0;
-      const diff = Math.abs(v - val);
-      if (diff < bestDiff) { bestDiff = diff; bestBtn = b; }
-      b.classList.remove('active');
-    });
-    if (bestBtn) bestBtn.classList.add('active');
+  // Actualiza visualmente el slider con el valor + track dorado proporcional
+  function updateRateSlider(slId, valId) {
+    const sl = $(slId);
+    const lbl = $(valId);
+    if (!sl) return;
+    const v = parseFloat(sl.value) || 0;
+    if (lbl) lbl.textContent = v + '%';
+    // Track dorado proporcional (Webkit no soporta progress nativo)
+    sl.style.background = `linear-gradient(90deg, #c9a227 0%, #ffd700 ${v}%, #1e293b ${v}%, #1e293b 100%)`;
   }
 
   function _renderAuditKpis(r) {
@@ -5922,23 +5918,6 @@ const MOS = (() => {
       const k = row.dataset.key;
       _evalState.auditChecks[k] = true;
       row.classList.add('checked');
-    });
-  }
-
-  function _bindRateBtns() {
-    document.querySelectorAll('#auditLimpiezaBtns .rate-btn').forEach(b => {
-      b.onclick = () => {
-        document.querySelectorAll('#auditLimpiezaBtns .rate-btn').forEach(x => x.classList.remove('active'));
-        b.classList.add('active');
-        $('auditLimpieza').value = b.dataset.val;
-      };
-    });
-    document.querySelectorAll('#auditLimpiezaProfBtns .rate-btn').forEach(b => {
-      b.onclick = () => {
-        document.querySelectorAll('#auditLimpiezaProfBtns .rate-btn').forEach(x => x.classList.remove('active'));
-        b.classList.add('active');
-        $('auditLimpiezaProf').value = b.dataset.val;
-      };
     });
   }
 
@@ -6023,6 +6002,50 @@ const MOS = (() => {
     }
   }
 
+  // ── Config de metas y bonos ──────────────────────────────────
+  async function abrirConfigEval() {
+    openModal('modalConfigEval');
+    try {
+      const res = await API.get('getConfig', {});
+      const cfg = res || {};
+      $('cfgMetaCajero').value     = cfg.evalMetaCajero     || 2000;
+      $('cfgMetaEnvasador').value  = cfg.evalMetaEnvasador  || 500;
+      $('cfgMetaAlmacenero').value = cfg.evalMetaAlmacenero || 15;
+      $('cfgBonoMetaBase').value   = cfg.evalBonoMetaBase   || 8;
+      $('cfgBonoMetaDoble').value  = cfg.evalBonoMetaDoble  || 15;
+    } catch(e) {
+      $('cfgMetaCajero').value = 2000;
+      $('cfgMetaEnvasador').value = 500;
+      $('cfgMetaAlmacenero').value = 15;
+      $('cfgBonoMetaBase').value = 8;
+      $('cfgBonoMetaDoble').value = 15;
+    }
+  }
+
+  async function guardarConfigEval() {
+    const btn = $('cfgEvalSaveBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+    const pares = [
+      ['evalMetaCajero',     $('cfgMetaCajero').value],
+      ['evalMetaEnvasador',  $('cfgMetaEnvasador').value],
+      ['evalMetaAlmacenero', $('cfgMetaAlmacenero').value],
+      ['evalBonoMetaBase',   $('cfgBonoMetaBase').value],
+      ['evalBonoMetaDoble',  $('cfgBonoMetaDoble').value]
+    ];
+    try {
+      await Promise.all(pares.map(([clave, valor]) =>
+        API.post('setConfig', { clave, valor: String(valor || '') })
+      ));
+      toast('Configuración guardada ✓', 'ok');
+      closeModal('modalConfigEval');
+      refreshEvaluacion().catch(() => {});
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
+    }
+  }
+
   function abrirLiquidacion() {
     const id = $('liqPersona')?.value;
     const fechaInicio = $('liqFechaInicio')?.value;
@@ -6050,6 +6073,7 @@ const MOS = (() => {
     loadEvaluacion, refreshEvaluacion, evalSetApp,
     abrirAuditar, cerrarAuditar, guardarAuditoria,
     auditToggleCheck, auditCheckAll, auditToggle,
+    updateRateSlider, abrirConfigEval, guardarConfigEval,
     abrirLiquidacion,
     abrirModalPrecio, publicarPrecio,
     setAlmTab,

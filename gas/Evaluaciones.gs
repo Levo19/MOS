@@ -85,6 +85,24 @@ function getEvaluacionesDia(params) {
   return { ok: true, data: rows };
 }
 
+// Normaliza fechas que vienen de MosExpress (Date, "yyyy-MM-dd...", "dd/MM/yyyy...")
+function _normalizarFechaME(raw, tz) {
+  if (raw instanceof Date) return Utilities.formatDate(raw, tz, 'yyyy-MM-dd');
+  var s = String(raw || '').trim();
+  if (!s) return '';
+  // Si comienza con yyyy- (ISO): tomar primeros 10
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0, 10);
+  // Si es dd/MM/yyyy o d/M/yyyy: convertir
+  var m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) {
+    var dd = m[1].length === 1 ? '0' + m[1] : m[1];
+    var mm = m[2].length === 1 ? '0' + m[2] : m[2];
+    return m[3] + '-' + mm + '-' + dd;
+  }
+  // Fallback: primeros 10
+  return s.substring(0, 10);
+}
+
 // ── Resolver persona (real o virtual MEX:nombre desde MosExpress) ──
 // Para virtuales detecta si tuvo caja abierta hoy → CAJERO, si solo vendió → VENDEDOR
 function _resolverPersona(idPersonal, fechaHint) {
@@ -261,25 +279,24 @@ function _calcularKpisAutoDia(p, fecha) {
 
   try {
     if (rol === 'CAJERO' || rol === 'VENDEDOR') {
-      // Leer directo de VENTAS_CABECERA de MosExpress (columnas capitalizadas)
+      // Leer directo de VENTAS_CABECERA de MosExpress
       try {
         var sh = _abrirMeSheet('VENTAS_CABECERA');
         if (sh) {
           var data = sh.getDataRange().getValues();
           var tz   = Session.getScriptTimeZone();
-          var nombreLow = (p.nombre || '').toLowerCase();
+          var nombreLow = (p.nombre || '').toLowerCase().trim();
           // Headers tipicos: 0=ID 1=Fecha 2=Vendedor 6=Total 8=FormaPago
           for (var r = 1; r < data.length; r++) {
             var row = data[r];
             var fRaw = row[1];
-            var fStr = fRaw instanceof Date
-              ? Utilities.formatDate(fRaw, tz, 'yyyy-MM-dd')
-              : String(fRaw || '').substring(0, 10);
+            var fStr = _normalizarFechaME(fRaw, tz);
             if (fStr !== fecha) continue;
             var vendedor = String(row[2] || '').toLowerCase().trim();
-            var formaPago = String(row[8] || '').toUpperCase();
-            if (formaPago === 'ANULADO') continue;
+            var formaPago = String(row[8] || '').toUpperCase().trim();
             if (!vendedor) continue;
+            // Solo cuentan ventas COBRADAS (excluye ANULADO, POR_COBRAR, CREDITO)
+            if (formaPago === 'ANULADO' || formaPago === 'POR_COBRAR' || formaPago === 'CREDITO') continue;
             // Match por contención (vendedor field puede tener nombre completo)
             if (vendedor === nombreLow || vendedor.indexOf(nombreLow) >= 0 || nombreLow.indexOf(vendedor) >= 0) {
               ventasReales += parseFloat(row[6]) || 0;
@@ -346,9 +363,7 @@ function getResumenTodosDia(params) {
       // Cols esperadas: 0=idSesion 1=idPersonal 2=fechaInicio 3=horaInicio ...
       for (var rs = 1; rs < sd.length; rs++) {
         var fr = sd[rs][2];
-        var fs = fr instanceof Date
-          ? Utilities.formatDate(fr, tzWh, 'yyyy-MM-dd')
-          : String(fr || '').substring(0, 10);
+        var fs = _normalizarFechaME(fr, tzWh);
         if (fs !== fecha) continue;
         var idP = String(sd[rs][1] || '').trim();
         if (idP) idsWhDelDia[idP] = true;
@@ -385,7 +400,7 @@ function getResumenTodosDia(params) {
       for (var r = 1; r < data.length; r++) {
         var row = data[r];
         var f = idxFechaApertura >= 0 ? row[idxFechaApertura] : null;
-        var fStr = f instanceof Date ? Utilities.formatDate(f, tz, 'yyyy-MM-dd') : String(f || '').substring(0, 10);
+        var fStr = _normalizarFechaME(f, tz);
         if (fStr !== fecha) continue;
         var nombre = String(row[idxVendedor] || '').trim();
         if (nombre) rolesDelDia[nombre] = 'CAJERO';
@@ -401,7 +416,7 @@ function getResumenTodosDia(params) {
       // Cols: 0=ID 1=Fecha 2=Vendedor 6=Total 8=FormaPago
       for (var rv = 1; rv < vd.length; rv++) {
         var fr = vd[rv][1];
-        var fs = fr instanceof Date ? Utilities.formatDate(fr, tz, 'yyyy-MM-dd') : String(fr || '').substring(0, 10);
+        var fs = _normalizarFechaME(fr, tz);
         if (fs !== fecha) continue;
         var nv = String(vd[rv][2] || '').trim();
         if (!nv) continue;
