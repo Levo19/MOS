@@ -92,14 +92,29 @@ function _normalizarFechaME(raw, tz) {
   if (!s) return '';
   // Si comienza con yyyy- (ISO): tomar primeros 10
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0, 10);
-  // Si es dd/MM/yyyy o d/M/yyyy: convertir
+  // Si es dd/MM/yyyy o d/M/yyyy: convertir (formato MosExpress)
   var m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
   if (m) {
     var dd = m[1].length === 1 ? '0' + m[1] : m[1];
     var mm = m[2].length === 1 ? '0' + m[2] : m[2];
     return m[3] + '-' + mm + '-' + dd;
   }
-  // Fallback: primeros 10
+  return s.substring(0, 10);
+}
+
+// Normaliza fechas de warehouseMos (formato M/D/yyyy — mes primero)
+function _normalizarFechaWh(raw, tz) {
+  if (raw instanceof Date) return Utilities.formatDate(raw, tz, 'yyyy-MM-dd');
+  var s = String(raw || '').trim();
+  if (!s) return '';
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0, 10);
+  // M/D/yyyy (es el formato de WH según los datos)
+  var m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) {
+    var mm = m[1].length === 1 ? '0' + m[1] : m[1];
+    var dd = m[2].length === 1 ? '0' + m[2] : m[2];
+    return m[3] + '-' + mm + '-' + dd;
+  }
   return s.substring(0, 10);
 }
 
@@ -306,21 +321,69 @@ function _calcularKpisAutoDia(p, fecha) {
       } catch(eV){ Logger.log('KPI ventas error: ' + eV.message); }
       ventasPct = Math.min(100, (ventasReales / cfg.metaCajero) * 100);
     } else if (rol === 'ENVASADOR') {
+      // Leer ENVASADOS directo de warehouseMos (formato M/D/yyyy)
       try {
-        var enva = getEnvasadosWarehouse({ fecha: fecha, usuario: nombre });
-        if (Array.isArray(enva)) {
-          enva.forEach(function(e){ envasados += parseFloat(e.unidadesProducidas) || 0; });
-        } else if (enva && enva.detalle) {
-          enva.detalle.forEach(function(e){ envasados += parseFloat(e.unidadesProducidas) || 0; });
+        var sh = _abrirWhSheet('ENVASADOS');
+        if (sh) {
+          var d = sh.getDataRange().getValues();
+          var headers = (d[0] || []).map(function(h){ return String(h || ''); });
+          var idxFecha = headers.indexOf('fecha');
+          var idxUser  = headers.indexOf('usuario');
+          var idxUds   = headers.indexOf('unidadesProducidas');
+          var idxEstado= headers.indexOf('estado');
+          if (idxFecha < 0 || idxUser < 0 || idxUds < 0) {
+            // Fallback por posición típica
+            idxFecha = idxFecha >= 0 ? idxFecha : 9;
+            idxUser  = idxUser  >= 0 ? idxUser  : 10;
+            idxUds   = idxUds   >= 0 ? idxUds   : 6;
+          }
+          var tzWh = Session.getScriptTimeZone();
+          var nLow = (p.nombre + ' ' + (p.apellido || '')).toLowerCase().trim();
+          for (var r = 1; r < d.length; r++) {
+            var f = _normalizarFechaWh(d[r][idxFecha], tzWh);
+            if (f !== fecha) continue;
+            if (idxEstado >= 0 && String(d[r][idxEstado]).toUpperCase() === 'ANULADO') continue;
+            var u = String(d[r][idxUser] || '').toLowerCase().trim();
+            if (!u) continue;
+            if (u === nLow || u.indexOf(p.nombre.toLowerCase()) >= 0 || nLow.indexOf(u) >= 0) {
+              envasados += parseFloat(d[r][idxUds]) || 0;
+            }
+          }
         }
-      } catch(_){}
+      } catch(eE){ Logger.log('KPI envasados error: ' + eE.message); }
       ventasPct = Math.min(100, (envasados / cfg.metaEnvasador) * 100);
     } else if (rol === 'ALMACENERO') {
+      // Leer GUIAS directo de warehouseMos: solo cuentan guías CERRADAS
+      // (las INGRESO_ENVASADO y SALIDA_ENVASADO son automáticas, no cuentan)
       try {
-        var guiasResp = getGuiasWarehouse({ fecha: fecha, usuario: nombre });
-        if (Array.isArray(guiasResp))      guias = guiasResp.length;
-        else if (guiasResp && guiasResp.detalle) guias = guiasResp.detalle.length;
-      } catch(_){}
+        var shG = _abrirWhSheet('GUIAS');
+        if (shG) {
+          var dG = shG.getDataRange().getValues();
+          var hG = (dG[0] || []).map(function(h){ return String(h || ''); });
+          var iFecha  = hG.indexOf('fecha');
+          var iUser   = hG.indexOf('usuario');
+          var iTipo   = hG.indexOf('tipo');
+          var iEstado = hG.indexOf('estado');
+          if (iFecha < 0)  iFecha  = 2;
+          if (iUser < 0)   iUser   = 3;
+          if (iTipo < 0)   iTipo   = 1;
+          if (iEstado < 0) iEstado = 9;
+          var tzWh2 = Session.getScriptTimeZone();
+          var nLow2 = (p.nombre + ' ' + (p.apellido || '')).toLowerCase().trim();
+          for (var rg = 1; rg < dG.length; rg++) {
+            var fG = _normalizarFechaWh(dG[rg][iFecha], tzWh2);
+            if (fG !== fecha) continue;
+            var tipo = String(dG[rg][iTipo] || '').toUpperCase();
+            // Excluir guías automáticas de envasado (las cuenta el envasador, no el almacenero)
+            if (tipo === 'INGRESO_ENVASADO' || tipo === 'SALIDA_ENVASADO') continue;
+            var uG = String(dG[rg][iUser] || '').toLowerCase().trim();
+            if (!uG) continue;
+            if (uG === nLow2 || uG.indexOf(p.nombre.toLowerCase()) >= 0 || nLow2.indexOf(uG) >= 0) {
+              guias++;
+            }
+          }
+        }
+      } catch(eG){ Logger.log('KPI guias error: ' + eG.message); }
       ventasPct = Math.min(100, (guias / cfg.metaAlmacenero) * 100);
     }
   } catch(_){}
@@ -363,7 +426,7 @@ function getResumenTodosDia(params) {
       // Cols esperadas: 0=idSesion 1=idPersonal 2=fechaInicio 3=horaInicio ...
       for (var rs = 1; rs < sd.length; rs++) {
         var fr = sd[rs][2];
-        var fs = _normalizarFechaME(fr, tzWh);
+        var fs = _normalizarFechaWh(fr, tzWh);
         if (fs !== fecha) continue;
         var idP = String(sd[rs][1] || '').trim();
         if (idP) idsWhDelDia[idP] = true;
