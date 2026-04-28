@@ -147,8 +147,9 @@
   function fmt(n) {
     return 'S/' + (parseFloat(n || 0).toFixed(2));
   }
-  function pill(score, evaluado) {
-    if (!evaluado) return '<span class="pill gray">No eval</span>';
+  function pill(score, presente, auditado) {
+    if (!presente) return '<span class="pill gray">No vino</span>';
+    if (!auditado) return '<span class="pill amber">Sin auditar</span>';
     if (score >= 85) return '<span class="pill">' + score + '%</span>';
     if (score >= 60) return '<span class="pill amber">' + score + '%</span>';
     return '<span class="pill" style="background:rgba(239,68,68,.15);color:#f87171;border-color:rgba(239,68,68,.3)">' + score + '%</span>';
@@ -162,16 +163,18 @@
       return fi.toLocaleDateString('es-PE', opt) + ' – ' + ff.toLocaleDateString('es-PE', { ...opt, year: 'numeric' });
     })();
 
-    const filas = (d.dias || []).map(x => `
-      <tr>
+    const filas = (d.dias || []).map(x => {
+      const dimmed = !x.presente ? 'opacity:.4' : '';
+      return `
+      <tr style="${dimmed}">
         <td><strong>${x.diaSemana}</strong> <span style="color:#64748b">${x.fecha.substring(8,10)}/${x.fecha.substring(5,7)}</span></td>
-        <td class="center">${pill(x.score, x.evaluado)}</td>
-        <td class="right">${fmt(x.montoBase)}</td>
+        <td class="center">${pill(x.score, x.presente, x.auditado)}</td>
+        <td class="right">${x.presente ? fmt(x.montoBase) : '—'}</td>
         <td class="right" style="color:${x.bonusScore > 0 ? '#fbbf24' : '#475569'}">${x.bonusScore > 0 ? '+' + fmt(x.bonusScore) : '—'}</td>
         <td class="right" style="color:${x.bonoMeta > 0 ? '#4ade80' : '#475569'}">${x.bonoMeta > 0 ? '+' + fmt(x.bonoMeta) : '—'}</td>
-        <td class="right"><strong>${fmt(x.totalDia)}</strong></td>
-      </tr>
-    `).join('');
+        <td class="right"><strong>${x.presente ? fmt(x.totalDia) : '—'}</strong></td>
+      </tr>`;
+    }).join('');
 
     const defKeys = Object.keys(d.deficiencias || {});
     const defHtml = defKeys.length ? `
@@ -235,13 +238,14 @@
       ''
     ];
     (d.dias || []).forEach(x => {
+      var marca = !x.presente ? 'NO VINO ' : (!x.auditado ? 'SIN AUDIT' : (x.score + '%').padStart(8));
       lineas.push(
         x.diaSemana.padEnd(4) + ' ' + x.fecha +
-        '  ' + (x.evaluado ? (x.score + '%').padStart(5) : '  --').padStart(5) +
-        '  base ' + fmt(x.montoBase) +
+        '  ' + marca +
+        '  base ' + (x.presente ? fmt(x.montoBase) : '   ---') +
         '  bono ' + fmt(x.bonusScore) +
         '  meta ' + fmt(x.bonoMeta) +
-        '  =>  ' + fmt(x.totalDia)
+        '  =>  ' + (x.presente ? fmt(x.totalDia) : '   ---')
       );
     });
     lineas.push('');

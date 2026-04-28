@@ -5798,7 +5798,9 @@ const MOS = (() => {
               </div>
               <div class="text-xs text-slate-500 mb-1">${kpiTxt}</div>
               <div class="flex items-center gap-2 flex-wrap">
-                ${evalCount > 0 ? `<span class="audit-count-pill">${evalCount} auditoría${evalCount !== 1 ? 's' : ''} hoy</span>` : `<span class="text-xs text-slate-500">Sin auditar</span>`}
+                ${evalCount > 0
+                  ? `<span class="audit-count-pill">${evalCount} auditoría${evalCount !== 1 ? 's' : ''} hoy</span>`
+                  : `<span class="audit-count-pill" style="background:rgba(245,158,11,.12);color:#fbbf24;border-color:rgba(245,158,11,.3)">⚠ Sin auditar</span>`}
                 <span class="text-xs text-slate-400">Pago día: <strong class="text-amber-400">S/${totalDia}</strong></span>
               </div>
             </div>

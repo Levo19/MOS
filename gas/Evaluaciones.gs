@@ -118,6 +118,84 @@ function _normalizarFechaWh(raw, tz) {
   return s.substring(0, 10);
 }
 
+// ── ¿La persona trabajó ese día? (sesión WH, caja abierta, ticket sellado) ──
+function _estaPresente(p, fecha) {
+  if (!p) return false;
+  var idP = String(p.idPersonal || '');
+
+  // Virtual MEX: existe solo si trabajó ese día
+  if (idP.indexOf('MEX:') === 0) {
+    return _verificarPresenciaME(p.nombre, fecha);
+  }
+
+  // WarehouseMos: chequear SESIONES
+  if (p.appOrigen === 'warehouseMos') {
+    try {
+      var ses = _abrirWhSheet('SESIONES');
+      if (!ses) return false;
+      var d  = ses.getDataRange().getValues();
+      var tz = Session.getScriptTimeZone();
+      for (var i = 1; i < d.length; i++) {
+        if (String(d[i][1] || '').trim() !== idP.trim()) continue;
+        var f = _normalizarFechaWh(d[i][2], tz);
+        if (f === fecha) return true;
+      }
+    } catch(_){}
+    return false;
+  }
+
+  // mosExpress real: chequear CAJAS + VENTAS_CABECERA por nombre
+  if (p.appOrigen === 'mosExpress') {
+    return _verificarPresenciaME(p.nombre, fecha);
+  }
+  return false;
+}
+
+function _verificarPresenciaME(nombre, fecha) {
+  var nLow = String(nombre || '').toLowerCase().trim();
+  if (!nLow) return false;
+  var tz = Session.getScriptTimeZone();
+
+  // CAJAS (cajero abrió caja)
+  try {
+    var cs = _abrirMeSheet('CAJAS');
+    if (cs) {
+      var d  = cs.getDataRange().getValues();
+      var headers = (d[0] || []).map(function(h){ return String(h || ''); });
+      var idxV = headers.indexOf('Vendedor'); if (idxV < 0) idxV = 1;
+      var idxF = -1;
+      for (var hi = 0; hi < headers.length; hi++) {
+        var hl = headers[hi].toLowerCase();
+        if (hl.indexOf('fecha') >= 0 && hl.indexOf('apert') >= 0) { idxF = hi; break; }
+      }
+      if (idxF < 0) for (var hi2 = 0; hi2 < headers.length; hi2++) {
+        if (headers[hi2].toLowerCase().indexOf('fecha') >= 0) { idxF = hi2; break; }
+      }
+      for (var i = 1; i < d.length; i++) {
+        var v = String(d[i][idxV] || '').toLowerCase().trim();
+        if (v !== nLow && v.indexOf(nLow) < 0 && nLow.indexOf(v) < 0) continue;
+        var f = idxF >= 0 ? _normalizarFechaME(d[i][idxF], tz) : '';
+        if (f === fecha) return true;
+      }
+    }
+  } catch(_){}
+
+  // VENTAS_CABECERA (vendedor selló ticket)
+  try {
+    var vs = _abrirMeSheet('VENTAS_CABECERA');
+    if (vs) {
+      var vd = vs.getDataRange().getValues();
+      for (var rv = 1; rv < vd.length; rv++) {
+        var v = String(vd[rv][2] || '').toLowerCase().trim();
+        if (v !== nLow && v.indexOf(nLow) < 0 && nLow.indexOf(v) < 0) continue;
+        var f = _normalizarFechaME(vd[rv][1], tz);
+        if (f === fecha) return true;
+      }
+    }
+  } catch(_){}
+  return false;
+}
+
 // ── Detecta los registros "Cajero/Vendedor Genérico" en PERSONAL_MASTER ──
 // Busca en nombre + apellido (insensitive case + acentos), filtra por mosExpress.
 function _detectarGenericosME(personal) {
@@ -266,6 +344,16 @@ function getResumenDia(params) {
     }
   }
 
+  // Lógica de pago:
+  // - Si trabajó ese día (presente) → cobra montoBase si o sí
+  // - Si además fue auditado → suma bonus + meta
+  // - Si no trabajó → 0 (no cobra nada)
+  var presente = _estaPresente(p, fecha);
+  var auditado = evals.length > 0;
+  var baseEfectiva  = presente ? montoBase : 0;
+  var bonusEfectivo = (presente && auditado) ? bonusScore : 0;
+  var metaEfectivo  = (presente && auditado) ? bonoMeta   : 0;
+
   return {
     ok: true,
     data: {
@@ -275,6 +363,8 @@ function getResumenDia(params) {
       appOrigen:         p.appOrigen,
       fecha:             fecha,
       evaluacionesCount: evals.length,
+      presente:          presente,
+      auditado:          auditado,
       kpis:              kpis,
       manual: {
         limpiezaPct:     maxLimp,
@@ -287,11 +377,12 @@ function getResumenDia(params) {
       },
       scoreFinal:    scoreFinal,
       bonusPctScore: bonusPctScore,
-      bonusScore:    Math.round(bonusScore * 100) / 100,
-      bonoMeta:      bonoMeta,
+      bonusScore:    Math.round(bonusEfectivo * 100) / 100,
+      bonoMeta:      metaEfectivo,
       metaPct:       metaPct,
-      montoBase:     montoBase,
-      totalDia:      Math.round((montoBase + bonusScore + bonoMeta) * 100) / 100,
+      montoBase:     baseEfectiva,
+      tarifaDiaria:  montoBase, // tarifa configurada (info)
+      totalDia:      Math.round((baseEfectiva + bonusEfectivo + metaEfectivo) * 100) / 100,
       aplicaComision: aplicaComision,
       aplicaBonoMeta: aplicaBonoMeta
     }
@@ -566,27 +657,27 @@ function getLiquidacionSemana(params) {
     dias.push({
       fecha:      fStr,
       diaSemana:  nombreDia,
-      evaluado:   rd.evaluacionesCount > 0,
+      presente:   !!rd.presente,
+      auditado:   !!rd.auditado,
       score:      rd.scoreFinal,
-      montoBase:  rd.montoBase,
-      bonusScore: rd.bonusScore,
+      montoBase:  rd.montoBase,    // ya viene en 0 si no presente
+      bonusScore: rd.bonusScore,   // ya viene en 0 si no presente o no auditado
       bonoMeta:   rd.bonoMeta,
       totalDia:   rd.totalDia
     });
-    if (rd.evaluacionesCount > 0) {
+    // Sumar al total: base si presente; bonus/meta solo si presente + auditado
+    if (rd.presente) {
       totalBase  += rd.montoBase;
       totalBonus += rd.bonusScore;
       totalMeta  += rd.bonoMeta;
-      // Trackear ítems no cumplidos para sección "qué mejorar"
-      if (rd.manual.controlPct < 100) {
-        var checks = rd.manual.checksAcum || {};
-        // Solo nos interesan los faltantes — el frontend resuelve el listado
-      }
-      if (rd.manual.limpiezaPct < 70) {
-        deficiencias['limpieza_estacion'] = (deficiencias['limpieza_estacion'] || 0) + 1;
-      }
-      if (rd.manual.limpiezaProfPct < 70) {
-        deficiencias['limpieza_profunda'] = (deficiencias['limpieza_profunda'] || 0) + 1;
+      // Trackear deficiencias solo si fue auditado (sin auditoría no hay datos)
+      if (rd.auditado) {
+        if (rd.manual.limpiezaPct < 70) {
+          deficiencias['limpieza_estacion'] = (deficiencias['limpieza_estacion'] || 0) + 1;
+        }
+        if (rd.manual.limpiezaProfPct < 70) {
+          deficiencias['limpieza_profunda'] = (deficiencias['limpieza_profunda'] || 0) + 1;
+        }
       }
     }
   }
