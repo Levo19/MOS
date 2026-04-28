@@ -226,7 +226,7 @@ const REFRESH   = 60;
 let countdown = REFRESH, timer = null;
 
 // ── Auto-update check: compara version.json con la versión embebida ──
-const _TURNO_VERSION = '1.3.34';
+const _TURNO_VERSION = '1.3.53';
 async function _checkVersion() {
   try {
     const r = await fetch('./version.json?t=' + Date.now(), { cache: 'no-store' });
@@ -1149,11 +1149,34 @@ async function doPrint(printNodeId) {
   }
 }
 
+let _autoPrintFired = false;
 function _triggerAutoPrint(data) {
-  const impresoras  = data.impresoras || [];
-  const estacionCaja = (data.caja && data.caja.estacion) ? data.caja.estacion : '';
-  const imp = impresoras.find(function(p) { return p.estacion === estacionCaja; });
+  // Guard: solo una vez por carga de página. El refresh cada 60s vuelve a
+  // llamar loadData() y antes re-disparaba múltiples impresiones (bug visto:
+  // 10+ jobs "Ticket Z" duplicados a la misma impresora).
+  if (_autoPrintFired) return;
+
+  const impresoras   = data.impresoras || [];
+  const estacionCaja = (data.caja && data.caja.estacion) ? String(data.caja.estacion).trim().toUpperCase() : '';
+  const zonaCaja     = (data.caja && data.caja.zona)     ? String(data.caja.zona).trim().toUpperCase()     : '';
+
+  // Match preferente por (estacion + zona) — disambigua estaciones con el
+  // mismo nombre en zonas distintas (ej. "Estacion 01" en ZONA-01 vs ZONA-02).
+  // Fallback a solo nombre si no hay zona (legacy).
+  let imp = null;
+  if (zonaCaja) {
+    imp = impresoras.find(function(p) {
+      return String(p.estacion).trim().toUpperCase() === estacionCaja
+          && String(p.zona).trim().toUpperCase()     === zonaCaja;
+    });
+  }
+  if (!imp) {
+    imp = impresoras.find(function(p) {
+      return String(p.estacion).trim().toUpperCase() === estacionCaja;
+    });
+  }
   if (imp && imp.printNodeId) {
+    _autoPrintFired = true;
     setTimeout(function() { doPrint(imp.printNodeId); }, 800);
   }
 }
