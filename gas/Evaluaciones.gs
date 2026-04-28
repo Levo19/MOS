@@ -336,8 +336,29 @@ function getResumenTodosDia(params) {
     return g || genericos[0] || null;
   }
 
-  // 1. WarehouseMos: todos los activos
-  var lista = personal.filter(function(r){ return r.appOrigen === 'warehouseMos'; });
+  // 1. WarehouseMos: solo los que iniciaron sesión hoy (tienen fila en SESIONES)
+  var idsWhDelDia = {};
+  try {
+    var sesSheet = _abrirWhSheet('SESIONES');
+    if (sesSheet) {
+      var sd = sesSheet.getDataRange().getValues();
+      var tzWh = Session.getScriptTimeZone();
+      // Cols esperadas: 0=idSesion 1=idPersonal 2=fechaInicio 3=horaInicio ...
+      for (var rs = 1; rs < sd.length; rs++) {
+        var fr = sd[rs][2];
+        var fs = fr instanceof Date
+          ? Utilities.formatDate(fr, tzWh, 'yyyy-MM-dd')
+          : String(fr || '').substring(0, 10);
+        if (fs !== fecha) continue;
+        var idP = String(sd[rs][1] || '').trim();
+        if (idP) idsWhDelDia[idP] = true;
+      }
+    }
+  } catch(e){ Logger.log('No se pudo leer SESIONES: ' + e.message); }
+
+  var lista = personal.filter(function(r){
+    return r.appOrigen === 'warehouseMos' && idsWhDelDia[r.idPersonal];
+  });
 
   // 2. MosExpress: 2a) cajeros (CAJAS) + 2b) vendedores puros (VENTAS_CABECERA)
   var rolesDelDia = {}; // nombre → 'CAJERO' | 'VENDEDOR'
