@@ -1237,7 +1237,7 @@ const MOS = (() => {
                 const alertHtml = alerts.map(a =>
                   `<span class="pres-alert-pill cat-alert-${a.tipo}"><span class="cat-alert-tag">${a.tag}</span>${a.sufijo}</span>`
                 ).join('');
-                return `<div class="pres-chip${hasAlert ? ' border-amber-900/50' : ''}${presActivo ? '' : ' pres-inactive'}">
+                return `<div class="pres-chip${hasAlert ? ' border-amber-900/50' : ''}${presActivo ? '' : ' pres-inactive'}" data-pres-id="${d.idProducto}">
                   <div class="min-w-0 flex-1">
                     <div class="text-xs font-semibold text-slate-200 truncate">${hlD}</div>
                     <div class="flex items-center gap-2 mt-0.5">
@@ -1248,7 +1248,7 @@ const MOS = (() => {
                   </div>
                   <div class="flex items-center gap-2 shrink-0">
                     <div class="${precioClass}">${fmtMoney(precioActual)}</div>
-                    <button type="button" class="toggle-sw sm ${presActivo ? 'on' : ''}"
+                    <button type="button" class="toggle-sw sm ${presActivo ? 'on' : ''}" data-pid="${d.idProducto}"
                             onclick="event.stopPropagation();MOS.toggleProductoActivo('${d.idProducto}', false)"
                             title="${presActivo ? 'Apagar' : 'Prender'}"><span class="toggle-sw-knob"></span></button>
                     <button class="cat-btn cat-btn-edit sm" onclick="event.stopPropagation();MOS.abrirModalProducto('${d.idProducto}')" title="Editar">✏️</button>
@@ -1278,7 +1278,7 @@ const MOS = (() => {
               </div>
               ${base.precioCosto > 0 ? `<div class="cat-cost" data-cat-costo="${base.idProducto}">Costo: ${fmtMoney(base.precioCosto)}</div>` : ''}
               <div class="flex gap-1.5 mt-1 items-center">
-                <button type="button" class="toggle-sw ${activo ? 'on' : ''}"
+                <button type="button" class="toggle-sw ${activo ? 'on' : ''}" data-pid="${base.idProducto}"
                         onclick="event.stopPropagation();MOS.toggleProductoActivo('${base.idProducto}', true)"
                         title="${activo ? 'Apagar producto' : 'Prender producto'}">
                   <span class="toggle-sw-knob"></span>
@@ -2769,8 +2769,28 @@ const MOS = (() => {
     }
   }
 
+  // ── Update visual surgical (sin re-renderizar) ────────────────
+  function _actualizarVisualProducto(idProducto, activo) {
+    // Toggle button
+    const toggle = document.querySelector(`.toggle-sw[data-pid="${idProducto}"]`);
+    if (toggle) {
+      toggle.classList.toggle('on', activo);
+      toggle.title = activo ? 'Apagar' : 'Prender';
+    }
+    // Si es presentación: pres-chip
+    const presChip = document.querySelector(`.pres-chip[data-pres-id="${idProducto}"]`);
+    if (presChip) {
+      presChip.classList.toggle('pres-inactive', !activo);
+    }
+    // Si es base: cat-card
+    const catCard = document.querySelector(`.cat-card[data-cat-id="${idProducto}"]`);
+    if (catCard) {
+      catCard.classList.toggle('cat-inactive', !activo);
+    }
+  }
+
   // ── Toggle estado activo/inactivo de producto ────────────────
-  // esBase=true: si apagas → confirmación + cascada. Si prendes → cascada directa.
+  // esBase=true: si apagas → flip visual + confirmación. Si prendes → cascada directa.
   // esBase=false: solo toggle local (presentación independiente).
   async function toggleProductoActivo(idProducto, esBase) {
     const p = S.productos.find(x => x.idProducto === idProducto);
@@ -2778,23 +2798,43 @@ const MOS = (() => {
     const activoActual = !p.estado || String(p.estado) === '1';
 
     if (esBase && activoActual) {
+      // Apagar base con confirmación: flip visual inmediato + abrir modal
+      _actualizarVisualProducto(idProducto, false);
       _pedirApagarBase(idProducto);
       return;
     }
 
     const nuevoEstado = activoActual ? '0' : '1';
+
+    // OPTIMISTIC: actualizar UI primero
+    p.estado = nuevoEstado;
+    _actualizarVisualProducto(idProducto, nuevoEstado === '1');
+    toast(nuevoEstado === '1' ? 'Activado ✓' : 'Apagado ✓', 'ok');
+
+    // Si es base prendiendo, cascadear visualmente a las presentaciones del grupo
+    if (esBase && nuevoEstado === '1') {
+      const skuBase = p.skuBase || idProducto;
+      S.productos.forEach(pp => {
+        if ((pp.skuBase || pp.idProducto) === skuBase && pp.idProducto !== idProducto) {
+          if (String(pp.estado) !== '1') {
+            pp.estado = '1';
+            _actualizarVisualProducto(pp.idProducto, true);
+          }
+        }
+      });
+    }
+
+    // POST en background sin bloquear UI
     try {
       await API.post('actualizarProducto', { idProducto, estado: nuevoEstado });
-      p.estado = nuevoEstado;
-
       if (esBase && nuevoEstado === '1') {
-        await _prenderHijos(p);
-        toast('Producto y todos sus hijos prendidos ✓', 'ok');
-      } else {
-        toast(nuevoEstado === '1' ? 'Activado ✓' : 'Apagado ✓', 'ok');
+        // Prender hijos en backend (presentaciones + equivalencias)
+        _prenderHijos(p).catch(() => {});
       }
-      renderCatalogo();
     } catch(e) {
+      // Revertir en caso de error
+      p.estado = activoActual ? '1' : '0';
+      _actualizarVisualProducto(idProducto, activoActual);
       toast('Error: ' + e.message, 'error');
     }
   }
@@ -2862,30 +2902,44 @@ const MOS = (() => {
     const skuBase    = $('apagarBaseSku').value;
     const equivIds   = JSON.parse($('modalApagarBase').dataset.equivs || '[]');
     if (!idProducto) return;
-    const btn = $('btnConfirmarApagar');
-    if (btn) { btn.disabled = true; btn.textContent = 'Apagando...'; }
+
+    const productos = S.productos.filter(pp =>
+      (pp.skuBase || pp.idProducto) === skuBase || pp.idProducto === idProducto
+    );
+
+    // OPTIMISTIC: marcar todos como apagados visualmente y cerrar modal de inmediato
+    productos.forEach(pp => {
+      pp.estado = '0';
+      _actualizarVisualProducto(pp.idProducto, false);
+    });
+    closeModal('modalApagarBase');
+    toast('Apagado ' + productos.length + ' producto(s) ✓', 'ok');
+
+    // Marcador de "no revertir" en el modal (la confirmación procedió)
+    $('modalApagarBase').dataset.confirmado = '1';
+
+    // POST en background
     try {
-      const productos = S.productos.filter(pp =>
-        (pp.skuBase || pp.idProducto) === skuBase || pp.idProducto === idProducto
-      );
-      await Promise.all(productos.map(async pp => {
-        if (String(pp.estado) === '0') return;
-        await API.post('actualizarProducto', { idProducto: pp.idProducto, estado: '0' });
-        pp.estado = '0';
-      }));
+      await Promise.all(productos.map(pp =>
+        API.post('actualizarProducto', { idProducto: pp.idProducto, estado: '0' })
+      ));
       await Promise.all(equivIds.map(idEquiv =>
         API.post('actualizarEquivalencia', { idEquiv, activo: '0' })
       ));
-      closeModal('modalApagarBase');
-      toast('Apagado ' + productos.length + ' productos y ' + equivIds.length + ' equivalencias ✓', 'ok');
-      renderCatalogo();
-      // Refresh equivMap del cache
-      loadCatalogo(true).catch(() => {});
     } catch(e) {
-      toast('Error: ' + e.message, 'error');
-    } finally {
-      if (btn) { btn.disabled = false; btn.textContent = 'Apagar todo'; }
+      toast('Error de sincronización: ' + e.message, 'error');
     }
+  }
+
+  // Cerrar modal apagar base SIN confirmar → revertir flip visual del toggle base
+  function cerrarApagarBaseRevertir() {
+    const modal = $('modalApagarBase');
+    if (modal && modal.dataset.confirmado !== '1') {
+      const idProducto = $('apagarBaseId').value;
+      if (idProducto) _actualizarVisualProducto(idProducto, true);
+    }
+    if (modal) delete modal.dataset.confirmado;
+    closeModal('modalApagarBase');
   }
 
   async function toggleEquivActivo(idEquiv, skuBase, nuevoActivo) {
@@ -6070,7 +6124,7 @@ const MOS = (() => {
     setProdTipo, prodAutogenBarcode, prodValidarCodigoBarra, prodToggleEstado, prodToggleCosto,
     prodCalcMargen, prodOnRange, prodToggleSunat, prodToggleEquiv,
     toggleAddEquiv, crearEquivalenciaModal, toggleEquivActivo,
-    toggleProductoActivo, confirmarApagarBase,
+    toggleProductoActivo, confirmarApagarBase, cerrarApagarBaseRevertir,
     // Evaluación de personal
     loadEvaluacion, refreshEvaluacion, evalSetApp,
     abrirAuditar, cerrarAuditar, guardarAuditoria,

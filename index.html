@@ -3776,11 +3776,11 @@
 </div>
 
 <!-- Modal: Confirmar apagar producto base + cascada -->
-<div id="modalApagarBase" class="modal-overlay hidden" onclick="if(event.target===this)MOS.closeModal('modalApagarBase')">
+<div id="modalApagarBase" class="modal-overlay hidden" onclick="if(event.target===this)MOS.cerrarApagarBaseRevertir()">
   <div class="modal-box" style="max-width:420px">
     <div class="flex items-center justify-between mb-3">
       <h3 class="font-semibold text-amber-400 text-base">⚠ Apagar producto</h3>
-      <button onclick="MOS.closeModal('modalApagarBase')" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+      <button onclick="MOS.cerrarApagarBaseRevertir()" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
     </div>
     <input type="hidden" id="apagarBaseId">
     <input type="hidden" id="apagarBaseSku">
@@ -3795,7 +3795,7 @@
       <ul id="apagarBaseEqList" class="text-xs text-slate-500 space-y-0.5"></ul>
     </div>
     <div class="flex gap-2">
-      <button onclick="MOS.closeModal('modalApagarBase')" class="btn-ghost flex-1">Cancelar</button>
+      <button onclick="MOS.cerrarApagarBaseRevertir()" class="btn-ghost flex-1">Cancelar</button>
       <button onclick="MOS.confirmarApagarBase()" id="btnConfirmarApagar" class="btn-primary flex-1" style="background:linear-gradient(135deg,#ef4444,#dc2626);border-color:#ef4444;color:#fff">Apagar todo</button>
     </div>
   </div>
