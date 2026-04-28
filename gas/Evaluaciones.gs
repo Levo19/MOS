@@ -118,16 +118,30 @@ function _normalizarFechaWh(raw, tz) {
   return s.substring(0, 10);
 }
 
+// ── Detecta los registros "Cajero/Vendedor Genérico" en PERSONAL_MASTER ──
+// Busca en nombre + apellido (insensitive case + acentos), filtra por mosExpress.
+function _detectarGenericosME(personal) {
+  function _norm(s) {
+    return String(s || '')
+      .toLowerCase()
+      .replace(/[áàä]/g, 'a').replace(/[éèë]/g, 'e').replace(/[íìï]/g, 'i')
+      .replace(/[óòö]/g, 'o').replace(/[úùü]/g, 'u');
+  }
+  return (personal || []).filter(function(r){
+    var app = _norm(r.appOrigen);
+    if (app !== 'mosexpress') return false;
+    var nombreCompleto = _norm(String(r.nombre || '') + ' ' + String(r.apellido || ''));
+    return nombreCompleto.indexOf('generic') >= 0;
+  });
+}
+
 // ── Resolver persona (real o virtual MEX:nombre desde MosExpress) ──
 // Para virtuales detecta si tuvo caja abierta hoy → CAJERO, si solo vendió → VENDEDOR
 function _resolverPersona(idPersonal, fechaHint) {
   if (idPersonal && idPersonal.indexOf('MEX:') === 0) {
     var nombre = idPersonal.substring(4);
     var personal = _sheetToObjects(getSheet('PERSONAL_MASTER'));
-    var genericos = personal.filter(function(r){
-      var n = String(r.nombre || '').toLowerCase();
-      return r.appOrigen === 'mosExpress' && (n.indexOf('gener') >= 0 || n.indexOf('génér') >= 0);
-    });
+    var genericos = _detectarGenericosME(personal);
 
     // Detectar el rol real consultando CAJAS de hoy (o fechaHint)
     var rolDetectado = 'VENDEDOR';
@@ -407,10 +421,7 @@ function getResumenTodosDia(params) {
   });
 
   // Detectar genéricos de mosExpress por rol (plantillas para virtuales)
-  var genericos = personal.filter(function(r){
-    var n = String(r.nombre || '').toLowerCase();
-    return r.appOrigen === 'mosExpress' && (n.indexOf('gener') >= 0 || n.indexOf('génér') >= 0);
-  });
+  var genericos = _detectarGenericosME(personal);
   function _genericoPorRol(rol) {
     var g = genericos.find(function(x){ return String(x.rol || '').toUpperCase() === rol; });
     return g || genericos[0] || null;
