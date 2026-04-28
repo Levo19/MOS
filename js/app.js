@@ -5680,6 +5680,7 @@ const MOS = (() => {
       CAJERO: [
         'Atención al cliente cordial y rápida',
         'Sigue procedimiento de cobro',
+        'Usa el sistema correctamente (sin manipular tickets)',
         'Maneja efectivo correctamente',
         'Cuadre de caja sin diferencias',
         'Estación limpia y ordenada',
@@ -5690,6 +5691,7 @@ const MOS = (() => {
       VENDEDOR: [
         'Atención al cliente cordial y rápida',
         'Sigue procedimiento de cobro',
+        'Usa el sistema correctamente (sin manipular tickets)',
         'Maneja efectivo correctamente',
         'Cuadre de caja sin diferencias',
         'Estación limpia y ordenada',
@@ -5826,21 +5828,45 @@ const MOS = (() => {
     const r = _evalState.resumenes.find(x => x.idPersonal === idPersonal);
     if (!r) { toast('Personal no encontrado', 'error'); return; }
     $('auditTitle').textContent = '🎯 Auditar · ' + r.nombre;
-    $('auditSubtitle').textContent = `${r.rol} · evaluaciones hoy: ${r.evaluacionesCount || 0}`;
+    const evalCount = r.evaluacionesCount || 0;
+    $('auditSubtitle').textContent = evalCount > 0
+      ? `${r.rol} · ${evalCount} auditoría${evalCount !== 1 ? 's' : ''} hoy · continuando...`
+      : `${r.rol} · primera auditoría del día`;
     $('auditIdPersonal').value = r.idPersonal;
     $('auditRol').value = r.rol || '';
     $('auditComentario').value = '';
-    $('auditLimpieza').value = '0';
-    $('auditLimpiezaProf').value = '0';
-    document.querySelectorAll('#auditLimpiezaBtns .rate-btn').forEach(b => b.classList.toggle('active', b.dataset.val === '0'));
-    document.querySelectorAll('#auditLimpiezaProfBtns .rate-btn').forEach(b => b.classList.toggle('active', b.dataset.val === '0'));
+
+    // Pre-cargar acumulado del día (MAX/OR) para que el admin continúe, no empiece de cero
+    const limpAcum = (r.manual && r.manual.limpiezaPct) || 0;
+    const limpProfAcum = (r.manual && r.manual.limpiezaProfPct) || 0;
+    $('auditLimpieza').value = String(limpAcum);
+    $('auditLimpiezaProf').value = String(limpProfAcum);
+
+    // Pre-marcar checks ya cumplidos en evaluaciones previas
+    _evalState.auditChecks = Object.assign({}, (r.manual && r.manual.checksAcum) || {});
+
     $('auditTogComision').classList.add('on');
     $('auditTogMeta').classList.add('on');
-    _evalState.auditChecks = {};
     _renderAuditKpis(r);
     _renderAuditChecklist(r.rol);
     _bindRateBtns();
+    // Marcar el botón de rate-btn más cercano al valor acumulado
+    _setActiveRateBtn('auditLimpiezaBtns', limpAcum);
+    _setActiveRateBtn('auditLimpiezaProfBtns', limpProfAcum);
     openModal('modalAuditar');
+  }
+
+  function _setActiveRateBtn(containerId, val) {
+    const btns = document.querySelectorAll('#' + containerId + ' .rate-btn');
+    let bestBtn = null;
+    let bestDiff = Infinity;
+    btns.forEach(b => {
+      const v = parseFloat(b.dataset.val) || 0;
+      const diff = Math.abs(v - val);
+      if (diff < bestDiff) { bestDiff = diff; bestBtn = b; }
+      b.classList.remove('active');
+    });
+    if (bestBtn) bestBtn.classList.add('active');
   }
 
   function _renderAuditKpis(r) {
@@ -5874,12 +5900,15 @@ const MOS = (() => {
     const cont = $('auditControlList');
     if (!cont) return;
     const items = _evalState.rolItems[String(rol || '').toUpperCase()] || _evalState.rolItems.CAJERO;
-    cont.innerHTML = items.map((txt, i) => `
-      <div class="audit-check-row" data-key="c${i}" onclick="MOS.auditToggleCheck('c${i}')">
-        <div class="audit-check-box"></div>
-        <span>${txt}</span>
-      </div>
-    `).join('');
+    cont.innerHTML = items.map((txt, i) => {
+      const key = 'c' + i;
+      const checked = !!_evalState.auditChecks[key];
+      return `
+        <div class="audit-check-row${checked ? ' checked' : ''}" data-key="${key}" onclick="MOS.auditToggleCheck('${key}')">
+          <div class="audit-check-box"></div>
+          <span>${txt}</span>
+        </div>`;
+    }).join('');
   }
 
   function auditToggleCheck(key) {
@@ -5924,29 +5953,52 @@ const MOS = (() => {
     const idPersonal = $('auditIdPersonal').value;
     const rol = $('auditRol').value;
     if (!idPersonal || !rol) { toast('Datos incompletos', 'error'); return; }
+
+    // Construir checklist completo: incluye TRUE y FALSE para todos los items del rol
+    const items = _evalState.rolItems[String(rol).toUpperCase()] || _evalState.rolItems.CAJERO;
+    const checksFull = {};
+    items.forEach((_, i) => {
+      const k = 'c' + i;
+      checksFull[k] = !!_evalState.auditChecks[k];
+    });
+
     const params = {
       idPersonal,
       rol,
       fecha: _evalState.fecha,
       limpiezaPct: parseFloat($('auditLimpieza').value) || 0,
       limpiezaProfPct: parseFloat($('auditLimpiezaProf').value) || 0,
-      controlChecks: JSON.stringify(_evalState.auditChecks),
+      controlChecks: JSON.stringify(checksFull),
       comentario: $('auditComentario').value || '',
       evaluadoPor: S.session?.nombre || '',
       aplicaComision: $('auditTogComision').classList.contains('on'),
       aplicaBonoMeta: $('auditTogMeta').classList.contains('on')
     };
-    const btn = $('auditSaveBtn');
-    if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+
+    // PREDICTIVO: cerrar modal + toast inmediato; sync en background
+    closeModal('modalAuditar');
+    toast('Auditoría registrada ✓', 'ok');
+    // Optimistic: update local state visualmente antes de confirmar servidor
+    const r = _evalState.resumenes.find(x => x.idPersonal === idPersonal);
+    if (r) {
+      r.evaluacionesCount = (r.evaluacionesCount || 0) + 1;
+      r.manual = r.manual || {};
+      const newLimp = parseFloat(params.limpiezaPct) || 0;
+      const newLimpProf = parseFloat(params.limpiezaProfPct) || 0;
+      if (newLimp > (r.manual.limpiezaPct || 0))     r.manual.limpiezaPct = newLimp;
+      if (newLimpProf > (r.manual.limpiezaProfPct || 0)) r.manual.limpiezaProfPct = newLimpProf;
+      r.manual.checksAcum = Object.assign({}, r.manual.checksAcum || {});
+      Object.keys(checksFull).forEach(k => { if (checksFull[k]) r.manual.checksAcum[k] = true; });
+      _renderEvalLista();
+    }
+
     try {
       await API.post('crearEvaluacion', params);
-      toast('Auditoría registrada ✓', 'ok');
-      closeModal('modalAuditar');
-      await refreshEvaluacion();
+      // Pull fresh data del servidor (en bg) para reflejar score real con KPIs auto
+      refreshEvaluacion().catch(() => {});
     } catch (e) {
-      toast('Error: ' + e.message, 'error');
-    } finally {
-      if (btn) { btn.disabled = false; btn.textContent = 'Registrar'; }
+      toast('Error al guardar: ' + e.message, 'error');
+      refreshEvaluacion().catch(() => {});
     }
   }
 

@@ -132,6 +132,7 @@ function getResumenDia(params) {
   // Acumulativo: MAX para limpiezas, OR para checks
   var maxLimp = 0, maxLimpProf = 0;
   var checksAcum = {};
+  var totalKeysVistos = {};   // todas las llaves del checklist enviadas
   var comentarios = [];
   var aplicaComision = true, aplicaBonoMeta = true;
   evals.forEach(function(e){
@@ -143,7 +144,10 @@ function getResumenDia(params) {
       var c = typeof e.controlChecks === 'string'
         ? JSON.parse(e.controlChecks || '{}')
         : (e.controlChecks || {});
-      Object.keys(c).forEach(function(k){ if (c[k]) checksAcum[k] = true; });
+      Object.keys(c).forEach(function(k){
+        totalKeysVistos[k] = true;
+        if (c[k]) checksAcum[k] = true;
+      });
     } catch(_){}
     if (e.comentario) comentarios.push('[' + e.hora + '] ' + e.comentario);
     if (e.aplicaComision === false || String(e.aplicaComision) === 'false') aplicaComision = false;
@@ -151,7 +155,7 @@ function getResumenDia(params) {
   });
 
   var checkCount = Object.keys(checksAcum).length;
-  var checkTotal = 8;
+  var checkTotal = Object.keys(totalKeysVistos).length || 9;
   var controlPct = checkTotal > 0 ? (checkCount / checkTotal) * 100 : 0;
 
   // KPIs auto del día
@@ -229,18 +233,32 @@ function _calcularKpisAutoDia(p, fecha) {
 
   try {
     if (rol === 'CAJERO' || rol === 'VENDEDOR') {
-      // Buscar ventas en MosExpress por nombre
+      // Leer directo de VENTAS_CABECERA de MosExpress (columnas capitalizadas)
       try {
-        var ventas = getVentasMosExpress({ fecha: fecha });
-        var lista  = (ventas && ventas.detalle) || (Array.isArray(ventas) ? ventas : []);
-        lista.forEach(function(v){
-          var vendedor = String(v.vendedor || '').toLowerCase();
-          var estado   = String(v.estado   || '').toUpperCase();
-          if (vendedor.indexOf(p.nombre.toLowerCase()) >= 0 && estado !== 'ANULADO') {
-            ventasReales += parseFloat(v.total) || 0;
+        var sh = _abrirMeSheet('VENTAS_CABECERA');
+        if (sh) {
+          var data = sh.getDataRange().getValues();
+          var tz   = Session.getScriptTimeZone();
+          var nombreLow = (p.nombre || '').toLowerCase();
+          // Headers tipicos: 0=ID 1=Fecha 2=Vendedor 6=Total 8=FormaPago
+          for (var r = 1; r < data.length; r++) {
+            var row = data[r];
+            var fRaw = row[1];
+            var fStr = fRaw instanceof Date
+              ? Utilities.formatDate(fRaw, tz, 'yyyy-MM-dd')
+              : String(fRaw || '').substring(0, 10);
+            if (fStr !== fecha) continue;
+            var vendedor = String(row[2] || '').toLowerCase().trim();
+            var formaPago = String(row[8] || '').toUpperCase();
+            if (formaPago === 'ANULADO') continue;
+            if (!vendedor) continue;
+            // Match por contención (vendedor field puede tener nombre completo)
+            if (vendedor === nombreLow || vendedor.indexOf(nombreLow) >= 0 || nombreLow.indexOf(vendedor) >= 0) {
+              ventasReales += parseFloat(row[6]) || 0;
+            }
           }
-        });
-      } catch(_){}
+        }
+      } catch(eV){ Logger.log('KPI ventas error: ' + eV.message); }
       ventasPct = Math.min(100, (ventasReales / cfg.metaCajero) * 100);
     } else if (rol === 'ENVASADOR') {
       try {
