@@ -86,24 +86,52 @@ function getEvaluacionesDia(params) {
 }
 
 // ── Resolver persona (real o virtual MEX:nombre desde MosExpress) ──
-function _resolverPersona(idPersonal) {
-  // idPersonal "MEX:Javier" = vendedor virtual de MosExpress no en master
+// Para virtuales detecta si tuvo caja abierta hoy → CAJERO, si solo vendió → VENDEDOR
+function _resolverPersona(idPersonal, fechaHint) {
   if (idPersonal && idPersonal.indexOf('MEX:') === 0) {
     var nombre = idPersonal.substring(4);
     var personal = _sheetToObjects(getSheet('PERSONAL_MASTER'));
-    // Encontrar el "Cajero Genérico" para usar su montoBase como tarifa
-    var generico = personal.find(function(r){
+    var genericos = personal.filter(function(r){
       var n = String(r.nombre || '').toLowerCase();
       return r.appOrigen === 'mosExpress' && (n.indexOf('gener') >= 0 || n.indexOf('génér') >= 0);
     });
+
+    // Detectar el rol real consultando CAJAS de hoy (o fechaHint)
+    var rolDetectado = 'VENDEDOR';
+    var fechaCheck = fechaHint || _hoy();
+    try {
+      var cs = _abrirMeSheet('CAJAS');
+      if (cs) {
+        var d = cs.getDataRange().getValues();
+        var tz2 = Session.getScriptTimeZone();
+        for (var i = 1; i < d.length; i++) {
+          var v = String(d[i][1] || '').trim();
+          if (v.toLowerCase() !== nombre.toLowerCase()) continue;
+          // Encontrar cualquier columna fecha
+          var fr = d[i][3] || d[i][2] || null; // intento de fecha
+          // Mejor: revisar toda la fila para una fecha que coincida
+          for (var c = 0; c < d[i].length; c++) {
+            var cell = d[i][c];
+            if (cell instanceof Date) {
+              var fs = Utilities.formatDate(cell, tz2, 'yyyy-MM-dd');
+              if (fs === fechaCheck) { rolDetectado = 'CAJERO'; break; }
+            }
+          }
+          if (rolDetectado === 'CAJERO') break;
+        }
+      }
+    } catch(_){}
+
+    var g = genericos.find(function(x){ return String(x.rol || '').toUpperCase() === rolDetectado; }) || genericos[0];
+
     return {
       idPersonal: idPersonal,
       nombre:     nombre,
       apellido:   '',
       tipo:       'VENDEDOR',
       appOrigen:  'mosExpress',
-      rol:        (generico && generico.rol) || 'CAJERO',
-      montoBase:  generico ? (parseFloat(generico.montoBase) || 0) : 0,
+      rol:        rolDetectado,
+      montoBase:  g ? (parseFloat(g.montoBase) || 0) : 0,
       estado:     '1',
       __virtual:  true
     };
@@ -118,7 +146,7 @@ function getResumenDia(params) {
   var idPersonal = params.idPersonal;
   if (!idPersonal) return { ok: false, error: 'idPersonal requerido' };
 
-  var p = _resolverPersona(idPersonal);
+  var p = _resolverPersona(idPersonal, fecha);
   if (!p) return { ok: false, error: 'Personal no encontrado' };
 
   var evals = _sheetToObjects(_getEvalSheet()).filter(function(r){
@@ -298,22 +326,28 @@ function getResumenTodosDia(params) {
     return String(r.estado) === '1';
   });
 
-  // Detectar el genérico de mosExpress (no se incluye en la lista — solo es plantilla)
-  var generico = personal.find(function(r){
+  // Detectar genéricos de mosExpress por rol (plantillas para virtuales)
+  var genericos = personal.filter(function(r){
     var n = String(r.nombre || '').toLowerCase();
     return r.appOrigen === 'mosExpress' && (n.indexOf('gener') >= 0 || n.indexOf('génér') >= 0);
   });
+  function _genericoPorRol(rol) {
+    var g = genericos.find(function(x){ return String(x.rol || '').toUpperCase() === rol; });
+    return g || genericos[0] || null;
+  }
 
   // 1. WarehouseMos: todos los activos
   var lista = personal.filter(function(r){ return r.appOrigen === 'warehouseMos'; });
 
-  // 2. MosExpress: detectar vendedores reales del día desde CAJAS
-  var vendedoresDelDia = {};
+  // 2. MosExpress: 2a) cajeros (CAJAS) + 2b) vendedores puros (VENTAS_CABECERA)
+  var rolesDelDia = {}; // nombre → 'CAJERO' | 'VENDEDOR'
+  var tz = Session.getScriptTimeZone();
+
+  // 2a. Cajeros — abren caja
   try {
     var cajasSheet = _abrirMeSheet('CAJAS');
     if (cajasSheet) {
       var data = cajasSheet.getDataRange().getValues();
-      // Cols típicas: 0=ID 1=Vendedor 2/8=Zona ... buscar "Fecha" en headers
       var headers = (data[0] || []).map(function(h){ return String(h || ''); });
       var idxVendedor = headers.indexOf('Vendedor');
       if (idxVendedor < 0) idxVendedor = 1;
@@ -323,46 +357,61 @@ function getResumenTodosDia(params) {
         if (hLow.indexOf('fecha') >= 0 && hLow.indexOf('apert') >= 0) { idxFechaApertura = hi; break; }
       }
       if (idxFechaApertura < 0) {
-        // Fallback: buscar cualquier columna con "fecha"
         for (var hi2 = 0; hi2 < headers.length; hi2++) {
           if (headers[hi2].toLowerCase().indexOf('fecha') >= 0) { idxFechaApertura = hi2; break; }
         }
       }
-      var tz = Session.getScriptTimeZone();
       for (var r = 1; r < data.length; r++) {
         var row = data[r];
         var f = idxFechaApertura >= 0 ? row[idxFechaApertura] : null;
-        var fStr = f instanceof Date
-          ? Utilities.formatDate(f, tz, 'yyyy-MM-dd')
-          : String(f || '').substring(0, 10);
+        var fStr = f instanceof Date ? Utilities.formatDate(f, tz, 'yyyy-MM-dd') : String(f || '').substring(0, 10);
         if (fStr !== fecha) continue;
         var nombre = String(row[idxVendedor] || '').trim();
-        if (nombre) vendedoresDelDia[nombre] = true;
+        if (nombre) rolesDelDia[nombre] = 'CAJERO';
       }
     }
-  } catch(e){ Logger.log('No se pudo leer CAJAS de MosExpress: ' + e.message); }
+  } catch(e){ Logger.log('No se pudo leer CAJAS: ' + e.message); }
 
-  // 3. Para cada vendedor real: si está en master usar ese, si no crear virtual
-  Object.keys(vendedoresDelDia).forEach(function(nombre){
+  // 2b. Vendedores puros — solo sellan tickets (no aparecen en CAJAS)
+  try {
+    var ventasSheet = _abrirMeSheet('VENTAS_CABECERA');
+    if (ventasSheet) {
+      var vd = ventasSheet.getDataRange().getValues();
+      // Cols: 0=ID 1=Fecha 2=Vendedor 6=Total 8=FormaPago
+      for (var rv = 1; rv < vd.length; rv++) {
+        var fr = vd[rv][1];
+        var fs = fr instanceof Date ? Utilities.formatDate(fr, tz, 'yyyy-MM-dd') : String(fr || '').substring(0, 10);
+        if (fs !== fecha) continue;
+        var nv = String(vd[rv][2] || '').trim();
+        if (!nv) continue;
+        // Si ya está como CAJERO, mantener ese rol (más autoritativo)
+        if (!rolesDelDia[nv]) rolesDelDia[nv] = 'VENDEDOR';
+      }
+    }
+  } catch(e){ Logger.log('No se pudo leer VENTAS_CABECERA: ' + e.message); }
+
+  // 3. Para cada nombre detectado: matchear con master o crear virtual
+  Object.keys(rolesDelDia).forEach(function(nombre){
+    var rol = rolesDelDia[nombre];
     var nLow = nombre.toLowerCase();
     var match = personal.find(function(p){
       if (p.appOrigen !== 'mosExpress') return false;
       var full = (String(p.nombre || '') + ' ' + (p.apellido || '')).trim().toLowerCase();
       return full === nLow || String(p.nombre || '').toLowerCase() === nLow;
     });
-    if (match && match !== generico) {
-      // Ya está en master con su propio registro
+    var esGenerico = match && genericos.indexOf(match) >= 0;
+    if (match && !esGenerico) {
       if (lista.indexOf(match) < 0) lista.push(match);
     } else {
-      // Virtual: usa nombre real, genérico aporta el montoBase
+      var g = _genericoPorRol(rol);
       lista.push({
         idPersonal: 'MEX:' + nombre,
         nombre:     nombre,
         apellido:   '',
         tipo:       'VENDEDOR',
         appOrigen:  'mosExpress',
-        rol:        (generico && generico.rol) || 'CAJERO',
-        montoBase:  generico ? (parseFloat(generico.montoBase) || 0) : 0,
+        rol:        rol,
+        montoBase:  g ? (parseFloat(g.montoBase) || 0) : 0,
         estado:     '1',
         __virtual:  true
       });
