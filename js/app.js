@@ -2315,6 +2315,7 @@ const MOS = (() => {
 
   async function selectProveedor(id) {
     S.provSelId = id;
+    S.provTab   = S.provTab || 'info';
     renderProveedores();
 
     const prov = S.proveedores.find(p => p.idProveedor === id);
@@ -2323,7 +2324,7 @@ const MOS = (() => {
     const detailEl = $('proveedorDetail');
     if (!detailEl) return;
     detailEl.innerHTML = `
-      <div class="flex items-start justify-between mb-4">
+      <div class="flex items-start justify-between mb-3">
         <div>
           <h3 class="font-bold text-white">${prov.nombre}</h3>
           <p class="text-sm text-slate-400">${prov.ruc || ''} — ${prov.email || ''}</p>
@@ -2332,34 +2333,170 @@ const MOS = (() => {
           <button class="btn-ghost text-xs" onclick="MOS.abrirModalProveedor('${id}')">✏️ Editar</button>
         </div>
       </div>
+      <!-- Tabs -->
+      <div class="prov-tabs">
+        <button class="prov-tab" data-tab="info"      onclick="MOS.provSetTab('info')">📋 Info</button>
+        <button class="prov-tab" data-tab="productos" onclick="MOS.provSetTab('productos')">📦 Productos</button>
+        <button class="prov-tab" data-tab="historico" onclick="MOS.provSetTab('historico')">📊 Histórico</button>
+        <button class="prov-tab" data-tab="pedidos"   onclick="MOS.provSetTab('pedidos')">🛒 Pedidos</button>
+      </div>
+      <!-- Contenido de cada tab -->
+      <div id="provTabInfo" class="prov-tab-content"></div>
+      <div id="provTabProductos" class="prov-tab-content hidden"></div>
+      <div id="provTabHistorico" class="prov-tab-content hidden"></div>
+      <div id="provTabPedidos" class="prov-tab-content hidden"></div>
+    `;
+    provSetTab(S.provTab);
+  }
+
+  function provSetTab(tab) {
+    S.provTab = tab;
+    document.querySelectorAll('.prov-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    document.querySelectorAll('.prov-tab-content').forEach(c => c.classList.add('hidden'));
+    const targetMap = { info: 'provTabInfo', productos: 'provTabProductos', historico: 'provTabHistorico', pedidos: 'provTabPedidos' };
+    const target = $(targetMap[tab]);
+    if (target) target.classList.remove('hidden');
+    if (tab === 'info')      _renderProvInfo();
+    if (tab === 'productos') _renderProvProductos();
+    if (tab === 'historico') _renderProvHistorico();
+    if (tab === 'pedidos')   _renderProvPedidos();
+  }
+
+  function _renderProvInfo() {
+    const id = S.provSelId;
+    const prov = S.proveedores.find(p => p.idProveedor === id);
+    const cont = $('provTabInfo');
+    if (!cont || !prov) return;
+    cont.innerHTML = `
       <div class="grid sm:grid-cols-2 gap-3 mb-4">
+        <div class="card-sm p-3 text-sm"><span class="text-slate-500">Teléfono: </span><span class="text-slate-200">${prov.telefono || '—'}</span></div>
         <div class="card-sm p-3 text-sm"><span class="text-slate-500">Banco: </span><span class="text-slate-200">${prov.banco || '—'}</span></div>
         <div class="card-sm p-3 text-sm"><span class="text-slate-500">Cuenta: </span><span class="text-slate-200">${prov.numeroCuenta || '—'}</span></div>
         <div class="card-sm p-3 text-sm"><span class="text-slate-500">Día pago: </span><span class="text-slate-200">${prov.diaPago || '—'}</span></div>
+        <div class="card-sm p-3 text-sm"><span class="text-slate-500">Forma pago: </span><span class="text-slate-200">${prov.formaPago || '—'}${prov.plazoCredito ? ' · ' + prov.plazoCredito + 'd' : ''}</span></div>
         <div class="card-sm p-3 text-sm"><span class="text-slate-500">Categoría: </span><span class="text-slate-200">${prov.categoriaProducto || '—'}</span></div>
       </div>
       <div class="flex items-center justify-between mb-3">
-        <h4 class="font-semibold text-sm text-slate-300">Pagos registrados</h4>
+        <h4 class="font-semibold text-sm text-slate-300">💰 Pagos registrados</h4>
         <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalPago('${id}')">+ Pago</button>
       </div>
-      <div id="listPagos" class="mb-4 text-sm text-slate-400">Cargando...</div>
+      <div id="listPagos" class="text-sm text-slate-400">Cargando...</div>
+    `;
+    API.get('getPagos', { idProveedor: id }).then(r => renderPagos(r || [])).catch(() => {});
+  }
+
+  async function _renderProvProductos() {
+    const id = S.provSelId;
+    const cont = $('provTabProductos');
+    if (!cont) return;
+    cont.innerHTML = `
       <div class="flex items-center justify-between mb-3">
-        <h4 class="font-semibold text-sm text-slate-300">Pedidos de compra</h4>
-        <button class="btn-ghost text-xs px-3 py-1.5" onclick="MOS.abrirModalPedido('${id}')">+ Pedido</button>
+        <h4 class="font-semibold text-sm text-slate-300">📦 Catálogo de cotizaciones</h4>
+        <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalProvProducto(null)">+ Producto</button>
+      </div>
+      <div id="provProductosList" class="space-y-2">
+        <div class="skel h-12 rounded-lg"></div>
+      </div>
+    `;
+    try {
+      const lista = await API.get('getProveedorProductos', { idProveedor: id });
+      const items = Array.isArray(lista) ? lista : (lista && lista.data) || [];
+      const list = $('provProductosList');
+      if (!items.length) {
+        list.innerHTML = '<p class="text-slate-500 text-sm py-6 text-center">Sin productos registrados.<br>Agrega cotizaciones para planificar pedidos.</p>';
+        return;
+      }
+      list.innerHTML = items.map(pp => `
+        <div class="card-sm p-3 cursor-pointer hover:border-indigo-500/30 transition-colors" onclick="MOS.abrirModalProvProducto('${pp.idPP}')">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0 flex-1">
+              <div class="text-sm font-semibold text-slate-100 truncate">${pp.descripcion || pp.skuBase}</div>
+              <div class="text-xs text-slate-500 mt-0.5" style="font-family:monospace">SKU ${pp.skuBase}${pp.codigoBarra ? ' · ▌' + pp.codigoBarra : ''}</div>
+              ${pp.notas ? `<div class="text-xs text-slate-500 mt-1 italic">${pp.notas}</div>` : ''}
+            </div>
+            <div class="text-right shrink-0">
+              <div class="text-sm font-bold text-amber-400">${fmtMoney(pp.precioReferencia || 0)}</div>
+              ${pp.minimoCompra ? `<div class="text-xs text-slate-500">mín ${pp.minimoCompra}</div>` : ''}
+              ${pp.diasEntrega ? `<div class="text-xs text-slate-500">${pp.diasEntrega}d</div>` : ''}
+            </div>
+          </div>
+        </div>
+      `).join('');
+    } catch(e) {
+      $('provProductosList').innerHTML = `<p class="text-red-400 text-sm">Error: ${e.message}</p>`;
+    }
+  }
+
+  async function _renderProvHistorico() {
+    const id = S.provSelId;
+    const cont = $('provTabHistorico');
+    if (!cont) return;
+    cont.innerHTML = `
+      <div class="flex items-center justify-between mb-3">
+        <h4 class="font-semibold text-sm text-slate-300">📊 Histórico de compras</h4>
+        <select id="provHistoricoDias" class="inp text-xs" style="max-width:120px" onchange="MOS._renderProvHistorico()">
+          <option value="30">30 días</option>
+          <option value="60" selected>60 días</option>
+          <option value="90">90 días</option>
+          <option value="180">180 días</option>
+        </select>
+      </div>
+      <div id="provHistoricoBody"><div class="skel h-32 rounded-lg"></div></div>
+    `;
+    try {
+      const dias = parseInt($('provHistoricoDias')?.value) || 60;
+      const r = await API.get('getHistoricoProveedor', { idProveedor: id, dias });
+      const data = r && r.data ? r.data : r;
+      if (!data || (!data.productos || !data.productos.length)) {
+        $('provHistoricoBody').innerHTML = '<p class="text-slate-500 text-sm py-6 text-center">Sin compras registradas en el rango.</p>';
+        return;
+      }
+      const totales = data.totales || data;
+      $('provHistoricoBody').innerHTML = `
+        <div class="grid grid-cols-3 gap-2 mb-4">
+          <div class="card-sm p-3 text-center"><div class="text-xs text-slate-500">Guías</div><div class="text-lg font-bold text-slate-100">${data.totalGuias}</div></div>
+          <div class="card-sm p-3 text-center"><div class="text-xs text-slate-500">Gastado</div><div class="text-lg font-bold text-amber-400">${fmtMoney(data.totalGastado)}</div></div>
+          <div class="card-sm p-3 text-center"><div class="text-xs text-slate-500">Por pagar</div><div class="text-lg font-bold ${data.porPagar > 0 ? 'text-rose-400' : 'text-green-400'}">${fmtMoney(data.porPagar)}</div></div>
+        </div>
+        <div class="text-xs text-slate-500 mb-2">${data.productos.length} productos comprados</div>
+        <div class="space-y-1">
+          ${data.productos.map(it => `
+            <div class="card-sm p-2.5">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <div class="text-sm font-medium text-slate-200 truncate">${it.descripcion}</div>
+                  <div class="text-xs text-slate-500" style="font-family:monospace">▌${it.codigoBarra} · ${it.veces} veces · ${it.cantidadTotal} uds</div>
+                </div>
+                <div class="text-right shrink-0">
+                  <div class="text-sm font-bold text-slate-100">${fmtMoney(it.ultimoPrecio)}</div>
+                  <div class="text-xs ${it.variacionPct > 1 ? 'text-rose-400' : it.variacionPct < -1 ? 'text-green-400' : 'text-slate-500'}">${it.variacionPct > 0 ? '↑' : it.variacionPct < 0 ? '↓' : '='} ${Math.abs(it.variacionPct)}%</div>
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    } catch(e) {
+      $('provHistoricoBody').innerHTML = `<p class="text-red-400 text-sm">Error: ${e.message}</p>`;
+    }
+  }
+
+  async function _renderProvPedidos() {
+    const id = S.provSelId;
+    const cont = $('provTabPedidos');
+    if (!cont) return;
+    cont.innerHTML = `
+      <div class="flex items-center justify-between mb-3">
+        <h4 class="font-semibold text-sm text-slate-300">🛒 Pedidos de compra</h4>
+        <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalPedido('${id}')">+ Nuevo pedido</button>
       </div>
       <div id="listPedidos" class="text-sm text-slate-400">Cargando...</div>
     `;
-
-    // Load pagos + pedidos
     try {
-      const [pagos, pedidos] = await Promise.all([
-        API.get('getPagos', { idProveedor: id }),
-        API.get('getPedidos', { idProveedor: id })
-      ]);
-      renderPagos(pagos || []);
-      renderPedidos(pedidos || []);
-    } catch (e) {
-      const lp = $('listPagos'); if (lp) lp.textContent = 'Error: ' + e.message;
+      const r = await API.get('getPedidos', { idProveedor: id });
+      renderPedidos(r || []);
+    } catch(e) {
+      $('listPedidos').innerHTML = `<p class="text-red-400">Error: ${e.message}</p>`;
     }
   }
 
@@ -6252,6 +6389,131 @@ const MOS = (() => {
   }
 
   // ============================================================
+  // ── MODAL Producto-Proveedor (cotización) ─────────────────────
+  // ============================================================
+  const _ppState = { editando: null };
+
+  async function abrirModalProvProducto(idPP) {
+    const idProv = S.provSelId;
+    if (!idProv) return;
+    _ppState.editando = idPP;
+    $('ppModalTitle').textContent = idPP ? '📦 Editar cotización' : '📦 Nueva cotización';
+    $('ppId').value = idPP || '';
+    $('ppBuscar').value = '';
+    $('ppSkuBase').value = '';
+    $('ppCodigoBarra').value = '';
+    $('ppBuscarRes').style.display = 'none';
+    $('ppSeleccionado').classList.add('hidden');
+    $('ppPrecio').value = '';
+    $('ppMinimo').value = '';
+    $('ppDiasEntrega').value = '';
+    $('ppNotas').value = '';
+    $('ppBtnEliminar').classList.toggle('hidden', !idPP);
+
+    if (idPP) {
+      try {
+        const lista = await API.get('getProveedorProductos', { idProveedor: idProv });
+        const items = Array.isArray(lista) ? lista : (lista && lista.data) || [];
+        const pp = items.find(x => x.idPP === idPP);
+        if (pp) {
+          $('ppSkuBase').value     = pp.skuBase || '';
+          $('ppCodigoBarra').value = pp.codigoBarra || '';
+          $('ppPrecio').value      = pp.precioReferencia || '';
+          $('ppMinimo').value      = pp.minimoCompra || '';
+          $('ppDiasEntrega').value = pp.diasEntrega || '';
+          $('ppNotas').value       = pp.notas || '';
+          $('ppSeleccionado').textContent = `${pp.descripcion || pp.skuBase} (SKU ${pp.skuBase}${pp.codigoBarra ? ' · ▌' + pp.codigoBarra : ''})`;
+          $('ppSeleccionado').classList.remove('hidden');
+        }
+      } catch(_){}
+    }
+    openModal('modalProvProducto');
+  }
+
+  function ppBuscar() {
+    const raw = ($('ppBuscar').value || '').trim();
+    const resBox = $('ppBuscarRes');
+    if (!raw) { resBox.style.display = 'none'; resBox.innerHTML = ''; return; }
+    const qn = _norm(raw);
+    const palabras = qn.split(/\s+/).filter(Boolean);
+    const canonicos = (S.productos || []).filter(p => {
+      const f = parseFloat(p.factorConversion);
+      return !p.factorConversion || f === 1;
+    });
+    const scored = canonicos.map(p => {
+      const haystack = _norm((p.descripcion || '') + ' ' + (p.codigoBarra || '') + ' ' + (p.skuBase || p.idProducto || '') + ' ' + (p.marca || ''));
+      let s = 0, ok = true;
+      palabras.forEach(w => { if (haystack.indexOf(w) >= 0) s++; else ok = false; });
+      return { p, score: s, ok };
+    }).filter(x => x.ok).sort((a, b) => b.score - a.score).slice(0, 10);
+    if (!scored.length) {
+      resBox.innerHTML = '<div class="pn-result text-slate-500 italic">Sin resultados</div>';
+      resBox.style.display = 'block';
+      return;
+    }
+    resBox.innerHTML = scored.map(({ p }) => {
+      const sku = p.skuBase || p.idProducto;
+      const cb  = p.codigoBarra || '';
+      const safeDesc = (p.descripcion || sku).replace(/'/g, "\\'");
+      return `<div class="pn-result" onclick="MOS.ppSeleccionar('${sku}', '${cb}', '${safeDesc}')">
+        <div class="text-slate-200 font-medium">${p.descripcion || sku}</div>
+        <div class="text-slate-500 text-xs" style="font-family:monospace">SKU ${sku}${cb ? ' · ▌' + cb : ''}</div>
+      </div>`;
+    }).join('');
+    resBox.style.display = 'block';
+  }
+
+  function ppSeleccionar(sku, cb, desc) {
+    $('ppSkuBase').value     = sku;
+    $('ppCodigoBarra').value = cb;
+    $('ppSeleccionado').textContent = `${desc} (SKU ${sku}${cb ? ' · ▌' + cb : ''})`;
+    $('ppSeleccionado').classList.remove('hidden');
+    $('ppBuscarRes').style.display = 'none';
+    $('ppBuscar').value = desc;
+  }
+
+  async function guardarProvProducto() {
+    const idProveedor = S.provSelId;
+    const idPP        = $('ppId').value;
+    const skuBase     = $('ppSkuBase').value;
+    const codigoBarra = $('ppCodigoBarra').value;
+    if (!skuBase) { toast('Selecciona un producto', 'error'); return; }
+    const params = {
+      idProveedor,
+      skuBase,
+      codigoBarra,
+      descripcion: ($('ppSeleccionado').textContent || '').split(' (')[0],
+      precioReferencia: parseFloat($('ppPrecio').value) || 0,
+      minimoCompra:     parseFloat($('ppMinimo').value) || 0,
+      diasEntrega:      parseInt($('ppDiasEntrega').value) || 0,
+      notas:            $('ppNotas').value
+    };
+    try {
+      if (idPP) {
+        await API.post('actualizarProductoProveedor', Object.assign({ idPP }, params));
+        toast('Cotización actualizada ✓', 'ok');
+      } else {
+        await API.post('agregarProductoProveedor', params);
+        toast('Cotización agregada ✓', 'ok');
+      }
+      closeModal('modalProvProducto');
+      _renderProvProductos();
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  async function eliminarProvProducto() {
+    const idPP = $('ppId').value;
+    if (!idPP) return;
+    if (!confirm('¿Eliminar esta cotización?')) return;
+    try {
+      await API.post('eliminarProductoProveedor', { idPP });
+      toast('Eliminada', 'ok');
+      closeModal('modalProvProducto');
+      _renderProvProductos();
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  // ============================================================
   // ── PROMOCIONES (gestión desde catálogo) ──────────────────────
   // ============================================================
   const _promoState = { lista: [], editando: null };
@@ -6477,6 +6739,9 @@ const MOS = (() => {
     setAlmTab,
     loadProveedores, selectProveedor, renderProveedores,
     abrirModalProveedor, guardarProveedor,
+    provSetTab, _renderProvHistorico,
+    abrirModalProvProducto, ppBuscar, ppSeleccionar,
+    guardarProvProducto, eliminarProvProducto,
     abrirModalPago, guardarPago, abrirModalPedido,
     // Config
     setCfgTab,
