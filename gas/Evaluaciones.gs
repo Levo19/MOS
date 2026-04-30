@@ -34,11 +34,12 @@ function _getEvalConfig() {
       { min: 50, pct:  3 },
       { min:  0, pct:  0 }
     ],
-    metaCajero:     parseFloat(cfg.evalMetaCajero     || 2000),
-    metaEnvasador:  parseFloat(cfg.evalMetaEnvasador  || 500),
-    metaAlmacenero: parseFloat(cfg.evalMetaAlmacenero || 15),
-    bonoMetaBase:   parseFloat(cfg.evalBonoMetaBase   || 8),
-    bonoMetaDoble:  parseFloat(cfg.evalBonoMetaDoble  || 15),
+    metaCajero:      parseFloat(cfg.evalMetaCajero      || 2000),
+    metaEnvasador:   parseFloat(cfg.evalMetaEnvasador   || 500),
+    metaAlmacenero:  parseFloat(cfg.evalMetaAlmacenero  || 15),
+    metaAuditorias:  parseFloat(cfg.evalMetaAuditorias  || 30),
+    bonoMetaBase:    parseFloat(cfg.evalBonoMetaBase    || 8),
+    bonoMetaDoble:   parseFloat(cfg.evalBonoMetaDoble   || 15),
     pesoVentas:     parseFloat(cfg.evalPesoVentas     || 30) / 100,
     pesoAuditoria:  parseFloat(cfg.evalPesoAudit      || 20) / 100,
     pesoLimpieza:   parseFloat(cfg.evalPesoLimp       || 15) / 100,
@@ -395,7 +396,55 @@ function _calcularKpisAutoDia(p, fecha) {
   var nombre = (p.nombre + ' ' + (p.apellido || '')).trim();
   var cfg    = _getEvalConfig();
 
-  var ventasReales = 0, ventasPct = 0, auditPct = 0, guias = 0, envasados = 0;
+  var ventasReales = 0, ventasPct = 0, guias = 0, envasados = 0;
+  var auditoriasHechas = 0, auditPct = 0;
+
+  // Auditorías de productos según app del empleado (meta 30/día para todos)
+  try {
+    if (rol === 'CAJERO' || rol === 'VENDEDOR') {
+      // MosExpress · AUDITORIAS: cols 0=ID 1=Fecha 2=Vendedor ...
+      var au = _abrirMeSheet('AUDITORIAS');
+      if (au) {
+        var ad = au.getDataRange().getValues();
+        var tzM = Session.getScriptTimeZone();
+        for (var ar = 1; ar < ad.length; ar++) {
+          var fA = _normalizarFechaME(ad[ar][1], tzM);
+          if (fA !== fecha) continue;
+          var vA = String(ad[ar][2] || '').toLowerCase().trim();
+          if (!vA) continue;
+          var nL = (p.nombre || '').toLowerCase().trim();
+          if (vA === nL || vA.indexOf(nL) >= 0 || nL.indexOf(vA) >= 0) auditoriasHechas++;
+        }
+      }
+    } else if (rol === 'ALMACENERO' || rol === 'ENVASADOR') {
+      // warehouseMos · AUDITORIAS: 3=usuario 9=estado 10=fechaEjecucion
+      var auW = _abrirWhSheet('AUDITORIAS');
+      if (auW) {
+        var adW = auW.getDataRange().getValues();
+        var headers = (adW[0] || []).map(function(h){ return String(h || ''); });
+        var idxUser    = headers.indexOf('usuario');
+        var idxEstado  = headers.indexOf('estado');
+        var idxFechaEj = headers.indexOf('fechaEjecucion');
+        if (idxUser    < 0) idxUser    = 3;
+        if (idxEstado  < 0) idxEstado  = 9;
+        if (idxFechaEj < 0) idxFechaEj = 10;
+        var tzW = Session.getScriptTimeZone();
+        var nLow = (p.nombre + ' ' + (p.apellido || '')).toLowerCase().trim();
+        for (var arW = 1; arW < adW.length; arW++) {
+          var estA = String(adW[arW][idxEstado] || '').toUpperCase().trim();
+          if (estA !== 'EJECUTADA') continue;
+          var fW = _normalizarFechaWh(adW[arW][idxFechaEj], tzW);
+          if (fW !== fecha) continue;
+          var uW = String(adW[arW][idxUser] || '').toLowerCase().trim();
+          if (!uW) continue;
+          if (uW === nLow || uW.indexOf((p.nombre || '').toLowerCase()) >= 0 || nLow.indexOf(uW) >= 0) {
+            auditoriasHechas++;
+          }
+        }
+      }
+    }
+  } catch(eA){ Logger.log('KPI auditorias error: ' + eA.message); }
+  auditPct = Math.min(100, (auditoriasHechas / cfg.metaAuditorias) * 100);
 
   try {
     if (rol === 'CAJERO' || rol === 'VENDEDOR') {
@@ -494,11 +543,13 @@ function _calcularKpisAutoDia(p, fecha) {
   } catch(_){}
 
   return {
-    ventasReales: Math.round(ventasReales * 100) / 100,
-    ventasPct:    Math.round(ventasPct * 10) / 10,
-    auditPct:     auditPct,
-    guias:        guias,
-    envasados:    envasados
+    ventasReales:     Math.round(ventasReales * 100) / 100,
+    ventasPct:        Math.round(ventasPct * 10) / 10,
+    auditoriasHechas: auditoriasHechas,
+    metaAuditorias:   cfg.metaAuditorias,
+    auditPct:         Math.round(auditPct * 10) / 10,
+    guias:            guias,
+    envasados:        envasados
   };
 }
 

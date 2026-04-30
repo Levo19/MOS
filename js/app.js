@@ -5867,16 +5867,17 @@ const MOS = (() => {
   function _evalKpiSummary(r) {
     const k = r.kpis || {};
     const rol = String(r.rol || '').toUpperCase();
+    const auditTxt = `${k.auditoriasHechas || 0}/${k.metaAuditorias || 30} aud.`;
     if (rol === 'CAJERO' || rol === 'VENDEDOR') {
-      return `Ventas S/${(k.ventasReales || 0).toFixed(2)}`;
+      return `Ventas S/${(k.ventasReales || 0).toFixed(2)} · ${auditTxt}`;
     }
     if (rol === 'ENVASADOR') {
-      return `Envasados ${k.envasados || 0} uds`;
+      return `Envasados ${k.envasados || 0} uds · ${auditTxt}`;
     }
     if (rol === 'ALMACENERO') {
-      return `${k.guias || 0} guías`;
+      return `${k.guias || 0} guías · ${auditTxt}`;
     }
-    return '—';
+    return auditTxt;
   }
 
   // ── Modal Auditar ────────────────────────────────────────────
@@ -5926,6 +5927,7 @@ const MOS = (() => {
     if (!cont) return;
     const k = r.kpis || {};
     const rol = String(r.rol || '').toUpperCase();
+    const auditMeta = k.metaAuditorias || 30;
     let rows = [];
     if (rol === 'CAJERO' || rol === 'VENDEDOR') {
       rows.push(_kpiRow('Ventas del día', `S/${(k.ventasReales || 0).toFixed(2)}`, k.ventasPct || 0));
@@ -5934,6 +5936,7 @@ const MOS = (() => {
     } else if (rol === 'ALMACENERO') {
       rows.push(_kpiRow('Guías procesadas', `${k.guias || 0}`, k.ventasPct || 0));
     }
+    rows.push(_kpiRow('Auditorías de productos', `${k.auditoriasHechas || 0}/${auditMeta}`, k.auditPct || 0));
     rows.push(_kpiRow('Score acumulado del día', `${r.scoreFinal || 0}%`, r.scoreFinal || 0));
     cont.innerHTML = rows.join('');
   }
@@ -6067,12 +6070,14 @@ const MOS = (() => {
       $('cfgMetaCajero').value     = cfg.evalMetaCajero     || 2000;
       $('cfgMetaEnvasador').value  = cfg.evalMetaEnvasador  || 500;
       $('cfgMetaAlmacenero').value = cfg.evalMetaAlmacenero || 15;
+      $('cfgMetaAuditorias').value = cfg.evalMetaAuditorias || 30;
       $('cfgBonoMetaBase').value   = cfg.evalBonoMetaBase   || 8;
       $('cfgBonoMetaDoble').value  = cfg.evalBonoMetaDoble  || 15;
     } catch(e) {
       $('cfgMetaCajero').value = 2000;
       $('cfgMetaEnvasador').value = 500;
       $('cfgMetaAlmacenero').value = 15;
+      $('cfgMetaAuditorias').value = 30;
       $('cfgBonoMetaBase').value = 8;
       $('cfgBonoMetaDoble').value = 15;
     }
@@ -6085,6 +6090,7 @@ const MOS = (() => {
       ['evalMetaCajero',     $('cfgMetaCajero').value],
       ['evalMetaEnvasador',  $('cfgMetaEnvasador').value],
       ['evalMetaAlmacenero', $('cfgMetaAlmacenero').value],
+      ['evalMetaAuditorias', $('cfgMetaAuditorias').value],
       ['evalBonoMetaBase',   $('cfgBonoMetaBase').value],
       ['evalBonoMetaDoble',  $('cfgBonoMetaDoble').value]
     ];
