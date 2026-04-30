@@ -1492,11 +1492,17 @@ const MOS = (() => {
     const qn = _norm(raw);
     const palabras = qn.split(/\s+/).filter(Boolean);
 
-    // 1. Scorear TODOS los productos contra la query
-    const scoredAll = (S.productos || []).map(p => {
-      const desc = _norm(p.descripcion || '');
-      const cb   = _norm(p.codigoBarra || '');
-      const sku  = _norm(p.skuBase || p.idProducto || '');
+    // 1. Solo canónicos: factorConversion = 1 (o vacío/null que cuenta como 1)
+    const canonicos = (S.productos || []).filter(p => {
+      const f = parseFloat(p.factorConversion);
+      return !p.factorConversion || f === 1;
+    });
+
+    // 2. Scorear contra la query (descripción, código, SKU, marca)
+    const scored = canonicos.map(p => {
+      const desc  = _norm(p.descripcion || '');
+      const cb    = _norm(p.codigoBarra || '');
+      const sku   = _norm(p.skuBase || p.idProducto || '');
       const marca = _norm(p.marca || '');
       const haystack = desc + ' ' + cb + ' ' + sku + ' ' + marca;
       let score = 0;
@@ -1507,31 +1513,17 @@ const MOS = (() => {
       });
       if (cb === qn || sku === qn) score += 100;
       if (desc.startsWith(qn))     score += 10;
-      const isCanonical = p.idProducto === (p.skuBase || p.idProducto);
-      return { p, score, allMatch, isCanonical, skuBase: p.skuBase || p.idProducto };
-    }).filter(x => x.allMatch);
+      return { p, score, allMatch };
+    }).filter(x => x.allMatch).sort((a, b) => b.score - a.score).slice(0, 12);
 
-    // 2. Deduplicar por skuBase: para cada grupo, priorizar canónico, si no el de mayor score
-    const bestPerGroup = {};
-    scoredAll.forEach(item => {
-      const k = item.skuBase;
-      const cur = bestPerGroup[k];
-      if (!cur) { bestPerGroup[k] = item; return; }
-      if (item.isCanonical && !cur.isCanonical)      bestPerGroup[k] = item;
-      else if (cur.isCanonical && !item.isCanonical) return;
-      else if (item.score > cur.score)               bestPerGroup[k] = item;
-    });
-
-    // 3. Ordenar por score y limitar
-    const final = Object.values(bestPerGroup).sort((a, b) => b.score - a.score).slice(0, 12);
-
-    if (!final.length) {
+    if (!scored.length) {
       resBox.innerHTML = '<div class="pn-result text-slate-500 italic">Sin resultados para "' + raw + '"</div>';
       resBox.style.display = 'block';
       return;
     }
 
-    resBox.innerHTML = final.map(({ p, skuBase }) => {
+    resBox.innerHTML = scored.map(({ p }) => {
+      const skuBase  = p.skuBase || p.idProducto;
       const safeDesc = (p.descripcion || p.idProducto).replace(/'/g, "\\'").replace(/"/g, '&quot;');
       const safeCB   = (p.codigoBarra || '').replace(/'/g, "\\'");
       return `
