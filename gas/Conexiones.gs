@@ -496,6 +496,7 @@ function lanzarProductoNuevo(params) {
     codigoFinal:     params.codigoFinal,
     cantidadFinal:   parseFloat(params.cantidadFinal) || 0,
     tipo:            tipo,
+    skuBase:         params.skuBase || '',  // solo en EQUIVALENTE
     aprobadoPor:     params.aprobadoPor || params.usuario || 'MOS',
     descripcion:     params.descripcion,
     idCategoria:     params.idCategoria || '',
