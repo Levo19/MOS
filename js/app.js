@@ -320,6 +320,7 @@ const MOS = (() => {
     _startCajasRefresh();
     _startCatRefresh();
     _startFinanzasRefresh();
+    _refreshPNPendientes(); // PN pendientes — pre-carga inmediata
     _pushInit(S.session.nombre, S.session.rol);
     // Sidebar session display
     const av = $('sessionAvatar');
@@ -631,6 +632,8 @@ const MOS = (() => {
 
   async function _catalogoRefreshSilencioso() {
     if (!API.isConfigured()) return;
+    // PN pendientes en paralelo (sin bloquear)
+    _refreshPNPendientes().catch(() => {});
     try {
       const [freshProd, freshEquiv] = await Promise.all([
         API.get('getProductos', {}),
@@ -1310,10 +1313,36 @@ const MOS = (() => {
 
   // ── Productos Nuevos (aprobación desde WH) ──────────────────
 
+  const PN_CACHE_KEY = 'mos_pn_cache';
+  function _pnLoadCache() {
+    try {
+      const raw = localStorage.getItem(PN_CACHE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      // Cache válida por 24h
+      if (Date.now() - (parsed.ts || 0) > 86400000) return null;
+      return parsed.data;
+    } catch { return null; }
+  }
+  function _pnSaveCache(data) {
+    try { localStorage.setItem(PN_CACHE_KEY, JSON.stringify({ ts: Date.now(), data })); } catch {}
+  }
+
   async function _refreshPNPendientes() {
+    // Render inmediato desde cache si existe
+    const cached = _pnLoadCache();
+    if (cached && (!S.pnPendientes || !S.pnPendientes.length)) {
+      S.pnPendientes = cached;
+      _updatePNBadge();
+      renderPNBanner();
+    }
     try {
       const lista = await API.getProductosNuevosWH({ estado: 'PENDIENTE' });
-      S.pnPendientes = lista || [];
+      const fresh = lista || [];
+      const changed = JSON.stringify(fresh) !== JSON.stringify(S.pnPendientes);
+      S.pnPendientes = fresh;
+      _pnSaveCache(fresh);
+      if (changed) { _updatePNBadge(); renderPNBanner(); }
     } catch(e) {
       S.pnPendientes = S.pnPendientes || [];
     }
