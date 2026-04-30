@@ -1450,28 +1450,64 @@ const MOS = (() => {
     $('pnCodigoFinal').value = 'NMLEV' + ts + rand;
   }
 
-  // Búsqueda de producto base para modo EQUIVALENTE
+  // Búsqueda de producto base para modo EQUIVALENTE (con normalización + multi-palabra)
   function pnBuscarBase() {
-    const q = ($('pnEquivBuscar').value || '').toLowerCase().trim();
+    const raw = ($('pnEquivBuscar').value || '').trim();
     const resBox = $('pnEquivResultados');
-    if (!q || q.length < 2) { resBox.style.display = 'none'; resBox.innerHTML = ''; return; }
-    const matches = (S.productos || []).filter(p => {
-      const desc = (p.descripcion || '').toLowerCase();
-      const cb   = (p.codigoBarra || '').toLowerCase();
-      const sku  = (p.skuBase || p.idProducto || '').toLowerCase();
-      return desc.indexOf(q) >= 0 || cb.indexOf(q) >= 0 || sku.indexOf(q) >= 0;
-    }).slice(0, 8);
-    if (!matches.length) {
-      resBox.innerHTML = '<div class="pn-result text-slate-500 italic">Sin resultados</div>';
+    if (!raw) { resBox.style.display = 'none'; resBox.innerHTML = ''; return; }
+    if (!S.productos || !S.productos.length) {
+      resBox.innerHTML = '<div class="pn-result text-slate-500 italic">Cargando catálogo... abre Catálogo primero</div>';
       resBox.style.display = 'block';
       return;
     }
-    resBox.innerHTML = matches.map(p => `
-      <div class="pn-result" onclick="MOS.pnSeleccionarBase('${(p.skuBase || p.idProducto)}', '${(p.descripcion || '').replace(/'/g, '\\\'')}', '${p.codigoBarra || ''}')">
-        <div class="text-slate-200 font-medium">${p.descripcion || p.idProducto}</div>
-        <div class="text-slate-500 text-xs">▌${p.codigoBarra || '—'} · SKU ${p.skuBase || p.idProducto}</div>
-      </div>
-    `).join('');
+    const qn = _norm(raw);
+    const palabras = qn.split(/\s+/).filter(Boolean);
+
+    // Solo bases (no presentaciones) — agrupar por skuBase, deduplicar
+    const vistos = new Set();
+    const candidatos = (S.productos || []).filter(p => {
+      const sku = p.skuBase || p.idProducto;
+      if (vistos.has(sku)) return false;
+      vistos.add(sku);
+      // Bases preferidas (idProducto === skuBase) o standalone
+      return !p.skuBase || p.skuBase === p.idProducto;
+    });
+
+    // Score por coincidencia de palabras: cada palabra debe estar en algún campo
+    const scored = candidatos.map(p => {
+      const desc = _norm(p.descripcion || '');
+      const cb   = _norm(p.codigoBarra || '');
+      const sku  = _norm(p.skuBase || p.idProducto || '');
+      const haystack = desc + ' ' + cb + ' ' + sku;
+      let score = 0;
+      let allMatch = true;
+      palabras.forEach(w => {
+        if (haystack.indexOf(w) >= 0) score++;
+        else allMatch = false;
+      });
+      // Boost si match exacto en código
+      if (cb === qn || sku === qn) score += 100;
+      // Boost si descripción comienza con la query
+      if (desc.startsWith(qn)) score += 10;
+      return { p, score, allMatch };
+    }).filter(x => x.allMatch).sort((a, b) => b.score - a.score).slice(0, 12);
+
+    if (!scored.length) {
+      resBox.innerHTML = '<div class="pn-result text-slate-500 italic">Sin resultados para "' + raw + '"</div>';
+      resBox.style.display = 'block';
+      return;
+    }
+
+    resBox.innerHTML = scored.map(({ p }) => {
+      const skuBase = p.skuBase || p.idProducto;
+      const safeDesc = (p.descripcion || p.idProducto).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+      const safeCB   = (p.codigoBarra || '').replace(/'/g, "\\'");
+      return `
+        <div class="pn-result" onclick="MOS.pnSeleccionarBase('${skuBase}', '${safeDesc}', '${safeCB}')">
+          <div class="text-slate-200 font-medium">${p.descripcion || p.idProducto}</div>
+          <div class="text-slate-500 text-xs" style="font-family:monospace">▌${p.codigoBarra || '—'} · SKU ${skuBase}</div>
+        </div>`;
+    }).join('');
     resBox.style.display = 'block';
   }
 
