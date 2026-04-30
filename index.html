@@ -628,6 +628,33 @@
     .alert-btn.active .alert-btn-icon { filter: none; }
     .alert-btn.active .alert-btn-count { background: #020817; color: #ffd700; box-shadow: 0 0 0 2px #ffd700; }
 
+    /* ── Radio cards para revisar PN ─────────────────────── */
+    .pn-radio-card {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px; border-radius: 10px;
+      background: #060d1f; border: 1.5px solid #1e293b;
+      cursor: pointer; transition: all .15s;
+    }
+    .pn-radio-card:hover { border-color: #334155; }
+    .pn-radio-card input[type="radio"] {
+      width: 18px; height: 18px; flex-shrink: 0;
+      accent-color: #ffd700;
+    }
+    .pn-radio-card:has(input:checked) {
+      background: rgba(255,215,0,.07);
+      border-color: rgba(255,215,0,.4);
+    }
+    .pn-radio-title { font-size: .85rem; font-weight: 700; color: #fef3c7; }
+    .pn-radio-sub   { font-size: .7rem;  color: #94a3b8; margin-top: 1px; }
+    /* Resultado de búsqueda producto base */
+    #pnEquivResultados .pn-result {
+      padding: 8px 10px; border-bottom: 1px solid #1e293b;
+      cursor: pointer; transition: background .12s;
+      font-size: .78rem;
+    }
+    #pnEquivResultados .pn-result:hover { background: rgba(255,215,0,.08); }
+    #pnEquivResultados .pn-result:last-child { border-bottom: none; }
+
     /* ── Evaluación de personal ──────────────────────────── */
     .eval-pill {
       padding: 6px 14px; border-radius: 999px;
@@ -2898,85 +2925,147 @@
   </div>
 </div>
 
-<!-- ══ Modal: Aprobar Producto Nuevo (WH) ═══════════════════════ -->
+<!-- ══ Modal: Revisar Producto Nuevo (rediseñado) ═══════════════ -->
 <div class="modal-backdrop hidden" id="modalPN" onclick="if(event.target===this)MOS.cerrarModalPN()">
-  <div class="modal-box p-6" style="max-width:540px">
-    <div class="flex items-center justify-between mb-4">
-      <h2 class="font-bold text-lg text-white">Producto Nuevo — Aprobación</h2>
-      <button onclick="MOS.cerrarModalPN()" class="text-slate-400 hover:text-white text-xl">×</button>
+  <div class="modal-box p-0" style="max-width:540px;display:flex;flex-direction:column;max-height:92vh">
+    <div class="flex items-center justify-between px-5 py-4 flex-shrink-0" style="border-bottom:1px solid #1e293b">
+      <h2 class="font-bold text-base text-white">📦 Revisar producto nuevo</h2>
+      <button onclick="MOS.cerrarModalPN()" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+    </div>
+    <div class="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+
+      <!-- Info reportada -->
+      <div class="flex gap-3" style="background:#060d1f;border:1px solid #1e293b;border-radius:10px;padding:10px">
+        <div id="pnFotoPreview" style="width:72px;height:72px;border-radius:8px;background:#1e293b;border:1px solid #334155;overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg>
+        </div>
+        <div class="flex-1 min-w-0 text-xs">
+          <div class="text-slate-500">Reportado por</div>
+          <div id="pnGuiaInfo" class="text-slate-200 font-medium mb-1"></div>
+          <div class="text-slate-500">Código original: <span id="pnCodigoWH" class="font-mono text-amber-400"></span></div>
+          <div class="text-slate-500 mt-0.5">Vence: <span id="pnFechaVenc" class="text-slate-300"></span></div>
+        </div>
+      </div>
+      <div id="pnObservaciones" class="text-xs text-slate-400 italic" style="display:none"></div>
+
+      <input type="hidden" id="pnId">
+      <input type="hidden" id="pnIdGuia">
+      <input type="hidden" id="pnCodigoOriginal">
+      <input type="hidden" id="pnUsuario">
+
+      <!-- Selector de tipo -->
+      <div>
+        <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">¿Qué hacer con este producto?</div>
+        <div class="space-y-2">
+          <label class="pn-radio-card" id="pnRadioNuevo">
+            <input type="radio" name="pnTipo" value="NUEVO" checked onchange="MOS.pnSetTipo('NUEVO')">
+            <div>
+              <div class="pn-radio-title">🆕 NUEVO en el catálogo</div>
+              <div class="pn-radio-sub">Crear nuevo registro en master</div>
+            </div>
+          </label>
+          <label class="pn-radio-card" id="pnRadioEquiv">
+            <input type="radio" name="pnTipo" value="EQUIVALENTE" onchange="MOS.pnSetTipo('EQUIVALENTE')">
+            <div>
+              <div class="pn-radio-title">🔗 EQUIVALENTE de uno existente</div>
+              <div class="pn-radio-sub">Agregar como código alias</div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Cantidad recibida (siempre visible — admin puede ajustar) -->
+      <div>
+        <label class="lbl">Cantidad recibida en almacén</label>
+        <input id="pnCantidad" type="number" step="0.01" min="0" class="inp" placeholder="80">
+        <div class="text-xs text-slate-500 mt-1">Si es distinta a la registrada, se ajustará el stock automáticamente.</div>
+      </div>
+
+      <!-- Sección NUEVO -->
+      <div id="pnSeccionNuevo" class="space-y-3 pt-2" style="border-top:1px solid #1e293b">
+        <div class="text-xs font-bold text-slate-400 uppercase tracking-wider">Datos del producto nuevo</div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="col-span-2">
+            <label class="lbl">Código de barras *</label>
+            <div class="flex gap-2">
+              <input id="pnCodigoFinal" class="inp flex-1" placeholder="Editable" autocomplete="off">
+              <button onclick="MOS.pnAutogenBarcode()" class="btn-ghost text-xs px-3 whitespace-nowrap" title="Generar código interno NMLEV">⚡ Auto</button>
+            </div>
+            <div id="pnCodigoFeedback" class="hidden text-xs mt-1"></div>
+          </div>
+          <div class="col-span-2">
+            <label class="lbl">Descripción *</label>
+            <input id="pnDesc" class="inp" placeholder="Nombre del producto" autocomplete="off">
+          </div>
+          <div>
+            <label class="lbl">Marca</label>
+            <input id="pnMarca" class="inp" placeholder="Marca">
+          </div>
+          <div>
+            <label class="lbl">Unidad</label>
+            <select id="pnUnidad" class="inp">
+              <option value="UND">UND</option>
+              <option value="KG">KG</option>
+              <option value="L">L</option>
+              <option value="CAJA">CAJA</option>
+              <option value="BOLSA">BOLSA</option>
+              <option value="PAQUETE">PAQUETE</option>
+            </select>
+          </div>
+          <div>
+            <label class="lbl">Categoría *</label>
+            <select id="pnCategoria" class="inp"><option value="">— elegir —</option></select>
+          </div>
+          <div>
+            <label class="lbl">IGV</label>
+            <select id="pnIGV" class="inp">
+              <option value="1">Gravado 18%</option>
+              <option value="2">Exonerado</option>
+              <option value="3">Inafecto</option>
+            </select>
+          </div>
+          <div>
+            <label class="lbl">Precio venta *</label>
+            <input id="pnPrecioVenta" type="number" step="0.01" min="0" class="inp" placeholder="0.00">
+          </div>
+          <div>
+            <label class="lbl">Precio costo</label>
+            <input id="pnPrecioCosto" type="number" step="0.01" min="0" class="inp" placeholder="0.00">
+          </div>
+        </div>
+      </div>
+
+      <!-- Sección EQUIVALENTE -->
+      <div id="pnSeccionEquiv" class="space-y-3 pt-2 hidden" style="border-top:1px solid #1e293b">
+        <div class="text-xs font-bold text-slate-400 uppercase tracking-wider">Producto base existente</div>
+        <div>
+          <label class="lbl">Buscar producto en catálogo *</label>
+          <input id="pnEquivBuscar" class="inp" placeholder="Escribe nombre o código..." oninput="MOS.pnBuscarBase()" autocomplete="off">
+          <div id="pnEquivResultados" class="mt-1 max-h-40 overflow-y-auto" style="background:#060d1f;border:1px solid #1e293b;border-radius:8px;display:none"></div>
+          <input type="hidden" id="pnEquivSkuBase">
+          <div id="pnEquivSeleccionado" class="text-xs mt-2 hidden" style="background:rgba(255,215,0,.08);border:1px solid rgba(255,215,0,.3);border-radius:8px;padding:8px">
+            <strong class="text-amber-400">Producto base:</strong>
+            <span id="pnEquivSeleccionadoNombre"></span>
+          </div>
+        </div>
+        <div>
+          <label class="lbl">Código equivalente</label>
+          <input id="pnCodigoEquiv" class="inp" placeholder="Código que aparece en el envase">
+          <div class="text-xs text-slate-500 mt-1">Es el mismo código original. Editable si lo deseas.</div>
+        </div>
+        <div>
+          <label class="lbl">Descripción del alias (opcional)</label>
+          <input id="pnDescEquiv" class="inp" placeholder="Ej: presentación de Marca X">
+        </div>
+      </div>
+
     </div>
 
-    <!-- Info guía + foto -->
-    <div class="flex gap-4 mb-4">
-      <div id="pnFotoPreview" style="width:80px;height:80px;border-radius:10px;background:#1e293b;border:1px solid #334155;overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg>
-      </div>
-      <div class="flex-1 min-w-0">
-        <div class="text-xs text-slate-500 mb-1">Guía de ingreso</div>
-        <div id="pnGuiaInfo" class="text-sm text-slate-300 font-medium mb-1"></div>
-        <div class="text-xs text-slate-500">Código WH: <span id="pnCodigoWH" class="font-mono text-amber-400"></span></div>
-        <div class="text-xs text-slate-500 mt-0.5">Cant. registrada: <span id="pnCantidad" class="text-white"></span></div>
-        <div class="text-xs text-slate-500 mt-0.5">Vencimiento: <span id="pnFechaVenc" class="text-white"></span></div>
-      </div>
-    </div>
-    <div id="pnObservaciones" class="text-xs text-slate-400 italic mb-4" style="display:none"></div>
-
-    <input type="hidden" id="pnId">
-    <input type="hidden" id="pnIdGuia">
-    <input type="hidden" id="pnUsuario">
-
-    <div class="grid grid-cols-2 gap-3">
-      <!-- Descripción -->
-      <div class="col-span-2">
-        <label class="block text-xs text-slate-400 mb-1">Descripción *</label>
-        <input id="pnDesc" class="inp w-full" placeholder="Nombre del producto" autocomplete="off">
-      </div>
-      <!-- Marca -->
-      <div>
-        <label class="block text-xs text-slate-400 mb-1">Marca</label>
-        <input id="pnMarca" class="inp w-full" placeholder="Marca" autocomplete="off">
-      </div>
-      <!-- Unidad -->
-      <div>
-        <label class="block text-xs text-slate-400 mb-1">Unidad *</label>
-        <select id="pnUnidad" class="inp w-full">
-          <option value="UND">UND</option>
-          <option value="KG">KG</option>
-          <option value="L">L</option>
-          <option value="CAJA">CAJA</option>
-          <option value="BOLSA">BOLSA</option>
-          <option value="PAQUETE">PAQUETE</option>
-        </select>
-      </div>
-      <!-- Categoría -->
-      <div>
-        <label class="block text-xs text-slate-400 mb-1">Categoría *</label>
-        <select id="pnCategoria" class="inp w-full">
-          <option value="">— elegir —</option>
-        </select>
-      </div>
-      <!-- Precio venta -->
-      <div>
-        <label class="block text-xs text-slate-400 mb-1">Precio venta</label>
-        <input id="pnPrecioVenta" type="number" step="0.01" min="0" class="inp w-full" placeholder="0.00">
-      </div>
-      <!-- Precio costo -->
-      <div>
-        <label class="block text-xs text-slate-400 mb-1">Precio costo</label>
-        <input id="pnPrecioCosto" type="number" step="0.01" min="0" class="inp w-full" placeholder="0.00">
-      </div>
-      <!-- Stock mín -->
-      <div>
-        <label class="block text-xs text-slate-400 mb-1">Stock mínimo</label>
-        <input id="pnStockMin" type="number" step="1" min="0" class="inp w-full" placeholder="0">
-      </div>
-    </div>
-
-    <div id="pnError" class="text-red-400 text-xs mt-3" style="display:none"></div>
-    <div class="flex gap-3 mt-5">
-      <button onclick="MOS.cerrarModalPN()" class="btn flex-1">Cancelar</button>
-      <button id="btnLanzarPN" onclick="MOS.lanzarAProduccion()" class="flex-1 py-2.5 px-4 rounded-lg font-semibold text-sm" style="background:#16a34a;color:#fff">
-        Lanzar a producción
+    <div id="pnError" class="text-red-400 text-xs px-5 pb-2" style="display:none"></div>
+    <div class="flex gap-3 px-5 py-4 flex-shrink-0" style="border-top:1px solid #1e293b">
+      <button onclick="MOS.cerrarModalPN()" class="btn-ghost flex-1">Cancelar</button>
+      <button id="btnLanzarPN" onclick="MOS.lanzarAProduccion()" class="flex-1 py-2.5 px-4 rounded-lg font-semibold text-sm" style="background:linear-gradient(135deg,#c9a227,#ffd700);color:#020817">
+        Aprobar y crear
       </button>
     </div>
   </div>

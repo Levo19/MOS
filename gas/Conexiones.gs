@@ -449,42 +449,68 @@ function getProductosNuevosWarehouse(params) {
 }
 
 function lanzarProductoNuevo(params) {
-  // 1. Crear en PRODUCTOS_MASTER de MOS
-  var resultCrear = crearProductoMaster({
-    codigoBarra:        params.codigoBarra       || '',
-    descripcion:        params.descripcion       || '',
-    marca:              params.marca             || '',
-    idCategoria:        params.idCategoria       || '',
-    unidad:             params.unidad            || 'UNIDAD',
-    precioVenta:        parseFloat(params.precioVenta)  || 0,
-    precioCosto:        parseFloat(params.precioCosto)  || 0,
-    stockMinimo:        parseFloat(params.stockMinimo)  || 0,
-    stockMaximo:        parseFloat(params.stockMaximo)  || 0,
-    esEnvasable:        params.esEnvasable        || '0',
-    codigoProductoBase: params.codigoProductoBase || '',
-    factorConversion:   params.factorConversion   || '',
-    mermaEsperadaPct:   params.mermaEsperadaPct   || '',
-    zona:               params.zona               || '',
-    usuario:            params.usuario            || 'MOS'
-  });
-  if (!resultCrear.ok) return resultCrear;
+  var tipo = String(params.tipo || 'NUEVO').toUpperCase();
+  var idProductoCreado = '';
+  var idEquivCreado    = '';
 
-  // 2. Notificar a warehouseMos: marcar PN como APROBADO
+  if (tipo === 'NUEVO') {
+    // 1. Crear en PRODUCTOS_MASTER de MOS
+    var resultCrear = crearProductoMaster({
+      codigoBarra:        params.codigoFinal        || '',
+      descripcion:        params.descripcion        || '',
+      marca:              params.marca              || '',
+      idCategoria:        params.idCategoria        || '',
+      unidad:             params.unidad             || 'UNIDAD',
+      Tipo_IGV:           params.Tipo_IGV           || '1',
+      precioVenta:        parseFloat(params.precioVenta) || 0,
+      precioCosto:        parseFloat(params.precioCosto) || 0,
+      stockMinimo:        parseFloat(params.stockMinimo) || 0,
+      stockMaximo:        parseFloat(params.stockMaximo) || 0,
+      esEnvasable:        params.esEnvasable        || '0',
+      codigoProductoBase: params.codigoProductoBase || '',
+      factorConversion:   params.factorConversion   || '',
+      mermaEsperadaPct:   params.mermaEsperadaPct   || '',
+      zona:               params.zona               || '',
+      usuario:            params.usuario            || 'MOS'
+    });
+    if (!resultCrear.ok) return resultCrear;
+    idProductoCreado = resultCrear.data.idProducto;
+  } else if (tipo === 'EQUIVALENTE') {
+    // 1. Crear en EQUIVALENCIAS de MOS
+    var resultEq = crearEquivalencia({
+      skuBase:     params.skuBase,
+      codigoBarra: params.codigoFinal || '',
+      descripcion: params.descripcionEquiv || params.descripcion || ''
+    });
+    if (!resultEq || !resultEq.ok) return { ok: false, error: (resultEq && resultEq.error) || 'Error creando equivalencia' };
+    idEquivCreado = resultEq.data && resultEq.data.idEquiv;
+  } else {
+    return { ok: false, error: 'tipo inválido (NUEVO o EQUIVALENTE)' };
+  }
+
+  // 2. Notificar a warehouseMos: actualizar GUIA_DETALLE + STOCK + marcar PN APROBADO
   var whResult = postToWarehouse('aprobarProductoNuevo', {
-    idProductoNuevo:  params.idProductoNuevo,
-    aprobadoPor:      params.usuario || 'MOS',
-    descripcion:      params.descripcion,
-    idCategoria:      params.idCategoria || '',
-    unidad:           params.unidad || 'UNIDAD',
-    idProducto:       resultCrear.data.idProducto
+    idProductoNuevo: params.idProductoNuevo,
+    idGuia:          params.idGuia,
+    codigoOriginal:  params.codigoOriginal,
+    codigoFinal:     params.codigoFinal,
+    cantidadFinal:   parseFloat(params.cantidadFinal) || 0,
+    tipo:            tipo,
+    aprobadoPor:     params.aprobadoPor || params.usuario || 'MOS',
+    descripcion:     params.descripcion,
+    idCategoria:     params.idCategoria || '',
+    unidad:          params.unidad || 'UNIDAD',
+    idProducto:      idProductoCreado
   });
 
   return {
-    ok:         true,
+    ok: true,
     data: {
-      idProducto:      resultCrear.data.idProducto,
-      aprobadoEnWH:    whResult.ok,
-      whError:         whResult.ok ? '' : (whResult.error || '')
+      tipo:           tipo,
+      idProducto:     idProductoCreado,
+      idEquiv:        idEquivCreado,
+      aprobadoEnWH:   whResult.ok,
+      whError:        whResult.ok ? '' : (whResult.error || '')
     }
   };
 }

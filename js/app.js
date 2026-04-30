@@ -1373,16 +1373,15 @@ const MOS = (() => {
     const pn = (S.pnPendientes || []).find(p => String(p.idProductoNuevo) === String(idProductoNuevo));
     if (!pn) return;
 
-    $('pnId').value       = pn.idProductoNuevo;
-    $('pnIdGuia').value   = pn.idGuia || '';
-    $('pnUsuario').value  = pn.usuario || '';
-    $('pnDesc').value     = pn.descripcion || '';
-    $('pnMarca').value    = pn.marca || '';
-    $('pnCodigoWH').textContent   = pn.codigoBarra || '—';
-    $('pnCantidad').textContent   = pn.cantidad != null ? pn.cantidad : '—';
-    $('pnFechaVenc').textContent  = pn.fechaVencimiento || '—';
+    $('pnId').value             = pn.idProductoNuevo;
+    $('pnIdGuia').value          = pn.idGuia || '';
+    $('pnCodigoOriginal').value  = pn.codigoBarra || '';
+    $('pnUsuario').value         = pn.usuario || '';
 
-    const guiaLabel = pn.guia ? `${pn.guia.tipo || 'Guía'} · ${pn.guia.fecha || ''} · ${pn.guia.estado || ''}` : `Guía ${pn.idGuia}`;
+    // Header info
+    $('pnCodigoWH').textContent  = pn.codigoBarra || '—';
+    $('pnFechaVenc').textContent = pn.fechaVencimiento || '—';
+    const guiaLabel = (pn.usuario || 'Operador') + ' · ' + (pn.fechaCreacion || '');
     $('pnGuiaInfo').textContent = guiaLabel;
 
     const obs = $('pnObservaciones');
@@ -1393,21 +1392,41 @@ const MOS = (() => {
     if (pn.foto) {
       fotoBox.innerHTML = `<img src="${pn.foto}" style="width:100%;height:100%;object-fit:cover">`;
     } else {
-      fotoBox.innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg>`;
+      fotoBox.innerHTML = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg>`;
     }
 
-    $('pnPrecioVenta').value = '';
-    $('pnPrecioCosto').value = '';
-    $('pnStockMin').value    = '';
+    // Cantidad pre-cargada con la registrada en WH
+    $('pnCantidad').value = pn.cantidad != null ? pn.cantidad : '';
 
-    const errEl = $('pnError'); if (errEl) errEl.style.display = 'none';
-    const btn = $('btnLanzarPN'); if (btn) { btn.disabled = false; btn.textContent = 'Lanzar a producción'; }
-
-    populateCatFiltro(); // repopulates pnCategoria from S.productos
+    // Sección NUEVO pre-cargada
+    $('pnDesc').value         = pn.descripcion || '';
+    $('pnMarca').value        = pn.marca || '';
+    $('pnCodigoFinal').value  = pn.codigoBarra || '';
+    $('pnPrecioVenta').value  = '';
+    $('pnPrecioCosto').value  = '';
+    $('pnIGV').value          = '1';
+    populateCatFiltro();
     const catSel = $('pnCategoria');
     if (catSel && pn.idCategoria) catSel.value = pn.idCategoria;
     const unidSel = $('pnUnidad');
     if (unidSel && pn.unidad) unidSel.value = pn.unidad;
+
+    // Sección EQUIVALENTE limpia
+    $('pnEquivBuscar').value = '';
+    $('pnEquivResultados').innerHTML = '';
+    $('pnEquivResultados').style.display = 'none';
+    $('pnEquivSkuBase').value = '';
+    $('pnEquivSeleccionado').classList.add('hidden');
+    $('pnCodigoEquiv').value = pn.codigoBarra || '';
+    $('pnDescEquiv').value   = pn.descripcion || '';
+
+    // Reset radio a NUEVO
+    document.querySelector('input[name="pnTipo"][value="NUEVO"]').checked = true;
+    pnSetTipo('NUEVO');
+
+    // Reset error y botón
+    const errEl = $('pnError'); if (errEl) errEl.style.display = 'none';
+    const btn = $('btnLanzarPN'); if (btn) { btn.disabled = false; btn.textContent = 'Aprobar y crear'; }
 
     const modal = $('modalPN');
     if (modal) { modal.classList.remove('hidden'); modal.classList.add('open'); }
@@ -1418,57 +1437,112 @@ const MOS = (() => {
     if (modal) { modal.classList.add('hidden'); modal.classList.remove('open'); }
   }
 
+  // Toggle sección NUEVO vs EQUIVALENTE
+  function pnSetTipo(tipo) {
+    $('pnSeccionNuevo').classList.toggle('hidden', tipo !== 'NUEVO');
+    $('pnSeccionEquiv').classList.toggle('hidden', tipo !== 'EQUIVALENTE');
+  }
+
+  // Auto-genera código NMLEV en sección NUEVO
+  function pnAutogenBarcode() {
+    const ts = Date.now().toString().slice(-6);
+    const rand = Math.floor(Math.random() * 900 + 100);
+    $('pnCodigoFinal').value = 'NMLEV' + ts + rand;
+  }
+
+  // Búsqueda de producto base para modo EQUIVALENTE
+  function pnBuscarBase() {
+    const q = ($('pnEquivBuscar').value || '').toLowerCase().trim();
+    const resBox = $('pnEquivResultados');
+    if (!q || q.length < 2) { resBox.style.display = 'none'; resBox.innerHTML = ''; return; }
+    const matches = (S.productos || []).filter(p => {
+      const desc = (p.descripcion || '').toLowerCase();
+      const cb   = (p.codigoBarra || '').toLowerCase();
+      const sku  = (p.skuBase || p.idProducto || '').toLowerCase();
+      return desc.indexOf(q) >= 0 || cb.indexOf(q) >= 0 || sku.indexOf(q) >= 0;
+    }).slice(0, 8);
+    if (!matches.length) {
+      resBox.innerHTML = '<div class="pn-result text-slate-500 italic">Sin resultados</div>';
+      resBox.style.display = 'block';
+      return;
+    }
+    resBox.innerHTML = matches.map(p => `
+      <div class="pn-result" onclick="MOS.pnSeleccionarBase('${(p.skuBase || p.idProducto)}', '${(p.descripcion || '').replace(/'/g, '\\\'')}', '${p.codigoBarra || ''}')">
+        <div class="text-slate-200 font-medium">${p.descripcion || p.idProducto}</div>
+        <div class="text-slate-500 text-xs">▌${p.codigoBarra || '—'} · SKU ${p.skuBase || p.idProducto}</div>
+      </div>
+    `).join('');
+    resBox.style.display = 'block';
+  }
+
+  function pnSeleccionarBase(skuBase, descripcion, codigoBarra) {
+    $('pnEquivSkuBase').value = skuBase;
+    $('pnEquivSeleccionadoNombre').textContent = `${descripcion} (${codigoBarra || skuBase})`;
+    $('pnEquivSeleccionado').classList.remove('hidden');
+    $('pnEquivResultados').style.display = 'none';
+    $('pnEquivBuscar').value = descripcion;
+  }
+
   async function lanzarAProduccion() {
     const btn = $('btnLanzarPN');
     const errEl = $('pnError');
     if (errEl) errEl.style.display = 'none';
 
     const idProductoNuevo = $('pnId')?.value?.trim();
-    const desc     = $('pnDesc')?.value?.trim();
-    const marca    = $('pnMarca')?.value?.trim();
-    const unidad   = $('pnUnidad')?.value;
-    const catId    = $('pnCategoria')?.value;
-    const pVenta   = parseFloat($('pnPrecioVenta')?.value || '0') || 0;
-    const pCosto   = parseFloat($('pnPrecioCosto')?.value || '0') || 0;
-    const stockMin = parseInt($('pnStockMin')?.value || '0') || 0;
-    const usuario  = $('pnUsuario')?.value || (S.session?.nombre || 'MOS');
-    const idGuia   = $('pnIdGuia')?.value || '';
+    const idGuia          = $('pnIdGuia')?.value || '';
+    const codigoOriginal  = $('pnCodigoOriginal')?.value || '';
+    const cantidadFinal   = parseFloat($('pnCantidad')?.value || '0') || 0;
+    const tipo            = document.querySelector('input[name="pnTipo"]:checked')?.value || 'NUEVO';
+    const usuario         = S.session?.nombre || 'MOS';
 
-    if (!desc)  { mostrarPNError('La descripción es obligatoria'); return; }
-    if (!catId) { mostrarPNError('Selecciona una categoría'); return; }
+    if (cantidadFinal < 0) { mostrarPNError('Cantidad inválida'); return; }
 
-    const pn = (S.pnPendientes || []).find(p => String(p.idProductoNuevo) === String(idProductoNuevo));
-    const codigoBarra = pn?.codigoBarra || '';
+    let params = { idProductoNuevo, idGuia, codigoOriginal, cantidadFinal, tipo, usuario, aprobadoPor: usuario };
+
+    if (tipo === 'NUEVO') {
+      const desc       = $('pnDesc')?.value?.trim();
+      const codigoFinal= $('pnCodigoFinal')?.value?.trim();
+      const marca      = $('pnMarca')?.value?.trim();
+      const unidad     = $('pnUnidad')?.value;
+      const catId      = $('pnCategoria')?.value;
+      const pVenta     = parseFloat($('pnPrecioVenta')?.value || '0') || 0;
+      const pCosto     = parseFloat($('pnPrecioCosto')?.value || '0') || 0;
+      const igv        = $('pnIGV')?.value || '1';
+
+      if (!desc)        { mostrarPNError('La descripción es obligatoria'); return; }
+      if (!codigoFinal) { mostrarPNError('El código de barras es obligatorio'); return; }
+      if (!catId)       { mostrarPNError('Selecciona una categoría'); return; }
+      if (pVenta <= 0)  { mostrarPNError('Precio de venta requerido'); return; }
+
+      Object.assign(params, {
+        codigoFinal, descripcion: desc, marca,
+        idCategoria: catId, unidad,
+        precioVenta: pVenta, precioCosto: pCosto, Tipo_IGV: igv
+      });
+    } else {
+      const skuBase   = $('pnEquivSkuBase')?.value;
+      const codigoEq  = $('pnCodigoEquiv')?.value?.trim();
+      const descEq    = $('pnDescEquiv')?.value?.trim();
+      if (!skuBase)   { mostrarPNError('Selecciona el producto base'); return; }
+      if (!codigoEq)  { mostrarPNError('Código equivalente requerido'); return; }
+      Object.assign(params, {
+        codigoFinal: codigoEq, skuBase,
+        descripcionEquiv: descEq
+      });
+    }
 
     if (btn) { btn.disabled = true; btn.textContent = 'Procesando...'; }
     try {
-      await API.lanzarProductoNuevo({
-        idProductoNuevo,
-        codigoBarra,
-        descripcion: desc,
-        marca,
-        idCategoria: catId,
-        unidad,
-        precioVenta: pVenta,
-        precioCosto: pCosto,
-        stockMinimo: stockMin,
-        stockMaximo: 0,
-        esEnvasable: '0',
-        usuario,
-        aprobadoPor: S.session?.nombre || usuario,
-        idGuia
-      });
-
+      await API.post('lanzarProductoNuevo', params);
       S.pnPendientes = (S.pnPendientes || []).filter(p => String(p.idProductoNuevo) !== String(idProductoNuevo));
       _updatePNBadge();
       renderPNBanner();
       cerrarModalPN();
-      toast('Producto lanzado a producción', 'ok');
-      // Refrescar catálogo para mostrar el nuevo producto
+      toast(tipo === 'NUEVO' ? 'Producto creado en catálogo ✓' : 'Equivalencia agregada ✓', 'ok');
       setTimeout(() => loadCatalogo(true), 800);
     } catch(e) {
-      mostrarPNError(e.message || 'Error al lanzar producto');
-      if (btn) { btn.disabled = false; btn.textContent = 'Lanzar a producción'; }
+      mostrarPNError(e.message || 'Error al aprobar producto');
+      if (btn) { btn.disabled = false; btn.textContent = 'Aprobar y crear'; }
     }
   }
 
@@ -6123,6 +6197,7 @@ const MOS = (() => {
     openConfig, saveConfig, testConnection, closeModal, openEcoModal,
     filterCatalogo, setCatTab, toggleDerivs, togglePresentaciones, guardarPrecioRapido,
     abrirModalPN, cerrarModalPN, lanzarAProduccion,
+    pnSetTipo, pnAutogenBarcode, pnBuscarBase, pnSeleccionarBase,
     abrirModalPrecioRapido, cerrarModalPrecioRapido, _qpSyncPresentaciones,
     abrirAnalitica, cerrarAnalitica, setAnPeriodo, guardarStockMinMax, _anCurrentId,
     guardarAjustePrecios, stepperInc, stepperDec,
