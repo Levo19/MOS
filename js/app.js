@@ -2531,8 +2531,8 @@ const MOS = (() => {
   }
 
   // ── MODALS ──────────────────────────────────────────────────
-  function openModal(id)  { const el = $(id); if (el) el.classList.add('open'); }
-  function closeModal(id) { const el = $(id); if (el) el.classList.remove('open'); }
+  function openModal(id)  { const el = $(id); if (el) { el.classList.remove('hidden'); el.classList.add('open'); } }
+  function closeModal(id) { const el = $(id); if (el) { el.classList.remove('open'); el.classList.add('hidden'); } }
 
   function openEcoModal(app) {
     const eco = S._ecoData;
