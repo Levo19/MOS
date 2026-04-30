@@ -575,6 +575,20 @@
     @media (max-width: 640px) {
       .cat-btn-new-lbl { display: none; }
       .cat-btn-new { padding: 0 12px !important; }
+      .cat-btn-promo { padding: 0 12px !important; }
+    }
+    .cat-btn-promo {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 0 14px; height: 38px;
+      background: linear-gradient(135deg, rgba(168,85,247,.15), rgba(236,72,153,.12));
+      border: 1.5px solid rgba(168,85,247,.4);
+      border-radius: 10px; color: #c084fc;
+      font-size: .85rem; font-weight: 700;
+      cursor: pointer; transition: all .15s;
+    }
+    .cat-btn-promo:hover {
+      background: linear-gradient(135deg,#a855f7,#ec4899);
+      color: #fff; border-color: #c084fc;
     }
 
     /* ── Botón de alertas en catálogo (dorado, palpita y salta) ── */
@@ -1786,6 +1800,9 @@
             </div>
           </div>
         </div>
+        <button class="cat-tool-btn cat-btn-promo" onclick="MOS.abrirModalPromociones()" title="Gestionar promociones">
+          <span>🎯</span><span class="cat-btn-new-lbl">Promos</span>
+        </button>
         <button class="btn-primary whitespace-nowrap flex items-center gap-1 cat-tool-btn cat-btn-new" onclick="MOS.abrirModalProducto(null)">
           <span>+</span><span class="cat-btn-new-lbl">Nuevo</span>
         </button>
@@ -3865,6 +3882,111 @@
       </li>
     </ul>
     <p class="upd-hint">No cierres la aplicación · Esto toma unos segundos</p>
+  </div>
+</div>
+
+<!-- Modal: Promociones (lista + form) -->
+<div id="modalPromociones" class="modal-overlay hidden" onclick="if(event.target===this)MOS.closeModal('modalPromociones')">
+  <div class="modal-box p-0" style="max-width:560px;max-height:92vh;display:flex;flex-direction:column">
+    <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
+      <div>
+        <h3 class="font-semibold text-purple-300 text-base">🎯 Promociones</h3>
+        <p class="text-xs text-slate-500" id="promosCount">— promociones</p>
+      </div>
+      <button onclick="MOS.closeModal('modalPromociones')" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+    </div>
+
+    <!-- Vista Lista -->
+    <div id="promoListView" class="overflow-y-auto px-5 py-4" style="flex:1">
+      <button onclick="MOS.promoNuevoForm()" class="btn-primary w-full mb-3" style="background:linear-gradient(135deg,#a855f7,#ec4899);border-color:#c084fc">
+        + Nueva promoción
+      </button>
+      <div id="promoLista" class="space-y-2"></div>
+    </div>
+
+    <!-- Vista Form (hidden inicialmente) -->
+    <div id="promoFormView" class="hidden overflow-y-auto px-5 py-4 space-y-4" style="flex:1">
+      <button onclick="MOS.promoVolverLista()" class="text-xs text-slate-400 hover:text-white">← Volver a lista</button>
+
+      <input type="hidden" id="promoIdEdit">
+
+      <!-- Producto / SKU -->
+      <div>
+        <label class="lbl">Producto base *</label>
+        <input id="promoBuscar" class="inp" placeholder="Buscar producto canónico..." oninput="MOS.promoBuscarBase()" autocomplete="off">
+        <div id="promoBuscarRes" class="mt-1 max-h-40 overflow-y-auto" style="background:#060d1f;border:1px solid #1e293b;border-radius:8px;display:none"></div>
+        <input type="hidden" id="promoSkuBase">
+        <div id="promoSeleccionado" class="text-xs mt-2 hidden" style="background:rgba(168,85,247,.08);border:1px solid rgba(168,85,247,.3);border-radius:8px;padding:8px">
+          <strong class="text-purple-300">Producto:</strong>
+          <span id="promoSeleccionadoNombre"></span>
+        </div>
+      </div>
+
+      <!-- Tipo -->
+      <div>
+        <label class="lbl">Tipo de promoción *</label>
+        <div class="space-y-2">
+          <label class="pn-radio-card">
+            <input type="radio" name="promoTipo" value="GRUPO" checked onchange="MOS.promoSetTipo('GRUPO')">
+            <div>
+              <div class="pn-radio-title">📦 GRUPO — Lleva N por S/ X</div>
+              <div class="pn-radio-sub">Ej: Lleva 3 por S/30 (cada uno a S/10)</div>
+            </div>
+          </label>
+          <label class="pn-radio-card">
+            <input type="radio" name="promoTipo" value="PORCENTAJE" onchange="MOS.promoSetTipo('PORCENTAJE')">
+            <div>
+              <div class="pn-radio-title">% PORCENTAJE — Descuento desde N uds</div>
+              <div class="pn-radio-sub">Ej: -10% desde 2 unidades</div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Cantidad mínima + valor -->
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="lbl">Cantidad mínima *</label>
+          <input id="promoCantMin" type="number" step="1" min="1" class="inp" placeholder="3" oninput="MOS.promoActualizarEjemplo&&MOS.promoActualizarEjemplo()">
+        </div>
+        <div>
+          <label class="lbl" id="promoValorLbl">Precio unitario (S/) *</label>
+          <input id="promoValor" type="number" step="0.01" min="0" class="inp" placeholder="10.00" oninput="MOS.promoActualizarEjemplo&&MOS.promoActualizarEjemplo()">
+        </div>
+      </div>
+      <div class="text-xs text-slate-500" id="promoEjemplo">Ejemplo: ...</div>
+
+      <!-- Descripción -->
+      <div>
+        <label class="lbl">Descripción visible</label>
+        <input id="promoDesc" class="inp" placeholder="Tripack: 3 por S/30">
+      </div>
+
+      <!-- Vigencia -->
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="lbl">Vigencia desde</label>
+          <input id="promoFDesde" type="date" class="inp">
+        </div>
+        <div>
+          <label class="lbl">Vigencia hasta</label>
+          <input id="promoFHasta" type="date" class="inp">
+        </div>
+      </div>
+
+      <!-- Activa toggle -->
+      <label class="flex items-center justify-between text-sm cursor-pointer">
+        <span class="text-slate-300">Activa</span>
+        <button type="button" id="promoTogActiva" class="toggle-sw on" onclick="this.classList.toggle('on')"><span class="toggle-sw-knob"></span></button>
+      </label>
+    </div>
+
+    <div id="promoError" class="text-red-400 text-xs px-5 pb-2" style="display:none"></div>
+    <div id="promoFormBtns" class="hidden flex gap-2 px-5 py-3 flex-shrink-0" style="border-top:1px solid #1e293b">
+      <button onclick="MOS.promoEliminar()" id="promoBtnEliminar" class="btn-ghost hidden" style="color:#f87171">Eliminar</button>
+      <button onclick="MOS.promoVolverLista()" class="btn-ghost flex-1">Cancelar</button>
+      <button onclick="MOS.promoGuardar()" class="btn-primary flex-1" style="background:linear-gradient(135deg,#a855f7,#ec4899);border-color:#c084fc">Guardar</button>
+    </div>
   </div>
 </div>
 
