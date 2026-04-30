@@ -39,13 +39,24 @@ function _route(method, e) {
       case 'publicarPrecio':       return publicarPrecio(params);
 
       // ── Proveedores maestros ───────────────────────────────
-      case 'getProveedores':       return getProveedoresMaster(params);
-      case 'crearProveedor':       return crearProveedorMaster(params);
-      case 'actualizarProveedor':  return actualizarProveedorMaster(params);
-      case 'getPagos':             return getPagosProveedor(params);
-      case 'registrarPago':        return registrarPago(params);
-      case 'getPedidos':           return getPedidosProveedor(params);
-      case 'crearPedido':          return crearPedidoProveedor(params);
+      case 'getProveedores':              return getProveedoresMaster(params);
+      case 'crearProveedor':              return crearProveedorMaster(params);
+      case 'actualizarProveedor':         return actualizarProveedorMaster(params);
+      case 'getPagos':                    return getPagosProveedor(params);
+      case 'registrarPago':               return registrarPago(params);
+      case 'getPedidos':                  return getPedidosProveedor(params);
+      case 'crearPedido':                 return crearPedidoProveedor(params);
+      case 'getHistoricoProveedor':       return getHistoricoProveedor(params);
+      case 'getProveedorProductos':       return getProveedorProductos(params);
+      case 'agregarProductoProveedor':    return agregarProductoProveedor(params);
+      case 'actualizarProductoProveedor': return actualizarProductoProveedor(params);
+      case 'eliminarProductoProveedor':   return eliminarProductoProveedor(params);
+
+      // ── Promociones (centralizadas en hoja MosExpress) ─────
+      case 'getPromociones':              return getPromociones(params);
+      case 'crearPromocion':              return crearPromocion(params);
+      case 'actualizarPromocion':         return actualizarPromocion(params);
+      case 'eliminarPromocion':           return eliminarPromocion(params);
 
       // ── Conexiones cross-app ───────────────────────────────
       case 'getStockWarehouse':    return getStockWarehouse(params);
