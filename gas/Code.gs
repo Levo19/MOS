@@ -43,6 +43,15 @@ function _route(method, e) {
       case 'auditarIntegridad':        return auditarIntegridadProductos();
       case 'resolverAlertaAuditoria':  return resolverAlertaAuditoria(params);
 
+      // ── Almacén unificado (WH + Zonas ME) ──────────────────
+      case 'getDashboardAlmacen':    return getDashboardAlmacen();
+      case 'getStockUnificado':      return getStockUnificado(params);
+      case 'getGuiasYPreingresos':   return getGuiasYPreingresos(params);
+      case 'getRankingZonas':        return getRankingZonas(params);
+      case 'getProductosSinVenta':   return getProductosSinVenta(params);
+      case 'getInsightsStock':       return getInsightsStock(params);
+      case 'getAlertasOperativas':   return getAlertasOperativas(params);
+
       // ── Proveedores maestros ───────────────────────────────
       case 'getProveedores':              return getProveedoresMaster(params);
       case 'crearProveedor':              return crearProveedorMaster(params);

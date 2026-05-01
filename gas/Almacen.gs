@@ -1,0 +1,798 @@
+// ============================================================
+// ProyectoMOS — Almacen.gs
+// Endpoints unificados de almacén/stock que combinan datos de:
+//  · WH (warehouseMos) — STOCK central, GUIAS, PREINGRESOS, MERMAS, ENVASADOS
+//  · ME (MosExpress)   — STOCK_ZONAS, VENTAS_CABECERA, VENTAS_DETALLE
+//  · MOS               — PRODUCTOS_MASTER (catálogo), ESTACIONES (zonas)
+// ============================================================
+
+// ── DASHBOARD: KPIs principales ─────────────────────────────────
+function getDashboardAlmacen() {
+  try {
+    var hoy = new Date();
+    var mesIni = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    var stockWh    = _safeReadWhStock();
+    var productos  = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
+    var prodMap = {}; productos.forEach(function(p){ prodMap[p.idProducto] = p; if (p.skuBase) prodMap[p.skuBase] = p; });
+
+    // 1. Stock valorizado
+    var stockValor = 0, totalUnidades = 0;
+    stockWh.forEach(function(s) {
+      var prod = prodMap[s.codigoProducto] || prodMap[s.skuBase];
+      var cant = parseFloat(s.cantidadDisponible) || 0;
+      var costo = prod ? (parseFloat(prod.precioCosto) || 0) : 0;
+      stockValor    += cant * costo;
+      totalUnidades += cant;
+    });
+
+    // 2. Productos críticos (stock < mínimo)
+    var criticos = 0, enAlerta = 0;
+    stockWh.forEach(function(s) {
+      var prod = prodMap[s.codigoProducto] || prodMap[s.skuBase];
+      if (!prod) return;
+      var cant = parseFloat(s.cantidadDisponible) || 0;
+      var min  = parseFloat(prod.stockMinimo) || 0;
+      if (min > 0) {
+        if (cant < min) criticos++;
+        else if (cant < min * 1.2) enAlerta++;
+      }
+    });
+
+    // 3. Vencimientos próximos (lotes ≤ 7 días) y críticos (≤ 30)
+    var lotes = _safeReadWhLotes();
+    var vencCrit = 0, vencAlerta = 0;
+    lotes.forEach(function(l) {
+      if (!l.fechaVencimiento || (parseFloat(l.cantidadActual) || 0) <= 0) return;
+      var dias = Math.floor((new Date(l.fechaVencimiento) - hoy) / 86400000);
+      if (dias <= 7) vencCrit++;
+      else if (dias <= 30) vencAlerta++;
+    });
+
+    // 4. Mermas del mes (sumar cantidad * costo)
+    var mermas = _safeReadWhMermas();
+    var mermasMes = 0, mermasMesUnidades = 0, mermasPendientes = 0;
+    mermas.forEach(function(m) {
+      var fecha = m.fecha ? new Date(m.fecha) : null;
+      if (!fecha || fecha < mesIni) return;
+      mermasMesUnidades += parseFloat(m.cantidad) || 0;
+      var prod = prodMap[m.codigoProducto] || prodMap[m.skuBase];
+      var costo = prod ? (parseFloat(prod.precioCosto) || 0) : 0;
+      mermasMes += (parseFloat(m.cantidad) || 0) * costo;
+      if (String(m.estado || '').toUpperCase() === 'PENDIENTE') mermasPendientes++;
+    });
+
+    // 5. Envasados del mes
+    var envasados = _safeReadWhEnvasados();
+    var envMes = 0, eficienciaSum = 0, eficienciaCount = 0;
+    envasados.forEach(function(e) {
+      var fecha = e.fecha ? new Date(e.fecha) : null;
+      if (!fecha || fecha < mesIni) return;
+      envMes++;
+      var ef = parseFloat(e.eficiencia);
+      if (!isNaN(ef)) { eficienciaSum += ef; eficienciaCount++; }
+    });
+    var eficienciaProm = eficienciaCount > 0 ? (eficienciaSum / eficienciaCount) : null;
+
+    // 6. Preingresos pendientes
+    var preingresos = _safeReadWhPreingresos();
+    var preingPendientes = preingresos.filter(function(p){
+      return String(p.estado || '').toUpperCase() === 'PENDIENTE';
+    }).length;
+
+    return { ok: true, data: {
+      stockValor:        Math.round(stockValor * 100) / 100,
+      totalUnidades:     totalUnidades,
+      productosTotal:    productos.length,
+      productosCriticos: criticos,
+      productosAlerta:   enAlerta,
+      vencCriticos:      vencCrit,
+      vencAlerta:        vencAlerta,
+      mermasMes:         Math.round(mermasMes * 100) / 100,
+      mermasMesUnidades: mermasMesUnidades,
+      mermasPendientes:  mermasPendientes,
+      envasadosMes:      envMes,
+      eficienciaPromedio: eficienciaProm,
+      preingresosPendientes: preingPendientes,
+      timestamp:         new Date().toISOString()
+    }};
+  } catch(e) {
+    return { ok: false, error: 'Error dashboard: ' + e.message };
+  }
+}
+
+// ── STOCK UNIFICADO: WH + Zonas ME para un producto específico ──
+function getStockUnificado(params) {
+  if (!params || (!params.skuBase && !params.idProducto)) {
+    return { ok: false, error: 'Requiere skuBase o idProducto' };
+  }
+  var key = params.skuBase || params.idProducto;
+  var rangoDias = parseInt(params.rangoDias) || 7;
+  var hoy = new Date();
+  var desde = new Date(hoy.getTime() - rangoDias * 86400000);
+
+  try {
+    // Catálogo + zonas
+    var productos = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
+    var estaciones = _sheetToObjects(getSheet('ESTACIONES'))
+      .filter(function(e){ return String(e.appOrigen || '').toLowerCase() === 'mosexpress'; });
+    var zonas = _sheetToObjects(getSheet('ZONAS'));
+    var zonaNomMap = {}; zonas.forEach(function(z){ zonaNomMap[z.idZona] = z.nombre; });
+
+    // Producto base + todas sus presentaciones (mismo skuBase)
+    var prodBase = productos.find(function(p){
+      return p.idProducto === key || p.skuBase === key;
+    });
+    if (!prodBase) return { ok: false, error: 'Producto no encontrado: ' + key };
+    var skuBase = prodBase.skuBase || prodBase.idProducto;
+    var presentaciones = productos.filter(function(p){
+      return (p.skuBase || p.idProducto) === skuBase;
+    });
+    var idsPresentacion = presentaciones.map(function(p){ return p.idProducto; });
+    var barrasPresentacion = presentaciones.map(function(p){ return p.codigoBarra; }).filter(Boolean);
+
+    // 1. Stock WH
+    var stockWh = _safeReadWhStock();
+    var stockWhCantidad = 0;
+    var stockWhDetalle = [];
+    stockWh.forEach(function(s) {
+      if (idsPresentacion.indexOf(s.codigoProducto) >= 0 || barrasPresentacion.indexOf(s.codigoProducto) >= 0) {
+        var c = parseFloat(s.cantidadDisponible) || 0;
+        stockWhCantidad += c;
+        stockWhDetalle.push({
+          codigoProducto: s.codigoProducto,
+          cantidad: c,
+          ultimaActualizacion: s.ultimaActualizacion
+        });
+      }
+    });
+
+    // 2. Stock por zona (ME.STOCK_ZONAS)
+    var stockZonas = _safeReadMeStockZonas();
+    var zonaAcum = {};  // { Zona_ID: cantidad }
+    stockZonas.forEach(function(z) {
+      var cb = String(z.Cod_Barras || z.codigoBarra || '').trim();
+      if (barrasPresentacion.indexOf(cb) < 0) return;
+      var zid = String(z.Zona_ID || z.zonaId || '').trim();
+      if (!zid) return;
+      zonaAcum[zid] = (zonaAcum[zid] || 0) + (parseFloat(z.Cantidad || z.cantidad) || 0);
+    });
+
+    // 3. Ventas últimos N días por zona (ME.VENTAS_CABECERA + DETALLE)
+    var ventasZona = _calcularVentasPorZonaRango(barrasPresentacion, idsPresentacion, desde);
+
+    // 4. Construir array de zonas (combinar stock + ventas + nombres)
+    var zonasIdsTodas = {};
+    Object.keys(zonaAcum).forEach(function(z){ zonasIdsTodas[z] = true; });
+    Object.keys(ventasZona).forEach(function(z){ zonasIdsTodas[z] = true; });
+    estaciones.forEach(function(e){
+      var zid = String(e.idZona || e.zona || '').trim();
+      if (zid) zonasIdsTodas[zid] = true;
+    });
+
+    var zonasArr = Object.keys(zonasIdsTodas).map(function(zid) {
+      var cant = zonaAcum[zid] || 0;
+      var ventas = ventasZona[zid] || 0;
+      var rotDia = ventas / rangoDias;
+      var diasParaAcabar = (rotDia > 0 && cant > 0) ? Math.floor(cant / rotDia) : null;
+      return {
+        idZona: zid,
+        nombre: zonaNomMap[zid] || zid,
+        cantidad: cant,
+        ventasRango: ventas,
+        rotacionDia: Math.round(rotDia * 10) / 10,
+        diasParaAcabar: diasParaAcabar
+      };
+    }).sort(function(a, b){ return b.ventasRango - a.ventasRango; });
+
+    // 5. Total
+    var totalCant = stockWhCantidad + zonasArr.reduce(function(s, z){ return s + z.cantidad; }, 0);
+    var totalRot = zonasArr.reduce(function(s, z){ return s + z.rotacionDia; }, 0);
+    var diasTotalParaAcabar = (totalRot > 0 && totalCant > 0) ? Math.floor(totalCant / totalRot) : null;
+
+    // 6. Insights
+    var insights = [];
+    zonasArr.forEach(function(z) {
+      if (z.rotacionDia > 0 && z.cantidad > 0 && z.diasParaAcabar !== null && z.diasParaAcabar < 7) {
+        insights.push({
+          tipo: 'REPONER_ZONA',
+          severidad: 'ALTA',
+          mensaje: 'Zona ' + z.nombre + ' consume ' + z.rotacionDia + '/d, alcanza ' + z.diasParaAcabar + ' días',
+          idZona: z.idZona,
+          accion: 'Trasladar desde WH (' + stockWhCantidad + 'u disponibles)'
+        });
+      }
+    });
+    if (totalRot === 0 && totalCant > 0) {
+      insights.push({
+        tipo: 'SIN_ROTACION',
+        severidad: 'MEDIA',
+        mensaje: 'Sin ventas en últimos ' + rangoDias + ' días con ' + totalCant + 'u en stock',
+        accion: 'Considerar promo/descuento para rotar'
+      });
+    }
+    var minimo = parseFloat(prodBase.stockMinimo) || 0;
+    if (minimo > 0 && totalCant < minimo) {
+      insights.push({
+        tipo: 'BAJO_MINIMO',
+        severidad: 'CRITICA',
+        mensaje: 'Stock total (' + totalCant + ') por debajo del mínimo (' + minimo + ')',
+        accion: 'Generar pedido de reposición'
+      });
+    }
+
+    return { ok: true, data: {
+      producto: {
+        idProducto:  prodBase.idProducto,
+        skuBase:     skuBase,
+        descripcion: prodBase.descripcion,
+        codigoBarra: prodBase.codigoBarra,
+        stockMinimo: parseFloat(prodBase.stockMinimo) || 0,
+        stockMaximo: parseFloat(prodBase.stockMaximo) || 0,
+        precioCosto: parseFloat(prodBase.precioCosto) || 0,
+        precioVenta: parseFloat(prodBase.precioVenta) || 0
+      },
+      wh: {
+        cantidad: stockWhCantidad,
+        detalle: stockWhDetalle
+      },
+      zonas: zonasArr,
+      total: {
+        cantidad:           totalCant,
+        rotacionDia:        Math.round(totalRot * 10) / 10,
+        ventasRango:        zonasArr.reduce(function(s, z){ return s + z.ventasRango; }, 0),
+        diasParaAcabar:     diasTotalParaAcabar,
+        rangoDiasConsultado: rangoDias
+      },
+      insights: insights
+    }};
+  } catch(e) {
+    return { ok: false, error: 'Error stock unificado: ' + e.message };
+  }
+}
+
+// ── GUÍAS Y PREINGRESOS DE WH (vista resumida para Almacén MOS) ──
+function getGuiasYPreingresos(params) {
+  try {
+    var dias = parseInt(params && params.dias) || 7;
+    var hoy = new Date();
+    var desde = new Date(hoy.getTime() - dias * 86400000);
+
+    var guias = _safeReadWhGuias();
+    var preingresos = _safeReadWhPreingresos();
+
+    // Filtrar guías recientes
+    var guiasFiltradas = guias.filter(function(g) {
+      var fecha = g.fecha ? new Date(g.fecha) : null;
+      return fecha && fecha >= desde;
+    }).sort(function(a, b){ return new Date(b.fecha) - new Date(a.fecha); });
+
+    // Preingresos pendientes (todos) + procesados recientes
+    var preingPend = preingresos.filter(function(p){
+      return String(p.estado || '').toUpperCase() === 'PENDIENTE';
+    });
+    var preingProc = preingresos.filter(function(p) {
+      if (String(p.estado || '').toUpperCase() !== 'PROCESADO') return false;
+      var fecha = p.fecha ? new Date(p.fecha) : null;
+      return fecha && fecha >= desde;
+    }).sort(function(a, b){ return new Date(b.fecha) - new Date(a.fecha); });
+
+    // Guía abiertas (>24h sin cerrar)
+    var hace24h = new Date(hoy.getTime() - 86400000);
+    var guiasAbiertasViejas = guias.filter(function(g) {
+      var fecha = g.fecha ? new Date(g.fecha) : null;
+      return String(g.estado || '').toUpperCase() === 'ABIERTA' && fecha && fecha < hace24h;
+    });
+
+    return { ok: true, data: {
+      guias:                 guiasFiltradas,
+      preingresosPendientes: preingPend,
+      preingresosProcesados: preingProc,
+      guiasAbiertasViejas:   guiasAbiertasViejas,
+      resumen: {
+        ingresosHoy:    _contarPorTipoYRango(guiasFiltradas, ['INGRESO_PROVEEDOR','INGRESO'], _hoyMidnight()),
+        despachosHoy:   _contarPorTipoYRango(guiasFiltradas, ['SALIDA_ZONA','DESPACHO','SALIDA'], _hoyMidnight()),
+        envasadosHoy:   _contarPorTipoYRango(guiasFiltradas, ['SALIDA_ENVASADO','ENVASADO'], _hoyMidnight()),
+        montoIngresoHoy: _sumarMontoPorTipoYRango(guiasFiltradas, ['INGRESO_PROVEEDOR','INGRESO'], _hoyMidnight())
+      }
+    }};
+  } catch(e) {
+    return { ok: false, error: 'Error guías/preingresos: ' + e.message };
+  }
+}
+
+// ── HELPERS PRIVADOS ────────────────────────────────────────────
+function _safeReadWhStock() {
+  try { return _sheetToObjects(_abrirWhSheet('STOCK')); } catch(e) { return []; }
+}
+function _safeReadWhLotes() {
+  try { return _sheetToObjects(_abrirWhSheet('LOTES_VENCIMIENTO')); } catch(e) { return []; }
+}
+function _safeReadWhMermas() {
+  try { return _sheetToObjects(_abrirWhSheet('MERMAS')); } catch(e) { return []; }
+}
+function _safeReadWhEnvasados() {
+  try { return _sheetToObjects(_abrirWhSheet('ENVASADOS')); } catch(e) { return []; }
+}
+function _safeReadWhGuias() {
+  try { return _sheetToObjects(_abrirWhSheet('GUIAS')); } catch(e) { return []; }
+}
+function _safeReadWhPreingresos() {
+  try { return _sheetToObjects(_abrirWhSheet('PREINGRESOS')); } catch(e) { return []; }
+}
+function _safeReadMeStockZonas() {
+  try { return _sheetToObjects(_abrirMeSheet('STOCK_ZONAS')); } catch(e) { return []; }
+}
+
+function _calcularVentasPorZonaRango(codBarras, idsProd, desde) {
+  // Devuelve { Zona_ID: cantidadVendida }
+  var resultado = {};
+  try {
+    var ssMe = SpreadsheetApp.openById(_getProp('ME_SS_ID'));
+    var shVC = ssMe.getSheetByName('VENTAS_CABECERA');
+    var shVD = ssMe.getSheetByName('VENTAS_DETALLE');
+    if (!shVC || !shVD) return resultado;
+
+    var dataVC = shVC.getDataRange().getValues();
+    if (dataVC.length < 2) return resultado;
+    // Mapa ID_Venta → Zona_ID + Fecha
+    // VENTAS_CABECERA: ID_Venta(0) | Fecha(1) | Vendedor(2) | Estacion(3) | ... | Estado_Envio(?)
+    // El estado de anulación está en col 8 (índice 8) según código existente
+    var ventasIdToZona = {};
+    for (var i = 1; i < dataVC.length; i++) {
+      var idV = String(dataVC[i][0] || '').trim();
+      if (!idV) continue;
+      var fecha = dataVC[i][1] ? new Date(dataVC[i][1]) : null;
+      if (!fecha || fecha < desde) continue;
+      if (String(dataVC[i][8] || '').toUpperCase() === 'ANULADO') continue;
+      var estacion = String(dataVC[i][3] || '').trim();
+      if (!estacion) continue;
+      ventasIdToZona[idV] = estacion;
+    }
+
+    // VENTAS_DETALLE: ID_Venta(0) | SKU(1) | Nombre(2) | Cantidad(3) | Precio(4) | Subtotal(5) | Cod_Barras(6) | ...
+    var dataVD = shVD.getDataRange().getValues();
+    var setBarras = {}; (codBarras || []).forEach(function(b){ setBarras[String(b)] = true; });
+    var setIds    = {}; (idsProd || []).forEach(function(i){ setIds[String(i)] = true; });
+
+    for (var j = 1; j < dataVD.length; j++) {
+      var idV2 = String(dataVD[j][0] || '').trim();
+      var zona = ventasIdToZona[idV2];
+      if (!zona) continue;
+      var sku  = String(dataVD[j][1] || '').trim();
+      var cb   = String(dataVD[j][6] || '').trim();
+      if (!setBarras[cb] && !setIds[sku]) continue;
+      var cant = parseFloat(dataVD[j][3]) || 0;
+      resultado[zona] = (resultado[zona] || 0) + cant;
+    }
+  } catch(e) { /* silencioso */ }
+  return resultado;
+}
+
+function _hoyMidnight() {
+  var d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function _contarPorTipoYRango(guias, tipos, desdeFecha) {
+  return guias.filter(function(g) {
+    var fecha = g.fecha ? new Date(g.fecha) : null;
+    if (!fecha || fecha < desdeFecha) return false;
+    var tipo = String(g.tipo || '').toUpperCase();
+    return tipos.some(function(t){ return tipo.indexOf(t) >= 0; });
+  }).length;
+}
+
+function _sumarMontoPorTipoYRango(guias, tipos, desdeFecha) {
+  var total = 0;
+  guias.forEach(function(g) {
+    var fecha = g.fecha ? new Date(g.fecha) : null;
+    if (!fecha || fecha < desdeFecha) return;
+    var tipo = String(g.tipo || '').toUpperCase();
+    if (!tipos.some(function(t){ return tipo.indexOf(t) >= 0; })) return;
+    total += parseFloat(g.montoTotal) || 0;
+  });
+  return Math.round(total * 100) / 100;
+}
+
+// ============================================================
+// SPRINT 3 — Análisis por Zona (datos ME)
+// ============================================================
+
+// Ranking de zonas por venta total + breakdown métricas
+function getRankingZonas(params) {
+  try {
+    var rangoDias = parseInt(params && params.dias) || 30;
+    var hoy = new Date();
+    var desde = new Date(hoy.getTime() - rangoDias * 86400000);
+
+    var ssMe = SpreadsheetApp.openById(_getProp('ME_SS_ID'));
+    var shVC = ssMe.getSheetByName('VENTAS_CABECERA');
+    if (!shVC) return { ok: false, error: 'VENTAS_CABECERA no encontrada en ME' };
+
+    var data = shVC.getDataRange().getValues();
+    if (data.length < 2) return { ok: true, data: { zonas: [], total: 0 } };
+
+    // Por zona: { ventas, tickets, vendedores, productos }
+    var porZona = {};
+    var totalVentas = 0, totalTickets = 0;
+    for (var i = 1; i < data.length; i++) {
+      var fecha = data[i][1] ? new Date(data[i][1]) : null;
+      if (!fecha || fecha < desde) continue;
+      if (String(data[i][8] || '').toUpperCase() === 'ANULADO') continue;
+      var zona = String(data[i][3] || '').trim();
+      var monto = parseFloat(data[i][6]) || 0;
+      var vendedor = String(data[i][2] || '').trim();
+      if (!zona) continue;
+      if (!porZona[zona]) porZona[zona] = { ventas: 0, tickets: 0, vendedoresSet: {}, idsVenta: [] };
+      porZona[zona].ventas  += monto;
+      porZona[zona].tickets += 1;
+      porZona[zona].vendedoresSet[vendedor] = true;
+      porZona[zona].idsVenta.push(String(data[i][0] || '').trim());
+      totalVentas += monto;
+      totalTickets += 1;
+    }
+
+    // Construir array y nombres de zona
+    var zonas = _sheetToObjects(getSheet('ZONAS'));
+    var zonaNomMap = {}; zonas.forEach(function(z){ zonaNomMap[z.idZona] = z.nombre; });
+
+    var arr = Object.keys(porZona).map(function(zid) {
+      var d = porZona[zid];
+      return {
+        idZona:     zid,
+        nombre:     zonaNomMap[zid] || zid,
+        ventas:     Math.round(d.ventas * 100) / 100,
+        tickets:    d.tickets,
+        ticketProm: d.tickets > 0 ? Math.round((d.ventas / d.tickets) * 100) / 100 : 0,
+        vendedores: Object.keys(d.vendedoresSet).length,
+        pctTotal:   totalVentas > 0 ? Math.round((d.ventas / totalVentas) * 1000) / 10 : 0
+      };
+    }).sort(function(a, b){ return b.ventas - a.ventas; });
+
+    return { ok: true, data: {
+      zonas:        arr,
+      totalVentas:  Math.round(totalVentas * 100) / 100,
+      totalTickets: totalTickets,
+      rangoDias:    rangoDias,
+      ticketProm:   totalTickets > 0 ? Math.round((totalVentas / totalTickets) * 100) / 100 : 0
+    }};
+  } catch(e) {
+    return { ok: false, error: 'Error ranking zonas: ' + e.message };
+  }
+}
+
+// Productos sin venta en últimos N días (con stock > 0 en alguna zona)
+function getProductosSinVenta(params) {
+  try {
+    var rangoDias = parseInt(params && params.dias) || 30;
+    var hoy = new Date();
+    var desde = new Date(hoy.getTime() - rangoDias * 86400000);
+
+    // 1. Obtener todos los códigos vendidos en el rango
+    var ssMe = SpreadsheetApp.openById(_getProp('ME_SS_ID'));
+    var shVC = ssMe.getSheetByName('VENTAS_CABECERA');
+    var shVD = ssMe.getSheetByName('VENTAS_DETALLE');
+    if (!shVC || !shVD) return { ok: false, error: 'Hojas ME no encontradas' };
+
+    var dataVC = shVC.getDataRange().getValues();
+    var ventasIds = {};
+    for (var i = 1; i < dataVC.length; i++) {
+      var fecha = dataVC[i][1] ? new Date(dataVC[i][1]) : null;
+      if (!fecha || fecha < desde) continue;
+      if (String(dataVC[i][8] || '').toUpperCase() === 'ANULADO') continue;
+      ventasIds[String(dataVC[i][0] || '').trim()] = true;
+    }
+
+    var dataVD = shVD.getDataRange().getValues();
+    var vendidos = {};
+    for (var j = 1; j < dataVD.length; j++) {
+      if (!ventasIds[String(dataVD[j][0] || '').trim()]) continue;
+      var sku = String(dataVD[j][1] || '').trim();
+      var cb  = String(dataVD[j][6] || '').trim();
+      if (sku) vendidos[sku] = true;
+      if (cb) vendidos[cb] = true;
+    }
+
+    // 2. Stock por zona
+    var stockZonas = _safeReadMeStockZonas();
+    var stockPorBarras = {};
+    stockZonas.forEach(function(z) {
+      var cb = String(z.Cod_Barras || z.codigoBarra || '').trim();
+      var qty = parseFloat(z.Cantidad || z.cantidad) || 0;
+      if (!cb || qty <= 0) return;
+      stockPorBarras[cb] = (stockPorBarras[cb] || 0) + qty;
+    });
+
+    // 3. Productos en master con stock pero sin venta
+    var productos = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
+    var sinVenta = productos.filter(function(p){
+      var idP = p.idProducto;
+      var cb  = p.codigoBarra;
+      var stockEnZonas = (cb && stockPorBarras[cb]) || 0;
+      if (stockEnZonas <= 0) return false;
+      // Si tiene stock pero no aparece como vendido en ese rango → sin venta
+      return !(vendidos[idP] || (cb && vendidos[cb]));
+    }).map(function(p){
+      return {
+        idProducto:  p.idProducto,
+        skuBase:     p.skuBase,
+        descripcion: p.descripcion,
+        codigoBarra: p.codigoBarra,
+        precioVenta: parseFloat(p.precioVenta) || 0,
+        stockEnZonas: stockPorBarras[p.codigoBarra] || 0
+      };
+    }).sort(function(a, b){ return b.stockEnZonas - a.stockEnZonas; });
+
+    return { ok: true, data: { productos: sinVenta, rangoDias: rangoDias } };
+  } catch(e) {
+    return { ok: false, error: 'Error productos sin venta: ' + e.message };
+  }
+}
+
+// ============================================================
+// SPRINT 4 — Alertas operativas (push diaria + alertas críticas)
+// ============================================================
+
+function getAlertasOperativas(params) {
+  try {
+    var alertas = [];
+    var stockWh = _safeReadWhStock();
+    var productos = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
+    var prodMap = {}; productos.forEach(function(p){ prodMap[p.idProducto] = p; });
+
+    // 1. Productos con stock crítico (< mínimo)
+    var critCount = 0, critTop = [];
+    stockWh.forEach(function(s) {
+      var prod = prodMap[s.codigoProducto];
+      if (!prod) return;
+      var cant = parseFloat(s.cantidadDisponible) || 0;
+      var min  = parseFloat(prod.stockMinimo) || 0;
+      if (min > 0 && cant < min) {
+        critCount++;
+        if (critTop.length < 5) {
+          critTop.push({
+            idProducto: prod.idProducto,
+            descripcion: prod.descripcion,
+            stock: cant,
+            minimo: min
+          });
+        }
+      }
+    });
+    if (critCount > 0) {
+      alertas.push({
+        tipo: 'STOCK_CRITICO',
+        severidad: 'CRITICA',
+        cantidad: critCount,
+        mensaje: critCount + ' producto(s) por debajo del mínimo en almacén central',
+        topItems: critTop
+      });
+    }
+
+    // 2. Vencimientos próximos
+    var lotes = _safeReadWhLotes();
+    var hoy = new Date();
+    var vencCrit = [];
+    lotes.forEach(function(l) {
+      if (!l.fechaVencimiento || (parseFloat(l.cantidadActual) || 0) <= 0) return;
+      var dias = Math.floor((new Date(l.fechaVencimiento) - hoy) / 86400000);
+      if (dias <= 7 && dias >= 0) {
+        vencCrit.push({
+          codigoProducto: l.codigoProducto,
+          dias: dias,
+          cantidad: parseFloat(l.cantidadActual) || 0
+        });
+      }
+    });
+    if (vencCrit.length > 0) {
+      alertas.push({
+        tipo: 'VENCIMIENTO_CRITICO',
+        severidad: 'ALTA',
+        cantidad: vencCrit.length,
+        mensaje: vencCrit.length + ' lote(s) vencen en ≤7 días',
+        topItems: vencCrit.slice(0, 5)
+      });
+    }
+
+    // 3. Preingresos pendientes
+    var preingresos = _safeReadWhPreingresos();
+    var preingPend = preingresos.filter(function(p){
+      return String(p.estado || '').toUpperCase() === 'PENDIENTE';
+    });
+    if (preingPend.length > 0) {
+      alertas.push({
+        tipo: 'PREINGRESOS_PENDIENTES',
+        severidad: 'MEDIA',
+        cantidad: preingPend.length,
+        mensaje: preingPend.length + ' preingreso(s) esperando aprobación'
+      });
+    }
+
+    return { ok: true, data: {
+      alertas: alertas,
+      total: alertas.length,
+      timestamp: new Date().toISOString()
+    }};
+  } catch(e) {
+    return { ok: false, error: 'Error alertas operativas: ' + e.message };
+  }
+}
+
+// Trigger diario opcional: corre las alertas y manda push si hay críticas
+// Configurar trigger: ScriptApp.newTrigger('alertasOperativasDiarias').timeBased().everyDays(1).atHour(7).create()
+function alertasOperativasDiarias() {
+  var r = getAlertasOperativas({});
+  if (!r.ok || !r.data || !r.data.total) return;
+  var criticas = r.data.alertas.filter(function(a){ return a.severidad === 'CRITICA'; }).length;
+  // Registrar en log (sin spam)
+  _registrarAlerta(
+    'OPS_DIARIA',
+    criticas > 0 ? 'CRITICA' : 'MEDIA',
+    'Resumen diario: ' + r.data.total + ' alertas operativas (' + criticas + ' críticas)',
+    'MOS',
+    JSON.stringify({ alertas: r.data.alertas, ts: new Date().toISOString() })
+  );
+  // Push (si está configurado)
+  try {
+    if (typeof _pushNotificarMaster === 'function') {
+      _pushNotificarMaster({
+        title: 'Resumen de almacén',
+        body:  r.data.total + ' alertas (' + criticas + ' críticas)',
+        url:   '/index.html#/almacen'
+      });
+    }
+  } catch(_){}
+  return r;
+}
+
+// ============================================================
+// SPRINT 5 — Inteligencia (sugerencias automáticas)
+// ============================================================
+
+function getInsightsStock(params) {
+  try {
+    var insights = [];
+    var rangoDias = parseInt(params && params.dias) || 30;
+    var hoy = new Date();
+    var desde = new Date(hoy.getTime() - rangoDias * 86400000);
+
+    var stockWh = _safeReadWhStock();
+    var stockZonas = _safeReadMeStockZonas();
+    var productos = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
+    var prodById = {}; productos.forEach(function(p){
+      prodById[p.idProducto] = p;
+      if (p.codigoBarra) prodById[p.codigoBarra] = p;
+    });
+
+    // Acumular stock por barras en zonas
+    var stockBarrasMap = {};
+    stockZonas.forEach(function(z) {
+      var cb = String(z.Cod_Barras || z.codigoBarra || '').trim();
+      var qty = parseFloat(z.Cantidad || z.cantidad) || 0;
+      if (!cb) return;
+      if (!stockBarrasMap[cb]) stockBarrasMap[cb] = { total: 0, zonas: {} };
+      stockBarrasMap[cb].total += qty;
+      var zid = String(z.Zona_ID || '').trim();
+      stockBarrasMap[cb].zonas[zid] = (stockBarrasMap[cb].zonas[zid] || 0) + qty;
+    });
+
+    // Calcular ventas por barras + zona
+    var ventasMap = {}; // { codigoBarra: { Zona_ID: cantidad } }
+    try {
+      var ssMe = SpreadsheetApp.openById(_getProp('ME_SS_ID'));
+      var shVC = ssMe.getSheetByName('VENTAS_CABECERA');
+      var shVD = ssMe.getSheetByName('VENTAS_DETALLE');
+      if (shVC && shVD) {
+        var dataVC = shVC.getDataRange().getValues();
+        var ventasMeta = {};
+        for (var i = 1; i < dataVC.length; i++) {
+          var fecha = dataVC[i][1] ? new Date(dataVC[i][1]) : null;
+          if (!fecha || fecha < desde) continue;
+          if (String(dataVC[i][8] || '').toUpperCase() === 'ANULADO') continue;
+          ventasMeta[String(dataVC[i][0] || '').trim()] = String(dataVC[i][3] || '').trim();
+        }
+        var dataVD = shVD.getDataRange().getValues();
+        for (var j = 1; j < dataVD.length; j++) {
+          var idV = String(dataVD[j][0] || '').trim();
+          var zona = ventasMeta[idV];
+          if (!zona) continue;
+          var cb = String(dataVD[j][6] || '').trim();
+          if (!cb) continue;
+          var cant = parseFloat(dataVD[j][3]) || 0;
+          if (!ventasMap[cb]) ventasMap[cb] = {};
+          ventasMap[cb][zona] = (ventasMap[cb][zona] || 0) + cant;
+        }
+      }
+    } catch(_){}
+
+    // INSIGHT 1 — Productos con stock alto y sin venta en N días
+    Object.keys(stockBarrasMap).forEach(function(cb) {
+      var info = stockBarrasMap[cb];
+      var ventasProd = ventasMap[cb] || {};
+      var ventasTot = Object.values(ventasProd).reduce(function(s, v){ return s + v; }, 0);
+      if (info.total >= 10 && ventasTot === 0) {
+        var prod = prodById[cb];
+        if (!prod) return;
+        insights.push({
+          tipo: 'SIN_ROTACION',
+          severidad: 'MEDIA',
+          producto: prod.descripcion || cb,
+          codigoBarra: cb,
+          stock: info.total,
+          mensaje: prod.descripcion + ' tiene ' + info.total + 'u sin venta en ' + rangoDias + ' días',
+          accion: 'Lanzar promo o trasladar a otra zona'
+        });
+      }
+    });
+
+    // INSIGHT 2 — Trasladar entre zonas: una zona vendiendo bien con poco stock + otra con stock + sin venta
+    Object.keys(ventasMap).forEach(function(cb) {
+      var ventasProd = ventasMap[cb];
+      var stockInfo = stockBarrasMap[cb] || { zonas: {} };
+      Object.keys(ventasProd).forEach(function(zonaVendedora) {
+        var ventas = ventasProd[zonaVendedora];
+        var stockEnEsa = stockInfo.zonas[zonaVendedora] || 0;
+        var rotacionDia = ventas / rangoDias;
+        if (rotacionDia <= 0) return;
+        var diasRestantes = stockEnEsa / rotacionDia;
+        if (diasRestantes < 7 && diasRestantes >= 0) {
+          // Buscar zona con stock pero sin venta de este producto
+          Object.keys(stockInfo.zonas).forEach(function(zonaConStock) {
+            if (zonaConStock === zonaVendedora) return;
+            var stockOtra = stockInfo.zonas[zonaConStock] || 0;
+            var ventasOtra = (ventasProd[zonaConStock] || 0);
+            if (stockOtra >= 5 && ventasOtra < ventas / 3) {
+              var prod = prodById[cb];
+              if (!prod) return;
+              insights.push({
+                tipo: 'TRASLADAR',
+                severidad: 'ALTA',
+                producto: prod.descripcion || cb,
+                codigoBarra: cb,
+                mensaje: 'Trasladar de zona ' + zonaConStock + ' (' + stockOtra + 'u) → zona ' + zonaVendedora + ' (vende ' + Math.round(rotacionDia * 10) / 10 + '/d, alcanza ' + Math.floor(diasRestantes) + 'd)',
+                desde: zonaConStock,
+                hacia: zonaVendedora,
+                cantidadSugerida: Math.min(stockOtra, Math.ceil(rotacionDia * 7))
+              });
+            }
+          });
+        }
+      });
+    });
+
+    // INSIGHT 3 — Reposición: stock total < mínimo
+    productos.forEach(function(p) {
+      var min = parseFloat(p.stockMinimo) || 0;
+      if (min <= 0) return;
+      var stockEnZonas = stockBarrasMap[p.codigoBarra] ? stockBarrasMap[p.codigoBarra].total : 0;
+      var stockWhProd = 0;
+      stockWh.forEach(function(s){
+        if (s.codigoProducto === p.idProducto || s.codigoProducto === p.codigoBarra) {
+          stockWhProd += parseFloat(s.cantidadDisponible) || 0;
+        }
+      });
+      var total = stockEnZonas + stockWhProd;
+      if (total < min) {
+        insights.push({
+          tipo: 'REPOSICION',
+          severidad: 'CRITICA',
+          producto: p.descripcion,
+          idProducto: p.idProducto,
+          stock: total,
+          minimo: min,
+          mensaje: p.descripcion + ' total ' + total + 'u < mínimo ' + min,
+          accion: 'Generar pedido al proveedor'
+        });
+      }
+    });
+
+    // Dedup + ordenar por severidad
+    var prio = { CRITICA: 0, ALTA: 1, MEDIA: 2, BAJA: 3 };
+    insights.sort(function(a, b){ return (prio[a.severidad] || 9) - (prio[b.severidad] || 9); });
+
+    return { ok: true, data: { insights: insights.slice(0, 20), total: insights.length, rangoDias: rangoDias } };
+  } catch(e) {
+    return { ok: false, error: 'Error insights: ' + e.message };
+  }
+}
