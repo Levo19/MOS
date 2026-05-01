@@ -365,6 +365,7 @@ const MOS = (() => {
         case 'cajas':        await loadCajas(true);    break;
         case 'finanzas':     await _loadFinanzas();    break;
         case 'evaluacion':   await loadEvaluacion();   break;
+        case 'promociones':  await loadPromociones();  break;
       }
     } catch (e) {
       // Reload allowed next time
@@ -6514,15 +6515,27 @@ const MOS = (() => {
   }
 
   // ============================================================
-  // ── PROMOCIONES (gestión desde catálogo) ──────────────────────
+  // ── PROMOCIONES (vista completa, no modal) ────────────────────
   // ============================================================
-  const _promoState = { lista: [], editando: null };
+  const _promoState = { lista: [], editando: null, comboItems: [] };
 
-  async function abrirModalPromociones() {
-    openModal('modalPromociones');
+  // Helper: stepper +/- para inputs numéricos
+  function numStep(id, delta, step) {
+    const el = $(id);
+    if (!el) return;
+    const stp = step || 1;
+    const cur = parseFloat(el.value) || 0;
+    let nuevo = cur + (delta * stp);
+    if (nuevo < 0) nuevo = 0;
+    // Redondear según el step para evitar errores de floating point
+    if (stp < 1) nuevo = Math.round(nuevo * 100) / 100;
+    el.value = nuevo;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  async function loadPromociones() {
     $('promoListView').classList.remove('hidden');
     $('promoFormView').classList.add('hidden');
-    $('promoFormBtns').classList.add('hidden');
     $('promoLista').innerHTML = '<div class="skel h-12 rounded-lg"></div><div class="skel h-12 rounded-lg mt-2"></div>';
     try {
       const lista = await API.get('getPromociones', {});
@@ -6531,40 +6544,60 @@ const MOS = (() => {
     _renderPromoLista();
   }
 
+  // Compat: si alguien llama el viejo método, redirige a nav
+  function abrirModalPromociones() { nav('promociones'); }
+
   function _renderPromoLista() {
     const cont = $('promoLista');
     const cnt  = $('promosCount');
-    if (cnt) cnt.textContent = `${_promoState.lista.length} promoción${_promoState.lista.length !== 1 ? 'es' : ''} registrada${_promoState.lista.length !== 1 ? 's' : ''}`;
+    if (cnt) cnt.textContent = _promoState.lista.length;
     if (!_promoState.lista.length) {
       cont.innerHTML = '<p class="text-sm text-slate-500 text-center py-8">No hay promociones. Crea una con el botón de arriba.</p>';
       return;
     }
     cont.innerHTML = _promoState.lista.map(p => {
-      const prod = (S.productos || []).find(pr => (pr.skuBase || pr.idProducto) === p.skuBase);
-      const nombre = prod ? prod.descripcion : p.skuBase;
-      const tipoLabel = p.tipo === 'GRUPO'
-        ? `Lleva ${p.cantMin} por S/${p.valorPromo.toFixed(2)} c/u`
-        : `-${p.valorPromo}% desde ${p.cantMin} uds`;
+      let nombre, tipoLabel, tipoIcon;
+      if (p.tipo === 'COMBO') {
+        nombre = `Combo de ${(p.items || []).length} producto${(p.items || []).length !== 1 ? 's' : ''}`;
+        tipoLabel = `Precio combo: S/${p.valorPromo.toFixed(2)}`;
+        tipoIcon = '🛒';
+      } else {
+        const prod = (S.productos || []).find(pr => (pr.skuBase || pr.idProducto) === p.skuBase);
+        nombre = prod ? prod.descripcion : p.skuBase;
+        if (p.tipo === 'GRUPO') {
+          tipoLabel = `Lleva ${p.cantMin} por S/${(p.cantMin * p.valorPromo).toFixed(2)} (c/u S/${p.valorPromo.toFixed(2)})`;
+          tipoIcon = '📦';
+        } else {
+          tipoLabel = `-${p.valorPromo}% desde ${p.cantMin} uds`;
+          tipoIcon = '%';
+        }
+      }
       const activaCls = p.activa ? 'border-purple-500/40 bg-purple-500/5' : 'border-slate-700 bg-slate-900/40 opacity-60';
+      const idRef = p.idPromo || p.skuBase || '';
       return `
-        <div class="cursor-pointer p-3 rounded-lg border ${activaCls} hover:border-purple-400 transition-colors" onclick="MOS.promoEditar('${p.skuBase}')">
-          <div class="flex items-center justify-between">
+        <div class="cursor-pointer p-3 rounded-lg border ${activaCls} hover:border-purple-400 transition-colors" onclick="MOS.promoEditar('${idRef}')">
+          <div class="flex items-center justify-between gap-3">
             <div class="min-w-0 flex-1">
-              <div class="text-sm font-semibold text-slate-100 truncate">${nombre}</div>
+              <div class="text-sm font-semibold text-slate-100 truncate">${tipoIcon} ${nombre}</div>
               <div class="text-xs text-purple-300 mt-0.5">${tipoLabel}</div>
               ${p.descripcion ? `<div class="text-xs text-slate-500 mt-0.5">${p.descripcion}</div>` : ''}
             </div>
-            <span class="text-xs font-bold px-2 py-1 rounded ${p.activa ? 'bg-purple-500/20 text-purple-300' : 'bg-slate-700 text-slate-400'}">${p.activa ? 'ACTIVA' : 'INACTIVA'}</span>
+            <span class="text-xs font-bold px-2 py-1 rounded shrink-0 ${p.activa ? 'bg-purple-500/20 text-purple-300' : 'bg-slate-700 text-slate-400'}">${p.activa ? 'ACTIVA' : 'INACTIVA'}</span>
           </div>
         </div>`;
     }).join('');
   }
 
+  function _hoyISO() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
   function promoNuevoForm() {
     _promoState.editando = null;
+    _promoState.comboItems = [];
     $('promoListView').classList.add('hidden');
     $('promoFormView').classList.remove('hidden');
-    $('promoFormBtns').classList.remove('hidden');
     $('promoBtnEliminar').classList.add('hidden');
     $('promoIdEdit').value = '';
     $('promoBuscar').value = '';
@@ -6572,32 +6605,44 @@ const MOS = (() => {
     $('promoBuscarRes').style.display = 'none';
     $('promoBuscarRes').innerHTML = '';
     $('promoSeleccionado').classList.add('hidden');
+    $('promoComboBuscar').value = '';
+    $('promoComboRes').style.display = 'none';
+    $('promoComboItems').innerHTML = '';
     document.querySelector('input[name="promoTipo"][value="GRUPO"]').checked = true;
     promoSetTipo('GRUPO');
     $('promoCantMin').value = '';
     $('promoValor').value = '';
+    const cp = $('promoComboPrecio'); if (cp) cp.value = '';
     $('promoDesc').value = '';
-    $('promoFDesde').value = '';
+    // Vigencia por defecto: hoy
+    $('promoFDesde').value = _hoyISO();
     $('promoFHasta').value = '';
     $('promoTogActiva').classList.add('on');
     $('promoError').style.display = 'none';
   }
 
-  function promoEditar(skuBase) {
-    const p = _promoState.lista.find(x => x.skuBase === skuBase);
+  function promoEditar(idRef) {
+    const p = _promoState.lista.find(x => (x.idPromo === idRef) || (x.skuBase === idRef));
     if (!p) return;
-    _promoState.editando = skuBase;
+    _promoState.editando = p.idPromo || p.skuBase;
     promoNuevoForm();
     $('promoBtnEliminar').classList.remove('hidden');
-    $('promoIdEdit').value = skuBase;
-    $('promoSkuBase').value = skuBase;
-    const prod = (S.productos || []).find(pr => (pr.skuBase || pr.idProducto) === skuBase);
-    $('promoSeleccionadoNombre').textContent = prod ? `${prod.descripcion} (${skuBase})` : skuBase;
-    $('promoSeleccionado').classList.remove('hidden');
+    $('promoIdEdit').value = p.idPromo || p.skuBase;
     document.querySelector('input[name="promoTipo"][value="' + p.tipo + '"]').checked = true;
     promoSetTipo(p.tipo);
-    $('promoCantMin').value = p.cantMin;
-    $('promoValor').value   = p.valorPromo;
+
+    if (p.tipo === 'COMBO') {
+      _promoState.comboItems = (p.items || []).slice();
+      _renderPromoComboItems();
+      $('promoComboPrecio').value = p.valorPromo || 0;
+    } else {
+      $('promoSkuBase').value = p.skuBase;
+      const prod = (S.productos || []).find(pr => (pr.skuBase || pr.idProducto) === p.skuBase);
+      $('promoSeleccionadoNombre').textContent = prod ? `${prod.descripcion} (${p.skuBase})` : p.skuBase;
+      $('promoSeleccionado').classList.remove('hidden');
+      $('promoCantMin').value = p.cantMin;
+      $('promoValor').value   = p.valorPromo;
+    }
     $('promoDesc').value    = p.descripcion || '';
     $('promoFDesde').value  = p.vigenciaDesde ? String(p.vigenciaDesde).substring(0, 10) : '';
     $('promoFHasta').value  = p.vigenciaHasta ? String(p.vigenciaHasta).substring(0, 10) : '';
@@ -6608,13 +6653,17 @@ const MOS = (() => {
   function promoVolverLista() {
     $('promoListView').classList.remove('hidden');
     $('promoFormView').classList.add('hidden');
-    $('promoFormBtns').classList.add('hidden');
   }
 
   function promoSetTipo(tipo) {
+    const esCombo = tipo === 'COMBO';
+    $('promoSeccionUnico').classList.toggle('hidden', esCombo);
+    $('promoSeccionCombo').classList.toggle('hidden', !esCombo);
+    $('promoSeccionValor').classList.toggle('hidden', esCombo);
+    $('promoSeccionPrecioCombo').classList.toggle('hidden', !esCombo);
     if (tipo === 'GRUPO') {
       $('promoValorLbl').textContent = 'Precio unitario en promo (S/) *';
-    } else {
+    } else if (tipo === 'PORCENTAJE') {
       $('promoValorLbl').textContent = '% Descuento *';
     }
     promoActualizarEjemplo();
@@ -6622,15 +6671,97 @@ const MOS = (() => {
 
   function promoActualizarEjemplo() {
     const tipo = document.querySelector('input[name="promoTipo"]:checked')?.value;
+    const ej = $('promoEjemplo');
+    if (!ej) return;
+    if (tipo === 'COMBO') {
+      const precio = parseFloat($('promoComboPrecio').value) || 0;
+      const items = _promoState.comboItems || [];
+      if (!items.length || !precio) { ej.textContent = ''; return; }
+      ej.textContent = `Ejemplo: ${items.length} producto${items.length !== 1 ? 's' : ''} juntos = S/${precio.toFixed(2)}`;
+      return;
+    }
     const cant = parseFloat($('promoCantMin').value) || 0;
     const val  = parseFloat($('promoValor').value) || 0;
-    const ej = $('promoEjemplo');
-    if (!ej || !cant || !val) { if (ej) ej.textContent = ''; return; }
+    if (!cant || !val) { ej.textContent = ''; return; }
     if (tipo === 'GRUPO') {
       ej.textContent = `Ejemplo: lleva ${cant} y paga S/${(cant * val).toFixed(2)} en total (S/${val.toFixed(2)} c/u)`;
     } else {
       ej.textContent = `Ejemplo: comprando ${cant}+ unidades, ${val}% de descuento sobre el subtotal`;
     }
+  }
+
+  // ── COMBO: agregar productos ─────────────────────────────────
+  function promoComboBuscar() {
+    const raw = ($('promoComboBuscar').value || '').trim();
+    const resBox = $('promoComboRes');
+    if (!raw) { resBox.style.display = 'none'; resBox.innerHTML = ''; return; }
+    const qn = _norm(raw);
+    const palabras = qn.split(/\s+/).filter(Boolean);
+    const canonicos = (S.productos || []).filter(p => {
+      const f = parseFloat(p.factorConversion);
+      return !p.factorConversion || f === 1;
+    });
+    const scored = canonicos.map(p => {
+      const haystack = _norm((p.descripcion || '') + ' ' + (p.codigoBarra || '') + ' ' + (p.skuBase || p.idProducto || '') + ' ' + (p.marca || ''));
+      let s = 0, ok = true;
+      palabras.forEach(w => { if (haystack.indexOf(w) >= 0) s++; else ok = false; });
+      return { p, score: s, ok };
+    }).filter(x => x.ok).sort((a, b) => b.score - a.score).slice(0, 8);
+    if (!scored.length) {
+      resBox.innerHTML = '<div class="pn-result text-slate-500 italic">Sin resultados</div>';
+      resBox.style.display = 'block';
+      return;
+    }
+    resBox.innerHTML = scored.map(({ p }) => {
+      const sku = p.skuBase || p.idProducto;
+      const safeDesc = (p.descripcion || sku).replace(/'/g, "\\'");
+      return `<div class="pn-result" onclick="MOS.promoComboAgregar('${sku}', '${safeDesc}')">
+        <div class="text-slate-200 font-medium">${p.descripcion || sku}</div>
+        <div class="text-slate-500 text-xs" style="font-family:monospace">SKU ${sku}</div>
+      </div>`;
+    }).join('');
+    resBox.style.display = 'block';
+  }
+
+  function promoComboAgregar(sku, descripcion) {
+    const existing = _promoState.comboItems.find(x => x.skuBase === sku);
+    if (existing) { existing.cantidad = (parseFloat(existing.cantidad) || 0) + 1; }
+    else _promoState.comboItems.push({ skuBase: sku, descripcion, cantidad: 1 });
+    _renderPromoComboItems();
+    $('promoComboBuscar').value = '';
+    $('promoComboRes').style.display = 'none';
+    promoActualizarEjemplo();
+  }
+
+  function promoComboCerrarRes() {
+    $('promoComboRes').style.display = 'none';
+  }
+
+  function _renderPromoComboItems() {
+    const cont = $('promoComboItems');
+    if (!cont) return;
+    if (!_promoState.comboItems.length) {
+      cont.innerHTML = '<p class="text-xs text-slate-500 italic py-2">Aún no hay productos. Búscalos arriba.</p>';
+      return;
+    }
+    cont.innerHTML = _promoState.comboItems.map((it, i) => `
+      <div class="promo-combo-item">
+        <span class="desc">${it.descripcion}</span>
+        <input class="qty" type="number" min="1" step="1" value="${it.cantidad}" onchange="MOS.promoComboCambiarQty(${i}, this.value)">
+        <span class="rm" onclick="MOS.promoComboQuitar(${i})" title="Quitar">×</span>
+      </div>
+    `).join('');
+  }
+
+  function promoComboCambiarQty(idx, val) {
+    if (!_promoState.comboItems[idx]) return;
+    _promoState.comboItems[idx].cantidad = Math.max(1, parseInt(val) || 1);
+  }
+
+  function promoComboQuitar(idx) {
+    _promoState.comboItems.splice(idx, 1);
+    _renderPromoComboItems();
+    promoActualizarEjemplo();
   }
 
   function promoBuscarBase() {
@@ -6675,26 +6806,44 @@ const MOS = (() => {
 
   async function promoGuardar() {
     const errEl = $('promoError'); errEl.style.display = 'none';
-    const skuBase = $('promoSkuBase').value;
-    if (!skuBase) { errEl.textContent = 'Selecciona un producto'; errEl.style.display = 'block'; return; }
     const tipo = document.querySelector('input[name="promoTipo"]:checked')?.value;
-    const cantMin = parseFloat($('promoCantMin').value) || 0;
-    const valor   = parseFloat($('promoValor').value) || 0;
-    if (!cantMin || cantMin < 1) { errEl.textContent = 'Cantidad mínima ≥ 1'; errEl.style.display = 'block'; return; }
-    if (valor <= 0) { errEl.textContent = 'Valor inválido'; errEl.style.display = 'block'; return; }
-    const params = {
-      skuBase, tipo,
-      cantMin, valorPromo: valor,
-      descripcion:   $('promoDesc').value,
-      vigenciaDesde: $('promoFDesde').value,
-      vigenciaHasta: $('promoFHasta').value,
-      activa:        $('promoTogActiva').classList.contains('on')
-    };
+    let params;
+    if (tipo === 'COMBO') {
+      if (!_promoState.comboItems.length) { errEl.textContent = 'Agrega al menos 1 producto al combo'; errEl.style.display = 'block'; return; }
+      const precio = parseFloat($('promoComboPrecio').value) || 0;
+      if (precio <= 0) { errEl.textContent = 'Precio del combo inválido'; errEl.style.display = 'block'; return; }
+      params = {
+        tipo,
+        items: _promoState.comboItems.map(it => ({ skuBase: it.skuBase, cantidad: parseInt(it.cantidad) || 1, descripcion: it.descripcion })),
+        valorPromo: precio,
+        cantMin: 1,
+        descripcion:   $('promoDesc').value,
+        vigenciaDesde: $('promoFDesde').value,
+        vigenciaHasta: $('promoFHasta').value,
+        activa:        $('promoTogActiva').classList.contains('on')
+      };
+    } else {
+      const skuBase = $('promoSkuBase').value;
+      if (!skuBase) { errEl.textContent = 'Selecciona un producto'; errEl.style.display = 'block'; return; }
+      const cantMin = parseFloat($('promoCantMin').value) || 0;
+      const valor   = parseFloat($('promoValor').value) || 0;
+      if (!cantMin || cantMin < 1) { errEl.textContent = 'Cantidad mínima ≥ 1'; errEl.style.display = 'block'; return; }
+      if (valor <= 0) { errEl.textContent = 'Valor inválido'; errEl.style.display = 'block'; return; }
+      params = {
+        skuBase, tipo,
+        cantMin, valorPromo: valor,
+        descripcion:   $('promoDesc').value,
+        vigenciaDesde: $('promoFDesde').value,
+        vigenciaHasta: $('promoFHasta').value,
+        activa:        $('promoTogActiva').classList.contains('on')
+      };
+    }
+    if (_promoState.editando) params.idPromo = _promoState.editando;
     try {
       const action = _promoState.editando ? 'actualizarPromocion' : 'crearPromocion';
       await API.post(action, params);
       toast(_promoState.editando ? 'Promoción actualizada ✓' : 'Promoción creada ✓', 'ok');
-      await abrirModalPromociones();
+      await loadPromociones();
     } catch(e) {
       errEl.textContent = e.message;
       errEl.style.display = 'block';
@@ -6705,9 +6854,9 @@ const MOS = (() => {
     if (!_promoState.editando) return;
     if (!confirm('¿Eliminar esta promoción?')) return;
     try {
-      await API.post('eliminarPromocion', { skuBase: _promoState.editando });
+      await API.post('eliminarPromocion', { idPromo: _promoState.editando, skuBase: _promoState.editando });
       toast('Promoción eliminada', 'ok');
-      await abrirModalPromociones();
+      await loadPromociones();
     } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
 
@@ -6718,9 +6867,11 @@ const MOS = (() => {
     filterCatalogo, setCatTab, toggleDerivs, togglePresentaciones, guardarPrecioRapido,
     abrirModalPN, cerrarModalPN, lanzarAProduccion,
     pnSetTipo, pnAutogenBarcode, pnBuscarBase, pnSeleccionarBase,
-    abrirModalPromociones, promoNuevoForm, promoEditar, promoVolverLista,
+    abrirModalPromociones, loadPromociones, promoNuevoForm, promoEditar, promoVolverLista,
     promoSetTipo, promoActualizarEjemplo, promoBuscarBase, promoSeleccionarBase,
     promoGuardar, promoEliminar,
+    promoComboBuscar, promoComboAgregar, promoComboCerrarRes,
+    promoComboCambiarQty, promoComboQuitar, numStep,
     abrirModalPrecioRapido, cerrarModalPrecioRapido, _qpSyncPresentaciones,
     abrirAnalitica, cerrarAnalitica, setAnPeriodo, guardarStockMinMax, _anCurrentId,
     guardarAjustePrecios, stepperInc, stepperDec,
