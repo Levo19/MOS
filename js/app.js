@@ -3647,7 +3647,9 @@ const MOS = (() => {
       params.factorConversion = '';
     } else if (_prodTipo === 'presentacion') {
       params.esEnvasable = '0';
-      params.skuBase          = $('prodSkuBase')?.value || '';
+      // Solo mandar skuBase si el input tiene valor — evita borrar el SKU existente
+      const skuVal = ($('prodSkuBase')?.value || '').trim();
+      if (skuVal) params.skuBase = skuVal;
       params.factorConversion = $('prodFactor')?.value  ? parseFloat($('prodFactor').value) : '';
       params.codigoProductoBase = ''; params.factorConversionBase = ''; params.mermaEsperadaPct = '';
     } else { // normal

@@ -170,10 +170,18 @@ function actualizarProductoMaster(params) {
                   'stockMinimo','stockMaximo','zona'];
     var _numCampos = ['precioVenta','precioCosto','factorConversion','factorConversionBase',
                       'mermaEsperadaPct','stockMinimo','stockMaximo','IGV_Porcentaje'];
+    // Campos críticos que NUNCA deben sobrescribirse con vacío (defensa contra
+    // bugs de frontend que mandan params.skuBase = '' cuando el input no estaba poblado)
+    var _camposNoVaciables = ['skuBase', 'codigoBarra', 'descripcion'];
     campos.forEach(function(campo) {
       if (params[campo] !== undefined) {
         var col = hdrs.indexOf(campo);
         if (col < 0) return;
+        // Si es campo crítico y el valor llega vacío, no tocar la celda
+        if (_camposNoVaciables.indexOf(campo) >= 0 &&
+            (params[campo] === '' || params[campo] === null)) {
+          return;
+        }
         var val = (_numCampos.indexOf(campo) >= 0 && params[campo] !== '')
           ? parseFloat(params[campo])
           : params[campo];
