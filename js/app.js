@@ -337,10 +337,12 @@ const MOS = (() => {
     if (avMob) { avMob.textContent = initial; avMob.style.background = S.session.color || '#6366f1'; }
     // Init SVG traveling border on sidebar avatar
     requestAnimationFrame(() => _initAvatarTrigSvg());
-    // Hide Config for admin role
+    // Hide Config for admin role (sidebar + bottom nav + avatar menu)
     document.querySelectorAll('[data-view="config"]').forEach(b => {
       b.style.display = isMaster ? '' : 'none';
     });
+    const btnAvCfg = $('btnAvatarConfig');
+    if (btnAvCfg) btnAvCfg.classList.toggle('hidden', !isMaster);
   }
 
   function logout() {
