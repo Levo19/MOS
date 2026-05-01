@@ -2310,6 +2310,13 @@ const MOS = (() => {
       $('listProveedores').innerHTML = '<p class="text-slate-500 text-sm text-center py-8">Configura el GAS URL.</p>';
       return;
     }
+    // Asegurar layout mobile correcto al entrar
+    const isMobile = window.matchMedia('(max-width: 1023px)').matches;
+    if (isMobile && !S.provSelId) {
+      $('provListWrap')?.classList.remove('hidden');
+      $('provHeaderBar')?.classList.remove('hidden');
+      $('provDetailWrap')?.classList.add('hidden');
+    }
     // Render desde cache (instantáneo)
     const cached = _provLoadCache();
     if (cached && (!S.proveedores || !S.proveedores.length)) {
@@ -2420,6 +2427,14 @@ const MOS = (() => {
     S.provTab   = S.provTab || 'info';
     renderProveedores();
 
+    // En mobile: ocultar lista + header, mostrar solo detalle
+    const isMobile = window.matchMedia('(max-width: 1023px)').matches;
+    if (isMobile) {
+      $('provListWrap')?.classList.add('hidden');
+      $('provHeaderBar')?.classList.add('hidden');
+    }
+    $('provDetailWrap')?.classList.remove('hidden');
+
     const prov = S.proveedores.find(p => p.idProveedor === id);
     if (!prov) return;
 
@@ -2449,6 +2464,15 @@ const MOS = (() => {
       <div id="provTabPedidos" class="prov-tab-content hidden"></div>
     `;
     provSetTab(S.provTab);
+  }
+
+  function cerrarDetalleProveedor() {
+    S.provSelId = null;
+    $('provListWrap')?.classList.remove('hidden');
+    $('provHeaderBar')?.classList.remove('hidden');
+    const isMobile = window.matchMedia('(max-width: 1023px)').matches;
+    if (isMobile) $('provDetailWrap')?.classList.add('hidden');
+    renderProveedores();
   }
 
   function provSetTab(tab) {
@@ -7152,7 +7176,7 @@ const MOS = (() => {
     abrirLiquidacion,
     abrirModalPrecio, publicarPrecio,
     setAlmTab,
-    loadProveedores, selectProveedor, renderProveedores,
+    loadProveedores, selectProveedor, renderProveedores, cerrarDetalleProveedor,
     abrirModalProveedor, guardarProveedor,
     provSetTab, _renderProvHistorico,
     abrirModalProvProducto, ppBuscar, ppSeleccionar,

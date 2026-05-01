@@ -2223,7 +2223,8 @@
 
     <!-- ═══ VIEW: PROVEEDORES ════════════════════════════════ -->
     <section id="view-proveedores" class="view">
-      <div class="flex items-center justify-between mb-4 gap-2 flex-wrap">
+      <!-- Header (oculto en mobile cuando hay detalle abierto) -->
+      <div id="provHeaderBar" class="flex items-center justify-between mb-4 gap-2 flex-wrap">
         <div class="text-sm text-slate-400"><span id="provCount">0</span> proveedores</div>
         <div class="flex gap-2">
           <button class="btn-ghost text-sm flex items-center gap-1" onclick="MOS.abrirVistaCargadores()" title="Cargadores temporales">
@@ -2233,15 +2234,19 @@
         </div>
       </div>
       <div class="grid lg:grid-cols-3 gap-4">
-        <!-- Proveedor list -->
-        <div class="lg:col-span-1">
+        <!-- Proveedor list (oculto en mobile cuando hay seleccionado) -->
+        <div id="provListWrap" class="lg:col-span-1">
           <div id="listProveedores" class="space-y-2">
             <div class="skel h-20 rounded-xl"></div>
             <div class="skel h-20 rounded-xl"></div>
           </div>
         </div>
-        <!-- Proveedor detail -->
-        <div class="lg:col-span-2">
+        <!-- Proveedor detail (oculto en mobile cuando NO hay seleccionado) -->
+        <div id="provDetailWrap" class="lg:col-span-2 hidden lg:block">
+          <button onclick="MOS.cerrarDetalleProveedor()" class="lg:hidden btn-ghost text-sm flex items-center gap-1 mb-3">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 18l-6-6 6-6"/></svg>
+            Volver a la lista
+          </button>
           <div id="proveedorDetail" class="card p-6 text-center text-slate-500 text-sm">
             Selecciona un proveedor para ver pagos y pedidos
           </div>
