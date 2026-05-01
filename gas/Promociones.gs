@@ -23,13 +23,13 @@ function _getPromocionesSheet() {
     sheet.appendRow([
       'SKU_Base', 'Tipo_Promo', 'Cant_Min', 'Valor_Promo',
       'Descripcion', 'Vigencia_Desde', 'Vigencia_Hasta', 'Activa', 'Notas',
-      'idPromo', 'Items_JSON'
+      'idPromo', 'Items_JSON', 'Valor_Modo'
     ]);
     sheet.setFrozenRows(1);
   } else {
     // Asegurar que las columnas extra existan (idempotente)
     var headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 4)).getValues()[0];
-    var extras  = ['Descripcion', 'Vigencia_Desde', 'Vigencia_Hasta', 'Activa', 'Notas', 'idPromo', 'Items_JSON'];
+    var extras  = ['Descripcion', 'Vigencia_Desde', 'Vigencia_Hasta', 'Activa', 'Notas', 'idPromo', 'Items_JSON', 'Valor_Modo'];
     extras.forEach(function(h){
       if (headers.indexOf(h) < 0) {
         var col = sheet.getLastColumn() + 1;
@@ -54,6 +54,7 @@ function _promoToObj(row, headers) {
     tipo:           o.Tipo_Promo,
     cantMin:        parseFloat(o.Cant_Min) || 0,
     valorPromo:     parseFloat(o.Valor_Promo) || 0,
+    valorModo:      String(o.Valor_Modo || 'UNITARIO').toUpperCase(),
     items:          items,
     descripcion:    o.Descripcion || '',
     vigenciaDesde:  o.Vigencia_Desde || '',
@@ -112,13 +113,22 @@ function crearPromocion(params) {
 
   // Generar idPromo (timestamp)
   var idPromo = params.idPromo || ('PROMO' + new Date().getTime());
+  // Convertir valorPromo a unitario si vino en modo TOTAL
+  var valorModo = String(params.valorModo || 'UNITARIO').toUpperCase();
+  var valorUnit = parseFloat(params.valorPromo) || 0;
+  var cantMin = parseFloat(params.cantMin) || 0;
+  if (tipo === 'GRUPO' && valorModo === 'TOTAL' && cantMin > 0 && valorUnit > 0) {
+    valorUnit = valorUnit / cantMin;  // dividir total entre cantidad
+  }
+
   // Construir fila respetando orden de headers
   var rowArr = headers.map(function(h){
     switch(h) {
       case 'SKU_Base':       return tipo === 'COMBO' ? '' : (params.skuBase || '');
       case 'Tipo_Promo':     return tipo;
-      case 'Cant_Min':       return parseFloat(params.cantMin) || 0;
-      case 'Valor_Promo':    return parseFloat(params.valorPromo) || 0;
+      case 'Cant_Min':       return cantMin;
+      case 'Valor_Promo':    return valorUnit;
+      case 'Valor_Modo':     return valorModo;
       case 'Descripcion':    return params.descripcion || '';
       case 'Vigencia_Desde': return params.vigenciaDesde || '';
       case 'Vigencia_Hasta': return params.vigenciaHasta || '';
@@ -156,7 +166,18 @@ function actualizarPromocion(params) {
       if (params.tipo)        set('Tipo_Promo', String(params.tipo).toUpperCase());
       if (params.skuBase    !== undefined) set('SKU_Base',     params.skuBase);
       if (params.cantMin    !== undefined) set('Cant_Min',     parseFloat(params.cantMin)    || 0);
-      if (params.valorPromo !== undefined) set('Valor_Promo',  parseFloat(params.valorPromo) || 0);
+      // valorPromo: convertir a unitario si modo es TOTAL
+      if (params.valorPromo !== undefined) {
+        var vModo = String(params.valorModo || 'UNITARIO').toUpperCase();
+        var vTipo = String(params.tipo || data[i][idxs.Tipo_Promo] || '').toUpperCase();
+        var vCantMin = parseFloat(params.cantMin !== undefined ? params.cantMin : data[i][idxs.Cant_Min]) || 0;
+        var vUnit = parseFloat(params.valorPromo) || 0;
+        if (vTipo === 'GRUPO' && vModo === 'TOTAL' && vCantMin > 0 && vUnit > 0) {
+          vUnit = vUnit / vCantMin;
+        }
+        set('Valor_Promo', vUnit);
+      }
+      if (params.valorModo  !== undefined) set('Valor_Modo',   String(params.valorModo).toUpperCase());
       if (params.descripcion !== undefined)   set('Descripcion',    params.descripcion);
       if (params.vigenciaDesde !== undefined) set('Vigencia_Desde', params.vigenciaDesde);
       if (params.vigenciaHasta !== undefined) set('Vigencia_Hasta', params.vigenciaHasta);

@@ -653,6 +653,20 @@
     .alert-btn.active .alert-btn-icon { filter: none; }
     .alert-btn.active .alert-btn-count { background: #020817; color: #ffd700; box-shadow: 0 0 0 2px #ffd700; }
 
+    /* ── Toggle modo de precio promo (unidad / total) ───── */
+    .promo-modo-btn {
+      flex: 1; padding: 6px 10px;
+      background: #060d1f; border: 1px solid #1e293b;
+      border-radius: 8px; color: #94a3b8;
+      font-size: .72rem; font-weight: 600;
+      cursor: pointer; transition: all .15s;
+    }
+    .promo-modo-btn:hover { border-color: #334155; }
+    .promo-modo-btn.active {
+      background: linear-gradient(135deg, rgba(168,85,247,.15), rgba(236,72,153,.15));
+      border-color: #c084fc; color: #c084fc;
+    }
+
     /* ── Number stepper (cantidad / precio con ± ) ────────── */
     .num-stepper {
       display: flex; align-items: stretch;
@@ -2679,22 +2693,29 @@
         </div>
 
         <!-- Cantidad mínima + valor (oculto en COMBO) -->
-        <div id="promoSeccionValor" class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="lbl">Cantidad mínima *</label>
-            <div class="num-stepper">
-              <button type="button" onclick="MOS.numStep('promoCantMin', -1, 1)">−</button>
-              <input id="promoCantMin" type="number" step="1" min="1" inputmode="decimal" placeholder="3" oninput="MOS.promoActualizarEjemplo()">
-              <button type="button" onclick="MOS.numStep('promoCantMin', +1, 1)">+</button>
+        <div id="promoSeccionValor" class="space-y-3">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="lbl">Cantidad mínima *</label>
+              <div class="num-stepper">
+                <button type="button" onclick="MOS.numStep('promoCantMin', -1, 1)">−</button>
+                <input id="promoCantMin" type="number" step="1" min="1" inputmode="decimal" placeholder="3" oninput="MOS.promoActualizarEjemplo()">
+                <button type="button" onclick="MOS.numStep('promoCantMin', +1, 1)">+</button>
+              </div>
+            </div>
+            <div>
+              <label class="lbl" id="promoValorLbl">Valor *</label>
+              <div class="num-stepper">
+                <button type="button" onclick="MOS.numStep('promoValor', -1, 0.50)">−</button>
+                <input id="promoValor" type="number" step="0.01" min="0" inputmode="decimal" placeholder="10.00" oninput="MOS.promoActualizarEjemplo()">
+                <button type="button" onclick="MOS.numStep('promoValor', +1, 0.50)">+</button>
+              </div>
             </div>
           </div>
-          <div>
-            <label class="lbl" id="promoValorLbl">Precio unitario *</label>
-            <div class="num-stepper">
-              <button type="button" onclick="MOS.numStep('promoValor', -1, 0.50)">−</button>
-              <input id="promoValor" type="number" step="0.01" min="0" inputmode="decimal" placeholder="10.00" oninput="MOS.promoActualizarEjemplo()">
-              <button type="button" onclick="MOS.numStep('promoValor', +1, 0.50)">+</button>
-            </div>
+          <!-- Toggle modo: solo para GRUPO -->
+          <div id="promoModoBox" class="flex gap-1.5 text-xs">
+            <button type="button" id="promoModoUnit"  class="promo-modo-btn active" onclick="MOS.promoSetModo('UNITARIO')">Por unidad</button>
+            <button type="button" id="promoModoTotal" class="promo-modo-btn" onclick="MOS.promoSetModo('TOTAL')">Precio total</button>
           </div>
         </div>
 

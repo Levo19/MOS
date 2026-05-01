@@ -6784,7 +6784,15 @@ const MOS = (() => {
       $('promoSeleccionadoNombre').textContent = prod ? `${prod.descripcion} (${p.skuBase})` : p.skuBase;
       $('promoSeleccionado').classList.remove('hidden');
       $('promoCantMin').value = p.cantMin;
-      $('promoValor').value   = p.valorPromo;
+      // Modo: si TOTAL, mostrar cantMin × valorPromo (lo que el usuario originalmente escribió)
+      const modo = String(p.valorModo || 'UNITARIO').toUpperCase();
+      if (p.tipo === 'GRUPO' && modo === 'TOTAL') {
+        $('promoValor').value = (p.cantMin * p.valorPromo).toFixed(2);
+        promoSetModo('TOTAL');
+      } else {
+        $('promoValor').value = p.valorPromo;
+        if (p.tipo === 'GRUPO') promoSetModo('UNITARIO');
+      }
     }
     $('promoDesc').value    = p.descripcion || '';
     $('promoFDesde').value  = p.vigenciaDesde ? String(p.vigenciaDesde).substring(0, 10) : '';
@@ -6800,15 +6808,28 @@ const MOS = (() => {
 
   function promoSetTipo(tipo) {
     const esCombo = tipo === 'COMBO';
+    const esGrupo = tipo === 'GRUPO';
     $('promoSeccionUnico').classList.toggle('hidden', esCombo);
     $('promoSeccionCombo').classList.toggle('hidden', !esCombo);
     $('promoSeccionValor').classList.toggle('hidden', esCombo);
     $('promoSeccionPrecioCombo').classList.toggle('hidden', !esCombo);
+    // Toggle modo solo visible en GRUPO
+    const modoBox = $('promoModoBox');
+    if (modoBox) modoBox.style.display = esGrupo ? '' : 'none';
     if (tipo === 'GRUPO') {
-      $('promoValorLbl').textContent = 'Precio unitario en promo (S/) *';
+      const modo = $('promoModoUnit')?.classList.contains('active') ? 'UNITARIO' : 'TOTAL';
+      $('promoValorLbl').textContent = modo === 'TOTAL' ? 'Precio TOTAL del grupo *' : 'Precio UNITARIO en promo *';
     } else if (tipo === 'PORCENTAJE') {
       $('promoValorLbl').textContent = '% Descuento *';
     }
+    promoActualizarEjemplo();
+  }
+
+  function promoSetModo(modo) {
+    const esTotal = modo === 'TOTAL';
+    $('promoModoUnit').classList.toggle('active', !esTotal);
+    $('promoModoTotal').classList.toggle('active', esTotal);
+    $('promoValorLbl').textContent = esTotal ? 'Precio TOTAL del grupo *' : 'Precio UNITARIO en promo *';
     promoActualizarEjemplo();
   }
 
@@ -6827,7 +6848,10 @@ const MOS = (() => {
     const val  = parseFloat($('promoValor').value) || 0;
     if (!cant || !val) { ej.textContent = ''; return; }
     if (tipo === 'GRUPO') {
-      ej.textContent = `Ejemplo: lleva ${cant} y paga S/${(cant * val).toFixed(2)} en total (S/${val.toFixed(2)} c/u)`;
+      const modoTotal = $('promoModoTotal')?.classList.contains('active');
+      const total = modoTotal ? val : (cant * val);
+      const unit  = modoTotal ? (cant > 0 ? val / cant : 0) : val;
+      ej.textContent = `Ejemplo: lleva ${cant} y paga S/${total.toFixed(2)} en total (S/${unit.toFixed(2)} c/u)`;
     } else {
       ej.textContent = `Ejemplo: comprando ${cant}+ unidades, ${val}% de descuento sobre el subtotal`;
     }
@@ -6972,9 +6996,11 @@ const MOS = (() => {
       const valor   = parseFloat($('promoValor').value) || 0;
       if (!cantMin || cantMin < 1) { errEl.textContent = 'Cantidad mínima ≥ 1'; errEl.style.display = 'block'; return; }
       if (valor <= 0) { errEl.textContent = 'Valor inválido'; errEl.style.display = 'block'; return; }
+      // Solo GRUPO usa el modo (UNITARIO/TOTAL); PORCENTAJE siempre es directo
+      const valorModo = (tipo === 'GRUPO' && $('promoModoTotal')?.classList.contains('active')) ? 'TOTAL' : 'UNITARIO';
       params = {
         skuBase, tipo,
-        cantMin, valorPromo: valor,
+        cantMin, valorPromo: valor, valorModo,
         descripcion:   $('promoDesc').value,
         vigenciaDesde: $('promoFDesde').value,
         vigenciaHasta: $('promoFHasta').value,
@@ -7011,7 +7037,7 @@ const MOS = (() => {
     abrirModalPN, cerrarModalPN, lanzarAProduccion,
     pnSetTipo, pnAutogenBarcode, pnBuscarBase, pnSeleccionarBase,
     abrirModalPromociones, loadPromociones, promoNuevoForm, promoEditar, promoVolverLista,
-    promoSetTipo, promoActualizarEjemplo, promoBuscarBase, promoSeleccionarBase,
+    promoSetTipo, promoSetModo, promoActualizarEjemplo, promoBuscarBase, promoSeleccionarBase,
     promoGuardar, promoEliminar,
     promoComboBuscar, promoComboAgregar, promoComboCerrarRes,
     promoComboCambiarQty, promoComboQuitar, numStep,
