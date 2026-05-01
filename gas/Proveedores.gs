@@ -100,6 +100,54 @@ function crearPedidoProveedor(params) {
   return { ok: true, data: { idPedido: id } };
 }
 
+// ── Proveedores que venden un producto específico ──────────────
+function getProveedoresQueVenden(params) {
+  if (!params || (!params.skuBase && !params.codigoBarra)) {
+    return { ok: false, error: 'Requiere skuBase o codigoBarra' };
+  }
+  try {
+    var ppSheet = _getProvProdSheet();
+    var ppData  = ppSheet.getDataRange().getValues();
+    var hdrs    = ppData[0];
+    var idxs = {}; hdrs.forEach(function(h, i){ idxs[h] = i; });
+    var matches = [];
+    for (var i = 1; i < ppData.length; i++) {
+      var sku = String(ppData[i][idxs.skuBase] || '').trim();
+      var cb  = String(ppData[i][idxs.codigoBarra] || '').trim();
+      if ((params.skuBase && sku === String(params.skuBase)) ||
+          (params.codigoBarra && cb === String(params.codigoBarra))) {
+        matches.push({
+          idPP:             ppData[i][idxs.idPP],
+          idProveedor:      ppData[i][idxs.idProveedor],
+          skuBase:          sku,
+          codigoBarra:      cb,
+          descripcion:      ppData[i][idxs.descripcion],
+          precioReferencia: parseFloat(ppData[i][idxs.precioReferencia]) || 0,
+          minimoCompra:     parseFloat(ppData[i][idxs.minimoCompra]) || 0,
+          diasEntrega:      parseInt(ppData[i][idxs.diasEntrega]) || 0
+        });
+      }
+    }
+    // Enriquecer con nombre del proveedor
+    if (matches.length > 0) {
+      var provs = _sheetToObjects(getSheet('PROVEEDORES_MASTER'));
+      var provMap = {}; provs.forEach(function(p){ provMap[p.idProveedor] = p; });
+      matches = matches.map(function(m){
+        var p = provMap[m.idProveedor] || {};
+        return Object.assign({}, m, {
+          nombreProveedor: p.nombre || m.idProveedor,
+          ruc:             p.ruc || ''
+        });
+      });
+      // Ordenar por menor precio
+      matches.sort(function(a, b){ return a.precioReferencia - b.precioReferencia; });
+    }
+    return { ok: true, data: matches };
+  } catch(e) {
+    return { ok: false, error: 'Error: ' + e.message };
+  }
+}
+
 // ── ANÁLISIS: proveedor con mejor precio histórico ───────────
 function getMejorPrecioProveedor(skuBase) {
   var historial = _sheetToObjects(getSheet('HISTORIAL_PRECIOS'));

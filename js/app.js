@@ -2347,7 +2347,11 @@ const MOS = (() => {
       console.warn('[almLoadResumen] error:', e);
     }
   }
-  function almRefreshResumen() { almLoadResumen(); }
+  async function almRefreshResumen() {
+    try { await API.get('bustAlmacenCache', {}); } catch(_){}
+    toast('Cache limpiado, recargando…', 'info');
+    almLoadResumen();
+  }
 
   function _almRenderKPIs(data) {
     if ($('almKpiValor'))    $('almKpiValor').textContent    = 'S/ ' + (data.stockValor || 0).toLocaleString('es-PE', { maximumFractionDigits: 0 });
@@ -2367,12 +2371,19 @@ const MOS = (() => {
     el.innerHTML = insights.map(i => {
       const c = sevColor[i.severidad] || 'slate';
       const icon = sevIcon[i.severidad] || '•';
+      // Botón "Crear pedido" para insights de reposición
+      let actionBtn = '';
+      if ((i.tipo === 'REPOSICION' || i.tipo === 'BAJO_MINIMO') && i.idProducto) {
+        const safeDesc = (i.producto || '').replace(/'/g, "\\'");
+        actionBtn = `<button class="btn-primary text-xs px-2 py-1 mt-2" onclick="MOS._almGenerarPedidoFromInsight('${i.idProducto}','${safeDesc}','','')">📋 Crear pedido borrador</button>`;
+      }
       return `<div class="card-sm border-${c}-500/30 p-3" style="border-left:3px solid var(--accent)">
         <div class="flex items-start gap-2">
           <span>${icon}</span>
           <div class="flex-1 min-w-0">
             <div class="text-sm text-slate-200 font-medium">${i.mensaje}</div>
             ${i.accion ? `<div class="text-xs text-slate-500 mt-1">→ ${i.accion}</div>` : ''}
+            ${actionBtn}
           </div>
           <span class="text-[10px] text-slate-600 font-mono shrink-0">${i.tipo || ''}</span>
         </div>
@@ -4166,9 +4177,185 @@ const MOS = (() => {
     }
   }
 
-  function abrirModalPedido(idProveedor) {
-    toast('Pedidos: próximamente desde esta vista', 'info');
+  // ── PEDIDO MODAL ────────────────────────────────────────────
+  let _pedidoState = { items: [], idProveedor: null };
+
+  async function abrirModalPedido(idProveedor) {
+    if (!idProveedor) return;
+    _pedidoState = { items: [], idProveedor: idProveedor };
+    const prov = (S.proveedores || []).find(p => p.idProveedor === idProveedor);
+    $('pedidoIdProveedor').value = idProveedor;
+    $('pedidoProveedorNombre').textContent = prov ? prov.nombre : idProveedor;
+    $('pedidoBuscar').value = '';
+    $('pedidoBuscarRes').style.display = 'none';
+    $('pedidoFechaEst').value = '';
+    $('pedidoNotas').value = '';
+    _renderPedidoItems();
+    // Si vino con producto sugerido (desde insight), pre-cargar
+    if (S._pedidoSugerido) {
+      _pedidoState.items.push({
+        skuBase:     S._pedidoSugerido.skuBase || S._pedidoSugerido.idProducto,
+        codigoBarra: S._pedidoSugerido.codigoBarra || '',
+        descripcion: S._pedidoSugerido.descripcion || '',
+        cantidad:    1,
+        precio:      S._pedidoSugerido.precioReferencia || 0
+      });
+      S._pedidoSugerido = null;
+      _renderPedidoItems();
+    }
+    openModal('modalPedido');
   }
+
+  function cerrarModalPedido() { closeModal('modalPedido'); }
+
+  let _pedidoBuscarTimer = null;
+  async function pedidoBuscarItem() {
+    clearTimeout(_pedidoBuscarTimer);
+    _pedidoBuscarTimer = setTimeout(async () => {
+      const q = ($('pedidoBuscar').value || '').trim();
+      const resBox = $('pedidoBuscarRes');
+      if (!q) { resBox.style.display = 'none'; return; }
+      try {
+        const items = await API.get('getProveedorProductos', { idProveedor: _pedidoState.idProveedor });
+        const lista = Array.isArray(items) ? items : (items && items.data) || [];
+        const qn = _norm(q);
+        const palabras = qn.split(/\s+/).filter(Boolean);
+        const filtered = lista.filter(pp => {
+          const hay = _norm((pp.descripcion || '') + ' ' + (pp.skuBase || '') + ' ' + (pp.codigoBarra || ''));
+          return palabras.every(w => hay.indexOf(w) >= 0);
+        }).slice(0, 8);
+        if (!filtered.length) {
+          resBox.innerHTML = '<div class="pn-result text-slate-500 italic">Sin coincidencias</div>';
+          resBox.style.display = 'block';
+          return;
+        }
+        resBox.innerHTML = filtered.map(pp => {
+          const safeDesc = (pp.descripcion || pp.skuBase).replace(/'/g, "\\'");
+          return `<div class="pn-result" onclick="MOS.pedidoAgregarItem('${pp.skuBase}', '${pp.codigoBarra || ''}', '${safeDesc}', ${pp.precioReferencia || 0})">
+            <div class="text-slate-200 font-medium text-sm">${pp.descripcion || pp.skuBase}</div>
+            <div class="text-slate-500 text-xs flex justify-between"><span style="font-family:monospace">${pp.skuBase}</span><span class="text-amber-400">${fmtMoney(pp.precioReferencia || 0)}</span></div>
+          </div>`;
+        }).join('');
+        resBox.style.display = 'block';
+      } catch(_){}
+    }, 200);
+  }
+
+  function pedidoAgregarItem(sku, cb, desc, precio) {
+    const existe = _pedidoState.items.find(it => it.skuBase === sku);
+    if (existe) { existe.cantidad++; }
+    else _pedidoState.items.push({ skuBase: sku, codigoBarra: cb, descripcion: desc, cantidad: 1, precio: parseFloat(precio) || 0 });
+    $('pedidoBuscar').value = '';
+    $('pedidoBuscarRes').style.display = 'none';
+    _renderPedidoItems();
+  }
+
+  function pedidoQuitarItem(idx) {
+    _pedidoState.items.splice(idx, 1);
+    _renderPedidoItems();
+  }
+
+  function pedidoCambiarQty(idx, qty) {
+    const q = Math.max(0, parseInt(qty) || 0);
+    if (q === 0) { _pedidoState.items.splice(idx, 1); }
+    else _pedidoState.items[idx].cantidad = q;
+    _renderPedidoItems();
+  }
+
+  function _renderPedidoItems() {
+    const list = $('pedidoItemsList');
+    const cnt = $('pedidoItemsCount');
+    if (!list) return;
+    if (cnt) cnt.textContent = '(' + _pedidoState.items.length + ')';
+    if (!_pedidoState.items.length) {
+      list.innerHTML = '<div class="text-xs text-slate-600 italic text-center py-3">Sin items aún. Busca productos arriba.</div>';
+      $('pedidoTotal').value = 'S/ 0.00';
+      return;
+    }
+    let total = 0;
+    list.innerHTML = _pedidoState.items.map((it, i) => {
+      const sub = (it.cantidad || 0) * (it.precio || 0);
+      total += sub;
+      return `<div class="flex items-center gap-2 p-2 rounded" style="background:#0d1526">
+        <div class="min-w-0 flex-1">
+          <div class="text-sm text-slate-200 truncate">${it.descripcion}</div>
+          <div class="text-[10px] text-slate-500 font-mono">${it.skuBase} · ${fmtMoney(it.precio)}</div>
+        </div>
+        <input type="number" min="0" step="1" class="inp text-xs" style="width:60px;text-align:center" value="${it.cantidad}" onchange="MOS.pedidoCambiarQty(${i}, this.value)">
+        <div class="text-xs text-amber-400 font-semibold whitespace-nowrap" style="width:60px;text-align:right">${fmtMoney(sub)}</div>
+        <button onclick="MOS.pedidoQuitarItem(${i})" class="text-rose-400 text-base p-1" title="Quitar">×</button>
+      </div>`;
+    }).join('');
+    $('pedidoTotal').value = fmtMoney(total);
+  }
+
+  async function guardarPedido() {
+    if (!_pedidoState.idProveedor) { toast('Falta proveedor', 'error'); return; }
+    if (!_pedidoState.items.length) { toast('Agrega al menos 1 item', 'error'); return; }
+    const total = _pedidoState.items.reduce((s, it) => s + (it.cantidad || 0) * (it.precio || 0), 0);
+    try {
+      await API.post('crearPedido', {
+        idProveedor:    _pedidoState.idProveedor,
+        items:          _pedidoState.items,
+        montoEstimado:  total,
+        fechaEstimada:  $('pedidoFechaEst').value || '',
+        notas:          $('pedidoNotas').value || '',
+        usuario:        S.session?.nombre || ''
+      });
+      toast('Pedido borrador creado ✓', 'ok');
+      closeModal('modalPedido');
+      // Refrescar pedidos del proveedor si la vista está abierta
+      if (S.provSelId === _pedidoState.idProveedor && S.provTab === 'pedidos') {
+        S.provPedidos[_pedidoState.idProveedor] = null;
+        _renderProvPedidos();
+      }
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  // ── Selector de proveedor desde insight de almacén ──
+  async function _almGenerarPedidoFromInsight(idProducto, descripcion, skuBase, codigoBarra) {
+    try {
+      const r = await API.get('getProveedoresQueVenden', { skuBase: skuBase || idProducto, codigoBarra: codigoBarra || '' });
+      const provs = (r && r.data) ? r.data : (r || []);
+      if (!provs.length) {
+        toast('Este producto no tiene proveedores registrados. Agrégalo en Proveedores → Productos.', 'error');
+        return;
+      }
+      // Guardar producto sugerido para pre-cargar en el modal
+      S._pedidoSugerido = {
+        idProducto, descripcion, skuBase: skuBase || idProducto, codigoBarra: codigoBarra || '',
+        precioReferencia: provs[0].precioReferencia
+      };
+      if (provs.length === 1) {
+        // Directo al modal de pedido
+        await abrirModalPedido(provs[0].idProveedor);
+        return;
+      }
+      // Mostrar selector
+      $('selProvProducto').textContent = descripcion || idProducto;
+      $('selProvList').innerHTML = provs.map(p => `
+        <div class="card-sm p-3 cursor-pointer hover:border-amber-500/40 transition-colors" onclick="MOS._almPickProveedor('${p.idProveedor}')">
+          <div class="flex items-center justify-between gap-2">
+            <div class="min-w-0 flex-1">
+              <div class="text-sm font-semibold text-slate-200 truncate">${p.nombreProveedor}</div>
+              <div class="text-xs text-slate-500">mín ${p.minimoCompra || 0} · ${p.diasEntrega || 0}d entrega</div>
+            </div>
+            <div class="text-amber-400 text-sm font-bold whitespace-nowrap shrink-0">${fmtMoney(p.precioReferencia)}</div>
+          </div>
+        </div>
+      `).join('');
+      openModal('modalSelProveedor');
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+  async function _almPickProveedor(idProveedor) {
+    closeModal('modalSelProveedor');
+    await abrirModalPedido(idProveedor);
+  }
+  function cerrarSelProveedor() { closeModal('modalSelProveedor'); }
 
   // ── CONFIGURACIÓN ────────────────────────────────────────────
   let cfgData = { zonas: [], estaciones: [], impresoras: [], personal: [], personalMOS: [], series: [], dispositivos: [] };
@@ -8085,6 +8272,9 @@ const MOS = (() => {
     setAlmTab,
     almLoadResumen, almRefreshResumen, almFiltrarStock,
     almLoadOps, almLoadZonas, almAbrirStockDetalle, cerrarStockDetalle,
+    _almGenerarPedidoFromInsight, _almPickProveedor, cerrarSelProveedor,
+    cerrarModalPedido, pedidoBuscarItem, pedidoAgregarItem,
+    pedidoQuitarItem, pedidoCambiarQty, guardarPedido,
     loadProveedores, selectProveedor, renderProveedores, cerrarDetalleProveedor,
     abrirModalProveedor, guardarProveedor,
     provSetTab, _renderProvHistorico, _refetchHistoricoProv,

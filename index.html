@@ -4488,6 +4488,65 @@
   </div>
 </div>
 
+<!-- Modal: Selector de proveedor (cuando un producto tiene varios proveedores) -->
+<div id="modalSelProveedor" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.cerrarSelProveedor()">
+  <div class="modal-box p-0" style="max-width:480px;display:flex;flex-direction:column;max-height:80vh">
+    <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
+      <h3 class="font-semibold text-amber-400 text-base">🛒 Elige proveedor</h3>
+      <button onclick="MOS.cerrarSelProveedor()" class="modal-close-x">×</button>
+    </div>
+    <div class="overflow-y-auto px-5 py-4 space-y-2" style="flex:1">
+      <p class="text-xs text-slate-500 mb-2">Producto: <span id="selProvProducto" class="text-slate-200"></span></p>
+      <div id="selProvList" class="space-y-2"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Crear pedido a proveedor -->
+<div id="modalPedido" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.cerrarModalPedido()">
+  <div class="modal-box p-0" style="max-width:560px;display:flex;flex-direction:column;max-height:92vh">
+    <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
+      <div class="min-w-0 flex-1">
+        <h3 class="font-semibold text-blue-400 text-base">🛒 Nuevo pedido</h3>
+        <p id="pedidoProveedorNombre" class="text-xs text-slate-500 mt-0.5 truncate"></p>
+      </div>
+      <button onclick="MOS.cerrarModalPedido()" class="modal-close-x">×</button>
+    </div>
+    <div class="overflow-y-auto px-5 py-4 space-y-3" style="flex:1">
+      <input type="hidden" id="pedidoIdProveedor">
+      <div>
+        <label class="lbl">Buscar producto del proveedor</label>
+        <input id="pedidoBuscar" class="inp" placeholder="Nombre o código..." oninput="MOS.pedidoBuscarItem()">
+        <div id="pedidoBuscarRes" class="mt-1 max-h-40 overflow-y-auto" style="background:#060d1f;border:1px solid #1e293b;border-radius:8px;display:none"></div>
+      </div>
+      <div>
+        <label class="lbl">Items del pedido <span id="pedidoItemsCount" class="text-slate-500 text-xs">(0)</span></label>
+        <div id="pedidoItemsList" class="space-y-1.5 max-h-60 overflow-y-auto p-2 rounded" style="background:#060d1f;border:1px solid #1e293b;min-height:60px">
+          <div class="text-xs text-slate-600 italic text-center py-3">Sin items aún. Busca productos arriba.</div>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="lbl">Fecha estimada</label>
+          <input id="pedidoFechaEst" type="date" class="inp">
+        </div>
+        <div>
+          <label class="lbl">Total estimado</label>
+          <input id="pedidoTotal" class="inp" readonly value="S/ 0.00" style="background:#060d1f;color:#fbbf24">
+        </div>
+      </div>
+      <div>
+        <label class="lbl">Notas</label>
+        <textarea id="pedidoNotas" class="inp" rows="2" placeholder="Detalles adicionales..."></textarea>
+      </div>
+    </div>
+    <div class="flex gap-2 px-5 py-3 flex-shrink-0" style="border-top:1px solid #1e293b">
+      <button onclick="MOS.cerrarModalPedido()" class="btn-ghost flex-1">Cancelar</button>
+      <button onclick="MOS.guardarPedido()" class="btn-primary flex-1">💾 Crear borrador</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Stock unificado (WH + zonas) -->
 <div id="modalStockDetalle" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.cerrarStockDetalle()">
   <div class="modal-box p-0" style="max-width:540px;display:flex;flex-direction:column;max-height:92vh">

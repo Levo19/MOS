@@ -51,6 +51,7 @@ function _route(method, e) {
       case 'getProductosSinVenta':   return getProductosSinVenta(params);
       case 'getInsightsStock':       return getInsightsStock(params);
       case 'getAlertasOperativas':   return getAlertasOperativas(params);
+      case 'bustAlmacenCache':       return bustAlmacenCache();
 
       // ── Proveedores maestros ───────────────────────────────
       case 'getProveedores':              return getProveedoresMaster(params);
@@ -60,6 +61,7 @@ function _route(method, e) {
       case 'registrarPago':               return registrarPago(params);
       case 'getPedidos':                  return getPedidosProveedor(params);
       case 'crearPedido':                 return crearPedidoProveedor(params);
+      case 'getProveedoresQueVenden':     return getProveedoresQueVenden(params);
       case 'getHistoricoProveedor':       return getHistoricoProveedor(params);
       case 'getProveedorProductos':       return getProveedorProductos(params);
       case 'agregarProductoProveedor':    return agregarProductoProveedor(params);

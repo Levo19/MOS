@@ -4,10 +4,65 @@
 //  · WH (warehouseMos) — STOCK central, GUIAS, PREINGRESOS, MERMAS, ENVASADOS
 //  · ME (MosExpress)   — STOCK_ZONAS, VENTAS_CABECERA, VENTAS_DETALLE
 //  · MOS               — PRODUCTOS_MASTER (catálogo), ESTACIONES (zonas)
+//
+// Cache: usa CacheService (memoria) con TTL configurable. Bypass con _refresh=true
 // ============================================================
 
-// ── DASHBOARD: KPIs principales ─────────────────────────────────
-function getDashboardAlmacen() {
+// ── CACHE HELPER ────────────────────────────────────────────────
+// CacheService limit: 100 KB por key, 10 MB total. Para responses
+// pequeños es perfecto. Si necesitamos algo más grande, hacer chunking.
+function _almCached(key, ttlSec, params, fn) {
+  // Bypass: si params._refresh === true, ignora cache y refresca
+  if (params && (params._refresh === true || params._refresh === 'true')) {
+    var fresh = fn();
+    _almCachePut(key, fresh, ttlSec);
+    return fresh;
+  }
+  var cached = _almCacheGet(key);
+  if (cached) return cached;
+  var result = fn();
+  _almCachePut(key, result, ttlSec);
+  return result;
+}
+function _almCacheGet(key) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var raw = cache.get('ALM_' + key);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch(_) { return null; }
+}
+function _almCachePut(key, value, ttlSec) {
+  try {
+    if (!value || value.ok === false) return;
+    var raw = JSON.stringify(value);
+    if (raw.length > 100000) return;  // demasiado grande, no cachear
+    CacheService.getScriptCache().put('ALM_' + key, raw, ttlSec);
+  } catch(_) {}
+}
+function _almCacheBust(prefix) {
+  // Invalida todas las keys que empiecen con prefix (manual)
+  // Nota: CacheService no tiene clear(), así que solo borramos las conocidas
+  try {
+    var keys = ['dashboard', 'guiasPreing7', 'guiasPreing30', 'rankZonas7', 'rankZonas30',
+                'rankZonas60', 'sinVenta30', 'sinVenta60', 'insights30', 'alertasOps'];
+    var cache = CacheService.getScriptCache();
+    cache.removeAll(keys.map(function(k){ return 'ALM_' + (prefix || '') + k; }));
+  } catch(_) {}
+}
+// Endpoint público para invalidar cache desde la PWA
+function bustAlmacenCache() {
+  _almCacheBust('');
+  return { ok: true, data: { busted: true, ts: new Date().toISOString() } };
+}
+
+// ── DASHBOARD: KPIs principales (cache 5min) ────────────────────
+function getDashboardAlmacen(params) {
+  return _almCached('dashboard', 300, params, function() {
+    return _getDashboardAlmacenImpl();
+  });
+}
+function _getDashboardAlmacenImpl() {
   try {
     var hoy = new Date();
     var mesIni = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
@@ -100,11 +155,17 @@ function getDashboardAlmacen() {
   }
 }
 
-// ── STOCK UNIFICADO: WH + Zonas ME para un producto específico ──
+// ── STOCK UNIFICADO por producto (cache 3min, key por producto) ──
 function getStockUnificado(params) {
   if (!params || (!params.skuBase && !params.idProducto)) {
     return { ok: false, error: 'Requiere skuBase o idProducto' };
   }
+  var key = 'stockUnif_' + (params.skuBase || params.idProducto) + '_' + (parseInt(params.rangoDias) || 7);
+  return _almCached(key, 180, params, function() {
+    return _getStockUnificadoImpl(params);
+  });
+}
+function _getStockUnificadoImpl(params) {
   var key = params.skuBase || params.idProducto;
   var rangoDias = parseInt(params.rangoDias) || 7;
   var hoy = new Date();
@@ -250,8 +311,14 @@ function getStockUnificado(params) {
   }
 }
 
-// ── GUÍAS Y PREINGRESOS DE WH (vista resumida para Almacén MOS) ──
+// ── GUÍAS Y PREINGRESOS DE WH (cache 2min) ───────────────────────
 function getGuiasYPreingresos(params) {
+  var dias = parseInt(params && params.dias) || 7;
+  return _almCached('guiasPreing' + dias, 120, params, function() {
+    return _getGuiasYPreingresosImpl(params);
+  });
+}
+function _getGuiasYPreingresosImpl(params) {
   try {
     var dias = parseInt(params && params.dias) || 7;
     var hoy = new Date();
@@ -399,8 +466,14 @@ function _sumarMontoPorTipoYRango(guias, tipos, desdeFecha) {
 // SPRINT 3 — Análisis por Zona (datos ME)
 // ============================================================
 
-// Ranking de zonas por venta total + breakdown métricas
+// Ranking de zonas por venta total (cache 5min)
 function getRankingZonas(params) {
+  var rangoDias = parseInt(params && params.dias) || 30;
+  return _almCached('rankZonas' + rangoDias, 300, params, function() {
+    return _getRankingZonasImpl(params);
+  });
+}
+function _getRankingZonasImpl(params) {
   try {
     var rangoDias = parseInt(params && params.dias) || 30;
     var hoy = new Date();
@@ -462,8 +535,14 @@ function getRankingZonas(params) {
   }
 }
 
-// Productos sin venta en últimos N días (con stock > 0 en alguna zona)
+// Productos sin venta en últimos N días (cache 10min — pesado)
 function getProductosSinVenta(params) {
+  var rangoDias = parseInt(params && params.dias) || 30;
+  return _almCached('sinVenta' + rangoDias, 600, params, function() {
+    return _getProductosSinVentaImpl(params);
+  });
+}
+function _getProductosSinVentaImpl(params) {
   try {
     var rangoDias = parseInt(params && params.dias) || 30;
     var hoy = new Date();
@@ -535,6 +614,11 @@ function getProductosSinVenta(params) {
 // ============================================================
 
 function getAlertasOperativas(params) {
+  return _almCached('alertasOps', 300, params, function() {
+    return _getAlertasOperativasImpl();
+  });
+}
+function _getAlertasOperativasImpl() {
   try {
     var alertas = [];
     var stockWh = _safeReadWhStock();
@@ -651,6 +735,12 @@ function alertasOperativasDiarias() {
 // ============================================================
 
 function getInsightsStock(params) {
+  var rangoDias = parseInt(params && params.dias) || 30;
+  return _almCached('insights' + rangoDias, 600, params, function() {
+    return _getInsightsStockImpl(params);
+  });
+}
+function _getInsightsStockImpl(params) {
   try {
     var insights = [];
     var rangoDias = parseInt(params && params.dias) || 30;
