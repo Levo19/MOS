@@ -2587,17 +2587,20 @@ const MOS = (() => {
         return;
       }
       list.innerHTML = items.map(pp => `
-        <div class="card-sm p-3 cursor-pointer hover:border-indigo-500/30 transition-colors${pp._tmp ? ' opacity-60' : ''}" onclick="MOS.abrirModalProvProducto('${pp.idPP}')">
+        <div class="card-sm p-3 hover:border-indigo-500/30 transition-colors${pp._tmp ? ' opacity-60' : ''}">
           <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0 flex-1">
+            <div class="min-w-0 flex-1 cursor-pointer" onclick="MOS.abrirModalProvProducto('${pp.idPP}')">
               <div class="text-sm font-semibold text-slate-100 truncate">${pp.descripcion || pp.skuBase}</div>
               <div class="text-xs text-slate-500 mt-0.5" style="font-family:monospace">SKU ${pp.skuBase}${pp.codigoBarra ? ' · ▌' + pp.codigoBarra : ''}</div>
               ${pp.notas ? `<div class="text-xs text-slate-500 mt-1 italic">${pp.notas}</div>` : ''}
             </div>
-            <div class="text-right shrink-0">
+            <div class="text-right shrink-0 flex flex-col items-end gap-1">
               <div class="text-sm font-bold text-amber-400">${fmtMoney(pp.precioReferencia || 0)}</div>
-              ${pp.minimoCompra ? `<div class="text-xs text-slate-500">mín ${pp.minimoCompra}</div>` : ''}
-              ${pp.diasEntrega ? `<div class="text-xs text-slate-500">${pp.diasEntrega}d</div>` : ''}
+              <div class="flex items-center gap-2 text-xs text-slate-500">
+                ${pp.minimoCompra ? `<span>mín ${pp.minimoCompra}</span>` : ''}
+                ${pp.diasEntrega ? `<span>${pp.diasEntrega}d</span>` : ''}
+              </div>
+              <button onclick="event.stopPropagation();MOS.eliminarProvProductoRapido('${pp.idPP}')" class="text-slate-500 hover:text-red-400 transition-colors text-base mt-1" title="Eliminar">🗑️</button>
             </div>
           </div>
         </div>
@@ -6756,6 +6759,22 @@ const MOS = (() => {
     }
   }
 
+  // Eliminar desde el botón 🗑️ de cada card (sin abrir modal)
+  async function eliminarProvProductoRapido(idPP) {
+    if (!idPP) return;
+    if (!confirm('¿Eliminar este producto del catálogo del proveedor?')) return;
+    const idProveedor = S.provSelId;
+    // OPTIMISTIC
+    if (S.provProductos && S.provProductos[idProveedor]) {
+      S.provProductos[idProveedor] = S.provProductos[idProveedor].filter(x => x.idPP !== idPP);
+    }
+    _renderProvProductos();
+    toast('Eliminado', 'ok');
+    try {
+      await API.post('eliminarProductoProveedor', { idPP });
+    } catch(e) { toast('Error de sincronización: ' + e.message, 'error'); }
+  }
+
   async function eliminarProvProducto() {
     const idPP = $('ppId').value;
     if (!idPP) return;
@@ -7266,7 +7285,7 @@ const MOS = (() => {
     abrirModalProveedor, guardarProveedor,
     provSetTab, _renderProvHistorico, _refetchHistoricoProv,
     abrirModalProvProducto, ppBuscar, ppSeleccionar,
-    guardarProvProducto, eliminarProvProducto,
+    guardarProvProducto, eliminarProvProducto, eliminarProvProductoRapido,
     abrirVistaCargadores, nuevoCargador, editarCargador,
     abrirModalPago, guardarPago, abrirModalPedido,
     // Config

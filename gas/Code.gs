@@ -51,6 +51,7 @@ function _route(method, e) {
       case 'agregarProductoProveedor':    return agregarProductoProveedor(params);
       case 'actualizarProductoProveedor': return actualizarProductoProveedor(params);
       case 'eliminarProductoProveedor':   return eliminarProductoProveedor(params);
+      case 'upsertProductoProveedor':     return upsertProductoProveedor(params);
 
       // ── Promociones (centralizadas en hoja MosExpress) ─────
       case 'getPromociones':              return getPromociones(params);

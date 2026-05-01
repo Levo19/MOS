@@ -318,6 +318,58 @@ function actualizarProductoProveedor(params) {
   return { ok: false, error: 'Producto-proveedor no encontrado' };
 }
 
+// Upsert silencioso: invocado desde WH al cerrar guía INGRESO_PROVEEDOR
+// Si la entry (idProveedor + skuBase) existe → actualiza precioReferencia + ultimaActualizacion
+// Si no existe → crea nueva fila
+function upsertProductoProveedor(params) {
+  if (!params.idProveedor) return { ok: false, error: 'idProveedor requerido' };
+  var codigoBarra = String(params.codigoBarra || '').trim();
+  if (!codigoBarra) return { ok: false, error: 'codigoBarra requerido' };
+  var precio = parseFloat(params.precioUnitario) || 0;
+
+  // 1. Buscar skuBase del producto
+  var productos = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
+  var prod = productos.find(function(p){ return String(p.codigoBarra || '').trim() === codigoBarra; });
+  // Si no se encuentra por codigoBarra, intentar por idProducto
+  if (!prod) prod = productos.find(function(p){ return String(p.idProducto || '').trim() === codigoBarra; });
+  if (!prod) {
+    // Producto aún no aprobado — silencioso, ignora
+    return { ok: true, data: { skipped: 'producto no en master' } };
+  }
+  var skuBase = prod.skuBase || prod.idProducto;
+  var descripcion = params.descripcion || prod.descripcion || '';
+
+  // 2. Buscar entry existente
+  var sheet = _getProvProdSheet();
+  var data  = sheet.getDataRange().getValues();
+  var headers = data[0];
+  var idxs = {}; headers.forEach(function(h, i){ idxs[h] = i; });
+
+  for (var i = 1; i < data.length; i++) {
+    var sameProv = String(data[i][idxs.idProveedor]) === String(params.idProveedor);
+    var sameSku  = String(data[i][idxs.skuBase])     === String(skuBase);
+    if (sameProv && sameSku) {
+      // Update precioReferencia + descripcion + ultimaActualizacion
+      var fila = i + 1;
+      if (precio > 0) sheet.getRange(fila, idxs.precioReferencia + 1).setValue(precio);
+      sheet.getRange(fila, idxs.descripcion + 1).setValue(descripcion);
+      sheet.getRange(fila, idxs.codigoBarra + 1).setValue(codigoBarra);
+      sheet.getRange(fila, idxs.ultimaActualizacion + 1).setValue(new Date());
+      return { ok: true, data: { idPP: data[i][idxs.idPP], accion: 'actualizado' } };
+    }
+  }
+
+  // 3. Crear nueva fila
+  var id = _generateId('PP');
+  sheet.appendRow([
+    id, params.idProveedor, skuBase, codigoBarra, descripcion,
+    precio, 0, 0,
+    new Date(), true,
+    params.notas || 'Auto desde guía'
+  ]);
+  return { ok: true, data: { idPP: id, accion: 'creado' } };
+}
+
 function eliminarProductoProveedor(params) {
   if (!params.idPP) return { ok: false, error: 'idPP requerido' };
   var sheet = _getProvProdSheet();
