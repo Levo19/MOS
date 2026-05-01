@@ -253,6 +253,12 @@
     .tbl th { padding: 10px 12px; text-align: left; font-weight: 600; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid #1e293b; white-space: nowrap; }
     .tbl td { padding: 10px 12px; border-bottom: 1px solid #0f172a; vertical-align: middle; }
     .tbl tr:hover td { background: rgba(255,255,255,.02); }
+    /* Mobile: tablas más compactas */
+    @media (max-width: 640px) {
+      .tbl { font-size: 12px; }
+      .tbl th { padding: 8px 8px; font-size: 10px; }
+      .tbl td { padding: 8px 8px; }
+    }
 
     /* Badges */
     .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; }
@@ -1979,16 +1985,17 @@
 
     <!-- ═══ VIEW: ALMACÉN ════════════════════════════════════ -->
     <section id="view-almacen" class="view">
-      <div class="tab-bar mb-4">
+      <div class="tab-bar mb-2">
         <button class="tab-btn active" id="almTabStock" onclick="MOS.setAlmTab('stock')">📦 Stock</button>
         <button class="tab-btn" id="almTabVenc"  onclick="MOS.setAlmTab('venc')">⏰ Venc.</button>
         <button class="tab-btn" id="almTabMerma" onclick="MOS.setAlmTab('merma')">🗑️ Mermas</button>
         <button class="tab-btn" id="almTabEnv"   onclick="MOS.setAlmTab('env')">🏷️ Envasados</button>
       </div>
+      <div class="text-xs text-slate-600 italic mb-3 sm:hidden">→ Desliza horizontalmente las tablas para ver todas las columnas</div>
 
       <!-- Stock tab -->
       <div id="almPanelStock">
-        <div class="card overflow-x-auto">
+        <div class="card overflow-x-auto" style="-webkit-overflow-scrolling:touch">
           <table class="tbl">
             <thead>
               <tr>
@@ -2023,7 +2030,7 @@
 
       <!-- Mermas tab -->
       <div id="almPanelMerma" class="hidden">
-        <div class="card overflow-x-auto">
+        <div class="card overflow-x-auto" style="-webkit-overflow-scrolling:touch">
           <table class="tbl">
             <thead>
               <tr>
@@ -2043,7 +2050,7 @@
 
       <!-- Envasados tab -->
       <div id="almPanelEnv" class="hidden">
-        <div class="card overflow-x-auto">
+        <div class="card overflow-x-auto" style="-webkit-overflow-scrolling:touch">
           <table class="tbl">
             <thead>
               <tr>
@@ -2065,7 +2072,7 @@
     <!-- ═══ VIEW: CONFIGURACIÓN ══════════════════════════════ -->
     <section id="view-config" class="view hidden">
       <!-- Tab bar (scrollable en mobile, con fade lateral indicador) -->
-      <div class="tab-scroll-wrap pb-1 mb-4">
+      <div class="tab-scroll-wrap pb-1 mb-2">
         <div class="tab-bar w-max">
           <button class="tab-btn active" id="cfgTabZonas"      onclick="MOS.setCfgTab('zonas')">🏪 Zonas</button>
           <button class="tab-btn" id="cfgTabEstaciones" onclick="MOS.setCfgTab('estaciones')">📍 Estaciones</button>
@@ -2076,14 +2083,15 @@
           <button class="tab-btn" id="cfgTabDispositivos"     onclick="MOS.setCfgTab('dispositivos')">📱 Dispositivos</button>
         </div>
       </div>
+      <div class="text-xs text-slate-600 italic mb-3 sm:hidden">→ Desliza las tablas y los tabs para ver todo</div>
 
       <!-- Zonas -->
       <div id="cfgPanelZonas">
-        <div class="flex items-center justify-between mb-3">
-          <p class="text-xs text-slate-500">Puntos de venta — cada zona agrupa 1 o más estaciones de despacho</p>
-          <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalZona(null)">+ Nueva zona</button>
+        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+          <p class="text-xs text-slate-500 flex-1 min-w-0">Puntos de venta — cada zona agrupa 1 o más estaciones de despacho</p>
+          <button class="btn-primary text-xs px-3 py-1.5 shrink-0" onclick="MOS.abrirModalZona(null)">+ Nueva zona</button>
         </div>
-        <div class="card overflow-x-auto">
+        <div class="card overflow-x-auto" style="-webkit-overflow-scrolling:touch">
           <table class="tbl">
             <thead><tr><th>ID</th><th>Nombre</th><th class="hidden sm:table-cell">Dirección</th><th class="hidden md:table-cell">Responsable</th><th>Estaciones</th><th>Estado</th><th></th></tr></thead>
             <tbody id="tbodyZonas"><tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Cargando...</td></tr></tbody>
@@ -2093,11 +2101,11 @@
 
       <!-- Estaciones -->
       <div id="cfgPanelEstaciones" class="hidden">
-        <div class="flex items-center justify-between mb-3">
-          <p class="text-xs text-slate-500">Cajas MosExpress + almacenes warehouseMos</p>
-          <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalEstacion(null)">+ Nueva</button>
+        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+          <p class="text-xs text-slate-500 flex-1 min-w-0">Cajas MosExpress + almacenes warehouseMos</p>
+          <button class="btn-primary text-xs px-3 py-1.5 shrink-0" onclick="MOS.abrirModalEstacion(null)">+ Nueva</button>
         </div>
-        <div class="card overflow-x-auto">
+        <div class="card overflow-x-auto" style="-webkit-overflow-scrolling:touch">
           <table class="tbl">
             <thead><tr><th>Estación</th><th>Zona</th><th>Tipo</th><th>App</th><th class="hidden sm:table-cell">Descripción</th><th>Estado</th><th></th></tr></thead>
             <tbody id="tbodyEstaciones"><tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Cargando...</td></tr></tbody>
@@ -2107,11 +2115,11 @@
 
       <!-- Impresoras -->
       <div id="cfgPanelImpresoras" class="hidden">
-        <div class="flex items-center justify-between mb-3">
-          <p class="text-xs text-slate-500">PrintNode IDs por estación — agrega nuevos dispositivos aquí</p>
-          <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalImpresora(null)">+ Nueva</button>
+        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+          <p class="text-xs text-slate-500 flex-1 min-w-0">PrintNode IDs por estación — agrega nuevos dispositivos aquí</p>
+          <button class="btn-primary text-xs px-3 py-1.5 shrink-0" onclick="MOS.abrirModalImpresora(null)">+ Nueva</button>
         </div>
-        <div class="card overflow-x-auto">
+        <div class="card overflow-x-auto" style="-webkit-overflow-scrolling:touch">
           <table class="tbl">
             <thead><tr><th>Nombre</th><th>PrintNode ID</th><th>Tipo</th><th>Estación</th><th>App</th><th>Estado</th><th></th></tr></thead>
             <tbody id="tbodyImpresoras"><tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Cargando...</td></tr></tbody>
@@ -2161,11 +2169,11 @@
 
       <!-- Series Documentales -->
       <div id="cfgPanelSeries" class="hidden">
-        <div class="flex items-center justify-between mb-3">
-          <p class="text-xs text-slate-500">Series NV / Boleta / Factura por estación — NubeFact / SUNAT</p>
-          <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalSerie(null)">+ Nueva serie</button>
+        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+          <p class="text-xs text-slate-500 flex-1 min-w-0">Series NV / Boleta / Factura por estación — NubeFact / SUNAT</p>
+          <button class="btn-primary text-xs px-3 py-1.5 shrink-0" onclick="MOS.abrirModalSerie(null)">+ Nueva serie</button>
         </div>
-        <div class="card overflow-x-auto">
+        <div class="card overflow-x-auto" style="-webkit-overflow-scrolling:touch">
           <table class="tbl">
             <thead><tr><th>Estación</th><th>Zona</th><th>Tipo doc.</th><th>Serie</th><th>Correlativo</th><th>Estado</th><th></th></tr></thead>
             <tbody id="tbodySeries"><tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Cargando...</td></tr></tbody>
@@ -2204,11 +2212,11 @@
 
       <!-- Dispositivos -->
       <div id="cfgPanelDispositivos" class="hidden">
-        <div class="flex items-center justify-between mb-3">
-          <p class="text-xs text-slate-500">Dispositivos autorizados por app — MosExpress · warehouseMos</p>
-          <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalDispositivo(null)">+ Nuevo</button>
+        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+          <p class="text-xs text-slate-500 flex-1 min-w-0">Dispositivos autorizados por app — MosExpress · warehouseMos</p>
+          <button class="btn-primary text-xs px-3 py-1.5 shrink-0" onclick="MOS.abrirModalDispositivo(null)">+ Nuevo</button>
         </div>
-        <div class="card overflow-x-auto">
+        <div class="card overflow-x-auto" style="-webkit-overflow-scrolling:touch">
           <table class="tbl">
             <thead><tr><th>Equipo / ID</th><th>App</th><th>Estado</th><th>Última conexión</th><th></th><th></th></tr></thead>
             <tbody id="tbodyDispositivos"><tr><td colspan="6" class="text-center py-8 text-slate-500 text-sm">Cargando...</td></tr></tbody>
@@ -2477,7 +2485,7 @@
         <!-- Historial del día (cajas cerradas) -->
         <div id="cajasHistorialWrap" class="hidden">
           <h3 id="cajasHistTitle" class="font-semibold text-sm text-slate-300 mb-3">Historial de Cierres</h3>
-          <div class="card overflow-hidden">
+          <div class="card overflow-x-auto" style="-webkit-overflow-scrolling:touch">
             <table class="tbl">
               <thead>
                 <tr>
@@ -2488,6 +2496,7 @@
               <tbody id="cajasHistTbody"></tbody>
             </table>
           </div>
+          <div class="text-xs text-slate-600 italic mt-1 lg:hidden">→ Desliza horizontalmente para ver todas las columnas</div>
         </div>
 
         <!-- Empty state -->

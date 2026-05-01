@@ -2595,19 +2595,19 @@ const MOS = (() => {
     }
     list.innerHTML = items.map(pp => `
       <div class="card-sm p-3 hover:border-indigo-500/30 transition-colors${pp._tmp ? ' opacity-60' : ''}">
-        <div class="flex items-start justify-between gap-3">
+        <div class="flex items-start justify-between gap-2">
           <div class="min-w-0 flex-1 cursor-pointer" onclick="MOS.abrirModalProvProducto('${pp.idPP}')">
             <div class="text-sm font-semibold text-slate-100 truncate">${pp.descripcion || pp.skuBase}</div>
-            <div class="text-xs text-slate-500 mt-0.5" style="font-family:monospace">SKU ${pp.skuBase}${pp.codigoBarra ? ' · ▌' + pp.codigoBarra : ''}</div>
-            ${pp.notas ? `<div class="text-xs text-slate-500 mt-1 italic">${pp.notas}</div>` : ''}
+            <div class="text-xs text-slate-500 mt-0.5 truncate" style="font-family:monospace">SKU ${pp.skuBase}${pp.codigoBarra ? ' · ▌' + pp.codigoBarra : ''}</div>
+            ${pp.notas ? `<div class="text-xs text-slate-500 mt-1 italic truncate">${pp.notas}</div>` : ''}
           </div>
-          <div class="text-right shrink-0 flex flex-col items-end gap-1">
-            <div class="text-sm font-bold text-amber-400">${fmtMoney(pp.precioReferencia || 0)}</div>
-            <div class="flex items-center gap-2 text-xs text-slate-500">
+          <div class="text-right shrink-0 flex flex-col items-end gap-0.5">
+            <div class="text-sm font-bold text-amber-400 whitespace-nowrap">${fmtMoney(pp.precioReferencia || 0)}</div>
+            <div class="flex items-center gap-1 text-[10px] text-slate-500 whitespace-nowrap">
               ${pp.minimoCompra ? `<span>mín ${pp.minimoCompra}</span>` : ''}
               ${pp.diasEntrega ? `<span>${pp.diasEntrega}d</span>` : ''}
             </div>
-            <button onclick="event.stopPropagation();MOS.eliminarProvProductoRapido('${pp.idPP}')" class="text-slate-500 hover:text-red-400 transition-colors text-base mt-1" title="Eliminar">🗑️</button>
+            <button onclick="event.stopPropagation();MOS.eliminarProvProductoRapido('${pp.idPP}')" class="text-slate-500 hover:text-red-400 transition-colors text-base mt-0.5 p-1" title="Eliminar">🗑️</button>
           </div>
         </div>
       </div>
@@ -2681,19 +2681,19 @@ const MOS = (() => {
     const filtro = S.provHistFilter || '';
     const productos = _filtrarHist(data.productos, filtro);
     body.innerHTML = `
-      <div class="grid grid-cols-3 gap-2 mb-4">
-        <div class="card-sm p-3 text-center"><div class="text-xs text-slate-500">Guías</div><div class="text-lg font-bold text-slate-100">${data.totalGuias}</div></div>
-        <div class="card-sm p-3 text-center"><div class="text-xs text-slate-500">Gastado</div><div class="text-lg font-bold text-amber-400">${fmtMoney(data.totalGastado)}</div></div>
-        <div class="card-sm p-3 text-center"><div class="text-xs text-slate-500">Por pagar</div><div class="text-lg font-bold ${data.porPagar > 0 ? 'text-rose-400' : 'text-green-400'}">${fmtMoney(data.porPagar)}</div></div>
+      <div class="grid grid-cols-3 gap-2 mb-3">
+        <div class="card-sm p-2 text-center"><div class="text-[10px] text-slate-500 uppercase tracking-wide">Guías</div><div class="text-base sm:text-lg font-bold text-slate-100">${data.totalGuias}</div></div>
+        <div class="card-sm p-2 text-center"><div class="text-[10px] text-slate-500 uppercase tracking-wide">Gastado</div><div class="text-base sm:text-lg font-bold text-amber-400 truncate">${fmtMoney(data.totalGastado)}</div></div>
+        <div class="card-sm p-2 text-center"><div class="text-[10px] text-slate-500 uppercase tracking-wide">Por pagar</div><div class="text-base sm:text-lg font-bold ${data.porPagar > 0 ? 'text-rose-400' : 'text-green-400'} truncate">${fmtMoney(data.porPagar)}</div></div>
       </div>
       <div class="text-xs text-slate-500 mb-2">${productos.length} de ${data.productos.length} productos${filtro ? ' · filtro: "' + filtro + '"' : ''}</div>
       <div class="space-y-1">
         ${productos.length ? productos.map(it => `
           <div class="card-sm p-2.5">
-            <div class="flex items-start justify-between gap-3">
+            <div class="flex items-start justify-between gap-2">
               <div class="min-w-0 flex-1">
                 <div class="text-sm font-medium text-slate-200 truncate">${it.descripcion}</div>
-                <div class="text-xs text-slate-500" style="font-family:monospace">▌${it.codigoBarra} · ${it.veces} veces · ${it.cantidadTotal} uds</div>
+                <div class="text-xs text-slate-500 truncate" style="font-family:monospace">▌${it.codigoBarra} · ${it.veces}× · ${it.cantidadTotal}u</div>
               </div>
               <div class="text-right shrink-0">
                 <div class="text-sm font-bold text-slate-100">${fmtMoney(it.ultimoPrecio)}</div>
@@ -2796,9 +2796,12 @@ const MOS = (() => {
     const total = pagos.reduce((s, p) => s + parseFloat(p.monto || 0), 0);
     el.innerHTML = `<p class="text-xs text-slate-500 mb-2">Total: <span class="text-indigo-400 font-semibold">${fmtMoney(total)}</span></p>` +
       pagos.slice(-5).reverse().map(p => `
-        <div class="flex justify-between items-center py-1.5 border-b border-slate-800/50">
-          <div><span class="text-slate-300">${fmtDate(p.fecha)}</span><span class="text-slate-500 ml-2 text-xs">${p.numeroFactura || ''}</span></div>
-          <span class="font-semibold text-green-400">${fmtMoney(p.monto)}</span>
+        <div class="flex justify-between items-center gap-2 py-1.5 border-b border-slate-800/50">
+          <div class="min-w-0 flex-1">
+            <span class="text-slate-300 text-xs">${fmtDate(p.fecha)}</span>
+            ${p.numeroFactura ? `<span class="text-slate-500 ml-2 text-xs truncate">${p.numeroFactura}</span>` : ''}
+          </div>
+          <span class="font-semibold text-green-400 text-sm whitespace-nowrap shrink-0">${fmtMoney(p.monto)}</span>
         </div>
       `).join('');
   }
@@ -2809,11 +2812,14 @@ const MOS = (() => {
     if (!pedidos.length) { el.innerHTML = '<p class="text-slate-600">Sin pedidos registrados</p>'; return; }
     el.innerHTML = pedidos.slice(-5).reverse().map(p => {
       const badge = p.estado === 'BORRADOR' ? 'badge-gray' : p.estado === 'CONFIRMADO' ? 'badge-blue' : 'badge-green';
-      return `<div class="flex justify-between items-center py-1.5 border-b border-slate-800/50">
-        <div><span class="text-slate-300 text-xs">${p.idPedido}</span><span class="text-slate-500 ml-2 text-xs">${fmtDate(p.fechaCreacion)}</span></div>
-        <div class="flex items-center gap-2">
-          <span class="text-slate-300">${fmtMoney(p.montoEstimado)}</span>
-          <span class="badge ${badge}">${p.estado}</span>
+      return `<div class="flex justify-between items-center gap-2 py-1.5 border-b border-slate-800/50">
+        <div class="min-w-0 flex-1">
+          <div class="text-slate-300 text-xs truncate">${p.idPedido}</div>
+          <div class="text-slate-500 text-[10px]">${fmtDate(p.fechaCreacion)}</div>
+        </div>
+        <div class="flex flex-col items-end gap-0.5 shrink-0">
+          <span class="text-slate-300 text-sm whitespace-nowrap">${fmtMoney(p.montoEstimado)}</span>
+          <span class="badge ${badge} text-[10px]">${p.estado}</span>
         </div>
       </div>`;
     }).join('');
