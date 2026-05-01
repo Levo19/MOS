@@ -2099,33 +2099,101 @@
 
     <!-- ═══ VIEW: ALMACÉN ════════════════════════════════════ -->
     <section id="view-almacen" class="view">
-      <div class="tab-bar mb-2">
-        <button class="tab-btn active" id="almTabStock" onclick="MOS.setAlmTab('stock')">📦 Stock</button>
-        <button class="tab-btn" id="almTabVenc"  onclick="MOS.setAlmTab('venc')">⏰ Venc.</button>
-        <button class="tab-btn" id="almTabMerma" onclick="MOS.setAlmTab('merma')">🗑️ Mermas</button>
-        <button class="tab-btn" id="almTabEnv"   onclick="MOS.setAlmTab('env')">🏷️ Envasados</button>
-      </div>
-      <div class="text-xs text-slate-600 italic mb-3 sm:hidden">→ Desliza horizontalmente las tablas para ver todas las columnas</div>
-
-      <!-- Stock tab -->
-      <div id="almPanelStock">
-        <div class="card overflow-x-auto" style="-webkit-overflow-scrolling:touch">
-          <table class="tbl">
-            <thead>
-              <tr>
-                <th>Producto</th>
-                <th class="hidden sm:table-cell">Código</th>
-                <th>Stock</th>
-                <th>Mínimo</th>
-                <th>Rotación</th>
-                <th>Estado</th>
-              </tr>
-            </thead>
-            <tbody id="tbodyStock">
-              <tr><td colspan="6" class="text-center py-8 text-slate-500 text-sm">Cargando...</td></tr>
-            </tbody>
-          </table>
+      <div class="tab-scroll-wrap mb-2">
+        <div class="tab-bar w-max">
+          <button class="tab-btn active" id="almTabResumen" onclick="MOS.setAlmTab('resumen')">📊 Resumen</button>
+          <button class="tab-btn" id="almTabStock" onclick="MOS.setAlmTab('stock')">📦 Stock</button>
+          <button class="tab-btn" id="almTabOps"   onclick="MOS.setAlmTab('ops')">📄 Operaciones</button>
+          <button class="tab-btn" id="almTabZonas" onclick="MOS.setAlmTab('zonas')">🏪 Zonas</button>
+          <button class="tab-btn" id="almTabVenc"  onclick="MOS.setAlmTab('venc')">⏰ Venc.</button>
+          <button class="tab-btn" id="almTabMerma" onclick="MOS.setAlmTab('merma')">🗑️ Mermas</button>
+          <button class="tab-btn" id="almTabEnv"   onclick="MOS.setAlmTab('env')">🏷️ Env.</button>
         </div>
+      </div>
+      <div class="text-xs text-slate-600 italic mb-3 sm:hidden">→ Desliza tabs y tablas horizontalmente</div>
+
+      <!-- Resumen tab (KPIs + Insights + Alertas operativas) -->
+      <div id="almPanelResumen">
+        <!-- KPIs -->
+        <div id="almKPIs" class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+          <div class="kpi-card p-3"><div class="text-xl mb-1">💰</div><div id="almKpiValor" class="text-xl font-bold text-emerald-400">—</div><div class="text-[10px] text-slate-500 uppercase">Stock valorizado</div></div>
+          <div class="kpi-card p-3"><div class="text-xl mb-1">🚨</div><div id="almKpiCriticos" class="text-xl font-bold text-rose-400">—</div><div class="text-[10px] text-slate-500 uppercase">Productos críticos</div></div>
+          <div class="kpi-card p-3"><div class="text-xl mb-1">⏰</div><div id="almKpiVenc" class="text-xl font-bold text-amber-400">—</div><div class="text-[10px] text-slate-500 uppercase">Vence ≤7 días</div></div>
+          <div class="kpi-card p-3"><div class="text-xl mb-1">🗑️</div><div id="almKpiMermas" class="text-xl font-bold text-orange-400">—</div><div class="text-[10px] text-slate-500 uppercase">Mermas mes</div></div>
+        </div>
+        <!-- Insights (sugerencias inteligentes) -->
+        <div class="mb-4">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="font-semibold text-sm text-slate-200">💡 Sugerencias inteligentes</h3>
+            <button class="btn-ghost text-xs" onclick="MOS.almRefreshResumen()">↺</button>
+          </div>
+          <div id="almInsights" class="space-y-2 text-sm text-slate-400">Cargando…</div>
+        </div>
+        <!-- Alertas operativas resumidas -->
+        <div>
+          <h3 class="font-semibold text-sm text-slate-200 mb-2">⚠ Alertas operativas</h3>
+          <div id="almAlertasOps" class="space-y-2 text-sm text-slate-400">Cargando…</div>
+        </div>
+      </div>
+
+      <!-- Stock tab (con búsqueda + barras de progreso) -->
+      <div id="almPanelStock" class="hidden">
+        <div class="flex items-center gap-2 mb-3 flex-wrap">
+          <input id="almStockFilter" class="inp text-sm flex-1" style="min-width:160px" placeholder="🔍 Buscar producto..." oninput="MOS.almFiltrarStock(this.value)">
+          <select id="almStockOrden" class="inp text-xs" onchange="MOS.almFiltrarStock()">
+            <option value="alerta">Por alerta (críticos primero)</option>
+            <option value="stock">Por stock (mayor)</option>
+            <option value="rotacion">Por rotación (mayor)</option>
+            <option value="alfa">Alfabético</option>
+          </select>
+        </div>
+        <div id="almStockList" class="space-y-2">
+          <div class="skel h-16 rounded-lg"></div>
+          <div class="skel h-16 rounded-lg"></div>
+        </div>
+      </div>
+
+      <!-- Operaciones (guías + preingresos) -->
+      <div id="almPanelOps" class="hidden">
+        <div id="almOpsResumen" class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+          <div class="card-sm p-3 text-center"><div class="text-xs text-slate-500">Ingresos hoy</div><div id="opsIngHoy" class="text-lg font-bold text-emerald-400">—</div></div>
+          <div class="card-sm p-3 text-center"><div class="text-xs text-slate-500">Despachos hoy</div><div id="opsDesHoy" class="text-lg font-bold text-blue-400">—</div></div>
+          <div class="card-sm p-3 text-center"><div class="text-xs text-slate-500">Envasados hoy</div><div id="opsEnvHoy" class="text-lg font-bold text-purple-400">—</div></div>
+          <div class="card-sm p-3 text-center"><div class="text-xs text-slate-500">$ Ingresado</div><div id="opsMontoHoy" class="text-lg font-bold text-amber-400">—</div></div>
+        </div>
+        <div id="almPreingPanel" class="mb-4 hidden">
+          <h3 class="font-semibold text-sm text-amber-400 mb-2">⚠ Preingresos pendientes <span id="opsPreingCount" class="badge badge-yellow text-xs ml-1">0</span></h3>
+          <div id="almPreingList" class="space-y-2"></div>
+        </div>
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="font-semibold text-sm text-slate-200">📄 Guías recientes</h3>
+          <select id="almGuiasFiltro" class="inp text-xs" style="max-width:140px" onchange="MOS.almLoadOps()">
+            <option value="7">Últimos 7 días</option>
+            <option value="3">Últimos 3 días</option>
+            <option value="1">Hoy</option>
+            <option value="30">Últimos 30 días</option>
+          </select>
+        </div>
+        <div id="almGuiasList" class="space-y-2">
+          <div class="skel h-12 rounded-lg"></div>
+        </div>
+      </div>
+
+      <!-- Zonas (ranking + sin venta + comparativa) -->
+      <div id="almPanelZonas" class="hidden">
+        <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
+          <h3 class="font-semibold text-sm text-slate-200">🏪 Análisis por zona</h3>
+          <select id="almZonasRango" class="inp text-xs" style="max-width:140px" onchange="MOS.almLoadZonas()">
+            <option value="30" selected>Últimos 30 días</option>
+            <option value="7">Últimos 7 días</option>
+            <option value="60">Últimos 60 días</option>
+          </select>
+        </div>
+        <div id="almZonasRanking" class="mb-4">
+          <div class="skel h-32 rounded-lg"></div>
+        </div>
+        <h3 class="font-semibold text-sm text-slate-200 mb-2">📦 Productos sin venta (con stock)</h3>
+        <div id="almSinVenta" class="space-y-2"></div>
       </div>
 
       <!-- Vencimientos tab -->
@@ -4416,6 +4484,23 @@
       <button id="ppBtnEliminar" onclick="MOS.eliminarProvProducto()" class="btn-ghost hidden" style="color:#f87171">Eliminar</button>
       <button onclick="MOS.closeModal('modalProvProducto')" class="btn-ghost flex-1">Cancelar</button>
       <button onclick="MOS.guardarProvProducto()" class="btn-primary flex-1">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Stock unificado (WH + zonas) -->
+<div id="modalStockDetalle" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.cerrarStockDetalle()">
+  <div class="modal-box p-0" style="max-width:540px;display:flex;flex-direction:column;max-height:92vh">
+    <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
+      <div class="min-w-0 flex-1">
+        <h3 id="stockDetTitle" class="font-semibold text-emerald-400 text-base truncate">📦 Detalle de stock</h3>
+        <p id="stockDetSku" class="text-xs text-slate-500 mt-0.5 font-mono"></p>
+      </div>
+      <button onclick="MOS.cerrarStockDetalle()" class="modal-close-x">×</button>
+    </div>
+    <div id="stockDetBody" class="overflow-y-auto px-5 py-4 space-y-4" style="flex:1"></div>
+    <div class="flex gap-2 px-5 py-3 flex-shrink-0" style="border-top:1px solid #1e293b">
+      <button onclick="MOS.cerrarStockDetalle()" class="btn-ghost flex-1">Cerrar</button>
     </div>
   </div>
 </div>

@@ -2312,7 +2312,7 @@ const MOS = (() => {
 
   function setAlmTab(tab) {
     S.almTab = tab;
-    ['stock','venc','merma','env'].forEach(t => {
+    ['resumen','stock','ops','zonas','venc','merma','env'].forEach(t => {
       const b = $('almTab' + t.charAt(0).toUpperCase() + t.slice(1));
       if (b) b.classList.toggle('active', t === tab);
       const p = $('almPanel' + t.charAt(0).toUpperCase() + t.slice(1));
@@ -2323,36 +2323,359 @@ const MOS = (() => {
   }
 
   function renderAlmTab(tab) {
+    if (tab === 'resumen') almLoadResumen();
     if (tab === 'stock') renderStockTable();
+    if (tab === 'ops')   almLoadOps();
+    if (tab === 'zonas') almLoadZonas();
     if (tab === 'venc')  renderVencTable();
     if (tab === 'merma') renderMermasTable();
     if (tab === 'env')   renderEnvTable();
   }
 
-  function renderStockTable() {
-    const tbody = $('tbodyStock');
-    if (!tbody) return;
-    if (!S.stock.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-slate-500 text-sm">Sin datos. Conecta warehouseMos.</td></tr>';
+  // ── ALMACÉN: RESUMEN (KPIs + insights + alertas operativas) ──
+  async function almLoadResumen() {
+    try {
+      const [dashRes, insightsRes, alertasRes] = await Promise.allSettled([
+        API.get('getDashboardAlmacen', {}),
+        API.get('getInsightsStock', { dias: 30 }),
+        API.get('getAlertasOperativas', {})
+      ]);
+      if (dashRes.status === 'fulfilled') _almRenderKPIs(dashRes.value || {});
+      if (insightsRes.status === 'fulfilled') _almRenderInsights((insightsRes.value || {}).insights || []);
+      if (alertasRes.status === 'fulfilled') _almRenderAlertasOps((alertasRes.value || {}).alertas || []);
+    } catch(e) {
+      console.warn('[almLoadResumen] error:', e);
+    }
+  }
+  function almRefreshResumen() { almLoadResumen(); }
+
+  function _almRenderKPIs(data) {
+    if ($('almKpiValor'))    $('almKpiValor').textContent    = 'S/ ' + (data.stockValor || 0).toLocaleString('es-PE', { maximumFractionDigits: 0 });
+    if ($('almKpiCriticos')) $('almKpiCriticos').textContent = data.productosCriticos || 0;
+    if ($('almKpiVenc'))     $('almKpiVenc').textContent     = data.vencCriticos || 0;
+    if ($('almKpiMermas'))   $('almKpiMermas').textContent   = 'S/ ' + (data.mermasMes || 0).toLocaleString('es-PE', { maximumFractionDigits: 0 });
+  }
+
+  function _almRenderInsights(insights) {
+    const el = $('almInsights'); if (!el) return;
+    if (!insights || !insights.length) {
+      el.innerHTML = '<div class="text-xs text-slate-600 italic py-3 text-center">✅ Sin sugerencias por ahora — todo en orden</div>';
       return;
     }
-    const sorted = [...S.stock].sort((a, b) => (a.alertaMinimo ? 0 : 1) - (b.alertaMinimo ? 0 : 1));
-    tbody.innerHTML = sorted.map(s => {
-      const badge = s.alertaMinimo
-        ? '<span class="badge badge-red">Bajo</span>'
-        : '<span class="badge badge-green">OK</span>';
-      const dias = s.diasCobertura !== undefined && s.diasCobertura !== null
-        ? `<span class="${s.diasCobertura <= 7 ? 'text-red-400' : s.diasCobertura <= 15 ? 'text-yellow-400' : 'text-slate-400'}">${s.diasCobertura}d</span>`
-        : '<span class="text-slate-600">—</span>';
-      return `<tr>
-        <td><div class="font-medium text-slate-200 text-xs sm:text-sm">${s.descripcion || s.codigoProducto}</div></td>
-        <td class="hidden sm:table-cell text-xs text-slate-500">${s.codigoProducto}</td>
-        <td class="font-semibold">${parseFloat(s.cantidadDisponible || 0).toLocaleString()}</td>
-        <td class="text-slate-500">${s.stockMinimo || 0}</td>
-        <td>${dias}</td>
-        <td>${badge}</td>
-      </tr>`;
+    const sevColor = { CRITICA: 'rose', ALTA: 'amber', MEDIA: 'indigo', BAJA: 'slate' };
+    const sevIcon  = { CRITICA: '🚨', ALTA: '⚠️', MEDIA: '💡', BAJA: 'ℹ️' };
+    el.innerHTML = insights.map(i => {
+      const c = sevColor[i.severidad] || 'slate';
+      const icon = sevIcon[i.severidad] || '•';
+      return `<div class="card-sm border-${c}-500/30 p-3" style="border-left:3px solid var(--accent)">
+        <div class="flex items-start gap-2">
+          <span>${icon}</span>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm text-slate-200 font-medium">${i.mensaje}</div>
+            ${i.accion ? `<div class="text-xs text-slate-500 mt-1">→ ${i.accion}</div>` : ''}
+          </div>
+          <span class="text-[10px] text-slate-600 font-mono shrink-0">${i.tipo || ''}</span>
+        </div>
+      </div>`;
     }).join('');
+  }
+
+  function _almRenderAlertasOps(alertas) {
+    const el = $('almAlertasOps'); if (!el) return;
+    if (!alertas || !alertas.length) {
+      el.innerHTML = '<div class="text-xs text-slate-600 italic py-3 text-center">✅ Sin alertas operativas</div>';
+      return;
+    }
+    const sevColor = { CRITICA: 'rose', ALTA: 'amber', MEDIA: 'indigo' };
+    el.innerHTML = alertas.map(a => `
+      <div class="card-sm p-3 border-${sevColor[a.severidad] || 'slate'}-500/30" style="border-left:3px solid #f59e0b">
+        <div class="flex items-start justify-between gap-2">
+          <div class="min-w-0 flex-1">
+            <div class="text-sm font-semibold text-slate-200">${a.mensaje}</div>
+            ${a.topItems ? `<div class="text-xs text-slate-500 mt-1">${a.topItems.slice(0,3).map(t => t.descripcion || t.codigoProducto).join(' · ')}${a.topItems.length > 3 ? ' …' : ''}</div>` : ''}
+          </div>
+          <span class="badge badge-${a.severidad === 'CRITICA' ? 'red' : 'yellow'} text-xs shrink-0">${a.cantidad}</span>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // ── ALMACÉN: STOCK con barras + búsqueda ──
+  function almFiltrarStock(q) {
+    if (q !== undefined) S.almStockFilter = q;
+    renderStockTable();
+  }
+
+  // ── ALMACÉN: OPERACIONES (guías + preingresos) ──
+  async function almLoadOps() {
+    const dias = parseInt($('almGuiasFiltro')?.value) || 7;
+    try {
+      const r = await API.get('getGuiasYPreingresos', { dias });
+      if (!r) return;
+      // Resumen
+      const res = r.resumen || {};
+      if ($('opsIngHoy'))   $('opsIngHoy').textContent   = res.ingresosHoy || 0;
+      if ($('opsDesHoy'))   $('opsDesHoy').textContent   = res.despachosHoy || 0;
+      if ($('opsEnvHoy'))   $('opsEnvHoy').textContent   = res.envasadosHoy || 0;
+      if ($('opsMontoHoy')) $('opsMontoHoy').textContent = 'S/ ' + (res.montoIngresoHoy || 0).toLocaleString('es-PE', { maximumFractionDigits: 0 });
+      // Preingresos pendientes
+      const preing = r.preingresosPendientes || [];
+      const pPanel = $('almPreingPanel');
+      if (pPanel) pPanel.classList.toggle('hidden', !preing.length);
+      if ($('opsPreingCount')) $('opsPreingCount').textContent = preing.length;
+      const pList = $('almPreingList');
+      if (pList) pList.innerHTML = preing.slice(0, 10).map(p => `
+        <div class="card-sm p-3 border-l-2 border-amber-500/40">
+          <div class="flex items-center justify-between gap-2">
+            <div class="min-w-0 flex-1">
+              <div class="text-sm font-semibold text-slate-200">${p.idPreingreso || p.idGuia || '—'}</div>
+              <div class="text-xs text-slate-500">${fmtDate(p.fecha)} · ${p.idProveedor || '—'} · S/ ${(parseFloat(p.monto) || 0).toFixed(2)}</div>
+              ${p.comentario ? `<div class="text-xs text-slate-600 italic mt-1 truncate">${p.comentario}</div>` : ''}
+            </div>
+            <span class="badge badge-yellow text-xs shrink-0">${p.estado || 'PENDIENTE'}</span>
+          </div>
+        </div>
+      `).join('') || '<div class="text-xs text-slate-600 italic py-2">—</div>';
+      // Guías recientes
+      const gList = $('almGuiasList');
+      const guias = r.guias || [];
+      if (!guias.length) {
+        if (gList) gList.innerHTML = '<div class="text-xs text-slate-600 italic py-3 text-center">Sin guías en el rango</div>';
+        return;
+      }
+      if (gList) gList.innerHTML = guias.slice(0, 30).map(g => {
+        const tipo = String(g.tipo || '').toUpperCase();
+        const tipoLabel = tipo.indexOf('INGRESO') >= 0 ? '🟢 INGRESO' : tipo.indexOf('SALIDA') >= 0 ? '🔵 SALIDA' : (tipo.indexOf('ENVASADO') >= 0 ? '🟣 ENVASADO' : '📋 ' + tipo);
+        const estadoCls = g.estado === 'CERRADA' ? 'text-slate-400' : g.estado === 'ABIERTA' ? 'text-amber-400' : 'text-slate-500';
+        return `
+          <div class="card-sm p-3">
+            <div class="flex items-center justify-between gap-2">
+              <div class="min-w-0 flex-1">
+                <div class="text-sm font-semibold text-slate-200 truncate">${tipoLabel} · ${g.idGuia || '—'}</div>
+                <div class="text-xs text-slate-500">${fmtDate(g.fecha)} · ${g.idProveedor || g.idZona || '—'} · S/ ${(parseFloat(g.montoTotal) || 0).toFixed(2)}</div>
+              </div>
+              <span class="text-xs shrink-0 ${estadoCls}">${g.estado || ''}</span>
+            </div>
+          </div>`;
+      }).join('');
+    } catch(e) {
+      console.warn('[almLoadOps] error:', e);
+    }
+  }
+
+  // ── ALMACÉN: ZONAS (ranking + sin venta) ──
+  async function almLoadZonas() {
+    const dias = parseInt($('almZonasRango')?.value) || 30;
+    try {
+      const [rankRes, sinVentaRes] = await Promise.allSettled([
+        API.get('getRankingZonas', { dias }),
+        API.get('getProductosSinVenta', { dias })
+      ]);
+      if (rankRes.status === 'fulfilled') _almRenderRankingZonas(rankRes.value || {});
+      if (sinVentaRes.status === 'fulfilled') _almRenderSinVenta((sinVentaRes.value || {}).productos || []);
+    } catch(e) {
+      console.warn('[almLoadZonas] error:', e);
+    }
+  }
+
+  function _almRenderRankingZonas(data) {
+    const el = $('almZonasRanking'); if (!el) return;
+    const zonas = data.zonas || [];
+    if (!zonas.length) {
+      el.innerHTML = '<div class="text-xs text-slate-600 italic py-3 text-center">Sin ventas en el rango</div>';
+      return;
+    }
+    const max = Math.max(...zonas.map(z => z.ventas));
+    const totalStr = data.totalVentas ? 'S/ ' + data.totalVentas.toLocaleString('es-PE', { maximumFractionDigits: 0 }) : 'S/ 0';
+    el.innerHTML = `
+      <div class="card-sm p-4 mb-2">
+        <div class="text-xs text-slate-500 uppercase mb-1">Total vendido (${data.rangoDias}d)</div>
+        <div class="text-2xl font-bold text-emerald-400">${totalStr}</div>
+        <div class="text-xs text-slate-500 mt-1">${data.totalTickets || 0} tickets · ticket prom S/ ${(data.ticketProm || 0).toFixed(2)}</div>
+      </div>
+      <div class="space-y-2">
+        ${zonas.map(z => {
+          const pct = max > 0 ? (z.ventas / max) * 100 : 0;
+          return `<div class="card-sm p-3">
+            <div class="flex items-center justify-between mb-1.5 gap-2">
+              <div class="text-sm font-semibold text-slate-200 truncate">${z.nombre}</div>
+              <div class="text-sm font-bold text-amber-400 whitespace-nowrap">S/ ${z.ventas.toLocaleString('es-PE', { maximumFractionDigits: 0 })}</div>
+            </div>
+            <div class="h-2 bg-slate-800 rounded overflow-hidden">
+              <div class="h-full" style="width:${pct}%;background:linear-gradient(to right,#10b981,#34d399)"></div>
+            </div>
+            <div class="flex items-center justify-between text-xs text-slate-500 mt-1.5">
+              <span>${z.tickets} tickets · ${z.vendedores} vendedor${z.vendedores !== 1 ? 'es' : ''}</span>
+              <span>${z.pctTotal}%</span>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  function _almRenderSinVenta(productos) {
+    const el = $('almSinVenta'); if (!el) return;
+    if (!productos.length) {
+      el.innerHTML = '<div class="text-xs text-slate-600 italic py-3 text-center">✅ Todos los productos con stock se vendieron</div>';
+      return;
+    }
+    el.innerHTML = productos.slice(0, 30).map(p => `
+      <div class="card-sm p-3">
+        <div class="flex items-center justify-between gap-2">
+          <div class="min-w-0 flex-1">
+            <div class="text-sm font-semibold text-slate-200 truncate">${p.descripcion || p.idProducto}</div>
+            <div class="text-xs text-slate-500 mt-0.5 font-mono">▌ ${p.codigoBarra || '—'}</div>
+          </div>
+          <div class="text-right shrink-0">
+            <div class="text-sm font-bold text-orange-400">${p.stockEnZonas}u</div>
+            <div class="text-[10px] text-slate-600">en zonas</div>
+          </div>
+        </div>
+      </div>
+    `).join('') + (productos.length > 30 ? `<div class="text-xs text-slate-600 italic text-center py-2">+ ${productos.length - 30} más…</div>` : '');
+  }
+
+  // ── ALMACÉN: STOCK detalle modal (WH + zonas) ──
+  async function almAbrirStockDetalle(idProducto) {
+    if (!idProducto) return;
+    openModal('modalStockDetalle');
+    const body = $('stockDetBody');
+    if (body) body.innerHTML = '<div class="skel h-32 rounded"></div>';
+    try {
+      const r = await API.get('getStockUnificado', { idProducto });
+      if (!r) throw new Error('Sin respuesta');
+      const p = r.producto || {};
+      $('stockDetTitle').textContent = '📦 ' + (p.descripcion || idProducto);
+      $('stockDetSku').textContent = 'SKU ' + (p.skuBase || '—') + (p.codigoBarra ? ' · ▌ ' + p.codigoBarra : '');
+      const zonasHtml = (r.zonas || []).map(z => {
+        const rotStr = z.rotacionDia > 0 ? z.rotacionDia + '/d' : '0/d';
+        const diasStr = z.diasParaAcabar !== null ? z.diasParaAcabar + 'd' : '—';
+        const colorDias = (z.diasParaAcabar !== null && z.diasParaAcabar < 7) ? 'text-rose-400'
+                        : (z.diasParaAcabar !== null && z.diasParaAcabar < 14) ? 'text-amber-400'
+                        : 'text-slate-400';
+        return `<div class="flex items-center justify-between py-2 border-b border-slate-800/50 gap-2">
+          <div class="min-w-0 flex-1">
+            <div class="text-sm text-slate-200 truncate">🏪 ${z.nombre}</div>
+            <div class="text-xs text-slate-500">rot ${rotStr} · ${diasStr === '—' ? 'sin venta' : 'alcanza ' + diasStr}</div>
+          </div>
+          <div class="text-right shrink-0">
+            <div class="text-base font-bold ${colorDias}">${z.cantidad}u</div>
+          </div>
+        </div>`;
+      }).join('');
+      const insightsHtml = (r.insights || []).map(i => {
+        const sevColor = { CRITICA: 'border-rose-500/40 bg-rose-500/5', ALTA: 'border-amber-500/40 bg-amber-500/5', MEDIA: 'border-indigo-500/40 bg-indigo-500/5' };
+        return `<div class="card-sm p-2.5 border-l-2 ${sevColor[i.severidad] || 'border-slate-700'}">
+          <div class="text-xs font-semibold text-slate-200">${i.mensaje}</div>
+          ${i.accion ? `<div class="text-[11px] text-slate-500 mt-1">→ ${i.accion}</div>` : ''}
+        </div>`;
+      }).join('');
+      const total = r.total || {};
+      const minimo = p.stockMinimo || 0;
+      const maximo = p.stockMaximo || (minimo * 2);
+      const pct = maximo > 0 ? Math.min(100, (total.cantidad / maximo) * 100) : 0;
+      const colorBar = total.cantidad < minimo ? '#f43f5e' : total.cantidad < minimo * 1.2 ? '#f59e0b' : '#10b981';
+      $('stockDetBody').innerHTML = `
+        <!-- Total + barra -->
+        <div class="card-sm p-4">
+          <div class="flex items-center justify-between mb-2">
+            <div class="text-xs text-slate-500 uppercase">Total</div>
+            <div class="text-2xl font-bold text-white">${total.cantidad}u</div>
+          </div>
+          <div class="h-3 bg-slate-800 rounded overflow-hidden">
+            <div class="h-full transition-all" style="width:${pct}%;background:${colorBar}"></div>
+          </div>
+          <div class="flex justify-between text-[10px] text-slate-500 mt-1">
+            <span>mín ${minimo}u</span><span>máx ${maximo}u</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 mt-3 text-xs">
+            <div><span class="text-slate-500">Rotación:</span> <span class="text-slate-200">${total.rotacionDia || 0}/d</span></div>
+            <div><span class="text-slate-500">Alcanza:</span> <span class="text-slate-200">${total.diasParaAcabar !== null ? total.diasParaAcabar + ' días' : '—'}</span></div>
+          </div>
+        </div>
+        <!-- WH -->
+        <div>
+          <div class="text-xs text-slate-500 uppercase mb-2">🏭 Almacén central</div>
+          <div class="card-sm p-3">
+            <div class="flex items-center justify-between">
+              <div class="text-sm text-slate-200">Stock disponible</div>
+              <div class="text-lg font-bold text-blue-400">${(r.wh || {}).cantidad || 0}u</div>
+            </div>
+          </div>
+        </div>
+        <!-- Zonas -->
+        ${zonasHtml ? `
+        <div>
+          <div class="text-xs text-slate-500 uppercase mb-1">🏪 Distribución por zona (rot ${total.rangoDiasConsultado || 7}d)</div>
+          <div class="card-sm p-3">${zonasHtml}</div>
+        </div>` : ''}
+        <!-- Insights -->
+        ${insightsHtml ? `
+        <div>
+          <div class="text-xs text-slate-500 uppercase mb-2">💡 Sugerencias</div>
+          <div class="space-y-2">${insightsHtml}</div>
+        </div>` : ''}
+      `;
+    } catch(e) {
+      $('stockDetBody').innerHTML = `<div class="text-rose-400 text-sm">Error: ${e.message}</div>`;
+    }
+  }
+  function cerrarStockDetalle() { closeModal('modalStockDetalle'); }
+
+  function renderStockTable() {
+    const list = $('almStockList');
+    if (!list) return;
+    if (!S.stock || !S.stock.length) {
+      list.innerHTML = '<div class="text-xs text-slate-600 italic py-6 text-center">Sin datos. Verifica conexión con warehouseMos.</div>';
+      return;
+    }
+    // Filtro
+    const q = (S.almStockFilter || '').trim().toLowerCase();
+    const orden = $('almStockOrden')?.value || 'alerta';
+    let items = [...S.stock];
+    if (q) {
+      items = items.filter(s =>
+        (s.descripcion || '').toLowerCase().includes(q) ||
+        (s.codigoProducto || '').toLowerCase().includes(q) ||
+        (s.skuBase || '').toLowerCase().includes(q)
+      );
+    }
+    // Orden
+    if (orden === 'alerta')   items.sort((a, b) => (a.alertaMinimo ? 0 : 1) - (b.alertaMinimo ? 0 : 1));
+    if (orden === 'stock')    items.sort((a, b) => (parseFloat(b.cantidadDisponible) || 0) - (parseFloat(a.cantidadDisponible) || 0));
+    if (orden === 'rotacion') items.sort((a, b) => (a.diasCobertura || 9999) - (b.diasCobertura || 9999));
+    if (orden === 'alfa')     items.sort((a, b) => (a.descripcion || '').localeCompare(b.descripcion || ''));
+    if (!items.length) {
+      list.innerHTML = '<div class="text-xs text-slate-600 italic py-6 text-center">Sin coincidencias para "' + q + '"</div>';
+      return;
+    }
+    list.innerHTML = items.slice(0, 100).map(s => {
+      const cant = parseFloat(s.cantidadDisponible) || 0;
+      const min = parseFloat(s.stockMinimo) || 0;
+      const max = min > 0 ? min * 2 : (cant * 1.5 || 100);
+      const pct = Math.min(100, max > 0 ? (cant / max) * 100 : 0);
+      const colorBar = cant < min ? '#f43f5e' : cant < min * 1.2 ? '#f59e0b' : '#10b981';
+      const dias = (s.diasCobertura !== undefined && s.diasCobertura !== null)
+        ? `<span class="${s.diasCobertura <= 7 ? 'text-rose-400' : s.diasCobertura <= 15 ? 'text-amber-400' : 'text-slate-500'}">${s.diasCobertura}d</span>`
+        : '<span class="text-slate-600">— rot</span>';
+      const idClick = s.codigoProducto || s.skuBase || '';
+      return `<div class="card-sm p-3 cursor-pointer hover:border-emerald-500/40 transition-colors" onclick="MOS.almAbrirStockDetalle('${idClick}')">
+        <div class="flex items-center justify-between gap-2 mb-1.5">
+          <div class="min-w-0 flex-1">
+            <div class="text-sm font-semibold text-slate-100 truncate">${s.descripcion || s.codigoProducto}</div>
+            <div class="text-[10px] text-slate-500 font-mono">${s.codigoProducto || s.skuBase}</div>
+          </div>
+          <div class="text-right shrink-0">
+            <div class="text-lg font-bold text-slate-100">${cant.toLocaleString('es-PE')}u</div>
+            <div class="text-[10px] text-slate-500">${dias} · mín ${min}</div>
+          </div>
+        </div>
+        <div class="h-2 bg-slate-800 rounded overflow-hidden">
+          <div class="h-full transition-all" style="width:${pct}%;background:${colorBar}"></div>
+        </div>
+      </div>`;
+    }).join('') + (items.length > 100 ? `<div class="text-xs text-slate-600 italic text-center py-2">+ ${items.length - 100} más, refina la búsqueda</div>` : '');
   }
 
   function renderVencTable() {
@@ -7760,6 +8083,8 @@ const MOS = (() => {
     abrirLiquidacion,
     abrirModalPrecio, publicarPrecio,
     setAlmTab,
+    almLoadResumen, almRefreshResumen, almFiltrarStock,
+    almLoadOps, almLoadZonas, almAbrirStockDetalle, cerrarStockDetalle,
     loadProveedores, selectProveedor, renderProveedores, cerrarDetalleProveedor,
     abrirModalProveedor, guardarProveedor,
     provSetTab, _renderProvHistorico, _refetchHistoricoProv,
