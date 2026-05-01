@@ -2600,16 +2600,15 @@ const MOS = (() => {
       $('stockDetTitle').textContent = '📦 ' + (p.descripcion || idProducto);
       $('stockDetSku').textContent = 'SKU ' + (p.skuBase || '—') + (p.codigoBarra ? ' · ▌ ' + p.codigoBarra : '');
       const zonasHtml = (r.zonas || []).map(z => {
-        // Stock display con manejo de NEGATIVO (anomalía) vs CERO (sin stock) vs positivo
+        // Stock display: NEGATIVO (anomalía) vs CERO (registrado y agotado) vs POSITIVO
         const isNeg = z.cantidad < 0;
+        const isCero = z.cantidad === 0;
         const stockColor = isNeg ? 'text-rose-500' :
-                          z.sinStock ? 'text-slate-600' :
+                          isCero ? 'text-slate-500' :
                           (z.diasParaAcabar !== null && z.diasParaAcabar < 7)  ? 'text-rose-400' :
                           (z.diasParaAcabar !== null && z.diasParaAcabar < 14) ? 'text-amber-400' :
                           'text-slate-200';
-        const stockDisplay = isNeg ? `⚠ ${z.cantidad}u` :
-                             z.sinStock ? 'Sin stock' :
-                             (z.cantidad + 'u');
+        const stockDisplay = isNeg ? `⚠ ${z.cantidad}u` : (z.cantidad + 'u');
         // Rotación + días para acabar
         let detailLine = '';
         if (z.sinVentas) {
@@ -2675,8 +2674,8 @@ const MOS = (() => {
               }
               if (total.cantidad === 0) {
                 return total.rotacionDia > 0
-                  ? '🚨 <span class="text-rose-400">Sin stock pero hay ventas activas</span> — reposición urgente'
-                  : '⚠ <span class="text-slate-500">Sin stock en ningún lado · Sin ventas tampoco</span>';
+                  ? '🚨 <span class="text-rose-400">Stock total en 0 pero hay ventas activas</span> — reposición urgente'
+                  : '⏸ <span class="text-slate-500">Stock total en 0 · Sin ventas en ' + (total.rangoDiasConsultado || 7) + 'd</span>';
               }
               if (total.diasParaAcabar !== null) {
                 const cls = total.diasParaAcabar < 7 ? 'text-rose-400' : total.diasParaAcabar < 14 ? 'text-amber-400' : 'text-emerald-400';
@@ -2702,10 +2701,10 @@ const MOS = (() => {
                 </div>
                 ${((r.wh && r.wh.detalle) || []).length > 1 ? `<div class="text-[10px] text-slate-600 font-mono mt-1">${r.wh.detalle.length} entradas en WH STOCK</div>` : ''}
               </div>
-              <div class="text-lg font-bold ${(r.wh || {}).cantidad > 0 ? 'text-blue-400' : (r.wh || {}).cantidad < 0 ? 'text-rose-500' : 'text-slate-600'} shrink-0">
+              <div class="text-lg font-bold ${(r.wh || {}).cantidad > 0 ? 'text-blue-400' : (r.wh || {}).cantidad < 0 ? 'text-rose-500' : 'text-slate-500'} shrink-0">
                 ${(r.wh || {}).cantidad > 0 ? ((r.wh || {}).cantidad + 'u') :
                   (r.wh || {}).cantidad < 0 ? ('⚠ ' + (r.wh || {}).cantidad + 'u') :
-                  'Sin stock'}
+                  ((r.wh || {}).detalle && (r.wh || {}).detalle.length > 0 ? '0u' : '— sin registro')}
               </div>
             </div>
           </div>
