@@ -6905,12 +6905,15 @@ const MOS = (() => {
 
   async function loadPromociones() {
     $('promoListView').classList.remove('hidden');
-    // Render cache primero (instantáneo)
+    // Render cache primero (instantáneo) — usa cache si existe, sino lista actual del estado
     const cached = _promoLoadCache();
-    if (cached && (!_promoState.lista || !_promoState.lista.length)) {
+    if (cached) {
       _promoState.lista = cached;
+    }
+    // Render SIEMPRE al entrar a la vista (incluso si lista ya tenía data del init startup)
+    if (_promoState.lista && _promoState.lista.length) {
       _renderPromoLista();
-    } else if (!_promoState.lista || !_promoState.lista.length) {
+    } else {
       $('promoLista').innerHTML = '<div class="skel h-12 rounded-lg"></div><div class="skel h-12 rounded-lg mt-2"></div>';
     }
     // Fetch fresco
@@ -6919,11 +6922,10 @@ const MOS = (() => {
       const lista = await API.get('getPromociones', {});
       const fresh = Array.isArray(lista) ? lista : (lista && lista.data) || [];
       console.log('[loadPromociones] respuesta GAS:', fresh.length, 'promociones', fresh);
-      const changed = JSON.stringify(fresh) !== JSON.stringify(_promoState.lista);
       _promoState.lista = fresh;
       _promoState.lastFetch = Date.now();
       _promoSaveCache(fresh);
-      if (changed || !cached) _renderPromoLista();
+      _renderPromoLista();  // SIEMPRE re-renderizar después del fetch
     } catch(e) {
       console.error('[loadPromociones] error API:', e);
       _promoState.lastError = e && e.message ? e.message : String(e);
