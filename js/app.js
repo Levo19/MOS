@@ -145,30 +145,56 @@ const MOS = (() => {
   let _loginSelectedId = null;
   let _pinValue        = '';
   let _pinMode         = 'login'; // 'login' | 'lock'
-  const _PIN_MAX       = 6;
+  let _pinChecking     = false;   // bloqueo durante validación
+  const _PIN_MAX       = 4;       // 4 dígitos exactos
 
   // ── Numpad ───────────────────────────────────────────────────
   function _np(key) {
+    if (_pinChecking) return;     // evitar input durante validación
     if (key === 'del') {
       _pinValue = _pinValue.slice(0, -1);
       _updatePinDots();
     } else if (key === 'ok') {
-      confirmarPin();
+      // Compatibilidad: si manualmente presionan ✓ con 4 dígitos
+      if (_pinValue.length === _PIN_MAX) confirmarPin();
     } else {
       if (_pinValue.length >= _PIN_MAX) return;
       _pinValue += key;
       _updatePinDots();
-      if (_pinValue.length === _PIN_MAX) setTimeout(confirmarPin, 130);
+      // Auto-validar al cuarto dígito
+      if (_pinValue.length === _PIN_MAX) {
+        _pinChecking = true;
+        setTimeout(() => { confirmarPin(); }, 100);
+      }
     }
   }
 
-  function _updatePinDots() {
+  function _updatePinDots(opts) {
     const isLock = _pinMode === 'lock';
     const id = isLock ? 'lockPinDots' : 'loginPinDots';
     const el = $(id); if (!el) return;
-    el.innerHTML = Array.from({ length: _PIN_MAX }, (_, i) =>
-      `<div class="pin-dot${i < _pinValue.length ? (isLock ? ' filled lock' : ' filled') : ''}"></div>`
-    ).join('');
+    const errorMode = opts && opts.error;
+    el.innerHTML = Array.from({ length: _PIN_MAX }, (_, i) => {
+      let cls = 'pin-dot';
+      if (i < _pinValue.length) cls += errorMode ? ' filled error' : (isLock ? ' filled lock' : ' filled');
+      return `<div class="${cls}"></div>`;
+    }).join('');
+  }
+
+  function _pinErrorAnim() {
+    const id = _pinMode === 'lock' ? 'lockPinDots' : 'loginPinDots';
+    const el = $(id); if (!el) return;
+    _updatePinDots({ error: true });
+    el.classList.remove('shake');
+    void el.offsetWidth;          // force reflow
+    el.classList.add('shake');
+    if (navigator.vibrate) { try { navigator.vibrate([80, 60, 80]); } catch {} }
+    setTimeout(() => {
+      _pinValue = '';
+      _updatePinDots();
+      el.classList.remove('shake');
+      _pinChecking = false;
+    }, 480);
   }
 
   // Keyboard support (desktop)
@@ -267,8 +293,8 @@ const MOS = (() => {
 
   async function confirmarPin() {
     if (_pinValue.length < 4) {
-      const eid = _pinMode === 'lock' ? 'lockPinError' : 'loginPinError';
-      const e = $(eid); if (e) e.textContent = 'Mínimo 4 dígitos';
+      _pinChecking = false;
+      _pinErrorAnim();
       return;
     }
     const pin    = _pinValue;
@@ -279,38 +305,107 @@ const MOS = (() => {
       try {
         const res = await API.post('verificarPinPersonal', { idPersonal: userId, pin });
         if (!res?.autorizado) {
-          _pinValue = ''; _updatePinDots();
-          const e = $('lockPinError'); if (e) e.textContent = 'PIN incorrecto';
+          if ($('lockPinError')) $('lockPinError').textContent = '';
+          toast('PIN incorrecto', 'error');
+          _pinErrorAnim();
           return;
         }
         $('loginOverlay')?.classList.add('hidden');
+        _pinChecking = false;
       } catch(e) {
-        _pinValue = ''; _updatePinDots();
-        const err = $('lockPinError'); if (err) err.textContent = e.message;
+        toast('Error: ' + e.message, 'error');
+        _pinErrorAnim();
       }
     } else {
       const err = $('loginPinError'); if (err) err.textContent = '';
       try {
         const res = await API.post('verificarPinPersonal', { idPersonal: userId, pin });
         if (!res?.autorizado) {
-          _pinValue = ''; _updatePinDots();
-          const e = $('loginPinError'); if (e) e.textContent = 'PIN incorrecto';
+          toast('PIN incorrecto', 'error');
+          _pinErrorAnim();
           return;
         }
         S.session = { idPersonal: userId, nombre: res.nombre, rol: res.rol };
         _saveSession(S.session);
         _applySession();
+        // Mostrar welcome screen + iniciar carga en background
+        _showWelcome(res.nombre, res.rol);
         $('loginOverlay')?.classList.add('hidden');
+        _pinChecking = false;
         nav('dashboard');
         loadView('dashboard');
         if (window._SWDailyCheck) window._SWDailyCheck();
         // Push: notificar login + registrar token (askPermission=true porque viene de gesto del usuario)
         _pushInit(res.nombre, res.rol, true);
       } catch(e) {
-        _pinValue = ''; _updatePinDots();
-        const err = $('loginPinError'); if (err) err.textContent = e.message;
+        toast('Error: ' + (e.message || 'No se pudo validar PIN'), 'error');
+        _pinErrorAnim();
       }
     }
+  }
+
+  // ── Welcome screen post-login ────────────────────────────────
+  const _WEL_MSGS = [
+    'El control es tuyo. Vamos.',
+    'Hoy es un gran día para crecer.',
+    'Tu equipo cuenta contigo.',
+    'Las decisiones importantes te esperan.',
+    'Que sea un día productivo.',
+    'Listo para liderar.',
+    'Vamos a hacer que las cosas pasen.'
+  ];
+  function _greetingByHour() {
+    const h = new Date().getHours();
+    if (h >= 5 && h < 12)  return '¡Buenos días!';
+    if (h >= 12 && h < 19) return '¡Buenas tardes!';
+    return '¡Buenas noches!';
+  }
+  function _showWelcome(nombre, rol) {
+    const overlay = $('welcomeScreen');
+    if (!overlay) return;
+    // Texto
+    $('welGreeting').textContent = _greetingByHour();
+    $('welName').textContent     = (nombre || 'Admin').split(' ')[0];
+    const rolLabel = (rol || '').toLowerCase() === 'master' ? '— Master Admin —' : '— Administrador —';
+    $('welRol').textContent  = rolLabel;
+    $('welMsg').textContent  = _WEL_MSGS[Math.floor(Math.random() * _WEL_MSGS.length)];
+    // Partículas (12 puntos con drift random)
+    const pcont = $('welParticles');
+    if (pcont) {
+      const N = 14;
+      pcont.innerHTML = Array.from({ length: N }, () => {
+        const left  = Math.random() * 100;
+        const dur   = 5 + Math.random() * 5;
+        const delay = -Math.random() * dur;
+        const drift = (Math.random() * 80 - 40) + 'px';
+        const size  = (4 + Math.random() * 8) | 0;
+        return `<span style="left:${left}%;width:${size}px;height:${size}px;animation-duration:${dur}s;animation-delay:${delay}s;--drift:${drift}"></span>`;
+      }).join('');
+    }
+    // Progress de 5 fases simulado (~3.5s total)
+    const fases = ['Catálogo', 'Stock', 'Cajas', 'Promociones', 'Personal'];
+    const dots = document.querySelectorAll('#welProgressDots .wel-progress-dot');
+    const lbl  = $('welProgressLabel');
+    fases.forEach((fase, i) => {
+      setTimeout(() => {
+        if (dots[i]) dots[i].classList.add('done');
+        if (lbl) lbl.textContent = 'Cargando ' + fase + '…';
+        if (i === fases.length - 1) {
+          setTimeout(() => { if (lbl) lbl.textContent = 'Todo listo · Toca para entrar'; }, 400);
+        }
+      }, 350 + i * 600);
+    });
+    // Mostrar (limpiar cualquier display:none previo)
+    overlay.style.display = '';
+    overlay.classList.remove('hide');
+    overlay.classList.add('show');
+  }
+  function _dismissWelcome() {
+    const overlay = $('welcomeScreen');
+    if (!overlay || !overlay.classList.contains('show')) return;
+    overlay.classList.remove('show');
+    overlay.classList.add('hide');
+    setTimeout(() => { overlay.style.display = 'none'; overlay.classList.remove('hide'); }, 400);
   }
 
   function _applySession() {
@@ -7407,7 +7502,7 @@ const MOS = (() => {
     confirmarAnularTicket, abrirModalMetodo, cerrarModalMetodo, aplicarCambioMetodo,
     _selMetodo, _onMixtoInput, _renderModalMetodo,
     // Login / sesión
-    seleccionarUsuario, loginVolver, confirmarPin, logout, lockScreen, _np,
+    seleccionarUsuario, loginVolver, confirmarPin, logout, lockScreen, _np, _dismissWelcome,
     syncApp, applyPendingUpdate,
     // Finanzas
     finCargar, finDia, finAbrirModalGasto, finAbrirModalJornada, finGuardarGasto,

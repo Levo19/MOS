@@ -1543,6 +1543,93 @@
     .pin-dot  { width: 13px; height: 13px; border-radius: 50%; border: 2px solid rgba(255,255,255,.18); transition: all .15s; }
     .pin-dot.filled      { background: #6366f1; border-color: #6366f1; box-shadow: 0 0 8px rgba(99,102,241,.65); }
     .pin-dot.filled.lock { background: #f59e0b; border-color: #f59e0b; box-shadow: 0 0 8px rgba(245,158,11,.65); }
+    .pin-dot.error       { background: #ef4444 !important; border-color: #ef4444 !important; box-shadow: 0 0 10px rgba(239,68,68,.7) !important; }
+    .pin-dots.shake { animation: pinShake .45s cubic-bezier(.36,.07,.19,.97); }
+    @keyframes pinShake {
+      10%, 90% { transform: translateX(-2px); }
+      20%, 80% { transform: translateX(4px); }
+      30%, 50%, 70% { transform: translateX(-7px); }
+      40%, 60% { transform: translateX(7px); }
+    }
+    /* ── Welcome screen ────────────────────────────────────── */
+    #welcomeScreen {
+      position: fixed; inset: 0; z-index: 200;
+      display: none;
+      align-items: center; justify-content: center;
+      padding: 32px 20px;
+      background: radial-gradient(ellipse at top, #1e1b4b 0%, #0f0a1f 50%, #020817 100%);
+      cursor: pointer;
+      overflow: hidden;
+    }
+    #welcomeScreen.show { display: flex; animation: welcomeFadeIn .55s ease; }
+    #welcomeScreen.hide { animation: welcomeFadeOut .4s ease forwards; }
+    @keyframes welcomeFadeIn  { from { opacity: 0; transform: scale(1.02); } to { opacity: 1; transform: scale(1); } }
+    @keyframes welcomeFadeOut { to   { opacity: 0; transform: scale(.98); } }
+    .wel-particles { position: absolute; inset: 0; pointer-events: none; }
+    .wel-particles span {
+      position: absolute; bottom: -30px;
+      width: 8px; height: 8px; border-radius: 50%;
+      background: radial-gradient(circle,#a78bfa 0%, rgba(167,139,250,0) 70%);
+      opacity: .55;
+      animation: welParticleRise linear infinite;
+    }
+    @keyframes welParticleRise {
+      0%   { transform: translateY(0) translateX(0) scale(.8); opacity: 0; }
+      10%  { opacity: .65; }
+      100% { transform: translateY(-110vh) translateX(var(--drift,0)) scale(1.2); opacity: 0; }
+    }
+    .wel-content { position: relative; z-index: 2; text-align: center; max-width: 460px; width: 100%; }
+    .wel-greeting {
+      color: #a78bfa; font-size: 1rem; font-weight: 500; letter-spacing: .15em;
+      text-transform: uppercase; margin-bottom: 16px;
+      opacity: 0; animation: welSlideUp .6s .1s forwards;
+    }
+    .wel-name {
+      font-size: clamp(2rem, 7vw, 3.4rem); font-weight: 800; color: #fff;
+      letter-spacing: -.02em; line-height: 1.1; margin-bottom: 8px;
+      background: linear-gradient(135deg, #fff 0%, #c4b5fd 60%, #a78bfa 100%);
+      -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+      opacity: 0; animation: welSlideUp .7s .25s forwards;
+    }
+    .wel-rol {
+      color: #94a3b8; font-size: .85rem; font-weight: 500; letter-spacing: .12em;
+      text-transform: uppercase; margin-bottom: 28px;
+      opacity: 0; animation: welSlideUp .6s .4s forwards;
+    }
+    .wel-msg {
+      color: #cbd5e1; font-size: 1.05rem; font-style: italic; font-weight: 300;
+      max-width: 380px; margin: 0 auto 36px; line-height: 1.5;
+      opacity: 0; animation: welSlideUp .7s .55s forwards;
+    }
+    .wel-progress {
+      display: flex; flex-direction: column; align-items: center; gap: 10px;
+      opacity: 0; animation: welSlideUp .6s .7s forwards;
+    }
+    .wel-progress-dots { display: flex; gap: 8px; }
+    .wel-progress-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: rgba(167,139,250,.25);
+      transition: all .3s;
+    }
+    .wel-progress-dot.done { background: #a78bfa; box-shadow: 0 0 8px rgba(167,139,250,.6); transform: scale(1.15); }
+    .wel-progress-label { color: #64748b; font-size: .75rem; letter-spacing: .08em; min-height: 18px; }
+    .wel-tap-hint {
+      position: absolute; bottom: max(env(safe-area-inset-bottom,0), 32px);
+      left: 0; right: 0; text-align: center;
+      color: #64748b; font-size: .8rem; letter-spacing: .14em;
+      text-transform: uppercase; font-weight: 500;
+      opacity: 0; animation: welTapPulse 1.6s 1s infinite;
+      pointer-events: none;
+    }
+    .wel-tap-hint::before { content: '↓'; display: block; font-size: 1.1rem; margin-bottom: 4px; opacity: .8; }
+    @keyframes welTapPulse {
+      0%,100% { opacity: .35; transform: translateY(0); }
+      50%     { opacity: 1;   transform: translateY(-3px); }
+    }
+    @keyframes welSlideUp {
+      from { opacity: 0; transform: translateY(14px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
     /* Lock avatar ring */
     .lock-av-ring {
       position: relative; width: 88px; height: 88px;
@@ -1773,6 +1860,30 @@
     </button>
   </div>
 
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- WELCOME SCREEN (post-login, optimista)                      -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div id="welcomeScreen" onclick="MOS._dismissWelcome()">
+  <div class="wel-particles" id="welParticles"></div>
+  <div class="wel-content">
+    <div id="welGreeting" class="wel-greeting">Hola</div>
+    <div id="welName" class="wel-name">—</div>
+    <div id="welRol" class="wel-rol">—</div>
+    <div id="welMsg" class="wel-msg">—</div>
+    <div class="wel-progress">
+      <div class="wel-progress-dots" id="welProgressDots">
+        <div class="wel-progress-dot"></div>
+        <div class="wel-progress-dot"></div>
+        <div class="wel-progress-dot"></div>
+        <div class="wel-progress-dot"></div>
+        <div class="wel-progress-dot"></div>
+      </div>
+      <div id="welProgressLabel" class="wel-progress-label">Cargando…</div>
+    </div>
+  </div>
+  <div class="wel-tap-hint">Toca para entrar</div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
