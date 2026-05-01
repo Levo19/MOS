@@ -6892,11 +6892,30 @@ const MOS = (() => {
     // Toggle modo solo visible en GRUPO
     const modoBox = $('promoModoBox');
     if (modoBox) modoBox.style.display = esGrupo ? '' : 'none';
+    // Chips rápidos según tipo
+    ['GRUPO','PORCENTAJE','COMBO'].forEach(t => {
+      const row = $('promoQuick' + t);
+      if (row) row.classList.toggle('hidden', t !== tipo);
+    });
     if (tipo === 'GRUPO') {
       const modo = $('promoModoUnit')?.classList.contains('active') ? 'UNITARIO' : 'TOTAL';
       $('promoValorLbl').textContent = modo === 'TOTAL' ? 'Precio TOTAL del grupo *' : 'Precio UNITARIO en promo *';
     } else if (tipo === 'PORCENTAJE') {
       $('promoValorLbl').textContent = '% Descuento *';
+    }
+    promoActualizarEjemplo();
+  }
+
+  // Auto-llena descripción y opcionalmente cantidad mínima desde un chip
+  function promoQuickFill(label, descripcion, cantMin) {
+    const descEl = $('promoDesc');
+    if (descEl) descEl.value = descripcion;
+    if (typeof cantMin === 'number' && cantMin > 0) {
+      const cm = $('promoCantMin');
+      if (cm) {
+        cm.value = cantMin;
+        cm.dispatchEvent(new Event('input', { bubbles: true }));
+      }
     }
     promoActualizarEjemplo();
   }
@@ -7113,7 +7132,7 @@ const MOS = (() => {
     abrirModalPN, cerrarModalPN, lanzarAProduccion,
     pnSetTipo, pnAutogenBarcode, pnBuscarBase, pnSeleccionarBase,
     abrirModalPromociones, loadPromociones, promoNuevoForm, promoEditar, promoVolverLista, promoToggleActiva,
-    promoSetTipo, promoSetModo, promoActualizarEjemplo, promoBuscarBase, promoSeleccionarBase,
+    promoSetTipo, promoSetModo, promoQuickFill, promoActualizarEjemplo, promoBuscarBase, promoSeleccionarBase,
     promoGuardar, promoEliminar,
     promoComboBuscar, promoComboAgregar, promoComboCerrarRes,
     promoComboCambiarQty, promoComboQuitar, numStep,

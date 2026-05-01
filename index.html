@@ -653,6 +653,28 @@
     .alert-btn.active .alert-btn-icon { filter: none; }
     .alert-btn.active .alert-btn-count { background: #020817; color: #ffd700; box-shadow: 0 0 0 2px #ffd700; }
 
+    /* ── Quick chips para descripción de promo ──────────── */
+    .promo-quick-row {
+      display: flex; flex-wrap: wrap; gap: 4px;
+      margin-bottom: 6px;
+    }
+    .promo-quick-chip {
+      padding: 4px 10px;
+      background: rgba(168,85,247,.08);
+      border: 1px solid rgba(168,85,247,.25);
+      border-radius: 999px;
+      color: #c084fc;
+      font-size: .68rem; font-weight: 600;
+      cursor: pointer; transition: all .12s;
+      white-space: nowrap;
+    }
+    .promo-quick-chip:hover {
+      background: linear-gradient(135deg, rgba(168,85,247,.2), rgba(236,72,153,.15));
+      border-color: #c084fc; color: #fce7f3;
+      transform: translateY(-1px);
+    }
+    .promo-quick-chip:active { transform: scale(.95); }
+
     /* ── Toggle modo de precio promo (unidad / total) ───── */
     .promo-modo-btn {
       flex: 1; padding: 6px 10px;
@@ -2736,6 +2758,29 @@
 
         <div>
           <label class="lbl">Descripción visible</label>
+          <!-- Chips rápidos por tipo -->
+          <div id="promoQuickGRUPO" class="promo-quick-row hidden">
+            <button type="button" class="promo-quick-chip" onclick="MOS.promoQuickFill('2x1','Lleva 2 paga 1',2)">2x1</button>
+            <button type="button" class="promo-quick-chip" onclick="MOS.promoQuickFill('Tripack','Tripack — Lleva 3',3)">Tripack</button>
+            <button type="button" class="promo-quick-chip" onclick="MOS.promoQuickFill('Pack 4','Pack de 4 unidades',4)">Pack 4</button>
+            <button type="button" class="promo-quick-chip" onclick="MOS.promoQuickFill('Sixpack','Sixpack — Lleva 6',6)">Sixpack</button>
+            <button type="button" class="promo-quick-chip" onclick="MOS.promoQuickFill('Docena','Docena — Lleva 12',12)">Docena</button>
+          </div>
+          <div id="promoQuickPORCENTAJE" class="promo-quick-row hidden">
+            <button type="button" class="promo-quick-chip" onclick="MOS.promoQuickFill('PorMayor','Descuento por mayor')">Por mayor</button>
+            <button type="button" class="promo-quick-chip" onclick="MOS.promoQuickFill('Frecuente','Descuento cliente frecuente')">Cliente frecuente</button>
+            <button type="button" class="promo-quick-chip" onclick="MOS.promoQuickFill('Temporada','Rebaja de temporada')">Rebaja temporada</button>
+            <button type="button" class="promo-quick-chip" onclick="MOS.promoQuickFill('Liquidacion','Liquidación / saldos')">Liquidación</button>
+            <button type="button" class="promo-quick-chip" onclick="MOS.promoQuickFill('Festivo','Promoción día festivo')">Día festivo</button>
+          </div>
+          <div id="promoQuickCOMBO" class="promo-quick-row hidden">
+            <button type="button" class="promo-quick-chip" onclick="MOS.promoQuickFill('Verano','Combo verano')">Verano</button>
+            <button type="button" class="promo-quick-chip" onclick="MOS.promoQuickFill('Navidad','Combo navideño')">Navidad</button>
+            <button type="button" class="promo-quick-chip" onclick="MOS.promoQuickFill('Desayuno','Combo desayuno')">Desayuno</button>
+            <button type="button" class="promo-quick-chip" onclick="MOS.promoQuickFill('Almuerzo','Combo almuerzo')">Almuerzo</button>
+            <button type="button" class="promo-quick-chip" onclick="MOS.promoQuickFill('Familiar','Combo familiar')">Familiar</button>
+            <button type="button" class="promo-quick-chip" onclick="MOS.promoQuickFill('Escolar','Combo escolar')">Escolar</button>
+          </div>
           <input id="promoDesc" class="inp" placeholder="Tripack: 3 por S/30">
         </div>
 
