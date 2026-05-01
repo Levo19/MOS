@@ -4,6 +4,41 @@
 // + historial de precios + publicación de precio
 // ============================================================
 
+// ── DEFENSA: solo origenes autorizados pueden modificar PRODUCTOS_MASTER / EQUIVALENCIAS ──
+var _SOURCES_AUTORIZADOS = [
+  'MOS_MODAL_PRODUCTO',  // guardarProducto (crear/editar desde modal)
+  'MOS_MODAL_PRECIO',    // publicarPrecio (modal de cambio de precio)
+  'MOS_TOGGLE',          // toggleProductoActivo (encender/apagar)
+  'MOS_TOGGLE_CASCADA',  // _prenderHijos / cascada de presentaciones
+  'MOS_EQUIV_MODAL',     // crear equivalencia desde modal
+  'MOS_PN_APROBACION',   // lanzarProductoNuevo (crea producto al aprobar PN)
+  'MOS_MIGRACION'        // import bulk
+];
+
+function _validarSource(params, accion, tabla) {
+  var src = params && params._source;
+  if (_SOURCES_AUTORIZADOS.indexOf(src) >= 0) return null;
+  // No autorizado: registrar alerta y devolver error
+  try {
+    _registrarAlerta(
+      'MOD_NO_AUTORIZADA',
+      'CRITICA',
+      'Intento de ' + accion + ' en ' + tabla + ' desde origen ' + (src || 'DESCONOCIDO'),
+      'MOS',
+      JSON.stringify({ accion: accion, tabla: tabla, source: src || null,
+                       params: _safePreviewParams(params), timestamp: new Date().toISOString() })
+    );
+  } catch(_){}
+  return { ok: false, error: 'Operacion bloqueada: origen no autorizado (' + (src || 'sin _source') + ')' };
+}
+
+function _safePreviewParams(p) {
+  try {
+    var s = JSON.stringify(p || {});
+    return s.length > 500 ? s.slice(0, 500) + '…' : s;
+  } catch(_){ return '{}'; }
+}
+
 // ── PRODUCTOS_MASTER ─────────────────────────────────────────
 function getProductosMaster(params) {
   var rows = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
@@ -105,6 +140,8 @@ function getProductoPorCodigo(params) {
 }
 
 function crearProductoMaster(params) {
+  var bloqueo = _validarSource(params, 'crear', 'PRODUCTOS_MASTER');
+  if (bloqueo) return bloqueo;
   var sheet = getSheet('PRODUCTOS_MASTER');
   var id = params.idProducto || _generateId('P');
   var skuBase = params.skuBase || params.codigoBarra || id;
@@ -153,6 +190,8 @@ function crearProductoMaster(params) {
 }
 
 function actualizarProductoMaster(params) {
+  var bloqueo = _validarSource(params, 'actualizar', 'PRODUCTOS_MASTER');
+  if (bloqueo) return bloqueo;
   var sheet = getSheet('PRODUCTOS_MASTER');
   var data  = sheet.getDataRange().getValues();
   var hdrs  = data[0];
@@ -213,6 +252,8 @@ function getEquivalencias(params) {
 }
 
 function crearEquivalencia(params) {
+  var bloqueo = _validarSource(params, 'crear', 'EQUIVALENCIAS');
+  if (bloqueo) return bloqueo;
   if (!params.skuBase || !params.codigoBarra) {
     return { ok: false, error: 'Requiere skuBase y codigoBarra' };
   }
@@ -223,6 +264,8 @@ function crearEquivalencia(params) {
 }
 
 function actualizarEquivalencia(params) {
+  var bloqueo = _validarSource(params, 'actualizar', 'EQUIVALENCIAS');
+  if (bloqueo) return bloqueo;
   if (!params.idEquiv) return { ok: false, error: 'Requiere idEquiv' };
   var sheet = getSheet('EQUIVALENCIAS');
   var data  = sheet.getDataRange().getValues();
@@ -259,6 +302,7 @@ function publicarPrecio(params) {
   }
 
   var res = actualizarProductoMaster({
+    _source:      'MOS_MODAL_PRECIO',
     idProducto:   params.idProducto,
     codigoBarra:  params.codigoBarra,
     precioVenta:  _precioNuevo,

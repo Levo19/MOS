@@ -38,6 +38,11 @@ function _route(method, e) {
       case 'getHistorialPrecios':  return getHistorialPrecios(params);
       case 'publicarPrecio':       return publicarPrecio(params);
 
+      // ── Auditoría de integridad ─────────────────────────────
+      case 'getAuditoriaIntegridad':   return getAuditoriaIntegridad(params);
+      case 'auditarIntegridad':        return auditarIntegridadProductos();
+      case 'resolverAlertaAuditoria':  return resolverAlertaAuditoria(params);
+
       // ── Proveedores maestros ───────────────────────────────
       case 'getProveedores':              return getProveedoresMaster(params);
       case 'crearProveedor':              return crearProveedorMaster(params);

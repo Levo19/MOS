@@ -418,6 +418,7 @@ const MOS = (() => {
     _refreshPNPendientes(); // PN pendientes — pre-carga inmediata
     loadProveedores().catch(() => {}); // pre-carga proveedores
     _startProvRefresh();
+    _auditCheckBanner().catch(() => {}); // banner de alertas de integridad
     // Pre-carga promociones desde cache (sin bloquear)
     const _pc = _promoLoadCache();
     if (_pc) _promoState.lista = _pc;
@@ -2232,7 +2233,7 @@ const MOS = (() => {
     if (!id) return;
     if (max > 0 && min > max) { toast('El mínimo no puede superar el máximo', 'error'); return; }
     try {
-      await API.post('actualizarProducto', { idProducto: id, stockMinimo: min, stockMaximo: max });
+      await API.post('actualizarProducto', { _source: 'MOS_MODAL_PRODUCTO', idProducto: id, stockMinimo: min, stockMaximo: max });
       // Actualizar en memoria
       const p = S.productos.find(x => x.idProducto === id);
       if (p) { p.stockMinimo = min; p.stockMaximo = max; }
@@ -3428,7 +3429,7 @@ const MOS = (() => {
     const btn = $('equivAddForm')?.querySelector('button');
     if (btn) btn.disabled = true;
     try {
-      await API.post('crearEquivalencia', { skuBase: sku, codigoBarra: codigo, descripcion: desc });
+      await API.post('crearEquivalencia', { _source: 'MOS_EQUIV_MODAL', skuBase: sku, codigoBarra: codigo, descripcion: desc });
       toast('Equivalencia guardada', 'ok');
       const f = $('equivAddForm'); if (f) f.classList.add('hidden');
       await _loadEquivModal(sku);
@@ -3497,7 +3498,7 @@ const MOS = (() => {
 
     // POST en background sin bloquear UI
     try {
-      await API.post('actualizarProducto', { idProducto, estado: nuevoEstado });
+      await API.post('actualizarProducto', { _source: 'MOS_TOGGLE', idProducto, estado: nuevoEstado });
       if (esBase && nuevoEstado === '1') {
         // Prender hijos en backend (presentaciones + equivalencias)
         _prenderHijos(p).catch(() => {});
@@ -3517,7 +3518,7 @@ const MOS = (() => {
     );
     await Promise.all(presentaciones.map(async pp => {
       if (_isProdActivo(pp)) return;
-      await API.post('actualizarProducto', { idProducto: pp.idProducto, estado: '1' });
+      await API.post('actualizarProducto', { _source: 'MOS_TOGGLE_CASCADA', idProducto: pp.idProducto, estado: '1' });
       pp.estado = '1';
     }));
     try {
@@ -3527,7 +3528,7 @@ const MOS = (() => {
         return !(v === '1' || v === 1 || v === true || String(v).toLowerCase() === 'true');
       });
       await Promise.all(inactivas.map(e =>
-        API.post('actualizarEquivalencia', { idEquiv: e.idEquiv, activo: '1' })
+        API.post('actualizarEquivalencia', { _source: 'MOS_TOGGLE_CASCADA', idEquiv: e.idEquiv, activo: '1' })
       ));
     } catch(_) {}
   }
@@ -3592,10 +3593,10 @@ const MOS = (() => {
     // POST en background
     try {
       await Promise.all(productos.map(pp =>
-        API.post('actualizarProducto', { idProducto: pp.idProducto, estado: '0' })
+        API.post('actualizarProducto', { _source: 'MOS_TOGGLE_CASCADA', idProducto: pp.idProducto, estado: '0' })
       ));
       await Promise.all(equivIds.map(idEquiv =>
-        API.post('actualizarEquivalencia', { idEquiv, activo: '0' })
+        API.post('actualizarEquivalencia', { _source: 'MOS_TOGGLE_CASCADA', idEquiv, activo: '0' })
       ));
     } catch(e) {
       toast('Error de sincronización: ' + e.message, 'error');
@@ -3670,6 +3671,7 @@ const MOS = (() => {
 
     try {
       const action = params.idProducto ? 'actualizarProducto' : 'crearProducto';
+      params._source = 'MOS_MODAL_PRODUCTO';
       await API.post(action, params);
       toast(params.idProducto ? 'Producto actualizado ✓' : 'Producto creado ✓', 'ok');
       closeModal('modalProducto');
@@ -3708,6 +3710,7 @@ const MOS = (() => {
     closeModal('modalPrecio');
     try {
       await API.post('publicarPrecio', {
+        _source: 'MOS_MODAL_PRECIO',
         idProducto: id, skuBase: p?.skuBase, codigoBarra: p?.codigoBarra,
         descripcion: p?.descripcion, precioNuevo: nuevo,
         motivo, imprimirMembretes: memb
@@ -3834,7 +3837,7 @@ const MOS = (() => {
 
   function setCfgTab(tab) {
     S.cfgTab = tab;
-    const tabs = ['zonas','estaciones','impresoras','personal','series','seguridad','dispositivos'];
+    const tabs = ['zonas','estaciones','impresoras','personal','series','seguridad','dispositivos','integridad'];
     tabs.forEach(t => {
       const btn = $('cfgTab' + t.charAt(0).toUpperCase() + t.slice(1));
       if (btn) btn.classList.toggle('active', t === tab);
@@ -3853,7 +3856,121 @@ const MOS = (() => {
       case 'series':       renderSeries();       break;
       case 'seguridad':    renderSeguridad();    break;
       case 'dispositivos': renderDispositivos(); break;
+      case 'integridad':   renderIntegridad();   break;
     }
+  }
+
+  // ── Integridad / Auditoría de PRODUCTOS_MASTER + EQUIVALENCIAS ───
+  async function renderIntegridad(skipFetch) {
+    const cont = $('auditAlertas');
+    const resumenEl = $('auditResumen');
+    if (!cont || !resumenEl) return;
+    if (!skipFetch) resumenEl.innerHTML = '<span class="text-slate-500">Cargando…</span>';
+    try {
+      const r = await API.get('getAuditoriaIntegridad', {});
+      const data = (r && r.data) ? r.data : r;
+      const alertas = (data && data.alertas) || [];
+      const ultimaLimpia = data && data.ultimaAuditoriaLimpia;
+
+      if (!alertas.length) {
+        resumenEl.innerHTML = `
+          <div class="flex items-start gap-3">
+            <div class="text-2xl">✅</div>
+            <div class="flex-1">
+              <div class="text-sm font-semibold text-green-400">Catálogo íntegro</div>
+              <div class="text-xs text-slate-500 mt-0.5">${ultimaLimpia ? 'Última auditoría limpia: ' + new Date(ultimaLimpia).toLocaleString() : 'Sin alertas activas. Corre una auditoría para verificar.'}</div>
+            </div>
+          </div>`;
+        cont.innerHTML = '';
+        return;
+      }
+      const criticas = alertas.filter(a => a.urgencia === 'CRITICA').length;
+      const altas    = alertas.filter(a => a.urgencia === 'ALTA').length;
+      resumenEl.innerHTML = `
+        <div class="flex items-start gap-3">
+          <div class="text-2xl">${criticas > 0 ? '🚨' : '⚠️'}</div>
+          <div class="flex-1">
+            <div class="text-sm font-semibold ${criticas > 0 ? 'text-rose-400' : 'text-amber-400'}">${alertas.length} alertas activas</div>
+            <div class="text-xs text-slate-500 mt-0.5">${criticas} críticas · ${altas} altas · ${alertas.length - criticas - altas} medias/info</div>
+          </div>
+        </div>`;
+      cont.innerHTML = alertas.map(a => {
+        const colorBorder = a.urgencia === 'CRITICA' ? 'border-rose-500/40' : a.urgencia === 'ALTA' ? 'border-amber-500/40' : 'border-slate-700';
+        const colorTipo   = a.urgencia === 'CRITICA' ? 'text-rose-400' : a.urgencia === 'ALTA' ? 'text-amber-400' : 'text-slate-400';
+        const detalleExtra = a.datos && a.datos.primeras
+          ? '<div class="text-[10px] text-slate-500 mt-2 font-mono whitespace-pre-wrap">' + (a.datos.primeras || []).slice(0, 5).map(p => '· ' + (p.detalle || JSON.stringify(p))).join('\n') + '</div>'
+          : '';
+        const fechaStr = a.fecha ? new Date(a.fecha).toLocaleString() : '';
+        return `
+          <div class="card-sm border ${colorBorder} p-3">
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-bold ${colorTipo}">${a.urgencia}</span>
+                  <span class="text-xs text-slate-500 font-mono">${a.tipo}</span>
+                </div>
+                <div class="text-sm text-slate-200 mt-1">${a.mensaje}</div>
+                <div class="text-[10px] text-slate-600 mt-1">${fechaStr}</div>
+                ${detalleExtra}
+              </div>
+              <button onclick="MOS.auditResolver('${a.idAlerta}')" class="btn-ghost text-xs px-2 py-1 shrink-0" title="Marcar como resuelta">✓</button>
+            </div>
+          </div>`;
+      }).join('');
+    } catch(e) {
+      resumenEl.innerHTML = `<div class="text-rose-400 text-sm">Error: ${e.message}</div>`;
+      cont.innerHTML = '';
+    }
+  }
+
+  async function auditCorrer() {
+    const resumenEl = $('auditResumen');
+    if (resumenEl) resumenEl.innerHTML = '<span class="text-slate-500">Auditando…</span>';
+    try {
+      const r = await API.get('getAuditoriaIntegridad', { run: 'true' });
+      const data = (r && r.data) ? r.data : r;
+      const totalAnomalias = (data && data.anomalias) ? data.anomalias.length : 0;
+      toast(totalAnomalias === 0 ? 'Auditoría limpia ✓' : totalAnomalias + ' anomalías detectadas', totalAnomalias === 0 ? 'ok' : 'error');
+      await renderIntegridad();
+      _auditCheckBanner();
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+      if (resumenEl) resumenEl.innerHTML = `<div class="text-rose-400 text-sm">Error: ${e.message}</div>`;
+    }
+  }
+
+  async function auditResolver(idAlerta) {
+    if (!idAlerta) return;
+    try {
+      await API.post('resolverAlertaAuditoria', { idAlerta });
+      await renderIntegridad();
+      _auditCheckBanner();
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  // Banner de alertas en el catálogo
+  async function _auditCheckBanner() {
+    const banner = $('auditBannerCat');
+    if (!banner) return;
+    try {
+      const r = await API.get('getAuditoriaIntegridad', {});
+      const data = (r && r.data) ? r.data : r;
+      const alertas = (data && data.alertas) || [];
+      if (!alertas.length) { banner.classList.add('hidden'); banner.innerHTML = ''; return; }
+      const criticas = alertas.filter(a => a.urgencia === 'CRITICA').length;
+      const cls = criticas > 0 ? 'border-rose-500/40 bg-rose-500/5 text-rose-300' : 'border-amber-500/40 bg-amber-500/5 text-amber-300';
+      const icon = criticas > 0 ? '🚨' : '⚠️';
+      banner.classList.remove('hidden');
+      banner.innerHTML = `
+        <div class="card-sm border ${cls} p-3 flex items-center gap-3 cursor-pointer" onclick="MOS.nav('config');setTimeout(()=>MOS.setCfgTab('integridad'),50)">
+          <span class="text-xl">${icon}</span>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-semibold">${alertas.length} alerta${alertas.length === 1 ? '' : 's'} de integridad de catálogo</div>
+            <div class="text-xs opacity-80">Click para ver detalle en Configuración → Integridad</div>
+          </div>
+          <span class="text-xl opacity-60">→</span>
+        </div>`;
+    } catch(_) { banner.classList.add('hidden'); }
   }
 
   function renderZonas() {
@@ -7560,6 +7677,7 @@ const MOS = (() => {
     abrirModalPago, guardarPago, abrirModalPedido,
     // Config
     setCfgTab,
+    auditCorrer, auditResolver, renderIntegridad,
     abrirModalZona, guardarZona,
     abrirModalEstacion, guardarEstacion,
     abrirModalImpresora, guardarImpresora,

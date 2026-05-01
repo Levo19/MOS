@@ -17,6 +17,10 @@ function _getProp(key) {
   return PropertiesService.getScriptProperties().getProperty(key) || '';
 }
 
+function _setProp(key, value) {
+  PropertiesService.getScriptProperties().setProperty(key, String(value || ''));
+}
+
 function _abrirWhSheet(nombreHoja) {
   var ssId = _getProp('WH_SS_ID');
   if (!ssId) throw new Error('WH_SS_ID no configurado. Ir a Script Properties de ProyectoMOS.');
@@ -456,6 +460,7 @@ function lanzarProductoNuevo(params) {
   if (tipo === 'NUEVO') {
     // 1. Crear en PRODUCTOS_MASTER de MOS
     var resultCrear = crearProductoMaster({
+      _source:            'MOS_PN_APROBACION',
       codigoBarra:        params.codigoFinal        || '',
       descripcion:        params.descripcion        || '',
       marca:              params.marca              || '',
@@ -478,6 +483,7 @@ function lanzarProductoNuevo(params) {
   } else if (tipo === 'EQUIVALENTE') {
     // 1. Crear en EQUIVALENCIAS de MOS
     var resultEq = crearEquivalencia({
+      _source:     'MOS_PN_APROBACION',
       skuBase:     params.skuBase,
       codigoBarra: params.codigoFinal || '',
       descripcion: params.descripcionEquiv || params.descripcion || ''
