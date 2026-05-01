@@ -2176,9 +2176,14 @@
 
     <!-- ═══ VIEW: PROVEEDORES ════════════════════════════════ -->
     <section id="view-proveedores" class="view">
-      <div class="flex items-center justify-between mb-4">
+      <div class="flex items-center justify-between mb-4 gap-2 flex-wrap">
         <div class="text-sm text-slate-400"><span id="provCount">0</span> proveedores</div>
-        <button class="btn-primary text-sm hidden lg:block" onclick="MOS.abrirModalProveedor(null)">+ Nuevo proveedor</button>
+        <div class="flex gap-2">
+          <button class="btn-ghost text-sm flex items-center gap-1" onclick="MOS.abrirVistaCargadores()" title="Cargadores temporales">
+            🚚 <span class="hidden sm:inline">Cargadores</span>
+          </button>
+          <button class="btn-primary text-sm" onclick="MOS.abrirModalProveedor(null)">+ Nuevo</button>
+        </div>
       </div>
       <div class="grid lg:grid-cols-3 gap-4">
         <!-- Proveedor list -->
@@ -3067,6 +3072,12 @@
       <div class="bnav-pill">
         <span class="bnav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></span>
         <span class="bnav-lbl">Finanzas</span>
+      </div>
+    </button>
+    <button data-view="proveedores" class="bnav-btn" onclick="MOS.nav('proveedores')">
+      <div class="bnav-pill">
+        <span class="bnav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-6 9 6v11a2 2 0 0 1-2 2h-4v-7H10v7H6a2 2 0 0 1-2-2V9z"/></svg></span>
+        <span class="bnav-lbl">Prov.</span>
       </div>
     </button>
     <button data-view="evaluacion" class="bnav-btn" onclick="MOS.nav('evaluacion')">
@@ -4092,6 +4103,23 @@
       </li>
     </ul>
     <p class="upd-hint">No cierres la aplicación · Esto toma unos segundos</p>
+  </div>
+</div>
+
+<!-- Modal: Cargadores temporales -->
+<div id="modalCargadores" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.closeModal('modalCargadores')">
+  <div class="modal-box p-0" style="max-width:480px;display:flex;flex-direction:column;max-height:88vh">
+    <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
+      <div>
+        <h3 class="font-semibold text-slate-100 text-base">🚚 Cargadores</h3>
+        <p class="text-xs text-slate-500"><span id="cargCount">0</span> cargadores registrados</p>
+      </div>
+      <button onclick="MOS.closeModal('modalCargadores')" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+    </div>
+    <div class="px-5 py-4 overflow-y-auto" style="flex:1">
+      <button onclick="MOS.nuevoCargador()" class="btn-primary w-full mb-3">+ Nuevo cargador</button>
+      <div id="listCargadores" class="space-y-2"></div>
+    </div>
   </div>
 </div>
 

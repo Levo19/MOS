@@ -321,6 +321,8 @@ const MOS = (() => {
     _startCatRefresh();
     _startFinanzasRefresh();
     _refreshPNPendientes(); // PN pendientes — pre-carga inmediata
+    loadProveedores().catch(() => {}); // pre-carga proveedores
+    _startProvRefresh();
     _pushInit(S.session.nombre, S.session.rol);
     // Sidebar session display
     const av = $('sessionAvatar');
@@ -2279,24 +2281,113 @@ const MOS = (() => {
   }
 
   // ── PROVEEDORES ─────────────────────────────────────────────
+  const PROV_CACHE_KEY = 'mos_prov_cache';
+  function _provLoadCache() {
+    try {
+      const raw = localStorage.getItem(PROV_CACHE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (Date.now() - (parsed.ts || 0) > 86400000) return null; // 24h
+      return parsed.data;
+    } catch { return null; }
+  }
+  function _provSaveCache(data) {
+    try { localStorage.setItem(PROV_CACHE_KEY, JSON.stringify({ ts: Date.now(), data })); } catch {}
+  }
+
   async function loadProveedores() {
     if (!API.isConfigured()) {
       $('listProveedores').innerHTML = '<p class="text-slate-500 text-sm text-center py-8">Configura el GAS URL.</p>';
       return;
     }
-    S.proveedores = await API.get('getProveedores', {});
-    const cnt = $('provCount'); if (cnt) cnt.textContent = S.proveedores.length;
-    renderProveedores();
+    // Render desde cache (instantáneo)
+    const cached = _provLoadCache();
+    if (cached && (!S.proveedores || !S.proveedores.length)) {
+      S.proveedores = cached;
+      renderProveedores();
+      const cnt = $('provCount'); if (cnt) cnt.textContent = _filtrarReales(S.proveedores).length;
+    }
+    // Fetch fresco
+    try {
+      const fresh = await API.get('getProveedores', {});
+      const lista = Array.isArray(fresh) ? fresh : (fresh && fresh.data) || [];
+      const changed = JSON.stringify(lista) !== JSON.stringify(S.proveedores);
+      S.proveedores = lista;
+      _provSaveCache(lista);
+      if (changed || !cached) renderProveedores();
+      const cnt = $('provCount'); if (cnt) cnt.textContent = _filtrarReales(S.proveedores).length;
+    } catch(e) {
+      if (!S.proveedores || !S.proveedores.length) {
+        $('listProveedores').innerHTML = `<p class="text-red-400 text-sm text-center py-8">${e.message}</p>`;
+      }
+    }
+  }
+
+  // Filtra proveedores excluyendo cargadores (nombre prefijo CARGADOR)
+  function _filtrarReales(lista) {
+    return (lista || []).filter(p => !String(p.nombre || '').toUpperCase().startsWith('CARGADOR'));
+  }
+  function _filtrarCargadores(lista) {
+    return (lista || []).filter(p => String(p.nombre || '').toUpperCase().startsWith('CARGADOR'));
+  }
+
+  // Refresh silencioso periódico (igual que catalogo)
+  let _provRefreshTimer = null;
+  function _startProvRefresh() {
+    if (_provRefreshTimer) clearInterval(_provRefreshTimer);
+    _provRefreshTimer = setInterval(() => {
+      loadProveedores().catch(() => {});
+    }, 120000); // cada 2 minutos
+  }
+
+  // ── Cargadores (proveedores con prefijo CARGADOR) ─────────
+  function abrirVistaCargadores() {
+    _renderCargadores();
+    openModal('modalCargadores');
+  }
+
+  function _renderCargadores() {
+    const cargadores = _filtrarCargadores(S.proveedores);
+    const cnt = $('cargCount');
+    if (cnt) cnt.textContent = cargadores.length;
+    const list = $('listCargadores');
+    if (!list) return;
+    if (!cargadores.length) {
+      list.innerHTML = '<p class="text-sm text-slate-500 text-center py-6">No hay cargadores registrados.</p>';
+      return;
+    }
+    list.innerHTML = cargadores.map(c => `
+      <div class="card-sm p-3 cursor-pointer hover:border-amber-500/30 transition-colors" onclick="MOS.abrirModalProveedor('${c.idProveedor}')">
+        <div class="flex items-center justify-between">
+          <div class="min-w-0 flex-1">
+            <div class="text-sm font-semibold text-slate-100 truncate">${c.nombre}</div>
+            <div class="text-xs text-slate-500 mt-0.5">${c.telefono || ''} ${c.dni ? '· DNI ' + c.dni : ''}</div>
+          </div>
+          <span class="text-xs text-slate-400">✏️</span>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function nuevoCargador() {
+    closeModal('modalCargadores');
+    abrirModalProveedor(null);
+    // Pre-llenar el nombre con prefijo
+    setTimeout(() => {
+      const inp = $('provNombre');
+      if (inp && !inp.value) inp.value = 'CARGADOR ';
+    }, 50);
   }
 
   function renderProveedores() {
     const el = $('listProveedores');
     if (!el) return;
-    if (!S.proveedores.length) {
+    const reales = _filtrarReales(S.proveedores);
+    if (!reales.length) {
       el.innerHTML = '<p class="text-slate-500 text-sm text-center py-8">Sin proveedores</p>';
       return;
     }
-    el.innerHTML = S.proveedores.map(p => `
+    el.innerHTML = reales.map(p => `
       <div class="card mb-2 p-3 cursor-pointer hover:border-indigo-500/30 transition-colors ${S.provSelId === p.idProveedor ? 'border-indigo-500/50' : ''}"
            onclick="MOS.selectProveedor('${p.idProveedor}')">
         <div class="flex items-start justify-between gap-2">
@@ -2390,25 +2481,27 @@ const MOS = (() => {
     const id = S.provSelId;
     const cont = $('provTabProductos');
     if (!cont) return;
-    cont.innerHTML = `
-      <div class="flex items-center justify-between mb-3">
-        <h4 class="font-semibold text-sm text-slate-300">📦 Catálogo de cotizaciones</h4>
-        <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalProvProducto(null)">+ Producto</button>
-      </div>
-      <div id="provProductosList" class="space-y-2">
-        <div class="skel h-12 rounded-lg"></div>
-      </div>
-    `;
-    try {
-      const lista = await API.get('getProveedorProductos', { idProveedor: id });
-      const items = Array.isArray(lista) ? lista : (lista && lista.data) || [];
-      const list = $('provProductosList');
+    S.provProductos = S.provProductos || {};
+
+    // Asegurar contenedor
+    if (!cont.querySelector('#provProductosList')) {
+      cont.innerHTML = `
+        <div class="flex items-center justify-between mb-3">
+          <h4 class="font-semibold text-sm text-slate-300">📦 Catálogo de cotizaciones</h4>
+          <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalProvProducto(null)">+ Producto</button>
+        </div>
+        <div id="provProductosList" class="space-y-2"></div>
+      `;
+    }
+    const list = $('provProductosList');
+
+    function pinta(items) {
       if (!items.length) {
         list.innerHTML = '<p class="text-slate-500 text-sm py-6 text-center">Sin productos registrados.<br>Agrega cotizaciones para planificar pedidos.</p>';
         return;
       }
       list.innerHTML = items.map(pp => `
-        <div class="card-sm p-3 cursor-pointer hover:border-indigo-500/30 transition-colors" onclick="MOS.abrirModalProvProducto('${pp.idPP}')">
+        <div class="card-sm p-3 cursor-pointer hover:border-indigo-500/30 transition-colors${pp._tmp ? ' opacity-60' : ''}" onclick="MOS.abrirModalProvProducto('${pp.idPP}')">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0 flex-1">
               <div class="text-sm font-semibold text-slate-100 truncate">${pp.descripcion || pp.skuBase}</div>
@@ -2423,8 +2516,23 @@ const MOS = (() => {
           </div>
         </div>
       `).join('');
+    }
+
+    // Render cache si existe (instantáneo)
+    if (S.provProductos[id]) {
+      pinta(S.provProductos[id]);
+    } else {
+      list.innerHTML = '<div class="skel h-12 rounded-lg"></div>';
+    }
+
+    // Fetch fresco
+    try {
+      const lista = await API.get('getProveedorProductos', { idProveedor: id });
+      const items = Array.isArray(lista) ? lista : (lista && lista.data) || [];
+      S.provProductos[id] = items;
+      pinta(items);
     } catch(e) {
-      $('provProductosList').innerHTML = `<p class="text-red-400 text-sm">Error: ${e.message}</p>`;
+      if (!S.provProductos[id]) list.innerHTML = `<p class="text-red-400 text-sm">Error: ${e.message}</p>`;
     }
   }
 
@@ -6489,29 +6597,62 @@ const MOS = (() => {
       diasEntrega:      parseInt($('ppDiasEntrega').value) || 0,
       notas:            $('ppNotas').value
     };
+
+    // OPTIMISTIC: actualizar cache local + cerrar modal de inmediato
+    S.provProductos = S.provProductos || {};
+    if (!S.provProductos[idProveedor]) S.provProductos[idProveedor] = [];
+    if (idPP) {
+      const idx = S.provProductos[idProveedor].findIndex(x => x.idPP === idPP);
+      if (idx >= 0) Object.assign(S.provProductos[idProveedor][idx], params, { idPP });
+    } else {
+      const tmpId = 'PP_TMP_' + Date.now();
+      S.provProductos[idProveedor].push(Object.assign({ idPP: tmpId, _tmp: true }, params));
+    }
+    closeModal('modalProvProducto');
+    toast(idPP ? 'Cotización actualizada ✓' : 'Cotización agregada ✓', 'ok');
+    _renderProvProductos();
+
+    // Sync en background
     try {
       if (idPP) {
         await API.post('actualizarProductoProveedor', Object.assign({ idPP }, params));
-        toast('Cotización actualizada ✓', 'ok');
       } else {
         await API.post('agregarProductoProveedor', params);
-        toast('Cotización agregada ✓', 'ok');
+        // Refrescar para obtener idPP real del servidor
+        const lista = await API.get('getProveedorProductos', { idProveedor });
+        const items = Array.isArray(lista) ? lista : (lista && lista.data) || [];
+        S.provProductos[idProveedor] = items;
+        _renderProvProductos();
       }
-      closeModal('modalProvProducto');
-      _renderProvProductos();
-    } catch(e) { toast('Error: ' + e.message, 'error'); }
+    } catch(e) {
+      toast('Error de sincronización: ' + e.message, 'error');
+      // Revertir: re-fetch
+      try {
+        const lista = await API.get('getProveedorProductos', { idProveedor });
+        const items = Array.isArray(lista) ? lista : (lista && lista.data) || [];
+        S.provProductos[idProveedor] = items;
+        _renderProvProductos();
+      } catch(_){}
+    }
   }
 
   async function eliminarProvProducto() {
     const idPP = $('ppId').value;
     if (!idPP) return;
     if (!confirm('¿Eliminar esta cotización?')) return;
+    const idProveedor = S.provSelId;
+
+    // OPTIMISTIC
+    if (S.provProductos && S.provProductos[idProveedor]) {
+      S.provProductos[idProveedor] = S.provProductos[idProveedor].filter(x => x.idPP !== idPP);
+    }
+    closeModal('modalProvProducto');
+    toast('Eliminada', 'ok');
+    _renderProvProductos();
+
     try {
       await API.post('eliminarProductoProveedor', { idPP });
-      toast('Eliminada', 'ok');
-      closeModal('modalProvProducto');
-      _renderProvProductos();
-    } catch(e) { toast('Error: ' + e.message, 'error'); }
+    } catch(e) { toast('Error de sincronización: ' + e.message, 'error'); }
   }
 
   // ============================================================
@@ -6893,6 +7034,7 @@ const MOS = (() => {
     provSetTab, _renderProvHistorico,
     abrirModalProvProducto, ppBuscar, ppSeleccionar,
     guardarProvProducto, eliminarProvProducto,
+    abrirVistaCargadores, nuevoCargador,
     abrirModalPago, guardarPago, abrirModalPedido,
     // Config
     setCfgTab,
