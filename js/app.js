@@ -2374,7 +2374,7 @@ const MOS = (() => {
       return;
     }
     list.innerHTML = cargadores.map(c => `
-      <div class="card-sm p-3 cursor-pointer hover:border-amber-500/30 transition-colors" onclick="MOS.abrirModalProveedor('${c.idProveedor}')">
+      <div class="card-sm p-3 cursor-pointer hover:border-amber-500/30 transition-colors" onclick="MOS.editarCargador('${c.idProveedor}')">
         <div class="flex items-center justify-between">
           <div class="min-w-0 flex-1">
             <div class="text-sm font-semibold text-slate-100 truncate">${c.nombre}</div>
@@ -2384,6 +2384,12 @@ const MOS = (() => {
         </div>
       </div>
     `).join('');
+  }
+
+  // Cierra el modal de cargadores y abre el modal de edición de proveedor
+  function editarCargador(idProveedor) {
+    closeModal('modalCargadores');
+    setTimeout(() => abrirModalProveedor(idProveedor), 100);
   }
 
   function nuevoCargador() {
@@ -2438,6 +2444,9 @@ const MOS = (() => {
     const prov = S.proveedores.find(p => p.idProveedor === id);
     if (!prov) return;
 
+    // Pre-carga de todos los tabs en paralelo (no espera para mostrar la UI)
+    _precargarProvData(id);
+
     const detailEl = $('proveedorDetail');
     if (!detailEl) return;
     detailEl.innerHTML = `
@@ -2464,6 +2473,40 @@ const MOS = (() => {
       <div id="provTabPedidos" class="prov-tab-content hidden"></div>
     `;
     provSetTab(S.provTab);
+  }
+
+  // ── Pre-carga paralela de los 4 tabs del proveedor ─────────
+  S.provPagos     = S.provPagos     || {};
+  S.provProductos = S.provProductos || {};
+  S.provHistorico = S.provHistorico || {};
+  S.provPedidos   = S.provPedidos   || {};
+
+  function _precargarProvData(id) {
+    if (!id) return;
+    // Pagos
+    API.get('getPagos', { idProveedor: id })
+      .then(r => {
+        S.provPagos[id] = Array.isArray(r) ? r : (r && r.data) || [];
+        if (S.provSelId === id && S.provTab === 'info') _renderProvInfo();
+      }).catch(() => {});
+    // Productos cotizados
+    API.get('getProveedorProductos', { idProveedor: id })
+      .then(r => {
+        S.provProductos[id] = Array.isArray(r) ? r : (r && r.data) || [];
+        if (S.provSelId === id && S.provTab === 'productos') _renderProvProductos();
+      }).catch(() => {});
+    // Histórico (60 días default)
+    API.get('getHistoricoProveedor', { idProveedor: id, dias: 60 })
+      .then(r => {
+        S.provHistorico[id] = (r && r.data) ? r.data : r;
+        if (S.provSelId === id && S.provTab === 'historico') _renderProvHistorico();
+      }).catch(() => {});
+    // Pedidos
+    API.get('getPedidos', { idProveedor: id })
+      .then(r => {
+        S.provPedidos[id] = Array.isArray(r) ? r : (r && r.data) || [];
+        if (S.provSelId === id && S.provTab === 'pedidos') _renderProvPedidos();
+      }).catch(() => {});
   }
 
   function cerrarDetalleProveedor() {
@@ -2506,9 +2549,18 @@ const MOS = (() => {
         <h4 class="font-semibold text-sm text-slate-300">💰 Pagos registrados</h4>
         <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalPago('${id}')">+ Pago</button>
       </div>
-      <div id="listPagos" class="text-sm text-slate-400">Cargando...</div>
+      <div id="listPagos" class="text-sm text-slate-400"></div>
     `;
-    API.get('getPagos', { idProveedor: id }).then(r => renderPagos(r || [])).catch(() => {});
+    // Render desde cache primero (instantáneo); sino fetch fresco
+    if (S.provPagos[id]) {
+      renderPagos(S.provPagos[id]);
+    } else {
+      $('listPagos').textContent = 'Cargando...';
+      API.get('getPagos', { idProveedor: id }).then(r => {
+        S.provPagos[id] = Array.isArray(r) ? r : (r && r.data) || [];
+        renderPagos(S.provPagos[id]);
+      }).catch(() => {});
+    }
   }
 
   async function _renderProvProductos() {
@@ -2574,28 +2626,30 @@ const MOS = (() => {
     const id = S.provSelId;
     const cont = $('provTabHistorico');
     if (!cont) return;
-    cont.innerHTML = `
-      <div class="flex items-center justify-between mb-3">
-        <h4 class="font-semibold text-sm text-slate-300">📊 Histórico de compras</h4>
-        <select id="provHistoricoDias" class="inp text-xs" style="max-width:120px" onchange="MOS._renderProvHistorico()">
-          <option value="30">30 días</option>
-          <option value="60" selected>60 días</option>
-          <option value="90">90 días</option>
-          <option value="180">180 días</option>
-        </select>
-      </div>
-      <div id="provHistoricoBody"><div class="skel h-32 rounded-lg"></div></div>
-    `;
-    try {
-      const dias = parseInt($('provHistoricoDias')?.value) || 60;
-      const r = await API.get('getHistoricoProveedor', { idProveedor: id, dias });
-      const data = r && r.data ? r.data : r;
+    // Asegurar contenedor base
+    if (!cont.querySelector('#provHistoricoBody')) {
+      cont.innerHTML = `
+        <div class="flex items-center justify-between mb-3">
+          <h4 class="font-semibold text-sm text-slate-300">📊 Histórico de compras</h4>
+          <select id="provHistoricoDias" class="inp text-xs" style="max-width:120px" onchange="MOS._refetchHistoricoProv()">
+            <option value="30">30 días</option>
+            <option value="60" selected>60 días</option>
+            <option value="90">90 días</option>
+            <option value="180">180 días</option>
+          </select>
+        </div>
+        <div id="provHistoricoBody"></div>
+      `;
+    }
+
+    function pinta(data) {
+      const body = $('provHistoricoBody');
+      if (!body) return;
       if (!data || (!data.productos || !data.productos.length)) {
-        $('provHistoricoBody').innerHTML = '<p class="text-slate-500 text-sm py-6 text-center">Sin compras registradas en el rango.</p>';
+        body.innerHTML = '<p class="text-slate-500 text-sm py-6 text-center">Sin compras registradas en el rango.</p>';
         return;
       }
-      const totales = data.totales || data;
-      $('provHistoricoBody').innerHTML = `
+      body.innerHTML = `
         <div class="grid grid-cols-3 gap-2 mb-4">
           <div class="card-sm p-3 text-center"><div class="text-xs text-slate-500">Guías</div><div class="text-lg font-bold text-slate-100">${data.totalGuias}</div></div>
           <div class="card-sm p-3 text-center"><div class="text-xs text-slate-500">Gastado</div><div class="text-lg font-bold text-amber-400">${fmtMoney(data.totalGastado)}</div></div>
@@ -2619,9 +2673,34 @@ const MOS = (() => {
           `).join('')}
         </div>
       `;
-    } catch(e) {
-      $('provHistoricoBody').innerHTML = `<p class="text-red-400 text-sm">Error: ${e.message}</p>`;
     }
+
+    // Render desde cache si existe (instantáneo)
+    if (S.provHistorico[id]) {
+      pinta(S.provHistorico[id]);
+    } else {
+      $('provHistoricoBody').innerHTML = '<div class="skel h-32 rounded-lg"></div>';
+    }
+
+    // Fetch fresco
+    try {
+      const dias = parseInt($('provHistoricoDias')?.value) || 60;
+      const r = await API.get('getHistoricoProveedor', { idProveedor: id, dias });
+      const data = r && r.data ? r.data : r;
+      S.provHistorico[id] = data;
+      pinta(data);
+    } catch(e) {
+      if (!S.provHistorico[id]) {
+        $('provHistoricoBody').innerHTML = `<p class="text-red-400 text-sm">Error: ${e.message}</p>`;
+      }
+    }
+  }
+
+  // Forzar refetch al cambiar el rango de días
+  function _refetchHistoricoProv() {
+    const id = S.provSelId;
+    if (id) S.provHistorico[id] = null;
+    _renderProvHistorico();
   }
 
   async function _renderProvPedidos() {
@@ -2633,13 +2712,20 @@ const MOS = (() => {
         <h4 class="font-semibold text-sm text-slate-300">🛒 Pedidos de compra</h4>
         <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalPedido('${id}')">+ Nuevo pedido</button>
       </div>
-      <div id="listPedidos" class="text-sm text-slate-400">Cargando...</div>
+      <div id="listPedidos" class="text-sm text-slate-400"></div>
     `;
-    try {
-      const r = await API.get('getPedidos', { idProveedor: id });
-      renderPedidos(r || []);
-    } catch(e) {
-      $('listPedidos').innerHTML = `<p class="text-red-400">Error: ${e.message}</p>`;
+    // Render desde cache primero
+    if (S.provPedidos[id]) {
+      renderPedidos(S.provPedidos[id]);
+    } else {
+      $('listPedidos').textContent = 'Cargando...';
+      try {
+        const r = await API.get('getPedidos', { idProveedor: id });
+        S.provPedidos[id] = Array.isArray(r) ? r : (r && r.data) || [];
+        renderPedidos(S.provPedidos[id]);
+      } catch(e) {
+        $('listPedidos').innerHTML = `<p class="text-red-400">Error: ${e.message}</p>`;
+      }
     }
   }
 
@@ -7178,10 +7264,10 @@ const MOS = (() => {
     setAlmTab,
     loadProveedores, selectProveedor, renderProveedores, cerrarDetalleProveedor,
     abrirModalProveedor, guardarProveedor,
-    provSetTab, _renderProvHistorico,
+    provSetTab, _renderProvHistorico, _refetchHistoricoProv,
     abrirModalProvProducto, ppBuscar, ppSeleccionar,
     guardarProvProducto, eliminarProvProducto,
-    abrirVistaCargadores, nuevoCargador,
+    abrirVistaCargadores, nuevoCargador, editarCargador,
     abrirModalPago, guardarPago, abrirModalPedido,
     // Config
     setCfgTab,
