@@ -71,7 +71,15 @@ function getPromociones(params) {
     var data  = sheet.getDataRange().getValues();
     if (data.length < 2) return { ok: true, data: [] };
     var headers = data[0];
-    var rows = data.slice(1).filter(function(r){ return r[0]; }).map(function(r){
+    var idxSku  = headers.indexOf('SKU_Base');
+    var idxId   = headers.indexOf('idPromo');
+    var idxTipo = headers.indexOf('Tipo_Promo');
+    // Fila válida = tiene SKU_Base O idPromo O Tipo_Promo (COMBO no tiene SKU_Base)
+    var rows = data.slice(1).filter(function(r){
+      return (idxSku  >= 0 && r[idxSku])
+          || (idxId   >= 0 && r[idxId])
+          || (idxTipo >= 0 && r[idxTipo]);
+    }).map(function(r){
       return _promoToObj(r, headers);
     });
     if (params && params.activa) {
