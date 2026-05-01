@@ -8,28 +8,33 @@
 // Cache: usa CacheService (memoria) con TTL configurable. Bypass con _refresh=true
 // ============================================================
 
-// ── ZONA RESOLVER (normaliza Zona_ID, idEstacion, nombre, etc.) ──
-// Cualquier string que venga de STOCK_ZONAS, VENTAS_CABECERA o ESTACIONES
-// se resuelve a un canónico { id, nombre } único.
+// ── ZONA RESOLVER ────────────────────────────────────────────────
+// Normaliza cualquier identificador de zona (Zona_ID, idEstacion, nombre)
+// a un canónico { id, nombre } único. Usa SOLO datos reales:
+//   1. Tabla ZONAS (idZona → nombre)
+//   2. Tabla ESTACIONES (mapea idEstacion/nombre → idZona padre)
+//   3. Fallback: usa el valor crudo como id Y nombre (no inventa)
 function _buildZonaResolver() {
   var zonas      = _sheetToObjects(getSheet('ZONAS'));
   var estaciones = _sheetToObjects(getSheet('ESTACIONES'));
   var map = {};   // clave normalizada → { id, nombre }
 
+  function _variantes(k) {
+    return [k, k.toUpperCase(), k.toLowerCase(),
+            k.replace(/[\s_-]+/g, ''),
+            k.replace(/[\s_-]+/g, '').toUpperCase(),
+            k.replace(/[\s_-]+/g, '').toLowerCase()];
+  }
   function setKey(rawKey, canonId, canonName) {
     if (!rawKey) return;
     var k = String(rawKey).trim();
     if (!k) return;
-    var variants = [k, k.toUpperCase(), k.toLowerCase(),
-                    k.replace(/[\s_-]+/g, ''),
-                    k.replace(/[\s_-]+/g, '').toUpperCase(),
-                    k.replace(/[\s_-]+/g, '').toLowerCase()];
-    variants.forEach(function(v){
+    _variantes(k).forEach(function(v){
       if (!map[v]) map[v] = { id: canonId, nombre: canonName };
     });
   }
 
-  // 1. ZONAS: idZona + nombre
+  // 1. ZONAS — fuente principal de nombres
   zonas.forEach(function(z) {
     if (!z.idZona) return;
     var canonId = String(z.idZona).trim().toUpperCase();
@@ -38,23 +43,16 @@ function _buildZonaResolver() {
     setKey(z.nombre, canonId, canonName);
   });
 
-  // 2. ESTACIONES: idZona + nombre + idEstacion + descripcion
-  // Si la idZona de estación no está en ZONAS, registrarla como nueva zona
+  // 2. ESTACIONES — mapean al idZona padre (sin inventar nombre)
+  // Solo agregamos rutas de búsqueda, no creamos zonas nuevas.
   estaciones.forEach(function(e) {
     if (!e.idZona) return;
     var idZ = String(e.idZona).trim().toUpperCase();
+    // Si ya existe en map (vino de ZONAS), usar su nombre. Si no, usar idZona crudo.
     var existing = map[idZ];
-    var nombreZona = existing ? existing.nombre : (function(){
-      // Derivar de descripción "POS estación N — Zona Central" → "Zona Central"
-      var desc = e.descripcion || '';
-      var m = desc.match(/Zona\s+([^—|]+?)(?:\s*[—|]|$)/i);
-      if (m) return 'Zona ' + m[1].trim();
-      // Sin match: usar idZona como nombre
-      return e.idZona;
-    })();
-    setKey(e.idZona, idZ, nombreZona);
-    // Mapear también el nombre de la estación → zona padre
-    setKey(e.nombre, idZ, nombreZona);
+    var nombreZona = existing ? existing.nombre : e.idZona;
+    setKey(e.idZona,     idZ, nombreZona);
+    setKey(e.nombre,     idZ, nombreZona);
     setKey(e.idEstacion, idZ, nombreZona);
   });
 
@@ -63,14 +61,11 @@ function _buildZonaResolver() {
       if (!raw) return null;
       var k = String(raw).trim();
       if (!k) return null;
-      var variants = [k, k.toUpperCase(), k.toLowerCase(),
-                      k.replace(/[\s_-]+/g, ''),
-                      k.replace(/[\s_-]+/g, '').toUpperCase(),
-                      k.replace(/[\s_-]+/g, '').toLowerCase()];
+      var variants = _variantes(k);
       for (var i = 0; i < variants.length; i++) {
         if (map[variants[i]]) return map[variants[i]];
       }
-      // Fallback: usar el raw original como id y nombre
+      // Sin match: id = uppercase del raw, nombre = raw tal cual viene
       return { id: k.toUpperCase(), nombre: k };
     }
   };
