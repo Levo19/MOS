@@ -385,6 +385,8 @@ function _getStockUnificadoImpl(params) {
     });
 
     var zonasArr = Object.keys(idsTodas).map(function(canonId) {
+      var hasStockRow = !!zonaAcum[canonId];          // ¿hay fila en STOCK_ZONAS?
+      var hasVentaRow = ventasZona[canonId] !== undefined; // ¿alguna venta del producto?
       var info = zonaAcum[canonId] || { cantidad: 0 };
       var cant = info.cantidad;
       var ventas = ventasZona[canonId] || 0;
@@ -397,7 +399,9 @@ function _getStockUnificadoImpl(params) {
         ventasRango: ventas,
         rotacionDia: Math.round(rotDia * 10) / 10,
         diasParaAcabar: diasParaAcabar,
-        // flags explícitos para que el frontend pueda renderizar mensajes claros
+        // Flags explícitos: registro vs cantidad
+        tieneRegistroStock: hasStockRow,    // true si hay fila en STOCK_ZONAS para este producto
+        tieneRegistroVenta: hasVentaRow,    // true si hubo alguna venta del producto en esta zona
         sinStock: cant <= 0,
         sinVentas: ventas <= 0
       };

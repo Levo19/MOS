@@ -2600,31 +2600,46 @@ const MOS = (() => {
       $('stockDetTitle').textContent = '📦 ' + (p.descripcion || idProducto);
       $('stockDetSku').textContent = 'SKU ' + (p.skuBase || '—') + (p.codigoBarra ? ' · ▌ ' + p.codigoBarra : '');
       const zonasHtml = (r.zonas || []).map(z => {
-        // Stock display: NEGATIVO (anomalía) vs CERO (registrado y agotado) vs POSITIVO
         const isNeg = z.cantidad < 0;
         const isCero = z.cantidad === 0;
-        const stockColor = isNeg ? 'text-rose-500' :
-                          isCero ? 'text-slate-500' :
-                          (z.diasParaAcabar !== null && z.diasParaAcabar < 7)  ? 'text-rose-400' :
-                          (z.diasParaAcabar !== null && z.diasParaAcabar < 14) ? 'text-amber-400' :
-                          'text-slate-200';
-        const stockDisplay = isNeg ? `⚠ ${z.cantidad}u` : (z.cantidad + 'u');
-        // Rotación + días para acabar
+        const sinRegistro = !z.tieneRegistroStock;  // NO existe fila en STOCK_ZONAS para este producto
+        // Stock display: distinguir sin registro / 0 / negativo / positivo
+        let stockColor, stockDisplay;
+        if (sinRegistro) {
+          stockColor = 'text-slate-600 italic';
+          stockDisplay = '— sin registro';
+        } else if (isNeg) {
+          stockColor = 'text-rose-500';
+          stockDisplay = `⚠ ${z.cantidad}u`;
+        } else if (isCero) {
+          stockColor = 'text-slate-500';
+          stockDisplay = '0u';
+        } else {
+          stockColor = (z.diasParaAcabar !== null && z.diasParaAcabar < 7)  ? 'text-rose-400' :
+                       (z.diasParaAcabar !== null && z.diasParaAcabar < 14) ? 'text-amber-400' :
+                       'text-slate-200';
+          stockDisplay = z.cantidad + 'u';
+        }
+        // Línea de detalle: ventas / rotación
         let detailLine = '';
-        if (z.sinVentas) {
+        if (sinRegistro && z.sinVentas) {
+          detailLine = '<span class="text-slate-600 italic">Producto nunca registrado en esta zona</span>';
+        } else if (z.sinVentas) {
           detailLine = '<span class="text-slate-600">Sin ventas en ' + (r.total?.rangoDiasConsultado || 7) + 'd</span>';
         } else {
           detailLine = 'Vende ' + z.rotacionDia + '/d';
           if (z.diasParaAcabar !== null) {
             const cls = z.diasParaAcabar < 7 ? 'text-rose-400' : z.diasParaAcabar < 14 ? 'text-amber-400' : 'text-slate-500';
             detailLine += ` · <span class="${cls}">alcanza ${z.diasParaAcabar}d</span>`;
-          } else if (z.sinStock) {
-            detailLine += ' · <span class="text-rose-400">⚠ requiere reposición urgente</span>';
+          } else if (sinRegistro) {
+            detailLine += ' · <span class="text-rose-400">⚠ vendiéndose sin estar registrado en stock</span>';
+          } else if (isCero) {
+            detailLine += ' · <span class="text-rose-400">⚠ stock agotado, reponer</span>';
           }
         }
-        // Aviso especial: tiene ventas pero NO stock
-        const warningBadge = (z.sinStock && !z.sinVentas)
-          ? '<span class="text-[10px] text-rose-400 ml-1">📍 stock agotado</span>' : '';
+        // Badge de alerta cuando hay ventas pero stock=0
+        const warningBadge = (!sinRegistro && isCero && !z.sinVentas)
+          ? '<span class="text-[10px] text-rose-400 ml-1">📍 stock agotado con ventas</span>' : '';
         return `<div class="flex items-center justify-between py-2 border-b border-slate-800/50 gap-2">
           <div class="min-w-0 flex-1">
             <div class="text-sm text-slate-200 truncate">🏪 ${z.nombre}${warningBadge}</div>
