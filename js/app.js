@@ -2579,18 +2579,35 @@ const MOS = (() => {
       $('stockDetTitle').textContent = '📦 ' + (p.descripcion || idProducto);
       $('stockDetSku').textContent = 'SKU ' + (p.skuBase || '—') + (p.codigoBarra ? ' · ▌ ' + p.codigoBarra : '');
       const zonasHtml = (r.zonas || []).map(z => {
-        const rotStr = z.rotacionDia > 0 ? z.rotacionDia + '/d' : '0/d';
-        const diasStr = z.diasParaAcabar !== null ? z.diasParaAcabar + 'd' : '—';
-        const colorDias = (z.diasParaAcabar !== null && z.diasParaAcabar < 7) ? 'text-rose-400'
-                        : (z.diasParaAcabar !== null && z.diasParaAcabar < 14) ? 'text-amber-400'
-                        : 'text-slate-400';
+        // Stock label: número o "Sin stock"
+        const stockColor = z.sinStock ? 'text-slate-600' :
+                          (z.diasParaAcabar !== null && z.diasParaAcabar < 7)  ? 'text-rose-400' :
+                          (z.diasParaAcabar !== null && z.diasParaAcabar < 14) ? 'text-amber-400' :
+                          'text-slate-200';
+        const stockDisplay = z.sinStock ? 'Sin stock' : (z.cantidad + 'u');
+        // Rotación + días para acabar
+        let detailLine = '';
+        if (z.sinVentas) {
+          detailLine = '<span class="text-slate-600">Sin ventas en ' + (r.total?.rangoDiasConsultado || 7) + 'd</span>';
+        } else {
+          detailLine = 'Vende ' + z.rotacionDia + '/d';
+          if (z.diasParaAcabar !== null) {
+            const cls = z.diasParaAcabar < 7 ? 'text-rose-400' : z.diasParaAcabar < 14 ? 'text-amber-400' : 'text-slate-500';
+            detailLine += ` · <span class="${cls}">alcanza ${z.diasParaAcabar}d</span>`;
+          } else if (z.sinStock) {
+            detailLine += ' · <span class="text-rose-400">⚠ requiere reposición urgente</span>';
+          }
+        }
+        // Aviso especial: tiene ventas pero NO stock
+        const warningBadge = (z.sinStock && !z.sinVentas)
+          ? '<span class="text-[10px] text-rose-400 ml-1">📍 stock agotado</span>' : '';
         return `<div class="flex items-center justify-between py-2 border-b border-slate-800/50 gap-2">
           <div class="min-w-0 flex-1">
-            <div class="text-sm text-slate-200 truncate">🏪 ${z.nombre}</div>
-            <div class="text-xs text-slate-500">rot ${rotStr} · ${diasStr === '—' ? 'sin venta' : 'alcanza ' + diasStr}</div>
+            <div class="text-sm text-slate-200 truncate">🏪 ${z.nombre}${warningBadge}</div>
+            <div class="text-xs text-slate-500">${detailLine}</div>
           </div>
           <div class="text-right shrink-0">
-            <div class="text-base font-bold ${colorDias}">${z.cantidad}u</div>
+            <div class="text-base font-bold ${stockColor}">${stockDisplay}</div>
           </div>
         </div>`;
       }).join('');
@@ -2609,9 +2626,16 @@ const MOS = (() => {
       $('stockDetBody').innerHTML = `
         <!-- Total + barra -->
         <div class="card-sm p-4">
-          <div class="flex items-center justify-between mb-2">
-            <div class="text-xs text-slate-500 uppercase">Total</div>
-            <div class="text-2xl font-bold text-white">${total.cantidad}u</div>
+          <div class="text-xs text-slate-500 uppercase mb-2">Total (WH + zonas)</div>
+          <div class="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <div class="text-[10px] text-slate-500 uppercase">Stock total</div>
+              <div class="text-2xl font-bold text-white">${total.cantidad}u</div>
+            </div>
+            <div>
+              <div class="text-[10px] text-slate-500 uppercase">Rotación total</div>
+              <div class="text-2xl font-bold ${total.rotacionDia > 0 ? 'text-emerald-400' : 'text-slate-600'}">${total.rotacionDia || 0}<span class="text-xs">/d</span></div>
+            </div>
           </div>
           <div class="h-3 bg-slate-800 rounded overflow-hidden">
             <div class="h-full transition-all" style="width:${pct}%;background:${colorBar}"></div>
@@ -2619,9 +2643,10 @@ const MOS = (() => {
           <div class="flex justify-between text-[10px] text-slate-500 mt-1">
             <span>mín ${minimo}u</span><span>máx ${maximo}u</span>
           </div>
-          <div class="grid grid-cols-2 gap-2 mt-3 text-xs">
-            <div><span class="text-slate-500">Rotación:</span> <span class="text-slate-200">${total.rotacionDia || 0}/d</span></div>
-            <div><span class="text-slate-500">Alcanza:</span> <span class="text-slate-200">${total.diasParaAcabar !== null ? total.diasParaAcabar + ' días' : '—'}</span></div>
+          <div class="text-xs text-slate-400 mt-3 pt-2 border-t border-slate-800">
+            ${total.diasParaAcabar !== null
+              ? `⏰ Al ritmo actual alcanza para <span class="${total.diasParaAcabar < 7 ? 'text-rose-400' : total.diasParaAcabar < 14 ? 'text-amber-400' : 'text-emerald-400'} font-semibold">${total.diasParaAcabar} días</span>`
+              : (total.cantidad === 0 ? '⚠ <span class="text-rose-400">Sin stock en ningún lado</span>' : '⏸ <span class="text-slate-500">Sin ventas registradas en ' + (total.rangoDiasConsultado || 7) + 'd</span>')}
           </div>
         </div>
         <!-- WH -->
@@ -2629,8 +2654,15 @@ const MOS = (() => {
           <div class="text-xs text-slate-500 uppercase mb-2">🏭 Almacén central</div>
           <div class="card-sm p-3">
             <div class="flex items-center justify-between">
-              <div class="text-sm text-slate-200">Stock disponible</div>
-              <div class="text-lg font-bold text-blue-400">${(r.wh || {}).cantidad || 0}u</div>
+              <div class="min-w-0 flex-1">
+                <div class="text-sm text-slate-200">Stock disponible</div>
+                <div class="text-xs text-slate-500 mt-0.5">
+                  ${total.rotacionDia > 0
+                    ? 'Despacha aprox. ' + total.rotacionDia + '/d (= venta total zonas)'
+                    : 'Sin movimiento de salida en ' + (total.rangoDiasConsultado || 7) + 'd'}
+                </div>
+              </div>
+              <div class="text-lg font-bold ${(r.wh || {}).cantidad > 0 ? 'text-blue-400' : 'text-slate-600'} shrink-0">${(r.wh || {}).cantidad > 0 ? ((r.wh || {}).cantidad + 'u') : 'Sin stock'}</div>
             </div>
           </div>
         </div>

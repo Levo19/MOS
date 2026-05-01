@@ -312,26 +312,55 @@ function _getStockUnificadoImpl(params) {
       ventasZona[canon.id] = (ventasZona[canon.id] || 0) + ventasZonaRaw[rawId];
     });
 
-    // 4. Construir array de zonas: solo las que tienen stock o ventas
+    // 4. Construir array de zonas — INCLUIR TODAS las zonas de la tabla ZONAS
+    //    (aunque no tengan stock ni ventas de este producto), para visibilidad completa.
+    var zonasMaster = _sheetToObjects(getSheet('ZONAS'));
     var idsTodas = {};
-    Object.keys(zonaAcum).forEach(function(z){ idsTodas[z] = true; });
-    Object.keys(ventasZona).forEach(function(z){ idsTodas[z] = true; });
+    var nombreCanonMap = {};
+    // 4a. Todas las ZONAS activas
+    zonasMaster.forEach(function(z){
+      if (!z.idZona) return;
+      var activa = (z.estado === undefined || z.estado === '' || z.estado === 1 || z.estado === '1' || z.estado === true);
+      if (!activa) return;
+      var canon = resolver.resolve(z.idZona);
+      idsTodas[canon.id] = true;
+      nombreCanonMap[canon.id] = canon.nombre;
+    });
+    // 4b. Cualquier zona que aparezca en stock o ventas pero no en ZONAS (sin registrar)
+    Object.keys(zonaAcum).forEach(function(z){
+      if (!idsTodas[z]) {
+        idsTodas[z] = true;
+        nombreCanonMap[z] = (zonaAcum[z] && zonaAcum[z].nombre) || z;
+      }
+    });
+    Object.keys(ventasZona).forEach(function(z){
+      if (!idsTodas[z]) { idsTodas[z] = true; nombreCanonMap[z] = z; }
+    });
 
     var zonasArr = Object.keys(idsTodas).map(function(canonId) {
-      var info = zonaAcum[canonId] || { cantidad: 0, nombre: canonId };
+      var info = zonaAcum[canonId] || { cantidad: 0 };
       var cant = info.cantidad;
       var ventas = ventasZona[canonId] || 0;
       var rotDia = ventas / rangoDias;
       var diasParaAcabar = (rotDia > 0 && cant > 0) ? Math.floor(cant / rotDia) : null;
       return {
         idZona: canonId,
-        nombre: info.nombre,
+        nombre: nombreCanonMap[canonId] || canonId,
         cantidad: cant,
         ventasRango: ventas,
         rotacionDia: Math.round(rotDia * 10) / 10,
-        diasParaAcabar: diasParaAcabar
+        diasParaAcabar: diasParaAcabar,
+        // flags explícitos para que el frontend pueda renderizar mensajes claros
+        sinStock: cant <= 0,
+        sinVentas: ventas <= 0
       };
-    }).sort(function(a, b){ return b.ventasRango - a.ventasRango; });
+    }).sort(function(a, b){
+      // Orden: las que tienen stock o ventas primero, después por mayor ventas
+      var aHas = (a.cantidad > 0 || a.ventasRango > 0) ? 1 : 0;
+      var bHas = (b.cantidad > 0 || b.ventasRango > 0) ? 1 : 0;
+      if (aHas !== bHas) return bHas - aHas;
+      return b.ventasRango - a.ventasRango;
+    });
 
     // 5. Total
     var totalCant = stockWhCantidad + zonasArr.reduce(function(s, z){ return s + z.cantidad; }, 0);
