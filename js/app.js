@@ -6908,17 +6908,31 @@ const MOS = (() => {
       $('promoLista').innerHTML = '<div class="skel h-12 rounded-lg"></div><div class="skel h-12 rounded-lg mt-2"></div>';
     }
     // Fetch fresco
+    _promoState.lastError = null;
     try {
       const lista = await API.get('getPromociones', {});
       const fresh = Array.isArray(lista) ? lista : (lista && lista.data) || [];
+      console.log('[loadPromociones] respuesta GAS:', fresh.length, 'promociones', fresh);
       const changed = JSON.stringify(fresh) !== JSON.stringify(_promoState.lista);
       _promoState.lista = fresh;
+      _promoState.lastFetch = Date.now();
       _promoSaveCache(fresh);
       if (changed || !cached) _renderPromoLista();
     } catch(e) {
+      console.error('[loadPromociones] error API:', e);
+      _promoState.lastError = e && e.message ? e.message : String(e);
+      toast('Error cargando promociones: ' + _promoState.lastError, 'error');
       if (!cached) _promoState.lista = [];
       _renderPromoLista();
     }
+  }
+
+  // Forzar refetch limpiando cache local
+  function _promoForzarRefresh() {
+    try { localStorage.removeItem(PROMO_CACHE_KEY); } catch {}
+    _promoState.lista = [];
+    toast('Cache limpiado, recargando…', 'info');
+    loadPromociones();
   }
 
   // Refresh silencioso periódico
@@ -6939,7 +6953,16 @@ const MOS = (() => {
     const cnt  = $('promosCount');
     if (cnt) cnt.textContent = _promoState.lista.length;
     if (!_promoState.lista.length) {
-      cont.innerHTML = '<p class="text-sm text-slate-500 text-center py-8">No hay promociones. Crea una con el botón de arriba.</p>';
+      const hora = _promoState.lastFetch ? new Date(_promoState.lastFetch).toLocaleTimeString() : '—';
+      const errMsg = _promoState.lastError
+        ? `<div class="text-xs text-rose-400 mb-2">⚠ Error: ${_promoState.lastError}</div><div class="text-xs text-slate-500 mb-3">Revisa que el GAS esté desplegado como Nueva versión.</div>`
+        : `<div class="text-xs text-slate-500 mb-3">El servidor respondió 0 promociones (verificado a las ${hora}).<br>Si tienes una registrada en la hoja PROMOCIONES de MosExpress, esto puede deberse a:<br>· GAS sin redesplegar con el último fix<br>· ME_SS_ID apunta a otro spreadsheet</div>`;
+      cont.innerHTML = `
+        <div class="text-center py-8">
+          ${errMsg}
+          <button class="btn-ghost text-xs" onclick="MOS._promoForzarRefresh()">🔄 Limpiar cache y reintentar</button>
+        </div>
+      `;
       return;
     }
     cont.innerHTML = _promoState.lista.map(p => {
@@ -7330,7 +7353,7 @@ const MOS = (() => {
     filterCatalogo, setCatTab, toggleDerivs, togglePresentaciones, guardarPrecioRapido,
     abrirModalPN, cerrarModalPN, lanzarAProduccion,
     pnSetTipo, pnAutogenBarcode, pnBuscarBase, pnSeleccionarBase,
-    abrirModalPromociones, loadPromociones, promoNuevoForm, promoEditar, promoVolverLista, promoToggleActiva,
+    abrirModalPromociones, loadPromociones, promoNuevoForm, promoEditar, promoVolverLista, promoToggleActiva, _promoForzarRefresh,
     promoSetTipo, promoSetModo, promoQuickFill, promoActualizarEjemplo, promoBuscarBase, promoSeleccionarBase,
     promoGuardar, promoEliminar,
     promoComboBuscar, promoComboAgregar, promoComboCerrarRes,
