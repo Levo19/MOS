@@ -238,6 +238,13 @@ function _getStockUnificadoImpl(params) {
     // Catálogo + resolver canónico de zonas
     var productos = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
     var resolver = _buildZonaResolver();
+    // Debug: capturar qué leyó de ZONAS para que el frontend lo muestre
+    var _zonasLeidasFromMaster = _sheetToObjects(getSheet('ZONAS')).map(function(z) {
+      return {
+        idZona: z.idZona, nombre: z.nombre, estado: z.estado,
+        canonResolved: z.idZona ? resolver.resolve(z.idZona) : null
+      };
+    });
 
     // Producto base — intentar 3 caminos: idProducto, skuBase, codigoBarra
     var prodBase = productos.find(function(p){
@@ -421,7 +428,14 @@ function _getStockUnificadoImpl(params) {
         diasParaAcabar:     diasTotalParaAcabar,
         rangoDiasConsultado: rangoDias
       },
-      insights: insights
+      insights: insights,
+      _debug: {
+        zonasLeidasDeTablaZONAS: _zonasLeidasFromMaster,
+        idsTodasFinales: Object.keys(idsTodas),
+        nombreCanonMap: nombreCanonMap,
+        zonaAcumKeys: Object.keys(zonaAcum),
+        ventasZonaKeys: Object.keys(ventasZona)
+      }
     }};
   } catch(e) {
     return { ok: false, error: 'Error stock unificado: ' + e.message };

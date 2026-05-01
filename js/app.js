@@ -2704,6 +2704,25 @@ const MOS = (() => {
           <div class="text-xs text-slate-500 uppercase mb-2">💡 Sugerencias</div>
           <div class="space-y-2">${insightsHtml}</div>
         </div>` : ''}
+        <!-- Debug (colapsado por default) -->
+        ${r._debug ? `
+        <details class="text-[10px] text-slate-600 mt-2">
+          <summary class="cursor-pointer hover:text-slate-400">🔍 Debug · ver qué leyó del backend</summary>
+          <div class="mt-2 p-2 rounded font-mono whitespace-pre-wrap" style="background:#060d1f;border:1px solid #1e293b">
+            <div class="text-slate-500 mb-1">Zonas leídas de tabla ZONAS:</div>
+            ${(r._debug.zonasLeidasDeTablaZONAS || []).map(z =>
+              `· idZona="${z.idZona}" · nombre="${z.nombre}" · estado=${z.estado} · canon→${z.canonResolved?.id}/${z.canonResolved?.nombre}`
+            ).join('<br>') || '<span class="text-rose-400">⚠ Tabla ZONAS vacía o no leída</span>'}
+            <div class="text-slate-500 mt-2 mb-1">IDs canónicos finales mostrados:</div>
+            ${(r._debug.idsTodasFinales || []).join(', ')}
+            <div class="text-slate-500 mt-2 mb-1">Nombres por canon:</div>
+            ${Object.entries(r._debug.nombreCanonMap || {}).map(([k,v]) => `${k} → ${v}`).join('<br>')}
+            <div class="text-slate-500 mt-2 mb-1">Stock encontrado por zona (canon):</div>
+            ${(r._debug.zonaAcumKeys || []).join(', ') || '(ninguno)'}
+            <div class="text-slate-500 mt-2 mb-1">Ventas por zona (canon):</div>
+            ${(r._debug.ventasZonaKeys || []).join(', ') || '(ninguno)'}
+          </div>
+        </details>` : ''}
       `;
     } catch(e) {
       $('stockDetBody').innerHTML = `<div class="text-rose-400 text-sm">Error: ${e.message}</div>`;
