@@ -57,15 +57,25 @@ function getStockWarehouse(params) {
   try {
     var stock    = _sheetToObjectsLocal(_abrirWhSheet('STOCK'));
     var productos = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
+    // Mapeo por idProducto, skuBase Y codigoBarra para tolerar nomenclaturas distintas
     var prodMap = {};
-    productos.forEach(function(p){ prodMap[p.idProducto] = p; });
+    productos.forEach(function(p){
+      if (p.idProducto)  prodMap[p.idProducto]  = p;
+      if (p.skuBase)     prodMap[p.skuBase]     = prodMap[p.skuBase] || p;
+      if (p.codigoBarra) prodMap[p.codigoBarra] = prodMap[p.codigoBarra] || p;
+    });
 
     stock = stock.map(function(s) {
       var p = prodMap[s.codigoProducto] || {};
-      s.descripcion  = p.descripcion || s.codigoProducto;
+      var sinCatalogo = !p.idProducto;
+      s.descripcion  = p.descripcion || (sinCatalogo ? '⚠ Sin nombre · ' + s.codigoProducto : s.codigoProducto);
       s.skuBase      = p.skuBase     || '';
-      s.stockMinimo  = p.stockMinimo || 0;
+      s.idProducto   = p.idProducto  || s.codigoProducto;
+      s.codigoBarra  = p.codigoBarra || '';
+      s.precioCosto  = parseFloat(p.precioCosto) || 0;
+      s.stockMinimo  = parseFloat(p.stockMinimo) || 0;
       s.alertaMinimo = parseFloat(s.cantidadDisponible) < parseFloat(p.stockMinimo || 0);
+      s.sinCatalogo  = sinCatalogo;
       return s;
     });
 

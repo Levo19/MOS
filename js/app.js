@@ -2690,11 +2690,19 @@ const MOS = (() => {
         ? `<span class="${s.diasCobertura <= 7 ? 'text-rose-400' : s.diasCobertura <= 15 ? 'text-amber-400' : 'text-slate-500'}">${s.diasCobertura}d</span>`
         : '<span class="text-slate-600">— rot</span>';
       const idClick = s.codigoProducto || s.skuBase || '';
-      return `<div class="card-sm p-3 cursor-pointer hover:border-emerald-500/40 transition-colors" onclick="MOS.almAbrirStockDetalle('${idClick}')">
+      // Nombre amistoso: si tiene descripcion real → la usa. Si es "⚠ Sin nombre..." → muestra advertencia sutil
+      const nombreFriendly = s.descripcion && !String(s.descripcion).startsWith('⚠')
+        ? s.descripcion
+        : `<span class="text-amber-400/70">${s.descripcion || s.codigoProducto}</span>`;
+      // Línea inferior: SKU + código de barras separados (más informativa)
+      const skuLine = s.skuBase
+        ? `<span class="text-emerald-300/70">SKU ${s.skuBase}</span> · ▌ ${s.codigoBarra || s.codigoProducto}`
+        : `▌ ${s.codigoProducto}`;
+      return `<div class="card-sm p-3 cursor-pointer hover:border-emerald-500/40 transition-colors${s.sinCatalogo ? ' border-amber-500/30' : ''}" onclick="MOS.almAbrirStockDetalle('${idClick}')">
         <div class="flex items-center justify-between gap-2 mb-1.5">
           <div class="min-w-0 flex-1">
-            <div class="text-sm font-semibold text-slate-100 truncate">${s.descripcion || s.codigoProducto}</div>
-            <div class="text-[10px] text-slate-500 font-mono">${s.codigoProducto || s.skuBase}</div>
+            <div class="text-sm font-semibold text-slate-100 truncate">${nombreFriendly}</div>
+            <div class="text-[10px] text-slate-500 font-mono truncate">${skuLine}</div>
           </div>
           <div class="text-right shrink-0">
             <div class="text-lg font-bold text-slate-100">${cant.toLocaleString('es-PE')}u</div>

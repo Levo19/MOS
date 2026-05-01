@@ -8,6 +8,74 @@
 // Cache: usa CacheService (memoria) con TTL configurable. Bypass con _refresh=true
 // ============================================================
 
+// ── ZONA RESOLVER (normaliza Zona_ID, idEstacion, nombre, etc.) ──
+// Cualquier string que venga de STOCK_ZONAS, VENTAS_CABECERA o ESTACIONES
+// se resuelve a un canónico { id, nombre } único.
+function _buildZonaResolver() {
+  var zonas      = _sheetToObjects(getSheet('ZONAS'));
+  var estaciones = _sheetToObjects(getSheet('ESTACIONES'));
+  var map = {};   // clave normalizada → { id, nombre }
+
+  function setKey(rawKey, canonId, canonName) {
+    if (!rawKey) return;
+    var k = String(rawKey).trim();
+    if (!k) return;
+    var variants = [k, k.toUpperCase(), k.toLowerCase(),
+                    k.replace(/[\s_-]+/g, ''),
+                    k.replace(/[\s_-]+/g, '').toUpperCase(),
+                    k.replace(/[\s_-]+/g, '').toLowerCase()];
+    variants.forEach(function(v){
+      if (!map[v]) map[v] = { id: canonId, nombre: canonName };
+    });
+  }
+
+  // 1. ZONAS: idZona + nombre
+  zonas.forEach(function(z) {
+    if (!z.idZona) return;
+    var canonId = String(z.idZona).trim().toUpperCase();
+    var canonName = z.nombre || z.idZona;
+    setKey(z.idZona, canonId, canonName);
+    setKey(z.nombre, canonId, canonName);
+  });
+
+  // 2. ESTACIONES: idZona + nombre + idEstacion + descripcion
+  // Si la idZona de estación no está en ZONAS, registrarla como nueva zona
+  estaciones.forEach(function(e) {
+    if (!e.idZona) return;
+    var idZ = String(e.idZona).trim().toUpperCase();
+    var existing = map[idZ];
+    var nombreZona = existing ? existing.nombre : (function(){
+      // Derivar de descripción "POS estación N — Zona Central" → "Zona Central"
+      var desc = e.descripcion || '';
+      var m = desc.match(/Zona\s+([^—|]+?)(?:\s*[—|]|$)/i);
+      if (m) return 'Zona ' + m[1].trim();
+      // Sin match: usar idZona como nombre
+      return e.idZona;
+    })();
+    setKey(e.idZona, idZ, nombreZona);
+    // Mapear también el nombre de la estación → zona padre
+    setKey(e.nombre, idZ, nombreZona);
+    setKey(e.idEstacion, idZ, nombreZona);
+  });
+
+  return {
+    resolve: function(raw) {
+      if (!raw) return null;
+      var k = String(raw).trim();
+      if (!k) return null;
+      var variants = [k, k.toUpperCase(), k.toLowerCase(),
+                      k.replace(/[\s_-]+/g, ''),
+                      k.replace(/[\s_-]+/g, '').toUpperCase(),
+                      k.replace(/[\s_-]+/g, '').toLowerCase()];
+      for (var i = 0; i < variants.length; i++) {
+        if (map[variants[i]]) return map[variants[i]];
+      }
+      // Fallback: usar el raw original como id y nombre
+      return { id: k.toUpperCase(), nombre: k };
+    }
+  };
+}
+
 // ── CACHE HELPER ────────────────────────────────────────────────
 // CacheService limit: 100 KB por key, 10 MB total. Para responses
 // pequeños es perfecto. Si necesitamos algo más grande, hacer chunking.
@@ -172,12 +240,9 @@ function _getStockUnificadoImpl(params) {
   var desde = new Date(hoy.getTime() - rangoDias * 86400000);
 
   try {
-    // Catálogo + zonas
+    // Catálogo + resolver canónico de zonas
     var productos = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
-    var estaciones = _sheetToObjects(getSheet('ESTACIONES'))
-      .filter(function(e){ return String(e.appOrigen || '').toLowerCase() === 'mosexpress'; });
-    var zonas = _sheetToObjects(getSheet('ZONAS'));
-    var zonaNomMap = {}; zonas.forEach(function(z){ zonaNomMap[z.idZona] = z.nombre; });
+    var resolver = _buildZonaResolver();
 
     // Producto base — intentar 3 caminos: idProducto, skuBase, codigoBarra
     var prodBase = productos.find(function(p){
@@ -231,37 +296,41 @@ function _getStockUnificadoImpl(params) {
       }
     });
 
-    // 2. Stock por zona (ME.STOCK_ZONAS)
+    // 2. Stock por zona (ME.STOCK_ZONAS) — agrupando por canónico
     var stockZonas = _safeReadMeStockZonas();
-    var zonaAcum = {};  // { Zona_ID: cantidad }
+    var zonaAcum = {};  // { canonId: { cantidad, nombre } }
     stockZonas.forEach(function(z) {
       var cb = String(z.Cod_Barras || z.codigoBarra || '').trim();
       if (barrasPresentacion.indexOf(cb) < 0) return;
       var zid = String(z.Zona_ID || z.zonaId || '').trim();
       if (!zid) return;
-      zonaAcum[zid] = (zonaAcum[zid] || 0) + (parseFloat(z.Cantidad || z.cantidad) || 0);
+      var canon = resolver.resolve(zid);
+      if (!zonaAcum[canon.id]) zonaAcum[canon.id] = { cantidad: 0, nombre: canon.nombre };
+      zonaAcum[canon.id].cantidad += (parseFloat(z.Cantidad || z.cantidad) || 0);
     });
 
-    // 3. Ventas últimos N días por zona (ME.VENTAS_CABECERA + DETALLE)
-    var ventasZona = _calcularVentasPorZonaRango(barrasPresentacion, idsPresentacion, desde);
-
-    // 4. Construir array de zonas (combinar stock + ventas + nombres)
-    var zonasIdsTodas = {};
-    Object.keys(zonaAcum).forEach(function(z){ zonasIdsTodas[z] = true; });
-    Object.keys(ventasZona).forEach(function(z){ zonasIdsTodas[z] = true; });
-    estaciones.forEach(function(e){
-      var zid = String(e.idZona || e.zona || '').trim();
-      if (zid) zonasIdsTodas[zid] = true;
+    // 3. Ventas últimos N días por zona (canonicalizado)
+    var ventasZonaRaw = _calcularVentasPorZonaRango(barrasPresentacion, idsPresentacion, desde);
+    var ventasZona = {};
+    Object.keys(ventasZonaRaw).forEach(function(rawId) {
+      var canon = resolver.resolve(rawId);
+      ventasZona[canon.id] = (ventasZona[canon.id] || 0) + ventasZonaRaw[rawId];
     });
 
-    var zonasArr = Object.keys(zonasIdsTodas).map(function(zid) {
-      var cant = zonaAcum[zid] || 0;
-      var ventas = ventasZona[zid] || 0;
+    // 4. Construir array de zonas: solo las que tienen stock o ventas
+    var idsTodas = {};
+    Object.keys(zonaAcum).forEach(function(z){ idsTodas[z] = true; });
+    Object.keys(ventasZona).forEach(function(z){ idsTodas[z] = true; });
+
+    var zonasArr = Object.keys(idsTodas).map(function(canonId) {
+      var info = zonaAcum[canonId] || { cantidad: 0, nombre: canonId };
+      var cant = info.cantidad;
+      var ventas = ventasZona[canonId] || 0;
       var rotDia = ventas / rangoDias;
       var diasParaAcabar = (rotDia > 0 && cant > 0) ? Math.floor(cant / rotDia) : null;
       return {
-        idZona: zid,
-        nombre: zonaNomMap[zid] || zid,
+        idZona: canonId,
+        nombre: info.nombre,
         cantidad: cant,
         ventasRango: ventas,
         rotacionDia: Math.round(rotDia * 10) / 10,
@@ -510,35 +579,33 @@ function _getRankingZonasImpl(params) {
     var data = shVC.getDataRange().getValues();
     if (data.length < 2) return { ok: true, data: { zonas: [], total: 0 } };
 
-    // Por zona: { ventas, tickets, vendedores, productos }
+    var resolver = _buildZonaResolver();
+
+    // Por zona canónica: { ventas, tickets, vendedores, idsVenta, nombre }
     var porZona = {};
     var totalVentas = 0, totalTickets = 0;
     for (var i = 1; i < data.length; i++) {
       var fecha = data[i][1] ? new Date(data[i][1]) : null;
       if (!fecha || fecha < desde) continue;
       if (String(data[i][8] || '').toUpperCase() === 'ANULADO') continue;
-      var zona = String(data[i][3] || '').trim();
+      var zonaRaw = String(data[i][3] || '').trim();
+      if (!zonaRaw) continue;
+      var canon = resolver.resolve(zonaRaw);
       var monto = parseFloat(data[i][6]) || 0;
       var vendedor = String(data[i][2] || '').trim();
-      if (!zona) continue;
-      if (!porZona[zona]) porZona[zona] = { ventas: 0, tickets: 0, vendedoresSet: {}, idsVenta: [] };
-      porZona[zona].ventas  += monto;
-      porZona[zona].tickets += 1;
-      porZona[zona].vendedoresSet[vendedor] = true;
-      porZona[zona].idsVenta.push(String(data[i][0] || '').trim());
+      if (!porZona[canon.id]) porZona[canon.id] = { ventas: 0, tickets: 0, vendedoresSet: {}, nombre: canon.nombre };
+      porZona[canon.id].ventas  += monto;
+      porZona[canon.id].tickets += 1;
+      porZona[canon.id].vendedoresSet[vendedor] = true;
       totalVentas += monto;
       totalTickets += 1;
     }
-
-    // Construir array y nombres de zona
-    var zonas = _sheetToObjects(getSheet('ZONAS'));
-    var zonaNomMap = {}; zonas.forEach(function(z){ zonaNomMap[z.idZona] = z.nombre; });
 
     var arr = Object.keys(porZona).map(function(zid) {
       var d = porZona[zid];
       return {
         idZona:     zid,
-        nombre:     zonaNomMap[zid] || zid,
+        nombre:     d.nombre || zid,
         ventas:     Math.round(d.ventas * 100) / 100,
         tickets:    d.tickets,
         ticketProm: d.tickets > 0 ? Math.round((d.ventas / d.tickets) * 100) / 100 : 0,
@@ -778,8 +845,11 @@ function _getInsightsStockImpl(params) {
       prodById[p.idProducto] = p;
       if (p.codigoBarra) prodById[p.codigoBarra] = p;
     });
+    var resolver = _buildZonaResolver();
+    // Mapa canonId → nombre humano (para mensajes)
+    var zonaNombre = {};
 
-    // Acumular stock por barras en zonas
+    // Acumular stock por barras en zonas (canonicalizado)
     var stockBarrasMap = {};
     stockZonas.forEach(function(z) {
       var cb = String(z.Cod_Barras || z.codigoBarra || '').trim();
@@ -788,11 +858,13 @@ function _getInsightsStockImpl(params) {
       if (!stockBarrasMap[cb]) stockBarrasMap[cb] = { total: 0, zonas: {} };
       stockBarrasMap[cb].total += qty;
       var zid = String(z.Zona_ID || '').trim();
-      stockBarrasMap[cb].zonas[zid] = (stockBarrasMap[cb].zonas[zid] || 0) + qty;
+      var canon = resolver.resolve(zid);
+      stockBarrasMap[cb].zonas[canon.id] = (stockBarrasMap[cb].zonas[canon.id] || 0) + qty;
+      zonaNombre[canon.id] = canon.nombre;
     });
 
-    // Calcular ventas por barras + zona
-    var ventasMap = {}; // { codigoBarra: { Zona_ID: cantidad } }
+    // Calcular ventas por barras + zona (canonicalizado)
+    var ventasMap = {}; // { codigoBarra: { canonZonaId: cantidad } }
     try {
       var ssMe = SpreadsheetApp.openById(_getProp('ME_SS_ID'));
       var shVC = ssMe.getSheetByName('VENTAS_CABECERA');
@@ -804,7 +876,10 @@ function _getInsightsStockImpl(params) {
           var fecha = dataVC[i][1] ? new Date(dataVC[i][1]) : null;
           if (!fecha || fecha < desde) continue;
           if (String(dataVC[i][8] || '').toUpperCase() === 'ANULADO') continue;
-          ventasMeta[String(dataVC[i][0] || '').trim()] = String(dataVC[i][3] || '').trim();
+          var rawZona = String(dataVC[i][3] || '').trim();
+          var canonV = resolver.resolve(rawZona);
+          ventasMeta[String(dataVC[i][0] || '').trim()] = canonV.id;
+          if (canonV) zonaNombre[canonV.id] = canonV.nombre;
         }
         var dataVD = shVD.getDataRange().getValues();
         for (var j = 1; j < dataVD.length; j++) {
@@ -859,12 +934,14 @@ function _getInsightsStockImpl(params) {
             if (stockOtra >= 5 && ventasOtra < ventas / 3) {
               var prod = prodById[cb];
               if (!prod) return;
+              var nombreOrigen = zonaNombre[zonaConStock] || zonaConStock;
+              var nombreDestino = zonaNombre[zonaVendedora] || zonaVendedora;
               insights.push({
                 tipo: 'TRASLADAR',
                 severidad: 'ALTA',
                 producto: prod.descripcion || cb,
                 codigoBarra: cb,
-                mensaje: 'Trasladar de zona ' + zonaConStock + ' (' + stockOtra + 'u) → zona ' + zonaVendedora + ' (vende ' + Math.round(rotacionDia * 10) / 10 + '/d, alcanza ' + Math.floor(diasRestantes) + 'd)',
+                mensaje: 'Trasladar ' + (prod.descripcion || cb) + ': ' + nombreOrigen + ' (' + stockOtra + 'u) → ' + nombreDestino + ' (vende ' + Math.round(rotacionDia * 10) / 10 + '/d, alcanza ' + Math.floor(diasRestantes) + 'd)',
                 desde: zonaConStock,
                 hacia: zonaVendedora,
                 cantidadSugerida: Math.min(stockOtra, Math.ceil(rotacionDia * 7))
