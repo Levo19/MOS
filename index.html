@@ -2624,20 +2624,23 @@
         </div>
       </div>
 
-      <!-- Sub-vista: lista -->
+      <!-- Vista lista (única) -->
       <div id="promoListView">
         <button onclick="MOS.promoNuevoForm()" class="btn-primary w-full mb-3" style="background:linear-gradient(135deg,#a855f7,#ec4899);border-color:#c084fc">
           + Nueva promoción
         </button>
         <div id="promoLista" class="space-y-2"></div>
       </div>
+    </section><!-- /view-promociones -->
 
-      <!-- Sub-vista: formulario -->
-      <div id="promoFormView" class="hidden space-y-4">
-        <button onclick="MOS.promoVolverLista()" class="text-xs text-slate-400 hover:text-white flex items-center gap-1">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 18l-6-6 6-6"/></svg>
-          Volver a lista
-        </button>
+    <!-- ── Modal flotante: editar/crear promoción ─────────────────── -->
+    <div id="modalPromoEdit" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.promoVolverLista()">
+      <div class="modal-box p-0" style="max-width:560px;display:flex;flex-direction:column;max-height:92vh">
+        <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
+          <h3 class="font-semibold text-purple-300 text-base">🎯 Promoción</h3>
+          <button onclick="MOS.promoVolverLista()" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+        </div>
+        <div class="overflow-y-auto px-5 py-4 space-y-4" style="flex:1">
 
         <input type="hidden" id="promoIdEdit">
 
@@ -2753,14 +2756,15 @@
         </label>
 
         <div id="promoError" class="text-red-400 text-xs" style="display:none"></div>
+        </div><!-- /modal scroll body -->
 
-        <div class="flex gap-2 pt-3" style="border-top:1px solid #1e293b">
+        <div class="flex gap-2 px-5 py-3 flex-shrink-0" style="border-top:1px solid #1e293b">
           <button onclick="MOS.promoEliminar()" id="promoBtnEliminar" class="btn-ghost hidden" style="color:#f87171">Eliminar</button>
           <button onclick="MOS.promoVolverLista()" class="btn-ghost flex-1">Cancelar</button>
           <button onclick="MOS.promoGuardar()" class="btn-primary flex-1" style="background:linear-gradient(135deg,#a855f7,#ec4899);border-color:#c084fc">Guardar</button>
         </div>
-      </div>
-    </section><!-- /view-promociones -->
+      </div><!-- /modal-box -->
+    </div><!-- /modalPromoEdit -->
 
     <!-- ── Modal: Auditar empleado ─────────────────────────────────── -->
     <div class="modal-backdrop hidden" id="modalAuditar">

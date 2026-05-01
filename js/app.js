@@ -323,6 +323,14 @@ const MOS = (() => {
     _refreshPNPendientes(); // PN pendientes — pre-carga inmediata
     loadProveedores().catch(() => {}); // pre-carga proveedores
     _startProvRefresh();
+    // Pre-carga promociones desde cache (sin bloquear)
+    const _pc = _promoLoadCache();
+    if (_pc) _promoState.lista = _pc;
+    // Fetch fresco en background
+    API.get('getPromociones', {}).then(r => {
+      _promoState.lista = Array.isArray(r) ? r : (r && r.data) || [];
+      _promoSaveCache(_promoState.lista);
+    }).catch(() => {});
     _pushInit(S.session.nombre, S.session.rol);
     // Sidebar session display
     const av = $('sessionAvatar');
@@ -6676,15 +6684,52 @@ const MOS = (() => {
     el.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
+  const PROMO_CACHE_KEY = 'mos_promo_cache';
+  function _promoLoadCache() {
+    try {
+      const raw = localStorage.getItem(PROMO_CACHE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (Date.now() - (parsed.ts || 0) > 86400000) return null; // 24h
+      return parsed.data;
+    } catch { return null; }
+  }
+  function _promoSaveCache(data) {
+    try { localStorage.setItem(PROMO_CACHE_KEY, JSON.stringify({ ts: Date.now(), data })); } catch {}
+  }
+
   async function loadPromociones() {
     $('promoListView').classList.remove('hidden');
-    $('promoFormView').classList.add('hidden');
-    $('promoLista').innerHTML = '<div class="skel h-12 rounded-lg"></div><div class="skel h-12 rounded-lg mt-2"></div>';
+    // Render cache primero (instantáneo)
+    const cached = _promoLoadCache();
+    if (cached && (!_promoState.lista || !_promoState.lista.length)) {
+      _promoState.lista = cached;
+      _renderPromoLista();
+    } else if (!_promoState.lista || !_promoState.lista.length) {
+      $('promoLista').innerHTML = '<div class="skel h-12 rounded-lg"></div><div class="skel h-12 rounded-lg mt-2"></div>';
+    }
+    // Fetch fresco
     try {
       const lista = await API.get('getPromociones', {});
-      _promoState.lista = Array.isArray(lista) ? lista : (lista && lista.data) || [];
-    } catch(e) { _promoState.lista = []; }
-    _renderPromoLista();
+      const fresh = Array.isArray(lista) ? lista : (lista && lista.data) || [];
+      const changed = JSON.stringify(fresh) !== JSON.stringify(_promoState.lista);
+      _promoState.lista = fresh;
+      _promoSaveCache(fresh);
+      if (changed || !cached) _renderPromoLista();
+    } catch(e) {
+      if (!cached) _promoState.lista = [];
+      _renderPromoLista();
+    }
+  }
+
+  // Refresh silencioso periódico
+  let _promoRefreshTimer = null;
+  function _startPromoRefresh() {
+    if (_promoRefreshTimer) clearInterval(_promoRefreshTimer);
+    _promoRefreshTimer = setInterval(() => {
+      // Solo refresh si la vista está activa
+      if (S.currentView === 'promociones') loadPromociones().catch(() => {});
+    }, 120000);
   }
 
   // Compat: si alguien llama el viejo método, redirige a nav
@@ -6725,10 +6770,42 @@ const MOS = (() => {
               <div class="text-xs text-purple-300 mt-0.5">${tipoLabel}</div>
               ${p.descripcion ? `<div class="text-xs text-slate-500 mt-0.5">${p.descripcion}</div>` : ''}
             </div>
-            <span class="text-xs font-bold px-2 py-1 rounded shrink-0 ${p.activa ? 'bg-purple-500/20 text-purple-300' : 'bg-slate-700 text-slate-400'}">${p.activa ? 'ACTIVA' : 'INACTIVA'}</span>
+            <button type="button" class="toggle-sw shrink-0 ${p.activa ? 'on' : ''}"
+                    onclick="event.stopPropagation();MOS.promoToggleActiva('${idRef}')"
+                    title="${p.activa ? 'Desactivar' : 'Activar'}">
+              <span class="toggle-sw-knob"></span>
+            </button>
           </div>
         </div>`;
     }).join('');
+  }
+
+  // Toggle inline: activar/desactivar promoción sin abrir form (optimista)
+  async function promoToggleActiva(idRef) {
+    const p = _promoState.lista.find(x => (x.idPromo === idRef) || (x.skuBase === idRef));
+    if (!p) return;
+    const nuevoEstado = !p.activa;
+
+    // OPTIMISTIC: cambiar en cache local + re-render
+    p.activa = nuevoEstado;
+    _promoSaveCache(_promoState.lista);
+    _renderPromoLista();
+    toast(nuevoEstado ? 'Promoción activada ✓' : 'Promoción desactivada', 'ok');
+
+    // Sync en background
+    try {
+      await API.post('actualizarPromocion', {
+        idPromo: p.idPromo,
+        skuBase: p.skuBase,
+        activa: nuevoEstado
+      });
+    } catch(e) {
+      // Revertir
+      p.activa = !nuevoEstado;
+      _promoSaveCache(_promoState.lista);
+      _renderPromoLista();
+      toast('Error: ' + e.message, 'error');
+    }
   }
 
   function _hoyISO() {
@@ -6739,8 +6816,8 @@ const MOS = (() => {
   function promoNuevoForm() {
     _promoState.editando = null;
     _promoState.comboItems = [];
-    $('promoListView').classList.add('hidden');
-    $('promoFormView').classList.remove('hidden');
+    // Abrir modal flotante
+    openModal('modalPromoEdit');
     $('promoBtnEliminar').classList.add('hidden');
     $('promoIdEdit').value = '';
     $('promoBuscar').value = '';
@@ -6802,8 +6879,7 @@ const MOS = (() => {
   }
 
   function promoVolverLista() {
-    $('promoListView').classList.remove('hidden');
-    $('promoFormView').classList.add('hidden');
+    closeModal('modalPromoEdit');
   }
 
   function promoSetTipo(tipo) {
@@ -7036,7 +7112,7 @@ const MOS = (() => {
     filterCatalogo, setCatTab, toggleDerivs, togglePresentaciones, guardarPrecioRapido,
     abrirModalPN, cerrarModalPN, lanzarAProduccion,
     pnSetTipo, pnAutogenBarcode, pnBuscarBase, pnSeleccionarBase,
-    abrirModalPromociones, loadPromociones, promoNuevoForm, promoEditar, promoVolverLista,
+    abrirModalPromociones, loadPromociones, promoNuevoForm, promoEditar, promoVolverLista, promoToggleActiva,
     promoSetTipo, promoSetModo, promoActualizarEjemplo, promoBuscarBase, promoSeleccionarBase,
     promoGuardar, promoEliminar,
     promoComboBuscar, promoComboAgregar, promoComboCerrarRes,
