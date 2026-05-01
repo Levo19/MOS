@@ -2429,6 +2429,11 @@ const MOS = (() => {
   }
 
   async function selectProveedor(id) {
+    // Reset filtros si se cambia de proveedor
+    if (S.provSelId !== id) {
+      S.provProdFilter = '';
+      S.provHistFilter = '';
+    }
     S.provSelId = id;
     S.provTab   = S.provTab || 'info';
     renderProveedores();
@@ -2449,22 +2454,27 @@ const MOS = (() => {
 
     const detailEl = $('proveedorDetail');
     if (!detailEl) return;
+    const safeNombre = (prov.nombre || '').replace(/"/g, '&quot;');
+    const meta = [prov.ruc, prov.email].filter(Boolean).join(' · ');
     detailEl.innerHTML = `
-      <div class="flex items-start justify-between mb-3">
-        <div>
-          <h3 class="font-bold text-white">${prov.nombre}</h3>
-          <p class="text-sm text-slate-400">${prov.ruc || ''} — ${prov.email || ''}</p>
+      <!-- Header sticky: back (mobile) + nombre + editar -->
+      <div class="prov-detail-header">
+        <div class="flex items-center gap-2 mb-2">
+          <button onclick="MOS.cerrarDetalleProveedor()" class="lg:hidden btn-ghost px-2 py-1 text-base shrink-0" title="Volver">←</button>
+          <div class="flex-1 min-w-0">
+            <h3 class="font-bold text-white truncate text-base lg:text-lg">${safeNombre}</h3>
+            <p class="text-xs text-slate-500 truncate">${meta || '—'}</p>
+          </div>
+          <button class="btn-ghost text-xs px-2 py-1 shrink-0" onclick="MOS.abrirModalProveedor('${id}')" title="Editar proveedor">✏️</button>
         </div>
-        <div class="flex gap-2">
-          <button class="btn-ghost text-xs" onclick="MOS.abrirModalProveedor('${id}')">✏️ Editar</button>
+        <div class="prov-tabs-wrap">
+          <div class="prov-tabs">
+            <button class="prov-tab" data-tab="info"      onclick="MOS.provSetTab('info')">📋 Info</button>
+            <button class="prov-tab" data-tab="productos" onclick="MOS.provSetTab('productos')">📦 Productos</button>
+            <button class="prov-tab" data-tab="historico" onclick="MOS.provSetTab('historico')">📊 Histórico</button>
+            <button class="prov-tab" data-tab="pedidos"   onclick="MOS.provSetTab('pedidos')">🛒 Pedidos</button>
+          </div>
         </div>
-      </div>
-      <!-- Tabs -->
-      <div class="prov-tabs">
-        <button class="prov-tab" data-tab="info"      onclick="MOS.provSetTab('info')">📋 Info</button>
-        <button class="prov-tab" data-tab="productos" onclick="MOS.provSetTab('productos')">📦 Productos</button>
-        <button class="prov-tab" data-tab="historico" onclick="MOS.provSetTab('historico')">📊 Histórico</button>
-        <button class="prov-tab" data-tab="pedidos"   onclick="MOS.provSetTab('pedidos')">🛒 Pedidos</button>
       </div>
       <!-- Contenido de cada tab -->
       <div id="provTabInfo" class="prov-tab-content"></div>
@@ -2563,53 +2573,79 @@ const MOS = (() => {
     }
   }
 
+  function _filtrarPP(items, q) {
+    if (!q) return items;
+    const qn = _norm(q);
+    const palabras = qn.split(/\s+/).filter(Boolean);
+    return items.filter(pp => {
+      const hay = _norm((pp.descripcion || '') + ' ' + (pp.skuBase || '') + ' ' + (pp.codigoBarra || '') + ' ' + (pp.notas || ''));
+      return palabras.every(w => hay.indexOf(w) >= 0);
+    });
+  }
+
+  function _pintaProvProductos(items) {
+    const list = $('provProductosList');
+    if (!list) return;
+    if (!items.length) {
+      const filtro = S.provProdFilter || '';
+      list.innerHTML = filtro
+        ? `<p class="text-slate-500 text-sm py-6 text-center">Sin coincidencias para "${filtro}".</p>`
+        : '<p class="text-slate-500 text-sm py-6 text-center">Sin productos registrados.<br>Agrega cotizaciones para planificar pedidos.</p>';
+      return;
+    }
+    list.innerHTML = items.map(pp => `
+      <div class="card-sm p-3 hover:border-indigo-500/30 transition-colors${pp._tmp ? ' opacity-60' : ''}">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0 flex-1 cursor-pointer" onclick="MOS.abrirModalProvProducto('${pp.idPP}')">
+            <div class="text-sm font-semibold text-slate-100 truncate">${pp.descripcion || pp.skuBase}</div>
+            <div class="text-xs text-slate-500 mt-0.5" style="font-family:monospace">SKU ${pp.skuBase}${pp.codigoBarra ? ' · ▌' + pp.codigoBarra : ''}</div>
+            ${pp.notas ? `<div class="text-xs text-slate-500 mt-1 italic">${pp.notas}</div>` : ''}
+          </div>
+          <div class="text-right shrink-0 flex flex-col items-end gap-1">
+            <div class="text-sm font-bold text-amber-400">${fmtMoney(pp.precioReferencia || 0)}</div>
+            <div class="flex items-center gap-2 text-xs text-slate-500">
+              ${pp.minimoCompra ? `<span>mín ${pp.minimoCompra}</span>` : ''}
+              ${pp.diasEntrega ? `<span>${pp.diasEntrega}d</span>` : ''}
+            </div>
+            <button onclick="event.stopPropagation();MOS.eliminarProvProductoRapido('${pp.idPP}')" class="text-slate-500 hover:text-red-400 transition-colors text-base mt-1" title="Eliminar">🗑️</button>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function _filtrarProvProductos(q) {
+    S.provProdFilter = q || '';
+    const id = S.provSelId;
+    if (!id) return;
+    const items = _filtrarPP(S.provProductos[id] || [], S.provProdFilter);
+    _pintaProvProductos(items);
+  }
+
   async function _renderProvProductos() {
     const id = S.provSelId;
     const cont = $('provTabProductos');
     if (!cont) return;
     S.provProductos = S.provProductos || {};
+    S.provProdFilter = S.provProdFilter || '';
 
-    // Asegurar contenedor
+    // Asegurar contenedor (con buscador + botón)
     if (!cont.querySelector('#provProductosList')) {
       cont.innerHTML = `
-        <div class="flex items-center justify-between mb-3">
-          <h4 class="font-semibold text-sm text-slate-300">📦 Catálogo de cotizaciones</h4>
-          <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalProvProducto(null)">+ Producto</button>
+        <div class="flex items-center gap-2 mb-3 flex-wrap">
+          <h4 class="font-semibold text-sm text-slate-300 shrink-0">📦 Catálogo</h4>
+          <input id="provProdFilter" class="inp text-xs flex-1" style="min-width:120px;max-width:200px"
+            placeholder="🔍 Filtrar..." oninput="MOS._filtrarProvProductos(this.value)" value="${S.provProdFilter}">
+          <button class="btn-primary text-xs px-3 py-1.5 shrink-0" onclick="MOS.abrirModalProvProducto(null)">+ Producto</button>
         </div>
         <div id="provProductosList" class="space-y-2"></div>
       `;
     }
     const list = $('provProductosList');
 
-    function pinta(items) {
-      if (!items.length) {
-        list.innerHTML = '<p class="text-slate-500 text-sm py-6 text-center">Sin productos registrados.<br>Agrega cotizaciones para planificar pedidos.</p>';
-        return;
-      }
-      list.innerHTML = items.map(pp => `
-        <div class="card-sm p-3 hover:border-indigo-500/30 transition-colors${pp._tmp ? ' opacity-60' : ''}">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0 flex-1 cursor-pointer" onclick="MOS.abrirModalProvProducto('${pp.idPP}')">
-              <div class="text-sm font-semibold text-slate-100 truncate">${pp.descripcion || pp.skuBase}</div>
-              <div class="text-xs text-slate-500 mt-0.5" style="font-family:monospace">SKU ${pp.skuBase}${pp.codigoBarra ? ' · ▌' + pp.codigoBarra : ''}</div>
-              ${pp.notas ? `<div class="text-xs text-slate-500 mt-1 italic">${pp.notas}</div>` : ''}
-            </div>
-            <div class="text-right shrink-0 flex flex-col items-end gap-1">
-              <div class="text-sm font-bold text-amber-400">${fmtMoney(pp.precioReferencia || 0)}</div>
-              <div class="flex items-center gap-2 text-xs text-slate-500">
-                ${pp.minimoCompra ? `<span>mín ${pp.minimoCompra}</span>` : ''}
-                ${pp.diasEntrega ? `<span>${pp.diasEntrega}d</span>` : ''}
-              </div>
-              <button onclick="event.stopPropagation();MOS.eliminarProvProductoRapido('${pp.idPP}')" class="text-slate-500 hover:text-red-400 transition-colors text-base mt-1" title="Eliminar">🗑️</button>
-            </div>
-          </div>
-        </div>
-      `).join('');
-    }
-
     // Render cache si existe (instantáneo)
     if (S.provProductos[id]) {
-      pinta(S.provProductos[id]);
+      _pintaProvProductos(_filtrarPP(S.provProductos[id], S.provProdFilter));
     } else {
       list.innerHTML = '<div class="skel h-12 rounded-lg"></div>';
     }
@@ -2619,68 +2655,89 @@ const MOS = (() => {
       const lista = await API.get('getProveedorProductos', { idProveedor: id });
       const items = Array.isArray(lista) ? lista : (lista && lista.data) || [];
       S.provProductos[id] = items;
-      pinta(items);
+      _pintaProvProductos(_filtrarPP(items, S.provProdFilter));
     } catch(e) {
       if (!S.provProductos[id]) list.innerHTML = `<p class="text-red-400 text-sm">Error: ${e.message}</p>`;
     }
+  }
+
+  function _filtrarHist(productos, q) {
+    if (!q) return productos;
+    const qn = _norm(q);
+    const palabras = qn.split(/\s+/).filter(Boolean);
+    return productos.filter(it => {
+      const hay = _norm((it.descripcion || '') + ' ' + (it.codigoBarra || ''));
+      return palabras.every(w => hay.indexOf(w) >= 0);
+    });
+  }
+
+  function _pintaProvHistorico(data) {
+    const body = $('provHistoricoBody');
+    if (!body) return;
+    if (!data || (!data.productos || !data.productos.length)) {
+      body.innerHTML = '<p class="text-slate-500 text-sm py-6 text-center">Sin compras registradas en el rango.</p>';
+      return;
+    }
+    const filtro = S.provHistFilter || '';
+    const productos = _filtrarHist(data.productos, filtro);
+    body.innerHTML = `
+      <div class="grid grid-cols-3 gap-2 mb-4">
+        <div class="card-sm p-3 text-center"><div class="text-xs text-slate-500">Guías</div><div class="text-lg font-bold text-slate-100">${data.totalGuias}</div></div>
+        <div class="card-sm p-3 text-center"><div class="text-xs text-slate-500">Gastado</div><div class="text-lg font-bold text-amber-400">${fmtMoney(data.totalGastado)}</div></div>
+        <div class="card-sm p-3 text-center"><div class="text-xs text-slate-500">Por pagar</div><div class="text-lg font-bold ${data.porPagar > 0 ? 'text-rose-400' : 'text-green-400'}">${fmtMoney(data.porPagar)}</div></div>
+      </div>
+      <div class="text-xs text-slate-500 mb-2">${productos.length} de ${data.productos.length} productos${filtro ? ' · filtro: "' + filtro + '"' : ''}</div>
+      <div class="space-y-1">
+        ${productos.length ? productos.map(it => `
+          <div class="card-sm p-2.5">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <div class="text-sm font-medium text-slate-200 truncate">${it.descripcion}</div>
+                <div class="text-xs text-slate-500" style="font-family:monospace">▌${it.codigoBarra} · ${it.veces} veces · ${it.cantidadTotal} uds</div>
+              </div>
+              <div class="text-right shrink-0">
+                <div class="text-sm font-bold text-slate-100">${fmtMoney(it.ultimoPrecio)}</div>
+                <div class="text-xs ${it.variacionPct > 1 ? 'text-rose-400' : it.variacionPct < -1 ? 'text-green-400' : 'text-slate-500'}">${it.variacionPct > 0 ? '↑' : it.variacionPct < 0 ? '↓' : '='} ${Math.abs(it.variacionPct)}%</div>
+              </div>
+            </div>
+          </div>
+        `).join('') : '<p class="text-slate-500 text-sm py-4 text-center italic">Sin coincidencias.</p>'}
+      </div>
+    `;
+  }
+
+  function _filtrarProvHistorico(q) {
+    S.provHistFilter = q || '';
+    const id = S.provSelId;
+    if (id && S.provHistorico[id]) _pintaProvHistorico(S.provHistorico[id]);
   }
 
   async function _renderProvHistorico() {
     const id = S.provSelId;
     const cont = $('provTabHistorico');
     if (!cont) return;
-    // Asegurar contenedor base
+    S.provHistFilter = S.provHistFilter || '';
+    // Asegurar contenedor base (con filtro)
     if (!cont.querySelector('#provHistoricoBody')) {
       cont.innerHTML = `
-        <div class="flex items-center justify-between mb-3">
-          <h4 class="font-semibold text-sm text-slate-300">📊 Histórico de compras</h4>
-          <select id="provHistoricoDias" class="inp text-xs" style="max-width:120px" onchange="MOS._refetchHistoricoProv()">
-            <option value="30">30 días</option>
-            <option value="60" selected>60 días</option>
-            <option value="90">90 días</option>
-            <option value="180">180 días</option>
+        <div class="flex items-center gap-2 mb-3 flex-wrap">
+          <h4 class="font-semibold text-sm text-slate-300 shrink-0">📊 Histórico</h4>
+          <input id="provHistFilter" class="inp text-xs flex-1" style="min-width:100px;max-width:180px"
+            placeholder="🔍 Filtrar..." oninput="MOS._filtrarProvHistorico(this.value)" value="${S.provHistFilter}">
+          <select id="provHistoricoDias" class="inp text-xs shrink-0" style="max-width:90px" onchange="MOS._refetchHistoricoProv()">
+            <option value="30">30d</option>
+            <option value="60" selected>60d</option>
+            <option value="90">90d</option>
+            <option value="180">180d</option>
           </select>
         </div>
         <div id="provHistoricoBody"></div>
       `;
     }
 
-    function pinta(data) {
-      const body = $('provHistoricoBody');
-      if (!body) return;
-      if (!data || (!data.productos || !data.productos.length)) {
-        body.innerHTML = '<p class="text-slate-500 text-sm py-6 text-center">Sin compras registradas en el rango.</p>';
-        return;
-      }
-      body.innerHTML = `
-        <div class="grid grid-cols-3 gap-2 mb-4">
-          <div class="card-sm p-3 text-center"><div class="text-xs text-slate-500">Guías</div><div class="text-lg font-bold text-slate-100">${data.totalGuias}</div></div>
-          <div class="card-sm p-3 text-center"><div class="text-xs text-slate-500">Gastado</div><div class="text-lg font-bold text-amber-400">${fmtMoney(data.totalGastado)}</div></div>
-          <div class="card-sm p-3 text-center"><div class="text-xs text-slate-500">Por pagar</div><div class="text-lg font-bold ${data.porPagar > 0 ? 'text-rose-400' : 'text-green-400'}">${fmtMoney(data.porPagar)}</div></div>
-        </div>
-        <div class="text-xs text-slate-500 mb-2">${data.productos.length} productos comprados</div>
-        <div class="space-y-1">
-          ${data.productos.map(it => `
-            <div class="card-sm p-2.5">
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0 flex-1">
-                  <div class="text-sm font-medium text-slate-200 truncate">${it.descripcion}</div>
-                  <div class="text-xs text-slate-500" style="font-family:monospace">▌${it.codigoBarra} · ${it.veces} veces · ${it.cantidadTotal} uds</div>
-                </div>
-                <div class="text-right shrink-0">
-                  <div class="text-sm font-bold text-slate-100">${fmtMoney(it.ultimoPrecio)}</div>
-                  <div class="text-xs ${it.variacionPct > 1 ? 'text-rose-400' : it.variacionPct < -1 ? 'text-green-400' : 'text-slate-500'}">${it.variacionPct > 0 ? '↑' : it.variacionPct < 0 ? '↓' : '='} ${Math.abs(it.variacionPct)}%</div>
-                </div>
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      `;
-    }
-
     // Render desde cache si existe (instantáneo)
     if (S.provHistorico[id]) {
-      pinta(S.provHistorico[id]);
+      _pintaProvHistorico(S.provHistorico[id]);
     } else {
       $('provHistoricoBody').innerHTML = '<div class="skel h-32 rounded-lg"></div>';
     }
@@ -2691,7 +2748,7 @@ const MOS = (() => {
       const r = await API.get('getHistoricoProveedor', { idProveedor: id, dias });
       const data = r && r.data ? r.data : r;
       S.provHistorico[id] = data;
-      pinta(data);
+      _pintaProvHistorico(data);
     } catch(e) {
       if (!S.provHistorico[id]) {
         $('provHistoricoBody').innerHTML = `<p class="text-red-400 text-sm">Error: ${e.message}</p>`;
@@ -6626,21 +6683,34 @@ const MOS = (() => {
   const _ppState = { editando: null };
 
   async function abrirModalProvProducto(idPP) {
+    console.log('[abrirModalProvProducto] idPP=', idPP, 'provSelId=', S.provSelId);
     const idProv = S.provSelId;
-    if (!idProv) return;
+    if (!idProv) {
+      toast('Selecciona primero un proveedor', 'error');
+      console.warn('[abrirModalProvProducto] abortado: sin provSelId');
+      return;
+    }
+    const elModal = $('modalProvProducto');
+    if (!elModal) {
+      toast('Modal no disponible — recarga la app', 'error');
+      console.error('[abrirModalProvProducto] #modalProvProducto no existe en DOM');
+      return;
+    }
     _ppState.editando = idPP;
-    $('ppModalTitle').textContent = idPP ? '📦 Editar cotización' : '📦 Nueva cotización';
-    $('ppId').value = idPP || '';
-    $('ppBuscar').value = '';
-    $('ppSkuBase').value = '';
-    $('ppCodigoBarra').value = '';
-    $('ppBuscarRes').style.display = 'none';
-    $('ppSeleccionado').classList.add('hidden');
-    $('ppPrecio').value = '';
-    $('ppMinimo').value = '';
-    $('ppDiasEntrega').value = '';
-    $('ppNotas').value = '';
-    $('ppBtnEliminar').classList.toggle('hidden', !idPP);
+    const setVal = (id, v) => { const el = $(id); if (el) el.value = v; };
+    const setTxt = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+    setTxt('ppModalTitle', idPP ? '📦 Editar cotización' : '📦 Nueva cotización');
+    setVal('ppId', idPP || '');
+    setVal('ppBuscar', '');
+    setVal('ppSkuBase', '');
+    setVal('ppCodigoBarra', '');
+    if ($('ppBuscarRes')) $('ppBuscarRes').style.display = 'none';
+    $('ppSeleccionado')?.classList.add('hidden');
+    setVal('ppPrecio', '');
+    setVal('ppMinimo', '');
+    setVal('ppDiasEntrega', '');
+    setVal('ppNotas', '');
+    $('ppBtnEliminar')?.classList.toggle('hidden', !idPP);
 
     if (idPP) {
       try {
@@ -7284,6 +7354,7 @@ const MOS = (() => {
     loadProveedores, selectProveedor, renderProveedores, cerrarDetalleProveedor,
     abrirModalProveedor, guardarProveedor,
     provSetTab, _renderProvHistorico, _refetchHistoricoProv,
+    _filtrarProvProductos, _filtrarProvHistorico,
     abrirModalProvProducto, ppBuscar, ppSeleccionar,
     guardarProvProducto, eliminarProvProducto, eliminarProvProductoRapido,
     abrirVistaCargadores, nuevoCargador, editarCargador,

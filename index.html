@@ -271,7 +271,11 @@
     /* Modal */
     .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 100; display: none; align-items: center; justify-content: center; padding: 16px; }
     .modal-backdrop.open { display: flex; }
-    .modal-box { background: #0f172a; border: 1px solid #1e293b; border-radius: 16px; width: 100%; max-width: 540px; max-height: 90vh; overflow-y: auto; }
+    .modal-box { background: #0f172a; border: 1px solid #1e293b; border-radius: 16px; width: 100%; max-width: 540px; max-height: 90vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    /* Tap target ≥40px para botones de cierre × en modales */
+    .modal-close-x { padding: 6px 10px; line-height: 1; font-size: 20px; color: #94a3b8; background: transparent; border: none; cursor: pointer; border-radius: 6px; transition: background .15s, color .15s; }
+    .modal-close-x:hover { color: #fff; background: rgba(255,255,255,.05); }
+    .modal-close-x:active { background: rgba(255,255,255,.1); }
     /* ── Modal Producto rediseñado ── */
     .prod-tipo-bar { display:flex; border-bottom:1px solid #1e293b; background:#070f1a; overflow-x:auto; flex-shrink:0; }
     .prod-tipo-btn { flex:1; padding:10px 6px; font-size:11px; font-weight:700; color:#475569; border-bottom:2px solid transparent; white-space:nowrap; transition:all .15s; min-width:72px; }
@@ -330,6 +334,14 @@
     .tab-bar { display: flex; gap: 2px; background: #0d1526; border-radius: 10px; padding: 3px; }
     .tab-btn { flex: 1; padding: 7px 12px; font-size: 13px; font-weight: 500; border-radius: 7px; border: none; background: transparent; color: #64748b; cursor: pointer; transition: all .15s; }
     .tab-btn.active { background: #1e293b; color: #e2e8f0; }
+    /* Wrapper para tabs con scroll horizontal + fade indicator a la derecha */
+    .tab-scroll-wrap { position: relative; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .tab-scroll-wrap::-webkit-scrollbar { display: none; }
+    .tab-scroll-wrap::after {
+      content: ''; position: absolute; right: 0; top: 0; bottom: 0;
+      width: 24px; pointer-events: none;
+      background: linear-gradient(to left, #0a1428 0%, transparent 100%);
+    }
 
     /* Loading skeleton */
     .skel { background: linear-gradient(90deg, #1e293b 25%, #2d3f5a 50%, #1e293b 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 6px; }
@@ -732,12 +744,22 @@
 
     /* ── Tabs de proveedor ────────────────────────────────── */
     .prov-tabs {
+      position: relative;
       display: flex; gap: 4px;
       border-bottom: 1px solid #1e293b;
       margin-bottom: 16px;
       overflow-x: auto; scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
     }
     .prov-tabs::-webkit-scrollbar { display: none; }
+    /* Fade lateral derecho — indica que hay más para scrollear */
+    .prov-tabs-wrap { position: relative; }
+    .prov-tabs-wrap::after {
+      content: '';
+      position: absolute; right: 0; top: 0; bottom: 1px;
+      width: 24px; pointer-events: none;
+      background: linear-gradient(to left, #0a1428 0%, transparent 100%);
+    }
     .prov-tab {
       flex-shrink: 0;
       padding: 8px 14px;
@@ -752,6 +774,27 @@
     .prov-tab.active {
       color: #ffd700;
       border-bottom-color: #ffd700;
+    }
+    /* Header sticky del detalle del proveedor (mobile y desktop) */
+    .prov-detail-header {
+      position: sticky; top: 56px; z-index: 5;
+      background: #0a1428;
+      padding: 8px 0 0;
+      margin-bottom: 8px;
+    }
+    @media (min-width: 768px) {
+      .prov-detail-header { top: 0; }
+    }
+    /* Card-look solo en desktop; mobile usa ancho completo */
+    .prov-detail-card { padding: 0; }
+    @media (min-width: 1024px) {
+      .prov-detail-card {
+        background: #0f172a;
+        border: 1px solid #1e293b;
+        border-radius: 12px;
+        padding: 1.25rem;
+      }
+      .prov-detail-header { padding-top: 0; }
     }
 
     /* ── Radio cards para revisar PN ─────────────────────── */
@@ -1653,7 +1696,7 @@
     <!-- Step 1: Seleccionar usuario -->
     <div id="loginStep1" class="w-full">
       <p class="text-slate-400 text-sm text-center mb-4">Selecciona tu perfil</p>
-      <div id="loginPersonalGrid" class="grid grid-cols-3 gap-3 mb-3">
+      <div id="loginPersonalGrid" class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
         <div class="col-span-3 text-center py-6 text-slate-500 text-sm">Cargando usuarios...</div>
       </div>
       <p id="loginStep1Error" class="text-red-400 text-xs text-center mt-2 min-h-4"></p>
@@ -2021,8 +2064,8 @@
 
     <!-- ═══ VIEW: CONFIGURACIÓN ══════════════════════════════ -->
     <section id="view-config" class="view hidden">
-      <!-- Tab bar (scrollable en mobile) -->
-      <div class="overflow-x-auto pb-1 mb-4">
+      <!-- Tab bar (scrollable en mobile, con fade lateral indicador) -->
+      <div class="tab-scroll-wrap pb-1 mb-4">
         <div class="tab-bar w-max">
           <button class="tab-btn active" id="cfgTabZonas"      onclick="MOS.setCfgTab('zonas')">🏪 Zonas</button>
           <button class="tab-btn" id="cfgTabEstaciones" onclick="MOS.setCfgTab('estaciones')">📍 Estaciones</button>
@@ -2182,7 +2225,7 @@
       <div class="modal-box">
         <div class="flex items-center justify-between mb-4">
           <h3 class="font-semibold text-white text-base">📱 Dispositivo</h3>
-          <button onclick="MOS.cerrarModalDispositivo()" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+          <button onclick="MOS.cerrarModalDispositivo()" class="modal-close-x">×</button>
         </div>
         <input type="hidden" id="dispId">
         <!-- ID siempre visible (editable en nuevo, solo lectura en edición) -->
@@ -2243,12 +2286,8 @@
         </div>
         <!-- Proveedor detail (oculto en mobile cuando NO hay seleccionado) -->
         <div id="provDetailWrap" class="lg:col-span-2 hidden lg:block">
-          <button onclick="MOS.cerrarDetalleProveedor()" class="lg:hidden btn-ghost text-sm flex items-center gap-1 mb-3">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 18l-6-6 6-6"/></svg>
-            Volver a la lista
-          </button>
-          <div id="proveedorDetail" class="card p-6 text-center text-slate-500 text-sm">
-            Selecciona un proveedor para ver pagos y pedidos
+          <div id="proveedorDetail" class="prov-detail-card text-slate-500 text-sm">
+            <p class="text-center p-6">Selecciona un proveedor para ver pagos y pedidos</p>
           </div>
         </div>
       </div>
@@ -2381,7 +2420,7 @@
             <h3 class="font-semibold text-sm text-slate-200">Cajas Abiertas Ahora</h3>
             <span id="cajasVivoCount" class="badge badge-green text-xs">0</span>
           </div>
-          <div id="cajasVivoGrid" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4"></div>
+          <div id="cajasVivoGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></div>
         </div>
 
         <!-- Gráficos -->
@@ -2417,18 +2456,18 @@
         <!-- Modal historial cajas expandido -->
         <div id="modalHistorialCajas" class="hidden fixed inset-0 z-50 flex items-center justify-center p-3" style="background:rgba(0,0,0,.85)">
           <div class="card p-5 w-full" style="max-width:800px;max-height:90vh;overflow-y:auto">
-            <div class="flex items-center justify-between mb-3">
-              <div>
-                <h3 class="font-semibold text-slate-200">Historial de Cajas — por fecha</h3>
-                <p class="text-xs text-slate-500 mt-0.5">Eje X = día · 🟢 verde = caja activa ahora · hover para detalle</p>
+            <div class="flex items-start justify-between gap-2 mb-3 flex-wrap">
+              <div class="min-w-0 flex-1">
+                <h3 class="font-semibold text-slate-200">Historial de Cajas</h3>
+                <p class="text-xs text-slate-500 mt-0.5 hidden sm:block">Eje X = día · 🟢 verde = caja activa · hover para detalle</p>
               </div>
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 shrink-0">
                 <div class="flex gap-1">
                   <button onclick="MOS.setChartCajasModalPeriodo(7)"  id="ccm7"  class="tab-btn active text-xs py-0.5 px-2">7D</button>
                   <button onclick="MOS.setChartCajasModalPeriodo(30)" id="ccm30" class="tab-btn text-xs py-0.5 px-2">30D</button>
                   <button onclick="MOS.setChartCajasModalPeriodo(90)" id="ccm90" class="tab-btn text-xs py-0.5 px-2">90D</button>
                 </div>
-                <button onclick="MOS.cerrarModalHistorialCajas()" class="text-slate-500 hover:text-white text-xl ml-1">✕</button>
+                <button onclick="MOS.cerrarModalHistorialCajas()" class="modal-close-x ml-1">✕</button>
               </div>
             </div>
             <div style="position:relative;height:380px"><canvas id="chartCajasModal"></canvas></div>
@@ -2630,7 +2669,7 @@
         <h3 class="text-sm font-bold text-slate-300 mb-2">📊 Liquidación semanal</h3>
         <p class="text-xs text-slate-500 mb-3">Domingo cierra automáticamente a las 8 PM. Imprime para pagar.</p>
         <div class="flex flex-wrap gap-2">
-          <input type="date" id="liqFechaInicio" class="inp text-xs" style="max-width:170px">
+          <input type="date" id="liqFechaInicio" class="inp text-xs" style="min-width:140px;max-width:170px;flex:1 1 140px">
           <select id="liqPersona" class="inp text-xs flex-1" style="min-width:160px"></select>
           <button onclick="MOS.abrirLiquidacion()" class="btn-primary text-xs">Ver liquidación</button>
         </div>
@@ -2665,7 +2704,7 @@
       <div class="modal-box p-0" style="max-width:560px;display:flex;flex-direction:column;max-height:92vh">
         <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
           <h3 class="font-semibold text-purple-300 text-base">🎯 Promoción</h3>
-          <button onclick="MOS.promoVolverLista()" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+          <button onclick="MOS.promoVolverLista()" class="modal-close-x">×</button>
         </div>
         <div class="overflow-y-auto px-5 py-4 space-y-4" style="flex:1">
 
@@ -2824,7 +2863,7 @@
             <h3 class="font-semibold text-white text-base" id="auditTitle">Auditar</h3>
             <p class="text-xs text-slate-500" id="auditSubtitle">—</p>
           </div>
-          <button onclick="MOS.cerrarAuditar()" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+          <button onclick="MOS.cerrarAuditar()" class="modal-close-x">×</button>
         </div>
         <div class="overflow-y-auto px-5 py-4 space-y-4" style="flex:1">
           <input type="hidden" id="auditIdPersonal">
@@ -2903,7 +2942,7 @@
       <div class="modal-box p-0 max-w-md w-full" style="max-height:90vh;display:flex;flex-direction:column">
         <div class="px-5 pt-5 pb-3 flex items-center justify-between border-b border-slate-800">
           <h3 class="font-semibold text-amber-400 text-base">⚙ Configuración de evaluación</h3>
-          <button onclick="MOS.closeModal('modalConfigEval')" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+          <button onclick="MOS.closeModal('modalConfigEval')" class="modal-close-x">×</button>
         </div>
         <div class="overflow-y-auto px-5 py-4 space-y-4" style="flex:1">
           <div>
@@ -2959,7 +2998,7 @@
       <div class="modal-box p-6 max-w-sm w-full">
         <div class="flex items-center justify-between mb-4">
           <h3 class="font-bold text-white">Registrar Gasto</h3>
-          <button onclick="MOS.cerrarModalFin('modalFinGasto')" class="text-slate-400 hover:text-white text-xl">×</button>
+          <button onclick="MOS.cerrarModalFin('modalFinGasto')" class="modal-close-x">×</button>
         </div>
         <div class="space-y-3">
           <div class="grid grid-cols-2 gap-3">
@@ -3014,7 +3053,7 @@
       <div class="modal-box p-6 max-w-sm w-full">
         <div class="flex items-center justify-between mb-4">
           <h3 class="font-bold text-white">Registrar Jornada</h3>
-          <button onclick="MOS.cerrarModalFin('modalFinJornada')" class="text-slate-400 hover:text-white text-xl">×</button>
+          <button onclick="MOS.cerrarModalFin('modalFinJornada')" class="modal-close-x">×</button>
         </div>
         <div class="space-y-3">
           <div class="grid grid-cols-2 gap-3">
@@ -3069,7 +3108,7 @@
         </button>
         <span id="finProdConteo" class="text-xs text-slate-500"></span>
       </div>
-      <button onclick="MOS.cerrarModalFin('finModalProductos')" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+      <button onclick="MOS.cerrarModalFin('finModalProductos')" class="modal-close-x">×</button>
     </div>
     <!-- inline cost editor dentro del modal -->
     <div id="finProdCostoWrap" class="hidden p-3 border-b border-amber-900/40 bg-amber-950/20 flex items-center gap-2 flex-wrap">
@@ -3107,7 +3146,7 @@
         <span class="text-white font-bold text-sm">Tickets del Día</span>
         <span id="finTicketConteo" class="text-xs text-slate-500"></span>
       </div>
-      <button onclick="MOS.cerrarModalFin('finModalTickets')" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+      <button onclick="MOS.cerrarModalFin('finModalTickets')" class="modal-close-x">×</button>
     </div>
     <!-- filtros -->
     <div class="p-3 border-b border-slate-800 flex flex-wrap gap-1.5" id="finTicketFiltros"></div>
@@ -3174,7 +3213,7 @@
 <!-- ═══════════════════════════════════════════════════════════ -->
 
 <!-- Modal Ecosistema -->
-<div class="modal-backdrop" id="modalEcosistema">
+<div class="modal-backdrop hidden" id="modalEcosistema">
   <div class="modal-box" style="max-width:420px; padding:0; display:flex; flex-direction:column;">
     <div class="flex items-center justify-between px-5 py-4 border-b border-slate-800 sticky top-0 bg-slate-900 rounded-t-2xl z-10">
       <h2 class="font-bold text-base text-white" id="ecoModalTitle">Estado Operacional</h2>
@@ -3187,11 +3226,11 @@
 </div>
 
 <!-- Config Modal -->
-<div class="modal-backdrop" id="modalConfig">
+<div class="modal-backdrop hidden" id="modalConfig">
   <div class="modal-box p-6">
     <div class="flex items-center justify-between mb-5">
       <h2 class="font-bold text-lg text-white">⚙️ Configuración</h2>
-      <button onclick="MOS.closeModal('modalConfig')" class="text-slate-400 hover:text-white text-xl">×</button>
+      <button onclick="MOS.closeModal('modalConfig')" class="modal-close-x">×</button>
     </div>
     <div class="space-y-4">
       <div>
@@ -3242,7 +3281,7 @@
   <div class="modal-box p-0" style="max-width:540px;display:flex;flex-direction:column;max-height:92vh">
     <div class="flex items-center justify-between px-5 py-4 flex-shrink-0" style="border-bottom:1px solid #1e293b">
       <h2 class="font-bold text-base text-white">📦 Revisar producto nuevo</h2>
-      <button onclick="MOS.cerrarModalPN()" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+      <button onclick="MOS.cerrarModalPN()" class="modal-close-x">×</button>
     </div>
     <div class="overflow-y-auto flex-1 px-5 py-4 space-y-4">
 
@@ -3384,12 +3423,12 @@
 </div>
 
 <!-- Producto Modal -->
-<div class="modal-backdrop" id="modalProducto">
+<div class="modal-backdrop hidden" id="modalProducto">
   <div class="modal-box" style="padding:0;display:flex;flex-direction:column;max-height:92vh;overflow:hidden">
     <!-- Header -->
     <div class="flex items-center justify-between px-5 py-4 flex-shrink-0" style="border-bottom:1px solid #1e293b">
       <h2 id="modalProdTitle" class="font-bold text-base text-white">Nuevo Producto</h2>
-      <button onclick="MOS.closeModal('modalProducto')" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+      <button onclick="MOS.closeModal('modalProducto')" class="modal-close-x">×</button>
     </div>
     <input type="hidden" id="prodId">
     <input type="hidden" id="prodEstado" value="1">
@@ -3624,11 +3663,11 @@
 </div>
 
 <!-- Precio Modal -->
-<div class="modal-backdrop" id="modalPrecio">
+<div class="modal-backdrop hidden" id="modalPrecio">
   <div class="modal-box p-6">
     <div class="flex items-center justify-between mb-5">
       <h2 class="font-bold text-lg text-white">💰 Publicar Precio</h2>
-      <button onclick="MOS.closeModal('modalPrecio')" class="text-slate-400 hover:text-white text-xl">×</button>
+      <button onclick="MOS.closeModal('modalPrecio')" class="modal-close-x">×</button>
     </div>
     <input type="hidden" id="precioIdProducto">
     <div class="space-y-3">
@@ -3658,11 +3697,11 @@
 </div>
 
 <!-- Proveedor Modal -->
-<div class="modal-backdrop" id="modalProveedor">
+<div class="modal-backdrop hidden" id="modalProveedor">
   <div class="modal-box p-6">
     <div class="flex items-center justify-between mb-5">
       <h2 id="modalProvTitle" class="font-bold text-lg text-white">Nuevo Proveedor</h2>
-      <button onclick="MOS.closeModal('modalProveedor')" class="text-slate-400 hover:text-white text-xl">×</button>
+      <button onclick="MOS.closeModal('modalProveedor')" class="modal-close-x">×</button>
     </div>
     <input type="hidden" id="provId">
     <div class="grid grid-cols-2 gap-3">
@@ -3714,11 +3753,11 @@
 </div>
 
 <!-- Pago Modal -->
-<div class="modal-backdrop" id="modalPago">
+<div class="modal-backdrop hidden" id="modalPago">
   <div class="modal-box p-6">
     <div class="flex items-center justify-between mb-5">
       <h2 class="font-bold text-lg text-white">Registrar Pago</h2>
-      <button onclick="MOS.closeModal('modalPago')" class="text-slate-400 hover:text-white text-xl">×</button>
+      <button onclick="MOS.closeModal('modalPago')" class="modal-close-x">×</button>
     </div>
     <input type="hidden" id="pagoIdProveedor">
     <div class="space-y-3">
@@ -3748,11 +3787,11 @@
 
 <!-- Modal Estación -->
 <!-- Modal Zona -->
-<div class="modal-backdrop" id="modalZona">
+<div class="modal-backdrop hidden" id="modalZona">
   <div class="modal-box p-6">
     <div class="flex items-center justify-between mb-5">
       <h2 id="modalZonaTitle" class="font-bold text-lg text-white">Nueva Zona</h2>
-      <button onclick="MOS.closeModal('modalZona')" class="text-slate-400 hover:text-white text-xl">×</button>
+      <button onclick="MOS.closeModal('modalZona')" class="modal-close-x">×</button>
     </div>
     <input type="hidden" id="zonaId">
     <div class="grid grid-cols-2 gap-3">
@@ -3775,11 +3814,11 @@
   </div>
 </div>
 
-<div class="modal-backdrop" id="modalEstacion">
+<div class="modal-backdrop hidden" id="modalEstacion">
   <div class="modal-box p-6">
     <div class="flex items-center justify-between mb-5">
       <h2 id="modalEstTitle" class="font-bold text-lg text-white">Nueva Estación</h2>
-      <button onclick="MOS.closeModal('modalEstacion')" class="text-slate-400 hover:text-white text-xl">×</button>
+      <button onclick="MOS.closeModal('modalEstacion')" class="modal-close-x">×</button>
     </div>
     <input type="hidden" id="estId">
     <div class="grid grid-cols-2 gap-3">
@@ -3813,11 +3852,11 @@
 </div>
 
 <!-- Modal Impresora -->
-<div class="modal-backdrop" id="modalImpresora">
+<div class="modal-backdrop hidden" id="modalImpresora">
   <div class="modal-box p-6">
     <div class="flex items-center justify-between mb-5">
       <h2 id="modalImpTitle" class="font-bold text-lg text-white">Nueva Impresora</h2>
-      <button onclick="MOS.closeModal('modalImpresora')" class="text-slate-400 hover:text-white text-xl">×</button>
+      <button onclick="MOS.closeModal('modalImpresora')" class="modal-close-x">×</button>
     </div>
     <input type="hidden" id="impId">
     <div class="grid grid-cols-2 gap-3">
@@ -3850,11 +3889,11 @@
 </div>
 
 <!-- Modal Personal -->
-<div class="modal-backdrop" id="modalPersonal">
+<div class="modal-backdrop hidden" id="modalPersonal">
   <div class="modal-box p-6">
     <div class="flex items-center justify-between mb-5">
       <h2 id="modalPersTitle" class="font-bold text-lg text-white">Nuevo Operador</h2>
-      <button onclick="MOS.closeModal('modalPersonal')" class="text-slate-400 hover:text-white text-xl">×</button>
+      <button onclick="MOS.closeModal('modalPersonal')" class="modal-close-x">×</button>
     </div>
     <input type="hidden" id="persId">
     <input type="hidden" id="persAppOrigen" value="warehouseMos">
@@ -3884,11 +3923,11 @@
 </div>
 
 <!-- Modal Serie Documental -->
-<div class="modal-backdrop" id="modalSerie">
+<div class="modal-backdrop hidden" id="modalSerie">
   <div class="modal-box p-6">
     <div class="flex items-center justify-between mb-5">
       <h2 id="modalSerieTitle" class="font-bold text-lg text-white">Nueva Serie</h2>
-      <button onclick="MOS.closeModal('modalSerie')" class="text-slate-400 hover:text-white text-xl">×</button>
+      <button onclick="MOS.closeModal('modalSerie')" class="modal-close-x">×</button>
     </div>
     <input type="hidden" id="serieId">
     <div class="grid grid-cols-2 gap-3">
@@ -4112,14 +4151,14 @@
 </div><!-- /viewAnalitica -->
 
 <!-- ── Modal Ajuste de Precios ───────────────────────────── -->
-<div class="modal-backdrop" id="modalAjustePrecios">
+<div class="modal-backdrop hidden" id="modalAjustePrecios">
   <div class="modal-box p-6" style="max-width:480px">
     <div class="flex items-start justify-between mb-1">
       <div>
         <h2 class="font-bold text-lg text-white">Ajuste de presentaciones</h2>
         <p class="text-xs text-slate-500 mt-0.5">El precio base cambió. Revisa y confirma cada presentación.</p>
       </div>
-      <button onclick="MOS.closeModal('modalAjustePrecios')" class="text-slate-400 hover:text-white text-xl ml-4 shrink-0">×</button>
+      <button onclick="MOS.closeModal('modalAjustePrecios')" class="modal-close-x ml-4 shrink-0">×</button>
     </div>
     <!-- Precio base nuevo -->
     <div id="ajusteBaseInfo" class="flex items-center justify-between rounded-lg bg-indigo-900/20 border border-indigo-800/40 px-4 py-2.5 mb-4 mt-3">
@@ -4188,7 +4227,7 @@
         <h3 class="font-semibold text-slate-100 text-base">🚚 Cargadores</h3>
         <p class="text-xs text-slate-500"><span id="cargCount">0</span> cargadores registrados</p>
       </div>
-      <button onclick="MOS.closeModal('modalCargadores')" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+      <button onclick="MOS.closeModal('modalCargadores')" class="modal-close-x">×</button>
     </div>
     <div class="px-5 py-4 overflow-y-auto" style="flex:1">
       <button onclick="MOS.nuevoCargador()" class="btn-primary w-full mb-3">+ Nuevo cargador</button>
@@ -4202,7 +4241,7 @@
   <div class="modal-box p-0" style="max-width:480px;display:flex;flex-direction:column;max-height:92vh">
     <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
       <h3 id="ppModalTitle" class="font-semibold text-amber-400 text-base">📦 Producto del proveedor</h3>
-      <button onclick="MOS.closeModal('modalProvProducto')" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+      <button onclick="MOS.closeModal('modalProvProducto')" class="modal-close-x">×</button>
     </div>
     <div class="overflow-y-auto px-5 py-4 space-y-3" style="flex:1">
       <input type="hidden" id="ppId">
@@ -4246,7 +4285,7 @@
   <div class="modal-box" style="max-width:420px">
     <div class="flex items-center justify-between mb-3">
       <h3 class="font-semibold text-amber-400 text-base">⚠ Apagar producto</h3>
-      <button onclick="MOS.cerrarApagarBaseRevertir()" class="text-slate-400 hover:text-white text-xl leading-none">×</button>
+      <button onclick="MOS.cerrarApagarBaseRevertir()" class="modal-close-x">×</button>
     </div>
     <input type="hidden" id="apagarBaseId">
     <input type="hidden" id="apagarBaseSku">
@@ -4268,7 +4307,7 @@
 </div>
 
 <!-- Toast -->
-<div id="toast" class="hide fixed top-4 right-4 z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-xl text-white" style="background:#1e293b;border:1px solid #334155;max-width:320px;"></div>
+<div id="toast" class="hide fixed z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-xl text-white" style="background:#1e293b;border:1px solid #334155;max-width:320px;top:calc(env(safe-area-inset-top,0) + 1rem);right:calc(env(safe-area-inset-right,0) + 1rem);"></div>
 
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
