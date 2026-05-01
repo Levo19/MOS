@@ -7427,26 +7427,87 @@ const MOS = (() => {
         activa:        $('promoTogActiva').classList.contains('on')
       };
     }
-    if (_promoState.editando) params.idPromo = _promoState.editando;
+    const isEdit = !!_promoState.editando;
+    if (isEdit) params.idPromo = _promoState.editando;
+
+    // OPTIMISTIC: actualizar lista local + cerrar modal de inmediato
+    // Para GRUPO con modo TOTAL, convertir a unitario en local (igual que el server)
+    let valorPromoLocal = params.valorPromo || 0;
+    if (params.tipo === 'GRUPO' && params.valorModo === 'TOTAL' && params.cantMin > 0 && valorPromoLocal > 0) {
+      valorPromoLocal = valorPromoLocal / params.cantMin;
+    }
+    const tmpId = isEdit ? params.idPromo : ('PROMO_TMP_' + Date.now());
+    const localPromo = {
+      idPromo:       tmpId,
+      skuBase:       params.skuBase || '',
+      tipo:          params.tipo,
+      cantMin:       params.cantMin || 0,
+      valorPromo:    valorPromoLocal,
+      valorModo:     params.valorModo || 'UNITARIO',
+      items:         params.items || [],
+      descripcion:   params.descripcion || '',
+      vigenciaDesde: params.vigenciaDesde || '',
+      vigenciaHasta: params.vigenciaHasta || '',
+      activa:        !!params.activa,
+      notas:         '',
+      _tmp:          !isEdit
+    };
+    if (isEdit) {
+      const idx = _promoState.lista.findIndex(p => p.idPromo === params.idPromo);
+      if (idx >= 0) _promoState.lista[idx] = Object.assign({}, _promoState.lista[idx], localPromo);
+    } else {
+      _promoState.lista.unshift(localPromo);
+    }
+    _promoSaveCache(_promoState.lista);
+    _renderPromoLista();
+    promoVolverLista();   // cierra modal
+    toast(isEdit ? 'Promoción actualizada ✓' : 'Promoción creada ✓', 'ok');
+
+    // Sync en background
     try {
-      const action = _promoState.editando ? 'actualizarPromocion' : 'crearPromocion';
-      await API.post(action, params);
-      toast(_promoState.editando ? 'Promoción actualizada ✓' : 'Promoción creada ✓', 'ok');
-      await loadPromociones();
+      const action = isEdit ? 'actualizarPromocion' : 'crearPromocion';
+      const res = await API.post(action, params);
+      // Server devuelve idPromo real → actualizar el tmp en cache
+      if (!isEdit && res && res.idPromo) {
+        const item = _promoState.lista.find(p => p.idPromo === tmpId);
+        if (item) { item.idPromo = res.idPromo; item._tmp = false; _promoSaveCache(_promoState.lista); }
+      }
+      // Refresh fresco en background (sin bloquear UI)
+      loadPromociones().catch(() => {});
     } catch(e) {
-      errEl.textContent = e.message;
-      errEl.style.display = 'block';
+      toast('Error de sincronización: ' + e.message, 'error');
+      // Revertir
+      if (!isEdit) {
+        _promoState.lista = _promoState.lista.filter(p => p.idPromo !== tmpId);
+      }
+      _promoSaveCache(_promoState.lista);
+      _renderPromoLista();
+      // Reabrir el modal para que pueda corregir
+      if (!isEdit) promoNuevoForm();
     }
   }
 
   async function promoEliminar() {
     if (!_promoState.editando) return;
     if (!confirm('¿Eliminar esta promoción?')) return;
+    const idPromo = _promoState.editando;
+    // OPTIMISTIC: cerrar modal + remover de lista local
+    const backup = _promoState.lista.slice();
+    _promoState.lista = _promoState.lista.filter(p => p.idPromo !== idPromo && p.skuBase !== idPromo);
+    _promoSaveCache(_promoState.lista);
+    _renderPromoLista();
+    promoVolverLista();
+    toast('Promoción eliminada', 'ok');
     try {
-      await API.post('eliminarPromocion', { idPromo: _promoState.editando, skuBase: _promoState.editando });
-      toast('Promoción eliminada', 'ok');
-      await loadPromociones();
-    } catch(e) { toast('Error: ' + e.message, 'error'); }
+      await API.post('eliminarPromocion', { idPromo, skuBase: idPromo });
+      loadPromociones().catch(() => {});
+    } catch(e) {
+      // Revertir
+      _promoState.lista = backup;
+      _promoSaveCache(_promoState.lista);
+      _renderPromoLista();
+      toast('Error de sincronización: ' + e.message, 'error');
+    }
   }
 
   // ── PUBLIC API ───────────────────────────────────────────────
