@@ -29,6 +29,38 @@ const MOS = (() => {
   function _saveSession(s)    { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); }
   function _clearSession()    { localStorage.removeItem(SESSION_KEY); }
 
+  // ── AUDIT CONTEXT — quién/cuándo/dónde para auditoría ──────────
+  function _getOrCreateDeviceId() {
+    let id = localStorage.getItem('mos_deviceId');
+    if (!id) {
+      id = (crypto && crypto.randomUUID) ? crypto.randomUUID()
+         : 'DEV-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+      localStorage.setItem('mos_deviceId', id);
+    }
+    return id;
+  }
+  function _generaIdSesion() {
+    return 'SES-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+  }
+  // Exposición global para que api.js pueda leer el contexto en cada POST
+  window.__MOS_AUDIT = window.__MOS_AUDIT || {
+    app:           'MOS',
+    idDispositivo: _getOrCreateDeviceId(),
+    idSesion:      null,    // se setea al login
+    usuario:       null,
+    idPersonal:    null,
+    rol:           null,
+    userAgent:     (navigator.userAgent || '').slice(0, 200)
+  };
+  function _refreshAuditCtx() {
+    const a = window.__MOS_AUDIT;
+    a.usuario    = S.session?.nombre || null;
+    a.idPersonal = S.session?.idPersonal || null;
+    a.rol        = S.session?.rol || null;
+    a.idSesion   = S.session?.idSesion || a.idSesion || null;
+    a.url        = (window.location && window.location.hash) || '';
+  }
+
   // ── HELPERS ─────────────────────────────────────────────────
   const $  = id => document.getElementById(id);
   const fmtMoney = v => 'S/. ' + parseFloat(v || 0).toFixed(2);
@@ -129,8 +161,11 @@ const MOS = (() => {
     // Session check
     const saved = _getSession();
     if (saved && saved.idPersonal && saved.nombre) {
+      // Si es sesión vieja sin idSesion, generar uno
+      if (!saved.idSesion) { saved.idSesion = _generaIdSesion(); _saveSession(saved); }
       S.session = saved;
       _applySession();
+      _refreshAuditCtx();
       const overlay = $('loginOverlay');
       if (overlay) overlay.classList.add('hidden');
       nav('dashboard');
@@ -325,9 +360,10 @@ const MOS = (() => {
           _pinErrorAnim();
           return;
         }
-        S.session = { idPersonal: userId, nombre: res.nombre, rol: res.rol };
+        S.session = { idPersonal: userId, nombre: res.nombre, rol: res.rol, idSesion: _generaIdSesion() };
         _saveSession(S.session);
         _applySession();
+        _refreshAuditCtx();
         // Mostrar welcome screen + iniciar carga en background
         _showWelcome(res.nombre, res.rol);
         $('loginOverlay')?.classList.add('hidden');
@@ -3898,21 +3934,44 @@ const MOS = (() => {
         const colorBorder = a.urgencia === 'CRITICA' ? 'border-rose-500/40' : a.urgencia === 'ALTA' ? 'border-amber-500/40' : 'border-slate-700';
         const colorTipo   = a.urgencia === 'CRITICA' ? 'text-rose-400' : a.urgencia === 'ALTA' ? 'text-amber-400' : 'text-slate-400';
         let detalleExtra = '';
-        // MOD_NO_AUTORIZADA → mostrar accion, tabla, source, params
+        // MOD_NO_AUTORIZADA → mostrar accion, tabla, source, params, contexto auditoría
         if (a.tipo === 'MOD_NO_AUTORIZADA' && a.datos) {
           const d = a.datos;
           let paramsObj = {};
           try { paramsObj = typeof d.params === 'string' ? JSON.parse(d.params) : (d.params || {}); } catch(_) { paramsObj = {}; }
           const idProd = paramsObj.idProducto || paramsObj.codigoBarra || paramsObj.idEquiv || '—';
-          const camposEditados = Object.keys(paramsObj).filter(k => k !== '_source' && k !== 'idProducto' && k !== 'idEquiv').join(', ') || '—';
+          const camposEditados = Object.keys(paramsObj).filter(k => k !== '_source' && k !== '_audit' && k !== 'idProducto' && k !== 'idEquiv').join(', ') || '—';
+          // Contexto auditoría
+          const usuario = d.usuario ? `${d.usuario} (${d.rol || 'sin rol'})` : '— sin sesión —';
+          const idSesion = d.idSesion || '—';
+          const dispositivo = d.idDispositivo ? d.idDispositivo.slice(0, 16) + '…' : '— sin device ID —';
+          const appOrigen = d.appOrigen || '—';
+          // userAgent simplificado (extrae plataforma/browser)
+          const ua = d.userAgent || '';
+          const uaSimple = ua.match(/(iPhone|iPad|Android|Windows|Mac|Linux)[^;)]*/)?.[0]?.slice(0, 40) || (ua ? ua.slice(0, 40) : '—');
+          const tsApp = d.timestampApp ? new Date(d.timestampApp).toLocaleString() : '—';
           detalleExtra = `
-            <div class="text-[11px] text-slate-400 mt-2 space-y-0.5 font-mono">
-              <div>📋 <span class="text-slate-500">Acción:</span> ${d.accion || '—'} en ${d.tabla || '—'}</div>
-              <div>🔍 <span class="text-slate-500">Origen reportado:</span> <span class="text-rose-300">${d.source || 'sin _source'}</span></div>
-              <div>🎯 <span class="text-slate-500">Producto/registro:</span> ${idProd}</div>
-              <div>✏️ <span class="text-slate-500">Campos que intentó cambiar:</span> ${camposEditados}</div>
+            <div class="mt-2 space-y-2">
+              <!-- Qué intentó hacer -->
+              <div class="text-[11px] font-mono space-y-0.5" style="background:rgba(244,63,94,.05);border-left:2px solid #f43f5e;padding:6px 8px;border-radius:4px">
+                <div class="text-rose-300 font-semibold">⛔ Operación bloqueada</div>
+                <div><span class="text-slate-500">Acción:</span> <span class="text-slate-300">${d.accion || '—'} en ${d.tabla || '—'}</span></div>
+                <div><span class="text-slate-500">Origen reportado:</span> <span class="text-rose-300">${d.source || 'sin _source'}</span></div>
+                <div><span class="text-slate-500">Producto/registro:</span> <span class="text-slate-300">${idProd}</span></div>
+                <div><span class="text-slate-500">Campos:</span> <span class="text-slate-300">${camposEditados}</span></div>
+              </div>
+              <!-- Quién / Dónde / Cuándo -->
+              <div class="text-[11px] font-mono space-y-0.5" style="background:rgba(99,102,241,.05);border-left:2px solid #6366f1;padding:6px 8px;border-radius:4px">
+                <div class="text-indigo-300 font-semibold">🔎 Contexto del intento</div>
+                <div><span class="text-slate-500">👤 Usuario:</span> <span class="text-slate-300">${usuario}</span></div>
+                <div><span class="text-slate-500">🔑 idSesión:</span> <span class="text-slate-300">${idSesion}</span></div>
+                <div><span class="text-slate-500">📱 Dispositivo:</span> <span class="text-slate-300">${dispositivo}</span></div>
+                <div><span class="text-slate-500">🌐 App origen:</span> <span class="text-slate-300">${appOrigen}</span></div>
+                <div><span class="text-slate-500">💻 Plataforma:</span> <span class="text-slate-300">${uaSimple}</span></div>
+                <div><span class="text-slate-500">⏰ Hora cliente:</span> <span class="text-slate-300">${tsApp}</span></div>
+              </div>
             </div>
-            <div class="text-[10px] text-slate-600 mt-1 italic">💡 Si reconoces la acción (precio, equivalencia, etc.) probablemente venga de una pestaña/dispositivo con la PWA antigua. Recarga todos los dispositivos y marca la alerta como resuelta.</div>
+            <div class="text-[10px] text-slate-600 mt-2 italic">💡 Si reconoces el usuario y la acción (cambió un precio, etc.) seguramente venga de una pestaña/dispositivo con la PWA antigua. Recárgala y marca la alerta como resuelta. Si NO reconoces nada, investigar.</div>
           `;
         } else if (a.datos && a.datos.primeras) {
           // AUDIT_INTEGRIDAD → primeras 5 anomalías

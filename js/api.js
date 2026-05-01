@@ -19,9 +19,12 @@ const API = (() => {
       if (!d.ok) throw new Error(d.error || 'Error del servidor');
       return d.data;
     } else {
+      // Inyectar contexto de auditoría (quién/cuándo/dónde) en cada POST
+      const audit = window.__MOS_AUDIT ? Object.assign({}, window.__MOS_AUDIT, { timestamp: new Date().toISOString() }) : null;
+      const body = audit && !params._audit ? Object.assign({ _audit: audit }, params) : params;
       const res = await fetch(url, {
         method:  'POST',
-        body:    JSON.stringify(params),
+        body:    JSON.stringify(body),
         headers: { 'Content-Type': 'text/plain' }
       });
       const d = await res.json();

@@ -18,15 +18,33 @@ var _SOURCES_AUTORIZADOS = [
 function _validarSource(params, accion, tabla) {
   var src = params && params._source;
   if (_SOURCES_AUTORIZADOS.indexOf(src) >= 0) return null;
-  // No autorizado: registrar alerta y devolver error
+  // No autorizado: registrar alerta CON contexto de auditoría
   try {
+    var audit = (params && params._audit) || {};
+    var appOrigen = audit.app || 'MOS';
     _registrarAlerta(
       'MOD_NO_AUTORIZADA',
       'CRITICA',
-      'Intento de ' + accion + ' en ' + tabla + ' desde origen ' + (src || 'DESCONOCIDO'),
-      'MOS',
-      JSON.stringify({ accion: accion, tabla: tabla, source: src || null,
-                       params: _safePreviewParams(params), timestamp: new Date().toISOString() })
+      'Intento de ' + accion + ' en ' + tabla + ' desde origen ' + (src || 'DESCONOCIDO') +
+        (audit.usuario ? ' · usuario: ' + audit.usuario : ''),
+      appOrigen,
+      JSON.stringify({
+        accion:        accion,
+        tabla:         tabla,
+        source:        src || null,
+        // Contexto de quién/cuándo/dónde
+        usuario:       audit.usuario || null,
+        idPersonal:    audit.idPersonal || null,
+        rol:           audit.rol || null,
+        idSesion:      audit.idSesion || null,
+        idDispositivo: audit.idDispositivo || null,
+        appOrigen:     appOrigen,
+        userAgent:     audit.userAgent || null,
+        url:           audit.url || null,
+        timestampApp:  audit.timestamp || null,
+        timestampSrv:  new Date().toISOString(),
+        params:        _safePreviewParams(params)
+      })
     );
   } catch(_){}
   return { ok: false, error: 'Operacion bloqueada: origen no autorizado (' + (src || 'sin _source') + ')' };
