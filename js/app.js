@@ -785,7 +785,7 @@ const MOS = (() => {
       // ── Actualizar dashboard KPI si visible ───────────────
       const kpiProd = $('dashTotalProductos');
       if (kpiProd) {
-        const activos = productos.filter(p => !p.estado || String(p.estado) === '1').length;
+        const activos = productos.filter(p => _isProdActivo(p)).length;
         _setVal('dashTotalProductos', activos, kpiProd.textContent !== String(activos));
       }
 
@@ -816,8 +816,7 @@ const MOS = (() => {
           }
           // Si cambió estado (activo/inactivo), actualizar clase de la card
           if (cardEl) {
-            const activo = !p.estado || String(p.estado) === '1';
-            cardEl.classList.toggle('cat-inactive', !activo);
+            cardEl.classList.toggle('cat-inactive', !_isProdActivo(p));
           }
         });
 
@@ -1241,7 +1240,7 @@ const MOS = (() => {
         const isEnvasable = String(g.base.esEnvasable) === '1';
         const hasConPres  = g.pres.length > 0;
         const isDeriv     = !!(g.base.codigoProductoBase);
-        const isInactivo  = !(!g.base.estado || String(g.base.estado) === '1');
+        const isInactivo  = !_isProdActivo(g.base);
         const ok = (_tipos.has('envasable') && isEnvasable) ||
                    (_tipos.has('conPres')   && hasConPres)  ||
                    (_tipos.has('derivado')  && isDeriv)     ||
@@ -1284,7 +1283,7 @@ const MOS = (() => {
     container.innerHTML = result.map(g => {
       const { base, pres, score } = g;
       const eid   = CSS.escape(base.idProducto);
-      const activo = !base.estado || String(base.estado) === '1';
+      const activo = _isProdActivo(base);
       const hlDesc = _highlight(base.descripcion || '—', words);
 
       // Badges
@@ -1343,7 +1342,7 @@ const MOS = (() => {
               ${presInfo.map(({ d, factor, precioActual, alerts }) => {
                 const hlD       = _highlight(d.descripcion || d.idProducto, words);
                 const hasAlert  = alerts.length > 0;
-                const presActivo = !d.estado || String(d.estado) === '1';
+                const presActivo = _isProdActivo(d);
                 const precioClass = hasAlert ? 'pres-price-err' : 'pres-price-ok';
                 const alertHtml = alerts.map(a =>
                   `<span class="pres-alert-pill cat-alert-${a.tipo}"><span class="cat-alert-tag">${a.tag}</span>${a.sufijo}</span>`
@@ -3134,6 +3133,17 @@ const MOS = (() => {
     return v === 1 || v === '1' || v === true || v === 'true' || v === 'Sí';
   }
 
+  // Producto activo si estado NO es explícitamente 0/'0'/false.
+  // Importante: Sheets convierte '0' en número 0; el check viejo usaba !p.estado,
+  // que con estado=0 (número) daba true incorrectamente — producto se veía activo.
+  function _isProdActivo(p) {
+    if (!p) return false;
+    const e = p.estado;
+    if (e === 0 || e === '0' || e === false) return false;
+    if (typeof e === 'string' && e.toLowerCase() === 'false') return false;
+    return true;
+  }
+
   function _poblarEnvasablesSelect() {
     const sel = $('prodCodigoProductoBase');
     if (!sel) return;
@@ -3309,7 +3319,7 @@ const MOS = (() => {
       $('prodUnidad').value      = p.unidad        || 'UNIDAD';
 
       // Estado
-      const activo = !p.estado || String(p.estado) === '1';
+      const activo = _isProdActivo(p);
       $('prodEstado').value = activo ? '1' : '0';
       if (toggle) { toggle.classList.toggle('on', activo); toggle.querySelector('.prod-toggle-lbl').textContent = activo ? 'Activo' : 'Inactivo'; }
 
@@ -3456,7 +3466,7 @@ const MOS = (() => {
   async function toggleProductoActivo(idProducto, esBase) {
     const p = S.productos.find(x => x.idProducto === idProducto);
     if (!p) return;
-    const activoActual = !p.estado || String(p.estado) === '1';
+    const activoActual = _isProdActivo(p);
 
     if (esBase && activoActual) {
       // Apagar base con confirmación: flip visual inmediato + abrir modal
@@ -3477,7 +3487,7 @@ const MOS = (() => {
       const skuBase = p.skuBase || idProducto;
       S.productos.forEach(pp => {
         if ((pp.skuBase || pp.idProducto) === skuBase && pp.idProducto !== idProducto) {
-          if (String(pp.estado) !== '1') {
+          if (!_isProdActivo(pp)) {
             pp.estado = '1';
             _actualizarVisualProducto(pp.idProducto, true);
           }
@@ -3506,7 +3516,7 @@ const MOS = (() => {
       (p.skuBase || p.idProducto) === skuBase && p.idProducto !== baseProd.idProducto
     );
     await Promise.all(presentaciones.map(async pp => {
-      if (String(pp.estado) === '1' || !pp.estado) return;
+      if (_isProdActivo(pp)) return;
       await API.post('actualizarProducto', { idProducto: pp.idProducto, estado: '1' });
       pp.estado = '1';
     }));
