@@ -224,7 +224,7 @@ function getStockUnificado(params) {
     return { ok: false, error: 'Requiere skuBase o idProducto' };
   }
   var key = 'stockUnif_' + (params.skuBase || params.idProducto) + '_' + (parseInt(params.rangoDias) || 7);
-  return _almCached(key, 180, params, function() {
+  return _almCached(key, 60, params, function() {  // TTL 60s para actualización rápida
     return _getStockUnificadoImpl(params);
   });
 }

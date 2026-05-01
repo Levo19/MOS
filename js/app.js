@@ -2567,24 +2567,31 @@ const MOS = (() => {
   }
 
   // ── ALMACÉN: STOCK detalle modal (WH + zonas) ──
-  async function almAbrirStockDetalle(idProducto) {
+  async function almAbrirStockDetalle(idProducto, forceRefresh) {
     if (!idProducto) return;
+    S._stockDetCurrentId = idProducto;
     openModal('modalStockDetalle');
     const body = $('stockDetBody');
     if (body) body.innerHTML = '<div class="skel h-32 rounded"></div>';
     try {
-      const r = await API.get('getStockUnificado', { idProducto });
+      const params = { idProducto };
+      if (forceRefresh) params._refresh = 'true';
+      const r = await API.get('getStockUnificado', params);
       if (!r) throw new Error('Sin respuesta');
       const p = r.producto || {};
       $('stockDetTitle').textContent = '📦 ' + (p.descripcion || idProducto);
       $('stockDetSku').textContent = 'SKU ' + (p.skuBase || '—') + (p.codigoBarra ? ' · ▌ ' + p.codigoBarra : '');
       const zonasHtml = (r.zonas || []).map(z => {
-        // Stock label: número o "Sin stock"
-        const stockColor = z.sinStock ? 'text-slate-600' :
+        // Stock display con manejo de NEGATIVO (anomalía) vs CERO (sin stock) vs positivo
+        const isNeg = z.cantidad < 0;
+        const stockColor = isNeg ? 'text-rose-500' :
+                          z.sinStock ? 'text-slate-600' :
                           (z.diasParaAcabar !== null && z.diasParaAcabar < 7)  ? 'text-rose-400' :
                           (z.diasParaAcabar !== null && z.diasParaAcabar < 14) ? 'text-amber-400' :
                           'text-slate-200';
-        const stockDisplay = z.sinStock ? 'Sin stock' : (z.cantidad + 'u');
+        const stockDisplay = isNeg ? `⚠ ${z.cantidad}u` :
+                             z.sinStock ? 'Sin stock' :
+                             (z.cantidad + 'u');
         // Rotación + días para acabar
         let detailLine = '';
         if (z.sinVentas) {
@@ -2644,25 +2651,44 @@ const MOS = (() => {
             <span>mín ${minimo}u</span><span>máx ${maximo}u</span>
           </div>
           <div class="text-xs text-slate-400 mt-3 pt-2 border-t border-slate-800">
-            ${total.diasParaAcabar !== null
-              ? `⏰ Al ritmo actual alcanza para <span class="${total.diasParaAcabar < 7 ? 'text-rose-400' : total.diasParaAcabar < 14 ? 'text-amber-400' : 'text-emerald-400'} font-semibold">${total.diasParaAcabar} días</span>`
-              : (total.cantidad === 0 ? '⚠ <span class="text-rose-400">Sin stock en ningún lado</span>' : '⏸ <span class="text-slate-500">Sin ventas registradas en ' + (total.rangoDiasConsultado || 7) + 'd</span>')}
+            ${(() => {
+              if (total.cantidad < 0) {
+                return '🚨 <span class="text-rose-500 font-semibold">Stock negativo (' + total.cantidad + 'u)</span> — discrepancia entre lo recibido y lo vendido. Auditar urgente.';
+              }
+              if (total.cantidad === 0) {
+                return total.rotacionDia > 0
+                  ? '🚨 <span class="text-rose-400">Sin stock pero hay ventas activas</span> — reposición urgente'
+                  : '⚠ <span class="text-slate-500">Sin stock en ningún lado · Sin ventas tampoco</span>';
+              }
+              if (total.diasParaAcabar !== null) {
+                const cls = total.diasParaAcabar < 7 ? 'text-rose-400' : total.diasParaAcabar < 14 ? 'text-amber-400' : 'text-emerald-400';
+                return `⏰ Al ritmo actual alcanza para <span class="${cls} font-semibold">${total.diasParaAcabar} días</span>`;
+              }
+              return '⏸ <span class="text-slate-500">Stock estable, sin ventas en ' + (total.rangoDiasConsultado || 7) + 'd</span>';
+            })()}
           </div>
         </div>
         <!-- WH -->
         <div>
           <div class="text-xs text-slate-500 uppercase mb-2">🏭 Almacén central</div>
-          <div class="card-sm p-3">
+          <div class="card-sm p-3 ${(r.wh || {}).cantidad < 0 ? 'border-rose-500/40' : ''}">
             <div class="flex items-center justify-between">
               <div class="min-w-0 flex-1">
                 <div class="text-sm text-slate-200">Stock disponible</div>
                 <div class="text-xs text-slate-500 mt-0.5">
-                  ${total.rotacionDia > 0
-                    ? 'Despacha aprox. ' + total.rotacionDia + '/d (= venta total zonas)'
-                    : 'Sin movimiento de salida en ' + (total.rangoDiasConsultado || 7) + 'd'}
+                  ${(r.wh || {}).cantidad < 0
+                    ? '<span class="text-rose-400">⚠ Stock negativo: vendiste/saliste más de lo recibido</span>'
+                    : (total.rotacionDia > 0
+                      ? 'Despacha aprox. ' + total.rotacionDia + '/d (= venta total zonas)'
+                      : 'Sin movimiento de salida en ' + (total.rangoDiasConsultado || 7) + 'd')}
                 </div>
+                ${((r.wh && r.wh.detalle) || []).length > 1 ? `<div class="text-[10px] text-slate-600 font-mono mt-1">${r.wh.detalle.length} entradas en WH STOCK</div>` : ''}
               </div>
-              <div class="text-lg font-bold ${(r.wh || {}).cantidad > 0 ? 'text-blue-400' : 'text-slate-600'} shrink-0">${(r.wh || {}).cantidad > 0 ? ((r.wh || {}).cantidad + 'u') : 'Sin stock'}</div>
+              <div class="text-lg font-bold ${(r.wh || {}).cantidad > 0 ? 'text-blue-400' : (r.wh || {}).cantidad < 0 ? 'text-rose-500' : 'text-slate-600'} shrink-0">
+                ${(r.wh || {}).cantidad > 0 ? ((r.wh || {}).cantidad + 'u') :
+                  (r.wh || {}).cantidad < 0 ? ('⚠ ' + (r.wh || {}).cantidad + 'u') :
+                  'Sin stock'}
+              </div>
             </div>
           </div>
         </div>
@@ -2684,6 +2710,12 @@ const MOS = (() => {
     }
   }
   function cerrarStockDetalle() { closeModal('modalStockDetalle'); }
+
+  async function almRefreshStockDetalle() {
+    if (!S._stockDetCurrentId) return;
+    toast('Refrescando datos…', 'info');
+    await almAbrirStockDetalle(S._stockDetCurrentId, true);
+  }
 
   function renderStockTable() {
     const list = $('almStockList');
@@ -8330,7 +8362,7 @@ const MOS = (() => {
     abrirModalPrecio, publicarPrecio,
     setAlmTab,
     almLoadResumen, almRefreshResumen, almFiltrarStock,
-    almLoadOps, almLoadZonas, almAbrirStockDetalle, cerrarStockDetalle,
+    almLoadOps, almLoadZonas, almAbrirStockDetalle, cerrarStockDetalle, almRefreshStockDetalle,
     _almGenerarPedidoFromInsight, _almPickProveedor, cerrarSelProveedor,
     cerrarModalPedido, pedidoBuscarItem, pedidoAgregarItem,
     pedidoQuitarItem, pedidoCambiarQty, guardarPedido,

@@ -4550,11 +4550,12 @@
 <!-- Modal: Stock unificado (WH + zonas) -->
 <div id="modalStockDetalle" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.cerrarStockDetalle()">
   <div class="modal-box p-0" style="max-width:540px;display:flex;flex-direction:column;max-height:92vh">
-    <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
+    <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0 gap-2" style="border-bottom:1px solid #1e293b">
       <div class="min-w-0 flex-1">
         <h3 id="stockDetTitle" class="font-semibold text-emerald-400 text-base truncate">📦 Detalle de stock</h3>
         <p id="stockDetSku" class="text-xs text-slate-500 mt-0.5 font-mono"></p>
       </div>
+      <button onclick="MOS.almRefreshStockDetalle()" class="btn-ghost text-xs px-2 py-1 shrink-0" title="Refrescar (ignora cache)">↺</button>
       <button onclick="MOS.cerrarStockDetalle()" class="modal-close-x">×</button>
     </div>
     <div id="stockDetBody" class="overflow-y-auto px-5 py-4 space-y-4" style="flex:1"></div>
