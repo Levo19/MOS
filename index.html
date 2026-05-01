@@ -2349,7 +2349,10 @@
             <h3 class="font-semibold text-sm text-slate-200">🛡️ Integridad de Catálogo</h3>
             <p class="text-xs text-slate-500 mt-0.5">PRODUCTOS_MASTER y EQUIVALENCIAS están protegidas. Solo el modal autorizado puede modificarlas. Cualquier escritura desde origen desconocido se bloquea y registra alerta.</p>
           </div>
-          <button class="btn-primary text-xs px-3 py-1.5 shrink-0" onclick="MOS.auditCorrer()">🔍 Auditar ahora</button>
+          <div class="flex gap-2 shrink-0">
+            <button class="btn-ghost text-xs px-3 py-1.5" onclick="MOS.auditResolverTodas()" title="Marcar todas como resueltas (no las elimina, solo las archiva)">🧹 Resolver todas</button>
+            <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.auditCorrer()">🔍 Auditar ahora</button>
+          </div>
         </div>
         <div id="auditResumen" class="card-sm p-4 mb-3 text-sm text-slate-400">Cargando…</div>
         <div id="auditAlertas" class="space-y-2"></div>

@@ -1827,7 +1827,7 @@ const MOS = (() => {
     // API en paralelo en background
     try {
       await Promise.all(updates.map(u =>
-        API.post('publicarPrecio', { idProducto: u.idProducto, precioNuevo: u.precio })
+        API.post('publicarPrecio', { _source: 'MOS_MODAL_PRECIO', idProducto: u.idProducto, precioNuevo: u.precio })
       ));
       const n = updates.length;
       toast(n > 1 ? `${n} precios actualizados` : 'Precio actualizado', 'ok');
@@ -1876,7 +1876,7 @@ const MOS = (() => {
 
     try {
       await Promise.all(updates.map(u =>
-        API.post('publicarPrecio', { idProducto: u.idProducto, precioNuevo: u.precio })
+        API.post('publicarPrecio', { _source: 'MOS_MODAL_PRECIO', idProducto: u.idProducto, precioNuevo: u.precio })
           .then(() => {
             const p = S.productos.find(x => x.idProducto === u.idProducto);
             if (p) p.precioVenta = u.precio;
@@ -3616,7 +3616,7 @@ const MOS = (() => {
 
   async function toggleEquivActivo(idEquiv, skuBase, nuevoActivo) {
     try {
-      await API.post('actualizarEquivalencia', { idEquiv, activo: nuevoActivo });
+      await API.post('actualizarEquivalencia', { _source: 'MOS_EQUIV_MODAL', idEquiv, activo: nuevoActivo });
       await _loadEquivModal(skuBase);
       renderCatalogo();
     } catch(e) {
@@ -3897,9 +3897,29 @@ const MOS = (() => {
       cont.innerHTML = alertas.map(a => {
         const colorBorder = a.urgencia === 'CRITICA' ? 'border-rose-500/40' : a.urgencia === 'ALTA' ? 'border-amber-500/40' : 'border-slate-700';
         const colorTipo   = a.urgencia === 'CRITICA' ? 'text-rose-400' : a.urgencia === 'ALTA' ? 'text-amber-400' : 'text-slate-400';
-        const detalleExtra = a.datos && a.datos.primeras
-          ? '<div class="text-[10px] text-slate-500 mt-2 font-mono whitespace-pre-wrap">' + (a.datos.primeras || []).slice(0, 5).map(p => '· ' + (p.detalle || JSON.stringify(p))).join('\n') + '</div>'
-          : '';
+        let detalleExtra = '';
+        // MOD_NO_AUTORIZADA → mostrar accion, tabla, source, params
+        if (a.tipo === 'MOD_NO_AUTORIZADA' && a.datos) {
+          const d = a.datos;
+          let paramsObj = {};
+          try { paramsObj = typeof d.params === 'string' ? JSON.parse(d.params) : (d.params || {}); } catch(_) { paramsObj = {}; }
+          const idProd = paramsObj.idProducto || paramsObj.codigoBarra || paramsObj.idEquiv || '—';
+          const camposEditados = Object.keys(paramsObj).filter(k => k !== '_source' && k !== 'idProducto' && k !== 'idEquiv').join(', ') || '—';
+          detalleExtra = `
+            <div class="text-[11px] text-slate-400 mt-2 space-y-0.5 font-mono">
+              <div>📋 <span class="text-slate-500">Acción:</span> ${d.accion || '—'} en ${d.tabla || '—'}</div>
+              <div>🔍 <span class="text-slate-500">Origen reportado:</span> <span class="text-rose-300">${d.source || 'sin _source'}</span></div>
+              <div>🎯 <span class="text-slate-500">Producto/registro:</span> ${idProd}</div>
+              <div>✏️ <span class="text-slate-500">Campos que intentó cambiar:</span> ${camposEditados}</div>
+            </div>
+            <div class="text-[10px] text-slate-600 mt-1 italic">💡 Si reconoces la acción (precio, equivalencia, etc.) probablemente venga de una pestaña/dispositivo con la PWA antigua. Recarga todos los dispositivos y marca la alerta como resuelta.</div>
+          `;
+        } else if (a.datos && a.datos.primeras) {
+          // AUDIT_INTEGRIDAD → primeras 5 anomalías
+          detalleExtra = '<div class="text-[10px] text-slate-500 mt-2 font-mono whitespace-pre-wrap">'
+            + (a.datos.primeras || []).slice(0, 5).map(p => '· ' + (p.detalle || JSON.stringify(p))).join('\n')
+            + '</div>';
+        }
         const fechaStr = a.fecha ? new Date(a.fecha).toLocaleString() : '';
         return `
           <div class="card-sm border ${colorBorder} p-3">
@@ -3943,6 +3963,20 @@ const MOS = (() => {
     if (!idAlerta) return;
     try {
       await API.post('resolverAlertaAuditoria', { idAlerta });
+      await renderIntegridad();
+      _auditCheckBanner();
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  async function auditResolverTodas() {
+    try {
+      const r = await API.get('getAuditoriaIntegridad', {});
+      const data = (r && r.data) ? r.data : r;
+      const alertas = (data && data.alertas) || [];
+      if (!alertas.length) { toast('No hay alertas activas', 'info'); return; }
+      if (!confirm('¿Marcar las ' + alertas.length + ' alertas como resueltas?')) return;
+      await Promise.all(alertas.map(a => API.post('resolverAlertaAuditoria', { idAlerta: a.idAlerta }).catch(() => {})));
+      toast(alertas.length + ' alertas archivadas', 'ok');
       await renderIntegridad();
       _auditCheckBanner();
     } catch(e) { toast('Error: ' + e.message, 'error'); }
@@ -7677,7 +7711,7 @@ const MOS = (() => {
     abrirModalPago, guardarPago, abrirModalPedido,
     // Config
     setCfgTab,
-    auditCorrer, auditResolver, renderIntegridad,
+    auditCorrer, auditResolver, auditResolverTodas, renderIntegridad,
     abrirModalZona, guardarZona,
     abrirModalEstacion, guardarEstacion,
     abrirModalImpresora, guardarImpresora,
