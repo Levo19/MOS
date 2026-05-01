@@ -2334,18 +2334,37 @@ const MOS = (() => {
 
   // ── ALMACÉN: RESUMEN (KPIs + insights + alertas operativas) ──
   async function almLoadResumen() {
-    try {
-      const [dashRes, insightsRes, alertasRes] = await Promise.allSettled([
-        API.get('getDashboardAlmacen', {}),
-        API.get('getInsightsStock', { dias: 30 }),
-        API.get('getAlertasOperativas', {})
-      ]);
-      if (dashRes.status === 'fulfilled') _almRenderKPIs(dashRes.value || {});
-      if (insightsRes.status === 'fulfilled') _almRenderInsights((insightsRes.value || {}).insights || []);
-      if (alertasRes.status === 'fulfilled') _almRenderAlertasOps((alertasRes.value || {}).alertas || []);
-    } catch(e) {
-      console.warn('[almLoadResumen] error:', e);
-    }
+    const [dashRes, insightsRes, alertasRes] = await Promise.allSettled([
+      API.get('getDashboardAlmacen', {}),
+      API.get('getInsightsStock', { dias: 30 }),
+      API.get('getAlertasOperativas', {})
+    ]);
+    // KPIs
+    if (dashRes.status === 'fulfilled') _almRenderKPIs(dashRes.value || {});
+    else _almRenderKPIsError(dashRes.reason);
+    // Insights
+    if (insightsRes.status === 'fulfilled') _almRenderInsights((insightsRes.value || {}).insights || []);
+    else _almRenderInsightsError(insightsRes.reason);
+    // Alertas
+    if (alertasRes.status === 'fulfilled') _almRenderAlertasOps((alertasRes.value || {}).alertas || []);
+    else _almRenderAlertasOpsError(alertasRes.reason);
+  }
+
+  function _almRenderKPIsError(err) {
+    const msg = err && err.message ? err.message : String(err || 'error');
+    ['almKpiValor','almKpiCriticos','almKpiVenc','almKpiMermas'].forEach(id => { const el = $(id); if (el) el.textContent = '⚠'; });
+    console.warn('[almLoadResumen] dashboard error:', msg);
+  }
+  function _almRenderInsightsError(err) {
+    const el = $('almInsights'); if (!el) return;
+    const msg = err && err.message ? err.message : String(err || 'error');
+    el.innerHTML = `<div class="text-xs text-rose-400 italic py-3 text-center">⚠ ${msg}</div>
+      <div class="text-[10px] text-slate-600 italic text-center">¿GAS de MOS desplegado como Nueva versión?</div>`;
+  }
+  function _almRenderAlertasOpsError(err) {
+    const el = $('almAlertasOps'); if (!el) return;
+    const msg = err && err.message ? err.message : String(err || 'error');
+    el.innerHTML = `<div class="text-xs text-rose-400 italic py-3 text-center">⚠ ${msg}</div>`;
   }
   async function almRefreshResumen() {
     try { await API.get('bustAlmacenCache', {}); } catch(_){}

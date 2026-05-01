@@ -179,11 +179,35 @@ function _getStockUnificadoImpl(params) {
     var zonas = _sheetToObjects(getSheet('ZONAS'));
     var zonaNomMap = {}; zonas.forEach(function(z){ zonaNomMap[z.idZona] = z.nombre; });
 
-    // Producto base + todas sus presentaciones (mismo skuBase)
+    // Producto base — intentar 3 caminos: idProducto, skuBase, codigoBarra
     var prodBase = productos.find(function(p){
-      return p.idProducto === key || p.skuBase === key;
+      return p.idProducto === key || p.skuBase === key || p.codigoBarra === key;
     });
-    if (!prodBase) return { ok: false, error: 'Producto no encontrado: ' + key };
+    // Si no está en MOS catálogo, devolver al menos los datos de WH (catálogo desincronizado)
+    if (!prodBase) {
+      var stockWh0 = _safeReadWhStock();
+      var matchWh = stockWh0.find(function(s){ return s.codigoProducto === key; });
+      var cantWh0 = matchWh ? (parseFloat(matchWh.cantidadDisponible) || 0) : 0;
+      return { ok: true, data: {
+        producto: {
+          idProducto:  key,
+          skuBase:     '',
+          descripcion: '⚠ ' + key + ' (no existe en catálogo MOS)',
+          codigoBarra: '',
+          stockMinimo: 0, stockMaximo: 0, precioCosto: 0, precioVenta: 0
+        },
+        wh: { cantidad: cantWh0, detalle: matchWh ? [matchWh] : [] },
+        zonas: [],
+        total: { cantidad: cantWh0, rotacionDia: 0, ventasRango: 0, diasParaAcabar: null, rangoDiasConsultado: rangoDias },
+        insights: [{
+          tipo: 'NO_EN_CATALOGO',
+          severidad: 'ALTA',
+          mensaje: 'Este producto está en WH pero no en PRODUCTOS_MASTER de MOS',
+          accion: 'Crearlo en Catálogo MOS para activar tracking de zonas y rotación'
+        }],
+        sinCatalogo: true
+      }};
+    }
     var skuBase = prodBase.skuBase || prodBase.idProducto;
     var presentaciones = productos.filter(function(p){
       return (p.skuBase || p.idProducto) === skuBase;
