@@ -455,6 +455,7 @@ const MOS = (() => {
     loadProveedores().catch(() => {}); // pre-carga proveedores
     _startProvRefresh();
     _auditCheckBanner().catch(() => {}); // banner de alertas de integridad
+    _prefetchAlmacen();                  // precarga endpoints pesados de almacén
     // Pre-carga promociones desde cache (sin bloquear)
     const _pc = _promoLoadCache();
     if (_pc) _promoState.lista = _pc;
@@ -2330,6 +2331,23 @@ const MOS = (() => {
     if (tab === 'venc')  renderVencTable();
     if (tab === 'merma') renderMermasTable();
     if (tab === 'env')   renderEnvTable();
+  }
+
+  // ── ALMACÉN: pre-fetch al loguear para que el cache esté tibio ──
+  function _prefetchAlmacen() {
+    // Esperar 3s después del init para no competir con otras pre-cargas
+    setTimeout(() => {
+      if (!S.session) return;
+      // Disparamos los 4 endpoints más usados sin esperar respuesta
+      // CacheService los guardará → la próxima visita es instantánea
+      const tasks = [
+        () => API.get('getDashboardAlmacen', {}),
+        () => API.get('getAlertasOperativas', {}),
+        () => API.get('getGuiasYPreingresos', { dias: 7 }),
+        () => API.get('getInsightsStock', { dias: 30 })
+      ];
+      tasks.forEach(t => t().catch(() => {}));
+    }, 3000);
   }
 
   // ── ALMACÉN: RESUMEN (KPIs + insights + alertas operativas) ──

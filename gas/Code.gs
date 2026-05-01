@@ -52,6 +52,8 @@ function _route(method, e) {
       case 'getInsightsStock':       return getInsightsStock(params);
       case 'getAlertasOperativas':   return getAlertasOperativas(params);
       case 'bustAlmacenCache':       return bustAlmacenCache();
+      case 'warmupAlmacen':          return warmupAlmacen();
+      case 'getAlmacenWarmupStatus': return getAlmacenWarmupStatus();
 
       // ── Proveedores maestros ───────────────────────────────
       case 'getProveedores':              return getProveedoresMaster(params);

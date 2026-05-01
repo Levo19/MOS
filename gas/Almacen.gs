@@ -119,6 +119,46 @@ function bustAlmacenCache() {
   return { ok: true, data: { busted: true, ts: new Date().toISOString() } };
 }
 
+// ── WARMUP: precarga todos los endpoints pesados a CacheService ──
+// Ideal para correr via trigger time-driven cada 4-5 minutos.
+// Mantiene el cache "caliente" → user nunca espera.
+function warmupAlmacen() {
+  var inicio = new Date().getTime();
+  var resultados = {};
+  var endpoints = [
+    { name: 'dashboard',     fn: function(){ return getDashboardAlmacen({ _refresh: true }); } },
+    { name: 'guiasPreing7',  fn: function(){ return getGuiasYPreingresos({ dias: 7,  _refresh: true }); } },
+    { name: 'guiasPreing30', fn: function(){ return getGuiasYPreingresos({ dias: 30, _refresh: true }); } },
+    { name: 'rankZonas30',   fn: function(){ return getRankingZonas({ dias: 30, _refresh: true }); } },
+    { name: 'rankZonas7',    fn: function(){ return getRankingZonas({ dias: 7,  _refresh: true }); } },
+    { name: 'sinVenta30',    fn: function(){ return getProductosSinVenta({ dias: 30, _refresh: true }); } },
+    { name: 'insights30',    fn: function(){ return getInsightsStock({ dias: 30, _refresh: true }); } },
+    { name: 'alertasOps',    fn: function(){ return getAlertasOperativas({ _refresh: true }); } }
+  ];
+  endpoints.forEach(function(ep) {
+    var t = new Date().getTime();
+    try {
+      var r = ep.fn();
+      resultados[ep.name] = { ok: r && r.ok !== false, ms: (new Date().getTime() - t) };
+    } catch(e) {
+      resultados[ep.name] = { ok: false, error: e.message, ms: (new Date().getTime() - t) };
+    }
+  });
+  resultados._totalMs = new Date().getTime() - inicio;
+  resultados._timestamp = new Date().toISOString();
+  // Guardar timestamp del último warmup (para mostrar al usuario)
+  try { _setProp('ALMACEN_LAST_WARMUP', resultados._timestamp); } catch(_) {}
+  return { ok: true, data: resultados };
+}
+
+// Endpoint que devuelve cuándo fue el último warmup
+function getAlmacenWarmupStatus() {
+  return { ok: true, data: {
+    lastWarmup: _getProp('ALMACEN_LAST_WARMUP') || null,
+    serverTime: new Date().toISOString()
+  }};
+}
+
 // ── DASHBOARD: KPIs principales (cache 5min) ────────────────────
 function getDashboardAlmacen(params) {
   return _almCached('dashboard', 300, params, function() {
