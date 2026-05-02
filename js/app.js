@@ -452,6 +452,7 @@ const MOS = (() => {
     _startCatRefresh();
     _startFinanzasRefresh();
     _refreshPNPendientes(); // PN pendientes — pre-carga inmediata
+    _startPNAutoRefresh();   // refresca cada 90s automáticamente
     loadProveedores().catch(() => {}); // pre-carga proveedores
     _startProvRefresh();
     _auditCheckBanner().catch(() => {}); // banner de alertas de integridad
@@ -1468,27 +1469,33 @@ const MOS = (() => {
   // ── Productos Nuevos (aprobación desde WH) ──────────────────
 
   const PN_CACHE_KEY = 'mos_pn_cache';
+  // Cache MUY corto para PN (60s) — el WH puede borrar/aprobar PNs en cualquier momento
+  const PN_CACHE_TTL_MS = 60 * 1000;
   function _pnLoadCache() {
     try {
       const raw = localStorage.getItem(PN_CACHE_KEY);
       if (!raw) return null;
       const parsed = JSON.parse(raw);
-      // Cache válida por 24h
-      if (Date.now() - (parsed.ts || 0) > 86400000) return null;
+      if (Date.now() - (parsed.ts || 0) > PN_CACHE_TTL_MS) return null;
       return parsed.data;
     } catch { return null; }
   }
   function _pnSaveCache(data) {
     try { localStorage.setItem(PN_CACHE_KEY, JSON.stringify({ ts: Date.now(), data })); } catch {}
   }
+  function _pnBustCache() {
+    try { localStorage.removeItem(PN_CACHE_KEY); } catch {}
+  }
 
-  async function _refreshPNPendientes() {
-    // Render inmediato desde cache si existe
-    const cached = _pnLoadCache();
-    if (cached && (!S.pnPendientes || !S.pnPendientes.length)) {
-      S.pnPendientes = cached;
-      _updatePNBadge();
-      renderPNBanner();
+  async function _refreshPNPendientes(force) {
+    // Render inmediato desde cache si existe (excepto si force=true)
+    if (!force) {
+      const cached = _pnLoadCache();
+      if (cached && (!S.pnPendientes || !S.pnPendientes.length)) {
+        S.pnPendientes = cached;
+        _updatePNBadge();
+        renderPNBanner();
+      }
     }
     try {
       const lista = await API.getProductosNuevosWH({ estado: 'PENDIENTE' });
@@ -1496,12 +1503,31 @@ const MOS = (() => {
       const changed = JSON.stringify(fresh) !== JSON.stringify(S.pnPendientes);
       S.pnPendientes = fresh;
       _pnSaveCache(fresh);
-      if (changed) { _updatePNBadge(); renderPNBanner(); }
+      if (changed || force) { _updatePNBadge(); renderPNBanner(); }
     } catch(e) {
       S.pnPendientes = S.pnPendientes || [];
     }
     _updatePNBadge();
     renderPNBanner();
+  }
+
+  // Auto-refresh periódico (cada 90s) mientras el usuario está logueado
+  let _pnRefreshTimer = null;
+  function _startPNAutoRefresh() {
+    if (_pnRefreshTimer) clearInterval(_pnRefreshTimer);
+    _pnRefreshTimer = setInterval(() => {
+      // Solo refresh si la app sigue activa (visible) y hay sesión
+      if (!S.session) return;
+      if (document.visibilityState !== 'visible') return;
+      _refreshPNPendientes().catch(() => {});
+    }, 90 * 1000);  // 90 segundos
+  }
+  // Refresh manual desde el banner — bypassa cache local
+  async function refreshPNManual() {
+    _pnBustCache();
+    toast('Actualizando productos nuevos…', 'info');
+    await _refreshPNPendientes(true);
+    toast('Lista actualizada ✓', 'ok');
   }
 
   function _updatePNBadge() {
@@ -1530,7 +1556,8 @@ const MOS = (() => {
       <div style="border:1px solid rgba(217,119,6,.35);background:rgba(120,53,15,.12);border-radius:12px;padding:12px 14px;margin-bottom:4px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
           <span style="background:#92400e;color:#fde68a;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px">N ${lista.length}</span>
-          <span style="font-size:13px;font-weight:600;color:#fcd34d">Productos nuevos pendientes de aprobación</span>
+          <span style="font-size:13px;font-weight:600;color:#fcd34d;flex:1">Productos nuevos pendientes de aprobación</span>
+          <button onclick="MOS.refreshPNManual()" title="Refrescar lista (ignora cache)" style="background:transparent;border:1px solid rgba(217,119,6,.4);color:#fbbf24;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer">↺</button>
         </div>
         <div style="display:flex;flex-direction:column;gap:8px">
           ${lista.map(pn => {
@@ -9012,7 +9039,7 @@ const MOS = (() => {
     init, nav, refresh, fabAction,
     openConfig, saveConfig, testConnection, closeModal, openEcoModal,
     filterCatalogo, setCatTab, toggleDerivs, togglePresentaciones, guardarPrecioRapido,
-    abrirModalPN, cerrarModalPN, lanzarAProduccion,
+    abrirModalPN, cerrarModalPN, lanzarAProduccion, refreshPNManual,
     pnSetTipo, pnAutogenBarcode, pnBuscarBase, pnSeleccionarBase,
     abrirModalPromociones, loadPromociones, promoNuevoForm, promoEditar, promoVolverLista, promoToggleActiva, _promoForzarRefresh,
     promoSetTipo, promoSetModo, promoQuickFill, promoActualizarEjemplo, promoBuscarBase, promoSeleccionarBase,
