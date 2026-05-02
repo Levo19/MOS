@@ -1110,10 +1110,36 @@ function _safeReadWhEnvasados() {
   try { return _sheetToObjects(_abrirWhSheet('ENVASADOS')); } catch(e) { return []; }
 }
 function _safeReadWhGuias() {
-  try { return _sheetToObjects(_abrirWhSheet('GUIAS')); } catch(e) { return []; }
+  // Usa lectura raw para preservar la hora completa (no truncar a yyyy-MM-dd)
+  try { return _readSheetPreservandoFecha(_abrirWhSheet('GUIAS')); } catch(e) { return []; }
 }
 function _safeReadWhPreingresos() {
-  try { return _sheetToObjects(_abrirWhSheet('PREINGRESOS')); } catch(e) { return []; }
+  try { return _readSheetPreservandoFecha(_abrirWhSheet('PREINGRESOS')); } catch(e) { return []; }
+}
+
+// Variante de _sheetToObjects que conserva los Date como ISO completo
+// (necesaria para Operaciones, donde la hora del día sí importa).
+function _readSheetPreservandoFecha(sheet) {
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) return [];
+  var headers = data[0].map(function(h){ return String(h).trim(); });
+  return data.slice(1).map(function(row){
+    var obj = {};
+    headers.forEach(function(h, i){
+      if (!h) return;
+      var v = row[i];
+      if (v instanceof Date) {
+        obj[h] = v.toISOString();
+      } else if (typeof v === 'string' && /^\d+,\d+$/.test(v.trim())) {
+        obj[h] = parseFloat(v.trim().replace(',', '.'));
+      } else {
+        obj[h] = v;
+      }
+    });
+    return obj;
+  }).filter(function(obj){
+    return Object.values(obj).some(function(v){ return v !== '' && v !== null && v !== undefined; });
+  });
 }
 function _safeReadMeStockZonas() {
   try { return _sheetToObjects(_abrirMeSheet('STOCK_ZONAS')); } catch(e) { return []; }
