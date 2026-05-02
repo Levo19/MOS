@@ -2170,9 +2170,9 @@
           <div class="card-sm p-3 text-center"><div class="text-xs text-slate-500">Envasados hoy</div><div id="opsEnvHoy" class="text-lg font-bold text-purple-400">—</div></div>
           <div class="card-sm p-3 text-center"><div class="text-xs text-slate-500">$ Ingresado</div><div id="opsMontoHoy" class="text-lg font-bold text-amber-400">—</div></div>
         </div>
-        <div id="almPreingPanel" class="mb-4 hidden">
-          <h3 class="font-semibold text-sm text-amber-400 mb-2">⚠ Preingresos pendientes <span id="opsPreingCount" class="badge badge-yellow text-xs ml-1">0</span></h3>
-          <div id="almPreingList" class="space-y-2"></div>
+        <!-- Preingresos pendientes badge — sin panel completo, solo conteo informativo -->
+        <div id="almPreingBadge" class="hidden mb-3 text-xs text-amber-400 italic">
+          ⚠ <span id="opsPreingCount">0</span> preingreso(s) pendiente(s) — aparecen abajo en color ámbar
         </div>
         <div class="flex items-center justify-between mb-2 gap-2 flex-wrap">
           <h3 class="font-semibold text-sm text-slate-200">📄 Operaciones (WH + zonas)</h3>

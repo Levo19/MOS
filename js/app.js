@@ -2481,7 +2481,7 @@ const MOS = (() => {
         API.get('getOperacionesUnificadas', params),
         API.get('getGuiasYPreingresos', params)
       ]);
-      // Resumen del día (de gpRes que ya lo calcula)
+      // Resumen del día (KPIs) + badge de preingresos pendientes
       if (gpRes.status === 'fulfilled') {
         const r = gpRes.value || {};
         const res = r.resumen || {};
@@ -2489,24 +2489,11 @@ const MOS = (() => {
         if ($('opsDesHoy'))   $('opsDesHoy').textContent   = res.despachosHoy || 0;
         if ($('opsEnvHoy'))   $('opsEnvHoy').textContent   = res.envasadosHoy || 0;
         if ($('opsMontoHoy')) $('opsMontoHoy').textContent = 'S/ ' + (res.montoIngresoHoy || 0).toLocaleString('es-PE', { maximumFractionDigits: 0 });
-        // Preingresos pendientes
+        // Solo mostramos un BADGE pequeño con el count, sin lista (ya aparecen en flujo)
         const preing = r.preingresosPendientes || [];
-        const pPanel = $('almPreingPanel');
-        if (pPanel) pPanel.classList.toggle('hidden', !preing.length);
+        const badge = $('almPreingBadge');
+        if (badge) badge.classList.toggle('hidden', !preing.length);
         if ($('opsPreingCount')) $('opsPreingCount').textContent = preing.length;
-        const pList = $('almPreingList');
-        if (pList) pList.innerHTML = preing.slice(0, 10).map(p => `
-          <div class="card-sm p-3 border-l-2 border-amber-500/40">
-            <div class="flex items-center justify-between gap-2">
-              <div class="min-w-0 flex-1">
-                <div class="text-sm font-semibold text-slate-200">${p.idPreingreso || p.idGuia || '—'}</div>
-                <div class="text-xs text-slate-500">${fmtDate(p.fecha)} · ${p.idProveedor || '—'} · S/ ${(parseFloat(p.monto) || 0).toFixed(2)}</div>
-                ${p.comentario ? `<div class="text-xs text-slate-600 italic mt-1 truncate">${p.comentario}</div>` : ''}
-              </div>
-              <span class="badge badge-yellow text-xs shrink-0">${p.estado || 'PENDIENTE'}</span>
-            </div>
-          </div>
-        `).join('') || '<div class="text-xs text-slate-600 italic py-2">—</div>';
       }
       // Operaciones unificadas
       if (opsRes.status === 'fulfilled') {
@@ -2576,22 +2563,32 @@ const MOS = (() => {
 
   function _renderOpCard(op) {
     const tipo = String(op.tipo || '').toUpperCase();
-    let tipoLabel, tipoColor;
-    if (tipo.indexOf('INGRESO') >= 0) { tipoLabel = '🟢 INGRESO'; tipoColor = 'text-emerald-400'; }
+    let tipoLabel, tipoColor, borderCls = '';
+    if (op.esPreingreso) {
+      tipoLabel = '⏳ PREINGRESO';
+      tipoColor = 'text-amber-400';
+      borderCls = 'border-l-2 border-amber-500/50';
+    } else if (tipo.indexOf('INGRESO') >= 0) { tipoLabel = '🟢 INGRESO'; tipoColor = 'text-emerald-400'; }
     else if (tipo.indexOf('SALIDA_VENTAS') >= 0 || tipo === 'SALIDA_VENTAS') { tipoLabel = '🛒 VENTAS'; tipoColor = 'text-purple-400'; }
     else if (tipo.indexOf('SALIDA_ZONA') >= 0 || tipo.indexOf('DESPACHO') >= 0) { tipoLabel = '📦 DESPACHO'; tipoColor = 'text-blue-400'; }
     else if (tipo.indexOf('ENVASADO') >= 0) { tipoLabel = '🏷️ ENVASADO'; tipoColor = 'text-purple-400'; }
     else if (tipo.indexOf('TRASLADO') >= 0) { tipoLabel = '🔄 TRASLADO'; tipoColor = 'text-amber-400'; }
     else { tipoLabel = '📋 ' + tipo; tipoColor = 'text-slate-400'; }
-    const estadoCls = op.estado === 'CERRADA' || op.estado === 'CONFIRMADO' ? 'text-slate-500' : op.estado === 'ABIERTA' ? 'text-amber-400' : 'text-slate-500';
-    const expandKey = op.fuente + '_' + op.idGuia;
+    const estadoCls = op.estado === 'CERRADA' || op.estado === 'CONFIRMADO' || op.estado === 'PROCESADO' ? 'text-slate-500'
+                    : op.estado === 'ABIERTA' || op.estado === 'PENDIENTE' ? 'text-amber-400'
+                    : 'text-slate-500';
+    const expandKey = op.fuente + '_' + op.idGuia + (op.esPreingreso ? '_PRE' : '');
     const expanded = !!S._opsExpanded[expandKey];
     const monto = op.montoTotal > 0 ? `<span class="text-amber-400 ml-2">S/ ${op.montoTotal.toLocaleString('es-PE', { maximumFractionDigits: 0 })}</span>` : '';
     const usuarioStr = op.usuario ? ` · ${op.usuario}` : '';
     const provStr = op.idProveedor ? ` · ${op.idProveedor}` : '';
     const horaStr = (function(){ try { var d = new Date(op.fecha); return d.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }); } catch(_){ return ''; }})();
-    return `<div class="card-sm p-2.5">
-      <div class="flex items-center justify-between gap-2 cursor-pointer" onclick="MOS.almToggleOpExpand('${op.fuente}','${op.idGuia}')">
+    // Preingresos no tienen líneas en GUIA_DETALLE — solo mostrar info de cabecera al expandir
+    const onclickAttr = op.esPreingreso
+      ? `onclick="MOS.almToggleOpExpand('${op.fuente}','${op.idGuia}', true)"`
+      : `onclick="MOS.almToggleOpExpand('${op.fuente}','${op.idGuia}')"`;
+    return `<div class="card-sm p-2.5 ${borderCls}">
+      <div class="flex items-center justify-between gap-2 cursor-pointer" ${onclickAttr}>
         <div class="min-w-0 flex-1">
           <div class="text-xs font-semibold ${tipoColor} truncate">${tipoLabel} · <span class="text-slate-300 font-mono">${op.idGuia}</span> ${monto}</div>
           <div class="text-[10px] text-slate-500 truncate">${horaStr}${usuarioStr}${provStr}${op.comentario ? ' · ' + op.comentario : ''}</div>
@@ -2602,9 +2599,22 @@ const MOS = (() => {
         </div>
       </div>
       <div id="opExp_${expandKey}" class="${expanded ? '' : 'hidden'} mt-2 pt-2 border-t border-slate-800/50">
-        ${expanded ? _renderOpDetalle(op.fuente, op.idGuia) : ''}
+        ${expanded ? (op.esPreingreso ? _renderPreingresoDetalle(op) : _renderOpDetalle(op.fuente, op.idGuia)) : ''}
       </div>
     </div>`;
+  }
+
+  function _renderPreingresoDetalle(op) {
+    // Preingreso: no hay líneas, mostrar info de cabecera + foto si existe
+    return `
+      <div class="text-[11px] space-y-1">
+        <div class="text-slate-400">📋 Preingreso (sin líneas hasta que sea aprobado y se convierta en guía de ingreso)</div>
+        ${op.idProveedor ? `<div class="text-slate-500"><span class="text-slate-600">Proveedor:</span> ${op.idProveedor}</div>` : ''}
+        ${op.usuario ? `<div class="text-slate-500"><span class="text-slate-600">Usuario:</span> ${op.usuario}</div>` : ''}
+        ${op.comentario ? `<div class="text-slate-500"><span class="text-slate-600">Comentario:</span> ${op.comentario}</div>` : ''}
+        ${op.idGuiaGenerada ? `<div class="text-slate-500"><span class="text-slate-600">Guía generada:</span> <span class="font-mono text-emerald-400">${op.idGuiaGenerada}</span></div>` : ''}
+        <div class="text-slate-500"><span class="text-slate-600">Estado:</span> <span class="text-amber-400 font-semibold">${op.estado || 'PENDIENTE'}</span></div>
+      </div>`;
   }
 
   function _renderOpDetalle(fuente, idGuia) {
@@ -2648,8 +2658,8 @@ const MOS = (() => {
     }
   }
 
-  function almToggleOpExpand(fuente, idGuia) {
-    const key = fuente + '_' + idGuia;
+  function almToggleOpExpand(fuente, idGuia, esPreingreso) {
+    const key = fuente + '_' + idGuia + (esPreingreso ? '_PRE' : '');
     S._opsExpanded[key] = !S._opsExpanded[key];
     almRenderOps();
   }

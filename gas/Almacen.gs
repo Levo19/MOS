@@ -784,19 +784,32 @@ function _getOperacionesUnificadasImpl(dias) {
     var hoy = new Date();
     var desde = new Date(hoy.getTime() - dias * 86400000);
     var resolver = _buildZonaResolver();
+    var tz = Session.getScriptTimeZone();
     var operaciones = [];
+
+    // Helper: parsea fechas robusto contra strings YYYY-MM-DD vs Date objects
+    function _parseFecha(v) {
+      if (!v) return null;
+      if (v instanceof Date) return v;
+      var s = String(v).trim();
+      if (!s) return null;
+      // String YYYY-MM-DD: anclarlo a mediodía local para evitar shifts de TZ
+      if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(s)) return new Date(s + 'T12:00:00');
+      var d = new Date(s);
+      return isNaN(d.getTime()) ? null : d;
+    }
 
     // 1. WH GUIAS
     var whGuias = _safeReadWhGuias();
     whGuias.forEach(function(g) {
-      var fecha = g.fecha ? new Date(g.fecha) : null;
+      var fecha = _parseFecha(g.fecha);
       if (!fecha || fecha < desde) return;
       operaciones.push({
         fuente:           'WH',
         fuenteLabel:      'Almacén central',
         idGuia:           g.idGuia || '',
         tipo:             g.tipo || '',
-        fecha:            g.fecha,
+        fecha:            fecha.toISOString(),
         usuario:          g.usuario || '',
         idProveedor:      g.idProveedor || '',
         idZona:           g.idZona || '',
@@ -807,11 +820,36 @@ function _getOperacionesUnificadasImpl(dias) {
         montoTotal:       parseFloat(g.montoTotal) || 0,
         estado:           g.estado || '',
         idPreingreso:     g.idPreingreso || '',
-        foto:             g.foto || ''
+        foto:             g.foto || '',
+        esPreingreso:     false
       });
     });
 
-    // 2. ME GUIAS_CABECERA (de cada zona)
+    // 2. WH PREINGRESOS pendientes — aparecen como operaciones del día también
+    var preingresos = _safeReadWhPreingresos();
+    preingresos.forEach(function(p) {
+      var fecha = _parseFecha(p.fecha);
+      if (!fecha || fecha < desde) return;
+      var estado = String(p.estado || '').toUpperCase();
+      operaciones.push({
+        fuente:           'WH',
+        fuenteLabel:      'Almacén central',
+        idGuia:           p.idPreingreso || '',
+        tipo:             'PREINGRESO',
+        fecha:            fecha.toISOString(),
+        usuario:          p.usuario || '',
+        idProveedor:      p.idProveedor || '',
+        idZona:           '',
+        comentario:       p.comentario || '',
+        montoTotal:       parseFloat(p.monto) || 0,
+        estado:           estado || 'PENDIENTE',
+        idGuiaGenerada:   p.idGuia || '',
+        esPreingreso:     true,
+        fotos:            p.fotos || ''
+      });
+    });
+
+    // 3. ME GUIAS_CABECERA (de cada zona)
     try {
       var ssMe = SpreadsheetApp.openById(_getProp('ME_SS_ID'));
       var shGC = ssMe.getSheetByName('GUIAS_CABECERA');
@@ -820,7 +858,7 @@ function _getOperacionesUnificadasImpl(dias) {
         if (data.length >= 2) {
           // Schema: ID_Guia | Fecha | Vendedor | Zona_ID | Tipo | Observacion | Zona_Destino | Estado
           for (var i = 1; i < data.length; i++) {
-            var fechaME = data[i][1] ? new Date(data[i][1]) : null;
+            var fechaME = _parseFecha(data[i][1]);
             if (!fechaME || fechaME < desde) continue;
             var zonaRaw = String(data[i][3] || '').trim();
             var canon = zonaRaw ? resolver.resolve(zonaRaw) : { id: '', nombre: '' };
@@ -837,7 +875,8 @@ function _getOperacionesUnificadasImpl(dias) {
               comentario:     String(data[i][5] || '').trim(),
               zonaDestino:    String(data[i][6] || '').trim(),
               estado:         String(data[i][7] || '').trim(),
-              montoTotal:     0  // ME guides no tienen monto en cabecera
+              montoTotal:     0,
+              esPreingreso:   false
             });
           }
         }
@@ -847,13 +886,11 @@ function _getOperacionesUnificadasImpl(dias) {
     // Ordenar por fecha desc
     operaciones.sort(function(a, b){ return new Date(b.fecha) - new Date(a.fecha); });
 
-    // Agrupar por día (YYYY-MM-DD)
+    // Agrupar por día — usar el TZ del script (Lima) para evitar shifts
     var porDia = {};
     operaciones.forEach(function(op) {
       var f = new Date(op.fecha);
-      var key = f.getFullYear() + '-' +
-                String(f.getMonth() + 1).padStart(2, '0') + '-' +
-                String(f.getDate()).padStart(2, '0');
+      var key = Utilities.formatDate(f, tz, 'yyyy-MM-dd');
       if (!porDia[key]) porDia[key] = { fecha: key, operaciones: [], totalMonto: 0 };
       porDia[key].operaciones.push(op);
       porDia[key].totalMonto += op.montoTotal || 0;
