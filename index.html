@@ -4605,6 +4605,32 @@
   </div>
 </div>
 
+<!-- Modal: Llenar costos de una guía de ingreso (con foto de factura) -->
+<div id="modalCostosGuia" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.cerrarCostosGuia()">
+  <div class="modal-box p-0" style="max-width:780px;display:flex;flex-direction:column;max-height:92vh">
+    <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0 gap-2" style="border-bottom:1px solid #1e293b">
+      <div class="min-w-0 flex-1">
+        <h3 class="font-semibold text-amber-400 text-base">💰 Llenar costos de guía</h3>
+        <p id="costosGuiaInfo" class="text-xs text-slate-500 mt-0.5 font-mono truncate"></p>
+      </div>
+      <button onclick="MOS.cerrarCostosGuia()" class="modal-close-x">×</button>
+    </div>
+    <div id="costosGuiaBody" class="overflow-y-auto px-5 py-4" style="flex:1">
+      <div class="text-xs text-slate-500 italic">Cargando...</div>
+    </div>
+    <div class="flex items-center gap-3 px-5 py-3 flex-shrink-0 flex-wrap" style="border-top:1px solid #1e293b">
+      <label class="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+        <input type="checkbox" id="costosGuiaUpdMaster" checked>
+        <span>También actualizar precio costo en catálogo MOS</span>
+      </label>
+      <div class="flex gap-2 ml-auto">
+        <button onclick="MOS.cerrarCostosGuia()" class="btn-ghost">Cancelar</button>
+        <button onclick="MOS.guardarCostosGuia()" class="btn-primary">💾 Guardar costos</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Stock unificado (WH + zonas) -->
 <div id="modalStockDetalle" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.cerrarStockDetalle()">
   <div class="modal-box p-0" style="max-width:540px;display:flex;flex-direction:column;max-height:92vh">

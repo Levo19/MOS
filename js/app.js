@@ -2638,6 +2638,13 @@ const MOS = (() => {
     const onclickAttr = op.esPreingreso
       ? `onclick="MOS.almToggleOpExpand('${op.fuente}','${op.idGuia}', true)"`
       : `onclick="MOS.almToggleOpExpand('${op.fuente}','${op.idGuia}')"`;
+    // Botón "💰 Llenar costos" para guías INGRESO_PROVEEDOR con foto
+    const esIngreso = op.fuente === 'WH' && tipo.indexOf('INGRESO') >= 0 && !op.esPreingreso;
+    const tieneFoto = !!(op.foto && String(op.foto).trim());
+    const llenarCostosBtn = (esIngreso && tieneFoto)
+      ? `<button onclick="event.stopPropagation();MOS.abrirCostosGuia('${op.idGuia}', '${op.fuente}')" class="text-amber-400 hover:text-amber-300 text-base shrink-0 px-1" title="Llenar costos basándose en foto de factura">💰</button>`
+      : '';
+
     return `<div class="card-sm p-2.5 ${borderCls}">
       <div class="flex items-center justify-between gap-2 cursor-pointer" ${onclickAttr}>
         <div class="min-w-0 flex-1">
@@ -2645,6 +2652,7 @@ const MOS = (() => {
           <div class="text-[10px] text-slate-500 truncate">${horaStr}${usuarioStr}${provStr}${op.comentario ? ' · ' + op.comentario : ''}</div>
         </div>
         <div class="flex items-center gap-2 shrink-0">
+          ${llenarCostosBtn}
           <span class="text-[10px] ${estadoCls}">${op.estado || ''}</span>
           <span class="text-slate-500">${expanded ? '▴' : '▾'}</span>
         </div>
@@ -2716,6 +2724,138 @@ const MOS = (() => {
     const key = fuente + '_' + idGuia + (esPreingreso ? '_PRE' : '');
     S._opsExpanded[key] = !S._opsExpanded[key];
     almRenderOps();
+  }
+
+  // ── Llenar costos de guía (con foto de factura) ──
+  S._costosGuiaState = S._costosGuiaState || { idGuia: null, fuente: null, lineas: [], foto: '' };
+
+  async function abrirCostosGuia(idGuia, fuente) {
+    if (!idGuia) return;
+    // Buscar la operación en el data ya cargado para tener la foto
+    let foto = '', idProveedor = '', nombreProveedor = '';
+    const data = S._opsData || {};
+    (data.porDia || []).forEach(d => d.operaciones.forEach(op => {
+      if (op.idGuia === idGuia && op.fuente === fuente) {
+        foto = op.foto || '';
+        idProveedor = op.idProveedor || '';
+        nombreProveedor = op.nombreProveedor || op.idProveedor || '';
+      }
+    }));
+    S._costosGuiaState = { idGuia, fuente, lineas: [], foto, idProveedor, nombreProveedor };
+    $('costosGuiaInfo').textContent = idGuia + (nombreProveedor ? ' · ' + nombreProveedor : '');
+    const body = $('costosGuiaBody');
+    body.innerHTML = '<div class="text-xs text-slate-500 italic py-4">Cargando líneas…</div>';
+    openModal('modalCostosGuia');
+    try {
+      const r = await API.get('getOperacionDetalle', { fuente, idGuia });
+      const lineas = (r && r.lineas) || [];
+      S._costosGuiaState.lineas = lineas;
+      _renderCostosGuiaBody();
+    } catch(e) {
+      body.innerHTML = `<div class="text-xs text-rose-400 py-4">Error: ${e.message}</div>`;
+    }
+  }
+
+  function _renderCostosGuiaBody() {
+    const body = $('costosGuiaBody');
+    if (!body) return;
+    const { lineas, foto } = S._costosGuiaState;
+    if (!lineas.length) {
+      body.innerHTML = '<div class="text-xs text-slate-500 italic py-4">Esta guía no tiene líneas registradas.</div>';
+      return;
+    }
+    const fotoHtml = foto
+      ? `<div class="mb-3">
+          <div class="text-[10px] text-slate-500 uppercase mb-1">📸 Foto de factura</div>
+          <a href="${foto}" target="_blank" rel="noopener">
+            <img src="${foto}" alt="Factura" class="rounded-lg cursor-zoom-in" style="max-width:100%;max-height:280px;object-fit:contain;background:#020617;border:1px solid #1e293b">
+          </a>
+          <div class="text-[10px] text-slate-600 mt-1">Click para ampliar en pestaña nueva</div>
+        </div>`
+      : '<div class="text-xs text-amber-400 italic mb-3">Esta guía no tiene foto adjunta.</div>';
+
+    let total = 0;
+    const filasHtml = lineas.map((l, i) => {
+      const sub = (l.cantidad || 0) * (l.precioUnitario || 0);
+      total += sub;
+      const equivBadge = l.esEquivalencia ? ' <span class="text-[9px] text-purple-400 bg-purple-500/10 px-1 rounded">EQUIV</span>' : '';
+      return `<tr>
+        <td class="py-2 pr-2">
+          <div class="text-xs text-slate-200 truncate">${l.descripcion}${equivBadge}</div>
+          <div class="text-[10px] text-slate-500 font-mono">▌ ${l.codigoProducto || '—'}</div>
+        </td>
+        <td class="py-2 pr-2 text-right text-xs text-slate-400 whitespace-nowrap">${l.cantidad}u</td>
+        <td class="py-2 pr-2">
+          <input type="number" step="0.01" min="0" class="inp text-xs text-right" style="width:90px"
+                 value="${l.precioUnitario || ''}"
+                 oninput="MOS._costosGuiaUpdLinea(${i}, this.value)" placeholder="0.00">
+        </td>
+        <td class="py-2 text-right text-xs whitespace-nowrap" id="costoGuiaSubtot_${i}">
+          ${sub > 0 ? `<span class="text-amber-400">S/ ${sub.toFixed(2)}</span>` : '<span class="text-slate-700">—</span>'}
+        </td>
+      </tr>`;
+    }).join('');
+    body.innerHTML = `${fotoHtml}
+      <div class="text-[10px] text-slate-500 uppercase mb-1">Líneas (${lineas.length})</div>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-[10px] text-slate-600 uppercase border-b border-slate-800">
+            <th class="text-left pb-1">Producto</th>
+            <th class="text-right pb-1">Cant</th>
+            <th class="text-right pb-1">Precio Unit.</th>
+            <th class="text-right pb-1">Subtotal</th>
+          </tr>
+        </thead>
+        <tbody>${filasHtml}</tbody>
+        <tfoot>
+          <tr class="border-t border-slate-800">
+            <td colspan="3" class="pt-2 text-right text-xs text-slate-500">Total guía estimado:</td>
+            <td class="pt-2 text-right text-sm font-bold text-amber-400" id="costosGuiaTotal">S/ ${total.toFixed(2)}</td>
+          </tr>
+        </tfoot>
+      </table>`;
+  }
+
+  function _costosGuiaUpdLinea(idx, valor) {
+    const linea = S._costosGuiaState.lineas[idx];
+    if (!linea) return;
+    linea.precioUnitario = parseFloat(valor) || 0;
+    // Actualizar subtotal en su celda
+    const sub = (linea.cantidad || 0) * linea.precioUnitario;
+    const cell = $('costoGuiaSubtot_' + idx);
+    if (cell) cell.innerHTML = sub > 0 ? `<span class="text-amber-400">S/ ${sub.toFixed(2)}</span>` : '<span class="text-slate-700">—</span>';
+    // Actualizar total
+    let total = 0;
+    S._costosGuiaState.lineas.forEach(l => { total += (l.cantidad || 0) * (l.precioUnitario || 0); });
+    const totalEl = $('costosGuiaTotal');
+    if (totalEl) totalEl.textContent = 'S/ ' + total.toFixed(2);
+  }
+
+  function cerrarCostosGuia() { closeModal('modalCostosGuia'); }
+
+  async function guardarCostosGuia() {
+    const { idGuia, lineas } = S._costosGuiaState;
+    if (!idGuia) return;
+    const items = lineas
+      .filter(l => l.precioUnitario && l.precioUnitario > 0)
+      .map(l => ({ idDetalle: l.idDetalle, codigoProducto: l.codigoProducto, precioUnitario: l.precioUnitario }));
+    if (!items.length) {
+      toast('No hay precios para guardar', 'error');
+      return;
+    }
+    const updateMaster = !!$('costosGuiaUpdMaster')?.checked;
+    closeModal('modalCostosGuia');
+    toast('Guardando costos…', 'info');
+    try {
+      await API.post('llenarCostosGuia', {
+        idGuia, items, actualizarPrecioCosto: updateMaster, usuario: S.session?.nombre || ''
+      });
+      toast('✓ ' + items.length + ' costos guardados' + (updateMaster ? ' + catálogo MOS actualizado' : ''), 'ok');
+      // Refrescar operaciones
+      await almLoadOps(true);
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    }
   }
 
   function _formatFechaCorta(yyyymmdd) {
@@ -9068,6 +9208,7 @@ const MOS = (() => {
     setAlmTab,
     almLoadResumen, almRefreshResumen, almFiltrarStock, almRefreshCatalogo, almToggleStockExpand,
     almLoadOps, almRefreshOps, almRenderOps, almToggleOpExpand,
+    abrirCostosGuia, _costosGuiaUpdLinea, cerrarCostosGuia, guardarCostosGuia,
     almLoadZonas, almRefreshZonas, almAbrirStockDetalle, cerrarStockDetalle, almRefreshStockDetalle,
     _almGenerarPedidoFromInsight, _almPickProveedor, cerrarSelProveedor,
     cerrarModalPedido, pedidoBuscarItem, pedidoAgregarItem,
