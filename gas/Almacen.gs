@@ -126,14 +126,15 @@ function warmupAlmacen() {
   var inicio = new Date().getTime();
   var resultados = {};
   var endpoints = [
-    { name: 'dashboard',     fn: function(){ return getDashboardAlmacen({ _refresh: true }); } },
-    { name: 'guiasPreing7',  fn: function(){ return getGuiasYPreingresos({ dias: 7,  _refresh: true }); } },
-    { name: 'guiasPreing30', fn: function(){ return getGuiasYPreingresos({ dias: 30, _refresh: true }); } },
-    { name: 'rankZonas30',   fn: function(){ return getRankingZonas({ dias: 30, _refresh: true }); } },
-    { name: 'rankZonas7',    fn: function(){ return getRankingZonas({ dias: 7,  _refresh: true }); } },
-    { name: 'sinVenta30',    fn: function(){ return getProductosSinVenta({ dias: 30, _refresh: true }); } },
-    { name: 'insights30',    fn: function(){ return getInsightsStock({ dias: 30, _refresh: true }); } },
-    { name: 'alertasOps',    fn: function(){ return getAlertasOperativas({ _refresh: true }); } }
+    { name: 'dashboard',          fn: function(){ return getDashboardAlmacen({ _refresh: true }); } },
+    { name: 'catalogoResumen7',   fn: function(){ return getCatalogoStockResumen({ dias: 7,  _refresh: true }); } },
+    { name: 'guiasPreing7',       fn: function(){ return getGuiasYPreingresos({ dias: 7,  _refresh: true }); } },
+    { name: 'guiasPreing30',      fn: function(){ return getGuiasYPreingresos({ dias: 30, _refresh: true }); } },
+    { name: 'rankZonas30',        fn: function(){ return getRankingZonas({ dias: 30, _refresh: true }); } },
+    { name: 'rankZonas7',         fn: function(){ return getRankingZonas({ dias: 7,  _refresh: true }); } },
+    { name: 'sinVenta30',         fn: function(){ return getProductosSinVenta({ dias: 30, _refresh: true }); } },
+    { name: 'insights30',         fn: function(){ return getInsightsStock({ dias: 30, _refresh: true }); } },
+    { name: 'alertasOps',         fn: function(){ return getAlertasOperativas({ _refresh: true }); } }
   ];
   endpoints.forEach(function(ep) {
     var t = new Date().getTime();
@@ -157,6 +158,151 @@ function getAlmacenWarmupStatus() {
     lastWarmup: _getProp('ALMACEN_LAST_WARMUP') || null,
     serverTime: new Date().toISOString()
   }};
+}
+
+// ── CATÁLOGO DE STOCK RESUMIDO (un row por skuBase, suma WH + zonas) ──
+// Diseño: una sola pasada por cada hoja, agregación O(N+M+K) → viable con 2K productos
+function getCatalogoStockResumen(params) {
+  var rangoDias = parseInt(params && params.dias) || 7;
+  return _almCached('catalogoStockResumen_' + rangoDias, 180, params, function() {
+    return _getCatalogoStockResumenImpl(rangoDias);
+  });
+}
+function _getCatalogoStockResumenImpl(rangoDias) {
+  var hoy = new Date();
+  var desde = new Date(hoy.getTime() - rangoDias * 86400000);
+  try {
+    var productos = _sheetToObjects(getSheet('PRODUCTOS_MASTER'))
+      .filter(function(p) {
+        var e = p.estado;
+        return !(e === 0 || e === '0' || e === false || String(e).toLowerCase() === 'false');
+      });
+
+    // Indexar productos
+    var prodById = {}, prodByCB = {};
+    var bySku = {};   // skuBase → { base, presentaciones, idsAll, barrasAll }
+    productos.forEach(function(p) {
+      prodById[p.idProducto] = p;
+      if (p.codigoBarra) prodByCB[p.codigoBarra] = p;
+      var sku = p.skuBase || p.idProducto;
+      if (!bySku[sku]) bySku[sku] = { base: null, presentaciones: [], idsAll: [], barrasAll: [] };
+      bySku[sku].presentaciones.push(p);
+      bySku[sku].idsAll.push(p.idProducto);
+      if (p.codigoBarra) bySku[sku].barrasAll.push(p.codigoBarra);
+      // El base es el producto canónico (factor=1 o idProducto === skuBase)
+      var fc = parseFloat(p.factorConversion) || 1;
+      if (p.idProducto === sku || (!bySku[sku].base && fc === 1)) {
+        bySku[sku].base = p;
+      }
+    });
+    Object.keys(bySku).forEach(function(sku) {
+      if (!bySku[sku].base) bySku[sku].base = bySku[sku].presentaciones[0];
+    });
+
+    // Stock WH: 1 pasada
+    var stockWH = _safeReadWhStock();
+    var whBySku = {};
+    stockWH.forEach(function(s) {
+      var p = prodById[s.codigoProducto] || prodByCB[s.codigoProducto];
+      if (!p) return;
+      var sku = p.skuBase || p.idProducto;
+      whBySku[sku] = (whBySku[sku] || 0) + (parseFloat(s.cantidadDisponible) || 0);
+    });
+
+    // Stock zonas ME: 1 pasada
+    var stockZonas = _safeReadMeStockZonas();
+    var zonasBySku = {};
+    stockZonas.forEach(function(z) {
+      var cb = String(z.Cod_Barras || z.codigoBarra || '').trim();
+      var p = prodByCB[cb];
+      if (!p) return;
+      var sku = p.skuBase || p.idProducto;
+      zonasBySku[sku] = (zonasBySku[sku] || 0) + (parseFloat(z.Cantidad || z.cantidad) || 0);
+    });
+
+    // Ventas N días: 1 pasada VENTAS_CABECERA + DETALLE
+    var ventasBySku = {};
+    try {
+      var ssMe = SpreadsheetApp.openById(_getProp('ME_SS_ID'));
+      var shVC = ssMe.getSheetByName('VENTAS_CABECERA');
+      var shVD = ssMe.getSheetByName('VENTAS_DETALLE');
+      if (shVC && shVD) {
+        var dataVC = shVC.getDataRange().getValues();
+        var idsValidas = {};
+        for (var i = 1; i < dataVC.length; i++) {
+          var fecha = dataVC[i][1] ? new Date(dataVC[i][1]) : null;
+          if (!fecha || fecha < desde) continue;
+          if (String(dataVC[i][8] || '').toUpperCase() === 'ANULADO') continue;
+          idsValidas[String(dataVC[i][0] || '').trim()] = true;
+        }
+        var dataVD = shVD.getDataRange().getValues();
+        for (var j = 1; j < dataVD.length; j++) {
+          var idV = String(dataVD[j][0] || '').trim();
+          if (!idsValidas[idV]) continue;
+          var sku2 = String(dataVD[j][1] || '').trim();
+          var cb2  = String(dataVD[j][6] || '').trim();
+          var p = prodById[sku2] || prodByCB[cb2];
+          if (!p) continue;
+          var skuKey = p.skuBase || p.idProducto;
+          var cant = parseFloat(dataVD[j][3]) || 0;
+          ventasBySku[skuKey] = (ventasBySku[skuKey] || 0) + cant;
+        }
+      }
+    } catch(_){}
+
+    // Construir resultado
+    var resultado = Object.keys(bySku).map(function(sku) {
+      var grupo = bySku[sku];
+      var p = grupo.base;
+      var whQ    = whBySku[sku] || 0;
+      var zonasQ = zonasBySku[sku] || 0;
+      var total  = whQ + zonasQ;
+      var ventas = ventasBySku[sku] || 0;
+      var rotDia = ventas / rangoDias;
+      var diasAcabar = (rotDia > 0 && total > 0) ? Math.floor(total / rotDia) : null;
+      var minimo = parseFloat(p.stockMinimo) || 0;
+      var maximo = parseFloat(p.stockMaximo) || 0;
+      // Nivel de alerta para ordenar/colorear
+      var alerta = 'OK';
+      if (total < 0)                                          alerta = 'NEGATIVO';
+      else if (minimo > 0 && total < minimo)                  alerta = 'BAJO_MINIMO';
+      else if (rotDia > 0 && diasAcabar !== null && diasAcabar < 7) alerta = 'AGOTAR_PRONTO';
+      else if (total > 0 && ventas === 0)                     alerta = 'SIN_ROTACION';
+      else if (minimo > 0 && total < minimo * 1.2)            alerta = 'CERCA_MINIMO';
+      return {
+        skuBase:           sku,
+        idProducto:        p.idProducto,
+        descripcion:       p.descripcion || sku,
+        codigoBarra:       p.codigoBarra || '',
+        marca:             p.marca || '',
+        idCategoria:       p.idCategoria || '',
+        precioVenta:       parseFloat(p.precioVenta) || 0,
+        precioCosto:       parseFloat(p.precioCosto) || 0,
+        stockMinimo:       minimo,
+        stockMaximo:       maximo,
+        whCantidad:        whQ,
+        zonasCantidad:     zonasQ,
+        totalCantidad:     total,
+        ventasRango:       ventas,
+        rotacionDia:       Math.round(rotDia * 10) / 10,
+        diasParaAcabar:    diasAcabar,
+        countPresentaciones: grupo.presentaciones.length,
+        alerta:            alerta
+      };
+    });
+
+    // Ordenar: alertas primero (NEGATIVO > BAJO_MINIMO > AGOTAR_PRONTO > etc.)
+    var sevOrden = { NEGATIVO: 0, BAJO_MINIMO: 1, AGOTAR_PRONTO: 2, SIN_ROTACION: 3, CERCA_MINIMO: 4, OK: 5 };
+    resultado.sort(function(a, b) {
+      var dx = (sevOrden[a.alerta] || 9) - (sevOrden[b.alerta] || 9);
+      if (dx !== 0) return dx;
+      return (a.descripcion || '').localeCompare(b.descripcion || '');
+    });
+
+    return { ok: true, data: { _almV: 2, productos: resultado, total: resultado.length, rangoDias: rangoDias } };
+  } catch(e) {
+    return { ok: false, error: 'Error catálogo stock: ' + e.message };
+  }
 }
 
 // ── DASHBOARD: KPIs principales (cache 5min) ────────────────────

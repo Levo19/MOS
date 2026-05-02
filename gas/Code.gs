@@ -45,6 +45,7 @@ function _route(method, e) {
 
       // ── Almacén unificado (WH + Zonas ME) ──────────────────
       case 'getDashboardAlmacen':    return getDashboardAlmacen();
+      case 'getCatalogoStockResumen': return getCatalogoStockResumen(params);
       case 'getStockUnificado':      return getStockUnificado(params);
       case 'getGuiasYPreingresos':   return getGuiasYPreingresos(params);
       case 'getRankingZonas':        return getRankingZonas(params);
