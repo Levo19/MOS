@@ -787,16 +787,45 @@ function _getOperacionesUnificadasImpl(dias) {
     var tz = Session.getScriptTimeZone();
     var operaciones = [];
 
-    // Helper: parsea fechas robusto contra strings YYYY-MM-DD vs Date objects
+    // Helper: parser robusto contra todos los formatos que puede venir
     function _parseFecha(v) {
       if (!v) return null;
-      if (v instanceof Date) return v;
+      // 1. Date object (lo más común si el sheet tiene celda formato Fecha)
+      if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
       var s = String(v).trim();
       if (!s) return null;
-      // String YYYY-MM-DD: anclarlo a mediodía local para evitar shifts de TZ
-      if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(s)) return new Date(s + 'T12:00:00');
-      var d = new Date(s);
-      return isNaN(d.getTime()) ? null : d;
+      // 2. ISO YYYY-MM-DD (sin hora) -> anclar a 12:00 local
+      if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(s)) {
+        return new Date(s + 'T12:00:00');
+      }
+      // 3. ISO completo YYYY-MM-DDTHH:MM:SS o YYYY-MM-DD HH:MM:SS
+      if (/^\d{4}-\d{1,2}-\d{1,2}[T ]\d{1,2}:\d{1,2}/.test(s)) {
+        var iso = s.replace(' ', 'T');
+        var d1 = new Date(iso);
+        if (!isNaN(d1.getTime())) return d1;
+      }
+      // 4. M/D/YYYY [H:MM:SS] (formato US, así guarda Sheets por default en muchas configs)
+      var mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+      if (mdy) {
+        return new Date(
+          parseInt(mdy[3], 10),
+          parseInt(mdy[1], 10) - 1,
+          parseInt(mdy[2], 10),
+          parseInt(mdy[4] || 0, 10),
+          parseInt(mdy[5] || 0, 10),
+          parseInt(mdy[6] || 0, 10)
+        );
+      }
+      // 5. D/M/YYYY (formato Latam si el spreadsheet usa locale 'es')
+      var dmy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (dmy) {
+        var dd = parseInt(dmy[1], 10), mm = parseInt(dmy[2], 10), yy = parseInt(dmy[3], 10);
+        // Heurística: si dd > 12, es D/M (no M/D)
+        if (dd > 12 && mm <= 12) return new Date(yy, mm - 1, dd);
+      }
+      // 6. Fallback: dejar que JS intente
+      var d2 = new Date(s);
+      return isNaN(d2.getTime()) ? null : d2;
     }
 
     // 1. WH GUIAS
@@ -908,7 +937,20 @@ function _getOperacionesUnificadasImpl(dias) {
       _almV: 2,
       porDia:    diasArr,
       total:     operaciones.length,
-      rangoDias: dias
+      rangoDias: dias,
+      _debug: {
+        timezone:     tz,
+        nowIso:       new Date().toISOString(),
+        nowLocal:     Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss'),
+        primerasFechasWh: whGuias.slice(-3).map(function(g){
+          var f = _parseFecha(g.fecha);
+          return {
+            raw:    String(g.fecha),
+            parsed: f ? f.toISOString() : null,
+            local:  f ? Utilities.formatDate(f, tz, 'yyyy-MM-dd HH:mm:ss') : null
+          };
+        })
+      }
     }};
   } catch(e) {
     return { ok: false, error: 'Error operaciones unificadas: ' + e.message };

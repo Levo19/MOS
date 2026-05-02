@@ -2518,8 +2518,22 @@ const MOS = (() => {
     if (!list) return;
     const data = S._opsData || {};
     const dias = data.porDia || [];
+    const debugInfo = data._debug;
+    // Sección debug colapsable al final
+    const debugHtml = debugInfo ? `
+      <details class="mt-3 text-[10px] text-slate-600">
+        <summary class="cursor-pointer hover:text-slate-400">🔍 Debug fechas (verifica timezone)</summary>
+        <div class="mt-1 p-2 rounded font-mono whitespace-pre-wrap" style="background:#060d1f;border:1px solid #1e293b">
+          <div>Server TZ: <span class="text-emerald-300">${debugInfo.timezone}</span></div>
+          <div>Server now: ${debugInfo.nowLocal} (${debugInfo.nowIso})</div>
+          <div class="mt-1 text-slate-500">Últimas 3 fechas WH parseadas:</div>
+          ${(debugInfo.primerasFechasWh || []).map(f =>
+            `· raw="${f.raw}" → ${f.local} (${f.parsed})`
+          ).join('<br>')}
+        </div>
+      </details>` : '';
     if (!dias.length) {
-      list.innerHTML = '<div class="text-xs text-slate-600 italic py-3 text-center">Sin operaciones en el rango</div>';
+      list.innerHTML = '<div class="text-xs text-slate-600 italic py-3 text-center">Sin operaciones en el rango</div>' + debugHtml;
       return;
     }
     const filtroFuente = $('almOpsFiltroFuente')?.value || '';
@@ -2558,7 +2572,7 @@ const MOS = (() => {
         </div>`;
       });
       return `<div class="mb-4">${headerHtml}${secciones}</div>`;
-    }).join('');
+    }).join('') + debugHtml;
   }
 
   function _renderOpCard(op) {
