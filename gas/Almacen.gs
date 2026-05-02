@@ -1528,41 +1528,81 @@ function _getInsightsStockImpl(params) {
       }
     });
 
-    // INSIGHT 2 — Trasladar entre zonas (SOLO entre zonas registradas en MOS.ZONAS)
+    // Pre-cálculo: stock WH por barras (para comparar con cada zona)
+    var stockWhPorCb = {};
+    stockWh.forEach(function(s) {
+      var cp = String(s.codigoProducto || '').trim();
+      var p = prodById[cp];
+      if (!p) return;
+      var cb = p.codigoBarra || cp;
+      stockWhPorCb[cb] = (stockWhPorCb[cb] || 0) + (parseFloat(s.cantidadDisponible) || 0);
+    });
+
+    // INSIGHT 2a — DESPACHAR DESDE WH (primera opción cuando una zona se queda sin stock)
+    // INSIGHT 2b — TRASLADAR ENTRE ZONAS (solo si WH NO tiene stock disponible)
     Object.keys(ventasMap).forEach(function(cb) {
       var ventasProd = ventasMap[cb];
       var stockInfo = stockBarrasMap[cb] || { zonas: {} };
+      var prod = prodById[cb];
+      if (!prod) return;
       Object.keys(ventasProd).forEach(function(zonaVendedora) {
-        // Filtro estricto: solo si la zona vendedora está registrada
         if (!zonasRegistradasSet[zonaVendedora]) return;
         var ventas = ventasProd[zonaVendedora];
         var stockEnEsa = stockInfo.zonas[zonaVendedora] || 0;
         var rotacionDia = ventas / rangoDias;
         if (rotacionDia <= 0) return;
         var diasRestantes = stockEnEsa / rotacionDia;
-        if (diasRestantes < 7 && diasRestantes >= 0) {
-          Object.keys(stockInfo.zonas).forEach(function(zonaConStock) {
-            if (zonaConStock === zonaVendedora) return;
-            // Filtro estricto: solo si la zona de origen también está registrada
-            if (!zonasRegistradasSet[zonaConStock]) return;
-            var stockOtra = stockInfo.zonas[zonaConStock] || 0;
-            var ventasOtra = (ventasProd[zonaConStock] || 0);
-            if (stockOtra >= 5 && ventasOtra < ventas / 3) {
-              var prod = prodById[cb];
-              if (!prod) return;
-              var nombreOrigen = zonaNombre[zonaConStock] || zonaConStock;
-              var nombreDestino = zonaNombre[zonaVendedora] || zonaVendedora;
-              insights.push({
-                tipo: 'TRASLADAR',
-                severidad: 'ALTA',
-                producto: prod.descripcion || cb,
-                codigoBarra: cb,
-                mensaje: 'Trasladar ' + (prod.descripcion || cb) + ': ' + nombreOrigen + ' (' + stockOtra + 'u) → ' + nombreDestino + ' (vende ' + Math.round(rotacionDia * 10) / 10 + '/d, alcanza ' + Math.floor(diasRestantes) + 'd)',
-                desde: zonaConStock,
-                hacia: zonaVendedora,
-                cantidadSugerida: Math.min(stockOtra, Math.ceil(rotacionDia * 7))
-              });
-            }
+        // Solo nos interesa si la zona se queda sin stock pronto
+        if (diasRestantes >= 7 || diasRestantes < 0) return;
+        var nombreDestino = zonaNombre[zonaVendedora] || zonaVendedora;
+        var stockWhDisp = stockWhPorCb[cb] || 0;
+        var cantidadSugerida = Math.ceil(rotacionDia * 14);  // 2 semanas de cobertura
+
+        // 2a. PRIMERA OPCIÓN: ¿Hay stock en WH para despachar?
+        if (stockWhDisp >= cantidadSugerida) {
+          insights.push({
+            tipo: 'DESPACHAR_DESDE_WH',
+            severidad: diasRestantes < 3 ? 'CRITICA' : 'ALTA',
+            producto: prod.descripcion || cb,
+            codigoBarra: cb,
+            mensaje: 'Despachar de 🏭 WH → ' + nombreDestino + ': ' + nombreDestino + ' tiene ' + stockEnEsa + 'u (alcanza ' + Math.floor(diasRestantes) + 'd) y vende ' + Math.round(rotacionDia * 10) / 10 + '/d. WH dispone de ' + stockWhDisp + 'u.',
+            accion: 'Despachar ' + cantidadSugerida + 'u (cobertura 2 semanas)',
+            desde: 'WH',
+            hacia: zonaVendedora,
+            cantidadSugerida: cantidadSugerida,
+            stockWh: stockWhDisp
+          });
+          return;  // si WH tiene stock, no sugerir traslado entre zonas (operación inusual)
+        }
+
+        // 2b. SEGUNDA OPCIÓN: WH no tiene → buscar otra zona con stock ocioso
+        var trasladosCandidatos = [];
+        Object.keys(stockInfo.zonas).forEach(function(zonaConStock) {
+          if (zonaConStock === zonaVendedora) return;
+          if (!zonasRegistradasSet[zonaConStock]) return;
+          var stockOtra = stockInfo.zonas[zonaConStock] || 0;
+          var ventasOtra = (ventasProd[zonaConStock] || 0);
+          if (stockOtra >= 5 && ventasOtra < ventas / 3) {
+            trasladosCandidatos.push({
+              zonaOrigen: zonaConStock,
+              stockOrigen: stockOtra,
+              cantSugerida: Math.min(stockOtra, cantidadSugerida)
+            });
+          }
+        });
+        if (trasladosCandidatos.length > 0) {
+          var mejor = trasladosCandidatos[0];
+          var nombreOrigen = zonaNombre[mejor.zonaOrigen] || mejor.zonaOrigen;
+          insights.push({
+            tipo: 'TRASLADAR',
+            severidad: 'MEDIA',  // menor prioridad porque es operación inusual
+            producto: prod.descripcion || cb,
+            codigoBarra: cb,
+            mensaje: '🏭 WH sin stock — Trasladar de ' + nombreOrigen + ' (' + mejor.stockOrigen + 'u, sin venta) → ' + nombreDestino + ' (vende ' + Math.round(rotacionDia * 10) / 10 + '/d, alcanza ' + Math.floor(diasRestantes) + 'd)',
+            accion: 'Mover ' + mejor.cantSugerida + 'u entre zonas (operación manual)',
+            desde: mejor.zonaOrigen,
+            hacia: zonaVendedora,
+            cantidadSugerida: mejor.cantSugerida
           });
         }
       });
@@ -1594,9 +1634,14 @@ function _getInsightsStockImpl(params) {
       }
     });
 
-    // Dedup + ordenar por severidad
-    var prio = { CRITICA: 0, ALTA: 1, MEDIA: 2, BAJA: 3 };
-    insights.sort(function(a, b){ return (prio[a.severidad] || 9) - (prio[b.severidad] || 9); });
+    // Ordenar: por severidad primero, luego por tipo (REPOSICION > DESPACHAR_DESDE_WH > TRASLADAR > SIN_ROTACION)
+    var prioSev  = { CRITICA: 0, ALTA: 1, MEDIA: 2, BAJA: 3 };
+    var prioTipo = { REPOSICION: 0, DESPACHAR_DESDE_WH: 1, TRASLADAR: 2, SIN_ROTACION: 3 };
+    insights.sort(function(a, b){
+      var d1 = (prioSev[a.severidad]  || 9) - (prioSev[b.severidad]  || 9);
+      if (d1 !== 0) return d1;
+      return (prioTipo[a.tipo] || 9) - (prioTipo[b.tipo] || 9);
+    });
 
     return { ok: true, data: { _almV: 2, insights: insights.slice(0, 20), total: insights.length, rangoDias: rangoDias } };
   } catch(e) {
