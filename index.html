@@ -2136,20 +2136,29 @@
         </div>
       </div>
 
-      <!-- Stock tab (con búsqueda + barras de progreso) -->
+      <!-- Stock tab — TODOS los productos activos del catálogo, agrupados por skuBase -->
       <div id="almPanelStock" class="hidden">
         <div class="flex items-center gap-2 mb-3 flex-wrap">
           <input id="almStockFilter" class="inp text-sm flex-1" style="min-width:160px" placeholder="🔍 Buscar producto..." oninput="MOS.almFiltrarStock(this.value)">
-          <select id="almStockOrden" class="inp text-xs" onchange="MOS.almFiltrarStock()">
-            <option value="alerta">Por alerta (críticos primero)</option>
-            <option value="stock">Por stock (mayor)</option>
-            <option value="rotacion">Por rotación (mayor)</option>
-            <option value="alfa">Alfabético</option>
+          <select id="almStockFiltroAlerta" class="inp text-xs" onchange="MOS.almFiltrarStock()">
+            <option value="">Todas las alertas</option>
+            <option value="NEGATIVO">🚨 Stock negativo</option>
+            <option value="BAJO_MINIMO">⚠ Bajo mínimo</option>
+            <option value="AGOTAR_PRONTO">⏰ Se agota pronto</option>
+            <option value="SIN_ROTACION">⏸ Sin rotación</option>
+            <option value="CERCA_MINIMO">🟡 Cerca al mínimo</option>
+            <option value="OK">✅ Solo OK</option>
           </select>
+          <button class="btn-ghost text-xs px-2 py-1.5" onclick="MOS.almRefreshCatalogo()" title="Refrescar (ignora cache)">↺</button>
         </div>
+        <div id="almStockGasVersionWarn" class="hidden text-xs text-amber-400 mb-2 p-2 rounded" style="background:rgba(245,158,11,0.05);border:1px solid rgba(245,158,11,0.3)">
+          ⚠ El GAS de MOS no está actualizado con los últimos cambios. Redespliega como Nueva versión.
+        </div>
+        <div id="almStockStats" class="text-xs text-slate-500 mb-2"></div>
         <div id="almStockList" class="space-y-2">
-          <div class="skel h-16 rounded-lg"></div>
-          <div class="skel h-16 rounded-lg"></div>
+          <div class="skel h-24 rounded-lg"></div>
+          <div class="skel h-24 rounded-lg"></div>
+          <div class="skel h-24 rounded-lg"></div>
         </div>
       </div>
 

@@ -2296,19 +2296,31 @@ const MOS = (() => {
   }
 
   // ── ALMACÉN ─────────────────────────────────────────────────
-  async function loadAlmacen() {
+  async function loadAlmacen(forceRefresh) {
     if (!API.isConfigured()) return;
-    const [stockRes, alertasRes, mermasRes, envRes] = await Promise.allSettled([
-      API.get('getStockWarehouse', {}),
+    const params = forceRefresh ? { _refresh: 'true' } : {};
+    const params7 = forceRefresh ? { dias: 7, _refresh: 'true' } : { dias: 7 };
+    const [catalogoRes, alertasRes, mermasRes, envRes] = await Promise.allSettled([
+      API.get('getCatalogoStockResumen', params7),
       API.get('getAlertasWarehouse', {}),
       API.get('getMermasWarehouse', {}),
       API.get('getEnvasadosWarehouse', { limit: '50' })
     ]);
-    if (stockRes.status === 'fulfilled') S.stock = stockRes.value || [];
+    if (catalogoRes.status === 'fulfilled') {
+      const v = catalogoRes.value || {};
+      S.catalogoStock = (v.productos) || [];
+      S._catalogoGasOld = !v._almV || v._almV < 2;
+    }
     if (alertasRes.status === 'fulfilled') S.vencimientos = alertasRes.value || { criticos: [], alertas: [] };
     if (mermasRes.status === 'fulfilled') S.mermas = mermasRes.value || [];
     if (envRes.status === 'fulfilled')    S.envasados = envRes.value || [];
+    S.loaded['almacen'] = true;
     renderAlmTab(S.almTab);
+  }
+
+  async function almRefreshCatalogo() {
+    toast('Refrescando catálogo de stock…', 'info');
+    await loadAlmacen(true);
   }
 
   function setAlmTab(tab) {
@@ -2805,67 +2817,229 @@ const MOS = (() => {
     await almAbrirStockDetalle(S._stockDetCurrentId, true);
   }
 
+  // Cache local de detalles expandidos (skuBase → datos)
+  S._stockDetCache = S._stockDetCache || {};
+  S._stockExpanded = S._stockExpanded || {};
+
   function renderStockTable() {
     const list = $('almStockList');
+    const stats = $('almStockStats');
+    const warn = $('almStockGasVersionWarn');
     if (!list) return;
-    if (!S.stock || !S.stock.length) {
-      list.innerHTML = '<div class="text-xs text-slate-600 italic py-6 text-center">Sin datos. Verifica conexión con warehouseMos.</div>';
+    if (warn) warn.classList.toggle('hidden', !S._catalogoGasOld);
+    const items = S.catalogoStock || [];
+    if (!items.length) {
+      list.innerHTML = '<div class="text-xs text-slate-600 italic py-6 text-center">Sin productos activos en catálogo.</div>';
+      if (stats) stats.textContent = '';
       return;
     }
-    // Filtro
+    // Filtros
     const q = (S.almStockFilter || '').trim().toLowerCase();
-    const orden = $('almStockOrden')?.value || 'alerta';
-    let items = [...S.stock];
+    const filtroAlerta = $('almStockFiltroAlerta')?.value || '';
+    let filtered = items;
     if (q) {
-      items = items.filter(s =>
-        (s.descripcion || '').toLowerCase().includes(q) ||
-        (s.codigoProducto || '').toLowerCase().includes(q) ||
-        (s.skuBase || '').toLowerCase().includes(q)
+      filtered = filtered.filter(p =>
+        (p.descripcion || '').toLowerCase().includes(q) ||
+        (p.skuBase || '').toLowerCase().includes(q) ||
+        (p.codigoBarra || '').toLowerCase().includes(q) ||
+        (p.idProducto || '').toLowerCase().includes(q)
       );
     }
-    // Orden
-    if (orden === 'alerta')   items.sort((a, b) => (a.alertaMinimo ? 0 : 1) - (b.alertaMinimo ? 0 : 1));
-    if (orden === 'stock')    items.sort((a, b) => (parseFloat(b.cantidadDisponible) || 0) - (parseFloat(a.cantidadDisponible) || 0));
-    if (orden === 'rotacion') items.sort((a, b) => (a.diasCobertura || 9999) - (b.diasCobertura || 9999));
-    if (orden === 'alfa')     items.sort((a, b) => (a.descripcion || '').localeCompare(b.descripcion || ''));
-    if (!items.length) {
-      list.innerHTML = '<div class="text-xs text-slate-600 italic py-6 text-center">Sin coincidencias para "' + q + '"</div>';
+    if (filtroAlerta) filtered = filtered.filter(p => p.alerta === filtroAlerta);
+
+    if (stats) stats.textContent = `${filtered.length} de ${items.length} productos`;
+
+    if (!filtered.length) {
+      list.innerHTML = '<div class="text-xs text-slate-600 italic py-6 text-center">Sin coincidencias' + (q ? ' para "' + q + '"' : '') + '</div>';
       return;
     }
-    list.innerHTML = items.slice(0, 100).map(s => {
-      const cant = parseFloat(s.cantidadDisponible) || 0;
-      const min = parseFloat(s.stockMinimo) || 0;
-      const max = min > 0 ? min * 2 : (cant * 1.5 || 100);
-      const pct = Math.min(100, max > 0 ? (cant / max) * 100 : 0);
-      const colorBar = cant < min ? '#f43f5e' : cant < min * 1.2 ? '#f59e0b' : '#10b981';
-      const dias = (s.diasCobertura !== undefined && s.diasCobertura !== null)
-        ? `<span class="${s.diasCobertura <= 7 ? 'text-rose-400' : s.diasCobertura <= 15 ? 'text-amber-400' : 'text-slate-500'}">${s.diasCobertura}d</span>`
-        : '<span class="text-slate-600">— rot</span>';
-      const idClick = s.codigoProducto || s.skuBase || '';
-      // Nombre amistoso: si tiene descripcion real → la usa. Si es "⚠ Sin nombre..." → muestra advertencia sutil
-      const nombreFriendly = s.descripcion && !String(s.descripcion).startsWith('⚠')
-        ? s.descripcion
-        : `<span class="text-amber-400/70">${s.descripcion || s.codigoProducto}</span>`;
-      // Línea inferior: SKU + código de barras separados (más informativa)
-      const skuLine = s.skuBase
-        ? `<span class="text-emerald-300/70">SKU ${s.skuBase}</span> · ▌ ${s.codigoBarra || s.codigoProducto}`
-        : `▌ ${s.codigoProducto}`;
-      return `<div class="card-sm p-3 cursor-pointer hover:border-emerald-500/40 transition-colors${s.sinCatalogo ? ' border-amber-500/30' : ''}" onclick="MOS.almAbrirStockDetalle('${idClick}')">
-        <div class="flex items-center justify-between gap-2 mb-1.5">
-          <div class="min-w-0 flex-1">
-            <div class="text-sm font-semibold text-slate-100 truncate">${nombreFriendly}</div>
-            <div class="text-[10px] text-slate-500 font-mono truncate">${skuLine}</div>
-          </div>
-          <div class="text-right shrink-0">
-            <div class="text-lg font-bold text-slate-100">${cant.toLocaleString('es-PE')}u</div>
-            <div class="text-[10px] text-slate-500">${dias} · mín ${min}</div>
+
+    list.innerHTML = filtered.slice(0, 100).map(p => _renderStockCard(p)).join('') +
+      (filtered.length > 100 ? `<div class="text-xs text-slate-600 italic text-center py-2">+ ${filtered.length - 100} productos más, refina la búsqueda</div>` : '');
+  }
+
+  function _renderStockCard(p) {
+    const expanded = !!S._stockExpanded[p.skuBase];
+    const total = p.totalCantidad;
+    const minimo = p.stockMinimo || 0;
+    const maximo = p.stockMaximo || (minimo * 2) || 100;
+    const pct = Math.min(100, maximo > 0 ? Math.max(0, total) / maximo * 100 : 0);
+    const colorBar = total < 0 ? '#f43f5e' :
+                     total < minimo ? '#f43f5e' :
+                     total < minimo * 1.2 ? '#f59e0b' :
+                     '#10b981';
+    // Mensaje de estado
+    let alertMsg = '', alertColor = 'text-slate-400';
+    if (p.alerta === 'NEGATIVO') {
+      alertMsg = `🚨 Stock negativo (${total}u) — discrepancia entre lo recibido y lo vendido. Auditar urgente.`;
+      alertColor = 'text-rose-500 font-semibold';
+    } else if (p.alerta === 'BAJO_MINIMO') {
+      alertMsg = `🚨 Stock total (${total}u) por debajo del mínimo (${minimo}u)`;
+      alertColor = 'text-rose-400';
+    } else if (p.alerta === 'AGOTAR_PRONTO' && p.diasParaAcabar !== null) {
+      alertMsg = `⏰ Al ritmo actual alcanza para ${p.diasParaAcabar} días`;
+      alertColor = 'text-amber-400';
+    } else if (p.alerta === 'SIN_ROTACION') {
+      alertMsg = `⏸ Stock sin movimiento en ${p.diasParaAcabar !== null ? p.diasParaAcabar + ' días' : 'el rango consultado'}`;
+      alertColor = 'text-slate-500';
+    } else if (p.alerta === 'CERCA_MINIMO') {
+      alertMsg = `🟡 Cerca del mínimo (${total}u / mín ${minimo}u)`;
+      alertColor = 'text-amber-400';
+    } else if (p.diasParaAcabar !== null) {
+      alertMsg = `✅ Alcanza para ${p.diasParaAcabar} días`;
+      alertColor = 'text-emerald-400';
+    } else if (total > 0) {
+      alertMsg = '✅ Stock estable';
+      alertColor = 'text-emerald-400';
+    }
+    const stockColor = total < 0 ? 'text-rose-500' : total === 0 ? 'text-slate-500' : 'text-slate-100';
+    const stockDisplay = total < 0 ? `⚠ ${total}u` : `${total}u`;
+
+    return `<div class="card-sm p-4">
+      <!-- Header del card: nombre + código + total + rotación + barra + alerta -->
+      <div class="flex items-start justify-between gap-3 mb-2">
+        <div class="min-w-0 flex-1">
+          <div class="text-sm font-semibold text-slate-100 truncate">📦 ${p.descripcion || p.skuBase}</div>
+          <div class="text-[11px] text-slate-500 font-mono mt-0.5 truncate">SKU <span class="text-emerald-300/70">${p.skuBase}</span>${p.codigoBarra ? ' · ▌ ' + p.codigoBarra : ''}${p.countPresentaciones > 1 ? ' <span class="text-slate-600">+ ' + (p.countPresentaciones - 1) + ' pres.</span>' : ''}</div>
+        </div>
+        <div class="text-right shrink-0">
+          <div class="text-lg font-bold ${stockColor}">${stockDisplay}</div>
+          <div class="text-[10px] text-slate-500">${p.rotacionDia > 0 ? p.rotacionDia + '/d' : '0/d'}</div>
+        </div>
+      </div>
+      <div class="h-2 bg-slate-800 rounded overflow-hidden mb-1">
+        <div class="h-full transition-all" style="width:${pct}%;background:${colorBar}"></div>
+      </div>
+      <div class="flex justify-between text-[10px] text-slate-500 mb-2">
+        <span>mín ${minimo}u</span>
+        <span class="text-slate-600">WH ${p.whCantidad}u · zonas ${p.zonasCantidad}u</span>
+        <span>máx ${maximo}u</span>
+      </div>
+      ${alertMsg ? `<div class="text-xs ${alertColor} mb-1">${alertMsg}</div>` : ''}
+      <!-- Toggle expandir / colapsar -->
+      <button onclick="MOS.almToggleStockExpand('${p.skuBase}', '${p.idProducto}')"
+              class="text-[11px] text-slate-500 hover:text-slate-300 mt-1 w-full text-center py-1 rounded transition-colors"
+              style="background:rgba(255,255,255,0.02)">
+        ${expanded ? '▴ Ocultar detalle' : '▾ Ver detalle (WH + zonas + sugerencias)'}
+      </button>
+      <!-- Sección expandible -->
+      <div id="stockExp_${p.skuBase}" class="${expanded ? '' : 'hidden'} mt-3 pt-3 border-t border-slate-800/50">
+        ${expanded ? _renderStockExpandedContent(p.skuBase) : ''}
+      </div>
+    </div>`;
+  }
+
+  function _renderStockExpandedContent(skuBase) {
+    const cached = S._stockDetCache[skuBase];
+    if (!cached) {
+      // Disparar fetch en background
+      _fetchStockDetail(skuBase);
+      return '<div class="text-xs text-slate-500 italic py-2">Cargando detalle…</div>';
+    }
+    if (cached.error) return `<div class="text-xs text-rose-400 italic py-2">Error: ${cached.error}</div>`;
+    const r = cached;
+    const wh = r.wh || {};
+    const zonas = r.zonas || [];
+    const insights = r.insights || [];
+    const total = r.total || {};
+    // WH detail
+    const whHtml = `
+      <div class="text-xs">
+        <div class="font-semibold text-slate-300 mb-1">🏭 Almacén central</div>
+        <div class="card-sm p-2 ${wh.cantidad < 0 ? 'border-rose-500/40' : ''}">
+          <div class="flex items-center justify-between">
+            <div class="min-w-0 flex-1">
+              <div class="text-slate-300">Stock disponible</div>
+              <div class="text-[10px] text-slate-500 mt-0.5">
+                ${wh.cantidad < 0 ? '<span class="text-rose-400">⚠ Stock negativo: vendiste/saliste más de lo recibido</span>' :
+                  total.rotacionDia > 0 ? 'Despacha aprox. ' + total.rotacionDia + '/d' : 'Sin movimiento'}
+              </div>
+            </div>
+            <div class="font-bold ${wh.cantidad > 0 ? 'text-blue-400' : wh.cantidad < 0 ? 'text-rose-500' : 'text-slate-500'}">
+              ${wh.cantidad > 0 ? wh.cantidad + 'u' : wh.cantidad < 0 ? '⚠ ' + wh.cantidad + 'u' : (wh.detalle && wh.detalle.length > 0 ? '0u' : '— sin registro')}
+            </div>
           </div>
         </div>
-        <div class="h-2 bg-slate-800 rounded overflow-hidden">
-          <div class="h-full transition-all" style="width:${pct}%;background:${colorBar}"></div>
+      </div>
+    `;
+    // Zonas
+    const zonasHtml = `
+      <div class="text-xs">
+        <div class="font-semibold text-slate-300 mb-1">🏪 Distribución por zona (rot ${total.rangoDiasConsultado || 7}d)</div>
+        <div class="card-sm p-2 space-y-1">
+          ${zonas.map(z => {
+            const sinReg = !z.tieneRegistroStock;
+            const isNeg = z.cantidad < 0;
+            const isCero = z.cantidad === 0;
+            let stockStr, stockCls;
+            if (sinReg) { stockStr = '— sin registro'; stockCls = 'text-slate-600 italic'; }
+            else if (isNeg) { stockStr = `⚠ ${z.cantidad}u`; stockCls = 'text-rose-500'; }
+            else if (isCero) { stockStr = '0u'; stockCls = 'text-slate-500'; }
+            else { stockStr = z.cantidad + 'u'; stockCls = 'text-slate-200'; }
+            let detail;
+            if (sinReg && z.sinVentas) detail = '<span class="text-slate-600 italic">Producto no registrado en zona</span>';
+            else if (z.sinVentas) detail = '<span class="text-slate-600">Sin ventas en ' + (total.rangoDiasConsultado || 7) + 'd</span>';
+            else {
+              detail = 'Vende ' + z.rotacionDia + '/d';
+              if (z.diasParaAcabar !== null) detail += ` · alcanza ${z.diasParaAcabar}d`;
+              else if (sinReg) detail += ' · <span class="text-rose-400">⚠ vendiéndose sin registro</span>';
+              else if (isCero) detail += ' · <span class="text-rose-400">⚠ stock agotado</span>';
+            }
+            return `<div class="flex items-center justify-between gap-2 py-1">
+              <div class="min-w-0 flex-1">
+                <div class="text-slate-300">🏪 ${z.nombre}</div>
+                <div class="text-[10px] text-slate-500">${detail}</div>
+              </div>
+              <div class="font-bold ${stockCls} shrink-0">${stockStr}</div>
+            </div>`;
+          }).join('')}
         </div>
-      </div>`;
-    }).join('') + (items.length > 100 ? `<div class="text-xs text-slate-600 italic text-center py-2">+ ${items.length - 100} más, refina la búsqueda</div>` : '');
+      </div>
+    `;
+    // Insights
+    const insightsHtml = insights.length ? `
+      <div class="text-xs">
+        <div class="font-semibold text-slate-300 mb-1">💡 Sugerencias</div>
+        <div class="space-y-1">
+          ${insights.map(i => {
+            const cls = i.severidad === 'CRITICA' ? 'border-rose-500/40' : i.severidad === 'ALTA' ? 'border-amber-500/40' : 'border-slate-700';
+            return `<div class="card-sm p-2 border-l-2 ${cls}">
+              <div class="text-slate-200">${i.mensaje}</div>
+              ${i.accion ? `<div class="text-[10px] text-slate-500 mt-0.5">→ ${i.accion}</div>` : ''}
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    ` : '';
+    return `<div class="space-y-3">${whHtml}${zonasHtml}${insightsHtml}</div>`;
+  }
+
+  async function _fetchStockDetail(skuBase) {
+    if (!skuBase) return;
+    if (S._stockDetCache[skuBase] && !S._stockDetCache[skuBase].error) return;
+    try {
+      const r = await API.get('getStockUnificado', { skuBase });
+      S._stockDetCache[skuBase] = r;
+      // Re-render solo si la sección sigue expandida
+      if (S._stockExpanded[skuBase]) {
+        const cont = $('stockExp_' + skuBase);
+        if (cont) cont.innerHTML = _renderStockExpandedContent(skuBase);
+      }
+    } catch(e) {
+      S._stockDetCache[skuBase] = { error: e.message };
+      if (S._stockExpanded[skuBase]) {
+        const cont = $('stockExp_' + skuBase);
+        if (cont) cont.innerHTML = _renderStockExpandedContent(skuBase);
+      }
+    }
+  }
+
+  function almToggleStockExpand(skuBase, idProducto) {
+    if (!skuBase) return;
+    S._stockExpanded[skuBase] = !S._stockExpanded[skuBase];
+    // Re-render solo esa card (más rápido que renderStockTable completo)
+    renderStockTable();
+    // Si abrió y aún no tiene cache, ya disparó el fetch dentro del render
   }
 
   function renderVencTable() {
@@ -8449,7 +8623,7 @@ const MOS = (() => {
     abrirLiquidacion,
     abrirModalPrecio, publicarPrecio,
     setAlmTab,
-    almLoadResumen, almRefreshResumen, almFiltrarStock,
+    almLoadResumen, almRefreshResumen, almFiltrarStock, almRefreshCatalogo, almToggleStockExpand,
     almLoadOps, almLoadZonas, almRefreshZonas, almAbrirStockDetalle, cerrarStockDetalle, almRefreshStockDetalle,
     _almGenerarPedidoFromInsight, _almPickProveedor, cerrarSelProveedor,
     cerrarModalPedido, pedidoBuscarItem, pedidoAgregarItem,
