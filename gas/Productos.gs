@@ -157,38 +157,100 @@ function getProductoPorCodigo(params) {
   };
 }
 
+// Genera el siguiente número secuencial mirando ambas columnas (idProducto + skuBase)
+// Returns { idProducto: 'IDPRO0002316', skuBase: 'LEV0002316', secuencia: 2316 }
+function _siguienteSecuenciaProducto(sheet) {
+  var data = sheet.getDataRange().getValues();
+  var hdrs = data[0];
+  var idxId  = hdrs.indexOf('idProducto'); if (idxId  < 0) idxId  = 0;
+  var idxSku = hdrs.indexOf('skuBase');
+  var max = 0;
+  for (var i = 1; i < data.length; i++) {
+    var id = String(data[i][idxId] || '');
+    var m1 = id.match(/^IDPRO(\d+)$/);
+    if (m1) max = Math.max(max, parseInt(m1[1], 10));
+    if (idxSku >= 0) {
+      var sku = String(data[i][idxSku] || '');
+      var m2 = sku.match(/^LEV(\d+)$/);
+      if (m2) max = Math.max(max, parseInt(m2[1], 10));
+    }
+  }
+  var siguiente = max + 1;
+  var pad = String(siguiente).padStart(7, '0');
+  return {
+    idProducto: 'IDPRO' + pad,
+    skuBase:    'LEV'   + pad,
+    secuencia:  siguiente
+  };
+}
+
 function crearProductoMaster(params) {
   var bloqueo = _validarSource(params, 'crear', 'PRODUCTOS_MASTER');
   if (bloqueo) return bloqueo;
   var sheet = getSheet('PRODUCTOS_MASTER');
-  var id = params.idProducto || _generateId('P');
-  var skuBase = params.skuBase || params.codigoBarra || id;
 
-  // Verificar duplicado
+  // 1. IDs secuenciales (IDPRO0002316 / LEV0002316)
+  var seq = _siguienteSecuenciaProducto(sheet);
+  var id      = params.idProducto || seq.idProducto;
+  var skuBase = params.skuBase    || seq.skuBase;
+
+  // 2. Validación duplicado de codigoBarra
   if (params.codigoBarra) {
-    var dup = _sheetToObjects(sheet).find(function(p){ return p.codigoBarra === params.codigoBarra; });
-    if (dup) return { ok: false, error: 'Código de barras ya existe: ' + dup.idProducto };
+    var existing = _sheetToObjects(sheet).find(function(p){
+      return String(p.codigoBarra || '').trim() === String(params.codigoBarra).trim();
+    });
+    if (existing) {
+      return { ok: false, error: 'El código de barras ' + params.codigoBarra +
+                                  ' ya existe en el producto ' + existing.idProducto +
+                                  ' (' + (existing.descripcion || 'sin descripción') + ')' };
+    }
   }
 
-  sheet.appendRow([
+  // 3. Defaults SUNAT autorrelleno
+  var tipoIGV = (params.Tipo_IGV !== undefined && params.Tipo_IGV !== '')
+              ? String(params.Tipo_IGV) : '1';   // 1 = Gravado por default
+  // Migrar valores legacy
+  var legacyMap = { 'gravado': '1', 'exonerado': '2', 'inafecto': '3' };
+  if (legacyMap[String(tipoIGV).toLowerCase()]) tipoIGV = legacyMap[String(tipoIGV).toLowerCase()];
+
+  var igvPct = (params.IGV_Porcentaje !== undefined && params.IGV_Porcentaje !== '')
+             ? parseFloat(params.IGV_Porcentaje) : (tipoIGV === '1' ? 18 : 0);
+  var codTributo = params.Cod_Tributo || (tipoIGV === '1' ? '1000' : tipoIGV === '2' ? '9997' : tipoIGV === '3' ? '9998' : '');
+  var codSunat = params.Cod_SUNAT || '10000000';
+  var unidadMedida = params.Unidad_Medida || 'NIU';
+  var unidad = params.unidad || 'NIU';
+
+  // 4. factorConversion: 1 si es base (no derivado, no presentación)
+  var esDerivado = !!(params.codigoProductoBase && String(params.codigoProductoBase).trim());
+  var esPresentacion = !!(params.skuBase && params.skuBase !== id);
+  var factorConv;
+  if (esPresentacion) {
+    factorConv = parseFloat(params.factorConversion) || 1;
+  } else if (esDerivado) {
+    factorConv = '';  // derivado usa factorConversionBase
+  } else {
+    factorConv = 1;   // base = factor 1
+  }
+
+  var values = [
     id,
     skuBase,
     params.codigoBarra          || '',
     params.descripcion          || '',
     params.marca                || '',
     params.idCategoria          || '',
-    params.unidad               || 'UNIDAD',
+    unidad,
     parseFloat(params.precioVenta)   || 0,
     parseFloat(params.precioCosto)   || 0,
-    params.Cod_Tributo          || '',
-    params.IGV_Porcentaje !== undefined ? parseFloat(params.IGV_Porcentaje) : '',
-    params.Cod_SUNAT            || '',
-    params.Tipo_IGV             || '',
-    params.Unidad_Medida        || 'NIU',
+    codTributo,
+    igvPct,
+    codSunat,
+    tipoIGV,
+    unidadMedida,
     '1',
     params.esEnvasable          || '0',
     params.codigoProductoBase   || '',
-    parseFloat(params.factorConversion)     || '',
+    factorConv,
     parseFloat(params.factorConversionBase) || '',
     parseFloat(params.mermaEsperadaPct)     || '',
     parseFloat(params.stockMinimo) || 0,
@@ -196,7 +258,13 @@ function crearProductoMaster(params) {
     params.zona                 || '',
     new Date(),
     params.usuario              || ''
-  ]);
+  ];
+
+  // 5. Forzar formato de TEXTO en columnas idProducto (1), skuBase (2), codigoBarra (3)
+  // (sino Sheets los convierte a número y se pierden ceros / formato exacto)
+  var nextRow = sheet.getLastRow() + 1;
+  sheet.getRange(nextRow, 1, 1, 3).setNumberFormat('@STRING@');
+  sheet.getRange(nextRow, 1, 1, values.length).setValues([values]);
 
   if (parseFloat(params.precioVenta) > 0) {
     _registrarHistorialPrecio(id, skuBase, params.codigoBarra || '',
@@ -204,7 +272,7 @@ function crearProductoMaster(params) {
       params.usuario || '', 'Precio inicial', 'MOS');
   }
 
-  return { ok: true, data: { idProducto: id, skuBase: skuBase } };
+  return { ok: true, data: { idProducto: id, skuBase: skuBase, secuencia: seq.secuencia } };
 }
 
 function actualizarProductoMaster(params) {
