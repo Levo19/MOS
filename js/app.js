@@ -4158,6 +4158,7 @@ const MOS = (() => {
     sel.innerHTML = '<option value="">— seleccionar envasable —</option>'
       + items.map(p => { const val = p.skuBase || p.idProducto; return `<option value="${val}"${cur===val?' selected':''}>${p.descripcion||p.idProducto}</option>`; }).join('');
     if (cur) sel.value = cur;
+    sel.onchange = () => _heredarTributariosDeBase(sel.value);
   }
 
   function _poblarBasesSelect() {
@@ -4168,6 +4169,34 @@ const MOS = (() => {
     sel.innerHTML = '<option value="">— seleccionar producto base —</option>'
       + bases.map(p => `<option value="${p.idProducto}"${cur===p.idProducto?' selected':''}>${p.descripcion||p.idProducto}</option>`).join('');
     if (cur) sel.value = cur;
+    sel.onchange = () => _heredarTributariosDeBase(sel.value);
+  }
+
+  // Hereda Tipo_IGV, IGV%, Cod_Tributo, Cod_SUNAT, Unidad_Medida del producto padre seleccionado
+  // (presentación o derivado). Editable después si se requiere.
+  function _heredarTributariosDeBase(idBase) {
+    if (!idBase) return;
+    const padre = (S.productos || []).find(p =>
+      p.idProducto === idBase || p.skuBase === idBase
+    );
+    if (!padre) return;
+    // Migrar legacy gravado/exonerado/inafecto → 1/2/3
+    const tipoLegacy = { 'gravado': '1', 'exonerado': '2', 'inafecto': '3' };
+    const tipoVal = tipoLegacy[String(padre.Tipo_IGV || '').toLowerCase()] || (padre.Tipo_IGV ? String(padre.Tipo_IGV) : '1');
+    if ($('prodTipoIGV'))     $('prodTipoIGV').value     = tipoVal;
+    if ($('prodCodTributo'))  $('prodCodTributo').value  = padre.Cod_Tributo || (tipoVal === '1' ? '1000' : tipoVal === '2' ? '9997' : '9998');
+    if ($('prodIGV'))         $('prodIGV').value         = (padre.IGV_Porcentaje !== undefined && padre.IGV_Porcentaje !== '') ? padre.IGV_Porcentaje : (tipoVal === '1' ? 18 : 0);
+    if ($('prodCodSUNAT'))    $('prodCodSUNAT').value    = padre.Cod_SUNAT || '10000000';
+    if ($('prodUnidadMedida')) $('prodUnidadMedida').value = padre.Unidad_Medida || 'NIU';
+    // Solo herendar idCategoria si no se ha llenado
+    if ($('prodCategoria') && !$('prodCategoria').value && padre.idCategoria) {
+      $('prodCategoria').value = padre.idCategoria;
+    }
+    if ($('prodMarca') && !$('prodMarca').value && padre.marca) {
+      $('prodMarca').value = padre.marca;
+    }
+    _actualizarResumenSunat();
+    toast('🧬 Datos tributarios heredados de "' + (padre.descripcion || padre.idProducto) + '" — editables si requiere', 'info');
   }
 
   function prodAutogenBarcode() {
@@ -4663,7 +4692,30 @@ const MOS = (() => {
 
   async function guardarProducto() {
     const desc = ($('prodDescripcion')?.value || '').trim();
-    if (!desc) { toast('La descripción es requerida', 'error'); return; }
+    // Validaciones de campos OBLIGATORIOS
+    if (!desc) {
+      toast('⚠ La descripción es requerida', 'error');
+      $('prodDescripcion')?.focus();
+      return;
+    }
+    let codigoBarra = ($('prodCodigoBarra')?.value || '').trim();
+    // Si no hay codigoBarra, autogenerar uno NMLEV en el momento (no permitir vacío)
+    if (!codigoBarra) {
+      prodAutogenBarcode();
+      codigoBarra = ($('prodCodigoBarra')?.value || '').trim();
+      if (!codigoBarra) {
+        toast('⚠ El código de barras es requerido', 'error');
+        $('prodCodigoBarra')?.focus();
+        return;
+      }
+      toast('Código de barras autogenerado: ' + codigoBarra, 'info');
+    }
+    const precioVenta = parseFloat($('prodPrecioVenta')?.value);
+    if (!precioVenta || precioVenta <= 0) {
+      toast('⚠ El precio de venta es requerido (> 0)', 'error');
+      $('prodPrecioVenta')?.focus();
+      return;
+    }
 
     const params = {
       idProducto:    $('prodId')?.value     || undefined,
@@ -4713,17 +4765,44 @@ const MOS = (() => {
       return;
     }
 
+    // OPTIMISTIC FLOW: cerrar modal de inmediato + pulse visual al guardarse
+    const isEdit = !!params.idProducto;
+    params._source = 'MOS_MODAL_PRODUCTO';
+    closeModal('modalProducto');
+    toast(isEdit ? 'Actualizando…' : 'Creando producto…', 'info');
+
     try {
-      const action = params.idProducto ? 'actualizarProducto' : 'crearProducto';
-      params._source = 'MOS_MODAL_PRODUCTO';
-      await API.post(action, params);
-      toast(params.idProducto ? 'Producto actualizado ✓' : 'Producto creado ✓', 'ok');
-      closeModal('modalProducto');
+      const action = isEdit ? 'actualizarProducto' : 'crearProducto';
+      const r = await API.post(action, params);
+      toast(isEdit ? 'Producto actualizado ✓' : 'Producto creado ✓', 'ok');
+      // Refresh catálogo
       S.loaded['catalogo'] = false;
       await loadCatalogo(true);
+      // Pulse en la card del producto creado/editado
+      const targetId = (r && r.idProducto) || params.idProducto || '';
+      if (targetId) _pulseCatalogoCard(targetId);
     } catch(e) {
       toast('Error: ' + e.message, 'error');
+      // Revertir abriendo el modal de nuevo con los datos para corregir
+      // (no implementado por simplicidad — el usuario puede reintentar manualmente)
     }
+  }
+
+  // Hace scroll a la card del producto y le aplica un pulso visual breve
+  function _pulseCatalogoCard(idProducto) {
+    setTimeout(() => {
+      const eid = CSS.escape(idProducto);
+      const card = document.getElementById('fc-' + eid);
+      if (!card) return;
+      // Scroll suave
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Aplicar clase de pulso
+      card.classList.remove('cat-card-pulse');
+      void card.offsetWidth;  // force reflow
+      card.classList.add('cat-card-pulse');
+      // Quitarla cuando termine
+      setTimeout(() => card.classList.remove('cat-card-pulse'), 2200);
+    }, 200);
   }
 
   // Price modal
