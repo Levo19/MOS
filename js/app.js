@@ -2466,61 +2466,205 @@ const MOS = (() => {
     renderStockTable();
   }
 
-  // ── ALMACÉN: OPERACIONES (guías + preingresos) ──
-  async function almLoadOps() {
+  // ── ALMACÉN: OPERACIONES UNIFICADAS (WH + zonas) por día ──
+  S._opsData = S._opsData || null;
+  S._opsExpanded = S._opsExpanded || {};
+  S._opsDetCache = S._opsDetCache || {};
+
+  async function almLoadOps(forceRefresh) {
     const dias = parseInt($('almGuiasFiltro')?.value) || 7;
+    const params = { dias };
+    if (forceRefresh) params._refresh = 'true';
     try {
-      const r = await API.get('getGuiasYPreingresos', { dias });
-      if (!r) return;
-      // Resumen
-      const res = r.resumen || {};
-      if ($('opsIngHoy'))   $('opsIngHoy').textContent   = res.ingresosHoy || 0;
-      if ($('opsDesHoy'))   $('opsDesHoy').textContent   = res.despachosHoy || 0;
-      if ($('opsEnvHoy'))   $('opsEnvHoy').textContent   = res.envasadosHoy || 0;
-      if ($('opsMontoHoy')) $('opsMontoHoy').textContent = 'S/ ' + (res.montoIngresoHoy || 0).toLocaleString('es-PE', { maximumFractionDigits: 0 });
-      // Preingresos pendientes
-      const preing = r.preingresosPendientes || [];
-      const pPanel = $('almPreingPanel');
-      if (pPanel) pPanel.classList.toggle('hidden', !preing.length);
-      if ($('opsPreingCount')) $('opsPreingCount').textContent = preing.length;
-      const pList = $('almPreingList');
-      if (pList) pList.innerHTML = preing.slice(0, 10).map(p => `
-        <div class="card-sm p-3 border-l-2 border-amber-500/40">
-          <div class="flex items-center justify-between gap-2">
-            <div class="min-w-0 flex-1">
-              <div class="text-sm font-semibold text-slate-200">${p.idPreingreso || p.idGuia || '—'}</div>
-              <div class="text-xs text-slate-500">${fmtDate(p.fecha)} · ${p.idProveedor || '—'} · S/ ${(parseFloat(p.monto) || 0).toFixed(2)}</div>
-              ${p.comentario ? `<div class="text-xs text-slate-600 italic mt-1 truncate">${p.comentario}</div>` : ''}
-            </div>
-            <span class="badge badge-yellow text-xs shrink-0">${p.estado || 'PENDIENTE'}</span>
-          </div>
-        </div>
-      `).join('') || '<div class="text-xs text-slate-600 italic py-2">—</div>';
-      // Guías recientes
-      const gList = $('almGuiasList');
-      const guias = r.guias || [];
-      if (!guias.length) {
-        if (gList) gList.innerHTML = '<div class="text-xs text-slate-600 italic py-3 text-center">Sin guías en el rango</div>';
-        return;
-      }
-      if (gList) gList.innerHTML = guias.slice(0, 30).map(g => {
-        const tipo = String(g.tipo || '').toUpperCase();
-        const tipoLabel = tipo.indexOf('INGRESO') >= 0 ? '🟢 INGRESO' : tipo.indexOf('SALIDA') >= 0 ? '🔵 SALIDA' : (tipo.indexOf('ENVASADO') >= 0 ? '🟣 ENVASADO' : '📋 ' + tipo);
-        const estadoCls = g.estado === 'CERRADA' ? 'text-slate-400' : g.estado === 'ABIERTA' ? 'text-amber-400' : 'text-slate-500';
-        return `
-          <div class="card-sm p-3">
+      // Llamamos en paralelo: operaciones unificadas + guias/preing (para resumen y preingresos)
+      const [opsRes, gpRes] = await Promise.allSettled([
+        API.get('getOperacionesUnificadas', params),
+        API.get('getGuiasYPreingresos', params)
+      ]);
+      // Resumen del día (de gpRes que ya lo calcula)
+      if (gpRes.status === 'fulfilled') {
+        const r = gpRes.value || {};
+        const res = r.resumen || {};
+        if ($('opsIngHoy'))   $('opsIngHoy').textContent   = res.ingresosHoy || 0;
+        if ($('opsDesHoy'))   $('opsDesHoy').textContent   = res.despachosHoy || 0;
+        if ($('opsEnvHoy'))   $('opsEnvHoy').textContent   = res.envasadosHoy || 0;
+        if ($('opsMontoHoy')) $('opsMontoHoy').textContent = 'S/ ' + (res.montoIngresoHoy || 0).toLocaleString('es-PE', { maximumFractionDigits: 0 });
+        // Preingresos pendientes
+        const preing = r.preingresosPendientes || [];
+        const pPanel = $('almPreingPanel');
+        if (pPanel) pPanel.classList.toggle('hidden', !preing.length);
+        if ($('opsPreingCount')) $('opsPreingCount').textContent = preing.length;
+        const pList = $('almPreingList');
+        if (pList) pList.innerHTML = preing.slice(0, 10).map(p => `
+          <div class="card-sm p-3 border-l-2 border-amber-500/40">
             <div class="flex items-center justify-between gap-2">
               <div class="min-w-0 flex-1">
-                <div class="text-sm font-semibold text-slate-200 truncate">${tipoLabel} · ${g.idGuia || '—'}</div>
-                <div class="text-xs text-slate-500">${fmtDate(g.fecha)} · ${g.idProveedor || g.idZona || '—'} · S/ ${(parseFloat(g.montoTotal) || 0).toFixed(2)}</div>
+                <div class="text-sm font-semibold text-slate-200">${p.idPreingreso || p.idGuia || '—'}</div>
+                <div class="text-xs text-slate-500">${fmtDate(p.fecha)} · ${p.idProveedor || '—'} · S/ ${(parseFloat(p.monto) || 0).toFixed(2)}</div>
+                ${p.comentario ? `<div class="text-xs text-slate-600 italic mt-1 truncate">${p.comentario}</div>` : ''}
               </div>
-              <span class="text-xs shrink-0 ${estadoCls}">${g.estado || ''}</span>
+              <span class="badge badge-yellow text-xs shrink-0">${p.estado || 'PENDIENTE'}</span>
             </div>
-          </div>`;
-      }).join('');
+          </div>
+        `).join('') || '<div class="text-xs text-slate-600 italic py-2">—</div>';
+      }
+      // Operaciones unificadas
+      if (opsRes.status === 'fulfilled') {
+        S._opsData = opsRes.value || {};
+        almRenderOps();
+      } else {
+        const lst = $('almOpsList');
+        if (lst) lst.innerHTML = '<div class="text-xs text-rose-400 py-3 text-center">Error cargando operaciones</div>';
+      }
     } catch(e) {
       console.warn('[almLoadOps] error:', e);
     }
+  }
+
+  async function almRefreshOps() {
+    toast('Refrescando operaciones…', 'info');
+    await almLoadOps(true);
+  }
+
+  function almRenderOps() {
+    const list = $('almOpsList');
+    if (!list) return;
+    const data = S._opsData || {};
+    const dias = data.porDia || [];
+    if (!dias.length) {
+      list.innerHTML = '<div class="text-xs text-slate-600 italic py-3 text-center">Sin operaciones en el rango</div>';
+      return;
+    }
+    const filtroFuente = $('almOpsFiltroFuente')?.value || '';
+    list.innerHTML = dias.map(dia => {
+      const ops = dia.operaciones.filter(op => !filtroFuente || op.fuente === filtroFuente);
+      if (!ops.length) return '';
+      // Sub-agrupar por fuente: WH vs zonas (con sus canon)
+      const byFuente = { WH: [], zonas: {} };
+      ops.forEach(op => {
+        if (op.fuente === 'WH') byFuente.WH.push(op);
+        else {
+          const zk = op.idZonaCanonId || 'sin-zona';
+          if (!byFuente.zonas[zk]) byFuente.zonas[zk] = { nombre: op.idZonaCanonNom || op.idZona || 'Sin zona', ops: [] };
+          byFuente.zonas[zk].ops.push(op);
+        }
+      });
+      const fechaDisp = _formatFechaCorta(dia.fecha);
+      const headerHtml = `<div class="flex items-center justify-between mb-2 sticky top-0 z-5" style="background:#0a1428;padding:6px 0">
+          <div class="text-sm font-semibold text-slate-200">📅 ${fechaDisp}</div>
+          <div class="text-xs text-slate-500">${ops.length} ops${dia.totalMonto > 0 ? ' · S/ ' + dia.totalMonto.toLocaleString('es-PE', { maximumFractionDigits: 0 }) : ''}</div>
+        </div>`;
+      let secciones = '';
+      // Sección WH
+      if (byFuente.WH.length) {
+        secciones += `<div class="mb-3">
+          <div class="text-[11px] font-semibold text-blue-400 uppercase mb-1.5 ml-2">🏭 Almacén central (${byFuente.WH.length})</div>
+          <div class="space-y-1.5">${byFuente.WH.map(_renderOpCard).join('')}</div>
+        </div>`;
+      }
+      // Sección zonas
+      Object.keys(byFuente.zonas).forEach(zk => {
+        const z = byFuente.zonas[zk];
+        secciones += `<div class="mb-3">
+          <div class="text-[11px] font-semibold text-emerald-400 uppercase mb-1.5 ml-2">🏪 ${z.nombre} (${z.ops.length})</div>
+          <div class="space-y-1.5">${z.ops.map(_renderOpCard).join('')}</div>
+        </div>`;
+      });
+      return `<div class="mb-4">${headerHtml}${secciones}</div>`;
+    }).join('');
+  }
+
+  function _renderOpCard(op) {
+    const tipo = String(op.tipo || '').toUpperCase();
+    let tipoLabel, tipoColor;
+    if (tipo.indexOf('INGRESO') >= 0) { tipoLabel = '🟢 INGRESO'; tipoColor = 'text-emerald-400'; }
+    else if (tipo.indexOf('SALIDA_VENTAS') >= 0 || tipo === 'SALIDA_VENTAS') { tipoLabel = '🛒 VENTAS'; tipoColor = 'text-purple-400'; }
+    else if (tipo.indexOf('SALIDA_ZONA') >= 0 || tipo.indexOf('DESPACHO') >= 0) { tipoLabel = '📦 DESPACHO'; tipoColor = 'text-blue-400'; }
+    else if (tipo.indexOf('ENVASADO') >= 0) { tipoLabel = '🏷️ ENVASADO'; tipoColor = 'text-purple-400'; }
+    else if (tipo.indexOf('TRASLADO') >= 0) { tipoLabel = '🔄 TRASLADO'; tipoColor = 'text-amber-400'; }
+    else { tipoLabel = '📋 ' + tipo; tipoColor = 'text-slate-400'; }
+    const estadoCls = op.estado === 'CERRADA' || op.estado === 'CONFIRMADO' ? 'text-slate-500' : op.estado === 'ABIERTA' ? 'text-amber-400' : 'text-slate-500';
+    const expandKey = op.fuente + '_' + op.idGuia;
+    const expanded = !!S._opsExpanded[expandKey];
+    const monto = op.montoTotal > 0 ? `<span class="text-amber-400 ml-2">S/ ${op.montoTotal.toLocaleString('es-PE', { maximumFractionDigits: 0 })}</span>` : '';
+    const usuarioStr = op.usuario ? ` · ${op.usuario}` : '';
+    const provStr = op.idProveedor ? ` · ${op.idProveedor}` : '';
+    const horaStr = (function(){ try { var d = new Date(op.fecha); return d.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }); } catch(_){ return ''; }})();
+    return `<div class="card-sm p-2.5">
+      <div class="flex items-center justify-between gap-2 cursor-pointer" onclick="MOS.almToggleOpExpand('${op.fuente}','${op.idGuia}')">
+        <div class="min-w-0 flex-1">
+          <div class="text-xs font-semibold ${tipoColor} truncate">${tipoLabel} · <span class="text-slate-300 font-mono">${op.idGuia}</span> ${monto}</div>
+          <div class="text-[10px] text-slate-500 truncate">${horaStr}${usuarioStr}${provStr}${op.comentario ? ' · ' + op.comentario : ''}</div>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <span class="text-[10px] ${estadoCls}">${op.estado || ''}</span>
+          <span class="text-slate-500">${expanded ? '▴' : '▾'}</span>
+        </div>
+      </div>
+      <div id="opExp_${expandKey}" class="${expanded ? '' : 'hidden'} mt-2 pt-2 border-t border-slate-800/50">
+        ${expanded ? _renderOpDetalle(op.fuente, op.idGuia) : ''}
+      </div>
+    </div>`;
+  }
+
+  function _renderOpDetalle(fuente, idGuia) {
+    const key = fuente + '_' + idGuia;
+    const cached = S._opsDetCache[key];
+    if (!cached) {
+      _fetchOpDetalle(fuente, idGuia);
+      return '<div class="text-xs text-slate-500 italic py-1">Cargando líneas…</div>';
+    }
+    if (cached.error) return `<div class="text-xs text-rose-400 italic py-1">Error: ${cached.error}</div>`;
+    const lineas = cached.lineas || [];
+    if (!lineas.length) return '<div class="text-[11px] text-slate-600 italic py-1">Sin líneas registradas</div>';
+    const total = lineas.reduce((s, l) => s + (l.subtotal || 0), 0);
+    return `
+      <div class="text-[11px] text-slate-500 mb-1">${lineas.length} línea${lineas.length === 1 ? '' : 's'}${total > 0 ? ' · subtotal S/ ' + total.toFixed(2) : ''}</div>
+      <div class="space-y-0.5">
+        ${lineas.map(l => `<div class="flex items-center justify-between gap-2 text-[11px] py-0.5">
+          <div class="min-w-0 flex-1">
+            <div class="text-slate-300 truncate">${l.descripcion || l.codigoProducto || l.codigoBarra}</div>
+            <div class="text-slate-600 font-mono text-[10px]">▌ ${l.codigoBarra || l.codigoProducto || '—'}${l.fechaVencimiento ? ' · venc ' + fmtDate(l.fechaVencimiento) : ''}</div>
+          </div>
+          <div class="text-right shrink-0">
+            <div class="text-slate-300 font-semibold">${l.cantidad}u</div>
+            ${l.subtotal > 0 ? `<div class="text-amber-400 text-[10px]">S/ ${l.subtotal.toFixed(2)}</div>` : ''}
+          </div>
+        </div>`).join('')}
+      </div>`;
+  }
+
+  async function _fetchOpDetalle(fuente, idGuia) {
+    const key = fuente + '_' + idGuia;
+    try {
+      const r = await API.get('getOperacionDetalle', { fuente, idGuia });
+      S._opsDetCache[key] = r || {};
+      const cont = $('opExp_' + key);
+      if (cont && S._opsExpanded[key]) cont.innerHTML = _renderOpDetalle(fuente, idGuia);
+    } catch(e) {
+      S._opsDetCache[key] = { error: e.message };
+      const cont = $('opExp_' + key);
+      if (cont && S._opsExpanded[key]) cont.innerHTML = _renderOpDetalle(fuente, idGuia);
+    }
+  }
+
+  function almToggleOpExpand(fuente, idGuia) {
+    const key = fuente + '_' + idGuia;
+    S._opsExpanded[key] = !S._opsExpanded[key];
+    almRenderOps();
+  }
+
+  function _formatFechaCorta(yyyymmdd) {
+    if (!yyyymmdd) return '';
+    const parts = yyyymmdd.split('-');
+    if (parts.length !== 3) return yyyymmdd;
+    const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+    const hoy = new Date(); hoy.setHours(0,0,0,0);
+    const ayer = new Date(hoy.getTime() - 86400000);
+    const dms = d.getTime();
+    if (dms === hoy.getTime()) return 'Hoy';
+    if (dms === ayer.getTime()) return 'Ayer';
+    return d.toLocaleDateString('es-PE', { weekday: 'short', day: 'numeric', month: 'short' });
   }
 
   // ── ALMACÉN: ZONAS (ranking + sin venta) ──
@@ -2943,6 +3087,31 @@ const MOS = (() => {
     const insights = r.insights || [];
     const total = r.total || {};
     const codigosBarra = r.codigosBarra || [];
+    // Matriz código × zona (solo si hay >1 código y al menos 1 zona con stock)
+    let matrizHtml = '';
+    if (codigosBarra.length > 1 && zonas.length) {
+      const cabZonas = zonas.map(z => `<th class="text-right pl-2 pb-1 text-[10px] text-slate-500 font-normal">${z.nombre}</th>`).join('');
+      const filasMatriz = codigosBarra.map(c => {
+        const cells = zonas.map(z => {
+          const q = (c.porZona && c.porZona[z.idZona]) || 0;
+          const cls = q < 0 ? 'text-rose-500' : q === 0 ? 'text-slate-700' : 'text-slate-300';
+          return `<td class="text-right pl-2 ${cls}">${q !== 0 ? q + 'u' : '·'}</td>`;
+        }).join('');
+        const tipoBadge = c.tipo === 'principal' ? '🟢' : '🟣';
+        return `<tr><td class="text-[10px] font-mono text-slate-400 py-1 pr-2 truncate" style="max-width:120px">${tipoBadge} ${c.codigoBarra}</td>${cells}</tr>`;
+      }).join('');
+      matrizHtml = `
+        <div class="text-xs">
+          <div class="font-semibold text-slate-300 mb-1">📊 Matriz código × zona</div>
+          <div class="card-sm p-2 overflow-x-auto">
+            <table class="text-[11px] w-full" style="border-collapse:collapse">
+              <thead><tr><th class="text-left pb-1 text-[10px] text-slate-500 font-normal">Código</th>${cabZonas}</tr></thead>
+              <tbody>${filasMatriz}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
     // Códigos asociados (principal + equivalencias)
     const codigosHtml = codigosBarra.length > 1 ? `
       <div class="text-xs">
@@ -3034,7 +3203,7 @@ const MOS = (() => {
         </div>
       </div>
     ` : '';
-    return `<div class="space-y-3">${codigosHtml}${whHtml}${zonasHtml}${insightsHtml}</div>`;
+    return `<div class="space-y-3">${codigosHtml}${matrizHtml}${whHtml}${zonasHtml}${insightsHtml}</div>`;
   }
 
   async function _fetchStockDetail(skuBase) {
@@ -8647,7 +8816,8 @@ const MOS = (() => {
     abrirModalPrecio, publicarPrecio,
     setAlmTab,
     almLoadResumen, almRefreshResumen, almFiltrarStock, almRefreshCatalogo, almToggleStockExpand,
-    almLoadOps, almLoadZonas, almRefreshZonas, almAbrirStockDetalle, cerrarStockDetalle, almRefreshStockDetalle,
+    almLoadOps, almRefreshOps, almRenderOps, almToggleOpExpand,
+    almLoadZonas, almRefreshZonas, almAbrirStockDetalle, cerrarStockDetalle, almRefreshStockDetalle,
     _almGenerarPedidoFromInsight, _almPickProveedor, cerrarSelProveedor,
     cerrarModalPedido, pedidoBuscarItem, pedidoAgregarItem,
     pedidoQuitarItem, pedidoCambiarQty, guardarPedido,
