@@ -722,6 +722,7 @@ function _getRankingZonasImpl(params) {
     }).sort(function(a, b){ return b.ventas - a.ventas; });
 
     return { ok: true, data: {
+      _almV: 2,  // versión del schema — frontend detecta si es viejo
       zonas:        arr,
       totalVentas:  Math.round(totalVentas * 100) / 100,
       totalTickets: totalTickets,
@@ -817,7 +818,7 @@ function _getProductosSinVentaImpl(params) {
       };
     }).sort(function(a, b){ return b.stockEnZonas - a.stockEnZonas; });
 
-    return { ok: true, data: { productos: sinVenta, rangoDias: rangoDias } };
+    return { ok: true, data: { _almV: 2, productos: sinVenta, rangoDias: rangoDias } };
   } catch(e) {
     return { ok: false, error: 'Error productos sin venta: ' + e.message };
   }

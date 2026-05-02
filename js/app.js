@@ -2512,18 +2512,36 @@ const MOS = (() => {
   }
 
   // ── ALMACÉN: ZONAS (ranking + sin venta) ──
-  async function almLoadZonas() {
+  async function almLoadZonas(forceRefresh) {
     const dias = parseInt($('almZonasRango')?.value) || 30;
+    const params = { dias };
+    if (forceRefresh) params._refresh = 'true';
     try {
       const [rankRes, sinVentaRes] = await Promise.allSettled([
-        API.get('getRankingZonas', { dias }),
-        API.get('getProductosSinVenta', { dias })
+        API.get('getRankingZonas', params),
+        API.get('getProductosSinVenta', params)
       ]);
-      if (rankRes.status === 'fulfilled') _almRenderRankingZonas(rankRes.value || {});
-      if (sinVentaRes.status === 'fulfilled') _almRenderSinVenta((sinVentaRes.value || {}).productos || []);
+      const warnEl = $('almZonasGasVersionWarn');
+      let gasOld = false;
+      if (rankRes.status === 'fulfilled') {
+        const v = rankRes.value || {};
+        if (!v._almV || v._almV < 2) gasOld = true;
+        _almRenderRankingZonas(v);
+      }
+      if (sinVentaRes.status === 'fulfilled') {
+        const v = sinVentaRes.value || {};
+        if (!v._almV || v._almV < 2) gasOld = true;
+        _almRenderSinVenta(v.productos || []);
+      }
+      if (warnEl) warnEl.classList.toggle('hidden', !gasOld);
     } catch(e) {
       console.warn('[almLoadZonas] error:', e);
     }
+  }
+
+  async function almRefreshZonas() {
+    toast('Refrescando zonas (ignora cache)…', 'info');
+    await almLoadZonas(true);
   }
 
   function _almRenderRankingZonas(data) {
@@ -8432,7 +8450,7 @@ const MOS = (() => {
     abrirModalPrecio, publicarPrecio,
     setAlmTab,
     almLoadResumen, almRefreshResumen, almFiltrarStock,
-    almLoadOps, almLoadZonas, almAbrirStockDetalle, cerrarStockDetalle, almRefreshStockDetalle,
+    almLoadOps, almLoadZonas, almRefreshZonas, almAbrirStockDetalle, cerrarStockDetalle, almRefreshStockDetalle,
     _almGenerarPedidoFromInsight, _almPickProveedor, cerrarSelProveedor,
     cerrarModalPedido, pedidoBuscarItem, pedidoAgregarItem,
     pedidoQuitarItem, pedidoCambiarQty, guardarPedido,
