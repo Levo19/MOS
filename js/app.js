@@ -1333,7 +1333,7 @@ const MOS = (() => {
       // Equivalencias para el skuBase
       const equivList = S.equivMap[base.skuBase || base.idProducto] || [];
 
-      // Meta tags: barcode + equivalencias con colores + brand
+      // Meta tags: barcode + equivalencias + brand + unidad
       const barcodeTag = base.codigoBarra
         ? `<span class="cat-barcode">▌${base.codigoBarra}</span>` : '';
       const equivTags  = equivList.map((cb, i) =>
@@ -1341,6 +1341,8 @@ const MOS = (() => {
       ).join('');
       const brandTag   = base.marca
         ? `<span class="cat-brand">${base.marca}</span>` : '';
+      const unidadDisp = _normalizarUnidad(base.unidad || base.Unidad_Medida);
+      const unidadTag  = `<span class="cat-unidad" title="Unidad de medida">× ${unidadDisp}</span>`;
 
       // Pre-computar alertas de cada presentación con la nueva lógica
       const basePrecio = parseFloat(base.precioVenta) || 0;
@@ -1385,12 +1387,14 @@ const MOS = (() => {
                 const alertHtml = alerts.map(a =>
                   `<span class="pres-alert-pill cat-alert-${a.tipo}"><span class="cat-alert-tag">${a.tag}</span>${a.sufijo}</span>`
                 ).join('');
+                const presUnidad = _normalizarUnidad(d.unidad || d.Unidad_Medida);
                 return `<div class="pres-chip${hasAlert ? ' border-amber-900/50' : ''}${presActivo ? '' : ' pres-inactive'}" data-pres-id="${d.idProducto}">
                   <div class="min-w-0 flex-1">
                     <div class="text-xs font-semibold text-slate-200 truncate">${hlD}</div>
                     <div class="flex items-center gap-2 mt-0.5">
                       ${d.codigoBarra ? `<span class="pres-code">▌${d.codigoBarra}</span>` : ''}
                       <span class="pres-factor">×${factor}</span>
+                      <span class="pres-factor" style="background:rgba(167,139,250,.12);color:#a78bfa">${presUnidad}</span>
                     </div>
                     ${alertHtml ? `<div class="flex flex-wrap items-center gap-1 mt-1">${alertHtml}</div>` : ''}
                   </div>
@@ -1416,7 +1420,7 @@ const MOS = (() => {
               <div class="flex flex-wrap gap-1 mb-2">${badgeCat}${badgeEnv}${badgePres}${badgeInac}</div>
               <div class="font-semibold text-slate-100 text-sm leading-snug mb-2">${hlDesc}</div>
               <div class="flex flex-wrap items-center gap-1.5">
-                ${barcodeTag}${equivTags}${brandTag}
+                ${barcodeTag}${equivTags}${brandTag}${unidadTag}
               </div>
             </div>
             <div class="flex flex-col items-end gap-1.5 shrink-0 ml-2">
@@ -4073,6 +4077,25 @@ const MOS = (() => {
     return v === 1 || v === '1' || v === true || v === 'true' || v === 'Sí';
   }
 
+  // Normaliza unidades legacy a códigos SUNAT (consistencia con prodUnidadMedida)
+  // Aceptamos códigos SUNAT directos: NIU, KGM, LTR, BG, BX, PR, PK, ZZ
+  // Mapeamos legacy: UNIDAD→NIU, KG→KGM, LITRO→LTR, BOLSA/SOBRE/SACO→BG, CAJA→BX
+  const _UNIDAD_LEGACY_MAP = {
+    'UNIDAD': 'NIU', 'UND': 'NIU', 'U': 'NIU', '': 'NIU',
+    'KG': 'KGM', 'KILO': 'KGM', 'KILOGRAMO': 'KGM',
+    'LITRO': 'LTR', 'LT': 'LTR', 'L': 'LTR',
+    'BOLSA': 'BG', 'SOBRE': 'BG', 'SACO': 'BG',
+    'CAJA': 'BX',
+    'PAR': 'PR',
+    'PAQUETE': 'PK', 'PACK': 'PK',
+    'SERVICIO': 'ZZ'
+  };
+  function _normalizarUnidad(u) {
+    if (!u) return 'NIU';
+    const up = String(u).trim().toUpperCase();
+    return _UNIDAD_LEGACY_MAP[up] || up;  // si ya es SUNAT, lo deja igual
+  }
+
   // Producto activo si estado NO es explícitamente 0/'0'/false.
   // Importante: Sheets convierte '0' en número 0; el check viejo usaba !p.estado,
   // que con estado=0 (número) daba true incorrectamente — producto se veía activo.
@@ -4256,7 +4279,8 @@ const MOS = (() => {
       $('prodCodigoBarra').value = p.codigoBarra   || '';
       $('prodMarca').value       = p.marca         || '';
       $('prodCategoria').value   = p.idCategoria   || '';
-      $('prodUnidad').value      = p.unidad        || 'UNIDAD';
+      // Migración: valores legacy (KG, LITRO, BOLSA, etc.) → códigos SUNAT
+      $('prodUnidad').value      = _normalizarUnidad(p.unidad) || 'NIU';
 
       // Estado
       const activo = _isProdActivo(p);
@@ -4304,7 +4328,7 @@ const MOS = (() => {
       _loadEquivModal(p.skuBase || p.idProducto);
     } else {
       $('modalProdTitle').textContent = 'Nuevo Producto';
-      $('prodUnidad').value      = 'UNIDAD';
+      $('prodUnidad').value      = 'NIU';
       $('prodUnidadMedida').value = 'NIU';
     }
     openModal('modalProducto');
@@ -4573,7 +4597,7 @@ const MOS = (() => {
       codigoBarra:   $('prodCodigoBarra')?.value  || '',
       marca:         $('prodMarca')?.value        || '',
       idCategoria:   $('prodCategoria')?.value    || '',
-      unidad:        $('prodUnidad')?.value       || 'UNIDAD',
+      unidad:        $('prodUnidad')?.value       || 'NIU',
       precioVenta:   parseFloat($('prodPrecioVenta')?.value) || 0,
       precioCosto:   $('prodPrecioCosto')?.value  ? parseFloat($('prodPrecioCosto').value) : '',
       stockMinimo:   parseInt($('prodStockMin')?.value)  || 0,
