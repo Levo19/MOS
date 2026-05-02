@@ -1367,8 +1367,19 @@ function _getInsightsStockImpl(params) {
       if (p.codigoBarra) prodById[p.codigoBarra] = p;
     });
     var resolver = _buildZonaResolver();
-    // Mapa canonId → nombre humano (para mensajes)
+    // Set ESTRICTO de zonas registradas en MOS.ZONAS (filtra TRASLADAR a zonas inventadas)
+    var zonasMOS = _sheetToObjects(getSheet('ZONAS'));
+    var zonasRegistradasSet = {};
     var zonaNombre = {};
+    zonasMOS.forEach(function(z) {
+      if (!z.idZona) return;
+      var ac = z.estado;
+      var activa = (ac === undefined || ac === '' || ac === 1 || ac === '1' || ac === true);
+      if (!activa) return;
+      var canon = resolver.resolve(z.idZona);
+      zonasRegistradasSet[canon.id] = true;
+      zonaNombre[canon.id] = canon.nombre;
+    });
 
     // Acumular stock por barras en zonas (canonicalizado)
     var stockBarrasMap = {};
@@ -1436,20 +1447,23 @@ function _getInsightsStockImpl(params) {
       }
     });
 
-    // INSIGHT 2 — Trasladar entre zonas: una zona vendiendo bien con poco stock + otra con stock + sin venta
+    // INSIGHT 2 — Trasladar entre zonas (SOLO entre zonas registradas en MOS.ZONAS)
     Object.keys(ventasMap).forEach(function(cb) {
       var ventasProd = ventasMap[cb];
       var stockInfo = stockBarrasMap[cb] || { zonas: {} };
       Object.keys(ventasProd).forEach(function(zonaVendedora) {
+        // Filtro estricto: solo si la zona vendedora está registrada
+        if (!zonasRegistradasSet[zonaVendedora]) return;
         var ventas = ventasProd[zonaVendedora];
         var stockEnEsa = stockInfo.zonas[zonaVendedora] || 0;
         var rotacionDia = ventas / rangoDias;
         if (rotacionDia <= 0) return;
         var diasRestantes = stockEnEsa / rotacionDia;
         if (diasRestantes < 7 && diasRestantes >= 0) {
-          // Buscar zona con stock pero sin venta de este producto
           Object.keys(stockInfo.zonas).forEach(function(zonaConStock) {
             if (zonaConStock === zonaVendedora) return;
+            // Filtro estricto: solo si la zona de origen también está registrada
+            if (!zonasRegistradasSet[zonaConStock]) return;
             var stockOtra = stockInfo.zonas[zonaConStock] || 0;
             var ventasOtra = (ventasProd[zonaConStock] || 0);
             if (stockOtra >= 5 && ventasOtra < ventas / 3) {
@@ -1503,7 +1517,7 @@ function _getInsightsStockImpl(params) {
     var prio = { CRITICA: 0, ALTA: 1, MEDIA: 2, BAJA: 3 };
     insights.sort(function(a, b){ return (prio[a.severidad] || 9) - (prio[b.severidad] || 9); });
 
-    return { ok: true, data: { insights: insights.slice(0, 20), total: insights.length, rangoDias: rangoDias } };
+    return { ok: true, data: { _almV: 2, insights: insights.slice(0, 20), total: insights.length, rangoDias: rangoDias } };
   } catch(e) {
     return { ok: false, error: 'Error insights: ' + e.message };
   }
