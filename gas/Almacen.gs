@@ -652,6 +652,18 @@ function _getStockUnificadoImpl(params) {
       });
     }
 
+    // Matriz código × zona — qué cantidad hay de cada código en cada zona específica
+    var matriz = {};  // matriz[cb][canonZonaId] = cantidad
+    stockZonas.forEach(function(z) {
+      var cb = String(z.Cod_Barras || z.codigoBarra || '').trim();
+      if (barrasPresentacion.indexOf(cb) < 0) return;
+      var zid = String(z.Zona_ID || z.zonaId || '').trim();
+      if (!zid) return;
+      var canonZ = resolver.resolve(zid);
+      if (!matriz[cb]) matriz[cb] = {};
+      matriz[cb][canonZ.id] = (matriz[cb][canonZ.id] || 0) + (parseFloat(z.Cantidad || z.cantidad) || 0);
+    });
+
     // Construir detalle por código de barra
     var codigosBarraDetalle = barrasInfo.map(function(b) {
       return {
@@ -660,7 +672,8 @@ function _getStockUnificadoImpl(params) {
         descripcion:   b.descripcion,
         stockWh:       stockWhPorCb[b.codigoBarra] || 0,
         stockZonas:    stockZonasPorCb[b.codigoBarra] || 0,
-        stockTotal:    (stockWhPorCb[b.codigoBarra] || 0) + (stockZonasPorCb[b.codigoBarra] || 0)
+        stockTotal:    (stockWhPorCb[b.codigoBarra] || 0) + (stockZonasPorCb[b.codigoBarra] || 0),
+        porZona:       matriz[b.codigoBarra] || {}
       };
     });
 
@@ -756,6 +769,173 @@ function _getGuiasYPreingresosImpl(params) {
     }};
   } catch(e) {
     return { ok: false, error: 'Error guías/preingresos: ' + e.message };
+  }
+}
+
+// ── OPERACIONES UNIFICADAS — WH + ME por día, agrupado ──────────
+function getOperacionesUnificadas(params) {
+  var dias = parseInt(params && params.dias) || 7;
+  return _almCached('opsUnif' + dias, 60, params, function() {
+    return _getOperacionesUnificadasImpl(dias);
+  });
+}
+function _getOperacionesUnificadasImpl(dias) {
+  try {
+    var hoy = new Date();
+    var desde = new Date(hoy.getTime() - dias * 86400000);
+    var resolver = _buildZonaResolver();
+    var operaciones = [];
+
+    // 1. WH GUIAS
+    var whGuias = _safeReadWhGuias();
+    whGuias.forEach(function(g) {
+      var fecha = g.fecha ? new Date(g.fecha) : null;
+      if (!fecha || fecha < desde) return;
+      operaciones.push({
+        fuente:           'WH',
+        fuenteLabel:      'Almacén central',
+        idGuia:           g.idGuia || '',
+        tipo:             g.tipo || '',
+        fecha:            g.fecha,
+        usuario:          g.usuario || '',
+        idProveedor:      g.idProveedor || '',
+        idZona:           g.idZona || '',
+        idZonaCanonId:    g.idZona ? resolver.resolve(g.idZona).id : '',
+        idZonaCanonNom:   g.idZona ? resolver.resolve(g.idZona).nombre : '',
+        numeroDocumento:  g.numeroDocumento || '',
+        comentario:       g.comentario || '',
+        montoTotal:       parseFloat(g.montoTotal) || 0,
+        estado:           g.estado || '',
+        idPreingreso:     g.idPreingreso || '',
+        foto:             g.foto || ''
+      });
+    });
+
+    // 2. ME GUIAS_CABECERA (de cada zona)
+    try {
+      var ssMe = SpreadsheetApp.openById(_getProp('ME_SS_ID'));
+      var shGC = ssMe.getSheetByName('GUIAS_CABECERA');
+      if (shGC) {
+        var data = shGC.getDataRange().getValues();
+        if (data.length >= 2) {
+          // Schema: ID_Guia | Fecha | Vendedor | Zona_ID | Tipo | Observacion | Zona_Destino | Estado
+          for (var i = 1; i < data.length; i++) {
+            var fechaME = data[i][1] ? new Date(data[i][1]) : null;
+            if (!fechaME || fechaME < desde) continue;
+            var zonaRaw = String(data[i][3] || '').trim();
+            var canon = zonaRaw ? resolver.resolve(zonaRaw) : { id: '', nombre: '' };
+            operaciones.push({
+              fuente:         'ME',
+              fuenteLabel:    'Zona ' + (canon.nombre || zonaRaw || ''),
+              idGuia:         String(data[i][0] || '').trim(),
+              tipo:           String(data[i][4] || '').trim(),
+              fecha:          fechaME.toISOString(),
+              usuario:        String(data[i][2] || '').trim(),
+              idZona:         zonaRaw,
+              idZonaCanonId:  canon.id,
+              idZonaCanonNom: canon.nombre,
+              comentario:     String(data[i][5] || '').trim(),
+              zonaDestino:    String(data[i][6] || '').trim(),
+              estado:         String(data[i][7] || '').trim(),
+              montoTotal:     0  // ME guides no tienen monto en cabecera
+            });
+          }
+        }
+      }
+    } catch(_){}
+
+    // Ordenar por fecha desc
+    operaciones.sort(function(a, b){ return new Date(b.fecha) - new Date(a.fecha); });
+
+    // Agrupar por día (YYYY-MM-DD)
+    var porDia = {};
+    operaciones.forEach(function(op) {
+      var f = new Date(op.fecha);
+      var key = f.getFullYear() + '-' +
+                String(f.getMonth() + 1).padStart(2, '0') + '-' +
+                String(f.getDate()).padStart(2, '0');
+      if (!porDia[key]) porDia[key] = { fecha: key, operaciones: [], totalMonto: 0 };
+      porDia[key].operaciones.push(op);
+      porDia[key].totalMonto += op.montoTotal || 0;
+    });
+    var diasArr = Object.keys(porDia).sort().reverse().map(function(k) {
+      return {
+        fecha:        k,
+        totalMonto:   Math.round(porDia[k].totalMonto * 100) / 100,
+        totalOps:     porDia[k].operaciones.length,
+        operaciones:  porDia[k].operaciones
+      };
+    });
+
+    return { ok: true, data: {
+      _almV: 2,
+      porDia:    diasArr,
+      total:     operaciones.length,
+      rangoDias: dias
+    }};
+  } catch(e) {
+    return { ok: false, error: 'Error operaciones unificadas: ' + e.message };
+  }
+}
+
+// Detalle de una operación específica (líneas/items)
+function getOperacionDetalle(params) {
+  if (!params || !params.fuente || !params.idGuia) {
+    return { ok: false, error: 'Requiere fuente y idGuia' };
+  }
+  try {
+    if (params.fuente === 'WH') {
+      // Reusar logic existente: leer WH GUIA_DETALLE + GUIAS
+      var whSheet = _abrirWhSheet('GUIA_DETALLE');
+      if (!whSheet) return { ok: false, error: 'GUIA_DETALLE no encontrada en WH' };
+      var allDet = _sheetToObjects(whSheet);
+      var lineas = allDet.filter(function(d){ return String(d.idGuia) === String(params.idGuia); });
+      // Enriquecer con descripcion del producto
+      var prodMap = {};
+      _sheetToObjects(getSheet('PRODUCTOS_MASTER')).forEach(function(p){
+        prodMap[p.idProducto] = p;
+        if (p.codigoBarra) prodMap[p.codigoBarra] = p;
+      });
+      lineas = lineas.map(function(l) {
+        var p = prodMap[l.codigoProducto] || {};
+        return {
+          codigoProducto:  l.codigoProducto,
+          descripcion:     p.descripcion || l.codigoProducto,
+          cantidad:        parseFloat(l.cantidad) || 0,
+          precioUnitario:  parseFloat(l.precioUnitario) || 0,
+          subtotal:        parseFloat(l.subtotal) || (parseFloat(l.cantidad) * parseFloat(l.precioUnitario)) || 0,
+          fechaVencimiento: l.fechaVencimiento || ''
+        };
+      });
+      return { ok: true, data: { fuente: 'WH', idGuia: params.idGuia, lineas: lineas } };
+    } else if (params.fuente === 'ME') {
+      var ssMe = SpreadsheetApp.openById(_getProp('ME_SS_ID'));
+      var shGD = ssMe.getSheetByName('GUIAS_DETALLE');
+      if (!shGD) return { ok: false, error: 'GUIAS_DETALLE no encontrada en ME' };
+      var data = shGD.getDataRange().getValues();
+      var lineas = [];
+      // Schema ME GUIAS_DETALLE: ID_Guia | Cod_Barras | Cantidad
+      var prodByCB = {};
+      _sheetToObjects(getSheet('PRODUCTOS_MASTER')).forEach(function(p){
+        if (p.codigoBarra) prodByCB[p.codigoBarra] = p;
+      });
+      for (var i = 1; i < data.length; i++) {
+        if (String(data[i][0]) !== String(params.idGuia)) continue;
+        var cb = String(data[i][1] || '').trim();
+        var p = prodByCB[cb] || {};
+        lineas.push({
+          codigoBarra:    cb,
+          descripcion:    p.descripcion || cb,
+          cantidad:       parseFloat(data[i][2]) || 0,
+          precioUnitario: parseFloat(p.precioVenta) || 0,
+          subtotal:       (parseFloat(data[i][2]) || 0) * (parseFloat(p.precioVenta) || 0)
+        });
+      }
+      return { ok: true, data: { fuente: 'ME', idGuia: params.idGuia, lineas: lineas } };
+    }
+    return { ok: false, error: 'Fuente desconocida: ' + params.fuente };
+  } catch(e) {
+    return { ok: false, error: 'Error detalle operación: ' + e.message };
   }
 }
 
