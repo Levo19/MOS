@@ -3679,12 +3679,21 @@
     <input type="hidden" id="prodId">
     <input type="hidden" id="prodEstado" value="1">
 
-    <!-- Selector de tipo -->
-    <div class="prod-tipo-bar">
-      <button id="ptNormal"       class="prod-tipo-btn active" onclick="MOS.setProdTipo('normal')">Normal</button>
-      <button id="ptEnvasable"    class="prod-tipo-btn"        onclick="MOS.setProdTipo('envasable')">⚗️ Envasable</button>
-      <button id="ptDerivado"     class="prod-tipo-btn"        onclick="MOS.setProdTipo('derivado')">🔗 Derivado</button>
-      <button id="ptPresentacion" class="prod-tipo-btn"        onclick="MOS.setProdTipo('presentacion')">📦 Presentación</button>
+    <!-- Tipo de producto: 3 checkboxes (presentación y derivado son mutex) -->
+    <div class="px-5 py-3 flex flex-wrap gap-x-5 gap-y-2 text-xs" style="background:#070f1a;border-bottom:1px solid #1e293b">
+      <label class="flex items-center gap-2 cursor-pointer hover:text-slate-200" style="color:#94a3b8">
+        <input type="checkbox" id="cbEsPresentacion" onchange="MOS.onTipoCheck('presentacion', this.checked)" style="cursor:pointer">
+        <span>📦 Es presentación de otro producto</span>
+      </label>
+      <label class="flex items-center gap-2 cursor-pointer hover:text-slate-200" style="color:#94a3b8">
+        <input type="checkbox" id="cbEsDerivado" onchange="MOS.onTipoCheck('derivado', this.checked)" style="cursor:pointer">
+        <span>🔗 Es derivado de un envasable</span>
+      </label>
+      <label class="flex items-center gap-2 cursor-pointer hover:text-slate-200" style="color:#94a3b8">
+        <input type="checkbox" id="cbEsEnvasable" onchange="MOS.onEnvasableCheck(this.checked)" style="cursor:pointer">
+        <span>⚗️ Es envasable (granel)</span>
+      </label>
+      <span class="text-[10px] text-slate-600 italic ml-auto self-center">Sin marcar = producto normal/base</span>
     </div>
 
     <!-- Contenido scrollable -->
@@ -3819,29 +3828,27 @@
         </div>
       </div>
 
-      <!-- ── SUNAT colapsable ── -->
+      <!-- ── SUNAT compacto con resumen ── -->
       <div>
         <button onclick="MOS.prodToggleSunat()" class="prod-section-toggle">
-          <span>🧾 SUNAT / Fiscal</span>
-          <span id="sunatChevron" style="font-size:10px">▶</span>
+          <span>🧾 Tributario · <span id="sunatResumen" class="text-emerald-400 font-normal">Gravado 18%</span></span>
+          <span class="text-[10px] text-slate-500" id="sunatChevron">⚙️ ajustar</span>
         </button>
         <div id="prodSecSunat" class="hidden pt-3 grid grid-cols-2 gap-3">
           <div>
             <label class="lbl">Tipo IGV</label>
-            <select id="prodTipoIGV" class="inp">
-              <option value="">—</option>
-              <option value="gravado">Gravado (18%)</option>
-              <option value="exonerado">Exonerado</option>
-              <option value="inafecto">Inafecto</option>
+            <select id="prodTipoIGV" class="inp" onchange="MOS.prodOnTipoIGVChange()">
+              <option value="1">1 — Gravado (18%)</option>
+              <option value="2">2 — Exonerado</option>
+              <option value="3">3 — Inafecto</option>
             </select>
           </div>
           <div>
             <label class="lbl">Cod. Tributo</label>
             <select id="prodCodTributo" class="inp">
-              <option value="">—</option>
               <option value="1000">1000 — IGV</option>
-              <option value="9998">9998 — Inafecto</option>
               <option value="9997">9997 — Exonerado</option>
+              <option value="9998">9998 — Inafecto</option>
             </select>
           </div>
           <div>

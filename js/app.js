@@ -4066,15 +4066,43 @@ const MOS = (() => {
   let _prodTipo = 'normal';
 
   function setProdTipo(tipo) {
+    // tipo: 'normal' | 'envasable' | 'derivado' | 'presentacion'
     _prodTipo = tipo;
-    ['normal','envasable','derivado','presentacion'].forEach(t => {
-      const btn = $('pt' + t.charAt(0).toUpperCase() + t.slice(1));
-      if (btn) btn.classList.toggle('active', t === tipo);
-    });
+    // Sincronizar checkboxes
+    const cbPres = $('cbEsPresentacion');
+    const cbDer  = $('cbEsDerivado');
+    const cbEnv  = $('cbEsEnvasable');
+    if (cbPres) cbPres.checked = (tipo === 'presentacion');
+    if (cbDer)  cbDer.checked  = (tipo === 'derivado');
+    if (cbEnv)  cbEnv.checked  = (tipo === 'envasable');
+    // Mostrar / ocultar secciones
     $('prodSecDerivado')?.classList.toggle('hidden', tipo !== 'derivado');
     $('prodSecPresentacion')?.classList.toggle('hidden', tipo !== 'presentacion');
     if (tipo === 'derivado')     _poblarEnvasablesSelect();
     if (tipo === 'presentacion') _poblarBasesSelect();
+  }
+
+  // Handler de los checkboxes mutex (presentación/derivado)
+  function onTipoCheck(tipo, checked) {
+    if (!checked) { setProdTipo('normal'); return; }
+    // Mutex: si marca presentacion, desmarca derivado y viceversa
+    setProdTipo(tipo);
+  }
+  // Handler del checkbox independiente "es envasable"
+  function onEnvasableCheck(checked) {
+    // envasable es independiente de presentacion/derivado
+    if (checked) {
+      // Si tenía presentación o derivado activo, lo desmarca (envasable es base)
+      const cbPres = $('cbEsPresentacion');
+      const cbDer  = $('cbEsDerivado');
+      if (cbPres) cbPres.checked = false;
+      if (cbDer)  cbDer.checked  = false;
+      _prodTipo = 'envasable';
+      $('prodSecDerivado')?.classList.add('hidden');
+      $('prodSecPresentacion')?.classList.add('hidden');
+    } else {
+      _prodTipo = 'normal';
+    }
   }
 
   function _esEnvasable(p) {
@@ -4244,7 +4272,34 @@ const MOS = (() => {
     const ch  = $('sunatChevron');
     if (!sec) return;
     const h = sec.classList.toggle('hidden');
-    if (ch) ch.textContent = h ? '▶' : '▼';
+    if (ch) ch.textContent = h ? '⚙️ ajustar' : '▴ ocultar';
+  }
+
+  // Cuando cambia Tipo IGV: autorrellenar los campos relacionados (Cod_Tributo, IGV%)
+  function prodOnTipoIGVChange() {
+    const tipo = $('prodTipoIGV')?.value || '1';
+    if (tipo === '1') {
+      $('prodCodTributo').value = '1000';
+      $('prodIGV').value = '18';
+    } else if (tipo === '2') {
+      $('prodCodTributo').value = '9997';
+      $('prodIGV').value = '0';
+    } else if (tipo === '3') {
+      $('prodCodTributo').value = '9998';
+      $('prodIGV').value = '0';
+    }
+    _actualizarResumenSunat();
+  }
+  function _actualizarResumenSunat() {
+    const tipo = $('prodTipoIGV')?.value;
+    const igv = $('prodIGV')?.value || '0';
+    const r = $('sunatResumen'); if (!r) return;
+    let txt = '—';
+    if (tipo === '1') txt = 'Gravado ' + igv + '%';
+    else if (tipo === '2') txt = 'Exonerado';
+    else if (tipo === '3') txt = 'Inafecto';
+    r.textContent = txt;
+    r.className = (tipo === '1') ? 'text-emerald-400 font-normal' : 'text-amber-400 font-normal';
   }
 
   function prodToggleEquiv() {
@@ -4309,12 +4364,15 @@ const MOS = (() => {
       // Stock
       _setStockSlider(parseFloat(p.stockMinimo)||0, parseFloat(p.stockMaximo)||0);
 
-      // SUNAT
-      $('prodTipoIGV').value     = p.Tipo_IGV       || '';
-      $('prodCodTributo').value  = p.Cod_Tributo     || '';
-      $('prodIGV').value         = p.IGV_Porcentaje  || '';
+      // SUNAT con migración legacy gravado→1, exonerado→2, inafecto→3
+      const tipoIgvLegacy = { 'gravado': '1', 'exonerado': '2', 'inafecto': '3' };
+      const tipoIgvVal = String(p.Tipo_IGV || '1').toLowerCase();
+      $('prodTipoIGV').value     = tipoIgvLegacy[tipoIgvVal] || (p.Tipo_IGV ? String(p.Tipo_IGV) : '1');
+      $('prodCodTributo').value  = p.Cod_Tributo     || '1000';
+      $('prodIGV').value         = (p.IGV_Porcentaje !== undefined && p.IGV_Porcentaje !== '') ? p.IGV_Porcentaje : 18;
       $('prodUnidadMedida').value= p.Unidad_Medida   || 'NIU';
-      $('prodCodSUNAT').value    = p.Cod_SUNAT       || '';
+      $('prodCodSUNAT').value    = p.Cod_SUNAT       || '10000000';
+      _actualizarResumenSunat();
 
       // Determinar tipo
       let tipo = 'normal';
@@ -4338,8 +4396,14 @@ const MOS = (() => {
       _loadEquivModal(p.skuBase || p.idProducto);
     } else {
       $('modalProdTitle').textContent = 'Nuevo Producto';
-      $('prodUnidad').value      = 'NIU';
+      // Defaults autorrelleno (típico abarrote: gravado 18%)
+      $('prodUnidad').value       = 'NIU';
       $('prodUnidadMedida').value = 'NIU';
+      $('prodTipoIGV').value      = '1';   // 1 = Gravado
+      $('prodCodTributo').value   = '1000';
+      $('prodIGV').value          = '18';
+      $('prodCodSUNAT').value     = '10000000';
+      _actualizarResumenSunat();
     }
     openModal('modalProducto');
   }
@@ -4636,11 +4700,18 @@ const MOS = (() => {
       if (skuVal) params.skuBase = skuVal;
       params.factorConversion = $('prodFactor')?.value  ? parseFloat($('prodFactor').value) : '';
       params.codigoProductoBase = ''; params.factorConversionBase = ''; params.mermaEsperadaPct = '';
-    } else { // normal
-      params.esEnvasable = '0'; params.codigoProductoBase = ''; params.factorConversion = ''; params.factorConversionBase = ''; params.mermaEsperadaPct = '';
+    } else { // normal (base): factorConversion = 1
+      params.esEnvasable = '0'; params.codigoProductoBase = ''; params.factorConversionBase = ''; params.mermaEsperadaPct = '';
+      // Solo asignar factorConversion=1 al CREAR (sin idProducto). En edición no se toca para no romper data.
+      if (!params.idProducto) params.factorConversion = 1;
     }
 
-    if (!prodValidarCodigoBarra()) { toast('El código de barras ya pertenece a otro producto', 'error'); return; }
+    // BLOQUEO: si codigoBarra duplicado, no permitir guardar
+    if (!prodValidarCodigoBarra()) {
+      toast('El código de barras ya pertenece a otro producto. No se puede guardar.', 'error');
+      $('prodCodigoBarra')?.focus();
+      return;
+    }
 
     try {
       const action = params.idProducto ? 'actualizarProducto' : 'crearProducto';
@@ -8861,8 +8932,8 @@ const MOS = (() => {
     abrirAnalitica, cerrarAnalitica, setAnPeriodo, guardarStockMinMax, _anCurrentId,
     guardarAjustePrecios, stepperInc, stepperDec,
     abrirModalProducto, guardarProducto,
-    setProdTipo, prodAutogenBarcode, prodValidarCodigoBarra, prodToggleEstado, prodToggleCosto,
-    prodCalcMargen, prodOnRange, prodToggleSunat, prodToggleEquiv,
+    setProdTipo, onTipoCheck, onEnvasableCheck, prodAutogenBarcode, prodValidarCodigoBarra, prodToggleEstado, prodToggleCosto,
+    prodCalcMargen, prodOnRange, prodToggleSunat, prodOnTipoIGVChange, prodToggleEquiv,
     toggleAddEquiv, crearEquivalenciaModal, toggleEquivActivo,
     toggleProductoActivo, confirmarApagarBase, cerrarApagarBaseRevertir,
     // Evaluación de personal
