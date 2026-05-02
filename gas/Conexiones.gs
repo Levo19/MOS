@@ -424,11 +424,40 @@ function getAnaliticaProducto(params) {
 function getProductosNuevosWarehouse(params) {
   try {
     var pns = _sheetToObjectsLocal(_abrirWhSheet('PRODUCTO_NUEVO'));
-    if (params && params.estado) {
-      pns = pns.filter(function(p){ return String(p.estado) === String(params.estado); });
-    } else {
-      pns = pns.filter(function(p){ return String(p.estado) === 'PENDIENTE'; });
+    var estadoFiltro = (params && params.estado) ? String(params.estado) : 'PENDIENTE';
+    pns = pns.filter(function(p){ return String(p.estado) === estadoFiltro; });
+
+    // Defensivo: filtrar PNs huérfanos cuya línea PN_PENDIENTE en GUIA_DETALLE
+    // ya fue anulada/borrada en WH (sucede si anularDetalle no actualizó el PN).
+    if (estadoFiltro === 'PENDIENTE') {
+      try {
+        var detalles = _sheetToObjectsLocal(_abrirWhSheet('GUIA_DETALLE'));
+        var lineasActivas = {}; // key: idGuia|codigoBarra (upper) → true
+        detalles.forEach(function(d) {
+          var obs = String(d.observacion || '').toUpperCase();
+          if (obs !== 'PN_PENDIENTE') return; // solo nos importan las líneas que aún esperan aprobación
+          var key = String(d.idGuia || '') + '|' + String(d.codigoProducto || '').toUpperCase();
+          lineasActivas[key] = true;
+        });
+        pns = pns.filter(function(p) {
+          if (!p.idGuia) return true; // PNs sin guía: no aplica
+          var key = String(p.idGuia) + '|' + String(p.codigoBarra || '').toUpperCase();
+          return !!lineasActivas[key];
+        });
+      } catch(_) {}
     }
+
+    // Dedupe: mismo (idGuia, codigoBarra) → quedarse con el más reciente
+    var dedupe = {};
+    pns.forEach(function(p) {
+      var key = String(p.idGuia || '') + '|' + String(p.codigoBarra || '').toUpperCase();
+      var prev = dedupe[key];
+      if (!prev) { dedupe[key] = p; return; }
+      var fa = new Date(p.fechaRegistro || 0).getTime() || 0;
+      var fb = new Date(prev.fechaRegistro || 0).getTime() || 0;
+      if (fa >= fb) dedupe[key] = p;
+    });
+    pns = Object.keys(dedupe).map(function(k){ return dedupe[k]; });
 
     // Enriquecer con guía origen
     var guias = [];
