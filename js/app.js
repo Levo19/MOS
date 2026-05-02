@@ -1341,8 +1341,9 @@ const MOS = (() => {
       ).join('');
       const brandTag   = base.marca
         ? `<span class="cat-brand">${base.marca}</span>` : '';
-      const unidadDisp = _normalizarUnidad(base.unidad || base.Unidad_Medida);
-      const unidadTag  = `<span class="cat-unidad" title="Unidad de medida">× ${unidadDisp}</span>`;
+      const unidadNorm = _normalizarUnidad(base.unidad || base.Unidad_Medida);
+      const unidadCls  = unidadNorm === 'KGM' ? 'cat-unidad cat-unidad-granel' : 'cat-unidad';
+      const unidadTag  = `<span class="${unidadCls}" title="${unidadNorm === 'KGM' ? 'Producto a granel (por peso)' : 'Unidad de medida SUNAT'}">${_unidadDisplay(base.unidad || base.Unidad_Medida)}</span>`;
 
       // Pre-computar alertas de cada presentación con la nueva lógica
       const basePrecio = parseFloat(base.precioVenta) || 0;
@@ -1388,13 +1389,17 @@ const MOS = (() => {
                   `<span class="pres-alert-pill cat-alert-${a.tipo}"><span class="cat-alert-tag">${a.tag}</span>${a.sufijo}</span>`
                 ).join('');
                 const presUnidad = _normalizarUnidad(d.unidad || d.Unidad_Medida);
+                const presUniIcon = presUnidad === 'KGM' ? '⚖️' : '';
+                const presUniBg = presUnidad === 'KGM'
+                  ? 'background:rgba(245,158,11,.15);color:#fbbf24'
+                  : 'background:rgba(167,139,250,.12);color:#a78bfa';
                 return `<div class="pres-chip${hasAlert ? ' border-amber-900/50' : ''}${presActivo ? '' : ' pres-inactive'}" data-pres-id="${d.idProducto}">
                   <div class="min-w-0 flex-1">
                     <div class="text-xs font-semibold text-slate-200 truncate">${hlD}</div>
                     <div class="flex items-center gap-2 mt-0.5">
                       ${d.codigoBarra ? `<span class="pres-code">▌${d.codigoBarra}</span>` : ''}
                       <span class="pres-factor">×${factor}</span>
-                      <span class="pres-factor" style="background:rgba(167,139,250,.12);color:#a78bfa">${presUnidad}</span>
+                      <span class="pres-factor" style="${presUniBg}">${presUniIcon} ${presUnidad}</span>
                     </div>
                     ${alertHtml ? `<div class="flex flex-wrap items-center gap-1 mt-1">${alertHtml}</div>` : ''}
                   </div>
@@ -4094,6 +4099,11 @@ const MOS = (() => {
     if (!u) return 'NIU';
     const up = String(u).trim().toUpperCase();
     return _UNIDAD_LEGACY_MAP[up] || up;  // si ya es SUNAT, lo deja igual
+  }
+  // Display de unidad con ícono — ⚖️ para KGM (granel), × para el resto
+  function _unidadDisplay(u) {
+    const norm = _normalizarUnidad(u);
+    return norm === 'KGM' ? `⚖️ ${norm}` : `× ${norm}`;
   }
 
   // Producto activo si estado NO es explícitamente 0/'0'/false.
