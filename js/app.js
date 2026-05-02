@@ -4403,11 +4403,23 @@ const MOS = (() => {
       $('prodCodSUNAT').value    = p.Cod_SUNAT       || '10000000';
       _actualizarResumenSunat();
 
-      // Determinar tipo
+      // Determinar tipo correctamente según el modelo de datos:
+      // - Envasable (granel): esEnvasable = 1
+      // - Derivado (envasado del granel): tiene codigoProductoBase
+      // - Presentación (variante del base, ej tripack): factorConversion > 1
+      // - Normal/Base (canónico): factor = 1 o vacío, sin codigoProductoBase
+      // OJO: skuBase y idProducto siempre son distintos en formato (IDPRO vs LEV),
+      // por eso NO sirven como criterio para distinguir base de presentación.
       let tipo = 'normal';
-      if (_esEnvasable(p))               tipo = 'envasable';
-      else if (p.codigoProductoBase)     tipo = 'derivado';
-      else if (p.skuBase && p.skuBase !== p.idProducto && parseFloat(p.factorConversion) > 0) tipo = 'presentacion';
+      const factor = parseFloat(p.factorConversion);
+      if (_esEnvasable(p)) {
+        tipo = 'envasable';
+      } else if (p.codigoProductoBase && String(p.codigoProductoBase).trim()) {
+        tipo = 'derivado';
+      } else if (factor && factor > 0 && factor !== 1) {
+        tipo = 'presentacion';
+      }
+      // else: factor=1 o vacío + sin codigoProductoBase = base/normal/canónico
       setProdTipo(tipo);
 
       if (tipo === 'derivado') {
