@@ -854,12 +854,14 @@ function _getOperacionesUnificadasImpl(dias) {
       });
     });
 
-    // 2. WH PREINGRESOS pendientes — aparecen como operaciones del día también
+    // 2. WH PREINGRESOS — SOLO PENDIENTES (los PROCESADO ya están como guía en sección 1)
     var preingresos = _safeReadWhPreingresos();
     preingresos.forEach(function(p) {
+      var estado = String(p.estado || '').toUpperCase();
+      // Si tiene idGuia o está PROCESADO, ya aparece como guía → no duplicar
+      if (estado === 'PROCESADO' || (p.idGuia && String(p.idGuia).trim())) return;
       var fecha = _parseFecha(p.fecha);
       if (!fecha || fecha < desde) return;
-      var estado = String(p.estado || '').toUpperCase();
       operaciones.push({
         fuente:           'WH',
         fuenteLabel:      'Almacén central',
