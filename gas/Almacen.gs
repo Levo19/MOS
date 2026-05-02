@@ -995,6 +995,49 @@ function _buildProdLookup() {
   return lookup;
 }
 
+// Llenar/actualizar costos de una guía WH y opcionalmente propagar a PRODUCTOS_MASTER
+// params: { idGuia, items: [{idDetalle, codigoProducto, precioUnitario}], actualizarPrecioCosto: bool }
+function llenarCostosGuia(params) {
+  if (!params.idGuia || !Array.isArray(params.items) || !params.items.length) {
+    return { ok: false, error: 'idGuia + items[] requeridos' };
+  }
+  // 1. Llamar WH para actualizar precioUnitario en GUIA_DETALLE
+  var whItems = params.items.map(function(it) {
+    return { idDetalle: it.idDetalle, precioUnitario: parseFloat(it.precioUnitario) || 0 };
+  });
+  var resWh = postToWarehouse('actualizarPreciosDetalle', { idGuia: params.idGuia, items: whItems });
+  if (!resWh || !resWh.ok) {
+    return { ok: false, error: 'WH no respondió: ' + ((resWh && resWh.error) || 'sin detalle') };
+  }
+  // 2. Si actualizarPrecioCosto=true, propagar a PRODUCTOS_MASTER.precioCosto
+  var actualizadosCosto = 0;
+  if (params.actualizarPrecioCosto) {
+    var prodLookup = _buildProdLookup();
+    params.items.forEach(function(it) {
+      var precio = parseFloat(it.precioUnitario) || 0;
+      if (precio <= 0) return;
+      var p = prodLookup[it.codigoProducto];
+      if (!p || !p.idProducto) return;
+      try {
+        actualizarProductoMaster({
+          _source:     'MOS_MODAL_PRODUCTO',
+          idProducto:  p.idProducto,
+          precioCosto: precio,
+          usuario:     params.usuario || ''
+        });
+        actualizadosCosto++;
+      } catch(_){}
+    });
+  }
+  // 3. Bust cache de operaciones para que se vean los cambios
+  try { _almCacheBust(''); } catch(_){}
+  return { ok: true, data: {
+    lineasActualizadas:   resWh.data && resWh.data.actualizados || 0,
+    productosActualizados: actualizadosCosto,
+    montoTotalNuevo:      resWh.data && resWh.data.montoTotalNuevo || 0
+  }};
+}
+
 // Detalle de una operación específica (líneas/items)
 function getOperacionDetalle(params) {
   if (!params || !params.fuente || !params.idGuia) {
@@ -1010,13 +1053,16 @@ function getOperacionDetalle(params) {
       lineas = lineas.map(function(l) {
         var p = prodLookup[l.codigoProducto] || {};
         var esEquiv = p.idProducto && p.idProducto !== l.codigoProducto && p.codigoBarra !== l.codigoProducto;
+        var cant = parseFloat(l.cantidadRecibida || l.cantidad) || parseFloat(l.cantidadEsperada) || 0;
+        var precio = parseFloat(l.precioUnitario) || 0;
         return {
+          idDetalle:       l.idDetalle || '',
           codigoProducto:  l.codigoProducto,
           descripcion:     p.descripcion || '⚠ ' + l.codigoProducto + ' (no en catálogo)',
           esEquivalencia:  esEquiv,
-          cantidad:        parseFloat(l.cantidad) || 0,
-          precioUnitario:  parseFloat(l.precioUnitario) || 0,
-          subtotal:        parseFloat(l.subtotal) || (parseFloat(l.cantidad) * parseFloat(l.precioUnitario)) || 0,
+          cantidad:        cant,
+          precioUnitario:  precio,
+          subtotal:        cant * precio,
           fechaVencimiento: l.fechaVencimiento || ''
         };
       });

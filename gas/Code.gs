@@ -50,6 +50,7 @@ function _route(method, e) {
       case 'getGuiasYPreingresos':   return getGuiasYPreingresos(params);
       case 'getOperacionesUnificadas': return getOperacionesUnificadas(params);
       case 'getOperacionDetalle':    return getOperacionDetalle(params);
+      case 'llenarCostosGuia':       return llenarCostosGuia(params);
       case 'getRankingZonas':        return getRankingZonas(params);
       case 'getProductosSinVenta':   return getProductosSinVenta(params);
       case 'getInsightsStock':       return getInsightsStock(params);
