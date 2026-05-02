@@ -8,6 +8,30 @@
 // Cache: usa CacheService (memoria) con TTL configurable. Bypass con _refresh=true
 // ============================================================
 
+// ── EQUIVALENCIAS HELPER ─────────────────────────────────────────
+// Lee EQUIVALENCIAS activas y devuelve { skuBase: [codigoBarra1, codigoBarra2, ...] }
+// + lookup inverso { codigoBarra: skuBase } para mapeo rápido
+function _readEquivalencias() {
+  var map = {};        // skuBase → [cb, cb, ...]
+  var inverse = {};    // cb → skuBase
+  try {
+    var data = _sheetToObjects(getSheet('EQUIVALENCIAS'));
+    data.forEach(function(e) {
+      if (!e.skuBase || !e.codigoBarra) return;
+      var ac = e.activo;
+      var activo = (ac === undefined || ac === '' || ac === 1 || ac === '1' ||
+                    ac === true || String(ac).toLowerCase() === 'true');
+      if (!activo) return;
+      var sku = String(e.skuBase).trim();
+      var cb  = String(e.codigoBarra).trim();
+      if (!map[sku]) map[sku] = [];
+      map[sku].push({ codigoBarra: cb, idEquiv: e.idEquiv || '', descripcion: e.descripcion || '' });
+      inverse[cb] = sku;
+    });
+  } catch(_){}
+  return { porSku: map, porCb: inverse };
+}
+
 // ── ZONA RESOLVER ────────────────────────────────────────────────
 // Normaliza cualquier identificador de zona (Zona_ID, idEstacion, nombre)
 // a un canónico { id, nombre } único. Usa SOLO datos reales:
@@ -180,16 +204,15 @@ function _getCatalogoStockResumenImpl(rangoDias) {
 
     // Indexar productos
     var prodById = {}, prodByCB = {};
-    var bySku = {};   // skuBase → { base, presentaciones, idsAll, barrasAll }
+    var bySku = {};   // skuBase → { base, presentaciones, idsAll, barrasAll, equivCount }
     productos.forEach(function(p) {
       prodById[p.idProducto] = p;
       if (p.codigoBarra) prodByCB[p.codigoBarra] = p;
       var sku = p.skuBase || p.idProducto;
-      if (!bySku[sku]) bySku[sku] = { base: null, presentaciones: [], idsAll: [], barrasAll: [] };
+      if (!bySku[sku]) bySku[sku] = { base: null, presentaciones: [], idsAll: [], barrasAll: [], equivCount: 0 };
       bySku[sku].presentaciones.push(p);
       bySku[sku].idsAll.push(p.idProducto);
       if (p.codigoBarra) bySku[sku].barrasAll.push(p.codigoBarra);
-      // El base es el producto canónico (factor=1 o idProducto === skuBase)
       var fc = parseFloat(p.factorConversion) || 1;
       if (p.idProducto === sku || (!bySku[sku].base && fc === 1)) {
         bySku[sku].base = p;
@@ -197,6 +220,20 @@ function _getCatalogoStockResumenImpl(rangoDias) {
     });
     Object.keys(bySku).forEach(function(sku) {
       if (!bySku[sku].base) bySku[sku].base = bySku[sku].presentaciones[0];
+    });
+
+    // EQUIVALENCIAS: agregar códigos de barra alternos a cada skuBase
+    var equiv = _readEquivalencias();
+    Object.keys(equiv.porSku).forEach(function(sku) {
+      if (!bySku[sku]) return;  // equivalencia para sku que no existe en master, ignorar
+      equiv.porSku[sku].forEach(function(eq) {
+        if (bySku[sku].barrasAll.indexOf(eq.codigoBarra) < 0) {
+          bySku[sku].barrasAll.push(eq.codigoBarra);
+          bySku[sku].equivCount++;
+        }
+        // También indexar prodByCB para que el lookup desde STOCK_ZONAS funcione
+        if (!prodByCB[eq.codigoBarra]) prodByCB[eq.codigoBarra] = bySku[sku].base;
+      });
     });
 
     // Stock WH: 1 pasada
@@ -287,6 +324,7 @@ function _getCatalogoStockResumenImpl(rangoDias) {
         rotacionDia:       Math.round(rotDia * 10) / 10,
         diasParaAcabar:    diasAcabar,
         countPresentaciones: grupo.presentaciones.length,
+        countEquivalencias:  grupo.equivCount,
         alerta:            alerta
       };
     });
@@ -466,12 +504,27 @@ function _getStockUnificadoImpl(params) {
       return (p.skuBase || p.idProducto) === skuBase;
     });
     var idsPresentacion = presentaciones.map(function(p){ return p.idProducto; });
-    var barrasPresentacion = presentaciones.map(function(p){ return p.codigoBarra; }).filter(Boolean);
+    // Códigos de barra: principales de las presentaciones + equivalencias
+    var equiv = _readEquivalencias();
+    var equivList = equiv.porSku[skuBase] || [];
+    var barrasInfo = [];  // [{ cb, tipo: 'principal'|'equiv', desc }]
+    presentaciones.forEach(function(p) {
+      if (p.codigoBarra) {
+        barrasInfo.push({ codigoBarra: p.codigoBarra, tipo: 'principal', descripcion: p.descripcion || '' });
+      }
+    });
+    equivList.forEach(function(eq) {
+      if (!barrasInfo.find(function(b){ return b.codigoBarra === eq.codigoBarra; })) {
+        barrasInfo.push({ codigoBarra: eq.codigoBarra, tipo: 'equivalencia', descripcion: eq.descripcion || '' });
+      }
+    });
+    var barrasPresentacion = barrasInfo.map(function(b){ return b.codigoBarra; });
 
     // 1. Stock WH
     var stockWh = _safeReadWhStock();
     var stockWhCantidad = 0;
     var stockWhDetalle = [];
+    var stockWhPorCb = {};  // codigoBarra → cantidad WH
     stockWh.forEach(function(s) {
       if (idsPresentacion.indexOf(s.codigoProducto) >= 0 || barrasPresentacion.indexOf(s.codigoProducto) >= 0) {
         var c = parseFloat(s.cantidadDisponible) || 0;
@@ -481,20 +534,24 @@ function _getStockUnificadoImpl(params) {
           cantidad: c,
           ultimaActualizacion: s.ultimaActualizacion
         });
+        stockWhPorCb[s.codigoProducto] = (stockWhPorCb[s.codigoProducto] || 0) + c;
       }
     });
 
     // 2. Stock por zona (ME.STOCK_ZONAS) — agrupando por canónico
     var stockZonas = _safeReadMeStockZonas();
     var zonaAcum = {};  // { canonId: { cantidad, nombre } }
+    var stockZonasPorCb = {};  // codigoBarra → cantidad total en zonas
     stockZonas.forEach(function(z) {
       var cb = String(z.Cod_Barras || z.codigoBarra || '').trim();
       if (barrasPresentacion.indexOf(cb) < 0) return;
+      var qty = parseFloat(z.Cantidad || z.cantidad) || 0;
+      stockZonasPorCb[cb] = (stockZonasPorCb[cb] || 0) + qty;
       var zid = String(z.Zona_ID || z.zonaId || '').trim();
       if (!zid) return;
       var canon = resolver.resolve(zid);
       if (!zonaAcum[canon.id]) zonaAcum[canon.id] = { cantidad: 0, nombre: canon.nombre };
-      zonaAcum[canon.id].cantidad += (parseFloat(z.Cantidad || z.cantidad) || 0);
+      zonaAcum[canon.id].cantidad += qty;
     });
 
     // 3. Ventas últimos N días por zona (canonicalizado)
@@ -595,6 +652,18 @@ function _getStockUnificadoImpl(params) {
       });
     }
 
+    // Construir detalle por código de barra
+    var codigosBarraDetalle = barrasInfo.map(function(b) {
+      return {
+        codigoBarra:   b.codigoBarra,
+        tipo:          b.tipo,
+        descripcion:   b.descripcion,
+        stockWh:       stockWhPorCb[b.codigoBarra] || 0,
+        stockZonas:    stockZonasPorCb[b.codigoBarra] || 0,
+        stockTotal:    (stockWhPorCb[b.codigoBarra] || 0) + (stockZonasPorCb[b.codigoBarra] || 0)
+      };
+    });
+
     return { ok: true, data: {
       producto: {
         idProducto:  prodBase.idProducto,
@@ -606,6 +675,8 @@ function _getStockUnificadoImpl(params) {
         precioCosto: parseFloat(prodBase.precioCosto) || 0,
         precioVenta: parseFloat(prodBase.precioVenta) || 0
       },
+      codigosBarra: codigosBarraDetalle,
+      countEquivalencias: equivList.length,
       wh: {
         cantidad: stockWhCantidad,
         detalle: stockWhDetalle

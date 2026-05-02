@@ -2900,7 +2900,7 @@ const MOS = (() => {
       <div class="flex items-start justify-between gap-3 mb-2">
         <div class="min-w-0 flex-1">
           <div class="text-sm font-semibold text-slate-100 truncate">📦 ${p.descripcion || p.skuBase}</div>
-          <div class="text-[11px] text-slate-500 font-mono mt-0.5 truncate">SKU <span class="text-emerald-300/70">${p.skuBase}</span>${p.codigoBarra ? ' · ▌ ' + p.codigoBarra : ''}${p.countPresentaciones > 1 ? ' <span class="text-slate-600">+ ' + (p.countPresentaciones - 1) + ' pres.</span>' : ''}</div>
+          <div class="text-[11px] text-slate-500 font-mono mt-0.5 truncate">SKU <span class="text-emerald-300/70">${p.skuBase}</span>${p.codigoBarra ? ' · ▌ ' + p.codigoBarra : ''}${p.countPresentaciones > 1 ? ' <span class="text-slate-600">+ ' + (p.countPresentaciones - 1) + ' pres.</span>' : ''}${p.countEquivalencias > 0 ? ' <span class="text-purple-400/70">+ ' + p.countEquivalencias + ' equiv.</span>' : ''}</div>
         </div>
         <div class="text-right shrink-0">
           <div class="text-lg font-bold ${stockColor}">${stockDisplay}</div>
@@ -2942,6 +2942,29 @@ const MOS = (() => {
     const zonas = r.zonas || [];
     const insights = r.insights || [];
     const total = r.total || {};
+    const codigosBarra = r.codigosBarra || [];
+    // Códigos asociados (principal + equivalencias)
+    const codigosHtml = codigosBarra.length > 1 ? `
+      <div class="text-xs">
+        <div class="font-semibold text-slate-300 mb-1">🏷️ Códigos asociados (${codigosBarra.length}: ${codigosBarra.filter(c => c.tipo === 'principal').length} principal + ${(r.countEquivalencias || 0)} equivalencia${(r.countEquivalencias || 0) === 1 ? '' : 's'})</div>
+        <div class="card-sm p-2 space-y-1">
+          ${codigosBarra.map(c => {
+            const tipoBadge = c.tipo === 'principal'
+              ? '<span class="text-[9px] text-emerald-400 bg-emerald-500/10 px-1 rounded">PRINCIPAL</span>'
+              : '<span class="text-[9px] text-purple-400 bg-purple-500/10 px-1 rounded">EQUIV</span>';
+            const totalCb = c.stockTotal || 0;
+            const cls = totalCb < 0 ? 'text-rose-500' : totalCb === 0 ? 'text-slate-500' : 'text-slate-200';
+            return `<div class="flex items-center justify-between gap-2 py-0.5">
+              <div class="min-w-0 flex-1 flex items-center gap-2">
+                ${tipoBadge}
+                <span class="font-mono text-slate-300 truncate">▌ ${c.codigoBarra}</span>
+              </div>
+              <div class="text-[10px] text-slate-500 whitespace-nowrap">WH ${c.stockWh}u · zonas ${c.stockZonas}u · <span class="${cls} font-semibold">total ${totalCb}u</span></div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    ` : '';
     // WH detail
     const whHtml = `
       <div class="text-xs">
@@ -3011,7 +3034,7 @@ const MOS = (() => {
         </div>
       </div>
     ` : '';
-    return `<div class="space-y-3">${whHtml}${zonasHtml}${insightsHtml}</div>`;
+    return `<div class="space-y-3">${codigosHtml}${whHtml}${zonasHtml}${insightsHtml}</div>`;
   }
 
   async function _fetchStockDetail(skuBase) {
