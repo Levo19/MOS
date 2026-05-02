@@ -2631,7 +2631,8 @@ const MOS = (() => {
     const expanded = !!S._opsExpanded[expandKey];
     const monto = op.montoTotal > 0 ? `<span class="text-amber-400 ml-2">S/ ${op.montoTotal.toLocaleString('es-PE', { maximumFractionDigits: 0 })}</span>` : '';
     const usuarioStr = op.usuario ? ` · ${op.usuario}` : '';
-    const provStr = op.idProveedor ? ` · ${op.idProveedor}` : '';
+    const provNombre = op.nombreProveedor || op.idProveedor;
+    const provStr = provNombre ? ` · ${provNombre}` : '';
     const horaStr = (function(){ try { var d = new Date(op.fecha); return d.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }); } catch(_){ return ''; }})();
     // Preingresos no tienen líneas en GUIA_DETALLE — solo mostrar info de cabecera al expandir
     const onclickAttr = op.esPreingreso
@@ -2681,16 +2682,19 @@ const MOS = (() => {
     return `
       <div class="text-[11px] text-slate-500 mb-1">${lineas.length} línea${lineas.length === 1 ? '' : 's'}${total > 0 ? ' · subtotal S/ ' + total.toFixed(2) : ''}</div>
       <div class="space-y-0.5">
-        ${lineas.map(l => `<div class="flex items-center justify-between gap-2 text-[11px] py-0.5">
-          <div class="min-w-0 flex-1">
-            <div class="text-slate-300 truncate">${l.descripcion || l.codigoProducto || l.codigoBarra}</div>
-            <div class="text-slate-600 font-mono text-[10px]">▌ ${l.codigoBarra || l.codigoProducto || '—'}${l.fechaVencimiento ? ' · venc ' + fmtDate(l.fechaVencimiento) : ''}</div>
-          </div>
-          <div class="text-right shrink-0">
-            <div class="text-slate-300 font-semibold">${l.cantidad}u</div>
-            ${l.subtotal > 0 ? `<div class="text-amber-400 text-[10px]">S/ ${l.subtotal.toFixed(2)}</div>` : ''}
-          </div>
-        </div>`).join('')}
+        ${lineas.map(l => {
+          const equivBadge = l.esEquivalencia ? ' <span class="text-[9px] text-purple-400 bg-purple-500/10 px-1 rounded">EQUIV</span>' : '';
+          return `<div class="flex items-center justify-between gap-2 text-[11px] py-0.5">
+            <div class="min-w-0 flex-1">
+              <div class="text-slate-300 truncate">${l.descripcion || l.codigoProducto || l.codigoBarra}${equivBadge}</div>
+              <div class="text-slate-600 font-mono text-[10px]">▌ ${l.codigoBarra || l.codigoProducto || '—'}${l.fechaVencimiento ? ' · venc ' + fmtDate(l.fechaVencimiento) : ''}</div>
+            </div>
+            <div class="text-right shrink-0">
+              <div class="text-slate-300 font-semibold">${l.cantidad}u</div>
+              ${l.subtotal > 0 ? `<div class="text-amber-400 text-[10px]">S/ ${l.subtotal.toFixed(2)}</div>` : ''}
+            </div>
+          </div>`;
+        }).join('')}
       </div>`;
   }
 

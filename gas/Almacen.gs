@@ -787,6 +787,14 @@ function _getOperacionesUnificadasImpl(dias) {
     var tz = Session.getScriptTimeZone();
     var operaciones = [];
 
+    // Mapa idProveedor → nombre (para enriquecer ops)
+    var provMap = {};
+    try {
+      _sheetToObjects(getSheet('PROVEEDORES_MASTER')).forEach(function(pr) {
+        if (pr.idProveedor) provMap[pr.idProveedor] = pr.nombre || pr.idProveedor;
+      });
+    } catch(_){}
+
     // Helper: parser robusto contra todos los formatos que puede venir
     function _parseFecha(v) {
       if (!v) return null;
@@ -841,6 +849,7 @@ function _getOperacionesUnificadasImpl(dias) {
         fecha:            fecha.toISOString(),
         usuario:          g.usuario || '',
         idProveedor:      g.idProveedor || '',
+        nombreProveedor:  g.idProveedor ? (provMap[g.idProveedor] || g.idProveedor) : '',
         idZona:           g.idZona || '',
         idZonaCanonId:    g.idZona ? resolver.resolve(g.idZona).id : '',
         idZonaCanonNom:   g.idZona ? resolver.resolve(g.idZona).nombre : '',
@@ -870,6 +879,7 @@ function _getOperacionesUnificadasImpl(dias) {
         fecha:            fecha.toISOString(),
         usuario:          p.usuario || '',
         idProveedor:      p.idProveedor || '',
+        nombreProveedor:  p.idProveedor ? (provMap[p.idProveedor] || p.idProveedor) : '',
         idZona:           '',
         comentario:       p.comentario || '',
         montoTotal:       parseFloat(p.monto) || 0,
@@ -959,29 +969,51 @@ function _getOperacionesUnificadasImpl(dias) {
   }
 }
 
+// Helper: construye mapa para resolver código a producto.
+// Indexa por idProducto, codigoBarra principal Y codigos de EQUIVALENCIAS.
+function _buildProdLookup() {
+  var productos = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
+  var bySku = {};
+  var lookup = {};
+  productos.forEach(function(p) {
+    if (p.idProducto)  lookup[p.idProducto]  = p;
+    if (p.codigoBarra) lookup[p.codigoBarra] = p;
+    var sku = p.skuBase || p.idProducto;
+    if (sku) bySku[sku] = bySku[sku] || p;
+  });
+  // Equivalencias: cada cb equivalente apunta al producto base via skuBase
+  try {
+    var equiv = _readEquivalencias();
+    Object.keys(equiv.porSku).forEach(function(skuBase) {
+      var prodBase = bySku[skuBase];
+      if (!prodBase) return;
+      equiv.porSku[skuBase].forEach(function(eq) {
+        if (!lookup[eq.codigoBarra]) lookup[eq.codigoBarra] = prodBase;
+      });
+    });
+  } catch(_){}
+  return lookup;
+}
+
 // Detalle de una operación específica (líneas/items)
 function getOperacionDetalle(params) {
   if (!params || !params.fuente || !params.idGuia) {
     return { ok: false, error: 'Requiere fuente y idGuia' };
   }
   try {
+    var prodLookup = _buildProdLookup();
     if (params.fuente === 'WH') {
-      // Reusar logic existente: leer WH GUIA_DETALLE + GUIAS
       var whSheet = _abrirWhSheet('GUIA_DETALLE');
       if (!whSheet) return { ok: false, error: 'GUIA_DETALLE no encontrada en WH' };
       var allDet = _sheetToObjects(whSheet);
       var lineas = allDet.filter(function(d){ return String(d.idGuia) === String(params.idGuia); });
-      // Enriquecer con descripcion del producto
-      var prodMap = {};
-      _sheetToObjects(getSheet('PRODUCTOS_MASTER')).forEach(function(p){
-        prodMap[p.idProducto] = p;
-        if (p.codigoBarra) prodMap[p.codigoBarra] = p;
-      });
       lineas = lineas.map(function(l) {
-        var p = prodMap[l.codigoProducto] || {};
+        var p = prodLookup[l.codigoProducto] || {};
+        var esEquiv = p.idProducto && p.idProducto !== l.codigoProducto && p.codigoBarra !== l.codigoProducto;
         return {
           codigoProducto:  l.codigoProducto,
-          descripcion:     p.descripcion || l.codigoProducto,
+          descripcion:     p.descripcion || '⚠ ' + l.codigoProducto + ' (no en catálogo)',
+          esEquivalencia:  esEquiv,
           cantidad:        parseFloat(l.cantidad) || 0,
           precioUnitario:  parseFloat(l.precioUnitario) || 0,
           subtotal:        parseFloat(l.subtotal) || (parseFloat(l.cantidad) * parseFloat(l.precioUnitario)) || 0,
@@ -996,17 +1028,15 @@ function getOperacionDetalle(params) {
       var data = shGD.getDataRange().getValues();
       var lineas = [];
       // Schema ME GUIAS_DETALLE: ID_Guia | Cod_Barras | Cantidad
-      var prodByCB = {};
-      _sheetToObjects(getSheet('PRODUCTOS_MASTER')).forEach(function(p){
-        if (p.codigoBarra) prodByCB[p.codigoBarra] = p;
-      });
       for (var i = 1; i < data.length; i++) {
         if (String(data[i][0]) !== String(params.idGuia)) continue;
         var cb = String(data[i][1] || '').trim();
-        var p = prodByCB[cb] || {};
+        var p = prodLookup[cb] || {};
+        var esEquivME = p.idProducto && p.codigoBarra !== cb;
         lineas.push({
           codigoBarra:    cb,
-          descripcion:    p.descripcion || cb,
+          descripcion:    p.descripcion || '⚠ ' + cb + ' (no en catálogo)',
+          esEquivalencia: esEquivME,
           cantidad:       parseFloat(data[i][2]) || 0,
           precioUnitario: parseFloat(p.precioVenta) || 0,
           subtotal:       (parseFloat(data[i][2]) || 0) * (parseFloat(p.precioVenta) || 0)
