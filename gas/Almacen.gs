@@ -662,9 +662,23 @@ function _getRankingZonasImpl(params) {
     if (data.length < 2) return { ok: true, data: { zonas: [], total: 0 } };
 
     var resolver = _buildZonaResolver();
+    // Set de zonas registradas en MOS (filtro estricto)
+    var zonasMOS = _sheetToObjects(getSheet('ZONAS'));
+    var zonasRegistradas = {};
+    var nombresRegistrados = {};
+    zonasMOS.forEach(function(z) {
+      if (!z.idZona) return;
+      var activa = (z.estado === undefined || z.estado === '' || z.estado === 1 || z.estado === '1' || z.estado === true);
+      if (!activa) return;
+      var canon = resolver.resolve(z.idZona);
+      zonasRegistradas[canon.id] = true;
+      nombresRegistrados[canon.id] = canon.nombre;
+    });
 
-    // Por zona canónica: { ventas, tickets, vendedores, idsVenta, nombre }
+    // Por zona canónica — SOLO zonas registradas en MOS.ZONAS
+    // (lo demás cae en bucket 'OTRAS' para no perder el dinero pero mostrarlo aparte)
     var porZona = {};
+    var ventasOtras = 0, ticketsOtras = 0;
     var totalVentas = 0, totalTickets = 0;
     for (var i = 1; i < data.length; i++) {
       var fecha = data[i][1] ? new Date(data[i][1]) : null;
@@ -675,13 +689,24 @@ function _getRankingZonasImpl(params) {
       var canon = resolver.resolve(zonaRaw);
       var monto = parseFloat(data[i][6]) || 0;
       var vendedor = String(data[i][2] || '').trim();
-      if (!porZona[canon.id]) porZona[canon.id] = { ventas: 0, tickets: 0, vendedoresSet: {}, nombre: canon.nombre };
+      totalVentas += monto;
+      totalTickets += 1;
+      // Si la zona NO está registrada en MOS, va al bucket 'OTRAS'
+      if (!zonasRegistradas[canon.id]) {
+        ventasOtras += monto;
+        ticketsOtras += 1;
+        continue;
+      }
+      if (!porZona[canon.id]) porZona[canon.id] = { ventas: 0, tickets: 0, vendedoresSet: {}, nombre: nombresRegistrados[canon.id] };
       porZona[canon.id].ventas  += monto;
       porZona[canon.id].tickets += 1;
       porZona[canon.id].vendedoresSet[vendedor] = true;
-      totalVentas += monto;
-      totalTickets += 1;
     }
+
+    // Asegurar que TODAS las zonas registradas aparezcan (aunque tengan 0 ventas)
+    Object.keys(zonasRegistradas).forEach(function(zid) {
+      if (!porZona[zid]) porZona[zid] = { ventas: 0, tickets: 0, vendedoresSet: {}, nombre: nombresRegistrados[zid] };
+    });
 
     var arr = Object.keys(porZona).map(function(zid) {
       var d = porZona[zid];
@@ -701,7 +726,9 @@ function _getRankingZonasImpl(params) {
       totalVentas:  Math.round(totalVentas * 100) / 100,
       totalTickets: totalTickets,
       rangoDias:    rangoDias,
-      ticketProm:   totalTickets > 0 ? Math.round((totalVentas / totalTickets) * 100) / 100 : 0
+      ticketProm:   totalTickets > 0 ? Math.round((totalVentas / totalTickets) * 100) / 100 : 0,
+      ventasFueraDeZonasRegistradas: Math.round(ventasOtras * 100) / 100,
+      ticketsFueraDeZonasRegistradas: ticketsOtras
     }};
   } catch(e) {
     return { ok: false, error: 'Error ranking zonas: ' + e.message };
@@ -746,14 +773,22 @@ function _getProductosSinVentaImpl(params) {
       if (cb) vendidos[cb] = true;
     }
 
-    // 2. Stock por zona
+    // 2. Stock por zona — guardamos breakdown por barras
     var stockZonas = _safeReadMeStockZonas();
-    var stockPorBarras = {};
+    var resolver = _buildZonaResolver();
+    var stockPorBarras = {};  // { cb: { total, porZona: {canonId: cant}, nombres: {canonId: nombre} } }
     stockZonas.forEach(function(z) {
       var cb = String(z.Cod_Barras || z.codigoBarra || '').trim();
       var qty = parseFloat(z.Cantidad || z.cantidad) || 0;
       if (!cb || qty <= 0) return;
-      stockPorBarras[cb] = (stockPorBarras[cb] || 0) + qty;
+      var zid = String(z.Zona_ID || '').trim();
+      var canon = zid ? resolver.resolve(zid) : null;
+      if (!stockPorBarras[cb]) stockPorBarras[cb] = { total: 0, porZona: {}, nombres: {} };
+      stockPorBarras[cb].total += qty;
+      if (canon) {
+        stockPorBarras[cb].porZona[canon.id] = (stockPorBarras[cb].porZona[canon.id] || 0) + qty;
+        stockPorBarras[cb].nombres[canon.id] = canon.nombre;
+      }
     });
 
     // 3. Productos en master con stock pero sin venta
@@ -761,18 +796,24 @@ function _getProductosSinVentaImpl(params) {
     var sinVenta = productos.filter(function(p){
       var idP = p.idProducto;
       var cb  = p.codigoBarra;
-      var stockEnZonas = (cb && stockPorBarras[cb]) || 0;
+      var info = cb && stockPorBarras[cb];
+      var stockEnZonas = info ? info.total : 0;
       if (stockEnZonas <= 0) return false;
-      // Si tiene stock pero no aparece como vendido en ese rango → sin venta
       return !(vendidos[idP] || (cb && vendidos[cb]));
     }).map(function(p){
+      var info = stockPorBarras[p.codigoBarra] || { total: 0, porZona: {}, nombres: {} };
+      // Construir breakdown ordenado por mayor cantidad
+      var breakdown = Object.keys(info.porZona).map(function(zid) {
+        return { idZona: zid, nombre: info.nombres[zid] || zid, cantidad: info.porZona[zid] };
+      }).sort(function(a, b){ return b.cantidad - a.cantidad; });
       return {
         idProducto:  p.idProducto,
         skuBase:     p.skuBase,
         descripcion: p.descripcion,
         codigoBarra: p.codigoBarra,
         precioVenta: parseFloat(p.precioVenta) || 0,
-        stockEnZonas: stockPorBarras[p.codigoBarra] || 0
+        stockEnZonas: info.total,
+        breakdownZonas: breakdown
       };
     }).sort(function(a, b){ return b.stockEnZonas - a.stockEnZonas; });
 

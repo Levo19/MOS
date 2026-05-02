@@ -2530,11 +2530,13 @@ const MOS = (() => {
     const el = $('almZonasRanking'); if (!el) return;
     const zonas = data.zonas || [];
     if (!zonas.length) {
-      el.innerHTML = '<div class="text-xs text-slate-600 italic py-3 text-center">Sin ventas en el rango</div>';
+      el.innerHTML = '<div class="text-xs text-slate-600 italic py-3 text-center">Sin zonas registradas en MOS o sin ventas en el rango</div>';
       return;
     }
-    const max = Math.max(...zonas.map(z => z.ventas));
+    const max = Math.max(...zonas.map(z => z.ventas), 1);
     const totalStr = data.totalVentas ? 'S/ ' + data.totalVentas.toLocaleString('es-PE', { maximumFractionDigits: 0 }) : 'S/ 0';
+    const fueraZonas = parseFloat(data.ventasFueraDeZonasRegistradas) || 0;
+    const fueraTickets = parseInt(data.ticketsFueraDeZonasRegistradas) || 0;
     el.innerHTML = `
       <div class="card-sm p-4 mb-2">
         <div class="text-xs text-slate-500 uppercase mb-1">Total vendido (${data.rangoDias}d)</div>
@@ -2543,7 +2545,7 @@ const MOS = (() => {
       </div>
       <div class="space-y-2">
         ${zonas.map(z => {
-          const pct = max > 0 ? (z.ventas / max) * 100 : 0;
+          const pct = (z.ventas / max) * 100;
           return `<div class="card-sm p-3">
             <div class="flex items-center justify-between mb-1.5 gap-2">
               <div class="text-sm font-semibold text-slate-200 truncate">${z.nombre}</div>
@@ -2558,6 +2560,15 @@ const MOS = (() => {
             </div>
           </div>`;
         }).join('')}
+        ${fueraZonas > 0 ? `<div class="card-sm p-3 border border-amber-500/30">
+          <div class="flex items-center justify-between gap-2">
+            <div class="min-w-0 flex-1">
+              <div class="text-sm font-semibold text-amber-400">⚠ Ventas fuera de zonas registradas</div>
+              <div class="text-xs text-slate-500 mt-0.5">${fueraTickets} tickets atribuidos a zonas que no existen en MOS.ZONAS — revisar configuración de estaciones</div>
+            </div>
+            <div class="text-sm font-bold text-amber-400 whitespace-nowrap">S/ ${fueraZonas.toLocaleString('es-PE', { maximumFractionDigits: 0 })}</div>
+          </div>
+        </div>` : ''}
       </div>
     `;
   }
@@ -2568,20 +2579,28 @@ const MOS = (() => {
       el.innerHTML = '<div class="text-xs text-slate-600 italic py-3 text-center">✅ Todos los productos con stock se vendieron</div>';
       return;
     }
-    el.innerHTML = productos.slice(0, 30).map(p => `
-      <div class="card-sm p-3">
-        <div class="flex items-center justify-between gap-2">
-          <div class="min-w-0 flex-1">
-            <div class="text-sm font-semibold text-slate-200 truncate">${p.descripcion || p.idProducto}</div>
-            <div class="text-xs text-slate-500 mt-0.5 font-mono">▌ ${p.codigoBarra || '—'}</div>
+    // Hint para el usuario sobre el propósito
+    const intro = '<div class="text-[11px] text-slate-500 italic mb-2 px-1">💡 Estos productos tienen stock pero no rotan — candidatos a promo o a botar</div>';
+    el.innerHTML = intro + productos.slice(0, 30).map(p => {
+      const breakdown = (p.breakdownZonas || []);
+      const breakdownStr = breakdown.length
+        ? breakdown.map(b => `<span class="text-slate-400">${b.nombre}: <span class="text-orange-300">${b.cantidad}u</span></span>`).join(' · ')
+        : '<span class="text-slate-600 italic">sin desglose</span>';
+      return `
+        <div class="card-sm p-3 cursor-pointer hover:border-orange-500/40 transition-colors" onclick="MOS.almAbrirStockDetalle('${p.idProducto}')">
+          <div class="flex items-center justify-between gap-2 mb-1">
+            <div class="min-w-0 flex-1">
+              <div class="text-sm font-semibold text-slate-200 truncate">${p.descripcion || p.idProducto}</div>
+              <div class="text-xs text-slate-500 mt-0.5 font-mono truncate">▌ ${p.codigoBarra || '—'} · ${fmtMoney(p.precioVenta)}</div>
+            </div>
+            <div class="text-right shrink-0">
+              <div class="text-sm font-bold text-orange-400">${p.stockEnZonas}u</div>
+              <div class="text-[10px] text-slate-600">total en zonas</div>
+            </div>
           </div>
-          <div class="text-right shrink-0">
-            <div class="text-sm font-bold text-orange-400">${p.stockEnZonas}u</div>
-            <div class="text-[10px] text-slate-600">en zonas</div>
-          </div>
-        </div>
-      </div>
-    `).join('') + (productos.length > 30 ? `<div class="text-xs text-slate-600 italic text-center py-2">+ ${productos.length - 30} más…</div>` : '');
+          <div class="text-[11px] mt-1 pt-1 border-t border-slate-800/50">${breakdownStr}</div>
+        </div>`;
+    }).join('') + (productos.length > 30 ? `<div class="text-xs text-slate-600 italic text-center py-2">+ ${productos.length - 30} más…</div>` : '');
   }
 
   // ── ALMACÉN: STOCK detalle modal (WH + zonas) ──
