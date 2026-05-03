@@ -997,6 +997,7 @@ function _buildProdLookup() {
 
 // Llenar/actualizar costos de una guía WH y opcionalmente propagar a PRODUCTOS_MASTER
 // params: { idGuia, items: [{idDetalle, codigoProducto, precioUnitario}], actualizarPrecioCosto: bool }
+// Retorna también sugerenciasPrecioVenta[] basadas en política + lotización FIFO.
 function llenarCostosGuia(params) {
   if (!params.idGuia || !Array.isArray(params.items) || !params.items.length) {
     return { ok: false, error: 'idGuia + items[] requeridos' };
@@ -1011,8 +1012,8 @@ function llenarCostosGuia(params) {
   }
   // 2. Si actualizarPrecioCosto=true, propagar a PRODUCTOS_MASTER.precioCosto
   var actualizadosCosto = 0;
+  var prodLookup = _buildProdLookup();
   if (params.actualizarPrecioCosto) {
-    var prodLookup = _buildProdLookup();
     params.items.forEach(function(it) {
       var precio = parseFloat(it.precioUnitario) || 0;
       if (precio <= 0) return;
@@ -1029,13 +1030,218 @@ function llenarCostosGuia(params) {
       } catch(_){}
     });
   }
-  // 3. Bust cache de operaciones para que se vean los cambios
+  // 3. Calcular sugerencias de precio venta para cada producto (con lotización FIFO)
+  var sugerencias = [];
+  try {
+    var mapaCat = _cargarMapaPoliticaCategorias();
+    // Refrescar lookup con costos actualizados (si se aplicó actualizarPrecioCosto)
+    if (params.actualizarPrecioCosto) prodLookup = _buildProdLookup();
+
+    params.items.forEach(function(it) {
+      var costoNuevo = parseFloat(it.precioUnitario) || 0;
+      if (costoNuevo <= 0) return;
+      var p = prodLookup[it.codigoProducto];
+      if (!p || !p.idProducto) return;
+      var sug = _construirSugerenciaPrecio(p, costoNuevo, mapaCat, params.idGuia);
+      if (sug) sugerencias.push(sug);
+    });
+  } catch(eS) {
+    Logger.log('Error generando sugerencias: ' + eS.message);
+  }
+
+  // 4. Bust cache de operaciones para que se vean los cambios
   try { _almCacheBust(''); } catch(_){}
   return { ok: true, data: {
-    lineasActualizadas:   resWh.data && resWh.data.actualizados || 0,
+    lineasActualizadas:    resWh.data && resWh.data.actualizados || 0,
     productosActualizados: actualizadosCosto,
-    montoTotalNuevo:      resWh.data && resWh.data.montoTotalNuevo || 0
+    montoTotalNuevo:       resWh.data && resWh.data.montoTotalNuevo || 0,
+    sugerenciasPrecioVenta: sugerencias
   }};
+}
+
+// Construye la sugerencia de precio venta para un producto dado un costo nuevo.
+// Incluye lotización FIFO: lee guías de ingreso y arma desglose hasta cubrir stock.
+function _construirSugerenciaPrecio(producto, costoNuevoConIgv, mapaCategorias, idGuiaActual) {
+  var politica = _resolverPoliticaProducto(producto, mapaCategorias);
+  var precioVentaActual = parseFloat(producto.precioVenta) || 0;
+  var costoAnterior = parseFloat(producto.precioCosto) || 0;
+  var sugerido = _calcularPrecioVentaSugerido(costoNuevoConIgv, politica);
+
+  var lotizacion = _calcularLotizacionFIFO(producto, costoNuevoConIgv, idGuiaActual);
+
+  return {
+    idProducto:        producto.idProducto,
+    codigoProducto:    producto.codigoBarra || producto.idProducto,
+    descripcion:       producto.descripcion || '',
+    costoAnterior:     costoAnterior,
+    costoNuevo:        costoNuevoConIgv,
+    costoPonderado:    lotizacion.costoPonderado,
+    precioVentaActual: precioVentaActual,
+    precioVentaSugerido: sugerido,
+    margenActual:      _calcularMargenReal(precioVentaActual, costoAnterior),
+    margenSugerido:    sugerido !== null ? _calcularMargenReal(sugerido, costoNuevoConIgv) : null,
+    margenObjetivo:    politica.margenPct,
+    modoEfectivo:      politica.modoVenta,
+    origenPolitica:    politica.origen,
+    precioTope:        politica.precioTope,
+    lotizacion:        lotizacion
+  };
+}
+
+// Lotización FIFO retroactiva:
+// - Stock actual del producto (suma WH STOCK + ME STOCK_ZONAS)
+// - Lee guías de INGRESO del producto, ordenadas por fecha desc
+// - Acumula cantidades hasta cubrir el stock actual
+// - Calcula promedio ponderado de los lotes "vivos"
+// Excluye la guía actual (ya está representada en costoNuevo).
+function _calcularLotizacionFIFO(producto, costoNuevoConIgv, idGuiaActual) {
+  var stockTotal = _stockTotalProducto(producto);
+  if (stockTotal <= 0) {
+    return { stockTotal: 0, hayLoteAnterior: false, costoPonderado: costoNuevoConIgv, desglose: [] };
+  }
+
+  // Construir lista de códigos a buscar (idProducto + codigoBarra principal + equivalencias)
+  var codigos = {};
+  if (producto.idProducto)  codigos[String(producto.idProducto).toUpperCase()] = true;
+  if (producto.codigoBarra) codigos[String(producto.codigoBarra).toUpperCase()] = true;
+  try {
+    var equiv = _readEquivalencias();
+    var skuBase = producto.skuBase || producto.idProducto;
+    var equivList = equiv.porSku[skuBase] || [];
+    equivList.forEach(function(e){ if (e.codigoBarra) codigos[String(e.codigoBarra).toUpperCase()] = true; });
+  } catch(_){}
+
+  // Leer GUIAS de WH + GUIA_DETALLE, filtrar ingresos del producto
+  var guiasIngreso = [];
+  try {
+    var guias = _safeReadWhGuias().filter(function(g) {
+      return String(g.tipo || '').toUpperCase().indexOf('INGRESO') === 0
+          && String(g.estado || '').toUpperCase() === 'CERRADA';
+    });
+    var guiaMap = {};
+    guias.forEach(function(g){ guiaMap[g.idGuia] = g; });
+
+    var detalles = _readSheetPreservandoFecha(_abrirWhSheet('GUIA_DETALLE'));
+    detalles.forEach(function(d) {
+      if (String(d.observacion || '').toUpperCase() === 'ANULADO') return;
+      var cb = String(d.codigoProducto || '').toUpperCase();
+      if (!codigos[cb]) return;
+      var guia = guiaMap[d.idGuia];
+      if (!guia) return;
+      var cant = parseFloat(d.cantidadRecibida) || 0;
+      var precio = parseFloat(d.precioUnitario) || 0;
+      if (cant <= 0) return;
+      guiasIngreso.push({
+        idGuia:  d.idGuia,
+        fecha:   guia.fecha || '',
+        cantidad: cant,
+        costo:   precio,
+        esActual: idGuiaActual && String(d.idGuia) === String(idGuiaActual)
+      });
+    });
+  } catch(eR) {
+    Logger.log('Lotización: error leyendo guías: ' + eR.message);
+  }
+
+  // Ordenar por fecha desc (más reciente primero)
+  guiasIngreso.sort(function(a, b){
+    var ta = new Date(a.fecha).getTime() || 0;
+    var tb = new Date(b.fecha).getTime() || 0;
+    return tb - ta;
+  });
+
+  // FIFO retroactivo: tomar las últimas guías hasta cubrir stockTotal
+  // Para la guía actual usar costoNuevoConIgv (pueden venir del modal ya con costo correcto)
+  var pendiente = stockTotal;
+  var desglose = [];
+  for (var i = 0; i < guiasIngreso.length && pendiente > 0; i++) {
+    var g = guiasIngreso[i];
+    var costo = g.esActual ? costoNuevoConIgv : g.costo;
+    if (costo <= 0) continue; // sin costo registrado, saltar (no ensucia el ponderado)
+    var aplica = Math.min(pendiente, g.cantidad);
+    desglose.push({
+      idGuia:   g.idGuia,
+      fecha:    g.fecha,
+      cantidad: aplica,
+      costo:    costo,
+      esActual: g.esActual,
+      esNueva:  g.esActual // alias para frontend
+    });
+    pendiente -= aplica;
+  }
+
+  // Promedio ponderado
+  var costoPonderado = 0;
+  var qtyTotal = 0;
+  desglose.forEach(function(d){ costoPonderado += d.costo * d.cantidad; qtyTotal += d.cantidad; });
+  costoPonderado = qtyTotal > 0 ? Math.round((costoPonderado / qtyTotal) * 10000) / 10000 : costoNuevoConIgv;
+
+  // ¿Hay lotes anteriores aún vivos?
+  var hayLoteAnterior = desglose.some(function(d){ return !d.esActual; });
+
+  return {
+    stockTotal: stockTotal,
+    cantidadCubierta: stockTotal - pendiente,
+    hayLoteAnterior: hayLoteAnterior,
+    costoPonderado: costoPonderado,
+    desglose: desglose
+  };
+}
+
+// Suma stock del producto en WH (STOCK) + ME (STOCK_ZONAS).
+function _stockTotalProducto(producto) {
+  var codigos = {};
+  if (producto.idProducto)  codigos[String(producto.idProducto).toUpperCase()] = true;
+  if (producto.codigoBarra) codigos[String(producto.codigoBarra).toUpperCase()] = true;
+  try {
+    var equiv = _readEquivalencias();
+    var skuBase = producto.skuBase || producto.idProducto;
+    (equiv.porSku[skuBase] || []).forEach(function(e){
+      if (e.codigoBarra) codigos[String(e.codigoBarra).toUpperCase()] = true;
+    });
+  } catch(_){}
+
+  var total = 0;
+  try {
+    _safeReadWhStock().forEach(function(s){
+      var cb = String(s.codigoProducto || s.codigoBarra || '').toUpperCase();
+      if (codigos[cb]) total += parseFloat(s.cantidad) || 0;
+    });
+  } catch(_){}
+  try {
+    _safeReadMeStockZonas().forEach(function(s){
+      var cb = String(s.Cod_Barras || '').toUpperCase();
+      if (codigos[cb]) total += parseFloat(s.Cantidad) || 0;
+    });
+  } catch(_){}
+  return total;
+}
+
+// Endpoint: aplicar precios de venta sugeridos seleccionados por el usuario
+// params: { items: [{idProducto, precioNuevo, motivo}], usuario }
+function aplicarPreciosVentaSugeridos(params) {
+  if (!Array.isArray(params.items) || !params.items.length) {
+    return { ok: false, error: 'items[] requerido' };
+  }
+  var aplicados = 0, errores = [];
+  params.items.forEach(function(it) {
+    var precio = parseFloat(it.precioNuevo);
+    if (!it.idProducto || isNaN(precio) || precio <= 0) { errores.push({ idProducto: it.idProducto, error: 'datos inválidos' }); return; }
+    try {
+      var r = actualizarProductoMaster({
+        _source:      'MOS_MODAL_PRODUCTO',
+        idProducto:   it.idProducto,
+        precioVenta:  precio,
+        usuario:      params.usuario || '',
+        motivoPrecio: it.motivo || 'Ajuste por costo de guía'
+      });
+      if (r && r.ok) aplicados++;
+      else errores.push({ idProducto: it.idProducto, error: (r && r.error) || 'sin detalle' });
+    } catch(e) {
+      errores.push({ idProducto: it.idProducto, error: e.message });
+    }
+  });
+  return { ok: true, data: { aplicados: aplicados, errores: errores } };
 }
 
 // Detalle de una operación específica (líneas/items)
