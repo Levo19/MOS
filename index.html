@@ -3756,7 +3756,7 @@
           </div>
           <div>
             <label class="lbl">Categoría</label>
-            <select id="prodCategoria" class="inp"><option value="">— seleccionar —</option></select>
+            <select id="prodCategoria" class="inp" onchange="MOS._prodActualizarPoliticaEfectiva()"><option value="">— seleccionar —</option></select>
           </div>
           <div>
             <label class="lbl">Unidad</label>
@@ -3821,6 +3821,42 @@
             </div>
             <input type="hidden" id="prodStockMin" value="0">
             <input type="hidden" id="prodStockMax" value="0">
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Política de precios ── -->
+      <div>
+        <button type="button" onclick="MOS.prodTogglePolitica()" class="flex items-center gap-1.5 text-xs text-slate-500 hover:text-amber-400 transition-colors">
+          <span id="politicaChevron" style="font-size:9px">▶</span>
+          <span>Política de precios (override de la categoría)</span>
+        </button>
+        <div id="prodSecPolitica" class="hidden mt-2 prod-sec-box">
+          <div class="text-[11px] text-slate-500 mb-2" id="prodPoliticaEfectiva">
+            Política efectiva: <span class="text-slate-400 italic">selecciona una categoría primero</span>
+          </div>
+          <label class="flex items-center gap-2 text-xs text-slate-300 mb-3 cursor-pointer">
+            <input id="prodPoliticaOverride" type="checkbox" onchange="MOS._prodOnPoliticaOverride()">
+            <span>Usar política propia (en vez de heredar de la categoría)</span>
+          </label>
+          <div id="prodPoliticaCampos" class="hidden grid grid-cols-2 gap-3">
+            <div class="col-span-2">
+              <label class="lbl">Modo de venta</label>
+              <select id="prodModoVenta" class="inp" onchange="MOS._prodOnModoChange()">
+                <option value="MARGEN">MARGEN</option>
+                <option value="FIJO">FIJO</option>
+                <option value="COMPETITIVO">COMPETITIVO</option>
+                <option value="LIBRE">LIBRE</option>
+              </select>
+            </div>
+            <div id="prodMargenWrap">
+              <label class="lbl">Margen objetivo %</label>
+              <input id="prodMargenPct" type="number" min="0" max="99" step="0.1" class="inp" placeholder="25">
+            </div>
+            <div id="prodTopeWrap" class="hidden">
+              <label class="lbl">Precio tope S/</label>
+              <input id="prodPrecioTope" type="number" min="0" step="0.01" class="inp" placeholder="0.00">
+            </div>
           </div>
         </div>
       </div>

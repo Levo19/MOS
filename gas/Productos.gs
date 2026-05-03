@@ -232,6 +232,15 @@ function crearProductoMaster(params) {
     factorConv = 1;   // base = factor 1
   }
 
+  // Garantizar columnas de política antes de escribir (idempotente)
+  try { _garantizarColumnasPoliticaProductos(); } catch(_){}
+
+  // Política override (vacío = hereda de categoría)
+  var modoOverride  = String(params.modoVenta || '').toUpperCase();
+  if (['MARGEN','FIJO','COMPETITIVO','LIBRE'].indexOf(modoOverride) === -1) modoOverride = '';
+  var margenOverride = (params.margenPct !== '' && params.margenPct !== undefined && params.margenPct !== null) ? parseFloat(params.margenPct) : '';
+  var topeOverride   = (params.precioTope !== '' && params.precioTope !== undefined && params.precioTope !== null) ? parseFloat(params.precioTope) : '';
+
   var values = [
     id,
     skuBase,
@@ -257,7 +266,10 @@ function crearProductoMaster(params) {
     parseFloat(params.stockMaximo) || 0,
     params.zona                 || '',
     new Date(),
-    params.usuario              || ''
+    params.usuario              || '',
+    modoOverride,
+    isNaN(margenOverride) ? '' : margenOverride,
+    isNaN(topeOverride) ? '' : topeOverride
   ];
 
   // 5. Forzar formato de TEXTO en columnas idProducto (1), skuBase (2), codigoBarra (3)
@@ -288,13 +300,18 @@ function actualizarProductoMaster(params) {
 
     var precioAnterior = data[i][hdrs.indexOf('precioVenta')];
 
+    // Garantizar columnas de política antes de actualizar (idempotente)
+    try { _garantizarColumnasPoliticaProductos(); hdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]; } catch(_){}
+
     var campos = ['skuBase','codigoBarra','descripcion','marca','idCategoria','unidad',
                   'precioVenta','precioCosto','Cod_Tributo','IGV_Porcentaje','Cod_SUNAT','Tipo_IGV',
                   'Unidad_Medida','estado','esEnvasable','codigoProductoBase',
                   'factorConversion','factorConversionBase','mermaEsperadaPct',
-                  'stockMinimo','stockMaximo','zona'];
+                  'stockMinimo','stockMaximo','zona',
+                  'modoVenta','margenPct','precioTope'];
     var _numCampos = ['precioVenta','precioCosto','factorConversion','factorConversionBase',
-                      'mermaEsperadaPct','stockMinimo','stockMaximo','IGV_Porcentaje'];
+                      'mermaEsperadaPct','stockMinimo','stockMaximo','IGV_Porcentaje',
+                      'margenPct','precioTope'];
     // Campos críticos que NUNCA deben sobrescribirse con vacío (defensa contra
     // bugs de frontend que mandan params.skuBase = '' cuando el input no estaba poblado)
     var _camposNoVaciables = ['skuBase', 'codigoBarra', 'descripcion'];

@@ -22,7 +22,8 @@ const MOS = (() => {
     equivMap: {},
     _editingPrecioId: null,
     _ecoData: null,
-    pnPendientes: []
+    pnPendientes: [],
+    categorias: []
   };
 
   function _getSession()      { try { return JSON.parse(localStorage.getItem(SESSION_KEY)); } catch { return null; } }
@@ -729,6 +730,47 @@ const MOS = (() => {
   let _catTimer  = null;
   let _catGroups = {}; // { [skuBase]: { base, pres[] } } — para acceso desde guardarPrecioRapido
 
+  // ── Política de precios — resolver y calcular margen ──────
+  // Política efectiva: override del producto > política de la categoría > default global.
+  function _resolverPoliticaProd(producto) {
+    const oModo = String(producto.modoVenta || '').toUpperCase();
+    const VALIDOS = ['MARGEN','FIJO','COMPETITIVO','LIBRE'];
+    const idCat = String(producto.idCategoria || '').toUpperCase();
+    const cat = (S.categorias || []).find(c => String(c.idCategoria).toUpperCase() === idCat);
+    const oMarg = (producto.margenPct !== '' && producto.margenPct !== undefined && producto.margenPct !== null) ? parseFloat(producto.margenPct) : null;
+    const oTope = (producto.precioTope !== '' && producto.precioTope !== undefined && producto.precioTope !== null) ? parseFloat(producto.precioTope) : null;
+
+    const modo  = (VALIDOS.indexOf(oModo) >= 0) ? oModo : (cat ? String(cat.modoVenta || 'MARGEN').toUpperCase() : 'MARGEN');
+    const margen = (oMarg !== null && !isNaN(oMarg)) ? oMarg : (cat ? (parseFloat(cat.margenPct) || 25) : 25);
+    const tope  = (oTope !== null && !isNaN(oTope) && oTope > 0) ? oTope : (cat ? (parseFloat(cat.precioTope) || 0) : 0);
+    const origen = oModo ? 'producto' : (cat ? 'categoría' : 'default');
+    return { modo, margen, tope, origen, categoria: cat };
+  }
+
+  // Calcula info de margen actual + estado vs política. Retorna null si no aplica.
+  function _calcularMargenInfo(producto) {
+    const venta = parseFloat(producto.precioVenta) || 0;
+    const costo = parseFloat(producto.precioCosto) || 0;
+    if (venta <= 0 || costo <= 0) return null;
+    const margenReal = ((venta - costo) / venta) * 100;
+    const pol = _resolverPoliticaProd(producto);
+    let estado = 'ok'; // ok | bajo | sin-regla
+    if (pol.modo === 'FIJO' || pol.modo === 'LIBRE') {
+      // No hay objetivo — solo alerta si margen < 10% (gancho permitido pero no a pérdida grave)
+      if (margenReal < 10) estado = 'bajo';
+      else estado = 'sin-regla';
+    } else {
+      // MARGEN o COMPETITIVO: alerta si está por debajo del objetivo - 5pts
+      if (margenReal < pol.margen - 5) estado = 'bajo';
+    }
+    return {
+      margen: margenReal,
+      objetivo: pol.margen,
+      modo: pol.modo,
+      estado: estado
+    };
+  }
+
   async function loadCatalogo(force = false) {
     // Si el timer ya precargó datos frescos y no se forzó, renderizar sin fetch
     if (!force && S.productos && S.productos.length > 0) {
@@ -748,10 +790,12 @@ const MOS = (() => {
 
     // Fetch fresco (si no lo hizo el timer aún, o si se forzó)
     try {
-      const [freshProd, freshEquiv] = await Promise.all([
+      const [freshProd, freshEquiv, freshCats] = await Promise.all([
         API.get('getProductos', {}),
-        API.get('getEquivalencias', { activo: '1' }).catch(() => [])
+        API.get('getEquivalencias', { activo: '1' }).catch(() => []),
+        API.get('getCategorias', {}).catch(() => [])
       ]);
+      S.categorias = freshCats || [];
       const productos = freshProd || [];
       const equivMap  = {};
       (freshEquiv || []).forEach(e => {
@@ -1435,6 +1479,16 @@ const MOS = (() => {
                 <div class="cat-price" data-cat-precio="${base.idProducto}">${fmtMoney(base.precioVenta)}</div>
               </div>
               ${base.precioCosto > 0 ? `<div class="cat-cost" data-cat-costo="${base.idProducto}">Costo: ${fmtMoney(base.precioCosto)}</div>` : ''}
+              ${(() => {
+                const mi = _calcularMargenInfo(base);
+                if (!mi) return '';
+                const cls = mi.estado === 'bajo' ? 'text-rose-400' : mi.estado === 'sin-regla' ? 'text-slate-500' : 'text-emerald-400';
+                const icon = mi.estado === 'bajo' ? '⚠' : '';
+                const tip = mi.modo === 'FIJO' || mi.modo === 'LIBRE'
+                  ? `Modo ${mi.modo} (sin objetivo)`
+                  : `Objetivo ${mi.objetivo.toFixed(1)}%`;
+                return `<div class="text-[10px] ${cls}" title="${tip}">Margen: ${mi.margen.toFixed(1)}% ${icon}</div>`;
+              })()}
               <div class="flex gap-1.5 mt-1 items-center">
                 <button type="button" class="toggle-sw ${activo ? 'on' : ''}" data-pid="${base.idProducto}"
                         onclick="event.stopPropagation();MOS.toggleProductoActivo('${base.idProducto}', true)"
@@ -4725,6 +4779,21 @@ const MOS = (() => {
       // Equivalencias
       $('modalEquivSection')?.classList.remove('hidden');
       _loadEquivModal(p.skuBase || p.idProducto);
+
+      // Política de precios (override del producto si tiene)
+      const tieneOverride = !!(p.modoVenta && String(p.modoVenta).trim());
+      $('prodPoliticaOverride').checked = tieneOverride;
+      if (tieneOverride) {
+        $('prodModoVenta').value = String(p.modoVenta).toUpperCase();
+        $('prodMargenPct').value = (p.margenPct !== '' && p.margenPct !== undefined && p.margenPct !== null) ? p.margenPct : '';
+        $('prodPrecioTope').value = (parseFloat(p.precioTope) > 0) ? p.precioTope : '';
+      } else {
+        $('prodModoVenta').value = 'MARGEN';
+        $('prodMargenPct').value = '';
+        $('prodPrecioTope').value = '';
+      }
+      _prodOnPoliticaOverride();
+      _prodActualizarPoliticaEfectiva();
     } else {
       $('modalProdTitle').textContent = 'Nuevo Producto';
       // Defaults autorrelleno (típico abarrote: gravado 18%)
@@ -4735,8 +4804,58 @@ const MOS = (() => {
       $('prodIGV').value          = '18';
       $('prodCodSUNAT').value     = '10000000';
       _actualizarResumenSunat();
+      // Política: por default heredar
+      $('prodPoliticaOverride').checked = false;
+      $('prodModoVenta').value = 'MARGEN';
+      $('prodMargenPct').value = '';
+      $('prodPrecioTope').value = '';
+      _prodOnPoliticaOverride();
+      _prodActualizarPoliticaEfectiva();
     }
     openModal('modalProducto');
+  }
+
+  // ── Modal producto: política de precios ───────────────────
+  function prodTogglePolitica() {
+    const sec = $('prodSecPolitica');
+    const ch  = $('politicaChevron');
+    if (!sec) return;
+    const oculta = sec.classList.contains('hidden');
+    sec.classList.toggle('hidden');
+    if (ch) ch.textContent = oculta ? '▼' : '▶';
+  }
+
+  function _prodOnPoliticaOverride() {
+    const on = $('prodPoliticaOverride')?.checked;
+    $('prodPoliticaCampos')?.classList.toggle('hidden', !on);
+    if (on) _prodOnModoChange();
+  }
+
+  function _prodOnModoChange() {
+    const modo = $('prodModoVenta')?.value;
+    $('prodMargenWrap')?.classList.toggle('hidden', modo === 'FIJO' || modo === 'LIBRE');
+    $('prodTopeWrap')?.classList.toggle('hidden', modo !== 'COMPETITIVO');
+  }
+
+  function _prodActualizarPoliticaEfectiva() {
+    const el = $('prodPoliticaEfectiva');
+    if (!el) return;
+    const idCat = $('prodCategoria')?.value;
+    const cat = (cfgData.categorias || []).find(c => String(c.idCategoria).toUpperCase() === String(idCat || '').toUpperCase());
+    const override = $('prodPoliticaOverride')?.checked;
+    if (override) {
+      const modo = $('prodModoVenta')?.value || 'MARGEN';
+      const margen = parseFloat($('prodMargenPct')?.value);
+      const detalle = (modo === 'MARGEN' || modo === 'COMPETITIVO') && !isNaN(margen)
+        ? `${modo} ${margen}%` : modo;
+      el.innerHTML = `Política efectiva: <span class="text-amber-400 font-semibold">${detalle}</span> <span class="text-slate-600">(override del producto)</span>`;
+    } else if (cat) {
+      const detalle = (cat.modoVenta === 'MARGEN' || cat.modoVenta === 'COMPETITIVO')
+        ? `${cat.modoVenta} ${parseFloat(cat.margenPct).toFixed(1)}%` : cat.modoVenta;
+      el.innerHTML = `Política efectiva: <span class="text-emerald-400 font-semibold">${detalle}</span> <span class="text-slate-600">(de categoría ${cat.nombre || cat.idCategoria})</span>`;
+    } else {
+      el.innerHTML = `Política efectiva: <span class="text-slate-400 italic">${idCat ? 'categoría sin política configurada' : 'selecciona una categoría primero'}</span>`;
+    }
   }
 
   // Carga y renderiza equivalencias dentro del modal
@@ -5019,6 +5138,7 @@ const MOS = (() => {
       return;
     }
 
+    const overridePolitica = !!$('prodPoliticaOverride')?.checked;
     const params = {
       idProducto:    $('prodId')?.value     || undefined,
       descripcion:   desc,
@@ -5036,6 +5156,10 @@ const MOS = (() => {
       IGV_Porcentaje:$('prodIGV')?.value          ? parseFloat($('prodIGV').value) : '',
       Unidad_Medida: $('prodUnidadMedida')?.value || 'NIU',
       Cod_SUNAT:     $('prodCodSUNAT')?.value     || '',
+      // Política override (vacío = hereda de categoría)
+      modoVenta:     overridePolitica ? ($('prodModoVenta')?.value || '') : '',
+      margenPct:     overridePolitica && $('prodMargenPct')?.value ? parseFloat($('prodMargenPct').value) : '',
+      precioTope:    overridePolitica && $('prodPrecioTope')?.value ? parseFloat($('prodPrecioTope').value) : ''
     };
 
     // Campos según tipo
@@ -9418,6 +9542,7 @@ const MOS = (() => {
     abrirAnalitica, cerrarAnalitica, setAnPeriodo, guardarStockMinMax, _anCurrentId,
     guardarAjustePrecios, stepperInc, stepperDec,
     abrirModalProducto, guardarProducto,
+    prodTogglePolitica, _prodOnPoliticaOverride, _prodOnModoChange, _prodActualizarPoliticaEfectiva,
     setProdTipo, onTipoCheck, onEnvasableCheck, prodAutogenBarcode, prodValidarCodigoBarra, prodToggleEstado, prodToggleCosto,
     prodCalcMargen, prodOnRange, prodToggleSunat, prodOnTipoIGVChange, prodToggleEquiv,
     toggleAddEquiv, crearEquivalenciaModal, toggleEquivActivo,
