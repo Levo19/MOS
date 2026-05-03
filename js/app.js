@@ -2613,11 +2613,17 @@ const MOS = (() => {
 
   function _renderOpCard(op) {
     const tipo = String(op.tipo || '').toUpperCase();
-    let tipoLabel, tipoColor, borderCls = '';
+    let tipoLabel, tipoColor, borderCls = '', extraStyle = '';
     if (op.esPreingreso) {
       tipoLabel = '⏳ PREINGRESO';
       tipoColor = 'text-amber-400';
       borderCls = 'border-l-2 border-amber-500/50';
+    } else if (tipo === 'INGRESO_PROVEEDOR') {
+      // Resaltado: guías de proveedor son críticas (compromiso de pago / costos)
+      tipoLabel = '🟢 INGRESO PROVEEDOR';
+      tipoColor = 'text-emerald-300';
+      borderCls = 'border-l-4 border-emerald-400';
+      extraStyle = 'background:linear-gradient(90deg,rgba(16,185,129,.10) 0%,rgba(16,185,129,.02) 100%);box-shadow:0 0 0 1px rgba(16,185,129,.18) inset';
     } else if (tipo.indexOf('INGRESO') >= 0) { tipoLabel = '🟢 INGRESO'; tipoColor = 'text-emerald-400'; }
     else if (tipo.indexOf('SALIDA_VENTAS') >= 0 || tipo === 'SALIDA_VENTAS') { tipoLabel = '🛒 VENTAS'; tipoColor = 'text-purple-400'; }
     else if (tipo.indexOf('SALIDA_ZONA') >= 0 || tipo.indexOf('DESPACHO') >= 0) { tipoLabel = '📦 DESPACHO'; tipoColor = 'text-blue-400'; }
@@ -2645,7 +2651,7 @@ const MOS = (() => {
       ? `<button onclick="event.stopPropagation();MOS.abrirCostosGuia('${op.idGuia}', '${op.fuente}')" class="text-amber-400 hover:text-amber-300 text-base shrink-0 px-1" title="Llenar costos basándose en foto de factura">💰</button>`
       : '';
 
-    return `<div class="card-sm p-2.5 ${borderCls}">
+    return `<div class="card-sm p-2.5 ${borderCls}" ${extraStyle ? `style="${extraStyle}"` : ''}>
       <div class="flex items-center justify-between gap-2 cursor-pointer" ${onclickAttr}>
         <div class="min-w-0 flex-1">
           <div class="text-xs font-semibold ${tipoColor} truncate">${tipoLabel} · <span class="text-slate-300 font-mono">${op.idGuia}</span> ${monto}</div>
