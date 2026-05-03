@@ -5801,7 +5801,7 @@ const MOS = (() => {
   }
 
   // ── TUTORIAL flotante en catálogo ────────────────────────
-  const _TUT_TOTAL = 6;
+  const _TUT_TOTAL = 7;
   let _tutSlide = 1;
 
   function tutorialOpen() {

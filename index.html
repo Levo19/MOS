@@ -5175,8 +5175,82 @@ producto.<b>factorConversion</b> = 1 (o vacío)?
         </div>
       </div>
 
-      <!-- SLIDE 5: Llenar costos de guía + impacto -->
+      <!-- SLIDE 5: Cascada de prioridad — override > categoría > default -->
       <div class="tut-slide" data-slide="5">
+        <div class="tut-title">⛓️ Cascada: override → categoría → default</div>
+        <div class="tut-subtitle">Las columnas <code style="background:#1e293b;padding:1px 5px;border-radius:3px">modoVenta</code>, <code style="background:#1e293b;padding:1px 5px;border-radius:3px">margenPct</code>, <code style="background:#1e293b;padding:1px 5px;border-radius:3px">precioTope</code> son <b style="color:#fbbf24">opcionales</b>. Vacías = hereda de la categoría.</div>
+
+        <svg viewBox="0 0 480 340" xmlns="http://www.w3.org/2000/svg" class="tut-svg-tree" style="max-width:520px">
+          <defs>
+            <linearGradient id="gOverride" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#f59e0b"/><stop offset="100%" stop-color="#dc2626"/></linearGradient>
+            <linearGradient id="gCat" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#10b981"/><stop offset="100%" stop-color="#0891b2"/></linearGradient>
+            <linearGradient id="gDef" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#64748b"/><stop offset="100%" stop-color="#475569"/></linearGradient>
+            <marker id="arrowH" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#fbbf24"/></marker>
+          </defs>
+
+          <!-- Etiqueta de prioridad lado izquierdo -->
+          <text x="20" y="40" font-size="9" font-weight="700" fill="#fbbf24" letter-spacing="1.5">↑ MÁS PRIORIDAD</text>
+          <text x="20" y="318" font-size="9" font-weight="700" fill="#64748b" letter-spacing="1.5">↓ MENOS PRIORIDAD</text>
+
+          <!-- Nivel 1 OVERRIDE -->
+          <rect x="130" y="50" width="320" height="62" rx="12" fill="url(#gOverride)" opacity="0.95"/>
+          <text x="290" y="72" text-anchor="middle" font-size="12" font-weight="700" fill="#0b1220">1️⃣ OVERRIDE DEL PRODUCTO</text>
+          <text x="290" y="89" text-anchor="middle" font-size="10" fill="#0b1220" font-weight="600">producto.modoVenta / margenPct / precioTope</text>
+          <text x="290" y="103" text-anchor="middle" font-size="9" fill="#0b1220" font-style="italic">Si están llenos → gana, ignora todo lo demás</text>
+
+          <!-- Flecha decisión -->
+          <text x="60" y="138" font-size="10" fill="#94a3b8">¿vacío?</text>
+          <path d="M 95 132 L 95 158" stroke="#fbbf24" stroke-width="2" fill="none" marker-end="url(#arrowH)"/>
+
+          <!-- Nivel 2 CATEGORÍA -->
+          <rect x="130" y="160" width="320" height="62" rx="12" fill="url(#gCat)" opacity="0.95"/>
+          <text x="290" y="182" text-anchor="middle" font-size="12" font-weight="700" fill="#022c22">2️⃣ POLÍTICA DE LA CATEGORÍA</text>
+          <text x="290" y="199" text-anchor="middle" font-size="10" fill="#022c22" font-weight="600">producto.idCategoria → CATEGORIAS.margenPct</text>
+          <text x="290" y="213" text-anchor="middle" font-size="9" fill="#022c22" font-style="italic">Si presentación: hereda idCategoria del canónico</text>
+
+          <!-- Flecha decisión 2 -->
+          <text x="40" y="248" font-size="10" fill="#94a3b8">¿no encuentra?</text>
+          <path d="M 95 242 L 95 268" stroke="#fbbf24" stroke-width="2" fill="none" marker-end="url(#arrowH)"/>
+
+          <!-- Nivel 3 DEFAULT -->
+          <rect x="130" y="270" width="320" height="50" rx="12" fill="url(#gDef)" opacity="0.95"/>
+          <text x="290" y="290" text-anchor="middle" font-size="12" font-weight="700" fill="#e2e8f0">3️⃣ DEFAULT GLOBAL</text>
+          <text x="290" y="306" text-anchor="middle" font-size="10" fill="#e2e8f0" font-weight="600">MARGEN 25%</text>
+        </svg>
+
+        <div class="tut-card" style="margin-top:6px">
+          <div class="tut-card-title">📋 Tres productos, mismo escenario</div>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:8px">
+
+            <div style="padding:10px;background:#020617;border-radius:8px;border-left:3px solid #10b981;font-size:11px">
+              <div><b style="color:#34d399">Caso A</b> — <b>COCA COLA 1.5LT</b></div>
+              <div style="color:#94a3b8;margin-top:3px">idCategoria=<b>BEBIDAS</b>, override=vacío</div>
+              <div style="color:#fbbf24;margin-top:3px;font-family:ui-monospace,monospace">→ usa <b>18%</b> (margen de BEBIDAS)</div>
+            </div>
+
+            <div style="padding:10px;background:#020617;border-radius:8px;border-left:3px solid #f59e0b;font-size:11px">
+              <div><b style="color:#fbbf24">Caso B</b> — <b>COCA COLA 1.5LT</b> (gancho del mes)</div>
+              <div style="color:#94a3b8;margin-top:3px">idCategoria=<b>BEBIDAS</b>, override <b>margenPct=8</b></div>
+              <div style="color:#fbbf24;margin-top:3px;font-family:ui-monospace,monospace">→ usa <b>8%</b> (gana el override, ignora 18% de BEBIDAS)</div>
+            </div>
+
+            <div style="padding:10px;background:#020617;border-radius:8px;border-left:3px solid #64748b;font-size:11px">
+              <div><b style="color:#cbd5e1">Caso C</b> — <b>BOLSA 5GR</b> (presentación)</div>
+              <div style="color:#94a3b8;margin-top:3px">idCategoria=vacío (presentación), override=vacío</div>
+              <div style="color:#94a3b8;margin-top:3px">→ busca canónico mismo skuBase → <b>ANIS ESTRELLA GRANEL</b></div>
+              <div style="color:#fbbf24;margin-top:3px;font-family:ui-monospace,monospace">→ usa <b>35%</b> (margen de ESPECIAS, herencia dinámica)</div>
+            </div>
+
+          </div>
+        </div>
+
+        <div style="text-align:center;padding:8px 0 0;color:#64748b;font-size:11px;font-style:italic">
+          💡 <b style="color:#fbbf24">99% de los productos</b> tendrán los 3 campos override vacíos. Es lo normal y deseado.
+        </div>
+      </div>
+
+      <!-- SLIDE 6: Llenar costos de guía + impacto -->
+      <div class="tut-slide" data-slide="6">
         <div class="tut-title">📥 Flujo "Llenar costos" desde guía</div>
         <div class="tut-subtitle">Cuando llega una factura de proveedor con productos.</div>
 
@@ -5200,8 +5274,8 @@ producto.<b>factorConversion</b> = 1 (o vacío)?
         </div>
       </div>
 
-      <!-- SLIDE 6: Régimen fiscal y EXO -->
-      <div class="tut-slide" data-slide="6">
+      <!-- SLIDE 7: Régimen fiscal y EXO -->
+      <div class="tut-slide" data-slide="7">
         <div class="tut-title">🧾 Régimen fiscal (IGV / Exonerado)</div>
         <div class="tut-subtitle">A diferencia de la categoría, el régimen fiscal SÍ se escribe en cada producto.</div>
 
@@ -5247,6 +5321,7 @@ producto.<b>factorConversion</b> = 1 (o vacío)?
         <div class="tut-dot" onclick="MOS.tutorialGoto(4)"></div>
         <div class="tut-dot" onclick="MOS.tutorialGoto(5)"></div>
         <div class="tut-dot" onclick="MOS.tutorialGoto(6)"></div>
+        <div class="tut-dot" onclick="MOS.tutorialGoto(7)"></div>
       </div>
       <button onclick="MOS.tutorialNext()" class="tut-btn-nav tut-btn-next" id="tutBtnNext">Siguiente →</button>
     </div>
