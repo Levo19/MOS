@@ -2060,6 +2060,12 @@
 
     <!-- ═══ VIEW: CATÁLOGO ════════════════════════════════════ -->
     <section id="view-catalogo" class="view">
+      <!-- Botón flotante de tutorial -->
+      <button id="tutFAB" onclick="MOS.tutorialOpen()"
+              class="fixed bottom-6 right-6 z-30 rounded-full shadow-2xl flex items-center justify-center transition-transform hover:scale-110"
+              style="width:52px;height:52px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#0b1220;font-size:22px;border:2px solid #fcd34d"
+              title="¿Cómo funcionan los precios y categorías?">🎓</button>
+
       <!-- Toolbar -->
       <div class="cat-toolbar">
         <div class="cat-search-wrap">
@@ -4981,6 +4987,270 @@
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
     Cerrar sesión
   </button>
+</div>
+
+<!-- ═══ TUTORIAL FLOTANTE — Cómo funcionan precios, categorías y herencias ═══ -->
+<style>
+  #modalTutorial { z-index: 100; }
+  .tut-box { max-width:780px; max-height:92vh; display:flex; flex-direction:column; background:linear-gradient(180deg,#0f172a 0%,#020617 100%); border:1px solid #334155; }
+  .tut-header { padding:18px 22px; border-bottom:1px solid #1e293b; display:flex; align-items:center; gap:14px; }
+  .tut-progress { flex:1; height:6px; background:#1e293b; border-radius:3px; overflow:hidden; }
+  .tut-progress-bar { height:100%; background:linear-gradient(90deg,#f59e0b,#fcd34d); transition:width .35s ease; border-radius:3px; }
+  .tut-body { flex:1; overflow-y:auto; padding:24px; min-height:380px; }
+  .tut-slide { display:none; animation:tutFadeIn .4s ease; }
+  .tut-slide.active { display:block; }
+  @keyframes tutFadeIn { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:translateY(0) } }
+  .tut-title { font-size:20px; font-weight:700; color:#fbbf24; margin-bottom:6px; }
+  .tut-subtitle { font-size:12px; color:#94a3b8; margin-bottom:18px; }
+  .tut-card { background:rgba(15,23,42,.5); border:1px solid #1e293b; border-radius:12px; padding:14px; margin-bottom:10px; }
+  .tut-card-title { font-size:13px; font-weight:600; color:#e2e8f0; margin-bottom:6px; display:flex; align-items:center; gap:8px; }
+  .tut-card-text { font-size:12px; color:#94a3b8; line-height:1.55; }
+  .tut-pill { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:600; }
+  .tut-pill.canon { background:rgba(245,158,11,.15); color:#fbbf24; border:1px solid rgba(245,158,11,.3); }
+  .tut-pill.pres  { background:rgba(99,102,241,.15); color:#a5b4fc; border:1px solid rgba(99,102,241,.3); }
+  .tut-pill.deriv { background:rgba(168,85,247,.15); color:#c4b5fd; border:1px solid rgba(168,85,247,.3); }
+  .tut-pill.ok    { background:rgba(16,185,129,.15); color:#34d399; border:1px solid rgba(16,185,129,.3); }
+  .tut-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  @media (max-width:560px) { .tut-grid-2 { grid-template-columns:1fr; } }
+  .tut-flow { background:#020617; border:1px dashed #334155; border-radius:10px; padding:12px; font-family:ui-monospace,monospace; font-size:11px; color:#cbd5e1; line-height:1.7; }
+  .tut-flow b { color:#fbbf24; }
+  .tut-flow .arrow { color:#475569; }
+  .tut-footer { padding:14px 22px; border-top:1px solid #1e293b; display:flex; align-items:center; gap:10px; }
+  .tut-dots { display:flex; gap:6px; flex:1; justify-content:center; }
+  .tut-dot { width:8px; height:8px; border-radius:50%; background:#334155; cursor:pointer; transition:all .2s; }
+  .tut-dot.active { background:#fbbf24; transform:scale(1.3); }
+  .tut-btn-nav { padding:8px 16px; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer; transition:all .2s; }
+  .tut-btn-prev { background:#1e293b; color:#94a3b8; border:1px solid #334155; }
+  .tut-btn-prev:hover:not(:disabled) { background:#334155; color:#e2e8f0; }
+  .tut-btn-prev:disabled { opacity:.3; cursor:not-allowed; }
+  .tut-btn-next { background:linear-gradient(135deg,#f59e0b,#d97706); color:#0b1220; border:none; }
+  .tut-btn-next:hover { transform:translateX(2px); }
+  .tut-eq { background:#020617; border:1px solid #1e293b; border-radius:8px; padding:10px 14px; margin:8px 0; font-family:ui-monospace,monospace; font-size:12px; color:#fbbf24; text-align:center; }
+  .tut-svg-tree { width:100%; height:auto; max-width:480px; display:block; margin:8px auto; }
+  .tut-step { display:flex; gap:12px; margin-bottom:14px; align-items:flex-start; }
+  .tut-step-num { flex-shrink:0; width:28px; height:28px; border-radius:50%; background:linear-gradient(135deg,#f59e0b,#d97706); color:#0b1220; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; }
+  .tut-step-body { flex:1; }
+  .tut-step-body strong { color:#e2e8f0; font-size:13px; }
+  .tut-step-body p { font-size:11px; color:#94a3b8; margin-top:2px; line-height:1.5; }
+</style>
+<div id="modalTutorial" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.tutorialClose()">
+  <div class="modal-box tut-box p-0">
+    <div class="tut-header">
+      <div style="font-size:24px">🎓</div>
+      <div style="flex:1; min-width:0">
+        <div style="font-size:14px; font-weight:600; color:#e2e8f0">Cómo funcionan precios y categorías</div>
+        <div style="font-size:10px; color:#64748b" id="tutSlideLabel">Slide 1 de 6</div>
+      </div>
+      <div class="tut-progress"><div class="tut-progress-bar" id="tutProgressBar" style="width:16.66%"></div></div>
+      <button onclick="MOS.tutorialClose()" class="modal-close-x">×</button>
+    </div>
+
+    <div class="tut-body" id="tutBody">
+
+      <!-- SLIDE 1: 3 tipos de productos -->
+      <div class="tut-slide active" data-slide="1">
+        <div class="tut-title">📦 Tres tipos de productos</div>
+        <div class="tut-subtitle">Todo producto en el catálogo es uno de estos tres. Cada tipo tiene un comportamiento distinto.</div>
+
+        <div class="tut-card" style="border-left:3px solid #f59e0b">
+          <div class="tut-card-title"><span class="tut-pill canon">CANÓNICO</span> Producto base</div>
+          <div class="tut-card-text">El producto "padre". Lleva la información maestra: <b style="color:#fbbf24">categoría, margen objetivo, régimen fiscal</b>. Se identifica porque <code style="background:#1e293b;padding:2px 6px;border-radius:4px">factorConversion = 1</code> y <b>no</b> tiene <code style="background:#1e293b;padding:2px 6px;border-radius:4px">codigoProductoBase</code>.</div>
+          <div class="tut-card-text" style="margin-top:6px;font-style:italic">Ej: <span class="tut-pill canon">ANIS ESTRELLA ENTERO GRANEL</span> · <span class="tut-pill canon">COCA COLA 1.5LT</span></div>
+        </div>
+
+        <div class="tut-card" style="border-left:3px solid #6366f1">
+          <div class="tut-card-title"><span class="tut-pill pres">PRESENTACIÓN</span> Variante del canónico</div>
+          <div class="tut-card-text">Mismo <code style="background:#1e293b;padding:2px 6px;border-radius:4px">skuBase</code> que el canónico, pero con un factor distinto (250GR, 500GR, sachet, tripack). <b>No</b> lleva idCategoria propio: lo hereda automáticamente del canónico.</div>
+          <div class="tut-card-text" style="margin-top:6px;font-style:italic">Ej: BOLSA 5GR · 250GR · TRIPACK 3UN</div>
+        </div>
+
+        <div class="tut-card" style="border-left:3px solid #a855f7">
+          <div class="tut-card-title"><span class="tut-pill deriv">DERIVADO</span> Envasado de un envasable</div>
+          <div class="tut-card-text">Tiene <code style="background:#1e293b;padding:2px 6px;border-radius:4px">codigoProductoBase</code> apuntando al envasable padre. Se vende empacado pero proviene del granel. Hereda categoría y régimen del envasable.</div>
+          <div class="tut-card-text" style="margin-top:6px;font-style:italic">Ej: ACHIOTE EN POLVO 250GR (proviene de ACHIOTE EN POLVO GRANEL)</div>
+        </div>
+      </div>
+
+      <!-- SLIDE 2: Cómo se identifica cada uno -->
+      <div class="tut-slide" data-slide="2">
+        <div class="tut-title">🔍 ¿Cómo identifica el sistema cada tipo?</div>
+        <div class="tut-subtitle">Reglas exactas que usa el resolver para clasificar al consultar.</div>
+
+        <div class="tut-flow">
+producto.<b>codigoProductoBase</b> tiene valor?
+   <span class="arrow">└─→</span> sí: <span style="color:#c4b5fd">DERIVADO</span> · busca canónico por idProducto/skuBase del padre
+   <span class="arrow">└─→</span> no: sigue ↓
+
+producto.<b>factorConversion</b> = 1 (o vacío)?
+   <span class="arrow">└─→</span> sí: <span style="color:#fbbf24">CANÓNICO</span> · su idCategoria es la fuente de verdad
+   <span class="arrow">└─→</span> no: <span style="color:#a5b4fc">PRESENTACIÓN</span> · busca canónico con mismo skuBase y factor=1
+        </div>
+
+        <div class="tut-card" style="margin-top:12px">
+          <div class="tut-card-title">📋 Ejemplo concreto</div>
+          <div class="tut-card-text">
+            <div style="margin:8px 0; padding:8px; background:#020617; border-radius:6px; font-family:ui-monospace,monospace; font-size:11px;">
+              <div><span class="tut-pill canon" style="margin-right:6px">CANÓNICO</span><b style="color:#fbbf24">WHANENRO</b> · skuBase=<b>LEV004</b> · factor=<b>1</b></div>
+              <div style="margin-top:6px"><span class="tut-pill pres" style="margin-right:6px">PRESENT</span>WHANENRO250GR · skuBase=<b>LEV004</b> · factor=<b>0.25</b> <span class="arrow">→ hereda de WHANENRO</span></div>
+              <div style="margin-top:6px"><span class="tut-pill pres" style="margin-right:6px">PRESENT</span>PRE001 (BOLSA 5GR) · skuBase=<b>LEV004</b> · factor=<b>0.005</b> <span class="arrow">→ hereda de WHANENRO</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SLIDE 3: Herencia de categoría -->
+      <div class="tut-slide" data-slide="3">
+        <div class="tut-title">🌳 Herencia de categoría</div>
+        <div class="tut-subtitle">Una sola fuente de verdad. Si reclasificas el canónico, todas las presentaciones cambian solas.</div>
+
+        <svg class="tut-svg-tree" viewBox="0 0 480 280" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="gCanon" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#fbbf24"/><stop offset="100%" stop-color="#d97706"/></linearGradient>
+            <linearGradient id="gPres"  x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#a5b4fc"/><stop offset="100%" stop-color="#6366f1"/></linearGradient>
+          </defs>
+          <!-- Canónico (raíz) -->
+          <rect x="160" y="20" width="160" height="50" rx="10" fill="url(#gCanon)"/>
+          <text x="240" y="40" text-anchor="middle" font-family="ui-sans-serif" font-size="11" font-weight="700" fill="#0b1220">CANÓNICO</text>
+          <text x="240" y="58" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" fill="#0b1220">idCategoria=GRANEL</text>
+          <!-- Líneas -->
+          <path d="M 240 70 L 80 130 M 240 70 L 240 130 M 240 70 L 400 130" stroke="#475569" stroke-width="2" stroke-dasharray="4 3" fill="none"/>
+          <!-- Presentaciones -->
+          <rect x="20" y="130" width="120" height="50" rx="8" fill="url(#gPres)" opacity="0.85"/>
+          <text x="80" y="150" text-anchor="middle" font-size="10" font-weight="600" fill="#0b1220">PRESENT 250GR</text>
+          <text x="80" y="167" text-anchor="middle" font-size="9" fill="#0b1220">idCategoria=∅</text>
+          <text x="80" y="195" text-anchor="middle" font-size="9" fill="#fbbf24" font-style="italic">↑ hereda GRANEL</text>
+
+          <rect x="180" y="130" width="120" height="50" rx="8" fill="url(#gPres)" opacity="0.85"/>
+          <text x="240" y="150" text-anchor="middle" font-size="10" font-weight="600" fill="#0b1220">PRESENT 500GR</text>
+          <text x="240" y="167" text-anchor="middle" font-size="9" fill="#0b1220">idCategoria=∅</text>
+          <text x="240" y="195" text-anchor="middle" font-size="9" fill="#fbbf24" font-style="italic">↑ hereda GRANEL</text>
+
+          <rect x="340" y="130" width="120" height="50" rx="8" fill="url(#gPres)" opacity="0.85"/>
+          <text x="400" y="150" text-anchor="middle" font-size="10" font-weight="600" fill="#0b1220">PRESENT 1KG</text>
+          <text x="400" y="167" text-anchor="middle" font-size="9" fill="#0b1220">idCategoria=∅</text>
+          <text x="400" y="195" text-anchor="middle" font-size="9" fill="#fbbf24" font-style="italic">↑ hereda GRANEL</text>
+
+          <text x="240" y="240" text-anchor="middle" font-size="11" fill="#94a3b8">Cambias <tspan font-weight="700" fill="#fbbf24">GRANEL → ESPECIAS</tspan> en el canónico</text>
+          <text x="240" y="258" text-anchor="middle" font-size="11" fill="#94a3b8">→ Las 3 presentaciones cambian automáticamente. Sin tocar nada.</text>
+        </svg>
+      </div>
+
+      <!-- SLIDE 4: Cómo se calcula el margen / precio sugerido -->
+      <div class="tut-slide" data-slide="4">
+        <div class="tut-title">💰 Cómo se calcula el precio sugerido</div>
+        <div class="tut-subtitle">Cascada de prioridad: lo más específico gana.</div>
+
+        <div class="tut-step">
+          <div class="tut-step-num">1</div>
+          <div class="tut-step-body">
+            <strong>Override del producto</strong>
+            <p>Si el producto tiene <code style="background:#1e293b;padding:1px 5px;border-radius:3px">modoVenta</code> + <code style="background:#1e293b;padding:1px 5px;border-radius:3px">margenPct</code> propios → se usan tal cual. Útil para promociones o productos gancho.</p>
+          </div>
+        </div>
+
+        <div class="tut-step">
+          <div class="tut-step-num">2</div>
+          <div class="tut-step-body">
+            <strong>Política de la categoría</strong>
+            <p>Si no hay override propio → se busca su categoría (heredada del canónico si es presentación) y se aplica el margen de esa categoría.</p>
+          </div>
+        </div>
+
+        <div class="tut-step">
+          <div class="tut-step-num">3</div>
+          <div class="tut-step-body">
+            <strong>Default global</strong>
+            <p>Si no encuentra ninguna política aplicable → MARGEN 25%.</p>
+          </div>
+        </div>
+
+        <div class="tut-card" style="margin-top:14px">
+          <div class="tut-card-title">📐 La fórmula</div>
+          <div class="tut-eq">precio venta = costo c/IGV ÷ (1 − margen ÷ 100)</div>
+          <div class="tut-card-text" style="font-size:11px">
+            Ejemplo: costo S/ 30 con margen 25% objetivo<br>
+            → S/ 30 ÷ (1 − 0.25) = S/ 30 ÷ 0.75 = <b style="color:#fbbf24">S/ 40</b><br>
+            <span style="font-style:italic;color:#64748b">(margen real obtenido al vender a 40: (40-30)/40 = 25% ✓)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- SLIDE 5: Llenar costos de guía + impacto -->
+      <div class="tut-slide" data-slide="5">
+        <div class="tut-title">📥 Flujo "Llenar costos" desde guía</div>
+        <div class="tut-subtitle">Cuando llega una factura de proveedor con productos.</div>
+
+        <div class="tut-flow">
+1. Operación de almacén tipo <b>INGRESO_PROVEEDOR</b> con foto
+2. Click en <b>💰</b> abre el modal de costos
+3. Tipear total o unitario, c/IGV o sin IGV → calcula auto
+4. Guardar:
+   <span class="arrow">├─</span> WH GUIA_DETALLE.precioUnitario actualizado
+   <span class="arrow">├─</span> Si check activo: PRODUCTOS_MASTER.precioCosto actualizado
+   <span class="arrow">└─</span> Sistema calcula <b>sugerencias de precio venta</b>:
+       <span class="arrow">    ├─</span> Resuelve política (override → categoría)
+       <span class="arrow">    ├─</span> FIFO retroactivo: leer guías previas para
+       <span class="arrow">    │   </span> verificar si aún hay stock del lote anterior
+       <span class="arrow">    └─</span> Si hay diferencia ≥ 1% → abre panel de impacto
+        </div>
+
+        <div class="tut-card" style="margin-top:12px">
+          <div class="tut-card-title">⚠️ Por qué importa el lote anterior</div>
+          <div class="tut-card-text">Si tienes 15 botellas pero la guía solo trae 10, hay 5 del lote viejo (a costo distinto). El sistema te lo avisa antes de aplicar el nuevo precio para que no estés vendiendo lote viejo a precio nuevo (o viceversa).</div>
+        </div>
+      </div>
+
+      <!-- SLIDE 6: Régimen fiscal y EXO -->
+      <div class="tut-slide" data-slide="6">
+        <div class="tut-title">🧾 Régimen fiscal (IGV / Exonerado)</div>
+        <div class="tut-subtitle">A diferencia de la categoría, el régimen fiscal SÍ se escribe en cada producto.</div>
+
+        <div class="tut-card">
+          <div class="tut-card-title"><span class="tut-pill ok">GRAVADO 18%</span> Default</div>
+          <div class="tut-card-text">La gran mayoría de abarrotes. Cod_Tributo=<b>1000</b>, Tipo_IGV=<b>1</b>, IGV%=<b>18</b>.</div>
+        </div>
+
+        <div class="tut-card">
+          <div class="tut-card-title"><span class="tut-pill" style="background:rgba(168,85,247,.15);color:#c4b5fd;border:1px solid rgba(168,85,247,.3)">EXONERADO</span> Granel agro</div>
+          <div class="tut-card-text">Productos con "EXO" en su descripción (granos, frutos secos al peso). Cod_Tributo=<b>9997</b>, Tipo_IGV=<b>2</b>, IGV%=<b>0</b>. <b style="color:#fbbf24">Las presentaciones y derivados de un canónico EXO heredan el régimen escrito en su propia fila</b> (no se calcula dinámicamente para no romper boletas).</div>
+        </div>
+
+        <div class="tut-card">
+          <div class="tut-card-title">🎯 Resumen de qué se hereda y qué no</div>
+          <div class="tut-grid-2" style="margin-top:8px">
+            <div style="padding:10px;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);border-radius:8px">
+              <div style="font-size:11px;font-weight:700;color:#34d399;margin-bottom:4px">↑ HEREDA DINÁMICO</div>
+              <div style="font-size:10px;color:#94a3b8">idCategoria, margen, modo de venta</div>
+              <div style="font-size:10px;color:#64748b;font-style:italic;margin-top:4px">Cambia el canónico → todas cambian</div>
+            </div>
+            <div style="padding:10px;background:rgba(244,63,94,.08);border:1px solid rgba(244,63,94,.2);border-radius:8px">
+              <div style="font-size:11px;font-weight:700;color:#fb7185;margin-bottom:4px">↓ ESCRITO EN CADA UNA</div>
+              <div style="font-size:10px;color:#94a3b8">Régimen fiscal (Cod_Tributo, IGV)</div>
+              <div style="font-size:10px;color:#64748b;font-style:italic;margin-top:4px">El script lo propaga al migrar</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="text-align:center;padding:14px 0 4px;color:#94a3b8;font-size:12px">
+          ✨ <b style="color:#fbbf24">Listo</b>. Ahora ya entiendes cómo funciona todo.
+        </div>
+      </div>
+
+    </div>
+
+    <div class="tut-footer">
+      <button onclick="MOS.tutorialPrev()" class="tut-btn-nav tut-btn-prev" id="tutBtnPrev">← Anterior</button>
+      <div class="tut-dots" id="tutDots">
+        <div class="tut-dot active" onclick="MOS.tutorialGoto(1)"></div>
+        <div class="tut-dot" onclick="MOS.tutorialGoto(2)"></div>
+        <div class="tut-dot" onclick="MOS.tutorialGoto(3)"></div>
+        <div class="tut-dot" onclick="MOS.tutorialGoto(4)"></div>
+        <div class="tut-dot" onclick="MOS.tutorialGoto(5)"></div>
+        <div class="tut-dot" onclick="MOS.tutorialGoto(6)"></div>
+      </div>
+      <button onclick="MOS.tutorialNext()" class="tut-btn-nav tut-btn-next" id="tutBtnNext">Siguiente →</button>
+    </div>
+  </div>
 </div>
 
 </body>

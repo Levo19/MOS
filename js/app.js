@@ -120,6 +120,10 @@ const MOS = (() => {
     const pt = $('pageTitle'); if (pt) pt.textContent = t;
     const ptd = $('pageTitleDesktop'); if (ptd) ptd.textContent = t;
 
+    // FAB tutorial: solo visible en catálogo
+    const tutFab = $('tutFAB');
+    if (tutFab) tutFab.style.display = (viewName === 'catalogo') ? 'flex' : 'none';
+
     // FAB visibility
     const fab = $('fab');
     if (fab) fab.classList.toggle('visible', viewName === 'proveedores');
@@ -5796,6 +5800,49 @@ const MOS = (() => {
     }
   }
 
+  // ── TUTORIAL flotante en catálogo ────────────────────────
+  const _TUT_TOTAL = 6;
+  let _tutSlide = 1;
+
+  function tutorialOpen() {
+    _tutSlide = 1;
+    _tutRender();
+    openModal('modalTutorial');
+  }
+  function tutorialClose() { closeModal('modalTutorial'); }
+  function tutorialNext() {
+    if (_tutSlide < _TUT_TOTAL) { _tutSlide++; _tutRender(); }
+    else tutorialClose();
+  }
+  function tutorialPrev() {
+    if (_tutSlide > 1) { _tutSlide--; _tutRender(); }
+  }
+  function tutorialGoto(n) {
+    n = parseInt(n) || 1;
+    if (n < 1 || n > _TUT_TOTAL) return;
+    _tutSlide = n;
+    _tutRender();
+  }
+  function _tutRender() {
+    document.querySelectorAll('#modalTutorial .tut-slide').forEach(el => {
+      el.classList.toggle('active', parseInt(el.dataset.slide) === _tutSlide);
+    });
+    document.querySelectorAll('#tutDots .tut-dot').forEach((el, i) => {
+      el.classList.toggle('active', i + 1 === _tutSlide);
+    });
+    const bar = $('tutProgressBar');
+    if (bar) bar.style.width = (_tutSlide * 100 / _TUT_TOTAL).toFixed(2) + '%';
+    const lbl = $('tutSlideLabel');
+    if (lbl) lbl.textContent = `Slide ${_tutSlide} de ${_TUT_TOTAL}`;
+    const btnPrev = $('tutBtnPrev');
+    if (btnPrev) btnPrev.disabled = _tutSlide === 1;
+    const btnNext = $('tutBtnNext');
+    if (btnNext) btnNext.textContent = (_tutSlide === _TUT_TOTAL) ? 'Cerrar ✓' : 'Siguiente →';
+    // Scroll body al inicio
+    const body = $('tutBody');
+    if (body) body.scrollTop = 0;
+  }
+
   // ── CATEGORÍAS / política de precios ─────────────────────
   async function renderCategorias(skipFetch) {
     const tbody = $('tbodyCategorias');
@@ -9784,6 +9831,7 @@ const MOS = (() => {
     auditCorrer, auditResolver, auditResolverTodas, renderIntegridad,
     abrirModalZona, guardarZona,
     abrirModalCategoria, guardarCategoria, _catOnModoChange,
+    tutorialOpen, tutorialClose, tutorialNext, tutorialPrev, tutorialGoto,
     abrirModalEstacion, guardarEstacion,
     abrirModalImpresora, guardarImpresora,
     abrirModalPersonal, guardarPersonal,
