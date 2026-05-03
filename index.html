@@ -5340,6 +5340,56 @@ producto.<b>factorConversion</b> = 1 (o vacío)?
           <div class="tut-card-title">🔄 FIFO retroactivo — unifica todos los códigos</div>
           <div class="tut-card-text">Para el cálculo de lotización (panel de impacto al llenar costos), el sistema agrupa <b>todos los códigos del mismo canónico</b>: idProducto + codigoBarra principal + códigos equivalentes. Si tienes 10 botellas con cod1 y llegan 10 con cod2 (equivalente), son 20 del mismo producto y FIFO hace los cálculos sobre el total correcto.</div>
         </div>
+
+        <div class="tut-card" style="border-left:3px solid #64748b">
+          <div class="tut-card-title">📚 Más ejemplos para que quede claro</div>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">
+
+            <div style="padding:8px;background:#020617;border-radius:6px;font-size:11px">
+              <div><b style="color:#fbbf24">Caso 1</b> — Canónico solitario (sin presentaciones)</div>
+              <div style="color:#94a3b8;margin-top:3px">"COCA COLA 1.5LT" no tiene presentaciones ni equivalentes.</div>
+              <div style="color:#94a3b8">Cambias precio S/ 6 → S/ 7. Solo se actualiza esa fila. <b style="color:#fbbf24">+0 propagadas</b>.</div>
+            </div>
+
+            <div style="padding:8px;background:#020617;border-radius:6px;font-size:11px">
+              <div><b style="color:#fbbf24">Caso 2</b> — Canónico granel con 5 presentaciones</div>
+              <div style="color:#94a3b8;margin-top:3px">"PIMIENTA NEGRA MOLIDA GRANEL" pasa de S/ 50/kg → S/ 60/kg.</div>
+              <div style="color:#a5b4fc;margin-top:2px">→ 50GR (factor 0.05) recalcula: S/ 2.50 → <b>S/ 3.00</b></div>
+              <div style="color:#a5b4fc">→ 250GR (factor 0.25) recalcula: S/ 12.50 → <b>S/ 15.00</b></div>
+              <div style="color:#a5b4fc">→ 500GR (factor 0.50) recalcula: S/ 25.00 → <b>S/ 30.00</b></div>
+              <div style="color:#a5b4fc">→ 1KG (factor 1.00) recalcula: S/ 50.00 → <b>S/ 60.00</b></div>
+              <div style="color:#fbbf24;margin-top:2px">+4 presentaciones propagadas. Equivalentes (si los hay) toman S/ 60 al escanearse.</div>
+            </div>
+
+            <div style="padding:8px;background:#020617;border-radius:6px;font-size:11px">
+              <div><b style="color:#f9a8d4">Caso 3</b> — Presentación con precio fijo</div>
+              <div style="color:#94a3b8;margin-top:3px">"PIMIENTA 50GR SOBRE" tiene <code style="background:#1e293b;padding:1px 4px;border-radius:3px">modoVenta=FIJO</code> a S/ 3.00 (precio psicológico).</div>
+              <div style="color:#94a3b8">El canónico sube a S/ 60/kg pero la presentación NO se mueve.</div>
+              <div style="color:#fbbf24;margin-top:2px">→ Las otras presentaciones sí recalculan, esta queda en S/ 3.</div>
+            </div>
+
+            <div style="padding:8px;background:#020617;border-radius:6px;font-size:11px">
+              <div><b style="color:#c4b5fd">Caso 4</b> — Derivado (envasado del granel)</div>
+              <div style="color:#94a3b8;margin-top:3px">"ACHIOTE EN POLVO 250GR" tiene <code style="background:#1e293b;padding:1px 4px;border-radius:3px">codigoProductoBase</code> apuntando al envasable.</div>
+              <div style="color:#94a3b8">No entra en propagación automática (los derivados tienen merma + etiqueta + envasado).</div>
+              <div style="color:#fbbf24;margin-top:2px">→ Su precio se actualiza solo cuando lo editas manualmente o desde el panel de impacto al llenar costos del envasable.</div>
+            </div>
+
+            <div style="padding:8px;background:#020617;border-radius:6px;font-size:11px">
+              <div><b style="color:#34d399">Caso 5</b> — Equivalente al escanear</div>
+              <div style="color:#94a3b8;margin-top:3px">"OREO ROLLO" canónico cb principal <code>7622201693015</code>, equivalente <code>7622202294723</code>.</div>
+              <div style="color:#94a3b8">Cliente escanea el equivalente en POS.</div>
+              <div style="color:#34d399;margin-top:2px">→ Sistema resuelve al canónico, cobra precio del canónico, IGV del canónico, registra venta como del canónico. Stock del canónico baja en 1 (sin importar bajo qué cb estaba).</div>
+            </div>
+
+            <div style="padding:8px;background:#020617;border-radius:6px;font-size:11px">
+              <div><b style="color:#60a5fa">Caso 6</b> — Insight con stock equivalente</div>
+              <div style="color:#94a3b8;margin-top:3px">Zona 1 vende ALSOL bajo cb1, le quedan 0u, vende ~3/día. Bodega WH tiene 0 de cb1 pero 50 de cb2 (equivalente del mismo canónico).</div>
+              <div style="color:#60a5fa;margin-top:2px">→ Insight DESPACHAR_DESDE_WH detecta los 50 (sumados al canónico) y sugiere despachar a Zona 1. <b style="color:#fbbf24">No los pierde</b> por ser cb distinto.</div>
+            </div>
+
+          </div>
+        </div>
       </div>
 
       <!-- SLIDE 8: Régimen fiscal y EXO -->

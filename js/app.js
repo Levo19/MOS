@@ -3825,6 +3825,47 @@ const MOS = (() => {
     // Si abrió y aún no tiene cache, ya disparó el fetch dentro del render
   }
 
+  // Resuelve un código (idProducto, codigoBarra o equivalencia) al canónico.
+  // Retorna { producto, descripcion, badge } para mostrar en tablas. Cae al código
+  // crudo si no se puede resolver.
+  function _resolverCodigoAProducto(cod) {
+    if (!cod || !S.productos || !S.productos.length) return null;
+    const ref = String(cod).toUpperCase().trim();
+    // 1. Match directo por idProducto o codigoBarra
+    let p = S.productos.find(x =>
+      String(x.idProducto || '').toUpperCase() === ref ||
+      String(x.codigoBarra || '').toUpperCase() === ref
+    );
+    if (p) {
+      // Si es presentación o derivado, subir al canónico
+      const canon = _buscarCanonicoFrontend(p) || p;
+      return canon;
+    }
+    // 2. Buscar en equivalencias
+    if (S.equivMap) {
+      for (const sku in S.equivMap) {
+        if ((S.equivMap[sku] || []).some(cb => String(cb).toUpperCase() === ref)) {
+          const canon = S.productos.find(x => {
+            const f = parseFloat(x.factorConversion);
+            const esCanon = (f === 1 || isNaN(f) || x.factorConversion === '' || x.factorConversion === null) &&
+                            !String(x.codigoProductoBase || '').trim();
+            return esCanon && String(x.skuBase || '').toUpperCase() === String(sku).toUpperCase();
+          });
+          if (canon) return canon;
+        }
+      }
+    }
+    return null;
+  }
+
+  // Devuelve un label "DESCRIPCIÓN · cod" para mostrar al usuario
+  function _labelProducto(cod) {
+    const p = _resolverCodigoAProducto(cod);
+    if (!p) return `<span class="text-slate-500 font-mono">${cod}</span>`;
+    const desc = p.descripcion || cod;
+    return `<span class="text-slate-200">${desc}</span> <span class="text-[10px] text-slate-600 font-mono">▌${cod}</span>`;
+  }
+
   function renderVencTable() {
     const listC = $('listVencCrit');
     const listA = $('listVencAlerta');
@@ -3833,7 +3874,7 @@ const MOS = (() => {
         ? '<p class="text-slate-600">Sin vencimientos críticos</p>'
         : (S.vencimientos.criticos || []).map(l =>
             `<div class="flex justify-between items-center p-2 rounded bg-red-950/30 border border-red-900/30">
-              <span class="text-red-300 text-xs">${l.codigoProducto} — Lote ${l.idLote || '—'}</span>
+              <span class="text-red-300 text-xs">${_labelProducto(l.codigoProducto)} — Lote ${l.idLote || '—'}</span>
               <span class="badge badge-red">${l.diasRestantes}d</span>
             </div>`
           ).join('');
@@ -3843,7 +3884,7 @@ const MOS = (() => {
         ? '<p class="text-slate-600">Sin alertas de vencimiento</p>'
         : (S.vencimientos.alertas || []).map(l =>
             `<div class="flex justify-between items-center p-2 rounded" style="background:rgba(245,158,11,.05);border:1px solid rgba(245,158,11,.15)">
-              <span class="text-yellow-300 text-xs">${l.codigoProducto} — Lote ${l.idLote || '—'}</span>
+              <span class="text-yellow-300 text-xs">${_labelProducto(l.codigoProducto)} — Lote ${l.idLote || '—'}</span>
               <span class="badge badge-yellow">${l.diasRestantes}d</span>
             </div>`
           ).join('');
@@ -3863,7 +3904,7 @@ const MOS = (() => {
                   : '<span class="badge badge-gray">' + m.estado + '</span>';
       return `<tr>
         <td class="text-xs text-slate-400">${fmtDate(m.fechaIngreso)}</td>
-        <td class="text-xs sm:text-sm text-slate-200">${m.codigoProducto}</td>
+        <td class="text-xs sm:text-sm">${_labelProducto(m.codigoProducto)}</td>
         <td class="text-xs text-slate-400">${m.origen || '—'}</td>
         <td class="hidden sm:table-cell text-xs">${parseFloat(m.cantidadPendiente || 0)}</td>
         <td>${badge}</td>
@@ -3881,9 +3922,11 @@ const MOS = (() => {
     tbody.innerHTML = S.envasados.slice(-20).reverse().map(e => {
       const ef = parseFloat(e.eficienciaPct || 0);
       const color = ef >= 98 ? 'text-green-400' : ef >= 90 ? 'text-yellow-400' : 'text-red-400';
+      const baseLbl = _labelProducto(e.codigoProductoBase);
+      const envLbl  = e.codigoProductoEnvasado ? _labelProducto(e.codigoProductoEnvasado) : '—';
       return `<tr>
         <td class="text-xs text-slate-400">${fmtDate(e.fecha)}</td>
-        <td class="text-xs sm:text-sm text-slate-200">${e.codigoProductoBase} → ${e.codigoProductoEnvasado || '—'}</td>
+        <td class="text-xs sm:text-sm">${baseLbl} <span class="text-slate-600">→</span> ${envLbl}</td>
         <td class="hidden sm:table-cell">${e.unidadesProducidas || 0}</td>
         <td class="${color} font-semibold">${ef.toFixed(1)}%</td>
         <td><span class="badge ${e.estado === 'COMPLETADO' ? 'badge-green' : 'badge-gray'}">${e.estado || '—'}</span></td>
