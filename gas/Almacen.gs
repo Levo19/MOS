@@ -8,6 +8,62 @@
 // Cache: usa CacheService (memoria) con TTL configurable. Bypass con _refresh=true
 // ============================================================
 
+// ── PRODUCTO CANÓNICO HELPER ─────────────────────────────────────
+// Construye un mapa { codigo_upper: canónico } donde "codigo" puede ser:
+//   - idProducto / codigoBarra de un canónico → su propio canónico
+//   - idProducto / codigoBarra de una presentación → canónico mismo skuBase
+//   - idProducto / codigoBarra de un derivado → envasable canónico
+//   - codigoBarra de una equivalencia → canónico vía skuBase
+// Sirve para que cualquier vista pueda resolver un cb suelto (de stock, ventas,
+// guías, mermas, vencimientos) al producto canónico al que pertenece.
+function _construirMapaCBaCanonico() {
+  var productos = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
+  var canonicosBySku = {};
+  var canonicosById  = {};
+  productos.forEach(function(p) {
+    if (_esCanonico(p)) {
+      if (p.skuBase)    canonicosBySku[String(p.skuBase).toUpperCase()]    = p;
+      if (p.idProducto) canonicosById[String(p.idProducto).toUpperCase()]  = p;
+    }
+  });
+
+  function resolverCanonicoDe(p) {
+    if (_esCanonico(p)) return p;
+    if (p.codigoProductoBase) {
+      var ref = String(p.codigoProductoBase).toUpperCase();
+      return canonicosById[ref] || canonicosBySku[ref] || null;
+    }
+    if (p.skuBase) {
+      return canonicosBySku[String(p.skuBase).toUpperCase()] || null;
+    }
+    return null;
+  }
+
+  var mapa = {};
+  productos.forEach(function(p) {
+    var canonico = resolverCanonicoDe(p);
+    if (!canonico) return;
+    if (p.idProducto)  mapa[String(p.idProducto).toUpperCase()]  = canonico;
+    if (p.codigoBarra) mapa[String(p.codigoBarra).toUpperCase()] = canonico;
+  });
+
+  // Equivalencias → cb equivalente apunta al canónico
+  try {
+    var equiv = _readEquivalencias();
+    Object.keys(equiv.porSku).forEach(function(skuBase) {
+      var canonico = canonicosBySku[String(skuBase).toUpperCase()];
+      if (!canonico) return;
+      equiv.porSku[skuBase].forEach(function(eq) {
+        if (!eq.codigoBarra) return;
+        var k = String(eq.codigoBarra).toUpperCase();
+        if (!mapa[k]) mapa[k] = canonico;
+      });
+    });
+  } catch(_){}
+
+  return mapa;
+}
+
 // ── EQUIVALENCIAS HELPER ─────────────────────────────────────────
 // Lee EQUIVALENCIAS activas y devuelve { skuBase: [codigoBarra1, codigoBarra2, ...] }
 // + lookup inverso { codigoBarra: skuBase } para mapeo rápido
@@ -355,29 +411,38 @@ function _getDashboardAlmacenImpl() {
     var mesIni = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
     var stockWh    = _safeReadWhStock();
     var productos  = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
-    var prodMap = {}; productos.forEach(function(p){ prodMap[p.idProducto] = p; if (p.skuBase) prodMap[p.skuBase] = p; });
+    // Mapa cb/idProd → CANÓNICO (incluye presentaciones, derivados y equivalencias)
+    var mapaCanon = _construirMapaCBaCanonico();
+    function _resolverProd(cod) {
+      if (!cod) return null;
+      return mapaCanon[String(cod).toUpperCase()] || null;
+    }
 
-    // 1. Stock valorizado
+    // 1. Stock valorizado (usando precioCosto del canónico al que apunta cada cb)
     var stockValor = 0, totalUnidades = 0;
+    var stockWhPorCanon = {};   // { idProductoCanon: cantidad }
     stockWh.forEach(function(s) {
-      var prod = prodMap[s.codigoProducto] || prodMap[s.skuBase];
+      var prod = _resolverProd(s.codigoProducto);
       var cant = parseFloat(s.cantidadDisponible) || 0;
       var costo = prod ? (parseFloat(prod.precioCosto) || 0) : 0;
       stockValor    += cant * costo;
       totalUnidades += cant;
+      if (prod) {
+        var key = String(prod.idProducto).toUpperCase();
+        stockWhPorCanon[key] = (stockWhPorCanon[key] || 0) + cant;
+      }
     });
 
-    // 2. Productos críticos (stock < mínimo)
+    // 2. Productos críticos (stock < mínimo) — agrupado por canónico
     var criticos = 0, enAlerta = 0;
-    stockWh.forEach(function(s) {
-      var prod = prodMap[s.codigoProducto] || prodMap[s.skuBase];
-      if (!prod) return;
-      var cant = parseFloat(s.cantidadDisponible) || 0;
-      var min  = parseFloat(prod.stockMinimo) || 0;
-      if (min > 0) {
-        if (cant < min) criticos++;
-        else if (cant < min * 1.2) enAlerta++;
-      }
+    productos.forEach(function(p) {
+      if (!_esCanonico(p)) return;  // solo canónicos definen mínimo
+      var min = parseFloat(p.stockMinimo) || 0;
+      if (min <= 0) return;
+      var key = String(p.idProducto).toUpperCase();
+      var cant = stockWhPorCanon[key] || 0;
+      if (cant < min) criticos++;
+      else if (cant < min * 1.2) enAlerta++;
     });
 
     // 3. Vencimientos próximos (lotes ≤ 7 días) y críticos (≤ 30)
@@ -390,14 +455,14 @@ function _getDashboardAlmacenImpl() {
       else if (dias <= 30) vencAlerta++;
     });
 
-    // 4. Mermas del mes (sumar cantidad * costo)
+    // 4. Mermas del mes (sumar cantidad * costo del canónico)
     var mermas = _safeReadWhMermas();
     var mermasMes = 0, mermasMesUnidades = 0, mermasPendientes = 0;
     mermas.forEach(function(m) {
       var fecha = m.fecha ? new Date(m.fecha) : null;
       if (!fecha || fecha < mesIni) return;
       mermasMesUnidades += parseFloat(m.cantidad) || 0;
-      var prod = prodMap[m.codigoProducto] || prodMap[m.skuBase];
+      var prod = _resolverProd(m.codigoProducto);
       var costo = prod ? (parseFloat(prod.precioCosto) || 0) : 0;
       mermasMes += (parseFloat(m.cantidad) || 0) * costo;
       if (String(m.estado || '').toUpperCase() === 'PENDIENTE') mermasPendientes++;
@@ -1556,7 +1621,11 @@ function _getProductosSinVentaImpl(params) {
     var hoy = new Date();
     var desde = new Date(hoy.getTime() - rangoDias * 86400000);
 
-    // 1. Obtener todos los códigos vendidos en el rango
+    // Mapa cb/idProd → CANÓNICO (incluye presentaciones, derivados y equivalentes)
+    var mapaCanon = _construirMapaCBaCanonico();
+    var productos = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
+
+    // 1. Vendidos POR CANÓNICO (cualquier variante o equivalente cuenta como venta del canónico)
     var ssMe = SpreadsheetApp.openById(_getProp('ME_SS_ID'));
     var shVC = ssMe.getSheetByName('VENTAS_CABECERA');
     var shVD = ssMe.getSheetByName('VENTAS_DETALLE');
@@ -1572,58 +1641,58 @@ function _getProductosSinVentaImpl(params) {
     }
 
     var dataVD = shVD.getDataRange().getValues();
-    var vendidos = {};
+    var canonicosVendidos = {};   // { idProductoCanon: true }
     for (var j = 1; j < dataVD.length; j++) {
       if (!ventasIds[String(dataVD[j][0] || '').trim()]) continue;
-      var sku = String(dataVD[j][1] || '').trim();
-      var cb  = String(dataVD[j][6] || '').trim();
-      if (sku) vendidos[sku] = true;
-      if (cb) vendidos[cb] = true;
+      var sku = String(dataVD[j][1] || '').trim().toUpperCase();
+      var cb  = String(dataVD[j][6] || '').trim().toUpperCase();
+      var canon = (sku && mapaCanon[sku]) || (cb && mapaCanon[cb]);
+      if (!canon) continue;
+      canonicosVendidos[String(canon.idProducto).toUpperCase()] = true;
     }
 
-    // 2. Stock por zona — guardamos breakdown por barras
+    // 2. Stock POR CANÓNICO en zonas (suma todas las variantes)
     var stockZonas = _safeReadMeStockZonas();
     var resolver = _buildZonaResolver();
-    var stockPorBarras = {};  // { cb: { total, porZona: {canonId: cant}, nombres: {canonId: nombre} } }
+    var stockPorCanon = {};  // { idProductoCanon: { canon, total, porZona: {canonId: cant}, nombres: {} } }
     stockZonas.forEach(function(z) {
       var cb = String(z.Cod_Barras || z.codigoBarra || '').trim();
       var qty = parseFloat(z.Cantidad || z.cantidad) || 0;
       if (!cb || qty <= 0) return;
+      var canon = mapaCanon[cb.toUpperCase()];
+      if (!canon) return;
+      var key = String(canon.idProducto).toUpperCase();
       var zid = String(z.Zona_ID || '').trim();
-      var canon = zid ? resolver.resolve(zid) : null;
-      if (!stockPorBarras[cb]) stockPorBarras[cb] = { total: 0, porZona: {}, nombres: {} };
-      stockPorBarras[cb].total += qty;
-      if (canon) {
-        stockPorBarras[cb].porZona[canon.id] = (stockPorBarras[cb].porZona[canon.id] || 0) + qty;
-        stockPorBarras[cb].nombres[canon.id] = canon.nombre;
+      var canonZ = zid ? resolver.resolve(zid) : null;
+      if (!stockPorCanon[key]) stockPorCanon[key] = { canon: canon, total: 0, porZona: {}, nombres: {} };
+      stockPorCanon[key].total += qty;
+      if (canonZ) {
+        stockPorCanon[key].porZona[canonZ.id] = (stockPorCanon[key].porZona[canonZ.id] || 0) + qty;
+        stockPorCanon[key].nombres[canonZ.id] = canonZ.nombre;
       }
     });
 
-    // 3. Productos en master con stock pero sin venta
-    var productos = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
-    var sinVenta = productos.filter(function(p){
-      var idP = p.idProducto;
-      var cb  = p.codigoBarra;
-      var info = cb && stockPorBarras[cb];
-      var stockEnZonas = info ? info.total : 0;
-      if (stockEnZonas <= 0) return false;
-      return !(vendidos[idP] || (cb && vendidos[cb]));
-    }).map(function(p){
-      var info = stockPorBarras[p.codigoBarra] || { total: 0, porZona: {}, nombres: {} };
-      // Construir breakdown ordenado por mayor cantidad
+    // 3. Canónicos con stock pero ninguna variante vendida en el rango
+    var sinVenta = [];
+    Object.keys(stockPorCanon).forEach(function(keyP) {
+      if (canonicosVendidos[keyP]) return;
+      var info = stockPorCanon[keyP];
+      var p = info.canon;
+      if (info.total <= 0) return;
       var breakdown = Object.keys(info.porZona).map(function(zid) {
         return { idZona: zid, nombre: info.nombres[zid] || zid, cantidad: info.porZona[zid] };
       }).sort(function(a, b){ return b.cantidad - a.cantidad; });
-      return {
-        idProducto:  p.idProducto,
-        skuBase:     p.skuBase,
-        descripcion: p.descripcion,
-        codigoBarra: p.codigoBarra,
-        precioVenta: parseFloat(p.precioVenta) || 0,
+      sinVenta.push({
+        idProducto:   p.idProducto,
+        skuBase:      p.skuBase,
+        descripcion:  p.descripcion,
+        codigoBarra:  p.codigoBarra,
+        precioVenta:  parseFloat(p.precioVenta) || 0,
         stockEnZonas: info.total,
         breakdownZonas: breakdown
-      };
-    }).sort(function(a, b){ return b.stockEnZonas - a.stockEnZonas; });
+      });
+    });
+    sinVenta.sort(function(a, b){ return b.stockEnZonas - a.stockEnZonas; });
 
     return { ok: true, data: { _almV: 2, productos: sinVenta, rangoDias: rangoDias } };
   } catch(e) {
@@ -1645,21 +1714,34 @@ function _getAlertasOperativasImpl() {
     var alertas = [];
     var stockWh = _safeReadWhStock();
     var productos = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
-    var prodMap = {}; productos.forEach(function(p){ prodMap[p.idProducto] = p; });
+    // Mapa cb/idProd → CANÓNICO (resuelve presentaciones, derivados y equivalentes)
+    var mapaCanon = _construirMapaCBaCanonico();
 
-    // 1. Productos con stock crítico (< mínimo)
-    var critCount = 0, critTop = [];
+    // Acumular stock WH POR CANÓNICO
+    var stockWhPorCanon = {};   // { idProductoCanon: cantidad }
     stockWh.forEach(function(s) {
-      var prod = prodMap[s.codigoProducto];
-      if (!prod) return;
-      var cant = parseFloat(s.cantidadDisponible) || 0;
-      var min  = parseFloat(prod.stockMinimo) || 0;
-      if (min > 0 && cant < min) {
+      var cp = String(s.codigoProducto || '').trim();
+      if (!cp) return;
+      var canon = mapaCanon[cp.toUpperCase()];
+      if (!canon) return;
+      var key = String(canon.idProducto).toUpperCase();
+      stockWhPorCanon[key] = (stockWhPorCanon[key] || 0) + (parseFloat(s.cantidadDisponible) || 0);
+    });
+
+    // 1. Canónicos con stock crítico (< mínimo) — agrupa todas sus variantes
+    var critCount = 0, critTop = [];
+    productos.forEach(function(p) {
+      if (!_esCanonico(p)) return;  // solo canónicos definen mínimo
+      var min = parseFloat(p.stockMinimo) || 0;
+      if (min <= 0) return;
+      var keyP = String(p.idProducto).toUpperCase();
+      var cant = stockWhPorCanon[keyP] || 0;
+      if (cant < min) {
         critCount++;
         if (critTop.length < 5) {
           critTop.push({
-            idProducto: prod.idProducto,
-            descripcion: prod.descripcion,
+            idProducto: p.idProducto,
+            descripcion: p.descripcion,
             stock: cant,
             minimo: min
           });
@@ -1772,6 +1854,13 @@ function _getInsightsStockImpl(params) {
     var stockWh = _safeReadWhStock();
     var stockZonas = _safeReadMeStockZonas();
     var productos = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
+    // Mapa cb/idProd → CANÓNICO (incluye presentaciones, derivados y equivalencias)
+    var mapaCanon = _construirMapaCBaCanonico();
+    function _aCanon(cod) {
+      if (!cod) return null;
+      return mapaCanon[String(cod).toUpperCase()] || null;
+    }
+    // Compatibilidad: prodById se usa para nombres si llega un cb no resuelto
     var prodById = {}; productos.forEach(function(p){
       prodById[p.idProducto] = p;
       if (p.codigoBarra) prodById[p.codigoBarra] = p;
@@ -1791,22 +1880,25 @@ function _getInsightsStockImpl(params) {
       zonaNombre[canon.id] = canon.nombre;
     });
 
-    // Acumular stock por barras en zonas (canonicalizado)
-    var stockBarrasMap = {};
+    // Acumular stock POR CANÓNICO en zonas (presentaciones + equivalentes suman al mismo canónico)
+    var stockCanonMap = {};   // { idProductoCanon: { canon, total, zonas: {zid: qty} } }
     stockZonas.forEach(function(z) {
       var cb = String(z.Cod_Barras || z.codigoBarra || '').trim();
       var qty = parseFloat(z.Cantidad || z.cantidad) || 0;
-      if (!cb) return;
-      if (!stockBarrasMap[cb]) stockBarrasMap[cb] = { total: 0, zonas: {} };
-      stockBarrasMap[cb].total += qty;
+      if (!cb || qty <= 0) return;
+      var canon = _aCanon(cb);
+      if (!canon) return;
+      var key = String(canon.idProducto).toUpperCase();
+      if (!stockCanonMap[key]) stockCanonMap[key] = { canon: canon, total: 0, zonas: {} };
+      stockCanonMap[key].total += qty;
       var zid = String(z.Zona_ID || '').trim();
-      var canon = resolver.resolve(zid);
-      stockBarrasMap[cb].zonas[canon.id] = (stockBarrasMap[cb].zonas[canon.id] || 0) + qty;
-      zonaNombre[canon.id] = canon.nombre;
+      var canonZ = resolver.resolve(zid);
+      stockCanonMap[key].zonas[canonZ.id] = (stockCanonMap[key].zonas[canonZ.id] || 0) + qty;
+      zonaNombre[canonZ.id] = canonZ.nombre;
     });
 
-    // Calcular ventas por barras + zona (canonicalizado)
-    var ventasMap = {}; // { codigoBarra: { canonZonaId: cantidad } }
+    // Calcular ventas POR CANÓNICO + zona
+    var ventasCanonMap = {}; // { idProductoCanon: { canonZonaId: cantidad } }
     try {
       var ssMe = SpreadsheetApp.openById(_getProp('ME_SS_ID'));
       var shVC = ssMe.getSheetByName('VENTAS_CABECERA');
@@ -1830,26 +1922,30 @@ function _getInsightsStockImpl(params) {
           if (!zona) continue;
           var cb = String(dataVD[j][6] || '').trim();
           if (!cb) continue;
+          var canonV2 = _aCanon(cb);
+          if (!canonV2) continue;
+          var keyV = String(canonV2.idProducto).toUpperCase();
           var cant = parseFloat(dataVD[j][3]) || 0;
-          if (!ventasMap[cb]) ventasMap[cb] = {};
-          ventasMap[cb][zona] = (ventasMap[cb][zona] || 0) + cant;
+          if (!ventasCanonMap[keyV]) ventasCanonMap[keyV] = {};
+          ventasCanonMap[keyV][zona] = (ventasCanonMap[keyV][zona] || 0) + cant;
         }
       }
     } catch(_){}
 
-    // INSIGHT 1 — Productos con stock alto y sin venta en N días
-    Object.keys(stockBarrasMap).forEach(function(cb) {
-      var info = stockBarrasMap[cb];
-      var ventasProd = ventasMap[cb] || {};
+    // INSIGHT 1 — Canónicos con stock alto y sin venta en N días
+    Object.keys(stockCanonMap).forEach(function(keyC) {
+      var info = stockCanonMap[keyC];
+      var ventasProd = ventasCanonMap[keyC] || {};
       var ventasTot = Object.values(ventasProd).reduce(function(s, v){ return s + v; }, 0);
       if (info.total >= 10 && ventasTot === 0) {
-        var prod = prodById[cb];
-        if (!prod) return;
+        var prod = info.canon;
         insights.push({
           tipo: 'SIN_ROTACION',
           severidad: 'MEDIA',
-          producto: prod.descripcion || cb,
-          codigoBarra: cb,
+          producto: prod.descripcion || keyC,
+          codigoBarra: prod.codigoBarra || keyC,
+          idProducto: prod.idProducto,
+          skuBase:    prod.skuBase || '',
           stock: info.total,
           mensaje: prod.descripcion + ' tiene ' + info.total + 'u sin venta en ' + rangoDias + ' días',
           accion: 'Lanzar promo o trasladar a otra zona'
@@ -1857,23 +1953,25 @@ function _getInsightsStockImpl(params) {
       }
     });
 
-    // Pre-cálculo: stock WH por barras (para comparar con cada zona)
-    var stockWhPorCb = {};
+    // Pre-cálculo: stock WH POR CANÓNICO (suma todos los códigos del mismo canónico, incluidos equivalentes)
+    var stockWhPorCanon = {};
     stockWh.forEach(function(s) {
       var cp = String(s.codigoProducto || '').trim();
-      var p = prodById[cp];
-      if (!p) return;
-      var cb = p.codigoBarra || cp;
-      stockWhPorCb[cb] = (stockWhPorCb[cb] || 0) + (parseFloat(s.cantidadDisponible) || 0);
+      if (!cp) return;
+      var canon = _aCanon(cp);
+      if (!canon) return;
+      var key = String(canon.idProducto).toUpperCase();
+      stockWhPorCanon[key] = (stockWhPorCanon[key] || 0) + (parseFloat(s.cantidadDisponible) || 0);
     });
 
     // INSIGHT 2a — DESPACHAR DESDE WH (primera opción cuando una zona se queda sin stock)
     // INSIGHT 2b — TRASLADAR ENTRE ZONAS (solo si WH NO tiene stock disponible)
-    Object.keys(ventasMap).forEach(function(cb) {
-      var ventasProd = ventasMap[cb];
-      var stockInfo = stockBarrasMap[cb] || { zonas: {} };
-      var prod = prodById[cb];
+    Object.keys(ventasCanonMap).forEach(function(keyC) {
+      var ventasProd = ventasCanonMap[keyC];
+      var stockInfo = stockCanonMap[keyC] || { zonas: {} };
+      var prod = (stockCanonMap[keyC] && stockCanonMap[keyC].canon) || _aCanon(keyC);
       if (!prod) return;
+      var cb = prod.codigoBarra || keyC;
       Object.keys(ventasProd).forEach(function(zonaVendedora) {
         if (!zonasRegistradasSet[zonaVendedora]) return;
         var ventas = ventasProd[zonaVendedora];
@@ -1884,8 +1982,8 @@ function _getInsightsStockImpl(params) {
         // Solo nos interesa si la zona se queda sin stock pronto
         if (diasRestantes >= 7 || diasRestantes < 0) return;
         var nombreDestino = zonaNombre[zonaVendedora] || zonaVendedora;
-        var stockWhDisp = stockWhPorCb[cb] || 0;
-        var cantidadSugerida = Math.ceil(rotacionDia * 14);  // 2 semanas de cobertura
+        var stockWhDisp = stockWhPorCanon[keyC] || 0;
+        var cantidadSugerida = Math.ceil(rotacionDia * 14);
 
         // 2a. PRIMERA OPCIÓN: ¿Hay stock en WH para despachar?
         if (stockWhDisp >= cantidadSugerida) {
@@ -1894,14 +1992,16 @@ function _getInsightsStockImpl(params) {
             severidad: diasRestantes < 3 ? 'CRITICA' : 'ALTA',
             producto: prod.descripcion || cb,
             codigoBarra: cb,
-            mensaje: 'Despachar de 🏭 WH → ' + nombreDestino + ': ' + nombreDestino + ' tiene ' + stockEnEsa + 'u (alcanza ' + Math.floor(diasRestantes) + 'd) y vende ' + Math.round(rotacionDia * 10) / 10 + '/d. WH dispone de ' + stockWhDisp + 'u.',
+            idProducto: prod.idProducto,
+            skuBase:    prod.skuBase || '',
+            mensaje: 'Despachar de 🏭 WH → ' + nombreDestino + ': ' + nombreDestino + ' tiene ' + stockEnEsa + 'u (alcanza ' + Math.floor(diasRestantes) + 'd) y vende ' + Math.round(rotacionDia * 10) / 10 + '/d. WH dispone de ' + stockWhDisp + 'u (todas las variantes).',
             accion: 'Despachar ' + cantidadSugerida + 'u (cobertura 2 semanas)',
             desde: 'WH',
             hacia: zonaVendedora,
             cantidadSugerida: cantidadSugerida,
             stockWh: stockWhDisp
           });
-          return;  // si WH tiene stock, no sugerir traslado entre zonas (operación inusual)
+          return;
         }
 
         // 2b. SEGUNDA OPCIÓN: WH no tiene → buscar otra zona con stock ocioso
@@ -1924,9 +2024,11 @@ function _getInsightsStockImpl(params) {
           var nombreOrigen = zonaNombre[mejor.zonaOrigen] || mejor.zonaOrigen;
           insights.push({
             tipo: 'TRASLADAR',
-            severidad: 'MEDIA',  // menor prioridad porque es operación inusual
+            severidad: 'MEDIA',
             producto: prod.descripcion || cb,
             codigoBarra: cb,
+            idProducto: prod.idProducto,
+            skuBase:    prod.skuBase || '',
             mensaje: '🏭 WH sin stock — Trasladar de ' + nombreOrigen + ' (' + mejor.stockOrigen + 'u, sin venta) → ' + nombreDestino + ' (vende ' + Math.round(rotacionDia * 10) / 10 + '/d, alcanza ' + Math.floor(diasRestantes) + 'd)',
             accion: 'Mover ' + mejor.cantSugerida + 'u entre zonas (operación manual)',
             desde: mejor.zonaOrigen,
@@ -1937,17 +2039,16 @@ function _getInsightsStockImpl(params) {
       });
     });
 
-    // INSIGHT 3 — Reposición: stock total < mínimo
+    // INSIGHT 3 — Reposición POR CANÓNICO: stock total < mínimo del canónico
+    // Solo evaluamos canónicos. Las presentaciones/derivados heredan stockMinimo del canónico
+    // si no lo tienen propio (lógica del frontend).
     productos.forEach(function(p) {
+      if (!_esCanonico(p)) return;  // solo canónicos definen mínimo
       var min = parseFloat(p.stockMinimo) || 0;
       if (min <= 0) return;
-      var stockEnZonas = stockBarrasMap[p.codigoBarra] ? stockBarrasMap[p.codigoBarra].total : 0;
-      var stockWhProd = 0;
-      stockWh.forEach(function(s){
-        if (s.codigoProducto === p.idProducto || s.codigoProducto === p.codigoBarra) {
-          stockWhProd += parseFloat(s.cantidadDisponible) || 0;
-        }
-      });
+      var keyP = String(p.idProducto).toUpperCase();
+      var stockEnZonas = stockCanonMap[keyP] ? stockCanonMap[keyP].total : 0;
+      var stockWhProd = stockWhPorCanon[keyP] || 0;
       var total = stockEnZonas + stockWhProd;
       if (total < min) {
         insights.push({
@@ -1955,9 +2056,10 @@ function _getInsightsStockImpl(params) {
           severidad: 'CRITICA',
           producto: p.descripcion,
           idProducto: p.idProducto,
+          skuBase: p.skuBase || '',
           stock: total,
           minimo: min,
-          mensaje: p.descripcion + ' total ' + total + 'u < mínimo ' + min,
+          mensaje: p.descripcion + ' total ' + total + 'u (todas variantes) < mínimo ' + min,
           accion: 'Generar pedido al proveedor'
         });
       }
