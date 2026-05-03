@@ -5047,10 +5047,10 @@
 
     <div class="tut-body" id="tutBody">
 
-      <!-- SLIDE 1: 3 tipos de productos -->
+      <!-- SLIDE 1: 4 tipos de productos -->
       <div class="tut-slide active" data-slide="1">
-        <div class="tut-title">📦 Tres tipos de productos</div>
-        <div class="tut-subtitle">Todo producto en el catálogo es uno de estos tres. Cada tipo tiene un comportamiento distinto.</div>
+        <div class="tut-title">📦 Cuatro tipos de productos</div>
+        <div class="tut-subtitle">Todo producto en el catálogo es uno de estos cuatro. Cada tipo tiene un comportamiento distinto.</div>
 
         <div class="tut-card" style="border-left:3px solid #f59e0b">
           <div class="tut-card-title"><span class="tut-pill canon">CANÓNICO</span> Producto base</div>
@@ -5060,7 +5060,7 @@
 
         <div class="tut-card" style="border-left:3px solid #6366f1">
           <div class="tut-card-title"><span class="tut-pill pres">PRESENTACIÓN</span> Variante del canónico</div>
-          <div class="tut-card-text">Mismo <code style="background:#1e293b;padding:2px 6px;border-radius:4px">skuBase</code> que el canónico, pero con un factor distinto (250GR, 500GR, sachet, tripack). <b>No</b> lleva idCategoria propio: lo hereda automáticamente del canónico.</div>
+          <div class="tut-card-text">Mismo <code style="background:#1e293b;padding:2px 6px;border-radius:4px">skuBase</code> que el canónico, pero con un factor distinto (250GR, 500GR, sachet, tripack). Vive en <code style="background:#1e293b;padding:2px 6px;border-radius:4px">PRODUCTOS_MASTER</code>. <b>No</b> lleva idCategoria propio: lo hereda automáticamente del canónico.</div>
           <div class="tut-card-text" style="margin-top:6px;font-style:italic">Ej: BOLSA 5GR · 250GR · TRIPACK 3UN</div>
         </div>
 
@@ -5068,6 +5068,12 @@
           <div class="tut-card-title"><span class="tut-pill deriv">DERIVADO</span> Envasado de un envasable</div>
           <div class="tut-card-text">Tiene <code style="background:#1e293b;padding:2px 6px;border-radius:4px">codigoProductoBase</code> apuntando al envasable padre. Se vende empacado pero proviene del granel. Hereda categoría y régimen del envasable.</div>
           <div class="tut-card-text" style="margin-top:6px;font-style:italic">Ej: ACHIOTE EN POLVO 250GR (proviene de ACHIOTE EN POLVO GRANEL)</div>
+        </div>
+
+        <div class="tut-card" style="border-left:3px solid #ec4899">
+          <div class="tut-card-title"><span class="tut-pill" style="background:rgba(236,72,153,.15);color:#f9a8d4;border:1px solid rgba(236,72,153,.3)">EQUIVALENTE</span> Código alternativo del canónico</div>
+          <div class="tut-card-text">Un código de barras <b>extra</b> que apunta al mismo producto. Vive en su propia tabla <code style="background:#1e293b;padding:2px 6px;border-radius:4px">EQUIVALENCIAS</code> (no en PRODUCTOS_MASTER). Se usa cuando un producto viene con varios códigos GS1 (lote viejo + lote nuevo, importado + nacional, etc.). Al escanearlo, el sistema lo resuelve al canónico vía <code style="background:#1e293b;padding:2px 6px;border-radius:4px">skuBase</code> y aplica todo desde ahí.</div>
+          <div class="tut-card-text" style="margin-top:6px;font-style:italic">Ej: <code style="background:#1e293b;padding:1px 4px;border-radius:3px">7622202294723</code> (cód. nuevo) → resuelve a OREO ROLLO GOLDEN</div>
         </div>
       </div>
 
@@ -5101,38 +5107,60 @@ producto.<b>factorConversion</b> = 1 (o vacío)?
       <!-- SLIDE 3: Herencia de categoría -->
       <div class="tut-slide" data-slide="3">
         <div class="tut-title">🌳 Herencia de categoría</div>
-        <div class="tut-subtitle">Una sola fuente de verdad. Si reclasificas el canónico, todas las presentaciones cambian solas.</div>
+        <div class="tut-subtitle">Una sola fuente de verdad. Si reclasificas el canónico, presentaciones y equivalentes cambian solos.</div>
 
-        <svg class="tut-svg-tree" viewBox="0 0 480 280" xmlns="http://www.w3.org/2000/svg">
+        <svg class="tut-svg-tree" viewBox="0 0 540 320" xmlns="http://www.w3.org/2000/svg">
           <defs>
-            <linearGradient id="gCanon" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#fbbf24"/><stop offset="100%" stop-color="#d97706"/></linearGradient>
-            <linearGradient id="gPres"  x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#a5b4fc"/><stop offset="100%" stop-color="#6366f1"/></linearGradient>
+            <linearGradient id="gCanon"  x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#fbbf24"/><stop offset="100%" stop-color="#d97706"/></linearGradient>
+            <linearGradient id="gPres"   x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#a5b4fc"/><stop offset="100%" stop-color="#6366f1"/></linearGradient>
+            <linearGradient id="gEquiv"  x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#f9a8d4"/><stop offset="100%" stop-color="#ec4899"/></linearGradient>
           </defs>
+
           <!-- Canónico (raíz) -->
-          <rect x="160" y="20" width="160" height="50" rx="10" fill="url(#gCanon)"/>
-          <text x="240" y="40" text-anchor="middle" font-family="ui-sans-serif" font-size="11" font-weight="700" fill="#0b1220">CANÓNICO</text>
-          <text x="240" y="58" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" fill="#0b1220">idCategoria=GRANEL</text>
-          <!-- Líneas -->
-          <path d="M 240 70 L 80 130 M 240 70 L 240 130 M 240 70 L 400 130" stroke="#475569" stroke-width="2" stroke-dasharray="4 3" fill="none"/>
-          <!-- Presentaciones -->
+          <rect x="190" y="20" width="160" height="52" rx="10" fill="url(#gCanon)"/>
+          <text x="270" y="42" text-anchor="middle" font-size="11" font-weight="700" fill="#0b1220">CANÓNICO</text>
+          <text x="270" y="58" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" fill="#0b1220">idCategoria=GRANEL</text>
+
+          <!-- Líneas a presentaciones (línea continua) -->
+          <path d="M 270 72 L 80 130 M 270 72 L 270 130 M 270 72 L 460 130" stroke="#475569" stroke-width="2" fill="none"/>
+
+          <!-- Presentación 1 -->
           <rect x="20" y="130" width="120" height="50" rx="8" fill="url(#gPres)" opacity="0.85"/>
           <text x="80" y="150" text-anchor="middle" font-size="10" font-weight="600" fill="#0b1220">PRESENT 250GR</text>
           <text x="80" y="167" text-anchor="middle" font-size="9" fill="#0b1220">idCategoria=∅</text>
-          <text x="80" y="195" text-anchor="middle" font-size="9" fill="#fbbf24" font-style="italic">↑ hereda GRANEL</text>
 
-          <rect x="180" y="130" width="120" height="50" rx="8" fill="url(#gPres)" opacity="0.85"/>
-          <text x="240" y="150" text-anchor="middle" font-size="10" font-weight="600" fill="#0b1220">PRESENT 500GR</text>
-          <text x="240" y="167" text-anchor="middle" font-size="9" fill="#0b1220">idCategoria=∅</text>
-          <text x="240" y="195" text-anchor="middle" font-size="9" fill="#fbbf24" font-style="italic">↑ hereda GRANEL</text>
+          <!-- Presentación 2 -->
+          <rect x="210" y="130" width="120" height="50" rx="8" fill="url(#gPres)" opacity="0.85"/>
+          <text x="270" y="150" text-anchor="middle" font-size="10" font-weight="600" fill="#0b1220">PRESENT 1KG</text>
+          <text x="270" y="167" text-anchor="middle" font-size="9" fill="#0b1220">idCategoria=∅</text>
 
-          <rect x="340" y="130" width="120" height="50" rx="8" fill="url(#gPres)" opacity="0.85"/>
-          <text x="400" y="150" text-anchor="middle" font-size="10" font-weight="600" fill="#0b1220">PRESENT 1KG</text>
-          <text x="400" y="167" text-anchor="middle" font-size="9" fill="#0b1220">idCategoria=∅</text>
-          <text x="400" y="195" text-anchor="middle" font-size="9" fill="#fbbf24" font-style="italic">↑ hereda GRANEL</text>
+          <!-- Presentación 3 -->
+          <rect x="400" y="130" width="120" height="50" rx="8" fill="url(#gPres)" opacity="0.85"/>
+          <text x="460" y="150" text-anchor="middle" font-size="10" font-weight="600" fill="#0b1220">BOLSA 5GR</text>
+          <text x="460" y="167" text-anchor="middle" font-size="9" fill="#0b1220">idCategoria=∅</text>
 
-          <text x="240" y="240" text-anchor="middle" font-size="11" fill="#94a3b8">Cambias <tspan font-weight="700" fill="#fbbf24">GRANEL → ESPECIAS</tspan> en el canónico</text>
-          <text x="240" y="258" text-anchor="middle" font-size="11" fill="#94a3b8">→ Las 3 presentaciones cambian automáticamente. Sin tocar nada.</text>
+          <!-- Línea hacia equivalentes (punteada para mostrar tabla aparte) -->
+          <path d="M 270 72 L 80 230 M 270 72 L 460 230" stroke="#ec4899" stroke-width="1.5" stroke-dasharray="3 3" fill="none" opacity="0.7"/>
+
+          <!-- Equivalente 1 -->
+          <rect x="20" y="226" width="120" height="44" rx="8" fill="url(#gEquiv)" opacity="0.85"/>
+          <text x="80" y="244" text-anchor="middle" font-size="10" font-weight="600" fill="#0b1220">EQUIV cód. importado</text>
+          <text x="80" y="259" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9" fill="#0b1220">→ tabla EQUIVALENCIAS</text>
+
+          <!-- Equivalente 2 -->
+          <rect x="400" y="226" width="120" height="44" rx="8" fill="url(#gEquiv)" opacity="0.85"/>
+          <text x="460" y="244" text-anchor="middle" font-size="10" font-weight="600" fill="#0b1220">EQUIV cód. nacional</text>
+          <text x="460" y="259" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9" fill="#0b1220">→ tabla EQUIVALENCIAS</text>
+
+          <!-- Texto explicativo -->
+          <text x="270" y="295" text-anchor="middle" font-size="11" fill="#94a3b8">Cambias <tspan font-weight="700" fill="#fbbf24">GRANEL → ESPECIAS</tspan> en el canónico</text>
+          <text x="270" y="312" text-anchor="middle" font-size="10" fill="#94a3b8">→ las <tspan fill="#a5b4fc" font-weight="600">3 presentaciones</tspan> y los <tspan fill="#f9a8d4" font-weight="600">2 equivalentes</tspan> cambian automáticamente</text>
         </svg>
+
+        <div class="tut-card" style="margin-top:6px;border-left:3px solid #ec4899">
+          <div class="tut-card-title">🔗 ¿Qué es exactamente un equivalente?</div>
+          <div class="tut-card-text">Un mismo producto puede tener varios códigos de barras a lo largo del tiempo (cambio de proveedor, variante importada vs nacional, lote rebrandeado). En vez de duplicarlo en el catálogo, lo guardas como <b style="color:#f9a8d4">equivalente</b> apuntando al canónico vía <code style="background:#1e293b;padding:1px 4px;border-radius:3px">skuBase</code>. Al escanearlo en POS, el sistema lo resuelve al canónico y usa <b>todo desde ahí</b>: precio, margen, categoría, IGV.</div>
+        </div>
       </div>
 
       <!-- SLIDE 4: Cómo se calcula el margen / precio sugerido -->
@@ -5239,6 +5267,13 @@ producto.<b>factorConversion</b> = 1 (o vacío)?
               <div style="color:#94a3b8;margin-top:3px">idCategoria=vacío (presentación), override=vacío</div>
               <div style="color:#94a3b8;margin-top:3px">→ busca canónico mismo skuBase → <b>ANIS ESTRELLA GRANEL</b></div>
               <div style="color:#fbbf24;margin-top:3px;font-family:ui-monospace,monospace">→ usa <b>35%</b> (margen de ESPECIAS, herencia dinámica)</div>
+            </div>
+
+            <div style="padding:10px;background:#020617;border-radius:8px;border-left:3px solid #ec4899;font-size:11px">
+              <div><b style="color:#f9a8d4">Caso D</b> — <code style="background:#1e293b;padding:1px 4px;border-radius:3px">7622202294723</code> escaneado en POS</div>
+              <div style="color:#94a3b8;margin-top:3px">No existe en PRODUCTOS_MASTER → busca en EQUIVALENCIAS</div>
+              <div style="color:#94a3b8;margin-top:3px">→ resuelve por skuBase al canónico <b>OREO ROLLO GOLDEN</b></div>
+              <div style="color:#fbbf24;margin-top:3px;font-family:ui-monospace,monospace">→ usa <b>22%</b> (margen de GALLETAS_SNACKS del canónico)</div>
             </div>
 
           </div>

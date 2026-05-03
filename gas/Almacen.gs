@@ -971,6 +971,8 @@ function _getOperacionesUnificadasImpl(dias) {
 
 // Helper: construye mapa para resolver código a producto.
 // Indexa por idProducto, codigoBarra principal Y codigos de EQUIVALENCIAS.
+// bySku PRIORIZA canónicos para que las equivalencias se resuelvan al producto
+// base (no a una presentación que comparte el skuBase).
 function _buildProdLookup() {
   var productos = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
   var bySku = {};
@@ -979,9 +981,16 @@ function _buildProdLookup() {
     if (p.idProducto)  lookup[p.idProducto]  = p;
     if (p.codigoBarra) lookup[p.codigoBarra] = p;
     var sku = p.skuBase || p.idProducto;
-    if (sku) bySku[sku] = bySku[sku] || p;
+    if (!sku) return;
+    var existente = bySku[sku];
+    // Solo sobreescribir si el actual NO es canónico Y el nuevo SÍ lo es
+    if (!existente) {
+      bySku[sku] = p;
+    } else if (!_esCanonico(existente) && _esCanonico(p)) {
+      bySku[sku] = p;
+    }
   });
-  // Equivalencias: cada cb equivalente apunta al producto base via skuBase
+  // Equivalencias: cada cb equivalente apunta al producto BASE via skuBase
   try {
     var equiv = _readEquivalencias();
     Object.keys(equiv.porSku).forEach(function(skuBase) {
