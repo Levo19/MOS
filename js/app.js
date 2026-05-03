@@ -2865,8 +2865,12 @@ const MOS = (() => {
       totalBruto += subBruto;
       const equivBadge = l.esEquivalencia ? ' <span class="text-[9px] text-purple-400 bg-purple-500/10 px-1 rounded">EQUIV</span>' : '';
       const placeholder = inputMode === 'TOTAL' ? 'Total línea' : 'P. unit.';
+      const bruto = neto * (1 + _IGV_RATE);
       const helperTxt = neto > 0
-        ? `<span class="text-[10px] text-slate-500">P. unit. neto: <span class="text-emerald-400 font-mono">S/ ${neto.toFixed(4)}</span></span>`
+        ? `<div class="text-[10px] leading-tight">
+             <div><span class="text-slate-500">c/IGV:</span> <span class="text-slate-300 font-mono">S/ ${bruto.toFixed(4)}</span></div>
+             <div><span class="text-slate-500">neto:</span> <span class="text-emerald-400 font-mono">S/ ${neto.toFixed(4)}</span></div>
+           </div>`
         : '<span class="text-[10px] text-slate-700">—</span>';
       return `<tr>
         <td class="py-2 pr-2">
@@ -2920,8 +2924,12 @@ const MOS = (() => {
     const neto = _costosGuiaCalcularNeto(linea, st);
     const cell = $('costoGuiaSubtot_' + idx);
     if (cell) {
+      const bruto = neto * (1 + _IGV_RATE);
       cell.innerHTML = neto > 0
-        ? `<span class="text-[10px] text-slate-500">P. unit. neto: <span class="text-emerald-400 font-mono">S/ ${neto.toFixed(4)}</span></span>`
+        ? `<div class="text-[10px] leading-tight">
+             <div><span class="text-slate-500">c/IGV:</span> <span class="text-slate-300 font-mono">S/ ${bruto.toFixed(4)}</span></div>
+             <div><span class="text-slate-500">neto:</span> <span class="text-emerald-400 font-mono">S/ ${neto.toFixed(4)}</span></div>
+           </div>`
         : '<span class="text-[10px] text-slate-700">—</span>';
     }
     // Recalcular totales
