@@ -2733,11 +2733,30 @@ const MOS = (() => {
   }
 
   // ── Llenar costos de guía (con foto de factura) ──
-  S._costosGuiaState = S._costosGuiaState || { idGuia: null, fuente: null, lineas: [], foto: '' };
+  // Modo de input por modal:
+  //   inputMode: 'TOTAL'    → el usuario escribe el total de la línea (factura típica)
+  //              'UNITARIO' → el usuario escribe el precio por unidad
+  //   igvMode:   'INCLUIDO' → el valor ingresado lleva IGV (se le resta para guardar neto)
+  //              'SIN_IGV'  → el valor ingresado ya es neto
+  // Defaults: TOTAL + INCLUIDO (formato más común en facturas).
+  S._costosGuiaState = S._costosGuiaState || {
+    idGuia: null, fuente: null, lineas: [], foto: '',
+    inputMode: 'TOTAL', igvMode: 'INCLUIDO'
+  };
+  const _IGV_RATE = 0.18;
+
+  // Convierte el valor que tipeó el usuario en precio UNITARIO NETO (sin IGV).
+  function _costosGuiaCalcularNeto(linea, st) {
+    const v = parseFloat(linea.inputValue) || 0;
+    if (v <= 0) return 0;
+    const cant = parseFloat(linea.cantidad) || 1;
+    let unitarioBruto = st.inputMode === 'TOTAL' ? (v / cant) : v;
+    let unitarioNeto = st.igvMode === 'INCLUIDO' ? (unitarioBruto / (1 + _IGV_RATE)) : unitarioBruto;
+    return unitarioNeto;
+  }
 
   async function abrirCostosGuia(idGuia, fuente) {
     if (!idGuia) return;
-    // Buscar la operación en el data ya cargado para tener la foto
     let foto = '', idProveedor = '', nombreProveedor = '';
     const data = S._opsData || {};
     (data.porDia || []).forEach(d => d.operaciones.forEach(op => {
@@ -2747,7 +2766,11 @@ const MOS = (() => {
         nombreProveedor = op.nombreProveedor || op.idProveedor || '';
       }
     }));
-    S._costosGuiaState = { idGuia, fuente, lineas: [], foto, idProveedor, nombreProveedor };
+    // Mantener defaults TOTAL + INCLUIDO en cada apertura
+    S._costosGuiaState = {
+      idGuia, fuente, lineas: [], foto, idProveedor, nombreProveedor,
+      inputMode: 'TOTAL', igvMode: 'INCLUIDO'
+    };
     $('costosGuiaInfo').textContent = idGuia + (nombreProveedor ? ' · ' + nombreProveedor : '');
     const body = $('costosGuiaBody');
     body.innerHTML = '<div class="text-xs text-slate-500 italic py-4">Cargando líneas…</div>';
@@ -2755,6 +2778,12 @@ const MOS = (() => {
     try {
       const r = await API.get('getOperacionDetalle', { fuente, idGuia });
       const lineas = (r && r.lineas) || [];
+      // Inicializar inputValue desde el precioUnitario existente (interpretado como neto)
+      // Para mostrarlo en modo TOTAL+INCLUIDO por defecto: total bruto = neto * cant * 1.18
+      lineas.forEach(l => {
+        const neto = parseFloat(l.precioUnitario) || 0;
+        l.inputValue = neto > 0 ? +(neto * (parseFloat(l.cantidad) || 1) * (1 + _IGV_RATE)).toFixed(2) : '';
+      });
       S._costosGuiaState.lineas = lineas;
       _renderCostosGuiaBody();
     } catch(e) {
@@ -2762,10 +2791,39 @@ const MOS = (() => {
     }
   }
 
+  function _costosGuiaSetMode(modo) {
+    // Convertir inputValue actual al nuevo modo (preservando el unitario neto)
+    const st = S._costosGuiaState;
+    if (st.inputMode === modo) return;
+    st.lineas.forEach(l => {
+      const neto = _costosGuiaCalcularNeto(l, st);
+      const cant = parseFloat(l.cantidad) || 1;
+      const bruto = st.igvMode === 'INCLUIDO' ? neto * (1 + _IGV_RATE) : neto;
+      l.inputValue = neto > 0 ? +(modo === 'TOTAL' ? bruto * cant : bruto).toFixed(2) : '';
+    });
+    st.inputMode = modo;
+    _renderCostosGuiaBody();
+  }
+
+  function _costosGuiaSetIgv(modo) {
+    const st = S._costosGuiaState;
+    if (st.igvMode === modo) return;
+    // Convertir inputValue al nuevo régimen IGV preservando el neto
+    st.lineas.forEach(l => {
+      const neto = _costosGuiaCalcularNeto(l, st);
+      const cant = parseFloat(l.cantidad) || 1;
+      const bruto = modo === 'INCLUIDO' ? neto * (1 + _IGV_RATE) : neto;
+      l.inputValue = neto > 0 ? +(st.inputMode === 'TOTAL' ? bruto * cant : bruto).toFixed(2) : '';
+    });
+    st.igvMode = modo;
+    _renderCostosGuiaBody();
+  }
+
   function _renderCostosGuiaBody() {
     const body = $('costosGuiaBody');
     if (!body) return;
-    const { lineas, foto } = S._costosGuiaState;
+    const st = S._costosGuiaState;
+    const { lineas, foto, inputMode, igvMode } = st;
     if (!lineas.length) {
       body.innerHTML = '<div class="text-xs text-slate-500 italic py-4">Esta guía no tiene líneas registradas.</div>';
       return;
@@ -2780,71 +2838,114 @@ const MOS = (() => {
         </div>`
       : '<div class="text-xs text-amber-400 italic mb-3">Esta guía no tiene foto adjunta.</div>';
 
-    let total = 0;
+    const segBtn = (active, label, onclick) => `<button onclick="${onclick}"
+      class="px-2.5 py-1 text-[11px] font-semibold rounded transition"
+      style="${active ? 'background:#f59e0b;color:#0b1220' : 'background:#0f172a;color:#94a3b8;border:1px solid #1e293b'}">${label}</button>`;
+    const togglesHtml = `
+      <div class="flex flex-wrap items-center gap-3 mb-3 pb-3" style="border-bottom:1px dashed #1e293b">
+        <div class="flex items-center gap-1.5">
+          <span class="text-[10px] text-slate-500 uppercase">Ingreso:</span>
+          ${segBtn(inputMode === 'TOTAL',    'Total línea',  "MOS._costosGuiaSetMode('TOTAL')")}
+          ${segBtn(inputMode === 'UNITARIO', 'Por unidad',   "MOS._costosGuiaSetMode('UNITARIO')")}
+        </div>
+        <div class="flex items-center gap-1.5">
+          <span class="text-[10px] text-slate-500 uppercase">IGV:</span>
+          ${segBtn(igvMode === 'INCLUIDO', 'Incluido (18%)', "MOS._costosGuiaSetIgv('INCLUIDO')")}
+          ${segBtn(igvMode === 'SIN_IGV',  'Sin IGV',        "MOS._costosGuiaSetIgv('SIN_IGV')")}
+        </div>
+      </div>`;
+
+    let totalNeto = 0, totalBruto = 0;
     const filasHtml = lineas.map((l, i) => {
-      const sub = (l.cantidad || 0) * (l.precioUnitario || 0);
-      total += sub;
+      const cant = parseFloat(l.cantidad) || 0;
+      const neto = _costosGuiaCalcularNeto(l, st);
+      const subNeto  = neto * cant;
+      const subBruto = subNeto * (1 + _IGV_RATE);
+      totalNeto  += subNeto;
+      totalBruto += subBruto;
       const equivBadge = l.esEquivalencia ? ' <span class="text-[9px] text-purple-400 bg-purple-500/10 px-1 rounded">EQUIV</span>' : '';
+      const placeholder = inputMode === 'TOTAL' ? 'Total línea' : 'P. unit.';
+      const helperTxt = neto > 0
+        ? `<span class="text-[10px] text-slate-500">P. unit. neto: <span class="text-emerald-400 font-mono">S/ ${neto.toFixed(4)}</span></span>`
+        : '<span class="text-[10px] text-slate-700">—</span>';
       return `<tr>
         <td class="py-2 pr-2">
           <div class="text-xs text-slate-200 truncate">${l.descripcion}${equivBadge}</div>
           <div class="text-[10px] text-slate-500 font-mono">▌ ${l.codigoProducto || '—'}</div>
         </td>
-        <td class="py-2 pr-2 text-right text-xs text-slate-400 whitespace-nowrap">${l.cantidad}u</td>
+        <td class="py-2 pr-2 text-right text-xs text-slate-400 whitespace-nowrap">${cant}u</td>
         <td class="py-2 pr-2">
-          <input type="number" step="0.01" min="0" class="inp text-xs text-right" style="width:90px"
-                 value="${l.precioUnitario || ''}"
-                 oninput="MOS._costosGuiaUpdLinea(${i}, this.value)" placeholder="0.00">
+          <input type="number" step="0.01" min="0" class="inp text-xs text-right" style="width:100px"
+                 value="${l.inputValue || ''}"
+                 oninput="MOS._costosGuiaUpdLinea(${i}, this.value)" placeholder="${placeholder}">
         </td>
-        <td class="py-2 text-right text-xs whitespace-nowrap" id="costoGuiaSubtot_${i}">
-          ${sub > 0 ? `<span class="text-amber-400">S/ ${sub.toFixed(2)}</span>` : '<span class="text-slate-700">—</span>'}
+        <td class="py-2 text-right whitespace-nowrap" id="costoGuiaSubtot_${i}">
+          ${helperTxt}
         </td>
       </tr>`;
     }).join('');
-    body.innerHTML = `${fotoHtml}
+    const colHeaderInput = inputMode === 'TOTAL' ? 'Total línea' : 'Precio unit.';
+    const colHeaderIgv   = igvMode === 'INCLUIDO' ? '(con IGV)'  : '(sin IGV)';
+    body.innerHTML = `${fotoHtml}${togglesHtml}
       <div class="text-[10px] text-slate-500 uppercase mb-1">Líneas (${lineas.length})</div>
       <table class="w-full text-sm">
         <thead>
           <tr class="text-[10px] text-slate-600 uppercase border-b border-slate-800">
             <th class="text-left pb-1">Producto</th>
             <th class="text-right pb-1">Cant</th>
-            <th class="text-right pb-1">Precio Unit.</th>
-            <th class="text-right pb-1">Subtotal</th>
+            <th class="text-right pb-1">${colHeaderInput} <span class="text-slate-700 normal-case">${colHeaderIgv}</span></th>
+            <th class="text-right pb-1">Cálculo</th>
           </tr>
         </thead>
         <tbody>${filasHtml}</tbody>
         <tfoot>
           <tr class="border-t border-slate-800">
-            <td colspan="3" class="pt-2 text-right text-xs text-slate-500">Total guía estimado:</td>
-            <td class="pt-2 text-right text-sm font-bold text-amber-400" id="costosGuiaTotal">S/ ${total.toFixed(2)}</td>
+            <td colspan="4" class="pt-3">
+              <div class="flex justify-end gap-4 text-[11px]">
+                <div><span class="text-slate-500">Neto:</span> <span class="text-slate-300 font-mono" id="costosGuiaTotalNeto">S/ ${totalNeto.toFixed(2)}</span></div>
+                <div><span class="text-slate-500">IGV:</span>  <span class="text-slate-300 font-mono" id="costosGuiaTotalIgv">S/ ${(totalBruto - totalNeto).toFixed(2)}</span></div>
+                <div><span class="text-amber-400 font-semibold">Total:</span> <span class="text-amber-400 font-mono font-bold" id="costosGuiaTotalBruto">S/ ${totalBruto.toFixed(2)}</span></div>
+              </div>
+            </td>
           </tr>
         </tfoot>
       </table>`;
   }
 
   function _costosGuiaUpdLinea(idx, valor) {
-    const linea = S._costosGuiaState.lineas[idx];
+    const st = S._costosGuiaState;
+    const linea = st.lineas[idx];
     if (!linea) return;
-    linea.precioUnitario = parseFloat(valor) || 0;
-    // Actualizar subtotal en su celda
-    const sub = (linea.cantidad || 0) * linea.precioUnitario;
+    linea.inputValue = parseFloat(valor) || 0;
+    const neto = _costosGuiaCalcularNeto(linea, st);
     const cell = $('costoGuiaSubtot_' + idx);
-    if (cell) cell.innerHTML = sub > 0 ? `<span class="text-amber-400">S/ ${sub.toFixed(2)}</span>` : '<span class="text-slate-700">—</span>';
-    // Actualizar total
-    let total = 0;
-    S._costosGuiaState.lineas.forEach(l => { total += (l.cantidad || 0) * (l.precioUnitario || 0); });
-    const totalEl = $('costosGuiaTotal');
-    if (totalEl) totalEl.textContent = 'S/ ' + total.toFixed(2);
+    if (cell) {
+      cell.innerHTML = neto > 0
+        ? `<span class="text-[10px] text-slate-500">P. unit. neto: <span class="text-emerald-400 font-mono">S/ ${neto.toFixed(4)}</span></span>`
+        : '<span class="text-[10px] text-slate-700">—</span>';
+    }
+    // Recalcular totales
+    let totalNeto = 0;
+    st.lineas.forEach(l => { totalNeto += _costosGuiaCalcularNeto(l, st) * (parseFloat(l.cantidad) || 0); });
+    const totalBruto = totalNeto * (1 + _IGV_RATE);
+    const elN = $('costosGuiaTotalNeto');  if (elN) elN.textContent = 'S/ ' + totalNeto.toFixed(2);
+    const elI = $('costosGuiaTotalIgv');   if (elI) elI.textContent = 'S/ ' + (totalBruto - totalNeto).toFixed(2);
+    const elB = $('costosGuiaTotalBruto'); if (elB) elB.textContent = 'S/ ' + totalBruto.toFixed(2);
   }
 
   function cerrarCostosGuia() { closeModal('modalCostosGuia'); }
 
   async function guardarCostosGuia() {
-    const { idGuia, lineas } = S._costosGuiaState;
+    const st = S._costosGuiaState;
+    const { idGuia, lineas } = st;
     if (!idGuia) return;
     const items = lineas
-      .filter(l => l.precioUnitario && l.precioUnitario > 0)
-      .map(l => ({ idDetalle: l.idDetalle, codigoProducto: l.codigoProducto, precioUnitario: l.precioUnitario }));
+      .map(l => ({
+        idDetalle: l.idDetalle,
+        codigoProducto: l.codigoProducto,
+        precioUnitario: _costosGuiaCalcularNeto(l, st)
+      }))
+      .filter(it => it.precioUnitario > 0);
     if (!items.length) {
       toast('No hay precios para guardar', 'error');
       return;
@@ -2857,7 +2958,6 @@ const MOS = (() => {
         idGuia, items, actualizarPrecioCosto: updateMaster, usuario: S.session?.nombre || ''
       });
       toast('✓ ' + items.length + ' costos guardados' + (updateMaster ? ' + catálogo MOS actualizado' : ''), 'ok');
-      // Refrescar operaciones
       await almLoadOps(true);
     } catch(e) {
       toast('Error: ' + e.message, 'error');
@@ -9214,7 +9314,7 @@ const MOS = (() => {
     setAlmTab,
     almLoadResumen, almRefreshResumen, almFiltrarStock, almRefreshCatalogo, almToggleStockExpand,
     almLoadOps, almRefreshOps, almRenderOps, almToggleOpExpand,
-    abrirCostosGuia, _costosGuiaUpdLinea, cerrarCostosGuia, guardarCostosGuia,
+    abrirCostosGuia, _costosGuiaUpdLinea, _costosGuiaSetMode, _costosGuiaSetIgv, cerrarCostosGuia, guardarCostosGuia,
     almLoadZonas, almRefreshZonas, almAbrirStockDetalle, cerrarStockDetalle, almRefreshStockDetalle,
     _almGenerarPedidoFromInsight, _almPickProveedor, cerrarSelProveedor,
     cerrarModalPedido, pedidoBuscarItem, pedidoAgregarItem,
