@@ -5417,14 +5417,15 @@ const MOS = (() => {
 
   async function loadConfig() {
     S.cfgTab = S.cfgTab || 'zonas';
-    const [zonRes, estRes, impRes, persRes, persMOSRes, serRes, dispRes] = await Promise.allSettled([
+    const [zonRes, estRes, impRes, persRes, persMOSRes, serRes, dispRes, catRes] = await Promise.allSettled([
       API.get('getZonas', {}),
       API.get('getEstaciones', {}),
       API.get('getImpresoras', {}),
       API.get('getPersonalMaster', { appOrigen: 'warehouseMos' }),
       API.get('getPersonalMaster', { appOrigen: 'MOS' }),
       API.get('getSeries', {}),
-      API.get('getDispositivos', {})
+      API.get('getDispositivos', {}),
+      API.get('getCategorias', {})
     ]);
     cfgData.zonas        = zonRes.status      === 'fulfilled' ? (zonRes.value      || []) : [];
     cfgData.estaciones   = estRes.status      === 'fulfilled' ? (estRes.value      || []) : [];
@@ -5433,12 +5434,13 @@ const MOS = (() => {
     cfgData.personalMOS  = persMOSRes.status  === 'fulfilled' ? (persMOSRes.value  || []) : [];
     cfgData.series       = serRes.status      === 'fulfilled' ? (serRes.value      || []) : [];
     cfgData.dispositivos = dispRes.status     === 'fulfilled' ? (dispRes.value     || []) : [];
+    cfgData.categorias   = catRes.status      === 'fulfilled' ? (catRes.value      || []) : [];
     renderCfgTab(S.cfgTab);
   }
 
   function setCfgTab(tab) {
     S.cfgTab = tab;
-    const tabs = ['zonas','estaciones','impresoras','personal','series','seguridad','dispositivos','integridad'];
+    const tabs = ['zonas','estaciones','impresoras','personal','series','seguridad','dispositivos','categorias','integridad'];
     tabs.forEach(t => {
       const btn = $('cfgTab' + t.charAt(0).toUpperCase() + t.slice(1));
       if (btn) btn.classList.toggle('active', t === tab);
@@ -5457,7 +5459,110 @@ const MOS = (() => {
       case 'series':       renderSeries();       break;
       case 'seguridad':    renderSeguridad();    break;
       case 'dispositivos': renderDispositivos(); break;
+      case 'categorias':   renderCategorias();   break;
       case 'integridad':   renderIntegridad();   break;
+    }
+  }
+
+  // ── CATEGORÍAS / política de precios ─────────────────────
+  async function renderCategorias(skipFetch) {
+    const tbody = $('tbodyCategorias');
+    if (!tbody) return;
+    if (!skipFetch) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-slate-500 text-sm">Cargando...</td></tr>';
+      try {
+        const r = await API.get('getCategorias', {});
+        cfgData.categorias = r || [];
+      } catch(e) {
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-8 text-rose-400 text-sm">Error: ${e.message}</td></tr>`;
+        return;
+      }
+    }
+    const rows = cfgData.categorias || [];
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-slate-500 text-sm">Sin categorías. Corre <code class="bg-slate-800 px-1 rounded">migrarPoliticaPrecios</code> en GAS para poblar las existentes.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(c => {
+      const activa = String(c.estado) === '1';
+      const modoBadge = c.modoVenta === 'MARGEN' ? 'bg-emerald-500/15 text-emerald-400'
+                      : c.modoVenta === 'FIJO' ? 'bg-blue-500/15 text-blue-400'
+                      : c.modoVenta === 'COMPETITIVO' ? 'bg-amber-500/15 text-amber-400'
+                      : 'bg-slate-700/40 text-slate-400';
+      const topeStr = parseFloat(c.precioTope) > 0 ? 'S/ ' + parseFloat(c.precioTope).toFixed(2) : '—';
+      return `<tr class="${activa ? '' : 'opacity-50'}">
+        <td class="font-medium">${c.nombre || c.idCategoria}</td>
+        <td class="text-[11px] text-slate-500 font-mono">${c.idCategoria}</td>
+        <td><span class="px-2 py-0.5 rounded text-[10px] font-semibold ${modoBadge}">${c.modoVenta}</span></td>
+        <td class="text-right font-mono">${c.modoVenta === 'MARGEN' || c.modoVenta === 'COMPETITIVO' ? (parseFloat(c.margenPct) || 0).toFixed(1) + '%' : '—'}</td>
+        <td class="text-right hidden sm:table-cell font-mono text-slate-400">${topeStr}</td>
+        <td class="hidden md:table-cell text-xs text-slate-500 truncate" style="max-width:200px">${c.descripcion || ''}</td>
+        <td><span class="text-[10px] ${activa ? 'text-emerald-400' : 'text-slate-500'}">${activa ? 'Activa' : 'Inactiva'}</span></td>
+        <td class="text-right">
+          <button onclick="MOS.abrirModalCategoria('${c.idCategoria}')" class="text-xs text-amber-400 hover:text-amber-300">Editar</button>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  function abrirModalCategoria(idCategoria) {
+    const cat = idCategoria
+      ? (cfgData.categorias || []).find(c => String(c.idCategoria) === String(idCategoria))
+      : null;
+    $('modalCategoriaTitle').textContent = cat ? 'Editar categoría' : 'Nueva categoría';
+    $('catId').value = cat ? cat.idCategoria : '';
+    $('catNombre').value = cat ? (cat.nombre || cat.idCategoria) : '';
+    $('catModo').value = cat ? (cat.modoVenta || 'MARGEN') : 'MARGEN';
+    $('catMargen').value = cat && cat.margenPct !== '' && cat.margenPct !== undefined ? cat.margenPct : 25;
+    $('catTope').value = cat && parseFloat(cat.precioTope) > 0 ? cat.precioTope : '';
+    $('catDesc').value = cat ? (cat.descripcion || '') : '';
+    $('catEstado').value = cat ? String(cat.estado || '1') : '1';
+    // Si es nueva, dejar nombre editable — si es edición, bloquear nombre/ID (lo identifica el sistema)
+    $('catNombre').disabled = !!cat;
+    _catOnModoChange();
+    openModal('modalCategoria');
+  }
+
+  function _catOnModoChange() {
+    const modo = $('catModo')?.value;
+    const margenWrap = $('catMargenWrap');
+    const topeWrap = $('catTopeWrap');
+    if (margenWrap) margenWrap.classList.toggle('hidden', modo === 'FIJO' || modo === 'LIBRE');
+    if (topeWrap)   topeWrap.classList.toggle('hidden', modo !== 'COMPETITIVO');
+  }
+
+  async function guardarCategoria() {
+    const id = $('catId').value;
+    const nombre = $('catNombre').value.trim();
+    if (!nombre) { toast('Nombre requerido', 'error'); return; }
+    const modo = $('catModo').value;
+    const margen = parseFloat($('catMargen').value);
+    const tope = parseFloat($('catTope').value);
+    if ((modo === 'MARGEN' || modo === 'COMPETITIVO') && (isNaN(margen) || margen < 0 || margen >= 100)) {
+      toast('Margen debe ser 0-99', 'error'); return;
+    }
+    if (modo === 'COMPETITIVO' && (!tope || tope <= 0)) {
+      toast('Precio tope requerido para modo COMPETITIVO', 'error'); return;
+    }
+    const params = {
+      nombre, modoVenta: modo,
+      margenPct: isNaN(margen) ? '' : margen,
+      precioTope: isNaN(tope) ? '' : tope,
+      descripcion: $('catDesc').value.trim(),
+      estado: $('catEstado').value
+    };
+    try {
+      if (id) {
+        await API.post('actualizarCategoria', { ...params, idCategoria: id });
+        toast('Categoría actualizada ✓', 'ok');
+      } else {
+        await API.post('crearCategoria', params);
+        toast('Categoría creada ✓', 'ok');
+      }
+      closeModal('modalCategoria');
+      await renderCategorias(); // refetch
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
     }
   }
 
@@ -9344,6 +9449,7 @@ const MOS = (() => {
     setCfgTab,
     auditCorrer, auditResolver, auditResolverTodas, renderIntegridad,
     abrirModalZona, guardarZona,
+    abrirModalCategoria, guardarCategoria, _catOnModoChange,
     abrirModalEstacion, guardarEstacion,
     abrirModalImpresora, guardarImpresora,
     abrirModalPersonal, guardarPersonal,

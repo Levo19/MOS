@@ -2313,6 +2313,7 @@
           <button class="tab-btn" id="cfgTabSeries"            onclick="MOS.setCfgTab('series')">📄 Series</button>
           <button class="tab-btn" id="cfgTabSeguridad"         onclick="MOS.setCfgTab('seguridad')">🔐 Seguridad</button>
           <button class="tab-btn" id="cfgTabDispositivos"     onclick="MOS.setCfgTab('dispositivos')">📱 Dispositivos</button>
+          <button class="tab-btn" id="cfgTabCategorias"        onclick="MOS.setCfgTab('categorias')">🏷️ Categorías</button>
           <button class="tab-btn" id="cfgTabIntegridad"        onclick="MOS.setCfgTab('integridad')">🛡️ Integridad</button>
         </div>
       </div>
@@ -2457,6 +2458,28 @@
         </div>
         <div class="mt-3 p-3 rounded-lg text-xs text-slate-400" style="background:#0d1526;border:1px solid #1e293b;">
           ℹ️ El <strong class="text-slate-300">ID del dispositivo</strong> se genera automáticamente en cada equipo (localStorage). Cópialo del dispositivo y regístralo aquí para autorizar el acceso.
+        </div>
+      </div>
+
+      <!-- Categorías + política de precios -->
+      <div id="cfgPanelCategorias" class="hidden">
+        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+          <div class="flex-1 min-w-0">
+            <h3 class="font-semibold text-sm text-slate-200">🏷️ Categorías y política de precios</h3>
+            <p class="text-xs text-slate-500 mt-0.5">Define el modo y margen objetivo para cada categoría. Los productos heredan estas reglas salvo que tengan override propio.</p>
+          </div>
+          <button class="btn-primary text-xs px-3 py-1.5 shrink-0" onclick="MOS.abrirModalCategoria(null)">+ Nueva categoría</button>
+        </div>
+        <div class="card overflow-x-auto" style="-webkit-overflow-scrolling:touch">
+          <table class="tbl">
+            <thead><tr>
+              <th>Nombre</th><th>ID</th><th>Modo</th><th class="text-right">Margen %</th><th class="text-right hidden sm:table-cell">Tope S/</th><th class="hidden md:table-cell">Descripción</th><th>Estado</th><th></th>
+            </tr></thead>
+            <tbody id="tbodyCategorias"><tr><td colspan="8" class="text-center py-8 text-slate-500 text-sm">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+        <div class="text-[11px] text-slate-600 italic mt-2">
+          ℹ️ <strong>MARGEN</strong>: precio venta = costo / (1 - margen/100). <strong>FIJO</strong>: no se sugiere cambio. <strong>COMPETITIVO</strong>: usa margen pero respeta el tope. <strong>LIBRE</strong>: todo manual.
         </div>
       </div>
 
@@ -4052,6 +4075,53 @@
 </div>
 
 <!-- Modal Estación -->
+<!-- Modal Categoría -->
+<div class="modal-backdrop hidden" id="modalCategoria">
+  <div class="modal-box p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 id="modalCategoriaTitle" class="font-bold text-lg text-white">Nueva Categoría</h2>
+      <button onclick="MOS.closeModal('modalCategoria')" class="modal-close-x">×</button>
+    </div>
+    <input type="hidden" id="catId">
+    <div class="grid grid-cols-2 gap-3">
+      <div class="col-span-2">
+        <label class="lbl">Nombre *</label>
+        <input id="catNombre" class="inp" placeholder="ABARROTES, BEBIDAS, GRANEL...">
+        <div class="text-[10px] text-slate-600 italic mt-1">El ID se genera automáticamente del nombre (mayúsculas, sin espacios extra).</div>
+      </div>
+      <div class="col-span-2">
+        <label class="lbl">Modo de venta *</label>
+        <select id="catModo" class="inp" onchange="MOS._catOnModoChange()">
+          <option value="MARGEN">MARGEN — sugerir precio según margen %</option>
+          <option value="FIJO">FIJO — no sugerir cambio automático</option>
+          <option value="COMPETITIVO">COMPETITIVO — margen + tope máximo</option>
+          <option value="LIBRE">LIBRE — todo manual</option>
+        </select>
+      </div>
+      <div id="catMargenWrap">
+        <label class="lbl">Margen objetivo % *</label>
+        <input id="catMargen" type="number" min="0" max="99" step="0.1" class="inp" placeholder="25" value="25">
+      </div>
+      <div id="catTopeWrap" class="hidden">
+        <label class="lbl">Precio tope S/ *</label>
+        <input id="catTope" type="number" min="0" step="0.01" class="inp" placeholder="12.50">
+      </div>
+      <div class="col-span-2"><label class="lbl">Descripción</label><input id="catDesc" class="inp" placeholder="Opcional"></div>
+      <div class="col-span-2">
+        <label class="lbl">Estado</label>
+        <select id="catEstado" class="inp">
+          <option value="1">Activa</option>
+          <option value="0">Inactiva</option>
+        </select>
+      </div>
+    </div>
+    <div class="flex gap-2 mt-5">
+      <button onclick="MOS.closeModal('modalCategoria')" class="btn-ghost flex-1">Cancelar</button>
+      <button onclick="MOS.guardarCategoria()" class="btn-primary flex-1">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal Zona -->
 <div class="modal-backdrop hidden" id="modalZona">
   <div class="modal-box p-6">
