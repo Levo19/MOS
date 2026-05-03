@@ -315,6 +315,9 @@ function actualizarProductoMaster(params) {
     // Campos críticos que NUNCA deben sobrescribirse con vacío (defensa contra
     // bugs de frontend que mandan params.skuBase = '' cuando el input no estaba poblado)
     var _camposNoVaciables = ['skuBase', 'codigoBarra', 'descripcion'];
+    // Campos que deben preservarse como TEXTO (evitar conversión a número que pierde
+    // ceros a la izquierda, formato GS1, etc.)
+    var _camposTexto = ['skuBase', 'codigoBarra'];
     campos.forEach(function(campo) {
       if (params[campo] !== undefined) {
         var col = hdrs.indexOf(campo);
@@ -324,10 +327,17 @@ function actualizarProductoMaster(params) {
             (params[campo] === '' || params[campo] === null)) {
           return;
         }
-        var val = (_numCampos.indexOf(campo) >= 0 && params[campo] !== '')
-          ? parseFloat(params[campo])
-          : params[campo];
-        sheet.getRange(i + 1, col + 1).setValue(isNaN(val) ? params[campo] : val);
+        var cell = sheet.getRange(i + 1, col + 1);
+        if (_camposTexto.indexOf(campo) >= 0) {
+          // Forzar TEXTO en celdas de identificadores
+          cell.setNumberFormat('@STRING@');
+          cell.setValue(String(params[campo] || ''));
+        } else {
+          var val = (_numCampos.indexOf(campo) >= 0 && params[campo] !== '')
+            ? parseFloat(params[campo])
+            : params[campo];
+          cell.setValue(isNaN(val) ? params[campo] : val);
+        }
       }
     });
 
@@ -362,7 +372,11 @@ function crearEquivalencia(params) {
   }
   var sheet = getSheet('EQUIVALENCIAS');
   var id = _generateId('EQ');
-  sheet.appendRow([id, params.skuBase, params.codigoBarra, params.descripcion || '', '1']);
+  var nextRow = sheet.getLastRow() + 1;
+  // Columnas 2 (skuBase) y 3 (codigoBarra) como TEXTO
+  sheet.getRange(nextRow, 2, 1, 2).setNumberFormat('@STRING@');
+  var values = [id, String(params.skuBase || ''), String(params.codigoBarra || ''), params.descripcion || '', '1'];
+  sheet.getRange(nextRow, 1, 1, values.length).setValues([values]);
   return { ok: true, data: { idEquiv: id } };
 }
 
@@ -379,7 +393,15 @@ function actualizarEquivalencia(params) {
     campos.forEach(function(c) {
       if (params[c] !== undefined) {
         var col = hdrs.indexOf(c);
-        if (col >= 0) sheet.getRange(i + 1, col + 1).setValue(params[c]);
+        if (col < 0) return;
+        var cell = sheet.getRange(i + 1, col + 1);
+        // codigoBarra debe ir como TEXTO para preservar ceros / formato
+        if (c === 'codigoBarra') {
+          cell.setNumberFormat('@STRING@');
+          cell.setValue(String(params[c] || ''));
+        } else {
+          cell.setValue(params[c]);
+        }
       }
     });
     return { ok: true };
@@ -429,7 +451,17 @@ function publicarPrecio(params) {
 
 function _registrarHistorialPrecio(idProd, skuBase, codBarra, desc, anterior, nuevo, usuario, motivo, app) {
   var sheet = getSheet('HISTORIAL_PRECIOS');
-  sheet.appendRow([_generateId('HP'), skuBase, codBarra, desc, anterior, nuevo, usuario, motivo, app, new Date()]);
+  var nextRow = sheet.getLastRow() + 1;
+  // Columnas 2 (skuBase) y 3 (codigoBarra) deben quedar como TEXTO para preservar
+  // ceros a la izquierda y evitar que Sheets las convierta a número.
+  sheet.getRange(nextRow, 2, 1, 2).setNumberFormat('@STRING@');
+  var values = [
+    _generateId('HP'),
+    String(skuBase  || ''),
+    String(codBarra || ''),
+    desc, anterior, nuevo, usuario, motivo, app, new Date()
+  ];
+  sheet.getRange(nextRow, 1, 1, values.length).setValues([values]);
 }
 
 function _registrarAlerta(tipo, urgencia, mensaje, appOrigen, datos) {
