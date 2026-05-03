@@ -3232,8 +3232,10 @@ const MOS = (() => {
     try {
       const r = await API.post('aplicarPreciosVentaSugeridos', { items, usuario: S.session?.nombre || '' });
       const aplicados = (r && r.aplicados) || (r && r.data && r.data.aplicados) || 0;
+      const propagadas = (r && r.presentacionesPropagadas) || (r && r.data && r.data.presentacionesPropagadas) || 0;
       const errores = (r && r.errores) || (r && r.data && r.data.errores) || [];
-      toast(`✓ ${aplicados} precios actualizados${errores.length ? ' · ' + errores.length + ' errores' : ''}`, errores.length ? 'error' : 'ok');
+      const propTxt = propagadas > 0 ? ` (+${propagadas} presentaciones propagadas)` : '';
+      toast(`✓ ${aplicados} precios actualizados${propTxt}${errores.length ? ' · ' + errores.length + ' errores' : ''}`, errores.length ? 'error' : 'ok');
       // Refrescar catálogo si está cargado
       if (S.productos && S.productos.length) {
         await loadCatalogo(true);
@@ -5801,7 +5803,7 @@ const MOS = (() => {
   }
 
   // ── TUTORIAL flotante en catálogo ────────────────────────
-  const _TUT_TOTAL = 7;
+  const _TUT_TOTAL = 8;
   let _tutSlide = 1;
 
   function tutorialOpen() {

@@ -342,17 +342,81 @@ function actualizarProductoMaster(params) {
     });
 
     // Historial si cambió el precio
-    if (params.precioVenta !== undefined &&
-        parseFloat(params.precioVenta) !== parseFloat(precioAnterior)) {
+    var cambioPrecioVenta = (params.precioVenta !== undefined &&
+        parseFloat(params.precioVenta) !== parseFloat(precioAnterior));
+    if (cambioPrecioVenta) {
       _registrarHistorialPrecio(
         data[i][0], data[i][1], data[i][2], data[i][3],
         precioAnterior, params.precioVenta,
         params.usuario || '', params.motivoPrecio || 'Actualización', 'MOS'
       );
     }
-    return { ok: true };
+
+    // Si cambió precioVenta y este producto es CANÓNICO, propagar a presentaciones
+    // por factor de conversión. Excluye presentaciones con modoVenta=FIJO o LIBRE.
+    // Se evita recursión con el flag _noPropagar.
+    var presentacionesActualizadas = 0;
+    if (cambioPrecioVenta && !params._noPropagar) {
+      try {
+        var prodActualizado = {
+          idProducto: data[i][hdrs.indexOf('idProducto')],
+          skuBase: data[i][hdrs.indexOf('skuBase')],
+          codigoProductoBase: data[i][hdrs.indexOf('codigoProductoBase')],
+          factorConversion: data[i][hdrs.indexOf('factorConversion')]
+        };
+        if (_esCanonico(prodActualizado) && prodActualizado.skuBase) {
+          presentacionesActualizadas = _propagarPrecioVentaAPresentaciones(
+            prodActualizado, parseFloat(params.precioVenta), params.usuario, params.motivoPrecio
+          );
+        }
+      } catch(eP) { Logger.log('Propagación falló: ' + eP.message); }
+    }
+
+    return { ok: true, data: { presentacionesActualizadas: presentacionesActualizadas } };
   }
   return { ok: false, error: 'Producto no encontrado' };
+}
+
+// Propaga el precio de venta del canónico a sus presentaciones, según factor.
+// Reglas:
+//   - Solo presentaciones (mismo skuBase, factor != 1, sin codigoProductoBase)
+//   - Excluye las que tienen modoVenta = FIJO o LIBRE (precios protegidos)
+//   - precioPresentación = precioCanónico × factorConversion
+// Retorna cantidad de presentaciones actualizadas.
+function _propagarPrecioVentaAPresentaciones(canonico, precioNuevoCanonico, usuario, motivoOrig) {
+  if (!canonico || !canonico.skuBase || !(precioNuevoCanonico > 0)) return 0;
+  var productos = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
+  var skuRef = String(canonico.skuBase).toUpperCase();
+  var idCanonRef = String(canonico.idProducto || '').toUpperCase();
+
+  var presentaciones = productos.filter(function(p) {
+    if (String(p.skuBase || '').toUpperCase() !== skuRef) return false;
+    if (String(p.idProducto || '').toUpperCase() === idCanonRef) return false; // excluir el propio canónico
+    if (String(p.codigoProductoBase || '').trim()) return false;               // derivados se manejan aparte
+    var f = parseFloat(p.factorConversion);
+    return !isNaN(f) && f > 0 && f !== 1;
+  });
+
+  var actualizadas = 0;
+  presentaciones.forEach(function(p) {
+    var modo = String(p.modoVenta || '').toUpperCase();
+    if (modo === 'FIJO' || modo === 'LIBRE') return; // respetar precios protegidos
+    var f = parseFloat(p.factorConversion);
+    var precioPres = Math.round(precioNuevoCanonico * f * 100) / 100;
+    if (precioPres <= 0) return;
+    try {
+      actualizarProductoMaster({
+        _source:      'MOS_MODAL_PRODUCTO',
+        _noPropagar:  true,  // evitar recursión
+        idProducto:   p.idProducto,
+        precioVenta:  precioPres,
+        usuario:      usuario || '',
+        motivoPrecio: 'Propagado desde canónico ' + (canonico.idProducto || '') + (motivoOrig ? ' · ' + motivoOrig : '')
+      });
+      actualizadas++;
+    } catch(_){}
+  });
+  return actualizadas;
 }
 
 // ── EQUIVALENCIAS ─────────────────────────────────────────────

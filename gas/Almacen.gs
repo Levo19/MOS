@@ -1229,11 +1229,12 @@ function _stockTotalProducto(producto) {
 
 // Endpoint: aplicar precios de venta sugeridos seleccionados por el usuario
 // params: { items: [{idProducto, precioNuevo, motivo}], usuario }
+// Retorna: aplicados (canónicos), presentacionesPropagadas, errores
 function aplicarPreciosVentaSugeridos(params) {
   if (!Array.isArray(params.items) || !params.items.length) {
     return { ok: false, error: 'items[] requerido' };
   }
-  var aplicados = 0, errores = [];
+  var aplicados = 0, errores = [], presentacionesPropagadas = 0;
   params.items.forEach(function(it) {
     var precio = parseFloat(it.precioNuevo);
     if (!it.idProducto || isNaN(precio) || precio <= 0) { errores.push({ idProducto: it.idProducto, error: 'datos inválidos' }); return; }
@@ -1245,13 +1246,23 @@ function aplicarPreciosVentaSugeridos(params) {
         usuario:      params.usuario || '',
         motivoPrecio: it.motivo || 'Ajuste por costo de guía'
       });
-      if (r && r.ok) aplicados++;
-      else errores.push({ idProducto: it.idProducto, error: (r && r.error) || 'sin detalle' });
+      if (r && r.ok) {
+        aplicados++;
+        if (r.data && r.data.presentacionesActualizadas) {
+          presentacionesPropagadas += parseInt(r.data.presentacionesActualizadas) || 0;
+        }
+      } else {
+        errores.push({ idProducto: it.idProducto, error: (r && r.error) || 'sin detalle' });
+      }
     } catch(e) {
       errores.push({ idProducto: it.idProducto, error: e.message });
     }
   });
-  return { ok: true, data: { aplicados: aplicados, errores: errores } };
+  return { ok: true, data: {
+    aplicados: aplicados,
+    presentacionesPropagadas: presentacionesPropagadas,
+    errores: errores
+  }};
 }
 
 // Detalle de una operación específica (líneas/items)

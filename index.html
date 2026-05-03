@@ -5309,8 +5309,41 @@ producto.<b>factorConversion</b> = 1 (o vacío)?
         </div>
       </div>
 
-      <!-- SLIDE 7: Régimen fiscal y EXO -->
+      <!-- SLIDE 7: Cambio de precio — propagación a presentaciones + equivalentes -->
       <div class="tut-slide" data-slide="7">
+        <div class="tut-title">💵 Cambiar el precio del canónico</div>
+        <div class="tut-subtitle">Cuando actualizas el precio venta de un canónico, el sistema propaga automáticamente.</div>
+
+        <div class="tut-card" style="border-left:3px solid #6366f1">
+          <div class="tut-card-title">↗️ Presentaciones — recalculan según factor</div>
+          <div class="tut-card-text">El sistema multiplica el nuevo precio del canónico por el <code style="background:#1e293b;padding:1px 5px;border-radius:3px">factorConversion</code> de cada presentación y escribe el resultado.</div>
+          <div class="tut-eq" style="margin-top:6px">precio presentación = precio canónico × factor</div>
+          <div class="tut-card-text" style="font-size:11px;margin-top:4px">
+            Ejemplo: ANIS ESTRELLA GRANEL pasa de S/ 80 → S/ 100 por kilo<br>
+            <span style="color:#a5b4fc">→ Presentación 250GR (factor 0.25): S/ 20 → <b>S/ 25</b></span><br>
+            <span style="color:#a5b4fc">→ Presentación 50GR  (factor 0.05): S/ 4 → <b>S/ 5</b></span><br>
+            <span style="color:#a5b4fc">→ Presentación 1KG   (factor 1.00): S/ 80 → <b>S/ 100</b></span>
+          </div>
+        </div>
+
+        <div class="tut-card" style="border-left:3px solid #ec4899">
+          <div class="tut-card-title">🔗 Equivalentes — siempre usan el del canónico</div>
+          <div class="tut-card-text">Los equivalentes <b>no tienen precio propio</b>. Cuando se escanea un código equivalente en POS, el sistema lo resuelve al canónico y cobra el precio del canónico. Es automático y siempre actualizado: no hay que hacer nada al cambiar el precio.</div>
+        </div>
+
+        <div class="tut-card" style="border-left:3px solid #f59e0b">
+          <div class="tut-card-title">🛡️ Excepción — presentaciones con modoVenta = FIJO</div>
+          <div class="tut-card-text">Si una presentación tiene <code style="background:#1e293b;padding:1px 5px;border-radius:3px">modoVenta = FIJO</code> o <code style="background:#1e293b;padding:1px 5px;border-radius:3px">LIBRE</code>, su precio <b>NO se sobreescribe</b>. Útil cuando una presentación tiene precio "psicológico" (ej. S/ 5 redondo) que no quieres que se mueva con cada cambio de costo.</div>
+        </div>
+
+        <div class="tut-card" style="border-left:3px solid #10b981">
+          <div class="tut-card-title">🔄 FIFO retroactivo — unifica todos los códigos</div>
+          <div class="tut-card-text">Para el cálculo de lotización (panel de impacto al llenar costos), el sistema agrupa <b>todos los códigos del mismo canónico</b>: idProducto + codigoBarra principal + códigos equivalentes. Si tienes 10 botellas con cod1 y llegan 10 con cod2 (equivalente), son 20 del mismo producto y FIFO hace los cálculos sobre el total correcto.</div>
+        </div>
+      </div>
+
+      <!-- SLIDE 8: Régimen fiscal y EXO -->
+      <div class="tut-slide" data-slide="8">
         <div class="tut-title">🧾 Régimen fiscal (IGV / Exonerado)</div>
         <div class="tut-subtitle">A diferencia de la categoría, el régimen fiscal SÍ se escribe en cada producto.</div>
 
@@ -5357,6 +5390,7 @@ producto.<b>factorConversion</b> = 1 (o vacío)?
         <div class="tut-dot" onclick="MOS.tutorialGoto(5)"></div>
         <div class="tut-dot" onclick="MOS.tutorialGoto(6)"></div>
         <div class="tut-dot" onclick="MOS.tutorialGoto(7)"></div>
+        <div class="tut-dot" onclick="MOS.tutorialGoto(8)"></div>
       </div>
       <button onclick="MOS.tutorialNext()" class="tut-btn-nav tut-btn-next" id="tutBtnNext">Siguiente →</button>
     </div>
