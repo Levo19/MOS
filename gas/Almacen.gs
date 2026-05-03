@@ -1034,6 +1034,7 @@ function llenarCostosGuia(params) {
   var sugerencias = [];
   try {
     var mapaCat = _cargarMapaPoliticaCategorias();
+    var mapaCanonicos = _cargarMapaCanonicos();
     // Refrescar lookup con costos actualizados (si se aplicó actualizarPrecioCosto)
     if (params.actualizarPrecioCosto) prodLookup = _buildProdLookup();
 
@@ -1042,7 +1043,7 @@ function llenarCostosGuia(params) {
       if (costoNuevo <= 0) return;
       var p = prodLookup[it.codigoProducto];
       if (!p || !p.idProducto) return;
-      var sug = _construirSugerenciaPrecio(p, costoNuevo, mapaCat, params.idGuia);
+      var sug = _construirSugerenciaPrecio(p, costoNuevo, mapaCat, params.idGuia, mapaCanonicos);
       if (sug) sugerencias.push(sug);
     });
   } catch(eS) {
@@ -1061,8 +1062,8 @@ function llenarCostosGuia(params) {
 
 // Construye la sugerencia de precio venta para un producto dado un costo nuevo.
 // Incluye lotización FIFO: lee guías de ingreso y arma desglose hasta cubrir stock.
-function _construirSugerenciaPrecio(producto, costoNuevoConIgv, mapaCategorias, idGuiaActual) {
-  var politica = _resolverPoliticaProducto(producto, mapaCategorias);
+function _construirSugerenciaPrecio(producto, costoNuevoConIgv, mapaCategorias, idGuiaActual, mapaCanonicos) {
+  var politica = _resolverPoliticaProducto(producto, mapaCategorias, mapaCanonicos);
   var precioVentaActual = parseFloat(producto.precioVenta) || 0;
   var costoAnterior = parseFloat(producto.precioCosto) || 0;
   var sugerido = _calcularPrecioVentaSugerido(costoNuevoConIgv, politica);

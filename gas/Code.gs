@@ -48,6 +48,7 @@ function _route(method, e) {
       case 'crearCategoria':          return crearCategoria(params);
       case 'actualizarCategoria':     return actualizarCategoria(params);
       case 'migrarPoliticaPrecios':   return migrarPoliticaPrecios();
+      case 'migrarCatalogoCompleto': return migrarCatalogoCompleto();
 
       // ── Almacén unificado (WH + Zonas ME) ──────────────────
       case 'getDashboardAlmacen':    return getDashboardAlmacen();
