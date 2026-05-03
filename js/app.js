@@ -731,12 +731,24 @@ const MOS = (() => {
   let _catGroups = {}; // { [skuBase]: { base, pres[] } } — para acceso desde guardarPrecioRapido
 
   // ── Política de precios — resolver y calcular margen ──────
-  // Política efectiva: override del producto > política de la categoría > default global.
+  // Política efectiva: override del producto > política de la categoría
+  // (con herencia dinámica si es presentación/derivado) > default global.
   function _resolverPoliticaProd(producto) {
     const oModo = String(producto.modoVenta || '').toUpperCase();
     const VALIDOS = ['MARGEN','FIJO','COMPETITIVO','LIBRE'];
-    const idCat = String(producto.idCategoria || '').toUpperCase();
+
+    // 1. Resolver idCategoria efectiva (con herencia)
+    let idCat = String(producto.idCategoria || '').trim().toUpperCase();
+    let origenCat = idCat ? 'producto' : '';
+    if (!idCat) {
+      const canonico = _buscarCanonicoFrontend(producto);
+      if (canonico && canonico.idCategoria) {
+        idCat = String(canonico.idCategoria).trim().toUpperCase();
+        origenCat = 'heredada';
+      }
+    }
     const cat = (S.categorias || []).find(c => c && String(c.idCategoria || '').toUpperCase() === idCat);
+
     const oMarg = (producto.margenPct !== '' && producto.margenPct !== undefined && producto.margenPct !== null) ? parseFloat(producto.margenPct) : null;
     const oTope = (producto.precioTope !== '' && producto.precioTope !== undefined && producto.precioTope !== null) ? parseFloat(producto.precioTope) : null;
 
@@ -744,7 +756,35 @@ const MOS = (() => {
     const margen = (oMarg !== null && !isNaN(oMarg)) ? oMarg : (cat ? (parseFloat(cat.margenPct) || 25) : 25);
     const tope  = (oTope !== null && !isNaN(oTope) && oTope > 0) ? oTope : (cat ? (parseFloat(cat.precioTope) || 0) : 0);
     const origen = oModo ? 'producto' : (cat ? 'categoría' : 'default');
-    return { modo, margen, tope, origen, categoria: cat };
+    return { modo, margen, tope, origen, categoria: cat, idCategoria: idCat, origenCategoria: origenCat };
+  }
+
+  // Busca el canónico al que pertenece una presentación/derivado.
+  // Devuelve null si el producto ya es canónico o no hay match.
+  function _buscarCanonicoFrontend(producto) {
+    if (!producto || !S.productos || !S.productos.length) return null;
+    const productos = S.productos;
+    // Derivado (envasado de envasable)
+    const codBase = String(producto.codigoProductoBase || '').trim();
+    if (codBase) {
+      const ref = codBase.toUpperCase();
+      return productos.find(p =>
+        String(p.idProducto || '').toUpperCase() === ref ||
+        String(p.skuBase    || '').toUpperCase() === ref
+      ) || null;
+    }
+    // Presentación (factor != 1, mismo skuBase)
+    const f = parseFloat(producto.factorConversion);
+    if (!isNaN(f) && f !== 1 && producto.skuBase) {
+      const skuRef = String(producto.skuBase).toUpperCase();
+      return productos.find(p => {
+        const fp = parseFloat(p.factorConversion);
+        const esCanon = (fp === 1 || isNaN(fp) || p.factorConversion === '' || p.factorConversion === null) &&
+                        !String(p.codigoProductoBase || '').trim();
+        return esCanon && String(p.skuBase || '').toUpperCase() === skuRef;
+      }) || null;
+    }
+    return null;
   }
 
   // Render seguro del badge de margen (cualquier error aquí no debe romper el catálogo)
