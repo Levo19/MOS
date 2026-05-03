@@ -736,7 +736,7 @@ const MOS = (() => {
     const oModo = String(producto.modoVenta || '').toUpperCase();
     const VALIDOS = ['MARGEN','FIJO','COMPETITIVO','LIBRE'];
     const idCat = String(producto.idCategoria || '').toUpperCase();
-    const cat = (S.categorias || []).find(c => String(c.idCategoria).toUpperCase() === idCat);
+    const cat = (S.categorias || []).find(c => c && String(c.idCategoria || '').toUpperCase() === idCat);
     const oMarg = (producto.margenPct !== '' && producto.margenPct !== undefined && producto.margenPct !== null) ? parseFloat(producto.margenPct) : null;
     const oTope = (producto.precioTope !== '' && producto.precioTope !== undefined && producto.precioTope !== null) ? parseFloat(producto.precioTope) : null;
 
@@ -745,6 +745,20 @@ const MOS = (() => {
     const tope  = (oTope !== null && !isNaN(oTope) && oTope > 0) ? oTope : (cat ? (parseFloat(cat.precioTope) || 0) : 0);
     const origen = oModo ? 'producto' : (cat ? 'categoría' : 'default');
     return { modo, margen, tope, origen, categoria: cat };
+  }
+
+  // Render seguro del badge de margen (cualquier error aquí no debe romper el catálogo)
+  function _renderMargenBadge(producto) {
+    try {
+      const mi = _calcularMargenInfo(producto);
+      if (!mi) return '';
+      const cls = mi.estado === 'bajo' ? 'text-rose-400' : mi.estado === 'sin-regla' ? 'text-slate-500' : 'text-emerald-400';
+      const icon = mi.estado === 'bajo' ? '⚠' : '';
+      const tip = (mi.modo === 'FIJO' || mi.modo === 'LIBRE')
+        ? 'Modo ' + mi.modo + ' (sin objetivo)'
+        : 'Objetivo ' + (parseFloat(mi.objetivo) || 0).toFixed(1) + '%';
+      return '<div class="text-[10px] ' + cls + '" title="' + tip + '">Margen: ' + mi.margen.toFixed(1) + '% ' + icon + '</div>';
+    } catch (_) { return ''; }
   }
 
   // Calcula info de margen actual + estado vs política. Retorna null si no aplica.
@@ -793,9 +807,9 @@ const MOS = (() => {
       const [freshProd, freshEquiv, freshCats] = await Promise.all([
         API.get('getProductos', {}),
         API.get('getEquivalencias', { activo: '1' }).catch(() => []),
-        API.get('getCategorias', {}).catch(() => [])
+        API.get('getCategorias', {}).catch(() => [])  // tolera GAS no redesplegado
       ]);
-      S.categorias = freshCats || [];
+      S.categorias = Array.isArray(freshCats) ? freshCats : [];
       const productos = freshProd || [];
       const equivMap  = {};
       (freshEquiv || []).forEach(e => {
@@ -1186,7 +1200,8 @@ const MOS = (() => {
     if (!panel) return;
     const isOpen = !panel.classList.contains('hidden');
     if (isOpen) { panel.classList.add('hidden'); return; }
-    const cats = [...new Set(S.productos.map(p => p.idCategoria).filter(Boolean))].sort();
+    const productos = Array.isArray(S.productos) ? S.productos : [];
+    const cats = [...new Set(productos.map(p => p && p.idCategoria).filter(Boolean))].sort();
     _renderFiltroCategList(cats);
     panel.classList.remove('hidden');
     setTimeout(() => document.addEventListener('click', _closeFiltroOnOutside, { once: true }), 0);
@@ -1479,16 +1494,7 @@ const MOS = (() => {
                 <div class="cat-price" data-cat-precio="${base.idProducto}">${fmtMoney(base.precioVenta)}</div>
               </div>
               ${base.precioCosto > 0 ? `<div class="cat-cost" data-cat-costo="${base.idProducto}">Costo: ${fmtMoney(base.precioCosto)}</div>` : ''}
-              ${(() => {
-                const mi = _calcularMargenInfo(base);
-                if (!mi) return '';
-                const cls = mi.estado === 'bajo' ? 'text-rose-400' : mi.estado === 'sin-regla' ? 'text-slate-500' : 'text-emerald-400';
-                const icon = mi.estado === 'bajo' ? '⚠' : '';
-                const tip = mi.modo === 'FIJO' || mi.modo === 'LIBRE'
-                  ? `Modo ${mi.modo} (sin objetivo)`
-                  : `Objetivo ${mi.objetivo.toFixed(1)}%`;
-                return `<div class="text-[10px] ${cls}" title="${tip}">Margen: ${mi.margen.toFixed(1)}% ${icon}</div>`;
-              })()}
+              ${_renderMargenBadge(base)}
               <div class="flex gap-1.5 mt-1 items-center">
                 <button type="button" class="toggle-sw ${activo ? 'on' : ''}" data-pid="${base.idProducto}"
                         onclick="event.stopPropagation();MOS.toggleProductoActivo('${base.idProducto}', true)"
