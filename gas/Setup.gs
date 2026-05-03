@@ -22,7 +22,9 @@ var MOS_SHEET_NAMES = {
   PERSONAL_MASTER:      'PERSONAL_MASTER',     // OPERADORES(WH) + VENDEDORES(ME)
   // ── Módulo Finanzas ────────────────────────────────────────
   JORNADAS:             'JORNADAS',            // Quién trabajó cada día y cuánto cobró
-  GASTOS:               'GASTOS'               // Gastos operativos y administrativos del día
+  GASTOS:               'GASTOS',              // Gastos operativos y administrativos del día
+  // ── Política de precios ────────────────────────────────────
+  CATEGORIAS:           'CATEGORIAS'           // Categorías + política default por categoría
 };
 
 var MOS_HEADERS = {
@@ -33,12 +35,14 @@ var MOS_HEADERS = {
   // codigoBarra: barcode individual (detalle para warehouseMos)
   // unidad: unidad de almacén (BOLSA/SACO/KG) — para warehouseMos
   // Unidad_Medida: código SUNAT (NIU/KGM/ZZ) — para MosExpress / NubeFact
+  // modoVenta/margenPct/precioTope: override de la política de la categoría (vacío = hereda)
   PRODUCTOS_MASTER:  ['idProducto','skuBase','codigoBarra','descripcion','marca',
                       'idCategoria','unidad','precioVenta','precioCosto',
                       'Cod_Tributo','IGV_Porcentaje','Cod_SUNAT','Tipo_IGV','Unidad_Medida',
                       'estado','esEnvasable','codigoProductoBase','factorConversion',
                       'mermaEsperadaPct','stockMinimo','stockMaximo','zona',
-                      'fechaCreacion','creadoPor'],
+                      'fechaCreacion','creadoPor',
+                      'modoVenta','margenPct','precioTope'],
 
   // Equivalencias: barcodes alternativos que apuntan al mismo skuBase
   EQUIVALENCIAS:     ['idEquiv','skuBase','codigoBarra','descripcion','activo'],
@@ -90,7 +94,18 @@ var MOS_HEADERS = {
   // Gastos operativos y administrativos
   // categoria: ALQUILER | SERVICIOS | TRANSPORTE | MANTENIMIENTO | MARKETING | SUMINISTROS | OTROS
   // tipo: FIJO | VARIABLE
-  GASTOS:              ['idGasto','fecha','categoria','tipo','descripcion','monto','comprobante','registradoPor']
+  GASTOS:              ['idGasto','fecha','categoria','tipo','descripcion','monto','comprobante','registradoPor'],
+
+  // ── Política de precios por categoría ────────────────────
+  // modoVenta: MARGEN | FIJO | COMPETITIVO | LIBRE
+  //   MARGEN       → precio venta sugerido = costo / (1 - margenPct/100)
+  //   FIJO         → no sugerir cambios automáticos (gancho, promociones)
+  //   COMPETITIVO  → min(margen sugerido, precioTope)
+  //   LIBRE        → ninguna sugerencia, todo manual
+  // margenPct: % objetivo cuando modoVenta=MARGEN o COMPETITIVO
+  // precioTope: precio máximo (solo para COMPETITIVO)
+  CATEGORIAS:          ['idCategoria','nombre','modoVenta','margenPct','precioTope',
+                        'descripcion','estado','fechaCreacion']
 };
 
 // ============================================================

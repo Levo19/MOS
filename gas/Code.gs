@@ -43,6 +43,12 @@ function _route(method, e) {
       case 'auditarIntegridad':        return auditarIntegridadProductos();
       case 'resolverAlertaAuditoria':  return resolverAlertaAuditoria(params);
 
+      // ── Política de precios (categorías + sugerencia) ──────
+      case 'getCategorias':           return getCategorias(params);
+      case 'crearCategoria':          return crearCategoria(params);
+      case 'actualizarCategoria':     return actualizarCategoria(params);
+      case 'migrarPoliticaPrecios':   return migrarPoliticaPrecios();
+
       // ── Almacén unificado (WH + Zonas ME) ──────────────────
       case 'getDashboardAlmacen':    return getDashboardAlmacen();
       case 'getCatalogoStockResumen': return getCatalogoStockResumen(params);
