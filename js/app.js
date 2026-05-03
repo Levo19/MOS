@@ -2733,11 +2733,13 @@ const MOS = (() => {
   }
 
   // ── Llenar costos de guía (con foto de factura) ──
-  // Modo de input por modal:
-  //   inputMode: 'TOTAL'    → el usuario escribe el total de la línea (factura típica)
-  //              'UNITARIO' → el usuario escribe el precio por unidad
-  //   igvMode:   'INCLUIDO' → el valor ingresado lleva IGV (se le resta para guardar neto)
-  //              'SIN_IGV'  → el valor ingresado ya es neto
+  // Toggles del modal:
+  //   inputMode: 'TOTAL'     → el usuario escribe el total de la línea (factura típica)
+  //              'UNITARIO'  → el usuario escribe el precio por unidad
+  //   igvMode:   'INCLUIDO'  → el valor ingresado YA incluye IGV
+  //              'SIN_IGV'   → el valor ingresado NO incluye IGV (se le agrega)
+  // Política: precioCosto siempre se guarda CON IGV (bruto). Si el usuario
+  // declaró Sin IGV, le sumamos el IGV antes de guardar.
   // Defaults: TOTAL + INCLUIDO (formato más común en facturas).
   S._costosGuiaState = S._costosGuiaState || {
     idGuia: null, fuente: null, lineas: [], foto: '',
@@ -2745,14 +2747,16 @@ const MOS = (() => {
   };
   const _IGV_RATE = 0.18;
 
-  // Convierte el valor que tipeó el usuario en precio UNITARIO NETO (sin IGV).
-  function _costosGuiaCalcularNeto(linea, st) {
+  // Convierte el valor que tipeó el usuario en precio UNITARIO BRUTO (con IGV).
+  // Es el valor que se guarda como precioCosto.
+  function _costosGuiaCalcularBruto(linea, st) {
     const v = parseFloat(linea.inputValue) || 0;
     if (v <= 0) return 0;
     const cant = parseFloat(linea.cantidad) || 1;
-    let unitarioBruto = st.inputMode === 'TOTAL' ? (v / cant) : v;
-    let unitarioNeto = st.igvMode === 'INCLUIDO' ? (unitarioBruto / (1 + _IGV_RATE)) : unitarioBruto;
-    return unitarioNeto;
+    // 1) Si el usuario declaró "Sin IGV", el valor que metió es neto → agregarle IGV
+    const valorConIgv = st.igvMode === 'INCLUIDO' ? v : v * (1 + _IGV_RATE);
+    // 2) Si era el TOTAL de la línea, dividir entre la cantidad
+    return st.inputMode === 'TOTAL' ? (valorConIgv / cant) : valorConIgv;
   }
 
   async function abrirCostosGuia(idGuia, fuente) {
@@ -2778,11 +2782,11 @@ const MOS = (() => {
     try {
       const r = await API.get('getOperacionDetalle', { fuente, idGuia });
       const lineas = (r && r.lineas) || [];
-      // Inicializar inputValue desde el precioUnitario existente (interpretado como neto)
-      // Para mostrarlo en modo TOTAL+INCLUIDO por defecto: total bruto = neto * cant * 1.18
+      // Inicializar inputValue desde el precioUnitario existente (interpretado como bruto c/IGV).
+      // Default modal: TOTAL + INCLUIDO → mostramos el total bruto = bruto * cant
       lineas.forEach(l => {
-        const neto = parseFloat(l.precioUnitario) || 0;
-        l.inputValue = neto > 0 ? +(neto * (parseFloat(l.cantidad) || 1) * (1 + _IGV_RATE)).toFixed(2) : '';
+        const bruto = parseFloat(l.precioUnitario) || 0;
+        l.inputValue = bruto > 0 ? +(bruto * (parseFloat(l.cantidad) || 1)).toFixed(2) : '';
       });
       S._costosGuiaState.lineas = lineas;
       _renderCostosGuiaBody();
@@ -2792,14 +2796,15 @@ const MOS = (() => {
   }
 
   function _costosGuiaSetMode(modo) {
-    // Convertir inputValue actual al nuevo modo (preservando el unitario neto)
+    // Convertir inputValue actual al nuevo modo preservando el unitario bruto (c/IGV)
     const st = S._costosGuiaState;
     if (st.inputMode === modo) return;
     st.lineas.forEach(l => {
-      const neto = _costosGuiaCalcularNeto(l, st);
+      const brutoUnit = _costosGuiaCalcularBruto(l, st);
       const cant = parseFloat(l.cantidad) || 1;
-      const bruto = st.igvMode === 'INCLUIDO' ? neto * (1 + _IGV_RATE) : neto;
-      l.inputValue = neto > 0 ? +(modo === 'TOTAL' ? bruto * cant : bruto).toFixed(2) : '';
+      // valor a mostrar según el régimen IGV declarado
+      const valorBase = st.igvMode === 'INCLUIDO' ? brutoUnit : (brutoUnit / (1 + _IGV_RATE));
+      l.inputValue = brutoUnit > 0 ? +(modo === 'TOTAL' ? valorBase * cant : valorBase).toFixed(2) : '';
     });
     st.inputMode = modo;
     _renderCostosGuiaBody();
@@ -2808,12 +2813,12 @@ const MOS = (() => {
   function _costosGuiaSetIgv(modo) {
     const st = S._costosGuiaState;
     if (st.igvMode === modo) return;
-    // Convertir inputValue al nuevo régimen IGV preservando el neto
+    // Convertir inputValue al nuevo régimen IGV preservando el unitario bruto
     st.lineas.forEach(l => {
-      const neto = _costosGuiaCalcularNeto(l, st);
+      const brutoUnit = _costosGuiaCalcularBruto(l, st);
       const cant = parseFloat(l.cantidad) || 1;
-      const bruto = modo === 'INCLUIDO' ? neto * (1 + _IGV_RATE) : neto;
-      l.inputValue = neto > 0 ? +(st.inputMode === 'TOTAL' ? bruto * cant : bruto).toFixed(2) : '';
+      const valorBase = modo === 'INCLUIDO' ? brutoUnit : (brutoUnit / (1 + _IGV_RATE));
+      l.inputValue = brutoUnit > 0 ? +(st.inputMode === 'TOTAL' ? valorBase * cant : valorBase).toFixed(2) : '';
     });
     st.igvMode = modo;
     _renderCostosGuiaBody();
@@ -2855,21 +2860,21 @@ const MOS = (() => {
         </div>
       </div>`;
 
-    let totalNeto = 0, totalBruto = 0;
+    let totalBruto = 0, totalNeto = 0;
     const filasHtml = lineas.map((l, i) => {
       const cant = parseFloat(l.cantidad) || 0;
-      const neto = _costosGuiaCalcularNeto(l, st);
-      const subNeto  = neto * cant;
-      const subBruto = subNeto * (1 + _IGV_RATE);
-      totalNeto  += subNeto;
+      const brutoUnit = _costosGuiaCalcularBruto(l, st);
+      const netoUnit  = brutoUnit / (1 + _IGV_RATE);
+      const subBruto  = brutoUnit * cant;
+      const subNeto   = netoUnit * cant;
       totalBruto += subBruto;
+      totalNeto  += subNeto;
       const equivBadge = l.esEquivalencia ? ' <span class="text-[9px] text-purple-400 bg-purple-500/10 px-1 rounded">EQUIV</span>' : '';
       const placeholder = inputMode === 'TOTAL' ? 'Total línea' : 'P. unit.';
-      const bruto = neto * (1 + _IGV_RATE);
-      const helperTxt = neto > 0
+      const helperTxt = brutoUnit > 0
         ? `<div class="text-[10px] leading-tight">
-             <div><span class="text-slate-500">c/IGV:</span> <span class="text-slate-300 font-mono">S/ ${bruto.toFixed(4)}</span></div>
-             <div><span class="text-slate-500">neto:</span> <span class="text-emerald-400 font-mono">S/ ${neto.toFixed(4)}</span></div>
+             <div><span class="text-amber-500 font-semibold">Costo unit. c/IGV:</span> <span class="text-amber-400 font-mono font-bold">S/ ${brutoUnit.toFixed(4)}</span></div>
+             <div><span class="text-slate-600">(neto: <span class="font-mono">S/ ${netoUnit.toFixed(4)}</span>)</span></div>
            </div>`
         : '<span class="text-[10px] text-slate-700">—</span>';
       return `<tr>
@@ -2921,21 +2926,21 @@ const MOS = (() => {
     const linea = st.lineas[idx];
     if (!linea) return;
     linea.inputValue = parseFloat(valor) || 0;
-    const neto = _costosGuiaCalcularNeto(linea, st);
+    const brutoUnit = _costosGuiaCalcularBruto(linea, st);
+    const netoUnit  = brutoUnit / (1 + _IGV_RATE);
     const cell = $('costoGuiaSubtot_' + idx);
     if (cell) {
-      const bruto = neto * (1 + _IGV_RATE);
-      cell.innerHTML = neto > 0
+      cell.innerHTML = brutoUnit > 0
         ? `<div class="text-[10px] leading-tight">
-             <div><span class="text-slate-500">c/IGV:</span> <span class="text-slate-300 font-mono">S/ ${bruto.toFixed(4)}</span></div>
-             <div><span class="text-slate-500">neto:</span> <span class="text-emerald-400 font-mono">S/ ${neto.toFixed(4)}</span></div>
+             <div><span class="text-amber-500 font-semibold">Costo unit. c/IGV:</span> <span class="text-amber-400 font-mono font-bold">S/ ${brutoUnit.toFixed(4)}</span></div>
+             <div><span class="text-slate-600">(neto: <span class="font-mono">S/ ${netoUnit.toFixed(4)}</span>)</span></div>
            </div>`
         : '<span class="text-[10px] text-slate-700">—</span>';
     }
     // Recalcular totales
-    let totalNeto = 0;
-    st.lineas.forEach(l => { totalNeto += _costosGuiaCalcularNeto(l, st) * (parseFloat(l.cantidad) || 0); });
-    const totalBruto = totalNeto * (1 + _IGV_RATE);
+    let totalBruto = 0;
+    st.lineas.forEach(l => { totalBruto += _costosGuiaCalcularBruto(l, st) * (parseFloat(l.cantidad) || 0); });
+    const totalNeto = totalBruto / (1 + _IGV_RATE);
     const elN = $('costosGuiaTotalNeto');  if (elN) elN.textContent = 'S/ ' + totalNeto.toFixed(2);
     const elI = $('costosGuiaTotalIgv');   if (elI) elI.textContent = 'S/ ' + (totalBruto - totalNeto).toFixed(2);
     const elB = $('costosGuiaTotalBruto'); if (elB) elB.textContent = 'S/ ' + totalBruto.toFixed(2);
@@ -2951,7 +2956,7 @@ const MOS = (() => {
       .map(l => ({
         idDetalle: l.idDetalle,
         codigoProducto: l.codigoProducto,
-        precioUnitario: _costosGuiaCalcularNeto(l, st)
+        precioUnitario: _costosGuiaCalcularBruto(l, st) // bruto c/IGV
       }))
       .filter(it => it.precioUnitario > 0);
     if (!items.length) {
