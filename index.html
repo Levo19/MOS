@@ -4711,6 +4711,29 @@
   </div>
 </div>
 
+<!-- Modal: Impacto de costos en precios de venta -->
+<div id="modalImpactoCostos" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.cerrarImpactoCostos()">
+  <div class="modal-box p-0" style="max-width:820px;display:flex;flex-direction:column;max-height:92vh">
+    <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0 gap-2" style="border-bottom:1px solid #1e293b">
+      <div class="min-w-0 flex-1">
+        <h3 class="font-semibold text-amber-400 text-base">📊 Impacto en precios de venta</h3>
+        <p id="impactoCostosInfo" class="text-xs text-slate-500 mt-0.5"></p>
+      </div>
+      <button onclick="MOS.cerrarImpactoCostos()" class="modal-close-x">×</button>
+    </div>
+    <div id="impactoCostosBody" class="overflow-y-auto px-5 py-4" style="flex:1">
+      <div class="text-xs text-slate-500 italic">Cargando...</div>
+    </div>
+    <div class="flex items-center gap-3 px-5 py-3 flex-shrink-0 flex-wrap" style="border-top:1px solid #1e293b">
+      <div class="text-[11px] text-slate-500" id="impactoCostosResumen"></div>
+      <div class="flex gap-2 ml-auto">
+        <button onclick="MOS.cerrarImpactoCostos()" class="btn-ghost">Cerrar sin aplicar</button>
+        <button onclick="MOS.aplicarSugerenciasSeleccionadas()" class="btn-primary">💾 Aplicar seleccionados</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Llenar costos de una guía de ingreso (con foto de factura) -->
 <div id="modalCostosGuia" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.cerrarCostosGuia()">
   <div class="modal-box p-0" style="max-width:780px;display:flex;flex-direction:column;max-height:92vh">

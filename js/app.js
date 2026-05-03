@@ -3021,11 +3021,173 @@ const MOS = (() => {
     closeModal('modalCostosGuia');
     toast('Guardando costos…', 'info');
     try {
-      await API.post('llenarCostosGuia', {
+      const resp = await API.post('llenarCostosGuia', {
         idGuia, items, actualizarPrecioCosto: updateMaster, usuario: S.session?.nombre || ''
       });
       toast('✓ ' + items.length + ' costos guardados' + (updateMaster ? ' + catálogo MOS actualizado' : ''), 'ok');
       await almLoadOps(true);
+
+      // Si hay sugerencias relevantes, abrir panel de impacto
+      const sugerencias = (resp && resp.sugerenciasPrecioVenta) || (resp && resp.data && resp.data.sugerenciasPrecioVenta) || [];
+      const relevantes = sugerencias.filter(s => {
+        // Mostrar solo si hay sugerencia activa Y precio sugerido difiere significativamente del actual
+        if (s.precioVentaSugerido === null || s.precioVentaSugerido === undefined) return false;
+        const actual = parseFloat(s.precioVentaActual) || 0;
+        const sug = parseFloat(s.precioVentaSugerido) || 0;
+        if (sug <= 0) return false;
+        if (actual <= 0) return true; // sin precio antes → sugerir
+        const deltaPct = Math.abs((sug - actual) / actual) * 100;
+        return deltaPct >= 1; // ≥ 1% de diferencia
+      });
+      if (relevantes.length) {
+        _mostrarPanelImpacto(relevantes, idGuia);
+      }
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  // ── Panel: Impacto de costos en precios de venta ─────────
+  S._impactoState = S._impactoState || { sugerencias: [], idGuia: null };
+
+  function _mostrarPanelImpacto(sugerencias, idGuia) {
+    // Inicializar cada una con seleccionado=true por default (excepto FIJO/LIBRE sin sugerencia)
+    sugerencias.forEach(s => {
+      s._seleccionado = (s.precioVentaSugerido !== null && s.precioVentaSugerido > 0);
+      s._precioCustom = s.precioVentaSugerido; // editable
+    });
+    S._impactoState = { sugerencias, idGuia };
+    const info = $('impactoCostosInfo');
+    if (info) info.textContent = `Guía ${idGuia} · ${sugerencias.length} producto${sugerencias.length === 1 ? '' : 's'} con cambio relevante`;
+    _renderImpactoBody();
+    openModal('modalImpactoCostos');
+  }
+
+  function _renderImpactoBody() {
+    const body = $('impactoCostosBody');
+    if (!body) return;
+    const { sugerencias } = S._impactoState;
+    if (!sugerencias.length) {
+      body.innerHTML = '<div class="text-xs text-slate-500 italic">Sin sugerencias relevantes.</div>';
+      return;
+    }
+    body.innerHTML = sugerencias.map((s, i) => {
+      const costoAnt = parseFloat(s.costoAnterior) || 0;
+      const costoNue = parseFloat(s.costoNuevo) || 0;
+      const deltaCosto = costoAnt > 0 ? ((costoNue - costoAnt) / costoAnt) * 100 : null;
+      const deltaCostoStr = deltaCosto === null ? 'nuevo' : (deltaCosto >= 0 ? '+' : '') + deltaCosto.toFixed(1) + '%';
+      const deltaCls = deltaCosto === null ? 'text-slate-500' : (deltaCosto > 0 ? 'text-rose-400' : 'text-emerald-400');
+
+      const ventaAct = parseFloat(s.precioVentaActual) || 0;
+      const ventaSug = parseFloat(s.precioVentaSugerido) || 0;
+      const margenSug = s.margenSugerido !== null && s.margenSugerido !== undefined ? s.margenSugerido : null;
+      const margenAct = s.margenActual !== null && s.margenActual !== undefined ? s.margenActual : null;
+
+      // Lotización
+      const lot = s.lotizacion || {};
+      const desglose = lot.desglose || [];
+      const lotHtml = (lot.hayLoteAnterior && desglose.length > 0)
+        ? `<div class="mt-2 p-2 rounded text-[10px] text-amber-300" style="background:rgba(251,191,36,.07);border:1px dashed rgba(251,191,36,.3)">
+             <div class="font-semibold mb-1">⚠️ Hay stock del lote anterior</div>
+             <table class="w-full text-[10px]">
+               <thead class="text-amber-500 opacity-70">
+                 <tr><th class="text-left">Lote</th><th class="text-right">Cant</th><th class="text-right">Costo c/IGV</th></tr>
+               </thead>
+               <tbody>
+                 ${desglose.map(d => `<tr ${d.esActual ? 'class="font-semibold"' : ''}>
+                   <td class="py-0.5">${d.esActual ? 'Nuevo (esta guía)' : new Date(d.fecha).toLocaleDateString('es-PE', { month: 'short', day: 'numeric' })}</td>
+                   <td class="text-right py-0.5">${d.cantidad}u</td>
+                   <td class="text-right py-0.5 font-mono">S/ ${parseFloat(d.costo).toFixed(2)}</td>
+                 </tr>`).join('')}
+               </tbody>
+             </table>
+             <div class="mt-1 text-amber-400">Costo ponderado real: <span class="font-mono font-semibold">S/ ${(parseFloat(lot.costoPonderado) || 0).toFixed(4)}</span> · stock total ${lot.stockTotal || 0}u</div>
+           </div>`
+        : '';
+
+      const sinSugerencia = (s.modoEfectivo === 'FIJO' || s.modoEfectivo === 'LIBRE' || ventaSug <= 0);
+      const checked = s._seleccionado ? 'checked' : '';
+      const disabledCheck = sinSugerencia ? 'disabled' : '';
+
+      return `<div class="card-sm p-3 mb-2" style="border-left:3px solid ${sinSugerencia ? '#475569' : (deltaCosto && deltaCosto > 0 ? '#f43f5e' : '#10b981')}">
+        <div class="flex items-start gap-3">
+          <input type="checkbox" ${checked} ${disabledCheck} onchange="MOS._impactoTogglesel(${i}, this.checked)" class="mt-1">
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-semibold text-slate-200 truncate">${s.descripcion}</div>
+            <div class="text-[10px] text-slate-500 font-mono">▌ ${s.codigoProducto}</div>
+            <div class="grid grid-cols-2 gap-2 mt-2 text-[11px]">
+              <div>
+                <span class="text-slate-500">Costo:</span>
+                <span class="font-mono">${costoAnt > 0 ? 'S/ ' + costoAnt.toFixed(2) : '—'} → <span class="text-amber-400 font-semibold">S/ ${costoNue.toFixed(2)}</span></span>
+                <span class="${deltaCls}">(${deltaCostoStr})</span>
+              </div>
+              <div>
+                <span class="text-slate-500">Margen:</span>
+                <span>${margenAct !== null ? margenAct.toFixed(1) + '%' : '—'} → <span class="${margenSug !== null ? 'text-emerald-400 font-semibold' : 'text-slate-500'}">${margenSug !== null ? margenSug.toFixed(1) + '%' : '—'}</span></span>
+              </div>
+            </div>
+            <div class="mt-2 flex items-center gap-2 text-[11px]">
+              <span class="text-slate-500">Precio venta:</span>
+              <span class="font-mono">${ventaAct > 0 ? 'S/ ' + ventaAct.toFixed(2) : '—'}</span>
+              <span class="text-slate-600">→</span>
+              ${sinSugerencia
+                ? `<span class="text-slate-500 italic text-[10px]">${s.modoEfectivo} — sin sugerencia automática</span>`
+                : `<input type="number" step="0.01" min="0" value="${(s._precioCustom || ventaSug).toFixed(2)}"
+                   oninput="MOS._impactoSetPrecio(${i}, this.value)"
+                   class="inp text-xs text-right" style="width:90px">
+                   <span class="text-[9px] text-slate-600">obj. ${(parseFloat(s.margenObjetivo) || 0).toFixed(0)}% (${s.origenPolitica})</span>`}
+            </div>
+            ${lotHtml}
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+    // Resumen del footer
+    const seleccionadas = sugerencias.filter(s => s._seleccionado).length;
+    const resEl = $('impactoCostosResumen');
+    if (resEl) resEl.textContent = `${seleccionadas} de ${sugerencias.length} seleccionados`;
+  }
+
+  function _impactoTogglesel(idx, checked) {
+    if (S._impactoState.sugerencias[idx]) {
+      S._impactoState.sugerencias[idx]._seleccionado = !!checked;
+      _renderImpactoBody();
+    }
+  }
+
+  function _impactoSetPrecio(idx, valor) {
+    if (S._impactoState.sugerencias[idx]) {
+      S._impactoState.sugerencias[idx]._precioCustom = parseFloat(valor) || 0;
+    }
+  }
+
+  function cerrarImpactoCostos() { closeModal('modalImpactoCostos'); }
+
+  async function aplicarSugerenciasSeleccionadas() {
+    const { sugerencias, idGuia } = S._impactoState;
+    const items = sugerencias
+      .filter(s => s._seleccionado && s._precioCustom > 0)
+      .map(s => ({
+        idProducto: s.idProducto,
+        precioNuevo: s._precioCustom,
+        motivo: 'Ajuste por costo guía ' + (idGuia || '')
+      }));
+    if (!items.length) {
+      toast('No hay sugerencias seleccionadas', 'error');
+      return;
+    }
+    closeModal('modalImpactoCostos');
+    toast('Aplicando precios…', 'info');
+    try {
+      const r = await API.post('aplicarPreciosVentaSugeridos', { items, usuario: S.session?.nombre || '' });
+      const aplicados = (r && r.aplicados) || (r && r.data && r.data.aplicados) || 0;
+      const errores = (r && r.errores) || (r && r.data && r.data.errores) || [];
+      toast(`✓ ${aplicados} precios actualizados${errores.length ? ' · ' + errores.length + ' errores' : ''}`, errores.length ? 'error' : 'ok');
+      // Refrescar catálogo si está cargado
+      if (S.productos && S.productos.length) {
+        await loadCatalogo(true);
+      }
     } catch(e) {
       toast('Error: ' + e.message, 'error');
     }
@@ -9558,6 +9720,7 @@ const MOS = (() => {
     almLoadResumen, almRefreshResumen, almFiltrarStock, almRefreshCatalogo, almToggleStockExpand,
     almLoadOps, almRefreshOps, almRenderOps, almToggleOpExpand,
     abrirCostosGuia, _costosGuiaUpdLinea, _costosGuiaSetMode, _costosGuiaSetIgv, cerrarCostosGuia, guardarCostosGuia,
+    _impactoTogglesel, _impactoSetPrecio, cerrarImpactoCostos, aplicarSugerenciasSeleccionadas,
     almLoadZonas, almRefreshZonas, almAbrirStockDetalle, cerrarStockDetalle, almRefreshStockDetalle,
     _almGenerarPedidoFromInsight, _almPickProveedor, cerrarSelProveedor,
     cerrarModalPedido, pedidoBuscarItem, pedidoAgregarItem,
