@@ -2935,7 +2935,53 @@
                 class="text-right p-4 hover:bg-slate-700/40 transition-colors rounded-r-xl active:bg-slate-700/60">
           <div class="fin-card-label mb-1 flex items-center justify-end gap-1">Ticket Promedio <span class="text-slate-500 text-xs">↗</span></div>
           <div id="finKpiTicketProm" class="text-2xl font-bold text-slate-200">—</div>
+          <!-- Margen Promedio (clickable, sub-acción del card) -->
+          <div class="mt-2 pt-2" style="border-top:1px dashed #1e293b">
+            <button onclick="event.stopPropagation();MOS.finAbrirEditorMargenDefault()"
+                    class="w-full text-right group" title="Click para editar el margen default usado en productos sin precio costo">
+              <div class="fin-card-label flex items-center justify-end gap-1 text-[10px]">
+                Margen Promedio <span class="text-slate-500 text-[10px]">⚙</span>
+              </div>
+              <div class="flex items-baseline justify-end gap-1.5">
+                <span id="finKpiMargenProm" class="text-xl font-bold">—</span>
+                <span id="finKpiMargenEstim" class="text-[10px] text-slate-500"></span>
+              </div>
+            </button>
+          </div>
         </button>
+      </div>
+
+      <!-- Modal: Editar margen default global -->
+      <div id="modalMargenDefault" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.finCerrarEditorMargenDefault()">
+        <div class="modal-box p-0 max-w-md w-full" style="display:flex;flex-direction:column">
+          <div class="px-5 pt-5 pb-3 flex items-center justify-between" style="border-bottom:1px solid #1e293b">
+            <div>
+              <h3 class="font-semibold text-amber-400 text-base">⚙️ Margen default</h3>
+              <p class="text-xs text-slate-500 mt-0.5">Para productos sin precio costo asignado</p>
+            </div>
+            <button onclick="MOS.finCerrarEditorMargenDefault()" class="modal-close-x">×</button>
+          </div>
+          <div class="px-5 py-4 space-y-3">
+            <div>
+              <label class="lbl">Margen sobre venta (%)</label>
+              <input type="number" min="0" max="99" step="0.5" id="finMargenDefaultInput" class="inp text-lg" placeholder="20">
+              <div class="text-[10px] text-slate-600 italic mt-1">
+                Si vendes a S/ 100 con margen X%, el costo estimado = 100 × (1 − X/100)
+              </div>
+            </div>
+            <div class="p-3 rounded text-[11px]" style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2)">
+              <div class="text-slate-300 mb-1"><b>📊 Impacto en el día actual:</b></div>
+              <div id="finMargenDefaultImpacto" class="text-slate-400 leading-relaxed">—</div>
+            </div>
+            <div class="text-[10px] text-slate-500">
+              💡 Solo aplica para productos sin precio costo. Los que sí tienen <code style="background:#1e293b;padding:1px 4px;border-radius:3px">precioCosto</code> usan ese valor real, este default no afecta.
+            </div>
+          </div>
+          <div class="px-5 py-3 flex gap-2" style="border-top:1px solid #1e293b">
+            <button onclick="MOS.finCerrarEditorMargenDefault()" class="btn-ghost flex-1">Cancelar</button>
+            <button onclick="MOS.finGuardarMargenDefault()" class="btn-primary flex-1" id="finMargenDefaultSaveBtn">Guardar</button>
+          </div>
+        </div>
       </div>
 
       <!-- ── Punto de Equilibrio ──────────────────────────────────── -->

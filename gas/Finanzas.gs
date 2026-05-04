@@ -327,14 +327,25 @@ function _calcularCostoVentas(fecha, detalleIds) {
   var productos = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
   try { detalle = _sheetToObjectsLocal(_abrirMeSheet('VENTAS_DETALLE')); } catch(e) {}
 
+  // Margen default global para estimar costo de productos sin precioCosto.
+  // Usa CONFIG_MOS clave 'finMargenDefault' (default 20% sobre venta).
+  var defaultMargen = 20;
+  try {
+    var cfg = _sheetToObjects(getSheet('CONFIG_MOS')).find(function(r){ return r.clave === 'finMargenDefault'; });
+    if (cfg && parseFloat(cfg.valor) >= 0 && parseFloat(cfg.valor) < 100) defaultMargen = parseFloat(cfg.valor);
+  } catch(_){}
+
   // VENTAS_DETALLE no tiene fecha propia → filtrar por ID_Venta del día
   var items_dia = detalle.filter(function(d){ return detalleIds[String(d.ID_Venta || '')]; });
 
-  var costoTotal = 0;
-  var sinCosto   = [];
-  var unidades   = 0;
-  var skusSet    = {};
-  var bySkuMap   = {};
+  var costoTotal      = 0;
+  var costoReal       = 0;     // suma con precioCosto explícito
+  var costoEstimado   = 0;     // suma con margen default
+  var ingresoTotal    = 0;     // para calcular margen promedio
+  var sinCostoSet     = {};    // skus únicos sin costo
+  var unidades        = 0;
+  var skusSet         = {};
+  var bySkuMap        = {};
 
   items_dia.forEach(function(d) {
     var sku    = String(d.SKU || '');
@@ -342,14 +353,37 @@ function _calcularCostoVentas(fecha, detalleIds) {
     var cant   = parseFloat(d.Cantidad || 0);
     var precio = parseFloat(d.Precio || 0);
     var prod   = productos.find(function(p){ return p.skuBase === sku || p.codigoBarra === sku || p.idProducto === sku; });
-    var costo  = prod ? parseFloat(prod.precioCosto || 0) : 0;
-    costoTotal += costo * cant;
-    unidades   += cant;
+    var costoUnitReal = prod ? parseFloat(prod.precioCosto || 0) : 0;
+
+    // Si no hay precioCosto, estimar con margen default sobre venta
+    var costoUnit;
+    var esEstimado;
+    if (costoUnitReal > 0) {
+      costoUnit  = costoUnitReal;
+      esEstimado = false;
+    } else {
+      costoUnit  = precio * (1 - defaultMargen / 100);  // costo = venta × (1 − m%)
+      esEstimado = true;
+      if (sku) sinCostoSet[sku] = true;
+    }
+
+    var costoLinea   = costoUnit * cant;
+    var ingresoLinea = precio    * cant;
+    costoTotal   += costoLinea;
+    ingresoTotal += ingresoLinea;
+    if (esEstimado) costoEstimado += costoLinea;
+    else            costoReal     += costoLinea;
+    unidades += cant;
     if (sku) skusSet[sku] = true;
-    if (!prod || !costo) sinCosto.push(sku);
-    // Agrupado por SKU para detalleProductos
+
     if (sku) {
-      if (!bySkuMap[sku]) bySkuMap[sku] = { sku: sku, nombre: nombre, cantidad: 0, precio: precio, costoUnit: costo, sinCosto: !costo };
+      if (!bySkuMap[sku]) {
+        bySkuMap[sku] = {
+          sku: sku, nombre: nombre, cantidad: 0,
+          precio: precio, costoUnit: costoUnit,
+          esEstimado: esEstimado, sinCosto: esEstimado  // alias retro-compat
+        };
+      }
       bySkuMap[sku].cantidad += cant;
       if (!bySkuMap[sku].nombre && nombre) bySkuMap[sku].nombre = nombre;
     }
@@ -357,18 +391,34 @@ function _calcularCostoVentas(fecha, detalleIds) {
 
   var detalleProductos = Object.keys(bySkuMap).map(function(k) {
     var p = bySkuMap[k];
-    return { sku: p.sku, nombre: p.nombre, cantidad: Math.round(p.cantidad * 100) / 100,
-             precio: p.precio, costoUnit: p.costoUnit,
-             costoTotal: _r2(p.costoUnit * p.cantidad), sinCosto: p.sinCosto };
+    return {
+      sku: p.sku, nombre: p.nombre,
+      cantidad:   Math.round(p.cantidad * 100) / 100,
+      precio:     p.precio,
+      costoUnit:  Math.round(p.costoUnit * 100) / 100,
+      costoTotal: _r2(p.costoUnit * p.cantidad),
+      esEstimado: p.esEstimado,
+      sinCosto:   p.sinCosto
+    };
   }).sort(function(a, b) { return b.cantidad - a.cantidad; });
+
+  // Margen promedio del día (usando costos mezclados real + estimado)
+  var margenPromedioPct = ingresoTotal > 0
+    ? Math.round(((ingresoTotal - costoTotal) / ingresoTotal) * 1000) / 10
+    : 0;
 
   return {
     total:           _r2(costoTotal),
+    totalReal:       _r2(costoReal),
+    totalEstimado:   _r2(costoEstimado),
     items:           items_dia.length,
-    sinCosto:        sinCosto.filter(function(v,i,a){ return v && a.indexOf(v)===i; }),
+    sinCosto:        Object.keys(sinCostoSet),
+    cantidadEstimados: Object.keys(sinCostoSet).length,
     unidades:        Math.round(unidades),
     skusDistintos:   Object.keys(skusSet).length,
-    detalleProductos: detalleProductos
+    detalleProductos: detalleProductos,
+    margenPromedioPct: margenPromedioPct,
+    defaultMargenUsado: defaultMargen
   };
 }
 
@@ -466,11 +516,16 @@ function _armarPL(fecha, ing, cos, per, gas) {
     byMetodo:       ing.byMetodo,
     detalleTickets: ing.detalleTickets,
     // Costos
-    costoVentas:    costoVentas,
-    itemsVendidos:  cos.items,
-    unidadesVendidas: cos.unidades,
-    skusDistintos:  cos.skusDistintos,
+    costoVentas:        costoVentas,
+    costoVentasReal:    cos.totalReal,
+    costoVentasEstimado:cos.totalEstimado,
+    itemsVendidos:      cos.items,
+    unidadesVendidas:   cos.unidades,
+    skusDistintos:      cos.skusDistintos,
     productosSinCosto:  cos.sinCosto,
+    cantidadEstimados:  cos.cantidadEstimados,
+    margenPromedioPct:  cos.margenPromedioPct,
+    defaultMargenUsado: cos.defaultMargenUsado,
     detalleProductos:   cos.detalleProductos,
     // Utilidad bruta
     utilidadBruta:  utilidadBruta,

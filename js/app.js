@@ -8579,6 +8579,27 @@ const MOS = (() => {
     _setText('finKpiSkus',       pl.skusDistintos    ?? '—');
     _setText('finKpiTicketProm', pl.ticketPromedio   ? 'S/ ' + parseFloat(pl.ticketPromedio).toFixed(2) : '—');
 
+    // Margen Promedio + estimados
+    const margenProm = parseFloat(pl.margenPromedioPct || 0);
+    const defaultMargen = parseFloat(pl.defaultMargenUsado || 20);
+    const cantEstim = parseInt(pl.cantidadEstimados || 0);
+    const margenEl = $('finKpiMargenProm');
+    if (margenEl) {
+      margenEl.textContent = (pl.itemsVendidos > 0 ? margenProm.toFixed(1) + '%' : '—');
+      // Color: si margen >= default → emerald; si < default → ámbar
+      margenEl.style.color = pl.itemsVendidos > 0
+        ? (margenProm >= defaultMargen ? '#34d399' : '#fbbf24')
+        : '#475569';
+    }
+    const estimEl = $('finKpiMargenEstim');
+    if (estimEl) {
+      if (cantEstim > 0) {
+        estimEl.textContent = `${cantEstim} SKU${cantEstim === 1 ? '' : 's'} estim. al ${defaultMargen}%`;
+      } else {
+        estimEl.textContent = pl.itemsVendidos > 0 ? '✓ todos con costo real' : '';
+      }
+    }
+
     // ⚠ inline junto a "Productos Vendidos" si hay SKUs sin costo
     const sinCostoIcon = $('finSinCostoAlerta');
     if (sinCostoIcon) sinCostoIcon.classList.toggle('hidden', !(pl.productosSinCosto?.length));
@@ -8908,6 +8929,44 @@ const MOS = (() => {
   function finCerrarCostoEditor() {
     _finEditSku = null;
     $('finCostoEditorWrap')?.classList.add('hidden');
+  }
+
+  // ── Editor de margen default global ──────────────────────
+  function finAbrirEditorMargenDefault() {
+    const inp = $('finMargenDefaultInput');
+    const cur = parseFloat(_finPL?.defaultMargenUsado) || 20;
+    if (inp) inp.value = cur;
+    // Mostrar impacto del día actual
+    const impEl = $('finMargenDefaultImpacto');
+    if (impEl && _finPL) {
+      const estim = parseFloat(_finPL.costoVentasEstimado || 0);
+      const real  = parseFloat(_finPL.costoVentasReal || 0);
+      const cantEstim = parseInt(_finPL.cantidadEstimados || 0);
+      if (cantEstim === 0) {
+        impEl.textContent = '✅ Hoy todos los productos vendidos tienen costo real asignado. Este default no afectó nada.';
+      } else {
+        impEl.innerHTML = `Hoy hay <b>${cantEstim} SKU${cantEstim === 1 ? '' : 's'}</b> sin precio costo. Se estimó <b class="text-amber-400">S/ ${estim.toFixed(2)}</b> de costo de venta usando este margen (vs <b>S/ ${real.toFixed(2)}</b> real). Cambiar el % afectará la utilidad mostrada inmediatamente al guardar.`;
+      }
+    }
+    openModal('modalMargenDefault');
+  }
+  function finCerrarEditorMargenDefault() { closeModal('modalMargenDefault'); }
+
+  async function finGuardarMargenDefault() {
+    const v = parseFloat($('finMargenDefaultInput')?.value);
+    if (isNaN(v) || v < 0 || v >= 100) { toast('Margen debe ser 0-99', 'error'); return; }
+    const btn = $('finMargenDefaultSaveBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+    try {
+      await API.post('setConfig', { clave: 'finMargenDefault', valor: String(v) });
+      toast(`Margen default ${v}% guardado ✓`, 'ok');
+      finCerrarEditorMargenDefault();
+      finCargar();
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
+    }
   }
 
   async function finGuardarCostoSku() {
@@ -10395,6 +10454,7 @@ const MOS = (() => {
     finGuardarJornada, finEliminarGasto, finEliminarJornada, finImportarCajas,
     cerrarModalFin,
     finEditarCostoSku, finCerrarCostoEditor, finGuardarCostoSku,
+    finAbrirEditorMargenDefault, finCerrarEditorMargenDefault, finGuardarMargenDefault,
     // Liquidaciones
     liqOpen, liqClose, liqSetTab, liqVerDetallePend, liqEmitirIndividual, liqEmitirTodos,
     liqVerTicket, liqMarcarPagada, liqAnular, liqImprimir, liqCerrarDetalle,
