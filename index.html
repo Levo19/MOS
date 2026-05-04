@@ -781,17 +781,13 @@
       color: #ffd700;
       border-bottom-color: #ffd700;
     }
-    /* Header sticky del detalle del proveedor (mobile y desktop) */
+    /* Header del detalle del proveedor */
     .prov-detail-header {
-      position: sticky; top: 56px; z-index: 5;
-      background: #0a1428;
+      background: transparent;
       padding: 8px 0 0;
       margin-bottom: 8px;
     }
-    @media (min-width: 768px) {
-      .prov-detail-header { top: 0; }
-    }
-    /* Card-look solo en desktop; mobile usa ancho completo */
+    /* Card-look solo en desktop; mobile/tablet usa expansión inline dentro del card */
     .prov-detail-card { padding: 0; }
     @media (min-width: 1024px) {
       .prov-detail-card {
@@ -800,7 +796,31 @@
         border-radius: 12px;
         padding: 1.25rem;
       }
-      .prov-detail-header { padding-top: 0; }
+      .prov-detail-header {
+        position: sticky; top: 0; z-index: 5;
+        background: #0f172a;
+        padding-top: 0;
+      }
+    }
+    /* Detalle inline (mobile/tablet) — se inyecta debajo del card seleccionado */
+    .prov-inline-detail {
+      background: #0a1428;
+      border: 1px solid rgba(99,102,241,.35);
+      border-top: none;
+      border-radius: 0 0 12px 12px;
+      margin-top: -2px;
+      padding: 12px;
+      animation: provExpandIn .18s ease-out;
+    }
+    @keyframes provExpandIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    /* Card seleccionada en mobile/tablet: bordes inferiores rectos para fundirse con detalle */
+    .card.prov-card-active {
+      border-color: rgba(99,102,241,.5);
+      border-bottom-color: transparent;
+      border-radius: 12px 12px 0 0;
     }
 
     /* ── Radio cards para revisar PN ─────────────────────── */
@@ -2599,25 +2619,36 @@
 
     <!-- ═══ VIEW: PROVEEDORES ════════════════════════════════ -->
     <section id="view-proveedores" class="view">
-      <!-- Header (oculto en mobile cuando hay detalle abierto) -->
-      <div id="provHeaderBar" class="flex items-center justify-between mb-4 gap-2 flex-wrap">
-        <div class="text-sm text-slate-400"><span id="provCount">0</span> proveedores</div>
-        <div class="flex gap-2">
-          <button class="btn-ghost text-sm flex items-center gap-1" onclick="MOS.abrirVistaCargadores()" title="Cargadores temporales">
-            🚚 <span class="hidden sm:inline">Cargadores</span>
-          </button>
-          <button class="btn-primary text-sm" onclick="MOS.abrirModalProveedor(null)">+ Nuevo</button>
+      <!-- Header -->
+      <div id="provHeaderBar" class="mb-4">
+        <div class="flex items-center justify-between gap-2 mb-3">
+          <div class="text-sm text-slate-400"><span id="provCount">0</span> proveedores</div>
+          <div class="flex gap-2">
+            <button class="btn-ghost text-sm flex items-center gap-1" onclick="MOS.abrirVistaCargadores()" title="Cargadores temporales">
+              🚚 <span class="hidden sm:inline">Cargadores</span>
+            </button>
+            <button class="btn-primary text-sm" onclick="MOS.abrirModalProveedor(null)">+ Nuevo</button>
+          </div>
+        </div>
+        <!-- Buscador inteligente -->
+        <div class="relative">
+          <input id="provSearch" type="search" autocomplete="off" oninput="MOS.provBuscar(this.value)"
+                 placeholder="Buscar por nombre, RUC, teléfono, categoría…"
+                 class="inp w-full pl-9 pr-9 text-sm">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm pointer-events-none">🔎</span>
+          <button id="provSearchClear" type="button" onclick="MOS.provBuscar('')"
+                  class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-200 text-lg leading-none px-2 hidden">×</button>
         </div>
       </div>
       <div class="grid lg:grid-cols-3 gap-4">
-        <!-- Proveedor list (oculto en mobile cuando hay seleccionado) -->
+        <!-- Lista: siempre visible. En mobile/tablet el detalle se inyecta inline bajo el card seleccionado. -->
         <div id="provListWrap" class="lg:col-span-1">
           <div id="listProveedores" class="space-y-2">
             <div class="skel h-20 rounded-xl"></div>
             <div class="skel h-20 rounded-xl"></div>
           </div>
         </div>
-        <!-- Proveedor detail (oculto en mobile cuando NO hay seleccionado) -->
+        <!-- Panel detalle (solo desktop ≥ lg) -->
         <div id="provDetailWrap" class="lg:col-span-2 hidden lg:block">
           <div id="proveedorDetail" class="prov-detail-card text-slate-500 text-sm">
             <p class="text-center p-6">Selecciona un proveedor para ver pagos y pedidos</p>
@@ -4158,6 +4189,53 @@
       <div>
         <label class="lbl">Categoría producto</label>
         <input id="provCategoria" class="inp" placeholder="Granos, Especias...">
+      </div>
+      <!-- Días de la semana — pedido / entrega / pago -->
+      <div>
+        <label class="lbl">Día de pedido</label>
+        <select id="provDiaPedido" class="inp">
+          <option value="">—</option>
+          <option value="LUNES">Lunes</option>
+          <option value="MARTES">Martes</option>
+          <option value="MIERCOLES">Miércoles</option>
+          <option value="JUEVES">Jueves</option>
+          <option value="VIERNES">Viernes</option>
+          <option value="SABADO">Sábado</option>
+          <option value="DOMINGO">Domingo</option>
+          <option value="DIARIO">Diario</option>
+          <option value="SEGUN_DEMANDA">Según demanda</option>
+        </select>
+      </div>
+      <div>
+        <label class="lbl">Día de entrega</label>
+        <select id="provDiaEntrega" class="inp">
+          <option value="">—</option>
+          <option value="LUNES">Lunes</option>
+          <option value="MARTES">Martes</option>
+          <option value="MIERCOLES">Miércoles</option>
+          <option value="JUEVES">Jueves</option>
+          <option value="VIERNES">Viernes</option>
+          <option value="SABADO">Sábado</option>
+          <option value="DOMINGO">Domingo</option>
+          <option value="MISMO_DIA">Mismo día</option>
+          <option value="24H">24 horas</option>
+          <option value="48H">48 horas</option>
+        </select>
+      </div>
+      <div>
+        <label class="lbl">Día de pago</label>
+        <select id="provDiaPago" class="inp">
+          <option value="">—</option>
+          <option value="LUNES">Lunes</option>
+          <option value="MARTES">Martes</option>
+          <option value="MIERCOLES">Miércoles</option>
+          <option value="JUEVES">Jueves</option>
+          <option value="VIERNES">Viernes</option>
+          <option value="SABADO">Sábado</option>
+          <option value="DOMINGO">Domingo</option>
+          <option value="CONTRA_ENTREGA">Contra entrega</option>
+          <option value="FIN_DE_MES">Fin de mes</option>
+        </select>
       </div>
       <div>
         <label class="lbl">Banco</label>

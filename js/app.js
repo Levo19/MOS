@@ -4053,19 +4053,11 @@ const MOS = (() => {
       $('listProveedores').innerHTML = '<p class="text-slate-500 text-sm text-center py-8">Configura el GAS URL.</p>';
       return;
     }
-    // Asegurar layout mobile correcto al entrar
-    const isMobile = window.matchMedia('(max-width: 1023px)').matches;
-    if (isMobile && !S.provSelId) {
-      $('provListWrap')?.classList.remove('hidden');
-      $('provHeaderBar')?.classList.remove('hidden');
-      $('provDetailWrap')?.classList.add('hidden');
-    }
     // Render desde cache (instantáneo)
     const cached = _provLoadCache();
     if (cached && (!S.proveedores || !S.proveedores.length)) {
       S.proveedores = cached;
       renderProveedores();
-      const cnt = $('provCount'); if (cnt) cnt.textContent = _filtrarReales(S.proveedores).length;
     }
     // Fetch fresco
     try {
@@ -4075,7 +4067,6 @@ const MOS = (() => {
       S.proveedores = lista;
       _provSaveCache(lista);
       if (changed || !cached) renderProveedores();
-      const cnt = $('provCount'); if (cnt) cnt.textContent = _filtrarReales(S.proveedores).length;
     } catch(e) {
       if (!S.proveedores || !S.proveedores.length) {
         $('listProveedores').innerHTML = `<p class="text-red-400 text-sm text-center py-8">${e.message}</p>`;
@@ -4145,33 +4136,96 @@ const MOS = (() => {
     }, 50);
   }
 
+  // ── Buscador de proveedores ─────────────────────────────────
+  const _DIA_LABELS = {
+    LUNES: 'Lun', MARTES: 'Mar', MIERCOLES: 'Mié', JUEVES: 'Jue',
+    VIERNES: 'Vie', SABADO: 'Sáb', DOMINGO: 'Dom',
+    DIARIO: 'Diario', SEGUN_DEMANDA: 'Según demanda',
+    MISMO_DIA: 'Mismo día', '24H': '24 h', '48H': '48 h',
+    CONTRA_ENTREGA: 'Contra entrega', FIN_DE_MES: 'Fin de mes'
+  };
+  function _provDiaLabel(v) {
+    if (!v) return '—';
+    return _DIA_LABELS[String(v).toUpperCase()] || v;
+  }
+
+  function _normaliza(s) {
+    return String(s || '').toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '');
+  }
+
+  function _provFiltrarPorQuery(lista, q) {
+    const qn = _normaliza(q).trim();
+    if (!qn) return lista;
+    const tokens = qn.split(/\s+/).filter(Boolean);
+    return lista.filter(p => {
+      const blob = _normaliza([
+        p.nombre, p.ruc, p.telefono, p.email,
+        p.categoriaProducto, p.banco, p.responsable,
+        p.diaPedido, p.diaEntrega, p.diaPago, p.formaPago
+      ].filter(Boolean).join(' '));
+      return tokens.every(t => blob.indexOf(t) >= 0);
+    });
+  }
+
+  function provBuscar(q) {
+    S.provQuery = q || '';
+    const inp = $('provSearch');
+    if (inp && inp.value !== S.provQuery) inp.value = S.provQuery;
+    const clr = $('provSearchClear');
+    if (clr) clr.classList.toggle('hidden', !S.provQuery);
+    renderProveedores();
+  }
+
   function renderProveedores() {
     const el = $('listProveedores');
     if (!el) return;
     const reales = _filtrarReales(S.proveedores);
+    const filtrados = _provFiltrarPorQuery(reales, S.provQuery || '');
+    const cnt = $('provCount');
+    if (cnt) cnt.textContent = filtrados.length + (S.provQuery ? ' / ' + reales.length : '');
     if (!reales.length) {
       el.innerHTML = '<p class="text-slate-500 text-sm text-center py-8">Sin proveedores</p>';
       return;
     }
-    el.innerHTML = reales.map(p => `
-      <div class="card mb-2 p-3 cursor-pointer hover:border-indigo-500/30 transition-colors ${S.provSelId === p.idProveedor ? 'border-indigo-500/50' : ''}"
-           onclick="MOS.selectProveedor('${p.idProveedor}')">
-        <div class="flex items-start justify-between gap-2">
-          <div>
-            <div class="font-medium text-sm text-slate-200">${p.nombre}</div>
-            <div class="text-xs text-slate-500 mt-0.5">${p.ruc || '—'}</div>
+    if (!filtrados.length) {
+      el.innerHTML = `<p class="text-slate-500 text-sm text-center py-8">Sin resultados para "${S.provQuery}"</p>`;
+      return;
+    }
+    el.innerHTML = filtrados.map(p => {
+      const sel = S.provSelId === p.idProveedor;
+      const diaPed = p.diaPedido ? `<span title="Día de pedido">📋 ${_provDiaLabel(p.diaPedido)}</span>` : '';
+      return `
+      <div>
+        <div class="card p-3 cursor-pointer hover:border-indigo-500/30 transition-colors ${sel ? 'prov-card-active' : ''}"
+             onclick="MOS.selectProveedor('${p.idProveedor}')">
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0">
+              <div class="font-medium text-sm text-slate-200 truncate">${p.nombre}</div>
+              <div class="text-xs text-slate-500 mt-0.5 truncate">${p.ruc || '—'}${p.categoriaProducto ? ' · ' + p.categoriaProducto : ''}</div>
+            </div>
+            <span class="badge ${p.estado == '1' ? 'badge-green' : 'badge-gray'} shrink-0">${p.estado == '1' ? 'Activo' : 'Inactivo'}</span>
           </div>
-          <span class="badge ${p.estado == '1' ? 'badge-green' : 'badge-gray'} shrink-0">${p.estado == '1' ? 'Activo' : 'Inactivo'}</span>
+          <div class="flex items-center flex-wrap gap-x-3 gap-y-1 mt-2 text-xs text-slate-500">
+            ${p.telefono ? `<span>📞 ${p.telefono}</span>` : ''}
+            ${p.formaPago ? `<span>${p.formaPago === 'CREDITO' ? `Crédito ${p.plazoCredito || 0}d` : 'Contado'}</span>` : ''}
+            ${diaPed}
+          </div>
         </div>
-        <div class="flex items-center gap-3 mt-2 text-xs text-slate-500">
-          ${p.telefono ? `<span>📞 ${p.telefono}</span>` : ''}
-          ${p.formaPago ? `<span>${p.formaPago === 'CREDITO' ? `Crédito ${p.plazoCredito}d` : 'Contado'}</span>` : ''}
-        </div>
-      </div>
-    `).join('');
+        ${sel ? `<div id="provInlineDetail" class="prov-inline-detail lg:hidden"></div>` : ''}
+      </div>`;
+    }).join('');
   }
 
   async function selectProveedor(id) {
+    const isMobile = window.matchMedia('(max-width: 1023px)').matches;
+
+    // Toggle: en mobile/tablet, click en el card ya activo lo cierra
+    if (isMobile && S.provSelId === id) {
+      cerrarDetalleProveedor();
+      return;
+    }
+
     // Reset filtros si se cambia de proveedor
     if (S.provSelId !== id) {
       S.provProdFilter = '';
@@ -4181,34 +4235,25 @@ const MOS = (() => {
     S.provTab   = S.provTab || 'info';
     renderProveedores();
 
-    // En mobile: ocultar lista + header, mostrar solo detalle
-    const isMobile = window.matchMedia('(max-width: 1023px)').matches;
-    if (isMobile) {
-      $('provListWrap')?.classList.add('hidden');
-      $('provHeaderBar')?.classList.add('hidden');
-    }
-    $('provDetailWrap')?.classList.remove('hidden');
-
     const prov = S.proveedores.find(p => p.idProveedor === id);
     if (!prov) return;
 
     // Pre-carga de todos los tabs en paralelo (no espera para mostrar la UI)
     _precargarProvData(id);
 
-    const detailEl = $('proveedorDetail');
+    const detailEl = isMobile ? $('provInlineDetail') : $('proveedorDetail');
     if (!detailEl) return;
     const safeNombre = (prov.nombre || '').replace(/"/g, '&quot;');
     const meta = [prov.ruc, prov.email].filter(Boolean).join(' · ');
     detailEl.innerHTML = `
-      <!-- Header sticky: back (mobile) + nombre + editar -->
       <div class="prov-detail-header">
         <div class="flex items-center gap-2 mb-2">
-          <button onclick="MOS.cerrarDetalleProveedor()" class="lg:hidden btn-ghost px-2 py-1 text-base shrink-0" title="Volver">←</button>
           <div class="flex-1 min-w-0">
             <h3 class="font-bold text-white truncate text-base lg:text-lg">${safeNombre}</h3>
             <p class="text-xs text-slate-500 truncate">${meta || '—'}</p>
           </div>
-          <button class="btn-ghost text-xs px-2 py-1 shrink-0" onclick="MOS.abrirModalProveedor('${id}')" title="Editar proveedor">✏️</button>
+          <button class="btn-ghost text-xs px-2 py-1 shrink-0" onclick="event.stopPropagation();MOS.abrirModalProveedor('${id}')" title="Editar proveedor">✏️</button>
+          <button class="lg:hidden btn-ghost text-xs px-2 py-1 shrink-0" onclick="event.stopPropagation();MOS.cerrarDetalleProveedor()" title="Cerrar">×</button>
         </div>
         <div class="prov-tabs-wrap">
           <div class="prov-tabs">
@@ -4219,13 +4264,19 @@ const MOS = (() => {
           </div>
         </div>
       </div>
-      <!-- Contenido de cada tab -->
       <div id="provTabInfo" class="prov-tab-content"></div>
       <div id="provTabProductos" class="prov-tab-content hidden"></div>
       <div id="provTabHistorico" class="prov-tab-content hidden"></div>
       <div id="provTabPedidos" class="prov-tab-content hidden"></div>
     `;
     provSetTab(S.provTab);
+
+    // En desktop, el panel derecho ya estaba visible; en mobile, hacemos scroll suave al detalle
+    if (isMobile) {
+      requestAnimationFrame(() => {
+        detailEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+    }
   }
 
   // ── Pre-carga paralela de los 4 tabs del proveedor ─────────
@@ -4264,11 +4315,10 @@ const MOS = (() => {
 
   function cerrarDetalleProveedor() {
     S.provSelId = null;
-    $('provListWrap')?.classList.remove('hidden');
-    $('provHeaderBar')?.classList.remove('hidden');
-    const isMobile = window.matchMedia('(max-width: 1023px)').matches;
-    if (isMobile) $('provDetailWrap')?.classList.add('hidden');
     renderProveedores();
+    // Reset del panel desktop por si venía con contenido
+    const detailEl = $('proveedorDetail');
+    if (detailEl) detailEl.innerHTML = '<p class="text-center p-6">Selecciona un proveedor para ver pagos y pedidos</p>';
   }
 
   function provSetTab(tab) {
@@ -4292,11 +4342,14 @@ const MOS = (() => {
     cont.innerHTML = `
       <div class="grid sm:grid-cols-2 gap-3 mb-4">
         <div class="card-sm p-3 text-sm"><span class="text-slate-500">Teléfono: </span><span class="text-slate-200">${prov.telefono || '—'}</span></div>
+        <div class="card-sm p-3 text-sm"><span class="text-slate-500">Email: </span><span class="text-slate-200">${prov.email || '—'}</span></div>
         <div class="card-sm p-3 text-sm"><span class="text-slate-500">Banco: </span><span class="text-slate-200">${prov.banco || '—'}</span></div>
         <div class="card-sm p-3 text-sm"><span class="text-slate-500">Cuenta: </span><span class="text-slate-200">${prov.numeroCuenta || '—'}</span></div>
-        <div class="card-sm p-3 text-sm"><span class="text-slate-500">Día pago: </span><span class="text-slate-200">${prov.diaPago || '—'}</span></div>
         <div class="card-sm p-3 text-sm"><span class="text-slate-500">Forma pago: </span><span class="text-slate-200">${prov.formaPago || '—'}${prov.plazoCredito ? ' · ' + prov.plazoCredito + 'd' : ''}</span></div>
         <div class="card-sm p-3 text-sm"><span class="text-slate-500">Categoría: </span><span class="text-slate-200">${prov.categoriaProducto || '—'}</span></div>
+        <div class="card-sm p-3 text-sm"><span class="text-slate-500">📋 Pedido: </span><span class="text-slate-200">${_provDiaLabel(prov.diaPedido)}</span></div>
+        <div class="card-sm p-3 text-sm"><span class="text-slate-500">📦 Entrega: </span><span class="text-slate-200">${_provDiaLabel(prov.diaEntrega)}</span></div>
+        <div class="card-sm p-3 text-sm"><span class="text-slate-500">💸 Pago: </span><span class="text-slate-200">${_provDiaLabel(prov.diaPago)}</span></div>
       </div>
       <div class="flex items-center justify-between mb-3">
         <h4 class="font-semibold text-sm text-slate-300">💰 Pagos registrados</h4>
@@ -5631,24 +5684,29 @@ const MOS = (() => {
 
   // Proveedor modal
   function abrirModalProveedor(id) {
-    ['Id','Nombre','Ruc','Tel','Email','FormaPago','Plazo','Categoria','Banco','Cuenta'].forEach(c => {
+    ['Id','Nombre','Ruc','Tel','Email','FormaPago','Plazo','Categoria','Banco','Cuenta','DiaPedido','DiaEntrega','DiaPago'].forEach(c => {
       const el = $('prov' + c);
-      if (el && el.tagName !== 'SELECT') el.value = '';
+      if (!el) return;
+      if (el.tagName === 'SELECT') el.value = '';
+      else el.value = '';
     });
     if (id) {
       const p = S.proveedores.find(x => x.idProveedor === id);
       if (!p) return;
       $('modalProvTitle').textContent = 'Editar Proveedor';
-      $('provId').value        = p.idProveedor;
-      $('provNombre').value    = p.nombre || '';
-      $('provRuc').value       = p.ruc || '';
-      $('provTel').value       = p.telefono || '';
-      $('provEmail').value     = p.email || '';
-      $('provFormaPago').value = p.formaPago || 'CONTADO';
-      $('provPlazo').value     = p.plazoCredito || '';
-      $('provCategoria').value = p.categoriaProducto || '';
-      $('provBanco').value     = p.banco || '';
-      $('provCuenta').value    = p.numeroCuenta || '';
+      $('provId').value         = p.idProveedor;
+      $('provNombre').value     = p.nombre || '';
+      $('provRuc').value        = p.ruc || '';
+      $('provTel').value        = p.telefono || '';
+      $('provEmail').value      = p.email || '';
+      $('provFormaPago').value  = p.formaPago || 'CONTADO';
+      $('provPlazo').value      = p.plazoCredito || '';
+      $('provCategoria').value  = p.categoriaProducto || '';
+      $('provBanco').value      = p.banco || '';
+      $('provCuenta').value     = p.numeroCuenta || '';
+      if ($('provDiaPedido'))  $('provDiaPedido').value  = (p.diaPedido  || '').toUpperCase();
+      if ($('provDiaEntrega')) $('provDiaEntrega').value = (p.diaEntrega || '').toUpperCase();
+      if ($('provDiaPago'))    $('provDiaPago').value    = (p.diaPago    || '').toUpperCase();
     } else {
       $('modalProvTitle').textContent = 'Nuevo Proveedor';
       $('provId').value = '';
@@ -5668,7 +5726,10 @@ const MOS = (() => {
       plazoCredito:     $('provPlazo')?.value || 0,
       categoriaProducto:$('provCategoria')?.value || '',
       banco:            $('provBanco')?.value || '',
-      numeroCuenta:     $('provCuenta')?.value || ''
+      numeroCuenta:     $('provCuenta')?.value || '',
+      diaPedido:        $('provDiaPedido')?.value  || '',
+      diaEntrega:       $('provDiaEntrega')?.value || '',
+      diaPago:          $('provDiaPago')?.value    || ''
     };
     if (!params.nombre) { toast('El nombre es requerido', 'error'); return; }
     try {
@@ -10515,7 +10576,7 @@ const MOS = (() => {
     cerrarModalPedido, pedidoBuscarItem, pedidoAgregarItem,
     pedidoQuitarItem, pedidoCambiarQty, guardarPedido,
     loadProveedores, selectProveedor, renderProveedores, cerrarDetalleProveedor,
-    abrirModalProveedor, guardarProveedor,
+    abrirModalProveedor, guardarProveedor, provBuscar,
     provSetTab, _renderProvHistorico, _refetchHistoricoProv,
     _filtrarProvProductos, _filtrarProvHistorico,
     abrirModalProvProducto, ppBuscar, ppSeleccionar,
