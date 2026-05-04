@@ -120,9 +120,12 @@ const MOS = (() => {
     const pt = $('pageTitle'); if (pt) pt.textContent = t;
     const ptd = $('pageTitleDesktop'); if (ptd) ptd.textContent = t;
 
-    // FAB tutorial: solo visible en catálogo
+    // FAB tutorial catálogo: solo visible en catálogo
     const tutFab = $('tutFAB');
     if (tutFab) tutFab.style.display = (viewName === 'catalogo') ? 'flex' : 'none';
+    // FAB tutorial cajas: solo visible en cajas
+    const tutCajasFab = $('tutCajasFAB');
+    if (tutCajasFab) tutCajasFab.style.display = (viewName === 'cajas') ? 'flex' : 'none';
 
     // FAB visibility
     const fab = $('fab');
@@ -5846,6 +5849,34 @@ const MOS = (() => {
     }
   }
 
+  // ── TUTORIAL TICKETS (módulo Cajas) ──────────────────────
+  const _TUT_TIC_TOTAL = 6;
+  let _tutTicSlide = 1;
+  function tutTicketsOpen() { _tutTicSlide = 1; _tutTicRender(); openModal('modalTutTickets'); }
+  function tutTicketsClose() { closeModal('modalTutTickets'); }
+  function tutTicketsNext() { if (_tutTicSlide < _TUT_TIC_TOTAL) { _tutTicSlide++; _tutTicRender(); } else tutTicketsClose(); }
+  function tutTicketsPrev() { if (_tutTicSlide > 1) { _tutTicSlide--; _tutTicRender(); } }
+  function tutTicketsGoto(n) {
+    n = parseInt(n) || 1;
+    if (n < 1 || n > _TUT_TIC_TOTAL) return;
+    _tutTicSlide = n; _tutTicRender();
+  }
+  function _tutTicRender() {
+    document.querySelectorAll('#modalTutTickets .tut-slide').forEach(el => {
+      el.classList.toggle('active', parseInt(el.dataset.tslide) === _tutTicSlide);
+    });
+    document.querySelectorAll('#tutTicDots .tut-dot').forEach((el, i) => {
+      el.classList.toggle('active', i + 1 === _tutTicSlide);
+    });
+    const bar = $('tutTicProgressBar');
+    if (bar) bar.style.width = (_tutTicSlide * 100 / _TUT_TIC_TOTAL).toFixed(2) + '%';
+    const lbl = $('tutTicSlideLabel');
+    if (lbl) lbl.textContent = `Slide ${_tutTicSlide} de ${_TUT_TIC_TOTAL}`;
+    const btnPrev = $('tutTicBtnPrev'); if (btnPrev) btnPrev.disabled = _tutTicSlide === 1;
+    const btnNext = $('tutTicBtnNext'); if (btnNext) btnNext.textContent = (_tutTicSlide === _TUT_TIC_TOTAL) ? 'Cerrar ✓' : 'Siguiente →';
+    const body = $('tutTicBody'); if (body) body.scrollTop = 0;
+  }
+
   // ── TUTORIAL flotante en catálogo ────────────────────────
   const _TUT_TOTAL = 8;
   let _tutSlide = 1;
@@ -8528,6 +8559,13 @@ const MOS = (() => {
     _setText('finKpiUtil',    fmt(pl.utilidadNeta));
     _setText('finKpiMargenN', 'Margen neto ' + pct(pl.margenNetoPct));
 
+    // Subfila: desglose efectivo / virtual / crédito / anulados
+    _setText('finKpiEfectivo', fmt(pl.cobradoEfectivo || 0));
+    _setText('finKpiVirtual',  fmt(pl.cobradoVirtual  || 0));
+    _setText('finKpiCredito',  fmt(pl.creditoOtorgado || 0));
+    _setText('finKpiCreditoSub', (pl.creditos || 0) + ' ticket' + (pl.creditos === 1 ? '' : 's') + ' POR_COBRAR');
+    _setText('finKpiAnulados', (pl.anulados || 0) + ' ticket' + (pl.anulados === 1 ? '' : 's'));
+
     // Color de la card de utilidad
     const card = $('finKpiUtilCard');
     if (card) {
@@ -10335,6 +10373,7 @@ const MOS = (() => {
     abrirModalZona, guardarZona,
     abrirModalCategoria, guardarCategoria, _catOnModoChange,
     tutorialOpen, tutorialClose, tutorialNext, tutorialPrev, tutorialGoto,
+    tutTicketsOpen, tutTicketsClose, tutTicketsNext, tutTicketsPrev, tutTicketsGoto,
     abrirModalEstacion, guardarEstacion,
     abrirModalImpresora, guardarImpresora,
     abrirModalPersonal, guardarPersonal,
