@@ -647,14 +647,14 @@ function _registrarJornadaIdempotente(nombre, rol, montoJornal, appOrigen, fecha
 // vean el mismo conjunto de "personas que trabajaron hoy".
 function _sincronizarJornadasAutoDelDia(fecha) {
   fecha = fecha || _hoy();
-  var personal = _sheetToObjects(getSheet('PERSONAL_MASTER')).filter(function(p) {
-    var ac = p.estado;
-    var activo = (ac === undefined || ac === '' || ac === 1 || ac === '1' || ac === true);
-    if (!activo) return false;
-    // Excluir MASTER/ADMINISTRADOR y appOrigen=MOS (auditores, no se les paga jornada)
-    if (typeof _esPersonalEvaluable === 'function') return _esPersonalEvaluable(p);
-    return true;
-  });
+  // Reusa getResumenTodosDia: ya devuelve a todos los presentes evaluables del día
+  // con su montoBase resuelto (real para personal en MASTER, plantilla genérica
+  // para virtuales detectados en VENTAS_CABECERA). Esto garantiza que la jornada
+  // se cree con el monto CORRECTO, no con S/ 0 cuando el master tiene montoBase=0.
+  if (typeof getResumenTodosDia !== 'function') return { creadas: 0 };
+  var rsm = getResumenTodosDia({ fecha: fecha });
+  if (!rsm || !rsm.ok || !Array.isArray(rsm.data)) return { creadas: 0 };
+  var presentes = rsm.data.filter(function(r){ return r && r.presente; });
 
   // Cargar jornadas existentes del día (idempotencia por nombre)
   var sheet = getSheet('JORNADAS');
@@ -671,25 +671,25 @@ function _sincronizarJornadasAutoDelDia(fecha) {
   }
 
   var creadas = 0, errores = [];
-  personal.forEach(function(p) {
-    var nombreFull = (p.nombre + ' ' + (p.apellido || '')).trim();
-    var nLow = nombreFull.toLowerCase().trim();
-    if (!nLow) return;
-    if (existentesPorNombre[nLow]) return;
+  presentes.forEach(function(r) {
+    var nombre = String(r.nombre || '').trim();
+    var nLow   = nombre.toLowerCase();
+    if (!nLow || existentesPorNombre[nLow]) return;
     try {
-      // _estaPresente vive en Evaluaciones.gs; mismo proyecto GAS lo expone.
-      if (typeof _estaPresente !== 'function') return;
-      if (!_estaPresente(p, fecha)) return;
-      var montoBase = parseFloat(p.montoBase) || 0;
-      var fuente    = p.appOrigen === 'warehouseMos' ? 'AUTO_LOGIN' : 'AUTO_VENTA';
-      // Schema: idJornada | fecha | idPersonal | nombre | rol | appOrigen | zona | montoJornal | observacion | registradoPor | fuente
+      var montoBase = parseFloat(r.montoBase) || 0;
+      var fuente    = r.appOrigen === 'warehouseMos' ? 'AUTO_LOGIN' : 'AUTO_VENTA';
+      var idPersonal = String(r.idPersonal || '');
+      // Para virtuales (idPersonal=MEX:nombre) guardar vacío en col idPersonal,
+      // así la jornada queda atada solo por nombre — lo cual es correcto porque
+      // mañana ese mismo nombre puede o no aparecer.
+      var idPersonalFinal = idPersonal.indexOf('MEX:') === 0 ? '' : idPersonal;
       sheet.appendRow([
         _generateId('JOR'),
         fecha,
-        p.idPersonal || '',
-        nombreFull,
-        p.rol || '',
-        p.appOrigen || '',
+        idPersonalFinal,
+        nombre,
+        r.rol || '',
+        r.appOrigen || '',
         '',                  // zona (vacía en sync auto)
         montoBase,
         'Sincronizado automático: presencia detectada',
@@ -697,7 +697,7 @@ function _sincronizarJornadasAutoDelDia(fecha) {
         fuente
       ]);
       creadas++;
-    } catch(eP) { errores.push({ nombre: nombreFull, error: eP.message }); }
+    } catch(eP) { errores.push({ nombre: nombre, error: eP.message }); }
   });
   return { creadas: creadas, errores: errores };
 }
