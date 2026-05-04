@@ -5850,7 +5850,7 @@ const MOS = (() => {
   }
 
   // ── TUTORIAL TICKETS (módulo Cajas) ──────────────────────
-  const _TUT_TIC_TOTAL = 6;
+  const _TUT_TIC_TOTAL = 8;
   let _tutTicSlide = 1;
   function tutTicketsOpen() { _tutTicSlide = 1; _tutTicRender(); openModal('modalTutTickets'); }
   function tutTicketsClose() { closeModal('modalTutTickets'); }

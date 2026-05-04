@@ -5286,8 +5286,115 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
         </div>
       </div>
 
-      <!-- SLIDE 6: Dónde aplica esta lógica -->
+      <!-- SLIDE 6: Margen sobre venta — la regla y por categoría -->
       <div class="tut-slide" data-tslide="6">
+        <div class="tut-title" style="color:#34d399">📊 Margen sobre venta</div>
+        <div class="tut-subtitle">El sistema entero usa <b>margen sobre venta</b> (no markup sobre costo). Aclara la diferencia para no confundir.</div>
+
+        <div class="tut-card" style="border-left:3px solid #10b981">
+          <div class="tut-card-title">✅ Margen sobre venta (lo que usa el sistema)</div>
+          <div class="tut-eq">margen % = (precio venta − costo) / <b>precio venta</b> × 100</div>
+          <div class="tut-card-text" style="font-size:11px;margin-top:4px">
+            Vendes S/ 100, costo S/ 78<br>
+            margen = (100 − 78) / <b style="color:#34d399">100</b> = <b>22%</b>
+          </div>
+        </div>
+
+        <div class="tut-card" style="border-left:3px solid #f59e0b">
+          <div class="tut-card-title">⚠️ Markup sobre costo (lo que NO usa el sistema)</div>
+          <div class="tut-eq">markup % = (precio venta − costo) / <b>costo</b> × 100</div>
+          <div class="tut-card-text" style="font-size:11px;margin-top:4px">
+            Mismo ejemplo: vendes S/ 100, costo S/ 78<br>
+            markup = (100 − 78) / <b style="color:#fbbf24">78</b> = <b>28.2%</b><br>
+            <span style="color:#94a3b8;font-style:italic">(El "mismo producto" tiene 22% margen pero 28% markup. NO son lo mismo.)</span>
+          </div>
+        </div>
+
+        <div class="tut-card" style="border-left:3px solid #6366f1">
+          <div class="tut-card-title">🧮 Fórmula inversa</div>
+          <div class="tut-card-text">Cuando defines el margen y quieres saber qué precio cobrar (o el costo asumido):</div>
+          <div class="tut-eq">precio venta = costo / (1 − margen/100)</div>
+          <div class="tut-eq">costo = precio venta × (1 − margen/100)</div>
+          <div class="tut-card-text" style="font-size:11px">
+            Ej: costo S/ 78 con margen 22% → precio venta = 78 / 0.78 = <b style="color:#34d399">S/ 100</b><br>
+            Ej: vendes S/ 100 con margen 22% → costo = 100 × 0.78 = <b style="color:#34d399">S/ 78</b>
+          </div>
+        </div>
+
+        <div class="tut-card">
+          <div class="tut-card-title">🏷️ Margen por categoría (configurable)</div>
+          <div class="tut-card-text" style="font-size:11px">Cada categoría tiene su margen objetivo. Editable en Configuración → 🏷️ Categorías.</div>
+          <table style="width:100%;font-size:11px;margin-top:8px;border-collapse:collapse">
+            <thead>
+              <tr style="border-bottom:1px solid #1e293b;color:#64748b">
+                <th style="text-align:left;padding:4px 6px;font-weight:600">Categoría</th>
+                <th style="text-align:right;padding:4px 6px;font-weight:600">Margen</th>
+                <th style="text-align:right;padding:4px 6px;font-weight:600">Si costo S/ 100</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td style="padding:3px 6px">🥤 BEBIDAS</td>             <td style="text-align:right;color:#34d399">18%</td><td style="text-align:right;font-family:ui-monospace,monospace">→ vender S/ 121.95</td></tr>
+              <tr><td style="padding:3px 6px">🍞 ABARROTES</td>           <td style="text-align:right;color:#34d399">22%</td><td style="text-align:right;font-family:ui-monospace,monospace">→ vender S/ 128.21</td></tr>
+              <tr><td style="padding:3px 6px">🌽 GRANEL</td>              <td style="text-align:right;color:#34d399">30%</td><td style="text-align:right;font-family:ui-monospace,monospace">→ vender S/ 142.86</td></tr>
+              <tr><td style="padding:3px 6px">🌶️ ESPECIAS</td>            <td style="text-align:right;color:#34d399">35%</td><td style="text-align:right;font-family:ui-monospace,monospace">→ vender S/ 153.85</td></tr>
+              <tr><td style="padding:3px 6px">🎨 INSUMOS_REPOSTERIA</td>  <td style="text-align:right;color:#34d399">40%</td><td style="text-align:right;font-family:ui-monospace,monospace">→ vender S/ 166.67</td></tr>
+            </tbody>
+          </table>
+          <div class="tut-card-text" style="font-size:10px;margin-top:6px;font-style:italic;color:#64748b">
+            Razonamiento: margen 18% (bebidas) refleja mucho volumen y poca utilidad por unidad. 40% (decorativos) refleja baja rotación y mayor margen para que valga la pena tenerlo.
+          </div>
+        </div>
+
+        <div style="text-align:center;padding:8px 0 0;color:#94a3b8;font-size:11px;font-style:italic">
+          💡 La cascada: <b>override producto</b> → <b>categoría</b> → <b>default global 25%</b>
+        </div>
+      </div>
+
+      <!-- SLIDE 7: Costo estimado y margen promedio -->
+      <div class="tut-slide" data-tslide="7">
+        <div class="tut-title" style="color:#34d399">📐 Costo y margen del día</div>
+        <div class="tut-subtitle">Cómo se calcula la utilidad cuando algunos productos no tienen precio costo asignado.</div>
+
+        <div class="tut-card" style="border-left:3px solid #10b981">
+          <div class="tut-card-title">✅ Producto CON precioCosto asignado</div>
+          <div class="tut-card-text">Se usa el costo real. Margen real = <span style="font-family:ui-monospace,monospace">(venta − costo) / venta × 100</span></div>
+          <div class="tut-card-text" style="font-size:11px;margin-top:4px">
+            Ej: vende S/ 10, costo S/ 7.80 → margen real <b style="color:#34d399">22%</b>
+          </div>
+        </div>
+
+        <div class="tut-card" style="border-left:3px solid #f59e0b">
+          <div class="tut-card-title">⚠️ Producto SIN precioCosto</div>
+          <div class="tut-card-text">El sistema NO conoce el costo real. Para no inflar la utilidad con S/ 0, estima el costo usando un <b style="color:#fbbf24">margen default global</b> sobre venta.</div>
+          <div class="tut-eq" style="margin-top:6px">costo estimado = precio venta × (1 − margen/100)</div>
+          <div class="tut-card-text" style="font-size:11px">
+            Ej con default 20%: vende S/ 100 → costo estimado <b style="color:#fbbf24">S/ 80</b>, utilidad <b>S/ 20</b><br>
+            Ej con default 25%: vende S/ 100 → costo estimado <b style="color:#fbbf24">S/ 75</b>, utilidad <b>S/ 25</b>
+          </div>
+        </div>
+
+        <div class="tut-card" style="border-left:3px solid #6366f1">
+          <div class="tut-card-title">📊 Margen Promedio del día</div>
+          <div class="tut-card-text">Suma de utilidad real + estimada, dividida entre ingreso total. Aparece en el card de Ticket Promedio.</div>
+          <div class="tut-eq" style="margin-top:6px">margen prom = (ingresos − costo total) / ingresos × 100</div>
+          <div class="tut-card-text" style="font-size:11px;margin-top:4px">
+            <b>Color:</b><br>
+            <span style="color:#34d399">🟢 verde</span> si margen prom &ge; default (vas bien o mejor)<br>
+            <span style="color:#fbbf24">🟡 ámbar</span> si margen prom &lt; default (estás perdiendo más de lo proyectado)
+          </div>
+        </div>
+
+        <div class="tut-card" style="border-left:3px solid #a855f7">
+          <div class="tut-card-title">⚙️ Editar el default</div>
+          <div class="tut-card-text">Click sobre "Margen Promedio" en Finanzas → modal con input. Cambia el % y el sistema recalcula utilidad de inmediato. Solo afecta productos SIN precioCosto.</div>
+          <div class="tut-card-text" style="font-size:10px;font-style:italic;color:#64748b;margin-top:4px">
+            Tip: empieza en 20% (conservador). Si el promedio real de tus categorías es más alto, súbelo. Mira tus categorías en Configuración → Categorías para guiarte (ABARROTES 22%, GRANEL 30%, etc.).
+          </div>
+        </div>
+      </div>
+
+      <!-- SLIDE 8: Dónde aplica esta lógica -->
+      <div class="tut-slide" data-tslide="8">
         <div class="tut-title" style="color:#34d399">🌐 Dónde aplica esta regla</div>
         <div class="tut-subtitle">La misma lógica corre consistente en todo el sistema.</div>
 
@@ -5327,6 +5434,8 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
         <div class="tut-dot" onclick="MOS.tutTicketsGoto(4)"></div>
         <div class="tut-dot" onclick="MOS.tutTicketsGoto(5)"></div>
         <div class="tut-dot" onclick="MOS.tutTicketsGoto(6)"></div>
+        <div class="tut-dot" onclick="MOS.tutTicketsGoto(7)"></div>
+        <div class="tut-dot" onclick="MOS.tutTicketsGoto(8)"></div>
       </div>
       <button onclick="MOS.tutTicketsNext()" class="tut-btn-nav tut-btn-next" id="tutTicBtnNext" style="background:linear-gradient(135deg,#10b981,#059669);color:#0b1220">Siguiente →</button>
     </div>
