@@ -2320,6 +2320,7 @@
           <button class="tab-btn" id="cfgTabSeguridad"         onclick="MOS.setCfgTab('seguridad')">🔐 Seguridad</button>
           <button class="tab-btn" id="cfgTabDispositivos"     onclick="MOS.setCfgTab('dispositivos')">📱 Dispositivos</button>
           <button class="tab-btn" id="cfgTabCategorias"        onclick="MOS.setCfgTab('categorias')">🏷️ Categorías</button>
+          <button class="tab-btn" id="cfgTabEvaluacion"        onclick="MOS.setCfgTab('evaluacion')">🎯 Evaluación</button>
           <button class="tab-btn" id="cfgTabIntegridad"        onclick="MOS.setCfgTab('integridad')">🛡️ Integridad</button>
         </div>
       </div>
@@ -2486,6 +2487,61 @@
         </div>
         <div class="text-[11px] text-slate-600 italic mt-2">
           ℹ️ <strong>MARGEN</strong>: precio venta = costo / (1 - margen/100). <strong>FIJO</strong>: no se sugiere cambio. <strong>COMPETITIVO</strong>: usa margen pero respeta el tope. <strong>LIBRE</strong>: todo manual.
+        </div>
+      </div>
+
+      <!-- Evaluación: metas diarias y bonos por meta -->
+      <div id="cfgPanelEvaluacion" class="hidden">
+        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+          <div class="flex-1 min-w-0">
+            <h3 class="font-semibold text-sm text-slate-200">🎯 Metas y bonos del personal</h3>
+            <p class="text-xs text-slate-500 mt-0.5">Estos valores afectan los cálculos de score, bonus y meta diaria en evaluaciones y liquidaciones.</p>
+          </div>
+        </div>
+        <div class="card p-5 max-w-xl space-y-4">
+          <div>
+            <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">🎯 Metas diarias</div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="lbl">Meta cajero/vendedor (S/)</label>
+                <input type="number" step="50" id="cfgPanelMetaCajero" class="inp" placeholder="2000">
+              </div>
+              <div>
+                <label class="lbl">Meta envasador (uds)</label>
+                <input type="number" step="50" id="cfgPanelMetaEnvasador" class="inp" placeholder="500">
+              </div>
+              <div>
+                <label class="lbl">Meta almacenero (guías)</label>
+                <input type="number" step="1" id="cfgPanelMetaAlmacenero" class="inp" placeholder="15">
+              </div>
+              <div>
+                <label class="lbl">Meta auditorías diarias <span class="text-slate-500">(todos)</span></label>
+                <input type="number" step="1" id="cfgPanelMetaAuditorias" class="inp" placeholder="30">
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">💰 Bonos por cumplir meta</div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="lbl">Meta simple (S/)</label>
+                <input type="number" step="1" id="cfgPanelBonoMetaBase" class="inp" placeholder="8">
+              </div>
+              <div>
+                <label class="lbl">Meta doble (S/)</label>
+                <input type="number" step="1" id="cfgPanelBonoMetaDoble" class="inp" placeholder="15">
+              </div>
+            </div>
+          </div>
+          <div class="pt-2 border-t border-slate-800">
+            <div class="text-xs text-slate-500">
+              Tramos de bonus por score (no editables aquí):<br>
+              <span class="text-slate-400">&lt;50% = 0% · 50-69% = +3% · 70-84% = +7% · 85-94% = +12% · 95+ = +18%</span>
+            </div>
+          </div>
+          <div class="pt-2 flex gap-2">
+            <button onclick="MOS.guardarConfigEvalPanel()" class="btn-primary text-xs px-4 py-2" id="cfgPanelEvalSaveBtn">💾 Guardar configuración</button>
+          </div>
         </div>
       </div>
 
@@ -2933,7 +2989,7 @@
           <p class="text-xs text-slate-500" id="evalFechaLbl">—</p>
         </div>
         <div class="flex gap-2">
-          <button onclick="MOS.abrirConfigEval()" class="btn-ghost text-sm" title="Configurar metas y bonos">⚙</button>
+          <button onclick="MOS.nav('config');setTimeout(()=>MOS.setCfgTab('evaluacion'),50)" class="btn-ghost text-sm" title="Configurar metas y bonos en Configuración → Evaluación">⚙</button>
           <button onclick="MOS.refreshEvaluacion()" class="btn-ghost text-sm">↻ Actualizar</button>
         </div>
       </div>

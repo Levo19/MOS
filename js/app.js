@@ -5821,7 +5821,7 @@ const MOS = (() => {
 
   function setCfgTab(tab) {
     S.cfgTab = tab;
-    const tabs = ['zonas','estaciones','impresoras','personal','series','seguridad','dispositivos','categorias','integridad'];
+    const tabs = ['zonas','estaciones','impresoras','personal','series','seguridad','dispositivos','categorias','evaluacion','integridad'];
     tabs.forEach(t => {
       const btn = $('cfgTab' + t.charAt(0).toUpperCase() + t.slice(1));
       if (btn) btn.classList.toggle('active', t === tab);
@@ -5841,6 +5841,7 @@ const MOS = (() => {
       case 'seguridad':    renderSeguridad();    break;
       case 'dispositivos': renderDispositivos(); break;
       case 'categorias':   renderCategorias();   break;
+      case 'evaluacion':   renderConfigEvalPanel(); break;
       case 'integridad':   renderIntegridad();   break;
     }
   }
@@ -5886,6 +5887,43 @@ const MOS = (() => {
     // Scroll body al inicio
     const body = $('tutBody');
     if (body) body.scrollTop = 0;
+  }
+
+  // ── Pestaña Configuración → Evaluación ─────────────────
+  async function renderConfigEvalPanel() {
+    try {
+      const res = await API.get('getConfig', {});
+      const cfg = res || {};
+      $('cfgPanelMetaCajero').value     = cfg.evalMetaCajero     || 2000;
+      $('cfgPanelMetaEnvasador').value  = cfg.evalMetaEnvasador  || 500;
+      $('cfgPanelMetaAlmacenero').value = cfg.evalMetaAlmacenero || 15;
+      $('cfgPanelMetaAuditorias').value = cfg.evalMetaAuditorias || 30;
+      $('cfgPanelBonoMetaBase').value   = cfg.evalBonoMetaBase   || 8;
+      $('cfgPanelBonoMetaDoble').value  = cfg.evalBonoMetaDoble  || 15;
+    } catch(_) {}
+  }
+
+  async function guardarConfigEvalPanel() {
+    const btn = $('cfgPanelEvalSaveBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+    const pares = [
+      ['evalMetaCajero',     $('cfgPanelMetaCajero').value],
+      ['evalMetaEnvasador',  $('cfgPanelMetaEnvasador').value],
+      ['evalMetaAlmacenero', $('cfgPanelMetaAlmacenero').value],
+      ['evalMetaAuditorias', $('cfgPanelMetaAuditorias').value],
+      ['evalBonoMetaBase',   $('cfgPanelBonoMetaBase').value],
+      ['evalBonoMetaDoble',  $('cfgPanelBonoMetaDoble').value]
+    ];
+    try {
+      await Promise.all(pares.map(([clave, valor]) =>
+        API.post('setConfig', { clave, valor: String(valor) })
+      ));
+      toast('Configuración guardada ✓', 'ok');
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar configuración'; }
+    }
   }
 
   // ── CATEGORÍAS / política de precios ─────────────────────
@@ -8629,20 +8667,66 @@ const MOS = (() => {
       cont.innerHTML = '<p class="text-slate-500 text-xs">Sin registros — usa "+ Jornada" o "⬇ Cajas"</p>';
       return;
     }
-    cont.innerHTML = pl.personalDetalle.map(p => `
-      <div class="fin-row">
-        <div class="flex items-center gap-2">
-          <div class="w-7 h-7 rounded-full bg-indigo-900 text-indigo-300 flex items-center justify-center text-xs font-bold">${(p.nombre||'?')[0].toUpperCase()}</div>
-          <div>
-            <div class="text-slate-200 font-medium text-sm">${p.nombre}</div>
-            <div class="text-xs text-slate-500">${p.rol || '—'} ${p.zona ? '· ' + p.zona : ''} ${p.fuente === 'AUTO_CAJAS' ? '<span class="fin-tag fin-tag-green ml-1">auto</span>' : ''}</div>
+    // Cargar resúmenes de evaluación en paralelo (score, KPIs, evalCount).
+    // Si la fecha es hoy o pasada, vale la pena. Si falla, render simple sin score.
+    API.get('getResumenTodosDia', { fecha: fecha }).then(resumenes => {
+      const byNombre = {};
+      const byIdPersonal = {};
+      (Array.isArray(resumenes) ? resumenes : []).forEach(r => {
+        const n = String(r.nombre || '').toLowerCase().trim();
+        if (n) byNombre[n] = r;
+        if (r.idPersonal) byIdPersonal[r.idPersonal] = r;
+      });
+      cont.innerHTML = pl.personalDetalle.map(p => {
+        const ev = byIdPersonal[p.idPersonal] || byNombre[String(p.nombre || '').toLowerCase().trim()] || null;
+        return _finRenderPersonalCard(p, ev, fecha);
+      }).join('');
+    }).catch(() => {
+      // Fallback: render sin score si falla
+      cont.innerHTML = pl.personalDetalle.map(p => _finRenderPersonalCard(p, null, fecha)).join('');
+    });
+  }
+
+  function _finRenderPersonalCard(p, ev, fecha) {
+    const score = ev ? (ev.scoreFinal || 0) : null;
+    const scoreClass = score !== null ? _evalScoreClass(score) : '';
+    const rolClass = _evalRolBadgeClass(p.rol || (ev && ev.rol));
+    const evalCount = ev ? (ev.evaluacionesCount || 0) : 0;
+    const kpiTxt = ev ? _evalKpiSummary(ev) : '';
+    const totalDia = (ev && ev.totalDia) ? ev.totalDia : (parseFloat(p.monto) || 0);
+    const idForEval = (ev && ev.idPersonal) || p.idPersonal || '';
+    const fuenteTag = p.fuente === 'AUTO_VENTA' ? '<span class="fin-tag fin-tag-green ml-1" title="Detectado por venta">auto</span>'
+                    : p.fuente === 'AUTO_LOGIN' ? '<span class="fin-tag fin-tag-green ml-1" title="Detectado por sesión">auto</span>'
+                    : p.fuente === 'AUTO_CAJAS' ? '<span class="fin-tag fin-tag-green ml-1" title="Importado de cajas">auto</span>'
+                    : '';
+    const scoreCircle = score !== null
+      ? `<div class="eval-score-circle ${scoreClass}" style="--score:${score};flex-shrink:0"><span>${score}%</span></div>`
+      : `<div class="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0" style="background:rgba(100,116,139,.15);color:#94a3b8">—</div>`;
+    return `
+      <div class="eval-card" data-id="${idForEval}">
+        <div class="flex items-center gap-3">
+          ${scoreCircle}
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-1 flex-wrap">
+              <div class="font-semibold text-slate-100 text-sm truncate">${p.nombre}</div>
+              <span class="badge-rol ${rolClass}">${p.rol || (ev && ev.rol) || '—'}</span>
+              ${ev && ev.virtual ? '<span class="badge-rol badge-rol-default" title="Detectado del sistema">⚡ del sistema</span>' : ''}
+              ${fuenteTag}
+            </div>
+            ${kpiTxt ? `<div class="text-xs text-slate-500 mb-1">${kpiTxt}</div>` : ''}
+            <div class="flex items-center gap-2 flex-wrap">
+              ${evalCount > 0
+                ? `<span class="audit-count-pill">${evalCount} auditoría${evalCount !== 1 ? 's' : ''} hoy</span>`
+                : `<span class="audit-count-pill" style="background:rgba(245,158,11,.12);color:#fbbf24;border-color:rgba(245,158,11,.3)">⚠ Sin auditar</span>`}
+              <span class="text-xs text-slate-400">Pago día: <strong class="text-amber-400">S/ ${parseFloat(totalDia).toFixed(2)}</strong></span>
+            </div>
+          </div>
+          <div class="flex flex-col gap-1 shrink-0">
+            ${idForEval ? `<button onclick="MOS.abrirAuditar('${idForEval}')" class="btn-primary text-xs whitespace-nowrap px-3 py-1.5">Auditar</button>` : ''}
+            <button class="text-[10px] text-slate-600 hover:text-rose-400 transition-colors px-2 py-1" onclick="MOS.finEliminarJornada('${p.idJornada || ''}','${fecha}')" title="Eliminar jornada (no contar como trabajado)">× quitar</button>
           </div>
         </div>
-        <div class="flex items-center gap-2">
-          <span class="text-emerald-400 font-semibold text-sm">S/ ${parseFloat(p.monto||0).toFixed(2)}</span>
-          <button class="fin-del" onclick="MOS.finEliminarJornada('${p.idJornada || ''}','${fecha}')" title="Eliminar">×</button>
-        </div>
-      </div>`).join('');
+      </div>`;
   }
 
   function _finRenderGastos(pl, fecha) {
@@ -10225,6 +10309,7 @@ const MOS = (() => {
     abrirAuditar, cerrarAuditar, guardarAuditoria,
     auditToggleCheck, auditCheckAll, auditToggle,
     updateRateSlider, abrirConfigEval, guardarConfigEval,
+    renderConfigEvalPanel, guardarConfigEvalPanel,
     abrirLiquidacion,
     abrirModalPrecio, publicarPrecio,
     setAlmTab,
