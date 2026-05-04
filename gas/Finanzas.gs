@@ -209,6 +209,23 @@ function eliminarGasto(params) {
 // CÁLCULOS INTERNOS
 // ════════════════════════════════════════════════════════════
 
+// Parser MIXTO: dado "MIXTO (VIR:0.50/EFE:1.00)" devuelve { efe, vir }.
+// Para POR_COBRAR / CREDITO / ANULADO devuelve { efe:0, vir:0 } (no es cash).
+function _parseFormaPagoFin(metodo, total) {
+  var m = String(metodo || '').toUpperCase().trim();
+  if (!m || m === 'POR_COBRAR' || m === 'CREDITO' || m === 'ANULADO') return { efe: 0, vir: 0 };
+  if (m === 'EFECTIVO') return { efe: total, vir: 0 };
+  if (m === 'VIRTUAL')  return { efe: 0, vir: total };
+  if (m.indexOf('MIXTO') === 0) {
+    var virM = String(metodo).match(/VIR:([\d.]+)/i);
+    var efeM = String(metodo).match(/EFE:([\d.]+)/i);
+    var vir  = virM ? parseFloat(virM[1]) : 0;
+    var efe  = efeM ? parseFloat(efeM[1]) : Math.round((total - vir) * 100) / 100;
+    return { efe: efe, vir: vir };
+  }
+  return { efe: 0, vir: total }; // fallback: lo trato como virtual
+}
+
 function _calcularIngresos(fecha) {
   var cabecera = [];
   try { cabecera = _sheetToObjectsLocal(_abrirMeSheet('VENTAS_CABECERA')); } catch(e) {}
@@ -217,38 +234,70 @@ function _calcularIngresos(fecha) {
     return String(v.Fecha || '').substring(0, 10) === fecha;
   });
 
-  var completadas = del_dia.filter(function(v){ return String(v.Estado_Envio||'') !== 'ANULADO'; });
-  var anuladas    = del_dia.filter(function(v){ return String(v.Estado_Envio||'') === 'ANULADO'; });
+  // ⚠ La fuente de verdad para detectar anulación es FormaPago (no Estado_Envio,
+  // que solo indica si fue enviado a NubeFact).
+  var noAnuladas = del_dia.filter(function(v){
+    return String(v.FormaPago || '').toUpperCase() !== 'ANULADO';
+  });
+  var anuladas = del_dia.filter(function(v){
+    return String(v.FormaPago || '').toUpperCase() === 'ANULADO';
+  });
 
-  var ventasBrutas = completadas.reduce(function(s, v){ return s + (parseFloat(v.Total) || 0); }, 0);
+  // Cobrado (cash flow real) vs crédito (cuenta por cobrar)
+  var cobrados = noAnuladas.filter(function(v) {
+    var m = String(v.FormaPago || '').toUpperCase();
+    return m !== 'POR_COBRAR' && m !== 'CREDITO';
+  });
+  var aCredito = noAnuladas.filter(function(v) {
+    var m = String(v.FormaPago || '').toUpperCase();
+    return m === 'POR_COBRAR' || m === 'CREDITO';
+  });
+
+  // Ventas brutas / netas = todas las NO ANULADAS (incluye crédito).
+  // El crédito ES venta del día contablemente, aunque no haya entrado al cash.
+  var ventasBrutas = noAnuladas.reduce(function(s, v){ return s + (parseFloat(v.Total) || 0); }, 0);
 
   // Desglose por tipo de documento
   var byDoc = {};
-  completadas.forEach(function(v) {
+  noAnuladas.forEach(function(v) {
     var t = String(v.Tipo_Doc || v.tipoDoc || 'NOTA_DE_VENTA');
     byDoc[t] = _r2((byDoc[t] || 0) + (parseFloat(v.Total) || 0));
   });
 
-  // Desglose por método de pago
-  var byMetodo = {};
-  completadas.forEach(function(v) {
-    var m = String(v.FormaPago || v.metodo || 'EFECTIVO');
-    byMetodo[m] = _r2((byMetodo[m] || 0) + (parseFloat(v.Total) || 0));
+  // Desglose por método de pago — descompone MIXTO correctamente
+  var totalEfectivo = 0, totalVirtual = 0;
+  cobrados.forEach(function(v) {
+    var t = parseFloat(v.Total) || 0;
+    var r = _parseFormaPagoFin(v.FormaPago, t);
+    totalEfectivo += r.efe;
+    totalVirtual  += r.vir;
   });
+  var creditoOtorgado = aCredito.reduce(function(s, v){ return s + (parseFloat(v.Total) || 0); }, 0);
+  var cobradoTotal    = _r2(totalEfectivo + totalVirtual);
 
-  // IDs de ventas del día para cruzar con DETALLE
+  var byMetodo = {
+    EFECTIVO: _r2(totalEfectivo),
+    VIRTUAL:  _r2(totalVirtual)
+  };
+  if (creditoOtorgado > 0) byMetodo.POR_COBRAR = _r2(creditoOtorgado);
+
+  // IDs para cruzar con DETALLE (incluye crédito — sí vendió, sí descuenta stock)
   var detalleIds = {};
-  completadas.forEach(function(v){ detalleIds[String(v.ID_Venta || '')] = true; });
+  noAnuladas.forEach(function(v){ detalleIds[String(v.ID_Venta || '')] = true; });
 
-  // Detalle individual de cada ticket (completadas + anuladas, más recientes primero)
+  // Detalle individual de cada ticket (todos los del día, ordenados por hora desc)
   var detalleTickets = del_dia.map(function(v) {
     var f = String(v.Fecha || '');
+    var fp = String(v.FormaPago || 'EFECTIVO').toUpperCase();
+    var estadoDerivado = fp === 'ANULADO' ? 'ANULADO'
+                       : (fp === 'POR_COBRAR' || fp === 'CREDITO') ? 'POR_COBRAR'
+                       : 'COBRADO';
     return {
       idVenta:   String(v.ID_Venta || ''),
       total:     parseFloat(v.Total) || 0,
       tipoDoc:   String(v.Tipo_Doc || v.tipoDoc || 'NOTA_DE_VENTA'),
       formaPago: String(v.FormaPago || v.metodo || 'EFECTIVO'),
-      estado:    String(v.Estado_Envio || 'COMPLETADO'),
+      estado:    estadoDerivado,
       vendedor:  String(v.Vendedor || ''),
       correlativo: String(v.Correlativo || ''),
       hora:      f.length >= 16 ? f.substring(11, 16) : f.substring(0, 16)
@@ -256,15 +305,20 @@ function _calcularIngresos(fecha) {
   }).sort(function(a, b) { return a.hora < b.hora ? 1 : -1; });
 
   return {
-    ventasBrutas:   _r2(ventasBrutas),
-    ventasNetas:    _r2(ventasBrutas),
-    tickets:        completadas.length,
-    anulados:       anuladas.length,
-    ticketPromedio: completadas.length > 0 ? _r2(ventasBrutas / completadas.length) : 0,
-    byDoc:          byDoc,
-    byMetodo:       byMetodo,
-    detalleIds:     detalleIds,
-    detalleTickets: detalleTickets
+    ventasBrutas:    _r2(ventasBrutas),
+    ventasNetas:     _r2(ventasBrutas),
+    cobrado:         cobradoTotal,        // EFECTIVO + VIRTUAL (incluyendo partes de MIXTO)
+    cobradoEfectivo: _r2(totalEfectivo),
+    cobradoVirtual:  _r2(totalVirtual),
+    creditoOtorgado: _r2(creditoOtorgado), // POR_COBRAR + CREDITO
+    tickets:         noAnuladas.length,
+    anulados:        anuladas.length,
+    creditos:        aCredito.length,
+    ticketPromedio:  noAnuladas.length > 0 ? _r2(ventasBrutas / noAnuladas.length) : 0,
+    byDoc:           byDoc,
+    byMetodo:        byMetodo,
+    detalleIds:      detalleIds,
+    detalleTickets:  detalleTickets
   };
 }
 

@@ -290,10 +290,13 @@ function getAnaliticaProducto(params) {
     meConectado = true;
 
     // Mapa ID_Venta → Fecha (yyyy-MM-dd)
+    // ⚠ Filtro de anulación va por FormaPago (no Estado_Envio, que solo indica
+    // envío a NubeFact). Mismo criterio que Cajas.gs y Finanzas.gs.
     var fechaMap = {};
     cabeceras.forEach(function(c) {
       var f = String(c.Fecha || '').substring(0, 10);
-      if (f >= desdeStr && c.Estado_Envio !== 'ANULADO') fechaMap[c.ID_Venta] = f;
+      var fp = String(c.FormaPago || '').toUpperCase();
+      if (f >= desdeStr && fp !== 'ANULADO') fechaMap[c.ID_Venta] = f;
     });
 
     detalles.forEach(function(v) {
