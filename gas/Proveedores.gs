@@ -292,6 +292,7 @@ function getHistoricoProveedor(params) {
 // CATÁLOGO PROVEEDORES_PRODUCTOS
 // (cotizaciones manuales: qué productos ofrece cada proveedor)
 // ════════════════════════════════════════════════
+var _PROV_PROD_FORMATTED = false;
 function _getProvProdSheet() {
   var ss    = getSpreadsheet();
   var sheet = ss.getSheetByName('PROVEEDORES_PRODUCTOS');
@@ -303,6 +304,14 @@ function _getProvProdSheet() {
       'ultimaActualizacion', 'activa', 'notas'
     ]);
     sheet.setFrozenRows(1);
+  }
+  // Forzar columnas idPP, idProveedor, skuBase y codigoBarra como TEXTO
+  // — preserva ceros a la izquierda y evita conversión a número.
+  if (!_PROV_PROD_FORMATTED) {
+    try {
+      sheet.getRange(1, 1, sheet.getMaxRows(), 4).setNumberFormat('@');
+      _PROV_PROD_FORMATTED = true;
+    } catch(e) {}
   }
   return sheet;
 }
@@ -322,10 +331,10 @@ function agregarProductoProveedor(params) {
   var sheet = _getProvProdSheet();
   var id = _generateId('PP');
   sheet.appendRow([
-    id,
-    params.idProveedor,
-    params.skuBase,
-    params.codigoBarra      || '',
+    String(id),
+    String(params.idProveedor),
+    String(params.skuBase),
+    String(params.codigoBarra || ''),
     params.descripcion      || '',
     parseFloat(params.precioReferencia) || 0,
     parseFloat(params.minimoCompra)     || 0,
@@ -351,8 +360,11 @@ function actualizarProductoProveedor(params) {
           sheet.getRange(fila, idxs[col] + 1).setValue(val);
         }
       }
-      if (params.skuBase            !== undefined) set('skuBase',          params.skuBase);
-      if (params.codigoBarra        !== undefined) set('codigoBarra',      params.codigoBarra);
+      if (params.skuBase            !== undefined) set('skuBase',          String(params.skuBase));
+      if (params.codigoBarra        !== undefined) {
+        var col = idxs.codigoBarra;
+        if (col !== undefined) sheet.getRange(fila, col + 1).setNumberFormat('@').setValue(String(params.codigoBarra));
+      }
       if (params.descripcion        !== undefined) set('descripcion',      params.descripcion);
       if (params.precioReferencia   !== undefined) set('precioReferencia', parseFloat(params.precioReferencia) || 0);
       if (params.minimoCompra       !== undefined) set('minimoCompra',     parseFloat(params.minimoCompra) || 0);
@@ -401,7 +413,7 @@ function upsertProductoProveedor(params) {
       var fila = i + 1;
       if (precio > 0) sheet.getRange(fila, idxs.precioReferencia + 1).setValue(precio);
       sheet.getRange(fila, idxs.descripcion + 1).setValue(descripcion);
-      sheet.getRange(fila, idxs.codigoBarra + 1).setValue(codigoBarra);
+      sheet.getRange(fila, idxs.codigoBarra + 1).setNumberFormat('@').setValue(String(codigoBarra));
       sheet.getRange(fila, idxs.ultimaActualizacion + 1).setValue(new Date());
       return { ok: true, data: { idPP: data[i][idxs.idPP], accion: 'actualizado' } };
     }
@@ -410,12 +422,95 @@ function upsertProductoProveedor(params) {
   // 3. Crear nueva fila
   var id = _generateId('PP');
   sheet.appendRow([
-    id, params.idProveedor, skuBase, codigoBarra, descripcion,
+    String(id), String(params.idProveedor), String(skuBase), String(codigoBarra), descripcion,
     precio, 0, 0,
     new Date(), true,
     params.notas || 'Auto desde guía'
   ]);
   return { ok: true, data: { idPP: id, accion: 'creado' } };
+}
+
+// ════════════════════════════════════════════════
+// JALAR productos al catálogo del proveedor desde
+// el histórico de GUIAS (warehouseMos). Útil cuando
+// hay guías cerradas antes del auto-upsert o cuando
+// faltó algún producto.
+// ════════════════════════════════════════════════
+function jalarProductosProveedor(params) {
+  if (!params || !params.idProveedor) return { ok: false, error: 'idProveedor requerido' };
+  try {
+    var guiasSh = _abrirWhSheet('GUIAS');
+    if (!guiasSh) return { ok: false, error: 'Hoja GUIAS no accesible' };
+    var gd = guiasSh.getDataRange().getValues();
+    var gh = gd[0];
+    var iGId    = gh.indexOf('idGuia');
+    var iGProv  = gh.indexOf('idProveedor');
+    var iGTipo  = gh.indexOf('tipo');
+    var iGFecha = gh.indexOf('fecha');
+    var guiaIds = {};
+    for (var r = 1; r < gd.length; r++) {
+      if (String(gd[r][iGProv]) !== String(params.idProveedor)) continue;
+      if (String(gd[r][iGTipo] || '').toUpperCase().indexOf('INGRESO') !== 0) continue;
+      guiaIds[gd[r][iGId]] = gd[r][iGFecha];
+    }
+    var totalGuias = Object.keys(guiaIds).length;
+    if (!totalGuias) return { ok: true, data: { creados: 0, actualizados: 0, total: 0, totalGuias: 0 } };
+
+    var detSh = _abrirWhSheet('GUIA_DETALLE');
+    if (!detSh) return { ok: false, error: 'Hoja GUIA_DETALLE no accesible' };
+    var dd = detSh.getDataRange().getValues();
+    var dh = dd[0];
+    var iDGuia = dh.indexOf('idGuia');
+    var iDCod  = dh.indexOf('codigoProducto');
+    var iDPrec = dh.indexOf('precioUnitario');
+    var iDDesc = dh.indexOf('descripcion');
+
+    // Quedarnos con el último precio por código
+    var porCodigo = {};
+    for (var d = 1; d < dd.length; d++) {
+      var idG = dd[d][iDGuia];
+      if (!guiaIds[idG]) continue;
+      var cod = String(dd[d][iDCod] || '').trim();
+      if (!cod) continue;
+      var prec = parseFloat(dd[d][iDPrec]) || 0;
+      var desc = dd[d][iDDesc] || '';
+      var prev = porCodigo[cod];
+      if (!prev || prec > 0) {
+        porCodigo[cod] = { codigoBarra: cod, precioUnitario: prec, descripcion: desc };
+      }
+    }
+
+    var creados = 0, actualizados = 0, omitidos = 0;
+    Object.keys(porCodigo).forEach(function(cod){
+      var entry = porCodigo[cod];
+      var res = upsertProductoProveedor({
+        idProveedor:    params.idProveedor,
+        codigoBarra:    cod,
+        precioUnitario: entry.precioUnitario,
+        descripcion:    entry.descripcion,
+        notas:          'Jalado manualmente'
+      });
+      if (res.ok && res.data) {
+        if (res.data.accion === 'creado')           creados++;
+        else if (res.data.accion === 'actualizado') actualizados++;
+        else omitidos++;
+      } else {
+        omitidos++;
+      }
+    });
+    return {
+      ok: true,
+      data: {
+        creados:      creados,
+        actualizados: actualizados,
+        omitidos:     omitidos,
+        total:        Object.keys(porCodigo).length,
+        totalGuias:   totalGuias
+      }
+    };
+  } catch(e) {
+    return { ok: false, error: 'Error: ' + e.message };
+  }
 }
 
 function eliminarProductoProveedor(params) {

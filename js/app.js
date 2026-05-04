@@ -4432,6 +4432,7 @@ const MOS = (() => {
           <h4 class="font-semibold text-sm text-slate-300 shrink-0">📦 Catálogo</h4>
           <input id="provProdFilter" class="inp text-xs flex-1" style="min-width:120px;max-width:200px"
             placeholder="🔍 Filtrar..." oninput="MOS._filtrarProvProductos(this.value)" value="${S.provProdFilter}">
+          <button id="btnJalarProds" class="btn-ghost text-xs px-3 py-1.5 shrink-0" onclick="MOS.jalarProductosProveedor()" title="Importa al catálogo todos los productos comprados a este proveedor según el histórico de guías">⬇️ Jalar</button>
           <button class="btn-primary text-xs px-3 py-1.5 shrink-0" onclick="MOS.abrirModalProvProducto(null)">+ Producto</button>
         </div>
         <div id="provProductosList" class="space-y-2"></div>
@@ -9973,6 +9974,34 @@ const MOS = (() => {
     } catch(e) { toast('Error de sincronización: ' + e.message, 'error'); }
   }
 
+  // Jalar productos del proveedor desde el histórico de guías de WH
+  async function jalarProductosProveedor() {
+    const idProveedor = S.provSelId;
+    if (!idProveedor) return;
+    if (!confirm('¿Importar al catálogo todos los productos comprados a este proveedor según las guías cerradas?\n\nNo borra nada — solo agrega los que falten y actualiza precios.')) return;
+    const btn = $('btnJalarProds');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Jalando…'; }
+    try {
+      const res = await API.post('jalarProductosProveedor', { idProveedor });
+      const data = (res && res.data) ? res.data : res;
+      if (!data) throw new Error('Sin datos');
+      const lineas = [
+        '✓ ' + (data.creados || 0)      + ' creados',
+        '↻ ' + (data.actualizados || 0) + ' actualizados',
+        '— ' + (data.totalGuias || 0)   + ' guías analizadas'
+      ].join(' · ');
+      toast(lineas, 'ok');
+      // Refresh productos del proveedor
+      const lista = await API.get('getProveedorProductos', { idProveedor });
+      S.provProductos[idProveedor] = Array.isArray(lista) ? lista : (lista && lista.data) || [];
+      _renderProvProductos();
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.innerHTML = '⬇️ Jalar'; }
+    }
+  }
+
   async function eliminarProvProducto() {
     const idPP = $('ppId').value;
     if (!idPP) return;
@@ -10581,6 +10610,7 @@ const MOS = (() => {
     _filtrarProvProductos, _filtrarProvHistorico,
     abrirModalProvProducto, ppBuscar, ppSeleccionar,
     guardarProvProducto, eliminarProvProducto, eliminarProvProductoRapido,
+    jalarProductosProveedor,
     abrirVistaCargadores, nuevoCargador, editarCargador,
     abrirModalPago, guardarPago, abrirModalPedido,
     // Config
