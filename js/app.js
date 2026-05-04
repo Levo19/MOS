@@ -4177,6 +4177,40 @@ const MOS = (() => {
     renderProveedores();
   }
 
+  // Avatar de iniciales con color hash estable por nombre
+  function _provAvatarHtml(nombre) {
+    const txt = String(nombre || '?').trim();
+    const partes = txt.split(/\s+/);
+    const ini = ((partes[0] || '?')[0] + (partes[1] ? partes[1][0] : '')).toUpperCase();
+    let h = 0;
+    for (let i = 0; i < txt.length; i++) h = (h * 31 + txt.charCodeAt(i)) >>> 0;
+    const colors = [
+      ['#fbbf24', '#78350f'], ['#a78bfa', '#3b0764'], ['#34d399', '#064e3b'],
+      ['#f87171', '#7f1d1d'], ['#60a5fa', '#1e3a8a'], ['#fb923c', '#7c2d12'],
+      ['#4ade80', '#14532d'], ['#e879f9', '#581c87'], ['#22d3ee', '#164e63']
+    ];
+    const [bg, fg] = colors[h % colors.length];
+    return `<div class="prov-avatar" style="background:${bg};color:${fg}">${ini}</div>`;
+  }
+
+  function _provTelLimpio(tel) {
+    const d = String(tel || '').replace(/\D/g, '');
+    return d.length === 9 ? '51' + d : d;
+  }
+
+  function provLlamar(idProveedor, ev) {
+    if (ev) ev.stopPropagation();
+    const p = S.proveedores.find(x => x.idProveedor === idProveedor);
+    if (!p || !p.telefono) { toast('Sin teléfono', 'error'); return; }
+    window.location.href = 'tel:' + p.telefono;
+  }
+  function provWhatsApp(idProveedor, ev) {
+    if (ev) ev.stopPropagation();
+    const p = S.proveedores.find(x => x.idProveedor === idProveedor);
+    if (!p || !p.telefono) { toast('Sin teléfono', 'error'); return; }
+    window.open('https://wa.me/' + _provTelLimpio(p.telefono), '_blank');
+  }
+
   function renderProveedores() {
     const el = $('listProveedores');
     if (!el) return;
@@ -4195,22 +4229,31 @@ const MOS = (() => {
     el.innerHTML = filtrados.map(p => {
       const sel = S.provSelId === p.idProveedor;
       const diaPed = p.diaPedido ? `<span title="Día de pedido">📋 ${_provDiaLabel(p.diaPedido)}</span>` : '';
+      const formaTxt = p.formaPago === 'CREDITO' ? `💳 Crédito ${p.plazoCredito || 0}d` : (p.formaPago === 'CONTADO' ? '💵 Contado' : '');
+      const tieneTel = !!p.telefono;
       return `
       <div>
-        <div class="card p-3 cursor-pointer hover:border-indigo-500/30 transition-colors ${sel ? 'prov-card-active' : ''}"
+        <div class="card p-3 cursor-pointer hover:border-indigo-500/30 transition-colors ${sel ? 'prov-card-active' : ''} ${p._tmp ? 'opacity-60' : ''}"
              onclick="MOS.selectProveedor('${p.idProveedor}')">
-          <div class="flex items-start justify-between gap-2">
-            <div class="min-w-0">
-              <div class="font-medium text-sm text-slate-200 truncate">${p.nombre}</div>
-              <div class="text-xs text-slate-500 mt-0.5 truncate">${p.ruc || '—'}${p.categoriaProducto ? ' · ' + p.categoriaProducto : ''}</div>
+          <div class="flex items-start gap-3">
+            ${_provAvatarHtml(p.nombre)}
+            <div class="min-w-0 flex-1">
+              <div class="flex items-start justify-between gap-2">
+                <div class="font-semibold text-sm text-slate-100 truncate">${p.nombre}</div>
+                <span class="badge ${p.estado == '1' ? 'badge-green' : 'badge-gray'} shrink-0">${p.estado == '1' ? 'Activo' : 'Inactivo'}</span>
+              </div>
+              <div class="text-[11px] text-slate-500 mt-0.5 truncate">${p.ruc || '—'}${p.categoriaProducto ? ' · ' + p.categoriaProducto : ''}</div>
+              <div class="flex items-center flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[11px] text-slate-400">
+                ${formaTxt ? `<span>${formaTxt}</span>` : ''}
+                ${diaPed}
+              </div>
             </div>
-            <span class="badge ${p.estado == '1' ? 'badge-green' : 'badge-gray'} shrink-0">${p.estado == '1' ? 'Activo' : 'Inactivo'}</span>
           </div>
-          <div class="flex items-center flex-wrap gap-x-3 gap-y-1 mt-2 text-xs text-slate-500">
-            ${p.telefono ? `<span>📞 ${p.telefono}</span>` : ''}
-            ${p.formaPago ? `<span>${p.formaPago === 'CREDITO' ? `Crédito ${p.plazoCredito || 0}d` : 'Contado'}</span>` : ''}
-            ${diaPed}
-          </div>
+          ${tieneTel ? `
+          <div class="flex gap-1.5 mt-2 pt-2 border-t border-slate-800">
+            <button onclick="MOS.provLlamar('${p.idProveedor}', event)" class="prov-quick-btn" title="Llamar ${p.telefono}">📞 ${p.telefono}</button>
+            <button onclick="MOS.provWhatsApp('${p.idProveedor}', event)" class="prov-quick-btn whatsapp" title="WhatsApp">💬</button>
+          </div>` : ''}
         </div>
         ${sel ? `<div id="provInlineDetail" class="prov-inline-detail lg:hidden"></div>` : ''}
       </div>`;
@@ -4260,15 +4303,14 @@ const MOS = (() => {
             <button class="prov-tab" data-tab="info"      onclick="MOS.provSetTab('info')">📋 Info</button>
             <button class="prov-tab" data-tab="productos" onclick="MOS.provSetTab('productos')">📦 Productos</button>
             <button class="prov-tab" data-tab="historico" onclick="MOS.provSetTab('historico')">📊 Histórico</button>
-            <button class="prov-tab" data-tab="pedidos"   onclick="MOS.provSetTab('pedidos')">🛒 Pedidos</button>
           </div>
         </div>
       </div>
       <div id="provTabInfo" class="prov-tab-content"></div>
       <div id="provTabProductos" class="prov-tab-content hidden"></div>
       <div id="provTabHistorico" class="prov-tab-content hidden"></div>
-      <div id="provTabPedidos" class="prov-tab-content hidden"></div>
     `;
+    if (S.provTab === 'pedidos') S.provTab = 'productos';
     provSetTab(S.provTab);
 
     // En desktop, el panel derecho ya estaba visible; en mobile, hacemos scroll suave al detalle
@@ -4293,8 +4335,8 @@ const MOS = (() => {
         S.provPagos[id] = Array.isArray(r) ? r : (r && r.data) || [];
         if (S.provSelId === id && S.provTab === 'info') _renderProvInfo();
       }).catch(() => {});
-    // Productos cotizados
-    API.get('getProveedorProductos', { idProveedor: id })
+    // Productos enriquecidos (con stock + zonas + min/max + sugerencia)
+    API.get('getProductosProveedorConStock', { idProveedor: id, rangoDias: 30 })
       .then(r => {
         S.provProductos[id] = Array.isArray(r) ? r : (r && r.data) || [];
         if (S.provSelId === id && S.provTab === 'productos') _renderProvProductos();
@@ -4304,12 +4346,6 @@ const MOS = (() => {
       .then(r => {
         S.provHistorico[id] = (r && r.data) ? r.data : r;
         if (S.provSelId === id && S.provTab === 'historico') _renderProvHistorico();
-      }).catch(() => {});
-    // Pedidos
-    API.get('getPedidos', { idProveedor: id })
-      .then(r => {
-        S.provPedidos[id] = Array.isArray(r) ? r : (r && r.data) || [];
-        if (S.provSelId === id && S.provTab === 'pedidos') _renderProvPedidos();
       }).catch(() => {});
   }
 
@@ -4325,13 +4361,12 @@ const MOS = (() => {
     S.provTab = tab;
     document.querySelectorAll('.prov-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
     document.querySelectorAll('.prov-tab-content').forEach(c => c.classList.add('hidden'));
-    const targetMap = { info: 'provTabInfo', productos: 'provTabProductos', historico: 'provTabHistorico', pedidos: 'provTabPedidos' };
+    const targetMap = { info: 'provTabInfo', productos: 'provTabProductos', historico: 'provTabHistorico' };
     const target = $(targetMap[tab]);
     if (target) target.classList.remove('hidden');
     if (tab === 'info')      _renderProvInfo();
     if (tab === 'productos') _renderProvProductos();
     if (tab === 'historico') _renderProvHistorico();
-    if (tab === 'pedidos')   _renderProvPedidos();
   }
 
   function _renderProvInfo() {
@@ -4379,6 +4414,20 @@ const MOS = (() => {
     });
   }
 
+  // Estado del pedido en construcción: { [idPP]: { qty, sku, desc, precio, codigoBarra } }
+  S.provPedido = S.provPedido || { items: {}, idProveedor: null };
+
+  function _provAlertaInfo(a) {
+    switch ((a || '').toUpperCase()) {
+      case 'NEGATIVO':      return { color: '#ef4444', label: '⚠ NEGATIVO' };
+      case 'BAJO_MINIMO':   return { color: '#f59e0b', label: '⬇ Bajo mín' };
+      case 'AGOTAR_PRONTO': return { color: '#fb923c', label: '⏱ Agotar pronto' };
+      case 'CERCA_MINIMO':  return { color: '#eab308', label: '~ Cerca mín' };
+      case 'SIN_ROTACION':  return { color: '#64748b', label: '· Sin rotación' };
+      default:              return { color: '#10b981', label: 'OK' };
+    }
+  }
+
   function _pintaProvProductos(items) {
     const list = $('provProductosList');
     if (!list) return;
@@ -4386,28 +4435,288 @@ const MOS = (() => {
       const filtro = S.provProdFilter || '';
       list.innerHTML = filtro
         ? `<p class="text-slate-500 text-sm py-6 text-center">Sin coincidencias para "${filtro}".</p>`
-        : '<p class="text-slate-500 text-sm py-6 text-center">Sin productos registrados.<br>Agrega cotizaciones para planificar pedidos.</p>';
+        : '<p class="text-slate-500 text-sm py-6 text-center">Sin productos registrados.<br>Pulsa <b>⬇️ Jalar</b> para importar desde guías o <b>+ Producto</b> para agregar manual.</p>';
+      _renderPedidoToolbar();
       return;
     }
-    list.innerHTML = items.map(pp => `
-      <div class="card-sm p-3 hover:border-indigo-500/30 transition-colors${pp._tmp ? ' opacity-60' : ''}">
-        <div class="flex items-start justify-between gap-2">
+    list.innerHTML = items.map(pp => {
+      const alert = _provAlertaInfo(pp.alerta);
+      const enPedido = S.provPedido.items[pp.idPP];
+      const qtyActual = enPedido ? enPedido.qty : (pp.sugerencia || 0);
+      const zonasHtml = (pp.zonas || []).filter(z => z.cantidad > 0).slice(0, 4).map(z =>
+        `<span class="prov-zona-chip">${z.nombre}: <b>${z.cantidad}</b></span>`
+      ).join('');
+      const tienePresentaciones = (pp.countPresentaciones || 1) > 1;
+      const tieneEquiv = (pp.countEquivalencias || 0) > 0;
+      return `
+      <div class="prov-prod-card${pp._tmp ? ' opacity-60' : ''}" data-idpp="${pp.idPP}" style="border-left:3px solid ${alert.color}">
+        <div class="flex items-start justify-between gap-2 mb-1.5">
           <div class="min-w-0 flex-1 cursor-pointer" onclick="MOS.abrirModalProvProducto('${pp.idPP}')">
             <div class="text-sm font-semibold text-slate-100 truncate">${pp.descripcion || pp.skuBase}</div>
-            <div class="text-xs text-slate-500 mt-0.5 truncate" style="font-family:monospace">SKU ${pp.skuBase}${pp.codigoBarra ? ' · ▌' + pp.codigoBarra : ''}</div>
-            ${pp.notas ? `<div class="text-xs text-slate-500 mt-1 italic truncate">${pp.notas}</div>` : ''}
+            <div class="text-[10px] text-slate-500 mt-0.5 truncate" style="font-family:monospace">SKU ${pp.skuBase}${pp.codigoBarra ? ' · ▌' + pp.codigoBarra : ''}${tienePresentaciones ? ' · ' + pp.countPresentaciones + ' pres' : ''}${tieneEquiv ? ' · ' + pp.countEquivalencias + ' eq' : ''}</div>
           </div>
           <div class="text-right shrink-0 flex flex-col items-end gap-0.5">
             <div class="text-sm font-bold text-amber-400 whitespace-nowrap">${fmtMoney(pp.precioReferencia || 0)}</div>
-            <div class="flex items-center gap-1 text-[10px] text-slate-500 whitespace-nowrap">
-              ${pp.minimoCompra ? `<span>mín ${pp.minimoCompra}</span>` : ''}
-              ${pp.diasEntrega ? `<span>${pp.diasEntrega}d</span>` : ''}
-            </div>
-            <button onclick="event.stopPropagation();MOS.eliminarProvProductoRapido('${pp.idPP}')" class="text-slate-500 hover:text-red-400 transition-colors text-base mt-0.5 p-1" title="Eliminar">🗑️</button>
+            <span class="text-[9px] font-bold" style="color:${alert.color}">${alert.label}</span>
           </div>
         </div>
+
+        <!-- Stock total + desglose -->
+        <div class="prov-stock-row">
+          <div class="prov-stock-total">
+            <span class="prov-stock-label">Stock</span>
+            <span class="prov-stock-num" style="color:${alert.color}">${pp.stockTotal}</span>
+          </div>
+          <div class="prov-stock-detail">
+            <span title="Almacén">🏬 ${pp.stockWh}</span>
+            <span class="text-slate-700">·</span>
+            <span title="Tienda (todas las zonas)">🏪 ${pp.stockTienda}</span>
+            ${pp.rotacionDia > 0 ? `<span class="text-slate-700">·</span><span title="Rotación últ. ${pp.rangoDias}d">↻ ${pp.rotacionDia}/d</span>` : ''}
+          </div>
+        </div>
+        ${zonasHtml ? `<div class="prov-zonas-row">${zonasHtml}</div>` : ''}
+
+        <!-- Mín/Máx editables -->
+        <div class="prov-minmax-row">
+          <div class="prov-minmax-grp">
+            <label class="prov-minmax-lbl">Mín</label>
+            <input type="number" min="0" step="1" value="${pp.stockMinimo || ''}" placeholder="—"
+              class="prov-minmax-inp" data-idprod="${pp.idProducto}" data-campo="stockMinimo" data-idpp="${pp.idPP}"
+              onchange="MOS.provProductoEditarStockMinMax(this)" onblur="MOS.provProductoEditarStockMinMax(this)">
+          </div>
+          <div class="prov-minmax-grp">
+            <label class="prov-minmax-lbl">Máx</label>
+            <input type="number" min="0" step="1" value="${pp.stockMaximo || ''}" placeholder="—"
+              class="prov-minmax-inp" data-idprod="${pp.idProducto}" data-campo="stockMaximo" data-idpp="${pp.idPP}"
+              onchange="MOS.provProductoEditarStockMinMax(this)" onblur="MOS.provProductoEditarStockMinMax(this)">
+          </div>
+          ${pp.razonSugerencia ? `<span class="prov-sugerencia-txt">${pp.razonSugerencia}</span>` : ''}
+        </div>
+
+        <!-- Pedido (cantidad editable + toggle) -->
+        <div class="prov-pedido-row">
+          <button onclick="MOS.provPedidoToggle('${pp.idPP}')" class="prov-pedido-toggle ${enPedido ? 'on' : ''}" title="Incluir en pedido">
+            ${enPedido ? '✓' : '＋'}
+          </button>
+          <input type="number" min="0" step="1" value="${qtyActual}" placeholder="${pp.sugerencia || 0}"
+            class="prov-pedido-qty" data-idpp="${pp.idPP}" oninput="MOS.provPedidoSetQty('${pp.idPP}', this.value)">
+          <span class="prov-pedido-sub">×&nbsp;${fmtMoney(pp.precioReferencia || 0)}</span>
+          <span class="prov-pedido-total">${fmtMoney((qtyActual || 0) * (pp.precioReferencia || 0))}</span>
+          <button onclick="event.stopPropagation();MOS.eliminarProvProductoRapido('${pp.idPP}')" class="text-slate-500 hover:text-red-400 transition-colors text-sm p-1 ml-auto" title="Eliminar del catálogo">🗑️</button>
+        </div>
+      </div>`;
+    }).join('');
+    _renderPedidoToolbar();
+  }
+
+  function _renderPedidoToolbar() {
+    let bar = $('provPedidoToolbar');
+    const items = Object.values(S.provPedido.items || {});
+    if (!items.length) { if (bar) bar.remove(); return; }
+    const totalQty   = items.reduce((s, it) => s + (parseFloat(it.qty) || 0), 0);
+    const totalMonto = items.reduce((s, it) => s + (parseFloat(it.qty) || 0) * (parseFloat(it.precio) || 0), 0);
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'provPedidoToolbar';
+      bar.className = 'prov-pedido-toolbar';
+      document.body.appendChild(bar);
+    }
+    bar.innerHTML = `
+      <div class="prov-pedido-bar-info">
+        <div class="text-xs text-slate-400">Pedido</div>
+        <div class="text-sm font-bold text-white">${items.length} prods · ${totalQty} unds · ${fmtMoney(totalMonto)}</div>
       </div>
-    `).join('');
+      <button onclick="MOS.provPedidoLimpiar()" class="btn-ghost text-xs px-2 py-1.5">Limpiar</button>
+      <button onclick="MOS.provPedidoExportar()" class="btn-primary text-xs px-3 py-1.5 whitespace-nowrap">📄 Generar pedido</button>
+    `;
+  }
+
+  function provProductoEditarStockMinMax(inp) {
+    const idProducto = inp.dataset.idprod;
+    const campo      = inp.dataset.campo;
+    const idPP       = inp.dataset.idpp;
+    const valor      = parseFloat(inp.value) || 0;
+    if (!idProducto || !campo) return;
+    // Optimista: actualizar localmente
+    const id = S.provSelId;
+    const lista = (S.provProductos && S.provProductos[id]) || [];
+    const item = lista.find(x => x.idPP === idPP);
+    if (item && item[campo] === valor) return; // sin cambio
+    if (item) item[campo] = valor;
+    // POST al GAS (silencioso)
+    API.post('actualizarProductoMaster', {
+      idProducto: idProducto,
+      [campo]: valor
+    }).then(() => {
+      toast(campo === 'stockMinimo' ? 'Mín actualizado' : 'Máx actualizado', 'ok');
+    }).catch(e => {
+      toast('Error: ' + e.message, 'error');
+    });
+  }
+
+  function provPedidoToggle(idPP) {
+    const id = S.provSelId;
+    const lista = (S.provProductos && S.provProductos[id]) || [];
+    const item = lista.find(x => x.idPP === idPP);
+    if (!item) return;
+    if (S.provPedido.idProveedor !== id) {
+      // Cambiar de proveedor → resetear pedido
+      S.provPedido = { items: {}, idProveedor: id };
+    }
+    if (S.provPedido.items[idPP]) {
+      delete S.provPedido.items[idPP];
+    } else {
+      const inp = document.querySelector(`.prov-pedido-qty[data-idpp="${idPP}"]`);
+      const qty = inp ? (parseFloat(inp.value) || item.sugerencia || 0) : (item.sugerencia || 0);
+      S.provPedido.items[idPP] = {
+        idPP, sku: item.skuBase, desc: item.descripcion,
+        codigoBarra: item.codigoBarra, precio: item.precioReferencia || 0,
+        qty: qty
+      };
+    }
+    _pintaProvProductos(_filtrarPP(lista, S.provProdFilter));
+  }
+
+  function provPedidoSetQty(idPP, val) {
+    const qty = parseFloat(val) || 0;
+    if (S.provPedido.items[idPP]) {
+      S.provPedido.items[idPP].qty = qty;
+    }
+    // Actualizar total visible sin re-render completo
+    const card = document.querySelector(`.prov-prod-card[data-idpp="${idPP}"]`);
+    if (card) {
+      const totalEl = card.querySelector('.prov-pedido-total');
+      const id = S.provSelId;
+      const lista = (S.provProductos && S.provProductos[id]) || [];
+      const item = lista.find(x => x.idPP === idPP);
+      if (totalEl && item) totalEl.textContent = fmtMoney(qty * (item.precioReferencia || 0));
+    }
+    _renderPedidoToolbar();
+  }
+
+  function provPedidoLimpiar() {
+    if (!Object.keys(S.provPedido.items).length) return;
+    S.provPedido = { items: {}, idProveedor: S.provSelId };
+    const id = S.provSelId;
+    _pintaProvProductos(_filtrarPP((S.provProductos && S.provProductos[id]) || [], S.provProdFilter));
+  }
+
+  function _pedidoCabeceraTexto() {
+    const prov = S.proveedores.find(p => p.idProveedor === S.provSelId) || {};
+    const fecha = today();
+    return { prov, fecha };
+  }
+
+  function _pedidoTextoWhatsApp() {
+    const { prov, fecha } = _pedidoCabeceraTexto();
+    const items = Object.values(S.provPedido.items || {});
+    const totalMonto = items.reduce((s, it) => s + (parseFloat(it.qty) || 0) * (parseFloat(it.precio) || 0), 0);
+    const lines = [
+      `*PEDIDO — ${prov.nombre || 'Proveedor'}*`,
+      `Fecha: ${fecha}`,
+      ``,
+      ...items.map((it, i) => {
+        const sub = (parseFloat(it.qty) || 0) * (parseFloat(it.precio) || 0);
+        return `${i+1}. ${it.desc}\n   ${it.qty} und × ${fmtMoney(it.precio)} = *${fmtMoney(sub)}*`;
+      }),
+      ``,
+      `*Total estimado: ${fmtMoney(totalMonto)}*`,
+      ``,
+      `_Generado desde MOS_`
+    ];
+    return lines.join('\n');
+  }
+
+  function provPedidoExportar() {
+    const items = Object.values(S.provPedido.items || {});
+    if (!items.length) { toast('No hay items en el pedido', 'error'); return; }
+    const { prov, fecha } = _pedidoCabeceraTexto();
+    const totalMonto = items.reduce((s, it) => s + (parseFloat(it.qty) || 0) * (parseFloat(it.precio) || 0), 0);
+    const totalQty = items.reduce((s, it) => s + (parseFloat(it.qty) || 0), 0);
+    const cont = $('pedidoExportContent');
+    if (!cont) return;
+    cont.innerHTML = `
+      <div class="pedido-doc">
+        <div class="pedido-doc-header">
+          <div>
+            <div class="text-xs text-slate-500 uppercase tracking-wider">Pedido</div>
+            <h2 class="text-xl font-bold text-slate-100">${prov.nombre || 'Proveedor'}</h2>
+            <div class="text-xs text-slate-500 mt-0.5">${[prov.ruc, prov.telefono].filter(Boolean).join(' · ') || ''}</div>
+          </div>
+          <div class="text-right">
+            <div class="text-xs text-slate-500">Fecha</div>
+            <div class="text-sm font-semibold text-slate-100">${fecha}</div>
+          </div>
+        </div>
+        <table class="pedido-tabla">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Producto</th>
+              <th class="text-right">Cant.</th>
+              <th class="text-right">Precio</th>
+              <th class="text-right">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map((it, i) => {
+              const sub = (parseFloat(it.qty) || 0) * (parseFloat(it.precio) || 0);
+              return `<tr>
+                <td>${i+1}</td>
+                <td>
+                  <div class="font-medium">${it.desc}</div>
+                  <div class="text-[10px] text-slate-500" style="font-family:monospace">${it.sku}${it.codigoBarra ? ' · ' + it.codigoBarra : ''}</div>
+                </td>
+                <td class="text-right font-bold">${it.qty}</td>
+                <td class="text-right">${fmtMoney(it.precio)}</td>
+                <td class="text-right font-bold">${fmtMoney(sub)}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="2" class="font-bold">TOTAL (${items.length} prods · ${totalQty} unds)</td>
+              <td colspan="3" class="text-right font-bold text-amber-400">${fmtMoney(totalMonto)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    `;
+    openModal('modalPedidoExport');
+  }
+
+  function provPedidoImprimir() {
+    const cont = $('pedidoExportContent');
+    if (!cont) return;
+    const win = window.open('', '_blank', 'width=800,height=900');
+    if (!win) { toast('Permite popups para imprimir', 'error'); return; }
+    win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Pedido</title>
+      <style>
+        body { font-family: system-ui, sans-serif; padding: 20px; color: #111; }
+        .pedido-doc-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid #333; }
+        .pedido-doc-header h2 { margin: 4px 0; font-size: 22px; }
+        .pedido-tabla { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .pedido-tabla th, .pedido-tabla td { padding: 6px 8px; border-bottom: 1px solid #ccc; text-align: left; }
+        .pedido-tabla th { background: #f3f4f6; font-weight: 700; }
+        .pedido-tabla .text-right { text-align: right; }
+        .pedido-tabla tfoot td { font-weight: 700; padding-top: 12px; border-top: 2px solid #333; border-bottom: none; }
+        @media print { body { padding: 0; } }
+      </style>
+    </head><body>${cont.innerHTML}</body></html>`);
+    win.document.close();
+    setTimeout(() => { win.print(); }, 250);
+  }
+
+  function provPedidoWhatsApp() {
+    const items = Object.values(S.provPedido.items || {});
+    if (!items.length) { toast('No hay items', 'error'); return; }
+    const prov = S.proveedores.find(p => p.idProveedor === S.provSelId) || {};
+    const tel = String(prov.telefono || '').replace(/\D/g, '');
+    const texto = encodeURIComponent(_pedidoTextoWhatsApp());
+    const url = tel
+      ? `https://wa.me/${tel.length === 9 ? '51' + tel : tel}?text=${texto}`
+      : `https://wa.me/?text=${texto}`;
+    window.open(url, '_blank');
   }
 
   function _filtrarProvProductos(q) {
@@ -4444,12 +4753,12 @@ const MOS = (() => {
     if (S.provProductos[id]) {
       _pintaProvProductos(_filtrarPP(S.provProductos[id], S.provProdFilter));
     } else {
-      list.innerHTML = '<div class="skel h-12 rounded-lg"></div>';
+      list.innerHTML = '<div class="skel h-24 rounded-lg"></div><div class="skel h-24 rounded-lg mt-2"></div>';
     }
 
-    // Fetch fresco
+    // Fetch fresco con stock + min/max + sugerencia
     try {
-      const lista = await API.get('getProveedorProductos', { idProveedor: id });
+      const lista = await API.get('getProductosProveedorConStock', { idProveedor: id, rangoDias: 30 });
       const items = Array.isArray(lista) ? lista : (lista && lista.data) || [];
       S.provProductos[id] = items;
       _pintaProvProductos(_filtrarPP(items, S.provProdFilter));
@@ -5733,15 +6042,43 @@ const MOS = (() => {
       diaPago:          $('provDiaPago')?.value    || ''
     };
     if (!params.nombre) { toast('El nombre es requerido', 'error'); return; }
+    const isEdit = !!params.idProveedor;
+    // OPTIMISTA: actualizar lista local + cerrar modal de inmediato
+    const backup = (S.proveedores || []).map(p => ({ ...p }));
+    if (isEdit) {
+      const idx = (S.proveedores || []).findIndex(p => p.idProveedor === params.idProveedor);
+      if (idx >= 0) {
+        S.proveedores[idx] = { ...S.proveedores[idx],
+          nombre: params.nombre, ruc: params.ruc, telefono: params.telefono,
+          email: params.email, formaPago: params.formaPago, plazoCredito: params.plazoCredito,
+          categoriaProducto: params.categoriaProducto, banco: params.banco, numeroCuenta: params.numeroCuenta,
+          diaPedido: params.diaPedido, diaEntrega: params.diaEntrega, diaPago: params.diaPago
+        };
+      }
+    } else {
+      // Insert provisional con id temporal
+      const tmpId = 'TMP_' + Date.now();
+      S.proveedores = [{ idProveedor: tmpId, estado: '1', _tmp: true, ...params }, ...(S.proveedores || [])];
+    }
+    closeModal('modalProveedor');
+    renderProveedores();
+    if (S.provSelId && S.provSelId === params.idProveedor) selectProveedor(S.provSelId);
+    toast(isEdit ? 'Proveedor actualizado' : 'Proveedor creado', 'ok');
+    // Sync en background
     try {
-      const action = params.idProveedor ? 'actualizarProveedor' : 'crearProveedor';
-      await API.post(action, params);
-      toast(params.idProveedor ? 'Proveedor actualizado' : 'Proveedor creado', 'ok');
-      closeModal('modalProveedor');
-      S.loaded['proveedores'] = false;
-      await loadProveedores();
+      const action = isEdit ? 'actualizarProveedor' : 'crearProveedor';
+      const r = await API.post(action, params);
+      // Si fue creación, refrescar para obtener idProveedor real
+      if (!isEdit) {
+        const fresh = await API.get('getProveedores', {});
+        S.proveedores = Array.isArray(fresh) ? fresh : (fresh && fresh.data) || [];
+        renderProveedores();
+      }
     } catch (e) {
-      toast('Error: ' + e.message, 'error');
+      // Revertir en error
+      S.proveedores = backup;
+      renderProveedores();
+      toast('Error de sincronización: ' + e.message, 'error');
     }
   }
 
@@ -5764,13 +6101,34 @@ const MOS = (() => {
       observacion:    $('pagoObs')?.value || ''
     };
     if (!params.monto || parseFloat(params.monto) <= 0) { toast('Ingresa un monto válido', 'error'); return; }
+    // OPTIMISTA: cerrar modal + insertar pago temporal en cache
+    const id = params.idProveedor;
+    S.provPagos = S.provPagos || {};
+    const tmpPago = {
+      idPago:        'PAG_TMP_' + Date.now(),
+      idProveedor:   id,
+      monto:         parseFloat(params.monto),
+      fecha:         params.fecha,
+      numeroFactura: params.numeroFactura,
+      estado:        'PAGADO',
+      observacion:   params.observacion,
+      _tmp:          true
+    };
+    const backup = (S.provPagos[id] || []).slice();
+    S.provPagos[id] = [tmpPago, ...(S.provPagos[id] || [])];
+    closeModal('modalPago');
+    if (S.provSelId === id && S.provTab === 'info') _renderProvInfo();
+    toast('Pago registrado: ' + fmtMoney(params.monto), 'ok');
     try {
       await API.post('registrarPago', params);
-      toast('Pago registrado: ' + fmtMoney(params.monto), 'ok');
-      closeModal('modalPago');
-      if (S.provSelId) selectProveedor(S.provSelId);
+      // Refresh real
+      const r = await API.get('getPagos', { idProveedor: id });
+      S.provPagos[id] = Array.isArray(r) ? r : (r && r.data) || [];
+      if (S.provSelId === id && S.provTab === 'info') _renderProvInfo();
     } catch (e) {
-      toast('Error: ' + e.message, 'error');
+      S.provPagos[id] = backup;
+      if (S.provSelId === id && S.provTab === 'info') _renderProvInfo();
+      toast('Error de sincronización: ' + e.message, 'error');
     }
   }
 
@@ -9811,20 +10169,11 @@ const MOS = (() => {
   // ============================================================
   const _ppState = { editando: null };
 
-  async function abrirModalProvProducto(idPP) {
-    console.log('[abrirModalProvProducto] idPP=', idPP, 'provSelId=', S.provSelId);
+  function abrirModalProvProducto(idPP) {
     const idProv = S.provSelId;
-    if (!idProv) {
-      toast('Selecciona primero un proveedor', 'error');
-      console.warn('[abrirModalProvProducto] abortado: sin provSelId');
-      return;
-    }
+    if (!idProv) { toast('Selecciona primero un proveedor', 'error'); return; }
     const elModal = $('modalProvProducto');
-    if (!elModal) {
-      toast('Modal no disponible — recarga la app', 'error');
-      console.error('[abrirModalProvProducto] #modalProvProducto no existe en DOM');
-      return;
-    }
+    if (!elModal) { toast('Modal no disponible — recarga la app', 'error'); return; }
     _ppState.editando = idPP;
     const setVal = (id, v) => { const el = $(id); if (el) el.value = v; };
     const setTxt = (id, v) => { const el = $(id); if (el) el.textContent = v; };
@@ -9841,29 +10190,34 @@ const MOS = (() => {
     setVal('ppNotas', '');
     $('ppBtnEliminar')?.classList.toggle('hidden', !idPP);
 
+    // Pre-poblar desde cache local (ya está enriquecido) ANTES de abrir → evita parpadeo
     if (idPP) {
-      try {
-        const lista = await API.get('getProveedorProductos', { idProveedor: idProv });
-        const items = Array.isArray(lista) ? lista : (lista && lista.data) || [];
-        const pp = items.find(x => x.idPP === idPP);
-        if (pp) {
-          $('ppSkuBase').value     = pp.skuBase || '';
-          $('ppCodigoBarra').value = pp.codigoBarra || '';
-          $('ppPrecio').value      = pp.precioReferencia || '';
-          $('ppMinimo').value      = pp.minimoCompra || '';
-          $('ppDiasEntrega').value = pp.diasEntrega || '';
-          $('ppNotas').value       = pp.notas || '';
-          $('ppSeleccionado').textContent = `${pp.descripcion || pp.skuBase} (SKU ${pp.skuBase}${pp.codigoBarra ? ' · ▌' + pp.codigoBarra : ''})`;
-          $('ppSeleccionado').classList.remove('hidden');
-        }
-      } catch(_){}
+      const cache = (S.provProductos && S.provProductos[idProv]) || [];
+      const pp = cache.find(x => x.idPP === idPP);
+      if (pp) {
+        $('ppSkuBase').value     = pp.skuBase || '';
+        $('ppCodigoBarra').value = pp.codigoBarra || '';
+        $('ppPrecio').value      = pp.precioReferencia || '';
+        $('ppMinimo').value      = pp.minimoCompra || '';
+        $('ppDiasEntrega').value = pp.diasEntrega || '';
+        $('ppNotas').value       = pp.notas || '';
+        $('ppSeleccionado').textContent = `${pp.descripcion || pp.skuBase} (SKU ${pp.skuBase}${pp.codigoBarra ? ' · ▌' + pp.codigoBarra : ''})`;
+        $('ppSeleccionado').classList.remove('hidden');
+      }
     }
     openModal('modalProvProducto');
   }
 
+  // Búsqueda de productos: debounced + persistente (no muestra/oculta en cada tecla)
+  let _ppBuscarTimer = null;
   function ppBuscar() {
+    if (_ppBuscarTimer) clearTimeout(_ppBuscarTimer);
+    _ppBuscarTimer = setTimeout(_ppBuscarRender, 180);
+  }
+  function _ppBuscarRender() {
     const raw = ($('ppBuscar').value || '').trim();
     const resBox = $('ppBuscarRes');
+    if (!resBox) return;
     if (!raw) { resBox.style.display = 'none'; resBox.innerHTML = ''; return; }
     const qn = _norm(raw);
     const palabras = qn.split(/\s+/).filter(Boolean);
@@ -9877,9 +10231,10 @@ const MOS = (() => {
       palabras.forEach(w => { if (haystack.indexOf(w) >= 0) s++; else ok = false; });
       return { p, score: s, ok };
     }).filter(x => x.ok).sort((a, b) => b.score - a.score).slice(0, 10);
+    // Mantener resBox VISIBLE (no togglear display) — solo cambiar contenido para evitar reflow visible
+    resBox.style.display = 'block';
     if (!scored.length) {
       resBox.innerHTML = '<div class="pn-result text-slate-500 italic">Sin resultados</div>';
-      resBox.style.display = 'block';
       return;
     }
     resBox.innerHTML = scored.map(({ p }) => {
@@ -9891,7 +10246,6 @@ const MOS = (() => {
         <div class="text-slate-500 text-xs" style="font-family:monospace">SKU ${sku}${cb ? ' · ▌' + cb : ''}</div>
       </div>`;
     }).join('');
-    resBox.style.display = 'block';
   }
 
   function ppSeleccionar(sku, cb, desc) {
@@ -10606,11 +10960,15 @@ const MOS = (() => {
     pedidoQuitarItem, pedidoCambiarQty, guardarPedido,
     loadProveedores, selectProveedor, renderProveedores, cerrarDetalleProveedor,
     abrirModalProveedor, guardarProveedor, provBuscar,
+    provLlamar, provWhatsApp,
     provSetTab, _renderProvHistorico, _refetchHistoricoProv,
     _filtrarProvProductos, _filtrarProvHistorico,
     abrirModalProvProducto, ppBuscar, ppSeleccionar,
     guardarProvProducto, eliminarProvProducto, eliminarProvProductoRapido,
     jalarProductosProveedor,
+    provProductoEditarStockMinMax,
+    provPedidoToggle, provPedidoSetQty, provPedidoLimpiar,
+    provPedidoExportar, provPedidoImprimir, provPedidoWhatsApp,
     abrirVistaCargadores, nuevoCargador, editarCargador,
     abrirModalPago, guardarPago, abrirModalPedido,
     // Config

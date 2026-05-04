@@ -431,6 +431,194 @@ function upsertProductoProveedor(params) {
 }
 
 // ════════════════════════════════════════════════
+// CATÁLOGO ENRIQUECIDO DEL PROVEEDOR
+// Productos del proveedor + stock por zona/almacén + mín/máx + rotación + sugerencia
+// ════════════════════════════════════════════════
+function getProductosProveedorConStock(params) {
+  if (!params || !params.idProveedor) return { ok: false, error: 'idProveedor requerido' };
+  var rangoDias = parseInt(params.rangoDias) || 30;
+  try {
+    // 1. Productos del proveedor (activos)
+    var pp = _sheetToObjects(_getProvProdSheet()).filter(function(r){
+      var act = r.activa;
+      return String(r.idProveedor) === String(params.idProveedor)
+        && (act === true || act === '1' || act === 1 || String(act).toUpperCase() === 'TRUE');
+    });
+    if (!pp.length) return { ok: true, data: [] };
+
+    // 2. Productos master + indices
+    var productos = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
+    var prodById = {}, prodByCB = {}, bySku = {};
+    productos.forEach(function(p) {
+      prodById[p.idProducto] = p;
+      if (p.codigoBarra) prodByCB[p.codigoBarra] = p;
+      var sku = p.skuBase || p.idProducto;
+      if (!bySku[sku]) bySku[sku] = { base: null, presentaciones: [], idsAll: [], barrasAll: [] };
+      bySku[sku].presentaciones.push(p);
+      bySku[sku].idsAll.push(p.idProducto);
+      if (p.codigoBarra) bySku[sku].barrasAll.push(p.codigoBarra);
+      var fc = parseFloat(p.factorConversion) || 1;
+      if (p.idProducto === sku || (!bySku[sku].base && fc === 1)) bySku[sku].base = p;
+    });
+    Object.keys(bySku).forEach(function(sku){
+      if (!bySku[sku].base) bySku[sku].base = bySku[sku].presentaciones[0];
+    });
+
+    // 3. Equivalencias → ampliar barrasAll
+    var equiv = _readEquivalencias();
+    Object.keys(equiv.porSku || {}).forEach(function(sku){
+      if (!bySku[sku]) return;
+      (equiv.porSku[sku] || []).forEach(function(eq){
+        if (bySku[sku].barrasAll.indexOf(eq.codigoBarra) < 0) {
+          bySku[sku].barrasAll.push(eq.codigoBarra);
+        }
+        if (!prodByCB[eq.codigoBarra]) prodByCB[eq.codigoBarra] = bySku[sku].base;
+      });
+    });
+
+    // 4. Resolver de zonas
+    var resolver = _buildZonaResolver();
+
+    // 5. Stock WH agregado por sku
+    var stockWH = _safeReadWhStock();
+    var whBySku = {};
+    stockWH.forEach(function(s) {
+      var p = prodById[s.codigoProducto] || prodByCB[s.codigoProducto];
+      if (!p) return;
+      var sku = p.skuBase || p.idProducto;
+      whBySku[sku] = (whBySku[sku] || 0) + (parseFloat(s.cantidadDisponible) || 0);
+    });
+
+    // 6. Stock zonas (canon-resolved) por sku
+    var stockZonas = _safeReadMeStockZonas();
+    var zonasBySku = {};
+    stockZonas.forEach(function(z) {
+      var cb = String(z.Cod_Barras || z.codigoBarra || '').trim();
+      var p = prodByCB[cb];
+      if (!p) return;
+      var sku = p.skuBase || p.idProducto;
+      var zid = String(z.Zona_ID || z.zonaId || '').trim();
+      if (!zid) return;
+      var canon = resolver.resolve(zid);
+      if (!zonasBySku[sku]) zonasBySku[sku] = {};
+      if (!zonasBySku[sku][canon.id]) zonasBySku[sku][canon.id] = { nombre: canon.nombre, cantidad: 0 };
+      zonasBySku[sku][canon.id].cantidad += parseFloat(z.Cantidad || z.cantidad) || 0;
+    });
+
+    // 7. Ventas en rango por sku
+    var hoy = new Date();
+    var desde = new Date(hoy.getTime() - rangoDias * 86400000);
+    var ventasBySku = {};
+    try {
+      var ssMe = SpreadsheetApp.openById(_getProp('ME_SS_ID'));
+      var shVC = ssMe.getSheetByName('VENTAS_CABECERA');
+      var shVD = ssMe.getSheetByName('VENTAS_DETALLE');
+      if (shVC && shVD) {
+        var dataVC = shVC.getDataRange().getValues();
+        var idsValidas = {};
+        for (var i = 1; i < dataVC.length; i++) {
+          var fecha = dataVC[i][1] ? new Date(dataVC[i][1]) : null;
+          if (!fecha || fecha < desde) continue;
+          if (String(dataVC[i][8] || '').toUpperCase() === 'ANULADO') continue;
+          idsValidas[String(dataVC[i][0] || '').trim()] = true;
+        }
+        var dataVD = shVD.getDataRange().getValues();
+        for (var j = 1; j < dataVD.length; j++) {
+          var idV = String(dataVD[j][0] || '').trim();
+          if (!idsValidas[idV]) continue;
+          var sku2 = String(dataVD[j][1] || '').trim();
+          var cb2  = String(dataVD[j][6] || '').trim();
+          var p = prodById[sku2] || prodByCB[cb2];
+          if (!p) continue;
+          var skuKey = p.skuBase || p.idProducto;
+          var cant = parseFloat(dataVD[j][3]) || 0;
+          ventasBySku[skuKey] = (ventasBySku[skuKey] || 0) + cant;
+        }
+      }
+    } catch(_){}
+
+    // 8. Enriquecer
+    var resultado = pp.map(function(item){
+      var sku = item.skuBase;
+      var grupo = bySku[sku];
+      var p = (grupo && grupo.base) || prodById[sku] || {};
+      var whQ = whBySku[sku] || 0;
+      var zonas = zonasBySku[sku] ? Object.keys(zonasBySku[sku]).map(function(zid){
+        return { idZona: zid, nombre: zonasBySku[sku][zid].nombre, cantidad: zonasBySku[sku][zid].cantidad };
+      }) : [];
+      var zonasTotal = zonas.reduce(function(s,z){ return s + z.cantidad; }, 0);
+      var total = whQ + zonasTotal;
+      var ventas = ventasBySku[sku] || 0;
+      var rotDia = rangoDias > 0 ? ventas / rangoDias : 0;
+      var minimo = parseFloat(p.stockMinimo) || 0;
+      var maximo = parseFloat(p.stockMaximo) || 0;
+
+      // Sugerencia de pedido
+      var sugerencia = 0;
+      var razonSugerencia = '';
+      if (minimo > 0 && total < minimo) {
+        var objetivo = maximo > minimo ? maximo : minimo * 2;
+        sugerencia = Math.max(0, Math.ceil(objetivo - total));
+        razonSugerencia = 'Reponer hasta ' + (maximo > minimo ? 'máx (' + objetivo + ')' : '2× mín (' + objetivo + ')');
+      } else if (rotDia > 0) {
+        var cobertura14 = Math.ceil(rotDia * 14);
+        sugerencia = Math.max(0, cobertura14 - Math.floor(total));
+        razonSugerencia = sugerencia > 0 ? 'Cobertura 14d (rot ' + rotDia.toFixed(1) + '/d)' : 'Stock cubre 14d';
+      } else if (total <= 0 && minimo === 0) {
+        razonSugerencia = 'Sin rotación · sin mín — define mínimo';
+      }
+
+      // Alerta
+      var alerta = 'OK';
+      if (total < 0) alerta = 'NEGATIVO';
+      else if (minimo > 0 && total < minimo) alerta = 'BAJO_MINIMO';
+      else if (rotDia > 0 && total > 0 && (total / rotDia) < 7) alerta = 'AGOTAR_PRONTO';
+      else if (minimo > 0 && total < minimo * 1.2) alerta = 'CERCA_MINIMO';
+      else if (total > 0 && ventas === 0) alerta = 'SIN_ROTACION';
+
+      return {
+        idPP:            item.idPP,
+        idProveedor:     item.idProveedor,
+        skuBase:         sku,
+        idProducto:      p.idProducto || sku,
+        descripcion:     item.descripcion || p.descripcion || sku,
+        codigoBarra:     String(item.codigoBarra || p.codigoBarra || ''),
+        precioReferencia: parseFloat(item.precioReferencia) || 0,
+        minimoCompra:    parseFloat(item.minimoCompra) || 0,
+        diasEntrega:     parseInt(item.diasEntrega) || 0,
+        notas:           item.notas || '',
+        stockWh:         whQ,
+        stockTienda:     zonasTotal,
+        stockTotal:      total,
+        zonas:           zonas.sort(function(a,b){ return b.cantidad - a.cantidad; }),
+        stockMinimo:     minimo,
+        stockMaximo:     maximo,
+        ventasRango:     ventas,
+        rotacionDia:     Math.round(rotDia * 10) / 10,
+        rangoDias:       rangoDias,
+        sugerencia:      sugerencia,
+        razonSugerencia: razonSugerencia,
+        alerta:          alerta,
+        countPresentaciones: grupo ? grupo.presentaciones.length : 1,
+        countEquivalencias:  (equiv.porSku && equiv.porSku[sku]) ? equiv.porSku[sku].length : 0
+      };
+    });
+
+    // Ordenar: alertas primero
+    var sevOrden = { NEGATIVO: 0, BAJO_MINIMO: 1, AGOTAR_PRONTO: 2, CERCA_MINIMO: 3, SIN_ROTACION: 4, OK: 5 };
+    resultado.sort(function(a, b){
+      var dx = (sevOrden[a.alerta] || 9) - (sevOrden[b.alerta] || 9);
+      if (dx !== 0) return dx;
+      return (a.descripcion || '').localeCompare(b.descripcion || '');
+    });
+
+    return { ok: true, data: resultado };
+  } catch(e) {
+    return { ok: false, error: 'Error: ' + e.message };
+  }
+}
+
+// ════════════════════════════════════════════════
 // JALAR productos al catálogo del proveedor desde
 // el histórico de GUIAS (warehouseMos). Útil cuando
 // hay guías cerradas antes del auto-upsert o cuando

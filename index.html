@@ -812,6 +812,138 @@
       padding: 12px;
       animation: provExpandIn .18s ease-out;
     }
+    /* Padding extra al fondo del view-proveedores en mobile/tablet
+       para que el bottom nav no tape el contenido cuando hay detalle abierto */
+    @media (max-width: 1023px) {
+      #view-proveedores { padding-bottom: 100px; }
+      #provPedidoToolbar + * { padding-bottom: 80px; }
+    }
+
+    /* ── Productos del proveedor (card enriquecida) ────────── */
+    .prov-prod-card {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 10px;
+      padding: 10px 12px;
+      transition: border-color .15s, transform .15s;
+    }
+    .prov-prod-card:hover { border-color: rgba(99,102,241,.35); }
+    .prov-stock-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 6px 0; border-top: 1px dashed #1e293b;
+    }
+    .prov-stock-total {
+      display: flex; align-items: baseline; gap: 6px;
+    }
+    .prov-stock-label { font-size: .65rem; color: #64748b; text-transform: uppercase; letter-spacing: .05em; }
+    .prov-stock-num { font-size: 1.1rem; font-weight: 800; }
+    .prov-stock-detail {
+      display: flex; align-items: center; gap: 6px;
+      font-size: .7rem; color: #94a3b8;
+      margin-left: auto;
+      flex-wrap: wrap;
+    }
+    .prov-zonas-row {
+      display: flex; flex-wrap: wrap; gap: 4px;
+      padding-bottom: 6px;
+    }
+    .prov-zona-chip {
+      font-size: .65rem; padding: 2px 7px; border-radius: 999px;
+      background: rgba(99,102,241,.1); color: #c7d2fe; border: 1px solid rgba(99,102,241,.2);
+    }
+    .prov-minmax-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 0; border-top: 1px dashed #1e293b;
+      flex-wrap: wrap;
+    }
+    .prov-minmax-grp {
+      display: flex; align-items: center; gap: 4px;
+    }
+    .prov-minmax-lbl {
+      font-size: .65rem; color: #64748b; font-weight: 700; text-transform: uppercase;
+    }
+    .prov-minmax-inp {
+      width: 54px; padding: 2px 6px; border-radius: 6px;
+      background: #060d1f; border: 1px solid #1e293b;
+      color: #f1f5f9; font-size: .75rem; font-weight: 700; text-align: right;
+      transition: border-color .15s;
+    }
+    .prov-minmax-inp:focus { outline: none; border-color: #ffd700; }
+    .prov-sugerencia-txt {
+      font-size: .65rem; color: #94a3b8; font-style: italic;
+      margin-left: auto; text-align: right;
+    }
+    .prov-pedido-row {
+      display: flex; align-items: center; gap: 6px;
+      padding-top: 6px; border-top: 1px dashed #1e293b;
+    }
+    .prov-pedido-toggle {
+      width: 28px; height: 28px; border-radius: 7px;
+      background: #060d1f; border: 1.5px solid #1e293b;
+      color: #94a3b8; font-size: .9rem; font-weight: 700;
+      cursor: pointer; transition: all .15s;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .prov-pedido-toggle:hover { border-color: #6366f1; color: #c7d2fe; }
+    .prov-pedido-toggle.on {
+      background: #6366f1; border-color: #6366f1; color: white;
+    }
+    .prov-pedido-qty {
+      width: 60px; padding: 3px 6px; border-radius: 6px;
+      background: #060d1f; border: 1px solid #1e293b;
+      color: #f1f5f9; font-size: .8rem; font-weight: 700; text-align: center;
+    }
+    .prov-pedido-qty:focus { outline: none; border-color: #ffd700; }
+    .prov-pedido-sub { font-size: .7rem; color: #64748b; }
+    .prov-pedido-total { font-size: .8rem; font-weight: 700; color: #fbbf24; }
+
+    /* Toolbar flotante de pedido en construcción */
+    .prov-pedido-toolbar {
+      position: fixed; left: 16px; right: 16px;
+      bottom: 70px; z-index: 25;
+      background: rgba(15,23,42,.96); backdrop-filter: blur(12px);
+      border: 1px solid rgba(99,102,241,.4);
+      border-radius: 12px; padding: 10px 12px;
+      display: flex; align-items: center; gap: 10px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.5);
+      animation: pedidoBarIn .2s ease-out;
+    }
+    @keyframes pedidoBarIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .prov-pedido-bar-info { flex: 1; min-width: 0; }
+    @media (min-width: 768px) {
+      .prov-pedido-toolbar {
+        left: auto; right: 24px;
+        bottom: 24px; max-width: 480px;
+      }
+    }
+
+    /* Pedido exportable (modal) */
+    .pedido-doc { color: #e2e8f0; }
+    .pedido-doc-header {
+      display: flex; justify-content: space-between; align-items: flex-end;
+      margin-bottom: 16px; padding-bottom: 8px;
+      border-bottom: 1.5px solid #334155;
+    }
+    .pedido-tabla {
+      width: 100%; border-collapse: collapse; font-size: .8rem;
+    }
+    .pedido-tabla th, .pedido-tabla td {
+      padding: 8px 6px; text-align: left;
+      border-bottom: 1px solid #1e293b;
+    }
+    .pedido-tabla th {
+      background: #0a1428; color: #cbd5e1;
+      font-weight: 700; font-size: .7rem; text-transform: uppercase; letter-spacing: .05em;
+    }
+    .pedido-tabla .text-right { text-align: right; }
+    .pedido-tabla tfoot td {
+      border-top: 1.5px solid #334155;
+      border-bottom: none; padding-top: 12px;
+    }
     @keyframes provExpandIn {
       from { opacity: 0; transform: translateY(-4px); }
       to   { opacity: 1; transform: translateY(0); }
@@ -821,6 +953,34 @@
       border-color: rgba(99,102,241,.5);
       border-bottom-color: transparent;
       border-radius: 12px 12px 0 0;
+    }
+    /* Avatar circular con iniciales */
+    .prov-avatar {
+      width: 38px; height: 38px; border-radius: 50%;
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .8rem; font-weight: 800; letter-spacing: -.02em;
+      box-shadow: 0 2px 6px rgba(0,0,0,.3);
+    }
+    /* Acciones rápidas en card de proveedor */
+    .prov-quick-btn {
+      flex: 1; padding: 5px 8px; font-size: .7rem;
+      background: rgba(99,102,241,.08); border: 1px solid rgba(99,102,241,.18);
+      color: #c7d2fe; border-radius: 7px;
+      cursor: pointer; transition: all .15s;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      font-weight: 600;
+    }
+    .prov-quick-btn:hover {
+      background: rgba(99,102,241,.18); border-color: rgba(99,102,241,.4);
+    }
+    .prov-quick-btn.whatsapp {
+      flex: 0 0 auto; padding: 5px 12px;
+      background: rgba(37,211,102,.12); border-color: rgba(37,211,102,.25);
+      color: #86efac;
+    }
+    .prov-quick-btn.whatsapp:hover {
+      background: rgba(37,211,102,.22); border-color: rgba(37,211,102,.45);
     }
 
     /* ── Radio cards para revisar PN ─────────────────────── */
@@ -4838,6 +4998,22 @@
     <div class="overflow-y-auto px-5 py-4 space-y-2" style="flex:1">
       <p class="text-xs text-slate-500 mb-2">Producto: <span id="selProvProducto" class="text-slate-200"></span></p>
       <div id="selProvList" class="space-y-2"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Pedido exportable (vista imprimible + WhatsApp) -->
+<div id="modalPedidoExport" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.closeModal('modalPedidoExport')">
+  <div class="modal-box p-0" style="max-width:680px;display:flex;flex-direction:column;max-height:92vh">
+    <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
+      <h3 class="font-semibold text-amber-400 text-base">📄 Pedido a proveedor</h3>
+      <button onclick="MOS.closeModal('modalPedidoExport')" class="modal-close-x">×</button>
+    </div>
+    <div id="pedidoExportContent" class="overflow-y-auto px-5 py-4" style="flex:1"></div>
+    <div class="px-5 py-3 flex gap-2 border-t border-slate-700/50 flex-shrink-0">
+      <button onclick="MOS.closeModal('modalPedidoExport')" class="btn-ghost flex-1">Cerrar</button>
+      <button onclick="MOS.provPedidoImprimir()" class="btn-ghost flex-1">🖨️ Imprimir</button>
+      <button onclick="MOS.provPedidoWhatsApp()" class="btn-primary flex-1" style="background:#25d366">💬 WhatsApp</button>
     </div>
   </div>
 </div>
