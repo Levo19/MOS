@@ -229,9 +229,9 @@
       .bnav-pill { padding: 5px 3px 4px; }
     }
 
-    /* Views */
-    .view { display: none; }
-    .view.active { display: block; animation: fadeIn .2s ease; }
+    /* Views — el !important blinda contra overrides accidentales (Tailwind/utilities) */
+    .view { display: none !important; }
+    .view.active { display: block !important; animation: fadeIn .2s ease; }
     @keyframes fadeIn       { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
     @keyframes cardSlideIn  { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
     @keyframes ticketFadeIn { from { opacity: 0; background: rgba(99,102,241,.12); } to { opacity: 1; background: transparent; } }
@@ -2942,39 +2942,6 @@
         </button>
       </div>
 
-      <!-- Modal: Editar margen default global -->
-      <div id="modalMargenDefault" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.finCerrarEditorMargenDefault()">
-        <div class="modal-box p-0 max-w-md w-full" style="display:flex;flex-direction:column">
-          <div class="px-5 pt-5 pb-3 flex items-center justify-between" style="border-bottom:1px solid #1e293b">
-            <div>
-              <h3 class="font-semibold text-amber-400 text-base">⚙️ Margen default</h3>
-              <p class="text-xs text-slate-500 mt-0.5">Para productos sin precio costo asignado</p>
-            </div>
-            <button onclick="MOS.finCerrarEditorMargenDefault()" class="modal-close-x">×</button>
-          </div>
-          <div class="px-5 py-4 space-y-3">
-            <div>
-              <label class="lbl">Margen sobre venta (%)</label>
-              <input type="number" min="0" max="99" step="0.5" id="finMargenDefaultInput" class="inp text-lg" placeholder="20">
-              <div class="text-[10px] text-slate-600 italic mt-1">
-                Si vendes a S/ 100 con margen X%, el costo estimado = 100 × (1 − X/100)
-              </div>
-            </div>
-            <div class="p-3 rounded text-[11px]" style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2)">
-              <div class="text-slate-300 mb-1"><b>📊 Impacto en el día actual:</b></div>
-              <div id="finMargenDefaultImpacto" class="text-slate-400 leading-relaxed">—</div>
-            </div>
-            <div class="text-[10px] text-slate-500">
-              💡 Solo aplica para productos sin precio costo. Los que sí tienen <code style="background:#1e293b;padding:1px 4px;border-radius:3px">precioCosto</code> usan ese valor real, este default no afecta.
-            </div>
-          </div>
-          <div class="px-5 py-3 flex gap-2" style="border-top:1px solid #1e293b">
-            <button onclick="MOS.finCerrarEditorMargenDefault()" class="btn-ghost flex-1">Cancelar</button>
-            <button onclick="MOS.finGuardarMargenDefault()" class="btn-primary flex-1" id="finMargenDefaultSaveBtn">Guardar</button>
-          </div>
-        </div>
-      </div>
-
       <!-- ── Punto de Equilibrio ──────────────────────────────────── -->
       <div class="fin-panel mb-5">
         <div class="flex items-center justify-between mb-2">
@@ -5429,6 +5396,39 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
         <div class="tut-dot" onclick="MOS.tutTicketsGoto(8)"></div>
       </div>
       <button onclick="MOS.tutTicketsNext()" class="tut-btn-nav tut-btn-next" id="tutTicBtnNext" style="background:linear-gradient(135deg,#10b981,#059669);color:#0b1220">Siguiente →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Editar margen default global (Finanzas) -->
+<div id="modalMargenDefault" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.finCerrarEditorMargenDefault()">
+  <div class="modal-box p-0 max-w-md w-full" style="display:flex;flex-direction:column">
+    <div class="px-5 pt-5 pb-3 flex items-center justify-between" style="border-bottom:1px solid #1e293b">
+      <div>
+        <h3 class="font-semibold text-amber-400 text-base">⚙️ Margen default</h3>
+        <p class="text-xs text-slate-500 mt-0.5">Para productos sin precio costo asignado</p>
+      </div>
+      <button onclick="MOS.finCerrarEditorMargenDefault()" class="modal-close-x">×</button>
+    </div>
+    <div class="px-5 py-4 space-y-3">
+      <div>
+        <label class="lbl">Margen sobre venta (%)</label>
+        <input type="number" min="0" max="99" step="0.5" id="finMargenDefaultInput" class="inp text-lg" placeholder="20">
+        <div class="text-[10px] text-slate-600 italic mt-1">
+          Si vendes a S/ 100 con margen X%, el costo estimado = 100 × (1 − X/100)
+        </div>
+      </div>
+      <div class="p-3 rounded text-[11px]" style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2)">
+        <div class="text-slate-300 mb-1"><b>📊 Impacto en el día actual:</b></div>
+        <div id="finMargenDefaultImpacto" class="text-slate-400 leading-relaxed">—</div>
+      </div>
+      <div class="text-[10px] text-slate-500">
+        💡 Solo aplica para productos sin precio costo. Los que sí tienen <code style="background:#1e293b;padding:1px 4px;border-radius:3px">precioCosto</code> usan ese valor real, este default no afecta.
+      </div>
+    </div>
+    <div class="px-5 py-3 flex gap-2" style="border-top:1px solid #1e293b">
+      <button onclick="MOS.finCerrarEditorMargenDefault()" class="btn-ghost flex-1">Cancelar</button>
+      <button onclick="MOS.finGuardarMargenDefault()" class="btn-primary flex-1" id="finMargenDefaultSaveBtn">Guardar</button>
     </div>
   </div>
 </div>
