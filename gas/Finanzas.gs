@@ -325,7 +325,12 @@ function _calcularPersonal(fecha) {
       var f = r.fecha instanceof Date
         ? Utilities.formatDate(r.fecha, tz, 'yyyy-MM-dd')
         : String(r.fecha || '').substring(0, 10);
-      return f === fecha;
+      if (f !== fecha) return false;
+      // Filtrar jornadas legacy de MASTER/ADMINISTRADOR/MOS (no se les paga)
+      var rol = String(r.rol || '').toUpperCase();
+      var app = String(r.appOrigen || '');
+      if (app === 'MOS' || rol === 'MASTER' || rol === 'ADMINISTRADOR' || rol === 'ADMIN') return false;
+      return true;
     });
 
   // Deduplicar: mismo nombre puede aparecer por AUTO_VENTA + AUTO_CAJAS + manual.
@@ -530,7 +535,11 @@ function _sincronizarJornadasAutoDelDia(fecha) {
   fecha = fecha || _hoy();
   var personal = _sheetToObjects(getSheet('PERSONAL_MASTER')).filter(function(p) {
     var ac = p.estado;
-    return (ac === undefined || ac === '' || ac === 1 || ac === '1' || ac === true);
+    var activo = (ac === undefined || ac === '' || ac === 1 || ac === '1' || ac === true);
+    if (!activo) return false;
+    // Excluir MASTER/ADMINISTRADOR y appOrigen=MOS (auditores, no se les paga jornada)
+    if (typeof _esPersonalEvaluable === 'function') return _esPersonalEvaluable(p);
+    return true;
   });
 
   // Cargar jornadas existentes del día (idempotencia por nombre)

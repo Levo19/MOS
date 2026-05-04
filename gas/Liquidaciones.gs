@@ -141,10 +141,13 @@ function getLiquidacionesPendientesSemana(params) {
     var hoy = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
     var mapaYaLiq = _cargarDiasYaLiquidados();
 
-    // Personal activo
+    // Personal activo y EVALUABLE (excluye MASTER/ADMINISTRADOR/MOS — son auditores)
     var personal = _sheetToObjects(getSheet('PERSONAL_MASTER')).filter(function(p) {
       var ac = p.estado;
-      return (ac === undefined || ac === '' || ac === 1 || ac === '1' || ac === true);
+      var activo = (ac === undefined || ac === '' || ac === 1 || ac === '1' || ac === true);
+      if (!activo) return false;
+      if (typeof _esPersonalEvaluable === 'function') return _esPersonalEvaluable(p);
+      return true;
     });
 
     var resultado = [];
@@ -235,6 +238,11 @@ function emitirLiquidacion(params) {
 
     var p = _resolverPersona(params.idPersonal);
     if (!p) return { ok: false, error: 'Personal no encontrado' };
+
+    // Bloquear roles no evaluables (MASTER, ADMINISTRADOR, appOrigen=MOS)
+    if (typeof _esPersonalEvaluable === 'function' && !_esPersonalEvaluable(p)) {
+      return { ok: false, error: 'Este rol no es evaluable ni se le paga jornada (MASTER/ADMINISTRADOR/auditor)' };
+    }
 
     var sem = _semanaLunDom(params.fechaRef || null);
     var mapaYaLiq = _cargarDiasYaLiquidados();

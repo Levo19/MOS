@@ -556,10 +556,27 @@ function _calcularKpisAutoDia(p, fecha) {
 // ── Resumen del día para TODOS los empleados ───────────────────
 // Incluye warehouseMos del master + vendedores reales que abrieron caja hoy
 // en MosExpress. Si un vendedor no está en master se vuelve virtual MEX:nombre.
+// ── Personal evaluable ──────────────────────────────────────
+// Determina si un colaborador entra en evaluación / liquidación.
+// EXCLUIDOS:
+//   - appOrigen = 'MOS'         (admins del panel, no son operativos)
+//   - rol = MASTER              (acceso total, audita pero no es auditado)
+//   - rol = ADMINISTRADOR/ADMIN  (idem)
+// INCLUIDOS:
+//   - warehouseMos: ALMACENERO, ENVASADOR, OPERADOR (operativos)
+//   - mosExpress:   CAJERO, VENDEDOR
+function _esPersonalEvaluable(p) {
+  if (!p) return false;
+  if (String(p.appOrigen || '') === 'MOS') return false;
+  var rol = String(p.rol || '').toUpperCase();
+  if (rol === 'MASTER' || rol === 'ADMINISTRADOR' || rol === 'ADMIN') return false;
+  return true;
+}
+
 function getResumenTodosDia(params) {
   var fecha    = params.fecha || _hoy();
   var personal = _sheetToObjects(getSheet('PERSONAL_MASTER')).filter(function(r){
-    return String(r.estado) === '1';
+    return String(r.estado) === '1' && _esPersonalEvaluable(r);
   });
 
   // Detectar genéricos de mosExpress por rol (plantillas para virtuales)
