@@ -11,6 +11,10 @@
 function getFinanzasDia(params) {
   var fecha = params.fecha || _hoy();
   try {
+    // Auto-sincronizar jornadas: si hay personal con presencia detectada
+    // (ventas, sesiones, cajas) pero sin JORNADA registrada, la crea ahora.
+    // Esto garantiza que finanzas, evaluaciones y liquidaciones siempre cuadren.
+    try { _sincronizarJornadasAutoDelDia(fecha); } catch(eS) { Logger.log('Sync jornadas: ' + eS.message); }
     var ingresos   = _calcularIngresos(fecha);
     var costos     = _calcularCostoVentas(fecha, ingresos.detalleIds);
     var personal   = _calcularPersonal(fecha);
@@ -513,3 +517,64 @@ function _registrarJornadaIdempotente(nombre, rol, montoJornal, appOrigen, fecha
 }
 
 // _sheetToObjectsLocal está definida en Conexiones.gs (compartida en el mismo proyecto GAS)
+
+// ════════════════════════════════════════════════════════════
+// SINCRONIZACIÓN AUTO: presencia detectada → JORNADA registrada
+// ════════════════════════════════════════════════════════════
+// Para cada personal activo:
+//   - Si _estaPresente(p, fecha) === true (vendió, abrió caja, inició sesión WH)
+//   - Y NO tiene una JORNADA en la fecha → crea una con monto = montoBase
+// Idempotente: nunca duplica. Garantiza que finanzas, evaluaciones y liquidaciones
+// vean el mismo conjunto de "personas que trabajaron hoy".
+function _sincronizarJornadasAutoDelDia(fecha) {
+  fecha = fecha || _hoy();
+  var personal = _sheetToObjects(getSheet('PERSONAL_MASTER')).filter(function(p) {
+    var ac = p.estado;
+    return (ac === undefined || ac === '' || ac === 1 || ac === '1' || ac === true);
+  });
+
+  // Cargar jornadas existentes del día (idempotencia por nombre)
+  var sheet = getSheet('JORNADAS');
+  var data  = sheet.getDataRange().getValues();
+  var tz    = Session.getScriptTimeZone();
+  var existentesPorNombre = {};
+  for (var i = 1; i < data.length; i++) {
+    var f = data[i][1] instanceof Date
+      ? Utilities.formatDate(data[i][1], tz, 'yyyy-MM-dd')
+      : String(data[i][1] || '').substring(0, 10);
+    if (f !== fecha) continue;
+    var n = String(data[i][3] || '').toLowerCase().trim();
+    if (n) existentesPorNombre[n] = true;
+  }
+
+  var creadas = 0, errores = [];
+  personal.forEach(function(p) {
+    var nombreFull = (p.nombre + ' ' + (p.apellido || '')).trim();
+    var nLow = nombreFull.toLowerCase().trim();
+    if (!nLow) return;
+    if (existentesPorNombre[nLow]) return;
+    try {
+      // _estaPresente vive en Evaluaciones.gs; mismo proyecto GAS lo expone.
+      if (typeof _estaPresente !== 'function') return;
+      if (!_estaPresente(p, fecha)) return;
+      var montoBase = parseFloat(p.montoBase) || 0;
+      var fuente    = p.appOrigen === 'warehouseMos' ? 'AUTO_LOGIN' : 'AUTO_VENTA';
+      // Schema: idJornada | fecha | idPersonal | nombre | rol | appOrigen | zona | montoJornal | observacion | registradoPor | fuente
+      sheet.appendRow([
+        _generateId('JOR'),
+        fecha,
+        p.idPersonal || '',
+        nombreFull,
+        p.rol || '',
+        p.appOrigen || '',
+        '',                  // zona (vacía en sync auto)
+        montoBase,
+        'Sincronizado automático: presencia detectada',
+        'AUTO',
+        fuente
+      ]);
+      creadas++;
+    } catch(eP) { errores.push({ nombre: nombreFull, error: eP.message }); }
+  });
+  return { creadas: creadas, errores: errores };
+}
