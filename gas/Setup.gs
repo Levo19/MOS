@@ -24,7 +24,9 @@ var MOS_SHEET_NAMES = {
   JORNADAS:             'JORNADAS',            // Quién trabajó cada día y cuánto cobró
   GASTOS:               'GASTOS',              // Gastos operativos y administrativos del día
   // ── Política de precios ────────────────────────────────────
-  CATEGORIAS:           'CATEGORIAS'           // Categorías + política default por categoría
+  CATEGORIAS:           'CATEGORIAS',          // Categorías + política default por categoría
+  // ── Liquidaciones de personal ──────────────────────────────
+  LIQUIDACIONES:        'LIQUIDACIONES'        // Tickets de pago al personal (snapshot por días)
 };
 
 var MOS_HEADERS = {
@@ -105,7 +107,19 @@ var MOS_HEADERS = {
   // margenPct: % objetivo cuando modoVenta=MARGEN o COMPETITIVO
   // precioTope: precio máximo (solo para COMPETITIVO)
   CATEGORIAS:          ['idCategoria','nombre','modoVenta','margenPct','precioTope',
-                        'descripcion','estado','fechaCreacion']
+                        'descripcion','estado','fechaCreacion'],
+
+  // ── Liquidaciones de personal ────────────────────────────
+  // Snapshot de pago a un colaborador por un conjunto de días.
+  // diasJSON: array de objetos con { fecha, presente, auditado, base, bonus, meta, logros[], pendientes[] }
+  // estado: PENDIENTE | PAGADA | ANULADA
+  // esLiquidacionParcial: true si no abarca toda la semana lun-dom
+  // idGastoGenerado: ID del registro en GASTOS al pagar (auto-vinculado)
+  LIQUIDACIONES:       ['idLiquidacion','idPersonal','nombrePersonal','rol','appOrigen',
+                        'semanaReferencia','fechaInicio','fechaFin','diasJSON',
+                        'cantidadDias','montoBase','montoBonus','montoMeta','montoTotal',
+                        'estado','esLiquidacionParcial','fechaGeneracion','generadoPor',
+                        'fechaPago','pagadoPor','idGastoGenerado','comentario']
 };
 
 // ============================================================

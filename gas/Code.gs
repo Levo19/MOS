@@ -165,6 +165,16 @@ function _route(method, e) {
       case 'getResumenTodosDia':        return getResumenTodosDia(params);
       case 'getLiquidacionSemana':      return getLiquidacionSemana(params);
 
+      // ── Liquidaciones (snapshot inmutable) ─────────────────
+      case 'getLiquidacionesPendientesSemana': return getLiquidacionesPendientesSemana(params);
+      case 'getDetalleDiasPendientes':         return getDetalleDiasPendientes(params);
+      case 'emitirLiquidacion':                return emitirLiquidacion(params);
+      case 'emitirLiquidacionesTodas':         return emitirLiquidacionesTodas(params);
+      case 'marcarLiquidacionPagada':          return marcarLiquidacionPagada(params);
+      case 'anularLiquidacion':                return anularLiquidacion(params);
+      case 'getLiquidacionesEmitidas':         return getLiquidacionesEmitidas(params);
+      case 'getLiquidacionDetalle':            return getLiquidacionDetalle(params);
+
       // ── Cajas MosExpress ────────────────────────────────────
       case 'getCierresCaja':            return getCierresCaja(params);
       case 'anularTicketME':            return anularTicketME(params);
