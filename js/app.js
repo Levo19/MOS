@@ -3916,25 +3916,121 @@ const MOS = (() => {
   }
 
   function renderEnvTable() {
-    const tbody = $('tbodyEnv');
-    if (!tbody) return;
+    const cont = $('envList');
+    const summaryEl = $('envSummary');
+    if (!cont) return;
     if (!S.envasados.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-slate-500 text-sm">Sin envasados recientes</td></tr>';
+      cont.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm">Sin envasados recientes</div>';
+      if (summaryEl) summaryEl.textContent = '';
       return;
     }
-    tbody.innerHTML = S.envasados.slice(-20).reverse().map(e => {
-      const ef = parseFloat(e.eficienciaPct || 0);
-      const color = ef >= 98 ? 'text-green-400' : ef >= 90 ? 'text-yellow-400' : 'text-red-400';
-      const baseLbl = _labelProducto(e.codigoProductoBase);
-      const envLbl  = e.codigoProductoEnvasado ? _labelProducto(e.codigoProductoEnvasado) : '—';
-      return `<tr>
-        <td class="text-xs text-slate-400">${fmtDate(e.fecha)}</td>
-        <td class="text-xs sm:text-sm">${baseLbl} <span class="text-slate-600">→</span> ${envLbl}</td>
-        <td class="hidden sm:table-cell">${e.unidadesProducidas || 0}</td>
-        <td class="${color} font-semibold">${ef.toFixed(1)}%</td>
-        <td><span class="badge ${e.estado === 'COMPLETADO' ? 'badge-green' : 'badge-gray'}">${e.estado || '—'}</span></td>
-      </tr>`;
+    // Agrupar por día (yyyy-MM-dd)
+    const porDia = {};
+    S.envasados.forEach(e => {
+      const f = String(e.fecha || '').substring(0, 10);
+      if (!f) return;
+      if (!porDia[f]) porDia[f] = [];
+      porDia[f].push(e);
+    });
+    const dias = Object.keys(porDia).sort((a, b) => b.localeCompare(a)); // más reciente primero
+
+    // Resumen global
+    const totEnv = S.envasados.length;
+    const totUds = S.envasados.reduce((s, e) => s + (parseFloat(e.unidadesProducidas) || 0), 0);
+    const efPromGlobal = S.envasados.length
+      ? S.envasados.reduce((s, e) => s + (parseFloat(e.eficienciaPct) || 0), 0) / S.envasados.length
+      : 0;
+    if (summaryEl) {
+      summaryEl.innerHTML = `${totEnv} envasados · <b class="text-slate-300">${totUds}</b> uds totales · eficiencia prom <b class="${_envEfColor(efPromGlobal)}">${efPromGlobal.toFixed(1)}%</b>`;
+    }
+
+    cont.innerHTML = dias.map(diaKey => {
+      const items = porDia[diaKey];
+      const totDiaUds = items.reduce((s, e) => s + (parseFloat(e.unidadesProducidas) || 0), 0);
+      const efPromDia = items.length
+        ? items.reduce((s, e) => s + (parseFloat(e.eficienciaPct) || 0), 0) / items.length
+        : 0;
+      // Usuarios distintos del día
+      const usuariosSet = new Set();
+      items.forEach(e => { if (e.usuario) usuariosSet.add(e.usuario); });
+      const usuariosDia = Array.from(usuariosSet).join(', ') || '—';
+
+      const itemsHtml = items
+        .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')))
+        .map(e => {
+          const ef = parseFloat(e.eficienciaPct) || 0;
+          const efCls = _envEfColor(ef);
+          const efBg  = ef >= 98 ? 'rgba(16,185,129,.08)'
+                     : ef >= 90 ? 'rgba(245,158,11,.08)'
+                     : 'rgba(244,63,94,.08)';
+          const baseLbl = _labelProducto(e.codigoProductoBase);
+          const envLbl  = e.codigoProductoEnvasado ? _labelProducto(e.codigoProductoEnvasado) : '<span class="text-slate-600 italic">sin código envasado</span>';
+          const hora = String(e.fecha || '').substring(11, 16) || '';
+          const estadoBadge = e.estado === 'COMPLETADO'
+            ? '<span class="badge badge-green">Completado</span>'
+            : `<span class="badge badge-gray">${e.estado || '—'}</span>`;
+          const cantBase = parseFloat(e.cantidadBase) || 0;
+          const cantBaseTxt = cantBase > 0 ? `${cantBase} ${e.unidadBase || ''}` : '—';
+          const merma = parseFloat(e.mermaReal);
+          const mermaTxt = !isNaN(merma) ? `merma ${merma}` : '';
+
+          return `<div class="card-sm p-3" style="background:${efBg};border-left:3px solid ${ef >= 98 ? '#10b981' : ef >= 90 ? '#f59e0b' : '#f43f5e'}">
+            <div class="flex items-start justify-between gap-3 flex-wrap">
+              <div class="min-w-0 flex-1">
+                <div class="text-xs sm:text-sm">
+                  <span class="text-slate-400 text-[10px]">DESDE:</span> ${baseLbl}
+                </div>
+                <div class="text-xs sm:text-sm mt-1">
+                  <span class="text-slate-400 text-[10px]">HACIA:</span> ${envLbl}
+                </div>
+                <div class="flex items-center gap-2 mt-2 flex-wrap text-[10px]">
+                  <span class="text-slate-500">${hora}</span>
+                  ${e.usuario ? `<span class="text-slate-500">·</span><span class="text-indigo-300 font-medium">👤 ${e.usuario}</span>` : ''}
+                  <span class="text-slate-500">·</span>
+                  <span class="text-slate-400">consumió ${cantBaseTxt}</span>
+                  ${mermaTxt ? `<span class="text-slate-500">·</span><span class="text-amber-400">${mermaTxt}</span>` : ''}
+                </div>
+              </div>
+              <div class="text-right shrink-0">
+                <div class="text-xl font-bold text-slate-200">${e.unidadesProducidas || 0}<span class="text-xs text-slate-500 font-normal ml-1">uds</span></div>
+                <div class="${efCls} text-xs font-semibold mt-0.5">${ef.toFixed(1)}% efic.</div>
+                <div class="mt-1">${estadoBadge}</div>
+              </div>
+            </div>
+          </div>`;
+        }).join('');
+
+      return `<div class="mb-3">
+        <div class="flex items-center justify-between mb-2 px-1 flex-wrap gap-2">
+          <div class="text-sm font-bold text-amber-400">📅 ${_envFmtFechaLarga(diaKey)}</div>
+          <div class="text-[11px] text-slate-500">
+            ${items.length} envasado${items.length === 1 ? '' : 's'} ·
+            <b class="text-slate-300">${totDiaUds}</b> uds ·
+            efic prom <b class="${_envEfColor(efPromDia)}">${efPromDia.toFixed(1)}%</b> ·
+            👤 ${usuariosDia}
+          </div>
+        </div>
+        <div class="space-y-1.5">${itemsHtml}</div>
+      </div>`;
     }).join('');
+  }
+
+  function _envEfColor(pct) {
+    return pct >= 98 ? 'text-emerald-400'
+         : pct >= 90 ? 'text-amber-400'
+         : 'text-rose-400';
+  }
+  function _envFmtFechaLarga(yyyymmdd) {
+    if (!yyyymmdd) return '—';
+    const m = String(yyyymmdd).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return yyyymmdd;
+    const d = new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+    const hoy = new Date(); hoy.setHours(0,0,0,0);
+    const dms = d.getTime();
+    const ayer = new Date(hoy.getTime() - 86400000);
+    if (dms === hoy.getTime())  return 'Hoy ' + m[3] + '/' + m[2];
+    if (dms === ayer.getTime()) return 'Ayer ' + m[3] + '/' + m[2];
+    return d.toLocaleDateString('es-PE', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
   }
 
   // ── PROVEEDORES ─────────────────────────────────────────────
