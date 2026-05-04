@@ -2922,24 +2922,25 @@
             <span class="text-slate-400 text-sm">SKUs</span>
           </div>
         </button>
-        <button onclick="MOS.finAbrirModalTickets()"
-                class="text-right p-4 hover:bg-slate-700/40 transition-colors rounded-r-xl active:bg-slate-700/60">
-          <div class="fin-card-label mb-1 flex items-center justify-end gap-1">Ticket Promedio <span class="text-slate-500 text-xs">↗</span></div>
-          <div id="finKpiTicketProm" class="text-2xl font-bold text-slate-200">—</div>
-          <!-- Margen Promedio (clickable, sub-acción del card) -->
-          <div class="mt-2 pt-2" style="border-top:1px dashed #1e293b">
-            <button onclick="event.stopPropagation();MOS.finAbrirEditorMargenDefault()"
-                    class="w-full text-right group" title="Click para editar el margen default usado en productos sin precio costo">
-              <div class="fin-card-label flex items-center justify-end gap-1 text-[10px]">
-                Margen Promedio <span class="text-slate-500 text-[10px]">⚙</span>
-              </div>
-              <div class="flex items-baseline justify-end gap-1.5">
-                <span id="finKpiMargenProm" class="text-xl font-bold">—</span>
-                <span id="finKpiMargenEstim" class="text-[10px] text-slate-500"></span>
-              </div>
-            </button>
+        <div class="rounded-r-xl overflow-hidden">
+          <div onclick="MOS.finAbrirModalTickets()" role="button" tabindex="0"
+               class="cursor-pointer text-right p-4 hover:bg-slate-700/40 transition-colors active:bg-slate-700/60">
+            <div class="fin-card-label mb-1 flex items-center justify-end gap-1">Ticket Promedio <span class="text-slate-500 text-xs">↗</span></div>
+            <div id="finKpiTicketProm" class="text-2xl font-bold text-slate-200">—</div>
           </div>
-        </button>
+          <!-- Margen Promedio (clickable, sub-acción del card) -->
+          <div onclick="MOS.finAbrirEditorMargenDefault()" role="button" tabindex="0"
+               class="cursor-pointer text-right px-4 pb-3 pt-2 hover:bg-slate-700/40 transition-colors active:bg-slate-700/60"
+               style="border-top:1px dashed #1e293b" title="Click para editar el margen default usado en productos sin precio costo">
+            <div class="fin-card-label flex items-center justify-end gap-1 text-[10px]">
+              Margen Promedio <span class="text-slate-500 text-[10px]">⚙</span>
+            </div>
+            <div class="flex items-baseline justify-end gap-1.5">
+              <span id="finKpiMargenProm" class="text-xl font-bold">—</span>
+              <span id="finKpiMargenEstim" class="text-[10px] text-slate-500"></span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- ── Punto de Equilibrio ──────────────────────────────────── -->
