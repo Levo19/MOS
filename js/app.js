@@ -8050,6 +8050,379 @@ const MOS = (() => {
   function applyPendingUpdate(){ if (window._SWControl) window._SWControl.applyPending(); }
 
   // ════════════════════════════════════════════════════════════
+  // LIQUIDACIONES de personal
+  // ════════════════════════════════════════════════════════════
+  let _liqState = { tab: 'pendientes', data: null, currentDet: null };
+
+  async function liqOpen() {
+    _liqState.tab = 'pendientes';
+    openModal('modalLiquidaciones');
+    await liqLoadCurrent();
+  }
+  function liqClose() { closeModal('modalLiquidaciones'); }
+
+  function liqSetTab(tab) {
+    _liqState.tab = tab;
+    document.querySelectorAll('#modalLiquidaciones .liq-tab').forEach(el => {
+      el.classList.toggle('active', el.dataset.liqtab === tab);
+    });
+    liqLoadCurrent();
+  }
+
+  async function liqLoadCurrent() {
+    const body = $('liqBody');
+    const footer = $('liqFooterActions');
+    const fInfo = $('liqFooterInfo');
+    if (!body) return;
+    body.innerHTML = '<div class="text-xs text-slate-500 italic py-6 text-center">Cargando...</div>';
+    if (footer) footer.innerHTML = '';
+    if (fInfo) fInfo.textContent = '';
+    try {
+      if (_liqState.tab === 'pendientes') {
+        const r = await API.get('getLiquidacionesPendientesSemana', {});
+        const d = r || {};
+        _liqState.data = d;
+        const info = $('liqHeaderInfo');
+        if (info) info.textContent = `Semana actual: ${_liqFmtFecha(d.semanaInicio)} — ${_liqFmtFecha(d.semanaFin)} · hoy ${_liqFmtFecha(d.hoy)}`;
+        liqRenderPendientes(d);
+      } else {
+        const estado = _liqState.tab === 'emitidas' ? 'PENDIENTE' :
+                       _liqState.tab === 'pagadas'  ? 'PAGADA' : null;
+        const params = estado ? { estado } : {};
+        const r = await API.get('getLiquidacionesEmitidas', params);
+        _liqState.data = r || [];
+        liqRenderEmitidas(_liqState.data);
+      }
+    } catch(e) {
+      body.innerHTML = `<div class="text-xs text-rose-400 py-6 text-center">Error: ${e.message}</div>`;
+    }
+  }
+
+  function _liqFmtFecha(s) {
+    if (!s) return '—';
+    const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return s;
+    return `${m[3]}/${m[2]}`;
+  }
+  function _liqFmtFechaLarga(s) {
+    if (!s) return '—';
+    const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return s;
+    const d = new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+    const dia = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][d.getDay()];
+    return `${dia} ${m[3]}/${m[2]}`;
+  }
+  function _liqMoney(n) { return 'S/ ' + (parseFloat(n) || 0).toFixed(2); }
+
+  function liqRenderPendientes(d) {
+    const body = $('liqBody');
+    const personas = (d && d.personal) || [];
+    if (!personas.length) {
+      body.innerHTML = `
+        <div class="text-center py-10">
+          <div class="text-3xl mb-2">✅</div>
+          <div class="text-sm text-slate-300 mb-1">Sin liquidaciones pendientes</div>
+          <div class="text-xs text-slate-500">No hay personal con jornadas no liquidadas en esta semana.</div>
+        </div>`;
+      return;
+    }
+    body.innerHTML = personas.map(p => `
+      <div class="liq-card">
+        <div class="flex items-start justify-between gap-2 mb-2">
+          <div class="min-w-0 flex-1">
+            <div class="text-sm font-semibold text-slate-200">👤 ${p.nombre}</div>
+            <div class="text-[10px] text-slate-500 mt-0.5">${p.rol || ''} ${p.appOrigen ? '· ' + p.appOrigen : ''}</div>
+          </div>
+          <div class="text-right shrink-0">
+            <div class="text-base font-bold text-amber-400">${_liqMoney(p.montoTotal)}</div>
+            <div class="text-[10px] text-slate-500">Base ${_liqMoney(p.montoBase)} · Bonus ${_liqMoney(p.montoBonus)} · Meta ${_liqMoney(p.montoMeta)}</div>
+          </div>
+        </div>
+        <div class="text-[11px] text-slate-400 mb-3">
+          <b>${p.diasPendientes}</b> día${p.diasPendientes === 1 ? '' : 's'} pendiente${p.diasPendientes === 1 ? '' : 's'}
+          <span class="text-slate-600">·</span>
+          ${p.diasAuditados}/${p.diasPendientes} auditado${p.diasAuditados === 1 ? '' : 's'}
+          <span class="text-slate-600">·</span>
+          ${p.fechas.map(f => `<span class="font-mono">${_liqFmtFecha(f)}</span>`).join(' ')}
+        </div>
+        <div class="flex gap-2">
+          <button onclick="MOS.liqVerDetallePend('${p.idPersonal}')" class="btn-ghost text-xs px-3 py-1.5">👁 Ver detalle</button>
+          <button onclick="MOS.liqEmitirIndividual('${p.idPersonal}')" class="btn-primary text-xs px-3 py-1.5">💾 Emitir individual</button>
+        </div>
+      </div>
+    `).join('');
+
+    const fInfo = $('liqFooterInfo');
+    const footer = $('liqFooterActions');
+    if (fInfo) fInfo.innerHTML = `Total a emitir: <b class="text-amber-400">${_liqMoney(d.totalGeneral)}</b> · ${personas.length} colaborador${personas.length === 1 ? '' : 'es'}`;
+    if (footer) footer.innerHTML = `<button onclick="MOS.liqEmitirTodos()" class="btn-primary text-xs px-4 py-2">💾 Emitir cierre de todos</button>`;
+  }
+
+  function liqRenderEmitidas(rows) {
+    const body = $('liqBody');
+    const list = Array.isArray(rows) ? rows : [];
+    if (!list.length) {
+      body.innerHTML = `<div class="text-center py-10 text-xs text-slate-500">Sin registros en este filtro.</div>`;
+      return;
+    }
+    body.innerHTML = list.map(l => {
+      const estadoCls = l.estado === 'PENDIENTE' ? 'liq-pill-pend'
+                      : l.estado === 'PAGADA'    ? 'liq-pill-pag'
+                      : 'liq-pill-anul';
+      const parcial = String(l.esLiquidacionParcial) === '1' || String(l.esLiquidacionParcial) === 'true';
+      const acciones = (l.estado === 'PENDIENTE') ? `
+        <button onclick="MOS.liqMarcarPagada('${l.idLiquidacion}')" class="btn-primary text-xs px-3 py-1.5">💵 Marcar pagada</button>
+        <button onclick="MOS.liqAnular('${l.idLiquidacion}')" class="btn-ghost text-xs px-3 py-1.5" style="color:#fb7185">❌ Anular</button>
+      ` : (l.estado === 'PAGADA' ? `
+        <button onclick="MOS.liqAnular('${l.idLiquidacion}')" class="btn-ghost text-xs px-3 py-1.5" style="color:#fb7185">↩ Anular</button>
+      ` : '');
+      return `<div class="liq-card">
+        <div class="flex items-start justify-between gap-2 mb-2">
+          <div class="min-w-0 flex-1">
+            <div class="text-sm font-semibold text-slate-200">${l.nombrePersonal}</div>
+            <div class="text-[10px] text-slate-500 mt-0.5 font-mono">${l.idLiquidacion}</div>
+          </div>
+          <div class="text-right shrink-0">
+            <div class="text-base font-bold text-amber-400">${_liqMoney(l.montoTotal)}</div>
+            <div class="mt-1 flex gap-1 justify-end">
+              <span class="liq-pill ${estadoCls}">${l.estado}</span>
+              ${parcial ? '<span class="liq-pill liq-pill-parc">PARCIAL</span>' : ''}
+            </div>
+          </div>
+        </div>
+        <div class="text-[11px] text-slate-400 mb-3">
+          ${l.cantidadDias} día${l.cantidadDias === 1 ? '' : 's'} · ${_liqFmtFecha(l.fechaInicio)} → ${_liqFmtFecha(l.fechaFin)}
+          ${l.fechaPago ? ' · pagado ' + _liqFmtFecha(String(l.fechaPago).substring(0, 10)) : ''}
+          ${l.comentario ? ' · ' + l.comentario : ''}
+        </div>
+        <div class="flex gap-2 flex-wrap">
+          <button onclick="MOS.liqVerTicket('${l.idLiquidacion}')" class="btn-ghost text-xs px-3 py-1.5">👁 Ver ticket</button>
+          <button onclick="MOS.liqImprimir('${l.idLiquidacion}')" class="btn-ghost text-xs px-3 py-1.5">🖨️ Imprimir</button>
+          ${acciones}
+        </div>
+      </div>`;
+    }).join('');
+
+    const fInfo = $('liqFooterInfo');
+    const tot = list.reduce((s, l) => s + (parseFloat(l.montoTotal) || 0), 0);
+    if (fInfo) fInfo.innerHTML = `${list.length} ticket${list.length === 1 ? '' : 's'} · total <b class="text-amber-400">${_liqMoney(tot)}</b>`;
+    const footer = $('liqFooterActions');
+    if (footer) footer.innerHTML = '';
+  }
+
+  async function liqVerDetallePend(idPersonal) {
+    openModal('modalLiqDetalle');
+    const body = $('liqDetBody');
+    const footer = $('liqDetFooter');
+    body.innerHTML = '<div class="text-xs text-slate-500 italic py-4">Cargando...</div>';
+    footer.innerHTML = '';
+    try {
+      const d = await API.get('getDetalleDiasPendientes', { idPersonal });
+      if (!d) throw new Error('Sin datos');
+      $('liqDetTitle').textContent = `📋 ${d.nombre}`;
+      $('liqDetSubtitle').textContent = `${d.rol || ''} · ${d.dias.length} día${d.dias.length === 1 ? '' : 's'} pendiente${d.dias.length === 1 ? '' : 's'}`;
+      _liqState.currentDet = d;
+      body.innerHTML = liqRenderDiasDetalle(d.dias) + `
+        <div class="mt-3 p-3 rounded" style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.25)">
+          <div class="flex justify-between text-xs">
+            <span class="text-slate-400">Total a cobrar</span>
+            <b class="text-amber-400 text-lg">${_liqMoney(d.montoTotal)}</b>
+          </div>
+          <div class="text-[10px] text-slate-500 mt-1">
+            Base ${_liqMoney(d.montoBase)} · Bonus ${_liqMoney(d.montoBonus)} · Meta ${_liqMoney(d.montoMeta)}
+          </div>
+        </div>`;
+      footer.innerHTML = `
+        <div class="text-[11px] text-slate-500 flex-1">Snapshot inmutable al emitir.</div>
+        <button onclick="MOS.liqCerrarDetalle()" class="btn-ghost text-xs px-3 py-1.5">Cerrar</button>
+        <button onclick="MOS.liqEmitirIndividual('${d.idPersonal}', true)" class="btn-primary text-xs px-3 py-1.5">💾 Emitir liquidación</button>
+      `;
+    } catch(e) {
+      body.innerHTML = `<div class="text-xs text-rose-400 py-4">Error: ${e.message}</div>`;
+    }
+  }
+
+  function liqRenderDiasDetalle(dias) {
+    if (!dias || !dias.length) return '<div class="text-xs text-slate-500 italic">Sin días.</div>';
+    return dias.map(d => {
+      const cls = !d.presente ? 'ausente' : (d.auditado ? 'aud-ok' : 'no-aud');
+      const estadoTxt = !d.presente ? '✗ AUSENTE' : (d.auditado ? '✓ Auditado' : '⚠ No auditado');
+      const logros = (d.logros || []).map(l => `<div class="liq-logro">✓ ${l}</div>`).join('');
+      const pendientes = (d.pendientes || []).map(p => `<div class="liq-pendient">✗ ${p}</div>`).join('');
+      return `<div class="liq-day-row ${cls}">
+        <div class="flex justify-between mb-1">
+          <span class="font-semibold text-slate-200">${_liqFmtFechaLarga(d.fecha)} · ${estadoTxt}</span>
+          <span class="font-mono ${d.totalDia > 0 ? 'text-amber-400' : 'text-slate-600'}">${_liqMoney(d.totalDia)}</span>
+        </div>
+        ${d.presente ? `<div class="text-[10px] text-slate-500 mb-1">Base ${_liqMoney(d.base)} · Bonus ${_liqMoney(d.bonus)} · Meta ${_liqMoney(d.meta)}${d.score ? ' · score ' + d.score : ''}</div>` : ''}
+        ${logros || pendientes ? `<div class="mt-1">${logros}${pendientes}</div>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  function liqCerrarDetalle() { closeModal('modalLiqDetalle'); }
+
+  async function liqEmitirIndividual(idPersonal, fromDetalle) {
+    const conf = confirm('Emitir liquidación de este personal con sus días pendientes?\nEl snapshot queda inmutable.');
+    if (!conf) return;
+    toast('Emitiendo...', 'info');
+    try {
+      const r = await API.post('emitirLiquidacion', { idPersonal, usuario: S.session?.nombre || '' });
+      const data = r && (r.data || r);
+      toast(`✓ Liquidación ${data.idLiquidacion} · ${_liqMoney(data.montoTotal)}`, 'ok');
+      if (fromDetalle) liqCerrarDetalle();
+      await liqLoadCurrent();
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  async function liqEmitirTodos() {
+    const data = _liqState.data || {};
+    const personas = (data.personal || []).length;
+    if (!personas) { toast('Nada para emitir', 'error'); return; }
+    const conf = confirm(`Emitir cierre para ${personas} colaborador${personas === 1 ? '' : 'es'}?\nTotal: ${_liqMoney(data.totalGeneral)}\n\nLos snapshots quedan inmutables.`);
+    if (!conf) return;
+    toast('Emitiendo bulk...', 'info');
+    try {
+      const r = await API.post('emitirLiquidacionesTodas', { usuario: S.session?.nombre || '', comentario: 'Cierre semanal' });
+      const d = r && (r.data || r);
+      const okCount = (d.emitidas || []).length;
+      const errCount = (d.errores || []).length;
+      toast(`✓ ${okCount} emitidas${errCount ? ' · ' + errCount + ' errores' : ''}`, errCount ? 'error' : 'ok');
+      await liqLoadCurrent();
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  async function liqVerTicket(idLiquidacion) {
+    openModal('modalLiqDetalle');
+    const body = $('liqDetBody');
+    const footer = $('liqDetFooter');
+    body.innerHTML = '<div class="text-xs text-slate-500 italic py-4">Cargando...</div>';
+    footer.innerHTML = '';
+    try {
+      const r = await API.get('getLiquidacionDetalle', { idLiquidacion });
+      const d = r || {};
+      $('liqDetTitle').textContent = `🎫 ${d.nombrePersonal}`;
+      $('liqDetSubtitle').textContent = `${d.idLiquidacion} · ${d.estado}`;
+      body.innerHTML = liqRenderDiasDetalle(d.dias || []) + `
+        <div class="mt-3 p-3 rounded" style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.25)">
+          <div class="flex justify-between text-xs">
+            <span class="text-slate-400">Total ${d.estado === 'PAGADA' ? 'pagado' : 'pendiente'}</span>
+            <b class="text-amber-400 text-lg">${_liqMoney(d.montoTotal)}</b>
+          </div>
+          <div class="text-[10px] text-slate-500 mt-1">
+            Base ${_liqMoney(d.montoBase)} · Bonus ${_liqMoney(d.montoBonus)} · Meta ${_liqMoney(d.montoMeta)}
+          </div>
+          ${d.fechaPago ? `<div class="text-[10px] text-emerald-400 mt-2">✓ Pagado el ${_liqFmtFechaLarga(String(d.fechaPago).substring(0,10))}${d.pagadoPor ? ' por ' + d.pagadoPor : ''}</div>` : ''}
+          ${d.idGastoGenerado ? `<div class="text-[10px] text-slate-500 mt-1 font-mono">Gasto vinculado: ${d.idGastoGenerado}</div>` : ''}
+        </div>`;
+      footer.innerHTML = `
+        <button onclick="MOS.liqCerrarDetalle()" class="btn-ghost text-xs px-3 py-1.5">Cerrar</button>
+        <button onclick="MOS.liqImprimir('${d.idLiquidacion}')" class="btn-ghost text-xs px-3 py-1.5">🖨️ Imprimir</button>
+        ${d.estado === 'PENDIENTE' ? `<button onclick="MOS.liqMarcarPagada('${d.idLiquidacion}')" class="btn-primary text-xs px-3 py-1.5">💵 Marcar pagada</button>` : ''}
+      `;
+    } catch(e) {
+      body.innerHTML = `<div class="text-xs text-rose-400 py-4">Error: ${e.message}</div>`;
+    }
+  }
+
+  async function liqMarcarPagada(idLiquidacion) {
+    const conf = confirm('Marcar como PAGADA?\n\nEsto:\n• Cambia el estado del ticket\n• Genera un gasto automático en categoría JORNALES\n• Queda en histórico para reportes');
+    if (!conf) return;
+    toast('Marcando pagada...', 'info');
+    try {
+      await API.post('marcarLiquidacionPagada', { idLiquidacion, usuario: S.session?.nombre || '' });
+      toast('✓ Pagada · gasto generado', 'ok');
+      liqCerrarDetalle();
+      await liqLoadCurrent();
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  async function liqAnular(idLiquidacion) {
+    const motivo = prompt('Motivo de anulación (opcional):', '');
+    if (motivo === null) return;
+    toast('Anulando...', 'info');
+    try {
+      await API.post('anularLiquidacion', { idLiquidacion, motivo, usuario: S.session?.nombre || '' });
+      toast('✓ Anulada · días liberados para nueva liquidación', 'ok');
+      liqCerrarDetalle();
+      await liqLoadCurrent();
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  async function liqImprimir(idLiquidacion) {
+    try {
+      const d = await API.get('getLiquidacionDetalle', { idLiquidacion });
+      if (!d) throw new Error('Sin datos');
+      const wrap = $('liqPrintWrap');
+      wrap.innerHTML = liqBuildPrintHtml(d);
+      wrap.style.display = 'block';
+      setTimeout(() => {
+        window.print();
+        wrap.style.display = 'none';
+      }, 100);
+    } catch(e) {
+      toast('Error al imprimir: ' + e.message, 'error');
+    }
+  }
+
+  function liqBuildPrintHtml(d) {
+    const dias = d.dias || [];
+    const diasHtml = dias.map(x => {
+      const presente = x.presente;
+      const auditado = x.auditado;
+      const fechaLg = _liqFmtFechaLarga(x.fecha);
+      let lineas = `<div class="liq-print-line"><span><b>${fechaLg}</b> · ${presente ? (auditado ? '✓ Auditado' : '⚠ Sin auditoría') : '✗ Ausente'}</span><span><b>S/ ${(x.totalDia || 0).toFixed(2)}</b></span></div>`;
+      if (presente) {
+        lineas += `<div style="margin-left:14px;font-size:10px;color:#475569">Base S/ ${(x.base||0).toFixed(2)} · Bonus S/ ${(x.bonus||0).toFixed(2)} · Meta S/ ${(x.meta||0).toFixed(2)}</div>`;
+        (x.logros || []).forEach(l => { lineas += `<div style="margin-left:14px;font-size:10px;color:#059669">✓ ${l}</div>`; });
+        (x.pendientes || []).forEach(p => { lineas += `<div style="margin-left:14px;font-size:10px;color:#dc2626">✗ ${p}</div>`; });
+      }
+      return `<div style="margin-bottom:8px">${lineas}</div>`;
+    }).join('');
+
+    return `
+      <div class="liq-print-area">
+        <h2>LIQUIDACIÓN DE PERSONAL</h2>
+        <div style="text-align:center;font-size:11px;color:#475569;margin-bottom:8px">${_liqFmtFechaLarga(d.fechaInicio)} → ${_liqFmtFechaLarga(d.fechaFin)}</div>
+        <div class="liq-print-sep"></div>
+        <div class="liq-print-line"><b>Personal:</b><span>${d.nombrePersonal || ''}</span></div>
+        <div class="liq-print-line"><b>Rol:</b><span>${d.rol || ''}</span></div>
+        <div class="liq-print-line"><b>App:</b><span>${d.appOrigen || ''}</span></div>
+        <div class="liq-print-line"><b>ID Liq.:</b><span style="font-family:monospace;font-size:10px">${d.idLiquidacion}</span></div>
+        <div class="liq-print-sep"></div>
+        <div style="font-weight:700;margin-bottom:6px">DÍAS TRABAJADOS</div>
+        ${diasHtml}
+        <div class="liq-print-sep"></div>
+        <div style="font-weight:700;margin-bottom:6px">RESUMEN</div>
+        <div class="liq-print-line"><span>Días incluidos</span><span>${d.cantidadDias}</span></div>
+        <div class="liq-print-line"><span>Total base</span><span>S/ ${(parseFloat(d.montoBase)||0).toFixed(2)}</span></div>
+        <div class="liq-print-line"><span>Total bonus</span><span>S/ ${(parseFloat(d.montoBonus)||0).toFixed(2)}</span></div>
+        <div class="liq-print-line"><span>Total meta</span><span>S/ ${(parseFloat(d.montoMeta)||0).toFixed(2)}</span></div>
+        <div class="liq-print-sep"></div>
+        <div class="liq-print-line" style="font-size:14px;font-weight:700"><span>TOTAL A COBRAR</span><span>S/ ${(parseFloat(d.montoTotal)||0).toFixed(2)}</span></div>
+        <div class="liq-print-sep"></div>
+        <div style="font-size:10px;color:#475569">
+          Estado: <b>${d.estado}</b><br>
+          Generado: ${_liqFmtFechaLarga(String(d.fechaGeneracion).substring(0,10))}${d.generadoPor ? ' por ' + d.generadoPor : ''}<br>
+          ${d.fechaPago ? 'Pagado: ' + _liqFmtFechaLarga(String(d.fechaPago).substring(0,10)) + (d.pagadoPor ? ' por ' + d.pagadoPor : '') + '<br>' : ''}
+          ${d.comentario ? 'Comentario: ' + d.comentario + '<br>' : ''}
+        </div>
+        <div style="margin-top:30px">
+          <div class="liq-print-line"><span>_____________________</span><span>_____________________</span></div>
+          <div class="liq-print-line" style="font-size:10px;color:#475569"><span>Recibí conforme</span><span>Pagado por</span></div>
+        </div>
+      </div>`;
+  }
+
+  // ════════════════════════════════════════════════════════════
   // MÓDULO FINANZAS
   // ════════════════════════════════════════════════════════════
   let _finPL = null;  // último P&L cargado
@@ -9898,6 +10271,9 @@ const MOS = (() => {
     finGuardarJornada, finEliminarGasto, finEliminarJornada, finImportarCajas,
     cerrarModalFin,
     finEditarCostoSku, finCerrarCostoEditor, finGuardarCostoSku,
+    // Liquidaciones
+    liqOpen, liqClose, liqSetTab, liqVerDetallePend, liqEmitirIndividual, liqEmitirTodos,
+    liqVerTicket, liqMarcarPagada, liqAnular, liqImprimir, liqCerrarDetalle,
     // Finanzas — modales detalle
     finAbrirModalProductos, finToggleFiltroSinCosto,
     finEditarCostoProd, finCerrarCostoProd, finGuardarCostoProd,

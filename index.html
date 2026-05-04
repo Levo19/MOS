@@ -2804,6 +2804,7 @@
           <button onclick="MOS.finAbrirModalGasto()" class="btn-primary text-xs px-3 py-2">+ Gasto</button>
           <button onclick="MOS.finAbrirModalJornada()" class="btn-ghost text-xs px-3 py-2">+ Jornada</button>
           <button onclick="MOS.finImportarCajas()" class="btn-ghost text-xs px-3 py-2" title="Importar jornadas automáticamente desde cajas MosExpress">⬇ Cajas</button>
+          <button onclick="MOS.liqOpen()" class="btn-ghost text-xs px-3 py-2" style="border-color:rgba(245,158,11,.4);color:#fbbf24" title="Emitir liquidaciones de personal">💼 Liquidaciones</button>
         </div>
       </div>
 
@@ -4988,6 +4989,88 @@
     Cerrar sesión
   </button>
 </div>
+
+<!-- ═══ MODAL LIQUIDACIONES ═══ -->
+<style>
+  #modalLiquidaciones { z-index: 95; }
+  #modalLiquidaciones .modal-box { max-width: 1080px; max-height: 95vh; display: flex; flex-direction: column; }
+  .liq-tab { padding: 8px 14px; border-radius: 8px 8px 0 0; font-size: 12px; font-weight: 600; cursor: pointer; color: #94a3b8; border-bottom: 2px solid transparent; transition: all .15s; }
+  .liq-tab.active { color: #fbbf24; border-bottom-color: #fbbf24; background: rgba(245,158,11,.08); }
+  .liq-tab:hover:not(.active) { color: #cbd5e1; background: rgba(148,163,184,.05); }
+  .liq-card { background: rgba(15,23,42,.5); border: 1px solid #1e293b; border-radius: 10px; padding: 14px; margin-bottom: 10px; transition: border-color .15s; }
+  .liq-card:hover { border-color: rgba(245,158,11,.3); }
+  .liq-pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; }
+  .liq-pill-pend { background: rgba(245,158,11,.15); color: #fbbf24; border: 1px solid rgba(245,158,11,.3); }
+  .liq-pill-pag  { background: rgba(16,185,129,.15); color: #34d399; border: 1px solid rgba(16,185,129,.3); }
+  .liq-pill-anul { background: rgba(100,116,139,.15); color: #94a3b8; border: 1px solid rgba(100,116,139,.3); }
+  .liq-pill-parc { background: rgba(168,85,247,.15); color: #c4b5fd; border: 1px solid rgba(168,85,247,.3); }
+  .liq-day-row { background: #020617; border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; font-size: 11px; }
+  .liq-day-row.ausente { opacity: 0.55; }
+  .liq-day-row.no-aud  { border-left: 2px solid rgba(245,158,11,.4); }
+  .liq-day-row.aud-ok  { border-left: 2px solid rgba(16,185,129,.4); }
+  .liq-logro    { color: #34d399; font-size: 10px; }
+  .liq-pendient { color: #fb7185; font-size: 10px; }
+  .liq-print-area {
+    background: white; color: #0b1220; padding: 24px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px; line-height: 1.5;
+  }
+  .liq-print-area h2 { font-size: 16px; margin: 0 0 4px; text-align: center; font-weight: 700; }
+  .liq-print-area .liq-print-sep { border-top: 1px dashed #475569; margin: 10px 0; }
+  .liq-print-area .liq-print-line { display: flex; justify-content: space-between; }
+  @media print {
+    body * { visibility: hidden !important; }
+    #liqPrintWrap, #liqPrintWrap * { visibility: visible !important; }
+    #liqPrintWrap { position: absolute; left: 0; top: 0; width: 100%; }
+  }
+</style>
+<div id="modalLiquidaciones" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.liqClose()">
+  <div class="modal-box p-0">
+    <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0 gap-2" style="border-bottom: 1px solid #1e293b">
+      <div class="min-w-0 flex-1">
+        <h3 class="font-semibold text-amber-400 text-base">💼 Liquidaciones de personal</h3>
+        <p id="liqHeaderInfo" class="text-xs text-slate-500 mt-0.5"></p>
+      </div>
+      <button onclick="MOS.liqClose()" class="modal-close-x">×</button>
+    </div>
+
+    <div class="px-5 pt-2 flex gap-1" style="border-bottom: 1px solid #1e293b">
+      <div class="liq-tab active" data-liqtab="pendientes" onclick="MOS.liqSetTab('pendientes')">⏳ Esta semana</div>
+      <div class="liq-tab"        data-liqtab="emitidas"   onclick="MOS.liqSetTab('emitidas')">📦 Emitidas</div>
+      <div class="liq-tab"        data-liqtab="pagadas"    onclick="MOS.liqSetTab('pagadas')">💵 Pagadas</div>
+      <div class="liq-tab"        data-liqtab="historico"  onclick="MOS.liqSetTab('historico')">📚 Histórico</div>
+    </div>
+
+    <div id="liqBody" class="overflow-y-auto px-5 py-4" style="flex: 1">
+      <div class="text-xs text-slate-500 italic">Cargando...</div>
+    </div>
+
+    <div id="liqFooter" class="px-5 py-3 flex items-center gap-3 flex-wrap" style="border-top: 1px solid #1e293b">
+      <div id="liqFooterInfo" class="text-xs text-slate-500 flex-1"></div>
+      <div id="liqFooterActions" class="flex gap-2"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Detalle de un personal antes de emitir / ticket de liquidación -->
+<div id="modalLiqDetalle" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.liqCerrarDetalle()">
+  <div class="modal-box p-0" style="max-width: 720px; max-height: 92vh; display: flex; flex-direction: column">
+    <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0 gap-2" style="border-bottom: 1px solid #1e293b">
+      <div class="min-w-0 flex-1">
+        <h3 id="liqDetTitle" class="font-semibold text-amber-400 text-base">Detalle</h3>
+        <p id="liqDetSubtitle" class="text-xs text-slate-500 mt-0.5"></p>
+      </div>
+      <button onclick="MOS.liqCerrarDetalle()" class="modal-close-x">×</button>
+    </div>
+    <div id="liqDetBody" class="overflow-y-auto px-5 py-4" style="flex: 1">
+      Cargando...
+    </div>
+    <div id="liqDetFooter" class="flex items-center gap-2 px-5 py-3 flex-shrink-0 flex-wrap" style="border-top: 1px solid #1e293b"></div>
+  </div>
+</div>
+
+<!-- Wrapper de impresión de ticket (oculto, solo se muestra al imprimir) -->
+<div id="liqPrintWrap" style="display:none"></div>
 
 <!-- ═══ TUTORIAL FLOTANTE — Cómo funcionan precios, categorías y herencias ═══ -->
 <style>
