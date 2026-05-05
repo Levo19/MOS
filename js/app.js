@@ -4598,30 +4598,39 @@ const MOS = (() => {
       const tienePresentaciones = (pp.countPresentaciones || 1) > 1;
       const tieneEquiv = (pp.countEquivalencias || 0) > 0;
 
-      // Chips de stock: almacén + cada zona (con stock o ventas)
-      const ubicaciones = [];
-      ubicaciones.push({ nombre: 'Almacén', cant: pp.stockWh || 0, rot: null, icon: '🏬' });
+      // Chips de stock: almacén + zonas REGISTRADAS + (si hay) huérfanas
+      const huerfanas = pp.zonasHuerfanas;
+      const stockChips = [];
+      stockChips.push({ nombre: 'Almacén', cant: pp.stockWh || 0, icon: '🏬' });
       (pp.zonas || []).forEach(z => {
-        ubicaciones.push({ nombre: z.nombre, cant: z.cantidad, rot: z.rotacionDia || 0, icon: '🏪' });
+        stockChips.push({ nombre: z.nombre, cant: z.cantidad, icon: '🏪' });
       });
-      const stockChipsHtml = ubicaciones.map(c =>
-        `<span class="prov-loc-chip${c.cant < 0 ? ' neg' : c.cant === 0 ? ' zero' : ''}"><span class="prov-loc-ic">${c.icon}</span>${c.nombre}: <b>${c.cant}</b></span>`
+      if (huerfanas && huerfanas.cantidad !== 0) {
+        stockChips.push({ nombre: 'Sin zona registrada', cant: huerfanas.cantidad, icon: '⚠', huerf: true });
+      }
+      const stockChipsHtml = stockChips.map(c =>
+        `<span class="prov-loc-chip${c.cant < 0 ? ' neg' : c.cant === 0 ? ' zero' : ''}${c.huerf ? ' huerf' : ''}" ${c.huerf ? 'title="Stock en una zona/estación que no está registrada en la tabla ZONAS de MOS — corrige el dato"' : ''}><span class="prov-loc-ic">${c.icon}</span>${c.nombre}: <b>${c.cant}</b></span>`
       ).join('');
-      // Chips de rotación: solo si hay rotación total > 0
-      // — almacén usa rotación total como referencia (lo que se vacía por día)
-      // — zonas individuales muestran la suya
+
+      // Chips de rotación: solo si hay rotación total > 0.
+      // El chip "Reposición sugerida" usa el TOTAL como referencia
+      // (lo que el almacén debería despachar/día para sostener las ventas).
+      // No es venta del almacén — el almacén no vende.
       const rotTotal = pp.rotacionDia || 0;
       const rotChips = [];
       if (rotTotal > 0) {
-        rotChips.push({ nombre: 'Almacén', rot: rotTotal, icon: '🏬', tip: 'Salidas/día = suma de ventas en zonas' });
+        rotChips.push({ nombre: 'Reposición sugerida', rot: rotTotal, icon: '🏬', tip: 'Lo que el almacén debe despachar por día = suma de ventas en zonas. Aproximación.' });
         (pp.zonas || []).forEach(z => {
           if (z.rotacionDia > 0 || z.ventasRango > 0) {
-            rotChips.push({ nombre: z.nombre, rot: z.rotacionDia || 0, icon: '🏪', tip: 'Ventas en ' + z.nombre });
+            rotChips.push({ nombre: z.nombre, rot: z.rotacionDia || 0, icon: '🏪', tip: 'Ventas/día en ' + z.nombre });
           }
         });
+        if (huerfanas && huerfanas.rotacionDia > 0) {
+          rotChips.push({ nombre: 'Sin zona registrada', rot: huerfanas.rotacionDia, icon: '⚠', huerf: true, tip: 'Ventas registradas en una estación cuya zona no está en la tabla ZONAS' });
+        }
       }
       const rotChipsHtml = rotChips.map(c =>
-        `<span class="prov-rot-chip" title="${c.tip}"><span class="prov-loc-ic">${c.icon}</span>${c.nombre}: <b>↻ ${c.rot}/d</b></span>`
+        `<span class="prov-rot-chip${c.huerf ? ' huerf' : ''}" title="${c.tip}"><span class="prov-loc-ic">${c.icon}</span>${c.nombre}: <b>↻ ${c.rot}/d</b></span>`
       ).join('');
 
       // Sliders mín/máx con marker en sugerencia semanal

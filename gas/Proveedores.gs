@@ -514,8 +514,20 @@ function getProductosProveedorConStock(params) {
       });
     });
 
-    // 4. Resolver de zonas
+    // 4. Resolver de zonas + set de zonas REGISTRADAS (tabla ZONAS activa).
+    //    Zonas que aparecen en STOCK_ZONAS o ventas pero NO están en master
+    //    se agruparán como "Sin zona registrada" en el frontend.
     var resolver = _buildZonaResolver();
+    var idsZonasRegistradas = {};
+    try {
+      _sheetToObjects(getSheet('ZONAS')).forEach(function(z){
+        if (!z.idZona) return;
+        var act = z.estado;
+        var activa = (act === undefined || act === '' || act === 1 || act === '1' || act === true);
+        if (!activa) return;
+        idsZonasRegistradas[String(z.idZona).trim().toUpperCase()] = z.nombre || z.idZona;
+      });
+    } catch(_){}
 
     // 5. Stock WH agregado por sku
     var stockWH = _safeReadWhStock();
@@ -593,29 +605,37 @@ function getProductosProveedorConStock(params) {
       var grupo = bySku[sku];
       var p = (grupo && grupo.base) || prodById[sku] || {};
       var whQ = whBySku[sku] || 0;
-      // Mergir zonas: incluir las que tienen stock O ventas
+      // Mergir zonas: incluir las que tienen stock O ventas.
+      // Separar las REGISTRADAS (en tabla ZONAS) vs HUÉRFANAS (zonas inventadas
+      // que aparecen en stock o ventas pero no están en master).
       var zonasMap = {};
-      if (zonasBySku[sku]) {
-        Object.keys(zonasBySku[sku]).forEach(function(zid){
+      var huerfanas = { cantidad: 0, ventasRango: 0 };
+      function _addZona(zid, src) {
+        if (!idsZonasRegistradas[zid]) {
+          // Zona no registrada — acumular en huérfanas y omitir chip individual
+          huerfanas.cantidad    += src.cantidad    || 0;
+          huerfanas.ventasRango += src.ventasRango || 0;
+          return;
+        }
+        if (!zonasMap[zid]) {
           zonasMap[zid] = {
             idZona:      zid,
-            nombre:      zonasBySku[sku][zid].nombre,
-            cantidad:    zonasBySku[sku][zid].cantidad,
+            nombre:      idsZonasRegistradas[zid] || src.nombre || zid,
+            cantidad:    0,
             ventasRango: 0
           };
+        }
+        zonasMap[zid].cantidad    += src.cantidad    || 0;
+        zonasMap[zid].ventasRango += src.ventasRango || 0;
+      }
+      if (zonasBySku[sku]) {
+        Object.keys(zonasBySku[sku]).forEach(function(zid){
+          _addZona(zid, { cantidad: zonasBySku[sku][zid].cantidad, nombre: zonasBySku[sku][zid].nombre });
         });
       }
       if (ventasBySkuByZona[sku]) {
         Object.keys(ventasBySkuByZona[sku]).forEach(function(zid){
-          if (!zonasMap[zid]) {
-            zonasMap[zid] = {
-              idZona:      zid,
-              nombre:      nombreZonaCanon[zid] || zid,
-              cantidad:    0,
-              ventasRango: 0
-            };
-          }
-          zonasMap[zid].ventasRango = ventasBySkuByZona[sku][zid];
+          _addZona(zid, { ventasRango: ventasBySkuByZona[sku][zid], nombre: nombreZonaCanon[zid] });
         });
       }
       var zonas = Object.keys(zonasMap).map(function(zid){
@@ -623,7 +643,12 @@ function getProductosProveedorConStock(params) {
         z.rotacionDia = rangoDias > 0 ? Math.round((z.ventasRango / rangoDias) * 10) / 10 : 0;
         return z;
       });
-      var zonasTotal = zonas.reduce(function(s,z){ return s + z.cantidad; }, 0);
+      // Stock + ventas en zonas SI registradas + huérfanas (para el TOTAL)
+      var zonasRegistradasStock = zonas.reduce(function(s,z){ return s + z.cantidad; }, 0);
+      var zonasTotal = zonasRegistradasStock + (huerfanas.cantidad || 0);
+      var ventasZonasTotal = zonas.reduce(function(s,z){ return s + z.ventasRango; }, 0) + (huerfanas.ventasRango || 0);
+      // Rotación huérfana
+      var huerfanasRotDia = rangoDias > 0 ? Math.round((huerfanas.ventasRango / rangoDias) * 10) / 10 : 0;
       var total = whQ + zonasTotal;
       var ventas = ventasBySku[sku] || 0;
       var rotDia = rangoDias > 0 ? ventas / rangoDias : 0;
@@ -668,6 +693,11 @@ function getProductosProveedorConStock(params) {
         stockTienda:     zonasTotal,
         stockTotal:      total,
         zonas:           zonas.sort(function(a,b){ return b.cantidad - a.cantidad; }),
+        zonasHuerfanas:  (huerfanas.cantidad > 0 || huerfanas.ventasRango > 0) ? {
+          cantidad:    huerfanas.cantidad,
+          ventasRango: huerfanas.ventasRango,
+          rotacionDia: huerfanasRotDia
+        } : null,
         stockMinimo:     minimo,
         stockMaximo:     maximo,
         ventasRango:     ventas,

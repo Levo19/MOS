@@ -863,6 +863,13 @@
       border-color: rgba(239,68,68,.4);
     }
     .prov-loc-chip.neg b { color: #fee2e2; }
+    /* Chip huérfano (zona/estación no registrada en tabla ZONAS) */
+    .prov-loc-chip.huerf {
+      background: rgba(251,191,36,.1); color: #fcd34d;
+      border-color: rgba(251,191,36,.4);
+      border-style: dashed;
+    }
+    .prov-loc-chip.huerf b { color: #fde68a; }
     .prov-loc-ic { font-size: .8rem; }
     /* Chips de rotación (mismo layout, color violeta) */
     .prov-rot-chip {
@@ -873,6 +880,12 @@
       white-space: nowrap;
     }
     .prov-rot-chip b { color: #818cf8; font-weight: 800; }
+    .prov-rot-chip.huerf {
+      background: rgba(251,191,36,.1); color: #fcd34d;
+      border-color: rgba(251,191,36,.4);
+      border-style: dashed;
+    }
+    .prov-rot-chip.huerf b { color: #fde68a; }
 
     /* Sliders Mín/Máx */
     .prov-minmax-row {
