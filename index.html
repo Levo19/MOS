@@ -916,91 +916,124 @@
     }
     .prov-rot-chip.huerf b { color: #fde68a; }
 
-    /* Sliders Mín/Máx */
-    .prov-minmax-row {
-      display: flex; flex-direction: column; gap: 8px;
-      padding: 8px 0 4px; border-top: 1px dashed #1e293b;
+    /* Dual-range Mín/Máx con marker de reposición sugerida */
+    .prov-range-block {
+      padding: 12px 0 4px;
+      border-top: 1px dashed #1e293b;
     }
-    .prov-slider-grp { display: flex; flex-direction: column; gap: 4px; }
-    .prov-slider-head {
-      display: flex; align-items: center; gap: 8px;
-      font-size: .7rem;
+    .prov-range-headline {
+      display: flex; align-items: flex-end; justify-content: space-between;
+      gap: 8px; margin-bottom: 14px;
     }
-    .prov-slider-lbl {
-      color: #64748b; font-weight: 700; text-transform: uppercase;
-      letter-spacing: .04em; min-width: 24px;
+    .prov-range-extreme {
+      display: flex; flex-direction: column; align-items: center; gap: 1px;
+      min-width: 40px;
     }
-    .prov-slider-val {
-      font-size: .85rem; font-weight: 800; color: #f1f5f9;
-      min-width: 28px; text-align: right;
+    .prov-range-extreme-lbl {
+      font-size: .6rem; color: #64748b; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .05em;
     }
-    .prov-sug-pill {
-      margin-left: auto;
-      font-size: .65rem; font-weight: 700;
-      padding: 2px 8px; border-radius: 999px;
-      background: rgba(251,191,36,.12); color: #fcd34d;
-      border: 1px solid rgba(251,191,36,.3);
-      cursor: pointer; transition: all .15s;
+    .prov-range-extreme-val {
+      font-size: 1rem; font-weight: 800; color: #f1f5f9;
     }
-    .prov-sug-pill:hover {
-      background: rgba(251,191,36,.25); border-color: rgba(251,191,36,.55);
+    .prov-range-mid {
+      font-size: .65rem; font-weight: 700; color: #34d399;
+      background: rgba(16,185,129,.1); padding: 4px 10px; border-radius: 999px;
+      border: 1px solid rgba(16,185,129,.3);
+      white-space: nowrap;
+      align-self: center;
     }
-    .prov-slider-track {
-      position: relative; height: 24px;
-      display: flex; align-items: center;
+    .prov-range-mid.off {
+      color: #fca5a5; background: rgba(239,68,68,.1);
+      border-color: rgba(239,68,68,.4);
     }
-    /* Reset visual del input range para track personalizado */
-    .prov-slider {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 100%; height: 4px;
-      background: linear-gradient(90deg, #1e293b 0%, #1e293b 100%);
-      border-radius: 2px;
-      outline: none;
-      margin: 0;
+    .prov-range-mid.muted {
+      color: #64748b; background: transparent;
+      border-color: #1e293b;
     }
-    .prov-slider::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 16px; height: 16px;
-      border-radius: 50%;
-      background: #fbbf24;
-      border: 2px solid #0b1220;
-      box-shadow: 0 0 0 1px #fbbf24;
-      cursor: pointer;
+
+    .prov-range-track-wrap {
+      position: relative; height: 32px;
     }
-    .prov-slider::-moz-range-thumb {
-      width: 16px; height: 16px;
-      border-radius: 50%;
-      background: #fbbf24;
-      border: 2px solid #0b1220;
-      box-shadow: 0 0 0 1px #fbbf24;
-      cursor: pointer;
+    .prov-range-track-bg {
+      position: absolute; left: 0; right: 0; top: 50%; height: 5px;
+      transform: translateY(-50%);
+      background: #0a1428; border: 1px solid #1e293b; border-radius: 3px;
     }
-    /* Marker en posición sugerida */
-    .prov-slider-mark {
-      position: absolute;
-      top: 50%;
-      width: 2px; height: 14px;
-      background: #10b981;
-      transform: translate(-50%, -50%);
+    .prov-range-fill {
+      position: absolute; top: 50%; height: 5px;
+      transform: translateY(-50%);
+      background: linear-gradient(90deg, rgba(245,158,11,.6), rgba(16,185,129,.85), rgba(129,140,248,.7));
+      border-radius: 3px;
       pointer-events: none;
-      box-shadow: 0 0 0 2px rgba(16,185,129,.25);
     }
-    .prov-slider-mark::after {
-      content: '';
-      position: absolute;
-      top: -4px; left: 50%;
-      transform: translateX(-50%);
-      width: 0; height: 0;
-      border-left: 4px solid transparent;
-      border-right: 4px solid transparent;
-      border-top: 5px solid #10b981;
+    /* Marker pulsante en posición sugerida */
+    .prov-range-mark {
+      position: absolute; top: 50%;
+      width: 12px; height: 12px; border-radius: 50%;
+      transform: translate(-50%, -50%);
+      background: #fbbf24;
+      box-shadow: 0 0 0 4px rgba(251,191,36,.25), 0 0 14px rgba(251,191,36,.7);
+      pointer-events: none; z-index: 1;
+      animation: provMarkPulse 2.2s ease-in-out infinite;
     }
+    .prov-range-mark.off {
+      background: #ef4444;
+      box-shadow: 0 0 0 4px rgba(239,68,68,.25), 0 0 14px rgba(239,68,68,.5);
+    }
+    .prov-range-mark-num {
+      position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+      font-size: .65rem; font-weight: 800; color: #fcd34d;
+      background: rgba(11,18,32,.95); padding: 1px 6px; border-radius: 4px;
+      border: 1px solid rgba(251,191,36,.45);
+      white-space: nowrap;
+    }
+    .prov-range-mark.off .prov-range-mark-num {
+      color: #fca5a5; border-color: rgba(239,68,68,.4);
+    }
+    @keyframes provMarkPulse {
+      0%, 100% { box-shadow: 0 0 0 4px rgba(251,191,36,.22), 0 0 14px rgba(251,191,36,.55); }
+      50%      { box-shadow: 0 0 0 7px rgba(251,191,36,.12), 0 0 20px rgba(251,191,36,.85); }
+    }
+
+    /* Inputs range superpuestos — track invisible, sólo thumbs visibles */
+    .prov-range {
+      -webkit-appearance: none; appearance: none;
+      position: absolute; left: 0; right: 0; top: 50%;
+      width: 100%; height: 32px; background: transparent;
+      pointer-events: none;
+      margin: 0; transform: translateY(-50%);
+      outline: none;
+    }
+    .prov-range::-webkit-slider-runnable-track { background: transparent; }
+    .prov-range::-moz-range-track { background: transparent; }
+    .prov-range::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none;
+      width: 18px; height: 18px; border-radius: 50%;
+      background: #fff; border: 3px solid #6366f1;
+      pointer-events: auto; cursor: pointer;
+      position: relative; z-index: 2;
+      box-shadow: 0 2px 8px rgba(0,0,0,.5);
+      margin-top: 0;
+    }
+    .prov-range::-moz-range-thumb {
+      width: 18px; height: 18px; border-radius: 50%;
+      background: #fff; border: 3px solid #6366f1;
+      pointer-events: auto; cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,.5);
+    }
+    /* Color por handle: Mín ámbar, Máx violeta — visualmente separados */
+    .prov-range-min { z-index: 3; }
+    .prov-range-max { z-index: 4; }
+    .prov-range-min::-webkit-slider-thumb { border-color: #f59e0b; }
+    .prov-range-min::-moz-range-thumb     { border-color: #f59e0b; }
+    .prov-range-max::-webkit-slider-thumb { border-color: #818cf8; }
+    .prov-range-max::-moz-range-thumb     { border-color: #818cf8; }
 
     .prov-sugerencia-txt {
       font-size: .65rem; color: #94a3b8; font-style: italic;
       text-align: right;
+      margin-top: 6px;
     }
     .prov-pedido-row {
       display: flex; align-items: center; gap: 6px;

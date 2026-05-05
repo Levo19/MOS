@@ -4730,28 +4730,16 @@ const MOS = (() => {
           📦 Bulto × <b>${upb}</b> un
         </span>`;
 
-      // Sliders mín/máx con marker en sugerencia semanal
-      const sugSemana = Math.max(0, Math.ceil((pp.rotacionDia || 0) * 7));
-      const sugMin = sugSemana;            // mínimo recomendado = 1 semana de cobertura
-      const sugMax = Math.max(sugSemana * 2, sugSemana + 7); // 2 semanas
-      const sliderMaxMin = Math.max(20, (pp.stockMinimo || 0), sugMin * 4 || 0, 30);
-      const sliderMaxMax = Math.max(50, (pp.stockMaximo || 0), sugMax * 4 || 0, 60);
+      // Dual-range Mín/Máx con marker en la reposición sugerida (rot × 7)
+      const sugRep = Math.max(0, Math.ceil((pp.rotacionDia || 0) * 7));
       const minVal = parseInt(pp.stockMinimo) || 0;
       const maxVal = parseInt(pp.stockMaximo) || 0;
-      const sliderRow = (campo, label, val, sliderMax, sug) => `
-        <div class="prov-slider-grp">
-          <div class="prov-slider-head">
-            <span class="prov-slider-lbl">${label}</span>
-            <span class="prov-slider-val" data-vfor="${campo}-${pp.idPP}">${val || 0}</span>
-            ${sug > 0 ? `<button class="prov-sug-pill" onclick="MOS.provSliderUsarSugerencia('${pp.idPP}','${pp.idProducto}','${campo}', ${sug})" title="Usar sugerido (${sug})">≈${sug}</button>` : ''}
-          </div>
-          <div class="prov-slider-track">
-            <input type="range" min="0" max="${sliderMax}" step="1" value="${val}"
-              class="prov-slider" data-idprod="${pp.idProducto}" data-campo="${campo}" data-idpp="${pp.idPP}"
-              oninput="MOS.provSliderInput(this)" onchange="MOS.provSliderChange(this)">
-            ${sug > 0 && sug <= sliderMax ? `<div class="prov-slider-mark" style="left:${(sug/sliderMax)*100}%" title="Sugerido por rotación: ${sug}"></div>` : ''}
-          </div>
-        </div>`;
+      // Escala del slider: dejar margen suficiente para el sugerido y los valores actuales
+      const escala = Math.max(20, sugRep * 4 || 0, maxVal * 1.3 || 0, minVal * 1.3 || 0, 30);
+      const sugDentro = sugRep > 0 && sugRep >= minVal && (maxVal === 0 || sugRep <= maxVal);
+      const minPctRange = (minVal / escala) * 100;
+      const maxPctRange = (maxVal / escala) * 100;
+      const sugPctRange = sugRep > 0 ? (sugRep / escala) * 100 : 0;
 
       return `
       <div class="prov-prod-card${pp._tmp ? ' opacity-60' : ''}${qtyActual > 0 ? ' en-pedido' : ''}" data-idpp="${pp.idPP}" style="border-left:3px solid ${alert.color}">
@@ -4790,12 +4778,40 @@ const MOS = (() => {
           </div>
         </div>` : ''}
 
-        <!-- Sliders Mín/Máx con marker de sugerencia (rot × 7d) -->
-        <div class="prov-minmax-row">
-          ${sliderRow('stockMinimo', 'Mín', minVal, sliderMaxMin, sugMin)}
-          ${sliderRow('stockMaximo', 'Máx', maxVal, sliderMaxMax, sugMax)}
+        <!-- Dual-range Mín-Máx con marker en reposición sugerida (rot × 7d) -->
+        <div class="prov-range-block" data-idpp="${pp.idPP}" data-idprod="${pp.idProducto}" data-scale="${escala}" data-sug="${sugRep}">
+          <div class="prov-range-headline">
+            <div class="prov-range-extreme">
+              <span class="prov-range-extreme-lbl">Mín</span>
+              <span class="prov-range-extreme-val" data-vfor="min-${pp.idPP}">${minVal}</span>
+            </div>
+            ${sugRep > 0 ? `
+              <div class="prov-range-mid${sugDentro ? '' : ' off'}" data-mid="${pp.idPP}" title="Reposición sugerida: ${sugRep} (rot × 7d)">
+                <span data-mid-lbl="${pp.idPP}">${sugDentro ? '✓ Sugerido (' + sugRep + ') dentro' : '⚠ Sugerido (' + sugRep + ') fuera'}</span>
+              </div>
+            ` : `<div class="prov-range-mid muted">Sin rotación</div>`}
+            <div class="prov-range-extreme">
+              <span class="prov-range-extreme-lbl">Máx</span>
+              <span class="prov-range-extreme-val" data-vfor="max-${pp.idPP}">${maxVal}</span>
+            </div>
+          </div>
+          <div class="prov-range-track-wrap">
+            <div class="prov-range-track-bg"></div>
+            <div class="prov-range-fill" data-fill="${pp.idPP}" style="left:${minPctRange}%;right:${100 - maxPctRange}%"></div>
+            ${sugRep > 0 ? `
+              <div class="prov-range-mark${sugDentro ? '' : ' off'}" data-mark="${pp.idPP}" style="left:${sugPctRange}%" title="Sugerido: ${sugRep}/sem">
+                <span class="prov-range-mark-num">≈ ${sugRep}</span>
+              </div>
+            ` : ''}
+            <input type="range" min="0" max="${escala}" step="1" value="${minVal}"
+              class="prov-range prov-range-min" data-idpp="${pp.idPP}" data-idprod="${pp.idProducto}" data-bound="min"
+              oninput="MOS.provRangeInput(this)" onchange="MOS.provRangeChange(this)">
+            <input type="range" min="0" max="${escala}" step="1" value="${maxVal}"
+              class="prov-range prov-range-max" data-idpp="${pp.idPP}" data-idprod="${pp.idProducto}" data-bound="max"
+              oninput="MOS.provRangeInput(this)" onchange="MOS.provRangeChange(this)">
+          </div>
         </div>
-        ${pp.razonSugerencia ? `<div class="prov-sugerencia-txt" style="margin:-4px 0 6px">${pp.razonSugerencia}</div>` : ''}
+        ${pp.razonSugerencia ? `<div class="prov-sugerencia-txt">${pp.razonSugerencia}</div>` : ''}
 
         <!-- Sugerencia de pedido (un toque la aplica al stepper) -->
         ${pp.sugerencia > 0 ? `
@@ -4868,27 +4884,57 @@ const MOS = (() => {
     }
   }
 
-  // ── Sliders Mín/Máx ─────────────────────────────────────────
-  // oninput: actualizar valor visible en vivo (sin escritura GAS)
-  function provSliderInput(inp) {
-    const idPP  = inp.dataset.idpp;
-    const campo = inp.dataset.campo;
-    const val   = parseInt(inp.value) || 0;
-    const valEl = document.querySelector(`[data-vfor="${campo}-${idPP}"]`);
-    if (valEl) valEl.textContent = val;
+  // ── Dual-range Mín/Máx (una sola barra con dos handles + marker) ──
+  // oninput: actualiza visual + valida que min ≤ max
+  function provRangeInput(inp) {
+    const block = inp.closest('.prov-range-block');
+    if (!block) return;
+    const idPP  = block.dataset.idpp;
+    const escala = parseInt(block.dataset.scale) || 100;
+    const sug    = parseInt(block.dataset.sug) || 0;
+    const minInp = block.querySelector('.prov-range-min');
+    const maxInp = block.querySelector('.prov-range-max');
+    let minV = parseInt(minInp.value) || 0;
+    let maxV = parseInt(maxInp.value) || 0;
+    // Clamp: el handle que mueves no puede cruzar al otro
+    if (inp.dataset.bound === 'min' && minV > maxV) {
+      minV = maxV; minInp.value = minV;
+    } else if (inp.dataset.bound === 'max' && maxV < minV) {
+      maxV = minV; maxInp.value = maxV;
+    }
+    // Etiquetas
+    const minLbl = block.querySelector(`[data-vfor="min-${idPP}"]`);
+    const maxLbl = block.querySelector(`[data-vfor="max-${idPP}"]`);
+    if (minLbl) minLbl.textContent = minV;
+    if (maxLbl) maxLbl.textContent = maxV;
+    // Fill (zona entre min y max)
+    const fill = block.querySelector(`[data-fill="${idPP}"]`);
+    if (fill) {
+      fill.style.left  = (minV / escala * 100) + '%';
+      fill.style.right = (100 - maxV / escala * 100) + '%';
+    }
+    // ¿El sugerido cae dentro? Pintar marker y pill verde/rojo
+    if (sug > 0) {
+      const dentro = sug >= minV && (maxV === 0 || sug <= maxV);
+      const mark = block.querySelector(`[data-mark="${idPP}"]`);
+      const mid  = block.querySelector(`[data-mid="${idPP}"]`);
+      const lbl  = block.querySelector(`[data-mid-lbl="${idPP}"]`);
+      if (mark) mark.classList.toggle('off', !dentro);
+      if (mid)  mid.classList.toggle('off', !dentro);
+      if (lbl)  lbl.textContent = dentro ? `✓ Sugerido (${sug}) dentro` : `⚠ Sugerido (${sug}) fuera`;
+    }
   }
-  // onchange: cuando suelta el slider, persistir al GAS (optimista)
-  function provSliderChange(inp) {
-    provProductoEditarStockMinMax(inp);
-  }
-  // Botón "≈sug": fija el slider en la cantidad sugerida y guarda
-  function provSliderUsarSugerencia(idPP, idProducto, campo, valor) {
-    const inp = document.querySelector(`.prov-slider[data-idpp="${idPP}"][data-campo="${campo}"]`);
-    if (!inp) return;
-    inp.value = valor;
-    // Disparar el visual update + persistir
-    provSliderInput(inp);
-    provProductoEditarStockMinMax(inp);
+  // onchange: cuando suelta el handle, persistir al GAS
+  function provRangeChange(inp) {
+    const campo = inp.dataset.bound === 'min' ? 'stockMinimo' : 'stockMaximo';
+    provProductoEditarStockMinMax({
+      dataset: {
+        idprod: inp.dataset.idprod,
+        campo:  campo,
+        idpp:   inp.dataset.idpp
+      },
+      value: inp.value
+    });
   }
 
   function provProductoEditarStockMinMax(inp) {
@@ -11514,7 +11560,7 @@ const MOS = (() => {
     guardarProvProducto, eliminarProvProducto, eliminarProvProductoRapido,
     jalarProductosProveedor,
     provProductoEditarStockMinMax,
-    provSliderInput, provSliderChange, provSliderUsarSugerencia,
+    provRangeInput, provRangeChange,
     provEditarBulto,
     provPedidoSetQty, provPedidoStep, provPedidoUsarSugerencia, provPedidoLimpiar,
     provAbrirCarrito, provCerrarCarrito, provCarritoSetTab, _renderCarrito,
