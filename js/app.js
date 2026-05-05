@@ -5037,10 +5037,11 @@ const MOS = (() => {
     const item = lista.find(x => x.idPP === idPP);
     if (item && item[campo] === valor) return; // sin cambio
     if (item) item[campo] = valor;
-    // POST al GAS (silencioso)
+    // POST al GAS (silencioso). _source autoriza la mutación en _validarSource.
     API.post('actualizarProductoMaster', {
+      _source:    'MOS_PROV_MINMAX',
       idProducto: idProducto,
-      [campo]: valor
+      [campo]:    valor
     }).then(() => {
       toast(campo === 'stockMinimo' ? 'Mín actualizado' : 'Máx actualizado', 'ok');
     }).catch(e => {

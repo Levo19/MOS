@@ -12,6 +12,8 @@ var _SOURCES_AUTORIZADOS = [
   'MOS_TOGGLE_CASCADA',  // _prenderHijos / cascada de presentaciones
   'MOS_EQUIV_MODAL',     // crear equivalencia desde modal
   'MOS_PN_APROBACION',   // lanzarProductoNuevo (crea producto al aprobar PN)
+  'MOS_PN_CORRECCION',   // lanzarProductoNuevo tipo CORREGIR_CODIGO
+  'MOS_PROV_MINMAX',     // edición inline de stockMinimo/stockMaximo desde proveedores
   'MOS_MIGRACION'        // import bulk
 ];
 
