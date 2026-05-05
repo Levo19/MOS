@@ -351,6 +351,22 @@ function _getProvProdSheet() {
       _PROV_PROD_FORMATTED = true;
     } catch(e) {}
   }
+  // Garantizar columna unidadesPorBulto (idempotente). Default 1.
+  try {
+    var hdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    if (hdrs.indexOf('unidadesPorBulto') < 0) {
+      var newCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, newCol).setValue('unidadesPorBulto')
+           .setBackground('#0f3460').setFontColor('#e2e8f0').setFontWeight('bold').setFontSize(10);
+      // Inicializar todas las filas existentes en 1
+      var lastRow = sheet.getLastRow();
+      if (lastRow > 1) {
+        var defaults = [];
+        for (var i = 0; i < lastRow - 1; i++) defaults.push([1]);
+        sheet.getRange(2, newCol, defaults.length, 1).setValues(defaults);
+      }
+    }
+  } catch(_){}
   return sheet;
 }
 
@@ -367,20 +383,26 @@ function agregarProductoProveedor(params) {
   if (!params.idProveedor) return { ok: false, error: 'idProveedor requerido' };
   if (!params.skuBase)     return { ok: false, error: 'skuBase requerido' };
   var sheet = _getProvProdSheet();
+  // Construir fila por nombre de columna (la columna unidadesPorBulto puede o
+  // no existir según versión del sheet; _getProvProdSheet la garantiza)
+  var hdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   var id = _generateId('PP');
-  sheet.appendRow([
-    String(id),
-    String(params.idProveedor),
-    String(params.skuBase),
-    String(params.codigoBarra || ''),
-    params.descripcion      || '',
-    parseFloat(params.precioReferencia) || 0,
-    parseFloat(params.minimoCompra)     || 0,
-    parseInt(params.diasEntrega)        || 0,
-    new Date(),
-    true,
-    params.notas || ''
-  ]);
+  var camposPorNombre = {
+    idPP:               String(id),
+    idProveedor:        String(params.idProveedor),
+    skuBase:            String(params.skuBase),
+    codigoBarra:        String(params.codigoBarra || ''),
+    descripcion:        params.descripcion || '',
+    precioReferencia:   parseFloat(params.precioReferencia) || 0,
+    minimoCompra:       parseFloat(params.minimoCompra)     || 0,
+    diasEntrega:        parseInt(params.diasEntrega)        || 0,
+    ultimaActualizacion: new Date(),
+    activa:             true,
+    notas:              params.notas || '',
+    unidadesPorBulto:   parseInt(params.unidadesPorBulto) || 1
+  };
+  var values = hdrs.map(function(h){ return camposPorNombre[h] !== undefined ? camposPorNombre[h] : ''; });
+  sheet.appendRow(values);
   return { ok: true, data: { idPP: id } };
 }
 
@@ -409,6 +431,7 @@ function actualizarProductoProveedor(params) {
       if (params.diasEntrega        !== undefined) set('diasEntrega',      parseInt(params.diasEntrega) || 0);
       if (params.activa             !== undefined) set('activa',           params.activa === false || String(params.activa) === 'false' ? false : true);
       if (params.notas              !== undefined) set('notas',            params.notas);
+      if (params.unidadesPorBulto   !== undefined) set('unidadesPorBulto', parseInt(params.unidadesPorBulto) || 1);
       set('ultimaActualizacion', new Date());
       return { ok: true };
     }
@@ -655,7 +678,7 @@ function getProductosProveedorConStock(params) {
       var minimo = parseFloat(p.stockMinimo) || 0;
       var maximo = parseFloat(p.stockMaximo) || 0;
 
-      // Sugerencia de pedido
+      // Sugerencia de pedido (en unidades base)
       var sugerencia = 0;
       var razonSugerencia = '';
       if (minimo > 0 && total < minimo) {
@@ -668,6 +691,16 @@ function getProductosProveedorConStock(params) {
         razonSugerencia = sugerencia > 0 ? 'Cobertura 14d (rot ' + rotDia.toFixed(1) + '/d)' : 'Stock cubre 14d';
       } else if (total <= 0 && minimo === 0) {
         razonSugerencia = 'Sin rotación · sin mín — define mínimo';
+      }
+      // Redondear arriba a múltiplo del bulto del proveedor
+      var unidadesPorBulto = parseInt(item.unidadesPorBulto) || 1;
+      var sugerenciaBultos = 0;
+      if (sugerencia > 0 && unidadesPorBulto > 1) {
+        sugerenciaBultos = Math.ceil(sugerencia / unidadesPorBulto);
+        sugerencia = sugerenciaBultos * unidadesPorBulto;
+        razonSugerencia = razonSugerencia + ' · ' + sugerenciaBultos + ' bulto' + (sugerenciaBultos === 1 ? '' : 's');
+      } else if (sugerencia > 0 && unidadesPorBulto === 1) {
+        sugerenciaBultos = sugerencia; // 1:1
       }
 
       // Alerta
@@ -689,6 +722,7 @@ function getProductosProveedorConStock(params) {
         minimoCompra:    parseFloat(item.minimoCompra) || 0,
         diasEntrega:     parseInt(item.diasEntrega) || 0,
         notas:           item.notas || '',
+        unidadesPorBulto: unidadesPorBulto,
         stockWh:         whQ,
         stockTienda:     zonasTotal,
         stockTotal:      total,
@@ -704,6 +738,7 @@ function getProductosProveedorConStock(params) {
         rotacionDia:     Math.round(rotDia * 10) / 10,
         rangoDias:       rangoDias,
         sugerencia:      sugerencia,
+        sugerenciaBultos: sugerenciaBultos,
         razonSugerencia: razonSugerencia,
         alerta:          alerta,
         countPresentaciones: grupo ? grupo.presentaciones.length : 1,

@@ -839,6 +839,35 @@
     .prov-stock-label { font-size: .65rem; color: #64748b; text-transform: uppercase; letter-spacing: .05em; }
     .prov-stock-num { font-size: 1.1rem; font-weight: 800; }
     .prov-rot-num { font-size: 1rem; font-weight: 700; color: #818cf8; }
+    /* Chip de bulto del proveedor (editable) */
+    .prov-bulto-chip {
+      margin-left: auto;
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: .68rem; padding: 3px 9px; border-radius: 999px;
+      background: rgba(245,158,11,.1); color: #fcd34d;
+      border: 1px dashed rgba(245,158,11,.4);
+      cursor: pointer; transition: all .15s;
+      white-space: nowrap;
+    }
+    .prov-bulto-chip:hover { background: rgba(245,158,11,.22); border-color: rgba(245,158,11,.6); }
+    .prov-bulto-chip b { color: #fde68a; font-weight: 800; }
+    /* Botón "+ bulto" en stepper */
+    .prov-bulto-step {
+      padding: 4px 8px; border-radius: 7px;
+      background: rgba(245,158,11,.1); color: #fcd34d;
+      border: 1px solid rgba(245,158,11,.3);
+      font-size: .75rem; font-weight: 700; cursor: pointer;
+      transition: all .15s;
+    }
+    .prov-bulto-step:hover { background: rgba(245,158,11,.22); }
+    /* Sugerencia destacada */
+    .prov-pedido-sug {
+      padding-top: 6px;
+    }
+    .prov-pedido-sug .prov-sug-btn {
+      width: 100%; text-align: center;
+      margin: 0;
+    }
 
     /* Chips de ubicación: almacén + zona, rojo si negativo */
     .prov-loc-chips {
@@ -5238,6 +5267,10 @@
         <div>
           <label class="lbl">Días entrega</label>
           <input id="ppDiasEntrega" type="number" step="1" min="0" class="inp" placeholder="0">
+        </div>
+        <div>
+          <label class="lbl">📦 Unidades por bulto/caja</label>
+          <input id="ppUnidadesBulto" type="number" step="1" min="1" class="inp" placeholder="1">
         </div>
       </div>
       <div>

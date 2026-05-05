@@ -4633,6 +4633,13 @@ const MOS = (() => {
         `<span class="prov-rot-chip${c.huerf ? ' huerf' : ''}" title="${c.tip}"><span class="prov-loc-ic">${c.icon}</span>${c.nombre}: <b>↻ ${c.rot}/d</b></span>`
       ).join('');
 
+      // Bulto del proveedor (cuántas unidades vienen por caja/paquete)
+      const upb = parseInt(pp.unidadesPorBulto) || 1;
+      const bultoChipHtml = `
+        <span class="prov-bulto-chip" onclick="MOS.provEditarBulto('${pp.idPP}', ${upb})" title="Click para editar — el proveedor vende en bultos de N unidades">
+          📦 Bulto × <b>${upb}</b> un
+        </span>`;
+
       // Sliders mín/máx con marker en sugerencia semanal
       const sugSemana = Math.max(0, Math.ceil((pp.rotacionDia || 0) * 7));
       const sugMin = sugSemana;            // mínimo recomendado = 1 semana de cobertura
@@ -4669,11 +4676,12 @@ const MOS = (() => {
           </div>
         </div>
 
-        <!-- Stock total con sus chips por ubicación -->
+        <!-- Stock total con sus chips por ubicación + bulto del proveedor -->
         <div class="prov-metric-block">
           <div class="prov-metric-head">
             <span class="prov-stock-label">Stock</span>
             <span class="prov-stock-num" style="color:${alert.color}">${pp.stockTotal}</span>
+            ${bultoChipHtml}
           </div>
           <div class="prov-loc-chips">
             ${stockChipsHtml}
@@ -4699,14 +4707,26 @@ const MOS = (() => {
         </div>
         ${pp.razonSugerencia ? `<div class="prov-sugerencia-txt" style="margin:-4px 0 6px">${pp.razonSugerencia}</div>` : ''}
 
-        <!-- Stepper de pedido [- qty +] -->
+        <!-- Sugerencia de pedido (un toque la aplica al stepper) -->
+        ${pp.sugerencia > 0 ? `
+        <div class="prov-pedido-sug">
+          <button onclick="MOS.provPedidoUsarSugerencia('${pp.idPP}', ${pp.sugerencia})" class="prov-sug-btn" title="${pp.razonSugerencia || ''}">
+            Pedir sugerido: <b>${pp.sugerencia}</b> un${upb > 1 ? ` (${pp.sugerenciaBultos} bulto${pp.sugerenciaBultos === 1 ? '' : 's'} × ${upb})` : ''}
+          </button>
+        </div>` : ''}
+
+        <!-- Stepper de pedido [- qty +] · paso de bulto si upb > 1 -->
         <div class="prov-pedido-row">
           <div class="prov-stepper">
-            <button onclick="MOS.provPedidoStep('${pp.idPP}', -1)" class="prov-stepper-btn" aria-label="Disminuir">−</button>
+            <button onclick="MOS.provPedidoStep('${pp.idPP}', -1)" class="prov-stepper-btn" aria-label="Disminuir 1">−</button>
             <input type="number" min="0" step="1" value="${qtyActual}" placeholder="0"
               class="prov-stepper-input" data-idpp="${pp.idPP}" oninput="MOS.provPedidoSetQty('${pp.idPP}', this.value)">
-            <button onclick="MOS.provPedidoStep('${pp.idPP}', 1)" class="prov-stepper-btn" aria-label="Aumentar">+</button>
+            <button onclick="MOS.provPedidoStep('${pp.idPP}', 1)" class="prov-stepper-btn" aria-label="Aumentar 1">+</button>
           </div>
+          ${upb > 1 ? `
+          <button onclick="MOS.provPedidoStep('${pp.idPP}', ${upb})" class="prov-bulto-step" title="Sumar 1 bulto (+${upb} unidades)">
+            +📦
+          </button>` : ''}
           <span class="prov-pedido-sub">×&nbsp;${fmtMoney(pp.precioReferencia || 0)}</span>
           <span class="prov-pedido-total">${fmtMoney((qtyActual || 0) * (pp.precioReferencia || 0))}</span>
           <button onclick="event.stopPropagation();MOS.eliminarProvProductoRapido('${pp.idPP}')" class="text-slate-500 hover:text-red-400 transition-colors text-sm p-1 ml-auto" title="Eliminar del catálogo">🗑️</button>
@@ -4736,6 +4756,26 @@ const MOS = (() => {
       <button onclick="MOS.provPedidoLimpiar()" class="btn-ghost text-xs px-2 py-1.5">Limpiar</button>
       <button onclick="MOS.provPedidoExportar()" class="btn-primary text-xs px-3 py-1.5 whitespace-nowrap">📄 Generar pedido</button>
     `;
+  }
+
+  // ── Editar unidadesPorBulto inline (prompt nativo, simple) ──
+  async function provEditarBulto(idPP, current) {
+    const nuevoStr = prompt('¿Cuántas unidades vienen por bulto/caja del proveedor?', current || 1);
+    if (nuevoStr === null) return;
+    const nuevo = Math.max(1, parseInt(nuevoStr) || 1);
+    if (nuevo === current) return;
+    const id = S.provSelId;
+    const lista = (S.provProductos && S.provProductos[id]) || [];
+    const item = lista.find(x => x.idPP === idPP);
+    if (item) item.unidadesPorBulto = nuevo;
+    // Re-render para que la sugerencia se recalcule visualmente
+    _pintaProvProductos(_filtrarPP(lista, S.provProdFilter));
+    try {
+      await API.post('actualizarProductoProveedor', { idPP, unidadesPorBulto: nuevo });
+      toast('Bulto actualizado: ' + nuevo + ' un', 'ok');
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    }
   }
 
   // ── Sliders Mín/Máx ─────────────────────────────────────────
@@ -10592,6 +10632,7 @@ const MOS = (() => {
     setVal('ppPrecio', '');
     setVal('ppMinimo', '');
     setVal('ppDiasEntrega', '');
+    setVal('ppUnidadesBulto', '');
     setVal('ppNotas', '');
     $('ppBtnEliminar')?.classList.toggle('hidden', !idPP);
 
@@ -10603,8 +10644,9 @@ const MOS = (() => {
         $('ppSkuBase').value     = pp.skuBase || '';
         $('ppCodigoBarra').value = pp.codigoBarra || '';
         $('ppPrecio').value      = pp.precioReferencia || '';
-        $('ppMinimo').value      = pp.minimoCompra || '';
-        $('ppDiasEntrega').value = pp.diasEntrega || '';
+        $('ppMinimo').value         = pp.minimoCompra || '';
+        $('ppDiasEntrega').value    = pp.diasEntrega || '';
+        if ($('ppUnidadesBulto')) $('ppUnidadesBulto').value = pp.unidadesPorBulto || '';
         $('ppNotas').value       = pp.notas || '';
         $('ppSeleccionado').textContent = `${pp.descripcion || pp.skuBase} (SKU ${pp.skuBase}${pp.codigoBarra ? ' · ▌' + pp.codigoBarra : ''})`;
         $('ppSeleccionado').classList.remove('hidden');
@@ -10676,6 +10718,7 @@ const MOS = (() => {
       precioReferencia: parseFloat($('ppPrecio').value) || 0,
       minimoCompra:     parseFloat($('ppMinimo').value) || 0,
       diasEntrega:      parseInt($('ppDiasEntrega').value) || 0,
+      unidadesPorBulto: parseInt($('ppUnidadesBulto')?.value) || 1,
       notas:            $('ppNotas').value
     };
 
@@ -11376,6 +11419,7 @@ const MOS = (() => {
     jalarProductosProveedor,
     provProductoEditarStockMinMax,
     provSliderInput, provSliderChange, provSliderUsarSugerencia,
+    provEditarBulto,
     provPedidoSetQty, provPedidoStep, provPedidoUsarSugerencia, provPedidoLimpiar,
     provAbrirCarrito, provCerrarCarrito, provCarritoSetTab, _renderCarrito,
     provHistToggleDia,
