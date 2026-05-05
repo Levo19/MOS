@@ -4500,6 +4500,8 @@ const MOS = (() => {
       el.innerHTML = `<p class="text-slate-500 text-sm text-center py-8">Sin resultados para "${S.provQuery}"</p>`;
       return;
     }
+    // Render UNA SOLA vez de la lista plana (sin wrappers extra).
+    // El inline-detail se mueve después por DOM manipulation, no por re-render.
     el.innerHTML = filtrados.map(p => {
       const sel = S.provSelId === p.idProveedor;
       const diaPed = p.diaPedido ? `<span title="Día de pedido">📋 ${_provDiaLabel(p.diaPedido)}</span>` : '';
@@ -4508,7 +4510,6 @@ const MOS = (() => {
       const pendStats = _provContarPendientes(p.idProveedor);
       const pendBadge = _provPendBadgeHtml(p.idProveedor, pendStats);
       return `
-      <div>
         <div class="card p-3 cursor-pointer hover:border-indigo-500/30 transition-colors ${sel ? 'prov-card-active' : ''} ${p._tmp ? 'opacity-60' : ''}"
              data-prov-card="${p.idProveedor}"
              onclick="MOS.selectProveedor('${p.idProveedor}')">
@@ -4534,10 +4535,45 @@ const MOS = (() => {
             <button onclick="MOS.provLlamar('${p.idProveedor}', event)" class="prov-quick-btn" title="Llamar ${p.telefono}">📞 ${p.telefono}</button>
             <button onclick="MOS.provWhatsApp('${p.idProveedor}', event)" class="prov-quick-btn whatsapp" title="WhatsApp">💬</button>
           </div>` : ''}
-        </div>
-        ${sel ? `<div id="provInlineDetail" class="prov-inline-detail lg:hidden"></div>` : ''}
-      </div>`;
-    }).join('');
+        </div>`;
+    }).join('') +
+    // Inline-detail único, vive al final de la lista; se mueve después del card seleccionado en mobile.
+    `<div id="provInlineDetail" class="prov-inline-detail lg:hidden" style="display:none"></div>`;
+
+    // Si hay selección activa, posicionar el inline-detail tras su card sin re-render
+    if (S.provSelId) _provPosicionarInlineDetail(S.provSelId);
+  }
+
+  // ── Cambio fluido de selección sin re-render de lista ───────
+  // Solo togglea clases y mueve el nodo del inline-detail.
+  function _provPosicionarInlineDetail(idProv) {
+    const inline = $('provInlineDetail');
+    if (!inline) return;
+    const card = document.querySelector(`[data-prov-card="${idProv}"]`);
+    if (!card) { inline.style.display = 'none'; return; }
+    // Insertar después del card seleccionado y mostrarlo
+    if (inline.previousElementSibling !== card) {
+      card.parentElement.insertBefore(inline, card.nextSibling);
+    }
+    inline.style.display = '';
+  }
+  function _provAplicarSeleccion(idAnt, idNuevo) {
+    const list = $('listProveedores');
+    if (!list) return;
+    // Quitar active del anterior (si seguía visible)
+    if (idAnt) {
+      const cardAnt = list.querySelector(`[data-prov-card="${idAnt}"]`);
+      if (cardAnt) cardAnt.classList.remove('prov-card-active');
+    }
+    // Marcar nuevo
+    if (idNuevo) {
+      const cardNuevo = list.querySelector(`[data-prov-card="${idNuevo}"]`);
+      if (cardNuevo) cardNuevo.classList.add('prov-card-active');
+      _provPosicionarInlineDetail(idNuevo);
+    } else {
+      const inline = $('provInlineDetail');
+      if (inline) { inline.style.display = 'none'; inline.innerHTML = ''; }
+    }
   }
 
   async function selectProveedor(id) {
@@ -4554,19 +4590,30 @@ const MOS = (() => {
       S.provProdFilter = '';
       S.provHistFilter = '';
     }
+    const idAnterior = S.provSelId;
     S.provSelId = id;
     try { localStorage.setItem('mos_prov_last_sel', id); } catch {}
     if (!S.provTab || S.provTab === 'info' || S.provTab === 'pedidos') S.provTab = 'productos';
-    renderProveedores();
 
     const prov = S.proveedores.find(p => p.idProveedor === id);
     if (!prov) return;
 
-    // Pre-carga en paralelo (no espera para mostrar la UI)
-    _precargarProvData(id);
+    // Mover selección sin re-render de toda la lista (evita parpadeo)
+    if (!$('listProveedores')?.querySelector('[data-prov-card]')) {
+      // Lista todavía no renderizada → render inicial
+      renderProveedores();
+    } else {
+      _provAplicarSeleccion(idAnterior, id);
+    }
 
     const detailEl = isMobile ? $('provInlineDetail') : $('proveedorDetail');
     if (!detailEl) return;
+    // Limpiar contenido del detail INMEDIATO para evitar mostrar el del proveedor
+    // anterior mientras se monta el nuevo. Render del header debajo va sincrónico.
+    detailEl.innerHTML = '';
+
+    // Pre-carga en paralelo (no espera para mostrar la UI)
+    _precargarProvData(id);
     const safeNombre = (prov.nombre || '').replace(/"/g, '&quot;');
     const tieneTel = !!prov.telefono;
     detailEl.innerHTML = `
@@ -4607,10 +4654,15 @@ const MOS = (() => {
     `;
     provSetTab(S.provTab);
 
-    // En desktop, el panel derecho ya estaba visible; en mobile, hacemos scroll suave al detalle
+    // En mobile/tablet hacemos scroll suave al card seleccionado solo si está fuera de la viewport.
+    // Evita el "salto" cada vez que cambias de proveedor cuando ya está visible.
     if (isMobile) {
       requestAnimationFrame(() => {
-        detailEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        const card = document.querySelector(`[data-prov-card="${id}"]`);
+        if (!card) return;
+        const r = card.getBoundingClientRect();
+        const visible = r.top >= 0 && r.bottom <= window.innerHeight;
+        if (!visible) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     }
   }
@@ -4644,8 +4696,10 @@ const MOS = (() => {
   }
 
   function cerrarDetalleProveedor() {
+    const ant = S.provSelId;
     S.provSelId = null;
-    renderProveedores();
+    // Solo togglear clases — sin re-render (evita parpadeo)
+    _provAplicarSeleccion(ant, null);
     // Reset del panel desktop por si venía con contenido
     const detailEl = $('proveedorDetail');
     if (detailEl) detailEl.innerHTML = '<p class="text-center p-6">Selecciona un proveedor para ver pagos y pedidos</p>';
@@ -5388,6 +5442,9 @@ const MOS = (() => {
       S.provProductos[id] = items;
       _provProdsSaveCache(id, items);
       _refreshProvPendientesBadge(id);
+      // Si entre el fetch y la respuesta el usuario cambió de proveedor, NO pintar:
+      // pintaríamos productos del proveedor anterior sobre el detalle del nuevo.
+      if (S.provSelId !== id) return;
       _pintaProvProductos(_filtrarPP(items, S.provProdFilter));
     } catch(e) {
       if (!S.provProductos[id]) list.innerHTML = `<p class="text-red-400 text-sm">Error: ${e.message}</p>`;
