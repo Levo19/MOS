@@ -4190,11 +4190,52 @@ const MOS = (() => {
     try { localStorage.setItem(PROV_CACHE_KEY, JSON.stringify({ ts: Date.now(), data })); } catch {}
   }
 
+  // ── Cache de productos enriquecidos por proveedor ───────────
+  // Key única por proveedor → { ts, data }. TTL: 30 min.
+  const PROV_PRODS_CACHE_KEY = 'mos_prov_prods_cache';
+  const PROV_PRODS_TTL = 30 * 60 * 1000; // 30 min
+  function _provProdsLoadCache(idProveedor) {
+    try {
+      const raw = localStorage.getItem(PROV_PRODS_CACHE_KEY);
+      if (!raw) return null;
+      const all = JSON.parse(raw);
+      const entry = all && all[idProveedor];
+      if (!entry) return null;
+      if (Date.now() - (entry.ts || 0) > PROV_PRODS_TTL) return null;
+      return entry.data;
+    } catch { return null; }
+  }
+  function _provProdsSaveCache(idProveedor, data) {
+    try {
+      const raw = localStorage.getItem(PROV_PRODS_CACHE_KEY);
+      const all = raw ? JSON.parse(raw) : {};
+      all[idProveedor] = { ts: Date.now(), data };
+      localStorage.setItem(PROV_PRODS_CACHE_KEY, JSON.stringify(all));
+    } catch {}
+  }
+  // Hidratar S.provProductos desde localStorage al inicio (todos los proveedores)
+  function _provProdsHidratarTodos() {
+    try {
+      const raw = localStorage.getItem(PROV_PRODS_CACHE_KEY);
+      if (!raw) return;
+      const all = JSON.parse(raw) || {};
+      S.provProductos = S.provProductos || {};
+      Object.keys(all).forEach(idProv => {
+        const entry = all[idProv];
+        if (entry && entry.data && Date.now() - (entry.ts || 0) <= PROV_PRODS_TTL) {
+          S.provProductos[idProv] = entry.data;
+        }
+      });
+    } catch {}
+  }
+
   async function loadProveedores() {
     if (!API.isConfigured()) {
       $('listProveedores').innerHTML = '<p class="text-slate-500 text-sm text-center py-8">Configura el GAS URL.</p>';
       return;
     }
+    // Hidratar productos por proveedor desde localStorage para render instantáneo
+    _provProdsHidratarTodos();
     // Render desde cache (instantáneo)
     const cached = _provLoadCache();
     if (cached && (!S.proveedores || !S.proveedores.length)) {
@@ -4209,11 +4250,57 @@ const MOS = (() => {
       S.proveedores = lista;
       _provSaveCache(lista);
       if (changed || !cached) renderProveedores();
+      // Pre-fetch de productos en background (silencioso, no bloquea UI)
+      _provProdsPrefetchEnBackground(lista);
     } catch(e) {
       if (!S.proveedores || !S.proveedores.length) {
         $('listProveedores').innerHTML = `<p class="text-red-400 text-sm text-center py-8">${e.message}</p>`;
       }
     }
+  }
+
+  // Pre-fetch en background de productos por proveedor.
+  // Estrategia: arranca por el último proveedor visitado (si existe) y
+  // luego itera secuencialmente con un pequeño throttle. Salta proveedores
+  // que ya tienen cache fresco (TTL).
+  let _provProdsPrefetching = false;
+  function _provProdsPrefetchEnBackground(proveedores) {
+    if (_provProdsPrefetching) return;
+    if (!Array.isArray(proveedores) || !proveedores.length) return;
+    const lista = _filtrarReales(proveedores);
+    if (!lista.length) return;
+    _provProdsPrefetching = true;
+    let lastId = null;
+    try { lastId = localStorage.getItem('mos_prov_last_sel'); } catch {}
+    // Ordenar: último visitado primero, después por orden natural
+    const orden = lista.slice().sort((a, b) => {
+      if (a.idProveedor === lastId) return -1;
+      if (b.idProveedor === lastId) return 1;
+      return 0;
+    });
+    let i = 0;
+    function siguiente() {
+      if (i >= orden.length) { _provProdsPrefetching = false; return; }
+      const prov = orden[i++];
+      const idProv = prov.idProveedor;
+      // Skip si ya hay cache fresco
+      if (_provProdsLoadCache(idProv)) {
+        setTimeout(siguiente, 50);
+        return;
+      }
+      API.get('getProductosProveedorConStock', { idProveedor: idProv, rangoDias: 30 })
+        .then(r => {
+          const items = Array.isArray(r) ? r : (r && r.data) || [];
+          S.provProductos = S.provProductos || {};
+          S.provProductos[idProv] = items;
+          _provProdsSaveCache(idProv, items);
+          // Si el usuario está viendo este proveedor en este momento, refrescar UI
+          if (S.provSelId === idProv && S.provTab === 'productos') _renderProvProductos();
+        })
+        .catch(() => {})
+        .finally(() => { setTimeout(siguiente, 800); });
+    }
+    siguiente();
   }
 
   // Filtra proveedores excluyendo cargadores (nombre prefijo CARGADOR)
@@ -4417,6 +4504,7 @@ const MOS = (() => {
       S.provHistFilter = '';
     }
     S.provSelId = id;
+    try { localStorage.setItem('mos_prov_last_sel', id); } catch {}
     if (!S.provTab || S.provTab === 'info' || S.provTab === 'pedidos') S.provTab = 'productos';
     renderProveedores();
 
@@ -4491,7 +4579,9 @@ const MOS = (() => {
     // Productos enriquecidos (con stock + zonas + min/max + sugerencia)
     API.get('getProductosProveedorConStock', { idProveedor: id, rangoDias: 30 })
       .then(r => {
-        S.provProductos[id] = Array.isArray(r) ? r : (r && r.data) || [];
+        const items = Array.isArray(r) ? r : (r && r.data) || [];
+        S.provProductos[id] = items;
+        _provProdsSaveCache(id, items);
         if (S.provSelId === id && S.provTab === 'productos') _renderProvProductos();
       }).catch(() => {});
     // Histórico (60 días default)
@@ -5140,7 +5230,12 @@ const MOS = (() => {
     }
     const list = $('provProductosList');
 
-    // Render cache si existe (instantáneo)
+    // Render cache si existe en memoria (ya hidratado del localStorage al login)
+    if (!S.provProductos[id]) {
+      // Por si el render se llama antes de la hidratación
+      const localCached = _provProdsLoadCache(id);
+      if (localCached) S.provProductos[id] = localCached;
+    }
     if (S.provProductos[id]) {
       _pintaProvProductos(_filtrarPP(S.provProductos[id], S.provProdFilter));
     } else {
@@ -5152,6 +5247,7 @@ const MOS = (() => {
       const lista = await API.get('getProductosProveedorConStock', { idProveedor: id, rangoDias: 30 });
       const items = Array.isArray(lista) ? lista : (lista && lista.data) || [];
       S.provProductos[id] = items;
+      _provProdsSaveCache(id, items);
       _pintaProvProductos(_filtrarPP(items, S.provProdFilter));
     } catch(e) {
       if (!S.provProductos[id]) list.innerHTML = `<p class="text-red-400 text-sm">Error: ${e.message}</p>`;
