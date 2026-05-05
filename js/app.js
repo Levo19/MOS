@@ -4647,7 +4647,7 @@ const MOS = (() => {
           ${tieneTel ? `<button class="prov-action-btn whatsapp" onclick="MOS.provWhatsApp('${id}', event)">💬 WhatsApp</button>` : ''}
           ${tieneTel ? `<button class="prov-action-btn" onclick="MOS.provLlamar('${id}', event)">📞 Llamar</button>` : ''}
           <button class="prov-action-btn" onclick="MOS.abrirModalPago('${id}')">💰 + Pago</button>
-          <button class="prov-action-btn primary" data-prov-carrito-btn="${id}" onclick="MOS.provComprometerCarrito()">🛒 ${(_provCarritoResumen(id) || {}).count ? `Carrito (${_provCarritoResumen(id).count})` : 'A carrito'}</button>
+          <button class="prov-action-btn primary" data-prov-carrito-btn="${id}" onclick="MOS.provAbrirCarrito()">🛒 ${(_provCarritoResumen(id) || {}).count ? `Ver carrito (${_provCarritoResumen(id).count})` : 'Ver carrito'}</button>
         </div>
         <div class="prov-tabs-wrap">
           <div class="prov-tabs">
@@ -4768,15 +4768,13 @@ const MOS = (() => {
     });
   }
 
-  // ── Estado de carritos y cantidades editadas ───────────────────
+  // ── Estado del carrito (modelo único) ──────────────────────────
   // S.provCarritos: PERSISTENTE en localStorage. Uno por proveedor.
   //   { [idProveedor]: { items: { [idPP]: {idPP, sku, desc, codigoBarra, precio, qty, upb} }, ts } }
-  // S.provQtyEditadas: VOLÁTIL en memoria. Retiene los steppers entre navegación
-  //   pero se reinicia al refresh.
-  //   { [idProveedor]: { [idPP]: qty } }
   // S.provCarritoActivoId: id del último carrito modificado (para FAB global).
+  // Los steppers en cada card del producto escriben DIRECTAMENTE al carrito —
+  // no hay estado intermedio. La sugerencia se ofrece como botón "Pedir N".
   S.provCarritos       = S.provCarritos       || {};
-  S.provQtyEditadas    = S.provQtyEditadas    || {};
   S.provCarritoActivoId = S.provCarritoActivoId || null;
 
   const PROV_CARRITOS_KEY      = 'mos_prov_carritos';
@@ -4842,11 +4840,11 @@ const MOS = (() => {
   }
 
   // ── FAB global del carrito ──────────────────────────────────
-  // Se renderiza en body, fixed. Visible si hay al menos un carrito con items.
+  // Visible si hay al menos un carrito con items. Click → abre modal carrito.
   function _provFabRender() {
     let fab = $('provCarritoFAB');
     const carritos = Object.entries(S.provCarritos || {})
-      .map(([id, c]) => ({ id, items: Object.values(c.items || {}), ts: c.ts }))
+      .map(([id, c]) => ({ id, items: Object.values((c && c.items) || {}), ts: (c && c.ts) || 0 }))
       .filter(c => c.items.length > 0);
     if (!carritos.length) {
       if (fab) fab.style.display = 'none';
@@ -4859,41 +4857,40 @@ const MOS = (() => {
       activo = carritos.sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
       activoId = activo.id;
     }
-    const provNombre = ((S.proveedores || []).find(p => p.idProveedor === activoId) || {}).nombre || '—';
-    const monto = activo.items.reduce((s, it) => s + (parseFloat(it.qty) || 0) * (parseFloat(it.precio) || 0), 0);
+    const prov = (S.proveedores || []).find(p => p.idProveedor === activoId) || {};
+    const provNombre = prov.nombre || activoId;
+    const totalUds = activo.items.reduce((s, it) => s + (parseFloat(it.qty) || 0), 0);
+    const monto    = activo.items.reduce((s, it) => s + (parseFloat(it.qty) || 0) * (parseFloat(it.precio) || 0), 0);
     const otros = carritos.length - 1;
+    // Avatar de iniciales (mismo helper que la lista)
+    const avatar = _provAvatarHtml(provNombre);
     if (!fab) {
       fab = document.createElement('button');
       fab.id = 'provCarritoFAB';
       fab.className = 'prov-cart-fab';
-      fab.onclick = () => provAbrirCarrito(activoId);
       document.body.appendChild(fab);
-    } else {
-      fab.onclick = () => provAbrirCarrito(activoId);
-      fab.style.display = '';
     }
+    fab.onclick = () => provAbrirCarrito(activoId);
+    fab.style.display = '';
     fab.innerHTML = `
-      <span class="prov-cart-fab-ic">🛒</span>
+      <span class="prov-cart-fab-avatar-wrap">
+        ${avatar}
+        <span class="prov-cart-fab-count">${activo.items.length}</span>
+      </span>
       <span class="prov-cart-fab-info">
         <span class="prov-cart-fab-prov">${provNombre}</span>
-        <span class="prov-cart-fab-monto">${activo.items.length} prods · ${fmtMoney(monto)}</span>
+        <span class="prov-cart-fab-monto">${totalUds} unds · <b>${fmtMoney(monto)}</b></span>
       </span>
-      ${otros > 0 ? `<span class="prov-cart-fab-otros" title="Otros ${otros} proveedor${otros === 1 ? '' : 'es'} con carrito">+${otros}</span>` : ''}
+      ${otros > 0 ? `<span class="prov-cart-fab-otros" title="${otros} proveedor${otros === 1 ? '' : 'es'} más con carrito">+${otros}</span>` : ''}
+      <span class="prov-cart-fab-arrow">›</span>
     `;
   }
 
-  // Cantidad efectiva de un producto en el stepper:
-  //   1. Si el user editó en esta sesión → ese valor
-  //   2. Si tiene sugerencia → la sugerencia
-  //   3. Sino 0
+  // Qty actual en el stepper = qty del carrito persistente (0 si no está)
   function _provStepperQty(idProveedor, pp) {
-    const ed = S.provQtyEditadas[idProveedor];
-    if (ed && ed[pp.idPP] !== undefined) return parseFloat(ed[pp.idPP]) || 0;
-    return parseFloat(pp.sugerencia) || 0;
-  }
-  function _provStepperSetQty(idProveedor, idPP, qty) {
-    if (!S.provQtyEditadas[idProveedor]) S.provQtyEditadas[idProveedor] = {};
-    S.provQtyEditadas[idProveedor][idPP] = qty;
+    const c = S.provCarritos[idProveedor];
+    if (!c || !c.items || !c.items[pp.idPP]) return 0;
+    return parseFloat(c.items[pp.idPP].qty) || 0;
   }
 
   // Marcar el carrito como activo (para el FAB global) + persistir
@@ -4904,31 +4901,27 @@ const MOS = (() => {
     _provFabRender();
   }
 
-  // Toma todas las cantidades editadas en steppers del proveedor y las
-  // compromete al carrito persistente. Reemplaza el carrito actual.
-  function _provComprometerSteppersAlCarrito(idProveedor) {
+  // Aplica todas las sugerencias al carrito (botón "Aplicar sugerencias").
+  // No reemplaza el carrito vacío — completa los productos sin item.
+  function _provAplicarSugerenciasACarrito(idProveedor) {
     if (!idProveedor) return;
-    const ed = S.provQtyEditadas[idProveedor] || {};
     const productos = (S.provProductos && S.provProductos[idProveedor]) || [];
-    const items = {};
+    _provCarritoVacioOCrear(idProveedor);
     productos.forEach(pp => {
-      // Cantidad: edited > sugerencia > 0
-      const qty = (ed[pp.idPP] !== undefined)
-        ? parseFloat(ed[pp.idPP]) || 0
-        : parseFloat(pp.sugerencia) || 0;
-      if (qty > 0) {
-        items[pp.idPP] = {
+      const sug = parseFloat(pp.sugerencia) || 0;
+      if (sug > 0) {
+        S.provCarritos[idProveedor].items[pp.idPP] = {
           idPP:        pp.idPP,
           sku:         pp.skuBase,
           desc:        pp.descripcion,
           codigoBarra: pp.codigoBarra,
           precio:      parseFloat(pp.precioReferencia) || 0,
-          qty:         qty,
+          qty:         sug,
           upb:         parseInt(pp.unidadesPorBulto) || 1
         };
       }
     });
-    S.provCarritos[idProveedor] = { items, ts: Date.now() };
+    S.provCarritos[idProveedor].ts = Date.now();
     _provCarritoMarcarActivo(idProveedor);
   }
 
@@ -4951,12 +4944,12 @@ const MOS = (() => {
       list.innerHTML = filtro
         ? `<p class="text-slate-500 text-sm py-6 text-center">Sin coincidencias para "${filtro}".</p>`
         : '<p class="text-slate-500 text-sm py-6 text-center">Sin productos registrados.<br>Pulsa <b>⬇️ Jalar</b> para importar desde guías o <b>+ Producto</b> para agregar manual.</p>';
-      _renderProvComprometeToolbar();
+      // toolbar eliminado — los steppers escriben directo al carrito
       return;
     }
-    // Steppers volátiles: provQtyEditadas guarda lo que el user toca
-    // durante la sesión. Si no hay edición, el render usa pp.sugerencia.
-    // El carrito persistente NO se toca aquí; solo al click "🛒 A carrito".
+    // El stepper qty refleja el carrito persistente (0 si no está).
+    // La sugerencia se ofrece como botón "Pedir N" si el producto NO está
+    // en carrito todavía.
     const idProvActual = S.provSelId;
     list.innerHTML = items.map(pp => {
       const alert = _provAlertaInfo(pp.alerta);
@@ -5089,7 +5082,13 @@ const MOS = (() => {
         </div>
         ${pp.razonSugerencia ? `<div class="prov-sugerencia-txt">${pp.razonSugerencia}</div>` : ''}
 
-        <!-- Stepper de pedido [- qty +] · paso de bulto si upb > 1 -->
+        ${qtyActual === 0 && pp.sugerencia > 0 ? `
+        <button onclick="MOS.provPedidoUsarSugerencia('${pp.idPP}', ${pp.sugerencia})" class="prov-sug-cta" title="${pp.razonSugerencia || ''}">
+          🛒 Pedir sugerido: <b>${pp.sugerencia} un</b>${upb > 1 ? ` (${pp.sugerenciaBultos} bulto${pp.sugerenciaBultos === 1 ? '' : 's'} × ${upb})` : ''}
+        </button>
+        ` : ''}
+
+        <!-- Stepper [- qty +] · paso de bulto si upb > 1. Edita el carrito directo. -->
         <div class="prov-pedido-row">
           <div class="prov-stepper">
             <button onclick="MOS.provPedidoStep('${pp.idPP}', -${upb})" class="prov-stepper-btn" title="${upb > 1 ? `Quitar 1 bulto (−${upb} un)` : 'Quitar 1 unidad'}">−</button>
@@ -5109,67 +5108,16 @@ const MOS = (() => {
     _renderProvComprometeToolbar();
   }
 
-  // Resumen visual de los steppers actuales del proveedor visible (NO es el carrito).
-  // Aparece como toolbar inferior con resumen y botones "Reset" y "🛒 Comprometer al carrito".
-  function _renderProvComprometeToolbar() {
-    let bar = $('provComprometeToolbar');
-    const idProv = S.provSelId;
-    if (!idProv) { if (bar) bar.remove(); return; }
-    const ed = S.provQtyEditadas[idProv] || {};
-    const productos = (S.provProductos && S.provProductos[idProv]) || [];
-    let cantProds = 0, totalUds = 0, totalMonto = 0;
-    productos.forEach(pp => {
-      const qty = (ed[pp.idPP] !== undefined)
-        ? parseFloat(ed[pp.idPP]) || 0
-        : parseFloat(pp.sugerencia) || 0;
-      if (qty > 0) {
-        cantProds++;
-        totalUds += qty;
-        totalMonto += qty * (parseFloat(pp.precioReferencia) || 0);
-      }
-    });
-    if (!cantProds) { if (bar) bar.remove(); return; }
-
-    // Comparar con el carrito actual: ¿hay cambios sin commit?
-    const carrito = _provCarritoDe(idProv) || {};
-    const hayCarrito = Object.keys(carrito).length > 0;
-
-    if (!bar) {
-      bar = document.createElement('div');
-      bar.id = 'provComprometeToolbar';
-      bar.className = 'prov-pedido-toolbar';
-      document.body.appendChild(bar);
-    }
-    bar.innerHTML = `
-      <div class="prov-pedido-bar-info">
-        <div class="text-[10px] text-slate-400 uppercase tracking-wide">Steppers actuales</div>
-        <div class="text-sm font-bold text-white">${cantProds} prods · ${totalUds} unds · ${fmtMoney(totalMonto)}</div>
-      </div>
-      <button onclick="MOS.provResetSteppers()" class="btn-ghost text-xs px-2 py-1.5" title="Volver al sugerido">↺</button>
-      <button onclick="MOS.provComprometerCarrito()" class="btn-primary text-xs px-3 py-1.5 whitespace-nowrap" style="background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#0b1220">
-        🛒 ${hayCarrito ? 'Reemplazar' : 'A carrito'}
-      </button>
-    `;
-  }
-
-  // Reset de steppers volátiles del proveedor activo → vuelve a sugerencias
-  function provResetSteppers() {
+  // Aplicar sugerencias al carrito + animar FAB + abrir modal
+  function provAplicarTodasSugerencias() {
     const id = S.provSelId;
     if (!id) return;
-    delete S.provQtyEditadas[id];
-    _pintaProvProductos(_filtrarPP((S.provProductos && S.provProductos[id]) || [], S.provProdFilter));
-  }
-
-  // Toma los steppers actuales del proveedor activo y los compromete al carrito
-  // persistente. Marca como activo. Abre el modal carrito.
-  function provComprometerCarrito() {
-    const id = S.provSelId;
-    if (!id) return;
-    _provComprometerSteppersAlCarrito(id);
+    _provAplicarSugerenciasACarrito(id);
     _provCarritosSave();
     _refreshProvCarritoBadge(id);
-    _renderProvComprometeToolbar();
-    provAbrirCarrito();
+    _provFabBump();
+    _pintaProvProductos(_filtrarPP((S.provProductos && S.provProductos[id]) || [], S.provProdFilter));
+    toast(`${Object.keys((S.provCarritos[id] || {}).items || {}).length} productos agregados al carrito`, 'ok');
   }
 
   // Línea de desglose del pedido: "1 bulto × 12 un · S/2.50 c/u → S/30.00"
@@ -5216,11 +5164,6 @@ const MOS = (() => {
       _renderCarritoIfOpen();
       _refreshProvCarritoBadge(id);
       _provFabRender();
-    }
-    // Sincronizar también el stepper volátil si tenía edición
-    const ed = S.provQtyEditadas[id];
-    if (ed && ed[idPP] !== undefined) {
-      ed[idPP] = Math.ceil((parseFloat(ed[idPP]) || 0) / nuevo) * nuevo;
     }
     // Re-render para que la sugerencia se recalcule visualmente
     _pintaProvProductos(_filtrarPP(lista, S.provProdFilter));
@@ -5309,8 +5252,8 @@ const MOS = (() => {
     });
   }
 
-  // Cambia la cantidad del stepper de un producto (VOLÁTIL — provQtyEditadas).
-  // El carrito persistente NO se toca aquí; eso pasa solo al click "🛒 Carrito".
+  // Edición del stepper en el card del producto.
+  // ESCRIBE DIRECTAMENTE al carrito persistente del proveedor activo.
   function provPedidoSetQty(idPP, val) {
     const idProv = S.provSelId;
     if (!idProv) return;
@@ -5319,19 +5262,40 @@ const MOS = (() => {
     if (!item) return;
     let qty = parseFloat(val);
     if (isNaN(qty) || qty < 0) qty = 0;
-    _provStepperSetQty(idProv, idPP, qty);
-    // Actualizar visual del card (sin re-render)
+    const upb = parseInt(item.unidadesPorBulto) || 1;
+    _provCarritoVacioOCrear(idProv);
+    if (qty <= 0) {
+      delete S.provCarritos[idProv].items[idPP];
+    } else {
+      S.provCarritos[idProv].items[idPP] = {
+        idPP:        item.idPP,
+        sku:         item.skuBase,
+        desc:        item.descripcion,
+        codigoBarra: item.codigoBarra,
+        precio:      parseFloat(item.precioReferencia) || 0,
+        qty:         qty,
+        upb:         upb
+      };
+    }
+    S.provCarritos[idProv].ts = Date.now();
+    _provCarritoMarcarActivo(idProv);
+    // Animar el FAB (efecto bump) para que el user note el cambio
+    _provFabBump();
+    // Actualizar visual del card sin re-render
     const card = document.querySelector(`.prov-prod-card[data-idpp="${idPP}"]`);
     if (card) {
       card.classList.toggle('en-pedido', qty > 0);
       const inp = card.querySelector('.prov-stepper-input');
       if (inp && document.activeElement !== inp) inp.value = qty;
       const desglose = card.querySelector(`[data-desglose="${idPP}"]`);
-      const upb = parseInt(item.unidadesPorBulto) || 1;
       if (desglose) desglose.innerHTML = _renderDesgloseLine(qty, upb, item.precioReferencia || 0);
+      // Pulso sutil al card que cambió
+      card.classList.remove('cart-flash');
+      void card.offsetWidth;
+      card.classList.add('cart-flash');
     }
-    // Refrescar el toolbar/header (resumen del compromiso pendiente)
-    _renderProvComprometeToolbar();
+    _refreshProvCarritoBadge(idProv);
+    _renderCarritoIfOpen();
   }
 
   function provPedidoStep(idPP, delta) {
@@ -5347,6 +5311,15 @@ const MOS = (() => {
 
   function provPedidoUsarSugerencia(idPP, sug) {
     provPedidoSetQty(idPP, sug);
+  }
+
+  // Animación bump del FAB del carrito
+  function _provFabBump() {
+    const fab = $('provCarritoFAB');
+    if (!fab) return;
+    fab.classList.remove('bump');
+    void fab.offsetWidth;
+    fab.classList.add('bump');
   }
 
   // ── Modal carrito de pedido ─────────────────────────────────
@@ -12022,7 +11995,7 @@ const MOS = (() => {
     provRangeInput, provRangeChange,
     provEditarBulto,
     provPedidoSetQty, provPedidoStep, provPedidoUsarSugerencia,
-    provResetSteppers, provComprometerCarrito,
+    provAplicarTodasSugerencias,
     carritoSetQty, carritoStep, carritoLimpiar, carritoAplicarSugerencias,
     provAbrirCarrito, provCerrarCarrito, provCarritoSetTab, _renderCarrito,
     provHistToggleDia,

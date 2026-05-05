@@ -1266,37 +1266,99 @@
       white-space: nowrap;
     }
 
-    /* FAB global del carrito */
+    /* FAB global del carrito — pill elegante con avatar */
     .prov-cart-fab {
       position: fixed;
       right: 16px; bottom: 80px;
       z-index: 35;
       display: flex; align-items: center; gap: 10px;
-      padding: 10px 14px; border-radius: 999px;
+      padding: 8px 14px 8px 8px; border-radius: 999px;
       background: linear-gradient(135deg, #fbbf24, #f59e0b);
       color: #0b1220; border: none;
-      box-shadow: 0 8px 24px rgba(245,158,11,.4);
-      cursor: pointer; transition: transform .15s, box-shadow .15s;
-      animation: provFabPulse 2.4s ease-in-out infinite;
+      box-shadow: 0 8px 24px rgba(245,158,11,.45), 0 2px 6px rgba(0,0,0,.4);
+      cursor: pointer;
+      transition: transform .15s, box-shadow .15s;
+      max-width: calc(100vw - 32px);
     }
     .prov-cart-fab:hover {
       transform: translateY(-2px);
-      box-shadow: 0 12px 32px rgba(245,158,11,.55);
+      box-shadow: 0 14px 36px rgba(245,158,11,.6), 0 4px 8px rgba(0,0,0,.5);
     }
-    .prov-cart-fab-ic { font-size: 1.3rem; }
-    .prov-cart-fab-info { display: flex; flex-direction: column; line-height: 1.1; }
-    .prov-cart-fab-prov { font-size: .65rem; font-weight: 700; opacity: .8; }
-    .prov-cart-fab-monto { font-size: .85rem; font-weight: 800; }
-    .prov-cart-fab-otros {
+    .prov-cart-fab-avatar-wrap {
+      position: relative; flex-shrink: 0;
+    }
+    .prov-cart-fab-avatar-wrap .prov-avatar {
+      width: 34px; height: 34px;
+      border: 2px solid #fef3c7;
+      box-shadow: 0 2px 6px rgba(0,0,0,.4);
+    }
+    .prov-cart-fab-count {
+      position: absolute;
+      top: -4px; right: -4px;
       background: #0b1220; color: #fbbf24;
       font-size: .65rem; font-weight: 800;
+      min-width: 18px; height: 18px; padding: 0 4px;
+      border-radius: 999px;
+      display: flex; align-items: center; justify-content: center;
+      border: 2px solid #fef3c7;
+    }
+    .prov-cart-fab-info {
+      display: flex; flex-direction: column;
+      line-height: 1.15; min-width: 0;
+    }
+    .prov-cart-fab-prov {
+      font-size: .65rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .04em;
+      opacity: .7;
+      max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .prov-cart-fab-monto { font-size: .85rem; font-weight: 700; }
+    .prov-cart-fab-monto b { font-weight: 900; }
+    .prov-cart-fab-otros {
+      background: rgba(11,18,32,.85); color: #fbbf24;
+      font-size: .65rem; font-weight: 800;
       padding: 2px 7px; border-radius: 999px;
-      margin-left: 4px;
+      flex-shrink: 0;
     }
-    @keyframes provFabPulse {
-      0%, 100% { box-shadow: 0 8px 24px rgba(245,158,11,.4); }
-      50%      { box-shadow: 0 8px 32px rgba(245,158,11,.65); }
+    .prov-cart-fab-arrow {
+      font-size: 1.2rem; font-weight: 800; opacity: .5;
+      flex-shrink: 0;
     }
+    /* Animación bump al cambiar el carrito (reset de keyframe via JS) */
+    .prov-cart-fab.bump {
+      animation: provFabBump .55s cubic-bezier(.34, 1.56, .64, 1);
+    }
+    @keyframes provFabBump {
+      0%   { transform: scale(1); }
+      30%  { transform: scale(1.18); box-shadow: 0 18px 44px rgba(245,158,11,.7), 0 4px 8px rgba(0,0,0,.5); }
+      60%  { transform: scale(.95); }
+      100% { transform: scale(1); }
+    }
+    /* Flash sutil del card cuando cambia el qty (1.5s) */
+    .prov-prod-card.cart-flash {
+      animation: provCardFlash 1s ease;
+    }
+    @keyframes provCardFlash {
+      0%   { box-shadow: 0 0 0 0 rgba(251,191,36,0); }
+      40%  { box-shadow: 0 0 0 4px rgba(251,191,36,.25); }
+      100% { box-shadow: 0 0 0 0 rgba(251,191,36,0); }
+    }
+    /* CTA Pedir sugerencia (botón ancho) */
+    .prov-sug-cta {
+      width: 100%;
+      padding: 8px 12px;
+      background: linear-gradient(135deg, rgba(251,191,36,.15), rgba(245,158,11,.15));
+      border: 1px dashed rgba(251,191,36,.45);
+      border-radius: 8px;
+      color: #fcd34d; font-size: .78rem; font-weight: 700;
+      cursor: pointer; transition: all .15s;
+      margin: 4px 0 6px;
+    }
+    .prov-sug-cta:hover {
+      background: linear-gradient(135deg, rgba(251,191,36,.28), rgba(245,158,11,.28));
+      border-color: rgba(251,191,36,.7);
+    }
+    .prov-sug-cta b { color: #fef3c7; font-weight: 900; }
     @media (min-width: 768px) {
       .prov-cart-fab { bottom: 24px; }
     }
