@@ -4839,51 +4839,159 @@ const MOS = (() => {
     _provFabRender();
   }
 
-  // ── FAB global del carrito ──────────────────────────────────
-  // Visible si hay al menos un carrito con items. Click → abre modal carrito.
+  // ── FAB global del carrito + selector multi-carrito ─────────
+  S._fabSelectorOpen = false;
+
+  function _provListarCarritosActivos() {
+    return Object.entries(S.provCarritos || {})
+      .map(([id, c]) => ({ id, items: Object.values((c && c.items) || {}), ts: (c && c.ts) || 0 }))
+      .filter(c => c.items.length > 0)
+      .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  }
+
   function _provFabRender() {
     let fab = $('provCarritoFAB');
-    const carritos = Object.entries(S.provCarritos || {})
-      .map(([id, c]) => ({ id, items: Object.values((c && c.items) || {}), ts: (c && c.ts) || 0 }))
-      .filter(c => c.items.length > 0);
+    const carritos = _provListarCarritosActivos();
     if (!carritos.length) {
       if (fab) fab.style.display = 'none';
+      _provFabSelectorClose();
       return;
     }
-    // Carrito a mostrar: el activo si tiene items, sino el más reciente
-    let activoId = S.provCarritoActivoId;
-    let activo = carritos.find(c => c.id === activoId);
-    if (!activo) {
-      activo = carritos.sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
-      activoId = activo.id;
-    }
-    const prov = (S.proveedores || []).find(p => p.idProveedor === activoId) || {};
-    const provNombre = prov.nombre || activoId;
-    const totalUds = activo.items.reduce((s, it) => s + (parseFloat(it.qty) || 0), 0);
-    const monto    = activo.items.reduce((s, it) => s + (parseFloat(it.qty) || 0) * (parseFloat(it.precio) || 0), 0);
-    const otros = carritos.length - 1;
-    // Avatar de iniciales (mismo helper que la lista)
-    const avatar = _provAvatarHtml(provNombre);
     if (!fab) {
       fab = document.createElement('button');
       fab.id = 'provCarritoFAB';
       fab.className = 'prov-cart-fab';
       document.body.appendChild(fab);
     }
-    fab.onclick = () => provAbrirCarrito(activoId);
     fab.style.display = '';
-    fab.innerHTML = `
-      <span class="prov-cart-fab-avatar-wrap">
-        ${avatar}
-        <span class="prov-cart-fab-count">${activo.items.length}</span>
-      </span>
-      <span class="prov-cart-fab-info">
-        <span class="prov-cart-fab-prov">${provNombre}</span>
-        <span class="prov-cart-fab-monto">${totalUds} unds · <b>${fmtMoney(monto)}</b></span>
-      </span>
-      ${otros > 0 ? `<span class="prov-cart-fab-otros" title="${otros} proveedor${otros === 1 ? '' : 'es'} más con carrito">+${otros}</span>` : ''}
-      <span class="prov-cart-fab-arrow">›</span>
+
+    if (carritos.length === 1) {
+      // Modo single — click abre el modal directamente
+      const c = carritos[0];
+      const prov = (S.proveedores || []).find(p => p.idProveedor === c.id) || {};
+      const nombre = prov.nombre || c.id;
+      const totalUds = c.items.reduce((s, it) => s + (parseFloat(it.qty) || 0), 0);
+      const monto    = c.items.reduce((s, it) => s + (parseFloat(it.qty) || 0) * (parseFloat(it.precio) || 0), 0);
+      fab.onclick = () => provAbrirCarrito(c.id);
+      fab.innerHTML = `
+        <span class="prov-cart-fab-avatar-wrap">
+          ${_provAvatarHtml(nombre)}
+          <span class="prov-cart-fab-count">${c.items.length}</span>
+        </span>
+        <span class="prov-cart-fab-info">
+          <span class="prov-cart-fab-prov">${nombre}</span>
+          <span class="prov-cart-fab-monto">${totalUds} unds · <b>${fmtMoney(monto)}</b></span>
+        </span>
+        <span class="prov-cart-fab-arrow">›</span>
+      `;
+    } else {
+      // Modo multi — avatares apilados, click toggle del selector
+      const totalProds = carritos.reduce((s, c) => s + c.items.length, 0);
+      const totalMonto = carritos.reduce((s, c) =>
+        s + c.items.reduce((sm, it) => sm + (parseFloat(it.qty) || 0) * (parseFloat(it.precio) || 0), 0), 0);
+      // Hasta 4 avatares visibles, el resto en chip "+N"
+      const avatarsVisible = carritos.slice(0, 4);
+      const overflow = carritos.length - avatarsVisible.length;
+      const stack = avatarsVisible.map((c, i) => {
+        const prov = (S.proveedores || []).find(p => p.idProveedor === c.id) || {};
+        return `<span class="prov-cart-fab-avatar-stacked" style="z-index:${10 - i}">${_provAvatarHtml(prov.nombre || c.id)}</span>`;
+      }).join('');
+      fab.onclick = () => _provFabToggleSelector();
+      fab.innerHTML = `
+        <span class="prov-cart-fab-avatars-stack">
+          ${stack}
+          ${overflow > 0 ? `<span class="prov-cart-fab-stack-more">+${overflow}</span>` : ''}
+        </span>
+        <span class="prov-cart-fab-info">
+          <span class="prov-cart-fab-prov">${carritos.length} carritos activos</span>
+          <span class="prov-cart-fab-monto">${totalProds} prods · <b>${fmtMoney(totalMonto)}</b></span>
+        </span>
+        <span class="prov-cart-fab-arrow">${S._fabSelectorOpen ? '▾' : '▸'}</span>
+      `;
+      // Si el selector estaba abierto y los carritos cambiaron, re-render
+      if (S._fabSelectorOpen) _provFabSelectorRender(carritos);
+    }
+  }
+
+  // Selector flotante (panel) que aparece al click del FAB en modo multi
+  function _provFabToggleSelector() {
+    S._fabSelectorOpen = !S._fabSelectorOpen;
+    if (S._fabSelectorOpen) {
+      const carritos = _provListarCarritosActivos();
+      _provFabSelectorRender(carritos);
+      // Listener click-outside para cerrar
+      setTimeout(() => document.addEventListener('click', _provFabSelectorClickOutside, true), 0);
+    } else {
+      _provFabSelectorClose();
+    }
+    _provFabRender();
+  }
+
+  function _provFabSelectorRender(carritos) {
+    let panel = $('provCarritoSelector');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'provCarritoSelector';
+      panel.className = 'prov-cart-selector';
+      document.body.appendChild(panel);
+    }
+    panel.innerHTML = `
+      <div class="prov-cart-selector-head">
+        <span>${carritos.length} carritos activos</span>
+        <button onclick="MOS._provFabSelectorCloseClick()" class="prov-cart-selector-close" aria-label="Cerrar">×</button>
+      </div>
+      <div class="prov-cart-selector-list">
+        ${carritos.map(c => {
+          const prov = (S.proveedores || []).find(p => p.idProveedor === c.id) || {};
+          const nombre = prov.nombre || c.id;
+          const totalUds = c.items.reduce((s, it) => s + (parseFloat(it.qty) || 0), 0);
+          const monto    = c.items.reduce((s, it) => s + (parseFloat(it.qty) || 0) * (parseFloat(it.precio) || 0), 0);
+          const tsLabel = c.ts ? _carritoTimestampHumano(c.ts) : '';
+          return `
+            <button class="prov-cart-selector-item" onclick="MOS._provFabSelectorPick('${c.id}')">
+              <span class="prov-cart-selector-avatar">${_provAvatarHtml(nombre)}</span>
+              <span class="prov-cart-selector-info">
+                <span class="prov-cart-selector-name">${nombre}</span>
+                <span class="prov-cart-selector-meta">${c.items.length} prods · ${totalUds} unds · ${tsLabel}</span>
+              </span>
+              <span class="prov-cart-selector-monto">${fmtMoney(monto)}</span>
+            </button>
+          `;
+        }).join('')}
+      </div>
     `;
+    panel.style.display = '';
+    requestAnimationFrame(() => panel.classList.add('open'));
+  }
+
+  function _provFabSelectorClose() {
+    const panel = $('provCarritoSelector');
+    if (panel) {
+      panel.classList.remove('open');
+      setTimeout(() => { if (panel) panel.style.display = 'none'; }, 180);
+    }
+    S._fabSelectorOpen = false;
+    document.removeEventListener('click', _provFabSelectorClickOutside, true);
+  }
+
+  function _provFabSelectorCloseClick() {
+    _provFabSelectorClose();
+    _provFabRender();
+  }
+
+  function _provFabSelectorClickOutside(ev) {
+    const panel = $('provCarritoSelector');
+    const fab   = $('provCarritoFAB');
+    if (panel && panel.contains(ev.target)) return;
+    if (fab   && fab.contains(ev.target))   return;
+    _provFabSelectorClose();
+    _provFabRender();
+  }
+
+  function _provFabSelectorPick(idProv) {
+    _provFabSelectorClose();
+    provAbrirCarrito(idProv);
+    _provFabRender();
   }
 
   // Qty actual en el stepper = qty del carrito persistente (0 si no está)
@@ -11996,6 +12104,7 @@ const MOS = (() => {
     provEditarBulto,
     provPedidoSetQty, provPedidoStep, provPedidoUsarSugerencia,
     provAplicarTodasSugerencias,
+    _provFabSelectorPick, _provFabSelectorCloseClick,
     carritoSetQty, carritoStep, carritoLimpiar, carritoAplicarSugerencias,
     provAbrirCarrito, provCerrarCarrito, provCarritoSetTab, _renderCarrito,
     provHistToggleDia,
