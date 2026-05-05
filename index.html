@@ -3846,6 +3846,15 @@
   </div>
 </div>
 
+<!-- ══ Lightbox de imagen ═══════════════════════════════════════ -->
+<div id="imgPreviewOverlay" onclick="MOS.closeImagePreview()" style="display:none;position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.92);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:20px;cursor:zoom-out;animation:imgFadeIn .15s ease-out">
+  <button onclick="event.stopPropagation();MOS.closeImagePreview()" aria-label="Cerrar"
+          style="position:absolute;top:14px;right:14px;width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.18);color:#fff;font-size:24px;cursor:pointer;display:flex;align-items:center;justify-content:center">×</button>
+  <img id="imgPreviewImg" src="" alt="" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;box-shadow:0 20px 60px rgba(0,0,0,.6);user-select:none">
+  <div id="imgPreviewCaption" style="position:absolute;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.6);color:#e2e8f0;padding:6px 14px;border-radius:18px;font-size:12px;max-width:90%;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+</div>
+<style>@keyframes imgFadeIn{from{opacity:0}to{opacity:1}}</style>
+
 <!-- ══ Modal: Revisar Producto Nuevo (rediseñado) ═══════════════ -->
 <div class="modal-backdrop hidden" id="modalPN" onclick="if(event.target===this)MOS.cerrarModalPN()">
   <div class="modal-box p-0" style="max-width:540px;display:flex;flex-direction:column;max-height:92vh">

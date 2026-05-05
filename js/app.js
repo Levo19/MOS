@@ -1652,25 +1652,71 @@ const MOS = (() => {
     });
   }
 
+  // Estado expandido/colapsado del banner PN (persistido)
+  function _pnBannerExpandido() {
+    try {
+      const v = localStorage.getItem('mos_pn_banner_open');
+      if (v === null) return false; // default: colapsado
+      return v === '1';
+    } catch { return false; }
+  }
+  function togglePNBanner() {
+    const open = !_pnBannerExpandido();
+    try { localStorage.setItem('mos_pn_banner_open', open ? '1' : '0'); } catch {}
+    renderPNBanner();
+  }
+
+  // ── Lightbox de imagen ─────────────────────────────────────
+  function openImagePreview(url, alt) {
+    if (!url) return;
+    const ov = $('imgPreviewOverlay');
+    const img = $('imgPreviewImg');
+    const cap = $('imgPreviewCaption');
+    if (!ov || !img) return;
+    img.src = url;
+    img.alt = alt || '';
+    if (cap) {
+      cap.textContent = alt || '';
+      cap.style.display = alt ? 'block' : 'none';
+    }
+    ov.style.display = 'flex';
+    document.addEventListener('keydown', _onImgPreviewKey);
+  }
+  function closeImagePreview() {
+    const ov = $('imgPreviewOverlay');
+    const img = $('imgPreviewImg');
+    if (ov) ov.style.display = 'none';
+    if (img) img.src = '';
+    document.removeEventListener('keydown', _onImgPreviewKey);
+  }
+  function _onImgPreviewKey(e) {
+    if (e.key === 'Escape') closeImagePreview();
+  }
+
   function renderPNBanner() {
     const banner = $('pnBannerCat');
     if (!banner) return;
     const lista = S.pnPendientes || [];
     if (!lista.length) { banner.style.display = 'none'; banner.innerHTML = ''; return; }
 
+    const open = _pnBannerExpandido();
     banner.style.display = 'block';
     banner.innerHTML = `
-      <div style="border:1px solid rgba(217,119,6,.35);background:rgba(120,53,15,.12);border-radius:12px;padding:12px 14px;margin-bottom:4px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <div style="border:1px solid rgba(217,119,6,.35);background:rgba(120,53,15,.12);border-radius:12px;padding:10px 12px;margin-bottom:4px">
+        <div onclick="MOS.togglePNBanner()" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none">
           <span style="background:#92400e;color:#fde68a;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px">N ${lista.length}</span>
-          <span style="font-size:13px;font-weight:600;color:#fcd34d;flex:1">Productos nuevos pendientes de aprobación</span>
-          <button onclick="MOS.refreshPNManual()" title="Refrescar lista (ignora cache)" style="background:transparent;border:1px solid rgba(217,119,6,.4);color:#fbbf24;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer">↺</button>
+          <span style="font-size:13px;font-weight:700;color:#fcd34d;flex:1">Aún faltan registrar ${lista.length} producto${lista.length === 1 ? '' : 's'}</span>
+          <button onclick="event.stopPropagation();MOS.refreshPNManual()" title="Refrescar lista (ignora cache)" style="background:transparent;border:1px solid rgba(217,119,6,.4);color:#fbbf24;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer">↺</button>
+          <span style="color:#fbbf24;font-size:14px;transition:transform .2s;transform:rotate(${open ? 180 : 0}deg);display:inline-block">▾</span>
         </div>
-        <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="overflow:hidden;transition:max-height .25s ease-out;max-height:${open ? 800 : 0}px">
+          <div style="display:flex;flex-direction:column;gap:8px;padding-top:10px">
           ${lista.map(pn => {
             const guiaLabel = pn.guia ? `Guía ${pn.guia.tipo || ''} · ${pn.guia.fecha || ''}` : `Guía ${pn.idGuia}`;
+            const safeFoto = (pn.foto || '').replace(/'/g, "\\'");
+            const safeDesc = (pn.descripcion || '').replace(/'/g, "\\'");
             const fotoHtml = pn.foto
-              ? `<img src="${pn.foto}" style="width:42px;height:42px;border-radius:8px;object-fit:cover;flex-shrink:0">`
+              ? `<img src="${pn.foto}" onclick="event.stopPropagation();MOS.openImagePreview('${safeFoto}','${safeDesc}')" style="width:42px;height:42px;border-radius:8px;object-fit:cover;flex-shrink:0;cursor:zoom-in" title="Click para ampliar">`
               : `<div style="width:42px;height:42px;border-radius:8px;background:#1e293b;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px">📦</div>`;
             return `<div style="display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.2);border-radius:8px;padding:8px 10px">
               ${fotoHtml}
@@ -1682,6 +1728,7 @@ const MOS = (() => {
               <button onclick="MOS.abrirModalPN('${pn.idProductoNuevo}')" style="flex-shrink:0;background:#b45309;color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">Revisar</button>
             </div>`;
           }).join('')}
+          </div>
         </div>
       </div>`;
   }
@@ -1707,9 +1754,13 @@ const MOS = (() => {
 
     const fotoBox = $('pnFotoPreview');
     if (pn.foto) {
-      fotoBox.innerHTML = `<img src="${pn.foto}" style="width:100%;height:100%;object-fit:cover">`;
+      const safeFoto = (pn.foto || '').replace(/'/g, "\\'");
+      const safeDesc = (pn.descripcion || '').replace(/'/g, "\\'");
+      fotoBox.innerHTML = `<img src="${pn.foto}" onclick="MOS.openImagePreview('${safeFoto}','${safeDesc}')" title="Click para ampliar" style="width:100%;height:100%;object-fit:cover;cursor:zoom-in">`;
+      fotoBox.style.cursor = 'zoom-in';
     } else {
       fotoBox.innerHTML = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg>`;
+      fotoBox.style.cursor = 'default';
     }
 
     // Cantidad pre-cargada con la registrada en WH
@@ -10926,6 +10977,7 @@ const MOS = (() => {
     openConfig, saveConfig, testConnection, closeModal, openEcoModal,
     filterCatalogo, setCatTab, toggleDerivs, togglePresentaciones, guardarPrecioRapido,
     abrirModalPN, cerrarModalPN, lanzarAProduccion, refreshPNManual,
+    togglePNBanner, openImagePreview, closeImagePreview,
     pnSetTipo, pnAutogenBarcode, pnBuscarBase, pnSeleccionarBase,
     abrirModalPromociones, loadPromociones, promoNuevoForm, promoEditar, promoVolverLista, promoToggleActiva, _promoForzarRefresh,
     promoSetTipo, promoSetModo, promoQuickFill, promoActualizarEjemplo, promoBuscarBase, promoSeleccionarBase,
