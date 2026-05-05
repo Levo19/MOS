@@ -4647,7 +4647,7 @@ const MOS = (() => {
           ${tieneTel ? `<button class="prov-action-btn whatsapp" onclick="MOS.provWhatsApp('${id}', event)">💬 WhatsApp</button>` : ''}
           ${tieneTel ? `<button class="prov-action-btn" onclick="MOS.provLlamar('${id}', event)">📞 Llamar</button>` : ''}
           <button class="prov-action-btn" onclick="MOS.abrirModalPago('${id}')">💰 + Pago</button>
-          <button class="prov-action-btn primary" data-prov-carrito-btn="${id}" onclick="MOS.provAbrirCarrito()">🛒 ${(_provCarritoResumen(id) || {}).count ? `Ver carrito (${_provCarritoResumen(id).count})` : 'Ver carrito'}</button>
+          <button class="prov-action-btn primary" data-prov-carrito-btn="${id}" onclick="MOS.provAccionPedido()">${(_provCarritoResumen(id) || {}).count ? `🛒 Ver carrito (${_provCarritoResumen(id).count})` : '🛒 Armar pedido'}</button>
         </div>
         <div class="prov-tabs-wrap">
           <div class="prov-tabs">
@@ -5190,26 +5190,20 @@ const MOS = (() => {
         </div>
         ${pp.razonSugerencia ? `<div class="prov-sugerencia-txt">${pp.razonSugerencia}</div>` : ''}
 
-        ${qtyActual === 0 && pp.sugerencia > 0 ? `
-        <button onclick="MOS.provPedidoUsarSugerencia('${pp.idPP}', ${pp.sugerencia})" class="prov-sug-cta" title="${pp.razonSugerencia || ''}">
-          🛒 Pedir sugerido: <b>${pp.sugerencia} un</b>${upb > 1 ? ` (${pp.sugerenciaBultos} bulto${pp.sugerenciaBultos === 1 ? '' : 's'} × ${upb})` : ''}
-        </button>
-        ` : ''}
-
-        <!-- Stepper [- qty +] · paso de bulto si upb > 1. Edita el carrito directo. -->
-        <div class="prov-pedido-row">
-          <div class="prov-stepper">
-            <button onclick="MOS.provPedidoStep('${pp.idPP}', -${upb})" class="prov-stepper-btn" title="${upb > 1 ? `Quitar 1 bulto (−${upb} un)` : 'Quitar 1 unidad'}">−</button>
-            <input type="number" min="0" step="${upb}" value="${qtyActual}" placeholder="0"
-              class="prov-stepper-input" data-idpp="${pp.idPP}" oninput="MOS.provPedidoSetQty('${pp.idPP}', this.value)">
-            <button onclick="MOS.provPedidoStep('${pp.idPP}', ${upb})" class="prov-stepper-btn" title="${upb > 1 ? `Sumar 1 bulto (+${upb} un)` : 'Sumar 1 unidad'}">+</button>
-          </div>
-          ${upb > 1 ? `<span class="prov-stepper-hint">${upb} un/bulto</span>` : ''}
-          <button onclick="event.stopPropagation();MOS.eliminarProvProductoRapido('${pp.idPP}')" class="text-slate-500 hover:text-red-400 transition-colors text-sm p-1 ml-auto" title="Eliminar del catálogo">🗑️</button>
-        </div>
-        <!-- Desglose: bultos × upb · precio = subtotal -->
-        <div class="prov-pedido-desglose" data-desglose="${pp.idPP}">
-          ${_renderDesgloseLine(qtyActual, upb, pp.precioReferencia || 0)}
+        <!-- Acción única: agregar a carrito (sugerencia individual) -->
+        <div class="prov-card-action">
+          ${qtyActual > 0 ? `
+            <button onclick="event.stopPropagation();MOS.provAbrirCarrito('${idProvActual}')" class="prov-en-carrito-chip" title="Click para ver/editar en el carrito">
+              ✓ En carrito: <b>${qtyActual} un</b>${upb > 1 ? ` <span class="prov-en-carrito-bultos">· ${(qtyActual/upb).toFixed(qtyActual % upb === 0 ? 0 : 1)} bulto${qtyActual === upb ? '' : 's'}</span>` : ''}
+            </button>
+          ` : pp.sugerencia > 0 ? `
+            <button onclick="event.stopPropagation();MOS.provPedidoUsarSugerencia('${pp.idPP}', ${pp.sugerencia})" class="prov-sug-cta" title="${pp.razonSugerencia || ''}">
+              🛒 Agregar al pedido: <b>${pp.sugerencia} un</b>${upb > 1 ? ` (${pp.sugerenciaBultos} bulto${pp.sugerenciaBultos === 1 ? '' : 's'} × ${upb})` : ''}
+            </button>
+          ` : `
+            <span class="prov-sin-accion">— Sin sugerencia · stock OK —</span>
+          `}
+          <button onclick="event.stopPropagation();MOS.eliminarProvProductoRapido('${pp.idPP}')" class="prov-card-del" title="Eliminar del catálogo">🗑️</button>
         </div>
       </div>`;
     }).join('');
@@ -5226,6 +5220,20 @@ const MOS = (() => {
     _provFabBump();
     _pintaProvProductos(_filtrarPP((S.provProductos && S.provProductos[id]) || [], S.provProdFilter));
     toast(`${Object.keys((S.provCarritos[id] || {}).items || {}).length} productos agregados al carrito`, 'ok');
+  }
+
+  // Acción del botón principal del header del detalle.
+  // Si carrito vacío → aplica todas las sugerencias y abre modal.
+  // Si carrito con items → solo abre modal (para revisar/editar).
+  function provAccionPedido() {
+    const id = S.provSelId;
+    if (!id) return;
+    const resumen = _provCarritoResumen(id);
+    if (!resumen || resumen.count === 0) {
+      // Carrito vacío: aplicar sugerencias y abrir modal
+      provAplicarTodasSugerencias();
+    }
+    provAbrirCarrito(id);
   }
 
   // Línea de desglose del pedido: "1 bulto × 12 un · S/2.50 c/u → S/30.00"
@@ -12103,7 +12111,7 @@ const MOS = (() => {
     provRangeInput, provRangeChange,
     provEditarBulto,
     provPedidoSetQty, provPedidoStep, provPedidoUsarSugerencia,
-    provAplicarTodasSugerencias,
+    provAplicarTodasSugerencias, provAccionPedido,
     _provFabSelectorPick, _provFabSelectorCloseClick,
     carritoSetQty, carritoStep, carritoLimpiar, carritoAplicarSugerencias,
     provAbrirCarrito, provCerrarCarrito, provCarritoSetTab, _renderCarrito,

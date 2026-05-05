@@ -1446,22 +1446,67 @@
       40%  { box-shadow: 0 0 0 4px rgba(251,191,36,.25); }
       100% { box-shadow: 0 0 0 0 rgba(251,191,36,0); }
     }
-    /* CTA Pedir sugerencia (botón ancho) */
+    /* Acción única del card de producto (botón ancho + papelera) */
+    .prov-card-action {
+      display: flex; align-items: center; gap: 6px;
+      padding-top: 6px;
+      border-top: 1px dashed #1e293b;
+    }
+    .prov-card-del {
+      flex-shrink: 0;
+      padding: 6px 10px;
+      background: transparent; border: 1px solid #1e293b;
+      color: #64748b; border-radius: 8px;
+      font-size: .85rem; cursor: pointer;
+      transition: all .15s;
+    }
+    .prov-card-del:hover {
+      color: #f87171; border-color: rgba(248,113,113,.4);
+      background: rgba(248,113,113,.06);
+    }
+
+    /* CTA "Agregar al pedido" — botón ancho dorado dashed */
     .prov-sug-cta {
-      width: 100%;
+      flex: 1;
       padding: 8px 12px;
       background: linear-gradient(135deg, rgba(251,191,36,.15), rgba(245,158,11,.15));
       border: 1px dashed rgba(251,191,36,.45);
       border-radius: 8px;
       color: #fcd34d; font-size: .78rem; font-weight: 700;
       cursor: pointer; transition: all .15s;
-      margin: 4px 0 6px;
+      text-align: center;
     }
     .prov-sug-cta:hover {
       background: linear-gradient(135deg, rgba(251,191,36,.28), rgba(245,158,11,.28));
       border-color: rgba(251,191,36,.7);
     }
     .prov-sug-cta b { color: #fef3c7; font-weight: 900; }
+
+    /* Chip "✓ En carrito" — clickeable, verde */
+    .prov-en-carrito-chip {
+      flex: 1;
+      padding: 8px 12px;
+      background: linear-gradient(135deg, rgba(16,185,129,.18), rgba(99,102,241,.15));
+      border: 1px solid rgba(16,185,129,.5);
+      border-radius: 8px;
+      color: #6ee7b7; font-size: .78rem; font-weight: 700;
+      cursor: pointer; transition: all .15s;
+      text-align: center;
+    }
+    .prov-en-carrito-chip:hover {
+      background: linear-gradient(135deg, rgba(16,185,129,.28), rgba(99,102,241,.25));
+      border-color: rgba(16,185,129,.75);
+    }
+    .prov-en-carrito-chip b { color: #d1fae5; font-weight: 900; }
+    .prov-en-carrito-bultos { color: #a7f3d0; font-weight: 600; opacity: .85; }
+
+    /* Estado "sin acción" cuando no hay sugerencia */
+    .prov-sin-accion {
+      flex: 1;
+      padding: 6px 10px;
+      font-size: .7rem; color: #64748b; font-style: italic;
+      text-align: center;
+    }
     @media (min-width: 768px) {
       .prov-cart-fab { bottom: 24px; }
     }
