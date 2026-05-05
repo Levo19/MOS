@@ -202,7 +202,9 @@ function getHistoricoProveedor(params) {
     var iDPrec = dh.indexOf('precioUnitario');
 
     // Acumular por código: cantidad total, suma de precio×cant, contador
+    // + por día: { fecha → { items: { codigoBarra → { cant, suma, descTmp } }, totalDia, idsGuias } }
     var porCodigo = {};
+    var porDia    = {};
     var totalGastado = 0;
     for (var d = 1; d < dd.length; d++) {
       var idG = dd[d][iDGuia];
@@ -236,6 +238,17 @@ function getHistoricoProveedor(params) {
         item.ultimaFecha = fGuia;
         if (prec > 0) item.ultimoPrecio = prec;
       }
+      // Agregación por día (string yyyy-MM-dd)
+      if (!porDia[fGuia]) porDia[fGuia] = { fecha: fGuia, items: {}, totalDia: 0, idsGuias: {} };
+      porDia[fGuia].idsGuias[idG] = true;
+      if (!porDia[fGuia].items[cod]) {
+        porDia[fGuia].items[cod] = { codigoBarra: cod, cantidad: 0, sumaMonto: 0, ultimoPrecio: 0 };
+      }
+      var dayItem = porDia[fGuia].items[cod];
+      dayItem.cantidad += cant;
+      dayItem.sumaMonto += prec * cant;
+      if (prec > 0) dayItem.ultimoPrecio = prec;
+      porDia[fGuia].totalDia += prec * cant;
     }
 
     // 3. Enriquecer con descripción del PRODUCTOS_MASTER de MOS
@@ -265,7 +278,31 @@ function getHistoricoProveedor(params) {
       return it;
     }).sort(function(a, b){ return b.veces - a.veces; });
 
-    // 4. Pagos y por pagar
+    // 4. Construir array de días con items enriquecidos por descripcion
+    var diasArr = Object.keys(porDia).map(function(fecha){
+      var d = porDia[fecha];
+      var items = Object.keys(d.items).map(function(cod){
+        var it = d.items[cod];
+        var p = prodByCB[cod] || null;
+        return {
+          codigoBarra: cod,
+          descripcion: (p && p.descripcion) || '—',
+          skuBase:     (p && (p.skuBase || p.idProducto)) || '',
+          cantidad:    it.cantidad,
+          monto:       Math.round(it.sumaMonto * 100) / 100,
+          precio:      it.ultimoPrecio
+        };
+      }).sort(function(a, b){ return b.monto - a.monto; });
+      return {
+        fecha:    fecha,
+        totalDia: Math.round(d.totalDia * 100) / 100,
+        numGuias: Object.keys(d.idsGuias).length,
+        numItems: items.length,
+        items:    items
+      };
+    }).sort(function(a, b){ return b.fecha.localeCompare(a.fecha); }); // más reciente primero
+
+    // 5. Pagos y por pagar
     var pagos = _sheetToObjects(getSheet('PAGOS_PROVEEDOR')).filter(function(p){
       return String(p.idProveedor) === String(params.idProveedor);
     });
@@ -280,7 +317,8 @@ function getHistoricoProveedor(params) {
         totalGastado: Math.round(totalGastado * 100) / 100,
         totalPagado:  Math.round(totalPagado * 100) / 100,
         porPagar:     Math.round((totalGastado - totalPagado) * 100) / 100,
-        productos:    resultado
+        productos:    resultado,
+        guiasPorDia:  diasArr
       }
     };
   } catch(e) {

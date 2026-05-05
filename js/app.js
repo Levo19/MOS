@@ -4338,42 +4338,55 @@ const MOS = (() => {
       S.provHistFilter = '';
     }
     S.provSelId = id;
-    S.provTab   = S.provTab || 'info';
+    if (!S.provTab || S.provTab === 'info' || S.provTab === 'pedidos') S.provTab = 'productos';
     renderProveedores();
 
     const prov = S.proveedores.find(p => p.idProveedor === id);
     if (!prov) return;
 
-    // Pre-carga de todos los tabs en paralelo (no espera para mostrar la UI)
+    // Pre-carga en paralelo (no espera para mostrar la UI)
     _precargarProvData(id);
 
     const detailEl = isMobile ? $('provInlineDetail') : $('proveedorDetail');
     if (!detailEl) return;
     const safeNombre = (prov.nombre || '').replace(/"/g, '&quot;');
-    const meta = [prov.ruc, prov.email].filter(Boolean).join(' · ');
+    const tieneTel = !!prov.telefono;
     detailEl.innerHTML = `
       <div class="prov-detail-header">
         <div class="flex items-center gap-2 mb-2">
           <div class="flex-1 min-w-0">
             <h3 class="font-bold text-white truncate text-base lg:text-lg">${safeNombre}</h3>
-            <p class="text-xs text-slate-500 truncate">${meta || '—'}</p>
+            <p class="text-xs text-slate-500 truncate">${[prov.ruc, prov.email].filter(Boolean).join(' · ') || '—'}</p>
           </div>
           <button class="btn-ghost text-xs px-2 py-1 shrink-0" onclick="event.stopPropagation();MOS.abrirModalProveedor('${id}')" title="Editar proveedor">✏️</button>
           <button class="lg:hidden btn-ghost text-xs px-2 py-1 shrink-0" onclick="event.stopPropagation();MOS.cerrarDetalleProveedor()" title="Cerrar">×</button>
         </div>
+        <!-- Info reducida del proveedor (siempre visible, reemplaza la tab Info) -->
+        <div class="prov-info-strip">
+          ${prov.telefono ? `<span class="prov-info-chip">📞 ${prov.telefono}</span>` : ''}
+          ${prov.formaPago ? `<span class="prov-info-chip">${prov.formaPago === 'CREDITO' ? '💳 Crédito ' + (prov.plazoCredito || 0) + 'd' : '💵 Contado'}</span>` : ''}
+          ${prov.diaPedido  ? `<span class="prov-info-chip" title="Día de pedido">📋 ${_provDiaLabel(prov.diaPedido)}</span>` : ''}
+          ${prov.diaEntrega ? `<span class="prov-info-chip" title="Día de entrega">📦 ${_provDiaLabel(prov.diaEntrega)}</span>` : ''}
+          ${prov.diaPago    ? `<span class="prov-info-chip" title="Día de pago">💸 ${_provDiaLabel(prov.diaPago)}</span>` : ''}
+          ${prov.categoriaProducto ? `<span class="prov-info-chip">🏷️ ${prov.categoriaProducto}</span>` : ''}
+          ${prov.banco ? `<span class="prov-info-chip" title="Banco">🏦 ${prov.banco}${prov.numeroCuenta ? ' · ' + prov.numeroCuenta : ''}</span>` : ''}
+        </div>
+        <div class="prov-action-row">
+          ${tieneTel ? `<button class="prov-action-btn whatsapp" onclick="MOS.provWhatsApp('${id}', event)">💬 WhatsApp</button>` : ''}
+          ${tieneTel ? `<button class="prov-action-btn" onclick="MOS.provLlamar('${id}', event)">📞 Llamar</button>` : ''}
+          <button class="prov-action-btn" onclick="MOS.abrirModalPago('${id}')">💰 + Pago</button>
+          <button class="prov-action-btn primary" onclick="MOS.provAbrirCarrito()">🛒 Carrito</button>
+        </div>
         <div class="prov-tabs-wrap">
           <div class="prov-tabs">
-            <button class="prov-tab" data-tab="info"      onclick="MOS.provSetTab('info')">📋 Info</button>
             <button class="prov-tab" data-tab="productos" onclick="MOS.provSetTab('productos')">📦 Productos</button>
             <button class="prov-tab" data-tab="historico" onclick="MOS.provSetTab('historico')">📊 Histórico</button>
           </div>
         </div>
       </div>
-      <div id="provTabInfo" class="prov-tab-content"></div>
       <div id="provTabProductos" class="prov-tab-content hidden"></div>
       <div id="provTabHistorico" class="prov-tab-content hidden"></div>
     `;
-    if (S.provTab === 'pedidos') S.provTab = 'productos';
     provSetTab(S.provTab);
 
     // En desktop, el panel derecho ya estaba visible; en mobile, hacemos scroll suave al detalle
@@ -4392,12 +4405,10 @@ const MOS = (() => {
 
   function _precargarProvData(id) {
     if (!id) return;
-    // Pagos
+    // Pagos (sin tab info — sólo cache para modal de pago)
     API.get('getPagos', { idProveedor: id })
-      .then(r => {
-        S.provPagos[id] = Array.isArray(r) ? r : (r && r.data) || [];
-        if (S.provSelId === id && S.provTab === 'info') _renderProvInfo();
-      }).catch(() => {});
+      .then(r => { S.provPagos[id] = Array.isArray(r) ? r : (r && r.data) || []; })
+      .catch(() => {});
     // Productos enriquecidos (con stock + zonas + min/max + sugerencia)
     API.get('getProductosProveedorConStock', { idProveedor: id, rangoDias: 30 })
       .then(r => {
@@ -4424,10 +4435,9 @@ const MOS = (() => {
     S.provTab = tab;
     document.querySelectorAll('.prov-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
     document.querySelectorAll('.prov-tab-content').forEach(c => c.classList.add('hidden'));
-    const targetMap = { info: 'provTabInfo', productos: 'provTabProductos', historico: 'provTabHistorico' };
+    const targetMap = { productos: 'provTabProductos', historico: 'provTabHistorico' };
     const target = $(targetMap[tab]);
     if (target) target.classList.remove('hidden');
-    if (tab === 'info')      _renderProvInfo();
     if (tab === 'productos') _renderProvProductos();
     if (tab === 'historico') _renderProvHistorico();
   }
@@ -4505,14 +4515,14 @@ const MOS = (() => {
     list.innerHTML = items.map(pp => {
       const alert = _provAlertaInfo(pp.alerta);
       const enPedido = S.provPedido.items[pp.idPP];
-      const qtyActual = enPedido ? enPedido.qty : (pp.sugerencia || 0);
+      const qtyActual = enPedido ? enPedido.qty : 0;
       const zonasHtml = (pp.zonas || []).filter(z => z.cantidad > 0).slice(0, 4).map(z =>
         `<span class="prov-zona-chip">${z.nombre}: <b>${z.cantidad}</b></span>`
       ).join('');
       const tienePresentaciones = (pp.countPresentaciones || 1) > 1;
       const tieneEquiv = (pp.countEquivalencias || 0) > 0;
       return `
-      <div class="prov-prod-card${pp._tmp ? ' opacity-60' : ''}" data-idpp="${pp.idPP}" style="border-left:3px solid ${alert.color}">
+      <div class="prov-prod-card${pp._tmp ? ' opacity-60' : ''}${qtyActual > 0 ? ' en-pedido' : ''}" data-idpp="${pp.idPP}" style="border-left:3px solid ${alert.color}">
         <div class="flex items-start justify-between gap-2 mb-1.5">
           <div class="min-w-0 flex-1 cursor-pointer" onclick="MOS.abrirModalProvProducto('${pp.idPP}')">
             <div class="text-sm font-semibold text-slate-100 truncate">${pp.descripcion || pp.skuBase}</div>
@@ -4539,7 +4549,7 @@ const MOS = (() => {
         </div>
         ${zonasHtml ? `<div class="prov-zonas-row">${zonasHtml}</div>` : ''}
 
-        <!-- Mín/Máx editables -->
+        <!-- Mín/Máx editables + sugerencia -->
         <div class="prov-minmax-row">
           <div class="prov-minmax-grp">
             <label class="prov-minmax-lbl">Mín</label>
@@ -4553,16 +4563,19 @@ const MOS = (() => {
               class="prov-minmax-inp" data-idprod="${pp.idProducto}" data-campo="stockMaximo" data-idpp="${pp.idPP}"
               onchange="MOS.provProductoEditarStockMinMax(this)" onblur="MOS.provProductoEditarStockMinMax(this)">
           </div>
-          ${pp.razonSugerencia ? `<span class="prov-sugerencia-txt">${pp.razonSugerencia}</span>` : ''}
+          ${pp.sugerencia > 0
+            ? `<button onclick="MOS.provPedidoUsarSugerencia('${pp.idPP}', ${pp.sugerencia})" class="prov-sug-btn" title="${pp.razonSugerencia || ''}">Sugerencia: ${pp.sugerencia}</button>`
+            : (pp.razonSugerencia ? `<span class="prov-sugerencia-txt">${pp.razonSugerencia}</span>` : '')}
         </div>
 
-        <!-- Pedido (cantidad editable + toggle) -->
+        <!-- Stepper de pedido [- qty +] -->
         <div class="prov-pedido-row">
-          <button onclick="MOS.provPedidoToggle('${pp.idPP}')" class="prov-pedido-toggle ${enPedido ? 'on' : ''}" title="Incluir en pedido">
-            ${enPedido ? '✓' : '＋'}
-          </button>
-          <input type="number" min="0" step="1" value="${qtyActual}" placeholder="${pp.sugerencia || 0}"
-            class="prov-pedido-qty" data-idpp="${pp.idPP}" oninput="MOS.provPedidoSetQty('${pp.idPP}', this.value)">
+          <div class="prov-stepper">
+            <button onclick="MOS.provPedidoStep('${pp.idPP}', -1)" class="prov-stepper-btn" aria-label="Disminuir">−</button>
+            <input type="number" min="0" step="1" value="${qtyActual}" placeholder="0"
+              class="prov-stepper-input" data-idpp="${pp.idPP}" oninput="MOS.provPedidoSetQty('${pp.idPP}', this.value)">
+            <button onclick="MOS.provPedidoStep('${pp.idPP}', 1)" class="prov-stepper-btn" aria-label="Aumentar">+</button>
+          </div>
           <span class="prov-pedido-sub">×&nbsp;${fmtMoney(pp.precioReferencia || 0)}</span>
           <span class="prov-pedido-total">${fmtMoney((qtyActual || 0) * (pp.precioReferencia || 0))}</span>
           <button onclick="event.stopPropagation();MOS.eliminarProvProductoRapido('${pp.idPP}')" class="text-slate-500 hover:text-red-400 transition-colors text-sm p-1 ml-auto" title="Eliminar del catálogo">🗑️</button>
@@ -4617,51 +4630,172 @@ const MOS = (() => {
     });
   }
 
-  function provPedidoToggle(idPP) {
+  // Asegura que el pedido pertenezca al proveedor actual; si no, lo resetea.
+  function _provPedidoEnsureProveedor() {
+    const id = S.provSelId;
+    if (S.provPedido.idProveedor !== id) {
+      S.provPedido = { items: {}, idProveedor: id };
+    }
+  }
+
+  // Cambia la cantidad del producto en el pedido. Si qty <= 0, se quita del pedido.
+  function provPedidoSetQty(idPP, val) {
+    _provPedidoEnsureProveedor();
     const id = S.provSelId;
     const lista = (S.provProductos && S.provProductos[id]) || [];
     const item = lista.find(x => x.idPP === idPP);
     if (!item) return;
-    if (S.provPedido.idProveedor !== id) {
-      // Cambiar de proveedor → resetear pedido
-      S.provPedido = { items: {}, idProveedor: id };
-    }
-    if (S.provPedido.items[idPP]) {
+    let qty = parseFloat(val);
+    if (isNaN(qty) || qty < 0) qty = 0;
+    if (qty <= 0) {
       delete S.provPedido.items[idPP];
     } else {
-      const inp = document.querySelector(`.prov-pedido-qty[data-idpp="${idPP}"]`);
-      const qty = inp ? (parseFloat(inp.value) || item.sugerencia || 0) : (item.sugerencia || 0);
       S.provPedido.items[idPP] = {
         idPP, sku: item.skuBase, desc: item.descripcion,
         codigoBarra: item.codigoBarra, precio: item.precioReferencia || 0,
         qty: qty
       };
     }
-    _pintaProvProductos(_filtrarPP(lista, S.provProdFilter));
-  }
-
-  function provPedidoSetQty(idPP, val) {
-    const qty = parseFloat(val) || 0;
-    if (S.provPedido.items[idPP]) {
-      S.provPedido.items[idPP].qty = qty;
-    }
-    // Actualizar total visible sin re-render completo
+    // Actualizar total visible y clase "en-pedido" sin re-render completo
     const card = document.querySelector(`.prov-prod-card[data-idpp="${idPP}"]`);
     if (card) {
+      card.classList.toggle('en-pedido', qty > 0);
       const totalEl = card.querySelector('.prov-pedido-total');
-      const id = S.provSelId;
-      const lista = (S.provProductos && S.provProductos[id]) || [];
-      const item = lista.find(x => x.idPP === idPP);
-      if (totalEl && item) totalEl.textContent = fmtMoney(qty * (item.precioReferencia || 0));
+      if (totalEl) totalEl.textContent = fmtMoney(qty * (item.precioReferencia || 0));
+      const inp = card.querySelector('.prov-stepper-input');
+      if (inp && document.activeElement !== inp) inp.value = qty;
     }
     _renderPedidoToolbar();
+    _renderCarritoIfOpen();
+  }
+
+  function provPedidoStep(idPP, delta) {
+    _provPedidoEnsureProveedor();
+    const cur = (S.provPedido.items[idPP] && S.provPedido.items[idPP].qty) || 0;
+    const next = Math.max(0, cur + delta);
+    provPedidoSetQty(idPP, next);
+  }
+
+  function provPedidoUsarSugerencia(idPP, sug) {
+    provPedidoSetQty(idPP, sug);
+  }
+
+  // ── Modal carrito de pedido ─────────────────────────────────
+  S.provCarritoTab = S.provCarritoTab || 'sel'; // 'sel' | 'all'
+
+  function provCarritoSetTab(t) {
+    S.provCarritoTab = t;
+    _renderCarrito();
+  }
+
+  function provAbrirCarrito() {
+    const id = S.provSelId;
+    if (!id) return;
+    _provPedidoEnsureProveedor();
+    const prov = S.proveedores.find(p => p.idProveedor === id) || {};
+    const nameEl = $('carritoProvNombre');
+    if (nameEl) nameEl.textContent = prov.nombre || '—';
+    const filt = $('carritoFiltro');
+    if (filt) filt.value = '';
+    // Si no hay items en pedido, arranca en 'all' para que vea productos
+    if (!Object.keys(S.provPedido.items).length) S.provCarritoTab = 'all';
+    _renderCarrito();
+    openModal('modalCarritoPedido');
+  }
+  function provCerrarCarrito() { closeModal('modalCarritoPedido'); }
+  function _renderCarritoIfOpen() {
+    const m = $('modalCarritoPedido');
+    if (m && !m.classList.contains('hidden')) _renderCarrito();
+  }
+
+  function _renderCarrito() {
+    const id = S.provSelId;
+    const lista = (S.provProductos && S.provProductos[id]) || [];
+    const cont  = $('carritoLista');
+    const tabSel = $('carritoTabSel');
+    const tabAll = $('carritoTabAll');
+    if (tabSel && tabAll) {
+      const isSel = S.provCarritoTab === 'sel';
+      tabSel.style.background = isSel ? '#6366f1' : 'transparent';
+      tabSel.style.color      = isSel ? '#fff'    : '#94a3b8';
+      tabAll.style.background = !isSel ? '#6366f1' : 'transparent';
+      tabAll.style.color      = !isSel ? '#fff'    : '#94a3b8';
+    }
+    const q = ($('carritoFiltro')?.value || '').trim();
+    const enPedidoCount = Object.keys(S.provPedido.items || {}).length;
+    let filtrados = _filtrarPP(lista, q);
+    if (S.provCarritoTab === 'sel') {
+      filtrados = filtrados.filter(pp => S.provPedido.items[pp.idPP]);
+    }
+    if (!cont) return;
+    if (!filtrados.length) {
+      cont.innerHTML = S.provCarritoTab === 'sel'
+        ? '<p class="text-slate-500 text-sm py-8 text-center">Aún no agregas productos al pedido.<br>Cambia a "Todos" y aumenta cantidades.</p>'
+        : '<p class="text-slate-500 text-sm py-8 text-center">Sin productos.</p>';
+    } else {
+      cont.innerHTML = filtrados.map(pp => _carritoFila(pp)).join('');
+    }
+    // Footer
+    _renderCarritoFooter(enPedidoCount);
+  }
+
+  function _carritoFila(pp) {
+    const alert = _provAlertaInfo(pp.alerta);
+    const enPedido = S.provPedido.items[pp.idPP];
+    const qty = enPedido ? enPedido.qty : 0;
+    const subt = qty * (pp.precioReferencia || 0);
+    return `
+    <div class="carrito-fila${qty > 0 ? ' en-pedido' : ''}" data-idpp="${pp.idPP}">
+      <div class="flex-1 min-w-0">
+        <div class="text-sm font-semibold text-slate-100 truncate">${pp.descripcion || pp.skuBase}</div>
+        <div class="text-[10px] text-slate-500 truncate" style="font-family:monospace">SKU ${pp.skuBase}${pp.codigoBarra ? ' · ▌' + pp.codigoBarra : ''}</div>
+        <div class="flex items-center gap-2 text-[11px] mt-1" style="color:${alert.color}">
+          <span>📦 Stock <b>${pp.stockTotal}</b></span>
+          ${pp.stockMinimo > 0 ? `<span class="text-slate-500">· mín ${pp.stockMinimo}</span>` : ''}
+          ${pp.sugerencia > 0 ? `<button onclick="MOS.provPedidoUsarSugerencia('${pp.idPP}', ${pp.sugerencia})" class="prov-sug-btn-mini" title="${pp.razonSugerencia || ''}">Sug ${pp.sugerencia}</button>` : ''}
+        </div>
+      </div>
+      <div class="text-right shrink-0 mr-2">
+        <div class="text-[11px] text-slate-500">${fmtMoney(pp.precioReferencia || 0)}</div>
+        <div class="text-sm font-bold ${qty > 0 ? 'text-amber-400' : 'text-slate-600'}">${fmtMoney(subt)}</div>
+      </div>
+      <div class="prov-stepper shrink-0">
+        <button onclick="MOS.provPedidoStep('${pp.idPP}', -1)" class="prov-stepper-btn">−</button>
+        <input type="number" min="0" step="1" value="${qty}" class="prov-stepper-input" data-idpp="${pp.idPP}"
+          oninput="MOS.provPedidoSetQty('${pp.idPP}', this.value)">
+        <button onclick="MOS.provPedidoStep('${pp.idPP}', 1)" class="prov-stepper-btn">+</button>
+      </div>
+    </div>`;
+  }
+
+  function _renderCarritoFooter(enPedidoCount) {
+    const items = Object.values(S.provPedido.items || {});
+    const totalQty = items.reduce((s, it) => s + (parseFloat(it.qty) || 0), 0);
+    const totalMonto = items.reduce((s, it) => s + (parseFloat(it.qty) || 0) * (parseFloat(it.precio) || 0), 0);
+    const f = $('carritoFooter');
+    if (!f) return;
+    f.innerHTML = `
+      <div class="min-w-0 flex-1">
+        <div class="text-[10px] text-slate-500 uppercase">Total</div>
+        <div class="text-sm font-bold text-slate-100">${items.length} prods · ${totalQty} unds</div>
+      </div>
+      <div class="text-right">
+        <div class="text-[10px] text-slate-500 uppercase">Monto</div>
+        <div class="text-base font-bold text-amber-400">${fmtMoney(totalMonto)}</div>
+      </div>
+      <button onclick="MOS.provPedidoLimpiar()" class="btn-ghost text-xs px-3 py-1.5" ${items.length ? '' : 'disabled style="opacity:.4"'}>Limpiar</button>
+      <button onclick="MOS.provPedidoExportar()" class="btn-primary text-xs px-3 py-1.5 whitespace-nowrap" ${items.length ? '' : 'disabled style="opacity:.4"'}>📄 Generar</button>
+    `;
   }
 
   function provPedidoLimpiar() {
     if (!Object.keys(S.provPedido.items).length) return;
+    if (!confirm('¿Limpiar el pedido en construcción?')) return;
     S.provPedido = { items: {}, idProveedor: S.provSelId };
     const id = S.provSelId;
     _pintaProvProductos(_filtrarPP((S.provProductos && S.provProductos[id]) || [], S.provProdFilter));
+    _renderCarritoIfOpen();
+    _renderPedidoToolbar();
   }
 
   function _pedidoCabeceraTexto() {
@@ -4840,38 +4974,92 @@ const MOS = (() => {
     });
   }
 
+  function _fmtFechaLarga(fechaStr) {
+    if (!fechaStr) return '';
+    const d = new Date(fechaStr + 'T00:00:00');
+    if (isNaN(d.getTime())) return fechaStr;
+    const dias = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+    const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    return `${dias[d.getDay()]} ${d.getDate()} ${meses[d.getMonth()]} ${d.getFullYear()}`;
+  }
+
+  // Estado de días expandidos (key = idProveedor:fecha)
+  S.provHistDiasOpen = S.provHistDiasOpen || {};
+
+  function provHistToggleDia(fecha) {
+    const key = (S.provSelId || '') + ':' + fecha;
+    S.provHistDiasOpen[key] = !S.provHistDiasOpen[key];
+    const id = S.provSelId;
+    if (id && S.provHistorico[id]) _pintaProvHistorico(S.provHistorico[id]);
+  }
+
   function _pintaProvHistorico(data) {
     const body = $('provHistoricoBody');
     if (!body) return;
-    if (!data || (!data.productos || !data.productos.length)) {
+    const tieneDias = data && Array.isArray(data.guiasPorDia) && data.guiasPorDia.length;
+    if (!data || (!tieneDias && (!data.productos || !data.productos.length))) {
       body.innerHTML = '<p class="text-slate-500 text-sm py-6 text-center">Sin compras registradas en el rango.</p>';
       return;
     }
-    const filtro = S.provHistFilter || '';
-    const productos = _filtrarHist(data.productos, filtro);
+
+    const filtro = (S.provHistFilter || '').toLowerCase().trim();
+    const _matchItem = (it) => {
+      if (!filtro) return true;
+      const hay = ((it.descripcion || '') + ' ' + (it.codigoBarra || '') + ' ' + (it.skuBase || '')).toLowerCase();
+      return filtro.split(/\s+/).every(w => hay.indexOf(w) >= 0);
+    };
+
+    let htmlDias = '';
+    if (tieneDias) {
+      const dias = data.guiasPorDia
+        .map(d => ({ ...d, items: (d.items || []).filter(_matchItem) }))
+        .filter(d => !filtro || d.items.length > 0);
+      if (!dias.length) {
+        htmlDias = '<p class="text-slate-500 text-sm py-6 text-center italic">Sin coincidencias para "' + filtro + '".</p>';
+      } else {
+        htmlDias = `<div class="space-y-2">${dias.map(d => {
+          const key = (S.provSelId || '') + ':' + d.fecha;
+          const open = !!S.provHistDiasOpen[key];
+          return `
+            <div class="hist-dia-card">
+              <div class="hist-dia-header" onclick="MOS.provHistToggleDia('${d.fecha}')">
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-bold text-slate-100">${_fmtFechaLarga(d.fecha)}</div>
+                  <div class="text-[11px] text-slate-500 mt-0.5">${d.numItems} producto${d.numItems === 1 ? '' : 's'} · ${d.numGuias} guía${d.numGuias === 1 ? '' : 's'}</div>
+                </div>
+                <div class="text-right shrink-0">
+                  <div class="text-sm font-bold text-amber-400 whitespace-nowrap">${fmtMoney(d.totalDia)}</div>
+                </div>
+                <span class="hist-chevron" style="transform:rotate(${open ? 180 : 0}deg)">▾</span>
+              </div>
+              <div class="hist-dia-body" style="max-height:${open ? 1200 : 0}px">
+                <div class="px-3 pb-3 pt-2 space-y-1.5">
+                  ${d.items.map(it => `
+                    <div class="hist-item-row">
+                      <div class="min-w-0 flex-1">
+                        <div class="text-[13px] text-slate-100 truncate">${it.descripcion || '—'}</div>
+                        <div class="text-[10px] text-slate-500 truncate" style="font-family:monospace">${it.skuBase || ''}${it.codigoBarra ? ' · ▌' + it.codigoBarra : ''}</div>
+                      </div>
+                      <div class="text-right shrink-0">
+                        <div class="text-sm font-bold text-slate-100">${it.cantidad}u</div>
+                        <div class="text-[10px] text-slate-500">× ${fmtMoney(it.precio)} = <b class="text-amber-400">${fmtMoney(it.monto)}</b></div>
+                      </div>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            </div>`;
+        }).join('')}</div>`;
+      }
+    }
+
     body.innerHTML = `
       <div class="grid grid-cols-3 gap-2 mb-3">
-        <div class="card-sm p-2 text-center"><div class="text-[10px] text-slate-500 uppercase tracking-wide">Guías</div><div class="text-base sm:text-lg font-bold text-slate-100">${data.totalGuias}</div></div>
-        <div class="card-sm p-2 text-center"><div class="text-[10px] text-slate-500 uppercase tracking-wide">Gastado</div><div class="text-base sm:text-lg font-bold text-amber-400 truncate">${fmtMoney(data.totalGastado)}</div></div>
-        <div class="card-sm p-2 text-center"><div class="text-[10px] text-slate-500 uppercase tracking-wide">Por pagar</div><div class="text-base sm:text-lg font-bold ${data.porPagar > 0 ? 'text-rose-400' : 'text-green-400'} truncate">${fmtMoney(data.porPagar)}</div></div>
+        <div class="card-sm p-2 text-center"><div class="text-[10px] text-slate-500 uppercase tracking-wide">Guías</div><div class="text-base sm:text-lg font-bold text-slate-100">${data.totalGuias || 0}</div></div>
+        <div class="card-sm p-2 text-center"><div class="text-[10px] text-slate-500 uppercase tracking-wide">Gastado</div><div class="text-base sm:text-lg font-bold text-amber-400 truncate">${fmtMoney(data.totalGastado || 0)}</div></div>
+        <div class="card-sm p-2 text-center"><div class="text-[10px] text-slate-500 uppercase tracking-wide">Por pagar</div><div class="text-base sm:text-lg font-bold ${(data.porPagar || 0) > 0 ? 'text-rose-400' : 'text-green-400'} truncate">${fmtMoney(data.porPagar || 0)}</div></div>
       </div>
-      <div class="text-xs text-slate-500 mb-2">${productos.length} de ${data.productos.length} productos${filtro ? ' · filtro: "' + filtro + '"' : ''}</div>
-      <div class="space-y-1">
-        ${productos.length ? productos.map(it => `
-          <div class="card-sm p-2.5">
-            <div class="flex items-start justify-between gap-2">
-              <div class="min-w-0 flex-1">
-                <div class="text-sm font-medium text-slate-200 truncate">${it.descripcion}</div>
-                <div class="text-xs text-slate-500 truncate" style="font-family:monospace">▌${it.codigoBarra} · ${it.veces}× · ${it.cantidadTotal}u</div>
-              </div>
-              <div class="text-right shrink-0">
-                <div class="text-sm font-bold text-slate-100">${fmtMoney(it.ultimoPrecio)}</div>
-                <div class="text-xs ${it.variacionPct > 1 ? 'text-rose-400' : it.variacionPct < -1 ? 'text-green-400' : 'text-slate-500'}">${it.variacionPct > 0 ? '↑' : it.variacionPct < 0 ? '↓' : '='} ${Math.abs(it.variacionPct)}%</div>
-              </div>
-            </div>
-          </div>
-        `).join('') : '<p class="text-slate-500 text-sm py-4 text-center italic">Sin coincidencias.</p>'}
-      </div>
+      ${htmlDias || '<p class="text-slate-500 text-xs py-2 italic">Tu GAS aún no devuelve histórico por día — redespliega para ver el timeline.</p>'}
     `;
   }
 
@@ -11032,7 +11220,9 @@ const MOS = (() => {
     guardarProvProducto, eliminarProvProducto, eliminarProvProductoRapido,
     jalarProductosProveedor,
     provProductoEditarStockMinMax,
-    provPedidoToggle, provPedidoSetQty, provPedidoLimpiar,
+    provPedidoSetQty, provPedidoStep, provPedidoUsarSugerencia, provPedidoLimpiar,
+    provAbrirCarrito, provCerrarCarrito, provCarritoSetTab, _renderCarrito,
+    provHistToggleDia,
     provPedidoExportar, provPedidoImprimir, provPedidoWhatsApp,
     abrirVistaCargadores, nuevoCargador, editarCargador,
     abrirModalPago, guardarPago, abrirModalPedido,

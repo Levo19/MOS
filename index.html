@@ -921,6 +921,130 @@
       }
     }
 
+    /* ── Header info reducida del proveedor ────────────────── */
+    .prov-info-strip {
+      display: flex; flex-wrap: wrap; gap: 6px;
+      margin-bottom: 8px;
+    }
+    .prov-info-chip {
+      font-size: .7rem; padding: 3px 9px; border-radius: 999px;
+      background: rgba(99,102,241,.08); color: #c7d2fe;
+      border: 1px solid rgba(99,102,241,.18);
+      white-space: nowrap;
+    }
+    .prov-action-row {
+      display: flex; flex-wrap: wrap; gap: 6px;
+      margin-bottom: 10px;
+    }
+    .prov-action-btn {
+      flex: 1; min-width: 0;
+      padding: 7px 10px; border-radius: 8px; font-size: .75rem; font-weight: 700;
+      background: rgba(99,102,241,.08); border: 1px solid rgba(99,102,241,.2);
+      color: #c7d2fe; cursor: pointer; transition: all .15s;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .prov-action-btn:hover { background: rgba(99,102,241,.18); border-color: rgba(99,102,241,.4); }
+    .prov-action-btn.whatsapp {
+      background: rgba(37,211,102,.12); border-color: rgba(37,211,102,.3); color: #86efac;
+    }
+    .prov-action-btn.whatsapp:hover { background: rgba(37,211,102,.22); }
+    .prov-action-btn.primary {
+      background: linear-gradient(135deg,#fbbf24,#f59e0b); border-color: #f59e0b; color: #0b1220;
+      flex: 1.2;
+    }
+    .prov-action-btn.primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(245,158,11,.4); }
+
+    /* Stepper [- qty +] */
+    .prov-stepper {
+      display: inline-flex; align-items: stretch;
+      background: #060d1f; border: 1px solid #1e293b; border-radius: 8px;
+      overflow: hidden;
+    }
+    .prov-stepper-btn {
+      width: 28px; height: 28px;
+      background: transparent; border: none; color: #cbd5e1;
+      font-size: 1.05rem; font-weight: 800; cursor: pointer;
+      transition: background .15s;
+    }
+    .prov-stepper-btn:hover { background: rgba(99,102,241,.18); color: #fff; }
+    .prov-stepper-btn:first-child { border-right: 1px solid #1e293b; }
+    .prov-stepper-btn:last-child  { border-left:  1px solid #1e293b; }
+    .prov-stepper-input {
+      width: 48px; padding: 0 4px;
+      background: transparent; border: none; outline: none;
+      color: #f1f5f9; font-size: .85rem; font-weight: 700; text-align: center;
+      -moz-appearance: textfield;
+    }
+    .prov-stepper-input::-webkit-outer-spin-button,
+    .prov-stepper-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+    /* Card en pedido — resaltado violeta */
+    .prov-prod-card.en-pedido {
+      background: rgba(99,102,241,.06);
+      border-color: rgba(99,102,241,.4);
+      box-shadow: inset 0 0 0 1px rgba(99,102,241,.2);
+    }
+
+    /* Botón de sugerencia (compacto) */
+    .prov-sug-btn {
+      font-size: .7rem; font-weight: 700;
+      padding: 3px 9px; border-radius: 6px;
+      background: rgba(251,191,36,.12); color: #fcd34d;
+      border: 1px solid rgba(251,191,36,.3);
+      cursor: pointer; transition: all .15s;
+      margin-left: auto;
+    }
+    .prov-sug-btn:hover { background: rgba(251,191,36,.22); border-color: rgba(251,191,36,.5); }
+    .prov-sug-btn-mini {
+      font-size: .65rem; padding: 1px 7px; border-radius: 5px;
+      background: rgba(251,191,36,.12); color: #fcd34d;
+      border: 1px solid rgba(251,191,36,.3);
+      cursor: pointer; font-weight: 700;
+    }
+    .prov-sug-btn-mini:hover { background: rgba(251,191,36,.22); }
+
+    /* ── Modal carrito ──────────────────────────────────────── */
+    .carrito-fila {
+      display: flex; align-items: center; gap: 8px;
+      padding: 9px 10px; border-radius: 10px;
+      background: #0a1428; border: 1px solid #1e293b;
+      transition: all .15s;
+    }
+    .carrito-fila.en-pedido {
+      background: rgba(99,102,241,.06);
+      border-color: rgba(99,102,241,.4);
+    }
+
+    /* ── Histórico por día ──────────────────────────────────── */
+    .hist-dia-card {
+      background: #0f172a; border: 1px solid #1e293b;
+      border-radius: 12px; overflow: hidden;
+    }
+    .hist-dia-header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; cursor: pointer;
+      transition: background .15s;
+    }
+    .hist-dia-header:hover { background: rgba(99,102,241,.05); }
+    .hist-chevron {
+      color: #94a3b8; font-size: 1rem;
+      transition: transform .2s;
+    }
+    .hist-dia-body {
+      overflow: hidden;
+      transition: max-height .25s ease-out;
+      border-top: 1px dashed transparent;
+    }
+    .hist-dia-card .hist-dia-body[style*="max-height: 1200"] {
+      border-top-color: #1e293b;
+    }
+    .hist-item-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 6px 0;
+      border-bottom: 1px dashed #1a2540;
+    }
+    .hist-item-row:last-child { border-bottom: none; }
+
     /* Pedido exportable (modal) */
     .pedido-doc { color: #e2e8f0; }
     .pedido-doc-header {
@@ -5008,6 +5132,28 @@
       <p class="text-xs text-slate-500 mb-2">Producto: <span id="selProvProducto" class="text-slate-200"></span></p>
       <div id="selProvList" class="space-y-2"></div>
     </div>
+  </div>
+</div>
+
+<!-- Modal: Carrito de pedido (todos los productos del proveedor con +/- inline) -->
+<div id="modalCarritoPedido" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.provCerrarCarrito()">
+  <div class="modal-box p-0" style="max-width:760px;display:flex;flex-direction:column;max-height:92vh;width:100%">
+    <div class="px-5 pt-4 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
+      <div class="min-w-0 flex-1">
+        <h3 class="font-semibold text-amber-400 text-base">🛒 Carrito de pedido</h3>
+        <p id="carritoProvNombre" class="text-xs text-slate-500 mt-0.5 truncate">—</p>
+      </div>
+      <button onclick="MOS.provCerrarCarrito()" class="modal-close-x">×</button>
+    </div>
+    <div class="px-5 py-2 flex items-center gap-2 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:#060d1f">
+      <input id="carritoFiltro" class="inp text-xs flex-1" placeholder="🔍 Filtrar productos..." oninput="MOS._renderCarrito()">
+      <div class="flex bg-slate-900 rounded-lg p-0.5 text-xs">
+        <button id="carritoTabSel"   onclick="MOS.provCarritoSetTab('sel')" class="px-3 py-1 rounded font-semibold">En pedido</button>
+        <button id="carritoTabAll"   onclick="MOS.provCarritoSetTab('all')" class="px-3 py-1 rounded font-semibold">Todos</button>
+      </div>
+    </div>
+    <div id="carritoLista" class="overflow-y-auto px-3 py-3 space-y-2" style="flex:1"></div>
+    <div id="carritoFooter" class="px-5 py-3 flex flex-wrap items-center gap-2 flex-shrink-0" style="border-top:1px solid #1e293b;background:#0a1428"></div>
   </div>
 </div>
 
