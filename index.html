@@ -837,41 +837,122 @@
     }
     .prov-stock-label { font-size: .65rem; color: #64748b; text-transform: uppercase; letter-spacing: .05em; }
     .prov-stock-num { font-size: 1.1rem; font-weight: 800; }
-    .prov-stock-detail {
-      display: flex; align-items: center; gap: 6px;
-      font-size: .7rem; color: #94a3b8;
+    .prov-rot-total {
+      display: flex; align-items: baseline; gap: 6px;
       margin-left: auto;
-      flex-wrap: wrap;
     }
-    .prov-zonas-row {
-      display: flex; flex-wrap: wrap; gap: 4px;
-      padding-bottom: 6px;
+    .prov-rot-num { font-size: .9rem; font-weight: 700; color: #818cf8; }
+
+    /* Chips de ubicación: almacén + zona, rojo si negativo */
+    .prov-loc-chips {
+      display: flex; flex-wrap: wrap; gap: 5px;
+      padding: 4px 0 8px;
     }
-    .prov-zona-chip {
-      font-size: .65rem; padding: 2px 7px; border-radius: 999px;
-      background: rgba(99,102,241,.1); color: #c7d2fe; border: 1px solid rgba(99,102,241,.2);
+    .prov-loc-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: .68rem; padding: 3px 8px; border-radius: 999px;
+      background: rgba(99,102,241,.1); color: #c7d2fe;
+      border: 1px solid rgba(99,102,241,.22);
+      white-space: nowrap;
     }
+    .prov-loc-chip b { color: #f1f5f9; font-weight: 800; }
+    .prov-loc-chip.zero {
+      background: rgba(100,116,139,.08); color: #94a3b8;
+      border-color: rgba(100,116,139,.2);
+    }
+    .prov-loc-chip.zero b { color: #94a3b8; }
+    .prov-loc-chip.neg {
+      background: rgba(239,68,68,.12); color: #fca5a5;
+      border-color: rgba(239,68,68,.4);
+    }
+    .prov-loc-chip.neg b { color: #fee2e2; }
+    .prov-loc-ic { font-size: .8rem; }
+
+    /* Sliders Mín/Máx */
     .prov-minmax-row {
+      display: flex; flex-direction: column; gap: 8px;
+      padding: 8px 0 4px; border-top: 1px dashed #1e293b;
+    }
+    .prov-slider-grp { display: flex; flex-direction: column; gap: 4px; }
+    .prov-slider-head {
       display: flex; align-items: center; gap: 8px;
-      padding: 6px 0; border-top: 1px dashed #1e293b;
-      flex-wrap: wrap;
+      font-size: .7rem;
     }
-    .prov-minmax-grp {
-      display: flex; align-items: center; gap: 4px;
+    .prov-slider-lbl {
+      color: #64748b; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .04em; min-width: 24px;
     }
-    .prov-minmax-lbl {
-      font-size: .65rem; color: #64748b; font-weight: 700; text-transform: uppercase;
+    .prov-slider-val {
+      font-size: .85rem; font-weight: 800; color: #f1f5f9;
+      min-width: 28px; text-align: right;
     }
-    .prov-minmax-inp {
-      width: 54px; padding: 2px 6px; border-radius: 6px;
-      background: #060d1f; border: 1px solid #1e293b;
-      color: #f1f5f9; font-size: .75rem; font-weight: 700; text-align: right;
-      transition: border-color .15s;
+    .prov-sug-pill {
+      margin-left: auto;
+      font-size: .65rem; font-weight: 700;
+      padding: 2px 8px; border-radius: 999px;
+      background: rgba(251,191,36,.12); color: #fcd34d;
+      border: 1px solid rgba(251,191,36,.3);
+      cursor: pointer; transition: all .15s;
     }
-    .prov-minmax-inp:focus { outline: none; border-color: #ffd700; }
+    .prov-sug-pill:hover {
+      background: rgba(251,191,36,.25); border-color: rgba(251,191,36,.55);
+    }
+    .prov-slider-track {
+      position: relative; height: 24px;
+      display: flex; align-items: center;
+    }
+    /* Reset visual del input range para track personalizado */
+    .prov-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%; height: 4px;
+      background: linear-gradient(90deg, #1e293b 0%, #1e293b 100%);
+      border-radius: 2px;
+      outline: none;
+      margin: 0;
+    }
+    .prov-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: #fbbf24;
+      border: 2px solid #0b1220;
+      box-shadow: 0 0 0 1px #fbbf24;
+      cursor: pointer;
+    }
+    .prov-slider::-moz-range-thumb {
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: #fbbf24;
+      border: 2px solid #0b1220;
+      box-shadow: 0 0 0 1px #fbbf24;
+      cursor: pointer;
+    }
+    /* Marker en posición sugerida */
+    .prov-slider-mark {
+      position: absolute;
+      top: 50%;
+      width: 2px; height: 14px;
+      background: #10b981;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      box-shadow: 0 0 0 2px rgba(16,185,129,.25);
+    }
+    .prov-slider-mark::after {
+      content: '';
+      position: absolute;
+      top: -4px; left: 50%;
+      transform: translateX(-50%);
+      width: 0; height: 0;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      border-top: 5px solid #10b981;
+    }
+
     .prov-sugerencia-txt {
       font-size: .65rem; color: #94a3b8; font-style: italic;
-      margin-left: auto; text-align: right;
+      text-align: right;
     }
     .prov-pedido-row {
       display: flex; align-items: center; gap: 6px;

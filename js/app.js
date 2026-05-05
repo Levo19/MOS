@@ -4595,11 +4595,42 @@ const MOS = (() => {
       const alert = _provAlertaInfo(pp.alerta);
       const enPedido = S.provPedido.items[pp.idPP];
       const qtyActual = enPedido ? enPedido.qty : 0;
-      const zonasHtml = (pp.zonas || []).filter(z => z.cantidad > 0).slice(0, 4).map(z =>
-        `<span class="prov-zona-chip">${z.nombre}: <b>${z.cantidad}</b></span>`
-      ).join('');
       const tienePresentaciones = (pp.countPresentaciones || 1) > 1;
       const tieneEquiv = (pp.countEquivalencias || 0) > 0;
+
+      // Chips de ubicación: almacén + cada zona (con stock o no, mostrar todo)
+      const chipsLocs = [];
+      chipsLocs.push({ nombre: 'Almacén', cant: pp.stockWh || 0, icon: '🏬' });
+      (pp.zonas || []).forEach(z => {
+        chipsLocs.push({ nombre: z.nombre, cant: z.cantidad, icon: '🏪' });
+      });
+      const chipsHtml = chipsLocs.map(c =>
+        `<span class="prov-loc-chip${c.cant < 0 ? ' neg' : c.cant === 0 ? ' zero' : ''}"><span class="prov-loc-ic">${c.icon}</span>${c.nombre}: <b>${c.cant}</b></span>`
+      ).join('');
+
+      // Sliders mín/máx con marker en sugerencia semanal
+      const sugSemana = Math.max(0, Math.ceil((pp.rotacionDia || 0) * 7));
+      const sugMin = sugSemana;            // mínimo recomendado = 1 semana de cobertura
+      const sugMax = Math.max(sugSemana * 2, sugSemana + 7); // 2 semanas
+      const sliderMaxMin = Math.max(20, (pp.stockMinimo || 0), sugMin * 4 || 0, 30);
+      const sliderMaxMax = Math.max(50, (pp.stockMaximo || 0), sugMax * 4 || 0, 60);
+      const minVal = parseInt(pp.stockMinimo) || 0;
+      const maxVal = parseInt(pp.stockMaximo) || 0;
+      const sliderRow = (campo, label, val, sliderMax, sug) => `
+        <div class="prov-slider-grp">
+          <div class="prov-slider-head">
+            <span class="prov-slider-lbl">${label}</span>
+            <span class="prov-slider-val" data-vfor="${campo}-${pp.idPP}">${val || 0}</span>
+            ${sug > 0 ? `<button class="prov-sug-pill" onclick="MOS.provSliderUsarSugerencia('${pp.idPP}','${pp.idProducto}','${campo}', ${sug})" title="Usar sugerido (${sug})">≈${sug}</button>` : ''}
+          </div>
+          <div class="prov-slider-track">
+            <input type="range" min="0" max="${sliderMax}" step="1" value="${val}"
+              class="prov-slider" data-idprod="${pp.idProducto}" data-campo="${campo}" data-idpp="${pp.idPP}"
+              oninput="MOS.provSliderInput(this)" onchange="MOS.provSliderChange(this)">
+            ${sug > 0 && sug <= sliderMax ? `<div class="prov-slider-mark" style="left:${(sug/sliderMax)*100}%" title="Sugerido por rotación: ${sug}"></div>` : ''}
+          </div>
+        </div>`;
+
       return `
       <div class="prov-prod-card${pp._tmp ? ' opacity-60' : ''}${qtyActual > 0 ? ' en-pedido' : ''}" data-idpp="${pp.idPP}" style="border-left:3px solid ${alert.color}">
         <div class="flex items-start justify-between gap-2 mb-1.5">
@@ -4613,39 +4644,29 @@ const MOS = (() => {
           </div>
         </div>
 
-        <!-- Stock total + desglose -->
+        <!-- Header: stock total a la izquierda, rotación a la derecha -->
         <div class="prov-stock-row">
           <div class="prov-stock-total">
             <span class="prov-stock-label">Stock</span>
             <span class="prov-stock-num" style="color:${alert.color}">${pp.stockTotal}</span>
           </div>
-          <div class="prov-stock-detail">
-            <span title="Almacén">🏬 ${pp.stockWh}</span>
-            <span class="text-slate-700">·</span>
-            <span title="Tienda (todas las zonas)">🏪 ${pp.stockTienda}</span>
-            ${pp.rotacionDia > 0 ? `<span class="text-slate-700">·</span><span title="Rotación últ. ${pp.rangoDias}d">↻ ${pp.rotacionDia}/d</span>` : ''}
+          <div class="prov-rot-total">
+            <span class="prov-stock-label">Rotación</span>
+            <span class="prov-rot-num">${pp.rotacionDia > 0 ? '↻ ' + pp.rotacionDia + '/d' : '—'}</span>
           </div>
         </div>
-        ${zonasHtml ? `<div class="prov-zonas-row">${zonasHtml}</div>` : ''}
 
-        <!-- Mín/Máx editables + sugerencia -->
-        <div class="prov-minmax-row">
-          <div class="prov-minmax-grp">
-            <label class="prov-minmax-lbl">Mín</label>
-            <input type="number" min="0" step="1" value="${pp.stockMinimo || ''}" placeholder="—"
-              class="prov-minmax-inp" data-idprod="${pp.idProducto}" data-campo="stockMinimo" data-idpp="${pp.idPP}"
-              onchange="MOS.provProductoEditarStockMinMax(this)" onblur="MOS.provProductoEditarStockMinMax(this)">
-          </div>
-          <div class="prov-minmax-grp">
-            <label class="prov-minmax-lbl">Máx</label>
-            <input type="number" min="0" step="1" value="${pp.stockMaximo || ''}" placeholder="—"
-              class="prov-minmax-inp" data-idprod="${pp.idProducto}" data-campo="stockMaximo" data-idpp="${pp.idPP}"
-              onchange="MOS.provProductoEditarStockMinMax(this)" onblur="MOS.provProductoEditarStockMinMax(this)">
-          </div>
-          ${pp.sugerencia > 0
-            ? `<button onclick="MOS.provPedidoUsarSugerencia('${pp.idPP}', ${pp.sugerencia})" class="prov-sug-btn" title="${pp.razonSugerencia || ''}">Sugerencia: ${pp.sugerencia}</button>`
-            : (pp.razonSugerencia ? `<span class="prov-sugerencia-txt">${pp.razonSugerencia}</span>` : '')}
+        <!-- Chips: almacén + cada zona -->
+        <div class="prov-loc-chips">
+          ${chipsHtml}
         </div>
+
+        <!-- Sliders Mín/Máx con marker de sugerencia (rot × 7d) -->
+        <div class="prov-minmax-row">
+          ${sliderRow('stockMinimo', 'Mín', minVal, sliderMaxMin, sugMin)}
+          ${sliderRow('stockMaximo', 'Máx', maxVal, sliderMaxMax, sugMax)}
+        </div>
+        ${pp.razonSugerencia ? `<div class="prov-sugerencia-txt" style="margin:-4px 0 6px">${pp.razonSugerencia}</div>` : ''}
 
         <!-- Stepper de pedido [- qty +] -->
         <div class="prov-pedido-row">
@@ -4684,6 +4705,29 @@ const MOS = (() => {
       <button onclick="MOS.provPedidoLimpiar()" class="btn-ghost text-xs px-2 py-1.5">Limpiar</button>
       <button onclick="MOS.provPedidoExportar()" class="btn-primary text-xs px-3 py-1.5 whitespace-nowrap">📄 Generar pedido</button>
     `;
+  }
+
+  // ── Sliders Mín/Máx ─────────────────────────────────────────
+  // oninput: actualizar valor visible en vivo (sin escritura GAS)
+  function provSliderInput(inp) {
+    const idPP  = inp.dataset.idpp;
+    const campo = inp.dataset.campo;
+    const val   = parseInt(inp.value) || 0;
+    const valEl = document.querySelector(`[data-vfor="${campo}-${idPP}"]`);
+    if (valEl) valEl.textContent = val;
+  }
+  // onchange: cuando suelta el slider, persistir al GAS (optimista)
+  function provSliderChange(inp) {
+    provProductoEditarStockMinMax(inp);
+  }
+  // Botón "≈sug": fija el slider en la cantidad sugerida y guarda
+  function provSliderUsarSugerencia(idPP, idProducto, campo, valor) {
+    const inp = document.querySelector(`.prov-slider[data-idpp="${idPP}"][data-campo="${campo}"]`);
+    if (!inp) return;
+    inp.value = valor;
+    // Disparar el visual update + persistir
+    provSliderInput(inp);
+    provProductoEditarStockMinMax(inp);
   }
 
   function provProductoEditarStockMinMax(inp) {
@@ -11300,6 +11344,7 @@ const MOS = (() => {
     guardarProvProducto, eliminarProvProducto, eliminarProvProductoRapido,
     jalarProductosProveedor,
     provProductoEditarStockMinMax,
+    provSliderInput, provSliderChange, provSliderUsarSugerencia,
     provPedidoSetQty, provPedidoStep, provPedidoUsarSugerencia, provPedidoLimpiar,
     provAbrirCarrito, provCerrarCarrito, provCarritoSetTab, _renderCarrito,
     provHistToggleDia,
