@@ -1240,6 +1240,52 @@
       border-bottom-color: transparent;
       border-radius: 12px 12px 0 0;
     }
+    /* Badge 🛒N de carrito en construcción */
+    .prov-cart-badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: .65rem; font-weight: 800;
+      padding: 2px 8px; border-radius: 999px;
+      background: linear-gradient(135deg, #fbbf24, #f59e0b);
+      color: #0b1220;
+      border: 1px solid #d97706;
+      white-space: nowrap;
+    }
+
+    /* FAB global del carrito */
+    .prov-cart-fab {
+      position: fixed;
+      right: 16px; bottom: 80px;
+      z-index: 35;
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px; border-radius: 999px;
+      background: linear-gradient(135deg, #fbbf24, #f59e0b);
+      color: #0b1220; border: none;
+      box-shadow: 0 8px 24px rgba(245,158,11,.4);
+      cursor: pointer; transition: transform .15s, box-shadow .15s;
+      animation: provFabPulse 2.4s ease-in-out infinite;
+    }
+    .prov-cart-fab:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 32px rgba(245,158,11,.55);
+    }
+    .prov-cart-fab-ic { font-size: 1.3rem; }
+    .prov-cart-fab-info { display: flex; flex-direction: column; line-height: 1.1; }
+    .prov-cart-fab-prov { font-size: .65rem; font-weight: 700; opacity: .8; }
+    .prov-cart-fab-monto { font-size: .85rem; font-weight: 800; }
+    .prov-cart-fab-otros {
+      background: #0b1220; color: #fbbf24;
+      font-size: .65rem; font-weight: 800;
+      padding: 2px 7px; border-radius: 999px;
+      margin-left: 4px;
+    }
+    @keyframes provFabPulse {
+      0%, 100% { box-shadow: 0 8px 24px rgba(245,158,11,.4); }
+      50%      { box-shadow: 0 8px 32px rgba(245,158,11,.65); }
+    }
+    @media (min-width: 768px) {
+      .prov-cart-fab { bottom: 24px; }
+    }
+
     /* Badge X/Y de productos a reponer en card del proveedor */
     .prov-pend-badge {
       display: inline-flex; align-items: center;

@@ -142,6 +142,8 @@ const MOS = (() => {
     // FAB visibility
     const fab = $('fab');
     if (fab) fab.classList.toggle('visible', viewName === 'proveedores');
+    // FAB del carrito de proveedores: visible en cualquier vista si hay carrito activo
+    _provFabRender();
 
     // Config: show first panel
     if (viewName === 'config') {
@@ -4509,6 +4511,10 @@ const MOS = (() => {
       const tieneTel = !!p.telefono;
       const pendStats = _provContarPendientes(p.idProveedor);
       const pendBadge = _provPendBadgeHtml(p.idProveedor, pendStats);
+      const cartStats = _provCarritoResumen(p.idProveedor);
+      const cartBadge = cartStats
+        ? `<span class="prov-cart-badge" data-prov-cart-badge="${p.idProveedor}" title="Carrito: ${cartStats.count} prods · ${fmtMoney(cartStats.monto)}">🛒 ${cartStats.count}</span>`
+        : `<span data-prov-cart-badge="${p.idProveedor}" style="display:none"></span>`;
       return `
         <div class="card p-3 cursor-pointer hover:border-indigo-500/30 transition-colors ${sel ? 'prov-card-active' : ''} ${p._tmp ? 'opacity-60' : ''}"
              data-prov-card="${p.idProveedor}"
@@ -4519,6 +4525,7 @@ const MOS = (() => {
               <div class="flex items-start justify-between gap-2">
                 <div class="font-semibold text-sm text-slate-100 truncate">${p.nombre}</div>
                 <div class="flex items-center gap-1.5 shrink-0">
+                  ${cartBadge}
                   ${pendBadge}
                   <span class="badge ${p.estado == '1' ? 'badge-green' : 'badge-gray'}">${p.estado == '1' ? 'Activo' : 'Inactivo'}</span>
                 </div>
@@ -4640,7 +4647,7 @@ const MOS = (() => {
           ${tieneTel ? `<button class="prov-action-btn whatsapp" onclick="MOS.provWhatsApp('${id}', event)">💬 WhatsApp</button>` : ''}
           ${tieneTel ? `<button class="prov-action-btn" onclick="MOS.provLlamar('${id}', event)">📞 Llamar</button>` : ''}
           <button class="prov-action-btn" onclick="MOS.abrirModalPago('${id}')">💰 + Pago</button>
-          <button class="prov-action-btn primary" onclick="MOS.provAbrirCarrito()">🛒 Carrito</button>
+          <button class="prov-action-btn primary" data-prov-carrito-btn="${id}" onclick="MOS.provComprometerCarrito()">🛒 ${(_provCarritoResumen(id) || {}).count ? `Carrito (${_provCarritoResumen(id).count})` : 'A carrito'}</button>
         </div>
         <div class="prov-tabs-wrap">
           <div class="prov-tabs">
@@ -4761,8 +4768,169 @@ const MOS = (() => {
     });
   }
 
-  // Estado del pedido en construcción: { [idPP]: { qty, sku, desc, precio, codigoBarra } }
-  S.provPedido = S.provPedido || { items: {}, idProveedor: null };
+  // ── Estado de carritos y cantidades editadas ───────────────────
+  // S.provCarritos: PERSISTENTE en localStorage. Uno por proveedor.
+  //   { [idProveedor]: { items: { [idPP]: {idPP, sku, desc, codigoBarra, precio, qty, upb} }, ts } }
+  // S.provQtyEditadas: VOLÁTIL en memoria. Retiene los steppers entre navegación
+  //   pero se reinicia al refresh.
+  //   { [idProveedor]: { [idPP]: qty } }
+  // S.provCarritoActivoId: id del último carrito modificado (para FAB global).
+  S.provCarritos       = S.provCarritos       || {};
+  S.provQtyEditadas    = S.provQtyEditadas    || {};
+  S.provCarritoActivoId = S.provCarritoActivoId || null;
+
+  const PROV_CARRITOS_KEY      = 'mos_prov_carritos';
+  const PROV_CARRITO_ACTIVO_KEY = 'mos_prov_carrito_activo';
+
+  function _provCarritosLoad() {
+    try {
+      const raw = localStorage.getItem(PROV_CARRITOS_KEY);
+      if (raw) S.provCarritos = JSON.parse(raw) || {};
+      const act = localStorage.getItem(PROV_CARRITO_ACTIVO_KEY);
+      if (act) S.provCarritoActivoId = act;
+    } catch {}
+  }
+  function _provCarritosSave() {
+    try {
+      localStorage.setItem(PROV_CARRITOS_KEY, JSON.stringify(S.provCarritos || {}));
+      if (S.provCarritoActivoId) localStorage.setItem(PROV_CARRITO_ACTIVO_KEY, S.provCarritoActivoId);
+      else localStorage.removeItem(PROV_CARRITO_ACTIVO_KEY);
+    } catch {}
+  }
+  // Hidratar al iniciar el módulo
+  _provCarritosLoad();
+
+  function _provCarritoDe(idProveedor) {
+    if (!idProveedor) return null;
+    return (S.provCarritos[idProveedor] && S.provCarritos[idProveedor].items) || null;
+  }
+  function _provCarritoVacioOCrear(idProveedor) {
+    if (!idProveedor) return null;
+    if (!S.provCarritos[idProveedor]) S.provCarritos[idProveedor] = { items: {}, ts: Date.now() };
+    return S.provCarritos[idProveedor];
+  }
+  function _provCarritoTotalItems() {
+    return Object.values(S.provCarritos || {}).filter(c => c && c.items && Object.keys(c.items).length > 0).length;
+  }
+
+  // Resumen del carrito de un proveedor — para badge y FAB
+  function _provCarritoResumen(idProveedor) {
+    const c = S.provCarritos[idProveedor];
+    if (!c || !c.items) return null;
+    const items = Object.values(c.items);
+    if (!items.length) return null;
+    let qty = 0, monto = 0;
+    items.forEach(it => {
+      qty += parseFloat(it.qty) || 0;
+      monto += (parseFloat(it.qty) || 0) * (parseFloat(it.precio) || 0);
+    });
+    return { count: items.length, qty, monto, ts: c.ts };
+  }
+
+  // Refresca el badge 🛒N en el card del proveedor en la lista
+  function _refreshProvCarritoBadge(idProveedor) {
+    if (!idProveedor) return;
+    const card = document.querySelector(`[data-prov-card="${idProveedor}"]`);
+    if (!card) return;
+    const slot = card.querySelector('[data-prov-cart-badge]');
+    const stats = _provCarritoResumen(idProveedor);
+    const html = stats
+      ? `<span class="prov-cart-badge" data-prov-cart-badge="${idProveedor}" title="Carrito: ${stats.count} prods · ${fmtMoney(stats.monto)}">🛒 ${stats.count}</span>`
+      : '';
+    if (slot) slot.outerHTML = html || `<span data-prov-cart-badge="${idProveedor}" style="display:none"></span>`;
+    _provFabRender();
+  }
+
+  // ── FAB global del carrito ──────────────────────────────────
+  // Se renderiza en body, fixed. Visible si hay al menos un carrito con items.
+  function _provFabRender() {
+    let fab = $('provCarritoFAB');
+    const carritos = Object.entries(S.provCarritos || {})
+      .map(([id, c]) => ({ id, items: Object.values(c.items || {}), ts: c.ts }))
+      .filter(c => c.items.length > 0);
+    if (!carritos.length) {
+      if (fab) fab.style.display = 'none';
+      return;
+    }
+    // Carrito a mostrar: el activo si tiene items, sino el más reciente
+    let activoId = S.provCarritoActivoId;
+    let activo = carritos.find(c => c.id === activoId);
+    if (!activo) {
+      activo = carritos.sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
+      activoId = activo.id;
+    }
+    const provNombre = ((S.proveedores || []).find(p => p.idProveedor === activoId) || {}).nombre || '—';
+    const monto = activo.items.reduce((s, it) => s + (parseFloat(it.qty) || 0) * (parseFloat(it.precio) || 0), 0);
+    const otros = carritos.length - 1;
+    if (!fab) {
+      fab = document.createElement('button');
+      fab.id = 'provCarritoFAB';
+      fab.className = 'prov-cart-fab';
+      fab.onclick = () => provAbrirCarrito(activoId);
+      document.body.appendChild(fab);
+    } else {
+      fab.onclick = () => provAbrirCarrito(activoId);
+      fab.style.display = '';
+    }
+    fab.innerHTML = `
+      <span class="prov-cart-fab-ic">🛒</span>
+      <span class="prov-cart-fab-info">
+        <span class="prov-cart-fab-prov">${provNombre}</span>
+        <span class="prov-cart-fab-monto">${activo.items.length} prods · ${fmtMoney(monto)}</span>
+      </span>
+      ${otros > 0 ? `<span class="prov-cart-fab-otros" title="Otros ${otros} proveedor${otros === 1 ? '' : 'es'} con carrito">+${otros}</span>` : ''}
+    `;
+  }
+
+  // Cantidad efectiva de un producto en el stepper:
+  //   1. Si el user editó en esta sesión → ese valor
+  //   2. Si tiene sugerencia → la sugerencia
+  //   3. Sino 0
+  function _provStepperQty(idProveedor, pp) {
+    const ed = S.provQtyEditadas[idProveedor];
+    if (ed && ed[pp.idPP] !== undefined) return parseFloat(ed[pp.idPP]) || 0;
+    return parseFloat(pp.sugerencia) || 0;
+  }
+  function _provStepperSetQty(idProveedor, idPP, qty) {
+    if (!S.provQtyEditadas[idProveedor]) S.provQtyEditadas[idProveedor] = {};
+    S.provQtyEditadas[idProveedor][idPP] = qty;
+  }
+
+  // Marcar el carrito como activo (para el FAB global) + persistir
+  function _provCarritoMarcarActivo(idProveedor) {
+    if (!idProveedor) return;
+    S.provCarritoActivoId = idProveedor;
+    _provCarritosSave();
+    _provFabRender();
+  }
+
+  // Toma todas las cantidades editadas en steppers del proveedor y las
+  // compromete al carrito persistente. Reemplaza el carrito actual.
+  function _provComprometerSteppersAlCarrito(idProveedor) {
+    if (!idProveedor) return;
+    const ed = S.provQtyEditadas[idProveedor] || {};
+    const productos = (S.provProductos && S.provProductos[idProveedor]) || [];
+    const items = {};
+    productos.forEach(pp => {
+      // Cantidad: edited > sugerencia > 0
+      const qty = (ed[pp.idPP] !== undefined)
+        ? parseFloat(ed[pp.idPP]) || 0
+        : parseFloat(pp.sugerencia) || 0;
+      if (qty > 0) {
+        items[pp.idPP] = {
+          idPP:        pp.idPP,
+          sku:         pp.skuBase,
+          desc:        pp.descripcion,
+          codigoBarra: pp.codigoBarra,
+          precio:      parseFloat(pp.precioReferencia) || 0,
+          qty:         qty,
+          upb:         parseInt(pp.unidadesPorBulto) || 1
+        };
+      }
+    });
+    S.provCarritos[idProveedor] = { items, ts: Date.now() };
+    _provCarritoMarcarActivo(idProveedor);
+  }
 
   function _provAlertaInfo(a) {
     switch ((a || '').toUpperCase()) {
@@ -4775,9 +4943,6 @@ const MOS = (() => {
     }
   }
 
-  // Track de qué proveedores ya tuvieron auto-fill del pedido en esta sesión
-  S.provPedidoAutoInit = S.provPedidoAutoInit || {};
-
   function _pintaProvProductos(items) {
     const list = $('provProductosList');
     if (!list) return;
@@ -4786,33 +4951,16 @@ const MOS = (() => {
       list.innerHTML = filtro
         ? `<p class="text-slate-500 text-sm py-6 text-center">Sin coincidencias para "${filtro}".</p>`
         : '<p class="text-slate-500 text-sm py-6 text-center">Sin productos registrados.<br>Pulsa <b>⬇️ Jalar</b> para importar desde guías o <b>+ Producto</b> para agregar manual.</p>';
-      _renderPedidoToolbar();
+      _renderProvComprometeToolbar();
       return;
     }
-    // Auto-fill: la primera vez que se renderizan productos de un proveedor,
-    // pre-llenar el stepper con la sugerencia para los productos que la tienen.
-    // Luego el user puede ajustar/limpiar libremente.
+    // Steppers volátiles: provQtyEditadas guarda lo que el user toca
+    // durante la sesión. Si no hay edición, el render usa pp.sugerencia.
+    // El carrito persistente NO se toca aquí; solo al click "🛒 A carrito".
     const idProvActual = S.provSelId;
-    if (idProvActual && !S.provPedidoAutoInit[idProvActual]) {
-      _provPedidoEnsureProveedor();
-      items.forEach(pp => {
-        if (pp.sugerencia > 0 && !S.provPedido.items[pp.idPP]) {
-          S.provPedido.items[pp.idPP] = {
-            idPP:        pp.idPP,
-            sku:         pp.skuBase,
-            desc:        pp.descripcion,
-            codigoBarra: pp.codigoBarra,
-            precio:      pp.precioReferencia || 0,
-            qty:         pp.sugerencia
-          };
-        }
-      });
-      S.provPedidoAutoInit[idProvActual] = true;
-    }
     list.innerHTML = items.map(pp => {
       const alert = _provAlertaInfo(pp.alerta);
-      const enPedido = S.provPedido.items[pp.idPP];
-      const qtyActual = enPedido ? enPedido.qty : 0;
+      const qtyActual = _provStepperQty(idProvActual, pp);
       const tienePresentaciones = (pp.countPresentaciones || 1) > 1;
       const tieneEquiv = (pp.countEquivalencias || 0) > 0;
 
@@ -4961,29 +5109,70 @@ const MOS = (() => {
         </div>
       </div>`;
     }).join('');
-    _renderPedidoToolbar();
+    _renderProvComprometeToolbar();
   }
 
-  function _renderPedidoToolbar() {
-    let bar = $('provPedidoToolbar');
-    const items = Object.values(S.provPedido.items || {});
-    if (!items.length) { if (bar) bar.remove(); return; }
-    const totalQty   = items.reduce((s, it) => s + (parseFloat(it.qty) || 0), 0);
-    const totalMonto = items.reduce((s, it) => s + (parseFloat(it.qty) || 0) * (parseFloat(it.precio) || 0), 0);
+  // Resumen visual de los steppers actuales del proveedor visible (NO es el carrito).
+  // Aparece como toolbar inferior con resumen y botones "Reset" y "🛒 Comprometer al carrito".
+  function _renderProvComprometeToolbar() {
+    let bar = $('provComprometeToolbar');
+    const idProv = S.provSelId;
+    if (!idProv) { if (bar) bar.remove(); return; }
+    const ed = S.provQtyEditadas[idProv] || {};
+    const productos = (S.provProductos && S.provProductos[idProv]) || [];
+    let cantProds = 0, totalUds = 0, totalMonto = 0;
+    productos.forEach(pp => {
+      const qty = (ed[pp.idPP] !== undefined)
+        ? parseFloat(ed[pp.idPP]) || 0
+        : parseFloat(pp.sugerencia) || 0;
+      if (qty > 0) {
+        cantProds++;
+        totalUds += qty;
+        totalMonto += qty * (parseFloat(pp.precioReferencia) || 0);
+      }
+    });
+    if (!cantProds) { if (bar) bar.remove(); return; }
+
+    // Comparar con el carrito actual: ¿hay cambios sin commit?
+    const carrito = _provCarritoDe(idProv) || {};
+    const hayCarrito = Object.keys(carrito).length > 0;
+
     if (!bar) {
       bar = document.createElement('div');
-      bar.id = 'provPedidoToolbar';
+      bar.id = 'provComprometeToolbar';
       bar.className = 'prov-pedido-toolbar';
       document.body.appendChild(bar);
     }
     bar.innerHTML = `
       <div class="prov-pedido-bar-info">
-        <div class="text-xs text-slate-400">Pedido</div>
-        <div class="text-sm font-bold text-white">${items.length} prods · ${totalQty} unds · ${fmtMoney(totalMonto)}</div>
+        <div class="text-[10px] text-slate-400 uppercase tracking-wide">Steppers actuales</div>
+        <div class="text-sm font-bold text-white">${cantProds} prods · ${totalUds} unds · ${fmtMoney(totalMonto)}</div>
       </div>
-      <button onclick="MOS.provPedidoLimpiar()" class="btn-ghost text-xs px-2 py-1.5">Limpiar</button>
-      <button onclick="MOS.provPedidoExportar()" class="btn-primary text-xs px-3 py-1.5 whitespace-nowrap">📄 Generar pedido</button>
+      <button onclick="MOS.provResetSteppers()" class="btn-ghost text-xs px-2 py-1.5" title="Volver al sugerido">↺</button>
+      <button onclick="MOS.provComprometerCarrito()" class="btn-primary text-xs px-3 py-1.5 whitespace-nowrap" style="background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#0b1220">
+        🛒 ${hayCarrito ? 'Reemplazar' : 'A carrito'}
+      </button>
     `;
+  }
+
+  // Reset de steppers volátiles del proveedor activo → vuelve a sugerencias
+  function provResetSteppers() {
+    const id = S.provSelId;
+    if (!id) return;
+    delete S.provQtyEditadas[id];
+    _pintaProvProductos(_filtrarPP((S.provProductos && S.provProductos[id]) || [], S.provProdFilter));
+  }
+
+  // Toma los steppers actuales del proveedor activo y los compromete al carrito
+  // persistente. Marca como activo. Abre el modal carrito.
+  function provComprometerCarrito() {
+    const id = S.provSelId;
+    if (!id) return;
+    _provComprometerSteppersAlCarrito(id);
+    _provCarritosSave();
+    _refreshProvCarritoBadge(id);
+    _renderProvComprometeToolbar();
+    provAbrirCarrito();
   }
 
   // Línea de desglose del pedido: "1 bulto × 12 un · S/2.50 c/u → S/30.00"
@@ -5103,52 +5292,38 @@ const MOS = (() => {
     });
   }
 
-  // Asegura que el pedido pertenezca al proveedor actual; si no, lo resetea.
-  function _provPedidoEnsureProveedor() {
-    const id = S.provSelId;
-    if (S.provPedido.idProveedor !== id) {
-      S.provPedido = { items: {}, idProveedor: id };
-    }
-  }
-
-  // Cambia la cantidad del producto en el pedido. Si qty <= 0, se quita del pedido.
+  // Cambia la cantidad del stepper de un producto (VOLÁTIL — provQtyEditadas).
+  // El carrito persistente NO se toca aquí; eso pasa solo al click "🛒 Carrito".
   function provPedidoSetQty(idPP, val) {
-    _provPedidoEnsureProveedor();
-    const id = S.provSelId;
-    const lista = (S.provProductos && S.provProductos[id]) || [];
+    const idProv = S.provSelId;
+    if (!idProv) return;
+    const lista = (S.provProductos && S.provProductos[idProv]) || [];
     const item = lista.find(x => x.idPP === idPP);
     if (!item) return;
     let qty = parseFloat(val);
     if (isNaN(qty) || qty < 0) qty = 0;
-    if (qty <= 0) {
-      delete S.provPedido.items[idPP];
-    } else {
-      S.provPedido.items[idPP] = {
-        idPP, sku: item.skuBase, desc: item.descripcion,
-        codigoBarra: item.codigoBarra, precio: item.precioReferencia || 0,
-        qty: qty
-      };
-    }
-    // Actualizar total visible y clase "en-pedido" sin re-render completo
+    _provStepperSetQty(idProv, idPP, qty);
+    // Actualizar visual del card (sin re-render)
     const card = document.querySelector(`.prov-prod-card[data-idpp="${idPP}"]`);
     if (card) {
       card.classList.toggle('en-pedido', qty > 0);
       const inp = card.querySelector('.prov-stepper-input');
       if (inp && document.activeElement !== inp) inp.value = qty;
-      // Refrescar línea de desglose (bultos × upb · precio = subtotal)
       const desglose = card.querySelector(`[data-desglose="${idPP}"]`);
       const upb = parseInt(item.unidadesPorBulto) || 1;
       if (desglose) desglose.innerHTML = _renderDesgloseLine(qty, upb, item.precioReferencia || 0);
     }
-    _renderPedidoToolbar();
-    _renderCarritoIfOpen();
-    // Actualizar badge X/Y del card del proveedor
-    _refreshProvPendientesBadge(S.provSelId);
+    // Refrescar el toolbar/header (resumen del compromiso pendiente)
+    _renderProvComprometeToolbar();
   }
 
   function provPedidoStep(idPP, delta) {
-    _provPedidoEnsureProveedor();
-    const cur = (S.provPedido.items[idPP] && S.provPedido.items[idPP].qty) || 0;
+    const idProv = S.provSelId;
+    if (!idProv) return;
+    const lista = (S.provProductos && S.provProductos[idProv]) || [];
+    const item = lista.find(x => x.idPP === idPP);
+    if (!item) return;
+    const cur = _provStepperQty(idProv, item);
     const next = Math.max(0, cur + delta);
     provPedidoSetQty(idPP, next);
   }
@@ -5165,17 +5340,20 @@ const MOS = (() => {
     _renderCarrito();
   }
 
-  function provAbrirCarrito() {
-    const id = S.provSelId;
-    if (!id) return;
-    _provPedidoEnsureProveedor();
-    const prov = S.proveedores.find(p => p.idProveedor === id) || {};
+  // Abre el modal carrito. Sin args → usa proveedor activo o el último tocado.
+  // Con idProveedor → fuerza el carrito de ese proveedor (para FAB cross-vista).
+  function provAbrirCarrito(idProveedor) {
+    const id = idProveedor || S.provSelId || S.provCarritoActivoId;
+    if (!id) { toast('Selecciona un proveedor primero', 'error'); return; }
+    S._carritoModalProvId = id;     // a quién pertenece la vista del modal
+    _provCarritoVacioOCrear(id);
+    const prov = (S.proveedores || []).find(p => p.idProveedor === id) || {};
     const nameEl = $('carritoProvNombre');
-    if (nameEl) nameEl.textContent = prov.nombre || '—';
+    if (nameEl) nameEl.textContent = prov.nombre || id;
     const filt = $('carritoFiltro');
     if (filt) filt.value = '';
-    // Si no hay items en pedido, arranca en 'all' para que vea productos
-    if (!Object.keys(S.provPedido.items).length) S.provCarritoTab = 'all';
+    const items = _provCarritoDe(id) || {};
+    if (!Object.keys(items).length) S.provCarritoTab = 'all';
     _renderCarrito();
     openModal('modalCarritoPedido');
   }
@@ -5185,8 +5363,21 @@ const MOS = (() => {
     if (m && !m.classList.contains('hidden')) _renderCarrito();
   }
 
+  function _carritoTimestampHumano(ts) {
+    if (!ts) return '';
+    const diff = Date.now() - ts;
+    const hr  = Math.floor(diff / 3600000);
+    const min = Math.floor(diff / 60000);
+    if (min < 1)   return 'recién';
+    if (min < 60)  return `hace ${min} min`;
+    if (hr  < 24)  return `hace ${hr} h`;
+    const dias = Math.floor(hr / 24);
+    return `hace ${dias} d`;
+  }
+
   function _renderCarrito() {
-    const id = S.provSelId;
+    const id = S._carritoModalProvId || S.provSelId;
+    if (!id) return;
     const lista = (S.provProductos && S.provProductos[id]) || [];
     const cont  = $('carritoLista');
     const tabSel = $('carritoTabSel');
@@ -5199,10 +5390,10 @@ const MOS = (() => {
       tabAll.style.color      = !isSel ? '#fff'    : '#94a3b8';
     }
     const q = ($('carritoFiltro')?.value || '').trim();
-    const enPedidoCount = Object.keys(S.provPedido.items || {}).length;
+    const carritoItems = _provCarritoDe(id) || {};
     let filtrados = _filtrarPP(lista, q);
     if (S.provCarritoTab === 'sel') {
-      filtrados = filtrados.filter(pp => S.provPedido.items[pp.idPP]);
+      filtrados = filtrados.filter(pp => carritoItems[pp.idPP]);
     }
     if (!cont) return;
     if (!filtrados.length) {
@@ -5210,16 +5401,16 @@ const MOS = (() => {
         ? '<p class="text-slate-500 text-sm py-8 text-center">Aún no agregas productos al pedido.<br>Cambia a "Todos" y aumenta cantidades.</p>'
         : '<p class="text-slate-500 text-sm py-8 text-center">Sin productos.</p>';
     } else {
-      cont.innerHTML = filtrados.map(pp => _carritoFila(pp)).join('');
+      cont.innerHTML = filtrados.map(pp => _carritoFila(pp, id)).join('');
     }
-    // Footer
-    _renderCarritoFooter(enPedidoCount);
+    _renderCarritoFooter(id);
   }
 
-  function _carritoFila(pp) {
+  function _carritoFila(pp, idProveedor) {
     const alert = _provAlertaInfo(pp.alerta);
-    const enPedido = S.provPedido.items[pp.idPP];
-    const qty = enPedido ? enPedido.qty : 0;
+    const carritoItems = _provCarritoDe(idProveedor) || {};
+    const enCarrito = carritoItems[pp.idPP];
+    const qty = enCarrito ? enCarrito.qty : 0;
     const subt = qty * (pp.precioReferencia || 0);
     return `
     <div class="carrito-fila${qty > 0 ? ' en-pedido' : ''}" data-idpp="${pp.idPP}">
@@ -5229,7 +5420,7 @@ const MOS = (() => {
         <div class="flex items-center gap-2 text-[11px] mt-1" style="color:${alert.color}">
           <span>📦 Stock <b>${pp.stockTotal}</b></span>
           ${pp.stockMinimo > 0 ? `<span class="text-slate-500">· mín ${pp.stockMinimo}</span>` : ''}
-          ${pp.sugerencia > 0 ? `<button onclick="MOS.provPedidoUsarSugerencia('${pp.idPP}', ${pp.sugerencia})" class="prov-sug-btn-mini" title="${pp.razonSugerencia || ''}">Sug ${pp.sugerencia}</button>` : ''}
+          ${pp.sugerencia > 0 ? `<button onclick="MOS.carritoSetQty('${pp.idPP}', ${pp.sugerencia})" class="prov-sug-btn-mini" title="${pp.razonSugerencia || ''}">Sug ${pp.sugerencia}</button>` : ''}
         </div>
       </div>
       <div class="text-right shrink-0 mr-2">
@@ -5237,53 +5428,122 @@ const MOS = (() => {
         <div class="text-sm font-bold ${qty > 0 ? 'text-amber-400' : 'text-slate-600'}">${fmtMoney(subt)}</div>
       </div>
       <div class="prov-stepper shrink-0">
-        <button onclick="MOS.provPedidoStep('${pp.idPP}', -1)" class="prov-stepper-btn">−</button>
+        <button onclick="MOS.carritoStep('${pp.idPP}', -1)" class="prov-stepper-btn">−</button>
         <input type="number" min="0" step="1" value="${qty}" class="prov-stepper-input" data-idpp="${pp.idPP}"
-          oninput="MOS.provPedidoSetQty('${pp.idPP}', this.value)">
-        <button onclick="MOS.provPedidoStep('${pp.idPP}', 1)" class="prov-stepper-btn">+</button>
+          oninput="MOS.carritoSetQty('${pp.idPP}', this.value)">
+        <button onclick="MOS.carritoStep('${pp.idPP}', 1)" class="prov-stepper-btn">+</button>
       </div>
     </div>`;
   }
 
-  function _renderCarritoFooter(enPedidoCount) {
-    const items = Object.values(S.provPedido.items || {});
+  function _renderCarritoFooter(idProveedor) {
+    const carrito = S.provCarritos[idProveedor] || { items: {}, ts: null };
+    const items = Object.values(carrito.items || {});
     const totalQty = items.reduce((s, it) => s + (parseFloat(it.qty) || 0), 0);
     const totalMonto = items.reduce((s, it) => s + (parseFloat(it.qty) || 0) * (parseFloat(it.precio) || 0), 0);
     const f = $('carritoFooter');
     if (!f) return;
+    const ageH = carrito.ts ? Math.floor((Date.now() - carrito.ts) / 3600000) : null;
+    const stale = ageH !== null && ageH >= 24;
+    const tsHtml = carrito.ts
+      ? `<div class="text-[10px] ${stale ? 'text-amber-400' : 'text-slate-500'}">${stale ? '⚠ ' : ''}Última edición: ${_carritoTimestampHumano(carrito.ts)}${stale ? ' · stock pudo cambiar' : ''}</div>`
+      : '';
     f.innerHTML = `
-      <div class="min-w-0 flex-1">
-        <div class="text-[10px] text-slate-500 uppercase">Total</div>
-        <div class="text-sm font-bold text-slate-100">${items.length} prods · ${totalQty} unds</div>
+      <div class="w-full flex flex-wrap items-center gap-2">
+        <div class="min-w-0 flex-1">
+          <div class="text-[10px] text-slate-500 uppercase">Total</div>
+          <div class="text-sm font-bold text-slate-100">${items.length} prods · ${totalQty} unds</div>
+          ${tsHtml}
+        </div>
+        <div class="text-right">
+          <div class="text-[10px] text-slate-500 uppercase">Monto</div>
+          <div class="text-base font-bold text-amber-400">${fmtMoney(totalMonto)}</div>
+        </div>
       </div>
-      <div class="text-right">
-        <div class="text-[10px] text-slate-500 uppercase">Monto</div>
-        <div class="text-base font-bold text-amber-400">${fmtMoney(totalMonto)}</div>
+      <div class="w-full flex flex-wrap gap-2 mt-2">
+        <button onclick="MOS.carritoAplicarSugerencias()" class="btn-ghost text-xs px-3 py-1.5" title="Reemplaza el carrito con las sugerencias actuales del backend">↻ Aplicar sugerencias</button>
+        <button onclick="MOS.carritoLimpiar()" class="btn-ghost text-xs px-3 py-1.5" ${items.length ? '' : 'disabled style="opacity:.4"'}>Limpiar</button>
+        <button onclick="MOS.provPedidoExportar()" class="btn-primary text-xs px-3 py-1.5 whitespace-nowrap ml-auto" ${items.length ? '' : 'disabled style="opacity:.4"'}>📄 Generar</button>
       </div>
-      <button onclick="MOS.provPedidoLimpiar()" class="btn-ghost text-xs px-3 py-1.5" ${items.length ? '' : 'disabled style="opacity:.4"'}>Limpiar</button>
-      <button onclick="MOS.provPedidoExportar()" class="btn-primary text-xs px-3 py-1.5 whitespace-nowrap" ${items.length ? '' : 'disabled style="opacity:.4"'}>📄 Generar</button>
     `;
   }
 
-  function provPedidoLimpiar() {
-    if (!Object.keys(S.provPedido.items).length) return;
-    if (!confirm('¿Limpiar el pedido en construcción?')) return;
-    S.provPedido = { items: {}, idProveedor: S.provSelId };
-    const id = S.provSelId;
-    _pintaProvProductos(_filtrarPP((S.provProductos && S.provProductos[id]) || [], S.provProdFilter));
-    _renderCarritoIfOpen();
-    _renderPedidoToolbar();
+  // Operaciones del carrito (PERSISTEN al localStorage)
+  function carritoSetQty(idPP, val) {
+    const id = S._carritoModalProvId || S.provSelId;
+    if (!id) return;
+    const lista = (S.provProductos && S.provProductos[id]) || [];
+    const item = lista.find(x => x.idPP === idPP);
+    if (!item) return;
+    let qty = parseFloat(val);
+    if (isNaN(qty) || qty < 0) qty = 0;
+    _provCarritoVacioOCrear(id);
+    if (qty <= 0) {
+      delete S.provCarritos[id].items[idPP];
+    } else {
+      S.provCarritos[id].items[idPP] = {
+        idPP, sku: item.skuBase, desc: item.descripcion,
+        codigoBarra: item.codigoBarra, precio: parseFloat(item.precioReferencia) || 0,
+        qty: qty,
+        upb: parseInt(item.unidadesPorBulto) || 1
+      };
+    }
+    S.provCarritos[id].ts = Date.now();
+    _provCarritoMarcarActivo(id);
+    _renderCarrito();
+    _refreshProvCarritoBadge(id);
+  }
+  function carritoStep(idPP, delta) {
+    const id = S._carritoModalProvId || S.provSelId;
+    if (!id) return;
+    const cur = (S.provCarritos[id] && S.provCarritos[id].items[idPP] && S.provCarritos[id].items[idPP].qty) || 0;
+    carritoSetQty(idPP, Math.max(0, cur + delta));
+  }
+  function carritoLimpiar() {
+    const id = S._carritoModalProvId || S.provSelId;
+    if (!id) return;
+    if (!Object.keys((S.provCarritos[id] && S.provCarritos[id].items) || {}).length) return;
+    if (!confirm('¿Limpiar el carrito de este proveedor?')) return;
+    S.provCarritos[id] = { items: {}, ts: Date.now() };
+    _provCarritosSave();
+    _renderCarrito();
+    _refreshProvCarritoBadge(id);
+    _provFabRender();
+  }
+  function carritoAplicarSugerencias() {
+    const id = S._carritoModalProvId || S.provSelId;
+    if (!id) return;
+    if (!confirm('¿Reemplazar el carrito con las sugerencias actuales? Pierdes ajustes manuales.')) return;
+    const productos = (S.provProductos && S.provProductos[id]) || [];
+    const items = {};
+    productos.forEach(pp => {
+      const sug = parseFloat(pp.sugerencia) || 0;
+      if (sug > 0) {
+        items[pp.idPP] = {
+          idPP: pp.idPP, sku: pp.skuBase, desc: pp.descripcion,
+          codigoBarra: pp.codigoBarra, precio: parseFloat(pp.precioReferencia) || 0,
+          qty: sug, upb: parseInt(pp.unidadesPorBulto) || 1
+        };
+      }
+    });
+    S.provCarritos[id] = { items, ts: Date.now() };
+    _provCarritoMarcarActivo(id);
+    _renderCarrito();
+    _refreshProvCarritoBadge(id);
+    toast(`Carrito actualizado · ${Object.keys(items).length} prods`, 'ok');
   }
 
   function _pedidoCabeceraTexto() {
-    const prov = S.proveedores.find(p => p.idProveedor === S.provSelId) || {};
+    const id = S._carritoModalProvId || S.provSelId;
+    const prov = (S.proveedores || []).find(p => p.idProveedor === id) || {};
     const fecha = today();
     return { prov, fecha };
   }
 
   function _pedidoTextoWhatsApp() {
     const { prov, fecha } = _pedidoCabeceraTexto();
-    const items = Object.values(S.provPedido.items || {});
+    const id = S._carritoModalProvId || S.provSelId;
+    const items = Object.values((S.provCarritos[id] && S.provCarritos[id].items) || {});
     const totalMonto = items.reduce((s, it) => s + (parseFloat(it.qty) || 0) * (parseFloat(it.precio) || 0), 0);
     const lines = [
       `*PEDIDO — ${prov.nombre || 'Proveedor'}*`,
@@ -5302,8 +5562,10 @@ const MOS = (() => {
   }
 
   function provPedidoExportar() {
-    const items = Object.values(S.provPedido.items || {});
-    if (!items.length) { toast('No hay items en el pedido', 'error'); return; }
+    const id = S._carritoModalProvId || S.provSelId;
+    if (!id) { toast('No hay carrito activo', 'error'); return; }
+    const items = Object.values((S.provCarritos[id] && S.provCarritos[id].items) || {});
+    if (!items.length) { toast('El carrito está vacío', 'error'); return; }
     const { prov, fecha } = _pedidoCabeceraTexto();
     const totalMonto = items.reduce((s, it) => s + (parseFloat(it.qty) || 0) * (parseFloat(it.precio) || 0), 0);
     const totalQty = items.reduce((s, it) => s + (parseFloat(it.qty) || 0), 0);
@@ -5378,7 +5640,24 @@ const MOS = (() => {
       </style>
     </head><body>${cont.innerHTML}</body></html>`);
     win.document.close();
-    setTimeout(() => { win.print(); }, 250);
+    setTimeout(() => { win.print(); _carritoOfrecerLimpiar(); }, 400);
+  }
+  // Pregunta tras imprimir/WhatsApp: ¿marcar como enviado y limpiar carrito?
+  function _carritoOfrecerLimpiar() {
+    const id = S._carritoModalProvId || S.provSelId;
+    if (!id) return;
+    const items = (S.provCarritos[id] && S.provCarritos[id].items) || {};
+    if (!Object.keys(items).length) return;
+    setTimeout(() => {
+      if (confirm('¿Marcar el pedido como enviado y limpiar el carrito de este proveedor?')) {
+        S.provCarritos[id] = { items: {}, ts: Date.now() };
+        _provCarritosSave();
+        _renderCarritoIfOpen();
+        _refreshProvCarritoBadge(id);
+        _provFabRender();
+        toast('Carrito limpiado', 'ok');
+      }
+    }, 600);
   }
 
   function provPedidoWhatsApp() {
@@ -5391,6 +5670,7 @@ const MOS = (() => {
       ? `https://wa.me/${tel.length === 9 ? '51' + tel : tel}?text=${texto}`
       : `https://wa.me/?text=${texto}`;
     window.open(url, '_blank');
+    _carritoOfrecerLimpiar();
   }
 
   function _filtrarProvProductos(q) {
@@ -11713,7 +11993,9 @@ const MOS = (() => {
     provProductoEditarStockMinMax,
     provRangeInput, provRangeChange,
     provEditarBulto,
-    provPedidoSetQty, provPedidoStep, provPedidoUsarSugerencia, provPedidoLimpiar,
+    provPedidoSetQty, provPedidoStep, provPedidoUsarSugerencia,
+    provResetSteppers, provComprometerCarrito,
+    carritoSetQty, carritoStep, carritoLimpiar, carritoAplicarSugerencias,
     provAbrirCarrito, provCerrarCarrito, provCarritoSetTab, _renderCarrito,
     provHistToggleDia,
     provPedidoExportar, provPedidoImprimir, provPedidoWhatsApp,
