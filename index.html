@@ -2734,7 +2734,7 @@
     </section>
 
     <!-- ── Modal: Dispositivo ──────────────────────────────── -->
-    <div id="modalDispositivo" class="modal-overlay hidden" onclick="if(event.target===this)MOS.cerrarModalDispositivo()">
+    <div id="modalDispositivo" class="modal-overlay hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.cerrarModalDispositivo()">
       <div class="modal-box">
         <div class="flex items-center justify-between mb-4">
           <h3 class="font-semibold text-white text-base">📱 Dispositivo</h3>
@@ -3270,7 +3270,7 @@
     </section><!-- /view-promociones -->
 
     <!-- ── Modal flotante: editar/crear promoción ─────────────────── -->
-    <div id="modalPromoEdit" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.promoVolverLista()">
+    <div id="modalPromoEdit" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.promoVolverLista()">
       <div class="modal-box p-0" style="max-width:560px;display:flex;flex-direction:column;max-height:92vh">
         <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
           <h3 class="font-semibold text-purple-300 text-base">🎯 Promoción</h3>
@@ -3666,7 +3666,7 @@
 </main>
 
 <!-- ══ Modal: Productos Vendidos ═══════════════════════════════ -->
-<div class="modal-backdrop hidden" id="finModalProductos" onclick="if(event.target===this)MOS.cerrarModalFin('finModalProductos')">
+<div class="modal-backdrop hidden" id="finModalProductos" onclick="if(MOS._validBackdropClose(event,this))MOS.cerrarModalFin('finModalProductos')">
   <div class="modal-box p-0" style="max-width:740px">
     <!-- header -->
     <div class="flex items-center justify-between p-4 border-b border-slate-800">
@@ -3709,7 +3709,7 @@
 </div>
 
 <!-- ══ Modal: Tickets del Día ══════════════════════════════════ -->
-<div class="modal-backdrop hidden" id="finModalTickets" onclick="if(event.target===this)MOS.cerrarModalFin('finModalTickets')">
+<div class="modal-backdrop hidden" id="finModalTickets" onclick="if(MOS._validBackdropClose(event,this))MOS.cerrarModalFin('finModalTickets')">
   <div class="modal-box p-0" style="max-width:580px">
     <div class="flex items-center justify-between p-4 border-b border-slate-800">
       <div class="flex items-center gap-2">
@@ -3818,7 +3818,7 @@
 </div>
 
 <!-- ── Precio Rápido (bottom sheet) ─────────────────────── -->
-<div class="qp-overlay" id="modalPrecioRapido" onclick="if(event.target===this)MOS.cerrarModalPrecioRapido()">
+<div class="qp-overlay" id="modalPrecioRapido" onclick="if(MOS._validBackdropClose(event,this))MOS.cerrarModalPrecioRapido()">
   <div class="qp-sheet" style="max-height:80vh;overflow-y:auto">
     <div class="qp-handle"></div>
     <div class="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-1">Precio de venta</div>
@@ -3856,7 +3856,7 @@
 <style>@keyframes imgFadeIn{from{opacity:0}to{opacity:1}}</style>
 
 <!-- ══ Modal: Revisar Producto Nuevo (rediseñado) ═══════════════ -->
-<div class="modal-backdrop hidden" id="modalPN" onclick="if(event.target===this)MOS.cerrarModalPN()">
+<div class="modal-backdrop hidden" id="modalPN" onclick="if(MOS._validBackdropClose(event,this))MOS.cerrarModalPN()">
   <div class="modal-box p-0" style="max-width:540px;display:flex;flex-direction:column;max-height:92vh">
     <div class="flex items-center justify-between px-5 py-4 flex-shrink-0" style="border-bottom:1px solid #1e293b">
       <h2 class="font-bold text-base text-white">📦 Revisar producto nuevo</h2>
@@ -4937,7 +4937,7 @@
 </div>
 
 <!-- Modal: Cargadores temporales -->
-<div id="modalCargadores" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.closeModal('modalCargadores')">
+<div id="modalCargadores" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalCargadores')">
   <div class="modal-box p-0" style="max-width:480px;display:flex;flex-direction:column;max-height:88vh">
     <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
       <div>
@@ -4954,7 +4954,7 @@
 </div>
 
 <!-- Modal: Producto-Proveedor (cotización) -->
-<div id="modalProvProducto" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.closeModal('modalProvProducto')">
+<div id="modalProvProducto" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalProvProducto')">
   <div class="modal-box p-0" style="max-width:480px;display:flex;flex-direction:column;max-height:92vh">
     <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
       <h3 id="ppModalTitle" class="font-semibold text-amber-400 text-base">📦 Producto del proveedor</h3>
@@ -4998,7 +4998,7 @@
 </div>
 
 <!-- Modal: Selector de proveedor (cuando un producto tiene varios proveedores) -->
-<div id="modalSelProveedor" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.cerrarSelProveedor()">
+<div id="modalSelProveedor" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.cerrarSelProveedor()">
   <div class="modal-box p-0" style="max-width:480px;display:flex;flex-direction:column;max-height:80vh">
     <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
       <h3 class="font-semibold text-amber-400 text-base">🛒 Elige proveedor</h3>
@@ -5012,7 +5012,7 @@
 </div>
 
 <!-- Modal: Pedido exportable (vista imprimible + WhatsApp) -->
-<div id="modalPedidoExport" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.closeModal('modalPedidoExport')">
+<div id="modalPedidoExport" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalPedidoExport')">
   <div class="modal-box p-0" style="max-width:680px;display:flex;flex-direction:column;max-height:92vh">
     <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
       <h3 class="font-semibold text-amber-400 text-base">📄 Pedido a proveedor</h3>
@@ -5028,7 +5028,7 @@
 </div>
 
 <!-- Modal: Crear pedido a proveedor -->
-<div id="modalPedido" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.cerrarModalPedido()">
+<div id="modalPedido" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.cerrarModalPedido()">
   <div class="modal-box p-0" style="max-width:560px;display:flex;flex-direction:column;max-height:92vh">
     <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
       <div class="min-w-0 flex-1">
@@ -5073,7 +5073,7 @@
 </div>
 
 <!-- Modal: Impacto de costos en precios de venta -->
-<div id="modalImpactoCostos" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.cerrarImpactoCostos()">
+<div id="modalImpactoCostos" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.cerrarImpactoCostos()">
   <div class="modal-box p-0" style="max-width:820px;display:flex;flex-direction:column;max-height:92vh">
     <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0 gap-2" style="border-bottom:1px solid #1e293b">
       <div class="min-w-0 flex-1">
@@ -5096,7 +5096,7 @@
 </div>
 
 <!-- Modal: Llenar costos de una guía de ingreso (con foto de factura) -->
-<div id="modalCostosGuia" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.cerrarCostosGuia()">
+<div id="modalCostosGuia" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.cerrarCostosGuia()">
   <div class="modal-box p-0" style="max-width:780px;display:flex;flex-direction:column;max-height:92vh">
     <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0 gap-2" style="border-bottom:1px solid #1e293b">
       <div class="min-w-0 flex-1">
@@ -5122,7 +5122,7 @@
 </div>
 
 <!-- Modal: Stock unificado (WH + zonas) -->
-<div id="modalStockDetalle" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.cerrarStockDetalle()">
+<div id="modalStockDetalle" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.cerrarStockDetalle()">
   <div class="modal-box p-0" style="max-width:540px;display:flex;flex-direction:column;max-height:92vh">
     <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0 gap-2" style="border-bottom:1px solid #1e293b">
       <div class="min-w-0 flex-1">
@@ -5140,7 +5140,7 @@
 </div>
 
 <!-- Modal: Confirmar apagar producto base + cascada -->
-<div id="modalApagarBase" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.cerrarApagarBaseRevertir()">
+<div id="modalApagarBase" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.cerrarApagarBaseRevertir()">
   <div class="modal-box" style="max-width:420px">
     <div class="flex items-center justify-between mb-3">
       <h3 class="font-semibold text-amber-400 text-base">⚠ Apagar producto</h3>
@@ -5354,7 +5354,7 @@
   #modalTutTickets .tut-pill-cre   { background:rgba(245,158,11,.15);  color:#fbbf24; border:1px solid rgba(245,158,11,.3); padding:2px 8px; border-radius:10px; font-size:10px; font-weight:600; }
   #modalTutTickets .tut-pill-anu   { background:rgba(100,116,139,.15); color:#94a3b8; border:1px solid rgba(100,116,139,.3); padding:2px 8px; border-radius:10px; font-size:10px; font-weight:600; }
 </style>
-<div id="modalTutTickets" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.tutTicketsClose()">
+<div id="modalTutTickets" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.tutTicketsClose()">
   <div class="modal-box tut-box p-0">
     <div class="tut-header">
       <div style="font-size:24px">🎓</div>
@@ -5665,7 +5665,7 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
 </div>
 
 <!-- Modal: Editar margen default global (Finanzas) -->
-<div id="modalMargenDefault" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.finCerrarEditorMargenDefault()">
+<div id="modalMargenDefault" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.finCerrarEditorMargenDefault()">
   <div class="modal-box p-0 max-w-md w-full" style="display:flex;flex-direction:column">
     <div class="px-5 pt-5 pb-3 flex items-center justify-between" style="border-bottom:1px solid #1e293b">
       <div>
@@ -5731,7 +5731,7 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
     #liqPrintWrap { position: absolute; left: 0; top: 0; width: 100%; }
   }
 </style>
-<div id="modalLiquidaciones" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.liqClose()">
+<div id="modalLiquidaciones" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.liqClose()">
   <div class="modal-box p-0">
     <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0 gap-2" style="border-bottom: 1px solid #1e293b">
       <div class="min-w-0 flex-1">
@@ -5760,7 +5760,7 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
 </div>
 
 <!-- Modal: Detalle de un personal antes de emitir / ticket de liquidación -->
-<div id="modalLiqDetalle" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.liqCerrarDetalle()">
+<div id="modalLiqDetalle" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.liqCerrarDetalle()">
   <div class="modal-box p-0" style="max-width: 720px; max-height: 92vh; display: flex; flex-direction: column">
     <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0 gap-2" style="border-bottom: 1px solid #1e293b">
       <div class="min-w-0 flex-1">
@@ -5823,7 +5823,7 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
   .tut-step-body strong { color:#e2e8f0; font-size:13px; }
   .tut-step-body p { font-size:11px; color:#94a3b8; margin-top:2px; line-height:1.5; }
 </style>
-<div id="modalTutorial" class="modal-backdrop hidden" onclick="if(event.target===this)MOS.tutorialClose()">
+<div id="modalTutorial" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.tutorialClose()">
   <div class="modal-box tut-box p-0">
     <div class="tut-header">
       <div style="font-size:24px">🎓</div>

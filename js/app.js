@@ -96,6 +96,18 @@ const MOS = (() => {
     S.charts[id] = new Chart(canvas, config);
   }
 
+  // ── MODAL BACKDROP — fix drag-select cierre accidental ─────
+  // Bug: si el usuario hace mousedown en un <input> y arrastra hasta soltar
+  // fuera del modal, el evento `click` se dispara en el backdrop y cierra.
+  // Solución: rastrear dónde empezó el mousedown y solo cerrar si tanto
+  // down como up ocurrieron sobre el backdrop.
+  let _modalDownTarget = null;
+  document.addEventListener('mousedown',  e => { _modalDownTarget = e.target; }, true);
+  document.addEventListener('touchstart', e => { _modalDownTarget = e.target; }, true);
+  function _validBackdropClose(ev, el) {
+    return ev.target === el && _modalDownTarget === el;
+  }
+
   // ── NAVIGATION ──────────────────────────────────────────────
   function nav(viewName) {
     if (S.view === viewName) return;
@@ -10978,6 +10990,7 @@ const MOS = (() => {
     filterCatalogo, setCatTab, toggleDerivs, togglePresentaciones, guardarPrecioRapido,
     abrirModalPN, cerrarModalPN, lanzarAProduccion, refreshPNManual,
     togglePNBanner, openImagePreview, closeImagePreview,
+    _validBackdropClose,
     pnSetTipo, pnAutogenBarcode, pnBuscarBase, pnSeleccionarBase,
     abrirModalPromociones, loadPromociones, promoNuevoForm, promoEditar, promoVolverLista, promoToggleActiva, _promoForzarRefresh,
     promoSetTipo, promoSetModo, promoQuickFill, promoActualizarEjemplo, promoBuscarBase, promoSeleccionarBase,
