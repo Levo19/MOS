@@ -4294,6 +4294,8 @@ const MOS = (() => {
           S.provProductos = S.provProductos || {};
           S.provProductos[idProv] = items;
           _provProdsSaveCache(idProv, items);
+          // Refrescar badge X/Y del card del proveedor en la lista
+          _refreshProvPendientesBadge(idProv);
           // Si el usuario está viendo este proveedor en este momento, refrescar UI
           if (S.provSelId === idProv && S.provTab === 'productos') _renderProvProductos();
         })
@@ -4427,6 +4429,49 @@ const MOS = (() => {
     return d.length === 9 ? '51' + d : d;
   }
 
+  // Cuenta productos del proveedor que necesitan reposición:
+  // - alerta NEGATIVO / BAJO_MINIMO / AGOTAR_PRONTO / CERCA_MINIMO
+  // - o sugerencia > 0
+  function _provContarPendientes(idProveedor) {
+    const lista = (S.provProductos && S.provProductos[idProveedor]) || null;
+    if (!lista) return null;
+    let pend = 0;
+    for (let i = 0; i < lista.length; i++) {
+      const pp = lista[i];
+      const a = (pp.alerta || '').toUpperCase();
+      if (a === 'NEGATIVO' || a === 'BAJO_MINIMO' || a === 'AGOTAR_PRONTO' || a === 'CERCA_MINIMO') {
+        pend++;
+      } else if ((pp.sugerencia || 0) > 0) {
+        pend++;
+      }
+    }
+    return { pend, total: lista.length };
+  }
+
+  // Refresca solo el badge X/Y del card de un proveedor (sin re-render completo)
+  function _refreshProvPendientesBadge(idProveedor) {
+    if (!idProveedor) return;
+    const card = document.querySelector(`[data-prov-card="${idProveedor}"]`);
+    if (!card) return;
+    const slot = card.querySelector('[data-prov-pend]');
+    if (!slot) return;
+    const stats = _provContarPendientes(idProveedor);
+    slot.outerHTML = _provPendBadgeHtml(idProveedor, stats);
+  }
+
+  function _provPendBadgeHtml(idProv, stats) {
+    if (!stats) {
+      return `<span class="prov-pend-badge muted" data-prov-pend="${idProv}" title="Aún sin datos de stock — abriendo cargará">·/·</span>`;
+    }
+    if (!stats.total) {
+      return `<span class="prov-pend-badge muted" data-prov-pend="${idProv}" title="Sin productos en el catálogo del proveedor">0/0</span>`;
+    }
+    if (stats.pend > 0) {
+      return `<span class="prov-pend-badge alerta" data-prov-pend="${idProv}" title="${stats.pend} de ${stats.total} productos necesitan reposición — toca para ver">${stats.pend}/${stats.total}</span>`;
+    }
+    return `<span class="prov-pend-badge ok" data-prov-pend="${idProv}" title="Stock OK en los ${stats.total} productos">${stats.total}/${stats.total}</span>`;
+  }
+
   function provLlamar(idProveedor, ev) {
     if (ev) ev.stopPropagation();
     const p = S.proveedores.find(x => x.idProveedor === idProveedor);
@@ -4460,16 +4505,22 @@ const MOS = (() => {
       const diaPed = p.diaPedido ? `<span title="Día de pedido">📋 ${_provDiaLabel(p.diaPedido)}</span>` : '';
       const formaTxt = p.formaPago === 'CREDITO' ? `💳 Crédito ${p.plazoCredito || 0}d` : (p.formaPago === 'CONTADO' ? '💵 Contado' : '');
       const tieneTel = !!p.telefono;
+      const pendStats = _provContarPendientes(p.idProveedor);
+      const pendBadge = _provPendBadgeHtml(p.idProveedor, pendStats);
       return `
       <div>
         <div class="card p-3 cursor-pointer hover:border-indigo-500/30 transition-colors ${sel ? 'prov-card-active' : ''} ${p._tmp ? 'opacity-60' : ''}"
+             data-prov-card="${p.idProveedor}"
              onclick="MOS.selectProveedor('${p.idProveedor}')">
           <div class="flex items-start gap-3">
             ${_provAvatarHtml(p.nombre)}
             <div class="min-w-0 flex-1">
               <div class="flex items-start justify-between gap-2">
                 <div class="font-semibold text-sm text-slate-100 truncate">${p.nombre}</div>
-                <span class="badge ${p.estado == '1' ? 'badge-green' : 'badge-gray'} shrink-0">${p.estado == '1' ? 'Activo' : 'Inactivo'}</span>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  ${pendBadge}
+                  <span class="badge ${p.estado == '1' ? 'badge-green' : 'badge-gray'}">${p.estado == '1' ? 'Activo' : 'Inactivo'}</span>
+                </div>
               </div>
               <div class="text-[11px] text-slate-500 mt-0.5 truncate">${p.ruc || '—'}${p.categoriaProducto ? ' · ' + p.categoriaProducto : ''}</div>
               <div class="flex items-center flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[11px] text-slate-400">
@@ -4670,6 +4721,9 @@ const MOS = (() => {
     }
   }
 
+  // Track de qué proveedores ya tuvieron auto-fill del pedido en esta sesión
+  S.provPedidoAutoInit = S.provPedidoAutoInit || {};
+
   function _pintaProvProductos(items) {
     const list = $('provProductosList');
     if (!list) return;
@@ -4680,6 +4734,26 @@ const MOS = (() => {
         : '<p class="text-slate-500 text-sm py-6 text-center">Sin productos registrados.<br>Pulsa <b>⬇️ Jalar</b> para importar desde guías o <b>+ Producto</b> para agregar manual.</p>';
       _renderPedidoToolbar();
       return;
+    }
+    // Auto-fill: la primera vez que se renderizan productos de un proveedor,
+    // pre-llenar el stepper con la sugerencia para los productos que la tienen.
+    // Luego el user puede ajustar/limpiar libremente.
+    const idProvActual = S.provSelId;
+    if (idProvActual && !S.provPedidoAutoInit[idProvActual]) {
+      _provPedidoEnsureProveedor();
+      items.forEach(pp => {
+        if (pp.sugerencia > 0 && !S.provPedido.items[pp.idPP]) {
+          S.provPedido.items[pp.idPP] = {
+            idPP:        pp.idPP,
+            sku:         pp.skuBase,
+            desc:        pp.descripcion,
+            codigoBarra: pp.codigoBarra,
+            precio:      pp.precioReferencia || 0,
+            qty:         pp.sugerencia
+          };
+        }
+      });
+      S.provPedidoAutoInit[idProvActual] = true;
     }
     list.innerHTML = items.map(pp => {
       const alert = _provAlertaInfo(pp.alerta);
@@ -4813,14 +4887,6 @@ const MOS = (() => {
         </div>
         ${pp.razonSugerencia ? `<div class="prov-sugerencia-txt">${pp.razonSugerencia}</div>` : ''}
 
-        <!-- Sugerencia de pedido (un toque la aplica al stepper) -->
-        ${pp.sugerencia > 0 ? `
-        <div class="prov-pedido-sug">
-          <button onclick="MOS.provPedidoUsarSugerencia('${pp.idPP}', ${pp.sugerencia})" class="prov-sug-btn" title="${pp.razonSugerencia || ''}">
-            Pedir sugerido: <b>${pp.sugerencia}</b> un${upb > 1 ? ` (${pp.sugerenciaBultos} bulto${pp.sugerenciaBultos === 1 ? '' : 's'} × ${upb})` : ''}
-          </button>
-        </div>` : ''}
-
         <!-- Stepper de pedido [- qty +] · paso de bulto si upb > 1 -->
         <div class="prov-pedido-row">
           <div class="prov-stepper">
@@ -4833,9 +4899,11 @@ const MOS = (() => {
           <button onclick="MOS.provPedidoStep('${pp.idPP}', ${upb})" class="prov-bulto-step" title="Sumar 1 bulto (+${upb} unidades)">
             +📦
           </button>` : ''}
-          <span class="prov-pedido-sub">×&nbsp;${fmtMoney(pp.precioReferencia || 0)}</span>
-          <span class="prov-pedido-total">${fmtMoney((qtyActual || 0) * (pp.precioReferencia || 0))}</span>
           <button onclick="event.stopPropagation();MOS.eliminarProvProductoRapido('${pp.idPP}')" class="text-slate-500 hover:text-red-400 transition-colors text-sm p-1 ml-auto" title="Eliminar del catálogo">🗑️</button>
+        </div>
+        <!-- Desglose: bultos × upb · precio = subtotal -->
+        <div class="prov-pedido-desglose" data-desglose="${pp.idPP}">
+          ${_renderDesgloseLine(qtyActual, upb, pp.precioReferencia || 0)}
         </div>
       </div>`;
     }).join('');
@@ -4862,6 +4930,26 @@ const MOS = (() => {
       <button onclick="MOS.provPedidoLimpiar()" class="btn-ghost text-xs px-2 py-1.5">Limpiar</button>
       <button onclick="MOS.provPedidoExportar()" class="btn-primary text-xs px-3 py-1.5 whitespace-nowrap">📄 Generar pedido</button>
     `;
+  }
+
+  // Línea de desglose del pedido: "1 bulto × 12 un · S/2.50 c/u → S/30.00"
+  function _renderDesgloseLine(qty, upb, precio) {
+    const q = parseFloat(qty) || 0;
+    const sub = q * (parseFloat(precio) || 0);
+    if (q <= 0) {
+      return `<span class="prov-pedido-sub-empty">— sin pedido —</span>`;
+    }
+    let descCantidad;
+    if (upb > 1) {
+      const bultos = q / upb;
+      const bultosTxt = (Math.abs(bultos - Math.round(bultos)) < 0.001)
+        ? Math.round(bultos)
+        : bultos.toFixed(2);
+      descCantidad = `<b>${bultosTxt}</b> bulto${Math.round(bultos) === 1 ? '' : 's'} × ${upb} un = <b>${q}</b> un`;
+    } else {
+      descCantidad = `<b>${q}</b> un`;
+    }
+    return `${descCantidad} · ${fmtMoney(precio)} c/u → <b class="prov-pedido-sub-total">${fmtMoney(sub)}</b>`;
   }
 
   // ── Editar unidadesPorBulto inline (prompt nativo, simple) ──
@@ -4990,13 +5078,17 @@ const MOS = (() => {
     const card = document.querySelector(`.prov-prod-card[data-idpp="${idPP}"]`);
     if (card) {
       card.classList.toggle('en-pedido', qty > 0);
-      const totalEl = card.querySelector('.prov-pedido-total');
-      if (totalEl) totalEl.textContent = fmtMoney(qty * (item.precioReferencia || 0));
       const inp = card.querySelector('.prov-stepper-input');
       if (inp && document.activeElement !== inp) inp.value = qty;
+      // Refrescar línea de desglose (bultos × upb · precio = subtotal)
+      const desglose = card.querySelector(`[data-desglose="${idPP}"]`);
+      const upb = parseInt(item.unidadesPorBulto) || 1;
+      if (desglose) desglose.innerHTML = _renderDesgloseLine(qty, upb, item.precioReferencia || 0);
     }
     _renderPedidoToolbar();
     _renderCarritoIfOpen();
+    // Actualizar badge X/Y del card del proveedor
+    _refreshProvPendientesBadge(S.provSelId);
   }
 
   function provPedidoStep(idPP, delta) {
@@ -5294,6 +5386,7 @@ const MOS = (() => {
       const items = Array.isArray(lista) ? lista : (lista && lista.data) || [];
       S.provProductos[id] = items;
       _provProdsSaveCache(id, items);
+      _refreshProvPendientesBadge(id);
       _pintaProvProductos(_filtrarPP(items, S.provProdFilter));
     } catch(e) {
       if (!S.provProductos[id]) list.innerHTML = `<p class="text-red-400 text-sm">Error: ${e.message}</p>`;
