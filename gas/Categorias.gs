@@ -471,7 +471,7 @@ function migrarCatalogoCompleto() {
     if (!prod.idCategoria) {
       var cat = _clasificarProducto(desc);
       var rg = sheet.getRange(prod.rowIdx, col.idCategoria + 1);
-      rg.setNumberFormat('@STRING@').setValue(cat);
+      rg.setNumberFormat('@').setValue(cat);
       prod.idCategoria = cat;
       stats.canonicosClasificados++;
       if (cat === 'OTROS') stats.canonicosOtros.push(prod.idProducto + ' · ' + prod.descripcion);

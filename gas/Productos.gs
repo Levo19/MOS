@@ -184,6 +184,26 @@ function _siguienteSecuenciaProducto(sheet) {
   };
 }
 
+// ── Garantía global de formato TEXTO en columnas de identificadores ───
+// Aplica setNumberFormat('@') a columnas idProducto, skuBase, codigoBarra
+// de PRODUCTOS_MASTER. Idempotente, una sola vez por request.
+// REGLA: el codigoBarra es SIEMPRE texto. Sheets no debe convertirlo a número.
+var _PM_TEXT_COLS_OK = false;
+function _ensurePMTextColumns(sheet) {
+  if (_PM_TEXT_COLS_OK) return;
+  try {
+    sheet = sheet || getSheet('PRODUCTOS_MASTER');
+    var hdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    ['idProducto', 'skuBase', 'codigoBarra', 'codigoProductoBase'].forEach(function(c){
+      var col = hdrs.indexOf(c);
+      if (col >= 0) {
+        sheet.getRange(2, col + 1, sheet.getMaxRows() - 1, 1).setNumberFormat('@');
+      }
+    });
+    _PM_TEXT_COLS_OK = true;
+  } catch(_){}
+}
+
 function crearProductoMaster(params) {
   var bloqueo = _validarSource(params, 'crear', 'PRODUCTOS_MASTER');
   if (bloqueo) return bloqueo;
@@ -234,6 +254,8 @@ function crearProductoMaster(params) {
 
   // Garantizar columnas de política antes de escribir (idempotente)
   try { _garantizarColumnasPoliticaProductos(); } catch(_){}
+  // Garantizar formato texto en columnas de IDs (idempotente)
+  _ensurePMTextColumns(sheet);
 
   // Política override (vacío = hereda de categoría)
   var modoOverride  = String(params.modoVenta || '').toUpperCase();
@@ -241,41 +263,47 @@ function crearProductoMaster(params) {
   var margenOverride = (params.margenPct !== '' && params.margenPct !== undefined && params.margenPct !== null) ? parseFloat(params.margenPct) : '';
   var topeOverride   = (params.precioTope !== '' && params.precioTope !== undefined && params.precioTope !== null) ? parseFloat(params.precioTope) : '';
 
-  var values = [
-    id,
-    skuBase,
-    params.codigoBarra          || '',
-    params.descripcion          || '',
-    params.marca                || '',
-    params.idCategoria          || '',
-    unidad,
-    parseFloat(params.precioVenta)   || 0,
-    parseFloat(params.precioCosto)   || 0,
-    codTributo,
-    igvPct,
-    codSunat,
-    tipoIGV,
-    unidadMedida,
-    '1',
-    params.esEnvasable          || '0',
-    params.codigoProductoBase   || '',
-    factorConv,
-    parseFloat(params.factorConversionBase) || '',
-    parseFloat(params.mermaEsperadaPct)     || '',
-    parseFloat(params.stockMinimo) || 0,
-    parseFloat(params.stockMaximo) || 0,
-    params.zona                 || '',
-    new Date(),
-    params.usuario              || '',
-    modoOverride,
-    isNaN(margenOverride) ? '' : margenOverride,
-    isNaN(topeOverride) ? '' : topeOverride
-  ];
+  // 5. Construir la fila POR NOMBRE DE COLUMNA del header real del sheet
+  //    — evita desfase si la sheet tiene columnas extra (ej: factorConversionBase
+  //    insertado entre factorConversion y mermaEsperadaPct).
+  var hdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var ahora = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+  var camposPorNombre = {
+    idProducto:           String(id),
+    skuBase:              String(skuBase),
+    codigoBarra:          String(params.codigoBarra || ''),
+    descripcion:          params.descripcion || '',
+    marca:                params.marca || '',
+    idCategoria:          params.idCategoria || '',
+    unidad:               unidad,
+    precioVenta:          parseFloat(params.precioVenta) || 0,
+    precioCosto:          parseFloat(params.precioCosto) || 0,
+    Cod_Tributo:          codTributo,
+    IGV_Porcentaje:       igvPct,
+    Cod_SUNAT:            codSunat,
+    Tipo_IGV:             tipoIGV,
+    Unidad_Medida:        unidadMedida,
+    estado:               '1',
+    esEnvasable:          params.esEnvasable || '0',
+    codigoProductoBase:   String(params.codigoProductoBase || ''),
+    factorConversion:     factorConv,
+    factorConversionBase: parseFloat(params.factorConversionBase) || '',
+    mermaEsperadaPct:     parseFloat(params.mermaEsperadaPct) || '',
+    stockMinimo:          parseFloat(params.stockMinimo) || 0,
+    stockMaximo:          parseFloat(params.stockMaximo) || 0,
+    zona:                 params.zona || '',
+    fechaCreacion:        ahora,
+    creadoPor:            params.usuario || '',
+    modoVenta:            modoOverride,
+    margenPct:            isNaN(margenOverride) ? '' : margenOverride,
+    precioTope:           isNaN(topeOverride) ? '' : topeOverride
+  };
+  // Construir el array según el orden REAL del header del sheet
+  var values = hdrs.map(function(h){
+    return camposPorNombre[h] !== undefined ? camposPorNombre[h] : '';
+  });
 
-  // 5. Forzar formato de TEXTO en columnas idProducto (1), skuBase (2), codigoBarra (3)
-  // (sino Sheets los convierte a número y se pierden ceros / formato exacto)
   var nextRow = sheet.getLastRow() + 1;
-  sheet.getRange(nextRow, 1, 1, 3).setNumberFormat('@STRING@');
   sheet.getRange(nextRow, 1, 1, values.length).setValues([values]);
 
   if (parseFloat(params.precioVenta) > 0) {
@@ -291,6 +319,8 @@ function actualizarProductoMaster(params) {
   var bloqueo = _validarSource(params, 'actualizar', 'PRODUCTOS_MASTER');
   if (bloqueo) return bloqueo;
   var sheet = getSheet('PRODUCTOS_MASTER');
+  // Garantizar formato texto en columnas de IDs antes de cualquier escritura
+  _ensurePMTextColumns(sheet);
   var data  = sheet.getDataRange().getValues();
   var hdrs  = data[0];
 
@@ -330,7 +360,7 @@ function actualizarProductoMaster(params) {
         var cell = sheet.getRange(i + 1, col + 1);
         if (_camposTexto.indexOf(campo) >= 0) {
           // Forzar TEXTO en celdas de identificadores
-          cell.setNumberFormat('@STRING@');
+          cell.setNumberFormat('@');
           cell.setValue(String(params[campo] || ''));
         } else {
           var val = (_numCampos.indexOf(campo) >= 0 && params[campo] !== '')
@@ -438,7 +468,7 @@ function crearEquivalencia(params) {
   var id = _generateId('EQ');
   var nextRow = sheet.getLastRow() + 1;
   // Columnas 2 (skuBase) y 3 (codigoBarra) como TEXTO
-  sheet.getRange(nextRow, 2, 1, 2).setNumberFormat('@STRING@');
+  sheet.getRange(nextRow, 2, 1, 2).setNumberFormat('@');
   var values = [id, String(params.skuBase || ''), String(params.codigoBarra || ''), params.descripcion || '', '1'];
   sheet.getRange(nextRow, 1, 1, values.length).setValues([values]);
   return { ok: true, data: { idEquiv: id } };
@@ -461,7 +491,7 @@ function actualizarEquivalencia(params) {
         var cell = sheet.getRange(i + 1, col + 1);
         // codigoBarra debe ir como TEXTO para preservar ceros / formato
         if (c === 'codigoBarra') {
-          cell.setNumberFormat('@STRING@');
+          cell.setNumberFormat('@');
           cell.setValue(String(params[c] || ''));
         } else {
           cell.setValue(params[c]);
@@ -518,7 +548,7 @@ function _registrarHistorialPrecio(idProd, skuBase, codBarra, desc, anterior, nu
   var nextRow = sheet.getLastRow() + 1;
   // Columnas 2 (skuBase) y 3 (codigoBarra) deben quedar como TEXTO para preservar
   // ceros a la izquierda y evitar que Sheets las convierta a número.
-  sheet.getRange(nextRow, 2, 1, 2).setNumberFormat('@STRING@');
+  sheet.getRange(nextRow, 2, 1, 2).setNumberFormat('@');
   var values = [
     _generateId('HP'),
     String(skuBase  || ''),
