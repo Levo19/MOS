@@ -5092,15 +5092,12 @@ const MOS = (() => {
         <!-- Stepper de pedido [- qty +] · paso de bulto si upb > 1 -->
         <div class="prov-pedido-row">
           <div class="prov-stepper">
-            <button onclick="MOS.provPedidoStep('${pp.idPP}', -1)" class="prov-stepper-btn" aria-label="Disminuir 1">−</button>
-            <input type="number" min="0" step="1" value="${qtyActual}" placeholder="0"
+            <button onclick="MOS.provPedidoStep('${pp.idPP}', -${upb})" class="prov-stepper-btn" title="${upb > 1 ? `Quitar 1 bulto (−${upb} un)` : 'Quitar 1 unidad'}">−</button>
+            <input type="number" min="0" step="${upb}" value="${qtyActual}" placeholder="0"
               class="prov-stepper-input" data-idpp="${pp.idPP}" oninput="MOS.provPedidoSetQty('${pp.idPP}', this.value)">
-            <button onclick="MOS.provPedidoStep('${pp.idPP}', 1)" class="prov-stepper-btn" aria-label="Aumentar 1">+</button>
+            <button onclick="MOS.provPedidoStep('${pp.idPP}', ${upb})" class="prov-stepper-btn" title="${upb > 1 ? `Sumar 1 bulto (+${upb} un)` : 'Sumar 1 unidad'}">+</button>
           </div>
-          ${upb > 1 ? `
-          <button onclick="MOS.provPedidoStep('${pp.idPP}', ${upb})" class="prov-bulto-step" title="Sumar 1 bulto (+${upb} unidades)">
-            +📦
-          </button>` : ''}
+          ${upb > 1 ? `<span class="prov-stepper-hint">${upb} un/bulto</span>` : ''}
           <button onclick="event.stopPropagation();MOS.eliminarProvProductoRapido('${pp.idPP}')" class="text-slate-500 hover:text-red-400 transition-colors text-sm p-1 ml-auto" title="Eliminar del catálogo">🗑️</button>
         </div>
         <!-- Desglose: bultos × upb · precio = subtotal -->
@@ -5205,6 +5202,26 @@ const MOS = (() => {
     const lista = (S.provProductos && S.provProductos[id]) || [];
     const item = lista.find(x => x.idPP === idPP);
     if (item) item.unidadesPorBulto = nuevo;
+
+    // Sincronizar el carrito de ESE proveedor: actualizar upb del item y
+    // re-redondear la qty al nuevo múltiplo (siempre arriba).
+    if (S.provCarritos[id] && S.provCarritos[id].items[idPP]) {
+      const ci = S.provCarritos[id].items[idPP];
+      const qtyAnt = parseFloat(ci.qty) || 0;
+      const qtyRedondeada = Math.ceil(qtyAnt / nuevo) * nuevo;
+      ci.upb = nuevo;
+      ci.qty = qtyRedondeada;
+      S.provCarritos[id].ts = Date.now();
+      _provCarritosSave();
+      _renderCarritoIfOpen();
+      _refreshProvCarritoBadge(id);
+      _provFabRender();
+    }
+    // Sincronizar también el stepper volátil si tenía edición
+    const ed = S.provQtyEditadas[id];
+    if (ed && ed[idPP] !== undefined) {
+      ed[idPP] = Math.ceil((parseFloat(ed[idPP]) || 0) / nuevo) * nuevo;
+    }
     // Re-render para que la sugerencia se recalcule visualmente
     _pintaProvProductos(_filtrarPP(lista, S.provProdFilter));
     try {
@@ -5411,11 +5428,21 @@ const MOS = (() => {
     const carritoItems = _provCarritoDe(idProveedor) || {};
     const enCarrito = carritoItems[pp.idPP];
     const qty = enCarrito ? enCarrito.qty : 0;
+    // upb viene del item del carrito si está, sino del producto (puede haber
+    // sido actualizado en el catálogo y aún no se sincronizó al carrito)
+    const upb = parseInt((enCarrito && enCarrito.upb) || pp.unidadesPorBulto) || 1;
+    const bultos = upb > 1 ? Math.round((qty / upb) * 100) / 100 : 0;
     const subt = qty * (pp.precioReferencia || 0);
+    const bultoChip = upb > 1
+      ? `<span class="carrito-bulto-chip" title="${upb} unidades por bulto">📦 ×${upb}</span>`
+      : '';
     return `
     <div class="carrito-fila${qty > 0 ? ' en-pedido' : ''}" data-idpp="${pp.idPP}">
       <div class="flex-1 min-w-0">
-        <div class="text-sm font-semibold text-slate-100 truncate">${pp.descripcion || pp.skuBase}</div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <div class="text-sm font-semibold text-slate-100 truncate flex-1 min-w-0">${pp.descripcion || pp.skuBase}</div>
+          ${bultoChip}
+        </div>
         <div class="text-[10px] text-slate-500 truncate" style="font-family:monospace">SKU ${pp.skuBase}${pp.codigoBarra ? ' · ▌' + pp.codigoBarra : ''}</div>
         <div class="flex items-center gap-2 text-[11px] mt-1" style="color:${alert.color}">
           <span>📦 Stock <b>${pp.stockTotal}</b></span>
@@ -5426,12 +5453,13 @@ const MOS = (() => {
       <div class="text-right shrink-0 mr-2">
         <div class="text-[11px] text-slate-500">${fmtMoney(pp.precioReferencia || 0)}</div>
         <div class="text-sm font-bold ${qty > 0 ? 'text-amber-400' : 'text-slate-600'}">${fmtMoney(subt)}</div>
+        ${qty > 0 && upb > 1 ? `<div class="text-[10px] text-slate-500">${bultos} bulto${Math.round(bultos) === 1 ? '' : 's'}</div>` : ''}
       </div>
       <div class="prov-stepper shrink-0">
-        <button onclick="MOS.carritoStep('${pp.idPP}', -1)" class="prov-stepper-btn">−</button>
-        <input type="number" min="0" step="1" value="${qty}" class="prov-stepper-input" data-idpp="${pp.idPP}"
+        <button onclick="MOS.carritoStep('${pp.idPP}', -${upb})" class="prov-stepper-btn" title="${upb > 1 ? `Quitar 1 bulto (−${upb})` : 'Quitar 1'}">−</button>
+        <input type="number" min="0" step="${upb}" value="${qty}" class="prov-stepper-input" data-idpp="${pp.idPP}"
           oninput="MOS.carritoSetQty('${pp.idPP}', this.value)">
-        <button onclick="MOS.carritoStep('${pp.idPP}', 1)" class="prov-stepper-btn">+</button>
+        <button onclick="MOS.carritoStep('${pp.idPP}', ${upb})" class="prov-stepper-btn" title="${upb > 1 ? `Sumar 1 bulto (+${upb})` : 'Sumar 1'}">+</button>
       </div>
     </div>`;
   }
