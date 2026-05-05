@@ -828,20 +828,17 @@
       transition: border-color .15s, transform .15s;
     }
     .prov-prod-card:hover { border-color: rgba(99,102,241,.35); }
-    .prov-stock-row {
-      display: flex; align-items: center; gap: 10px;
+    /* Bloques métricos: Stock / Rotación con su título y chips */
+    .prov-metric-block {
       padding: 6px 0; border-top: 1px dashed #1e293b;
     }
-    .prov-stock-total {
-      display: flex; align-items: baseline; gap: 6px;
+    .prov-metric-head {
+      display: flex; align-items: baseline; gap: 8px;
+      margin-bottom: 4px;
     }
     .prov-stock-label { font-size: .65rem; color: #64748b; text-transform: uppercase; letter-spacing: .05em; }
     .prov-stock-num { font-size: 1.1rem; font-weight: 800; }
-    .prov-rot-total {
-      display: flex; align-items: baseline; gap: 6px;
-      margin-left: auto;
-    }
-    .prov-rot-num { font-size: .9rem; font-weight: 700; color: #818cf8; }
+    .prov-rot-num { font-size: 1rem; font-weight: 700; color: #818cf8; }
 
     /* Chips de ubicación: almacén + zona, rojo si negativo */
     .prov-loc-chips {
@@ -867,6 +864,15 @@
     }
     .prov-loc-chip.neg b { color: #fee2e2; }
     .prov-loc-ic { font-size: .8rem; }
+    /* Chips de rotación (mismo layout, color violeta) */
+    .prov-rot-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: .68rem; padding: 3px 8px; border-radius: 999px;
+      background: rgba(129,140,248,.1); color: #c7d2fe;
+      border: 1px solid rgba(129,140,248,.22);
+      white-space: nowrap;
+    }
+    .prov-rot-chip b { color: #818cf8; font-weight: 800; }
 
     /* Sliders Mín/Máx */
     .prov-minmax-row {

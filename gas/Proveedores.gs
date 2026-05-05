@@ -543,27 +543,30 @@ function getProductosProveedorConStock(params) {
       zonasBySku[sku][canon.id].cantidad += parseFloat(z.Cantidad || z.cantidad) || 0;
     });
 
-    // 7. Ventas en rango por sku
+    // 7. Ventas en rango por sku Y por zona (una sola pasada de VENTAS)
     var hoy = new Date();
     var desde = new Date(hoy.getTime() - rangoDias * 86400000);
     var ventasBySku = {};
+    var ventasBySkuByZona = {};   // sku → { canonZonaId: cantidad }
+    var nombreZonaCanon = {};      // canonZonaId → nombre legible (cache)
     try {
       var ssMe = SpreadsheetApp.openById(_getProp('ME_SS_ID'));
       var shVC = ssMe.getSheetByName('VENTAS_CABECERA');
       var shVD = ssMe.getSheetByName('VENTAS_DETALLE');
       if (shVC && shVD) {
         var dataVC = shVC.getDataRange().getValues();
-        var idsValidas = {};
+        var idsValidas = {};   // idV → estacion (sin canonizar todavía)
         for (var i = 1; i < dataVC.length; i++) {
           var fecha = dataVC[i][1] ? new Date(dataVC[i][1]) : null;
           if (!fecha || fecha < desde) continue;
           if (String(dataVC[i][8] || '').toUpperCase() === 'ANULADO') continue;
-          idsValidas[String(dataVC[i][0] || '').trim()] = true;
+          var estacion = String(dataVC[i][3] || '').trim();
+          idsValidas[String(dataVC[i][0] || '').trim()] = estacion || '';
         }
         var dataVD = shVD.getDataRange().getValues();
         for (var j = 1; j < dataVD.length; j++) {
           var idV = String(dataVD[j][0] || '').trim();
-          if (!idsValidas[idV]) continue;
+          if (idsValidas[idV] === undefined) continue;
           var sku2 = String(dataVD[j][1] || '').trim();
           var cb2  = String(dataVD[j][6] || '').trim();
           var p = prodById[sku2] || prodByCB[cb2];
@@ -571,6 +574,15 @@ function getProductosProveedorConStock(params) {
           var skuKey = p.skuBase || p.idProducto;
           var cant = parseFloat(dataVD[j][3]) || 0;
           ventasBySku[skuKey] = (ventasBySku[skuKey] || 0) + cant;
+          // Acumular por zona (canonizando estacion → zona canónica)
+          var est = idsValidas[idV];
+          if (est) {
+            var canonZ = resolver.resolve(est);
+            var zKey = canonZ.id;
+            nombreZonaCanon[zKey] = canonZ.nombre || zKey;
+            if (!ventasBySkuByZona[skuKey]) ventasBySkuByZona[skuKey] = {};
+            ventasBySkuByZona[skuKey][zKey] = (ventasBySkuByZona[skuKey][zKey] || 0) + cant;
+          }
         }
       }
     } catch(_){}
@@ -581,9 +593,36 @@ function getProductosProveedorConStock(params) {
       var grupo = bySku[sku];
       var p = (grupo && grupo.base) || prodById[sku] || {};
       var whQ = whBySku[sku] || 0;
-      var zonas = zonasBySku[sku] ? Object.keys(zonasBySku[sku]).map(function(zid){
-        return { idZona: zid, nombre: zonasBySku[sku][zid].nombre, cantidad: zonasBySku[sku][zid].cantidad };
-      }) : [];
+      // Mergir zonas: incluir las que tienen stock O ventas
+      var zonasMap = {};
+      if (zonasBySku[sku]) {
+        Object.keys(zonasBySku[sku]).forEach(function(zid){
+          zonasMap[zid] = {
+            idZona:      zid,
+            nombre:      zonasBySku[sku][zid].nombre,
+            cantidad:    zonasBySku[sku][zid].cantidad,
+            ventasRango: 0
+          };
+        });
+      }
+      if (ventasBySkuByZona[sku]) {
+        Object.keys(ventasBySkuByZona[sku]).forEach(function(zid){
+          if (!zonasMap[zid]) {
+            zonasMap[zid] = {
+              idZona:      zid,
+              nombre:      nombreZonaCanon[zid] || zid,
+              cantidad:    0,
+              ventasRango: 0
+            };
+          }
+          zonasMap[zid].ventasRango = ventasBySkuByZona[sku][zid];
+        });
+      }
+      var zonas = Object.keys(zonasMap).map(function(zid){
+        var z = zonasMap[zid];
+        z.rotacionDia = rangoDias > 0 ? Math.round((z.ventasRango / rangoDias) * 10) / 10 : 0;
+        return z;
+      });
       var zonasTotal = zonas.reduce(function(s,z){ return s + z.cantidad; }, 0);
       var total = whQ + zonasTotal;
       var ventas = ventasBySku[sku] || 0;

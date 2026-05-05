@@ -4598,14 +4598,30 @@ const MOS = (() => {
       const tienePresentaciones = (pp.countPresentaciones || 1) > 1;
       const tieneEquiv = (pp.countEquivalencias || 0) > 0;
 
-      // Chips de ubicación: almacén + cada zona (con stock o no, mostrar todo)
-      const chipsLocs = [];
-      chipsLocs.push({ nombre: 'Almacén', cant: pp.stockWh || 0, icon: '🏬' });
+      // Chips de stock: almacén + cada zona (con stock o ventas)
+      const ubicaciones = [];
+      ubicaciones.push({ nombre: 'Almacén', cant: pp.stockWh || 0, rot: null, icon: '🏬' });
       (pp.zonas || []).forEach(z => {
-        chipsLocs.push({ nombre: z.nombre, cant: z.cantidad, icon: '🏪' });
+        ubicaciones.push({ nombre: z.nombre, cant: z.cantidad, rot: z.rotacionDia || 0, icon: '🏪' });
       });
-      const chipsHtml = chipsLocs.map(c =>
+      const stockChipsHtml = ubicaciones.map(c =>
         `<span class="prov-loc-chip${c.cant < 0 ? ' neg' : c.cant === 0 ? ' zero' : ''}"><span class="prov-loc-ic">${c.icon}</span>${c.nombre}: <b>${c.cant}</b></span>`
+      ).join('');
+      // Chips de rotación: solo si hay rotación total > 0
+      // — almacén usa rotación total como referencia (lo que se vacía por día)
+      // — zonas individuales muestran la suya
+      const rotTotal = pp.rotacionDia || 0;
+      const rotChips = [];
+      if (rotTotal > 0) {
+        rotChips.push({ nombre: 'Almacén', rot: rotTotal, icon: '🏬', tip: 'Salidas/día = suma de ventas en zonas' });
+        (pp.zonas || []).forEach(z => {
+          if (z.rotacionDia > 0 || z.ventasRango > 0) {
+            rotChips.push({ nombre: z.nombre, rot: z.rotacionDia || 0, icon: '🏪', tip: 'Ventas en ' + z.nombre });
+          }
+        });
+      }
+      const rotChipsHtml = rotChips.map(c =>
+        `<span class="prov-rot-chip" title="${c.tip}"><span class="prov-loc-ic">${c.icon}</span>${c.nombre}: <b>↻ ${c.rot}/d</b></span>`
       ).join('');
 
       // Sliders mín/máx con marker en sugerencia semanal
@@ -4644,22 +4660,28 @@ const MOS = (() => {
           </div>
         </div>
 
-        <!-- Header: stock total a la izquierda, rotación a la derecha -->
-        <div class="prov-stock-row">
-          <div class="prov-stock-total">
+        <!-- Stock total con sus chips por ubicación -->
+        <div class="prov-metric-block">
+          <div class="prov-metric-head">
             <span class="prov-stock-label">Stock</span>
             <span class="prov-stock-num" style="color:${alert.color}">${pp.stockTotal}</span>
           </div>
-          <div class="prov-rot-total">
-            <span class="prov-stock-label">Rotación</span>
-            <span class="prov-rot-num">${pp.rotacionDia > 0 ? '↻ ' + pp.rotacionDia + '/d' : '—'}</span>
+          <div class="prov-loc-chips">
+            ${stockChipsHtml}
           </div>
         </div>
 
-        <!-- Chips: almacén + cada zona -->
-        <div class="prov-loc-chips">
-          ${chipsHtml}
-        </div>
+        <!-- Rotación total con sus chips por ubicación -->
+        ${rotTotal > 0 ? `
+        <div class="prov-metric-block">
+          <div class="prov-metric-head">
+            <span class="prov-stock-label">Rotación</span>
+            <span class="prov-rot-num">↻ ${rotTotal}/d</span>
+          </div>
+          <div class="prov-loc-chips">
+            ${rotChipsHtml}
+          </div>
+        </div>` : ''}
 
         <!-- Sliders Mín/Máx con marker de sugerencia (rot × 7d) -->
         <div class="prov-minmax-row">
