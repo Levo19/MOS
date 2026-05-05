@@ -1800,6 +1800,12 @@ const MOS = (() => {
     $('pnCodigoEquiv').value = pn.codigoBarra || '';
     $('pnDescEquiv').value   = pn.descripcion || '';
 
+    // Reset sección CORREGIR_CODIGO
+    if ($('pnCorregirBuscar'))      $('pnCorregirBuscar').value = '';
+    if ($('pnCorregirIdProducto'))  $('pnCorregirIdProducto').value = '';
+    if ($('pnCorregirResultados'))  { $('pnCorregirResultados').style.display = 'none'; $('pnCorregirResultados').innerHTML = ''; }
+    if ($('pnCorregirSeleccionado')) $('pnCorregirSeleccionado').classList.add('hidden');
+
     // Reset radio a NUEVO
     document.querySelector('input[name="pnTipo"][value="NUEVO"]').checked = true;
     pnSetTipo('NUEVO');
@@ -1817,10 +1823,69 @@ const MOS = (() => {
     if (modal) { modal.classList.add('hidden'); modal.classList.remove('open'); }
   }
 
-  // Toggle sección NUEVO vs EQUIVALENTE
+  // Toggle sección según tipo (NUEVO / EQUIVALENTE / CORREGIR_CODIGO)
   function pnSetTipo(tipo) {
     $('pnSeccionNuevo').classList.toggle('hidden', tipo !== 'NUEVO');
     $('pnSeccionEquiv').classList.toggle('hidden', tipo !== 'EQUIVALENTE');
+    const secCorr = $('pnSeccionCorregir');
+    if (secCorr) secCorr.classList.toggle('hidden', tipo !== 'CORREGIR_CODIGO');
+    // Pre-llenar el "código real entrante" en el preview de corrección
+    if (tipo === 'CORREGIR_CODIGO') {
+      const cb = $('pnCodigoOriginal')?.value || '';
+      const nuevoEl = $('pnCorregirCodNuevo');
+      if (nuevoEl) nuevoEl.textContent = cb || '—';
+    }
+  }
+
+  // Búsqueda para CORREGIR_CODIGO — reusa la lógica de pnBuscarBase pero
+  // proyecta a otro contenedor y selecciona por idProducto (no skuBase)
+  function pnBuscarParaCorregir() {
+    const raw = ($('pnCorregirBuscar').value || '').trim();
+    const resBox = $('pnCorregirResultados');
+    if (!raw) { resBox.style.display = 'none'; resBox.innerHTML = ''; return; }
+    if (!S.productos || !S.productos.length) {
+      resBox.innerHTML = '<div class="pn-result text-slate-500 italic">Cargando catálogo... abre Catálogo primero</div>';
+      resBox.style.display = 'block';
+      return;
+    }
+    const qn = _norm(raw);
+    const palabras = qn.split(/\s+/).filter(Boolean);
+    const scored = (S.productos || []).map(p => {
+      const haystack = _norm((p.descripcion || '') + ' ' + (p.codigoBarra || '') + ' ' + (p.skuBase || p.idProducto || '') + ' ' + (p.marca || ''));
+      let score = 0, allMatch = true;
+      palabras.forEach(w => { if (haystack.indexOf(w) >= 0) score++; else allMatch = false; });
+      if (_norm(p.codigoBarra || '') === qn) score += 100;
+      return { p, score, allMatch };
+    }).filter(x => x.allMatch).sort((a, b) => b.score - a.score).slice(0, 12);
+
+    if (!scored.length) {
+      resBox.innerHTML = '<div class="pn-result text-slate-500 italic">Sin resultados para "' + raw + '"</div>';
+      resBox.style.display = 'block';
+      return;
+    }
+    resBox.innerHTML = scored.map(({ p }) => {
+      const safeDesc = (p.descripcion || p.idProducto).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+      const safeCB   = (p.codigoBarra || '').replace(/'/g, "\\'");
+      // Marcar visualmente los códigos sospechosos (cortos / empiezan con 0)
+      const cb = String(p.codigoBarra || '');
+      const sospechoso = cb && (cb.length < 8 || cb[0] === '0');
+      return `
+        <div class="pn-result" onclick="MOS.pnSeleccionarParaCorregir('${p.idProducto}', '${safeDesc}', '${safeCB}')">
+          <div class="text-slate-200 font-medium">${p.descripcion || p.idProducto}</div>
+          <div class="text-xs ${sospechoso ? 'text-rose-400' : 'text-slate-500'}" style="font-family:monospace">▌${cb || '—'}${sospechoso ? ' ⚠ posible falso' : ''} · ${p.idProducto}</div>
+        </div>`;
+    }).join('');
+    resBox.style.display = 'block';
+  }
+
+  function pnSeleccionarParaCorregir(idProducto, descripcion, codigoBarra) {
+    $('pnCorregirIdProducto').value = idProducto;
+    $('pnCorregirNombre').textContent = descripcion;
+    $('pnCorregirCodViejo').textContent = codigoBarra || '(sin código)';
+    $('pnCorregirCodNuevo').textContent = $('pnCodigoOriginal')?.value || '—';
+    $('pnCorregirSeleccionado').classList.remove('hidden');
+    $('pnCorregirResultados').style.display = 'none';
+    $('pnCorregirBuscar').value = descripcion;
   }
 
   // Auto-genera código NMLEV en sección NUEVO
@@ -1930,7 +1995,7 @@ const MOS = (() => {
         idCategoria: catId, unidad,
         precioVenta: pVenta, precioCosto: pCosto, Tipo_IGV: igv
       });
-    } else {
+    } else if (tipo === 'EQUIVALENTE') {
       const skuBase   = $('pnEquivSkuBase')?.value;
       const codigoEq  = $('pnCodigoEquiv')?.value?.trim();
       const descEq    = $('pnDescEquiv')?.value?.trim();
@@ -1939,6 +2004,15 @@ const MOS = (() => {
       Object.assign(params, {
         codigoFinal: codigoEq, skuBase,
         descripcionEquiv: descEq
+      });
+    } else if (tipo === 'CORREGIR_CODIGO') {
+      const idExist     = $('pnCorregirIdProducto')?.value;
+      const codigoReal  = codigoOriginal; // El código real que vino en la guía
+      if (!idExist)    { mostrarPNError('Selecciona el producto a corregir'); return; }
+      if (!codigoReal) { mostrarPNError('Falta el código real entrante'); return; }
+      Object.assign(params, {
+        idProductoExistente: idExist,
+        codigoFinal: codigoReal
       });
     }
 
@@ -1949,7 +2023,12 @@ const MOS = (() => {
       _updatePNBadge();
       renderPNBanner();
       cerrarModalPN();
-      toast(tipo === 'NUEVO' ? 'Producto creado en catálogo ✓' : 'Equivalencia agregada ✓', 'ok');
+      const okMsg = tipo === 'NUEVO'
+        ? 'Producto creado en catálogo ✓'
+        : tipo === 'EQUIVALENTE'
+        ? 'Equivalencia agregada ✓'
+        : 'Código corregido — viejo guardado como equivalencia ✓';
+      toast(okMsg, 'ok');
       setTimeout(() => loadCatalogo(true), 800);
     } catch(e) {
       mostrarPNError(e.message || 'Error al aprobar producto');
@@ -11177,6 +11256,7 @@ const MOS = (() => {
     openConfig, saveConfig, testConnection, closeModal, openEcoModal,
     filterCatalogo, setCatTab, toggleDerivs, togglePresentaciones, guardarPrecioRapido,
     abrirModalPN, cerrarModalPN, lanzarAProduccion, refreshPNManual,
+    pnBuscarParaCorregir, pnSeleccionarParaCorregir,
     togglePNBanner, openImagePreview, closeImagePreview,
     _validBackdropClose,
     pnSetTipo, pnAutogenBarcode, pnBuscarBase, pnSeleccionarBase,

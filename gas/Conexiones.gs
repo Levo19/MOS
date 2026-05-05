@@ -532,8 +532,80 @@ function lanzarProductoNuevo(params) {
     });
     if (!resultEq || !resultEq.ok) return { ok: false, error: (resultEq && resultEq.error) || 'Error creando equivalencia' };
     idEquivCreado = resultEq.data && resultEq.data.idEquiv;
+  } else if (tipo === 'CORREGIR_CODIGO') {
+    // CORRECCIÓN: el producto existe pero su codigoBarra principal era falso/inventado.
+    // Reemplazar codigoBarra por el código real entrante. Preservar el viejo
+    // como Equivalencia para no romper histórico.
+    if (!params.idProductoExistente) return { ok: false, error: 'Requiere idProductoExistente' };
+    if (!params.codigoFinal)         return { ok: false, error: 'Requiere codigoFinal (código real)' };
+
+    // 1. Localizar el producto existente
+    var sheetPM = getSheet('PRODUCTOS_MASTER');
+    var dataPM = sheetPM.getDataRange().getValues();
+    var hdrs = dataPM[0];
+    var iId   = hdrs.indexOf('idProducto');
+    var iCB   = hdrs.indexOf('codigoBarra');
+    var iSku  = hdrs.indexOf('skuBase');
+    var iDesc = hdrs.indexOf('descripcion');
+    var iCat  = hdrs.indexOf('idCategoria');
+    var iUnid = hdrs.indexOf('unidad');
+    var existente = null;
+    for (var i2 = 1; i2 < dataPM.length; i2++) {
+      if (String(dataPM[i2][iId]) === String(params.idProductoExistente)) {
+        existente = {
+          idProducto:  dataPM[i2][iId],
+          skuBase:     dataPM[i2][iSku],
+          codigoBarra: dataPM[i2][iCB],
+          descripcion: dataPM[i2][iDesc],
+          idCategoria: dataPM[i2][iCat],
+          unidad:      dataPM[i2][iUnid]
+        };
+        break;
+      }
+    }
+    if (!existente) return { ok: false, error: 'Producto existente no encontrado: ' + params.idProductoExistente };
+
+    var codigoViejo = String(existente.codigoBarra || '').trim();
+    var codigoNuevo = String(params.codigoFinal).trim();
+    if (codigoViejo === codigoNuevo) {
+      return { ok: false, error: 'El producto ya tiene el código ' + codigoNuevo };
+    }
+
+    // 2. Si el código nuevo ya existe en OTRO producto del master → conflicto, abortar
+    for (var i3 = 1; i3 < dataPM.length; i3++) {
+      if (String(dataPM[i3][iId]) === String(existente.idProducto)) continue;
+      if (String(dataPM[i3][iCB] || '').trim() === codigoNuevo) {
+        return { ok: false, error: 'El código ' + codigoNuevo + ' ya está en uso por el producto ' + dataPM[i3][iId] };
+      }
+    }
+
+    // 3. Preservar el código viejo como Equivalencia (silencioso si ya existía)
+    if (codigoViejo) {
+      try {
+        crearEquivalencia({
+          _source:     'MOS_PN_CORRECCION',
+          skuBase:     existente.skuBase,
+          codigoBarra: codigoViejo,
+          descripcion: 'Código corregido el ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd') + ' (era principal)'
+        });
+      } catch(_){}
+    }
+
+    // 4. Actualizar codigoBarra del producto existente: viejo → nuevo
+    var resultUpd = actualizarProductoMaster({
+      _source:     'MOS_PN_CORRECCION',
+      idProducto:  existente.idProducto,
+      codigoBarra: codigoNuevo
+    });
+    if (!resultUpd.ok) return resultUpd;
+
+    idProductoCreado = existente.idProducto;
+    // Para el postToWarehouse: usar datos del existente
+    params.descripcion = existente.descripcion;
+    params.idCategoria = existente.idCategoria;
+    params.unidad      = existente.unidad;
   } else {
-    return { ok: false, error: 'tipo inválido (NUEVO o EQUIVALENTE)' };
+    return { ok: false, error: 'tipo inválido (NUEVO, EQUIVALENTE o CORREGIR_CODIGO)' };
   }
 
   // 2. Notificar a warehouseMos: actualizar GUIA_DETALLE + STOCK + marcar PN APROBADO

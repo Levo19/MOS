@@ -4025,6 +4025,13 @@
               <div class="pn-radio-sub">Agregar como código alias</div>
             </div>
           </label>
+          <label class="pn-radio-card" id="pnRadioCorregir">
+            <input type="radio" name="pnTipo" value="CORREGIR_CODIGO" onchange="MOS.pnSetTipo('CORREGIR_CODIGO')">
+            <div>
+              <div class="pn-radio-title">🔄 CORREGIR código de existente</div>
+              <div class="pn-radio-sub">El producto ya está en catálogo con un código falso/inventado — sustituir por el código real entrante</div>
+            </div>
+          </label>
         </div>
       </div>
 
@@ -4110,6 +4117,31 @@
         <div>
           <label class="lbl">Descripción del alias (opcional)</label>
           <input id="pnDescEquiv" class="inp" placeholder="Ej: presentación de Marca X">
+        </div>
+      </div>
+
+      <!-- Sección CORREGIR_CODIGO -->
+      <div id="pnSeccionCorregir" class="space-y-3 pt-2 hidden" style="border-top:1px solid #1e293b">
+        <div class="text-xs font-bold text-slate-400 uppercase tracking-wider">Producto a corregir</div>
+        <div class="text-[11px] text-slate-400 leading-relaxed" style="background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.3);border-radius:8px;padding:9px 10px">
+          <strong class="text-indigo-300">¿Cómo funciona?</strong> Buscas el producto que ya está en tu catálogo con un código falso (típicamente uno corto que empieza con 0). El código falso pasa a Equivalencia (preserva histórico) y el código real entrante queda como principal.
+        </div>
+        <div>
+          <label class="lbl">Buscar producto con código mal *</label>
+          <input id="pnCorregirBuscar" class="inp" placeholder="Nombre del producto que ya está en catálogo..." oninput="MOS.pnBuscarParaCorregir()" autocomplete="off">
+          <div id="pnCorregirResultados" class="mt-1 max-h-40 overflow-y-auto" style="background:#060d1f;border:1px solid #1e293b;border-radius:8px;display:none"></div>
+          <input type="hidden" id="pnCorregirIdProducto">
+          <div id="pnCorregirSeleccionado" class="text-xs mt-2 hidden" style="background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.3);border-radius:8px;padding:9px 10px">
+            <div class="text-indigo-300 font-semibold mb-1" id="pnCorregirNombre">—</div>
+            <div class="flex items-center justify-between gap-2 text-[11px]">
+              <span class="text-slate-400">Código actual (falso):</span>
+              <span id="pnCorregirCodViejo" class="font-mono text-rose-400 truncate">—</span>
+            </div>
+            <div class="flex items-center justify-between gap-2 text-[11px] mt-0.5">
+              <span class="text-slate-400">Nuevo código real:</span>
+              <span id="pnCorregirCodNuevo" class="font-mono text-green-400 truncate">—</span>
+            </div>
+          </div>
         </div>
       </div>
 
