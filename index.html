@@ -2826,11 +2826,6 @@
       <svg class="nav-icon shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
       <span class="nav-label whitespace-nowrap">Finanzas</span>
     </button>
-    <button data-view="evaluacion" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('evaluacion')">
-      <div class="nav-dot"></div>
-      <svg class="nav-icon shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-      <span class="nav-label whitespace-nowrap">Evaluación</span>
-    </button>
     <div class="mt-2 pt-2 border-t border-slate-800">
       <button data-view="config" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('config')">
         <div class="nav-dot"></div>
@@ -4116,44 +4111,10 @@
 
     </section><!-- /view-finanzas -->
 
-    <!-- ═══ VIEW: EVALUACIÓN DE PERSONAL ═══════════════════════════ -->
-    <section id="view-evaluacion" class="view hidden">
-      <div class="flex items-center justify-between mb-4">
-        <div>
-          <h2 class="text-lg font-bold text-slate-100">Evaluación de Personal</h2>
-          <p class="text-xs text-slate-500" id="evalFechaLbl">—</p>
-        </div>
-        <div class="flex gap-2">
-          <button onclick="MOS.nav('config');setTimeout(()=>MOS.setCfgTab('evaluacion'),50)" class="btn-ghost text-sm" title="Configurar metas y bonos en Configuración → Evaluación">⚙</button>
-          <button onclick="MOS.refreshEvaluacion()" class="btn-ghost text-sm">↻ Actualizar</button>
-        </div>
-      </div>
-
-      <!-- Filtro app origen -->
-      <div class="flex gap-2 mb-3 overflow-x-auto" id="evalAppFilter">
-        <button class="eval-pill active" data-app="all" onclick="MOS.evalSetApp('all')">Todos</button>
-        <button class="eval-pill" data-app="warehouseMos" onclick="MOS.evalSetApp('warehouseMos')">⚙ Warehouse</button>
-        <button class="eval-pill" data-app="mosExpress"   onclick="MOS.evalSetApp('mosExpress')">💰 MosExpress</button>
-      </div>
-
-      <!-- Lista de empleados -->
-      <div id="evalListPersonal" class="space-y-3">
-        <div class="skel h-24 rounded-xl"></div>
-        <div class="skel h-24 rounded-xl"></div>
-        <div class="skel h-24 rounded-xl"></div>
-      </div>
-
-      <!-- Liquidación semanal -->
-      <div class="mt-6 pt-4 border-t border-slate-800">
-        <h3 class="text-sm font-bold text-slate-300 mb-2">📊 Liquidación semanal</h3>
-        <p class="text-xs text-slate-500 mb-3">Domingo cierra automáticamente a las 8 PM. Imprime para pagar.</p>
-        <div class="flex flex-wrap gap-2">
-          <input type="date" id="liqFechaInicio" class="inp text-xs" style="min-width:140px;max-width:170px;flex:1 1 140px">
-          <select id="liqPersona" class="inp text-xs flex-1" style="min-width:160px"></select>
-          <button onclick="MOS.abrirLiquidacion()" class="btn-primary text-xs">Ver liquidación</button>
-        </div>
-      </div>
-    </section><!-- /view-evaluacion -->
+    <!-- (Vista "Evaluación" eliminada — sus funciones se accedan desde
+         Finanzas (Personal del Día) y Configuración → Evaluación) -->
+    <input type="hidden" id="liqFechaInicio">
+    <select id="liqPersona" style="display:none"></select>
 
     <!-- ═══ VIEW: PROMOCIONES ═══════════════════════════════════════ -->
     <section id="view-promociones" class="view hidden">
@@ -4676,12 +4637,6 @@
       <div class="bnav-pill">
         <span class="bnav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-6 9 6v11a2 2 0 0 1-2 2h-4v-7H10v7H6a2 2 0 0 1-2-2V9z"/></svg></span>
         <span class="bnav-lbl">Proveedores</span>
-      </div>
-    </button>
-    <button data-view="evaluacion" class="bnav-btn" onclick="MOS.nav('evaluacion')">
-      <div class="bnav-pill">
-        <span class="bnav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
-        <span class="bnav-lbl">Evaluación</span>
       </div>
     </button>
   </div>

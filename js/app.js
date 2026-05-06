@@ -132,6 +132,9 @@ const MOS = (() => {
 
   // ── NAVIGATION ──────────────────────────────────────────────
   function nav(viewName) {
+    // Módulo Evaluación eliminado — sus funciones viven en Finanzas
+    // (Personal del Día) y en Configuración → Evaluación.
+    if (viewName === 'evaluacion' || viewName === 'evaluación') viewName = 'finanzas';
     if (S.view === viewName) return;
 
     // Al SALIR del módulo proveedores, limpiar la selección activa para
@@ -565,7 +568,6 @@ const MOS = (() => {
         case 'proveedores':  await loadProveedores();  break;
         case 'cajas':        await loadCajas(true);    break;
         case 'finanzas':     await _loadFinanzas();    break;
-        case 'evaluacion':   await loadEvaluacion();   break;
         case 'promociones':  await loadPromociones();  break;
       }
     } catch (e) {
