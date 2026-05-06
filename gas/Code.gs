@@ -150,6 +150,7 @@ function _route(method, e) {
       case 'crearPersonalMaster':       return crearPersonalMaster(params);
       case 'actualizarPersonalMaster':  return actualizarPersonalMaster(params);
       case 'verificarPinPersonal':      return verificarPinPersonal(params);
+      case 'registrarConexionPersonal': return registrarConexionPersonal(params);
 
       // ── Finanzas ────────────────────────────────────────────
       case 'getFinanzasDia':             return getFinanzasDia(params);

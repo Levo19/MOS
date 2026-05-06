@@ -267,7 +267,21 @@ function actualizarSerie(params) {
 // VENDEDORES: cajeros MosExpress — solo registro de nombre, sin cuenta
 // ════════════════════════════════════════════════
 
+// Auto-añade columna Ultima_Conexion a PERSONAL_MASTER si no existe
+function _garantizarColumnasPersonal() {
+  var sheet = getSheet('PERSONAL_MASTER');
+  var hdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+    .map(function(h){ return String(h).trim(); });
+  if (hdrs.indexOf('Ultima_Conexion') === -1) {
+    var col = sheet.getLastColumn() + 1;
+    sheet.getRange(1, col, 1, 1).setValues([['Ultima_Conexion']]);
+    sheet.getRange(1, col, 1, 1).setFontWeight('bold').setBackground('#1f2937').setFontColor('#fff');
+  }
+  return sheet;
+}
+
 function getPersonalMaster(params) {
+  _garantizarColumnasPersonal();
   var rows = _sheetToObjects(getSheet('PERSONAL_MASTER'));
   if (params && params.tipo)      rows = rows.filter(function(r){ return r.tipo === params.tipo; });
   if (params && params.appOrigen) rows = rows.filter(function(r){ return r.appOrigen === params.appOrigen; });
@@ -281,6 +295,39 @@ function getPersonalMaster(params) {
       return c;
     })
   };
+}
+
+// Heartbeat de personal — actualiza Ultima_Conexion del usuario.
+// Soporta búsqueda por idPersonal o por (nombre + appOrigen).
+// Si es vendedor ME nuevo (no existe en PM), no crea fila aquí — el bloqueo
+// usa BLOQUEOS_USUARIO independiente.
+function registrarConexionPersonal(params) {
+  if (!params) return { ok: false, error: 'Sin params' };
+  _garantizarColumnasPersonal();
+  var sheet = getSheet('PERSONAL_MASTER');
+  var data  = sheet.getDataRange().getValues();
+  var hdrs  = data[0];
+  var iId   = hdrs.indexOf('idPersonal');
+  var iNom  = hdrs.indexOf('nombre');
+  var iApp  = hdrs.indexOf('appOrigen');
+  var iUC   = hdrs.indexOf('Ultima_Conexion');
+  if (iUC < 0) return { ok: false, error: 'Columna Ultima_Conexion no creada' };
+
+  var nombreNorm = String(params.nombre || '').trim().toLowerCase();
+  var appNorm = String(params.appOrigen || '').toLowerCase();
+  var tz = Session.getScriptTimeZone();
+  var nowStr = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss');
+
+  for (var i = 1; i < data.length; i++) {
+    var matchId  = params.idPersonal && String(data[i][iId]) === String(params.idPersonal);
+    var matchNom = nombreNorm && String(data[i][iNom] || '').trim().toLowerCase() === nombreNorm;
+    var matchApp = !appNorm || String(data[i][iApp] || '').toLowerCase() === appNorm;
+    if ((matchId || matchNom) && matchApp) {
+      sheet.getRange(i + 1, iUC + 1).setValue(nowStr);
+      return { ok: true, data: { idPersonal: data[i][iId], nombre: data[i][iNom] } };
+    }
+  }
+  return { ok: true, data: { idPersonal: null, nombre: params.nombre || null, encontrado: false } };
 }
 
 function crearPersonalMaster(params) {

@@ -7982,8 +7982,8 @@ const MOS = (() => {
   let cfgData = { zonas: [], estaciones: [], impresoras: [], personal: [], personalMOS: [], series: [], dispositivos: [] };
 
   async function loadConfig() {
-    S.cfgTab = S.cfgTab || 'zonas';
-    const [zonRes, estRes, impRes, persRes, persMOSRes, bloqMERes, serRes, dispRes, catRes] = await Promise.allSettled([
+    S.cfgTab = S.cfgTab || 'infra';
+    const [zonRes, estRes, impRes, persRes, persMOSRes, bloqMERes, serRes, dispRes, catRes, cfgRes] = await Promise.allSettled([
       API.get('getZonas', {}),
       API.get('getEstaciones', {}),
       API.get('getImpresoras', {}),
@@ -7992,7 +7992,8 @@ const MOS = (() => {
       API.get('getVendedoresMEBloqueados', {}),
       API.get('getSeries', {}),
       API.get('getDispositivos', {}),
-      API.get('getCategorias', {})
+      API.get('getCategorias', {}),
+      API.get('getConfig', {})
     ]);
     cfgData.zonas         = zonRes.status      === 'fulfilled' ? (zonRes.value      || []) : [];
     cfgData.estaciones    = estRes.status      === 'fulfilled' ? (estRes.value      || []) : [];
@@ -8003,12 +8004,13 @@ const MOS = (() => {
     cfgData.series        = serRes.status      === 'fulfilled' ? (serRes.value      || []) : [];
     cfgData.dispositivos  = dispRes.status     === 'fulfilled' ? (dispRes.value     || []) : [];
     cfgData.categorias    = catRes.status      === 'fulfilled' ? (catRes.value      || []) : [];
+    cfgData.config        = cfgRes.status      === 'fulfilled' ? (cfgRes.value      || {}) : {};
     renderCfgTab(S.cfgTab);
   }
 
   function setCfgTab(tab) {
     S.cfgTab = tab;
-    const tabs = ['infra','personal','seguridad','categorias','evaluacion','integridad'];
+    const tabs = ['infra','personal','seguridad','categorias','integridad'];
     tabs.forEach(t => {
       const btn = $('cfgTab' + t.charAt(0).toUpperCase() + t.slice(1));
       if (btn) btn.classList.toggle('active', t === tab);
@@ -8019,14 +8021,15 @@ const MOS = (() => {
   }
 
   function renderCfgTab(tab) {
-    if (tab === 'infra') _arrancarRefreshInfra();
-    else                 _detenerRefreshInfra();
+    if (tab === 'infra')        _arrancarRefreshInfra();
+    else                        _detenerRefreshInfra();
+    if (tab === 'personal')     _arrancarRefreshPersonal();
+    else                        _detenerRefreshPersonal();
     switch (tab) {
       case 'infra':        renderInfra();        break;
       case 'personal':     renderPersonal();     break;
       case 'seguridad':    renderSeguridad();    break;
       case 'categorias':   renderCategorias();   break;
-      case 'evaluacion':   renderConfigEvalPanel(); break;
       case 'integridad':   renderIntegridad();   break;
     }
   }
@@ -8053,6 +8056,48 @@ const MOS = (() => {
   }
   function _detenerRefreshInfra() {
     if (_intervalInfra) { clearInterval(_intervalInfra); _intervalInfra = null; }
+  }
+
+  // Auto-refresh Personal cada 30s (Ultima_Conexion + dispositivos para online ME)
+  let _intervalPersonal = null;
+  function _arrancarRefreshPersonal() {
+    if (_intervalPersonal) return;
+    _intervalPersonal = setInterval(async () => {
+      if (S.cfgTab !== 'personal' || document.hidden) return;
+      try {
+        const [personRes, mosRes, dispRes] = await Promise.allSettled([
+          API.get('getPersonalMaster', { appOrigen: 'warehouseMos' }),
+          API.get('getPersonalMaster', { appOrigen: 'MOS' }),
+          API.get('getDispositivos', {})
+        ]);
+        let cambios = false;
+        if (personRes.status === 'fulfilled') {
+          const newJson = JSON.stringify(personRes.value || []);
+          if (JSON.stringify(cfgData.personal || []) !== newJson) {
+            cfgData.personal = personRes.value || [];
+            cambios = true;
+          }
+        }
+        if (mosRes.status === 'fulfilled') {
+          const newJson = JSON.stringify(mosRes.value || []);
+          if (JSON.stringify(cfgData.personalMOS || []) !== newJson) {
+            cfgData.personalMOS = mosRes.value || [];
+            cambios = true;
+          }
+        }
+        if (dispRes.status === 'fulfilled') {
+          const newJson = JSON.stringify(dispRes.value || []);
+          if (JSON.stringify(cfgData.dispositivos || []) !== newJson) {
+            cfgData.dispositivos = dispRes.value || [];
+            cambios = true;
+          }
+        }
+        if (cambios) renderPersonal();
+      } catch(_) {}
+    }, 30 * 1000);
+  }
+  function _detenerRefreshPersonal() {
+    if (_intervalPersonal) { clearInterval(_intervalPersonal); _intervalPersonal = null; }
   }
 
   // ── TUTORIAL TICKETS (módulo Cajas) ──────────────────────
@@ -8969,65 +9014,202 @@ const MOS = (() => {
 
   // (renderImpresoras() obsoleto — usado renderInfra() para vista jerárquica)
 
-  function renderPersonal() {
-    // MOS users
-    const elMOS = $('listUsuariosMOS');
-    if (elMOS) {
-      if (!cfgData.personalMOS.length) {
-        elMOS.innerHTML = '<p class="text-slate-500 text-sm text-center py-4">Sin usuarios MOS</p>';
-      } else {
-        elMOS.innerHTML = cfgData.personalMOS.map(p => {
-          const ini = ((p.nombre||'?')[0] + (p.apellido||'?')[0]).toUpperCase();
-          const rolCls = p.rol === 'master' ? 'badge-yellow' : 'badge-blue';
-          const activo = p.estado == '1';
-          return `<div class="pers-card${activo ? '' : ' inactivo'}${p._tmp ? ' opacity-60' : ''}">
-            <div class="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
-                 style="background:${p.color||'#6366f1'}">${ini}</div>
-            <div class="flex-1 min-w-0">
-              <div class="font-medium text-sm text-slate-200 truncate">${p.nombre} ${p.apellido||''}</div>
-              <span class="badge ${rolCls} text-xs">${p.rol}</span>
-            </div>
-            <label class="pers-switch" title="${activo ? 'Desactivar' : 'Activar'}" onclick="event.stopPropagation()">
-              <input type="checkbox" ${activo ? 'checked' : ''} onchange="MOS.togglePersonalActivo('${p.idPersonal}','MOS', event)">
-              <span class="pers-switch-slider"></span>
-            </label>
-            <button onclick="MOS.abrirModalPersonal('${p.idPersonal}','MOS')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700 ml-1" title="Editar">✏️</button>
-          </div>`;
-        }).join('');
-      }
-    }
-    // ME Vendedores — leídos del cache de liquidaciones pendientes
-    // (mismo source que la pantalla de Liquidaciones, ya pre-cargado al login)
-    _cfgRenderMeCajeros();
+  // Helper: actividad del usuario igual que dispositivos
+  function _personaActividad(ultimaConexion) {
+    if (!ultimaConexion) return { color: '#64748b', label: 'sin conexión', dot: '⚫', minutos: Infinity };
+    const t = new Date(ultimaConexion).getTime();
+    if (isNaN(t)) return { color: '#64748b', label: ultimaConexion, dot: '⚫', minutos: Infinity };
+    const min = Math.floor((Date.now() - t) / 60000);
+    if (min < 5)       return { color: '#10b981', label: 'online ahora',     dot: '🟢', minutos: min };
+    if (min < 60)      return { color: '#10b981', label: `hace ${min}m`,     dot: '🟢', minutos: min };
+    if (min < 60*24)   return { color: '#fbbf24', label: `hace ${Math.floor(min/60)}h`, dot: '🟡', minutos: min };
+    if (min < 60*24*7) return { color: '#f97316', label: `hace ${Math.floor(min/60/24)}d`, dot: '🟠', minutos: min };
+    return { color: '#ef4444', label: `inactivo ${Math.floor(min/60/24)}d`, dot: '🔴', minutos: min };
+  }
 
-    // WH operadores
-    const el = $('listOperadores');
-    if (!el) return;
-    if (!cfgData.personal.length) {
-      el.innerHTML = '<p class="text-slate-500 text-sm text-center py-4">Sin operadores registrados</p>';
-      return;
-    }
-    el.innerHTML = cfgData.personal.map(p => {
-      const initials = ((p.nombre || '?').charAt(0) + (p.apellido || '?').charAt(0)).toUpperCase();
-      const rolBadge = p.rol === 'ENVASADOR' ? 'badge-yellow' : p.rol === 'SUPERVISOR' ? 'badge-blue' : 'badge-gray';
-      const activo = p.estado == '1';
-      return `<div class="pers-card${activo ? '' : ' inactivo'}${p._tmp ? ' opacity-60' : ''}">
-        <div class="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
-             style="background:${p.color || '#6366f1'}">${initials}</div>
-        <div class="flex-1 min-w-0">
-          <div class="font-medium text-sm text-slate-200 truncate">${p.nombre} ${p.apellido || ''}</div>
-          <div class="flex items-center gap-2 mt-0.5 flex-wrap">
-            <span class="badge ${rolBadge} text-xs">${p.rol}</span>
-            ${p.montoBase ? `<span class="text-[10px] text-slate-500">S/.${parseFloat(p.montoBase).toFixed(2)}/día</span>` : ''}
+  // Render unificado de card de persona con avatar, indicador online, switch y click
+  function _renderPersonaCard(p, appOrigen) {
+    const ini = ((p.nombre || '?')[0] + (p.apellido || '?')[0]).toUpperCase();
+    const activo = String(p.estado) === '1';
+    const act = _personaActividad(p.Ultima_Conexion || p.ultimaConexion);
+    const isFresh = act.minutos < 5;
+    const safeId = String(p.idPersonal || '').replace(/'/g, '&#39;');
+    const claseFresh = isFresh ? 'disp-chip-live' : '';
+    const dotPulse = isFresh ? '<span class="disp-dot-pulse"></span>' : '';
+    const opacityCls = (!activo || p._tmp) ? 'opacity-60' : '';
+    const glowBg = isFresh ? 'rgba(16,185,129,0.06)' : '#0d1526';
+    const glowBorder = isFresh ? 'rgba(16,185,129,0.5)' : '#1e293b';
+
+    return `<div class="disp-chip flex items-center gap-3 p-3 rounded-lg cursor-pointer ${claseFresh} ${opacityCls}"
+      onclick="MOS.abrirModalPersonal('${safeId}','${appOrigen}')"
+      style="background:${glowBg};border:1px solid ${glowBorder};transition:all 0.2s;"
+      title="Click para editar">
+      <div class="relative shrink-0">
+        <div class="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold"
+             style="background:${p.color || '#6366f1'}">${ini}</div>
+        ${dotPulse}
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="font-medium text-sm text-slate-200 truncate">${p.nombre} ${p.apellido || ''}</div>
+        <div class="flex items-center gap-2 mt-0.5 flex-wrap">
+          <span class="badge badge-gray text-[9px] uppercase">${p.rol || '—'}</span>
+          ${p.montoBase ? `<span class="text-[9px] text-slate-500">S/.${parseFloat(p.montoBase).toFixed(2)}/día</span>` : ''}
+          <span class="text-[9px]" style="color:${act.color};">${act.dot} ${act.label}</span>
+        </div>
+      </div>
+      <label class="pers-switch shrink-0" title="${activo ? 'Desactivar' : 'Activar'}" onclick="event.stopPropagation()">
+        <input type="checkbox" ${activo ? 'checked' : ''} onchange="MOS.togglePersonalActivo('${safeId}','${appOrigen}', event)">
+        <span class="pers-switch-slider"></span>
+      </label>
+      <span class="text-[10px] text-slate-500 p-1">✏️</span>
+    </div>`;
+  }
+
+  // Chip de meta editable inline (click → input)
+  function _renderMetaChip(label, configKey, valor, unidad, color) {
+    color = color || '#6366f1';
+    const safeKey = String(configKey).replace(/'/g, '&#39;');
+    return `<span class="meta-chip inline-flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer text-xs font-bold"
+      onclick="MOS.editarMetaChip('${safeKey}', this)"
+      data-meta-key="${safeKey}"
+      data-meta-valor="${valor}"
+      style="background:rgba(99,102,241,0.12);border:1px solid ${color};color:#c7d2fe;transition:all 0.2s;"
+      title="Click para editar">
+      <span class="text-[10px] opacity-80 uppercase">${label}</span>
+      <span class="text-base font-black" style="color:${color}">${valor || '—'}</span>
+      <span class="text-[10px] opacity-70">${unidad || ''}</span>
+      <span class="text-[10px] opacity-50">✏️</span>
+    </span>`;
+  }
+
+  function renderPersonal() {
+    const cont = $('personalContenedor');
+    if (!cont) return;
+
+    const adminsMOS = (cfgData.personalMOS || []).filter(p => {
+      const r = String(p.rol || '').toUpperCase();
+      return r === 'MASTER' || r === 'ADMIN' || r === 'ADMINISTRADOR';
+    });
+    const operadoresWH = (cfgData.personal || []).filter(p =>
+      String(p.rol || '').toUpperCase() !== 'SUPERVISOR'
+    );
+
+    // Contar online en cada grupo
+    const _onlineCount = arr => arr.filter(p => _personaActividad(p.Ultima_Conexion || p.ultimaConexion).minutos < 5).length;
+    const onlineMOS = _onlineCount(adminsMOS);
+    const onlineWH  = _onlineCount(operadoresWH);
+    // ME vendedores: contar dispositivos con sesión <5min cuyo Ultima_Sesion sea de un cajero
+    const onlineME = (cfgData.dispositivos || []).filter(d => {
+      if (String(d.Estado).toUpperCase() !== 'ACTIVO') return false;
+      if (!d.Ultima_Sesion) return false;
+      return _personaActividad(d.Ultima_Conexion).minutos < 5;
+    }).length;
+
+    // Metas (de cfgData.config si existe; si no, leerá vacío y guardará al editar)
+    const cfg = (cfgData.config || {});
+    const metaCajero    = cfg.META_CAJERO    || '';
+    const metaEnvasador = cfg.META_ENVASADOR || '';
+    const metaAlmacenero = cfg.META_ALMACENERO || '';
+    const metaAuditorias = cfg.META_AUDITORIAS || '';
+
+    // ── Grupo 1: ADMIN/MASTER (MOS) ─────
+    const grupoMOS = `<div class="card p-4" style="background:linear-gradient(135deg,#1e1b4b 0%,#0d1526 100%);border:1px solid #6366f1;">
+      <div class="flex items-start justify-between gap-3 mb-3 flex-wrap">
+        <div class="flex items-center gap-3">
+          <span class="text-2xl">👑</span>
+          <div>
+            <div class="flex items-center gap-2">
+              <h3 class="text-base font-black text-white">Administradores</h3>
+              ${onlineMOS > 0 ? `<span class="badge text-[10px] disp-chip-live" style="background:rgba(16,185,129,0.18);color:#6ee7b7;border:1px solid rgba(16,185,129,0.5);">🟢 ${onlineMOS} online</span>` : ''}
+            </div>
+            <p class="text-[11px] text-slate-400 mt-0.5">MOS · acceso al panel · gestión global · ${adminsMOS.length} total</p>
           </div>
         </div>
-        <label class="pers-switch" title="${activo ? 'Desactivar' : 'Activar'}" onclick="event.stopPropagation()">
-          <input type="checkbox" ${activo ? 'checked' : ''} onchange="MOS.togglePersonalActivo('${p.idPersonal}','warehouseMos', event)">
-          <span class="pers-switch-slider"></span>
-        </label>
-        <button onclick="MOS.abrirModalPersonal('${p.idPersonal}','warehouseMos')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700 ml-1" title="Editar">✏️</button>
-      </div>`;
-    }).join('');
+        <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalPersonal(null,'MOS')">+ admin</button>
+      </div>
+      ${adminsMOS.length === 0
+        ? '<p class="text-center py-4 text-slate-500 text-sm">Sin admins/master registrados</p>'
+        : `<div class="space-y-2">${adminsMOS.map(p => _renderPersonaCard(p, 'MOS')).join('')}</div>`}
+    </div>`;
+
+    // ── Grupo 2: VENDEDORES (ME) — usa el render de cajeros existente ─
+    const grupoME = `<div class="card p-4" style="background:linear-gradient(135deg,#451a03 0%,#0d1526 100%);border:1px solid #f59e0b;">
+      <div class="flex items-start justify-between gap-3 mb-3 flex-wrap">
+        <div class="flex items-center gap-3">
+          <span class="text-2xl">🛒</span>
+          <div>
+            <div class="flex items-center gap-2">
+              <h3 class="text-base font-black text-white">Vendedores / Cajeros</h3>
+              ${onlineME > 0 ? `<span class="badge text-[10px] disp-chip-live" style="background:rgba(16,185,129,0.18);color:#6ee7b7;border:1px solid rgba(16,185,129,0.5);">🟢 ${onlineME} online</span>` : ''}
+            </div>
+            <p class="text-[11px] text-slate-400 mt-0.5">MosExpress · cajeros que operan POS</p>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-1.5">
+          ${_renderMetaChip('Meta venta diaria', 'META_CAJERO', metaCajero, 'S/', '#f59e0b')}
+        </div>
+      </div>
+      <div id="listMeCajeros" class="space-y-2"></div>
+      <span id="cfgMeCajerosCount" class="hidden"></span>
+    </div>`;
+
+    // ── Grupo 3: OPERADORES WH (almacenero + envasador juntos) ─
+    const grupoWH = `<div class="card p-4" style="background:linear-gradient(135deg,#0d1526 0%,#7c2d12 0%,#0d1526 100%);border:1px solid #ea580c;">
+      <div class="flex items-start justify-between gap-3 mb-3 flex-wrap">
+        <div class="flex items-center gap-3">
+          <span class="text-2xl">🏭</span>
+          <div>
+            <div class="flex items-center gap-2">
+              <h3 class="text-base font-black text-white">Operadores Almacén</h3>
+              ${onlineWH > 0 ? `<span class="badge text-[10px] disp-chip-live" style="background:rgba(16,185,129,0.18);color:#6ee7b7;border:1px solid rgba(16,185,129,0.5);">🟢 ${onlineWH} online</span>` : ''}
+            </div>
+            <p class="text-[11px] text-slate-400 mt-0.5">warehouseMos · almaceneros + envasadores · ${operadoresWH.length} total</p>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-1.5">
+          ${_renderMetaChip('Meta guías', 'META_ALMACENERO', metaAlmacenero, '/día', '#ea580c')}
+          ${_renderMetaChip('Meta envasado', 'META_ENVASADOR', metaEnvasador, 'uds', '#fb923c')}
+          ${_renderMetaChip('Meta auditorías', 'META_AUDITORIAS', metaAuditorias, '/día', '#fbbf24')}
+        </div>
+        <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalPersonal(null,'warehouseMos')">+ operador</button>
+      </div>
+      ${operadoresWH.length === 0
+        ? '<p class="text-center py-4 text-slate-500 text-sm">Sin operadores registrados</p>'
+        : `<div class="space-y-2">${operadoresWH.map(p => _renderPersonaCard(p, 'warehouseMos')).join('')}</div>`}
+    </div>`;
+
+    cont.innerHTML = grupoMOS + grupoME + grupoWH;
+
+    // Renderizar cajeros ME (usa cache de liquidaciones existente)
+    _cfgRenderMeCajeros();
+  }
+
+  // Editar meta inline (chip → input → guardar al blur/enter)
+  function editarMetaChip(configKey, chipEl) {
+    const valorActual = chipEl.dataset.metaValor || '';
+    const label = chipEl.querySelector('span:first-child')?.textContent || configKey;
+    chipEl.outerHTML = `<span class="inline-flex items-center gap-2 px-2 py-1 rounded-lg" style="background:rgba(99,102,241,0.12);border:1px solid #6366f1;">
+      <span class="text-[10px] text-slate-300 uppercase">${label}</span>
+      <input type="number" id="metaInput_${configKey}" value="${valorActual}" autofocus
+        onblur="MOS.guardarMetaChip('${configKey}', this.value)"
+        onkeydown="if(event.key==='Enter')this.blur(); if(event.key==='Escape'){this.value='${valorActual}';this.blur();}"
+        class="bg-slate-900 text-white text-sm font-black px-2 py-0.5 rounded border border-indigo-500 outline-none w-24"
+        style="-moz-appearance:textfield;">
+    </span>`;
+    setTimeout(() => $('metaInput_' + configKey)?.focus(), 50);
+  }
+
+  async function guardarMetaChip(configKey, valor) {
+    const v = String(valor || '').trim();
+    if (!cfgData.config) cfgData.config = {};
+    cfgData.config[configKey] = v;
+    renderPersonal();
+    try {
+      await API.post('setConfig', { clave: configKey, valor: v });
+      toast(`Meta actualizada · ${configKey} = ${v}`, 'ok');
+    } catch(e) {
+      toast('Error al guardar meta: ' + e.message, 'error');
+    }
   }
 
   // Pinta el card "🛒 Vendedores — MosExpress" en Config → Personal.
@@ -9926,7 +10108,7 @@ const MOS = (() => {
     if (rolSel) {
       rolSel.innerHTML = isMOS
         ? '<option value="MASTER">MASTER (acceso total)</option><option value="ADMIN">ADMIN (sin configuración)</option>'
-        : '<option value="ALMACENERO">ALMACENERO</option><option value="ENVASADOR">ENVASADOR</option><option value="SUPERVISOR">SUPERVISOR</option>';
+        : '<option value="ALMACENERO">ALMACENERO</option><option value="ENVASADOR">ENVASADOR</option>';
     }
     const pinInp = $('persPin');
     if (pinInp) pinInp.type = 'password';
@@ -14608,6 +14790,7 @@ const MOS = (() => {
     eliminarZona, _zonaActualizarPreview,
     toggleZonaActiva, toggleEstacionActiva, toggleImpresoraActiva, infraToggleHeatmap,
     abrirModalPersonal, guardarPersonal, togglePersonalActivo, eliminarPersonal,
+    editarMetaChip, guardarMetaChip,
     _persActualizarPreview, _persRandomColor, _persRandomPin, _persSeleccionarColor,
     abrirModalSerieZona, guardarSerieZona, eliminarSerieZona, _serieActualizarPreview,
     guardarPinEstacion, guardarPinWH,

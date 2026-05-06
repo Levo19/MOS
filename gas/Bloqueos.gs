@@ -72,6 +72,17 @@ function getEstadoBloqueoUsuario(params) {
     } catch(e) { /* tolerar */ }
   }
 
+  // ── Heartbeat de PERSONAL ────────────────────────────────
+  // Aprovecha el mismo poll cada 30s para actualizar Ultima_Conexion
+  // del usuario (vendedor ME por nombre, operador WH por idPersonal).
+  try {
+    registrarConexionPersonal({
+      idPersonal: params.idPersonal || '',
+      nombre:     params.nombre || '',
+      appOrigen:  params.appOrigen || ''
+    });
+  } catch(e) { /* tolerar */ }
+
   // 1) (Solo para usuarios "reales" tipo WH/MOS Admin) — buscar en PERSONAL_MASTER
   // Para vendedores ME esto NO aplica: ellos comparten el usuario plantilla
   // (ej: PER099 Cajero Genérico) y se identifican solo por nombre.
