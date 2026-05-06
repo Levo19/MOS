@@ -117,6 +117,9 @@ const MOS = (() => {
     if (S.view === 'proveedores' && viewName !== 'proveedores' && S.provSelId) {
       try { cerrarDetalleProveedor(); } catch {}
     }
+    // Auto-refresh de almacén: arrancar/detener según vista
+    if (viewName === 'almacen') _almIniciarAutoRefresh();
+    else _almDetenerAutoRefresh();
 
     document.querySelectorAll('.view').forEach(v => {
       v.classList.remove('active');
@@ -2589,6 +2592,108 @@ const MOS = (() => {
     return n.toFixed(decimals);
   }
 
+  // ── ALMACÉN: cache localStorage + auto-refresh background ──
+  // Cada pestaña hidrata desde localStorage al inicio (render instantáneo),
+  // luego un fetch silencioso en background actualiza si hay diferencias.
+  // Un timer global de 60s repite el ciclo mientras la app está visible.
+  const ALM_CACHE_PFX = 'mos_alm_';
+  const ALM_CACHE_TTL = 30 * 60 * 1000;  // 30 min — más que el periodo de refresh
+  function _almLoadCache(key) {
+    try {
+      const raw = localStorage.getItem(ALM_CACHE_PFX + key);
+      if (!raw) return null;
+      const p = JSON.parse(raw);
+      if (Date.now() - (p.ts || 0) > ALM_CACHE_TTL) return null;
+      return p.data;
+    } catch { return null; }
+  }
+  function _almSaveCache(key, data) {
+    try { localStorage.setItem(ALM_CACHE_PFX + key, JSON.stringify({ ts: Date.now(), data })); } catch {}
+  }
+  // Hidrata todos los caches en S.X al inicio del módulo
+  function _almHidratarTodos() {
+    const cat = _almLoadCache('catalogoStock');
+    if (cat) S.catalogoStock = cat;
+    const venc = _almLoadCache('vencimientos');
+    if (venc) S.vencimientos = venc;
+    const mer = _almLoadCache('mermas');
+    if (mer) S.mermas = mer;
+    const env = _almLoadCache('envasados');
+    if (env) S.envasados = env;
+    const opsCache = _almLoadCache('opsData');
+    if (opsCache) S._opsData = opsCache;
+  }
+  // Auto-refresh background: 60s. Solo cuando la app está visible.
+  const ALM_AUTO_REFRESH_MS = 60 * 1000;
+  let _almAutoTimer = null;
+  function _almIniciarAutoRefresh() {
+    if (_almAutoTimer) clearInterval(_almAutoTimer);
+    _almAutoTimer = setInterval(() => {
+      if (!S.session) return;
+      if (document.visibilityState !== 'visible') return;
+      _almRefreshSilencioActivo();
+    }, ALM_AUTO_REFRESH_MS);
+  }
+  function _almDetenerAutoRefresh() {
+    if (_almAutoTimer) { clearInterval(_almAutoTimer); _almAutoTimer = null; }
+  }
+  // Refresca silenciosamente la pestaña activa
+  async function _almRefreshSilencioActivo() {
+    const tab = S.almTab || 'resumen';
+    try {
+      if (tab === 'resumen') {
+        if (typeof almLoadResumen === 'function') almLoadResumen();
+      } else if (tab === 'stock') {
+        const r = await API.get('getCatalogoStockResumen', { dias: 7 });
+        const items = (r && r.productos) || [];
+        if (JSON.stringify(items) !== JSON.stringify(S.catalogoStock)) {
+          S.catalogoStock = items;
+          _almSaveCache('catalogoStock', items);
+          if (S.almTab === 'stock') { renderStockTable(); _almFlash('almPanelStock'); }
+        }
+      } else if (tab === 'ops') {
+        if (typeof almLoadOps === 'function') almLoadOps();
+      } else if (tab === 'zonas') {
+        if (typeof almLoadZonas === 'function') almLoadZonas();
+      } else if (tab === 'venc') {
+        const r = await API.get('getAlertasWarehouse', {});
+        const v = r || { criticos: [], alertas: [] };
+        if (JSON.stringify(v) !== JSON.stringify(S.vencimientos)) {
+          S.vencimientos = v;
+          _almSaveCache('vencimientos', v);
+          if (S.almTab === 'venc') { renderVencTable(); _almFlash('almPanelVenc'); }
+        }
+      } else if (tab === 'merma') {
+        const r = await API.get('getMermasWarehouse', {});
+        const m = r || [];
+        if (JSON.stringify(m) !== JSON.stringify(S.mermas)) {
+          S.mermas = m;
+          _almSaveCache('mermas', m);
+          if (S.almTab === 'merma') { renderMermasTable(); _almFlash('almPanelMerma'); }
+        }
+      } else if (tab === 'env') {
+        const r = await API.get('getEnvasadosWarehouse', { limit: '50' });
+        const e = r || [];
+        if (JSON.stringify(e) !== JSON.stringify(S.envasados)) {
+          S.envasados = e;
+          _almSaveCache('envasados', e);
+          if (S.almTab === 'env') { renderEnvTable(); _almFlash('almPanelEnv'); }
+        }
+      }
+    } catch {}
+  }
+  // Animación sutil de "actualizado" cuando llega data nueva
+  function _almFlash(panelId) {
+    const el = $(panelId);
+    if (!el) return;
+    el.classList.remove('alm-flash');
+    void el.offsetWidth;
+    el.classList.add('alm-flash');
+  }
+
+  // Hidratar al cargar el script
+  _almHidratarTodos();
+
   // ── ALMACÉN ─────────────────────────────────────────────────
   async function loadAlmacen(forceRefresh) {
     if (!API.isConfigured()) return;
@@ -2604,10 +2709,20 @@ const MOS = (() => {
       const v = catalogoRes.value || {};
       S.catalogoStock = (v.productos) || [];
       S._catalogoGasOld = !v._almV || v._almV < 2;
+      _almSaveCache('catalogoStock', S.catalogoStock);
     }
-    if (alertasRes.status === 'fulfilled') S.vencimientos = alertasRes.value || { criticos: [], alertas: [] };
-    if (mermasRes.status === 'fulfilled') S.mermas = mermasRes.value || [];
-    if (envRes.status === 'fulfilled')    S.envasados = envRes.value || [];
+    if (alertasRes.status === 'fulfilled') {
+      S.vencimientos = alertasRes.value || { criticos: [], alertas: [] };
+      _almSaveCache('vencimientos', S.vencimientos);
+    }
+    if (mermasRes.status === 'fulfilled') {
+      S.mermas = mermasRes.value || [];
+      _almSaveCache('mermas', S.mermas);
+    }
+    if (envRes.status === 'fulfilled') {
+      S.envasados = envRes.value || [];
+      _almSaveCache('envasados', S.envasados);
+    }
     S.loaded['almacen'] = true;
     renderAlmTab(S.almTab);
   }
@@ -2639,20 +2754,30 @@ const MOS = (() => {
     if (tab === 'env')   renderEnvTable();
   }
 
-  // ── ALMACÉN: pre-fetch al loguear para que el cache esté tibio ──
+  // ── ALMACÉN: pre-fetch al loguear ─────────────────────────
+  // Carga TODAS las tablas críticas + persiste a localStorage para que la
+  // próxima visita al módulo sea instantánea. También hidrata S.X en memoria.
   function _prefetchAlmacen() {
-    // Esperar 3s después del init para no competir con otras pre-cargas
     setTimeout(() => {
       if (!S.session) return;
-      // Disparamos los 4 endpoints más usados sin esperar respuesta
-      // CacheService los guardará → la próxima visita es instantánea
-      const tasks = [
-        () => API.get('getDashboardAlmacen', {}),
-        () => API.get('getAlertasOperativas', {}),
-        () => API.get('getGuiasYPreingresos', { dias: 7 }),
-        () => API.get('getInsightsStock', { dias: 30 })
-      ];
-      tasks.forEach(t => t().catch(() => {}));
+      // Endpoints del Resumen (cache GAS interna)
+      API.get('getDashboardAlmacen', {}).catch(() => {});
+      API.get('getAlertasOperativas', {}).catch(() => {});
+      API.get('getGuiasYPreingresos', { dias: 7 }).catch(() => {});
+      API.get('getInsightsStock', { dias: 30 }).catch(() => {});
+      // Tablas principales (persisten a localStorage)
+      API.get('getCatalogoStockResumen', { dias: 7 }).then(r => {
+        if (r && r.productos) { S.catalogoStock = r.productos; _almSaveCache('catalogoStock', r.productos); }
+      }).catch(() => {});
+      API.get('getAlertasWarehouse', {}).then(r => {
+        if (r) { S.vencimientos = r; _almSaveCache('vencimientos', r); }
+      }).catch(() => {});
+      API.get('getMermasWarehouse', {}).then(r => {
+        if (r) { S.mermas = r; _almSaveCache('mermas', r); }
+      }).catch(() => {});
+      API.get('getEnvasadosWarehouse', { limit: '50' }).then(r => {
+        if (r) { S.envasados = r; _almSaveCache('envasados', r); }
+      }).catch(() => {});
     }, 3000);
   }
 
@@ -4020,49 +4145,143 @@ const MOS = (() => {
     return `<span class="text-slate-200">${desc}</span> <span class="text-[10px] text-slate-600 font-mono">▌${cod}</span>`;
   }
 
+  // Helper: agrupa una lista por una clave de fecha (yyyy-MM-dd extraída del campo dado)
+  function _almGroupByFecha(items, fechaKey) {
+    const map = {};
+    items.forEach(it => {
+      const f = String(it[fechaKey] || '').substring(0, 10) || 'Sin fecha';
+      if (!map[f]) map[f] = [];
+      map[f].push(it);
+    });
+    const fechas = Object.keys(map).sort((a, b) => b.localeCompare(a));
+    return { map, fechas };
+  }
+  function _almFechaLarga(s) {
+    if (!s || s === 'Sin fecha') return 'Sin fecha';
+    const d = new Date(s + 'T00:00:00');
+    if (isNaN(d.getTime())) return s;
+    const dias = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+    const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    return `${dias[d.getDay()]} ${d.getDate()} ${meses[d.getMonth()]} ${d.getFullYear()}`;
+  }
+
   function renderVencTable() {
     const listC = $('listVencCrit');
     const listA = $('listVencAlerta');
+    const criticos = S.vencimientos.criticos || [];
+    const alertas  = S.vencimientos.alertas  || [];
     if (listC) {
-      listC.innerHTML = (S.vencimientos.criticos || []).length === 0
-        ? '<p class="text-slate-600">Sin vencimientos críticos</p>'
-        : (S.vencimientos.criticos || []).map(l =>
-            `<div class="flex justify-between items-center p-2 rounded bg-red-950/30 border border-red-900/30">
-              <span class="text-red-300 text-xs">${_labelProducto(l.codigoProducto)} — Lote ${l.idLote || '—'}</span>
-              <span class="badge badge-red">${l.diasRestantes}d</span>
-            </div>`
-          ).join('');
+      if (!criticos.length) {
+        listC.innerHTML = '<p class="text-slate-500 text-sm py-4 text-center">✓ Sin vencimientos críticos</p>';
+      } else {
+        const { map, fechas } = _almGroupByFecha(criticos, 'fechaVencimiento');
+        listC.innerHTML = fechas.map(f => {
+          const items = map[f];
+          return `
+            <div class="alm-fecha-grupo critico">
+              <div class="alm-fecha-head">
+                <span class="alm-fecha-label">${_almFechaLarga(f)}</span>
+                <span class="alm-fecha-count critico">${items.length} ${items.length === 1 ? 'lote' : 'lotes'}</span>
+              </div>
+              <div class="alm-fecha-items">
+                ${items.map(l => `
+                  <div class="alm-fecha-item critico">
+                    <div class="min-w-0 flex-1">
+                      <div class="text-xs text-slate-200 truncate">${_labelProducto(l.codigoProducto)}</div>
+                      <div class="text-[10px] text-slate-500 mt-0.5">Lote ${l.idLote || '—'}${l.cantidad ? ' · ' + l.cantidad + ' un' : ''}</div>
+                    </div>
+                    <span class="badge badge-red shrink-0">${l.diasRestantes}d</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>`;
+        }).join('');
+      }
     }
     if (listA) {
-      listA.innerHTML = (S.vencimientos.alertas || []).length === 0
-        ? '<p class="text-slate-600">Sin alertas de vencimiento</p>'
-        : (S.vencimientos.alertas || []).map(l =>
-            `<div class="flex justify-between items-center p-2 rounded" style="background:rgba(245,158,11,.05);border:1px solid rgba(245,158,11,.15)">
-              <span class="text-yellow-300 text-xs">${_labelProducto(l.codigoProducto)} — Lote ${l.idLote || '—'}</span>
-              <span class="badge badge-yellow">${l.diasRestantes}d</span>
-            </div>`
-          ).join('');
+      if (!alertas.length) {
+        listA.innerHTML = '<p class="text-slate-500 text-sm py-4 text-center">✓ Sin alertas de vencimiento</p>';
+      } else {
+        const { map, fechas } = _almGroupByFecha(alertas, 'fechaVencimiento');
+        listA.innerHTML = fechas.map(f => {
+          const items = map[f];
+          return `
+            <div class="alm-fecha-grupo alerta">
+              <div class="alm-fecha-head">
+                <span class="alm-fecha-label">${_almFechaLarga(f)}</span>
+                <span class="alm-fecha-count alerta">${items.length} ${items.length === 1 ? 'lote' : 'lotes'}</span>
+              </div>
+              <div class="alm-fecha-items">
+                ${items.map(l => `
+                  <div class="alm-fecha-item alerta">
+                    <div class="min-w-0 flex-1">
+                      <div class="text-xs text-slate-200 truncate">${_labelProducto(l.codigoProducto)}</div>
+                      <div class="text-[10px] text-slate-500 mt-0.5">Lote ${l.idLote || '—'}${l.cantidad ? ' · ' + l.cantidad + ' un' : ''}</div>
+                    </div>
+                    <span class="badge badge-yellow shrink-0">${l.diasRestantes}d</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>`;
+        }).join('');
+      }
     }
   }
 
   function renderMermasTable() {
-    const tbody = $('tbodyMermas');
-    if (!tbody) return;
-    if (!S.mermas.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-slate-500 text-sm">Sin mermas registradas</td></tr>';
+    // Buscar contenedor: si existe el viejo tbodyMermas, montamos arriba.
+    // El host real será el panel almPanelMerma — vaciamos su contenido y
+    // ponemos cards agrupadas por día.
+    const panel = $('almPanelMerma');
+    if (!panel) {
+      const tbody = $('tbodyMermas');
+      if (tbody) tbody.innerHTML = '';
       return;
     }
-    tbody.innerHTML = S.mermas.map(m => {
-      const badge = m.estado === 'PENDIENTE' ? '<span class="badge badge-yellow">Pendiente</span>'
-                  : m.estado === 'PROCESADA'  ? '<span class="badge badge-green">Procesada</span>'
-                  : '<span class="badge badge-gray">' + m.estado + '</span>';
-      return `<tr>
-        <td class="text-xs text-slate-400">${fmtDate(m.fechaIngreso)}</td>
-        <td class="text-xs sm:text-sm">${_labelProducto(m.codigoProducto)}</td>
-        <td class="text-xs text-slate-400">${m.origen || '—'}</td>
-        <td class="hidden sm:table-cell text-xs">${parseFloat(m.cantidadPendiente || 0)}</td>
-        <td>${badge}</td>
-      </tr>`;
+    let host = $('almMermasList');
+    if (!host) {
+      // Reemplazar la tabla vieja por un contenedor de cards
+      const oldTable = panel.querySelector('table');
+      if (oldTable) oldTable.style.display = 'none';
+      host = document.createElement('div');
+      host.id = 'almMermasList';
+      host.className = 'space-y-3';
+      panel.appendChild(host);
+    }
+    if (!S.mermas.length) {
+      host.innerHTML = '<p class="text-slate-500 text-sm py-8 text-center">Sin mermas registradas</p>';
+      return;
+    }
+    const { map, fechas } = _almGroupByFecha(S.mermas, 'fechaIngreso');
+    host.innerHTML = fechas.map(f => {
+      const items = map[f];
+      const totalCant = items.reduce((s, m) => s + (parseFloat(m.cantidadPendiente) || 0), 0);
+      const pendientes = items.filter(m => m.estado === 'PENDIENTE').length;
+      return `
+        <div class="alm-fecha-grupo merma">
+          <div class="alm-fecha-head">
+            <span class="alm-fecha-label">${_almFechaLarga(f)}</span>
+            <div class="flex items-center gap-2 shrink-0">
+              ${pendientes > 0 ? `<span class="alm-fecha-count alerta">${pendientes} pend</span>` : ''}
+              <span class="alm-fecha-count">${items.length} item${items.length === 1 ? '' : 's'} · ${totalCant} un</span>
+            </div>
+          </div>
+          <div class="alm-fecha-items">
+            ${items.map(m => {
+              const badge = m.estado === 'PENDIENTE' ? '<span class="badge badge-yellow">Pendiente</span>'
+                          : m.estado === 'PROCESADA' ? '<span class="badge badge-green">Procesada</span>'
+                          : '<span class="badge badge-gray">' + (m.estado || '—') + '</span>';
+              return `
+                <div class="alm-fecha-item">
+                  <div class="min-w-0 flex-1">
+                    <div class="text-xs text-slate-200 truncate">${_labelProducto(m.codigoProducto)}</div>
+                    <div class="text-[10px] text-slate-500 mt-0.5">${m.origen || '—'}${m.cantidadPendiente ? ' · ' + m.cantidadPendiente + ' un' : ''}</div>
+                  </div>
+                  ${badge}
+                </div>`;
+            }).join('')}
+          </div>
+        </div>`;
     }).join('');
   }
 
@@ -4088,11 +4307,8 @@ const MOS = (() => {
     // Resumen global
     const totEnv = S.envasados.length;
     const totUds = S.envasados.reduce((s, e) => s + (parseFloat(e.unidadesProducidas) || 0), 0);
-    const efPromGlobal = S.envasados.length
-      ? S.envasados.reduce((s, e) => s + (parseFloat(e.eficienciaPct) || 0), 0) / S.envasados.length
-      : 0;
     if (summaryEl) {
-      summaryEl.innerHTML = `${totEnv} envasados · <b class="text-slate-300">${totUds}</b> uds totales · eficiencia prom <b class="${_envEfColor(efPromGlobal)}">${efPromGlobal.toFixed(1)}%</b>`;
+      summaryEl.innerHTML = `${totEnv} envasados · <b class="text-slate-300">${totUds}</b> uds totales`;
     }
 
     cont.innerHTML = dias.map(diaKey => {
@@ -4109,43 +4325,32 @@ const MOS = (() => {
       const itemsHtml = items
         .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')))
         .map(e => {
-          const ef = parseFloat(e.eficienciaPct) || 0;
-          const efCls = _envEfColor(ef);
-          const efBg  = ef >= 98 ? 'rgba(16,185,129,.08)'
-                     : ef >= 90 ? 'rgba(245,158,11,.08)'
-                     : 'rgba(244,63,94,.08)';
           const baseLbl = _labelProducto(e.codigoProductoBase);
-          const envLbl  = e.codigoProductoEnvasado ? _labelProducto(e.codigoProductoEnvasado) : '<span class="text-slate-600 italic">sin código envasado</span>';
+          const envLbl  = e.codigoProductoEnvasado
+            ? _labelProducto(e.codigoProductoEnvasado)
+            : '<span class="text-slate-600 italic">sin código envasado</span>';
           const hora = String(e.fecha || '').substring(11, 16) || '';
-          const estadoBadge = e.estado === 'COMPLETADO'
-            ? '<span class="badge badge-green">Completado</span>'
-            : `<span class="badge badge-gray">${e.estado || '—'}</span>`;
           const cantBase = parseFloat(e.cantidadBase) || 0;
           const cantBaseTxt = cantBase > 0 ? `${cantBase} ${e.unidadBase || ''}` : '—';
-          const merma = parseFloat(e.mermaReal);
-          const mermaTxt = !isNaN(merma) ? `merma ${merma}` : '';
+          const estadoBadge = e.estado === 'COMPLETADO'
+            ? ''  // estado completado = default, no mostrar badge para limpieza
+            : `<span class="badge badge-gray">${e.estado || '—'}</span>`;
 
-          return `<div class="card-sm p-3" style="background:${efBg};border-left:3px solid ${ef >= 98 ? '#10b981' : ef >= 90 ? '#f59e0b' : '#f43f5e'}">
-            <div class="flex items-start justify-between gap-3 flex-wrap">
-              <div class="min-w-0 flex-1">
-                <div class="text-xs sm:text-sm">
-                  <span class="text-slate-400 text-[10px]">DESDE:</span> ${baseLbl}
-                </div>
-                <div class="text-xs sm:text-sm mt-1">
-                  <span class="text-slate-400 text-[10px]">HACIA:</span> ${envLbl}
-                </div>
-                <div class="flex items-center gap-2 mt-2 flex-wrap text-[10px]">
-                  <span class="text-slate-500">${hora}</span>
-                  ${e.usuario ? `<span class="text-slate-500">·</span><span class="text-indigo-300 font-medium">👤 ${e.usuario}</span>` : ''}
-                  <span class="text-slate-500">·</span>
-                  <span class="text-slate-400">consumió ${cantBaseTxt}</span>
-                  ${mermaTxt ? `<span class="text-slate-500">·</span><span class="text-amber-400">${mermaTxt}</span>` : ''}
+          return `<div class="env-card-v2">
+            <div class="env-card-v2-row">
+              <div class="env-card-v2-out">
+                <div class="env-card-v2-out-name">${envLbl}</div>
+                <div class="env-card-v2-out-from">
+                  <span class="env-card-v2-from-lbl">desde</span> ${baseLbl} <span class="text-slate-500">· ${cantBaseTxt}</span>
                 </div>
               </div>
-              <div class="text-right shrink-0">
-                <div class="text-xl font-bold text-slate-200">${e.unidadesProducidas || 0}<span class="text-xs text-slate-500 font-normal ml-1">uds</span></div>
-                <div class="${efCls} text-xs font-semibold mt-0.5">${ef.toFixed(1)}% efic.</div>
-                <div class="mt-1">${estadoBadge}</div>
+              <div class="env-card-v2-meta">
+                <div class="env-card-v2-uds">${e.unidadesProducidas || 0}<span class="env-card-v2-uds-lbl"> uds</span></div>
+                <div class="env-card-v2-foot">
+                  <span>${hora}</span>
+                  ${e.usuario ? `<span>·</span><span class="text-indigo-300">👤 ${e.usuario}</span>` : ''}
+                  ${estadoBadge ? `<span>·</span>${estadoBadge}` : ''}
+                </div>
               </div>
             </div>
           </div>`;
@@ -4157,7 +4362,6 @@ const MOS = (() => {
           <div class="text-[11px] text-slate-500">
             ${items.length} envasado${items.length === 1 ? '' : 's'} ·
             <b class="text-slate-300">${totDiaUds}</b> uds ·
-            efic prom <b class="${_envEfColor(efPromDia)}">${efPromDia.toFixed(1)}%</b> ·
             👤 ${usuariosDia}
           </div>
         </div>
