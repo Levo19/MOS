@@ -8545,6 +8545,10 @@ const MOS = (() => {
         }).join('');
       }
     }
+    // ME Vendedores — leídos del cache de liquidaciones pendientes
+    // (mismo source que la pantalla de Liquidaciones, ya pre-cargado al login)
+    _cfgRenderMeCajeros();
+
     // WH operadores
     const el = $('listOperadores');
     if (!el) return;
@@ -8568,6 +8572,63 @@ const MOS = (() => {
         <div class="flex items-center gap-1">
           <span class="badge ${p.estado == '1' ? 'badge-green' : 'badge-gray'} text-xs">${p.estado == '1' ? 'Activo' : 'Inactivo'}</span>
           <button onclick="MOS.abrirModalPersonal('${p.idPersonal}','warehouseMos')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700 ml-1">✏️</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // Pinta el card "🛒 Vendedores — MosExpress" en Config → Personal.
+  // Lee del cache localStorage de liquidaciones pendientes (mismo source
+  // que la pantalla de Liquidaciones, ya prefetcheado al login).
+  function _cfgRenderMeCajeros() {
+    const cont = $('listMeCajeros');
+    if (!cont) return;
+    let pendientes = null;
+    try {
+      const raw = localStorage.getItem('mos_liq_pendientes');
+      if (raw) {
+        const p = JSON.parse(raw);
+        pendientes = p && p.data;
+      }
+    } catch {}
+
+    const cajeros = (pendientes && Array.isArray(pendientes.personal))
+      ? pendientes.personal.filter(p => {
+          const app = String(p.appOrigen || '').toLowerCase();
+          return app === 'mosexpress' || app === 'mexpress' || app.indexOf('express') >= 0;
+        })
+      : [];
+
+    const cnt = $('cfgMeCajerosCount');
+    if (cnt) {
+      cnt.textContent = cajeros.length + (cajeros.length === 1 ? ' activo' : ' activos');
+      cnt.className = 'badge ' + (cajeros.length ? 'badge-green' : 'badge-gray') + ' text-xs';
+    }
+    if (!cajeros.length) {
+      cont.innerHTML = '<p class="text-xs text-slate-500 italic text-center py-3">Sin cajeros activos esta semana.</p>';
+      return;
+    }
+    cont.innerHTML = cajeros.map(c => {
+      const initials = String(c.nombre || '?').split(/\s+/).map(s => s[0] || '').join('').slice(0, 2).toUpperCase();
+      const monto = parseFloat(c.montoTotal) || 0;
+      const dias = parseInt(c.diasPendientes) || 0;
+      const aud  = parseInt(c.diasAuditados) || 0;
+      const virt = c.esVirtual
+        ? '<span class="badge badge-yellow text-[9px] ml-1" title="Detectado de ventas (no en PERSONAL_MASTER)">virtual</span>'
+        : '';
+      return `<div class="flex items-center gap-3 p-3 rounded-lg" style="background:#0d1526;border:1px solid #1e293b">
+        <div class="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
+             style="background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#0b1220">${initials}</div>
+        <div class="flex-1 min-w-0">
+          <div class="font-medium text-sm text-slate-200 truncate">${c.nombre}${virt}</div>
+          <div class="flex items-center gap-2 mt-0.5 flex-wrap">
+            <span class="badge badge-gray text-xs">${c.rol || 'CAJERO'}</span>
+            <span class="text-[10px] text-slate-500">${dias}d · ${aud}/${dias} aud</span>
+          </div>
+        </div>
+        <div class="text-right shrink-0">
+          <div class="text-sm font-bold text-amber-400">S/ ${monto.toFixed(2)}</div>
+          <div class="text-[10px] text-slate-500">esta semana</div>
         </div>
       </div>`;
     }).join('');
@@ -10939,7 +11000,13 @@ const MOS = (() => {
       }
       // Refresh también las liquidaciones pendientes (cambian con jornadas auto)
       API.get('getLiquidacionesPendientesSemana', {}).then(r => {
-        if (r) _liqSaveCache('pendientes', r);
+        if (r) {
+          _liqSaveCache('pendientes', r);
+          // Si el user está en Config → Personal, refrescar el card ME
+          if (S.view === 'config' && S.cfgTab === 'personal') {
+            try { _cfgRenderMeCajeros(); } catch {}
+          }
+        }
       }).catch(() => {});
     } catch(_) { /* silencioso */ }
     iconBusy('finanzas', false);

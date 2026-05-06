@@ -3471,14 +3471,14 @@
             </div>
             <div id="listOperadores" class="space-y-2"><div class="text-center py-4 text-slate-500 text-sm">Cargando...</div></div>
           </div>
-          <!-- ME Vendedores -->
+          <!-- ME Vendedores — listado en tiempo real desde JORNADAS de la semana -->
           <div class="card p-4">
-            <h3 class="font-semibold text-sm text-white mb-1">🛒 Vendedores — MosExpress</h3>
-            <p class="text-xs text-slate-500 mb-4">Alta rotación · nombre libre · sin cuenta</p>
-            <div class="card-sm p-5 text-center">
-              <div class="text-3xl mb-2">🔄</div>
-              <p class="text-xs text-slate-500">Los cajeros escriben su nombre al abrir caja. El historial queda en los reportes.</p>
+            <div class="flex items-start justify-between gap-2 mb-1">
+              <h3 class="font-semibold text-sm text-white">🛒 Vendedores — MosExpress</h3>
+              <span id="cfgMeCajerosCount" class="badge badge-gray text-xs">—</span>
             </div>
+            <p class="text-xs text-slate-500 mb-3">Cajeros con jornadas en la semana actual (auto-detectados de Cajas/Ventas)</p>
+            <div id="listMeCajeros" class="space-y-2"></div>
           </div>
         </div>
       </div>
