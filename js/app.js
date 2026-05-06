@@ -9019,6 +9019,85 @@ const MOS = (() => {
     } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
 
+  // Paleta de colores neón para avatares
+  const _PERS_COLORS = [
+    '#22c55e', '#10b981', '#06b6d4', '#0ea5e9', '#3b82f6',
+    '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899',
+    '#f43f5e', '#ef4444', '#f97316', '#f59e0b', '#eab308',
+    '#84cc16', '#14b8a6', '#22d3ee', '#fb7185', '#fbbf24'
+  ];
+
+  function _persColoresEnUso(excluirId) {
+    const all = [...(cfgData.personalMOS || []), ...(cfgData.personal || [])];
+    return new Set(
+      all.filter(p => String(p.estado) === '1' && p.idPersonal !== excluirId)
+         .map(p => String(p.color || '').toLowerCase())
+    );
+  }
+
+  function _persPinsEnUsoAdmin(excluirId) {
+    return new Set(
+      (cfgData.personalMOS || [])
+        .filter(p => p.idPersonal !== excluirId)
+        .map(p => String(p.pin || ''))
+        .filter(Boolean)
+    );
+  }
+
+  function _persRandomColor() {
+    const enUso = _persColoresEnUso($('persId')?.value);
+    const disponibles = _PERS_COLORS.filter(c => !enUso.has(c.toLowerCase()));
+    const pool = disponibles.length ? disponibles : _PERS_COLORS;
+    const elegido = pool[Math.floor(Math.random() * pool.length)];
+    const hidden = $('persColor');
+    if (hidden) hidden.value = elegido;
+    _persRenderChips();
+    _persActualizarPreview();
+  }
+
+  function _persSeleccionarColor(c) {
+    const hidden = $('persColor');
+    if (hidden) hidden.value = c;
+    _persRenderChips();
+    _persActualizarPreview();
+  }
+
+  function _persRenderChips() {
+    const cont = $('persColorChips');
+    if (!cont) return;
+    const sel = String($('persColor')?.value || '').toLowerCase();
+    const enUso = _persColoresEnUso($('persId')?.value);
+    cont.innerHTML = _PERS_COLORS.map(c => {
+      const isSel = c.toLowerCase() === sel;
+      const ocupado = enUso.has(c.toLowerCase()) && !isSel;
+      const cls = `inline-block w-6 h-6 rounded-full transition-all`;
+      const ring = isSel ? 'box-shadow:0 0 0 2px #fff,0 0 12px ' + c + ';transform:scale(1.15);' : '';
+      const dim  = ocupado ? 'opacity:0.25;' : '';
+      const cursor = ocupado ? 'cursor:not-allowed;' : 'cursor:pointer;';
+      return `<button type="button" class="${cls}" style="background:${c};${ring}${dim}${cursor}border:2px solid #0d1526;"
+              ${ocupado ? 'disabled' : ''}
+              title="${ocupado ? 'En uso por otro usuario activo' : c}"
+              onclick="MOS._persSeleccionarColor('${c}')"></button>`;
+    }).join('');
+  }
+
+  function _persRandomPin() {
+    const enUso = _persPinsEnUsoAdmin($('persId')?.value);
+    let intentos = 0;
+    let pin;
+    do {
+      pin = String(Math.floor(1000 + Math.random() * 9000));
+      intentos++;
+    } while (enUso.has(pin) && intentos < 100);
+    const inp = $('persPin');
+    if (inp) {
+      inp.type = 'text';
+      inp.value = pin;
+      // ocultar después de 3s
+      setTimeout(() => { if (inp.value === pin) inp.type = 'password'; }, 3000);
+    }
+  }
+
   function _persActualizarPreview() {
     const ini = ($('persNombre')?.value || '').trim().charAt(0).toUpperCase()
               + ($('persApellido')?.value || '').trim().charAt(0).toUpperCase();
@@ -9035,6 +9114,19 @@ const MOS = (() => {
     }
   }
 
+  // Selecciona option case-insensitive — devuelve el value real del select
+  function _selectOptionCI(selectEl, value) {
+    if (!selectEl || !value) return false;
+    const v = String(value).trim().toUpperCase();
+    for (const opt of selectEl.options) {
+      if (String(opt.value).trim().toUpperCase() === v) {
+        selectEl.value = opt.value;
+        return true;
+      }
+    }
+    return false;
+  }
+
   function abrirModalPersonal(id, appOrigen = 'warehouseMos') {
     ['Nombre','Apellido','Pin','Tarifa','Monto'].forEach(f => {
       const el = $('pers' + f); if (el && el.tagName !== 'SELECT') el.value = '';
@@ -9043,14 +9135,15 @@ const MOS = (() => {
     $('persAppOrigen').value = appOrigen;
     const isMOS = appOrigen === 'MOS';
     const pagoWrap = $('persPagoWrap'); if (pagoWrap) pagoWrap.style.display = isMOS ? 'none' : '';
-    // Set rol options based on app
+    // Set rol options based on app — todos en MAYÚSCULAS para coincidir con DB
     const rolSel = $('persRol');
     if (rolSel) {
       rolSel.innerHTML = isMOS
-        ? '<option value="master">master (acceso total)</option><option value="admin">admin (sin configuración)</option>'
+        ? '<option value="MASTER">MASTER (acceso total)</option><option value="ADMIN">ADMIN (sin configuración)</option>'
         : '<option value="ALMACENERO">ALMACENERO</option><option value="ENVASADOR">ENVASADOR</option><option value="SUPERVISOR">SUPERVISOR</option>';
     }
-    $('persColor').value = '#6366f1';
+    const pinInp = $('persPin');
+    if (pinInp) pinInp.type = 'password';
 
     const source = isMOS ? cfgData.personalMOS : cfgData.personal;
     const estadoWrap = $('persEstadoWrap');
@@ -9064,7 +9157,10 @@ const MOS = (() => {
       $('persId').value       = p.idPersonal;
       $('persNombre').value   = p.nombre || '';
       $('persApellido').value = p.apellido || '';
-      if (rolSel) rolSel.value = p.rol || (isMOS ? 'admin' : 'ALMACENERO');
+      // Match rol case-insensitive (la DB puede tener "MASTER" / "master" / "Admin"/etc.)
+      if (rolSel && !_selectOptionCI(rolSel, p.rol)) {
+        rolSel.value = isMOS ? 'ADMIN' : 'ALMACENERO';
+      }
       $('persColor').value    = p.color || '#6366f1';
       if (!isMOS) {
         $('persTarifa').value = p.tarifaHora || '';
@@ -9078,11 +9174,15 @@ const MOS = (() => {
       if (tg) tg.checked = String(p.estado) === '1' || p.estado === true;
     } else {
       $('modalPersTitle').textContent = isMOS ? 'Nuevo Usuario MOS' : 'Nuevo Operador';
-      if (rolSel) rolSel.value = isMOS ? 'admin' : 'ALMACENERO';
+      if (rolSel) rolSel.value = isMOS ? 'ADMIN' : 'ALMACENERO';
       if (estadoWrap) estadoWrap.classList.add('hidden');
       if (btnElim)    btnElim.classList.add('hidden');
-      if (pinHint)    { pinHint.textContent = 'requerido al crear'; pinHint.className = 'text-amber-400 text-[10px]'; }
+      if (pinHint)    { pinHint.textContent = 'requerido al crear', pinHint.className = 'text-amber-400 text-[10px]'; }
+      // Auto: color random no-repetido + (si MOS) PIN random no-repetido
+      _persRandomColor();
+      if (isMOS) _persRandomPin();
     }
+    _persRenderChips();
     _persActualizarPreview();
     openModal('modalPersonal');
   }
@@ -9095,7 +9195,7 @@ const MOS = (() => {
       idPersonal:  idEdit,
       nombre:      ($('persNombre')?.value || '').trim(),
       apellido:    ($('persApellido')?.value || '').trim(),
-      rol:         $('persRol')?.value || (isMOS ? 'admin' : 'ALMACENERO'),
+      rol:         $('persRol')?.value || (isMOS ? 'ADMIN' : 'ALMACENERO'),
       color:       $('persColor')?.value || '#6366f1',
       tipo:        'OPERADOR',
       appOrigen:   appOrigen
@@ -13421,7 +13521,7 @@ const MOS = (() => {
     abrirModalEstacion, guardarEstacion,
     abrirModalImpresora, guardarImpresora,
     abrirModalPersonal, guardarPersonal, togglePersonalActivo, eliminarPersonal,
-    _persActualizarPreview,
+    _persActualizarPreview, _persRandomColor, _persRandomPin, _persSeleccionarColor,
     abrirModalSerie, guardarSerie,
     guardarPinEstacion, guardarPinWH,
     seg_consultarClave, seg_rotarManual, seg_cargarAuditoria, seg_ocultar,

@@ -5684,8 +5684,12 @@
             <input id="persApellido" class="inp" placeholder="Ramos" oninput="MOS._persActualizarPreview()">
           </div>
           <div>
-            <label class="lbl">Color avatar</label>
-            <input id="persColor" class="inp" type="color" value="#6366f1" oninput="MOS._persActualizarPreview()">
+            <div class="flex items-center justify-between mb-1">
+              <label class="lbl mb-0">Color avatar</label>
+              <button type="button" onclick="MOS._persRandomColor()" class="text-[10px] text-indigo-400 hover:text-indigo-300 px-2 py-0.5 rounded border border-indigo-700/40">🎲 random</button>
+            </div>
+            <div id="persColorChips" class="flex flex-wrap gap-1.5"></div>
+            <input id="persColor" type="hidden" value="#6366f1">
           </div>
           <div>
             <label class="lbl">Rol</label>
@@ -5693,8 +5697,8 @@
               <option value="ALMACENERO">ALMACENERO</option>
               <option value="ENVASADOR">ENVASADOR</option>
               <option value="SUPERVISOR">SUPERVISOR</option>
-              <option value="master">master (acceso total)</option>
-              <option value="admin">admin (sin configuración)</option>
+              <option value="MASTER">MASTER (acceso total)</option>
+              <option value="ADMIN">ADMIN (sin configuración)</option>
             </select>
           </div>
         </div>
@@ -5704,9 +5708,12 @@
       <div class="pers-section">
         <div class="pers-section-title">Acceso</div>
         <div>
-          <label class="lbl">PIN (4–6 dígitos) <span id="persPinHint" class="text-amber-400 text-[10px]">requerido al crear</span></label>
-          <input id="persPin" class="inp" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="••••">
-          <div class="text-[10px] text-slate-600 mt-1">Si lo dejas vacío al editar, se conserva el actual.</div>
+          <label class="lbl">PIN (4 dígitos) <span id="persPinHint" class="text-amber-400 text-[10px]">requerido al crear</span></label>
+          <div class="flex gap-2">
+            <input id="persPin" class="inp flex-1" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="••••">
+            <button type="button" onclick="MOS._persRandomPin()" class="btn-ghost text-xs px-3 whitespace-nowrap" style="border:1px solid #334155">🎲 random</button>
+          </div>
+          <div class="text-[10px] text-slate-600 mt-1">Único por usuario. Si lo dejas vacío al editar, se conserva el actual.</div>
         </div>
       </div>
 
