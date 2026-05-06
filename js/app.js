@@ -9107,10 +9107,10 @@ const MOS = (() => {
 
     // Metas (de cfgData.config si existe; si no, leerá vacío y guardará al editar)
     const cfg = (cfgData.config || {});
-    const metaCajero    = cfg.META_CAJERO    || '';
-    const metaEnvasador = cfg.META_ENVASADOR || '';
-    const metaAlmacenero = cfg.META_ALMACENERO || '';
-    const metaAuditorias = cfg.META_AUDITORIAS || '';
+    const metaCajero     = cfg.evalMetaCajero     || '';
+    const metaEnvasador  = cfg.evalMetaEnvasador  || '';
+    const metaAlmacenero = cfg.evalMetaAlmacenero || '';
+    const metaAuditorias = cfg.evalMetaAuditorias || '';
 
     // ── Grupo 1: ADMIN/MASTER (MOS) ─────
     const grupoMOS = `<div class="card p-4" style="background:linear-gradient(135deg,#1e1b4b 0%,#0d1526 100%);border:1px solid #6366f1;">
@@ -9146,7 +9146,7 @@ const MOS = (() => {
           </div>
         </div>
         <div class="flex flex-wrap gap-1.5">
-          ${_renderMetaChip('Meta venta diaria', 'META_CAJERO', metaCajero, 'S/', '#f59e0b')}
+          ${_renderMetaChip('Meta venta diaria', 'evalMetaCajero', metaCajero, 'S/', '#f59e0b')}
         </div>
       </div>
       <div id="listMeCajeros" class="space-y-2"></div>
@@ -9167,9 +9167,9 @@ const MOS = (() => {
           </div>
         </div>
         <div class="flex flex-wrap gap-1.5">
-          ${_renderMetaChip('Meta guías', 'META_ALMACENERO', metaAlmacenero, '/día', '#ea580c')}
-          ${_renderMetaChip('Meta envasado', 'META_ENVASADOR', metaEnvasador, 'uds', '#fb923c')}
-          ${_renderMetaChip('Meta auditorías', 'META_AUDITORIAS', metaAuditorias, '/día', '#fbbf24')}
+          ${_renderMetaChip('Meta guías', 'evalMetaAlmacenero', metaAlmacenero, '/día', '#ea580c')}
+          ${_renderMetaChip('Meta envasado', 'evalMetaEnvasador', metaEnvasador, 'uds', '#fb923c')}
+          ${_renderMetaChip('Meta auditorías', 'evalMetaAuditorias', metaAuditorias, '/día', '#fbbf24')}
         </div>
         <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalPersonal(null,'warehouseMos')">+ operador</button>
       </div>
@@ -9262,6 +9262,20 @@ const MOS = (() => {
     const bloqMap = {};
     (cfgData.bloqueosME || []).forEach(b => { bloqMap[_norm(b.nombre)] = b; });
 
+    // Cruzar con DISPOSITIVOS para detectar última conexión por Ultima_Sesion (nombre del cajero)
+    // Toma el dispositivo MÁS reciente que tiene este cajero como Ultima_Sesion
+    const dispPorCajero = {};
+    (cfgData.dispositivos || []).forEach(d => {
+      if (String(d.Estado).toUpperCase() !== 'ACTIVO') return;
+      const sesNorm = _norm(d.Ultima_Sesion);
+      if (!sesNorm) return;
+      const t = new Date(d.Ultima_Conexion || 0).getTime() || 0;
+      const prev = dispPorCajero[sesNorm];
+      if (!prev || (new Date(prev.Ultima_Conexion || 0).getTime() || 0) < t) {
+        dispPorCajero[sesNorm] = d;
+      }
+    });
+
     cont.innerHTML = cajeros.map(c => {
       const initials = String(c.nombre || '?').split(/\s+/).map(s => s[0] || '').join('').slice(0, 2).toUpperCase();
       const monto = parseFloat(c.montoTotal) || 0;
@@ -9273,19 +9287,30 @@ const MOS = (() => {
       const reg = bloqMap[_norm(c.nombre)];
       const bloqueado = !!(reg && reg.fechaBloqueo && !reg.unlockVigente);
       const safeNombre = String(c.nombre || '').replace(/'/g, '&#39;');
+      // Indicador de actividad cruzando con DISPOSITIVOS
+      const dispActivo = dispPorCajero[_norm(c.nombre)];
+      const act = dispActivo ? _personaActividad(dispActivo.Ultima_Conexion) : { color: '#64748b', label: 'sin sesión', dot: '⚫', minutos: Infinity };
+      const isFresh = act.minutos < 5;
       const opacity = bloqueado ? 'opacity:0.6;' : '';
-      const borderCol = bloqueado ? '#7f1d1d' : '#1e293b';
+      const borderCol = bloqueado ? '#7f1d1d' : (isFresh ? 'rgba(16,185,129,0.5)' : '#1e293b');
+      const bgChip = isFresh ? 'rgba(16,185,129,0.06)' : '#0d1526';
+      const dotPulse = isFresh ? '<span class="disp-dot-pulse"></span>' : '';
+      const claseFresh = isFresh ? 'disp-chip-live' : '';
       const lockBadge = bloqueado
         ? '<span class="badge badge-red text-[9px] ml-1" title="Cajero bloqueado — al iniciar MosExpress con este nombre, ve pantalla de candado">🔒 bloqueado</span>'
         : '';
-      return `<div class="flex items-center gap-3 p-3 rounded-lg" style="background:#0d1526;border:1px solid ${borderCol};${opacity}">
-        <div class="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
-             style="background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#0b1220">${initials}</div>
+      return `<div class="flex items-center gap-3 p-3 rounded-lg ${claseFresh}" style="background:${bgChip};border:1px solid ${borderCol};${opacity}transition:all 0.2s;">
+        <div class="relative shrink-0">
+          <div class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold"
+               style="background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#0b1220">${initials}</div>
+          ${dotPulse}
+        </div>
         <div class="flex-1 min-w-0">
           <div class="font-medium text-sm text-slate-200 truncate">${c.nombre}${virt}${lockBadge}</div>
           <div class="flex items-center gap-2 mt-0.5 flex-wrap">
-            <span class="badge badge-gray text-xs">${c.rol || 'CAJERO'}</span>
-            <span class="text-[10px] text-slate-500">${dias}d · ${aud}/${dias} aud</span>
+            <span class="badge badge-gray text-[9px] uppercase">${c.rol || 'CAJERO'}</span>
+            <span class="text-[9px]" style="color:${act.color};">${act.dot} ${act.label}</span>
+            <span class="text-[9px] text-slate-500">${dias}d · ${aud}/${dias} aud</span>
           </div>
         </div>
         <div class="text-right shrink-0 mr-2">
