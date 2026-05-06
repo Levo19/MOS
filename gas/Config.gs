@@ -454,16 +454,27 @@ function registrarSesionDispositivo(params) {
   }
 
   // No existe → crear como PENDIENTE_APROBACION
+  var nombreNuevo = params.Nombre_Equipo || ('Nuevo dispositivo (' + deviceId.substring(0, 8) + ')');
+  var appNueva = params.app || params.App || 'mosExpress';
   var fila = new Array(hdrs.length).fill('');
   fila[iId] = deviceId;
-  fila[hdrs.indexOf('Nombre_Equipo')] = params.Nombre_Equipo || ('Nuevo dispositivo (' + deviceId.substring(0, 8) + ')');
-  fila[hdrs.indexOf('App')]           = params.app || params.App || 'mosExpress';
+  fila[hdrs.indexOf('Nombre_Equipo')] = nombreNuevo;
+  fila[hdrs.indexOf('App')]           = appNueva;
   fila[iEst]                          = 'PENDIENTE_APROBACION';
   if (iUC >= 0)  fila[iUC]  = nowStr;
   if (iUZ >= 0)  fila[iUZ]  = params.idZona || '';
   if (iUEs >= 0) fila[iUEs] = params.idEstacion || '';
   if (iUSe >= 0) fila[iUSe] = params.vendedor || '';
   sheet.appendRow(fila);
+
+  // Push notif a master/admin avisando del nuevo dispositivo
+  try {
+    var detalle = appNueva.toUpperCase() + ' · UUID ' + deviceId.substring(0, 8) + '...';
+    if (params.idEstacion) detalle += ' · estación ' + params.idEstacion;
+    if (params.vendedor)   detalle += ' · cajero ' + params.vendedor;
+    _enviarPushTodos('🔔 Nuevo dispositivo solicita acceso', detalle);
+  } catch(e) { Logger.log('Push pendiente fallo: ' + e.message); }
+
   return { ok: true, data: { autorizado: false, estado: 'PENDIENTE_APROBACION', error: 'Dispositivo nuevo — esperando aprobación del administrador' } };
 }
 
