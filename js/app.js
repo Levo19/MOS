@@ -421,6 +421,8 @@ const MOS = (() => {
         _saveSession(S.session);
         _applySession();
         _refreshAuditCtx();
+        // Cachear la clave admin global en sessionStorage (solo master/admin)
+        _segCachearGlobalEnLogin(res.rol, pin);
         // Mostrar welcome screen + iniciar carga en background
         _showWelcome(res.nombre, res.rol);
         $('loginOverlay')?.classList.add('hidden');
@@ -551,6 +553,7 @@ const MOS = (() => {
     _stopFinanzasRefresh();
     _finPL = null;
     _clearSession();
+    if (typeof _segLimpiarCacheLocal === 'function') _segLimpiarCacheLocal();
     S.session = null;
     S.loaded = {};
     S._cajasLoaded = false; S._todasCajas = null; S._todosTickets = null;
@@ -8718,6 +8721,7 @@ const MOS = (() => {
         return;
       }
       _segDataActual = data;
+      _segActualizarCacheLocal(data);
       _segPintar(data);
       seg_cargarAuditoria();
     } catch(e) {
@@ -8775,6 +8779,7 @@ const MOS = (() => {
         diasParaProximaRotacion: 30,
         vencida: false
       };
+      _segActualizarCacheLocal(_segDataActual);
       _segPintar(_segDataActual);
       seg_cargarAuditoria();
       toast('Clave rotada · ' + data.pin, 'ok', 5000);
@@ -10529,6 +10534,62 @@ const MOS = (() => {
     }).observe(sidebar);
   })();
 
+  // ── Clave admin global en avatar menu (sessionStorage) ──
+  function _segEsAdmin(rol) {
+    const r = String(rol || '').toUpperCase();
+    return r === 'MASTER' || r === 'ADMIN' || r === 'ADMINISTRADOR';
+  }
+  async function _segCachearGlobalEnLogin(rol, pinAdmin) {
+    if (!_segEsAdmin(rol)) return;
+    try {
+      const data = await API.get('getClaveAdminGlobal', { pinAdmin });
+      if (data?.autorizado && data.pin) {
+        sessionStorage.setItem('mos_admin_global_pin', data.pin);
+        sessionStorage.setItem('mos_admin_global_dias', String(data.diasParaProximaRotacion ?? ''));
+        sessionStorage.setItem('mos_admin_global_vencida', data.vencida ? '1' : '0');
+      }
+    } catch(_) { /* tolerar */ }
+  }
+  function _segActualizarCacheLocal(data) {
+    if (!data || !data.pin) return;
+    sessionStorage.setItem('mos_admin_global_pin', data.pin);
+    sessionStorage.setItem('mos_admin_global_dias', String(data.diasParaProximaRotacion ?? ''));
+    sessionStorage.setItem('mos_admin_global_vencida', data.vencida ? '1' : '0');
+  }
+  function _segLimpiarCacheLocal() {
+    sessionStorage.removeItem('mos_admin_global_pin');
+    sessionStorage.removeItem('mos_admin_global_dias');
+    sessionStorage.removeItem('mos_admin_global_vencida');
+  }
+  function _segPintarEnAvatarMenu() {
+    const box = $('avMenuClaveBox');
+    if (!box) return;
+    const rolOk = _segEsAdmin(S.session?.rol);
+    const pin = sessionStorage.getItem('mos_admin_global_pin');
+    if (!rolOk || !pin) {
+      box.classList.add('hidden');
+      return;
+    }
+    box.classList.remove('hidden');
+    const elPin = $('avMenuClavePin');
+    if (elPin) elPin.textContent = pin.split('').join(' ');
+    const dias = parseInt(sessionStorage.getItem('mos_admin_global_dias') || '0', 10);
+    const vencida = sessionStorage.getItem('mos_admin_global_vencida') === '1';
+    const elDias = $('avMenuClaveDias');
+    if (elDias) {
+      if (vencida) {
+        elDias.textContent = '⚠ Vencida';
+        elDias.style.color = '#f87171';
+      } else if (dias <= 5) {
+        elDias.textContent = dias + 'd';
+        elDias.style.color = '#fbbf24';
+      } else {
+        elDias.textContent = dias + 'd';
+        elDias.style.color = '#94a3b8';
+      }
+    }
+  }
+
   function toggleAvatarMenu() {
     const menu = $('avatarMenu');
     if (!menu) return;
@@ -10536,6 +10597,8 @@ const MOS = (() => {
       menu.classList.add('hidden');
       return;
     }
+    // Pintar clave global si aplica
+    _segPintarEnAvatarMenu();
     // Buscar trigger visible: sidebar en desktop, botón mobile en móvil
     let trigger = document.querySelector('.avatar-trigger');
     if (!trigger || trigger.getBoundingClientRect().width === 0) {
