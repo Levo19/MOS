@@ -9190,15 +9190,17 @@ const MOS = (() => {
 
     // Botón 🔑 visible solo para admins/master
     const llaveBtn = esAdmin
-      ? `<button onclick="event.stopPropagation();MOS.abrirModalClaveGlobal('${safeId}')" class="text-base hover:scale-110 transition-transform" title="Ver clave global">🔑</button>`
+      ? `<button onclick="event.stopPropagation();MOS.abrirModalClaveGlobal('${safeId}')"
+                 class="text-[14px] p-1 rounded hover:bg-amber-500/20 hover:scale-110 transition-all"
+                 title="Ver clave global">🔑</button>`
       : '';
 
-    // Quick actions hover (solo para WH y vendedores ME — admins editan con click directo)
-    const quickActions = !esAdmin
-      ? `<div class="pers-card-actions">
-          <button onclick="event.stopPropagation();MOS.abrirModalEnviarPush('${safeId}','${(p.nombre || '').replace(/'/g, '&#39;')}')" title="Enviar mensaje push">💬</button>
-        </div>`
-      : '';
+    // Botón 💬 SIEMPRE visible (todos pueden recibir push). Color azul tenue.
+    const safeNombre = String(p.nombre || '').replace(/'/g, '&#39;');
+    const pushBtn = `<button onclick="event.stopPropagation();MOS.abrirModalEnviarPush('${safeId}','${safeNombre}')"
+                             class="text-[12px] p-1 rounded hover:bg-blue-500/20 hover:scale-110 transition-all"
+                             style="color:#60a5fa;"
+                             title="Enviar mensaje push a ${p.nombre}">💬</button>`;
 
     // Audit hoy (solo admins)
     const auditExpand = esAdmin
@@ -9231,7 +9233,7 @@ const MOS = (() => {
           </div>
           ${ultAccion}
         </div>
-        ${quickActions}
+        ${pushBtn}
         ${llaveBtn}
         <label class="pers-switch shrink-0" title="${activo ? 'Desactivar' : 'Activar'}" onclick="event.stopPropagation()">
           <input type="checkbox" ${activo ? 'checked' : ''} onchange="MOS.togglePersonalActivo('${safeId}','${appOrigen}', event)">
@@ -9870,6 +9872,10 @@ const MOS = (() => {
           <div class="text-sm font-bold text-amber-400">S/ ${monto.toFixed(2)}</div>
           <div class="text-[10px] text-slate-500">esta semana</div>
         </div>
+        <button onclick="event.stopPropagation();MOS.abrirModalEnviarPush('','${safeNombre}')"
+                class="text-[12px] p-1 rounded hover:bg-blue-500/20 hover:scale-110 transition-all"
+                style="color:#60a5fa;"
+                title="Enviar mensaje push a ${c.nombre}">💬</button>
         <label class="pers-switch shrink-0" title="${bloqueado ? 'Activar cajero — desbloquea pantalla de candado en su dispositivo' : 'Bloquear cajero — solo el dispositivo donde está logueado verá pantalla de candado'}">
           <input type="checkbox" ${bloqueado ? '' : 'checked'} onchange="MOS.toggleVendedorME('${safeNombre}', event)">
           <span class="pers-switch-slider"></span>
