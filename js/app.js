@@ -4565,13 +4565,17 @@ const MOS = (() => {
   }
 
   // ── Cambio fluido de selección sin re-render de lista ───────
-  // Solo togglea clases y mueve el nodo del inline-detail.
+  // Solo togglea clases y mueve el nodo del inline-detail (solo en TABLET;
+  // en mobile el detail va al panel inferior, en desktop al panel derecho).
   function _provPosicionarInlineDetail(idProv) {
     const inline = $('provInlineDetail');
     if (!inline) return;
+    if (_provBreakpoint() !== 'tablet') {
+      // No mover en mobile/desktop — CSS lo oculta
+      return;
+    }
     const card = document.querySelector(`[data-prov-card="${idProv}"]`);
-    if (!card) { inline.style.display = 'none'; return; }
-    // Insertar después del card seleccionado y mostrarlo
+    if (!card) return;
     if (inline.previousElementSibling !== card) {
       card.parentElement.insertBefore(inline, card.nextSibling);
     }
@@ -4598,8 +4602,22 @@ const MOS = (() => {
     }
   }
 
+  // Breakpoint actual: 'mobile' (<768) | 'tablet' (768-1023) | 'desktop' (≥1024)
+  function _provBreakpoint() {
+    if (window.matchMedia('(min-width: 1024px)').matches) return 'desktop';
+    if (window.matchMedia('(min-width: 768px)').matches)  return 'tablet';
+    return 'mobile';
+  }
+  // Target donde se renderiza el detalle según breakpoint:
+  // - tablet: inline (debajo del card seleccionado)
+  // - mobile y desktop: panel principal (#proveedorDetail)
+  function _provDetailTargetEl() {
+    return _provBreakpoint() === 'tablet' ? $('provInlineDetail') : $('proveedorDetail');
+  }
+
   async function selectProveedor(id) {
-    const isMobile = window.matchMedia('(max-width: 1023px)').matches;
+    const bp = _provBreakpoint();
+    const isMobile = bp !== 'desktop';
 
     // Toggle: en mobile/tablet, click en el card ya activo lo cierra
     if (isMobile && S.provSelId === id) {
@@ -4628,7 +4646,7 @@ const MOS = (() => {
       _provAplicarSeleccion(idAnterior, id);
     }
 
-    const detailEl = isMobile ? $('provInlineDetail') : $('proveedorDetail');
+    const detailEl = _provDetailTargetEl();
     if (!detailEl) return;
     // Limpiar contenido del detail INMEDIATO para evitar mostrar el del proveedor
     // anterior mientras se monta el nuevo. Render del header debajo va sincrónico.

@@ -1249,82 +1249,137 @@
       from { opacity: 0; transform: translateY(-4px); }
       to   { opacity: 1; transform: translateY(0); }
     }
-    /* ── Layout adaptativo de la lista de proveedores ─────────
-       Sin selección: grid de 2/3/4 columnas (más uso del espacio).
-       Con selección: 1 columna vertical + panel detalle al lado.
-       Toggle vía clase .con-detalle en #view-proveedores.        */
-    /* Ocultar el panel detalle vacío cuando no hay selección
-       (en desktop el `lg:block` lo dejaba visible con un placeholder) */
-    #view-proveedores:not(.con-detalle) #provDetailWrap {
-      display: none !important;
-    }
+    /* ═════════════════════════════════════════════════════════
+       LAYOUT DE LA LISTA DE PROVEEDORES — 3 modos por breakpoint
+       Mobile (<768)  → carrusel horizontal con scroll-snap (Rolodex)
+       Tablet (768-1023) → 2 cols sin selección, 1 col + inline con sel
+       Desktop (≥1024) → 3 cols sin selección, master-detail con sel
+       ════════════════════════════════════════════════════════ */
+    /* Default: lista vertical 1 col */
     #listProveedores {
       display: flex;
       flex-direction: column;
       gap: 8px;
     }
-    @media (min-width: 768px) {
+    /* Card de proveedor — base con position relative para el pseudoelemento */
+    #listProveedores .card[data-prov-card] {
+      position: relative;
+      transition: transform .2s, border-color .2s, box-shadow .2s;
+    }
+
+    /* ── MOBILE (<768): carrusel horizontal Rolodex ──────────── */
+    @media (max-width: 767px) {
+      #listProveedores {
+        flex-direction: row;
+        overflow-x: auto;
+        overflow-y: visible;
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+        scroll-behavior: smooth;
+        gap: 10px;
+        padding: 6px 4px 14px;
+        margin: 0 -4px;
+        scrollbar-width: none;
+      }
+      #listProveedores::-webkit-scrollbar { display: none; }
+      #listProveedores > .card {
+        flex: 0 0 calc(85% - 4px);
+        max-width: 320px;
+        scroll-snap-align: start;
+        scroll-snap-stop: always;
+      }
+      /* En mobile, el detalle inline NO se usa — va al panel principal abajo */
+      #provInlineDetail { display: none !important; }
+      #view-proveedores.con-detalle #provDetailWrap {
+        display: block !important;
+        margin-top: 12px;
+      }
+      /* Card activa en carrusel: pestaña dorada arriba (visualmente "sobresale") */
+      #listProveedores .card.prov-card-active {
+        border-color: #fbbf24;
+        box-shadow: 0 -2px 0 0 #fbbf24, 0 8px 20px rgba(251,191,36,.25);
+      }
+    }
+
+    /* ── TABLET (768-1023) ──────────────────────────────────── */
+    @media (min-width: 768px) and (max-width: 1023px) {
+      /* Sin selección: 2 columnas */
       #view-proveedores:not(.con-detalle) #provListWrap {
-        grid-column: 1 / -1;     /* ocupa todas las columnas del grid padre */
+        grid-column: 1 / -1;
       }
       #view-proveedores:not(.con-detalle) #listProveedores {
         display: grid;
         grid-template-columns: repeat(2, 1fr);
-        gap: 10px;
+        gap: 12px;
       }
-    }
-    @media (min-width: 1024px) {
-      #view-proveedores:not(.con-detalle) #listProveedores {
-        grid-template-columns: repeat(3, 1fr);
-      }
-    }
-    @media (min-width: 1280px) {
-      #view-proveedores:not(.con-detalle) #listProveedores {
-        grid-template-columns: repeat(4, 1fr);
-      }
+      /* Con selección: lista 1 col + inline detail debajo del card seleccionado */
+      #view-proveedores.con-detalle #provListWrap { grid-column: 1 / -1; }
+      #view-proveedores.con-detalle #provDetailWrap { display: none !important; }
     }
 
-    /* En desktop con detalle abierto: columna izquierda y derecha
-       cada una con su propio scroll, sin que afecten al global.    */
+    /* ── DESKTOP (≥1024): 3 cols sin selección, master-detail con ── */
     @media (min-width: 1024px) {
+      #view-proveedores:not(.con-detalle) #provListWrap {
+        grid-column: 1 / -1;
+      }
+      #view-proveedores:not(.con-detalle) #listProveedores {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+      }
+      #view-proveedores:not(.con-detalle) #provDetailWrap {
+        display: none !important;
+      }
+      /* Con detalle: scroll independiente de cada columna */
       #view-proveedores.con-detalle #provListWrap,
       #view-proveedores.con-detalle #provDetailWrap {
-        max-height: calc(100vh - 180px);
+        max-height: calc(100vh - 200px);
         overflow-y: auto;
         scroll-behavior: smooth;
       }
-      #view-proveedores.con-detalle #provListWrap {
-        scrollbar-width: thin;
-        padding-right: 4px;
-      }
-      #view-proveedores.con-detalle #provListWrap::-webkit-scrollbar { width: 6px; }
-      #view-proveedores.con-detalle #provListWrap::-webkit-scrollbar-track { background: transparent; }
-      #view-proveedores.con-detalle #provListWrap::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
-      #view-proveedores.con-detalle #provListWrap::-webkit-scrollbar-thumb:hover { background: #334155; }
+      #view-proveedores.con-detalle #provInlineDetail { display: none !important; }
     }
 
-    /* ── Efecto "fichero" / Rolodex en la card del proveedor ──── */
-    .card[data-prov-card] {
-      position: relative;
-      transition: transform .2s, border-color .2s, box-shadow .2s;
+    /* ── Scrollbars modernas (todos los modos con scroll) ──── */
+    #provListWrap, #provDetailWrap {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(99,102,241,.4) transparent;
     }
-    /* Card seleccionada: borde dorado lateral + glow tipo agenda */
-    .card.prov-card-active {
-      border-color: rgba(251,191,36,.5);
-      box-shadow: 0 8px 24px rgba(0,0,0,.4), 0 0 0 1px rgba(251,191,36,.2);
+    #provListWrap::-webkit-scrollbar,
+    #provDetailWrap::-webkit-scrollbar {
+      width: 6px;
     }
-    .card.prov-card-active::before {
-      content: '';
-      position: absolute;
-      left: -2px; top: 6px; bottom: 6px;
-      width: 4px;
-      background: linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%);
-      border-radius: 0 4px 4px 0;
-      box-shadow: 0 0 8px rgba(251,191,36,.5);
+    #provListWrap::-webkit-scrollbar-track,
+    #provDetailWrap::-webkit-scrollbar-track {
+      background: transparent;
     }
-    /* En mobile (<lg): bordes inferiores rectos para fundirse con detalle inline */
-    @media (max-width: 1023px) {
-      .card.prov-card-active {
+    #provListWrap::-webkit-scrollbar-thumb,
+    #provDetailWrap::-webkit-scrollbar-thumb {
+      background: rgba(99,102,241,.4);
+      border-radius: 999px;
+      transition: background .15s;
+    }
+    #provListWrap::-webkit-scrollbar-thumb:hover,
+    #provDetailWrap::-webkit-scrollbar-thumb:hover {
+      background: rgba(251,191,36,.6);
+    }
+
+    /* ── EFECTO FICHERO / Rolodex en card seleccionado (desktop/tablet) ── */
+    @media (min-width: 768px) {
+      #listProveedores .card.prov-card-active {
+        border-color: rgba(251,191,36,.6);
+        background: linear-gradient(135deg, rgba(251,191,36,.04), #0f172a 30%);
+        box-shadow:
+          inset 4px 0 0 0 #fbbf24,
+          0 8px 24px rgba(0,0,0,.5),
+          0 0 0 1px rgba(251,191,36,.25);
+        transform: translateX(2px);
+      }
+    }
+    /* En tablet con detalle abierto, la card seleccionada se funde con
+       el inline-detail abajo (esquinas inferiores rectas) */
+    @media (min-width: 768px) and (max-width: 1023px) {
+      #view-proveedores.con-detalle .card.prov-card-active {
         border-bottom-color: transparent;
         border-radius: 12px 12px 0 0;
       }
