@@ -179,6 +179,7 @@ function _route(method, e) {
       case 'anularLiquidacion':                return anularLiquidacion(params);
       case 'getLiquidacionesEmitidas':         return getLiquidacionesEmitidas(params);
       case 'getLiquidacionDetalle':            return getLiquidacionDetalle(params);
+      case 'anularJornadas':                   return anularJornadas(params);
 
       // ── Cajas MosExpress ────────────────────────────────────
       case 'getCierresCaja':            return getCierresCaja(params);

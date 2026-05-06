@@ -236,6 +236,88 @@ function getLiquidacionesPendientesSemana(params) {
   }
 }
 
+// ── Anular jornadas (eliminar filas en JORNADAS) ────────────
+// Útil para sacar a alguien del cálculo de liquidación cuando el admin
+// decide no pagarle por un día (o por la semana entera).
+//
+// params: { idPersonal? | nombre?, fecha?, fechas?, motivo?, usuario? }
+// Si pasas `fecha` o `fechas` → solo borra esos días.
+// Si NO pasas fechas → borra todas las jornadas del rango lunDom de la
+// semana de referencia (params.fechaRef opcional).
+function anularJornadas(params) {
+  try {
+    if (!params || (!params.idPersonal && !params.nombre)) {
+      return { ok: false, error: 'Requiere idPersonal o nombre' };
+    }
+    var sheet = getSheet('JORNADAS');
+    var data = sheet.getDataRange().getValues();
+    if (data.length < 2) return { ok: true, data: { eliminadas: 0 } };
+    var hdrs = data[0];
+    var iId      = hdrs.indexOf('idPersonal');
+    var iNombre  = hdrs.indexOf('nombre');
+    var iFecha   = hdrs.indexOf('fecha');
+    var iRol     = hdrs.indexOf('rol');
+    var iApp     = hdrs.indexOf('appOrigen');
+    var tz = Session.getScriptTimeZone();
+
+    // Resolver fechas objetivo
+    var fechasObj = {};
+    if (params.fecha)  fechasObj[String(params.fecha).substring(0, 10)] = true;
+    if (Array.isArray(params.fechas)) params.fechas.forEach(function(f){ fechasObj[String(f).substring(0, 10)] = true; });
+    var rangoCompleto = !Object.keys(fechasObj).length;
+    var sem = rangoCompleto ? _semanaLunDom(params.fechaRef || null) : null;
+
+    // Resolver identidad: si viene idPersonal con MEX:, usamos nombre
+    var idTarget = params.idPersonal ? String(params.idPersonal) : '';
+    var nombreTarget = params.nombre ? String(params.nombre).toLowerCase() : '';
+    if (idTarget.indexOf('MEX:') === 0 && !nombreTarget) {
+      nombreTarget = idTarget.substring(4).toLowerCase();
+    }
+
+    // Recolectar filas a borrar (de mayor a menor para no descuadrar índices)
+    var rowsToDelete = [];
+    var detalle = [];
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      var idR  = String(row[iId] || '');
+      var nomR = String(row[iNombre] || '').toLowerCase();
+      var matchPersona = false;
+      if (idTarget && idTarget.indexOf('MEX:') !== 0 && idR === idTarget) matchPersona = true;
+      else if (nombreTarget && nomR === nombreTarget) matchPersona = true;
+      if (!matchPersona) continue;
+
+      var f = row[iFecha] instanceof Date
+        ? Utilities.formatDate(row[iFecha], tz, 'yyyy-MM-dd')
+        : String(row[iFecha] || '').substring(0, 10);
+
+      var matchFecha;
+      if (rangoCompleto) {
+        matchFecha = (f >= sem.lunes && f <= sem.domingo);
+      } else {
+        matchFecha = !!fechasObj[f];
+      }
+      if (!matchFecha) continue;
+
+      rowsToDelete.push(i + 1);  // 1-based para deleteRow
+      detalle.push({ fecha: f, nombre: row[iNombre], rol: row[iRol], app: row[iApp] });
+    }
+    // Borrar de mayor a menor para preservar índices
+    rowsToDelete.sort(function(a, b){ return b - a; });
+    rowsToDelete.forEach(function(rowIdx){
+      try { sheet.deleteRow(rowIdx); } catch(_){}
+    });
+
+    return { ok: true, data: {
+      eliminadas: rowsToDelete.length,
+      detalle:    detalle,
+      motivo:     params.motivo || '',
+      usuario:    params.usuario || ''
+    }};
+  } catch(e) {
+    return { ok: false, error: 'Error anular: ' + e.message };
+  }
+}
+
 // Detalle día por día de un personal — para mostrar antes de emitir o en preview.
 function getDetalleDiasPendientes(params) {
   try {

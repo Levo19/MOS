@@ -10318,10 +10318,16 @@ const MOS = (() => {
   // Pre-cargar al iniciar sesión y persistir
   function _prefetchLiquidaciones() {
     if (!S.session) return;
-    iconBusy('finanzas', true);  // el módulo "padre" (cae en finanzas en el menú)
+    iconBusy('finanzas', true);
     Promise.all([
       API.get('getLiquidacionesPendientesSemana', {}).then(r => {
-        if (r) _liqSaveCache('pendientes', r);
+        if (r) {
+          _liqSaveCache('pendientes', r);
+          // Encadenar prefetch de detalles de cada persona en background
+          if (r.personal && r.personal.length) {
+            setTimeout(() => _prefetchDetallesLiq(r.personal), 1500);
+          }
+        }
       }).catch(() => {}),
       API.get('getLiquidacionesEmitidas', { estado: 'PENDIENTE' }).then(r => {
         _liqSaveCache('emitidas', r || []);
@@ -10377,19 +10383,27 @@ const MOS = (() => {
       if (_liqState.tab === 'pendientes') {
         const r = await API.get('getLiquidacionesPendientesSemana', {});
         const d = r || {};
-        _liqState.data = d;
         _liqSaveCache('pendientes', d);
-        const info = $('liqHeaderInfo');
-        if (info) info.textContent = `Semana actual: ${_liqFmtFecha(d.semanaInicio)} — ${_liqFmtFecha(d.semanaFin)} · hoy ${_liqFmtFecha(d.hoy)}`;
-        liqRenderPendientes(d);
+        // Solo re-render si la data cambió respecto al cache (evita parpadeo)
+        const cachedJSON = JSON.stringify(cached || {});
+        const freshJSON  = JSON.stringify(d);
+        if (cachedJSON !== freshJSON) {
+          _liqState.data = d;
+          const info = $('liqHeaderInfo');
+          if (info) info.textContent = `Semana actual: ${_liqFmtFecha(d.semanaInicio)} — ${_liqFmtFecha(d.semanaFin)} · hoy ${_liqFmtFecha(d.hoy)}`;
+          liqRenderPendientes(d);
+        }
       } else {
         const estado = _liqState.tab === 'emitidas' ? 'PENDIENTE' :
                        _liqState.tab === 'pagadas'  ? 'PAGADA' : null;
         const params = estado ? { estado } : {};
         const r = await API.get('getLiquidacionesEmitidas', params);
-        _liqState.data = r || [];
-        _liqSaveCache(_liqState.tab, _liqState.data);
-        liqRenderEmitidas(_liqState.data);
+        const fresh = r || [];
+        _liqSaveCache(_liqState.tab, fresh);
+        if (JSON.stringify(cached || []) !== JSON.stringify(fresh)) {
+          _liqState.data = fresh;
+          liqRenderEmitidas(fresh);
+        }
       }
     } catch(e) {
       // Si había cache, ignorar el error silenciosamente
@@ -10427,17 +10441,21 @@ const MOS = (() => {
         </div>`;
       return;
     }
-    body.innerHTML = personas.map(p => `
-      <div class="liq-card">
+    body.innerHTML = personas.map(p => {
+      const safeName = (p.nombre || '').replace(/'/g, "\\'");
+      return `
+      <div class="liq-card" data-liq-card="${p.idPersonal}">
         <div class="flex items-start justify-between gap-2 mb-2">
           <div class="min-w-0 flex-1">
-            <div class="text-sm font-semibold text-slate-200">👤 ${p.nombre}</div>
+            <div class="text-sm font-semibold text-slate-200">👤 ${p.nombre}${p.esVirtual ? ' <span class="text-[9px] text-amber-400 font-normal">(virtual ME)</span>' : ''}</div>
             <div class="text-[10px] text-slate-500 mt-0.5">${p.rol || ''} ${p.appOrigen ? '· ' + p.appOrigen : ''}</div>
           </div>
           <div class="text-right shrink-0">
             <div class="text-base font-bold text-amber-400">${_liqMoney(p.montoTotal)}</div>
             <div class="text-[10px] text-slate-500">Base ${_liqMoney(p.montoBase)} · Bonus ${_liqMoney(p.montoBonus)} · Meta ${_liqMoney(p.montoMeta)}</div>
           </div>
+          <button onclick="MOS.liqAnularPersona('${p.idPersonal}','${safeName}')"
+                  class="liq-anular-x" title="Sacar de la liquidación (anula todas las jornadas de la semana)">×</button>
         </div>
         <div class="text-[11px] text-slate-400 mb-3">
           <b>${p.diasPendientes}</b> día${p.diasPendientes === 1 ? '' : 's'} pendiente${p.diasPendientes === 1 ? '' : 's'}
@@ -10451,7 +10469,7 @@ const MOS = (() => {
           <button onclick="MOS.liqEmitirIndividual('${p.idPersonal}')" class="btn-primary text-xs px-3 py-1.5">💾 Emitir individual</button>
         </div>
       </div>
-    `).join('');
+    `}).join('');
 
     const fInfo = $('liqFooterInfo');
     const footer = $('liqFooterActions');
@@ -10511,49 +10529,90 @@ const MOS = (() => {
     if (footer) footer.innerHTML = '';
   }
 
+  // Pinta el detalle ya tengamos data (de cache o fetch)
+  function _liqPintarDetalle(d) {
+    const body = $('liqDetBody');
+    const footer = $('liqDetFooter');
+    if (!body || !d) return;
+    $('liqDetTitle').textContent = `📋 ${d.nombre}`;
+    $('liqDetSubtitle').textContent = `${d.rol || ''} · ${d.dias.length} día${d.dias.length === 1 ? '' : 's'} pendiente${d.dias.length === 1 ? '' : 's'}`;
+    _liqState.currentDet = d;
+    body.innerHTML = liqRenderDiasDetalle(d.dias, d.idPersonal) + `
+      <div class="mt-3 p-3 rounded" style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.25)">
+        <div class="flex justify-between text-xs">
+          <span class="text-slate-400">Total a cobrar</span>
+          <b class="text-amber-400 text-lg">${_liqMoney(d.montoTotal)}</b>
+        </div>
+        <div class="text-[10px] text-slate-500 mt-1">
+          Base ${_liqMoney(d.montoBase)} · Bonus ${_liqMoney(d.montoBonus)} · Meta ${_liqMoney(d.montoMeta)}
+        </div>
+      </div>`;
+    if (footer) footer.innerHTML = `
+      <div class="text-[11px] text-slate-500 flex-1">Snapshot inmutable al emitir.</div>
+      <button onclick="MOS.liqCerrarDetalle()" class="btn-ghost text-xs px-3 py-1.5">Cerrar</button>
+      <button onclick="MOS.liqEmitirIndividual('${d.idPersonal}', true)" class="btn-primary text-xs px-3 py-1.5">💾 Emitir liquidación</button>
+    `;
+  }
+
   async function liqVerDetallePend(idPersonal) {
     openModal('modalLiqDetalle');
     const body = $('liqDetBody');
     const footer = $('liqDetFooter');
-    body.innerHTML = '<div class="text-xs text-slate-500 italic py-4">Cargando...</div>';
-    footer.innerHTML = '';
+    if (footer) footer.innerHTML = '';
+    // 1. Pintar inmediato desde cache si existe
+    const cached = _liqLoadCache('det_' + idPersonal);
+    if (cached) {
+      _liqPintarDetalle(cached);
+    } else {
+      body.innerHTML = '<div class="text-xs text-slate-500 italic py-4">Cargando...</div>';
+    }
+    // 2. Fetch fresco
     try {
       const d = await API.get('getDetalleDiasPendientes', { idPersonal });
       if (!d) throw new Error('Sin datos');
-      $('liqDetTitle').textContent = `📋 ${d.nombre}`;
-      $('liqDetSubtitle').textContent = `${d.rol || ''} · ${d.dias.length} día${d.dias.length === 1 ? '' : 's'} pendiente${d.dias.length === 1 ? '' : 's'}`;
-      _liqState.currentDet = d;
-      body.innerHTML = liqRenderDiasDetalle(d.dias) + `
-        <div class="mt-3 p-3 rounded" style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.25)">
-          <div class="flex justify-between text-xs">
-            <span class="text-slate-400">Total a cobrar</span>
-            <b class="text-amber-400 text-lg">${_liqMoney(d.montoTotal)}</b>
-          </div>
-          <div class="text-[10px] text-slate-500 mt-1">
-            Base ${_liqMoney(d.montoBase)} · Bonus ${_liqMoney(d.montoBonus)} · Meta ${_liqMoney(d.montoMeta)}
-          </div>
-        </div>`;
-      footer.innerHTML = `
-        <div class="text-[11px] text-slate-500 flex-1">Snapshot inmutable al emitir.</div>
-        <button onclick="MOS.liqCerrarDetalle()" class="btn-ghost text-xs px-3 py-1.5">Cerrar</button>
-        <button onclick="MOS.liqEmitirIndividual('${d.idPersonal}', true)" class="btn-primary text-xs px-3 py-1.5">💾 Emitir liquidación</button>
-      `;
+      _liqSaveCache('det_' + idPersonal, d);
+      // Re-pintar solo si difiere (evita parpadeo)
+      if (!cached || JSON.stringify(cached) !== JSON.stringify(d)) {
+        _liqPintarDetalle(d);
+      }
     } catch(e) {
-      body.innerHTML = `<div class="text-xs text-rose-400 py-4">Error: ${e.message}</div>`;
+      if (!cached) body.innerHTML = `<div class="text-xs text-rose-400 py-4">Error: ${e.message}</div>`;
     }
   }
 
-  function liqRenderDiasDetalle(dias) {
+  // Pre-cargar detalles de cada persona del listado de pendientes (al login)
+  async function _prefetchDetallesLiq(personal) {
+    if (!Array.isArray(personal) || !personal.length) return;
+    // Throttle: 300ms entre fetches para no saturar
+    for (let i = 0; i < personal.length; i++) {
+      const idP = personal[i].idPersonal;
+      if (!idP) continue;
+      try {
+        const d = await API.get('getDetalleDiasPendientes', { idPersonal: idP });
+        if (d) _liqSaveCache('det_' + idP, d);
+      } catch {}
+      await new Promise(r => setTimeout(r, 300));
+    }
+  }
+
+  function liqRenderDiasDetalle(dias, idPersonal) {
     if (!dias || !dias.length) return '<div class="text-xs text-slate-500 italic">Sin días.</div>';
     return dias.map(d => {
       const cls = !d.presente ? 'ausente' : (d.auditado ? 'aud-ok' : 'no-aud');
       const estadoTxt = !d.presente ? '✗ AUSENTE' : (d.auditado ? '✓ Auditado' : '⚠ No auditado');
       const logros = (d.logros || []).map(l => `<div class="liq-logro">✓ ${l}</div>`).join('');
       const pendientes = (d.pendientes || []).map(p => `<div class="liq-pendient">✗ ${p}</div>`).join('');
-      return `<div class="liq-day-row ${cls}">
+      // Solo mostrar X si el día tiene jornada (presente y monto > 0) y tenemos el idPersonal
+      const xBtn = (d.presente && d.totalDia > 0 && idPersonal)
+        ? `<button onclick="MOS.liqAnularDia('${idPersonal}','${d.fecha}')" class="liq-anular-x liq-anular-x-day" title="Anular pago de este día (elimina la jornada)">×</button>`
+        : '';
+      return `<div class="liq-day-row ${cls}" data-fecha="${d.fecha}">
         <div class="flex justify-between mb-1">
           <span class="font-semibold text-slate-200">${_liqFmtFechaLarga(d.fecha)} · ${estadoTxt}</span>
-          <span class="font-mono ${d.totalDia > 0 ? 'text-amber-400' : 'text-slate-600'}">${_liqMoney(d.totalDia)}</span>
+          <div class="flex items-center gap-2">
+            <span class="font-mono ${d.totalDia > 0 ? 'text-amber-400' : 'text-slate-600'}">${_liqMoney(d.totalDia)}</span>
+            ${xBtn}
+          </div>
         </div>
         ${d.presente ? `<div class="text-[10px] text-slate-500 mb-1">Base ${_liqMoney(d.base)} · Bonus ${_liqMoney(d.bonus)} · Meta ${_liqMoney(d.meta)}${d.score ? ' · score ' + d.score : ''}</div>` : ''}
         ${logros || pendientes ? `<div class="mt-1">${logros}${pendientes}</div>` : ''}
@@ -10562,6 +10621,98 @@ const MOS = (() => {
   }
 
   function liqCerrarDetalle() { closeModal('modalLiqDetalle'); }
+
+  // ── Anular jornadas (saca a alguien o un día específico) ────
+  // OPTIMISTA: actualizamos la UI ya, después confirmamos con GAS.
+  async function liqAnularPersona(idPersonal, nombre) {
+    if (!confirm(`¿Sacar a "${nombre}" de la liquidación?\n\nSe eliminarán TODAS sus jornadas de la semana actual y no se le pagará nada.`)) return;
+
+    // Optimistic: quitar la card del DOM + del state local
+    const card = document.querySelector(`[data-liq-card="${idPersonal}"]`);
+    if (card) card.style.animation = 'liqFadeOut .25s forwards';
+    const data = _liqState.data;
+    let backup = null;
+    if (data && Array.isArray(data.personal)) {
+      backup = JSON.parse(JSON.stringify(data));
+      data.personal = data.personal.filter(p => p.idPersonal !== idPersonal);
+      data.totalGeneral = data.personal.reduce((s, p) => s + (parseFloat(p.montoTotal) || 0), 0);
+      _liqSaveCache('pendientes', data);
+      setTimeout(() => liqRenderPendientes(data), 250);
+    }
+
+    try {
+      const params = { idPersonal, nombre, usuario: S.session?.nombre || '' };
+      const r = await API.post('anularJornadas', params);
+      const d = r && (r.data || r);
+      toast(`✓ ${d.eliminadas || 0} jornadas anuladas`, 'ok');
+      // Invalidar cache del detalle
+      try { localStorage.removeItem('mos_liq_det_' + idPersonal); } catch {}
+    } catch(e) {
+      // Revert
+      if (backup) {
+        _liqState.data = backup;
+        _liqSaveCache('pendientes', backup);
+        liqRenderPendientes(backup);
+      }
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  async function liqAnularDia(idPersonal, fecha) {
+    if (!confirm(`¿Anular el pago del día ${_liqFmtFechaLarga(fecha)}?\n\nSe eliminará la jornada de ese día. La persona seguirá liquidando los otros días.`)) return;
+
+    // Optimistic: ocultar la fila del día + recalcular totales en el state
+    const row = document.querySelector(`#liqDetBody [data-fecha="${fecha}"]`);
+    if (row) row.style.animation = 'liqFadeOut .25s forwards';
+    const det = _liqState.currentDet;
+    let backupDet = null, backupPend = null;
+    if (det && Array.isArray(det.dias)) {
+      backupDet = JSON.parse(JSON.stringify(det));
+      const removed = det.dias.find(d => d.fecha === fecha);
+      det.dias = det.dias.filter(d => d.fecha !== fecha);
+      if (removed) {
+        det.montoBase  = Math.max(0, (det.montoBase  || 0) - (removed.base  || 0));
+        det.montoBonus = Math.max(0, (det.montoBonus || 0) - (removed.bonus || 0));
+        det.montoMeta  = Math.max(0, (det.montoMeta  || 0) - (removed.meta  || 0));
+        det.montoTotal = Math.max(0, (det.montoTotal || 0) - (removed.totalDia || 0));
+      }
+      _liqSaveCache('det_' + idPersonal, det);
+      setTimeout(() => _liqPintarDetalle(det), 250);
+    }
+    // Y refrescar la card de pendientes en el state
+    const pend = _liqState.tab === 'pendientes' ? _liqState.data : _liqLoadCache('pendientes');
+    if (pend && Array.isArray(pend.personal)) {
+      backupPend = JSON.parse(JSON.stringify(pend));
+      const persona = pend.personal.find(p => p.idPersonal === idPersonal);
+      if (persona) {
+        persona.fechas = (persona.fechas || []).filter(f => f !== fecha);
+        persona.diasPendientes = persona.fechas.length;
+        if (det && det.montoTotal !== undefined) {
+          persona.montoBase  = det.montoBase;
+          persona.montoBonus = det.montoBonus;
+          persona.montoMeta  = det.montoMeta;
+          persona.montoTotal = det.montoTotal;
+        }
+        if (persona.diasPendientes === 0) {
+          pend.personal = pend.personal.filter(p => p.idPersonal !== idPersonal);
+        }
+      }
+      pend.totalGeneral = pend.personal.reduce((s, p) => s + (parseFloat(p.montoTotal) || 0), 0);
+      _liqSaveCache('pendientes', pend);
+      if (_liqState.tab === 'pendientes') liqRenderPendientes(pend);
+    }
+
+    try {
+      const params = { idPersonal, fecha, usuario: S.session?.nombre || '' };
+      const r = await API.post('anularJornadas', params);
+      const d = r && (r.data || r);
+      toast(`✓ Jornada del ${_liqFmtFecha(fecha)} anulada`, 'ok');
+    } catch(e) {
+      if (backupDet)  { _liqState.currentDet = backupDet; _liqSaveCache('det_' + idPersonal, backupDet); _liqPintarDetalle(backupDet); }
+      if (backupPend) { _liqSaveCache('pendientes', backupPend); if (_liqState.tab === 'pendientes') { _liqState.data = backupPend; liqRenderPendientes(backupPend); } }
+      toast('Error: ' + e.message, 'error');
+    }
+  }
 
   async function liqEmitirIndividual(idPersonal, fromDetalle) {
     const conf = confirm('Emitir liquidación de este personal con sus días pendientes?\nEl snapshot queda inmutable.');
@@ -12785,6 +12936,7 @@ const MOS = (() => {
     finAbrirEditorMargenDefault, finCerrarEditorMargenDefault, finGuardarMargenDefault,
     // Liquidaciones
     liqOpen, liqClose, liqSetTab, liqVerDetallePend, liqEmitirIndividual, liqEmitirTodos,
+    liqAnularPersona, liqAnularDia,
     liqVerTicket, liqMarcarPagada, liqAnular, liqImprimir, liqCerrarDetalle,
     // Finanzas — modales detalle
     finAbrirModalProductos, finToggleFiltroSinCosto,
