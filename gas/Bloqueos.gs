@@ -136,36 +136,19 @@ function desbloquearUsuarioTemporal(params) {
   }
 
   var clave = String(params.claveAdmin).trim();
-  var validadoPor = '';
 
-  // ── 1) Validar contra ESTACIONES.adminPin ──
-  try {
-    var estaciones = _sheetToObjects(getSheet('ESTACIONES'));
-    var estMatch = estaciones.find(function(e) {
-      return String(e.activo) !== '0' && String(e.adminPin || '') === clave && clave.length > 0;
-    });
-    if (estMatch) {
-      validadoPor = 'estacion:' + (estMatch.nombre || estMatch.idEstacion);
-    }
-  } catch(e) { /* tolerar si no existe la hoja aún */ }
-
-  // ── 2) Validar contra PIN de master/admin en PERSONAL_MASTER ──
-  if (!validadoPor) {
-    var personas = _sheetToObjects(getSheet('PERSONAL_MASTER'));
-    var persMatch = personas.find(function(p) {
-      var rol = String(p.rol || '').toUpperCase();
-      var esAdmin = rol === 'MASTER' || rol === 'ADMIN' || rol === 'ADMINISTRADOR';
-      return esAdmin && String(p.estado) === '1' &&
-             String(p.pin || '') === clave && clave.length > 0;
-    });
-    if (persMatch) {
-      validadoPor = 'admin:' + persMatch.nombre;
-    }
+  // Validación unificada — clave de 8 dígitos: ADMIN_GLOBAL_PIN + PIN admin
+  var verif = verificarClaveAdmin({
+    clave: clave,
+    accion: 'DESBLOQUEO_USUARIO',
+    refDocumento: (params.nombre || params.idPersonal || ''),
+    appOrigen: params.appOrigen || '',
+    detalle: 'Desbloqueo temporal 15 min'
+  });
+  if (!verif.ok || !verif.data || !verif.data.autorizado) {
+    return { ok: true, data: { autorizado: false, error: (verif.data && verif.data.error) || 'Clave incorrecta' } };
   }
-
-  if (!validadoPor) {
-    return { ok: true, data: { autorizado: false, error: 'Clave incorrecta' } };
-  }
+  var validadoPor = verif.data.validadoPor;
 
   // ── 3) Resolver datos del usuario a desbloquear ──
   var personasAll = _sheetToObjects(getSheet('PERSONAL_MASTER'));

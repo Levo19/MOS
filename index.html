@@ -3571,31 +3571,96 @@
         </div>
       </div>
 
-      <!-- Seguridad -->
+      <!-- Seguridad — Clave Admin Global Unificada -->
       <div id="cfgPanelSeguridad" class="hidden">
-        <div class="grid lg:grid-cols-2 gap-4">
-          <!-- PINs por estación -->
-          <div class="card p-4">
-            <h3 class="font-semibold text-sm text-white mb-1">🔐 PINs por Estación — MosExpress</h3>
-            <p class="text-xs text-slate-500 mb-4">Autoriza anulaciones y notas de crédito en cada caja</p>
-            <div id="listPinsEstaciones" class="space-y-2"><div class="text-center py-4 text-slate-500 text-sm">Cargando...</div></div>
-          </div>
-          <!-- PIN admin WH -->
-          <div class="card p-4">
-            <h3 class="font-semibold text-sm text-white mb-1">🏭 PIN Admin — warehouseMos</h3>
-            <p class="text-xs text-slate-500 mb-4">Autoriza ajustes de stock, auditorías y edición de documentos</p>
-            <div class="space-y-3">
-              <div>
-                <label class="lbl">Nuevo PIN (4–6 dígitos)</label>
-                <input id="pinWH" class="inp" type="password" maxlength="6" placeholder="••••">
-              </div>
-              <div>
-                <label class="lbl">Confirmar PIN</label>
-                <input id="pinWHConfirm" class="inp" type="password" maxlength="6" placeholder="••••">
-              </div>
-              <button onclick="MOS.guardarPinWH()" class="btn-primary w-full">Actualizar PIN</button>
-              <p class="text-xs text-slate-500 mt-1">Se guarda en CONFIG_MOS y warehouseMos lo lee como <code class="text-indigo-400">PIN_ADMIN_WH</code>.</p>
+        <!-- Card explicativo -->
+        <div class="card p-4 mb-4" style="background:linear-gradient(135deg,#0c1e3a 0%,#0d1526 100%);border:1px solid #1e3a8a;">
+          <div class="flex items-start gap-3">
+            <div style="font-size:24px;">🔐</div>
+            <div class="flex-1">
+              <h3 class="font-bold text-sm text-white mb-1">Sistema de Clave Admin Unificado</h3>
+              <p class="text-xs text-slate-400 leading-relaxed">
+                Para autorizar acciones admin en MosExpress (anular ticket, crédito, cambio de pago)
+                y warehouseMos (reabrir guías), los administradores ingresan una clave de
+                <strong class="text-emerald-400">8 dígitos</strong>:
+                <code class="text-amber-300">CLAVE_GLOBAL (4)</code> +
+                <code class="text-emerald-300">TU_PIN (4)</code>.
+                La clave global rota automáticamente cada 30 días.
+              </p>
             </div>
+          </div>
+        </div>
+
+        <div class="grid lg:grid-cols-2 gap-4">
+          <!-- Card: ver clave global -->
+          <div class="card p-4">
+            <h3 class="font-semibold text-sm text-white mb-1">🔑 Clave Global Vigente</h3>
+            <p class="text-xs text-slate-500 mb-4">Solo visible para Master/Admin. Verifica con tu PIN personal.</p>
+
+            <div id="segPanelLogin">
+              <label class="lbl">Tu PIN (4 dígitos)</label>
+              <input id="segPinAdmin" class="inp text-center text-xl font-bold tracking-widest"
+                     type="password" inputmode="numeric" maxlength="4" placeholder="••••"
+                     onkeyup="if(event.key==='Enter')MOS.seg_consultarClave()">
+              <button onclick="MOS.seg_consultarClave()" class="btn-primary w-full mt-3">
+                Ver clave global
+              </button>
+              <p id="segError" class="text-xs text-red-400 mt-2 min-h-4"></p>
+            </div>
+
+            <div id="segPanelClave" class="hidden">
+              <div class="text-center mb-4">
+                <p class="text-xs text-slate-500 uppercase tracking-wider mb-2">Clave global actual</p>
+                <p class="text-6xl font-black tracking-[0.3em] mb-2"
+                   style="color:#fbbf24;text-shadow:0 0 30px rgba(251,191,36,0.3);font-family:'Courier New',monospace;"
+                   id="segClaveDigits">- - - -</p>
+                <p class="text-xs text-slate-400">+ tu PIN de 4 dígitos = clave admin completa</p>
+              </div>
+
+              <div class="rounded-lg p-3 mb-3" style="background:#0d1526;border:1px solid #1e293b;">
+                <div class="flex items-center justify-between text-xs mb-1">
+                  <span class="text-slate-500">Próxima rotación auto</span>
+                  <span id="segDiasRestantes" class="font-bold text-slate-300">—</span>
+                </div>
+                <div class="w-full h-2 rounded-full" style="background:#1e293b;">
+                  <div id="segBarraProgreso" style="background:linear-gradient(90deg,#10b981,#fbbf24);height:100%;border-radius:9999px;width:0%;transition:width 0.5s;"></div>
+                </div>
+                <p id="segFechaProxima" class="text-[10px] text-slate-600 mt-1.5 text-right"></p>
+              </div>
+
+              <div class="flex gap-2">
+                <button onclick="MOS.seg_rotarManual()" class="btn-primary flex-1 text-sm py-2">
+                  🔄 Rotar ahora
+                </button>
+                <button onclick="MOS.seg_ocultar()" class="btn-secondary text-sm px-3 py-2">
+                  Ocultar
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card: lista de admins activos -->
+          <div class="card p-4">
+            <h3 class="font-semibold text-sm text-white mb-1">👤 Administradores Activos</h3>
+            <p class="text-xs text-slate-500 mb-4">Cualquiera de estos puede autorizar combinando su PIN con la clave global.</p>
+            <div id="segListaAdmins" class="space-y-2"><div class="text-center py-4 text-slate-500 text-sm">Cargando...</div></div>
+          </div>
+        </div>
+
+        <!-- Auditoría -->
+        <div class="card p-4 mt-4">
+          <div class="flex items-center justify-between mb-3">
+            <div>
+              <h3 class="font-semibold text-sm text-white">📋 Auditoría reciente</h3>
+              <p class="text-xs text-slate-500">Últimas 30 acciones autorizadas con clave admin</p>
+            </div>
+            <button onclick="MOS.seg_cargarAuditoria()" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700">↻</button>
+          </div>
+          <div class="overflow-x-auto" style="-webkit-overflow-scrolling:touch">
+            <table class="tbl text-xs">
+              <thead><tr><th>Fecha</th><th>Acción</th><th>Autorizó</th><th>App</th><th class="hidden sm:table-cell">Ref</th></tr></thead>
+              <tbody id="tbodyAuditoria"><tr><td colspan="5" class="text-center py-6 text-slate-500">Carga primero la clave global para ver auditoría.</td></tr></tbody>
+            </table>
           </div>
         </div>
       </div>

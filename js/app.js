@@ -8659,28 +8659,173 @@ const MOS = (() => {
   }
 
   function renderSeguridad() {
-    // PINs por estación (solo ME cajas)
-    const listPins = $('listPinsEstaciones');
-    if (!listPins) return;
-    const cajasMe = cfgData.estaciones.filter(e => e.appOrigen === 'mosExpress' && e.tipo === 'CAJA');
-    if (!cajasMe.length) {
-      listPins.innerHTML = '<p class="text-slate-500 text-sm text-center py-4">Sin estaciones de tipo CAJA.</p>';
-    } else {
-      listPins.innerHTML = cajasMe.map(e => `
-        <div class="flex items-center justify-between p-3 rounded-lg" style="background:#0d1526;border:1px solid #1e293b">
-          <div>
-            <div class="text-sm font-medium text-slate-200">${e.nombre}</div>
-            <div class="text-xs text-slate-500">${e.idZona} · ${e.idEstacion}</div>
+    // Reset panel a estado login
+    seg_ocultar();
+    // Renderizar lista de admins (de cfgData.usuarios MOS o llamar API)
+    const listaEl = $('segListaAdmins');
+    if (listaEl) {
+      const admins = (cfgData.personalMOS || []).filter(u => {
+        const r = String(u.rol || '').toUpperCase();
+        return (r === 'MASTER' || r === 'ADMIN' || r === 'ADMINISTRADOR') && String(u.estado) === '1';
+      });
+      if (!admins.length) {
+        listaEl.innerHTML = '<p class="text-slate-500 text-sm text-center py-4">Sin admins activos. Crea uno en pestaña Personal.</p>';
+      } else {
+        listaEl.innerHTML = admins.map(a => `
+          <div class="flex items-center gap-3 p-3 rounded-lg" style="background:#0d1526;border:1px solid #1e293b;">
+            <div class="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm" style="background:${a.color || '#6366f1'}">
+              ${(a.nombre || '?')[0]}${(a.apellido || '')[0] || ''}
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-medium text-slate-200 truncate">${a.nombre} ${a.apellido || ''}</div>
+              <div class="text-xs text-slate-500 uppercase tracking-wider">${a.rol}</div>
+            </div>
           </div>
-          <div class="flex items-center gap-2">
-            <input class="inp w-24 text-center" type="password" maxlength="6"
-                   placeholder="••••" id="pin_${e.idEstacion}"
-                   title="Nuevo PIN para ${e.nombre}">
-            <button onclick="MOS.guardarPinEstacion('${e.idEstacion}')"
-                    class="btn-primary text-xs px-2 py-1">Guardar</button>
-          </div>
-        </div>
-      `).join('');
+        `).join('');
+      }
+    }
+  }
+
+  // ── Seguridad: Clave Admin Global ──────────────────────
+  let _segDataActual = null;
+
+  function seg_ocultar() {
+    const login = $('segPanelLogin');
+    const clave = $('segPanelClave');
+    if (login) login.classList.remove('hidden');
+    if (clave) clave.classList.add('hidden');
+    const inp = $('segPinAdmin');
+    if (inp) inp.value = '';
+    const err = $('segError');
+    if (err) err.textContent = '';
+    _segDataActual = null;
+  }
+
+  async function seg_consultarClave() {
+    const inp = $('segPinAdmin');
+    const err = $('segError');
+    const pin = String(inp?.value || '').trim();
+    if (!/^\d{4}$/.test(pin)) {
+      if (err) err.textContent = 'Ingresa tu PIN de 4 dígitos';
+      return;
+    }
+    if (err) err.textContent = '';
+    try {
+      const r = await fetch(API_URL + '?action=getClaveAdminGlobal&pinAdmin=' + encodeURIComponent(pin));
+      const j = await r.json();
+      if (!j || !j.ok) { if (err) err.textContent = j?.error || 'Error de red'; return; }
+      if (!j.data?.autorizado) {
+        if (err) err.textContent = j.data?.error || 'PIN incorrecto';
+        if (inp) inp.value = '';
+        return;
+      }
+      _segDataActual = j.data;
+      _segPintar(j.data);
+      seg_cargarAuditoria();
+    } catch(e) {
+      if (err) err.textContent = 'Sin conexión';
+    }
+  }
+
+  function _segPintar(data) {
+    const claveDig = $('segClaveDigits');
+    if (claveDig) claveDig.textContent = (data.pin || '----').split('').join(' ');
+    const dr = $('segDiasRestantes');
+    if (dr) {
+      const dias = data.diasParaProximaRotacion;
+      dr.textContent = data.vencida ? '⚠ Vencida — rota ahora'
+                       : (dias === 0 ? 'Hoy' : (dias + ' días'));
+      dr.style.color = data.vencida ? '#f87171' : (dias <= 5 ? '#fbbf24' : '#10b981');
+    }
+    const barra = $('segBarraProgreso');
+    if (barra) {
+      const pct = Math.max(0, Math.min(100, ((30 - data.diasParaProximaRotacion) / 30) * 100));
+      barra.style.width = pct + '%';
+      if (data.vencida) barra.style.background = '#ef4444';
+    }
+    const fp = $('segFechaProxima');
+    if (fp && data.fechaProximaRotacion) {
+      const f = new Date(data.fechaProximaRotacion);
+      fp.textContent = 'Próxima rotación: ' + f.toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric' });
+    }
+    $('segPanelLogin')?.classList.add('hidden');
+    $('segPanelClave')?.classList.remove('hidden');
+  }
+
+  async function seg_rotarManual() {
+    const inp = $('segPinAdmin');
+    const pin = String(inp?.value || '').trim();
+    let pinUsar = pin;
+    if (!/^\d{4}$/.test(pinUsar)) {
+      pinUsar = prompt('Ingresa tu PIN admin de 4 dígitos para confirmar la rotación:');
+      if (!pinUsar || !/^\d{4}$/.test(pinUsar.trim())) {
+        toast('Rotación cancelada · PIN inválido', 'warn');
+        return;
+      }
+      pinUsar = pinUsar.trim();
+    }
+    if (!confirm('¿Generar una nueva clave global aleatoria? La clave actual dejará de funcionar inmediatamente en MosExpress y warehouseMos.')) return;
+    try {
+      const r = await fetch(API_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'rotarClaveAdminGlobal', manual: true, pinAdmin: pinUsar })
+      });
+      const j = await r.json();
+      if (!j || !j.ok) { toast('Error: ' + (j?.error || 'sin respuesta'), 'danger'); return; }
+      if (!j.data?.autorizado && j.data?.error) { toast(j.data.error, 'danger'); return; }
+      // Recargar
+      _segDataActual = {
+        pin: j.data.pin,
+        fechaUltimaRotacion: j.data.fechaUltimaRotacion,
+        fechaProximaRotacion: j.data.fechaProximaRotacion,
+        diasDesdeRotacion: 0,
+        diasParaProximaRotacion: 30,
+        vencida: false
+      };
+      _segPintar(_segDataActual);
+      seg_cargarAuditoria();
+      toast('Clave rotada · ' + j.data.pin, 'ok', 5000);
+    } catch(e) {
+      toast('Sin conexión', 'danger');
+    }
+  }
+
+  async function seg_cargarAuditoria() {
+    const tbody = $('tbodyAuditoria');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-slate-500">Cargando...</td></tr>';
+    try {
+      const r = await fetch(API_URL + '?action=getAuditoriaAdmin&limit=30');
+      const j = await r.json();
+      if (!j || !j.ok || !Array.isArray(j.data)) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-slate-500">Sin auditoría disponible.</td></tr>';
+        return;
+      }
+      if (!j.data.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-6 text-slate-500">Aún no hay acciones registradas.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = j.data.map(a => {
+        const fecha = a.fecha ? new Date(a.fecha) : null;
+        const fmtFecha = fecha ? fecha.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit' }) + ' ' + fecha.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }) : '—';
+        const accColor = {
+          'ANULACION': 'text-red-400',
+          'CREDITO': 'text-amber-400',
+          'CAMBIO_METODO': 'text-blue-400',
+          'REABRIR_GUIA': 'text-purple-400',
+          'DESBLOQUEO_USUARIO': 'text-emerald-400',
+          'ROTACION_PIN_GLOBAL': 'text-pink-400'
+        }[String(a.accion || '').toUpperCase()] || 'text-slate-400';
+        return `<tr>
+          <td class="text-slate-500">${fmtFecha}</td>
+          <td class="${accColor} font-semibold text-xs uppercase tracking-wider">${a.accion || '—'}</td>
+          <td class="text-slate-200">${a.nombreAutoriza || '—'}</td>
+          <td class="text-slate-500 text-xs">${a.appOrigen || '—'}</td>
+          <td class="text-slate-500 text-xs hidden sm:table-cell font-mono">${a.refDocumento || '—'}</td>
+        </tr>`;
+      }).join('');
+    } catch(e) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-slate-500">Sin conexión</td></tr>';
     }
   }
 
@@ -13115,6 +13260,7 @@ const MOS = (() => {
     _persActualizarPreview,
     abrirModalSerie, guardarSerie,
     guardarPinEstacion, guardarPinWH,
+    seg_consultarClave, seg_rotarManual, seg_cargarAuditoria, seg_ocultar,
     abrirModalDispositivo, cerrarModalDispositivo, guardarDispositivo, toggleEstadoDispositivo,
     toggleAvatarMenu, closeAvatarMenu, installPWA,
     toggleFiltroCat, setFiltroCategoria, toggleFiltroTipo, limpiarFiltrosCat, toggleFiltroAlertas, toggleAlertPop,

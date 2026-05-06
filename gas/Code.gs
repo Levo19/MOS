@@ -186,6 +186,13 @@ function _route(method, e) {
       case 'desbloquearUsuarioTemporal':return desbloquearUsuarioTemporal(params);
       case 'getBloqueosActivos':        return getBloqueosActivos(params);
 
+      // ── Seguridad: clave admin global unificada ────────────
+      case 'verificarClaveAdmin':       return verificarClaveAdmin(params);
+      case 'getClaveAdminGlobal':       return getClaveAdminGlobal(params);
+      case 'rotarClaveAdminGlobal':     return rotarClaveAdminGlobal(params);
+      case 'getAdminPinsCache':         return getAdminPinsCache(params);
+      case 'getAuditoriaAdmin':         return getAuditoriaAdmin(params);
+
       // ── Cajas MosExpress ────────────────────────────────────
       case 'getCierresCaja':            return getCierresCaja(params);
       case 'anularTicketME':            return anularTicketME(params);
