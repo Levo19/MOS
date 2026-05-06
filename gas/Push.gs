@@ -186,6 +186,32 @@ function enviarPushNotif(params) {
   return { ok: true };
 }
 
+// ── Enviar push DIRIGIDO a un usuario específico (filtra tokens por nombre) ──
+// Busca todos los tokens cuyo campo 'usuario' coincide con el destinatario
+// y solo envía a esos. Si el usuario no tiene dispositivos suscritos, retorna error.
+function enviarPushUsuario(params) {
+  if (!params.usuario) return { ok: false, error: 'usuario requerido' };
+  if (!params.titulo)  return { ok: false, error: 'titulo requerido' };
+  var sheet = _getPushTokensSheet();
+  var data  = sheet.getDataRange().getValues();
+  // headers: idToken(0) token(1) usuario(2) dispositivo(3) appOrigen(4) fecha(5) ultimaVez(6) activo(7)
+  var nombreNorm = String(params.usuario).trim().toLowerCase();
+  var tokens = [];
+  for (var i = 1; i < data.length; i++) {
+    var token  = String(data[i][1] || '');
+    var u      = String(data[i][2] || '').trim().toLowerCase();
+    var activo = data[i][7];
+    if (!token) continue;
+    if (activo === false || String(activo) === '0' || String(activo) === 'false') continue;
+    if (u === nombreNorm) tokens.push(token);
+  }
+  if (tokens.length === 0) {
+    return { ok: false, error: 'Usuario "' + params.usuario + '" no tiene dispositivos suscritos a notificaciones' };
+  }
+  _enviarPushTokens(params.titulo, params.cuerpo || '', tokens);
+  return { ok: true, data: { tokensAlcanzados: tokens.length, usuario: params.usuario } };
+}
+
 // ── Resumen diario (llamado por el trigger de GAS) ─────────────
 function enviarResumenDiario() {
   try {

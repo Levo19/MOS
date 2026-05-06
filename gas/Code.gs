@@ -167,6 +167,7 @@ function _route(method, e) {
       // ── Push notifications ─────────────────────────────────────
       case 'registrarPushToken':        return registrarPushToken(params);
       case 'enviarPushNotif':           return enviarPushNotif(params);
+      case 'enviarPushUsuario':         return enviarPushUsuario(params);
 
       // ── Evaluaciones de personal ──────────────────────────────
       case 'crearEvaluacion':           return crearEvaluacion(params);

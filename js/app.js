@@ -9711,12 +9711,23 @@ const MOS = (() => {
     const cuerpo = String($('pushCuerpo')?.value || '').trim();
     const dest = String($('pushDestinoUsuario')?.value || '').trim();
     if (!titulo || !cuerpo) { toast('Título y mensaje son requeridos', 'error'); return; }
+    if (!dest) { toast('Destinatario no encontrado', 'error'); return; }
     closeModal('modalEnviarPush');
     try {
-      await API.post('enviarPushNotif', { titulo, cuerpo: `[a ${dest}] ${cuerpo}` });
-      toast(`✓ Mensaje enviado a ${dest}`, 'ok');
+      const r = await API.post('enviarPushUsuario', { usuario: dest, titulo, cuerpo });
+      if (r?.tokensAlcanzados) {
+        toast(`✓ Mensaje enviado a ${dest} (${r.tokensAlcanzados} dispositivo${r.tokensAlcanzados === 1 ? '' : 's'})`, 'ok');
+      } else {
+        toast(`✓ Mensaje enviado a ${dest}`, 'ok');
+      }
     } catch(e) {
-      toast('Error: ' + e.message, 'error');
+      // Si el usuario no tiene tokens, mostrar error claro
+      const msg = e?.message || 'Error';
+      if (msg.includes('no tiene dispositivos')) {
+        toast(`⚠ ${dest} no tiene notificaciones activas. Pídele que las habilite al iniciar sesión.`, 'warn', 8000);
+      } else {
+        toast('Error: ' + msg, 'error');
+      }
     }
   }
 
