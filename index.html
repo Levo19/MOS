@@ -1874,6 +1874,57 @@
       50%      { opacity: 0.85; }
     }
 
+    /* ── Dispositivo: chip con hover/click ─────────────────── */
+    .disp-chip {
+      will-change: transform, box-shadow;
+    }
+    .disp-chip:hover {
+      transform: translateY(-2px);
+      border-color: rgba(99,102,241,0.6) !important;
+      box-shadow: 0 4px 14px rgba(99,102,241,0.18);
+    }
+    .disp-chip:active {
+      transform: translateY(0);
+    }
+
+    /* Dispositivo con actividad <5 min: glow + breathing */
+    .disp-chip-live {
+      animation: dispLiveBreath 2.4s ease-in-out infinite;
+    }
+    @keyframes dispLiveBreath {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(16,185,129, 0); }
+      50%      { box-shadow: 0 0 16px 2px rgba(16,185,129, 0.4); }
+    }
+
+    /* Dot verde pulsante junto al icono del dispositivo (si está fresco) */
+    .disp-dot-pulse {
+      position: absolute;
+      top: -2px;
+      right: -3px;
+      width: 8px;
+      height: 8px;
+      background: #10b981;
+      border-radius: 50%;
+      box-shadow: 0 0 0 0 rgba(16,185,129, 0.7);
+      animation: dispDotPulse 1.6s ease-in-out infinite;
+    }
+    .disp-dot-pulse::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      background: inherit;
+      animation: dispDotRipple 1.6s ease-out infinite;
+    }
+    @keyframes dispDotPulse {
+      0%, 100% { transform: scale(1);   opacity: 1; }
+      50%      { transform: scale(1.2); opacity: 0.85; }
+    }
+    @keyframes dispDotRipple {
+      0%   { transform: scale(1);   opacity: 0.7; }
+      100% { transform: scale(2.6); opacity: 0; }
+    }
+
     /* Flash sutil del card cuando cambia el qty (1.5s) */
     .prov-prod-card.cart-flash {
       animation: provCardFlash 1s ease;

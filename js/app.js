@@ -8665,17 +8665,23 @@ const MOS = (() => {
               const act = _dispActividad(d.Ultima_Conexion);
               const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
               const movio = _dispSeMovio(d);
+              const isFresh = act.minutos < 5;
               const claseAnim = movio ? 'disp-chip-moved' : (_dispRenderCount === 0 ? 'disp-chip-arrived' : '');
-              const bgColor = movio ? 'rgba(99,102,241,0.12)' : 'rgba(16,185,129,0.06)';
-              const bordColor = movio ? 'rgba(99,102,241,0.5)' : 'rgba(16,185,129,0.25)';
+              const claseFresh = isFresh ? 'disp-chip-live' : '';
+              const bgColor = movio ? 'rgba(99,102,241,0.12)' : (isFresh ? 'rgba(16,185,129,0.10)' : 'rgba(16,185,129,0.06)');
+              const bordColor = movio ? 'rgba(99,102,241,0.5)' : (isFresh ? 'rgba(16,185,129,0.5)' : 'rgba(16,185,129,0.25)');
               const movedBadge = movio ? '<span class="text-[8px] font-bold text-indigo-300 ml-1" title="Recién movido a esta estación">📍 movido</span>' : '';
-              return `<div class="flex items-center gap-2 px-2 py-1.5 rounded ${claseAnim}" style="background:${bgColor};border:1px solid ${bordColor};">
-                <span class="text-sm shrink-0">${ico}</span>
+              const dotPulse = isFresh ? '<span class="disp-dot-pulse"></span>' : '';
+              return `<div class="disp-chip flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer ${claseAnim} ${claseFresh}"
+                onclick="MOS.abrirModalDispositivo('${idAttr}')"
+                style="background:${bgColor};border:1px solid ${bordColor};transition:all 0.2s;"
+                title="Click para editar">
+                <span class="text-sm shrink-0 relative">${ico}${dotPulse}</span>
                 <div class="flex-1 min-w-0">
                   <div class="text-xs font-medium text-slate-200 truncate">${d.Nombre_Equipo || '—'}${movedBadge}</div>
-                  <div class="text-[9px] truncate" style="color:${act.color};">${act.dot} ${act.label}${d.Ultima_Sesion ? ' · 👤 ' + d.Ultima_Sesion : ''}</div>
+                  <div class="text-[9px] truncate" style="color:${act.color};">${act.dot} ${act.label}${d.Ultima_Sesion ? ' · 👤 <span class="text-emerald-400 font-bold">' + d.Ultima_Sesion + '</span>' : ''}</div>
                 </div>
-                <button onclick="MOS.abrirModalDispositivo('${idAttr}')" class="text-[10px] text-slate-500 hover:text-white p-1" title="Editar">✏️</button>
+                <span class="text-[10px] text-slate-500 group-hover:text-white p-1">✏️</span>
               </div>`;
             }).join('')}
           </div>
@@ -9296,17 +9302,23 @@ const MOS = (() => {
     const ico = _dispIcono(d.Nombre_Equipo);
     const act = _dispActividad(d.Ultima_Conexion);
     const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
-    const sesion = d.Ultima_Sesion ? ` · 👤 ${d.Ultima_Sesion}` : '';
+    const isFresh = act.minutos < 5;
+    const sesion = d.Ultima_Sesion ? ` · 👤 <span class="text-emerald-400 font-bold">${d.Ultima_Sesion}</span>` : '';
     const cls = opts.compact ? 'text-[10px] px-2 py-1.5' : 'text-[11px] px-3 py-2';
-    return `<div class="flex items-center gap-2 rounded-lg ${cls} group" style="background:#0a1424;border:1px solid #1e293b;">
-      <span class="text-base shrink-0">${ico}</span>
+    const claseFresh = isFresh ? 'disp-chip-live' : '';
+    const dotPulse = isFresh ? '<span class="disp-dot-pulse"></span>' : '';
+    return `<div class="disp-chip flex items-center gap-2 rounded-lg cursor-pointer ${cls} ${claseFresh}"
+      onclick="MOS.abrirModalDispositivo('${idAttr}')"
+      style="background:#0a1424;border:1px solid #1e293b;transition:all 0.2s;"
+      title="Click para editar">
+      <span class="text-base shrink-0 relative">${ico}${dotPulse}</span>
       <div class="flex-1 min-w-0">
         <div class="font-medium text-slate-200 truncate">${d.Nombre_Equipo || '—'}</div>
         <div class="text-[9px] truncate" style="color:${act.color};">
           ${act.dot} ${act.label}${sesion}
         </div>
       </div>
-      <button onclick="MOS.abrirModalDispositivo('${idAttr}')" class="text-[10px] text-slate-500 hover:text-white p-1" title="Editar">✏️</button>
+      <span class="text-[10px] text-slate-500 p-1">✏️</span>
     </div>`;
   }
 
