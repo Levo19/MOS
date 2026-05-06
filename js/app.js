@@ -2632,7 +2632,9 @@ const MOS = (() => {
   function _almSaveCache(key, data) {
     try { localStorage.setItem(ALM_CACHE_PFX + key, JSON.stringify({ ts: Date.now(), data })); } catch {}
   }
-  // Hidrata todos los caches en S.X al inicio del módulo
+  // Hidrata todos los caches en S.X al inicio del módulo + pinta lo que
+  // pueda pintarse desde localStorage para que la primera vista no muestre
+  // "Cargando..." aunque sea brevemente.
   function _almHidratarTodos() {
     const cat = _almLoadCache('catalogoStock');
     if (cat) S.catalogoStock = cat;
@@ -2644,6 +2646,25 @@ const MOS = (() => {
     if (env) S.envasados = env;
     const opsCache = _almLoadCache('opsData');
     if (opsCache) S._opsData = opsCache;
+    const ins = _almLoadCache('insights');
+    if (ins) S._almInsights = ins;
+    const aOps = _almLoadCache('alertasOps');
+    if (aOps) S._almAlertasOps = aOps;
+    const kpis = _almLoadCache('kpis');
+    if (kpis) S._almKpis = kpis;
+    const ranking = _almLoadCache('rankingZonas');
+    if (ranking) S._almRankingZonas = ranking;
+    const sinV = _almLoadCache('sinVenta');
+    if (sinV) S._almSinVenta = sinV;
+  }
+  // Pinta lo cacheado en el DOM (debe correr cuando el DOM exista — usar al
+  // entrar al módulo o tras render de los containers).
+  function _almPintarDesdeCacheLocal() {
+    if (S._almKpis)         { try { _almRenderKPIs(S._almKpis); } catch {} }
+    if (S._almInsights)     { try { _almRenderInsights(S._almInsights); } catch {} }
+    if (S._almAlertasOps)   { try { _almRenderAlertasOps(S._almAlertasOps); } catch {} }
+    if (S._almRankingZonas) { try { _almRenderRankingZonas(S._almRankingZonas); } catch {} }
+    if (S._almSinVenta)     { try { _almRenderSinVenta(S._almSinVenta); } catch {} }
   }
   // Auto-refresh background: 60s. Solo cuando la app está visible.
   const ALM_AUTO_REFRESH_MS = 60 * 1000;
@@ -2779,50 +2800,112 @@ const MOS = (() => {
   }
 
   // ── ALMACÉN: pre-fetch al loguear ─────────────────────────
-  // Carga TODAS las tablas críticas + persiste a localStorage para que la
-  // próxima visita al módulo sea instantánea. También hidrata S.X en memoria.
+  // Trae las tablas críticas, las persiste a localStorage Y pinta la UI
+  // directamente para que cuando el user abra el módulo todo esté ya
+  // renderizado (no "Cargando…").
   function _prefetchAlmacen() {
     setTimeout(() => {
       if (!S.session) return;
       iconBusy('almacen', true);
       const tasks = [
-        API.get('getDashboardAlmacen', {}).catch(() => {}),
-        API.get('getAlertasOperativas', {}).catch(() => {}),
+        // Resumen — KPIs
+        API.get('getDashboardAlmacen', {}).then(r => {
+          if (r) { S._almKpis = r; _almSaveCache('kpis', r);
+            try { _almRenderKPIs(r); } catch {} }
+        }).catch(() => {}),
+        // Resumen — alertas operativas
+        API.get('getAlertasOperativas', {}).then(r => {
+          if (r) { S._almAlertasOps = r; _almSaveCache('alertasOps', r);
+            try { _almRenderAlertasOps(r); } catch {} }
+        }).catch(() => {}),
+        // Operaciones — guías y preingresos
         API.get('getGuiasYPreingresos', { dias: 7 }).catch(() => {}),
-        API.get('getInsightsStock', { dias: 30 }).catch(() => {}),
+        // Resumen — insights / sugerencias
+        API.get('getInsightsStock', { dias: 30 }).then(r => {
+          const ins = (r && r.insights) || [];
+          S._almInsights = ins;
+          _almSaveCache('insights', ins);
+          try { _almRenderInsights(ins); } catch {}
+        }).catch(() => {}),
+        // Stock principal
         API.get('getCatalogoStockResumen', { dias: 7 }).then(r => {
-          if (r && r.productos) { S.catalogoStock = r.productos; _almSaveCache('catalogoStock', r.productos); }
+          if (r && r.productos) {
+            S.catalogoStock = r.productos;
+            _almSaveCache('catalogoStock', r.productos);
+            try { renderStockTable(); } catch {}
+          }
         }).catch(() => {}),
+        // Vencimientos
         API.get('getAlertasWarehouse', {}).then(r => {
-          if (r) { S.vencimientos = r; _almSaveCache('vencimientos', r); }
+          if (r) { S.vencimientos = r; _almSaveCache('vencimientos', r);
+            try { renderVencTable(); } catch {} }
         }).catch(() => {}),
+        // Mermas
         API.get('getMermasWarehouse', {}).then(r => {
-          if (r) { S.mermas = r; _almSaveCache('mermas', r); }
+          if (r) { S.mermas = r; _almSaveCache('mermas', r);
+            try { renderMermasTable(); } catch {} }
         }).catch(() => {}),
+        // Envasados
         API.get('getEnvasadosWarehouse', { limit: '50' }).then(r => {
-          if (r) { S.envasados = r; _almSaveCache('envasados', r); }
+          if (r) { S.envasados = r; _almSaveCache('envasados', r);
+            try { renderEnvTable(); } catch {} }
+        }).catch(() => {}),
+        // Zonas — ranking + sin venta
+        API.get('getRankingZonas', { dias: 30 }).then(r => {
+          if (r) { S._almRankingZonas = r; _almSaveCache('rankingZonas', r);
+            try { _almRenderRankingZonas(r); } catch {} }
+        }).catch(() => {}),
+        API.get('getProductosSinVenta', { dias: 30 }).then(r => {
+          if (r) { S._almSinVenta = r; _almSaveCache('sinVenta', r);
+            try { _almRenderSinVenta(r); } catch {} }
         }).catch(() => {})
       ];
       Promise.all(tasks).finally(() => iconBusy('almacen', false));
-    }, 3000);
+    }, 1500);  // bajamos de 3000 a 1500 — queremos arrancar pronto
   }
 
   // ── ALMACÉN: RESUMEN (KPIs + insights + alertas operativas) ──
   async function almLoadResumen() {
+    // 1. Pintar inmediato desde cache local (si existe) — render instantáneo
+    if (S._almKpis)       { try { _almRenderKPIs(S._almKpis); } catch {} }
+    if (S._almInsights)   { try { _almRenderInsights(S._almInsights); } catch {} }
+    if (S._almAlertasOps) {
+      const a = S._almAlertasOps;
+      try { _almRenderAlertasOps(Array.isArray(a) ? a : (a.alertas || [])); } catch {}
+    }
+    // 2. Fetch fresco en background — actualiza la UI cuando responda
     const [dashRes, insightsRes, alertasRes] = await Promise.allSettled([
       API.get('getDashboardAlmacen', {}),
       API.get('getInsightsStock', { dias: 30 }),
       API.get('getAlertasOperativas', {})
     ]);
     // KPIs
-    if (dashRes.status === 'fulfilled') _almRenderKPIs(dashRes.value || {});
-    else _almRenderKPIsError(dashRes.reason);
+    if (dashRes.status === 'fulfilled') {
+      const v = dashRes.value || {};
+      S._almKpis = v;
+      _almSaveCache('kpis', v);
+      _almRenderKPIs(v);
+    } else if (!S._almKpis) {
+      _almRenderKPIsError(dashRes.reason);
+    }
     // Insights
-    if (insightsRes.status === 'fulfilled') _almRenderInsights((insightsRes.value || {}).insights || []);
-    else _almRenderInsightsError(insightsRes.reason);
+    if (insightsRes.status === 'fulfilled') {
+      const ins = (insightsRes.value || {}).insights || [];
+      S._almInsights = ins;
+      _almSaveCache('insights', ins);
+      _almRenderInsights(ins);
+    } else if (!S._almInsights) {
+      _almRenderInsightsError(insightsRes.reason);
+    }
     // Alertas
-    if (alertasRes.status === 'fulfilled') _almRenderAlertasOps((alertasRes.value || {}).alertas || []);
-    else _almRenderAlertasOpsError(alertasRes.reason);
+    if (alertasRes.status === 'fulfilled') {
+      const al = (alertasRes.value || {}).alertas || [];
+      S._almAlertasOps = al;
+      _almSaveCache('alertasOps', al);
+      _almRenderAlertasOps(al);
+    } else if (!S._almAlertasOps) {
+      _almRenderAlertasOpsError(alertasRes.reason);
+    }
   }
 
   function _almRenderKPIsError(err) {
@@ -3570,6 +3653,13 @@ const MOS = (() => {
 
   // ── ALMACÉN: ZONAS (ranking + sin venta) ──
   async function almLoadZonas(forceRefresh) {
+    // 1. Pintar inmediato desde cache local (si existe)
+    if (S._almRankingZonas) { try { _almRenderRankingZonas(S._almRankingZonas); } catch {} }
+    if (S._almSinVenta) {
+      const v = S._almSinVenta;
+      try { _almRenderSinVenta(Array.isArray(v) ? v : (v.productos || [])); } catch {}
+    }
+    // 2. Fetch fresco
     const dias = parseInt($('almZonasRango')?.value) || 30;
     const params = { dias };
     if (forceRefresh) params._refresh = 'true';
@@ -3583,11 +3673,15 @@ const MOS = (() => {
       if (rankRes.status === 'fulfilled') {
         const v = rankRes.value || {};
         if (!v._almV || v._almV < 2) gasOld = true;
+        S._almRankingZonas = v;
+        _almSaveCache('rankingZonas', v);
         _almRenderRankingZonas(v);
       }
       if (sinVentaRes.status === 'fulfilled') {
         const v = sinVentaRes.value || {};
         if (!v._almV || v._almV < 2) gasOld = true;
+        S._almSinVenta = v;
+        _almSaveCache('sinVenta', v);
         _almRenderSinVenta(v.productos || []);
       }
       if (warnEl) warnEl.classList.toggle('hidden', !gasOld);
