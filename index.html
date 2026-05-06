@@ -1830,6 +1830,21 @@
       100% { box-shadow: 0 0 0 0 rgba(99,102,241, 0); }
     }
 
+    /* Dispositivo recién llegado a la estación: slide + glow verde */
+    .disp-chip-arrived {
+      animation: dispArriveIn .8s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes dispArriveIn {
+      0%   { opacity: 0; transform: translateY(-8px); box-shadow: 0 0 0 0 rgba(16,185,129, 0); }
+      40%  { opacity: 1; transform: translateY(0); box-shadow: 0 0 12px 2px rgba(16,185,129, .35); }
+      100% { box-shadow: 0 0 0 0 rgba(16,185,129, 0); }
+    }
+    /* Pulse para card de dispositivos pendientes */
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%      { opacity: 0.85; }
+    }
+
     /* Flash sutil del card cuando cambia el qty (1.5s) */
     .prov-prod-card.cart-flash {
       animation: provCardFlash 1s ease;
@@ -3464,7 +3479,6 @@
           <button class="tab-btn active" id="cfgTabInfra"     onclick="MOS.setCfgTab('infra')">🏗️ Infraestructura</button>
           <button class="tab-btn" id="cfgTabPersonal"          onclick="MOS.setCfgTab('personal')">👥 Personal</button>
           <button class="tab-btn" id="cfgTabSeguridad"         onclick="MOS.setCfgTab('seguridad')">🔐 Seguridad</button>
-          <button class="tab-btn" id="cfgTabDispositivos"     onclick="MOS.setCfgTab('dispositivos')">📱 Dispositivos</button>
           <button class="tab-btn" id="cfgTabCategorias"        onclick="MOS.setCfgTab('categorias')">🏷️ Categorías</button>
           <button class="tab-btn" id="cfgTabEvaluacion"        onclick="MOS.setCfgTab('evaluacion')">🎯 Evaluación</button>
           <button class="tab-btn" id="cfgTabIntegridad"        onclick="MOS.setCfgTab('integridad')">🛡️ Integridad</button>
@@ -3622,23 +3636,6 @@
         </div>
       </div>
 
-      <!-- Dispositivos -->
-      <div id="cfgPanelDispositivos" class="hidden">
-        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
-          <p class="text-xs text-slate-500 flex-1 min-w-0">Dispositivos autorizados por app — MosExpress · warehouseMos</p>
-          <button class="btn-primary text-xs px-3 py-1.5 shrink-0" onclick="MOS.abrirModalDispositivo(null)">+ Nuevo</button>
-        </div>
-        <div class="card overflow-x-auto" style="-webkit-overflow-scrolling:touch">
-          <table class="tbl">
-            <thead><tr><th>Equipo / ID</th><th>App</th><th>Estado</th><th>Última conexión</th><th></th><th></th></tr></thead>
-            <tbody id="tbodyDispositivos"><tr><td colspan="6" class="text-center py-8 text-slate-500 text-sm">Cargando...</td></tr></tbody>
-          </table>
-        </div>
-        <div class="mt-3 p-3 rounded-lg text-xs text-slate-400" style="background:#0d1526;border:1px solid #1e293b;">
-          ℹ️ El <strong class="text-slate-300">ID del dispositivo</strong> se genera automáticamente en cada equipo (localStorage). Cópialo del dispositivo y regístralo aquí para autorizar el acceso.
-        </div>
-      </div>
-
       <!-- Categorías + política de precios -->
       <div id="cfgPanelCategorias" class="hidden">
         <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
@@ -3734,45 +3731,80 @@
     </section>
 
     <!-- ── Modal: Dispositivo ──────────────────────────────── -->
-    <div id="modalDispositivo" class="modal-overlay hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.cerrarModalDispositivo()">
-      <div class="modal-box">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="font-semibold text-white text-base">📱 Dispositivo</h3>
+    <!-- Modal DISPOSITIVO — diseño moderno -->
+    <div id="modalDispositivo" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.cerrarModalDispositivo()">
+      <div class="modal-box flex flex-col" style="max-width:540px;max-height:92vh">
+        <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(99,102,241,.1),transparent)">
+          <div id="dispIconPreview" class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0" style="background:linear-gradient(135deg,#1e3a8a,#6366f1);">📱</div>
+          <div class="min-w-0 flex-1">
+            <h2 id="modalDispTitle" class="font-bold text-base text-white truncate">Nuevo Dispositivo</h2>
+            <p id="modalDispSubtitle" class="text-[11px] text-slate-500 mt-0.5">Equipo físico autorizado</p>
+          </div>
           <button onclick="MOS.cerrarModalDispositivo()" class="modal-close-x">×</button>
         </div>
-        <input type="hidden" id="dispId">
-        <!-- ID siempre visible (editable en nuevo, solo lectura en edición) -->
-        <div>
-          <label class="lbl" id="dispIdLabel">ID del Dispositivo <span class="text-slate-500">(UUID del equipo)</span></label>
-          <div class="flex gap-2">
-            <input id="dispIdVisible" class="inp font-mono text-xs flex-1" placeholder="Pega aquí el UUID generado en el dispositivo">
-            <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('dispIdVisible').value).then(()=>MOS.toast&&MOS.toast('ID copiado','ok'))"
-                    class="btn-ghost text-xs px-2 shrink-0" title="Copiar UUID">⎘</button>
+
+        <div class="overflow-y-auto px-5 py-4 flex-1">
+          <input type="hidden" id="dispId">
+
+          <!-- Toggle activo (solo edición) -->
+          <div id="dispEstadoWrap" class="hidden mb-4 p-3 rounded-lg" style="background:#0d1526;border:1px solid #1e293b">
+            <div class="flex items-center justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <div class="text-sm font-semibold text-slate-100">Dispositivo activo</div>
+                <div class="text-[11px] text-slate-500">Si lo desactivas, no podrá iniciar sesión en ninguna app</div>
+              </div>
+              <label class="pers-switch">
+                <input type="checkbox" id="dispEstadoToggle">
+                <span class="pers-switch-slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Estado conexión (info) -->
+          <div id="dispUltimaConexion" class="hidden mb-4 p-3 rounded-lg" style="background:#0d1526;border:1px solid #1e293b">
+            <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Última conexión</div>
+            <div id="dispUltimaConexionTexto" class="text-sm font-medium text-slate-200">—</div>
+            <div id="dispUltimaSesion" class="text-[11px] text-slate-500 mt-1"></div>
+          </div>
+
+          <div class="pers-section">
+            <div class="pers-section-title">UUID del equipo</div>
+            <div class="flex gap-2">
+              <input id="dispIdVisible" class="inp font-mono text-[11px] flex-1" placeholder="Pega el UUID generado en el dispositivo">
+              <button type="button" onclick="MOS.dispCopiarUUID()" class="btn-ghost text-xs px-3 shrink-0" title="Copiar UUID al portapapeles">📋</button>
+            </div>
+            <div class="text-[10px] text-slate-600 mt-1">Cada equipo genera su UUID al primer arranque y lo guarda en localStorage. Es único y no cambia.</div>
+          </div>
+
+          <div class="pers-section">
+            <div class="pers-section-title">Información</div>
+            <div class="grid grid-cols-2 gap-3">
+              <div class="col-span-2">
+                <label class="lbl">Nombre del equipo *</label>
+                <input id="dispNombre" class="inp" placeholder="Ej: Tablet Javier, PC zona2" oninput="MOS._dispActualizarPreview()">
+              </div>
+              <div>
+                <label class="lbl">App</label>
+                <select id="dispApp" class="inp" onchange="MOS._dispActualizarPreview()">
+                  <option value="mosExpress">📍 MosExpress</option>
+                  <option value="warehouseMos">🏭 warehouseMos</option>
+                </select>
+              </div>
+              <input type="hidden" id="dispEstado" value="ACTIVO">
+            </div>
+          </div>
+
+          <div class="rounded-lg p-3 mt-2" style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.3);">
+            <p class="text-[11px] text-indigo-300 leading-relaxed">
+              💡 <strong>El dispositivo no se ancla a una zona</strong>. Aparece automáticamente en la zona/estación donde el cajero hizo login por última vez. Puede usarse en cualquier zona.
+            </p>
           </div>
         </div>
-        <div class="mt-3">
-          <label class="lbl">Nombre del Equipo</label>
-          <input id="dispNombre" class="inp" placeholder="Ej: Caja Principal, iPad Almacén">
-        </div>
-        <div class="mt-3 grid grid-cols-2 gap-3">
-          <div>
-            <label class="lbl">App</label>
-            <select id="dispApp" class="inp">
-              <option value="mosExpress">MosExpress</option>
-              <option value="warehouseMos">warehouseMos</option>
-            </select>
-          </div>
-          <div>
-            <label class="lbl">Estado</label>
-            <select id="dispEstado" class="inp">
-              <option value="ACTIVO">Activo</option>
-              <option value="INACTIVO">Inactivo</option>
-            </select>
-          </div>
-        </div>
-        <div class="flex gap-2 mt-5">
+
+        <div class="flex gap-2 px-5 py-3 flex-shrink-0" style="border-top:1px solid #1e293b">
+          <button id="dispBtnEliminar" onclick="MOS.eliminarDispositivo()" class="btn-ghost hidden" style="color:#f87171">🚫 Bloquear</button>
           <button onclick="MOS.cerrarModalDispositivo()" class="btn-ghost flex-1">Cancelar</button>
-          <button onclick="MOS.guardarDispositivo()" class="btn-primary flex-1">Guardar</button>
+          <button onclick="MOS.guardarDispositivo()" class="btn-primary flex-1">💾 Guardar</button>
         </div>
       </div>
     </div>

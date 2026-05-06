@@ -8008,7 +8008,7 @@ const MOS = (() => {
 
   function setCfgTab(tab) {
     S.cfgTab = tab;
-    const tabs = ['infra','personal','seguridad','dispositivos','categorias','evaluacion','integridad'];
+    const tabs = ['infra','personal','seguridad','categorias','evaluacion','integridad'];
     tabs.forEach(t => {
       const btn = $('cfgTab' + t.charAt(0).toUpperCase() + t.slice(1));
       if (btn) btn.classList.toggle('active', t === tab);
@@ -8019,15 +8019,40 @@ const MOS = (() => {
   }
 
   function renderCfgTab(tab) {
+    if (tab === 'infra') _arrancarRefreshInfra();
+    else                 _detenerRefreshInfra();
     switch (tab) {
       case 'infra':        renderInfra();        break;
       case 'personal':     renderPersonal();     break;
       case 'seguridad':    renderSeguridad();    break;
-      case 'dispositivos': renderDispositivos(); break;
       case 'categorias':   renderCategorias();   break;
       case 'evaluacion':   renderConfigEvalPanel(); break;
       case 'integridad':   renderIntegridad();   break;
     }
+  }
+
+  // Auto-refresh dinámico de dispositivos (cada 30s mientras Infra esté visible)
+  let _intervalInfra = null;
+  function _arrancarRefreshInfra() {
+    if (_intervalInfra) return;
+    _intervalInfra = setInterval(async () => {
+      if (S.cfgTab !== 'infra' || document.hidden) return;
+      try {
+        const data = await API.get('getDispositivos', {});
+        if (Array.isArray(data)) {
+          // Detectar cambios para no re-renderizar inútilmente
+          const prevJson = JSON.stringify(cfgData.dispositivos || []);
+          const newJson = JSON.stringify(data);
+          if (prevJson !== newJson) {
+            cfgData.dispositivos = data;
+            renderInfra();
+          }
+        }
+      } catch(_) { /* tolerar */ }
+    }, 30 * 1000);
+  }
+  function _detenerRefreshInfra() {
+    if (_intervalInfra) { clearInterval(_intervalInfra); _intervalInfra = null; }
   }
 
   // ── TUTORIAL TICKETS (módulo Cajas) ──────────────────────
@@ -8493,7 +8518,55 @@ const MOS = (() => {
       </div>`;
     }).join('');
 
-    cont.innerHTML = zonasHTML + cardNuevaZona;
+    // Sección de dispositivos pendientes de aprobación (arriba si hay alguno)
+    const pendientes = _dispPendientes();
+    const pendHTML = pendientes.length ? `
+      <div class="card p-4 mb-4" style="background:linear-gradient(135deg,#3b1010 0%,#0d1526 100%);border:2px solid #ef4444;animation:pulse 2s ease-in-out infinite;">
+        <div class="flex items-center gap-2 mb-3">
+          <span class="text-2xl">🔔</span>
+          <div class="flex-1">
+            <h3 class="font-black text-base text-white">Dispositivos esperando aprobación</h3>
+            <p class="text-[11px] text-red-200">Estos equipos intentaron conectarse pero aún no están autorizados.</p>
+          </div>
+          <span class="badge badge-red text-xs">${pendientes.length}</span>
+        </div>
+        <div class="space-y-2">
+          ${pendientes.map(d => {
+            const ico = _dispIcono(d.Nombre_Equipo);
+            const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
+            const act = _dispActividad(d.Ultima_Conexion);
+            return `<div class="flex items-center gap-3 p-3 rounded-lg" style="background:#0a1424;border:1px solid #7f1d1d;">
+              <span class="text-3xl shrink-0">${ico}</span>
+              <div class="flex-1 min-w-0">
+                <div class="font-bold text-sm text-white truncate">${d.Nombre_Equipo || 'Dispositivo nuevo'}</div>
+                <div class="text-[10px] text-slate-500 font-mono truncate">${d.ID_Dispositivo}</div>
+                <div class="text-[10px] mt-0.5" style="color:${act.color};">${act.dot} ${act.label}${d.Ultima_Sesion ? ' · 👤 ' + d.Ultima_Sesion : ''}</div>
+              </div>
+              <button onclick="MOS.aprobarDispositivo('${idAttr}')" class="btn-primary text-xs px-3 py-1.5 shrink-0" style="background:#10b981">✓ Aprobar</button>
+              <button onclick="MOS.rechazarDispositivo('${idAttr}')" class="btn-ghost text-xs px-2 py-1.5 shrink-0" style="color:#f87171;border:1px solid #7f1d1d">✕</button>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>` : '';
+
+    // Sección de dispositivos móviles / sin asignar (al final)
+    const moviles = _dispMoviles();
+    const movHTML = moviles.length ? `
+      <div class="card p-4 mt-4" style="background:linear-gradient(135deg,#0d1526 0%,#0a1424 100%);border:1px solid #334155;">
+        <div class="flex items-center gap-2 mb-3">
+          <span class="text-xl">📱</span>
+          <div class="flex-1">
+            <h3 class="font-bold text-sm text-white">Dispositivos móviles / sin sesión reciente</h3>
+            <p class="text-[10px] text-slate-500">Equipos sin login en las últimas 24h. Aparecerán en la zona/estación que escojan al iniciar sesión.</p>
+          </div>
+          <span class="badge badge-gray text-xs">${moviles.length}</span>
+        </div>
+        <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          ${moviles.map(d => _renderDispositivoChip(d)).join('')}
+        </div>
+      </div>` : '';
+
+    cont.innerHTML = pendHTML + zonasHTML + movHTML + cardNuevaZona;
   }
 
   // ── Series documentales por zona (chips) ─────────────────
@@ -8578,6 +8651,29 @@ const MOS = (() => {
         }).join('')
       : `<div class="text-[10px] text-amber-500 italic px-2 py-1.5">⚠ sin impresoras</div>`;
 
+    // Dispositivos activos en esta estación (sesión <24h)
+    const dispEnEst = _dispEnEstacion(e.idEstacion);
+    const dispsHTML = dispEnEst.length
+      ? `<div class="mt-2 pt-2" style="border-top:1px dashed #1e293b;">
+          <div class="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">📱 Aquí ahora</div>
+          <div class="space-y-1.5">
+            ${dispEnEst.map(d => {
+              const ico = _dispIcono(d.Nombre_Equipo);
+              const act = _dispActividad(d.Ultima_Conexion);
+              const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
+              return `<div class="flex items-center gap-2 px-2 py-1.5 rounded disp-chip-arrived" style="background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.25);">
+                <span class="text-sm shrink-0">${ico}</span>
+                <div class="flex-1 min-w-0">
+                  <div class="text-xs font-medium text-slate-200 truncate">${d.Nombre_Equipo || '—'}</div>
+                  <div class="text-[9px] truncate" style="color:${act.color};">${act.dot} ${act.label}${d.Ultima_Sesion ? ' · ' + d.Ultima_Sesion : ''}</div>
+                </div>
+                <button onclick="MOS.abrirModalDispositivo('${idAttr}')" class="text-[10px] text-slate-500 hover:text-white p-1" title="Editar">✏️</button>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>`
+      : '';
+
     return `<div class="rounded-lg p-3 ${activa ? '' : 'opacity-60'}" style="background:#0d1526;border:1px solid ${activa ? '#1e293b' : '#475569'};">
       <div class="flex items-start gap-2 mb-2">
         <span class="text-xl shrink-0" style="line-height:1;">${tipoIcon}</span>
@@ -8601,6 +8697,7 @@ const MOS = (() => {
               class="mt-2 w-full text-[10px] text-slate-500 hover:text-white py-1.5 rounded border border-dashed border-slate-700 hover:border-purple-700 hover:bg-purple-900/20 transition-colors">
         + impresora
       </button>
+      ${dispsHTML}
     </div>`;
   }
 
@@ -9117,34 +9214,74 @@ const MOS = (() => {
     }
   }
 
-  function renderDispositivos() {
-    const tbody = $('tbodyDispositivos');
-    if (!tbody) return;
-    if (!cfgData.dispositivos.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-slate-500 text-sm">Sin dispositivos registrados.</td></tr>';
-      return;
-    }
-    tbody.innerHTML = cfgData.dispositivos.map(d => {
-      const isActivo = d.Estado === 'ACTIVO';
-      const appColor = d.App === 'mosExpress' ? 'text-indigo-400' : 'text-orange-400';
-      const uc = d.Ultima_Conexion || '—';
-      return `<tr>
-        <td>
-          <div class="font-medium text-sm text-slate-200">${d.Nombre_Equipo || '—'}</div>
-          <div class="text-xs text-slate-600 font-mono truncate max-w-[180px]">${d.ID_Dispositivo}</div>
-        </td>
-        <td class="${appColor} text-xs font-medium">${d.App || '—'}</td>
-        <td><span class="badge ${isActivo ? 'badge-green' : 'badge-gray'}">${isActivo ? 'Activo' : 'Inactivo'}</span></td>
-        <td class="text-slate-500 text-xs">${uc}</td>
-        <td>
-          <button onclick="MOS.toggleEstadoDispositivo('${d.ID_Dispositivo}','${isActivo ? 'INACTIVO' : 'ACTIVO'}')"
-                  class="text-xs px-2 py-1 rounded border ${isActivo ? 'border-red-700 text-red-400 hover:bg-red-900/30' : 'border-green-700 text-green-400 hover:bg-green-900/30'}">
-            ${isActivo ? 'Desactivar' : 'Activar'}
-          </button>
-        </td>
-        <td><button onclick="MOS.abrirModalDispositivo('${d.ID_Dispositivo}')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700">✏️</button></td>
-      </tr>`;
-    }).join('');
+  // (renderDispositivos() obsoleto — ahora viven dentro de Infraestructura)
+  // Helpers compartidos para iconos / actividad de dispositivos
+  function _dispIcono(nombre) {
+    const n = String(nombre || '').toLowerCase();
+    if (n.includes('tablet') || n.includes('ipad'))      return '📲';
+    if (n.includes('celular') || n.includes('movil') || n.includes('phone')) return '📱';
+    if (n.includes('laptop') || n.includes('notebook'))  return '💻';
+    if (n.includes('pc ') || n.startsWith('pc') || n.includes('desktop')) return '🖥️';
+    return '📱';
+  }
+
+  function _dispActividad(ultimaConexion) {
+    if (!ultimaConexion) return { color: '#64748b', label: 'sin conexión', dot: '⚫', minutos: Infinity };
+    const t = new Date(ultimaConexion).getTime();
+    if (isNaN(t)) return { color: '#64748b', label: ultimaConexion, dot: '⚫', minutos: Infinity };
+    const min = Math.floor((Date.now() - t) / 60000);
+    if (min < 5)       return { color: '#10b981', label: 'online ahora',     dot: '🟢', minutos: min };
+    if (min < 60)      return { color: '#10b981', label: `hace ${min}m`,     dot: '🟢', minutos: min };
+    if (min < 60*24)   return { color: '#fbbf24', label: `hace ${Math.floor(min/60)}h`, dot: '🟡', minutos: min };
+    if (min < 60*24*7) return { color: '#f97316', label: `hace ${Math.floor(min/60/24)}d`, dot: '🟠', minutos: min };
+    return { color: '#ef4444', label: `inactivo ${Math.floor(min/60/24)}d`, dot: '🔴', minutos: min };
+  }
+
+  // Devuelve dispositivos cuya última sesión fue en esta estación dentro de las últimas 24h
+  function _dispEnEstacion(idEstacion) {
+    return (cfgData.dispositivos || []).filter(d => {
+      if (String(d.Estado).toUpperCase() !== 'ACTIVO') return false;
+      if (String(d.Ultima_Estacion || '') !== String(idEstacion)) return false;
+      const act = _dispActividad(d.Ultima_Conexion);
+      return act.minutos < 60 * 24; // ventana de 24h
+    });
+  }
+
+  // Devuelve dispositivos sin asignación reciente o sin estación
+  function _dispMoviles() {
+    return (cfgData.dispositivos || []).filter(d => {
+      const estado = String(d.Estado).toUpperCase();
+      if (estado === 'PENDIENTE_APROBACION') return false; // van en sección aparte
+      const tieneEstacionReciente = d.Ultima_Estacion &&
+        _dispActividad(d.Ultima_Conexion).minutos < 60 * 24;
+      return !tieneEstacionReciente;
+    });
+  }
+
+  function _dispPendientes() {
+    return (cfgData.dispositivos || []).filter(d =>
+      String(d.Estado).toUpperCase() === 'PENDIENTE_APROBACION'
+    );
+  }
+
+  // Render compacto de un chip de dispositivo (dentro de estación o lista global)
+  function _renderDispositivoChip(d, opts) {
+    opts = opts || {};
+    const ico = _dispIcono(d.Nombre_Equipo);
+    const act = _dispActividad(d.Ultima_Conexion);
+    const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
+    const sesion = d.Ultima_Sesion ? ` · 👤 ${d.Ultima_Sesion}` : '';
+    const cls = opts.compact ? 'text-[10px] px-2 py-1.5' : 'text-[11px] px-3 py-2';
+    return `<div class="flex items-center gap-2 rounded-lg ${cls} group" style="background:#0a1424;border:1px solid #1e293b;">
+      <span class="text-base shrink-0">${ico}</span>
+      <div class="flex-1 min-w-0">
+        <div class="font-medium text-slate-200 truncate">${d.Nombre_Equipo || '—'}</div>
+        <div class="text-[9px] truncate" style="color:${act.color};">
+          ${act.dot} ${act.label}${sesion}
+        </div>
+      </div>
+      <button onclick="MOS.abrirModalDispositivo('${idAttr}')" class="text-[10px] text-slate-500 hover:text-white p-1" title="Editar">✏️</button>
+    </div>`;
   }
 
   // Config CRUD
@@ -11131,6 +11268,16 @@ const MOS = (() => {
 
 
   // ── DISPOSITIVOS CRUD ────────────────────────────────────────
+  function _dispActualizarPreview() {
+    const nom = ($('dispNombre')?.value || '').trim();
+    const app = $('dispApp')?.value || 'mosExpress';
+    const ico = _dispIcono(nom);
+    const ip = $('dispIconPreview');
+    if (ip) ip.textContent = ico;
+    const sub = $('modalDispSubtitle');
+    if (sub) sub.textContent = nom ? `${app === 'mosExpress' ? 'ME' : 'WH'} · equipo físico` : 'Equipo físico autorizado';
+  }
+
   function abrirModalDispositivo(id) {
     const modal = $('modalDispositivo');
     if (!modal) return;
@@ -11139,22 +11286,52 @@ const MOS = (() => {
     $('dispNombre').value = '';
     $('dispApp').value = 'mosExpress';
     $('dispEstado').value = 'ACTIVO';
-    const lbl = $('dispIdLabel');
+
+    const wrap = $('dispEstadoWrap');
+    const tg = $('dispEstadoToggle');
+    const btnElim = $('dispBtnEliminar');
+    const ucWrap = $('dispUltimaConexion');
+
     if (id) {
       const d = cfgData.dispositivos.find(x => x.ID_Dispositivo === id);
-      if (d) {
-        $('dispId').value        = d.ID_Dispositivo;
-        $('dispIdVisible').value = d.ID_Dispositivo;
-        $('dispNombre').value    = d.Nombre_Equipo || '';
-        $('dispApp').value       = d.App    || 'mosExpress';
-        $('dispEstado').value    = d.Estado || 'ACTIVO';
+      if (!d) return;
+      $('modalDispTitle').textContent = 'Editar Dispositivo';
+      $('dispId').value        = d.ID_Dispositivo;
+      $('dispIdVisible').value = d.ID_Dispositivo;
+      $('dispNombre').value    = d.Nombre_Equipo || '';
+      $('dispApp').value       = d.App    || 'mosExpress';
+      $('dispEstado').value    = d.Estado || 'ACTIVO';
+      const activo = String(d.Estado).toUpperCase() === 'ACTIVO';
+      if (tg) tg.checked = activo;
+      if (wrap) wrap.classList.remove('hidden');
+      if (btnElim) btnElim.classList.remove('hidden');
+      $('dispIdVisible').readOnly = true; // no permite cambiar UUID al editar
+      // Última conexión
+      if (ucWrap) {
+        ucWrap.classList.remove('hidden');
+        const act = _dispActividad(d.Ultima_Conexion);
+        $('dispUltimaConexionTexto').innerHTML = `<span style="color:${act.color}">${act.dot} ${act.label}</span>${d.Ultima_Conexion ? ` <span class="text-slate-600 text-[10px]">(${d.Ultima_Conexion})</span>` : ''}`;
+        const detalles = [];
+        if (d.Ultima_Sesion) detalles.push('👤 ' + d.Ultima_Sesion);
+        if (d.Ultima_Zona) {
+          const z = cfgData.zonas?.find(x => x.idZona === d.Ultima_Zona);
+          detalles.push('🏬 ' + (z?.nombre || d.Ultima_Zona));
+        }
+        if (d.Ultima_Estacion) {
+          const e = cfgData.estaciones?.find(x => x.idEstacion === d.Ultima_Estacion);
+          detalles.push('📍 ' + (e?.nombre || d.Ultima_Estacion));
+        }
+        $('dispUltimaSesion').textContent = detalles.join(' · ');
       }
-      if (lbl) lbl.innerHTML = 'ID del Dispositivo <span class="text-slate-500">(editable — el nuevo UUID reemplazará el anterior)</span>';
-      $('dispIdVisible').readOnly = false;
     } else {
-      if (lbl) lbl.innerHTML = 'ID del Dispositivo <span class="text-slate-500">(UUID del equipo)</span>';
+      $('modalDispTitle').textContent = 'Nuevo Dispositivo';
+      if (tg) tg.checked = true;
+      if (wrap) wrap.classList.add('hidden');
+      if (btnElim) btnElim.classList.add('hidden');
+      if (ucWrap) ucWrap.classList.add('hidden');
       $('dispIdVisible').readOnly = false;
     }
+    _dispActualizarPreview();
     modal.classList.remove('hidden');
   }
 
@@ -11163,45 +11340,122 @@ const MOS = (() => {
     if (modal) modal.classList.add('hidden');
   }
 
+  function dispCopiarUUID() {
+    const uuid = String($('dispIdVisible')?.value || '').trim();
+    if (!uuid) { toast('Sin UUID para copiar', 'warn'); return; }
+    navigator.clipboard.writeText(uuid).then(() => toast('UUID copiado al portapapeles ✓', 'ok'))
+      .catch(() => toast('No se pudo copiar', 'error'));
+  }
+
   async function guardarDispositivo() {
     const idOriginal = $('dispId').value.trim();
     const idNuevo    = ($('dispIdVisible')?.value || '').trim();
     const nombre     = $('dispNombre').value.trim();
     const app        = $('dispApp').value;
-    const estado     = $('dispEstado').value;
+    const tg         = $('dispEstadoToggle');
+    const estado     = idOriginal ? (tg && tg.checked ? 'ACTIVO' : 'INACTIVO') : 'ACTIVO';
     if (!nombre) { toast('El nombre del equipo es obligatorio', 'warn'); return; }
-    if (!idNuevo) { toast('Pega el ID del dispositivo (UUID)', 'warn'); return; }
+    if (!idNuevo) { toast('Pega el UUID del dispositivo', 'warn'); return; }
+
+    // OPTIMISTA
+    const list = cfgData.dispositivos;
+    const backup = list.slice();
+    if (idOriginal) {
+      const idx = list.findIndex(x => x.ID_Dispositivo === idOriginal);
+      if (idx >= 0) list[idx] = { ...list[idx], Nombre_Equipo: nombre, App: app, Estado: estado };
+    } else {
+      list.push({ ID_Dispositivo: idNuevo, Nombre_Equipo: nombre, App: app, Estado: estado, Ultima_Conexion: '' });
+    }
+    cerrarModalDispositivo();
+    renderInfra();
+
     try {
       if (idOriginal) {
-        // Edición: si cambió el ID, crear con nuevo ID y borrar el anterior (no hay rename en Sheets)
-        if (idOriginal !== idNuevo) {
-          await API.post('crearDispositivo', { ID_Dispositivo: idNuevo, Nombre_Equipo: nombre, App: app, Estado: estado });
-          await API.post('actualizarDispositivo', { ID_Dispositivo: idOriginal, Estado: 'INACTIVO' });
-        } else {
-          await API.post('actualizarDispositivo', { ID_Dispositivo: idOriginal, Nombre_Equipo: nombre, App: app, Estado: estado });
-        }
+        await API.post('actualizarDispositivo', { ID_Dispositivo: idOriginal, Nombre_Equipo: nombre, App: app, Estado: estado });
       } else {
         await API.post('crearDispositivo', { ID_Dispositivo: idNuevo, Nombre_Equipo: nombre, App: app, Estado: estado });
       }
-      toast('Dispositivo guardado', 'ok');
-      cerrarModalDispositivo();
-      await loadConfig();
+      toast('Dispositivo guardado ✓', 'ok');
     } catch(e) {
-      toast(e.message || 'Error al guardar dispositivo', 'error');
+      cfgData.dispositivos = backup;
+      renderInfra();
+      toast(e.message || 'Error al guardar', 'error');
     }
   }
 
+  async function eliminarDispositivo() {
+    // 'Eliminar' = bloquear (Estado=INACTIVO)
+    const id = $('dispId')?.value;
+    if (!id) return;
+    const d = cfgData.dispositivos.find(x => x.ID_Dispositivo === id);
+    if (!d) return;
+    if (!confirm(`¿Bloquear el dispositivo "${d.Nombre_Equipo}"?\n\nNo podrá iniciar sesión en ninguna app. Puedes reactivarlo cuando quieras.`)) return;
+    cerrarModalDispositivo();
+    const previo = d.Estado;
+    d.Estado = 'INACTIVO';
+    renderInfra();
+    try {
+      await API.post('actualizarDispositivo', { ID_Dispositivo: id, Estado: 'INACTIVO' });
+      toast('Dispositivo bloqueado', 'ok');
+    } catch(e) {
+      d.Estado = previo;
+      renderInfra();
+      toast(e.message || 'Error', 'error');
+    }
+  }
+
+  async function aprobarDispositivo(id) {
+    const d = cfgData.dispositivos.find(x => x.ID_Dispositivo === id);
+    if (!d) return;
+    const nombrePropuesto = d.Nombre_Equipo || ('Dispositivo ' + id.substring(0, 8));
+    const nombre = prompt('Nombre del dispositivo:', nombrePropuesto);
+    if (!nombre || !nombre.trim()) return;
+    const previo = d.Estado;
+    d.Estado = 'ACTIVO';
+    d.Nombre_Equipo = nombre.trim();
+    renderInfra();
+    try {
+      await API.post('aprobarDispositivoPendiente', {
+        ID_Dispositivo: id,
+        Nombre_Equipo: nombre.trim()
+      });
+      toast(`✓ "${nombre.trim()}" aprobado`, 'ok');
+    } catch(e) {
+      d.Estado = previo;
+      renderInfra();
+      toast(e.message || 'Error', 'error');
+    }
+  }
+
+  async function rechazarDispositivo(id) {
+    const d = cfgData.dispositivos.find(x => x.ID_Dispositivo === id);
+    if (!d) return;
+    if (!confirm(`¿Rechazar este dispositivo? Quedará bloqueado y no podrá conectarse.`)) return;
+    const previo = d.Estado;
+    d.Estado = 'INACTIVO';
+    renderInfra();
+    try {
+      await API.post('rechazarDispositivoPendiente', { ID_Dispositivo: id });
+      toast('Dispositivo rechazado', 'ok');
+    } catch(e) {
+      d.Estado = previo;
+      renderInfra();
+      toast(e.message || 'Error', 'error');
+    }
+  }
+
+  // Compat con código viejo (renderDispositivos eliminado)
   async function toggleEstadoDispositivo(id, nuevoEstado) {
     const d = cfgData.dispositivos.find(x => x.ID_Dispositivo === id);
     if (d) d.Estado = nuevoEstado;
-    renderDispositivos();
+    renderInfra();
     try {
       await API.post('actualizarDispositivo', { ID_Dispositivo: id, Estado: nuevoEstado });
       toast(nuevoEstado === 'ACTIVO' ? 'Dispositivo activado' : 'Dispositivo desactivado', 'ok');
     } catch(e) {
       if (d) d.Estado = nuevoEstado === 'ACTIVO' ? 'INACTIVO' : 'ACTIVO';
-      renderDispositivos();
-      toast(e.message || 'Error al actualizar', 'error');
+      renderInfra();
+      toast(e.message || 'Error', 'error');
     }
   }
 
@@ -14123,6 +14377,7 @@ const MOS = (() => {
     av_consultarClaveDesdeMenu,
     toggleVendedorME,
     abrirModalDispositivo, cerrarModalDispositivo, guardarDispositivo, toggleEstadoDispositivo,
+    eliminarDispositivo, aprobarDispositivo, rechazarDispositivo, dispCopiarUUID, _dispActualizarPreview,
     toggleAvatarMenu, closeAvatarMenu, installPWA,
     toggleFiltroCat, setFiltroCategoria, toggleFiltroTipo, limpiarFiltrosCat, toggleFiltroAlertas, toggleAlertPop,
     // Cajas

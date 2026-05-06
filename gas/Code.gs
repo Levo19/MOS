@@ -114,10 +114,14 @@ function _route(method, e) {
       case 'setConfig':            return setConfigMos(params);
 
       // ── Dispositivos ───────────────────────────────────────
-      case 'getDispositivos':          return getDispositivos(params);
-      case 'crearDispositivo':         return crearDispositivo(params);
-      case 'actualizarDispositivo':    return actualizarDispositivo(params);
-      case 'registrarConexion':        return registrarConexionDispositivo(params);
+      case 'getDispositivos':              return getDispositivos(params);
+      case 'crearDispositivo':             return crearDispositivo(params);
+      case 'actualizarDispositivo':        return actualizarDispositivo(params);
+      case 'registrarConexion':            return registrarConexionDispositivo(params);
+      case 'registrarSesionDispositivo':   return registrarSesionDispositivo(params);
+      case 'getDispositivosPendientes':    return getDispositivosPendientes();
+      case 'aprobarDispositivoPendiente':  return aprobarDispositivoPendiente(params);
+      case 'rechazarDispositivoPendiente': return rechazarDispositivoPendiente(params);
 
       // ── Zonas (puntos de venta) ────────────────────────────
       case 'getZonas':             return getZonas(params);

@@ -339,11 +339,33 @@ function verificarPinPersonal(params) {
 
 // ════════════════════════════════════════════════
 // DISPOSITIVOS
-// Gestión centralizada de dispositivos autorizados por app
+// Gestión centralizada de equipos físicos autorizados por app.
 // Columnas: ID_Dispositivo | Nombre_Equipo | App | Estado | Ultima_Conexion
+//           + Ultima_Zona | Ultima_Estacion | Ultima_Sesion (auto-añadidas)
+//
+// Estados: ACTIVO | INACTIVO | PENDIENTE_APROBACION
+// Si MosExpress conecta con un UUID desconocido se crea como
+// PENDIENTE_APROBACION; el admin aprueba o rechaza desde el panel.
 // ════════════════════════════════════════════════
 
+var _DISP_COLS_EXTRA = ['Ultima_Zona', 'Ultima_Estacion', 'Ultima_Sesion'];
+
+function _garantizarColumnasDispositivos() {
+  var sheet = getSheet('DISPOSITIVOS');
+  var data = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues();
+  var hdrs = (data[0] || []).map(function(h) { return String(h).trim(); });
+  var faltan = _DISP_COLS_EXTRA.filter(function(c) { return hdrs.indexOf(c) === -1; });
+  if (faltan.length > 0) {
+    var startCol = sheet.getLastColumn() + 1;
+    sheet.getRange(1, startCol, 1, faltan.length).setValues([faltan]);
+    sheet.getRange(1, startCol, 1, faltan.length)
+         .setFontWeight('bold').setBackground('#1f2937').setFontColor('#fff');
+  }
+  return sheet;
+}
+
 function getDispositivos(params) {
+  _garantizarColumnasDispositivos();
   var rows = _sheetToObjects(getSheet('DISPOSITIVOS'));
   if (params && params.app)    rows = rows.filter(function(r){ return r.App === params.app; });
   if (params && params.estado) rows = rows.filter(function(r){ return r.Estado === params.estado; });
@@ -351,31 +373,36 @@ function getDispositivos(params) {
 }
 
 function crearDispositivo(params) {
+  _garantizarColumnasDispositivos();
   if (!params.ID_Dispositivo) return { ok: false, error: 'Requiere ID_Dispositivo' };
   if (!params.Nombre_Equipo)  return { ok: false, error: 'Requiere Nombre_Equipo' };
   var sheet = getSheet('DISPOSITIVOS');
-  // Verificar duplicado
   var dup = _sheetToObjects(sheet).find(function(d){ return d.ID_Dispositivo === params.ID_Dispositivo; });
   if (dup) return { ok: false, error: 'Dispositivo ya registrado: ' + params.ID_Dispositivo };
   var tz = Session.getScriptTimeZone();
-  sheet.appendRow([
-    params.ID_Dispositivo,
-    params.Nombre_Equipo,
-    params.App    || 'mosExpress',
-    params.Estado || 'ACTIVO',
-    Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss')
-  ]);
+  var hdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var fila = new Array(hdrs.length).fill('');
+  fila[hdrs.indexOf('ID_Dispositivo')]   = params.ID_Dispositivo;
+  fila[hdrs.indexOf('Nombre_Equipo')]    = params.Nombre_Equipo;
+  fila[hdrs.indexOf('App')]              = params.App    || 'mosExpress';
+  fila[hdrs.indexOf('Estado')]           = params.Estado || 'ACTIVO';
+  fila[hdrs.indexOf('Ultima_Conexion')]  = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss');
+  if (hdrs.indexOf('Ultima_Zona') >= 0)     fila[hdrs.indexOf('Ultima_Zona')]     = params.Ultima_Zona     || '';
+  if (hdrs.indexOf('Ultima_Estacion') >= 0) fila[hdrs.indexOf('Ultima_Estacion')] = params.Ultima_Estacion || '';
+  if (hdrs.indexOf('Ultima_Sesion') >= 0)   fila[hdrs.indexOf('Ultima_Sesion')]   = params.Ultima_Sesion   || '';
+  sheet.appendRow(fila);
   return { ok: true, data: { ID_Dispositivo: params.ID_Dispositivo } };
 }
 
 function actualizarDispositivo(params) {
+  _garantizarColumnasDispositivos();
   if (!params.ID_Dispositivo) return { ok: false, error: 'Requiere ID_Dispositivo' };
   var sheet = getSheet('DISPOSITIVOS');
   var data  = sheet.getDataRange().getValues();
   var hdrs  = data[0];
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][0]) !== String(params.ID_Dispositivo)) continue;
-    var campos = ['Nombre_Equipo', 'App', 'Estado'];
+    var campos = ['Nombre_Equipo', 'App', 'Estado', 'Ultima_Zona', 'Ultima_Estacion', 'Ultima_Sesion'];
     campos.forEach(function(c) {
       if (params[c] !== undefined) {
         var col = hdrs.indexOf(c);
@@ -387,21 +414,100 @@ function actualizarDispositivo(params) {
   return { ok: false, error: 'Dispositivo no encontrado: ' + params.ID_Dispositivo };
 }
 
-// Registrar última conexión — llamado por MosExpress al verificar con éxito
+// Registrar última conexión + zona/estación/vendedor de la sesión actual.
+// Llamado por MosExpress al aperturar caja (o cualquier sesión válida).
+// Si el UUID no existe → lo crea como PENDIENTE_APROBACION (admin debe aprobar).
+function registrarSesionDispositivo(params) {
+  _garantizarColumnasDispositivos();
+  var deviceId = String(params.ID_Dispositivo || params.deviceId || '').trim();
+  if (!deviceId) return { ok: false, error: 'Requiere ID_Dispositivo' };
+
+  var sheet = getSheet('DISPOSITIVOS');
+  var data  = sheet.getDataRange().getValues();
+  var hdrs  = data[0];
+  var iId   = hdrs.indexOf('ID_Dispositivo');
+  var iEst  = hdrs.indexOf('Estado');
+  var iUC   = hdrs.indexOf('Ultima_Conexion');
+  var iUZ   = hdrs.indexOf('Ultima_Zona');
+  var iUEs  = hdrs.indexOf('Ultima_Estacion');
+  var iUSe  = hdrs.indexOf('Ultima_Sesion');
+  var tz = Session.getScriptTimeZone();
+  var nowStr = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss');
+
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][iId]) !== deviceId) continue;
+    var estado = String(data[i][iEst] || '').toUpperCase();
+    if (estado === 'INACTIVO') {
+      return { ok: true, data: { autorizado: false, estado: 'INACTIVO', error: 'Dispositivo bloqueado por el admin' } };
+    }
+    if (estado === 'PENDIENTE_APROBACION') {
+      // Solo refrescar Ultima_Conexion para que el admin sepa que sigue intentando
+      if (iUC >= 0) sheet.getRange(i + 1, iUC + 1).setValue(nowStr);
+      return { ok: true, data: { autorizado: false, estado: 'PENDIENTE_APROBACION', error: 'Esperando aprobación del administrador' } };
+    }
+    // ACTIVO → actualizar contexto
+    if (iUC >= 0)  sheet.getRange(i + 1, iUC + 1).setValue(nowStr);
+    if (iUZ >= 0   && params.idZona      !== undefined) sheet.getRange(i + 1, iUZ + 1).setValue(params.idZona || '');
+    if (iUEs >= 0  && params.idEstacion  !== undefined) sheet.getRange(i + 1, iUEs + 1).setValue(params.idEstacion || '');
+    if (iUSe >= 0  && params.vendedor    !== undefined) sheet.getRange(i + 1, iUSe + 1).setValue(params.vendedor || '');
+    return { ok: true, data: { autorizado: true, estado: 'ACTIVO', nombre: data[i][hdrs.indexOf('Nombre_Equipo')] } };
+  }
+
+  // No existe → crear como PENDIENTE_APROBACION
+  var fila = new Array(hdrs.length).fill('');
+  fila[iId] = deviceId;
+  fila[hdrs.indexOf('Nombre_Equipo')] = params.Nombre_Equipo || ('Nuevo dispositivo (' + deviceId.substring(0, 8) + ')');
+  fila[hdrs.indexOf('App')]           = params.app || params.App || 'mosExpress';
+  fila[iEst]                          = 'PENDIENTE_APROBACION';
+  if (iUC >= 0)  fila[iUC]  = nowStr;
+  if (iUZ >= 0)  fila[iUZ]  = params.idZona || '';
+  if (iUEs >= 0) fila[iUEs] = params.idEstacion || '';
+  if (iUSe >= 0) fila[iUSe] = params.vendedor || '';
+  sheet.appendRow(fila);
+  return { ok: true, data: { autorizado: false, estado: 'PENDIENTE_APROBACION', error: 'Dispositivo nuevo — esperando aprobación del administrador' } };
+}
+
+// Compat: viejo endpoint sigue funcionando (sólo refresca Ultima_Conexion)
 function registrarConexionDispositivo(params) {
+  return registrarSesionDispositivo(params);
+}
+
+// Listar dispositivos pendientes de aprobación (panel MOS los muestra arriba)
+function getDispositivosPendientes() {
+  _garantizarColumnasDispositivos();
+  var rows = _sheetToObjects(getSheet('DISPOSITIVOS'))
+    .filter(function(d) { return String(d.Estado || '').toUpperCase() === 'PENDIENTE_APROBACION'; });
+  return { ok: true, data: rows };
+}
+
+// Aprobar dispositivo pendiente — admin asigna nombre y opcionalmente zona/estación
+function aprobarDispositivoPendiente(params) {
+  _garantizarColumnasDispositivos();
   if (!params.ID_Dispositivo) return { ok: false, error: 'Requiere ID_Dispositivo' };
   var sheet = getSheet('DISPOSITIVOS');
   var data  = sheet.getDataRange().getValues();
   var hdrs  = data[0];
-  var colUC = hdrs.indexOf('Ultima_Conexion');
-  if (colUC < 0) return { ok: false, error: 'Columna Ultima_Conexion no encontrada' };
-  var tz = Session.getScriptTimeZone();
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][0]) !== String(params.ID_Dispositivo)) continue;
-    sheet.getRange(i + 1, colUC + 1).setValue(
-      Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss')
-    );
+    sheet.getRange(i + 1, hdrs.indexOf('Estado') + 1).setValue('ACTIVO');
+    if (params.Nombre_Equipo) sheet.getRange(i + 1, hdrs.indexOf('Nombre_Equipo') + 1).setValue(params.Nombre_Equipo);
+    if (params.App)           sheet.getRange(i + 1, hdrs.indexOf('App') + 1).setValue(params.App);
     return { ok: true };
   }
-  return { ok: false, error: 'Dispositivo no encontrado: ' + params.ID_Dispositivo };
+  return { ok: false, error: 'Dispositivo no encontrado' };
+}
+
+// Rechazar / bloquear dispositivo pendiente o activo
+function rechazarDispositivoPendiente(params) {
+  _garantizarColumnasDispositivos();
+  if (!params.ID_Dispositivo) return { ok: false, error: 'Requiere ID_Dispositivo' };
+  var sheet = getSheet('DISPOSITIVOS');
+  var data  = sheet.getDataRange().getValues();
+  var hdrs  = data[0];
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) !== String(params.ID_Dispositivo)) continue;
+    sheet.getRange(i + 1, hdrs.indexOf('Estado') + 1).setValue('INACTIVO');
+    return { ok: true };
+  }
+  return { ok: false, error: 'Dispositivo no encontrado' };
 }
