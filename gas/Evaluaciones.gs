@@ -786,7 +786,7 @@ function configurarTriggerCierreSemanal() {
 function cerrarSemanaAutomatico() {
   try {
     if (typeof _enviarPushTodos === 'function') {
-      _enviarPushTodos('💰 Liquidación semanal lista', 'Revisa MOS para imprimir y pagar al personal.');
+      _enviarPushTodos('💰 Liquidación semanal lista', 'Revisa MOS para imprimir y pagar al personal.', { soloRolesAdmin: true });
     }
     Logger.log('Cierre semanal disparado: ' + new Date());
   } catch(e) {

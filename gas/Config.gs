@@ -540,7 +540,7 @@ function registrarSesionDispositivo(params) {
     var detalle = appNueva.toUpperCase() + ' · UUID ' + deviceId.substring(0, 8) + '...';
     if (params.idEstacion) detalle += ' · estación ' + params.idEstacion;
     if (params.vendedor)   detalle += ' · cajero ' + params.vendedor;
-    _enviarPushTodos('🔔 Nuevo dispositivo solicita acceso', detalle);
+    _enviarPushTodos('🔔 Nuevo dispositivo solicita acceso', detalle, { soloRolesAdmin: true });
   } catch(e) { Logger.log('Push pendiente fallo: ' + e.message); }
 
   return { ok: true, data: { autorizado: false, estado: 'PENDIENTE_APROBACION', error: 'Dispositivo nuevo — esperando aprobación del administrador' } };

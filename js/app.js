@@ -14143,11 +14143,13 @@ const MOS = (() => {
         dispositivo: navigator.userAgent.substring(0, 150)
       }).catch(() => {});
 
-      // Notificar ingreso a todos los demás
+      // Notificar ingreso a otros admins/master (no a sí mismo, no a no-admins)
       const hora = new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
       API.post('enviarPushNotif', {
         titulo: '👤 ' + nombre + ' ingresó a MOS',
-        cuerpo: (rol || '') + ' · ' + hora
+        cuerpo: (rol || '') + ' · ' + hora,
+        soloRolesAdmin: true,
+        excluirUsuario: nombre
       }).catch(() => {});
 
       console.log('[Push] token registrado en GAS ✅');

@@ -84,22 +84,82 @@ function _enviarPushTokens(titulo, cuerpo, tokens) {
   });
 }
 
-// ── Enviar a TODOS los tokens activos + auto-limpiar los inválidos ─
-function _enviarPushTodos(titulo, cuerpo) {
+// ── Selección de tokens "más activos" por usuario ──────────────
+// Cada usuario puede tener varios dispositivos registrados. Solo enviamos
+// al más reciente (mayor ultimaVez), evitando duplicar la notificación
+// en laptop+celular+tablet del mismo admin.
+//
+// opciones (todas opcionales):
+//   excluirUsuario: nombre del usuario a no notificar (ej: él mismo originó la acción)
+//   soloRolesAdmin: true → solo tokens cuyo usuario es MASTER/ADMIN en PERSONAL_MASTER
+function _seleccionarTokensActivos(data, opciones) {
+  opciones = opciones || {};
+  // headers: idToken(0) token(1) usuario(2) dispositivo(3) appOrigen(4) fecha(5) ultimaVez(6) activo(7)
+  var porUsuario = {};
+  var excNorm = opciones.excluirUsuario ? String(opciones.excluirUsuario).trim().toLowerCase() : null;
+
+  // Si filtramos por rol, cargar set de admins activos
+  var adminsSet = null;
+  if (opciones.soloRolesAdmin) {
+    adminsSet = {};
+    try {
+      var personas = _sheetToObjects(getSheet('PERSONAL_MASTER'));
+      personas.forEach(function(p) {
+        var rol = String(p.rol || '').toUpperCase();
+        var es = rol === 'MASTER' || rol === 'ADMIN' || rol === 'ADMINISTRADOR';
+        if (es && String(p.estado) === '1') {
+          var n = (String(p.nombre || '') + ' ' + String(p.apellido || '')).trim().toLowerCase();
+          adminsSet[n] = true;
+          // También aceptar solo nombre (si el token se registró sin apellido)
+          adminsSet[String(p.nombre || '').trim().toLowerCase()] = true;
+        }
+      });
+    } catch(e) { Logger.log('soloRolesAdmin: ' + e.message); }
+  }
+
+  for (var i = 1; i < data.length; i++) {
+    var token  = String(data[i][1] || '');
+    var usuarioRaw = String(data[i][2] || '');
+    var usuario = usuarioRaw.trim().toLowerCase();
+    var activo = data[i][7];
+    if (!token) continue;
+    if (activo === false || String(activo) === '0' || String(activo) === 'false') continue;
+    if (excNorm && usuario === excNorm) continue; // excluir al sender
+    if (adminsSet && !adminsSet[usuario]) continue; // solo admins/master
+    var ultVezRaw = data[i][6];
+    var ultVez = 0;
+    try { ultVez = ultVezRaw ? new Date(ultVezRaw).getTime() : 0; } catch(_) {}
+    var key = usuario || ('__sinusuario__' + i);
+    if (!porUsuario[key] || porUsuario[key].ultVez < ultVez) {
+      porUsuario[key] = { token: token, usuario: data[i][2], row: i, ultVez: ultVez };
+    }
+  }
+  return Object.keys(porUsuario).map(function(k){ return porUsuario[k]; });
+}
+
+// ── Enviar a tokens activos (1 por usuario) + opciones de filtro ─
+// opciones (todas opcionales):
+//   excluirUsuario: nombre del que originó la acción (no auto-notificarse)
+//   soloRolesAdmin: true → solo MASTER/ADMIN/ADMINISTRADOR
+function _enviarPushTodos(titulo, cuerpo, opciones) {
   try {
     var sheet       = _getPushTokensSheet();
     var data        = sheet.getDataRange().getValues();
     var projectId   = PropertiesService.getScriptProperties().getProperty('FCM_PROJECT_ID');
     var accessToken = _getFcmAccessToken();
     var url = 'https://fcm.googleapis.com/v1/projects/' + projectId + '/messages:send';
-    // headers: idToken(0) token(1) usuario(2) dispositivo(3) appOrigen(4) fecha(5) ultimaVez(6) activo(7)
 
+    // Seleccionar solo 1 token por usuario (el más activo) + filtros opcionales
+    var seleccion = _seleccionarTokensActivos(data, opciones || {});
     var sent = 0, cleaned = 0;
 
-    for (var i = 1; i < data.length; i++) {
-      var token  = String(data[i][1] || '');
+    seleccion.forEach(function(item) {
+      var token = item.token;
+      var i = item.row;
+      // dummy variable para mantener la estructura del bloque catch original
+      if (!token) return;
       var activo = data[i][7];
-      if (!token || activo === false || String(activo) === '0' || String(activo) === 'false') continue;
+      if (!token || activo === false || String(activo) === '0' || String(activo) === 'false') return;
 
       try {
         var resp = UrlFetchApp.fetch(url, {
@@ -145,8 +205,8 @@ function _enviarPushTodos(titulo, cuerpo) {
       } catch(e) {
         Logger.log('[Push] excepcion token[' + i + ']: ' + e.message);
       }
-    }
-    Logger.log('[Push] Resumen: ' + sent + ' enviados, ' + cleaned + ' tokens limpiados');
+    });
+    Logger.log('[Push] Resumen: ' + sent + ' enviados (1 por usuario), ' + cleaned + ' tokens limpiados');
   } catch(e) {
     Logger.log('_enviarPushTodos error: ' + e.message);
   }
@@ -180,15 +240,22 @@ function registrarPushToken(params) {
 }
 
 // ── Enviar push desde apps hijas (MosExpress, warehouseMos) ────
+// Acepta opciones:
+//   excluirUsuario: nombre del usuario a no notificar (auto-exclusión del sender)
+//   soloRolesAdmin: true → solo a MASTER/ADMIN
 function enviarPushNotif(params) {
   if (!params.titulo) return { ok: false, error: 'titulo requerido' };
-  _enviarPushTodos(params.titulo, params.cuerpo || '');
+  var opciones = {
+    excluirUsuario: params.excluirUsuario || null,
+    soloRolesAdmin: params.soloRolesAdmin === true || String(params.soloRolesAdmin) === 'true'
+  };
+  _enviarPushTodos(params.titulo, params.cuerpo || '', opciones);
   return { ok: true };
 }
 
-// ── Enviar push DIRIGIDO a un usuario específico (filtra tokens por nombre) ──
-// Busca todos los tokens cuyo campo 'usuario' coincide con el destinatario
-// y solo envía a esos. Si el usuario no tiene dispositivos suscritos, retorna error.
+// ── Enviar push DIRIGIDO a un usuario específico (solo al dispositivo más activo) ──
+// Si el usuario tiene varios dispositivos (laptop+celular+tablet), envía
+// solo al de Ultima_Vez más reciente — donde más probablemente está activo.
 function enviarPushUsuario(params) {
   if (!params.usuario) return { ok: false, error: 'usuario requerido' };
   if (!params.titulo)  return { ok: false, error: 'titulo requerido' };
@@ -196,23 +263,31 @@ function enviarPushUsuario(params) {
   var data  = sheet.getDataRange().getValues();
   // headers: idToken(0) token(1) usuario(2) dispositivo(3) appOrigen(4) fecha(5) ultimaVez(6) activo(7)
   var nombreNorm = String(params.usuario).trim().toLowerCase();
-  var tokens = [];
+  var mejor = null; // { token, ultVez, dispositivo }
   for (var i = 1; i < data.length; i++) {
     var token  = String(data[i][1] || '');
     var u      = String(data[i][2] || '').trim().toLowerCase();
     var activo = data[i][7];
     if (!token) continue;
     if (activo === false || String(activo) === '0' || String(activo) === 'false') continue;
-    if (u === nombreNorm) tokens.push(token);
+    if (u !== nombreNorm) continue;
+    var ultVez = 0;
+    try { ultVez = data[i][6] ? new Date(data[i][6]).getTime() : 0; } catch(_) {}
+    if (!mejor || mejor.ultVez < ultVez) {
+      mejor = { token: token, ultVez: ultVez, dispositivo: String(data[i][3] || '') };
+    }
   }
-  if (tokens.length === 0) {
+  if (!mejor) {
     return { ok: false, error: 'Usuario "' + params.usuario + '" no tiene dispositivos suscritos a notificaciones' };
   }
-  _enviarPushTokens(params.titulo, params.cuerpo || '', tokens);
-  return { ok: true, data: { tokensAlcanzados: tokens.length, usuario: params.usuario } };
+  _enviarPushTokens(params.titulo, params.cuerpo || '', [mejor.token]);
+  return { ok: true, data: { tokensAlcanzados: 1, usuario: params.usuario, dispositivo: mejor.dispositivo } };
 }
 
 // ── Resumen diario (llamado por el trigger de GAS) ─────────────
+// El "neto cobrado" = efectivo + virtual + mixto. NO incluye crédito ni por-cobrar
+// (que son promesas de venta, no caja real). Coincide con el TOTAL TURNO de turno.html
+// menos los créditos/por-cobrar.
 function enviarResumenDiario() {
   try {
     var fecha = _hoy();
@@ -221,13 +296,17 @@ function enviarResumenDiario() {
     var per   = _calcularPersonal(fecha);
 
     var titulo = '📊 Resumen ' + fecha;
-    var cuerpo = [
-      '💰 Ventas: S/ ' + ing.ventasNetas.toFixed(2) + '  (' + ing.tickets + ' tickets)',
-      '📦 ' + cos.unidades + ' uds · ' + cos.skusDistintos + ' SKUs',
-      '👥 Personal: ' + per.personas + ' persona' + (per.personas !== 1 ? 's' : '')
-    ].join('\n');
+    var lineas = [
+      '💰 Cobrado: S/ ' + ing.cobrado.toFixed(2) + '  (' + ing.tickets + ' tickets)',
+      '   💵 Efe: S/ ' + ing.cobradoEfectivo.toFixed(2) + ' · 📲 Vir: S/ ' + ing.cobradoVirtual.toFixed(2)
+    ];
+    if (ing.creditoOtorgado > 0) {
+      lineas.push('💳 Crédito otorgado: S/ ' + ing.creditoOtorgado.toFixed(2) + ' (' + ing.creditos + ' tk · NO entró a caja)');
+    }
+    lineas.push('📦 ' + cos.unidades + ' uds · ' + cos.skusDistintos + ' SKUs');
+    lineas.push('👥 Personal: ' + per.personas + ' persona' + (per.personas !== 1 ? 's' : ''));
 
-    _enviarPushTodos(titulo, cuerpo);
+    _enviarPushTodos(titulo, lineas.join('\n'));
     return { ok: true };
   } catch(e) {
     Logger.log('enviarResumenDiario error: ' + e.message);
