@@ -63,6 +63,8 @@ function _route(method, e) {
       case 'getRankingZonas':        return getRankingZonas(params);
       case 'getProductosSinVenta':   return getProductosSinVenta(params);
       case 'getInsightsStock':       return getInsightsStock(params);
+      case 'recalcularStockMinMaxAuto': return recalcularStockMinMaxAuto(params);
+      case 'getLastAutoMinMaxTs':       return getLastAutoMinMaxTs();
       case 'getAlertasOperativas':   return getAlertasOperativas(params);
       case 'bustAlmacenCache':       return bustAlmacenCache();
       case 'warmupAlmacen':          return warmupAlmacen();

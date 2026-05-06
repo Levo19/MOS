@@ -1835,6 +1835,153 @@ function alertasOperativasDiarias() {
 }
 
 // ============================================================
+// AUTO-AJUSTE DE stockMinimo / stockMaximo SEMANAL
+// ----------------------------------------------------------
+// Reescribe los mín/máx en PRODUCTOS_MASTER (canónico de cada sku) en
+// función de las ventas reales de los últimos 28 días.
+//   stockMinimo = ventasSemana
+//   stockMaximo = ventasSemana × 1.2  (techo seguro 20% sobre demanda)
+// Suma TODAS las presentaciones + códigos equivalentes del sku.
+// Se ejecuta on-demand, frontend lo dispara cada 12h desde el prefetch.
+// ============================================================
+function recalcularStockMinMaxAuto(params) {
+  var rangoDias = parseInt(params && params.dias) || 28;
+  var hoy = new Date();
+  var desde = new Date(hoy.getTime() - rangoDias * 86400000);
+  try {
+    // 1. Master + indices + identificar fila del canónico de cada sku
+    var sheetMaster = getSheet('PRODUCTOS_MASTER');
+    var data = sheetMaster.getDataRange().getValues();
+    var hdrs = data[0];
+    var iId  = hdrs.indexOf('idProducto');
+    var iSku = hdrs.indexOf('skuBase');
+    var iCB  = hdrs.indexOf('codigoBarra');
+    var iMin = hdrs.indexOf('stockMinimo');
+    var iMax = hdrs.indexOf('stockMaximo');
+    var iFC  = hdrs.indexOf('factorConversion');
+    var iCPB = hdrs.indexOf('codigoProductoBase');
+    if (iMin < 0 || iMax < 0) return { ok: false, error: 'PRODUCTOS_MASTER sin columnas stockMinimo/stockMaximo' };
+
+    var prodById = {}, prodByCB = {}, bySku = {};
+    var rowCanonBySku = {};  // sku → fila (1-based) del canónico
+    for (var i = 1; i < data.length; i++) {
+      var p = {
+        idProducto:         data[i][iId],
+        skuBase:            data[i][iSku],
+        codigoBarra:        data[i][iCB],
+        codigoProductoBase: data[i][iCPB],
+        factorConversion:   data[i][iFC],
+        rowIdx:             i + 1
+      };
+      prodById[p.idProducto] = p;
+      if (p.codigoBarra) prodByCB[p.codigoBarra] = p;
+      var sku = p.skuBase || p.idProducto;
+      if (!bySku[sku]) bySku[sku] = [];
+      bySku[sku].push(p);
+      // Canónico: idProducto === skuBase ó factorConversion=1 sin codigoProductoBase
+      var fc = parseFloat(p.factorConversion) || 1;
+      var esCanon = (p.idProducto === sku) ||
+                    (fc === 1 && !String(p.codigoProductoBase || '').trim());
+      if (esCanon && !rowCanonBySku[sku]) rowCanonBySku[sku] = p.rowIdx;
+    }
+    // Si algún sku no tuvo canónico explícito, usar el primer producto
+    Object.keys(bySku).forEach(function(sku){
+      if (!rowCanonBySku[sku]) rowCanonBySku[sku] = bySku[sku][0].rowIdx;
+    });
+
+    // 2. Equivalencias: ampliar prodByCB para que ventas con código
+    //    alterno se mapeen al sku correcto
+    try {
+      var equiv = _readEquivalencias();
+      Object.keys(equiv.porSku || {}).forEach(function(sku){
+        if (!bySku[sku]) return;
+        (equiv.porSku[sku] || []).forEach(function(eq){
+          if (!prodByCB[eq.codigoBarra]) prodByCB[eq.codigoBarra] = bySku[sku][0];
+        });
+      });
+    } catch(_){}
+
+    // 3. Ventas en rango por sku (suma todas las presentaciones + equivalentes)
+    var ventasBySku = {};
+    try {
+      var ssMe = SpreadsheetApp.openById(_getProp('ME_SS_ID'));
+      var shVC = ssMe.getSheetByName('VENTAS_CABECERA');
+      var shVD = ssMe.getSheetByName('VENTAS_DETALLE');
+      if (shVC && shVD) {
+        var dataVC = shVC.getDataRange().getValues();
+        var idsValidas = {};
+        for (var k = 1; k < dataVC.length; k++) {
+          var fecha = dataVC[k][1] ? new Date(dataVC[k][1]) : null;
+          if (!fecha || fecha < desde) continue;
+          if (String(dataVC[k][8] || '').toUpperCase() === 'ANULADO') continue;
+          idsValidas[String(dataVC[k][0] || '').trim()] = true;
+        }
+        var dataVD = shVD.getDataRange().getValues();
+        for (var j = 1; j < dataVD.length; j++) {
+          var idV = String(dataVD[j][0] || '').trim();
+          if (!idsValidas[idV]) continue;
+          var sku2 = String(dataVD[j][1] || '').trim();
+          var cb2  = String(dataVD[j][6] || '').trim();
+          var p = prodById[sku2] || prodByCB[cb2];
+          if (!p) continue;
+          var skuKey = p.skuBase || p.idProducto;
+          var cant = parseFloat(dataVD[j][3]) || 0;
+          ventasBySku[skuKey] = (ventasBySku[skuKey] || 0) + cant;
+        }
+      }
+    } catch(_){}
+
+    // 4. Calcular nuevos mín/máx y escribir al canónico de cada sku
+    var actualizados = 0, sinVentas = 0, errores = 0, sinCambio = 0;
+    var semanas = rangoDias / 7;
+    var detalle = [];  // log para debug
+    Object.keys(bySku).forEach(function(sku) {
+      var totalVentas = ventasBySku[sku] || 0;
+      if (totalVentas <= 0) { sinVentas++; return; }
+      var ventasSemana = totalVentas / semanas;
+      var nuevoMin = Math.ceil(ventasSemana);
+      var nuevoMax = Math.ceil(ventasSemana * 1.2);
+      var rowIdx = rowCanonBySku[sku];
+      if (!rowIdx) { errores++; return; }
+      try {
+        var minActual = parseFloat(data[rowIdx - 1][iMin]) || 0;
+        var maxActual = parseFloat(data[rowIdx - 1][iMax]) || 0;
+        if (minActual === nuevoMin && maxActual === nuevoMax) { sinCambio++; return; }
+        sheetMaster.getRange(rowIdx, iMin + 1).setValue(nuevoMin);
+        sheetMaster.getRange(rowIdx, iMax + 1).setValue(nuevoMax);
+        actualizados++;
+        if (detalle.length < 20) {
+          detalle.push({ sku: sku, ventasSem: Math.round(ventasSemana), min: nuevoMin, max: nuevoMax });
+        }
+      } catch(_){ errores++; }
+    });
+
+    PropertiesService.getScriptProperties().setProperty('LAST_AUTO_MINMAX', String(Date.now()));
+    return {
+      ok: true,
+      data: {
+        actualizados: actualizados,
+        sinCambio:    sinCambio,
+        sinVentas:    sinVentas,
+        errores:      errores,
+        ventana:      rangoDias + ' días',
+        sample:       detalle
+      }
+    };
+  } catch(e) {
+    return { ok: false, error: 'Error auto-min-max: ' + e.message };
+  }
+}
+
+// Devuelve el timestamp del último recálculo (para throttle desde frontend)
+function getLastAutoMinMaxTs() {
+  try {
+    var ts = PropertiesService.getScriptProperties().getProperty('LAST_AUTO_MINMAX');
+    return { ok: true, data: { ts: parseInt(ts) || 0 } };
+  } catch(e) { return { ok: false, error: e.message }; }
+}
+
+// ============================================================
 // SPRINT 5 — Inteligencia (sugerencias automáticas)
 // ============================================================
 

@@ -2801,6 +2801,34 @@ const MOS = (() => {
     if (tab === 'env')   renderEnvTable();
   }
 
+  // ── Auto-recálculo semanal de stockMinimo/stockMaximo ───────
+  // Dispara recalcularStockMinMaxAuto en el GAS si pasaron >12h desde
+  // la última corrida. El cálculo: ventas últimos 28d → ventasSemana =
+  // total / 4 → min = ceil(ventasSemana), max = ceil(ventasSemana × 1.2).
+  // Se escribe al canónico de cada sku en PRODUCTOS_MASTER.
+  const AUTO_MINMAX_KEY = 'mos_last_auto_minmax';
+  const AUTO_MINMAX_TTL = 12 * 60 * 60 * 1000;  // 12h
+  function _maybeRecalcularMinMaxAuto() {
+    try {
+      const last = parseInt(localStorage.getItem(AUTO_MINMAX_KEY) || '0');
+      if (Date.now() - last < AUTO_MINMAX_TTL) return;
+      // Marcar antes para evitar disparos paralelos en pestañas múltiples
+      localStorage.setItem(AUTO_MINMAX_KEY, String(Date.now()));
+      API.post('recalcularStockMinMaxAuto', { dias: 28 })
+        .then(r => {
+          const d = (r && r.data) || r || {};
+          if (d.actualizados > 0) {
+            console.log('[auto-min-max]', d.actualizados, 'productos actualizados ·', d.ventana);
+          }
+        })
+        .catch(e => {
+          // Si falló, restaurar timestamp para reintentar pronto
+          localStorage.setItem(AUTO_MINMAX_KEY, '0');
+          console.warn('[auto-min-max] error:', e && e.message);
+        });
+    } catch {}
+  }
+
   // ── ALMACÉN: pre-fetch al loguear ─────────────────────────
   // Trae las tablas críticas, las persiste a localStorage Y pinta la UI
   // directamente para que cuando el user abra el módulo todo esté ya
@@ -2809,6 +2837,8 @@ const MOS = (() => {
     setTimeout(() => {
       if (!S.session) return;
       iconBusy('almacen', true);
+      // Auto-actualizar mín/máx semanales (dispara máx 1 vez cada 12h)
+      _maybeRecalcularMinMaxAuto();
       const tasks = [
         // Resumen — KPIs
         API.get('getDashboardAlmacen', {}).then(r => {
