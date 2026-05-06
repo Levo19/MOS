@@ -1713,6 +1713,57 @@
       flex-wrap: wrap; justify-content: flex-end;
     }
 
+    /* ── Indicador de carga en icono de módulo (sidebar / bnav) ──
+       Línea dorada sutil que indica fetch en progreso, sin bloquear.
+       Toggle vía clase .icon-busy / .icon-done.                      */
+    [data-view] {
+      position: relative;
+      overflow: hidden;
+    }
+    /* Pseudoelemento ::after = la línea de carga */
+    [data-view].icon-busy::after,
+    [data-view].icon-done::after {
+      content: '';
+      position: absolute;
+      pointer-events: none;
+      border-radius: 2px;
+    }
+    /* En sidebar (item full-width): línea inferior */
+    #sidebar [data-view].icon-busy::after,
+    #sidebar [data-view].icon-done::after {
+      left: 8px; right: 8px; bottom: 4px;
+      height: 2px;
+    }
+    /* En bottom nav (botón compacto): línea superior */
+    #bottomnav [data-view].icon-busy::after,
+    #bottomnav [data-view].icon-done::after {
+      left: 14%; right: 14%; top: 2px;
+      height: 2.5px;
+    }
+    /* Animación de "cargando" — gradiente dorado en loop */
+    [data-view].icon-busy::after {
+      background: linear-gradient(90deg,
+        rgba(251,191,36,0)   0%,
+        rgba(251,191,36,.85) 50%,
+        rgba(251,191,36,0)   100%);
+      animation: iconBusyLoop 1s linear infinite;
+      background-size: 200% 100%;
+    }
+    @keyframes iconBusyLoop {
+      0%   { background-position: -100% 0; }
+      100% { background-position:  100% 0; }
+    }
+    /* Estado "done": flash verde 600ms */
+    [data-view].icon-done::after {
+      background: linear-gradient(90deg, #10b981, #34d399);
+      animation: iconDoneFade .6s ease-out forwards;
+    }
+    @keyframes iconDoneFade {
+      0%   { opacity: 0; transform: scaleX(.3); }
+      30%  { opacity: 1; transform: scaleX(1);  }
+      100% { opacity: 0; transform: scaleX(1);  }
+    }
+
     /* Flash sutil al actualizar pestaña de almacén con data nueva */
     .alm-flash {
       animation: almFlashIn .6s ease;

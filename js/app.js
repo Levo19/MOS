@@ -108,6 +108,28 @@ const MOS = (() => {
     return ev.target === el && _modalDownTarget === el;
   }
 
+  // ── Indicador de carga en icono del módulo ──────────────────
+  // iconBusy('almacen', true) → enciende barra dorada en el botón de
+  // sidebar y bottom-nav que tiene data-view="almacen".
+  // iconBusy('almacen', false) → apaga + flash verde 400ms (terminó OK).
+  function iconBusy(modulo, busy) {
+    if (!modulo) return;
+    const sels = `[data-view="${modulo}"]`;
+    document.querySelectorAll(sels).forEach(el => {
+      if (busy) {
+        el.classList.add('icon-busy');
+        el.classList.remove('icon-done');
+      } else {
+        el.classList.remove('icon-busy');
+        // Flash verde breve cuando termina
+        el.classList.remove('icon-done');
+        void el.offsetWidth;
+        el.classList.add('icon-done');
+        setTimeout(() => el.classList.remove('icon-done'), 600);
+      }
+    });
+  }
+
   // ── NAVIGATION ──────────────────────────────────────────────
   function nav(viewName) {
     if (S.view === viewName) return;
@@ -2640,6 +2662,7 @@ const MOS = (() => {
   // Refresca silenciosamente la pestaña activa
   async function _almRefreshSilencioActivo() {
     const tab = S.almTab || 'resumen';
+    iconBusy('almacen', true);
     try {
       if (tab === 'resumen') {
         if (typeof almLoadResumen === 'function') almLoadResumen();
@@ -2681,6 +2704,7 @@ const MOS = (() => {
         }
       }
     } catch {}
+    iconBusy('almacen', false);
   }
   // Animación sutil de "actualizado" cuando llega data nueva
   function _almFlash(panelId) {
@@ -2760,24 +2784,26 @@ const MOS = (() => {
   function _prefetchAlmacen() {
     setTimeout(() => {
       if (!S.session) return;
-      // Endpoints del Resumen (cache GAS interna)
-      API.get('getDashboardAlmacen', {}).catch(() => {});
-      API.get('getAlertasOperativas', {}).catch(() => {});
-      API.get('getGuiasYPreingresos', { dias: 7 }).catch(() => {});
-      API.get('getInsightsStock', { dias: 30 }).catch(() => {});
-      // Tablas principales (persisten a localStorage)
-      API.get('getCatalogoStockResumen', { dias: 7 }).then(r => {
-        if (r && r.productos) { S.catalogoStock = r.productos; _almSaveCache('catalogoStock', r.productos); }
-      }).catch(() => {});
-      API.get('getAlertasWarehouse', {}).then(r => {
-        if (r) { S.vencimientos = r; _almSaveCache('vencimientos', r); }
-      }).catch(() => {});
-      API.get('getMermasWarehouse', {}).then(r => {
-        if (r) { S.mermas = r; _almSaveCache('mermas', r); }
-      }).catch(() => {});
-      API.get('getEnvasadosWarehouse', { limit: '50' }).then(r => {
-        if (r) { S.envasados = r; _almSaveCache('envasados', r); }
-      }).catch(() => {});
+      iconBusy('almacen', true);
+      const tasks = [
+        API.get('getDashboardAlmacen', {}).catch(() => {}),
+        API.get('getAlertasOperativas', {}).catch(() => {}),
+        API.get('getGuiasYPreingresos', { dias: 7 }).catch(() => {}),
+        API.get('getInsightsStock', { dias: 30 }).catch(() => {}),
+        API.get('getCatalogoStockResumen', { dias: 7 }).then(r => {
+          if (r && r.productos) { S.catalogoStock = r.productos; _almSaveCache('catalogoStock', r.productos); }
+        }).catch(() => {}),
+        API.get('getAlertasWarehouse', {}).then(r => {
+          if (r) { S.vencimientos = r; _almSaveCache('vencimientos', r); }
+        }).catch(() => {}),
+        API.get('getMermasWarehouse', {}).then(r => {
+          if (r) { S.mermas = r; _almSaveCache('mermas', r); }
+        }).catch(() => {}),
+        API.get('getEnvasadosWarehouse', { limit: '50' }).then(r => {
+          if (r) { S.envasados = r; _almSaveCache('envasados', r); }
+        }).catch(() => {})
+      ];
+      Promise.all(tasks).finally(() => iconBusy('almacen', false));
     }, 3000);
   }
 
@@ -2845,11 +2871,16 @@ const MOS = (() => {
         const safeDesc = (i.producto || '').replace(/'/g, "\\'");
         actionBtn = `<button class="btn-primary text-xs px-2 py-1 mt-2" onclick="MOS._almGenerarPedidoFromInsight('${i.idProducto}','${safeDesc}','','')">📋 Crear pedido borrador</button>`;
       }
+      // Header con nombre del producto destacado (cuando lo tiene)
+      const productoHeader = i.producto
+        ? `<div class="text-sm font-bold text-slate-100 mb-1 truncate">${i.producto}${i.codigoBarra ? ` <span class="text-[10px] text-slate-500 font-mono">▌${i.codigoBarra}</span>` : ''}</div>`
+        : '';
       return `<div class="card-sm border-${c}-500/30 p-3" style="border-left:3px solid var(--accent)">
         <div class="flex items-start gap-2">
           <span>${icon}</span>
           <div class="flex-1 min-w-0">
-            <div class="text-sm text-slate-200 font-medium">${i.mensaje}</div>
+            ${productoHeader}
+            <div class="text-xs text-slate-300">${i.mensaje}</div>
             ${i.accion ? `<div class="text-xs text-slate-500 mt-1">→ ${i.accion}</div>` : ''}
             ${actionBtn}
           </div>
@@ -4483,6 +4514,7 @@ const MOS = (() => {
     const lista = _filtrarReales(proveedores);
     if (!lista.length) return;
     _provProdsPrefetching = true;
+    iconBusy('proveedores', true);
     let lastId = null;
     try { lastId = localStorage.getItem('mos_prov_last_sel'); } catch {}
     // Ordenar: último visitado primero, después por orden natural
@@ -4493,7 +4525,7 @@ const MOS = (() => {
     });
     let i = 0;
     function siguiente() {
-      if (i >= orden.length) { _provProdsPrefetching = false; return; }
+      if (i >= orden.length) { _provProdsPrefetching = false; iconBusy('proveedores', false); return; }
       const prov = orden[i++];
       const idProv = prov.idProveedor;
       // Skip si ya hay cache fresco
@@ -12399,7 +12431,7 @@ const MOS = (() => {
 
   // ── PUBLIC API ───────────────────────────────────────────────
   return {
-    init, nav, refresh, fabAction,
+    init, nav, refresh, fabAction, iconBusy,
     openConfig, saveConfig, testConnection, closeModal, openEcoModal,
     filterCatalogo, setCatTab, toggleDerivs, togglePresentaciones, guardarPrecioRapido,
     abrirModalPN, cerrarModalPN, lanzarAProduccion, refreshPNManual,
