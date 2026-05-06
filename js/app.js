@@ -8669,7 +8669,7 @@ const MOS = (() => {
         </div>
         <label class="pers-switch shrink-0" title="${bloqueado ? 'Activar cajero — desbloquea pantalla de candado en su dispositivo' : 'Bloquear cajero — solo el dispositivo donde está logueado verá pantalla de candado'}">
           <input type="checkbox" ${bloqueado ? '' : 'checked'} onchange="MOS.toggleVendedorME('${safeNombre}', event)">
-          <span class="pers-slider"></span>
+          <span class="pers-switch-slider"></span>
         </label>
       </div>`;
     }).join('');
