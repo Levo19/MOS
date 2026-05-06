@@ -10673,6 +10673,35 @@ const MOS = (() => {
   let _finPL = null;  // último P&L cargado
   let _finanzasRefreshTimer = null;
 
+  // ── Cache localStorage ────────────────────────────────────
+  const FIN_CACHE_PFX = 'mos_fin_';
+  const FIN_CACHE_TTL = 30 * 60 * 1000;  // 30 min
+  function _finLoadCache(key) {
+    try {
+      const raw = localStorage.getItem(FIN_CACHE_PFX + key);
+      if (!raw) return null;
+      const p = JSON.parse(raw);
+      if (Date.now() - (p.ts || 0) > FIN_CACHE_TTL) return null;
+      return p.data;
+    } catch { return null; }
+  }
+  function _finSaveCache(key, data) {
+    try { localStorage.setItem(FIN_CACHE_PFX + key, JSON.stringify({ ts: Date.now(), data })); } catch {}
+  }
+  function _finFlash() {
+    const v = $('view-finanzas');
+    if (!v) return;
+    v.classList.remove('alm-flash');
+    void v.offsetWidth;
+    v.classList.add('alm-flash');
+  }
+  // Hidratar PL del día actual al cargar el script
+  (function _finHidratar() {
+    const f = today();
+    const cached = _finLoadCache('pl_' + f);
+    if (cached) _finPL = cached;
+  })();
+
   function _startFinanzasRefresh() {
     _stopFinanzasRefresh();
     _finanzasRefreshSilencioso(); // fetch inmediato al autenticar
@@ -10682,32 +10711,53 @@ const MOS = (() => {
     if (_finanzasRefreshTimer) { clearInterval(_finanzasRefreshTimer); _finanzasRefreshTimer = null; }
   }
   async function _finanzasRefreshSilencioso() {
+    if (!S.session) return;
+    if (document.visibilityState !== 'visible') return;
+    iconBusy('finanzas', true);
     try {
       const fecha  = $('finFecha')?.value || today();
       const pl     = await API.get('getFinanzasDia', { fecha });
+      const changedPL = JSON.stringify(pl) !== JSON.stringify(_finPL);
       _finPL = pl;
+      _finSaveCache('pl_' + fecha, pl);
       if (S.view === 'finanzas') {
-        _finRender(pl, fecha);
+        if (changedPL) { _finRender(pl, fecha); _finFlash(); }
         const hasta  = fecha;
         const desde7 = _fechaOffset(fecha, -6);
         const rango  = await API.get('getFinanzasRango', { desde: desde7, hasta });
+        _finSaveCache('rango_' + fecha, rango);
         _finRender7d(rango);
       }
     } catch(_) { /* silencioso */ }
+    iconBusy('finanzas', false);
   }
 
   async function finCargar() {
     const fecha = $('finFecha')?.value || today();
+    // 1. Pintar desde cache local si existe (instantáneo)
+    const cachedPL = _finLoadCache('pl_' + fecha);
+    if (cachedPL) {
+      _finPL = cachedPL;
+      try { _finRender(cachedPL, fecha); } catch {}
+    }
+    const cachedRango = _finLoadCache('rango_' + fecha);
+    if (cachedRango) { try { _finRender7d(cachedRango); } catch {} }
+    // 2. Fetch fresco en background — actualiza cuando responda
+    iconBusy('finanzas', true);
     try {
       _finPL = await API.get('getFinanzasDia', { fecha });
+      _finSaveCache('pl_' + fecha, _finPL);
       _finRender(_finPL, fecha);
-      // Cargar tendencia 7 días en paralelo
       const hasta  = fecha;
       const desde7 = _fechaOffset(fecha, -6);
       const rango  = await API.get('getFinanzasRango', { desde: desde7, hasta });
+      _finSaveCache('rango_' + fecha, rango);
       _finRender7d(rango);
     } catch(e) {
-      toast('Error Finanzas: ' + e.message, 'error');
+      // Si falla pero teníamos cache, no molestar al user
+      if (!cachedPL) toast('Error Finanzas: ' + e.message, 'error');
+    } finally {
+      iconBusy('finanzas', false);
     }
   }
 
