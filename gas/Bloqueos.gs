@@ -55,6 +55,23 @@ function getEstadoBloqueoUsuario(params) {
   var appOrigen = _normalizarApp(params.appOrigen || '');
   var nombreNorm = _normalizarNombre(params.nombre);
 
+  // ── Heartbeat de dispositivo (Round 2) ──────────────────────
+  // Si la app envía deviceId, aprovechamos esta llamada (que ya corre
+  // cada 30s) para actualizar Ultima_Conexion + Ultima_Zona/Estacion/Sesion
+  // en la tabla DISPOSITIVOS. Cero round-trips extra.
+  // Tolera errores: nunca bloquea la respuesta del bloqueo.
+  if (params.deviceId) {
+    try {
+      registrarSesionDispositivo({
+        ID_Dispositivo: params.deviceId,
+        idZona:         params.idZona || '',
+        idEstacion:     params.idEstacion || '',
+        vendedor:       params.nombre || '',
+        app:            params.appOrigen || 'mosExpress'
+      });
+    } catch(e) { /* tolerar */ }
+  }
+
   // 1) (Solo para usuarios "reales" tipo WH/MOS Admin) — buscar en PERSONAL_MASTER
   // Para vendedores ME esto NO aplica: ellos comparten el usuario plantilla
   // (ej: PER099 Cajero Genérico) y se identifican solo por nombre.
