@@ -145,6 +145,8 @@ const MOS = (() => {
     // Auto-refresh de almacén: arrancar/detener según vista
     if (viewName === 'almacen') _almIniciarAutoRefresh();
     else _almDetenerAutoRefresh();
+    if (viewName === 'config') _cfgIniciarAutoRefresh();
+    else _cfgDetenerAutoRefresh();
 
     document.querySelectorAll('.view').forEach(v => {
       v.classList.remove('active');
@@ -517,6 +519,7 @@ const MOS = (() => {
     _startProvRefresh();
     _auditCheckBanner().catch(() => {}); // banner de alertas de integridad
     _prefetchAlmacen();                  // precarga endpoints pesados de almacén
+    _cfgPrefetch();                      // precarga endpoints de configuración
     // Pre-carga promociones desde cache (sin bloquear)
     const _pc = _promoLoadCache();
     if (_pc) _promoState.lista = _pc;
@@ -7981,31 +7984,161 @@ const MOS = (() => {
   // ── CONFIGURACIÓN ────────────────────────────────────────────
   let cfgData = { zonas: [], estaciones: [], impresoras: [], personal: [], personalMOS: [], series: [], dispositivos: [] };
 
+  // ════════════════════════════════════════════════════════
+  // CONFIGURACIÓN — sistema cache + prefetch + auto-refresh
+  // (mismo patrón que Almacén)
+  // ════════════════════════════════════════════════════════
+  const CFG_CACHE_PFX = 'mos_cfg_';
+  const CFG_CACHE_TTL = 30 * 60 * 1000; // 30 min
+
+  function _cfgLoadCache(key) {
+    try {
+      const raw = localStorage.getItem(CFG_CACHE_PFX + key);
+      if (!raw) return null;
+      const p = JSON.parse(raw);
+      if (Date.now() - (p.ts || 0) > CFG_CACHE_TTL) return null;
+      return p.data;
+    } catch { return null; }
+  }
+  function _cfgSaveCache(key, data) {
+    try { localStorage.setItem(CFG_CACHE_PFX + key, JSON.stringify({ ts: Date.now(), data })); } catch {}
+  }
+
+  // Hidrata cfgData desde localStorage (instantáneo)
+  function _cfgHidratarTodos() {
+    const z = _cfgLoadCache('zonas');        if (z) cfgData.zonas        = z;
+    const e = _cfgLoadCache('estaciones');   if (e) cfgData.estaciones   = e;
+    const i = _cfgLoadCache('impresoras');   if (i) cfgData.impresoras   = i;
+    const p = _cfgLoadCache('personal');     if (p) cfgData.personal     = p;
+    const m = _cfgLoadCache('personalMOS');  if (m) cfgData.personalMOS  = m;
+    const b = _cfgLoadCache('bloqueosME');   if (b) cfgData.bloqueosME   = b;
+    const s = _cfgLoadCache('series');       if (s) cfgData.series       = s;
+    const d = _cfgLoadCache('dispositivos'); if (d) cfgData.dispositivos = d;
+    const c = _cfgLoadCache('categorias');   if (c) cfgData.categorias   = c;
+    const f = _cfgLoadCache('config');       if (f) cfgData.config       = f;
+    return !!(z || e || i || p || m || b || s || d || c || f);
+  }
+
+  // Prefetch al login: descarga TODO en paralelo y cachea (corre en background)
+  function _cfgPrefetch() {
+    setTimeout(() => {
+      if (!S.session) return;
+      iconBusy('config', true);
+      const tasks = [
+        API.get('getZonas', {}).then(r => { if (r) { cfgData.zonas = r; _cfgSaveCache('zonas', r); } }).catch(() => {}),
+        API.get('getEstaciones', {}).then(r => { if (r) { cfgData.estaciones = r; _cfgSaveCache('estaciones', r); } }).catch(() => {}),
+        API.get('getImpresoras', {}).then(r => { if (r) { cfgData.impresoras = r; _cfgSaveCache('impresoras', r); } }).catch(() => {}),
+        API.get('getPersonalMaster', { appOrigen: 'warehouseMos' }).then(r => { if (r) { cfgData.personal = r; _cfgSaveCache('personal', r); } }).catch(() => {}),
+        API.get('getPersonalMaster', { appOrigen: 'MOS' }).then(r => { if (r) { cfgData.personalMOS = r; _cfgSaveCache('personalMOS', r); } }).catch(() => {}),
+        API.get('getVendedoresMEBloqueados', {}).then(r => { if (r) { cfgData.bloqueosME = r; _cfgSaveCache('bloqueosME', r); } }).catch(() => {}),
+        API.get('getSeries', {}).then(r => { if (r) { cfgData.series = r; _cfgSaveCache('series', r); } }).catch(() => {}),
+        API.get('getDispositivos', {}).then(r => { if (r) { cfgData.dispositivos = r; _cfgSaveCache('dispositivos', r); } }).catch(() => {}),
+        API.get('getCategorias', {}).then(r => { if (r) { cfgData.categorias = r; _cfgSaveCache('categorias', r); } }).catch(() => {}),
+        API.get('getConfig', {}).then(r => { if (r) { cfgData.config = r; _cfgSaveCache('config', r); } }).catch(() => {})
+      ];
+      Promise.all(tasks).finally(() => {
+        iconBusy('config', false);
+        S._cfgPrecargado = true;
+        // Si el usuario ya está viendo configuración, re-renderizar
+        if (S.view === 'config') renderCfgTab(S.cfgTab || 'infra');
+      });
+    }, 1500);
+  }
+
+  // Auto-refresh global cada 60s mientras módulo configuración visible
+  let _cfgAutoTimer = null;
+  function _cfgIniciarAutoRefresh() {
+    if (_cfgAutoTimer) clearInterval(_cfgAutoTimer);
+    _cfgAutoTimer = setInterval(() => {
+      if (!S.session || S.view !== 'config') return;
+      if (document.visibilityState !== 'visible') return;
+      _cfgRefreshSilencioso();
+    }, 60 * 1000);
+  }
+  function _cfgDetenerAutoRefresh() {
+    if (_cfgAutoTimer) { clearInterval(_cfgAutoTimer); _cfgAutoTimer = null; }
+  }
+  // Refresh silencioso — solo recarga lo que afecta la pestaña activa
+  async function _cfgRefreshSilencioso() {
+    iconBusy('config', true);
+    try {
+      const tab = S.cfgTab || 'infra';
+      const tasks = [];
+      // Datos compartidos (siempre)
+      tasks.push(API.get('getZonas', {}).then(r => { if (r) { cfgData.zonas = r; _cfgSaveCache('zonas', r); } }).catch(() => {}));
+      tasks.push(API.get('getEstaciones', {}).then(r => { if (r) { cfgData.estaciones = r; _cfgSaveCache('estaciones', r); } }).catch(() => {}));
+      // Por pestaña
+      if (tab === 'infra') {
+        tasks.push(API.get('getImpresoras', {}).then(r => { if (r) { cfgData.impresoras = r; _cfgSaveCache('impresoras', r); } }).catch(() => {}));
+        tasks.push(API.get('getDispositivos', {}).then(r => { if (r) { cfgData.dispositivos = r; _cfgSaveCache('dispositivos', r); } }).catch(() => {}));
+        tasks.push(API.get('getSeries', {}).then(r => { if (r) { cfgData.series = r; _cfgSaveCache('series', r); } }).catch(() => {}));
+      }
+      if (tab === 'personal') {
+        tasks.push(API.get('getPersonalMaster', { appOrigen: 'warehouseMos' }).then(r => { if (r) { cfgData.personal = r; _cfgSaveCache('personal', r); } }).catch(() => {}));
+        tasks.push(API.get('getPersonalMaster', { appOrigen: 'MOS' }).then(r => { if (r) { cfgData.personalMOS = r; _cfgSaveCache('personalMOS', r); } }).catch(() => {}));
+        tasks.push(API.get('getVendedoresMEBloqueados', {}).then(r => { if (r) { cfgData.bloqueosME = r; _cfgSaveCache('bloqueosME', r); } }).catch(() => {}));
+        tasks.push(API.get('getDispositivos', {}).then(r => { if (r) { cfgData.dispositivos = r; _cfgSaveCache('dispositivos', r); } }).catch(() => {}));
+      }
+      if (tab === 'categorias') {
+        tasks.push(API.get('getCategorias', {}).then(r => { if (r) { cfgData.categorias = r; _cfgSaveCache('categorias', r); } }).catch(() => {}));
+      }
+      await Promise.all(tasks);
+      // Re-render solo si la pestaña sigue activa
+      if (S.view === 'config') renderCfgTab(S.cfgTab || 'infra');
+    } finally {
+      iconBusy('config', false);
+    }
+  }
+
   async function loadConfig() {
     S.cfgTab = S.cfgTab || 'infra';
-    const [zonRes, estRes, impRes, persRes, persMOSRes, bloqMERes, serRes, dispRes, catRes, cfgRes] = await Promise.allSettled([
-      API.get('getZonas', {}),
-      API.get('getEstaciones', {}),
-      API.get('getImpresoras', {}),
-      API.get('getPersonalMaster', { appOrigen: 'warehouseMos' }),
-      API.get('getPersonalMaster', { appOrigen: 'MOS' }),
-      API.get('getVendedoresMEBloqueados', {}),
-      API.get('getSeries', {}),
-      API.get('getDispositivos', {}),
-      API.get('getCategorias', {}),
-      API.get('getConfig', {})
-    ]);
-    cfgData.zonas         = zonRes.status      === 'fulfilled' ? (zonRes.value      || []) : [];
-    cfgData.estaciones    = estRes.status      === 'fulfilled' ? (estRes.value      || []) : [];
-    cfgData.impresoras    = impRes.status      === 'fulfilled' ? (impRes.value      || []) : [];
-    cfgData.personal      = persRes.status     === 'fulfilled' ? (persRes.value     || []) : [];
-    cfgData.personalMOS   = persMOSRes.status  === 'fulfilled' ? (persMOSRes.value  || []) : [];
-    cfgData.bloqueosME    = bloqMERes.status   === 'fulfilled' ? (bloqMERes.value   || []) : [];
-    cfgData.series        = serRes.status      === 'fulfilled' ? (serRes.value      || []) : [];
-    cfgData.dispositivos  = dispRes.status     === 'fulfilled' ? (dispRes.value     || []) : [];
-    cfgData.categorias    = catRes.status      === 'fulfilled' ? (catRes.value      || []) : [];
-    cfgData.config        = cfgRes.status      === 'fulfilled' ? (cfgRes.value      || {}) : {};
-    renderCfgTab(S.cfgTab);
+    // 1) Hidratar inmediato desde cache (zero spinner para usuarios recurrentes)
+    const huboCache = _cfgHidratarTodos();
+    if (huboCache) renderCfgTab(S.cfgTab);
+    // 2) Si ya se prefetcheó al login, no reabrir red — lo nuevo viene del auto-refresh
+    if (S._cfgPrecargado) {
+      _cfgIniciarAutoRefresh();
+      return;
+    }
+    // 3) Primera vez: pedir fresh en paralelo (con loading icon)
+    iconBusy('config', true);
+    try {
+      const [zonRes, estRes, impRes, persRes, persMOSRes, bloqMERes, serRes, dispRes, catRes, cfgRes] = await Promise.allSettled([
+        API.get('getZonas', {}),
+        API.get('getEstaciones', {}),
+        API.get('getImpresoras', {}),
+        API.get('getPersonalMaster', { appOrigen: 'warehouseMos' }),
+        API.get('getPersonalMaster', { appOrigen: 'MOS' }),
+        API.get('getVendedoresMEBloqueados', {}),
+        API.get('getSeries', {}),
+        API.get('getDispositivos', {}),
+        API.get('getCategorias', {}),
+        API.get('getConfig', {})
+      ]);
+      const _set = (k, res) => {
+        if (res.status === 'fulfilled') {
+          cfgData[k] = res.value || (k === 'config' ? {} : []);
+          _cfgSaveCache(k, cfgData[k]);
+        } else if (cfgData[k] === undefined) {
+          cfgData[k] = (k === 'config' ? {} : []);
+        }
+      };
+      _set('zonas', zonRes);
+      _set('estaciones', estRes);
+      _set('impresoras', impRes);
+      _set('personal', persRes);
+      _set('personalMOS', persMOSRes);
+      _set('bloqueosME', bloqMERes);
+      _set('series', serRes);
+      _set('dispositivos', dispRes);
+      _set('categorias', catRes);
+      _set('config', cfgRes);
+      S._cfgPrecargado = true;
+      renderCfgTab(S.cfgTab);
+    } finally {
+      iconBusy('config', false);
+      _cfgIniciarAutoRefresh();
+    }
   }
 
   function setCfgTab(tab) {
