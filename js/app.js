@@ -11555,12 +11555,11 @@ const MOS = (() => {
       _dispPoblarSelectEstaciones('', '');
     }
     _dispActualizarPreview();
-    modal.classList.remove('hidden');
+    openModal('modalDispositivo');
   }
 
   function cerrarModalDispositivo() {
-    const modal = $('modalDispositivo');
-    if (modal) modal.classList.add('hidden');
+    closeModal('modalDispositivo');
   }
 
   function dispCopiarUUID() {

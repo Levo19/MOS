@@ -403,12 +403,33 @@ function actualizarDispositivo(params) {
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][0]) !== String(params.ID_Dispositivo)) continue;
     var campos = ['Nombre_Equipo', 'App', 'Estado', 'Ultima_Zona', 'Ultima_Estacion', 'Ultima_Sesion'];
+    var cambioZonaEstacion = false;
+    var iZ  = hdrs.indexOf('Ultima_Zona');
+    var iE  = hdrs.indexOf('Ultima_Estacion');
     campos.forEach(function(c) {
       if (params[c] !== undefined) {
         var col = hdrs.indexOf(c);
-        if (col >= 0) sheet.getRange(i + 1, col + 1).setValue(params[c]);
+        if (col >= 0) {
+          var actual = String(data[i][col] || '');
+          if ((c === 'Ultima_Zona' || c === 'Ultima_Estacion') && actual !== String(params[c] || '')) {
+            cambioZonaEstacion = true;
+          }
+          sheet.getRange(i + 1, col + 1).setValue(params[c]);
+        }
       }
     });
+    // Si el admin cambió manualmente la zona/estación, refrescar Ultima_Conexion
+    // y marcar Ultima_Sesion='manual_admin' para que el panel muestre tiempo reciente.
+    if (cambioZonaEstacion) {
+      var iUC = hdrs.indexOf('Ultima_Conexion');
+      var iUS = hdrs.indexOf('Ultima_Sesion');
+      var tz = Session.getScriptTimeZone();
+      var nowStr = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss');
+      if (iUC >= 0) sheet.getRange(i + 1, iUC + 1).setValue(nowStr);
+      if (iUS >= 0 && params.Ultima_Sesion === undefined) {
+        sheet.getRange(i + 1, iUS + 1).setValue('manual_admin');
+      }
+    }
     return { ok: true };
   }
   return { ok: false, error: 'Dispositivo no encontrado: ' + params.ID_Dispositivo };
