@@ -8574,8 +8574,7 @@ const MOS = (() => {
           <div class="font-medium text-sm text-slate-200 truncate">${p.nombre} ${p.apellido || ''}</div>
           <div class="flex items-center gap-2 mt-0.5 flex-wrap">
             <span class="badge ${rolBadge} text-xs">${p.rol}</span>
-            ${p.tarifaHora ? `<span class="text-[10px] text-slate-500">S/.${parseFloat(p.tarifaHora).toFixed(2)}/h</span>` : ''}
-            ${p.montoBase ? `<span class="text-[10px] text-slate-500">· S/.${parseFloat(p.montoBase).toFixed(2)}/d</span>` : ''}
+            ${p.montoBase ? `<span class="text-[10px] text-slate-500">S/.${parseFloat(p.montoBase).toFixed(2)}/día</span>` : ''}
           </div>
         </div>
         <label class="pers-switch" title="${activo ? 'Desactivar' : 'Activar'}" onclick="event.stopPropagation()">
@@ -9163,7 +9162,6 @@ const MOS = (() => {
       }
       $('persColor').value    = p.color || '#6366f1';
       if (!isMOS) {
-        $('persTarifa').value = p.tarifaHora || '';
         $('persMonto').value  = p.montoBase  || '';
       }
       // Toggle activo + botón eliminar visibles en edición
@@ -9201,7 +9199,6 @@ const MOS = (() => {
       appOrigen:   appOrigen
     };
     if (!isMOS) {
-      params.tarifaHora = $('persTarifa')?.value || 0;
       params.montoBase  = $('persMonto')?.value  || 0;
     }
     const pin = $('persPin')?.value;
