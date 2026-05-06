@@ -182,7 +182,7 @@ const MOS = (() => {
 
     // Config: show first panel
     if (viewName === 'config') {
-      setCfgTab(S.cfgTab || 'zonas');
+      setCfgTab(S.cfgTab || 'infra');
     }
 
     S.view = viewName;
@@ -8008,7 +8008,7 @@ const MOS = (() => {
 
   function setCfgTab(tab) {
     S.cfgTab = tab;
-    const tabs = ['zonas','estaciones','impresoras','personal','series','seguridad','dispositivos','categorias','evaluacion','integridad'];
+    const tabs = ['infra','personal','series','seguridad','dispositivos','categorias','evaluacion','integridad'];
     tabs.forEach(t => {
       const btn = $('cfgTab' + t.charAt(0).toUpperCase() + t.slice(1));
       if (btn) btn.classList.toggle('active', t === tab);
@@ -8020,9 +8020,7 @@ const MOS = (() => {
 
   function renderCfgTab(tab) {
     switch (tab) {
-      case 'zonas':        renderZonas();        break;
-      case 'estaciones':   renderEstaciones();   break;
-      case 'impresoras':   renderImpresoras();   break;
+      case 'infra':        renderInfra();        break;
       case 'personal':     renderPersonal();     break;
       case 'series':       renderSeries();       break;
       case 'seguridad':    renderSeguridad();    break;
@@ -8413,25 +8411,212 @@ const MOS = (() => {
     } catch(_) { banner.classList.add('hidden'); }
   }
 
-  function renderZonas() {
-    const tbody = $('tbodyZonas');
-    if (!tbody) return;
-    if (!cfgData.zonas.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Sin zonas registradas. Crea la primera.</td></tr>';
+  // ════════════════════════════════════════════════════════════
+  // INFRAESTRUCTURA — vista jerárquica Zona > Estación > Impresora
+  // ════════════════════════════════════════════════════════════
+  function renderInfra() {
+    const cont = $('infraContenedor');
+    if (!cont) return;
+    const zonas = cfgData.zonas || [];
+    const estaciones = cfgData.estaciones || [];
+    const impresoras = cfgData.impresoras || [];
+
+    // Filtros
+    const buscar = String($('infraBuscar')?.value || '').trim().toLowerCase();
+    const filtroApp = $('infraFiltroApp')?.value || '';
+    const soloActivos = $('infraSoloActivos')?.checked;
+
+    const _match = (texto) => !buscar || String(texto || '').toLowerCase().includes(buscar);
+
+    if (!zonas.length) {
+      cont.innerHTML = `<div class="card p-12 text-center text-slate-500">
+        <div class="text-6xl mb-3">🏗️</div>
+        <p class="font-bold text-slate-300 mb-1">Sin zonas todavía</p>
+        <p class="text-xs mb-4">Crea tu primera zona para empezar a configurar la infraestructura.</p>
+        <button class="btn-primary text-sm px-4 py-2" onclick="MOS.abrirModalZona(null)">+ Crear primera zona</button>
+      </div>`;
       return;
     }
-    tbody.innerHTML = cfgData.zonas.map(z => {
-      const estCount = cfgData.estaciones.filter(e => e.idZona === z.idZona).length;
-      return `<tr>
-        <td class="font-mono text-xs text-slate-400">${z.idZona}</td>
-        <td class="font-medium text-white">${z.nombre}</td>
-        <td class="hidden sm:table-cell text-slate-400 text-xs">${z.direccion || '—'}</td>
-        <td class="hidden md:table-cell text-slate-400 text-xs">${z.responsable || '—'}</td>
-        <td class="text-center"><span class="text-xs px-2 py-0.5 rounded-full bg-indigo-900 text-indigo-300">${estCount} est.</span></td>
-        <td><span class="text-xs px-2 py-0.5 rounded-full ${z.estado === '1' || z.estado === 1 ? 'bg-emerald-900 text-emerald-300' : 'bg-slate-700 text-slate-400'}">${z.estado === '1' || z.estado === 1 ? 'Activa' : 'Inactiva'}</span></td>
-        <td><button onclick="MOS.abrirModalZona('${z.idZona}')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700">✏️</button></td>
-      </tr>`;
-    }).join('');
+
+    cont.innerHTML = zonas.map(z => {
+      const zonaActiva = String(z.estado) === '1' || z.estado === 1 || z.estado === true;
+      if (soloActivos && !zonaActiva) return '';
+      // Estaciones de esta zona
+      let estZona = estaciones.filter(e => e.idZona === z.idZona);
+      if (filtroApp) estZona = estZona.filter(e => e.appOrigen === filtroApp);
+      if (soloActivos) estZona = estZona.filter(e => String(e.activo) === '1');
+      // Filtro de búsqueda — la zona pasa si su nombre matchea, o si alguna estación/impresora hija matchea
+      const zonaMatchea = _match(z.nombre) || _match(z.idZona) || _match(z.direccion);
+      const estacionesMatch = estZona.filter(e => {
+        if (zonaMatchea) return true;
+        if (_match(e.nombre) || _match(e.idEstacion)) return true;
+        const imps = impresoras.filter(i => i.idEstacion === e.idEstacion);
+        return imps.some(i => _match(i.nombre) || _match(i.printNodeId));
+      });
+      if (buscar && !zonaMatchea && estacionesMatch.length === 0) return '';
+
+      const totalImp = estZona.reduce((acc, e) =>
+        acc + impresoras.filter(i => i.idEstacion === e.idEstacion).length, 0);
+
+      const estadoBadge = zonaActiva
+        ? '<span class="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-900/60 text-emerald-300 font-bold"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>activa</span>'
+        : '<span class="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-400 font-bold">inactiva</span>';
+
+      // Estaciones grid
+      const estsHTML = (estacionesMatch.length ? estacionesMatch : estZona).map(e => _renderInfraEstacion(e, impresoras, soloActivos, _match, filtroApp)).join('');
+
+      return `<div class="card p-4" style="background:linear-gradient(135deg,#0d1f3a 0%,#0d1526 100%);border:1px solid ${zonaActiva ? '#1e3a8a' : '#334155'};${zonaActiva ? '' : 'opacity:0.7;'}">
+        <!-- Header zona -->
+        <div class="flex items-start justify-between gap-3 mb-3 pb-3" style="border-bottom:1px solid #1e293b;">
+          <div class="flex items-start gap-3 flex-1 min-w-0">
+            <div class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0" style="background:linear-gradient(135deg,#1e3a8a,#0c4a6e);">🏬</div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <h3 class="text-base font-black text-white truncate">${z.nombre}</h3>
+                ${estadoBadge}
+                <span class="font-mono text-[10px] text-slate-500">${z.idZona}</span>
+              </div>
+              <p class="text-xs text-slate-400 mt-0.5 truncate">${z.direccion ? '📍 ' + z.direccion : ''}${z.responsable ? '  ·  👤 ' + z.responsable : ''}</p>
+              <p class="text-[11px] text-slate-500 mt-1">${estZona.length} estación${estZona.length === 1 ? '' : 'es'} · ${totalImp} impresora${totalImp === 1 ? '' : 's'}</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-1 shrink-0">
+            <label class="pers-switch" title="${zonaActiva ? 'Desactivar zona' : 'Activar zona'}" onclick="event.stopPropagation()">
+              <input type="checkbox" ${zonaActiva ? 'checked' : ''} onchange="MOS.toggleZonaActiva('${z.idZona}', event)">
+              <span class="pers-switch-slider"></span>
+            </label>
+            <button onclick="MOS.abrirModalZona('${z.idZona}')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700" title="Editar zona">✏️</button>
+          </div>
+        </div>
+
+        <!-- Grid de estaciones -->
+        ${estZona.length > 0
+          ? `<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">${estsHTML}</div>`
+          : `<div class="text-center py-6 text-slate-500 text-xs italic">Esta zona no tiene estaciones aún.</div>`}
+
+        <!-- Botón agregar estación -->
+        <button onclick="MOS.abrirModalEstacion(null,'${z.idZona}')"
+                class="mt-3 w-full text-xs text-slate-400 hover:text-white py-2 rounded-lg border border-dashed border-slate-700 hover:border-emerald-700 hover:bg-emerald-900/20 transition-colors">
+          + estación a esta zona
+        </button>
+      </div>`;
+    }).filter(Boolean).join('') || `<div class="card p-8 text-center text-slate-500 text-sm">Sin coincidencias para los filtros aplicados.</div>`;
+  }
+
+  function _renderInfraEstacion(e, impresoras, soloActivos, _match, filtroApp) {
+    const activa = String(e.activo) === '1' || e.activo === 1 || e.activo === true;
+    if (soloActivos && !activa) return '';
+    let imps = impresoras.filter(i => i.idEstacion === e.idEstacion);
+    if (soloActivos) imps = imps.filter(i => String(i.activo) === '1');
+    const tipoIcon = { CAJA: '🛒', ALMACEN: '🏭', ENVASADO: '🍶' }[e.tipo] || '📍';
+    const appColor = e.appOrigen === 'mosExpress' ? '#818cf8' : '#fb923c';
+    const appBadge = e.appOrigen === 'mosExpress'
+      ? '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded" style="background:rgba(99,102,241,0.2);color:#a5b4fc;">ME</span>'
+      : '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded" style="background:rgba(249,115,22,0.2);color:#fdba74;">WH</span>';
+    const safeId = String(e.idEstacion).replace(/'/g, '&#39;');
+
+    const impsHTML = imps.length
+      ? imps.map(i => {
+          const impActiva = String(i.activo) === '1' || i.activo === 1 || i.activo === true;
+          const impIcon = { TICKET: '🖨️', ADHESIVO: '🏷️', ZPL: '📄' }[i.tipo] || '🖨️';
+          return `<div class="flex items-center gap-2 px-2 py-1.5 rounded ${impActiva ? '' : 'opacity-50'}" style="background:#0a1424;border:1px solid #1e293b;">
+            <span class="text-sm shrink-0">${impIcon}</span>
+            <div class="flex-1 min-w-0">
+              <div class="text-xs font-medium text-slate-200 truncate">${i.nombre}</div>
+              <div class="text-[10px] text-slate-500 truncate">PN ${i.printNodeId || '—'} · ${i.tipo}</div>
+            </div>
+            <label class="pers-switch" style="transform:scale(0.7);" title="${impActiva ? 'Desactivar' : 'Activar'}" onclick="event.stopPropagation()">
+              <input type="checkbox" ${impActiva ? 'checked' : ''} onchange="MOS.toggleImpresoraActiva('${i.idImpresora}', event)">
+              <span class="pers-switch-slider"></span>
+            </label>
+            <button onclick="MOS.abrirModalImpresora('${i.idImpresora}')" class="text-[10px] text-slate-500 hover:text-white p-1" title="Editar">✏️</button>
+          </div>`;
+        }).join('')
+      : `<div class="text-[10px] text-amber-500 italic px-2 py-1.5">⚠ sin impresoras</div>`;
+
+    return `<div class="rounded-lg p-3 ${activa ? '' : 'opacity-60'}" style="background:#0d1526;border:1px solid ${activa ? '#1e293b' : '#475569'};">
+      <div class="flex items-start gap-2 mb-2">
+        <span class="text-xl shrink-0" style="line-height:1;">${tipoIcon}</span>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="text-sm font-bold text-white truncate">${e.nombre}</span>
+            ${appBadge}
+          </div>
+          <div class="text-[10px] text-slate-500 font-mono truncate">${e.idEstacion}</div>
+        </div>
+        <label class="pers-switch shrink-0" style="transform:scale(0.85);" title="${activa ? 'Desactivar estación' : 'Activar estación'}" onclick="event.stopPropagation()">
+          <input type="checkbox" ${activa ? 'checked' : ''} onchange="MOS.toggleEstacionActiva('${safeId}', event)">
+          <span class="pers-switch-slider"></span>
+        </label>
+        <button onclick="MOS.abrirModalEstacion('${safeId}')" class="text-xs text-slate-400 hover:text-white p-1" title="Editar estación">✏️</button>
+      </div>
+      <div class="space-y-1.5">
+        ${impsHTML}
+      </div>
+      <button onclick="MOS.abrirModalImpresora(null,'${safeId}')"
+              class="mt-2 w-full text-[10px] text-slate-500 hover:text-white py-1.5 rounded border border-dashed border-slate-700 hover:border-purple-700 hover:bg-purple-900/20 transition-colors">
+        + impresora
+      </button>
+    </div>`;
+  }
+
+  function infra_filtrar() {
+    renderInfra();
+  }
+
+  // Toggles optimistas
+  async function toggleZonaActiva(idZona, ev) {
+    if (ev) ev.stopPropagation();
+    const z = (cfgData.zonas || []).find(x => x.idZona === idZona);
+    if (!z) return;
+    const nuevo = String(z.estado) === '1' ? '0' : '1';
+    const previo = z.estado;
+    z.estado = nuevo;
+    renderInfra();
+    try {
+      await API.post('actualizarZona', { idZona, estado: nuevo });
+      toast(`Zona ${nuevo === '1' ? 'activada' : 'desactivada'}`, 'ok');
+    } catch(e) {
+      z.estado = previo;
+      renderInfra();
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  async function toggleEstacionActiva(idEstacion, ev) {
+    if (ev) ev.stopPropagation();
+    const e = (cfgData.estaciones || []).find(x => x.idEstacion === idEstacion);
+    if (!e) return;
+    const nuevo = String(e.activo) === '1' ? '0' : '1';
+    const previo = e.activo;
+    e.activo = nuevo;
+    renderInfra();
+    try {
+      await API.post('actualizarEstacion', { idEstacion, activo: nuevo });
+      toast(`Estación ${nuevo === '1' ? 'activada' : 'desactivada'}`, 'ok');
+    } catch(err) {
+      e.activo = previo;
+      renderInfra();
+      toast('Error: ' + err.message, 'error');
+    }
+  }
+
+  async function toggleImpresoraActiva(idImpresora, ev) {
+    if (ev) ev.stopPropagation();
+    const i = (cfgData.impresoras || []).find(x => x.idImpresora === idImpresora);
+    if (!i) return;
+    const nuevo = String(i.activo) === '1' ? '0' : '1';
+    const previo = i.activo;
+    i.activo = nuevo;
+    renderInfra();
+    try {
+      await API.post('actualizarImpresora', { idImpresora, activo: nuevo });
+      toast(`Impresora ${nuevo === '1' ? 'activada' : 'desactivada'}`, 'ok');
+    } catch(err) {
+      i.activo = previo;
+      renderInfra();
+      toast('Error: ' + err.message, 'error');
+    }
   }
 
   function abrirModalZona(id) {
@@ -8477,53 +8662,9 @@ const MOS = (() => {
     } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
 
-  function renderEstaciones() {
-    const tbody = $('tbodyEstaciones');
-    if (!tbody) return;
-    if (!cfgData.estaciones.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Sin estaciones. Configura el GAS URL.</td></tr>';
-      return;
-    }
-    tbody.innerHTML = cfgData.estaciones.map(e => {
-      const tipoBadge = e.tipo === 'CAJA' ? 'badge-blue' : 'badge-yellow';
-      const appColor  = e.appOrigen === 'mosExpress' ? 'text-indigo-400' : 'text-orange-400';
-      return `<tr>
-        <td><div class="font-medium text-sm text-slate-200">${e.nombre}</div><div class="text-xs text-slate-500">${e.idEstacion}</div></td>
-        <td class="text-slate-400 text-xs">${e.idZona || '—'}</td>
-        <td><span class="badge ${tipoBadge}">${e.tipo}</span></td>
-        <td class="${appColor} text-xs font-medium">${e.appOrigen}</td>
-        <td class="hidden sm:table-cell text-slate-500 text-xs">${e.descripcion || '—'}</td>
-        <td><span class="badge ${e.activo == '1' ? 'badge-green' : 'badge-gray'}">${e.activo == '1' ? 'Activa' : 'Inactiva'}</span></td>
-        <td><button onclick="MOS.abrirModalEstacion('${e.idEstacion}')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700">✏️</button></td>
-      </tr>`;
-    }).join('');
-  }
+  // (renderEstaciones() obsoleto — usado renderInfra() para vista jerárquica)
 
-  function renderImpresoras() {
-    const tbody = $('tbodyImpresoras');
-    if (!tbody) return;
-    if (!cfgData.impresoras.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Sin impresoras registradas.</td></tr>';
-      return;
-    }
-    tbody.innerHTML = cfgData.impresoras.map(imp => {
-      const tipoBadge = imp.tipo === 'TICKET' ? 'badge-blue' : imp.tipo === 'ADHESIVO' ? 'badge-yellow' : 'badge-gray';
-      const hasPrintId = imp.printNodeId && imp.printNodeId !== '';
-      return `<tr>
-        <td><div class="font-medium text-sm text-slate-200">${imp.nombre}</div></td>
-        <td>
-          ${hasPrintId
-            ? `<code class="text-indigo-400 text-xs bg-indigo-500/10 px-2 py-0.5 rounded">${imp.printNodeId}</code>`
-            : `<span class="text-yellow-400 text-xs">⚠️ Sin configurar</span>`}
-        </td>
-        <td><span class="badge ${tipoBadge}">${imp.tipo}</span></td>
-        <td class="text-slate-500 text-xs">${imp.idEstacion || '—'}</td>
-        <td class="${imp.appOrigen === 'mosExpress' ? 'text-indigo-400' : 'text-orange-400'} text-xs">${imp.appOrigen}</td>
-        <td><span class="badge ${imp.activo == '1' ? 'badge-green' : 'badge-gray'}">${imp.activo == '1' ? 'Activa' : 'Inactiva'}</span></td>
-        <td><button onclick="MOS.abrirModalImpresora('${imp.idImpresora}')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700">✏️</button></td>
-      </tr>`;
-    }).join('');
-  }
+  // (renderImpresoras() obsoleto — usado renderInfra() para vista jerárquica)
 
   function renderPersonal() {
     // MOS users
@@ -8920,7 +9061,7 @@ const MOS = (() => {
   }
 
   // Config CRUD
-  function abrirModalEstacion(id) {
+  function abrirModalEstacion(id, presetIdZona) {
     ['Id','Nombre','Tipo','App','Pin','Desc'].forEach(f => {
       const el = $('est' + f); if (el && el.tagName !== 'SELECT') el.value = '';
     });
@@ -8947,6 +9088,8 @@ const MOS = (() => {
       $('estId').value = '';
       $('estTipo').value = 'CAJA';
       $('estApp').value = 'mosExpress';
+      // Preset de zona si se está creando desde dentro de una zona
+      if (presetIdZona && zonaSelect) zonaSelect.value = presetIdZona;
     }
     openModal('modalEstacion');
   }
@@ -8972,7 +9115,7 @@ const MOS = (() => {
     } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
 
-  function abrirModalImpresora(id) {
+  function abrirModalImpresora(id, presetIdEstacion) {
     ['Id','Nombre','PrintNodeId','Estacion','Zona','Desc'].forEach(f => {
       const el = $('imp' + f); if (el && el.tagName !== 'SELECT') el.value = '';
     });
@@ -8993,6 +9136,15 @@ const MOS = (() => {
       $('impId').value = '';
       $('impTipo').value = 'TICKET';
       $('impApp').value = 'mosExpress';
+      // Preset desde la card de estación: pre-llenar idEstacion + idZona + appOrigen
+      if (presetIdEstacion) {
+        const e = cfgData.estaciones.find(x => x.idEstacion === presetIdEstacion);
+        if (e) {
+          if ($('impEstacion')) $('impEstacion').value = e.idEstacion;
+          if ($('impZona'))     $('impZona').value     = e.idZona || '';
+          if ($('impApp'))      $('impApp').value      = e.appOrigen || 'mosExpress';
+        }
+      }
     }
     openModal('modalImpresora');
   }
@@ -13517,6 +13669,7 @@ const MOS = (() => {
     tutTicketsOpen, tutTicketsClose, tutTicketsNext, tutTicketsPrev, tutTicketsGoto,
     abrirModalEstacion, guardarEstacion,
     abrirModalImpresora, guardarImpresora,
+    infra_filtrar, toggleZonaActiva, toggleEstacionActiva, toggleImpresoraActiva,
     abrirModalPersonal, guardarPersonal, togglePersonalActivo, eliminarPersonal,
     _persActualizarPreview, _persRandomColor, _persRandomPin, _persSeleccionarColor,
     abrirModalSerie, guardarSerie,

@@ -3461,9 +3461,7 @@
       <!-- Tab bar (scrollable en mobile, con fade lateral indicador) -->
       <div class="tab-scroll-wrap pb-1 mb-2">
         <div class="tab-bar w-max">
-          <button class="tab-btn active" id="cfgTabZonas"      onclick="MOS.setCfgTab('zonas')">🏪 Zonas</button>
-          <button class="tab-btn" id="cfgTabEstaciones" onclick="MOS.setCfgTab('estaciones')">📍 Estaciones</button>
-          <button class="tab-btn" id="cfgTabImpresoras"        onclick="MOS.setCfgTab('impresoras')">🖨️ Impresoras</button>
+          <button class="tab-btn active" id="cfgTabInfra"     onclick="MOS.setCfgTab('infra')">🏗️ Infraestructura</button>
           <button class="tab-btn" id="cfgTabPersonal"          onclick="MOS.setCfgTab('personal')">👥 Personal</button>
           <button class="tab-btn" id="cfgTabSeries"            onclick="MOS.setCfgTab('series')">📄 Series</button>
           <button class="tab-btn" id="cfgTabSeguridad"         onclick="MOS.setCfgTab('seguridad')">🔐 Seguridad</button>
@@ -3475,48 +3473,44 @@
       </div>
       <div class="text-xs text-slate-600 italic mb-3 sm:hidden">→ Desliza las tablas y los tabs para ver todo</div>
 
-      <!-- Zonas -->
-      <div id="cfgPanelZonas">
-        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
-          <p class="text-xs text-slate-500 flex-1 min-w-0">Puntos de venta — cada zona agrupa 1 o más estaciones de despacho</p>
-          <button class="btn-primary text-xs px-3 py-1.5 shrink-0" onclick="MOS.abrirModalZona(null)">+ Nueva zona</button>
+      <!-- ════════════════════════════════════════════════════════
+           INFRAESTRUCTURA — vista jerárquica Zona → Estación → Impresora
+           ════════════════════════════════════════════════════════ -->
+      <div id="cfgPanelInfra">
+        <!-- Toolbar superior sticky -->
+        <div class="card p-3 mb-3" style="position:sticky;top:0;z-index:5;background:linear-gradient(135deg,#0c1a2e 0%,#0d1526 100%);border:1px solid #1e3a8a;">
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <p class="text-xs text-slate-400 flex-1 min-w-0">
+              Jerarquía completa: <strong class="text-slate-200">Zonas</strong> → <strong class="text-slate-200">Estaciones</strong> → <strong class="text-slate-200">Impresoras</strong>
+            </p>
+            <div class="flex gap-1.5 shrink-0">
+              <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalZona(null)" style="background:#0ea5e9">+ Zona</button>
+              <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalEstacion(null)" style="background:#10b981">+ Estación</button>
+              <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalImpresora(null)" style="background:#a855f7">+ Impresora</button>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 mt-2 flex-wrap">
+            <input id="infraBuscar" oninput="MOS.infra_filtrar()" placeholder="🔍 Buscar zona, estación o impresora..."
+                   class="inp text-xs flex-1 min-w-[200px]" style="padding:6px 10px;">
+            <select id="infraFiltroApp" onchange="MOS.infra_filtrar()" class="inp text-xs" style="padding:6px 10px;width:auto;">
+              <option value="">Todas las apps</option>
+              <option value="mosExpress">📍 MosExpress</option>
+              <option value="warehouseMos">🏭 warehouseMos</option>
+            </select>
+            <label class="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer">
+              <input id="infraSoloActivos" type="checkbox" onchange="MOS.infra_filtrar()" class="w-3.5 h-3.5 accent-emerald-500">
+              Solo activos
+            </label>
+          </div>
         </div>
-        <div class="card overflow-x-auto" style="-webkit-overflow-scrolling:touch">
-          <table class="tbl">
-            <thead><tr><th>ID</th><th>Nombre</th><th class="hidden sm:table-cell">Dirección</th><th class="hidden md:table-cell">Responsable</th><th>Estaciones</th><th>Estado</th><th></th></tr></thead>
-            <tbody id="tbodyZonas"><tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Cargando...</td></tr></tbody>
-          </table>
-        </div>
-      </div>
 
-      <!-- Estaciones -->
-      <div id="cfgPanelEstaciones" class="hidden">
-        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
-          <p class="text-xs text-slate-500 flex-1 min-w-0">Cajas MosExpress + almacenes warehouseMos</p>
-          <button class="btn-primary text-xs px-3 py-1.5 shrink-0" onclick="MOS.abrirModalEstacion(null)">+ Nueva</button>
+        <!-- Vista jerárquica -->
+        <div id="infraContenedor" class="space-y-4">
+          <div class="text-center py-12 text-slate-500 text-sm">Cargando infraestructura...</div>
         </div>
-        <div class="card overflow-x-auto" style="-webkit-overflow-scrolling:touch">
-          <table class="tbl">
-            <thead><tr><th>Estación</th><th>Zona</th><th>Tipo</th><th>App</th><th class="hidden sm:table-cell">Descripción</th><th>Estado</th><th></th></tr></thead>
-            <tbody id="tbodyEstaciones"><tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Cargando...</td></tr></tbody>
-          </table>
-        </div>
-      </div>
 
-      <!-- Impresoras -->
-      <div id="cfgPanelImpresoras" class="hidden">
-        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
-          <p class="text-xs text-slate-500 flex-1 min-w-0">PrintNode IDs por estación — agrega nuevos dispositivos aquí</p>
-          <button class="btn-primary text-xs px-3 py-1.5 shrink-0" onclick="MOS.abrirModalImpresora(null)">+ Nueva</button>
-        </div>
-        <div class="card overflow-x-auto" style="-webkit-overflow-scrolling:touch">
-          <table class="tbl">
-            <thead><tr><th>Nombre</th><th>PrintNode ID</th><th>Tipo</th><th>Estación</th><th>App</th><th>Estado</th><th></th></tr></thead>
-            <tbody id="tbodyImpresoras"><tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Cargando...</td></tr></tbody>
-          </table>
-        </div>
         <div class="mt-3 p-3 rounded-lg text-xs text-slate-400" style="background:#0d1526;border:1px solid #1e293b;">
-          ℹ️ Las API keys de PrintNode se mantienen en <strong class="text-slate-300">Script Properties</strong> de cada app (warehouseMos / MosExpress) por seguridad. Aquí solo se gestionan los PrintNode IDs.
+          ℹ️ Las API keys de PrintNode se mantienen en <strong class="text-slate-300">Script Properties</strong> de cada app por seguridad. Aquí solo se gestionan los PrintNode IDs.
         </div>
       </div>
 
