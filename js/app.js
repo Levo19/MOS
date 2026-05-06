@@ -2646,6 +2646,8 @@ const MOS = (() => {
     if (env) S.envasados = env;
     const opsCache = _almLoadCache('opsData');
     if (opsCache) S._opsData = opsCache;
+    const gp = _almLoadCache('guiasYPre');
+    if (gp) S._almGuiasYPre = gp;
     const ins = _almLoadCache('insights');
     if (ins) S._almInsights = ins;
     const aOps = _almLoadCache('alertasOps');
@@ -2818,8 +2820,16 @@ const MOS = (() => {
           if (r) { S._almAlertasOps = r; _almSaveCache('alertasOps', r);
             try { _almRenderAlertasOps(r); } catch {} }
         }).catch(() => {}),
-        // Operaciones — guías y preingresos
-        API.get('getGuiasYPreingresos', { dias: 7 }).catch(() => {}),
+        // Operaciones — guías y preingresos (KPIs del día + badge)
+        API.get('getGuiasYPreingresos', { dias: 7 }).then(r => {
+          if (r) { S._almGuiasYPre = r; _almSaveCache('guiasYPre', r);
+            try { _almPintarGuiasYPre(r); } catch {} }
+        }).catch(() => {}),
+        // Operaciones — feed unificado
+        API.get('getOperacionesUnificadas', { dias: 7 }).then(r => {
+          if (r) { S._opsData = r; _almSaveCache('opsData', r);
+            try { almRenderOps(); } catch {} }
+        }).catch(() => {}),
         // Resumen — insights / sugerencias
         API.get('getInsightsStock', { dias: 30 }).then(r => {
           const ins = (r && r.insights) || [];
@@ -3005,34 +3015,30 @@ const MOS = (() => {
   S._opsDetCache = S._opsDetCache || {};
 
   async function almLoadOps(forceRefresh) {
+    // 1. Pintar inmediato desde cache local (si existe)
+    if (S._opsData) { try { almRenderOps(); } catch {} }
+    if (S._almGuiasYPre) { try { _almPintarGuiasYPre(S._almGuiasYPre); } catch {} }
+    // 2. Fetch fresco
     const dias = parseInt($('almGuiasFiltro')?.value) || 7;
     const params = { dias };
     if (forceRefresh) params._refresh = 'true';
     try {
-      // Llamamos en paralelo: operaciones unificadas + guias/preing (para resumen y preingresos)
       const [opsRes, gpRes] = await Promise.allSettled([
         API.get('getOperacionesUnificadas', params),
         API.get('getGuiasYPreingresos', params)
       ]);
       // Resumen del día (KPIs) + badge de preingresos pendientes
       if (gpRes.status === 'fulfilled') {
-        const r = gpRes.value || {};
-        const res = r.resumen || {};
-        if ($('opsIngHoy'))   $('opsIngHoy').textContent   = res.ingresosHoy || 0;
-        if ($('opsDesHoy'))   $('opsDesHoy').textContent   = res.despachosHoy || 0;
-        if ($('opsEnvHoy'))   $('opsEnvHoy').textContent   = res.envasadosHoy || 0;
-        if ($('opsMontoHoy')) $('opsMontoHoy').textContent = 'S/ ' + (res.montoIngresoHoy || 0).toLocaleString('es-PE', { maximumFractionDigits: 0 });
-        // Solo mostramos un BADGE pequeño con el count, sin lista (ya aparecen en flujo)
-        const preing = r.preingresosPendientes || [];
-        const badge = $('almPreingBadge');
-        if (badge) badge.classList.toggle('hidden', !preing.length);
-        if ($('opsPreingCount')) $('opsPreingCount').textContent = preing.length;
+        S._almGuiasYPre = gpRes.value || {};
+        _almSaveCache('guiasYPre', S._almGuiasYPre);
+        _almPintarGuiasYPre(S._almGuiasYPre);
       }
       // Operaciones unificadas
       if (opsRes.status === 'fulfilled') {
         S._opsData = opsRes.value || {};
+        _almSaveCache('opsData', S._opsData);
         almRenderOps();
-      } else {
+      } else if (!S._opsData) {
         const lst = $('almOpsList');
         if (lst) lst.innerHTML = '<div class="text-xs text-rose-400 py-3 text-center">Error cargando operaciones</div>';
       }
@@ -3044,6 +3050,21 @@ const MOS = (() => {
   async function almRefreshOps() {
     toast('Refrescando operaciones…', 'info');
     await almLoadOps(true);
+  }
+
+  // Pinta KPIs del día + badge de preingresos pendientes a partir de la
+  // respuesta de getGuiasYPreingresos. Reutilizado por prefetch y fetch.
+  function _almPintarGuiasYPre(r) {
+    if (!r) return;
+    const res = r.resumen || {};
+    if ($('opsIngHoy'))   $('opsIngHoy').textContent   = res.ingresosHoy || 0;
+    if ($('opsDesHoy'))   $('opsDesHoy').textContent   = res.despachosHoy || 0;
+    if ($('opsEnvHoy'))   $('opsEnvHoy').textContent   = res.envasadosHoy || 0;
+    if ($('opsMontoHoy')) $('opsMontoHoy').textContent = 'S/ ' + (res.montoIngresoHoy || 0).toLocaleString('es-PE', { maximumFractionDigits: 0 });
+    const preing = r.preingresosPendientes || [];
+    const badge = $('almPreingBadge');
+    if (badge) badge.classList.toggle('hidden', !preing.length);
+    if ($('opsPreingCount')) $('opsPreingCount').textContent = preing.length;
   }
 
   function almRenderOps() {
