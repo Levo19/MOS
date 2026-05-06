@@ -9195,11 +9195,11 @@ const MOS = (() => {
                  title="Ver clave global">🔑</button>`
       : '';
 
-    // Botón 💬 SIEMPRE visible (todos pueden recibir push). Color azul tenue.
+    // Botón 💬 SIEMPRE visible (todos pueden recibir push). Círculo azul.
     const safeNombre = String(p.nombre || '').replace(/'/g, '&#39;');
     const pushBtn = `<button onclick="event.stopPropagation();MOS.abrirModalEnviarPush('${safeId}','${safeNombre}')"
-                             class="text-[12px] p-1 rounded hover:bg-blue-500/20 hover:scale-110 transition-all"
-                             style="color:#60a5fa;"
+                             class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center hover:scale-110 transition-all"
+                             style="background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.5);color:#60a5fa;font-size:13px;"
                              title="Enviar mensaje push a ${p.nombre}">💬</button>`;
 
     // Audit hoy (solo admins)
@@ -9873,8 +9873,8 @@ const MOS = (() => {
           <div class="text-[10px] text-slate-500">esta semana</div>
         </div>
         <button onclick="event.stopPropagation();MOS.abrirModalEnviarPush('','${safeNombre}')"
-                class="text-[12px] p-1 rounded hover:bg-blue-500/20 hover:scale-110 transition-all"
-                style="color:#60a5fa;"
+                class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center hover:scale-110 transition-all"
+                style="background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.5);color:#60a5fa;font-size:13px;"
                 title="Enviar mensaje push a ${c.nombre}">💬</button>
         <label class="pers-switch shrink-0" title="${bloqueado ? 'Activar cajero — desbloquea pantalla de candado en su dispositivo' : 'Bloquear cajero — solo el dispositivo donde está logueado verá pantalla de candado'}">
           <input type="checkbox" ${bloqueado ? '' : 'checked'} onchange="MOS.toggleVendedorME('${safeNombre}', event)">
