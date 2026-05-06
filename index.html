@@ -5533,103 +5533,207 @@
 </div>
 
 <!-- Modal Zona -->
-<div class="modal-backdrop hidden" id="modalZona">
-  <div class="modal-box p-6">
-    <div class="flex items-center justify-between mb-5">
-      <h2 id="modalZonaTitle" class="font-bold text-lg text-white">Nueva Zona</h2>
+<!-- Modal ZONA — diseño moderno con icono grande + secciones + toggle estado -->
+<div class="modal-backdrop hidden" id="modalZona" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalZona')">
+  <div class="modal-box flex flex-col" style="max-width:520px;max-height:92vh">
+    <!-- Header con icono preview -->
+    <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(14,165,233,.1),transparent)">
+      <div class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0" style="background:linear-gradient(135deg,#0c4a6e,#0ea5e9);">🏬</div>
+      <div class="min-w-0 flex-1">
+        <h2 id="modalZonaTitle" class="font-bold text-base text-white truncate">Nueva Zona</h2>
+        <p id="modalZonaSubtitle" class="text-[11px] text-slate-500 mt-0.5">Punto de venta físico</p>
+      </div>
       <button onclick="MOS.closeModal('modalZona')" class="modal-close-x">×</button>
     </div>
-    <input type="hidden" id="zonaId">
-    <div class="grid grid-cols-2 gap-3">
-      <div class="col-span-2"><label class="lbl">Nombre *</label><input id="zonaNombre" class="inp" placeholder="Local Norte, Tienda Centro..."></div>
-      <div class="col-span-2"><label class="lbl">Dirección</label><input id="zonaDireccion" class="inp" placeholder="Av. Principal 123"></div>
-      <div><label class="lbl">Responsable</label><input id="zonaResponsable" class="inp" placeholder="Nombre del encargado"></div>
-      <div>
-        <label class="lbl">Estado</label>
-        <select id="zonaEstado" class="inp">
-          <option value="1">Activo</option>
-          <option value="0">Inactivo</option>
-        </select>
+
+    <div class="overflow-y-auto px-5 py-4 flex-1">
+      <input type="hidden" id="zonaId">
+
+      <!-- Toggle activo (solo en edición) -->
+      <div id="zonaEstadoWrap" class="hidden mb-4 p-3 rounded-lg" style="background:#0d1526;border:1px solid #1e293b">
+        <div class="flex items-center justify-between gap-3">
+          <div class="min-w-0 flex-1">
+            <div class="text-sm font-semibold text-slate-100">Zona activa</div>
+            <div class="text-[11px] text-slate-500">Si la desactivas, sus estaciones quedan ocultas en las apps</div>
+          </div>
+          <label class="pers-switch">
+            <input type="checkbox" id="zonaEstadoToggle" onchange="MOS._zonaActualizarPreview()">
+            <span class="pers-switch-slider"></span>
+          </label>
+        </div>
       </div>
-      <div class="col-span-2"><label class="lbl">Descripción</label><input id="zonaDesc" class="inp" placeholder="Descripción opcional..."></div>
+
+      <div class="pers-section">
+        <div class="pers-section-title">Información</div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="col-span-2"><label class="lbl">Nombre *</label><input id="zonaNombre" class="inp" placeholder="Sucursal Centro" oninput="MOS._zonaActualizarPreview()"></div>
+          <div class="col-span-2"><label class="lbl">Dirección</label><input id="zonaDireccion" class="inp" placeholder="Av. Principal 123"></div>
+          <div class="col-span-2"><label class="lbl">Responsable</label><input id="zonaResponsable" class="inp" placeholder="Nombre del encargado"></div>
+          <div class="col-span-2"><label class="lbl">Descripción</label><input id="zonaDesc" class="inp" placeholder="Notas opcionales..."></div>
+          <input type="hidden" id="zonaEstado" value="1">
+        </div>
+      </div>
     </div>
-    <div class="flex gap-2 mt-5">
+
+    <div class="flex gap-2 px-5 py-3 flex-shrink-0" style="border-top:1px solid #1e293b">
+      <button id="zonaBtnEliminar" onclick="MOS.eliminarZona()" class="btn-ghost hidden" style="color:#f87171">🗑️ Eliminar</button>
       <button onclick="MOS.closeModal('modalZona')" class="btn-ghost flex-1">Cancelar</button>
-      <button onclick="MOS.guardarZona()" class="btn-primary flex-1">Guardar</button>
+      <button onclick="MOS.guardarZona()" class="btn-primary flex-1">💾 Guardar</button>
     </div>
   </div>
 </div>
 
-<div class="modal-backdrop hidden" id="modalEstacion">
-  <div class="modal-box p-6">
-    <div class="flex items-center justify-between mb-5">
-      <h2 id="modalEstTitle" class="font-bold text-lg text-white">Nueva Estación</h2>
+<!-- Modal ESTACION — diseño moderno -->
+<div class="modal-backdrop hidden" id="modalEstacion" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalEstacion')">
+  <div class="modal-box flex flex-col" style="max-width:520px;max-height:92vh">
+    <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(16,185,129,.1),transparent)">
+      <div id="estIconPreview" class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0" style="background:linear-gradient(135deg,#064e3b,#10b981);">🛒</div>
+      <div class="min-w-0 flex-1">
+        <h2 id="modalEstTitle" class="font-bold text-base text-white truncate">Nueva Estación</h2>
+        <p id="modalEstSubtitle" class="text-[11px] text-slate-500 mt-0.5">Caja / almacén</p>
+      </div>
       <button onclick="MOS.closeModal('modalEstacion')" class="modal-close-x">×</button>
     </div>
-    <input type="hidden" id="estId">
-    <div class="grid grid-cols-2 gap-3">
-      <div class="col-span-2"><label class="lbl">Nombre *</label><input id="estNombre" class="inp" placeholder="Caja Central 01"></div>
-      <div>
-        <label class="lbl">Zona (punto de venta)</label>
-        <select id="estZona" class="inp"><option value="">— Sin zona —</option></select>
+
+    <div class="overflow-y-auto px-5 py-4 flex-1">
+      <input type="hidden" id="estId">
+
+      <!-- Toggle activo (solo en edición) -->
+      <div id="estEstadoWrap" class="hidden mb-4 p-3 rounded-lg" style="background:#0d1526;border:1px solid #1e293b">
+        <div class="flex items-center justify-between gap-3">
+          <div class="min-w-0 flex-1">
+            <div class="text-sm font-semibold text-slate-100">Estación activa</div>
+            <div class="text-[11px] text-slate-500">Si la desactivas, no aparece en MosExpress / warehouseMos</div>
+          </div>
+          <label class="pers-switch">
+            <input type="checkbox" id="estEstadoToggle">
+            <span class="pers-switch-slider"></span>
+          </label>
+        </div>
       </div>
-      <div>
-        <label class="lbl">Tipo</label>
-        <select id="estTipo" class="inp">
-          <option value="CAJA">CAJA (MosExpress)</option>
-          <option value="ALMACEN">ALMACEN (warehouseMos)</option>
-        </select>
+
+      <div class="pers-section">
+        <div class="pers-section-title">Información</div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="col-span-2"><label class="lbl">Nombre *</label><input id="estNombre" class="inp" placeholder="Caja Central 01" oninput="MOS._estActualizarPreview()"></div>
+          <div class="col-span-2"><label class="lbl">Descripción</label><input id="estDesc" class="inp" placeholder="POS frontal, almacén central..."></div>
+        </div>
       </div>
-      <div>
-        <label class="lbl">App origen</label>
-        <select id="estApp" class="inp">
-          <option value="mosExpress">MosExpress</option>
-          <option value="warehouseMos">warehouseMos</option>
-        </select>
+
+      <div class="pers-section">
+        <div class="pers-section-title">Ubicación</div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="col-span-2">
+            <label class="lbl">Zona (punto de venta)</label>
+            <select id="estZona" class="inp" onchange="MOS._estActualizarPreview()"><option value="">— Sin zona —</option></select>
+          </div>
+          <div>
+            <label class="lbl">App</label>
+            <select id="estApp" class="inp" onchange="MOS._estActualizarPreview()">
+              <option value="mosExpress">📍 MosExpress</option>
+              <option value="warehouseMos">🏭 warehouseMos</option>
+            </select>
+          </div>
+          <div>
+            <label class="lbl">Tipo</label>
+            <select id="estTipo" class="inp" onchange="MOS._estActualizarPreview()">
+              <option value="CAJA">🛒 CAJA</option>
+              <option value="ALMACEN">🏭 ALMACEN</option>
+              <option value="ENVASADO">🍶 ENVASADO</option>
+            </select>
+          </div>
+        </div>
       </div>
-      <div><label class="lbl">Admin PIN</label><input id="estPin" class="inp" type="password" maxlength="6" placeholder="••••"></div>
-      <div class="col-span-2"><label class="lbl">Descripción</label><input id="estDesc" class="inp" placeholder="POS estación principal..."></div>
+
+      <input type="hidden" id="estPin">
     </div>
-    <div class="flex gap-2 mt-5">
+
+    <div class="flex gap-2 px-5 py-3 flex-shrink-0" style="border-top:1px solid #1e293b">
+      <button id="estBtnEliminar" onclick="MOS.eliminarEstacion()" class="btn-ghost hidden" style="color:#f87171">🗑️ Eliminar</button>
       <button onclick="MOS.closeModal('modalEstacion')" class="btn-ghost flex-1">Cancelar</button>
-      <button onclick="MOS.guardarEstacion()" class="btn-primary flex-1">Guardar</button>
+      <button onclick="MOS.guardarEstacion()" class="btn-primary flex-1">💾 Guardar</button>
     </div>
   </div>
 </div>
 
-<!-- Modal Impresora -->
-<div class="modal-backdrop hidden" id="modalImpresora">
-  <div class="modal-box p-6">
-    <div class="flex items-center justify-between mb-5">
-      <h2 id="modalImpTitle" class="font-bold text-lg text-white">Nueva Impresora</h2>
+<!-- Modal IMPRESORA — diseño moderno -->
+<div class="modal-backdrop hidden" id="modalImpresora" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalImpresora')">
+  <div class="modal-box flex flex-col" style="max-width:520px;max-height:92vh">
+    <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(168,85,247,.1),transparent)">
+      <div id="impIconPreview" class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0" style="background:linear-gradient(135deg,#581c87,#a855f7);">🖨️</div>
+      <div class="min-w-0 flex-1">
+        <h2 id="modalImpTitle" class="font-bold text-base text-white truncate">Nueva Impresora</h2>
+        <p id="modalImpSubtitle" class="text-[11px] text-slate-500 mt-0.5">PrintNode endpoint</p>
+      </div>
       <button onclick="MOS.closeModal('modalImpresora')" class="modal-close-x">×</button>
     </div>
-    <input type="hidden" id="impId">
-    <div class="grid grid-cols-2 gap-3">
-      <div class="col-span-2"><label class="lbl">Nombre *</label><input id="impNombre" class="inp" placeholder="Ticket Caja 01"></div>
-      <div><label class="lbl">PrintNode ID *</label><input id="impPrintNodeId" class="inp" placeholder="75338007"></div>
-      <div>
-        <label class="lbl">Tipo</label>
-        <select id="impTipo" class="inp">
-          <option value="TICKET">TICKET</option>
-          <option value="ADHESIVO">ADHESIVO</option>
-          <option value="AMBAS">AMBAS</option>
-        </select>
+
+    <div class="overflow-y-auto px-5 py-4 flex-1">
+      <input type="hidden" id="impId">
+
+      <div id="impEstadoWrap" class="hidden mb-4 p-3 rounded-lg" style="background:#0d1526;border:1px solid #1e293b">
+        <div class="flex items-center justify-between gap-3">
+          <div class="min-w-0 flex-1">
+            <div class="text-sm font-semibold text-slate-100">Impresora activa</div>
+            <div class="text-[11px] text-slate-500">Solo se intentará imprimir en las activas</div>
+          </div>
+          <label class="pers-switch">
+            <input type="checkbox" id="impEstadoToggle">
+            <span class="pers-switch-slider"></span>
+          </label>
+        </div>
       </div>
-      <div><label class="lbl">ID Estación</label><input id="impEstacion" class="inp" placeholder="ES001"></div>
-      <div><label class="lbl">Zona ID</label><input id="impZona" class="inp" placeholder="ZONA-01"></div>
-      <div>
-        <label class="lbl">App origen</label>
-        <select id="impApp" class="inp">
-          <option value="mosExpress">MosExpress</option>
-          <option value="warehouseMos">warehouseMos</option>
-        </select>
+
+      <div class="pers-section">
+        <div class="pers-section-title">Información</div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="col-span-2"><label class="lbl">Nombre *</label><input id="impNombre" class="inp" placeholder="Térmica frontal" oninput="MOS._impActualizarPreview()"></div>
+          <div>
+            <label class="lbl">Tipo</label>
+            <select id="impTipo" class="inp" onchange="MOS._impActualizarPreview()">
+              <option value="TICKET">🖨️ TICKET (térmica)</option>
+              <option value="ADHESIVO">🏷️ ADHESIVO</option>
+              <option value="ZPL">📄 ZPL (Zebra)</option>
+              <option value="AMBAS">🖨️🏷️ AMBAS</option>
+            </select>
+          </div>
+          <div>
+            <label class="lbl">PrintNode ID *</label>
+            <input id="impPrintNodeId" class="inp" placeholder="75338007" inputmode="numeric">
+          </div>
+          <div class="col-span-2"><label class="lbl">Descripción</label><input id="impDesc" class="inp" placeholder="Notas opcionales..."></div>
+        </div>
       </div>
-      <div class="col-span-2"><label class="lbl">Descripción</label><input id="impDesc" class="inp" placeholder="Impresora ticket caja..."></div>
+
+      <div class="pers-section">
+        <div class="pers-section-title">Ubicación</div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="lbl">Estación</label>
+            <select id="impEstacion" class="inp" onchange="MOS._impActualizarPreview()"><option value="">— Sin estación —</option></select>
+          </div>
+          <div>
+            <label class="lbl">App</label>
+            <select id="impApp" class="inp" onchange="MOS._impActualizarPreview()">
+              <option value="mosExpress">📍 MosExpress</option>
+              <option value="warehouseMos">🏭 warehouseMos</option>
+            </select>
+          </div>
+          <input type="hidden" id="impZona">
+        </div>
+      </div>
+
+      <div class="rounded-lg p-3 mt-2" style="background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.3);">
+        <p class="text-[11px] text-purple-300 leading-relaxed">
+          🔐 La <strong>API key de PrintNode</strong> vive en <code class="text-purple-200">Script Properties</code> de cada app. Aquí solo se gestiona el <strong>PrintNode ID</strong> del dispositivo.
+        </p>
+      </div>
     </div>
-    <div class="flex gap-2 mt-5">
+
+    <div class="flex gap-2 px-5 py-3 flex-shrink-0" style="border-top:1px solid #1e293b">
+      <button id="impBtnEliminar" onclick="MOS.eliminarImpresora()" class="btn-ghost hidden" style="color:#f87171">🗑️ Eliminar</button>
       <button onclick="MOS.closeModal('modalImpresora')" class="btn-ghost flex-1">Cancelar</button>
-      <button onclick="MOS.guardarImpresora()" class="btn-primary flex-1">Guardar</button>
+      <button onclick="MOS.guardarImpresora()" class="btn-primary flex-1">💾 Guardar</button>
     </div>
   </div>
 </div>

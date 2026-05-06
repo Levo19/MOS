@@ -8619,10 +8619,22 @@ const MOS = (() => {
     }
   }
 
+  function _zonaActualizarPreview() {
+    const sub = $('modalZonaSubtitle');
+    if (!sub) return;
+    const nom = ($('zonaNombre')?.value || '').trim();
+    const tg = $('zonaEstadoToggle');
+    const activo = tg ? tg.checked : true;
+    sub.textContent = nom ? (activo ? '🟢 activa' : '🔴 inactiva') + ' · zona' : 'Punto de venta físico';
+  }
+
   function abrirModalZona(id) {
     ['Id','Nombre','Direccion','Responsable','Desc'].forEach(f => {
       const el = $('zona' + f); if (el) el.value = '';
     });
+    const estadoWrap = $('zonaEstadoWrap');
+    const btnElim = $('zonaBtnEliminar');
+    const tg = $('zonaEstadoToggle');
     if (id) {
       const z = cfgData.zonas.find(x => x.idZona === id);
       if (!z) return;
@@ -8633,33 +8645,85 @@ const MOS = (() => {
       $('zonaResponsable').value = z.responsable || '';
       $('zonaEstado').value      = String(z.estado ?? '1');
       $('zonaDesc').value        = z.descripcion || '';
+      if (tg) tg.checked = String(z.estado) === '1' || z.estado === 1 || z.estado === true;
+      if (estadoWrap) estadoWrap.classList.remove('hidden');
+      if (btnElim)    btnElim.classList.remove('hidden');
     } else {
       $('modalZonaTitle').textContent = 'Nueva Zona';
       $('zonaId').value = '';
       $('zonaEstado').value = '1';
+      if (tg) tg.checked = true;
+      if (estadoWrap) estadoWrap.classList.add('hidden');
+      if (btnElim)    btnElim.classList.add('hidden');
     }
+    _zonaActualizarPreview();
     openModal('modalZona');
   }
 
   async function guardarZona() {
     const nombre = $('zonaNombre')?.value.trim();
     if (!nombre) { toast('Nombre requerido', 'error'); return; }
+    const idEdit = $('zonaId')?.value || undefined;
+    const tg = $('zonaEstadoToggle');
+    const estado = idEdit ? (tg && tg.checked ? '1' : '0') : '1';
     const params = {
-      idZona:      $('zonaId')?.value || undefined,
+      idZona:      idEdit,
       nombre,
       descripcion: $('zonaDesc')?.value || '',
       direccion:   $('zonaDireccion')?.value || '',
       responsable: $('zonaResponsable')?.value || '',
-      estado:      $('zonaEstado')?.value ?? '1'
+      estado
     };
     if (!params.idZona) delete params.idZona;
+    // OPTIMISTA
+    const list = cfgData.zonas;
+    const backup = list.slice();
+    if (idEdit) {
+      const idx = list.findIndex(x => x.idZona === idEdit);
+      if (idx >= 0) list[idx] = { ...list[idx], ...params };
+    } else {
+      list.push({ ...params, idZona: 'Z_TMP' + Date.now(), _tmp: true });
+    }
+    closeModal('modalZona');
+    renderInfra();
     try {
-      await API.post(params.idZona ? 'actualizarZona' : 'crearZona', params);
-      toast('Zona guardada', 'ok');
-      closeModal('modalZona');
-      S.loaded['config'] = false;
-      await loadConfig();
-    } catch(e) { toast('Error: ' + e.message, 'error'); }
+      const res = await API.post(idEdit ? 'actualizarZona' : 'crearZona', params);
+      if (!idEdit && res?.idZona) {
+        const tmp = list.findIndex(x => x._tmp);
+        if (tmp >= 0) { list[tmp].idZona = res.idZona; delete list[tmp]._tmp; }
+      }
+      toast('Zona guardada ✓', 'ok');
+      renderInfra();
+    } catch(e) {
+      cfgData.zonas = backup;
+      renderInfra();
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  async function eliminarZona() {
+    const id = $('zonaId')?.value;
+    if (!id) return;
+    const z = cfgData.zonas.find(x => x.idZona === id);
+    if (!z) return;
+    const numEst = cfgData.estaciones.filter(e => e.idZona === id).length;
+    const msg = numEst > 0
+      ? `¿Desactivar la zona "${z.nombre}"?\n\nTiene ${numEst} estación${numEst === 1 ? '' : 'es'} asociada${numEst === 1 ? '' : 's'} que dejarán de aparecer en las apps. Puedes reactivarla luego.`
+      : `¿Desactivar la zona "${z.nombre}"?\n\nPodrás reactivarla cuando quieras.`;
+    if (!confirm(msg)) return;
+    closeModal('modalZona');
+    // OPTIMISTA: marcar inactiva
+    const previo = z.estado;
+    z.estado = '0';
+    renderInfra();
+    try {
+      await API.post('actualizarZona', { idZona: id, estado: '0' });
+      toast('Zona desactivada', 'ok');
+    } catch(e) {
+      z.estado = previo;
+      renderInfra();
+      toast('Error: ' + e.message, 'error');
+    }
   }
 
   // (renderEstaciones() obsoleto — usado renderInfra() para vista jerárquica)
@@ -9061,6 +9125,20 @@ const MOS = (() => {
   }
 
   // Config CRUD
+  function _estActualizarPreview() {
+    const nom = ($('estNombre')?.value || '').trim();
+    const tipo = $('estTipo')?.value || 'CAJA';
+    const app = $('estApp')?.value || 'mosExpress';
+    const idZona = $('estZona')?.value || '';
+    const zonaName = idZona ? (cfgData.zonas.find(z => z.idZona === idZona)?.nombre || '—') : 'Sin zona';
+    const tipoIcon = { CAJA: '🛒', ALMACEN: '🏭', ENVASADO: '🍶' }[tipo] || '📍';
+    const appLbl = app === 'mosExpress' ? 'ME' : 'WH';
+    const sub = $('modalEstSubtitle');
+    if (sub) sub.textContent = nom ? `${tipo} · ${appLbl} · ${zonaName}` : 'Caja / almacén';
+    const ico = $('estIconPreview');
+    if (ico) ico.textContent = tipoIcon;
+  }
+
   function abrirModalEstacion(id, presetIdZona) {
     ['Id','Nombre','Tipo','App','Pin','Desc'].forEach(f => {
       const el = $('est' + f); if (el && el.tagName !== 'SELECT') el.value = '';
@@ -9073,6 +9151,9 @@ const MOS = (() => {
           `<option value="${z.idZona}">${z.nombre}</option>`
         ).join('');
     }
+    const estadoWrap = $('estEstadoWrap');
+    const btnElim = $('estBtnEliminar');
+    const tg = $('estEstadoToggle');
     if (id) {
       const e = cfgData.estaciones.find(x => x.idEstacion === id);
       if (!e) return;
@@ -9083,42 +9164,118 @@ const MOS = (() => {
       $('estTipo').value   = e.tipo || 'CAJA';
       $('estApp').value    = e.appOrigen || 'mosExpress';
       $('estDesc').value   = e.descripcion || '';
+      if (tg) tg.checked = String(e.activo) === '1' || e.activo === 1 || e.activo === true;
+      if (estadoWrap) estadoWrap.classList.remove('hidden');
+      if (btnElim)    btnElim.classList.remove('hidden');
     } else {
       $('modalEstTitle').textContent = 'Nueva Estación';
       $('estId').value = '';
       $('estTipo').value = 'CAJA';
       $('estApp').value = 'mosExpress';
+      if (tg) tg.checked = true;
+      if (estadoWrap) estadoWrap.classList.add('hidden');
+      if (btnElim)    btnElim.classList.add('hidden');
       // Preset de zona si se está creando desde dentro de una zona
       if (presetIdZona && zonaSelect) zonaSelect.value = presetIdZona;
     }
+    _estActualizarPreview();
     openModal('modalEstacion');
   }
 
   async function guardarEstacion() {
+    const idEdit = $('estId')?.value || undefined;
+    const tg = $('estEstadoToggle');
     const params = {
-      idEstacion:  $('estId')?.value || undefined,
-      nombre:      $('estNombre')?.value || '',
+      idEstacion:  idEdit,
+      nombre:      ($('estNombre')?.value || '').trim(),
       idZona:      $('estZona')?.value || '',
       tipo:        $('estTipo')?.value || 'CAJA',
       appOrigen:   $('estApp')?.value || 'mosExpress',
-      adminPin:    $('estPin')?.value || undefined,
       descripcion: $('estDesc')?.value || ''
     };
+    if (idEdit) params.activo = (tg && tg.checked) ? '1' : '0';
     if (!params.nombre) { toast('Nombre requerido', 'error'); return; }
-    if (!params.adminPin) delete params.adminPin; // no sobreescribir PIN si está vacío
+    if (!params.idEstacion) delete params.idEstacion;
+    // OPTIMISTA
+    const list = cfgData.estaciones;
+    const backup = list.slice();
+    if (idEdit) {
+      const idx = list.findIndex(x => x.idEstacion === idEdit);
+      if (idx >= 0) list[idx] = { ...list[idx], ...params };
+    } else {
+      list.push({ ...params, idEstacion: 'EST_TMP' + Date.now(), activo: '1', _tmp: true });
+    }
+    closeModal('modalEstacion');
+    renderInfra();
     try {
-      await API.post(params.idEstacion ? 'actualizarEstacion' : 'crearEstacion', params);
-      toast('Estación guardada', 'ok');
-      closeModal('modalEstacion');
-      S.loaded['config'] = false;
-      await loadConfig();
-    } catch(e) { toast('Error: ' + e.message, 'error'); }
+      const res = await API.post(idEdit ? 'actualizarEstacion' : 'crearEstacion', params);
+      if (!idEdit && res?.idEstacion) {
+        const tmp = list.findIndex(x => x._tmp);
+        if (tmp >= 0) { list[tmp].idEstacion = res.idEstacion; delete list[tmp]._tmp; }
+      }
+      toast('Estación guardada ✓', 'ok');
+      renderInfra();
+    } catch(e) {
+      cfgData.estaciones = backup;
+      renderInfra();
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  async function eliminarEstacion() {
+    const id = $('estId')?.value;
+    if (!id) return;
+    const e = cfgData.estaciones.find(x => x.idEstacion === id);
+    if (!e) return;
+    const numImp = cfgData.impresoras.filter(i => i.idEstacion === id).length;
+    const msg = numImp > 0
+      ? `¿Desactivar la estación "${e.nombre}"?\n\nTiene ${numImp} impresora${numImp === 1 ? '' : 's'} asociada${numImp === 1 ? '' : 's'}. Puedes reactivarla luego.`
+      : `¿Desactivar la estación "${e.nombre}"?\n\nPodrás reactivarla cuando quieras.`;
+    if (!confirm(msg)) return;
+    closeModal('modalEstacion');
+    const previo = e.activo;
+    e.activo = '0';
+    renderInfra();
+    try {
+      await API.post('actualizarEstacion', { idEstacion: id, activo: '0' });
+      toast('Estación desactivada', 'ok');
+    } catch(err) {
+      e.activo = previo;
+      renderInfra();
+      toast('Error: ' + err.message, 'error');
+    }
+  }
+
+  function _impActualizarPreview() {
+    const nom = ($('impNombre')?.value || '').trim();
+    const tipo = $('impTipo')?.value || 'TICKET';
+    const app = $('impApp')?.value || 'mosExpress';
+    const idEst = $('impEstacion')?.value || '';
+    const estName = idEst ? (cfgData.estaciones.find(e => e.idEstacion === idEst)?.nombre || '—') : 'Sin estación';
+    const tipoIcon = { TICKET: '🖨️', ADHESIVO: '🏷️', ZPL: '📄', AMBAS: '🖨️' }[tipo] || '🖨️';
+    const appLbl = app === 'mosExpress' ? 'ME' : 'WH';
+    const sub = $('modalImpSubtitle');
+    if (sub) sub.textContent = nom ? `${tipo} · ${appLbl} · ${estName}` : 'PrintNode endpoint';
+    const ico = $('impIconPreview');
+    if (ico) ico.textContent = tipoIcon;
   }
 
   function abrirModalImpresora(id, presetIdEstacion) {
     ['Id','Nombre','PrintNodeId','Estacion','Zona','Desc'].forEach(f => {
       const el = $('imp' + f); if (el && el.tagName !== 'SELECT') el.value = '';
     });
+    // Poblar select de estaciones dinámicamente
+    const estSelect = $('impEstacion');
+    if (estSelect) {
+      estSelect.innerHTML = '<option value="">— Sin estación —</option>' +
+        cfgData.estaciones.filter(e => String(e.activo) === '1').map(e => {
+          const tipoIc = { CAJA: '🛒', ALMACEN: '🏭', ENVASADO: '🍶' }[e.tipo] || '📍';
+          return `<option value="${e.idEstacion}">${tipoIc} ${e.nombre}</option>`;
+        }).join('');
+    }
+    const estadoWrap = $('impEstadoWrap');
+    const btnElim = $('impBtnEliminar');
+    const tg = $('impEstadoToggle');
     if (id) {
       const imp = cfgData.impresoras.find(x => x.idImpresora === id);
       if (!imp) return;
@@ -9127,47 +9284,103 @@ const MOS = (() => {
       $('impNombre').value      = imp.nombre || '';
       $('impPrintNodeId').value = imp.printNodeId || '';
       $('impTipo').value        = imp.tipo || 'TICKET';
-      $('impEstacion').value    = imp.idEstacion || '';
+      if (estSelect) estSelect.value = imp.idEstacion || '';
       $('impZona').value        = imp.idZona || '';
       $('impApp').value         = imp.appOrigen || 'mosExpress';
       $('impDesc').value        = imp.descripcion || '';
+      if (tg) tg.checked = String(imp.activo) === '1' || imp.activo === 1 || imp.activo === true;
+      if (estadoWrap) estadoWrap.classList.remove('hidden');
+      if (btnElim)    btnElim.classList.remove('hidden');
     } else {
       $('modalImpTitle').textContent = 'Nueva Impresora';
       $('impId').value = '';
       $('impTipo').value = 'TICKET';
       $('impApp').value = 'mosExpress';
-      // Preset desde la card de estación: pre-llenar idEstacion + idZona + appOrigen
+      if (tg) tg.checked = true;
+      if (estadoWrap) estadoWrap.classList.add('hidden');
+      if (btnElim)    btnElim.classList.add('hidden');
+      // Preset desde la card de estación
       if (presetIdEstacion) {
         const e = cfgData.estaciones.find(x => x.idEstacion === presetIdEstacion);
         if (e) {
-          if ($('impEstacion')) $('impEstacion').value = e.idEstacion;
-          if ($('impZona'))     $('impZona').value     = e.idZona || '';
-          if ($('impApp'))      $('impApp').value      = e.appOrigen || 'mosExpress';
+          if (estSelect)        estSelect.value         = e.idEstacion;
+          if ($('impZona'))     $('impZona').value      = e.idZona || '';
+          if ($('impApp'))      $('impApp').value       = e.appOrigen || 'mosExpress';
         }
       }
     }
+    _impActualizarPreview();
     openModal('modalImpresora');
   }
 
   async function guardarImpresora() {
+    const idEdit = $('impId')?.value || undefined;
+    const tg = $('impEstadoToggle');
+    const idEstSel = $('impEstacion')?.value || '';
+    // Si seleccionó estación, deducir idZona y app
+    let idZona = $('impZona')?.value || '';
+    let appOrigen = $('impApp')?.value || 'mosExpress';
+    if (idEstSel) {
+      const e = cfgData.estaciones.find(x => x.idEstacion === idEstSel);
+      if (e) { idZona = e.idZona || idZona; appOrigen = e.appOrigen || appOrigen; }
+    }
     const params = {
-      idImpresora:  $('impId')?.value || undefined,
-      nombre:       $('impNombre')?.value || '',
+      idImpresora:  idEdit,
+      nombre:       ($('impNombre')?.value || '').trim(),
       printNodeId:  $('impPrintNodeId')?.value || '',
       tipo:         $('impTipo')?.value || 'TICKET',
-      idEstacion:   $('impEstacion')?.value || '',
-      idZona:       $('impZona')?.value || '',
-      appOrigen:    $('impApp')?.value || 'mosExpress',
+      idEstacion:   idEstSel,
+      idZona,
+      appOrigen,
       descripcion:  $('impDesc')?.value || ''
     };
+    if (idEdit) params.activo = (tg && tg.checked) ? '1' : '0';
     if (!params.nombre) { toast('Nombre requerido', 'error'); return; }
+    if (!params.idImpresora) delete params.idImpresora;
+    // OPTIMISTA
+    const list = cfgData.impresoras;
+    const backup = list.slice();
+    if (idEdit) {
+      const idx = list.findIndex(x => x.idImpresora === idEdit);
+      if (idx >= 0) list[idx] = { ...list[idx], ...params };
+    } else {
+      list.push({ ...params, idImpresora: 'IMP_TMP' + Date.now(), activo: '1', _tmp: true });
+    }
+    closeModal('modalImpresora');
+    renderInfra();
     try {
-      await API.post(params.idImpresora ? 'actualizarImpresora' : 'crearImpresora', params);
-      toast('Impresora guardada', 'ok');
-      closeModal('modalImpresora');
-      S.loaded['config'] = false;
-      await loadConfig();
-    } catch(e) { toast('Error: ' + e.message, 'error'); }
+      const res = await API.post(idEdit ? 'actualizarImpresora' : 'crearImpresora', params);
+      if (!idEdit && res?.idImpresora) {
+        const tmp = list.findIndex(x => x._tmp);
+        if (tmp >= 0) { list[tmp].idImpresora = res.idImpresora; delete list[tmp]._tmp; }
+      }
+      toast('Impresora guardada ✓', 'ok');
+      renderInfra();
+    } catch(e) {
+      cfgData.impresoras = backup;
+      renderInfra();
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  async function eliminarImpresora() {
+    const id = $('impId')?.value;
+    if (!id) return;
+    const i = cfgData.impresoras.find(x => x.idImpresora === id);
+    if (!i) return;
+    if (!confirm(`¿Desactivar la impresora "${i.nombre}"?\n\nDejará de recibir trabajos de impresión. Puedes reactivarla luego.`)) return;
+    closeModal('modalImpresora');
+    const previo = i.activo;
+    i.activo = '0';
+    renderInfra();
+    try {
+      await API.post('actualizarImpresora', { idImpresora: id, activo: '0' });
+      toast('Impresora desactivada', 'ok');
+    } catch(e) {
+      i.activo = previo;
+      renderInfra();
+      toast('Error: ' + e.message, 'error');
+    }
   }
 
   // Paleta de colores neón para avatares
@@ -13667,8 +13880,9 @@ const MOS = (() => {
     abrirModalCategoria, guardarCategoria, _catOnModoChange,
     tutorialOpen, tutorialClose, tutorialNext, tutorialPrev, tutorialGoto,
     tutTicketsOpen, tutTicketsClose, tutTicketsNext, tutTicketsPrev, tutTicketsGoto,
-    abrirModalEstacion, guardarEstacion,
-    abrirModalImpresora, guardarImpresora,
+    abrirModalEstacion, guardarEstacion, eliminarEstacion, _estActualizarPreview,
+    abrirModalImpresora, guardarImpresora, eliminarImpresora, _impActualizarPreview,
+    eliminarZona, _zonaActualizarPreview,
     infra_filtrar, toggleZonaActiva, toggleEstacionActiva, toggleImpresoraActiva,
     abrirModalPersonal, guardarPersonal, togglePersonalActivo, eliminarPersonal,
     _persActualizarPreview, _persRandomColor, _persRandomPin, _persSeleccionarColor,
