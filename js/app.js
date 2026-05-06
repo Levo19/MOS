@@ -8549,15 +8549,15 @@ const MOS = (() => {
         </div>
       </div>` : '';
 
-    // Sección de dispositivos móviles / sin asignar (al final)
+    // Sección de dispositivos sin estación asignada todavía
     const moviles = _dispMoviles();
     const movHTML = moviles.length ? `
       <div class="card p-4 mt-4" style="background:linear-gradient(135deg,#0d1526 0%,#0a1424 100%);border:1px solid #334155;">
         <div class="flex items-center gap-2 mb-3">
           <span class="text-xl">📱</span>
           <div class="flex-1">
-            <h3 class="font-bold text-sm text-white">Dispositivos móviles / sin sesión reciente</h3>
-            <p class="text-[10px] text-slate-500">Equipos sin login en las últimas 24h. Aparecerán en la zona/estación que escojan al iniciar sesión.</p>
+            <h3 class="font-bold text-sm text-white">Sin estación asignada</h3>
+            <p class="text-[10px] text-slate-500">Dispositivos aprobados que aún no han hecho login en ninguna estación. Aparecerán en la zona/estación que escojan al ingresar.</p>
           </div>
           <span class="badge badge-gray text-xs">${moviles.length}</span>
         </div>
@@ -8567,6 +8567,9 @@ const MOS = (() => {
       </div>` : '';
 
     cont.innerHTML = pendHTML + zonasHTML + movHTML + cardNuevaZona;
+
+    // Guardar mapa de estaciones para detectar movimientos en próximo render
+    _dispActualizarMapa();
   }
 
   // ── Series documentales por zona (chips) ─────────────────
@@ -8651,21 +8654,26 @@ const MOS = (() => {
         }).join('')
       : `<div class="text-[10px] text-amber-500 italic px-2 py-1.5">⚠ sin impresoras</div>`;
 
-    // Dispositivos activos en esta estación (sesión <24h)
+    // Dispositivos asignados a esta estación (última sesión, sin límite de tiempo)
     const dispEnEst = _dispEnEstacion(e.idEstacion);
     const dispsHTML = dispEnEst.length
       ? `<div class="mt-2 pt-2" style="border-top:1px dashed #1e293b;">
-          <div class="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">📱 Aquí ahora</div>
+          <div class="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">📱 Asignados a esta estación</div>
           <div class="space-y-1.5">
             ${dispEnEst.map(d => {
               const ico = _dispIcono(d.Nombre_Equipo);
               const act = _dispActividad(d.Ultima_Conexion);
               const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
-              return `<div class="flex items-center gap-2 px-2 py-1.5 rounded disp-chip-arrived" style="background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.25);">
+              const movio = _dispSeMovio(d);
+              const claseAnim = movio ? 'disp-chip-moved' : (_dispRenderCount === 0 ? 'disp-chip-arrived' : '');
+              const bgColor = movio ? 'rgba(99,102,241,0.12)' : 'rgba(16,185,129,0.06)';
+              const bordColor = movio ? 'rgba(99,102,241,0.5)' : 'rgba(16,185,129,0.25)';
+              const movedBadge = movio ? '<span class="text-[8px] font-bold text-indigo-300 ml-1" title="Recién movido a esta estación">📍 movido</span>' : '';
+              return `<div class="flex items-center gap-2 px-2 py-1.5 rounded ${claseAnim}" style="background:${bgColor};border:1px solid ${bordColor};">
                 <span class="text-sm shrink-0">${ico}</span>
                 <div class="flex-1 min-w-0">
-                  <div class="text-xs font-medium text-slate-200 truncate">${d.Nombre_Equipo || '—'}</div>
-                  <div class="text-[9px] truncate" style="color:${act.color};">${act.dot} ${act.label}${d.Ultima_Sesion ? ' · ' + d.Ultima_Sesion : ''}</div>
+                  <div class="text-xs font-medium text-slate-200 truncate">${d.Nombre_Equipo || '—'}${movedBadge}</div>
+                  <div class="text-[9px] truncate" style="color:${act.color};">${act.dot} ${act.label}${d.Ultima_Sesion ? ' · 👤 ' + d.Ultima_Sesion : ''}</div>
                 </div>
                 <button onclick="MOS.abrirModalDispositivo('${idAttr}')" class="text-[10px] text-slate-500 hover:text-white p-1" title="Editar">✏️</button>
               </div>`;
@@ -9237,25 +9245,43 @@ const MOS = (() => {
     return { color: '#ef4444', label: `inactivo ${Math.floor(min/60/24)}d`, dot: '🔴', minutos: min };
   }
 
-  // Devuelve dispositivos cuya última sesión fue en esta estación dentro de las últimas 24h
+  // Tracking de movimientos entre renders para animar transiciones
+  let _dispUltimaEstacionMap = {};
+  let _dispRenderCount = 0;
+
+  // Devuelve dispositivos cuya ÚLTIMA sesión fue en esta estación
+  // (sin importar cuánto tiempo, mantiene "viviendo" donde estuvo último)
   function _dispEnEstacion(idEstacion) {
     return (cfgData.dispositivos || []).filter(d => {
       if (String(d.Estado).toUpperCase() !== 'ACTIVO') return false;
-      if (String(d.Ultima_Estacion || '') !== String(idEstacion)) return false;
-      const act = _dispActividad(d.Ultima_Conexion);
-      return act.minutos < 60 * 24; // ventana de 24h
+      return String(d.Ultima_Estacion || '') === String(idEstacion);
     });
   }
 
-  // Devuelve dispositivos sin asignación reciente o sin estación
+  // Devuelve solo dispositivos que NUNCA se han logueado en una estación
+  // (recién aprobados o registrados a mano sin sesión todavía)
   function _dispMoviles() {
     return (cfgData.dispositivos || []).filter(d => {
       const estado = String(d.Estado).toUpperCase();
       if (estado === 'PENDIENTE_APROBACION') return false; // van en sección aparte
-      const tieneEstacionReciente = d.Ultima_Estacion &&
-        _dispActividad(d.Ultima_Conexion).minutos < 60 * 24;
-      return !tieneEstacionReciente;
+      if (estado === 'INACTIVO') return false;             // bloqueados no se muestran como móviles
+      return !d.Ultima_Estacion; // solo los que nunca tuvieron estación
     });
+  }
+
+  // Detectar si el dispositivo se movió de estación entre renders
+  function _dispSeMovio(d) {
+    if (_dispRenderCount === 0) return false; // primer render, no animar
+    const prev = _dispUltimaEstacionMap[d.ID_Dispositivo];
+    const ahora = String(d.Ultima_Estacion || '');
+    return prev !== undefined && prev !== ahora;
+  }
+
+  function _dispActualizarMapa() {
+    (cfgData.dispositivos || []).forEach(d => {
+      _dispUltimaEstacionMap[d.ID_Dispositivo] = String(d.Ultima_Estacion || '');
+    });
+    _dispRenderCount++;
   }
 
   function _dispPendientes() {

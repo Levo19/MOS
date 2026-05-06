@@ -1839,6 +1839,35 @@
       40%  { opacity: 1; transform: translateY(0); box-shadow: 0 0 12px 2px rgba(16,185,129, .35); }
       100% { box-shadow: 0 0 0 0 rgba(16,185,129, 0); }
     }
+
+    /* Dispositivo MOVIDO entre estaciones: slide horizontal + glow indigo prolongado */
+    .disp-chip-moved {
+      animation: dispMovedIn 2.4s cubic-bezier(0.16, 1, 0.3, 1);
+      position: relative;
+    }
+    @keyframes dispMovedIn {
+      0%   { opacity: 0; transform: translateX(-30px) scale(0.9); box-shadow: 0 0 0 0 rgba(99,102,241, 0); background: rgba(99,102,241,0.3) !important; }
+      25%  { opacity: 1; transform: translateX(0) scale(1.04); box-shadow: 0 0 24px 4px rgba(99,102,241, .55); }
+      50%  { transform: translateX(0) scale(1); box-shadow: 0 0 16px 2px rgba(99,102,241, .35); }
+      100% { box-shadow: 0 0 0 0 rgba(99,102,241, 0); }
+    }
+    .disp-chip-moved::before {
+      content: '';
+      position: absolute;
+      inset: -2px;
+      border-radius: inherit;
+      pointer-events: none;
+      background: linear-gradient(90deg, transparent, rgba(99,102,241,0.4), transparent);
+      background-size: 200% 100%;
+      animation: dispMovedShine 2s ease-in-out;
+      opacity: 0.6;
+    }
+    @keyframes dispMovedShine {
+      0%   { background-position: 100% 0; opacity: 0; }
+      40%  { opacity: 0.8; }
+      100% { background-position: -100% 0; opacity: 0; }
+    }
+
     /* Pulse para card de dispositivos pendientes */
     @keyframes pulse {
       0%, 100% { opacity: 1; }
