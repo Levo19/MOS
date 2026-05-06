@@ -1874,6 +1874,36 @@
       50%      { opacity: 0.85; }
     }
 
+    /* Quick actions hover en card de persona — visible al hover */
+    .pers-card-wrap { position: relative; }
+    .pers-card-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      opacity: 0;
+      transform: translateX(-4px);
+      transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none;
+    }
+    .pers-card-wrap:hover .pers-card-actions {
+      opacity: 1;
+      transform: translateX(0);
+      pointer-events: auto;
+    }
+    .pers-card-actions button {
+      background: rgba(99,102,241,0.15);
+      border: 1px solid rgba(99,102,241,0.4);
+      color: #a5b4fc;
+      width: 28px; height: 28px;
+      border-radius: 8px;
+      font-size: 14px;
+      transition: all 0.15s;
+    }
+    .pers-card-actions button:hover {
+      background: rgba(99,102,241,0.3);
+      transform: scale(1.1);
+    }
+
     /* ── Dispositivo: chip con hover/click ─────────────────── */
     .disp-chip {
       will-change: transform, box-shadow;
@@ -3571,9 +3601,7 @@
         <div class="tab-bar w-max">
           <button class="tab-btn active" id="cfgTabInfra"     onclick="MOS.setCfgTab('infra')">🏗️ Infraestructura</button>
           <button class="tab-btn" id="cfgTabPersonal"          onclick="MOS.setCfgTab('personal')">👥 Personal</button>
-          <button class="tab-btn" id="cfgTabSeguridad"         onclick="MOS.setCfgTab('seguridad')">🔐 Seguridad</button>
           <button class="tab-btn" id="cfgTabCategorias"        onclick="MOS.setCfgTab('categorias')">🏷️ Categorías</button>
-          <button class="tab-btn" id="cfgTabIntegridad"        onclick="MOS.setCfgTab('integridad')">🛡️ Integridad</button>
         </div>
       </div>
       <div class="text-xs text-slate-600 italic mb-3 sm:hidden">→ Desliza las tablas y los tabs para ver todo</div>
@@ -3599,104 +3627,28 @@
 
       <!-- Personal — vista agrupada con metas inline + indicador de actividad -->
       <div id="cfgPanelPersonal" class="hidden">
+        <!-- Toolbar superior con botones flotantes 🔔 y 🛡️ -->
+        <div class="flex items-center justify-end gap-2 mb-3">
+          <button id="personalBtnNotif" onclick="MOS.abrirModalNotificaciones()"
+            class="relative px-3 py-1.5 rounded-lg text-sm font-bold transition-all hover:scale-105"
+            style="background:linear-gradient(135deg,#1e293b,#0d1526);border:1px solid #334155;color:#cbd5e1;"
+            title="Centro de notificaciones">
+            🔔 <span class="text-[10px] opacity-80 ml-1">notif</span>
+            <span id="personalNotifBadge" class="hidden absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center" style="animation:pulse 1.5s infinite;">0</span>
+          </button>
+          <button id="personalBtnIntegridad" onclick="MOS.abrirModalIntegridad()"
+            class="relative px-3 py-1.5 rounded-lg text-sm font-bold transition-all hover:scale-105"
+            style="background:linear-gradient(135deg,#1e293b,#0d1526);border:1px solid #334155;color:#cbd5e1;"
+            title="Integridad de catálogo">
+            🛡️ <span class="text-[10px] opacity-80 ml-1">integridad</span>
+            <span id="personalIntegBadge" class="hidden absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center" style="animation:pulse 1.5s infinite;">0</span>
+          </button>
+        </div>
         <div id="personalContenedor" class="space-y-4">
           <div class="text-center py-12 text-slate-500 text-sm">Cargando personal...</div>
         </div>
       </div>
 
-      <!-- Seguridad — Clave Admin Global Unificada -->
-      <div id="cfgPanelSeguridad" class="hidden">
-        <!-- Card explicativo -->
-        <div class="card p-4 mb-4" style="background:linear-gradient(135deg,#0c1e3a 0%,#0d1526 100%);border:1px solid #1e3a8a;">
-          <div class="flex items-start gap-3">
-            <div style="font-size:24px;">🔐</div>
-            <div class="flex-1">
-              <h3 class="font-bold text-sm text-white mb-1">Sistema de Clave Admin Unificado</h3>
-              <p class="text-xs text-slate-400 leading-relaxed">
-                Para autorizar acciones admin en MosExpress (anular ticket, crédito, cambio de pago)
-                y warehouseMos (reabrir guías), los administradores ingresan una clave de
-                <strong class="text-emerald-400">8 dígitos</strong>:
-                <code class="text-amber-300">CLAVE_GLOBAL (4)</code> +
-                <code class="text-emerald-300">TU_PIN (4)</code>.
-                La clave global rota automáticamente cada 30 días.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div class="grid lg:grid-cols-2 gap-4">
-          <!-- Card: ver clave global -->
-          <div class="card p-4">
-            <h3 class="font-semibold text-sm text-white mb-1">🔑 Clave Global Vigente</h3>
-            <p class="text-xs text-slate-500 mb-4">Solo visible para Master/Admin. Verifica con tu PIN personal.</p>
-
-            <div id="segPanelLogin">
-              <label class="lbl">Tu PIN (4 dígitos)</label>
-              <input id="segPinAdmin" class="inp text-center text-xl font-bold tracking-widest"
-                     type="password" inputmode="numeric" maxlength="4" placeholder="••••"
-                     onkeyup="if(event.key==='Enter')MOS.seg_consultarClave()">
-              <button onclick="MOS.seg_consultarClave()" class="btn-primary w-full mt-3">
-                Ver clave global
-              </button>
-              <p id="segError" class="text-xs text-red-400 mt-2 min-h-4"></p>
-            </div>
-
-            <div id="segPanelClave" class="hidden">
-              <div class="text-center mb-4">
-                <p class="text-xs text-slate-500 uppercase tracking-wider mb-2">Clave global actual</p>
-                <p class="text-6xl font-black tracking-[0.3em] mb-2"
-                   style="color:#fbbf24;text-shadow:0 0 30px rgba(251,191,36,0.3);font-family:'Courier New',monospace;"
-                   id="segClaveDigits">- - - -</p>
-                <p class="text-xs text-slate-400">+ tu PIN de 4 dígitos = clave admin completa</p>
-              </div>
-
-              <div class="rounded-lg p-3 mb-3" style="background:#0d1526;border:1px solid #1e293b;">
-                <div class="flex items-center justify-between text-xs mb-1">
-                  <span class="text-slate-500">Próxima rotación auto</span>
-                  <span id="segDiasRestantes" class="font-bold text-slate-300">—</span>
-                </div>
-                <div class="w-full h-2 rounded-full" style="background:#1e293b;">
-                  <div id="segBarraProgreso" style="background:linear-gradient(90deg,#10b981,#fbbf24);height:100%;border-radius:9999px;width:0%;transition:width 0.5s;"></div>
-                </div>
-                <p id="segFechaProxima" class="text-[10px] text-slate-600 mt-1.5 text-right"></p>
-              </div>
-
-              <div class="flex gap-2">
-                <button onclick="MOS.seg_rotarManual()" class="btn-primary flex-1 text-sm py-2">
-                  🔄 Rotar ahora
-                </button>
-                <button onclick="MOS.seg_ocultar()" class="btn-secondary text-sm px-3 py-2">
-                  Ocultar
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Card: lista de admins activos -->
-          <div class="card p-4">
-            <h3 class="font-semibold text-sm text-white mb-1">👤 Administradores Activos</h3>
-            <p class="text-xs text-slate-500 mb-4">Cualquiera de estos puede autorizar combinando su PIN con la clave global.</p>
-            <div id="segListaAdmins" class="space-y-2"><div class="text-center py-4 text-slate-500 text-sm">Cargando...</div></div>
-          </div>
-        </div>
-
-        <!-- Auditoría -->
-        <div class="card p-4 mt-4">
-          <div class="flex items-center justify-between mb-3">
-            <div>
-              <h3 class="font-semibold text-sm text-white">📋 Auditoría reciente</h3>
-              <p class="text-xs text-slate-500">Últimas 30 acciones autorizadas con clave admin</p>
-            </div>
-            <button onclick="MOS.seg_cargarAuditoria()" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700">↻</button>
-          </div>
-          <div class="overflow-x-auto" style="-webkit-overflow-scrolling:touch">
-            <table class="tbl text-xs">
-              <thead><tr><th>Fecha</th><th>Acción</th><th>Autorizó</th><th>App</th><th class="hidden sm:table-cell">Ref</th></tr></thead>
-              <tbody id="tbodyAuditoria"><tr><td colspan="5" class="text-center py-6 text-slate-500">Carga primero la clave global para ver auditoría.</td></tr></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
 
       <!-- Categorías + política de precios -->
       <div id="cfgPanelCategorias" class="hidden">
@@ -3720,21 +3672,6 @@
         </div>
       </div>
 
-      <!-- Integridad: defensa PRODUCTOS_MASTER + EQUIVALENCIAS -->
-      <div id="cfgPanelIntegridad" class="hidden">
-        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
-          <div class="flex-1 min-w-0">
-            <h3 class="font-semibold text-sm text-slate-200">🛡️ Integridad de Catálogo</h3>
-            <p class="text-xs text-slate-500 mt-0.5">PRODUCTOS_MASTER y EQUIVALENCIAS están protegidas. Solo el modal autorizado puede modificarlas. Cualquier escritura desde origen desconocido se bloquea y registra alerta.</p>
-          </div>
-          <div class="flex gap-2 shrink-0">
-            <button class="btn-ghost text-xs px-3 py-1.5" onclick="MOS.auditResolverTodas()" title="Marcar todas como resueltas (no las elimina, solo las archiva)">🧹 Resolver todas</button>
-            <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.auditCorrer()">🔍 Auditar ahora</button>
-          </div>
-        </div>
-        <div id="auditResumen" class="card-sm p-4 mb-3 text-sm text-slate-400">Cargando…</div>
-        <div id="auditAlertas" class="space-y-2"></div>
-      </div>
     </section>
 
     <!-- ── Modal: Dispositivo ──────────────────────────────── -->
@@ -6600,6 +6537,166 @@
   });
 })();
 </script>
+
+<!-- ════════════════════════════════════════════════
+     MODAL: CLAVE ADMIN GLOBAL (abierto desde card master/admin)
+     ═══════════════════════════════════════════════ -->
+<div class="modal-backdrop hidden" id="modalClaveGlobal" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalClaveGlobal')">
+  <div class="modal-box flex flex-col" style="max-width:480px;max-height:92vh">
+    <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(245,158,11,0.10),transparent);">
+      <div class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0" style="background:linear-gradient(135deg,#7c2d12,#f59e0b);">🔑</div>
+      <div class="min-w-0 flex-1">
+        <h2 class="font-bold text-base text-white">Clave Admin Global</h2>
+        <p id="claveGlobalSubtitle" class="text-[11px] text-slate-500 mt-0.5">8 dígitos = global (4) + tu PIN (4)</p>
+      </div>
+      <button onclick="MOS.closeModal('modalClaveGlobal')" class="modal-close-x">×</button>
+    </div>
+    <div class="overflow-y-auto px-5 py-4 flex-1">
+      <input type="hidden" id="claveGlobalIdPersonal">
+      <input type="hidden" id="claveGlobalRol">
+
+      <!-- Estado: pedir PIN -->
+      <div id="claveGlobalLogin">
+        <p class="text-xs text-slate-400 mb-3">Ingresa tu PIN de 4 dígitos para ver la clave global vigente.</p>
+        <input id="claveGlobalPin" class="inp text-center text-2xl font-black tracking-widest"
+               type="password" inputmode="numeric" maxlength="4" placeholder="••••"
+               onkeyup="if(event.key==='Enter')MOS.cgConsultar()">
+        <p id="claveGlobalError" class="text-xs text-red-400 mt-2 min-h-4"></p>
+        <button onclick="MOS.cgConsultar()" class="btn-primary w-full mt-3">Ver clave</button>
+      </div>
+
+      <!-- Estado: clave revelada -->
+      <div id="claveGlobalRevelada" class="hidden">
+        <div class="text-center mb-4">
+          <p class="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Clave global vigente</p>
+          <p id="claveGlobalDigits" class="text-6xl font-black tracking-[0.3em] mb-2" style="color:#fbbf24;text-shadow:0 0 30px rgba(251,191,36,0.3);font-family:'Courier New',monospace;">- - - -</p>
+          <p class="text-[10px] text-slate-400">+ tu PIN de 4 dígitos = clave admin completa de 8</p>
+        </div>
+        <div class="rounded-lg p-3 mb-3" style="background:#0d1526;border:1px solid #1e293b;">
+          <div class="flex items-center justify-between text-xs mb-1">
+            <span class="text-slate-500">Próxima rotación auto</span>
+            <span id="claveGlobalDias" class="font-bold text-slate-300">—</span>
+          </div>
+          <div class="w-full h-2 rounded-full" style="background:#1e293b;">
+            <div id="claveGlobalProgreso" style="background:linear-gradient(90deg,#10b981,#fbbf24);height:100%;border-radius:9999px;width:0%;transition:width 0.5s;"></div>
+          </div>
+          <p id="claveGlobalFechaProxima" class="text-[10px] text-slate-600 mt-1.5 text-right"></p>
+        </div>
+        <button id="claveGlobalBtnRotar" onclick="MOS.cgRotar()" class="btn-primary w-full text-sm py-2">
+          🔄 Rotar ahora
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════
+     MODAL: HISTORIAL DE AUDITORÍA (full-screen)
+     ═══════════════════════════════════════════════ -->
+<div class="modal-backdrop hidden" id="modalHistorialAudit" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalHistorialAudit')">
+  <div class="modal-box flex flex-col" style="max-width:720px;max-height:92vh">
+    <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;">
+      <div class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0" style="background:linear-gradient(135deg,#1e3a8a,#6366f1);">📋</div>
+      <div class="min-w-0 flex-1">
+        <h2 class="font-bold text-base text-white">Historial de auditoría</h2>
+        <p id="histAuditSubtitle" class="text-[11px] text-slate-500 mt-0.5">Acciones autorizadas con clave admin</p>
+      </div>
+      <button onclick="MOS.closeModal('modalHistorialAudit')" class="modal-close-x">×</button>
+    </div>
+    <div class="overflow-y-auto px-5 py-4 flex-1">
+      <div class="flex items-center gap-2 mb-3 flex-wrap">
+        <select id="histAuditFiltroAccion" onchange="MOS.histAuditFiltrar()" class="inp text-xs" style="padding:6px 10px;width:auto;">
+          <option value="">Todas las acciones</option>
+          <option value="ANULACION">ANULACION</option>
+          <option value="CREDITO">CREDITO</option>
+          <option value="CAMBIO_METODO">CAMBIO_METODO</option>
+          <option value="REABRIR_GUIA">REABRIR_GUIA</option>
+          <option value="DESBLOQUEO_USUARIO">DESBLOQUEO_USUARIO</option>
+          <option value="ROTACION_PIN_GLOBAL">ROTACION_PIN_GLOBAL</option>
+          <option value="GENERICA">GENERICA</option>
+        </select>
+        <button onclick="MOS.histAuditCargar()" class="btn-ghost text-xs px-3 py-1.5">↻ Recargar</button>
+      </div>
+      <div id="histAuditContenido" class="space-y-3">
+        <div class="text-center py-8 text-slate-500 text-sm">Cargando...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════
+     MODAL: INTEGRIDAD (alertas de catálogo)
+     ═══════════════════════════════════════════════ -->
+<div class="modal-backdrop hidden" id="modalIntegridad" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalIntegridad')">
+  <div class="modal-box flex flex-col" style="max-width:680px;max-height:92vh">
+    <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(220,38,38,0.10),transparent);">
+      <div class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0" style="background:linear-gradient(135deg,#7f1d1d,#dc2626);">🛡️</div>
+      <div class="min-w-0 flex-1">
+        <h2 class="font-bold text-base text-white">Integridad de catálogo</h2>
+        <p class="text-[11px] text-slate-500 mt-0.5">PRODUCTOS_MASTER y EQUIVALENCIAS protegidas</p>
+      </div>
+      <button onclick="MOS.closeModal('modalIntegridad')" class="modal-close-x">×</button>
+    </div>
+    <div class="overflow-y-auto px-5 py-4 flex-1">
+      <div class="flex items-center gap-2 mb-3 flex-wrap">
+        <button onclick="MOS.auditCorrer()" class="btn-primary text-xs px-3 py-1.5">🔍 Auditar ahora</button>
+        <button onclick="MOS.auditResolverTodas()" class="btn-ghost text-xs px-3 py-1.5" title="Marcar todas como resueltas">🧹 Resolver todas</button>
+      </div>
+      <div id="auditResumen" class="card-sm p-4 mb-3 text-sm text-slate-400">Cargando…</div>
+      <div id="auditAlertas" class="space-y-2"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════
+     MODAL: NOTIFICACIONES UNIFICADAS
+     ═══════════════════════════════════════════════ -->
+<div class="modal-backdrop hidden" id="modalNotificaciones" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalNotificaciones')">
+  <div class="modal-box flex flex-col" style="max-width:640px;max-height:92vh">
+    <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;">
+      <div class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0" style="background:linear-gradient(135deg,#7c2d12,#ea580c);">🔔</div>
+      <div class="min-w-0 flex-1">
+        <h2 class="font-bold text-base text-white">Centro de notificaciones</h2>
+        <p id="notifSubtitle" class="text-[11px] text-slate-500 mt-0.5">Pendientes acumulados</p>
+      </div>
+      <button onclick="MOS.closeModal('modalNotificaciones')" class="modal-close-x">×</button>
+    </div>
+    <div class="overflow-y-auto px-5 py-4 flex-1">
+      <div id="notifContenido" class="space-y-3">
+        <div class="text-center py-8 text-slate-500 text-sm">Cargando...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════
+     MODAL: ENVIAR PUSH a un usuario
+     ═══════════════════════════════════════════════ -->
+<div class="modal-backdrop hidden" id="modalEnviarPush" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalEnviarPush')">
+  <div class="modal-box flex flex-col" style="max-width:440px;max-height:92vh">
+    <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;">
+      <div class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0" style="background:linear-gradient(135deg,#1e3a8a,#3b82f6);">💬</div>
+      <div class="min-w-0 flex-1">
+        <h2 class="font-bold text-base text-white">Enviar mensaje push</h2>
+        <p id="pushDestinoNombre" class="text-[11px] text-slate-500 mt-0.5">a —</p>
+      </div>
+      <button onclick="MOS.closeModal('modalEnviarPush')" class="modal-close-x">×</button>
+    </div>
+    <div class="overflow-y-auto px-5 py-4 flex-1">
+      <input type="hidden" id="pushDestinoUsuario">
+      <p class="text-xs text-slate-400 mb-3">Le llegará como notificación con vibración en su dispositivo. Mensaje corto y claro.</p>
+      <label class="lbl">Título</label>
+      <input id="pushTitulo" class="inp mb-3" placeholder="Ej: Atención" maxlength="50" value="📢 Mensaje del admin">
+      <label class="lbl">Mensaje</label>
+      <textarea id="pushCuerpo" class="inp" rows="3" placeholder="Ej: Por favor llama al cliente del ticket NV01-042" maxlength="200"></textarea>
+      <p class="text-[10px] text-slate-600 mt-1">Máx 200 caracteres</p>
+    </div>
+    <div class="flex gap-2 px-5 py-3 flex-shrink-0" style="border-top:1px solid #1e293b">
+      <button onclick="MOS.closeModal('modalEnviarPush')" class="btn-ghost flex-1">Cancelar</button>
+      <button onclick="MOS.enviarPushUsuario()" class="btn-primary flex-1">📨 Enviar</button>
+    </div>
+  </div>
+</div>
 
 <!-- ── Avatar Dropdown (global, fuera del sidebar para evitar overflow clip) ── -->
 <div id="avatarMenu" class="hidden">

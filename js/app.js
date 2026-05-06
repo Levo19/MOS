@@ -8010,7 +8010,7 @@ const MOS = (() => {
 
   function setCfgTab(tab) {
     S.cfgTab = tab;
-    const tabs = ['infra','personal','seguridad','categorias','integridad'];
+    const tabs = ['infra','personal','categorias'];
     tabs.forEach(t => {
       const btn = $('cfgTab' + t.charAt(0).toUpperCase() + t.slice(1));
       if (btn) btn.classList.toggle('active', t === tab);
@@ -8028,9 +8028,7 @@ const MOS = (() => {
     switch (tab) {
       case 'infra':        renderInfra();        break;
       case 'personal':     renderPersonal();     break;
-      case 'seguridad':    renderSeguridad();    break;
       case 'categorias':   renderCategorias();   break;
-      case 'integridad':   renderIntegridad();   break;
     }
   }
 
@@ -9028,6 +9026,7 @@ const MOS = (() => {
   }
 
   // Render unificado de card de persona con avatar, indicador online, switch y click
+  // Para admins/master: agrega botón 🔑 + sección expandible con auditoría hoy
   function _renderPersonaCard(p, appOrigen) {
     const ini = ((p.nombre || '?')[0] + (p.apellido || '?')[0]).toUpperCase();
     const activo = String(p.estado) === '1';
@@ -9040,30 +9039,82 @@ const MOS = (() => {
     const glowBg = isFresh ? 'rgba(16,185,129,0.06)' : '#0d1526';
     const glowBorder = isFresh ? 'rgba(16,185,129,0.5)' : '#1e293b';
 
-    return `<div class="disp-chip flex items-center gap-3 p-3 rounded-lg cursor-pointer ${claseFresh} ${opacityCls}"
-      onclick="MOS.abrirModalPersonal('${safeId}','${appOrigen}')"
-      style="background:${glowBg};border:1px solid ${glowBorder};transition:all 0.2s;"
-      title="Click para editar">
-      <div class="relative shrink-0">
-        <div class="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold"
-             style="background:${p.color || '#6366f1'}">${ini}</div>
-        ${dotPulse}
-      </div>
-      <div class="flex-1 min-w-0">
-        <div class="font-medium text-sm text-slate-200 truncate">${p.nombre} ${p.apellido || ''}</div>
-        <div class="flex items-center gap-2 mt-0.5 flex-wrap">
-          <span class="badge badge-gray text-[9px] uppercase">${p.rol || '—'}</span>
-          ${p.montoBase ? `<span class="text-[9px] text-slate-500">S/.${parseFloat(p.montoBase).toFixed(2)}/día</span>` : ''}
-          <span class="text-[9px]" style="color:${act.color};">${act.dot} ${act.label}</span>
+    const rolUp = String(p.rol || '').toUpperCase();
+    const esAdmin = rolUp === 'MASTER' || rolUp === 'ADMIN' || rolUp === 'ADMINISTRADOR';
+    const esWH = appOrigen === 'warehouseMos';
+
+    // Última acción para admins (del cache de audit)
+    let ultAccion = '';
+    if (esAdmin && _personalAuditCache.length) {
+      const propias = _personalAuditCache.filter(a => String(a.idPersonalAutoriza) === String(p.idPersonal));
+      if (propias.length) {
+        const ult = propias[0];
+        const f = ult.fecha ? new Date(ult.fecha) : null;
+        const fmt = f ? f.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }) : '';
+        ultAccion = `<div class="text-[9px] text-indigo-300 mt-1 truncate"><span class="opacity-70">${fmt}</span> · <span class="font-bold uppercase">${ult.accion || '—'}</span>${ult.refDocumento ? ' · ' + ult.refDocumento : ''}</div>`;
+      }
+    }
+
+    // Botón 🔑 visible solo para admins/master
+    const llaveBtn = esAdmin
+      ? `<button onclick="event.stopPropagation();MOS.abrirModalClaveGlobal('${safeId}')" class="text-base hover:scale-110 transition-transform" title="Ver clave global">🔑</button>`
+      : '';
+
+    // Quick actions hover (solo para WH y vendedores ME — admins editan con click directo)
+    const quickActions = !esAdmin
+      ? `<div class="pers-card-actions">
+          <button onclick="event.stopPropagation();MOS.abrirModalEnviarPush('${safeId}','${(p.nombre || '').replace(/'/g, '&#39;')}')" title="Enviar mensaje push">💬</button>
+        </div>`
+      : '';
+
+    // Audit hoy (solo admins)
+    const auditExpand = esAdmin
+      ? `<div id="auditDetail_${safeId}" class="hidden mt-2 p-3 rounded-lg" style="background:#0a1424;border:1px solid #1e293b;">
+          <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">📋 Acciones de hoy</div>
+          <div id="auditList_${safeId}" class="space-y-1 text-[11px] text-slate-400">Cargando...</div>
+          <button onclick="event.stopPropagation();MOS.abrirModalHistorialAudit('${safeId}','${(p.nombre || '').replace(/'/g, '&#39;')}')"
+            class="mt-2 w-full text-[10px] text-indigo-400 hover:text-white py-1 rounded border border-dashed border-indigo-700/50 hover:border-indigo-500 transition-colors">
+            Ver historial completo →
+          </button>
+        </div>`
+      : '';
+
+    return `<div class="pers-card-wrap">
+      <div class="disp-chip pers-card-clickable flex items-center gap-3 p-3 rounded-lg cursor-pointer ${claseFresh} ${opacityCls}"
+        onclick="${esAdmin ? `MOS._togglePersAudit('${safeId}')` : `MOS.abrirModalPersonal('${safeId}','${appOrigen}')`}"
+        style="background:${glowBg};border:1px solid ${glowBorder};transition:all 0.2s;position:relative;"
+        title="${esAdmin ? 'Click para ver auditoría' : 'Click para editar'}">
+        <div class="relative shrink-0">
+          <div class="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold"
+               style="background:${p.color || '#6366f1'}">${ini}</div>
+          ${dotPulse}
         </div>
+        <div class="flex-1 min-w-0">
+          <div class="font-medium text-sm text-slate-200 truncate">${p.nombre} ${p.apellido || ''}</div>
+          <div class="flex items-center gap-2 mt-0.5 flex-wrap">
+            <span class="badge badge-gray text-[9px] uppercase">${p.rol || '—'}</span>
+            ${p.montoBase ? `<span class="text-[9px] text-slate-500">S/.${parseFloat(p.montoBase).toFixed(2)}/día</span>` : ''}
+            <span class="text-[9px]" style="color:${act.color};">${act.dot} ${act.label}</span>
+          </div>
+          ${ultAccion}
+        </div>
+        ${quickActions}
+        ${llaveBtn}
+        <label class="pers-switch shrink-0" title="${activo ? 'Desactivar' : 'Activar'}" onclick="event.stopPropagation()">
+          <input type="checkbox" ${activo ? 'checked' : ''} onchange="MOS.togglePersonalActivo('${safeId}','${appOrigen}', event)">
+          <span class="pers-switch-slider"></span>
+        </label>
+        <button onclick="event.stopPropagation();MOS.abrirModalPersonal('${safeId}','${appOrigen}')"
+                class="text-[10px] text-slate-500 hover:text-white p-1" title="Editar">✏️</button>
       </div>
-      <label class="pers-switch shrink-0" title="${activo ? 'Desactivar' : 'Activar'}" onclick="event.stopPropagation()">
-        <input type="checkbox" ${activo ? 'checked' : ''} onchange="MOS.togglePersonalActivo('${safeId}','${appOrigen}', event)">
-        <span class="pers-switch-slider"></span>
-      </label>
-      <span class="text-[10px] text-slate-500 p-1">✏️</span>
+      ${auditExpand}
     </div>`;
   }
+
+  // Cache de auditoría (compartido entre cards y modal historial)
+  let _personalAuditCache = []; // últimas N entradas
+  let _personalIntegCount = 0;
+  let _personalNotifCount = 0;
 
   // Chip de meta editable inline (click → input)
   function _renderMetaChip(label, configKey, valor, unidad, color) {
@@ -9182,6 +9233,20 @@ const MOS = (() => {
 
     // Renderizar cajeros ME (usa cache de liquidaciones existente)
     _cfgRenderMeCajeros();
+
+    // Cargar audit log para mostrar última acción de cada admin (background)
+    if (!_personalAuditCache.length) {
+      API.get('getAuditoriaAdmin', { limit: 50 })
+        .then(data => {
+          if (Array.isArray(data)) {
+            _personalAuditCache = data;
+            renderPersonal(); // re-render para incluir últimas acciones
+          }
+        })
+        .catch(_ => {});
+    }
+    // Actualizar badges
+    _actualizarBadgesPersonal();
   }
 
   // Editar meta inline (chip → input → guardar al blur/enter)
@@ -9197,6 +9262,361 @@ const MOS = (() => {
         style="-moz-appearance:textfield;">
     </span>`;
     setTimeout(() => $('metaInput_' + configKey)?.focus(), 50);
+  }
+
+  // ────────────────────────────────────────────────────────
+  // MODAL CLAVE GLOBAL (abierto desde card master/admin con 🔑)
+  // ────────────────────────────────────────────────────────
+  let _cgDataActual = null;
+
+  function abrirModalClaveGlobal(idPersonal) {
+    const p = (cfgData.personalMOS || []).find(x => x.idPersonal === idPersonal);
+    if (!p) return;
+    $('claveGlobalIdPersonal').value = p.idPersonal;
+    $('claveGlobalRol').value = String(p.rol || '').toUpperCase();
+    $('claveGlobalSubtitle').textContent = `${p.nombre} (${p.rol})`;
+    $('claveGlobalPin').value = '';
+    $('claveGlobalError').textContent = '';
+    $('claveGlobalLogin').classList.remove('hidden');
+    $('claveGlobalRevelada').classList.add('hidden');
+    // Si es admin (no master), ocultar botón rotar
+    const esMaster = String(p.rol || '').toUpperCase() === 'MASTER';
+    const btnRotar = $('claveGlobalBtnRotar');
+    if (btnRotar) btnRotar.style.display = esMaster ? '' : 'none';
+    openModal('modalClaveGlobal');
+    setTimeout(() => $('claveGlobalPin')?.focus(), 100);
+  }
+
+  async function cgConsultar() {
+    const pin = String($('claveGlobalPin')?.value || '').trim();
+    const err = $('claveGlobalError');
+    if (!/^\d{4}$/.test(pin)) {
+      if (err) err.textContent = 'PIN debe ser de 4 dígitos';
+      return;
+    }
+    if (err) err.textContent = '';
+    try {
+      const data = await API.get('getClaveAdminGlobal', { pinAdmin: pin });
+      if (!data?.autorizado) {
+        if (err) err.textContent = data?.error || 'PIN incorrecto';
+        $('claveGlobalPin').value = '';
+        return;
+      }
+      _cgDataActual = data;
+      _cgPintar(data);
+      // Actualizar caché global del avatar menú
+      if (typeof _segActualizarCacheLocal === 'function') _segActualizarCacheLocal(data);
+    } catch(e) {
+      if (err) err.textContent = e?.message || 'Sin conexión';
+    }
+  }
+
+  function _cgPintar(data) {
+    $('claveGlobalDigits').textContent = (data.pin || '----').split('').join(' ');
+    const dias = data.diasParaProximaRotacion;
+    const dr = $('claveGlobalDias');
+    if (data.vencida) { dr.textContent = '⚠ Vencida'; dr.style.color = '#f87171'; }
+    else if (dias <= 5) { dr.textContent = dias + ' días'; dr.style.color = '#fbbf24'; }
+    else { dr.textContent = dias + ' días'; dr.style.color = '#10b981'; }
+    const pct = Math.max(0, Math.min(100, ((30 - dias) / 30) * 100));
+    $('claveGlobalProgreso').style.width = pct + '%';
+    if (data.fechaProximaRotacion) {
+      const f = new Date(data.fechaProximaRotacion);
+      $('claveGlobalFechaProxima').textContent = 'Próxima: ' + f.toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric' });
+    }
+    $('claveGlobalLogin').classList.add('hidden');
+    $('claveGlobalRevelada').classList.remove('hidden');
+  }
+
+  async function cgRotar() {
+    const pin = String($('claveGlobalPin')?.value || '').trim();
+    if (!/^\d{4}$/.test(pin)) {
+      toast('PIN inválido', 'error'); return;
+    }
+    if (!confirm('¿Generar una nueva clave global aleatoria? La clave actual dejará de funcionar inmediatamente en MosExpress y warehouseMos.')) return;
+    try {
+      const data = await API.post('rotarClaveAdminGlobal', { manual: true, pinAdmin: pin });
+      if (!data?.autorizado && data?.error) { toast(data.error, 'error'); return; }
+      _cgDataActual = {
+        pin: data.pin, fechaUltimaRotacion: data.fechaUltimaRotacion,
+        fechaProximaRotacion: data.fechaProximaRotacion,
+        diasDesdeRotacion: 0, diasParaProximaRotacion: 30, vencida: false
+      };
+      _cgPintar(_cgDataActual);
+      if (typeof _segActualizarCacheLocal === 'function') _segActualizarCacheLocal(_cgDataActual);
+      toast('Clave rotada · ' + data.pin, 'ok');
+    } catch(e) {
+      toast(e?.message || 'Error', 'error');
+    }
+  }
+
+  // ────────────────────────────────────────────────────────
+  // AUDITORÍA EXPANDIBLE EN CARD ADMIN
+  // ────────────────────────────────────────────────────────
+  function _togglePersAudit(idPersonal) {
+    const safeId = String(idPersonal).replace(/'/g, '&#39;');
+    const det = $('auditDetail_' + safeId);
+    if (!det) return;
+    if (det.classList.contains('hidden')) {
+      det.classList.remove('hidden');
+      _cargarAuditDetail(idPersonal);
+    } else {
+      det.classList.add('hidden');
+    }
+  }
+
+  async function _cargarAuditDetail(idPersonal) {
+    const list = $('auditList_' + idPersonal);
+    if (!list) return;
+    // Filtrar de cache si hay; si no, cargar
+    const propiasHoy = _personalAuditCache.filter(a => {
+      if (String(a.idPersonalAutoriza) !== String(idPersonal)) return false;
+      const f = new Date(a.fecha);
+      const hoy = new Date();
+      return f.toDateString() === hoy.toDateString();
+    });
+    if (!propiasHoy.length) {
+      list.innerHTML = '<div class="text-[10px] text-slate-600 italic">Sin acciones registradas hoy.</div>';
+      return;
+    }
+    list.innerHTML = propiasHoy.slice(0, 8).map(a => {
+      const f = a.fecha ? new Date(a.fecha) : null;
+      const hora = f ? f.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }) : '—';
+      const accColor = {
+        'ANULACION': 'text-red-400', 'CREDITO': 'text-amber-400', 'CAMBIO_METODO': 'text-blue-400',
+        'REABRIR_GUIA': 'text-purple-400', 'DESBLOQUEO_USUARIO': 'text-emerald-400', 'ROTACION_PIN_GLOBAL': 'text-pink-400'
+      }[String(a.accion || '').toUpperCase()] || 'text-slate-400';
+      return `<div class="flex items-center gap-2">
+        <span class="text-slate-600 text-[10px]">${hora}</span>
+        <span class="${accColor} font-bold uppercase tracking-wider text-[10px]">${a.accion || '—'}</span>
+        <span class="text-slate-500 truncate flex-1">${a.refDocumento || ''}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // ────────────────────────────────────────────────────────
+  // MODAL HISTORIAL COMPLETO DE AUDITORÍA (agrupado por fecha)
+  // ────────────────────────────────────────────────────────
+  let _histAuditFiltroPersonal = null;
+
+  function abrirModalHistorialAudit(idPersonal, nombre) {
+    _histAuditFiltroPersonal = idPersonal || null;
+    $('histAuditSubtitle').textContent = nombre ? `Acciones de ${nombre}` : 'Todas las acciones';
+    $('histAuditFiltroAccion').value = '';
+    openModal('modalHistorialAudit');
+    histAuditCargar();
+  }
+
+  async function histAuditCargar() {
+    const cont = $('histAuditContenido');
+    if (!cont) return;
+    cont.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm">Cargando...</div>';
+    try {
+      const data = await API.get('getAuditoriaAdmin', { limit: 200 });
+      _personalAuditCache = Array.isArray(data) ? data : [];
+      histAuditFiltrar();
+    } catch(e) {
+      cont.innerHTML = '<div class="text-center py-6 text-red-400 text-sm">Error: ' + e.message + '</div>';
+    }
+  }
+
+  function histAuditFiltrar() {
+    const cont = $('histAuditContenido');
+    if (!cont) return;
+    let rows = _personalAuditCache.slice();
+    if (_histAuditFiltroPersonal) {
+      rows = rows.filter(a => String(a.idPersonalAutoriza) === String(_histAuditFiltroPersonal));
+    }
+    const filtroAcc = $('histAuditFiltroAccion')?.value || '';
+    if (filtroAcc) rows = rows.filter(a => String(a.accion || '').toUpperCase() === filtroAcc);
+    if (!rows.length) {
+      cont.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm">Sin registros para los filtros aplicados.</div>';
+      return;
+    }
+    // Agrupar por fecha
+    const grupos = {};
+    rows.forEach(a => {
+      const f = a.fecha ? new Date(a.fecha) : null;
+      const key = f ? f.toISOString().substring(0, 10) : '—';
+      if (!grupos[key]) grupos[key] = [];
+      grupos[key].push(a);
+    });
+    const keys = Object.keys(grupos).sort().reverse();
+    cont.innerHTML = keys.map(k => {
+      const f = new Date(k);
+      const lbl = isNaN(f.getTime()) ? k : f.toLocaleDateString('es-PE', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+      const acciones = grupos[k];
+      return `<div class="card p-3" style="background:#0d1526;border:1px solid #1e293b;">
+        <div class="flex items-center justify-between mb-2">
+          <div class="text-xs font-bold text-white uppercase">${lbl}</div>
+          <span class="badge badge-gray text-[9px]">${acciones.length} acción${acciones.length === 1 ? '' : 'es'}</span>
+        </div>
+        <div class="space-y-1.5">
+          ${acciones.map(a => {
+            const fa = a.fecha ? new Date(a.fecha) : null;
+            const hora = fa ? fa.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }) : '—';
+            const accColor = {
+              'ANULACION': '#f87171', 'CREDITO': '#fbbf24', 'CAMBIO_METODO': '#60a5fa',
+              'REABRIR_GUIA': '#a78bfa', 'DESBLOQUEO_USUARIO': '#34d399', 'ROTACION_PIN_GLOBAL': '#f472b6'
+            }[String(a.accion || '').toUpperCase()] || '#94a3b8';
+            return `<div class="flex items-center gap-2 text-[11px] py-1 px-2 rounded" style="background:#0a1424;">
+              <span class="text-slate-500 font-mono">${hora}</span>
+              <span class="font-bold uppercase tracking-wider" style="color:${accColor}">${a.accion || '—'}</span>
+              <span class="text-slate-300 flex-1 truncate">${a.nombreAutoriza || '—'}</span>
+              <span class="text-slate-500 text-[10px] hidden sm:inline">${a.appOrigen || ''}</span>
+              <span class="text-slate-500 text-[10px] font-mono truncate hidden md:inline" style="max-width:120px;">${a.refDocumento || ''}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // ────────────────────────────────────────────────────────
+  // MODAL INTEGRIDAD (alertas)
+  // ────────────────────────────────────────────────────────
+  function abrirModalIntegridad() {
+    openModal('modalIntegridad');
+    if (typeof renderIntegridad === 'function') renderIntegridad();
+  }
+
+  // ────────────────────────────────────────────────────────
+  // MODAL NOTIFICACIONES UNIFICADAS
+  // ────────────────────────────────────────────────────────
+  function abrirModalNotificaciones() {
+    openModal('modalNotificaciones');
+    _renderNotificaciones();
+  }
+
+  function _renderNotificaciones() {
+    const cont = $('notifContenido');
+    if (!cont) return;
+    const partes = [];
+    let total = 0;
+
+    // 1) Dispositivos pendientes
+    const pendDisp = (cfgData.dispositivos || []).filter(d => String(d.Estado).toUpperCase() === 'PENDIENTE_APROBACION');
+    if (pendDisp.length) {
+      total += pendDisp.length;
+      partes.push(`<div class="card p-3" style="background:#3b1010;border:1px solid #ef4444;">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="text-xl">📱</span>
+          <strong class="text-white text-sm">Dispositivos esperando aprobación</strong>
+          <span class="badge badge-red text-[10px] ml-auto">${pendDisp.length}</span>
+        </div>
+        <div class="space-y-1.5">
+          ${pendDisp.slice(0, 5).map(d => `<div class="text-[11px] text-slate-300 px-2 py-1 rounded" style="background:#0a1424;">
+            ${_dispIcono(d.Nombre_Equipo)} ${d.Nombre_Equipo || 'Nuevo'} <span class="text-slate-600">·</span>
+            <span class="text-slate-500 font-mono">${String(d.ID_Dispositivo).substring(0, 8)}...</span>
+          </div>`).join('')}
+        </div>
+        <button onclick="MOS.closeModal('modalNotificaciones');MOS.nav('config');MOS.setCfgTab('infra')" class="mt-2 text-[10px] text-red-300 hover:text-red-200">Ver en Infraestructura →</button>
+      </div>`);
+    }
+
+    // 2) Bloqueos vendedores ME activos
+    const bloqs = (cfgData.bloqueosME || []).filter(b => b.fechaBloqueo && !b.unlockVigente);
+    if (bloqs.length) {
+      total += bloqs.length;
+      partes.push(`<div class="card p-3" style="background:#3b2410;border:1px solid #f59e0b;">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="text-xl">🔒</span>
+          <strong class="text-white text-sm">Cajeros bloqueados</strong>
+          <span class="badge badge-yellow text-[10px] ml-auto">${bloqs.length}</span>
+        </div>
+        <div class="space-y-1.5">
+          ${bloqs.slice(0, 5).map(b => `<div class="text-[11px] text-slate-300 px-2 py-1 rounded" style="background:#0a1424;">
+            👤 ${b.nombre} <span class="text-slate-600">·</span> <span class="text-slate-500">${b.motivo || ''}</span>
+          </div>`).join('')}
+        </div>
+      </div>`);
+    }
+
+    // 3) Integridad alertas
+    if (_personalIntegCount > 0) {
+      total += _personalIntegCount;
+      partes.push(`<div class="card p-3" style="background:#3b1010;border:1px solid #dc2626;">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="text-xl">🛡️</span>
+          <strong class="text-white text-sm">Integridad de catálogo</strong>
+          <span class="badge badge-red text-[10px] ml-auto">${_personalIntegCount}</span>
+        </div>
+        <p class="text-[11px] text-slate-400">Hay alertas de seguridad en PRODUCTOS_MASTER o EQUIVALENCIAS.</p>
+        <button onclick="MOS.closeModal('modalNotificaciones');MOS.abrirModalIntegridad()" class="mt-2 text-[10px] text-red-300 hover:text-red-200">Revisar →</button>
+      </div>`);
+    }
+
+    if (total === 0) {
+      cont.innerHTML = `<div class="text-center py-12 text-slate-500">
+        <div class="text-5xl mb-3">✨</div>
+        <p class="font-bold text-emerald-400">Todo en orden</p>
+        <p class="text-xs">Sin notificaciones pendientes.</p>
+      </div>`;
+      $('notifSubtitle').textContent = 'Sin pendientes';
+    } else {
+      cont.innerHTML = partes.join('');
+      $('notifSubtitle').textContent = `${total} pendiente${total === 1 ? '' : 's'}`;
+    }
+  }
+
+  // ────────────────────────────────────────────────────────
+  // MODAL ENVIAR PUSH a usuario
+  // ────────────────────────────────────────────────────────
+  function abrirModalEnviarPush(idPersonal, nombre) {
+    $('pushDestinoUsuario').value = nombre || '';
+    $('pushDestinoNombre').textContent = `a ${nombre || 'usuario'}`;
+    $('pushTitulo').value = '📢 Mensaje del admin';
+    $('pushCuerpo').value = '';
+    openModal('modalEnviarPush');
+    setTimeout(() => $('pushCuerpo')?.focus(), 100);
+  }
+
+  async function enviarPushUsuario() {
+    const titulo = String($('pushTitulo')?.value || '').trim();
+    const cuerpo = String($('pushCuerpo')?.value || '').trim();
+    const dest = String($('pushDestinoUsuario')?.value || '').trim();
+    if (!titulo || !cuerpo) { toast('Título y mensaje son requeridos', 'error'); return; }
+    closeModal('modalEnviarPush');
+    try {
+      await API.post('enviarPushNotif', { titulo, cuerpo: `[a ${dest}] ${cuerpo}` });
+      toast(`✓ Mensaje enviado a ${dest}`, 'ok');
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  // ────────────────────────────────────────────────────────
+  // ACTUALIZAR BADGES (notif + integridad) en header de Personal
+  // ────────────────────────────────────────────────────────
+  async function _actualizarBadgesPersonal() {
+    // Notificaciones unificadas
+    const pendDisp = (cfgData.dispositivos || []).filter(d => String(d.Estado).toUpperCase() === 'PENDIENTE_APROBACION').length;
+    const bloqs = (cfgData.bloqueosME || []).filter(b => b.fechaBloqueo && !b.unlockVigente).length;
+    _personalNotifCount = pendDisp + bloqs + _personalIntegCount;
+    const bN = $('personalNotifBadge');
+    if (bN) {
+      if (_personalNotifCount > 0) {
+        bN.classList.remove('hidden');
+        bN.textContent = _personalNotifCount;
+      } else {
+        bN.classList.add('hidden');
+      }
+    }
+    // Integridad
+    try {
+      const r = await API.get('getAuditoriaIntegridad', {});
+      const alertas = r?.alertas || r?.data || [];
+      _personalIntegCount = Array.isArray(alertas) ? alertas.filter(a => !a.resuelto).length : 0;
+    } catch(_) { _personalIntegCount = 0; }
+    const bI = $('personalIntegBadge');
+    if (bI) {
+      if (_personalIntegCount > 0) {
+        bI.classList.remove('hidden');
+        bI.textContent = _personalIntegCount;
+      } else {
+        bI.classList.add('hidden');
+      }
+    }
   }
 
   async function guardarMetaChip(configKey, valor) {
@@ -14816,6 +15236,10 @@ const MOS = (() => {
     toggleZonaActiva, toggleEstacionActiva, toggleImpresoraActiva, infraToggleHeatmap,
     abrirModalPersonal, guardarPersonal, togglePersonalActivo, eliminarPersonal,
     editarMetaChip, guardarMetaChip,
+    abrirModalClaveGlobal, cgConsultar, cgRotar,
+    _togglePersAudit, abrirModalHistorialAudit, histAuditCargar, histAuditFiltrar,
+    abrirModalIntegridad, abrirModalNotificaciones,
+    abrirModalEnviarPush, enviarPushUsuario,
     _persActualizarPreview, _persRandomColor, _persRandomPin, _persSeleccionarColor,
     abrirModalSerieZona, guardarSerieZona, eliminarSerieZona, _serieActualizarPreview,
     guardarPinEstacion, guardarPinWH,
