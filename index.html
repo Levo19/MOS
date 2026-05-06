@@ -803,7 +803,7 @@
         padding-top: 0;
       }
     }
-    /* Detalle inline (mobile/tablet) — se inyecta debajo del card seleccionado */
+    /* Detalle inline (tablet) — se inyecta debajo del card seleccionado */
     .prov-inline-detail {
       background: #0a1428;
       border: 1px solid rgba(99,102,241,.35);
@@ -811,7 +811,23 @@
       border-radius: 0 0 12px 12px;
       margin-top: -2px;
       padding: 12px;
-      animation: provExpandIn .18s ease-out;
+      animation: provExpandIn .28s cubic-bezier(.34, 1.2, .64, 1);
+      transform-origin: top center;
+    }
+    /* Panel detalle (mobile y desktop) — fade in suave al aparecer */
+    #proveedorDetail {
+      animation: provDetailIn .3s cubic-bezier(.34, 1.2, .64, 1);
+    }
+    @keyframes provDetailIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    /* Transición suave de cards en el grid al cambiar layout */
+    #listProveedores .card[data-prov-card] {
+      transition: transform .25s cubic-bezier(.34, 1.2, .64, 1),
+                  border-color .2s ease,
+                  box-shadow .25s ease,
+                  background .25s ease;
     }
     /* Padding extra al fondo del view-proveedores en mobile/tablet
        para que el bottom nav no tape el contenido cuando hay detalle abierto */
@@ -1247,15 +1263,24 @@
       border-bottom: none; padding-top: 12px;
     }
     @keyframes provExpandIn {
-      from { opacity: 0; transform: translateY(-4px); }
-      to   { opacity: 1; transform: translateY(0); }
+      from { opacity: 0; transform: translateY(-8px) scaleY(.95); }
+      to   { opacity: 1; transform: translateY(0)    scaleY(1); }
     }
     /* ═════════════════════════════════════════════════════════
        LAYOUT DE LA LISTA DE PROVEEDORES — 3 modos por breakpoint
        Mobile (<768)  → carrusel horizontal con scroll-snap (Rolodex)
-       Tablet (768-1023) → 2 cols sin selección, 1 col + inline con sel
+       Tablet (768-1023) → carrusel sin sel · vertical+inline con sel
        Desktop (≥1024) → 3 cols sin selección, master-detail con sel
        ════════════════════════════════════════════════════════ */
+    /* En mobile/tablet (<1024) forzamos el grid padre a apilar vertical
+       para evitar cualquier interpretación de columnas heredadas. */
+    @media (max-width: 1023px) {
+      #view-proveedores > .grid {
+        display: flex !important;
+        flex-direction: column;
+        gap: 1rem;
+      }
+    }
     /* Default: lista vertical 1 col */
     #listProveedores {
       display: flex;

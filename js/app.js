@@ -112,6 +112,12 @@ const MOS = (() => {
   function nav(viewName) {
     if (S.view === viewName) return;
 
+    // Al SALIR del módulo proveedores, limpiar la selección activa para
+    // que al regresar arranque sin un proveedor pre-seleccionado.
+    if (S.view === 'proveedores' && viewName !== 'proveedores' && S.provSelId) {
+      try { cerrarDetalleProveedor(); } catch {}
+    }
+
     document.querySelectorAll('.view').forEach(v => {
       v.classList.remove('active');
       v.classList.add('hidden');
@@ -5337,7 +5343,6 @@ const MOS = (() => {
         </div>
       </div>`;
     }).join('');
-    _renderProvComprometeToolbar();
   }
 
   // Aplicar sugerencias al carrito + animar FAB + abrir modal
