@@ -9238,10 +9238,82 @@ const MOS = (() => {
       }
       toast('Estación guardada ✓', 'ok');
       renderInfra();
+      // Auto-replicación: si es nueva y la zona ya tiene series, crearlas para esta estación
+      if (!idEdit && res?.idEstacion && params.idZona) {
+        await _replicarSeriesParaNuevaEstacion(res.idEstacion, params.idZona);
+      }
     } catch(e) {
       cfgData.estaciones = backup;
       renderInfra();
       toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  // Si la zona ya tiene series configuradas, crear las filas correspondientes
+  // para la nueva estación. Cada nueva fila empieza con correlativo=1.
+  // El nombre de la serie se toma de la mayoría existente en la zona.
+  async function _replicarSeriesParaNuevaEstacion(idEstacion, idZona) {
+    if (!idEstacion || !idZona) return;
+    const seriesZona = (cfgData.series || []).filter(s =>
+      s.idZona === idZona && s.idEstacion !== idEstacion
+    );
+    if (!seriesZona.length) return; // zona sin series — no hay nada que replicar
+
+    // Agrupar por tipoDocumento → escoger el nombre más frecuente
+    const porTipo = {};
+    seriesZona.forEach(s => {
+      const k = s.tipoDocumento;
+      if (!porTipo[k]) porTipo[k] = [];
+      porTipo[k].push(s);
+    });
+
+    const nuevasFilas = [];
+    Object.keys(porTipo).forEach(tipo => {
+      const grupos = porTipo[tipo];
+      const conteo = {};
+      grupos.forEach(s => { conteo[s.serie] = (conteo[s.serie] || 0) + 1; });
+      const nombreMasComun = Object.entries(conteo).sort((a, b) => b[1] - a[1])[0][0];
+      // Verificar si ya existe (defensa contra duplicados)
+      const yaExiste = (cfgData.series || []).some(s =>
+        s.idEstacion === idEstacion && s.tipoDocumento === tipo
+      );
+      if (!yaExiste) {
+        nuevasFilas.push({
+          idEstacion,
+          idZona,
+          tipoDocumento: tipo,
+          serie: nombreMasComun,
+          correlativo: 1,
+          activo: '1'
+        });
+      }
+    });
+
+    if (!nuevasFilas.length) return;
+
+    // OPTIMISTA: agregar a cfgData.series con id temporal
+    nuevasFilas.forEach(f => {
+      cfgData.series.push({ ...f, idSerie: 'SER_TMP' + Date.now() + '_' + f.tipoDocumento, _tmp: true });
+    });
+    renderInfra();
+
+    try {
+      await Promise.all(nuevasFilas.map(f =>
+        API.post('crearSerie', f).then(res => {
+          if (res?.idSerie) {
+            const tmp = cfgData.series.find(s => s._tmp && s.idEstacion === idEstacion && s.tipoDocumento === f.tipoDocumento);
+            if (tmp) { tmp.idSerie = res.idSerie; delete tmp._tmp; }
+          }
+        })
+      ));
+      toast(`✓ Auto-replicadas ${nuevasFilas.length} serie${nuevasFilas.length === 1 ? '' : 's'} desde la zona`, 'ok');
+      renderInfra();
+    } catch(e) {
+      console.error('[replicar series]', e);
+      // Quitar las _tmp que no pudieron sincronizarse
+      cfgData.series = cfgData.series.filter(s => !s._tmp);
+      renderInfra();
+      toast('La estación se creó pero falló la replicación de series', 'warn');
     }
   }
 
@@ -9765,6 +9837,7 @@ const MOS = (() => {
     const backup = (cfgData.series || []).slice();
     const promesas = [];
 
+    let creadas = 0, actualizadas = 0;
     for (const e of estZona) {
       const existente = seriesExistentes.find(s => s.idEstacion === e.idEstacion);
       if (existente) {
@@ -9783,15 +9856,17 @@ const MOS = (() => {
           correlativo: nuevoCorr,
           activo
         }));
-      } else if (!esEdicion) {
-        // Crear nueva fila para esta estación
+        actualizadas++;
+      } else {
+        // Crear nueva fila para esta estación (también en modo edición:
+        // completa la cobertura si la zona tiene estaciones sin esta serie)
         const tmp = {
           idSerie: 'SER_TMP' + Date.now() + '_' + e.idEstacion,
           idEstacion: e.idEstacion,
           idZona,
           tipoDocumento,
           serie: nombre,
-          correlativo,
+          correlativo: esEdicion ? 1 : correlativo, // estación nueva siempre arranca en 1
           activo,
           _tmp: true
         };
@@ -9801,12 +9876,13 @@ const MOS = (() => {
           idZona,
           tipoDocumento,
           serie: nombre,
-          correlativo,
+          correlativo: tmp.correlativo,
           activo
         }).then(res => {
           if (res?.idSerie) tmp.idSerie = res.idSerie;
           delete tmp._tmp;
         }));
+        creadas++;
       }
     }
 
@@ -9814,7 +9890,10 @@ const MOS = (() => {
 
     try {
       await Promise.all(promesas);
-      toast(`Serie ${tipoDocumento} guardada en ${estZona.length} estación(es) ✓`, 'ok');
+      const partes = [];
+      if (actualizadas) partes.push(`${actualizadas} actualizada${actualizadas === 1 ? '' : 's'}`);
+      if (creadas)      partes.push(`${creadas} creada${creadas === 1 ? '' : 's'} (auto)`);
+      toast(`Serie ${tipoDocumento}: ${partes.join(' · ')} ✓`, 'ok');
     } catch(e) {
       console.error('[guardarSerieZona]', e);
       cfgData.series = backup;
