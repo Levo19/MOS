@@ -11304,6 +11304,34 @@ const MOS = (() => {
     if (sub) sub.textContent = nom ? `${app === 'mosExpress' ? 'ME' : 'WH'} · equipo físico` : 'Equipo físico autorizado';
   }
 
+  function _dispPoblarSelectZonas(idZonaSel) {
+    const sel = $('dispUltimaZona');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">— Sin asignar —</option>' +
+      (cfgData.zonas || []).filter(z => z.estado === '1' || z.estado === 1)
+        .map(z => `<option value="${z.idZona}">${z.nombre}</option>`).join('');
+    if (idZonaSel) sel.value = idZonaSel;
+  }
+
+  function _dispPoblarSelectEstaciones(idZona, idEstacionSel) {
+    const sel = $('dispUltimaEstacion');
+    if (!sel) return;
+    let estaciones = cfgData.estaciones || [];
+    if (idZona) estaciones = estaciones.filter(e => e.idZona === idZona);
+    estaciones = estaciones.filter(e => String(e.activo) === '1');
+    sel.innerHTML = '<option value="">— Sin asignar —</option>' +
+      estaciones.map(e => {
+        const ico = { CAJA: '🛒', ALMACEN: '🏭', ENVASADO: '🍶' }[e.tipo] || '📍';
+        return `<option value="${e.idEstacion}">${ico} ${e.nombre}</option>`;
+      }).join('');
+    if (idEstacionSel) sel.value = idEstacionSel;
+  }
+
+  function _dispZonaCambio() {
+    const idZona = $('dispUltimaZona')?.value || '';
+    _dispPoblarSelectEstaciones(idZona, ''); // resetear estación al cambiar zona
+  }
+
   function abrirModalDispositivo(id) {
     const modal = $('modalDispositivo');
     if (!modal) return;
@@ -11332,6 +11360,9 @@ const MOS = (() => {
       if (wrap) wrap.classList.remove('hidden');
       if (btnElim) btnElim.classList.remove('hidden');
       $('dispIdVisible').readOnly = true; // no permite cambiar UUID al editar
+      // Selectors de ubicación pre-llenados
+      _dispPoblarSelectZonas(d.Ultima_Zona || '');
+      _dispPoblarSelectEstaciones(d.Ultima_Zona || '', d.Ultima_Estacion || '');
       // Última conexión
       if (ucWrap) {
         ucWrap.classList.remove('hidden');
@@ -11356,6 +11387,8 @@ const MOS = (() => {
       if (btnElim) btnElim.classList.add('hidden');
       if (ucWrap) ucWrap.classList.add('hidden');
       $('dispIdVisible').readOnly = false;
+      _dispPoblarSelectZonas('');
+      _dispPoblarSelectEstaciones('', '');
     }
     _dispActualizarPreview();
     modal.classList.remove('hidden');
@@ -11380,6 +11413,8 @@ const MOS = (() => {
     const app        = $('dispApp').value;
     const tg         = $('dispEstadoToggle');
     const estado     = idOriginal ? (tg && tg.checked ? 'ACTIVO' : 'INACTIVO') : 'ACTIVO';
+    const idZonaManual     = $('dispUltimaZona')?.value || '';
+    const idEstacionManual = $('dispUltimaEstacion')?.value || '';
     if (!nombre) { toast('El nombre del equipo es obligatorio', 'warn'); return; }
     if (!idNuevo) { toast('Pega el UUID del dispositivo', 'warn'); return; }
 
@@ -11388,18 +11423,32 @@ const MOS = (() => {
     const backup = list.slice();
     if (idOriginal) {
       const idx = list.findIndex(x => x.ID_Dispositivo === idOriginal);
-      if (idx >= 0) list[idx] = { ...list[idx], Nombre_Equipo: nombre, App: app, Estado: estado };
+      if (idx >= 0) list[idx] = {
+        ...list[idx],
+        Nombre_Equipo: nombre, App: app, Estado: estado,
+        Ultima_Zona: idZonaManual,
+        Ultima_Estacion: idEstacionManual
+      };
     } else {
-      list.push({ ID_Dispositivo: idNuevo, Nombre_Equipo: nombre, App: app, Estado: estado, Ultima_Conexion: '' });
+      list.push({
+        ID_Dispositivo: idNuevo, Nombre_Equipo: nombre, App: app, Estado: estado,
+        Ultima_Conexion: '', Ultima_Zona: idZonaManual, Ultima_Estacion: idEstacionManual
+      });
     }
     cerrarModalDispositivo();
     renderInfra();
 
     try {
       if (idOriginal) {
-        await API.post('actualizarDispositivo', { ID_Dispositivo: idOriginal, Nombre_Equipo: nombre, App: app, Estado: estado });
+        await API.post('actualizarDispositivo', {
+          ID_Dispositivo: idOriginal, Nombre_Equipo: nombre, App: app, Estado: estado,
+          Ultima_Zona: idZonaManual, Ultima_Estacion: idEstacionManual
+        });
       } else {
-        await API.post('crearDispositivo', { ID_Dispositivo: idNuevo, Nombre_Equipo: nombre, App: app, Estado: estado });
+        await API.post('crearDispositivo', {
+          ID_Dispositivo: idNuevo, Nombre_Equipo: nombre, App: app, Estado: estado,
+          Ultima_Zona: idZonaManual, Ultima_Estacion: idEstacionManual
+        });
       }
       toast('Dispositivo guardado ✓', 'ok');
     } catch(e) {
@@ -14403,7 +14452,7 @@ const MOS = (() => {
     av_consultarClaveDesdeMenu,
     toggleVendedorME,
     abrirModalDispositivo, cerrarModalDispositivo, guardarDispositivo, toggleEstadoDispositivo,
-    eliminarDispositivo, aprobarDispositivo, rechazarDispositivo, dispCopiarUUID, _dispActualizarPreview,
+    eliminarDispositivo, aprobarDispositivo, rechazarDispositivo, dispCopiarUUID, _dispActualizarPreview, _dispZonaCambio,
     toggleAvatarMenu, closeAvatarMenu, installPWA,
     toggleFiltroCat, setFiltroCategoria, toggleFiltroTipo, limpiarFiltrosCat, toggleFiltroAlertas, toggleAlertPop,
     // Cajas

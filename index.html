@@ -3823,9 +3823,28 @@
             </div>
           </div>
 
+          <div class="pers-section">
+            <div class="pers-section-title">Ubicación actual</div>
+            <p class="text-[10px] text-slate-500 mb-2">Asígnalo manualmente o se actualiza solo cuando el cajero abra MosExpress en una estación.</p>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="lbl">Zona</label>
+                <select id="dispUltimaZona" class="inp" onchange="MOS._dispZonaCambio()">
+                  <option value="">— Sin asignar —</option>
+                </select>
+              </div>
+              <div>
+                <label class="lbl">Estación</label>
+                <select id="dispUltimaEstacion" class="inp">
+                  <option value="">— Sin asignar —</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
           <div class="rounded-lg p-3 mt-2" style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.3);">
             <p class="text-[11px] text-indigo-300 leading-relaxed">
-              💡 <strong>El dispositivo no se ancla a una zona</strong>. Aparece automáticamente en la zona/estación donde el cajero hizo login por última vez. Puede usarse en cualquier zona.
+              💡 <strong>El dispositivo no se ancla a una zona</strong>. Si el cajero hace login en otra zona/estación, se mueve automáticamente. Esta asignación es solo el "punto de partida" o ajuste manual.
             </p>
           </div>
         </div>
