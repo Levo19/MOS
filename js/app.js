@@ -139,9 +139,10 @@ const MOS = (() => {
     const tutCajasFab = $('tutCajasFAB');
     if (tutCajasFab) tutCajasFab.style.display = (viewName === 'cajas') ? 'flex' : 'none';
 
-    // FAB visibility
+    // FAB del + (catálogo/proveedores). Lo dejé inactivo en proveedores
+    // porque ya hay un "+ Nuevo" en el header — botón duplicado innecesario.
     const fab = $('fab');
-    if (fab) fab.classList.toggle('visible', viewName === 'proveedores');
+    if (fab) fab.classList.remove('visible');
     // FAB del carrito de proveedores: visible en cualquier vista si hay carrito activo
     _provFabRender();
 
@@ -4548,7 +4549,19 @@ const MOS = (() => {
     `<div id="provInlineDetail" class="prov-inline-detail lg:hidden" style="display:none"></div>`;
 
     // Si hay selección activa, posicionar el inline-detail tras su card sin re-render
-    if (S.provSelId) _provPosicionarInlineDetail(S.provSelId);
+    if (S.provSelId) {
+      _provPosicionarInlineDetail(S.provSelId);
+      _provViewToggleConDetalle(true);
+    } else {
+      _provViewToggleConDetalle(false);
+    }
+  }
+
+  // Toggle de la clase con-detalle del view (afecta layout grid)
+  function _provViewToggleConDetalle(activo) {
+    const view = $('view-proveedores');
+    if (!view) return;
+    view.classList.toggle('con-detalle', !!activo);
   }
 
   // ── Cambio fluido de selección sin re-render de lista ───────
@@ -4577,9 +4590,11 @@ const MOS = (() => {
       const cardNuevo = list.querySelector(`[data-prov-card="${idNuevo}"]`);
       if (cardNuevo) cardNuevo.classList.add('prov-card-active');
       _provPosicionarInlineDetail(idNuevo);
+      _provViewToggleConDetalle(true);
     } else {
       const inline = $('provInlineDetail');
       if (inline) { inline.style.display = 'none'; inline.innerHTML = ''; }
+      _provViewToggleConDetalle(false);
     }
   }
 
