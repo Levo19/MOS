@@ -8421,12 +8421,15 @@ const MOS = (() => {
     const estaciones = cfgData.estaciones || [];
     const impresoras = cfgData.impresoras || [];
 
-    // Filtros
-    const buscar = String($('infraBuscar')?.value || '').trim().toLowerCase();
-    const filtroApp = $('infraFiltroApp')?.value || '';
-    const soloActivos = $('infraSoloActivos')?.checked;
-
-    const _match = (texto) => !buscar || String(texto || '').toLowerCase().includes(buscar);
+    // Card punteado para crear primera/nueva zona
+    const cardNuevaZona = `<button onclick="MOS.abrirModalZona(null)"
+        class="w-full py-6 rounded-xl border-2 border-dashed border-slate-700 hover:border-sky-600 hover:bg-sky-900/10 transition-all text-slate-500 hover:text-sky-300 group">
+        <div class="flex items-center justify-center gap-2 text-sm font-semibold">
+          <span class="text-xl">🏬</span>
+          <span>+ agregar nueva zona</span>
+        </div>
+        <p class="text-[10px] text-slate-600 group-hover:text-sky-500 mt-1">Crea otro punto de venta físico</p>
+      </button>`;
 
     if (!zonas.length) {
       cont.innerHTML = `<div class="card p-12 text-center text-slate-500">
@@ -8438,23 +8441,9 @@ const MOS = (() => {
       return;
     }
 
-    cont.innerHTML = zonas.map(z => {
+    const zonasHTML = zonas.map(z => {
       const zonaActiva = String(z.estado) === '1' || z.estado === 1 || z.estado === true;
-      if (soloActivos && !zonaActiva) return '';
-      // Estaciones de esta zona
-      let estZona = estaciones.filter(e => e.idZona === z.idZona);
-      if (filtroApp) estZona = estZona.filter(e => e.appOrigen === filtroApp);
-      if (soloActivos) estZona = estZona.filter(e => String(e.activo) === '1');
-      // Filtro de búsqueda — la zona pasa si su nombre matchea, o si alguna estación/impresora hija matchea
-      const zonaMatchea = _match(z.nombre) || _match(z.idZona) || _match(z.direccion);
-      const estacionesMatch = estZona.filter(e => {
-        if (zonaMatchea) return true;
-        if (_match(e.nombre) || _match(e.idEstacion)) return true;
-        const imps = impresoras.filter(i => i.idEstacion === e.idEstacion);
-        return imps.some(i => _match(i.nombre) || _match(i.printNodeId));
-      });
-      if (buscar && !zonaMatchea && estacionesMatch.length === 0) return '';
-
+      const estZona = estaciones.filter(e => e.idZona === z.idZona);
       const totalImp = estZona.reduce((acc, e) =>
         acc + impresoras.filter(i => i.idEstacion === e.idEstacion).length, 0);
 
@@ -8462,8 +8451,7 @@ const MOS = (() => {
         ? '<span class="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-900/60 text-emerald-300 font-bold"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>activa</span>'
         : '<span class="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-400 font-bold">inactiva</span>';
 
-      // Estaciones grid
-      const estsHTML = (estacionesMatch.length ? estacionesMatch : estZona).map(e => _renderInfraEstacion(e, impresoras, soloActivos, _match, filtroApp)).join('');
+      const estsHTML = estZona.map(e => _renderInfraEstacion(e, impresoras)).join('');
 
       return `<div class="card p-4" style="background:linear-gradient(135deg,#0d1f3a 0%,#0d1526 100%);border:1px solid ${zonaActiva ? '#1e3a8a' : '#334155'};${zonaActiva ? '' : 'opacity:0.7;'}">
         <!-- Header zona -->
@@ -8500,14 +8488,14 @@ const MOS = (() => {
           + estación a esta zona
         </button>
       </div>`;
-    }).filter(Boolean).join('') || `<div class="card p-8 text-center text-slate-500 text-sm">Sin coincidencias para los filtros aplicados.</div>`;
+    }).join('');
+
+    cont.innerHTML = zonasHTML + cardNuevaZona;
   }
 
-  function _renderInfraEstacion(e, impresoras, soloActivos, _match, filtroApp) {
+  function _renderInfraEstacion(e, impresoras) {
     const activa = String(e.activo) === '1' || e.activo === 1 || e.activo === true;
-    if (soloActivos && !activa) return '';
-    let imps = impresoras.filter(i => i.idEstacion === e.idEstacion);
-    if (soloActivos) imps = imps.filter(i => String(i.activo) === '1');
+    const imps = impresoras.filter(i => i.idEstacion === e.idEstacion);
     const tipoIcon = { CAJA: '🛒', ALMACEN: '🏭', ENVASADO: '🍶' }[e.tipo] || '📍';
     const appColor = e.appOrigen === 'mosExpress' ? '#818cf8' : '#fb923c';
     const appBadge = e.appOrigen === 'mosExpress'
@@ -8558,10 +8546,6 @@ const MOS = (() => {
         + impresora
       </button>
     </div>`;
-  }
-
-  function infra_filtrar() {
-    renderInfra();
   }
 
   // Toggles optimistas
@@ -13883,7 +13867,7 @@ const MOS = (() => {
     abrirModalEstacion, guardarEstacion, eliminarEstacion, _estActualizarPreview,
     abrirModalImpresora, guardarImpresora, eliminarImpresora, _impActualizarPreview,
     eliminarZona, _zonaActualizarPreview,
-    infra_filtrar, toggleZonaActiva, toggleEstacionActiva, toggleImpresoraActiva,
+    toggleZonaActiva, toggleEstacionActiva, toggleImpresoraActiva,
     abrirModalPersonal, guardarPersonal, togglePersonalActivo, eliminarPersonal,
     _persActualizarPreview, _persRandomColor, _persRandomPin, _persSeleccionarColor,
     abrirModalSerie, guardarSerie,

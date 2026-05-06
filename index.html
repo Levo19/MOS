@@ -3477,32 +3477,10 @@
            INFRAESTRUCTURA — vista jerárquica Zona → Estación → Impresora
            ════════════════════════════════════════════════════════ -->
       <div id="cfgPanelInfra">
-        <!-- Toolbar superior sticky -->
-        <div class="card p-3 mb-3" style="position:sticky;top:0;z-index:5;background:linear-gradient(135deg,#0c1a2e 0%,#0d1526 100%);border:1px solid #1e3a8a;">
-          <div class="flex items-center justify-between gap-2 flex-wrap">
-            <p class="text-xs text-slate-400 flex-1 min-w-0">
-              Jerarquía completa: <strong class="text-slate-200">Zonas</strong> → <strong class="text-slate-200">Estaciones</strong> → <strong class="text-slate-200">Impresoras</strong>
-            </p>
-            <div class="flex gap-1.5 shrink-0">
-              <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalZona(null)" style="background:#0ea5e9">+ Zona</button>
-              <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalEstacion(null)" style="background:#10b981">+ Estación</button>
-              <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalImpresora(null)" style="background:#a855f7">+ Impresora</button>
-            </div>
-          </div>
-          <div class="flex items-center gap-2 mt-2 flex-wrap">
-            <input id="infraBuscar" oninput="MOS.infra_filtrar()" placeholder="🔍 Buscar zona, estación o impresora..."
-                   class="inp text-xs flex-1 min-w-[200px]" style="padding:6px 10px;">
-            <select id="infraFiltroApp" onchange="MOS.infra_filtrar()" class="inp text-xs" style="padding:6px 10px;width:auto;">
-              <option value="">Todas las apps</option>
-              <option value="mosExpress">📍 MosExpress</option>
-              <option value="warehouseMos">🏭 warehouseMos</option>
-            </select>
-            <label class="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer">
-              <input id="infraSoloActivos" type="checkbox" onchange="MOS.infra_filtrar()" class="w-3.5 h-3.5 accent-emerald-500">
-              Solo activos
-            </label>
-          </div>
-        </div>
+        <!-- Subtítulo breve -->
+        <p class="text-xs text-slate-500 mb-3">
+          Jerarquía: <strong class="text-slate-300">Zonas</strong> → <strong class="text-slate-300">Estaciones</strong> → <strong class="text-slate-300">Impresoras</strong>. Usa los botones contextuales dentro de cada card para agregar.
+        </p>
 
         <!-- Vista jerárquica -->
         <div id="infraContenedor" class="space-y-4">
