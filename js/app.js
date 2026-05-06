@@ -8530,17 +8530,19 @@ const MOS = (() => {
         elMOS.innerHTML = cfgData.personalMOS.map(p => {
           const ini = ((p.nombre||'?')[0] + (p.apellido||'?')[0]).toUpperCase();
           const rolCls = p.rol === 'master' ? 'badge-yellow' : 'badge-blue';
-          return `<div class="flex items-center gap-3 p-3 rounded-lg" style="background:#0d1526;border:1px solid #1e293b">
+          const activo = p.estado == '1';
+          return `<div class="pers-card${activo ? '' : ' inactivo'}${p._tmp ? ' opacity-60' : ''}">
             <div class="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
                  style="background:${p.color||'#6366f1'}">${ini}</div>
             <div class="flex-1 min-w-0">
-              <div class="font-medium text-sm text-slate-200">${p.nombre} ${p.apellido||''}</div>
+              <div class="font-medium text-sm text-slate-200 truncate">${p.nombre} ${p.apellido||''}</div>
               <span class="badge ${rolCls} text-xs">${p.rol}</span>
             </div>
-            <div class="flex items-center gap-1">
-              <span class="badge ${p.estado=='1'?'badge-green':'badge-gray'} text-xs">${p.estado=='1'?'Activo':'Inactivo'}</span>
-              <button onclick="MOS.abrirModalPersonal('${p.idPersonal}','MOS')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700 ml-1">✏️</button>
-            </div>
+            <label class="pers-switch" title="${activo ? 'Desactivar' : 'Activar'}" onclick="event.stopPropagation()">
+              <input type="checkbox" ${activo ? 'checked' : ''} onchange="MOS.togglePersonalActivo('${p.idPersonal}','MOS', event)">
+              <span class="pers-switch-slider"></span>
+            </label>
+            <button onclick="MOS.abrirModalPersonal('${p.idPersonal}','MOS')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700 ml-1" title="Editar">✏️</button>
           </div>`;
         }).join('');
       }
@@ -8557,22 +8559,25 @@ const MOS = (() => {
       return;
     }
     el.innerHTML = cfgData.personal.map(p => {
-      const initials = (p.nombre || '?').charAt(0) + (p.apellido || '?').charAt(0);
+      const initials = ((p.nombre || '?').charAt(0) + (p.apellido || '?').charAt(0)).toUpperCase();
       const rolBadge = p.rol === 'ENVASADOR' ? 'badge-yellow' : p.rol === 'SUPERVISOR' ? 'badge-blue' : 'badge-gray';
-      return `<div class="flex items-center gap-3 p-3 rounded-lg" style="background:#0d1526;border:1px solid #1e293b">
+      const activo = p.estado == '1';
+      return `<div class="pers-card${activo ? '' : ' inactivo'}${p._tmp ? ' opacity-60' : ''}">
         <div class="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
              style="background:${p.color || '#6366f1'}">${initials}</div>
         <div class="flex-1 min-w-0">
-          <div class="font-medium text-sm text-slate-200">${p.nombre} ${p.apellido || ''}</div>
-          <div class="flex items-center gap-2 mt-0.5">
+          <div class="font-medium text-sm text-slate-200 truncate">${p.nombre} ${p.apellido || ''}</div>
+          <div class="flex items-center gap-2 mt-0.5 flex-wrap">
             <span class="badge ${rolBadge} text-xs">${p.rol}</span>
-            <span class="text-xs text-slate-500">${p.tarifaHora ? 'S/.' + parseFloat(p.tarifaHora).toFixed(2) + '/h' : ''}</span>
+            ${p.tarifaHora ? `<span class="text-[10px] text-slate-500">S/.${parseFloat(p.tarifaHora).toFixed(2)}/h</span>` : ''}
+            ${p.montoBase ? `<span class="text-[10px] text-slate-500">· S/.${parseFloat(p.montoBase).toFixed(2)}/d</span>` : ''}
           </div>
         </div>
-        <div class="flex items-center gap-1">
-          <span class="badge ${p.estado == '1' ? 'badge-green' : 'badge-gray'} text-xs">${p.estado == '1' ? 'Activo' : 'Inactivo'}</span>
-          <button onclick="MOS.abrirModalPersonal('${p.idPersonal}','warehouseMos')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700 ml-1">✏️</button>
-        </div>
+        <label class="pers-switch" title="${activo ? 'Desactivar' : 'Activar'}" onclick="event.stopPropagation()">
+          <input type="checkbox" ${activo ? 'checked' : ''} onchange="MOS.togglePersonalActivo('${p.idPersonal}','warehouseMos', event)">
+          <span class="pers-switch-slider"></span>
+        </label>
+        <button onclick="MOS.abrirModalPersonal('${p.idPersonal}','warehouseMos')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700 ml-1" title="Editar">✏️</button>
       </div>`;
     }).join('');
   }
@@ -8808,6 +8813,22 @@ const MOS = (() => {
     } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
 
+  function _persActualizarPreview() {
+    const ini = ($('persNombre')?.value || '').trim().charAt(0).toUpperCase()
+              + ($('persApellido')?.value || '').trim().charAt(0).toUpperCase();
+    const av = $('persAvatarPreview');
+    if (av) {
+      av.textContent = ini || '??';
+      av.style.background = $('persColor')?.value || '#6366f1';
+    }
+    const sub = $('modalPersSubtitle');
+    if (sub) {
+      const rol = $('persRol')?.value || '';
+      const app = $('persAppOrigen')?.value || '';
+      sub.textContent = (rol || '—') + (app ? ' · ' + app : '');
+    }
+  }
+
   function abrirModalPersonal(id, appOrigen = 'warehouseMos') {
     ['Nombre','Apellido','Pin','Tarifa','Monto'].forEach(f => {
       const el = $('pers' + f); if (el && el.tagName !== 'SELECT') el.value = '';
@@ -8815,9 +8836,7 @@ const MOS = (() => {
     $('persId').value = '';
     $('persAppOrigen').value = appOrigen;
     const isMOS = appOrigen === 'MOS';
-    // Show/hide WH-only fields
-    const tw = $('persTarifaWrap'); if (tw) tw.style.display = isMOS ? 'none' : '';
-    const mw = $('persMontoWrap');  if (mw) mw.style.display = isMOS ? 'none' : '';
+    const pagoWrap = $('persPagoWrap'); if (pagoWrap) pagoWrap.style.display = isMOS ? 'none' : '';
     // Set rol options based on app
     const rolSel = $('persRol');
     if (rolSel) {
@@ -8828,6 +8847,10 @@ const MOS = (() => {
     $('persColor').value = '#6366f1';
 
     const source = isMOS ? cfgData.personalMOS : cfgData.personal;
+    const estadoWrap = $('persEstadoWrap');
+    const btnElim = $('persBtnEliminar');
+    const pinHint = $('persPinHint');
+
     if (id) {
       const p = source.find(x => x.idPersonal === id);
       if (!p) return;
@@ -8841,20 +8864,31 @@ const MOS = (() => {
         $('persTarifa').value = p.tarifaHora || '';
         $('persMonto').value  = p.montoBase  || '';
       }
+      // Toggle activo + botón eliminar visibles en edición
+      if (estadoWrap) estadoWrap.classList.remove('hidden');
+      if (btnElim)    btnElim.classList.remove('hidden');
+      if (pinHint)    { pinHint.textContent = '(opcional al editar)'; pinHint.className = 'text-slate-500 text-[10px]'; }
+      const tg = $('persEstadoToggle');
+      if (tg) tg.checked = String(p.estado) === '1' || p.estado === true;
     } else {
       $('modalPersTitle').textContent = isMOS ? 'Nuevo Usuario MOS' : 'Nuevo Operador';
       if (rolSel) rolSel.value = isMOS ? 'admin' : 'ALMACENERO';
+      if (estadoWrap) estadoWrap.classList.add('hidden');
+      if (btnElim)    btnElim.classList.add('hidden');
+      if (pinHint)    { pinHint.textContent = 'requerido al crear'; pinHint.className = 'text-amber-400 text-[10px]'; }
     }
+    _persActualizarPreview();
     openModal('modalPersonal');
   }
 
   async function guardarPersonal() {
     const appOrigen = $('persAppOrigen')?.value || 'warehouseMos';
     const isMOS = appOrigen === 'MOS';
+    const idEdit = $('persId')?.value || undefined;
     const params = {
-      idPersonal:  $('persId')?.value || undefined,
-      nombre:      $('persNombre')?.value || '',
-      apellido:    $('persApellido')?.value || '',
+      idPersonal:  idEdit,
+      nombre:      ($('persNombre')?.value || '').trim(),
+      apellido:    ($('persApellido')?.value || '').trim(),
       rol:         $('persRol')?.value || (isMOS ? 'admin' : 'ALMACENERO'),
       color:       $('persColor')?.value || '#6366f1',
       tipo:        'OPERADOR',
@@ -8866,15 +8900,90 @@ const MOS = (() => {
     }
     const pin = $('persPin')?.value;
     if (pin) params.pin = pin;
+    // Estado del toggle (solo aplica al editar)
+    if (idEdit) {
+      const tg = $('persEstadoToggle');
+      params.estado = (tg && tg.checked) ? '1' : '0';
+    }
     if (!params.nombre) { toast('Nombre requerido', 'error'); return; }
-    if (!params.idPersonal && !pin) { toast('PIN requerido', 'error'); return; }
+    if (!params.idPersonal && !pin) { toast('PIN requerido al crear', 'error'); return; }
+
+    // OPTIMISTA: cerrar modal + actualizar lista local + sincronizar
+    const list = isMOS ? (cfgData.personalMOS || []) : (cfgData.personal || []);
+    const backup = list.slice();
+    if (idEdit) {
+      const idx = list.findIndex(x => x.idPersonal === idEdit);
+      if (idx >= 0) list[idx] = { ...list[idx], ...params };
+    } else {
+      list.unshift({ idPersonal: 'TMP_' + Date.now(), estado: '1', _tmp: true, ...params });
+    }
+    closeModal('modalPersonal');
+    renderPersonal();
+    toast(idEdit ? 'Actualizado ✓' : 'Creado ✓', 'ok');
     try {
-      await API.post(params.idPersonal ? 'actualizarPersonalMaster' : 'crearPersonalMaster', params);
-      toast(params.idPersonal ? 'Actualizado' : 'Creado', 'ok');
-      closeModal('modalPersonal');
+      await API.post(idEdit ? 'actualizarPersonalMaster' : 'crearPersonalMaster', params);
+      // Refrescar para obtener idPersonal real del servidor
       S.loaded['config'] = false;
-      await loadConfig();
-    } catch(e) { toast('Error: ' + e.message, 'error'); }
+      loadConfig().catch(() => {});
+    } catch(e) {
+      // Revertir
+      if (isMOS) cfgData.personalMOS = backup; else cfgData.personal = backup;
+      renderPersonal();
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  // Toggle inline en card — activa/desactiva sin abrir modal
+  async function togglePersonalActivo(idPersonal, appOrigen, ev) {
+    if (ev) ev.stopPropagation();
+    const isMOS = appOrigen === 'MOS';
+    const list = isMOS ? (cfgData.personalMOS || []) : (cfgData.personal || []);
+    const p = list.find(x => x.idPersonal === idPersonal);
+    if (!p) return;
+    const nuevoEstado = String(p.estado) === '1' ? '0' : '1';
+    const accion = nuevoEstado === '1' ? 'activar' : 'desactivar';
+    if (!confirm(`¿${accion.charAt(0).toUpperCase() + accion.slice(1)} a ${p.nombre} ${p.apellido || ''}?`)) return;
+    // OPTIMISTA
+    const previo = p.estado;
+    p.estado = nuevoEstado;
+    renderPersonal();
+    try {
+      await API.post('actualizarPersonalMaster', {
+        idPersonal: idPersonal,
+        estado:     nuevoEstado,
+        appOrigen:  appOrigen
+      });
+      toast(`${p.nombre} ${nuevoEstado === '1' ? 'activado' : 'desactivado'}`, 'ok');
+    } catch(e) {
+      p.estado = previo;
+      renderPersonal();
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  async function eliminarPersonal() {
+    const id = $('persId')?.value;
+    const appOrigen = $('persAppOrigen')?.value || 'warehouseMos';
+    if (!id) return;
+    const isMOS = appOrigen === 'MOS';
+    const list = isMOS ? cfgData.personalMOS : cfgData.personal;
+    const p = (list || []).find(x => x.idPersonal === id);
+    if (!p) return;
+    if (!confirm(`¿Eliminar a ${p.nombre} ${p.apellido || ''}? Esta acción no se puede deshacer.`)) return;
+    closeModal('modalPersonal');
+    // OPTIMISTA
+    const backup = list.slice();
+    const idx = list.findIndex(x => x.idPersonal === id);
+    if (idx >= 0) list.splice(idx, 1);
+    renderPersonal();
+    toast('Eliminado ✓', 'ok');
+    try {
+      await API.post('eliminarPersonalMaster', { idPersonal: id, appOrigen });
+    } catch(e) {
+      if (isMOS) cfgData.personalMOS = backup; else cfgData.personal = backup;
+      renderPersonal();
+      toast('Error: ' + e.message, 'error');
+    }
   }
 
   function abrirModalSerie(id) {
@@ -13002,7 +13111,8 @@ const MOS = (() => {
     tutTicketsOpen, tutTicketsClose, tutTicketsNext, tutTicketsPrev, tutTicketsGoto,
     abrirModalEstacion, guardarEstacion,
     abrirModalImpresora, guardarImpresora,
-    abrirModalPersonal, guardarPersonal,
+    abrirModalPersonal, guardarPersonal, togglePersonalActivo, eliminarPersonal,
+    _persActualizarPreview,
     abrirModalSerie, guardarSerie,
     guardarPinEstacion, guardarPinWH,
     abrirModalDispositivo, cerrarModalDispositivo, guardarDispositivo, toggleEstadoDispositivo,

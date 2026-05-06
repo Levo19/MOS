@@ -1746,6 +1746,80 @@
       100% { opacity: 0; transform: scaleX(1);  }
     }
 
+    /* ── Modal Personal moderno ───────────────────────────── */
+    .pers-avatar-lg {
+      width: 48px; height: 48px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 1.05rem; font-weight: 800;
+      flex-shrink: 0;
+      box-shadow: 0 4px 12px rgba(0,0,0,.4);
+      transition: background .2s;
+    }
+    .pers-section {
+      margin-bottom: 14px;
+    }
+    .pers-section-title {
+      font-size: .65rem; color: #fbbf24; font-weight: 800;
+      text-transform: uppercase; letter-spacing: .08em;
+      padding-bottom: 6px;
+      margin-bottom: 8px;
+      border-bottom: 1px dashed #1e293b;
+    }
+    /* Card de personal con switch */
+    .pers-card {
+      display: flex; align-items: center; gap: 10px;
+      padding: 11px 12px;
+      border-radius: 10px;
+      background: #0d1526;
+      border: 1px solid #1e293b;
+      transition: opacity .2s, border-color .2s;
+    }
+    .pers-card.inactivo {
+      opacity: .55;
+      border-color: rgba(100,116,139,.25);
+    }
+    /* Switch tipo iOS */
+    .pers-switch {
+      position: relative;
+      display: inline-block;
+      width: 38px; height: 22px;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+    .pers-switch input {
+      opacity: 0;
+      width: 0; height: 0;
+      position: absolute;
+    }
+    .pers-switch-slider {
+      position: absolute;
+      inset: 0;
+      background: #334155;
+      border-radius: 999px;
+      transition: background .2s;
+    }
+    .pers-switch-slider::before {
+      content: '';
+      position: absolute;
+      width: 16px; height: 16px;
+      left: 3px; top: 3px;
+      background: #f1f5f9;
+      border-radius: 50%;
+      transition: transform .2s, background .2s;
+      box-shadow: 0 1px 3px rgba(0,0,0,.4);
+    }
+    .pers-switch input:checked + .pers-switch-slider {
+      background: linear-gradient(135deg, #10b981, #059669);
+    }
+    .pers-switch input:checked + .pers-switch-slider::before {
+      transform: translateX(16px);
+      background: #fff;
+    }
+    .pers-switch:hover .pers-switch-slider {
+      box-shadow: 0 0 0 4px rgba(99,102,241,.15);
+    }
+
     /* Flash sutil al actualizar pestaña de almacén con data nueva */
     .alm-flash {
       animation: almFlashIn .6s ease;
@@ -5501,36 +5575,97 @@
   </div>
 </div>
 
-<!-- Modal Personal -->
-<div class="modal-backdrop hidden" id="modalPersonal">
-  <div class="modal-box p-6">
-    <div class="flex items-center justify-between mb-5">
-      <h2 id="modalPersTitle" class="font-bold text-lg text-white">Nuevo Operador</h2>
+<!-- Modal Personal — diseño moderno con avatar, secciones y toggle -->
+<div class="modal-backdrop hidden" id="modalPersonal" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalPersonal')">
+  <div class="modal-box p-0" style="max-width:520px;display:flex;flex-direction:column;max-height:92vh;overflow:hidden">
+    <!-- Header con avatar preview -->
+    <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(99,102,241,.08),transparent)">
+      <div id="persAvatarPreview" class="pers-avatar-lg" style="background:#6366f1">??</div>
+      <div class="min-w-0 flex-1">
+        <h2 id="modalPersTitle" class="font-bold text-base text-white truncate">Nuevo Operador</h2>
+        <p id="modalPersSubtitle" class="text-[11px] text-slate-500 mt-0.5">—</p>
+      </div>
       <button onclick="MOS.closeModal('modalPersonal')" class="modal-close-x">×</button>
     </div>
-    <input type="hidden" id="persId">
-    <input type="hidden" id="persAppOrigen" value="warehouseMos">
-    <div class="grid grid-cols-2 gap-3">
-      <div><label class="lbl">Nombre *</label><input id="persNombre" class="inp" placeholder="Carlos"></div>
-      <div><label class="lbl">Apellido</label><input id="persApellido" class="inp" placeholder="Ramos"></div>
-      <div>
-        <label class="lbl">Rol</label>
-        <select id="persRol" class="inp">
-          <option value="ALMACENERO">ALMACENERO</option>
-          <option value="ENVASADOR">ENVASADOR</option>
-          <option value="SUPERVISOR">SUPERVISOR</option>
-          <option value="master">master (acceso total)</option>
-          <option value="admin">admin (sin configuración)</option>
-        </select>
+
+    <div class="overflow-y-auto px-5 py-4 flex-1">
+      <input type="hidden" id="persId">
+      <input type="hidden" id="persAppOrigen" value="warehouseMos">
+
+      <!-- Toggle Activo/Inactivo (solo en edición) -->
+      <div id="persEstadoWrap" class="hidden mb-4 p-3 rounded-lg" style="background:#0d1526;border:1px solid #1e293b">
+        <div class="flex items-center justify-between gap-3">
+          <div class="min-w-0 flex-1">
+            <div class="text-sm font-semibold text-slate-100">Usuario activo</div>
+            <div class="text-[11px] text-slate-500">Si lo desactivas, no podrá iniciar sesión</div>
+          </div>
+          <label class="pers-switch">
+            <input type="checkbox" id="persEstadoToggle">
+            <span class="pers-switch-slider"></span>
+          </label>
+        </div>
       </div>
-      <div><label class="lbl">PIN (4–6 dígitos)</label><input id="persPin" class="inp" type="password" maxlength="6" placeholder="••••"></div>
-      <div><label class="lbl">Color</label><input id="persColor" class="inp" type="color" value="#6366f1"></div>
-      <div id="persTarifaWrap"><label class="lbl">Tarifa/hora (S/.)</label><input id="persTarifa" class="inp" type="number" step="0.50" placeholder="5.00"></div>
-      <div id="persMontoWrap" class="col-span-2"><label class="lbl">Monto base mensual (S/.)</label><input id="persMonto" class="inp" type="number" placeholder="1200"></div>
+
+      <!-- Sección 1: identidad -->
+      <div class="pers-section">
+        <div class="pers-section-title">Identidad</div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="lbl">Nombre *</label>
+            <input id="persNombre" class="inp" placeholder="Carlos" oninput="MOS._persActualizarPreview()">
+          </div>
+          <div>
+            <label class="lbl">Apellido</label>
+            <input id="persApellido" class="inp" placeholder="Ramos" oninput="MOS._persActualizarPreview()">
+          </div>
+          <div>
+            <label class="lbl">Color avatar</label>
+            <input id="persColor" class="inp" type="color" value="#6366f1" oninput="MOS._persActualizarPreview()">
+          </div>
+          <div>
+            <label class="lbl">Rol</label>
+            <select id="persRol" class="inp" onchange="MOS._persActualizarPreview()">
+              <option value="ALMACENERO">ALMACENERO</option>
+              <option value="ENVASADOR">ENVASADOR</option>
+              <option value="SUPERVISOR">SUPERVISOR</option>
+              <option value="master">master (acceso total)</option>
+              <option value="admin">admin (sin configuración)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sección 2: acceso -->
+      <div class="pers-section">
+        <div class="pers-section-title">Acceso</div>
+        <div>
+          <label class="lbl">PIN (4–6 dígitos) <span id="persPinHint" class="text-amber-400 text-[10px]">requerido al crear</span></label>
+          <input id="persPin" class="inp" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="••••">
+          <div class="text-[10px] text-slate-600 mt-1">Si lo dejas vacío al editar, se conserva el actual.</div>
+        </div>
+      </div>
+
+      <!-- Sección 3: pago (solo WH) -->
+      <div id="persPagoWrap" class="pers-section">
+        <div class="pers-section-title">Pago</div>
+        <div class="grid grid-cols-2 gap-3">
+          <div id="persTarifaWrap">
+            <label class="lbl">Tarifa/hora (S/.)</label>
+            <input id="persTarifa" class="inp" type="number" step="0.50" placeholder="5.00">
+          </div>
+          <div id="persMontoWrap">
+            <label class="lbl">Monto base diario</label>
+            <input id="persMonto" class="inp" type="number" placeholder="50">
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="flex gap-2 mt-5">
+
+    <!-- Footer con acciones -->
+    <div class="flex gap-2 px-5 py-3 flex-shrink-0" style="border-top:1px solid #1e293b">
+      <button id="persBtnEliminar" onclick="MOS.eliminarPersonal()" class="btn-ghost hidden" style="color:#f87171">🗑️ Eliminar</button>
       <button onclick="MOS.closeModal('modalPersonal')" class="btn-ghost flex-1">Cancelar</button>
-      <button onclick="MOS.guardarPersonal()" class="btn-primary flex-1">Guardar</button>
+      <button onclick="MOS.guardarPersonal()" class="btn-primary flex-1">💾 Guardar</button>
     </div>
   </div>
 </div>
