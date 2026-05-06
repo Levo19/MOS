@@ -8008,7 +8008,7 @@ const MOS = (() => {
 
   function setCfgTab(tab) {
     S.cfgTab = tab;
-    const tabs = ['infra','personal','series','seguridad','dispositivos','categorias','evaluacion','integridad'];
+    const tabs = ['infra','personal','seguridad','dispositivos','categorias','evaluacion','integridad'];
     tabs.forEach(t => {
       const btn = $('cfgTab' + t.charAt(0).toUpperCase() + t.slice(1));
       if (btn) btn.classList.toggle('active', t === tab);
@@ -8022,7 +8022,6 @@ const MOS = (() => {
     switch (tab) {
       case 'infra':        renderInfra();        break;
       case 'personal':     renderPersonal();     break;
-      case 'series':       renderSeries();       break;
       case 'seguridad':    renderSeguridad();    break;
       case 'dispositivos': renderDispositivos(); break;
       case 'categorias':   renderCategorias();   break;
@@ -8452,6 +8451,7 @@ const MOS = (() => {
         : '<span class="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-400 font-bold">inactiva</span>';
 
       const estsHTML = estZona.map(e => _renderInfraEstacion(e, impresoras)).join('');
+      const seriesHTML = _renderInfraSeries(z, estZona);
 
       return `<div class="card p-4" style="background:linear-gradient(135deg,#0d1f3a 0%,#0d1526 100%);border:1px solid ${zonaActiva ? '#1e3a8a' : '#334155'};${zonaActiva ? '' : 'opacity:0.7;'}">
         <!-- Header zona -->
@@ -8477,6 +8477,9 @@ const MOS = (() => {
           </div>
         </div>
 
+        <!-- Series documentales (chips) -->
+        ${seriesHTML}
+
         <!-- Grid de estaciones -->
         ${estZona.length > 0
           ? `<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">${estsHTML}</div>`
@@ -8491,6 +8494,59 @@ const MOS = (() => {
     }).join('');
 
     cont.innerHTML = zonasHTML + cardNuevaZona;
+  }
+
+  // ── Series documentales por zona (chips) ─────────────────
+  const _SERIE_TIPOS = [
+    { tipo: 'NOTA_VENTA', icon: '📋', color: '#94a3b8', bg: 'rgba(148,163,184,0.12)', border: 'rgba(148,163,184,0.4)' },
+    { tipo: 'BOLETA',     icon: '🧾', color: '#60a5fa', bg: 'rgba(96,165,250,0.12)',  border: 'rgba(96,165,250,0.4)' },
+    { tipo: 'FACTURA',    icon: '🧮', color: '#a78bfa', bg: 'rgba(167,139,250,0.12)', border: 'rgba(167,139,250,0.4)' }
+  ];
+
+  function _renderInfraSeries(zona, estZona) {
+    const series = (cfgData.series || []).filter(s => s.idZona === zona.idZona);
+    const chips = _SERIE_TIPOS.map(t => {
+      const seriesTipo = series.filter(s => s.tipoDocumento === t.tipo);
+      if (!seriesTipo.length) {
+        // Chip vacío: + serie de este tipo
+        return `<button onclick="MOS.abrirModalSerieZona('${zona.idZona}','${t.tipo}')"
+          class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed text-[11px] hover:bg-slate-800/50 transition-colors"
+          style="border-color:#334155;color:#64748b;"
+          title="Crear serie ${t.tipo} para esta zona">
+          <span>${t.icon}</span>
+          <span class="font-bold">+ ${t.tipo}</span>
+        </button>`;
+      }
+      // Determinar nombre representativo
+      const nombres = [...new Set(seriesTipo.map(s => s.serie))];
+      const tieneDiversidad = nombres.length > 1;
+      const nombreShow = tieneDiversidad ? '⚠ ' + nombres.join('/') : nombres[0];
+      const corrMax = Math.max(...seriesTipo.map(s => parseInt(s.correlativo, 10) || 0));
+      const todasActivas = seriesTipo.every(s => String(s.activo) === '1');
+      const cubre = seriesTipo.length;
+      const total = estZona.length;
+      const cobertura = (cubre === total) ? '' : ` · ${cubre}/${total} est.`;
+
+      return `<button onclick="MOS.abrirModalSerieZona('${zona.idZona}','${t.tipo}',true)"
+        class="inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-[11px] hover:brightness-125 transition-all ${todasActivas ? '' : 'opacity-60'}"
+        style="background:${t.bg};border-color:${t.border};color:${t.color};"
+        title="${tieneDiversidad ? 'Diversidad de nombres entre estaciones' : 'Editar serie ' + t.tipo}">
+        <span>${t.icon}</span>
+        <div class="flex flex-col items-start leading-tight">
+          <span class="font-black">${nombreShow}</span>
+          <span class="text-[9px] opacity-70">corr ${corrMax}${cobertura}</span>
+        </div>
+        ${todasActivas ? '' : '<span class="text-[9px] text-slate-500">⏸</span>'}
+      </button>`;
+    }).join('');
+
+    return `<div class="mb-3 pb-3" style="border-bottom:1px dashed #1e293b;">
+      <div class="flex items-center gap-2 mb-2">
+        <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">📄 Series documentales</span>
+        ${estZona.length === 0 ? '<span class="text-[9px] text-amber-500 italic">⚠ agrega estaciones primero</span>' : ''}
+      </div>
+      <div class="flex flex-wrap gap-2">${chips}</div>
+    </div>`;
   }
 
   function _renderInfraEstacion(e, impresoras) {
@@ -8893,24 +8949,7 @@ const MOS = (() => {
     }
   }
 
-  function renderSeries() {
-    const tbody = $('tbodySeries');
-    if (!tbody) return;
-    if (!cfgData.series.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Sin series configuradas.</td></tr>';
-      return;
-    }
-    const tipoBadge = { NOTA_VENTA: 'badge-gray', BOLETA: 'badge-blue', FACTURA: 'badge-yellow' };
-    tbody.innerHTML = cfgData.series.map(s => `<tr>
-      <td class="text-slate-300 text-xs font-medium">${s.idEstacion}</td>
-      <td class="text-slate-500 text-xs">${s.idZona || '—'}</td>
-      <td><span class="badge ${tipoBadge[s.tipoDocumento] || 'badge-gray'}">${s.tipoDocumento}</span></td>
-      <td><code class="text-indigo-400 text-xs bg-indigo-500/10 px-2 py-0.5 rounded">${s.serie}</code></td>
-      <td class="font-semibold text-slate-200">${s.correlativo}</td>
-      <td><span class="badge ${s.activo == '1' ? 'badge-green' : 'badge-gray'}">${s.activo == '1' ? 'Activa' : 'Inactiva'}</span></td>
-      <td><button onclick="MOS.abrirModalSerie('${s.idSerie}')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700">✏️</button></td>
-    </tr>`).join('');
-  }
+  // (renderSeries() obsoleto — series ahora viven dentro de Infraestructura como chips)
 
   function renderSeguridad() {
     // Reset panel a estado login
@@ -9638,45 +9677,174 @@ const MOS = (() => {
     }
   }
 
-  function abrirModalSerie(id) {
-    ['Id','Estacion','Zona','Serie','Correlativo'].forEach(f => {
-      const el = $('serie' + f); if (el && el.tagName !== 'SELECT') el.value = '';
-    });
-    if (id) {
-      const s = cfgData.series.find(x => x.idSerie === id);
-      if (!s) return;
-      $('modalSerieTitle').textContent = 'Editar Serie';
-      $('serieId').value          = s.idSerie;
-      $('serieEstacion').value    = s.idEstacion || '';
-      $('serieZona').value        = s.idZona || '';
-      $('serieTipo').value        = s.tipoDocumento || 'BOLETA';
-      $('serieSerie').value       = s.serie || '';
-      $('serieCorrelativo').value = s.correlativo || 1;
-    } else {
-      $('modalSerieTitle').textContent = 'Nueva Serie';
-      $('serieId').value = '';
-      $('serieCorrelativo').value = 1;
+  function _serieActualizarPreview() {
+    const tipo = $('serieTipo')?.value || 'NOTA_VENTA';
+    const serie = ($('serieSerie')?.value || '').trim();
+    const ico = { NOTA_VENTA: '📋', BOLETA: '🧾', FACTURA: '🧮' }[tipo] || '📋';
+    const sub = $('modalSerieSubtitle');
+    if (sub) sub.textContent = serie ? `${tipo} · ${serie}` : 'NubeFact / SUNAT';
+    const ip = $('serieIconPreview');
+    if (ip) ip.textContent = ico;
+  }
+
+  // Abre modal para crear/editar serie de una zona+tipoDocumento
+  // Si edicion=true, pre-llena con la serie actual; si no, modo crear
+  function abrirModalSerieZona(idZona, tipoDocumento, edicion) {
+    const z = cfgData.zonas.find(x => x.idZona === idZona);
+    if (!z) return;
+    const estZona = (cfgData.estaciones || []).filter(e => e.idZona === idZona && String(e.activo) === '1');
+
+    $('serieZonaId').value = idZona;
+    $('serieTipo').value = tipoDocumento;
+    $('serieTipoOriginal').value = tipoDocumento;
+    $('serieZonaNombre').textContent = z.nombre;
+
+    if (estZona.length === 0) {
+      toast('Crea estaciones en esta zona antes de configurar series', 'warn');
+      return;
     }
+
+    // Lista de estaciones afectadas
+    const tipoIc = { CAJA: '🛒', ALMACEN: '🏭', ENVASADO: '🍶' };
+    $('serieEstacionesCount').textContent = estZona.length;
+    $('serieEstacionesList').innerHTML = estZona.map(e =>
+      `<div>${tipoIc[e.tipo] || '📍'} ${e.nombre} <span class="text-slate-600 font-mono text-[10px]">${e.idEstacion}</span></div>`
+    ).join('');
+
+    const wrap = $('serieEstadoWrap');
+    const btnElim = $('serieBtnEliminar');
+    const tg = $('serieEstadoToggle');
+
+    if (edicion) {
+      // Encontrar series existentes de este tipo en esta zona
+      const seriesActuales = (cfgData.series || []).filter(s => s.idZona === idZona && s.tipoDocumento === tipoDocumento);
+      $('modalSerieTitle').textContent = `Editar serie ${tipoDocumento}`;
+      const nombre = seriesActuales[0]?.serie || '';
+      const corrMax = Math.max(0, ...seriesActuales.map(s => parseInt(s.correlativo, 10) || 0));
+      $('serieSerie').value = nombre;
+      $('serieCorrelativo').value = corrMax;
+      const todasActivas = seriesActuales.every(s => String(s.activo) === '1');
+      if (tg) tg.checked = todasActivas;
+      if (wrap) wrap.classList.remove('hidden');
+      if (btnElim) btnElim.classList.remove('hidden');
+    } else {
+      $('modalSerieTitle').textContent = `Nueva serie ${tipoDocumento}`;
+      $('serieSerie').value = '';
+      $('serieCorrelativo').value = 1;
+      if (tg) tg.checked = true;
+      if (wrap) wrap.classList.add('hidden');
+      if (btnElim) btnElim.classList.add('hidden');
+    }
+
+    _serieActualizarPreview();
     openModal('modalSerie');
   }
 
-  async function guardarSerie() {
-    const params = {
-      idSerie:       $('serieId')?.value || undefined,
-      idEstacion:    $('serieEstacion')?.value || '',
-      idZona:        $('serieZona')?.value || '',
-      tipoDocumento: $('serieTipo')?.value || 'BOLETA',
-      serie:         $('serieSerie')?.value || '',
-      correlativo:   parseInt($('serieCorrelativo')?.value || 1)
-    };
-    if (!params.idEstacion || !params.serie) { toast('Estación y Serie son requeridos', 'error'); return; }
+  async function guardarSerieZona() {
+    const idZona = $('serieZonaId')?.value;
+    const tipoDocumento = $('serieTipo')?.value;
+    const tipoOrig = $('serieTipoOriginal')?.value;
+    const nombre = ($('serieSerie')?.value || '').trim();
+    const correlativo = parseInt($('serieCorrelativo')?.value || '1', 10) || 1;
+    const tg = $('serieEstadoToggle');
+    const activo = tg ? (tg.checked ? '1' : '0') : '1';
+
+    if (!nombre) { toast('Nombre de serie requerido', 'error'); return; }
+    if (!idZona) { toast('Zona no encontrada', 'error'); return; }
+
+    const estZona = (cfgData.estaciones || []).filter(e => e.idZona === idZona && String(e.activo) === '1');
+    if (!estZona.length) { toast('La zona no tiene estaciones activas', 'warn'); return; }
+
+    const seriesExistentes = (cfgData.series || []).filter(s => s.idZona === idZona && s.tipoDocumento === tipoOrig);
+    const esEdicion = seriesExistentes.length > 0;
+
+    closeModal('modalSerie');
+    toast('Guardando serie...', 'info');
+
+    // OPTIMISTA: actualizar cfgData.series localmente
+    const backup = (cfgData.series || []).slice();
+    const promesas = [];
+
+    for (const e of estZona) {
+      const existente = seriesExistentes.find(s => s.idEstacion === e.idEstacion);
+      if (existente) {
+        // Actualizar nombre/activo (NO sobreescribir correlativo si es mayor al ingresado)
+        const nuevoCorr = parseInt(existente.correlativo, 10) >= correlativo
+          ? existente.correlativo
+          : correlativo;
+        existente.serie = nombre;
+        existente.tipoDocumento = tipoDocumento;
+        existente.correlativo = nuevoCorr;
+        existente.activo = activo;
+        promesas.push(API.post('actualizarSerie', {
+          idSerie: existente.idSerie,
+          serie: nombre,
+          tipoDocumento,
+          correlativo: nuevoCorr,
+          activo
+        }));
+      } else if (!esEdicion) {
+        // Crear nueva fila para esta estación
+        const tmp = {
+          idSerie: 'SER_TMP' + Date.now() + '_' + e.idEstacion,
+          idEstacion: e.idEstacion,
+          idZona,
+          tipoDocumento,
+          serie: nombre,
+          correlativo,
+          activo,
+          _tmp: true
+        };
+        cfgData.series.push(tmp);
+        promesas.push(API.post('crearSerie', {
+          idEstacion: e.idEstacion,
+          idZona,
+          tipoDocumento,
+          serie: nombre,
+          correlativo,
+          activo
+        }).then(res => {
+          if (res?.idSerie) tmp.idSerie = res.idSerie;
+          delete tmp._tmp;
+        }));
+      }
+    }
+
+    renderInfra();
+
     try {
-      await API.post(params.idSerie ? 'actualizarSerie' : 'crearSerie', params);
-      toast('Serie guardada', 'ok');
-      closeModal('modalSerie');
-      S.loaded['config'] = false;
-      await loadConfig();
-    } catch(e) { toast('Error: ' + e.message, 'error'); }
+      await Promise.all(promesas);
+      toast(`Serie ${tipoDocumento} guardada en ${estZona.length} estación(es) ✓`, 'ok');
+    } catch(e) {
+      console.error('[guardarSerieZona]', e);
+      cfgData.series = backup;
+      renderInfra();
+      toast('Error: ' + (e.message || 'falló sincronización'), 'error');
+    }
+  }
+
+  async function eliminarSerieZona() {
+    const idZona = $('serieZonaId')?.value;
+    const tipoDocumento = $('serieTipoOriginal')?.value;
+    if (!idZona || !tipoDocumento) return;
+    const seriesActuales = (cfgData.series || []).filter(s => s.idZona === idZona && s.tipoDocumento === tipoDocumento);
+    if (!seriesActuales.length) return;
+    if (!confirm(`¿Desactivar la serie ${tipoDocumento} en ${seriesActuales.length} estación(es) de esta zona?\n\nMosExpress dejará de emitir documentos de este tipo. Puedes reactivarla luego.`)) return;
+    closeModal('modalSerie');
+
+    const backup = cfgData.series.slice();
+    seriesActuales.forEach(s => { s.activo = '0'; });
+    renderInfra();
+    try {
+      await Promise.all(seriesActuales.map(s =>
+        API.post('actualizarSerie', { idSerie: s.idSerie, activo: '0' })
+      ));
+      toast('Serie desactivada', 'ok');
+    } catch(e) {
+      cfgData.series = backup;
+      renderInfra();
+      toast('Error: ' + e.message, 'error');
+    }
   }
 
   async function guardarPinEstacion(idEstacion) {
@@ -13870,7 +14038,7 @@ const MOS = (() => {
     toggleZonaActiva, toggleEstacionActiva, toggleImpresoraActiva,
     abrirModalPersonal, guardarPersonal, togglePersonalActivo, eliminarPersonal,
     _persActualizarPreview, _persRandomColor, _persRandomPin, _persSeleccionarColor,
-    abrirModalSerie, guardarSerie,
+    abrirModalSerieZona, guardarSerieZona, eliminarSerieZona, _serieActualizarPreview,
     guardarPinEstacion, guardarPinWH,
     seg_consultarClave, seg_rotarManual, seg_cargarAuditoria, seg_ocultar,
     av_consultarClaveDesdeMenu,

@@ -3463,7 +3463,6 @@
         <div class="tab-bar w-max">
           <button class="tab-btn active" id="cfgTabInfra"     onclick="MOS.setCfgTab('infra')">🏗️ Infraestructura</button>
           <button class="tab-btn" id="cfgTabPersonal"          onclick="MOS.setCfgTab('personal')">👥 Personal</button>
-          <button class="tab-btn" id="cfgTabSeries"            onclick="MOS.setCfgTab('series')">📄 Series</button>
           <button class="tab-btn" id="cfgTabSeguridad"         onclick="MOS.setCfgTab('seguridad')">🔐 Seguridad</button>
           <button class="tab-btn" id="cfgTabDispositivos"     onclick="MOS.setCfgTab('dispositivos')">📱 Dispositivos</button>
           <button class="tab-btn" id="cfgTabCategorias"        onclick="MOS.setCfgTab('categorias')">🏷️ Categorías</button>
@@ -3526,20 +3525,6 @@
             <p class="text-xs text-slate-500 mb-3">Cajeros con jornadas en la semana actual (auto-detectados de Cajas/Ventas)</p>
             <div id="listMeCajeros" class="space-y-2"></div>
           </div>
-        </div>
-      </div>
-
-      <!-- Series Documentales -->
-      <div id="cfgPanelSeries" class="hidden">
-        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
-          <p class="text-xs text-slate-500 flex-1 min-w-0">Series NV / Boleta / Factura por estación — NubeFact / SUNAT</p>
-          <button class="btn-primary text-xs px-3 py-1.5 shrink-0" onclick="MOS.abrirModalSerie(null)">+ Nueva serie</button>
-        </div>
-        <div class="card overflow-x-auto" style="-webkit-overflow-scrolling:touch">
-          <table class="tbl">
-            <thead><tr><th>Estación</th><th>Zona</th><th>Tipo doc.</th><th>Serie</th><th>Correlativo</th><th>Estado</th><th></th></tr></thead>
-            <tbody id="tbodySeries"><tr><td colspan="7" class="text-center py-8 text-slate-500 text-sm">Cargando...</td></tr></tbody>
-          </table>
         </div>
       </div>
 
@@ -5814,30 +5799,74 @@
 </div>
 
 <!-- Modal Serie Documental -->
-<div class="modal-backdrop hidden" id="modalSerie">
-  <div class="modal-box p-6">
-    <div class="flex items-center justify-between mb-5">
-      <h2 id="modalSerieTitle" class="font-bold text-lg text-white">Nueva Serie</h2>
+<!-- Modal SERIE — diseño moderno por zona (replica a todas las estaciones) -->
+<div class="modal-backdrop hidden" id="modalSerie" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalSerie')">
+  <div class="modal-box flex flex-col" style="max-width:540px;max-height:92vh">
+    <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(245,158,11,.1),transparent)">
+      <div id="serieIconPreview" class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0" style="background:linear-gradient(135deg,#7c2d12,#f59e0b);">📋</div>
+      <div class="min-w-0 flex-1">
+        <h2 id="modalSerieTitle" class="font-bold text-base text-white truncate">Nueva Serie</h2>
+        <p id="modalSerieSubtitle" class="text-[11px] text-slate-500 mt-0.5">NubeFact / SUNAT</p>
+      </div>
       <button onclick="MOS.closeModal('modalSerie')" class="modal-close-x">×</button>
     </div>
-    <input type="hidden" id="serieId">
-    <div class="grid grid-cols-2 gap-3">
-      <div><label class="lbl">ID Estación *</label><input id="serieEstacion" class="inp" placeholder="ES001"></div>
-      <div><label class="lbl">Zona ID</label><input id="serieZona" class="inp" placeholder="ZONA-01"></div>
-      <div>
-        <label class="lbl">Tipo documento *</label>
-        <select id="serieTipo" class="inp">
-          <option value="NOTA_VENTA">NOTA_VENTA</option>
-          <option value="BOLETA">BOLETA</option>
-          <option value="FACTURA">FACTURA</option>
-        </select>
+
+    <div class="overflow-y-auto px-5 py-4 flex-1">
+      <input type="hidden" id="serieZonaId">
+      <input type="hidden" id="serieTipoOriginal">
+
+      <!-- Toggle activa/inactiva (solo edición) -->
+      <div id="serieEstadoWrap" class="hidden mb-4 p-3 rounded-lg" style="background:#0d1526;border:1px solid #1e293b">
+        <div class="flex items-center justify-between gap-3">
+          <div class="min-w-0 flex-1">
+            <div class="text-sm font-semibold text-slate-100">Serie activa</div>
+            <div class="text-[11px] text-slate-500">Si la desactivas, MosExpress no la usará para emitir documentos</div>
+          </div>
+          <label class="pers-switch">
+            <input type="checkbox" id="serieEstadoToggle">
+            <span class="pers-switch-slider"></span>
+          </label>
+        </div>
       </div>
-      <div><label class="lbl">Serie *</label><input id="serieSerie" class="inp" placeholder="B001"></div>
-      <div class="col-span-2"><label class="lbl">Correlativo actual</label><input id="serieCorrelativo" class="inp" type="number" placeholder="1"></div>
+
+      <div class="pers-section">
+        <div class="pers-section-title">Documento</div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="lbl">Tipo documento *</label>
+            <select id="serieTipo" class="inp" onchange="MOS._serieActualizarPreview()">
+              <option value="NOTA_VENTA">📋 NOTA_VENTA</option>
+              <option value="BOLETA">🧾 BOLETA</option>
+              <option value="FACTURA">🧮 FACTURA</option>
+            </select>
+          </div>
+          <div>
+            <label class="lbl">Serie *</label>
+            <input id="serieSerie" class="inp" placeholder="NV01" maxlength="10" oninput="MOS._serieActualizarPreview()">
+          </div>
+          <div class="col-span-2">
+            <label class="lbl">Correlativo inicial / actual</label>
+            <input id="serieCorrelativo" class="inp" type="number" placeholder="1" min="0">
+            <div class="text-[10px] text-slate-600 mt-1">Cada estación lleva su propio numerador. Solo afecta a estaciones que NO tengan correlativo todavía.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pers-section">
+        <div class="pers-section-title">Replicación</div>
+        <div class="rounded-lg p-3" style="background:rgba(14,165,233,0.08);border:1px solid rgba(14,165,233,0.3);">
+          <p class="text-[11px] text-sky-300 leading-relaxed mb-2">
+            🔁 Esta serie se aplicará a <strong id="serieEstacionesCount">0</strong> estación(es) de la zona <strong id="serieZonaNombre">—</strong>:
+          </p>
+          <div id="serieEstacionesList" class="text-[11px] text-slate-400 space-y-0.5"></div>
+        </div>
+      </div>
     </div>
-    <div class="flex gap-2 mt-5">
+
+    <div class="flex gap-2 px-5 py-3 flex-shrink-0" style="border-top:1px solid #1e293b">
+      <button id="serieBtnEliminar" onclick="MOS.eliminarSerieZona()" class="btn-ghost hidden" style="color:#f87171">🗑️ Eliminar</button>
       <button onclick="MOS.closeModal('modalSerie')" class="btn-ghost flex-1">Cancelar</button>
-      <button onclick="MOS.guardarSerie()" class="btn-primary flex-1">Guardar</button>
+      <button onclick="MOS.guardarSerieZona()" class="btn-primary flex-1">💾 Guardar</button>
     </div>
   </div>
 </div>
