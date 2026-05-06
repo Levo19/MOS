@@ -505,6 +505,7 @@ const MOS = (() => {
     _startCajasRefresh();
     _startCatRefresh();
     _startFinanzasRefresh();
+    _prefetchLiquidaciones();   // las 3 pestañas a localStorage
     _refreshPNPendientes(); // PN pendientes — pre-carga inmediata
     _startPNAutoRefresh();   // refresca cada 90s automáticamente
     loadProveedores().catch(() => {}); // pre-carga proveedores
@@ -10295,9 +10296,41 @@ const MOS = (() => {
   function applyPendingUpdate(){ if (window._SWControl) window._SWControl.applyPending(); }
 
   // ════════════════════════════════════════════════════════════
-  // LIQUIDACIONES de personal
+  // LIQUIDACIONES de personal — con cache localStorage + prefetch
   // ════════════════════════════════════════════════════════════
   let _liqState = { tab: 'pendientes', data: null, currentDet: null };
+
+  // ── Cache localStorage por pestaña ──────────────────────────
+  const LIQ_CACHE_PFX = 'mos_liq_';
+  const LIQ_CACHE_TTL = 30 * 60 * 1000;
+  function _liqLoadCache(key) {
+    try {
+      const raw = localStorage.getItem(LIQ_CACHE_PFX + key);
+      if (!raw) return null;
+      const p = JSON.parse(raw);
+      if (Date.now() - (p.ts || 0) > LIQ_CACHE_TTL) return null;
+      return p.data;
+    } catch { return null; }
+  }
+  function _liqSaveCache(key, data) {
+    try { localStorage.setItem(LIQ_CACHE_PFX + key, JSON.stringify({ ts: Date.now(), data })); } catch {}
+  }
+  // Pre-cargar al iniciar sesión y persistir
+  function _prefetchLiquidaciones() {
+    if (!S.session) return;
+    iconBusy('finanzas', true);  // el módulo "padre" (cae en finanzas en el menú)
+    Promise.all([
+      API.get('getLiquidacionesPendientesSemana', {}).then(r => {
+        if (r) _liqSaveCache('pendientes', r);
+      }).catch(() => {}),
+      API.get('getLiquidacionesEmitidas', { estado: 'PENDIENTE' }).then(r => {
+        _liqSaveCache('emitidas', r || []);
+      }).catch(() => {}),
+      API.get('getLiquidacionesEmitidas', { estado: 'PAGADA' }).then(r => {
+        _liqSaveCache('pagadas', r || []);
+      }).catch(() => {})
+    ]).finally(() => iconBusy('finanzas', false));
+  }
 
   async function liqOpen() {
     _liqState.tab = 'pendientes';
@@ -10319,14 +10352,33 @@ const MOS = (() => {
     const footer = $('liqFooterActions');
     const fInfo = $('liqFooterInfo');
     if (!body) return;
-    body.innerHTML = '<div class="text-xs text-slate-500 italic py-6 text-center">Cargando...</div>';
     if (footer) footer.innerHTML = '';
     if (fInfo) fInfo.textContent = '';
+
+    // 1. Render INSTANTÁNEO desde cache local si existe
+    const cacheKey = _liqState.tab;
+    const cached = _liqLoadCache(cacheKey);
+    if (cached) {
+      _liqState.data = cached;
+      if (cacheKey === 'pendientes') {
+        const info = $('liqHeaderInfo');
+        if (info) info.textContent = `Semana actual: ${_liqFmtFecha(cached.semanaInicio)} — ${_liqFmtFecha(cached.semanaFin)} · hoy ${_liqFmtFecha(cached.hoy)}`;
+        liqRenderPendientes(cached);
+      } else {
+        liqRenderEmitidas(cached);
+      }
+    } else {
+      body.innerHTML = '<div class="text-xs text-slate-500 italic py-6 text-center">Cargando...</div>';
+    }
+
+    // 2. Fetch fresco en background
+    iconBusy('finanzas', true);
     try {
       if (_liqState.tab === 'pendientes') {
         const r = await API.get('getLiquidacionesPendientesSemana', {});
         const d = r || {};
         _liqState.data = d;
+        _liqSaveCache('pendientes', d);
         const info = $('liqHeaderInfo');
         if (info) info.textContent = `Semana actual: ${_liqFmtFecha(d.semanaInicio)} — ${_liqFmtFecha(d.semanaFin)} · hoy ${_liqFmtFecha(d.hoy)}`;
         liqRenderPendientes(d);
@@ -10336,10 +10388,14 @@ const MOS = (() => {
         const params = estado ? { estado } : {};
         const r = await API.get('getLiquidacionesEmitidas', params);
         _liqState.data = r || [];
+        _liqSaveCache(_liqState.tab, _liqState.data);
         liqRenderEmitidas(_liqState.data);
       }
     } catch(e) {
-      body.innerHTML = `<div class="text-xs text-rose-400 py-6 text-center">Error: ${e.message}</div>`;
+      // Si había cache, ignorar el error silenciosamente
+      if (!cached) body.innerHTML = `<div class="text-xs text-rose-400 py-6 text-center">Error: ${e.message}</div>`;
+    } finally {
+      iconBusy('finanzas', false);
     }
   }
 
@@ -10728,6 +10784,10 @@ const MOS = (() => {
         _finSaveCache('rango_' + fecha, rango);
         _finRender7d(rango);
       }
+      // Refresh también las liquidaciones pendientes (cambian con jornadas auto)
+      API.get('getLiquidacionesPendientesSemana', {}).then(r => {
+        if (r) _liqSaveCache('pendientes', r);
+      }).catch(() => {});
     } catch(_) { /* silencioso */ }
     iconBusy('finanzas', false);
   }
