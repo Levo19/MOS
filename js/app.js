@@ -11163,9 +11163,19 @@ const MOS = (() => {
       cont.innerHTML = '<p class="text-slate-500 text-xs">Sin registros — usa "+ Jornada" o "⬇ Cajas"</p>';
       return;
     }
-    // Cargar resúmenes de evaluación en paralelo (score, KPIs, evalCount).
-    // Si la fecha es hoy o pasada, vale la pena. Si falla, render simple sin score.
-    API.get('getResumenTodosDia', { fecha: fecha }).then(resumenes => {
+    // ───── PASO 1: render INMEDIATO (sin score) ─────
+    // Si tenemos cache local de resúmenes, lo usamos. Sino, render plano.
+    const cacheKey = 'mos_fin_resum_' + fecha;
+    let cachedResumenes = null;
+    try {
+      const raw = localStorage.getItem(cacheKey);
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (Date.now() - (p.ts || 0) < 30 * 60 * 1000) cachedResumenes = p.data;
+      }
+    } catch {}
+
+    function _pintarConResumenes(resumenes) {
       const byNombre = {};
       const byIdPersonal = {};
       (Array.isArray(resumenes) ? resumenes : []).forEach(r => {
@@ -11177,10 +11187,19 @@ const MOS = (() => {
         const ev = byIdPersonal[p.idPersonal] || byNombre[String(p.nombre || '').toLowerCase().trim()] || null;
         return _finRenderPersonalCard(p, ev, fecha);
       }).join('');
-    }).catch(() => {
-      // Fallback: render sin score si falla
-      cont.innerHTML = pl.personalDetalle.map(p => _finRenderPersonalCard(p, null, fecha)).join('');
-    });
+    }
+
+    // Render inmediato — usa cache si existe, sino sin score
+    _pintarConResumenes(cachedResumenes);
+
+    // ───── PASO 2: fetch fresh en background, enriquece si cambió ─────
+    API.get('getResumenTodosDia', { fecha: fecha }).then(resumenes => {
+      try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: resumenes })); } catch {}
+      // Solo re-render si difiere del cache (evita parpadeo)
+      if (JSON.stringify(cachedResumenes) !== JSON.stringify(resumenes)) {
+        _pintarConResumenes(resumenes);
+      }
+    }).catch(() => { /* si falla, queda lo del cache o sin score */ });
   }
 
   function _finRenderPersonalCard(p, ev, fecha) {
