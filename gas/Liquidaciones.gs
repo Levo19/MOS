@@ -140,15 +140,56 @@ function getLiquidacionesPendientesSemana(params) {
     var sem = _semanaLunDom(fechaRef);
     var hoy = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
     var mapaYaLiq = _cargarDiasYaLiquidados();
+    var tz = Session.getScriptTimeZone();
 
-    // Personal activo y EVALUABLE (excluye MASTER/ADMINISTRADOR/MOS — son auditores)
-    var personal = _sheetToObjects(getSheet('PERSONAL_MASTER')).filter(function(p) {
+    // 1. Personal del PERSONAL_MASTER (evaluables)
+    var personalMaster = _sheetToObjects(getSheet('PERSONAL_MASTER')).filter(function(p) {
       var ac = p.estado;
       var activo = (ac === undefined || ac === '' || ac === 1 || ac === '1' || ac === true);
       if (!activo) return false;
       if (typeof _esPersonalEvaluable === 'function') return _esPersonalEvaluable(p);
       return true;
     });
+
+    // 2. Personal VIRTUAL detectado en JORNADAS de la semana pero NO presente
+    // en PERSONAL_MASTER. Típicamente cajeros de MosExpress (id MEX:<nombre>).
+    // Los excluimos si el rol es MASTER/ADMINISTRADOR/MOS (no son evaluables).
+    var jornadas = _sheetToObjects(getSheet('JORNADAS'));
+    var jornadasSem = jornadas.filter(function(j) {
+      var f = j.fecha instanceof Date
+        ? Utilities.formatDate(j.fecha, tz, 'yyyy-MM-dd')
+        : String(j.fecha || '').substring(0, 10);
+      return f >= sem.lunes && f <= sem.domingo;
+    });
+    var nombresMaster = {};
+    personalMaster.forEach(function(p) {
+      var nombreFull = (p.nombre + ' ' + (p.apellido || '')).trim().toLowerCase();
+      nombresMaster[nombreFull] = true;
+      nombresMaster[String(p.nombre || '').toLowerCase()] = true;
+    });
+    var virtualesMap = {};
+    jornadasSem.forEach(function(j) {
+      var rol = String(j.rol || '').toUpperCase();
+      var app = String(j.appOrigen || '');
+      if (app === 'MOS' || rol === 'MASTER' || rol === 'ADMINISTRADOR' || rol === 'ADMIN') return;
+      var nombre = String(j.nombre || '').trim();
+      if (!nombre) return;
+      var key = nombre.toLowerCase();
+      if (nombresMaster[key]) return;          // ya está en master
+      if (virtualesMap[key]) return;            // ya agregado
+      virtualesMap[key] = {
+        idPersonal: 'MEX:' + nombre,
+        nombre:     nombre,
+        apellido:   '',
+        rol:        j.rol || 'CAJERO',
+        appOrigen:  j.appOrigen || 'mosExpress',
+        _virtual:   true
+      };
+    });
+    var virtuales = Object.values(virtualesMap);
+
+    // 3. Procesar TODOS — master + virtuales
+    var personal = personalMaster.concat(virtuales);
 
     var resultado = [];
     personal.forEach(function(p) {
@@ -167,6 +208,7 @@ function getLiquidacionesPendientesSemana(params) {
         nombre:         (p.nombre + ' ' + (p.apellido || '')).trim(),
         rol:            p.rol     || '',
         appOrigen:      p.appOrigen || '',
+        esVirtual:      !!p._virtual,
         diasPendientes: dias.length,
         diasAuditados:  diasAuditados,
         fechas:         dias.map(function(d){ return d.fecha; }),
