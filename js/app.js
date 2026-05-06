@@ -4831,9 +4831,8 @@ const MOS = (() => {
   function _provInerciaActualizar() {
     const list = $('listProveedores');
     if (!list) return;
-    const view = $('view-proveedores');
-    const isHoriz = view && !view.classList.contains('con-detalle')
-                 && window.matchMedia('(max-width: 1023px)').matches;
+    // Carrusel horizontal SIEMPRE en mobile/tablet (con o sin selección).
+    const isHoriz = window.matchMedia('(max-width: 1023px)').matches;
     if (isHoriz) _provInerciaAttach(list);
     else         _provInerciaDetach(list);
   }
@@ -4912,23 +4911,9 @@ const MOS = (() => {
     s.raf = requestAnimationFrame(step);
   }
 
-  // ── Cambio fluido de selección sin re-render de lista ───────
-  // Solo togglea clases y mueve el nodo del inline-detail (solo en TABLET;
-  // en mobile el detail va al panel inferior, en desktop al panel derecho).
-  function _provPosicionarInlineDetail(idProv) {
-    const inline = $('provInlineDetail');
-    if (!inline) return;
-    if (_provBreakpoint() !== 'tablet') {
-      // No mover en mobile/desktop — CSS lo oculta
-      return;
-    }
-    const card = document.querySelector(`[data-prov-card="${idProv}"]`);
-    if (!card) return;
-    if (inline.previousElementSibling !== card) {
-      card.parentElement.insertBefore(inline, card.nextSibling);
-    }
-    inline.style.display = '';
-  }
+  // El inline-detail ya no se usa (era para tablet, ahora todo va al panel).
+  // Función mantenida no-op para compatibilidad con llamadas existentes.
+  function _provPosicionarInlineDetail(_idProv) { /* no-op */ }
   function _provAplicarSeleccion(idAnt, idNuevo) {
     const list = $('listProveedores');
     if (!list) return;
@@ -4956,11 +4941,11 @@ const MOS = (() => {
     if (window.matchMedia('(min-width: 768px)').matches)  return 'tablet';
     return 'mobile';
   }
-  // Target donde se renderiza el detalle según breakpoint:
-  // - tablet: inline (debajo del card seleccionado)
-  // - mobile y desktop: panel principal (#proveedorDetail)
+  // Target donde se renderiza el detalle: SIEMPRE el panel principal
+  // (#proveedorDetail). En mobile/tablet aparece debajo del carrusel,
+  // en desktop al lado en master-detail.
   function _provDetailTargetEl() {
-    return _provBreakpoint() === 'tablet' ? $('provInlineDetail') : $('proveedorDetail');
+    return $('proveedorDetail');
   }
 
   async function selectProveedor(id) {
@@ -5042,15 +5027,30 @@ const MOS = (() => {
     `;
     provSetTab(S.provTab);
 
-    // En mobile/tablet hacemos scroll suave al card seleccionado solo si está fuera de la viewport.
-    // Evita el "salto" cada vez que cambias de proveedor cuando ya está visible.
+    // En mobile/tablet:
+    //  1. Scroll del CARRUSEL para anclar el card seleccionado
+    //  2. Scroll de la página al detail (que está abajo) para que el user lo vea
     if (isMobile) {
       requestAnimationFrame(() => {
+        const list = $('listProveedores');
         const card = document.querySelector(`[data-prov-card="${id}"]`);
-        if (!card) return;
-        const r = card.getBoundingClientRect();
-        const visible = r.top >= 0 && r.bottom <= window.innerHeight;
-        if (!visible) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (list && card) {
+          const lr = list.getBoundingClientRect();
+          const cr = card.getBoundingClientRect();
+          // Centrar el card en el viewport horizontal del carrusel
+          const offset = (cr.left - lr.left) - (lr.width - cr.width) / 2;
+          list.scrollBy({ left: offset, behavior: 'smooth' });
+        }
+        // Después scroll suave al detail
+        setTimeout(() => {
+          const det = $('proveedorDetail');
+          if (det) {
+            const dr = det.getBoundingClientRect();
+            if (dr.top > window.innerHeight * 0.6) {
+              det.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+          }
+        }, 300);
       });
     }
   }

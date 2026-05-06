@@ -1293,9 +1293,11 @@
       transition: transform .2s, border-color .2s, box-shadow .2s;
     }
 
-    /* ── MOBILE / TABLET sin selección: carrusel horizontal Rolodex ─ */
+    /* ── MOBILE / TABLET: carrusel horizontal SIEMPRE (con o sin selección) ─
+       El carrusel queda arriba; el detalle aparece DEBAJO cuando hay
+       selección. La idea es preservar la sensación rolodex en todo momento. */
     @media (max-width: 1023px) {
-      #view-proveedores:not(.con-detalle) #listProveedores {
+      #listProveedores {
         flex-direction: row;
         overflow-x: auto;
         overflow-y: visible;
@@ -1310,64 +1312,50 @@
         user-select: none;
         touch-action: pan-x;
       }
-      #view-proveedores:not(.con-detalle) #listProveedores.dragging { cursor: grabbing; scroll-behavior: auto; }
-      #view-proveedores:not(.con-detalle) #listProveedores::-webkit-scrollbar { display: none; }
-      #view-proveedores:not(.con-detalle) #listProveedores > .card {
+      #listProveedores.dragging { cursor: grabbing; scroll-behavior: auto; }
+      #listProveedores::-webkit-scrollbar { display: none; }
+      #listProveedores > .card {
         scroll-snap-align: start;
         scroll-snap-stop: always;
+      }
+      /* Inline-detail (tablet vieja) ya no se usa — todo va al panel principal */
+      #provInlineDetail { display: none !important; }
+      /* Detalle abajo del carrusel cuando hay selección (mobile + tablet) */
+      #view-proveedores.con-detalle #provDetailWrap {
+        display: block !important;
+        margin-top: 14px;
+      }
+      /* Card activa en carrusel: pestaña dorada arriba (visualmente "sobresale") */
+      #listProveedores .card.prov-card-active {
+        border-color: #fbbf24;
+        box-shadow:
+          0 -3px 0 0 #fbbf24,
+          0 8px 24px rgba(251,191,36,.3),
+          0 0 0 1px rgba(251,191,36,.4);
+      }
+      /* Borde dorado lateral interno también — efecto fichero más visible */
+      #listProveedores .card.prov-card-active::before {
+        content: '';
+        position: absolute;
+        left: 0; top: 0; bottom: 0;
+        width: 4px;
+        background: linear-gradient(180deg, #fbbf24, #f59e0b);
+        border-radius: 4px 0 0 4px;
+        box-shadow: 0 0 8px rgba(251,191,36,.6);
       }
     }
     /* MOBILE (<768): card ocupa 85% del viewport (uno principal + un peek) */
     @media (max-width: 767px) {
-      #view-proveedores:not(.con-detalle) #listProveedores > .card {
+      #listProveedores > .card {
         flex: 0 0 calc(85% - 4px);
         max-width: 320px;
       }
-      /* Detalle siempre va al panel principal debajo del carrusel */
-      #provInlineDetail { display: none !important; }
-      #view-proveedores.con-detalle #provDetailWrap {
-        display: block !important;
-        margin-top: 12px;
-      }
-      /* Card activa en carrusel: pestaña dorada arriba */
-      #listProveedores .card.prov-card-active {
-        border-color: #fbbf24;
-        box-shadow: 0 -2px 0 0 #fbbf24, 0 8px 20px rgba(251,191,36,.25);
-      }
-      /* Mobile con selección: lista vertical (1 col) + detalle abajo */
-      #view-proveedores.con-detalle #listProveedores {
-        flex-direction: column;
-        overflow-x: visible;
-        cursor: default;
-        padding: 0;
-        margin: 0;
-        gap: 8px;
-      }
-      #view-proveedores.con-detalle #listProveedores > .card {
-        flex: 1 1 auto;
-        max-width: none;
-      }
     }
-    /* TABLET (768-1023) sin selección: cards más anchos en el carrusel */
+    /* TABLET (768-1023): cards más anchos (~45% del viewport) */
     @media (min-width: 768px) and (max-width: 1023px) {
-      #view-proveedores:not(.con-detalle) #listProveedores > .card {
-        flex: 0 0 calc(45% - 6px);    /* 2 cards visibles + peek del 3ro */
+      #listProveedores > .card {
+        flex: 0 0 calc(45% - 6px);
         max-width: 360px;
-      }
-      /* Tablet con selección: lista 1 col + inline detail debajo del card */
-      #view-proveedores.con-detalle #provListWrap { grid-column: 1 / -1; }
-      #view-proveedores.con-detalle #provDetailWrap { display: none !important; }
-      #view-proveedores.con-detalle #listProveedores {
-        flex-direction: column;
-        overflow-x: visible;
-        gap: 8px;
-        padding: 0;
-        margin: 0;
-        cursor: default;
-      }
-      #view-proveedores.con-detalle #listProveedores > .card {
-        flex: 1 1 auto;
-        max-width: none;
       }
     }
 
@@ -1430,14 +1418,8 @@
         transform: translateX(2px);
       }
     }
-    /* En tablet con detalle abierto, la card seleccionada se funde con
-       el inline-detail abajo (esquinas inferiores rectas) */
-    @media (min-width: 768px) and (max-width: 1023px) {
-      #view-proveedores.con-detalle .card.prov-card-active {
-        border-bottom-color: transparent;
-        border-radius: 12px 12px 0 0;
-      }
-    }
+    /* (En mobile/tablet ya no hay inline-detail; el card seleccionado
+       muestra solo la pestaña dorada y el detail aparece debajo) */
     /* Badge 🛒N de carrito en construcción */
     .prov-cart-badge {
       display: inline-flex; align-items: center; gap: 3px;
