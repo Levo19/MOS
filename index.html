@@ -6439,7 +6439,7 @@
 
 <!-- ── Avatar Dropdown (global, fuera del sidebar para evitar overflow clip) ── -->
 <div id="avatarMenu" class="hidden">
-  <!-- Bloque clave admin global (visible solo para MASTER/ADMIN) -->
+  <!-- Bloque clave admin global VISIBLE (cuando ya está cacheada) -->
   <div id="avMenuClaveBox" class="hidden" style="padding:10px 12px;margin:0 0 4px;border-radius:10px;background:linear-gradient(135deg,#451a03 0%,#1f2937 100%);border:1px solid #d97706;cursor:pointer" onclick="MOS.nav('config');MOS.setCfgTab&&MOS.setCfgTab('seguridad');MOS.closeAvatarMenu()" title="Tocar para ir al panel de seguridad">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
       <span style="font-size:14px;">🔑</span>
@@ -6450,6 +6450,24 @@
       <span id="avMenuClaveDias" style="font-size:10px;color:#94a3b8;font-weight:600;white-space:nowrap;">—</span>
     </div>
     <div style="font-size:10px;color:#cbd5e1;margin-top:3px;line-height:1.3;">+ tu PIN (4 dig) en MosExpress / warehouseMos</div>
+  </div>
+
+  <!-- Bloque LOGIN clave admin (cuando no hay caché — pide PIN una vez) -->
+  <div id="avMenuClaveLogin" class="hidden" style="padding:10px 12px;margin:0 0 4px;border-radius:10px;background:linear-gradient(135deg,#1e3a5f 0%,#1f2937 100%);border:1px solid #475569;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <span style="font-size:14px;">🔑</span>
+      <span style="font-size:10px;font-weight:800;color:#7dd3fc;text-transform:uppercase;letter-spacing:0.05em;">Ver Clave Admin Global</span>
+    </div>
+    <div style="display:flex;gap:6px;">
+      <input id="avMenuClaveLoginPin" type="password" inputmode="numeric" maxlength="4"
+             placeholder="Tu PIN"
+             onkeyup="if(event.key==='Enter')MOS.av_consultarClaveDesdeMenu()"
+             onclick="event.stopPropagation()"
+             style="flex:1;background:#0d1526;border:1px solid #334155;border-radius:6px;padding:6px 8px;color:#fff;font-size:14px;text-align:center;letter-spacing:0.15em;font-weight:700;outline:none;">
+      <button onclick="event.stopPropagation();MOS.av_consultarClaveDesdeMenu()"
+              style="background:#0284c7;color:#fff;border:none;border-radius:6px;padding:0 10px;font-size:11px;font-weight:700;cursor:pointer;">VER</button>
+    </div>
+    <div id="avMenuClaveLoginErr" style="font-size:10px;color:#f87171;margin-top:4px;min-height:12px;font-weight:600;"></div>
   </div>
   <button class="avatar-menu-btn" onclick="MOS.syncApp();MOS.closeAvatarMenu()">
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>

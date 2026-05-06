@@ -10625,31 +10625,69 @@ const MOS = (() => {
     sessionStorage.removeItem('mos_admin_global_vencida');
   }
   function _segPintarEnAvatarMenu() {
-    const box = $('avMenuClaveBox');
-    if (!box) return;
+    const box      = $('avMenuClaveBox');
+    const loginBox = $('avMenuClaveLogin');
+    if (!box || !loginBox) return;
     const rolOk = _segEsAdmin(S.session?.rol);
     const pin = sessionStorage.getItem('mos_admin_global_pin');
-    if (!rolOk || !pin) {
+    if (!rolOk) {
       box.classList.add('hidden');
+      loginBox.classList.add('hidden');
       return;
     }
-    box.classList.remove('hidden');
-    const elPin = $('avMenuClavePin');
-    if (elPin) elPin.textContent = pin.split('').join(' ');
-    const dias = parseInt(sessionStorage.getItem('mos_admin_global_dias') || '0', 10);
-    const vencida = sessionStorage.getItem('mos_admin_global_vencida') === '1';
-    const elDias = $('avMenuClaveDias');
-    if (elDias) {
-      if (vencida) {
-        elDias.textContent = '⚠ Vencida';
-        elDias.style.color = '#f87171';
-      } else if (dias <= 5) {
-        elDias.textContent = dias + 'd';
-        elDias.style.color = '#fbbf24';
-      } else {
-        elDias.textContent = dias + 'd';
-        elDias.style.color = '#94a3b8';
+    if (pin) {
+      // Tenemos clave cacheada — mostrar bloque visible
+      loginBox.classList.add('hidden');
+      box.classList.remove('hidden');
+      const elPin = $('avMenuClavePin');
+      if (elPin) elPin.textContent = pin.split('').join(' ');
+      const dias = parseInt(sessionStorage.getItem('mos_admin_global_dias') || '0', 10);
+      const vencida = sessionStorage.getItem('mos_admin_global_vencida') === '1';
+      const elDias = $('avMenuClaveDias');
+      if (elDias) {
+        if (vencida) {
+          elDias.textContent = '⚠ Vencida';
+          elDias.style.color = '#f87171';
+        } else if (dias <= 5) {
+          elDias.textContent = dias + 'd';
+          elDias.style.color = '#fbbf24';
+        } else {
+          elDias.textContent = dias + 'd';
+          elDias.style.color = '#94a3b8';
+        }
       }
+    } else {
+      // Sin caché — mostrar input para autenticar
+      box.classList.add('hidden');
+      loginBox.classList.remove('hidden');
+      const inp = $('avMenuClaveLoginPin');
+      if (inp) inp.value = '';
+      const err = $('avMenuClaveLoginErr');
+      if (err) err.textContent = '';
+    }
+  }
+
+  async function av_consultarClaveDesdeMenu() {
+    const inp = $('avMenuClaveLoginPin');
+    const err = $('avMenuClaveLoginErr');
+    const pin = String(inp?.value || '').trim();
+    if (!/^\d{4}$/.test(pin)) {
+      if (err) err.textContent = 'PIN debe tener 4 dígitos';
+      return;
+    }
+    if (err) err.textContent = '';
+    try {
+      const data = await API.get('getClaveAdminGlobal', { pinAdmin: pin });
+      if (!data?.autorizado) {
+        if (err) err.textContent = data?.error || 'PIN incorrecto';
+        if (inp) inp.value = '';
+        return;
+      }
+      _segActualizarCacheLocal(data);
+      _segPintarEnAvatarMenu();
+    } catch(e) {
+      console.error('[av_consultarClaveDesdeMenu]', e);
+      if (err) err.textContent = e?.message || 'Sin conexión';
     }
   }
 
@@ -13380,6 +13418,7 @@ const MOS = (() => {
     abrirModalSerie, guardarSerie,
     guardarPinEstacion, guardarPinWH,
     seg_consultarClave, seg_rotarManual, seg_cargarAuditoria, seg_ocultar,
+    av_consultarClaveDesdeMenu,
     toggleVendedorME,
     abrirModalDispositivo, cerrarModalDispositivo, guardarDispositivo, toggleEstadoDispositivo,
     toggleAvatarMenu, closeAvatarMenu, installPWA,
