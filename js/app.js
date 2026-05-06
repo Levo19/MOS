@@ -4555,13 +4555,110 @@ const MOS = (() => {
     } else {
       _provViewToggleConDetalle(false);
     }
+    // Reattachear/detacher la inercia del carrusel
+    _provInerciaActualizar();
   }
+
+  // Re-evaluar layout al cambiar tamaño de pantalla
+  window.addEventListener('resize', () => {
+    if (S.view === 'proveedores') _provInerciaActualizar();
+  }, { passive: true });
 
   // Toggle de la clase con-detalle del view (afecta layout grid)
   function _provViewToggleConDetalle(activo) {
     const view = $('view-proveedores');
     if (!view) return;
     view.classList.toggle('con-detalle', !!activo);
+    // Re-attachear/detacher inercia del carrusel según corresponda
+    setTimeout(_provInerciaActualizar, 0);
+  }
+
+  // ── Inercia del carrusel horizontal de proveedores ─────────
+  // Drag con pointer (touch + mouse), trackea velocidad, en pointerup
+  // aplica deceleración exponencial → efecto Apple-like.
+  let _inerciaState = null;  // { startX, startScroll, lastX, lastT, vel, dragging, target }
+  function _provInerciaActualizar() {
+    const list = $('listProveedores');
+    if (!list) return;
+    const view = $('view-proveedores');
+    const isHoriz = view && !view.classList.contains('con-detalle')
+                 && window.matchMedia('(max-width: 1023px)').matches;
+    if (isHoriz) _provInerciaAttach(list);
+    else         _provInerciaDetach(list);
+  }
+  function _provInerciaAttach(el) {
+    if (el._inerciaAttached) return;
+    el._inerciaAttached = true;
+    el.addEventListener('pointerdown',  _onInerciaDown,  { passive: true });
+    el.addEventListener('pointermove',  _onInerciaMove);
+    el.addEventListener('pointerup',    _onInerciaUp);
+    el.addEventListener('pointercancel',_onInerciaUp);
+    el.addEventListener('pointerleave', _onInerciaUp);
+  }
+  function _provInerciaDetach(el) {
+    if (!el._inerciaAttached) return;
+    el._inerciaAttached = false;
+    el.removeEventListener('pointerdown',  _onInerciaDown);
+    el.removeEventListener('pointermove',  _onInerciaMove);
+    el.removeEventListener('pointerup',    _onInerciaUp);
+    el.removeEventListener('pointercancel',_onInerciaUp);
+    el.removeEventListener('pointerleave', _onInerciaUp);
+  }
+  function _onInerciaDown(e) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const t = e.currentTarget;
+    if (_inerciaState && _inerciaState.raf) {
+      cancelAnimationFrame(_inerciaState.raf); _inerciaState.raf = 0;
+    }
+    _inerciaState = {
+      target: t, startX: e.clientX, startScroll: t.scrollLeft,
+      lastX: e.clientX, lastT: performance.now(), vel: 0,
+      dragging: false, moved: false, raf: 0
+    };
+  }
+  function _onInerciaMove(e) {
+    const s = _inerciaState;
+    if (!s || s.target !== e.currentTarget) return;
+    const dx = e.clientX - s.startX;
+    if (!s.dragging) {
+      if (Math.abs(dx) < 6) return;
+      s.dragging = true;
+      s.target.classList.add('dragging');
+      try { s.target.setPointerCapture(e.pointerId); } catch {}
+    }
+    s.target.scrollLeft = s.startScroll - dx;
+    const now = performance.now();
+    const dt = Math.max(1, now - s.lastT);
+    // Velocidad en px/ms (positiva = avanza derecha en scroll, negativa izq)
+    s.vel = (s.lastX - e.clientX) / dt;
+    s.lastX = e.clientX;
+    s.lastT = now;
+    s.moved = true;
+    e.preventDefault();
+  }
+  function _onInerciaUp(e) {
+    const s = _inerciaState;
+    if (!s) return;
+    if (!s.dragging || !s.moved) { _inerciaState = null; return; }
+    s.target.classList.remove('dragging');
+    try { s.target.releasePointerCapture(e.pointerId); } catch {}
+    // Aplicar inercia: cada frame escalamos la velocidad por un factor
+    let v = s.vel * 16; // px/frame ≈ vel(px/ms) * 16ms/frame
+    if (Math.abs(v) < 0.5) { _inerciaState = null; return; }
+    const target = s.target;
+    function step() {
+      if (Math.abs(v) < 0.4) {
+        // Snap final al card más cercano
+        target.style.scrollSnapType = '';  // re-habilita snap
+        _inerciaState = null;
+        return;
+      }
+      target.scrollLeft += v;
+      v *= 0.93;  // factor de fricción
+      s.raf = requestAnimationFrame(step);
+    }
+    target.style.scrollSnapType = 'none';  // permite scroll libre durante inercia
+    s.raf = requestAnimationFrame(step);
   }
 
   // ── Cambio fluido de selección sin re-render de lista ───────
