@@ -181,6 +181,11 @@ function _route(method, e) {
       case 'getLiquidacionDetalle':            return getLiquidacionDetalle(params);
       case 'anularJornadas':                   return anularJornadas(params);
 
+      // ── Bloqueo remoto de usuarios (ME / WH) ───────────────
+      case 'getEstadoBloqueoUsuario':   return getEstadoBloqueoUsuario(params);
+      case 'desbloquearUsuarioTemporal':return desbloquearUsuarioTemporal(params);
+      case 'getBloqueosActivos':        return getBloqueosActivos(params);
+
       // ── Cajas MosExpress ────────────────────────────────────
       case 'getCierresCaja':            return getCierresCaja(params);
       case 'anularTicketME':            return anularTicketME(params);
