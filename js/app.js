@@ -8445,6 +8445,55 @@ const MOS = (() => {
     const estaciones = cfgData.estaciones || [];
     const impresoras = cfgData.impresoras || [];
 
+    // ── A: Header summary con contadores en vivo ──
+    const dispActivos = (cfgData.dispositivos || []).filter(d => String(d.Estado).toUpperCase() === 'ACTIVO');
+    const onlineCount = dispActivos.filter(d => _dispActividad(d.Ultima_Conexion).minutos < 5).length;
+    const totalZ = zonas.filter(z => String(z.estado) === '1' || z.estado === 1).length;
+    const totalE = estaciones.filter(e => String(e.activo) === '1').length;
+    const summaryHTML = `<div class="card p-3 mb-4" style="background:linear-gradient(135deg,#0c1a2e 0%,#0d1526 100%);border:1px solid #1e3a8a;">
+      <div class="flex items-center gap-3 flex-wrap">
+        <div class="flex items-center gap-2">
+          <span class="relative inline-block" style="width:14px;height:14px;">
+            <span class="absolute inset-0 rounded-full" style="background:${onlineCount > 0 ? '#10b981' : '#475569'};"></span>
+            ${onlineCount > 0 ? '<span class="disp-dot-pulse" style="position:absolute;inset:0;width:14px;height:14px;top:0;right:0;"></span>' : ''}
+          </span>
+          <div>
+            <div class="text-xl font-black ${onlineCount > 0 ? 'text-emerald-300' : 'text-slate-500'} leading-none">${onlineCount}</div>
+            <div class="text-[9px] uppercase text-slate-500 tracking-wider mt-0.5">online ahora</div>
+          </div>
+        </div>
+        <div class="text-slate-700 text-lg">·</div>
+        <div class="flex items-center gap-2">
+          <span class="text-lg">📱</span>
+          <div>
+            <div class="text-base font-bold text-slate-200 leading-none">${dispActivos.length}</div>
+            <div class="text-[9px] uppercase text-slate-500 tracking-wider mt-0.5">dispositivos</div>
+          </div>
+        </div>
+        <div class="text-slate-700 text-lg">·</div>
+        <div class="flex items-center gap-2">
+          <span class="text-lg">🏬</span>
+          <div>
+            <div class="text-base font-bold text-slate-200 leading-none">${totalZ}</div>
+            <div class="text-[9px] uppercase text-slate-500 tracking-wider mt-0.5">zonas</div>
+          </div>
+        </div>
+        <div class="text-slate-700 text-lg">·</div>
+        <div class="flex items-center gap-2">
+          <span class="text-lg">🛒</span>
+          <div>
+            <div class="text-base font-bold text-slate-200 leading-none">${totalE}</div>
+            <div class="text-[9px] uppercase text-slate-500 tracking-wider mt-0.5">estaciones</div>
+          </div>
+        </div>
+        <button onclick="MOS.infraToggleHeatmap()"
+                class="ml-auto text-xs px-3 py-1.5 rounded-lg transition-all"
+                style="background:${_infraHeatmapActivo ? 'linear-gradient(90deg,#dc2626,#f59e0b)' : '#1e293b'};color:${_infraHeatmapActivo ? '#fff' : '#94a3b8'};border:1px solid ${_infraHeatmapActivo ? '#dc2626' : '#334155'};font-weight:700;">
+          🔥 Heatmap ${_infraHeatmapActivo ? 'ON' : 'OFF'}
+        </button>
+      </div>
+    </div>`;
+
     // Card punteado para crear primera/nueva zona
     const cardNuevaZona = `<button onclick="MOS.abrirModalZona(null)"
         class="w-full py-6 rounded-xl border-2 border-dashed border-slate-700 hover:border-sky-600 hover:bg-sky-900/10 transition-all text-slate-500 hover:text-sky-300 group">
@@ -8456,7 +8505,7 @@ const MOS = (() => {
       </button>`;
 
     if (!zonas.length) {
-      cont.innerHTML = `<div class="card p-12 text-center text-slate-500">
+      cont.innerHTML = summaryHTML + `<div class="card p-12 text-center text-slate-500">
         <div class="text-6xl mb-3">🏗️</div>
         <p class="font-bold text-slate-300 mb-1">Sin zonas todavía</p>
         <p class="text-xs mb-4">Crea tu primera zona para empezar a configurar la infraestructura.</p>
@@ -8470,10 +8519,15 @@ const MOS = (() => {
       const estZona = estaciones.filter(e => e.idZona === z.idZona);
       const totalImp = estZona.reduce((acc, e) =>
         acc + impresoras.filter(i => i.idEstacion === e.idEstacion).length, 0);
+      // C: Contador de dispositivos online en esta zona
+      const onlineEnZona = estZona.reduce((acc, e) => acc + _dispOnlineEnEstacion(e.idEstacion), 0);
 
       const estadoBadge = zonaActiva
         ? '<span class="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-900/60 text-emerald-300 font-bold"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>activa</span>'
         : '<span class="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-400 font-bold">inactiva</span>';
+      const onlineBadge = onlineEnZona > 0
+        ? `<span class="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-bold disp-chip-live" style="background:rgba(16,185,129,0.18);color:#6ee7b7;border:1px solid rgba(16,185,129,0.5);"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>${onlineEnZona} online</span>`
+        : '';
 
       const estsHTML = estZona.map(e => _renderInfraEstacion(e, impresoras)).join('');
       const seriesHTML = _renderInfraSeries(z, estZona);
@@ -8487,6 +8541,7 @@ const MOS = (() => {
               <div class="flex items-center gap-2 flex-wrap">
                 <h3 class="text-base font-black text-white truncate">${z.nombre}</h3>
                 ${estadoBadge}
+                ${onlineBadge}
                 <span class="font-mono text-[10px] text-slate-500">${z.idZona}</span>
               </div>
               <p class="text-xs text-slate-400 mt-0.5 truncate">${z.direccion ? '📍 ' + z.direccion : ''}${z.responsable ? '  ·  👤 ' + z.responsable : ''}</p>
@@ -8566,7 +8621,7 @@ const MOS = (() => {
         </div>
       </div>` : '';
 
-    cont.innerHTML = pendHTML + zonasHTML + movHTML + cardNuevaZona;
+    cont.innerHTML = summaryHTML + pendHTML + zonasHTML + movHTML + cardNuevaZona;
 
     // Guardar mapa de estaciones para detectar movimientos en próximo render
     _dispActualizarMapa();
@@ -8688,7 +8743,39 @@ const MOS = (() => {
         </div>`
       : '';
 
-    return `<div class="rounded-lg p-3 ${activa ? '' : 'opacity-60'}" style="background:#0d1526;border:1px solid ${activa ? '#1e293b' : '#475569'};">
+    // B/F: Decoración según dispositivos online + modo heatmap
+    const onlineEnEst = _dispOnlineEnEstacion(e.idEstacion);
+    const fantasmasAqui = _dispFantasmasDeEstacion(e.idEstacion);
+    let cardBg = '#0d1526';
+    let cardBorder = activa ? '#1e293b' : '#475569';
+    let cardExtra = '';
+    if (_infraHeatmapActivo && activa) {
+      const hm = _heatmapColor(_dispEnEstacion(e.idEstacion).length);
+      cardBg = hm.bg !== 'transparent' ? hm.bg : cardBg;
+      cardBorder = hm.border;
+      cardExtra = `box-shadow: inset 0 0 20px ${hm.bg};`;
+    } else if (activa && onlineEnEst > 0) {
+      // B: borde verde sutil cuando hay dispositivos online
+      cardBorder = 'rgba(16,185,129,0.5)';
+      cardExtra = 'box-shadow: 0 0 12px rgba(16,185,129,0.18);';
+    }
+
+    // D: Trail fantasma — dispositivos que se fueron de aquí en los últimos 5s
+    const fantasmasHTML = fantasmasAqui.length ? `
+      <div class="mt-2 px-2 py-1.5 rounded text-[10px] disp-fantasma" style="background:rgba(99,102,241,0.05);border:1px dashed rgba(99,102,241,0.4);">
+        ${fantasmasAqui.map(f => {
+          const estDest = (cfgData.estaciones || []).find(es => es.idEstacion === f.hacia);
+          return `<div class="flex items-center gap-1 italic opacity-80">
+            <span>${f.ico}</span>
+            <span class="text-slate-400">${f.nombre}</span>
+            <span class="text-indigo-300">→</span>
+            <span class="text-indigo-300 font-bold">${estDest?.nombre || '...'}</span>
+            <span class="text-[8px] text-slate-600 ml-auto">se mudó hace momentos</span>
+          </div>`;
+        }).join('')}
+      </div>` : '';
+
+    return `<div class="rounded-lg p-3 ${activa ? '' : 'opacity-60'}" style="background:${cardBg};border:1px solid ${cardBorder};${cardExtra}transition:all 0.4s ease;">
       <div class="flex items-start gap-2 mb-2">
         <span class="text-xl shrink-0" style="line-height:1;">${tipoIcon}</span>
         <div class="flex-1 min-w-0">
@@ -8712,6 +8799,7 @@ const MOS = (() => {
         + impresora
       </button>
       ${dispsHTML}
+      ${fantasmasHTML}
     </div>`;
   }
 
@@ -9254,6 +9342,11 @@ const MOS = (() => {
   // Tracking de movimientos entre renders para animar transiciones
   let _dispUltimaEstacionMap = {};
   let _dispRenderCount = 0;
+  // Trails: fantasmas que se quedan 5s en la estación de origen tras un movimiento
+  let _dispFantasmas = {}; // { deviceId: { desde, hacia, ico, nombre, expira } }
+  let _dispCleanupTimer = null;
+  // Modo heatmap: colorea estaciones según cantidad de dispositivos online
+  let _infraHeatmapActivo = false;
 
   // Devuelve dispositivos cuya ÚLTIMA sesión fue en esta estación
   // (sin importar cuánto tiempo, mantiene "viviendo" donde estuvo último)
@@ -9284,10 +9377,69 @@ const MOS = (() => {
   }
 
   function _dispActualizarMapa() {
+    let huboMovimientos = false;
     (cfgData.dispositivos || []).forEach(d => {
-      _dispUltimaEstacionMap[d.ID_Dispositivo] = String(d.Ultima_Estacion || '');
+      const prev = _dispUltimaEstacionMap[d.ID_Dispositivo];
+      const ahora = String(d.Ultima_Estacion || '');
+      // Detectar movimiento real (entre 2 renders, ambas estaciones definidas)
+      if (_dispRenderCount > 0 && prev !== undefined && prev !== '' && prev !== ahora && ahora) {
+        const ico = _dispIcono(d.Nombre_Equipo);
+        const nombre = d.Nombre_Equipo || 'Dispositivo';
+        _dispFantasmas[d.ID_Dispositivo] = {
+          desde: prev,
+          hacia: ahora,
+          ico,
+          nombre,
+          expira: Date.now() + 5000
+        };
+        // E: Toast notif del movimiento
+        const estDest = (cfgData.estaciones || []).find(e => e.idEstacion === ahora);
+        const nombreDest = estDest?.nombre || ahora;
+        try { toast(`📍 ${nombre} se movió a ${nombreDest}`, 'ok'); } catch(_) {}
+        huboMovimientos = true;
+      }
+      _dispUltimaEstacionMap[d.ID_Dispositivo] = ahora;
     });
     _dispRenderCount++;
+    // Programar re-render para que los fantasmas desaparezcan a los 5s
+    if (huboMovimientos) {
+      if (_dispCleanupTimer) clearTimeout(_dispCleanupTimer);
+      _dispCleanupTimer = setTimeout(() => {
+        _dispCleanupTimer = null;
+        if (S.cfgTab === 'infra') renderInfra();
+      }, 5200);
+    }
+  }
+
+  // Devuelve fantasmas vigentes que partieron de esta estación
+  function _dispFantasmasDeEstacion(idEstacion) {
+    const ahora = Date.now();
+    return Object.entries(_dispFantasmas)
+      .filter(([id, f]) => f.desde === idEstacion && f.expira > ahora)
+      .map(([id, f]) => ({ id, ...f }));
+  }
+
+  // Cuenta dispositivos online (ACTIVO + actividad <5 min) en una estación
+  function _dispOnlineEnEstacion(idEstacion) {
+    return _dispEnEstacion(idEstacion).filter(d =>
+      _dispActividad(d.Ultima_Conexion).minutos < 5
+    ).length;
+  }
+
+  // Toggle heatmap
+  function infraToggleHeatmap() {
+    _infraHeatmapActivo = !_infraHeatmapActivo;
+    renderInfra();
+  }
+
+  // Color del borde según densidad de dispositivos en estación (modo heatmap)
+  function _heatmapColor(cantOnline) {
+    if (cantOnline === 0) return { bg: 'transparent', border: '#1e293b', label: '' };
+    if (cantOnline === 1) return { bg: 'rgba(14,165,233,0.10)',  border: '#0284c7', label: '🟦' };
+    if (cantOnline === 2) return { bg: 'rgba(16,185,129,0.12)',  border: '#10b981', label: '🟩' };
+    if (cantOnline === 3) return { bg: 'rgba(251,191,36,0.14)',  border: '#f59e0b', label: '🟨' };
+    if (cantOnline <= 5)  return { bg: 'rgba(249,115,22,0.16)',  border: '#ea580c', label: '🟧' };
+    return                       { bg: 'rgba(239,68,68,0.18)',   border: '#dc2626', label: '🟥' };
   }
 
   function _dispPendientes() {
@@ -14455,7 +14607,7 @@ const MOS = (() => {
     abrirModalEstacion, guardarEstacion, eliminarEstacion, _estActualizarPreview,
     abrirModalImpresora, guardarImpresora, eliminarImpresora, _impActualizarPreview,
     eliminarZona, _zonaActualizarPreview,
-    toggleZonaActiva, toggleEstacionActiva, toggleImpresoraActiva,
+    toggleZonaActiva, toggleEstacionActiva, toggleImpresoraActiva, infraToggleHeatmap,
     abrirModalPersonal, guardarPersonal, togglePersonalActivo, eliminarPersonal,
     _persActualizarPreview, _persRandomColor, _persRandomPin, _persSeleccionarColor,
     abrirModalSerieZona, guardarSerieZona, eliminarSerieZona, _serieActualizarPreview,
