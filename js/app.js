@@ -4138,7 +4138,11 @@ const MOS = (() => {
   // Resuelve un código (idProducto, codigoBarra o equivalencia) al canónico.
   // Retorna { producto, descripcion, badge } para mostrar en tablas. Cae al código
   // crudo si no se puede resolver.
-  function _resolverCodigoAProducto(cod) {
+  // Resuelve un código a un producto del catálogo.
+  // Por default sube al canónico (útil para stock/ventas que quieren ver
+  // el agregado). Pasar `exacto=true` cuando necesitas el producto específico
+  // (ej. envasados: el código apunta a la presentación, no al granel base).
+  function _resolverCodigoAProducto(cod, exacto) {
     if (!cod || !S.productos || !S.productos.length) return null;
     const ref = String(cod).toUpperCase().trim();
     // 1. Match directo por idProducto o codigoBarra
@@ -4147,6 +4151,7 @@ const MOS = (() => {
       String(x.codigoBarra || '').toUpperCase() === ref
     );
     if (p) {
+      if (exacto) return p;
       // Si es presentación o derivado, subir al canónico
       const canon = _buscarCanonicoFrontend(p) || p;
       return canon;
@@ -4168,9 +4173,10 @@ const MOS = (() => {
     return null;
   }
 
-  // Devuelve un label "DESCRIPCIÓN · cod" para mostrar al usuario
-  function _labelProducto(cod) {
-    const p = _resolverCodigoAProducto(cod);
+  // Devuelve un label "DESCRIPCIÓN · cod" para mostrar al usuario.
+  // exacto=true → mantiene el producto exacto (no sube al canónico).
+  function _labelProducto(cod, exacto) {
+    const p = _resolverCodigoAProducto(cod, exacto);
     if (!p) return `<span class="text-slate-500 font-mono">${cod}</span>`;
     const desc = p.descripcion || cod;
     return `<span class="text-slate-200">${desc}</span> <span class="text-[10px] text-slate-600 font-mono">▌${cod}</span>`;
@@ -4356,9 +4362,12 @@ const MOS = (() => {
       const itemsHtml = items
         .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')))
         .map(e => {
-          const baseLbl = _labelProducto(e.codigoProductoBase);
+          // Envasado: usar el producto EXACTO (no subir al canónico)
+          // — el código del envasado apunta a la PRESENTACIÓN específica
+          // (ej. WHAJARUM250GR), no al granel base.
+          const baseLbl = _labelProducto(e.codigoProductoBase, true);
           const envLbl  = e.codigoProductoEnvasado
-            ? _labelProducto(e.codigoProductoEnvasado)
+            ? _labelProducto(e.codigoProductoEnvasado, true)
             : '<span class="text-slate-600 italic">sin código envasado</span>';
           const hora = String(e.fecha || '').substring(11, 16) || '';
           const cantBase = parseFloat(e.cantidadBase) || 0;
