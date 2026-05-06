@@ -7983,12 +7983,13 @@ const MOS = (() => {
 
   async function loadConfig() {
     S.cfgTab = S.cfgTab || 'zonas';
-    const [zonRes, estRes, impRes, persRes, persMOSRes, serRes, dispRes, catRes] = await Promise.allSettled([
+    const [zonRes, estRes, impRes, persRes, persMOSRes, persMERes, serRes, dispRes, catRes] = await Promise.allSettled([
       API.get('getZonas', {}),
       API.get('getEstaciones', {}),
       API.get('getImpresoras', {}),
       API.get('getPersonalMaster', { appOrigen: 'warehouseMos' }),
       API.get('getPersonalMaster', { appOrigen: 'MOS' }),
+      API.get('getPersonalMaster', { appOrigen: 'mosExpress' }),
       API.get('getSeries', {}),
       API.get('getDispositivos', {}),
       API.get('getCategorias', {})
@@ -7998,6 +7999,7 @@ const MOS = (() => {
     cfgData.impresoras   = impRes.status      === 'fulfilled' ? (impRes.value      || []) : [];
     cfgData.personal     = persRes.status     === 'fulfilled' ? (persRes.value     || []) : [];
     cfgData.personalMOS  = persMOSRes.status  === 'fulfilled' ? (persMOSRes.value  || []) : [];
+    cfgData.personalME   = persMERes.status   === 'fulfilled' ? (persMERes.value   || []) : [];
     cfgData.series       = serRes.status      === 'fulfilled' ? (serRes.value      || []) : [];
     cfgData.dispositivos = dispRes.status     === 'fulfilled' ? (dispRes.value     || []) : [];
     cfgData.categorias   = catRes.status      === 'fulfilled' ? (catRes.value      || []) : [];
@@ -8600,12 +8602,26 @@ const MOS = (() => {
       }
     } catch {}
 
-    const cajeros = (pendientes && Array.isArray(pendientes.personal))
+    let cajeros = (pendientes && Array.isArray(pendientes.personal))
       ? pendientes.personal.filter(p => {
           const app = String(p.appOrigen || '').toLowerCase();
           return app === 'mosexpress' || app === 'mexpress' || app.indexOf('express') >= 0;
         })
       : [];
+    // Agregar bloqueados (estado=0) que no aparecen en jornadas de la semana
+    const _normN = s => String(s || '').trim().toLowerCase();
+    const yaListados = new Set(cajeros.map(c => _normN(c.nombre)));
+    (cfgData.personalME || []).forEach(p => {
+      if (String(p.estado) === '0' && !yaListados.has(_normN(p.nombre))) {
+        cajeros.push({
+          nombre: p.nombre,
+          rol: p.rol || 'CAJERO',
+          appOrigen: 'mosExpress',
+          montoTotal: 0, diasPendientes: 0, diasAuditados: 0,
+          esVirtual: false
+        });
+      }
+    });
 
     const cnt = $('cfgMeCajerosCount');
     if (cnt) {
@@ -8616,6 +8632,11 @@ const MOS = (() => {
       cont.innerHTML = '<p class="text-xs text-slate-500 italic text-center py-3">Sin cajeros activos esta semana.</p>';
       return;
     }
+    // Map por nombre normalizado para detectar bloqueados (estado=0 en PERSONAL_MASTER)
+    const _norm = s => String(s || '').trim().toLowerCase();
+    const bloqMap = {};
+    (cfgData.personalME || []).forEach(p => { bloqMap[_norm(p.nombre)] = p; });
+
     cont.innerHTML = cajeros.map(c => {
       const initials = String(c.nombre || '?').split(/\s+/).map(s => s[0] || '').join('').slice(0, 2).toUpperCase();
       const monto = parseFloat(c.montoTotal) || 0;
@@ -8624,22 +8645,86 @@ const MOS = (() => {
       const virt = c.esVirtual
         ? '<span class="badge badge-yellow text-[9px] ml-1" title="Detectado de ventas (no en PERSONAL_MASTER)">virtual</span>'
         : '';
-      return `<div class="flex items-center gap-3 p-3 rounded-lg" style="background:#0d1526;border:1px solid #1e293b">
+      const reg = bloqMap[_norm(c.nombre)];
+      const bloqueado = reg && String(reg.estado) === '0';
+      const idAttr = reg ? reg.idPersonal : '';
+      const safeNombre = String(c.nombre || '').replace(/'/g, '&#39;');
+      const opacity = bloqueado ? 'opacity:0.6;' : '';
+      const borderCol = bloqueado ? '#7f1d1d' : '#1e293b';
+      const lockBadge = bloqueado
+        ? '<span class="badge badge-red text-[9px] ml-1" title="Cuenta bloqueada — el cajero ve pantalla de candado">🔒 bloqueado</span>'
+        : '';
+      return `<div class="flex items-center gap-3 p-3 rounded-lg" style="background:#0d1526;border:1px solid ${borderCol};${opacity}">
         <div class="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
              style="background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#0b1220">${initials}</div>
         <div class="flex-1 min-w-0">
-          <div class="font-medium text-sm text-slate-200 truncate">${c.nombre}${virt}</div>
+          <div class="font-medium text-sm text-slate-200 truncate">${c.nombre}${virt}${lockBadge}</div>
           <div class="flex items-center gap-2 mt-0.5 flex-wrap">
             <span class="badge badge-gray text-xs">${c.rol || 'CAJERO'}</span>
             <span class="text-[10px] text-slate-500">${dias}d · ${aud}/${dias} aud</span>
           </div>
         </div>
-        <div class="text-right shrink-0">
+        <div class="text-right shrink-0 mr-2">
           <div class="text-sm font-bold text-amber-400">S/ ${monto.toFixed(2)}</div>
           <div class="text-[10px] text-slate-500">esta semana</div>
         </div>
+        <label class="pers-switch shrink-0" title="${bloqueado ? 'Activar cuenta — desbloquea pantalla de candado' : 'Bloquear cuenta — el cajero verá pantalla de candado'}">
+          <input type="checkbox" ${bloqueado ? '' : 'checked'} onchange="MOS.toggleVendedorME('${safeNombre}','${idAttr}', event)">
+          <span class="pers-slider"></span>
+        </label>
       </div>`;
     }).join('');
+  }
+
+  // Activa/desactiva un cajero ME — crea registro en PERSONAL_MASTER si no existe
+  async function toggleVendedorME(nombre, idPersonal, ev) {
+    if (ev) ev.stopPropagation();
+    const checked = ev?.target?.checked;
+    // checked=true → activar (estado=1) ; checked=false → bloquear (estado=0)
+    const nuevoEstado = checked ? '1' : '0';
+    const accion = checked ? 'activar' : 'BLOQUEAR (mostrar pantalla de candado)';
+    if (!confirm(`¿${accion.charAt(0).toUpperCase() + accion.slice(1)} a ${nombre}?`)) {
+      // Revertir UI
+      if (ev?.target) ev.target.checked = !checked;
+      return;
+    }
+    try {
+      if (idPersonal) {
+        // Ya existe registro — solo actualizar estado
+        await API.post('actualizarPersonalMaster', {
+          idPersonal: idPersonal,
+          estado: nuevoEstado,
+          appOrigen: 'mosExpress'
+        });
+      } else {
+        // No existe — crear con estado=0 (solo si bloqueamos)
+        if (checked) { return; /* nada que hacer si está activo y no existe */ }
+        const r = await API.post('crearPersonalMaster', {
+          nombre: nombre,
+          tipo: 'VENDEDOR',
+          appOrigen: 'mosExpress',
+          rol: 'CAJERO',
+          pin: ''
+        });
+        // crearPersonalMaster crea con estado=1 por defecto, hay que actualizarlo
+        if (r?.idPersonal) {
+          await API.post('actualizarPersonalMaster', {
+            idPersonal: r.idPersonal,
+            estado: '0',
+            appOrigen: 'mosExpress'
+          });
+        }
+      }
+      toast(`${nombre} ${checked ? 'activado' : 'bloqueado'} ✓`, 'ok');
+      // Refrescar
+      const persME = await API.get('getPersonalMaster', { appOrigen: 'mosExpress' });
+      cfgData.personalME = persME || [];
+      _cfgRenderMeCajeros();
+    } catch(e) {
+      console.error('[toggleVendedorME]', e);
+      toast('Error: ' + e.message, 'error');
+      if (ev?.target) ev.target.checked = !checked;
+    }
   }
 
   function renderSeries() {
@@ -13317,6 +13402,7 @@ const MOS = (() => {
     abrirModalSerie, guardarSerie,
     guardarPinEstacion, guardarPinWH,
     seg_consultarClave, seg_rotarManual, seg_cargarAuditoria, seg_ocultar,
+    toggleVendedorME,
     abrirModalDispositivo, cerrarModalDispositivo, guardarDispositivo, toggleEstadoDispositivo,
     toggleAvatarMenu, closeAvatarMenu, installPWA,
     toggleFiltroCat, setFiltroCategoria, toggleFiltroTipo, limpiarFiltrosCat, toggleFiltroAlertas, toggleAlertPop,
