@@ -10656,6 +10656,13 @@ const MOS = (() => {
           elDias.style.color = '#94a3b8';
         }
       }
+      // Click solo activo para MASTER (admin/administrador no tienen acceso a config)
+      const esMaster = String(S.session?.rol || '').toUpperCase() === 'MASTER';
+      box.onclick = esMaster
+        ? () => { try { nav('config'); setCfgTab('seguridad'); } catch(_){} closeAvatarMenu(); }
+        : null;
+      box.style.cursor = esMaster ? 'pointer' : 'default';
+      box.title = esMaster ? 'Tocar para ir al panel de seguridad' : 'Solo el master puede modificarla';
     } else {
       // Sin caché — mostrar input para autenticar
       box.classList.add('hidden');
