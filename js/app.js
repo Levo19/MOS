@@ -8711,19 +8711,18 @@ const MOS = (() => {
     }
     if (err) err.textContent = '';
     try {
-      const r = await fetch(API_URL + '?action=getClaveAdminGlobal&pinAdmin=' + encodeURIComponent(pin));
-      const j = await r.json();
-      if (!j || !j.ok) { if (err) err.textContent = j?.error || 'Error de red'; return; }
-      if (!j.data?.autorizado) {
-        if (err) err.textContent = j.data?.error || 'PIN incorrecto';
+      const data = await API.get('getClaveAdminGlobal', { pinAdmin: pin });
+      if (!data?.autorizado) {
+        if (err) err.textContent = data?.error || 'PIN incorrecto';
         if (inp) inp.value = '';
         return;
       }
-      _segDataActual = j.data;
-      _segPintar(j.data);
+      _segDataActual = data;
+      _segPintar(data);
       seg_cargarAuditoria();
     } catch(e) {
-      if (err) err.textContent = 'Sin conexión';
+      console.error('[seg_consultarClave]', e);
+      if (err) err.textContent = e?.message || 'Sin conexión';
     }
   }
 
@@ -8766,27 +8765,22 @@ const MOS = (() => {
     }
     if (!confirm('¿Generar una nueva clave global aleatoria? La clave actual dejará de funcionar inmediatamente en MosExpress y warehouseMos.')) return;
     try {
-      const r = await fetch(API_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'rotarClaveAdminGlobal', manual: true, pinAdmin: pinUsar })
-      });
-      const j = await r.json();
-      if (!j || !j.ok) { toast('Error: ' + (j?.error || 'sin respuesta'), 'danger'); return; }
-      if (!j.data?.autorizado && j.data?.error) { toast(j.data.error, 'danger'); return; }
-      // Recargar
+      const data = await API.post('rotarClaveAdminGlobal', { manual: true, pinAdmin: pinUsar });
+      if (!data?.autorizado && data?.error) { toast(data.error, 'danger'); return; }
       _segDataActual = {
-        pin: j.data.pin,
-        fechaUltimaRotacion: j.data.fechaUltimaRotacion,
-        fechaProximaRotacion: j.data.fechaProximaRotacion,
+        pin: data.pin,
+        fechaUltimaRotacion: data.fechaUltimaRotacion,
+        fechaProximaRotacion: data.fechaProximaRotacion,
         diasDesdeRotacion: 0,
         diasParaProximaRotacion: 30,
         vencida: false
       };
       _segPintar(_segDataActual);
       seg_cargarAuditoria();
-      toast('Clave rotada · ' + j.data.pin, 'ok', 5000);
+      toast('Clave rotada · ' + data.pin, 'ok', 5000);
     } catch(e) {
-      toast('Sin conexión', 'danger');
+      console.error('[seg_rotarManual]', e);
+      toast(e?.message || 'Sin conexión', 'danger');
     }
   }
 
@@ -8795,17 +8789,16 @@ const MOS = (() => {
     if (!tbody) return;
     tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-slate-500">Cargando...</td></tr>';
     try {
-      const r = await fetch(API_URL + '?action=getAuditoriaAdmin&limit=30');
-      const j = await r.json();
-      if (!j || !j.ok || !Array.isArray(j.data)) {
+      const data = await API.get('getAuditoriaAdmin', { limit: 30 });
+      if (!Array.isArray(data)) {
         tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-slate-500">Sin auditoría disponible.</td></tr>';
         return;
       }
-      if (!j.data.length) {
+      if (!data.length) {
         tbody.innerHTML = '<tr><td colspan="5" class="text-center py-6 text-slate-500">Aún no hay acciones registradas.</td></tr>';
         return;
       }
-      tbody.innerHTML = j.data.map(a => {
+      tbody.innerHTML = data.map(a => {
         const fecha = a.fecha ? new Date(a.fecha) : null;
         const fmtFecha = fecha ? fecha.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit' }) + ' ' + fecha.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }) : '—';
         const accColor = {
