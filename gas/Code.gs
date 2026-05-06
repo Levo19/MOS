@@ -185,6 +185,8 @@ function _route(method, e) {
       case 'getEstadoBloqueoUsuario':   return getEstadoBloqueoUsuario(params);
       case 'desbloquearUsuarioTemporal':return desbloquearUsuarioTemporal(params);
       case 'getBloqueosActivos':        return getBloqueosActivos(params);
+      case 'bloquearVendedorME':        return bloquearVendedorME(params);
+      case 'getVendedoresMEBloqueados': return getVendedoresMEBloqueados(params);
 
       // ── Seguridad: clave admin global unificada ────────────
       case 'verificarClaveAdmin':       return verificarClaveAdmin(params);

@@ -55,30 +55,35 @@ function getEstadoBloqueoUsuario(params) {
   var appOrigen = _normalizarApp(params.appOrigen || '');
   var nombreNorm = _normalizarNombre(params.nombre);
 
-  // 1) Buscar persona en PERSONAL_MASTER
-  var personas = _sheetToObjects(getSheet('PERSONAL_MASTER'));
-  var persona = null;
-  if (params.idPersonal) {
-    persona = personas.find(function(p){ return String(p.idPersonal) === String(params.idPersonal); });
-  }
-  if (!persona && nombreNorm) {
-    persona = personas.find(function(p) {
-      if (!p.nombre) return false;
-      if (appOrigen && _normalizarApp(p.appOrigen) !== appOrigen) return false;
-      return _normalizarNombre(p.nombre) === nombreNorm;
-    });
+  // 1) (Solo para usuarios "reales" tipo WH/MOS Admin) — buscar en PERSONAL_MASTER
+  // Para vendedores ME esto NO aplica: ellos comparten el usuario plantilla
+  // (ej: PER099 Cajero Genérico) y se identifican solo por nombre.
+  var estaInactivoEnPM = false;
+  var personaPM = null;
+  if (appOrigen !== 'mosexpress') {
+    var personas = _sheetToObjects(getSheet('PERSONAL_MASTER'));
+    if (params.idPersonal) {
+      personaPM = personas.find(function(p){ return String(p.idPersonal) === String(params.idPersonal); });
+    }
+    if (!personaPM && nombreNorm) {
+      personaPM = personas.find(function(p) {
+        if (!p.nombre) return false;
+        if (appOrigen && _normalizarApp(p.appOrigen) !== appOrigen) return false;
+        return _normalizarNombre(p.nombre) === nombreNorm;
+      });
+    }
+    if (personaPM) estaInactivoEnPM = String(personaPM.estado) === '0';
   }
 
-  // Si no existe en PERSONAL_MASTER, no está bloqueado (no hay registro que revisar)
-  if (!persona) {
-    return { ok: true, data: { bloqueado: false, motivo: 'sin_registro' } };
-  }
-
-  var estaInactivo = String(persona.estado) === '0';
-
-  // 2) Buscar fila de unlock temporal vigente en BLOQUEOS_USUARIO
+  // 2) Revisar BLOQUEOS_USUARIO — fila puede tener:
+  //    - fechaBloqueo seteada → bloqueo manual del admin (vendedor ME, o cualquiera)
+  //    - unlockHasta futuro → desbloqueo temporal vigente
   var unlockHasta = 0;
+  var fechaBloqueo = '';
   var motivo = '';
+  var idPersonalReg = personaPM ? personaPM.idPersonal : (params.idPersonal || '');
+  var nombreReg = personaPM ? personaPM.nombre : (params.nombre || '');
+
   var sheet = _garantizarHojaBloqueos();
   var data = sheet.getDataRange().getValues();
   if (data.length > 1) {
@@ -87,15 +92,17 @@ function getEstadoBloqueoUsuario(params) {
     var iNom = hdrs.indexOf('nombre');
     var iApp = hdrs.indexOf('appOrigen');
     var iUnl = hdrs.indexOf('unlockHasta');
+    var iFB  = hdrs.indexOf('fechaBloqueo');
     var iMot = hdrs.indexOf('motivo');
     for (var r = data.length - 1; r >= 1; r--) {
       var row = data[r];
-      var matchId  = persona.idPersonal && String(row[iId]) === String(persona.idPersonal);
-      var matchNom = nombreNorm && _normalizarNombre(row[iNom]) === _normalizarNombre(persona.nombre);
+      var matchId  = idPersonalReg && String(row[iId]) === String(idPersonalReg);
+      var matchNom = nombreReg && _normalizarNombre(row[iNom]) === _normalizarNombre(nombreReg);
       var matchApp = !appOrigen || _normalizarApp(row[iApp]) === appOrigen;
       if ((matchId || matchNom) && matchApp) {
-        unlockHasta = parseInt(row[iUnl], 10) || 0;
-        motivo = row[iMot] || '';
+        unlockHasta  = parseInt(row[iUnl], 10) || 0;
+        fechaBloqueo = row[iFB] || '';
+        motivo       = row[iMot] || '';
         break;
       }
     }
@@ -103,20 +110,131 @@ function getEstadoBloqueoUsuario(params) {
 
   var ahora = new Date().getTime();
   var unlockVigente = unlockHasta > ahora;
+  var bloqueoManualEnTabla = !!fechaBloqueo;
+
+  // Bloqueado si:
+  //  - PERSONAL_MASTER.estado=0 (WH/MOS Admin), o
+  //  - BLOQUEOS_USUARIO.fechaBloqueo seteado (vendedor ME bloqueado por admin)
+  // Y SIN unlock vigente.
+  var bloqueado = (estaInactivoEnPM || bloqueoManualEnTabla) && !unlockVigente;
 
   return {
     ok: true,
     data: {
-      bloqueado: estaInactivo && !unlockVigente,
-      inactivo: estaInactivo,
+      bloqueado: bloqueado,
+      inactivo: estaInactivoEnPM || bloqueoManualEnTabla,
       unlockHasta: unlockHasta,
       unlockVigente: unlockVigente,
       msRestantes: unlockVigente ? (unlockHasta - ahora) : 0,
       motivo: motivo,
-      idPersonal: persona.idPersonal,
-      nombre: persona.nombre
+      idPersonal: idPersonalReg,
+      nombre: nombreReg
     }
   };
+}
+
+// ────────────────────────────────────────────────────────────
+// BLOQUEAR/ACTIVAR VENDEDOR ME por NOMBRE (no toca PERSONAL_MASTER)
+// Usado desde MOS panel: toggle de cajeros ME que comparten el usuario
+// plantilla (ej: PER099). Escribe directamente en BLOQUEOS_USUARIO.
+// ────────────────────────────────────────────────────────────
+function bloquearVendedorME(params) {
+  if (!params || !params.nombre) return { ok: false, error: 'Requiere nombre' };
+  var nombre = String(params.nombre).trim();
+  var appOrigen = _normalizarApp(params.appOrigen || 'mosExpress');
+  var bloquear = !!params.bloquear;
+  var bloqueadoPor = String(params.bloqueadoPor || 'admin').trim();
+
+  var lock = LockService.getScriptLock();
+  try { lock.tryLock(15000); } catch(e) {}
+  try {
+    var sheet = _garantizarHojaBloqueos();
+    var data = sheet.getDataRange().getValues();
+    var hdrs = data[0];
+    var iId  = hdrs.indexOf('idPersonal');
+    var iNom = hdrs.indexOf('nombre');
+    var iApp = hdrs.indexOf('appOrigen');
+    var iMot = hdrs.indexOf('motivo');
+    var iBp  = hdrs.indexOf('bloqueadoPor');
+    var iFB  = hdrs.indexOf('fechaBloqueo');
+    var iUnl = hdrs.indexOf('unlockHasta');
+    var iDes = hdrs.indexOf('desbloqueadoPor');
+
+    var foundRow = -1;
+    var nombreNorm = _normalizarNombre(nombre);
+    for (var r = 1; r < data.length; r++) {
+      var matchNom = _normalizarNombre(data[r][iNom]) === nombreNorm;
+      var matchApp = _normalizarApp(data[r][iApp]) === appOrigen;
+      if (matchNom && matchApp) { foundRow = r + 1; break; }
+    }
+
+    if (bloquear) {
+      var ahora = new Date();
+      if (foundRow > 0) {
+        sheet.getRange(foundRow, iFB + 1).setValue(ahora);
+        sheet.getRange(foundRow, iBp + 1).setValue(bloqueadoPor);
+        sheet.getRange(foundRow, iMot + 1).setValue(params.motivo || 'bloqueo_admin');
+        sheet.getRange(foundRow, iUnl + 1).setValue(0);
+        sheet.getRange(foundRow, iDes + 1).setValue('');
+      } else {
+        var fila = new Array(BLOQUEOS_HEADERS.length).fill('');
+        fila[hdrs.indexOf('idBloqueo')] = _generateId('BLO');
+        fila[iId]  = '';
+        fila[iNom] = nombre;
+        fila[iApp] = appOrigen;
+        fila[iMot] = params.motivo || 'bloqueo_admin';
+        fila[iBp]  = bloqueadoPor;
+        fila[iFB]  = ahora;
+        fila[iUnl] = 0;
+        fila[iDes] = '';
+        sheet.appendRow(fila);
+      }
+      // Auditoría
+      try {
+        var audSheet = _garantizarHojaAuditoria();
+        audSheet.appendRow([
+          _generateId('AUD'), ahora, 'BLOQUEAR_VENDEDOR_ME',
+          nombre, '', bloqueadoPor, appOrigen, '', 'Toggle apagado desde panel MOS'
+        ]);
+      } catch(e) {}
+      return { ok: true, data: { bloqueado: true, nombre: nombre } };
+    } else {
+      // Desbloquear — limpiar fechaBloqueo y unlockHasta
+      if (foundRow > 0) {
+        sheet.getRange(foundRow, iFB + 1).setValue('');
+        sheet.getRange(foundRow, iUnl + 1).setValue(0);
+        sheet.getRange(foundRow, iDes + 1).setValue(bloqueadoPor + ' (reactivado)');
+      }
+      try {
+        var audSheet2 = _garantizarHojaAuditoria();
+        audSheet2.appendRow([
+          _generateId('AUD'), new Date(), 'ACTIVAR_VENDEDOR_ME',
+          nombre, '', bloqueadoPor, appOrigen, '', 'Toggle encendido desde panel MOS'
+        ]);
+      } catch(e) {}
+      return { ok: true, data: { bloqueado: false, nombre: nombre } };
+    }
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
+  }
+}
+
+// Lista todos los vendedores ME con bloqueo manual (fechaBloqueo seteada)
+function getVendedoresMEBloqueados(params) {
+  var sheet = _garantizarHojaBloqueos();
+  var rows = _sheetToObjects(sheet);
+  var ahora = new Date().getTime();
+  rows = rows
+    .filter(function(r) {
+      return _normalizarApp(r.appOrigen) === 'mosexpress' && r.fechaBloqueo;
+    })
+    .map(function(r) {
+      var unl = parseInt(r.unlockHasta, 10) || 0;
+      r.unlockVigente = unl > ahora;
+      r.msRestantes = r.unlockVigente ? (unl - ahora) : 0;
+      return r;
+    });
+  return { ok: true, data: rows };
 }
 
 // ────────────────────────────────────────────────────────────
