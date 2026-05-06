@@ -14143,12 +14143,12 @@ const MOS = (() => {
         dispositivo: navigator.userAgent.substring(0, 150)
       }).catch(() => {});
 
-      // Notificar ingreso a otros admins/master (no a sí mismo, no a no-admins)
+      // Notificar ingreso a MOS — SOLO los MASTER lo ven (admins no se enteran de otros admins)
       const hora = new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
       API.post('enviarPushNotif', {
         titulo: '👤 ' + nombre + ' ingresó a MOS',
         cuerpo: (rol || '') + ' · ' + hora,
-        soloRolesAdmin: true,
+        soloRolesMaster: true,
         excluirUsuario: nombre
       }).catch(() => {});
 

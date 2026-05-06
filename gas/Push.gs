@@ -91,30 +91,36 @@ function _enviarPushTokens(titulo, cuerpo, tokens) {
 //
 // opciones (todas opcionales):
 //   excluirUsuario: nombre del usuario a no notificar (ej: él mismo originó la acción)
-//   soloRolesAdmin: true → solo tokens cuyo usuario es MASTER/ADMIN en PERSONAL_MASTER
+//   soloRolesAdmin: true → solo MASTER + ADMIN/ADMINISTRADOR
+//   soloRolesMaster: true → solo MASTER (más restrictivo que soloRolesAdmin)
 function _seleccionarTokensActivos(data, opciones) {
   opciones = opciones || {};
   // headers: idToken(0) token(1) usuario(2) dispositivo(3) appOrigen(4) fecha(5) ultimaVez(6) activo(7)
   var porUsuario = {};
   var excNorm = opciones.excluirUsuario ? String(opciones.excluirUsuario).trim().toLowerCase() : null;
 
-  // Si filtramos por rol, cargar set de admins activos
-  var adminsSet = null;
-  if (opciones.soloRolesAdmin) {
-    adminsSet = {};
+  // Si filtramos por rol, cargar set de usuarios permitidos
+  var rolSet = null;
+  if (opciones.soloRolesMaster || opciones.soloRolesAdmin) {
+    rolSet = {};
     try {
       var personas = _sheetToObjects(getSheet('PERSONAL_MASTER'));
       personas.forEach(function(p) {
         var rol = String(p.rol || '').toUpperCase();
-        var es = rol === 'MASTER' || rol === 'ADMIN' || rol === 'ADMINISTRADOR';
-        if (es && String(p.estado) === '1') {
+        var permitido = false;
+        if (opciones.soloRolesMaster) {
+          permitido = (rol === 'MASTER');
+        } else if (opciones.soloRolesAdmin) {
+          permitido = (rol === 'MASTER' || rol === 'ADMIN' || rol === 'ADMINISTRADOR');
+        }
+        if (permitido && String(p.estado) === '1') {
           var n = (String(p.nombre || '') + ' ' + String(p.apellido || '')).trim().toLowerCase();
-          adminsSet[n] = true;
+          rolSet[n] = true;
           // También aceptar solo nombre (si el token se registró sin apellido)
-          adminsSet[String(p.nombre || '').trim().toLowerCase()] = true;
+          rolSet[String(p.nombre || '').trim().toLowerCase()] = true;
         }
       });
-    } catch(e) { Logger.log('soloRolesAdmin: ' + e.message); }
+    } catch(e) { Logger.log('filtro rol: ' + e.message); }
   }
 
   for (var i = 1; i < data.length; i++) {
@@ -125,7 +131,7 @@ function _seleccionarTokensActivos(data, opciones) {
     if (!token) continue;
     if (activo === false || String(activo) === '0' || String(activo) === 'false') continue;
     if (excNorm && usuario === excNorm) continue; // excluir al sender
-    if (adminsSet && !adminsSet[usuario]) continue; // solo admins/master
+    if (rolSet && !rolSet[usuario]) continue; // filtro por rol (master o admin+master)
     var ultVezRaw = data[i][6];
     var ultVez = 0;
     try { ultVez = ultVezRaw ? new Date(ultVezRaw).getTime() : 0; } catch(_) {}
@@ -242,12 +248,14 @@ function registrarPushToken(params) {
 // ── Enviar push desde apps hijas (MosExpress, warehouseMos) ────
 // Acepta opciones:
 //   excluirUsuario: nombre del usuario a no notificar (auto-exclusión del sender)
-//   soloRolesAdmin: true → solo a MASTER/ADMIN
+//   soloRolesAdmin: true → solo a MASTER + ADMIN
+//   soloRolesMaster: true → solo a MASTER (más restrictivo)
 function enviarPushNotif(params) {
   if (!params.titulo) return { ok: false, error: 'titulo requerido' };
   var opciones = {
-    excluirUsuario: params.excluirUsuario || null,
-    soloRolesAdmin: params.soloRolesAdmin === true || String(params.soloRolesAdmin) === 'true'
+    excluirUsuario:  params.excluirUsuario || null,
+    soloRolesAdmin:  params.soloRolesAdmin === true || String(params.soloRolesAdmin) === 'true',
+    soloRolesMaster: params.soloRolesMaster === true || String(params.soloRolesMaster) === 'true'
   };
   _enviarPushTodos(params.titulo, params.cuerpo || '', opciones);
   return { ok: true };
