@@ -460,11 +460,19 @@ function _calcularPersonal(fecha) {
     var kFull = ((p.nombre || '') + ' ' + (p.apellido || '')).trim().toLowerCase();
     if (kFull && kFull !== k) personalByNombre[kFull] = p;
   });
-  // Plantilla genérica por rol (para vendedores virtuales detectados de ME)
+  // Plantilla genérica por rol (para vendedores virtuales detectados de ME).
+  // VENDEDOR y CAJERO son sinónimos: la jornada puede venir con cualquiera y
+  // PERSONAL_MASTER tiene la plantilla "Cajero Genérico" con rol=CAJERO.
+  function _equivRol(a, b) {
+    if (a === b) return true;
+    var sin = { 'VENDEDOR': 'CAJERO', 'CAJERO': 'VENDEDOR' };
+    return sin[a] === b;
+  }
   function _montoPorRol(rol) {
     var r = String(rol || '').toUpperCase();
     var pl = personalMaster.find(function(p){
-      return String(p.rol || '').toUpperCase() === r && (parseFloat(p.montoBase) || 0) > 0;
+      var pr = String(p.rol || '').toUpperCase();
+      return _equivRol(r, pr) && (parseFloat(p.montoBase) || 0) > 0;
     });
     return pl ? (parseFloat(pl.montoBase) || 0) : 0;
   }
