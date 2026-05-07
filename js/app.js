@@ -14190,6 +14190,11 @@ const MOS = (() => {
     const cont = $('finPersonalList');
     const tot  = $('finPersonalTotal');
     if (!cont) return;
+    // Sincronizar la fecha del módulo Evaluaciones con la del Finanzas — así el
+    // botón Auditar de cada card busca el resumen en la fecha correcta (no en hoy).
+    if (typeof _evalState !== 'undefined' && _evalState && fecha) {
+      _evalState.fecha = fecha;
+    }
     if (tot) _animateCount(tot, pl.gastoPersonal || 0, { prefix: 'S/ ' });
     if (!pl.personalDetalle || !pl.personalDetalle.length) {
       cont.innerHTML = '<p class="text-slate-500 text-xs">Sin registros — usa "+ Jornada" o "⬇ Cajas"</p>';
