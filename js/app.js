@@ -512,7 +512,18 @@ const MOS = (() => {
     _startCajasRefresh();
     _startCatRefresh();
     _startFinanzasRefresh();
-    _prefetchLiquidaciones();   // las 3 pestañas a localStorage
+    _prefetchLiquidaciones();   // las 4 pestañas a localStorage
+    // Prefetch resumen evaluativo del día (Cierre/Finanzas + Evaluaciones + Auditar)
+    (function _prefetchResumenDia() {
+      const _fhoy = today();
+      API.get('getResumenTodosDia', { fecha: _fhoy }).then(r => {
+        if (Array.isArray(r)) {
+          try { localStorage.setItem('mos_fin_resum_' + _fhoy, JSON.stringify({ ts: Date.now(), data: r })); } catch {}
+          _evalState.resumenes = r;
+          _evalState.fecha = _fhoy;
+        }
+      }).catch(() => {});
+    })();
     _refreshPNPendientes(); // PN pendientes — pre-carga inmediata
     _startPNAutoRefresh();   // refresca cada 90s automáticamente
     loadProveedores().catch(() => {}); // pre-carga proveedores
@@ -12777,6 +12788,10 @@ const MOS = (() => {
       }).catch(() => {}),
       API.get('getLiquidacionesEmitidas', { estado: 'PAGADA' }).then(r => {
         _liqSaveCache('pagadas', r || []);
+      }).catch(() => {}),
+      // Histórico: sin filtro (todas las emitidas, paginadas server-side)
+      API.get('getLiquidacionesEmitidas', {}).then(r => {
+        _liqSaveCache('historico', r || []);
       }).catch(() => {})
     ]).finally(() => iconBusy('finanzas', false));
   }
@@ -14320,7 +14335,29 @@ const MOS = (() => {
 
   // ── Modal Auditar ────────────────────────────────────────────
   async function abrirAuditar(idPersonal) {
-    const r = _evalState.resumenes.find(x => x.idPersonal === idPersonal);
+    let r = _evalState.resumenes.find(x => x.idPersonal === idPersonal);
+    // Si no está en _evalState (módulo Evaluaciones nunca abierto), hidratar
+    // desde cache de Cierre/Finanzas, y si tampoco, fetch directo.
+    if (!r) {
+      try {
+        const raw = localStorage.getItem('mos_fin_resum_' + _evalState.fecha);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed?.data)) _evalState.resumenes = parsed.data;
+        }
+      } catch {}
+      r = _evalState.resumenes.find(x => x.idPersonal === idPersonal);
+    }
+    if (!r) {
+      try {
+        const fresh = await API.get('getResumenTodosDia', { fecha: _evalState.fecha });
+        if (Array.isArray(fresh)) {
+          _evalState.resumenes = fresh;
+          try { localStorage.setItem('mos_fin_resum_' + _evalState.fecha, JSON.stringify({ ts: Date.now(), data: fresh })); } catch {}
+        }
+      } catch {}
+      r = _evalState.resumenes.find(x => x.idPersonal === idPersonal);
+    }
     if (!r) { toast('Personal no encontrado', 'error'); return; }
     $('auditTitle').textContent = '🎯 Auditar · ' + r.nombre;
     const evalCount = r.evaluacionesCount || 0;
