@@ -14218,7 +14218,17 @@ const MOS = (() => {
               <span class="text-xs text-slate-400">Pago día: <strong class="text-amber-400">S/ ${parseFloat(totalDia).toFixed(2)}</strong></span>
             </div>
           </div>
-          <div class="flex flex-col gap-1 shrink-0">
+          <div class="flex flex-col gap-1 shrink-0 items-end">
+            <div class="flex gap-1 mb-0.5">
+              <button onclick="event.stopPropagation();MOS.abrirEscuchaPorUsuario('${String(p.nombre || '').replace(/'/g,'&#39;')}')"
+                class="w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-all"
+                style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.5);color:#f87171;font-size:11px;"
+                title="Escucha remota de ${p.nombre}">🎙️</button>
+              <button onclick="event.stopPropagation();MOS.abrirGpsPorUsuario('${String(p.nombre || '').replace(/'/g,'&#39;')}')"
+                class="w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-all"
+                style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.5);color:#34d399;font-size:11px;"
+                title="Ver ubicación de ${p.nombre}">📍</button>
+            </div>
             ${idForEval ? `<button onclick="MOS.abrirAuditar('${idForEval}')" class="btn-primary text-xs whitespace-nowrap px-3 py-1.5">Auditar</button>` : ''}
             <button class="text-[10px] text-slate-600 hover:text-rose-400 transition-colors px-2 py-1" onclick="MOS.finEliminarJornada('${p.idJornada || ''}','${fecha}')" title="Eliminar jornada (no contar como trabajado)">× quitar</button>
           </div>
@@ -14829,7 +14839,19 @@ const MOS = (() => {
                 <span class="text-xs text-slate-400">Pago día: <strong class="text-amber-400">S/${totalDia}</strong></span>
               </div>
             </div>
-            <button onclick="MOS.abrirAuditar('${r.idPersonal}')" class="btn-primary text-xs whitespace-nowrap shrink-0">Auditar</button>
+            <div class="flex flex-col gap-1 shrink-0 items-end">
+              <div class="flex gap-1">
+                <button onclick="event.stopPropagation();MOS.abrirEscuchaPorUsuario('${String(r.nombre || '').replace(/'/g,'&#39;')}')"
+                  class="w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-all"
+                  style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.5);color:#f87171;font-size:11px;"
+                  title="Escucha remota de ${r.nombre}">🎙️</button>
+                <button onclick="event.stopPropagation();MOS.abrirGpsPorUsuario('${String(r.nombre || '').replace(/'/g,'&#39;')}')"
+                  class="w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-all"
+                  style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.5);color:#34d399;font-size:11px;"
+                  title="Ver ubicación de ${r.nombre}">📍</button>
+              </div>
+              <button onclick="MOS.abrirAuditar('${r.idPersonal}')" class="btn-primary text-xs whitespace-nowrap">Auditar</button>
+            </div>
           </div>
         </div>`;
     }).join('');
