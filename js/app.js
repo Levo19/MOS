@@ -12799,24 +12799,51 @@ const MOS = (() => {
     return String(S.session?.rol || '').toUpperCase() === 'MASTER';
   }
 
-  // Busca dispositivos ACTIVOS donde el usuario está logueado.
-  // El cajero/vendedor solo puede tener 1; un operador WH puede tener varios.
+  // Busca dispositivos donde el usuario tiene Ultima_Sesion (sin filtrar por
+  // Estado — incluye los aprobados aunque estén offline ahora). Ordena por
+  // Ultima_Conexion DESC para que el más reciente quede primero.
   function _buscarDispositivosDeUsuario(nombre) {
     const target = String(nombre || '').trim().toLowerCase();
     if (!target) return [];
-    return (cfgData.dispositivos || []).filter(d => {
-      if (String(d.Estado || '').toUpperCase() !== 'ACTIVO') return false;
-      const sesion = String(d.Ultima_Sesion || '').trim().toLowerCase();
-      return sesion === target;
-    });
+    return (cfgData.dispositivos || [])
+      .filter(d => {
+        // Excluir solo los explícitamente INACTIVO o PENDIENTE
+        const est = String(d.Estado || '').toUpperCase();
+        if (est === 'INACTIVO' || est === 'PENDIENTE_APROBACION') return false;
+        const sesion = String(d.Ultima_Sesion || '').trim().toLowerCase();
+        return sesion === target;
+      })
+      .sort((a, b) => {
+        const ta = new Date(a.Ultima_Conexion || 0).getTime() || 0;
+        const tb = new Date(b.Ultima_Conexion || 0).getTime() || 0;
+        return tb - ta;
+      });
   }
 
-  // Punto de entrada cuando se hace click en 🎙️ desde Personal del Día (no hay deviceId conocido)
-  function abrirEscuchaPorUsuario(nombre) {
+  // Refresca cfgData.dispositivos antes de buscar — garantiza data fresh
+  async function _refrescarDispositivosFresh() {
+    try {
+      const data = await API.get('getDispositivos', {});
+      if (Array.isArray(data)) cfgData.dispositivos = data;
+    } catch(_) {}
+  }
+
+  // Punto de entrada cuando se hace click en 🎙️ desde Personal del Día
+  async function abrirEscuchaPorUsuario(nombre) {
+    await _refrescarDispositivosFresh();
     const devs = _buscarDispositivosDeUsuario(nombre);
     if (!devs.length) {
-      toast(`⚠ ${nombre} no tiene dispositivos activos ahora`, 'warn');
+      toast(`⚠ ${nombre} no tiene dispositivos registrados con su sesión`, 'warn', 5000);
       return;
+    }
+    // Advertir si la última conexión es muy vieja
+    const masReciente = devs[0];
+    const ultMs = new Date(masReciente.Ultima_Conexion || 0).getTime() || 0;
+    const minsTranscurridos = (Date.now() - ultMs) / 60000;
+    if (minsTranscurridos > 10) {
+      const horas = Math.floor(minsTranscurridos / 60);
+      const txt = horas > 0 ? `hace ${horas}h` : `hace ${Math.floor(minsTranscurridos)}min`;
+      if (!confirm(`⚠ Última conexión de ${nombre} fue ${txt}.\n\nLa app puede estar cerrada — el comando de escucha puede no llegar.\n\n¿Iniciar igual?`)) return;
     }
     if (devs.length === 1) {
       abrirModalAudioRouted(devs[0].ID_Dispositivo);
@@ -12825,10 +12852,11 @@ const MOS = (() => {
     _selectorDispMostrar(nombre, devs, 'audio');
   }
 
-  function abrirGpsPorUsuario(nombre) {
+  async function abrirGpsPorUsuario(nombre) {
+    await _refrescarDispositivosFresh();
     const devs = _buscarDispositivosDeUsuario(nombre);
     if (!devs.length) {
-      toast(`⚠ ${nombre} no tiene dispositivos activos ahora`, 'warn');
+      toast(`⚠ ${nombre} no tiene dispositivos registrados`, 'warn', 4000);
       return;
     }
     if (devs.length === 1) {
@@ -12939,12 +12967,22 @@ const MOS = (() => {
       // Arrancar polling y reproductor
       _audioFlotantePollChunks(); // primer poll inmediato
       _audioFlot.polling = setInterval(_audioFlotantePollChunks, 4000);
-      // Watchdog: si en 45s no hay chunks, avisar al admin
-      _audioFlot.watchdog = setTimeout(() => {
+      // Watchdogs progresivos: 20s → primer aviso, 45s → recomendación, 90s → autodetener
+      _audioFlot.watchdog20 = setTimeout(() => {
         if (!_audioFlot || _audioFlot.chunks.length > 0) return;
         const elS = document.querySelector('#audioFlotante .audio-flot-sub');
-        if (elS) elS.innerHTML = '⚠ <span style="color:#fbbf24">Sin respuesta · ¿app cerrada o sin permiso mic?</span>';
+        if (elS) elS.innerHTML = '⌛ <span style="color:#fde68a">esperando dispositivo (~5-15s más)...</span>';
+      }, 20000);
+      _audioFlot.watchdog45 = setTimeout(() => {
+        if (!_audioFlot || _audioFlot.chunks.length > 0) return;
+        const elS = document.querySelector('#audioFlotante .audio-flot-sub');
+        if (elS) elS.innerHTML = '⚠ <span style="color:#fbbf24">App cerrada o sin permiso mic — pedile que abra la app</span>';
       }, 45000);
+      _audioFlot.watchdog90 = setTimeout(() => {
+        if (!_audioFlot || _audioFlot.chunks.length > 0) return;
+        toast('⚠ Sin respuesta del dispositivo · escucha cancelada', 'warn', 6000);
+        _audioFlotanteDetenerInterno(true);
+      }, 90000);
     } catch(e) {
       const subEl3 = document.querySelector('#audioFlotante .audio-flot-sub');
       if (subEl3) subEl3.textContent = '❌ ' + e.message;
@@ -13130,7 +13168,9 @@ const MOS = (() => {
     const idSesion = _audioFlot.idSesion;
     if (_audioFlot.polling) clearInterval(_audioFlot.polling);
     if (_audioFlot.contadorTimer) clearInterval(_audioFlot.contadorTimer);
-    if (_audioFlot.watchdog) clearTimeout(_audioFlot.watchdog);
+    if (_audioFlot.watchdog20) clearTimeout(_audioFlot.watchdog20);
+    if (_audioFlot.watchdog45) clearTimeout(_audioFlot.watchdog45);
+    if (_audioFlot.watchdog90) clearTimeout(_audioFlot.watchdog90);
     if (_audioFlot.audioEl) { _audioFlot.audioEl.pause(); _audioFlot.audioEl.src = ''; _audioFlot.audioEl.onended = null; }
     const fl = document.getElementById('audioFlotante');
     if (fl) {
