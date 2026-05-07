@@ -87,25 +87,36 @@ function registrarJornada(params) {
   return { ok: true, data: { idJornada: id } };
 }
 
+// Veto de pago: marca la jornada como tombstone (fuente='ELIMINADA') con
+// timestamp en observación con prefijo 'VETO_TS:<ISO>'. La auto-sync respeta
+// este veto hasta que detecte actividad posterior al timestamp.
 function eliminarJornada(params) {
   if (!params.idJornada) return { ok: false, error: 'Requiere idJornada' };
   var sheet = getSheet('JORNADAS');
   var data  = sheet.getDataRange().getValues();
-  // Marcar como ELIMINADA (en lugar de borrar) para que _sincronizarJornadasAutoDelDia
-  // no la recree en el próximo getFinanzasDia. La fila se mantiene como tombstone:
-  //   fuente='ELIMINADA' · montoJornal=0 · observación con timestamp.
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][0]) === String(params.idJornada)) {
       // Columnas: 0=id 1=fecha 2=idPersonal 3=nombre 4=rol 5=appOrigen 6=zona
       //           7=montoJornal 8=observacion 9=registradoPor 10=fuente
       var rowNum = i + 1;
+      var nowIso = new Date().toISOString();
+      var actor  = String(params.actor || params.registradoPor || 'admin');
       sheet.getRange(rowNum, 8).setValue(0);
-      sheet.getRange(rowNum, 9).setValue('Eliminada manualmente ' + new Date().toISOString());
+      sheet.getRange(rowNum, 9).setValue('VETO_TS:' + nowIso + ' · por ' + actor);
       sheet.getRange(rowNum, 11).setValue('ELIMINADA');
-      return { ok: true };
+      return { ok: true, data: { vetoTs: nowIso, idJornada: params.idJornada } };
     }
   }
   return { ok: false, error: 'Jornada no encontrada' };
+}
+
+// Helper: extrae el ISO timestamp de la observación 'VETO_TS:<ISO> · por X'
+function _parseVetoTs(obs) {
+  if (!obs) return 0;
+  var m = String(obs).match(/VETO_TS:([0-9T:.\-Z]+)/);
+  if (!m) return 0;
+  var t = new Date(m[1]).getTime();
+  return isNaN(t) ? 0 : t;
 }
 
 // Importa automáticamente las jornadas del día desde las aperturas de caja de MosExpress.
@@ -703,33 +714,59 @@ function _sincronizarJornadasAutoDelDia(fecha) {
   if (!rsm || !rsm.ok || !Array.isArray(rsm.data)) return { creadas: 0 };
   var presentes = rsm.data.filter(function(r){ return r && r.presente; });
 
-  // Cargar jornadas existentes del día (idempotencia por nombre)
+  // ── Cargar jornadas existentes del día (idempotencia por nombre) ──
+  // Distinguir entre jornadas ACTIVAS (no recrear, ya existe) y TOMBSTONES
+  // (fuente=ELIMINADA). Los tombstones tienen vetoTs y permiten auto-rehabilitación
+  // si la persona vuelve a operar después del veto.
   var sheet = getSheet('JORNADAS');
   var data  = sheet.getDataRange().getValues();
   var tz    = Session.getScriptTimeZone();
-  var existentesPorNombre = {};
+  var activasPorNombre  = {};
+  var tombstonesPorNombre = {}; // nombreLow → vetoTs (ms)
   for (var i = 1; i < data.length; i++) {
     var f = data[i][1] instanceof Date
       ? Utilities.formatDate(data[i][1], tz, 'yyyy-MM-dd')
       : String(data[i][1] || '').substring(0, 10);
     if (f !== fecha) continue;
     var n = String(data[i][3] || '').toLowerCase().trim();
-    if (n) existentesPorNombre[n] = true;
+    if (!n) continue;
+    var fuenteRow = String(data[i][10] || '').toUpperCase();
+    if (fuenteRow === 'ELIMINADA') {
+      var ts = _parseVetoTs(data[i][8]);
+      // Si hay varios tombstones para el mismo nombre, quedarse con el más reciente
+      if (!tombstonesPorNombre[n] || ts > tombstonesPorNombre[n]) {
+        tombstonesPorNombre[n] = ts;
+      }
+    } else {
+      activasPorNombre[n] = true;
+    }
   }
+
+  // ── Indexar última actividad del día (para auto-rehabilitación) ──
+  // Para presentes con tombstone, comparamos su actividad más reciente vs vetoTs.
+  // Si ultActividad > vetoTs → la persona "regresó" después del veto → crear nueva jornada.
+  var ultActividadPorNombre = _ultimaActividadPorNombre(fecha, tz);
 
   var creadas = 0, errores = [];
   presentes.forEach(function(r) {
     var nombre = String(r.nombre || '').trim();
     var nLow   = nombre.toLowerCase();
-    if (!nLow || existentesPorNombre[nLow]) return;
+    if (!nLow) return;
+    if (activasPorNombre[nLow]) return; // ya hay jornada activa
+    // Tombstone → exigir actividad posterior al veto
+    if (tombstonesPorNombre[nLow]) {
+      var vetoTs = tombstonesPorNombre[nLow];
+      var ultTs  = ultActividadPorNombre[nLow] || 0;
+      if (ultTs <= vetoTs) return; // no hay actividad nueva, respeta el veto
+    }
     try {
       var montoBase = parseFloat(r.montoBase) || 0;
       var fuente    = r.appOrigen === 'warehouseMos' ? 'AUTO_LOGIN' : 'AUTO_VENTA';
       var idPersonal = String(r.idPersonal || '');
-      // Para virtuales (idPersonal=MEX:nombre) guardar vacío en col idPersonal,
-      // así la jornada queda atada solo por nombre — lo cual es correcto porque
-      // mañana ese mismo nombre puede o no aparecer.
       var idPersonalFinal = idPersonal.indexOf('MEX:') === 0 ? '' : idPersonal;
+      var obs = tombstonesPorNombre[nLow]
+        ? 'Auto-rehabilitada: actividad post-veto detectada'
+        : 'Sincronizado automático: presencia detectada';
       sheet.appendRow([
         _generateId('JOR'),
         fecha,
@@ -737,9 +774,9 @@ function _sincronizarJornadasAutoDelDia(fecha) {
         nombre,
         r.rol || '',
         r.appOrigen || '',
-        '',                  // zona (vacía en sync auto)
+        '',
         montoBase,
-        'Sincronizado automático: presencia detectada',
+        obs,
         'AUTO',
         fuente
       ]);
@@ -747,4 +784,63 @@ function _sincronizarJornadasAutoDelDia(fecha) {
     } catch(eP) { errores.push({ nombre: nombre, error: eP.message }); }
   });
   return { creadas: creadas, errores: errores };
+}
+
+// Devuelve { nombreLow: timestampMsMasReciente } combinando VENTAS_CABECERA + SESIONES
+// para la fecha dada. Usado por _sincronizarJornadasAutoDelDia para auto-rehab.
+function _ultimaActividadPorNombre(fecha, tz) {
+  var out = {};
+  function _bumpTs(nombre, ts) {
+    if (!nombre || !ts) return;
+    var k = String(nombre).toLowerCase().trim();
+    if (!out[k] || ts > out[k]) out[k] = ts;
+  }
+  // VENTAS_CABECERA (col 1=Fecha, col 2=Vendedor)
+  try {
+    var v = _abrirMeSheet('VENTAS_CABECERA');
+    if (v) {
+      var vd = v.getDataRange().getValues();
+      for (var rv = 1; rv < vd.length; rv++) {
+        var fr = vd[rv][1];
+        var fStr;
+        if (fr instanceof Date) fStr = Utilities.formatDate(fr, tz, 'yyyy-MM-dd');
+        else fStr = String(fr || '').substring(0, 10);
+        if (fStr !== fecha) continue;
+        var ts = fr instanceof Date ? fr.getTime() : new Date(fr).getTime();
+        if (isNaN(ts)) ts = 0;
+        _bumpTs(vd[rv][2], ts);
+      }
+    }
+  } catch(e) { Logger.log('ultActividad VENTAS: ' + e.message); }
+  // SESIONES WH (col 1=idPersonal, col 2=fechaInicio, col 3=horaInicio)
+  // Para resolver nombre del idPersonal, usar PERSONAL_MASTER.
+  try {
+    var s = _abrirWhSheet('SESIONES');
+    if (s) {
+      var sd = s.getDataRange().getValues();
+      var personal = _sheetToObjects(getSheet('PERSONAL_MASTER'));
+      var nombrePorId = {};
+      personal.forEach(function(p){ nombrePorId[String(p.idPersonal)] = p.nombre; });
+      for (var rs = 1; rs < sd.length; rs++) {
+        var fs = sd[rs][2];
+        var fsStr = fs instanceof Date ? Utilities.formatDate(fs, tz, 'yyyy-MM-dd') : String(fs || '').substring(0, 10);
+        if (fsStr !== fecha) continue;
+        var idP = String(sd[rs][1] || '');
+        var nombreP = nombrePorId[idP];
+        // hora puede venir aparte; si tenemos fs Date+ hora separada, combinar
+        var ts = 0;
+        var hi = sd[rs][3];
+        if (fs instanceof Date) {
+          ts = fs.getTime();
+          if (hi instanceof Date) {
+            ts += (hi.getHours() * 3600 + hi.getMinutes() * 60 + hi.getSeconds()) * 1000;
+          }
+        } else if (typeof fs === 'string' && hi) {
+          ts = new Date(fsStr + 'T' + hi).getTime();
+        }
+        if (!isNaN(ts) && ts > 0) _bumpTs(nombreP, ts);
+      }
+    }
+  } catch(e) { Logger.log('ultActividad SESIONES: ' + e.message); }
+  return out;
 }

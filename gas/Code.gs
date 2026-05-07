@@ -192,6 +192,7 @@ function _route(method, e) {
       case 'desbloquearUsuarioTemporal':return desbloquearUsuarioTemporal(params);
       case 'getBloqueosActivos':        return getBloqueosActivos(params);
       case 'bloquearVendedorME':        return bloquearVendedorME(params);
+      case 'bloquearUsuario':           return bloquearVendedorME(params); // alias genérico (ME + WH + cualquier app)
       case 'getVendedoresMEBloqueados': return getVendedoresMEBloqueados(params);
 
       // ── Seguridad: clave admin global unificada ────────────

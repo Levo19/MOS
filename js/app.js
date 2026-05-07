@@ -14280,7 +14280,16 @@ const MOS = (() => {
                 title="Ver ubicación de ${p.nombre}">📍</button>
             </div>
             ${idForEval ? `<button onclick="MOS.abrirAuditar('${idForEval}')" class="btn-primary text-xs whitespace-nowrap px-3 py-1.5">Auditar</button>` : ''}
-            <button class="text-[10px] text-slate-600 hover:text-rose-400 transition-colors px-2 py-1" onclick="MOS.finEliminarJornada('${p.idJornada || ''}','${fecha}')" title="Eliminar jornada (no contar como trabajado)">× quitar</button>
+            <div class="flex gap-1 mt-1">
+              <button onclick="event.stopPropagation();MOS.finBloquearUsuario('${String(p.nombre || '').replace(/'/g,'&#39;')}','${(ev && ev.appOrigen) || p.appOrigen || ''}','${(ev && ev.idPersonal) || p.idPersonal || ''}')"
+                class="w-7 h-7 rounded-md flex items-center justify-center hover:scale-110 transition-all"
+                style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.5);color:#fbbf24;font-size:12px;"
+                title="🔒 Bloquear dispositivo (pantalla de candado en su tablet/celular)">🔒</button>
+              <button onclick="event.stopPropagation();MOS.finVetarPago('${p.idJornada || ''}','${fecha}','${String(p.nombre || '').replace(/'/g,'&#39;')}')"
+                class="w-7 h-7 rounded-md flex items-center justify-center hover:scale-110 transition-all"
+                style="background:rgba(168,85,247,0.12);border:1px solid rgba(168,85,247,0.5);color:#c084fc;font-size:12px;"
+                title="💸 Vetar del pago de hoy (sigue operando, pero no se contará en gastos)">💸</button>
+            </div>
           </div>
         </div>
       </div>`;
@@ -14390,8 +14399,15 @@ const MOS = (() => {
     } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
 
-  async function finEliminarJornada(idJornada, fecha) {
-    if (!idJornada || !confirm('¿Eliminar esta jornada? Esta persona no se contará para el pago de hoy.')) return;
+  // Veto de pago — la persona sigue operando, pero no se cuenta su jornada hoy.
+  // Si el sistema detecta actividad POSTERIOR al veto (nuevo ticket/sesión), reaparece
+  // automáticamente con un nuevo registro (auto-rehabilitación).
+  async function finVetarPago(idJornada, fecha, nombre) {
+    if (!idJornada) {
+      toast('No se puede vetar: jornada sin idJornada', 'warn');
+      return;
+    }
+    if (!confirm(`¿Vetar el pago de ${nombre || 'esta persona'} para hoy?\n\nNo se contará en los gastos del día. Si vuelve a vender/operar después de este momento, reaparecerá automáticamente.`)) return;
     // ── UI optimista: animar salida + recalcular P&L local antes de pegarle al server ──
     const card = document.querySelector(`.eval-card[data-id]`)
       ? Array.from(document.querySelectorAll('.eval-card')).find(el => {
@@ -14465,14 +14481,85 @@ const MOS = (() => {
     }
 
     try {
-      await API.post('eliminarJornada', { idJornada });
-      toast(`Jornada eliminada · -S/ ${pagoEliminado.toFixed(2)}`, 'ok');
+      await API.post('eliminarJornada', { idJornada, actor: S.session?.nombre || '' });
+      toast(`💸 Veto aplicado · -S/ ${pagoEliminado.toFixed(2)}`, 'ok');
       // Refresh suave en background para confirmar con el server
       finCargar();
     } catch(e) {
       toast('Error: ' + e.message + ' — recargando...', 'error');
       finCargar();
     }
+  }
+
+  // Alias por compatibilidad con código viejo
+  const finEliminarJornada = finVetarPago;
+
+  // ════════════════════════════════════════════════════════════
+  // BLOQUEO DE DISPOSITIVO — pantalla de candado en ME / WH
+  // Visualmente: efecto de rejas cayendo sobre la card.
+  // ════════════════════════════════════════════════════════════
+  async function finBloquearUsuario(nombre, appOrigen, idPersonal) {
+    if (!nombre) return;
+    const apoyo = (appOrigen || '').toLowerCase().indexOf('warehouse') >= 0
+      ? 'pantalla de candado en su tablet/celular WH'
+      : 'pantalla de candado en su POS de MosExpress';
+    if (!confirm(`🔒 ¿Bloquear dispositivo de ${nombre}?\n\nVa a aparecer ${apoyo}.\nNo podrá operar hasta que un admin ingrese clave de desbloqueo en su dispositivo.\n\n⚠ Acción operativa: bloquea el dispositivo. Los gastos NO cambian (usá 💸 si querés vetar el pago).`)) return;
+
+    // Resolver el card y aplicar efecto de rejas inmediatamente
+    const allCards = document.querySelectorAll('.eval-card');
+    const cardsTarget = Array.from(allCards).filter(el => {
+      const btn = el.querySelector(`button[onclick*="finBloquearUsuario"][onclick*="${nombre.replace(/'/g, '&#39;')}"]`);
+      return !!btn;
+    });
+    cardsTarget.forEach(c => _aplicarRejasOverlay(c, nombre));
+
+    try {
+      const r = await API.post('bloquearUsuario', {
+        nombre,
+        appOrigen: appOrigen || 'mosExpress',
+        idPersonal: idPersonal || '',
+        bloquear: true,
+        bloqueadoPor: S.session?.nombre || 'admin',
+        motivo: 'bloqueo_desde_personal_dia'
+      });
+      if (r && r.ok !== false) {
+        toast(`🔒 ${nombre} bloqueada · su dispositivo entrará en pantalla de candado en <30s`, 'ok', 5000);
+      } else {
+        throw new Error(r?.error || 'No se pudo bloquear');
+      }
+    } catch(e) {
+      // Quitar el overlay si falló
+      cardsTarget.forEach(c => {
+        const ov = c.querySelector('.fin-rejas-overlay');
+        if (ov) ov.remove();
+      });
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  // Pinta el overlay de rejas sobre un card (con animación de caída)
+  function _aplicarRejasOverlay(card, nombre) {
+    if (!card || card.querySelector('.fin-rejas-overlay')) return;
+    const rect = card.getBoundingClientRect();
+    const ov = document.createElement('div');
+    ov.className = 'fin-rejas-overlay';
+    ov.innerHTML = `
+      <div class="fin-rejas-bars">
+        <div class="fin-rejas-bar"></div>
+        <div class="fin-rejas-bar" style="animation-delay:60ms"></div>
+        <div class="fin-rejas-bar" style="animation-delay:120ms"></div>
+        <div class="fin-rejas-bar" style="animation-delay:180ms"></div>
+        <div class="fin-rejas-bar" style="animation-delay:240ms"></div>
+        <div class="fin-rejas-bar" style="animation-delay:300ms"></div>
+      </div>
+      <div class="fin-rejas-badge">🔒 BLOQUEADO</div>
+      <div class="fin-rejas-sub">${nombre}</div>`;
+    card.style.position = 'relative';
+    card.appendChild(ov);
+    // Pulso del card
+    card.style.transition = 'box-shadow 0.4s, transform 0.4s';
+    card.style.boxShadow = '0 0 24px rgba(245,158,11,0.55)';
+    setTimeout(() => { card.style.boxShadow = ''; }, 800);
   }
 
   async function finImportarCajas() {
@@ -16171,7 +16258,7 @@ const MOS = (() => {
     syncApp, applyPendingUpdate,
     // Finanzas
     finCargar, finDia, finAbrirModalGasto, finAbrirModalJornada, finGuardarGasto,
-    finGuardarJornada, finEliminarGasto, finEliminarJornada, finImportarCajas,
+    finGuardarJornada, finEliminarGasto, finEliminarJornada, finVetarPago, finBloquearUsuario, finImportarCajas,
     cerrarModalFin,
     finEditarCostoSku, finCerrarCostoEditor, finGuardarCostoSku,
     finAbrirEditorMargenDefault, finCerrarEditorMargenDefault, finGuardarMargenDefault,

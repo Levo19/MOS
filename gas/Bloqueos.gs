@@ -198,16 +198,21 @@ function bloquearVendedorME(params) {
 
     if (bloquear) {
       var ahora = new Date();
+      var idPersonalParam = String(params.idPersonal || '').trim();
       if (foundRow > 0) {
         sheet.getRange(foundRow, iFB + 1).setValue(ahora);
         sheet.getRange(foundRow, iBp + 1).setValue(bloqueadoPor);
         sheet.getRange(foundRow, iMot + 1).setValue(params.motivo || 'bloqueo_admin');
         sheet.getRange(foundRow, iUnl + 1).setValue(0);
         sheet.getRange(foundRow, iDes + 1).setValue('');
+        // Si nos pasan idPersonal y la fila existente no lo tenía, completarlo (para que WH polling matchee)
+        if (idPersonalParam && !data[foundRow - 1][iId]) {
+          sheet.getRange(foundRow, iId + 1).setValue(idPersonalParam);
+        }
       } else {
         var fila = new Array(BLOQUEOS_HEADERS.length).fill('');
         fila[hdrs.indexOf('idBloqueo')] = _generateId('BLO');
-        fila[iId]  = '';
+        fila[iId]  = idPersonalParam;
         fila[iNom] = nombre;
         fila[iApp] = appOrigen;
         fila[iMot] = params.motivo || 'bloqueo_admin';
