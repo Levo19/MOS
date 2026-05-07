@@ -13962,13 +13962,16 @@ const MOS = (() => {
 
     _finUpdateBadge(fecha);
 
-    // 1. Pintar desde cache local si existe (instantáneo) — sino, skeleton
+    // 1. Pintar desde cache local si existe (instantáneo) — sino, RESET visual
+    //    completo. Evita que el user vea datos del día anterior mezclados con
+    //    el nuevo (Personal, Gastos, break-even bar quedaban stale).
     const cachedPL = _finLoadCache('pl_' + fecha);
     if (cachedPL) {
       _finPL = cachedPL;
       try { _finRender(cachedPL, fecha); } catch {}
     } else {
       _finMostrarSkeleton(true);
+      _finPL = null;
     }
     const cachedRango = _finLoadCache('rango_' + fecha);
     if (cachedRango) { try { _finRender7d(cachedRango); } catch {} }
@@ -14048,10 +14051,69 @@ const MOS = (() => {
     setTimeout(() => el.classList.remove('fin-day-pulse'), 280);
   }
 
-  // ── Skeleton on/off (placeholders shimmer en KPIs) ──
+  // ── Skeleton on/off — reset visual completo de TODO ──
+  // Cuando el user navega a un día sin caché, evita ver datos del día anterior.
+  // Pinta shimmer en KPIs + Personal + Gastos + break-even bar.
   function _finMostrarSkeleton(on) {
     const slide = $('finSlideContent');
     if (slide) slide.classList.toggle('fin-skel-on', !!on);
+    if (!on) return;
+
+    // Lists
+    const pl = $('finPersonalList');
+    if (pl) pl.innerHTML = `
+      <div class="fin-skel" style="height: 64px;"></div>
+      <div class="fin-skel" style="height: 64px;"></div>
+      <div class="fin-skel" style="height: 64px;"></div>`;
+    const gl = $('finGastosList');
+    if (gl) gl.innerHTML = `
+      <div class="fin-skel" style="height: 28px;"></div>
+      <div class="fin-skel" style="height: 28px;"></div>`;
+    const cat = $('finGastosCateg');
+    if (cat) cat.innerHTML = '';
+
+    // Totales que se actualizan fuera del countup (textContent directo)
+    const totGastos = $('finGastosTotal');
+    if (totGastos) totGastos.textContent = 'S/ —';
+    const totPer = $('finPersonalTotal');
+    if (totPer) { totPer.textContent = 'S/ —'; totPer.dataset._anim = '0'; }
+
+    // Reset data-attrs de los KPIs con countup → próxima animación arranca de 0
+    ['finKpiVentas','finKpiCosto','finKpiGastos','finKpiUtil','finBECostosFijos']
+      .forEach(id => { const el = $(id); if (el) { el.dataset._anim = '0'; el.textContent = 'S/ —'; } });
+
+    // Break-even bar y línea — colapsar a 0
+    const bar = $('finBEBarVentas');
+    if (bar) { bar.style.width = '0%'; bar.dataset._beAnim = '0'; }
+    const lin = $('finBELinea');
+    if (lin) lin.style.left = '0%';
+    const beMeta = $('finBEMeta');
+    if (beMeta) beMeta.innerHTML = 'Meta: <span class="_beNum">—</span>';
+    const beVent = $('finBEVentas');
+    if (beVent) beVent.innerHTML = 'Ventas: <span class="_bevNum">—</span>';
+    const beMC = $('finBEMargenC');
+    if (beMC) beMC.textContent = '—%';
+    const beBadge = $('finBEBadge');
+    if (beBadge) {
+      beBadge.textContent = '...';
+      beBadge.className = 'text-xs font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-500';
+    }
+
+    // KPI textos no-numéricos
+    const tk = $('finKpiTickets');     if (tk) tk.textContent = '— tickets';
+    const mb = $('finKpiMargenB');     if (mb) mb.textContent = 'Margen bruto —%';
+    const pe = $('finKpiPersonas');    if (pe) pe.textContent = '— personas';
+    const mn = $('finKpiMargenN');     if (mn) mn.textContent = 'Margen neto —%';
+    const ef = $('finKpiEfectivo');    if (ef) ef.textContent = 'S/ —';
+    const vi = $('finKpiVirtual');     if (vi) vi.textContent = 'S/ —';
+    const cr = $('finKpiCredito');     if (cr) cr.textContent = 'S/ —';
+    const cs = $('finKpiCreditoSub');  if (cs) cs.textContent = '— tickets POR_COBRAR';
+    const an = $('finKpiAnulados');    if (an) an.textContent = '— tickets';
+    const un = $('finKpiUnidades');    if (un) un.textContent = '—';
+    const sk = $('finKpiSkus');        if (sk) sk.textContent = '—';
+    const tp = $('finKpiTicketProm');  if (tp) tp.textContent = '—';
+    const mp = $('finKpiMargenProm');  if (mp) mp.textContent = '—';
+    const me = $('finKpiMargenEstim'); if (me) me.textContent = '';
   }
 
   // ── Prefetch ±1 día en background (no espera) ──
