@@ -10324,18 +10324,18 @@ const MOS = (() => {
     const cls = opts.compact ? 'text-[10px] px-2 py-1.5' : 'text-[11px] px-3 py-2';
     const claseFresh = isFresh ? 'disp-chip-live' : '';
     const dotPulse = isFresh ? '<span class="disp-dot-pulse"></span>' : '';
-    return `<div class="disp-chip flex items-center gap-2 rounded-lg cursor-pointer ${cls} ${claseFresh}"
-      onclick="MOS.abrirModalDispositivo('${idAttr}')"
-      style="background:#0a1424;border:1px solid #1e293b;transition:all 0.2s;"
-      title="Click para editar">
-      <span class="text-base shrink-0 relative">${ico}${dotPulse}</span>
-      <div class="flex-1 min-w-0">
+    return `<div class="disp-chip flex items-center gap-2 rounded-lg ${cls} ${claseFresh}"
+      style="background:#0a1424;border:1px solid #1e293b;transition:all 0.2s;">
+      <span class="text-base shrink-0 relative cursor-pointer" onclick="MOS.abrirModalDispositivo('${idAttr}')" title="Editar">${ico}${dotPulse}</span>
+      <div class="flex-1 min-w-0 cursor-pointer" onclick="MOS.abrirModalDispositivo('${idAttr}')">
         <div class="font-medium text-slate-200 truncate">${d.Nombre_Equipo || '—'}</div>
         <div class="text-[9px] truncate" style="color:${act.color};">
           ${act.dot} ${act.label}${sesion}
         </div>
       </div>
-      <span class="text-[10px] text-slate-500 p-1">✏️</span>
+      <button onclick="event.stopPropagation();MOS.abrirModalAudio('${idAttr}')" class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.5);color:#f87171;font-size:11px;" title="Escucha remota">🎙️</button>
+      <button onclick="event.stopPropagation();MOS.abrirModalGps('${idAttr}')" class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.5);color:#34d399;font-size:11px;" title="Ver ubicación">📍</button>
+      <button onclick="event.stopPropagation();MOS.abrirModalDispositivo('${idAttr}')" class="text-[10px] text-slate-500 hover:text-white p-1" title="Editar">✏️</button>
     </div>`;
   }
 
@@ -12550,6 +12550,250 @@ const MOS = (() => {
       d.Estado = previo;
       renderInfra();
       toast(e.message || 'Error', 'error');
+    }
+  }
+
+  // ────────────────────────────────────────────────────────
+  // MODAL AUDIO — escucha remota
+  // ────────────────────────────────────────────────────────
+  let _audioPollTimer = null;
+  let _audioReproduciendo = null; // { sesion, chunks, idx }
+
+  async function abrirModalAudio(idDispositivo) {
+    const d = (cfgData.dispositivos || []).find(x => x.ID_Dispositivo === idDispositivo);
+    if (!d) return;
+    $('audioModalDeviceId').value = idDispositivo;
+    $('audioModalSubtitle').textContent = `${d.Nombre_Equipo || idDispositivo}${d.Ultima_Sesion ? ' · 👤 ' + d.Ultima_Sesion : ''}`;
+    $('audioReproductor').classList.add('hidden');
+    openModal('modalAudio');
+    await audioRefrescarEstado();
+    audioListarSesiones();
+    if (_audioPollTimer) clearInterval(_audioPollTimer);
+    _audioPollTimer = setInterval(audioRefrescarEstado, 10 * 1000);
+  }
+
+  // Cerrar modal cancela el poll
+  document.addEventListener('mos:modal-cerrado', e => {
+    if (e.detail === 'modalAudio' && _audioPollTimer) {
+      clearInterval(_audioPollTimer); _audioPollTimer = null;
+    }
+  });
+
+  async function audioRefrescarEstado() {
+    const id = $('audioModalDeviceId')?.value;
+    if (!id) return;
+    const cont = $('audioEstadoActual');
+    if (!cont) return;
+    try {
+      const data = await API.get('getEstadoAudio', { deviceId: id });
+      if (data?.activa) {
+        const sesionId = data.sesion.idSesion;
+        const ini = data.sesion.inicio ? new Date(data.sesion.inicio) : null;
+        const segs = ini ? Math.floor((Date.now() - ini.getTime()) / 1000) : 0;
+        const mm = String(Math.floor(segs / 60)).padStart(2, '0');
+        const ss = String(segs % 60).padStart(2, '0');
+        cont.innerHTML = `<div class="card p-3" style="background:rgba(239,68,68,0.10);border:1px solid #dc2626;">
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <div class="text-sm font-bold text-red-300">🔴 Grabando ahora</div>
+              <div class="text-[10px] text-slate-500 font-mono">sesión ${sesionId} · ${mm}:${ss}</div>
+            </div>
+            <button onclick="MOS.audioDetener('${sesionId}')" class="btn-primary text-xs px-3 py-1.5" style="background:#dc2626">⏹️ Detener</button>
+          </div>
+        </div>`;
+      } else {
+        cont.innerHTML = `<div class="card p-3" style="background:#0a1424;border:1px solid #1e293b;">
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <div class="text-sm font-bold text-slate-300">⏸ Sin grabación activa</div>
+              <div class="text-[10px] text-slate-500">El dispositivo está en silencio</div>
+            </div>
+            <button onclick="MOS.audioIniciar('${id}')" class="btn-primary text-xs px-3 py-1.5" style="background:#dc2626">🎙️ Iniciar escucha</button>
+          </div>
+        </div>`;
+      }
+    } catch(_) {
+      cont.innerHTML = '<div class="text-center py-3 text-red-400 text-sm">Error consultando estado</div>';
+    }
+  }
+
+  async function audioIniciar(deviceId) {
+    if (!confirm('¿Iniciar grabación de audio? El dispositivo grabará en chunks de 15s. Auto-detiene a los 30 min.')) return;
+    try {
+      const data = await API.post('iniciarEscuchaAudio', {
+        deviceId,
+        autorizadoPor: S.session?.nombre || 'admin',
+        motivo: 'Escucha desde MOS'
+      });
+      toast(`🎙️ Comando enviado · sesión ${data.idSesion}`, 'ok');
+      setTimeout(audioRefrescarEstado, 1500);
+      setTimeout(audioListarSesiones, 2000);
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  async function audioDetener(idSesion) {
+    try {
+      await API.post('detenerEscuchaAudio', { idSesion });
+      toast('⏹️ Detenido', 'ok');
+      setTimeout(audioRefrescarEstado, 1000);
+      setTimeout(audioListarSesiones, 1500);
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  async function audioListarSesiones() {
+    const id = $('audioModalDeviceId')?.value;
+    if (!id) return;
+    const cont = $('audioListaSesiones');
+    try {
+      const data = await API.get('getSesionesAudio', { deviceId: id, limit: 20 });
+      if (!Array.isArray(data) || !data.length) {
+        cont.innerHTML = '<div class="text-center py-6 text-slate-500 text-sm italic">Sin sesiones todavía</div>';
+        return;
+      }
+      cont.innerHTML = data.map(s => {
+        const fIni = s.inicio ? new Date(s.inicio) : null;
+        const fmt = fIni ? fIni.toLocaleString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+        const dur = s.duracionSeg ? Math.floor(s.duracionSeg / 60) + 'm' + (s.duracionSeg % 60) + 's' : '—';
+        const estCl = s.estado === 'ACTIVA' ? 'text-red-400 animate-pulse'
+                    : s.estado === 'CERRADA' ? 'text-emerald-400'
+                    : 'text-slate-500';
+        return `<div class="flex items-center gap-2 p-2 rounded" style="background:#0a1424;border:1px solid #1e293b;">
+          <div class="flex-1 min-w-0">
+            <div class="text-xs font-medium text-slate-200">${fmt} · <span class="${estCl} text-[10px] uppercase">${s.estado || '—'}</span></div>
+            <div class="text-[10px] text-slate-500">por ${s.autorizadoPor || '—'} · ${dur}</div>
+          </div>
+          <button onclick="MOS.audioReproducir('${s.idSesion}','${(s.autorizadoPor || '').replace(/'/g,"\\'")}','${fmt.replace(/'/g,"\\'")}')"
+            class="btn-ghost text-[10px] px-2 py-1" ${s.estado === 'ACTIVA' ? '' : ''}>▶ Reproducir</button>
+        </div>`;
+      }).join('');
+    } catch(e) {
+      cont.innerHTML = '<div class="text-center py-3 text-red-400 text-sm">Error</div>';
+    }
+  }
+
+  async function audioReproducir(idSesion, autorizadoPor, fechaTxt) {
+    const player = $('audioPlayer');
+    const cont = $('audioReproductor');
+    const titulo = $('audioReproductorTitulo');
+    const info = $('audioReproductorInfo');
+    if (!player || !cont) return;
+    cont.classList.remove('hidden');
+    titulo.textContent = `▶ Sesión ${fechaTxt} · ${autorizadoPor || ''}`;
+    info.textContent = 'Cargando chunks...';
+    try {
+      const chunks = await API.get('getChunksAudioSesion', { idSesion });
+      if (!Array.isArray(chunks) || !chunks.length) {
+        info.textContent = '⚠ Sesión sin chunks (puede estar arrancando)';
+        return;
+      }
+      info.textContent = `${chunks.length} chunks · cargando primero...`;
+      _audioReproduciendo = { chunks, idx: 0, idSesion };
+      await _audioCargarYReproducir();
+    } catch(e) {
+      info.textContent = 'Error: ' + e.message;
+    }
+  }
+
+  async function _audioCargarYReproducir() {
+    if (!_audioReproduciendo) return;
+    const { chunks, idx } = _audioReproduciendo;
+    if (idx >= chunks.length) {
+      $('audioReproductorInfo').textContent = '✓ Reproducción finalizada';
+      return;
+    }
+    const ch = chunks[idx];
+    try {
+      const data = await API.get('getChunkAudioContent', { fileId: ch.driveFileId });
+      if (!data?.base64) throw new Error('Sin contenido');
+      const blob = _b64ToBlob(data.base64, data.mimeType || 'audio/webm');
+      const url = URL.createObjectURL(blob);
+      const player = $('audioPlayer');
+      player.src = url;
+      player.play().catch(() => {});
+      $('audioReproductorInfo').textContent = `Chunk ${idx + 1} / ${chunks.length}`;
+      player.onended = () => {
+        URL.revokeObjectURL(url);
+        if (_audioReproduciendo) {
+          _audioReproduciendo.idx++;
+          _audioCargarYReproducir();
+        }
+      };
+    } catch(e) {
+      $('audioReproductorInfo').textContent = 'Error chunk ' + (idx + 1) + ': ' + e.message;
+    }
+  }
+
+  function _b64ToBlob(b64, mime) {
+    const bin = atob(b64);
+    const len = bin.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  }
+
+  function audioCerrarReproductor() {
+    _audioReproduciendo = null;
+    const player = $('audioPlayer');
+    if (player) { player.pause(); player.src = ''; }
+    $('audioReproductor')?.classList.add('hidden');
+  }
+
+  // ────────────────────────────────────────────────────────
+  // MODAL GPS — ubicación + mapa Google
+  // ────────────────────────────────────────────────────────
+  async function abrirModalGps(idDispositivo) {
+    const d = (cfgData.dispositivos || []).find(x => x.ID_Dispositivo === idDispositivo);
+    if (!d) return;
+    $('gpsModalDeviceId').value = idDispositivo;
+    $('gpsModalSubtitle').textContent = `${d.Nombre_Equipo || idDispositivo}${d.Ultima_Sesion ? ' · 👤 ' + d.Ultima_Sesion : ''}`;
+    openModal('modalGps');
+    await gpsCargar(24);
+  }
+
+  async function gpsCargar(horas) {
+    const id = $('gpsModalDeviceId')?.value;
+    if (!id) return;
+    const info = $('gpsInfo');
+    const mapa = $('gpsMapa');
+    const cantEl = $('gpsCantidadPuntos');
+    info.innerHTML = '<div class="text-center py-4 text-slate-500 text-sm">Cargando ubicación...</div>';
+    mapa.innerHTML = '';
+    try {
+      const ult = await API.get('getUltimaUbicacionDispositivo', { deviceId: id });
+      const hist = await API.get('getUbicacionesDispositivo', { deviceId: id, horas });
+      if (!ult) {
+        info.innerHTML = '<div class="text-center py-4 text-amber-400 text-sm">⚠ Este dispositivo nunca ha reportado ubicación</div>';
+        return;
+      }
+      const fecha = ult.timestamp ? new Date(ult.timestamp) : null;
+      const mins = fecha ? Math.floor((Date.now() - fecha.getTime()) / 60000) : null;
+      const fmt = fecha ? fecha.toLocaleString('es-PE') : '—';
+      const fresh = mins !== null && mins < 10;
+      const dot = fresh ? '🟢' : (mins < 60 ? '🟢' : (mins < 60 * 24 ? '🟡' : '🔴'));
+      const bat = ult.bateria !== '' && ult.bateria !== undefined ? `🔋 ${ult.bateria}%` : '';
+      info.innerHTML = `<div class="flex items-center justify-between gap-2 flex-wrap">
+        <div>
+          <div class="text-sm font-bold text-white">${dot} Última ubicación · ${fmt}</div>
+          <div class="text-[11px] text-slate-400 mt-1">📍 ${parseFloat(ult.lat).toFixed(6)}, ${parseFloat(ult.lng).toFixed(6)} · precisión ~${Math.round(ult.accuracy)}m ${bat}</div>
+          ${ult.usuarioLogueado ? `<div class="text-[11px] text-slate-500 mt-0.5">👤 ${ult.usuarioLogueado}</div>` : ''}
+        </div>
+        <a href="https://www.google.com/maps?q=${ult.lat},${ult.lng}" target="_blank" class="btn-ghost text-xs">🗺️ Abrir en Maps</a>
+      </div>`;
+
+      cantEl.textContent = (Array.isArray(hist) ? hist.length : 0) + ' puntos en ' + horas + 'h';
+
+      // Embed Google Maps con iframe (sin API key)
+      const lat = parseFloat(ult.lat);
+      const lng = parseFloat(ult.lng);
+      mapa.innerHTML = `<iframe width="100%" height="100%" frameborder="0"
+        src="https://maps.google.com/maps?q=${lat},${lng}&z=16&output=embed"
+        style="border:none;"></iframe>`;
+    } catch(e) {
+      info.innerHTML = '<div class="text-center py-4 text-red-400 text-sm">Error: ' + e.message + '</div>';
     }
   }
 
@@ -15521,6 +15765,8 @@ const MOS = (() => {
     toggleVendedorME,
     abrirModalDispositivo, cerrarModalDispositivo, guardarDispositivo, toggleEstadoDispositivo,
     eliminarDispositivo, aprobarDispositivo, rechazarDispositivo, dispCopiarUUID, _dispActualizarPreview, _dispZonaCambio,
+    abrirModalAudio, audioRefrescarEstado, audioIniciar, audioDetener, audioListarSesiones, audioReproducir, audioCerrarReproductor,
+    abrirModalGps, gpsCargar,
     toggleAvatarMenu, closeAvatarMenu, installPWA,
     toggleFiltroCat, setFiltroCategoria, toggleFiltroTipo, limpiarFiltrosCat, toggleFiltroAlertas, toggleAlertPop,
     // Cajas

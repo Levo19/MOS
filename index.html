@@ -3744,6 +3744,73 @@
       </div>
     </div>
 
+    <!-- ═══════════════════════════════════════════════════════
+         MODAL: AUDIO (escucha remota)
+    ═══════════════════════════════════════════════════════ -->
+    <div id="modalAudio" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalAudio')">
+      <div class="modal-box flex flex-col" style="max-width:640px;max-height:92vh">
+        <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(239,68,68,0.10),transparent);">
+          <div class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl" style="background:linear-gradient(135deg,#7f1d1d,#dc2626);">🎙️</div>
+          <div class="min-w-0 flex-1">
+            <h2 class="font-bold text-base text-white">Escucha remota</h2>
+            <p id="audioModalSubtitle" class="text-[11px] text-slate-500 mt-0.5">Activación on-demand · max 30 min</p>
+          </div>
+          <button onclick="MOS.closeModal('modalAudio')" class="modal-close-x">×</button>
+        </div>
+        <div class="overflow-y-auto px-5 py-4 flex-1">
+          <input type="hidden" id="audioModalDeviceId">
+          <!-- Estado actual -->
+          <div id="audioEstadoActual" class="mb-3"></div>
+          <!-- Historial sesiones -->
+          <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">📼 Sesiones recientes</h3>
+          <div id="audioListaSesiones" class="space-y-2"><div class="text-center py-6 text-slate-500 text-sm">Cargando...</div></div>
+          <!-- Reproductor -->
+          <div id="audioReproductor" class="hidden mt-4 p-3 rounded-lg" style="background:#0a1424;border:1px solid #1e293b;">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-bold text-slate-300" id="audioReproductorTitulo">—</span>
+              <button onclick="MOS.audioCerrarReproductor()" class="text-[10px] text-slate-500 hover:text-white">✕ cerrar</button>
+            </div>
+            <audio id="audioPlayer" controls class="w-full"></audio>
+            <div id="audioReproductorInfo" class="text-[10px] text-slate-500 mt-1"></div>
+          </div>
+          <div class="rounded-lg p-3 mt-3" style="background:rgba(220,38,38,0.06);border:1px solid rgba(220,38,38,0.2);">
+            <p class="text-[10px] text-red-300/80">
+              ⚠ Solo legítimo en dispositivos de empresa con cartelería visible. Quedan registros en AUDITORIA_ADMIN.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════
+         MODAL: GPS (ubicación + historial)
+    ═══════════════════════════════════════════════════════ -->
+    <div id="modalGps" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalGps')">
+      <div class="modal-box flex flex-col" style="max-width:760px;max-height:92vh">
+        <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(16,185,129,0.10),transparent);">
+          <div class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl" style="background:linear-gradient(135deg,#064e3b,#10b981);">📍</div>
+          <div class="min-w-0 flex-1">
+            <h2 class="font-bold text-base text-white">Ubicación del dispositivo</h2>
+            <p id="gpsModalSubtitle" class="text-[11px] text-slate-500 mt-0.5">Última posición conocida · 7 días de historial</p>
+          </div>
+          <button onclick="MOS.closeModal('modalGps')" class="modal-close-x">×</button>
+        </div>
+        <div class="overflow-y-auto px-5 py-4 flex-1">
+          <input type="hidden" id="gpsModalDeviceId">
+          <div id="gpsInfo" class="mb-3 p-3 rounded-lg" style="background:#0a1424;border:1px solid #1e293b;">
+            <div class="text-center py-4 text-slate-500 text-sm">Cargando ubicación...</div>
+          </div>
+          <div id="gpsMapa" class="rounded-lg overflow-hidden" style="background:#0a1424;border:1px solid #1e293b;height:360px;"></div>
+          <div class="flex items-center gap-2 mt-3 flex-wrap">
+            <button onclick="MOS.gpsCargar(24)" class="btn-ghost text-xs">🕐 24h</button>
+            <button onclick="MOS.gpsCargar(72)" class="btn-ghost text-xs">📅 3 días</button>
+            <button onclick="MOS.gpsCargar(168)" class="btn-ghost text-xs">📆 7 días</button>
+            <span class="text-[10px] text-slate-500 ml-auto" id="gpsCantidadPuntos">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- ═══ VIEW: PROVEEDORES ════════════════════════════════ -->
     <section id="view-proveedores" class="view">
       <!-- Header -->
