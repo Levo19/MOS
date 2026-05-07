@@ -9026,7 +9026,7 @@ const MOS = (() => {
                   <div class="text-xs font-medium text-slate-200 truncate">${d.Nombre_Equipo || '—'}${movedBadge}</div>
                   <div class="text-[9px] truncate" style="color:${act.color};">${act.dot} ${act.label}${d.Ultima_Sesion ? ' · 👤 <span class="text-emerald-400 font-bold">' + d.Ultima_Sesion + '</span>' : ''}</div>
                 </div>
-                <button onclick="event.stopPropagation();MOS.abrirModalAudio('${idAttr}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.5);color:#f87171;font-size:10px;" title="Escucha remota">🎙️</button>
+                <button onclick="event.stopPropagation();MOS.abrirEscuchaDispositivo('${idAttr}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.5);color:#f87171;font-size:10px;" title="Escucha remota">🎙️</button>
                 <button onclick="event.stopPropagation();MOS.abrirModalGps('${idAttr}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.5);color:#34d399;font-size:10px;" title="Ver ubicación">📍</button>
                 <span class="text-[10px] text-slate-500 p-1 cursor-pointer" onclick="event.stopPropagation();MOS.abrirModalDispositivo('${idAttr}')" title="Editar">✏️</span>
               </div>`;
@@ -10387,7 +10387,7 @@ const MOS = (() => {
           ${act.dot} ${act.label}${sesion}
         </div>
       </div>
-      <button onclick="event.stopPropagation();MOS.abrirModalAudio('${idAttr}')" class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.5);color:#f87171;font-size:11px;" title="Escucha remota">🎙️</button>
+      <button onclick="event.stopPropagation();MOS.abrirEscuchaDispositivo('${idAttr}')" class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.5);color:#f87171;font-size:11px;" title="Escucha remota">🎙️</button>
       <button onclick="event.stopPropagation();MOS.abrirModalGps('${idAttr}')" class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.5);color:#34d399;font-size:11px;" title="Ver ubicación">📍</button>
       <button onclick="event.stopPropagation();MOS.abrirModalDispositivo('${idAttr}')" class="text-[10px] text-slate-500 hover:text-white p-1" title="Editar">✏️</button>
     </div>`;
@@ -12672,19 +12672,10 @@ const MOS = (() => {
   }
 
   async function audioIniciar(deviceId) {
-    if (!confirm('¿Iniciar grabación de audio? El dispositivo grabará en chunks de 15s. Auto-detiene a los 30 min.')) return;
-    try {
-      const data = await API.post('iniciarEscuchaAudio', {
-        deviceId,
-        autorizadoPor: S.session?.nombre || 'admin',
-        motivo: 'Escucha desde MOS'
-      });
-      toast(`🎙️ Comando enviado · sesión ${data.idSesion}`, 'ok');
-      setTimeout(audioRefrescarEstado, 1500);
-      setTimeout(audioListarSesiones, 2000);
-    } catch(e) {
-      toast('Error: ' + e.message, 'error');
-    }
+    // Cerrar el modal de historial (si está abierto) y enrutar al flotante.
+    // Sin confirm — el user ya hizo click en "🎙️ Iniciar escucha", confirmación redundante.
+    try { closeModal('modalAudio'); } catch {}
+    return _audioFlotanteIniciar(deviceId);
   }
 
   async function audioDetener(idSesion) {
@@ -12895,6 +12886,11 @@ const MOS = (() => {
     return _audioFlotanteIniciar(idDispositivo);
   }
 
+  // Wrapper que enruta desde Configuración → Infraestructura al flotante
+  async function abrirEscuchaDispositivo(idDispositivo) {
+    return _audioFlotanteIniciar(idDispositivo);
+  }
+
   // ════════════════════════════════════════════════════════════
   // WIDGET FLOTANTE de escucha en vivo
   // - Persiste entre módulos (mounted en <body>)
@@ -12907,30 +12903,42 @@ const MOS = (() => {
   //   inicio, polling, contadorTimer, chunksCargados:Set, prefetched:Map }
 
   async function _audioFlotanteIniciar(idDispositivo) {
-    if (_audioFlot) {
-      // Ya hay escucha activa de OTRO dispositivo
-      if (_audioFlot.deviceId === idDispositivo) {
-        toast('Ya estás escuchando este dispositivo', 'info');
-        return;
-      }
-      if (!confirm(`Ya estás escuchando a ${_audioFlot.nombre}. ¿Cambiar al nuevo dispositivo? (se detendrá la escucha actual)`)) return;
-      await _audioFlotanteDetenerInterno(true);
+    // Si ya hay un flotante para el mismo dispositivo, no hacer nada
+    if (_audioFlot && _audioFlot.deviceId === idDispositivo) {
+      toast('Ya estás escuchando este dispositivo', 'info');
+      return;
     }
+    // Si hay flotante de OTRO dispositivo → swap silencioso (sin confirm — el user clickeó otro)
+    if (_audioFlot) await _audioFlotanteDetenerInterno(true);
 
     const d = (cfgData.dispositivos || []).find(x => x.ID_Dispositivo === idDispositivo);
     if (!d) { toast('Dispositivo no encontrado', 'error'); return; }
     const nombre = d.Nombre_Equipo + (d.Ultima_Sesion ? ' · ' + d.Ultima_Sesion : '');
 
-    // Crear el flotante en estado "iniciando"
+    // Crear el flotante INMEDIATO (UI optimista — el user ve el widget al instante)
     _audioFlotanteCrearDOM(idDispositivo, nombre);
     const subEl = document.querySelector('#audioFlotante .audio-flot-sub');
-    if (subEl) subEl.textContent = '⌛ enviando comando...';
+    if (subEl) subEl.textContent = '⌛ conectando...';
 
     try {
-      // Si el dispositivo YA tiene una sesión activa → conectar a esa
+      // Detectar sesión zombie: ACTIVA pero >35 min de antigüedad sin chunks → cerrar y abrir nueva
       const estado = await API.get('getEstadoAudio', { deviceId: idDispositivo });
-      let idSesion = estado?.activa ? estado.sesion.idSesion : null;
+      let idSesion = null;
+      if (estado?.activa) {
+        const ini = estado.sesion?.inicio ? new Date(estado.sesion.inicio).getTime() : 0;
+        const edad = Date.now() - ini;
+        const esZombie = edad > 35 * 60 * 1000; // 35 min (max es 30, esto da margen)
+        if (esZombie) {
+          // Cerrar zombie y abrir nueva
+          try { await API.post('detenerEscuchaAudio', { idSesion: estado.sesion.idSesion }); } catch {}
+          if (subEl) subEl.textContent = '⌛ sesión zombie cerrada · iniciando nueva...';
+        } else {
+          idSesion = estado.sesion.idSesion;
+          if (subEl) subEl.textContent = '🔴 conectando a sesión activa...';
+        }
+      }
       if (!idSesion) {
+        if (subEl && !subEl.textContent.includes('zombie')) subEl.textContent = '⌛ iniciando grabación...';
         const data = await API.post('iniciarEscuchaAudio', {
           deviceId: idDispositivo,
           autorizadoPor: S.session?.nombre || 'admin',
@@ -12938,9 +12946,10 @@ const MOS = (() => {
         });
         idSesion = data.idSesion;
       }
+      if (!_audioFlot) return; // user cerró el flotante mientras esperaba
       _audioFlot.idSesion = idSesion;
       const subEl2 = document.querySelector('#audioFlotante .audio-flot-sub');
-      if (subEl2) subEl2.textContent = '🔴 conectando · primer chunk en ~15s';
+      if (subEl2) subEl2.textContent = '🔴 esperando primer chunk (~15s)...';
 
       // Arrancar polling y reproductor
       _audioFlotantePollChunks(); // primer poll inmediato
@@ -16811,7 +16820,7 @@ const MOS = (() => {
     abrirModalDispositivo, cerrarModalDispositivo, guardarDispositivo, toggleEstadoDispositivo,
     eliminarDispositivo, aprobarDispositivo, rechazarDispositivo, dispCopiarUUID, _dispActualizarPreview, _dispZonaCambio,
     abrirModalAudio, audioRefrescarEstado, audioIniciar, audioDetener, audioListarSesiones, audioReproducir, audioCerrarReproductor,
-    abrirModalAudioRouted, abrirEscuchaPorUsuario, abrirGpsPorUsuario,
+    abrirModalAudioRouted, abrirEscuchaDispositivo, abrirEscuchaPorUsuario, abrirGpsPorUsuario,
     _audioLiveIniciar, _audioLiveDetener,
     _audioFlotanteDetener, _audioFlotanteIniciar,
     abrirModalGps, gpsCargar,
