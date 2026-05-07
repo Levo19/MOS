@@ -617,6 +617,55 @@ function rechazarDispositivoPendiente(params) {
   return { ok: false, error: 'Dispositivo no encontrado' };
 }
 
+// Notifica a master+admin que un vendedor/operador inició sesión en ME o WH.
+// Llamado desde ME al completar configuración inicial (nombre + estación) y
+// también desde WH al login. Idempotente: si el mismo nombre ya tiene sesión
+// activa ese día (Ultima_Sesion + Ultima_Conexion en DISPOSITIVOS hoy y <30 min),
+// NO envía push (evita spam por reloads).
+function notificarInicioSesionVendedor(params) {
+  var nombre = String(params.nombre || '').trim();
+  var appOrigen = String(params.appOrigen || 'mosExpress');
+  var deviceId = String(params.deviceId || '').trim();
+  if (!nombre) return { ok: false, error: 'Requiere nombre' };
+
+  // Anti-spam: solo notificar si esta sesión es nueva (no había heartbeat reciente)
+  try {
+    var sheetD = getSheet('DISPOSITIVOS');
+    var dataD = sheetD.getDataRange().getValues();
+    var hdrsD = dataD[0];
+    var iSesD = hdrsD.indexOf('Ultima_Sesion');
+    var iUcD  = hdrsD.indexOf('Ultima_Conexion');
+    var ahora = new Date().getTime();
+    var nLow = nombre.toLowerCase();
+    for (var rd = 1; rd < dataD.length; rd++) {
+      var sesion = String(dataD[rd][iSesD] || '').toLowerCase();
+      if (sesion !== nLow) continue;
+      var uc = dataD[rd][iUcD];
+      var ts = uc instanceof Date ? uc.getTime() : (uc ? new Date(uc).getTime() : 0);
+      if (!ts) continue;
+      // Si tuvo conexión en últimos 30 min → ya estaba activo, no es "ingreso nuevo"
+      if (ahora - ts < 30 * 60 * 1000) {
+        return { ok: true, data: { yaEstabaActivo: true, sinPush: true } };
+      }
+    }
+  } catch(e) {}
+
+  // Push silencioso a master + admin
+  var appLbl = appOrigen.toLowerCase().indexOf('warehouse') >= 0 ? 'warehouseMos' : 'MosExpress';
+  var icono  = appOrigen.toLowerCase().indexOf('warehouse') >= 0 ? '🏭' : '🛒';
+  try {
+    if (typeof _enviarPushTodos === 'function') {
+      _enviarPushTodos(
+        icono + ' ' + nombre + ' inició sesión',
+        'En ' + appLbl + (params.estacion ? ' · ' + params.estacion : ''),
+        { soloRolesAdmin: true, excluirUsuario: nombre }
+      );
+    }
+  } catch(eP) { Logger.log('Push inicio sesión fallo: ' + eP.message); }
+
+  return { ok: true, data: { notificado: true, nombre: nombre } };
+}
+
 // Limpia los rows PENDIENTE_APROBACION huérfanos creados por browsers MOS antes
 // de que registrarSesionDispositivo dejara de auto-crearlos. Útil para purga
 // puntual del spam acumulado.

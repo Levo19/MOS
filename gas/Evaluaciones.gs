@@ -659,6 +659,37 @@ function getResumenTodosDia(params) {
     }
   } catch(e){ Logger.log('No se pudo leer VENTAS_CABECERA: ' + e.message); }
 
+  // 2c. SESIONES sin venta — vendedor que ingresó a ME (entrenamiento, descanso,
+  //     todavía no vendió). Cruzar DISPOSITIVOS: Ultima_Sesion (nombre) y
+  //     Ultima_Conexion del día actual.
+  try {
+    var sheetD = getSheet('DISPOSITIVOS');
+    var dataD = sheetD.getDataRange().getValues();
+    var hdrsD = dataD[0];
+    var iSesD = hdrsD.indexOf('Ultima_Sesion');
+    var iUcD  = hdrsD.indexOf('Ultima_Conexion');
+    var iAppD = hdrsD.indexOf('App');
+    var iEstD = hdrsD.indexOf('Estado');
+    for (var rd = 1; rd < dataD.length; rd++) {
+      var nomD = String(dataD[rd][iSesD] || '').trim();
+      if (!nomD) continue;
+      var ucD  = dataD[rd][iUcD];
+      var fStrD;
+      if (ucD instanceof Date) fStrD = Utilities.formatDate(ucD, tz, 'yyyy-MM-dd');
+      else fStrD = String(ucD || '').substring(0, 10);
+      if (fStrD !== fecha) continue;
+      var appD = String(dataD[rd][iAppD] || '').toLowerCase();
+      var estD = String(dataD[rd][iEstD] || '').toUpperCase();
+      if (estD === 'INACTIVO' || estD === 'PENDIENTE_APROBACION') continue;
+      // Solo apps de operación (mosExpress y warehouseMos)
+      if (appD === 'mos') continue;
+      // Si ya está rolado por venta/caja, mantener ese rol
+      if (!rolesDelDia[nomD]) {
+        rolesDelDia[nomD] = appD.indexOf('warehouse') >= 0 ? 'OPERADOR' : 'VENDEDOR';
+      }
+    }
+  } catch(e) { Logger.log('No se pudo leer DISPOSITIVOS: ' + e.message); }
+
   // 3. Para cada nombre detectado: matchear con master o crear virtual
   Object.keys(rolesDelDia).forEach(function(nombre){
     var rol = rolesDelDia[nombre];
