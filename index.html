@@ -2239,6 +2239,79 @@
       100% { opacity: 1; }
     }
 
+    /* ── ESCUCHA REMOTA: widget flotante ────────────────── */
+    #audioFlotante {
+      position: fixed; bottom: 16px; right: 16px;
+      z-index: 9999;
+      background: linear-gradient(135deg, rgba(127,29,29,0.95), rgba(15,23,42,0.95));
+      border: 1px solid #dc2626;
+      border-radius: 14px;
+      padding: 10px 14px 10px 12px;
+      display: flex; align-items: center; gap: 10px;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 10px 32px rgba(220,38,38,0.45), 0 0 0 1px rgba(248,113,113,0.3);
+      min-width: 250px; max-width: 340px;
+      cursor: grab;
+      animation: audioFlotanteIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    #audioFlotante.dragging { cursor: grabbing; opacity: 0.85; }
+    @keyframes audioFlotanteIn {
+      0%   { transform: translateY(80px) scale(0.85); opacity: 0; }
+      60%  { transform: translateY(-6px) scale(1.03); opacity: 1; }
+      100% { transform: translateY(0) scale(1); opacity: 1; }
+    }
+    .audio-flot-mic {
+      font-size: 22px; flex-shrink: 0;
+      width: 38px; height: 38px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(220,38,38,0.45);
+      border-radius: 50%;
+      animation: audioFlotMic 1.2s ease-in-out infinite;
+      position: relative;
+    }
+    .audio-flot-mic::after {
+      content: ''; position: absolute; inset: -4px;
+      border: 2px solid #dc2626; border-radius: 50%;
+      animation: audioFlotPulse 1.5s ease-out infinite;
+    }
+    @keyframes audioFlotMic {
+      0%, 100% { transform: scale(1); }
+      50%      { transform: scale(1.12); }
+    }
+    @keyframes audioFlotPulse {
+      0%   { transform: scale(0.9); opacity: 0.8; }
+      100% { transform: scale(1.6); opacity: 0; }
+    }
+    .audio-flot-info { flex: 1; min-width: 0; }
+    .audio-flot-nom { font-size: 12px; font-weight: 800; color: #fef2f2; text-transform: uppercase; letter-spacing: 0.05em; }
+    .audio-flot-sub { font-size: 10px; color: #fca5a5; }
+    .audio-flot-time {
+      font-family: 'SF Mono', Menlo, monospace;
+      font-size: 13px; color: #fee2e2; font-weight: 700;
+      letter-spacing: 0.06em;
+    }
+    .audio-flot-chunks { font-size: 9px; color: #fca5a5; opacity: 0.85; }
+    .audio-flot-actions { display: flex; gap: 4px; flex-shrink: 0; }
+    .audio-flot-btn {
+      width: 30px; height: 30px;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.18);
+      cursor: pointer;
+      color: #fef2f2; font-size: 13px;
+      transition: all 0.15s;
+    }
+    .audio-flot-btn:hover { background: rgba(255,255,255,0.18); transform: scale(1.08); }
+    .audio-flot-btn-stop { background: rgba(220,38,38,0.55); border-color: rgba(248,113,113,0.7); }
+    .audio-flot-btn-stop:hover { background: rgba(220,38,38,0.85); }
+    #audioFlotantePlayer { display: none; }
+    .audio-flot-link {
+      font-size: 9px; color: #fca5a5; text-decoration: underline;
+      cursor: pointer; opacity: 0.8;
+    }
+    .audio-flot-link:hover { opacity: 1; color: #fef2f2; }
+
     /* ── SLIDE entre días (carousel) ────────────────────────── */
     .fin-slide-content {
       will-change: transform, opacity;

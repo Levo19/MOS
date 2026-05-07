@@ -12674,13 +12674,34 @@ const MOS = (() => {
     const id = $('audioModalDeviceId')?.value;
     if (!id) return;
     const cont = $('audioListaSesiones');
+    // Render INMEDIATO desde cache localStorage si existe (TTL 60s)
+    const cacheKey = 'mos_audio_sesiones_' + id;
+    try {
+      const raw = localStorage.getItem(cacheKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed.data) && (Date.now() - parsed.ts) < 60000) {
+          cont.innerHTML = _audioRenderSesiones(parsed.data);
+        }
+      }
+    } catch {}
     try {
       const data = await API.get('getSesionesAudio', { deviceId: id, limit: 20 });
+      try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data })); } catch {}
       if (!Array.isArray(data) || !data.length) {
         cont.innerHTML = '<div class="text-center py-6 text-slate-500 text-sm italic">Sin sesiones todavía</div>';
         return;
       }
-      cont.innerHTML = data.map(s => {
+      cont.innerHTML = _audioRenderSesiones(data);
+      return;
+    } catch(e) {
+      if (!cont.innerHTML.trim()) cont.innerHTML = '<div class="text-center py-3 text-red-400 text-sm">Error: ' + e.message + '</div>';
+      return;
+    }
+  }
+
+  function _audioRenderSesiones(data) {
+    return data.map(s => {
         const fIni = s.inicio ? new Date(s.inicio) : null;
         const fmt = fIni ? fIni.toLocaleString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
         const dur = s.duracionSeg ? Math.floor(s.duracionSeg / 60) + 'm' + (s.duracionSeg % 60) + 's' : '—';
@@ -12696,9 +12717,6 @@ const MOS = (() => {
             class="btn-ghost text-[10px] px-2 py-1" ${s.estado === 'ACTIVA' ? '' : ''}>▶ Reproducir</button>
         </div>`;
       }).join('');
-    } catch(e) {
-      cont.innerHTML = '<div class="text-center py-3 text-red-400 text-sm">Error</div>';
-    }
   }
 
   async function audioReproducir(idSesion, autorizadoPor, fechaTxt) {
@@ -12842,13 +12860,272 @@ const MOS = (() => {
     openModal('modalSelectorDispositivos');
   }
 
-  // Abre el modal correcto según rol: ADMIN → live; MASTER → completo con historial
-  // (Sustituye al anterior abrirModalAudio para enrutamiento.)
+  // Click en 🎙️ desde cualquier lado → entra DIRECTO al modo escucha en vivo
+  // con widget flotante. Sin modal intrusivo. El historial completo (master)
+  // queda accesible desde el flotante con el botón "📋".
   async function abrirModalAudioRouted(idDispositivo) {
-    if (_esRolMaster()) {
-      return abrirModalAudio(idDispositivo);
+    return _audioFlotanteIniciar(idDispositivo);
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // WIDGET FLOTANTE de escucha en vivo
+  // - Persiste entre módulos (mounted en <body>)
+  // - Auto-iniciar sesión + auto-streaming de chunks
+  // - Click en ⏹️ → detener escucha + remover flotante
+  // - Click en 📋 → modal completo con historial (solo master)
+  // ════════════════════════════════════════════════════════════
+  let _audioFlot = null;
+  // _audioFlot: { idSesion, deviceId, nombre, chunks[], idx, audioEl,
+  //   inicio, polling, contadorTimer, chunksCargados:Set, prefetched:Map }
+
+  async function _audioFlotanteIniciar(idDispositivo) {
+    if (_audioFlot) {
+      // Ya hay escucha activa de OTRO dispositivo
+      if (_audioFlot.deviceId === idDispositivo) {
+        toast('Ya estás escuchando este dispositivo', 'info');
+        return;
+      }
+      if (!confirm(`Ya estás escuchando a ${_audioFlot.nombre}. ¿Cambiar al nuevo dispositivo? (se detendrá la escucha actual)`)) return;
+      await _audioFlotanteDetenerInterno(true);
     }
-    return _abrirModalAudioLive(idDispositivo);
+
+    const d = (cfgData.dispositivos || []).find(x => x.ID_Dispositivo === idDispositivo);
+    if (!d) { toast('Dispositivo no encontrado', 'error'); return; }
+    const nombre = d.Nombre_Equipo + (d.Ultima_Sesion ? ' · ' + d.Ultima_Sesion : '');
+
+    // Crear el flotante en estado "iniciando"
+    _audioFlotanteCrearDOM(idDispositivo, nombre);
+    const subEl = document.querySelector('#audioFlotante .audio-flot-sub');
+    if (subEl) subEl.textContent = '⌛ enviando comando...';
+
+    try {
+      // Si el dispositivo YA tiene una sesión activa → conectar a esa
+      const estado = await API.get('getEstadoAudio', { deviceId: idDispositivo });
+      let idSesion = estado?.activa ? estado.sesion.idSesion : null;
+      if (!idSesion) {
+        const data = await API.post('iniciarEscuchaAudio', {
+          deviceId: idDispositivo,
+          autorizadoPor: S.session?.nombre || 'admin',
+          motivo: 'Escucha en vivo desde MOS'
+        });
+        idSesion = data.idSesion;
+      }
+      _audioFlot.idSesion = idSesion;
+      const subEl2 = document.querySelector('#audioFlotante .audio-flot-sub');
+      if (subEl2) subEl2.textContent = '🔴 conectando · primer chunk en ~15s';
+
+      // Arrancar polling y reproductor
+      _audioFlotantePollChunks(); // primer poll inmediato
+      _audioFlot.polling = setInterval(_audioFlotantePollChunks, 4000);
+      // Watchdog: si en 45s no hay chunks, avisar al admin
+      _audioFlot.watchdog = setTimeout(() => {
+        if (!_audioFlot || _audioFlot.chunks.length > 0) return;
+        const elS = document.querySelector('#audioFlotante .audio-flot-sub');
+        if (elS) elS.innerHTML = '⚠ <span style="color:#fbbf24">Sin respuesta · ¿app cerrada o sin permiso mic?</span>';
+      }, 45000);
+    } catch(e) {
+      const subEl3 = document.querySelector('#audioFlotante .audio-flot-sub');
+      if (subEl3) subEl3.textContent = '❌ ' + e.message;
+      setTimeout(() => _audioFlotanteCerrarSinDetener(), 3000);
+    }
+  }
+
+  function _audioFlotanteCrearDOM(deviceId, nombre) {
+    if (document.getElementById('audioFlotante')) return;
+    const fl = document.createElement('div');
+    fl.id = 'audioFlotante';
+    fl.innerHTML = `
+      <div class="audio-flot-mic">🎙️</div>
+      <div class="audio-flot-info">
+        <div class="audio-flot-nom">${nombre}</div>
+        <div class="audio-flot-sub">⌛ iniciando...</div>
+        <div class="audio-flot-time" id="audioFlotTime">00:00</div>
+        <div class="audio-flot-chunks" id="audioFlotChunks">— chunks</div>
+      </div>
+      <div class="audio-flot-actions">
+        <button class="audio-flot-btn" onclick="MOS.abrirModalAudio('${String(deviceId).replace(/'/g,"\\'")}')" title="Ver historial">📋</button>
+        <button class="audio-flot-btn audio-flot-btn-stop" onclick="MOS._audioFlotanteDetener()" title="Detener escucha">⏹</button>
+      </div>
+      <audio id="audioFlotantePlayer"></audio>`;
+    document.body.appendChild(fl);
+    _audioFlot = {
+      deviceId, nombre,
+      idSesion: null,
+      chunks: [], idx: 0,
+      chunksCargados: new Set(),
+      audioEl: document.getElementById('audioFlotantePlayer'),
+      inicio: Date.now(),
+      polling: null,
+      contadorTimer: null,
+      prefetched: new Map()
+    };
+    // Contador
+    _audioFlot.contadorTimer = setInterval(() => {
+      if (!_audioFlot) return;
+      const segs = Math.floor((Date.now() - _audioFlot.inicio) / 1000);
+      const mm = String(Math.floor(segs / 60)).padStart(2, '0');
+      const ss = String(segs % 60).padStart(2, '0');
+      const t = $('audioFlotTime');
+      if (t) t.textContent = `${mm}:${ss}`;
+    }, 1000);
+    // Encadenado: cuando termina un chunk, ir al siguiente
+    _audioFlot.audioEl.onended = () => {
+      if (!_audioFlot) return;
+      _audioFlot.idx++;
+      _audioFlotanteReproducirSiguiente();
+    };
+    // Drag (mover el flotante)
+    _audioFlotanteDraggable(fl);
+  }
+
+  function _audioFlotanteDraggable(el) {
+    let dragging = false, ox = 0, oy = 0, sl = 0, st = 0;
+    el.addEventListener('mousedown', e => {
+      if (e.target.closest('.audio-flot-btn') || e.target.closest('audio')) return;
+      dragging = true;
+      const r = el.getBoundingClientRect();
+      ox = e.clientX; oy = e.clientY; sl = r.left; st = r.top;
+      el.classList.add('dragging');
+      el.style.right = 'auto'; el.style.bottom = 'auto';
+    });
+    document.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      el.style.left = (sl + e.clientX - ox) + 'px';
+      el.style.top  = (st + e.clientY - oy) + 'px';
+    });
+    document.addEventListener('mouseup', () => { dragging = false; el.classList.remove('dragging'); });
+  }
+
+  async function _audioFlotantePollChunks() {
+    if (!_audioFlot || !_audioFlot.idSesion) return;
+    try {
+      const newChunks = await API.get('getChunksAudioSesion', { idSesion: _audioFlot.idSesion });
+      if (!Array.isArray(newChunks)) return;
+      let added = 0;
+      newChunks.forEach(c => {
+        if (!_audioFlot.chunksCargados.has(c.driveFileId)) {
+          _audioFlot.chunks.push(c);
+          _audioFlot.chunksCargados.add(c.driveFileId);
+          added++;
+        }
+      });
+      const elC = $('audioFlotChunks');
+      if (elC) elC.textContent = `${_audioFlot.chunks.length} chunks · idx ${_audioFlot.idx + 1}`;
+      const elS = document.querySelector('#audioFlotante .audio-flot-sub');
+      if (elS && _audioFlot.chunks.length > 0) elS.textContent = '🔴 escuchando en vivo';
+
+      // Si el reproductor está pausado y hay chunks por reproducir, arrancar
+      if (_audioFlot.audioEl.paused && _audioFlot.idx < _audioFlot.chunks.length) {
+        _audioFlotanteReproducirSiguiente();
+      }
+      // Prefetch de los próximos 2 chunks (para evitar gap entre chunks)
+      _audioFlotantePrefetch(_audioFlot.idx + 1);
+      _audioFlotantePrefetch(_audioFlot.idx + 2);
+    } catch (e) {
+      const elS = document.querySelector('#audioFlotante .audio-flot-sub');
+      if (elS) elS.textContent = '⚠ ' + e.message;
+    }
+  }
+
+  async function _audioFlotantePrefetch(idx) {
+    if (!_audioFlot) return;
+    if (idx >= _audioFlot.chunks.length) return;
+    const ch = _audioFlot.chunks[idx];
+    if (!ch || _audioFlot.prefetched.has(ch.driveFileId)) return;
+    _audioFlot.prefetched.set(ch.driveFileId, 'pending');
+    try {
+      const data = await API.get('getChunkAudioContent', { fileId: ch.driveFileId });
+      if (!data?.base64) throw new Error('vacío');
+      _audioFlot.prefetched.set(ch.driveFileId, data);
+    } catch {
+      _audioFlot.prefetched.delete(ch.driveFileId);
+    }
+  }
+
+  async function _audioFlotanteReproducirSiguiente() {
+    if (!_audioFlot) return;
+    const { chunks, idx, audioEl } = _audioFlot;
+    if (idx >= chunks.length) {
+      const elS = document.querySelector('#audioFlotante .audio-flot-sub');
+      if (elS) elS.textContent = '⏳ esperando próximo chunk...';
+      return;
+    }
+    const ch = chunks[idx];
+    let data = _audioFlot.prefetched.get(ch.driveFileId);
+    if (!data || data === 'pending') {
+      try {
+        data = await API.get('getChunkAudioContent', { fileId: ch.driveFileId });
+        _audioFlot.prefetched.set(ch.driveFileId, data);
+      } catch (e) {
+        const elS = document.querySelector('#audioFlotante .audio-flot-sub');
+        if (elS) elS.textContent = '⚠ chunk ' + (idx + 1) + ' falló';
+        // intentar siguiente
+        _audioFlot.idx++;
+        setTimeout(() => _audioFlotanteReproducirSiguiente(), 500);
+        return;
+      }
+    }
+    if (!data?.base64) {
+      _audioFlot.idx++;
+      setTimeout(() => _audioFlotanteReproducirSiguiente(), 200);
+      return;
+    }
+    const blob = _b64ToBlob(data.base64, data.mimeType || 'audio/webm');
+    const url = URL.createObjectURL(blob);
+    audioEl.src = url;
+    try {
+      await audioEl.play();
+    } catch (e) {
+      // Autoplay policy bloqueó: el usuario debe hacer click manualmente
+      const elS = document.querySelector('#audioFlotante .audio-flot-sub');
+      if (elS) elS.textContent = '🔇 click el mic para iniciar audio';
+      const mic = document.querySelector('#audioFlotante .audio-flot-mic');
+      if (mic) {
+        mic.style.cursor = 'pointer';
+        mic.onclick = () => audioEl.play().catch(() => {});
+      }
+    }
+    URL.revokeObjectURL(url);
+    // Iniciar prefetch del próximo
+    _audioFlotantePrefetch(idx + 1);
+  }
+
+  async function _audioFlotanteDetener() {
+    if (!_audioFlot) return;
+    if (!confirm('¿Detener escucha?')) return;
+    await _audioFlotanteDetenerInterno(true);
+    toast('⏹️ Escucha detenida', 'ok');
+  }
+
+  // Detiene la sesión en server (si remoto=true) y limpia el widget
+  async function _audioFlotanteDetenerInterno(remoto) {
+    if (!_audioFlot) return;
+    const idSesion = _audioFlot.idSesion;
+    if (_audioFlot.polling) clearInterval(_audioFlot.polling);
+    if (_audioFlot.contadorTimer) clearInterval(_audioFlot.contadorTimer);
+    if (_audioFlot.watchdog) clearTimeout(_audioFlot.watchdog);
+    if (_audioFlot.audioEl) { _audioFlot.audioEl.pause(); _audioFlot.audioEl.src = ''; _audioFlot.audioEl.onended = null; }
+    const fl = document.getElementById('audioFlotante');
+    if (fl) {
+      fl.style.transition = 'all 0.3s ease-out';
+      fl.style.transform = 'translateY(50px) scale(0.85)';
+      fl.style.opacity = '0';
+      setTimeout(() => fl.remove(), 320);
+    }
+    _audioFlot = null;
+    if (remoto && idSesion) {
+      try { await API.post('detenerEscuchaAudio', { idSesion }); } catch {}
+    }
+  }
+
+  function _audioFlotanteCerrarSinDetener() {
+    const fl = document.getElementById('audioFlotante');
+    if (fl) fl.remove();
+    if (_audioFlot) {
+      if (_audioFlot.polling) clearInterval(_audioFlot.polling);
+      if (_audioFlot.contadorTimer) clearInterval(_audioFlot.contadorTimer);
+    }
+    _audioFlot = null;
   }
 
   async function _abrirModalAudioLive(idDispositivo) {
@@ -16508,6 +16785,7 @@ const MOS = (() => {
     abrirModalAudio, audioRefrescarEstado, audioIniciar, audioDetener, audioListarSesiones, audioReproducir, audioCerrarReproductor,
     abrirModalAudioRouted, abrirEscuchaPorUsuario, abrirGpsPorUsuario,
     _audioLiveIniciar, _audioLiveDetener,
+    _audioFlotanteDetener, _audioFlotanteIniciar,
     abrirModalGps, gpsCargar,
     toggleAvatarMenu, closeAvatarMenu, installPWA,
     toggleFiltroCat, setFiltroCategoria, toggleFiltroTipo, limpiarFiltrosCat, toggleFiltroAlertas, toggleAlertPop,
