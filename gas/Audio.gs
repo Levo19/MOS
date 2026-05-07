@@ -81,30 +81,53 @@ function _pushComandoDispositivo(deviceId, action, extra) {
     return { ok: false, error: 'El dispositivo no tiene un usuario logueado' };
   }
 
-  // Buscar token más reciente de ese usuario+app
+  // Buscar token: PRIMERO por deviceId (más preciso), después fallback a usuario+app.
+  // Tokens viejos no tienen deviceId guardado → match por usuario.
   var sheetT = _getPushTokensSheet();
   var dataT = sheetT.getDataRange().getValues();
+  var hdrsT = dataT[0];
+  var iDev = hdrsT.indexOf('deviceId');
   var nombreNorm = nombreUsuario.toLowerCase();
   var appNorm = appOrigen.toLowerCase();
   var mejor = null;
-  for (var j = 1; j < dataT.length; j++) {
-    var token  = String(dataT[j][1] || '');
-    var u      = String(dataT[j][2] || '').trim().toLowerCase();
-    var app    = String(dataT[j][4] || '').trim().toLowerCase();
-    var activo = dataT[j][7];
-    if (!token) continue;
-    if (activo === false || String(activo) === '0' || String(activo) === 'false') continue;
-    if (u !== nombreNorm) continue;
-    if (appNorm && app && app !== appNorm) continue;
-    var ultVez = 0;
-    try { ultVez = dataT[j][6] ? new Date(dataT[j][6]).getTime() : 0; } catch(_) {}
-    if (!mejor || mejor.ultVez < ultVez) {
-      mejor = { token: token, ultVez: ultVez };
+  // Pass 1: match exacto por deviceId
+  if (iDev >= 0) {
+    for (var j = 1; j < dataT.length; j++) {
+      var token  = String(dataT[j][1] || '');
+      var devRow = String(dataT[j][iDev] || '');
+      var activo = dataT[j][7];
+      if (!token || !devRow) continue;
+      if (activo === false || String(activo) === '0' || String(activo) === 'false') continue;
+      if (devRow !== String(deviceId)) continue;
+      var ultVez = 0;
+      try { ultVez = dataT[j][6] ? new Date(dataT[j][6]).getTime() : 0; } catch(_) {}
+      if (!mejor || mejor.ultVez < ultVez) {
+        mejor = { token: token, ultVez: ultVez, via: 'deviceId' };
+      }
+    }
+  }
+  // Pass 2 (fallback): si no encontramos por deviceId, match por usuario+app (legacy)
+  if (!mejor) {
+    for (var k = 1; k < dataT.length; k++) {
+      var tk     = String(dataT[k][1] || '');
+      var u      = String(dataT[k][2] || '').trim().toLowerCase();
+      var app    = String(dataT[k][4] || '').trim().toLowerCase();
+      var act    = dataT[k][7];
+      if (!tk) continue;
+      if (act === false || String(act) === '0' || String(act) === 'false') continue;
+      if (u !== nombreNorm) continue;
+      if (appNorm && app && app !== appNorm) continue;
+      var ultV = 0;
+      try { ultV = dataT[k][6] ? new Date(dataT[k][6]).getTime() : 0; } catch(_) {}
+      if (!mejor || mejor.ultVez < ultV) {
+        mejor = { token: tk, ultVez: ultV, via: 'usuario' };
+      }
     }
   }
   if (!mejor) {
-    return { ok: false, error: 'Sin token activo para ' + nombreUsuario };
+    return { ok: false, error: 'Sin token activo para device ' + String(deviceId).substring(0, 8) + ' (' + nombreUsuario + ')' };
   }
+  Logger.log('[push-cmd] match via ' + mejor.via + ' → ' + nombreUsuario);
 
   // Enviar push data-only
   var projectId = PropertiesService.getScriptProperties().getProperty('FCM_PROJECT_ID');

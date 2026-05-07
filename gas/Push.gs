@@ -223,16 +223,22 @@ function registrarPushToken(params) {
   if (!params.token) return { ok: false, error: 'token requerido' };
   var sheet = _getPushTokensSheet();
   var data  = sheet.getDataRange().getValues();
+  var hdrs  = data[0];
+  var iDev  = hdrs.indexOf('deviceId');
 
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][1]) === String(params.token)) {
       sheet.getRange(i + 1, 3).setValue(params.usuario    || data[i][2]);
       sheet.getRange(i + 1, 7).setValue(new Date());
+      // Actualizar deviceId si nos pasan uno (token reusado en otro device es raro pero posible)
+      if (iDev >= 0 && params.deviceId) {
+        sheet.getRange(i + 1, iDev + 1).setValue(params.deviceId);
+      }
       return { ok: true, data: { accion: 'actualizado' } };
     }
   }
 
-  sheet.appendRow([
+  var fila = [
     _generateId('PTK'),
     params.token,
     params.usuario    || '',
@@ -241,7 +247,9 @@ function registrarPushToken(params) {
     _hoy(),
     new Date(),
     true
-  ]);
+  ];
+  if (iDev >= 0) fila[iDev] = params.deviceId || '';
+  sheet.appendRow(fila);
   return { ok: true, data: { accion: 'registrado' } };
 }
 
@@ -353,8 +361,14 @@ function _getPushTokensSheet() {
   var sheet = ss.getSheetByName('PUSH_TOKENS');
   if (!sheet) {
     sheet = ss.insertSheet('PUSH_TOKENS');
-    sheet.appendRow(['idToken','token','usuario','dispositivo','appOrigen','fecha','ultimaVez','activo']);
+    sheet.appendRow(['idToken','token','usuario','dispositivo','appOrigen','fecha','ultimaVez','activo','deviceId']);
     sheet.setFrozenRows(1);
+  } else {
+    // Agregar columna deviceId si falta (retrocompat con sheets viejos)
+    var hdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    if (hdrs.indexOf('deviceId') < 0) {
+      sheet.getRange(1, sheet.getLastColumn() + 1).setValue('deviceId');
+    }
   }
   return sheet;
 }
