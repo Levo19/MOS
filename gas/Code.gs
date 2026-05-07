@@ -201,6 +201,20 @@ function _route(method, e) {
       case 'getAdminPinsCache':         return getAdminPinsCache(params);
       case 'getAuditoriaAdmin':         return getAuditoriaAdmin(params);
 
+      // ── Audio: escucha remota on-demand desde MOS ─────────
+      case 'iniciarEscuchaAudio':       return iniciarEscuchaAudio(params);
+      case 'detenerEscuchaAudio':       return detenerEscuchaAudio(params);
+      case 'subirChunkAudio':           return subirChunkAudio(params);
+      case 'getSesionesAudio':          return getSesionesAudio(params);
+      case 'getChunksAudioSesion':      return getChunksAudioSesion(params);
+      case 'getChunkAudioContent':      return getChunkAudioContent(params);
+      case 'getEstadoAudio':            return getEstadoAudio(params);
+
+      // ── GPS: tracking de dispositivos (anti-robo) ─────────
+      case 'registrarUbicacion':            return registrarUbicacion(params);
+      case 'getUltimaUbicacionDispositivo': return getUltimaUbicacionDispositivo(params);
+      case 'getUbicacionesDispositivo':     return getUbicacionesDispositivo(params);
+
       // ── Cajas MosExpress ────────────────────────────────────
       case 'getCierresCaja':            return getCierresCaja(params);
       case 'anularTicketME':            return anularTicketME(params);
