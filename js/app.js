@@ -14165,10 +14165,18 @@ const MOS = (() => {
         if (n) byNombre[n] = r;
         if (r.idPersonal) byIdPersonal[r.idPersonal] = r;
       });
+      // Recalcular total desde lo que realmente se renderiza en cada card
+      // (JORNADAS legacy puede tener montoJornal=0 en AUTO_VENTA, pero la card
+      //  muestra ev.totalDia derivado de PERSONAL_MASTER.montoBase). Mantener
+      //  consistencia: total = suma de pagos visibles.
+      let totalReal = 0;
       cont.innerHTML = pl.personalDetalle.map(p => {
         const ev = byIdPersonal[p.idPersonal] || byNombre[String(p.nombre || '').toLowerCase().trim()] || null;
+        const pago = (ev && ev.totalDia) ? ev.totalDia : (parseFloat(p.monto) || 0);
+        totalReal += parseFloat(pago) || 0;
         return _finRenderPersonalCard(p, ev, fecha);
       }).join('');
+      if (tot) tot.textContent = 'S/ ' + totalReal.toFixed(2);
     }
 
     // Render inmediato — usa cache si existe, sino sin score
