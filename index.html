@@ -3783,6 +3783,50 @@
     </div>
 
     <!-- ═══════════════════════════════════════════════════════
+         MODAL: AUDIO LIVE (ADMIN — solo escucha en vivo, sin historial)
+    ═══════════════════════════════════════════════════════ -->
+    <div id="modalAudioLive" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalAudioLive')">
+      <div class="modal-box flex flex-col" style="max-width:520px;max-height:92vh">
+        <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(239,68,68,0.10),transparent);">
+          <div class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl" style="background:linear-gradient(135deg,#7f1d1d,#dc2626);">🎙️</div>
+          <div class="min-w-0 flex-1">
+            <h2 class="font-bold text-base text-white">Escucha en vivo</h2>
+            <p id="audioLiveSubtitle" class="text-[11px] text-slate-500 mt-0.5">Activación on-demand · max 30 min</p>
+          </div>
+          <button onclick="MOS.closeModal('modalAudioLive')" class="modal-close-x">×</button>
+        </div>
+        <div class="overflow-y-auto px-5 py-4 flex-1">
+          <input type="hidden" id="audioLiveDeviceId">
+          <div id="audioLiveEstadoActual" class="mb-3"></div>
+          <div class="rounded-lg p-3 mt-2" style="background:rgba(220,38,38,0.06);border:1px solid rgba(220,38,38,0.2);">
+            <p class="text-[10px] text-red-300/80">
+              ⚠ Solo legítimo en dispositivos de empresa con cartelería visible. Quedan registros en AUDITORIA_ADMIN.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════
+         MODAL: SELECTOR DE DISPOSITIVOS (cuando un usuario tiene N≥2)
+    ═══════════════════════════════════════════════════════ -->
+    <div id="modalSelectorDispositivos" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalSelectorDispositivos')">
+      <div class="modal-box flex flex-col" style="max-width:520px;max-height:92vh">
+        <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;">
+          <div class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl" style="background:linear-gradient(135deg,#1e3a8a,#3b82f6);">📱</div>
+          <div class="min-w-0 flex-1">
+            <h2 class="font-bold text-base text-white">Elegir dispositivo</h2>
+            <p id="selectorDispSubtitle" class="text-[11px] text-slate-500 mt-0.5">El usuario tiene múltiples dispositivos activos</p>
+          </div>
+          <button onclick="MOS.closeModal('modalSelectorDispositivos')" class="modal-close-x">×</button>
+        </div>
+        <div class="overflow-y-auto px-5 py-4 flex-1">
+          <div id="selectorDispLista" class="space-y-2"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════
          MODAL: GPS (ubicación + historial)
     ═══════════════════════════════════════════════════════ -->
     <div id="modalGps" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalGps')">

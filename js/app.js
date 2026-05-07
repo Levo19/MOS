@@ -8991,16 +8991,16 @@ const MOS = (() => {
               const bordColor = movio ? 'rgba(99,102,241,0.5)' : (isFresh ? 'rgba(16,185,129,0.5)' : 'rgba(16,185,129,0.25)');
               const movedBadge = movio ? '<span class="text-[8px] font-bold text-indigo-300 ml-1" title="Recién movido a esta estación">📍 movido</span>' : '';
               const dotPulse = isFresh ? '<span class="disp-dot-pulse"></span>' : '';
-              return `<div class="disp-chip flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer ${claseAnim} ${claseFresh}"
-                onclick="MOS.abrirModalDispositivo('${idAttr}')"
-                style="background:${bgColor};border:1px solid ${bordColor};transition:all 0.2s;"
-                title="Click para editar">
-                <span class="text-sm shrink-0 relative">${ico}${dotPulse}</span>
-                <div class="flex-1 min-w-0">
+              return `<div class="disp-chip flex items-center gap-1.5 px-2 py-1.5 rounded ${claseAnim} ${claseFresh}"
+                style="background:${bgColor};border:1px solid ${bordColor};transition:all 0.2s;">
+                <span class="text-sm shrink-0 relative cursor-pointer" onclick="MOS.abrirModalDispositivo('${idAttr}')" title="Editar">${ico}${dotPulse}</span>
+                <div class="flex-1 min-w-0 cursor-pointer" onclick="MOS.abrirModalDispositivo('${idAttr}')">
                   <div class="text-xs font-medium text-slate-200 truncate">${d.Nombre_Equipo || '—'}${movedBadge}</div>
                   <div class="text-[9px] truncate" style="color:${act.color};">${act.dot} ${act.label}${d.Ultima_Sesion ? ' · 👤 <span class="text-emerald-400 font-bold">' + d.Ultima_Sesion + '</span>' : ''}</div>
                 </div>
-                <span class="text-[10px] text-slate-500 group-hover:text-white p-1">✏️</span>
+                <button onclick="event.stopPropagation();MOS.abrirModalAudio('${idAttr}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.5);color:#f87171;font-size:10px;" title="Escucha remota">🎙️</button>
+                <button onclick="event.stopPropagation();MOS.abrirModalGps('${idAttr}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.5);color:#34d399;font-size:10px;" title="Ver ubicación">📍</button>
+                <span class="text-[10px] text-slate-500 p-1 cursor-pointer" onclick="event.stopPropagation();MOS.abrirModalDispositivo('${idAttr}')" title="Editar">✏️</span>
               </div>`;
             }).join('')}
           </div>
@@ -9290,6 +9290,22 @@ const MOS = (() => {
                              style="background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.5);color:#60a5fa;font-size:13px;"
                              title="Enviar mensaje push a ${p.nombre}">💬</button>`;
 
+    // Botones 🎙️📍 — solo si el usuario tiene al menos un dispositivo ACTIVO con sesión propia
+    // (operadores WH y cajeros; los admins no operan tablets, así que típicamente no aparecerán)
+    const tieneDispActivo = _buscarDispositivosDeUsuario(p.nombre).length > 0;
+    const audioBtn = tieneDispActivo
+      ? `<button onclick="event.stopPropagation();MOS.abrirEscuchaPorUsuario('${safeNombre}')"
+                 class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center hover:scale-110 transition-all"
+                 style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.5);color:#f87171;font-size:13px;"
+                 title="Escucha remota de ${p.nombre}">🎙️</button>`
+      : '';
+    const gpsBtn = tieneDispActivo
+      ? `<button onclick="event.stopPropagation();MOS.abrirGpsPorUsuario('${safeNombre}')"
+                 class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center hover:scale-110 transition-all"
+                 style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.5);color:#34d399;font-size:13px;"
+                 title="Ver ubicación de ${p.nombre}">📍</button>`
+      : '';
+
     // Audit hoy (solo admins)
     const auditExpand = esAdmin
       ? `<div id="auditDetail_${safeId}" class="hidden mt-2 p-3 rounded-lg" style="background:#0a1424;border:1px solid #1e293b;">
@@ -9321,6 +9337,8 @@ const MOS = (() => {
           </div>
           ${ultAccion}
         </div>
+        ${audioBtn}
+        ${gpsBtn}
         ${pushBtn}
         ${llaveBtn}
         <label class="pers-switch shrink-0" title="${activo ? 'Desactivar' : 'Activar'}" onclick="event.stopPropagation()">
@@ -9971,6 +9989,14 @@ const MOS = (() => {
           <div class="text-sm font-bold text-amber-400">S/ ${monto.toFixed(2)}</div>
           <div class="text-[10px] text-slate-500">esta semana</div>
         </div>
+        ${dispActivo ? `<button onclick="event.stopPropagation();MOS.abrirEscuchaPorUsuario('${safeNombre}')"
+                class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center hover:scale-110 transition-all"
+                style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.5);color:#f87171;font-size:13px;"
+                title="Escucha remota de ${c.nombre}">🎙️</button>
+        <button onclick="event.stopPropagation();MOS.abrirGpsPorUsuario('${safeNombre}')"
+                class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center hover:scale-110 transition-all"
+                style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.5);color:#34d399;font-size:13px;"
+                title="Ver ubicación de ${c.nombre}">📍</button>` : ''}
         <button onclick="event.stopPropagation();MOS.abrirModalEnviarPush('','${safeNombre}')"
                 class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center hover:scale-110 transition-all"
                 style="background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.5);color:#60a5fa;font-size:13px;"
@@ -12741,6 +12767,171 @@ const MOS = (() => {
     if (player) { player.pause(); player.src = ''; }
     $('audioReproductor')?.classList.add('hidden');
   }
+
+  // ────────────────────────────────────────────────────────
+  // Audio LIVE (ADMIN) — sin historial, solo activar/detener
+  // ────────────────────────────────────────────────────────
+  let _audioLivePollTimer = null;
+
+  function _esRolMaster() {
+    return String(S.session?.rol || '').toUpperCase() === 'MASTER';
+  }
+
+  // Busca dispositivos ACTIVOS donde el usuario está logueado.
+  // El cajero/vendedor solo puede tener 1; un operador WH puede tener varios.
+  function _buscarDispositivosDeUsuario(nombre) {
+    const target = String(nombre || '').trim().toLowerCase();
+    if (!target) return [];
+    return (cfgData.dispositivos || []).filter(d => {
+      if (String(d.Estado || '').toUpperCase() !== 'ACTIVO') return false;
+      const sesion = String(d.Ultima_Sesion || '').trim().toLowerCase();
+      return sesion === target;
+    });
+  }
+
+  // Punto de entrada cuando se hace click en 🎙️ desde Personal del Día (no hay deviceId conocido)
+  function abrirEscuchaPorUsuario(nombre) {
+    const devs = _buscarDispositivosDeUsuario(nombre);
+    if (!devs.length) {
+      toast(`⚠ ${nombre} no tiene dispositivos activos ahora`, 'warn');
+      return;
+    }
+    if (devs.length === 1) {
+      abrirModalAudioRouted(devs[0].ID_Dispositivo);
+      return;
+    }
+    _selectorDispMostrar(nombre, devs, 'audio');
+  }
+
+  function abrirGpsPorUsuario(nombre) {
+    const devs = _buscarDispositivosDeUsuario(nombre);
+    if (!devs.length) {
+      toast(`⚠ ${nombre} no tiene dispositivos activos ahora`, 'warn');
+      return;
+    }
+    if (devs.length === 1) {
+      abrirModalGps(devs[0].ID_Dispositivo);
+      return;
+    }
+    _selectorDispMostrar(nombre, devs, 'gps');
+  }
+
+  function _selectorDispMostrar(nombre, devs, modo) {
+    const sub = $('selectorDispSubtitle');
+    const lista = $('selectorDispLista');
+    if (sub) sub.textContent = `${nombre} · ${devs.length} dispositivos · elige cuál ${modo === 'audio' ? 'escuchar' : 'ubicar'}`;
+    if (!lista) return;
+    const accion = modo === 'audio' ? 'abrirModalAudioRouted' : 'abrirModalGps';
+    const ico = modo === 'audio' ? '🎙️' : '📍';
+    const accent = modo === 'audio' ? '#dc2626' : '#10b981';
+    lista.innerHTML = devs.map(d => {
+      const act = _personaActividad(d.Ultima_Conexion);
+      const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
+      const ico2 = String(d.Icono || '📱');
+      return `<button onclick="MOS.closeModal('modalSelectorDispositivos');MOS.${accion}('${idAttr}')"
+        class="w-full flex items-center gap-3 p-3 rounded-lg hover:scale-[1.01] transition-all text-left"
+        style="background:#0a1424;border:1px solid #1e293b;">
+        <span class="text-2xl shrink-0">${ico2}</span>
+        <div class="flex-1 min-w-0">
+          <div class="text-sm font-medium text-slate-200 truncate">${d.Nombre_Equipo || idAttr}</div>
+          <div class="text-[10px]" style="color:${act.color};">${act.dot} ${act.label} · ${d.App || '—'}${d.Estacion ? ' · ' + d.Estacion : ''}</div>
+        </div>
+        <span class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center" style="background:rgba(255,255,255,0.05);border:1px solid ${accent};color:${accent};">${ico}</span>
+      </button>`;
+    }).join('');
+    openModal('modalSelectorDispositivos');
+  }
+
+  // Abre el modal correcto según rol: ADMIN → live; MASTER → completo con historial
+  // (Sustituye al anterior abrirModalAudio para enrutamiento.)
+  async function abrirModalAudioRouted(idDispositivo) {
+    if (_esRolMaster()) {
+      return abrirModalAudio(idDispositivo);
+    }
+    return _abrirModalAudioLive(idDispositivo);
+  }
+
+  async function _abrirModalAudioLive(idDispositivo) {
+    const d = (cfgData.dispositivos || []).find(x => x.ID_Dispositivo === idDispositivo);
+    if (!d) return;
+    $('audioLiveDeviceId').value = idDispositivo;
+    $('audioLiveSubtitle').textContent = `${d.Nombre_Equipo || idDispositivo}${d.Ultima_Sesion ? ' · 👤 ' + d.Ultima_Sesion : ''}`;
+    openModal('modalAudioLive');
+    await _audioLiveRefrescar();
+    if (_audioLivePollTimer) clearInterval(_audioLivePollTimer);
+    _audioLivePollTimer = setInterval(_audioLiveRefrescar, 10 * 1000);
+  }
+
+  async function _audioLiveRefrescar() {
+    const id = $('audioLiveDeviceId')?.value;
+    if (!id) return;
+    const cont = $('audioLiveEstadoActual');
+    if (!cont) return;
+    try {
+      const data = await API.get('getEstadoAudio', { deviceId: id });
+      if (data?.activa) {
+        const sesionId = data.sesion.idSesion;
+        const ini = data.sesion.inicio ? new Date(data.sesion.inicio) : null;
+        const segs = ini ? Math.floor((Date.now() - ini.getTime()) / 1000) : 0;
+        const mm = String(Math.floor(segs / 60)).padStart(2, '0');
+        const ss = String(segs % 60).padStart(2, '0');
+        cont.innerHTML = `<div class="card p-3" style="background:rgba(239,68,68,0.10);border:1px solid #dc2626;">
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <div class="text-sm font-bold text-red-300">🔴 Grabando ahora</div>
+              <div class="text-[10px] text-slate-500 font-mono">${mm}:${ss} · auto-stop a 30:00</div>
+            </div>
+            <button onclick="MOS._audioLiveDetener('${sesionId}')" class="btn-primary text-xs px-3 py-1.5" style="background:#dc2626">⏹️ Detener</button>
+          </div>
+          <p class="text-[10px] text-slate-500 mt-2">El audio se está guardando para revisión posterior por el master.</p>
+        </div>`;
+      } else {
+        cont.innerHTML = `<div class="card p-3" style="background:#0a1424;border:1px solid #1e293b;">
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <div class="text-sm font-bold text-slate-300">⏸ Sin grabación activa</div>
+              <div class="text-[10px] text-slate-500">Inicia la escucha cuando lo necesites</div>
+            </div>
+            <button onclick="MOS._audioLiveIniciar('${id}')" class="btn-primary text-xs px-3 py-1.5" style="background:#dc2626">🎙️ Iniciar</button>
+          </div>
+        </div>`;
+      }
+    } catch(_) {
+      cont.innerHTML = '<div class="text-center py-3 text-red-400 text-sm">Error consultando estado</div>';
+    }
+  }
+
+  async function _audioLiveIniciar(deviceId) {
+    if (!confirm('¿Iniciar escucha? El dispositivo grabará en chunks de 15s. Auto-detiene a los 30 min.')) return;
+    try {
+      await API.post('iniciarEscuchaAudio', {
+        deviceId,
+        autorizadoPor: S.session?.nombre || 'admin',
+        motivo: 'Escucha en vivo desde MOS'
+      });
+      toast('🎙️ Comando enviado', 'ok');
+      setTimeout(_audioLiveRefrescar, 1500);
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  async function _audioLiveDetener(idSesion) {
+    try {
+      await API.post('detenerEscuchaAudio', { idSesion });
+      toast('⏹️ Detenido', 'ok');
+      setTimeout(_audioLiveRefrescar, 1000);
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  // Cancelar poll cuando se cierra el live
+  document.addEventListener('mos:modal-cerrado', e => {
+    if (e.detail === 'modalAudioLive' && _audioLivePollTimer) {
+      clearInterval(_audioLivePollTimer); _audioLivePollTimer = null;
+    }
+  });
 
   // ────────────────────────────────────────────────────────
   // MODAL GPS — ubicación + mapa Google
@@ -15766,6 +15957,8 @@ const MOS = (() => {
     abrirModalDispositivo, cerrarModalDispositivo, guardarDispositivo, toggleEstadoDispositivo,
     eliminarDispositivo, aprobarDispositivo, rechazarDispositivo, dispCopiarUUID, _dispActualizarPreview, _dispZonaCambio,
     abrirModalAudio, audioRefrescarEstado, audioIniciar, audioDetener, audioListarSesiones, audioReproducir, audioCerrarReproductor,
+    abrirModalAudioRouted, abrirEscuchaPorUsuario, abrirGpsPorUsuario,
+    _audioLiveIniciar, _audioLiveDetener,
     abrirModalGps, gpsCargar,
     toggleAvatarMenu, closeAvatarMenu, installPWA,
     toggleFiltroCat, setFiltroCategoria, toggleFiltroTipo, limpiarFiltrosCat, toggleFiltroAlertas, toggleAlertPop,
