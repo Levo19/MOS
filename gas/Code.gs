@@ -122,6 +122,7 @@ function _route(method, e) {
       case 'getDispositivosPendientes':    return getDispositivosPendientes();
       case 'aprobarDispositivoPendiente':  return aprobarDispositivoPendiente(params);
       case 'rechazarDispositivoPendiente': return rechazarDispositivoPendiente(params);
+      case 'vincularBrowserDispositivo':   return vincularBrowserDispositivo(params);
 
       // ── Zonas (puntos de venta) ────────────────────────────
       case 'getZonas':             return getZonas(params);

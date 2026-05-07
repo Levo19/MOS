@@ -505,6 +505,37 @@ const MOS = (() => {
     setTimeout(() => { overlay.style.display = 'none'; overlay.classList.remove('hide'); }, 400);
   }
 
+  // ── Vincular este browser a un dispositivo ya registrado ──
+  // Soluciona el problema: cada browser PWA genera su propio mos_deviceId,
+  // y no coincide con el ID_Dispositivo del row "Celular Levo" (que se creó
+  // antes con otro UUID). Este botón hace que ambos UUIDs sean el mismo.
+  async function vincularEsteBrowser(idDispositivoTarget, nombreEquipo) {
+    const browserId = localStorage.getItem('mos_deviceId') || '';
+    if (!browserId) { toast('No tengo deviceId en este browser', 'error'); return; }
+    if (!confirm(`¿Vincular este browser a "${nombreEquipo}"?\n\nA partir de ahora, la actividad de este browser MOS se reflejará en ese dispositivo. Útil cuando físicamente estás operando desde "${nombreEquipo}".`)) return;
+    try {
+      const res = await API.post('vincularBrowserDispositivo', {
+        idDispositivoTarget,
+        browserDeviceId: browserId
+      });
+      if (res?.vinculado) {
+        toast(`📌 Vinculado a "${nombreEquipo}"`, 'ok');
+        // Forzar refresh de Infraestructura para ver el cambio
+        try { renderInfra && renderInfra(); } catch {}
+        try { _mosHeartbeat(); } catch {}
+        // Refrescar lista
+        try {
+          const data = await API.get('getDispositivos', {});
+          if (Array.isArray(data)) { cfgData.dispositivos = data; renderInfra(); }
+        } catch {}
+      } else {
+        toast('No se pudo vincular', 'error');
+      }
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
   // ── Heartbeat del propio dispositivo MOS ──────────────────────
   // Sin esto, la laptop/PC del master abierto en MOS jamás reporta su
   // Ultima_Conexion en DISPOSITIVOS y aparece "hace 16h" siempre.
@@ -10378,15 +10409,27 @@ const MOS = (() => {
     const cls = opts.compact ? 'text-[10px] px-2 py-1.5' : 'text-[11px] px-3 py-2';
     const claseFresh = isFresh ? 'disp-chip-live' : '';
     const dotPulse = isFresh ? '<span class="disp-dot-pulse"></span>' : '';
+    // Pin: si este dispositivo es app='MOS' Y NO es el browser actual, mostrar
+    // botón 📌 para vincular ESTE browser a este dispositivo (resuelve mismatch UUID).
+    const miBrowserId = localStorage.getItem('mos_deviceId') || '';
+    const esMOS = String(d.App || '').toUpperCase() === 'MOS';
+    const yaSoyEste = String(d.ID_Dispositivo) === miBrowserId;
+    const pinBtn = (esMOS && !yaSoyEste && miBrowserId)
+      ? `<button onclick="event.stopPropagation();MOS.vincularEsteBrowser('${idAttr}','${(d.Nombre_Equipo||'').replace(/'/g,'&#39;')}')" class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;font-size:11px;" title="Soy este dispositivo · vincular este browser para que su actividad refleje aquí">📌</button>`
+      : '';
+    const yaSoyBadge = yaSoyEste
+      ? `<span class="shrink-0 text-[9px] px-1.5 py-0.5 rounded-full" style="background:rgba(16,185,129,0.18);color:#6ee7b7;border:1px solid rgba(16,185,129,0.4);" title="Este es el browser actual">📍 yo</span>`
+      : '';
     return `<div class="disp-chip flex items-center gap-2 rounded-lg ${cls} ${claseFresh}"
       style="background:#0a1424;border:1px solid #1e293b;transition:all 0.2s;">
       <span class="text-base shrink-0 relative cursor-pointer" onclick="MOS.abrirModalDispositivo('${idAttr}')" title="Editar">${ico}${dotPulse}</span>
       <div class="flex-1 min-w-0 cursor-pointer" onclick="MOS.abrirModalDispositivo('${idAttr}')">
-        <div class="font-medium text-slate-200 truncate">${d.Nombre_Equipo || '—'}</div>
+        <div class="font-medium text-slate-200 truncate">${d.Nombre_Equipo || '—'} ${yaSoyBadge}</div>
         <div class="text-[9px] truncate" style="color:${act.color};">
           ${act.dot} ${act.label}${sesion}
         </div>
       </div>
+      ${pinBtn}
       <button onclick="event.stopPropagation();MOS.abrirEscuchaDispositivo('${idAttr}')" class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.5);color:#f87171;font-size:11px;" title="Escucha remota">🎙️</button>
       <button onclick="event.stopPropagation();MOS.abrirModalGps('${idAttr}')" class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.5);color:#34d399;font-size:11px;" title="Ver ubicación">📍</button>
       <button onclick="event.stopPropagation();MOS.abrirModalDispositivo('${idAttr}')" class="text-[10px] text-slate-500 hover:text-white p-1" title="Editar">✏️</button>
@@ -16824,6 +16867,7 @@ const MOS = (() => {
     toggleVendedorME,
     abrirModalDispositivo, cerrarModalDispositivo, guardarDispositivo, toggleEstadoDispositivo,
     eliminarDispositivo, aprobarDispositivo, rechazarDispositivo, dispCopiarUUID, _dispActualizarPreview, _dispZonaCambio,
+    vincularEsteBrowser,
     abrirModalAudio, audioRefrescarEstado, audioIniciar, audioDetener, audioListarSesiones, audioReproducir, audioCerrarReproductor,
     abrirModalAudioRouted, abrirEscuchaDispositivo, abrirEscuchaPorUsuario, abrirGpsPorUsuario,
     _audioLiveIniciar, _audioLiveDetener,

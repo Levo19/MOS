@@ -590,3 +590,37 @@ function rechazarDispositivoPendiente(params) {
   }
   return { ok: false, error: 'Dispositivo no encontrado' };
 }
+
+// Vincula un browser (mos_deviceId UUID) a un row existente en DISPOSITIVOS.
+// Reemplaza el ID_Dispositivo del row con el UUID del browser, así futuros
+// heartbeats actualizan ese row específico. Si había un row PENDIENTE con el
+// browserDeviceId, lo elimina (para no duplicar).
+function vincularBrowserDispositivo(params) {
+  _garantizarColumnasDispositivos();
+  var idTarget = String(params.idDispositivoTarget || '').trim();
+  var browserId = String(params.browserDeviceId || '').trim();
+  if (!idTarget || !browserId) return { ok: false, error: 'Requiere idDispositivoTarget y browserDeviceId' };
+
+  var sheet = getSheet('DISPOSITIVOS');
+  var data  = sheet.getDataRange().getValues();
+  var hdrs  = data[0];
+  var iId = hdrs.indexOf('ID_Dispositivo');
+
+  var targetRow = -1;
+  var pendienteRow = -1;
+  for (var i = 1; i < data.length; i++) {
+    var rowId = String(data[i][iId] || '');
+    if (rowId === idTarget) targetRow = i + 1;
+    if (rowId === browserId) pendienteRow = i + 1;
+  }
+  if (targetRow === -1) return { ok: false, error: 'Dispositivo target no encontrado' };
+
+  // Reemplazar el ID del target con el browserId
+  sheet.getRange(targetRow, iId + 1).setValue(browserId);
+
+  // Borrar el row "huérfano" del browser (si MOS lo había creado como PENDIENTE_APROBACION)
+  if (pendienteRow > 0 && pendienteRow !== targetRow) {
+    sheet.deleteRow(pendienteRow);
+  }
+  return { ok: true, data: { vinculado: true, targetRow: targetRow, deviceId: browserId } };
+}
