@@ -11065,10 +11065,16 @@ const MOS = (() => {
     } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
 
-  // Close modal on backdrop click
+  // Close modal on backdrop click — usa _validBackdropClose para evitar
+  // cierre al arrastrar selección de texto desde un input hasta el backdrop.
+  // El handler inline de cada modal (onclick="...") usa la misma protección;
+  // este handler global cubre los modales que no la tienen inline.
   document.addEventListener('click', e => {
     if (e.target.classList.contains('modal-backdrop')) {
-      e.target.classList.remove('open');
+      if (_validBackdropClose(e, e.target)) {
+        e.target.classList.remove('open');
+        e.target.classList.add('hidden');
+      }
     }
   });
 
