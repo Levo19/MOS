@@ -12966,7 +12966,7 @@ const MOS = (() => {
 
       // Arrancar polling y reproductor
       _audioFlotantePollChunks(); // primer poll inmediato
-      _audioFlot.polling = setInterval(_audioFlotantePollChunks, 4000);
+      _audioFlot.polling = setInterval(_audioFlotantePollChunks, 2500);
       // Watchdogs progresivos: 20s → primer aviso, 45s → recomendación, 90s → autodetener
       _audioFlot.watchdog20 = setTimeout(() => {
         if (!_audioFlot || _audioFlot.chunks.length > 0) return;
@@ -13039,6 +13039,17 @@ const MOS = (() => {
       _audioFlot.idx++;
       _audioFlotanteReproducirSiguiente();
     };
+    // Pre-warm autoplay policy: reproducir un blob silencioso de 100ms para
+    // que el browser asocie el user gesture (click 🎙️) con el audio element.
+    // Sin esto, cuando llega el primer chunk 15s después, autoplay falla.
+    try {
+      const silentWebm = 'data:audio/webm;base64,GkXfowEAAAAAAAAfQoaBAUL3gQFC8oEEQvOBCEKChHdlYm1Ch4EEQoWBAhhTgGcBAAAAAAAVkhFNm3RALE27i1OrhBVJqWZTrIHfTbuMU6uEFlSua1OsggEwTbuMU6uEHFO7a1OsggI+7AEAAAAAAACkAAAAAAAAAAAAAAAAAAA=';
+      _audioFlot.audioEl.src = silentWebm;
+      _audioFlot.audioEl.volume = 0;
+      _audioFlot.audioEl.play().then(() => {
+        if (_audioFlot && _audioFlot.audioEl) _audioFlot.audioEl.volume = 1;
+      }).catch(() => {});
+    } catch(_) {}
     // Drag (mover el flotante)
     _audioFlotanteDraggable(fl);
   }
@@ -15524,7 +15535,19 @@ const MOS = (() => {
         const t = payload.notification?.title || '';
         const b = payload.notification?.body  || '';
         toast('🔔 ' + t + (b ? ': ' + b : ''), 'ok', 8000);
-        // Mostrar también como notificación del sistema (visible aunque la app esté al frente)
+        // Optimismo: si la notif es de dispositivos o sesiones, refrescar Configuración
+        // para mostrar el cambio al instante (sin esperar el polling de 30s).
+        const tLow = (t + ' ' + b).toLowerCase();
+        if (tLow.includes('dispositivo') || tLow.includes('inició sesión') || tLow.includes('inicio sesion')) {
+          try {
+            const data = await API.get('getDispositivos', {});
+            if (Array.isArray(data)) {
+              cfgData.dispositivos = data;
+              if (S.cfgTab === 'infra') renderInfra();
+              if (S.cfgTab === 'personal') renderPersonal();
+            }
+          } catch(_) {}
+        }
         try {
           const reg = await navigator.serviceWorker.ready;
           reg.showNotification(t, {
