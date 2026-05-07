@@ -12969,6 +12969,11 @@ const MOS = (() => {
 
   function _audioFlotanteCrearDOM(deviceId, nombre) {
     if (document.getElementById('audioFlotante')) return;
+    // Botón 📋 (ver historial completo) solo para MASTER. Admin no debería
+    // ver sesiones pasadas — solo escucha en vivo.
+    const btnHist = _esRolMaster()
+      ? `<button class="audio-flot-btn" onclick="MOS.abrirModalAudio('${String(deviceId).replace(/'/g,"\\'")}')" title="Ver historial de sesiones">📋</button>`
+      : '';
     const fl = document.createElement('div');
     fl.id = 'audioFlotante';
     fl.innerHTML = `
@@ -12980,7 +12985,7 @@ const MOS = (() => {
         <div class="audio-flot-chunks" id="audioFlotChunks">— chunks</div>
       </div>
       <div class="audio-flot-actions">
-        <button class="audio-flot-btn" onclick="MOS.abrirModalAudio('${String(deviceId).replace(/'/g,"\\'")}')" title="Ver historial">📋</button>
+        ${btnHist}
         <button class="audio-flot-btn audio-flot-btn-stop" onclick="MOS._audioFlotanteDetener()" title="Detener escucha">⏹</button>
       </div>
       <audio id="audioFlotantePlayer"></audio>`;
