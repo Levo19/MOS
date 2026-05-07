@@ -13925,32 +13925,81 @@ const MOS = (() => {
     iconBusy('finanzas', false);
   }
 
-  async function finCargar() {
+  // ════════════════════════════════════════════════════════════
+  // Race-safe token: invalida respuestas obsoletas si el user
+  // navega rápido entre días. Solo la última request gana.
+  // ════════════════════════════════════════════════════════════
+  let _finGenId = 0;
+  let _finUltimaFecha = null;
+
+  async function finCargar(opts) {
+    opts = opts || {};
     const fecha = $('finFecha')?.value || today();
-    // 1. Pintar desde cache local si existe (instantáneo)
+    const myGen = ++_finGenId;
+    const fechaPrev = _finUltimaFecha;
+    _finUltimaFecha = fecha;
+
+    // Animar slide si se pidió y hay cambio real de fecha
+    const dir = opts.dir;
+    const animate = !!opts.animate;
+    const slide = $('finSlideContent');
+    if (animate && slide && fechaPrev && fechaPrev !== fecha) {
+      slide.classList.remove('fin-slide-snap');
+      slide.classList.add(dir > 0 ? 'fin-slide-out-left' : 'fin-slide-out-right');
+      _finBeep('nav');
+      // esperar fade-out antes de pintar lo nuevo
+      await new Promise(r => setTimeout(r, 220));
+      slide.classList.add('fin-slide-snap');
+      slide.classList.remove('fin-slide-out-left', 'fin-slide-out-right');
+      slide.classList.add(dir > 0 ? 'fin-slide-in-right' : 'fin-slide-in-left');
+      // forzar reflow para que el snap aplique
+      void slide.offsetWidth;
+      slide.classList.remove('fin-slide-snap');
+      requestAnimationFrame(() => {
+        slide.classList.remove('fin-slide-in-left', 'fin-slide-in-right');
+      });
+    }
+
+    _finUpdateBadge(fecha);
+
+    // 1. Pintar desde cache local si existe (instantáneo) — sino, skeleton
     const cachedPL = _finLoadCache('pl_' + fecha);
     if (cachedPL) {
       _finPL = cachedPL;
       try { _finRender(cachedPL, fecha); } catch {}
+    } else {
+      _finMostrarSkeleton(true);
     }
     const cachedRango = _finLoadCache('rango_' + fecha);
     if (cachedRango) { try { _finRender7d(cachedRango); } catch {} }
+
     // 2. Fetch fresco en background — actualiza cuando responda
     iconBusy('finanzas', true);
     try {
-      _finPL = await API.get('getFinanzasDia', { fecha });
-      _finSaveCache('pl_' + fecha, _finPL);
-      _finRender(_finPL, fecha);
+      const pl = await API.get('getFinanzasDia', { fecha });
+      // Race check: si el user navegó a otra fecha, descartar esta respuesta
+      if (myGen !== _finGenId) return;
+      _finPL = pl;
+      _finSaveCache('pl_' + fecha, pl);
+      _finMostrarSkeleton(false);
+      _finRender(pl, fecha);
+      _finBeep('ok');
+
       const hasta  = fecha;
       const desde7 = _fechaOffset(fecha, -6);
       const rango  = await API.get('getFinanzasRango', { desde: desde7, hasta });
+      if (myGen !== _finGenId) return;
       _finSaveCache('rango_' + fecha, rango);
       _finRender7d(rango);
+
+      // Prefetch ±1 día en background (idle) — para navegación instantánea
+      _finPrefetchAdyacentes(fecha);
     } catch(e) {
-      // Si falla pero teníamos cache, no molestar al user
+      if (myGen !== _finGenId) return; // race: ya no nos importa este error
+      _finMostrarSkeleton(false);
       if (!cachedPL) toast('Error Finanzas: ' + e.message, 'error');
     } finally {
-      iconBusy('finanzas', false);
+      if (myGen === _finGenId) iconBusy('finanzas', false);
     }
   }
 
@@ -13960,8 +14009,128 @@ const MOS = (() => {
     const d = new Date(inp.value + 'T00:00:00');
     d.setDate(d.getDate() + delta);
     inp.value = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-    finCargar();
+    finCargar({ animate: true, dir: delta });
   }
+
+  function finIrHoy() {
+    const inp = $('finFecha');
+    if (!inp) return;
+    const cur = inp.value;
+    const hoy = today();
+    if (cur === hoy) {
+      // pulso del badge
+      const b = $('finDayBadge');
+      if (b) { b.classList.add('fin-day-pulse'); setTimeout(() => b.classList.remove('fin-day-pulse'), 280); }
+      return;
+    }
+    const dir = (cur && cur > hoy) ? -1 : 1;
+    inp.value = hoy;
+    finCargar({ animate: true, dir });
+  }
+
+  // ── Badge "Hoy / Ayer / Hace N días / +N días" ──
+  function _finUpdateBadge(fecha) {
+    const el = $('finDayBadge');
+    if (!el) return;
+    const hoy = today();
+    const a = new Date(fecha + 'T00:00:00');
+    const h = new Date(hoy + 'T00:00:00');
+    const diff = Math.round((a - h) / 86400000);
+    el.classList.remove('fin-day-hoy', 'fin-day-ayer', 'fin-day-past', 'fin-day-futuro');
+    let txt = '';
+    if (diff === 0)       { txt = '🟢 Hoy';        el.classList.add('fin-day-hoy'); }
+    else if (diff === -1) { txt = 'Ayer';          el.classList.add('fin-day-ayer'); }
+    else if (diff === 1)  { txt = 'Mañana';        el.classList.add('fin-day-futuro'); }
+    else if (diff < 0)    { txt = `Hace ${-diff} días`;   el.classList.add('fin-day-past'); }
+    else                  { txt = `+${diff} días`; el.classList.add('fin-day-futuro'); }
+    el.textContent = txt;
+    el.classList.add('fin-day-pulse');
+    setTimeout(() => el.classList.remove('fin-day-pulse'), 280);
+  }
+
+  // ── Skeleton on/off (placeholders shimmer en KPIs) ──
+  function _finMostrarSkeleton(on) {
+    const slide = $('finSlideContent');
+    if (slide) slide.classList.toggle('fin-skel-on', !!on);
+  }
+
+  // ── Prefetch ±1 día en background (no espera) ──
+  function _finPrefetchAdyacentes(fecha) {
+    const target = [
+      _fechaOffset(fecha, -1),
+      _fechaOffset(fecha, +1),
+    ];
+    // setTimeout para esperar que el navegador esté idle
+    setTimeout(() => {
+      target.forEach(f => {
+        if (_finLoadCache('pl_' + f)) return; // ya cacheado
+        API.get('getFinanzasDia', { fecha: f })
+          .then(pl => _finSaveCache('pl_' + f, pl))
+          .catch(() => {});
+      });
+    }, 800);
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // Sonido sutil opt-in (Web Audio API, sin archivos)
+  // Toggle por usuario, default OFF, persiste en localStorage.
+  // ════════════════════════════════════════════════════════════
+  let _finSonidoOn = false;
+  let _finAudioCtx = null;
+  try { _finSonidoOn = localStorage.getItem('mos_fin_sonido') === '1'; } catch {}
+
+  function _finBeep(tipo) {
+    if (!_finSonidoOn) return;
+    try {
+      if (!_finAudioCtx) _finAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = _finAudioCtx;
+      const t = ctx.currentTime;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      // nav: click corto agudo. ok: ding suave.
+      if (tipo === 'nav') {
+        o.frequency.setValueAtTime(1800, t);
+        o.frequency.exponentialRampToValueAtTime(900, t + 0.05);
+        g.gain.setValueAtTime(0.05, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+        o.start(t); o.stop(t + 0.07);
+      } else {
+        o.frequency.setValueAtTime(1320, t);
+        g.gain.setValueAtTime(0.04, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+        o.start(t); o.stop(t + 0.20);
+      }
+    } catch {}
+  }
+
+  function finToggleSonido() {
+    _finSonidoOn = !_finSonidoOn;
+    try { localStorage.setItem('mos_fin_sonido', _finSonidoOn ? '1' : '0'); } catch {}
+    const btn = $('finBtnSonido');
+    if (btn) btn.textContent = _finSonidoOn ? '🔊' : '🔇';
+    if (_finSonidoOn) _finBeep('ok');
+    toast(_finSonidoOn ? '🔊 Efectos de sonido ON' : '🔇 Efectos de sonido OFF', 'info');
+  }
+
+  // Sincronizar el botón al cargar
+  setTimeout(() => {
+    const btn = $('finBtnSonido');
+    if (btn) btn.textContent = _finSonidoOn ? '🔊' : '🔇';
+  }, 500);
+
+  // ── Atajos de teclado en la vista Finanzas ──
+  document.addEventListener('keydown', e => {
+    // Ignorar si el foco está en input/textarea
+    const tag = (document.activeElement?.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+    // Solo si la vista Finanzas está visible
+    const view = $('view-finanzas');
+    if (!view || view.classList.contains('hidden')) return;
+    if (e.key === 'ArrowLeft')  { e.preventDefault(); finDia(-1); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); finDia(1); }
+    else if (e.key === ' ') { e.preventDefault(); finIrHoy(); }
+  });
 
   function _finRender(pl, fecha, opts) {
     opts = opts || {};
@@ -16289,7 +16458,7 @@ const MOS = (() => {
     seleccionarUsuario, loginVolver, confirmarPin, logout, lockScreen, _np, _dismissWelcome,
     syncApp, applyPendingUpdate,
     // Finanzas
-    finCargar, finDia, finAbrirModalGasto, finAbrirModalJornada, finGuardarGasto,
+    finCargar, finDia, finIrHoy, finToggleSonido, finAbrirModalGasto, finAbrirModalJornada, finGuardarGasto,
     finGuardarJornada, finEliminarGasto, finEliminarJornada, finVetarPago, finBloquearUsuario, finImportarCajas,
     cerrarModalFin,
     finEditarCostoSku, finCerrarCostoEditor, finGuardarCostoSku,

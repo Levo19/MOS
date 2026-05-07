@@ -2239,6 +2239,48 @@
       100% { opacity: 1; }
     }
 
+    /* ── SLIDE entre días (carousel) ────────────────────────── */
+    .fin-slide-content {
+      will-change: transform, opacity;
+      transition: transform 280ms cubic-bezier(0.4, 0, 0.2, 1), opacity 220ms ease-out, filter 220ms ease-out;
+    }
+    .fin-slide-out-left  { transform: translateX(-30px); opacity: 0; filter: blur(2px); }
+    .fin-slide-out-right { transform: translateX(30px);  opacity: 0; filter: blur(2px); }
+    .fin-slide-in-left   { transform: translateX(-30px); opacity: 0; filter: blur(2px); }
+    .fin-slide-in-right  { transform: translateX(30px);  opacity: 0; filter: blur(2px); }
+    .fin-slide-snap      { transition: none !important; }
+
+    /* ── SKELETON shimmer (cuando no hay caché todavía) ────── */
+    .fin-skel {
+      background: linear-gradient(90deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+      background-size: 200% 100%;
+      animation: finShimmer 1.4s ease-in-out infinite;
+      border-radius: 8px;
+    }
+    @keyframes finShimmer {
+      0%   { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+    .fin-skel-on .fin-card-val,
+    .fin-skel-on .fin-card-sub { color: transparent !important; }
+    .fin-skel-on .fin-card-val::after {
+      content: ''; display: block; width: 80px; height: 22px;
+      background: linear-gradient(90deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+      background-size: 200% 100%;
+      animation: finShimmer 1.4s ease-in-out infinite;
+      border-radius: 6px; margin-top: 2px;
+    }
+
+    /* ── Badge dinámico de día relativo ─────────────────────── */
+    #finDayBadge.fin-day-hoy   { background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.5); color: #6ee7b7; }
+    #finDayBadge.fin-day-ayer  { background: rgba(99,102,241,0.15); border-color: rgba(99,102,241,0.5); color: #a5b4fc; }
+    #finDayBadge.fin-day-past  { background: rgba(100,116,139,0.15); border-color: rgba(100,116,139,0.4); color: #94a3b8; }
+    #finDayBadge.fin-day-futuro{ background: rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.5); color: #fbbf24; }
+    #finDayBadge {
+      transition: background 0.25s, border-color 0.25s, color 0.25s, transform 0.25s;
+    }
+    #finDayBadge.fin-day-pulse { transform: scale(1.15); }
+
     .audit-count-pill {
       display: inline-flex; align-items: center; gap: 3px;
       padding: 2px 7px; border-radius: 999px;
@@ -4207,10 +4249,13 @@
       <!-- ── Header ──────────────────────────────────────────────── -->
       <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
         <div class="flex items-center gap-2">
-          <button onclick="MOS.finDia(-1)" class="btn-ghost px-2 py-1 text-lg leading-none">‹</button>
-          <input id="finFecha" type="date" class="inp text-sm py-1.5 w-36" onchange="MOS.finCargar()">
-          <button onclick="MOS.finDia(1)"  class="btn-ghost px-2 py-1 text-lg leading-none">›</button>
-          <button onclick="MOS.finCargar()" class="btn-ghost text-xs px-3 py-1.5">↺</button>
+          <button onclick="MOS.finDia(-1)" class="btn-ghost px-2 py-1 text-lg leading-none" title="Día anterior (←)">‹</button>
+          <input id="finFecha" type="date" class="inp text-sm py-1.5 w-36" onchange="MOS.finCargar({ animate: true, dir: 0 })">
+          <button onclick="MOS.finDia(1)"  class="btn-ghost px-2 py-1 text-lg leading-none" title="Día siguiente (→)">›</button>
+          <button onclick="MOS.finIrHoy()" class="btn-ghost text-xs px-3 py-1.5" title="Ir a hoy (Espacio)">📅 Hoy</button>
+          <button onclick="MOS.finCargar()" class="btn-ghost text-xs px-3 py-1.5" title="Recargar">↺</button>
+          <span id="finDayBadge" class="text-[10px] font-bold px-2 py-1 rounded-full" style="background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;letter-spacing:0.05em;">—</span>
+          <button onclick="MOS.finToggleSonido()" id="finBtnSonido" class="btn-ghost text-xs px-2 py-1.5" title="Efectos de sonido (off por defecto)">🔇</button>
         </div>
         <div class="flex gap-2">
           <button onclick="MOS.finAbrirModalGasto()" class="btn-primary text-xs px-3 py-2">+ Gasto</button>
@@ -4219,6 +4264,9 @@
           <button onclick="MOS.liqOpen()" class="btn-ghost text-xs px-3 py-2" style="border-color:rgba(245,158,11,.4);color:#fbbf24" title="Emitir liquidaciones de personal">💼 Liquidaciones</button>
         </div>
       </div>
+
+      <!-- ── Slide viewport (carousel entre días) ───────────────── -->
+      <div id="finSlideContent" class="fin-slide-content">
 
       <!-- ── KPI Cards ────────────────────────────────────────────── -->
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
@@ -4373,6 +4421,7 @@
         </div>
       </div>
 
+      </div><!-- /finSlideContent -->
     </section><!-- /view-finanzas -->
 
     <!-- (Vista "Evaluación" eliminada — sus funciones se accedan desde
