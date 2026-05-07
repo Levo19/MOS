@@ -9290,16 +9290,16 @@ const MOS = (() => {
                              style="background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.5);color:#60a5fa;font-size:13px;"
                              title="Enviar mensaje push a ${p.nombre}">💬</button>`;
 
-    // Botones 🎙️📍 — solo si el usuario tiene al menos un dispositivo ACTIVO con sesión propia
-    // (operadores WH y cajeros; los admins no operan tablets, así que típicamente no aparecerán)
-    const tieneDispActivo = _buscarDispositivosDeUsuario(p.nombre).length > 0;
-    const audioBtn = tieneDispActivo
+    // Botones 🎙️📍 — siempre visibles para no-admins (cajeros y operadores WH).
+    // Si el usuario no está logueado en ningún dispositivo, abrirEscuchaPorUsuario muestra toast.
+    // Para admins/master se ocultan: ellos usan el panel web, no tablets.
+    const audioBtn = !esAdmin
       ? `<button onclick="event.stopPropagation();MOS.abrirEscuchaPorUsuario('${safeNombre}')"
                  class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center hover:scale-110 transition-all"
                  style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.5);color:#f87171;font-size:13px;"
                  title="Escucha remota de ${p.nombre}">🎙️</button>`
       : '';
-    const gpsBtn = tieneDispActivo
+    const gpsBtn = !esAdmin
       ? `<button onclick="event.stopPropagation();MOS.abrirGpsPorUsuario('${safeNombre}')"
                  class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center hover:scale-110 transition-all"
                  style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.5);color:#34d399;font-size:13px;"
@@ -9989,14 +9989,14 @@ const MOS = (() => {
           <div class="text-sm font-bold text-amber-400">S/ ${monto.toFixed(2)}</div>
           <div class="text-[10px] text-slate-500">esta semana</div>
         </div>
-        ${dispActivo ? `<button onclick="event.stopPropagation();MOS.abrirEscuchaPorUsuario('${safeNombre}')"
+        <button onclick="event.stopPropagation();MOS.abrirEscuchaPorUsuario('${safeNombre}')"
                 class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center hover:scale-110 transition-all"
                 style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.5);color:#f87171;font-size:13px;"
                 title="Escucha remota de ${c.nombre}">🎙️</button>
         <button onclick="event.stopPropagation();MOS.abrirGpsPorUsuario('${safeNombre}')"
                 class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center hover:scale-110 transition-all"
                 style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.5);color:#34d399;font-size:13px;"
-                title="Ver ubicación de ${c.nombre}">📍</button>` : ''}
+                title="Ver ubicación de ${c.nombre}">📍</button>
         <button onclick="event.stopPropagation();MOS.abrirModalEnviarPush('','${safeNombre}')"
                 class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center hover:scale-110 transition-all"
                 style="background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.5);color:#60a5fa;font-size:13px;"
