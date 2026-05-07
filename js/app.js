@@ -509,10 +509,14 @@ const MOS = (() => {
   // Soluciona el problema: cada browser PWA genera su propio mos_deviceId,
   // y no coincide con el ID_Dispositivo del row "Celular Levo" (que se creó
   // antes con otro UUID). Este botón hace que ambos UUIDs sean el mismo.
-  async function vincularEsteBrowser(idDispositivoTarget, nombreEquipo) {
+  async function vincularEsteBrowser(idDispositivoTarget, nombreEquipo, appOrigen) {
     const browserId = localStorage.getItem('mos_deviceId') || '';
     if (!browserId) { toast('No tengo deviceId en este browser', 'error'); return; }
-    if (!confirm(`¿Vincular este browser a "${nombreEquipo}"?\n\nA partir de ahora, la actividad de este browser MOS se reflejará en ese dispositivo. Útil cuando físicamente estás operando desde "${nombreEquipo}".`)) return;
+    let advertencia = '';
+    if (appOrigen && appOrigen.toUpperCase() !== 'MOS') {
+      advertencia = `\n\n⚠ Este dispositivo está marcado como app "${appOrigen}", no MOS. Vincular igual cambiará su UUID al de este browser MOS.`;
+    }
+    if (!confirm(`¿Vincular este browser a "${nombreEquipo}"?${advertencia}\n\nA partir de ahora, la actividad de este browser MOS se reflejará en ese dispositivo. Útil cuando físicamente estás operando desde "${nombreEquipo}".`)) return;
     try {
       const res = await API.post('vincularBrowserDispositivo', {
         idDispositivoTarget,
@@ -9050,12 +9054,12 @@ const MOS = (() => {
               const bordColor = movio ? 'rgba(99,102,241,0.5)' : (isFresh ? 'rgba(16,185,129,0.5)' : 'rgba(16,185,129,0.25)');
               const movedBadge = movio ? '<span class="text-[8px] font-bold text-indigo-300 ml-1" title="Recién movido a esta estación">📍 movido</span>' : '';
               const dotPulse = isFresh ? '<span class="disp-dot-pulse"></span>' : '';
-              // Pin: si es app='MOS' y NO es el browser actual → botón vincular
+              // Pin: si NO es el browser actual → botón vincular (sin filtrar por App,
+              // el user decide qué row representa su browser MOS).
               const _miBrowserId = localStorage.getItem('mos_deviceId') || '';
-              const _esMOSdev = String(d.App || '').toUpperCase() === 'MOS';
               const _yaSoyEste = String(d.ID_Dispositivo) === _miBrowserId;
-              const _pinBtn = (_esMOSdev && !_yaSoyEste && _miBrowserId)
-                ? `<button onclick="event.stopPropagation();MOS.vincularEsteBrowser('${idAttr}','${(d.Nombre_Equipo||'').replace(/'/g,'&#39;')}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;font-size:10px;" title="Soy este dispositivo · vincular este browser">📌</button>`
+              const _pinBtn = (!_yaSoyEste && _miBrowserId)
+                ? `<button onclick="event.stopPropagation();MOS.vincularEsteBrowser('${idAttr}','${(d.Nombre_Equipo||'').replace(/'/g,'&#39;')}','${(d.App||'').replace(/'/g,'&#39;')}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;font-size:10px;" title="Soy este dispositivo · vincular este browser">📌</button>`
                 : '';
               const _yoBadge = _yaSoyEste
                 ? `<span class="text-[8px] font-bold text-emerald-300 ml-1" title="Este es el browser actual">📍 yo</span>`
@@ -10420,13 +10424,12 @@ const MOS = (() => {
     const cls = opts.compact ? 'text-[10px] px-2 py-1.5' : 'text-[11px] px-3 py-2';
     const claseFresh = isFresh ? 'disp-chip-live' : '';
     const dotPulse = isFresh ? '<span class="disp-dot-pulse"></span>' : '';
-    // Pin: si este dispositivo es app='MOS' Y NO es el browser actual, mostrar
-    // botón 📌 para vincular ESTE browser a este dispositivo (resuelve mismatch UUID).
+    // Pin: si NO es el browser actual, mostrar botón 📌 para vincular ESTE
+    // browser a este dispositivo (resuelve mismatch UUID).
     const miBrowserId = localStorage.getItem('mos_deviceId') || '';
-    const esMOS = String(d.App || '').toUpperCase() === 'MOS';
     const yaSoyEste = String(d.ID_Dispositivo) === miBrowserId;
-    const pinBtn = (esMOS && !yaSoyEste && miBrowserId)
-      ? `<button onclick="event.stopPropagation();MOS.vincularEsteBrowser('${idAttr}','${(d.Nombre_Equipo||'').replace(/'/g,'&#39;')}')" class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;font-size:11px;" title="Soy este dispositivo · vincular este browser para que su actividad refleje aquí">📌</button>`
+    const pinBtn = (!yaSoyEste && miBrowserId)
+      ? `<button onclick="event.stopPropagation();MOS.vincularEsteBrowser('${idAttr}','${(d.Nombre_Equipo||'').replace(/'/g,'&#39;')}','${(d.App||'').replace(/'/g,'&#39;')}')" class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;font-size:11px;" title="Soy este dispositivo · vincular este browser para que su actividad refleje aquí">📌</button>`
       : '';
     const yaSoyBadge = yaSoyEste
       ? `<span class="shrink-0 text-[9px] px-1.5 py-0.5 rounded-full" style="background:rgba(16,185,129,0.18);color:#6ee7b7;border:1px solid rgba(16,185,129,0.4);" title="Este es el browser actual">📍 yo</span>`
