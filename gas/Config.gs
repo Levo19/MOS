@@ -490,6 +490,30 @@ function registrarSesionDispositivo(params) {
   var deviceId = String(params.ID_Dispositivo || params.deviceId || '').trim();
   if (!deviceId) return { ok: false, error: 'Requiere ID_Dispositivo' };
 
+  // ── App MOS = panel admin, NO se considera "dispositivo de operación" ──
+  // No crear PENDIENTE_APROBACION ni mandar push spam. Cada admin/master abre
+  // MOS desde múltiples browsers (laptop, celular, tablet) y cada UUID nuevo
+  // generaba un push de "Nuevo dispositivo solicita acceso" — ruido innecesario.
+  // Solo actualizar Ultima_Conexion si el row YA existe.
+  var appNorm = String(params.app || params.App || '').toLowerCase();
+  if (appNorm === 'mos') {
+    var sheetMos = getSheet('DISPOSITIVOS');
+    var dataMos  = sheetMos.getDataRange().getValues();
+    var hdrsMos  = dataMos[0];
+    var iIdMos   = hdrsMos.indexOf('ID_Dispositivo');
+    var iUCMos   = hdrsMos.indexOf('Ultima_Conexion');
+    var tzM = Session.getScriptTimeZone();
+    var nowM = Utilities.formatDate(new Date(), tzM, 'yyyy-MM-dd HH:mm:ss');
+    for (var rm = 1; rm < dataMos.length; rm++) {
+      if (String(dataMos[rm][iIdMos]) === deviceId) {
+        if (iUCMos >= 0) sheetMos.getRange(rm + 1, iUCMos + 1).setValue(nowM);
+        return { ok: true, data: { autorizado: true, estado: 'ACTIVO', soloHeartbeat: true } };
+      }
+    }
+    // No existe → no hacer nada (MOS no se auto-registra)
+    return { ok: true, data: { autorizado: false, estado: 'NO_REGISTRADO', noEsDispositivoOperativo: true } };
+  }
+
   var sheet = getSheet('DISPOSITIVOS');
   var data  = sheet.getDataRange().getValues();
   var hdrs  = data[0];
@@ -591,6 +615,29 @@ function rechazarDispositivoPendiente(params) {
     return { ok: true };
   }
   return { ok: false, error: 'Dispositivo no encontrado' };
+}
+
+// Limpia los rows PENDIENTE_APROBACION huérfanos creados por browsers MOS antes
+// de que registrarSesionDispositivo dejara de auto-crearlos. Útil para purga
+// puntual del spam acumulado.
+function limpiarPendientesMOS() {
+  _garantizarColumnasDispositivos();
+  var sheet = getSheet('DISPOSITIVOS');
+  var data  = sheet.getDataRange().getValues();
+  var hdrs  = data[0];
+  var iEst  = hdrs.indexOf('Estado');
+  var iApp  = hdrs.indexOf('App');
+  var borradas = 0;
+  // Iterar de atrás hacia adelante para no perder índices al borrar
+  for (var i = data.length - 1; i >= 1; i--) {
+    var est = String(data[i][iEst] || '').toUpperCase();
+    var app = String(data[i][iApp] || '').toUpperCase();
+    if (est === 'PENDIENTE_APROBACION' && (app === 'MOS' || app === '')) {
+      sheet.deleteRow(i + 1);
+      borradas++;
+    }
+  }
+  return { ok: true, data: { borradas: borradas } };
 }
 
 // Vincula un browser (mos_deviceId UUID) a un row existente en DISPOSITIVOS.
