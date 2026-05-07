@@ -1932,6 +1932,78 @@ const MOS = (() => {
     resBox.style.display = 'block';
   }
 
+  // ── DUPLICAR PRODUCTO EXISTENTE (sección NUEVO) ──────────────
+  // Permite buscar un producto similar y copiar marca/unidad/categoria/IGV/precios.
+  // Mantiene el codigoBarra y descripción del nuevo (que el admin edita).
+  function pnToggleDuplicar() {
+    const box = $('pnDuplicarBox');
+    if (!box) return;
+    const oculto = box.classList.contains('hidden');
+    if (oculto) {
+      box.classList.remove('hidden');
+      $('pnDuplicarBuscar').value = '';
+      $('pnDuplicarResultados').style.display = 'none';
+      $('pnDuplicarOrigen').classList.add('hidden');
+      setTimeout(() => $('pnDuplicarBuscar')?.focus(), 50);
+    } else {
+      box.classList.add('hidden');
+    }
+  }
+
+  function pnBuscarParaDuplicar() {
+    const raw = ($('pnDuplicarBuscar').value || '').trim();
+    const resBox = $('pnDuplicarResultados');
+    if (!raw) { resBox.style.display = 'none'; resBox.innerHTML = ''; return; }
+    if (!S.productos || !S.productos.length) {
+      resBox.innerHTML = '<div class="pn-result text-slate-500 italic">Cargando catálogo... abre Catálogo primero</div>';
+      resBox.style.display = 'block';
+      return;
+    }
+    const qn = _norm(raw);
+    const palabras = qn.split(/\s+/).filter(Boolean);
+    const scored = (S.productos || []).map(p => {
+      const haystack = _norm((p.descripcion || '') + ' ' + (p.codigoBarra || '') + ' ' + (p.skuBase || p.idProducto || '') + ' ' + (p.marca || ''));
+      let score = 0, allMatch = true;
+      palabras.forEach(w => { if (haystack.indexOf(w) >= 0) score++; else allMatch = false; });
+      return { p, score, allMatch };
+    }).filter(x => x.allMatch).sort((a, b) => b.score - a.score).slice(0, 12);
+
+    if (!scored.length) {
+      resBox.innerHTML = '<div class="pn-result text-slate-500 italic">Sin resultados para "' + raw + '"</div>';
+      resBox.style.display = 'block';
+      return;
+    }
+    resBox.innerHTML = scored.map(({ p }) => {
+      const safeId = String(p.idProducto || '').replace(/'/g, "\\'");
+      return `<div class="pn-result" onclick="MOS.pnSeleccionarParaDuplicar('${safeId}')">
+          <div class="text-slate-200 font-medium">${p.descripcion || p.idProducto}</div>
+          <div class="text-xs text-slate-500" style="font-family:monospace">${p.marca || 'sin marca'} · ${p.idCategoria || '?'} · S/ ${p.precioVenta || '0'}</div>
+        </div>`;
+    }).join('');
+    resBox.style.display = 'block';
+  }
+
+  function pnSeleccionarParaDuplicar(idProducto) {
+    const p = (S.productos || []).find(x => String(x.idProducto) === String(idProducto));
+    if (!p) return;
+    // Copiar campos pero respetar codigoBarra y descripción que el admin ingresó
+    if ($('pnMarca')) $('pnMarca').value = p.marca || '';
+    if ($('pnUnidad')) {
+      const u = String(p.Unidad_Medida || p.unidad || 'NIU').toUpperCase();
+      $('pnUnidad').value = u;
+    }
+    if ($('pnCategoria')) $('pnCategoria').value = p.idCategoria || '';
+    if ($('pnIGV')) $('pnIGV').value = String(p.Tipo_IGV || '1');
+    if ($('pnPrecioVenta')) $('pnPrecioVenta').value = p.precioVenta || '';
+    if ($('pnPrecioCosto')) $('pnPrecioCosto').value = p.precioCosto || '';
+    // Mostrar de qué producto se copió
+    $('pnDuplicarOrigenNombre').textContent = (p.descripcion || p.idProducto) + ' · ' + (p.marca || '');
+    $('pnDuplicarOrigen').classList.remove('hidden');
+    $('pnDuplicarResultados').style.display = 'none';
+    $('pnDuplicarBuscar').value = p.descripcion || '';
+    toast('✓ Datos copiados — edita el código y la descripción del nuevo', 'ok');
+  }
+
   function pnSeleccionarParaCorregir(idProducto, descripcion, codigoBarra) {
     $('pnCorregirIdProducto').value = idProducto;
     $('pnCorregirNombre').textContent = descripcion;
@@ -2042,11 +2114,13 @@ const MOS = (() => {
       if (!desc)        { mostrarPNError('La descripción es obligatoria'); return; }
       if (!codigoFinal) { mostrarPNError('El código de barras es obligatorio'); return; }
       if (!catId)       { mostrarPNError('Selecciona una categoría'); return; }
-      if (pVenta <= 0)  { mostrarPNError('Precio de venta requerido'); return; }
+      if (!pVenta || pVenta <= 0) { mostrarPNError('El precio de venta es obligatorio y debe ser mayor a 0'); return; }
 
       Object.assign(params, {
         codigoFinal, descripcion: desc, marca,
-        idCategoria: catId, unidad,
+        idCategoria: catId,
+        unidad,             // legacy
+        Unidad_Medida: unidad, // sincronizado (mismo valor SUNAT)
         precioVenta: pVenta, precioCosto: pCosto, Tipo_IGV: igv
       });
     } else if (tipo === 'EQUIVALENTE') {
@@ -7117,7 +7191,10 @@ const MOS = (() => {
       $('prodMarca').value       = p.marca         || '';
       $('prodCategoria').value   = p.idCategoria   || '';
       // Migración: valores legacy (KG, LITRO, BOLSA, etc.) → códigos SUNAT
-      $('prodUnidad').value      = _normalizarUnidad(p.unidad) || 'NIU';
+      // El campo Unidad_Medida (SUNAT autoritativo) prima sobre unidad
+      const _unidadProd = _normalizarUnidad(p.Unidad_Medida || p.unidad) || 'NIU';
+      $('prodUnidad').value      = _unidadProd;
+      $('prodUnidadMedida').value = _unidadProd; // hidden sincronizado
 
       // Estado
       const activo = _isProdActivo(p);
@@ -7142,7 +7219,7 @@ const MOS = (() => {
       $('prodTipoIGV').value     = tipoIgvLegacy[tipoIgvVal] || (p.Tipo_IGV ? String(p.Tipo_IGV) : '1');
       $('prodCodTributo').value  = p.Cod_Tributo     || '1000';
       $('prodIGV').value         = (p.IGV_Porcentaje !== undefined && p.IGV_Porcentaje !== '') ? p.IGV_Porcentaje : 18;
-      $('prodUnidadMedida').value= p.Unidad_Medida   || 'NIU';
+      // prodUnidadMedida ya se sincronizó arriba con prodUnidad (campo unificado)
       $('prodCodSUNAT').value    = p.Cod_SUNAT       || '10000000';
       _actualizarResumenSunat();
 
@@ -15367,6 +15444,7 @@ const MOS = (() => {
     togglePNBanner, openImagePreview, closeImagePreview,
     _validBackdropClose,
     pnSetTipo, pnAutogenBarcode, pnBuscarBase, pnSeleccionarBase,
+    pnToggleDuplicar, pnBuscarParaDuplicar, pnSeleccionarParaDuplicar,
     abrirModalPromociones, loadPromociones, promoNuevoForm, promoEditar, promoVolverLista, promoToggleActiva, _promoForzarRefresh,
     promoSetTipo, promoSetModo, promoQuickFill, promoActualizarEjemplo, promoBuscarBase, promoSeleccionarBase,
     promoGuardar, promoEliminar,

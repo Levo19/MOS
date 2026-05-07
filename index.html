@@ -4847,7 +4847,29 @@
 
       <!-- Sección NUEVO -->
       <div id="pnSeccionNuevo" class="space-y-3 pt-2" style="border-top:1px solid #1e293b">
-        <div class="text-xs font-bold text-slate-400 uppercase tracking-wider">Datos del producto nuevo</div>
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <div class="text-xs font-bold text-slate-400 uppercase tracking-wider">Datos del producto nuevo</div>
+          <button onclick="MOS.pnToggleDuplicar()" id="pnBtnDuplicar"
+            class="text-[10px] px-3 py-1 rounded-lg font-bold transition-all"
+            style="background:rgba(99,102,241,0.15);color:#a5b4fc;border:1px solid rgba(99,102,241,0.4);"
+            title="Buscar producto similar existente y autorrellenar campos">
+            📋 Duplicar de existente
+          </button>
+        </div>
+
+        <!-- Buscador de producto a duplicar (oculto por default) -->
+        <div id="pnDuplicarBox" class="hidden p-3 rounded-lg" style="background:rgba(99,102,241,0.08);border:1px dashed rgba(99,102,241,0.4);">
+          <p class="text-[11px] text-indigo-300 mb-2">
+            🔍 Busca un producto similar (mismo proveedor, categoría, IGV...). Sus datos se copiarán al nuevo, manteniendo el código de barras y descripción que tú edites.
+          </p>
+          <input id="pnDuplicarBuscar" class="inp text-xs" placeholder="Escribe nombre o código..." oninput="MOS.pnBuscarParaDuplicar()" autocomplete="off">
+          <div id="pnDuplicarResultados" class="mt-1 max-h-40 overflow-y-auto" style="background:#060d1f;border:1px solid #1e293b;border-radius:8px;display:none"></div>
+          <div id="pnDuplicarOrigen" class="text-[11px] mt-2 hidden" style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.3);border-radius:6px;padding:6px 8px">
+            <strong class="text-emerald-400">✓ Datos copiados de:</strong>
+            <span id="pnDuplicarOrigenNombre" class="text-slate-300"></span>
+          </div>
+        </div>
+
         <div class="grid grid-cols-2 gap-3">
           <div class="col-span-2">
             <label class="lbl">Código de barras *</label>
@@ -4866,14 +4888,19 @@
             <input id="pnMarca" class="inp" placeholder="Marca">
           </div>
           <div>
-            <label class="lbl">Unidad</label>
+            <label class="lbl">Unidad de medida (SUNAT)</label>
             <select id="pnUnidad" class="inp">
-              <option value="UND">UND</option>
-              <option value="KG">KG</option>
-              <option value="L">L</option>
-              <option value="CAJA">CAJA</option>
-              <option value="BOLSA">BOLSA</option>
-              <option value="PAQUETE">PAQUETE</option>
+              <option value="NIU">NIU — Unidad</option>
+              <option value="KGM">KGM — Kilogramo</option>
+              <option value="LTR">LTR — Litro</option>
+              <option value="MTR">MTR — Metro</option>
+              <option value="MLT">MLT — Mililitro</option>
+              <option value="GRM">GRM — Gramo</option>
+              <option value="BG">BG — Bolsa</option>
+              <option value="BX">BX — Caja</option>
+              <option value="PR">PR — Par</option>
+              <option value="PK">PK — Paquete</option>
+              <option value="ZZ">ZZ — Servicio</option>
             </select>
           </div>
           <div>
@@ -4889,8 +4916,8 @@
             </select>
           </div>
           <div>
-            <label class="lbl">Precio venta *</label>
-            <input id="pnPrecioVenta" type="number" step="0.01" min="0" class="inp" placeholder="0.00">
+            <label class="lbl">Precio venta * <span class="text-rose-400">(&gt; 0)</span></label>
+            <input id="pnPrecioVenta" type="number" step="0.01" min="0.01" class="inp" placeholder="0.00" required>
           </div>
           <div>
             <label class="lbl">Precio costo</label>
@@ -5016,11 +5043,14 @@
             <select id="prodCategoria" class="inp" onchange="MOS._prodActualizarPoliticaEfectiva()"><option value="">— seleccionar —</option></select>
           </div>
           <div>
-            <label class="lbl">Unidad</label>
-            <select id="prodUnidad" class="inp">
+            <label class="lbl">Unidad de medida (SUNAT)</label>
+            <select id="prodUnidad" class="inp" onchange="document.getElementById('prodUnidadMedida').value=this.value">
               <option value="NIU">NIU — Unidad</option>
               <option value="KGM">KGM — Kilogramo</option>
               <option value="LTR">LTR — Litro</option>
+              <option value="MTR">MTR — Metro</option>
+              <option value="MLT">MLT — Mililitro</option>
+              <option value="GRM">GRM — Gramo</option>
               <option value="BG">BG — Bolsa</option>
               <option value="BX">BX — Caja</option>
               <option value="PR">PR — Par</option>
@@ -5183,17 +5213,8 @@
             <label class="lbl">IGV %</label>
             <input id="prodIGV" class="inp" type="number" placeholder="18">
           </div>
-          <div>
-            <label class="lbl">Unidad medida SUNAT</label>
-            <select id="prodUnidadMedida" class="inp">
-              <option value="NIU">NIU — Unidad</option>
-              <option value="KGM">KGM — Kilogramo</option>
-              <option value="LTR">LTR — Litro</option>
-              <option value="ZZ">ZZ — Servicio</option>
-              <option value="BG">BG — Bolsa</option>
-              <option value="BX">BX — Caja</option>
-            </select>
-          </div>
+          <!-- Campo Unidad_Medida unificado con prodUnidad — se mantiene como hidden para retro-compat -->
+          <input type="hidden" id="prodUnidadMedida" value="NIU">
           <div class="col-span-2">
             <label class="lbl">Cod. SUNAT</label>
             <input id="prodCodSUNAT" class="inp" placeholder="Ej: 1212001">

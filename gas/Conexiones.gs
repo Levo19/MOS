@@ -500,6 +500,17 @@ function lanzarProductoNuevo(params) {
   var idEquivCreado    = '';
 
   if (tipo === 'NUEVO') {
+    // VALIDACIONES OBLIGATORIAS — coherentes con crearProductoMaster directo
+    if (!params.descripcion || !String(params.descripcion).trim()) {
+      return { ok: false, error: 'La descripción es requerida' };
+    }
+    var pvNum = parseFloat(params.precioVenta);
+    if (!pvNum || pvNum <= 0) {
+      return { ok: false, error: 'El precio de venta es requerido y debe ser mayor a 0' };
+    }
+    // Sincronizar unidad/Unidad_Medida (default NIU si ninguno viene)
+    var unidadFinal = params.unidad || params.Unidad_Medida || 'NIU';
+
     // 1. Crear en PRODUCTOS_MASTER de MOS
     var resultCrear = crearProductoMaster({
       _source:            'MOS_PN_APROBACION',
@@ -507,9 +518,10 @@ function lanzarProductoNuevo(params) {
       descripcion:        params.descripcion        || '',
       marca:              params.marca              || '',
       idCategoria:        params.idCategoria        || '',
-      unidad:             params.unidad             || 'UNIDAD',
+      unidad:             unidadFinal,
+      Unidad_Medida:      unidadFinal,
       Tipo_IGV:           params.Tipo_IGV           || '1',
-      precioVenta:        parseFloat(params.precioVenta) || 0,
+      precioVenta:        pvNum,
       precioCosto:        parseFloat(params.precioCosto) || 0,
       stockMinimo:        parseFloat(params.stockMinimo) || 0,
       stockMaximo:        parseFloat(params.stockMaximo) || 0,

@@ -209,6 +209,16 @@ function _ensurePMTextColumns(sheet) {
 function crearProductoMaster(params) {
   var bloqueo = _validarSource(params, 'crear', 'PRODUCTOS_MASTER');
   if (bloqueo) return bloqueo;
+
+  // VALIDACIONES OBLIGATORIAS — coherentes entre catálogo y revisión PN
+  if (!params.descripcion || !String(params.descripcion).trim()) {
+    return { ok: false, error: 'La descripción es requerida' };
+  }
+  var precioVentaNum = parseFloat(params.precioVenta);
+  if (!precioVentaNum || precioVentaNum <= 0) {
+    return { ok: false, error: 'El precio de venta es requerido y debe ser mayor a 0' };
+  }
+
   var sheet = getSheet('PRODUCTOS_MASTER');
 
   // 1. IDs secuenciales (IDPRO0002316 / LEV0002316)
@@ -239,8 +249,15 @@ function crearProductoMaster(params) {
              ? parseFloat(params.IGV_Porcentaje) : (tipoIGV === '1' ? 18 : 0);
   var codTributo = params.Cod_Tributo || (tipoIGV === '1' ? '1000' : tipoIGV === '2' ? '9997' : tipoIGV === '3' ? '9998' : '');
   var codSunat = params.Cod_SUNAT || '10000000';
-  var unidadMedida = params.Unidad_Medida || 'NIU';
-  var unidad = params.unidad || 'NIU';
+  // Unificación: si solo viene uno de los dos, sincronizamos para mantener ambas columnas iguales
+  var _unidadIn = params.unidad || params.Unidad_Medida || 'NIU';
+  var _unidadMedidaIn = params.Unidad_Medida || params.unidad || 'NIU';
+  // Si vinieron ambos pero distintos, prima Unidad_Medida (código SUNAT autoritativo)
+  if (params.unidad && params.Unidad_Medida && params.unidad !== params.Unidad_Medida) {
+    _unidadIn = _unidadMedidaIn = params.Unidad_Medida;
+  }
+  var unidad = _unidadIn;
+  var unidadMedida = _unidadMedidaIn;
 
   // 4. factorConversion: 1 si es base (no derivado, no presentación)
   var esDerivado = !!(params.codigoProductoBase && String(params.codigoProductoBase).trim());
@@ -320,6 +337,26 @@ function crearProductoMaster(params) {
 function actualizarProductoMaster(params) {
   var bloqueo = _validarSource(params, 'actualizar', 'PRODUCTOS_MASTER');
   if (bloqueo) return bloqueo;
+
+  // Sincronización: si el frontend manda solo `unidad` o solo `Unidad_Medida`,
+  // copiar el valor al otro campo para mantener ambas columnas alineadas.
+  if (params.unidad && params.Unidad_Medida === undefined) {
+    params.Unidad_Medida = params.unidad;
+  } else if (params.Unidad_Medida && params.unidad === undefined) {
+    params.unidad = params.Unidad_Medida;
+  } else if (params.unidad && params.Unidad_Medida && params.unidad !== params.Unidad_Medida) {
+    // Si vinieron ambos pero distintos, prima Unidad_Medida
+    params.unidad = params.Unidad_Medida;
+  }
+
+  // Validación: si están actualizando precioVenta, no aceptar 0 ni vacío
+  if (params.precioVenta !== undefined && params.precioVenta !== '') {
+    var pv = parseFloat(params.precioVenta);
+    if (!pv || pv <= 0) {
+      return { ok: false, error: 'El precio de venta no puede ser 0 ni vacío' };
+    }
+  }
+
   var sheet = getSheet('PRODUCTOS_MASTER');
   // Garantizar formato texto en columnas de IDs antes de cualquier escritura
   _ensurePMTextColumns(sheet);
