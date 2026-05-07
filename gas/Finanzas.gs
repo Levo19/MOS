@@ -745,14 +745,13 @@ function _sincronizarJornadasAutoDelDia(fecha) {
   var presentes = rsm.data.filter(function(r){ return r && r.presente; });
 
   // ── Cargar jornadas existentes del día (idempotencia por nombre) ──
-  // Distinguir entre jornadas ACTIVAS (no recrear, ya existe) y TOMBSTONES
-  // (fuente=ELIMINADA). Los tombstones tienen vetoTs y permiten auto-rehabilitación
-  // si la persona vuelve a operar después del veto.
+  // Tombstones (fuente=ELIMINADA) son DEFINITIVOS para ese día: aunque la persona
+  // vuelva a operar después del veto, NO se le crea nueva jornada. El veto vale
+  // todo el día. Si master quiere "rehabilitar", debe hacerlo manualmente.
   var sheet = getSheet('JORNADAS');
   var data  = sheet.getDataRange().getValues();
   var tz    = Session.getScriptTimeZone();
-  var activasPorNombre  = {};
-  var tombstonesPorNombre = {}; // nombreLow → vetoTs (ms)
+  var bloqueadasPorNombre = {}; // activas + tombstones (no recrear nunca)
   for (var i = 1; i < data.length; i++) {
     var f = data[i][1] instanceof Date
       ? Utilities.formatDate(data[i][1], tz, 'yyyy-MM-dd')
@@ -760,43 +759,21 @@ function _sincronizarJornadasAutoDelDia(fecha) {
     if (f !== fecha) continue;
     var n = String(data[i][3] || '').toLowerCase().trim();
     if (!n) continue;
-    var fuenteRow = String(data[i][10] || '').toUpperCase();
-    if (fuenteRow === 'ELIMINADA') {
-      var ts = _parseVetoTs(data[i][8]);
-      // Si hay varios tombstones para el mismo nombre, quedarse con el más reciente
-      if (!tombstonesPorNombre[n] || ts > tombstonesPorNombre[n]) {
-        tombstonesPorNombre[n] = ts;
-      }
-    } else {
-      activasPorNombre[n] = true;
-    }
+    bloqueadasPorNombre[n] = true;
   }
-
-  // ── Indexar última actividad del día (para auto-rehabilitación) ──
-  // Para presentes con tombstone, comparamos su actividad más reciente vs vetoTs.
-  // Si ultActividad > vetoTs → la persona "regresó" después del veto → crear nueva jornada.
-  var ultActividadPorNombre = _ultimaActividadPorNombre(fecha, tz);
 
   var creadas = 0, errores = [];
   presentes.forEach(function(r) {
     var nombre = String(r.nombre || '').trim();
     var nLow   = nombre.toLowerCase();
     if (!nLow) return;
-    if (activasPorNombre[nLow]) return; // ya hay jornada activa
-    // Tombstone → exigir actividad posterior al veto
-    if (tombstonesPorNombre[nLow]) {
-      var vetoTs = tombstonesPorNombre[nLow];
-      var ultTs  = ultActividadPorNombre[nLow] || 0;
-      if (ultTs <= vetoTs) return; // no hay actividad nueva, respeta el veto
-    }
+    if (bloqueadasPorNombre[nLow]) return; // ya hay jornada (activa o tombstone)
     try {
       var montoBase = parseFloat(r.montoBase) || 0;
       var fuente    = r.appOrigen === 'warehouseMos' ? 'AUTO_LOGIN' : 'AUTO_VENTA';
       var idPersonal = String(r.idPersonal || '');
       var idPersonalFinal = idPersonal.indexOf('MEX:') === 0 ? '' : idPersonal;
-      var obs = tombstonesPorNombre[nLow]
-        ? 'Auto-rehabilitada: actividad post-veto detectada'
-        : 'Sincronizado automático: presencia detectada';
+      var obs = 'Sincronizado automático: presencia detectada';
       sheet.appendRow([
         _generateId('JOR'),
         fecha,

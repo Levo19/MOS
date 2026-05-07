@@ -14997,7 +14997,7 @@ const MOS = (() => {
       return;
     }
     const fechaTxt = _formatFechaCorta(fecha);
-    if (!confirm(`¿Vetar el pago de ${nombre || 'esta persona'} del ${fechaTxt}?\n\nNo se contará en los gastos del día. Si vuelve a vender/operar después de este momento, reaparecerá automáticamente.`)) return;
+    if (!confirm(`¿Vetar el pago de ${nombre || 'esta persona'} del ${fechaTxt}?\n\n⚠ Decisión DEFINITIVA para este día:\n• No se cuenta en gastos ni liquidación.\n• La persona puede seguir operando (no la bloquea).\n• Aunque haga más ventas hoy, no se le pagará por este día.\n\nUsá 🔒 si querés bloquear su dispositivo.`)) return;
 
     // Localizar el card por el idJornada del botón vetar
     const card = Array.from(document.querySelectorAll('.eval-card')).find(el => {
