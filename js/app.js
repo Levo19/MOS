@@ -9050,13 +9050,24 @@ const MOS = (() => {
               const bordColor = movio ? 'rgba(99,102,241,0.5)' : (isFresh ? 'rgba(16,185,129,0.5)' : 'rgba(16,185,129,0.25)');
               const movedBadge = movio ? '<span class="text-[8px] font-bold text-indigo-300 ml-1" title="Recién movido a esta estación">📍 movido</span>' : '';
               const dotPulse = isFresh ? '<span class="disp-dot-pulse"></span>' : '';
+              // Pin: si es app='MOS' y NO es el browser actual → botón vincular
+              const _miBrowserId = localStorage.getItem('mos_deviceId') || '';
+              const _esMOSdev = String(d.App || '').toUpperCase() === 'MOS';
+              const _yaSoyEste = String(d.ID_Dispositivo) === _miBrowserId;
+              const _pinBtn = (_esMOSdev && !_yaSoyEste && _miBrowserId)
+                ? `<button onclick="event.stopPropagation();MOS.vincularEsteBrowser('${idAttr}','${(d.Nombre_Equipo||'').replace(/'/g,'&#39;')}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;font-size:10px;" title="Soy este dispositivo · vincular este browser">📌</button>`
+                : '';
+              const _yoBadge = _yaSoyEste
+                ? `<span class="text-[8px] font-bold text-emerald-300 ml-1" title="Este es el browser actual">📍 yo</span>`
+                : '';
               return `<div class="disp-chip flex items-center gap-1.5 px-2 py-1.5 rounded ${claseAnim} ${claseFresh}"
                 style="background:${bgColor};border:1px solid ${bordColor};transition:all 0.2s;">
                 <span class="text-sm shrink-0 relative cursor-pointer" onclick="MOS.abrirModalDispositivo('${idAttr}')" title="Editar">${ico}${dotPulse}</span>
                 <div class="flex-1 min-w-0 cursor-pointer" onclick="MOS.abrirModalDispositivo('${idAttr}')">
-                  <div class="text-xs font-medium text-slate-200 truncate">${d.Nombre_Equipo || '—'}${movedBadge}</div>
+                  <div class="text-xs font-medium text-slate-200 truncate">${d.Nombre_Equipo || '—'}${movedBadge}${_yoBadge}</div>
                   <div class="text-[9px] truncate" style="color:${act.color};">${act.dot} ${act.label}${d.Ultima_Sesion ? ' · 👤 <span class="text-emerald-400 font-bold">' + d.Ultima_Sesion + '</span>' : ''}</div>
                 </div>
+                ${_pinBtn}
                 <button onclick="event.stopPropagation();MOS.abrirEscuchaDispositivo('${idAttr}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.5);color:#f87171;font-size:10px;" title="Escucha remota">🎙️</button>
                 <button onclick="event.stopPropagation();MOS.abrirModalGps('${idAttr}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.5);color:#34d399;font-size:10px;" title="Ver ubicación">📍</button>
                 <span class="text-[10px] text-slate-500 p-1 cursor-pointer" onclick="event.stopPropagation();MOS.abrirModalDispositivo('${idAttr}')" title="Editar">✏️</span>
