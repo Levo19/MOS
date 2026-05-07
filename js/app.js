@@ -13963,7 +13963,9 @@ const MOS = (() => {
     finCargar();
   }
 
-  function _finRender(pl, fecha) {
+  function _finRender(pl, fecha, opts) {
+    opts = opts || {};
+    const skipPersonal = !!opts.skipPersonal;
     const fmt  = v => 'S/ ' + parseFloat(v || 0).toFixed(2);
     const pct  = v => parseFloat(v || 0).toFixed(1) + '%';
 
@@ -14055,17 +14057,46 @@ const MOS = (() => {
     }
     const barV = $('finBEBarVentas');
     const linBE = $('finBELinea');
-    if (barV) barV.style.width = Math.min(pl.breakEvenPct || 0, 100) + '%';
+    const newPct  = Math.min(pl.breakEvenPct || 0, 100);
+    const oldPct  = parseFloat(barV?.dataset?._beAnim) || 0;
+    if (barV) {
+      barV.style.width = newPct + '%';
+      barV.dataset._beAnim = String(newPct);
+    }
+    let newLeft = 0;
     if (linBE && pl.breakEvenVentas && pl.ventasNetas) {
-      const bePct = Math.min(pl.breakEvenVentas / Math.max(pl.ventasNetas, pl.breakEvenVentas) * 100, 100);
-      linBE.style.left = bePct.toFixed(1) + '%';
+      newLeft = Math.min(pl.breakEvenVentas / Math.max(pl.ventasNetas, pl.breakEvenVentas) * 100, 100);
+      linBE.style.left = newLeft.toFixed(1) + '%';
+    }
+    // Pulso de atención cuando el punto de equilibrio se mueve significativamente
+    if (Math.abs(newPct - oldPct) > 2 && oldPct > 0) {
+      const beCard = barV?.closest('.fin-card') || barV?.parentElement?.parentElement;
+      if (beCard) {
+        const subio = pl.superaBreakEven;
+        beCard.style.transition = 'box-shadow 0.4s ease-out';
+        beCard.style.boxShadow = subio
+          ? '0 0 24px rgba(52,211,153,0.45)'
+          : '0 0 24px rgba(251,191,36,0.45)';
+        setTimeout(() => { beCard.style.boxShadow = ''; }, 600);
+      }
+      if (linBE) {
+        linBE.style.transition = 'left 0.7s cubic-bezier(0.4,0,0.2,1), box-shadow 0.3s';
+        linBE.style.boxShadow = '0 0 8px rgba(255,255,255,0.9)';
+        setTimeout(() => { linBE.style.boxShadow = ''; }, 700);
+      }
     }
 
     // Waterfall chart
     _finRenderWaterfall(pl);
 
-    // Personal list
-    _finRenderPersonal(pl, fecha);
+    // Personal list — skip cuando estamos en update optimista (preserva animación de salida)
+    if (!skipPersonal) {
+      _finRenderPersonal(pl, fecha);
+    } else {
+      // Solo actualizar el total animado (sin re-render de cards)
+      const tot = $('finPersonalTotal');
+      if (tot) _animateCount(tot, pl.gastoPersonal || 0, { prefix: 'S/ ' });
+    }
 
     // Gastos list
     _finRenderGastos(pl, fecha);
@@ -14360,12 +14391,88 @@ const MOS = (() => {
   }
 
   async function finEliminarJornada(idJornada, fecha) {
-    if (!idJornada || !confirm('¿Eliminar esta jornada?')) return;
+    if (!idJornada || !confirm('¿Eliminar esta jornada? Esta persona no se contará para el pago de hoy.')) return;
+    // ── UI optimista: animar salida + recalcular P&L local antes de pegarle al server ──
+    const card = document.querySelector(`.eval-card[data-id]`)
+      ? Array.from(document.querySelectorAll('.eval-card')).find(el => {
+          const btn = el.querySelector(`button[onclick*="${idJornada}"]`);
+          return !!btn;
+        })
+      : null;
+    let pagoEliminado = 0;
+    if (_finPL && Array.isArray(_finPL.personalDetalle)) {
+      const idx = _finPL.personalDetalle.findIndex(p => String(p.idJornada) === String(idJornada));
+      if (idx >= 0) {
+        // Resolver el monto que se está eliminando (ev.totalDia tiene prioridad si existe)
+        const p = _finPL.personalDetalle[idx];
+        // Buscar en cache de resúmenes
+        const resKey = 'mos_fin_resum_' + fecha;
+        let ev = null;
+        try {
+          const raw = localStorage.getItem(resKey);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed.data)) {
+              ev = parsed.data.find(r =>
+                (r.idPersonal && r.idPersonal === p.idPersonal) ||
+                (String(r.nombre || '').toLowerCase().trim() === String(p.nombre || '').toLowerCase().trim())
+              );
+            }
+          }
+        } catch {}
+        pagoEliminado = (ev && ev.totalDia) ? parseFloat(ev.totalDia) : (parseFloat(p.monto) || 0);
+        // Sacar del array y recalcular el P&L local
+        _finPL.personalDetalle.splice(idx, 1);
+        _finPL.personas = Math.max(0, (_finPL.personas || 1) - 1);
+        _finPL.gastoPersonal = Math.max(0, (parseFloat(_finPL.gastoPersonal) || 0) - pagoEliminado);
+        _finPL.totalGastos   = Math.max(0, (parseFloat(_finPL.totalGastos) || 0) - pagoEliminado);
+        _finPL.utilidadNeta  = (parseFloat(_finPL.utilidadNeta) || 0) + pagoEliminado;
+        _finPL.costosFijos   = Math.max(0, (parseFloat(_finPL.costosFijos) || 0) - pagoEliminado);
+        // Recalcular margen contribución y break-even
+        const ventas = parseFloat(_finPL.ventasNetas) || 0;
+        const costoV = parseFloat(_finPL.costoVentas) || 0;
+        const mc = ventas > 0 ? (ventas - costoV) / ventas : 0;
+        _finPL.margenContribPct = ventas > 0 ? +(mc * 100).toFixed(2) : 0;
+        _finPL.breakEvenVentas  = mc > 0 ? +(_finPL.costosFijos / mc).toFixed(2) : null;
+        _finPL.breakEvenPct     = (_finPL.breakEvenVentas && ventas > 0)
+          ? +Math.min(_finPL.breakEvenVentas / ventas * 100, 100).toFixed(2) : 0;
+        _finPL.superaBreakEven  = _finPL.breakEvenVentas !== null && ventas >= _finPL.breakEvenVentas;
+        _finPL.margenNetoPct    = ventas > 0 ? +(_finPL.utilidadNeta / ventas * 100).toFixed(2) : 0;
+      }
+    }
+
+    // Animar salida de la card (slide-out + colapso de altura)
+    if (card) {
+      card.style.overflow = 'hidden';
+      card.style.transition = 'all 0.45s cubic-bezier(0.4, 0, 0.2, 1)';
+      card.style.transform = 'translateX(-30px) scale(0.95)';
+      card.style.opacity = '0';
+      const h = card.offsetHeight;
+      card.style.maxHeight = h + 'px';
+      requestAnimationFrame(() => {
+        card.style.maxHeight = '0px';
+        card.style.marginTop = '0';
+        card.style.marginBottom = '0';
+        card.style.paddingTop = '0';
+        card.style.paddingBottom = '0';
+      });
+      setTimeout(() => card.remove(), 460);
+    }
+
+    // Re-render KPIs con animación countup (sin tocar la lista de personal — la card ya está animándose)
+    if (_finPL) {
+      try { _finRender(_finPL, fecha, { skipPersonal: true }); } catch {}
+    }
+
     try {
       await API.post('eliminarJornada', { idJornada });
-      toast('Jornada eliminada', 'ok');
+      toast(`Jornada eliminada · -S/ ${pagoEliminado.toFixed(2)}`, 'ok');
+      // Refresh suave en background para confirmar con el server
       finCargar();
-    } catch(e) { toast('Error: ' + e.message, 'error'); }
+    } catch(e) {
+      toast('Error: ' + e.message + ' — recargando...', 'error');
+      finCargar();
+    }
   }
 
   async function finImportarCajas() {

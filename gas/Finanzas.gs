@@ -91,9 +91,17 @@ function eliminarJornada(params) {
   if (!params.idJornada) return { ok: false, error: 'Requiere idJornada' };
   var sheet = getSheet('JORNADAS');
   var data  = sheet.getDataRange().getValues();
+  // Marcar como ELIMINADA (en lugar de borrar) para que _sincronizarJornadasAutoDelDia
+  // no la recree en el próximo getFinanzasDia. La fila se mantiene como tombstone:
+  //   fuente='ELIMINADA' · montoJornal=0 · observación con timestamp.
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][0]) === String(params.idJornada)) {
-      sheet.deleteRow(i + 1);
+      // Columnas: 0=id 1=fecha 2=idPersonal 3=nombre 4=rol 5=appOrigen 6=zona
+      //           7=montoJornal 8=observacion 9=registradoPor 10=fuente
+      var rowNum = i + 1;
+      sheet.getRange(rowNum, 8).setValue(0);
+      sheet.getRange(rowNum, 9).setValue('Eliminada manualmente ' + new Date().toISOString());
+      sheet.getRange(rowNum, 11).setValue('ELIMINADA');
       return { ok: true };
     }
   }
@@ -430,6 +438,9 @@ function _calcularPersonal(fecha) {
         ? Utilities.formatDate(r.fecha, tz, 'yyyy-MM-dd')
         : String(r.fecha || '').substring(0, 10);
       if (f !== fecha) return false;
+      // Tombstone: jornadas eliminadas manualmente quedan en la hoja para que
+      // la auto-sync no las recree, pero no se cuentan en el P&L.
+      if (String(r.fuente || '').toUpperCase() === 'ELIMINADA') return false;
       // Filtrar jornadas legacy de MASTER/ADMINISTRADOR/MOS (no se les paga)
       var rol = String(r.rol || '').toUpperCase();
       var app = String(r.appOrigen || '');
