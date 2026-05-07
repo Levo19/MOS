@@ -443,37 +443,21 @@ function _calcularCostoVentas(fecha, detalleIds) {
 
 function _calcularPersonal(fecha) {
   var tz   = Session.getScriptTimeZone();
+  // Incluimos también las ELIMINADA (tombstones) para poder mostrarlas en el card
+  // con efecto "vetada" — no cuentan al total, pero quedan visibles.
   var rows = _sheetToObjects(getSheet('JORNADAS'))
     .filter(function(r) {
       var f = r.fecha instanceof Date
         ? Utilities.formatDate(r.fecha, tz, 'yyyy-MM-dd')
         : String(r.fecha || '').substring(0, 10);
       if (f !== fecha) return false;
-      // Tombstone: jornadas eliminadas manualmente quedan en la hoja para que
-      // la auto-sync no las recree, pero no se cuentan en el P&L.
-      if (String(r.fuente || '').toUpperCase() === 'ELIMINADA') return false;
-      // Filtrar jornadas legacy de MASTER/ADMINISTRADOR/MOS (no se les paga)
       var rol = String(r.rol || '').toUpperCase();
       var app = String(r.appOrigen || '');
       if (app === 'MOS' || rol === 'MASTER' || rol === 'ADMINISTRADOR' || rol === 'ADMIN') return false;
       return true;
     });
 
-  // Deduplicar: mismo nombre puede aparecer por AUTO_VENTA + AUTO_CAJAS + manual.
-  // Prioridad: MANUAL(0) > AUTO_CAJAS(1) > AUTO_VENTA(2) > AUTO_LOGIN(3)
-  var prioridad = { 'MANUAL': 0, 'AUTO_CAJAS': 1, 'AUTO_VENTA': 2, 'AUTO_LOGIN': 3 };
-  var seen = {};
-  rows.forEach(function(r) {
-    var key = String(r.nombre || '').trim().toLowerCase();
-    if (!key) return;
-    var p = prioridad[String(r.fuente || '')] !== undefined ? prioridad[String(r.fuente)] : 99;
-    if (!seen[key] || p < seen[key].p) seen[key] = { r: r, p: p };
-  });
-  var deduped = Object.keys(seen).map(function(k) { return seen[k].r; });
-
-  // ── FALLBACK: registros legacy AUTO_VENTA/AUTO_LOGIN con montoJornal=0 ──
-  // Resolver el monto real cruzando contra PERSONAL_MASTER (montoBase) y
-  // contra la plantilla genérica por rol cuando el cajero es virtual ME.
+  // ── Resolución de monto (PERSONAL_MASTER + sinónimo VENDEDOR↔CAJERO) ──
   var personalMaster = _sheetToObjects(getSheet('PERSONAL_MASTER'));
   var personalByNombre = {};
   personalMaster.forEach(function(p) {
@@ -482,9 +466,6 @@ function _calcularPersonal(fecha) {
     var kFull = ((p.nombre || '') + ' ' + (p.apellido || '')).trim().toLowerCase();
     if (kFull && kFull !== k) personalByNombre[kFull] = p;
   });
-  // Plantilla genérica por rol (para vendedores virtuales detectados de ME).
-  // VENDEDOR y CAJERO son sinónimos: la jornada puede venir con cualquiera y
-  // PERSONAL_MASTER tiene la plantilla "Cajero Genérico" con rol=CAJERO.
   function _equivRol(a, b) {
     if (a === b) return true;
     var sin = { 'VENDEDOR': 'CAJERO', 'CAJERO': 'VENDEDOR' };
@@ -507,13 +488,62 @@ function _calcularPersonal(fecha) {
     return _montoPorRol(r.rol);
   }
 
-  var total   = deduped.reduce(function(s, r){ return s + _resolverMonto(r); }, 0);
-  var detalle = deduped.map(function(r){
-    return { idJornada: r.idJornada || '', nombre: r.nombre, rol: r.rol || '',
-             zona: r.zona || '', monto: _resolverMonto(r), fuente: r.fuente || 'MANUAL' };
+  // ── Agrupar por nombre: separar activas vs tombstones ──
+  // Si hay activas → suma el mejor (por prioridad). Las tombstones quedan como
+  // detalle "vetada" para que el frontend las muestre con efecto sin contarlas.
+  var prioridad = { 'MANUAL': 0, 'AUTO_CAJAS': 1, 'AUTO_VENTA': 2, 'AUTO_LOGIN': 3 };
+  var grupos = {};
+  rows.forEach(function(r) {
+    var key = String(r.nombre || '').trim().toLowerCase();
+    if (!key) return;
+    if (!grupos[key]) grupos[key] = { activas: [], tombstones: [] };
+    var fuente = String(r.fuente || '').toUpperCase();
+    if (fuente === 'ELIMINADA') grupos[key].tombstones.push(r);
+    else grupos[key].activas.push(r);
   });
 
-  return { total: _r2(total), personas: deduped.length, detalle: detalle };
+  var total = 0;
+  var detalle = [];
+  var personasPagadas = 0;
+  Object.keys(grupos).forEach(function(key) {
+    var g = grupos[key];
+    if (g.activas.length > 0) {
+      // Elegir la activa de mayor prioridad
+      var best = null, bestP = 99;
+      g.activas.forEach(function(r) {
+        var p = prioridad[String(r.fuente || '')] !== undefined ? prioridad[String(r.fuente)] : 99;
+        if (p < bestP) { best = r; bestP = p; }
+      });
+      var monto = _resolverMonto(best);
+      detalle.push({
+        idJornada: best.idJornada || '',
+        nombre:    best.nombre,
+        rol:       best.rol || '',
+        zona:      best.zona || '',
+        monto:     monto,
+        fuente:    best.fuente || 'MANUAL',
+        vetada:    false
+      });
+      total += monto;
+      personasPagadas++;
+    } else if (g.tombstones.length > 0) {
+      // Solo tombstones → vetada visible (no cuenta para total)
+      var last = g.tombstones[g.tombstones.length - 1];
+      detalle.push({
+        idJornada: last.idJornada || '',
+        nombre:    last.nombre,
+        rol:       last.rol || '',
+        zona:      last.zona || '',
+        monto:     0,
+        fuente:    'ELIMINADA',
+        vetada:    true,
+        vetoTs:    _parseVetoTs(last.observacion) || 0,
+        vetoObs:   String(last.observacion || '')
+      });
+    }
+  });
+
+  return { total: _r2(total), personas: personasPagadas, detalle: detalle };
 }
 
 function _calcularGastos(fecha) {

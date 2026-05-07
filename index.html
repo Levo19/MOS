@@ -2199,6 +2199,46 @@
       100% { opacity: 1; transform: translate(-50%,-60%) scale(1); }
     }
 
+    /* ── Card VETADA (no removida, queda con efecto violeta + tachado) ── */
+    .fin-vetada-card {
+      filter: grayscale(0.4) brightness(0.85);
+      border-color: rgba(168,85,247,0.5) !important;
+    }
+    .fin-vetada-card .font-semibold {
+      text-decoration: line-through;
+      text-decoration-color: rgba(168,85,247,0.7);
+      text-decoration-thickness: 1.5px;
+    }
+    .fin-vetada-overlay {
+      position: absolute; inset: 0; pointer-events: none;
+      border-radius: 12px; overflow: hidden; z-index: 4;
+      animation: finVetadaIn 0.5s ease-out;
+    }
+    .fin-vetada-stripe {
+      position: absolute; inset: 0;
+      background: repeating-linear-gradient(
+        135deg,
+        transparent 0px,
+        transparent 12px,
+        rgba(168,85,247,0.18) 12px,
+        rgba(168,85,247,0.18) 14px
+      );
+    }
+    .fin-vetada-badge {
+      position: absolute; top: 8px; right: 8px;
+      background: rgba(15,23,42,0.95);
+      color: #c084fc;
+      font-size: 10px; font-weight: 800;
+      padding: 3px 8px; border-radius: 999px;
+      border: 1px solid rgba(168,85,247,0.55);
+      letter-spacing: 0.05em;
+      box-shadow: 0 0 12px rgba(168,85,247,0.4);
+    }
+    @keyframes finVetadaIn {
+      0%   { opacity: 0; }
+      100% { opacity: 1; }
+    }
+
     .audit-count-pill {
       display: inline-flex; align-items: center; gap: 3px;
       padding: 2px 7px; border-radius: 999px;

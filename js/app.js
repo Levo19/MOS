@@ -14254,8 +14254,17 @@ const MOS = (() => {
     const scoreCircle = score !== null
       ? `<div class="eval-score-circle ${scoreClass}" style="--score:${score};flex-shrink:0"><span>${score}%</span></div>`
       : `<div class="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0" style="background:rgba(100,116,139,.15);color:#94a3b8">—</div>`;
+    const esVetada = !!(p.vetada || p.fuente === 'ELIMINADA');
+    const vetadaCls = esVetada ? ' fin-vetada-card' : '';
+    const vetadaOverlay = esVetada
+      ? `<div class="fin-vetada-overlay">
+           <div class="fin-vetada-stripe"></div>
+           <div class="fin-vetada-badge">💸 VETADA · S/ 0.00</div>
+         </div>`
+      : '';
     return `
-      <div class="eval-card" data-id="${idForEval}">
+      <div class="eval-card${vetadaCls}" data-id="${idForEval}" style="position:relative;">
+        ${vetadaOverlay}
         <div class="flex items-center gap-3">
           ${scoreCircle}
           <div class="flex-1 min-w-0">
@@ -14404,29 +14413,27 @@ const MOS = (() => {
     } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
 
-  // Veto de pago — la persona sigue operando, pero no se cuenta su jornada hoy.
-  // Si el sistema detecta actividad POSTERIOR al veto (nuevo ticket/sesión), reaparece
-  // automáticamente con un nuevo registro (auto-rehabilitación).
+  // Veto de pago — la persona sigue operando, pero no se cuenta su jornada en esta fecha.
+  // El card NO se elimina: queda con efecto vetada (violeta + tachado + badge). Si el sistema
+  // detecta actividad POSTERIOR al veto (nuevo ticket/sesión), reaparece automáticamente.
   async function finVetarPago(idJornada, fecha, nombre) {
     if (!idJornada) {
       toast('No se puede vetar: jornada sin idJornada', 'warn');
       return;
     }
-    if (!confirm(`¿Vetar el pago de ${nombre || 'esta persona'} para hoy?\n\nNo se contará en los gastos del día. Si vuelve a vender/operar después de este momento, reaparecerá automáticamente.`)) return;
-    // ── UI optimista: animar salida + recalcular P&L local antes de pegarle al server ──
-    const card = document.querySelector(`.eval-card[data-id]`)
-      ? Array.from(document.querySelectorAll('.eval-card')).find(el => {
-          const btn = el.querySelector(`button[onclick*="${idJornada}"]`);
-          return !!btn;
-        })
-      : null;
+    const fechaTxt = _formatFechaCorta(fecha);
+    if (!confirm(`¿Vetar el pago de ${nombre || 'esta persona'} del ${fechaTxt}?\n\nNo se contará en los gastos del día. Si vuelve a vender/operar después de este momento, reaparecerá automáticamente.`)) return;
+
+    // Localizar el card por el idJornada del botón vetar
+    const card = Array.from(document.querySelectorAll('.eval-card')).find(el => {
+      return !!el.querySelector(`button[onclick*="finVetarPago"][onclick*="${idJornada}"]`);
+    });
+
     let pagoEliminado = 0;
     if (_finPL && Array.isArray(_finPL.personalDetalle)) {
       const idx = _finPL.personalDetalle.findIndex(p => String(p.idJornada) === String(idJornada));
       if (idx >= 0) {
-        // Resolver el monto que se está eliminando (ev.totalDia tiene prioridad si existe)
         const p = _finPL.personalDetalle[idx];
-        // Buscar en cache de resúmenes
         const resKey = 'mos_fin_resum_' + fecha;
         let ev = null;
         try {
@@ -14442,14 +14449,17 @@ const MOS = (() => {
           }
         } catch {}
         pagoEliminado = (ev && ev.totalDia) ? parseFloat(ev.totalDia) : (parseFloat(p.monto) || 0);
-        // Sacar del array y recalcular el P&L local
-        _finPL.personalDetalle.splice(idx, 1);
+        // Marcar como vetada en _finPL (no remover del array → el card persiste en próximos render)
+        p.vetada = true;
+        p.monto = 0;
+        p.fuente = 'ELIMINADA';
+        p.vetoTs = Date.now();
+        // Recalcular P&L local
         _finPL.personas = Math.max(0, (_finPL.personas || 1) - 1);
         _finPL.gastoPersonal = Math.max(0, (parseFloat(_finPL.gastoPersonal) || 0) - pagoEliminado);
         _finPL.totalGastos   = Math.max(0, (parseFloat(_finPL.totalGastos) || 0) - pagoEliminado);
         _finPL.utilidadNeta  = (parseFloat(_finPL.utilidadNeta) || 0) + pagoEliminado;
         _finPL.costosFijos   = Math.max(0, (parseFloat(_finPL.costosFijos) || 0) - pagoEliminado);
-        // Recalcular margen contribución y break-even
         const ventas = parseFloat(_finPL.ventasNetas) || 0;
         const costoV = parseFloat(_finPL.costoVentas) || 0;
         const mc = ventas > 0 ? (ventas - costoV) / ventas : 0;
@@ -14462,38 +14472,55 @@ const MOS = (() => {
       }
     }
 
-    // Animar salida de la card (slide-out + colapso de altura)
-    if (card) {
-      card.style.overflow = 'hidden';
-      card.style.transition = 'all 0.45s cubic-bezier(0.4, 0, 0.2, 1)';
-      card.style.transform = 'translateX(-30px) scale(0.95)';
-      card.style.opacity = '0';
-      const h = card.offsetHeight;
-      card.style.maxHeight = h + 'px';
-      requestAnimationFrame(() => {
-        card.style.maxHeight = '0px';
-        card.style.marginTop = '0';
-        card.style.marginBottom = '0';
-        card.style.paddingTop = '0';
-        card.style.paddingBottom = '0';
-      });
-      setTimeout(() => card.remove(), 460);
-    }
+    // Aplicar efecto vetada al card (in-place, sin re-render)
+    if (card) _aplicarVetadaOverlay(card, nombre, pagoEliminado);
 
-    // Re-render KPIs con animación countup (sin tocar la lista de personal — la card ya está animándose)
+    // Re-render solo KPIs (skipPersonal preserva el card y su animación)
     if (_finPL) {
       try { _finRender(_finPL, fecha, { skipPersonal: true }); } catch {}
     }
 
     try {
       await API.post('eliminarJornada', { idJornada, actor: S.session?.nombre || '' });
-      toast(`💸 Veto aplicado · -S/ ${pagoEliminado.toFixed(2)}`, 'ok');
-      // Refresh suave en background para confirmar con el server
-      finCargar();
+      toast(`💸 Veto aplicado · ${nombre || ''} · -S/ ${pagoEliminado.toFixed(2)}`, 'ok');
+      // No hacemos finCargar() inmediato — evita parpadeo. El próximo navigate refresca.
     } catch(e) {
+      // Revertir el efecto y recargar
+      if (card) {
+        const ov = card.querySelector('.fin-vetada-overlay');
+        if (ov) ov.remove();
+        card.classList.remove('fin-vetada-card');
+      }
       toast('Error: ' + e.message + ' — recargando...', 'error');
       finCargar();
     }
+  }
+
+  function _formatFechaCorta(fecha) {
+    if (!fecha) return 'hoy';
+    const hoy = (typeof today === 'function') ? today() : new Date().toISOString().slice(0, 10);
+    if (fecha === hoy) return 'hoy (' + fecha + ')';
+    try {
+      const d = new Date(fecha + 'T00:00:00');
+      return d.toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' });
+    } catch { return fecha; }
+  }
+
+  // Aplica overlay vetada al card (violeta + tachado + badge "💸 VETADA")
+  function _aplicarVetadaOverlay(card, nombre, monto) {
+    if (!card || card.querySelector('.fin-vetada-overlay')) return;
+    card.classList.add('fin-vetada-card');
+    card.style.position = 'relative';
+    const ov = document.createElement('div');
+    ov.className = 'fin-vetada-overlay';
+    ov.innerHTML = `
+      <div class="fin-vetada-stripe"></div>
+      <div class="fin-vetada-badge">💸 VETADA · -S/ ${parseFloat(monto || 0).toFixed(2)}</div>`;
+    card.appendChild(ov);
+    // Pulso violeta breve
+    card.style.transition = 'box-shadow 0.4s, transform 0.4s';
+    card.style.boxShadow = '0 0 24px rgba(168,85,247,0.45)';
+    setTimeout(() => { card.style.boxShadow = ''; }, 700);
   }
 
   // Alias por compatibilidad con código viejo
