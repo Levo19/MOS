@@ -505,6 +505,30 @@ const MOS = (() => {
     setTimeout(() => { overlay.style.display = 'none'; overlay.classList.remove('hide'); }, 400);
   }
 
+  // ── Heartbeat del propio dispositivo MOS ──────────────────────
+  // Sin esto, la laptop/PC del master abierto en MOS jamás reporta su
+  // Ultima_Conexion en DISPOSITIVOS y aparece "hace 16h" siempre.
+  let _mosHeartbeatTimer = null;
+  async function _mosHeartbeat() {
+    if (document.hidden) return;
+    if (!S.session) return;
+    try {
+      await API.post('registrarSesionDispositivo', {
+        ID_Dispositivo: _getOrCreateDeviceId(),
+        app:            'MOS',
+        vendedor:       S.session.nombre || ''
+      });
+    } catch(_) { /* tolerar */ }
+  }
+  function _startMosHeartbeat() {
+    if (_mosHeartbeatTimer) return;
+    _mosHeartbeatTimer = setInterval(_mosHeartbeat, 60 * 1000);
+    // También al volver a la pestaña (visibilitychange)
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) _mosHeartbeat();
+    });
+  }
+
   function _applySession() {
     if (!S.session) return;
     const isMaster = (S.session.rol || '').toLowerCase() === 'master';
@@ -540,6 +564,10 @@ const MOS = (() => {
       _promoSaveCache(_promoState.lista);
     }).catch(() => {});
     _pushInit(S.session.nombre, S.session.rol);
+    // Heartbeat de propio dispositivo MOS — sin esto la laptop del master
+    // jamás reporta su Ultima_Conexion en DISPOSITIVOS.
+    _mosHeartbeat();
+    _startMosHeartbeat();
     // Sidebar session display
     const av = $('sessionAvatar');
     const nm = $('sessionName');
