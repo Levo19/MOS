@@ -449,10 +449,38 @@ function _calcularPersonal(fecha) {
   });
   var deduped = Object.keys(seen).map(function(k) { return seen[k].r; });
 
-  var total   = deduped.reduce(function(s, r){ return s + (parseFloat(r.montoJornal) || 0); }, 0);
+  // ── FALLBACK: registros legacy AUTO_VENTA/AUTO_LOGIN con montoJornal=0 ──
+  // Resolver el monto real cruzando contra PERSONAL_MASTER (montoBase) y
+  // contra la plantilla genérica por rol cuando el cajero es virtual ME.
+  var personalMaster = _sheetToObjects(getSheet('PERSONAL_MASTER'));
+  var personalByNombre = {};
+  personalMaster.forEach(function(p) {
+    var k = String(p.nombre || '').trim().toLowerCase();
+    if (k) personalByNombre[k] = p;
+    var kFull = ((p.nombre || '') + ' ' + (p.apellido || '')).trim().toLowerCase();
+    if (kFull && kFull !== k) personalByNombre[kFull] = p;
+  });
+  // Plantilla genérica por rol (para vendedores virtuales detectados de ME)
+  function _montoPorRol(rol) {
+    var r = String(rol || '').toUpperCase();
+    var pl = personalMaster.find(function(p){
+      return String(p.rol || '').toUpperCase() === r && (parseFloat(p.montoBase) || 0) > 0;
+    });
+    return pl ? (parseFloat(pl.montoBase) || 0) : 0;
+  }
+  function _resolverMonto(r) {
+    var raw = parseFloat(r.montoJornal) || 0;
+    if (raw > 0) return raw;
+    var k = String(r.nombre || '').trim().toLowerCase();
+    var pm = personalByNombre[k];
+    if (pm && (parseFloat(pm.montoBase) || 0) > 0) return parseFloat(pm.montoBase) || 0;
+    return _montoPorRol(r.rol);
+  }
+
+  var total   = deduped.reduce(function(s, r){ return s + _resolverMonto(r); }, 0);
   var detalle = deduped.map(function(r){
     return { idJornada: r.idJornada || '', nombre: r.nombre, rol: r.rol || '',
-             zona: r.zona || '', monto: parseFloat(r.montoJornal) || 0, fuente: r.fuente || 'MANUAL' };
+             zona: r.zona || '', monto: _resolverMonto(r), fuente: r.fuente || 'MANUAL' };
   });
 
   return { total: _r2(total), personas: deduped.length, detalle: detalle };

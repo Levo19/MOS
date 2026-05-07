@@ -13967,15 +13967,15 @@ const MOS = (() => {
     const fmt  = v => 'S/ ' + parseFloat(v || 0).toFixed(2);
     const pct  = v => parseFloat(v || 0).toFixed(1) + '%';
 
-    // KPI cards
-    _setText('finKpiVentas',  fmt(pl.ventasNetas));
+    // KPI cards — los montos animan countup
+    _animateCount('finKpiVentas', pl.ventasNetas, { prefix: 'S/ ' });
     _setText('finKpiTickets', pl.tickets + ' ticket' + (pl.tickets !== 1 ? 's' : '') +
              (pl.anulados ? ' · ' + pl.anulados + ' anulado' + (pl.anulados > 1 ? 's' : '') : ''));
-    _setText('finKpiCosto',   fmt(pl.costoVentas));
+    _animateCount('finKpiCosto', pl.costoVentas, { prefix: 'S/ ' });
     _setText('finKpiMargenB', 'Margen bruto ' + pct(pl.margenBrutoPct));
-    _setText('finKpiGastos',  fmt(pl.totalGastos));
+    _animateCount('finKpiGastos', pl.totalGastos, { prefix: 'S/ ' });
     _setText('finKpiPersonas', pl.personas + ' persona' + (pl.personas !== 1 ? 's' : ''));
-    _setText('finKpiUtil',    fmt(pl.utilidadNeta));
+    _animateCount('finKpiUtil', pl.utilidadNeta, { prefix: 'S/ ' });
     _setText('finKpiMargenN', 'Margen neto ' + pct(pl.margenNetoPct));
 
     // Subfila: desglose efectivo / virtual / crédito / anulados
@@ -14023,10 +14023,29 @@ const MOS = (() => {
     const sinCostoIcon = $('finSinCostoAlerta');
     if (sinCostoIcon) sinCostoIcon.classList.toggle('hidden', !(pl.productosSinCosto?.length));
 
-    // Break-even
-    _setText('finBEMeta',       pl.breakEvenVentas ? 'Meta: ' + fmt(pl.breakEvenVentas) : 'Sin datos');
-    _setText('finBEVentas',     'Ventas: ' + fmt(pl.ventasNetas));
-    _setText('finBECostosFijos', fmt(pl.costosFijos));
+    // Break-even — costos fijos y meta animan
+    if (pl.breakEvenVentas) {
+      const beMeta = $('finBEMeta');
+      if (beMeta) {
+        // Animar solo la parte numérica
+        const span = beMeta.querySelector('span._beNum') || (() => {
+          beMeta.innerHTML = 'Meta: <span class="_beNum"></span>';
+          return beMeta.querySelector('span._beNum');
+        })();
+        _animateCount(span, pl.breakEvenVentas, { prefix: 'S/ ' });
+      }
+    } else {
+      _setText('finBEMeta', 'Sin datos');
+    }
+    const beV = $('finBEVentas');
+    if (beV) {
+      const span = beV.querySelector('span._bevNum') || (() => {
+        beV.innerHTML = 'Ventas: <span class="_bevNum"></span>';
+        return beV.querySelector('span._bevNum');
+      })();
+      _animateCount(span, pl.ventasNetas, { prefix: 'S/ ' });
+    }
+    _animateCount('finBECostosFijos', pl.costosFijos, { prefix: 'S/ ' });
     _setText('finBEMargenC',    pct(pl.margenContribPct));
     const badge = $('finBEBadge');
     if (badge) {
@@ -14140,7 +14159,7 @@ const MOS = (() => {
     const cont = $('finPersonalList');
     const tot  = $('finPersonalTotal');
     if (!cont) return;
-    if (tot) tot.textContent = 'S/ ' + (pl.gastoPersonal || 0).toFixed(2);
+    if (tot) _animateCount(tot, pl.gastoPersonal || 0, { prefix: 'S/ ' });
     if (!pl.personalDetalle || !pl.personalDetalle.length) {
       cont.innerHTML = '<p class="text-slate-500 text-xs">Sin registros — usa "+ Jornada" o "⬇ Cajas"</p>';
       return;
@@ -14165,18 +14184,10 @@ const MOS = (() => {
         if (n) byNombre[n] = r;
         if (r.idPersonal) byIdPersonal[r.idPersonal] = r;
       });
-      // Recalcular total desde lo que realmente se renderiza en cada card
-      // (JORNADAS legacy puede tener montoJornal=0 en AUTO_VENTA, pero la card
-      //  muestra ev.totalDia derivado de PERSONAL_MASTER.montoBase). Mantener
-      //  consistencia: total = suma de pagos visibles.
-      let totalReal = 0;
       cont.innerHTML = pl.personalDetalle.map(p => {
         const ev = byIdPersonal[p.idPersonal] || byNombre[String(p.nombre || '').toLowerCase().trim()] || null;
-        const pago = (ev && ev.totalDia) ? ev.totalDia : (parseFloat(p.monto) || 0);
-        totalReal += parseFloat(pago) || 0;
         return _finRenderPersonalCard(p, ev, fecha);
       }).join('');
-      if (tot) tot.textContent = 'S/ ' + totalReal.toFixed(2);
     }
 
     // Render inmediato — usa cache si existe, sino sin score
@@ -14627,6 +14638,57 @@ const MOS = (() => {
 
   // Helpers
   function _setText(id, val) { const el = $(id); if (el) el.textContent = val; }
+
+  // ── Animación countup: pasa de un número a otro suavemente ──
+  // Lee el número anterior del data-attr y anima hasta el nuevo.
+  // prefix/suffix = strings fijos (ej. 'S/ ', '%'). decimals = decimales.
+  // Si el cambio es ≥ 1% del valor o > S/ 1, agrega flash visual.
+  function _animateCount(id, newVal, opts) {
+    const el = typeof id === 'string' ? $(id) : id;
+    if (!el) return;
+    opts = opts || {};
+    const prefix   = opts.prefix || '';
+    const suffix   = opts.suffix || '';
+    const decimals = (opts.decimals !== undefined) ? opts.decimals : 2;
+    const duration = opts.duration || 600;
+    const flashCol = opts.flashCol || '';
+    const newNum   = parseFloat(newVal) || 0;
+    const oldNum   = parseFloat(el.dataset._anim) || 0;
+    el.dataset._anim = String(newNum);
+    const fmt = n => prefix + n.toFixed(decimals) + suffix;
+    if (Math.abs(newNum - oldNum) < 0.005) {
+      el.textContent = fmt(newNum);
+      return;
+    }
+    const t0 = performance.now();
+    function step(t) {
+      const k = Math.min(1, (t - t0) / duration);
+      // easeOutCubic
+      const e = 1 - Math.pow(1 - k, 3);
+      const cur = oldNum + (newNum - oldNum) * e;
+      el.textContent = fmt(cur);
+      if (k < 1) requestAnimationFrame(step);
+      else el.textContent = fmt(newNum);
+    }
+    requestAnimationFrame(step);
+    // Flash visual
+    const significant = Math.abs(newNum - oldNum) > Math.max(1, Math.abs(oldNum) * 0.01);
+    if (significant) {
+      const orig = el.style.transition;
+      const origBg = el.style.boxShadow;
+      const isUp = newNum > oldNum;
+      const color = flashCol || (isUp ? 'rgba(52,211,153,0.55)' : 'rgba(248,113,113,0.55)');
+      el.style.transition = 'box-shadow 0.25s ease-out, transform 0.25s ease-out';
+      el.style.boxShadow = '0 0 18px ' + color;
+      el.style.transform = 'scale(1.04)';
+      setTimeout(() => {
+        el.style.boxShadow = origBg;
+        el.style.transform = '';
+        setTimeout(() => { el.style.transition = orig; }, 280);
+      }, 380);
+    }
+  }
+
   function _fechaOffset(fechaStr, dias) {
     const d = new Date(fechaStr + 'T00:00:00');
     d.setDate(d.getDate() + dias);
