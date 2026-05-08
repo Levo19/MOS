@@ -67,7 +67,8 @@ function getEstadoBloqueoUsuario(params) {
         idZona:         params.idZona || '',
         idEstacion:     params.idEstacion || '',
         vendedor:       params.nombre || '',
-        app:            params.appOrigen || 'mosExpress'
+        app:            params.appOrigen || 'mosExpress',
+        userAgent:      params.userAgent || ''
       });
     } catch(e) { /* tolerar */ }
   }

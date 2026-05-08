@@ -11,6 +11,40 @@
 //    no requieren PIN ni credenciales
 // ============================================================
 
+// ────────────────────────────────────────────────────────────
+// Helper: parsear user agent para nombre legible del dispositivo
+// Ej: "Android · SM-G960F · Chrome" o "Windows · Chrome" o "iOS · iPhone · Safari"
+// ────────────────────────────────────────────────────────────
+function _parseUserAgent(ua) {
+  if (!ua) return '';
+  var s = String(ua);
+  // Plataforma
+  var plat = '';
+  if (/android/i.test(s))      plat = 'Android';
+  else if (/iphone/i.test(s))  plat = 'iOS · iPhone';
+  else if (/ipad/i.test(s))    plat = 'iOS · iPad';
+  else if (/ipod/i.test(s))    plat = 'iOS · iPod';
+  else if (/windows nt/i.test(s)) plat = 'Windows';
+  else if (/macintosh|mac os/i.test(s)) plat = 'Mac';
+  else if (/linux/i.test(s))   plat = 'Linux';
+  // Modelo Android: "Android X.Y.Z; ES; SM-G960F Build/..."
+  var modelo = '';
+  if (plat === 'Android') {
+    var m = s.match(/Android[^)]*?;\s*[a-z]{2,3}[-\w]*;\s*([^);]+)/i)
+         || s.match(/;\s*([^);]+)\s+Build\//);
+    if (m) modelo = m[1].trim();
+  }
+  // Browser
+  var nav = '';
+  if (/edg\//i.test(s))         nav = 'Edge';
+  else if (/opr\/|opera/i.test(s)) nav = 'Opera';
+  else if (/chrome\//i.test(s)) nav = 'Chrome';
+  else if (/firefox/i.test(s))  nav = 'Firefox';
+  else if (/safari/i.test(s))   nav = 'Safari';
+  var parts = [plat, modelo, nav].filter(function(x){ return !!x; });
+  return parts.join(' · ');
+}
+
 // ════════════════════════════════════════════════
 // CONSULTA CONVENIENCE PARA APPS CLIENTES
 // (devuelve estaciones activas + su impresora TICKET unidas)
@@ -545,8 +579,12 @@ function registrarSesionDispositivo(params) {
     return { ok: true, data: { autorizado: true, estado: 'ACTIVO', nombre: data[i][hdrs.indexOf('Nombre_Equipo')] } };
   }
 
-  // No existe → crear como PENDIENTE_APROBACION
-  var nombreNuevo = params.Nombre_Equipo || ('Nuevo dispositivo (' + deviceId.substring(0, 8) + ')');
+  // No existe → crear como PENDIENTE_APROBACION con nombre legible
+  var nombreNuevo = params.Nombre_Equipo;
+  if (!nombreNuevo || nombreNuevo.indexOf('Nuevo dispositivo') === 0) {
+    var labelUA = _parseUserAgent(params.userAgent || '');
+    nombreNuevo = labelUA ? labelUA + ' (' + deviceId.substring(0, 6) + ')' : ('Nuevo dispositivo ' + deviceId.substring(0, 8));
+  }
   var appNueva = params.app || params.App || 'mosExpress';
   var fila = new Array(hdrs.length).fill('');
   fila[iId] = deviceId;
@@ -559,13 +597,12 @@ function registrarSesionDispositivo(params) {
   if (iUSe >= 0) fila[iUSe] = params.vendedor || '';
   sheet.appendRow(fila);
 
-  // Push notif a master/admin avisando del nuevo dispositivo
+  // Push notif a master avisando del nuevo dispositivo, con nombre legible.
   try {
-    var detalle = appNueva.toUpperCase() + ' · UUID ' + deviceId.substring(0, 8) + '...';
+    var deviceLabel = _parseUserAgent(params.userAgent || '');
+    var detalle = (deviceLabel || appNueva.toUpperCase()) + ' · UUID ' + deviceId.substring(0, 8) + '...';
     if (params.idEstacion) detalle += ' · estación ' + params.idEstacion;
     if (params.vendedor)   detalle += ' · cajero ' + params.vendedor;
-    // Solo MASTER recibe esta notificación: la aprobación de dispositivos es
-    // exclusiva del master (no del admin), así que el push también.
     _enviarPushTodos('🔔 Nuevo dispositivo solicita acceso', detalle, { soloRolesMaster: true });
   } catch(e) { Logger.log('Push pendiente fallo: ' + e.message); }
 
