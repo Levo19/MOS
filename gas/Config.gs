@@ -623,6 +623,32 @@ function getDispositivosPendientes() {
 }
 
 // Aprobar dispositivo pendiente — admin asigna nombre y opcionalmente zona/estación
+// ── Solo CONSULTAR estado del dispositivo, sin registrar ni actualizar ──
+// Útil para que las apps cliente verifiquen "¿estoy aprobado?" sin generar
+// PENDIENTE_APROBACION accidentalmente cuando cargan la página.
+function consultarEstadoDispositivo(params) {
+  _garantizarColumnasDispositivos();
+  var deviceId = String(params.ID_Dispositivo || params.deviceId || '').trim();
+  if (!deviceId) return { ok: false, error: 'Requiere ID_Dispositivo' };
+  var sheet = getSheet('DISPOSITIVOS');
+  var data  = sheet.getDataRange().getValues();
+  var hdrs  = data[0];
+  var iId   = hdrs.indexOf('ID_Dispositivo');
+  var iEst  = hdrs.indexOf('Estado');
+  var iApp  = hdrs.indexOf('App');
+  var iNom  = hdrs.indexOf('Nombre_Equipo');
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][iId]) !== deviceId) continue;
+    return { ok: true, data: {
+      registrado: true,
+      estado:     String(data[i][iEst] || ''),
+      nombre:     data[i][iNom] || '',
+      app:        data[i][iApp] || ''
+    }};
+  }
+  return { ok: true, data: { registrado: false, estado: 'NO_REGISTRADO' } };
+}
+
 function aprobarDispositivoPendiente(params) {
   _garantizarColumnasDispositivos();
   if (!params.ID_Dispositivo) return { ok: false, error: 'Requiere ID_Dispositivo' };

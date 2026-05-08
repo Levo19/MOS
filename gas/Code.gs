@@ -120,6 +120,7 @@ function _route(method, e) {
       case 'registrarConexion':            return registrarConexionDispositivo(params);
       case 'registrarSesionDispositivo':   return registrarSesionDispositivo(params);
       case 'getDispositivosPendientes':    return getDispositivosPendientes();
+      case 'consultarEstadoDispositivo':   return consultarEstadoDispositivo(params);
       case 'aprobarDispositivoPendiente':  return aprobarDispositivoPendiente(params);
       case 'rechazarDispositivoPendiente': return rechazarDispositivoPendiente(params);
       case 'vincularBrowserDispositivo':   return vincularBrowserDispositivo(params);
