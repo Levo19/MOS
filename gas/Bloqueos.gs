@@ -62,10 +62,27 @@ function getEstadoBloqueoUsuario(params) {
   // Tolera errores: nunca bloquea la respuesta del bloqueo.
   if (params.deviceId) {
     try {
+      // Auto-asignar estación de Almacén si viene de WH sin idEstacion explícito
+      // (operadores WH no eligen estación — todos usan la única de Almacén)
+      var idEstacionFinal = params.idEstacion || '';
+      var idZonaFinal     = params.idZona || '';
+      if (!idEstacionFinal && _normalizarApp(params.appOrigen) === 'warehousemos') {
+        try {
+          var estaciones = _sheetToObjects(getSheet('ESTACIONES'));
+          var primeraWH = estaciones.find(function(e) {
+            return String(e.app || '').toLowerCase() === 'warehousemos'
+                && String(e.activa || '1') !== '0';
+          });
+          if (primeraWH) {
+            idEstacionFinal = primeraWH.idEstacion || '';
+            idZonaFinal     = idZonaFinal || primeraWH.idZona || '';
+          }
+        } catch(eEst) { Logger.log('Auto-estación WH falló: ' + eEst.message); }
+      }
       registrarSesionDispositivo({
         ID_Dispositivo: params.deviceId,
-        idZona:         params.idZona || '',
-        idEstacion:     params.idEstacion || '',
+        idZona:         idZonaFinal,
+        idEstacion:     idEstacionFinal,
         vendedor:       params.nombre || '',
         app:            params.appOrigen || 'mosExpress',
         userAgent:      params.userAgent || ''
