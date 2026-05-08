@@ -8278,7 +8278,12 @@ const MOS = (() => {
           }
         }
       } catch(_) { /* tolerar */ }
-    }, 30 * 1000);
+    }, 15 * 1000); // cada 15s para sentir tiempo real
+    // Re-render local cada 10s para que los "hace Xs" se actualicen sin esperar fetch
+    setInterval(() => {
+      if (S.cfgTab !== 'infra' || document.hidden) return;
+      try { renderInfra(); } catch(_) {}
+    }, 10 * 1000);
   }
   function _detenerRefreshInfra() {
     if (_intervalInfra) { clearInterval(_intervalInfra); _intervalInfra = null; }
@@ -10232,8 +10237,10 @@ const MOS = (() => {
     if (!ultimaConexion) return { color: '#64748b', label: 'sin conexión', dot: '⚫', minutos: Infinity };
     const t = new Date(ultimaConexion).getTime();
     if (isNaN(t)) return { color: '#64748b', label: ultimaConexion, dot: '⚫', minutos: Infinity };
-    const min = Math.floor((Date.now() - t) / 60000);
-    if (min < 5)       return { color: '#10b981', label: 'online ahora',     dot: '🟢', minutos: min };
+    const seg = Math.floor((Date.now() - t) / 1000);
+    const min = Math.floor(seg / 60);
+    if (seg < 90)      return { color: '#10b981', label: `🔴 LIVE · hace ${seg}s`, dot: '🟢', minutos: min };
+    if (min < 5)       return { color: '#10b981', label: `online · hace ${min}m`,  dot: '🟢', minutos: min };
     if (min < 60)      return { color: '#10b981', label: `hace ${min}m`,     dot: '🟢', minutos: min };
     if (min < 60*24)   return { color: '#fbbf24', label: `hace ${Math.floor(min/60)}h`, dot: '🟡', minutos: min };
     if (min < 60*24*7) return { color: '#f97316', label: `hace ${Math.floor(min/60/24)}d`, dot: '🟠', minutos: min };

@@ -623,9 +623,10 @@ function getDispositivosPendientes() {
 }
 
 // Aprobar dispositivo pendiente — admin asigna nombre y opcionalmente zona/estación
-// ── Solo CONSULTAR estado del dispositivo, sin registrar ni actualizar ──
-// Útil para que las apps cliente verifiquen "¿estoy aprobado?" sin generar
-// PENDIENTE_APROBACION accidentalmente cuando cargan la página.
+// ── Consultar estado del dispositivo (NO crea row, pero SÍ actualiza heartbeat) ──
+// Lee el estado actual sin generar PENDIENTE_APROBACION accidentalmente.
+// Si el row existe, actualiza Ultima_Conexion → master ve actividad en tiempo
+// real aún cuando el operador esté en pantalla candado pre-login.
 function consultarEstadoDispositivo(params) {
   _garantizarColumnasDispositivos();
   var deviceId = String(params.ID_Dispositivo || params.deviceId || '').trim();
@@ -637,8 +638,13 @@ function consultarEstadoDispositivo(params) {
   var iEst  = hdrs.indexOf('Estado');
   var iApp  = hdrs.indexOf('App');
   var iNom  = hdrs.indexOf('Nombre_Equipo');
+  var iUC   = hdrs.indexOf('Ultima_Conexion');
+  var tz    = Session.getScriptTimeZone();
+  var nowStr = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss');
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][iId]) !== deviceId) continue;
+    // Heartbeat: actualizar Ultima_Conexion aunque el dispositivo no haya logueado
+    if (iUC >= 0) sheet.getRange(i + 1, iUC + 1).setValue(nowStr);
     return { ok: true, data: {
       registrado: true,
       estado:     String(data[i][iEst] || ''),
