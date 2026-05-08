@@ -32,6 +32,7 @@ function _route(method, e) {
       case 'getProductoPorCodigo': return getProductoPorCodigo(params);
       case 'crearProducto':        return crearProductoMaster(params);
       case 'actualizarProducto':         return actualizarProductoMaster(params);
+      case 'getProductosEditadosRecientes': return getProductosEditadosRecientes(params);
       case 'actualizarProductoMaster':   return actualizarProductoMaster(params);
       case 'getEquivalencias':       return getEquivalencias(params);
       case 'crearEquivalencia':      return crearEquivalencia(params);

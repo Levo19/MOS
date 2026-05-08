@@ -566,6 +566,9 @@ const MOS = (() => {
     });
     const btnAvCfg = $('btnAvatarConfig');
     if (btnAvCfg) btnAvCfg.classList.toggle('hidden', !isMaster);
+    // Botón "📜 Log" del catálogo: solo master
+    const btnLog = $('btnLogProductos');
+    if (btnLog) btnLog.classList.toggle('hidden', !isMaster);
   }
 
   function logout() {
@@ -7161,6 +7164,59 @@ const MOS = (() => {
     if (!sec) return;
     const h = sec.classList.toggle('hidden');
     if (ch) ch.textContent = h ? '▶' : '▼';
+  }
+
+  // ── LOG de cambios de productos (master) ──────────────────
+  async function abrirLogProductos() {
+    openModal('modalLogProductos');
+    await refreshLogProductos();
+  }
+
+  async function refreshLogProductos() {
+    const cont = $('logProductosList');
+    if (!cont) return;
+    cont.innerHTML = '<div class="text-center py-6 text-slate-500 text-sm">Cargando...</div>';
+    try {
+      const data = await API.get('getProductosEditadosRecientes', { limit: 100 });
+      if (!Array.isArray(data) || !data.length) {
+        cont.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm italic">Sin ediciones recientes</div>';
+        return;
+      }
+      cont.innerHTML = data.map(p => {
+        const f = p.ultimaEdicion ? new Date(p.ultimaEdicion) : null;
+        const fmt = f ? f.toLocaleString('es-PE', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', second:'2-digit' }) : '—';
+        const mins = f ? Math.floor((Date.now() - f.getTime()) / 60000) : Infinity;
+        let badge = '';
+        if (mins < 5)        badge = `<span class="text-[10px] px-1.5 py-0.5 rounded-full" style="background:rgba(16,185,129,0.18);color:#6ee7b7;border:1px solid rgba(16,185,129,0.4);">🟢 hace ${mins}m</span>`;
+        else if (mins < 60)  badge = `<span class="text-[10px] px-1.5 py-0.5 rounded-full" style="background:rgba(99,102,241,0.18);color:#a5b4fc;border:1px solid rgba(99,102,241,0.4);">hace ${mins}m</span>`;
+        else if (mins < 1440) badge = `<span class="text-[10px] px-1.5 py-0.5 rounded-full" style="background:rgba(245,158,11,0.18);color:#fbbf24;border:1px solid rgba(245,158,11,0.4);">hace ${Math.floor(mins/60)}h</span>`;
+        else                  badge = `<span class="text-[10px] px-1.5 py-0.5 rounded-full" style="background:rgba(100,116,139,0.18);color:#94a3b8;border:1px solid rgba(100,116,139,0.4);">hace ${Math.floor(mins/1440)}d</span>`;
+        const tipo = p.codigoProductoBase
+          ? `<span class="text-[9px] uppercase font-bold text-purple-300">DERIVADO</span>`
+          : (parseFloat(p.factorConversion) === 1 || !p.factorConversion)
+            ? `<span class="text-[9px] uppercase font-bold text-emerald-300">CANÓNICO</span>`
+            : `<span class="text-[9px] uppercase font-bold text-blue-300">PRESENTACIÓN · f=${p.factorConversion}</span>`;
+        const safeId = String(p.idProducto || '').replace(/'/g, '&#39;');
+        return `<div class="flex items-center gap-3 p-3 rounded-lg cursor-pointer hover:scale-[1.01] transition-all"
+          style="background:#0a1424;border:1px solid #1e293b;"
+          onclick="MOS.closeModal('modalLogProductos');MOS.abrirModalProducto('${safeId}')">
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-medium text-slate-200 truncate">${p.descripcion || '—'}</div>
+            <div class="flex items-center gap-2 mt-0.5 flex-wrap">
+              ${tipo}
+              <span class="text-[10px] text-slate-500">${p.skuBase || '—'}</span>
+              <span class="text-[10px] text-amber-400 font-bold">S/ ${parseFloat(p.precioVenta || 0).toFixed(2)}</span>
+            </div>
+            <div class="text-[10px] text-slate-500 mt-1">
+              ✏️ ${p.ultimaEdicionPor || 'desconocido'} · ${fmt}
+            </div>
+          </div>
+          ${badge}
+        </div>`;
+      }).join('');
+    } catch(e) {
+      cont.innerHTML = '<div class="text-center py-6 text-red-400 text-sm">Error: ' + e.message + '</div>';
+    }
   }
 
   // ── Product modal — abrir ─────────────────────────────────
@@ -16812,6 +16868,7 @@ const MOS = (() => {
     abrirAnalitica, cerrarAnalitica, setAnPeriodo, guardarStockMinMax, _anCurrentId,
     guardarAjustePrecios, stepperInc, stepperDec,
     abrirModalProducto, guardarProducto,
+    abrirLogProductos, refreshLogProductos,
     prodTogglePolitica, _prodOnPoliticaOverride, _prodOnModoChange, _prodActualizarPoliticaEfectiva,
     setProdTipo, onTipoCheck, onEnvasableCheck, prodAutogenBarcode, prodValidarCodigoBarra, prodToggleEstado, prodToggleCosto,
     prodCalcMargen, prodOnRange, prodToggleSunat, prodOnTipoIGVChange, prodToggleEquiv,

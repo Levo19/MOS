@@ -3584,6 +3584,9 @@
         <button class="cat-tool-btn cat-btn-promo" onclick="MOS.nav('promociones')" title="Gestionar promociones">
           <span>🎯</span><span class="cat-btn-new-lbl">Promos</span>
         </button>
+        <button id="btnLogProductos" class="cat-tool-btn hidden" onclick="MOS.abrirLogProductos()" title="Log de cambios de catálogo (master)" style="background:rgba(168,85,247,0.12);border-color:rgba(168,85,247,0.5);color:#c084fc;">
+          <span>📜</span><span class="cat-btn-new-lbl">Log</span>
+        </button>
         <button class="btn-primary whitespace-nowrap flex items-center gap-1 cat-tool-btn cat-btn-new" onclick="MOS.abrirModalProducto(null)">
           <span>+</span><span class="cat-btn-new-lbl">Nuevo</span>
         </button>
@@ -5311,6 +5314,28 @@
 </div>
 
 <!-- Producto Modal -->
+<!-- ═══════════════════════════════════════════════════════
+     MODAL: LOG DE CAMBIOS DE PRODUCTOS (master)
+═══════════════════════════════════════════════════════ -->
+<div id="modalLogProductos" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalLogProductos')">
+  <div class="modal-box flex flex-col" style="max-width:720px;max-height:92vh">
+    <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(168,85,247,0.10),transparent);">
+      <div class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl" style="background:linear-gradient(135deg,#581c87,#a855f7);">📜</div>
+      <div class="min-w-0 flex-1">
+        <h2 class="font-bold text-base text-white">Log de cambios — Catálogo</h2>
+        <p class="text-[11px] text-slate-500 mt-0.5">Productos editados recientemente · ordenados por fecha desc</p>
+      </div>
+      <button onclick="MOS.refreshLogProductos()" class="btn-ghost text-xs px-2 py-1.5" title="Recargar">↺</button>
+      <button onclick="MOS.closeModal('modalLogProductos')" class="modal-close-x">×</button>
+    </div>
+    <div class="overflow-y-auto px-5 py-3 flex-1">
+      <div id="logProductosList" class="space-y-2">
+        <div class="text-center py-6 text-slate-500 text-sm">Cargando...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop hidden" id="modalProducto">
   <div class="modal-box" style="padding:0;display:flex;flex-direction:column;max-height:92vh;overflow:hidden">
     <!-- Header -->

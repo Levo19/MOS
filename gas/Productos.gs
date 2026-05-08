@@ -206,6 +206,49 @@ function _ensurePMTextColumns(sheet) {
   } catch(_){}
 }
 
+// Garantiza columnas de auditoría: ultimaEdicionPor (texto) + ultimaEdicion (timestamp)
+function _garantizarColumnasAuditoriaProducto(sheet) {
+  try {
+    sheet = sheet || getSheet('PRODUCTOS_MASTER');
+    var hdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var nuevas = [];
+    if (hdrs.indexOf('ultimaEdicionPor') < 0) nuevas.push('ultimaEdicionPor');
+    if (hdrs.indexOf('ultimaEdicion') < 0)    nuevas.push('ultimaEdicion');
+    nuevas.forEach(function(c) {
+      var nextCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, nextCol).setValue(c).setFontWeight('bold').setBackground('#1f2937').setFontColor('#fff');
+    });
+  } catch(_){}
+}
+
+// Endpoint: top N productos editados recientemente (para panel master "log de cambios")
+function getProductosEditadosRecientes(params) {
+  var limit = parseInt((params && params.limit) || 50, 10);
+  if (!limit || limit < 1) limit = 50;
+  if (limit > 500) limit = 500;
+  _garantizarColumnasAuditoriaProducto();
+  var rows = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
+  rows = rows.filter(function(r){ return r.ultimaEdicion; });
+  rows.sort(function(a, b) {
+    var ta = a.ultimaEdicion instanceof Date ? a.ultimaEdicion.getTime() : (new Date(a.ultimaEdicion).getTime() || 0);
+    var tb = b.ultimaEdicion instanceof Date ? b.ultimaEdicion.getTime() : (new Date(b.ultimaEdicion).getTime() || 0);
+    return tb - ta;
+  });
+  return { ok: true, data: rows.slice(0, limit).map(function(r) {
+    return {
+      idProducto:       r.idProducto,
+      skuBase:          r.skuBase,
+      descripcion:      r.descripcion,
+      precioVenta:      r.precioVenta,
+      ultimaEdicion:    r.ultimaEdicion instanceof Date ? r.ultimaEdicion.toISOString() : r.ultimaEdicion,
+      ultimaEdicionPor: r.ultimaEdicionPor || '',
+      codigoProductoBase: r.codigoProductoBase || '',
+      factorConversion: r.factorConversion,
+      esEnvasable:      r.esEnvasable
+    };
+  }) };
+}
+
 function crearProductoMaster(params) {
   var bloqueo = _validarSource(params, 'crear', 'PRODUCTOS_MASTER');
   if (bloqueo) return bloqueo;
@@ -360,11 +403,16 @@ function actualizarProductoMaster(params) {
   var sheet = getSheet('PRODUCTOS_MASTER');
   // Garantizar formato texto en columnas de IDs antes de cualquier escritura
   _ensurePMTextColumns(sheet);
+  // Garantizar columnas de auditoría (ultimaEdicionPor + ultimaEdicion) — idempotente
+  _garantizarColumnasAuditoriaProducto(sheet);
   var data  = sheet.getDataRange().getValues();
   var hdrs  = data[0];
 
   for (var i = 1; i < data.length; i++) {
-    var match = data[i][0] === params.idProducto || data[i][2] === params.codigoBarra;
+    // Match SOLO por idProducto cuando viene (más seguro que el OR codigoBarra)
+    var match = params.idProducto
+      ? (data[i][0] === params.idProducto)
+      : (data[i][2] === params.codigoBarra);
     if (!match) continue;
 
     var precioAnterior = data[i][hdrs.indexOf('precioVenta')];
@@ -381,34 +429,69 @@ function actualizarProductoMaster(params) {
     var _numCampos = ['precioVenta','precioCosto','factorConversion','factorConversionBase',
                       'mermaEsperadaPct','stockMinimo','stockMaximo','IGV_Porcentaje',
                       'margenPct','precioTope'];
-    // Campos críticos que NUNCA deben sobrescribirse con vacío (defensa contra
-    // bugs de frontend que mandan params.skuBase = '' cuando el input no estaba poblado)
-    var _camposNoVaciables = ['skuBase', 'codigoBarra', 'descripcion'];
+    // Campos críticos que NUNCA deben sobrescribirse con vacío. Si el frontend
+    // manda params[campo] = '' o null, IGNORAR. Si querés borrar de verdad, usar
+    // el flag explícito params._permitirVaciar = ['campo1','campo2'].
+    // Esto previene el bug en que el modal manda todo el form con vacíos no intencionales.
+    var _camposNoVaciables = ['skuBase', 'codigoBarra', 'descripcion',
+                              'factorConversion', 'codigoProductoBase', 'factorConversionBase',
+                              'idCategoria', 'unidad', 'Unidad_Medida'];
+    var _permitirVaciar = Array.isArray(params._permitirVaciar) ? params._permitirVaciar : [];
     // Campos que deben preservarse como TEXTO (evitar conversión a número que pierde
     // ceros a la izquierda, formato GS1, etc.)
-    var _camposTexto = ['skuBase', 'codigoBarra'];
+    var _camposTexto = ['skuBase', 'codigoBarra', 'codigoProductoBase'];
+    var _huboCambioReal = false;
     campos.forEach(function(campo) {
       if (params[campo] !== undefined) {
         var col = hdrs.indexOf(campo);
         if (col < 0) return;
-        // Si es campo crítico y el valor llega vacío, no tocar la celda
-        if (_camposNoVaciables.indexOf(campo) >= 0 &&
-            (params[campo] === '' || params[campo] === null)) {
+        var llegoVacio = (params[campo] === '' || params[campo] === null);
+        // Si es campo protegido contra vaciado y llega vacío sin flag explícito → ignorar
+        if (llegoVacio &&
+            _camposNoVaciables.indexOf(campo) >= 0 &&
+            _permitirVaciar.indexOf(campo) < 0) {
           return;
         }
         var cell = sheet.getRange(i + 1, col + 1);
+        var valorActual = data[i][col];
         if (_camposTexto.indexOf(campo) >= 0) {
           // Forzar TEXTO en celdas de identificadores
           cell.setNumberFormat('@');
-          cell.setValue(String(params[campo] || ''));
+          var nuevoVal = String(params[campo] || '');
+          if (String(valorActual || '') !== nuevoVal) _huboCambioReal = true;
+          cell.setValue(nuevoVal);
         } else {
           var val = (_numCampos.indexOf(campo) >= 0 && params[campo] !== '')
             ? parseFloat(params[campo])
             : params[campo];
-          cell.setValue(isNaN(val) ? params[campo] : val);
+          var nuevoFinal = isNaN(val) ? params[campo] : val;
+          if (String(valorActual) !== String(nuevoFinal)) _huboCambioReal = true;
+          cell.setValue(nuevoFinal);
         }
       }
     });
+
+    // Estandarizar: si después del update el producto es CANÓNICO y factorConversion
+    // está vacío, escribir 1 explícitamente (modelo normalizado).
+    try {
+      var iCpb = hdrs.indexOf('codigoProductoBase');
+      var iFc  = hdrs.indexOf('factorConversion');
+      var cpbActual = String(sheet.getRange(i + 1, iCpb + 1).getValue() || '').trim();
+      var fcActual  = sheet.getRange(i + 1, iFc + 1).getValue();
+      if (!cpbActual && (fcActual === '' || fcActual === null || fcActual === undefined)) {
+        sheet.getRange(i + 1, iFc + 1).setValue(1);
+      }
+    } catch(_){}
+
+    // Auditoría: registrar quién y cuándo (solo si hubo cambio real, ignora calls del propagador)
+    if (_huboCambioReal && !params._noPropagar) {
+      try {
+        var iUltPor = hdrs.indexOf('ultimaEdicionPor');
+        var iUltAt  = hdrs.indexOf('ultimaEdicion');
+        if (iUltPor >= 0) sheet.getRange(i + 1, iUltPor + 1).setValue(String(params.usuario || params._audit?.usuario || 'desconocido'));
+        if (iUltAt  >= 0) sheet.getRange(i + 1, iUltAt + 1).setValue(new Date());
+      } catch(_){}
+    }
 
     // Historial si cambió el precio
     var cambioPrecioVenta = (params.precioVenta !== undefined &&
