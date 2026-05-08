@@ -457,15 +457,33 @@ function getDispositivos(params) {
   var tz = Session.getScriptTimeZone();
   rows.forEach(function(r){
     if (!r.Ultima_Conexion) return;
-    if (r.Ultima_Conexion instanceof Date) {
-      r.Ultima_Conexion = r.Ultima_Conexion.toISOString();
-    } else if (typeof r.Ultima_Conexion === 'string') {
-      // Legacy: "2026-05-08 14:23:00" sin TZ → asumir TZ del script y convertir a ISO con Z
-      var s = r.Ultima_Conexion;
-      if (s.indexOf('T') < 0 && s.indexOf('Z') < 0) {
-        var parsed = Utilities.parseDate(s, tz, 'yyyy-MM-dd HH:mm:ss');
-        if (parsed) r.Ultima_Conexion = parsed.toISOString();
+    try {
+      if (r.Ultima_Conexion instanceof Date) {
+        r.Ultima_Conexion = r.Ultima_Conexion.toISOString();
+        return;
       }
+      if (typeof r.Ultima_Conexion === 'string') {
+        var s = r.Ultima_Conexion.trim();
+        // Si ya tiene T o Z, asumir ISO válido — dejarlo como está
+        if (s.indexOf('T') >= 0 || s.indexOf('Z') >= 0) return;
+        // Intentar parsear con varios formatos legacy
+        var parsed = null;
+        var formatos = ['yyyy-MM-dd HH:mm:ss', 'yyyy-MM-dd', 'dd/MM/yyyy HH:mm:ss', 'dd/MM/yyyy'];
+        for (var fi = 0; fi < formatos.length; fi++) {
+          try {
+            parsed = Utilities.parseDate(s, tz, formatos[fi]);
+            if (parsed && !isNaN(parsed.getTime())) break;
+            parsed = null;
+          } catch(_) { /* intentar siguiente formato */ }
+        }
+        if (parsed) {
+          r.Ultima_Conexion = parsed.toISOString();
+        }
+        // Si nada parsea, dejarlo como string crudo — el frontend hará best-effort
+      }
+    } catch(eRow) {
+      Logger.log('Parse Ultima_Conexion failed for ' + r.ID_Dispositivo + ': ' + eRow.message);
+      // No re-throw — un row mal no debe romper toda la lista
     }
   });
   return { ok: true, data: rows };
