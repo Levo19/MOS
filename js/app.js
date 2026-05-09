@@ -5717,12 +5717,12 @@ const MOS = (() => {
       el.innerHTML = `<p class="text-slate-500 text-sm text-center py-8">Sin resultados</p>`;
       return;
     }
-    // Render UNA SOLA vez de la lista plana (sin wrappers extra).
+    // Card minimalista: el detalle ya repite todos los datos secundarios
+    // (RUC, forma pago, día pago, botones llamar/whatsapp). Aquí solo lo
+    // estrictamente necesario para responder "¿lo abro o no?".
     el.innerHTML = filtrados.map((p, idx) => {
       const sel = S.provSelId === p.idProveedor;
       const urg = _provUrgenciaPedido(p);
-      const formaTxt = p.formaPago === 'CREDITO' ? `💳 Crédito ${p.plazoCredito || 0}d` : (p.formaPago === 'CONTADO' ? '💵 Contado' : '');
-      const tieneTel = !!p.telefono;
       const pendStats = _provContarPendientes(p.idProveedor);
       const pendBadge = _provPendBadgeHtml(p.idProveedor, pendStats);
       const cartStats = _provCarritoResumen(p.idProveedor);
@@ -5743,7 +5743,7 @@ const MOS = (() => {
             ${_provAvatarHtmlFull(p, 'prov-avatar')}
             <div class="min-w-0 flex-1">
               <div class="prov-card-nombre">${p.nombre}</div>
-              <div class="prov-card-ruc">${p.ruc || '—'}${p.categoriaProducto ? ' · ' + p.categoriaProducto : ''}</div>
+              ${p.categoriaProducto ? `<div class="prov-card-cat">${p.categoriaProducto}</div>` : ''}
             </div>
             <div class="prov-card-badges">
               ${cartBadge}
@@ -5755,15 +5755,8 @@ const MOS = (() => {
               ${urg.estado === 'hoy' ? '🔥' : urg.estado === 'proximo' ? '⏳' : urg.estado === 'inactivo' ? '⚠' : '📅'}
               ${urg.label}
             </span>
-            ${formaTxt ? `<span class="prov-card-meta">${formaTxt}</span>` : ''}
-            ${p.diaPago ? `<span class="prov-card-meta" title="Día de pago">💸 ${_provDiaLabel(p.diaPago)}</span>` : ''}
           </div>
           ${_provSparkBars(p.idProveedor)}
-          ${tieneTel ? `
-          <div class="prov-card-quickbtns">
-            <button onclick="MOS.provLlamar('${p.idProveedor}', event)" class="prov-quick-btn" title="Llamar ${p.telefono}">📞 ${p.telefono}</button>
-            <button onclick="MOS.provWhatsApp('${p.idProveedor}', event)" class="prov-quick-btn whatsapp" title="WhatsApp">💬</button>
-          </div>` : ''}
         </div>`;
     }).join('') +
     // Inline-detail único (legacy, el detalle real va al panel desktop).
