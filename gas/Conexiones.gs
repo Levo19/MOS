@@ -498,6 +498,8 @@ function lanzarProductoNuevo(params) {
   var tipo = String(params.tipo || 'NUEVO').toUpperCase();
   var idProductoCreado = '';
   var idEquivCreado    = '';
+  // Resolver usuario una sola vez: explícito > _audit (auto-inyectado por api.js) > '' (no 'desconocido' aún — los handlers internos hacen el fallback)
+  var usuarioPropag = params.usuario || (params._audit && params._audit.usuario) || '';
 
   if (tipo === 'NUEVO') {
     // VALIDACIONES OBLIGATORIAS — coherentes con crearProductoMaster directo
@@ -514,6 +516,7 @@ function lanzarProductoNuevo(params) {
     // 1. Crear en PRODUCTOS_MASTER de MOS
     var resultCrear = crearProductoMaster({
       _source:            'MOS_PN_APROBACION',
+      _audit:             params._audit,                  // propagar contexto auditoría
       codigoBarra:        params.codigoFinal        || '',
       descripcion:        params.descripcion        || '',
       marca:              params.marca              || '',
@@ -530,7 +533,7 @@ function lanzarProductoNuevo(params) {
       factorConversion:   params.factorConversion   || '',
       mermaEsperadaPct:   params.mermaEsperadaPct   || '',
       zona:               params.zona               || '',
-      usuario:            params.usuario            || 'MOS'
+      usuario:            usuarioPropag             || 'MOS'
     });
     if (!resultCrear.ok) return resultCrear;
     idProductoCreado = resultCrear.data.idProducto;
@@ -538,9 +541,11 @@ function lanzarProductoNuevo(params) {
     // 1. Crear en EQUIVALENCIAS de MOS
     var resultEq = crearEquivalencia({
       _source:     'MOS_PN_APROBACION',
+      _audit:      params._audit,                          // propagar contexto auditoría
       skuBase:     params.skuBase,
       codigoBarra: params.codigoFinal || '',
-      descripcion: params.descripcionEquiv || params.descripcion || ''
+      descripcion: params.descripcionEquiv || params.descripcion || '',
+      usuario:     usuarioPropag                            // antes faltaba — causaba "desconocido" en log
     });
     if (!resultEq || !resultEq.ok) return { ok: false, error: (resultEq && resultEq.error) || 'Error creando equivalencia' };
     idEquivCreado = resultEq.data && resultEq.data.idEquiv;
@@ -596,10 +601,11 @@ function lanzarProductoNuevo(params) {
       try {
         crearEquivalencia({
           _source:     'MOS_PN_CORRECCION',
+          _audit:      params._audit,                       // propagar contexto auditoría
           skuBase:     existente.skuBase,
           codigoBarra: codigoViejo,
           descripcion: 'Código corregido el ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd') + ' (era principal)',
-          usuario:     params.usuario || ''
+          usuario:     usuarioPropag || ''
         });
       } catch(_){}
     }
@@ -607,9 +613,10 @@ function lanzarProductoNuevo(params) {
     // 4. Actualizar codigoBarra del producto existente: viejo → nuevo
     var resultUpd = actualizarProductoMaster({
       _source:      'MOS_PN_CORRECCION',
+      _audit:       params._audit,                          // propagar contexto auditoría
       idProducto:   existente.idProducto,
       codigoBarra:  codigoNuevo,
-      usuario:      params.usuario || params.aprobadoPor || '',
+      usuario:      usuarioPropag || params.aprobadoPor || '',
       motivoPrecio: 'Corrección de código de barra (era ' + codigoViejo + ')'
     });
     if (!resultUpd.ok) return resultUpd;
