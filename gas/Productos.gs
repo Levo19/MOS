@@ -673,10 +673,20 @@ function crearEquivalencia(params) {
   var sheet = getSheet('EQUIVALENCIAS');
   var id = _generateId('EQ');
   var nextRow = sheet.getLastRow() + 1;
-  // Columnas 2 (skuBase) y 3 (codigoBarra) como TEXTO
   sheet.getRange(nextRow, 2, 1, 2).setNumberFormat('@');
   var values = [id, String(params.skuBase || ''), String(params.codigoBarra || ''), params.descripcion || '', '1'];
   sheet.getRange(nextRow, 1, 1, values.length).setValues([values]);
+  // Auditoría: registrar entrada en el historial del producto base
+  try {
+    _registrarEnHistorialProductoPorSkuBase(params.skuBase, {
+      ts: new Date().toISOString(),
+      usuario: String(params.usuario || (params._audit && params._audit.usuario) || 'desconocido'),
+      source: String(params._source || 'unknown'),
+      accion: 'agregar equivalencia',
+      codigoEquivalente: String(params.codigoBarra),
+      descripcionEquiv: String(params.descripcion || '')
+    });
+  } catch(_){}
   return { ok: true, data: { idEquiv: id } };
 }
 
@@ -689,13 +699,17 @@ function actualizarEquivalencia(params) {
   var hdrs  = data[0];
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][0]) !== String(params.idEquiv)) continue;
+    var skuBase = String(data[i][hdrs.indexOf('skuBase')] || '');
+    var cambios = [];
     var campos = ['codigoBarra', 'descripcion', 'activo'];
     campos.forEach(function(c) {
       if (params[c] !== undefined) {
         var col = hdrs.indexOf(c);
         if (col < 0) return;
+        var prev = data[i][col];
         var cell = sheet.getRange(i + 1, col + 1);
-        // codigoBarra debe ir como TEXTO para preservar ceros / formato
+        var nuevo = c === 'codigoBarra' ? String(params[c] || '') : params[c];
+        if (String(prev) !== String(nuevo)) cambios.push({ campo: 'equiv.' + c, antes: prev, despues: nuevo });
         if (c === 'codigoBarra') {
           cell.setNumberFormat('@');
           cell.setValue(String(params[c] || ''));
@@ -704,9 +718,47 @@ function actualizarEquivalencia(params) {
         }
       }
     });
+    // Auditoría: registrar cambios en historial del producto base
+    if (cambios.length && skuBase) {
+      try {
+        _registrarEnHistorialProductoPorSkuBase(skuBase, {
+          ts: new Date().toISOString(),
+          usuario: String(params.usuario || (params._audit && params._audit.usuario) || 'desconocido'),
+          source: String(params._source || 'unknown'),
+          accion: String(params.activo) === '0' ? 'desactivar equivalencia' : 'editar equivalencia',
+          cambios: cambios,
+          idEquiv: params.idEquiv
+        });
+      } catch(_){}
+    }
     return { ok: true };
   }
   return { ok: false, error: 'Equivalencia no encontrada: ' + params.idEquiv };
+}
+
+// Helper: append entrada al historial del producto cuyo skuBase coincide.
+// Útil para auditar cambios de equivalencias en el log del producto base.
+function _registrarEnHistorialProductoPorSkuBase(skuBase, entrada) {
+  if (!skuBase) return;
+  var sheet = getSheet('PRODUCTOS_MASTER');
+  _garantizarColumnasAuditoriaProducto(sheet);
+  var data = sheet.getDataRange().getValues();
+  var hdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var iSku = hdrs.indexOf('skuBase');
+  var iCpb = hdrs.indexOf('codigoProductoBase');
+  var iFc  = hdrs.indexOf('factorConversion');
+  if (iSku < 0) return;
+  var skuRef = String(skuBase).toUpperCase();
+  // Match al CANÓNICO (mismo skuBase, sin codigoProductoBase, factor=1 o vacío)
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][iSku] || '').toUpperCase() !== skuRef) continue;
+    var cpb = iCpb >= 0 ? String(data[i][iCpb] || '').trim() : '';
+    var fc  = iFc  >= 0 ? data[i][iFc] : 1;
+    var esCanon = !cpb && (fc === '' || fc === null || fc === undefined || parseFloat(fc) === 1);
+    if (!esCanon) continue;
+    _appendHistorialProducto(sheet, i + 1, hdrs, entrada);
+    return;
+  }
 }
 
 // ── HISTORIAL DE PRECIOS ─────────────────────────────────────

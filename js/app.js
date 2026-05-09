@@ -960,8 +960,8 @@ const MOS = (() => {
 
   async function _catalogoRefreshSilencioso() {
     if (!API.isConfigured()) return;
-    // PN pendientes en paralelo (sin bloquear)
     _refreshPNPendientes().catch(() => {});
+    iconBusy('catalogo', true); // Spinner mini en el ícono del sidebar
     try {
       const [freshProd, freshEquiv] = await Promise.all([
         API.get('getProductos', {}),
@@ -969,14 +969,13 @@ const MOS = (() => {
       ]);
       const productos = freshProd || [];
 
-      // Reconstruir equivMap
       const equivMap = {};
       (freshEquiv || []).forEach(e => {
         const k = e.skuBase || e.idProducto;
         if (k && e.codigoBarra) { if (!equivMap[k]) equivMap[k] = []; equivMap[k].push(e.codigoBarra); }
       });
 
-      // ── Diff: qué cambió ──────────────────────────────────
+      // Diff: qué cambió
       const prevMap = {};
       (S.productos || []).forEach(p => { prevMap[p.idProducto] = p; });
       const prevIds = new Set(Object.keys(prevMap));
@@ -993,91 +992,130 @@ const MOS = (() => {
             || String(prev.estado)      !== String(p.estado);
       });
 
+      const esPrimeraVez = !S.productos || S.productos.length === 0;
       const sinCambios = added.length === 0 && removed.length === 0 && changed.length === 0
                       && JSON.stringify(equivMap) === JSON.stringify(S.equivMap);
-      if (sinCambios) return; // nada que hacer
+      if (sinCambios) return;
 
-      // ── Actualizar estado ─────────────────────────────────
       S.productos = productos;
       S.equivMap  = equivMap;
       _catSaveCache({ productos, equivMap });
 
-      // ── Actualizar dashboard KPI si visible ───────────────
+      // KPI dashboard
       const kpiProd = $('dashTotalProductos');
       if (kpiProd) {
         const activos = productos.filter(p => _isProdActivo(p)).length;
         _setVal('dashTotalProductos', activos, kpiProd.textContent !== String(activos));
       }
 
-      // ── Si no estamos en catálogo, terminar aquí ──────────
-      if (S.view !== 'catalogo') return;
+      // Si NO estamos en catálogo, no rendericemos pero sí log diagnóstico
+      if (S.view !== 'catalogo') {
+        if (added.length || removed.length) console.log('[CatRefresh]', { added: added.map(p => p.descripcion), removed: removed.map(p => p.descripcion), changed: changed.length });
+        return;
+      }
 
       const container = $('listCatalogo');
       if (!container) return;
 
-      // ── Actualización in-place (solo precios/costos) ──────
-      // Si no hay nuevos ni eliminados, actualizar solo las celdas que cambiaron
-      if (added.length === 0 && removed.length === 0 && changed.length > 0) {
-        let allInPlace = true;
-        changed.forEach(p => {
-          const priceEl = document.querySelector(`[data-cat-precio="${p.idProducto}"]`);
-          const costoEl = document.querySelector(`[data-cat-costo="${p.idProducto}"]`);
-          const cardEl  = document.querySelector(`[data-cat-id="${p.idProducto}"]`);
-          if (priceEl) {
-            const nuevo = fmtMoney(p.precioVenta);
-            if (priceEl.textContent !== nuevo) {
-              priceEl.textContent = nuevo;
-              priceEl.classList.remove('val-flash'); priceEl.offsetHeight; priceEl.classList.add('val-flash');
-            }
-          } else { allInPlace = false; } // no está visible (filtrado/fuera de viewport)
-          if (costoEl) {
-            const nuevo = 'Costo: ' + fmtMoney(p.precioCosto);
-            if (costoEl.textContent !== nuevo) { costoEl.textContent = nuevo; }
-          }
-          // Si cambió estado (activo/inactivo), actualizar clase de la card
-          if (cardEl) {
-            cardEl.classList.toggle('cat-inactive', !_isProdActivo(p));
-          }
-        });
-
-        // Si todos los cambios fueron in-place, solo notificar discretamente
-        if (allInPlace || changed.length <= 5) {
-          const msg = changed.length === 1
-            ? `Precio actualizado: ${changed[0].descripcion || changed[0].idProducto}`
-            : `${changed.length} precios actualizados`;
-          toast(msg, 'ok');
-          return;
-        }
+      // ── Si es primera vez (cargando ya en catálogo), render completo SIN parpadeo ──
+      if (esPrimeraVez) {
+        populateCatFiltro();
+        renderCatalogo();
+        return;
       }
 
-      // ── Re-render suave (nuevos, eliminados, o cambios masivos) ──
-      const scrollY = container.scrollTop;
-      container.style.transition = 'opacity .18s ease';
-      container.style.opacity    = '0';
-      await new Promise(r => setTimeout(r, 180));
-
-      populateCatFiltro();
-      renderCatalogo();
-      container.scrollTop = scrollY;
-
-      // Fade in
-      container.style.opacity = '1';
-      setTimeout(() => { container.style.transition = ''; }, 200);
-
-      // Highlight cards nuevas
-      added.forEach(p => {
-        const card = document.querySelector(`[data-cat-id="${p.idProducto}"]`);
-        if (card) { card.style.animation = 'cardSlideIn .4s ease'; }
+      // ── Update IN-PLACE de cambios (sin fade-out del contenedor) ──
+      // 1. Cambios de precio/costo/descripcion en cards visibles
+      changed.forEach(p => {
+        const priceEl = document.querySelector(`[data-cat-precio="${p.idProducto}"]`);
+        const costoEl = document.querySelector(`[data-cat-costo="${p.idProducto}"]`);
+        const cardEl  = document.querySelector(`[data-cat-id="${p.idProducto}"]`);
+        if (priceEl) {
+          const nuevo = fmtMoney(p.precioVenta);
+          if (priceEl.textContent !== nuevo) {
+            priceEl.textContent = nuevo;
+            priceEl.classList.remove('val-flash'); priceEl.offsetHeight; priceEl.classList.add('val-flash');
+          }
+        }
+        if (costoEl) {
+          const nuevo = 'Costo: ' + fmtMoney(p.precioCosto);
+          if (costoEl.textContent !== nuevo) { costoEl.textContent = nuevo; }
+        }
+        if (cardEl) {
+          cardEl.classList.toggle('cat-inactive', !_isProdActivo(p));
+        }
       });
 
-      // Toast informativo
-      const msgs = [];
-      if (added.length)   msgs.push(`+${added.length} nuevo${added.length>1?'s':''}`);
-      if (removed.length) msgs.push(`−${removed.length} eliminado${removed.length>1?'s':''}`);
-      if (changed.length && !added.length && !removed.length) msgs.push(`${changed.length} precio${changed.length>1?'s':''} actualizado${changed.length>1?'s':''}`);
-      if (msgs.length) toast('Catálogo: ' + msgs.join(', '), 'ok');
+      // 2. Eliminar cards de productos removidos (slide-out individual)
+      removed.forEach(p => {
+        const cardEl = document.querySelector(`[data-cat-id="${p.idProducto}"]`);
+        if (cardEl) {
+          cardEl.style.transition = 'all 0.3s ease-out';
+          cardEl.style.transform = 'translateX(-30px) scale(0.95)';
+          cardEl.style.opacity = '0';
+          cardEl.style.maxHeight = cardEl.offsetHeight + 'px';
+          requestAnimationFrame(() => {
+            cardEl.style.maxHeight = '0';
+            cardEl.style.marginTop = '0';
+            cardEl.style.marginBottom = '0';
+          });
+          setTimeout(() => cardEl.remove(), 320);
+        }
+      });
 
-    } catch(e) { console.warn('[CatRefresh]', e.message); }
+      // 3. Insertar cards nuevas (re-render del catálogo solo si hay añadidos)
+      // Si solo cambios in-place + removidos, no necesita re-render total
+      if (added.length > 0) {
+        // Re-render sin parpadeo: solo actualiza el HTML, mantiene scroll
+        const scrollY = container.scrollTop;
+        populateCatFiltro();
+        renderCatalogo();
+        container.scrollTop = scrollY;
+        // Highlight cards nuevas con animación
+        added.forEach(p => {
+          const card = document.querySelector(`[data-cat-id="${p.idProducto}"]`);
+          if (card) { card.style.animation = 'cardSlideIn .4s ease'; }
+        });
+      }
+
+      // ── Toast inteligente con NOMBRES de productos ──
+      if (added.length) {
+        const nombres = added.slice(0, 3).map(p => p.descripcion || p.idProducto);
+        const txt = added.length <= 3
+          ? `📦 Nuevos: ${nombres.join(', ')}`
+          : `📦 +${added.length} nuevos: ${nombres.join(', ')} +${added.length - 3} más`;
+        toast(txt, 'ok', 6000);
+        // Log diagnóstico completo en consola
+        console.log('[CatRefresh +' + added.length + ']', added.map(p => ({ id: p.idProducto, desc: p.descripcion, sku: p.skuBase })));
+      }
+      if (removed.length) {
+        const nombres = removed.slice(0, 3).map(p => p.descripcion || p.idProducto);
+        toast(`🗑 ${removed.length} eliminado${removed.length>1?'s':''}: ${nombres.join(', ')}`, 'warn', 5000);
+      }
+      // Cambios de precio: solo toast si cambio significativo (>5% en algún producto)
+      if (!added.length && !removed.length && changed.length > 0) {
+        const significativos = changed.filter(p => {
+          const prev = prevMap[p.idProducto];
+          if (!prev) return false;
+          const pa = parseFloat(prev.precioVenta) || 0;
+          const pn = parseFloat(p.precioVenta) || 0;
+          if (pa === 0) return true;
+          return Math.abs(pn - pa) / pa > 0.05;
+        });
+        if (significativos.length === 1) {
+          const p = significativos[0];
+          toast(`💲 ${p.descripcion}: S/ ${parseFloat(prevMap[p.idProducto].precioVenta).toFixed(2)} → S/ ${parseFloat(p.precioVenta).toFixed(2)}`, 'ok', 5000);
+        } else if (significativos.length > 1) {
+          toast(`💲 ${significativos.length} precios actualizados (cambios >5%)`, 'ok', 4000);
+        }
+        // Cambios pequeños: silencio
+      }
+
+    } catch(e) {
+      console.warn('[CatRefresh]', e.message);
+    } finally {
+      iconBusy('catalogo', false);
+    }
   }
 
   function _startCatRefresh() {
