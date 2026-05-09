@@ -2807,8 +2807,10 @@
     .qp-sheet-v2 {
       position: relative;
       max-height: 88vh;
-      padding: 14px 16px 16px !important;
+      padding: 14px 12px 16px !important;
+      box-sizing: border-box;
     }
+    .qp-sheet-v2 *, .qp-sheet-v2 *::before, .qp-sheet-v2 *::after { box-sizing: border-box; }
     @media (min-width: 768px) {
       /* Tablet/desktop: modal centrado en lugar de bottom sheet */
       .qp-sheet-v2 {
@@ -2816,6 +2818,7 @@
         margin: 4vh auto !important;
         border-radius: 18px !important;
         max-height: 92vh;
+        padding: 14px 18px 18px !important;
       }
     }
     .qp-close {
@@ -2843,40 +2846,54 @@
       background: linear-gradient(135deg, rgba(99,102,241,0.10), rgba(99,102,241,0.04));
       border: 1px solid rgba(99,102,241,0.35);
       border-radius: 14px;
-      padding: 12px 14px;
+      padding: 10px 12px;
       margin-bottom: 14px;
       box-shadow: 0 8px 24px rgba(99,102,241,0.10);
+      max-width: 100%;
+      overflow: hidden;
     }
     .qp-base-label {
       font-size: 10px; font-weight: 800; color: #a5b4fc;
       text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px;
     }
-    .qp-base-row { display: flex; gap: 10px; align-items: center; }
+    .qp-base-row {
+      display: flex; gap: 6px; align-items: center;
+      width: 100%; min-width: 0;
+    }
     .qp-step-btn {
-      width: 44px; height: 44px;
+      width: 40px; height: 40px;
       background: rgba(99,102,241,0.15); border: 1px solid rgba(99,102,241,0.4);
       border-radius: 10px; color: #c7d2fe;
-      font-size: 22px; font-weight: 800; line-height: 1;
+      font-size: 20px; font-weight: 800; line-height: 1;
       cursor: pointer; flex-shrink: 0;
       transition: all 0.12s;
     }
     .qp-step-btn:hover { background: rgba(99,102,241,0.30); transform: scale(1.05); }
     .qp-step-btn:active { transform: scale(0.94); }
     .qp-base-input-wrap {
-      flex: 1; display: flex; align-items: center; gap: 6px;
+      flex: 1 1 0%; min-width: 0;
+      display: flex; align-items: center; gap: 4px;
       background: #060d1f; border: 1.5px solid #334155; border-radius: 10px;
-      padding: 0 12px;
+      padding: 0 10px;
       transition: border-color 0.15s, box-shadow 0.15s;
     }
     .qp-base-input-wrap:focus-within {
       border-color: #818cf8; box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
     }
-    .qp-currency { color: #64748b; font-weight: 700; font-size: 14px; }
+    .qp-currency { color: #64748b; font-weight: 700; font-size: 13px; flex-shrink: 0; }
     .qp-base-input {
-      flex: 1; background: transparent; border: 0; outline: 0;
-      color: #f1f5f9; font-size: 22px; font-weight: 800;
-      padding: 10px 0; min-width: 0;
+      flex: 1 1 0%; min-width: 0; max-width: 100%;
+      background: transparent; border: 0; outline: 0;
+      color: #f1f5f9; font-size: 20px; font-weight: 800;
+      padding: 9px 0;
       text-align: center; letter-spacing: 0.02em;
+      width: 100%;
+    }
+    @media (min-width: 768px) {
+      .qp-step-btn { width: 44px; height: 44px; font-size: 22px; }
+      .qp-base-input { font-size: 22px; padding: 10px 0; }
+      .qp-base-row { gap: 10px; }
+      .qp-currency { font-size: 14px; }
     }
     .qp-base-input::-webkit-outer-spin-button,
     .qp-base-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
