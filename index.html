@@ -2682,6 +2682,207 @@
       margin: 0 auto 1.1rem;
     }
 
+    /* ── QP v2: modal modernizado de cambio de precio ──────────── */
+    .qp-sheet-v2 {
+      position: relative;
+      max-height: 88vh;
+      padding: 14px 16px 16px !important;
+    }
+    @media (min-width: 768px) {
+      /* Tablet/desktop: modal centrado en lugar de bottom sheet */
+      .qp-sheet-v2 {
+        max-width: 480px;
+        margin: 4vh auto !important;
+        border-radius: 18px !important;
+        max-height: 92vh;
+      }
+    }
+    .qp-close {
+      position: absolute; top: 8px; right: 12px;
+      width: 32px; height: 32px;
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 50%; color: #94a3b8;
+      font-size: 20px; line-height: 1;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .qp-close:hover { background: rgba(239,68,68,0.18); color: #f87171; transform: rotate(90deg); }
+    .qp-titulo-wrap { margin-bottom: 14px; padding-right: 36px; }
+    .qp-eyebrow {
+      font-size: 10px; font-weight: 700; color: #64748b;
+      text-transform: uppercase; letter-spacing: 0.08em;
+    }
+    .qp-nombre {
+      font-size: 17px; font-weight: 800; color: #f1f5f9;
+      line-height: 1.2; margin-top: 2px; word-break: break-word;
+    }
+    .qp-subtitulo { font-size: 11px; color: #64748b; margin-top: 3px; }
+
+    /* Tarjeta del precio base */
+    .qp-base-card {
+      background: linear-gradient(135deg, rgba(99,102,241,0.10), rgba(99,102,241,0.04));
+      border: 1px solid rgba(99,102,241,0.35);
+      border-radius: 14px;
+      padding: 12px 14px;
+      margin-bottom: 14px;
+      box-shadow: 0 8px 24px rgba(99,102,241,0.10);
+    }
+    .qp-base-label {
+      font-size: 10px; font-weight: 800; color: #a5b4fc;
+      text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px;
+    }
+    .qp-base-row { display: flex; gap: 10px; align-items: center; }
+    .qp-step-btn {
+      width: 44px; height: 44px;
+      background: rgba(99,102,241,0.15); border: 1px solid rgba(99,102,241,0.4);
+      border-radius: 10px; color: #c7d2fe;
+      font-size: 22px; font-weight: 800; line-height: 1;
+      cursor: pointer; flex-shrink: 0;
+      transition: all 0.12s;
+    }
+    .qp-step-btn:hover { background: rgba(99,102,241,0.30); transform: scale(1.05); }
+    .qp-step-btn:active { transform: scale(0.94); }
+    .qp-base-input-wrap {
+      flex: 1; display: flex; align-items: center; gap: 6px;
+      background: #060d1f; border: 1.5px solid #334155; border-radius: 10px;
+      padding: 0 12px;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .qp-base-input-wrap:focus-within {
+      border-color: #818cf8; box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
+    }
+    .qp-currency { color: #64748b; font-weight: 700; font-size: 14px; }
+    .qp-base-input {
+      flex: 1; background: transparent; border: 0; outline: 0;
+      color: #f1f5f9; font-size: 22px; font-weight: 800;
+      padding: 10px 0; min-width: 0;
+      text-align: center; letter-spacing: 0.02em;
+    }
+    .qp-base-input::-webkit-outer-spin-button,
+    .qp-base-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+    /* Presentaciones */
+    .qp-pres-header {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; flex-wrap: wrap;
+      font-size: 11px; font-weight: 700; color: #94a3b8;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      margin-bottom: 8px; padding: 0 2px;
+    }
+    .qp-tip {
+      font-size: 9.5px; color: #fbbf24; font-weight: 600;
+      text-transform: none; letter-spacing: 0;
+      background: rgba(245,158,11,0.10); padding: 3px 8px;
+      border-radius: 999px; border: 1px solid rgba(245,158,11,0.25);
+    }
+    .qp-pres-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+    .qp-pres-card {
+      display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center;
+      padding: 10px 12px;
+      background: #0a1424; border: 1.5px solid #1e293b; border-radius: 12px;
+      transition: all 0.15s;
+    }
+    .qp-pres-card:hover { border-color: #334155; }
+    .qp-pres-card.qp-modificada {
+      border-color: rgba(251,191,36,0.55);
+      background: linear-gradient(135deg, rgba(251,191,36,0.06), rgba(10,20,36,1));
+    }
+    .qp-pres-card.qp-excluida { opacity: 0.45; filter: saturate(0.5); }
+    .qp-pres-check {
+      width: 22px; height: 22px; cursor: pointer; flex-shrink: 0;
+      accent-color: #6366f1;
+    }
+    .qp-pres-info { min-width: 0; }
+    .qp-pres-nom {
+      font-size: 13px; font-weight: 700; color: #e2e8f0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .qp-pres-meta {
+      font-size: 10px; color: #64748b; margin-top: 1px;
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    }
+    .qp-pres-factor {
+      font-family: 'SF Mono', Menlo, monospace;
+      background: rgba(99,102,241,0.12); color: #a5b4fc;
+      padding: 1px 6px; border-radius: 4px; font-size: 9px;
+    }
+    .qp-pres-antes { color: #64748b; text-decoration: line-through; }
+    .qp-pres-controls {
+      display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+    }
+    .qp-pres-input-wrap {
+      display: flex; align-items: center;
+      background: #060d1f; border: 1.5px solid #334155; border-radius: 8px;
+      padding: 0 8px; min-width: 90px;
+      transition: all 0.15s;
+    }
+    .qp-pres-input-wrap.qp-tocada {
+      border-color: rgba(251,191,36,0.65);
+      box-shadow: 0 0 0 2px rgba(251,191,36,0.12);
+    }
+    .qp-pres-input-wrap.qp-bajo-costo {
+      border-color: rgba(239,68,68,0.65);
+      box-shadow: 0 0 0 2px rgba(239,68,68,0.15);
+    }
+    .qp-pres-input-prefix { color: #64748b; font-size: 11px; font-weight: 700; }
+    .qp-pres-input {
+      flex: 1; background: transparent; border: 0; outline: 0;
+      color: #f1f5f9; font-size: 14px; font-weight: 700;
+      padding: 8px 0 8px 4px; text-align: right; min-width: 0; max-width: 70px;
+    }
+    .qp-pres-input::-webkit-outer-spin-button,
+    .qp-pres-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .qp-pres-pencil {
+      width: 14px; height: 14px;
+      font-size: 11px; opacity: 0; transition: opacity 0.15s;
+      color: #fbbf24;
+    }
+    .qp-pres-input-wrap.qp-tocada .qp-pres-pencil { opacity: 1; }
+    .qp-pres-warn {
+      grid-column: 2 / -1;
+      font-size: 10px; color: #f87171; font-weight: 600;
+      margin-top: 2px;
+      display: none;
+    }
+    .qp-pres-card.qp-bajo-costo-card .qp-pres-warn { display: block; }
+
+    /* Animación de pulso al guardar */
+    @keyframes qpSavedPulse {
+      0%   { box-shadow: 0 0 0 0 rgba(16,185,129,0.5); }
+      50%  { box-shadow: 0 0 0 12px rgba(16,185,129,0); }
+      100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); }
+    }
+    .qp-pres-card.qp-saved {
+      border-color: rgba(16,185,129,0.7) !important;
+      animation: qpSavedPulse 0.7s ease-out;
+    }
+
+    /* Footer con acciones */
+    .qp-footer {
+      display: flex; gap: 10px; padding-top: 6px;
+      border-top: 1px solid #1e293b; padding-top: 14px;
+    }
+    .qp-btn-ghost {
+      padding: 11px 16px; background: transparent;
+      border: 1px solid #334155; border-radius: 10px;
+      color: #94a3b8; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .qp-btn-ghost:hover { background: #1e293b; color: #e2e8f0; }
+    .qp-btn-primary {
+      flex: 1; padding: 11px 18px;
+      background: linear-gradient(135deg, #6366f1, #4f46e5);
+      border: 0; border-radius: 10px;
+      color: white; font-size: 14px; font-weight: 800;
+      cursor: pointer; transition: all 0.15s;
+      box-shadow: 0 6px 18px rgba(99,102,241,0.35);
+    }
+    .qp-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(99,102,241,0.5); }
+    .qp-btn-primary:active { transform: scale(0.97); }
+    .qp-btn-primary[disabled] {
+      background: #334155; cursor: not-allowed;
+      box-shadow: none; transform: none; opacity: 0.6;
+    }
+
     /* Equivalencias in modal */
     .equiv-row {
       display: flex; align-items: center; gap: .6rem;
@@ -5075,30 +5276,47 @@
 
 <!-- ── Precio Rápido (bottom sheet) ─────────────────────── -->
 <div class="qp-overlay" id="modalPrecioRapido" onclick="if(MOS._validBackdropClose(event,this))MOS.cerrarModalPrecioRapido()">
-  <div class="qp-sheet" style="max-height:80vh;overflow-y:auto">
+  <div class="qp-sheet qp-sheet-v2" style="overflow-y:auto">
     <div class="qp-handle"></div>
-    <div class="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-1">Precio de venta</div>
-    <div id="qpNombre" class="font-semibold text-slate-100 text-base mb-3 truncate">—</div>
-    <div class="flex gap-2 mb-3">
-      <div class="flex items-center gap-2 flex-1">
-        <span class="text-slate-500 font-semibold text-sm shrink-0">S/.</span>
-        <div class="stepper lg flex-1">
-          <button class="stepper-btn" onclick="MOS.stepperDec('qpInput',0.50)">−</button>
-          <input id="qpInput" type="number" step="0.01" min="0" class="stepper-input"
-                 style="width:auto;flex:1"
+    <button onclick="MOS.cerrarModalPrecioRapido()" class="qp-close" aria-label="Cerrar">×</button>
+
+    <div class="qp-titulo-wrap">
+      <div class="qp-eyebrow">Cambiar precio</div>
+      <div id="qpNombre" class="qp-nombre">—</div>
+      <div id="qpSubtitulo" class="qp-subtitulo">—</div>
+    </div>
+
+    <!-- Precio canónico -->
+    <div class="qp-base-card">
+      <div class="qp-base-label">Precio base</div>
+      <div class="qp-base-row">
+        <button class="qp-step-btn" onclick="MOS.stepperDec('qpInput',0.50);MOS._qpSyncPresentaciones();MOS._qpBeep('tick')">−</button>
+        <div class="qp-base-input-wrap">
+          <span class="qp-currency">S/</span>
+          <input id="qpInput" type="number" step="0.01" min="0" class="qp-base-input"
                  oninput="MOS._qpSyncPresentaciones()"
                  onkeydown="if(event.key==='Enter')MOS.guardarPrecioRapido()">
-          <button class="stepper-btn" onclick="MOS.stepperInc('qpInput',0.50)">+</button>
         </div>
+        <button class="qp-step-btn" onclick="MOS.stepperInc('qpInput',0.50);MOS._qpSyncPresentaciones();MOS._qpBeep('tick')">+</button>
       </div>
-      <button onclick="MOS.guardarPrecioRapido()" class="btn-primary px-5 text-base font-semibold">Guardar</button>
     </div>
-    <!-- Presentaciones inline (solo si es producto base) -->
-    <div id="qpPresSection" class="hidden mt-1 mb-3">
-      <div class="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-2">Presentaciones</div>
-      <div id="qpPresList" class="space-y-1.5"></div>
+
+    <!-- Presentaciones inline (solo si es producto base con presentaciones) -->
+    <div id="qpPresSection" class="hidden">
+      <div class="qp-pres-header">
+        <span id="qpPresCount">📦 Presentaciones</span>
+        <span class="qp-tip">💡 Si no tocás el precio, sigue al base</span>
+      </div>
+      <div id="qpPresList" class="qp-pres-list"></div>
     </div>
-    <button onclick="MOS.cerrarModalPrecioRapido()" class="btn-ghost w-full text-sm">Cancelar</button>
+
+    <!-- Footer con acciones -->
+    <div class="qp-footer">
+      <button onclick="MOS.cerrarModalPrecioRapido()" class="qp-btn-ghost">Cancelar</button>
+      <button id="qpBtnGuardar" onclick="MOS.guardarPrecioRapido()" class="qp-btn-primary">
+        <span id="qpBtnLabel">✓ Guardar</span>
+      </button>
+    </div>
   </div>
 </div>
 

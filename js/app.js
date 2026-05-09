@@ -2183,13 +2183,22 @@ const MOS = (() => {
     const prod = S.productos.find(p => p.idProducto === idProducto);
     if (!prod) return;
     S._editingPrecioId = idProducto;
+    S._qpTocadas = {}; // tracking de presentaciones modificadas manualmente
     const nombre = $('qpNombre');
+    const subt   = $('qpSubtitulo');
     const inp    = $('qpInput');
     if (nombre) nombre.textContent = prod.descripcion || idProducto;
+    if (subt) {
+      const tipo = prod.codigoProductoBase ? '🔗 Derivado'
+                 : (parseFloat(prod.factorConversion) === 1 || !prod.factorConversion) ? '🔵 Canónico'
+                 : `📐 Presentación · ×${prod.factorConversion}`;
+      subt.textContent = `${prod.skuBase || ''} · ${tipo} · ${prod.unidad || prod.Unidad_Medida || ''}`;
+    }
     if (inp) inp.value = parseFloat(prod.precioVenta || 0).toFixed(2);
     _qpRenderPresentaciones();
     const overlay = $('modalPrecioRapido');
     if (overlay) overlay.classList.add('active');
+    _qpBeep('open');
     setTimeout(() => { if (inp) { inp.focus(); inp.select(); } }, 280);
   }
 
@@ -2197,13 +2206,57 @@ const MOS = (() => {
     const overlay = $('modalPrecioRapido');
     if (overlay) overlay.classList.remove('active');
     S._editingPrecioId = null;
+    S._qpTocadas = {};
   }
 
-  // Renderiza las filas de presentaciones (llamado al abrir el modal)
+  // Sonidos sutiles del modal (Web Audio API, sin archivos)
+  let _qpAudioCtx = null;
+  function _qpBeep(tipo) {
+    try {
+      if (!_qpAudioCtx) _qpAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = _qpAudioCtx;
+      const t = ctx.currentTime;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      if (tipo === 'tick') {
+        o.frequency.setValueAtTime(880, t);
+        g.gain.setValueAtTime(0.04, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+        o.start(t); o.stop(t + 0.05);
+      } else if (tipo === 'open') {
+        o.frequency.setValueAtTime(660, t);
+        o.frequency.exponentialRampToValueAtTime(990, t + 0.08);
+        g.gain.setValueAtTime(0.04, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.10);
+        o.start(t); o.stop(t + 0.11);
+      } else if (tipo === 'tap') {
+        o.frequency.setValueAtTime(1320, t);
+        g.gain.setValueAtTime(0.025, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.03);
+        o.start(t); o.stop(t + 0.04);
+      } else if (tipo === 'success') {
+        // ka-ching: dos notas ascendentes
+        o.frequency.setValueAtTime(880, t);
+        o.frequency.setValueAtTime(1320, t + 0.08);
+        g.gain.setValueAtTime(0.06, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.30);
+        o.start(t); o.stop(t + 0.32);
+      } else if (tipo === 'error') {
+        o.frequency.setValueAtTime(220, t);
+        g.gain.setValueAtTime(0.06, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+        o.start(t); o.stop(t + 0.20);
+      }
+    } catch(_) {}
+  }
+
+  // Renderiza las filas de presentaciones (al abrir el modal)
   function _qpRenderPresentaciones() {
     const idProducto = S._editingPrecioId;
     const section = $('qpPresSection');
     const list    = $('qpPresList');
+    const countEl = $('qpPresCount');
     if (!section || !list) return;
 
     const prod  = S.productos.find(p => p.idProducto === idProducto);
@@ -2218,26 +2271,76 @@ const MOS = (() => {
 
     const precioBase = parseFloat($('qpInput')?.value || '0') || 0;
     section.classList.remove('hidden');
+    if (countEl) countEl.textContent = `📦 ${grupo.pres.length} presentaciones`;
     list.innerHTML = grupo.pres.map((p, i) => {
       const factor   = parseFloat(p.factorConversion) || 1;
-      const sugerido = precioBase * factor;
+      const sugerido = +(precioBase * factor).toFixed(2);
       const actual   = parseFloat(p.precioVenta) || 0;
-      return `<label class="ajuste-row cursor-pointer" style="padding:.4rem .65rem">
-        <input type="checkbox" class="ajuste-check" id="qpPres${i}"
-               data-id="${p.idProducto}" data-factor="${factor}" checked>
-        <div class="ajuste-info min-w-0">
-          <div class="ajuste-name truncate" style="font-size:.74rem">${p.descripcion || p.idProducto}</div>
-          <div class="ajuste-factor">×${factor}</div>
+      const costo    = parseFloat(p.precioCosto) || 0;
+      const bajo     = costo > 0 && sugerido < costo;
+      return `<div class="qp-pres-card${bajo ? ' qp-bajo-costo-card' : ''}" id="qpCard${i}" data-id="${p.idProducto}" data-factor="${factor}">
+        <input type="checkbox" class="qp-pres-check" id="qpChk${i}" checked
+          onchange="MOS._qpToggleExcluida(${i})">
+        <div class="qp-pres-info">
+          <div class="qp-pres-nom">${p.descripcion || p.idProducto}</div>
+          <div class="qp-pres-meta">
+            <span class="qp-pres-factor">×${factor}</span>
+            <span class="qp-pres-antes">antes ${fmtMoney(actual)}</span>
+          </div>
         </div>
-        <div class="ajuste-prices">
-          <div class="ajuste-current">${fmtMoney(actual)}</div>
-          <div class="ajuste-suggest" id="qpSug${i}">→ ${fmtMoney(sugerido)}</div>
+        <div class="qp-pres-controls">
+          <div class="qp-pres-input-wrap" id="qpWrap${i}">
+            <span class="qp-pres-input-prefix">S/</span>
+            <input type="number" class="qp-pres-input" id="qpPresInput${i}"
+              step="0.01" min="0" value="${sugerido.toFixed(2)}"
+              data-sugerido="${sugerido.toFixed(2)}"
+              data-costo="${costo}"
+              oninput="MOS._qpInputTocado(${i})"
+              onfocus="MOS._qpBeep('tap')">
+            <span class="qp-pres-pencil">✏️</span>
+          </div>
         </div>
-      </label>`;
+        <div class="qp-pres-warn" id="qpWarn${i}">⚠ Bajo precio costo (S/ ${costo.toFixed(2)})</div>
+      </div>`;
     }).join('');
   }
 
-  // Actualiza solo los precios sugeridos mientras el usuario escribe (sin re-renderizar)
+  // Llamado cuando user EDITA un input de presentación → marca como "tocada manual"
+  function _qpInputTocado(i) {
+    if (!S._qpTocadas) S._qpTocadas = {};
+    S._qpTocadas[i] = true;
+    const wrap = $('qpWrap' + i);
+    const card = $('qpCard' + i);
+    if (wrap) wrap.classList.add('qp-tocada');
+    if (card) card.classList.add('qp-modificada');
+    _qpCheckBajoCosto(i);
+  }
+
+  function _qpToggleExcluida(i) {
+    const chk = $('qpChk' + i);
+    const card = $('qpCard' + i);
+    if (!chk || !card) return;
+    if (chk.checked) {
+      card.classList.remove('qp-excluida');
+    } else {
+      card.classList.add('qp-excluida');
+    }
+    _qpBeep('tap');
+  }
+
+  function _qpCheckBajoCosto(i) {
+    const inp = $('qpPresInput' + i);
+    const wrap = $('qpWrap' + i);
+    const card = $('qpCard' + i);
+    if (!inp || !wrap) return;
+    const val = parseFloat(inp.value) || 0;
+    const costo = parseFloat(inp.dataset.costo) || 0;
+    const bajo = costo > 0 && val < costo && val > 0;
+    wrap.classList.toggle('qp-bajo-costo', bajo);
+    if (card) card.classList.toggle('qp-bajo-costo-card', bajo);
+  }
+
+  // Actualiza precios sugeridos al cambiar el base — solo los NO tocados manualmente
   function _qpSyncPresentaciones() {
     const idProducto = S._editingPrecioId;
     if (!idProducto) return;
@@ -2248,9 +2351,24 @@ const MOS = (() => {
     if (!grupo || !grupo.pres) return;
     grupo.pres.forEach((p, i) => {
       const factor   = parseFloat(p.factorConversion) || 1;
-      const sugerido = precio * factor;
-      const sug = $(`qpSug${i}`);
-      if (sug) sug.textContent = '→ ' + fmtMoney(sugerido);
+      const sugerido = +(precio * factor).toFixed(2);
+      const inp = $('qpPresInput' + i);
+      if (!inp) return;
+      // Actualizar el data-attr siempre (referencia)
+      inp.dataset.sugerido = sugerido.toFixed(2);
+      // Solo escribir el valor si el user NO la modificó manualmente
+      if (!S._qpTocadas || !S._qpTocadas[i]) {
+        // Animación countup breve
+        const oldVal = parseFloat(inp.value) || 0;
+        if (Math.abs(oldVal - sugerido) > 0.001) {
+          inp.value = sugerido.toFixed(2);
+          // Efecto pulse
+          inp.style.transition = 'background 0.3s';
+          inp.style.background = 'rgba(99,102,241,0.18)';
+          setTimeout(() => { inp.style.background = ''; }, 300);
+        }
+      }
+      _qpCheckBajoCosto(i);
     });
   }
 
@@ -2259,14 +2377,20 @@ const MOS = (() => {
     if (!idProducto) return;
     const inp    = $('qpInput');
     const precio = parseFloat(inp ? inp.value : '');
-    if (isNaN(precio) || precio < 0) { toast('Precio inválido', 'error'); return; }
+    if (isNaN(precio) || precio <= 0) { toast('Precio del base inválido', 'error'); _qpBeep('error'); return; }
 
-    // Recoger presentaciones seleccionadas
-    const checks = document.querySelectorAll('#qpPresList input[type=checkbox]:checked');
+    // Recoger TODAS las presentaciones marcadas, leyendo el VALOR del input
+    // (que puede ser sugerido auto o manual editado por el user)
     const updates = [{ idProducto, precio }];
-    checks.forEach(cb => {
-      const factor   = parseFloat(cb.dataset.factor) || 1;
-      updates.push({ idProducto: cb.dataset.id, precio: parseFloat((precio * factor).toFixed(2)) });
+    const cards = document.querySelectorAll('#qpPresList .qp-pres-card');
+    cards.forEach(card => {
+      const idx = card.id.replace('qpCard', '');
+      const chk = $('qpChk' + idx);
+      if (!chk || !chk.checked) return; // excluida
+      const presInp = $('qpPresInput' + idx);
+      const presPrecio = parseFloat(presInp?.value);
+      if (isNaN(presPrecio) || presPrecio <= 0) return;
+      updates.push({ idProducto: card.dataset.id, precio: +presPrecio.toFixed(2) });
     });
 
     // Snapshot para rollback
@@ -2275,22 +2399,40 @@ const MOS = (() => {
       return { idProducto: u.idProducto, precio: p ? p.precioVenta : null };
     });
 
-    // Optimistic update inmediato — todo en memoria de golpe
+    // Optimistic update — actualizar memoria local
     updates.forEach(u => {
       const p = S.productos.find(x => x.idProducto === u.idProducto);
       if (p) p.precioVenta = u.precio;
     });
     _catSaveCache({ productos: S.productos, equivMap: S.equivMap });
-    cerrarModalPrecioRapido();
-    renderCatalogo(); // inmediato, sin esperar al GAS
 
-    // API en paralelo en background
+    // Animación visual de éxito ANTES de cerrar
+    cards.forEach((card, i) => {
+      const idx = card.id.replace('qpCard', '');
+      const chk = $('qpChk' + idx);
+      if (chk && chk.checked) {
+        setTimeout(() => card.classList.add('qp-saved'), i * 60);
+      }
+    });
+    _qpBeep('success');
+
+    // Cerrar modal después de que el pulse alcance a verse
+    setTimeout(() => {
+      cerrarModalPrecioRapido();
+      renderCatalogo();
+    }, 450);
+
+    // API en paralelo en background — solo precioVenta, no toca otros campos
     try {
       await Promise.all(updates.map(u =>
-        API.post('publicarPrecio', { _source: 'MOS_MODAL_PRECIO', idProducto: u.idProducto, precioNuevo: u.precio })
+        API.post('publicarPrecio', {
+          _source: 'MOS_MODAL_PRECIO',
+          idProducto: u.idProducto,
+          precioNuevo: u.precio
+        })
       ));
       const n = updates.length;
-      toast(n > 1 ? `${n} precios actualizados` : 'Precio actualizado', 'ok');
+      toast(n > 1 ? `✓ ${n} precios actualizados` : '✓ Precio actualizado', 'ok');
     } catch(e) {
       prev.forEach(snap => {
         if (snap.precio === null) return;
@@ -2299,6 +2441,7 @@ const MOS = (() => {
       });
       _catSaveCache({ productos: S.productos, equivMap: S.equivMap });
       toast('Error al guardar: ' + e.message, 'error');
+      _qpBeep('error');
       renderCatalogo();
     }
   }
@@ -16865,6 +17008,7 @@ const MOS = (() => {
     promoComboBuscar, promoComboAgregar, promoComboCerrarRes,
     promoComboCambiarQty, promoComboQuitar, numStep,
     abrirModalPrecioRapido, cerrarModalPrecioRapido, _qpSyncPresentaciones,
+    _qpInputTocado, _qpToggleExcluida, _qpBeep,
     abrirAnalitica, cerrarAnalitica, setAnPeriodo, guardarStockMinMax, _anCurrentId,
     guardarAjustePrecios, stepperInc, stepperDec,
     abrirModalProducto, guardarProducto,
