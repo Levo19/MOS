@@ -107,6 +107,22 @@ function _seleccionarTokensActivos(data, opciones) {
   else if (opciones.soloRolesWH) appOrigenFiltro = 'WH';
   else if (opciones.soloRolesME) appOrigenFiltro = 'ME';
 
+  // Match flexible — los tokens se registran con variaciones en appOrigen:
+  //   warehouseMos · WH · WAREHOUSE → todos cuentan como WH
+  //   mosExpress · ME · MOSEXPRESS  → todos cuentan como ME
+  //   MOS · ProyectoMOS              → ambos cuentan como MOS
+  function _matchApp(appOrig, filtro) {
+    if (!filtro) return true;
+    var a = String(appOrig || '').toUpperCase().trim();
+    var f = String(filtro).toUpperCase().trim();
+    if (!a) return false;          // sin appOrigen no se asume nada
+    if (a === f) return true;
+    if (f === 'WH'  && (a.indexOf('WAREHOUSE') === 0 || a === 'WHM' || a.indexOf('WH') === 0 && a.length <= 4)) return true;
+    if (f === 'ME'  && (a.indexOf('MOSEXPRESS') === 0 || a.indexOf('MOSE') === 0)) return true;
+    if (f === 'MOS' && (a === 'MOS' || a.indexOf('PROYECTOMOS') === 0)) return true;
+    return false;
+  }
+
   // Si filtramos por rol, cargar set de usuarios permitidos
   var rolSet = null;
   if (opciones.soloRolesMaster || opciones.soloRolesAdmin) {
@@ -141,7 +157,7 @@ function _seleccionarTokensActivos(data, opciones) {
     if (activo === false || String(activo) === '0' || String(activo) === 'false') continue;
     if (excNorm && usuario === excNorm) continue; // excluir al sender
     if (rolSet && !rolSet[usuario]) continue;     // filtro por rol (master o admin+master)
-    if (appOrigenFiltro && appOrig !== appOrigenFiltro) continue; // filtro por app (WH/ME/MOS)
+    if (appOrigenFiltro && !_matchApp(appOrig, appOrigenFiltro)) continue; // filtro por app (WH/ME/MOS)
     var ultVezRaw = data[i][6];
     var ultVez = 0;
     try { ultVez = ultVezRaw ? new Date(ultVezRaw).getTime() : 0; } catch(_) {}
