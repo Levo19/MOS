@@ -2975,6 +2975,21 @@
       color: #fbbf24;
     }
     .qp-pres-input-wrap.qp-tocada .qp-pres-pencil { opacity: 1; }
+    .qp-pres-lock {
+      width: 14px; height: 14px;
+      font-size: 11px; opacity: 0; transition: opacity 0.15s;
+      color: #94a3b8;
+    }
+    .qp-pres-card.qp-excluida .qp-pres-lock { opacity: 1; }
+    .qp-pres-card.qp-excluida .qp-pres-pencil { opacity: 0; }
+    .qp-pres-card.qp-excluida .qp-pres-input-wrap {
+      background: #0a1424; border-color: #475569;
+    }
+    .qp-pres-card.qp-excluida .qp-pres-input {
+      color: #94a3b8 !important; text-decoration: line-through;
+    }
+    .qp-pres-card.qp-excluida .qp-pres-antes { text-decoration: none !important; color: #6ee7b7; }
+    .qp-pres-card.qp-excluida .qp-pres-antes::before { content: '✓ queda en '; }
     .qp-pres-warn {
       grid-column: 2 / -1;
       font-size: 10px; color: #f87171; font-weight: 600;

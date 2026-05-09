@@ -2354,8 +2354,13 @@ const MOS = (() => {
   function cerrarModalPrecioRapido() {
     const overlay = $('modalPrecioRapido');
     if (overlay) overlay.classList.remove('active');
+    // Si hay cambios pendientes (no se guardó), avisar con sonido descendente
+    if (!S._qpGuardado) {
+      _qpBeep('cancel');
+    }
     S._editingPrecioId = null;
     S._qpTocadas = {};
+    S._qpGuardado = false;
   }
 
   // Sonidos sutiles del modal (Web Audio API, sin archivos)
@@ -2396,6 +2401,27 @@ const MOS = (() => {
         g.gain.setValueAtTime(0.06, t);
         g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
         o.start(t); o.stop(t + 0.20);
+      } else if (tipo === 'lock') {
+        // Tono descendente — bloqueo/excluir
+        o.frequency.setValueAtTime(880, t);
+        o.frequency.exponentialRampToValueAtTime(440, t + 0.10);
+        g.gain.setValueAtTime(0.04, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+        o.start(t); o.stop(t + 0.13);
+      } else if (tipo === 'unlock') {
+        // Tono ascendente — re-incluir
+        o.frequency.setValueAtTime(440, t);
+        o.frequency.exponentialRampToValueAtTime(880, t + 0.08);
+        g.gain.setValueAtTime(0.04, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.10);
+        o.start(t); o.stop(t + 0.11);
+      } else if (tipo === 'cancel') {
+        // Swoosh descendente — cierre sin guardar
+        o.frequency.setValueAtTime(660, t);
+        o.frequency.exponentialRampToValueAtTime(220, t + 0.16);
+        g.gain.setValueAtTime(0.04, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+        o.start(t); o.stop(t + 0.19);
       }
     } catch(_) {}
   }
@@ -2443,10 +2469,12 @@ const MOS = (() => {
             <input type="number" class="qp-pres-input" id="qpPresInput${i}"
               step="0.01" min="0" value="${sugerido.toFixed(2)}"
               data-sugerido="${sugerido.toFixed(2)}"
+              data-anterior="${actual.toFixed(2)}"
               data-costo="${costo}"
               oninput="MOS._qpInputTocado(${i})"
               onfocus="MOS._qpBeep('tap')">
             <span class="qp-pres-pencil">✏️</span>
+            <span class="qp-pres-lock">🔒</span>
           </div>
         </div>
         <div class="qp-pres-warn" id="qpWarn${i}">⚠ Bajo precio costo (S/ ${costo.toFixed(2)})</div>
@@ -2468,13 +2496,39 @@ const MOS = (() => {
   function _qpToggleExcluida(i) {
     const chk = $('qpChk' + i);
     const card = $('qpCard' + i);
-    if (!chk || !card) return;
+    const inp  = $('qpPresInput' + i);
+    const wrap = $('qpWrap' + i);
+    if (!chk || !card || !inp) return;
     if (chk.checked) {
+      // Re-incluido: vuelve al sugerido (a menos que la haya tocado manualmente)
       card.classList.remove('qp-excluida');
+      inp.disabled = false;
+      const wasModif = S._qpTocadas && S._qpTocadas[i];
+      if (!wasModif) {
+        // Al re-incluir y no estaba tocada, sincronizar al sugerido actual del base
+        const sugerido = parseFloat(inp.dataset.sugerido) || 0;
+        inp.value = sugerido.toFixed(2);
+      }
+      _qpCheckBajoCosto(i);
+      _qpBeep('unlock');
     } else {
+      // Excluida: restaurar al precio anterior + deshabilitar input
+      const anterior = parseFloat(inp.dataset.anterior) || 0;
+      inp.value = anterior.toFixed(2);
+      inp.disabled = true;
       card.classList.add('qp-excluida');
+      // Pulse visual + sonido lock
+      wrap?.classList.remove('qp-tocada', 'qp-bajo-costo');
+      card.classList.remove('qp-modificada', 'qp-bajo-costo-card');
+      // Pulso ámbar para llamar la atención
+      if (wrap) {
+        wrap.style.transition = 'box-shadow 0.4s, transform 0.3s';
+        wrap.style.boxShadow = '0 0 0 3px rgba(148,163,184,0.35)';
+        wrap.style.transform = 'scale(0.97)';
+        setTimeout(() => { wrap.style.boxShadow = ''; wrap.style.transform = ''; }, 350);
+      }
+      _qpBeep('lock');
     }
-    _qpBeep('tap');
   }
 
   function _qpCheckBajoCosto(i) {
@@ -2502,16 +2556,17 @@ const MOS = (() => {
       const factor   = parseFloat(p.factorConversion) || 1;
       const sugerido = +(precio * factor).toFixed(2);
       const inp = $('qpPresInput' + i);
+      const chk = $('qpChk' + i);
       if (!inp) return;
-      // Actualizar el data-attr siempre (referencia)
+      // Actualizar el data-attr siempre (referencia, para cuando re-incluya)
       inp.dataset.sugerido = sugerido.toFixed(2);
+      // No tocar inputs excluidos (checkbox off) — quedan en el precio anterior
+      if (chk && !chk.checked) return;
       // Solo escribir el valor si el user NO la modificó manualmente
       if (!S._qpTocadas || !S._qpTocadas[i]) {
-        // Animación countup breve
         const oldVal = parseFloat(inp.value) || 0;
         if (Math.abs(oldVal - sugerido) > 0.001) {
           inp.value = sugerido.toFixed(2);
-          // Efecto pulse
           inp.style.transition = 'background 0.3s';
           inp.style.background = 'rgba(99,102,241,0.18)';
           setTimeout(() => { inp.style.background = ''; }, 300);
@@ -2564,6 +2619,7 @@ const MOS = (() => {
       }
     });
     _qpBeep('success');
+    S._qpGuardado = true; // marca: no disparar sonido cancel al cerrar
 
     // Cerrar modal después de que el pulse alcance a verse
     setTimeout(() => {
