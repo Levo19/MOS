@@ -691,6 +691,20 @@ function forwardWHPickup(params) {
   return postToWarehouse('recibirPickupDeME', safe);
 }
 
+// Bridge genérico — para cualquier action que ME quiera ejecutar en WH cuando
+// no tiene ruta directa. params: { whAction, ...resto }. Elimina action y
+// whAction del payload, mete whAction como action del POST.
+function forwardWHAction(params) {
+  var whAction = params.whAction;
+  if (!whAction) return { ok: false, error: 'Requiere whAction' };
+  var clean = {};
+  Object.keys(params).forEach(function(k){
+    if (k === 'action' || k === 'whAction') return;
+    clean[k] = params[k];
+  });
+  return postToWarehouse(whAction, clean);
+}
+
 // ════════════════════════════════════════════════
 // GESTIÓN DE CONEXIONES
 // ════════════════════════════════════════════════

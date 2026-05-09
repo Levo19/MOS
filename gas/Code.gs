@@ -110,6 +110,7 @@ function _route(method, e) {
       case 'setConexion':          return setConexion(params);
       case 'getEcoStatus':         return getEcoStatus();
       case 'forwardWHPickup':      return forwardWHPickup(params);
+      case 'forwardWHAction':      return forwardWHAction(params);
 
       // ── Config ─────────────────────────────────────────────
       case 'getConfig':            return getConfigMos();
