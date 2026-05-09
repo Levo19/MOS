@@ -10291,7 +10291,7 @@ const MOS = (() => {
             const ico = _dispIcono(d.Nombre_Equipo);
             const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
             const act = _dispActividad(d.Ultima_Conexion);
-            return `<div class="flex items-center gap-3 p-3 rounded-lg" style="background:#0a1424;border:1px solid #7f1d1d;">
+            return `<div class="disp-pend-card flex items-center gap-3 p-3 rounded-lg" data-pend-card="${idAttr}" style="background:#0a1424;border:1px solid #7f1d1d;">
               <span class="text-3xl shrink-0">${ico}</span>
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2 flex-wrap">
@@ -10301,8 +10301,15 @@ const MOS = (() => {
                 <div class="text-[10px] text-slate-500 font-mono truncate mt-0.5">${d.ID_Dispositivo}</div>
                 <div class="text-[10px] mt-0.5" style="color:${act.color};">${act.dot} ${act.label}${d.Ultima_Sesion ? ' · 👤 ' + d.Ultima_Sesion : ''}</div>
               </div>
-              <button onclick="MOS.aprobarDispositivo('${idAttr}')" class="btn-primary text-xs px-3 py-1.5 shrink-0" style="background:#10b981">✓ Aprobar</button>
-              <button onclick="MOS.rechazarDispositivo('${idAttr}')" class="btn-ghost text-xs px-2 py-1.5 shrink-0" style="color:#f87171;border:1px solid #7f1d1d">✕</button>
+              <button onclick="MOS.aprobarDispositivo('${idAttr}')"
+                      class="btn-primary text-xs px-3 py-1.5 shrink-0"
+                      style="background:#10b981" title="Aprobar con el nombre actual">✓ Aprobar</button>
+              <button onclick="MOS.aprobarDispositivoConNombre('${idAttr}')"
+                      class="btn-ghost text-xs px-2 py-1.5 shrink-0"
+                      style="color:#a5b4fc;border:1px solid #312e81" title="Renombrar antes de aprobar">✎</button>
+              <button onclick="MOS.rechazarDispositivo('${idAttr}')"
+                      class="btn-ghost text-xs px-2 py-1.5 shrink-0"
+                      style="color:#f87171;border:1px solid #7f1d1d" title="Rechazar">✕</button>
             </div>`;
           }).join('')}
         </div>
@@ -15409,39 +15416,70 @@ const MOS = (() => {
     }
   }
 
-  async function aprobarDispositivo(id) {
+  // Aprobar dispositivo: optimista con feedback visual claro.
+  // - Nombre por default = el que vino del User-Agent (ej "Windows · Chrome").
+  // - Si pasamos { renombrar: true } abre prompt para editarlo.
+  // - Animación slide-out del card + sonido + toast inmediato.
+  async function aprobarDispositivo(id, opts) {
+    opts = opts || {};
     const d = cfgData.dispositivos.find(x => x.ID_Dispositivo === id);
     if (!d) return;
-    const nombrePropuesto = d.Nombre_Equipo || ('Dispositivo ' + id.substring(0, 8));
-    const nombre = prompt('Nombre del dispositivo:', nombrePropuesto);
-    if (!nombre || !nombre.trim()) return;
+    let nombre = (d.Nombre_Equipo || '').trim() || ('Dispositivo ' + id.substring(0, 8));
+    if (opts.renombrar) {
+      const nuevoNombre = prompt('Nombre del dispositivo:', nombre);
+      if (nuevoNombre === null) return;
+      const t = (nuevoNombre || '').trim();
+      if (!t) { toast('El nombre no puede estar vacío', 'error'); return; }
+      nombre = t;
+    }
+    // Animación slide-out del card que se está aprobando
+    const safeId = String(id).replace(/'/g, '&#39;');
+    const card = document.querySelector(`[data-pend-card="${safeId}"]`);
+    if (card) {
+      card.classList.add('disp-pend-aprobando');
+    }
+    // Sonido + toast inmediato (optimista)
+    try { _finBeep?.('breakeven'); } catch(_){}
+    toast(`✓ "${nombre}" aprobado`, 'ok');
+    // Aplicar cambio en el modelo local
     const previo = d.Estado;
     d.Estado = 'ACTIVO';
-    d.Nombre_Equipo = nombre.trim();
-    renderInfra();
+    d.Nombre_Equipo = nombre;
+    // Esperar la animación antes del re-render para que se vea desaparecer
+    setTimeout(() => renderInfra(), 320);
     try {
       await API.post('aprobarDispositivoPendiente', {
         ID_Dispositivo: id,
-        Nombre_Equipo: nombre.trim()
+        Nombre_Equipo: nombre
       });
-      toast(`✓ "${nombre.trim()}" aprobado`, 'ok');
     } catch(e) {
       d.Estado = previo;
       renderInfra();
-      toast(e.message || 'Error', 'error');
+      toast(e.message || 'Error al aprobar', 'error');
     }
+  }
+
+  // Variante: aprobar pero pidiendo nombre antes (botón ✎ Renombrar).
+  function aprobarDispositivoConNombre(id) {
+    return aprobarDispositivo(id, { renombrar: true });
   }
 
   async function rechazarDispositivo(id) {
     const d = cfgData.dispositivos.find(x => x.ID_Dispositivo === id);
     if (!d) return;
     if (!confirm(`¿Rechazar este dispositivo? Quedará bloqueado y no podrá conectarse.`)) return;
+    const safeId = String(id).replace(/'/g, '&#39;');
+    const card = document.querySelector(`[data-pend-card="${safeId}"]`);
+    if (card) {
+      card.classList.add('disp-pend-rechazando');
+    }
+    try { _finBeep?.('click'); } catch(_){}
+    toast('Dispositivo rechazado', 'warn');
     const previo = d.Estado;
     d.Estado = 'INACTIVO';
-    renderInfra();
+    setTimeout(() => renderInfra(), 320);
     try {
       await API.post('rechazarDispositivoPendiente', { ID_Dispositivo: id });
-      toast('Dispositivo rechazado', 'ok');
     } catch(e) {
       d.Estado = previo;
       renderInfra();
@@ -20770,7 +20808,7 @@ const MOS = (() => {
     av_consultarClaveDesdeMenu,
     toggleVendedorME,
     abrirModalDispositivo, cerrarModalDispositivo, guardarDispositivo, toggleEstadoDispositivo,
-    eliminarDispositivo, aprobarDispositivo, rechazarDispositivo, dispCopiarUUID, _dispActualizarPreview, _dispZonaCambio,
+    eliminarDispositivo, aprobarDispositivo, aprobarDispositivoConNombre, rechazarDispositivo, dispCopiarUUID, _dispActualizarPreview, _dispZonaCambio,
     vincularEsteBrowser,
     abrirModalAudio, audioRefrescarEstado, audioIniciar, audioDetener, audioListarSesiones, audioReproducir, audioCerrarReproductor,
     abrirModalAudioRouted, abrirEscuchaDispositivo, abrirEscuchaPorUsuario, abrirGpsPorUsuario,

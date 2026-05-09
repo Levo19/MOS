@@ -4003,6 +4003,35 @@
       50%      { box-shadow: 0 0 16px 2px rgba(16,185,129, 0.4); }
     }
 
+    /* Card pendiente — transition base para animaciones de salida */
+    .disp-pend-card {
+      transition: opacity 0.3s ease, transform 0.3s ease, max-height 0.3s ease,
+                  margin 0.3s ease, padding 0.3s ease, border-color 0.2s ease;
+      max-height: 200px;
+      overflow: hidden;
+    }
+    /* Aprobando: pulso verde + slide-out + fadeout */
+    .disp-pend-card.disp-pend-aprobando {
+      border-color: #10b981 !important;
+      background: linear-gradient(90deg, rgba(16,185,129,0.20), #0a1424) !important;
+      animation: dispPendApprPulse 0.32s ease-out forwards;
+    }
+    @keyframes dispPendApprPulse {
+      0%   { transform: scale(1) translateX(0);   opacity: 1; }
+      30%  { transform: scale(1.02) translateX(0); opacity: 1; box-shadow: 0 0 0 4px rgba(16,185,129,0.30); }
+      100% { transform: scale(0.95) translateX(40px); opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; margin-top: 0; margin-bottom: 0; border-width: 0; }
+    }
+    /* Rechazando: rojo + slide-out al lado contrario */
+    .disp-pend-card.disp-pend-rechazando {
+      border-color: #ef4444 !important;
+      background: linear-gradient(90deg, rgba(239,68,68,0.20), #0a1424) !important;
+      animation: dispPendRejPulse 0.32s ease-out forwards;
+    }
+    @keyframes dispPendRejPulse {
+      0%   { transform: translateX(0);   opacity: 1; }
+      100% { transform: translateX(-40px); opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; margin-top: 0; margin-bottom: 0; border-width: 0; }
+    }
+
     /* Dot verde pulsante junto al icono del dispositivo (si está fresco) */
     .disp-dot-pulse {
       position: absolute;
