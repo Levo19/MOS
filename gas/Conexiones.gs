@@ -681,6 +681,16 @@ function postToWarehouse(action, params) {
   }
 }
 
+// Bridge: ME → MOS → WH cuando WH_GAS_URL no está accesible directo desde ME.
+// Recibe el payload tal cual lo enviaría ME a recibirPickupDeME y lo retransmite.
+function forwardWHPickup(params) {
+  var safe = {
+    idGuiaME: params.idGuiaME, idCaja: params.idCaja, idZona: params.idZona,
+    cajero:   params.cajero,   items:  params.items
+  };
+  return postToWarehouse('recibirPickupDeME', safe);
+}
+
 // ════════════════════════════════════════════════
 // GESTIÓN DE CONEXIONES
 // ════════════════════════════════════════════════
