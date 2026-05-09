@@ -954,3 +954,199 @@ function imprimirTicketZCierre(params) {
     return { ok: false, error: 'Error PrintNode: ' + e.message };
   }
 }
+
+// ============================================================
+// PUENTE A MOSEXPRESS — proxy de eventos editables
+// MOS no replica la lógica: delega en ME.gas EditarVenta.gs.
+// ============================================================
+// Normaliza la respuesta de ME (que usa { status: 'success'|'error', mensaje, ... })
+// al formato MOS ({ ok: true, data: ... } / { ok: false, error: ... }).
+function _meNormalizar(resp) {
+  if (!resp) return { ok: false, error: 'Respuesta vacía de MosExpress' };
+  if (resp.ok !== undefined) return resp; // ya normalizado
+  if (resp.status === 'success') {
+    var data = {};
+    Object.keys(resp).forEach(function(k) {
+      if (k !== 'status' && k !== 'mensaje') data[k] = resp[k];
+    });
+    return { ok: true, mensaje: resp.mensaje || '', data: data };
+  }
+  if (resp.status === 'error') {
+    return { ok: false, error: resp.mensaje || 'Error sin descripción' };
+  }
+  return resp; // formato desconocido — pasar tal cual
+}
+
+function _meBridgeEvento(tipoEvento, payload) {
+  var url = _getProp('ME_GAS_URL');
+  if (!url) return { ok: false, error: 'ME_GAS_URL no configurado. Ve a ⚙️ → Conexiones.' };
+  var body = Object.assign({ tipoEvento: tipoEvento }, payload || {});
+  try {
+    var res = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'text/plain',
+      payload: JSON.stringify(body),
+      followRedirects: true,
+      muteHttpExceptions: true
+    });
+    var txt = res.getContentText();
+    try { return _meNormalizar(JSON.parse(txt)); }
+    catch(_) { return { ok: false, error: 'Respuesta no JSON: ' + txt.substring(0, 200) }; }
+  } catch(e) {
+    return { ok: false, error: 'Bridge ME error: ' + e.message };
+  }
+}
+
+function _meBridgeGet(params) {
+  var url = _getProp('ME_GAS_URL');
+  if (!url) return { ok: false, error: 'ME_GAS_URL no configurado.' };
+  try {
+    var qs = Object.keys(params || {}).map(function(k) {
+      return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+    }).join('&');
+    var res = UrlFetchApp.fetch(url + '?' + qs, { followRedirects: true, muteHttpExceptions: true });
+    var txt = res.getContentText();
+    try { return _meNormalizar(JSON.parse(txt)); }
+    catch(_) { return { ok: false, error: 'Respuesta no JSON: ' + txt.substring(0, 200) }; }
+  } catch(e) {
+    return { ok: false, error: 'Bridge ME error: ' + e.message };
+  }
+}
+
+// Inyecta auth desde el contexto MOS al payload que va a ME
+function _meAuthFromMos(params) {
+  var a = params._audit || {};
+  return {
+    vendedor: a.usuario || 'admin-MOS',
+    rol:      a.rol     || 'admin',
+    deviceId: 'MOS-' + (a.idSesion || 'panel')
+  };
+}
+
+// ── Cobrar crédito desde MOS (POR_COBRAR/CREDITO → cobrado) ──
+function meCobrarCredito(params) {
+  if (!params.idVenta || !params.cajaReceptora || !params.metodo) {
+    return { ok: false, error: 'idVenta, cajaReceptora y metodo requeridos' };
+  }
+  return _meBridgeEvento('COBRAR_CREDITO_CON_EXTRA', {
+    idVenta:       params.idVenta,
+    cajaReceptora: params.cajaReceptora,
+    metodo:        params.metodo,
+    montoEfectivo: params.montoEfectivo,
+    montoVirtual:  params.montoVirtual,
+    obs:           params.obs || '',
+    auth:          _meAuthFromMos(params),
+    adminAuth:     { nombre: (params._audit||{}).usuario || 'admin-MOS', rol: (params._audit||{}).rol || 'admin', via: 'PANEL_MOS' }
+  });
+}
+
+// ── Cambiar forma de pago (corrección sin afectar caja) ──
+function meEditarFormaPago(params) {
+  if (!params.idVenta || !params.formaPagoNueva) {
+    return { ok: false, error: 'idVenta y formaPagoNueva requeridos' };
+  }
+  if (!params.motivo || String(params.motivo).trim().length < 3) {
+    return { ok: false, error: 'Motivo obligatorio (mínimo 3 caracteres)' };
+  }
+  return _meBridgeEvento('EDITAR_FORMA_PAGO_VENTA', {
+    idVenta:        params.idVenta,
+    formaPagoNueva: params.formaPagoNueva,
+    motivo:         params.motivo,
+    auth:           _meAuthFromMos(params),
+    adminAuth:      { nombre: (params._audit||{}).usuario || 'admin-MOS', rol: (params._audit||{}).rol || 'admin', via: 'PANEL_MOS' }
+  });
+}
+
+// ── Aprobar como CREDITO (POR_COBRAR → CREDITO) ──
+function meAprobarComoCredito(params) {
+  if (!params.idVenta) return { ok: false, error: 'idVenta requerido' };
+  return _meBridgeEvento('EDITAR_FORMA_PAGO_VENTA', {
+    idVenta:        params.idVenta,
+    formaPagoNueva: 'CREDITO',
+    motivo:         'Aprobación admin: ' + (params.motivo || 'sin observación'),
+    auth:           _meAuthFromMos(params),
+    adminAuth:      { nombre: (params._audit||{}).usuario || 'admin-MOS', rol: (params._audit||{}).rol || 'admin', via: 'PANEL_MOS' }
+  });
+}
+
+// ── Editar cliente (solo NOTA_DE_VENTA) ──
+function meEditarCliente(params) {
+  if (!params.idVenta) return { ok: false, error: 'idVenta requerido' };
+  return _meBridgeEvento('EDITAR_CLIENTE_VENTA', {
+    idVenta:           params.idVenta,
+    clienteDoc:        params.clienteDoc || '',
+    clienteNombre:     params.clienteNom || params.clienteNombre || '',
+    clienteDireccion:  params.direccion  || params.clienteDireccion || '',
+    motivo:            params.motivo     || '',
+    auth:              _meAuthFromMos(params),
+    adminAuth:         { nombre: (params._audit||{}).usuario || 'admin-MOS', rol: (params._audit||{}).rol || 'admin', via: 'PANEL_MOS' }
+  });
+}
+
+// ── Convertir NV a Boleta/Factura (emisión retroactiva) ──
+function meConvertirNVaCPE(params) {
+  if (!params.idVenta || !params.tipoDocNuevo) {
+    return { ok: false, error: 'idVenta y tipoDocNuevo requeridos' };
+  }
+  return _meBridgeEvento('CONVERTIR_NV_A_CPE', {
+    idVenta:           params.idVenta,
+    tipoDocNuevo:      params.tipoDocNuevo,    // BOLETA | FACTURA
+    serieNueva:        params.serie || params.serieNueva || '',
+    clienteDoc:        params.clienteDoc || '',
+    clienteNombre:     params.clienteNom || params.clienteNombre || '',
+    clienteDireccion:  params.direccion  || params.clienteDireccion || '',
+    auth:              _meAuthFromMos(params),
+    adminAuth:         { nombre: (params._audit||{}).usuario || 'admin-MOS', rol: (params._audit||{}).rol || 'admin', via: 'PANEL_MOS' }
+  });
+}
+
+// ── Baja del CPE (comunicación SUNAT) ──
+function meBajaCPE(params) {
+  if (!params.idVenta || !params.motivo) {
+    return { ok: false, error: 'idVenta y motivo requeridos' };
+  }
+  return _meBridgeEvento('BAJA_CPE', {
+    idVenta:   params.idVenta,
+    motivo:    params.motivo,
+    auth:      _meAuthFromMos(params),
+    adminAuth: { nombre: (params._audit||{}).usuario || 'admin-MOS', rol: (params._audit||{}).rol || 'admin', via: 'PANEL_MOS' }
+  });
+}
+
+// ── Historial JSON de un ticket ──
+function meHistorialVenta(params) {
+  if (!params.idVenta) return { ok: false, error: 'idVenta requerido' };
+  return _meBridgeGet({ accion: 'historial_venta', idVenta: params.idVenta });
+}
+
+// ── Detalle completo de venta (cliente, items, totales) ──
+function meDetalleVenta(params) {
+  if (!params.idVenta) return { ok: false, error: 'idVenta requerido' };
+  return _meBridgeGet({ accion: 'detalle_venta', id_venta: params.idVenta });
+}
+
+// ── Cajas abiertas (para selector receptora) ──
+function meCajasAbiertas() {
+  var ss;
+  try { ss = _meSS(); } catch(e) { return { ok: false, error: e.message }; }
+  var sheet = ss.getSheetByName('CAJAS');
+  if (!sheet) return { ok: false, error: 'CAJAS no encontrada' };
+  var data = sheet.getDataRange().getValues();
+  var lista = [];
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][5] || '') !== 'ABIERTA') continue;
+    lista.push({
+      idCaja:   String(data[i][0] || ''),
+      vendedor: String(data[i][1] || ''),
+      estacion: String(data[i][2] || ''),
+      zona:     String(data[i][8] || '')
+    });
+  }
+  return { ok: true, data: lista };
+}
+
+// ── Consultar cliente por DNI/RUC (proxy a ME) ──
+function meConsultarCliente(params) {
+  if (!params.doc) return { ok: false, error: 'doc requerido' };
+  return _meBridgeGet({ accion: 'consultar_cliente', doc: params.doc });
+}

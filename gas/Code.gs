@@ -156,6 +156,7 @@ function _route(method, e) {
       case 'actualizarPersonalMaster':  return actualizarPersonalMaster(params);
       case 'verificarPinPersonal':      return verificarPinPersonal(params);
       case 'registrarConexionPersonal': return registrarConexionPersonal(params);
+      case 'getHistorialPersonal':      return getHistorialPersonal(params);
 
       // ── Finanzas ────────────────────────────────────────────
       case 'getFinanzasDia':             return getFinanzasDia(params);
@@ -163,6 +164,7 @@ function _route(method, e) {
       case 'getJornadas':                return getJornadas(params);
       case 'registrarJornada':           return registrarJornada(params);
       case 'eliminarJornada':            return eliminarJornada(params);
+      case 'rehabilitarJornada':         return rehabilitarJornada(params);
       case 'importarJornadasDesdeCajas': return importarJornadasDesdeCajas(params);
       case 'getGastos':                  return getGastos(params);
       case 'registrarGasto':             return registrarGasto(params);
@@ -228,6 +230,18 @@ function _route(method, e) {
       case 'imprimirTicketZCierre':     return imprimirTicketZCierre(params);
       case 'getTicketZTexto':           return getTicketZTexto(params);
       case 'datosTurno':               return datosTurno(params);
+
+      // ── Editar tickets desde MOS (puente a ME) ─────────────
+      case 'meCobrarCredito':           return meCobrarCredito(params);
+      case 'meEditarFormaPago':         return meEditarFormaPago(params);
+      case 'meAprobarComoCredito':      return meAprobarComoCredito(params);
+      case 'meEditarCliente':           return meEditarCliente(params);
+      case 'meConvertirNVaCPE':         return meConvertirNVaCPE(params);
+      case 'meBajaCPE':                 return meBajaCPE(params);
+      case 'meHistorialVenta':          return meHistorialVenta(params);
+      case 'meDetalleVenta':            return meDetalleVenta(params);
+      case 'meCajasAbiertas':           return meCajasAbiertas();
+      case 'meConsultarCliente':        return meConsultarCliente(params);
 
       default:
         return { ok: false, error: 'Acción no reconocida: ' + action };

@@ -7588,99 +7588,648 @@ const MOS = (() => {
   }
 
   // ── LOG de cambios de productos (master) ──────────────────
-  async function abrirLogProductos() {
-    openModal('modalLogProductos');
-    await refreshLogProductos();
+  // Estado del log (UI compacta)
+  let _logProdState = {
+    fecha: null,             // 'YYYY-MM-DD' (local) o '' = sin filtro de fecha
+    sinFiltroFecha: false,   // true cuando user clickea "ver todo"
+    filtroBuscar: '',
+    filtroUsuario: '',
+    filtroAccion: '',
+    diasConActividad: new Set(),
+    calMes: null,
+  };
+
+  // Convierte un timestamp ISO a 'YYYY-MM-DD' en HORA LOCAL del browser.
+  // Crítico: comparar contra today() que también es local. Sin esto, los
+  // cambios hechos al final del día PE caen en UTC del día siguiente y
+  // desaparecen del filtro "hoy".
+  function _logFechaLocal(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return '';
+    return d.getFullYear() + '-' +
+           String(d.getMonth() + 1).padStart(2, '0') + '-' +
+           String(d.getDate()).padStart(2, '0');
   }
 
-  async function refreshLogProductos() {
+  async function abrirLogProductos() {
+    openModal('modalLogProductos');
+    // Inicializar fecha = hoy si no hay
+    if (!_logProdState.fecha) {
+      _logProdState.fecha = today();
+    }
+    _logProdActualizarFechaUI();
+    await refreshLogProductos();
+    // Atajos teclado ←/→
+    if (!_logProdState._kbd) {
+      _logProdState._kbd = e => {
+        const modal = document.getElementById('modalLogProductos');
+        if (!modal || modal.classList.contains('hidden')) return;
+        // Si está enfocado un input/select, no interceptar
+        const tag = (document.activeElement?.tagName || '').toLowerCase();
+        if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+        if (e.key === 'ArrowLeft')  { e.preventDefault(); _logProdFechaOffset(-1); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); _logProdFechaOffset(+1); }
+      };
+      document.addEventListener('keydown', _logProdState._kbd);
+    }
+  }
+
+  function _logProdActualizarFechaUI() {
+    const lbl = $('logFechaLabel');
+    if (lbl) {
+      if (_logProdState.sinFiltroFecha) {
+        lbl.textContent = 'Todos';
+      } else {
+        const f = _logProdState.fecha;
+        const hoy = today();
+        const d = new Date(f + 'T00:00:00');
+        const txt = d.toLocaleDateString('es-PE', { day:'2-digit', month:'short' });
+        lbl.textContent = (f === hoy) ? `Hoy · ${txt}` : txt;
+      }
+    }
+    // Marcar iconos activos según filtros
+    const ic = (id, on) => {
+      const b = $(id); if (!b) return;
+      b.classList.toggle('active', !!on);
+      const dot = b.querySelector('.log-icon-dot');
+      if (dot) dot.classList.toggle('hidden', !on);
+    };
+    ic('logIconUsuario', !!_logProdState.filtroUsuario);
+    ic('logIconAccion',  !!_logProdState.filtroAccion);
+    ic('logIconBuscar',  !!_logProdState.filtroBuscar);
+    // Mostrar botón limpiar si hay algún filtro
+    const limpiar = $('logBtnLimpiar');
+    const hay = !!(_logProdState.filtroBuscar || _logProdState.filtroUsuario || _logProdState.filtroAccion || _logProdState.sinFiltroFecha);
+    if (limpiar) limpiar.classList.toggle('hidden', !hay);
+  }
+
+  async function refreshLogProductos(force) {
     const cont = $('logProductosList');
     if (!cont) return;
     // Render INMEDIATO desde cache si existe (TTL 60s)
     const cache = S._logProdCache;
-    if (cache && Array.isArray(cache.data) && (Date.now() - cache.ts) < 60 * 1000) {
-      _logProdRender(cache.data);
+    if (!force && cache && Array.isArray(cache.data) && (Date.now() - cache.ts) < 60 * 1000) {
+      _logProdConstruirIndices(cache.data);
+      _logProdFiltrar();
     } else {
       cont.innerHTML = '<div class="text-center py-6 text-slate-500 text-sm">Cargando log...</div>';
     }
     try {
-      const data = await API.get('getProductosEditadosRecientes', { limit: 100 });
+      const data = await API.get('getProductosEditadosRecientes', { limit: 200 });
       S._logProdCache = { ts: Date.now(), data };
       if (!Array.isArray(data) || !data.length) {
         cont.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm italic">Sin ediciones registradas todavía</div>';
         return;
       }
-      _logProdRender(data);
+      _logProdConstruirIndices(data);
+      _logProdFiltrar();
     } catch(e) {
       if (!cache) cont.innerHTML = '<div class="text-center py-6 text-red-400 text-sm">Error: ' + e.message + '</div>';
     }
   }
 
+  // Construye el índice de días con actividad (en hora LOCAL) y dropdown usuarios
+  function _logProdConstruirIndices(data) {
+    const dias = new Set();
+    const usuarios = new Set();
+    data.forEach(p => {
+      const hist = Array.isArray(p.historial) ? p.historial : [];
+      hist.forEach(e => {
+        const f = _logFechaLocal(e.ts);
+        if (f) dias.add(f);
+        if (e.usuario) usuarios.add(String(e.usuario).trim());
+      });
+    });
+    _logProdState.diasConActividad = dias;
+    _logProdState.usuariosDisponibles = Array.from(usuarios).sort();
+    const sel = $('logFiltroUsuario');
+    if (sel) {
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">Todos</option>' +
+        _logProdState.usuariosDisponibles.map(u => `<option value="${u}">${u}</option>`).join('');
+      sel.value = cur;
+    }
+  }
+
+  function _logProdFechaOffset(delta) {
+    // Si estaba en "todos", al navegar volvemos a fecha hoy ± delta
+    if (_logProdState.sinFiltroFecha) {
+      _logProdState.sinFiltroFecha = false;
+      _logProdState.fecha = today();
+    }
+    const f = _logProdState.fecha || today();
+    // Construir fecha LOCAL evitando UTC drift
+    const [yy, mm, dd] = f.split('-').map(Number);
+    const d = new Date(yy, mm - 1, dd);
+    d.setDate(d.getDate() + delta);
+    const newFecha = d.getFullYear() + '-' +
+                     String(d.getMonth() + 1).padStart(2, '0') + '-' +
+                     String(d.getDate()).padStart(2, '0');
+    _logProdState.fecha = newFecha;
+    _logProdActualizarFechaUI();
+    _logProdFiltrar();
+    _logProdSlide(delta < 0 ? 'left' : 'right');
+  }
+  function _logProdIrHoy() {
+    _logProdState.fecha = today();
+    _logProdState.sinFiltroFecha = false;
+    _logProdActualizarFechaUI();
+    _logProdFiltrar();
+  }
+  function _logProdVerTodo() {
+    _logProdState.sinFiltroFecha = true;
+    _logProdActualizarFechaUI();
+    _logProdFiltrar();
+  }
+  function _logProdLimpiarFiltros() {
+    _logProdState.filtroBuscar = '';
+    _logProdState.filtroUsuario = '';
+    _logProdState.filtroAccion = '';
+    _logProdState.sinFiltroFecha = false;
+    if (!_logProdState.fecha) _logProdState.fecha = today();
+    const inp = $('logFiltroBuscar'); if (inp) inp.value = '';
+    const su = $('logFiltroUsuario'); if (su) su.value = '';
+    const sa = $('logFiltroAccion');  if (sa) sa.value = '';
+    // Si la barra estaba en modo búsqueda, volver al modo normal
+    const bar = $('logBarraBuscar');
+    const norm = $('logBarraNormal');
+    if (bar && !bar.classList.contains('hidden')) {
+      bar.classList.add('hidden');
+      norm?.classList.remove('hidden');
+    }
+    _logProdActualizarFechaUI();
+    _logProdFiltrar();
+  }
+  function _logProdLimpiarBuscar() {
+    const inp = $('logFiltroBuscar');
+    if (inp) { inp.value = ''; inp.focus(); }
+    _logProdState.filtroBuscar = '';
+    _logProdActualizarFechaUI();
+    _logProdFiltrar();
+  }
+  function _logProdToggleBusqueda() {
+    const bar = $('logBarraBuscar');
+    const norm = $('logBarraNormal');
+    if (!bar || !norm) return;
+    const abriendo = bar.classList.contains('hidden');
+    bar.classList.toggle('hidden', !abriendo);
+    norm.classList.toggle('hidden', abriendo);
+    if (abriendo) {
+      setTimeout(() => $('logFiltroBuscar')?.focus(), 50);
+    }
+  }
+  // Popover unificado: usuario / acción
+  function _logProdAbrirFiltro(tipo, anchorBtn) {
+    const pop = $('logFiltroPopover');
+    if (!pop) return;
+    if (!pop.classList.contains('hidden') && pop.dataset.tipo === tipo) {
+      pop.classList.add('hidden');
+      return;
+    }
+    pop.dataset.tipo = tipo;
+    let html = '';
+    if (tipo === 'usuario') {
+      const cur = _logProdState.filtroUsuario;
+      const usuarios = _logProdState.usuariosDisponibles || [];
+      html = '<div class="log-popover-title">Usuario</div>';
+      html += `<div class="log-popover-opt ${!cur ? 'selected' : ''}" onclick="MOS._logProdSetFiltro('usuario','')">
+        <div class="log-popover-opt-radio"></div><span>Todos</span>
+      </div>`;
+      usuarios.forEach(u => {
+        const safe = u.replace(/'/g, "\\'");
+        html += `<div class="log-popover-opt ${cur === u ? 'selected' : ''}" onclick="MOS._logProdSetFiltro('usuario','${safe}')">
+          <div class="log-popover-opt-radio"></div><span>👤 ${u}</span>
+        </div>`;
+      });
+    } else if (tipo === 'accion') {
+      const cur = _logProdState.filtroAccion;
+      const opts = [
+        ['', 'Todas las acciones'],
+        ['crear', '🆕 Crear'],
+        ['editar', '✏️ Editar'],
+        ['precio', '💰 Cambio de precio'],
+        ['codigo', '🔢 Corrección código'],
+        ['equivalencia', '🔗 Equivalencia']
+      ];
+      html = '<div class="log-popover-title">Tipo de acción</div>';
+      opts.forEach(([v, lbl]) => {
+        html += `<div class="log-popover-opt ${cur === v ? 'selected' : ''}" onclick="MOS._logProdSetFiltro('accion','${v}')">
+          <div class="log-popover-opt-radio"></div><span>${lbl}</span>
+        </div>`;
+      });
+    }
+    pop.innerHTML = html;
+    // Posicionar bajo el botón
+    const r = anchorBtn.getBoundingClientRect();
+    pop.style.left = Math.max(8, Math.min(window.innerWidth - 290, r.left)) + 'px';
+    pop.style.top  = (r.bottom + 6) + 'px';
+    pop.classList.remove('hidden');
+    // Cerrar al click fuera
+    setTimeout(() => {
+      const closer = e => {
+        if (!pop.contains(e.target) && !anchorBtn.contains(e.target)) {
+          pop.classList.add('hidden');
+          document.removeEventListener('click', closer);
+        }
+      };
+      document.addEventListener('click', closer);
+    }, 50);
+  }
+  function _logProdSetFiltro(tipo, valor) {
+    if (tipo === 'usuario') _logProdState.filtroUsuario = valor;
+    if (tipo === 'accion')  _logProdState.filtroAccion = valor;
+    const sel = $(tipo === 'usuario' ? 'logFiltroUsuario' : 'logFiltroAccion');
+    if (sel) sel.value = valor;
+    $('logFiltroPopover')?.classList.add('hidden');
+    _logProdActualizarFechaUI();
+    _logProdFiltrar();
+  }
+
+  function _logProdFiltrar() {
+    const data = S._logProdCache?.data || [];
+    if (!Array.isArray(data) || !data.length) return;
+
+    // Recoger filtros desde DOM (puede haberlos cambiado el user)
+    _logProdState.filtroBuscar  = ($('logFiltroBuscar')?.value || '').trim().toLowerCase();
+
+    // Una sola vista: agrupada por canónico, filtrada por fecha activa
+    _logProdRenderPorProducto(data);
+    _logProdActualizarFechaUI();
+  }
+
+  function _logProdSlide(dir) {
+    const cont = $('logProductosList');
+    if (!cont) return;
+    const cls = dir === 'left' ? 'fin-slide-out-right' : 'fin-slide-out-left';
+    cont.classList.add(cls);
+    setTimeout(() => cont.classList.remove(cls), 280);
+  }
+
+  // ── Filtra una entrada según los filtros activos ──
+  function _logProdEntradaCoincide(entrada) {
+    // Filtro fecha (hora local)
+    if (!_logProdState.sinFiltroFecha && _logProdState.fecha) {
+      const fLocal = _logFechaLocal(entrada.ts);
+      if (fLocal !== _logProdState.fecha) return false;
+    }
+    if (_logProdState.filtroUsuario) {
+      const u = String(entrada.usuario || '').trim();
+      if (u !== _logProdState.filtroUsuario) return false;
+    }
+    if (_logProdState.filtroAccion) {
+      const a = String(entrada.accion || '').toLowerCase();
+      const src = String(entrada.source || '').toLowerCase();
+      const filt = _logProdState.filtroAccion;
+      if (filt === 'crear' && a !== 'crear') return false;
+      if (filt === 'editar' && a !== 'editar' && a !== 'editar (auto)') return false;
+      if (filt === 'precio' && !src.includes('precio')) return false;
+      if (filt === 'codigo' && !src.includes('codigo')) return false;
+      if (filt === 'equivalencia' && !src.includes('equiv')) return false;
+    }
+    return true;
+  }
+  function _logProdProductoCoincide(p) {
+    if (_logProdState.filtroBuscar) {
+      const q = _logProdState.filtroBuscar;
+      const txt = (p.descripcion + ' ' + (p.skuBase || '') + ' ' + (p.codigoBarra || '')).toLowerCase();
+      if (!txt.includes(q)) return false;
+    }
+    return true;
+  }
+
+  // ── Vista única: agrupada por canónico, filtrada por fecha activa ──
+  function _logProdRenderPorProducto(data) {
+    _logProdRender(data);
+    const cont = $('logProductosList');
+    const cant = cont ? cont.querySelectorAll('.log-card').length : 0;
+    const cantEl = $('logCantResultados');
+    if (cantEl) {
+      cantEl.textContent = cant > 0 ? `${cant} ⚡` : '0';
+      // Pulso al actualizar
+      cantEl.style.transition = 'color 0.4s';
+      cantEl.style.color = cant > 0 ? '#a5b4fc' : '#64748b';
+      setTimeout(() => { cantEl.style.color = '#94a3b8'; }, 400);
+    }
+    const sub = $('logModalSubtitle');
+    if (sub) {
+      const fechaTxt = _logProdState.sinFiltroFecha ? 'todo el historial'
+        : (_logProdState.fecha === today() ? 'hoy' : _logProdState.fecha);
+      sub.textContent = `${cant} producto${cant !== 1 ? 's' : ''} con cambios · ${fechaTxt}`;
+    }
+    if (!cant && cont) {
+      const haceFiltro = !!(_logProdState.filtroBuscar || _logProdState.filtroUsuario || _logProdState.filtroAccion);
+      const linkVerTodo = !_logProdState.sinFiltroFecha && !haceFiltro
+        ? `<button onclick="MOS._logProdVerTodo()" class="text-indigo-400 hover:text-indigo-300 text-xs mt-2 underline">Ver todo el historial →</button>`
+        : '';
+      cont.innerHTML = `<div class="text-center py-10 text-slate-500 text-sm italic">
+        Sin cambios ${haceFiltro ? 'con esos filtros' : (_logProdState.sinFiltroFecha ? '' : 'este día')}
+        <div>${linkVerTodo}</div>
+      </div>`;
+    }
+  }
+
+  // ── Vista por día: agrupado por hora ──
+  function _logProdRenderPorDia(data) {
+    const cont = $('logProductosList');
+    if (!cont) return;
+    const fechaSel = _logProdState.fecha;
+    // Construir mapa skuBase → canónico para resolver títulos correctos
+    const canonicoPorSku = {};
+    data.forEach(p => {
+      const sku = p.skuBase;
+      if (!sku) return;
+      const esCan = !p.codigoProductoBase && (parseFloat(p.factorConversion) === 1 || !p.factorConversion);
+      if (esCan) canonicoPorSku[sku] = p;
+    });
+    // Aplanar todas las entradas del día
+    const eventos = [];
+    data.forEach(p => {
+      // Filtro búsqueda: si no coincide ni este producto ni su canónico (mismo skuBase), saltar
+      const can = p.skuBase ? canonicoPorSku[p.skuBase] : null;
+      const coincideAlguno = _logProdProductoCoincide(p) || (can && _logProdProductoCoincide(can));
+      if (!coincideAlguno) return;
+      const hist = Array.isArray(p.historial) ? p.historial : [];
+      const esCanonico = !p.codigoProductoBase && (parseFloat(p.factorConversion) === 1 || !p.factorConversion);
+      hist.forEach(e => {
+        if (!e.ts) return;
+        if (_logFechaLocal(e.ts) !== fechaSel) return;
+        if (!_logProdEntradaCoincide(e)) return;
+        eventos.push({
+          ts: e.ts,
+          // Título mostrado = canónico (si existe), para agrupar visualmente
+          titulo: can ? (can.descripcion || p.descripcion) : (p.descripcion || '—'),
+          // Sub-título = la presentación específica si no es canónico
+          esCanonico,
+          presentacion: esCanonico ? '' : (p.descripcion || ''),
+          factor: p.factorConversion || '',
+          idProducto: p.idProducto || '',
+          skuBase: p.skuBase || '',
+          entrada: e
+        });
+      });
+    });
+    // Ordenar desc
+    eventos.sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
+
+    const cantEl = $('logCantResultados');
+    if (cantEl) cantEl.textContent = `${eventos.length} cambio${eventos.length !== 1 ? 's' : ''}`;
+    const sub = $('logModalSubtitle');
+    const fHoyTxt = new Date(fechaSel + 'T00:00:00').toLocaleDateString('es-PE', { weekday:'long', day:'numeric', month:'long' });
+    if (sub) sub.textContent = `${eventos.length} cambios · ${fHoyTxt}`;
+
+    if (!eventos.length) {
+      cont.innerHTML = '<div class="log-dia-empty">Sin actividad este día</div>';
+      return;
+    }
+
+    // Agrupar por hora
+    const porHora = {};
+    eventos.forEach(ev => {
+      const d = new Date(ev.ts);
+      const hh = String(d.getHours()).padStart(2, '0');
+      const key = hh;
+      if (!porHora[key]) porHora[key] = [];
+      porHora[key].push(ev);
+    });
+    const horas = Object.keys(porHora).sort((a, b) => b.localeCompare(a));
+    cont.innerHTML = horas.map(h => {
+      const evs = porHora[h];
+      return `<div class="log-dia-hour">
+        <div class="log-dia-hour-col">
+          ${h}h
+          <div class="log-dia-hour-col-sub">${evs.length} ev</div>
+        </div>
+        <div class="log-dia-events">
+          ${evs.map(ev => {
+            const e = ev.entrada;
+            const d = new Date(e.ts);
+            const mm = String(d.getMinutes()).padStart(2, '0');
+            const ss = String(d.getSeconds()).padStart(2, '0');
+            let cuerpo = '';
+            if (e.accion === 'crear') {
+              cuerpo = `<span class="log-action log-action-crear">🆕 creó</span>`;
+            } else if (Array.isArray(e.cambios) && e.cambios.length) {
+              cuerpo = `<span class="log-action log-action-editar">✏️ editó</span> ` + e.cambios.map(c =>
+                `<strong style="color:#fbbf24">${c.campo}</strong>: <span class="log-antes">${_logFmtVal(c.antes)}</span> → <span class="log-despues">${_logFmtVal(c.despues)}</span>`
+              ).join(' · ');
+            } else {
+              cuerpo = `<span class="log-action log-action-editar">${e.accion || 'cambio'}</span>`;
+            }
+            const safeId = String(ev.idProducto || '').replace(/'/g, '&#39;');
+            const origenChip = ev.esCanonico
+              ? `<span class="log-origen log-origen-canonico">📦 base</span>`
+              : `<span class="log-origen log-origen-presentacion">📐 ${ev.presentacion || 'presentación'}${ev.factor ? ' · f=' + ev.factor : ''}</span>`;
+            return `<div class="log-dia-event" onclick="MOS.closeModal('modalLogProductos');MOS.abrirModalProducto('${safeId}')">
+              <div class="log-dia-event-prod">${ev.titulo}</div>
+              <div class="flex items-center gap-2 flex-wrap" style="margin:3px 0">
+                ${origenChip}
+                <span style="flex:1;min-width:0">${cuerpo}</span>
+              </div>
+              <div class="log-dia-event-meta">${h}:${mm}:${ss} · 👤 ${e.usuario || '—'} ${e.source ? '· ' + e.source : ''}${e.motivo ? ' · ' + e.motivo : ''}</div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // ── DATEPICKER ──
+  function _logProdAbrirCalendario(btn) {
+    const dp = $('logDatepicker');
+    if (!dp) return;
+    if (!dp.classList.contains('hidden')) {
+      dp.classList.add('hidden');
+      return;
+    }
+    // Posicionar bajo el botón
+    const r = btn.getBoundingClientRect();
+    dp.style.left = (r.left) + 'px';
+    dp.style.top  = (r.bottom + 6) + 'px';
+    // Mes inicial = mes de la fecha seleccionada
+    const f = _logProdState.fecha || today();
+    const d = new Date(f + 'T00:00:00');
+    _logProdState.calMes = { y: d.getFullYear(), m: d.getMonth() };
+    _logProdRenderCalendario();
+    dp.classList.remove('hidden');
+    // Click fuera cierra
+    setTimeout(() => {
+      const closer = e => {
+        if (!dp.contains(e.target) && e.target.id !== 'logFechaBtn' && !btn.contains(e.target)) {
+          dp.classList.add('hidden');
+          document.removeEventListener('click', closer);
+        }
+      };
+      document.addEventListener('click', closer);
+    }, 50);
+  }
+  function _logProdCalNavMes(delta) {
+    if (!_logProdState.calMes) return;
+    let { y, m } = _logProdState.calMes;
+    m += delta;
+    if (m < 0)   { m = 11; y--; }
+    if (m > 11)  { m = 0;  y++; }
+    _logProdState.calMes = { y, m };
+    _logProdRenderCalendario();
+  }
+  function _logProdRenderCalendario() {
+    const grid = $('logCalGrid');
+    const lbl  = $('logCalMesAnio');
+    if (!grid || !_logProdState.calMes) return;
+    const { y, m } = _logProdState.calMes;
+    const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    if (lbl) lbl.textContent = `${meses[m]} ${y}`;
+    // Primer día del mes
+    const primero = new Date(y, m, 1);
+    let primerDow = primero.getDay(); // 0=dom..6=sab
+    primerDow = primerDow === 0 ? 6 : primerDow - 1; // L=0..D=6
+    const ultimo = new Date(y, m + 1, 0).getDate();
+    const hoy = today();
+    const sel = _logProdState.fecha;
+    const dias = _logProdState.diasConActividad;
+    let html = '';
+    for (let i = 0; i < primerDow; i++) html += '<button class="log-cal-day empty"></button>';
+    for (let dia = 1; dia <= ultimo; dia++) {
+      const f = `${y}-${String(m + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+      const cls = ['log-cal-day'];
+      if (dias.has(f)) cls.push('has-activity');
+      if (f === hoy)   cls.push('today');
+      if (f === sel)   cls.push('selected');
+      html += `<button class="${cls.join(' ')}" onclick="MOS._logProdElegirFecha('${f}')">${dia}</button>`;
+    }
+    grid.innerHTML = html;
+  }
+  function _logProdElegirFecha(f) {
+    _logProdState.fecha = f;
+    _logProdActualizarFechaUI();
+    const dp = $('logDatepicker');
+    if (dp) dp.classList.add('hidden');
+    _logProdFiltrar();
+  }
+
+  // Agrupa productos por skuBase. El representante es el canónico
+  // (factorConversion=1 sin codigoProductoBase). Las presentaciones quedan
+  // como sub-productos cuyas entradas se mezclan en el historial combinado
+  // del grupo, etiquetadas con el origen.
+  function _logProdAgruparPorCanonico(data) {
+    const grupos = {};
+    data.forEach(p => {
+      const key = String(p.skuBase || p.codigoProductoBase || p.idProducto || '');
+      if (!key) return;
+      if (!grupos[key]) grupos[key] = { canonico: null, miembros: [], historial: [] };
+      const esCanonico = !p.codigoProductoBase && (parseFloat(p.factorConversion) === 1 || !p.factorConversion);
+      if (esCanonico) grupos[key].canonico = p;
+      grupos[key].miembros.push(p);
+      const hist = Array.isArray(p.historial) ? p.historial : [];
+      hist.forEach(e => {
+        grupos[key].historial.push(Object.assign({}, e, {
+          _origenIdProducto: p.idProducto,
+          _origenDescripcion: p.descripcion,
+          _origenEsCanonico: esCanonico,
+          _origenFactor: p.factorConversion
+        }));
+      });
+    });
+    Object.keys(grupos).forEach(k => {
+      // Si no hay canónico identificado, usar el miembro con factor más bajo
+      if (!grupos[k].canonico) {
+        grupos[k].canonico = grupos[k].miembros.slice().sort((a, b) =>
+          (parseFloat(a.factorConversion) || 1) - (parseFloat(b.factorConversion) || 1)
+        )[0];
+      }
+      grupos[k].historial.sort((a, b) => new Date(b.ts || 0).getTime() - new Date(a.ts || 0).getTime());
+    });
+    return grupos;
+  }
+
   function _logProdRender(data) {
     const cont = $('logProductosList');
     if (!cont || !Array.isArray(data)) return;
-      cont.innerHTML = data.map(p => {
-        const hist = Array.isArray(p.historial) ? p.historial : [];
-        const ult = p.ultimaEntrada || hist[hist.length - 1] || {};
-        const f = ult.ts ? new Date(ult.ts) : null;
-        const fmt = f ? f.toLocaleString('es-PE', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—';
-        const mins = f ? Math.floor((Date.now() - f.getTime()) / 60000) : Infinity;
-        let badge = '';
-        if (mins < 5)         badge = `<span class="log-badge log-badge-live">🟢 hace ${mins}m</span>`;
-        else if (mins < 60)   badge = `<span class="log-badge log-badge-recent">hace ${mins}m</span>`;
-        else if (mins < 1440) badge = `<span class="log-badge log-badge-hours">hace ${Math.floor(mins/60)}h</span>`;
-        else                  badge = `<span class="log-badge log-badge-old">hace ${Math.floor(mins/1440)}d</span>`;
-        const tipo = p.codigoProductoBase
-          ? `<span class="text-[9px] uppercase font-bold text-purple-300">DERIVADO</span>`
-          : (parseFloat(p.factorConversion) === 1 || !p.factorConversion)
-            ? `<span class="text-[9px] uppercase font-bold text-emerald-300">CANÓNICO</span>`
-            : `<span class="text-[9px] uppercase font-bold text-blue-300">PRESENTACIÓN · f=${p.factorConversion}</span>`;
-        const safeId = String(p.idProducto || '').replace(/'/g, '&#39;');
-        // Renderizar las últimas N entradas del historial (más reciente arriba)
-        const entries = hist.slice().reverse().slice(0, 10).map(e => {
-          const fe = e.ts ? new Date(e.ts).toLocaleString('es-PE', { day:'2-digit', month:'short', year:'2-digit', hour:'2-digit', minute:'2-digit' }) : '—';
-          let cuerpo = '';
-          if (e.accion === 'crear') {
-            cuerpo = `<span class="log-action log-action-crear">🆕 creó</span> ${e.descripcion || ''}${e.codigoBarra ? ' · cód ' + e.codigoBarra : ''}${e.precioVenta ? ' · S/ ' + parseFloat(e.precioVenta).toFixed(2) : ''}`;
-          } else if (Array.isArray(e.cambios) && e.cambios.length) {
-            cuerpo = '<span class="log-action log-action-editar">✏️ editó</span> ' + e.cambios.map(c =>
-              `<span class="log-cambio"><strong>${c.campo}</strong>: <span class="log-antes">${_logFmtVal(c.antes)}</span> → <span class="log-despues">${_logFmtVal(c.despues)}</span></span>`
-            ).join(' · ');
-          } else {
-            cuerpo = `<span class="log-action log-action-editar">✏️ ${e.accion || 'cambio'}</span>`;
-          }
-          if (e.motivo) cuerpo += ` <span class="log-motivo">— ${e.motivo}</span>`;
-          return `<div class="log-entry">
-            <div class="log-entry-head">
-              <span class="log-usuario">👤 ${e.usuario || 'desconocido'}</span>
-              <span class="log-source">${e.source || ''}</span>
-              <span class="log-fecha">${fe}</span>
-            </div>
-            <div class="log-entry-body">${cuerpo}</div>
-          </div>`;
-        }).join('');
-        return `<div class="log-card">
-          <div class="log-card-head" onclick="MOS._logToggleCard(this)">
-            <div class="flex-1 min-w-0">
-              <div class="log-card-title">${p.descripcion || '—'} <span class="log-toggle">▾</span></div>
-              <div class="log-card-meta">
-                ${tipo}
-                <span class="text-[10px] text-slate-500">${p.skuBase || '—'}</span>
-                <span class="text-[10px] text-amber-400 font-bold">S/ ${parseFloat(p.precioVenta || 0).toFixed(2)}</span>
-                <span class="text-[10px] text-slate-500">· ${hist.length} cambio${hist.length !== 1 ? 's' : ''}</span>
-              </div>
-              <div class="log-card-last">
-                Último: ${ult.usuario || '—'} · ${fmt}
-              </div>
-            </div>
-            ${badge}
+    const grupos = _logProdAgruparPorCanonico(data);
+    // Ordenar grupos por timestamp del último cambio descendente
+    const claves = Object.keys(grupos).sort((a, b) => {
+      const ta = grupos[a].historial[0]?.ts ? new Date(grupos[a].historial[0].ts).getTime() : 0;
+      const tb = grupos[b].historial[0]?.ts ? new Date(grupos[b].historial[0].ts).getTime() : 0;
+      return tb - ta;
+    });
+
+    cont.innerHTML = claves.map(key => {
+      const g = grupos[key];
+      const c = g.canonico;
+      // Filtro de búsqueda: aplica al GRUPO (cualquier miembro coincide).
+      // Esto permite buscar "TRIPACK" y aún ver el grupo del canónico ACONCAGUA.
+      const grupoCoincide = g.miembros.some(_logProdProductoCoincide);
+      if (!grupoCoincide) return '';
+      // Filtrar entradas individuales con _logProdEntradaCoincide
+      const histFiltrado = g.historial.filter(_logProdEntradaCoincide);
+      if (!histFiltrado.length) return '';
+      const ult = histFiltrado[0];
+      const f = ult.ts ? new Date(ult.ts) : null;
+      const fmt = f ? f.toLocaleString('es-PE', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—';
+      const mins = f ? Math.floor((Date.now() - f.getTime()) / 60000) : Infinity;
+      let badge = '';
+      if (mins < 5)         badge = `<span class="log-badge log-badge-live">🟢 hace ${mins}m</span>`;
+      else if (mins < 60)   badge = `<span class="log-badge log-badge-recent">hace ${mins}m</span>`;
+      else if (mins < 1440) badge = `<span class="log-badge log-badge-hours">hace ${Math.floor(mins/60)}h</span>`;
+      else                  badge = `<span class="log-badge log-badge-old">hace ${Math.floor(mins/1440)}d</span>`;
+      const safeId = String(c.idProducto || '').replace(/'/g, '&#39;');
+      const numPresentaciones = g.miembros.filter(m => !!m.codigoProductoBase || (parseFloat(m.factorConversion) > 1)).length;
+      const tipoChip = numPresentaciones > 0
+        ? `<span class="text-[9px] uppercase font-bold text-emerald-300">CANÓNICO + ${numPresentaciones} pres.</span>`
+        : `<span class="text-[9px] uppercase font-bold text-emerald-300">CANÓNICO</span>`;
+
+      const entries = histFiltrado.slice(0, 12).map(e => {
+        const fe = e.ts ? new Date(e.ts).toLocaleString('es-PE', { day:'2-digit', month:'short', year:'2-digit', hour:'2-digit', minute:'2-digit' }) : '—';
+        // Chip de origen: si la entrada viene de una presentación, indicar cuál
+        const origenChip = e._origenEsCanonico
+          ? `<span class="log-origen log-origen-canonico" title="Cambio en el producto canónico">📦 base</span>`
+          : `<span class="log-origen log-origen-presentacion" title="Cambio en la presentación">📐 ${e._origenDescripcion || 'presentación'}${e._origenFactor ? ' · f=' + e._origenFactor : ''}</span>`;
+        let cuerpo = '';
+        if (e.accion === 'crear') {
+          cuerpo = `<span class="log-action log-action-crear">🆕 creó</span> ${e.descripcion || ''}${e.codigoBarra ? ' · cód ' + e.codigoBarra : ''}${e.precioVenta ? ' · S/ ' + parseFloat(e.precioVenta).toFixed(2) : ''}`;
+        } else if (Array.isArray(e.cambios) && e.cambios.length) {
+          cuerpo = '<span class="log-action log-action-editar">✏️ editó</span> ' + e.cambios.map(c =>
+            `<span class="log-cambio"><strong>${c.campo}</strong>: <span class="log-antes">${_logFmtVal(c.antes)}</span> → <span class="log-despues">${_logFmtVal(c.despues)}</span></span>`
+          ).join(' · ');
+        } else {
+          cuerpo = `<span class="log-action log-action-editar">✏️ ${e.accion || 'cambio'}</span>`;
+        }
+        if (e.motivo) cuerpo += ` <span class="log-motivo">— ${e.motivo}</span>`;
+        const evIdSafe = String(e._origenIdProducto || '').replace(/'/g, '&#39;');
+        return `<div class="log-entry">
+          <div class="log-entry-head">
+            <span class="log-usuario">👤 ${e.usuario || 'desconocido'}</span>
+            ${origenChip}
+            <span class="log-source">${e.source || ''}</span>
+            <span class="log-fecha">${fe}</span>
           </div>
-          <div class="log-card-entries hidden">
-            ${entries}
-            <button onclick="MOS.closeModal('modalLogProductos');MOS.abrirModalProducto('${safeId}')" class="log-btn-edit">✏️ Abrir producto</button>
-          </div>
+          <div class="log-entry-body">${cuerpo}</div>
+          ${!e._origenEsCanonico && evIdSafe ? `<button onclick="event.stopPropagation();MOS.closeModal('modalLogProductos');MOS.abrirModalProducto('${evIdSafe}')" class="log-entry-link">→ abrir presentación</button>` : ''}
         </div>`;
       }).join('');
+
+      return `<div class="log-card">
+        <div class="log-card-head" onclick="MOS._logToggleCard(this)">
+          <div class="flex-1 min-w-0">
+            <div class="log-card-title">${c.descripcion || '—'} <span class="log-toggle">▾</span></div>
+            <div class="log-card-meta">
+              ${tipoChip}
+              <span class="text-[10px] text-slate-500">${c.skuBase || '—'}</span>
+              <span class="text-[10px] text-amber-400 font-bold">S/ ${parseFloat(c.precioVenta || 0).toFixed(2)}</span>
+              <span class="text-[10px] text-slate-500">· ${histFiltrado.length} cambio${histFiltrado.length !== 1 ? 's' : ''}</span>
+            </div>
+            <div class="log-card-last">
+              Último: ${ult.usuario || '—'} · ${fmt}${!ult._origenEsCanonico ? ' · en ' + (ult._origenDescripcion || 'presentación') : ''}
+            </div>
+          </div>
+          ${badge}
+        </div>
+        <div class="log-card-entries hidden">
+          ${entries}
+          <button onclick="MOS.closeModal('modalLogProductos');MOS.abrirModalProducto('${safeId}')" class="log-btn-edit">✏️ Abrir canónico</button>
+        </div>
+      </div>`;
+    }).filter(Boolean).join('');
   }
 
   function _logFmtVal(v) {
@@ -9547,8 +10096,7 @@ const MOS = (() => {
                   <div class="text-[9px] truncate" style="color:${act.color};">${act.dot} ${act.label}${d.Ultima_Sesion ? ' · 👤 <span class="text-emerald-400 font-bold">' + d.Ultima_Sesion + '</span>' : ''}</div>
                 </div>
                 ${_pinBtn}
-                <button onclick="event.stopPropagation();MOS.abrirEscuchaDispositivo('${idAttr}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.5);color:#f87171;font-size:10px;" title="Escucha remota">🎙️</button>
-                <button onclick="event.stopPropagation();MOS.abrirModalGps('${idAttr}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.5);color:#34d399;font-size:10px;" title="Ver ubicación">📍</button>
+                <button onclick="event.stopPropagation();MOS.abrirEspiaDispositivo('${idAttr}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(99,102,241,0.18);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;font-size:10px;" title="Espiar dispositivo (audio + GPS)">🕵️</button>
                 <span class="text-[10px] text-slate-500 p-1 cursor-pointer" onclick="event.stopPropagation();MOS.abrirModalDispositivo('${idAttr}')" title="Editar">✏️</span>
               </div>`;
             }).join('')}
@@ -9839,21 +10387,16 @@ const MOS = (() => {
                              style="background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.5);color:#60a5fa;font-size:13px;"
                              title="Enviar mensaje push a ${p.nombre}">💬</button>`;
 
-    // Botones 🎙️📍 — siempre visibles para no-admins (cajeros y operadores WH).
-    // Si el usuario no está logueado en ningún dispositivo, abrirEscuchaPorUsuario muestra toast.
-    // Para admins/master se ocultan: ellos usan el panel web, no tablets.
+    // Botón 🕵️ ESPÍA (audio + gps combinados) — siempre visible para no-admins.
+    // Si el usuario no está logueado en ningún dispositivo, abrirEspiaPorUsuario muestra toast.
+    // Para admins/master se oculta: ellos usan el panel web, no tablets.
     const audioBtn = !esAdmin
-      ? `<button onclick="event.stopPropagation();MOS.abrirEscuchaPorUsuario('${safeNombre}')"
+      ? `<button onclick="event.stopPropagation();MOS.abrirEspiaPorUsuario('${safeNombre}')"
                  class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center hover:scale-110 transition-all"
-                 style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.5);color:#f87171;font-size:13px;"
-                 title="Escucha remota de ${p.nombre}">🎙️</button>`
+                 style="background:rgba(99,102,241,0.18);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;font-size:13px;"
+                 title="Espiar a ${p.nombre} (audio + GPS)">🕵️</button>`
       : '';
-    const gpsBtn = !esAdmin
-      ? `<button onclick="event.stopPropagation();MOS.abrirGpsPorUsuario('${safeNombre}')"
-                 class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center hover:scale-110 transition-all"
-                 style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.5);color:#34d399;font-size:13px;"
-                 title="Ver ubicación de ${p.nombre}">📍</button>`
-      : '';
+    const gpsBtn = '';
 
     // Audit hoy (solo admins)
     const auditExpand = esAdmin
@@ -10538,14 +11081,10 @@ const MOS = (() => {
           <div class="text-sm font-bold text-amber-400">S/ ${monto.toFixed(2)}</div>
           <div class="text-[10px] text-slate-500">esta semana</div>
         </div>
-        <button onclick="event.stopPropagation();MOS.abrirEscuchaPorUsuario('${safeNombre}')"
+        <button onclick="event.stopPropagation();MOS.abrirEspiaPorUsuario('${safeNombre}')"
                 class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center hover:scale-110 transition-all"
-                style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.5);color:#f87171;font-size:13px;"
-                title="Escucha remota de ${c.nombre}">🎙️</button>
-        <button onclick="event.stopPropagation();MOS.abrirGpsPorUsuario('${safeNombre}')"
-                class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center hover:scale-110 transition-all"
-                style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.5);color:#34d399;font-size:13px;"
-                title="Ver ubicación de ${c.nombre}">📍</button>
+                style="background:rgba(99,102,241,0.18);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;font-size:13px;"
+                title="Espiar a ${c.nombre} (audio + GPS)">🕵️</button>
         <button onclick="event.stopPropagation();MOS.abrirModalEnviarPush('','${safeNombre}')"
                 class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center hover:scale-110 transition-all"
                 style="background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.5);color:#60a5fa;font-size:13px;"
@@ -10913,8 +11452,7 @@ const MOS = (() => {
         </div>
       </div>
       ${pinBtn}
-      <button onclick="event.stopPropagation();MOS.abrirEscuchaDispositivo('${idAttr}')" class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.5);color:#f87171;font-size:11px;" title="Escucha remota">🎙️</button>
-      <button onclick="event.stopPropagation();MOS.abrirModalGps('${idAttr}')" class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.5);color:#34d399;font-size:11px;" title="Ver ubicación">📍</button>
+      <button onclick="event.stopPropagation();MOS.abrirEspiaDispositivo('${idAttr}')" class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(99,102,241,0.18);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;font-size:11px;" title="Espiar dispositivo (audio + GPS)">🕵️</button>
       <button onclick="event.stopPropagation();MOS.abrirModalDispositivo('${idAttr}')" class="text-[10px] text-slate-500 hover:text-white p-1" title="Editar">✏️</button>
     </div>`;
   }
@@ -11735,82 +12273,1605 @@ const MOS = (() => {
     }
   });
 
-  // Renderiza la vista de Cajas usando S._todasCajas / S._todosTickets ya cargados
-  function _renderCajasDesdeEstado() {
-    const abiertas  = (S._todasCajas||[]).filter(c=>c.estado==='ABIERTA');
-    const cerradas  = (S._todasCajas||[]).filter(c=>c.estado!=='ABIERTA');
-    const tkAll     = S._todosTickets||[];
-    const todayStr  = today();
+  // Wrapper compat — redirige al nuevo renderizado modernizado
+  function _renderCajasDesdeEstado() { _cjRender(); }
 
-    // KPIs (recalcular localmente)
-    const hoyKpis   = S._cajasHoy||[];
-    const totalDia  = hoyKpis.reduce((s,c)=>s+c.totalVentas,0);
-    const ticketsDia= hoyKpis.reduce((s,c)=>s+c.tickets,0);
-    const setQ = (id,v)=>{ const el=$(id); if(el) el.textContent=v; };
-    setQ('cajasKpiVentas', fmtMoney(totalDia));
+  // ════════════════════════════════════════════════════════════
+  // ║ MÓDULO CAJAS MODERNIZADO (estilo Bloomberg/trading)       ║
+  // ════════════════════════════════════════════════════════════
+  let _cjState = {
+    fecha: null,
+    calMes: null,
+    expandido: new Set(),
+    livePulseTimer: null,
+    elapsedTimer: null,
+    tvActivo: false,
+    tvAutoTimer: null,
+    tkFiltro: 'todos',
+    tkCajaFiltro: '',
+    tkBuscar: '',
+    chunksAnteriores: new Map(),  // idCaja → cantidadTickets para detectar cambios
+  };
 
-    // Tickets KPIs desde S._todosTickets
-    const hoy  = todayStr;
-    let nvH=0,bH=0,fH=0,totH=0,nvM=0,bM=0,fM=0,totM=0;
-    tkAll.forEach(t => {
-      const an = t.estado==='ANULADO';
-      if (!an) {
-        totM++; if(t.tipo==='NV') nvM++; else if(t.tipo==='B') bM++; else if(t.tipo==='F') fM++;
-        if(t.fecha===hoy){ totH++; if(t.tipo==='NV') nvH++; else if(t.tipo==='B') bH++; else if(t.tipo==='F') fH++; }
+  function _cjFecha() { return _cjState.fecha || $('cjFecha')?.value || today(); }
+
+  function _cjActualizarFechaUI() {
+    const fecha = _cjFecha();
+    const lbl = $('cjFechaLabel');
+    const badge = $('cjDayBadge');
+    const hoy = today();
+    const a = new Date(fecha + 'T00:00:00');
+    const h = new Date(hoy + 'T00:00:00');
+    const diff = Math.round((a - h) / 86400000);
+    if (lbl) {
+      const txt = a.toLocaleDateString('es-PE', { day:'2-digit', month:'short', year:'2-digit' });
+      lbl.textContent = (diff === 0) ? `Hoy · ${txt}` : txt;
+    }
+    if (badge) {
+      let txt = '';
+      if (diff === 0)       txt = '🟢 Hoy';
+      else if (diff === -1) txt = 'Ayer';
+      else if (diff === 1)  txt = 'Mañana';
+      else if (diff < 0)    txt = `Hace ${-diff} días`;
+      else                  txt = `+${diff} días`;
+      badge.textContent = txt;
+    }
+    // Banner archivo cuando no es hoy
+    const banner = $('cjBannerArchivo');
+    if (banner) banner.classList.toggle('hidden', diff === 0);
+  }
+
+  function cjDia(delta) {
+    const cur = _cjFecha();
+    const [y, m, d] = cur.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setDate(dt.getDate() + delta);
+    const nueva = dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0');
+    _cjState.fecha = nueva;
+    const inp = $('cjFecha'); if (inp) inp.value = nueva;
+    _finBeep('nav');
+    _cjActualizarFechaUI();
+    _cjRender();
+  }
+  function cjIrHoy() {
+    _cjState.fecha = today();
+    const inp = $('cjFecha'); if (inp) inp.value = _cjState.fecha;
+    _finBeep('ok');
+    _cjActualizarFechaUI();
+    _cjRender();
+  }
+  function cjAbrirCalendario(btn) {
+    const dp = $('cjDatepicker');
+    if (!dp) return;
+    if (!dp.classList.contains('hidden')) { dp.classList.add('hidden'); return; }
+    const cur = _cjFecha();
+    const d = new Date(cur + 'T00:00:00');
+    _cjState.calMes = { y: d.getFullYear(), m: d.getMonth() };
+    _cjCalRender();
+    const r = btn.getBoundingClientRect();
+    dp.style.left = Math.max(8, Math.min(window.innerWidth - 250, r.left)) + 'px';
+    dp.style.top  = (r.bottom + 6) + 'px';
+    dp.classList.remove('hidden');
+    _finBeep('click');
+    setTimeout(() => {
+      const closer = e => {
+        if (!dp.contains(e.target) && !btn.contains(e.target)) {
+          dp.classList.add('hidden');
+          document.removeEventListener('click', closer);
+        }
+      };
+      document.addEventListener('click', closer);
+    }, 50);
+  }
+  function cjCalNavMes(delta) {
+    if (!_cjState.calMes) return;
+    let { y, m } = _cjState.calMes;
+    m += delta;
+    if (m < 0)  { m = 11; y--; }
+    if (m > 11) { m = 0;  y++; }
+    _cjState.calMes = { y, m };
+    _cjCalRender();
+  }
+  function _cjCalRender() {
+    const grid = $('cjCalGrid');
+    const lbl  = $('cjCalMesAnio');
+    if (!grid || !_cjState.calMes) return;
+    const { y, m } = _cjState.calMes;
+    const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    if (lbl) lbl.textContent = `${meses[m]} ${y}`;
+    const primero = new Date(y, m, 1);
+    let primerDow = primero.getDay();
+    primerDow = primerDow === 0 ? 6 : primerDow - 1;
+    const ultimo = new Date(y, m + 1, 0).getDate();
+    const hoy = today();
+    const sel = _cjFecha();
+    let html = '';
+    for (let i = 0; i < primerDow; i++) html += '<button class="log-cal-day empty"></button>';
+    for (let dia = 1; dia <= ultimo; dia++) {
+      const f = `${y}-${String(m + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+      const cls = ['log-cal-day'];
+      if (f === hoy) cls.push('today');
+      if (f === sel) cls.push('selected');
+      html += `<button class="${cls.join(' ')}" onclick="MOS.cjElegirFecha('${f}')">${dia}</button>`;
+    }
+    grid.innerHTML = html;
+  }
+  function cjElegirFecha(f) {
+    _cjState.fecha = f;
+    const inp = $('cjFecha'); if (inp) inp.value = f;
+    $('cjDatepicker')?.classList.add('hidden');
+    _finBeep('click');
+    _cjActualizarFechaUI();
+    _cjRender();
+  }
+
+  // ── Render principal ───────────────────────────────────
+  function _cjRender() {
+    if (!_cjState.fecha) _cjState.fecha = today();
+    const inp = $('cjFecha'); if (inp && !inp.value) inp.value = _cjState.fecha;
+    _cjActualizarFechaUI();
+
+    const fecha = _cjFecha();
+    const esHoy = fecha === today();
+
+    const todas = S._todasCajas || [];
+    const tkAll = S._todosTickets || [];
+
+    // Filtrar cajas según la fecha activa (estilo finanzas)
+    const cajasDelDia = todas.filter(c => {
+      const fa = (c.fechaApertura || '').substring(0, 10);
+      const fc = (c.fechaCierre   || '').substring(0, 10);
+      // Si es hoy: incluir todas las abiertas (sin cierre) + cerradas de hoy
+      if (esHoy) {
+        if (c.estado === 'ABIERTA') return true;
+        return fc === fecha || fa === fecha;
+      }
+      // Días pasados: solo las que cerraron (o abrieron) en esa fecha
+      return fc === fecha || fa === fecha;
+    });
+    const abiertas = cajasDelDia.filter(c => c.estado === 'ABIERTA');
+    const cerradas = cajasDelDia.filter(c => c.estado !== 'ABIERTA');
+
+    // Tickets del día: filtrar por fecha
+    const tkDia = tkAll.filter(t => (t.fecha || '').substring(0, 10) === fecha);
+    const tkMes = tkAll.filter(t => {
+      const f = (t.fecha || '').substring(0, 10);
+      const cutoff = _fechaOffset(fecha, -29);
+      return f && f <= fecha && f >= cutoff;
+    });
+
+    _cjRenderTicker(cajasDelDia, tkDia, esHoy);
+    _cjRenderKPIs(cajasDelDia, tkDia, tkMes, fecha);
+    _cjRenderCajas(abiertas, cerradas, fecha, esHoy);
+    _cjRenderRanking(cajasDelDia);
+    _cjRenderActividad(tkDia, esHoy);
+    _cjRender7d(fecha);
+
+    // Empty state
+    const empty = $('cajasEmpty');
+    if (empty) empty.classList.toggle('hidden', cajasDelDia.length > 0);
+
+    // Reloj live elapsed (solo si es hoy y hay abiertas)
+    _cjStartElapsedTimer(esHoy && abiertas.length > 0);
+  }
+
+  // ── TICKER ──────────────────────────────────────────────
+  function _cjRenderTicker(cajas, tickets, esHoy) {
+    const cont = $('cjTickerContent');
+    if (!cont) return;
+    const totalDia = cajas.reduce((s, c) => s + (parseFloat(c.totalVentas) || 0), 0);
+    const tkCount = tickets.filter(t => t.estado !== 'ANULADO').length;
+    const abiertas = cajas.filter(c => c.estado === 'ABIERTA').length;
+    const cerradas = cajas.filter(c => c.estado !== 'ABIERTA').length;
+    // Buscar última venta
+    const tkOrd = tickets.slice().sort((a,b) => (b.fecha+b.hora||'').localeCompare(a.fecha+a.hora||''));
+    const ultima = tkOrd[0];
+    const ultimoTxt = ultima
+      ? `Última venta: ${ultima.hora || '—'} · S/ ${parseFloat(ultima.total||0).toFixed(2)}`
+      : 'Sin ventas';
+    // Comparación con ayer (solo si esHoy)
+    let tendencia = '';
+    if (esHoy) {
+      const ayer = _fechaOffset(today(), -1);
+      const tkAyer = (S._todosTickets || []).filter(t => (t.fecha||'').substring(0,10) === ayer && t.estado !== 'ANULADO');
+      const totalAyer = tkAyer.reduce((s,t)=>s+(parseFloat(t.total)||0), 0);
+      if (totalAyer > 0) {
+        const pct = ((totalDia - totalAyer) / totalAyer) * 100;
+        tendencia = pct >= 0
+          ? `<span class="cj-ticker-up">▲ ${Math.abs(pct).toFixed(0)}% vs ayer</span>`
+          : `<span class="cj-ticker-down">▼ ${Math.abs(pct).toFixed(0)}% vs ayer</span>`;
+      }
+    }
+    // Pieza única que se repite 2× para scroll continuo
+    const pieza = `
+      <span class="cj-ticker-item ${totalDia >= 0 ? 'cj-ticker-up':'cj-ticker-down'}">${totalDia >= 0 ? '▲':'▼'} S/ ${totalDia.toFixed(2)}</span>
+      <span class="cj-ticker-sep">│</span>
+      <span class="cj-ticker-item">🧾 ${tkCount} tickets</span>
+      <span class="cj-ticker-sep">│</span>
+      <span class="cj-ticker-item cj-ticker-up">🟢 ${abiertas} abiertas</span>
+      <span class="cj-ticker-sep">│</span>
+      <span class="cj-ticker-item">⚫ ${cerradas} cerradas</span>
+      <span class="cj-ticker-sep">│</span>
+      <span class="cj-ticker-item">${ultimoTxt}</span>
+      ${tendencia ? '<span class="cj-ticker-sep">│</span>' + tendencia : ''}
+      <span class="cj-ticker-sep">│</span>
+    `;
+    cont.innerHTML = pieza + pieza; // 2× para scroll continuo
+  }
+
+  // ── KPIs ─────────────────────────────────────────────────
+  function _cjRenderKPIs(cajas, tkDia, tkMes, fecha) {
+    const totalDia = cajas.reduce((s, c) => s + (parseFloat(c.totalVentas) || 0), 0);
+    _animateCount('cajasKpiVentas', totalDia, { prefix: 'S/ ' });
+
+    // Barra proporcional efectivo / virtual / mixto / crédito
+    const ef = cajas.reduce((s, c) => s + (parseFloat(c.efectivo) || 0), 0);
+    const vi = cajas.reduce((s, c) => {
+      const bm = c.byMetodo || {};
+      // Sumar todo lo que no sea EFECTIVO ni POR_COBRAR/CREDITO ni ANULADO
+      let total = 0;
+      Object.keys(bm).forEach(k => {
+        const ku = String(k || '').toUpperCase();
+        if (ku === 'EFECTIVO' || ku === 'POR_COBRAR' || ku === 'CREDITO' || ku === 'ANULADO') return;
+        total += parseFloat(bm[k]) || 0;
+      });
+      return s + total;
+    }, 0);
+    const totalCobrado = ef + vi;
+    const efPct = totalCobrado > 0 ? (ef / totalCobrado * 100) : 50;
+    const viPct = totalCobrado > 0 ? (vi / totalCobrado * 100) : 50;
+    const setW = (id, p) => { const el = $(id); if (el) el.style.width = p.toFixed(1) + '%'; };
+    setW('cjPagoBarEf', efPct);
+    setW('cjPagoBarVi', viPct);
+    _setText('cjEfectivoMonto', 'S/ ' + ef.toFixed(2));
+    _setText('cjVirtualMonto',  'S/ ' + vi.toFixed(2));
+    _setText('cjEfectivoPct',   efPct.toFixed(0) + '%');
+    _setText('cjVirtualPct',    viPct.toFixed(0) + '%');
+
+    // Lógica basada en formaPago (definiciones selladas del negocio):
+    //   EFECTIVO/VIRTUAL/MIXTO = COBRADO (dinero recibido)
+    //   POR_COBRAR             = pendiente de cajero (vendedor emitió, no cobrado)
+    //   CREDITO                = deuda formal aprobada por admin
+    //   ANULADO                = descartado, no cuenta
+    const fp = t => String(t.metodo || t.formaPago || '').toUpperCase();
+    const esAnul    = t => fp(t) === 'ANULADO' || t.estado === 'ANULADO';
+    const esPorCob  = t => fp(t) === 'POR_COBRAR' && !esAnul(t);
+    const esCred    = t => fp(t) === 'CREDITO' && !esAnul(t);
+    const esCobrado = t => !esAnul(t) && !esPorCob(t) && !esCred(t);
+
+    const tkOk    = tkDia.filter(esCobrado).length;
+    const tkPorCb = tkDia.filter(esPorCob).length;
+    const tkCred  = tkDia.filter(esCred).length;
+    const tkAnul  = tkDia.filter(esAnul).length;
+    _setText('cjVentasSub',
+      tkOk + ' cobrados · ' + tkPorCb + ' por cobrar · ' + tkCred + ' a crédito · ' + tkAnul + ' anulado' + (tkAnul !== 1 ? 's' : '')
+    );
+    _setText('cjTkCobrados',  tkOk);
+    _setText('cjTkPorCobrar', tkPorCb);
+    _setText('cjTkCredito',   tkCred);
+    _setText('cjTkAnulados',  tkAnul);
+
+    // Hoy / 30d (no contar anulados)
+    const hoyTotal = tkDia.filter(t => !esAnul(t)).length;
+    const mesTotal = tkMes.filter(t => !esAnul(t)).length;
+    _setText('cajasKpiTicketsHoy', hoyTotal);
+    _setText('cajasKpiTicketsMes', mesTotal);
+
+    // Tipos doc (NV/B/F) — tipoDoc puede ser corto o largo
+    let nvH = 0, bH = 0, fH = 0;
+    tkDia.forEach(t => {
+      if (esAnul(t)) return;
+      const tp = String(t.tipo || t.tipoDoc || '').toUpperCase();
+      if (tp === 'NV' || tp === 'NOTA_DE_VENTA') nvH++;
+      else if (tp === 'B' || tp === 'BOLETA') bH++;
+      else if (tp === 'F' || tp === 'FACTURA') fH++;
+    });
+    _setText('cajasKpiNV', nvH);
+    _setText('cajasKpiBoleta', bH);
+    _setText('cajasKpiFactura', fH);
+
+    // Comparación vs ayer
+    const ayer = _fechaOffset(fecha, -1);
+    const tkAyer = (S._todosTickets || []).filter(t =>
+      (t.fecha || '').substring(0, 10) === ayer && t.estado !== 'ANULADO');
+    const totalAyer = tkAyer.reduce((s, t) => s + (parseFloat(t.total) || 0), 0);
+    const cmp = $('cjVentasComparaAyer');
+    if (cmp) {
+      if (totalAyer > 0) {
+        const pct = ((totalDia - totalAyer) / totalAyer) * 100;
+        cmp.classList.remove('hidden');
+        cmp.classList.toggle('up', pct >= 0);
+        cmp.classList.toggle('down', pct < 0);
+        cmp.innerHTML = (pct >= 0 ? '▲ +' : '▼ ') + Math.abs(pct).toFixed(0) + '% vs ayer';
+      } else { cmp.classList.add('hidden'); }
+    }
+  }
+
+  // ── CARDS DE CAJAS ───────────────────────────────────────
+  function _cjRenderCajas(abiertas, cerradas, fecha, esHoy) {
+    const grid = $('cjCajasGrid');
+    if (!grid) return;
+    const sub = $('cjCajasSub');
+    if (sub) {
+      const total = abiertas.length + cerradas.length;
+      sub.textContent = total > 0
+        ? `${total} caja${total !== 1 ? 's' : ''} ${esHoy ? 'hoy' : 'en este día'}`
+        : (esHoy ? 'Sin actividad todavía' : 'Sin actividad');
+    }
+    _setText('cjPillActivas',  '🟢 ' + abiertas.length + ' abiertas');
+    _setText('cjPillCerradas', '⚫ ' + cerradas.length + ' cerradas');
+
+    if (!abiertas.length && !cerradas.length) {
+      grid.innerHTML = '<p class="text-slate-500 text-xs text-center py-6 col-span-full">Sin cajas en esta fecha</p>';
+      return;
+    }
+    // Activas primero, luego cerradas
+    grid.innerHTML = [
+      ...abiertas.map(c => _cjBuildCajaCard(c, true, fecha)),
+      ...cerradas.map(c => _cjBuildCajaCard(c, false, fecha))
+    ].join('');
+
+    // Detectar tickets nuevos (flash en card de la caja correspondiente)
+    if (esHoy) _cjDetectarTicketsNuevos(abiertas);
+  }
+
+  function _cjBuildCajaCard(c, esActiva, fecha) {
+    const idAttr = String(c.idCaja).replace(/'/g, '&#39;');
+    const elapsed = _cajaElapsed(c.fechaApertura);
+    const total = parseFloat(c.totalVentas) || 0;
+    const tickets = c.tickets || 0;
+    const anulados = c.anulados || 0;
+    const sinCobrar = c.sinCobrar || 0;
+    const ef = parseFloat(c.efectivo) || 0;
+
+    // Métodos: separar virtual / mixto / credito desde byMetodo
+    const bm = c.byMetodo || {};
+    let mVi = 0, mMx = 0, mCr = 0;
+    Object.keys(bm).forEach(k => {
+      const ku = String(k || '').toUpperCase();
+      const v = parseFloat(bm[k]) || 0;
+      if (ku === 'EFECTIVO' || ku === 'ANULADO') return;
+      if (ku === 'POR_COBRAR' || ku === 'CREDITO') mCr += v;
+      else if (ku.startsWith('MIXTO')) mMx += v;
+      else mVi += v;
+    });
+    const totalCobrado = ef + mVi + mMx;
+    const efPct = totalCobrado > 0 ? (ef / totalCobrado * 100) : 0;
+    const viPct = totalCobrado > 0 ? (mVi / totalCobrado * 100) : 0;
+    const mxPct = totalCobrado > 0 ? (mMx / totalCobrado * 100) : 0;
+    const totalConCredito = totalCobrado + mCr;
+    const crPct = totalConCredito > 0 ? (mCr / totalConCredito * 100) : 0;
+
+    // Salud: 100 base, descuenta % anulados, % crédito alto, sin movimiento
+    const tkSafe = Math.max(1, tickets);
+    let salud = 100;
+    salud -= Math.min(40, (anulados / tkSafe) * 100 * 2); // anulados: -2 por cada %
+    if (total > 0 && mCr / Math.max(1, total) > 0.30) salud -= 15; // crédito > 30%
+    salud = Math.max(0, Math.round(salud));
+    const saludCls = salud >= 80 ? '' : (salud >= 60 ? 'warn' : 'bad');
+
+    // Sparkline de tickets por hora (12 barras: 7am-19h)
+    const tkList = c.ticketsList || [];
+    const horas = new Array(13).fill(0);
+    tkList.forEach(t => {
+      if (t.estado === 'ANULADO') return;
+      const h = parseInt(String(t.hora || '0').split(':')[0], 10);
+      const idx = Math.max(0, Math.min(12, h - 7));
+      horas[idx] += (parseFloat(t.total) || 0);
+    });
+    const maxH = Math.max.apply(null, horas.concat([1]));
+    const horaActual = new Date().getHours();
+    const sparkBars = horas.map((v, i) => {
+      const h = Math.max(2, (v / maxH) * 28);
+      const realHora = i + 7;
+      const cls = v === 0 ? 'zero' : (esActiva && realHora === horaActual ? 'now' : '');
+      return `<div class="cj-spark-bar ${cls}" style="height:${h}px" title="${realHora}h: S/ ${v.toFixed(2)}"></div>`;
+    }).join('');
+
+    // Iniciales del cajero
+    const ini = (c.vendedor || '?').split(/\s+/).map(p => p[0] || '').slice(0, 2).join('').toUpperCase();
+    const safeNombre = String(c.vendedor || '').replace(/'/g, '&#39;');
+
+    // Banderas de alerta
+    const sinMov = esActiva && tickets === 0 && _cajaMinutosDesdeApertura(c.fechaApertura) > 30;
+    const claseEstado = esActiva
+      ? (sinMov ? 'alerta' : 'activa')
+      : 'cerrada';
+
+    // Botones
+    const btnActiva = esActiva ? `
+      <button onclick="event.stopPropagation();MOS.cjVerTicketsCaja('${idAttr}')" class="cj-caja-btn cj-caja-btn-primary" title="Ver tickets de esta caja">🧾 Tickets</button>
+      <button onclick="event.stopPropagation();MOS.cjAbrirTurno('${idAttr}')" class="cj-caja-btn" title="Ver turno completo">📊 Turno</button>` : `
+      <button onclick="event.stopPropagation();MOS.cjVerTicketsCaja('${idAttr}')" class="cj-caja-btn cj-caja-btn-primary">🧾 Tickets del turno</button>
+      <button onclick="event.stopPropagation();MOS.cjAbrirTurno('${idAttr}')" class="cj-caja-btn" title="Ver turno completo">📜 Ver cierre</button>`;
+
+    return `
+    <div class="cj-caja-card ${claseEstado}" id="cjcard-${idAttr}" data-idcaja="${idAttr}" data-tickets="${tickets}" onclick="MOS.cjToggleCajaDetail('${idAttr}')">
+      <div class="cj-caja-head">
+        <span class="cj-caja-status-dot ${esActiva ? 'live' : 'off'}"></span>
+        <div class="cj-caja-titulo">📍 ${c.zona || c.estacion || c.idCaja}</div>
+        <span class="cj-caja-badge ${esActiva ? 'live' : 'cerrada'}">${esActiva ? 'LIVE' : 'CERRADA'}</span>
+        <button class="cj-caja-toggle ${_cjState.expandido.has(idAttr) ? 'open' : ''}" onclick="event.stopPropagation();MOS.cjToggleCajaDetail('${idAttr}')">▾</button>
+      </div>
+      <div class="cj-caja-meta">
+        <div class="cj-caja-avatar">${ini}</div>
+        <div class="cj-caja-meta-cuerpo">
+          <div class="cj-caja-meta-nombre">${c.vendedor || '—'}</div>
+          <div class="cj-caja-meta-sub">${(c.fechaApertura || '').substring(11, 16)} → ${esActiva ? 'ahora' : (c.fechaCierre || '').substring(11, 16)}</div>
+        </div>
+        <span class="cj-caja-elapsed" data-elapsed-id="${idAttr}" data-fecha="${c.fechaApertura}" data-cierre="${c.fechaCierre || ''}">${elapsed}</span>
+      </div>
+      <div class="cj-caja-hero">
+        <div>
+          <div class="cj-caja-hero-monto">S/ ${total.toFixed(2)}</div>
+          <div class="cj-caja-hero-sub">${tickets} tickets · ${anulados > 0 ? `<span style="color:#fca5a5">${anulados} anul</span> · ` : ''}${sinCobrar > 0 ? `<span style="color:#fcd34d">${sinCobrar} créd</span>` : '0 créd'}</div>
+        </div>
+        <div class="cj-caja-salud" title="Salud de la caja: ${salud}/100">
+          <div class="cj-caja-salud-num ${saludCls}">${salud}</div>
+          <div class="cj-caja-salud-lbl">SALUD</div>
+          <div class="cj-caja-salud-bar"><div class="cj-caja-salud-bar-fill" style="width:${salud}%"></div></div>
+        </div>
+      </div>
+      <div class="cj-caja-pago-bar">
+        ${efPct > 0 ? `<div class="cj-caja-pago-bar-ef" style="width:${efPct}%">${efPct >= 12 ? '💵' : ''}</div>` : ''}
+        ${viPct > 0 ? `<div class="cj-caja-pago-bar-vi" style="width:${viPct}%">${viPct >= 12 ? '📱' : ''}</div>` : ''}
+        ${mxPct > 0 ? `<div class="cj-caja-pago-bar-mx" style="width:${mxPct}%">${mxPct >= 12 ? '🔀' : ''}</div>` : ''}
+        ${crPct > 0 ? `<div class="cj-caja-pago-bar-cr" style="width:${crPct}%">${crPct >= 12 ? '📋' : ''}</div>` : ''}
+      </div>
+      <div class="cj-caja-pago-leg">
+        ${ef > 0 ? `<span class="cj-caja-pago-leg-item"><span style="width:8px;height:8px;border-radius:50%;background:#34d399"></span>S/ ${ef.toFixed(0)}</span>` : ''}
+        ${mVi > 0 ? `<span class="cj-caja-pago-leg-item"><span style="width:8px;height:8px;border-radius:50%;background:#22d3ee"></span>S/ ${mVi.toFixed(0)}</span>` : ''}
+        ${mMx > 0 ? `<span class="cj-caja-pago-leg-item"><span style="width:8px;height:8px;border-radius:50%;background:#a5b4fc"></span>S/ ${mMx.toFixed(0)}</span>` : ''}
+        ${mCr > 0 ? `<span class="cj-caja-pago-leg-item"><span style="width:8px;height:8px;border-radius:50%;background:#fb923c"></span>S/ ${mCr.toFixed(0)}</span>` : ''}
+      </div>
+      <div class="cj-spark">${sparkBars}</div>
+      <div class="cj-spark-axis"><span>7h</span><span>13h</span><span>19h</span></div>
+      <div class="cj-caja-actions">
+        ${btnActiva}
+      </div>
+      <div class="cj-caja-detail ${_cjState.expandido.has(idAttr) ? '' : 'hidden'}" id="cjdetail-${idAttr}">
+        ${_cjBuildDetalleHtml(c)}
+      </div>
+    </div>`;
+  }
+
+  function _cjBuildDetalleHtml(c) {
+    const tkList = (c.ticketsList || []).slice(0, 30);
+    const exList = (c.extrasList || []);
+    if (!tkList.length && !exList.length) return '<div class="text-xs text-slate-500 italic">Sin tickets ni movimientos</div>';
+    const ticketsHtml = tkList.length ? `
+      <div class="cj-caja-detail-head">${tkList.length} ticket${tkList.length!==1?'s':''}</div>
+      ${tkList.map(t => {
+        const an = t.estado === 'ANULADO';
+        return `<div class="flex items-center gap-2 py-1.5 border-b border-slate-800/40 ${an?'opacity-50':''}">
+          <span class="text-[10px] font-mono text-slate-400">${t.correlativo||'—'}</span>
+          <span class="text-[10px] text-slate-500 flex-1 min-w-0 truncate">${t.clienteNom||t.clienteDoc||'—'}</span>
+          <span class="text-[10px] ${an?'line-through text-slate-600':'text-slate-300 font-bold'}">S/ ${parseFloat(t.total||0).toFixed(2)}</span>
+          <span class="text-[9px] text-slate-500">${(t.metodo||'').substring(0,3)}</span>
+        </div>`;
+      }).join('')}
+    ` : '';
+    const extrasHtml = exList.length ? `
+      <div class="cj-caja-detail-head" style="margin-top:10px">Movimientos extra</div>
+      ${exList.map(ex => `
+        <div class="flex items-center justify-between py-1 text-[10px]">
+          <span class="${ex.tipo==='INGRESO'?'text-emerald-400':'text-red-400'}">${ex.tipo==='INGRESO'?'▲':'▼'} ${ex.concepto || ex.tipo}</span>
+          <span class="${ex.tipo==='INGRESO'?'text-emerald-400':'text-red-400'} font-bold">${ex.tipo==='INGRESO'?'+':'-'}S/ ${parseFloat(ex.monto||0).toFixed(2)}</span>
+        </div>`).join('')}
+    ` : '';
+    return ticketsHtml + extrasHtml;
+  }
+
+  function cjToggleCajaDetail(idCaja) {
+    const id = String(idCaja);
+    if (_cjState.expandido.has(id)) _cjState.expandido.delete(id);
+    else _cjState.expandido.add(id);
+    const safe = id.replace(/'/g, '&#39;');
+    const det = document.getElementById('cjdetail-' + safe);
+    const tog = document.querySelector(`#cjcard-${safe} .cj-caja-toggle`);
+    if (det) det.classList.toggle('hidden');
+    if (tog) tog.classList.toggle('open');
+    _finBeep('click');
+  }
+
+  // Helper: minutos desde apertura
+  function _cajaMinutosDesdeApertura(fechaApertura) {
+    if (!fechaApertura) return 0;
+    return Math.floor((Date.now() - new Date(fechaApertura).getTime()) / 60000);
+  }
+
+  // ── Reloj live: actualiza elapsed cada segundo ────────
+  function _cjStartElapsedTimer(activar) {
+    if (_cjState.elapsedTimer) {
+      clearInterval(_cjState.elapsedTimer);
+      _cjState.elapsedTimer = null;
+    }
+    if (!activar) return;
+    _cjState.elapsedTimer = setInterval(() => {
+      document.querySelectorAll('[data-elapsed-id]').forEach(el => {
+        const fecha = el.dataset.fecha;
+        const cierre = el.dataset.cierre;
+        if (cierre) return; // solo activas
+        if (fecha) el.textContent = _cajaElapsed(fecha);
+      });
+    }, 1000);
+  }
+
+  // ── Detectar tickets nuevos por caja → cha-ching + popup ───
+  function _cjDetectarTicketsNuevos(abiertas) {
+    abiertas.forEach(c => {
+      const id = String(c.idCaja);
+      const previo = _cjState.chunksAnteriores.get(id);
+      const actualTk = c.tickets || 0;
+      const actualMonto = parseFloat(c.totalVentas) || 0;
+      if (previo !== undefined && actualTk > (previo.tk || 0)) {
+        const deltaMonto = Math.max(0, actualMonto - (previo.monto || 0));
+        const deltaTk = actualTk - (previo.tk || 0);
+        _cjEfectoVentaNueva(id, deltaMonto, deltaTk);
+      }
+      _cjState.chunksAnteriores.set(id, { tk: actualTk, monto: actualMonto });
+    });
+  }
+
+  // ── Efecto registradora ¡cha-ching! ──────────────────
+  function _cjEfectoVentaNueva(idCaja, deltaMonto, deltaTk) {
+    const safe = String(idCaja).replace(/'/g, '&#39;');
+    const card = document.getElementById('cjcard-' + safe);
+    if (!card) return;
+    // 1) Sonido dinero
+    _finBeep('dinero');
+    // 2) Vibración + glow
+    card.classList.remove('cj-vibrate');
+    void card.offsetWidth;
+    card.classList.add('cj-vibrate');
+    setTimeout(() => card.classList.remove('cj-vibrate'), 700);
+    // 3) Popup +S/ XX flotante saliendo del hero
+    const hero = card.querySelector('.cj-caja-hero');
+    if (hero) {
+      const pop = document.createElement('div');
+      pop.className = 'cj-pop-venta';
+      const txt = deltaMonto > 0
+        ? `+S/ ${deltaMonto.toFixed(2)}`
+        : `+${deltaTk} ticket${deltaTk!==1?'s':''}`;
+      pop.innerHTML = `<span class="cj-pop-emoji">💸</span><span>${txt}</span>`;
+      hero.appendChild(pop);
+      setTimeout(() => pop.remove(), 2000);
+    }
+    // 4) Pulso del monto del card (countup animado)
+    const monto = card.querySelector('.cj-caja-hero-monto');
+    if (monto) {
+      monto.classList.remove('cj-monto-pulse');
+      void monto.offsetWidth;
+      monto.classList.add('cj-monto-pulse');
+      setTimeout(() => monto.classList.remove('cj-monto-pulse'), 900);
+    }
+    // 5) Pulso del KPI grande del día también
+    const kpi = $('cajasKpiVentas');
+    if (kpi) {
+      kpi.classList.remove('cj-monto-pulse');
+      void kpi.offsetWidth;
+      kpi.classList.add('cj-monto-pulse');
+    }
+    // 6) Pulso de la barra de pago global
+    const pagoBar = document.querySelector('.fin-pago-bar');
+    if (pagoBar) {
+      pagoBar.classList.remove('cj-bar-pulse');
+      void pagoBar.offsetWidth;
+      pagoBar.classList.add('cj-bar-pulse');
+    }
+  }
+
+  // ── Pulso del dot polling ──────────────────────
+  function _cjPulsoPoll() {
+    const dot = $('cjPollDot');
+    if (!dot) return;
+    dot.classList.add('active');
+    setTimeout(() => dot.classList.remove('active'), 1300);
+  }
+
+  // ── RANKING ─────────────────────────────────────
+  function _cjRenderRanking(cajas) {
+    const targets = ['cjRanking', 'cjRankingTV'];
+    targets.forEach(id => {
+      const cont = $(id);
+      if (!cont) return;
+      if (!cajas.length) {
+        cont.innerHTML = '<p class="text-slate-500 text-xs italic text-center py-6">Sin cajas</p>';
+        return;
+      }
+      const ord = cajas.slice().sort((a,b)=> (parseFloat(b.totalVentas)||0) - (parseFloat(a.totalVentas)||0));
+      const max = parseFloat(ord[0].totalVentas) || 1;
+      cont.innerHTML = ord.map((c, i) => {
+        const total = parseFloat(c.totalVentas) || 0;
+        const pct = (total / max) * 100;
+        const medCls = i === 0 ? 'cj-ranking-1' : i === 1 ? 'cj-ranking-2' : i === 2 ? 'cj-ranking-3' : 'cj-ranking-x';
+        const medIco = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '#'+(i+1);
+        const idAttr = String(c.idCaja).replace(/'/g, '&#39;');
+        return `<div class="cj-ranking-row" onclick="MOS.cjScrollToCaja('${idAttr}')">
+          <div class="cj-ranking-medalla ${medCls}">${medIco}</div>
+          <div class="cj-ranking-cuerpo">
+            <div class="cj-ranking-nombre">${c.vendedor || '—'} · ${c.zona || c.estacion || ''}</div>
+            <div class="cj-ranking-sub">${c.tickets || 0} tk · ${c.estado === 'ABIERTA' ? '🟢 abierta' : '⚫ cerrada'}</div>
+          </div>
+          <div class="cj-ranking-monto">S/ ${total.toFixed(0)}</div>
+          <div class="cj-ranking-bar"><div class="cj-ranking-bar-fill" style="width:${pct}%"></div></div>
+        </div>`;
+      }).join('');
+    });
+  }
+
+  function cjScrollToCaja(idCaja) {
+    const safe = String(idCaja).replace(/'/g, '&#39;');
+    const card = document.getElementById('cjcard-' + safe);
+    if (card) {
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      card.classList.remove('flash');
+      void card.offsetWidth;
+      card.classList.add('flash');
+      _finBeep('nav');
+    }
+  }
+
+  // ── ACTIVIDAD POR HORA (timeline horizontal con barras) ─────
+  function _cjRenderActividad(tickets, esHoy) {
+    const cont = $('cjActividad');
+    if (!cont) return;
+    const fp2 = t => String(t.metodo || t.formaPago || '').toUpperCase();
+    const esAnul2 = t => fp2(t) === 'ANULADO' || t.estado === 'ANULADO';
+
+    // Acumular por hora (6h-22h = 17 filas)
+    const horaIni = 6, horaFin = 22;
+    const horas = {};
+    for (let h = horaIni; h <= horaFin; h++) horas[h] = { total: 0, count: 0 };
+    tickets.forEach(t => {
+      if (esAnul2(t)) return;
+      const h = parseInt(String(t.hora || '0').split(':')[0], 10);
+      if (h >= horaIni && h <= horaFin) {
+        horas[h].total += (parseFloat(t.total) || 0);
+        horas[h].count += 1;
       }
     });
-    setQ('cajasKpiTicketsHoy', totH); setQ('cajasKpiTicketsMes', totM);
-    setQ('cajasKpiNV', nvH); setQ('cajasKpiBoleta', bH); setQ('cajasKpiFactura', fH);
-
-    // Cajas abiertas
-    const vivoWrap  = $('cajasVivoWrap');
-    const vivoGrid  = $('cajasVivoGrid');
-    const vivoCount = $('cajasVivoCount');
-    if (abiertas.length>0 && vivoGrid) {
-      vivoWrap?.classList.remove('hidden');
-      if (vivoCount) vivoCount.textContent = abiertas.length;
-      vivoGrid.innerHTML = abiertas.map(c=>_buildCajaCard(c)).join('');
-    } else { vivoWrap?.classList.add('hidden'); }
-
-    // Gráficos
-    const chartsWrap = $('cajasChartsWrap');
-    S._todasCajas = S._todasCajas||[];
-    if (S._todasCajas.length>0 && chartsWrap) {
-      chartsWrap.classList.remove('hidden');
-      _renderChartCajasCompacto(7); _renderChartMetodosHoy();
+    const horasArr = Object.keys(horas).map(h => ({ h: parseInt(h, 10), ...horas[h] }));
+    const max = Math.max.apply(null, horasArr.map(x => x.total).concat([1]));
+    const totalGen = horasArr.reduce((s, x) => s + x.total, 0);
+    if (totalGen === 0) {
+      cont.innerHTML = '<p class="text-slate-500 text-xs italic text-center py-8">Sin actividad en esta fecha</p>';
+      _setText('cjActividadPico', '—');
+      return;
     }
 
-    // Historial
-    const histWrap  = $('cajasHistorialWrap');
-    const histTbody = $('cajasHistTbody');
-    const histTitle = $('cajasHistTitle');
-    if (cerradas.length>0 && histWrap && histTbody) {
-      histWrap.classList.remove('hidden');
-      if (histTitle) histTitle.textContent = 'Historial de Cierres ('+cerradas.length+')';
-      const hora  = s=>(s||'').substring(11,16);
-      const fecha = s=>(s||'').substring(0,16).replace('T',' ');
-      histTbody.innerHTML = cerradas.map(c=>{
-        const esHoy=(c.fechaCierre||'').startsWith(todayStr);
-        return `<tr data-caja-row="${c.idCaja}">
-          <td><div class="font-medium">${c.vendedor||'—'}</div><div class="text-xs text-slate-500">${esHoy?'Hoy '+hora(c.fechaCierre):fecha(c.fechaCierre)}</div></td>
-          <td><span class="badge badge-blue">${c.zona||c.estacion||'—'}</span></td>
-          <td class="text-slate-400 text-xs">${hora(c.fechaApertura)} → ${hora(c.fechaCierre)}</td>
-          <td id="hr-total-${c.idCaja}" class="font-semibold">${fmtMoney(c.totalVentas)}</td>
-          <td id="hr-tickets-${c.idCaja}" class="text-center">${c.tickets}</td>
-          <td>
-            <button onclick="window.open('./turno.html?idCaja=${c.idCaja}&api='+encodeURIComponent(API.getUrl()),'_blank')" class="btn-ghost text-xs px-3 py-1.5">📋 Turno</button>
-          </td>
-        </tr>`;
-      }).join('');
-    } else { histWrap?.classList.add('hidden'); }
+    // Hora pico
+    const pico = horasArr.slice().sort((a, b) => b.total - a.total)[0];
+    const picoTxt = (pico && pico.total > 0)
+      ? `🔥 Pico: ${String(pico.h).padStart(2, '0')}h · S/ ${pico.total.toFixed(0)}`
+      : '—';
+    _setText('cjActividadPico', picoTxt);
+    _setText('cjActividadPicoTV', picoTxt);
 
-    const empty = $('cajasEmpty');
-    if (abiertas.length===0 && cerradas.length===0) empty?.classList.remove('hidden');
-    else empty?.classList.add('hidden');
-
-    const ts = $('cajasTimestamp');
-    if (ts && S._cajasGenTs) ts.textContent = 'Actualizado: ' + S._cajasGenTs;
+    const horaActual = new Date().getHours();
+    const html = `<div class="cj-actividad-grid">${
+      horasArr.map(x => {
+        const pct = x.total === 0 ? 0 : Math.max(2, (x.total / max) * 100);
+        const isNow = esHoy && x.h === horaActual;
+        const cls = x.total === 0 ? 'zero' : (isNow ? 'now' : '');
+        const rowCls = isNow ? 'cj-actividad-row now' : 'cj-actividad-row';
+        const horaCls = isNow ? 'cj-actividad-hora now' : 'cj-actividad-hora';
+        const monto = x.total > 0 ? 'S/ ' + x.total.toFixed(0) : '';
+        return `
+          <div class="${horaCls}">${String(x.h).padStart(2, '0')}h</div>
+          <div class="cj-actividad-bar-track">
+            <div class="cj-actividad-bar-fill ${cls}" style="width:${pct}%">
+              <span class="cj-actividad-bar-monto">${monto}</span>
+            </div>
+          </div>
+          <div class="cj-actividad-tickets ${rowCls}">
+            <span class="cj-actividad-tickets-num">${x.count}</span> tk
+          </div>`;
+      }).join('')
+    }</div>`;
+    cont.innerHTML = html;
+    const tv = $('cjActividadTV');
+    if (tv) tv.innerHTML = html;
   }
+
+  // ── ÚLTIMOS 7 DÍAS (mini-row + chart) ───────────────────
+  function _cjRender7d(fechaActiva) {
+    const tkAll = S._todosTickets || [];
+    const cajasAll = S._todasCajas || [];
+    // 7 días terminando en fechaActiva
+    const dias = [];
+    for (let i = 6; i >= 0; i--) {
+      const f = _fechaOffset(fechaActiva, -i);
+      dias.push({ fecha: f, total: 0, count: 0, cajas: 0 });
+    }
+    const fp3 = t => String(t.metodo || t.formaPago || '').toUpperCase();
+    const esAnul3 = t => fp3(t) === 'ANULADO' || t.estado === 'ANULADO';
+    tkAll.forEach(t => {
+      const f = (t.fecha || '').substring(0, 10);
+      const dia = dias.find(d => d.fecha === f);
+      if (!dia) return;
+      if (esAnul3(t)) return;
+      dia.total += (parseFloat(t.total) || 0);
+      dia.count += 1;
+    });
+    cajasAll.forEach(c => {
+      const fa = (c.fechaApertura || '').substring(0, 10);
+      const fc = (c.fechaCierre   || '').substring(0, 10);
+      const dia = dias.find(d => d.fecha === fa || d.fecha === fc);
+      if (dia) dia.cajas++;
+    });
+    const totalSemana = dias.reduce((s, d) => s + d.total, 0);
+    ['cj7dTotal', 'cj7dTotalTV'].forEach(id => {
+      const pill = $(id);
+      if (pill) {
+        pill.textContent = totalSemana > 0 ? 'S/ ' + totalSemana.toFixed(0) : 'S/ 0';
+        pill.classList.toggle('up', totalSemana > 0);
+        pill.classList.remove('down');
+      }
+    });
+    _setText('cj7dSubtitulo', `Total 7d: S/ ${totalSemana.toFixed(2)}`);
+
+    const max = Math.max.apply(null, dias.map(d => d.total).concat([1]));
+    const hoy = today();
+    const miniHtml = dias.map(d => {
+      const dt = new Date(d.fecha + 'T00:00:00');
+      const dia = dt.toLocaleDateString('es-PE', { weekday: 'short' }).slice(0, 3);
+      const h = Math.max(6, (d.total / max) * 30);
+      const cls = ['cj-7d-mini-day'];
+      if (d.fecha === hoy) cls.push('today');
+      if (d.total > 0) cls.push('has-data');
+      return `<button class="${cls.join(' ')}" onclick="MOS.cjElegirFecha('${d.fecha}')" title="${d.fecha} · S/ ${d.total.toFixed(2)} · ${d.count} tk">
+        <div class="cj-7d-mini-bar" style="height:${h}px"></div>
+        <div class="cj-7d-mini-lbl">${dia}</div>
+      </button>`;
+    }).join('');
+    ['cj7dMiniRow', 'cj7dMiniRowTV'].forEach(id => {
+      const el = $(id); if (el) el.innerHTML = miniHtml;
+    });
+
+    const labels = dias.map(d => {
+      const dt = new Date(d.fecha + 'T00:00:00');
+      return dt.toLocaleDateString('es-PE', { weekday: 'short', day: 'numeric' });
+    });
+    const opts = {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Ventas',  data: dias.map(d => d.total), backgroundColor: 'rgba(34,211,238,0.55)', borderRadius: 4 },
+          { label: 'Tickets', data: dias.map(d => d.count), backgroundColor: 'rgba(168,85,247,0.55)', borderRadius: 4, yAxisID: 'y1' }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#64748b', boxWidth: 10, font: { size: 9 } } } },
+        scales: {
+          x: { grid: { color: '#1e293b' }, ticks: { color: '#64748b', font: { size: 9 } } },
+          y: { position: 'left', grid: { color: '#1e293b' }, ticks: { color: '#64748b', callback: v => 'S/' + v, font: { size: 9 } } },
+          y1: { position: 'right', grid: { display: false }, ticks: { color: '#a855f7', font: { size: 9 } } }
+        }
+      }
+    };
+    try { renderChart('chartCajasBars', opts); } catch (_) {}
+    if ($('chartCajasBarsTV')) {
+      try { renderChart('chartCajasBarsTV', opts); } catch (_) {}
+    }
+  }
+
+  // ── MODAL TICKETS (compartido cajas + finanzas-style) ─
+  function cjVerTodosTickets(filtroInicial) {
+    _finBeep('click');
+    _cjState.tkCajaFiltro = '';
+    _cjState.tkFiltro = (filtroInicial === 'ventas') ? 'ventas' : 'todos';
+    _cjState.tkBuscar = '';
+    const inp = $('cjTkBuscar'); if (inp) inp.value = '';
+    _setText('cjModalTicketsTitulo', 'Tickets del día');
+    _setText('cjModalTicketsSubtitulo', _cjFecha() + ' · todas las cajas');
+    openModal('cjModalTickets');
+    _cjTkRenderFiltrosBtns();
+    _cjTkRender();
+  }
+  function cjVerTicketsCaja(idCaja) {
+    _finBeep('click');
+    const c = (S._todasCajas || []).find(x => String(x.idCaja) === String(idCaja));
+    _cjState.tkCajaFiltro = String(idCaja);
+    _cjState.tkFiltro = 'todos';
+    _cjState.tkBuscar = '';
+    const inp = $('cjTkBuscar'); if (inp) inp.value = '';
+    _setText('cjModalTicketsTitulo', 'Tickets de Caja · ' + (c?.vendedor || '—'));
+    _setText('cjModalTicketsSubtitulo', (c?.zona || c?.estacion || '') + ' · ' + (c?.idCaja || ''));
+    openModal('cjModalTickets');
+    _cjTkRenderFiltrosBtns();
+    _cjTkRender();
+  }
+
+  function _cjTkRenderFiltrosBtns() {
+    const wrap = $('cjTkFiltros');
+    if (!wrap) return;
+    const filtros = [
+      { key: 'todos',      label: 'Todos' },
+      { key: 'ventas',     label: '💰 Cobrado' },
+      { key: 'efectivo',   label: '💵 Efectivo' },
+      { key: 'virtual',    label: '📱 Virtual' },
+      { key: 'mixto',      label: '🔀 Mixto' },
+      { key: 'por_cobrar', label: '⏳ Por cobrar' },
+      { key: 'credito',    label: '📋 Crédito' },
+      { key: 'anulado',    label: '❌ Anulado' },
+    ];
+    wrap.innerHTML = filtros.map(f => {
+      const active = f.key === _cjState.tkFiltro;
+      const cls = active
+        ? 'log-icon-btn active'
+        : 'log-icon-btn';
+      return `<button onclick="MOS._cjTkSetFiltro('${f.key}')" class="${cls}" style="padding:5px 10px;font-size:11px;width:auto;height:auto">${f.label}</button>`;
+    }).join('');
+  }
+  function _cjTkSetFiltro(key) {
+    _cjState.tkFiltro = key;
+    _finBeep('click');
+    _cjTkRenderFiltrosBtns();
+    _cjTkRender();
+  }
+
+  function _cjTkApplyFiltro(tickets) {
+    const f = _cjState.tkFiltro;
+    const fp = t => String(t.metodo || t.formaPago || '').toUpperCase();
+    const esAnul   = t => fp(t) === 'ANULADO' || t.estado === 'ANULADO';
+    const esPorCob = t => fp(t) === 'POR_COBRAR' && !esAnul(t);
+    const esCred   = t => fp(t) === 'CREDITO' && !esAnul(t);
+    const esEf     = t => fp(t) === 'EFECTIVO';
+    const esVi     = t => fp(t) === 'VIRTUAL';
+    const esMx     = t => fp(t).startsWith('MIXTO');
+    const esCob    = t => !esAnul(t) && !esPorCob(t) && !esCred(t);
+    if (f === 'todos')      return tickets;
+    if (f === 'ventas')     return tickets.filter(esCob);
+    if (f === 'efectivo')   return tickets.filter(t => esEf(t) && !esAnul(t));
+    if (f === 'virtual')    return tickets.filter(t => esVi(t) && !esAnul(t));
+    if (f === 'mixto')      return tickets.filter(t => esMx(t) && !esAnul(t));
+    if (f === 'por_cobrar') return tickets.filter(esPorCob);
+    if (f === 'credito')    return tickets.filter(esCred);
+    if (f === 'anulado')    return tickets.filter(esAnul);
+    return tickets;
+  }
+
+  function _cjTkRender() {
+    const list = $('cjTkList');
+    const conteo = $('cjTkConteo');
+    if (!list) return;
+    const fecha = _cjFecha();
+    let todos = (S._todosTickets || []).filter(t => (t.fecha || '').substring(0, 10) === fecha);
+    // Filtro por caja
+    if (_cjState.tkCajaFiltro) {
+      todos = todos.filter(t => String(t.idCaja || '') === _cjState.tkCajaFiltro);
+    }
+    // Buscar
+    const q = ($('cjTkBuscar')?.value || _cjState.tkBuscar || '').trim().toLowerCase();
+    if (q) {
+      todos = todos.filter(t => {
+        const cli = (t.clienteNom || t.cliente || '').toLowerCase();
+        const doc = (t.clienteDoc || '').toLowerCase();
+        const corr = (t.correlativo || '').toLowerCase();
+        return cli.includes(q) || doc.includes(q) || corr.includes(q);
+      });
+    }
+    // Filtro de método
+    const lista = _cjTkApplyFiltro(todos);
+    const esAnul2 = t => String(t.metodo || t.formaPago || '').toUpperCase() === 'ANULADO' || t.estado === 'ANULADO';
+    const totalF = lista.reduce((s,t)=> s + (esAnul2(t) ? 0 : (parseFloat(t.total)||0)), 0);
+    if (conteo) conteo.textContent = lista.length + ' tk · S/ ' + totalF.toFixed(2);
+    if (!lista.length) {
+      list.innerHTML = '<div class="px-4 py-10 text-center text-slate-500 text-sm italic">Sin tickets con este filtro</div>';
+      return;
+    }
+    const docLabel = { 'BOLETA': 'BOL', 'NOTA_DE_VENTA': 'NV', 'FACTURA': 'FAC', 'NV': 'NV', 'B': 'BOL', 'F': 'FAC' };
+    const metodoChip = t => {
+      const fp = String(t.metodo || t.formaPago || '').toUpperCase();
+      if (fp === 'ANULADO')        return { txt: 'ANULADO',     cls: 'tk-chip-anul' };
+      if (fp === 'EFECTIVO')       return { txt: '💵 Efectivo', cls: 'tk-chip-ef'   };
+      if (fp === 'VIRTUAL')        return { txt: '📱 Virtual',  cls: 'tk-chip-vi'   };
+      if (fp === 'POR_COBRAR')     return { txt: '⏳ Por cobrar', cls: 'tk-chip-pc' };
+      if (fp === 'CREDITO')        return { txt: '📋 Crédito',  cls: 'tk-chip-cr'   };
+      if (fp.startsWith('MIXTO'))  return { txt: '🔀 Mixto',    cls: 'tk-chip-mx'   };
+      return { txt: fp || '—', cls: 'tk-chip-other' };
+    };
+    list.innerHTML = lista.map(t => {
+      const an = esAnul2(t);
+      const met = metodoChip(t);
+      const corr = t.correlativo || (t.idVenta || '').split('-').pop() || '—';
+      const cliN = (t.clienteNom || t.cliente || '').trim();
+      const cliD = (t.clienteDoc || '').trim();
+      const tieneCliente = !!(cliN || cliD);
+      const cabecera = tieneCliente
+        ? `<div class="tk-cli-nombre">👤 ${cliN || 'Sin nombre'}</div>${cliD ? `<div class="tk-cli-doc">${cliD}</div>` : ''}`
+        : `<div class="tk-cli-nombre tk-cli-nombre-anon">— Cliente sin registrar —</div>`;
+      const tipo = docLabel[t.tipo || t.tipoDoc] || (t.tipo || t.tipoDoc || '');
+      const idVentaSafe = String(t.idVenta || '').replace(/'/g, "\\'");
+      return `<div class="tk-row tk-row-clickable ${an?'tk-row-anul':''} ${met.cls}" onclick="MOS.cjAbrirAccionesTicket('${idVentaSafe}')">
+        <div class="tk-cli">${cabecera}</div>
+        <div class="tk-meta">
+          <span class="tk-meta-corr">${tipo} ${corr}</span>
+          ${t.vendedor ? `<span class="tk-meta-vend">· ${t.vendedor}</span>` : ''}
+          ${t.hora ? `<span class="tk-meta-hora">· ${t.hora}</span>` : ''}
+        </div>
+        <div class="tk-monto-col">
+          <div class="tk-monto ${an?'tk-monto-anul':''}">S/ ${parseFloat(t.total||0).toFixed(2)}</div>
+          <span class="tk-chip ${met.cls}">${met.txt}</span>
+        </div>
+        <div class="tk-row-cog" title="Acciones">⚙️</div>
+      </div>`;
+    }).join('');
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // ACCIONES SOBRE TICKETS — modal contextual editable
+  // Estado, helpers, handlers de cada modal secundario.
+  // ════════════════════════════════════════════════════════════
+  const _tkAcc = {
+    idVenta: null,
+    ticket: null,
+    cobrar: { metodo: 'EFECTIVO', cajaSel: '', cajas: [] },
+    cambiarFP: { nueva: '' },
+    convCPE: { tipo: 'BOLETA', clienteOK: false },
+    baja: { motivo: '' }
+  };
+
+  // Buscar el ticket en cualquier estado (cajas o finanzas)
+  function _tkBuscarTicket(idVenta) {
+    const id = String(idVenta);
+    // Cajas
+    const enCajas = (S._todosTickets || []).find(t => String(t.idVenta) === id);
+    if (enCajas) return _tkNormalizar(enCajas, 'cajas');
+    // Finanzas
+    const enFin = (_finPL?.detalleTickets || []).find(t => String(t.idVenta) === id);
+    if (enFin) return _tkNormalizar(enFin, 'finanzas');
+    return null;
+  }
+
+  // Normaliza para que ambos shapes (cajas vs finanzas) compartan campos
+  function _tkNormalizar(t, fuente) {
+    return {
+      idVenta:    String(t.idVenta || ''),
+      correlativo: t.correlativo || '',
+      tipoDoc:    t.tipoDoc || t.tipo || '',
+      formaPago:  String(t.formaPago || t.metodo || '').toUpperCase(),
+      total:      parseFloat(t.total || 0),
+      cliente:    (t.cliente || t.clienteNombre || t.clienteNom || '').trim(),
+      clienteDoc: (t.clienteDoc || t.clienteDocumento || '').trim(),
+      vendedor:   t.vendedor || '',
+      hora:       t.hora || '',
+      fecha:      t.fecha || '',
+      idCaja:     t.idCaja || '',
+      obs:        t.obs || '',
+      nfEstado:   t.nfEstado || t.NF_Estado || '',
+      _fuente:    fuente
+    };
+  }
+
+  // Abre el menú contextual de acciones para un ticket
+  async function cjAbrirAccionesTicket(idVenta) {
+    const t = _tkBuscarTicket(idVenta);
+    if (!t) { toast('Ticket no encontrado', 'error'); return; }
+
+    const rol = (S.session?.rol || '').toLowerCase();
+    if (rol !== 'master' && rol !== 'admin') {
+      toast('Solo admin/master pueden editar tickets', 'error');
+      return;
+    }
+
+    _tkAcc.idVenta = t.idVenta;
+    _tkAcc.ticket  = t;
+
+    const tit = $('tkAccTitulo');
+    const sub = $('tkAccSubtitulo');
+    if (tit) tit.textContent = (t.correlativo || t.idVenta) + ' · S/ ' + t.total.toFixed(2);
+    if (sub) {
+      const cli = t.cliente || (t.clienteDoc ? t.clienteDoc : '— sin cliente —');
+      sub.textContent = `${t.tipoDoc || ''} · ${t.formaPago} · ${cli}`;
+    }
+    _tkAccBuildMenu(t);
+    openModal('modalTkAcciones');
+  }
+
+  // Construye el menú según el estado del ticket
+  function _tkAccBuildMenu(t) {
+    const body = $('tkAccBody');
+    if (!body) return;
+
+    const fp = t.formaPago;
+    const esAnulado = fp === 'ANULADO';
+    const esPorCobrar = fp === 'POR_COBRAR';
+    const esCredito   = fp === 'CREDITO';
+    const esCobrado   = !esAnulado && !esPorCobrar && !esCredito;
+    const esNV        = (t.tipoDoc === 'NOTA_DE_VENTA' || t.tipoDoc === 'NV');
+    const esCPE       = (t.tipoDoc === 'BOLETA' || t.tipoDoc === 'FACTURA');
+    const cpeEmitido  = esCPE && t.nfEstado === 'EMITIDO';
+
+    const btns = [];
+    const btn = (cls, emoji, tit, sub, accion) => {
+      btns.push(`<button class="tk-acc-btn ${cls}" onclick="MOS._tkAccion('${accion}')">
+        <span class="tk-acc-emoji">${emoji}</span>
+        <span class="tk-acc-txt">
+          <div class="tk-acc-tit">${tit}</div>
+          <div class="tk-acc-sub">${sub}</div>
+        </span>
+      </button>`);
+    };
+
+    if (esAnulado) {
+      btn('', '📜', 'Ver historial', 'Ver todos los cambios del ticket', 'historial');
+      body.innerHTML = `<p class="text-[11px] text-slate-500 italic px-2 py-2">Ticket anulado · solo lectura.</p>${btns.join('')}`;
+      return;
+    }
+
+    // 💵 Cobrar (si está pendiente o crédito)
+    if (esPorCobrar || esCredito) {
+      btn('tk-acc-btn-ok', '💵', 'Cobrar' + (esCredito ? ' deuda' : ' pendiente'),
+          'Crea ingreso en caja receptora · marca como cobrado', 'cobrar');
+    }
+
+    // 📋 Aprobar como crédito (solo si está POR_COBRAR)
+    if (esPorCobrar) {
+      btn('tk-acc-btn-warn', '📋', 'Aprobar como crédito',
+          'Pasa de "por cobrar" a "crédito formal"', 'aprobarCredito');
+    }
+
+    // 🔄 Cambiar forma de pago (corrección sin afectar caja)
+    if (esCobrado) {
+      btn('', '🔄', 'Cambiar forma de pago',
+          'Corrige errores de tipeo · NO mueve dinero entre cajas', 'cambiarFP');
+    }
+
+    // 👤 Editar cliente (solo NV o CPE no emitido)
+    if (!cpeEmitido) {
+      btn('', '👤', 'Editar cliente',
+          esNV ? 'Cambiar DNI/RUC y nombre del NV' : 'Editar antes de emitir CPE', 'editarCliente');
+    }
+
+    // 📑 Convertir NV → CPE (solo NV)
+    if (esNV && !esAnulado) {
+      btn('', '📑', 'Convertir a Boleta/Factura',
+          'Emite CPE retroactivo en SUNAT', 'convertirCPE');
+    }
+
+    // 📋 Baja del CPE (solo CPE emitido)
+    if (cpeEmitido) {
+      btn('tk-acc-btn-danger', '📋', 'Baja del CPE',
+          'Comunica baja a SUNAT (irreversible)', 'bajaCPE');
+    }
+
+    // ❌ Anular venta interna (siempre disponible si no anulado)
+    btn('tk-acc-btn-danger', '❌', 'Anular venta',
+        'Marca el ticket como anulado internamente', 'anular');
+
+    // 📜 Historial — siempre
+    btn('', '📜', 'Ver historial',
+        'Ver todos los cambios de este ticket', 'historial');
+
+    body.innerHTML = btns.join('') || '<p class="text-xs text-slate-500 italic">Sin acciones disponibles.</p>';
+  }
+
+  // Routing del menú contextual
+  function _tkAccion(accion) {
+    const t = _tkAcc.ticket;
+    if (!t) return;
+    closeModal('modalTkAcciones');
+    if (accion === 'cobrar')          return _tkCobrarOpen(t);
+    if (accion === 'cambiarFP')       return _tkCambiarFPOpen(t);
+    if (accion === 'aprobarCredito')  return _tkAprobarCredOpen(t);
+    if (accion === 'convertirCPE')    return _tkConvertirOpen(t);
+    if (accion === 'bajaCPE')         return _tkBajaOpen(t);
+    if (accion === 'editarCliente')   return _tkEditarClienteOpen(t);
+    if (accion === 'anular')          return _tkAnularSimple(t);
+    if (accion === 'historial')       return _tkHistorialOpen(t);
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // COBRAR PENDIENTE / DEUDA
+  // ──────────────────────────────────────────────────────────
+  async function _tkCobrarOpen(t) {
+    _tkAcc.cobrar = { metodo: 'EFECTIVO', cajaSel: '', cajas: [] };
+    $('tkCobrarTitulo').textContent = (t.formaPago === 'CREDITO' ? 'Cobrar deuda' : 'Cobrar pendiente');
+    $('tkCobrarSubtitulo').textContent = (t.correlativo || t.idVenta) + ' · ' + t.formaPago;
+    $('tkCobrarCliente').textContent = t.cliente || '— sin cliente —';
+    $('tkCobrarRef').textContent     = (t.tipoDoc || '') + ' ' + (t.correlativo || t.idVenta);
+    $('tkCobrarMonto').textContent   = 'S/ ' + t.total.toFixed(2);
+    $('tkCobrarObs').value           = '';
+    $('tkCobrarMonEf').value = '';
+    $('tkCobrarMonVi').value = '';
+    $('tkCobrarMixto').classList.add('hidden');
+    $('tkCobrarMixtoHint').textContent = '';
+    $('tkCobrarCajas').innerHTML = '<div class="text-xs text-slate-500 italic px-2 py-3">Cargando cajas abiertas...</div>';
+
+    // Marcar EFECTIVO por default
+    _tkCobrarSetMetodo('EFECTIVO');
+    openModal('modalTkCobrar');
+
+    try {
+      const data = await API.get('meCajasAbiertas');
+      _tkAcc.cobrar.cajas = Array.isArray(data) ? data : [];
+      _tkCobrarRenderCajas();
+    } catch(e) {
+      $('tkCobrarCajas').innerHTML = `<div class="text-xs text-rose-400 px-2 py-2">Error: ${e.message}</div>`;
+    }
+  }
+
+  function _tkCobrarRenderCajas() {
+    const c = $('tkCobrarCajas');
+    if (!c) return;
+    const cajas = _tkAcc.cobrar.cajas || [];
+    if (!cajas.length) {
+      c.innerHTML = '<div class="text-xs text-amber-400 italic px-2 py-2">No hay cajas abiertas. Abre una caja en MosExpress primero.</div>';
+      return;
+    }
+    c.innerHTML = cajas.map(k => `
+      <label class="tk-caja-radio" data-id="${k.idCaja}">
+        <input type="radio" name="tkCobrarCaja" value="${k.idCaja}" onchange="MOS._tkCobrarSetCaja('${k.idCaja}')">
+        <div class="tk-caja-vend">${k.vendedor || k.idCaja}</div>
+        <div class="tk-caja-zona">${k.zona || ''}</div>
+      </label>
+    `).join('');
+    // Auto-seleccionar la única caja si solo hay una
+    if (cajas.length === 1) {
+      const r = c.querySelector('input[type="radio"]');
+      if (r) { r.checked = true; _tkCobrarSetCaja(cajas[0].idCaja); }
+    }
+  }
+
+  function _tkCobrarSetCaja(id) {
+    _tkAcc.cobrar.cajaSel = id;
+    document.querySelectorAll('#tkCobrarCajas .tk-caja-radio').forEach(el => {
+      el.classList.toggle('tk-caja-active', el.dataset.id === id);
+    });
+  }
+
+  function _tkCobrarSetMetodo(met) {
+    _tkAcc.cobrar.metodo = met;
+    ['Ef','Vi','Mx'].forEach(k => {
+      const b = $('tkCobrarBtn' + k);
+      if (b) b.classList.remove('tk-cob-mbtn-active');
+    });
+    const map = { 'EFECTIVO':'Ef', 'VIRTUAL':'Vi', 'MIXTO':'Mx' };
+    const b = $('tkCobrarBtn' + map[met]);
+    if (b) b.classList.add('tk-cob-mbtn-active');
+    $('tkCobrarMixto').classList.toggle('hidden', met !== 'MIXTO');
+    if (met === 'MIXTO') _tkCobrarValidarMixto();
+  }
+
+  function _tkCobrarValidarMixto() {
+    const t = _tkAcc.ticket;
+    const ef = parseFloat($('tkCobrarMonEf').value || 0);
+    const vi = parseFloat($('tkCobrarMonVi').value || 0);
+    const total = t ? t.total : 0;
+    const sum = ef + vi;
+    const hint = $('tkCobrarMixtoHint');
+    if (!hint) return;
+    if (Math.abs(sum - total) < 0.01) {
+      hint.textContent = `✓ Suma S/ ${sum.toFixed(2)} = total`;
+      hint.style.color = '#6ee7b7';
+    } else {
+      hint.textContent = `Suma S/ ${sum.toFixed(2)} · falta/sobra S/ ${(total - sum).toFixed(2)}`;
+      hint.style.color = '#fcd34d';
+    }
+  }
+
+  async function _tkCobrarConfirmar() {
+    const t = _tkAcc.ticket;
+    if (!t) return;
+    const c = _tkAcc.cobrar;
+    if (!c.cajaSel)  { toast('Selecciona la caja receptora', 'error'); return; }
+    if (!c.metodo)   { toast('Selecciona forma de pago', 'error'); return; }
+
+    let metodoFinal = c.metodo;
+    let monEf, monVi;
+    if (c.metodo === 'MIXTO') {
+      monEf = parseFloat($('tkCobrarMonEf').value || 0);
+      monVi = parseFloat($('tkCobrarMonVi').value || 0);
+      if (Math.abs((monEf + monVi) - t.total) > 0.01) {
+        toast('La suma EFE+VIR debe igualar el total', 'error'); return;
+      }
+      metodoFinal = `MIXTO (EFE:${monEf.toFixed(2)}/VIR:${monVi.toFixed(2)})`;
+    }
+
+    const btn = $('tkCobrarBtnOK');
+    if (btn) { btn.disabled = true; btn.textContent = 'Procesando...'; }
+    try {
+      const r = await API.post('meCobrarCredito', {
+        idVenta:       t.idVenta,
+        cajaReceptora: c.cajaSel,
+        metodo:        metodoFinal,
+        montoEfectivo: monEf,
+        montoVirtual:  monVi,
+        obs:           $('tkCobrarObs').value || ''
+      });
+      toast('✓ Cobrado · ingreso registrado', 'success');
+      closeModal('modalTkCobrar');
+      await _cajasRefreshSilencioso?.();
+      if (S.view === 'finanzas') finCargar?.();
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '✓ Confirmar cobro'; }
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // CAMBIAR FORMA DE PAGO (corrección)
+  // ──────────────────────────────────────────────────────────
+  function _tkCambiarFPOpen(t) {
+    _tkAcc.cambiarFP.nueva = '';
+    $('tkCambiarFPSub').textContent  = (t.correlativo || t.idVenta);
+    $('tkCambiarFPActual').textContent = t.formaPago;
+    $('tkCambiarFPMotivo').value = '';
+
+    // Opciones (excluye la actual)
+    const opciones = [
+      { v: 'EFECTIVO', txt: '💵 Efectivo' },
+      { v: 'VIRTUAL',  txt: '📱 Virtual'  },
+      { v: 'POR_COBRAR', txt: '⏳ Por cobrar' },
+      { v: 'CREDITO',  txt: '📋 Crédito' }
+    ].filter(o => o.v !== t.formaPago);
+    $('tkCambiarFPOpciones').innerHTML = opciones.map(o =>
+      `<button class="tk-cob-mbtn" onclick="MOS._tkCambiarFPSel('${o.v}')" id="tkCambiarFPOp_${o.v}">${o.txt}</button>`
+    ).join('');
+    openModal('modalTkCambiarFP');
+  }
+
+  function _tkCambiarFPSel(v) {
+    _tkAcc.cambiarFP.nueva = v;
+    document.querySelectorAll('#tkCambiarFPOpciones .tk-cob-mbtn').forEach(b => b.classList.remove('tk-cob-mbtn-active'));
+    const b = $('tkCambiarFPOp_' + v);
+    if (b) b.classList.add('tk-cob-mbtn-active');
+  }
+
+  async function _tkCambiarFPConfirmar() {
+    const t = _tkAcc.ticket;
+    const nueva = _tkAcc.cambiarFP.nueva;
+    if (!nueva) { toast('Selecciona la nueva forma de pago', 'error'); return; }
+    const motivo = ($('tkCambiarFPMotivo').value || '').trim();
+    if (motivo.length < 3) { toast('Motivo obligatorio (mín. 3 caracteres)', 'error'); return; }
+    try {
+      await API.post('meEditarFormaPago', {
+        idVenta: t.idVenta, formaPagoNueva: nueva, motivo
+      });
+      toast('✓ Forma de pago actualizada', 'success');
+      closeModal('modalTkCambiarFP');
+      await _cajasRefreshSilencioso?.();
+      if (S.view === 'finanzas') finCargar?.();
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // APROBAR COMO CREDITO (POR_COBRAR → CREDITO)
+  // ──────────────────────────────────────────────────────────
+  function _tkAprobarCredOpen(t) {
+    $('tkAprobarCredSub').textContent = (t.correlativo || t.idVenta) + ' · S/ ' + t.total.toFixed(2);
+    $('tkAprobarCredObs').value = '';
+    openModal('modalTkAprobarCred');
+  }
+
+  async function _tkAprobarCredConfirmar() {
+    const t = _tkAcc.ticket;
+    const obs = ($('tkAprobarCredObs').value || '').trim();
+    if (obs.length < 3) { toast('Motivo obligatorio (mín. 3 caracteres)', 'error'); return; }
+    try {
+      await API.post('meAprobarComoCredito', { idVenta: t.idVenta, motivo: obs });
+      toast('✓ Aprobado como crédito', 'success');
+      closeModal('modalTkAprobarCred');
+      await _cajasRefreshSilencioso?.();
+      if (S.view === 'finanzas') finCargar?.();
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // CONVERTIR NV → CPE (boleta/factura retroactivo)
+  // ──────────────────────────────────────────────────────────
+  function _tkConvertirOpen(t) {
+    _tkAcc.convCPE = { tipo: 'BOLETA', clienteOK: false };
+    $('tkConvSub').textContent = (t.correlativo || t.idVenta) + ' · S/ ' + t.total.toFixed(2);
+    $('tkConvDoc').value      = t.clienteDoc || '';
+    $('tkConvNombre').value   = t.cliente || '';
+    $('tkConvDireccion').value = '';
+    $('tkConvSerie').value     = '';
+    $('tkConvClienteInfo').classList.add('hidden');
+    _tkConvSetTipo('BOLETA');
+    openModal('modalTkConvertirCPE');
+  }
+
+  function _tkConvSetTipo(tipo) {
+    _tkAcc.convCPE.tipo = tipo;
+    ['Bol','Fac'].forEach(k => {
+      const b = $('tkConvBtn' + k);
+      if (b) b.classList.remove('tk-cob-mbtn-active');
+    });
+    const b = $('tkConvBtn' + (tipo === 'BOLETA' ? 'Bol' : 'Fac'));
+    if (b) b.classList.add('tk-cob-mbtn-active');
+    const seriePh = tipo === 'BOLETA' ? 'B001' : 'F001';
+    $('tkConvSerie').placeholder = 'ej: ' + seriePh;
+  }
+
+  function _tkConvDocChange() {
+    _tkAcc.convCPE.clienteOK = false;
+    $('tkConvClienteInfo').classList.add('hidden');
+  }
+
+  async function _tkConvBuscarCliente() {
+    const doc = ($('tkConvDoc').value || '').trim();
+    if (!doc) { toast('Ingresa DNI o RUC', 'error'); return; }
+    if (doc.length !== 8 && doc.length !== 11) {
+      toast('DNI debe tener 8 dígitos · RUC 11 dígitos', 'error'); return;
+    }
+    const info = $('tkConvClienteInfo');
+    if (info) {
+      info.classList.remove('hidden');
+      info.innerHTML = '<span class="text-slate-400">🔎 Consultando...</span>';
+    }
+    try {
+      const r = await API.get('meConsultarCliente', { doc });
+      const nombre = r?.nombre || r?.razon_social || '';
+      const direccion = r?.direccion || '';
+      if (!nombre) {
+        info.innerHTML = '<span class="text-amber-400">⚠ No encontrado en RENIEC/SUNAT — puedes ingresar manualmente</span>';
+        _tkAcc.convCPE.clienteOK = false;
+        return;
+      }
+      $('tkConvNombre').value    = nombre;
+      $('tkConvDireccion').value = direccion;
+      info.innerHTML = `<div class="text-emerald-400 font-bold">✓ ${nombre}</div>` +
+                       (direccion ? `<div class="text-slate-400">${direccion}</div>` : '');
+      _tkAcc.convCPE.clienteOK = true;
+    } catch(e) {
+      info.innerHTML = '<span class="text-rose-400">Error: ' + e.message + '</span>';
+    }
+  }
+
+  async function _tkConvertirConfirmar() {
+    const t = _tkAcc.ticket;
+    const tipo = _tkAcc.convCPE.tipo;
+    const doc  = ($('tkConvDoc').value || '').trim();
+    const nom  = ($('tkConvNombre').value || '').trim();
+    const dir  = ($('tkConvDireccion').value || '').trim();
+    const ser  = ($('tkConvSerie').value || '').trim();
+
+    if (tipo === 'BOLETA' && doc.length !== 8) { toast('Boleta requiere DNI de 8 dígitos', 'error'); return; }
+    if (tipo === 'FACTURA' && doc.length !== 11) { toast('Factura requiere RUC de 11 dígitos', 'error'); return; }
+    if (!nom) { toast('Falta nombre/razón social', 'error'); return; }
+    if (tipo === 'FACTURA' && !dir) { toast('Factura requiere dirección', 'error'); return; }
+    if (!ser) { toast('Ingresa la serie', 'error'); return; }
+
+    if (!confirm(`¿Emitir ${tipo} en SUNAT para ${nom}?\n\nLa NV original quedará anulada.`)) return;
+
+    const btn = $('tkConvBtnOK');
+    if (btn) { btn.disabled = true; btn.textContent = 'Emitiendo...'; }
+    try {
+      const r = await API.post('meConvertirNVaCPE', {
+        idVenta: t.idVenta, tipoDocNuevo: tipo, serie: ser,
+        clienteDoc: doc, clienteNom: nom, direccion: dir
+      });
+      toast('✓ CPE emitido', 'success');
+      closeModal('modalTkConvertirCPE');
+      await _cajasRefreshSilencioso?.();
+      if (S.view === 'finanzas') finCargar?.();
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '📤 Emitir CPE en SUNAT'; }
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // BAJA DEL CPE (comunicación SUNAT)
+  // ──────────────────────────────────────────────────────────
+  function _tkBajaOpen(t) {
+    _tkAcc.baja = { motivo: '' };
+    $('tkBajaSub').textContent = (t.correlativo || t.idVenta) + ' · ' + (t.tipoDoc || '');
+    document.querySelectorAll('input[name="tkBajaMotivo"]').forEach(r => r.checked = false);
+    $('tkBajaMotivoTxt').value = '';
+    $('tkBajaBtnOK').disabled = true;
+    openModal('modalTkBajaCPE');
+  }
+
+  function _tkBajaSetMotivo(v) {
+    _tkAcc.baja.motivo = v;
+    if (v) $('tkBajaMotivoTxt').value = '';
+    _tkBajaActualizarBoton();
+  }
+
+  function _tkBajaActualizarBoton() {
+    const radio = _tkAcc.baja.motivo;
+    const txt   = ($('tkBajaMotivoTxt').value || '').trim();
+    const motivoFinal = radio || txt;
+    $('tkBajaBtnOK').disabled = (motivoFinal.length < 3);
+    _tkAcc.baja.motivoFinal = motivoFinal;
+  }
+
+  async function _tkBajaConfirmar() {
+    const t = _tkAcc.ticket;
+    const motivo = _tkAcc.baja.motivoFinal || _tkAcc.baja.motivo || ($('tkBajaMotivoTxt').value || '').trim();
+    if (!motivo || motivo.length < 3) { toast('Motivo obligatorio', 'error'); return; }
+    if (!confirm(`¿Comunicar baja del ${t.tipoDoc} ${t.correlativo} a SUNAT?\n\nEsta acción es irreversible.`)) return;
+    const btn = $('tkBajaBtnOK');
+    if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
+    try {
+      const r = await API.post('meBajaCPE', { idVenta: t.idVenta, motivo });
+      toast('✓ Baja enviada · ' + (r?.nuevoEstado || 'aceptada'), 'success');
+      closeModal('modalTkBajaCPE');
+      await _cajasRefreshSilencioso?.();
+      if (S.view === 'finanzas') finCargar?.();
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '📤 Enviar baja a SUNAT'; }
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // EDITAR CLIENTE (modo prompt rápido — solo NV o pre-CPE)
+  // ──────────────────────────────────────────────────────────
+  async function _tkEditarClienteOpen(t) {
+    const docNuevo = prompt('DNI (8) / RUC (11) — vacío para sin doc:', t.clienteDoc || '');
+    if (docNuevo === null) return;
+    const docTrim = (docNuevo || '').trim();
+    if (docTrim && docTrim.length !== 8 && docTrim.length !== 11) {
+      toast('Doc debe tener 8 o 11 dígitos', 'error'); return;
+    }
+
+    let nombre = t.cliente || '';
+    let direccion = '';
+    if (docTrim) {
+      try {
+        const r = await API.get('meConsultarCliente', { doc: docTrim });
+        nombre = r?.nombre || r?.razon_social || '';
+        direccion = r?.direccion || '';
+      } catch(_) {}
+    }
+
+    nombre = prompt('Nombre / Razón social:', nombre || '');
+    if (nombre === null) return;
+    if (!docTrim && !nombre.trim()) {
+      toast('Ingresa al menos un dato (doc o nombre)', 'error'); return;
+    }
+
+    const motivo = prompt('Motivo del cambio:', '') || '';
+    if (motivo.trim().length < 3) { toast('Motivo obligatorio', 'error'); return; }
+
+    try {
+      await API.post('meEditarCliente', {
+        idVenta: t.idVenta,
+        clienteDoc: docTrim,
+        clienteNom: nombre.trim(),
+        direccion,
+        motivo: motivo.trim()
+      });
+      toast('✓ Cliente actualizado', 'success');
+      await _cajasRefreshSilencioso?.();
+      if (S.view === 'finanzas') finCargar?.();
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // ANULAR VENTA INTERNA (sin afectar SUNAT)
+  // ──────────────────────────────────────────────────────────
+  async function _tkAnularSimple(t) {
+    if (!confirm(`¿Anular ${t.tipoDoc || 'ticket'} ${t.correlativo || t.idVenta}?\n\nMonto: S/ ${t.total.toFixed(2)}\n\nSi tiene CPE emitido, también debes solicitar la baja en SUNAT.`)) return;
+    try {
+      await API.post('anularTicketME', { idVenta: t.idVenta });
+      toast('✓ Ticket anulado', 'success');
+      await _cajasRefreshSilencioso?.();
+      if (S.view === 'finanzas') finCargar?.();
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // HISTORIAL (timeline)
+  // ──────────────────────────────────────────────────────────
+  async function _tkHistorialOpen(t) {
+    $('tkHistSub').textContent = (t.correlativo || t.idVenta);
+    $('tkHistBody').innerHTML = '<div class="text-center py-8 text-slate-500 text-xs">Cargando...</div>';
+    openModal('modalTkHistorial');
+    try {
+      const data = await API.get('meHistorialVenta', { idVenta: t.idVenta });
+      const hist = data?.historial || data || [];
+      _tkHistRender(hist);
+    } catch(e) {
+      $('tkHistBody').innerHTML = `<div class="text-center py-8 text-rose-400 text-xs">Error: ${e.message}</div>`;
+    }
+  }
+
+  function _tkHistRender(hist) {
+    const body = $('tkHistBody');
+    if (!body) return;
+    if (!Array.isArray(hist) || !hist.length) {
+      body.innerHTML = '<div class="text-center py-8 text-slate-500 text-xs italic">Sin eventos registrados.<br>Los cambios futuros se irán acumulando aquí.</div>';
+      return;
+    }
+    const ordenada = hist.slice().reverse(); // más reciente arriba
+    const fmtFecha = ts => {
+      try {
+        const d = new Date(ts);
+        if (isNaN(d.getTime())) return ts;
+        return d.toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' });
+      } catch(_) { return ts; }
+    };
+    const claseAccion = a => {
+      const ax = String(a || '').toLowerCase();
+      if (ax.includes('crear') || ax.includes('alta')) return 'tk-hist-evt-create';
+      if (ax.includes('cobr')) return 'tk-hist-evt-cobrar';
+      if (ax.includes('anul') || ax.includes('baja')) return 'tk-hist-evt-anular';
+      return 'tk-hist-evt-edit';
+    };
+    body.innerHTML = ordenada.map(ev => {
+      const acc = ev.accion || ev.source || 'cambio';
+      const fechaTxt = fmtFecha(ev.timestamp || ev.fecha || '');
+      const cambios = Array.isArray(ev.cambios) ? ev.cambios : [];
+      const cambiosHtml = cambios.length
+        ? `<div class="tk-hist-evt-cambios">
+            ${cambios.map(c => `<span class="tk-hist-evt-cambio"><b>${c.campo}</b>: <s>${c.antes || '—'}</s> → <em>${c.despues || '—'}</em></span>`).join('')}
+          </div>`
+        : '';
+      const motivo = ev.motivo ? `<div class="tk-hist-evt-motivo">📝 ${ev.motivo}</div>` : '';
+      const admin = ev.autorizadoPor?.nombre
+        ? `<div class="tk-hist-evt-admin">PIN ADMIN · ${ev.autorizadoPor.nombre}</div>`
+        : '';
+      return `<div class="tk-hist-evt ${claseAccion(acc)}">
+        <div class="tk-hist-evt-cabecera">
+          <span class="tk-hist-evt-accion">${acc}</span>
+          <span class="tk-hist-evt-fecha">${fechaTxt}</span>
+        </div>
+        <div class="tk-hist-evt-user">por ${ev.usuario || '—'}${ev.rol ? ' (' + ev.rol + ')' : ''}</div>
+        ${cambiosHtml}
+        ${motivo}
+        ${admin}
+      </div>`;
+    }).join('');
+  }
+
+  // ── Abrir turno externo ─────────────────────────
+  function cjAbrirTurno(idCaja) {
+    _finBeep('click');
+    window.open('./turno.html?idCaja=' + idCaja + '&api=' + encodeURIComponent(API.getUrl()), '_blank');
+  }
+
+  // ── MODO TV fullscreen ──────────────────────────
+  function cjModoTV(activar) {
+    if (typeof activar === 'undefined') activar = !_cjState.tvActivo;
+    _cjState.tvActivo = activar;
+    document.body.classList.toggle('cj-modo-tv', activar);
+    if (activar) {
+      _finBeep('breakeven');
+      try { document.documentElement.requestFullscreen?.(); } catch {}
+      // Re-render para llenar el strip TV (Ranking/7d/Actividad duplicados)
+      _cjRender();
+      // Auto-actualización cada 15s en TV (más agresivo)
+      if (_cjState.tvAutoTimer) clearInterval(_cjState.tvAutoTimer);
+      _cjState.tvAutoTimer = setInterval(() => {
+        if (typeof _cajasRefreshSilencioso === 'function') _cajasRefreshSilencioso();
+      }, 15000);
+    } else {
+      _finBeep('click');
+      try { if (document.fullscreenElement) document.exitFullscreen?.(); } catch {}
+      if (_cjState.tvAutoTimer) { clearInterval(_cjState.tvAutoTimer); _cjState.tvAutoTimer = null; }
+    }
+  }
+
+  // Atajo ESC para salir TV
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && _cjState.tvActivo) cjModoTV(false);
+    if (S.view === 'cajas') {
+      const tag = (document.activeElement?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      if (e.key === 'ArrowLeft')  { e.preventDefault(); cjDia(-1); }
+      if (e.key === 'ArrowRight') { e.preventDefault(); cjDia(+1); }
+      if (e.key === ' ') { e.preventDefault(); cjIrHoy(); }
+    }
+  });
 
   // ── CAJAS ────────────────────────────────────────────────────
   async function loadCajas(force) {
@@ -11819,15 +13880,21 @@ const MOS = (() => {
 
     const loading  = $('cajasLoading');
     const content  = $('cajasContent');
-    const empty    = $('cajasEmpty');
 
-    // Si ya tenemos datos precargados del timer, renderizar inmediatamente
-    // y luego refrescar en background (sin bloquear ni mostrar spinner)
+    // Inicializar fecha del módulo si no está
+    const inpF = $('cjFecha');
+    if (inpF && !inpF.value) inpF.value = today();
+    if (!_cjState.fecha) _cjState.fecha = inpF?.value || today();
+
+    // Sonido al entrar al módulo
+    _finBeep('nav');
+
+    // Datos en cache → render inmediato
     if (S._cajasLoaded && S._todasCajas) {
       loading?.classList.add('hidden');
       content?.classList.remove('hidden');
-      _renderCajasDesdeEstado();
-      if (force) _cajasRefreshSilencioso(); // actualizar en bg sin spinner
+      _cjRender();
+      if (force) _cajasRefreshSilencioso();
       return;
     }
 
@@ -11836,13 +13903,10 @@ const MOS = (() => {
 
     try {
       const res = await API.get('getCierresCaja', {});
-
       loading?.classList.add('hidden');
       content?.classList.remove('hidden');
 
-      const { kpis, abiertas = [], cerradas = [], generadoEn } = res || {};
-
-      // Guardar cajas de hoy en estado para el panel de desglose
+      const { kpis, abiertas = [], cerradas = [], generadoEn, todosTickets: tkAll = [] } = res || {};
       const todayStr = today();
       S._cajasHoy = [
         ...abiertas,
@@ -11851,80 +13915,18 @@ const MOS = (() => {
           (c.fechaCierre   || '').startsWith(todayStr)
         )
       ];
-
-      // Timestamp
-      const ts = $('cajasTimestamp');
-      if (ts) ts.textContent = 'Actualizado: ' + (generadoEn || '—');
-
-      // ── KPIs ────────────────────────────────────────────────
-      const set = (id, v) => { const el=$(id); if(el) el.textContent=v; };
-      const { kpisTickets = {}, todosTickets: tkAll = [] } = res || {};
-      S._todosTickets = tkAll;
-
-      set('cajasKpiVentas',      fmtMoney(kpis?.totalDia || 0));
-      set('cajasKpiTicketsHoy',  kpisTickets.hoy?.total    || 0);
-      set('cajasKpiTicketsMes',  kpisTickets.mes?.total    || 0);
-      set('cajasKpiNV',          kpisTickets.hoy?.NV       || 0);
-      set('cajasKpiBoleta',      kpisTickets.hoy?.B        || 0);
-      set('cajasKpiFactura',     kpisTickets.hoy?.F        || 0);
-
-      const todosVacios = abiertas.length === 0 && cerradas.length === 0;
-      if (todosVacios) { empty?.classList.remove('hidden'); return; }
-      empty?.classList.add('hidden');
-
-      // ── Cajas ABIERTAS en vivo ───────────────────────────────
-      const vivoWrap  = $('cajasVivoWrap');
-      const vivoGrid  = $('cajasVivoGrid');
-      const vivoCount = $('cajasVivoCount');
-      if (abiertas.length > 0 && vivoWrap && vivoGrid) {
-        vivoWrap.classList.remove('hidden');
-        if (vivoCount) vivoCount.textContent = abiertas.length;
-        vivoGrid.innerHTML = abiertas.map(c => _buildCajaCard(c)).join('');
-      } else if (vivoWrap) {
-        vivoWrap.classList.add('hidden');
-      }
-
-      // ── Gráficos ─────────────────────────────────────────────
-      const chartsWrap = $('cajasChartsWrap');
       S._todasCajas = [...abiertas, ...cerradas];
-      if (S._todasCajas.length > 0 && chartsWrap) {
-        chartsWrap.classList.remove('hidden');
-        _renderChartCajasCompacto(7);
-        _renderChartMetodosHoy();
-      }
+      S._todosTickets = tkAll;
+      S._cajasGenTs = generadoEn || '';
+      S._cajasLoaded = true;
 
-      // ── Historial cierres (últimos 30 días) ──────────────────
-      const histWrap  = $('cajasHistorialWrap');
-      const histTbody = $('cajasHistTbody');
-      const histTitle = $('cajasHistTitle');
-      if (cerradas.length > 0 && histWrap && histTbody) {
-        histWrap.classList.remove('hidden');
-        if (histTitle) histTitle.textContent = 'Historial de Cierres (' + cerradas.length + ')';
-        histTbody.innerHTML = cerradas.map(c => {
-          const fecha  = s => (s || '').substring(0, 16).replace('T', ' ');
-          const hora   = s => (s || '').substring(11, 16);
-          const esHoy  = (c.fechaCierre || '').startsWith(today());
-          return `<tr data-caja-row="${c.idCaja}">
-            <td>
-              <div class="font-medium">${c.vendedor || '—'}</div>
-              <div class="text-xs text-slate-500">${esHoy ? 'Hoy ' + hora(c.fechaCierre) : fecha(c.fechaCierre)}</div>
-            </td>
-            <td><span class="badge badge-blue">${c.zona || c.estacion || '—'}</span></td>
-            <td class="text-slate-400 text-xs">${hora(c.fechaApertura)} → ${hora(c.fechaCierre)}</td>
-            <td id="hr-total-${c.idCaja}" class="font-semibold">${fmtMoney(c.totalVentas)}</td>
-            <td id="hr-tickets-${c.idCaja}" class="text-center">${c.tickets}</td>
-            <td>
-              <button onclick="window.open('./turno.html?idCaja=${c.idCaja}&api='+encodeURIComponent(API.getUrl()),'_blank')" class="btn-ghost text-xs px-3 py-1.5">📋 Turno</button>
-            </td>
-          </tr>`;
-        }).join('');
-      } else if (histWrap) {
-        histWrap.classList.add('hidden');
-      }
+      _cjRender();
+      _cjPulsoPoll();
 
     } catch(e) {
       loading?.classList.add('hidden');
       content?.classList.remove('hidden');
+      const empty = $('cajasEmpty');
       empty?.classList.remove('hidden');
       if (empty) empty.innerHTML = `<div class="text-4xl mb-3">⚠️</div><div class="text-red-400 font-medium mb-1">Error al cargar</div><div class="text-xs text-slate-500">${e.message}</div>`;
       S.loaded['cajas'] = false;
@@ -11934,8 +13936,13 @@ const MOS = (() => {
   // ── Auto-refresh silencioso de cajas cada 60s ───────────────
   let _cajasRefreshTimer = null;
 
-  // ── Construye el HTML de una card de caja abierta ───────────
+  // ── Construye el HTML de una card de caja abierta (LEGACY) ──
+  // Reemplazado por _cjBuildCajaCard. Si algo aún llama a _buildCajaCard
+  // (código viejo), redirigir al nuevo.
   function _buildCajaCard(c) {
+    return _cjBuildCajaCard(c, c.estado === 'ABIERTA', _cjFecha());
+  }
+  function _buildCajaCardLegacy(c) {
     const elapsed   = _cajaElapsed(c.fechaApertura);
     const pctEfect  = c.totalVentas > 0 ? Math.round(c.efectivo / c.totalVentas * 100) : 0;
     const pctOtros  = 100 - pctEfect;
@@ -12085,130 +14092,36 @@ const MOS = (() => {
 
   async function _cajasRefreshSilencioso() {
     if (!API.isConfigured()) return;
+    iconBusy('cajas', true);
     try {
       const res = await API.get('getCierresCaja', {});
-      const { kpis, abiertas = [], cerradas = [], kpisTickets = {}, todosTickets: tkAll = [], generadoEn } = res || {};
-
-      // ── Detectar cambios en tickets ──────────────────────────
-      const prevIds  = new Set((S._todosTickets || []).map(t => t.idVenta));
-      const nuevos   = (tkAll || []).filter(t => !prevIds.has(t.idVenta));
-
-      // ── Actualizar estado global ─────────────────────────────
+      const { abiertas = [], cerradas = [], todosTickets: tkAll = [], generadoEn } = res || {};
+      const todayStr = today();
+      // Detectar tickets nuevos comparando con cache previo
+      const prevIds = new Set((S._todosTickets || []).map(t => t.idVenta));
+      const nuevos = (tkAll || []).filter(t => !prevIds.has(t.idVenta));
       S._todosTickets = tkAll;
-      const todayStr  = today();
-      S._cajasHoy  = [...abiertas, ...(cerradas || []).filter(c =>
-        (c.fechaApertura||'').startsWith(todayStr)||(c.fechaCierre||'').startsWith(todayStr))];
-      S._todasCajas = [...abiertas, ...cerradas];
+      S._cajasHoy = [...abiertas, ...(cerradas || []).filter(c =>
+        (c.fechaApertura || '').startsWith(todayStr) || (c.fechaCierre || '').startsWith(todayStr))];
+      S._todasCajas  = [...abiertas, ...cerradas];
       S._cajasLoaded = true;
       S._cajasGenTs  = generadoEn || '';
-
-      // ── KPIs ─────────────────────────────────────────────────
-      _setVal('cajasKpiVentas',     fmtMoney(kpis?.totalDia||0), true);
-      _setVal('cajasKpiTicketsHoy', kpisTickets.hoy?.total||0,   nuevos.length > 0);
-      _setVal('cajasKpiTicketsMes', kpisTickets.mes?.total||0,   false);
-      _setVal('cajasKpiNV',         kpisTickets.hoy?.NV||0,      false);
-      _setVal('cajasKpiBoleta',     kpisTickets.hoy?.B||0,       false);
-      _setVal('cajasKpiFactura',    kpisTickets.hoy?.F||0,       false);
-      const ts = $('cajasTimestamp');
-      if (ts) ts.textContent = 'Actualizado: ' + (generadoEn||'—');
-
-      // ── Cards cajas abiertas ──────────────────────────────────
-      const vivoGrid = $('cajasVivoGrid');
-      if (vivoGrid) {
-        const prevCardIds = new Set([...vivoGrid.querySelectorAll('[id^="cajacard-"]')].map(el=>el.id.replace('cajacard-','')));
-        const newIds      = new Set(abiertas.map(c=>c.idCaja));
-
-        // Actualizar o crear cards
-        abiertas.forEach(c => {
-          const existed = _updateCajaCard(c);
-          if (!existed) {
-            // Nueva caja abierta → crear card y prependla
-            const tmp = document.createElement('div');
-            tmp.innerHTML = _buildCajaCard(c);
-            const newCard = tmp.firstElementChild;
-            newCard.style.animation = 'cardSlideIn .4s ease';
-            vivoGrid.prepend(newCard);
-            if ($('cajasVivoWrap')) $('cajasVivoWrap').classList.remove('hidden');
-          }
-        });
-
-        // Cards de cajas que ya cerraron → fade out y remover
-        prevCardIds.forEach(id => {
-          if (!newIds.has(id)) {
-            const card = $('cajacard-' + id);
-            if (card) { card.style.transition='opacity .4s'; card.style.opacity='0'; setTimeout(()=>card.remove(),400); }
-          }
-        });
-
-        // Actualizar contador
-        const vivoCount = $('cajasVivoCount');
-        if (vivoCount) vivoCount.textContent = abiertas.length;
-        if (vivoGrid.parentElement) vivoGrid.parentElement.classList.toggle('hidden', abiertas.length === 0);
+      if (S.view === 'cajas') {
+        _cjRender();
+        _cjPulsoPoll();
+        const modalTk = $('cjModalTickets');
+        if (modalTk && !modalTk.classList.contains('hidden')) _cjTkRender();
+        // Sonido sutil si hay tickets nuevos
+        if (nuevos.length > 0 && prevIds.size > 0) _finBeep('click');
       }
-
-      // ── Historial (cajas cerradas) ────────────────────────────
-      const histWrap  = $('cajasHistorialWrap');
-      const histTbody = $('cajasHistTbody');
-      if (histTbody && cerradas.length > 0) {
-        histWrap?.classList.remove('hidden');
-        const hora  = s => (s||'').substring(11,16);
-        const fecha = s => (s||'').substring(0,16).replace('T',' ');
-        cerradas.forEach(c => {
-          const existed = _updateHistorialRow(c);
-          if (!existed) {
-            // Nueva fila → prepend con flash
-            const esHoy  = (c.fechaCierre||'').startsWith(todayStr);
-            const tr = document.createElement('tr');
-            tr.setAttribute('data-caja-row', c.idCaja);
-            tr.style.animation = 'ticketFadeIn .5s ease';
-            tr.innerHTML = `
-              <td><div class="font-medium">${c.vendedor||'—'}</div><div class="text-xs text-slate-500">${esHoy?'Hoy '+hora(c.fechaCierre):fecha(c.fechaCierre)}</div></td>
-              <td><span class="badge badge-blue">${c.zona||c.estacion||'—'}</span></td>
-              <td class="text-slate-400 text-xs">${hora(c.fechaApertura)} → ${hora(c.fechaCierre)}</td>
-              <td id="hr-total-${c.idCaja}" class="font-semibold">${fmtMoney(c.totalVentas)}</td>
-              <td id="hr-tickets-${c.idCaja}" class="text-center">${c.tickets}</td>
-              <td>
-                <button onclick="window.open('./turno.html?idCaja=${c.idCaja}&api='+encodeURIComponent(API.getUrl()),'_blank')" class="btn-ghost text-xs px-3 py-1.5">📋 Turno</button>
-              </td>`;
-            histTbody.prepend(tr);
-            const histTitle = $('cajasHistTitle');
-            if (histTitle) histTitle.textContent = 'Historial de Cierres (' + cerradas.length + ')';
-          }
-        });
-      }
-
-      // ── Panel tickets (si está abierto) ──────────────────────
-      if (!$('cajasTicketsPanel')?.classList.contains('hidden')) {
-        if (nuevos.length > 0) {
-          _renderTicketList();
-          nuevos.forEach(t => {
-            const row = document.querySelector('[data-ticket-id="' + t.idVenta + '"]');
-            if (row) { row.classList.remove('val-flash'); row.offsetHeight; row.classList.add('val-flash'); }
-          });
-          toast(`↑ ${nuevos.length} ticket${nuevos.length>1?'s':''} nuevo${nuevos.length>1?'s':''}`, 'ok');
-        } else {
-          _renderTicketList();
-        }
-      }
-
-      // ── Panel desglose ventas (si está abierto) ───────────────
-      if (!$('cajasKpiDetalle')?.classList.contains('hidden')) toggleKpiVentas(), toggleKpiVentas();
-
-      // ── Gráficos ─────────────────────────────────────────────
-      if ($('cajasChartsWrap') && !$('cajasChartsWrap').classList.contains('hidden')) {
-        if (!$('modalHistorialCajas') || $('modalHistorialCajas').classList.contains('hidden')) {
-          _renderChartCajasCompacto(_chartCajasPeriodo);
-          _renderChartMetodosHoy();
-        }
-      }
-
     } catch(e) { console.warn('[CajasRefresh]', e.message); }
+    finally { iconBusy('cajas', false); }
   }
 
   function _startCajasRefresh() {
     _stopCajasRefresh();
     _cajasRefreshSilencioso(); // fetch inmediato
-    _cajasRefreshTimer = setInterval(_cajasRefreshSilencioso, 60000);
+    _cajasRefreshTimer = setInterval(_cajasRefreshSilencioso, 20000);
   }
   function _stopCajasRefresh() {
     if (_cajasRefreshTimer) { clearInterval(_cajasRefreshTimer); _cajasRefreshTimer = null; }
@@ -13410,11 +15323,15 @@ const MOS = (() => {
   function _selectorDispMostrar(nombre, devs, modo) {
     const sub = $('selectorDispSubtitle');
     const lista = $('selectorDispLista');
-    if (sub) sub.textContent = `${nombre} · ${devs.length} dispositivos · elige cuál ${modo === 'audio' ? 'escuchar' : 'ubicar'}`;
+    const verboMap = { audio: 'escuchar', gps: 'ubicar', espia: 'espiar' };
+    if (sub) sub.textContent = `${nombre} · ${devs.length} dispositivos · elige cuál ${verboMap[modo] || 'usar'}`;
     if (!lista) return;
-    const accion = modo === 'audio' ? 'abrirModalAudioRouted' : 'abrirModalGps';
-    const ico = modo === 'audio' ? '🎙️' : '📍';
-    const accent = modo === 'audio' ? '#dc2626' : '#10b981';
+    const accionMap = { audio: 'abrirModalAudioRouted', gps: 'abrirModalGps', espia: 'abrirEspiaDispositivo' };
+    const icoMap = { audio: '🎙️', gps: '📍', espia: '🕵️' };
+    const accentMap = { audio: '#dc2626', gps: '#10b981', espia: '#6366f1' };
+    const accion = accionMap[modo] || 'abrirModalAudioRouted';
+    const ico = icoMap[modo] || '🎙️';
+    const accent = accentMap[modo] || '#dc2626';
     lista.innerHTML = devs.map(d => {
       const act = _personaActividad(d.Ultima_Conexion);
       const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
@@ -13746,6 +15663,518 @@ const MOS = (() => {
     }
     _audioFlot = null;
   }
+
+  // ════════════════════════════════════════════════════════════
+  // ESPÍA — orquestador audio + gps en modal grande + widget mini
+  // ════════════════════════════════════════════════════════════
+  // _espiaState:
+  //   { deviceId, nombre, modalAbierto:bool, gpsPolling, gpsUlt, gpsRangoH }
+  // Audio sigue manejado por _audioFlot (estado heredado), pero el widget
+  // visible es #espiaFlotante (no #audioFlotante).
+  let _espiaState = null;
+
+  // Click en 🕵️ desde Personal del Día / Configuración Personal
+  // Abre el modal INMEDIATAMENTE con datos en cache, refresca en background.
+  async function abrirEspiaPorUsuario(nombre) {
+    let devs = _buscarDispositivosDeUsuario(nombre);
+    if (!devs.length) {
+      // No hay en cache → buscar fresh (única vez que bloqueamos)
+      await _refrescarDispositivosFresh();
+      devs = _buscarDispositivosDeUsuario(nombre);
+    }
+    if (!devs.length) {
+      toast(`⚠ ${nombre} no tiene dispositivos con su sesión`, 'warn', 5000);
+      return;
+    }
+    if (devs.length === 1) {
+      abrirEspiaDispositivo(devs[0].ID_Dispositivo);
+      // Refrescar en background para próximas
+      _refrescarDispositivosFresh().catch(() => {});
+      return;
+    }
+    _selectorDispMostrar(nombre, devs, 'espia');
+  }
+
+  // Inicia espía (audio + gps) y abre el modal grande SIN bloquear.
+  async function abrirEspiaDispositivo(idDispositivo) {
+    const d = (cfgData.dispositivos || []).find(x => x.ID_Dispositivo === idDispositivo);
+    if (!d) { toast('Dispositivo no encontrado', 'error'); return; }
+    const nombre = d.Ultima_Sesion || d.Nombre_Equipo || idDispositivo;
+
+    // 1) Si ya hay otra sesión activa, confirmar switch
+    if (_espiaState && _espiaState.deviceId !== idDispositivo) {
+      if (!confirm(`Ya estás espiando a ${_espiaState.nombre}.\n\n¿Detener esa sesión y empezar a espiar a ${nombre}?\n\n• Si dices NO, seguirás espiando a ${_espiaState.nombre}.`)) return;
+      _espiaDetenerTodo(true); // sin await — limpieza en background
+    }
+
+    // 2) Marcar state
+    _espiaState = {
+      deviceId: idDispositivo,
+      nombre,
+      modalAbierto: false,
+      gpsPolling: null,
+      gpsUlt: null,
+      gpsRangoH: 24,
+      _avisosTimers: []
+    };
+
+    // 3) Abrir modal INMEDIATO (feedback visual sin esperar API)
+    _espiaModalAbrir();
+
+    // 4) Mostrar avisos según diagnóstico inicial (conexión vieja, etc)
+    _espiaActualizarAvisos();
+
+    // 5) Iniciar audio + gps en paralelo (sin bloquear UI)
+    _espiaIniciarAudio(idDispositivo);
+    _espiaIniciarGps(idDispositivo);
+  }
+
+  // ── AVISOS dentro del modal: en lugar de confirms bloqueantes ──
+  function _espiaActualizarAvisos() {
+    if (!_espiaState) return;
+    const cont = $('espiaAvisos');
+    if (!cont) return;
+    const avisos = [];
+    const d = (cfgData.dispositivos || []).find(x => x.ID_Dispositivo === _espiaState.deviceId);
+    // 1) Última conexión
+    const ultMs = new Date(d?.Ultima_Conexion || 0).getTime() || 0;
+    const mins = ultMs ? (Date.now() - ultMs) / 60000 : Infinity;
+    if (!ultMs) {
+      avisos.push({
+        nivel: 'error', ico: '📡',
+        titulo: 'Sin reportes de conexión',
+        detalle: 'Este dispositivo nunca ha reportado heartbeat — puede no estar registrado correctamente.'
+      });
+    } else if (mins > 60) {
+      const horas = Math.floor(mins / 60);
+      avisos.push({
+        nivel: 'error', ico: '📡',
+        titulo: `App parece cerrada (hace ${horas}h)`,
+        detalle: 'El comando de escucha puede no llegar hasta que abra la app o reciba un push.'
+      });
+    } else if (mins > 10) {
+      avisos.push({
+        nivel: 'warn', ico: '📡',
+        titulo: `Última conexión hace ${Math.floor(mins)} min`,
+        detalle: 'La app puede estar en background — el comando podría tardar.'
+      });
+    }
+    // 2) Audio sin chunks tras 30s = sin permiso
+    if (_audioFlot && _audioFlot.deviceId === _espiaState.deviceId &&
+        _audioFlot.idSesion && _audioFlot.chunks.length === 0 &&
+        (Date.now() - _audioFlot.inicio) > 30000) {
+      avisos.push({
+        nivel: 'warn', ico: '🎙️',
+        titulo: 'Audio sin permiso o app cerrada',
+        detalle: 'No se reciben chunks. Verifica que el dispositivo tenga permiso de micrófono concedido.'
+      });
+    }
+    // 3) GPS sin reportes
+    if (_espiaState.gpsRevisado && !_espiaState.gpsUlt) {
+      avisos.push({
+        nivel: 'warn', ico: '📍',
+        titulo: 'GPS desconectado',
+        detalle: 'El dispositivo no ha reportado ubicación todavía. Pídele que abra la app.'
+      });
+    }
+    cont.innerHTML = avisos.map(a => `
+      <div class="espia-aviso espia-aviso-${a.nivel}">
+        <span class="espia-aviso-ico">${a.ico}</span>
+        <div class="espia-aviso-cuerpo">
+          <div class="espia-aviso-titulo">${a.titulo}</div>
+          <div class="espia-aviso-detalle">${a.detalle}</div>
+        </div>
+      </div>`).join('');
+    // Re-evaluar cada 10s mientras el modal está abierto
+    if (_espiaState.modalAbierto) {
+      clearTimeout(_espiaState._avisosNextTimer);
+      _espiaState._avisosNextTimer = setTimeout(() => {
+        if (_espiaState && _espiaState.modalAbierto) _espiaActualizarAvisos();
+      }, 10000);
+    }
+  }
+
+  function _espiaModalAbrir() {
+    if (!_espiaState) return;
+    const sub = $('espiaModalSubtitle');
+    if (sub) {
+      const d = (cfgData.dispositivos || []).find(x => x.ID_Dispositivo === _espiaState.deviceId);
+      sub.textContent = `${_espiaState.nombre}${d?.Nombre_Equipo ? ' · ' + d.Nombre_Equipo : ''}`;
+    }
+    const dev = $('espiaModalDeviceId');
+    if (dev) dev.value = _espiaState.deviceId;
+    const btnHist = $('espiaModalBtnHist');
+    if (btnHist) btnHist.classList.toggle('hidden', !_esRolMaster());
+    // Esconder widget instantáneamente (sin animación de salida)
+    const w = document.getElementById('espiaFlotante');
+    if (w) w.style.display = 'none';
+    openModal('modalEspia');
+    _espiaState.modalAbierto = true;
+    // Refrescar avisos cada vez que abrimos (puede haber cambiado el estado)
+    _espiaActualizarAvisos();
+  }
+
+  // Cierra modal pero mantiene audio/gps corriendo → muestra widget
+  function _espiaModalMinimizar() {
+    if (!_espiaState) {
+      try { closeModal('modalEspia'); } catch {}
+      return;
+    }
+    closeModal('modalEspia');
+    _espiaState.modalAbierto = false;
+    clearTimeout(_espiaState._avisosNextTimer);
+    _espiaWidgetMontar();
+  }
+
+  // Detiene audio + gps + remueve widget + cierra modal
+  // Cierre INMEDIATO de UI; las llamadas API se hacen en background.
+  function _espiaDetenerTodo(silencioso) {
+    if (!silencioso) {
+      const nom = _espiaState?.nombre || 'el usuario';
+      if (!confirm(`🛑 DETENER el espionaje de ${nom}?\n\n• Se cierra el audio y el rastreo GPS.\n• El indicador del widget desaparece.\n• Si querés solo minimizar (seguir grabando en background), usá el botón ▾ del modal.\n\n¿Detener todo ahora?`)) return;
+    }
+    if (!_espiaState && !document.getElementById('espiaFlotante') && !_audioFlot) return;
+
+    const idSesion = _audioFlot?.idSesion;
+    // 1) Limpiar estado / timers SÍNCRONO (UI responde de inmediato)
+    if (_espiaState?.gpsPolling) clearInterval(_espiaState.gpsPolling);
+    if (_espiaState?._avisosNextTimer) clearTimeout(_espiaState._avisosNextTimer);
+    if (_audioFlot) {
+      if (_audioFlot.polling) clearInterval(_audioFlot.polling);
+      if (_audioFlot.contadorTimer) clearInterval(_audioFlot.contadorTimer);
+      if (_audioFlot.watchdog20) clearTimeout(_audioFlot.watchdog20);
+      if (_audioFlot.watchdog45) clearTimeout(_audioFlot.watchdog45);
+      if (_audioFlot.watchdog90) clearTimeout(_audioFlot.watchdog90);
+      if (_audioFlot.audioEl) { _audioFlot.audioEl.pause(); _audioFlot.audioEl.src = ''; _audioFlot.audioEl.onended = null; }
+    }
+    // 2) Cerrar modal y widget INMEDIATO
+    try { closeModal('modalEspia'); } catch {}
+    const w = document.getElementById('espiaFlotante');
+    if (w) {
+      w.style.transition = 'all 0.18s ease-out';
+      w.style.transform = 'translateY(20px) scale(0.92)';
+      w.style.opacity = '0';
+      setTimeout(() => w.remove(), 180);
+    }
+    _audioFlot = null;
+    _espiaState = null;
+    if (!silencioso) toast('🛑 Espía detenido', 'ok');
+    // 3) Avisar al server en background (sin bloquear UI)
+    if (idSesion) {
+      API.post('detenerEscuchaAudio', { idSesion }).catch(() => {});
+    }
+  }
+
+  // ── Audio dentro del modal espía (sin crear el #audioFlotante viejo)
+  async function _espiaIniciarAudio(idDispositivo) {
+    // Reusar la maquinaria existente pero apuntar el audio al player del modal
+    const dDisp = (cfgData.dispositivos || []).find(x => x.ID_Dispositivo === idDispositivo);
+    if (!dDisp) return;
+    const nombre = dDisp.Ultima_Sesion || dDisp.Nombre_Equipo || idDispositivo;
+
+    // Si ya había _audioFlot de otro device, parar
+    if (_audioFlot) await _audioFlotanteDetenerInterno(true);
+
+    _espiaActualizarAudioSub('⌛ enviando comando...');
+
+    let cmd;
+    try {
+      cmd = await API.post('iniciarEscuchaAudio', {
+        deviceId: idDispositivo,
+        autorizadoPor: S.session?.nombre || 'admin',
+        razon: 'Espía remoto desde panel'
+      });
+    } catch(e) {
+      _espiaActualizarAudioSub('⚠ ' + e.message);
+      return;
+    }
+    if (!cmd?.idSesion) {
+      _espiaActualizarAudioSub('⚠ Sin idSesion');
+      return;
+    }
+
+    // Setup _audioFlot (mismo formato que el flotante viejo, pero el audio
+    // element apunta al player del modal espía)
+    const player = document.getElementById('espiaPlayerLive');
+    _audioFlot = {
+      deviceId: idDispositivo,
+      nombre,
+      idSesion: cmd.idSesion,
+      chunks: [], idx: 0,
+      chunksCargados: new Set(),
+      audioEl: player,
+      inicio: Date.now(),
+      polling: null,
+      contadorTimer: null,
+      prefetched: new Map(),
+      muted: false,
+      origenEspia: true
+    };
+    // Encadenado al terminar
+    if (player) {
+      player.onended = () => {
+        if (!_audioFlot) return;
+        _audioFlot.idx++;
+        _audioFlotanteReproducirSiguiente();
+        _espiaActualizarAudioVista();
+      };
+    }
+    // Pre-warm autoplay
+    try {
+      const silentWebm = 'data:audio/webm;base64,GkXfowEAAAAAAAAfQoaBAUL3gQFC8oEEQvOBCEKChHdlYm1Ch4EEQoWBAhhTgGcBAAAAAAAVkhFNm3RALE27i1OrhBVJqWZTrIHfTbuMU6uEFlSua1OsggEwTbuMU6uEHFO7a1OsggI+7AEAAAAAAACkAAAAAAAAAAAAAAAAAAA=';
+      if (player) {
+        player.src = silentWebm;
+        player.volume = 0;
+        player.play().then(() => {
+          if (player) player.volume = _audioFlot?.muted ? 0 : 1;
+        }).catch(() => {});
+      }
+    } catch(_) {}
+
+    _espiaActualizarAudioSub('🔴 sesión iniciada · esperando chunks');
+    _espiaActualizarAudioVista();
+
+    // Contador
+    _audioFlot.contadorTimer = setInterval(() => {
+      if (!_audioFlot) return;
+      const segs = Math.floor((Date.now() - _audioFlot.inicio) / 1000);
+      const mm = String(Math.floor(segs / 60)).padStart(2, '0');
+      const ss = String(segs % 60).padStart(2, '0');
+      const t = $('espiaModalAudioTime');
+      if (t) t.textContent = `${mm}:${ss}`;
+      _espiaWidgetUpdate();
+    }, 1000);
+
+    // Polling de chunks
+    setTimeout(_audioFlotantePollChunks, 800);
+    _audioFlot.polling = setInterval(() => {
+      _audioFlotantePollChunks();
+      _espiaActualizarAudioVista();
+    }, 2500);
+  }
+
+  function _espiaActualizarAudioSub(txt) {
+    const el = $('espiaModalAudioSub');
+    if (el) el.textContent = txt;
+    const subW = document.querySelector('#espiaFlotante .espia-flot-sub');
+    if (subW) subW.textContent = txt;
+  }
+  function _espiaActualizarAudioVista() {
+    if (!_audioFlot) return;
+    const c = $('espiaModalAudioChunks');
+    if (c) c.textContent = `${_audioFlot.chunks.length} chunks · idx ${_audioFlot.idx + 1}`;
+    if (_audioFlot.chunks.length > 0) {
+      const sub = $('espiaModalAudioSub');
+      if (sub) sub.textContent = _audioFlot.muted ? '🔇 muteado · grabación activa' : '🔴 escuchando en vivo';
+    }
+    _espiaWidgetUpdate();
+    // Re-evaluar avisos: el primer chunk recibido limpia el aviso "sin permiso"
+    if (_audioFlot.chunks.length === 1) _espiaActualizarAvisos();
+  }
+
+  // Toggle mute (no detiene grabación, solo silencia reproducción local)
+  function _espiaToggleMute() {
+    if (!_audioFlot || !_audioFlot.audioEl) return;
+    _audioFlot.muted = !_audioFlot.muted;
+    _audioFlot.audioEl.muted = _audioFlot.muted;
+    const btn = $('espiaModalBtnMute');
+    if (btn) btn.innerHTML = _audioFlot.muted ? '🔊 Quitar mute' : '🔇 Mutear';
+    const ico = $('espiaModalMicIcon');
+    if (ico) {
+      ico.textContent = _audioFlot.muted ? '🔇' : '🎙️';
+      ico.classList.toggle('muted', _audioFlot.muted);
+    }
+    _espiaActualizarAudioVista();
+    _espiaWidgetUpdate();
+  }
+
+  // Abre el modal viejo de historial (solo master)
+  function _espiaAbrirHistorial() {
+    if (!_espiaState) return;
+    abrirModalAudio(_espiaState.deviceId);
+  }
+
+  // ── GPS dentro del modal espía
+  async function _espiaIniciarGps(idDispositivo) {
+    if (_espiaState?.gpsPolling) clearInterval(_espiaState.gpsPolling);
+    // Primer refresh sin bloquear; luego polling cada 15s
+    _espiaGpsRefresh();
+    if (!_espiaState) return;
+    _espiaState.gpsPolling = setInterval(_espiaGpsRefresh, 15000);
+  }
+
+  async function _espiaGpsRefresh() {
+    if (!_espiaState) return;
+    const id = _espiaState.deviceId;
+    const info = $('espiaModalGpsInfo');
+    const mapa = $('espiaModalGpsMapa');
+    const cantEl = $('espiaModalGpsPuntos');
+    try {
+      const ult = await API.get('getUltimaUbicacionDispositivo', { deviceId: id });
+      const hist = await API.get('getUbicacionesDispositivo', { deviceId: id, horas: _espiaState.gpsRangoH });
+      if (_espiaState) _espiaState.gpsRevisado = true;
+      if (!ult) {
+        if (info) info.innerHTML = '<span class="text-amber-400">⚠ Sin ubicación reportada</span>';
+        const sub = $('espiaModalGpsSub');
+        if (sub) sub.textContent = 'Sin reportes';
+        _espiaActualizarAvisos();
+        return;
+      }
+      _espiaState.gpsUlt = ult;
+      const fecha = ult.timestamp ? new Date(ult.timestamp) : null;
+      const mins = fecha ? Math.floor((Date.now() - fecha.getTime()) / 60000) : null;
+      const fmt = fecha ? fecha.toLocaleString('es-PE', { hour:'2-digit', minute:'2-digit' }) : '—';
+      const fresh = mins !== null && mins < 5;
+      const dot = fresh ? '🟢' : (mins < 60 ? '🟡' : '🔴');
+      const bat = ult.bateria !== '' && ult.bateria !== undefined ? ` · 🔋${ult.bateria}%` : '';
+      if (info) {
+        info.innerHTML = `<div class="text-white font-bold">${dot} ${fmt}${bat}</div>
+          <div class="text-[10px] text-slate-400 mt-0.5">📍 ${parseFloat(ult.lat).toFixed(6)}, ${parseFloat(ult.lng).toFixed(6)} · ~${Math.round(ult.accuracy)}m</div>`;
+      }
+      const subM = $('espiaModalGpsSub');
+      if (subM) {
+        const txt = fresh ? '🟢 en vivo' : (mins < 60 ? `hace ${mins}min` : `hace ${Math.floor(mins/60)}h`);
+        subM.textContent = txt;
+      }
+      const lnk = $('espiaModalGpsMaps');
+      if (lnk) {
+        lnk.href = `https://www.google.com/maps?q=${ult.lat},${ult.lng}`;
+        lnk.classList.remove('hidden');
+      }
+      if (cantEl) cantEl.textContent = (Array.isArray(hist) ? hist.length : 0) + ' puntos · ' + _espiaState.gpsRangoH + 'h';
+      if (mapa && (!mapa.dataset.lastLat || mapa.dataset.lastLat !== String(ult.lat) || mapa.dataset.lastLng !== String(ult.lng))) {
+        mapa.innerHTML = `<iframe width="100%" height="100%" frameborder="0"
+          src="https://maps.google.com/maps?q=${ult.lat},${ult.lng}&z=16&output=embed"
+          style="border:none;"></iframe>`;
+        mapa.dataset.lastLat = String(ult.lat);
+        mapa.dataset.lastLng = String(ult.lng);
+      }
+      _espiaWidgetUpdate();
+      _espiaActualizarAvisos();
+    } catch(e) {
+      if (info) info.innerHTML = '<span class="text-red-400">Error: ' + e.message + '</span>';
+    }
+  }
+
+  function _espiaGpsRangoCambiar(horas) {
+    if (!_espiaState) return;
+    _espiaState.gpsRangoH = horas;
+    _espiaGpsRefresh();
+  }
+
+  // ── Widget flotante mini ─────────────────────────────────
+  function _espiaWidgetMontar() {
+    if (!_espiaState) return;
+    let w = document.getElementById('espiaFlotante');
+    if (w) { w.style.display = 'flex'; _espiaWidgetUpdate(); return; }
+    w = document.createElement('div');
+    w.id = 'espiaFlotante';
+    w.innerHTML = `
+      <div class="espia-flot-emoji" data-open-modal="1">🕵️</div>
+      <div class="espia-flot-info" data-open-modal="1">
+        <div class="espia-flot-nom"></div>
+        <div class="espia-flot-sub">⌛</div>
+      </div>
+      <div class="espia-flot-icons">
+        <div class="espia-flot-ico espia-flot-ico-mic" title="Click: mutear / quitar mute (audio sigue grabando)">🎙️</div>
+        <div class="espia-flot-ico espia-flot-ico-gps" title="Click: ver GPS en modal">📍</div>
+        <button class="espia-flot-stop" title="Detener todo">×</button>
+      </div>`;
+    document.body.appendChild(w);
+
+    // Handlers nativos de click para los controles (mic / gps / stop)
+    w.querySelector('.espia-flot-ico-mic').addEventListener('click', e => {
+      e.stopPropagation();
+      _espiaToggleMute();
+    });
+    w.querySelector('.espia-flot-ico-gps').addEventListener('click', e => {
+      e.stopPropagation();
+      _espiaModalAbrir();
+      setTimeout(() => {
+        const sec = document.getElementById('espiaSecGps');
+        if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        _espiaGpsRefresh();
+      }, 120);
+    });
+    w.querySelector('.espia-flot-stop').addEventListener('click', e => {
+      e.stopPropagation();
+      _espiaDetenerTodo(false);
+    });
+
+    // Drag SOLO sobre el cuerpo (no controles). Click sobre cuerpo abre modal.
+    let pStart = null, moved = false;
+    const onDown = e => {
+      // Si el pointerdown fue sobre un control, no iniciar drag (sus handlers click nativos manejan)
+      if (e.target.closest('.espia-flot-ico') || e.target.closest('.espia-flot-stop')) return;
+      pStart = { x: e.clientX, y: e.clientY };
+      moved = false;
+      w.setPointerCapture?.(e.pointerId);
+      w.classList.add('dragging');
+      w.style.right = 'auto'; w.style.bottom = 'auto';
+      const r = w.getBoundingClientRect();
+      w.dataset._sl = String(r.left);
+      w.dataset._st = String(r.top);
+    };
+    const onMove = e => {
+      if (!pStart) return;
+      const dx = e.clientX - pStart.x, dy = e.clientY - pStart.y;
+      if (!moved && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) moved = true;
+      if (moved) {
+        const sl = parseFloat(w.dataset._sl || 0);
+        const st = parseFloat(w.dataset._st || 0);
+        w.style.left = (sl + dx) + 'px';
+        w.style.top  = (st + dy) + 'px';
+      }
+    };
+    const onUp = () => {
+      if (!pStart) return;
+      const wasMoved = moved;
+      pStart = null; moved = false;
+      w.classList.remove('dragging');
+      // Click puro sobre cuerpo (sin drag) → abre modal
+      if (!wasMoved) _espiaModalAbrir();
+    };
+    w.addEventListener('pointerdown', onDown);
+    w.addEventListener('pointermove', onMove);
+    w.addEventListener('pointerup', onUp);
+    w.addEventListener('pointercancel', () => { pStart = null; moved = false; w.classList.remove('dragging'); });
+
+    _espiaWidgetUpdate();
+  }
+
+  function _espiaWidgetUpdate() {
+    const w = document.getElementById('espiaFlotante');
+    if (!w || !_espiaState) return;
+    const nom = w.querySelector('.espia-flot-nom');
+    if (nom) nom.textContent = _espiaState.nombre;
+    const mic = w.querySelector('.espia-flot-ico-mic');
+    if (mic) {
+      const live = !!(_audioFlot && _audioFlot.chunks.length > 0);
+      const muted = !!(_audioFlot && _audioFlot.muted);
+      mic.classList.toggle('live', live && !muted);
+      mic.classList.toggle('muted', muted);
+      mic.textContent = muted ? '🔇' : '🎙️';
+    }
+    const gps = w.querySelector('.espia-flot-ico-gps');
+    if (gps && _espiaState.gpsUlt) {
+      const fecha = new Date(_espiaState.gpsUlt.timestamp || 0).getTime();
+      const mins = (Date.now() - fecha) / 60000;
+      gps.classList.toggle('fresh', mins < 5);
+      gps.classList.toggle('stale', mins >= 60);
+    }
+    const sub = w.querySelector('.espia-flot-sub');
+    if (sub) {
+      const segs = _audioFlot ? Math.floor((Date.now() - _audioFlot.inicio) / 1000) : 0;
+      const mm = String(Math.floor(segs / 60)).padStart(2, '0');
+      const ss = String(segs % 60).padStart(2, '0');
+      const gpsTxt = _espiaState.gpsUlt ? '· 📍' : '';
+      sub.textContent = `${mm}:${ss} ${gpsTxt}`;
+    }
+  }
+
+  // Cuando cierran el modal por backdrop o ESC y hay sesión activa, mantener
+  // el flujo: el handler espiaModal ya llama a _espiaModalMinimizar.
+  // Ningún cleanup adicional necesario — _espiaState se limpia en _espiaDetenerTodo.
 
   async function _abrirModalAudioLive(idDispositivo) {
     const d = (cfgData.dispositivos || []).find(x => x.ID_Dispositivo === idDispositivo);
@@ -14144,9 +16573,11 @@ const MOS = (() => {
   async function _loadFinanzas() {
     const inp = $('finFecha');
     if (inp && !inp.value) inp.value = today();
+    const fecha = inp?.value || today();
+    // Sonido al entrar al módulo (mismo que al cambiar fecha)
+    _finBeep('nav');
     // Si ya hay datos precargados, renderizar inmediatamente sin fetch extra
     if (_finPL) {
-      const fecha = inp?.value || today();
       _finRender(_finPL, fecha);
       const hasta  = fecha;
       const desde7 = _fechaOffset(fecha, -6);
@@ -14154,9 +16585,12 @@ const MOS = (() => {
         const rango = await API.get('getFinanzasRango', { desde: desde7, hasta });
         _finRender7d(rango);
       } catch(_) {}
+      // Pre-load adyacentes (-1 / +1) en background
+      _finPrefetchAdyacentes(fecha);
       return;
     }
     await finCargar();
+    // finCargar ya prefetchea ±1 al final si éxito
   }
 
   // ── Sync / Update ────────────────────────────────────────────
@@ -14800,6 +17234,8 @@ const MOS = (() => {
       _finPL = pl;
       _finSaveCache('pl_' + fecha, pl);
       if (S.view === 'finanzas') {
+        // Pulso del dot indicando refresh silencioso exitoso
+        _finPulsoPoll();
         if (changedPL) { _finRender(pl, fecha); _finFlash(); }
         const hasta  = fecha;
         const desde7 = _fechaOffset(fecha, -6);
@@ -14830,7 +17266,9 @@ const MOS = (() => {
 
   async function finCargar(opts) {
     opts = opts || {};
-    const fecha = $('finFecha')?.value || today();
+    const inpF = $('finFecha');
+    if (inpF && !inpF.value) inpF.value = today();
+    const fecha = inpF?.value || today();
     const myGen = ++_finGenId;
     const fechaPrev = _finUltimaFecha;
     _finUltimaFecha = fecha;
@@ -14905,7 +17343,8 @@ const MOS = (() => {
   function finDia(delta) {
     const inp = $('finFecha');
     if (!inp) return;
-    const d = new Date(inp.value + 'T00:00:00');
+    const cur = inp.value || today();
+    const d = new Date(cur + 'T00:00:00');
     d.setDate(d.getDate() + delta);
     inp.value = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
     finCargar({ animate: true, dir: delta });
@@ -14930,21 +17369,186 @@ const MOS = (() => {
   // ── Badge "Hoy / Ayer / Hace N días / +N días" ──
   function _finUpdateBadge(fecha) {
     const el = $('finDayBadge');
-    if (!el) return;
+    const lbl = $('finFechaLabel');
     const hoy = today();
     const a = new Date(fecha + 'T00:00:00');
     const h = new Date(hoy + 'T00:00:00');
     const diff = Math.round((a - h) / 86400000);
-    el.classList.remove('fin-day-hoy', 'fin-day-ayer', 'fin-day-past', 'fin-day-futuro');
-    let txt = '';
-    if (diff === 0)       { txt = '🟢 Hoy';        el.classList.add('fin-day-hoy'); }
-    else if (diff === -1) { txt = 'Ayer';          el.classList.add('fin-day-ayer'); }
-    else if (diff === 1)  { txt = 'Mañana';        el.classList.add('fin-day-futuro'); }
-    else if (diff < 0)    { txt = `Hace ${-diff} días`;   el.classList.add('fin-day-past'); }
-    else                  { txt = `+${diff} días`; el.classList.add('fin-day-futuro'); }
-    el.textContent = txt;
-    el.classList.add('fin-day-pulse');
-    setTimeout(() => el.classList.remove('fin-day-pulse'), 280);
+    if (el) {
+      el.classList.remove('fin-day-hoy', 'fin-day-ayer', 'fin-day-past', 'fin-day-futuro');
+      let txt = '';
+      if (diff === 0)       { txt = '🟢 Hoy';        el.classList.add('fin-day-hoy'); }
+      else if (diff === -1) { txt = 'Ayer';          el.classList.add('fin-day-ayer'); }
+      else if (diff === 1)  { txt = 'Mañana';        el.classList.add('fin-day-futuro'); }
+      else if (diff < 0)    { txt = `Hace ${-diff} días`;   el.classList.add('fin-day-past'); }
+      else                  { txt = `+${diff} días`; el.classList.add('fin-day-futuro'); }
+      el.textContent = txt;
+      el.classList.add('fin-day-pulse');
+      setTimeout(() => el.classList.remove('fin-day-pulse'), 280);
+    }
+    if (lbl) {
+      const d = new Date(fecha + 'T00:00:00');
+      const txt = d.toLocaleDateString('es-PE', { day:'2-digit', month:'short', year:'2-digit' });
+      lbl.textContent = (diff === 0) ? `Hoy · ${txt}` : txt;
+    }
+  }
+
+  // ── Comparación vs ayer (para el card de Ventas) ────────────
+  function _finRenderComparaAyer(pl, fecha) {
+    const el = $('finVentasComparaAyer');
+    if (!el) return;
+    try {
+      const ayer = _fechaOffset(fecha, -1);
+      const cached = _finLoadCache('pl_' + ayer);
+      const ventasAyer = cached ? parseFloat(cached.ventasNetas || 0) : 0;
+      const ventasHoy = parseFloat(pl.ventasNetas || 0);
+      if (!ventasAyer || !cached) {
+        el.classList.add('hidden');
+        return;
+      }
+      const diff = ventasHoy - ventasAyer;
+      const pct = ventasAyer > 0 ? (diff / ventasAyer * 100) : 0;
+      el.classList.remove('hidden', 'up', 'down');
+      if (diff >= 0) {
+        el.classList.add('up');
+        el.innerHTML = '▲ +' + Math.abs(pct).toFixed(0) + '% vs ayer';
+      } else {
+        el.classList.add('down');
+        el.innerHTML = '▼ ' + Math.abs(pct).toFixed(0) + '% vs ayer';
+      }
+    } catch { el.classList.add('hidden'); }
+  }
+
+  // ── Confetti al cruzar break-even ─────────────────────────
+  function _finConfetiBE() {
+    const canvas = $('finBEConfetti');
+    const card = $('finBECardWrap');
+    if (!canvas || !card) return;
+    const rect = card.getBoundingClientRect();
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+    canvas.classList.remove('hidden');
+    const ctx = canvas.getContext('2d');
+    const colores = ['#34d399', '#fbbf24', '#a5b4fc', '#22d3ee', '#f472b6', '#facc15'];
+    const piezas = [];
+    for (let i = 0; i < 80; i++) {
+      piezas.push({
+        x: Math.random() * canvas.width,
+        y: -10 - Math.random() * 40,
+        vx: (Math.random() - 0.5) * 4,
+        vy: 2 + Math.random() * 4,
+        rot: Math.random() * 360,
+        vRot: (Math.random() - 0.5) * 12,
+        size: 6 + Math.random() * 6,
+        color: colores[Math.floor(Math.random() * colores.length)],
+        forma: Math.random() > 0.5 ? 'rect' : 'circle'
+      });
+    }
+    let frames = 0;
+    const tick = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      piezas.forEach(p => {
+        p.vy += 0.15; // gravedad
+        p.x += p.vx;
+        p.y += p.vy;
+        p.rot += p.vRot;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate((p.rot * Math.PI) / 180);
+        ctx.fillStyle = p.color;
+        if (p.forma === 'rect') ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size * 0.4);
+        else { ctx.beginPath(); ctx.arc(0, 0, p.size/2, 0, Math.PI*2); ctx.fill(); }
+        ctx.restore();
+      });
+      frames++;
+      if (frames < 180) requestAnimationFrame(tick);
+      else { ctx.clearRect(0, 0, canvas.width, canvas.height); canvas.classList.add('hidden'); }
+    };
+    tick();
+  }
+
+  // ── Datepicker del header de Finanzas ─────────────────────
+  let _finCalState = null;
+  function finAbrirCalendario(btn) {
+    const dp = $('finDatepicker');
+    if (!dp) return;
+    if (!dp.classList.contains('hidden')) { dp.classList.add('hidden'); return; }
+    const cur = $('finFecha')?.value || today();
+    const d = new Date(cur + 'T00:00:00');
+    _finCalState = { y: d.getFullYear(), m: d.getMonth() };
+    _finCalRender();
+    const r = btn.getBoundingClientRect();
+    dp.style.left = Math.max(8, Math.min(window.innerWidth - 250, r.left)) + 'px';
+    dp.style.top  = (r.bottom + 6) + 'px';
+    dp.classList.remove('hidden');
+    setTimeout(() => {
+      const closer = e => {
+        if (!dp.contains(e.target) && !btn.contains(e.target)) {
+          dp.classList.add('hidden');
+          document.removeEventListener('click', closer);
+        }
+      };
+      document.addEventListener('click', closer);
+    }, 50);
+  }
+  function finCalNavMes(delta) {
+    if (!_finCalState) return;
+    let { y, m } = _finCalState;
+    m += delta;
+    if (m < 0)  { m = 11; y--; }
+    if (m > 11) { m = 0; y++; }
+    _finCalState = { y, m };
+    _finCalRender();
+  }
+  function _finCalRender() {
+    const grid = $('finCalGrid');
+    const lbl  = $('finCalMesAnio');
+    if (!grid || !_finCalState) return;
+    const { y, m } = _finCalState;
+    const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    if (lbl) lbl.textContent = `${meses[m]} ${y}`;
+    const primero = new Date(y, m, 1);
+    let primerDow = primero.getDay();
+    primerDow = primerDow === 0 ? 6 : primerDow - 1;
+    const ultimo = new Date(y, m + 1, 0).getDate();
+    const hoy = today();
+    const sel = $('finFecha')?.value || hoy;
+    let html = '';
+    for (let i = 0; i < primerDow; i++) html += '<button class="log-cal-day empty"></button>';
+    for (let dia = 1; dia <= ultimo; dia++) {
+      const f = `${y}-${String(m + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+      const cls = ['log-cal-day'];
+      if (f === hoy) cls.push('today');
+      if (f === sel) cls.push('selected');
+      html += `<button class="${cls.join(' ')}" onclick="MOS.finElegirFecha('${f}')">${dia}</button>`;
+    }
+    grid.innerHTML = html;
+  }
+  function finElegirFecha(f) {
+    const inp = $('finFecha');
+    if (!inp) return;
+    const prev = inp.value;
+    inp.value = f;
+    $('finDatepicker')?.classList.add('hidden');
+    finCargar({ animate: true, dir: f > prev ? 1 : -1 });
+  }
+
+  // Ir a una fecha específica desde el mini-row de 7 días
+  function finIrAFecha(f) {
+    const inp = $('finFecha');
+    if (!inp) return;
+    const prev = inp.value || today();
+    if (f === prev) return;
+    inp.value = f;
+    finCargar({ animate: true, dir: f > prev ? 1 : -1 });
+  }
+
+  // ── Indicador visual del polling silencioso ─────────────
+  function _finPulsoPoll() {
+    const dot = $('finPollDot');
+    if (!dot) return;
+    dot.classList.add('active');
+    setTimeout(() => dot.classList.remove('active'), 1300);
   }
 
   // ── Skeleton on/off — reset visual completo de TODO ──
@@ -15030,52 +17634,141 @@ const MOS = (() => {
   }
 
   // ════════════════════════════════════════════════════════════
-  // Sonido sutil opt-in (Web Audio API, sin archivos)
-  // Toggle por usuario, default OFF, persiste en localStorage.
+  // Sonidos de Finanzas — SIEMPRE suenan (efectos de UI son parte
+  // de la interacción, no se mutean desde la app).
   // ════════════════════════════════════════════════════════════
-  let _finSonidoOn = false;
   let _finAudioCtx = null;
-  try { _finSonidoOn = localStorage.getItem('mos_fin_sonido') === '1'; } catch {}
 
   function _finBeep(tipo) {
-    if (!_finSonidoOn) return;
     try {
       if (!_finAudioCtx) _finAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
       const ctx = _finAudioCtx;
-      const t = ctx.currentTime;
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.connect(g); g.connect(ctx.destination);
-      // nav: click corto agudo. ok: ding suave.
-      if (tipo === 'nav') {
-        o.frequency.setValueAtTime(1800, t);
-        o.frequency.exponentialRampToValueAtTime(900, t + 0.05);
-        g.gain.setValueAtTime(0.05, t);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
-        o.start(t); o.stop(t + 0.07);
-      } else {
-        o.frequency.setValueAtTime(1320, t);
-        g.gain.setValueAtTime(0.04, t);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
-        o.start(t); o.stop(t + 0.20);
+      const t0 = ctx.currentTime;
+      const tone = (freq, dur, gain, type, t) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = type || 'sine';
+        o.frequency.setValueAtTime(freq, t);
+        g.gain.setValueAtTime(gain, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        o.start(t); o.stop(t + dur + 0.02);
+      };
+      const sweep = (f1, f2, dur, gain, type, t) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = type || 'sine';
+        o.frequency.setValueAtTime(f1, t);
+        o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+        g.gain.setValueAtTime(gain, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        o.start(t); o.stop(t + dur + 0.02);
+      };
+      switch (tipo) {
+        case 'nav':         // tic agudo (cambio día)
+          sweep(1800, 900, 0.05, 0.05, 'sine', t0);
+          break;
+        case 'ok':          // ding suave (acción confirmada)
+          tone(1320, 0.18, 0.04, 'sine', t0);
+          break;
+        case 'veto':        // tono grave descendente + eco (rejas cayendo)
+          sweep(880, 220, 0.32, 0.10, 'sawtooth', t0);
+          tone(160, 0.30, 0.06, 'sine', t0 + 0.10);
+          break;
+        case 'rehab':       // tres notas ascendentes (campana liberadora)
+          [523.25, 659.25, 783.99].forEach((f, i) =>
+            tone(f, 0.20, 0.08, 'triangle', t0 + i * 0.08));
+          break;
+        case 'bloquear':    // chasquido de cerrojo: dos thuds graves rápidos
+          sweep(420, 90, 0.08, 0.12, 'square', t0);
+          sweep(380, 80, 0.10, 0.10, 'square', t0 + 0.09);
+          break;
+        case 'desbloquear': // cerrojo abriéndose: thud + ascenso ligero
+          sweep(180, 90, 0.08, 0.10, 'square', t0);
+          sweep(440, 880, 0.12, 0.06, 'triangle', t0 + 0.10);
+          break;
+        case 'agregar':     // chink moneda (gasto/jornada agregado)
+          tone(880, 0.06, 0.06, 'triangle', t0);
+          tone(1320, 0.12, 0.05, 'triangle', t0 + 0.04);
+          break;
+        case 'eliminar':    // whoosh corto descendente
+          sweep(660, 220, 0.14, 0.06, 'sine', t0);
+          break;
+        case 'importar':    // cascada: 5 chinks rápidos ascendentes
+          [659, 740, 880, 988, 1175].forEach((f, i) =>
+            tone(f, 0.07, 0.045, 'triangle', t0 + i * 0.045));
+          break;
+        case 'audit':       // dos notas estables (auditando)
+          tone(880, 0.10, 0.05, 'sine', t0);
+          tone(1108, 0.14, 0.05, 'sine', t0 + 0.10);
+          break;
+        case 'breakeven':   // ¡fanfare! C-E-G-C celebración
+          [523.25, 659.25, 783.99, 1046.5].forEach((f, i) =>
+            tone(f, 0.28, 0.09, 'triangle', t0 + i * 0.10));
+          break;
+        case 'kpi-up':      // sutil tono ascendente (KPI mejora)
+          sweep(660, 990, 0.10, 0.04, 'sine', t0);
+          break;
+        case 'kpi-down':    // sutil tono descendente (KPI empeora)
+          sweep(660, 440, 0.12, 0.04, 'sine', t0);
+          break;
+        case 'error':       // buzz grave (acción bloqueada/falló)
+          tone(220, 0.14, 0.10, 'square', t0);
+          tone(180, 0.16, 0.08, 'square', t0 + 0.10);
+          break;
+        case 'click':       // click neutral
+          tone(2000, 0.025, 0.04, 'sine', t0);
+          break;
+        case 'dinero':      // ¡cha-ching! caja registradora
+          // Pulso metálico + 3 notas brillantes ascendentes
+          tone(2400, 0.04, 0.08, 'square', t0);           // klick metálico
+          tone(1046.5, 0.10, 0.10, 'triangle', t0 + 0.02); // C6
+          tone(1318.5, 0.12, 0.10, 'triangle', t0 + 0.08); // E6
+          tone(1568.0, 0.18, 0.12, 'triangle', t0 + 0.14); // G6
+          // Cola sutil aguda como el "ting" de cajón
+          tone(2637.0, 0.20, 0.05, 'sine', t0 + 0.18);    // E7 alto
+          break;
+        default:
+          tone(1320, 0.18, 0.04, 'sine', t0);
       }
     } catch {}
   }
 
-  function finToggleSonido() {
-    _finSonidoOn = !_finSonidoOn;
-    try { localStorage.setItem('mos_fin_sonido', _finSonidoOn ? '1' : '0'); } catch {}
-    const btn = $('finBtnSonido');
-    if (btn) btn.textContent = _finSonidoOn ? '🔊' : '🔇';
-    if (_finSonidoOn) _finBeep('ok');
-    toast(_finSonidoOn ? '🔊 Efectos de sonido ON' : '🔇 Efectos de sonido OFF', 'info');
+  // Reemplaza el HTML de un card específico tras una acción (vetar/rehabilitar)
+  // sin tocar el resto. Evita parpadeo y mantiene el botón actualizado a su
+  // nuevo estado (💸 ↔ 💵).
+  function _finReemplazarCardJornada(idJornada, fecha) {
+    if (!_finPL || !Array.isArray(_finPL.personalDetalle)) return;
+    const p = _finPL.personalDetalle.find(x => String(x.idJornada) === String(idJornada));
+    if (!p) return;
+    let ev = null;
+    try {
+      const raw = localStorage.getItem('mos_fin_resum_' + fecha);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed.data)) {
+          ev = parsed.data.find(r =>
+            (r.idPersonal && r.idPersonal === p.idPersonal) ||
+            (String(r.nombre || '').toLowerCase().trim() === String(p.nombre || '').toLowerCase().trim())
+          );
+        }
+      }
+    } catch {}
+    const cards = document.querySelectorAll('.eval-card');
+    for (const c of cards) {
+      // Match por botón vetar O rehabilitar que contenga el idJornada
+      if (c.querySelector(`button[onclick*="finVetarPago"][onclick*="'${idJornada}'"]`) ||
+          c.querySelector(`button[onclick*="finRehabilitarPago"][onclick*="'${idJornada}'"]`)) {
+        const wrap = document.createElement('div');
+        wrap.innerHTML = _finRenderPersonalCard(p, ev || null, fecha).trim();
+        const nuevo = wrap.firstElementChild;
+        if (nuevo) c.replaceWith(nuevo);
+        return;
+      }
+    }
   }
 
-  // Sincronizar el botón al cargar
-  setTimeout(() => {
-    const btn = $('finBtnSonido');
-    if (btn) btn.textContent = _finSonidoOn ? '🔊' : '🔇';
-  }, 500);
 
   // ── Atajos de teclado en la vista Finanzas ──
   document.addEventListener('keydown', e => {
@@ -15102,25 +17795,43 @@ const MOS = (() => {
              (pl.anulados ? ' · ' + pl.anulados + ' anulado' + (pl.anulados > 1 ? 's' : '') : ''));
     _animateCount('finKpiCosto', pl.costoVentas, { prefix: 'S/ ' });
     _setText('finKpiMargenB', 'Margen bruto ' + pct(pl.margenBrutoPct));
+    // Barra del margen bruto (visual)
+    const margenBarFill = $('finMargenBarFill');
+    if (margenBarFill) {
+      const mb = Math.max(0, Math.min(parseFloat(pl.margenBrutoPct || 0), 100));
+      margenBarFill.style.width = mb.toFixed(1) + '%';
+      margenBarFill.style.background = mb >= 30
+        ? 'linear-gradient(90deg, #10b981, #34d399)'
+        : (mb >= 15 ? 'linear-gradient(90deg, #f59e0b, #fbbf24)'
+                    : 'linear-gradient(90deg, #dc2626, #f87171)');
+    }
     _animateCount('finKpiGastos', pl.totalGastos, { prefix: 'S/ ' });
     _setText('finKpiPersonas', pl.personas + ' persona' + (pl.personas !== 1 ? 's' : ''));
     _animateCount('finKpiUtil', pl.utilidadNeta, { prefix: 'S/ ' });
     _setText('finKpiMargenN', 'Margen neto ' + pct(pl.margenNetoPct));
 
-    // Subfila: desglose efectivo / virtual / crédito / anulados
-    _setText('finKpiEfectivo', fmt(pl.cobradoEfectivo || 0));
-    _setText('finKpiVirtual',  fmt(pl.cobradoVirtual  || 0));
+    // ── Métodos de pago: barra proporcional efectivo/virtual ──
+    const ef = parseFloat(pl.cobradoEfectivo || 0);
+    const vi = parseFloat(pl.cobradoVirtual || 0);
+    const totalCobrado = ef + vi;
+    _setText('finKpiEfectivo', fmt(ef));
+    _setText('finKpiVirtual',  fmt(vi));
+    const efPct = totalCobrado > 0 ? (ef / totalCobrado * 100) : 50;
+    const viPct = totalCobrado > 0 ? (vi / totalCobrado * 100) : 50;
+    const barEf = $('finPagoBarEf');
+    const barVi = $('finPagoBarVi');
+    if (barEf) barEf.style.width = efPct.toFixed(1) + '%';
+    if (barVi) barVi.style.width = viPct.toFixed(1) + '%';
+    _setText('finPagoPctEf', efPct.toFixed(0) + '%');
+    _setText('finPagoPctVi', viPct.toFixed(0) + '%');
+
+    // Crédito + Anulados (slim)
     _setText('finKpiCredito',  fmt(pl.creditoOtorgado || 0));
-    _setText('finKpiCreditoSub', (pl.creditos || 0) + ' ticket' + (pl.creditos === 1 ? '' : 's') + ' POR_COBRAR');
+    _setText('finKpiCreditoSub', (pl.creditos || 0) + ' ticket' + (pl.creditos === 1 ? '' : 's') + ' por cobrar');
     _setText('finKpiAnulados', (pl.anulados || 0) + ' ticket' + (pl.anulados === 1 ? '' : 's'));
 
-    // Color de la card de utilidad
-    const card = $('finKpiUtilCard');
-    if (card) {
-      card.className = 'fin-card ' + (pl.utilidadNeta >= 0 ? 'fin-card-indigo' : 'fin-card-red');
-      const v = $('finKpiUtil');
-      if (v) v.style.color = pl.utilidadNeta >= 0 ? '#a5b4fc' : '#f87171';
-    }
+    // Comparación vs ayer (Ventas)
+    _finRenderComparaAyer(pl, fecha);
 
     // KPI Productos vendidos
     _setText('finKpiUnidades',   pl.unidadesVendidas ?? '—');
@@ -15152,80 +17863,103 @@ const MOS = (() => {
     const sinCostoIcon = $('finSinCostoAlerta');
     if (sinCostoIcon) sinCostoIcon.classList.toggle('hidden', !(pl.productosSinCosto?.length));
 
-    // Break-even — costos fijos y meta animan
+    // ── BREAK-EVEN dramático ─────────────────────────────
+    const beCard  = $('finBECardWrap');
+    const beMeta  = $('finBEMeta');
+    const beVent  = $('finBEVentas');
+    const beFalta = $('finBEFaltaTxt');
+    const beEmoji = $('finBEEmoji');
+    const beEstado = $('finBEEstado');
+    const beResLabel = $('finBEResultadoLabel');
     if (pl.breakEvenVentas) {
-      const beMeta = $('finBEMeta');
-      if (beMeta) {
-        // Animar solo la parte numérica
-        const span = beMeta.querySelector('span._beNum') || (() => {
-          beMeta.innerHTML = 'Meta: <span class="_beNum"></span>';
-          return beMeta.querySelector('span._beNum');
-        })();
-        _animateCount(span, pl.breakEvenVentas, { prefix: 'S/ ' });
-      }
+      if (beMeta) beMeta.textContent = 'Meta: S/ ' + parseFloat(pl.breakEvenVentas).toFixed(2);
     } else {
-      _setText('finBEMeta', 'Sin datos');
+      if (beMeta) beMeta.textContent = 'Meta: —';
     }
-    const beV = $('finBEVentas');
-    if (beV) {
-      const span = beV.querySelector('span._bevNum') || (() => {
-        beV.innerHTML = 'Ventas: <span class="_bevNum"></span>';
-        return beV.querySelector('span._bevNum');
-      })();
-      _animateCount(span, pl.ventasNetas, { prefix: 'S/ ' });
-    }
+    if (beVent) beVent.textContent = 'Ventas: S/ ' + parseFloat(pl.ventasNetas || 0).toFixed(2);
     _animateCount('finBECostosFijos', pl.costosFijos, { prefix: 'S/ ' });
-    _setText('finBEMargenC',    pct(pl.margenContribPct));
-    const badge = $('finBEBadge');
-    if (badge) {
-      badge.textContent    = pl.superaBreakEven ? '✅ Alcanzado' : '⏳ Pendiente';
-      badge.className      = 'text-xs font-bold px-2 py-0.5 rounded-full ' +
-        (pl.superaBreakEven ? 'bg-emerald-900 text-emerald-300' : 'bg-slate-800 text-slate-400');
-    }
+    _setText('finBEMargenC', pct(pl.margenContribPct));
+
+    // Barra: ventas como % de la meta. Si supera, llena al 100% y el marker
+    // cae más allá del meta-line. Si no, marker en proporción.
     const barV = $('finBEBarVentas');
     const linBE = $('finBELinea');
-    const newPct  = Math.min(pl.breakEvenPct || 0, 100);
-    const oldPct  = parseFloat(barV?.dataset?._beAnim) || 0;
+    const marker = $('finBEMarker');
+    const ventasN = parseFloat(pl.ventasNetas || 0);
+    const meta = parseFloat(pl.breakEvenVentas || 0);
+    const escala = Math.max(meta * 1.2, ventasN * 1.05, 1); // escala dinámica para que el marker se vea
+    const fillPctNew = Math.min((ventasN / escala) * 100, 100);
+    const metaPct    = meta > 0 ? Math.min((meta / escala) * 100, 100) : 0;
+    const oldFillPct = parseFloat(barV?.dataset?._beAnim) || 0;
     if (barV) {
-      barV.style.width = newPct + '%';
-      barV.dataset._beAnim = String(newPct);
+      barV.style.width = fillPctNew.toFixed(1) + '%';
+      barV.dataset._beAnim = String(fillPctNew);
     }
-    let newLeft = 0;
-    if (linBE && pl.breakEvenVentas && pl.ventasNetas) {
-      newLeft = Math.min(pl.breakEvenVentas / Math.max(pl.ventasNetas, pl.breakEvenVentas) * 100, 100);
-      linBE.style.left = newLeft.toFixed(1) + '%';
+    if (linBE) linBE.style.left = metaPct.toFixed(1) + '%';
+    if (marker) marker.style.left = fillPctNew.toFixed(1) + '%';
+
+    // Estado dramático: alcanzado / cerca / lejos
+    if (beCard) {
+      beCard.classList.toggle('alcanzado', !!pl.superaBreakEven);
+      beCard.classList.toggle('lejos', !pl.superaBreakEven && ventasN < meta * 0.5 && meta > 0);
     }
-    // Pulso de atención cuando el punto de equilibrio se mueve significativamente
-    if (Math.abs(newPct - oldPct) > 2 && oldPct > 0) {
-      const beCard = barV?.closest('.fin-card') || barV?.parentElement?.parentElement;
-      if (beCard) {
-        const subio = pl.superaBreakEven;
-        beCard.style.transition = 'box-shadow 0.4s ease-out';
-        beCard.style.boxShadow = subio
-          ? '0 0 24px rgba(52,211,153,0.45)'
-          : '0 0 24px rgba(251,191,36,0.45)';
-        setTimeout(() => { beCard.style.boxShadow = ''; }, 600);
-      }
-      if (linBE) {
-        linBE.style.transition = 'left 0.7s cubic-bezier(0.4,0,0.2,1), box-shadow 0.3s';
-        linBE.style.boxShadow = '0 0 8px rgba(255,255,255,0.9)';
-        setTimeout(() => { linBE.style.boxShadow = ''; }, 700);
-      }
+    if (beEmoji) beEmoji.textContent = pl.superaBreakEven ? '🎉' : (ventasN < meta * 0.5 ? '⚠️' : '⚖️');
+    if (beEstado) {
+      if (!meta) beEstado.textContent = 'Sin datos suficientes';
+      else if (pl.superaBreakEven) beEstado.textContent = '🚀 Cubriste costos · ¡estás ganando!';
+      else if (ventasN < meta * 0.5) beEstado.textContent = '⚠ Falta mucho · ' + (Math.round((ventasN/meta)*100)) + '% de la meta';
+      else beEstado.textContent = '⏳ A buen ritmo · ' + (Math.round((ventasN/meta)*100)) + '% de la meta';
+    }
+    if (beFalta) {
+      const falta = Math.max(0, meta - ventasN);
+      if (pl.superaBreakEven) beFalta.textContent = '✓ Excedente: S/ ' + (ventasN - meta).toFixed(2);
+      else if (meta > 0) beFalta.textContent = 'Faltan S/ ' + falta.toFixed(2);
+      else beFalta.textContent = '—';
+    }
+    if (beResLabel) beResLabel.textContent = pl.utilidadNeta >= 0 ? '✓ UTILIDAD NETA' : '✗ PÉRDIDA NETA';
+
+    // Confetti + sonido al CRUZAR break-even (de no superar a superar)
+    if (beCard && pl.superaBreakEven && oldFillPct > 0 && fillPctNew >= 100 &&
+        !beCard.dataset._celebrado) {
+      // Marcar para no repetir confetti hasta nuevo render con cambio
+      beCard.dataset._celebrado = '1';
+      _finBeep('breakeven');
+      _finConfetiBE();
+      setTimeout(() => { delete beCard.dataset._celebrado; }, 8000);
+    }
+    // Pulso de atención al moverse significativamente
+    if (Math.abs(fillPctNew - oldFillPct) > 2 && oldFillPct > 0 && beCard) {
+      beCard.style.transition = 'box-shadow 0.4s ease-out';
+      beCard.style.boxShadow = pl.superaBreakEven
+        ? '0 0 32px rgba(52,211,153,0.55)'
+        : '0 0 32px rgba(251,191,36,0.45)';
+      setTimeout(() => { beCard.style.boxShadow = ''; }, 700);
     }
 
-    // Waterfall chart
+    // Waterfall + pill de Utilidad Neta
     _finRenderWaterfall(pl);
+    const wPill = $('finWaterUtil');
+    if (wPill) {
+      wPill.textContent = (pl.utilidadNeta >= 0 ? '+' : '') + 'S/ ' + parseFloat(pl.utilidadNeta || 0).toFixed(2);
+      wPill.classList.toggle('up', pl.utilidadNeta >= 0);
+      wPill.classList.toggle('down', pl.utilidadNeta < 0);
+    }
 
-    // Personal list — skip cuando estamos en update optimista (preserva animación de salida)
+    // Personal list
     if (!skipPersonal) {
       _finRenderPersonal(pl, fecha);
     } else {
-      // Solo actualizar el total animado (sin re-render de cards)
       const tot = $('finPersonalTotal');
       if (tot) _animateCount(tot, pl.gastoPersonal || 0, { prefix: 'S/ ' });
     }
+    // Subtítulo del card Personal
+    const persSub = $('finPersonalSub');
+    if (persSub) {
+      const n = pl.personas || 0;
+      persSub.textContent = n > 0 ? `${n} persona${n !== 1 ? 's' : ''} hoy` : 'Sin personal todavía';
+    }
 
-    // Gastos list
+    // Gastos list (con modo slim cuando no hay)
     _finRenderGastos(pl, fecha);
   }
 
@@ -15289,7 +18023,34 @@ const MOS = (() => {
     const util    = rango.serie.map(d => d.utilidadNeta);
 
     const totalUtil = rango.totales?.utilidadNeta || 0;
-    _setText('fin7dTotal', (totalUtil >= 0 ? '+' : '') + 'S/ ' + totalUtil.toFixed(2) + ' neto');
+    const pill = $('fin7dTotal');
+    if (pill) {
+      pill.textContent = (totalUtil >= 0 ? '+' : '') + 'S/ ' + totalUtil.toFixed(2);
+      pill.classList.toggle('up', totalUtil >= 0);
+      pill.classList.toggle('down', totalUtil < 0);
+    }
+    _setText('fin7dSubtitulo', `Tendencia · S/ ${rango.totales?.ventasNetas?.toFixed(2) || '0'} en ventas`);
+
+    // Mini bars row (drill-down rápido por día)
+    const miniRow = $('fin7dMiniRow');
+    if (miniRow) {
+      const hoy = today();
+      const maxAbs = Math.max.apply(null, util.map(u => Math.abs(u || 0)).concat([1]));
+      miniRow.innerHTML = rango.serie.map((d, i) => {
+        const u = d.utilidadNeta || 0;
+        const h = Math.max(8, Math.min(28, Math.abs(u) / maxAbs * 28));
+        const dt = new Date(d.fecha + 'T00:00:00');
+        const dia = dt.toLocaleDateString('es-PE', { weekday:'short' });
+        const cls = ['fin-7d-mini-day'];
+        if (d.fecha === hoy) cls.push('today');
+        if (u > 0) cls.push('profit-up');
+        else if (u < 0) cls.push('profit-down');
+        return `<button class="${cls.join(' ')}" onclick="MOS.finIrAFecha('${d.fecha}')" title="${d.fecha} · S/ ${u.toFixed(2)}">
+          <div class="fin-7d-mini-bar" style="height:${h}px"></div>
+          <div class="fin-7d-mini-lbl">${dia.slice(0,3)}</div>
+        </button>`;
+      }).join('');
+    }
 
     renderChart('finChart7d', {
       type: 'bar',
@@ -15411,14 +18172,10 @@ const MOS = (() => {
           </div>
           <div class="flex flex-col gap-1 shrink-0 items-end">
             <div class="flex gap-1 mb-0.5">
-              <button onclick="event.stopPropagation();MOS.abrirEscuchaPorUsuario('${String(p.nombre || '').replace(/'/g,'&#39;')}')"
+              <button onclick="event.stopPropagation();MOS.abrirEspiaPorUsuario('${String(p.nombre || '').replace(/'/g,'&#39;')}')"
                 class="w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-all"
-                style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.5);color:#f87171;font-size:11px;"
-                title="Escucha remota de ${p.nombre}">🎙️</button>
-              <button onclick="event.stopPropagation();MOS.abrirGpsPorUsuario('${String(p.nombre || '').replace(/'/g,'&#39;')}')"
-                class="w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-all"
-                style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.5);color:#34d399;font-size:11px;"
-                title="Ver ubicación de ${p.nombre}">📍</button>
+                style="background:rgba(99,102,241,0.18);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;font-size:11px;"
+                title="Espiar a ${p.nombre} (audio + GPS)">🕵️</button>
             </div>
             ${idForEval ? `<button onclick="MOS.abrirAuditar('${idForEval}')" class="btn-primary text-xs whitespace-nowrap px-3 py-1.5">Auditar</button>` : ''}
             <div class="flex gap-1 mt-1">
@@ -15426,10 +18183,15 @@ const MOS = (() => {
                 class="w-7 h-7 rounded-md flex items-center justify-center hover:scale-110 transition-all"
                 style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.5);color:#fbbf24;font-size:12px;"
                 title="🔒 Bloquear dispositivo (pantalla de candado en su tablet/celular)">🔒</button>
-              <button onclick="event.stopPropagation();MOS.finVetarPago('${p.idJornada || ''}','${fecha}','${String(p.nombre || '').replace(/'/g,'&#39;')}')"
-                class="w-7 h-7 rounded-md flex items-center justify-center hover:scale-110 transition-all"
-                style="background:rgba(168,85,247,0.12);border:1px solid rgba(168,85,247,0.5);color:#c084fc;font-size:12px;"
-                title="💸 Vetar del pago de hoy (sigue operando, pero no se contará en gastos)">💸</button>
+              ${esVetada
+                ? `<button onclick="event.stopPropagation();MOS.finRehabilitarPago('${p.idJornada || ''}','${fecha}','${String(p.nombre || '').replace(/'/g,'&#39;')}')"
+                    class="w-7 h-7 rounded-md flex items-center justify-center hover:scale-110 transition-all"
+                    style="background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.55);color:#86efac;font-size:12px;"
+                    title="💵 Rehabilitar pago (revierte el veto y restaura el monto)">💵</button>`
+                : `<button onclick="event.stopPropagation();MOS.finVetarPago('${p.idJornada || ''}','${fecha}','${String(p.nombre || '').replace(/'/g,'&#39;')}')"
+                    class="w-7 h-7 rounded-md flex items-center justify-center hover:scale-110 transition-all"
+                    style="background:rgba(168,85,247,0.12);border:1px solid rgba(168,85,247,0.5);color:#c084fc;font-size:12px;"
+                    title="💸 Vetar del pago de hoy (sigue operando, pero no se contará en gastos)">💸</button>`}
             </div>
           </div>
         </div>
@@ -15440,10 +18202,29 @@ const MOS = (() => {
     const listEl  = $('finGastosList');
     const categEl = $('finGastosCateg');
     const totEl   = $('finGastosTotal');
+    const subEl   = $('finGastosSub');
     if (!listEl) return;
-    if (totEl) totEl.textContent = 'S/ ' + (pl.gastoOtros || 0).toFixed(2);
+    const totalGastos = parseFloat(pl.gastoOtros || 0);
+    if (totEl) totEl.textContent = 'S/ ' + totalGastos.toFixed(2);
 
-    // Por categoría
+    const cantidad = (pl.gastosDetalle || []).length;
+    const tieneGastos = cantidad > 0;
+
+    // Modo SLIM cuando no hay gastos: card mínimo, sub-text invitando
+    if (!tieneGastos) {
+      if (subEl) subEl.textContent = 'Sin gastos hoy · click en + para agregar';
+      listEl.classList.add('hidden');
+      categEl?.classList.add('hidden');
+      listEl.innerHTML = '';
+      if (categEl) categEl.innerHTML = '';
+      return;
+    }
+
+    // Modo EXPANDIDO con gastos
+    if (subEl) subEl.textContent = `${cantidad} gasto${cantidad !== 1 ? 's' : ''} registrado${cantidad !== 1 ? 's' : ''}`;
+    listEl.classList.remove('hidden');
+    categEl?.classList.remove('hidden');
+
     if (categEl) {
       const cats = pl.gastosByCategoria || {};
       const keys = Object.keys(cats);
@@ -15452,11 +18233,6 @@ const MOS = (() => {
           <span class="text-slate-400">${cat}</span>
           <span class="text-slate-200 font-semibold">S/ ${cats[cat].toFixed(2)}</span>
         </div>`).join('') : '';
-    }
-
-    if (!pl.gastosDetalle || !pl.gastosDetalle.length) {
-      listEl.innerHTML = '<p class="text-slate-500 text-xs">Sin gastos registrados</p>';
-      return;
     }
     const tagColor = t => t === 'FIJO' ? 'fin-tag-amber' : 'fin-tag-green';
     listEl.innerHTML = '<div class="border-t border-slate-800 pt-2 mt-1">' +
@@ -15498,17 +18274,22 @@ const MOS = (() => {
     const tipo  = $('finGastoTipo')?.value;
     const fecha = $('finGastoFecha')?.value;
     const comp  = $('finGastoComp')?.value?.trim();
-    if (!monto || monto <= 0) { toast('Ingresa un monto válido', 'error'); return; }
-    if (!desc)               { toast('Ingresa una descripción', 'error'); return; }
+    if (!monto || monto <= 0) { _finBeep('error'); toast('Ingresa un monto válido', 'error'); return; }
+    if (!desc)                { _finBeep('error'); toast('Ingresa una descripción', 'error'); return; }
+    // Sonido optimista al click confirmar
+    _finBeep('agregar');
     try {
       await API.post('registrarGasto', {
         fecha, categoria: categ, tipo, descripcion: desc,
         monto, comprobante: comp, registradoPor: S.session?.nombre || ''
       });
       cerrarModalFin('modalFinGasto');
-      toast('Gasto registrado', 'ok');
+      toast(`💰 Gasto registrado · S/ ${parseFloat(monto).toFixed(2)} · ${desc}`, 'ok', 4000);
       finCargar();
-    } catch(e) { toast('Error: ' + e.message, 'error'); }
+    } catch(e) {
+      _finBeep('error');
+      toast('Error: ' + e.message, 'error');
+    }
   }
 
   async function finGuardarJornada() {
@@ -15549,7 +18330,11 @@ const MOS = (() => {
       return;
     }
     const fechaTxt = _formatFechaCorta(fecha);
-    if (!confirm(`¿Vetar el pago de ${nombre || 'esta persona'} del ${fechaTxt}?\n\n⚠ Decisión DEFINITIVA para este día:\n• No se cuenta en gastos ni liquidación.\n• La persona puede seguir operando (no la bloquea).\n• Aunque haga más ventas hoy, no se le pagará por este día.\n\nUsá 🔒 si querés bloquear su dispositivo.`)) return;
+    if (!confirm(`💸 VETAR el pago de ${nombre || 'esta persona'} del ${fechaTxt}?\n\n• No se le pagará por este día.\n• La persona puede seguir operando (no la bloquea).\n• Tras vetar, el botón cambiará a 💵 para rehabilitar.\n\nUsá 🔒 si querés bloquear su dispositivo.`)) return;
+
+    // SONIDO OPTIMISTA: dispara INMEDIATO al confirmar (sincronizado con el click).
+    // Si después falla el back, sonará 'error'.
+    _finBeep('veto');
 
     // Localizar el card por el idJornada del botón vetar
     const card = Array.from(document.querySelectorAll('.eval-card')).find(el => {
@@ -15609,10 +18394,12 @@ const MOS = (() => {
 
     try {
       await API.post('eliminarJornada', { idJornada, actor: S.session?.nombre || '' });
-      toast(`💸 Veto aplicado · ${nombre || ''} · -S/ ${pagoEliminado.toFixed(2)}`, 'ok');
-      // No hacemos finCargar() inmediato — evita parpadeo. El próximo navigate refresca.
+      toast(`💸 Vetado · ${nombre || ''} · -S/ ${pagoEliminado.toFixed(2)} · ahora aparece 💵 para rehabilitar`, 'ok', 4500);
+      // Esperar que la animación del overlay complete (700ms) antes de
+      // reemplazar el card, así el botón cambia 💸 → 💵 sin perder la animación.
+      setTimeout(() => _finReemplazarCardJornada(idJornada, fecha), 720);
     } catch(e) {
-      // Revertir el efecto y recargar
+      _finBeep('error');
       if (card) {
         const ov = card.querySelector('.fin-vetada-overlay');
         if (ov) ov.remove();
@@ -15653,6 +18440,120 @@ const MOS = (() => {
   // Alias por compatibilidad con código viejo
   const finEliminarJornada = finVetarPago;
 
+  // Rehabilita el veto: animación de "rejas suben" del overlay vetada,
+  // restaura monto, recalcula KPIs locales, y persiste en GAS.
+  async function finRehabilitarPago(idJornada, fecha, nombre) {
+    if (!idJornada) {
+      toast('No se puede rehabilitar: jornada sin idJornada', 'warn');
+      return;
+    }
+    const fechaTxt = _formatFechaCorta(fecha);
+    if (!confirm(`💵 REHABILITAR el pago de ${nombre || 'esta persona'} del ${fechaTxt}?\n\n• Se restaurará el monto desde PERSONAL_MASTER.\n• Volverá a contarse en gastos y liquidación.\n• Tras rehabilitar, el botón vuelve a ser 💸.\n• Quedará rastro de auditoría (REHAB_TS).`)) return;
+
+    // SONIDO OPTIMISTA: dispara INMEDIATO al confirmar.
+    _finBeep('rehab');
+
+    // Localizar card
+    const card = Array.from(document.querySelectorAll('.eval-card')).find(el => {
+      return !!el.querySelector(`button[onclick*="finRehabilitarPago"][onclick*="${idJornada}"]`);
+    });
+
+    // Calcular monto a restaurar (mejor desde PERSONAL_MASTER cache, fallback p.monto)
+    let montoRestaurar = 0;
+    let pTarget = null;
+    if (_finPL && Array.isArray(_finPL.personalDetalle)) {
+      pTarget = _finPL.personalDetalle.find(p => String(p.idJornada) === String(idJornada));
+      if (pTarget) {
+        // Si el cache tiene resumen con totalDia, usarlo
+        const resKey = 'mos_fin_resum_' + fecha;
+        try {
+          const raw = localStorage.getItem(resKey);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed.data)) {
+              const ev = parsed.data.find(r =>
+                (r.idPersonal && r.idPersonal === pTarget.idPersonal) ||
+                (String(r.nombre || '').toLowerCase().trim() === String(pTarget.nombre || '').toLowerCase().trim())
+              );
+              if (ev && ev.totalDia) montoRestaurar = parseFloat(ev.totalDia);
+            }
+          }
+        } catch {}
+        if (!montoRestaurar) {
+          // Buscar montoBase en personal (cfgData o S._cajeros)
+          try {
+            const personal = (S._personal || []).concat(cfgData?.personal || []);
+            const match = personal.find(x =>
+              (x.idPersonal && x.idPersonal === pTarget.idPersonal) ||
+              String(x.nombre || '').toLowerCase().trim() === String(pTarget.nombre || '').toLowerCase().trim()
+            );
+            if (match) montoRestaurar = parseFloat(match.montoBase || 0);
+          } catch {}
+        }
+      }
+    }
+
+    // Animación: rejas/overlay suben con fade-out
+    if (card) {
+      const ov = card.querySelector('.fin-vetada-overlay');
+      if (ov) {
+        ov.style.transition = 'transform 0.45s cubic-bezier(0.4,0,0.2,1), opacity 0.4s ease-out, filter 0.4s';
+        ov.style.transform = 'translateY(-100%)';
+        ov.style.opacity = '0';
+        ov.style.filter = 'blur(3px)';
+        setTimeout(() => ov.remove(), 460);
+      }
+      card.classList.remove('fin-vetada-card');
+      // Pulso verde breve indica rehabilitación
+      card.style.transition = 'box-shadow 0.4s, transform 0.4s';
+      card.style.boxShadow = '0 0 28px rgba(34,197,94,0.5)';
+      setTimeout(() => { card.style.boxShadow = ''; }, 800);
+    }
+
+    // Update _finPL en memoria (revertir veto)
+    if (pTarget) {
+      pTarget.vetada = false;
+      pTarget.fuente = 'MANUAL';
+      pTarget.monto = montoRestaurar || pTarget.monto || 0;
+      delete pTarget.vetoTs;
+      // Recalcular P&L local (suma de vuelta el monto)
+      const m = parseFloat(pTarget.monto) || 0;
+      _finPL.personas = (parseInt(_finPL.personas, 10) || 0) + 1;
+      _finPL.gastoPersonal = (parseFloat(_finPL.gastoPersonal) || 0) + m;
+      _finPL.totalGastos   = (parseFloat(_finPL.totalGastos) || 0) + m;
+      _finPL.utilidadNeta  = (parseFloat(_finPL.utilidadNeta) || 0) - m;
+      _finPL.costosFijos   = (parseFloat(_finPL.costosFijos) || 0) + m;
+      const ventas = parseFloat(_finPL.ventasNetas) || 0;
+      const costoV = parseFloat(_finPL.costoVentas) || 0;
+      const mc = ventas > 0 ? (ventas - costoV) / ventas : 0;
+      _finPL.margenContribPct = ventas > 0 ? +(mc * 100).toFixed(2) : 0;
+      _finPL.breakEvenVentas  = mc > 0 ? +(_finPL.costosFijos / mc).toFixed(2) : null;
+      _finPL.breakEvenPct     = (_finPL.breakEvenVentas && ventas > 0)
+        ? +Math.min(_finPL.breakEvenVentas / ventas * 100, 100).toFixed(2) : 0;
+      _finPL.superaBreakEven  = _finPL.breakEvenVentas !== null && ventas >= _finPL.breakEvenVentas;
+      _finPL.margenNetoPct    = ventas > 0 ? +(_finPL.utilidadNeta / ventas * 100).toFixed(2) : 0;
+    }
+
+    // Re-render KPIs sin tocar el card (preserva animación)
+    if (_finPL) {
+      try { _finRender(_finPL, fecha, { skipPersonal: true }); } catch {}
+    }
+
+    try {
+      const r = await API.post('rehabilitarJornada', { idJornada, actor: S.session?.nombre || '' });
+      if (!r || r.error) throw new Error(r?.error || 'Error desconocido');
+      const monto = (r.data && r.data.monto) || montoRestaurar;
+      toast(`💵 Rehabilitado · ${nombre || ''} · +S/ ${parseFloat(monto || 0).toFixed(2)} · ahora aparece 💸 para vetar`, 'ok', 4500);
+      // Esperar a que la animación de salida del overlay (450ms) complete antes
+      // de reemplazar el card. Así el botón cambia 💵 → 💸 sin parpadeo.
+      setTimeout(() => _finReemplazarCardJornada(idJornada, fecha), 480);
+    } catch(e) {
+      _finBeep('error');
+      toast('Error: ' + e.message + ' — recargando...', 'error');
+      finCargar();
+    }
+  }
+
   // ════════════════════════════════════════════════════════════
   // BLOQUEO DE DISPOSITIVO — pantalla de candado en ME / WH
   // Visualmente: efecto de rejas cayendo sobre la card.
@@ -15663,6 +18564,9 @@ const MOS = (() => {
       ? 'pantalla de candado en su tablet/celular WH'
       : 'pantalla de candado en su POS de MosExpress';
     if (!confirm(`🔒 ¿Bloquear dispositivo de ${nombre}?\n\nVa a aparecer ${apoyo}.\nNo podrá operar hasta que un admin ingrese clave de desbloqueo en su dispositivo.\n\n⚠ Acción operativa: bloquea el dispositivo. Los gastos NO cambian (usá 💸 si querés vetar el pago).`)) return;
+
+    // Sonido optimista al click
+    _finBeep('bloquear');
 
     // Resolver el card y aplicar efecto de rejas inmediatamente
     const allCards = document.querySelectorAll('.eval-card');
@@ -15687,7 +18591,7 @@ const MOS = (() => {
         throw new Error(r?.error || 'No se pudo bloquear');
       }
     } catch(e) {
-      // Quitar el overlay si falló
+      _finBeep('error');
       cardsTarget.forEach(c => {
         const ov = c.querySelector('.fin-rejas-overlay');
         if (ov) ov.remove();
@@ -15893,21 +18797,30 @@ const MOS = (() => {
   let _finTicketFiltro = 'todos';
 
   const _FIN_FILTROS = [
-    { key: 'todos',   label: 'Todos' },
-    { key: 'boleta',  label: 'Boleta' },
-    { key: 'nota',    label: 'Nota' },
-    { key: 'factura', label: 'Factura' },
-    { key: 'credito', label: 'Crédito' },
-    { key: 'efectivo',label: 'Efectivo' },
-    { key: 'virtual', label: 'Virtual' },
-    { key: 'anulado', label: 'Anulado' },
+    { key: 'todos',      label: 'Todos' },
+    { key: 'ventas',     label: '💰 Cobrado' },
+    { key: 'efectivo',   label: '💵 Efectivo' },
+    { key: 'virtual',    label: '📱 Virtual' },
+    { key: 'mixto',      label: '🔀 Mixto' },
+    { key: 'por_cobrar', label: '⏳ Por cobrar' },
+    { key: 'credito',    label: '📋 Crédito' },
+    { key: 'anulado',    label: '❌ Anulado' },
+    { key: 'boleta',     label: 'Boleta' },
+    { key: 'nota',       label: 'Nota' },
+    { key: 'factura',    label: 'Factura' },
   ];
 
-  function finAbrirModalTickets() {
+  function finAbrirModalTickets(filtroInicial) {
+    // SONIDO OPTIMISTA: dispara INMEDIATO antes de cualquier DOM op
+    _finBeep('click');
     const m = $('finModalTickets');
     if (!m) return;
     m.classList.remove('hidden'); m.classList.add('open');
-    _finTicketFiltro = 'todos';
+    const f = String(filtroInicial || '').toUpperCase();
+    _finTicketFiltro = (f === 'CREDITO' || f === 'POR_COBRAR') ? 'credito'
+                     : (f === 'ANULADO' || f === 'ANULADOS') ? 'anulado'
+                     : (f === 'VENTAS' || f === 'COBRADO') ? 'ventas'
+                     : 'todos';
     _finRenderFiltrosBtns();
     _finRenderTickets();
   }
@@ -15932,15 +18845,31 @@ const MOS = (() => {
 
   function _finApplyTicketFiltro(tickets) {
     const f = _finTicketFiltro;
-    if (f === 'todos')    return tickets;
-    if (f === 'boleta')   return tickets.filter(t => t.tipoDoc === 'BOLETA');
-    if (f === 'nota')     return tickets.filter(t => t.tipoDoc === 'NOTA_DE_VENTA');
-    if (f === 'factura')  return tickets.filter(t => t.tipoDoc === 'FACTURA');
-    if (f === 'credito')  return tickets.filter(t => t.formaPago === 'POR_COBRAR');
-    if (f === 'efectivo') return tickets.filter(t => t.formaPago === 'EFECTIVO' && t.estado !== 'ANULADO');
-    if (f === 'virtual')  return tickets.filter(t =>
-      t.formaPago !== 'EFECTIVO' && !t.formaPago.startsWith('MIXTO') && t.formaPago !== 'POR_COBRAR' && t.estado !== 'ANULADO');
-    if (f === 'anulado')  return tickets.filter(t => t.estado === 'ANULADO');
+    // Definiciones selladas (FormaPago):
+    //   EFECTIVO/VIRTUAL/MIXTO = COBRADO (dinero recibido)
+    //   POR_COBRAR             = pendiente de cajero (vendedor emitió)
+    //   CREDITO                = deuda formal aprobada por admin
+    //   ANULADO                = descartado
+    const fp = t => String(t.formaPago || '').toUpperCase();
+    const esAnulado   = t => fp(t) === 'ANULADO' || t.estado === 'ANULADO';
+    const esPorCobrar = t => fp(t) === 'POR_COBRAR' && !esAnulado(t);
+    const esCredito   = t => fp(t) === 'CREDITO' && !esAnulado(t);
+    const esEfectivo  = t => fp(t) === 'EFECTIVO';
+    const esVirtual   = t => fp(t) === 'VIRTUAL';
+    const esMixto     = t => fp(t).startsWith('MIXTO');
+    const esCobrado   = t => !esAnulado(t) && !esPorCobrar(t) && !esCredito(t);
+
+    if (f === 'todos')      return tickets;
+    if (f === 'ventas')     return tickets.filter(esCobrado);
+    if (f === 'efectivo')   return tickets.filter(t => esEfectivo(t) && !esAnulado(t));
+    if (f === 'virtual')    return tickets.filter(t => esVirtual(t) && !esAnulado(t));
+    if (f === 'mixto')      return tickets.filter(t => esMixto(t) && !esAnulado(t));
+    if (f === 'por_cobrar') return tickets.filter(esPorCobrar);
+    if (f === 'credito')    return tickets.filter(esCredito);
+    if (f === 'anulado')    return tickets.filter(esAnulado);
+    if (f === 'boleta')     return tickets.filter(t => t.tipoDoc === 'BOLETA');
+    if (f === 'nota')       return tickets.filter(t => t.tipoDoc === 'NOTA_DE_VENTA');
+    if (f === 'factura')    return tickets.filter(t => t.tipoDoc === 'FACTURA');
     return tickets;
   }
 
@@ -15950,43 +18879,64 @@ const MOS = (() => {
     const fmtM = v => 'S/ ' + parseFloat(v || 0).toFixed(2);
     const todos = pl.detalleTickets || [];
     const lista = _finApplyTicketFiltro(todos);
-    const totalFiltrado = lista.reduce((s, t) => s + (t.estado === 'ANULADO' ? 0 : t.total), 0);
+    // Total considera ANULADO por formaPago O por estado (defensivo)
+    const esAnul = t => String(t.formaPago || '').toUpperCase() === 'ANULADO' || t.estado === 'ANULADO';
+    const totalFiltrado = lista.reduce((s, t) => s + (esAnul(t) ? 0 : (parseFloat(t.total) || 0)), 0);
     const conteo = $('finTicketConteo');
     if (conteo) conteo.textContent = lista.length + ' ticket' + (lista.length !== 1 ? 's' : '') +
       (lista.length < todos.length ? ' · Total: ' + fmtM(totalFiltrado) : '');
     const list = $('finTicketList');
     if (!list) return;
 
-    const docLabel = { 'BOLETA': 'Boleta', 'NOTA_DE_VENTA': 'Nota', 'FACTURA': 'Factura' };
-    const metodoLabel = m => {
-      if (m === 'EFECTIVO')    return { txt: 'Efectivo', cls: 'text-emerald-400' };
-      if (m === 'POR_COBRAR')  return { txt: 'Crédito',  cls: 'text-amber-400' };
-      if (m.startsWith('MIXTO')) return { txt: 'Mixto',  cls: 'text-blue-400' };
-      return { txt: m, cls: 'text-purple-400' };
+    const docLabel = { 'BOLETA': 'BOL', 'NOTA_DE_VENTA': 'NV', 'FACTURA': 'FAC' };
+    // Chip de método según FormaPago — POR_COBRAR y CREDITO ahora separados
+    const metodoChip = t => {
+      const fp = String(t.formaPago || '').toUpperCase();
+      if (fp === 'ANULADO')        return { txt: 'ANULADO',     cls: 'tk-chip-anul' };
+      if (fp === 'EFECTIVO')       return { txt: '💵 Efectivo', cls: 'tk-chip-ef'   };
+      if (fp === 'VIRTUAL')        return { txt: '📱 Virtual',  cls: 'tk-chip-vi'   };
+      if (fp === 'POR_COBRAR')     return { txt: '⏳ Por cobrar', cls: 'tk-chip-pc' };
+      if (fp === 'CREDITO')        return { txt: '📋 Crédito',  cls: 'tk-chip-cr'   };
+      if (fp.startsWith('MIXTO'))  return { txt: '🔀 Mixto',    cls: 'tk-chip-mx', sub: fp.replace('MIXTO ', '') };
+      return { txt: fp || '—', cls: 'tk-chip-other' };
     };
 
+    if (!lista.length) {
+      list.innerHTML = '<div class="px-4 py-10 text-center text-slate-500 text-sm italic">Sin tickets con este filtro</div>';
+      return;
+    }
+
     list.innerHTML = lista.map(t => {
-      const anulado = t.estado === 'ANULADO';
-      const met = metodoLabel(t.formaPago);
-      const corrLabel = t.correlativo || t.idVenta.split('-').pop() || '—';
-      return `<div class="flex items-center justify-between px-4 py-3 ${anulado ? 'opacity-50' : 'hover:bg-slate-800/30'} transition-colors">
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span class="text-slate-200 text-xs font-semibold">${corrLabel}</span>
-            <span class="text-slate-500 text-xs">${docLabel[t.tipoDoc] || t.tipoDoc}</span>
-            ${anulado ? '<span class="text-xs bg-red-900/40 text-red-400 px-1.5 py-0.5 rounded">ANULADO</span>' : ''}
-          </div>
-          <div class="flex items-center gap-2 mt-0.5 flex-wrap">
-            <span class="text-slate-500">${t.hora || ''}</span>
-            ${t.vendedor ? `<span class="text-slate-600">· ${t.vendedor}</span>` : ''}
-            <span class="${met.cls}">${met.txt}</span>
-          </div>
+      const anulado = esAnul(t);
+      const met = metodoChip(t);
+      const corr = t.correlativo || (t.idVenta || '').split('-').pop() || '—';
+      // Cliente: el backend puede devolver `cliente`/`clienteNombre` y `clienteDoc`
+      const cliNombre = (t.cliente || t.clienteNombre || '').trim();
+      const cliDoc    = (t.clienteDoc || t.clienteDocumento || '').trim();
+      const tieneCliente = !!(cliNombre || cliDoc);
+      const cabecera = tieneCliente
+        ? `<div class="tk-cli-nombre">👤 ${cliNombre || 'Sin nombre'}</div>
+           ${cliDoc ? `<div class="tk-cli-doc">${cliDoc}</div>` : ''}`
+        : `<div class="tk-cli-nombre tk-cli-nombre-anon">— Cliente sin registrar —</div>`;
+      const corrTxt = `${docLabel[t.tipoDoc] || ''} ${corr}`;
+      const idVentaSafe = String(t.idVenta || '').replace(/'/g, "\\'");
+      return `<div class="tk-row tk-row-clickable ${anulado ? 'tk-row-anul' : ''} ${met.cls}" onclick="MOS.cjAbrirAccionesTicket('${idVentaSafe}')">
+        <div class="tk-cli">
+          ${cabecera}
         </div>
-        <div class="text-right pl-3">
-          <div class="font-bold ${anulado ? 'line-through text-slate-600' : 'text-slate-200'}">${fmtM(t.total)}</div>
+        <div class="tk-meta">
+          <span class="tk-meta-corr">${corrTxt}</span>
+          ${t.vendedor ? `<span class="tk-meta-vend">· ${t.vendedor}</span>` : ''}
+          ${t.hora ? `<span class="tk-meta-hora">· ${t.hora}</span>` : ''}
+          ${t.obs ? `<span class="tk-meta-obs" title="${t.obs.replace(/"/g,'&quot;')}">📝</span>` : ''}
         </div>
+        <div class="tk-monto-col">
+          <div class="tk-monto ${anulado ? 'tk-monto-anul' : ''}">${fmtM(t.total)}</div>
+          <span class="tk-chip ${met.cls}">${met.txt}</span>
+        </div>
+        <div class="tk-row-cog" title="Acciones">⚙️</div>
       </div>`;
-    }).join('') || '<div class="px-4 py-8 text-center text-slate-500">Sin tickets</div>';
+    }).join('');
   }
 
   // Helpers
@@ -16276,14 +19226,10 @@ const MOS = (() => {
             </div>
             <div class="flex flex-col gap-1 shrink-0 items-end">
               <div class="flex gap-1">
-                <button onclick="event.stopPropagation();MOS.abrirEscuchaPorUsuario('${String(r.nombre || '').replace(/'/g,'&#39;')}')"
+                <button onclick="event.stopPropagation();MOS.abrirEspiaPorUsuario('${String(r.nombre || '').replace(/'/g,'&#39;')}')"
                   class="w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-all"
-                  style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.5);color:#f87171;font-size:11px;"
-                  title="Escucha remota de ${r.nombre}">🎙️</button>
-                <button onclick="event.stopPropagation();MOS.abrirGpsPorUsuario('${String(r.nombre || '').replace(/'/g,'&#39;')}')"
-                  class="w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-all"
-                  style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.5);color:#34d399;font-size:11px;"
-                  title="Ver ubicación de ${r.nombre}">📍</button>
+                  style="background:rgba(99,102,241,0.18);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;font-size:11px;"
+                  title="Espiar a ${r.nombre} (audio + GPS)">🕵️</button>
               </div>
               <button onclick="MOS.abrirAuditar('${r.idPersonal}')" class="btn-primary text-xs whitespace-nowrap">Auditar</button>
             </div>
@@ -17349,6 +20295,10 @@ const MOS = (() => {
     guardarAjustePrecios, stepperInc, stepperDec,
     abrirModalProducto, guardarProducto,
     abrirLogProductos, refreshLogProductos, _logToggleCard,
+    _logProdFechaOffset, _logProdIrHoy, _logProdVerTodo, _logProdFiltrar,
+    _logProdLimpiarFiltros, _logProdLimpiarBuscar, _logProdToggleBusqueda,
+    _logProdAbrirFiltro, _logProdSetFiltro,
+    _logProdAbrirCalendario, _logProdCalNavMes, _logProdElegirFecha,
     prodTogglePolitica, _prodOnPoliticaOverride, _prodOnModoChange, _prodActualizarPoliticaEfectiva,
     setProdTipo, onTipoCheck, onEnvasableCheck, prodAutogenBarcode, prodValidarCodigoBarra, prodToggleEstado, prodToggleCosto,
     prodCalcMargen, prodOnRange, prodToggleSunat, prodOnTipoIGVChange, prodToggleEquiv,
@@ -17422,6 +20372,11 @@ const MOS = (() => {
     _audioLiveIniciar, _audioLiveDetener,
     _audioFlotanteDetener, _audioFlotanteIniciar,
     abrirModalGps, gpsCargar,
+    // ESPÍA
+    abrirEspiaPorUsuario, abrirEspiaDispositivo,
+    _espiaModalAbrir, _espiaModalMinimizar, _espiaDetenerTodo,
+    _espiaToggleMute, _espiaAbrirHistorial,
+    _espiaGpsRefresh, _espiaGpsRangoCambiar,
     toggleAvatarMenu, closeAvatarMenu, installPWA,
     toggleFiltroCat, setFiltroCategoria, toggleFiltroTipo, limpiarFiltrosCat, toggleFiltroAlertas, toggleAlertPop,
     // Cajas
@@ -17429,12 +20384,25 @@ const MOS = (() => {
     toggleKpiTickets, setTicketFiltroFecha, setTicketFiltroEstado, setTicketFiltroTipo,
     confirmarAnularTicket, abrirModalMetodo, cerrarModalMetodo, aplicarCambioMetodo,
     _selMetodo, _onMixtoInput, _renderModalMetodo,
+    // Cajas modernizado
+    cjDia, cjIrHoy, cjAbrirCalendario, cjCalNavMes, cjElegirFecha,
+    cjToggleCajaDetail, cjVerTodosTickets, cjVerTicketsCaja, cjAbrirTurno,
+    cjScrollToCaja, cjModoTV,
+    _cjTkRender, _cjTkSetFiltro,
+    // F2 — Acciones editables sobre tickets
+    cjAbrirAccionesTicket, _tkAccion,
+    _tkCobrarSetMetodo, _tkCobrarSetCaja, _tkCobrarValidarMixto, _tkCobrarConfirmar,
+    _tkCambiarFPSel, _tkCambiarFPConfirmar,
+    _tkAprobarCredConfirmar,
+    _tkConvSetTipo, _tkConvDocChange, _tkConvBuscarCliente, _tkConvertirConfirmar,
+    _tkBajaSetMotivo, _tkBajaActualizarBoton, _tkBajaConfirmar,
     // Login / sesión
     seleccionarUsuario, loginVolver, confirmarPin, logout, lockScreen, _np, _dismissWelcome,
     syncApp, applyPendingUpdate,
     // Finanzas
-    finCargar, finDia, finIrHoy, finToggleSonido, finAbrirModalGasto, finAbrirModalJornada, finGuardarGasto,
-    finGuardarJornada, finEliminarGasto, finEliminarJornada, finVetarPago, finBloquearUsuario, finImportarCajas,
+    finCargar, finDia, finIrHoy, finAbrirModalGasto, finAbrirModalJornada, finGuardarGasto,
+    finAbrirCalendario, finCalNavMes, finElegirFecha, finIrAFecha,
+    finGuardarJornada, finEliminarGasto, finEliminarJornada, finVetarPago, finRehabilitarPago, finBloquearUsuario, finImportarCajas,
     cerrarModalFin,
     finEditarCostoSku, finCerrarCostoEditor, finGuardarCostoSku,
     finAbrirEditorMargenDefault, finCerrarEditorMargenDefault, finGuardarMargenDefault,

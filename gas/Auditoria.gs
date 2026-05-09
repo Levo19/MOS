@@ -195,6 +195,95 @@ function getAuditoriaIntegridad(params) {
   }
 }
 
+// ============================================================
+// LOG JSON unificado (estilo PRODUCTOS_MASTER.historialCambios)
+// para tablas auxiliares de MOS: PERSONAL_MASTER, JORNADAS, etc.
+// ============================================================
+
+// Tablas del lado MOS que llevan log JSON.
+var _AUD_MOS_TABLAS = {
+  'PERSONAL_MASTER': { pkCol: 0  /* idPersonal en col 0 */ },
+  'JORNADAS':        { pkCol: 0  /* idJornada en col 0 */ }
+};
+
+// Asegura columna `historialCambios` al final de la hoja. Idempotente.
+function _audMOSAsegurarColumna(sheet) {
+  if (!sheet) return -1;
+  var lastCol = sheet.getLastColumn() || 1;
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  for (var i = 0; i < headers.length; i++) {
+    if (String(headers[i]).trim() === 'historialCambios') return i + 1;
+  }
+  var newColIdx = lastCol + 1;
+  sheet.getRange(1, newColIdx).setValue('historialCambios');
+  try { sheet.setColumnWidth(newColIdx, 380); } catch(_){}
+  return newColIdx;
+}
+
+function _audMOSBuscarRow(sheet, pkColIdx, pk) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return -1;
+  var col = sheet.getRange(2, pkColIdx + 1, lastRow - 1, 1).getValues();
+  for (var i = col.length - 1; i >= 0; i--) {
+    if (String(col[i][0]) === String(pk)) return i + 2;
+  }
+  return -1;
+}
+
+// API pública para registrar log en tabla MOS.
+//   auditarLogMOS('PERSONAL_MASTER', idPersonal, {usuario, rol, source, accion, cambios, ...})
+function auditarLogMOS(tabla, pk, entrada) {
+  try {
+    var meta = _AUD_MOS_TABLAS[tabla];
+    if (!meta) { Logger.log('auditarLogMOS: tabla no soportada: ' + tabla); return false; }
+    var sheet = getSheet(tabla);
+    if (!sheet) return false;
+    var rowNum = _audMOSBuscarRow(sheet, meta.pkCol, pk);
+    if (rowNum < 2) return false;
+    var col = _audMOSAsegurarColumna(sheet);
+    if (col < 1) return false;
+    var range = sheet.getRange(rowNum, col);
+    var raw = range.getValue();
+    var arr = [];
+    if (raw) {
+      try {
+        var p = JSON.parse(String(raw));
+        if (Array.isArray(p)) arr = p;
+      } catch(_){}
+    }
+    if (!entrada.ts) entrada.ts = new Date().toISOString();
+    arr.push(entrada);
+    if (arr.length > 200) arr = arr.slice(arr.length - 200);
+    range.setValue(JSON.stringify(arr));
+    return true;
+  } catch(e) {
+    Logger.log('auditarLogMOS excepcion: ' + e.message);
+    return false;
+  }
+}
+
+function obtenerHistorialMOS(tabla, pk) {
+  try {
+    var meta = _AUD_MOS_TABLAS[tabla];
+    if (!meta) return [];
+    var sheet = getSheet(tabla);
+    if (!sheet) return [];
+    var rowNum = _audMOSBuscarRow(sheet, meta.pkCol, pk);
+    if (rowNum < 2) return [];
+    var col = _audMOSAsegurarColumna(sheet);
+    var raw = sheet.getRange(rowNum, col).getValue();
+    if (!raw) return [];
+    var p = JSON.parse(String(raw));
+    return Array.isArray(p) ? p : [];
+  } catch(e) { return []; }
+}
+
+// Endpoint público para que MOS frontend lea el log de un personal.
+function getHistorialPersonal(params) {
+  if (!params.idPersonal) return { ok:false, error:'Requiere idPersonal' };
+  return { ok:true, data: obtenerHistorialMOS('PERSONAL_MASTER', params.idPersonal) };
+}
+
 // Marca una alerta como resuelta (leida=1)
 function resolverAlertaAuditoria(params) {
   if (!params.idAlerta) return { ok: false, error: 'Requiere idAlerta' };

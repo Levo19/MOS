@@ -326,6 +326,1678 @@
     .fin-del { background: none; border: none; color: #475569; cursor: pointer; padding: 0 4px; font-size: 15px; line-height: 1; transition: color .15s; }
     .fin-del:hover { color: #f87171; }
 
+    /* ── Header Finanzas modernizado ─────────────────────── */
+    .fin-header-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; flex-wrap: wrap;
+    }
+    .fin-nav-fecha {
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    }
+    .fin-nav-arrow {
+      width: 34px; height: 34px;
+      display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, rgba(99,102,241,0.10), rgba(99,102,241,0.04));
+      border: 1px solid rgba(99,102,241,0.35);
+      border-radius: 10px;
+      color: #a5b4fc; font-size: 18px; font-weight: 700;
+      cursor: pointer; transition: all 0.15s;
+      flex-shrink: 0;
+    }
+    .fin-nav-arrow:hover { background: rgba(99,102,241,0.25); transform: scale(1.06); }
+    .fin-nav-arrow:active { transform: scale(0.96); }
+    .fin-fecha-btn {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 14px;
+      background: linear-gradient(135deg, rgba(99,102,241,0.15), rgba(168,85,247,0.10));
+      border: 1px solid rgba(168,85,247,0.45);
+      border-radius: 10px;
+      color: #e9d5ff; font-size: 13px; font-weight: 700;
+      cursor: pointer; transition: all 0.18s;
+      min-height: 34px;
+      box-shadow: 0 2px 8px rgba(99,102,241,0.10);
+    }
+    .fin-fecha-btn:hover {
+      background: linear-gradient(135deg, rgba(99,102,241,0.25), rgba(168,85,247,0.20));
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(99,102,241,0.20);
+    }
+    .fin-fecha-emoji { font-size: 14px; }
+    .fin-fecha-arrow { font-size: 9px; opacity: 0.6; }
+    .fin-pill-hoy {
+      padding: 7px 12px;
+      background: rgba(16,185,129,0.12);
+      border: 1px solid rgba(16,185,129,0.40);
+      border-radius: 10px;
+      color: #6ee7b7; font-size: 11px; font-weight: 700;
+      cursor: pointer; transition: all 0.15s;
+      min-height: 34px;
+      flex-shrink: 0;
+    }
+    .fin-pill-hoy:hover { background: rgba(16,185,129,0.22); transform: scale(1.04); }
+    .fin-day-badge {
+      font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;
+      padding: 4px 10px; border-radius: 999px;
+      background: rgba(99,102,241,0.15);
+      border: 1px solid rgba(99,102,241,0.4);
+      color: #a5b4fc;
+    }
+    .fin-poll-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #475569;
+      transition: background 0.3s, box-shadow 0.3s;
+      align-self: center;
+    }
+    .fin-poll-dot.active {
+      background: #34d399;
+      box-shadow: 0 0 8px rgba(52,211,153,0.7);
+      animation: finPollPulse 1.2s ease-in-out;
+    }
+    @keyframes finPollPulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.4); }
+    }
+    .fin-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .fin-action-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 14px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid #334155;
+      border-radius: 10px;
+      color: #cbd5e1; font-size: 12px; font-weight: 700;
+      cursor: pointer; transition: all 0.18s;
+      min-height: 34px;
+    }
+    .fin-action-btn:hover { transform: translateY(-1px); background: rgba(255,255,255,0.08); }
+    .fin-action-primary {
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border-color: #818cf8;
+      color: white;
+      box-shadow: 0 4px 12px rgba(99,102,241,0.30);
+    }
+    .fin-action-primary:hover {
+      box-shadow: 0 6px 18px rgba(99,102,241,0.45);
+    }
+    .fin-action-gold {
+      background: linear-gradient(135deg, rgba(245,158,11,0.15), rgba(217,119,6,0.10));
+      border-color: rgba(251,191,36,0.45);
+      color: #fbbf24;
+    }
+    .fin-action-gold:hover {
+      background: linear-gradient(135deg, rgba(245,158,11,0.30), rgba(217,119,6,0.20));
+    }
+    .fin-action-ico { font-size: 14px; }
+    @media (max-width: 600px) {
+      .fin-action-label { display: none; }
+      .fin-action-btn { padding: 7px 10px; }
+    }
+
+    /* ── Datepicker (reusa estilos del log datepicker) ─────── */
+    #finDatepicker .log-cal-day {
+      width: 28px; height: 28px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; color: #94a3b8;
+      background: transparent; border: none;
+      border-radius: 6px; cursor: pointer;
+      position: relative; transition: all 0.12s;
+    }
+    #finDatepicker .log-cal-day:hover { background: rgba(99,102,241,0.15); color: #e2e8f0; }
+    #finDatepicker .log-cal-day.today { background: rgba(99,102,241,0.10); color: #c7d2fe; font-weight: 700; }
+    #finDatepicker .log-cal-day.selected {
+      background: linear-gradient(135deg, #581c87, #a855f7);
+      color: white; font-weight: 700;
+    }
+    #finDatepicker .log-cal-day.empty { visibility: hidden; }
+
+    /* ── Big Cards modernos ─────────────────────────────── */
+    .fin-bigcard {
+      background: linear-gradient(135deg, #0a1628, #050b18);
+      border: 1px solid #1e293b;
+      border-radius: 16px;
+      padding: 18px 20px;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .fin-bigcard::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent, currentColor, transparent);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .fin-bigcard:hover::before { opacity: 0.5; }
+    .fin-bigcard-ventas { color: #34d399; border-color: rgba(16,185,129,0.30); }
+    .fin-bigcard-ventas:hover { box-shadow: 0 4px 24px rgba(16,185,129,0.15); }
+    .fin-bigcard-productos { color: #a5b4fc; border-color: rgba(99,102,241,0.30); padding: 0; }
+    .fin-bigcard-productos:hover { box-shadow: 0 4px 24px rgba(99,102,241,0.15); }
+    .fin-bigcard-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .fin-bigcard-eyebrow {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 11px; font-weight: 700; color: #94a3b8;
+      text-transform: uppercase; letter-spacing: 0.07em;
+    }
+    .fin-bigcard-monto {
+      font-size: 2.5rem; font-weight: 900; line-height: 1;
+      color: #e2e8f0;
+      font-variant-numeric: tabular-nums;
+    }
+    .fin-bigcard-ventas .fin-bigcard-monto span { color: #6ee7b7; }
+    .fin-bigcard-sub { font-size: 11px; color: #64748b; margin-top: 6px; }
+    .fin-compara {
+      font-size: 11px; font-weight: 700;
+      padding: 2px 8px; border-radius: 999px;
+      display: inline-flex; align-items: center; gap: 3px;
+    }
+    .fin-compara.up { background: rgba(16,185,129,0.15); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.4); }
+    .fin-compara.down { background: rgba(239,68,68,0.12); color: #fca5a5; border: 1px solid rgba(239,68,68,0.4); }
+
+    /* Barra proporcional efectivo/virtual */
+    .fin-pago-bar-wrap { margin-top: 14px; }
+    .fin-pago-bar {
+      display: flex; height: 28px;
+      border-radius: 8px; overflow: hidden;
+      background: #0a1424;
+      border: 1px solid #1e293b;
+    }
+    .fin-pago-bar-ef, .fin-pago-bar-vi {
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 800;
+      color: white;
+      transition: width 0.7s cubic-bezier(0.4,0,0.2,1);
+      position: relative;
+      overflow: hidden;
+    }
+    .fin-pago-bar-ef {
+      background: linear-gradient(90deg, #059669, #34d399);
+    }
+    .fin-pago-bar-vi {
+      background: linear-gradient(90deg, #0891b2, #22d3ee);
+    }
+    .fin-pago-bar-ef::after, .fin-pago-bar-vi::after {
+      content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      animation: finBarShimmer 3.5s ease-in-out infinite;
+    }
+    @keyframes finBarShimmer { 0%, 100% { left: -100%; } 50% { left: 100%; } }
+    .fin-pago-leyenda {
+      display: flex; justify-content: space-between;
+      gap: 8px; margin-top: 8px; flex-wrap: wrap;
+    }
+    .fin-pago-leyenda-item {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11px;
+    }
+    .fin-pago-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+    }
+    .fin-pago-monto { font-weight: 800; color: #e2e8f0; font-size: 13px; }
+    .fin-pago-pct { color: #64748b; font-size: 10px; }
+    .fin-pago-tag { color: #94a3b8; font-size: 10px; }
+
+    /* Card B: Productos + Costo */
+    .fin-bigcard-btn {
+      width: 100%; text-align: left;
+      background: transparent; border: none;
+      padding: 18px 20px 14px; cursor: pointer;
+      transition: background 0.15s;
+    }
+    .fin-bigcard-btn:hover { background: rgba(99,102,241,0.05); }
+    .fin-prod-num {
+      display: flex; align-items: baseline; gap: 6px;
+      flex-wrap: wrap; margin-top: 6px;
+    }
+    .fin-prod-grande { font-size: 2.2rem; font-weight: 900; color: #c7d2fe; line-height: 1; font-variant-numeric: tabular-nums; }
+    .fin-prod-mini { font-size: 12px; color: #94a3b8; }
+    .fin-prod-sep { color: #475569; margin: 0 4px; }
+    .fin-prod-extra {
+      display: flex; align-items: center; gap: 6px;
+      flex-wrap: wrap; margin-top: 8px;
+      font-size: 11px;
+    }
+    .fin-prod-extra-label { color: #64748b; }
+    .fin-prod-extra-val { color: #e2e8f0; font-weight: 700; }
+    .fin-prod-extra-tip { color: #64748b; font-size: 10px; }
+    .fin-prod-costo {
+      padding: 12px 20px 16px;
+      border-top: 1px solid #1e293b;
+      background: rgba(127,29,29,0.04);
+    }
+    .fin-prod-costo-row {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 8px;
+    }
+    .fin-prod-costo-ico { font-size: 14px; }
+    .fin-prod-costo-label {
+      font-size: 11px; font-weight: 700; color: #fca5a5;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      flex: 1;
+    }
+    .fin-prod-costo-val {
+      font-size: 18px; font-weight: 800; color: #f87171;
+      font-variant-numeric: tabular-nums;
+    }
+    .fin-prod-costo-margen {
+      display: flex; align-items: center; gap: 8px;
+    }
+    .fin-prod-costo-bar {
+      flex: 1; height: 5px;
+      background: rgba(127,29,29,0.20);
+      border-radius: 3px;
+      overflow: hidden;
+      position: relative;
+    }
+    .fin-prod-costo-bar-fill {
+      display: block; height: 100%;
+      background: linear-gradient(90deg, #f59e0b, #fbbf24);
+      transition: width 0.7s cubic-bezier(0.4,0,0.2,1);
+    }
+    .fin-prod-costo-margen-pct {
+      font-size: 11px; font-weight: 700; color: #fbbf24;
+      flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ── PUNTO DE EQUILIBRIO impresionante ─────────────── */
+    .fin-be-card {
+      position: relative;
+      background: linear-gradient(135deg, #0a1628 0%, #0f0c2e 100%);
+      border: 1px solid #312e81;
+      border-radius: 18px;
+      padding: 22px 24px;
+      overflow: hidden;
+      transition: all 0.4s ease-out;
+    }
+    .fin-be-card.alcanzado {
+      border-color: rgba(16,185,129,0.55);
+      box-shadow: 0 0 32px rgba(16,185,129,0.18), inset 0 0 30px rgba(16,185,129,0.04);
+      background: linear-gradient(135deg, #0a1628 0%, #022c22 100%);
+    }
+    .fin-be-card.lejos {
+      border-color: rgba(239,68,68,0.55);
+      box-shadow: 0 0 32px rgba(239,68,68,0.10), inset 0 0 30px rgba(239,68,68,0.04);
+      background: linear-gradient(135deg, #0a1628 0%, #1f0a0a 100%);
+    }
+    .fin-be-head {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 16px; margin-bottom: 18px; flex-wrap: wrap;
+    }
+    .fin-be-titulo { display: flex; align-items: center; gap: 12px; }
+    .fin-be-emoji {
+      font-size: 32px;
+      animation: finBeEmojiBalance 4s ease-in-out infinite;
+      display: inline-block;
+    }
+    @keyframes finBeEmojiBalance {
+      0%, 100% { transform: rotate(-8deg); }
+      50% { transform: rotate(8deg); }
+    }
+    .fin-be-card.alcanzado .fin-be-emoji { animation: finBeBounce 0.8s ease-in-out infinite; }
+    @keyframes finBeBounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-4px); }
+    }
+    .fin-be-titulo-txt {
+      font-size: 14px; font-weight: 800; color: #e2e8f0;
+      text-transform: uppercase; letter-spacing: 0.08em;
+    }
+    .fin-be-estado {
+      font-size: 11px; color: #94a3b8;
+      margin-top: 2px;
+    }
+    .fin-be-resultado {
+      text-align: right;
+      padding: 8px 16px;
+      border-radius: 12px;
+      background: rgba(0,0,0,0.20);
+      border: 1px solid rgba(99,102,241,0.30);
+    }
+    .fin-be-card.alcanzado .fin-be-resultado {
+      background: rgba(16,185,129,0.12);
+      border-color: rgba(16,185,129,0.50);
+    }
+    .fin-be-card.lejos .fin-be-resultado {
+      background: rgba(239,68,68,0.10);
+      border-color: rgba(239,68,68,0.45);
+    }
+    .fin-be-resultado-label {
+      font-size: 9px; font-weight: 800; color: #64748b;
+      text-transform: uppercase; letter-spacing: 0.10em;
+    }
+    .fin-be-resultado-val {
+      font-size: 1.8rem; font-weight: 900; line-height: 1;
+      color: #e2e8f0; margin-top: 2px;
+      font-variant-numeric: tabular-nums;
+    }
+    .fin-be-card.alcanzado .fin-be-resultado-val { color: #6ee7b7; }
+    .fin-be-card.lejos .fin-be-resultado-val { color: #f87171; }
+    .fin-be-resultado-margen { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+
+    /* Barra dramática */
+    .fin-be-bar-wrap { margin: 24px 0 12px; }
+    .fin-be-bar-track {
+      position: relative;
+      height: 14px;
+      background: linear-gradient(90deg, #1e1b4b, #0f0c2e);
+      border-radius: 999px;
+      overflow: visible;
+      border: 1px solid #312e81;
+    }
+    .fin-be-bar-fill {
+      position: absolute; top: 0; left: 0; height: 100%;
+      background: linear-gradient(90deg, #f59e0b 0%, #fbbf24 60%, #34d399 100%);
+      border-radius: 999px;
+      transition: width 1s cubic-bezier(0.4,0,0.2,1);
+      box-shadow: 0 0 12px rgba(251,191,36,0.40);
+    }
+    .fin-be-card.alcanzado .fin-be-bar-fill {
+      background: linear-gradient(90deg, #10b981, #34d399, #6ee7b7);
+      box-shadow: 0 0 20px rgba(16,185,129,0.55);
+    }
+    .fin-be-bar-meta-line {
+      position: absolute; top: -6px; bottom: -6px;
+      width: 2px;
+      background: rgba(255,255,255,0.85);
+      box-shadow: 0 0 8px rgba(255,255,255,0.6);
+      transition: left 1s cubic-bezier(0.4,0,0.2,1);
+      z-index: 2;
+    }
+    .fin-be-bar-meta-flag {
+      position: absolute; top: -28px; left: 50%; transform: translateX(-50%);
+      background: linear-gradient(135deg, #475569, #1e293b);
+      border: 1px solid #94a3b8;
+      color: #e2e8f0;
+      font-size: 10px; font-weight: 800;
+      padding: 3px 8px; border-radius: 6px;
+      white-space: nowrap;
+    }
+    .fin-be-bar-marker {
+      position: absolute; top: -3px;
+      width: 20px; height: 20px;
+      background: linear-gradient(135deg, #fbbf24, #f59e0b);
+      border: 2px solid white;
+      border-radius: 50%;
+      transform: translateX(-50%);
+      box-shadow: 0 0 12px rgba(251,191,36,0.6);
+      transition: left 1s cubic-bezier(0.4,0,0.2,1);
+      z-index: 3;
+    }
+    .fin-be-card.alcanzado .fin-be-bar-marker {
+      background: linear-gradient(135deg, #34d399, #10b981);
+      box-shadow: 0 0 16px rgba(16,185,129,0.8);
+      animation: finBeMarkerPulse 1.6s ease-in-out infinite;
+    }
+    @keyframes finBeMarkerPulse {
+      0%, 100% { transform: translateX(-50%) scale(1); }
+      50% { transform: translateX(-50%) scale(1.15); }
+    }
+    .fin-be-bar-labels {
+      display: flex; justify-content: space-between;
+      margin-top: 10px;
+      font-size: 11px; color: #94a3b8;
+    }
+    .fin-be-bar-start { color: #64748b; }
+    .fin-be-falta {
+      font-weight: 700; color: #fbbf24;
+      padding: 2px 8px; border-radius: 6px;
+      background: rgba(245,158,11,0.10);
+      border: 1px solid rgba(251,191,36,0.30);
+    }
+    .fin-be-card.alcanzado .fin-be-falta { color: #6ee7b7; background: rgba(16,185,129,0.10); border-color: rgba(16,185,129,0.40); }
+    .fin-be-ventas-end { color: #cbd5e1; font-weight: 700; }
+
+    /* Footer del BE: 4 métricas */
+    .fin-be-footer {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(99,102,241,0.20);
+      margin-top: 8px;
+    }
+    @media (max-width: 700px) {
+      .fin-be-footer { grid-template-columns: repeat(2, 1fr); }
+    }
+    .fin-be-foot-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: rgba(0,0,0,0.20);
+      border: 1px solid #1e293b;
+    }
+    .fin-be-foot-clickable {
+      cursor: pointer; transition: all 0.15s;
+      position: relative;
+    }
+    .fin-be-foot-clickable:hover {
+      background: rgba(168,85,247,0.10);
+      border-color: rgba(168,85,247,0.40);
+    }
+    .fin-be-foot-clickable:active { transform: scale(0.97); }
+    .fin-be-foot-arrow {
+      display: inline-block;
+      margin-left: 3px;
+      color: #c084fc;
+      font-size: 10px;
+      transition: transform 0.15s;
+    }
+    .fin-be-foot-clickable:hover .fin-be-foot-arrow {
+      transform: rotate(45deg) scale(1.1);
+    }
+    /* Efecto click universal en cualquier card de Finanzas con cursor:pointer */
+    .fin-bigcard[onclick]:active,
+    .fin-slim-col:active {
+      transform: scale(0.99);
+      transition: transform 0.08s;
+    }
+    .fin-bigcard[onclick] { cursor: pointer; }
+    .fin-bigcard[onclick]:hover { border-color: rgba(99,102,241,0.55); }
+    /* Click flash global para clickeables marcados */
+    .fin-clickable {
+      cursor: pointer;
+      transition: transform 0.08s, box-shadow 0.18s, border-color 0.18s;
+    }
+    .fin-clickable:active { transform: scale(0.98); }
+    @keyframes finClickFlash {
+      0% { box-shadow: 0 0 0 0 rgba(168,85,247,0.55); }
+      100% { box-shadow: 0 0 0 14px rgba(168,85,247,0); }
+    }
+    .fin-click-flash { animation: finClickFlash 0.5s ease-out; }
+    .fin-be-foot-ico { font-size: 18px; }
+    .fin-be-foot-label {
+      font-size: 9px; font-weight: 700; color: #64748b;
+      text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .fin-be-foot-val {
+      font-size: 14px; font-weight: 800; color: #e2e8f0;
+      font-variant-numeric: tabular-nums; line-height: 1.2;
+    }
+    .fin-be-confetti {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 4;
+    }
+
+    /* ── Slim card: crédito + anulados ───────────────── */
+    .fin-slim-card {
+      display: flex; align-items: stretch;
+      background: linear-gradient(135deg, #0a1628, #050b18);
+      border: 1px solid #1e293b;
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    .fin-slim-col {
+      flex: 1;
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 16px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .fin-slim-col:hover { background: rgba(99,102,241,0.06); }
+    .fin-slim-divider {
+      width: 1px;
+      background: linear-gradient(to bottom, transparent, #1e293b, transparent);
+    }
+    .fin-slim-credito { color: #fb923c; }
+    .fin-slim-anulados { color: #94a3b8; }
+    .fin-slim-ico { font-size: 20px; flex-shrink: 0; }
+    .fin-slim-cuerpo { flex: 1; min-width: 0; }
+    .fin-slim-label {
+      font-size: 10px; font-weight: 700; color: #64748b;
+      text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .fin-slim-val-row {
+      display: flex; align-items: baseline; gap: 8px;
+      flex-wrap: wrap;
+    }
+    .fin-slim-val {
+      font-size: 16px; font-weight: 800;
+      color: #e2e8f0;
+      font-variant-numeric: tabular-nums;
+    }
+    .fin-slim-credito .fin-slim-val { color: #fdba74; }
+    .fin-slim-sub {
+      font-size: 10px; color: #64748b;
+    }
+    .fin-slim-arrow {
+      color: #475569; font-size: 14px;
+      transition: transform 0.15s;
+    }
+    .fin-slim-col:hover .fin-slim-arrow { transform: translateX(2px); color: #94a3b8; }
+
+    /* ── Modcards: estilo modernizado para los 4 cards restantes ─ */
+    .fin-modcard {
+      background: linear-gradient(135deg, #0a1628 0%, #050b18 100%);
+      border: 1px solid #1e293b;
+      border-radius: 16px;
+      padding: 16px 18px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .fin-modcard * { min-width: 0; }
+    @media (max-width: 640px) {
+      .fin-modcard { padding: 12px 14px; border-radius: 12px; }
+      .fin-modcard-emoji { width: 32px; height: 32px; font-size: 18px; }
+      .fin-modcard-title-txt { font-size: 12px; }
+      .fin-water-canvas-wrap { height: 200px !important; }
+    }
+    .fin-modcard:hover { border-color: #334155; }
+    .fin-modcard-head {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 12px; margin-bottom: 12px;
+    }
+    .fin-modcard-title {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .fin-modcard-emoji {
+      font-size: 22px;
+      width: 36px; height: 36px;
+      display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, rgba(99,102,241,0.20), rgba(99,102,241,0.06));
+      border: 1px solid rgba(99,102,241,0.40);
+      border-radius: 10px;
+    }
+    .fin-modcard-title-txt {
+      font-size: 13px; font-weight: 800; color: #e2e8f0;
+      text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .fin-modcard-sub {
+      font-size: 10px; color: #64748b;
+      margin-top: 2px;
+    }
+    .fin-modcard-pill {
+      padding: 4px 10px; border-radius: 999px;
+      font-size: 11px; font-weight: 800;
+      background: rgba(99,102,241,0.12);
+      border: 1px solid rgba(99,102,241,0.40);
+      color: #c7d2fe;
+      align-self: center;
+      flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
+    }
+    .fin-modcard-pill.up { background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.45); color: #6ee7b7; }
+    .fin-modcard-pill.down { background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.45); color: #fca5a5; }
+
+    /* Waterfall card */
+    .fin-modcard-water .fin-modcard-emoji { background: linear-gradient(135deg, rgba(168,85,247,0.20), rgba(99,102,241,0.06)); border-color: rgba(168,85,247,0.40); }
+    .fin-water-canvas-wrap {
+      position: relative;
+      height: 240px;
+      width: 100%;
+      max-width: 100%;
+      overflow: hidden;
+      animation: finCardEntrada 0.42s cubic-bezier(0.4,0,0.2,1);
+    }
+    .fin-water-canvas-wrap canvas {
+      max-width: 100% !important;
+      max-height: 100% !important;
+    }
+    @keyframes finCardEntrada {
+      0% { opacity: 0; transform: translateY(8px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+
+    /* 7d card */
+    .fin-modcard-7d .fin-modcard-emoji { background: linear-gradient(135deg, rgba(34,211,238,0.18), rgba(34,211,238,0.04)); border-color: rgba(34,211,238,0.40); }
+    .fin-7d-mini-row {
+      display: flex; gap: 4px;
+      margin: 4px 0 12px;
+      height: 32px;
+    }
+    .fin-7d-mini-day {
+      flex: 1;
+      display: flex; flex-direction: column; align-items: center;
+      gap: 2px;
+      padding: 2px 4px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
+      background: rgba(99,102,241,0.04);
+    }
+    .fin-7d-mini-day:hover {
+      background: rgba(99,102,241,0.18);
+      transform: translateY(-2px);
+    }
+    .fin-7d-mini-day.today {
+      background: rgba(99,102,241,0.20);
+      border: 1px solid rgba(99,102,241,0.50);
+    }
+    .fin-7d-mini-day.profit-up { background: rgba(16,185,129,0.10); }
+    .fin-7d-mini-day.profit-down { background: rgba(239,68,68,0.08); }
+    .fin-7d-mini-bar {
+      width: 100%; max-width: 22px;
+      height: 16px;
+      border-radius: 3px;
+      background: rgba(99,102,241,0.30);
+      transform-origin: bottom;
+      transition: transform 0.5s cubic-bezier(0.4,0,0.2,1);
+    }
+    .fin-7d-mini-day.profit-up .fin-7d-mini-bar { background: linear-gradient(180deg, #34d399, #10b981); }
+    .fin-7d-mini-day.profit-down .fin-7d-mini-bar { background: linear-gradient(180deg, #f87171, #dc2626); }
+    .fin-7d-mini-lbl {
+      font-size: 8px; font-weight: 700;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    /* Personal grid */
+    .fin-modcard-personal .fin-modcard-emoji { background: linear-gradient(135deg, rgba(245,158,11,0.18), rgba(245,158,11,0.04)); border-color: rgba(251,191,36,0.40); }
+    .fin-personal-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+    @media (min-width: 900px) {
+      .fin-personal-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    /* Gastos slim/expandido */
+    .fin-modcard-gastos .fin-modcard-emoji { background: linear-gradient(135deg, rgba(251,191,36,0.18), rgba(245,158,11,0.04)); border-color: rgba(251,191,36,0.40); }
+    .fin-gastos-actions {
+      display: flex; align-items: center; gap: 8px;
+    }
+    .fin-pill-add {
+      width: 28px; height: 28px;
+      display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border: 1px solid #818cf8;
+      border-radius: 8px;
+      color: white; font-size: 16px; font-weight: 800;
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s;
+      box-shadow: 0 2px 8px rgba(99,102,241,0.30);
+    }
+    .fin-pill-add:hover { transform: scale(1.08); box-shadow: 0 4px 16px rgba(99,102,241,0.50); }
+    .fin-pill-add:active { transform: scale(0.94); }
+    .fin-gastos-cat, .fin-gastos-list {
+      animation: finCardEntrada 0.32s cubic-bezier(0.4,0,0.2,1);
+      margin-top: 8px;
+    }
+    .fin-gastos-cat:not(.hidden) { padding-top: 10px; border-top: 1px solid #1e293b; }
+
+    /* ── Modal Tickets — layout enfocado en cliente ─────────── */
+    .tk-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      grid-template-rows: auto auto;
+      gap: 2px 12px;
+      padding: 12px 16px;
+      border-left: 3px solid transparent;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .tk-row:hover { background: rgba(99,102,241,0.06); }
+    .tk-row-anul { opacity: 0.55; }
+    .tk-row-clickable { cursor: pointer; position: relative; }
+    .tk-row-clickable:hover { background: rgba(99,102,241,0.10); }
+    .tk-row-cog {
+      position: absolute; top: 8px; right: 8px;
+      font-size: 11px; opacity: 0;
+      transition: opacity 0.15s;
+      pointer-events: none;
+    }
+    .tk-row-clickable:hover .tk-row-cog { opacity: 0.55; }
+
+    /* ── Botón método (Cobrar / Convertir) ─────────────────── */
+    .tk-cob-mbtn {
+      padding: 10px 8px;
+      border: 1px solid #1e293b;
+      background: #0a1424;
+      color: #cbd5e1;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .tk-cob-mbtn:hover {
+      border-color: #6366f1;
+      background: rgba(99,102,241,0.10);
+    }
+    .tk-cob-mbtn.tk-cob-mbtn-active {
+      border-color: #6366f1;
+      background: linear-gradient(135deg, rgba(99,102,241,0.20), rgba(168,85,247,0.10));
+      color: #fff;
+      box-shadow: 0 0 0 2px rgba(99,102,241,0.30);
+    }
+
+    /* ── Acción del menú contextual (modalTkAcciones) ─────── */
+    .tk-acc-btn {
+      width: 100%;
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 14px;
+      background: #0a1424;
+      border: 1px solid #1e293b;
+      border-radius: 10px;
+      color: #e2e8f0;
+      font-size: 13px;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .tk-acc-btn:hover { border-color: #6366f1; background: rgba(99,102,241,0.08); }
+    .tk-acc-btn .tk-acc-emoji { font-size: 18px; flex-shrink: 0; }
+    .tk-acc-btn .tk-acc-txt { flex: 1; min-width: 0; }
+    .tk-acc-btn .tk-acc-tit { font-weight: 700; }
+    .tk-acc-btn .tk-acc-sub { font-size: 11px; color: #64748b; margin-top: 2px; }
+    .tk-acc-btn-danger:hover { border-color: #dc2626; background: rgba(220,38,38,0.08); }
+    .tk-acc-btn-warn:hover   { border-color: #fb923c; background: rgba(251,146,60,0.08); }
+    .tk-acc-btn-ok:hover     { border-color: #10b981; background: rgba(16,185,129,0.08); }
+
+    /* ── Caja receptora seleccionable ─────────────────────── */
+    .tk-caja-radio {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 12px;
+      background: #0a1424;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .tk-caja-radio:hover { border-color: #6366f1; }
+    .tk-caja-radio.tk-caja-active {
+      border-color: #10b981;
+      background: rgba(16,185,129,0.06);
+    }
+    .tk-caja-radio .tk-caja-vend { font-size: 13px; font-weight: 700; color: #e2e8f0; flex: 1; }
+    .tk-caja-radio .tk-caja-zona { font-size: 10px; color: #64748b; }
+
+    /* ── Timeline historial ─────────────────────────────── */
+    .tk-hist-evt {
+      border-left: 3px solid #1e293b;
+      padding: 8px 0 12px 14px;
+      margin-left: 6px;
+      position: relative;
+    }
+    .tk-hist-evt::before {
+      content: ''; position: absolute; left: -7px; top: 12px;
+      width: 11px; height: 11px; border-radius: 50%;
+      background: #475569; border: 2px solid #0f172a;
+    }
+    .tk-hist-evt-create::before { background: #10b981; }
+    .tk-hist-evt-edit::before   { background: #6366f1; }
+    .tk-hist-evt-cobrar::before { background: #fbbf24; }
+    .tk-hist-evt-anular::before { background: #dc2626; }
+    .tk-hist-evt-cabecera { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+    .tk-hist-evt-accion { font-weight: 700; color: #e2e8f0; font-size: 12px; }
+    .tk-hist-evt-fecha  { font-size: 10px; color: #64748b; font-family: 'SF Mono', monospace; }
+    .tk-hist-evt-user   { font-size: 11px; color: #94a3b8; }
+    .tk-hist-evt-cambios {
+      margin-top: 6px;
+      background: rgba(99,102,241,0.04);
+      border-radius: 6px;
+      padding: 6px 9px;
+      font-size: 11px;
+      color: #cbd5e1;
+      font-family: 'SF Mono', monospace;
+    }
+    .tk-hist-evt-cambio { display: block; margin-bottom: 2px; }
+    .tk-hist-evt-cambio b { color: #a5b4fc; font-weight: 700; }
+    .tk-hist-evt-cambio s { color: #ef4444; opacity: 0.7; }
+    .tk-hist-evt-cambio em { color: #6ee7b7; font-style: normal; }
+    .tk-hist-evt-motivo {
+      margin-top: 4px;
+      font-size: 10px;
+      color: #fcd34d;
+      font-style: italic;
+    }
+    .tk-hist-evt-admin {
+      display: inline-block;
+      margin-top: 4px;
+      padding: 1px 6px;
+      background: rgba(168,85,247,0.15);
+      border: 1px solid rgba(168,85,247,0.40);
+      border-radius: 4px;
+      font-size: 9px;
+      color: #c084fc;
+      font-weight: 700;
+    }
+    .tk-cli { grid-column: 1; grid-row: 1; min-width: 0; }
+    .tk-meta { grid-column: 1; grid-row: 2; min-width: 0; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 10px; color: #64748b; }
+    .tk-monto-col {
+      grid-column: 2; grid-row: 1 / span 2;
+      display: flex; flex-direction: column; align-items: flex-end; justify-content: center;
+      gap: 4px;
+    }
+    .tk-cli-nombre {
+      font-size: 14px; font-weight: 700; color: #e2e8f0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      line-height: 1.2;
+    }
+    .tk-cli-nombre-anon { color: #64748b; font-style: italic; font-weight: 500; font-size: 12px; }
+    .tk-cli-doc {
+      font-family: 'SF Mono', Menlo, monospace;
+      font-size: 10px; color: #94a3b8;
+      margin-top: 1px;
+    }
+    .tk-meta-corr { color: #cbd5e1; font-weight: 600; font-family: 'SF Mono', Menlo, monospace; }
+    .tk-meta-vend { color: #94a3b8; }
+    .tk-meta-hora { color: #64748b; }
+    .tk-meta-obs { font-size: 11px; cursor: help; }
+    .tk-monto {
+      font-size: 16px; font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      color: #e2e8f0;
+      line-height: 1;
+    }
+    .tk-monto-anul { text-decoration: line-through; color: #475569; }
+    .tk-chip {
+      font-size: 9px; font-weight: 800;
+      padding: 2px 8px;
+      border-radius: 999px;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+    /* Border-left + chip color por método */
+    .tk-row.tk-chip-ef    { border-left-color: rgba(16,185,129,0.55); }
+    .tk-row.tk-chip-ef .tk-monto { color: #6ee7b7; }
+    .tk-chip.tk-chip-ef   { background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.45); color: #6ee7b7; }
+
+    .tk-row.tk-chip-vi    { border-left-color: rgba(34,211,238,0.55); }
+    .tk-row.tk-chip-vi .tk-monto { color: #67e8f9; }
+    .tk-chip.tk-chip-vi   { background: rgba(34,211,238,0.13); border: 1px solid rgba(34,211,238,0.40); color: #67e8f9; }
+
+    .tk-row.tk-chip-mx    { border-left-color: rgba(99,102,241,0.55); }
+    .tk-row.tk-chip-mx .tk-monto { color: #a5b4fc; }
+    .tk-chip.tk-chip-mx   { background: rgba(99,102,241,0.15); border: 1px solid rgba(99,102,241,0.45); color: #a5b4fc; }
+
+    .tk-row.tk-chip-cr    { border-left-color: rgba(251,146,60,0.55); }
+    .tk-row.tk-chip-cr .tk-monto { color: #fdba74; }
+    .tk-chip.tk-chip-cr   { background: rgba(251,146,60,0.13); border: 1px solid rgba(251,146,60,0.45); color: #fdba74; }
+
+    .tk-row.tk-chip-pc    { border-left-color: rgba(251,191,36,0.55); }
+    .tk-row.tk-chip-pc .tk-monto { color: #fcd34d; }
+    .tk-chip.tk-chip-pc   { background: rgba(245,158,11,0.13); border: 1px solid rgba(251,191,36,0.45); color: #fcd34d; }
+
+    .tk-row.tk-chip-anul  { border-left-color: rgba(239,68,68,0.55); background: rgba(239,68,68,0.04); }
+    .tk-chip.tk-chip-anul { background: rgba(239,68,68,0.18); border: 1px solid rgba(239,68,68,0.50); color: #fca5a5; }
+
+    .tk-chip.tk-chip-other { background: rgba(168,85,247,0.13); border: 1px solid rgba(168,85,247,0.40); color: #c084fc; }
+    @media (max-width: 480px) {
+      .tk-row { padding: 10px 12px; }
+      .tk-cli-nombre { font-size: 13px; }
+      .tk-monto { font-size: 14px; }
+      .tk-chip { font-size: 8px; padding: 1px 6px; }
+    }
+
+    /* ── CAJAS: header + ticker ─────────────────────────── */
+    .cj-header-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; flex-wrap: wrap;
+    }
+    .cj-nav-fecha {
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    }
+    .cj-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .cj-banner-archivo {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 14px;
+      background: linear-gradient(135deg, rgba(245,158,11,0.10), rgba(217,119,6,0.06));
+      border: 1px solid rgba(251,191,36,0.45);
+      border-radius: 10px;
+      color: #fcd34d;
+      font-size: 12px;
+      animation: cjFadeIn 0.4s ease-out;
+    }
+    .cj-archivo-ico { font-size: 16px; }
+    .cj-archivo-volver {
+      margin-left: auto;
+      background: rgba(251,191,36,0.15);
+      border: 1px solid rgba(251,191,36,0.40);
+      color: #fbbf24;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 10px; font-weight: 700;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .cj-archivo-volver:hover { background: rgba(251,191,36,0.30); }
+    @keyframes cjFadeIn { 0% { opacity: 0; transform: translateY(-4px); } 100% { opacity: 1; transform: translateY(0); } }
+
+    /* TICKER live tipo Bloomberg */
+    .cj-ticker {
+      background: linear-gradient(90deg, #050b18, #0a1628 50%, #050b18);
+      border: 1px solid #1e293b;
+      border-radius: 12px;
+      padding: 10px 0;
+      overflow: hidden;
+      position: relative;
+      height: 40px;
+    }
+    .cj-ticker::before, .cj-ticker::after {
+      content: ''; position: absolute; top: 0; bottom: 0;
+      width: 60px; pointer-events: none; z-index: 2;
+    }
+    .cj-ticker::before { left: 0; background: linear-gradient(90deg, #050b18, transparent); }
+    .cj-ticker::after  { right: 0; background: linear-gradient(270deg, #050b18, transparent); }
+    .cj-ticker-content {
+      display: flex; align-items: center; gap: 28px;
+      white-space: nowrap;
+      animation: cjTickerScroll 80s linear infinite;
+      padding-left: 100%;
+      font-family: 'SF Mono', Menlo, monospace;
+      font-size: 13px; font-weight: 700;
+      color: #94a3b8;
+    }
+    .cj-ticker:hover .cj-ticker-content { animation-play-state: paused; }
+    @keyframes cjTickerScroll {
+      0%   { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+    .cj-ticker-item { display: inline-flex; align-items: center; gap: 6px; }
+    .cj-ticker-up   { color: #34d399; }
+    .cj-ticker-down { color: #f87171; }
+    .cj-ticker-sep  { color: #475569; opacity: 0.6; }
+
+    /* ── KPI tickets pills extra ─────────────────────── */
+    .cj-tickets-tipos {
+      display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;
+    }
+    .cj-tipo-pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 10px; border-radius: 999px;
+      background: rgba(99,102,241,0.10);
+      border: 1px solid rgba(99,102,241,0.35);
+      font-size: 11px; color: #c7d2fe; font-weight: 700;
+    }
+    .cj-tipo-pill .cj-tipo-lbl { color: #94a3b8; font-weight: 500; font-size: 10px; }
+    .cj-tickets-estado {
+      display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap;
+    }
+    .cj-estado-pill {
+      padding: 2px 8px; border-radius: 999px;
+      font-size: 10px; font-weight: 700;
+      display: inline-flex; align-items: center; gap: 3px;
+    }
+    .cj-estado-ok   { background: rgba(16,185,129,0.12); border: 1px solid rgba(16,185,129,0.35); color: #6ee7b7; }
+    .cj-estado-pend { background: rgba(245,158,11,0.12); border: 1px solid rgba(251,191,36,0.35); color: #fcd34d; }
+    .cj-estado-cred { background: rgba(251,146,60,0.12); border: 1px solid rgba(251,146,60,0.40); color: #fdba74; }
+    .cj-estado-anul { background: rgba(239,68,68,0.10); border: 1px solid rgba(239,68,68,0.35); color: #fca5a5; }
+
+    /* ── Sección de cajas ──────────────────────────── */
+    .cj-section {
+      background: linear-gradient(135deg, #0a1628 0%, #050b18 100%);
+      border: 1px solid #1e293b;
+      border-radius: 16px;
+      padding: 18px 20px;
+    }
+    .cj-section-head {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .cj-section-titulo { display: flex; align-items: center; gap: 10px; }
+    .cj-section-emoji {
+      font-size: 22px;
+      width: 36px; height: 36px;
+      display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, rgba(16,185,129,0.20), rgba(16,185,129,0.06));
+      border: 1px solid rgba(16,185,129,0.40);
+      border-radius: 10px;
+    }
+    .cj-section-titulo-txt {
+      font-size: 14px; font-weight: 800; color: #e2e8f0;
+      text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .cj-section-sub { font-size: 11px; color: #64748b; margin-top: 2px; }
+    .cj-section-pills { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .cj-cajas-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+    @media (min-width: 800px) {
+      .cj-cajas-grid { grid-template-columns: 1fr 1fr; }
+    }
+    @media (min-width: 1280px) {
+      .cj-cajas-grid { grid-template-columns: 1fr 1fr 1fr; }
+    }
+
+    /* ── Card de caja (estilo trading) ────────────── */
+    .cj-caja-card {
+      background: linear-gradient(135deg, #0a1424, #060d1f);
+      border: 1px solid #1e293b;
+      border-left: 3px solid #1e293b;
+      border-radius: 14px;
+      padding: 14px 16px;
+      transition: all 0.25s ease-out;
+      position: relative;
+      overflow: hidden;
+    }
+    .cj-caja-card.activa {
+      border-color: #10b981;
+      border-left-color: #10b981;
+      box-shadow: 0 4px 22px rgba(16,185,129,0.10);
+    }
+    .cj-caja-card.activa::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #34d399, transparent);
+      animation: cjLiveStripe 3s ease-in-out infinite;
+    }
+    @keyframes cjLiveStripe {
+      0%, 100% { transform: translateX(-100%); }
+      50%      { transform: translateX(100%); }
+    }
+    .cj-caja-card.cerrada {
+      opacity: 0.65;
+      filter: grayscale(0.4);
+    }
+    .cj-caja-card.cerrada:hover { opacity: 0.85; filter: grayscale(0); }
+    .cj-caja-card.alerta { border-color: #f59e0b; border-left-color: #f59e0b; }
+    .cj-caja-card.problema { border-color: #ef4444; border-left-color: #ef4444; }
+    .cj-caja-card.flash {
+      animation: cjFlash 0.6s ease-out;
+    }
+    @keyframes cjFlash {
+      0%   { box-shadow: 0 0 0 0 rgba(52,211,153,0.55); transform: scale(1); }
+      40%  { box-shadow: 0 0 0 12px rgba(52,211,153,0); transform: scale(1.01); }
+      100% { box-shadow: 0 0 0 0 rgba(52,211,153,0); transform: scale(1); }
+    }
+    /* Vibración cha-ching cuando llega venta nueva */
+    .cj-caja-card.cj-vibrate {
+      animation: cjVibrate 0.7s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+      box-shadow: 0 0 0 0 rgba(52,211,153,0.55), 0 0 32px rgba(52,211,153,0.40);
+    }
+    @keyframes cjVibrate {
+      0%, 100% { transform: translateX(0) rotate(0deg); }
+      10%      { transform: translateX(-2px) rotate(-0.8deg); }
+      20%      { transform: translateX(3px) rotate(0.8deg); }
+      30%      { transform: translateX(-3px) rotate(-1.2deg); }
+      40%      { transform: translateX(3px) rotate(1.2deg); }
+      50%      { transform: translateX(-2px) rotate(-0.8deg); }
+      60%      { transform: translateX(2px) rotate(0.8deg); }
+      70%      { transform: translateX(-1px) rotate(-0.4deg); }
+      80%      { transform: translateX(1px) rotate(0.4deg); }
+      90%      { transform: translateX(0) rotate(0); }
+    }
+    /* Popup +S/ XX flotando hacia arriba */
+    .cj-pop-venta {
+      position: absolute;
+      top: 8px; right: 12px;
+      background: linear-gradient(135deg, #10b981, #34d399);
+      color: white;
+      font-size: 18px; font-weight: 900;
+      padding: 6px 14px;
+      border-radius: 999px;
+      box-shadow: 0 4px 20px rgba(52,211,153,0.55), 0 0 0 2px rgba(255,255,255,0.20);
+      display: flex; align-items: center; gap: 6px;
+      pointer-events: none;
+      z-index: 10;
+      font-variant-numeric: tabular-nums;
+      animation: cjPopVenta 2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+      white-space: nowrap;
+    }
+    .cj-pop-emoji {
+      font-size: 16px;
+      animation: cjPopEmojiBounce 0.6s ease-in-out infinite;
+    }
+    @keyframes cjPopVenta {
+      0%   { opacity: 0; transform: translateY(0) scale(0.5); }
+      15%  { opacity: 1; transform: translateY(-4px) scale(1.2); }
+      30%  { opacity: 1; transform: translateY(-12px) scale(1); }
+      75%  { opacity: 1; transform: translateY(-30px) scale(1); }
+      100% { opacity: 0; transform: translateY(-60px) scale(0.85); }
+    }
+    @keyframes cjPopEmojiBounce {
+      0%, 100% { transform: rotate(-8deg) scale(1); }
+      50%      { transform: rotate(8deg) scale(1.15); }
+    }
+    /* Pulso del monto cuando se actualiza */
+    .cj-monto-pulse {
+      animation: cjMontoPulse 0.9s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    @keyframes cjMontoPulse {
+      0%   { color: #6ee7b7; transform: scale(1); text-shadow: 0 0 0 rgba(52,211,153,0); }
+      30%  { color: #34d399; transform: scale(1.10); text-shadow: 0 0 18px rgba(52,211,153,0.85); }
+      100% { color: inherit; transform: scale(1); text-shadow: 0 0 0 rgba(52,211,153,0); }
+    }
+    /* Pulso de la barra proporcional */
+    .cj-bar-pulse {
+      animation: cjBarPulse 0.9s ease-out;
+    }
+    @keyframes cjBarPulse {
+      0%   { box-shadow: 0 0 0 0 rgba(52,211,153,0.0); }
+      30%  { box-shadow: 0 0 0 4px rgba(52,211,153,0.45); }
+      100% { box-shadow: 0 0 0 0 rgba(52,211,153,0); }
+    }
+
+    .cj-caja-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .cj-caja-status-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .cj-caja-status-dot.live {
+      background: #10b981;
+      box-shadow: 0 0 0 0 rgba(16,185,129,0.55);
+      animation: cjPulseDot 1.6s infinite;
+    }
+    .cj-caja-status-dot.off {
+      background: #475569;
+    }
+    @keyframes cjPulseDot {
+      0%   { box-shadow: 0 0 0 0 rgba(16,185,129,0.6); }
+      70%  { box-shadow: 0 0 0 9px rgba(16,185,129,0); }
+      100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); }
+    }
+    .cj-caja-titulo {
+      font-size: 12px; font-weight: 800; color: #e2e8f0;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      flex: 1; min-width: 0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .cj-caja-badge {
+      font-size: 9px; font-weight: 800;
+      padding: 3px 8px; border-radius: 999px;
+      letter-spacing: 0.08em;
+      flex-shrink: 0;
+    }
+    .cj-caja-badge.live  { background: rgba(16,185,129,0.20); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.45); }
+    .cj-caja-badge.cerrada { background: rgba(100,116,139,0.18); color: #94a3b8; border: 1px solid rgba(100,116,139,0.40); }
+    .cj-caja-toggle {
+      background: none; border: none; color: #475569; cursor: pointer; font-size: 14px;
+      padding: 0 4px; transition: transform 0.18s, color 0.18s;
+    }
+    .cj-caja-toggle:hover { color: #94a3b8; }
+    .cj-caja-toggle.open { transform: rotate(180deg); color: #a5b4fc; }
+
+    .cj-caja-meta {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 12px;
+    }
+    .cj-caja-avatar {
+      width: 36px; height: 36px;
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 800;
+      color: white;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      flex-shrink: 0;
+    }
+    .cj-caja-meta-cuerpo { flex: 1; min-width: 0; }
+    .cj-caja-meta-nombre { font-size: 13px; font-weight: 700; color: #e2e8f0; line-height: 1.2; }
+    .cj-caja-meta-sub {
+      font-size: 10px; color: #64748b;
+      margin-top: 2px;
+      font-family: 'SF Mono', Menlo, monospace;
+    }
+    .cj-caja-elapsed {
+      font-family: 'SF Mono', Menlo, monospace;
+      font-size: 11px; font-weight: 700;
+      color: #34d399;
+      background: rgba(16,185,129,0.10);
+      border: 1px solid rgba(16,185,129,0.30);
+      padding: 3px 8px;
+      border-radius: 6px;
+      flex-shrink: 0;
+    }
+    .cj-caja-card.cerrada .cj-caja-elapsed {
+      color: #94a3b8;
+      background: rgba(100,116,139,0.10);
+      border-color: rgba(100,116,139,0.30);
+    }
+
+    .cj-caja-hero {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      padding: 10px 12px;
+      background: rgba(0,0,0,0.20);
+      border: 1px solid #1e293b;
+      border-radius: 10px;
+      margin-bottom: 10px;
+    }
+    .cj-caja-hero-monto {
+      font-size: 1.6rem; font-weight: 900;
+      color: #6ee7b7;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .cj-caja-card.cerrada .cj-caja-hero-monto { color: #cbd5e1; }
+    .cj-caja-hero-sub {
+      font-size: 10px; color: #64748b;
+      margin-top: 4px;
+    }
+    .cj-caja-salud {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 2px;
+    }
+    .cj-caja-salud-num {
+      font-size: 16px; font-weight: 900;
+      color: #6ee7b7;
+      font-variant-numeric: tabular-nums;
+    }
+    .cj-caja-salud-num.warn { color: #fbbf24; }
+    .cj-caja-salud-num.bad { color: #f87171; }
+    .cj-caja-salud-lbl {
+      font-size: 8px; color: #64748b;
+      text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .cj-caja-salud-bar {
+      width: 50px; height: 4px;
+      background: #1e293b;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .cj-caja-salud-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #f87171, #fbbf24, #34d399);
+      transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
+    }
+
+    .cj-caja-pago-bar {
+      display: flex; height: 18px;
+      border-radius: 6px; overflow: hidden;
+      background: #0a1424;
+      border: 1px solid #1e293b;
+      margin-bottom: 6px;
+    }
+    .cj-caja-pago-bar > div {
+      display: flex; align-items: center; justify-content: center;
+      font-size: 9px; font-weight: 800; color: white;
+      transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
+    }
+    .cj-caja-pago-bar-ef { background: linear-gradient(90deg, #059669, #34d399); }
+    .cj-caja-pago-bar-vi { background: linear-gradient(90deg, #0891b2, #22d3ee); }
+    .cj-caja-pago-bar-mx { background: linear-gradient(90deg, #6366f1, #8b5cf6); }
+    .cj-caja-pago-bar-cr { background: linear-gradient(90deg, #ea580c, #fb923c); }
+    .cj-caja-pago-leg {
+      display: flex; gap: 8px; flex-wrap: wrap;
+      font-size: 10px; color: #94a3b8;
+      margin-bottom: 10px;
+    }
+    .cj-caja-pago-leg-item { display: flex; align-items: center; gap: 3px; }
+
+    /* Sparkline */
+    .cj-spark {
+      display: flex; align-items: flex-end; gap: 2px;
+      height: 30px; margin-bottom: 8px;
+      padding: 0 2px;
+    }
+    .cj-spark-bar {
+      flex: 1;
+      min-height: 2px;
+      background: linear-gradient(180deg, #6366f1, #4f46e5);
+      border-radius: 2px 2px 0 0;
+      transition: height 0.4s cubic-bezier(0.4,0,0.2,1);
+    }
+    .cj-spark-bar.now {
+      background: linear-gradient(180deg, #34d399, #10b981);
+      box-shadow: 0 0 6px rgba(52,211,153,0.6);
+    }
+    .cj-spark-bar.zero {
+      background: #1e293b;
+    }
+    .cj-spark-axis {
+      display: flex; justify-content: space-between;
+      font-size: 8px; color: #475569; margin-bottom: 8px;
+      padding: 0 2px;
+    }
+
+    /* Botones de acción */
+    .cj-caja-actions {
+      display: flex; gap: 6px; flex-wrap: wrap;
+    }
+    .cj-caja-btn {
+      flex: 1; min-width: 0;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 11px; font-weight: 700;
+      cursor: pointer; transition: all 0.15s;
+      border: 1px solid #334155;
+      background: rgba(255,255,255,0.03);
+      color: #cbd5e1;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .cj-caja-btn:hover { background: rgba(99,102,241,0.10); border-color: #475569; color: #c7d2fe; }
+    .cj-caja-btn:active { transform: scale(0.96); }
+    .cj-caja-btn-primary {
+      background: linear-gradient(135deg, rgba(99,102,241,0.20), rgba(139,92,246,0.10));
+      border-color: rgba(99,102,241,0.50);
+      color: #a5b4fc;
+    }
+    .cj-caja-btn-danger { background: rgba(239,68,68,0.10); border-color: rgba(239,68,68,0.40); color: #fca5a5; }
+
+    /* Detalle expandido (tickets + extras) */
+    .cj-caja-detail {
+      margin-top: 10px; padding-top: 10px;
+      border-top: 1px dashed #1e293b;
+      animation: cjFadeIn 0.3s ease-out;
+    }
+    .cj-caja-detail-head {
+      font-size: 9px; font-weight: 800; color: #64748b;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      margin-bottom: 6px;
+    }
+
+    /* Multi-turno tabs */
+    .cj-turnos-tabs {
+      display: flex; gap: 4px; margin-bottom: 8px;
+    }
+    .cj-turno-tab {
+      padding: 3px 10px;
+      border-radius: 6px;
+      background: rgba(99,102,241,0.06);
+      border: 1px solid #334155;
+      color: #94a3b8; font-size: 10px; font-weight: 700;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .cj-turno-tab.active {
+      background: rgba(99,102,241,0.18);
+      border-color: rgba(99,102,241,0.50);
+      color: #c7d2fe;
+    }
+
+    /* Ranking */
+    .cj-ranking { display: flex; flex-direction: column; gap: 8px; }
+    .cj-ranking-row {
+      display: grid;
+      grid-template-columns: 28px 1fr auto;
+      gap: 10px; align-items: center;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: rgba(0,0,0,0.20);
+      border: 1px solid #1e293b;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .cj-ranking-row:hover {
+      background: rgba(99,102,241,0.08);
+      border-color: rgba(99,102,241,0.40);
+      transform: translateX(2px);
+    }
+    .cj-ranking-medalla {
+      width: 28px; height: 28px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 50%;
+      font-size: 14px;
+    }
+    .cj-ranking-1 { background: rgba(251,191,36,0.20); border: 1px solid rgba(251,191,36,0.50); }
+    .cj-ranking-2 { background: rgba(148,163,184,0.18); border: 1px solid rgba(148,163,184,0.45); }
+    .cj-ranking-3 { background: rgba(202,138,4,0.18); border: 1px solid rgba(202,138,4,0.45); }
+    .cj-ranking-x { background: rgba(99,102,241,0.10); border: 1px solid rgba(99,102,241,0.30); color: #94a3b8; font-size: 11px; font-weight: 800; }
+    .cj-ranking-cuerpo { min-width: 0; }
+    .cj-ranking-nombre { font-size: 12px; font-weight: 700; color: #e2e8f0; }
+    .cj-ranking-sub { font-size: 10px; color: #64748b; }
+    .cj-ranking-monto {
+      font-size: 14px; font-weight: 800;
+      color: #6ee7b7;
+      font-variant-numeric: tabular-nums;
+    }
+    .cj-ranking-bar {
+      grid-column: 1 / span 3;
+      height: 3px;
+      background: #1e293b;
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+    .cj-ranking-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #6366f1, #34d399);
+      transition: width 0.7s cubic-bezier(0.4,0,0.2,1);
+    }
+
+    /* ── KPI Card único: layout fila ─────────────────── */
+    .cj-kpi-unico-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px; align-items: center;
+      margin-bottom: 14px;
+      padding-bottom: 14px;
+      border-bottom: 1px dashed rgba(99,102,241,0.20);
+    }
+    .cj-kpi-monto-col { min-width: 0; }
+    .cj-kpi-stats-col {
+      display: flex; flex-direction: column; align-items: flex-end;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .cj-kpi-stat { text-align: right; }
+    .cj-kpi-stat-num {
+      font-size: 1.6rem; font-weight: 900; color: #c7d2fe;
+      font-variant-numeric: tabular-nums; line-height: 1;
+    }
+    .cj-kpi-stat-lbl { font-size: 9px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; }
+    .cj-kpi-stat-sub { font-size: 10px; color: #94a3b8; margin-top: 2px; }
+    .cj-kpi-stat-pills { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+    @media (max-width: 640px) {
+      .cj-kpi-unico-row { grid-template-columns: 1fr; gap: 10px; }
+      .cj-kpi-stats-col { align-items: flex-start; }
+      .cj-kpi-stat { text-align: left; }
+      .cj-kpi-stat-pills { justify-content: flex-start; }
+    }
+
+    /* ── Mini-row 7 días (estilo Finanzas) ────────── */
+    .cj-7d-mini-row {
+      display: flex; gap: 4px;
+      margin: 4px 0 12px;
+      height: 36px;
+    }
+    .cj-7d-mini-day {
+      flex: 1;
+      display: flex; flex-direction: column; align-items: center;
+      gap: 2px;
+      padding: 2px 4px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
+      background: rgba(99,102,241,0.04);
+      border: 1px solid transparent;
+    }
+    .cj-7d-mini-day:hover {
+      background: rgba(99,102,241,0.18);
+      transform: translateY(-2px);
+      border-color: rgba(99,102,241,0.40);
+    }
+    .cj-7d-mini-day.today {
+      background: rgba(99,102,241,0.24);
+      border-color: rgba(99,102,241,0.60);
+    }
+    .cj-7d-mini-day.has-data { background: rgba(34,197,94,0.10); }
+    .cj-7d-mini-bar {
+      width: 100%; max-width: 22px;
+      height: 18px;
+      border-radius: 3px;
+      background: linear-gradient(180deg, #6366f1, #4f46e5);
+      transform-origin: bottom;
+      transition: transform 0.5s cubic-bezier(0.4,0,0.2,1);
+    }
+    .cj-7d-mini-day.has-data .cj-7d-mini-bar { background: linear-gradient(180deg, #34d399, #10b981); }
+    .cj-7d-mini-lbl { font-size: 8px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
+
+    /* ── Actividad por hora (timeline horizontal con barras) ─ */
+    .cj-actividad-wrap {
+      padding: 8px 4px 4px;
+    }
+    .cj-actividad-grid {
+      display: grid;
+      grid-template-columns: 36px 1fr auto;
+      gap: 6px 10px;
+      align-items: center;
+    }
+    .cj-actividad-hora {
+      font-family: 'SF Mono', Menlo, monospace;
+      font-size: 11px; font-weight: 700;
+      color: #94a3b8;
+      text-align: right;
+    }
+    .cj-actividad-hora.now { color: #34d399; }
+    .cj-actividad-bar-track {
+      position: relative;
+      height: 22px;
+      background: rgba(99,102,241,0.06);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .cj-actividad-bar-fill {
+      position: absolute; top: 0; left: 0; bottom: 0;
+      background: linear-gradient(90deg, rgba(99,102,241,0.45), rgba(34,211,238,0.55));
+      border-radius: 6px;
+      transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
+      display: flex; align-items: center; justify-content: flex-end;
+      padding-right: 6px;
+    }
+    .cj-actividad-bar-fill.now {
+      background: linear-gradient(90deg, rgba(16,185,129,0.45), rgba(52,211,153,0.65));
+      box-shadow: 0 0 14px rgba(52,211,153,0.30);
+    }
+    .cj-actividad-bar-fill.zero { background: rgba(99,102,241,0.04); box-shadow: none; }
+    .cj-actividad-bar-monto {
+      font-size: 10px; font-weight: 700; color: white;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .cj-actividad-bar-fill.zero .cj-actividad-bar-monto { color: #475569; }
+    .cj-actividad-tickets {
+      font-size: 10px;
+      color: #64748b;
+      font-family: 'SF Mono', Menlo, monospace;
+      text-align: right;
+      min-width: 38px;
+    }
+    .cj-actividad-tickets-num { color: #cbd5e1; font-weight: 700; }
+    .cj-actividad-row.now .cj-actividad-tickets-num { color: #34d399; }
+
+    /* ════════════════════════════════════════════════════════════
+       MODO TV — fullscreen dashboard, todo cabe en 1 pantalla
+       ════════════════════════════════════════════════════════════ */
+    body.cj-modo-tv {
+      background: #000 !important;
+      overflow: hidden;
+      height: 100vh;
+    }
+    body.cj-modo-tv #sidebar,
+    body.cj-modo-tv #bottomnav,
+    body.cj-modo-tv header,
+    body.cj-modo-tv #toast,
+    body.cj-modo-tv .fab,
+    body.cj-modo-tv #tutCajasFAB,
+    body.cj-modo-tv .cj-banner-archivo,
+    body.cj-modo-tv #cajasEmpty { display: none !important; }
+    body.cj-modo-tv main { margin-left: 0 !important; padding: 0 !important; }
+    body.cj-modo-tv #view-cajas {
+      padding: 12px 18px;
+      height: 100vh;
+      max-height: 100vh;
+      background: #000;
+      display: flex; flex-direction: column;
+      gap: 10px;
+      overflow: hidden;
+    }
+    /* Header TV: solo nav fecha + actions, compacto */
+    body.cj-modo-tv .cj-header-bar { margin-bottom: 0 !important; flex-shrink: 0; }
+    /* Ticker TV */
+    body.cj-modo-tv .cj-ticker { margin-bottom: 0 !important; flex-shrink: 0; height: 36px; padding: 6px 0; }
+    body.cj-modo-tv .cj-ticker-content { font-size: 14px; }
+    /* Contenedor scrollable para que no se desborde */
+    body.cj-modo-tv #cajasContent {
+      flex: 1; min-height: 0;
+      display: flex; flex-direction: column;
+      gap: 10px;
+      overflow: hidden;
+    }
+    /* KPI card TV: monto grande pero compacto */
+    body.cj-modo-tv .fin-bigcard {
+      padding: 12px 16px !important;
+      margin-bottom: 0 !important;
+      background: linear-gradient(135deg, #050b18, #000);
+      flex-shrink: 0;
+    }
+    body.cj-modo-tv .fin-bigcard-monto { font-size: 2.4rem; }
+    body.cj-modo-tv .fin-bigcard-eyebrow { font-size: 10px; }
+    body.cj-modo-tv .fin-bigcard-sub { font-size: 10px; }
+    body.cj-modo-tv .cj-kpi-stat-num { font-size: 1.4rem; }
+    body.cj-modo-tv .fin-pago-bar { height: 22px; }
+    body.cj-modo-tv .cj-tickets-estado { font-size: 9px; }
+    /* Sección cajas TV: toma el espacio sobrante con scroll */
+    body.cj-modo-tv .cj-section {
+      padding: 10px 14px !important;
+      margin-bottom: 0 !important;
+      background: linear-gradient(135deg, #050b18, #000);
+      flex: 1; min-height: 0;
+      display: flex; flex-direction: column;
+    }
+    body.cj-modo-tv .cj-section-head { margin-bottom: 8px !important; }
+    body.cj-modo-tv .cj-cajas-grid {
+      grid-template-columns: repeat(4, 1fr) !important;
+      gap: 8px !important;
+      overflow-y: auto;
+      flex: 1; min-height: 0;
+      align-content: start;
+    }
+    @media (max-width: 1280px) {
+      body.cj-modo-tv .cj-cajas-grid { grid-template-columns: repeat(3, 1fr) !important; }
+    }
+    @media (min-width: 1600px) {
+      body.cj-modo-tv .cj-cajas-grid { grid-template-columns: repeat(5, 1fr) !important; }
+    }
+    /* Cards de caja TV: más compactas */
+    body.cj-modo-tv .cj-caja-card { padding: 10px 12px; }
+    body.cj-modo-tv .cj-caja-hero-monto { font-size: 1.6rem; }
+    body.cj-modo-tv .cj-caja-hero { padding: 7px 9px; margin-bottom: 7px; }
+    body.cj-modo-tv .cj-caja-meta { margin-bottom: 7px; }
+    body.cj-modo-tv .cj-caja-avatar { width: 30px; height: 30px; font-size: 12px; }
+    body.cj-modo-tv .cj-spark { height: 24px; margin-bottom: 5px; }
+    body.cj-modo-tv .cj-caja-actions { display: none; } /* en TV no se interactúa */
+    body.cj-modo-tv .cj-caja-pago-leg { display: none; }
+    body.cj-modo-tv .cj-spark-axis { display: none; }
+    /* Footer strip TV: 3 mini-paneles horizontales — Ranking + 7d + Actividad */
+    body.cj-modo-tv #cjTvBottomStrip { display: flex !important; }
+    body.cj-modo-tv .cj-tv-strip {
+      display: grid;
+      grid-template-columns: 1.2fr 1.5fr 1fr;
+      gap: 8px;
+      flex-shrink: 0;
+      max-height: 22vh;
+    }
+    body.cj-modo-tv .cj-tv-strip > * {
+      padding: 8px 12px !important;
+      background: linear-gradient(135deg, #050b18, #000);
+      overflow: hidden;
+      display: flex; flex-direction: column;
+    }
+    body.cj-modo-tv .cj-tv-strip .fin-modcard-head { margin-bottom: 6px !important; }
+    body.cj-modo-tv .cj-tv-strip .fin-modcard-emoji { width: 26px; height: 26px; font-size: 14px; }
+    body.cj-modo-tv .cj-tv-strip .fin-modcard-title-txt { font-size: 11px; }
+    body.cj-modo-tv .cj-tv-strip .fin-modcard-sub { display: none; }
+    body.cj-modo-tv .cj-tv-strip .cj-7d-mini-row { height: 28px; margin: 0 0 4px; }
+    body.cj-modo-tv .cj-tv-strip .fin-water-canvas-wrap { height: 70px !important; flex: 1; }
+    body.cj-modo-tv .cj-tv-strip .cj-actividad-wrap {
+      flex: 1; overflow-y: auto; padding: 4px 0;
+    }
+    body.cj-modo-tv .cj-tv-strip .cj-actividad-grid {
+      grid-template-columns: 32px 1fr 32px;
+      gap: 3px 8px;
+    }
+    body.cj-modo-tv .cj-tv-strip .cj-actividad-bar-track { height: 16px; }
+    body.cj-modo-tv .cj-tv-strip .cj-actividad-hora { font-size: 10px; }
+    body.cj-modo-tv .cj-tv-strip .cj-actividad-bar-monto { font-size: 9px; }
+    body.cj-modo-tv .cj-tv-strip .cj-actividad-tickets { font-size: 9px; min-width: 26px; }
+    body.cj-modo-tv .cj-tv-strip .cj-ranking { gap: 4px; flex: 1; overflow-y: auto; }
+    body.cj-modo-tv .cj-tv-strip .cj-ranking-row { padding: 4px 8px; grid-template-columns: 22px 1fr auto; gap: 6px; }
+    body.cj-modo-tv .cj-tv-strip .cj-ranking-medalla { width: 22px; height: 22px; font-size: 11px; }
+    body.cj-modo-tv .cj-tv-strip .cj-ranking-nombre { font-size: 10px; }
+    body.cj-modo-tv .cj-tv-strip .cj-ranking-sub { font-size: 9px; }
+    body.cj-modo-tv .cj-tv-strip .cj-ranking-monto { font-size: 12px; }
+    /* Ocultar el grid analytics original en TV (los originales se duplican en strip) */
+    body.cj-modo-tv #cajasContent > .grid.lg\\:grid-cols-2 { display: none !important; }
+    body.cj-modo-tv #cajasContent > .fin-modcard.mb-5 { display: none !important; }
+    /* Strip por defecto oculto fuera de TV */
+    #cjTvBottomStrip { display: none; }
+    .cj-tv-exit {
+      position: fixed; top: 12px; right: 12px;
+      z-index: 1000;
+      background: rgba(239,68,68,0.20);
+      border: 1px solid rgba(239,68,68,0.50);
+      color: #fca5a5;
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 11px; font-weight: 700;
+      cursor: pointer;
+      display: none;
+    }
+    body.cj-modo-tv .cj-tv-exit { display: block; }
+
     /* Form inputs */
     .inp { background: #020817; border: 1px solid #1e293b; border-radius: 8px; padding: 8px 12px; color: #e2e8f0; font-size: 14px; width: 100%; transition: border-color .15s; outline: none; }
     .inp:focus { border-color: var(--accent); }
@@ -2147,6 +3819,217 @@
     .log-badge-recent { background: rgba(99,102,241,0.18); color: #a5b4fc; border: 1px solid rgba(99,102,241,0.4); }
     .log-badge-hours  { background: rgba(245,158,11,0.18); color: #fbbf24; border: 1px solid rgba(245,158,11,0.4); }
     .log-badge-old    { background: rgba(100,116,139,0.18); color: #94a3b8; border: 1px solid rgba(100,116,139,0.4); }
+    /* Chip de origen: indica si la entrada es del canónico o de una presentación */
+    .log-origen {
+      display: inline-flex; align-items: center;
+      padding: 1px 7px; border-radius: 999px;
+      font-size: 9px; font-weight: 700;
+      letter-spacing: 0.02em;
+      max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .log-origen-canonico {
+      background: rgba(16,185,129,0.18); color: #6ee7b7;
+      border: 1px solid rgba(16,185,129,0.4);
+    }
+    .log-origen-presentacion {
+      background: rgba(59,130,246,0.16); color: #93c5fd;
+      border: 1px solid rgba(59,130,246,0.4);
+    }
+    .log-entry-link {
+      margin-top: 4px; padding: 3px 9px;
+      background: rgba(59,130,246,0.10); border: 1px dashed rgba(59,130,246,0.4);
+      border-radius: 4px; color: #93c5fd; font-size: 9px; font-weight: 600;
+      cursor: pointer; transition: all 0.12s;
+    }
+    .log-entry-link:hover { background: rgba(59,130,246,0.22); color: white; }
+
+    /* ── LOG: barra unificada compacta ────────────────────── */
+    .log-bar {
+      background: linear-gradient(135deg, #070f1a, #0a1424);
+      border-bottom: 1px solid #1e293b;
+      padding: 8px 10px;
+    }
+    .log-bar-row {
+      display: flex; align-items: center; gap: 6px;
+    }
+    .log-bar-spacer { flex: 1; }
+    .log-nav-arrow {
+      width: 30px; height: 30px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(99,102,241,0.10);
+      border: 1px solid rgba(99,102,241,0.35);
+      border-radius: 8px;
+      color: #a5b4fc; font-size: 16px; font-weight: 700;
+      cursor: pointer; transition: all 0.15s;
+      flex-shrink: 0;
+    }
+    .log-nav-arrow:hover { background: rgba(99,102,241,0.25); transform: scale(1.06); }
+    .log-fecha-btn {
+      padding: 5px 10px;
+      background: linear-gradient(135deg, rgba(168,85,247,0.20), rgba(99,102,241,0.12));
+      border: 1px solid rgba(168,85,247,0.50);
+      border-radius: 8px;
+      color: #e9d5ff; font-size: 12px; font-weight: 700;
+      cursor: pointer;
+      display: flex; align-items: center; gap: 5px;
+      transition: all 0.15s;
+      min-width: 0; flex-shrink: 1; min-height: 30px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .log-fecha-btn:hover { background: rgba(168,85,247,0.32); }
+    .log-pill {
+      padding: 0; width: 30px; height: 30px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(16,185,129,0.12);
+      border: 1px solid rgba(16,185,129,0.40);
+      border-radius: 8px;
+      color: #6ee7b7; font-size: 13px;
+      cursor: pointer; transition: all 0.15s;
+      flex-shrink: 0;
+    }
+    .log-pill:hover { background: rgba(16,185,129,0.28); transform: scale(1.06); }
+    .log-pill-hoy { background: rgba(99,102,241,0.10); border-color: rgba(99,102,241,0.40); color: #a5b4fc; }
+    .log-pill-hoy:hover { background: rgba(99,102,241,0.25); }
+    .log-icon-btn {
+      width: 30px; height: 30px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid #334155;
+      border-radius: 8px;
+      color: #cbd5e1; font-size: 13px;
+      cursor: pointer; transition: all 0.15s;
+      flex-shrink: 0; position: relative;
+    }
+    .log-icon-btn:hover { background: rgba(255,255,255,0.10); border-color: #475569; }
+    .log-icon-btn.active {
+      background: rgba(168,85,247,0.18);
+      border-color: rgba(168,85,247,0.55);
+      color: #e9d5ff;
+    }
+    .log-icon-dot {
+      position: absolute; top: 2px; right: 2px;
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #34d399;
+      box-shadow: 0 0 6px #10b981;
+      border: 1px solid #0a1424;
+    }
+    .log-pill-clear {
+      width: 26px; height: 26px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(239,68,68,0.15);
+      border: 1px solid rgba(239,68,68,0.45);
+      border-radius: 6px;
+      color: #fca5a5; font-size: 11px; font-weight: 700;
+      cursor: pointer; transition: all 0.15s;
+      flex-shrink: 0;
+    }
+    .log-pill-clear:hover { background: rgba(239,68,68,0.30); }
+    .log-contador {
+      font-size: 11px; color: #94a3b8; font-weight: 600;
+      padding-left: 4px; flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
+    }
+    .log-search-inp {
+      flex: 1; min-width: 0;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(99,102,241,0.30);
+      border-radius: 8px;
+      padding: 6px 12px;
+      color: #e2e8f0; font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .log-search-inp:focus { border-color: #6366f1; background: rgba(99,102,241,0.06); }
+    /* Filtro popover (usuario / acción) */
+    .log-popover-title {
+      font-size: 9px; font-weight: 800; color: #64748b;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      padding: 4px 8px 6px;
+    }
+    .log-popover-opt {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 10px; border-radius: 6px;
+      cursor: pointer; transition: all 0.12s;
+      font-size: 12px; color: #cbd5e1;
+      border: 1px solid transparent;
+    }
+    .log-popover-opt:hover { background: rgba(99,102,241,0.10); color: white; }
+    .log-popover-opt.selected {
+      background: rgba(99,102,241,0.18);
+      border-color: rgba(99,102,241,0.45);
+      color: #c7d2fe; font-weight: 700;
+    }
+    .log-popover-opt-radio {
+      width: 14px; height: 14px; border-radius: 50%;
+      border: 1.5px solid #475569;
+      flex-shrink: 0;
+      transition: all 0.12s;
+    }
+    .log-popover-opt.selected .log-popover-opt-radio {
+      border-color: #a5b4fc;
+      background: radial-gradient(circle, #a5b4fc 0%, #a5b4fc 40%, transparent 50%);
+    }
+    /* Mobile: aún más compacto */
+    @media (max-width: 480px) {
+      .log-bar { padding: 6px 8px; }
+      .log-bar-row { gap: 4px; }
+      .log-fecha-btn { font-size: 11px; padding: 5px 7px; }
+      .log-fecha-btn span:last-child { display: none; } /* esconder ▾ en mobile */
+      .log-contador { font-size: 10px; padding-left: 2px; }
+      #logBtnHoy { display: flex; }
+    }
+    /* ── DATEPICKER ── */
+    #logDatepicker { width: 230px; }
+    .log-cal-day {
+      width: 28px; height: 28px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; color: #94a3b8;
+      background: transparent; border: none;
+      border-radius: 6px; cursor: pointer;
+      position: relative;
+      transition: all 0.12s;
+    }
+    .log-cal-day:hover { background: rgba(99,102,241,0.15); color: #e2e8f0; }
+    .log-cal-day.has-activity::after {
+      content: ''; position: absolute;
+      bottom: 3px; left: 50%; transform: translateX(-50%);
+      width: 4px; height: 4px; border-radius: 50%;
+      background: #a855f7;
+    }
+    .log-cal-day.today { background: rgba(99,102,241,0.10); color: #c7d2fe; font-weight: 700; }
+    .log-cal-day.selected {
+      background: linear-gradient(135deg, #581c87, #a855f7);
+      color: white; font-weight: 700;
+    }
+    .log-cal-day.empty { visibility: hidden; }
+    .log-cal-day.outside { opacity: 0.30; }
+    /* ── VISTA POR DÍA: timeline cronológico ── */
+    .log-dia-hour {
+      display: flex; gap: 12px; margin-bottom: 12px;
+    }
+    .log-dia-hour-col {
+      flex-shrink: 0; width: 56px;
+      font-family: 'SF Mono', Menlo, monospace;
+      font-size: 13px; font-weight: 700; color: #c084fc;
+      padding-top: 6px;
+    }
+    .log-dia-hour-col-sub { font-size: 9px; color: #64748b; font-weight: 400; }
+    .log-dia-events { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+    .log-dia-event {
+      padding: 8px 10px;
+      background: #060d1f;
+      border-left: 3px solid #6366f1;
+      border-radius: 4px;
+      font-size: 11px; color: #cbd5e1;
+      cursor: pointer; transition: all 0.12s;
+    }
+    .log-dia-event:hover { background: #0a1424; transform: translateX(2px); }
+    .log-dia-event-prod { font-weight: 700; color: #fbbf24; font-size: 12px; }
+    .log-dia-event-meta { font-size: 9px; color: #64748b; margin-top: 2px; }
+    .log-dia-empty {
+      text-align: center; padding: 32px;
+      color: #475569; font-style: italic; font-size: 13px;
+    }
 
     /* ── PN modal v2: header, hero, chips ────────────────── */
     .pn-modal-v2 { border-radius: 16px; overflow: hidden; }
@@ -2500,6 +4383,179 @@
       cursor: pointer; opacity: 0.8;
     }
     .audio-flot-link:hover { opacity: 1; color: #fef2f2; }
+
+    /* ── ESPÍA: widget flotante minimizado (mic + gps) ───────── */
+    #espiaFlotante {
+      position: fixed; bottom: 16px; right: 16px;
+      z-index: 9999;
+      background: linear-gradient(135deg, rgba(49,46,129,0.96), rgba(15,23,42,0.96));
+      border: 1px solid #6366f1;
+      border-radius: 16px;
+      padding: 10px 12px;
+      display: flex; align-items: center; gap: 10px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 12px 36px rgba(99,102,241,0.45), 0 0 0 1px rgba(165,180,252,0.25);
+      min-width: 220px; max-width: 320px;
+      cursor: pointer;
+      animation: espiaFlotIn 0.42s cubic-bezier(0.34, 1.56, 0.64, 1);
+      transition: transform 0.18s ease-out, box-shadow 0.18s ease-out;
+    }
+    #espiaFlotante:hover { transform: translateY(-2px); box-shadow: 0 16px 44px rgba(99,102,241,0.55); }
+    #espiaFlotante.dragging { cursor: grabbing; opacity: 0.85; transform: scale(1.02); }
+    @keyframes espiaFlotIn {
+      0%   { transform: translateY(80px) scale(0.7); opacity: 0; }
+      60%  { transform: translateY(-8px) scale(1.04); opacity: 1; }
+      100% { transform: translateY(0) scale(1); opacity: 1; }
+    }
+    .espia-flot-emoji {
+      font-size: 18px; flex-shrink: 0;
+      width: 32px; height: 32px;
+      display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg,#312e81,#6366f1);
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(99,102,241,0.4);
+    }
+    .espia-flot-info { flex: 1; min-width: 0; }
+    .espia-flot-nom {
+      font-size: 11px; font-weight: 800; color: #e0e7ff;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .espia-flot-sub { font-size: 9px; color: #a5b4fc; opacity: 0.85; }
+    .espia-flot-icons {
+      display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+    }
+    .espia-flot-ico {
+      width: 34px; height: 34px;
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; cursor: pointer;
+      transition: all 0.18s;
+      position: relative;
+    }
+    .espia-flot-ico:hover { transform: scale(1.12); }
+    /* Mic activo (live) */
+    .espia-flot-ico-mic {
+      background: rgba(220,38,38,0.30);
+      border: 1px solid rgba(248,113,113,0.55);
+      color: #fef2f2;
+    }
+    .espia-flot-ico-mic.live::before {
+      content: ''; position: absolute; inset: -3px;
+      border: 2px solid #dc2626; border-radius: 12px;
+      animation: espiaPulse 1.4s ease-out infinite;
+    }
+    .espia-flot-ico-mic.live::after {
+      content: ''; position: absolute; top: 3px; right: 3px;
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #ef4444;
+      box-shadow: 0 0 8px #ef4444;
+      animation: espiaDot 1s ease-in-out infinite;
+    }
+    .espia-flot-ico-mic.muted {
+      background: rgba(100,116,139,0.25);
+      border-color: rgba(148,163,184,0.4);
+      color: #94a3b8;
+      opacity: 0.6;
+    }
+    /* GPS activo */
+    .espia-flot-ico-gps {
+      background: rgba(16,185,129,0.25);
+      border: 1px solid rgba(52,211,153,0.55);
+      color: #d1fae5;
+    }
+    .espia-flot-ico-gps.fresh::after {
+      content: ''; position: absolute; top: 3px; right: 3px;
+      width: 6px; height: 6px; border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 6px #10b981;
+      animation: espiaDot 2.5s ease-in-out infinite;
+    }
+    .espia-flot-ico-gps.stale {
+      background: rgba(245,158,11,0.20);
+      border-color: rgba(251,191,36,0.45);
+      color: #fcd34d;
+    }
+    /* Stop button */
+    .espia-flot-stop {
+      width: 28px; height: 28px;
+      border-radius: 8px;
+      background: rgba(239,68,68,0.5);
+      border: 1px solid rgba(248,113,113,0.7);
+      color: #fef2f2; font-size: 11px;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .espia-flot-stop:hover { background: rgba(239,68,68,0.85); transform: scale(1.1); }
+    @keyframes espiaPulse {
+      0%   { transform: scale(0.92); opacity: 0.7; }
+      100% { transform: scale(1.55); opacity: 0; }
+    }
+    @keyframes espiaDot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%      { opacity: 0.5; transform: scale(0.85); }
+    }
+    /* Tooltip pequeño "muted" */
+    .espia-flot-ico-mic.muted::before {
+      content: '🔇'; position: absolute;
+      bottom: -3px; right: -3px;
+      font-size: 9px;
+      background: #1e293b;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 0 0 1px #475569;
+    }
+
+    /* ── Modal espía: pulses internos ───────────────────────── */
+    .espia-mic-pulse { animation: espiaMicBounce 1.6s ease-in-out infinite; display: inline-block; }
+    .espia-mic-pulse.muted { animation: none; opacity: 0.45; filter: grayscale(1); }
+    .espia-gps-pulse { animation: espiaGpsBob 2.2s ease-in-out infinite; display: inline-block; }
+    @keyframes espiaMicBounce {
+      0%, 100% { transform: scale(1); }
+      50%      { transform: scale(1.12); }
+    }
+    @keyframes espiaGpsBob {
+      0%, 100% { transform: translateY(0); }
+      50%      { transform: translateY(-3px); }
+    }
+    .espia-modal-emoji {
+      animation: espiaModalEmoji 3s ease-in-out infinite;
+    }
+    @keyframes espiaModalEmoji {
+      0%, 100% { transform: rotate(-6deg); }
+      50%      { transform: rotate(6deg); }
+    }
+    /* ── Avisos dentro del modal ── */
+    .espia-aviso {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px;
+      border-radius: 10px;
+      font-size: 11px;
+      animation: espiaAvisoIn 0.32s cubic-bezier(0.4,0,0.2,1);
+    }
+    @keyframes espiaAvisoIn {
+      0% { transform: translateY(-6px); opacity: 0; }
+      100% { transform: translateY(0); opacity: 1; }
+    }
+    .espia-aviso-warn {
+      background: rgba(245,158,11,0.10);
+      border: 1px solid rgba(251,191,36,0.40);
+      color: #fcd34d;
+    }
+    .espia-aviso-error {
+      background: rgba(239,68,68,0.10);
+      border: 1px solid rgba(248,113,113,0.40);
+      color: #fca5a5;
+    }
+    .espia-aviso-info {
+      background: rgba(59,130,246,0.08);
+      border: 1px solid rgba(96,165,250,0.40);
+      color: #93c5fd;
+    }
+    .espia-aviso-ico { font-size: 16px; flex-shrink: 0; }
+    .espia-aviso-cuerpo { flex: 1; min-width: 0; line-height: 1.4; }
+    .espia-aviso-titulo { font-weight: 700; font-size: 11px; }
+    .espia-aviso-detalle { font-size: 10px; opacity: 0.85; margin-top: 1px; }
 
     /* ── SLIDE entre días (carousel) ────────────────────────── */
     .fin-slide-content {
@@ -4488,6 +6544,75 @@
       </div>
     </div>
 
+    <!-- ═══════════════════════════════════════════════════════
+         MODAL: ESPÍA (audio + gps combinados)
+    ═══════════════════════════════════════════════════════ -->
+    <div id="modalEspia" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS._espiaModalMinimizar()">
+      <div class="modal-box flex flex-col" style="max-width:760px;max-height:94vh;background:linear-gradient(180deg,#0f1729,#0a1424);border:1px solid #334155;">
+        <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(99,102,241,0.10),transparent);">
+          <div class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl espia-modal-emoji" style="background:linear-gradient(135deg,#312e81,#6366f1);">🕵️</div>
+          <div class="min-w-0 flex-1">
+            <h2 class="font-bold text-base text-white">Espía remoto</h2>
+            <p id="espiaModalSubtitle" class="text-[11px] text-slate-500 mt-0.5">Audio + ubicación en tiempo real</p>
+          </div>
+          <button onclick="MOS._espiaModalMinimizar()" class="modal-close-x" title="Minimizar (mantiene escucha)">▾</button>
+          <button onclick="MOS._espiaDetenerTodo()" class="modal-close-x" title="Detener todo" style="color:#f87171;">×</button>
+        </div>
+        <div class="overflow-y-auto px-5 py-4 flex-1">
+          <input type="hidden" id="espiaModalDeviceId">
+          <!-- Avisos: GPS desconectado, conexión vieja, sin permiso, etc -->
+          <div id="espiaAvisos" class="space-y-2 mb-3"></div>
+          <!-- Sección AUDIO -->
+          <div id="espiaSecAudio" class="rounded-xl p-4 mb-4" style="background:linear-gradient(135deg,rgba(127,29,29,0.10),rgba(15,23,42,0.4));border:1px solid rgba(220,38,38,0.35);">
+            <div class="flex items-center justify-between gap-2 mb-3">
+              <div class="flex items-center gap-2">
+                <span class="text-2xl espia-mic-pulse" id="espiaModalMicIcon">🎙️</span>
+                <div>
+                  <div class="text-sm font-bold text-white">Audio en vivo</div>
+                  <div class="text-[10px] text-rose-300/80" id="espiaModalAudioSub">⌛ iniciando...</div>
+                </div>
+              </div>
+              <div class="text-right">
+                <div class="font-mono text-base text-white font-bold" id="espiaModalAudioTime">00:00</div>
+                <div class="text-[9px] text-rose-300/70" id="espiaModalAudioChunks">— chunks</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 mt-2 flex-wrap">
+              <button onclick="MOS._espiaToggleMute()" id="espiaModalBtnMute" class="btn-ghost text-xs">🔇 Mutear</button>
+              <button onclick="MOS._espiaAbrirHistorial()" id="espiaModalBtnHist" class="btn-ghost text-xs hidden">📋 Historial</button>
+            </div>
+            <audio id="espiaPlayerLive" style="display:none"></audio>
+          </div>
+          <!-- Sección GPS -->
+          <div id="espiaSecGps" class="rounded-xl p-4" style="background:linear-gradient(135deg,rgba(6,78,59,0.10),rgba(15,23,42,0.4));border:1px solid rgba(16,185,129,0.35);">
+            <div class="flex items-center justify-between gap-2 mb-3">
+              <div class="flex items-center gap-2">
+                <span class="text-2xl espia-gps-pulse" id="espiaModalGpsIcon">📍</span>
+                <div>
+                  <div class="text-sm font-bold text-white">Ubicación</div>
+                  <div class="text-[10px] text-emerald-300/80" id="espiaModalGpsSub">Cargando...</div>
+                </div>
+              </div>
+              <a id="espiaModalGpsMaps" target="_blank" class="btn-ghost text-xs hidden">🗺️ Maps</a>
+            </div>
+            <div id="espiaModalGpsInfo" class="mb-2 p-2 rounded-lg text-[11px]" style="background:#0a1424;border:1px solid #1e293b;color:#94a3b8;">Esperando primer fix...</div>
+            <div id="espiaModalGpsMapa" class="rounded-lg overflow-hidden" style="background:#0a1424;border:1px solid #1e293b;height:300px;"></div>
+            <div class="flex items-center gap-2 mt-2 flex-wrap">
+              <button onclick="MOS._espiaGpsRefresh()" class="btn-ghost text-xs">🔄 Actualizar</button>
+              <button onclick="MOS._espiaGpsRangoCambiar(24)" class="btn-ghost text-xs">🕐 24h</button>
+              <button onclick="MOS._espiaGpsRangoCambiar(72)" class="btn-ghost text-xs">📅 3d</button>
+              <span class="text-[10px] text-slate-500 ml-auto" id="espiaModalGpsPuntos">—</span>
+            </div>
+          </div>
+          <div class="rounded-lg p-3 mt-4" style="background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.2);">
+            <p class="text-[10px] text-indigo-300/80">
+              ⚠ Solo legítimo en dispositivos de empresa con cartelería visible. Quedan registros en AUDITORIA_ADMIN.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- ═══ VIEW: PROVEEDORES ════════════════════════════════ -->
     <section id="view-proveedores" class="view">
       <!-- Header -->
@@ -4531,22 +6656,71 @@
     <!-- ═══ VIEW: CAJAS ══════════════════════════════════════════ -->
     <section id="view-cajas" class="view">
 
+      <!-- Botón salir Modo TV -->
+      <button class="cj-tv-exit" onclick="MOS.cjModoTV(false)">✕ Salir Modo TV (ESC)</button>
+
       <!-- Botón flotante de tutorial -->
       <button id="tutCajasFAB" onclick="MOS.tutTicketsOpen()"
               class="fixed bottom-6 right-6 z-30 rounded-full shadow-2xl flex items-center justify-center transition-transform hover:scale-110"
               style="width:52px;height:52px;background:linear-gradient(135deg,#10b981,#059669);color:#0b1220;font-size:22px;border:2px solid #34d399;display:none"
               title="¿Cómo se cuentan los tickets? (efectivo, virtual, mixto, crédito, anulado)">🎓</button>
 
-      <!-- Header bar -->
-      <div class="flex items-center justify-between mb-5">
-        <div>
-          <div id="cajasTimestamp" class="text-xs text-slate-500">—</div>
+      <!-- ── Header MODERNO tipo Finanzas ─────────────────────── -->
+      <div class="cj-header-bar mb-3">
+        <div class="cj-nav-fecha">
+          <button onclick="MOS.cjDia(-1)" class="fin-nav-arrow" title="Día anterior (←)">‹</button>
+          <button onclick="MOS.cjAbrirCalendario(this)" id="cjFechaBtn" class="fin-fecha-btn" title="Elegir fecha">
+            <span class="fin-fecha-emoji">📅</span>
+            <span id="cjFechaLabel">—</span>
+            <span class="fin-fecha-arrow">▾</span>
+          </button>
+          <button onclick="MOS.cjDia(1)" class="fin-nav-arrow" title="Día siguiente (→)">›</button>
+          <button onclick="MOS.cjIrHoy()" class="fin-pill-hoy" title="Ir a hoy">📍 Hoy</button>
+          <span id="cjDayBadge" class="fin-day-badge">—</span>
+          <span id="cjPollDot" class="fin-poll-dot" title="Auto-refresh activo · cada 60s"></span>
+          <input id="cjFecha" type="hidden">
         </div>
-        <button onclick="MOS.loadCajas(true)" class="btn-ghost text-xs px-3 py-1.5">↺ Actualizar</button>
+        <div class="cj-actions">
+          <button onclick="MOS.cjVerTodosTickets()" class="fin-action-btn fin-action-primary" title="Ver TODOS los tickets del día">
+            <span class="fin-action-ico">🧾</span>
+            <span class="fin-action-label">Ver todos los tickets</span>
+          </button>
+          <button onclick="MOS.cjModoTV()" class="fin-action-btn fin-action-gold" title="Modo TV — pantalla completa">
+            <span class="fin-action-ico">📺</span>
+            <span class="fin-action-label">Modo TV</span>
+          </button>
+        </div>
       </div>
 
-      <!-- Loading -->
-      <div id="cajasLoading" class="text-center py-16 text-slate-500 text-sm">
+      <!-- Datepicker flotante -->
+      <div id="cjDatepicker" class="hidden" style="position:fixed;z-index:10000;background:#0a1424;border:1px solid #475569;border-radius:12px;padding:10px;box-shadow:0 10px 30px rgba(0,0,0,0.6);width:240px;">
+        <div class="flex items-center justify-between mb-2">
+          <button onclick="MOS.cjCalNavMes(-1)" class="text-slate-400 hover:text-white text-sm px-2">‹</button>
+          <span id="cjCalMesAnio" class="text-xs font-bold text-slate-200">—</span>
+          <button onclick="MOS.cjCalNavMes(+1)" class="text-slate-400 hover:text-white text-sm px-2">›</button>
+        </div>
+        <div class="grid grid-cols-7 gap-1 text-[10px] text-slate-500 text-center mb-1">
+          <span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span>
+        </div>
+        <div id="cjCalGrid" class="grid grid-cols-7 gap-1"></div>
+      </div>
+
+      <!-- Banner ARCHIVO (cuando no es hoy) -->
+      <div id="cjBannerArchivo" class="cj-banner-archivo hidden mb-3">
+        <span class="cj-archivo-ico">📜</span>
+        <span>Viendo archivo · solo lectura · sin actualización en vivo</span>
+        <button onclick="MOS.cjIrHoy()" class="cj-archivo-volver">→ Volver a hoy</button>
+      </div>
+
+      <!-- TICKER LIVE (banda Bloomberg) -->
+      <div id="cjTicker" class="cj-ticker mb-4">
+        <div class="cj-ticker-content" id="cjTickerContent">
+          <span class="cj-ticker-item">⌛ Cargando datos del día...</span>
+        </div>
+      </div>
+
+      <!-- Loading inicial -->
+      <div id="cajasLoading" class="text-center py-16 text-slate-500 text-sm hidden">
         <div class="skel h-4 w-40 mx-auto mb-3 rounded"></div>
         <div class="skel h-4 w-56 mx-auto rounded"></div>
       </div>
@@ -4554,192 +6728,448 @@
       <!-- Contenido (oculto hasta cargar) -->
       <div id="cajasContent" class="hidden">
 
-        <!-- KPIs del día -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-
-          <!-- Card 1: Total vendido hoy -->
-          <div class="kpi-card p-4 cursor-pointer select-none" onclick="MOS.toggleKpiVentas()" title="Ver desglose por caja">
-            <div class="flex items-start justify-between mb-2">
-              <span class="text-2xl">💰</span>
-              <span class="badge badge-green text-xs" id="cajasKpiBadgeVentas"></span>
-            </div>
-            <div id="cajasKpiVentas" class="text-3xl font-bold text-white mb-1">—</div>
-            <div class="flex items-center gap-1 text-xs text-slate-500">
-              Total vendido hoy <span id="cajasKpiVentasArrow" class="text-slate-600">▼</span>
+        <!-- ── KPI ÚNICO: Total vendido + tickets fusionado ──────── -->
+        <div class="fin-bigcard fin-bigcard-ventas mb-4 cj-kpi-unico" onclick="MOS.cjVerTodosTickets('ventas')" style="cursor:pointer">
+          <div class="fin-bigcard-head">
+            <div class="fin-bigcard-eyebrow">
+              <span>💰</span><span>Resumen del día</span>
+              <span id="cjVentasComparaAyer" class="fin-compara hidden"></span>
+              <span class="text-slate-500 text-xs ml-auto">↗ ver tickets</span>
             </div>
           </div>
+          <div class="cj-kpi-unico-row">
+            <!-- Lado izq: monto + comparación -->
+            <div class="cj-kpi-monto-col">
+              <div class="fin-bigcard-monto">
+                <span id="cajasKpiVentas">—</span>
+              </div>
+              <div id="cjVentasSub" class="fin-bigcard-sub">— tickets cobrados</div>
+            </div>
+            <!-- Lado der: stats compactas tickets -->
+            <div class="cj-kpi-stats-col">
+              <div class="cj-kpi-stat">
+                <div class="cj-kpi-stat-num" id="cajasKpiTicketsHoy">—</div>
+                <div class="cj-kpi-stat-lbl">tickets hoy</div>
+                <div class="cj-kpi-stat-sub"><span id="cajasKpiTicketsMes">—</span> en 30d</div>
+              </div>
+              <div class="cj-kpi-stat-pills">
+                <span class="cj-tipo-pill"><span>🧾</span><span id="cajasKpiNV">—</span></span>
+                <span class="cj-tipo-pill"><span>📄</span><span id="cajasKpiBoleta">—</span></span>
+                <span class="cj-tipo-pill"><span>📋</span><span id="cajasKpiFactura">—</span></span>
+              </div>
+            </div>
+          </div>
+          <!-- Barra proporcional efectivo/virtual -->
+          <div class="fin-pago-bar-wrap">
+            <div class="fin-pago-bar">
+              <div id="cjPagoBarEf" class="fin-pago-bar-ef" style="width:50%">
+                <span class="fin-pago-bar-ef-label">💵</span>
+              </div>
+              <div id="cjPagoBarVi" class="fin-pago-bar-vi" style="width:50%">
+                <span class="fin-pago-bar-vi-label">📱</span>
+              </div>
+            </div>
+            <div class="fin-pago-leyenda">
+              <div class="fin-pago-leyenda-item">
+                <span class="fin-pago-dot" style="background:#34d399"></span>
+                <span class="fin-pago-monto" id="cjEfectivoMonto">S/ —</span>
+                <span class="fin-pago-pct" id="cjEfectivoPct">—%</span>
+                <span class="fin-pago-tag">Efectivo</span>
+              </div>
+              <div class="fin-pago-leyenda-item">
+                <span class="fin-pago-dot" style="background:#22d3ee"></span>
+                <span class="fin-pago-monto" id="cjVirtualMonto">S/ —</span>
+                <span class="fin-pago-pct" id="cjVirtualPct">—%</span>
+                <span class="fin-pago-tag">Virtual</span>
+              </div>
+            </div>
+          </div>
+          <!-- Pills de estado tickets — 4 estados separados -->
+          <div class="cj-tickets-estado">
+            <span class="cj-estado-pill cj-estado-ok"><span id="cjTkCobrados">—</span> ✅ cobrados</span>
+            <span class="cj-estado-pill cj-estado-pend"><span id="cjTkPorCobrar">—</span> ⏳ por cobrar</span>
+            <span class="cj-estado-pill cj-estado-cred"><span id="cjTkCredito">—</span> 📋 crédito</span>
+            <span class="cj-estado-pill cj-estado-anul"><span id="cjTkAnulados">—</span> ❌ anulados</span>
+          </div>
+        </div>
 
-          <!-- Card 2: Historial de Tickets -->
-          <div class="kpi-card p-4 cursor-pointer select-none" onclick="MOS.toggleKpiTickets()" title="Ver historial de tickets">
-            <div class="flex items-start justify-between mb-2">
-              <span class="text-xl">🧾</span>
-              <span class="text-xs text-slate-600">▼ ver todos</span>
+        <!-- ── CAJAS DEL DÍA (activas + cerradas, no esconder) ─── -->
+        <div class="cj-section mb-4">
+          <div class="cj-section-head">
+            <div class="cj-section-titulo">
+              <span class="cj-section-emoji">🟢</span>
+              <div>
+                <div class="cj-section-titulo-txt">Cajas del día</div>
+                <div class="cj-section-sub" id="cjCajasSub">—</div>
+              </div>
             </div>
-            <!-- Números principales: hoy / 30d -->
-            <div class="flex items-baseline gap-2 mb-2">
-              <span id="cajasKpiTicketsHoy" class="text-3xl font-bold text-white">—</span>
-              <span class="text-sm text-slate-500">hoy &nbsp;/&nbsp; <span id="cajasKpiTicketsMes" class="text-slate-400">—</span> <span class="text-slate-600">30d</span></span>
+            <div class="cj-section-pills">
+              <span id="cjPillActivas" class="fin-modcard-pill up">🟢 0 abiertas</span>
+              <span id="cjPillCerradas" class="fin-modcard-pill">⚫ 0 cerradas</span>
             </div>
-            <!-- Conteos por tipo -->
-            <div class="flex items-center gap-4 mb-2">
-              <div class="flex items-center gap-1">
-                <span class="text-base">🧾</span>
+          </div>
+          <div id="cjCajasGrid" class="cj-cajas-grid">
+            <p class="text-slate-500 text-xs text-center py-6 col-span-full">Sin cajas en esta fecha</p>
+          </div>
+        </div>
+
+        <!-- ── ANALYTICS: ranking + tendencia 7d + actividad por hora ── -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
+          <!-- Ranking entre cajas -->
+          <div class="fin-modcard">
+            <div class="fin-modcard-head">
+              <div class="fin-modcard-title">
+                <span class="fin-modcard-emoji">🏆</span>
                 <div>
-                  <div class="text-xs text-slate-500">Notas</div>
-                  <div id="cajasKpiNV" class="text-sm font-bold text-white">—</div>
+                  <div class="fin-modcard-title-txt">Ranking del día</div>
+                  <div class="fin-modcard-sub">Cajas ordenadas por total vendido</div>
                 </div>
               </div>
-              <div class="flex items-center gap-1">
-                <span class="text-base">📄</span>
+            </div>
+            <div id="cjRanking" class="cj-ranking">
+              <p class="text-slate-500 text-xs italic text-center py-6">Sin cajas</p>
+            </div>
+          </div>
+
+          <!-- Tendencia 7 días -->
+          <div class="fin-modcard">
+            <div class="fin-modcard-head">
+              <div class="fin-modcard-title">
+                <span class="fin-modcard-emoji">📈</span>
                 <div>
-                  <div class="text-xs text-slate-500">Boletas</div>
-                  <div id="cajasKpiBoleta" class="text-sm font-bold text-white">—</div>
+                  <div class="fin-modcard-title-txt">Últimos 7 días</div>
+                  <div class="fin-modcard-sub" id="cj7dSubtitulo">Tendencia de ventas</div>
                 </div>
               </div>
-              <div class="flex items-center gap-1">
-                <span class="text-base">📋</span>
-                <div>
-                  <div class="text-xs text-slate-500">Facturas</div>
-                  <div id="cajasKpiFactura" class="text-sm font-bold text-white">—</div>
-                </div>
+              <span id="cj7dTotal" class="fin-modcard-pill">—</span>
+            </div>
+            <div class="cj-7d-mini-row" id="cj7dMiniRow"></div>
+            <div class="fin-water-canvas-wrap" style="height:160px"><canvas id="chartCajasBars"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Actividad por hora (timeline horizontal con barras) -->
+        <div class="fin-modcard mb-5">
+          <div class="fin-modcard-head">
+            <div class="fin-modcard-title">
+              <span class="fin-modcard-emoji">⏱️</span>
+              <div>
+                <div class="fin-modcard-title-txt">Actividad por hora</div>
+                <div class="fin-modcard-sub" id="cjActividadSub">Volumen vendido y tickets entre 6h y 22h</div>
               </div>
             </div>
-            <div class="flex items-center gap-1 text-xs text-slate-500">
-              Historial de tickets <span id="cajasKpiTicketsArrow" class="text-slate-600">▼</span>
-            </div>
+            <span id="cjActividadPico" class="fin-modcard-pill">—</span>
           </div>
-        </div>
-
-        <!-- Panel desglose Total vendido hoy -->
-        <div id="cajasKpiDetalle" class="hidden mb-5">
-          <div class="card p-4">
-            <div class="flex items-center justify-between mb-3">
-              <h3 class="font-semibold text-sm text-slate-200">Desglose por caja — hoy</h3>
-              <button onclick="MOS.toggleKpiVentas()" class="text-slate-600 hover:text-slate-300 text-xs">✕ cerrar</button>
-            </div>
-            <div id="cajasKpiDetalleBody"></div>
-          </div>
-        </div>
-
-        <!-- Panel historial de tickets -->
-        <div id="cajasTicketsPanel" class="hidden mb-5">
-          <div class="card p-4">
-            <div class="flex items-center justify-between mb-3">
-              <h3 class="font-semibold text-sm text-slate-200">Historial de Tickets</h3>
-              <button onclick="MOS.toggleKpiTickets()" class="text-slate-600 hover:text-slate-300 text-xs">✕ cerrar</button>
-            </div>
-            <!-- Filtros fecha -->
-            <div class="flex gap-1 mb-2 flex-wrap">
-              <button onclick="MOS.setTicketFiltroFecha('hoy')"   id="tfHoy"   class="tab-btn active text-xs py-1 px-3">Hoy</button>
-              <button onclick="MOS.setTicketFiltroFecha('semana')" id="tfSemana" class="tab-btn text-xs py-1 px-3">Semana</button>
-              <button onclick="MOS.setTicketFiltroFecha('mes')"   id="tfMes"   class="tab-btn text-xs py-1 px-3">Mes</button>
-              <button onclick="MOS.setTicketFiltroFecha('todos')" id="tfTodos" class="tab-btn text-xs py-1 px-3">Todos (30d)</button>
-            </div>
-            <!-- Filtros estado / tipo -->
-            <div class="flex gap-1 mb-3 flex-wrap">
-              <button onclick="MOS.setTicketFiltroEstado('')"           id="teAll"  class="tab-btn active text-xs py-1 px-3">Todos</button>
-              <button onclick="MOS.setTicketFiltroEstado('COMPLETADO')" id="teCom"  class="tab-btn text-xs py-1 px-3">✅ Cobrado</button>
-              <button onclick="MOS.setTicketFiltroEstado('POR_COBRAR')" id="tePend" class="tab-btn text-xs py-1 px-3">⏳ Por cobrar</button>
-              <button onclick="MOS.setTicketFiltroEstado('ANULADO')"    id="teAnu"  class="tab-btn text-xs py-1 px-3">🚫 Anulado</button>
-              <button onclick="MOS.setTicketFiltroTipo('NV')"  id="ttNV"  class="tab-btn text-xs py-1 px-3">🧾 NV</button>
-              <button onclick="MOS.setTicketFiltroTipo('B')"   id="ttB"   class="tab-btn text-xs py-1 px-3">📄 Boleta</button>
-              <button onclick="MOS.setTicketFiltroTipo('F')"   id="ttF"   class="tab-btn text-xs py-1 px-3">📋 Factura</button>
-            </div>
-            <!-- Lista -->
-            <div id="cajasTicketsList"></div>
-            <!-- Modal cambiar método -->
-            <div id="modalCambiarMetodo" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style="background:rgba(0,0,0,.75)">
-              <div id="modalCambiarMetodoBox" class="card p-5 w-full max-w-sm"></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Cajas ABIERTAS en vivo -->
-        <div id="cajasVivoWrap" class="mb-5 hidden">
-          <div class="flex items-center gap-2 mb-3">
-            <span class="dot-green"></span>
-            <h3 class="font-semibold text-sm text-slate-200">Cajas Abiertas Ahora</h3>
-            <span id="cajasVivoCount" class="badge badge-green text-xs">0</span>
-          </div>
-          <div id="cajasVivoGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></div>
-        </div>
-
-        <!-- Gráficos -->
-        <div id="cajasChartsWrap" class="grid lg:grid-cols-2 gap-4 mb-5 hidden">
-
-          <!-- Historial de cajas (compacto) -->
-          <div class="card p-4">
-            <div class="flex items-center justify-between mb-2">
-              <button onclick="MOS.abrirModalHistorialCajas()" class="font-semibold text-sm text-slate-200 hover:text-indigo-400 transition-colors flex items-center gap-1">
-                Historial de Cajas <span class="text-slate-600 text-xs">↗ expandir</span>
-              </button>
-              <div class="flex gap-1">
-                <button onclick="MOS.setChartCajasPeriodo(7)"  id="ccp7"  class="tab-btn active text-xs py-0.5 px-2">7D</button>
-                <button onclick="MOS.setChartCajasPeriodo(30)" id="ccp30" class="tab-btn text-xs py-0.5 px-2">30D</button>
-                <button onclick="MOS.setChartCajasPeriodo(90)" id="ccp90" class="tab-btn text-xs py-0.5 px-2">90D</button>
-              </div>
-            </div>
-            <div class="flex items-center gap-3 mb-2 text-xs text-slate-600">
-              <span><span class="inline-block w-2 h-2 rounded-sm mr-1" style="background:#22c55e"></span>Activa</span>
-              <span><span class="inline-block w-2 h-2 rounded-sm mr-1" style="background:#6366f1"></span>Cerrada</span>
-            </div>
-            <div style="position:relative;height:180px"><canvas id="chartCajasBars"></canvas></div>
-          </div>
-
-          <!-- Métodos de pago hoy -->
-          <div class="card p-4">
-            <h3 class="font-semibold text-sm text-slate-200 mb-1">Métodos de Pago <span class="text-xs text-slate-500 font-normal">— solo hoy</span></h3>
-            <div style="position:relative;height:180px"><canvas id="chartCajasMetodo"></canvas></div>
-            <div id="cajasMetodoDetalle" class="mt-2 space-y-1"></div>
-          </div>
-        </div>
-
-        <!-- Modal historial cajas expandido -->
-        <div id="modalHistorialCajas" class="hidden fixed inset-0 z-50 flex items-center justify-center p-3" style="background:rgba(0,0,0,.85)">
-          <div class="card p-5 w-full" style="max-width:800px;max-height:90vh;overflow-y:auto">
-            <div class="flex items-start justify-between gap-2 mb-3 flex-wrap">
-              <div class="min-w-0 flex-1">
-                <h3 class="font-semibold text-slate-200">Historial de Cajas</h3>
-                <p class="text-xs text-slate-500 mt-0.5 hidden sm:block">Eje X = día · 🟢 verde = caja activa · hover para detalle</p>
-              </div>
-              <div class="flex items-center gap-2 shrink-0">
-                <div class="flex gap-1">
-                  <button onclick="MOS.setChartCajasModalPeriodo(7)"  id="ccm7"  class="tab-btn active text-xs py-0.5 px-2">7D</button>
-                  <button onclick="MOS.setChartCajasModalPeriodo(30)" id="ccm30" class="tab-btn text-xs py-0.5 px-2">30D</button>
-                  <button onclick="MOS.setChartCajasModalPeriodo(90)" id="ccm90" class="tab-btn text-xs py-0.5 px-2">90D</button>
-                </div>
-                <button onclick="MOS.cerrarModalHistorialCajas()" class="modal-close-x ml-1">✕</button>
-              </div>
-            </div>
-            <div style="position:relative;height:380px"><canvas id="chartCajasModal"></canvas></div>
-          </div>
-        </div>
-
-        <!-- Historial del día (cajas cerradas) -->
-        <div id="cajasHistorialWrap" class="hidden">
-          <h3 id="cajasHistTitle" class="font-semibold text-sm text-slate-300 mb-3">Historial de Cierres</h3>
-          <div class="card overflow-x-auto" style="-webkit-overflow-scrolling:touch">
-            <table class="tbl">
-              <thead>
-                <tr>
-                  <th>Cajero</th><th>Zona</th><th>Apertura → Cierre</th>
-                  <th>Vendido</th><th>Tickets</th><th>Turno</th>
-                </tr>
-              </thead>
-              <tbody id="cajasHistTbody"></tbody>
-            </table>
-          </div>
-          <div class="text-xs text-slate-600 italic mt-1 lg:hidden">→ Desliza horizontalmente para ver todas las columnas</div>
+          <div id="cjActividad" class="cj-actividad-wrap"></div>
         </div>
 
         <!-- Empty state -->
         <div id="cajasEmpty" class="hidden text-center py-16 text-slate-500 text-sm">
           <div class="text-4xl mb-3">🗃️</div>
-          <div class="font-medium text-slate-400 mb-1">Sin actividad de cajas hoy</div>
-          <div class="text-xs">Las cajas aparecerán aquí en tiempo real cuando se abran</div>
+          <div class="font-medium text-slate-400 mb-1">Sin actividad de cajas en esta fecha</div>
+          <div class="text-xs">Navega con ‹ › para revisar otros días</div>
+        </div>
+
+        <!-- ── STRIP HORIZONTAL solo en MODO TV: Ranking + 7d + Actividad ── -->
+        <div id="cjTvBottomStrip" class="cj-tv-strip">
+          <div class="fin-modcard">
+            <div class="fin-modcard-head">
+              <div class="fin-modcard-title">
+                <span class="fin-modcard-emoji">🏆</span>
+                <div><div class="fin-modcard-title-txt">Ranking</div></div>
+              </div>
+            </div>
+            <div id="cjRankingTV" class="cj-ranking"></div>
+          </div>
+          <div class="fin-modcard">
+            <div class="fin-modcard-head">
+              <div class="fin-modcard-title">
+                <span class="fin-modcard-emoji">📈</span>
+                <div><div class="fin-modcard-title-txt">7d</div></div>
+              </div>
+              <span id="cj7dTotalTV" class="fin-modcard-pill">—</span>
+            </div>
+            <div class="cj-7d-mini-row" id="cj7dMiniRowTV"></div>
+            <div class="fin-water-canvas-wrap"><canvas id="chartCajasBarsTV"></canvas></div>
+          </div>
+          <div class="fin-modcard">
+            <div class="fin-modcard-head">
+              <div class="fin-modcard-title">
+                <span class="fin-modcard-emoji">⏱️</span>
+                <div><div class="fin-modcard-title-txt">Por hora</div></div>
+              </div>
+              <span id="cjActividadPicoTV" class="fin-modcard-pill">—</span>
+            </div>
+            <div id="cjActividadTV" class="cj-actividad-wrap"></div>
+          </div>
         </div>
 
       </div><!-- /cajasContent -->
+
+      <!-- ═══════════════════════════════════════════════════════
+           MODAL TICKETS (compartido con Finanzas) — versión Cajas
+      ═══════════════════════════════════════════════════════ -->
+      <div id="cjModalTickets" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('cjModalTickets')">
+        <div class="modal-box flex flex-col" style="max-width:680px;max-height:94vh">
+          <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(99,102,241,0.10),transparent);">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style="background:linear-gradient(135deg,#312e81,#6366f1);">🧾</div>
+            <div class="min-w-0 flex-1">
+              <h2 class="font-bold text-base text-white" id="cjModalTicketsTitulo">Tickets del día</h2>
+              <p id="cjModalTicketsSubtitulo" class="text-[11px] text-slate-500 mt-0.5">—</p>
+            </div>
+            <button onclick="MOS.closeModal('cjModalTickets')" class="modal-close-x">×</button>
+          </div>
+          <div class="px-3 py-2 flex-shrink-0 flex items-center gap-1 flex-wrap" style="background:#070f1a;border-bottom:1px solid #1e293b;" id="cjTkFiltros"></div>
+          <div class="px-5 py-2 flex items-center gap-2 flex-shrink-0" style="background:#0a1424;border-bottom:1px solid #1e293b;">
+            <input id="cjTkBuscar" type="search" placeholder="🔎 buscar cliente, doc, correlativo..."
+                   oninput="MOS._cjTkRender()" class="inp text-xs flex-1" style="padding:6px 10px;">
+            <span class="text-[10px] text-slate-500" id="cjTkConteo">—</span>
+          </div>
+          <div class="overflow-y-auto flex-1">
+            <div id="cjTkList" class="divide-y divide-slate-800/40"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════════
+           MODAL: ACCIONES DE TICKET (menú contextual)
+      ═══════════════════════════════════════════════════════ -->
+      <div id="modalTkAcciones" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalTkAcciones')">
+        <div class="modal-box flex flex-col" style="max-width:480px;max-height:88vh">
+          <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(168,85,247,0.10),transparent);">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style="background:linear-gradient(135deg,#581c87,#a855f7);">⚙️</div>
+            <div class="min-w-0 flex-1">
+              <h2 class="font-bold text-base text-white" id="tkAccTitulo">Acciones</h2>
+              <p id="tkAccSubtitulo" class="text-[11px] text-slate-500 mt-0.5">—</p>
+            </div>
+            <button onclick="MOS.closeModal('modalTkAcciones')" class="modal-close-x">×</button>
+          </div>
+          <div id="tkAccBody" class="overflow-y-auto p-4 space-y-2 flex-1"></div>
+        </div>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════════
+           MODAL: COBRAR PENDIENTE / DEUDA — selector caja + método
+      ═══════════════════════════════════════════════════════ -->
+      <div id="modalTkCobrar" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalTkCobrar')">
+        <div class="modal-box flex flex-col" style="max-width:520px;max-height:92vh">
+          <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(16,185,129,0.10),transparent);">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style="background:linear-gradient(135deg,#064e3b,#10b981);">💵</div>
+            <div class="min-w-0 flex-1">
+              <h2 class="font-bold text-base text-white" id="tkCobrarTitulo">Cobrar pendiente</h2>
+              <p id="tkCobrarSubtitulo" class="text-[11px] text-slate-500 mt-0.5">—</p>
+            </div>
+            <button onclick="MOS.closeModal('modalTkCobrar')" class="modal-close-x">×</button>
+          </div>
+          <div class="overflow-y-auto p-5 space-y-4 flex-1">
+            <div class="rounded-xl p-3" style="background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.30);">
+              <div class="text-[10px] font-bold uppercase text-emerald-400 mb-1">Cliente</div>
+              <div class="text-sm font-bold text-white" id="tkCobrarCliente">—</div>
+              <div class="text-[10px] text-slate-400 font-mono mt-0.5" id="tkCobrarRef">—</div>
+              <div class="text-2xl font-black text-emerald-400 mt-2" id="tkCobrarMonto">S/ —</div>
+            </div>
+            <div>
+              <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Caja receptora</div>
+              <div id="tkCobrarCajas" class="space-y-1.5"></div>
+            </div>
+            <div>
+              <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Forma de pago</div>
+              <div class="grid grid-cols-3 gap-2">
+                <button onclick="MOS._tkCobrarSetMetodo('EFECTIVO')" id="tkCobrarBtnEf" class="tk-cob-mbtn">💵 Efectivo</button>
+                <button onclick="MOS._tkCobrarSetMetodo('VIRTUAL')"  id="tkCobrarBtnVi" class="tk-cob-mbtn">📱 Virtual</button>
+                <button onclick="MOS._tkCobrarSetMetodo('MIXTO')"    id="tkCobrarBtnMx" class="tk-cob-mbtn">🔀 Mixto</button>
+              </div>
+            </div>
+            <div id="tkCobrarMixto" class="hidden grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-[10px] text-slate-400 uppercase">💵 Efectivo</label>
+                <input type="number" step="0.01" id="tkCobrarMonEf" oninput="MOS._tkCobrarValidarMixto()" class="inp text-sm" placeholder="0.00">
+              </div>
+              <div>
+                <label class="text-[10px] text-slate-400 uppercase">📱 Virtual</label>
+                <input type="number" step="0.01" id="tkCobrarMonVi" oninput="MOS._tkCobrarValidarMixto()" class="inp text-sm" placeholder="0.00">
+              </div>
+              <p id="tkCobrarMixtoHint" class="col-span-2 text-[10px] text-slate-500"></p>
+            </div>
+            <div>
+              <label class="text-[10px] text-slate-400 uppercase block mb-1">Observación (opcional)</label>
+              <input type="text" id="tkCobrarObs" class="inp text-sm" placeholder="ej: cliente pagó completo en caja">
+            </div>
+            <button onclick="MOS._tkCobrarConfirmar()" id="tkCobrarBtnOK" class="w-full btn-primary text-sm py-3">✓ Confirmar cobro</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════════
+           MODAL: CAMBIAR FORMA DE PAGO (corrección)
+      ═══════════════════════════════════════════════════════ -->
+      <div id="modalTkCambiarFP" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalTkCambiarFP')">
+        <div class="modal-box flex flex-col" style="max-width:480px;max-height:88vh">
+          <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(99,102,241,0.10),transparent);">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style="background:linear-gradient(135deg,#312e81,#6366f1);">🔄</div>
+            <div class="min-w-0 flex-1">
+              <h2 class="font-bold text-base text-white">Cambiar forma de pago</h2>
+              <p id="tkCambiarFPSub" class="text-[11px] text-slate-500 mt-0.5">—</p>
+            </div>
+            <button onclick="MOS.closeModal('modalTkCambiarFP')" class="modal-close-x">×</button>
+          </div>
+          <div class="overflow-y-auto p-5 space-y-4 flex-1">
+            <div class="rounded-xl p-3 text-xs" style="background:rgba(245,158,11,0.06);border:1px solid rgba(251,191,36,0.30);color:#fcd34d;">
+              ⚠ Solo cambia el campo en la base de datos · NO mueve dinero entre cajas. Usa esta opción para corregir errores de tipeo.
+            </div>
+            <div>
+              <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Forma actual</div>
+              <span id="tkCambiarFPActual" class="tk-chip">—</span>
+            </div>
+            <div>
+              <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Nueva forma</div>
+              <div class="grid grid-cols-2 gap-2" id="tkCambiarFPOpciones"></div>
+            </div>
+            <div>
+              <label class="text-[10px] text-slate-400 uppercase block mb-1">Motivo (obligatorio)</label>
+              <input type="text" id="tkCambiarFPMotivo" class="inp text-sm" placeholder="ej: cliente pagó realmente con Yape">
+            </div>
+            <button onclick="MOS._tkCambiarFPConfirmar()" class="w-full btn-primary text-sm py-3">✓ Aplicar cambio</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════════
+           MODAL: APROBAR COMO CRÉDITO (POR_COBRAR → CREDITO)
+      ═══════════════════════════════════════════════════════ -->
+      <div id="modalTkAprobarCred" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalTkAprobarCred')">
+        <div class="modal-box flex flex-col" style="max-width:480px;max-height:88vh">
+          <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(251,146,60,0.10),transparent);">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style="background:linear-gradient(135deg,#7c2d12,#fb923c);">📋</div>
+            <div class="min-w-0 flex-1">
+              <h2 class="font-bold text-base text-white">Aprobar como crédito</h2>
+              <p id="tkAprobarCredSub" class="text-[11px] text-slate-500 mt-0.5">—</p>
+            </div>
+            <button onclick="MOS.closeModal('modalTkAprobarCred')" class="modal-close-x">×</button>
+          </div>
+          <div class="overflow-y-auto p-5 space-y-4 flex-1">
+            <div class="rounded-xl p-3 text-xs" style="background:rgba(251,146,60,0.08);border:1px solid rgba(251,146,60,0.30);color:#fdba74;">
+              📋 El ticket pasa de <b>Por Cobrar</b> (espera del cajero) a <b>Crédito</b> (deuda formal aprobada).<br>
+              Tras la aprobación, el cobro futuro será un movimiento de caja normal.
+            </div>
+            <div>
+              <label class="text-[10px] text-slate-400 uppercase block mb-1">Motivo de aprobación</label>
+              <textarea id="tkAprobarCredObs" rows="3" class="inp text-sm w-full" placeholder="ej: cliente Don Lucho · pagará viernes · acuerdo personal"></textarea>
+            </div>
+            <button onclick="MOS._tkAprobarCredConfirmar()" class="w-full btn-primary text-sm py-3" style="background:linear-gradient(135deg,#7c2d12,#fb923c)">✓ Aprobar como crédito</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════════
+           MODAL: CONVERTIR NV → BOLETA / FACTURA
+      ═══════════════════════════════════════════════════════ -->
+      <div id="modalTkConvertirCPE" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalTkConvertirCPE')">
+        <div class="modal-box flex flex-col" style="max-width:560px;max-height:92vh">
+          <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(99,102,241,0.10),transparent);">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style="background:linear-gradient(135deg,#312e81,#6366f1);">📑</div>
+            <div class="min-w-0 flex-1">
+              <h2 class="font-bold text-base text-white">Convertir NV → CPE</h2>
+              <p id="tkConvSub" class="text-[11px] text-slate-500 mt-0.5">—</p>
+            </div>
+            <button onclick="MOS.closeModal('modalTkConvertirCPE')" class="modal-close-x">×</button>
+          </div>
+          <div class="overflow-y-auto p-5 space-y-4 flex-1">
+            <div class="rounded-xl p-3 text-xs" style="background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.30);color:#a5b4fc;">
+              📑 La NV original se anulará y se emitirá un nuevo CPE (Boleta o Factura) en SUNAT.<br>
+              <b>Datos del NV se preservan</b>, solo se agrega el cliente formal.
+            </div>
+            <div>
+              <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Tipo de comprobante</div>
+              <div class="grid grid-cols-2 gap-2">
+                <button onclick="MOS._tkConvSetTipo('BOLETA')"  id="tkConvBtnBol" class="tk-cob-mbtn">📄 Boleta (DNI)</button>
+                <button onclick="MOS._tkConvSetTipo('FACTURA')" id="tkConvBtnFac" class="tk-cob-mbtn">📋 Factura (RUC)</button>
+              </div>
+            </div>
+            <div>
+              <label class="text-[10px] text-slate-400 uppercase block mb-1">Cliente — DNI o RUC</label>
+              <div class="flex gap-2">
+                <input type="text" id="tkConvDoc" class="inp text-sm flex-1" placeholder="DNI 8 dígitos · RUC 11 dígitos" oninput="MOS._tkConvDocChange()">
+                <button onclick="MOS._tkConvBuscarCliente()" id="tkConvBtnBuscar" class="btn-ghost text-xs px-4">🔎 Buscar</button>
+              </div>
+              <div id="tkConvClienteInfo" class="hidden mt-2 p-2 rounded text-xs" style="background:#0a1424;border:1px solid #1e293b;"></div>
+            </div>
+            <div>
+              <label class="text-[10px] text-slate-400 uppercase block mb-1">Nombre / Razón social</label>
+              <input type="text" id="tkConvNombre" class="inp text-sm" placeholder="Se llena tras buscar">
+            </div>
+            <div>
+              <label class="text-[10px] text-slate-400 uppercase block mb-1">Dirección (opcional, requerida en factura)</label>
+              <input type="text" id="tkConvDireccion" class="inp text-sm" placeholder="Auto-llenada para RUC">
+            </div>
+            <div>
+              <label class="text-[10px] text-slate-400 uppercase block mb-1">Serie</label>
+              <input type="text" id="tkConvSerie" class="inp text-sm" placeholder="ej: B001 / F001">
+            </div>
+            <button onclick="MOS._tkConvertirConfirmar()" id="tkConvBtnOK" class="w-full btn-primary text-sm py-3">📤 Emitir CPE en SUNAT</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════════
+           MODAL: BAJA DEL CPE (comunicación a SUNAT)
+      ═══════════════════════════════════════════════════════ -->
+      <div id="modalTkBajaCPE" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalTkBajaCPE')">
+        <div class="modal-box flex flex-col" style="max-width:520px;max-height:88vh">
+          <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(239,68,68,0.10),transparent);">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style="background:linear-gradient(135deg,#7f1d1d,#dc2626);">📋</div>
+            <div class="min-w-0 flex-1">
+              <h2 class="font-bold text-base text-white">Baja del CPE</h2>
+              <p id="tkBajaSub" class="text-[11px] text-slate-500 mt-0.5">—</p>
+            </div>
+            <button onclick="MOS.closeModal('modalTkBajaCPE')" class="modal-close-x">×</button>
+          </div>
+          <div class="overflow-y-auto p-5 space-y-4 flex-1">
+            <div class="rounded-xl p-3 text-xs" style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.30);color:#fca5a5;">
+              ⚠ Se enviará una <b>Comunicación de Baja</b> a NubeFact → SUNAT.<br>
+              El CPE quedará inválido oficialmente. La acción es <b>irreversible</b>.
+            </div>
+            <div>
+              <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Motivo (SUNAT lo requiere)</div>
+              <div class="space-y-1.5">
+                <label class="flex items-start gap-2 cursor-pointer text-xs text-slate-300">
+                  <input type="radio" name="tkBajaMotivo" value="Error en el documento" onchange="MOS._tkBajaSetMotivo(this.value)" class="mt-0.5">
+                  <span>Error en el documento (datos cliente, monto, etc)</span>
+                </label>
+                <label class="flex items-start gap-2 cursor-pointer text-xs text-slate-300">
+                  <input type="radio" name="tkBajaMotivo" value="Devolucion total de la operacion" onchange="MOS._tkBajaSetMotivo(this.value)" class="mt-0.5">
+                  <span>Devolución total · cliente devolvió el producto</span>
+                </label>
+                <label class="flex items-start gap-2 cursor-pointer text-xs text-slate-300">
+                  <input type="radio" name="tkBajaMotivo" value="Otro" onchange="MOS._tkBajaSetMotivo('')" class="mt-0.5">
+                  <span>Otro (especificar)</span>
+                </label>
+              </div>
+              <input type="text" id="tkBajaMotivoTxt" oninput="MOS._tkBajaActualizarBoton()" class="inp text-xs mt-2" placeholder="Detalle del motivo...">
+            </div>
+            <button onclick="MOS._tkBajaConfirmar()" id="tkBajaBtnOK" class="w-full btn-primary text-sm py-3" style="background:linear-gradient(135deg,#7f1d1d,#dc2626);" disabled>📤 Enviar baja a SUNAT</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════════
+           MODAL: HISTORIAL DEL TICKET (timeline)
+      ═══════════════════════════════════════════════════════ -->
+      <div id="modalTkHistorial" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalTkHistorial')">
+        <div class="modal-box flex flex-col" style="max-width:600px;max-height:90vh">
+          <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(168,85,247,0.10),transparent);">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style="background:linear-gradient(135deg,#581c87,#a855f7);">📜</div>
+            <div class="min-w-0 flex-1">
+              <h2 class="font-bold text-base text-white">Historial del ticket</h2>
+              <p id="tkHistSub" class="text-[11px] text-slate-500 mt-0.5">—</p>
+            </div>
+            <button onclick="MOS.closeModal('modalTkHistorial')" class="modal-close-x">×</button>
+          </div>
+          <div id="tkHistBody" class="overflow-y-auto p-5 flex-1">
+            <div class="text-center py-8 text-slate-500 text-xs">Cargando...</div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- ═══════════════════════════════════════════════════════════ -->
@@ -4747,179 +7177,301 @@
     <!-- ═══════════════════════════════════════════════════════════ -->
     <section id="view-finanzas" class="view hidden">
 
-      <!-- ── Header ──────────────────────────────────────────────── -->
-      <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
-        <div class="flex items-center gap-2">
-          <button onclick="MOS.finDia(-1)" class="btn-ghost px-2 py-1 text-lg leading-none" title="Día anterior (←)">‹</button>
-          <input id="finFecha" type="date" class="inp text-sm py-1.5 w-36" onchange="MOS.finCargar({ animate: true, dir: 0 })">
-          <button onclick="MOS.finDia(1)"  class="btn-ghost px-2 py-1 text-lg leading-none" title="Día siguiente (→)">›</button>
-          <button onclick="MOS.finIrHoy()" class="btn-ghost text-xs px-3 py-1.5" title="Ir a hoy (Espacio)">📅 Hoy</button>
-          <button onclick="MOS.finCargar()" class="btn-ghost text-xs px-3 py-1.5" title="Recargar">↺</button>
-          <span id="finDayBadge" class="text-[10px] font-bold px-2 py-1 rounded-full" style="background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;letter-spacing:0.05em;">—</span>
-          <button onclick="MOS.finToggleSonido()" id="finBtnSonido" class="btn-ghost text-xs px-2 py-1.5" title="Efectos de sonido (off por defecto)">🔇</button>
+      <!-- ── Header MODERNO ─────────────────────────────────────── -->
+      <div class="fin-header-bar mb-5">
+        <div class="fin-nav-fecha">
+          <button onclick="MOS.finDia(-1)" class="fin-nav-arrow" title="Día anterior (←)">‹</button>
+          <button onclick="MOS.finAbrirCalendario(this)" id="finFechaBtn" class="fin-fecha-btn" title="Elegir fecha">
+            <span class="fin-fecha-emoji">📅</span>
+            <span id="finFechaLabel">—</span>
+            <span class="fin-fecha-arrow">▾</span>
+          </button>
+          <button onclick="MOS.finDia(1)" class="fin-nav-arrow" title="Día siguiente (→)">›</button>
+          <button onclick="MOS.finIrHoy()" id="finBtnHoy" class="fin-pill-hoy" title="Ir a hoy (Espacio)">📍 Hoy</button>
+          <span id="finDayBadge" class="fin-day-badge">—</span>
+          <span id="finPollDot" class="fin-poll-dot" title="Auto-refresh activo · cada 60s"></span>
+          <input id="finFecha" type="hidden">
         </div>
-        <div class="flex gap-2">
-          <button onclick="MOS.finAbrirModalGasto()" class="btn-primary text-xs px-3 py-2">+ Gasto</button>
-          <button onclick="MOS.finAbrirModalJornada()" class="btn-ghost text-xs px-3 py-2">+ Jornada</button>
-          <button onclick="MOS.finImportarCajas()" class="btn-ghost text-xs px-3 py-2" title="Importar jornadas automáticamente desde cajas MosExpress">⬇ Cajas</button>
-          <button onclick="MOS.liqOpen()" class="btn-ghost text-xs px-3 py-2" style="border-color:rgba(245,158,11,.4);color:#fbbf24" title="Emitir liquidaciones de personal">💼 Liquidaciones</button>
+        <div class="fin-actions">
+          <button onclick="MOS.finAbrirModalGasto()" class="fin-action-btn fin-action-primary" title="Registrar un gasto del día">
+            <span class="fin-action-ico">💰</span>
+            <span class="fin-action-label">Gasto</span>
+          </button>
+          <button onclick="MOS.liqOpen()" class="fin-action-btn fin-action-gold" title="Emitir liquidaciones de personal">
+            <span class="fin-action-ico">💼</span>
+            <span class="fin-action-label">Liquidaciones</span>
+          </button>
         </div>
+      </div>
+
+      <!-- Datepicker flotante -->
+      <div id="finDatepicker" class="hidden" style="position:fixed;z-index:10000;background:#0a1424;border:1px solid #475569;border-radius:12px;padding:10px;box-shadow:0 10px 30px rgba(0,0,0,0.6);width:240px;">
+        <div class="flex items-center justify-between mb-2">
+          <button onclick="MOS.finCalNavMes(-1)" class="text-slate-400 hover:text-white text-sm px-2">‹</button>
+          <span id="finCalMesAnio" class="text-xs font-bold text-slate-200">—</span>
+          <button onclick="MOS.finCalNavMes(+1)" class="text-slate-400 hover:text-white text-sm px-2">›</button>
+        </div>
+        <div class="grid grid-cols-7 gap-1 text-[10px] text-slate-500 text-center mb-1">
+          <span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span>
+        </div>
+        <div id="finCalGrid" class="grid grid-cols-7 gap-1"></div>
       </div>
 
       <!-- ── Slide viewport (carousel entre días) ───────────────── -->
       <div id="finSlideContent" class="fin-slide-content">
 
-      <!-- ── KPI Cards ────────────────────────────────────────────── -->
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
-        <div class="fin-card fin-card-green">
-          <div class="fin-card-label">Ventas Netas</div>
-          <div id="finKpiVentas" class="fin-card-val">—</div>
-          <div id="finKpiTickets" class="fin-card-sub">— tickets</div>
-        </div>
-        <div class="fin-card fin-card-red">
-          <div class="fin-card-label">Costo de Ventas</div>
-          <div id="finKpiCosto" class="fin-card-val">—</div>
-          <div id="finKpiMargenB" class="fin-card-sub">Margen bruto —%</div>
-        </div>
-        <div class="fin-card fin-card-amber">
-          <div class="fin-card-label">Gastos del Día</div>
-          <div id="finKpiGastos" class="fin-card-val">—</div>
-          <div id="finKpiPersonas" class="fin-card-sub">— personas</div>
-        </div>
-        <div id="finKpiUtilCard" class="fin-card">
-          <div class="fin-card-label">Utilidad Neta</div>
-          <div id="finKpiUtil" class="fin-card-val">—</div>
-          <div id="finKpiMargenN" class="fin-card-sub">Margen neto —%</div>
-        </div>
-      </div>
+      <!-- ── FILA 1: Ventas + Métodos | Productos + Costo ─────── -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-4">
 
-      <!-- ── Desglose cash / crédito / anulados (subfila) ──────────── -->
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-        <div class="fin-card" style="border-color:#064e3b;background:#022c22aa">
-          <div class="fin-card-label">💵 Efectivo</div>
-          <div id="finKpiEfectivo" class="fin-card-val">—</div>
-          <div class="fin-card-sub">Cash físico recibido</div>
-        </div>
-        <div class="fin-card" style="border-color:#155e75;background:#083344aa">
-          <div class="fin-card-label">📱 Virtual</div>
-          <div id="finKpiVirtual" class="fin-card-val">—</div>
-          <div class="fin-card-sub">Yape · Plin · Transferencia</div>
-        </div>
-        <div class="fin-card" style="border-color:#7c2d12;background:#2c150aaa">
-          <div class="fin-card-label">📋 Crédito otorgado</div>
-          <div id="finKpiCredito" class="fin-card-val">—</div>
-          <div id="finKpiCreditoSub" class="fin-card-sub">— tickets POR_COBRAR</div>
-        </div>
-        <div class="fin-card" style="border-color:#374151;background:#1f2937aa">
-          <div class="fin-card-label">❌ Anulados</div>
-          <div id="finKpiAnulados" class="fin-card-val">—</div>
-          <div class="fin-card-sub">No se cuentan en ventas</div>
-        </div>
-      </div>
-
-      <!-- ── KPI Productos Vendidos + Ticket Promedio (clickables) ── -->
-      <div class="fin-panel mb-5 grid grid-cols-2 gap-0 p-0 overflow-hidden">
-        <button onclick="MOS.finAbrirModalProductos()"
-                class="text-left p-4 hover:bg-slate-700/40 transition-colors rounded-l-xl border-r border-slate-700/50 active:bg-slate-700/60">
-          <div class="fin-card-label mb-1 flex items-center gap-1.5">Productos Vendidos <span id="finSinCostoAlerta" class="hidden text-amber-400 text-sm" title="Hay productos sin costo">⚠</span><span class="text-slate-500 text-xs">↗</span></div>
-          <div class="flex items-baseline gap-2 flex-wrap">
-            <span id="finKpiUnidades" class="text-3xl font-bold text-indigo-300">—</span>
-            <span class="text-slate-400 text-sm">uds</span>
-            <span class="text-slate-600 mx-0.5">·</span>
-            <span id="finKpiSkus" class="text-3xl font-bold text-indigo-300">—</span>
-            <span class="text-slate-400 text-sm">SKUs</span>
-          </div>
-        </button>
-        <div class="rounded-r-xl overflow-hidden">
-          <div onclick="MOS.finAbrirModalTickets()" role="button" tabindex="0"
-               class="cursor-pointer text-right p-4 hover:bg-slate-700/40 transition-colors active:bg-slate-700/60">
-            <div class="fin-card-label mb-1 flex items-center justify-end gap-1">Ticket Promedio <span class="text-slate-500 text-xs">↗</span></div>
-            <div id="finKpiTicketProm" class="text-2xl font-bold text-slate-200">—</div>
-          </div>
-          <!-- Margen Promedio (clickable, sub-acción del card) -->
-          <div onclick="MOS.finAbrirEditorMargenDefault()" role="button" tabindex="0"
-               class="cursor-pointer text-right px-4 pb-3 pt-2 hover:bg-slate-700/40 transition-colors active:bg-slate-700/60"
-               style="border-top:1px dashed #1e293b" title="Click para editar el margen default usado en productos sin precio costo">
-            <div class="fin-card-label flex items-center justify-end gap-1 text-[10px]">
-              Margen Promedio <span class="text-slate-500 text-[10px]">⚙</span>
+        <!-- CARD A: VENTAS NETAS + barra proporcional efectivo/virtual -->
+        <div class="fin-bigcard fin-bigcard-ventas lg:col-span-7" onclick="MOS.finAbrirModalTickets('VENTAS')" style="cursor:pointer">
+          <div class="fin-bigcard-head">
+            <div class="fin-bigcard-eyebrow">
+              <span>💰</span><span>Ventas Netas</span>
+              <span id="finVentasComparaAyer" class="fin-compara hidden"></span>
+              <span class="text-slate-500 text-xs ml-auto">↗</span>
             </div>
-            <div class="flex items-baseline justify-end gap-1.5">
-              <span id="finKpiMargenProm" class="text-xl font-bold">—</span>
-              <span id="finKpiMargenEstim" class="text-[10px] text-slate-500"></span>
+          </div>
+          <div class="fin-bigcard-monto">
+            <span id="finKpiVentas">—</span>
+          </div>
+          <div id="finKpiTickets" class="fin-bigcard-sub">— tickets</div>
+          <!-- Barra proporcional efectivo/virtual -->
+          <div class="fin-pago-bar-wrap">
+            <div class="fin-pago-bar">
+              <div id="finPagoBarEf" class="fin-pago-bar-ef" style="width:50%">
+                <span class="fin-pago-bar-ef-label">💵</span>
+              </div>
+              <div id="finPagoBarVi" class="fin-pago-bar-vi" style="width:50%">
+                <span class="fin-pago-bar-vi-label">📱</span>
+              </div>
+            </div>
+            <div class="fin-pago-leyenda">
+              <div class="fin-pago-leyenda-item fin-pago-leyenda-ef">
+                <span class="fin-pago-dot" style="background:#34d399"></span>
+                <span class="fin-pago-monto" id="finKpiEfectivo">S/ —</span>
+                <span class="fin-pago-pct" id="finPagoPctEf">—%</span>
+                <span class="fin-pago-tag">Efectivo</span>
+              </div>
+              <div class="fin-pago-leyenda-item fin-pago-leyenda-vi">
+                <span class="fin-pago-dot" style="background:#22d3ee"></span>
+                <span class="fin-pago-monto" id="finKpiVirtual">S/ —</span>
+                <span class="fin-pago-pct" id="finPagoPctVi">—%</span>
+                <span class="fin-pago-tag">Virtual</span>
+              </div>
             </div>
           </div>
         </div>
+
+        <!-- CARD B: PRODUCTOS + COSTO apilados -->
+        <div class="fin-bigcard fin-bigcard-productos lg:col-span-5">
+          <button onclick="MOS.finAbrirModalProductos()" class="fin-bigcard-btn">
+            <div class="fin-bigcard-eyebrow">
+              <span>📦</span><span>Productos Vendidos</span>
+              <span id="finSinCostoAlerta" class="hidden text-amber-400 text-sm" title="Hay productos sin costo">⚠</span>
+              <span class="text-slate-500 text-xs ml-auto">↗</span>
+            </div>
+            <div class="fin-prod-num">
+              <span id="finKpiUnidades" class="fin-prod-grande">—</span>
+              <span class="fin-prod-mini">uds</span>
+              <span class="fin-prod-sep">·</span>
+              <span id="finKpiSkus" class="fin-prod-grande">—</span>
+              <span class="fin-prod-mini">SKUs</span>
+            </div>
+            <div class="fin-prod-extra">
+              <span class="fin-prod-extra-label">Ticket prom:</span>
+              <span id="finKpiTicketProm" class="fin-prod-extra-val">—</span>
+              <span class="fin-prod-sep">·</span>
+              <span class="fin-prod-extra-label">Margen prom:</span>
+              <span id="finKpiMargenProm" class="fin-prod-extra-val">—</span>
+              <span id="finKpiMargenEstim" class="fin-prod-extra-tip"></span>
+            </div>
+          </button>
+          <!-- Costo de Ventas debajo, en el mismo card -->
+          <div class="fin-prod-costo">
+            <div class="fin-prod-costo-row">
+              <span class="fin-prod-costo-ico">💸</span>
+              <span class="fin-prod-costo-label">Costo de Ventas</span>
+              <span id="finKpiCosto" class="fin-prod-costo-val">—</span>
+            </div>
+            <div class="fin-prod-costo-margen">
+              <span class="fin-prod-costo-bar">
+                <span id="finMargenBarFill" class="fin-prod-costo-bar-fill" style="width:50%"></span>
+              </span>
+              <span id="finKpiMargenB" class="fin-prod-costo-margen-pct">Margen bruto —%</span>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <!-- ── Punto de Equilibrio ──────────────────────────────────── -->
-      <div class="fin-panel mb-5">
-        <div class="flex items-center justify-between mb-2">
-          <span class="text-sm font-bold text-slate-200">Punto de Equilibrio</span>
-          <span id="finBEBadge" class="text-xs font-bold px-2 py-0.5 rounded-full">—</span>
+      <!-- ── PUNTO DE EQUILIBRIO IMPRESIONANTE ────────────────── -->
+      <div id="finBECardWrap" class="fin-be-card mb-4">
+        <!-- Header con estado dramático -->
+        <div class="fin-be-head">
+          <div class="fin-be-titulo">
+            <span class="fin-be-emoji" id="finBEEmoji">⚖️</span>
+            <div>
+              <div class="fin-be-titulo-txt">Punto de Equilibrio</div>
+              <div id="finBEEstado" class="fin-be-estado">—</div>
+            </div>
+          </div>
+          <div class="fin-be-resultado" id="finBEResultadoBox">
+            <div class="fin-be-resultado-label" id="finBEResultadoLabel">UTILIDAD NETA</div>
+            <div class="fin-be-resultado-val" id="finKpiUtil">—</div>
+            <div id="finKpiMargenN" class="fin-be-resultado-margen">—%</div>
+          </div>
         </div>
-        <div class="flex items-center justify-between text-xs text-slate-400 mb-1.5">
-          <span>S/ 0</span>
-          <span id="finBEMeta" class="text-slate-300 font-semibold">Meta: —</span>
-          <span id="finBEVentas">Ventas: —</span>
+        <!-- Barra dramática con marker -->
+        <div class="fin-be-bar-wrap">
+          <div class="fin-be-bar-track">
+            <div id="finBEBarVentas" class="fin-be-bar-fill" style="width:0%"></div>
+            <div id="finBELinea" class="fin-be-bar-meta-line" style="left:0%">
+              <div class="fin-be-bar-meta-flag">
+                <span id="finBEMeta">Meta: —</span>
+              </div>
+            </div>
+            <div class="fin-be-bar-marker" id="finBEMarker" style="left:0%"></div>
+          </div>
+          <!-- Etiquetas debajo -->
+          <div class="fin-be-bar-labels">
+            <span class="fin-be-bar-start">S/ 0</span>
+            <span id="finBEFaltaTxt" class="fin-be-falta">—</span>
+            <span id="finBEVentas" class="fin-be-ventas-end">Ventas: —</span>
+          </div>
         </div>
-        <div class="w-full bg-slate-800 rounded-full h-3 relative overflow-hidden">
-          <div id="finBEBarVentas"  class="h-3 rounded-full transition-all duration-700 absolute top-0 left-0" style="width:0%;background:linear-gradient(90deg,#10b981,#34d399)"></div>
-          <div id="finBELinea"      class="absolute top-0 h-3 w-0.5 bg-white/60 transition-all duration-700" style="left:0%"></div>
+        <!-- Footer con métricas: Costos fijos / Margen contrib / Gastos / Personas -->
+        <div class="fin-be-footer">
+          <div class="fin-be-foot-item">
+            <span class="fin-be-foot-ico">🏗️</span>
+            <div>
+              <div class="fin-be-foot-label">Costos fijos</div>
+              <div id="finBECostosFijos" class="fin-be-foot-val">—</div>
+            </div>
+          </div>
+          <div class="fin-be-foot-item fin-be-foot-clickable" onclick="MOS.finAbrirEditorMargenDefault()" title="Click para editar margen default usado en productos sin precio costo">
+            <span class="fin-be-foot-ico">📐</span>
+            <div>
+              <div class="fin-be-foot-label">Margen contrib <span class="fin-be-foot-arrow">⚙</span></div>
+              <div id="finBEMargenC" class="fin-be-foot-val">—%</div>
+            </div>
+          </div>
+          <div class="fin-be-foot-item">
+            <span class="fin-be-foot-ico">💼</span>
+            <div>
+              <div class="fin-be-foot-label">Gastos del día</div>
+              <div id="finKpiGastos" class="fin-be-foot-val">—</div>
+            </div>
+          </div>
+          <div class="fin-be-foot-item">
+            <span class="fin-be-foot-ico">👥</span>
+            <div>
+              <div class="fin-be-foot-label">Personas</div>
+              <div id="finKpiPersonas" class="fin-be-foot-val">— pers.</div>
+            </div>
+          </div>
         </div>
-        <div class="flex justify-between text-xs text-slate-500 mt-1">
-          <span>Costos fijos: <span id="finBECostosFijos" class="text-slate-300">—</span></span>
-          <span>Margen contrib: <span id="finBEMargenC" class="text-slate-300">—%</span></span>
+        <!-- Layer de confeti cuando se cruza el BE -->
+        <canvas id="finBEConfetti" class="fin-be-confetti hidden"></canvas>
+      </div>
+
+      <!-- ── CARD SLIM: Crédito + Anulados ────────────────────── -->
+      <div class="fin-slim-card mb-5">
+        <div class="fin-slim-col fin-slim-credito" onclick="MOS.finAbrirModalTickets('CREDITO')">
+          <span class="fin-slim-ico">📋</span>
+          <div class="fin-slim-cuerpo">
+            <div class="fin-slim-label">Crédito otorgado</div>
+            <div class="fin-slim-val-row">
+              <span id="finKpiCredito" class="fin-slim-val">S/ —</span>
+              <span id="finKpiCreditoSub" class="fin-slim-sub">— por cobrar</span>
+            </div>
+          </div>
+          <span class="fin-slim-arrow">↗</span>
+        </div>
+        <div class="fin-slim-divider"></div>
+        <div class="fin-slim-col fin-slim-anulados" onclick="MOS.finAbrirModalTickets('ANULADO')">
+          <span class="fin-slim-ico">❌</span>
+          <div class="fin-slim-cuerpo">
+            <div class="fin-slim-label">Anulados</div>
+            <div class="fin-slim-val-row">
+              <span id="finKpiAnulados" class="fin-slim-val">— ticket</span>
+              <span class="fin-slim-sub">no cuenta en ventas</span>
+            </div>
+          </div>
+          <span class="fin-slim-arrow">↗</span>
         </div>
       </div>
 
-      <div class="grid lg:grid-cols-2 gap-5 mb-5">
-        <!-- ── Waterfall Chart ───────────────────────────────────── -->
-        <div class="fin-panel">
-          <div class="text-sm font-bold text-slate-200 mb-3">Estado de Resultados</div>
-          <div style="position:relative;height:240px">
+      <div class="grid lg:grid-cols-2 gap-4 mb-4">
+        <!-- ── Estado de Resultados (Waterfall modernizado) ───── -->
+        <div class="fin-modcard fin-modcard-water">
+          <div class="fin-modcard-head">
+            <div class="fin-modcard-title">
+              <span class="fin-modcard-emoji">💧</span>
+              <div>
+                <div class="fin-modcard-title-txt">Estado de Resultados</div>
+                <div class="fin-modcard-sub">De ventas a utilidad neta · paso a paso</div>
+              </div>
+            </div>
+            <span id="finWaterUtil" class="fin-modcard-pill">—</span>
+          </div>
+          <div class="fin-water-canvas-wrap">
             <canvas id="finChartWaterfall"></canvas>
           </div>
         </div>
 
-        <!-- ── Tendencia 7 días ──────────────────────────────────── -->
-        <div class="fin-panel">
-          <div class="flex items-center justify-between mb-3">
-            <span class="text-sm font-bold text-slate-200">Últimos 7 Días</span>
-            <span id="fin7dTotal" class="text-xs text-emerald-400 font-semibold"></span>
+        <!-- ── Últimos 7 Días (modernizado) ────────────────────── -->
+        <div class="fin-modcard fin-modcard-7d">
+          <div class="fin-modcard-head">
+            <div class="fin-modcard-title">
+              <span class="fin-modcard-emoji">📈</span>
+              <div>
+                <div class="fin-modcard-title-txt">Últimos 7 Días</div>
+                <div class="fin-modcard-sub" id="fin7dSubtitulo">—</div>
+              </div>
+            </div>
+            <span id="fin7dTotal" class="fin-modcard-pill">—</span>
           </div>
-          <div style="position:relative;height:240px">
+          <div class="fin-7d-mini-row" id="fin7dMiniRow"></div>
+          <div class="fin-water-canvas-wrap">
             <canvas id="finChart7d"></canvas>
           </div>
         </div>
       </div>
 
-      <!-- ── Detalle gastos + jornadas ─────────────────────────────── -->
-      <div class="grid lg:grid-cols-2 gap-5">
-
-        <!-- Personal del día -->
-        <div class="fin-panel">
-          <div class="flex items-center justify-between mb-3">
-            <span class="text-sm font-bold text-slate-200">Personal del Día</span>
-            <span id="finPersonalTotal" class="text-xs text-slate-400"></span>
+      <!-- ── Personal del Día (full-width modernizado) ───────── -->
+      <div class="fin-modcard fin-modcard-personal mb-4">
+        <div class="fin-modcard-head">
+          <div class="fin-modcard-title">
+            <span class="fin-modcard-emoji">👥</span>
+            <div>
+              <div class="fin-modcard-title-txt">Personal del Día</div>
+              <div class="fin-modcard-sub" id="finPersonalSub">—</div>
+            </div>
           </div>
-          <div id="finPersonalList" class="space-y-2">
-            <p class="text-slate-500 text-xs">Sin registros</p>
+          <span id="finPersonalTotal" class="fin-modcard-pill">—</span>
+        </div>
+        <div id="finPersonalList" class="fin-personal-grid">
+          <p class="text-slate-500 text-xs col-span-full">Sin registros</p>
+        </div>
+      </div>
+
+      <!-- ── Gastos del Día (slim cuando vacío, expandido cuando hay) ─ -->
+      <div id="finGastosCard" class="fin-modcard fin-modcard-gastos mb-5">
+        <div class="fin-modcard-head">
+          <div class="fin-modcard-title">
+            <span class="fin-modcard-emoji">💰</span>
+            <div>
+              <div class="fin-modcard-title-txt">Gastos del Día</div>
+              <div class="fin-modcard-sub" id="finGastosSub">Sin gastos registrados</div>
+            </div>
+          </div>
+          <div class="fin-gastos-actions">
+            <span id="finGastosTotal" class="fin-modcard-pill">S/ 0</span>
+            <button onclick="MOS.finAbrirModalGasto()" class="fin-pill-add" title="Agregar gasto">+</button>
           </div>
         </div>
-
-        <!-- Gastos del día -->
-        <div class="fin-panel">
-          <div class="flex items-center justify-between mb-3">
-            <span class="text-sm font-bold text-slate-200">Gastos del Día</span>
-            <span id="finGastosTotal" class="text-xs text-slate-400"></span>
-          </div>
-          <!-- Por categoría -->
-          <div id="finGastosCateg" class="space-y-1.5 mb-3"></div>
-          <!-- Lista detalle -->
-          <div id="finGastosList" class="space-y-1.5">
-            <p class="text-slate-500 text-xs">Sin gastos registrados</p>
-          </div>
-        </div>
+        <div id="finGastosCateg" class="fin-gastos-cat hidden"></div>
+        <div id="finGastosList" class="fin-gastos-list hidden"></div>
       </div>
 
       </div><!-- /finSlideContent -->
@@ -5767,20 +8319,74 @@
      MODAL: LOG DE CAMBIOS DE PRODUCTOS (master)
 ═══════════════════════════════════════════════════════ -->
 <div id="modalLogProductos" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalLogProductos')">
-  <div class="modal-box flex flex-col" style="max-width:720px;max-height:92vh">
-    <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(168,85,247,0.10),transparent);">
-      <div class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl" style="background:linear-gradient(135deg,#581c87,#a855f7);">📜</div>
+  <div class="modal-box flex flex-col" style="max-width:820px;max-height:94vh">
+    <div class="px-5 py-3 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(168,85,247,0.10),transparent);">
+      <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style="background:linear-gradient(135deg,#581c87,#a855f7);">📜</div>
       <div class="min-w-0 flex-1">
         <h2 class="font-bold text-base text-white">Log de cambios — Catálogo</h2>
-        <p class="text-[11px] text-slate-500 mt-0.5">Productos editados recientemente · ordenados por fecha desc</p>
+        <p class="text-[11px] text-slate-500 mt-0.5" id="logModalSubtitle">— ediciones</p>
       </div>
-      <button onclick="MOS.refreshLogProductos()" class="btn-ghost text-xs px-2 py-1.5" title="Recargar">↺</button>
+      <button onclick="MOS.refreshLogProductos(true)" class="btn-ghost text-xs px-2 py-1.5" title="Recargar">↺</button>
       <button onclick="MOS.closeModal('modalLogProductos')" class="modal-close-x">×</button>
     </div>
-    <div class="overflow-y-auto px-5 py-3 flex-1">
-      <div id="logProductosList" class="space-y-2">
-        <div class="text-center py-6 text-slate-500 text-sm">Cargando...</div>
+
+    <!-- ── BARRA UNIFICADA: navegación + filtros en una sola fila ── -->
+    <div id="logBarraTop" class="log-bar flex-shrink-0">
+      <!-- Modo NORMAL: nav fecha + iconos filtros -->
+      <div id="logBarraNormal" class="log-bar-row">
+        <button onclick="MOS._logProdFechaOffset(-1)" class="log-nav-arrow" title="Día anterior (←)">‹</button>
+        <button onclick="MOS._logProdAbrirCalendario(this)" id="logFechaBtn" class="log-fecha-btn" title="Elegir fecha">
+          📅 <span id="logFechaLabel">—</span> <span class="text-[10px] opacity-60">▾</span>
+        </button>
+        <button onclick="MOS._logProdFechaOffset(+1)" class="log-nav-arrow" title="Día siguiente (→)">›</button>
+        <button onclick="MOS._logProdIrHoy()" id="logBtnHoy" class="log-pill log-pill-hoy" title="Saltar a hoy">📍</button>
+        <div class="log-bar-spacer"></div>
+        <button onclick="MOS._logProdToggleBusqueda()" id="logIconBuscar" class="log-icon-btn" title="Buscar producto">🔎</button>
+        <button onclick="MOS._logProdAbrirFiltro('usuario', this)" id="logIconUsuario" class="log-icon-btn" title="Filtrar por usuario">👤<span class="log-icon-dot hidden"></span></button>
+        <button onclick="MOS._logProdAbrirFiltro('accion', this)" id="logIconAccion" class="log-icon-btn" title="Filtrar por acción">✏️<span class="log-icon-dot hidden"></span></button>
+        <button onclick="MOS._logProdLimpiarFiltros()" id="logBtnLimpiar" class="log-pill-clear hidden" title="Limpiar filtros">✕</button>
+        <span class="log-contador" id="logCantResultados">—</span>
       </div>
+      <!-- Modo BUSCAR: input full-width -->
+      <div id="logBarraBuscar" class="log-bar-row hidden">
+        <button onclick="MOS._logProdToggleBusqueda()" class="log-nav-arrow" title="Volver">←</button>
+        <span class="text-base">🔎</span>
+        <input id="logFiltroBuscar" type="search" placeholder="buscar producto, sku o código..."
+               oninput="MOS._logProdFiltrar()"
+               class="log-search-inp">
+        <button onclick="MOS._logProdLimpiarBuscar()" class="log-nav-arrow" title="Limpiar">✕</button>
+      </div>
+      <!-- Hidden selects (datos para los popovers) -->
+      <select id="logFiltroUsuario" class="hidden" onchange="MOS._logProdFiltrar()"></select>
+      <select id="logFiltroAccion" class="hidden" onchange="MOS._logProdFiltrar()">
+        <option value="">Todas</option>
+        <option value="crear">🆕 Crear</option>
+        <option value="editar">✏️ Editar</option>
+        <option value="precio">💰 Precio</option>
+        <option value="codigo">🔢 Código</option>
+        <option value="equivalencia">🔗 Equivalencia</option>
+      </select>
+    </div>
+
+    <!-- ── POPOVER FILTROS (usuario / acción) ── -->
+    <div id="logFiltroPopover" class="hidden" style="position:fixed;z-index:10001;background:#0a1424;border:1px solid #475569;border-radius:12px;padding:8px;box-shadow:0 10px 30px rgba(0,0,0,0.6);min-width:200px;max-width:280px;max-height:60vh;overflow-y:auto;"></div>
+
+    <!-- ── DATEPICKER FLOTANTE ── -->
+    <div id="logDatepicker" class="hidden" style="position:fixed;z-index:10000;background:#0a1424;border:1px solid #475569;border-radius:12px;padding:10px;box-shadow:0 10px 30px rgba(0,0,0,0.5);">
+      <div class="flex items-center justify-between mb-2">
+        <button onclick="MOS._logProdCalNavMes(-1)" class="text-slate-400 hover:text-white text-sm px-2">‹</button>
+        <span id="logCalMesAnio" class="text-xs font-bold text-slate-200">—</span>
+        <button onclick="MOS._logProdCalNavMes(+1)" class="text-slate-400 hover:text-white text-sm px-2">›</button>
+      </div>
+      <div class="grid grid-cols-7 gap-1 text-[10px] text-slate-500 text-center mb-1">
+        <span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span>
+      </div>
+      <div id="logCalGrid" class="grid grid-cols-7 gap-1"></div>
+    </div>
+
+    <!-- ── CONTENIDO ── -->
+    <div id="logProductosList" class="overflow-y-auto px-5 py-3 flex-1 space-y-2 fin-slide-content">
+      <div class="text-center py-6 text-slate-500 text-sm">Cargando...</div>
     </div>
   </div>
 </div>

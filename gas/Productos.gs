@@ -511,6 +511,23 @@ function actualizarProductoMaster(params) {
     var _camposTexto = ['skuBase', 'codigoBarra', 'codigoProductoBase'];
     var _huboCambioReal = false;
     var _cambiosDetectados = []; // [{campo, antes, despues}]
+    // Compara dos valores ignorando diferencias de formato (coma vs punto, trim,
+    // tolerancia numérica de 0.001). Evita registrar cambios "fantasma" como
+    // 9,50 → 9.5 que en realidad son el mismo valor.
+    function _valoresIguales(a, b) {
+      if (a === b) return true;
+      if (a == null && b == null) return true;
+      var sa = String(a == null ? '' : a).trim();
+      var sb = String(b == null ? '' : b).trim();
+      if (sa === sb) return true;
+      // Intento numérico (acepta coma decimal)
+      var na = parseFloat(sa.replace(',', '.'));
+      var nb = parseFloat(sb.replace(',', '.'));
+      if (!isNaN(na) && !isNaN(nb) && isFinite(na) && isFinite(nb)) {
+        return Math.abs(na - nb) < 0.001;
+      }
+      return false;
+    }
     campos.forEach(function(campo) {
       if (params[campo] !== undefined) {
         var col = hdrs.indexOf(campo);
@@ -527,7 +544,8 @@ function actualizarProductoMaster(params) {
         if (_camposTexto.indexOf(campo) >= 0) {
           cell.setNumberFormat('@');
           var nuevoVal = String(params[campo] || '');
-          if (String(valorActual || '') !== nuevoVal) {
+          // Para campos texto: comparación trimmed (códigos sí distinguen "001" vs "1")
+          if (String(valorActual || '').trim() !== nuevoVal.trim()) {
             _huboCambioReal = true;
             _cambiosDetectados.push({ campo: campo, antes: String(valorActual || ''), despues: nuevoVal });
           }
@@ -537,7 +555,7 @@ function actualizarProductoMaster(params) {
             ? parseFloat(params[campo])
             : params[campo];
           var nuevoFinal = isNaN(val) ? params[campo] : val;
-          if (String(valorActual) !== String(nuevoFinal)) {
+          if (!_valoresIguales(valorActual, nuevoFinal)) {
             _huboCambioReal = true;
             _cambiosDetectados.push({ campo: campo, antes: valorActual, despues: nuevoFinal });
           }

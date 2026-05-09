@@ -383,6 +383,27 @@ function crearPersonalMaster(params) {
     new Date(),
     params.foto         || ''
   ]);
+
+  // Log de auditoría
+  try {
+    auditarLogMOS('PERSONAL_MASTER', id, {
+      usuario: String(params.usuario || params._audit && params._audit.usuario || 'desconocido'),
+      rol:     String(params._audit && params._audit.rol || ''),
+      source:  String(params._source || 'MOS_PERSONAL'),
+      accion:  'crear',
+      ref: {
+        nombre: params.nombre,
+        apellido: params.apellido || '',
+        tipo: params.tipo || 'OPERADOR',
+        appOrigen: params.appOrigen || 'warehouseMos',
+        rol: params.rol || 'ALMACENERO',
+        montoBase: parseFloat(params.montoBase) || 0,
+        tarifaHora: parseFloat(params.tarifaHora) || 0,
+        tienePin: !!params.pin
+      }
+    });
+  } catch(_){}
+
   return { ok: true, data: { idPersonal: id } };
 }
 
@@ -394,13 +415,42 @@ function actualizarPersonalMaster(params) {
   for (var i = 1; i < data.length; i++) {
     if (data[i][0] !== params.idPersonal) continue;
     var campos = ['nombre','apellido','tipo','appOrigen','rol','pin','color','tarifaHora','montoBase','estado'];
+    var cambios = [];
     campos.forEach(function(c) {
       if (params[c] !== undefined) {
         var col = hdrs.indexOf(c);
-        if (col >= 0) sheet.getRange(i+1, col+1).setValue(params[c]);
+        if (col >= 0) {
+          var antes = data[i][col];
+          var despues = params[c];
+          // Comparación normalizada (números con tolerancia, strings con trim)
+          if (String(antes).trim() !== String(despues).trim()) {
+            // No exponer el PIN viejo en el log; solo decir que cambió
+            if (c === 'pin') {
+              cambios.push({ campo: c, antes: antes ? '••••' : '(vacío)', despues: despues ? '••••' : '(vacío)' });
+            } else {
+              cambios.push({ campo: c, antes: antes, despues: despues });
+            }
+          }
+          sheet.getRange(i+1, col+1).setValue(despues);
+        }
       }
     });
-    return { ok: true };
+
+    // Log si hubo cambios reales
+    if (cambios.length > 0) {
+      try {
+        auditarLogMOS('PERSONAL_MASTER', params.idPersonal, {
+          usuario: String(params.usuario || (params._audit && params._audit.usuario) || 'desconocido'),
+          rol:     String((params._audit && params._audit.rol) || ''),
+          source:  String(params._source || 'MOS_PERSONAL'),
+          accion:  'editar',
+          cambios: cambios,
+          motivo:  String(params.motivo || '')
+        });
+      } catch(_){}
+    }
+
+    return { ok: true, cambios: cambios.length };
   }
   return { ok: false, error: 'Personal no encontrado: ' + params.idPersonal };
 }

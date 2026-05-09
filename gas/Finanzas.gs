@@ -119,6 +119,49 @@ function _parseVetoTs(obs) {
   return isNaN(t) ? 0 : t;
 }
 
+// Rehabilita una jornada vetada: limpia el tombstone, restaura monto desde
+// PERSONAL_MASTER (o monto provisto), reescribe fuente. Deja rastro en
+// observación con prefijo 'REHAB_TS:<ISO> · por X' para auditoría.
+function rehabilitarJornada(params) {
+  if (!params.idJornada) return { ok: false, error: 'Requiere idJornada' };
+  var sheet = getSheet('JORNADAS');
+  var data  = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(params.idJornada)) {
+      var rowNum = i + 1;
+      // Si no está vetada, no hacer nada
+      var fuenteActual = String(data[i][10] || '').toUpperCase();
+      if (fuenteActual !== 'ELIMINADA') {
+        return { ok: false, error: 'La jornada no está vetada' };
+      }
+      var nowIso = new Date().toISOString();
+      var actor  = String(params.actor || params.registradoPor || 'admin');
+      var nombre = String(data[i][3] || '');
+      var idPersonal = String(data[i][2] || '');
+      // Resolver monto: prioridad → params.monto → PERSONAL_MASTER.montoBase
+      var monto = parseFloat(params.monto || 0);
+      if (!monto || monto <= 0) {
+        try {
+          var pers = _sheetToObjects(getSheet('PERSONAL_MASTER'));
+          var match = pers.find(function(p){
+            if (idPersonal && String(p.idPersonal) === idPersonal) return true;
+            return String(p.nombre || '').toLowerCase() === nombre.toLowerCase();
+          });
+          if (match) monto = parseFloat(match.montoBase || 0);
+        } catch(_) {}
+      }
+      if (!monto || monto <= 0) monto = parseFloat(params.montoDefault || 0);
+      sheet.getRange(rowNum, 8).setValue(monto);
+      // Mantener rastro: REHAB_TS reemplaza VETO_TS
+      sheet.getRange(rowNum, 9).setValue('REHAB_TS:' + nowIso + ' · por ' + actor);
+      // Restaurar fuente — preferir 'MANUAL' (admin la rehabilitó)
+      sheet.getRange(rowNum, 11).setValue('MANUAL');
+      return { ok: true, data: { rehabTs: nowIso, idJornada: params.idJornada, monto: monto } };
+    }
+  }
+  return { ok: false, error: 'Jornada no encontrada' };
+}
+
 // Importa automáticamente las jornadas del día desde las aperturas de caja de MosExpress.
 // Por cada caja abierta ese día toma: vendedor, zona → busca montoBase en PERSONAL_MASTER.
 // Si no está en PERSONAL_MASTER usa el monto por defecto (params.montoDefault).
@@ -253,87 +296,105 @@ function _calcularIngresos(fecha) {
     return String(v.Fecha || '').substring(0, 10) === fecha;
   });
 
-  // ⚠ La fuente de verdad para detectar anulación es FormaPago (no Estado_Envio,
-  // que solo indica si fue enviado a NubeFact).
-  var noAnuladas = del_dia.filter(function(v){
-    return String(v.FormaPago || '').toUpperCase() !== 'ANULADO';
-  });
-  var anuladas = del_dia.filter(function(v){
-    return String(v.FormaPago || '').toUpperCase() === 'ANULADO';
-  });
-
-  // Cobrado (cash flow real) vs crédito (cuenta por cobrar)
-  var cobrados = noAnuladas.filter(function(v) {
-    var m = String(v.FormaPago || '').toUpperCase();
+  // ⚠ Definiciones selladas (FormaPago):
+  //   EFECTIVO/VIRTUAL/MIXTO = dinero recibido (cobrado real)
+  //   POR_COBRAR             = vendedor emitió, pendiente de cajero (cobro futuro inmediato)
+  //   CREDITO                = admin aprobó cobro futuro formal (deuda)
+  //   ANULADO                = ticket descartado, no cuenta
+  var fp = function(v){ return String(v.FormaPago || '').toUpperCase(); };
+  var anuladas    = del_dia.filter(function(v){ return fp(v) === 'ANULADO'; });
+  var noAnuladas  = del_dia.filter(function(v){ return fp(v) !== 'ANULADO'; });
+  var cobrados    = noAnuladas.filter(function(v) {
+    var m = fp(v);
     return m !== 'POR_COBRAR' && m !== 'CREDITO';
   });
-  var aCredito = noAnuladas.filter(function(v) {
-    var m = String(v.FormaPago || '').toUpperCase();
-    return m === 'POR_COBRAR' || m === 'CREDITO';
-  });
+  var porCobrarLs = noAnuladas.filter(function(v){ return fp(v) === 'POR_COBRAR'; });
+  var creditoLs   = noAnuladas.filter(function(v){ return fp(v) === 'CREDITO'; });
 
-  // Ventas brutas / netas = todas las NO ANULADAS (incluye crédito).
-  // El crédito ES venta del día contablemente, aunque no haya entrado al cash.
+  // Ventas brutas (devengado): todo lo facturado del día menos anulados
   var ventasBrutas = noAnuladas.reduce(function(s, v){ return s + (parseFloat(v.Total) || 0); }, 0);
 
-  // Desglose por tipo de documento
+  // Desglose por método (cobrados) + cantidades pendientes
+  var totalEfectivo = 0, totalVirtual = 0, totalMixto = 0;
+  cobrados.forEach(function(v) {
+    var t = parseFloat(v.Total) || 0;
+    var m = fp(v);
+    var r = _parseFormaPagoFin(v.FormaPago, t);
+    totalEfectivo += r.efe;
+    totalVirtual  += r.vir;
+    if (m.indexOf('MIXTO') === 0) totalMixto += t;
+  });
+  var porCobrarMonto = porCobrarLs.reduce(function(s, v){ return s + (parseFloat(v.Total) || 0); }, 0);
+  var creditoMonto   = creditoLs.reduce(function(s, v){ return s + (parseFloat(v.Total) || 0); }, 0);
+
+  // ✅ ventasNetas = SOLO COBRADO REAL (regla del negocio).
+  // Aplica a Margen Bruto, Neto, Contribución, Break-Even, Tendencia 7d, etc.
+  var cobradoTotal = _r2(totalEfectivo + totalVirtual);
+
+  // Desglose por tipo de documento (sobre TODO no anulado)
   var byDoc = {};
   noAnuladas.forEach(function(v) {
     var t = String(v.Tipo_Doc || v.tipoDoc || 'NOTA_DE_VENTA');
     byDoc[t] = _r2((byDoc[t] || 0) + (parseFloat(v.Total) || 0));
   });
 
-  // Desglose por método de pago — descompone MIXTO correctamente
-  var totalEfectivo = 0, totalVirtual = 0;
-  cobrados.forEach(function(v) {
-    var t = parseFloat(v.Total) || 0;
-    var r = _parseFormaPagoFin(v.FormaPago, t);
-    totalEfectivo += r.efe;
-    totalVirtual  += r.vir;
-  });
-  var creditoOtorgado = aCredito.reduce(function(s, v){ return s + (parseFloat(v.Total) || 0); }, 0);
-  var cobradoTotal    = _r2(totalEfectivo + totalVirtual);
-
   var byMetodo = {
-    EFECTIVO: _r2(totalEfectivo),
-    VIRTUAL:  _r2(totalVirtual)
+    EFECTIVO:   _r2(totalEfectivo),
+    VIRTUAL:    _r2(totalVirtual),
+    MIXTO:      _r2(totalMixto),
+    POR_COBRAR: _r2(porCobrarMonto),
+    CREDITO:    _r2(creditoMonto)
   };
-  if (creditoOtorgado > 0) byMetodo.POR_COBRAR = _r2(creditoOtorgado);
 
-  // IDs para cruzar con DETALLE (incluye crédito — sí vendió, sí descuenta stock)
+  // IDs para cruzar con DETALLE (incluye pendientes y créditos — sí vendió)
   var detalleIds = {};
   noAnuladas.forEach(function(v){ detalleIds[String(v.ID_Venta || '')] = true; });
 
-  // Detalle individual de cada ticket (todos los del día, ordenados por hora desc)
+  // Detalle individual de cada ticket: estado distingue 4 valores
   var detalleTickets = del_dia.map(function(v) {
     var f = String(v.Fecha || '');
-    var fp = String(v.FormaPago || 'EFECTIVO').toUpperCase();
-    var estadoDerivado = fp === 'ANULADO' ? 'ANULADO'
-                       : (fp === 'POR_COBRAR' || fp === 'CREDITO') ? 'POR_COBRAR'
+    var m = fp(v);
+    var estadoDerivado = m === 'ANULADO'    ? 'ANULADO'
+                       : m === 'POR_COBRAR' ? 'POR_COBRAR'
+                       : m === 'CREDITO'    ? 'CREDITO'
                        : 'COBRADO';
     return {
-      idVenta:   String(v.ID_Venta || ''),
-      total:     parseFloat(v.Total) || 0,
-      tipoDoc:   String(v.Tipo_Doc || v.tipoDoc || 'NOTA_DE_VENTA'),
-      formaPago: String(v.FormaPago || v.metodo || 'EFECTIVO'),
-      estado:    estadoDerivado,
-      vendedor:  String(v.Vendedor || ''),
+      idVenta:     String(v.ID_Venta || ''),
+      total:       parseFloat(v.Total) || 0,
+      tipoDoc:     String(v.Tipo_Doc || v.tipoDoc || 'NOTA_DE_VENTA'),
+      formaPago:   String(v.FormaPago || v.metodo || 'EFECTIVO'),
+      estado:      estadoDerivado,
+      vendedor:    String(v.Vendedor || ''),
       correlativo: String(v.Correlativo || ''),
-      hora:      f.length >= 16 ? f.substring(11, 16) : f.substring(0, 16)
+      cliente:     String(v.Cliente_Nombre || ''),
+      clienteDoc:  String(v.Cliente_Doc || ''),
+      hora:        f.length >= 16 ? f.substring(11, 16) : f.substring(0, 16)
     };
   }).sort(function(a, b) { return a.hora < b.hora ? 1 : -1; });
 
   return {
-    ventasBrutas:    _r2(ventasBrutas),
-    ventasNetas:     _r2(ventasBrutas),
-    cobrado:         cobradoTotal,        // EFECTIVO + VIRTUAL (incluyendo partes de MIXTO)
+    // Cifras principales (regla "ventas netas = solo cobrado real")
+    ventasNetas:     cobradoTotal,        // ✅ EFE + VIR + MIX (incluye partes de MIXTO)
+    ventasBrutas:    _r2(ventasBrutas),   // referencia: todo lo facturado (sin anulado)
+    cobrado:         cobradoTotal,        // alias de ventasNetas para claridad
     cobradoEfectivo: _r2(totalEfectivo),
     cobradoVirtual:  _r2(totalVirtual),
-    creditoOtorgado: _r2(creditoOtorgado), // POR_COBRAR + CREDITO
-    tickets:         noAnuladas.length,
+    cobradoMixto:    _r2(totalMixto),
+
+    // Pendientes separados (no suman a ventasNetas)
+    porCobrarTotal:  _r2(porCobrarMonto),
+    creditoTotal:    _r2(creditoMonto),
+    // Compat: campo viejo `creditoOtorgado` = suma de los dos pendientes (para callers legacy)
+    creditoOtorgado: _r2(porCobrarMonto + creditoMonto),
+
+    // Conteos
+    tickets:         cobrados.length,        // solo cobrados (los que generaron cash)
+    ticketsTotales:  noAnuladas.length,      // todos los no anulados
+    porCobrar:       porCobrarLs.length,
+    creditos:        creditoLs.length,
     anulados:        anuladas.length,
-    creditos:        aCredito.length,
-    ticketPromedio:  noAnuladas.length > 0 ? _r2(ventasBrutas / noAnuladas.length) : 0,
+    ticketPromedio:  cobrados.length > 0 ? _r2(cobradoTotal / cobrados.length) : 0,
+
     byDoc:           byDoc,
     byMetodo:        byMetodo,
     detalleIds:      detalleIds,
