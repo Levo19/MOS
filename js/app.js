@@ -18603,56 +18603,78 @@ const MOS = (() => {
   }
 
   // Busca la Ultima_Conexion para una persona del Día (vendedor ME virtual o operador real).
-  // Estrategia 3 niveles:
-  //   1. PERSONAL_MASTER por idPersonal → empleado registrado (rol real)
-  //   2. PERSONAL_MASTER por nombre (con o sin apellido) → cualquier match
-  //   3. DISPOSITIVOS por Ultima_Sesion → vendedor ME virtual cuyo nombre coincide
-  //      con el último login en algún dispositivo activo (más reciente gana)
+  // Estrategia: probar todas las fuentes y devolver la fecha MÁS RECIENTE encontrada.
+  // Un usuario puede tener varios dispositivos (laptop + móvil + tablet) — la idea
+  // es ver su "live" general sin importar en qué dispositivo esté activo.
+  //
+  // Fuentes consultadas (todas se evalúan, gana la más reciente):
+  //   A. PERSONAL_MASTER (personalMOS + personal) por idPersonal o nombre
+  //   B. DISPOSITIVOS por Ultima_Sesion === nombre (cualquier match)
+  //   C. DISPOSITIVOS por Ultima_Sesion contains primer nombre (Javier matchea "Javier Vasquez")
   function _finBuscarActividadPersonal(p, ev) {
     const idP = (ev && ev.idPersonal) || p.idPersonal || '';
     const nomBruto = String(p.nombre || (ev && ev.nombre) || '').trim();
     if (!nomBruto && !idP) return null;
-    const norm = s => String(s || '').trim().toLowerCase();
+
+    // Normalizador: lowercase + collapse múltiples espacios + trim
+    const norm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
     const nomNorm = norm(nomBruto);
+    const primerNombre = nomNorm.split(' ')[0]; // "javier" de "javier vasquez"
 
     const personasMaster = [
       ...(cfgData.personalMOS || []),
       ...(cfgData.personal || [])
     ];
 
-    // 1. Match exacto por idPersonal (más confiable)
+    // Acumulador del timestamp más reciente encontrado (en cualquier fuente)
+    let mejorIso = null;
+    let mejorMs  = -Infinity;
+    const _consider = (iso) => {
+      if (!iso) return;
+      const t = _parseTsUtc(iso);
+      if (!isNaN(t) && t > mejorMs) { mejorMs = t; mejorIso = iso; }
+    };
+
+    // A. PERSONAL_MASTER por idPersonal
     if (idP) {
       const m = personasMaster.find(x => String(x.idPersonal) === String(idP));
-      if (m) return m.Ultima_Conexion || m.ultimaConexion || null;
+      if (m) _consider(m.Ultima_Conexion || m.ultimaConexion || null);
     }
 
-    // 2. Match por nombre — probar nombre+apellido combinado y también nombre solo
+    // A2. PERSONAL_MASTER por nombre (combinado o solo) con tolerancia
     if (nomNorm) {
-      const m = personasMaster.find(x => {
+      const matches = personasMaster.filter(x => {
         const nomCompleto = norm((x.nombre || '') + ' ' + (x.apellido || ''));
         const soloNombre  = norm(x.nombre || '');
-        return nomCompleto === nomNorm || soloNombre === nomNorm
-            || nomCompleto.startsWith(nomNorm + ' ') || nomNorm.startsWith(soloNombre + ' ');
+        if (!nomCompleto && !soloNombre) return false;
+        return nomCompleto === nomNorm
+            || soloNombre  === nomNorm
+            || nomCompleto.startsWith(nomNorm + ' ')
+            || nomNorm.startsWith(soloNombre + ' ')
+            || nomCompleto === primerNombre
+            || soloNombre  === primerNombre;
       });
-      if (m) return m.Ultima_Conexion || m.ultimaConexion || null;
+      matches.forEach(m => _consider(m.Ultima_Conexion || m.ultimaConexion || null));
     }
 
-    // 3. Vendedor virtual: cruzar con DISPOSITIVOS por Ultima_Sesion (nombre del cajero)
+    // B. DISPOSITIVOS por Ultima_Sesion — cualquier dispositivo cuyo último login
+    //    matchee con el nombre buscado. Tomamos cualquiera que matchee, gana el más reciente.
     if (nomNorm && Array.isArray(cfgData.dispositivos)) {
-      let masReciente = null;
-      let tMasReciente = -Infinity;
       for (const d of cfgData.dispositivos) {
-        if (norm(d.Ultima_Sesion) !== nomNorm) continue;
-        const t = _parseTsUtc(d.Ultima_Conexion);
-        if (!isNaN(t) && t > tMasReciente) {
-          tMasReciente = t;
-          masReciente = d.Ultima_Conexion;
-        }
+        const sesNorm = norm(d.Ultima_Sesion || '');
+        if (!sesNorm) continue;
+        const matchea =
+          sesNorm === nomNorm ||                         // match exacto
+          sesNorm.startsWith(nomNorm + ' ') ||           // "javier vasquez" empieza con "javier "
+          nomNorm.startsWith(sesNorm + ' ') ||           // "javier vasquez" buscado, sesion "javier"
+          (primerNombre && sesNorm === primerNombre) ||  // sesion === primer nombre buscado
+          (primerNombre && sesNorm.startsWith(primerNombre + ' ')); // sesion empieza con primer nombre
+        if (!matchea) continue;
+        _consider(d.Ultima_Conexion);
       }
-      if (masReciente) return masReciente;
     }
 
-    return null;
+    return mejorIso;
   }
 
   function _finRenderPersonalCard(p, ev, fecha) {
