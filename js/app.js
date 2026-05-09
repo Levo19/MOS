@@ -10387,6 +10387,12 @@ const MOS = (() => {
                              style="background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.5);color:#60a5fa;font-size:13px;"
                              title="Enviar mensaje push a ${p.nombre}">💬</button>`;
 
+    // Botón 📜 Historial JSON — siempre visible (PERSONAL_MASTER.historialCambios)
+    const histBtn = `<button onclick="event.stopPropagation();MOS.cfgHistorialPersonal('${safeId}','${safeNombre}')"
+                             class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center hover:scale-110 transition-all"
+                             style="background:rgba(168,85,247,0.15);border:1px solid rgba(168,85,247,0.5);color:#c084fc;font-size:13px;"
+                             title="Ver historial de cambios de ${p.nombre}">📜</button>`;
+
     // Botón 🕵️ ESPÍA (audio + gps combinados) — siempre visible para no-admins.
     // Si el usuario no está logueado en ningún dispositivo, abrirEspiaPorUsuario muestra toast.
     // Para admins/master se oculta: ellos usan el panel web, no tablets.
@@ -10432,6 +10438,7 @@ const MOS = (() => {
         ${audioBtn}
         ${gpsBtn}
         ${pushBtn}
+        ${histBtn}
         ${llaveBtn}
         <label class="pers-switch shrink-0" title="${activo ? 'Desactivar' : 'Activar'}" onclick="event.stopPropagation()">
           <input type="checkbox" ${activo ? 'checked' : ''} onchange="MOS.togglePersonalActivo('${safeId}','${appOrigen}', event)">
@@ -12759,11 +12766,17 @@ const MOS = (() => {
     ` : '';
     const extrasHtml = exList.length ? `
       <div class="cj-caja-detail-head" style="margin-top:10px">Movimientos extra</div>
-      ${exList.map(ex => `
-        <div class="flex items-center justify-between py-1 text-[10px]">
-          <span class="${ex.tipo==='INGRESO'?'text-emerald-400':'text-red-400'}">${ex.tipo==='INGRESO'?'▲':'▼'} ${ex.concepto || ex.tipo}</span>
-          <span class="${ex.tipo==='INGRESO'?'text-emerald-400':'text-red-400'} font-bold">${ex.tipo==='INGRESO'?'+':'-'}S/ ${parseFloat(ex.monto||0).toFixed(2)}</span>
-        </div>`).join('')}
+      ${exList.map(ex => {
+        const idEx = String(ex.idExtra || '').replace(/'/g, '&#39;');
+        const colorCls = ex.tipo === 'INGRESO' || ex.tipo === 'INGRESO_VIRTUAL' ? 'text-emerald-400' : 'text-red-400';
+        const sigArr = ex.tipo === 'INGRESO' || ex.tipo === 'INGRESO_VIRTUAL' ? '▲' : '▼';
+        const sigMon = ex.tipo === 'INGRESO' || ex.tipo === 'INGRESO_VIRTUAL' ? '+' : '-';
+        return `<div class="flex items-center justify-between gap-2 py-1 text-[10px]">
+          <span class="${colorCls} flex-1 min-w-0 truncate">${sigArr} ${ex.concepto || ex.tipo}</span>
+          <span class="${colorCls} font-bold">${sigMon}S/ ${parseFloat(ex.monto||0).toFixed(2)}</span>
+          ${idEx ? `<button onclick="event.stopPropagation();MOS.cjHistorialExtra('${idEx}')" class="text-[11px] opacity-50 hover:opacity-100" title="Ver historial">📜</button>` : ''}
+        </div>`;
+      }).join('')}
     ` : '';
     return ticketsHtml + extrasHtml;
   }
@@ -13325,6 +13338,12 @@ const MOS = (() => {
     btn('', '📜', 'Ver historial',
         'Ver todos los cambios de este ticket', 'historial');
 
+    // 📜 Historial cliente — solo si hay clienteDoc
+    if (t.clienteDoc) {
+      btn('', '👥', 'Historial del cliente',
+          (t.cliente || t.clienteDoc) + ' · cambios sobre este cliente', 'historialCli');
+    }
+
     body.innerHTML = btns.join('') || '<p class="text-xs text-slate-500 italic">Sin acciones disponibles.</p>';
   }
 
@@ -13341,6 +13360,7 @@ const MOS = (() => {
     if (accion === 'editarCliente')   return _tkEditarClienteOpen(t);
     if (accion === 'anular')          return _tkAnularSimple(t);
     if (accion === 'historial')       return _tkHistorialOpen(t);
+    if (accion === 'historialCli')    return _tkHistorialClienteOpen(t);
   }
 
   // ──────────────────────────────────────────────────────────
@@ -13748,19 +13768,58 @@ const MOS = (() => {
   }
 
   // ──────────────────────────────────────────────────────────
-  // HISTORIAL (timeline)
+  // HISTORIAL (timeline) — genérico para ticket/cliente/extra/personal
   // ──────────────────────────────────────────────────────────
-  async function _tkHistorialOpen(t) {
-    $('tkHistSub').textContent = (t.correlativo || t.idVenta);
+  // Abre el modal de historial reusando #modalTkHistorial.
+  // opts: { titulo, subtitulo, fetcher: () => Promise<historial[]|{historial:[]}> }
+  async function _abrirHistorialGenerico(opts) {
+    const tit = document.querySelector('#modalTkHistorial h2');
+    if (tit) tit.textContent = opts.titulo || 'Historial';
+    $('tkHistSub').textContent = opts.subtitulo || '—';
     $('tkHistBody').innerHTML = '<div class="text-center py-8 text-slate-500 text-xs">Cargando...</div>';
     openModal('modalTkHistorial');
     try {
-      const data = await API.get('meHistorialVenta', { idVenta: t.idVenta });
-      const hist = data?.historial || data || [];
+      const data = await opts.fetcher();
+      const hist = Array.isArray(data) ? data : (data?.historial || []);
       _tkHistRender(hist);
     } catch(e) {
       $('tkHistBody').innerHTML = `<div class="text-center py-8 text-rose-400 text-xs">Error: ${e.message}</div>`;
     }
+  }
+
+  function _tkHistorialOpen(t) {
+    return _abrirHistorialGenerico({
+      titulo:    'Historial del ticket',
+      subtitulo: t.correlativo || t.idVenta,
+      fetcher:   () => API.get('meHistorialVenta', { idVenta: t.idVenta })
+    });
+  }
+
+  function _tkHistorialClienteOpen(t) {
+    if (!t.clienteDoc) { toast('El ticket no tiene cliente con documento', 'warning'); return; }
+    return _abrirHistorialGenerico({
+      titulo:    'Historial · Cliente',
+      subtitulo: `${t.cliente || '—'} · ${t.clienteDoc}`,
+      fetcher:   () => API.get('meHistorialCliente', { doc: t.clienteDoc })
+    });
+  }
+
+  function cjHistorialExtra(idExtra) {
+    if (!idExtra) { toast('Extra sin id — no se puede consultar historial', 'warning'); return; }
+    return _abrirHistorialGenerico({
+      titulo:    'Historial · Movimiento extra',
+      subtitulo: idExtra,
+      fetcher:   () => API.get('meHistorialExtra', { idExtra })
+    });
+  }
+
+  function cfgHistorialPersonal(idPersonal, nombre) {
+    if (!idPersonal) return;
+    return _abrirHistorialGenerico({
+      titulo:    'Historial · Personal',
+      subtitulo: (nombre || '—') + ' · ' + idPersonal,
+      fetcher:   () => API.get('getHistorialPersonal', { idPersonal })
+    });
   }
 
   function _tkHistRender(hist) {
@@ -20374,6 +20433,8 @@ const MOS = (() => {
     _tkAprobarCredConfirmar,
     _tkConvSetTipo, _tkConvDocChange, _tkConvBuscarCliente, _tkConvertirConfirmar,
     _tkBajaSetMotivo, _tkBajaActualizarBoton, _tkBajaConfirmar,
+    // F4 — Historiales adicionales (cliente / extra / personal)
+    cjHistorialExtra, cfgHistorialPersonal,
     // Login / sesión
     seleccionarUsuario, loginVolver, confirmarPin, logout, lockScreen, _np, _dismissWelcome,
     syncApp, applyPendingUpdate,

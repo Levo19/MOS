@@ -167,6 +167,7 @@ function getCierresCaja(params) {
       else if (tipo2 === 'EGRESO')          extrasPorCaja[ec].salidas         += mto;
       else if (tipo2 === 'EGRESO_VIRTUAL')  extrasPorCaja[ec].salidasVirtual  += mto;
       extrasListPorCaja[ec].push({
+        idExtra: String(ed[i][0] || ''),
         tipo: tipo2, monto: mto,
         concepto: String(ed[i][5] || ''),
         hora: fEx instanceof Date ? Utilities.formatDate(fEx, tz, 'HH:mm') : ''
@@ -1117,6 +1118,18 @@ function meBajaCPE(params) {
 function meHistorialVenta(params) {
   if (!params.idVenta) return { ok: false, error: 'idVenta requerido' };
   return _meBridgeGet({ accion: 'historial_venta', idVenta: params.idVenta });
+}
+
+// ── Historial JSON de un cliente ──
+function meHistorialCliente(params) {
+  if (!params.doc) return { ok: false, error: 'doc requerido' };
+  return _meBridgeGet({ accion: 'historial_cliente', doc: params.doc });
+}
+
+// ── Historial JSON de un movimiento extra ──
+function meHistorialExtra(params) {
+  if (!params.idExtra) return { ok: false, error: 'idExtra requerido' };
+  return _meBridgeGet({ accion: 'historial_extra', idExtra: params.idExtra });
 }
 
 // ── Detalle completo de venta (cliente, items, totales) ──

@@ -239,6 +239,8 @@ function _route(method, e) {
       case 'meConvertirNVaCPE':         return meConvertirNVaCPE(params);
       case 'meBajaCPE':                 return meBajaCPE(params);
       case 'meHistorialVenta':          return meHistorialVenta(params);
+      case 'meHistorialCliente':        return meHistorialCliente(params);
+      case 'meHistorialExtra':          return meHistorialExtra(params);
       case 'meDetalleVenta':            return meDetalleVenta(params);
       case 'meCajasAbiertas':           return meCajasAbiertas();
       case 'meConsultarCliente':        return meConsultarCliente(params);
