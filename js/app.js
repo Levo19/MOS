@@ -18602,22 +18602,57 @@ const MOS = (() => {
     }).catch(() => { /* si falla, queda lo del cache o sin score */ });
   }
 
-  // Busca la Ultima_Conexion de un personal en cfgData (cruza por idPersonal o nombre).
-  // Devuelve null si no se encuentra (cfgData aún no cargado o persona no listada).
+  // Busca la Ultima_Conexion para una persona del Día (vendedor ME virtual o operador real).
+  // Estrategia 3 niveles:
+  //   1. PERSONAL_MASTER por idPersonal → empleado registrado (rol real)
+  //   2. PERSONAL_MASTER por nombre (con o sin apellido) → cualquier match
+  //   3. DISPOSITIVOS por Ultima_Sesion → vendedor ME virtual cuyo nombre coincide
+  //      con el último login en algún dispositivo activo (más reciente gana)
   function _finBuscarActividadPersonal(p, ev) {
     const idP = (ev && ev.idPersonal) || p.idPersonal || '';
-    const nomNorm = String(p.nombre || (ev && ev.nombre) || '').trim().toLowerCase();
-    const fuentes = [
+    const nomBruto = String(p.nombre || (ev && ev.nombre) || '').trim();
+    if (!nomBruto && !idP) return null;
+    const norm = s => String(s || '').trim().toLowerCase();
+    const nomNorm = norm(nomBruto);
+
+    const personasMaster = [
       ...(cfgData.personalMOS || []),
       ...(cfgData.personal || [])
     ];
-    let match = null;
-    if (idP) match = fuentes.find(x => String(x.idPersonal) === String(idP));
-    if (!match && nomNorm) {
-      match = fuentes.find(x => String(x.nombre || '').trim().toLowerCase() === nomNorm);
+
+    // 1. Match exacto por idPersonal (más confiable)
+    if (idP) {
+      const m = personasMaster.find(x => String(x.idPersonal) === String(idP));
+      if (m) return m.Ultima_Conexion || m.ultimaConexion || null;
     }
-    if (!match) return null;
-    return match.Ultima_Conexion || match.ultimaConexion || null;
+
+    // 2. Match por nombre — probar nombre+apellido combinado y también nombre solo
+    if (nomNorm) {
+      const m = personasMaster.find(x => {
+        const nomCompleto = norm((x.nombre || '') + ' ' + (x.apellido || ''));
+        const soloNombre  = norm(x.nombre || '');
+        return nomCompleto === nomNorm || soloNombre === nomNorm
+            || nomCompleto.startsWith(nomNorm + ' ') || nomNorm.startsWith(soloNombre + ' ');
+      });
+      if (m) return m.Ultima_Conexion || m.ultimaConexion || null;
+    }
+
+    // 3. Vendedor virtual: cruzar con DISPOSITIVOS por Ultima_Sesion (nombre del cajero)
+    if (nomNorm && Array.isArray(cfgData.dispositivos)) {
+      let masReciente = null;
+      let tMasReciente = -Infinity;
+      for (const d of cfgData.dispositivos) {
+        if (norm(d.Ultima_Sesion) !== nomNorm) continue;
+        const t = _parseTsUtc(d.Ultima_Conexion);
+        if (!isNaN(t) && t > tMasReciente) {
+          tMasReciente = t;
+          masReciente = d.Ultima_Conexion;
+        }
+      }
+      if (masReciente) return masReciente;
+    }
+
+    return null;
   }
 
   function _finRenderPersonalCard(p, ev, fecha) {
