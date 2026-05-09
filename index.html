@@ -2458,9 +2458,53 @@
     /* ════════════════════════════════════════════════════════════
        PROVEEDORES — MODERNIZACIÓN F5 (cards lateral + header detalle)
        ════════════════════════════════════════════════════════════ */
+    /* ── Buscador + pills en una sola fila con expand-on-type ───── */
+    .prov-filas-filtro {
+      display: flex; align-items: center; gap: 8px;
+      flex-wrap: nowrap;
+    }
+    .prov-search-wrap {
+      flex: 0 1 220px;
+      min-width: 0;
+      transition: flex-basis 0.30s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    /* Cuando hay query (provBuscar setea has-query) o foco: ensanchar el input
+       y comprimir los pills hasta ocultarlos por completo. */
+    .prov-filas-filtro.has-query .prov-search-wrap,
+    .prov-filas-filtro.searching-focus .prov-search-wrap {
+      flex: 1 1 auto;
+    }
+    .prov-filas-filtro.has-query .prov-filtros-urgencia,
+    .prov-filas-filtro.searching-focus .prov-filtros-urgencia {
+      max-width: 0;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateX(8px);
+    }
+    /* Mobile: si la pantalla es muy chica, dejamos los pills en línea propia */
+    @media (max-width: 480px) {
+      .prov-filas-filtro {
+        flex-wrap: wrap;
+      }
+      .prov-search-wrap {
+        flex: 1 1 100%;
+      }
+      .prov-filtros-urgencia {
+        flex: 1 1 100%;
+      }
+    }
+
     /* ── Pills de urgencia (filtro arriba de la lista) ─────────── */
     .prov-filtros-urgencia {
       display: flex; flex-wrap: wrap; gap: 6px;
+      flex: 1 1 auto;
+      min-width: 0;
+      max-width: 1000px;
+      opacity: 1;
+      transition: max-width 0.30s cubic-bezier(0.16, 1, 0.3, 1),
+                  opacity 0.20s ease,
+                  transform 0.30s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow: hidden;
     }
     .prov-urg-pill {
       display: inline-flex; align-items: center; gap: 6px;
@@ -7006,17 +7050,22 @@
             <button class="btn-primary text-sm" onclick="MOS.abrirModalProveedor(null)">+ Nuevo</button>
           </div>
         </div>
-        <!-- Buscador inteligente -->
-        <div class="relative">
-          <input id="provSearch" type="search" autocomplete="off" oninput="MOS.provBuscar(this.value)"
-                 placeholder="Buscar por nombre, RUC, teléfono, categoría…"
-                 class="inp w-full pl-9 pr-9 text-sm">
-          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm pointer-events-none">🔎</span>
-          <button id="provSearchClear" type="button" onclick="MOS.provBuscar('')"
-                  class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-200 text-lg leading-none px-2 hidden">×</button>
+        <!-- Buscador + pills filtro urgencia en una sola fila.
+             Al escribir, el input se ensancha y los pills se ocultan. -->
+        <div id="provFilasFiltro" class="prov-filas-filtro">
+          <div class="prov-search-wrap relative">
+            <input id="provSearch" type="search" autocomplete="off"
+                   oninput="MOS.provBuscar(this.value)"
+                   onfocus="document.getElementById('provFilasFiltro')?.classList.add('searching-focus')"
+                   onblur="if(!this.value)document.getElementById('provFilasFiltro')?.classList.remove('searching-focus')"
+                   placeholder="Buscar por nombre, RUC, teléfono, categoría…"
+                   class="inp w-full pl-9 pr-9 text-sm">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm pointer-events-none">🔎</span>
+            <button id="provSearchClear" type="button" onclick="MOS.provBuscar('')"
+                    class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-200 text-lg leading-none px-2 hidden">×</button>
+          </div>
+          <div id="provFiltrosUrgencia" class="prov-filtros-urgencia"></div>
         </div>
-        <!-- Pills filtro urgencia: ordena la lista por día de pedido vs hoy -->
-        <div id="provFiltrosUrgencia" class="prov-filtros-urgencia mt-3"></div>
       </div>
       <div class="grid lg:grid-cols-3 gap-4">
         <!-- Lista: siempre visible. En mobile/tablet el detalle se inyecta inline bajo el card seleccionado. -->

@@ -5615,6 +5615,9 @@ const MOS = (() => {
     if (inp && inp.value !== S.provQuery) inp.value = S.provQuery;
     const clr = $('provSearchClear');
     if (clr) clr.classList.toggle('hidden', !S.provQuery);
+    // Toggle estado del contenedor: si hay query, ensancha el input y oculta pills
+    const wrap = $('provFilasFiltro');
+    if (wrap) wrap.classList.toggle('has-query', !!S.provQuery);
     renderProveedores();
   }
 
