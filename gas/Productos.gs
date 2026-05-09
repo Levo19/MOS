@@ -206,32 +206,83 @@ function _ensurePMTextColumns(sheet) {
   } catch(_){}
 }
 
-// Garantiza columnas de auditoría: ultimaEdicionPor (texto) + ultimaEdicion (timestamp)
+// Garantiza columna 'historialCambios' (JSON array) con fallback a las dos
+// columnas legacy 'ultimaEdicionPor' + 'ultimaEdicion' si ya existían.
 function _garantizarColumnasAuditoriaProducto(sheet) {
   try {
     sheet = sheet || getSheet('PRODUCTOS_MASTER');
     var hdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    var nuevas = [];
-    if (hdrs.indexOf('ultimaEdicionPor') < 0) nuevas.push('ultimaEdicionPor');
-    if (hdrs.indexOf('ultimaEdicion') < 0)    nuevas.push('ultimaEdicion');
-    nuevas.forEach(function(c) {
+    if (hdrs.indexOf('historialCambios') < 0) {
       var nextCol = sheet.getLastColumn() + 1;
-      sheet.getRange(1, nextCol).setValue(c).setFontWeight('bold').setBackground('#1f2937').setFontColor('#fff');
-    });
+      sheet.getRange(1, nextCol).setValue('historialCambios').setFontWeight('bold').setBackground('#1f2937').setFontColor('#fff');
+      SpreadsheetApp.flush();
+    }
   } catch(_){}
 }
 
-// Endpoint: top N productos editados recientemente (para panel master "log de cambios")
+// Append una entrada al historial JSON de un producto. Limita a últimas 50.
+// entrada = { ts, usuario, source, accion, cambios?: [{campo, antes, despues}], descripcion? }
+function _appendHistorialProducto(sheet, rowNum, hdrs, entrada) {
+  try {
+    var iCol = hdrs.indexOf('historialCambios');
+    if (iCol < 0) {
+      _garantizarColumnasAuditoriaProducto(sheet);
+      hdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      iCol = hdrs.indexOf('historialCambios');
+      if (iCol < 0) return;
+    }
+    var cell = sheet.getRange(rowNum, iCol + 1);
+    var raw = String(cell.getValue() || '').trim();
+    var arr = [];
+    if (raw) {
+      try { arr = JSON.parse(raw); } catch(_) { arr = []; }
+      if (!Array.isArray(arr)) arr = [];
+    }
+    arr.push(entrada);
+    if (arr.length > 50) arr = arr.slice(-50);
+    cell.setNumberFormat('@'); // forzar TEXTO para que no intente parsear como fecha/número
+    cell.setValue(JSON.stringify(arr));
+  } catch(e) { Logger.log('appendHistorial fail: ' + e.message); }
+}
+
+// Endpoint: top N productos con historial de cambios (para panel master "log").
+// Lee la columna historialCambios (JSON) y retorna los productos ordenados por
+// timestamp de la última entrada del historial. Cada producto trae su historial
+// completo (hasta 50 entradas) para que el frontend pueda expandirlo.
 function getProductosEditadosRecientes(params) {
   var limit = parseInt((params && params.limit) || 50, 10);
   if (!limit || limit < 1) limit = 50;
   if (limit > 500) limit = 500;
   _garantizarColumnasAuditoriaProducto();
   var rows = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
-  rows = rows.filter(function(r){ return r.ultimaEdicion; });
+  // Parsear historial + extraer última edición
+  rows = rows.map(function(r) {
+    var hist = [];
+    if (r.historialCambios) {
+      try {
+        var raw = String(r.historialCambios);
+        if (raw) hist = JSON.parse(raw);
+      } catch(_) { hist = []; }
+      if (!Array.isArray(hist)) hist = [];
+    }
+    // Compat con datos legacy: si tenía ultimaEdicion + ultimaEdicionPor pero NO hay historial,
+    // sintetizar una entrada para no perder ese registro previo.
+    if (hist.length === 0 && r.ultimaEdicion) {
+      hist.push({
+        ts: r.ultimaEdicion instanceof Date ? r.ultimaEdicion.toISOString() : String(r.ultimaEdicion),
+        usuario: String(r.ultimaEdicionPor || 'desconocido'),
+        source: 'legacy',
+        accion: 'editar',
+        cambios: []
+      });
+    }
+    r._historial = hist;
+    r._ultimaTs = hist.length ? hist[hist.length - 1].ts : null;
+    return r;
+  }).filter(function(r) { return r._ultimaTs; });
   rows.sort(function(a, b) {
-    var ta = a.ultimaEdicion instanceof Date ? a.ultimaEdicion.getTime() : (new Date(a.ultimaEdicion).getTime() || 0);
-    var tb = b.ultimaEdicion instanceof Date ? b.ultimaEdicion.getTime() : (new Date(b.ultimaEdicion).getTime() || 0);
+    var ta = new Date(a._ultimaTs).getTime() || 0;
+    var tb = new Date(b._ultimaTs).getTime() || 0;
     return tb - ta;
   });
   return { ok: true, data: rows.slice(0, limit).map(function(r) {
@@ -240,8 +291,8 @@ function getProductosEditadosRecientes(params) {
       skuBase:          r.skuBase,
       descripcion:      r.descripcion,
       precioVenta:      r.precioVenta,
-      ultimaEdicion:    r.ultimaEdicion instanceof Date ? r.ultimaEdicion.toISOString() : r.ultimaEdicion,
-      ultimaEdicionPor: r.ultimaEdicionPor || '',
+      historial:        r._historial,                 // array completo de entradas
+      ultimaEntrada:    r._historial[r._historial.length - 1],
       codigoProductoBase: r.codigoProductoBase || '',
       factorConversion: r.factorConversion,
       esEnvasable:      r.esEnvasable
@@ -374,6 +425,24 @@ function crearProductoMaster(params) {
       params.usuario || '', 'Precio inicial', 'MOS');
   }
 
+  // Auditoría: registrar entrada inicial en historialCambios
+  try {
+    _garantizarColumnasAuditoriaProducto(sheet);
+    var hdrsActual = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var auditUser = params.usuario;
+    if (!auditUser && params._audit && params._audit.usuario) auditUser = params._audit.usuario;
+    if (!auditUser) auditUser = 'desconocido';
+    _appendHistorialProducto(sheet, nextRow, hdrsActual, {
+      ts: new Date().toISOString(),
+      usuario: String(auditUser),
+      source: String(params._source || 'unknown'),
+      accion: 'crear',
+      descripcion: String(params.descripcion || ''),
+      codigoBarra: String(params.codigoBarra || ''),
+      precioVenta: parseFloat(params.precioVenta) || 0
+    });
+  } catch(_){}
+
   return { ok: true, data: { idProducto: id, skuBase: skuBase, secuencia: seq.secuencia } };
 }
 
@@ -441,6 +510,7 @@ function actualizarProductoMaster(params) {
     // ceros a la izquierda, formato GS1, etc.)
     var _camposTexto = ['skuBase', 'codigoBarra', 'codigoProductoBase'];
     var _huboCambioReal = false;
+    var _cambiosDetectados = []; // [{campo, antes, despues}]
     campos.forEach(function(campo) {
       if (params[campo] !== undefined) {
         var col = hdrs.indexOf(campo);
@@ -455,17 +525,22 @@ function actualizarProductoMaster(params) {
         var cell = sheet.getRange(i + 1, col + 1);
         var valorActual = data[i][col];
         if (_camposTexto.indexOf(campo) >= 0) {
-          // Forzar TEXTO en celdas de identificadores
           cell.setNumberFormat('@');
           var nuevoVal = String(params[campo] || '');
-          if (String(valorActual || '') !== nuevoVal) _huboCambioReal = true;
+          if (String(valorActual || '') !== nuevoVal) {
+            _huboCambioReal = true;
+            _cambiosDetectados.push({ campo: campo, antes: String(valorActual || ''), despues: nuevoVal });
+          }
           cell.setValue(nuevoVal);
         } else {
           var val = (_numCampos.indexOf(campo) >= 0 && params[campo] !== '')
             ? parseFloat(params[campo])
             : params[campo];
           var nuevoFinal = isNaN(val) ? params[campo] : val;
-          if (String(valorActual) !== String(nuevoFinal)) _huboCambioReal = true;
+          if (String(valorActual) !== String(nuevoFinal)) {
+            _huboCambioReal = true;
+            _cambiosDetectados.push({ campo: campo, antes: valorActual, despues: nuevoFinal });
+          }
           cell.setValue(nuevoFinal);
         }
       }
@@ -483,13 +558,22 @@ function actualizarProductoMaster(params) {
       }
     } catch(_){}
 
-    // Auditoría: registrar quién y cuándo (solo si hubo cambio real, ignora calls del propagador)
-    if (_huboCambioReal && !params._noPropagar) {
+    // Auditoría: append entrada al historialCambios (JSON array).
+    // Cada entrada captura quién, cuándo, fuente, acción, y diff de campos.
+    if (_huboCambioReal) {
       try {
-        var iUltPor = hdrs.indexOf('ultimaEdicionPor');
-        var iUltAt  = hdrs.indexOf('ultimaEdicion');
-        if (iUltPor >= 0) sheet.getRange(i + 1, iUltPor + 1).setValue(String(params.usuario || params._audit?.usuario || 'desconocido'));
-        if (iUltAt  >= 0) sheet.getRange(i + 1, iUltAt + 1).setValue(new Date());
+        var auditUser = params.usuario;
+        if (!auditUser && params._audit && params._audit.usuario) auditUser = params._audit.usuario;
+        if (!auditUser) auditUser = params._noPropagar ? 'sistema · propagación' : 'desconocido';
+        var entrada = {
+          ts: new Date().toISOString(),
+          usuario: String(auditUser),
+          source: String(params._source || 'unknown'),
+          accion: params._noPropagar ? 'editar (auto)' : 'editar',
+          cambios: _cambiosDetectados
+        };
+        if (params.motivoPrecio) entrada.motivo = String(params.motivoPrecio);
+        _appendHistorialProducto(sheet, i + 1, hdrs, entrada);
       } catch(_){}
     }
 

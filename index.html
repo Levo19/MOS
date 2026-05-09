@@ -2080,6 +2080,74 @@
       background: rgba(37,211,102,.22); border-color: rgba(37,211,102,.45);
     }
 
+    /* ── LOG de productos: cards expandibles con historial ─── */
+    .log-card {
+      background: #0a1424; border: 1px solid #1e293b;
+      border-radius: 10px; overflow: hidden;
+      transition: border-color 0.15s;
+    }
+    .log-card:hover { border-color: #334155; }
+    .log-card-head {
+      display: flex; gap: 10px; align-items: flex-start;
+      padding: 10px 12px; cursor: pointer;
+    }
+    .log-card-title {
+      font-size: 13px; font-weight: 700; color: #e2e8f0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .log-toggle { color: #64748b; font-size: 10px; margin-left: 4px; }
+    .log-card-meta {
+      display: flex; gap: 8px; flex-wrap: wrap;
+      margin-top: 2px;
+    }
+    .log-card-last { font-size: 10px; color: #64748b; margin-top: 2px; }
+    .log-card-entries {
+      padding: 4px 12px 12px;
+      border-top: 1px solid #1e293b;
+      display: flex; flex-direction: column; gap: 6px;
+      animation: logSlide 0.25s ease-out;
+    }
+    @keyframes logSlide { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+    .log-entry {
+      background: #060d1f; border-left: 2px solid #334155;
+      border-radius: 4px; padding: 6px 10px;
+    }
+    .log-entry-head {
+      display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+      font-size: 10px; margin-bottom: 3px;
+    }
+    .log-usuario { font-weight: 700; color: #c7d2fe; }
+    .log-source { color: #64748b; font-family: 'SF Mono', Menlo, monospace; font-size: 9px; }
+    .log-fecha { color: #94a3b8; margin-left: auto; }
+    .log-entry-body { font-size: 11px; color: #cbd5e1; line-height: 1.5; }
+    .log-action {
+      display: inline-block; padding: 1px 6px; border-radius: 3px;
+      font-size: 9px; font-weight: 800; text-transform: uppercase;
+      letter-spacing: 0.05em; margin-right: 4px;
+    }
+    .log-action-crear { background: rgba(16,185,129,0.18); color: #6ee7b7; }
+    .log-action-editar { background: rgba(99,102,241,0.18); color: #a5b4fc; }
+    .log-cambio { display: inline-block; margin-right: 6px; }
+    .log-cambio strong { color: #fbbf24; font-weight: 700; }
+    .log-antes { color: #f87171; text-decoration: line-through; }
+    .log-despues { color: #6ee7b7; font-weight: 700; }
+    .log-motivo { color: #94a3b8; font-style: italic; }
+    .log-btn-edit {
+      margin-top: 6px; padding: 6px 12px;
+      background: rgba(168,85,247,0.15); border: 1px solid rgba(168,85,247,0.4);
+      border-radius: 6px; color: #c084fc; font-size: 11px; font-weight: 700;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .log-btn-edit:hover { background: rgba(168,85,247,0.30); }
+    .log-badge {
+      flex-shrink: 0; padding: 2px 8px; border-radius: 999px;
+      font-size: 10px; font-weight: 700;
+    }
+    .log-badge-live   { background: rgba(16,185,129,0.18); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.4); }
+    .log-badge-recent { background: rgba(99,102,241,0.18); color: #a5b4fc; border: 1px solid rgba(99,102,241,0.4); }
+    .log-badge-hours  { background: rgba(245,158,11,0.18); color: #fbbf24; border: 1px solid rgba(245,158,11,0.4); }
+    .log-badge-old    { background: rgba(100,116,139,0.18); color: #94a3b8; border: 1px solid rgba(100,116,139,0.4); }
+
     /* ── PN modal v2: header, hero, chips ────────────────── */
     .pn-modal-v2 { border-radius: 16px; overflow: hidden; }
     @media (max-width: 640px) {

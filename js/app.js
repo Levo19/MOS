@@ -7537,44 +7537,88 @@ const MOS = (() => {
     try {
       const data = await API.get('getProductosEditadosRecientes', { limit: 100 });
       if (!Array.isArray(data) || !data.length) {
-        cont.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm italic">Sin ediciones recientes</div>';
+        cont.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm italic">Sin ediciones registradas todavía</div>';
         return;
       }
       cont.innerHTML = data.map(p => {
-        const f = p.ultimaEdicion ? new Date(p.ultimaEdicion) : null;
-        const fmt = f ? f.toLocaleString('es-PE', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', second:'2-digit' }) : '—';
+        const hist = Array.isArray(p.historial) ? p.historial : [];
+        const ult = p.ultimaEntrada || hist[hist.length - 1] || {};
+        const f = ult.ts ? new Date(ult.ts) : null;
+        const fmt = f ? f.toLocaleString('es-PE', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—';
         const mins = f ? Math.floor((Date.now() - f.getTime()) / 60000) : Infinity;
         let badge = '';
-        if (mins < 5)        badge = `<span class="text-[10px] px-1.5 py-0.5 rounded-full" style="background:rgba(16,185,129,0.18);color:#6ee7b7;border:1px solid rgba(16,185,129,0.4);">🟢 hace ${mins}m</span>`;
-        else if (mins < 60)  badge = `<span class="text-[10px] px-1.5 py-0.5 rounded-full" style="background:rgba(99,102,241,0.18);color:#a5b4fc;border:1px solid rgba(99,102,241,0.4);">hace ${mins}m</span>`;
-        else if (mins < 1440) badge = `<span class="text-[10px] px-1.5 py-0.5 rounded-full" style="background:rgba(245,158,11,0.18);color:#fbbf24;border:1px solid rgba(245,158,11,0.4);">hace ${Math.floor(mins/60)}h</span>`;
-        else                  badge = `<span class="text-[10px] px-1.5 py-0.5 rounded-full" style="background:rgba(100,116,139,0.18);color:#94a3b8;border:1px solid rgba(100,116,139,0.4);">hace ${Math.floor(mins/1440)}d</span>`;
+        if (mins < 5)         badge = `<span class="log-badge log-badge-live">🟢 hace ${mins}m</span>`;
+        else if (mins < 60)   badge = `<span class="log-badge log-badge-recent">hace ${mins}m</span>`;
+        else if (mins < 1440) badge = `<span class="log-badge log-badge-hours">hace ${Math.floor(mins/60)}h</span>`;
+        else                  badge = `<span class="log-badge log-badge-old">hace ${Math.floor(mins/1440)}d</span>`;
         const tipo = p.codigoProductoBase
           ? `<span class="text-[9px] uppercase font-bold text-purple-300">DERIVADO</span>`
           : (parseFloat(p.factorConversion) === 1 || !p.factorConversion)
             ? `<span class="text-[9px] uppercase font-bold text-emerald-300">CANÓNICO</span>`
             : `<span class="text-[9px] uppercase font-bold text-blue-300">PRESENTACIÓN · f=${p.factorConversion}</span>`;
         const safeId = String(p.idProducto || '').replace(/'/g, '&#39;');
-        return `<div class="flex items-center gap-3 p-3 rounded-lg cursor-pointer hover:scale-[1.01] transition-all"
-          style="background:#0a1424;border:1px solid #1e293b;"
-          onclick="MOS.closeModal('modalLogProductos');MOS.abrirModalProducto('${safeId}')">
-          <div class="flex-1 min-w-0">
-            <div class="text-sm font-medium text-slate-200 truncate">${p.descripcion || '—'}</div>
-            <div class="flex items-center gap-2 mt-0.5 flex-wrap">
-              ${tipo}
-              <span class="text-[10px] text-slate-500">${p.skuBase || '—'}</span>
-              <span class="text-[10px] text-amber-400 font-bold">S/ ${parseFloat(p.precioVenta || 0).toFixed(2)}</span>
+        // Renderizar las últimas N entradas del historial (más reciente arriba)
+        const entries = hist.slice().reverse().slice(0, 10).map(e => {
+          const fe = e.ts ? new Date(e.ts).toLocaleString('es-PE', { day:'2-digit', month:'short', year:'2-digit', hour:'2-digit', minute:'2-digit' }) : '—';
+          let cuerpo = '';
+          if (e.accion === 'crear') {
+            cuerpo = `<span class="log-action log-action-crear">🆕 creó</span> ${e.descripcion || ''}${e.codigoBarra ? ' · cód ' + e.codigoBarra : ''}${e.precioVenta ? ' · S/ ' + parseFloat(e.precioVenta).toFixed(2) : ''}`;
+          } else if (Array.isArray(e.cambios) && e.cambios.length) {
+            cuerpo = '<span class="log-action log-action-editar">✏️ editó</span> ' + e.cambios.map(c =>
+              `<span class="log-cambio"><strong>${c.campo}</strong>: <span class="log-antes">${_logFmtVal(c.antes)}</span> → <span class="log-despues">${_logFmtVal(c.despues)}</span></span>`
+            ).join(' · ');
+          } else {
+            cuerpo = `<span class="log-action log-action-editar">✏️ ${e.accion || 'cambio'}</span>`;
+          }
+          if (e.motivo) cuerpo += ` <span class="log-motivo">— ${e.motivo}</span>`;
+          return `<div class="log-entry">
+            <div class="log-entry-head">
+              <span class="log-usuario">👤 ${e.usuario || 'desconocido'}</span>
+              <span class="log-source">${e.source || ''}</span>
+              <span class="log-fecha">${fe}</span>
             </div>
-            <div class="text-[10px] text-slate-500 mt-1">
-              ✏️ ${p.ultimaEdicionPor || 'desconocido'} · ${fmt}
+            <div class="log-entry-body">${cuerpo}</div>
+          </div>`;
+        }).join('');
+        return `<div class="log-card">
+          <div class="log-card-head" onclick="MOS._logToggleCard(this)">
+            <div class="flex-1 min-w-0">
+              <div class="log-card-title">${p.descripcion || '—'} <span class="log-toggle">▾</span></div>
+              <div class="log-card-meta">
+                ${tipo}
+                <span class="text-[10px] text-slate-500">${p.skuBase || '—'}</span>
+                <span class="text-[10px] text-amber-400 font-bold">S/ ${parseFloat(p.precioVenta || 0).toFixed(2)}</span>
+                <span class="text-[10px] text-slate-500">· ${hist.length} cambio${hist.length !== 1 ? 's' : ''}</span>
+              </div>
+              <div class="log-card-last">
+                Último: ${ult.usuario || '—'} · ${fmt}
+              </div>
             </div>
+            ${badge}
           </div>
-          ${badge}
+          <div class="log-card-entries hidden">
+            ${entries}
+            <button onclick="MOS.closeModal('modalLogProductos');MOS.abrirModalProducto('${safeId}')" class="log-btn-edit">✏️ Abrir producto</button>
+          </div>
         </div>`;
       }).join('');
     } catch(e) {
       cont.innerHTML = '<div class="text-center py-6 text-red-400 text-sm">Error: ' + e.message + '</div>';
     }
+  }
+
+  function _logFmtVal(v) {
+    if (v === null || v === undefined || v === '') return '<em class="text-slate-600">vacío</em>';
+    const s = String(v);
+    return s.length > 40 ? s.substring(0, 40) + '...' : s;
+  }
+
+  function _logToggleCard(headEl) {
+    const card = headEl?.closest('.log-card');
+    if (!card) return;
+    card.querySelector('.log-card-entries')?.classList.toggle('hidden');
+    const t = card.querySelector('.log-toggle');
+    if (t) t.textContent = card.querySelector('.log-card-entries').classList.contains('hidden') ? '▾' : '▴';
   }
 
   // ── Product modal — abrir ─────────────────────────────────
@@ -17228,7 +17272,7 @@ const MOS = (() => {
     abrirAnalitica, cerrarAnalitica, setAnPeriodo, guardarStockMinMax, _anCurrentId,
     guardarAjustePrecios, stepperInc, stepperDec,
     abrirModalProducto, guardarProducto,
-    abrirLogProductos, refreshLogProductos,
+    abrirLogProductos, refreshLogProductos, _logToggleCard,
     prodTogglePolitica, _prodOnPoliticaOverride, _prodOnModoChange, _prodActualizarPoliticaEfectiva,
     setProdTipo, onTipoCheck, onEnvasableCheck, prodAutogenBarcode, prodValidarCodigoBarra, prodToggleEstado, prodToggleCosto,
     prodCalcMargen, prodOnRange, prodToggleSunat, prodOnTipoIGVChange, prodToggleEquiv,

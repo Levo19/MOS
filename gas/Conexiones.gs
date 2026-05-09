@@ -598,16 +598,19 @@ function lanzarProductoNuevo(params) {
           _source:     'MOS_PN_CORRECCION',
           skuBase:     existente.skuBase,
           codigoBarra: codigoViejo,
-          descripcion: 'Código corregido el ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd') + ' (era principal)'
+          descripcion: 'Código corregido el ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd') + ' (era principal)',
+          usuario:     params.usuario || ''
         });
       } catch(_){}
     }
 
     // 4. Actualizar codigoBarra del producto existente: viejo → nuevo
     var resultUpd = actualizarProductoMaster({
-      _source:     'MOS_PN_CORRECCION',
-      idProducto:  existente.idProducto,
-      codigoBarra: codigoNuevo
+      _source:      'MOS_PN_CORRECCION',
+      idProducto:   existente.idProducto,
+      codigoBarra:  codigoNuevo,
+      usuario:      params.usuario || params.aprobadoPor || '',
+      motivoPrecio: 'Corrección de código de barra (era ' + codigoViejo + ')'
     });
     if (!resultUpd.ok) return resultUpd;
 
