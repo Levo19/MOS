@@ -93,11 +93,19 @@ function _enviarPushTokens(titulo, cuerpo, tokens) {
 //   excluirUsuario: nombre del usuario a no notificar (ej: él mismo originó la acción)
 //   soloRolesAdmin: true → solo MASTER + ADMIN/ADMINISTRADOR
 //   soloRolesMaster: true → solo MASTER (más restrictivo que soloRolesAdmin)
+//   soloAppOrigen: 'WH'|'ME'|'MOS' → solo tokens registrados desde esa app
+//   soloRolesWH: true → alias de soloAppOrigen='WH' (compat con apps hijas)
 function _seleccionarTokensActivos(data, opciones) {
   opciones = opciones || {};
   // headers: idToken(0) token(1) usuario(2) dispositivo(3) appOrigen(4) fecha(5) ultimaVez(6) activo(7)
   var porUsuario = {};
   var excNorm = opciones.excluirUsuario ? String(opciones.excluirUsuario).trim().toLowerCase() : null;
+
+  // Filtro appOrigen — alias soloRolesWH = soloAppOrigen:'WH'
+  var appOrigenFiltro = '';
+  if (opciones.soloAppOrigen) appOrigenFiltro = String(opciones.soloAppOrigen).toUpperCase().trim();
+  else if (opciones.soloRolesWH) appOrigenFiltro = 'WH';
+  else if (opciones.soloRolesME) appOrigenFiltro = 'ME';
 
   // Si filtramos por rol, cargar set de usuarios permitidos
   var rolSet = null;
@@ -127,15 +135,20 @@ function _seleccionarTokensActivos(data, opciones) {
     var token  = String(data[i][1] || '');
     var usuarioRaw = String(data[i][2] || '');
     var usuario = usuarioRaw.trim().toLowerCase();
+    var appOrig = String(data[i][4] || '').toUpperCase().trim();
     var activo = data[i][7];
     if (!token) continue;
     if (activo === false || String(activo) === '0' || String(activo) === 'false') continue;
     if (excNorm && usuario === excNorm) continue; // excluir al sender
-    if (rolSet && !rolSet[usuario]) continue; // filtro por rol (master o admin+master)
+    if (rolSet && !rolSet[usuario]) continue;     // filtro por rol (master o admin+master)
+    if (appOrigenFiltro && appOrig !== appOrigenFiltro) continue; // filtro por app (WH/ME/MOS)
     var ultVezRaw = data[i][6];
     var ultVez = 0;
     try { ultVez = ultVezRaw ? new Date(ultVezRaw).getTime() : 0; } catch(_) {}
-    var key = usuario || ('__sinusuario__' + i);
+    // Cuando filtramos por appOrigen, la clave incluye la app para no colapsar
+    // tokens del mismo usuario en distintas apps (ej: el mismo MASTER tiene
+    // token WH y token ME; al filtrar WH solo queda el WH).
+    var key = (usuario || ('__sinusuario__' + i)) + (appOrigenFiltro ? '@' + appOrig : '');
     if (!porUsuario[key] || porUsuario[key].ultVez < ultVez) {
       porUsuario[key] = { token: token, usuario: data[i][2], row: i, ultVez: ultVez };
     }
@@ -263,7 +276,10 @@ function enviarPushNotif(params) {
   var opciones = {
     excluirUsuario:  params.excluirUsuario || null,
     soloRolesAdmin:  params.soloRolesAdmin === true || String(params.soloRolesAdmin) === 'true',
-    soloRolesMaster: params.soloRolesMaster === true || String(params.soloRolesMaster) === 'true'
+    soloRolesMaster: params.soloRolesMaster === true || String(params.soloRolesMaster) === 'true',
+    soloRolesWH:     params.soloRolesWH === true || String(params.soloRolesWH) === 'true',
+    soloRolesME:     params.soloRolesME === true || String(params.soloRolesME) === 'true',
+    soloAppOrigen:   params.soloAppOrigen || ''
   };
   _enviarPushTodos(params.titulo, params.cuerpo || '', opciones);
   return { ok: true };
