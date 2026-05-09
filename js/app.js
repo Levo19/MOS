@@ -10683,11 +10683,44 @@ const MOS = (() => {
   // (renderImpresoras() obsoleto — usado renderInfra() para vista jerárquica)
 
   // Helper: actividad del usuario igual que dispositivos
+  // Parser defensivo de timestamps Ultima_Conexion / Ultima_Sesion del backend.
+  // Caso 1: ISO con Z → JS Date lo parsea correcto.
+  // Caso 2: ISO sin Z (legacy "2026-05-09 14:35:29") → SIN este helper JS lo
+  //         parseaba como hora LOCAL del browser, dando mismatch de horas vs
+  //         server. Aquí lo convertimos manualmente asumiendo UTC.
+  // Caso 3: formato US "5/9/2026 9:35:29" → parsear con regex defensivo.
+  function _parseTsUtc(raw) {
+    if (!raw) return NaN;
+    if (raw instanceof Date) return raw.getTime();
+    const s = String(raw).trim();
+    if (!s) return NaN;
+    // ISO con T y Z (o con offset tipo +05:00) — JS lo parsea correctamente
+    if (s.indexOf('T') >= 0 && (s.indexOf('Z') >= 0 || /[+-]\d{2}:?\d{2}$/.test(s))) {
+      return new Date(s).getTime();
+    }
+    // ISO sin Z: "2026-05-09 14:35:29" o "2026-05-09T14:35:29" → tratar como UTC
+    const isoNoZ = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{1,2}):(\d{2}):(\d{2})/;
+    const m1 = s.match(isoNoZ);
+    if (m1) {
+      return Date.UTC(+m1[1], +m1[2] - 1, +m1[3], +m1[4], +m1[5], +m1[6]);
+    }
+    // Formato US "5/9/2026 9:35:29" o "05/09/2026 09:35:29" → tratar como UTC
+    const usFmt = /^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})/;
+    const m2 = s.match(usFmt);
+    if (m2) {
+      return Date.UTC(+m2[3], +m2[1] - 1, +m2[2], +m2[4], +m2[5], +m2[6]);
+    }
+    // Fallback: que JS intente
+    const t = new Date(s).getTime();
+    return isNaN(t) ? NaN : t;
+  }
+
   function _personaActividad(ultimaConexion) {
     if (!ultimaConexion) return { color: '#64748b', label: 'sin conexión', dot: '⚫', minutos: Infinity };
-    const t = new Date(ultimaConexion).getTime();
+    const t = _parseTsUtc(ultimaConexion);
     if (isNaN(t)) return { color: '#64748b', label: ultimaConexion, dot: '⚫', minutos: Infinity };
     const min = Math.floor((Date.now() - t) / 60000);
+    if (min < 0)       return { color: '#10b981', label: 'online ahora',     dot: '🟢', minutos: 0 }; // server adelantado
     if (min < 5)       return { color: '#10b981', label: 'online ahora',     dot: '🟢', minutos: min };
     if (min < 60)      return { color: '#10b981', label: `hace ${min}m`,     dot: '🟢', minutos: min };
     if (min < 60*24)   return { color: '#fbbf24', label: `hace ${Math.floor(min/60)}h`, dot: '🟡', minutos: min };
@@ -11688,10 +11721,11 @@ const MOS = (() => {
 
   function _dispActividad(ultimaConexion) {
     if (!ultimaConexion) return { color: '#64748b', label: 'sin conexión', dot: '⚫', minutos: Infinity };
-    const t = new Date(ultimaConexion).getTime();
+    const t = _parseTsUtc(ultimaConexion);
     if (isNaN(t)) return { color: '#64748b', label: ultimaConexion, dot: '⚫', minutos: Infinity };
     const seg = Math.floor((Date.now() - t) / 1000);
     const min = Math.floor(seg / 60);
+    if (seg < 0)       return { color: '#10b981', label: '🔴 LIVE · ahora', dot: '🟢', minutos: 0 };
     if (seg < 90)      return { color: '#10b981', label: `🔴 LIVE · hace ${seg}s`, dot: '🟢', minutos: min };
     if (min < 5)       return { color: '#10b981', label: `online · hace ${min}m`,  dot: '🟢', minutos: min };
     if (min < 60)      return { color: '#10b981', label: `hace ${min}m`,     dot: '🟢', minutos: min };

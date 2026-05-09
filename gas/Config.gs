@@ -320,6 +320,35 @@ function getPersonalMaster(params) {
   if (params && params.tipo)      rows = rows.filter(function(r){ return r.tipo === params.tipo; });
   if (params && params.appOrigen) rows = rows.filter(function(r){ return r.appOrigen === params.appOrigen; });
   if (params && params.estado)    rows = rows.filter(function(r){ return String(r.estado) === String(params.estado); });
+  // Normalizar Ultima_Conexion a ISO con Z explícito — mismo patrón que getDispositivos.
+  // Sin esto, strings legacy "2026-05-09 14:35:29" sin Z los parseaba el browser
+  // como hora local y mostraba "hace 9h" cuando eran segundos.
+  var tz = Session.getScriptTimeZone();
+  rows.forEach(function(r){
+    if (!r.Ultima_Conexion) return;
+    try {
+      if (r.Ultima_Conexion instanceof Date) {
+        r.Ultima_Conexion = r.Ultima_Conexion.toISOString();
+        return;
+      }
+      if (typeof r.Ultima_Conexion === 'string') {
+        var s = r.Ultima_Conexion.trim();
+        // Si ya tiene T y Z → ISO válido
+        if (s.indexOf('T') >= 0 && s.indexOf('Z') >= 0) return;
+        // Intentar parsear formatos legacy en TZ del script (asumir local)
+        var parsed = null;
+        var formatos = ['yyyy-MM-dd HH:mm:ss', 'yyyy-MM-dd', 'M/d/yyyy H:m:s', 'd/M/yyyy H:m:s'];
+        for (var fi = 0; fi < formatos.length; fi++) {
+          try {
+            parsed = Utilities.parseDate(s, tz, formatos[fi]);
+            if (parsed && !isNaN(parsed.getTime())) break;
+            parsed = null;
+          } catch(_) {}
+        }
+        if (parsed) r.Ultima_Conexion = parsed.toISOString();
+      }
+    } catch(_) {}
+  });
   // PIN solo se devuelve si se pide explícitamente (para verificación interna)
   return {
     ok: true,
@@ -550,14 +579,14 @@ function crearDispositivo(params) {
   var sheet = getSheet('DISPOSITIVOS');
   var dup = _sheetToObjects(sheet).find(function(d){ return d.ID_Dispositivo === params.ID_Dispositivo; });
   if (dup) return { ok: false, error: 'Dispositivo ya registrado: ' + params.ID_Dispositivo };
-  var tz = Session.getScriptTimeZone();
   var hdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   var fila = new Array(hdrs.length).fill('');
   fila[hdrs.indexOf('ID_Dispositivo')]   = params.ID_Dispositivo;
   fila[hdrs.indexOf('Nombre_Equipo')]    = params.Nombre_Equipo;
   fila[hdrs.indexOf('App')]              = params.App    || 'mosExpress';
   fila[hdrs.indexOf('Estado')]           = params.Estado || 'ACTIVO';
-  fila[hdrs.indexOf('Ultima_Conexion')]  = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss');
+  // ISO UTC explícito (Z) — formato consistente con el resto de heartbeats
+  fila[hdrs.indexOf('Ultima_Conexion')]  = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
   if (hdrs.indexOf('Ultima_Zona') >= 0)     fila[hdrs.indexOf('Ultima_Zona')]     = params.Ultima_Zona     || '';
   if (hdrs.indexOf('Ultima_Estacion') >= 0) fila[hdrs.indexOf('Ultima_Estacion')] = params.Ultima_Estacion || '';
   if (hdrs.indexOf('Ultima_Sesion') >= 0)   fila[hdrs.indexOf('Ultima_Sesion')]   = params.Ultima_Sesion   || '';
@@ -594,8 +623,8 @@ function actualizarDispositivo(params) {
     if (cambioZonaEstacion) {
       var iUC = hdrs.indexOf('Ultima_Conexion');
       var iUS = hdrs.indexOf('Ultima_Sesion');
-      var tz = Session.getScriptTimeZone();
-      var nowStr = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss');
+      // ISO UTC explícito (mismo formato que el resto)
+      var nowStr = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
       if (iUC >= 0) sheet.getRange(i + 1, iUC + 1).setValue(nowStr);
       if (iUS >= 0 && params.Ultima_Sesion === undefined) {
         sheet.getRange(i + 1, iUS + 1).setValue('manual_admin');
