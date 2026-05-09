@@ -5294,6 +5294,302 @@ const MOS = (() => {
     return _DIA_LABELS[String(v).toUpperCase()] || v;
   }
 
+  // Mapa día-de-semana → número (1=Lun, 7=Dom). null si no es un día semanal.
+  const _DIA_NUM = { LUNES:1, MARTES:2, MIERCOLES:3, JUEVES:4, VIERNES:5, SABADO:6, DOMINGO:7 };
+  function _provDiaANumero(v) {
+    if (!v) return null;
+    const n = _DIA_NUM[String(v).toUpperCase()];
+    return n || null;  // DIARIO/SEGUN_DEMANDA/etc → null (no aplica urgencia)
+  }
+  // Devuelve día de hoy 1=Lun..7=Dom
+  function _provHoyNum() {
+    const d = new Date().getDay();   // 0=Dom..6=Sab
+    return d === 0 ? 7 : d;
+  }
+  // Días faltantes hasta el próximo "diaSemana" (1..7). 0 si es hoy. NaN si dia inválido.
+  function _provDiasHastaProx(diaSemana) {
+    if (!diaSemana) return NaN;
+    const hoy = _provHoyNum();
+    let d = diaSemana - hoy;
+    if (d < 0) d += 7;
+    return d;
+  }
+
+  // Categoriza la urgencia de pedido de un proveedor.
+  // Devuelve { estado, dias, label, cls } donde estado es:
+  //   'hoy'      — diaPedido cae hoy (urgente)
+  //   'proximo'  — en 1..3 días
+  //   'lejano'   — en 4..6 días o sin día específico (DIARIO/SEGUN_DEMANDA)
+  //   'sinDia'   — sin diaPedido configurado
+  //   'inactivo' — estado del proveedor != '1'
+  function _provUrgenciaPedido(p) {
+    if (!p) return { estado: 'lejano', dias: NaN, label: '—', cls: '' };
+    if (String(p.estado || '0') !== '1') {
+      return { estado: 'inactivo', dias: NaN, label: 'Inactivo', cls: 'prov-urg-inactivo' };
+    }
+    const num = _provDiaANumero(p.diaPedido);
+    if (!num) {
+      // DIARIO se trata como "siempre puedes pedir" → lejano (no urgente, no rojo)
+      const upper = String(p.diaPedido || '').toUpperCase();
+      if (upper === 'DIARIO' || upper === 'SEGUN_DEMANDA' || upper === 'MISMO_DIA') {
+        return { estado: 'lejano', dias: 0, label: 'Diario', cls: 'prov-urg-lejano' };
+      }
+      return { estado: 'sinDia', dias: NaN, label: 'Sin día', cls: 'prov-urg-sindia' };
+    }
+    const dias = _provDiasHastaProx(num);
+    if (dias === 0)        return { estado: 'hoy',     dias: 0, label: 'PEDIR HOY',                    cls: 'prov-urg-hoy' };
+    if (dias <= 3)         return { estado: 'proximo', dias,    label: `en ${dias} día${dias>1?'s':''}`, cls: 'prov-urg-proximo' };
+    return                       { estado: 'lejano',  dias,    label: `en ${dias} días`,                cls: 'prov-urg-lejano' };
+  }
+
+  // Avatar con imagen real si existe, fallback a iniciales con color hash
+  function _provAvatarHtmlFull(prov, sizeCls) {
+    const cls = sizeCls || 'prov-avatar';
+    const txt = String(prov.nombre || '?').trim();
+    const img = (prov.imagen || '').trim();
+    if (img) {
+      // Logo del proveedor: img redonda
+      const safe = img.replace(/"/g, '&quot;');
+      return `<div class="${cls} prov-avatar-img"><img src="${safe}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='${_provAvatarInicialesInner(txt)}'"></div>`;
+    }
+    return _provAvatarHtml(prov.nombre).replace('class="prov-avatar"', `class="${cls}"`);
+  }
+  // Helper: HTML interno (sin wrapper) para el fallback en onerror
+  function _provAvatarInicialesInner(nombre) {
+    const partes = String(nombre || '?').split(/\s+/);
+    const ini = ((partes[0] || '?')[0] + (partes[1] ? partes[1][0] : '')).toUpperCase();
+    return ini.replace(/'/g, '&#39;');
+  }
+
+  // Sparkline simple de los últimos 30 días de compras del proveedor.
+  // Si no hay datos cached, devuelve vacío (no rompe).
+  function _provSparkBars(idProveedor) {
+    const hist = (S.provHistorico && S.provHistorico[idProveedor]) || null;
+    const fuente = hist && Array.isArray(hist.guiasPorDia) ? hist.guiasPorDia : null;
+    if (!fuente || !fuente.length) return '';
+    const dias = fuente.slice(-30);
+    const max = dias.reduce((m, d) => Math.max(m, parseFloat(d.totalDia || 0)), 1);
+    const bars = dias.map(d => {
+      const v = parseFloat(d.totalDia || 0);
+      const h = Math.max(2, Math.round((v / max) * 18));
+      const cls = v === 0 ? 'zero' : '';
+      return `<div class="prov-spark-bar ${cls}" style="height:${h}px" title="${d.fecha}: S/ ${v.toFixed(2)}"></div>`;
+    }).join('');
+    return `<div class="prov-spark">${bars}</div>`;
+  }
+
+  // ── Filtro de urgencia: pills arriba de la lista ──────────────
+  // S.provUrgFiltro persistido en sessionStorage para no perderlo al navegar.
+  function _provGetFiltroUrg() {
+    if (S.provUrgFiltro) return S.provUrgFiltro;
+    try { S.provUrgFiltro = sessionStorage.getItem('mos_prov_urg') || 'todos'; }
+    catch { S.provUrgFiltro = 'todos'; }
+    return S.provUrgFiltro;
+  }
+  function provSetFiltroUrgencia(filtro) {
+    S.provUrgFiltro = filtro;
+    try { sessionStorage.setItem('mos_prov_urg', filtro); } catch {}
+    _finBeep?.('click');
+    renderProveedores();
+  }
+
+  // Aplica filtro de urgencia a la lista (se llama después del filtro de búsqueda)
+  function _provAplicarFiltroUrgencia(lista) {
+    const f = _provGetFiltroUrg();
+    if (f === 'todos') return lista;
+    return lista.filter(p => {
+      const u = _provUrgenciaPedido(p);
+      if (f === 'hoy')        return u.estado === 'hoy';
+      if (f === 'proximos')   return u.estado === 'hoy' || u.estado === 'proximo';
+      if (f === 'atrasados')  return u.estado === 'inactivo';   // hoy no hay "atrasado real" por modelo
+      return true;
+    });
+  }
+
+  // Ordena por urgencia (HOY → próximos asc por días → lejano → sinDia → inactivo)
+  function _provOrdenarPorUrgencia(lista) {
+    const orden = { hoy: 0, proximo: 1, lejano: 2, sinDia: 3, inactivo: 4 };
+    return lista.slice().sort((a, b) => {
+      const ua = _provUrgenciaPedido(a);
+      const ub = _provUrgenciaPedido(b);
+      const oa = orden[ua.estado] ?? 9;
+      const ob = orden[ub.estado] ?? 9;
+      if (oa !== ob) return oa - ob;
+      // Mismo estado: el de menor días faltantes primero (NaN al final)
+      const da = isNaN(ua.dias) ? 99 : ua.dias;
+      const db = isNaN(ub.dias) ? 99 : ub.dias;
+      if (da !== db) return da - db;
+      // Empate total: alfabético por nombre
+      return String(a.nombre || '').localeCompare(String(b.nombre || ''));
+    });
+  }
+
+  // Píldora decisional para el header: pedido o entrega.
+  // diaCampo: valor del campo del proveedor (LUNES, DIARIO, etc.)
+  // titulo: texto del header (PEDIDO, ENTREGA)
+  // emoji: icon
+  // opts.contextDia: para entrega — calcula "+N días después del pedido"
+  function _provPildoraDia(diaCampo, titulo, emoji, opts) {
+    if (!diaCampo) return _provPildoraVacia(titulo, emoji, '—', '');
+    const upper = String(diaCampo).toUpperCase();
+    // Casos no-semanales
+    if (upper === 'DIARIO')           return _provPildoraVacia(titulo, emoji, 'Diario', 'prov-pild-neutral');
+    if (upper === 'SEGUN_DEMANDA')    return _provPildoraVacia(titulo, emoji, 'Según demanda', 'prov-pild-neutral');
+    if (upper === 'MISMO_DIA')        return _provPildoraVacia(titulo, emoji, 'Mismo día', 'prov-pild-neutral');
+    if (upper === 'CONTRA_ENTREGA')   return _provPildoraVacia(titulo, emoji, 'Contra entrega', 'prov-pild-neutral');
+    if (upper === '24H')              return _provPildoraVacia(titulo, emoji, '24 horas', 'prov-pild-neutral');
+    if (upper === '48H')              return _provPildoraVacia(titulo, emoji, '48 horas', 'prov-pild-neutral');
+    if (upper === 'FIN_DE_MES')       return _provPildoraVacia(titulo, emoji, 'Fin de mes', 'prov-pild-neutral');
+    // Día semanal: calcular distancia
+    const dias = _provDiasHastaProx(_provDiaANumero(diaCampo));
+    if (isNaN(dias)) return _provPildoraVacia(titulo, emoji, _provDiaLabel(diaCampo), '');
+    const labelDia = _provDiaLabel(diaCampo);
+    let texto, cls;
+    if (dias === 0)     { texto = `🔥 HOY (${labelDia})`;            cls = 'prov-pild-hoy'; }
+    else if (dias === 1){ texto = `Mañana (${labelDia})`;            cls = 'prov-pild-proximo'; }
+    else if (dias <= 3) { texto = `en ${dias} días (${labelDia})`;   cls = 'prov-pild-proximo'; }
+    else                { texto = `en ${dias} días (${labelDia})`;   cls = 'prov-pild-lejano'; }
+    return `
+      <div class="prov-pild ${cls}">
+        <div class="prov-pild-head">${emoji} ${titulo}</div>
+        <div class="prov-pild-body">${texto}</div>
+      </div>`;
+  }
+
+  function _provPildoraVacia(titulo, emoji, texto, cls) {
+    return `
+      <div class="prov-pild ${cls || ''}">
+        <div class="prov-pild-head">${emoji} ${titulo}</div>
+        <div class="prov-pild-body">${texto}</div>
+      </div>`;
+  }
+
+  // Píldora de PAGO: combina diaPago semanal + plazoCredito.
+  function _provPildoraPago(prov) {
+    const dia   = prov.diaPago;
+    const plazo = parseInt(prov.plazoCredito || 0, 10);
+    const fp    = String(prov.formaPago || '').toUpperCase();
+    if (fp === 'CONTADO') {
+      return _provPildoraVacia('PAGO', '💸', 'Al contado', 'prov-pild-neutral');
+    }
+    if (dia) {
+      const upper = String(dia).toUpperCase();
+      if (upper === 'FIN_DE_MES') return _provPildoraVacia('PAGO', '💸', 'Fin de mes', 'prov-pild-neutral');
+      const num = _provDiaANumero(dia);
+      if (num) {
+        const ddiff = _provDiasHastaProx(num);
+        const label = _provDiaLabel(dia);
+        const sufijo = plazo ? ` · plazo ${plazo}d` : '';
+        let txt, cls;
+        if (ddiff === 0)        { txt = `🔥 HOY (${label})${sufijo}`;            cls = 'prov-pild-hoy'; }
+        else if (ddiff === 1)   { txt = `Mañana (${label})${sufijo}`;            cls = 'prov-pild-proximo'; }
+        else if (ddiff <= 3)    { txt = `en ${ddiff} días (${label})${sufijo}`;  cls = 'prov-pild-proximo'; }
+        else                    { txt = `en ${ddiff} días (${label})${sufijo}`;  cls = 'prov-pild-lejano'; }
+        return `<div class="prov-pild ${cls}"><div class="prov-pild-head">💸 PAGO</div><div class="prov-pild-body">${txt}</div></div>`;
+      }
+    }
+    if (plazo) return _provPildoraVacia('PAGO', '💸', `Plazo ${plazo} días`, 'prov-pild-neutral');
+    return _provPildoraVacia('PAGO', '💸', '—', '');
+  }
+
+  // Abre el modal de Histórico (reemplaza la pestaña). Usa data ya cargada o pide.
+  // Renderiza directamente al body del modal usando el render legacy detrás de
+  // una redirección temporal — evitamos duplicar IDs (provHistFilter, etc).
+  async function provAbrirHistorico(id) {
+    const prov = S.proveedores.find(p => p.idProveedor === id);
+    if (!prov) return;
+    _finBeep?.('click');
+    const sub = $('provHistModalSub');
+    if (sub) sub.textContent = prov.nombre + ' · últimos 60 días';
+    openModal('modalProvHistorico');
+    const body = $('provHistModalBody');
+    if (!body) return;
+    body.innerHTML = '<p class="text-center py-8 text-slate-500 text-xs">Cargando...</p>';
+    try {
+      // Asegurar data cacheada
+      if (!S.provHistorico[id]) {
+        const r = await API.get('getHistoricoProveedor', { idProveedor: id, dias: 60 });
+        S.provHistorico[id] = (r && r.data) ? r.data : r;
+      }
+      const data = S.provHistorico[id];
+      // Renderizar histórico (reusa _renderProvHistorico → escribe en provTabHistorico oculto)
+      _renderProvHistorico();
+      // Mover el body interior (sin filtro/select para evitar IDs duplicados) al modal
+      const sourceBody = document.querySelector('#provTabHistorico #provHistoricoBody');
+      if (sourceBody && sourceBody.innerHTML.trim()) {
+        body.innerHTML = sourceBody.innerHTML;
+      } else if (data && (data.totalGuias || (data.guiasPorDia && data.guiasPorDia.length))) {
+        // El render aún no terminó (fetch async) — mostrar resumen mínimo
+        body.innerHTML = `<p class="text-center py-6 text-slate-400 text-sm">Cargando detalle…</p>`;
+        setTimeout(() => {
+          const sb = document.querySelector('#provTabHistorico #provHistoricoBody');
+          if (sb && sb.innerHTML.trim()) body.innerHTML = sb.innerHTML;
+        }, 400);
+      } else {
+        body.innerHTML = '<p class="text-center py-8 text-slate-500 text-xs italic">Sin compras en los últimos 60 días</p>';
+      }
+    } catch (e) {
+      body.innerHTML = `<p class="text-center py-8 text-rose-400 text-xs">Error: ${e.message}</p>`;
+    }
+  }
+
+  // Abre el pop-down con datos secundarios del proveedor (banco, CCI, email, etc).
+  function provAbrirInfo(id) {
+    const prov = S.proveedores.find(p => p.idProveedor === id);
+    if (!prov) return;
+    _finBeep?.('click');
+    const sub = $('provInfoModalSub');
+    if (sub) sub.textContent = prov.nombre;
+    const body = $('provInfoModalBody');
+    if (!body) return;
+    const row = (label, val, emoji) => val ? `
+      <div class="prov-info-row">
+        <span class="prov-info-row-label">${emoji || ''} ${label}</span>
+        <span class="prov-info-row-val">${val}</span>
+      </div>` : '';
+    body.innerHTML =
+      row('RUC',           prov.ruc,            '🪪') +
+      row('Teléfono',      prov.telefono,       '📞') +
+      row('Email',         prov.email,          '📧') +
+      row('Banco',         prov.banco,          '🏦') +
+      row('Nº Cuenta',     prov.numeroCuenta,   '🔢') +
+      row('CCI',           prov.cci,            '🔢') +
+      row('Forma de pago', (prov.formaPago === 'CREDITO' ? 'Crédito ' + (prov.plazoCredito||0) + 'd' : prov.formaPago) || '', '💳') +
+      row('Día pedido',    _provDiaLabel(prov.diaPedido),  '📋') +
+      row('Día entrega',   _provDiaLabel(prov.diaEntrega), '📦') +
+      row('Día pago',      _provDiaLabel(prov.diaPago),    '💸') +
+      row('Plazo crédito', prov.plazoCredito ? prov.plazoCredito + ' días' : '', '⏱') +
+      row('Categoría',     prov.categoriaProducto, '🏷') +
+      row('Responsable',   prov.responsable,    '👤') +
+      row('Estado',        prov.estado === '1' ? 'Activo' : 'Inactivo', '⚙');
+    openModal('modalProvInfo');
+  }
+
+  function _provRenderFiltrosUrgencia(lista) {
+    const cont = $('provFiltrosUrgencia');
+    if (!cont) return;
+    // Conteo por estado
+    const cnt = { hoy: 0, proximo: 0, lejano: 0, sinDia: 0, inactivo: 0 };
+    lista.forEach(p => { cnt[_provUrgenciaPedido(p).estado] = (cnt[_provUrgenciaPedido(p).estado] || 0) + 1; });
+    const f = _provGetFiltroUrg();
+    const total = lista.length;
+    const proximos = cnt.hoy + cnt.proximo;
+
+    const pill = (key, label, count, color) => {
+      const active = f === key;
+      const cls = active ? 'prov-urg-pill active ' + color : 'prov-urg-pill ' + color;
+      return `<button class="${cls}" onclick="MOS.provSetFiltroUrgencia('${key}')">${label} <span class="prov-urg-pill-cnt">${count}</span></button>`;
+    };
+
+    let html = '';
+    html += pill('hoy',       '🔥 Pedir hoy',  cnt.hoy,    'rojo');
+    html += pill('proximos',  '⏳ Próximos 3d', proximos,   'amber');
+    html += pill('todos',     '📋 Todos',      total,      'neutral');
+    if (cnt.inactivo > 0) html += pill('atrasados', '⚠ Inactivos', cnt.inactivo, 'gris');
+
+    cont.innerHTML = html;
+  }
+
   function _normaliza(s) {
     return String(s || '').toLowerCase()
       .normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -5403,7 +5699,11 @@ const MOS = (() => {
     const el = $('listProveedores');
     if (!el) return;
     const reales = _filtrarReales(S.proveedores);
-    const filtrados = _provFiltrarPorQuery(reales, S.provQuery || '');
+    const filtradosTexto = _provFiltrarPorQuery(reales, S.provQuery || '');
+    // Pills de urgencia se computan sobre lo filtrado por texto (no por urgencia)
+    _provRenderFiltrosUrgencia(filtradosTexto);
+    // Filtro de urgencia + orden por urgencia
+    const filtrados = _provOrdenarPorUrgencia(_provAplicarFiltroUrgencia(filtradosTexto));
     const cnt = $('provCount');
     if (cnt) cnt.textContent = filtrados.length + (S.provQuery ? ' / ' + reales.length : '');
     if (!reales.length) {
@@ -5411,14 +5711,13 @@ const MOS = (() => {
       return;
     }
     if (!filtrados.length) {
-      el.innerHTML = `<p class="text-slate-500 text-sm text-center py-8">Sin resultados para "${S.provQuery}"</p>`;
+      el.innerHTML = `<p class="text-slate-500 text-sm text-center py-8">Sin resultados</p>`;
       return;
     }
     // Render UNA SOLA vez de la lista plana (sin wrappers extra).
-    // El inline-detail se mueve después por DOM manipulation, no por re-render.
-    el.innerHTML = filtrados.map(p => {
+    el.innerHTML = filtrados.map((p, idx) => {
       const sel = S.provSelId === p.idProveedor;
-      const diaPed = p.diaPedido ? `<span title="Día de pedido">📋 ${_provDiaLabel(p.diaPedido)}</span>` : '';
+      const urg = _provUrgenciaPedido(p);
       const formaTxt = p.formaPago === 'CREDITO' ? `💳 Crédito ${p.plazoCredito || 0}d` : (p.formaPago === 'CONTADO' ? '💵 Contado' : '');
       const tieneTel = !!p.telefono;
       const pendStats = _provContarPendientes(p.idProveedor);
@@ -5427,46 +5726,52 @@ const MOS = (() => {
       const cartBadge = cartStats
         ? `<span class="prov-cart-badge" data-prov-cart-badge="${p.idProveedor}" title="Carrito: ${cartStats.count} prods · ${fmtMoney(cartStats.monto)}">🛒 ${cartStats.count}</span>`
         : `<span data-prov-cart-badge="${p.idProveedor}" style="display:none"></span>`;
+      // Stagger fade-up suave: max 12 cards animados (después es CSS instantáneo)
+      const staggerDelay = idx < 12 ? (idx * 30) : 0;
+      const staggerStyle = staggerDelay > 0 ? `style="animation-delay:${staggerDelay}ms"` : '';
+
       return `
-        <div class="card p-3 cursor-pointer hover:border-indigo-500/30 transition-colors ${sel ? 'prov-card-active' : ''} ${p._tmp ? 'opacity-60' : ''}"
+        <div class="prov-card-modern ${urg.cls} ${sel ? 'prov-card-active' : ''} ${p._tmp ? 'opacity-60' : ''}"
              data-prov-card="${p.idProveedor}"
+             ${staggerStyle}
              onclick="MOS.selectProveedor('${p.idProveedor}')">
-          <div class="flex items-start gap-3">
-            ${_provAvatarHtml(p.nombre)}
+          ${urg.estado === 'hoy' ? '<div class="prov-card-corona" title="Hoy es día de pedido">👑</div>' : ''}
+          <div class="prov-card-head">
+            ${_provAvatarHtmlFull(p, 'prov-avatar')}
             <div class="min-w-0 flex-1">
-              <div class="flex items-start justify-between gap-2">
-                <div class="font-semibold text-sm text-slate-100 truncate">${p.nombre}</div>
-                <div class="flex items-center gap-1.5 shrink-0">
-                  ${cartBadge}
-                  ${pendBadge}
-                  <span class="badge ${p.estado == '1' ? 'badge-green' : 'badge-gray'}">${p.estado == '1' ? 'Activo' : 'Inactivo'}</span>
-                </div>
-              </div>
-              <div class="text-[11px] text-slate-500 mt-0.5 truncate">${p.ruc || '—'}${p.categoriaProducto ? ' · ' + p.categoriaProducto : ''}</div>
-              <div class="flex items-center flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[11px] text-slate-400">
-                ${formaTxt ? `<span>${formaTxt}</span>` : ''}
-                ${diaPed}
-              </div>
+              <div class="prov-card-nombre">${p.nombre}</div>
+              <div class="prov-card-ruc">${p.ruc || '—'}${p.categoriaProducto ? ' · ' + p.categoriaProducto : ''}</div>
+            </div>
+            <div class="prov-card-badges">
+              ${cartBadge}
+              ${pendBadge}
             </div>
           </div>
+          <div class="prov-card-urg-row">
+            <span class="prov-urg-chip ${urg.cls}">
+              ${urg.estado === 'hoy' ? '🔥' : urg.estado === 'proximo' ? '⏳' : urg.estado === 'inactivo' ? '⚠' : '📅'}
+              ${urg.label}
+            </span>
+            ${formaTxt ? `<span class="prov-card-meta">${formaTxt}</span>` : ''}
+            ${p.diaPago ? `<span class="prov-card-meta" title="Día de pago">💸 ${_provDiaLabel(p.diaPago)}</span>` : ''}
+          </div>
+          ${_provSparkBars(p.idProveedor)}
           ${tieneTel ? `
-          <div class="flex gap-1.5 mt-2 pt-2 border-t border-slate-800">
+          <div class="prov-card-quickbtns">
             <button onclick="MOS.provLlamar('${p.idProveedor}', event)" class="prov-quick-btn" title="Llamar ${p.telefono}">📞 ${p.telefono}</button>
             <button onclick="MOS.provWhatsApp('${p.idProveedor}', event)" class="prov-quick-btn whatsapp" title="WhatsApp">💬</button>
           </div>` : ''}
         </div>`;
     }).join('') +
-    // Inline-detail único, vive al final de la lista; se mueve después del card seleccionado en mobile.
+    // Inline-detail único (legacy, el detalle real va al panel desktop).
     `<div id="provInlineDetail" class="prov-inline-detail lg:hidden" style="display:none"></div>`;
 
-    // Si hay selección activa, posicionar el inline-detail tras su card sin re-render
     if (S.provSelId) {
       _provPosicionarInlineDetail(S.provSelId);
       _provViewToggleConDetalle(true);
     } else {
       _provViewToggleConDetalle(false);
     }
-    // Reattachear/detacher la inercia del carrusel
     _provInerciaActualizar();
   }
 
@@ -5649,43 +5954,57 @@ const MOS = (() => {
     _precargarProvData(id);
     const safeNombre = (prov.nombre || '').replace(/"/g, '&quot;');
     const tieneTel = !!prov.telefono;
+    const urg      = _provUrgenciaPedido(prov);
+    // Calculamos las 3 píldoras decisionales del header
+    const pildoraPedido  = _provPildoraDia(prov.diaPedido,  'PEDIDO',  '📅');
+    const pildoraPago    = _provPildoraPago(prov);
+    const pildoraEntrega = _provPildoraDia(prov.diaEntrega, 'ENTREGA', '🚚', { contextDia: prov.diaPedido });
+
     detailEl.innerHTML = `
-      <div class="prov-detail-header">
-        <div class="flex items-center gap-2 mb-2">
-          <div class="flex-1 min-w-0">
-            <h3 class="font-bold text-white truncate text-base lg:text-lg">${safeNombre}</h3>
-            <p class="text-xs text-slate-500 truncate">${[prov.ruc, prov.email].filter(Boolean).join(' · ') || '—'}</p>
+      <div class="prov-detail-modern ${urg.cls}">
+        <div class="prov-detail-head">
+          ${_provAvatarHtmlFull(prov, 'prov-avatar-xl')}
+          <div class="prov-detail-nombre-wrap">
+            <h3 class="prov-detail-nombre">${safeNombre}</h3>
+            <p class="prov-detail-ruc">${prov.ruc || '—'}${prov.categoriaProducto ? ' · ' + prov.categoriaProducto : ''}</p>
           </div>
-          <button class="btn-ghost text-xs px-2 py-1 shrink-0" onclick="event.stopPropagation();MOS.abrirModalProveedor('${id}')" title="Editar proveedor">✏️</button>
-          <button class="lg:hidden btn-ghost text-xs px-2 py-1 shrink-0" onclick="event.stopPropagation();MOS.cerrarDetalleProveedor()" title="Cerrar">×</button>
+          <div class="prov-detail-actions-icons">
+            <button class="prov-icon-btn" onclick="event.stopPropagation();MOS.provAbrirHistorico('${id}')" title="Histórico de compras">📊</button>
+            <button class="prov-icon-btn" onclick="event.stopPropagation();MOS.provAbrirInfo('${id}')" title="Datos completos del proveedor">ⓘ</button>
+            <button class="prov-icon-btn" onclick="event.stopPropagation();MOS.abrirModalProveedor('${id}')" title="Editar proveedor">✏️</button>
+            <button class="prov-icon-btn lg:hidden" onclick="event.stopPropagation();MOS.cerrarDetalleProveedor()" title="Cerrar">×</button>
+          </div>
         </div>
-        <!-- Info reducida del proveedor (siempre visible, reemplaza la tab Info) -->
-        <div class="prov-info-strip">
-          ${prov.telefono ? `<span class="prov-info-chip">📞 ${prov.telefono}</span>` : ''}
-          ${prov.formaPago ? `<span class="prov-info-chip">${prov.formaPago === 'CREDITO' ? '💳 Crédito ' + (prov.plazoCredito || 0) + 'd' : '💵 Contado'}</span>` : ''}
-          ${prov.diaPedido  ? `<span class="prov-info-chip" title="Día de pedido">📋 ${_provDiaLabel(prov.diaPedido)}</span>` : ''}
-          ${prov.diaEntrega ? `<span class="prov-info-chip" title="Día de entrega">📦 ${_provDiaLabel(prov.diaEntrega)}</span>` : ''}
-          ${prov.diaPago    ? `<span class="prov-info-chip" title="Día de pago">💸 ${_provDiaLabel(prov.diaPago)}</span>` : ''}
-          ${prov.categoriaProducto ? `<span class="prov-info-chip">🏷️ ${prov.categoriaProducto}</span>` : ''}
-          ${prov.banco ? `<span class="prov-info-chip" title="Banco">🏦 ${prov.banco}${prov.numeroCuenta ? ' · ' + prov.numeroCuenta : ''}</span>` : ''}
+
+        <!-- 3 píldoras decisionales: pedido / pago / entrega -->
+        <div class="prov-pildoras">
+          ${pildoraPedido}
+          ${pildoraPago}
+          ${pildoraEntrega}
         </div>
+
+        <!-- Chips compactos: forma pago + responsable (datos secundarios en ⓘ) -->
+        <div class="prov-detail-chips">
+          ${prov.formaPago ? `<span class="prov-chip-mini">${prov.formaPago === 'CREDITO' ? '💳 Crédito ' + (prov.plazoCredito || 0) + 'd' : '💵 Contado'}</span>` : ''}
+          ${prov.responsable ? `<span class="prov-chip-mini">👤 ${prov.responsable}</span>` : ''}
+        </div>
+
+        <!-- Acciones -->
         <div class="prov-action-row">
           ${tieneTel ? `<button class="prov-action-btn whatsapp" onclick="MOS.provWhatsApp('${id}', event)">💬 WhatsApp</button>` : ''}
           ${tieneTel ? `<button class="prov-action-btn" onclick="MOS.provLlamar('${id}', event)">📞 Llamar</button>` : ''}
           <button class="prov-action-btn" onclick="MOS.abrirModalPago('${id}')">💰 + Pago</button>
           <button class="prov-action-btn primary" data-prov-carrito-btn="${id}" onclick="MOS.provAccionPedido()">${(_provCarritoResumen(id) || {}).count ? `🛒 Ver carrito (${_provCarritoResumen(id).count})` : '🛒 Armar pedido'}</button>
         </div>
-        <div class="prov-tabs-wrap">
-          <div class="prov-tabs">
-            <button class="prov-tab" data-tab="productos" onclick="MOS.provSetTab('productos')">📦 Productos</button>
-            <button class="prov-tab" data-tab="historico" onclick="MOS.provSetTab('historico')">📊 Histórico</button>
-          </div>
-        </div>
       </div>
-      <div id="provTabProductos" class="prov-tab-content hidden"></div>
+      <!-- Productos: contenido directo (ya no es tab) -->
+      <div id="provTabProductos" class="prov-tab-content prov-productos-direct"></div>
+      <!-- Histórico: legacy hidden — ahora vive en modal #modalProvHistorico. -->
       <div id="provTabHistorico" class="prov-tab-content hidden"></div>
     `;
-    provSetTab(S.provTab);
+    // Mostrar productos siempre (no hay tabs)
+    S.provTab = 'productos';
+    provSetTab('productos');
 
     // En mobile/tablet:
     //  1. Scroll del CARRUSEL para anclar el card seleccionado
@@ -20362,6 +20681,8 @@ const MOS = (() => {
     abrirModalProveedor, guardarProveedor, provBuscar,
     provLlamar, provWhatsApp,
     provSetTab, _renderProvHistorico, _refetchHistoricoProv,
+    // F5 — Modernización Proveedores
+    provSetFiltroUrgencia, provAbrirHistorico, provAbrirInfo,
     _filtrarProvProductos, _filtrarProvHistorico,
     abrirModalProvProducto, ppBuscar, ppSeleccionar,
     guardarProvProducto, eliminarProvProducto, eliminarProvProductoRapido,

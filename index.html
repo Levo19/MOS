@@ -2454,6 +2454,407 @@
         padding-top: 0;
       }
     }
+
+    /* ════════════════════════════════════════════════════════════
+       PROVEEDORES — MODERNIZACIÓN F5 (cards lateral + header detalle)
+       ════════════════════════════════════════════════════════════ */
+    /* ── Pills de urgencia (filtro arriba de la lista) ─────────── */
+    .prov-filtros-urgencia {
+      display: flex; flex-wrap: wrap; gap: 6px;
+    }
+    .prov-urg-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 11px;
+      font-size: 11px; font-weight: 700;
+      border-radius: 999px;
+      border: 1px solid #1e293b;
+      background: #0a1424;
+      color: #94a3b8;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .prov-urg-pill:hover { transform: translateY(-1px); }
+    .prov-urg-pill.active { transform: scale(1.04); }
+    .prov-urg-pill-cnt {
+      font-size: 9px; font-weight: 800;
+      background: rgba(255,255,255,0.08);
+      padding: 1px 6px;
+      border-radius: 999px;
+      min-width: 18px; text-align: center;
+    }
+    .prov-urg-pill.rojo {
+      border-color: rgba(239,68,68,0.40);
+      color: #fca5a5;
+      background: rgba(239,68,68,0.06);
+    }
+    .prov-urg-pill.rojo.active {
+      background: linear-gradient(135deg, #7f1d1d, #dc2626);
+      color: #fff;
+      box-shadow: 0 0 0 2px rgba(239,68,68,0.30);
+    }
+    .prov-urg-pill.amber {
+      border-color: rgba(251,191,36,0.40);
+      color: #fcd34d;
+      background: rgba(251,191,36,0.05);
+    }
+    .prov-urg-pill.amber.active {
+      background: linear-gradient(135deg, #78350f, #f59e0b);
+      color: #fff;
+      box-shadow: 0 0 0 2px rgba(251,191,36,0.30);
+    }
+    .prov-urg-pill.neutral.active {
+      background: linear-gradient(135deg, #312e81, #6366f1);
+      color: #fff;
+      box-shadow: 0 0 0 2px rgba(99,102,241,0.30);
+    }
+    .prov-urg-pill.gris {
+      opacity: 0.65;
+    }
+    .prov-urg-pill.gris.active {
+      opacity: 1;
+      background: rgba(148,163,184,0.18);
+      color: #cbd5e1;
+    }
+
+    /* ── Card lateral del proveedor (modernizado) ────────────── */
+    .prov-card-modern {
+      position: relative;
+      background: linear-gradient(135deg, #0a1424, #060d1f);
+      border: 1px solid #1e293b;
+      border-left: 3px solid #1e293b;
+      border-radius: 14px;
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: all 0.2s ease-out;
+      animation: provCardIn 0.4s ease-out backwards;
+    }
+    @keyframes provCardIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .prov-card-modern:hover {
+      transform: translateY(-2px);
+      border-color: rgba(99,102,241,0.50);
+      box-shadow: 0 6px 22px rgba(99,102,241,0.10);
+    }
+    .prov-card-modern.prov-card-active {
+      border-color: #6366f1;
+      border-left-color: #6366f1;
+      background: linear-gradient(135deg, rgba(99,102,241,0.08), #060d1f);
+      box-shadow: 0 4px 18px rgba(99,102,241,0.18);
+    }
+    /* Border-left + glow según urgencia */
+    .prov-card-modern.prov-urg-hoy {
+      border-left-color: #fbbf24;
+      box-shadow: 0 4px 22px rgba(251,191,36,0.16);
+    }
+    .prov-card-modern.prov-urg-hoy::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #fbbf24, transparent);
+      animation: provCoronaStripe 3s ease-in-out infinite;
+      border-radius: 14px 14px 0 0;
+    }
+    @keyframes provCoronaStripe {
+      0%, 100% { transform: translateX(-100%); }
+      50%      { transform: translateX(100%); }
+    }
+    .prov-card-modern.prov-urg-proximo { border-left-color: #fbbf24; }
+    .prov-card-modern.prov-urg-lejano  { border-left-color: #475569; }
+    .prov-card-modern.prov-urg-sindia  { border-left-color: #1e293b; }
+    .prov-card-modern.prov-urg-inactivo { opacity: 0.55; }
+
+    /* Corona dorada si hoy es día de pedido */
+    .prov-card-corona {
+      position: absolute;
+      top: -8px; right: 12px;
+      font-size: 22px;
+      filter: drop-shadow(0 2px 6px rgba(251,191,36,0.50));
+      animation: provCoronaFloat 3s ease-in-out infinite;
+      pointer-events: none;
+      z-index: 2;
+    }
+    @keyframes provCoronaFloat {
+      0%, 100% { transform: translateY(0) rotate(-5deg); }
+      50%      { transform: translateY(-3px) rotate(5deg); }
+    }
+
+    /* Head: avatar + nombre + badges */
+    .prov-card-head {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 8px;
+    }
+    .prov-card-nombre {
+      font-size: 13px; font-weight: 700; color: #e2e8f0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .prov-card-modern.prov-urg-hoy .prov-card-nombre { color: #fcd34d; }
+    .prov-card-ruc {
+      font-size: 10px; color: #64748b;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      margin-top: 1px;
+    }
+    .prov-card-badges {
+      display: flex; align-items: center; gap: 4px;
+      flex-shrink: 0;
+    }
+
+    /* Avatar — soporta logo (imagen) o iniciales */
+    .prov-avatar-img {
+      overflow: hidden;
+      padding: 0 !important;
+    }
+    .prov-avatar-img img {
+      width: 100%; height: 100%; object-fit: cover;
+      border-radius: inherit;
+    }
+
+    /* Strip urgencia + meta (forma pago, día pago) */
+    .prov-card-urg-row {
+      display: flex; flex-wrap: wrap; gap: 6px 10px;
+      align-items: center;
+      margin-bottom: 6px;
+      font-size: 10px;
+    }
+    .prov-urg-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 9px;
+      font-size: 10px; font-weight: 800;
+      border-radius: 999px;
+      letter-spacing: 0.04em;
+    }
+    .prov-urg-chip.prov-urg-hoy {
+      background: rgba(251,191,36,0.16);
+      border: 1px solid rgba(251,191,36,0.45);
+      color: #fcd34d;
+      animation: provUrgPulse 2s ease-in-out infinite;
+    }
+    @keyframes provUrgPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(251,191,36,0.40); }
+      50%      { box-shadow: 0 0 0 6px rgba(251,191,36,0); }
+    }
+    .prov-urg-chip.prov-urg-proximo {
+      background: rgba(251,191,36,0.10);
+      border: 1px solid rgba(251,191,36,0.35);
+      color: #fcd34d;
+    }
+    .prov-urg-chip.prov-urg-lejano {
+      background: rgba(99,102,241,0.10);
+      border: 1px solid rgba(99,102,241,0.30);
+      color: #a5b4fc;
+    }
+    .prov-urg-chip.prov-urg-sindia {
+      background: rgba(148,163,184,0.10);
+      border: 1px solid rgba(148,163,184,0.25);
+      color: #94a3b8;
+    }
+    .prov-urg-chip.prov-urg-inactivo {
+      background: rgba(239,68,68,0.10);
+      border: 1px solid rgba(239,68,68,0.30);
+      color: #fca5a5;
+    }
+    .prov-card-meta {
+      font-size: 10px; color: #94a3b8;
+    }
+
+    /* Sparkline */
+    .prov-spark {
+      display: flex; align-items: flex-end;
+      gap: 1.5px;
+      height: 20px;
+      margin: 6px 0;
+      padding: 0 1px;
+    }
+    .prov-spark-bar {
+      flex: 1;
+      background: linear-gradient(180deg, #6366f1, #312e81);
+      border-radius: 2px 2px 0 0;
+      transition: height 0.3s ease-out, opacity 0.2s;
+      min-height: 2px;
+    }
+    .prov-spark-bar.zero { background: #1e293b; opacity: 0.5; }
+    .prov-card-modern.prov-urg-hoy .prov-spark-bar:not(.zero) {
+      background: linear-gradient(180deg, #fbbf24, #78350f);
+    }
+
+    /* Quick buttons (whatsapp / llamar) */
+    .prov-card-quickbtns {
+      display: flex; gap: 6px;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(30,41,59,0.5);
+    }
+
+    /* Flash al actualizar */
+    .prov-card-modern.flash {
+      animation: provFlash 0.6s ease-out;
+    }
+    @keyframes provFlash {
+      0%   { background: rgba(251,191,36,0.20); }
+      100% { background: linear-gradient(135deg, #0a1424, #060d1f); }
+    }
+
+    /* ── Header del detalle del proveedor (modernizado) ──────── */
+    .prov-detail-modern {
+      padding: 16px 18px;
+      background: linear-gradient(135deg, rgba(99,102,241,0.06), transparent);
+      border-radius: 14px;
+      border: 1px solid #1e293b;
+      margin-bottom: 14px;
+    }
+    .prov-detail-modern.prov-urg-hoy {
+      background: linear-gradient(135deg, rgba(251,191,36,0.08), transparent);
+      border-color: rgba(251,191,36,0.30);
+      box-shadow: 0 4px 28px rgba(251,191,36,0.10);
+    }
+    .prov-detail-head {
+      display: flex; align-items: center; gap: 14px;
+      margin-bottom: 14px;
+    }
+    .prov-avatar-xl {
+      width: 56px; height: 56px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; font-weight: 800;
+      flex-shrink: 0;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.30);
+    }
+    .prov-avatar-xl.prov-avatar-img { padding: 0; }
+    .prov-avatar-xl.prov-avatar-img img {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      border-radius: 50%;
+    }
+    .prov-detail-nombre-wrap {
+      flex: 1; min-width: 0;
+    }
+    .prov-detail-nombre {
+      font-size: 18px; font-weight: 800; color: #f1f5f9;
+      line-height: 1.1;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .prov-detail-modern.prov-urg-hoy .prov-detail-nombre {
+      color: #fcd34d;
+    }
+    .prov-detail-ruc {
+      font-size: 11px; color: #64748b;
+      margin-top: 3px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .prov-detail-actions-icons {
+      display: flex; align-items: center; gap: 4px;
+      flex-shrink: 0;
+    }
+    .prov-icon-btn {
+      width: 34px; height: 34px;
+      border-radius: 8px;
+      background: rgba(99,102,241,0.10);
+      border: 1px solid rgba(99,102,241,0.25);
+      color: #a5b4fc;
+      font-size: 14px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s;
+    }
+    .prov-icon-btn:hover {
+      transform: scale(1.05);
+      background: rgba(99,102,241,0.20);
+      border-color: rgba(99,102,241,0.50);
+      color: #fff;
+    }
+
+    /* 3 píldoras decisionales: pedido / pago / entrega */
+    .prov-pildoras {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    @media (max-width: 640px) {
+      .prov-pildoras { grid-template-columns: 1fr; }
+    }
+    .prov-pild {
+      background: #0a1424;
+      border: 1px solid #1e293b;
+      border-radius: 10px;
+      padding: 10px 12px;
+      transition: all 0.2s;
+    }
+    .prov-pild-head {
+      font-size: 9px; font-weight: 800;
+      color: #64748b;
+      letter-spacing: 0.10em;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .prov-pild-body {
+      font-size: 13px; font-weight: 700;
+      color: #e2e8f0;
+      line-height: 1.2;
+    }
+    .prov-pild.prov-pild-hoy {
+      background: linear-gradient(135deg, rgba(251,191,36,0.18), rgba(120,53,15,0.10));
+      border-color: rgba(251,191,36,0.50);
+      box-shadow: 0 0 0 1px rgba(251,191,36,0.20);
+    }
+    .prov-pild.prov-pild-hoy .prov-pild-head { color: #fbbf24; }
+    .prov-pild.prov-pild-hoy .prov-pild-body { color: #fcd34d; }
+    .prov-pild.prov-pild-proximo {
+      background: rgba(251,191,36,0.06);
+      border-color: rgba(251,191,36,0.30);
+    }
+    .prov-pild.prov-pild-proximo .prov-pild-body { color: #fde68a; }
+    .prov-pild.prov-pild-lejano {
+      background: rgba(99,102,241,0.06);
+      border-color: rgba(99,102,241,0.20);
+    }
+    .prov-pild.prov-pild-neutral {
+      background: rgba(148,163,184,0.06);
+      border-color: rgba(148,163,184,0.20);
+    }
+
+    /* Chips secundarios bajo las píldoras */
+    .prov-detail-chips {
+      display: flex; flex-wrap: wrap; gap: 6px;
+      margin-bottom: 12px;
+    }
+    .prov-chip-mini {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 10px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: rgba(99,102,241,0.08);
+      border: 1px solid rgba(99,102,241,0.20);
+      color: #cbd5e1;
+    }
+
+    /* Productos directos (ya no es tab) */
+    .prov-productos-direct {
+      display: block !important;
+    }
+
+    /* Modal info: filas label/valor */
+    .prov-info-row {
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      background: #0a1424;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+    }
+    .prov-info-row-label {
+      font-size: 11px; font-weight: 700;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      flex-shrink: 0;
+    }
+    .prov-info-row-val {
+      font-size: 13px;
+      color: #e2e8f0;
+      text-align: right;
+      word-break: break-all;
+    }
     /* Detalle inline (tablet) — se inyecta debajo del card seleccionado */
     .prov-inline-detail {
       background: #0a1428;
@@ -6614,6 +7015,8 @@
           <button id="provSearchClear" type="button" onclick="MOS.provBuscar('')"
                   class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-200 text-lg leading-none px-2 hidden">×</button>
         </div>
+        <!-- Pills filtro urgencia: ordena la lista por día de pedido vs hoy -->
+        <div id="provFiltrosUrgencia" class="prov-filtros-urgencia mt-3"></div>
       </div>
       <div class="grid lg:grid-cols-3 gap-4">
         <!-- Lista: siempre visible. En mobile/tablet el detalle se inyecta inline bajo el card seleccionado. -->
@@ -6627,6 +7030,42 @@
         <div id="provDetailWrap" class="lg:col-span-2 hidden lg:block">
           <div id="proveedorDetail" class="prov-detail-card text-slate-500 text-sm">
             <p class="text-center p-6">Selecciona un proveedor para ver pagos y pedidos</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal: HISTÓRICO del proveedor (reemplaza la pestaña) -->
+      <div id="modalProvHistorico" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalProvHistorico')">
+        <div class="modal-box flex flex-col" style="max-width:780px;max-height:90vh">
+          <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(99,102,241,0.10),transparent);">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style="background:linear-gradient(135deg,#312e81,#6366f1);">📊</div>
+            <div class="min-w-0 flex-1">
+              <h2 class="font-bold text-base text-white">Histórico de compras</h2>
+              <p id="provHistModalSub" class="text-[11px] text-slate-500 mt-0.5">—</p>
+            </div>
+            <button onclick="MOS.closeModal('modalProvHistorico')" class="modal-close-x">×</button>
+          </div>
+          <div class="overflow-y-auto p-4 flex-1">
+            <div id="provHistModalBody" class="text-sm">
+              <p class="text-center py-8 text-slate-500 text-xs">Cargando...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pop-down: DATOS SECUNDARIOS del proveedor (ⓘ) -->
+      <div id="modalProvInfo" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalProvInfo')">
+        <div class="modal-box flex flex-col" style="max-width:480px;max-height:80vh">
+          <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(34,211,238,0.10),transparent);">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style="background:linear-gradient(135deg,#164e63,#22d3ee);">ⓘ</div>
+            <div class="min-w-0 flex-1">
+              <h2 class="font-bold text-base text-white">Datos del proveedor</h2>
+              <p id="provInfoModalSub" class="text-[11px] text-slate-500 mt-0.5">—</p>
+            </div>
+            <button onclick="MOS.closeModal('modalProvInfo')" class="modal-close-x">×</button>
+          </div>
+          <div class="overflow-y-auto p-5 flex-1">
+            <div id="provInfoModalBody" class="space-y-2 text-sm"></div>
           </div>
         </div>
       </div>
