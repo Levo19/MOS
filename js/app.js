@@ -10267,8 +10267,11 @@ const MOS = (() => {
             return `<div class="flex items-center gap-3 p-3 rounded-lg" style="background:#0a1424;border:1px solid #7f1d1d;">
               <span class="text-3xl shrink-0">${ico}</span>
               <div class="flex-1 min-w-0">
-                <div class="font-bold text-sm text-white truncate">${d.Nombre_Equipo || 'Dispositivo nuevo'}</div>
-                <div class="text-[10px] text-slate-500 font-mono truncate">${d.ID_Dispositivo}</div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="font-bold text-sm text-white truncate">${d.Nombre_Equipo || 'Dispositivo nuevo'}</span>
+                  ${_appBadge(d.App)}
+                </div>
+                <div class="text-[10px] text-slate-500 font-mono truncate mt-0.5">${d.ID_Dispositivo}</div>
                 <div class="text-[10px] mt-0.5" style="color:${act.color};">${act.dot} ${act.label}${d.Ultima_Sesion ? ' · 👤 ' + d.Ultima_Sesion : ''}</div>
               </div>
               <button onclick="MOS.aprobarDispositivo('${idAttr}')" class="btn-primary text-xs px-3 py-1.5 shrink-0" style="background:#10b981">✓ Aprobar</button>
@@ -11160,8 +11163,10 @@ const MOS = (() => {
           <span class="badge badge-red text-[10px] ml-auto">${pendDisp.length}</span>
         </div>
         <div class="space-y-1.5">
-          ${pendDisp.slice(0, 5).map(d => `<div class="text-[11px] text-slate-300 px-2 py-1 rounded" style="background:#0a1424;">
-            ${_dispIcono(d.Nombre_Equipo)} ${d.Nombre_Equipo || 'Nuevo'} <span class="text-slate-600">·</span>
+          ${pendDisp.slice(0, 5).map(d => `<div class="text-[11px] text-slate-300 px-2 py-1 rounded flex items-center gap-1.5 flex-wrap" style="background:#0a1424;">
+            <span>${_dispIcono(d.Nombre_Equipo)} ${d.Nombre_Equipo || 'Nuevo'}</span>
+            ${_appBadge(d.App, { compact: false })}
+            <span class="text-slate-600">·</span>
             <span class="text-slate-500 font-mono">${String(d.ID_Dispositivo).substring(0, 8)}...</span>
           </div>`).join('')}
         </div>
@@ -11626,6 +11631,25 @@ const MOS = (() => {
     if (n.includes('laptop') || n.includes('notebook'))  return '💻';
     if (n.includes('pc ') || n.startsWith('pc') || n.includes('desktop')) return '🖥️';
     return '📱';
+  }
+
+  // Pill con la app de origen del dispositivo (ME / WH / MOS) — útil para que
+  // el admin sepa de qué cliente viene la solicitud antes de aprobar.
+  function _appBadge(appRaw, opts) {
+    const app = String(appRaw || '').toLowerCase();
+    let icon = '❓', label = 'desconocida', bg = 'rgba(148,163,184,0.15)', border = '#475569', fg = '#cbd5e1';
+    if (app === 'mosexpress' || app === 'me' || app.indexOf('express') >= 0) {
+      icon = '🛒'; label = 'MosExpress'; bg = 'rgba(16,185,129,0.15)'; border = '#10b981'; fg = '#6ee7b7';
+    } else if (app === 'warehousemos' || app === 'wh' || app.indexOf('warehouse') >= 0) {
+      icon = '📦'; label = 'warehouseMos'; bg = 'rgba(251,146,60,0.15)'; border = '#fb923c'; fg = '#fdba74';
+    } else if (app === 'mos') {
+      icon = '👑'; label = 'MOS panel'; bg = 'rgba(168,85,247,0.15)'; border = '#a855f7'; fg = '#d8b4fe';
+    } else if (!app || app === '') {
+      icon = '❓'; label = '?';
+    }
+    const compact = opts && opts.compact;
+    const cls = compact ? 'text-[9px] px-1.5 py-0.5' : 'text-[10px] px-2 py-0.5';
+    return `<span class="${cls} rounded font-bold inline-flex items-center gap-1" style="background:${bg};border:1px solid ${border};color:${fg};white-space:nowrap;">${icon} ${compact ? '' : label}</span>`;
   }
 
   function _dispActividad(ultimaConexion) {
