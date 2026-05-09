@@ -18602,6 +18602,24 @@ const MOS = (() => {
     }).catch(() => { /* si falla, queda lo del cache o sin score */ });
   }
 
+  // Busca la Ultima_Conexion de un personal en cfgData (cruza por idPersonal o nombre).
+  // Devuelve null si no se encuentra (cfgData aún no cargado o persona no listada).
+  function _finBuscarActividadPersonal(p, ev) {
+    const idP = (ev && ev.idPersonal) || p.idPersonal || '';
+    const nomNorm = String(p.nombre || (ev && ev.nombre) || '').trim().toLowerCase();
+    const fuentes = [
+      ...(cfgData.personalMOS || []),
+      ...(cfgData.personal || [])
+    ];
+    let match = null;
+    if (idP) match = fuentes.find(x => String(x.idPersonal) === String(idP));
+    if (!match && nomNorm) {
+      match = fuentes.find(x => String(x.nombre || '').trim().toLowerCase() === nomNorm);
+    }
+    if (!match) return null;
+    return match.Ultima_Conexion || match.ultimaConexion || null;
+  }
+
   function _finRenderPersonalCard(p, ev, fecha) {
     const score = ev ? (ev.scoreFinal || 0) : null;
     const scoreClass = score !== null ? _evalScoreClass(score) : '';
@@ -18614,9 +18632,18 @@ const MOS = (() => {
                     : p.fuente === 'AUTO_LOGIN' ? '<span class="fin-tag fin-tag-green ml-1" title="Detectado por sesión">auto</span>'
                     : p.fuente === 'AUTO_CAJAS' ? '<span class="fin-tag fin-tag-green ml-1" title="Importado de cajas">auto</span>'
                     : '';
-    const scoreCircle = score !== null
-      ? `<div class="eval-score-circle ${scoreClass}" style="--score:${score};flex-shrink:0"><span>${score}%</span></div>`
-      : `<div class="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0" style="background:rgba(100,116,139,.15);color:#94a3b8">—</div>`;
+    // Indicador online: dot pulsante sobre el avatar si Ultima_Conexion < 5min
+    const ultCx = _finBuscarActividadPersonal(p, ev);
+    const act = _personaActividad(ultCx);
+    const isFresh = act.minutos < 5;
+    const dotPulse = isFresh ? '<span class="fin-pers-dot-pulse" title="🔴 LIVE — '+act.label+'"></span>' : '';
+    const ringCls = isFresh ? ' fin-pers-avatar-live' : '';
+    const innerScore = score !== null
+      ? `<div class="eval-score-circle ${scoreClass}" style="--score:${score};"><span>${score}%</span></div>`
+      : `<div class="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold" style="background:rgba(100,116,139,.15);color:#94a3b8">—</div>`;
+    const scoreCircle = `<div class="fin-pers-avatar-wrap${ringCls}" style="position:relative;flex-shrink:0;"
+      title="${isFresh ? '🟢 ' + act.label : (ultCx ? '⚫ ' + act.label : '')}"
+      >${innerScore}${dotPulse}</div>`;
     const esVetada = !!(p.vetada || p.fuente === 'ELIMINADA');
     const vetadaCls = esVetada ? ' fin-vetada-card' : '';
     const vetadaOverlay = esVetada
