@@ -2080,7 +2080,128 @@
       background: rgba(37,211,102,.22); border-color: rgba(37,211,102,.45);
     }
 
-    /* ── Radio cards para revisar PN ─────────────────────── */
+    /* ── PN modal v2: header, hero, chips ────────────────── */
+    .pn-modal-v2 { border-radius: 16px; overflow: hidden; }
+    @media (max-width: 640px) {
+      .pn-modal-v2 { max-width: 100% !important; max-height: 100vh !important; border-radius: 0; margin: 0; height: 100vh; }
+    }
+    .pn-header {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 18px;
+      background: linear-gradient(135deg, rgba(255,215,0,0.08), rgba(15,23,42,1));
+      border-bottom: 1px solid #1e293b; flex-shrink: 0;
+    }
+    .pn-header-icon {
+      width: 40px; height: 40px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, #92400e, #ffd700);
+      font-size: 22px; flex-shrink: 0;
+    }
+    .pn-header-title { font-size: 16px; font-weight: 800; color: #fef3c7; line-height: 1.1; }
+    .pn-header-sub   { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+    .pn-hero {
+      display: flex; gap: 12px;
+      background: linear-gradient(135deg, #060d1f, #0a1424);
+      border: 1px solid #1e293b; border-radius: 12px;
+      padding: 12px;
+    }
+    .pn-hero-foto {
+      width: 80px; height: 80px; border-radius: 10px;
+      background: #1e293b; border: 1px solid #334155;
+      overflow: hidden; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .pn-hero-foto img { width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; }
+    .pn-hero-eyebrow { font-size: 9px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em; }
+    .pn-hero-guia { font-size: 13px; font-weight: 700; color: #f1f5f9; margin: 2px 0 6px; }
+    .pn-hero-meta { font-size: 11px; color: #94a3b8; line-height: 1.5; }
+    .pn-hero-meta-label { color: #64748b; margin-right: 4px; }
+    .pn-hero-codigo { font-family: 'SF Mono', Menlo, monospace; color: #fbbf24; font-size: 11px; }
+    .pn-section-label {
+      font-size: 11px; font-weight: 800; color: #94a3b8;
+      text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px;
+    }
+    /* Chips de tipo: segmented control */
+    .pn-tipo-chips {
+      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px;
+      background: #060d1f; border: 1px solid #1e293b;
+      border-radius: 12px; padding: 4px;
+    }
+    .pn-tipo-chip {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 3px; padding: 8px 6px; border-radius: 8px;
+      background: transparent; border: 0; cursor: pointer;
+      color: #94a3b8; font-size: 11px; font-weight: 600;
+      transition: all 0.18s;
+    }
+    .pn-tipo-chip:hover { background: rgba(255,215,0,0.06); color: #cbd5e1; }
+    .pn-tipo-chip.active {
+      background: linear-gradient(135deg, #c9a227, #ffd700);
+      color: #020817; font-weight: 800;
+      box-shadow: 0 4px 12px rgba(255,215,0,0.3);
+    }
+    .pn-tipo-icon { font-size: 18px; }
+    .pn-tipo-hint {
+      font-size: 11px; color: #fbbf24; margin-top: 8px;
+      padding: 6px 10px; background: rgba(251,191,36,0.08);
+      border-left: 2px solid rgba(251,191,36,0.5);
+      border-radius: 4px;
+    }
+    /* Validación inline en inputs PN */
+    .pn-field-ok {
+      border-color: rgba(16,185,129,0.55) !important;
+      box-shadow: 0 0 0 2px rgba(16,185,129,0.10);
+    }
+    .pn-field-error {
+      border-color: rgba(239,68,68,0.55) !important;
+      box-shadow: 0 0 0 2px rgba(239,68,68,0.10);
+    }
+    .pn-field-msg {
+      font-size: 10px; margin-top: 3px;
+      display: flex; align-items: center; gap: 4px;
+    }
+    .pn-field-msg.ok    { color: #6ee7b7; }
+    .pn-field-msg.warn  { color: #fbbf24; }
+    .pn-field-msg.error { color: #f87171; }
+    /* Margen calculado */
+    .pn-margen {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 8px; border-radius: 999px;
+      font-size: 10px; font-weight: 700;
+    }
+    .pn-margen-ok    { background: rgba(16,185,129,0.15); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.35); }
+    .pn-margen-bajo  { background: rgba(245,158,11,0.15); color: #fbbf24; border: 1px solid rgba(245,158,11,0.35); }
+    .pn-margen-warn  { background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.35); }
+    /* Hint contextual de duplicado */
+    .pn-dup-hint {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; margin-top: 8px;
+      background: linear-gradient(135deg, rgba(99,102,241,0.10), rgba(15,23,42,0.5));
+      border: 1px solid rgba(99,102,241,0.4); border-radius: 8px;
+      font-size: 11px; color: #c7d2fe;
+      animation: pnSlideDown 0.3s ease-out;
+    }
+    @keyframes pnSlideDown { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+    .pn-dup-hint button {
+      margin-left: auto; padding: 3px 10px; border-radius: 6px;
+      background: rgba(99,102,241,0.25); border: 1px solid rgba(99,102,241,0.5);
+      color: #a5b4fc; font-size: 10px; font-weight: 700; cursor: pointer;
+    }
+    .pn-dup-hint button:hover { background: rgba(99,102,241,0.4); }
+    /* Confeti emoji al aprobar */
+    @keyframes pnConfetti {
+      0%   { opacity: 0; transform: translate(-50%, 0) scale(0.5) rotate(0deg); }
+      20%  { opacity: 1; }
+      100% { opacity: 0; transform: translate(var(--cx), var(--cy)) scale(1.2) rotate(var(--cr)); }
+    }
+    .pn-confetti-piece {
+      position: fixed; left: 50%; top: 50%;
+      pointer-events: none; z-index: 9999;
+      font-size: 28px;
+      animation: pnConfetti 1.4s ease-out forwards;
+    }
+
+    /* ── Radio cards para revisar PN (legacy, mantenidas para compat) ─── */
     .pn-radio-card {
       display: flex; align-items: center; gap: 10px;
       padding: 10px 14px; border-radius: 10px;
@@ -5329,25 +5450,35 @@
 </div>
 <style>@keyframes imgFadeIn{from{opacity:0}to{opacity:1}}</style>
 
-<!-- ══ Modal: Revisar Producto Nuevo (rediseñado) ═══════════════ -->
+<!-- ══ Modal: Revisar Producto Nuevo (v2 — single-page modernizado) ══ -->
 <div class="modal-backdrop hidden" id="modalPN" onclick="if(MOS._validBackdropClose(event,this))MOS.cerrarModalPN()">
-  <div class="modal-box p-0" style="max-width:540px;display:flex;flex-direction:column;max-height:92vh">
-    <div class="flex items-center justify-between px-5 py-4 flex-shrink-0" style="border-bottom:1px solid #1e293b">
-      <h2 class="font-bold text-base text-white">📦 Revisar producto nuevo</h2>
+  <div class="modal-box pn-modal-v2 p-0" style="max-width:600px;display:flex;flex-direction:column;max-height:94vh">
+    <div class="pn-header">
+      <div class="pn-header-icon">📦</div>
+      <div class="flex-1 min-w-0">
+        <h2 class="pn-header-title">Producto nuevo entrante</h2>
+        <p class="pn-header-sub">Decidí qué hacer y validá los datos</p>
+      </div>
       <button onclick="MOS.cerrarModalPN()" class="modal-close-x">×</button>
     </div>
     <div class="overflow-y-auto flex-1 px-5 py-4 space-y-4">
 
-      <!-- Info reportada -->
-      <div class="flex gap-3" style="background:#060d1f;border:1px solid #1e293b;border-radius:10px;padding:10px">
-        <div id="pnFotoPreview" style="width:72px;height:72px;border-radius:8px;background:#1e293b;border:1px solid #334155;overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg>
+      <!-- Hero card del producto entrante -->
+      <div class="pn-hero">
+        <div id="pnFotoPreview" class="pn-hero-foto">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg>
         </div>
-        <div class="flex-1 min-w-0 text-xs">
-          <div class="text-slate-500">Reportado por</div>
-          <div id="pnGuiaInfo" class="text-slate-200 font-medium mb-1"></div>
-          <div class="text-slate-500">Código original: <span id="pnCodigoWH" class="font-mono text-amber-400"></span></div>
-          <div class="text-slate-500 mt-0.5">Vence: <span id="pnFechaVenc" class="text-slate-300"></span></div>
+        <div class="flex-1 min-w-0">
+          <div class="pn-hero-eyebrow">Reportado por</div>
+          <div id="pnGuiaInfo" class="pn-hero-guia">—</div>
+          <div class="pn-hero-meta">
+            <span class="pn-hero-meta-label">Código WH:</span>
+            <span id="pnCodigoWH" class="pn-hero-codigo">—</span>
+          </div>
+          <div class="pn-hero-meta">
+            <span class="pn-hero-meta-label">Vence:</span>
+            <span id="pnFechaVenc" class="text-slate-300">—</span>
+          </div>
         </div>
       </div>
       <div id="pnObservaciones" class="text-xs text-slate-400 italic" style="display:none"></div>
@@ -5357,32 +5488,28 @@
       <input type="hidden" id="pnCodigoOriginal">
       <input type="hidden" id="pnUsuario">
 
-      <!-- Selector de tipo -->
+      <!-- Tipo: chips estilo segmented control (más compacto que cards) -->
       <div>
-        <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">¿Qué hacer con este producto?</div>
-        <div class="space-y-2">
-          <label class="pn-radio-card" id="pnRadioNuevo">
-            <input type="radio" name="pnTipo" value="NUEVO" checked onchange="MOS.pnSetTipo('NUEVO')">
-            <div>
-              <div class="pn-radio-title">🆕 NUEVO en el catálogo</div>
-              <div class="pn-radio-sub">Crear nuevo registro en master</div>
-            </div>
-          </label>
-          <label class="pn-radio-card" id="pnRadioEquiv">
-            <input type="radio" name="pnTipo" value="EQUIVALENTE" onchange="MOS.pnSetTipo('EQUIVALENTE')">
-            <div>
-              <div class="pn-radio-title">🔗 EQUIVALENTE de uno existente</div>
-              <div class="pn-radio-sub">Agregar como código alias</div>
-            </div>
-          </label>
-          <label class="pn-radio-card" id="pnRadioCorregir">
-            <input type="radio" name="pnTipo" value="CORREGIR_CODIGO" onchange="MOS.pnSetTipo('CORREGIR_CODIGO')">
-            <div>
-              <div class="pn-radio-title">🔄 CORREGIR código de existente</div>
-              <div class="pn-radio-sub">El producto ya está en catálogo con un código falso/inventado — sustituir por el código real entrante</div>
-            </div>
-          </label>
+        <div class="pn-section-label">¿Qué hacemos?</div>
+        <div class="pn-tipo-chips">
+          <button type="button" class="pn-tipo-chip active" id="pnTipoNuevo" onclick="MOS.pnSetTipo('NUEVO')">
+            <span class="pn-tipo-icon">🆕</span>
+            <span class="pn-tipo-label">Nuevo</span>
+          </button>
+          <button type="button" class="pn-tipo-chip" id="pnTipoEquiv" onclick="MOS.pnSetTipo('EQUIVALENTE')">
+            <span class="pn-tipo-icon">🔗</span>
+            <span class="pn-tipo-label">Equivalente</span>
+          </button>
+          <button type="button" class="pn-tipo-chip" id="pnTipoCorregir" onclick="MOS.pnSetTipo('CORREGIR_CODIGO')">
+            <span class="pn-tipo-icon">🔄</span>
+            <span class="pn-tipo-label">Corregir</span>
+          </button>
         </div>
+        <p class="pn-tipo-hint" id="pnTipoHint">📝 Crear nuevo registro en master con datos editables</p>
+        <!-- radios ocultos para compat con código existente -->
+        <input type="radio" name="pnTipo" value="NUEVO" checked style="display:none">
+        <input type="radio" name="pnTipo" value="EQUIVALENTE" style="display:none">
+        <input type="radio" name="pnTipo" value="CORREGIR_CODIGO" style="display:none">
       </div>
 
       <!-- Cantidad recibida (siempre visible — admin puede ajustar) -->
@@ -5421,7 +5548,7 @@
           <div class="col-span-2">
             <label class="lbl">Código de barras *</label>
             <div class="flex gap-2">
-              <input id="pnCodigoFinal" class="inp flex-1" placeholder="Editable" autocomplete="off">
+              <input id="pnCodigoFinal" class="inp flex-1" placeholder="Editable" autocomplete="off" oninput="MOS._pnCheckDuplicadoCodigo()">
               <button onclick="MOS.pnAutogenBarcode()" class="btn-ghost text-xs px-3 whitespace-nowrap" title="Generar código interno NMLEV">⚡ Auto</button>
             </div>
             <div id="pnCodigoFeedback" class="hidden text-xs mt-1"></div>
@@ -5464,13 +5591,14 @@
           </div>
           <div>
             <label class="lbl">Precio venta * <span class="text-rose-400">(&gt; 0)</span></label>
-            <input id="pnPrecioVenta" type="number" step="0.01" min="0.01" class="inp" placeholder="0.00" required>
+            <input id="pnPrecioVenta" type="number" step="0.01" min="0.01" class="inp" placeholder="0.00" required oninput="MOS._pnRecalcularMargen()">
           </div>
           <div>
             <label class="lbl">Precio costo</label>
-            <input id="pnPrecioCosto" type="number" step="0.01" min="0" class="inp" placeholder="0.00">
+            <input id="pnPrecioCosto" type="number" step="0.01" min="0" class="inp" placeholder="0.00" oninput="MOS._pnRecalcularMargen()">
           </div>
         </div>
+        <div id="pnMargenInfo" class="text-xs"></div>
       </div>
 
       <!-- Sección EQUIVALENTE -->

@@ -1893,12 +1893,148 @@ const MOS = (() => {
     $('pnSeccionEquiv').classList.toggle('hidden', tipo !== 'EQUIVALENTE');
     const secCorr = $('pnSeccionCorregir');
     if (secCorr) secCorr.classList.toggle('hidden', tipo !== 'CORREGIR_CODIGO');
+    // Activar chip correspondiente
+    const chips = { NUEVO: 'pnTipoNuevo', EQUIVALENTE: 'pnTipoEquiv', CORREGIR_CODIGO: 'pnTipoCorregir' };
+    Object.entries(chips).forEach(([t, id]) => {
+      const el = $(id);
+      if (el) el.classList.toggle('active', t === tipo);
+    });
+    // Sincronizar radios ocultos para compat
+    document.querySelectorAll('input[name="pnTipo"]').forEach(r => {
+      if (r.value === tipo) r.checked = true;
+    });
+    // Hint contextual
+    const hint = $('pnTipoHint');
+    if (hint) {
+      hint.textContent = tipo === 'NUEVO'
+        ? '📝 Crear nuevo registro en master con datos editables'
+        : tipo === 'EQUIVALENTE'
+          ? '🔗 Es el mismo producto que ya tenés — solo agregás el código alterno'
+          : '🔄 Sustituís el código falso (típicamente uno corto que empieza con 0) por el real entrante';
+    }
+    // Sonido
+    _pnBeep('tap');
     // Pre-llenar el "código real entrante" en el preview de corrección
     if (tipo === 'CORREGIR_CODIGO') {
       const cb = $('pnCodigoOriginal')?.value || '';
       const nuevoEl = $('pnCorregirCodNuevo');
       if (nuevoEl) nuevoEl.textContent = cb || '—';
     }
+  }
+
+  // ── Sonidos del modal PN ──
+  let _pnAudioCtx = null;
+  function _pnBeep(tipo) {
+    try {
+      if (!_pnAudioCtx) _pnAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = _pnAudioCtx; const t = ctx.currentTime;
+      const o = ctx.createOscillator(); const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      if (tipo === 'tap') {
+        o.frequency.setValueAtTime(1100, t);
+        g.gain.setValueAtTime(0.03, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+        o.start(t); o.stop(t + 0.05);
+      } else if (tipo === 'ok') {
+        o.frequency.setValueAtTime(1320, t);
+        g.gain.setValueAtTime(0.03, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.10);
+        o.start(t); o.stop(t + 0.11);
+      } else if (tipo === 'success') {
+        o.frequency.setValueAtTime(660, t);
+        o.frequency.setValueAtTime(990, t + 0.08);
+        o.frequency.setValueAtTime(1320, t + 0.16);
+        g.gain.setValueAtTime(0.06, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.40);
+        o.start(t); o.stop(t + 0.42);
+      } else if (tipo === 'error') {
+        o.frequency.setValueAtTime(220, t);
+        g.gain.setValueAtTime(0.06, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+        o.start(t); o.stop(t + 0.20);
+      }
+    } catch(_) {}
+  }
+
+  // Confeti al aprobar exitosamente
+  function _pnConfeti() {
+    const emojis = ['🎉','✨','💫','⭐','🎊'];
+    for (let i = 0; i < 10; i++) {
+      const el = document.createElement('div');
+      el.className = 'pn-confetti-piece';
+      el.textContent = emojis[i % emojis.length];
+      const angle = (Math.PI * 2 * i) / 10 + Math.random() * 0.5;
+      const dist = 200 + Math.random() * 120;
+      el.style.setProperty('--cx', (Math.cos(angle) * dist).toFixed(0) + 'px');
+      el.style.setProperty('--cy', (Math.sin(angle) * dist).toFixed(0) + 'px');
+      el.style.setProperty('--cr', (Math.random() * 540 - 270).toFixed(0) + 'deg');
+      el.style.animationDelay = (i * 30) + 'ms';
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 1500);
+    }
+  }
+
+  // Validación inline de campos
+  function _pnValidarCampo(id, validator, msgOk, msgError) {
+    const el = $(id);
+    if (!el) return false;
+    const val = String(el.value || '').trim();
+    const ok = validator(val);
+    el.classList.remove('pn-field-ok', 'pn-field-error');
+    if (val) {
+      el.classList.add(ok ? 'pn-field-ok' : 'pn-field-error');
+    }
+    return ok;
+  }
+
+  // Detección de duplicados al pegar código de barras
+  function _pnCheckDuplicadoCodigo() {
+    const codInp = $('pnCodigoFinal');
+    const fb = $('pnCodigoFeedback');
+    if (!codInp || !fb) return;
+    const cod = String(codInp.value || '').trim();
+    if (!cod || cod.length < 4) {
+      fb.classList.add('hidden');
+      codInp.classList.remove('pn-field-ok', 'pn-field-error');
+      return;
+    }
+    // Buscar en catálogo
+    const dup = (S.productos || []).find(p => String(p.codigoBarra || '').trim() === cod);
+    if (dup) {
+      codInp.classList.remove('pn-field-ok');
+      codInp.classList.add('pn-field-error');
+      fb.classList.remove('hidden');
+      fb.innerHTML = `⚠ <span style="color:#f87171">Este código YA existe</span> como <strong>${dup.descripcion}</strong>. ¿Querés agregarlo como <button onclick="MOS.pnSetTipo('EQUIVALENTE');MOS._pnPrellenaEquiv('${(dup.skuBase||dup.idProducto).replace(/'/g,'')}')" style="margin-left:4px;padding:2px 6px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.5);border-radius:4px;color:#a5b4fc;font-weight:600;font-size:9px">EQUIVALENTE</button>?`;
+      _pnBeep('error');
+    } else if (cod.length >= 8 || cod.startsWith('NMLEV')) {
+      codInp.classList.add('pn-field-ok');
+      codInp.classList.remove('pn-field-error');
+      fb.classList.remove('hidden');
+      fb.innerHTML = '<span class="pn-field-msg ok">✓ Código disponible</span>';
+      _pnBeep('ok');
+    }
+  }
+
+  function _pnPrellenaEquiv(skuBase) {
+    const buscar = $('pnEquivBuscar');
+    if (buscar) { buscar.value = skuBase; pnBuscarBase(); }
+  }
+
+  // Margen calculado en vivo (ventas - costo) / ventas * 100
+  function _pnRecalcularMargen() {
+    const v = parseFloat($('pnPrecioVenta')?.value) || 0;
+    const c = parseFloat($('pnPrecioCosto')?.value) || 0;
+    const cont = $('pnMargenInfo');
+    if (!cont) return;
+    if (v <= 0 || c <= 0) { cont.innerHTML = ''; return; }
+    if (c > v) {
+      cont.innerHTML = `<span class="pn-margen pn-margen-warn">⚠ Costo mayor al venta — perdiendo S/${(c-v).toFixed(2)}</span>`;
+      return;
+    }
+    const margen = ((v - c) / v) * 100;
+    const cls = margen >= 25 ? 'pn-margen-ok' : margen >= 10 ? 'pn-margen-bajo' : 'pn-margen-warn';
+    const ico = margen >= 25 ? '🟢' : margen >= 10 ? '🟡' : '🔴';
+    cont.innerHTML = `<span class="pn-margen ${cls}">${ico} Margen ${margen.toFixed(1)}%</span>`;
   }
 
   // Búsqueda para CORREGIR_CODIGO — reusa la lógica de pnBuscarBase pero
@@ -2024,11 +2160,20 @@ const MOS = (() => {
     $('pnCorregirBuscar').value = descripcion;
   }
 
-  // Auto-genera código NMLEV en sección NUEVO
+  // Auto-genera código NMLEV en sección NUEVO. Si el campo YA tiene contenido,
+  // pide confirmación antes de sobrescribir.
   function pnAutogenBarcode() {
+    const inp = $('pnCodigoFinal');
+    if (!inp) return;
+    const actual = String(inp.value || '').trim();
+    if (actual && !confirm(`El código actual "${actual}" será reemplazado por uno automático.\n\n¿Continuar?`)) {
+      return;
+    }
     const ts = Date.now().toString().slice(-6);
     const rand = Math.floor(Math.random() * 900 + 100);
-    $('pnCodigoFinal').value = 'NMLEV' + ts + rand;
+    inp.value = 'NMLEV' + ts + rand;
+    // Disparar evento input para que validaciones se actualicen
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
   // Búsqueda de producto base para modo EQUIVALENTE (con normalización + multi-palabra)
@@ -2160,16 +2305,20 @@ const MOS = (() => {
       S.pnPendientes = (S.pnPendientes || []).filter(p => String(p.idProductoNuevo) !== String(idProductoNuevo));
       _updatePNBadge();
       renderPNBanner();
-      cerrarModalPN();
+      // Efecto de éxito antes de cerrar
+      _pnConfeti();
+      _pnBeep('success');
       const okMsg = tipo === 'NUEVO'
-        ? 'Producto creado en catálogo ✓'
+        ? '🆕 Producto creado en catálogo'
         : tipo === 'EQUIVALENTE'
-        ? 'Equivalencia agregada ✓'
-        : 'Código corregido — viejo guardado como equivalencia ✓';
+        ? '🔗 Equivalencia agregada'
+        : '🔄 Código corregido · viejo guardado como equivalencia';
       toast(okMsg, 'ok');
+      setTimeout(() => { cerrarModalPN(); }, 350);
       setTimeout(() => loadCatalogo(true), 800);
     } catch(e) {
       mostrarPNError(e.message || 'Error al aprobar producto');
+      _pnBeep('error');
       if (btn) { btn.disabled = false; btn.textContent = 'Aprobar y crear'; }
     }
   }
@@ -7169,11 +7318,21 @@ const MOS = (() => {
     toast('🧬 Datos tributarios heredados de "' + (padre.descripcion || padre.idProducto) + '" — editables si requiere', 'info');
   }
 
-  function prodAutogenBarcode() {
+  // Si silencioso=true: solo regenera (uso interno, ej. al guardar con campo vacío).
+  // Si silencioso=false (click del botón): confirma antes de sobrescribir si hay contenido.
+  function prodAutogenBarcode(silencioso) {
+    const cb = $('prodCodigoBarra');
+    if (!cb) return;
+    const actual = String(cb.value || '').trim();
+    if (!silencioso && actual) {
+      if (!confirm(`El código actual "${actual}" será reemplazado por uno automático.\n\n¿Continuar?`)) {
+        return;
+      }
+    }
     const ts   = Date.now().toString().slice(-6);
     const rand = Math.floor(Math.random() * 900 + 100);
-    const cb = $('prodCodigoBarra');
-    if (cb) { cb.value = 'NMLEV' + ts + rand; prodValidarCodigoBarra(); }
+    cb.value = 'NMLEV' + ts + rand;
+    prodValidarCodigoBarra();
   }
 
   function prodValidarCodigoBarra() {
@@ -7804,7 +7963,7 @@ const MOS = (() => {
     let codigoBarra = ($('prodCodigoBarra')?.value || '').trim();
     // Si no hay codigoBarra, autogenerar uno NMLEV en el momento (no permitir vacío)
     if (!codigoBarra) {
-      prodAutogenBarcode();
+      prodAutogenBarcode(true); // silencioso: el campo está vacío, no hay que confirmar
       codigoBarra = ($('prodCodigoBarra')?.value || '').trim();
       if (!codigoBarra) {
         toast('⚠ El código de barras es requerido', 'error');
@@ -17001,6 +17160,7 @@ const MOS = (() => {
     togglePNBanner, openImagePreview, closeImagePreview,
     _validBackdropClose,
     pnSetTipo, pnAutogenBarcode, pnBuscarBase, pnSeleccionarBase,
+    _pnCheckDuplicadoCodigo, _pnRecalcularMargen, _pnPrellenaEquiv,
     pnToggleDuplicar, pnBuscarParaDuplicar, pnSeleccionarParaDuplicar,
     abrirModalPromociones, loadPromociones, promoNuevoForm, promoEditar, promoVolverLista, promoToggleActiva, _promoForzarRefresh,
     promoSetTipo, promoSetModo, promoQuickFill, promoActualizarEjemplo, promoBuscarBase, promoSeleccionarBase,
