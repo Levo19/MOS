@@ -12440,10 +12440,15 @@ const MOS = (() => {
       return f && f <= fecha && f >= cutoff;
     });
 
+    // Identificar caja líder del día (corona 👑) — la de mayor totalVentas con tickets > 0
+    const cajasConVentas = cajasDelDia
+      .filter(c => (parseFloat(c.totalVentas) || 0) > 0 && (c.tickets || 0) > 0)
+      .sort((a, b) => (parseFloat(b.totalVentas) || 0) - (parseFloat(a.totalVentas) || 0));
+    const idCajaLider = cajasConVentas.length > 0 ? String(cajasConVentas[0].idCaja) : null;
+
     _cjRenderTicker(cajasDelDia, tkDia, esHoy);
     _cjRenderKPIs(cajasDelDia, tkDia, tkMes, fecha);
-    _cjRenderCajas(abiertas, cerradas, fecha, esHoy);
-    _cjRenderRanking(cajasDelDia);
+    _cjRenderCajas(abiertas, cerradas, fecha, esHoy, idCajaLider);
     _cjRenderActividad(tkDia, esHoy);
     _cjRender7d(fecha);
 
@@ -12588,7 +12593,7 @@ const MOS = (() => {
   }
 
   // ── CARDS DE CAJAS ───────────────────────────────────────
-  function _cjRenderCajas(abiertas, cerradas, fecha, esHoy) {
+  function _cjRenderCajas(abiertas, cerradas, fecha, esHoy, idCajaLider) {
     const grid = $('cjCajasGrid');
     if (!grid) return;
     const sub = $('cjCajasSub');
@@ -12605,17 +12610,17 @@ const MOS = (() => {
       grid.innerHTML = '<p class="text-slate-500 text-xs text-center py-6 col-span-full">Sin cajas en esta fecha</p>';
       return;
     }
-    // Activas primero, luego cerradas
+    // Activas primero, luego cerradas. La corona 👑 va a la caja líder (mayor totalVentas).
     grid.innerHTML = [
-      ...abiertas.map(c => _cjBuildCajaCard(c, true, fecha)),
-      ...cerradas.map(c => _cjBuildCajaCard(c, false, fecha))
+      ...abiertas.map(c => _cjBuildCajaCard(c, true,  fecha, String(c.idCaja) === idCajaLider)),
+      ...cerradas.map(c => _cjBuildCajaCard(c, false, fecha, String(c.idCaja) === idCajaLider))
     ].join('');
 
     // Detectar tickets nuevos (flash en card de la caja correspondiente)
     if (esHoy) _cjDetectarTicketsNuevos(abiertas);
   }
 
-  function _cjBuildCajaCard(c, esActiva, fecha) {
+  function _cjBuildCajaCard(c, esActiva, fecha, esLider) {
     const idAttr = String(c.idCaja).replace(/'/g, '&#39;');
     const elapsed = _cajaElapsed(c.fechaApertura);
     const total = parseFloat(c.totalVentas) || 0;
@@ -12686,10 +12691,11 @@ const MOS = (() => {
       <button onclick="event.stopPropagation();MOS.cjAbrirTurno('${idAttr}')" class="cj-caja-btn" title="Ver turno completo">📜 Ver cierre</button>`;
 
     return `
-    <div class="cj-caja-card ${claseEstado}" id="cjcard-${idAttr}" data-idcaja="${idAttr}" data-tickets="${tickets}" onclick="MOS.cjToggleCajaDetail('${idAttr}')">
+    <div class="cj-caja-card ${claseEstado} ${esLider ? 'cj-caja-card-lider' : ''}" id="cjcard-${idAttr}" data-idcaja="${idAttr}" data-tickets="${tickets}" onclick="MOS.cjToggleCajaDetail('${idAttr}')">
+      ${esLider ? '<div class="cj-caja-corona" title="Líder del día — caja con mayor venta">👑</div>' : ''}
       <div class="cj-caja-head">
         <span class="cj-caja-status-dot ${esActiva ? 'live' : 'off'}"></span>
-        <div class="cj-caja-titulo">📍 ${c.zona || c.estacion || c.idCaja}</div>
+        <div class="cj-caja-titulo">${esLider ? '🏆' : '📍'} ${c.zona || c.estacion || c.idCaja}</div>
         <span class="cj-caja-badge ${esActiva ? 'live' : 'cerrada'}">${esActiva ? 'LIVE' : 'CERRADA'}</span>
         <button class="cj-caja-toggle ${_cjState.expandido.has(idAttr) ? 'open' : ''}" onclick="event.stopPropagation();MOS.cjToggleCajaDetail('${idAttr}')">▾</button>
       </div>
@@ -12869,36 +12875,8 @@ const MOS = (() => {
     setTimeout(() => dot.classList.remove('active'), 1300);
   }
 
-  // ── RANKING ─────────────────────────────────────
-  function _cjRenderRanking(cajas) {
-    const targets = ['cjRanking', 'cjRankingTV'];
-    targets.forEach(id => {
-      const cont = $(id);
-      if (!cont) return;
-      if (!cajas.length) {
-        cont.innerHTML = '<p class="text-slate-500 text-xs italic text-center py-6">Sin cajas</p>';
-        return;
-      }
-      const ord = cajas.slice().sort((a,b)=> (parseFloat(b.totalVentas)||0) - (parseFloat(a.totalVentas)||0));
-      const max = parseFloat(ord[0].totalVentas) || 1;
-      cont.innerHTML = ord.map((c, i) => {
-        const total = parseFloat(c.totalVentas) || 0;
-        const pct = (total / max) * 100;
-        const medCls = i === 0 ? 'cj-ranking-1' : i === 1 ? 'cj-ranking-2' : i === 2 ? 'cj-ranking-3' : 'cj-ranking-x';
-        const medIco = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '#'+(i+1);
-        const idAttr = String(c.idCaja).replace(/'/g, '&#39;');
-        return `<div class="cj-ranking-row" onclick="MOS.cjScrollToCaja('${idAttr}')">
-          <div class="cj-ranking-medalla ${medCls}">${medIco}</div>
-          <div class="cj-ranking-cuerpo">
-            <div class="cj-ranking-nombre">${c.vendedor || '—'} · ${c.zona || c.estacion || ''}</div>
-            <div class="cj-ranking-sub">${c.tickets || 0} tk · ${c.estado === 'ABIERTA' ? '🟢 abierta' : '⚫ cerrada'}</div>
-          </div>
-          <div class="cj-ranking-monto">S/ ${total.toFixed(0)}</div>
-          <div class="cj-ranking-bar"><div class="cj-ranking-bar-fill" style="width:${pct}%"></div></div>
-        </div>`;
-      }).join('');
-    });
-  }
+  // ── RANKING: deprecado — la corona 👑 va al card de la caja líder ──
+  // (Eliminado: el card de "Ranking del día" + duplicado en TV strip)
 
   function cjScrollToCaja(idCaja) {
     const safe = String(idCaja).replace(/'/g, '&#39;');

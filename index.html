@@ -1385,6 +1385,36 @@
     .cj-caja-card.cerrada:hover { opacity: 0.85; filter: grayscale(0); }
     .cj-caja-card.alerta { border-color: #f59e0b; border-left-color: #f59e0b; }
     .cj-caja-card.problema { border-color: #ef4444; border-left-color: #ef4444; }
+
+    /* ── LÍDER del día (corona 👑) — borde dorado + glow ──────────── */
+    .cj-caja-card-lider {
+      border-color: #fbbf24 !important;
+      border-left-color: #fbbf24 !important;
+      box-shadow: 0 4px 28px rgba(251,191,36,0.20), 0 0 0 1px rgba(251,191,36,0.30);
+      background: linear-gradient(135deg, rgba(251,191,36,0.06), #060d1f);
+    }
+    .cj-caja-card-lider.activa {
+      box-shadow: 0 4px 28px rgba(251,191,36,0.28), 0 0 0 1px rgba(251,191,36,0.40);
+    }
+    .cj-caja-card-lider .cj-caja-titulo {
+      color: #fcd34d;
+    }
+    .cj-caja-corona {
+      position: absolute;
+      top: -6px;
+      right: 10px;
+      font-size: 22px;
+      filter: drop-shadow(0 2px 6px rgba(251,191,36,0.50));
+      animation: cjCoronaFloat 3s ease-in-out infinite;
+      pointer-events: none;
+      z-index: 2;
+    }
+    @keyframes cjCoronaFloat {
+      0%, 100% { transform: translateY(0) rotate(-6deg); }
+      50%      { transform: translateY(-3px) rotate(6deg); }
+    }
+    /* En modo TV la corona es un pelín más pequeña */
+    body.cj-modo-tv .cj-caja-corona { font-size: 18px; top: -4px; right: 8px; }
     .cj-caja-card.flash {
       animation: cjFlash 0.6s ease-out;
     }
@@ -1687,55 +1717,8 @@
       color: #c7d2fe;
     }
 
-    /* Ranking */
-    .cj-ranking { display: flex; flex-direction: column; gap: 8px; }
-    .cj-ranking-row {
-      display: grid;
-      grid-template-columns: 28px 1fr auto;
-      gap: 10px; align-items: center;
-      padding: 8px 10px;
-      border-radius: 8px;
-      background: rgba(0,0,0,0.20);
-      border: 1px solid #1e293b;
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-    .cj-ranking-row:hover {
-      background: rgba(99,102,241,0.08);
-      border-color: rgba(99,102,241,0.40);
-      transform: translateX(2px);
-    }
-    .cj-ranking-medalla {
-      width: 28px; height: 28px;
-      display: flex; align-items: center; justify-content: center;
-      border-radius: 50%;
-      font-size: 14px;
-    }
-    .cj-ranking-1 { background: rgba(251,191,36,0.20); border: 1px solid rgba(251,191,36,0.50); }
-    .cj-ranking-2 { background: rgba(148,163,184,0.18); border: 1px solid rgba(148,163,184,0.45); }
-    .cj-ranking-3 { background: rgba(202,138,4,0.18); border: 1px solid rgba(202,138,4,0.45); }
-    .cj-ranking-x { background: rgba(99,102,241,0.10); border: 1px solid rgba(99,102,241,0.30); color: #94a3b8; font-size: 11px; font-weight: 800; }
-    .cj-ranking-cuerpo { min-width: 0; }
-    .cj-ranking-nombre { font-size: 12px; font-weight: 700; color: #e2e8f0; }
-    .cj-ranking-sub { font-size: 10px; color: #64748b; }
-    .cj-ranking-monto {
-      font-size: 14px; font-weight: 800;
-      color: #6ee7b7;
-      font-variant-numeric: tabular-nums;
-    }
-    .cj-ranking-bar {
-      grid-column: 1 / span 3;
-      height: 3px;
-      background: #1e293b;
-      border-radius: 2px;
-      overflow: hidden;
-      margin-top: 4px;
-    }
-    .cj-ranking-bar-fill {
-      height: 100%;
-      background: linear-gradient(90deg, #6366f1, #34d399);
-      transition: width 0.7s cubic-bezier(0.4,0,0.2,1);
-    }
+    /* Ranking: deprecado — el card de ranking fue removido (la corona 👑 en el
+       card de la caja líder cumple la misma función). CSS eliminado. */
 
     /* ── KPI Card único: layout fila ─────────────────── */
     .cj-kpi-unico-row {
@@ -1945,7 +1928,7 @@
     body.cj-modo-tv #cjTvBottomStrip { display: flex !important; }
     body.cj-modo-tv .cj-tv-strip {
       display: grid;
-      grid-template-columns: 1.2fr 1.5fr 1fr;
+      grid-template-columns: 1.5fr 1fr;
       gap: 8px;
       flex-shrink: 0;
       max-height: 22vh;
@@ -1973,12 +1956,8 @@
     body.cj-modo-tv .cj-tv-strip .cj-actividad-hora { font-size: 10px; }
     body.cj-modo-tv .cj-tv-strip .cj-actividad-bar-monto { font-size: 9px; }
     body.cj-modo-tv .cj-tv-strip .cj-actividad-tickets { font-size: 9px; min-width: 26px; }
-    body.cj-modo-tv .cj-tv-strip .cj-ranking { gap: 4px; flex: 1; overflow-y: auto; }
-    body.cj-modo-tv .cj-tv-strip .cj-ranking-row { padding: 4px 8px; grid-template-columns: 22px 1fr auto; gap: 6px; }
-    body.cj-modo-tv .cj-tv-strip .cj-ranking-medalla { width: 22px; height: 22px; font-size: 11px; }
-    body.cj-modo-tv .cj-tv-strip .cj-ranking-nombre { font-size: 10px; }
-    body.cj-modo-tv .cj-tv-strip .cj-ranking-sub { font-size: 9px; }
-    body.cj-modo-tv .cj-tv-strip .cj-ranking-monto { font-size: 12px; }
+    /* (CSS de ranking removido — el card de Ranking ya no existe; la corona 👑
+       en el card de la caja líder cumple la misma función de forma más compacta) */
     /* Ocultar el grid analytics original en TV (los originales se duplican en strip) */
     body.cj-modo-tv #cajasContent > .grid.lg\\:grid-cols-2 { display: none !important; }
     body.cj-modo-tv #cajasContent > .fin-modcard.mb-5 { display: none !important; }
@@ -6813,24 +6792,9 @@
           </div>
         </div>
 
-        <!-- ── ANALYTICS: ranking + tendencia 7d + actividad por hora ── -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
-          <!-- Ranking entre cajas -->
-          <div class="fin-modcard">
-            <div class="fin-modcard-head">
-              <div class="fin-modcard-title">
-                <span class="fin-modcard-emoji">🏆</span>
-                <div>
-                  <div class="fin-modcard-title-txt">Ranking del día</div>
-                  <div class="fin-modcard-sub">Cajas ordenadas por total vendido</div>
-                </div>
-              </div>
-            </div>
-            <div id="cjRanking" class="cj-ranking">
-              <p class="text-slate-500 text-xs italic text-center py-6">Sin cajas</p>
-            </div>
-          </div>
-
+        <!-- ── ANALYTICS: tendencia 7d + actividad por hora ──
+             Ranking redundante eliminado — la corona 👑 ya marca a la caja líder. -->
+        <div class="mb-5">
           <!-- Tendencia 7 días -->
           <div class="fin-modcard">
             <div class="fin-modcard-head">
@@ -6870,22 +6834,14 @@
           <div class="text-xs">Navega con ‹ › para revisar otros días</div>
         </div>
 
-        <!-- ── STRIP HORIZONTAL solo en MODO TV: Ranking + 7d + Actividad ── -->
+        <!-- ── STRIP HORIZONTAL solo en MODO TV: 7d + Actividad por hora ──
+             Ranking eliminado — la corona 👑 en el card lider ya cumple esa función. -->
         <div id="cjTvBottomStrip" class="cj-tv-strip">
           <div class="fin-modcard">
             <div class="fin-modcard-head">
               <div class="fin-modcard-title">
-                <span class="fin-modcard-emoji">🏆</span>
-                <div><div class="fin-modcard-title-txt">Ranking</div></div>
-              </div>
-            </div>
-            <div id="cjRankingTV" class="cj-ranking"></div>
-          </div>
-          <div class="fin-modcard">
-            <div class="fin-modcard-head">
-              <div class="fin-modcard-title">
                 <span class="fin-modcard-emoji">📈</span>
-                <div><div class="fin-modcard-title-txt">7d</div></div>
+                <div><div class="fin-modcard-title-txt">Últimos 7 días</div></div>
               </div>
               <span id="cj7dTotalTV" class="fin-modcard-pill">—</span>
             </div>
