@@ -953,6 +953,16 @@ const MOS = (() => {
     }
     // PN pendientes (fire-and-forget — no bloquea)
     _refreshPNPendientes();
+
+    // Precarga del log de cambios — para que al abrir el modal sea instantáneo
+    if (S.session && (S.session.rol || '').toLowerCase() === 'master') {
+      API.get('getProductosEditadosRecientes', { limit: 100 })
+        .then(data => {
+          if (Array.isArray(data)) {
+            S._logProdCache = { ts: Date.now(), data };
+          }
+        }).catch(() => {});
+    }
   }
 
   // ── Refresh silencioso del catálogo cada 60s ────────────────
@@ -1092,9 +1102,16 @@ const MOS = (() => {
         const nombres = removed.slice(0, 3).map(p => p.descripcion || p.idProducto);
         toast(`🗑 ${removed.length} eliminado${removed.length>1?'s':''}: ${nombres.join(', ')}`, 'warn', 5000);
       }
-      // Cambios de precio: solo toast si cambio significativo (>5% en algún producto)
+      // Cambios de precio: solo toast si NO fue cambio mío local Y es significativo (>5%)
       if (!added.length && !removed.length && changed.length > 0) {
-        const significativos = changed.filter(p => {
+        const locales = S._catCambiosLocales || new Map();
+        const externos = changed.filter(p => {
+          // Si el precio coincide con un cambio que YO hice → no notificar
+          const local = locales.get(p.idProducto);
+          if (local && Math.abs(local.precio - parseFloat(p.precioVenta)) < 0.001) return false;
+          return true;
+        });
+        const significativos = externos.filter(p => {
           const prev = prevMap[p.idProducto];
           if (!prev) return false;
           const pa = parseFloat(prev.precioVenta) || 0;
@@ -1106,9 +1123,8 @@ const MOS = (() => {
           const p = significativos[0];
           toast(`💲 ${p.descripcion}: S/ ${parseFloat(prevMap[p.idProducto].precioVenta).toFixed(2)} → S/ ${parseFloat(p.precioVenta).toFixed(2)}`, 'ok', 5000);
         } else if (significativos.length > 1) {
-          toast(`💲 ${significativos.length} precios actualizados (cambios >5%)`, 'ok', 4000);
+          toast(`💲 ${significativos.length} precios actualizados por otros (cambios >5%)`, 'ok', 4000);
         }
-        // Cambios pequeños: silencio
       }
 
     } catch(e) {
@@ -2641,14 +2657,20 @@ const MOS = (() => {
       return { idProducto: u.idProducto, precio: p ? p.precioVenta : null };
     });
 
-    // Optimistic update — actualizar memoria local
+    // Optimistic update — actualizar memoria local + tracking para suprimir toast del polling
+    if (!S._catCambiosLocales) S._catCambiosLocales = new Map();
     updates.forEach(u => {
       const p = S.productos.find(x => x.idProducto === u.idProducto);
       if (p) p.precioVenta = u.precio;
+      // Marcar como cambio local — el polling silencioso no lo notificará
+      S._catCambiosLocales.set(u.idProducto, { precio: u.precio, ts: Date.now() });
     });
     _catSaveCache({ productos: S.productos, equivMap: S.equivMap });
 
-    // Animación visual de éxito ANTES de cerrar
+    // Re-render INMEDIATO del catálogo (no esperar 450ms) para que el optimistic se vea ya
+    try { renderCatalogo(); } catch {}
+
+    // Animación visual de éxito en las cards DEL MODAL antes de cerrar
     cards.forEach((card, i) => {
       const idx = card.id.replace('qpCard', '');
       const chk = $('qpChk' + idx);
@@ -2657,13 +2679,10 @@ const MOS = (() => {
       }
     });
     _qpBeep('success');
-    S._qpGuardado = true; // marca: no disparar sonido cancel al cerrar
+    S._qpGuardado = true;
 
-    // Cerrar modal después de que el pulse alcance a verse
-    setTimeout(() => {
-      cerrarModalPrecioRapido();
-      renderCatalogo();
-    }, 450);
+    // Cerrar modal con un delay para que el pulse se vea
+    setTimeout(() => { cerrarModalPrecioRapido(); }, 450);
 
     // API en paralelo en background — solo precioVenta, no toca otros campos
     try {
@@ -2671,16 +2690,22 @@ const MOS = (() => {
         API.post('publicarPrecio', {
           _source: 'MOS_MODAL_PRECIO',
           idProducto: u.idProducto,
-          precioNuevo: u.precio
+          precioNuevo: u.precio,
+          usuario: S.session?.nombre || ''
         })
       ));
       const n = updates.length;
       toast(n > 1 ? `✓ ${n} precios actualizados` : '✓ Precio actualizado', 'ok');
+      // Limpiar el tracking de cambios locales tras 90s (más que el polling de 60s)
+      setTimeout(() => {
+        updates.forEach(u => S._catCambiosLocales?.delete(u.idProducto));
+      }, 90 * 1000);
     } catch(e) {
       prev.forEach(snap => {
         if (snap.precio === null) return;
         const p = S.productos.find(x => x.idProducto === snap.idProducto);
         if (p) p.precioVenta = snap.precio;
+        S._catCambiosLocales?.delete(snap.idProducto);
       });
       _catSaveCache({ productos: S.productos, equivMap: S.equivMap });
       toast('Error al guardar: ' + e.message, 'error');
@@ -7571,13 +7596,29 @@ const MOS = (() => {
   async function refreshLogProductos() {
     const cont = $('logProductosList');
     if (!cont) return;
-    cont.innerHTML = '<div class="text-center py-6 text-slate-500 text-sm">Cargando...</div>';
+    // Render INMEDIATO desde cache si existe (TTL 60s)
+    const cache = S._logProdCache;
+    if (cache && Array.isArray(cache.data) && (Date.now() - cache.ts) < 60 * 1000) {
+      _logProdRender(cache.data);
+    } else {
+      cont.innerHTML = '<div class="text-center py-6 text-slate-500 text-sm">Cargando log...</div>';
+    }
     try {
       const data = await API.get('getProductosEditadosRecientes', { limit: 100 });
+      S._logProdCache = { ts: Date.now(), data };
       if (!Array.isArray(data) || !data.length) {
         cont.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm italic">Sin ediciones registradas todavía</div>';
         return;
       }
+      _logProdRender(data);
+    } catch(e) {
+      if (!cache) cont.innerHTML = '<div class="text-center py-6 text-red-400 text-sm">Error: ' + e.message + '</div>';
+    }
+  }
+
+  function _logProdRender(data) {
+    const cont = $('logProductosList');
+    if (!cont || !Array.isArray(data)) return;
       cont.innerHTML = data.map(p => {
         const hist = Array.isArray(p.historial) ? p.historial : [];
         const ult = p.ultimaEntrada || hist[hist.length - 1] || {};
@@ -7640,9 +7681,6 @@ const MOS = (() => {
           </div>
         </div>`;
       }).join('');
-    } catch(e) {
-      cont.innerHTML = '<div class="text-center py-6 text-red-400 text-sm">Error: ' + e.message + '</div>';
-    }
   }
 
   function _logFmtVal(v) {

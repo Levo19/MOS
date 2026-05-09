@@ -778,12 +778,17 @@ function publicarPrecio(params) {
     return { ok: false, error: 'Requiere idProducto, codigoBarra o skuBase' };
   }
 
+  // Resolver usuario: explícito > _audit (auto-inyectado por api.js) > 'desconocido'
+  var usuarioFinal = params.usuario;
+  if (!usuarioFinal && params._audit && params._audit.usuario) usuarioFinal = params._audit.usuario;
+
   var res = actualizarProductoMaster({
     _source:      'MOS_MODAL_PRECIO',
+    _audit:       params._audit,    // propagar contexto de auditoría
     idProducto:   params.idProducto,
     codigoBarra:  params.codigoBarra,
     precioVenta:  _precioNuevo,
-    usuario:      params.usuario,
+    usuario:      usuarioFinal || '',
     motivoPrecio: params.motivo || 'Publicación de precio'
   });
   if (!res.ok) return res;
