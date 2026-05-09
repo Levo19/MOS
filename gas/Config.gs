@@ -349,13 +349,17 @@ function registrarConexionPersonal(params) {
 
   var nombreNorm = String(params.nombre || '').trim().toLowerCase();
   var appNorm = String(params.appOrigen || '').toLowerCase();
-  var tz = Session.getScriptTimeZone();
-  var nowStr = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss');
+  // ISO UTC explícito ('Z') — sin ambigüedad de timezone al leer del browser.
+  // Antes guardábamos en TZ del script sin Z → JS lo parseaba como hora local
+  // del browser y daba diferencias de horas.
+  var nowStr = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
 
   for (var i = 1; i < data.length; i++) {
     var matchId  = params.idPersonal && String(data[i][iId]) === String(params.idPersonal);
     var matchNom = nombreNorm && String(data[i][iNom] || '').trim().toLowerCase() === nombreNorm;
-    var matchApp = !appNorm || String(data[i][iApp] || '').toLowerCase() === appNorm;
+    // Si appOrigen es 'mos' (master/admin abriendo el panel), no filtrar por app
+    // — el master puede figurar como appOrigen='warehouseMos' u otro en PERSONAL_MASTER.
+    var matchApp = !appNorm || appNorm === 'mos' || String(data[i][iApp] || '').toLowerCase() === appNorm;
     if ((matchId || matchNom) && matchApp) {
       sheet.getRange(i + 1, iUC + 1).setValue(nowStr);
       return { ok: true, data: { idPersonal: data[i][iId], nombre: data[i][iNom] } };
@@ -622,7 +626,8 @@ function registrarSesionDispositivo(params) {
     var hdrsMos  = dataMos[0];
     var iIdMos   = hdrsMos.indexOf('ID_Dispositivo');
     var iUCMos   = hdrsMos.indexOf('Ultima_Conexion');
-    var nowM = new Date(); // Sheets guarda Date como timestamp absoluto (UTC interno) — sin ambigüedad de TZ
+    // ISO UTC explícito (mismo formato que el resto)
+    var nowM = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
     for (var rm = 1; rm < dataMos.length; rm++) {
       if (String(dataMos[rm][iIdMos]) === deviceId) {
         if (iUCMos >= 0) sheetMos.getRange(rm + 1, iUCMos + 1).setValue(nowM);
@@ -642,9 +647,10 @@ function registrarSesionDispositivo(params) {
   var iUZ   = hdrs.indexOf('Ultima_Zona');
   var iUEs  = hdrs.indexOf('Ultima_Estacion');
   var iUSe  = hdrs.indexOf('Ultima_Sesion');
-  // Sheets acepta Date directo y lo guarda como timestamp absoluto (sin ambigüedad de TZ).
-  // El frontend al leer recibe un ISO con Z explícito → JS Date lo parsea bien.
-  var nowStr = new Date();
+  // ISO UTC explícito como STRING — antes era Date object que Sheets formateaba
+  // según locale del cell ("5/9/2026 9:35:29" en lugar de ISO), causando que el
+  // browser lo interpretara como hora local y mostrara "hace 9h" cuando eran minutos.
+  var nowStr = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
 
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][iId]) !== deviceId) continue;
@@ -725,7 +731,8 @@ function consultarEstadoDispositivo(params) {
   var iApp  = hdrs.indexOf('App');
   var iNom  = hdrs.indexOf('Nombre_Equipo');
   var iUC   = hdrs.indexOf('Ultima_Conexion');
-  var nowStr = new Date(); // Date object → Sheets lo guarda como timestamp absoluto
+  // ISO UTC explícito como string — formato consistente entre todos los heartbeats
+  var nowStr = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][iId]) !== deviceId) continue;
     // Heartbeat: actualizar Ultima_Conexion aunque el dispositivo no haya logueado

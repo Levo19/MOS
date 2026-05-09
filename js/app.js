@@ -505,16 +505,43 @@ const MOS = (() => {
     setTimeout(() => { overlay.style.display = 'none'; overlay.classList.remove('hide'); }, 400);
   }
 
-  // (Removido: heartbeat MOS y vinculación de browser → eran complejidad
-  // innecesaria. MOS es panel admin, no dispositivo de operación. Cada cajero/
-  // operador real tiene su propio UUID que se actualiza desde ME/WH.)
+  // Heartbeat ligero del MASTER/ADMIN cuando está en MOS panel.
+  // Llama getEstadoBloqueoUsuario con appOrigen='mos' que actualiza
+  // PERSONAL_MASTER.Ultima_Conexion vía registrarConexionPersonal.
+  // Sin esto, el master/admin siempre figuraba "sin conexión" en el panel
+  // aunque estuviera viendo MOS en este mismo momento.
+  let _mosHbTimer = null;
   function vincularEsteBrowser() { /* deprecated: mantener export para compat */ }
-  function _mosHeartbeat() {}
-  function _startMosHeartbeat() {}
+  async function _mosHeartbeat() {
+    try {
+      const ses = S.session;
+      if (!ses || !ses.idPersonal) return;
+      if (!navigator.onLine) return;
+      const url = API.getUrl()
+        + '?action=getEstadoBloqueoUsuario'
+        + '&idPersonal=' + encodeURIComponent(ses.idPersonal)
+        + '&nombre='     + encodeURIComponent(ses.nombre || '')
+        + '&appOrigen=mos';
+      await fetch(url);
+    } catch(_) {}
+  }
+  function _startMosHeartbeat() {
+    if (_mosHbTimer) return;
+    // Primera llamada inmediata para que el master aparezca online al instante
+    _mosHeartbeat();
+    // Refrescar cada 60s mientras el panel esté abierto
+    _mosHbTimer = setInterval(_mosHeartbeat, 60 * 1000);
+    // Pausar cuando la pestaña está oculta para no spamear
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') _mosHeartbeat();
+    });
+  }
 
   function _applySession() {
     if (!S.session) return;
     const isMaster = (S.session.rol || '').toLowerCase() === 'master';
+    // Heartbeat MOS para que el master/admin aparezca online en el panel
+    _startMosHeartbeat();
     // Iniciar pre-carga en background al autenticar
     _startCajasRefresh();
     _startCatRefresh();

@@ -63,15 +63,17 @@ function getEstadoBloqueoUsuario(params) {
   if (params.deviceId) {
     try {
       // Auto-asignar estación de Almacén si viene de WH sin idEstacion explícito
-      // (operadores WH no eligen estación — todos usan la única de Almacén)
+      // (operadores WH no eligen estación — todos usan la única de Almacén).
+      // Bug previo: buscaba e.app y e.activa, pero las columnas reales son
+      // appOrigen y activo → siempre fallaba y la sesión quedaba sin estación.
       var idEstacionFinal = params.idEstacion || '';
       var idZonaFinal     = params.idZona || '';
       if (!idEstacionFinal && _normalizarApp(params.appOrigen) === 'warehousemos') {
         try {
           var estaciones = _sheetToObjects(getSheet('ESTACIONES'));
           var primeraWH = estaciones.find(function(e) {
-            return String(e.app || '').toLowerCase() === 'warehousemos'
-                && String(e.activa || '1') !== '0';
+            return String(e.appOrigen || '').toLowerCase() === 'warehousemos'
+                && String(e.activo || '1') !== '0';
           });
           if (primeraWH) {
             idEstacionFinal = primeraWH.idEstacion || '';
