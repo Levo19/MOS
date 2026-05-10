@@ -10145,6 +10145,215 @@
   </div>
 </div>
 
+<!-- ════════════════════════════════════════════════════════════
+     PANTALLA DE BLOQUEO POR DISPOSITIVO NO AUTORIZADO (NUEVA EN MOS)
+     Igual lógica que WH y ME: chequea UUID con consultarEstadoDispositivo.
+     Si no ACTIVO → bloquea con opciones: solicitar acceso o activar in-situ.
+═══════════════════════════════════════════════════════════════ -->
+<div id="mosVerifDispOverlay" style="display:none;position:fixed;inset:0;z-index:9999;background:linear-gradient(135deg,#0c1426,#1e293b);align-items:center;justify-content:center;padding:24px;flex-direction:column;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif">
+  <div id="mosVerifDispContent" style="text-align:center;max-width:420px;width:100%"></div>
+</div>
+
+<!-- Modal activar in-situ MOS -->
+<div id="mosActInSitu" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(2,6,23,.85);backdrop-filter:blur(8px);align-items:center;justify-content:center;padding:20px">
+  <div style="max-width:420px;width:100%;border-radius:20px;padding:22px;background:linear-gradient(135deg,#1e293b,#0f172a);border:1.5px solid rgba(201,162,39,.55);box-shadow:0 30px 60px -10px rgba(0,0,0,.65),0 0 24px -6px rgba(255,215,0,.3)">
+    <div style="font-size:36px;margin-bottom:8px">🔑</div>
+    <p style="font-size:1.05em;font-weight:900;color:#fef3c7;margin-bottom:4px">Activar dispositivo MOS</p>
+    <p style="font-size:.78em;color:#94a3b8;margin-bottom:16px">Un administrador autoriza este dispositivo con su clave de 8 dígitos.</p>
+    <label style="display:block;font-size:.7em;font-weight:700;color:#94a3b8;margin-bottom:4px;letter-spacing:.04em">NOMBRE DEL DISPOSITIVO</label>
+    <input id="mosActInsNombre" type="text"
+           style="width:100%;padding:12px;border-radius:10px;background:rgba(15,23,42,.7);border:1.5px solid rgba(51,65,85,.6);color:#fef3c7;font-size:.92em;outline:none;margin-bottom:14px"
+           placeholder="ej: Laptop admin central">
+    <label style="display:block;font-size:.7em;font-weight:700;color:#94a3b8;margin-bottom:4px;letter-spacing:.04em">CLAVE ADMIN (8 DÍGITOS)</label>
+    <input id="mosActInsClave" type="password" inputmode="numeric" maxlength="8"
+           style="width:100%;padding:14px;border-radius:10px;background:rgba(15,23,42,.7);border:1.5px solid rgba(201,162,39,.5);color:#fef3c7;font-size:1.3em;font-weight:900;letter-spacing:.4em;text-align:center;outline:none;margin-bottom:6px"
+           placeholder="••••••••" autocomplete="off">
+    <p style="font-size:.62em;color:#64748b;margin-bottom:14px;letter-spacing:.04em">Clave global (4) + PIN personal del admin (4)</p>
+    <p id="mosActInsErr" style="font-size:.75em;color:#fca5a5;margin-bottom:10px;min-height:18px;text-align:center"></p>
+    <div style="display:flex;gap:8px">
+      <button id="mosActInsCancel" style="flex:1;padding:13px;border-radius:11px;border:1px solid rgba(71,85,105,.55);background:rgba(71,85,105,.3);color:#cbd5e1;font-size:.85em;font-weight:800;cursor:pointer">Cancelar</button>
+      <button id="mosActInsOk" style="flex:1;padding:13px;border-radius:11px;border:none;background:linear-gradient(135deg,#c9a227,#ffd700);color:#020817;font-size:.85em;font-weight:900;cursor:pointer;box-shadow:0 6px 16px -3px rgba(201,162,39,.55)">✓ ACTIVAR</button>
+    </div>
+    <p id="mosActInsUuid" style="font-size:.6em;color:#64748b;margin-top:14px;text-align:center;font-family:monospace"></p>
+  </div>
+</div>
+
+<!-- Verificación de dispositivo MOS -->
+<script>
+(function(){
+  const GAS_URL = 'https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec';
+  const DEV_KEY = 'mos_device_id';
+  const AUTH_CACHE_KEY = 'mos_device_auth_ts';
+  const AUTH_CACHE_MAX = 24 * 60 * 60 * 1000; // 24h
+
+  function _getDeviceId() {
+    let id = localStorage.getItem(DEV_KEY);
+    if (!id) {
+      id = (crypto.randomUUID && crypto.randomUUID()) ||
+           ('mos-' + Date.now().toString(36) + '-' + Math.random().toString(36).substr(2, 9));
+      localStorage.setItem(DEV_KEY, id);
+    }
+    return id;
+  }
+  window._getDeviceIdMos = _getDeviceId;
+
+  function _hideOverlay() {
+    const ov = document.getElementById('mosVerifDispOverlay');
+    if (ov) ov.style.display = 'none';
+  }
+  function _showOverlay(html) {
+    const ov   = document.getElementById('mosVerifDispOverlay');
+    const cont = document.getElementById('mosVerifDispContent');
+    if (cont) cont.innerHTML = html;
+    if (ov) ov.style.display = 'flex';
+  }
+  function _renderNoAutorizado() {
+    const uuid = _getDeviceId();
+    _showOverlay(`
+      <div style="font-size:64px;margin-bottom:16px">🔒</div>
+      <h2 style="font-size:22px;font-weight:800;margin-bottom:8px;color:#fef3c7">Dispositivo no autorizado</h2>
+      <p style="font-size:14px;color:#94a3b8;margin-bottom:20px">Este dispositivo no tiene permiso para usar MOS.</p>
+      <button id="mosBtnSolicitar" style="display:block;width:100%;background:linear-gradient(135deg,#f59e0b,#d97706);color:#0b1220;border:none;padding:14px 24px;border-radius:12px;font-size:14px;font-weight:800;cursor:pointer;box-shadow:0 8px 24px rgba(245,158,11,.4);margin-bottom:10px">📨 Solicitar acceso al admin (remoto)</button>
+      <div style="font-size:11px;color:#64748b;margin:14px 0 10px;letter-spacing:.05em">─ o si está un admin contigo ─</div>
+      <button id="mosBtnInSitu" style="display:block;width:100%;background:linear-gradient(135deg,#c9a227,#ffd700);color:#020817;border:none;padding:14px 24px;border-radius:12px;font-size:14px;font-weight:800;cursor:pointer;box-shadow:0 8px 24px rgba(201,162,39,.5)">🔑 Activar in-situ (admin presente)</button>
+      <p style="font-size:11px;color:#64748b;margin-top:24px;font-family:monospace">UUID: ${uuid.substring(0, 16)}...</p>
+    `);
+    document.getElementById('mosBtnSolicitar').onclick = _solicitarAcceso;
+    document.getElementById('mosBtnInSitu').onclick    = _abrirModalInSitu;
+  }
+  function _renderPendiente() {
+    _showOverlay(`
+      <div style="font-size:64px;margin-bottom:16px;animation:mpulse 1.6s infinite">⌛</div>
+      <h2 style="font-size:22px;font-weight:800;margin-bottom:8px;color:#fbbf24">Esperando aprobación</h2>
+      <p style="font-size:14px;color:#94a3b8;margin-bottom:8px">Tu dispositivo está pendiente de aprobación por un administrador.</p>
+      <p style="font-size:12px;color:#64748b;margin-bottom:16px">Reintenta automáticamente cada 15s.</p>
+      <button id="mosBtnInSituP" style="display:block;width:100%;background:linear-gradient(135deg,#c9a227,#ffd700);color:#020817;border:none;padding:12px 22px;border-radius:11px;font-size:13px;font-weight:800;cursor:pointer;margin-top:10px">🔑 Activar in-situ con clave admin</button>
+      <style>@keyframes mpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}</style>
+    `);
+    document.getElementById('mosBtnInSituP').onclick = _abrirModalInSitu;
+  }
+  function _renderInactivo() {
+    _showOverlay(`
+      <div style="font-size:64px;margin-bottom:16px">🚫</div>
+      <h2 style="font-size:22px;font-weight:800;margin-bottom:8px;color:#f87171">Dispositivo desactivado</h2>
+      <p style="font-size:14px;color:#94a3b8;margin-bottom:24px">El administrador desactivó este dispositivo. Contactá al administrador.</p>
+    `);
+  }
+
+  async function _solicitarAcceso() {
+    const btn = document.getElementById('mosBtnSolicitar');
+    if (btn) { btn.disabled = true; btn.textContent = '⌛ Enviando...'; }
+    try {
+      await fetch(GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'registrarSesionDispositivo',
+          ID_Dispositivo: _getDeviceId(),
+          app: 'MOS',
+          userAgent: (navigator.userAgent || '').substring(0, 200)
+        })
+      });
+      _renderPendiente();
+    } catch (e) { if (btn) { btn.disabled = false; btn.textContent = '📨 Solicitar acceso'; } }
+  }
+
+  function _abrirModalInSitu() {
+    const ua = (navigator.userAgent || '');
+    const esMobile = /iPhone|Android|Mobile|iPad/i.test(ua);
+    const prefix   = esMobile ? 'Mobile' : 'Desktop';
+    const ahora    = new Date();
+    const hh = String(ahora.getHours()).padStart(2, '0');
+    const mm = String(ahora.getMinutes()).padStart(2, '0');
+    document.getElementById('mosActInsNombre').value = prefix + ' MOS ' + hh + ':' + mm;
+    document.getElementById('mosActInsClave').value = '';
+    document.getElementById('mosActInsErr').textContent = '';
+    document.getElementById('mosActInsUuid').textContent = 'UUID: ' + _getDeviceId().substring(0, 16) + '...';
+    document.getElementById('mosActInSitu').style.display = 'flex';
+    setTimeout(() => document.getElementById('mosActInsClave').focus(), 100);
+  }
+  document.addEventListener('DOMContentLoaded', () => {
+    const cancelBtn = document.getElementById('mosActInsCancel');
+    if (cancelBtn) cancelBtn.onclick = () => {
+      document.getElementById('mosActInSitu').style.display = 'none';
+    };
+    const okBtn = document.getElementById('mosActInsOk');
+    if (okBtn) okBtn.onclick = async () => {
+      const clave  = document.getElementById('mosActInsClave').value.trim();
+      const nombre = document.getElementById('mosActInsNombre').value.trim();
+      const errEl  = document.getElementById('mosActInsErr');
+      errEl.textContent = '';
+      if (!/^\d{8}$/.test(clave)) { errEl.textContent = 'La clave debe ser 8 dígitos numéricos'; return; }
+      okBtn.disabled = true; okBtn.textContent = '⌛ Validando...';
+      try {
+        const res = await fetch(GAS_URL, {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'aprobarDispositivoEnSitu',
+            deviceId: _getDeviceId(),
+            nombreEquipo: nombre || ('MOS ' + new Date().toISOString()),
+            app: 'MOS',
+            userAgent: (navigator.userAgent || '').substring(0, 200),
+            claveAdmin: clave
+          })
+        });
+        const j = await res.json();
+        if (!j.ok) { errEl.textContent = j.error || 'Error de conexión'; okBtn.disabled = false; okBtn.textContent = '✓ ACTIVAR'; return; }
+        if (!j.data?.autorizado) {
+          errEl.textContent = j.data?.error || 'Clave incorrecta';
+          okBtn.disabled = false; okBtn.textContent = '✓ ACTIVAR';
+          try { window.MosSfx?.bellSoft?.(); } catch(_){}
+          if (navigator.vibrate) navigator.vibrate([60, 30, 60]);
+          return;
+        }
+        // ✓ Aprobado
+        try { localStorage.setItem(AUTH_CACHE_KEY, String(Date.now())); } catch(_){}
+        try { localStorage.setItem('mos_perms_check_pending', '1'); } catch(_){}
+        try { window.MosSfx?.updateReady?.(); } catch(_){}
+        if (navigator.vibrate) navigator.vibrate([30, 30, 60]);
+        document.getElementById('mosActInSitu').style.display = 'none';
+        _hideOverlay();
+        // Disparar wizard de permisos automáticamente
+        setTimeout(() => { if (window.MosPerms?.auto) window.MosPerms.auto(); }, 400);
+      } catch (e) {
+        errEl.textContent = 'Sin conexión con MOS';
+        okBtn.disabled = false; okBtn.textContent = '✓ ACTIVAR';
+      }
+    };
+  });
+
+  async function _verificar() {
+    // Cache 24h: si pasó hace poco una verificación exitosa, no bloquear
+    try {
+      const ts = parseInt(localStorage.getItem(AUTH_CACHE_KEY) || '0');
+      if (ts && (Date.now() - ts) < AUTH_CACHE_MAX) return; // OK
+    } catch(_){}
+
+    const id = _getDeviceId();
+    try {
+      const r = await fetch(`${GAS_URL}?action=consultarEstadoDispositivo&deviceId=${encodeURIComponent(id)}`);
+      const j = await r.json();
+      if (j?.ok && j.data?.estado === 'ACTIVO') {
+        try { localStorage.setItem(AUTH_CACHE_KEY, String(Date.now())); } catch(_){}
+        return;
+      }
+      const est = j?.data?.estado || 'NO_REGISTRADO';
+      if (est === 'PENDIENTE_APROBACION' || est === 'PENDIENTE') _renderPendiente();
+      else if (est === 'INACTIVO')                                _renderInactivo();
+      else                                                        _renderNoAutorizado();
+      // Reintento cada 15s mientras esté pendiente
+      if (est === 'PENDIENTE_APROBACION' || est === 'PENDIENTE') {
+        setTimeout(_verificar, 15000);
+      }
+    } catch (e) {
+      // Sin conexión: no bloquear (offline tolerable)
+    }
+  }
+  // Disparar al cargar
+  if (document.readyState === 'complete') _verificar();
+  else window.addEventListener('load', () => setTimeout(_verificar, 500));
+})();
+</script>
+
 <!-- ════ Wizard de permisos · post-update ════ -->
 <div id="mosPermsOverlay" class="mos-perms-overlay">
   <div class="mos-perms-modal">
@@ -10193,6 +10402,16 @@
       </div>
       <button class="mos-perm-status is-pedir"
               onclick="MosPerms.pedir('audio')">PROBAR</button>
+    </div>
+
+    <div class="mos-perm-card" data-perm="install">
+      <span class="mos-perm-icon">📱</span>
+      <div class="flex-1 min-w-0">
+        <p class="mos-perm-name">Instalar como app</p>
+        <p class="mos-perm-desc">Acceso directo desde el escritorio. Funciona offline.</p>
+      </div>
+      <button class="mos-perm-status is-pedir"
+              onclick="MosPerms.pedir('install')">INSTALAR</button>
     </div>
 
     <div class="mos-perms-footer">
@@ -10805,8 +11024,12 @@
 ════════════════════════════════════════════════ -->
 <script>
 (function(){
-  const PERMS = ['notifications', 'microphone', 'geolocation', 'audio'];
+  const PERMS = ['notifications', 'microphone', 'geolocation', 'audio', 'install'];
   const AUDIO_KEY = 'mos_audio_tested_v';
+
+  let _installPrompt = null;
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); _installPrompt = e; });
+  window.addEventListener('appinstalled', () => { _installPrompt = null; });
   let _stateActual = {};
 
   // Detecta hardware físico — para no pedir permiso si el dispositivo no existe
@@ -10840,6 +11063,18 @@
         const v = window._MOS_PERMS_VERSION || 'unk';
         return localStorage.getItem(AUDIO_KEY + v) === '1' ? 'granted' : 'prompt';
       } catch(_) { return 'prompt'; }
+    }
+    if (perm === 'install') {
+      const standalone = window.matchMedia?.('(display-mode: standalone)').matches
+                      || window.navigator.standalone === true;
+      if (standalone) return 'granted';
+      try {
+        const v = window._MOS_PERMS_VERSION || 'unk';
+        if (localStorage.getItem('mos_install_dismissed_v' + v) === '1') return 'granted';
+      } catch(_){}
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+      if (isIOS) return 'prompt';
+      return _installPrompt ? 'prompt' : 'unsupported';
     }
     if (!navigator.permissions?.query) return 'prompt';
     try {
@@ -10877,7 +11112,7 @@
         pendientes++;
         if (btn) {
           btn.className = 'mos-perm-status is-pedir';
-          btn.textContent = (p === 'audio') ? 'PROBAR' : 'AUTORIZAR';
+          btn.textContent = (p === 'audio') ? 'PROBAR' : (p === 'install') ? 'INSTALAR' : 'AUTORIZAR';
           btn.disabled = false;
         }
       }
@@ -10907,6 +11142,21 @@
         await new Promise((res, rej) => {
           navigator.geolocation.getCurrentPosition(res, rej, { timeout: 8000 });
         });
+      } else if (perm === 'install') {
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        if (isIOS) {
+          alert('📱 Instalar en iOS:\n\n1. Toca Compartir\n2. "Añadir a inicio"\n3. Confirmar.\n\nAparecerá como app en tu pantalla.');
+          try {
+            const v = window._MOS_PERMS_VERSION || 'unk';
+            localStorage.setItem('mos_install_dismissed_v' + v, '1');
+          } catch(_){}
+        } else if (_installPrompt) {
+          try {
+            _installPrompt.prompt();
+            const result = await _installPrompt.userChoice;
+            if (result.outcome === 'accepted') _installPrompt = null;
+          } catch(_){}
+        }
       } else if (perm === 'audio') {
         try {
           const Ctx = window.AudioContext || window.webkitAudioContext;

@@ -125,6 +125,7 @@ function _route(method, e) {
       case 'getDispositivosPendientes':    return getDispositivosPendientes();
       case 'consultarEstadoDispositivo':   return consultarEstadoDispositivo(params);
       case 'aprobarDispositivoPendiente':  return aprobarDispositivoPendiente(params);
+      case 'aprobarDispositivoEnSitu':     return aprobarDispositivoEnSitu(params);
       case 'rechazarDispositivoPendiente': return rechazarDispositivoPendiente(params);
       case 'vincularBrowserDispositivo':   return vincularBrowserDispositivo(params);
       case 'limpiarPendientesMOS':         return limpiarPendientesMOS();

@@ -792,6 +792,71 @@ function aprobarDispositivoPendiente(params) {
   return { ok: false, error: 'Dispositivo no encontrado' };
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// APROBAR DISPOSITIVO EN SITU — admin presente con clave 8 dígitos
+//
+// El admin escribe su clave de 8 dig (4 globales + 4 PIN personal) en el
+// dispositivo nuevo y este queda activo al instante. No requiere ir al
+// panel MOS a aprobar manualmente. Igual que el flujo de
+// anulaciones/conversiones que ya usa verificarClaveAdmin.
+//
+// Params: { deviceId, nombreEquipo, app, userAgent, claveAdmin (8 dig) }
+// Retorna: { ok, data: { aprobadoPor: 'admin:Juan Perez' } } o autorizado:false
+// ════════════════════════════════════════════════════════════════════════
+function aprobarDispositivoEnSitu(params) {
+  if (!params.deviceId)     return { ok: false, error: 'Requiere deviceId' };
+  if (!params.claveAdmin)   return { ok: false, error: 'Requiere claveAdmin' };
+
+  // Validar la clave 8 dig — verificarClaveAdmin retorna ok:true incluso si
+  // no autorizado (el flag está en data.autorizado). También deja auditoría.
+  var auth = verificarClaveAdmin({
+    clave:        params.claveAdmin,
+    accion:       'APROBAR_DISPOSITIVO',
+    refDocumento: params.deviceId,
+    appOrigen:    params.app || '',
+    dispositivo:  params.nombreEquipo || params.userAgent || '',
+    detalle:      'Aprobación in-situ desde el dispositivo nuevo'
+  });
+  if (!auth.ok) return auth;
+  if (!auth.data || !auth.data.autorizado) {
+    return { ok: true, data: { autorizado: false, error: auth.data?.error || 'Clave incorrecta' } };
+  }
+
+  _garantizarColumnasDispositivos();
+  var sheet = getSheet('DISPOSITIVOS');
+  var data  = sheet.getDataRange().getValues();
+  var hdrs  = data[0];
+  var iId   = hdrs.indexOf('ID_Dispositivo');
+  var iEst  = hdrs.indexOf('Estado');
+  var iNom  = hdrs.indexOf('Nombre_Equipo');
+  var iApp  = hdrs.indexOf('App');
+  var iUC   = hdrs.indexOf('Ultima_Conexion');
+
+  // Buscar si ya existe (puede estar como PENDIENTE de un solicitarAcceso previo)
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][iId]) === String(params.deviceId)) {
+      sheet.getRange(i + 1, iEst + 1).setValue('ACTIVO');
+      if (params.nombreEquipo && iNom >= 0) sheet.getRange(i + 1, iNom + 1).setValue(params.nombreEquipo);
+      if (params.app && iApp >= 0)          sheet.getRange(i + 1, iApp + 1).setValue(params.app);
+      if (iUC >= 0) sheet.getRange(i + 1, iUC + 1).setValue(
+        Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'")
+      );
+      return { ok: true, data: { autorizado: true, aprobadoPor: auth.data.validadoPor, accion: 'reactivado' } };
+    }
+  }
+
+  // No existe: crearlo ya como ACTIVO directamente
+  var fila = new Array(hdrs.length).fill('');
+  if (iId  >= 0) fila[iId]  = String(params.deviceId);
+  if (iEst >= 0) fila[iEst] = 'ACTIVO';
+  if (iNom >= 0) fila[iNom] = String(params.nombreEquipo || params.userAgent || 'Sin nombre');
+  if (iApp >= 0) fila[iApp] = String(params.app || '');
+  if (iUC  >= 0) fila[iUC]  = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
+  sheet.appendRow(fila);
+
+  return { ok: true, data: { autorizado: true, aprobadoPor: auth.data.validadoPor, accion: 'creado' } };
+}
+
 // Rechazar / bloquear dispositivo pendiente o activo
 function rechazarDispositivoPendiente(params) {
   _garantizarColumnasDispositivos();
