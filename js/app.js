@@ -10597,10 +10597,11 @@ const MOS = (() => {
     let p = {};
     try { p = (typeof permsJson === 'string') ? JSON.parse(permsJson) : permsJson; } catch(_) { return ''; }
     const items = [
-      { k: 'notif', i: '🔔' },
-      { k: 'cam',   i: '📸' },
-      { k: 'mic',   i: '🎤' },
-      { k: 'geo',   i: '📍' }
+      { k: 'notif',   i: '🔔' },
+      { k: 'cam',     i: '📸' },
+      { k: 'mic',     i: '🎤' },
+      { k: 'geo',     i: '📍' },
+      { k: 'storage', i: '💾' }
     ];
     const chips = items.map(it => {
       const st = p[it.k];
@@ -10627,9 +10628,10 @@ const MOS = (() => {
       mic:     { i: '🎤', n: 'Micrófono' },
       geo:     { i: '📍', n: 'Geolocalización' },
       audio:   { i: '🔊', n: 'Audio' },
-      install: { i: '📱', n: 'App instalada' }
+      install: { i: '📱', n: 'App instalada' },
+      storage: { i: '💾', n: 'Almacenamiento persistente' }
     };
-    const orden = ['notif','cam','mic','geo','audio','install'];
+    const orden = ['notif','cam','mic','geo','audio','install','storage'];
     const tieneDatos = Object.keys(p).length > 0;
     if (!tieneDatos) {
       return `<div class="rounded-lg p-3 text-center text-xs text-slate-500 italic" style="background:#0a1424;border:1px dashed #334155;">

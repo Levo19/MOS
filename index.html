@@ -10309,6 +10309,7 @@
         try { localStorage.setItem(AUTH_CACHE_KEY, String(Date.now())); } catch(_){}
         try { localStorage.setItem('mos_perms_check_pending', '1'); } catch(_){}
         try { window.MosSfx?.updateReady?.(); } catch(_){}
+        try { window._pedirPersistentStorageMos && window._pedirPersistentStorageMos(); } catch(_){}
         if (navigator.vibrate) navigator.vibrate([30, 30, 60]);
         document.getElementById('mosActInSitu').style.display = 'none';
         _hideOverlay();
@@ -11232,6 +11233,19 @@
     }
   }
 
+  // ── Persistent Storage · pide al SO no borrar localStorage ──
+  // Silencioso: si granted, perfecto. Si no, igual sigue funcionando.
+  async function _pedirPersistentStorage() {
+    try {
+      if (!navigator.storage || !navigator.storage.persist) return 'unsupported';
+      const ya = await navigator.storage.persisted();
+      if (ya) return 'granted';
+      const ok = await navigator.storage.persist();
+      return ok ? 'granted' : 'prompt';
+    } catch (_) { return 'unsupported'; }
+  }
+  window._pedirPersistentStorageMos = _pedirPersistentStorage;
+
   // ── Reportar snapshot de permisos al GAS (visibilidad para admin) ──
   let _permsChangeHooked = false;
   async function _reportarPermisos() {
@@ -11256,6 +11270,8 @@
       perms.install = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
                     ? 'granted'
                     : (window._MOS_INSTALL_PROMPT ? 'prompt' : 'unsupported');
+      // storage: persistent storage del navegador (no en wizard, automático)
+      perms.storage = await _pedirPersistentStorage();
       _permsChangeHooked = true;
       await fetch('https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec', {
         method: 'POST',
