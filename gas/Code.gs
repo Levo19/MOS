@@ -130,6 +130,11 @@ function _route(method, e) {
       case 'vincularBrowserDispositivo':   return vincularBrowserDispositivo(params);
       case 'limpiarPendientesMOS':         return limpiarPendientesMOS();
       case 'notificarInicioSesionVendedor': return notificarInicioSesionVendedor(params);
+      case 'registrarPermisosDispositivo': return registrarPermisosDispositivo(params);
+      case 'marcarWizardMostrado':         return marcarWizardMostrado(params);
+      case 'forzarWizardDispositivo':      return forzarWizardDispositivo(params);
+      case 'revocarDispositivo':           return revocarDispositivo(params);
+      case 'purgarDispositivosInactivos':  return purgarDispositivosInactivos(params);
 
       // ── Zonas (puntos de venta) ────────────────────────────
       case 'getZonas':             return getZonas(params);

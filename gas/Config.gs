@@ -512,7 +512,22 @@ function verificarPinPersonal(params) {
 // PENDIENTE_APROBACION; el admin aprueba o rechaza desde el panel.
 // ════════════════════════════════════════════════
 
-var _DISP_COLS_EXTRA = ['Ultima_Zona', 'Ultima_Estacion', 'Ultima_Sesion'];
+var _DISP_COLS_EXTRA = ['Ultima_Zona', 'Ultima_Estacion', 'Ultima_Sesion',
+                        'Permisos_JSON', 'Permisos_LastUpdate',
+                        'Forzar_Wizard', 'Suspendido_Desde'];
+
+// Push helper · notifica a admin/master cuando se aprueba un dispositivo
+function _notificarAprobacionDispositivo(deviceId, app, nombreEquipo, aprobadoPor, accion) {
+  try {
+    var titulo = '✅ Dispositivo aprobado';
+    var appLabel = (app || '').toUpperCase() || '—';
+    var nombre   = nombreEquipo || ('UUID ' + (deviceId || '').substring(0, 8) + '...');
+    var quien    = aprobadoPor || 'admin';
+    var via      = accion === 'creado' ? 'in-situ' : (accion === 'reactivado' ? 'in-situ (reactivado)' : 'desde panel');
+    var cuerpo   = nombre + ' · ' + appLabel + ' · aprobado por ' + quien + ' (' + via + ')';
+    _enviarPushTodos(titulo, cuerpo, { soloRolesAdmin: true });
+  } catch (e) { Logger.log('Push aprobación falló: ' + e.message); }
+}
 
 function _garantizarColumnasDispositivos() {
   var sheet = getSheet('DISPOSITIVOS');
@@ -760,20 +775,166 @@ function consultarEstadoDispositivo(params) {
   var iApp  = hdrs.indexOf('App');
   var iNom  = hdrs.indexOf('Nombre_Equipo');
   var iUC   = hdrs.indexOf('Ultima_Conexion');
+  var iFW   = hdrs.indexOf('Forzar_Wizard');
+  var iSus  = hdrs.indexOf('Suspendido_Desde');
   // ISO UTC explícito como string — formato consistente entre todos los heartbeats
   var nowStr = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][iId]) !== deviceId) continue;
     // Heartbeat: actualizar Ultima_Conexion aunque el dispositivo no haya logueado
     if (iUC >= 0) sheet.getRange(i + 1, iUC + 1).setValue(nowStr);
+    // Si estaba suspendido por inactividad y reapareció, limpiar el flag
+    if (iSus >= 0 && data[i][iSus]) sheet.getRange(i + 1, iSus + 1).setValue('');
+    var fw = iFW >= 0 ? String(data[i][iFW] || '') : '';
     return { ok: true, data: {
-      registrado: true,
-      estado:     String(data[i][iEst] || ''),
-      nombre:     data[i][iNom] || '',
-      app:        data[i][iApp] || ''
+      registrado:    true,
+      estado:        String(data[i][iEst] || ''),
+      nombre:        data[i][iNom] || '',
+      app:           data[i][iApp] || '',
+      forzar_wizard: fw === '1' || fw.toLowerCase() === 'true'
     }};
   }
   return { ok: true, data: { registrado: false, estado: 'NO_REGISTRADO' } };
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// PERMISOS DEL DISPOSITIVO — visibility para admin
+// Cada app reporta los permisos que tiene granted/denied/unsupported.
+// ════════════════════════════════════════════════════════════════════════
+function registrarPermisosDispositivo(params) {
+  _garantizarColumnasDispositivos();
+  var deviceId = String(params.deviceId || params.ID_Dispositivo || '').trim();
+  if (!deviceId) return { ok: false, error: 'Requiere deviceId' };
+  if (!params.permisos || typeof params.permisos !== 'object') {
+    return { ok: false, error: 'Requiere permisos:{notif,cam,mic,geo,audio,install}' };
+  }
+  var sheet = getSheet('DISPOSITIVOS');
+  var data  = sheet.getDataRange().getValues();
+  var hdrs  = data[0];
+  var iId   = hdrs.indexOf('ID_Dispositivo');
+  var iPJ   = hdrs.indexOf('Permisos_JSON');
+  var iPLU  = hdrs.indexOf('Permisos_LastUpdate');
+  var nowStr = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][iId]) !== deviceId) continue;
+    if (iPJ  >= 0) sheet.getRange(i + 1, iPJ  + 1).setValue(JSON.stringify(params.permisos));
+    if (iPLU >= 0) sheet.getRange(i + 1, iPLU + 1).setValue(nowStr);
+    return { ok: true };
+  }
+  return { ok: false, error: 'Dispositivo no encontrado: ' + deviceId };
+}
+
+// El dispositivo confirma que ya mostró el wizard → limpiar la flag
+function marcarWizardMostrado(params) {
+  _garantizarColumnasDispositivos();
+  var deviceId = String(params.deviceId || params.ID_Dispositivo || '').trim();
+  if (!deviceId) return { ok: false, error: 'Requiere deviceId' };
+  var sheet = getSheet('DISPOSITIVOS');
+  var data  = sheet.getDataRange().getValues();
+  var hdrs  = data[0];
+  var iId   = hdrs.indexOf('ID_Dispositivo');
+  var iFW   = hdrs.indexOf('Forzar_Wizard');
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][iId]) !== deviceId) continue;
+    if (iFW >= 0) sheet.getRange(i + 1, iFW + 1).setValue('');
+    return { ok: true };
+  }
+  return { ok: false, error: 'Dispositivo no encontrado' };
+}
+
+// Admin fuerza re-wizard remoto. Requiere clave admin (8 dig).
+function forzarWizardDispositivo(params) {
+  if (!params.deviceId)   return { ok: false, error: 'Requiere deviceId' };
+  if (!params.claveAdmin) return { ok: false, error: 'Requiere claveAdmin' };
+  var auth = verificarClaveAdmin({
+    clave: params.claveAdmin, accion: 'FORZAR_WIZARD',
+    refDocumento: params.deviceId, appOrigen: params.app || '',
+    detalle: 'Forzar re-wizard remoto'
+  });
+  if (!auth.ok) return auth;
+  if (!auth.data || !auth.data.autorizado) {
+    return { ok: true, data: { autorizado: false, error: auth.data?.error || 'Clave incorrecta' } };
+  }
+  _garantizarColumnasDispositivos();
+  var sheet = getSheet('DISPOSITIVOS');
+  var data  = sheet.getDataRange().getValues();
+  var hdrs  = data[0];
+  var iId   = hdrs.indexOf('ID_Dispositivo');
+  var iFW   = hdrs.indexOf('Forzar_Wizard');
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][iId]) !== params.deviceId) continue;
+    if (iFW >= 0) sheet.getRange(i + 1, iFW + 1).setValue('1');
+    return { ok: true, data: { autorizado: true, forzadoPor: auth.data.validadoPor } };
+  }
+  return { ok: false, error: 'Dispositivo no encontrado' };
+}
+
+// Admin revoca acceso de un dispositivo (UUID → INACTIVO). Clave admin requerida.
+function revocarDispositivo(params) {
+  if (!params.deviceId)   return { ok: false, error: 'Requiere deviceId' };
+  if (!params.claveAdmin) return { ok: false, error: 'Requiere claveAdmin' };
+  var auth = verificarClaveAdmin({
+    clave: params.claveAdmin, accion: 'REVOCAR_DISPOSITIVO',
+    refDocumento: params.deviceId, appOrigen: params.app || '',
+    detalle: 'Revocar acceso de dispositivo'
+  });
+  if (!auth.ok) return auth;
+  if (!auth.data || !auth.data.autorizado) {
+    return { ok: true, data: { autorizado: false, error: auth.data?.error || 'Clave incorrecta' } };
+  }
+  _garantizarColumnasDispositivos();
+  var sheet = getSheet('DISPOSITIVOS');
+  var data  = sheet.getDataRange().getValues();
+  var hdrs  = data[0];
+  var iId   = hdrs.indexOf('ID_Dispositivo');
+  var iEst  = hdrs.indexOf('Estado');
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][iId]) !== params.deviceId) continue;
+    if (iEst >= 0) sheet.getRange(i + 1, iEst + 1).setValue('INACTIVO');
+    return { ok: true, data: { autorizado: true, revocadoPor: auth.data.validadoPor } };
+  }
+  return { ok: false, error: 'Dispositivo no encontrado' };
+}
+
+// Auto-purge: dispositivos ACTIVOS sin Ultima_Conexion en >7 días → SUSPENDIDO.
+// Diseñado para correr desde un trigger diario (o manual).
+// SUSPENDIDO ≠ INACTIVO: re-activable solo con que el dispositivo vuelva a conectar.
+function purgarDispositivosInactivos(params) {
+  _garantizarColumnasDispositivos();
+  var diasMax = (params && Number(params.dias)) > 0 ? Number(params.dias) : 7;
+  var sheet = getSheet('DISPOSITIVOS');
+  var data  = sheet.getDataRange().getValues();
+  var hdrs  = data[0];
+  var iEst  = hdrs.indexOf('Estado');
+  var iUC   = hdrs.indexOf('Ultima_Conexion');
+  var iSus  = hdrs.indexOf('Suspendido_Desde');
+  var nowMs = Date.now();
+  var limMs = diasMax * 24 * 60 * 60 * 1000;
+  var nowStr = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
+  var suspendidos = 0;
+  for (var i = 1; i < data.length; i++) {
+    var est = String(data[i][iEst] || '').toUpperCase();
+    if (est !== 'ACTIVO') continue;
+    var uc = data[i][iUC];
+    var ucMs = 0;
+    if (uc instanceof Date) ucMs = uc.getTime();
+    else if (typeof uc === 'string' && uc.trim()) {
+      var d = new Date(uc);
+      if (!isNaN(d.getTime())) ucMs = d.getTime();
+    }
+    if (!ucMs) continue;
+    if ((nowMs - ucMs) > limMs) {
+      sheet.getRange(i + 1, iEst + 1).setValue('SUSPENDIDO');
+      if (iSus >= 0) sheet.getRange(i + 1, iSus + 1).setValue(nowStr);
+      suspendidos++;
+    }
+  }
+  return { ok: true, data: { suspendidos: suspendidos, dias: diasMax } };
+}
+
+// Cron-friendly wrapper: instalable como trigger diario sin params.
+function purgarDispositivosInactivos7d() {
+  return purgarDispositivosInactivos({ dias: 7 });
 }
 
 function aprobarDispositivoPendiente(params) {
@@ -787,6 +948,11 @@ function aprobarDispositivoPendiente(params) {
     sheet.getRange(i + 1, hdrs.indexOf('Estado') + 1).setValue('ACTIVO');
     if (params.Nombre_Equipo) sheet.getRange(i + 1, hdrs.indexOf('Nombre_Equipo') + 1).setValue(params.Nombre_Equipo);
     if (params.App)           sheet.getRange(i + 1, hdrs.indexOf('App') + 1).setValue(params.App);
+
+    var nombreFinal = params.Nombre_Equipo || data[i][hdrs.indexOf('Nombre_Equipo')] || '';
+    var appFinal    = params.App || data[i][hdrs.indexOf('App')] || '';
+    _notificarAprobacionDispositivo(params.ID_Dispositivo, appFinal, nombreFinal,
+                                    (params.aprobadoPor || 'panel'), 'panel');
     return { ok: true };
   }
   return { ok: false, error: 'Dispositivo no encontrado' };
@@ -841,6 +1007,8 @@ function aprobarDispositivoEnSitu(params) {
       if (iUC >= 0) sheet.getRange(i + 1, iUC + 1).setValue(
         Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'")
       );
+      _notificarAprobacionDispositivo(params.deviceId, params.app, params.nombreEquipo || data[i][iNom],
+                                      auth.data.validadoPor, 'reactivado');
       return { ok: true, data: { autorizado: true, aprobadoPor: auth.data.validadoPor, accion: 'reactivado' } };
     }
   }
@@ -854,6 +1022,9 @@ function aprobarDispositivoEnSitu(params) {
   if (iUC  >= 0) fila[iUC]  = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
   sheet.appendRow(fila);
 
+  _notificarAprobacionDispositivo(params.deviceId, params.app,
+                                  params.nombreEquipo || params.userAgent,
+                                  auth.data.validadoPor, 'creado');
   return { ok: true, data: { autorizado: true, aprobadoPor: auth.data.validadoPor, accion: 'creado' } };
 }
 

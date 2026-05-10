@@ -11028,8 +11028,8 @@
   const AUDIO_KEY = 'mos_audio_tested_v';
 
   let _installPrompt = null;
-  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); _installPrompt = e; });
-  window.addEventListener('appinstalled', () => { _installPrompt = null; });
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); _installPrompt = e; window._MOS_INSTALL_PROMPT = e; });
+  window.addEventListener('appinstalled', () => { _installPrompt = null; window._MOS_INSTALL_PROMPT = null; if (window._reportarPermisosMos) _reportarPermisosMos(); });
   let _stateActual = {};
 
   // Detecta hardware físico — para no pedir permiso si el dispositivo no existe
@@ -11112,7 +11112,13 @@
         pendientes++;
         if (btn) {
           btn.className = 'mos-perm-status is-pedir';
-          btn.textContent = (p === 'audio') ? 'PROBAR' : (p === 'install') ? 'INSTALAR' : 'AUTORIZAR';
+          let label = 'AUTORIZAR';
+          if (p === 'audio') label = 'PROBAR';
+          else if (p === 'install') {
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            label = (_installPrompt) ? 'INSTALAR' : (isIOS ? 'VER CÓMO' : 'VER CÓMO');
+          }
+          btn.textContent = label;
           btn.disabled = false;
         }
       }
@@ -11212,7 +11218,55 @@
       const v = window._MOS_PERMS_VERSION || 'unk';
       localStorage.setItem('mos_perms_done_v' + v, '1');
     } catch(_){}
+    // Reportar snapshot al backend al cerrar el wizard
+    _reportarPermisos();
+    // Si vino forzado por admin, marcarle al backend que ya se mostró
+    if (window._MOS_WIZARD_FORZADO) {
+      try {
+        fetch('https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec', {
+          method:'POST',
+          body: JSON.stringify({ action:'marcarWizardMostrado', deviceId: (window._getDeviceIdMos && _getDeviceIdMos()) || '' })
+        });
+      } catch(_){}
+      window._MOS_WIZARD_FORZADO = false;
+    }
   }
+
+  // ── Reportar snapshot de permisos al GAS (visibilidad para admin) ──
+  let _permsChangeHooked = false;
+  async function _reportarPermisos() {
+    try {
+      const deviceId = (window._getDeviceIdMos && _getDeviceIdMos()) || '';
+      if (!deviceId) return;
+      const map = { notifications:'notif', camera:'cam', microphone:'mic', geolocation:'geo' };
+      const perms = {};
+      for (const [name, key] of Object.entries(map)) {
+        try {
+          const ps = await navigator.permissions.query({ name });
+          perms[key] = ps.state; // 'granted' | 'denied' | 'prompt'
+          if (!_permsChangeHooked) {
+            ps.onchange = () => _reportarPermisos();
+          }
+        } catch (_) { perms[key] = 'unsupported'; }
+      }
+      // audio: se considera granted si MosSfx fue desbloqueado, sino prompt
+      perms.audio = (window.MosSfx && window.MosSfx._desbloqueado) ? 'granted'
+                  : (localStorage.getItem('mos_audio_ok') === '1' ? 'granted' : 'prompt');
+      // install: standalone = installed, prompt disponible = prompt, sino unsupported
+      perms.install = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+                    ? 'granted'
+                    : (window._MOS_INSTALL_PROMPT ? 'prompt' : 'unsupported');
+      _permsChangeHooked = true;
+      await fetch('https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'registrarPermisosDispositivo',
+          deviceId, permisos: perms
+        })
+      });
+    } catch (e) { /* silent */ }
+  }
+  window._reportarPermisosMos = _reportarPermisos;
 
   async function _autoTrigger() {
     const pending = localStorage.getItem('mos_perms_check_pending') === '1';
@@ -11221,8 +11275,19 @@
       const r = await fetch('./version.json?t=' + Date.now()).then(r => r.json());
       v = r.version || 'unk';
     } catch(_){}
-    if (!pending && localStorage.getItem('mos_perms_done_v' + v) === '1') return;
-    // Esperar a que la app esté inicializada (aprox. 3s tras carga)
+    // Reportar permisos en cada arranque (silencioso, no bloquea UI)
+    setTimeout(_reportarPermisos, 5000);
+    // Detectar si admin forzó re-wizard remoto desde el panel
+    let forzado = false;
+    try {
+      const id = (window._getDeviceIdMos && _getDeviceIdMos()) || '';
+      if (id) {
+        const r = await fetch('https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec?action=consultarEstadoDispositivo&deviceId=' + encodeURIComponent(id));
+        const j = await r.json();
+        if (j?.data?.forzar_wizard) { forzado = true; window._MOS_WIZARD_FORZADO = true; }
+      }
+    } catch(_){}
+    if (!forzado && !pending && localStorage.getItem('mos_perms_done_v' + v) === '1') return;
     setTimeout(async () => {
       await _abrirSiHayQuePedir(v);
       try { localStorage.removeItem('mos_perms_check_pending'); } catch(_){}

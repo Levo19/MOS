@@ -10332,7 +10332,10 @@ const MOS = (() => {
         </div>
       </div>` : '';
 
-    cont.innerHTML = summaryHTML + pendHTML + zonasHTML + movHTML + cardNuevaZona;
+    // Zona Premium · admins+master con app=MOS (sin estación/impresora asignada)
+    const premiumHTML = _renderInfraPremium();
+
+    cont.innerHTML = summaryHTML + premiumHTML + pendHTML + zonasHTML + movHTML + cardNuevaZona;
 
     // Guardar mapa de estaciones para detectar movimientos en próximo render
     _dispActualizarMapa();
@@ -10448,6 +10451,7 @@ const MOS = (() => {
                   <div class="text-[9px] truncate" style="color:${act.color};">${act.dot} ${act.label}${d.Ultima_Sesion ? ' · 👤 <span class="text-emerald-400 font-bold">' + d.Ultima_Sesion + '</span>' : ''}</div>
                 </div>
                 ${_pinBtn}
+                <button onclick="event.stopPropagation();MOS.abrirDetalleDispositivo('${idAttr}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(251,191,36,0.18);border:1px solid rgba(251,191,36,0.5);color:#fcd34d;font-size:10px;" title="Permisos y acciones del dispositivo">🛡️</button>
                 <button onclick="event.stopPropagation();MOS.abrirEspiaDispositivo('${idAttr}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(99,102,241,0.18);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;font-size:10px;" title="Espiar dispositivo (audio + GPS)">🕵️</button>
                 <span class="text-[10px] text-slate-500 p-1 cursor-pointer" onclick="event.stopPropagation();MOS.abrirModalDispositivo('${idAttr}')" title="Editar">✏️</span>
               </div>`;
@@ -10514,6 +10518,302 @@ const MOS = (() => {
       ${dispsHTML}
       ${fantasmasHTML}
     </div>`;
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // ZONA PREMIUM · ADMIN & MASTER (app=MOS, sin estación/impresora)
+  // ════════════════════════════════════════════════════════════
+  function _isAppMOS(d) {
+    const a = String(d.App || '').toLowerCase();
+    return a === 'mos';
+  }
+
+  function _renderInfraPremium() {
+    const dispMOS = (cfgData.dispositivos || []).filter(_isAppMOS);
+    if (!dispMOS.length) return '';
+    const activos    = dispMOS.filter(d => String(d.Estado).toUpperCase() === 'ACTIVO');
+    const pendientes = dispMOS.filter(d => String(d.Estado).toUpperCase() === 'PENDIENTE_APROBACION');
+    const inactivos  = dispMOS.filter(d => ['INACTIVO','SUSPENDIDO'].indexOf(String(d.Estado).toUpperCase()) >= 0);
+    const onlineNow  = activos.filter(d => _dispActividad(d.Ultima_Conexion).minutos < 5).length;
+
+    const cardsHTML = dispMOS.map(d => {
+      const ico   = _dispIcono(d.Nombre_Equipo);
+      const act   = _dispActividad(d.Ultima_Conexion);
+      const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
+      const est   = String(d.Estado || '').toUpperCase();
+      const isFresh = est === 'ACTIVO' && act.minutos < 5;
+      const dotPulse = isFresh ? '<span class="disp-dot-pulse"></span>' : '';
+      const estBadge = est === 'ACTIVO'
+        ? '<span class="text-[9px] font-black px-1.5 py-0.5 rounded" style="background:rgba(16,185,129,0.18);color:#6ee7b7;border:1px solid rgba(16,185,129,0.4)">ACTIVO</span>'
+        : (est === 'PENDIENTE_APROBACION'
+          ? '<span class="text-[9px] font-black px-1.5 py-0.5 rounded" style="background:rgba(251,191,36,0.18);color:#fcd34d;border:1px solid rgba(251,191,36,0.4)">PENDIENTE</span>'
+          : (est === 'SUSPENDIDO'
+            ? '<span class="text-[9px] font-black px-1.5 py-0.5 rounded" style="background:rgba(148,163,184,0.18);color:#cbd5e1;border:1px solid rgba(148,163,184,0.4)">SUSPENDIDO</span>'
+            : '<span class="text-[9px] font-black px-1.5 py-0.5 rounded" style="background:rgba(248,113,113,0.18);color:#fca5a5;border:1px solid rgba(248,113,113,0.4)">INACTIVO</span>'));
+
+      // Mini-chips de permisos (parsea JSON)
+      const permsMini = _renderDispPermisosChipsMini(d.Permisos_JSON);
+
+      return `<div class="rounded-xl p-3 cursor-pointer transition-all hover:scale-[1.01] hover:shadow-lg"
+        onclick="MOS.abrirDetalleDispositivo('${idAttr}')"
+        style="background:linear-gradient(135deg,rgba(251,191,36,0.06),rgba(99,102,241,0.04));border:1px solid rgba(251,191,36,0.35);box-shadow:0 0 12px rgba(251,191,36,0.08);">
+        <div class="flex items-start gap-2.5">
+          <div class="relative shrink-0 text-2xl">${ico}${dotPulse}</div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="font-black text-sm text-amber-100 truncate">${d.Nombre_Equipo || '—'}</span>
+              ${estBadge}
+            </div>
+            <div class="text-[10px] text-amber-300/60 font-mono truncate mt-0.5">${String(d.ID_Dispositivo).substring(0,18)}...</div>
+            <div class="text-[10px] mt-0.5" style="color:${act.color};">${act.dot} ${act.label}</div>
+            ${permsMini}
+          </div>
+          <span class="text-amber-400/40 text-lg shrink-0">›</span>
+        </div>
+      </div>`;
+    }).join('');
+
+    return `<div class="card p-4 mb-4" style="background:linear-gradient(135deg,#1a1410 0%,#0d1526 50%,#1a1410 100%);border:2px solid rgba(251,191,36,0.45);box-shadow:0 0 24px rgba(251,191,36,0.12);">
+      <div class="flex items-center gap-2 mb-3 pb-3" style="border-bottom:1px dashed rgba(251,191,36,0.25)">
+        <span class="text-2xl">🏆</span>
+        <div class="flex-1 min-w-0">
+          <h3 class="font-black text-base text-amber-200">Zona Premium · Admin & Master</h3>
+          <p class="text-[10px] text-amber-300/70">Dispositivos del panel MOS · sin estación ni impresora asignada</p>
+        </div>
+        <div class="flex items-center gap-2 text-[11px]">
+          <span class="px-2 py-1 rounded-full font-bold" style="background:rgba(16,185,129,0.18);color:#6ee7b7;">${onlineNow} online</span>
+          <span class="px-2 py-1 rounded-full font-bold" style="background:rgba(251,191,36,0.18);color:#fcd34d;">${activos.length} activos</span>
+          ${pendientes.length ? `<span class="px-2 py-1 rounded-full font-bold animate-pulse" style="background:rgba(248,113,113,0.18);color:#fca5a5;">${pendientes.length} pend</span>` : ''}
+          ${inactivos.length ? `<span class="px-2 py-1 rounded-full font-bold" style="background:rgba(148,163,184,0.15);color:#cbd5e1;">${inactivos.length} off</span>` : ''}
+        </div>
+      </div>
+      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5">${cardsHTML}</div>
+    </div>`;
+  }
+
+  // Mini-chips de permisos para preview en cards (4 más relevantes)
+  function _renderDispPermisosChipsMini(permsJson) {
+    if (!permsJson) return '';
+    let p = {};
+    try { p = (typeof permsJson === 'string') ? JSON.parse(permsJson) : permsJson; } catch(_) { return ''; }
+    const items = [
+      { k: 'notif', i: '🔔' },
+      { k: 'cam',   i: '📸' },
+      { k: 'mic',   i: '🎤' },
+      { k: 'geo',   i: '📍' }
+    ];
+    const chips = items.map(it => {
+      const st = p[it.k];
+      if (!st) return '';
+      let bg, border, color;
+      if (st === 'granted')          { bg='rgba(16,185,129,0.20)'; border='rgba(16,185,129,0.5)';  color='#6ee7b7'; }
+      else if (st === 'denied')      { bg='rgba(248,113,113,0.20)'; border='rgba(248,113,113,0.5)'; color='#fca5a5'; }
+      else if (st === 'unsupported') { bg='rgba(100,116,139,0.20)'; border='rgba(100,116,139,0.5)'; color='#94a3b8'; }
+      else                            { bg='rgba(251,191,36,0.20)'; border='rgba(251,191,36,0.5)';  color='#fcd34d'; }
+      return `<span class="inline-flex items-center text-[9px] px-1 py-0.5 rounded" style="background:${bg};border:1px solid ${border};color:${color};">${it.i}</span>`;
+    }).filter(Boolean).join(' ');
+    return chips ? `<div class="mt-1 flex gap-0.5">${chips}</div>` : '';
+  }
+
+  // Render completo de chips (en modal de detalle): muestra todos los permisos con label
+  function _renderDispPermisosChipsFull(permsJson, lastUpdate) {
+    let p = {};
+    if (permsJson) {
+      try { p = (typeof permsJson === 'string') ? JSON.parse(permsJson) : permsJson; } catch(_) { p = {}; }
+    }
+    const labels = {
+      notif:   { i: '🔔', n: 'Notificaciones' },
+      cam:     { i: '📸', n: 'Cámara' },
+      mic:     { i: '🎤', n: 'Micrófono' },
+      geo:     { i: '📍', n: 'Geolocalización' },
+      audio:   { i: '🔊', n: 'Audio' },
+      install: { i: '📱', n: 'App instalada' }
+    };
+    const orden = ['notif','cam','mic','geo','audio','install'];
+    const tieneDatos = Object.keys(p).length > 0;
+    if (!tieneDatos) {
+      return `<div class="rounded-lg p-3 text-center text-xs text-slate-500 italic" style="background:#0a1424;border:1px dashed #334155;">
+        Aún no se han reportado permisos desde este dispositivo. <br>
+        <span class="text-[10px]">Se reportarán automáticamente al abrir la app.</span>
+      </div>`;
+    }
+    const ts = lastUpdate ? `<span class="text-[10px] text-slate-500 italic">Actualizado: ${_dispActividad(lastUpdate).label}</span>` : '';
+    const cards = orden.map(k => {
+      const st = p[k];
+      const lab = labels[k];
+      if (!lab) return '';
+      let bg, border, color, txt;
+      if (!st)                       { bg='rgba(100,116,139,0.10)'; border='#334155';                color='#64748b'; txt='—'; }
+      else if (st === 'granted')     { bg='rgba(16,185,129,0.12)';  border='rgba(16,185,129,0.45)'; color='#6ee7b7'; txt='✓ activo'; }
+      else if (st === 'denied')      { bg='rgba(248,113,113,0.12)'; border='rgba(248,113,113,0.45)';color='#fca5a5'; txt='✗ denegado'; }
+      else if (st === 'unsupported') { bg='rgba(100,116,139,0.10)'; border='rgba(100,116,139,0.4)'; color='#94a3b8'; txt='no soportado'; }
+      else                            { bg='rgba(251,191,36,0.12)';  border='rgba(251,191,36,0.45)'; color='#fcd34d'; txt='⏳ pendiente'; }
+      return `<div class="flex items-center gap-2 p-2 rounded-lg" style="background:${bg};border:1px solid ${border};">
+        <span class="text-lg shrink-0">${lab.i}</span>
+        <div class="flex-1 min-w-0">
+          <div class="text-xs font-bold truncate" style="color:${color}">${lab.n}</div>
+          <div class="text-[10px] opacity-80" style="color:${color}">${txt}</div>
+        </div>
+      </div>`;
+    }).join('');
+    return `<div>
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Permisos del dispositivo</span>
+        ${ts}
+      </div>
+      <div class="grid grid-cols-2 gap-2">${cards}</div>
+    </div>`;
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // MODAL DETALLE DISPOSITIVO — moderno con permisos + acciones
+  // ════════════════════════════════════════════════════════════
+  function abrirDetalleDispositivo(id) {
+    const d = (cfgData.dispositivos || []).find(x => String(x.ID_Dispositivo) === String(id));
+    if (!d) { toast('Dispositivo no encontrado', 'error'); return; }
+    const ico = _dispIcono(d.Nombre_Equipo);
+    const act = _dispActividad(d.Ultima_Conexion);
+    const est = String(d.Estado || '').toUpperCase();
+    const isMOS = _isAppMOS(d);
+    const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
+
+    const estChip = est === 'ACTIVO'
+      ? '<span class="text-[10px] font-black px-2 py-1 rounded" style="background:rgba(16,185,129,0.20);color:#6ee7b7;border:1px solid rgba(16,185,129,0.5)">● ACTIVO</span>'
+      : (est === 'PENDIENTE_APROBACION'
+        ? '<span class="text-[10px] font-black px-2 py-1 rounded animate-pulse" style="background:rgba(251,191,36,0.20);color:#fcd34d;border:1px solid rgba(251,191,36,0.5)">⏳ PENDIENTE</span>'
+        : (est === 'SUSPENDIDO'
+          ? '<span class="text-[10px] font-black px-2 py-1 rounded" style="background:rgba(148,163,184,0.20);color:#e2e8f0;border:1px solid rgba(148,163,184,0.5)">💤 SUSPENDIDO</span>'
+          : '<span class="text-[10px] font-black px-2 py-1 rounded" style="background:rgba(248,113,113,0.20);color:#fca5a5;border:1px solid rgba(248,113,113,0.5)">⛔ INACTIVO</span>'));
+
+    const headerBg = isMOS
+      ? 'linear-gradient(135deg,rgba(251,191,36,0.18),rgba(99,102,241,0.10))'
+      : 'linear-gradient(135deg,rgba(99,102,241,0.10),transparent)';
+
+    const html = `
+      <div class="modal-box flex flex-col" style="max-width:560px;max-height:92vh">
+        <div class="px-5 py-4 flex items-start gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:${headerBg}">
+          <div class="w-14 h-14 rounded-xl flex items-center justify-center text-3xl flex-shrink-0" style="background:${isMOS ? 'linear-gradient(135deg,#7c2d12,#f59e0b)' : 'linear-gradient(135deg,#1e3a8a,#6366f1)'};">
+            ${ico}
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2 flex-wrap">
+              <h2 class="font-bold text-base text-white truncate">${d.Nombre_Equipo || 'Sin nombre'}</h2>
+              ${estChip}
+            </div>
+            <p class="text-[11px] text-slate-500 mt-1 font-mono truncate">${d.ID_Dispositivo}</p>
+            <p class="text-[11px] mt-1" style="color:${act.color}">${act.dot} ${act.label}${d.Ultima_Sesion ? ' · 👤 ' + d.Ultima_Sesion : ''}</p>
+          </div>
+          <button onclick="MOS.cerrarDetalleDispositivo()" class="modal-close-x">×</button>
+        </div>
+
+        <div class="overflow-y-auto px-5 py-4 flex-1 space-y-4">
+          <!-- App + Zona/Estación -->
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div class="p-2.5 rounded-lg" style="background:#0a1424;border:1px solid #1e293b">
+              <div class="text-[9px] uppercase text-slate-500 tracking-wider mb-1">App</div>
+              <div class="font-bold text-slate-200">${(d.App || '—').toUpperCase()}</div>
+            </div>
+            <div class="p-2.5 rounded-lg" style="background:#0a1424;border:1px solid #1e293b">
+              <div class="text-[9px] uppercase text-slate-500 tracking-wider mb-1">Última zona/estación</div>
+              <div class="font-bold text-slate-200 truncate">${d.Ultima_Zona || '—'}${d.Ultima_Estacion ? ' · ' + d.Ultima_Estacion : ''}</div>
+            </div>
+          </div>
+
+          <!-- Permisos -->
+          ${_renderDispPermisosChipsFull(d.Permisos_JSON, d.Permisos_LastUpdate)}
+
+          <!-- Acciones -->
+          <div class="space-y-2">
+            <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Acciones (requieren clave admin 8 dig)</div>
+            <button onclick="MOS.forzarWizardRemoto('${idAttr}')"
+              class="w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all hover:scale-[1.01]"
+              style="background:linear-gradient(135deg,rgba(99,102,241,0.10),rgba(168,85,247,0.08));border:1px solid rgba(99,102,241,0.4)">
+              <span class="text-2xl">🪄</span>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-black text-indigo-200">Forzar re-wizard</div>
+                <div class="text-[10px] text-indigo-300/70">Al próximo arranque, mostrarle el wizard de permisos</div>
+              </div>
+            </button>
+            <button onclick="MOS.revocarDispositivoUUID('${idAttr}')"
+              class="w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all hover:scale-[1.01]"
+              style="background:linear-gradient(135deg,rgba(248,113,113,0.10),rgba(220,38,38,0.08));border:1px solid rgba(248,113,113,0.4)">
+              <span class="text-2xl">🚫</span>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-black text-red-200">Revocar acceso (UUID)</div>
+                <div class="text-[10px] text-red-300/70">Bloquea este dispositivo físico — el usuario no podrá usar la app</div>
+              </div>
+            </button>
+            <button onclick="MOS.cerrarDetalleDispositivo();MOS.abrirModalDispositivo('${idAttr}')"
+              class="w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all hover:scale-[1.01]"
+              style="background:#0a1424;border:1px solid #334155">
+              <span class="text-2xl">✏️</span>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-bold text-slate-200">Editar detalles</div>
+                <div class="text-[10px] text-slate-400">Renombrar, cambiar app, estado…</div>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>`;
+
+    let backdrop = $('modalDispDetalle');
+    if (!backdrop) {
+      backdrop = document.createElement('div');
+      backdrop.id = 'modalDispDetalle';
+      backdrop.className = 'modal-backdrop';
+      backdrop.onclick = (e) => { if (e.target === backdrop) cerrarDetalleDispositivo(); };
+      document.body.appendChild(backdrop);
+    }
+    backdrop.innerHTML = html;
+    backdrop.classList.remove('hidden');
+  }
+
+  function cerrarDetalleDispositivo() {
+    const bd = $('modalDispDetalle');
+    if (bd) bd.classList.add('hidden');
+  }
+
+  async function _pedirClaveAdmin(accion) {
+    return new Promise((resolve) => {
+      const clave = prompt(`Ingresa tu clave admin (8 dígitos = global 4 + tu PIN 4) para: ${accion}`);
+      resolve((clave || '').trim());
+    });
+  }
+
+  async function revocarDispositivoUUID(id) {
+    const d = (cfgData.dispositivos || []).find(x => String(x.ID_Dispositivo) === String(id));
+    if (!d) return;
+    if (!confirm(`¿Revocar el acceso de "${d.Nombre_Equipo}"?\n\nEl dispositivo quedará bloqueado y no podrá usar la app.`)) return;
+    const clave = await _pedirClaveAdmin('REVOCAR_DISPOSITIVO');
+    if (!/^\d{8}$/.test(clave)) { toast('Clave inválida (8 dígitos)', 'error'); return; }
+    try {
+      const r = await API.post('revocarDispositivo', { deviceId: id, claveAdmin: clave, app: d.App });
+      if (!r?.data?.autorizado) {
+        toast(r?.data?.error || 'Clave incorrecta', 'error');
+        return;
+      }
+      toast('Dispositivo revocado por ' + r.data.revocadoPor, 'ok');
+      d.Estado = 'INACTIVO';
+      cerrarDetalleDispositivo();
+      renderInfra();
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  async function forzarWizardRemoto(id) {
+    const d = (cfgData.dispositivos || []).find(x => String(x.ID_Dispositivo) === String(id));
+    if (!d) return;
+    if (!confirm(`Al próximo arranque de "${d.Nombre_Equipo}" se mostrará el wizard de permisos.\n\n¿Continuar?`)) return;
+    const clave = await _pedirClaveAdmin('FORZAR_WIZARD');
+    if (!/^\d{8}$/.test(clave)) { toast('Clave inválida (8 dígitos)', 'error'); return; }
+    try {
+      const r = await API.post('forzarWizardDispositivo', { deviceId: id, claveAdmin: clave, app: d.App });
+      if (!r?.data?.autorizado) {
+        toast(r?.data?.error || 'Clave incorrecta', 'error');
+        return;
+      }
+      toast('Wizard forzado por ' + r.data.forzadoPor, 'ok');
+      cerrarDetalleDispositivo();
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
 
   // Toggles optimistas
@@ -20927,6 +21227,7 @@ const MOS = (() => {
     toggleVendedorME,
     abrirModalDispositivo, cerrarModalDispositivo, guardarDispositivo, toggleEstadoDispositivo,
     eliminarDispositivo, aprobarDispositivo, aprobarDispositivoConNombre, rechazarDispositivo, dispCopiarUUID, _dispActualizarPreview, _dispZonaCambio,
+    abrirDetalleDispositivo, cerrarDetalleDispositivo, revocarDispositivoUUID, forzarWizardRemoto,
     vincularEsteBrowser,
     abrirModalAudio, audioRefrescarEstado, audioIniciar, audioDetener, audioListarSesiones, audioReproducir, audioCerrarReproductor,
     abrirModalAudioRouted, abrirEscuchaDispositivo, abrirEscuchaPorUsuario, abrirGpsPorUsuario,
