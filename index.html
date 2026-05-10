@@ -5260,7 +5260,119 @@
       cursor:pointer;white-space:nowrap;transition:filter .15s, transform .15s;
       box-shadow: 0 2px 8px rgba(201,162,39,.4);
     }
-    .mos-upd-btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
+    .mos-upd-btn:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
+    .mos-upd-btn:disabled {
+      background:rgba(71,85,105,.4) !important;color:#94a3b8 !important;
+      cursor:not-allowed;box-shadow:none;
+    }
+    /* Barra de progreso del banner */
+    .mos-upd-progress {
+      height:4px;background:rgba(15,23,42,.6);border-radius:999px;
+      overflow:hidden;margin-top:8px;position:relative;
+    }
+    .mos-upd-progress-fill {
+      height:100%;background:linear-gradient(90deg,#c9a227,#ffd700);
+      width:0%;transition:width .3s ease;border-radius:999px;
+      box-shadow:0 0 12px rgba(255,215,0,.6);
+    }
+    .mos-upd-progress-fill.is-ready {
+      background:linear-gradient(90deg,#10b981,#34d399);
+      box-shadow:0 0 14px rgba(16,185,129,.6);
+    }
+    .mos-upd-progress-shimmer {
+      position:absolute;inset:0;border-radius:999px;
+      background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.25) 50%,transparent 100%);
+      animation: mosUpdShimmer 1.4s linear infinite;
+    }
+    @keyframes mosUpdShimmer {
+      0%   { transform:translateX(-100%); }
+      100% { transform:translateX(100%); }
+    }
+    .mos-upd-countdown {
+      font-size:.65rem;color:#c9a227;font-weight:700;margin-top:4px;
+    }
+    /* Wizard de permisos · post-update (paleta MOS guinda+gold) */
+    .mos-perms-overlay {
+      position:fixed;inset:0;z-index:9998;display:none;
+      background:linear-gradient(135deg,rgba(2,6,23,.92),rgba(15,23,42,.95));
+      backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+      align-items:center;justify-content:center;padding:20px;
+      animation: mosPermsIn .35s ease-out;
+    }
+    .mos-perms-overlay.is-open { display:flex; }
+    @keyframes mosPermsIn {
+      0%   { opacity:0; }
+      100% { opacity:1; }
+    }
+    .mos-perms-modal {
+      max-width:440px;width:100%;max-height:90vh;overflow-y:auto;
+      border-radius:20px;padding:20px;
+      background:linear-gradient(135deg,rgba(30,41,59,.97),rgba(15,23,42,.97));
+      border:1.5px solid rgba(201,162,39,.45);
+      box-shadow:0 30px 60px -10px rgba(0,0,0,.65),
+                 0 0 24px -6px rgba(255,215,0,.3);
+      animation: mosPermsModalPop .4s cubic-bezier(.34,1.56,.64,1);
+    }
+    @keyframes mosPermsModalPop {
+      0%   { transform:translateY(20px) scale(.94); opacity:0; }
+      100% { transform:translateY(0) scale(1); opacity:1; }
+    }
+    .mos-perms-emoji {
+      font-size:42px;margin-bottom:6px;display:inline-block;
+      filter:drop-shadow(0 4px 14px rgba(255,215,0,.55));
+    }
+    .mos-perms-title { font-size:1.15em;font-weight:900;color:#fef3c7;letter-spacing:-.005em;margin-bottom:4px; }
+    .mos-perms-sub   { font-size:.78em;color:#94a3b8;margin-bottom:16px;line-height:1.45; }
+    .mos-perm-card {
+      border-radius:13px;padding:13px;margin-bottom:10px;
+      background:rgba(15,23,42,.55);border:1px solid rgba(51,65,85,.5);
+      display:flex;align-items:center;gap:12px;
+      transition:all .25s ease;
+    }
+    .mos-perm-card.is-granted {
+      background:linear-gradient(135deg,rgba(16,185,129,.12),rgba(15,23,42,.6));
+      border-color:rgba(16,185,129,.5);
+    }
+    .mos-perm-card.is-denied {
+      background:linear-gradient(135deg,rgba(220,38,38,.10),rgba(15,23,42,.6));
+      border-color:rgba(239,68,68,.4);
+    }
+    .mos-perm-icon { font-size:24px;flex-shrink:0; }
+    .mos-perm-name { font-size:.92em;font-weight:800;color:#fef3c7; }
+    .mos-perm-desc { font-size:.7em;color:#94a3b8;margin-top:2px;line-height:1.3; }
+    .mos-perm-status {
+      flex-shrink:0;padding:6px 12px;border-radius:9px;border:none;cursor:pointer;
+      font-size:.72em;font-weight:900;letter-spacing:.04em;
+      -webkit-tap-highlight-color:transparent;
+      transition:all .18s ease;
+    }
+    .mos-perm-status:active { transform:scale(.94); }
+    .mos-perm-status.is-pedir {
+      background:linear-gradient(135deg,#c9a227,#ffd700);color:#020817;
+      box-shadow:0 4px 12px -3px rgba(201,162,39,.55);
+    }
+    .mos-perm-status.is-ok {
+      background:rgba(16,185,129,.18);color:#86efac;cursor:default;
+    }
+    .mos-perm-status.is-denied {
+      background:rgba(220,38,38,.15);color:#fca5a5;
+    }
+    .mos-perms-footer {
+      margin-top:14px;padding-top:14px;border-top:1px solid rgba(51,65,85,.4);
+      display:flex;align-items:center;justify-content:space-between;gap:10px;
+    }
+    .mos-perms-btn-listo {
+      flex:1;padding:13px 16px;border-radius:12px;border:none;cursor:pointer;
+      background:linear-gradient(135deg,#10b981,#059669);color:#fff;
+      font-size:.92em;font-weight:900;letter-spacing:.04em;
+      box-shadow:0 6px 18px -4px rgba(16,185,129,.5);
+      transition:all .2s ease;
+    }
+    .mos-perms-btn-listo:disabled {
+      background:rgba(71,85,105,.4);color:#94a3b8;cursor:not-allowed;box-shadow:none;
+    }
+    .mos-perms-btn-listo:not(:disabled):active { transform:scale(.98); }
+    .mos-perms-progress-text { font-size:.7em;color:#94a3b8;font-weight:700; }
 
     /* ── Catalog cards ──────────────────────────────────── */
     .cat-card {
@@ -10010,15 +10122,84 @@
 </div>
 
 
-<!-- ── Banner nueva versión ──────────────────────────────── -->
+<!-- ── Banner nueva versión · con barra de progreso real ─── -->
 <div id="mosUpdateBanner">
-  <div class="mos-upd-inner">
-    <div class="mos-upd-icon">🚀</div>
-    <div class="mos-upd-text">
-      <div class="mos-upd-title">Nueva versión disponible</div>
-      <div class="mos-upd-sub" id="mosUpdateBannerSub">Preparando actualización…</div>
+  <div class="mos-upd-inner" style="flex-direction:column;align-items:stretch;gap:8px">
+    <div style="display:flex;align-items:center;gap:12px">
+      <div class="mos-upd-icon">🚀</div>
+      <div class="mos-upd-text">
+        <div class="mos-upd-title" id="mosUpdateBannerTitle">Descargando nueva versión...</div>
+        <div class="mos-upd-sub" id="mosUpdateBannerSub">Preparando…</div>
+      </div>
+      <button class="mos-upd-btn" id="mosUpdateBtn"
+              onclick="window._applyMosUpdate()" disabled>Actualizar</button>
     </div>
-    <button class="mos-upd-btn" onclick="window._applyMosUpdate()">Actualizar</button>
+    <div class="mos-upd-progress">
+      <div class="mos-upd-progress-fill" id="mosUpdateProgressFill" style="width:0%">
+        <div class="mos-upd-progress-shimmer" id="mosUpdateShimmer"></div>
+      </div>
+    </div>
+    <p class="mos-upd-countdown" id="mosUpdateCountdown" style="display:none">
+      Auto-actualización en <span id="mosUpdateCdNum">60</span>s
+    </p>
+  </div>
+</div>
+
+<!-- ════ Wizard de permisos · post-update ════ -->
+<div id="mosPermsOverlay" class="mos-perms-overlay">
+  <div class="mos-perms-modal">
+    <div class="mos-perms-emoji">🛡</div>
+    <p class="mos-perms-title">Configurá tus permisos</p>
+    <p class="mos-perms-sub">
+      Para que MOS funcione al 100% necesitamos algunos accesos.
+      Solo te pido lo que falta — los que ya tenés se omiten.
+    </p>
+
+    <div class="mos-perm-card" data-perm="notifications">
+      <span class="mos-perm-icon">🔔</span>
+      <div class="flex-1 min-w-0">
+        <p class="mos-perm-name">Notificaciones</p>
+        <p class="mos-perm-desc">Avisos de cierre de caja, pickups y alertas de admin.</p>
+      </div>
+      <button class="mos-perm-status is-pedir"
+              onclick="MosPerms.pedir('notifications')">AUTORIZAR</button>
+    </div>
+
+    <div class="mos-perm-card" data-perm="microphone">
+      <span class="mos-perm-icon">🎤</span>
+      <div class="flex-1 min-w-0">
+        <p class="mos-perm-name">Micrófono</p>
+        <p class="mos-perm-desc">Comandos remotos, audio de incidentes desde MOS.</p>
+      </div>
+      <button class="mos-perm-status is-pedir"
+              onclick="MosPerms.pedir('microphone')">AUTORIZAR</button>
+    </div>
+
+    <div class="mos-perm-card" data-perm="geolocation">
+      <span class="mos-perm-icon">📍</span>
+      <div class="flex-1 min-w-0">
+        <p class="mos-perm-name">Ubicación (GPS)</p>
+        <p class="mos-perm-desc">Tracking de actividad y ubicación del dispositivo.</p>
+      </div>
+      <button class="mos-perm-status is-pedir"
+              onclick="MosPerms.pedir('geolocation')">AUTORIZAR</button>
+    </div>
+
+    <div class="mos-perm-card" data-perm="audio">
+      <span class="mos-perm-icon">🔊</span>
+      <div class="flex-1 min-w-0">
+        <p class="mos-perm-name">Voz y sonidos</p>
+        <p class="mos-perm-desc">Avisos sonoros, alertas y voz activa. Toca para probar.</p>
+      </div>
+      <button class="mos-perm-status is-pedir"
+              onclick="MosPerms.pedir('audio')">PROBAR</button>
+    </div>
+
+    <div class="mos-perms-footer">
+      <span class="mos-perms-progress-text" id="mosPermsProgress">0/0 listos</span>
+      <button class="mos-perms-btn-listo" id="mosPermsBtnListo"
+              onclick="MosPerms.cerrar()" disabled>Listo · usar MOS</button>
+    </div>
   </div>
 </div>
 
@@ -10351,30 +10532,191 @@
     }
   }
 
+  // ══════ SoundFX MOS · sonidos del flujo de update ══════
+  let _mosSfxCtx = null, _mosSfxComp = null;
+  function _mosSfxGetCtx() {
+    if (!_mosSfxCtx) {
+      try { _mosSfxCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(_){}
+    }
+    if (!_mosSfxCtx) return null;
+    if (_mosSfxCtx.state === 'suspended') _mosSfxCtx.resume().catch(() => {});
+    if (!_mosSfxComp) {
+      _mosSfxComp = _mosSfxCtx.createDynamicsCompressor();
+      _mosSfxComp.threshold.value = -6; _mosSfxComp.knee.value = 2;
+      _mosSfxComp.ratio.value = 12; _mosSfxComp.attack.value = 0.001;
+      _mosSfxComp.release.value = 0.08;
+      _mosSfxComp.connect(_mosSfxCtx.destination);
+    }
+    return _mosSfxCtx;
+  }
+  function _mosTone(freq, dur, type, vol, delay) {
+    try {
+      const ctx = _mosSfxGetCtx(); if (!ctx) return;
+      const t = ctx.currentTime + (delay || 0);
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.connect(g); g.connect(_mosSfxComp);
+      osc.type = type || 'sine';
+      osc.frequency.setValueAtTime(freq, t);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(vol || 0.8, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      osc.start(t); osc.stop(t + dur + 0.02);
+    } catch(_){}
+  }
+  const MosSfx = {
+    updateArrived: () => {
+      _mosTone(523, 0.10, 'sine',     0.7, 0);
+      _mosTone(784, 0.12, 'triangle', 0.85, 0.10);
+      _mosTone(1047,0.18, 'sine',     0.85, 0.22);
+    },
+    updateReady: () => {
+      _mosTone(659, 0.10, 'triangle', 0.8, 0);
+      _mosTone(880, 0.10, 'triangle', 0.85, 0.10);
+      _mosTone(1175,0.12, 'triangle', 0.9, 0.20);
+      _mosTone(1568,0.30, 'sine',     1.0, 0.32);
+    },
+    rocket: () => {
+      try {
+        const ctx = _mosSfxGetCtx(); if (!ctx) return;
+        const t = ctx.currentTime;
+        const osc = ctx.createOscillator(); const g = ctx.createGain();
+        osc.connect(g); g.connect(_mosSfxComp);
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(120, t);
+        osc.frequency.exponentialRampToValueAtTime(2400, t + 0.85);
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.6, t + 0.05);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.95);
+        osc.start(t); osc.stop(t + 1.0);
+      } catch(_){}
+      _mosTone(1568, 0.10, 'square', 0.7, 0.85);
+      _mosTone(2093, 0.18, 'square', 0.9, 0.95);
+    },
+    tickUrgent: () => _mosTone(1500, 0.04, 'square', 0.6),
+    bellSoft:   () => _mosTone(1200, 0.13, 'triangle', 0.85, 0)
+  };
+  window.MosSfx = MosSfx;
+
+  // ══════ Banner update con progreso real ══════
+  let _mosSwProgress = { done: 0, total: 0, ready: false };
+  let _mosAutoCdInterval = null;
+  let _mosAutoCdActive = false;
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', (e) => {
+      const d = e.data;
+      if (!d || !d.type) return;
+      if (d.type === 'sw-install-progress') {
+        _mosSwProgress.done = d.done; _mosSwProgress.total = d.total;
+        _mosUpdateProgressBar();
+      }
+      if (d.type === 'sw-install-done') {
+        _mosSwProgress.done = _mosSwProgress.total = d.total;
+        _mosSwProgress.ready = true;
+        _mosUpdateProgressBar();
+      }
+    });
+  }
+
+  function _mosUpdateProgressBar() {
+    const fill = document.getElementById('mosUpdateProgressFill');
+    const sub  = document.getElementById('mosUpdateBannerSub');
+    const tit  = document.getElementById('mosUpdateBannerTitle');
+    const btn  = document.getElementById('mosUpdateBtn');
+    const sh   = document.getElementById('mosUpdateShimmer');
+    const cdEl = document.getElementById('mosUpdateCountdown');
+    if (!fill) return;
+    const pct = _mosSwProgress.total > 0
+      ? Math.round((_mosSwProgress.done / _mosSwProgress.total) * 100) : 0;
+    fill.style.width = (_mosSwProgress.ready ? 100 : pct) + '%';
+    if (_mosSwProgress.ready) {
+      const wasReady = fill.classList.contains('is-ready');
+      fill.classList.add('is-ready');
+      if (sh) sh.style.display = 'none';
+      if (tit) tit.textContent = '✓ Lista para instalar';
+      if (sub) sub.textContent = `Descargada · ${_mosSwProgress.total} archivos`;
+      if (btn) btn.disabled = false;
+      if (cdEl) cdEl.style.display = 'block';
+      if (!wasReady) {
+        try { MosSfx.updateReady(); } catch(_){}
+        try { if (navigator.vibrate) navigator.vibrate([30, 30, 30, 30, 60]); } catch(_){}
+      }
+      _mosStartAutoCd();
+    } else {
+      if (tit) tit.textContent = 'Descargando nueva versión...';
+      if (sub) sub.textContent = `Preparando ${_mosSwProgress.done}/${_mosSwProgress.total} archivos`;
+      if (btn) btn.disabled = true;
+    }
+  }
+
+  function _mosStartAutoCd() {
+    if (_mosAutoCdActive) return;
+    _mosAutoCdActive = true;
+    let secs = 60;
+    const cdNum = document.getElementById('mosUpdateCdNum');
+    if (cdNum) cdNum.textContent = secs;
+    _mosAutoCdInterval = setInterval(() => {
+      secs--;
+      if (cdNum) cdNum.textContent = secs;
+      if (secs > 0 && secs <= 5) { try { MosSfx.tickUrgent(); } catch(_){} }
+      if (secs <= 0) {
+        clearInterval(_mosAutoCdInterval);
+        _mosAutoCdInterval = null;
+        _mosAutoCdActive = false;
+        window._applyMosUpdate();
+      }
+    }, 1000);
+  }
+  function _mosStopAutoCd() {
+    if (_mosAutoCdInterval) { clearInterval(_mosAutoCdInterval); _mosAutoCdInterval = null; }
+    _mosAutoCdActive = false;
+  }
+
   // Oculta el banner deslizante
   function _hideBanner() {
     const b = document.getElementById('mosUpdateBanner');
     if (b) b.classList.remove('visible');
+    _mosStopAutoCd();
   }
 
-  // Muestra el banner deslizante con versión
+  // Muestra el banner con sonido + listener de progreso
   function _showUpdateBanner(worker) {
     _waitingWorker = worker;
     fetch('./version.json?t=' + Date.now())
       .then(r => r.json())
       .then(v => {
-        const sub = document.getElementById('mosUpdateBannerSub');
-        if (sub) sub.textContent = 'v' + v.version + (v.build ? ' · ' + v.build : '');
+        const tit = document.getElementById('mosUpdateBannerTitle');
+        if (tit) tit.textContent = 'Nueva versión v' + v.version;
       }).catch(() => {});
     const b = document.getElementById('mosUpdateBanner');
     if (b) setTimeout(() => b.classList.add('visible'), 200);
+    try { MosSfx.updateArrived(); } catch(_){}
+    try { if (navigator.vibrate) navigator.vibrate([20, 40, 20]); } catch(_){}
+    if (worker && worker.state === 'installed') {
+      _mosSwProgress.ready = true;
+      _mosUpdateProgressBar();
+    } else if (worker) {
+      worker.addEventListener('statechange', () => {
+        if (worker.state === 'installed') {
+          _mosSwProgress.ready = true;
+          _mosUpdateProgressBar();
+        }
+      });
+    }
   }
 
-  // Aplicar update desde el banner
+  // Aplicar update desde el banner — con sonido cohete
   window._applyMosUpdate = function() {
+    _mosStopAutoCd();
+    try { MosSfx.rocket(); } catch(_){}
+    try { if (navigator.vibrate) navigator.vibrate([60, 30, 60, 30, 100]); } catch(_){}
     _hideBanner();
     _showUpdateOverlay();
-    if (_waitingWorker) _waitingWorker.postMessage('SKIP_WAITING');
+    try { localStorage.setItem('mos_perms_check_pending', '1'); } catch(_){}
+    setTimeout(() => {
+      if (_waitingWorker) _waitingWorker.postMessage('SKIP_WAITING');
+    }, 900);
   };
 
   // Activa el SW en espera y recarga
@@ -10455,6 +10797,169 @@
   }).catch(e => console.warn('[SW register]', e)).finally(() => {
     MOS.init();
   });
+})();
+</script>
+
+<!-- ════════════════════════════════════════════════
+     WIZARD DE PERMISOS · Post-update MOS
+════════════════════════════════════════════════ -->
+<script>
+(function(){
+  const PERMS = ['notifications', 'microphone', 'geolocation', 'audio'];
+  const AUDIO_KEY = 'mos_audio_tested_v';
+  let _stateActual = {};
+
+  async function _consultarPerm(perm) {
+    if (perm === 'notifications') {
+      if (!('Notification' in window)) return 'unsupported';
+      return Notification.permission;
+    }
+    if (perm === 'audio') {
+      try {
+        const v = window._MOS_PERMS_VERSION || 'unk';
+        return localStorage.getItem(AUDIO_KEY + v) === '1' ? 'granted' : 'prompt';
+      } catch(_) { return 'prompt'; }
+    }
+    if (!navigator.permissions?.query) return 'prompt';
+    try {
+      const res = await navigator.permissions.query({ name: perm });
+      return res.state;
+    } catch (e) { return 'prompt'; }
+  }
+  function _normEstado(s) {
+    if (s === 'default')     return 'prompt';
+    if (s === 'unsupported') return 'unsupported';
+    return s;
+  }
+
+  async function _refrescarUI() {
+    let pendientes = 0, listos = 0;
+    for (const p of PERMS) {
+      const raw = await _consultarPerm(p);
+      const est = _normEstado(raw);
+      _stateActual[p] = est;
+      const card = document.querySelector(`.mos-perm-card[data-perm="${p}"]`);
+      if (!card) continue;
+      const btn = card.querySelector('.mos-perm-status');
+      card.classList.remove('is-granted', 'is-denied');
+      if (est === 'granted') {
+        listos++;
+        card.classList.add('is-granted');
+        if (btn) { btn.className = 'mos-perm-status is-ok'; btn.textContent = '✓ OK'; btn.disabled = true; }
+      } else if (est === 'denied') {
+        card.classList.add('is-denied');
+        if (btn) { btn.className = 'mos-perm-status is-denied'; btn.textContent = '✗ DENEGADO'; }
+      } else if (est === 'unsupported') {
+        listos++;
+        if (btn) { btn.className = 'mos-perm-status is-ok'; btn.textContent = 'N/A'; btn.disabled = true; }
+      } else {
+        pendientes++;
+        if (btn) {
+          btn.className = 'mos-perm-status is-pedir';
+          btn.textContent = (p === 'audio') ? 'PROBAR' : 'AUTORIZAR';
+          btn.disabled = false;
+        }
+      }
+    }
+    const prog = document.getElementById('mosPermsProgress');
+    const btn  = document.getElementById('mosPermsBtnListo');
+    if (prog) prog.textContent = `${listos}/${PERMS.length} resueltos · ${pendientes} pendiente${pendientes!==1?'s':''}`;
+    if (btn) btn.disabled = pendientes > 0;
+    return { pendientes, listos };
+  }
+
+  async function _pedirPerm(perm) {
+    try {
+      if (perm === 'notifications') {
+        await Notification.requestPermission();
+      } else if (perm === 'microphone') {
+        const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+        s.getTracks().forEach(t => t.stop());
+      } else if (perm === 'geolocation') {
+        await new Promise((res, rej) => {
+          navigator.geolocation.getCurrentPosition(res, rej, { timeout: 8000 });
+        });
+      } else if (perm === 'audio') {
+        try {
+          const Ctx = window.AudioContext || window.webkitAudioContext;
+          const ctx = new Ctx();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.frequency.value = 880;
+          gain.gain.value = 0.15;
+          osc.start();
+          osc.stop(ctx.currentTime + 0.18);
+        } catch(_){}
+        if ('speechSynthesis' in window) {
+          try {
+            speechSynthesis.cancel();
+            const u = new SpeechSynthesisUtterance('Voz activa MOS, listo');
+            u.lang = 'es-PE'; u.rate = 1.05; u.volume = 1;
+            speechSynthesis.speak(u);
+          } catch(_){}
+        }
+        const escucho = confirm('🔊 ¿Escuchaste el beep y la voz?\n\nSi NO, revisa el volumen del dispositivo y vuelve a probar.');
+        if (escucho) {
+          try {
+            const v = window._MOS_PERMS_VERSION || 'unk';
+            localStorage.setItem(AUDIO_KEY + v, '1');
+          } catch(_){}
+        }
+      }
+    } catch (e) {}
+    setTimeout(_refrescarUI, 300);
+  }
+
+  async function _abrirSiHayQuePedir(versionActual) {
+    const flagKey = 'mos_perms_done_v' + (versionActual || 'unk');
+    if (localStorage.getItem(flagKey) === '1') return false;
+    const { pendientes } = await _refrescarUI();
+    if (pendientes === 0) {
+      try { localStorage.setItem(flagKey, '1'); } catch(_){}
+      return false;
+    }
+    const ov = document.getElementById('mosPermsOverlay');
+    if (ov) ov.classList.add('is-open');
+    window._MOS_PERMS_VERSION = versionActual;
+    return true;
+  }
+
+  function _cerrar() {
+    const btn = document.getElementById('mosPermsBtnListo');
+    if (btn && btn.disabled) return;
+    const ov = document.getElementById('mosPermsOverlay');
+    if (ov) ov.classList.remove('is-open');
+    try {
+      const v = window._MOS_PERMS_VERSION || 'unk';
+      localStorage.setItem('mos_perms_done_v' + v, '1');
+    } catch(_){}
+  }
+
+  async function _autoTrigger() {
+    const pending = localStorage.getItem('mos_perms_check_pending') === '1';
+    let v = 'unk';
+    try {
+      const r = await fetch('./version.json?t=' + Date.now()).then(r => r.json());
+      v = r.version || 'unk';
+    } catch(_){}
+    if (!pending && localStorage.getItem('mos_perms_done_v' + v) === '1') return;
+    // Esperar a que la app esté inicializada (aprox. 3s tras carga)
+    setTimeout(async () => {
+      await _abrirSiHayQuePedir(v);
+      try { localStorage.removeItem('mos_perms_check_pending'); } catch(_){}
+    }, 3000);
+  }
+
+  window.MosPerms = {
+    pedir: _pedirPerm,
+    cerrar: _cerrar,
+    refrescar: _refrescarUI,
+    auto: _autoTrigger
+  };
+
+  if (document.readyState === 'complete') _autoTrigger();
+  else window.addEventListener('load', _autoTrigger);
 })();
 </script>
 

@@ -27,7 +27,7 @@ _fcmMsg.onBackgroundMessage(payload => {
   });
 });
 
-const VERSION = '2.30.5';
+const VERSION = '2.31.0';
 const CACHE   = 'mos-v' + VERSION;
 const ASSETS  = [
   './',
@@ -40,15 +40,29 @@ const ASSETS  = [
   './version.json'
 ];
 
-// ── Instalar: cachear todos los assets (no-cache para ignorar CDN) ──
+// ── Instalar: cachear secuencial con reporte de progreso ──
+// postMessage al cliente por cada asset → banner muestra barra real.
+// NO skipWaiting automático: queda en 'waiting' para que el banner
+// avise al user antes de aplicar.
 self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE)
-      .then(c => c.addAll(
-        ASSETS.map(url => new Request(url, { cache: 'no-store' }))
-      ))
-      .then(() => self.skipWaiting())
-  );
+  e.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    const total = ASSETS.length;
+    let done = 0;
+    async function _broadcast(payload) {
+      const cs = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
+      cs.forEach(c => { try { c.postMessage(payload); } catch(_){} });
+    }
+    await _broadcast({ type: 'sw-install-progress', done: 0, total, version: VERSION });
+    for (const url of ASSETS) {
+      try {
+        await cache.add(new Request(url, { cache: 'no-store' }));
+      } catch (err) { console.warn('[SW MOS] No se pudo cachear:', url, err); }
+      done++;
+      await _broadcast({ type: 'sw-install-progress', done, total, version: VERSION });
+    }
+    await _broadcast({ type: 'sw-install-done', total, version: VERSION });
+  })());
 });
 
 // ── Activar: borrar cachés viejos y reclamar clientes ───────
