@@ -10623,13 +10623,13 @@ const MOS = (() => {
       try { p = (typeof permsJson === 'string') ? JSON.parse(permsJson) : permsJson; } catch(_) { p = {}; }
     }
     const labels = {
-      notif:   { i: '🔔', n: 'Notificaciones' },
-      cam:     { i: '📸', n: 'Cámara' },
-      mic:     { i: '🎤', n: 'Micrófono' },
-      geo:     { i: '📍', n: 'Geolocalización' },
-      audio:   { i: '🔊', n: 'Audio' },
-      install: { i: '📱', n: 'App instalada' },
-      storage: { i: '💾', n: 'Almacenamiento persistente' }
+      notif:   { i: '🔔', n: 'Notificaciones',   d: 'Pickups, anulaciones, alertas y avisos del admin llegan al dispositivo aunque la app esté cerrada.' },
+      cam:     { i: '📸', n: 'Cámara',           d: 'Escaneo de códigos de barra de productos y guías. Sin esto, hay que digitar manualmente.' },
+      mic:     { i: '🎤', n: 'Micrófono',        d: 'Búsqueda por voz y escucha remota del admin (espía 🕵️). Sin esto, sólo búsqueda por texto.' },
+      geo:     { i: '📍', n: 'Geolocalización',  d: 'Ubica el dispositivo en su zona y rastrea repartos. Útil para auditoría de ruta del cajero móvil.' },
+      audio:   { i: '🔊', n: 'Audio',            d: 'Alertas sonoras (nueva venta, error, pickup listo) y voz sintética que anuncia eventos.' },
+      install: { i: '📱', n: 'App instalada',    d: 'PWA instalada en el escritorio/inicio. Funciona offline, abre más rápido y sin barra del navegador.' },
+      storage: { i: '💾', n: 'Almacenamiento',   d: 'El sistema no borra automáticamente tus ventas/datos offline aunque ande corto de espacio. Crítico para no perder pendingSales.' }
     };
     const orden = ['notif','cam','mic','geo','audio','install','storage'];
     const tieneDatos = Object.keys(p).length > 0;
@@ -10650,10 +10650,14 @@ const MOS = (() => {
       else if (st === 'denied')      { bg='rgba(248,113,113,0.12)'; border='rgba(248,113,113,0.45)';color='#fca5a5'; txt='✗ denegado'; }
       else if (st === 'unsupported') { bg='rgba(100,116,139,0.10)'; border='rgba(100,116,139,0.4)'; color='#94a3b8'; txt='no soportado'; }
       else                            { bg='rgba(251,191,36,0.12)';  border='rgba(251,191,36,0.45)'; color='#fcd34d'; txt='⏳ pendiente'; }
+      const info = (lab.d || '').replace(/"/g, '&quot;');
       return `<div class="flex items-center gap-2 p-2 rounded-lg" style="background:${bg};border:1px solid ${border};">
         <span class="text-lg shrink-0">${lab.i}</span>
         <div class="flex-1 min-w-0">
-          <div class="text-xs font-bold truncate" style="color:${color}">${lab.n}</div>
+          <div class="flex items-center gap-1">
+            <div class="text-xs font-bold truncate" style="color:${color}">${lab.n}</div>
+            ${info ? `<span title="${info}" class="cursor-help text-[10px] opacity-60 hover:opacity-100" style="color:${color}">ⓘ</span>` : ''}
+          </div>
           <div class="text-[10px] opacity-80" style="color:${color}">${txt}</div>
         </div>
       </div>`;
