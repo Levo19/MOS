@@ -988,6 +988,23 @@ function aprobarDispositivoEnSitu(params) {
     return { ok: true, data: { autorizado: false, error: auth.data?.error || 'Clave incorrecta' } };
   }
 
+  // ── REGLA: activar MOS en un dispositivo nuevo SOLO puede hacerlo MASTER ──
+  // Los admins comunes no pueden propagar MOS a equipos arbitrarios. Esto
+  // limita el acceso a la app de administración a quien explícitamente
+  // designe el master. WH y ME no tienen esta restricción.
+  var appTarget = String(params.app || '').trim().toUpperCase();
+  var esAppMOS  = (appTarget === 'MOS' || appTarget === 'PROYECTOMOS');
+  var rolAprob  = String(auth.data.rol || '').toUpperCase();
+  if (esAppMOS && rolAprob !== 'MASTER') {
+    return {
+      ok: true,
+      data: {
+        autorizado: false,
+        error: 'Solo el MASTER puede activar la app MOS en un nuevo dispositivo. Pídelo al master.'
+      }
+    };
+  }
+
   _garantizarColumnasDispositivos();
   var sheet = getSheet('DISPOSITIVOS');
   var data  = sheet.getDataRange().getValues();

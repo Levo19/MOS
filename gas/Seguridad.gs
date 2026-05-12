@@ -161,7 +161,9 @@ function verificarClaveAdmin(params) {
       autorizado: true,
       validadoPor: 'admin:' + (admin.nombre + ' ' + (admin.apellido || '')).trim(),
       idPersonal: admin.idPersonal,
-      nombre: admin.nombre + ' ' + (admin.apellido || '')
+      nombre: admin.nombre + ' ' + (admin.apellido || ''),
+      rol: String(admin.rol || '').toUpperCase()  // expuesto para que callers
+                                                   // puedan validar admin vs master
     }
   };
 }
