@@ -5308,25 +5308,40 @@
       transform:translateX(-50%) translateY(180px);
       z-index:9997;width:calc(100% - 32px);max-width:420px;
       transition:transform .45s cubic-bezier(.34,1.56,.64,1);
+      pointer-events:none; /* mientras está oculto no captura taps */
     }
+    #mosUpdateBanner.visible { pointer-events:auto; }
     @media (max-width: 767px) {
-      /* En mobile dejar espacio para el bottom nav + safe area */
-      #mosUpdateBanner { bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+      /* En mobile dejar espacio para el bottom nav + safe area
+         y dejar 8px de margen lateral para no tapar FAB derecho */
+      #mosUpdateBanner {
+        bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+        width: calc(100% - 16px);
+      }
     }
     #mosUpdateBanner.visible { transform:translateX(-50%) translateY(0); }
     .mos-upd-inner {
       background:linear-gradient(135deg,#1a1503,#0f172a);
-      border:1px solid #c9a227;border-radius:16px;padding:14px 16px;
+      border:1px solid #c9a227;border-radius:16px;padding:12px 14px;
       display:flex;align-items:center;gap:12px;
-      box-shadow:0 8px 32px rgba(201,162,39,.35);
-      animation:mosGlow 3s ease-in-out infinite;
+      box-shadow:0 8px 28px rgba(201,162,39,.28);
+      /* Glow infinito retirado — distraía sin aportar UX. Solo el icono "respira". */
     }
-    @keyframes mosGlow {
-      0%,100%{ box-shadow:0 8px 32px rgba(201,162,39,.35); }
-      50%    { box-shadow:0 8px 44px rgba(255,215,0,.55);   }
+    @media (max-width: 767px) {
+      .mos-upd-inner { padding:10px 12px; border-radius:14px; }
     }
     .mos-upd-icon { font-size:1.5rem;animation:mosIconBounce 1.8s ease-in-out infinite;
                     filter: drop-shadow(0 0 6px rgba(255,215,0,.5)); }
+    .mos-upd-dismiss {
+      background:transparent;border:1px solid rgba(148,163,184,.35);
+      color:#94a3b8;border-radius:50%;
+      width:30px;height:30px;display:flex;align-items:center;justify-content:center;
+      cursor:pointer;font-size:18px;line-height:1;flex-shrink:0;
+      transition:background .15s,color .15s,transform .12s;
+      -webkit-tap-highlight-color:transparent;
+    }
+    .mos-upd-dismiss:active { transform:scale(.92); }
+    .mos-upd-dismiss:hover  { background:rgba(148,163,184,.12); color:#e2e8f0; }
     @keyframes mosIconBounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
     .mos-upd-text  { flex:1; }
     .mos-upd-title { font-size:.9rem;font-weight:700;color:#fef3c7; }
@@ -10233,7 +10248,7 @@
 <!-- ── Banner nueva versión · con barra de progreso real ─── -->
 <div id="mosUpdateBanner">
   <div class="mos-upd-inner" style="flex-direction:column;align-items:stretch;gap:8px">
-    <div style="display:flex;align-items:center;gap:12px">
+    <div style="display:flex;align-items:center;gap:10px">
       <div class="mos-upd-icon">🚀</div>
       <div class="mos-upd-text">
         <div class="mos-upd-title" id="mosUpdateBannerTitle">Descargando nueva versión...</div>
@@ -10241,6 +10256,8 @@
       </div>
       <button class="mos-upd-btn" id="mosUpdateBtn"
               onclick="window._applyMosUpdate()" disabled>Actualizar</button>
+      <button class="mos-upd-dismiss" id="mosUpdateDismissBtn"
+              onclick="window._dismissMosUpdate()" title="Posponer 5 min" aria-label="Cerrar">×</button>
     </div>
     <div class="mos-upd-progress">
       <div class="mos-upd-progress-fill" id="mosUpdateProgressFill" style="width:0%">
@@ -11008,9 +11025,27 @@
     _mosStopAutoCd();
   }
 
+  // Posponer 5 minutos (snooze) — guarda timestamp en localStorage
+  // El banner no reaparece hasta que expire o haya otra versión nueva
+  window._dismissMosUpdate = function() {
+    const snoozeMs = 5 * 60 * 1000;
+    try { localStorage.setItem('mos_upd_snooze_until', String(Date.now() + snoozeMs)); } catch(_){}
+    _hideBanner();
+  };
+
+  // Verifica si el banner está snoozeado (no debe mostrarse aún)
+  function _isUpdateSnoozed() {
+    try {
+      const until = parseInt(localStorage.getItem('mos_upd_snooze_until') || '0', 10);
+      return until && Date.now() < until;
+    } catch(_) { return false; }
+  }
+
   // Muestra el banner con sonido + listener de progreso
   function _showUpdateBanner(worker) {
     _waitingWorker = worker;
+    // Si está snoozeado, no mostrar
+    if (_isUpdateSnoozed()) return;
     fetch('./version.json?t=' + Date.now())
       .then(r => r.json())
       .then(v => {
