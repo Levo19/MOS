@@ -11404,12 +11404,18 @@ const MOS = (() => {
       document.body.appendChild(backdrop);
     }
     backdrop.innerHTML = html;
+    // El CSS .modal-backdrop tiene display:none por defecto. Mostramos con .open
+    // (no solo quitar .hidden). Antes el modal NUNCA aparecía por este bug.
     backdrop.classList.remove('hidden');
+    backdrop.classList.add('open');
   }
 
   function cerrarDetalleDispositivo() {
     const bd = $('modalDispDetalle');
-    if (bd) bd.classList.add('hidden');
+    if (bd) {
+      bd.classList.add('hidden');
+      bd.classList.remove('open');
+    }
   }
 
   async function _pedirClaveAdmin(accion) {
