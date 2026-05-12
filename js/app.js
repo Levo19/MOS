@@ -3260,7 +3260,7 @@ const MOS = (() => {
           if (S.almTab === 'merma') { renderMermasTable(); _almFlash('almPanelMerma'); }
         }
       } else if (tab === 'env') {
-        const r = await API.get('getEnvasadosWarehouse', { limit: '50' });
+        const r = await API.get('getEnvasadosWarehouse', { limit: '500' });
         const e = r || [];
         if (JSON.stringify(e) !== JSON.stringify(S.envasados)) {
           S.envasados = e;
@@ -3292,7 +3292,7 @@ const MOS = (() => {
       API.get('getCatalogoStockResumen', params7),
       API.get('getAlertasWarehouse', {}),
       API.get('getMermasWarehouse', {}),
-      API.get('getEnvasadosWarehouse', { limit: '50' })
+      API.get('getEnvasadosWarehouse', { limit: '500' })
     ]);
     if (catalogoRes.status === 'fulfilled') {
       const v = catalogoRes.value || {};
@@ -3428,7 +3428,7 @@ const MOS = (() => {
             try { renderMermasTable(); } catch {} }
         }).catch(() => {}),
         // Envasados
-        API.get('getEnvasadosWarehouse', { limit: '50' }).then(r => {
+        API.get('getEnvasadosWarehouse', { limit: '500' }).then(r => {
           if (r) { S.envasados = r; _almSaveCache('envasados', r);
             try { renderEnvTable(); } catch {} }
         }).catch(() => {}),
@@ -5009,6 +5009,62 @@ const MOS = (() => {
     }).join('');
   }
 
+  // ── Estado de filtros Envasados ────────────────────────────
+  const _envFiltros = { rango: 'hoy', operador: '', agrupar: 'fecha', desde: '', hasta: '' };
+  function _envHoyStr() {
+    const d = new Date(); const z = n => String(n).padStart(2,'0');
+    return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`;
+  }
+  function _envCalcularRango() {
+    const hoy = new Date();
+    const z = n => String(n).padStart(2,'0');
+    const fmt = d => `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`;
+    if (_envFiltros.rango === 'todo')   return { desde: '0000-01-01',         hasta: '9999-12-31' };
+    if (_envFiltros.rango === 'custom') return { desde: _envFiltros.desde || '0000-01-01', hasta: _envFiltros.hasta || '9999-12-31' };
+    if (_envFiltros.rango === 'hoy')    return { desde: fmt(hoy),             hasta: fmt(hoy) };
+    if (_envFiltros.rango === 'ayer') {
+      const a = new Date(hoy); a.setDate(hoy.getDate() - 1);
+      return { desde: fmt(a), hasta: fmt(a) };
+    }
+    if (_envFiltros.rango === 'semana') {
+      const a = new Date(hoy); a.setDate(hoy.getDate() - 6);
+      return { desde: fmt(a), hasta: fmt(hoy) };
+    }
+    if (_envFiltros.rango === 'mes') {
+      const a = new Date(hoy); a.setDate(hoy.getDate() - 29);
+      return { desde: fmt(a), hasta: fmt(hoy) };
+    }
+    return { desde: '0000-01-01', hasta: '9999-12-31' };
+  }
+  function envSetRango(r) {
+    _envFiltros.rango = r;
+    document.querySelectorAll('.env-pill').forEach(b => b.classList.toggle('active', b.dataset.rango === r));
+    if (r !== 'custom') {
+      const cr = $('envCustomRange'); if (cr) cr.classList.add('hidden');
+    }
+    renderEnvTable();
+  }
+  function envToggleCustom() {
+    _envFiltros.rango = 'custom';
+    document.querySelectorAll('.env-pill').forEach(b => b.classList.toggle('active', b.dataset.rango === 'custom'));
+    const cr = $('envCustomRange'); if (cr) cr.classList.remove('hidden');
+    const today = _envHoyStr();
+    if ($('envDesde') && !$('envDesde').value) $('envDesde').value = today;
+    if ($('envHasta') && !$('envHasta').value) $('envHasta').value = today;
+    envSetCustom();
+  }
+  function envSetCustom() {
+    _envFiltros.desde = $('envDesde')?.value || '';
+    _envFiltros.hasta = $('envHasta')?.value || '';
+    renderEnvTable();
+  }
+  function envSetOperador(op) { _envFiltros.operador = op; renderEnvTable(); }
+  function envSetAgrupar(g) {
+    _envFiltros.agrupar = g;
+    document.querySelectorAll('.env-toggle').forEach(b => b.classList.toggle('active', b.dataset.agrupar === g));
+    renderEnvTable();
+  }
+
   function renderEnvTable() {
     const cont = $('envList');
     const summaryEl = $('envSummary');
@@ -5018,30 +5074,65 @@ const MOS = (() => {
       if (summaryEl) summaryEl.textContent = '';
       return;
     }
-    // Agrupar por día (yyyy-MM-dd)
-    const porDia = {};
-    S.envasados.forEach(e => {
-      const f = String(e.fecha || '').substring(0, 10);
-      if (!f) return;
-      if (!porDia[f]) porDia[f] = [];
-      porDia[f].push(e);
-    });
-    const dias = Object.keys(porDia).sort((a, b) => b.localeCompare(a)); // más reciente primero
 
-    // Resumen global
-    const totEnv = S.envasados.length;
-    const totUds = S.envasados.reduce((s, e) => s + (parseFloat(e.unidadesProducidas) || 0), 0);
-    if (summaryEl) {
-      summaryEl.innerHTML = `${totEnv} envasados · <b class="text-slate-300">${totUds}</b> uds totales`;
+    // Poblar selector de operadores (una vez por carga)
+    const selOp = $('envFiltroOperador');
+    if (selOp && selOp.options.length <= 1) {
+      const opsSet = new Set();
+      S.envasados.forEach(e => { if (e.usuario) opsSet.add(e.usuario); });
+      Array.from(opsSet).sort().forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u; opt.textContent = '👤 ' + u;
+        selOp.appendChild(opt);
+      });
     }
 
-    cont.innerHTML = dias.map(diaKey => {
-      const items = porDia[diaKey];
+    // Aplicar filtros (rango + operador)
+    const { desde, hasta } = _envCalcularRango();
+    const opFiltro = String(_envFiltros.operador || '').toLowerCase().trim();
+    const filtrados = S.envasados.filter(e => {
+      const f = String(e.fecha || '').substring(0, 10);
+      if (!f) return false;
+      if (f < desde || f > hasta) return false;
+      if (opFiltro && String(e.usuario || '').toLowerCase().trim() !== opFiltro) return false;
+      return true;
+    });
+
+    if (!filtrados.length) {
+      cont.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm">Sin envasados en este rango</div>';
+      if (summaryEl) summaryEl.textContent = '0 envasados';
+      return;
+    }
+
+    // Resumen
+    const totEnv = filtrados.length;
+    const totUds = filtrados.reduce((s, e) => s + (parseFloat(e.unidadesProducidas) || 0), 0);
+    if (summaryEl) {
+      summaryEl.innerHTML = `${totEnv} envasado${totEnv === 1 ? '' : 's'} · <b class="text-slate-300">${totUds}</b> uds totales`;
+    }
+
+    // Agrupar según toggle (fecha u operador)
+    const porGrupo = {};
+    filtrados.forEach(e => {
+      const key = _envFiltros.agrupar === 'operador'
+        ? (e.usuario || '— sin operador')
+        : String(e.fecha || '').substring(0, 10);
+      if (!porGrupo[key]) porGrupo[key] = [];
+      porGrupo[key].push(e);
+    });
+    // Sort: por fecha desc, por operador alfabético
+    const claves = Object.keys(porGrupo).sort((a, b) => {
+      if (_envFiltros.agrupar === 'operador') return a.localeCompare(b);
+      return b.localeCompare(a);
+    });
+
+    cont.innerHTML = claves.map(diaKey => {
+      const items = porGrupo[diaKey];
       const totDiaUds = items.reduce((s, e) => s + (parseFloat(e.unidadesProducidas) || 0), 0);
       const efPromDia = items.length
         ? items.reduce((s, e) => s + (parseFloat(e.eficienciaPct) || 0), 0) / items.length
         : 0;
-      // Usuarios distintos del día
+      // Usuarios distintos del grupo (solo si agrupado por fecha)
       const usuariosSet = new Set();
       items.forEach(e => { if (e.usuario) usuariosSet.add(e.usuario); });
       const usuariosDia = Array.from(usuariosSet).join(', ') || '—';
@@ -5083,14 +5174,18 @@ const MOS = (() => {
           </div>`;
         }).join('');
 
+      // Header dinámico según modo de agrupación
+      const esPorOperador = _envFiltros.agrupar === 'operador';
+      const headerTitulo = esPorOperador
+        ? `👤 <span class="text-indigo-300">${diaKey}</span>`
+        : `📅 ${_envFmtFechaLarga(diaKey)}`;
+      const headerMeta = esPorOperador
+        ? `${items.length} envasado${items.length === 1 ? '' : 's'} · <b class="text-slate-300">${totDiaUds}</b> uds`
+        : `${items.length} envasado${items.length === 1 ? '' : 's'} · <b class="text-slate-300">${totDiaUds}</b> uds · 👤 ${usuariosDia}`;
       return `<div class="mb-3">
         <div class="flex items-center justify-between mb-2 px-1 flex-wrap gap-2">
-          <div class="text-sm font-bold text-amber-400">📅 ${_envFmtFechaLarga(diaKey)}</div>
-          <div class="text-[11px] text-slate-500">
-            ${items.length} envasado${items.length === 1 ? '' : 's'} ·
-            <b class="text-slate-300">${totDiaUds}</b> uds ·
-            👤 ${usuariosDia}
-          </div>
+          <div class="text-sm font-bold text-amber-400">${headerTitulo}</div>
+          <div class="text-[11px] text-slate-500">${headerMeta}</div>
         </div>
         <div class="space-y-1.5">${itemsHtml}</div>
       </div>`;
@@ -21317,6 +21412,8 @@ const MOS = (() => {
     finAbrirModalProductos, finToggleFiltroSinCosto,
     finEditarCostoProd, finCerrarCostoProd, finGuardarCostoProd,
     finAbrirModalTickets, finSetTicketFiltro,
+    // Envasados — filtros modernos
+    envSetRango, envSetOperador, envSetAgrupar, envToggleCustom, envSetCustom,
     activarPush: () => _pushInit(S.session?.nombre || '', S.session?.rol || '', true)
   };
 })();

@@ -3753,6 +3753,53 @@
     .alm-fecha-item.critico { border-color: rgba(239,68,68,.25); }
     .alm-fecha-item.alerta  { border-color: rgba(245,158,11,.22); }
 
+    /* ── Filtros modernos de Envasados ── */
+    .env-filters { background: rgba(15,23,42,.5); border: 1px solid #1e293b;
+                   border-radius: 12px; padding: 10px 12px; }
+    .env-pill {
+      padding: 5px 12px; border-radius: 999px;
+      background: transparent; border: 1px solid #334155;
+      color: #64748b; font-size: 11px; font-weight: 700;
+      cursor: pointer; transition: all .15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .env-pill:active { transform: scale(.95); }
+    .env-pill.active {
+      background: linear-gradient(135deg, rgba(99,102,241,.18), rgba(168,85,247,.12));
+      border-color: rgba(99,102,241,.5); color: #c7d2fe;
+      box-shadow: inset 0 0 0 1px rgba(99,102,241,.3);
+    }
+    .env-pill-custom { padding: 5px 10px; }
+    .env-select {
+      background: #0f172a; color: #cbd5e1;
+      border: 1px solid #334155; border-radius: 8px;
+      padding: 5px 10px; font-size: 11px; font-weight: 600;
+      cursor: pointer; transition: border-color .15s;
+      min-width: 160px;
+    }
+    .env-select:focus { border-color: #6366f1; outline: none; }
+    .env-toggle-group {
+      background: #0f172a; border: 1px solid #334155;
+      border-radius: 8px; overflow: hidden;
+    }
+    .env-toggle {
+      padding: 5px 10px; background: transparent;
+      border: none; color: #64748b;
+      font-size: 11px; font-weight: 700;
+      cursor: pointer; transition: all .15s;
+    }
+    .env-toggle:active { transform: scale(.94); }
+    .env-toggle.active {
+      background: linear-gradient(135deg, rgba(99,102,241,.2), rgba(168,85,247,.14));
+      color: #c7d2fe;
+    }
+    .env-date-input {
+      background: #0f172a; color: #e2e8f0;
+      border: 1px solid #334155; border-radius: 6px;
+      padding: 4px 8px; font-size: 11px;
+      color-scheme: dark;
+    }
+
     /* ── Card de envasado v2 (limpio, producto final destacado) ── */
     .env-card-v2 {
       background: #0f172a;
@@ -6892,9 +6939,39 @@
 
       <!-- Envasados tab -->
       <div id="almPanelEnv" class="hidden">
+        <!-- Filtros modernos -->
+        <div class="env-filters mb-3">
+          <!-- Pills de rango rápido -->
+          <div class="env-pills flex items-center gap-1.5 flex-wrap">
+            <button class="env-pill active" data-rango="hoy"    onclick="MOS.envSetRango('hoy')">Hoy</button>
+            <button class="env-pill"        data-rango="ayer"   onclick="MOS.envSetRango('ayer')">Ayer</button>
+            <button class="env-pill"        data-rango="semana" onclick="MOS.envSetRango('semana')">Semana</button>
+            <button class="env-pill"        data-rango="mes"    onclick="MOS.envSetRango('mes')">Mes</button>
+            <button class="env-pill"        data-rango="todo"   onclick="MOS.envSetRango('todo')">Todo</button>
+            <button class="env-pill env-pill-custom" data-rango="custom" onclick="MOS.envToggleCustom()" title="Rango personalizado">📅</button>
+          </div>
+          <!-- Selector operador + toggle agrupación -->
+          <div class="flex items-center gap-2 mt-2 flex-wrap">
+            <select id="envFiltroOperador" class="env-select" onchange="MOS.envSetOperador(this.value)">
+              <option value="">👤 Todos los operadores</option>
+            </select>
+            <div class="env-toggle-group flex">
+              <button class="env-toggle active" data-agrupar="fecha"    onclick="MOS.envSetAgrupar('fecha')">Por fecha</button>
+              <button class="env-toggle"        data-agrupar="operador" onclick="MOS.envSetAgrupar('operador')">Por operador</button>
+            </div>
+            <button class="btn-ghost text-xs px-2 py-1.5 ml-auto" onclick="MOS.refresh()" title="Recargar">↺</button>
+          </div>
+          <!-- Rango personalizado (oculto por default) -->
+          <div id="envCustomRange" class="hidden mt-2 flex items-center gap-2 flex-wrap">
+            <label class="text-xs text-slate-400">Desde</label>
+            <input type="date" id="envDesde" class="env-date-input" onchange="MOS.envSetCustom()"/>
+            <label class="text-xs text-slate-400">Hasta</label>
+            <input type="date" id="envHasta" class="env-date-input" onchange="MOS.envSetCustom()"/>
+          </div>
+        </div>
+
         <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
           <div class="text-xs text-slate-500" id="envSummary">—</div>
-          <button class="btn-ghost text-xs px-3 py-1.5" onclick="MOS.refresh()">↺</button>
         </div>
         <div id="envList" class="space-y-3">
           <div class="text-center py-8 text-slate-500 text-sm">Cargando...</div>

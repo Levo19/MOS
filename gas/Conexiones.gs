@@ -134,7 +134,23 @@ function getMermasWarehouse(params) {
 function getEnvasadosWarehouse(params) {
   try {
     var rows = _sheetToObjectsLocal(_abrirWhSheet('ENVASADOS'));
-    if (params && params.limit) rows = rows.slice(-parseInt(params.limit));
+    params = params || {};
+    // Filtros de fecha (yyyy-MM-dd)
+    if (params.desde) {
+      rows = rows.filter(function(r){ return String(r.fecha || '').substring(0,10) >= String(params.desde); });
+    }
+    if (params.hasta) {
+      rows = rows.filter(function(r){ return String(r.fecha || '').substring(0,10) <= String(params.hasta); });
+    }
+    if (params.usuario) {
+      var u = String(params.usuario).toLowerCase().trim();
+      rows = rows.filter(function(r){ return String(r.usuario || '').toLowerCase().trim() === u; });
+    }
+    // Más recientes primero (ENVASADOS suele venir cronológico, invertimos)
+    rows.sort(function(a, b){ return String(b.fecha || '').localeCompare(String(a.fecha || '')); });
+    // Limit (default 500, antes 50 truncaba mucho)
+    var limit = parseInt(params.limit) || 500;
+    if (rows.length > limit) rows = rows.slice(0, limit);
     return { ok: true, data: rows };
   } catch(e) {
     return { ok: false, error: e.message };
