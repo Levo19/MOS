@@ -687,9 +687,16 @@ function imprimirTicketZCierre(params) {
   tVirtual  = Math.round(tVirtual  * 100) / 100;
   var tCredito   = creditos.reduce(function(s,t){return s+t.total;},0);
   var tAnulTotal = anulados.reduce(function(s,t){return s+t.total;},0);
-  var tEntradas  = extras.filter(function(x){return x.tipo==='INGRESO';}).reduce(function(s,x){return s+x.monto;},0);
-  var tSalidas   = extras.filter(function(x){return x.tipo==='EGRESO'; }).reduce(function(s,x){return s+x.monto;},0);
-  var montoFinal = caja.montoInicial + tEfectivo + tEntradas - tSalidas;
+  // Extras EFE (afectan caja física) usan === estricto: solo 'INGRESO'/'EGRESO'.
+  // Extras VIR (no tocan caja física) usan startsWith para incluir
+  // 'INGRESO_VIRTUAL'/'EGRESO_VIRTUAL' (Yape/Plin/Transferencia).
+  var tEntradas        = extras.filter(function(x){return x.tipo==='INGRESO';        }).reduce(function(s,x){return s+x.monto;},0);
+  var tSalidas         = extras.filter(function(x){return x.tipo==='EGRESO';         }).reduce(function(s,x){return s+x.monto;},0);
+  var tEntradasVirtual = extras.filter(function(x){return x.tipo==='INGRESO_VIRTUAL';}).reduce(function(s,x){return s+x.monto;},0);
+  var tSalidasVirtual  = extras.filter(function(x){return x.tipo==='EGRESO_VIRTUAL'; }).reduce(function(s,x){return s+x.monto;},0);
+  var montoFinal       = caja.montoInicial + tEfectivo + tEntradas - tSalidas;
+  // Virtual final = ventas virtuales + neto extras virtuales
+  var virtualFinal     = tVirtual + tEntradasVirtual - tSalidasVirtual;
 
   var TLBL = { 'NOTA_DE_VENTA':'Notas V.', 'BOLETA':'Boletas ', 'FACTURA':'Facturas' };
   var corrPorTipo = {};
@@ -775,10 +782,10 @@ function imprimirTicketZCierre(params) {
   txt += '\x1b\x21\x30S/ ' + montoFinal.toFixed(2) + '\x1b\x21\x00\n\n';
   txt += 'EFECTIVO EN CAJON\n';
   txt += '\x1b\x61\x00';
-  if (tVirtual > 0) {
+  if (virtualFinal > 0) {
     txt += SEPd;
     txt += '\x1b\x61\x01VIRTUAL RECIBIDO:\n';
-    txt += '\x1b\x21\x10S/ ' + tVirtual.toFixed(2) + '\x1b\x21\x00\n';
+    txt += '\x1b\x21\x10S/ ' + virtualFinal.toFixed(2) + '\x1b\x21\x00\n';
     txt += '\x1b\x61\x00';
   }
 
@@ -788,11 +795,15 @@ function imprimirTicketZCierre(params) {
   txt += SEPd;
   txt += _sRow('Base inicial',    caja.montoInicial, 0);
   txt += _sRow('Ventas cobradas', tEfectivo,         tVirtual);
-  if (tEntradas > 0 || tSalidas > 0)
-    txt += _sRow('Extras neto',   tEntradas-tSalidas, 0);
+  // Extras neto: ahora muestra ambas columnas (antes virtual estaba en 0).
+  var netoEfeExtras = tEntradas - tSalidas;
+  var netoVirExtras = tEntradasVirtual - tSalidasVirtual;
+  if (netoEfeExtras !== 0 || netoVirExtras !== 0)
+    txt += _sRow('Extras neto',   netoEfeExtras, netoVirExtras);
   txt += SEPd;
   txt += '\x1b\x45\x01';
-  txt += _sRow('EFECTIVO FINAL',  montoFinal,        tVirtual);
+  // EFECTIVO FINAL ahora usa virtualFinal (incluye extras virtuales)
+  txt += _sRow('EFECTIVO FINAL',  montoFinal,        virtualFinal);
   txt += '\x1b\x45\x00';
   if (tCredito > 0) txt += '  +Credito pendiente: ' + _amtP(tCredito,8) + ' (no en caja)\n';
 
@@ -837,18 +848,29 @@ function imprimirTicketZCierre(params) {
   }
 
   // PARTE 7: EXTRAS
+  // Bug histórico: usaba ex.tipo === 'INGRESO' (estricto) → INGRESO_VIRTUAL
+  // caía al else y aparecía con signo negativo. Ahora usa startsWith para
+  // tratar INGRESO e INGRESO_VIRTUAL igual. Tag [EFE]/[VIR] desambigua tipo.
   txt += _sHdr('EXTRAS DEL TURNO (' + extras.length + ')');
   if (extras.length > 0) {
     extras.forEach(function(ex){
-      var mEx = ex.tipo==='INGRESO' ? parseFloat(ex.monto) : -parseFloat(ex.monto);
-      txt += (ex.tipo==='INGRESO'?'+':'-') + ' ' + _pEnd(_norm(ex.concepto),22) + _amtN(mEx,12) + '\n';
+      var isIng = String(ex.tipo || '').indexOf('INGRESO') === 0;
+      var isVir = String(ex.tipo || '').indexOf('_VIRTUAL') >= 0;
+      var mEx   = isIng ? parseFloat(ex.monto) : -parseFloat(ex.monto);
+      var pfx   = (isIng ? '+' : '-') + (isVir ? '[VIR]' : '[EFE]') + ' ';
+      var maxC  = 22 - 6; // 22 col descripción - 6 ocupados por '+[VIR] '
+      txt += pfx + _pEnd(_norm(ex.concepto), maxC) + _amtN(mEx, 12) + '\n';
       if (ex.obs) txt += _wrap(ex.obs, W, '  > ');
     });
     txt += SEPd;
-    if (tEntradas>0) txt += '+ INGRESOS       ' + _amtP(tEntradas,14) + '\n';
-    if (tSalidas>0)  txt += '- EGRESOS        ' + _amtN(-tSalidas,14) + '\n';
+    if (tEntradas        > 0) txt += '+ INGRESOS EFE   ' + _amtP(tEntradas,        14) + '\n';
+    if (tSalidas         > 0) txt += '- EGRESOS EFE    ' + _amtN(-tSalidas,        14) + '\n';
+    if (tEntradasVirtual > 0) txt += '+ INGRESOS VIR   ' + _amtP(tEntradasVirtual, 14) + '\n';
+    if (tSalidasVirtual  > 0) txt += '- EGRESOS VIR    ' + _amtN(-tSalidasVirtual, 14) + '\n';
     txt += '\x1b\x45\x01';
-    txt += '  NETO EXTRAS    ' + _amtN(tEntradas-tSalidas,14) + '\n';
+    txt += '  NETO EFE      ' + _amtN(tEntradas - tSalidas,               14) + '\n';
+    if (tEntradasVirtual > 0 || tSalidasVirtual > 0)
+      txt += '  NETO VIR      ' + _amtN(tEntradasVirtual - tSalidasVirtual, 14) + '\n';
     txt += '\x1b\x45\x00';
   } else {
     txt += '  Sin movimientos extra en este turno\n';
