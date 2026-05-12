@@ -19153,13 +19153,11 @@ const MOS = (() => {
               ${ev && ev.virtual ? '<span class="badge-rol badge-rol-default" title="Detectado del sistema">⚡ del sistema</span>' : ''}
               ${fuenteTag}
             </div>
-            ${esPOS && kpiTxt ? `<div class="text-xs text-slate-500 mb-1">${kpiTxt}</div>` : ''}
+            ${kpiTxt ? `<div class="text-xs text-slate-500 mb-1">${kpiTxt}</div>` : ''}
             <div class="flex items-center gap-2 flex-wrap">
-              ${esPOS
-                ? (evalCount > 0
-                    ? `<span class="audit-count-pill">${evalCount} auditoría${evalCount !== 1 ? 's' : ''} hoy</span>`
-                    : `<span class="audit-count-pill" style="background:rgba(245,158,11,.12);color:#fbbf24;border-color:rgba(245,158,11,.3)">⚠ Sin auditar</span>`)
-                : ''}
+              ${evalCount > 0
+                ? `<span class="audit-count-pill">${evalCount} auditoría${evalCount !== 1 ? 's' : ''} hoy</span>`
+                : `<span class="audit-count-pill" style="background:rgba(245,158,11,.12);color:#fbbf24;border-color:rgba(245,158,11,.3)">⚠ Sin auditar</span>`}
               <span class="text-xs text-slate-400">Pago día: <strong class="text-amber-400">S/ ${parseFloat(totalDia).toFixed(2)}</strong></span>
             </div>
           </div>
@@ -20239,9 +20237,15 @@ const MOS = (() => {
       return `Ventas S/${(k.ventasReales || 0).toFixed(2)} · ${auditTxt}`;
     }
     if (rol === 'ENVASADOR') {
-      return `Envasados ${k.envasados || 0} uds · ${auditTxt}`;
+      // Envasador: unidades producidas + eficiencia (más informativo que aud.)
+      const efic = (k.eficienciaPromedio != null) ? k.eficienciaPromedio
+                 : (k.eficienciaPct != null)     ? k.eficienciaPct : null;
+      return efic != null
+        ? `Envasados ${k.envasados || 0} uds · efic ${parseFloat(efic).toFixed(0)}%`
+        : `Envasados ${k.envasados || 0} uds`;
     }
     if (rol === 'ALMACENERO') {
+      // Almacenero: guías + auditorías de stock
       return `${k.guias || 0} guías · ${auditTxt}`;
     }
     return auditTxt;
@@ -20273,11 +20277,21 @@ const MOS = (() => {
       r = _evalState.resumenes.find(x => x.idPersonal === idPersonal);
     }
     if (!r) { toast('Personal no encontrado', 'error'); return; }
-    $('auditTitle').textContent = '🎯 Auditar · ' + r.nombre;
+    // Título contextual: emoji + área según rol
+    const rolU = String(r.rol || '').toUpperCase();
+    const tituloIco = (rolU === 'CAJERO' || rolU === 'VENDEDOR') ? '🛒'
+                    : rolU === 'ALMACENERO' ? '🏭'
+                    : rolU === 'ENVASADOR'  ? '🏷'
+                    : '🎯';
+    const areaApp = (rolU === 'CAJERO' || rolU === 'VENDEDOR') ? 'MosExpress · POS'
+                  : (rolU === 'ALMACENERO' || rolU === 'ENVASADOR') ? 'warehouseMos · Almacén'
+                  : '';
+    $('auditTitle').textContent = `${tituloIco} Auditar ${r.rol || ''} · ${r.nombre}`;
     const evalCount = r.evaluacionesCount || 0;
-    $('auditSubtitle').textContent = evalCount > 0
-      ? `${r.rol} · ${evalCount} auditoría${evalCount !== 1 ? 's' : ''} hoy · continuando...`
-      : `${r.rol} · primera auditoría del día`;
+    const contexto = evalCount > 0
+      ? `${evalCount} auditoría${evalCount !== 1 ? 's' : ''} hoy · continuando...`
+      : 'primera auditoría del día';
+    $('auditSubtitle').textContent = areaApp ? `${areaApp} · ${contexto}` : contexto;
     $('auditIdPersonal').value = r.idPersonal;
     $('auditRol').value = r.rol || '';
     $('auditComentario').value = '';
@@ -20318,15 +20332,32 @@ const MOS = (() => {
     const rol = String(r.rol || '').toUpperCase();
     const auditMeta = k.metaAuditorias || 30;
     let rows = [];
+
     if (rol === 'CAJERO' || rol === 'VENDEDOR') {
-      rows.push(_kpiRow('Ventas del día', `S/${(k.ventasReales || 0).toFixed(2)}`, k.ventasPct || 0));
+      // POS: ventas + auditorías de productos vendidos
+      rows.push(_kpiRow('🛒 Ventas del día',         `S/${(k.ventasReales || 0).toFixed(2)}`, k.ventasPct || 0));
+      rows.push(_kpiRow('📋 Auditorías de productos', `${k.auditoriasHechas || 0}/${auditMeta}`, k.auditPct || 0));
     } else if (rol === 'ENVASADOR') {
-      rows.push(_kpiRow('Unidades envasadas', `${k.envasados || 0}`, k.ventasPct || 0));
+      // Envasador: unidades producidas + eficiencia (real vs esperado) + mermas
+      const efic = (k.eficienciaPromedio != null) ? k.eficienciaPromedio
+                 : (k.eficienciaPct != null)     ? k.eficienciaPct : 0;
+      rows.push(_kpiRow('🏷 Unidades envasadas',    `${k.envasados || 0}`,              k.ventasPct || 0));
+      rows.push(_kpiRow('⚡ Eficiencia promedio',   `${parseFloat(efic).toFixed(1)}%`,  parseFloat(efic) || 0));
+      if (k.mermaPct != null) {
+        rows.push(_kpiRow('🗑 Merma %', `${parseFloat(k.mermaPct).toFixed(1)}%`, Math.min(100, parseFloat(k.mermaPct) || 0)));
+      }
     } else if (rol === 'ALMACENERO') {
-      rows.push(_kpiRow('Guías procesadas', `${k.guias || 0}`, k.ventasPct || 0));
+      // Almacenero: guías procesadas + auditorías de stock + diferencias
+      rows.push(_kpiRow('📦 Guías procesadas',          `${k.guias || 0}`,                        k.ventasPct || 0));
+      rows.push(_kpiRow('🕵 Auditorías de inventario',  `${k.auditoriasHechas || 0}/${auditMeta}`, k.auditPct || 0));
+      if (k.diferenciasDetectadas != null) {
+        rows.push(_kpiRow('⚠ Diferencias detectadas', `${k.diferenciasDetectadas || 0}`, 0));
+      }
+    } else {
+      rows.push(_kpiRow('Actividad del día', `${k.auditoriasHechas || 0}/${auditMeta}`, k.auditPct || 0));
     }
-    rows.push(_kpiRow('Auditorías de productos', `${k.auditoriasHechas || 0}/${auditMeta}`, k.auditPct || 0));
-    rows.push(_kpiRow('Score acumulado del día', `${r.scoreFinal || 0}%`, r.scoreFinal || 0));
+
+    rows.push(_kpiRow('🎯 Score acumulado', `${r.scoreFinal || 0}%`, r.scoreFinal || 0));
     cont.innerHTML = rows.join('');
   }
 
