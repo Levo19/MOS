@@ -9073,6 +9073,297 @@
   </div>
 </div>
 
+<!-- ══ Modal: Crear Producto Nuevo MANUAL (admin/master) ═════════════════ -->
+<!-- Solo visible para admin/master. Inserta una fila en PRODUCTO_NUEVO (WH)
+     con idGuia vacío → NO toca GUIA_DETALLE ni stock. Aparece en la misma
+     lista PN pendientes y se procesa con el flujo de revisión normal. -->
+<style>
+  /* Botón "+ Agregar producto nuevo manual" del banner PN ----------------- */
+  .pn-add-cta {
+    width:100%;
+    padding:11px 14px;
+    border-radius:11px;
+    background:linear-gradient(135deg,#92400e 0%,#d97706 55%,#f59e0b 100%);
+    color:#fff8e1;
+    border:1px solid rgba(245,158,11,.45);
+    font-weight:800;
+    font-size:13px;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+    cursor:pointer;
+    position:relative;
+    overflow:hidden;
+    display:flex;align-items:center;gap:10px;justify-content:center;
+    transition:transform .18s ease, box-shadow .25s ease, filter .2s ease;
+    box-shadow:0 2px 12px rgba(180,83,9,.18);
+    -webkit-tap-highlight-color:transparent;
+  }
+  .pn-add-cta:hover {
+    transform:translateY(-2px);
+    box-shadow:0 8px 24px rgba(245,158,11,.45), 0 0 0 1px rgba(252,211,77,.4) inset;
+    filter:brightness(1.08);
+  }
+  .pn-add-cta:active { transform:translateY(0) scale(.98); }
+  .pn-add-cta::before {
+    content:""; position:absolute; inset:0;
+    background:linear-gradient(120deg,transparent 30%, rgba(255,255,255,.22) 50%, transparent 70%);
+    transform:translateX(-100%);
+    transition:transform .6s ease;
+  }
+  .pn-add-cta:hover::before { transform:translateX(100%); }
+  .pn-add-cta .plus-ico {
+    display:inline-flex; align-items:center; justify-content:center;
+    width:22px; height:22px; border-radius:50%;
+    background:rgba(255,255,255,.18); font-size:14px; font-weight:900;
+    border:1px solid rgba(255,255,255,.3);
+  }
+
+  /* Modal crear PN ------------------------------------------------------- */
+  @keyframes cpnBackdrop { from{opacity:0;backdrop-filter:blur(0)} to{opacity:1;backdrop-filter:blur(8px)} }
+  @keyframes cpnBoxIn   { 0%{opacity:0;transform:scale(.85) translateY(8px)} 60%{opacity:1;transform:scale(1.02)} 100%{transform:scale(1)} }
+  @keyframes cpnHeaderShimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+  @keyframes cpnFieldGlow { 0%{box-shadow:0 0 0 0 rgba(245,158,11,.45)} 70%{box-shadow:0 0 0 6px rgba(245,158,11,0)} 100%{box-shadow:0 0 0 0 rgba(245,158,11,0)} }
+  @keyframes cpnSubmitPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.04)} }
+  @keyframes cpnFotoIn { from{opacity:0;transform:scale(.92)} to{opacity:1;transform:scale(1)} }
+
+  #modalCrearPN.modal-backdrop.open {
+    background:rgba(0,0,0,.78);
+    backdrop-filter:blur(8px);
+    animation:cpnBackdrop .22s ease-out;
+  }
+  #modalCrearPN .modal-box {
+    background:linear-gradient(180deg,#0f172a 0%,#0a1325 100%);
+    border:1px solid rgba(245,158,11,.22);
+    max-width:520px;
+    box-shadow:0 30px 80px rgba(0,0,0,.5), 0 0 0 1px rgba(245,158,11,.08);
+    animation:cpnBoxIn .35s cubic-bezier(.2,.9,.3,1.15);
+  }
+  .cpn-header {
+    padding:16px 18px;
+    background:linear-gradient(135deg,rgba(146,64,14,.25),rgba(217,119,6,.10) 50%,transparent);
+    border-bottom:1px solid rgba(245,158,11,.18);
+    display:flex; align-items:center; gap:12px;
+    position:relative; overflow:hidden;
+  }
+  .cpn-header::after {
+    content:""; position:absolute; inset:0;
+    background:linear-gradient(110deg, transparent 30%, rgba(252,211,77,.25) 50%, transparent 70%);
+    background-size:200% 100%;
+    background-position:-200% 0;
+    animation:cpnHeaderShimmer 1.4s ease-out .15s 1 forwards;
+    pointer-events:none;
+  }
+  .cpn-header-icon {
+    width:42px; height:42px; border-radius:12px;
+    background:linear-gradient(135deg,#92400e,#f59e0b);
+    display:flex;align-items:center;justify-content:center;
+    font-size:22px; flex-shrink:0;
+    box-shadow:0 6px 18px rgba(245,158,11,.35);
+  }
+  .cpn-header h2 { font-size:15px; font-weight:800; color:#fde68a; letter-spacing:.01em; }
+  .cpn-header p { font-size:11px; color:#94a3b8; margin-top:1px; }
+
+  .cpn-body { padding:14px 18px 6px; display:flex; flex-direction:column; gap:13px; }
+  .cpn-label { font-size:10px; font-weight:800; color:#94a3b8; text-transform:uppercase; letter-spacing:.07em; margin-bottom:6px; display:flex; align-items:center; justify-content:space-between; }
+  .cpn-field-wrap { position:relative; }
+  .cpn-input, .cpn-textarea {
+    width:100%; box-sizing:border-box;
+    background:#0a1322; border:1px solid #1f2a3d; border-radius:10px;
+    padding:11px 13px; color:#f1f5f9; font-size:14px;
+    transition:border-color .18s, box-shadow .22s, background .2s;
+    outline:none;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .cpn-input:focus, .cpn-textarea:focus {
+    border-color:#f59e0b;
+    background:#0c172a;
+    animation:cpnFieldGlow 1.1s ease-out;
+  }
+  .cpn-input.cpn-codigo {
+    font-family:ui-monospace,monospace; font-weight:700;
+    color:#fbbf24; letter-spacing:.04em;
+  }
+  .cpn-textarea { resize:none; }
+
+  /* Toggle auto-gen NLEV */
+  .cpn-autogen-wrap { display:flex; align-items:center; gap:6px; }
+  .cpn-autogen-lbl { font-size:10px; color:#64748b; font-weight:600; }
+  .cpn-toggle {
+    width:38px; height:20px; border-radius:11px; background:#334155;
+    position:relative; cursor:pointer; transition:background .2s;
+    flex-shrink:0;
+  }
+  .cpn-toggle.on { background:linear-gradient(90deg,#d97706,#f59e0b); }
+  .cpn-toggle-thumb {
+    position:absolute; top:2px; left:2px;
+    width:16px; height:16px; border-radius:50%;
+    background:#64748b; transition:left .2s, background .2s, box-shadow .2s;
+  }
+  .cpn-toggle.on .cpn-toggle-thumb {
+    left:20px; background:#fff;
+    box-shadow:0 0 8px rgba(252,211,77,.6);
+  }
+
+  /* Foto */
+  .cpn-foto-zone {
+    border:2px dashed #334155; border-radius:11px; padding:14px;
+    background:#0a1322; cursor:pointer; transition:all .18s;
+    display:flex; align-items:center; justify-content:center; gap:9px;
+    color:#64748b; font-size:13px; font-weight:600;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .cpn-foto-zone:hover { border-color:#d97706; color:#fbbf24; background:rgba(245,158,11,.05); }
+  .cpn-foto-preview { display:none; margin-bottom:8px; position:relative; }
+  .cpn-foto-preview.show { display:block; animation:cpnFotoIn .28s ease-out; }
+  .cpn-foto-preview img {
+    width:100%; height:160px; object-fit:cover;
+    border-radius:11px; border:1px solid rgba(245,158,11,.3);
+  }
+  .cpn-foto-preview .cpn-foto-check {
+    position:absolute; top:8px; right:8px;
+    width:26px; height:26px; border-radius:50%;
+    background:#16a34a; color:#fff;
+    display:flex; align-items:center; justify-content:center;
+    font-weight:900; font-size:14px;
+    box-shadow:0 4px 12px rgba(22,163,74,.45);
+  }
+  .cpn-foto-preview .cpn-foto-remove {
+    position:absolute; top:8px; left:8px;
+    width:26px; height:26px; border-radius:50%;
+    background:rgba(0,0,0,.55); color:#fff; border:none;
+    cursor:pointer; font-size:14px;
+    display:flex; align-items:center; justify-content:center;
+  }
+
+  /* Cantidad: stepper [-] N [+] */
+  .cpn-stepper { display:flex; align-items:stretch; gap:0; background:#0a1322; border:1px solid #1f2a3d; border-radius:10px; overflow:hidden; }
+  .cpn-stepper-btn {
+    width:42px; background:transparent; border:none; color:#fbbf24;
+    font-size:18px; font-weight:900; cursor:pointer;
+    transition:background .15s, transform .12s;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .cpn-stepper-btn:hover { background:rgba(245,158,11,.12); }
+  .cpn-stepper-btn:active { transform:scale(.9); }
+  .cpn-stepper input {
+    flex:1; text-align:center; background:transparent; border:none; outline:none;
+    color:#f1f5f9; font-size:15px; font-weight:700; min-width:0;
+  }
+
+  /* Footer + submit */
+  .cpn-footer {
+    padding:14px 18px; border-top:1px solid #1e293b;
+    display:flex; gap:10px; align-items:center;
+    background:rgba(10,19,34,.6);
+  }
+  .cpn-submit {
+    flex:2; padding:11px 16px; border:none; border-radius:11px;
+    background:linear-gradient(135deg,#d97706 0%,#f59e0b 55%,#fbbf24 100%);
+    color:#1c0f00; font-weight:900; font-size:14px;
+    letter-spacing:.05em; text-transform:uppercase; cursor:pointer;
+    box-shadow:0 8px 22px rgba(245,158,11,.35);
+    transition:transform .15s, filter .2s, box-shadow .2s;
+    position:relative; overflow:hidden;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .cpn-submit:hover:not(:disabled) {
+    transform:translateY(-2px);
+    box-shadow:0 14px 32px rgba(245,158,11,.5);
+    filter:brightness(1.07);
+  }
+  .cpn-submit:active:not(:disabled) { transform:translateY(0) scale(.97); }
+  .cpn-submit:disabled { opacity:.55; cursor:not-allowed; }
+  .cpn-submit.cpn-busy { animation:cpnSubmitPulse 1s ease-in-out infinite; }
+  .cpn-submit-spinner { display:inline-block; width:14px; height:14px; border-radius:50%; border:2px solid rgba(28,15,0,.25); border-top-color:#1c0f00; animation:spin .8s linear infinite; vertical-align:-2px; margin-right:6px; }
+  .cpn-err {
+    font-size:12px; color:#fca5a5; padding:8px 12px; border-radius:8px;
+    background:rgba(239,68,68,.08); border:1px solid rgba(239,68,68,.2);
+    margin:0 18px;
+  }
+  .cpn-err:empty { display:none; }
+</style>
+<div class="modal-backdrop hidden" id="modalCrearPN" onclick="if(MOS._validBackdropClose(event,this))MOS.cerrarCrearPNManual()">
+  <div class="modal-box p-0" style="display:flex;flex-direction:column;max-height:94vh">
+    <div class="cpn-header">
+      <div class="cpn-header-icon">✨</div>
+      <div class="flex-1 min-w-0">
+        <h2>Producto nuevo manual</h2>
+        <p>Registrar para revisión posterior — no afecta stock</p>
+      </div>
+      <button onclick="MOS.cerrarCrearPNManual()" class="modal-close-x">×</button>
+    </div>
+
+    <div class="cpn-body overflow-y-auto" style="flex:1">
+
+      <!-- Código de barras + auto-gen -->
+      <div>
+        <div class="cpn-label">
+          Código de barras
+          <div class="cpn-autogen-wrap">
+            <span class="cpn-autogen-lbl">Auto NLEV</span>
+            <div id="cpnAutogenToggle" class="cpn-toggle" onclick="MOS._cpnToggleAutogen()">
+              <div class="cpn-toggle-thumb"></div>
+            </div>
+          </div>
+        </div>
+        <div class="cpn-field-wrap">
+          <input id="cpnCodigo" class="cpn-input cpn-codigo" placeholder="Escribe o escanea el código…" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+
+      <!-- Foto -->
+      <div>
+        <div class="cpn-label">Foto del producto</div>
+        <div id="cpnFotoPreview" class="cpn-foto-preview">
+          <img id="cpnFotoImg" src="" alt="">
+          <button type="button" class="cpn-foto-remove" onclick="MOS._cpnRemoverFoto()" title="Quitar foto">×</button>
+          <div class="cpn-foto-check">✓</div>
+        </div>
+        <div class="cpn-foto-zone" onclick="document.getElementById('cpnFotoInput').click()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+          <span id="cpnFotoBtn">Tomar / elegir foto</span>
+        </div>
+        <input type="file" id="cpnFotoInput" accept="image/*" capture="environment"
+               style="display:none" onchange="MOS._cpnFotoSeleccionada(this)">
+      </div>
+
+      <!-- Cantidad -->
+      <div>
+        <div class="cpn-label">Cantidad recibida</div>
+        <div class="cpn-stepper">
+          <button type="button" class="cpn-stepper-btn" onclick="MOS._cpnStep(-1)">−</button>
+          <input id="cpnCantidad" type="number" min="0" step="1" value="1" inputmode="numeric">
+          <button type="button" class="cpn-stepper-btn" onclick="MOS._cpnStep(1)">+</button>
+        </div>
+      </div>
+
+      <!-- Fecha vencimiento -->
+      <div>
+        <div class="cpn-label">Fecha de vencimiento <span style="color:#475569;font-weight:600;text-transform:none;letter-spacing:0">(opcional)</span></div>
+        <input id="cpnFechaVenc" type="date" class="cpn-input">
+      </div>
+
+      <!-- Descripción / observaciones -->
+      <div>
+        <div class="cpn-label">Descripción / observaciones</div>
+        <textarea id="cpnObservaciones" rows="2" class="cpn-textarea" placeholder="Ej: caja grande color azul sin etiqueta, código mal escaneado en guía X…"></textarea>
+      </div>
+
+    </div>
+
+    <div id="cpnError" class="cpn-err" style="margin-bottom:8px"></div>
+    <div class="cpn-footer">
+      <button onclick="MOS.cerrarCrearPNManual()" class="btn-ghost flex-1">Cancelar</button>
+      <button id="cpnSubmit" class="cpn-submit" onclick="MOS.crearPNManualSubmit()">
+        <span id="cpnSubmitLbl">✨ Registrar ✨</span>
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- Producto Modal -->
 <!-- ═══════════════════════════════════════════════════════
      MODAL: LOG DE CAMBIOS DE PRODUCTOS (master)

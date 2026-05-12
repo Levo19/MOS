@@ -41,5 +41,9 @@ const API = (() => {
     post: (action, p = {}) => _fetch('POST', { action, ...p }),
     getProductosNuevosWH: (p = {}) => _fetch('GET',  { action: 'getProductosNuevosWH', ...p }),
     lanzarProductoNuevo:  (p = {}) => _fetch('POST', { action: 'lanzarProductoNuevo',  ...p }),
+    // Crea un PN manualmente desde MOS (admin/master). idGuia vacío → WH no
+    // escribe en GUIA_DETALLE (no afecta stock ni guías). Solo encola en
+    // PRODUCTO_NUEVO con estado PENDIENTE para revisión normal.
+    crearPNManual:        (p = {}) => _fetch('POST', { action: 'forwardWHAction', whAction: 'registrarProductoNuevo', idGuia: '', ...p }),
   };
 })();

@@ -1850,41 +1850,70 @@ const MOS = (() => {
     if (e.key === 'Escape') closeImagePreview();
   }
 
+  // ¿El usuario actual es admin o master? Lo usa el banner PN para mostrar
+  // u ocultar el botón "Agregar producto nuevo manual" (solo permisos altos).
+  function _esAdminOMaster() {
+    const rol = String(S.session?.rol || '').toUpperCase();
+    return rol === 'ADMIN' || rol === 'ADMINISTRADOR' || rol === 'MASTER';
+  }
+
   function renderPNBanner() {
     const banner = $('pnBannerCat');
     if (!banner) return;
     const lista = S.pnPendientes || [];
-    if (!lista.length) { banner.style.display = 'none'; banner.innerHTML = ''; return; }
+    const esAdmin = _esAdminOMaster();
+    // Si NO hay pendientes Y NO es admin → ocultar. Si es admin, mantenerlo
+    // visible (aunque vacío) para que pueda usar "Agregar manual".
+    if (!lista.length && !esAdmin) { banner.style.display = 'none'; banner.innerHTML = ''; return; }
 
-    const open = _pnBannerExpandido();
+    const open = _pnBannerExpandido() || (!lista.length && esAdmin); // si vacío y admin, abierto por default
     banner.style.display = 'block';
+
+    const addBtnHtml = esAdmin ? `
+      <button onclick="event.stopPropagation();MOS.abrirCrearPNManual()" class="pn-add-cta" style="margin-bottom:10px">
+        <span class="plus-ico">+</span>
+        <span>AGREGAR PRODUCTO NUEVO MANUAL</span>
+      </button>` : '';
+
+    const headerLabel = lista.length
+      ? `Aún faltan registrar ${lista.length} producto${lista.length === 1 ? '' : 's'}`
+      : `Productos nuevos · sin pendientes`;
+    const headerBadge = lista.length
+      ? `<span style="background:#92400e;color:#fde68a;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px">N ${lista.length}</span>`
+      : `<span style="background:#1e293b;color:#94a3b8;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px">✓ 0</span>`;
+
+    const listaHtml = lista.length ? lista.map(pn => {
+      const guiaLabel = pn.guia ? `Guía ${pn.guia.tipo || ''} · ${pn.guia.fecha || ''}` : `Guía ${pn.idGuia || '— manual'}`;
+      const safeFoto = (pn.foto || '').replace(/'/g, "\\'");
+      const safeDesc = (pn.descripcion || '').replace(/'/g, "\\'");
+      const fotoHtml = pn.foto
+        ? `<img src="${pn.foto}" onclick="event.stopPropagation();MOS.openImagePreview('${safeFoto}','${safeDesc}')" style="width:42px;height:42px;border-radius:8px;object-fit:cover;flex-shrink:0;cursor:zoom-in" title="Click para ampliar">`
+        : `<div style="width:42px;height:42px;border-radius:8px;background:#1e293b;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px">📦</div>`;
+      return `<div style="display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.2);border-radius:8px;padding:8px 10px">
+        ${fotoHtml}
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;color:#f1f5f9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${pn.descripcion || '(sin nombre)'}</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:1px">${pn.codigoBarra || 'sin código'} · ${pn.marca || ''}</div>
+          <div style="font-size:11px;color:#64748b">${guiaLabel}</div>
+        </div>
+        <button onclick="MOS.abrirModalPN('${pn.idProductoNuevo}')" style="flex-shrink:0;background:#b45309;color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">Revisar</button>
+      </div>`;
+    }).join('') : (esAdmin
+      ? `<div style="font-size:12px;color:#64748b;padding:6px 4px;font-style:italic">No hay pendientes. Puedes registrar manualmente con el botón de arriba.</div>`
+      : '');
+
     banner.innerHTML = `
       <div style="border:1px solid rgba(217,119,6,.35);background:rgba(120,53,15,.12);border-radius:12px;padding:10px 12px;margin-bottom:4px">
         <div onclick="MOS.togglePNBanner()" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none">
-          <span style="background:#92400e;color:#fde68a;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px">N ${lista.length}</span>
-          <span style="font-size:13px;font-weight:700;color:#fcd34d;flex:1">Aún faltan registrar ${lista.length} producto${lista.length === 1 ? '' : 's'}</span>
+          ${headerBadge}
+          <span style="font-size:13px;font-weight:700;color:#fcd34d;flex:1">${headerLabel}</span>
           <button onclick="event.stopPropagation();MOS.refreshPNManual()" title="Refrescar lista (ignora cache)" style="background:transparent;border:1px solid rgba(217,119,6,.4);color:#fbbf24;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer">↺</button>
           <span style="color:#fbbf24;font-size:14px;transition:transform .2s;transform:rotate(${open ? 180 : 0}deg);display:inline-block">▾</span>
         </div>
-        <div style="overflow:hidden;transition:max-height .25s ease-out;max-height:${open ? 800 : 0}px">
+        <div style="overflow:hidden;transition:max-height .25s ease-out;max-height:${open ? 1000 : 0}px">
           <div style="display:flex;flex-direction:column;gap:8px;padding-top:10px">
-          ${lista.map(pn => {
-            const guiaLabel = pn.guia ? `Guía ${pn.guia.tipo || ''} · ${pn.guia.fecha || ''}` : `Guía ${pn.idGuia}`;
-            const safeFoto = (pn.foto || '').replace(/'/g, "\\'");
-            const safeDesc = (pn.descripcion || '').replace(/'/g, "\\'");
-            const fotoHtml = pn.foto
-              ? `<img src="${pn.foto}" onclick="event.stopPropagation();MOS.openImagePreview('${safeFoto}','${safeDesc}')" style="width:42px;height:42px;border-radius:8px;object-fit:cover;flex-shrink:0;cursor:zoom-in" title="Click para ampliar">`
-              : `<div style="width:42px;height:42px;border-radius:8px;background:#1e293b;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px">📦</div>`;
-            return `<div style="display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.2);border-radius:8px;padding:8px 10px">
-              ${fotoHtml}
-              <div style="flex:1;min-width:0">
-                <div style="font-size:13px;font-weight:600;color:#f1f5f9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${pn.descripcion || '(sin nombre)'}</div>
-                <div style="font-size:11px;color:#94a3b8;margin-top:1px">${pn.codigoBarra || 'sin código'} · ${pn.marca || ''}</div>
-                <div style="font-size:11px;color:#64748b">${guiaLabel}</div>
-              </div>
-              <button onclick="MOS.abrirModalPN('${pn.idProductoNuevo}')" style="flex-shrink:0;background:#b45309;color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">Revisar</button>
-            </div>`;
-          }).join('')}
+          ${addBtnHtml}
+          ${listaHtml}
           </div>
         </div>
       </div>`;
@@ -1966,6 +1995,198 @@ const MOS = (() => {
   function cerrarModalPN() {
     const modal = $('modalPN');
     if (modal) { modal.classList.add('hidden'); modal.classList.remove('open'); }
+  }
+
+  // ── Modal: Crear Producto Nuevo MANUAL (admin/master) ──────────────────
+  // Inserta una fila en PRODUCTO_NUEVO de WH con idGuia vacío. No toca
+  // GUIA_DETALLE, no descuenta stock. Aparece en el banner PN y se procesa
+  // con el flujo de revisión normal (NUEVO/EQUIVALENTE/CORREGIR).
+  let _cpnCreating = false;        // lock anti-doble-click submit
+  let _cpnFotoBase64 = '';         // base64 de la foto seleccionada
+  let _cpnFotoMime   = 'image/jpeg';
+  let _cpnAutogen    = false;
+
+  function abrirCrearPNManual() {
+    if (!_esAdminOMaster()) {
+      toast('Solo administradores pueden agregar productos nuevos manualmente', 'warn');
+      return;
+    }
+    // Limpiar campos
+    const cod = $('cpnCodigo');      if (cod) cod.value = '';
+    const cant= $('cpnCantidad');    if (cant) cant.value = '1';
+    const fec = $('cpnFechaVenc');   if (fec) fec.value = '';
+    const obs = $('cpnObservaciones');if (obs) obs.value = '';
+    _cpnFotoBase64 = '';
+    const prev = $('cpnFotoPreview'); if (prev) prev.classList.remove('show');
+    const fotoBtn = $('cpnFotoBtn');  if (fotoBtn) fotoBtn.textContent = 'Tomar / elegir foto';
+    const fileInput = $('cpnFotoInput'); if (fileInput) fileInput.value = '';
+    _cpnAutogen = false;
+    const togg = $('cpnAutogenToggle');
+    if (togg) togg.classList.remove('on');
+    if (cod) cod.disabled = false;
+    const err = $('cpnError'); if (err) err.textContent = '';
+    const submit = $('cpnSubmit');
+    if (submit) {
+      submit.disabled = false;
+      submit.classList.remove('cpn-busy');
+      const lbl = $('cpnSubmitLbl');
+      if (lbl) lbl.innerHTML = '✨ Registrar ✨';
+    }
+
+    const modal = $('modalCrearPN');
+    if (modal) {
+      modal.classList.remove('hidden');
+      modal.classList.add('open');
+      // Focus al input de código tras la animación de apertura
+      setTimeout(() => { const c = $('cpnCodigo'); if (c) c.focus(); }, 280);
+    }
+  }
+
+  function cerrarCrearPNManual() {
+    if (_cpnCreating) return; // no cerrar a mitad del submit
+    const modal = $('modalCrearPN');
+    if (modal) { modal.classList.add('hidden'); modal.classList.remove('open'); }
+  }
+
+  function _cpnToggleAutogen() {
+    _cpnAutogen = !_cpnAutogen;
+    const togg = $('cpnAutogenToggle');
+    const cod  = $('cpnCodigo');
+    if (togg) togg.classList.toggle('on', _cpnAutogen);
+    if (cod) {
+      cod.disabled = _cpnAutogen;
+      cod.value = _cpnAutogen ? '(se generará NLEVxxxxx al guardar)' : '';
+      if (_cpnAutogen) cod.style.color = '#64748b';
+      else cod.style.color = '';
+    }
+  }
+
+  async function _cpnFotoSeleccionada(input) {
+    const file = input?.files?.[0];
+    if (!file) return;
+    if (file.size > 6 * 1024 * 1024) {
+      toast('Imagen demasiado grande (máx 6MB)', 'warn');
+      input.value = '';
+      return;
+    }
+    _cpnFotoMime = file.type || 'image/jpeg';
+    // Leer como dataURL → extraer base64
+    const reader = new FileReader();
+    reader.onload = e => {
+      const dataUrl = String(e.target?.result || '');
+      const comma = dataUrl.indexOf(',');
+      _cpnFotoBase64 = comma >= 0 ? dataUrl.substring(comma + 1) : '';
+      const img = $('cpnFotoImg');
+      const prev = $('cpnFotoPreview');
+      if (img) img.src = dataUrl;
+      if (prev) prev.classList.add('show');
+      const btnLbl = $('cpnFotoBtn');
+      if (btnLbl) btnLbl.textContent = 'Reemplazar foto';
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function _cpnRemoverFoto() {
+    _cpnFotoBase64 = '';
+    const prev = $('cpnFotoPreview'); if (prev) prev.classList.remove('show');
+    const img  = $('cpnFotoImg');     if (img) img.src = '';
+    const file = $('cpnFotoInput');   if (file) file.value = '';
+    const btnLbl = $('cpnFotoBtn');   if (btnLbl) btnLbl.textContent = 'Tomar / elegir foto';
+  }
+
+  function _cpnStep(delta) {
+    const inp = $('cpnCantidad');
+    if (!inp) return;
+    const cur = parseInt(inp.value, 10) || 0;
+    inp.value = String(Math.max(0, cur + delta));
+  }
+
+  function _cpnError(msg) {
+    const err = $('cpnError');
+    if (err) err.textContent = msg || '';
+  }
+
+  async function crearPNManualSubmit() {
+    if (_cpnCreating) return;
+    _cpnError('');
+
+    const codigo = _cpnAutogen ? '' : String($('cpnCodigo')?.value || '').trim();
+    const cant   = parseFloat($('cpnCantidad')?.value || '0') || 0;
+    const venc   = String($('cpnFechaVenc')?.value || '').trim();
+    const obs    = String($('cpnObservaciones')?.value || '').trim();
+
+    // Validación: requiere código (o auto-gen) Y al menos descripción para que
+    // tenga sentido revisarlo después. Cantidad puede ser 0 (registro sin recibir).
+    if (!_cpnAutogen && !codigo) { _cpnError('Escribe el código o activa Auto NLEV'); return; }
+    if (!obs) { _cpnError('La descripción / observación es obligatoria — es lo que verán los revisores'); return; }
+    if (cant < 0) { _cpnError('Cantidad inválida'); return; }
+
+    const usuario = S.session?.nombre || 'admin-mos';
+    const params = {
+      codigoBarra:     codigo,                    // vacío → WH genera NLEVxxxxx
+      descripcion:     obs,                       // observación es la descripción del PN
+      marca:           '',
+      cantidad:        cant,
+      fechaVencimiento: venc,
+      usuario:         usuario
+    };
+    if (_cpnFotoBase64) {
+      params.fotoBase64 = _cpnFotoBase64;
+      params.mimeType   = _cpnFotoMime;
+    }
+
+    // Lock + UI busy
+    _cpnCreating = true;
+    const submit = $('cpnSubmit');
+    const lbl    = $('cpnSubmitLbl');
+    if (submit) { submit.disabled = true; submit.classList.add('cpn-busy'); }
+    if (lbl) lbl.innerHTML = '<span class="cpn-submit-spinner"></span>Guardando…';
+
+    try {
+      const res = await API.crearPNManual(params);
+      if (!res || res.ok === false) {
+        const msg = (res && res.error) || 'No se pudo registrar';
+        throw new Error(msg);
+      }
+      const data = res.data || {};
+      const idPN = data.idProductoNuevo || ('PN' + Date.now());
+      const codFinal = data.codigoBarra || codigo;
+
+      // Optimista: meter el PN nuevo arriba de la lista local
+      const fotoUrlPreview = _cpnFotoBase64 ? ('data:' + _cpnFotoMime + ';base64,' + _cpnFotoBase64) : '';
+      const nuevoPN = {
+        idProductoNuevo: idPN,
+        idGuia:          '',
+        marca:           '',
+        descripcion:     obs,
+        codigoBarra:     codFinal,
+        cantidad:        cant,
+        fechaVencimiento: venc,
+        foto:            fotoUrlPreview,
+        estado:          'PENDIENTE',
+        usuario:         usuario,
+        fechaRegistro:   new Date().toISOString(),
+        guia:            null
+      };
+      S.pnPendientes = [nuevoPN, ...(S.pnPendientes || [])];
+      _pnSaveCache(S.pnPendientes);
+      _updatePNBadge();
+      try { localStorage.setItem('mos_pn_banner_open', '1'); } catch {}
+      renderPNBanner();
+
+      cerrarCrearPNManual();
+      toast('✨ Producto nuevo agregado — ' + (codFinal || '—'), 'ok', 3000);
+
+      // Refresh real en background para traer el registro definitivo desde WH
+      setTimeout(() => { _refreshPNPendientes(true).catch(()=>{}); }, 1500);
+    } catch (e) {
+      _cpnError(String(e?.message || e || 'Error al registrar'));
+      toast('No se pudo registrar el producto nuevo', 'danger', 4000);
+    } finally {
+      _cpnCreating = false;
+      if (submit) { submit.disabled = false; submit.classList.remove('cpn-busy'); }
+      if (lbl) lbl.innerHTML = '✨ Registrar ✨';
+    }
   }
 
   // Toggle sección según tipo (NUEVO / EQUIVALENTE / CORREGIR_CODIGO)
@@ -21304,6 +21525,9 @@ const MOS = (() => {
     abrirModalPN, cerrarModalPN, lanzarAProduccion, refreshPNManual,
     pnBuscarParaCorregir, pnSeleccionarParaCorregir,
     togglePNBanner, openImagePreview, closeImagePreview,
+    // PN manual (admin/master)
+    abrirCrearPNManual, cerrarCrearPNManual, crearPNManualSubmit,
+    _cpnToggleAutogen, _cpnFotoSeleccionada, _cpnRemoverFoto, _cpnStep,
     _validBackdropClose,
     pnSetTipo, pnAutogenBarcode, pnBuscarBase, pnSeleccionarBase,
     _pnCheckDuplicadoCodigo, _pnRecalcularMargen, _pnPrellenaEquiv,
