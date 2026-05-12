@@ -4003,6 +4003,37 @@
       50%      { box-shadow: 0 0 16px 2px rgba(16,185,129, 0.4); }
     }
 
+    /* Personal del Día — sub-grupos por área (POS / Almacén / Otros) */
+    .fin-pers-group {
+      margin-bottom: 14px;
+    }
+    .fin-pers-group:last-child { margin-bottom: 0; }
+    .fin-pers-group-hdr {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 4px 8px;
+      font-size: 11px; font-weight: 800;
+      color: #94a3b8;
+      text-transform: uppercase; letter-spacing: .08em;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+      margin-bottom: 8px;
+    }
+    .fin-pers-group-ico { font-size: 14px; }
+    .fin-pers-group-tit { flex: 1; color: #cbd5e1; }
+    .fin-pers-group-count {
+      font-size: 10px; font-weight: 700; color: #64748b;
+      background: rgba(30, 41, 59, 0.6);
+      padding: 2px 8px; border-radius: 10px;
+    }
+    .fin-pers-group-sub {
+      font-size: 11px; font-weight: 700; color: #fbbf24;
+    }
+    .fin-pers-group[data-area="POS"]     .fin-pers-group-tit { color: #93c5fd; }
+    .fin-pers-group[data-area="ALMACEN"] .fin-pers-group-tit { color: #fcd34d; }
+    .fin-pers-group[data-area="OTRO"]    .fin-pers-group-tit { color: #cbd5e1; }
+    .fin-pers-group-list {
+      display: grid; gap: 8px;
+    }
+
     /* Personal del Día — indicador online en avatar (dot verde pulsante) */
     .fin-pers-avatar-wrap.fin-pers-avatar-live {
       animation: finPersAvatarBreath 2.4s ease-in-out infinite;

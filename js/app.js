@@ -18855,12 +18855,18 @@ const MOS = (() => {
     });
   }
 
+  // Clasifica rol en POS (cajero/vendedor) vs ALMACEN (almacenero/envasador) vs OTRO
+  function _finClasificarRol(rol) {
+    const r = String(rol || '').toUpperCase().trim();
+    if (r === 'CAJERO' || r === 'VENDEDOR') return 'POS';
+    if (r === 'ALMACENERO' || r === 'ENVASADOR') return 'ALMACEN';
+    return 'OTRO';
+  }
+
   function _finRenderPersonal(pl, fecha) {
     const cont = $('finPersonalList');
     const tot  = $('finPersonalTotal');
     if (!cont) return;
-    // Sincronizar la fecha del módulo Evaluaciones con la del Finanzas — así el
-    // botón Auditar de cada card busca el resumen en la fecha correcta (no en hoy).
     if (typeof _evalState !== 'undefined' && _evalState && fecha) {
       _evalState.fecha = fecha;
     }
@@ -18869,17 +18875,42 @@ const MOS = (() => {
       cont.innerHTML = '<p class="text-slate-500 text-xs">Sin registros — usa "+ Jornada" o "⬇ Cajas"</p>';
       return;
     }
-    // ───── PASO 1: render INMEDIATO (sin score) ─────
-    // Si tenemos cache local de resúmenes, lo usamos. Sino, render plano.
+
+    // Agrupar por área (POS / ALMACEN / OTRO) — no confunde los KPIs
+    const grupos = { POS: [], ALMACEN: [], OTRO: [] };
+    pl.personalDetalle.forEach(p => {
+      grupos[_finClasificarRol(p.rol)].push(p);
+    });
+
     const cacheKey = 'mos_fin_resum_' + fecha;
     let cachedResumenes = null;
     try {
       const raw = localStorage.getItem(cacheKey);
       if (raw) {
-        const p = JSON.parse(raw);
-        if (Date.now() - (p.ts || 0) < 30 * 60 * 1000) cachedResumenes = p.data;
+        const pCache = JSON.parse(raw);
+        if (Date.now() - (pCache.ts || 0) < 30 * 60 * 1000) cachedResumenes = pCache.data;
       }
     } catch {}
+
+    function _renderGrupo(arr, titulo, icono, area, byNombre, byIdPersonal) {
+      if (!arr.length) return '';
+      const subtotal = arr.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
+      return `
+        <div class="fin-pers-group" data-area="${area}">
+          <div class="fin-pers-group-hdr">
+            <span class="fin-pers-group-ico">${icono}</span>
+            <span class="fin-pers-group-tit">${titulo}</span>
+            <span class="fin-pers-group-count">${arr.length}</span>
+            <span class="fin-pers-group-sub">S/ ${subtotal.toFixed(2)}</span>
+          </div>
+          <div class="fin-pers-group-list">
+            ${arr.map(p => {
+              const ev = byIdPersonal[p.idPersonal] || byNombre[String(p.nombre || '').toLowerCase().trim()] || null;
+              return _finRenderPersonalCard(p, ev, fecha, area);
+            }).join('')}
+          </div>
+        </div>`;
+    }
 
     function _pintarConResumenes(resumenes) {
       const byNombre = {};
@@ -18889,19 +18920,18 @@ const MOS = (() => {
         if (n) byNombre[n] = r;
         if (r.idPersonal) byIdPersonal[r.idPersonal] = r;
       });
-      cont.innerHTML = pl.personalDetalle.map(p => {
-        const ev = byIdPersonal[p.idPersonal] || byNombre[String(p.nombre || '').toLowerCase().trim()] || null;
-        return _finRenderPersonalCard(p, ev, fecha);
-      }).join('');
+
+      let html = '';
+      html += _renderGrupo(grupos.POS,     'POS · Cajeros',        '🛒', 'POS',     byNombre, byIdPersonal);
+      html += _renderGrupo(grupos.ALMACEN, 'Almacén',              '🏭', 'ALMACEN', byNombre, byIdPersonal);
+      html += _renderGrupo(grupos.OTRO,    'Otros',                '👤', 'OTRO',    byNombre, byIdPersonal);
+      cont.innerHTML = html || '<p class="text-slate-500 text-xs">Sin registros</p>';
     }
 
-    // Render inmediato — usa cache si existe, sino sin score
     _pintarConResumenes(cachedResumenes);
 
-    // ───── PASO 2: fetch fresh en background, enriquece si cambió ─────
     API.get('getResumenTodosDia', { fecha: fecha }).then(resumenes => {
       try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: resumenes })); } catch {}
-      // Solo re-render si difiere del cache (evita parpadeo)
       if (JSON.stringify(cachedResumenes) !== JSON.stringify(resumenes)) {
         _pintarConResumenes(resumenes);
       }
@@ -18983,7 +19013,8 @@ const MOS = (() => {
     return mejorIso;
   }
 
-  function _finRenderPersonalCard(p, ev, fecha) {
+  function _finRenderPersonalCard(p, ev, fecha, area) {
+    const esPOS = (area || _finClasificarRol(p.rol)) === 'POS';
     const score = ev ? (ev.scoreFinal || 0) : null;
     const scoreClass = score !== null ? _evalScoreClass(score) : '';
     const rolClass = _evalRolBadgeClass(p.rol || (ev && ev.rol));
@@ -19027,11 +19058,13 @@ const MOS = (() => {
               ${ev && ev.virtual ? '<span class="badge-rol badge-rol-default" title="Detectado del sistema">⚡ del sistema</span>' : ''}
               ${fuenteTag}
             </div>
-            ${kpiTxt ? `<div class="text-xs text-slate-500 mb-1">${kpiTxt}</div>` : ''}
+            ${esPOS && kpiTxt ? `<div class="text-xs text-slate-500 mb-1">${kpiTxt}</div>` : ''}
             <div class="flex items-center gap-2 flex-wrap">
-              ${evalCount > 0
-                ? `<span class="audit-count-pill">${evalCount} auditoría${evalCount !== 1 ? 's' : ''} hoy</span>`
-                : `<span class="audit-count-pill" style="background:rgba(245,158,11,.12);color:#fbbf24;border-color:rgba(245,158,11,.3)">⚠ Sin auditar</span>`}
+              ${esPOS
+                ? (evalCount > 0
+                    ? `<span class="audit-count-pill">${evalCount} auditoría${evalCount !== 1 ? 's' : ''} hoy</span>`
+                    : `<span class="audit-count-pill" style="background:rgba(245,158,11,.12);color:#fbbf24;border-color:rgba(245,158,11,.3)">⚠ Sin auditar</span>`)
+                : ''}
               <span class="text-xs text-slate-400">Pago día: <strong class="text-amber-400">S/ ${parseFloat(totalDia).toFixed(2)}</strong></span>
             </div>
           </div>
