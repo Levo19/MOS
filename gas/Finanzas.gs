@@ -548,6 +548,15 @@ function _calcularPersonal(fecha) {
     if (pm && (parseFloat(pm.montoBase) || 0) > 0) return parseFloat(pm.montoBase) || 0;
     return _montoPorRol(r.rol);
   }
+  // Resuelve el rol REAL desde PERSONAL_MASTER (fuente de verdad).
+  // JORNADAS puede tener rol stale (auto-detect con default 'VENDEDOR' cuando
+  // no encontraba match en master, o rol viejo si la persona cambió de rol).
+  function _resolverRol(r) {
+    var k = String(r.nombre || '').trim().toLowerCase();
+    var pm = personalByNombre[k];
+    if (pm && pm.rol) return String(pm.rol).toUpperCase();
+    return String(r.rol || '').toUpperCase();
+  }
 
   // ── Agrupar por nombre: separar activas vs tombstones ──
   // Si hay activas → suma el mejor (por prioridad). Las tombstones quedan como
@@ -579,7 +588,7 @@ function _calcularPersonal(fecha) {
       detalle.push({
         idJornada: best.idJornada || '',
         nombre:    best.nombre,
-        rol:       best.rol || '',
+        rol:       _resolverRol(best),
         zona:      best.zona || '',
         monto:     monto,
         fuente:    best.fuente || 'MANUAL',
@@ -593,7 +602,7 @@ function _calcularPersonal(fecha) {
       detalle.push({
         idJornada: last.idJornada || '',
         nombre:    last.nombre,
-        rol:       last.rol || '',
+        rol:       _resolverRol(last),
         zona:      last.zona || '',
         monto:     0,
         fuente:    'ELIMINADA',
