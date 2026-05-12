@@ -11141,7 +11141,11 @@
 
   let _reg = null, _waitingWorker = null;
 
-  // Muestra el overlay de "Actualizando..." con pasos progresivos + versión
+  // Muestra el overlay de "Actualizando..." — pasos REACTIVOS al SW.
+  // Antes los pasos avanzaban con setTimeouts fijos (1.5s, 3s, 4.4s),
+  // haciendo que el overlay siempre durara >4.4s aunque el SW terminara
+  // en 800ms. Ahora los pasos avanzan al instante: paso 1 al abrir,
+  // paso 2 cuando se manda SKIP_WAITING, paso 3 al controllerchange.
   function _showUpdateOverlay() {
     const el = document.getElementById('updateOverlay');
     if (!el) return;
@@ -11157,14 +11161,24 @@
 
     // Animar barra de progreso
     const bar = document.getElementById('updateOverlayBar');
-    if (bar) setTimeout(() => bar.classList.add('animate'), 50);
+    if (bar) setTimeout(() => bar.classList.add('animate'), 30);
 
-    // Activar pasos secuencialmente
+    // Paso 1 activo inmediatamente (descarga ya hecha si llegó hasta aquí).
+    // Pasos 2 y 3 se activan desde _applyMosUpdate al mandar SKIP_WAITING
+    // y al detectar controllerchange. Si SW tarda, fallback en 2s.
     const steps = document.querySelectorAll('#updateOverlaySteps .upd-step');
     if (steps.length === 3) {
-      setTimeout(() => { steps[0].classList.remove('active'); steps[0].classList.add('done'); steps[1].classList.add('active'); }, 1500);
-      setTimeout(() => { steps[1].classList.remove('active'); steps[1].classList.add('done'); steps[2].classList.add('active'); }, 3000);
-      setTimeout(() => { steps[2].classList.remove('active'); steps[2].classList.add('done'); }, 4400);
+      steps[0].classList.remove('active'); steps[0].classList.add('done');
+      steps[1].classList.add('active');
+    }
+  }
+
+  // Avanza el overlay al paso "Aplicando cambios"
+  function _mosOverlayPasoFinal() {
+    const steps = document.querySelectorAll('#updateOverlaySteps .upd-step');
+    if (steps.length === 3) {
+      steps[1].classList.remove('active'); steps[1].classList.add('done');
+      steps[2].classList.add('active');
     }
   }
 
@@ -11360,7 +11374,10 @@
     }
   }
 
-  // Aplicar update desde el banner — con sonido cohete
+  // Aplicar update desde el banner — con sonido cohete.
+  // Antes esperaba 900ms para que el cohete sonara antes del reload, lo
+  // cual hacía sentir lenta la actualización. Ahora: 250ms (lo justo para
+  // arrancar el sonido) + fallback reload 3s si controllerchange no dispara.
   window._applyMosUpdate = function() {
     _mosStopAutoCd();
     try { MosSfx.rocket(); } catch(_){}
@@ -11370,15 +11387,29 @@
     try { localStorage.setItem('mos_perms_check_pending', '1'); } catch(_){}
     setTimeout(() => {
       if (_waitingWorker) _waitingWorker.postMessage('SKIP_WAITING');
-    }, 900);
+      _mosOverlayPasoFinal();
+      // Fallback: si controllerchange no dispara en 3s (SW bloqueado),
+      // forzar reload manual. Evita overlay infinito.
+      setTimeout(() => {
+        if (document.getElementById('updateOverlay')?.classList.contains('hidden') === false) {
+          window.location.reload();
+        }
+      }, 3000);
+    }, 250);
   };
 
-  // Activa el SW en espera y recarga
+  // Activa el SW en espera y recarga — inmediato si ya está waiting.
   function _activateWaiting(worker) {
     _hideBanner();
     _showUpdateOverlay();
     worker.postMessage('SKIP_WAITING');
-    // La recarga la dispara el evento controllerchange
+    _mosOverlayPasoFinal();
+    // Fallback reload por si controllerchange no dispara
+    setTimeout(() => {
+      if (document.getElementById('updateOverlay')?.classList.contains('hidden') === false) {
+        window.location.reload();
+      }
+    }, 3000);
   }
 
   // Exponer para el botón sidebar y para app.js
