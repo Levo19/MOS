@@ -9306,8 +9306,19 @@
             </div>
           </div>
         </div>
-        <div class="cpn-field-wrap">
-          <input id="cpnCodigo" class="cpn-input cpn-codigo" placeholder="Escribe o escanea el código…" autocomplete="off" spellcheck="false">
+        <div class="cpn-field-wrap" style="display:flex;gap:8px;align-items:stretch">
+          <input id="cpnCodigo" class="cpn-input cpn-codigo" placeholder="Escribe o escanea el código…" autocomplete="off" spellcheck="false" style="flex:1">
+          <button type="button" id="cpnScanBtn" onclick="MOS.cpnAbrirScanner()" title="Escanear con cámara"
+                  style="flex-shrink:0;background:linear-gradient(135deg,#0ea5e9,#0284c7);color:#fff;border:none;border-radius:10px;padding:0 14px;cursor:pointer;display:flex;align-items:center;gap:6px;font-weight:700;font-size:13px;letter-spacing:.03em;-webkit-tap-highlight-color:transparent;transition:transform .15s,box-shadow .2s">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 7V5a2 2 0 0 1 2-2h2"/>
+              <path d="M17 3h2a2 2 0 0 1 2 2v2"/>
+              <path d="M21 17v2a2 2 0 0 1-2 2h-2"/>
+              <path d="M7 21H5a2 2 0 0 1-2-2v-2"/>
+              <path d="M7 8v8M11 8v8M15 8v8"/>
+            </svg>
+            <span>Escanear</span>
+          </button>
         </div>
       </div>
 
@@ -9362,6 +9373,102 @@
       </button>
     </div>
   </div>
+</div>
+
+<!-- ══ Scanner de cámara para crear PN manual ════════════════════════════ -->
+<!-- Overlay fullscreen con video stream + área de detección. Usa
+     BarcodeDetector nativo cuando existe (Chrome/Android, Safari 16.4+),
+     fallback a ZXing cargado desde CDN si no. -->
+<style>
+  @keyframes cpnScanLine { 0%{top:8%} 50%{top:92%} 100%{top:8%} }
+  @keyframes cpnScanFlash { 0%{box-shadow:0 0 0 0 rgba(34,197,94,0)} 50%{box-shadow:0 0 0 24px rgba(34,197,94,.6),0 0 48px rgba(34,197,94,.4) inset} 100%{box-shadow:0 0 0 0 rgba(34,197,94,0)} }
+  #cpnScannerOverlay {
+    position:fixed; inset:0; z-index:300;
+    background:#000;
+    display:none;
+    flex-direction:column;
+    align-items:center; justify-content:center;
+  }
+  #cpnScannerOverlay.is-open { display:flex; }
+  #cpnScannerVideo {
+    position:absolute; inset:0;
+    width:100%; height:100%;
+    object-fit:cover;
+    background:#000;
+  }
+  .cpn-scanner-frame {
+    position:relative; z-index:1;
+    width:min(85vw, 380px); height:min(50vw, 220px);
+    border:3px solid rgba(14,165,233,.85);
+    border-radius:18px;
+    box-shadow:0 0 0 9999px rgba(0,0,0,.55);
+    overflow:hidden;
+  }
+  .cpn-scanner-frame.is-hit { animation:cpnScanFlash .5s ease-out; border-color:#22c55e; }
+  .cpn-scanner-line {
+    position:absolute; left:6%; right:6%; height:2px;
+    background:linear-gradient(90deg,transparent,#0ea5e9,transparent);
+    box-shadow:0 0 12px rgba(14,165,233,.9);
+    animation:cpnScanLine 2.2s ease-in-out infinite;
+  }
+  .cpn-scanner-corners::before,
+  .cpn-scanner-corners::after,
+  .cpn-scanner-corners > b::before,
+  .cpn-scanner-corners > b::after {
+    content:""; position:absolute; width:28px; height:28px;
+    border:3px solid #0ea5e9;
+  }
+  .cpn-scanner-corners::before { top:-2px; left:-2px; border-right:none; border-bottom:none; border-radius:18px 0 0 0; }
+  .cpn-scanner-corners::after  { top:-2px; right:-2px; border-left:none; border-bottom:none; border-radius:0 18px 0 0; }
+  .cpn-scanner-corners > b::before { bottom:-2px; left:-2px; border-right:none; border-top:none; border-radius:0 0 0 18px; }
+  .cpn-scanner-corners > b::after  { bottom:-2px; right:-2px; border-left:none; border-top:none; border-radius:0 0 18px 0; }
+  .cpn-scanner-hint {
+    position:relative; z-index:1; margin-top:24px;
+    color:#e0f2fe; font-size:14px; font-weight:600;
+    text-align:center; padding:0 24px;
+    text-shadow:0 2px 6px rgba(0,0,0,.6);
+  }
+  .cpn-scanner-detected {
+    position:relative; z-index:1; margin-top:14px;
+    background:rgba(34,197,94,.18); border:1px solid rgba(34,197,94,.6);
+    color:#bbf7d0; padding:8px 16px; border-radius:99px;
+    font-family:ui-monospace,monospace; font-size:13px; font-weight:800;
+    display:none;
+  }
+  .cpn-scanner-detected.show { display:inline-block; }
+  .cpn-scanner-controls {
+    position:absolute; top:12px; left:0; right:0; z-index:2;
+    display:flex; justify-content:space-between; padding:0 14px;
+  }
+  .cpn-scanner-btn {
+    width:42px; height:42px; border-radius:50%;
+    background:rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.25);
+    color:#fff; cursor:pointer; font-size:20px; font-weight:900;
+    display:flex; align-items:center; justify-content:center;
+    backdrop-filter:blur(6px);
+    -webkit-tap-highlight-color:transparent;
+  }
+  .cpn-scanner-btn:active { transform:scale(.92); }
+  .cpn-scanner-btn.cpn-torch.is-on { background:#fbbf24; color:#0f172a; }
+  .cpn-scanner-state {
+    position:absolute; bottom:24px; left:0; right:0; z-index:2;
+    text-align:center; color:#94a3b8; font-size:11px;
+    text-shadow:0 1px 3px rgba(0,0,0,.6);
+  }
+</style>
+<div id="cpnScannerOverlay">
+  <video id="cpnScannerVideo" autoplay muted playsinline></video>
+  <div class="cpn-scanner-controls">
+    <button class="cpn-scanner-btn" onclick="MOS.cpnCerrarScanner()" title="Cerrar">✕</button>
+    <button class="cpn-scanner-btn cpn-torch" id="cpnTorchBtn" onclick="MOS.cpnToggleTorch()" title="Linterna" style="display:none">💡</button>
+  </div>
+  <div class="cpn-scanner-frame" id="cpnScannerFrame">
+    <div class="cpn-scanner-corners"><b></b></div>
+    <div class="cpn-scanner-line"></div>
+  </div>
+  <div class="cpn-scanner-hint" id="cpnScannerHint">Apunta al código de barras</div>
+  <div class="cpn-scanner-detected" id="cpnScannerDetected"></div>
+  <div class="cpn-scanner-state" id="cpnScannerState"></div>
 </div>
 
 <!-- Producto Modal -->

@@ -2101,6 +2101,175 @@ const MOS = (() => {
     inp.value = String(Math.max(0, cur + delta));
   }
 
+  // ── Scanner cámara para crear PN manual ──────────────────────────────
+  // Usa BarcodeDetector nativo cuando existe (Chrome/Android, Safari 16.4+);
+  // si no, carga ZXing on-demand desde CDN como fallback. Permite linterna
+  // si la cámara la soporta.
+  let _cpnScanStream = null;
+  let _cpnScanRAF = null;
+  let _cpnScanZxingReader = null;
+  let _cpnScanTrack = null;
+  let _cpnScanTorchOn = false;
+
+  function _cpnScannerEstado(txt) {
+    const el = $('cpnScannerState'); if (el) el.textContent = txt || '';
+  }
+
+  async function cpnAbrirScanner() {
+    const ov = $('cpnScannerOverlay');
+    if (!ov) return;
+    ov.classList.add('is-open');
+    _cpnScannerEstado('Pidiendo cámara…');
+    const hint = $('cpnScannerHint');
+    if (hint) hint.textContent = 'Apunta al código de barras';
+    const det = $('cpnScannerDetected'); if (det) det.classList.remove('show');
+    const frame = $('cpnScannerFrame'); if (frame) frame.classList.remove('is-hit');
+
+    try {
+      _cpnScanStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false
+      });
+    } catch (e) {
+      _cpnScannerEstado('No se pudo abrir la cámara: ' + (e?.message || e));
+      if (hint) hint.textContent = 'Sin acceso a la cámara';
+      return;
+    }
+
+    const video = $('cpnScannerVideo');
+    if (!video) return;
+    video.srcObject = _cpnScanStream;
+    try { await video.play(); } catch(_){}
+
+    // Track para linterna (si soporta)
+    _cpnScanTrack = _cpnScanStream.getVideoTracks()[0] || null;
+    _cpnScanTorchOn = false;
+    try {
+      const caps = _cpnScanTrack && _cpnScanTrack.getCapabilities ? _cpnScanTrack.getCapabilities() : {};
+      const btnTorch = $('cpnTorchBtn');
+      if (btnTorch) btnTorch.style.display = caps.torch ? 'flex' : 'none';
+      if (btnTorch) btnTorch.classList.remove('is-on');
+    } catch(_){}
+
+    // ── Detección: BarcodeDetector primero ──
+    if ('BarcodeDetector' in window) {
+      _cpnScannerEstado('Usando BarcodeDetector nativo');
+      let detector;
+      try {
+        const formats = await window.BarcodeDetector.getSupportedFormats();
+        detector = new window.BarcodeDetector({ formats });
+      } catch(e) {
+        detector = new window.BarcodeDetector();
+      }
+      _cpnScanLoopNativo(detector, video);
+      return;
+    }
+
+    // ── Fallback: ZXing desde CDN ──
+    _cpnScannerEstado('Cargando librería de escaneo…');
+    await _cpnCargarZxing();
+    if (!window.ZXingBrowser) {
+      _cpnScannerEstado('No se pudo cargar el lector. Escribe el código manualmente.');
+      return;
+    }
+    _cpnScannerEstado('Usando ZXing');
+    try {
+      _cpnScanZxingReader = new window.ZXingBrowser.BrowserMultiFormatReader();
+      _cpnScanZxingReader.decodeFromVideoElementContinuously(video, (result, err) => {
+        if (result) _cpnScanHit(result.getText());
+      });
+    } catch(e) {
+      _cpnScannerEstado('Error al iniciar ZXing: ' + (e?.message || e));
+    }
+  }
+
+  function _cpnScanLoopNativo(detector, video) {
+    let detecting = false;
+    const tick = async () => {
+      if (!_cpnScanStream || !document.getElementById('cpnScannerOverlay')?.classList.contains('is-open')) return;
+      if (!detecting && video.readyState >= 2) {
+        detecting = true;
+        try {
+          const codes = await detector.detect(video);
+          if (codes && codes.length) {
+            _cpnScanHit(codes[0].rawValue);
+            return;
+          }
+        } catch(_){}
+        detecting = false;
+      }
+      _cpnScanRAF = requestAnimationFrame(tick);
+    };
+    tick();
+  }
+
+  function _cpnScanHit(codigo) {
+    if (!codigo) return;
+    // Visual + haptic + sonido
+    try { if (navigator.vibrate) navigator.vibrate([40, 20, 80]); } catch(_){}
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator(); const g = ctx.createGain();
+      osc.connect(g); g.connect(ctx.destination);
+      osc.type = 'triangle'; osc.frequency.value = 1320;
+      g.gain.value = 0.18;
+      osc.start(); osc.stop(ctx.currentTime + 0.14);
+    } catch(_){}
+    const frame = $('cpnScannerFrame'); if (frame) frame.classList.add('is-hit');
+    const det = $('cpnScannerDetected');
+    if (det) { det.textContent = codigo; det.classList.add('show'); }
+    // Llenar input + cerrar overlay tras 350ms (sentir el feedback)
+    const inp = $('cpnCodigo');
+    if (inp) {
+      inp.value = codigo;
+      // Si auto-gen estaba activo, desactivarlo (ya tenemos código real)
+      if (_cpnAutogen) _cpnToggleAutogen();
+    }
+    setTimeout(cpnCerrarScanner, 350);
+  }
+
+  function cpnCerrarScanner() {
+    const ov = $('cpnScannerOverlay');
+    if (ov) ov.classList.remove('is-open');
+    if (_cpnScanRAF) { cancelAnimationFrame(_cpnScanRAF); _cpnScanRAF = null; }
+    if (_cpnScanZxingReader) {
+      try { _cpnScanZxingReader.reset(); } catch(_){}
+      _cpnScanZxingReader = null;
+    }
+    if (_cpnScanStream) {
+      try { _cpnScanStream.getTracks().forEach(t => t.stop()); } catch(_){}
+      _cpnScanStream = null;
+    }
+    _cpnScanTrack = null;
+    _cpnScanTorchOn = false;
+    const video = $('cpnScannerVideo'); if (video) video.srcObject = null;
+  }
+
+  async function cpnToggleTorch() {
+    if (!_cpnScanTrack) return;
+    try {
+      _cpnScanTorchOn = !_cpnScanTorchOn;
+      await _cpnScanTrack.applyConstraints({ advanced: [{ torch: _cpnScanTorchOn }] });
+      const btn = $('cpnTorchBtn');
+      if (btn) btn.classList.toggle('is-on', _cpnScanTorchOn);
+    } catch(e) {
+      _cpnScannerEstado('Linterna no disponible');
+    }
+  }
+
+  // Carga ZXing-browser desde CDN solo si se necesita (fallback).
+  function _cpnCargarZxing() {
+    return new Promise((resolve) => {
+      if (window.ZXingBrowser) return resolve();
+      const s = document.createElement('script');
+      s.src = 'https://unpkg.com/@zxing/browser@latest/umd/index.min.js';
+      s.async = true;
+      s.onload = () => resolve();
+      s.onerror = () => resolve();
+      document.head.appendChild(s);
+    });
+  }
+
   function _cpnError(msg) {
     const err = $('cpnError');
     if (err) err.textContent = msg || '';
@@ -21528,6 +21697,7 @@ const MOS = (() => {
     // PN manual (admin/master)
     abrirCrearPNManual, cerrarCrearPNManual, crearPNManualSubmit,
     _cpnToggleAutogen, _cpnFotoSeleccionada, _cpnRemoverFoto, _cpnStep,
+    cpnAbrirScanner, cpnCerrarScanner, cpnToggleTorch,
     _validBackdropClose,
     pnSetTipo, pnAutogenBarcode, pnBuscarBase, pnSeleccionarBase,
     _pnCheckDuplicadoCodigo, _pnRecalcularMargen, _pnPrellenaEquiv,
