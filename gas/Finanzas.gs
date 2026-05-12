@@ -16,7 +16,11 @@ function getFinanzasDia(params) {
     // Esto garantiza que finanzas, evaluaciones y liquidaciones siempre cuadren.
     try { _sincronizarJornadasAutoDelDia(fecha); } catch(eS) { Logger.log('Sync jornadas: ' + eS.message); }
     var ingresos   = _calcularIngresos(fecha);
-    var costos     = _calcularCostoVentas(fecha, ingresos.detalleIds);
+    // Costo se calcula SOLO sobre tickets COBRADOS (no POR_COBRAR/CRÉDITO).
+    // Antes usaba ingresos.detalleIds (todos los no-anulados), produciendo
+    // margen aparente menor al estimado del 15% por la mezcla con créditos
+    // pendientes.
+    var costos     = _calcularCostoVentas(fecha, ingresos.cobradosIds);
     var personal   = _calcularPersonal(fecha);
     var gastosList = _calcularGastos(fecha);
     return { ok: true, data: _armarPL(fecha, ingresos, costos, personal, gastosList) };
@@ -31,7 +35,7 @@ function getFinanzasRango(params) {
     var dias    = _diasEnRango(params.desde, params.hasta);
     var serie   = dias.map(function(f) {
       var ing  = _calcularIngresos(f);
-      var cos  = _calcularCostoVentas(f, ing.detalleIds);
+      var cos  = _calcularCostoVentas(f, ing.cobradosIds);  // solo cobrados — alinea margen con ventasNetas
       var per  = _calcularPersonal(f);
       var gas  = _calcularGastos(f);
       var pl   = _armarPL(f, ing, cos, per, gas);
@@ -350,6 +354,14 @@ function _calcularIngresos(fecha) {
   var detalleIds = {};
   noAnuladas.forEach(function(v){ detalleIds[String(v.ID_Venta || '')] = true; });
 
+  // IDs SOLO de cobrados (EFE/VIR/MIXTO). Útil para calcular el costo de
+  // ventas en sintonía con "ventasNetas" (que es solo lo cobrado). Antes
+  // el costo se calculaba sobre todas las no-anuladas (incluyendo
+  // POR_COBRAR y CRÉDITO), produciendo márgenes aparentes menores al
+  // estimado del 15%.
+  var cobradosIds = {};
+  cobrados.forEach(function(v){ cobradosIds[String(v.ID_Venta || '')] = true; });
+
   // Detalle individual de cada ticket: estado distingue 4 valores
   var detalleTickets = del_dia.map(function(v) {
     var f = String(v.Fecha || '');
@@ -398,6 +410,7 @@ function _calcularIngresos(fecha) {
     byDoc:           byDoc,
     byMetodo:        byMetodo,
     detalleIds:      detalleIds,
+    cobradosIds:     cobradosIds,
     detalleTickets:  detalleTickets
   };
 }
