@@ -2024,6 +2024,10 @@ const MOS = (() => {
     const togg = $('cpnAutogenToggle');
     if (togg) togg.classList.remove('on');
     if (cod) cod.disabled = false;
+    if (cod) cod.classList.remove('is-conflicto');
+    _cpnCodigoDuplicado = false;
+    const avi = $('cpnCodigoAviso');
+    if (avi) { avi.style.display = 'none'; avi.className = 'cpn-codigo-aviso'; avi.innerHTML = ''; }
     const err = $('cpnError'); if (err) err.textContent = '';
     const submit = $('cpnSubmit');
     if (submit) {
@@ -2059,6 +2063,9 @@ const MOS = (() => {
       if (_cpnAutogen) cod.style.color = '#64748b';
       else cod.style.color = '';
     }
+    // Limpiar aviso de duplicado al activar autogen (no aplica) y revalidar
+    // al desactivar (puede haber un código tipeado antes).
+    _cpnValidarCodigoNow();
   }
 
   async function _cpnFotoSeleccionada(input) {
@@ -2099,6 +2106,131 @@ const MOS = (() => {
     if (!inp) return;
     const cur = parseInt(inp.value, 10) || 0;
     inp.value = String(Math.max(0, cur + delta));
+  }
+
+  // ── Validación: ¿el código ya existe como canónico o equivalente? ─────
+  // Lookup en S.productos (canónicos activos con factor=1) + S.equivMap
+  // (equivalencias activas). Si existe, bloquea el submit con aviso grande.
+  let _cpnCodigoDuplicado = false;
+  let _cpnValidarTimer = null;
+
+  function _cpnBuscarCodigoEnCatalogo(cb) {
+    const cod = String(cb || '').trim().toUpperCase();
+    if (!cod) return { existe: false };
+
+    // 1) Canónicos (factor=1 + estado activo)
+    const prods = S.productos || [];
+    for (const p of prods) {
+      const f = parseFloat(p.factorConversion || 1);
+      const estadoActivo = String(p.estado || '1') !== '0';
+      if (!(f === 1 && estadoActivo)) continue;
+      const cbProd = String(p.codigoBarra || '').trim().toUpperCase();
+      if (cbProd && cbProd === cod) {
+        return {
+          existe: true,
+          tipo:   'canonico',
+          producto: p,
+          skuBase:  String(p.skuBase || p.idProducto || '')
+        };
+      }
+    }
+
+    // 2) Equivalencias (S.equivMap: { skuBase: [cbEquiv1, cbEquiv2] })
+    const equivMap = S.equivMap || {};
+    for (const skuBase of Object.keys(equivMap)) {
+      const codigos = equivMap[skuBase] || [];
+      const hit = codigos.some(c => String(c || '').trim().toUpperCase() === cod);
+      if (hit) {
+        // Buscar el producto canónico de ese skuBase para mostrar info
+        const canonico = prods.find(p => {
+          const sb = String(p.skuBase || '').trim().toUpperCase();
+          const ip = String(p.idProducto || '').trim().toUpperCase();
+          const sk = String(skuBase).trim().toUpperCase();
+          const esBase = parseFloat(p.factorConversion || 1) === 1 && String(p.estado || '1') !== '0';
+          return esBase && (sb === sk || ip === sk);
+        });
+        return {
+          existe: true,
+          tipo:   'equivalente',
+          producto: canonico || null,
+          skuBase:  String(skuBase)
+        };
+      }
+    }
+
+    return { existe: false };
+  }
+
+  function _cpnEsc(s) { return String(s || '').replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])); }
+
+  // Llamado en oninput (debounce 250ms) + al obtener código del scanner.
+  function _cpnValidarCodigo() {
+    if (_cpnValidarTimer) clearTimeout(_cpnValidarTimer);
+    _cpnValidarTimer = setTimeout(_cpnValidarCodigoNow, 250);
+  }
+  function _cpnValidarCodigoNow() {
+    const inp = $('cpnCodigo');
+    const avi = $('cpnCodigoAviso');
+    const submit = $('cpnSubmit');
+    if (!inp || !avi) return;
+
+    // Si auto-gen NLEV está activo, el código se genera en backend → no validar
+    if (_cpnAutogen) {
+      _cpnCodigoDuplicado = false;
+      avi.style.display = 'none';
+      avi.className = 'cpn-codigo-aviso';
+      avi.innerHTML = '';
+      inp.classList.remove('is-conflicto');
+      if (submit) submit.disabled = false;
+      return;
+    }
+
+    const cod = String(inp.value || '').trim();
+    if (!cod || cod.length < 3) {
+      _cpnCodigoDuplicado = false;
+      avi.style.display = 'none';
+      avi.className = 'cpn-codigo-aviso';
+      avi.innerHTML = '';
+      inp.classList.remove('is-conflicto');
+      if (submit) submit.disabled = false;
+      return;
+    }
+
+    const hit = _cpnBuscarCodigoEnCatalogo(cod);
+    if (hit.existe) {
+      _cpnCodigoDuplicado = true;
+      const prod = hit.producto;
+      const nombre = prod ? (prod.descripcion || prod.idProducto || hit.skuBase) : '(sin nombre)';
+      const sku    = hit.skuBase || (prod && prod.idProducto) || '';
+      const tipoLbl = hit.tipo === 'canonico' ? '🎯 Producto canónico' : '🔗 Código equivalente';
+      avi.className = 'cpn-codigo-aviso is-conflicto';
+      avi.innerHTML =
+        '<div class="cpn-aviso-titulo">' +
+          '<span class="cpn-aviso-ico">⛔</span>' +
+          '<span>Este código YA está registrado</span>' +
+        '</div>' +
+        '<div class="cpn-aviso-tipo">' + tipoLbl + '</div>' +
+        '<div class="cpn-aviso-prod">' +
+          '<div class="cpn-aviso-prod-nombre">' + _cpnEsc(nombre) + '</div>' +
+          '<div class="cpn-aviso-prod-meta">' +
+            'SKU: ' + _cpnEsc(sku) + ' · Código: ' + _cpnEsc(cod) +
+          '</div>' +
+        '</div>' +
+        '<div class="cpn-aviso-hint">' +
+          'No puedes registrar un producto que ya existe en el sistema. ' +
+          'Cambia el código o cierra este modal.' +
+        '</div>';
+      avi.style.display = 'block';
+      inp.classList.add('is-conflicto');
+      if (submit) submit.disabled = true;
+    } else {
+      _cpnCodigoDuplicado = false;
+      avi.className = 'cpn-codigo-aviso is-ok';
+      avi.innerHTML = '<span style="font-size:14px">✓</span><span>Código nuevo · disponible para registrar</span>';
+      avi.style.display = 'flex';
+      inp.classList.remove('is-conflicto');
+      if (submit) submit.disabled = false;
+    }
   }
 
   // ── Scanner cámara para crear PN manual ──────────────────────────────
@@ -2218,12 +2350,16 @@ const MOS = (() => {
     const frame = $('cpnScannerFrame'); if (frame) frame.classList.add('is-hit');
     const det = $('cpnScannerDetected');
     if (det) { det.textContent = codigo; det.classList.add('show'); }
-    // Llenar input + cerrar overlay tras 350ms (sentir el feedback)
+    // Llenar input + validar duplicado + cerrar overlay tras 350ms
     const inp = $('cpnCodigo');
     if (inp) {
       inp.value = codigo;
       // Si auto-gen estaba activo, desactivarlo (ya tenemos código real)
       if (_cpnAutogen) _cpnToggleAutogen();
+      // Validar inmediatamente — si está duplicado el aviso aparece al
+      // volver al modal, en vez de dejar al user darse cuenta al apretar
+      // "Registrar".
+      _cpnValidarCodigoNow();
     }
     setTimeout(cpnCerrarScanner, 350);
   }
@@ -2289,6 +2425,18 @@ const MOS = (() => {
     if (!_cpnAutogen && !codigo) { _cpnError('Escribe el código o activa Auto NLEV'); return; }
     if (!obs) { _cpnError('La descripción / observación es obligatoria — es lo que verán los revisores'); return; }
     if (cant < 0) { _cpnError('Cantidad inválida'); return; }
+
+    // Gate de duplicado — el input + scanner ya validaron, pero recheck
+    // por si el catálogo cambió entre la última validación y este submit.
+    if (!_cpnAutogen && codigo) {
+      const hit = _cpnBuscarCodigoEnCatalogo(codigo);
+      if (hit.existe) {
+        _cpnValidarCodigoNow();  // refresca el banner rojo
+        _cpnError('No puedes registrar: este código ya existe en el sistema');
+        try { if (navigator.vibrate) navigator.vibrate([60, 40, 60]); } catch(_){}
+        return;
+      }
+    }
 
     const usuario = S.session?.nombre || 'admin-mos';
     const params = {
@@ -21697,6 +21845,7 @@ const MOS = (() => {
     // PN manual (admin/master)
     abrirCrearPNManual, cerrarCrearPNManual, crearPNManualSubmit,
     _cpnToggleAutogen, _cpnFotoSeleccionada, _cpnRemoverFoto, _cpnStep,
+    _cpnValidarCodigo,
     cpnAbrirScanner, cpnCerrarScanner, cpnToggleTorch,
     _validBackdropClose,
     pnSetTipo, pnAutogenBarcode, pnBuscarBase, pnSeleccionarBase,

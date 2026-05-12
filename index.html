@@ -9281,6 +9281,67 @@
     margin:0 18px;
   }
   .cpn-err:empty { display:none; }
+
+  /* Aviso de código duplicado ------------------------------------------- */
+  @keyframes cpnAvisoShake { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-6px)} 40%,80%{transform:translateX(6px)} }
+  @keyframes cpnAvisoPulse { 0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.55)} 50%{box-shadow:0 0 0 8px rgba(239,68,68,0)} }
+  .cpn-codigo-aviso.is-conflicto {
+    margin-top:10px;
+    padding:14px 16px;
+    border-radius:12px;
+    background:linear-gradient(135deg,rgba(127,29,29,.55),rgba(220,38,38,.25));
+    border:2px solid #ef4444;
+    color:#fee2e2;
+    animation:cpnAvisoShake .5s ease-out, cpnAvisoPulse 1.6s ease-out 2;
+  }
+  .cpn-codigo-aviso.is-conflicto .cpn-aviso-titulo {
+    display:flex; align-items:center; gap:9px;
+    font-size:14px; font-weight:900; color:#fca5a5;
+    text-transform:uppercase; letter-spacing:.05em;
+    margin-bottom:8px;
+  }
+  .cpn-codigo-aviso.is-conflicto .cpn-aviso-titulo .cpn-aviso-ico {
+    display:inline-flex; align-items:center; justify-content:center;
+    width:30px; height:30px; border-radius:50%;
+    background:#dc2626; color:#fff; font-size:18px; font-weight:900;
+    box-shadow:0 4px 12px rgba(220,38,38,.5);
+  }
+  .cpn-codigo-aviso.is-conflicto .cpn-aviso-prod {
+    background:rgba(0,0,0,.30);
+    border-left:3px solid #ef4444;
+    border-radius:8px;
+    padding:9px 12px;
+    margin-bottom:6px;
+  }
+  .cpn-codigo-aviso.is-conflicto .cpn-aviso-prod-nombre {
+    font-size:14px; font-weight:800; color:#fff; line-height:1.25;
+  }
+  .cpn-codigo-aviso.is-conflicto .cpn-aviso-prod-meta {
+    font-size:11px; color:#fda4af; margin-top:3px;
+    font-family:ui-monospace,monospace;
+  }
+  .cpn-codigo-aviso.is-conflicto .cpn-aviso-tipo {
+    display:inline-block; padding:2px 9px; border-radius:99px;
+    background:rgba(239,68,68,.25); color:#fecaca;
+    font-size:10px; font-weight:800; letter-spacing:.05em; text-transform:uppercase;
+    margin-bottom:6px;
+  }
+  .cpn-codigo-aviso.is-conflicto .cpn-aviso-hint {
+    font-size:12px; color:#fecaca; margin-top:6px; line-height:1.35;
+  }
+  /* Input en estado de error */
+  #cpnCodigo.is-conflicto { border-color:#ef4444 !important; background:rgba(127,29,29,.18) !important; color:#fca5a5 !important; }
+  /* Aviso verde sutil cuando es código nuevo */
+  .cpn-codigo-aviso.is-ok {
+    margin-top:8px;
+    padding:6px 12px;
+    border-radius:8px;
+    background:rgba(34,197,94,.10);
+    border:1px solid rgba(34,197,94,.3);
+    color:#86efac;
+    font-size:11px; font-weight:600;
+    display:flex; align-items:center; gap:6px;
+  }
 </style>
 <div class="modal-backdrop hidden" id="modalCrearPN" onclick="if(MOS._validBackdropClose(event,this))MOS.cerrarCrearPNManual()">
   <div class="modal-box p-0" style="display:flex;flex-direction:column;max-height:94vh">
@@ -9307,7 +9368,7 @@
           </div>
         </div>
         <div class="cpn-field-wrap" style="display:flex;gap:8px;align-items:stretch">
-          <input id="cpnCodigo" class="cpn-input cpn-codigo" placeholder="Escribe o escanea el código…" autocomplete="off" spellcheck="false" style="flex:1">
+          <input id="cpnCodigo" class="cpn-input cpn-codigo" placeholder="Escribe o escanea el código…" autocomplete="off" spellcheck="false" style="flex:1" oninput="MOS._cpnValidarCodigo()">
           <button type="button" id="cpnScanBtn" onclick="MOS.cpnAbrirScanner()" title="Escanear con cámara"
                   style="flex-shrink:0;background:linear-gradient(135deg,#0ea5e9,#0284c7);color:#fff;border:none;border-radius:10px;padding:0 14px;cursor:pointer;display:flex;align-items:center;gap:6px;font-weight:700;font-size:13px;letter-spacing:.03em;-webkit-tap-highlight-color:transparent;transition:transform .15s,box-shadow .2s">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -9320,6 +9381,8 @@
             <span>Escanear</span>
           </button>
         </div>
+        <!-- Aviso de código duplicado (solo si el código ya existe en canónicos o equivalentes) -->
+        <div id="cpnCodigoAviso" class="cpn-codigo-aviso" style="display:none"></div>
       </div>
 
       <!-- Foto -->
