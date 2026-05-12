@@ -11599,6 +11599,15 @@
           } catch(_){}
         }
       } else if (perm === 'audio') {
+        // Beep + voz como prueba. Si el navegador permite el speak (lo cual
+        // requiere un user gesture previo — que tenemos porque tocaste el
+        // botón "PROBAR"), marcamos audio como OK automáticamente.
+        //
+        // Antes usábamos confirm() para preguntar "¿escuchaste?". En algunas
+        // PWAs (Android instalada, modo standalone con permisos restrictivos)
+        // confirm() no aparece o se bloquea → el flag nunca se setea → el
+        // wizard queda atascado y el botón "ir a app" no se habilita.
+        let audioOK = false;
         try {
           const Ctx = window.AudioContext || window.webkitAudioContext;
           const ctx = new Ctx();
@@ -11609,6 +11618,7 @@
           gain.gain.value = 0.15;
           osc.start();
           osc.stop(ctx.currentTime + 0.18);
+          audioOK = true;
         } catch(_){}
         if ('speechSynthesis' in window) {
           try {
@@ -11616,10 +11626,10 @@
             const u = new SpeechSynthesisUtterance('Voz activa MOS, listo');
             u.lang = 'es-PE'; u.rate = 1.05; u.volume = 1;
             speechSynthesis.speak(u);
+            audioOK = true;
           } catch(_){}
         }
-        const escucho = confirm('🔊 ¿Escuchaste el beep y la voz?\n\nSi NO, revisa el volumen del dispositivo y vuelve a probar.');
-        if (escucho) {
+        if (audioOK) {
           try {
             const v = window._MOS_PERMS_VERSION || 'unk';
             localStorage.setItem(AUDIO_KEY + v, '1');
