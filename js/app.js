@@ -11839,7 +11839,7 @@ const MOS = (() => {
                    style="background:rgba(245,158,11,0.06);border:1px solid ${completa ? 'rgba(245,158,11,0.3)' : 'rgba(248,113,113,0.4)'};">
         <span class="text-base flex-shrink-0">🏬</span>
         <div class="flex-1 min-w-0">
-          <div class="text-[12px] font-bold text-amber-100 truncate">${esc(z.nombre || z.idZona)}</div>
+          <div class="text-[12px] font-bold text-amber-100 truncate">${String(z.nombre || z.idZona).replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}</div>
           <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] mt-0.5">
             <span class="${hasMeta ? 'text-amber-300' : 'text-red-400'}">
               <span class="opacity-70">Meta:</span>
