@@ -18863,6 +18863,19 @@ const MOS = (() => {
   function _prefetchLiquidaciones() {
     if (!S.session) return;
     iconBusy('finanzas', true);
+    // ── v2: precarga del nuevo modelo (Pendientes + Pagadas) ──
+    // Guarda en localStorage (mos_liq2_*) para que liqOpen pinte al instante.
+    // Inline el prefijo porque _LIQ_CACHE_PFX se declara más abajo (const en TDZ).
+    try {
+      API.get('getLiquidacionesPendientes', {}).then(r => {
+        const arr = Array.isArray(r) ? r : ((r && r.data) || []);
+        try { localStorage.setItem('mos_liq2_pendientes', JSON.stringify({ ts: Date.now(), data: arr })); } catch(_){}
+      }).catch(() => {});
+      API.get('getLiquidacionesPagadas', {}).then(r => {
+        const arr = Array.isArray(r) ? r : ((r && r.data) || []);
+        try { localStorage.setItem('mos_liq2_pagadas', JSON.stringify({ ts: Date.now(), data: arr })); } catch(_){}
+      }).catch(() => {});
+    } catch(_){}
     Promise.all([
       API.get('getLiquidacionesPendientesSemana', {}).then(r => {
         if (r) {
@@ -19041,35 +19054,57 @@ const MOS = (() => {
     if (h && h.value) _liqState.hasta = h.value;
   }
 
+  // Helper: race API.get contra un timeout para que la UI no se quede eternamente cargando
+  function _liqFetchConTimeout(endpoint, params, ms) {
+    return Promise.race([
+      API.get(endpoint, params || {}),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout — el backend está tardando demasiado')), ms || 25000))
+    ]);
+  }
+
   // ── Carga + render ──
   async function liqLoadCurrent() {
     const body = $('liqBody');
     if (!body) return;
+    const tabActual = _liqState.tab;
     // Si NO hay cache previo pintado, mostrar skeleton. Si SÍ hay → no parpadeo.
     if (!_liqState.pendientes || !_liqState.pendientes.length) {
-      if (_liqState.tab === 'pendientes' && !body.dataset._hasCache) {
-        body.innerHTML = `<div class="text-center text-xs text-slate-500 py-8"><div class="inline-block animate-spin">⏳</div> Cargando ${_liqState.tab}...</div>`;
+      if (tabActual === 'pendientes' && !body.dataset._hasCache) {
+        body.innerHTML = `<div class="text-center text-xs text-slate-500 py-8"><div class="inline-block animate-spin">⏳</div> Cargando ${tabActual}...
+          <div class="text-[10px] text-slate-600 mt-2">(puede tardar ~10s la primera vez)</div>
+        </div>`;
       }
     }
     try {
-      if (_liqState.tab === 'pendientes') {
-        const res = await API.get('getLiquidacionesPendientes', { desde: _liqState.desde, hasta: _liqState.hasta });
+      if (tabActual === 'pendientes') {
+        const res = await _liqFetchConTimeout('getLiquidacionesPendientes', { desde: _liqState.desde, hasta: _liqState.hasta }, 25000);
+        if (_liqState.tab !== tabActual) return; // user cambió de tab mientras esperaba
         const arr = Array.isArray(res) ? res : ((res && res.data) || []);
         _liqState.pendientes = arr;
         _liqCacheSave('pendientes', arr);
         body.dataset._hasCache = '1';
         _liqRenderPendientes();
-      } else if (_liqState.tab === 'pagadas') {
-        const res = await API.get('getLiquidacionesPagadas', { desde: _liqOffset(_liqHoy(), -89), hasta: _liqHoy() });
+      } else if (tabActual === 'pagadas') {
+        const res = await _liqFetchConTimeout('getLiquidacionesPagadas', { desde: _liqOffset(_liqHoy(), -89), hasta: _liqHoy() }, 20000);
+        if (_liqState.tab !== tabActual) return;
         const arr = Array.isArray(res) ? res : ((res && res.data) || []);
         _liqState.pagadas = arr;
         _liqCacheSave('pagadas', arr);
         _liqRenderPagadas();
-      } else if (_liqState.tab === 'resumen') {
+      } else if (tabActual === 'resumen') {
         _liqRenderResumen();
       }
     } catch(e) {
-      body.innerHTML = `<div class="text-center text-xs text-rose-400 py-8">⚠ Error: ${e.message || e}</div>`;
+      // Si ya había datos pintados (de cache), mantenerlos y solo mostrar toast
+      if (body.dataset._hasCache) {
+        toast('⚠ ' + (e.message || 'Error de red, mostrando cache'), 'error');
+      } else {
+        body.innerHTML = `<div class="text-center py-10">
+          <div class="text-3xl mb-2 opacity-50">⚠</div>
+          <div class="text-sm text-rose-400 mb-2">${e.message || e}</div>
+          <button onclick="MOS.liqRefresh()" class="btn-primary btn-ripple text-xs px-4 py-2 mt-2">↻ Reintentar</button>
+        </div>`;
+      }
     }
     _liqUpdatePayBar();
   }

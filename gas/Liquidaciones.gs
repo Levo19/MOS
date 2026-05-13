@@ -89,12 +89,36 @@ function _liqMapaPagados() {
 function getLiquidacionesPendientes(params) {
   params = params || {};
   var hasta = params.hasta || _liqHoy();
-  // Default: últimos 30 días para que las cosas no pagadas se acumulen
-  var desde = params.desde || _fechaOffset(hasta, -29);
+  // Default: últimos 7 días. Cada llamada a getResumenTodosDia es costosa
+  // (~3s); 7 días = ~21s en peor caso. Si el admin necesita ver más atrás
+  // puede pedir desde explícito. Lo normal es liquidar al menos semanal.
+  var desde = params.desde || _fechaOffset(hasta, -6);
   var mapaPag = _liqMapaPagados();
 
   var fechas = _rangoFechas(desde, hasta);
   var hoy = _liqHoy();
+
+  // ── Cache script-side (TTL 90s) ──
+  // getResumenTodosDia es costoso (~3s/día). Si en la última 1.5min se
+  // pidió el resumen del mismo día (típico al navegar entre Pendientes y
+  // Editar día), reusamos el JSON cacheado en CacheService.
+  var ssCache;
+  try { ssCache = CacheService.getScriptCache(); } catch(_){}
+  function _rsmDelDiaCached(f) {
+    var ck = 'rsm_d_' + f;
+    if (ssCache) {
+      try {
+        var hit = ssCache.get(ck);
+        if (hit) return JSON.parse(hit);
+      } catch(_){}
+    }
+    var r;
+    try { r = getResumenTodosDia({ fecha: f }); } catch(_){ return null; }
+    if (r && r.ok && Array.isArray(r.data) && ssCache) {
+      try { ssCache.put(ck, JSON.stringify(r), 90); } catch(_){}
+    }
+    return r;
+  }
 
   // Acumulador: { idPersonal: { metadata, dias[] } }
   var acum = {};
@@ -102,8 +126,7 @@ function getLiquidacionesPendientes(params) {
   // Pre-fetch resumen por cada fecha del rango (incluye reales + virtuales).
   fechas.forEach(function(f) {
     if (f > hoy) return;
-    var rsm;
-    try { rsm = getResumenTodosDia({ fecha: f }); } catch(_){ return; }
+    var rsm = _rsmDelDiaCached(f);
     if (!rsm || !rsm.ok || !Array.isArray(rsm.data)) return;
 
     rsm.data.forEach(function(r) {
