@@ -517,21 +517,10 @@ function _calcularCostoVentas(fecha, detalleIds) {
 
 function _calcularPersonal(fecha) {
   var tz   = Session.getScriptTimeZone();
-  // Incluimos también las ELIMINADA (tombstones) para poder mostrarlas en el card
-  // con efecto "vetada" — no cuentan al total, pero quedan visibles.
-  var rows = _sheetToObjects(getSheet('JORNADAS'))
-    .filter(function(r) {
-      var f = r.fecha instanceof Date
-        ? Utilities.formatDate(r.fecha, tz, 'yyyy-MM-dd')
-        : String(r.fecha || '').substring(0, 10);
-      if (f !== fecha) return false;
-      var rol = String(r.rol || '').toUpperCase();
-      var app = String(r.appOrigen || '');
-      if (app === 'MOS' || rol === 'MASTER' || rol === 'ADMINISTRADOR' || rol === 'ADMIN') return false;
-      return true;
-    });
 
   // ── Resolución de monto (PERSONAL_MASTER + sinónimo VENDEDOR↔CAJERO) ──
+  // Lo construimos ANTES del filtro de rows para poder cruzar el rol real
+  // del master con el rol stale que pueda haber en JORNADAS.
   var personalMaster = _sheetToObjects(getSheet('PERSONAL_MASTER'));
   var personalByNombre = {};
   personalMaster.forEach(function(p) {
@@ -540,6 +529,45 @@ function _calcularPersonal(fecha) {
     var kFull = ((p.nombre || '') + ' ' + (p.apellido || '')).trim().toLowerCase();
     if (kFull && kFull !== k) personalByNombre[kFull] = p;
   });
+
+  // Set de roles válidos para "personal del día" (sin admin/master):
+  //   - WH: ALMACENERO, ENVASADOR, OPERADOR (operativos)
+  //   - ME: CAJERO, VENDEDOR
+  function _esRolValido(rol) {
+    var r = String(rol || '').toUpperCase();
+    return r === 'ALMACENERO' || r === 'ENVASADOR' || r === 'OPERADOR'
+        || r === 'CAJERO'     || r === 'VENDEDOR';
+  }
+
+  // Incluimos también las ELIMINADA (tombstones) para poder mostrarlas en el card
+  // con efecto "vetada" — no cuentan al total, pero quedan visibles.
+  // FILTRO doble:
+  //  1. rol/app en JORNADAS no sea admin/master/MOS
+  //  2. SI existe match en PERSONAL_MASTER → el rol REAL del master es válido
+  //     (esto descarta admins cuya JORNADA quedó con rol stale tipo VENDEDOR
+  //     por auto-detección antigua)
+  var rows = _sheetToObjects(getSheet('JORNADAS'))
+    .filter(function(r) {
+      var f = r.fecha instanceof Date
+        ? Utilities.formatDate(r.fecha, tz, 'yyyy-MM-dd')
+        : String(r.fecha || '').substring(0, 10);
+      if (f !== fecha) return false;
+      var rolJ = String(r.rol || '').toUpperCase();
+      var app = String(r.appOrigen || '');
+      if (app === 'MOS' || rolJ === 'MASTER' || rolJ === 'ADMINISTRADOR' || rolJ === 'ADMIN') return false;
+      // Cross-check con PERSONAL_MASTER (source of truth)
+      var k = String(r.nombre || '').trim().toLowerCase();
+      var pm = personalByNombre[k];
+      if (pm) {
+        var rolM = String(pm.rol || '').toUpperCase();
+        var appM = String(pm.appOrigen || '');
+        if (appM === 'MOS') return false;
+        if (rolM === 'MASTER' || rolM === 'ADMINISTRADOR' || rolM === 'ADMIN') return false;
+        // Si master tiene rol pero no es de los válidos → excluir
+        if (rolM && !_esRolValido(rolM)) return false;
+      }
+      return true;
+    });
   function _equivRol(a, b) {
     if (a === b) return true;
     var sin = { 'VENDEDOR': 'CAJERO', 'CAJERO': 'VENDEDOR' };

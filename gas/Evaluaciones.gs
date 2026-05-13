@@ -671,8 +671,25 @@ function _esPersonalEvaluable(p) {
 
 function getResumenTodosDia(params) {
   var fecha    = params.fecha || _hoy();
-  var personal = _sheetToObjects(getSheet('PERSONAL_MASTER')).filter(function(r){
-    return String(r.estado) === '1' && _esPersonalEvaluable(r);
+  var todosPersonal = _sheetToObjects(getSheet('PERSONAL_MASTER')).filter(function(r){
+    return String(r.estado) === '1';
+  });
+  var personal = todosPersonal.filter(_esPersonalEvaluable);
+
+  // ── Set de nombres de admin/master/MOS para EXCLUIR ─────────
+  // Cuando un admin o master abre WH (o ME), su nombre queda en
+  // DISPOSITIVOS.Ultima_Sesion y los reports de actividad pueden
+  // detectarlo. Sin esta exclusión se creaban virtuales tipo
+  // "OPERADOR" en la lista de personal del día. Solo cuentan:
+  //   - WH: ALMACENERO, ENVASADOR, OPERADOR
+  //   - ME: CAJERO, VENDEDOR
+  var excluidosNorm = {};
+  todosPersonal.forEach(function(p){
+    if (_esPersonalEvaluable(p)) return;
+    var n1 = String(p.nombre || '').toLowerCase().trim();
+    var n2 = (String(p.nombre || '') + ' ' + String(p.apellido || '')).toLowerCase().trim();
+    if (n1) excluidosNorm[n1] = true;
+    if (n2) excluidosNorm[n2] = true;
   });
 
   // Detectar genéricos de mosExpress por rol (plantillas para virtuales)
@@ -796,7 +813,10 @@ function getResumenTodosDia(params) {
   // El rol REAL del master gana al rol detectado por la actividad.
   Object.keys(rolesDelDia).forEach(function(nombre){
     var rol = rolesDelDia[nombre];
-    var nLow = nombre.toLowerCase();
+    var nLow = nombre.toLowerCase().trim();
+    // FILTRO: si el nombre coincide con un admin/master de PERSONAL_MASTER,
+    // descartarlo. No deben aparecer en el listado del día.
+    if (excluidosNorm[nLow]) return;
     // Buscar primero en mosExpress (preferencia natural para POS), luego
     // en cualquier app (para detectar almaceneros/envasadores que aparecen
     // accidentalmente en ME logs).
