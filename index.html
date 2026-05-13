@@ -7323,16 +7323,10 @@
           </div>
           <button class="btn-primary text-xs px-3 py-1.5 shrink-0" onclick="MOS.abrirModalCategoria(null)">+ Nueva categoría</button>
         </div>
-        <div class="card overflow-x-auto" style="-webkit-overflow-scrolling:touch">
-          <table class="tbl">
-            <thead><tr>
-              <th>Nombre</th><th>ID</th><th>Modo</th><th class="text-right">Margen %</th><th class="text-right hidden sm:table-cell">Tope S/</th><th class="hidden md:table-cell">Descripción</th><th>Estado</th><th></th>
-            </tr></thead>
-            <tbody id="tbodyCategorias"><tr><td colspan="8" class="text-center py-8 text-slate-500 text-sm">Cargando...</td></tr></tbody>
-          </table>
-        </div>
-        <div class="text-[11px] text-slate-600 italic mt-2">
-          ℹ️ <strong>MARGEN</strong>: precio venta = costo / (1 - margen/100). <strong>FIJO</strong>: no se sugiere cambio. <strong>COMPETITIVO</strong>: usa margen pero respeta el tope. <strong>LIBRE</strong>: todo manual.
+        <!-- Grid de cards modernas (reemplaza la tabla) -->
+        <div id="catGridContainer" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3"></div>
+        <div class="text-[11px] text-slate-600 italic mt-3">
+          ℹ️ <strong class="text-emerald-400">📈 MARGEN</strong>: precio = costo / (1 − margen/100). <strong class="text-blue-400">🔒 FIJO</strong>: no sugiere cambio. <strong class="text-amber-400">🎯 COMPETITIVO</strong>: margen + tope. <strong class="text-slate-400">🆓 LIBRE</strong>: todo manual.
         </div>
       </div>
 
@@ -13072,9 +13066,31 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
     background: linear-gradient(135deg,#0c1424 0%,#0f172a 45%,#0a1428 100%);
     border: 1px solid #1e293b; border-radius: 12px;
     padding: 14px;
-    transition: all .25s cubic-bezier(.34,1.56,.64,1);
+    transition: transform .25s cubic-bezier(.34,1.56,.64,1),
+                border-color .25s, box-shadow .25s;
     animation: notifCardIn .35s cubic-bezier(.34,1.56,.64,1) backwards;
   }
+  /* Panel expandible — transición suave (no re-render) */
+  .notif-card-body {
+    max-height: 0; opacity: 0;
+    overflow: hidden;
+    transition: max-height .35s cubic-bezier(.34,1.16,.64,1),
+                opacity .25s ease,
+                margin-top .25s ease,
+                padding-top .25s ease;
+    margin-top: 0; padding-top: 0;
+    border-top: 1px solid transparent;
+  }
+  .notif-card.expanded .notif-card-body {
+    max-height: 600px; opacity: 1;
+    margin-top: 12px; padding-top: 12px;
+    border-top-color: #1e293b;
+  }
+  .notif-card-chevron {
+    color: #64748b; font-size: 14px;
+    transition: transform .25s cubic-bezier(.34,1.56,.64,1);
+  }
+  .notif-card.expanded .notif-card-chevron { transform: rotate(90deg); color: #fbbf24; }
   .notif-card { animation-delay: calc(var(--i,0) * 25ms); }
   @keyframes notifCardIn {
     from { opacity: 0; transform: translateY(8px) scale(.96); }
@@ -13148,6 +13164,47 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
   .notif-priority-pill.normal-on  { background: rgba(99,102,241,.18); color: #a5b4fc; }
   .notif-priority-pill.alta-on    { background: rgba(248,113,113,.18); color: #fca5a5; }
   .notif-priority-pill:not(.on)   { opacity: .35; }
+
+  /* ── Cards modernas de Categorías ──────────────────────── */
+  .cat-card-modern {
+    position: relative; overflow: hidden;
+    background: linear-gradient(135deg,#0c1424 0%,#0f172a 45%,#0a1428 100%);
+    border: 1px solid #1e293b; border-radius: 12px;
+    padding: 12px 14px; cursor: pointer;
+    transition: transform .25s cubic-bezier(.34,1.56,.64,1), border-color .25s, box-shadow .25s;
+    animation: catModernIn .35s cubic-bezier(.34,1.56,.64,1) backwards;
+  }
+  .cat-card-modern { animation-delay: calc(var(--i,0) * 25ms); }
+  @keyframes catModernIn {
+    from { opacity: 0; transform: translateY(10px) scale(.95); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .cat-card-modern::before {
+    content:''; position:absolute; top:0; left:-100%; width:60%; height:100%;
+    background: linear-gradient(120deg, transparent 30%, rgba(251,191,36,.08) 50%, transparent 80%);
+    pointer-events:none; transition: left .7s cubic-bezier(.34,1.56,.64,1);
+  }
+  .cat-card-modern:hover::before { left: 130%; }
+  .cat-card-modern:hover {
+    transform: translateY(-2px) scale(1.01);
+    border-color: rgba(251,191,36,.4);
+    box-shadow: 0 10px 28px -8px rgba(251,191,36,.35);
+  }
+  .cat-card-modern:active { transform: translateY(0) scale(.99); }
+  .cat-card-modern.inactiva { opacity: 0.55; filter: grayscale(.4); }
+  .cat-card-modern.modo-margen { border-left: 3px solid rgba(16,185,129,.6); }
+  .cat-card-modern.modo-fijo   { border-left: 3px solid rgba(59,130,246,.6); }
+  .cat-card-modern.modo-comp   { border-left: 3px solid rgba(251,191,36,.6); }
+  .cat-card-modern.modo-libre  { border-left: 3px solid rgba(148,163,184,.5); }
+  .cat-modo-pill {
+    padding: 2px 8px; border-radius: 999px;
+    font-size: 9px; font-weight: 700; letter-spacing: .5px;
+    flex-shrink: 0; white-space: nowrap;
+  }
+  .cat-modo-pill.modo-margen { background: rgba(16,185,129,.15);  color: #34d399; }
+  .cat-modo-pill.modo-fijo   { background: rgba(59,130,246,.15);  color: #93c5fd; }
+  .cat-modo-pill.modo-comp   { background: rgba(251,191,36,.15);  color: #fbbf24; }
+  .cat-modo-pill.modo-libre  { background: rgba(148,163,184,.12); color: #cbd5e1; }
 
   .notif-log-row {
     background: rgba(15,23,42,.5); border: 1px solid #1e293b; border-radius: 8px;

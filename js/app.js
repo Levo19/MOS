@@ -547,6 +547,7 @@ const MOS = (() => {
     _startCatRefresh();
     _startFinanzasRefresh();
     _prefetchLiquidaciones();   // las 4 pestañas a localStorage
+    _prefetchConfigModulos();   // notificaciones + categorías + personal + dispositivos
     // Prefetch resumen evaluativo del día (Cierre/Finanzas + Evaluaciones + Auditar)
     (function _prefetchResumenDia() {
       const _fhoy = today();
@@ -10188,7 +10189,7 @@ const MOS = (() => {
   function cerrarSelProveedor() { closeModal('modalSelProveedor'); }
 
   // ── CONFIGURACIÓN ────────────────────────────────────────────
-  let cfgData = { zonas: [], estaciones: [], impresoras: [], personal: [], personalMOS: [], series: [], dispositivos: [] };
+  let cfgData = { zonas: [], estaciones: [], impresoras: [], personal: [], personalMOS: [], series: [], dispositivos: [], categorias: [], personalMaster: [] };
 
   // ════════════════════════════════════════════════════════
   // CONFIGURACIÓN — sistema cache + prefetch + auto-refresh
@@ -10384,13 +10385,12 @@ const MOS = (() => {
     cargado: false
   };
   const NOTIF_ROLES_DISP = [
-    { key: 'MASTER',         label: 'Master',     cls: 'master' },
-    { key: 'ADMIN',          label: 'Admin',      cls: 'admin' },
-    { key: 'ADMINISTRADOR',  label: 'Administ',   cls: 'admin' },
-    { key: 'CAJERO',         label: 'Cajeros',    cls: 'cajero' },
-    { key: 'VENDEDOR',       label: 'Vendedores', cls: 'cajero' },
-    { key: 'ALMACENERO',     label: 'Almaceneros',cls: 'almacen' },
-    { key: 'ENVASADOR',      label: 'Envasadores',cls: 'almacen' }
+    { key: 'MASTER',     label: 'Master',     cls: 'master' },
+    { key: 'ADMIN',      label: 'Admin',      cls: 'admin' },
+    { key: 'CAJERO',     label: 'Cajeros',    cls: 'cajero' },
+    { key: 'VENDEDOR',   label: 'Vendedores', cls: 'cajero' },
+    { key: 'ALMACENERO', label: 'Almaceneros',cls: 'almacen' },
+    { key: 'ENVASADOR',  label: 'Envasadores',cls: 'almacen' }
   ];
 
   function _notifIsMaster() {
@@ -10497,7 +10497,8 @@ const MOS = (() => {
     const cardCls = [
       'notif-card',
       !isOn ? 'silenciada' : '',
-      prioridad === 'alta' ? 'alta' : ''
+      prioridad === 'alta' ? 'alta' : '',
+      expandido ? 'expanded' : ''
     ].filter(Boolean).join(' ');
     const silenciaTxt = silenciada ? `<span class="text-[10px] text-amber-400 ml-1">🔕 hasta ${new Date(n.silenciada_hasta).toLocaleString('es-PE', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}</span>` : '';
     const rolesSet = new Set(String(n.audiencia_roles || '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean));
@@ -10509,6 +10510,7 @@ const MOS = (() => {
                 onclick="MOS._notifToggleRol('${n.idNotif}', '${r.key}', event)">${r.label}</span>`;
     }).join(' ');
 
+    // Body SIEMPRE renderizado — se oculta/muestra con CSS (sin reflow ni parpadeo)
     return `
       <div class="${cardCls}" style="--i:${Math.min(idx,18)}" data-id="${n.idNotif}">
         <div class="flex items-center gap-3 cursor-pointer" onclick="MOS._notifToggleExpand('${n.idNotif}', event)">
@@ -10528,84 +10530,99 @@ const MOS = (() => {
           <div class="notif-toggle ${isOn ? 'on' : ''}"
                onclick="event.stopPropagation();MOS._notifToggleActiva('${n.idNotif}', event)"
                title="${isOn ? 'Activa' : 'Silenciada'}"></div>
-          <span style="color:#64748b;font-size:14px">${expandido ? '▾' : '▸'}</span>
+          <span class="notif-card-chevron">▸</span>
         </div>
-        ${expandido ? `
-          <div class="mt-3 pt-3 border-t border-slate-800 space-y-3">
+        <div class="notif-card-body space-y-3">
+          <div>
+            <div class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5">👥 Audiencia por rol</div>
+            <div class="flex flex-wrap gap-1.5">${chipsRoles}</div>
+          </div>
+          <div>
+            <div class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5">➕ Usuarios específicos (extra)</div>
+            <input type="text" class="inp text-xs"
+                   id="notifExtra_${n.idNotif}"
+                   placeholder="Nombres separados por coma (ej: Carlos, Jorgenis)"
+                   value="${usuariosExtra.join(', ').replace(/"/g, '&quot;')}"
+                   onchange="MOS._notifSetExtra('${n.idNotif}', this.value)">
+          </div>
+          <div class="grid grid-cols-2 gap-3">
             <div>
-              <div class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5">👥 Audiencia por rol</div>
-              <div class="flex flex-wrap gap-1.5">${chipsRoles}</div>
-            </div>
-            <div>
-              <div class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5">➕ Usuarios específicos (extra)</div>
-              <input type="text" class="inp text-xs"
-                     id="notifExtra_${n.idNotif}"
-                     placeholder="Nombres separados por coma (ej: Carlos, Jorgenis)"
-                     value="${usuariosExtra.join(', ').replace(/"/g, '&quot;')}"
-                     onchange="MOS._notifSetExtra('${n.idNotif}', this.value)">
-            </div>
-            <div class="grid grid-cols-2 gap-3">
-              <div>
-                <div class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5">⚡ Prioridad</div>
-                <div class="flex gap-1">
-                  ${['baja','normal','alta'].map(p => {
-                    const on = prioridad === p ? ' on ' + p + '-on' : ' ' + p + '-on';
-                    return `<span class="notif-priority-pill${on}" onclick="MOS._notifSetPrioridad('${n.idNotif}', '${p}', event)">${p.toUpperCase()}</span>`;
-                  }).join('')}
-                </div>
-              </div>
-              <div>
-                <div class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5">🚫 Excluir origen</div>
-                <label class="flex items-center gap-2 text-xs cursor-pointer">
-                  <input type="checkbox" ${n.excluir_origen ? 'checked' : ''}
-                         style="width:14px;height:14px;accent-color:#fbbf24;cursor:pointer"
-                         onchange="MOS._notifSetExcluir('${n.idNotif}', this.checked)">
-                  <span class="text-slate-300">Quien dispara no recibe</span>
-                </label>
+              <div class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5">⚡ Prioridad</div>
+              <div class="flex gap-1">
+                ${['baja','normal','alta'].map(p => {
+                  const on = prioridad === p ? ' on ' + p + '-on' : ' ' + p + '-on';
+                  return `<span class="notif-priority-pill${on}" onclick="MOS._notifSetPrioridad('${n.idNotif}', '${p}', event)">${p.toUpperCase()}</span>`;
+                }).join('')}
               </div>
             </div>
             <div>
-              <div class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5">🔕 Silenciar temporal</div>
-              <div class="flex gap-1 flex-wrap">
-                <button onclick="MOS._notifSilenciar('${n.idNotif}','1h', event)"     class="btn-ghost btn-ripple text-[10px] px-2 py-1">1 hora</button>
-                <button onclick="MOS._notifSilenciar('${n.idNotif}','manana', event)" class="btn-ghost btn-ripple text-[10px] px-2 py-1">Mañana 8am</button>
-                <button onclick="MOS._notifSilenciar('${n.idNotif}','lunes', event)"  class="btn-ghost btn-ripple text-[10px] px-2 py-1">Lunes 7am</button>
-                ${silenciada ? `<button onclick="MOS._notifSilenciar('${n.idNotif}','', event)" class="btn-ghost btn-ripple text-[10px] px-2 py-1" style="color:#34d399;border-color:rgba(34,197,94,.4)">↺ Quitar silencio</button>` : ''}
-              </div>
-            </div>
-            <div class="flex gap-2 flex-wrap pt-2 border-t border-slate-800">
-              <button onclick="MOS._notifRestaurarDefault('${n.idNotif}', event)" class="btn-ghost btn-ripple text-xs flex-1">↺ Restaurar default</button>
-              <button onclick="MOS._notifProbar('${n.idNotif}', event)" class="btn-primary btn-ripple text-xs flex-1">🧪 Probar a mí</button>
+              <div class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5">🚫 Excluir origen</div>
+              <label class="flex items-center gap-2 text-xs cursor-pointer">
+                <input type="checkbox" ${n.excluir_origen ? 'checked' : ''}
+                       style="width:14px;height:14px;accent-color:#fbbf24;cursor:pointer"
+                       onchange="MOS._notifSetExcluir('${n.idNotif}', this.checked)">
+                <span class="text-slate-300">Quien dispara no recibe</span>
+              </label>
             </div>
           </div>
-        ` : ''}
+          <div>
+            <div class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5">🔕 Silenciar temporal</div>
+            <div class="flex gap-1 flex-wrap">
+              <button onclick="MOS._notifSilenciar('${n.idNotif}','1h', event)"     class="btn-ghost btn-ripple text-[10px] px-2 py-1">1 hora</button>
+              <button onclick="MOS._notifSilenciar('${n.idNotif}','manana', event)" class="btn-ghost btn-ripple text-[10px] px-2 py-1">Mañana 8am</button>
+              <button onclick="MOS._notifSilenciar('${n.idNotif}','lunes', event)"  class="btn-ghost btn-ripple text-[10px] px-2 py-1">Lunes 7am</button>
+              ${silenciada ? `<button onclick="MOS._notifSilenciar('${n.idNotif}','', event)" class="btn-ghost btn-ripple text-[10px] px-2 py-1" style="color:#34d399;border-color:rgba(34,197,94,.4)">↺ Quitar silencio</button>` : ''}
+            </div>
+          </div>
+          <div class="flex gap-2 flex-wrap pt-2 border-t border-slate-800">
+            <button onclick="MOS._notifRestaurarDefault('${n.idNotif}', event)" class="btn-ghost btn-ripple text-xs flex-1">↺ Restaurar default</button>
+            <button onclick="MOS._notifProbar('${n.idNotif}', event)" class="btn-primary btn-ripple text-xs flex-1">🧪 Probar a mí</button>
+          </div>
+        </div>
       </div>`;
   }
 
   // ── Handlers ──
   function _notifToggleExpand(id, ev) {
     if (ev && ev.target.closest('.notif-toggle, input, button, .notif-rol-chip')) return;
-    _notifState.expandido[id] = !_notifState.expandido[id];
-    if (typeof _evalSfx === 'function') _evalSfx(_notifState.expandido[id] ? 'expand' : 'collapse');
-    _renderNotifs();
+    const nuevo = !_notifState.expandido[id];
+    _notifState.expandido[id] = nuevo;
+    if (typeof _evalSfx === 'function') _evalSfx(nuevo ? 'expand' : 'collapse');
+    // Toggle SOLO la clase de esa card → CSS hace la animación, sin re-render
+    const card = document.querySelector(`.notif-card[data-id="${id}"]`);
+    if (card) card.classList.toggle('expanded', nuevo);
   }
+  // Mutación quirúrgica: actualiza solo los nodos visibles afectados de UNA card
+  function _notifPatchCard(id) {
+    const it = _notifState.items.find(x => x.idNotif === id);
+    if (!it) return;
+    const card = document.querySelector(`.notif-card[data-id="${id}"]`);
+    if (!card) return;
+    const isOn = !!it.activa;
+    const silenciada = it.silenciada_hasta && new Date(it.silenciada_hasta).getTime() > Date.now();
+    card.classList.toggle('silenciada', !isOn);
+    card.classList.toggle('alta', String(it.prioridad || 'normal').toLowerCase() === 'alta');
+    const toggle = card.querySelector('.notif-toggle');
+    if (toggle) toggle.classList.toggle('on', isOn);
+  }
+
   async function _notifToggleActiva(id, ev) {
     if (!_notifIsMaster()) { toast('Solo Master puede editar', 'error'); if (typeof _evalSfx === 'function') _evalSfx('error'); return; }
     const it = _notifState.items.find(x => x.idNotif === id);
     if (!it) return;
     const nuevoEstado = !it.activa;
-    it.activa = nuevoEstado;  // optimistic
+    it.activa = nuevoEstado;
     if (typeof _evalSfx === 'function') _evalSfx(nuevoEstado ? 'add' : 'remove');
     if (ev && typeof _evalRipple === 'function') _evalRipple(ev);
-    _renderNotifs();
+    _notifPatchCard(id);  // mutación quirúrgica, sin re-render global
     try {
       await API.post('actualizarNotifConfig', { idNotif: id, activa: nuevoEstado, actualizado_por: S.session?.nombre || 'admin' });
       toast(`${nuevoEstado ? '✓ Activada' : '🔕 Silenciada'} · ${it.titulo}`, 'ok');
     } catch(e) {
-      it.activa = !nuevoEstado; // rollback
+      it.activa = !nuevoEstado;
+      _notifPatchCard(id);
       toast('Error: ' + e.message, 'error');
       if (typeof _evalSfx === 'function') _evalSfx('error');
-      _renderNotifs();
     }
   }
   async function _notifToggleRol(id, rol, ev) {
@@ -10617,7 +10634,10 @@ const MOS = (() => {
     const nuevoCsv = Array.from(rolesSet).join(',');
     it.audiencia_roles = nuevoCsv;
     if (typeof _evalSfx === 'function') _evalSfx('tap');
-    _renderNotifs();
+    // Toggle solo el chip clickeado (no re-render)
+    const card = document.querySelector(`.notif-card[data-id="${id}"]`);
+    const chip = card?.querySelector(`.notif-rol-chip[onclick*="'${rol}'"]`);
+    if (chip) chip.classList.toggle('on', rolesSet.has(rol));
     try {
       await API.post('actualizarNotifConfig', { idNotif: id, audiencia_roles: nuevoCsv, actualizado_por: S.session?.nombre || 'admin' });
     } catch(e) { toast('Error: ' + e.message, 'error'); }
@@ -10638,7 +10658,15 @@ const MOS = (() => {
     if (!it) return;
     it.prioridad = prio;
     if (typeof _evalSfx === 'function') _evalSfx('switch');
-    _renderNotifs();
+    // Mutación quirúrgica: solo cambia clases del card + pills
+    _notifPatchCard(id);
+    const card = document.querySelector(`.notif-card[data-id="${id}"]`);
+    if (card) {
+      card.querySelectorAll('.notif-priority-pill').forEach(pill => {
+        const txt = (pill.textContent || '').trim().toLowerCase();
+        pill.classList.toggle('on', txt === prio);
+      });
+    }
     try {
       await API.post('actualizarNotifConfig', { idNotif: id, prioridad: prio, actualizado_por: S.session?.nombre || 'admin' });
     } catch(e) { toast('Error: ' + e.message, 'error'); }
@@ -10670,6 +10698,7 @@ const MOS = (() => {
     if (it) it.silenciada_hasta = hastaIso;
     if (typeof _evalSfx === 'function') _evalSfx(hastaIso ? 'switch' : 'success');
     if (ev && typeof _evalRipple === 'function') _evalRipple(ev);
+    // Para silenciar/quitar mantenemos re-render (cambia texto del badge silenciada)
     _renderNotifs();
     try {
       await API.post('actualizarNotifConfig', { idNotif: id, silenciada_hasta: hastaIso, actualizado_por: S.session?.nombre || 'admin' });
@@ -10954,46 +10983,96 @@ const MOS = (() => {
 
   // ── CATEGORÍAS / política de precios ─────────────────────
   async function renderCategorias(skipFetch) {
-    const tbody = $('tbodyCategorias');
-    if (!tbody) return;
+    const cont = $('catGridContainer');
+    if (!cont) return;
+    // Pintar desde cache instantáneamente si ya está en cfgData
+    const cached = cfgData.categorias || [];
+    if (cached.length > 0) _renderCategoriasCards(cont, cached);
+    else cont.innerHTML = `<div class="col-span-full text-center py-8 text-slate-500 text-sm"><div class="inline-block animate-spin">⏳</div> Cargando...</div>`;
     if (!skipFetch) {
-      tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-slate-500 text-sm">Cargando...</td></tr>';
       try {
         const r = await API.get('getCategorias', {});
         cfgData.categorias = r || [];
+        _renderCategoriasCards(cont, cfgData.categorias);
       } catch(e) {
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-8 text-rose-400 text-sm">Error: ${e.message}</td></tr>`;
-        return;
+        if (!cached.length) cont.innerHTML = `<div class="col-span-full text-center py-8 text-rose-400 text-sm">Error: ${e.message}</div>`;
       }
     }
-    const rows = cfgData.categorias || [];
+  }
+
+  function _renderCategoriasCards(cont, rows) {
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-slate-500 text-sm">Sin categorías. Corre <code class="bg-slate-800 px-1 rounded">migrarPoliticaPrecios</code> en GAS para poblar las existentes.</td></tr>';
+      cont.innerHTML = `<div class="col-span-full text-center py-10 text-slate-500 text-sm">
+        <div class="text-3xl mb-2 opacity-50">🏷️</div>
+        Sin categorías. Crea una con "+ Nueva categoría"
+      </div>`;
       return;
     }
-    tbody.innerHTML = rows.map(c => {
+    cont.innerHTML = rows.map((c, idx) => {
       const activa = String(c.estado) === '1';
-      const modoBadge = c.modoVenta === 'MARGEN' ? 'bg-emerald-500/15 text-emerald-400'
-                      : c.modoVenta === 'FIJO' ? 'bg-blue-500/15 text-blue-400'
-                      : c.modoVenta === 'COMPETITIVO' ? 'bg-amber-500/15 text-amber-400'
-                      : 'bg-slate-700/40 text-slate-400';
-      const topeStr = parseFloat(c.precioTope) > 0 ? 'S/ ' + parseFloat(c.precioTope).toFixed(2) : '—';
-      return `<tr class="${activa ? '' : 'opacity-50'}">
-        <td class="font-medium">${c.nombre || c.idCategoria}</td>
-        <td class="text-[11px] text-slate-500 font-mono">${c.idCategoria}</td>
-        <td><span class="px-2 py-0.5 rounded text-[10px] font-semibold ${modoBadge}">${c.modoVenta}</span></td>
-        <td class="text-right font-mono">${c.modoVenta === 'MARGEN' || c.modoVenta === 'COMPETITIVO' ? (parseFloat(c.margenPct) || 0).toFixed(1) + '%' : '—'}</td>
-        <td class="text-right hidden sm:table-cell font-mono text-slate-400">${topeStr}</td>
-        <td class="hidden md:table-cell text-xs text-slate-500 truncate" style="max-width:200px">${c.descripcion || ''}</td>
-        <td><span class="text-[10px] ${activa ? 'text-emerald-400' : 'text-slate-500'}">${activa ? 'Activa' : 'Inactiva'}</span></td>
-        <td class="text-right">
-          <button onclick="MOS.abrirModalCategoria('${c.idCategoria}')" class="text-xs text-amber-400 hover:text-amber-300">Editar</button>
-        </td>
-      </tr>`;
+      const modo = String(c.modoVenta || '').toUpperCase();
+      const modoCls = modo === 'MARGEN' ? 'modo-margen' :
+                      modo === 'FIJO' ? 'modo-fijo' :
+                      modo === 'COMPETITIVO' ? 'modo-comp' : 'modo-libre';
+      const modoIco = modo === 'MARGEN' ? '📈'
+                    : modo === 'FIJO'   ? '🔒'
+                    : modo === 'COMPETITIVO' ? '🎯'
+                    : '🆓';
+      const margenStr = (modo === 'MARGEN' || modo === 'COMPETITIVO')
+        ? (parseFloat(c.margenPct) || 0).toFixed(1) + '%' : '—';
+      const topeStr = parseFloat(c.precioTope) > 0 ? 'S/ ' + parseFloat(c.precioTope).toFixed(2) : '';
+      return `
+        <div class="cat-card-modern ${!activa ? 'inactiva' : ''} ${modoCls}"
+             style="--i:${Math.min(idx, 20)}"
+             onclick="MOS.abrirModalCategoria('${c.idCategoria}', event)">
+          <div class="flex items-start justify-between gap-2 mb-1">
+            <div class="flex items-center gap-2 min-w-0 flex-1">
+              <span style="font-size:18px">${modoIco}</span>
+              <div class="min-w-0 flex-1">
+                <div class="text-sm font-semibold text-slate-100 truncate">${c.nombre || c.idCategoria}</div>
+                <div class="text-[9px] text-slate-600 font-mono truncate">${c.idCategoria}</div>
+              </div>
+            </div>
+            <span class="cat-modo-pill ${modoCls}">${modo}</span>
+          </div>
+          <div class="flex items-center gap-3 text-xs mt-2">
+            <div>
+              <div class="text-[9px] uppercase text-slate-500 font-bold tracking-wider">Margen</div>
+              <div class="font-mono font-bold text-amber-400">${margenStr}</div>
+            </div>
+            ${topeStr ? `<div>
+              <div class="text-[9px] uppercase text-slate-500 font-bold tracking-wider">Tope</div>
+              <div class="font-mono text-slate-300">${topeStr}</div>
+            </div>` : ''}
+            <div class="ml-auto">
+              <span class="text-[9px] ${activa ? 'text-emerald-400' : 'text-slate-500'}">${activa ? '● Activa' : '○ Inactiva'}</span>
+            </div>
+          </div>
+          ${c.descripcion ? `<div class="text-[10px] text-slate-500 mt-1.5 truncate">${c.descripcion}</div>` : ''}
+        </div>
+      `;
     }).join('');
   }
 
-  function abrirModalCategoria(idCategoria) {
+  function abrirModalCategoria(idCategoria, ev) {
+    if (typeof _evalSfx === 'function') _evalSfx('open');
+    if (ev && typeof _evalRipple === 'function') {
+      // Ripple en el card si existe el target
+      try {
+        const card = ev.target && ev.target.closest('.cat-card-modern');
+        if (card) {
+          const rect = card.getBoundingClientRect();
+          const size = Math.max(rect.width, rect.height) * 0.7;
+          const r = document.createElement('span');
+          r.className = 'cat-ripple';
+          r.style.width = r.style.height = size + 'px';
+          r.style.left = (ev.clientX - rect.left - size/2) + 'px';
+          r.style.top  = (ev.clientY - rect.top  - size/2) + 'px';
+          card.appendChild(r);
+          setTimeout(() => { try { r.remove(); } catch(_){} }, 700);
+        }
+      } catch(_){}
+    }
     const cat = idCategoria
       ? (cfgData.categorias || []).find(c => String(c.idCategoria) === String(idCategoria))
       : null;
@@ -11047,9 +11126,18 @@ const MOS = (() => {
         await API.post('crearCategoria', params);
         toast('Categoría creada ✓', 'ok');
       }
+      if (typeof _evalSfx === 'function') _evalSfx('success');
+      try {
+        const btn = $('btnGuardarCategoria');
+        if (btn && typeof _evalConfetti === 'function') {
+          const r = btn.getBoundingClientRect();
+          _evalConfetti(r.left + r.width/2, r.top + r.height/2, '#fbbf24');
+        }
+      } catch(_){}
       closeModal('modalCategoria');
       await renderCategorias(); // refetch
     } catch(e) {
+      if (typeof _evalSfx === 'function') _evalSfx('error');
       toast('Error: ' + e.message, 'error');
     }
   }
@@ -18742,6 +18830,36 @@ const MOS = (() => {
     try { localStorage.setItem(LIQ_CACHE_PFX + key, JSON.stringify({ ts: Date.now(), data })); } catch {}
   }
   // Pre-cargar al iniciar sesión y persistir
+  // Prefetch de TODAS las tablas del módulo Configuraciones para que
+  // cualquier tab abra al instante. Se ejecuta al autenticar y guarda
+  // los resultados en cfgData / state cache → cuando el usuario abre la
+  // pestaña, renderCfgTab encuentra datos listos y solo refresca en bg.
+  function _prefetchConfigModulos() {
+    if (!S.session) return;
+    // Notificaciones (catálogo)
+    API.get('getNotificacionesConfig', {}).then(r => {
+      const arr = Array.isArray(r) ? r : ((r && r.data) || []);
+      _notifState.items = arr;
+      _notifState.cargado = true;
+    }).catch(() => {});
+    // Categorías
+    API.get('getCategorias', {}).then(r => {
+      if (Array.isArray(r)) cfgData.categorias = r;
+    }).catch(() => {});
+    // Personal (de PERSONAL_MASTER)
+    API.get('getPersonalMaster', {}).then(r => {
+      if (Array.isArray(r)) cfgData.personalMaster = r;
+    }).catch(() => {});
+    // Dispositivos (infraestructura)
+    API.get('getDispositivos', {}).then(r => {
+      if (Array.isArray(r)) cfgData.dispositivos = r;
+    }).catch(() => {});
+    // Zonas + Estaciones + Impresoras (infra)
+    API.get('getZonas',     {}).then(r => { if (Array.isArray(r)) cfgData.zonas = r; }).catch(() => {});
+    API.get('getEstaciones',{}).then(r => { if (Array.isArray(r)) cfgData.estaciones = r; }).catch(() => {});
+    API.get('getImpresoras',{}).then(r => { if (Array.isArray(r)) cfgData.impresoras = r; }).catch(() => {});
+  }
+
   function _prefetchLiquidaciones() {
     if (!S.session) return;
     iconBusy('finanzas', true);
