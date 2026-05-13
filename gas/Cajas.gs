@@ -575,6 +575,7 @@ function datosTurno(params) {
   }).sort(function(a,b){ return b.venta - a.venta; });
 
   var metaInfo = {
+    configurada:          policy.configurada,    // false → la zona aún no tiene meta
     metaDiaria:           policy.metaDiaria,
     comisionPct:          policy.comisionExcedentePct,
     totalCobrado:         totalCobrado,
@@ -965,8 +966,16 @@ function imprimirTicketZCierre(params) {
   });
   var totalCobZ = Object.keys(pMapCobZ).reduce(function(s,k){ return s + pMapCobZ[k]; }, 0);
 
-  txt += _sHdr('META DIARIA · ' + _amtP(policyZ.metaDiaria, 0).trim());
-  if (metaLogradaZ) {
+  txt += _sHdr('META DIARIA');
+  if (!policyZ.configurada) {
+    txt += '\x1b\x45\x01';
+    txt += '  ZONA SIN META CONFIGURADA\n';
+    txt += '\x1b\x45\x00';
+    txt += '  El admin debe configurar la meta\n';
+    txt += '  de la zona ' + (caja.zona || '—') + ' en MOS\n';
+    txt += '  -> Infraestructura -> editar zona\n';
+  } else if (metaLogradaZ) {
+    txt += '  Meta: ' + _amtP(policyZ.metaDiaria, 0).trim() + '\n';
     txt += '\x1b\x45\x01';
     txt += _pSt('>> META LOGRADA <<' , 24) + _amtP(totalCobradoZ, 24).trim() + '\n';
     txt += '\x1b\x45\x00';

@@ -65,25 +65,12 @@ function actualizarZona(params) {
 }
 
 // ── Resolver política de comisión/meta para una zona ────────────────
-// Lee politicaJSON de la zona; si vacío/inválido, cae a CONFIG_MOS global.
-// Retorna { metaDiaria, comisionExcedentePct } siempre con valores válidos.
+// Lee politicaJSON de la zona. SIN fallback global — cada zona se
+// configura explícitamente desde el modal de Zona. Si la zona no tiene
+// meta válida, retorna configurada:false para que UI muestre "FALTA
+// CONFIGURAR" en lugar de heredar un valor por defecto confuso.
 function _resolverPoliticaZona(idZona) {
-  var meta = 0, pct = 0;
-  // 1. Fallback global desde CONFIG_MOS (siempre se lee primero)
-  try {
-    var cfgRows = _sheetToObjects(getSheet('CONFIG_MOS'));
-    var cfgMap = {};
-    cfgRows.forEach(function(r){ cfgMap[r.clave] = r.valor; });
-    meta = parseFloat(cfgMap['evalMetaCajero']) || 2000;
-    pct  = parseFloat(cfgMap['evalComisionExcedentePct']);
-    if (isNaN(pct)) {
-      pct = 5;
-      // Auto-crear la clave la primera vez para que el admin pueda editarla
-      _setConfigMosClave('evalComisionExcedentePct', 5,
-        'Porcentaje de comisión sobre el excedente de la meta diaria (sobre lo cobrado)');
-    }
-  } catch(_){}
-  // 2. Override por zona si politicaJSON tiene valores
+  var meta = 0, pct = 0, configurada = false;
   if (idZona) {
     try {
       _garantizarColPoliticaZona();
@@ -95,11 +82,12 @@ function _resolverPoliticaZona(idZona) {
           var pol = JSON.parse(raw);
           if (pol && parseFloat(pol.metaDiaria) > 0)             meta = parseFloat(pol.metaDiaria);
           if (pol && parseFloat(pol.comisionExcedentePct) >= 0)  pct  = parseFloat(pol.comisionExcedentePct);
+          if (meta > 0)                                          configurada = true;
         }
       }
     } catch(_) {}
   }
-  return { metaDiaria: meta, comisionExcedentePct: pct };
+  return { metaDiaria: meta, comisionExcedentePct: pct, configurada: configurada };
 }
 
 // Helper interno: setea (o crea) una clave en CONFIG_MOS

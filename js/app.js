@@ -11805,6 +11805,61 @@ const MOS = (() => {
   let _personalNotifCount = 0;
 
   // Chip de meta editable inline (click → input)
+  // ── Render compacto: meta + comisión POR ZONA ─────────────────
+  // Reemplaza el chip global confuso. Cada zona se edita aparte abriendo
+  // su modal de edición. Si no tiene política configurada → badge ⚠.
+  function _renderMetasPorZona() {
+    const zonas = (cfgData.zonas || []).filter(z => String(z.estado) === '1' || z.estado === 1 || z.estado === true);
+    if (!zonas.length) {
+      return `<div class="p-3 mb-3 rounded-lg text-[12px] text-slate-500 italic text-center"
+                   style="background:#0a1424;border:1px dashed #334155">
+        Sin zonas activas. Crea una zona en
+        <a href="javascript:MOS.nav('config');setTimeout(()=>MOS.setCfgTab('infra'),50)"
+           class="text-amber-400 hover:underline">Infraestructura</a> para configurar su meta diaria.
+      </div>`;
+    }
+    const rows = zonas.map(z => {
+      let pol = {};
+      try {
+        pol = z.politicaJSON ? (typeof z.politicaJSON === 'string' ? JSON.parse(z.politicaJSON) : z.politicaJSON) : {};
+      } catch(_){}
+      const meta = parseFloat(pol.metaDiaria);
+      const pct  = parseFloat(pol.comisionExcedentePct);
+      const hasMeta = !isNaN(meta) && meta > 0;
+      const hasPct  = !isNaN(pct)  && pct  >= 0;
+      const completa = hasMeta && hasPct;
+      const idAttr = String(z.idZona).replace(/'/g, '&#39;');
+      return `<div class="flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all hover:scale-[1.01]"
+                   onclick="MOS.abrirModalZona('${idAttr}')"
+                   style="background:rgba(245,158,11,0.06);border:1px solid ${completa ? 'rgba(245,158,11,0.3)' : 'rgba(248,113,113,0.4)'};">
+        <span class="text-base flex-shrink-0">🏬</span>
+        <div class="flex-1 min-w-0">
+          <div class="text-[12px] font-bold text-amber-100 truncate">${esc(z.nombre || z.idZona)}</div>
+          <div class="flex items-center gap-3 text-[11px] mt-0.5">
+            <span class="${hasMeta ? 'text-amber-300' : 'text-red-400'}">
+              <span class="opacity-70">Meta:</span>
+              <span class="font-bold">${hasMeta ? 'S/ ' + meta.toFixed(0) : 'sin configurar'}</span>
+            </span>
+            <span class="text-slate-500">·</span>
+            <span class="${hasPct ? 'text-emerald-300' : 'text-red-400'}">
+              <span class="opacity-70">Comisión:</span>
+              <span class="font-bold">${hasPct ? pct + '%' : 'sin configurar'}</span>
+            </span>
+          </div>
+        </div>
+        ${completa
+          ? '<span class="text-[10px] opacity-50">✏️</span>'
+          : '<span class="text-[10px] font-black text-red-400 px-2 py-0.5 rounded" style="background:rgba(248,113,113,0.15);border:1px solid rgba(248,113,113,0.4)">⚠ FALTA</span>'}
+      </div>`;
+    }).join('');
+    return `<div class="mb-3 p-2.5 rounded-lg" style="background:rgba(0,0,0,0.18);border:1px dashed rgba(245,158,11,0.25)">
+      <div class="text-[10px] uppercase tracking-wider text-amber-200/70 font-bold mb-2 px-1 flex items-center gap-1">
+        <span>🎯</span><span>Metas y comisiones por zona</span>
+      </div>
+      <div class="space-y-1.5">${rows}</div>
+    </div>`;
+  }
+
   function _renderMetaChip(label, configKey, valor, unidad, color) {
     color = color || '#6366f1';
     const safeKey = String(configKey).replace(/'/g, '&#39;');
@@ -11846,11 +11901,11 @@ const MOS = (() => {
 
     // Metas (de cfgData.config si existe; si no, leerá vacío y guardará al editar)
     const cfg = (cfgData.config || {});
-    const metaCajero     = cfg.evalMetaCajero     || '';
+    // metaCajero ya no se muestra como chip global — cada zona se configura
+    // por separado en _renderMetasPorZona (Infraestructura → modal Zona).
     const metaEnvasador  = cfg.evalMetaEnvasador  || '';
     const metaAlmacenero = cfg.evalMetaAlmacenero || '';
     const metaAuditorias = cfg.evalMetaAuditorias || '';
-    const comisionExcPct = cfg.evalComisionExcedentePct != null ? cfg.evalComisionExcedentePct : '5';
 
     // ── Grupo 1: ADMIN/MASTER (MOS) ─────
     const grupoMOS = `<div class="card p-4" style="background:linear-gradient(135deg,#1e1b4b 0%,#0d1526 100%);border:1px solid #6366f1;">
@@ -11885,16 +11940,12 @@ const MOS = (() => {
             <p class="text-[11px] text-slate-400 mt-0.5">MosExpress · cajeros que operan POS</p>
           </div>
         </div>
-        <div class="flex flex-wrap gap-1.5">
-          ${_renderMetaChip('Meta venta diaria',       'evalMetaCajero',            metaCajero,     'S/', '#f59e0b')}
-          ${_renderMetaChip('Comisión sobre excedente','evalComisionExcedentePct',  comisionExcPct, '%',  '#10b981')}
-        </div>
+        <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalPersonal(null,'mosExpress')">+ cajero/vendedor</button>
       </div>
-      <div class="text-[10px] text-slate-500 italic px-1 mb-2">
-        ⓘ Valores globales (fallback). Cada zona puede sobrescribir su meta y % en
-        <a href="javascript:MOS.nav('config');setTimeout(()=>MOS.setCfgTab('infra'),50)" class="text-amber-400 hover:underline">Infraestructura</a>
-        editando la zona.
-      </div>
+
+      <!-- Metas y comisiones POR ZONA — cada zona se edita aparte (click → modal Zona) -->
+      ${_renderMetasPorZona()}
+
       <div id="listMeCajeros" class="space-y-2"></div>
       <span id="cfgMeCajerosCount" class="hidden"></span>
     </div>`;
