@@ -217,6 +217,69 @@ const MOS = (() => {
       }
     }
 
+    // ─────────────────────────────────────────────────────────
+    // INDICADOR DE CONEXIÓN — chip pulsante en el header móvil
+    // ─────────────────────────────────────────────────────────
+    let _netStatusActual = navigator.onLine ? 'online' : 'offline';
+    let _netSyncTimer = null;
+    function _netStatusSet(estado, labelOverride) {
+      const chip = document.getElementById('netStatusChip');
+      if (!chip) return;
+      const lbl = chip.querySelector('.net-chip-label');
+      chip.classList.remove('net-chip-online','net-chip-offline','net-chip-syncing');
+      chip.classList.add('net-chip-' + estado);
+      const txt = labelOverride
+        || (estado === 'online'   ? 'EN LÍNEA'
+          : estado === 'offline'  ? 'SIN CONEXIÓN'
+          : 'SINCRONIZANDO');
+      if (lbl) lbl.textContent = txt;
+      chip.title = txt.charAt(0) + txt.slice(1).toLowerCase();
+      if (estado !== _netStatusActual && estado !== 'syncing') {
+        chip.classList.add('net-chip-just-changed');
+        setTimeout(() => chip.classList.remove('net-chip-just-changed'), 500);
+      }
+      if (estado !== 'syncing') _netStatusActual = estado;
+    }
+    function _initNetStatusChip() {
+      _netStatusSet(navigator.onLine ? 'online' : 'offline');
+      window.addEventListener('online',  () => _netStatusSet('online'));
+      window.addEventListener('offline', () => _netStatusSet('offline'));
+    }
+    // Exponer flag temporal de sincronización: el chip se pone morado
+    // mientras dura una operación pesada (prefetch, fetch fresh).
+    function _netSyncStart(label) {
+      if (!navigator.onLine) return; // offline gana siempre
+      _netStatusSet('syncing', label);
+      clearTimeout(_netSyncTimer);
+      // Failsafe: si nadie llama _netSyncEnd en 30s, volver a online
+      _netSyncTimer = setTimeout(() => _netStatusSet(_netStatusActual), 30000);
+    }
+    function _netSyncEnd() {
+      clearTimeout(_netSyncTimer);
+      _netStatusSet(navigator.onLine ? _netStatusActual : 'offline');
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // PREFETCH POST-LOGIN — descargar Liquidaciones en background
+    // para que el primer click sea instantáneo. Falla silencioso.
+    // ─────────────────────────────────────────────────────────
+    function _prefetchSesionEnLinea() {
+      if (!navigator.onLine) return;
+      // Pequeño delay: no compitamos con la carga del dashboard
+      setTimeout(() => {
+        try {
+          _netSyncStart('PRECARGANDO');
+          // Liquidaciones: ambos tabs
+          if (typeof _liqPrefetchTab === 'function') {
+            _liqPrefetchTab('pendientes');
+            _liqPrefetchTab('pagadas');
+          }
+        } catch(_) {}
+        // Liberar el chip tras un margen razonable (los prefetches son async)
+        setTimeout(() => _netSyncEnd(), 8000);
+      }, 1200);
+    }
+
     // Session check
     const saved = _getSession();
     if (saved && saved.idPersonal && saved.nombre) {
@@ -229,9 +292,13 @@ const MOS = (() => {
       if (overlay) overlay.classList.add('hidden');
       nav('dashboard');
       loadView('dashboard');
+      _prefetchSesionEnLinea();
     } else {
       _showLogin();
     }
+
+    // ── Indicador de conexión: listeners + render inicial ──
+    _initNetStatusChip();
   }
 
   // ── LOGIN / LOCK ─────────────────────────────────────────────
@@ -434,6 +501,8 @@ const MOS = (() => {
         if (window._SWDailyCheck) window._SWDailyCheck();
         // Push: notificar login + registrar token (askPermission=true porque viene de gesto del usuario)
         _pushInit(res.nombre, res.rol, true);
+        // 🚀 Prefetch silencioso de módulos pesados para que se sientan instantáneos
+        _prefetchSesionEnLinea();
       } catch(e) {
         toast('Error: ' + (e.message || 'No se pudo validar PIN'), 'error');
         _pinErrorAnim();
@@ -19154,12 +19223,32 @@ const MOS = (() => {
     const body = $('liqBody');
     if (!body) return;
     const tabActual = _liqState.tab;
-    // Si NO hay cache previo pintado, mostrar skeleton. Si SÍ hay → no parpadeo.
+    // Si NO hay cache previo pintado, mostrar skeleton premium con shimmer.
+    // Si SÍ hay → no parpadeo.
     if (!_liqState.pendientes || !_liqState.pendientes.length) {
       if (tabActual === 'pendientes' && !body.dataset._hasCache) {
-        body.innerHTML = `<div class="text-center text-xs text-slate-500 py-8"><div class="inline-block animate-spin">⏳</div> Cargando ${tabActual}...
-          <div class="text-[10px] text-slate-600 mt-2">(puede tardar ~10s la primera vez)</div>
-        </div>`;
+        body.innerHTML = `
+          <div class="liq-skel-stage">
+            <div class="liq-skel-row"></div>
+            <div class="liq-skel-row" style="animation-delay: 0.12s"></div>
+            <div class="liq-skel-row" style="animation-delay: 0.24s"></div>
+            <div class="liq-skel-row" style="animation-delay: 0.36s"></div>
+            <div class="liq-skel-stage-hint">
+              <span class="liq-skel-hint-dot"></span>
+              Sincronizando liquidaciones...
+            </div>
+          </div>`;
+      } else if (tabActual === 'pagadas' && !body.dataset._hasCache) {
+        body.innerHTML = `
+          <div class="liq-skel-stage">
+            <div class="liq-skel-card"></div>
+            <div class="liq-skel-card" style="animation-delay: 0.14s"></div>
+            <div class="liq-skel-card" style="animation-delay: 0.28s"></div>
+            <div class="liq-skel-stage-hint">
+              <span class="liq-skel-hint-dot"></span>
+              Cargando historial de pagos...
+            </div>
+          </div>`;
       }
     }
     try {
