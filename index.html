@@ -4853,6 +4853,36 @@
       100% { opacity: 1; transform: translate(-50%,-60%) scale(1); }
     }
 
+    /* ── Card BLOQUEADA persistente (dispositivos encarcelados) ── */
+    /* Variante: sin animación de caída (no flickea en cada re-render),
+       más sobria, queda combinable con veto. */
+    .fin-bloq-card {
+      border-color: rgba(245,158,11,0.55) !important;
+      box-shadow: 0 0 0 1px rgba(245,158,11,0.25) inset;
+    }
+    .fin-rejas-overlay.fin-rejas-persist {
+      animation: none;
+      background: linear-gradient(180deg, rgba(120,53,15,0.42), rgba(15,23,42,0.6));
+      z-index: 5;
+    }
+    .fin-rejas-overlay.fin-rejas-persist .fin-rejas-bar {
+      animation: none;
+      transform: translateY(0);
+      opacity: 0.72;
+    }
+    .fin-rejas-overlay.fin-rejas-persist .fin-rejas-badge,
+    .fin-rejas-overlay.fin-rejas-persist .fin-rejas-sub {
+      animation: none;
+    }
+    /* Cuando hay AMBOS overlays (vetada + bloqueada), reposicionar badges
+       para que no choquen: rejas arriba-centro, vetada arriba-derecha. */
+    .fin-vetada-card.fin-bloq-card .fin-rejas-overlay.fin-rejas-persist .fin-rejas-badge {
+      top: 8px; transform: translate(-50%, 0);
+    }
+    .fin-vetada-card.fin-bloq-card .fin-rejas-overlay.fin-rejas-persist .fin-rejas-sub {
+      top: 30px; transform: translate(-50%, 0); font-size: 10px;
+    }
+
     /* ── Card VETADA (no removida, queda con efecto violeta + tachado) ── */
     .fin-vetada-card {
       filter: grayscale(0.4) brightness(0.85);

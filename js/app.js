@@ -19729,6 +19729,7 @@ const MOS = (() => {
   // MÓDULO FINANZAS
   // ════════════════════════════════════════════════════════════
   let _finPL = null;  // último P&L cargado
+  let _finBloqueados = { porNombre: {}, fecha: null };  // {nombre.lower: {dispositivos:[...]}} para overlay de rejas persistente
   let _finanzasRefreshTimer = null;
 
   // ── Cache localStorage ────────────────────────────────────
@@ -19882,6 +19883,19 @@ const MOS = (() => {
       if (pl) pl._fechaStamp = fecha; // stamp para detectar mismatch al reabrir
       _finPL = pl;
       _finSaveCache('pl_' + fecha, pl);
+
+      // Cargar lista de dispositivos bloqueados (encarcelados) para pintar
+      // overlay persistente de rejas en cards. Fallback silencioso si falla.
+      try {
+        const rB = await API.get('getDispositivosBloqueados', { agruparPorNombre: true });
+        if (myGen !== _finGenId) return;
+        if (rB && rB.ok && rB.data) {
+          _finBloqueados = { porNombre: rB.data.porNombre || {}, fecha };
+        } else {
+          _finBloqueados = { porNombre: {}, fecha };
+        }
+      } catch(_) { _finBloqueados = { porNombre: {}, fecha }; }
+
       _finMostrarSkeleton(false);
       _finRender(pl, fecha);
       _finBeep('ok');
@@ -20882,6 +20896,11 @@ const MOS = (() => {
 
   function _finRenderPersonalCard(p, ev, fecha, area) {
     const esVetada = !!(p.vetada || p.fuente === 'ELIMINADA');
+    // ¿Tiene dispositivos encarcelados? Lookup por nombre (lowercased + trim).
+    const nLowCard = String(p.nombre || '').toLowerCase().trim();
+    const bloqInfo = (_finBloqueados && _finBloqueados.porNombre)
+      ? _finBloqueados.porNombre[nLowCard] : null;
+    const esBloqueado = !!(bloqInfo && bloqInfo.dispositivos && bloqInfo.dispositivos.length);
     const esPOS = (area || _finClasificarRol(p.rol)) === 'POS';
     const score = ev ? (ev.scoreFinal || 0) : null;
     const scoreClass = score !== null ? _evalScoreClass(score) : '';
@@ -20908,15 +20927,34 @@ const MOS = (() => {
       title="${isFresh ? '🟢 ' + act.label : (ultCx ? '⚫ ' + act.label : '')}"
       >${innerScore}${dotPulse}</div>`;
     const vetadaCls = esVetada ? ' fin-vetada-card' : '';
+    const bloqCls   = esBloqueado ? ' fin-bloq-card' : '';
     const vetadaOverlay = esVetada
       ? `<div class="fin-vetada-overlay">
            <div class="fin-vetada-stripe"></div>
            <div class="fin-vetada-badge">💸 VETADA · S/ 0.00</div>
          </div>`
       : '';
+    // Overlay de rejas persistente: si el usuario tiene devices encarcelados.
+    // Se renderiza dentro del template (no como inyección DOM temporal) para
+    // sobrevivir cualquier re-render del card. Combinable con veto.
+    const bloqOverlay = esBloqueado
+      ? `<div class="fin-rejas-overlay fin-rejas-persist">
+           <div class="fin-rejas-bars">
+             <div class="fin-rejas-bar"></div>
+             <div class="fin-rejas-bar"></div>
+             <div class="fin-rejas-bar"></div>
+             <div class="fin-rejas-bar"></div>
+             <div class="fin-rejas-bar"></div>
+             <div class="fin-rejas-bar"></div>
+           </div>
+           <div class="fin-rejas-badge">🔒 BLOQUEADO · ${bloqInfo.dispositivos.length} disp.</div>
+           <div class="fin-rejas-sub">${p.nombre}</div>
+         </div>`
+      : '';
     return `
-      <div class="eval-card${vetadaCls}" data-id="${idForEval}" style="position:relative;">
+      <div class="eval-card${vetadaCls}${bloqCls}" data-id="${idForEval}" style="position:relative;">
         ${vetadaOverlay}
+        ${bloqOverlay}
         <div class="flex items-center gap-3">
           ${scoreCircle}
           <div class="flex-1 min-w-0">
@@ -20943,18 +20981,23 @@ const MOS = (() => {
             </div>
             ${idForEval ? `<button onclick="MOS.abrirAuditar('${idForEval}')" class="btn-primary text-xs whitespace-nowrap px-3 py-1.5">Auditar</button>` : ''}
             <div class="flex gap-1 mt-1">
-              <button onclick="event.stopPropagation();MOS.finBloquearUsuario('${String(p.nombre || '').replace(/'/g,'&#39;')}','${(ev && ev.appOrigen) || p.appOrigen || ''}','${(ev && ev.idPersonal) || p.idPersonal || ''}')"
-                class="w-7 h-7 rounded-md flex items-center justify-center hover:scale-110 transition-all"
-                style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.5);color:#fbbf24;font-size:12px;"
-                title="🔒 Bloquear dispositivo (pantalla de candado en su tablet/celular)">🔒</button>
+              ${esBloqueado
+                ? `<button onclick="event.stopPropagation();MOS.finLiberarDispositivosUsuario('${String(p.nombre || '').replace(/'/g,'&#39;')}')"
+                    class="w-7 h-7 rounded-md flex items-center justify-center hover:scale-110 transition-all"
+                    style="background:rgba(34,197,94,0.18);border:1px solid rgba(34,197,94,0.55);color:#86efac;font-size:12px;position:relative;z-index:10;"
+                    title="🔓 Liberar dispositivo(s) bloqueado(s) — requiere clave admin">🔓</button>`
+                : `<button onclick="event.stopPropagation();MOS.finBloquearUsuario('${String(p.nombre || '').replace(/'/g,'&#39;')}','${(ev && ev.appOrigen) || p.appOrigen || ''}','${(ev && ev.idPersonal) || p.idPersonal || ''}')"
+                    class="w-7 h-7 rounded-md flex items-center justify-center hover:scale-110 transition-all"
+                    style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.5);color:#fbbf24;font-size:12px;position:relative;z-index:10;"
+                    title="🔒 Bloquear dispositivo (pantalla de candado en su tablet/celular)">🔒</button>`}
               ${esVetada
                 ? `<button onclick="event.stopPropagation();MOS.finRehabilitarPago('${p.idJornada || ''}','${fecha}','${String(p.nombre || '').replace(/'/g,'&#39;')}')"
                     class="w-7 h-7 rounded-md flex items-center justify-center hover:scale-110 transition-all"
-                    style="background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.55);color:#86efac;font-size:12px;"
+                    style="background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.55);color:#86efac;font-size:12px;position:relative;z-index:10;"
                     title="💵 Rehabilitar pago (revierte el veto y restaura el monto)">💵</button>`
                 : `<button onclick="event.stopPropagation();MOS.finVetarPago('${p.idJornada || ''}','${fecha}','${String(p.nombre || '').replace(/'/g,'&#39;')}')"
                     class="w-7 h-7 rounded-md flex items-center justify-center hover:scale-110 transition-all"
-                    style="background:rgba(168,85,247,0.12);border:1px solid rgba(168,85,247,0.5);color:#c084fc;font-size:12px;"
+                    style="background:rgba(168,85,247,0.12);border:1px solid rgba(168,85,247,0.5);color:#c084fc;font-size:12px;position:relative;z-index:10;"
                     title="💸 Vetar del pago de hoy (sigue operando, pero no se contará en gastos)">💸</button>`}
             </div>
           </div>
@@ -21327,12 +21370,11 @@ const MOS = (() => {
     const apoyo = (appOrigen || '').toLowerCase().indexOf('warehouse') >= 0
       ? 'pantalla de candado en su tablet/celular WH'
       : 'pantalla de candado en su POS de MosExpress';
-    if (!confirm(`🔒 ¿Bloquear dispositivo de ${nombre}?\n\nVa a aparecer ${apoyo}.\nNo podrá operar hasta que un admin ingrese clave de desbloqueo en su dispositivo.\n\n⚠ Acción operativa: bloquea el dispositivo. Los gastos NO cambian (usá 💸 si querés vetar el pago).`)) return;
+    if (!confirm(`🔒 ¿Encarcelar dispositivo(s) de ${nombre}?\n\nSe bloquearán TODOS sus dispositivos asociados (UUID).\nVa a aparecer ${apoyo} en <30s.\nSi borra cache y obtiene UUID nuevo → tendrá que ser aprobado in situ por admin+master.\n\n⚠ Para liberar: requiere clave admin (8 dígitos).`)) return;
 
-    // Sonido optimista al click
     _finBeep('bloquear');
 
-    // Resolver el card y aplicar efecto de rejas inmediatamente
+    // Aplicar overlay temporal inmediato (luego el re-render lo hace persistente)
     const allCards = document.querySelectorAll('.eval-card');
     const cardsTarget = Array.from(allCards).filter(el => {
       const btn = el.querySelector(`button[onclick*="finBloquearUsuario"][onclick*="${nombre.replace(/'/g, '&#39;')}"]`);
@@ -21341,26 +21383,89 @@ const MOS = (() => {
     cardsTarget.forEach(c => _aplicarRejasOverlay(c, nombre));
 
     try {
-      const r = await API.post('bloquearUsuario', {
+      const r = await API.post('bloquearDispositivosDeUsuario', {
         nombre,
         appOrigen: appOrigen || 'mosExpress',
-        idPersonal: idPersonal || '',
-        bloquear: true,
         bloqueadoPor: S.session?.nombre || 'admin',
         motivo: 'bloqueo_desde_personal_dia'
       });
       if (r && r.ok !== false) {
-        toast(`🔒 ${nombre} bloqueada · su dispositivo entrará en pantalla de candado en <30s`, 'ok', 5000);
+        const n = r.data?.cantidad || 0;
+        if (n > 0) {
+          toast(`🔒 ${nombre} · ${n} dispositivo(s) encarcelado(s) · pantalla candado en <30s`, 'ok', 5000);
+          // Actualizar state local inmediatamente para que el re-render persista
+          const nLow = String(nombre).toLowerCase().trim();
+          _finBloqueados.porNombre = _finBloqueados.porNombre || {};
+          _finBloqueados.porNombre[nLow] = {
+            nombre,
+            dispositivos: r.data.bloqueados || []
+          };
+          // Re-render del personal para pintar overlay persistente
+          if (_finPL) _finRenderPersonal(_finPL, _finPL._fechaStamp || $('finFecha')?.value || today());
+        } else {
+          toast(`⚠ ${nombre} no tenía dispositivos activos para encarcelar`, 'warning');
+          cardsTarget.forEach(c => {
+            const ov = c.querySelector('.fin-rejas-overlay:not(.fin-rejas-persist)');
+            if (ov) ov.remove();
+          });
+        }
       } else {
         throw new Error(r?.error || 'No se pudo bloquear');
       }
     } catch(e) {
       _finBeep('error');
       cardsTarget.forEach(c => {
-        const ov = c.querySelector('.fin-rejas-overlay');
+        const ov = c.querySelector('.fin-rejas-overlay:not(.fin-rejas-persist)');
         if (ov) ov.remove();
       });
       toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  // Libera todos los dispositivos encarcelados de un usuario. Requiere clave
+  // admin de 8 dígitos por cada dispositivo (más seguro: cada UUID es una
+  // decisión independiente). En la práctica son 1-2 devices máximo por
+  // usuario, así que la fricción es aceptable.
+  async function finLiberarDispositivosUsuario(nombre) {
+    if (!nombre) return;
+    const nLow = String(nombre).toLowerCase().trim();
+    const info = _finBloqueados?.porNombre?.[nLow];
+    if (!info || !info.dispositivos?.length) {
+      toast('No hay dispositivos bloqueados para ' + nombre, 'warning');
+      return;
+    }
+    const devices = info.dispositivos;
+    const clave = prompt(`🔓 Liberar ${devices.length} dispositivo(s) de ${nombre}\n\nIngresá la clave admin (8 dígitos: 4 globales + 4 personales):`);
+    if (!clave) return;
+    if (!/^\d{8}$/.test(clave.trim())) {
+      toast('La clave debe ser de 8 dígitos numéricos', 'error');
+      return;
+    }
+    _finBeep('bloquear');
+    let liberados = 0, fallados = 0, errMsg = '';
+    for (const d of devices) {
+      try {
+        const r = await API.post('liberarDispositivoBloqueado', {
+          deviceId: d.deviceId,
+          claveAdmin: clave.trim(),
+          motivo: 'liberacion_desde_personal_dia'
+        });
+        if (r?.ok && r.data?.autorizado && !r.data?.error) {
+          liberados++;
+        } else {
+          fallados++;
+          errMsg = r?.data?.error || r?.error || 'desconocido';
+        }
+      } catch(e) { fallados++; errMsg = e.message; }
+    }
+    if (liberados > 0) {
+      toast(`🔓 ${liberados} dispositivo(s) liberado(s) · pueden operar en <30s`, 'ok', 5000);
+      // Limpiar state local y re-render
+      delete _finBloqueados.porNombre[nLow];
+      if (_finPL) _finRenderPersonal(_finPL, _finPL._fechaStamp || $('finFecha')?.value || today());
+    }
+    if (fallados > 0) {
+      toast(`❌ ${fallados} no se pudo liberar: ${errMsg}`, 'error', 6000);
     }
   }
 
@@ -23896,7 +24001,7 @@ const MOS = (() => {
     // Finanzas
     finCargar, finDia, finIrHoy, finAbrirModalGasto, finAbrirModalJornada, finGuardarGasto,
     finAbrirCalendario, finCalNavMes, finElegirFecha, finIrAFecha,
-    finGuardarJornada, finEliminarGasto, finEliminarJornada, finVetarPago, finRehabilitarPago, finBloquearUsuario, finImportarCajas,
+    finGuardarJornada, finEliminarGasto, finEliminarJornada, finVetarPago, finRehabilitarPago, finBloquearUsuario, finLiberarDispositivosUsuario, finImportarCajas,
     cerrarModalFin,
     finEditarCostoSku, finCerrarCostoEditor, finGuardarCostoSku,
     finAbrirEditorMargenDefault, finCerrarEditorMargenDefault, finGuardarMargenDefault,

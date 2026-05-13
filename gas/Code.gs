@@ -244,6 +244,11 @@ function _route(method, e) {
       case 'bloquearUsuario':           return bloquearVendedorME(params); // alias genérico (ME + WH + cualquier app)
       case 'getVendedoresMEBloqueados': return getVendedoresMEBloqueados(params);
 
+      // ── Bloqueo por UUID de dispositivo (encarcela el aparato) ────
+      case 'bloquearDispositivosDeUsuario': return bloquearDispositivosDeUsuario(params);
+      case 'liberarDispositivoBloqueado':   return liberarDispositivoBloqueado(params);
+      case 'getDispositivosBloqueados':     return getDispositivosBloqueados(params);
+
       // ── Seguridad: clave admin global unificada ────────────
       case 'verificarClaveAdmin':       return verificarClaveAdmin(params);
       case 'getClaveAdminGlobal':       return getClaveAdminGlobal(params);

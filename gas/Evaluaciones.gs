@@ -219,6 +219,38 @@ function _verificarPresenciaME(nombre, fecha) {
       }
     }
   } catch(_){}
+
+  // DISPOSITIVOS: login activo en ME (entrenamiento, descanso, todavía
+  // no vendió). Regla acordada: basta con loguearse para contar como
+  // presente del día. Si no se le quiere pagar → vetar la jornada
+  // manualmente desde Finanzas.
+  try {
+    var dSh = getSheet('DISPOSITIVOS');
+    if (dSh) {
+      var dd = dSh.getDataRange().getValues();
+      var hdrs = dd[0] || [];
+      var iSes = hdrs.indexOf('Ultima_Sesion');
+      var iUc  = hdrs.indexOf('Ultima_Conexion');
+      var iApp = hdrs.indexOf('App');
+      var iEst = hdrs.indexOf('Estado');
+      if (iSes >= 0 && iUc >= 0) {
+        for (var rd = 1; rd < dd.length; rd++) {
+          var nomD = String(dd[rd][iSes] || '').toLowerCase().trim();
+          if (!nomD) continue;
+          if (nomD !== nLow && nomD.indexOf(nLow) < 0 && nLow.indexOf(nomD) < 0) continue;
+          var app = iApp >= 0 ? String(dd[rd][iApp] || '').toLowerCase() : '';
+          if (app === 'mos') continue; // app de admin, no operativo
+          var est = iEst >= 0 ? String(dd[rd][iEst] || '').toUpperCase() : '';
+          if (est === 'INACTIVO' || est === 'PENDIENTE_APROBACION') continue;
+          var ucD = dd[rd][iUc];
+          var fStrD = ucD instanceof Date
+            ? Utilities.formatDate(ucD, tz, 'yyyy-MM-dd')
+            : String(ucD || '').substring(0, 10);
+          if (fStrD === fecha) return true;
+        }
+      }
+    }
+  } catch(_){}
   return false;
 }
 
@@ -691,13 +723,14 @@ function getResumenTodosDia(params) {
   // "OPERADOR" en la lista de personal del día. Solo cuentan:
   //   - WH: ALMACENERO, ENVASADOR, OPERADOR
   //   - ME: CAJERO, VENDEDOR
+  // REGLA: excluir SOLO por nombre+apellido (n2). El nombre solo (n1)
+  // generaba falsos positivos cuando un vendedor real comparte primer
+  // nombre con un admin (ej: "javier" vendedor vs "Javier Vasquez" ADMIN).
   var excluidosNorm = {};
   todosPersonal.forEach(function(p){
     if (_esPersonalEvaluable(p)) return;
-    var n1 = String(p.nombre || '').toLowerCase().trim();
     var n2 = (String(p.nombre || '') + ' ' + String(p.apellido || '')).toLowerCase().trim();
-    if (n1) excluidosNorm[n1] = true;
-    if (n2) excluidosNorm[n2] = true;
+    if (n2 && n2.indexOf(' ') >= 0) excluidosNorm[n2] = true;
   });
 
   // Detectar genéricos de mosExpress por rol (plantillas para virtuales)

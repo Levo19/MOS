@@ -417,3 +417,259 @@ function getBloqueosActivos(params) {
   }
   return { ok: true, data: rows };
 }
+
+// ════════════════════════════════════════════════════════════════════════
+// BLOQUEO POR DISPOSITIVO (UUID) — encarcela el aparato, no el usuario
+// ════════════════════════════════════════════════════════════════════════
+// Filosofía: el admin clickea 🔒 en card de "Orlando" → buscamos TODOS los
+// dispositivos donde Orlando está logueado/asociado y los pasamos a Estado
+// BLOQUEADO. La app hija (ME/WH) polea consultarEstadoDispositivo con su
+// UUID y al recibir BLOQUEADO muestra pantalla de candado.
+//
+// Si Orlando borra cache → nuevo UUID → cae como PENDIENTE_APROBACION y
+// admin+master tienen que aprobarlo in situ.
+
+// Bloquea todos los dispositivos asociados al nombre del usuario.
+// params: { nombre, appOrigen, bloqueadoPor, motivo }
+function bloquearDispositivosDeUsuario(params) {
+  if (!params || !params.nombre) return { ok: false, error: 'Requiere nombre' };
+  var nombre = String(params.nombre).trim();
+  var nombreNorm = nombre.toLowerCase();
+  var appOrigen = _normalizarApp(params.appOrigen || '');
+  var bloqueadoPor = String(params.bloqueadoPor || 'admin').trim();
+  var motivo = String(params.motivo || 'bloqueo_desde_personal_dia');
+
+  var sheet = getSheet('DISPOSITIVOS');
+  var data = sheet.getDataRange().getValues();
+  var hdrs = data[0];
+  var iId   = hdrs.indexOf('ID_Dispositivo');
+  var iEst  = hdrs.indexOf('Estado');
+  var iApp  = hdrs.indexOf('App');
+  var iSes  = hdrs.indexOf('Ultima_Sesion');
+  var iNomE = hdrs.indexOf('Nombre_Equipo');
+  if (iId < 0 || iEst < 0 || iSes < 0) {
+    return { ok: false, error: 'DISPOSITIVOS sin columnas requeridas' };
+  }
+
+  var bloqueados = [];
+  var ahora = new Date();
+  for (var r = 1; r < data.length; r++) {
+    var sesion = String(data[r][iSes] || '').toLowerCase().trim();
+    if (!sesion) continue;
+    // Match flexible: igual o contiene (tolera "javier " vs "javier")
+    if (sesion !== nombreNorm && sesion.indexOf(nombreNorm) < 0 && nombreNorm.indexOf(sesion) < 0) continue;
+    if (appOrigen && iApp >= 0) {
+      var appRow = _normalizarApp(data[r][iApp]);
+      if (appRow !== appOrigen) continue;
+    }
+    var estadoActual = String(data[r][iEst] || '').toUpperCase();
+    // No re-bloquear lo ya bloqueado/inactivo
+    if (estadoActual === 'INACTIVO') continue;
+    var deviceId = String(data[r][iId] || '');
+    if (!deviceId) continue;
+
+    // Reusa estado INACTIVO existente — ME/WH ya reaccionan a ese estado
+    // mostrando pantalla candado. Diferenciamos "encarcelado por usuario"
+    // de "revocado permanente" via fila en BLOQUEOS_USUARIO con motivo
+    // 'DEVICE: ...' (sólo esos se pueden liberar via liberarDispositivoBloqueado).
+    sheet.getRange(r + 1, iEst + 1).setValue('INACTIVO');
+    bloqueados.push({
+      deviceId: deviceId,
+      nombreEquipo: iNomE >= 0 ? String(data[r][iNomE] || '') : '',
+      estadoAnterior: estadoActual
+    });
+
+    // Auditar en BLOQUEOS_USUARIO (una fila por device bloqueado)
+    try {
+      var bSheet = _garantizarHojaBloqueos();
+      var bHdrs = bSheet.getRange(1, 1, 1, bSheet.getLastColumn()).getValues()[0];
+      var fila = new Array(BLOQUEOS_HEADERS.length).fill('');
+      fila[bHdrs.indexOf('idBloqueo')]    = _generateId('BLO');
+      fila[bHdrs.indexOf('idPersonal')]   = deviceId; // usamos col para guardar deviceId
+      fila[bHdrs.indexOf('nombre')]       = nombre;
+      fila[bHdrs.indexOf('appOrigen')]    = appOrigen || (iApp >= 0 ? String(data[r][iApp] || '') : '');
+      fila[bHdrs.indexOf('motivo')]       = 'DEVICE: ' + motivo;
+      fila[bHdrs.indexOf('bloqueadoPor')] = bloqueadoPor;
+      fila[bHdrs.indexOf('fechaBloqueo')] = ahora;
+      fila[bHdrs.indexOf('unlockHasta')]  = 0;
+      fila[bHdrs.indexOf('desbloqueadoPor')] = '';
+      bSheet.appendRow(fila);
+    } catch(eA) { Logger.log('Audit bloqueo device falló: ' + eA.message); }
+  }
+
+  // Auditoría general en hoja AUDITORIA
+  try {
+    var audSheet = _garantizarHojaAuditoria();
+    audSheet.appendRow([
+      _generateId('AUD'), ahora, 'BLOQUEAR_DISPOSITIVOS_USUARIO',
+      nombre, '', bloqueadoPor, appOrigen, '',
+      'Bloqueados ' + bloqueados.length + ' dispositivo(s): ' +
+        bloqueados.map(function(b){ return b.deviceId; }).join(', ')
+    ]);
+  } catch(e) {}
+
+  return {
+    ok: true,
+    data: {
+      nombre: nombre,
+      cantidad: bloqueados.length,
+      bloqueados: bloqueados
+    }
+  };
+}
+
+// Libera un dispositivo bloqueado. Requiere clave admin/master de 8 dígitos.
+// params: { deviceId, claveAdmin, motivo? }
+function liberarDispositivoBloqueado(params) {
+  if (!params || !params.deviceId) return { ok: false, error: 'Requiere deviceId' };
+  if (!params.claveAdmin) return { ok: false, error: 'Requiere claveAdmin' };
+
+  var auth = verificarClaveAdmin({
+    clave: params.claveAdmin,
+    accion: 'LIBERAR_DISPOSITIVO_BLOQUEADO',
+    refDocumento: params.deviceId,
+    appOrigen: params.app || '',
+    detalle: params.motivo || 'Liberar dispositivo bloqueado'
+  });
+  if (!auth.ok) return auth;
+  if (!auth.data || !auth.data.autorizado) {
+    return { ok: true, data: { autorizado: false, error: auth.data?.error || 'Clave incorrecta' } };
+  }
+
+  var sheet = getSheet('DISPOSITIVOS');
+  var data = sheet.getDataRange().getValues();
+  var hdrs = data[0];
+  var iId  = hdrs.indexOf('ID_Dispositivo');
+  var iEst = hdrs.indexOf('Estado');
+  var iNomE = hdrs.indexOf('Nombre_Equipo');
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][iId]) !== String(params.deviceId)) continue;
+    var estadoActual = String(data[i][iEst] || '').toUpperCase();
+    if (estadoActual !== 'INACTIVO') {
+      return { ok: true, data: { autorizado: true, ok: false, error: 'Estado actual: ' + estadoActual + ' (no estaba INACTIVO)' } };
+    }
+    // Solo liberable si fue encarcelado por flujo DEVICE (no si fue revocado
+    // permanentemente por otro motivo). Verificar en BLOQUEOS_USUARIO.
+    var esDeviceBloqueo = false;
+    try {
+      var bSheetChk = _garantizarHojaBloqueos();
+      var bDataChk = bSheetChk.getDataRange().getValues();
+      var bHdrsChk = bDataChk[0];
+      var bIdPChk  = bHdrsChk.indexOf('idPersonal');
+      var bMotChk  = bHdrsChk.indexOf('motivo');
+      var bFBChk   = bHdrsChk.indexOf('fechaBloqueo');
+      for (var brc = 1; brc < bDataChk.length; brc++) {
+        if (String(bDataChk[brc][bIdPChk]) === String(params.deviceId)
+            && bDataChk[brc][bFBChk]
+            && String(bDataChk[brc][bMotChk] || '').indexOf('DEVICE:') === 0) {
+          esDeviceBloqueo = true;
+          break;
+        }
+      }
+    } catch(_) {}
+    if (!esDeviceBloqueo) {
+      return { ok: true, data: { autorizado: true, ok: false, error: 'Este dispositivo fue revocado por otra vía. Usá el panel de dispositivos para reactivarlo.' } };
+    }
+    sheet.getRange(i + 1, iEst + 1).setValue('ACTIVO');
+
+    // Marcar fila(s) en BLOQUEOS_USUARIO como liberadas
+    try {
+      var bSheet = _garantizarHojaBloqueos();
+      var bData = bSheet.getDataRange().getValues();
+      var bHdrs = bData[0];
+      var bIdP  = bHdrs.indexOf('idPersonal'); // contiene deviceId para bloqueos por device
+      var bDes  = bHdrs.indexOf('desbloqueadoPor');
+      var bFB   = bHdrs.indexOf('fechaBloqueo');
+      for (var br = 1; br < bData.length; br++) {
+        if (String(bData[br][bIdP]) === String(params.deviceId) && bData[br][bFB]) {
+          bSheet.getRange(br + 1, bDes + 1).setValue(auth.data.validadoPor + ' @ ' + new Date().toISOString());
+          bSheet.getRange(br + 1, bFB + 1).setValue('');
+        }
+      }
+    } catch(eL) {}
+
+    return {
+      ok: true,
+      data: {
+        autorizado: true,
+        deviceId: params.deviceId,
+        nombreEquipo: iNomE >= 0 ? String(data[i][iNomE] || '') : '',
+        liberadoPor: auth.data.validadoPor
+      }
+    };
+  }
+  return { ok: false, error: 'Dispositivo no encontrado: ' + params.deviceId };
+}
+
+// Lista dispositivos bloqueados, opcionalmente agrupados por nombre de usuario.
+// Frontend de Finanzas lo usa para pintar el overlay de rejas en cards.
+// params: { agruparPorNombre?: bool }
+function getDispositivosBloqueados(params) {
+  // 1. Set de deviceIds que fueron encarcelados por flujo DEVICE (sospecha
+  //    de usuario). Excluye revocaciones permanentes hechas desde panel.
+  var deviceBloqueadosSet = {};
+  try {
+    var bSheet = _garantizarHojaBloqueos();
+    var bData = bSheet.getDataRange().getValues();
+    if (bData.length > 1) {
+      var bHdrs = bData[0];
+      var bIdP  = bHdrs.indexOf('idPersonal');
+      var bMot  = bHdrs.indexOf('motivo');
+      var bFB   = bHdrs.indexOf('fechaBloqueo');
+      var bNom  = bHdrs.indexOf('nombre');
+      var bBp   = bHdrs.indexOf('bloqueadoPor');
+      for (var br = 1; br < bData.length; br++) {
+        if (!bData[br][bFB]) continue; // ya liberado
+        if (String(bData[br][bMot] || '').indexOf('DEVICE:') !== 0) continue;
+        var did = String(bData[br][bIdP] || '');
+        if (did) {
+          deviceBloqueadosSet[did] = {
+            nombre:       String(bData[br][bNom] || ''),
+            bloqueadoPor: String(bData[br][bBp] || ''),
+            fechaBloqueo: bData[br][bFB]
+          };
+        }
+      }
+    }
+  } catch(_) {}
+
+  // 2. Cruzar con DISPOSITIVOS para enriquecer con nombre de equipo / app
+  var sheet = getSheet('DISPOSITIVOS');
+  var data = sheet.getDataRange().getValues();
+  var hdrs = data[0];
+  var iId   = hdrs.indexOf('ID_Dispositivo');
+  var iEst  = hdrs.indexOf('Estado');
+  var iApp  = hdrs.indexOf('App');
+  var iSes  = hdrs.indexOf('Ultima_Sesion');
+  var iNomE = hdrs.indexOf('Nombre_Equipo');
+
+  var bloqueados = [];
+  for (var r = 1; r < data.length; r++) {
+    var did2 = String(data[r][iId] || '');
+    if (!deviceBloqueadosSet[did2]) continue;
+    var est = String(data[r][iEst] || '').toUpperCase();
+    if (est !== 'INACTIVO') continue; // si ya no está INACTIVO ignorar (out of sync)
+    var meta = deviceBloqueadosSet[did2];
+    bloqueados.push({
+      deviceId:     did2,
+      nombreEquipo: iNomE >= 0 ? String(data[r][iNomE] || '') : '',
+      app:          iApp  >= 0 ? String(data[r][iApp]  || '') : '',
+      ultimaSesion: iSes  >= 0 ? String(data[r][iSes]  || '') : '',
+      nombreUsuario: meta.nombre,
+      bloqueadoPor: meta.bloqueadoPor,
+      fechaBloqueo: meta.fechaBloqueo
+    });
+  }
+
+  if (params && params.agruparPorNombre) {
+    var byNombre = {};
+    bloqueados.forEach(function(b){
+      var k = String(b.nombreUsuario || b.ultimaSesion || '').toLowerCase().trim();
+      if (!k) return;
+      if (!byNombre[k]) byNombre[k] = { nombre: b.nombreUsuario || b.ultimaSesion, dispositivos: [] };
+      byNombre[k].dispositivos.push(b);
+    });
+    return { ok: true, data: { lista: bloqueados, porNombre: byNombre } };
+  }
+  return { ok: true, data: bloqueados };
+}
