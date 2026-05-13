@@ -19892,7 +19892,9 @@ const MOS = (() => {
     const scoreClass = score !== null ? _evalScoreClass(score) : '';
     const rolClass = _evalRolBadgeClass(p.rol || (ev && ev.rol));
     const evalCount = ev ? (ev.evaluacionesCount || 0) : 0;
-    const kpiTxt = ev ? _evalKpiSummary(ev) : '';
+    // Pasar p.rol como override: el rol de PERSONAL_MASTER es source of
+    // truth; el ev.rol puede venir de detección automática (cajas/ventas).
+    const kpiTxt = ev ? _evalKpiSummary(ev, p.rol) : '';
     const totalDia = (ev && ev.totalDia) ? ev.totalDia : (parseFloat(p.monto) || 0);
     const idForEval = (ev && ev.idPersonal) || p.idPersonal || '';
     const fuenteTag = p.fuente === 'AUTO_VENTA' ? '<span class="fin-tag fin-tag-green ml-1" title="Detectado por venta">auto</span>'
@@ -21030,24 +21032,30 @@ const MOS = (() => {
     }).join('');
   }
 
-  function _evalKpiSummary(r) {
+  function _evalKpiSummary(r, rolOverride) {
     const k = r.kpis || {};
-    const rol = String(r.rol || '').toUpperCase();
+    // rolOverride (de p.rol en PERSONAL_MASTER) tiene prioridad sobre r.rol
+    // (de la detección auto en el resumen), porque PERSONAL_MASTER es la
+    // fuente de verdad — un ENVASADOR sigue siendo ENVASADOR aunque toque
+    // ME un rato. Esto evita "Ventas S/0.00" en cards de almacén.
+    const rol = String(rolOverride || r.rol || '').toUpperCase();
     const auditTxt = `${k.auditoriasHechas || 0}/${k.metaAuditorias || 30} aud.`;
     if (rol === 'CAJERO' || rol === 'VENDEDOR') {
       return `Ventas S/${(k.ventasReales || 0).toFixed(2)} · ${auditTxt}`;
     }
     if (rol === 'ENVASADOR') {
-      // Envasador: unidades producidas + eficiencia (más informativo que aud.)
-      const efic = (k.eficienciaPromedio != null) ? k.eficienciaPromedio
-                 : (k.eficienciaPct != null)     ? k.eficienciaPct : null;
-      return efic != null
-        ? `Envasados ${k.envasados || 0} uds · efic ${parseFloat(efic).toFixed(0)}%`
-        : `Envasados ${k.envasados || 0} uds`;
+      const tar = parseFloat(r.tarifaEnvasado) || 0;
+      const uds = parseFloat(k.envasados) || 0;
+      const pago = uds * tar;
+      return tar > 0 && uds > 0
+        ? `🏷 ${uds} uds · S/${pago.toFixed(2)} · ${auditTxt}`
+        : `🏷 ${uds} uds envasadas · ${auditTxt}`;
     }
     if (rol === 'ALMACENERO') {
-      // Almacenero: guías + auditorías de stock
-      return `${k.guias || 0} guías · ${auditTxt}`;
+      const uds = parseFloat(k.envasados) || 0;
+      return uds > 0
+        ? `🏷 ${uds} uds envasadas · ${auditTxt}`
+        : `📋 ${auditTxt}`;
     }
     return auditTxt;
   }
@@ -21078,6 +21086,16 @@ const MOS = (() => {
       r = _evalState.resumenes.find(x => x.idPersonal === idPersonal);
     }
     if (!r) { toast('Personal no encontrado', 'error'); return; }
+    // Override del rol desde PERSONAL_MASTER (la card lo expone). Si
+    // existe, gana sobre r.rol (que puede venir de auto-detección).
+    try {
+      const card = document.querySelector(`.eval-card[data-id="${idPersonal}"]`);
+      const badge = card?.querySelector('.badge-rol');
+      const rolReal = badge?.textContent?.trim();
+      if (rolReal && rolReal !== '—' && rolReal !== '⚡ del sistema') {
+        r.rol = rolReal;
+      }
+    } catch(_){}
     // Título contextual: emoji + área según rol
     const rolU = String(r.rol || '').toUpperCase();
     const tituloIco = (rolU === 'CAJERO' || rolU === 'VENDEDOR') ? '🛒'

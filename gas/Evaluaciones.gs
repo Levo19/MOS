@@ -787,16 +787,34 @@ function getResumenTodosDia(params) {
   } catch(e) { Logger.log('No se pudo leer DISPOSITIVOS: ' + e.message); }
 
   // 3. Para cada nombre detectado: matchear con master o crear virtual
+  //
+  // ── Regla de matching (PERSONAL_MASTER es source of truth) ──
+  // Buscamos por nombre en cualquier appOrigen, no solo mosExpress.
+  // Esto evita que un ENVASADOR/ALMACENERO (registrado en warehouseMos)
+  // se duplique como VENDEDOR virtual cuando su nombre aparezca en
+  // ventas/cajas de ME (p.ej. si abrió caja para cubrir un descanso).
+  // El rol REAL del master gana al rol detectado por la actividad.
   Object.keys(rolesDelDia).forEach(function(nombre){
     var rol = rolesDelDia[nombre];
     var nLow = nombre.toLowerCase();
+    // Buscar primero en mosExpress (preferencia natural para POS), luego
+    // en cualquier app (para detectar almaceneros/envasadores que aparecen
+    // accidentalmente en ME logs).
     var match = personal.find(function(p){
       if (p.appOrigen !== 'mosExpress') return false;
       var full = (String(p.nombre || '') + ' ' + (p.apellido || '')).trim().toLowerCase();
       return full === nLow || String(p.nombre || '').toLowerCase() === nLow;
     });
+    if (!match) {
+      match = personal.find(function(p){
+        var full = (String(p.nombre || '') + ' ' + (p.apellido || '')).trim().toLowerCase();
+        return full === nLow || String(p.nombre || '').toLowerCase() === nLow;
+      });
+    }
     var esGenerico = match && genericos.indexOf(match) >= 0;
     if (match && !esGenerico) {
+      // El rol del master MANDA: si Oswaldbit es ENVASADOR en master, su rol
+      // queda como ENVASADOR aunque haya tocado ME ese día. No reasignar.
       if (lista.indexOf(match) < 0) lista.push(match);
     } else {
       var g = _genericoPorRol(rol);
