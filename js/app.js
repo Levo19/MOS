@@ -21192,10 +21192,11 @@ const MOS = (() => {
   // getResumenDia para garantizar consistencia con liquidación semanal.
   async function imprimirLiquidacionDia() {
     const r = _evalState.auditR;
-    if (!r) { toast('Abre primero una auditoría', 'error'); return; }
+    if (!r) { _evalSfx('error'); toast('Abre primero una auditoría', 'error'); return; }
     const sub = $('liqPrintSubtitle');
     if (sub) sub.textContent = `${r.nombre || ''} · ${r.rol || ''} · ${_evalState.fecha}`;
     openModal('modalSelPrinterLiq');
+    _evalSfx('open');
     await _liqLoadPrinters(false);
   }
 
@@ -21261,20 +21262,23 @@ const MOS = (() => {
         const g = grupos[k];
         const items = g.printers
           .sort((a,b) => (b.online?1:0) - (a.online?1:0) || String(a.nombre||'').localeCompare(String(b.nombre||'')))
-          .map(p => {
+          .map((p, idx) => {
             const offClass = p.online ? '' : 'opacity-60';
+            const dotCls = p.online ? 'printer-dot-online' : '';
             const dotColor = p.online ? '#34d399' : '#f87171';
-            const offTag = p.online ? '' : '<span class="text-[9px] text-rose-400 ml-1">offline</span>';
+            const offTag = p.online
+              ? '<span class="text-[9px] text-emerald-400 ml-1 font-semibold">online</span>'
+              : '<span class="text-[9px] text-rose-400 ml-1">offline</span>';
             const meta = [
               p.nombreCatalogo,
               p.idEstacion ? '· ' + p.idEstacion : '',
               p.computer ? '· ' + p.computer : ''
             ].filter(Boolean).join(' ');
-            return `<button onclick="MOS._liqEnviarPrint(${p.id})"
-                            class="w-full text-left rounded-lg p-2 transition hover:bg-slate-800/60 ${offClass}"
-                            style="background:#060d1f;border:1px solid #1e293b">
+            return `<button onclick="MOS._liqEnviarPrint(${p.id}, this, event)"
+                            class="printer-card btn-ripple w-full text-left rounded-lg p-2 ${offClass}"
+                            style="background:linear-gradient(135deg,#060d1f,#0a1428);border:1px solid #1e293b;animation: checklistItemIn .35s cubic-bezier(.34,1.56,.64,1) backwards; animation-delay:${idx*45}ms">
               <div class="flex items-center gap-2">
-                <span style="width:8px;height:8px;border-radius:999px;background:${dotColor};box-shadow:0 0 6px ${dotColor}"></span>
+                <span class="${dotCls}" style="width:10px;height:10px;border-radius:999px;background:${dotColor};box-shadow:0 0 8px ${dotColor}"></span>
                 <span class="text-sm text-slate-200 font-medium flex-1">${p.nombre}</span>
                 ${offTag}
               </div>
@@ -21289,19 +21293,27 @@ const MOS = (() => {
     cont.innerHTML = html;
   }
 
-  async function _liqEnviarPrint(printerId) {
+  async function _liqEnviarPrint(printerId, btnEl, ev) {
     const r = _evalState.auditR;
-    if (!r) { toast('Falta resumen', 'error'); return; }
-    const cont = $('liqPrinterList');
-    if (cont) cont.innerHTML = `<div class="text-center text-xs text-amber-400 py-8">
-      <div class="inline-block animate-pulse">🖨</div> Enviando a PrintNode...
-    </div>`;
+    if (!r) { _evalSfx('error'); toast('Falta resumen', 'error'); return; }
+    _evalSfx('print');
+    if (ev) _evalRipple(ev);
+    // Marcar la card como "enviando" + pulse en el botón de imprimir del modal
+    if (btnEl) btnEl.classList.add('sending');
+    const printBtn = $('auditPrintBtn');
+    if (printBtn) printBtn.classList.add('printing');
     try {
       const res = await API.post('imprimirLiquidacionDia', {
         idPersonal: r.idPersonal,
         fecha:      _evalState.fecha,
         printerId:  parseInt(printerId, 10)
       });
+      _evalSfx('success');
+      // Confetti dorado desde el botón clickeado
+      try {
+        const rect = (btnEl || $('liqPrinterList')).getBoundingClientRect();
+        _evalConfetti(rect.left + rect.width/2, rect.top + rect.height/2, '#fbbf24');
+      } catch(_){}
       if (res && res.printJobId) {
         toast(`✓ Liquidación enviada · job ${res.printJobId}`, 'ok');
       } else {
@@ -21309,8 +21321,12 @@ const MOS = (() => {
       }
       closeModal('modalSelPrinterLiq');
     } catch(e) {
+      _evalSfx('error');
       toast('Error: ' + ((e && e.message) || e), 'error');
       _liqRenderPrinters(_evalState.pnPrinters || []);
+    } finally {
+      if (btnEl) btnEl.classList.remove('sending');
+      if (printBtn) printBtn.classList.remove('printing');
     }
   }
 
@@ -21370,13 +21386,24 @@ const MOS = (() => {
     }).join('');
 
     const total = Math.max(0, base + bonusEf + metaEf + (esAlm ? pagoEnv : 0) - sancion);
-    totEl.textContent = `S/${total.toFixed(2)}`;
+    const totalStr = `S/${total.toFixed(2)}`;
+    const cambio = totEl.textContent !== totalStr;
+    totEl.textContent = totalStr;
     if (sancion > 0 && (base + bonusEf + metaEf + (esAlm ? pagoEnv : 0) - sancion) < 0) {
       totEl.style.color = '#f87171';
       totEl.title = 'Sanción excede el total, se trunca a S/0.00';
     } else {
       totEl.style.color = '#fbbf24';
       totEl.title = '';
+    }
+    // Bump animado + tick sonoro al cambiar el total
+    if (cambio && _evalState.auditR) {
+      totEl.classList.remove('bumping');
+      // Reflow forzado para reiniciar la animación
+      void totEl.offsetWidth;
+      totEl.classList.add('bumping');
+      _evalSfx('tap');
+      setTimeout(() => totEl.classList.remove('bumping'), 500);
     }
   }
 
@@ -21396,6 +21423,83 @@ const MOS = (() => {
   }
 
   // ============================================================
+  // ── SFX + efectos del módulo Evaluación ──────────────────────
+  // Sonidos sintetizados (sin assets externos) + confetti + ripple
+  // ============================================================
+  let _evalAudioCtx = null;
+  function _evalSfx(tipo) {
+    try {
+      if (!_evalAudioCtx) _evalAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = _evalAudioCtx; const t = ctx.currentTime;
+      function tone(freq, dur, gainVal, opts) {
+        const o = ctx.createOscillator(); const g = ctx.createGain();
+        o.type = (opts && opts.type) || 'sine';
+        o.frequency.setValueAtTime(freq, t + (opts?.delay || 0));
+        if (opts?.glide) o.frequency.exponentialRampToValueAtTime(opts.glide, t + (opts?.delay || 0) + dur);
+        g.gain.setValueAtTime(gainVal, t + (opts?.delay || 0));
+        g.gain.exponentialRampToValueAtTime(0.0001, t + (opts?.delay || 0) + dur);
+        o.connect(g); g.connect(ctx.destination);
+        o.start(t + (opts?.delay || 0)); o.stop(t + (opts?.delay || 0) + dur + 0.01);
+      }
+      switch (tipo) {
+        case 'tap':     tone(1400, .035, .04, { type:'triangle' }); break;
+        case 'click':   tone(1100, .04,  .05); tone(1500, .03, .03, { delay:.02 }); break;
+        case 'pop':     tone(900,  .06,  .05, { type:'sine', glide: 380 }); break;
+        case 'add':     tone(700,  .05,  .05); tone(1050, .06, .05, { delay:.05 }); tone(1400, .07, .04, { delay:.10 }); break;
+        case 'remove':  tone(420,  .12,  .055, { type:'sawtooth', glide: 180 }); break;
+        case 'drag':    tone(620,  .04,  .03, { type:'triangle' }); break;
+        case 'drop':    tone(880,  .07,  .045); tone(660, .08, .04, { delay:.04 }); break;
+        case 'switch':  tone(800,  .04,  .04, { type:'triangle' }); tone(1100, .04, .04, { delay:.04, type:'triangle' }); break;
+        case 'success': tone(660,  .08,  .06); tone(990, .08, .06, { delay:.08 }); tone(1320, .12, .065, { delay:.16 }); break;
+        case 'print':   tone(440,  .15,  .04, { type:'sawtooth' }); tone(880, .18, .045, { delay:.05, type:'sawtooth' }); break;
+        case 'error':   tone(220,  .22,  .07, { type:'square', glide: 140 }); break;
+        case 'open':    tone(520,  .06,  .04); tone(780, .08, .045, { delay:.04 }); break;
+      }
+    } catch(_){}
+  }
+  // Expone módulo para que otros sitios reutilicen
+  function _evalRipple(ev) {
+    try {
+      const el = ev.currentTarget;
+      if (!el || !el.classList || !el.classList.contains('btn-ripple')) return;
+      const rect = el.getBoundingClientRect();
+      const size = Math.max(rect.width, rect.height);
+      const r = document.createElement('span');
+      r.className = 'ripple';
+      r.style.width = r.style.height = size + 'px';
+      r.style.left = (ev.clientX - rect.left - size/2) + 'px';
+      r.style.top  = (ev.clientY - rect.top  - size/2) + 'px';
+      el.appendChild(r);
+      setTimeout(() => { try { r.remove(); } catch(_){} }, 600);
+    } catch(_){}
+  }
+  function _evalConfetti(originX, originY, color) {
+    try {
+      const count = 26;
+      const colors = color
+        ? [color]
+        : ['#fbbf24', '#fde68a', '#34d399', '#60a5fa', '#a78bfa', '#f472b6'];
+      for (let i = 0; i < count; i++) {
+        const el = document.createElement('div');
+        el.className = 'confetti-burst';
+        const angle = (Math.PI * 2 * i) / count + (Math.random()*0.4 - 0.2);
+        const dist  = 80 + Math.random()*160;
+        const dx    = Math.cos(angle) * dist;
+        const dy    = Math.sin(angle) * dist + 60; // sesgo a caer
+        el.style.left = originX + 'px';
+        el.style.top  = originY + 'px';
+        el.style.background = colors[i % colors.length];
+        el.style.setProperty('--dx',  dx + 'px');
+        el.style.setProperty('--dy',  dy + 'px');
+        el.style.setProperty('--rot', (360 + Math.random()*720) + 'deg');
+        el.style.setProperty('--dur', (1 + Math.random()*0.8) + 's');
+        document.body.appendChild(el);
+        setTimeout(() => { try { el.remove(); } catch(_){} }, 2000);
+      }
+    } catch(_){}
+  }
+
+  // ============================================================
   // ── EDITOR DE CHECKLISTS (modalEvalChecklists) ───────────────
   // ============================================================
   // Estado del editor: copia mutable de _evalState.rolItems
@@ -21406,11 +21510,10 @@ const MOS = (() => {
     dirty: false
   };
 
-  async function abrirEditorChecklists() {
-    // Asegurar que _evalState.rolItems esté hidratado (forzar refresh por si cfgData cambió)
+  async function abrirEditorChecklists(ev) {
+    if (ev) _evalRipple(ev);
     _evalState.rolItems = null;
     ['CAJERO','VENDEDOR','ALMACENERO','ENVASADOR'].forEach(r => _evalChecklistDe(r));
-    // Clonar al editor
     ['CAJERO','VENDEDOR','ALMACENERO','ENVASADOR'].forEach(r => {
       _checklistEditor.items[r] = (_evalState.rolItems[r] || []).slice();
     });
@@ -21418,6 +21521,7 @@ const MOS = (() => {
     _checklistEditor.dirty = false;
     _renderChecklistEditor();
     openModal('modalEvalChecklists');
+    _evalSfx('open');
   }
 
   function _renderChecklistEditor() {
@@ -21429,13 +21533,15 @@ const MOS = (() => {
     if (!cont) return;
     const list = _checklistEditor.items[_checklistEditor.rolActivo] || [];
     if (!list.length) {
-      cont.innerHTML = `<div class="text-center text-xs text-slate-500 py-6">
-        Sin ítems. Añade al menos uno o usa "Restaurar por defecto".
+      cont.innerHTML = `<div class="text-center text-xs text-slate-500 py-8">
+        <div class="text-3xl mb-2 opacity-50">📋</div>
+        Sin ítems. Añade el primero abajo o restaura los por defecto.
       </div>`;
       return;
     }
     cont.innerHTML = list.map((txt, i) => `
       <div class="checklist-item-row" draggable="true" data-idx="${i}"
+           style="animation-delay: ${i * 35}ms"
            ondragstart="MOS._checklistDragStart(event,${i})"
            ondragover="MOS._checklistDragOver(event)"
            ondrop="MOS._checklistDrop(event,${i})"
@@ -21449,19 +21555,29 @@ const MOS = (() => {
   }
 
   function checklistSetRol(rol) {
-    _checklistEditor.rolActivo = String(rol || 'CAJERO').toUpperCase();
+    const nuevo = String(rol || 'CAJERO').toUpperCase();
+    if (_checklistEditor.rolActivo === nuevo) return;
+    _checklistEditor.rolActivo = nuevo;
     _renderChecklistEditor();
+    _evalSfx('switch');
   }
 
-  function checklistAddItem() {
+  function checklistAddItem(ev) {
     const inp = $('checklistNewItem');
     if (!inp) return;
     const val = String(inp.value || '').trim();
-    if (!val) return;
+    if (!val) { inp.focus(); _evalSfx('error'); return; }
     _checklistEditor.items[_checklistEditor.rolActivo].push(val);
     _checklistEditor.dirty = true;
     inp.value = '';
     _renderChecklistEditor();
+    _evalSfx('add');
+    if (ev) _evalRipple(ev);
+    // Scroll al final para mostrar el ítem recién añadido
+    requestAnimationFrame(() => {
+      const items = $('checklistItems');
+      if (items) items.lastElementChild?.scrollIntoView({ behavior:'smooth', block:'nearest' });
+    });
     inp.focus();
   }
 
@@ -21476,9 +21592,21 @@ const MOS = (() => {
   function _checklistDelItem(idx) {
     const list = _checklistEditor.items[_checklistEditor.rolActivo];
     if (!list || list[idx] === undefined) return;
-    list.splice(idx, 1);
-    _checklistEditor.dirty = true;
-    _renderChecklistEditor();
+    _evalSfx('remove');
+    // Animar la salida antes de borrar
+    const row = document.querySelector(`.checklist-item-row[data-idx="${idx}"]`);
+    if (row) {
+      row.classList.add('removing');
+      setTimeout(() => {
+        list.splice(idx, 1);
+        _checklistEditor.dirty = true;
+        _renderChecklistEditor();
+      }, 260);
+    } else {
+      list.splice(idx, 1);
+      _checklistEditor.dirty = true;
+      _renderChecklistEditor();
+    }
   }
 
   // Drag & drop reorder
@@ -21487,6 +21615,7 @@ const MOS = (() => {
     _dragIdx = idx;
     try { ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', String(idx)); } catch(_){}
     ev.currentTarget.classList.add('dragging');
+    _evalSfx('drag');
   }
   function _checklistDragOver(ev) { ev.preventDefault(); try { ev.dataTransfer.dropEffect = 'move'; } catch(_){} }
   function _checklistDrop(ev, dstIdx) {
@@ -21498,6 +21627,15 @@ const MOS = (() => {
     list.splice(dstIdx, 0, moved);
     _checklistEditor.dirty = true;
     _renderChecklistEditor();
+    _evalSfx('drop');
+    // Highlight visual al ítem recién soltado
+    requestAnimationFrame(() => {
+      const row = document.querySelector(`.checklist-item-row[data-idx="${dstIdx}"]`);
+      if (row) {
+        row.classList.add('dropping');
+        setTimeout(() => row.classList.remove('dropping'), 400);
+      }
+    });
   }
   function _checklistDragEnd(ev) {
     _dragIdx = null;
@@ -21510,10 +21648,12 @@ const MOS = (() => {
     _checklistEditor.items[rol] = def.slice();
     _checklistEditor.dirty = true;
     _renderChecklistEditor();
+    _evalSfx('pop');
     toast(`Checklist de ${rol} restaurada al default`, 'info');
   }
 
-  async function guardarChecklists() {
+  async function guardarChecklists(ev) {
+    if (ev) _evalRipple(ev);
     const btn = $('checklistSaveBtn');
     if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
     try {
@@ -21540,9 +21680,16 @@ const MOS = (() => {
         }
       } catch(_){}
       _checklistEditor.dirty = false;
+      _evalSfx('success');
+      // Confetti centrado en el botón guardar
+      try {
+        const btnRect = $('checklistSaveBtn').getBoundingClientRect();
+        _evalConfetti(btnRect.left + btnRect.width/2, btnRect.top + btnRect.height/2);
+      } catch(_){}
       toast('✓ Checklists guardados — aplicado a la próxima auditoría', 'ok');
       closeModal('modalEvalChecklists');
     } catch(e) {
+      _evalSfx('error');
       toast('Error guardando: ' + (e.message || e), 'error');
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar todos'; }
@@ -21566,6 +21713,7 @@ const MOS = (() => {
   function auditToggle(id) {
     const el = $(id);
     if (el) el.classList.toggle('on');
+    _evalSfx('switch');
     // Recalcula liquidación al vuelo
     if (id === 'auditTogComision' || id === 'auditTogMeta') _renderAuditLiquidacion();
   }

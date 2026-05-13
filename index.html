@@ -5303,31 +5303,195 @@
     }
 
     /* ── Editor de checklists ─────────────────────────────── */
-    .checklist-tab { color:#64748b; background:transparent; transition:all .2s; }
-    .checklist-tab:hover { color:#fbbf24; background:rgba(251,191,36,.04); }
-    .checklist-tab.active { color:#fbbf24; border-bottom-color:#fbbf24 !important; background:rgba(251,191,36,.06); }
+    .checklist-tab {
+      color:#64748b; background:transparent;
+      transition: all .25s cubic-bezier(.34,1.56,.64,1);
+      position:relative; overflow:hidden;
+    }
+    .checklist-tab:hover { color:#fbbf24; background:rgba(251,191,36,.06); transform: translateY(-1px); }
+    .checklist-tab.active {
+      color:#fbbf24; border-bottom-color:#fbbf24 !important;
+      background:linear-gradient(180deg, rgba(251,191,36,.10), rgba(251,191,36,.02));
+      text-shadow: 0 0 12px rgba(251,191,36,.4);
+    }
+    .checklist-tab.active::after {
+      content:''; position:absolute; left:0; right:0; bottom:0; height:2px;
+      background: linear-gradient(90deg, transparent, #fbbf24 25%, #fde68a 50%, #fbbf24 75%, transparent);
+      animation: tabUnderlineShimmer 1.6s ease-in-out infinite;
+    }
+    @keyframes tabUnderlineShimmer {
+      0%,100% { opacity:.6; }
+      50%     { opacity:1; }
+    }
     .checklist-item-row {
       display:flex; align-items:center; gap:8px; padding:8px 10px;
       background:#060d1f; border:1px solid #1e293b; border-radius:8px;
-      transition: all .15s ease;
+      transition: transform .2s cubic-bezier(.34,1.56,.64,1), border-color .15s, box-shadow .15s, background .15s;
+      animation: checklistItemIn .3s cubic-bezier(.34,1.56,.64,1) backwards;
     }
-    .checklist-item-row:hover { border-color:#334155; }
-    .checklist-item-row.dragging { opacity:.45; }
+    .checklist-item-row:hover {
+      border-color: rgba(251,191,36,.35);
+      box-shadow: 0 4px 14px -6px rgba(251,191,36,.25);
+      transform: translateY(-1px);
+    }
+    .checklist-item-row.dragging {
+      opacity:.45;
+      transform: scale(.96) rotate(-1deg);
+      box-shadow: 0 12px 28px -8px rgba(56,189,248,.55);
+      border-color: rgba(56,189,248,.6);
+    }
+    .checklist-item-row.dropping {
+      animation: checklistDrop .35s cubic-bezier(.34,1.56,.64,1);
+    }
+    .checklist-item-row.removing {
+      animation: checklistRemove .28s ease-in forwards;
+      pointer-events: none;
+    }
+    @keyframes checklistItemIn {
+      from { opacity:0; transform: translateY(-8px) scale(.95); }
+      to   { opacity:1; transform: translateY(0) scale(1); }
+    }
+    @keyframes checklistDrop {
+      0%   { transform: scale(1.04); box-shadow: 0 0 0 6px rgba(56,189,248,.22); }
+      100% { transform: scale(1);    box-shadow: 0 0 0 0   rgba(56,189,248,0); }
+    }
+    @keyframes checklistRemove {
+      0%   { transform: translateX(0) scale(1);     opacity:1; }
+      30%  { transform: translateX(8px) rotate(2deg); }
+      100% { transform: translateX(-280px) scale(.7); opacity:0; height:0; padding:0; margin:0; border:0; }
+    }
     .checklist-handle {
       cursor:grab; color:#475569; user-select:none;
-      font-size:14px; line-height:1; padding:2px;
+      font-size:14px; line-height:1; padding:2px 4px;
+      transition: color .15s, transform .15s;
     }
-    .checklist-handle:active { cursor:grabbing; }
+    .checklist-handle:hover { color:#fbbf24; transform: scale(1.2); }
+    .checklist-handle:active { cursor:grabbing; transform: scale(.9); }
     .checklist-item-input {
       flex:1; background:transparent; color:#e2e8f0; border:none; outline:none;
-      font-size:.85rem;
+      font-size:.85rem; transition: color .15s, transform .15s;
     }
-    .checklist-item-input:focus { color:#fbbf24; }
+    .checklist-item-input:focus { color:#fbbf24; transform: translateX(2px); }
     .checklist-del {
       color:#64748b; background:transparent; border:none; cursor:pointer;
-      padding:2px 6px; border-radius:4px; transition: all .15s;
+      padding:2px 6px; border-radius:4px;
+      transition: all .15s cubic-bezier(.34,1.56,.64,1);
     }
-    .checklist-del:hover { color:#f87171; background:rgba(248,113,113,.08); }
+    .checklist-del:hover {
+      color:#f87171; background:rgba(248,113,113,.12);
+      transform: scale(1.15) rotate(8deg);
+    }
+
+    /* ── Liquidación en vivo (modal Auditar) ──────────────── */
+    #auditLiquidacionTotal {
+      transition: transform .35s cubic-bezier(.34,1.56,.64,1), text-shadow .35s;
+      display: inline-block;
+    }
+    #auditLiquidacionTotal.bumping {
+      animation: liqBump .45s cubic-bezier(.34,1.56,.64,1);
+      text-shadow: 0 0 14px rgba(251,191,36,.8), 0 0 28px rgba(251,191,36,.4);
+    }
+    @keyframes liqBump {
+      0%   { transform: scale(1); }
+      35%  { transform: scale(1.18); }
+      70%  { transform: scale(.97); }
+      100% { transform: scale(1); }
+    }
+    #auditLiquidacionWrap {
+      position:relative; overflow:hidden;
+      transition: box-shadow .3s;
+    }
+    #auditLiquidacionWrap:hover {
+      box-shadow: 0 8px 28px -10px rgba(251,191,36,.4);
+    }
+    #auditLiquidacionWrap::before {
+      content:''; position:absolute; inset:0;
+      background: linear-gradient(120deg, transparent 30%, rgba(251,191,36,.08) 50%, transparent 70%);
+      transform: translateX(-100%);
+      animation: liqSheen 5s ease-in-out infinite;
+      pointer-events:none;
+    }
+    @keyframes liqSheen {
+      0%,60% { transform: translateX(-100%); }
+      80%    { transform: translateX(100%); }
+      100%   { transform: translateX(100%); }
+    }
+    #auditPrintBtn {
+      transition: transform .2s cubic-bezier(.34,1.56,.64,1), box-shadow .2s, background .2s;
+    }
+    #auditPrintBtn:hover {
+      transform: scale(1.08) translateY(-1px);
+      box-shadow: 0 6px 16px -4px rgba(251,191,36,.55);
+      background: rgba(251,191,36,.28) !important;
+    }
+    #auditPrintBtn:active { transform: scale(.94); }
+    #auditPrintBtn.printing {
+      animation: btnPrinting .8s ease-in-out infinite;
+      pointer-events: none;
+    }
+    @keyframes btnPrinting {
+      0%,100% { transform: scale(1);    box-shadow: 0 0 0 0   rgba(251,191,36,.6); }
+      50%     { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(251,191,36,0); }
+    }
+
+    /* ── Cards de impresora (modal Liquidación) ───────────── */
+    .printer-card {
+      position: relative; overflow: hidden; cursor: pointer;
+      transition: transform .2s cubic-bezier(.34,1.56,.64,1), border-color .2s, box-shadow .2s;
+    }
+    .printer-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(251,191,36,.45) !important;
+      box-shadow: 0 8px 22px -8px rgba(251,191,36,.4);
+    }
+    .printer-card:active { transform: translateY(0) scale(.98); }
+    .printer-card.sending {
+      animation: printerSending 1s ease-in-out infinite;
+      border-color: #fbbf24 !important;
+    }
+    @keyframes printerSending {
+      0%,100% { box-shadow: 0 0 0 0   rgba(251,191,36,.6); }
+      50%     { box-shadow: 0 0 0 8px rgba(251,191,36,0); }
+    }
+    .printer-card::after {
+      content:''; position:absolute; top:0; left:-100%; width:100%; height:100%;
+      background: linear-gradient(120deg, transparent 30%, rgba(251,191,36,.16) 50%, transparent 70%);
+      pointer-events:none;
+    }
+    .printer-card:hover::after { animation: printerSheen .6s ease-in-out; }
+    @keyframes printerSheen { to { left: 100%; } }
+    .printer-dot-online {
+      animation: dotPulse 1.8s ease-in-out infinite;
+    }
+    @keyframes dotPulse {
+      0%,100% { box-shadow: 0 0 6px #34d399, 0 0 0 0 rgba(52,211,153,.5); }
+      50%     { box-shadow: 0 0 14px #34d399, 0 0 0 6px rgba(52,211,153,0); }
+    }
+
+    /* ── Confetti de éxito ────────────────────────────────── */
+    .confetti-burst {
+      position: fixed; pointer-events: none; z-index: 99999;
+      width: 8px; height: 8px; border-radius: 2px;
+      animation: confettiFall var(--dur, 1.2s) cubic-bezier(.32,.66,.56,1) forwards;
+    }
+    @keyframes confettiFall {
+      0%   { transform: translate(0,0) rotate(0); opacity: 1; }
+      100% { transform: translate(var(--dx,0), var(--dy,200px)) rotate(var(--rot,720deg)); opacity: 0; }
+    }
+
+    /* ── Ripple universal en botones del editor ───────────── */
+    .btn-ripple {
+      position: relative; overflow: hidden;
+    }
+    .btn-ripple .ripple {
+      position: absolute; border-radius: 50%; transform: scale(0);
+      background: rgba(251,191,36,.45);
+      animation: rippleExpand .55s ease-out;
+      pointer-events: none;
+    }
+    @keyframes rippleExpand {
+      to { transform: scale(4); opacity: 0; }
+    }
 
     /* ── Update banner (nueva versión disponible) ───────── */
     #mosUpdateBanner {
@@ -8617,8 +8781,11 @@
           <!-- Editor de checklists por rol -->
           <div class="pt-3 border-t border-slate-800">
             <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">📝 Checklists de evaluación</div>
-            <button onclick="MOS.abrirEditorChecklists()" class="btn-ghost w-full text-sm flex items-center justify-center gap-2"
-                    style="border:1px dashed rgba(251,191,36,.35);color:#fbbf24">
+            <button onclick="MOS.abrirEditorChecklists(event)" class="btn-ghost btn-ripple w-full text-sm flex items-center justify-center gap-2"
+                    style="border:1px dashed rgba(251,191,36,.35);color:#fbbf24;
+                           transition: all .2s cubic-bezier(.34,1.56,.64,1);"
+                    onmouseover="this.style.background='rgba(251,191,36,.08)';this.style.borderStyle='solid';this.style.transform='translateY(-1px)';this.style.boxShadow='0 6px 16px -4px rgba(251,191,36,.4)'"
+                    onmouseout="this.style.background='';this.style.borderStyle='dashed';this.style.transform='';this.style.boxShadow=''">
               📝 Editar checklists por rol
             </button>
             <p class="text-[10px] text-slate-500 mt-1">Personaliza los ítems del control diario que aparece en cada auditoría.</p>
@@ -8633,7 +8800,10 @@
 
     <!-- ── Modal: Selector de impresora (Liquidación 80mm) ─────────── -->
     <div class="modal-backdrop hidden" id="modalSelPrinterLiq">
-      <div class="modal-box p-0 max-w-md w-full" style="max-height:88vh;display:flex;flex-direction:column">
+      <div class="modal-box p-0 max-w-md w-full" style="max-height:88vh;display:flex;flex-direction:column;
+           background:linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,8,23,.98));
+           backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+           box-shadow: 0 24px 60px -10px rgba(251,191,36,.18), 0 0 0 1px rgba(251,191,36,.08);">
         <div class="px-5 pt-5 pb-3 flex items-center justify-between border-b border-slate-800">
           <div>
             <h3 class="font-semibold text-white text-base">🖨 Imprimir liquidación</h3>
@@ -8659,7 +8829,10 @@
 
     <!-- ── Modal: Editor de checklists por rol ─────────────────────── -->
     <div class="modal-backdrop hidden" id="modalEvalChecklists">
-      <div class="modal-box p-0 max-w-lg w-full" style="max-height:92vh;display:flex;flex-direction:column">
+      <div class="modal-box p-0 max-w-lg w-full" style="max-height:92vh;display:flex;flex-direction:column;
+           background:linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,8,23,.98));
+           backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+           box-shadow: 0 24px 60px -10px rgba(251,191,36,.22), 0 0 0 1px rgba(251,191,36,.08);">
         <div class="px-5 pt-5 pb-3 flex items-center justify-between border-b border-slate-800">
           <div>
             <h3 class="font-semibold text-white text-base">📝 Editor de checklists</h3>
@@ -8695,17 +8868,17 @@
             <input id="checklistNewItem" type="text" class="inp flex-1 text-sm"
                    placeholder="Añadir nuevo ítem (ej: Usa EPP correctamente)"
                    onkeydown="if(event.key==='Enter'){event.preventDefault();MOS.checklistAddItem();}">
-            <button onclick="MOS.checklistAddItem()" class="btn-primary text-sm px-3">+ Añadir</button>
+            <button onclick="MOS.checklistAddItem(event)" class="btn-primary btn-ripple text-sm px-3">+ Añadir</button>
           </div>
 
-          <button onclick="MOS.checklistResetRol()" class="text-xs text-slate-500 hover:text-amber-400 underline">
+          <button onclick="MOS.checklistResetRol()" class="text-xs text-slate-500 hover:text-amber-400 underline transition-colors">
             ↺ Restaurar checklist por defecto para este rol
           </button>
         </div>
 
         <div class="px-5 py-3 border-t border-slate-800 flex gap-2">
           <button onclick="MOS.closeModal('modalEvalChecklists')" class="btn-ghost flex-1">Cancelar</button>
-          <button onclick="MOS.guardarChecklists()" class="btn-primary flex-1" id="checklistSaveBtn">💾 Guardar todos</button>
+          <button onclick="MOS.guardarChecklists(event)" class="btn-primary btn-ripple flex-1" id="checklistSaveBtn">💾 Guardar todos</button>
         </div>
       </div>
     </div>
