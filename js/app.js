@@ -18226,12 +18226,18 @@ const MOS = (() => {
 
   async function _loadFinanzas() {
     const inp = $('finFecha');
-    if (inp && !inp.value) inp.value = today();
-    const fecha = inp?.value || today();
-    // Sonido al entrar al módulo (mismo que al cambiar fecha)
+    const hoy = today();
+    // Al ABRIR el módulo siempre arrancamos en hoy (la fecha quedaba
+    // pegada al último día que vio el usuario y el label se mostraba
+    // como "—" cuando _finPL traía datos de otro día).
+    if (inp) inp.value = hoy;
+    const fecha = hoy;
     _finBeep('nav');
-    // Si ya hay datos precargados, renderizar inmediatamente sin fetch extra
-    if (_finPL) {
+    _finUpdateBadge(fecha);  // label "🟢 Hoy · ..." al instante
+    // Si los datos precargados (_finPL) son del MISMO día que hoy, los
+    // pintamos al vuelo. Si son de otro día, ignoramos y refrescamos.
+    // _finPL viene marcado (ver finCargar). Si no coincide con hoy → refrescar.
+    if (_finPL && (_finPL._fechaStamp === fecha || _finPL.fecha === fecha)) {
       _finRender(_finPL, fecha);
       const hasta  = fecha;
       const desde7 = _fechaOffset(fecha, -6);
@@ -18239,12 +18245,10 @@ const MOS = (() => {
         const rango = await API.get('getFinanzasRango', { desde: desde7, hasta });
         _finRender7d(rango);
       } catch(_) {}
-      // Pre-load adyacentes (-1 / +1) en background
       _finPrefetchAdyacentes(fecha);
       return;
     }
     await finCargar();
-    // finCargar ya prefetchea ±1 al final si éxito
   }
 
   // ── Sync / Update ────────────────────────────────────────────
@@ -18866,7 +18870,7 @@ const MOS = (() => {
   (function _finHidratar() {
     const f = today();
     const cached = _finLoadCache('pl_' + f);
-    if (cached) _finPL = cached;
+    if (cached) { cached._fechaStamp = f; _finPL = cached; }
   })();
 
   function _startFinanzasRefresh() {
@@ -18885,6 +18889,7 @@ const MOS = (() => {
       const fecha  = $('finFecha')?.value || today();
       const pl     = await API.get('getFinanzasDia', { fecha });
       const changedPL = JSON.stringify(pl) !== JSON.stringify(_finPL);
+      if (pl) pl._fechaStamp = fecha;
       _finPL = pl;
       _finSaveCache('pl_' + fecha, pl);
       if (S.view === 'finanzas') {
@@ -18955,6 +18960,7 @@ const MOS = (() => {
     //    el nuevo (Personal, Gastos, break-even bar quedaban stale).
     const cachedPL = _finLoadCache('pl_' + fecha);
     if (cachedPL) {
+      cachedPL._fechaStamp = fecha; // stamp para detectar mismatch al reabrir
       _finPL = cachedPL;
       try { _finRender(cachedPL, fecha); } catch {}
     } else {
@@ -18970,6 +18976,7 @@ const MOS = (() => {
       const pl = await API.get('getFinanzasDia', { fecha });
       // Race check: si el user navegó a otra fecha, descartar esta respuesta
       if (myGen !== _finGenId) return;
+      if (pl) pl._fechaStamp = fecha; // stamp para detectar mismatch al reabrir
       _finPL = pl;
       _finSaveCache('pl_' + fecha, pl);
       _finMostrarSkeleton(false);
@@ -19788,11 +19795,21 @@ const MOS = (() => {
     function _pintarConResumenes(resumenes) {
       const byNombre = {};
       const byIdPersonal = {};
-      (Array.isArray(resumenes) ? resumenes : []).forEach(r => {
+      const arr = Array.isArray(resumenes) ? resumenes : [];
+      arr.forEach(r => {
         const n = String(r.nombre || '').toLowerCase().trim();
         if (n) byNombre[n] = r;
         if (r.idPersonal) byIdPersonal[r.idPersonal] = r;
       });
+
+      // CRÍTICO: mantener _evalState.resumenes sincronizado con la fecha
+      // que Finanzas está pintando. Sin esto, abrirAuditar leía resumenes
+      // de otro día (típicamente hoy) y mostraba KPIs distintos a los de
+      // la card. Source-of-truth ÚNICO para esta vista.
+      _evalState.resumenes = arr;
+      _evalState.fecha = fecha;
+      _evalState.byNombre = byNombre;
+      _evalState.byIdPersonal = byIdPersonal;
 
       let html = '';
       html += _renderGrupo(grupos.POS,     'POS · Cajeros',        '🛒', 'POS',     byNombre, byIdPersonal);
@@ -19803,10 +19820,17 @@ const MOS = (() => {
 
     _pintarConResumenes(cachedResumenes);
 
+    // Guard contra respuestas out-of-order: si el usuario cambia de día
+    // rápido, podemos descartar una respuesta vieja cuya fecha ya no es
+    // la mostrada. _evalState.fecha es el "request id" de la vista.
     API.get('getResumenTodosDia', { fecha: fecha }).then(resumenes => {
+      if (_evalState.fecha !== fecha) return; // descartar respuesta obsoleta
       try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: resumenes })); } catch {}
       if (JSON.stringify(cachedResumenes) !== JSON.stringify(resumenes)) {
         _pintarConResumenes(resumenes);
+      } else {
+        _evalState.resumenes = Array.isArray(resumenes) ? resumenes : [];
+        _evalState.fecha = fecha;
       }
     }).catch(() => { /* si falla, queda lo del cache o sin score */ });
   }
