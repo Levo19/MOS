@@ -331,13 +331,14 @@ function getResumenDia(params) {
   var montoBase  = parseFloat(p.montoBase) || 0;
   var bonusScore = aplicaComision ? (montoBase * bonusPctScore / 100) : 0;
 
-  // Bono por meta
+  // Bono por meta: para POS usa la meta efectiva que ya resolvió KPIs
+  // (kpis.metaVenta proviene de politicaJSON.metaDiaria de su zona principal).
   var bonoMeta = 0, metaPct = 0;
   if (aplicaBonoMeta) {
     var meta = 0, real = 0;
-    if (p.rol === 'CAJERO' || p.rol === 'VENDEDOR') { meta = cfg.metaCajero;     real = kpis.ventasReales; }
-    else if (p.rol === 'ENVASADOR')                  { meta = cfg.metaEnvasador;  real = kpis.envasados; }
-    else if (p.rol === 'ALMACENERO')                 { meta = cfg.metaAlmacenero; real = kpis.guias; }
+    if (p.rol === 'CAJERO' || p.rol === 'VENDEDOR') { meta = kpis.metaVenta || cfg.metaCajero; real = kpis.ventasReales; }
+    else if (p.rol === 'ENVASADOR')                  { meta = cfg.metaEnvasador;               real = kpis.envasados; }
+    else if (p.rol === 'ALMACENERO')                 { meta = cfg.metaAlmacenero;              real = kpis.guias; }
     if (meta > 0) {
       metaPct = Math.round((real / meta) * 1000) / 10;
       if (real >= meta * 2) bonoMeta = cfg.bonoMetaDoble;
@@ -449,13 +450,27 @@ function _calcularKpisAutoDia(p, fecha) {
   try {
     if (rol === 'CAJERO' || rol === 'VENDEDOR') {
       // Leer directo de VENTAS_CABECERA de MosExpress
+      // Además, contar ventas por zona (via ID_Caja → CAJAS.zona) para
+      // determinar la "zona principal" del personal en este día.
+      // Su política (meta diaria + meta auditorías) se resuelve desde ahí.
+      var ventasPorZona = {};   // { 'ZONA-02': 1200, 'ZONA-03': 400 }
+      var cajaZonaMap   = {};   // cache idCaja → zona (evita re-leer CAJAS)
+      try {
+        var shCajas = _abrirMeSheet('CAJAS');
+        if (shCajas) {
+          var dCajas = shCajas.getDataRange().getValues();
+          for (var rc = 1; rc < dCajas.length; rc++) {
+            cajaZonaMap[String(dCajas[rc][0])] = String(dCajas[rc][8] || '');
+          }
+        }
+      } catch(_){}
       try {
         var sh = _abrirMeSheet('VENTAS_CABECERA');
         if (sh) {
           var data = sh.getDataRange().getValues();
           var tz   = Session.getScriptTimeZone();
           var nombreLow = (p.nombre || '').toLowerCase().trim();
-          // Headers tipicos: 0=ID 1=Fecha 2=Vendedor 6=Total 8=FormaPago
+          // Headers tipicos: 0=ID 1=Fecha 2=Vendedor 6=Total 8=FormaPago 10=ID_Caja
           for (var r = 1; r < data.length; r++) {
             var row = data[r];
             var fRaw = row[1];
@@ -468,12 +483,33 @@ function _calcularKpisAutoDia(p, fecha) {
             if (formaPago === 'ANULADO' || formaPago === 'POR_COBRAR' || formaPago === 'CREDITO') continue;
             // Match por contención (vendedor field puede tener nombre completo)
             if (vendedor === nombreLow || vendedor.indexOf(nombreLow) >= 0 || nombreLow.indexOf(vendedor) >= 0) {
-              ventasReales += parseFloat(row[6]) || 0;
+              var totalRow = parseFloat(row[6]) || 0;
+              ventasReales += totalRow;
+              var idCaja = String(row[10] || '');
+              var zonaVenta = cajaZonaMap[idCaja] || '';
+              if (zonaVenta) ventasPorZona[zonaVenta] = (ventasPorZona[zonaVenta] || 0) + totalRow;
             }
           }
         }
       } catch(eV){ Logger.log('KPI ventas error: ' + eV.message); }
-      ventasPct = Math.min(100, (ventasReales / cfg.metaCajero) * 100);
+      // Zona principal = donde más vendió. Resolver su política
+      var zonaPrincipal = '';
+      Object.keys(ventasPorZona).forEach(function(z){
+        if (!zonaPrincipal || ventasPorZona[z] > ventasPorZona[zonaPrincipal]) zonaPrincipal = z;
+      });
+      var politicaPersonal = (typeof _resolverPoliticaZona === 'function')
+        ? _resolverPoliticaZona(zonaPrincipal) : null;
+      var metaVtaUsar = (politicaPersonal && politicaPersonal.metaDiaria > 0)
+        ? politicaPersonal.metaDiaria : cfg.metaCajero;
+      var metaAudUsar = (politicaPersonal && politicaPersonal.metaAuditorias > 0)
+        ? politicaPersonal.metaAuditorias : cfg.metaAuditorias;
+      ventasPct = Math.min(100, (ventasReales / metaVtaUsar) * 100);
+      // Recalcular auditPct con la meta de la zona del personal
+      auditPct = Math.min(100, (auditoriasHechas / metaAudUsar) * 100);
+      // Sobrescribir el valor que se retorna abajo
+      cfg._metaAuditoriasEfectiva = metaAudUsar;
+      cfg._metaVentaEfectiva      = metaVtaUsar;
+      cfg._zonaPrincipal          = zonaPrincipal;
     } else if (rol === 'ENVASADOR') {
       // Leer ENVASADOS directo de warehouseMos (formato M/D/yyyy)
       try {
@@ -542,11 +578,17 @@ function _calcularKpisAutoDia(p, fecha) {
     }
   } catch(_){}
 
+  // Meta de auditorías efectiva: si el personal es POS, viene de la zona
+  // principal (politicaJSON.metaAuditorias). Si no, global cfg.metaAuditorias.
+  var metaAudResp = cfg._metaAuditoriasEfectiva || cfg.metaAuditorias;
+  var metaVtaResp = cfg._metaVentaEfectiva      || cfg.metaCajero;
   return {
     ventasReales:     Math.round(ventasReales * 100) / 100,
     ventasPct:        Math.round(ventasPct * 10) / 10,
     auditoriasHechas: auditoriasHechas,
-    metaAuditorias:   cfg.metaAuditorias,
+    metaAuditorias:   metaAudResp,                  // meta usada (por zona o global)
+    metaVenta:        metaVtaResp,                  // meta usada (por zona o global)
+    zonaPrincipal:    cfg._zonaPrincipal || '',     // zona inferida (POS)
     auditPct:         Math.round(auditPct * 10) / 10,
     guias:            guias,
     envasados:        envasados
