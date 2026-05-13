@@ -86,12 +86,18 @@ function _liqMapaPagados() {
 //
 // Params: { desde:'yyyy-MM-dd', hasta:'yyyy-MM-dd' }
 // Retorna: [{ idPersonal, nombre, rol, appOrigen, virtual, dias:[{fecha, ...}], total }]
+// ⚡ MATERIALIZADO — ahora delega a getLiquidacionesPendientesDia que lee
+// directamente de LIQUIDACIONES_DIA (instantáneo). El nombre se mantiene
+// para no romper el frontend ni los caches localStorage.
 function getLiquidacionesPendientes(params) {
+  return getLiquidacionesPendientesDia(params);
+}
+
+// Versión LEGACY (cálculo virtual). Se conserva por si se quiere comparar
+// o usar como fallback. No se llama por defecto.
+function getLiquidacionesPendientesLegacy(params) {
   params = params || {};
   var hasta = params.hasta || _liqHoy();
-  // Default: últimos 3 días para abrir rápido. Si el admin quiere ver más
-  // atrás, llama con desde= explícito (UI: botón "Cargar más días").
-  // Cada día = ~3s en backend; 3 días = ~9s, dentro del timeout del cliente.
   var desde = params.desde || _fechaOffset(hasta, -2);
   var mapaPag = _liqMapaPagados();
 
@@ -312,6 +318,9 @@ function marcarPagos(params) {
     } catch(eP) { Logger.log('Print fallo: ' + eP.message); }
   }
 
+  // ⚡ Materialización: marcar los días como PAGADA en LIQUIDACIONES_DIA
+  try { _liqDiaMarcarPagadas(String(params.idPersonal), params.fechas, idPago); } catch(_){}
+
   return { ok: true, data: { idPago: idPago, total: totalPago, jobId: jobId, dias: filas.length } };
 }
 
@@ -378,6 +387,9 @@ function anularPago(params) {
       }
     } catch(_){}
   }
+
+  // ⚡ Materialización: revertir los días a PENDIENTE en LIQUIDACIONES_DIA
+  try { _liqDiaRevertirPagadas(params.idPago); } catch(_){}
 
   return { ok: true, data: { autorizado: true, anuladas: anuladas, nombre: nombrePago, anuladoPor: auth.data.validadoPor } };
 }
@@ -673,6 +685,361 @@ function migrarLiquidacionesV2() {
   } catch(_) { /* puede que ya exista */ }
 
   return { ok: true, data: { migradas: insertadas, msg: 'Migrados ' + insertadas + ' días desde legacy.' } };
+}
+
+// ============================================================
+// ── MATERIALIZED VIEW: LIQUIDACIONES_DIA ─────────────────────
+// 1 fila por (idPersonal × fecha) con su totalDia ya calculado y
+// su estado (PENDIENTE/PAGADA/ANULADA). Leer Pendientes = SELECT
+// directo, sin recomputar.
+// ============================================================
+
+var _LDIA_SHEET = 'LIQUIDACIONES_DIA';
+var _LDIA_HDRS  = [
+  'idDia', 'fecha', 'idPersonal', 'nombre', 'rol', 'appOrigen', 'virtual',
+  'montoBase', 'pagoEnvasado', 'bonoMeta', 'sancion', 'totalDia',
+  'auditado', 'evaluacionesCount', 'scoreFinal', 'tarifaEnvasado', 'presente',
+  'estado', 'idPago', 'ts_creado', 'ts_actualizado'
+];
+
+function _liqDiaGetSheet() {
+  var ss = getSpreadsheet();
+  var sh = ss.getSheetByName(_LDIA_SHEET);
+  if (sh) return sh;
+  sh = ss.insertSheet(_LDIA_SHEET);
+  sh.getRange(1, 1, 1, _LDIA_HDRS.length).setValues([_LDIA_HDRS]);
+  sh.getRange(1, 1, 1, _LDIA_HDRS.length)
+    .setBackground('#7c3aed').setFontColor('#fff').setFontWeight('bold').setFontSize(10);
+  sh.setFrozenRows(1);
+  // Texto en columnas críticas
+  try {
+    sh.getRange(2, 1, 5000, 1).setNumberFormat('@'); // idDia
+    sh.getRange(2, 3, 5000, 1).setNumberFormat('@'); // idPersonal
+  } catch(_){}
+  return sh;
+}
+
+function _liqDiaKey(idPersonal, fecha) {
+  var fechaCompacta = String(fecha).replace(/-/g, '');
+  var idClean = String(idPersonal).replace(/[^a-zA-Z0-9:]/g, '_');
+  return 'LDIA-' + fechaCompacta + '-' + idClean;
+}
+
+function _liqDiaIsBlocked(rol) {
+  var r = String(rol || '').toUpperCase();
+  return r === 'MASTER' || r === 'ADMIN' || r === 'ADMINISTRADOR';
+}
+
+// Upsert una fila desde un resumen ya computado (de getResumenDia.data)
+function _liqDiaUpsertRow(rd, fecha) {
+  if (!rd) return null;
+  if (!rd.presente) return null;
+  if (_liqDiaIsBlocked(rd.rol)) return null;
+
+  var sh = _liqDiaGetSheet();
+  var data = sh.getDataRange().getValues();
+  var hdrs = data[0];
+  var iIdDia = hdrs.indexOf('idDia');
+  var iEstado = hdrs.indexOf('estado');
+  var iIdPago = hdrs.indexOf('idPago');
+  var iTsCreado = hdrs.indexOf('ts_creado');
+
+  var idDia = _liqDiaKey(rd.idPersonal, fecha);
+  var nowStr = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
+  var idPersonalStr = String(rd.idPersonal);
+  var isVirtual = idPersonalStr.indexOf('MEX:') === 0;
+
+  // Buscar existing row
+  var existingIdx = -1;
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][iIdDia]) === idDia) { existingIdx = i; break; }
+  }
+
+  // Preserve estado/idPago si la fila ya está PAGADA o ANULADA
+  var estadoExist = 'PENDIENTE', idPagoExist = '', tsCreadoExist = nowStr;
+  if (existingIdx >= 0) {
+    estadoExist = String(data[existingIdx][iEstado] || 'PENDIENTE').toUpperCase();
+    idPagoExist = String(data[existingIdx][iIdPago] || '');
+    tsCreadoExist = data[existingIdx][iTsCreado] || nowStr;
+  }
+  // Si está PAGADA conservamos esos valores; si está PENDIENTE/ANULADA tampoco
+  // recalculamos estado, solo actualizamos los montos.
+  var newRow = {
+    idDia:             idDia,
+    fecha:             fecha,
+    idPersonal:        idPersonalStr,
+    nombre:            String(rd.nombre || ''),
+    rol:               String(rd.rol || '').toUpperCase(),
+    appOrigen:         String(rd.appOrigen || ''),
+    virtual:           isVirtual,
+    montoBase:         parseFloat(rd.montoBase) || 0,
+    pagoEnvasado:      parseFloat(rd.pagoEnvasado) || 0,
+    bonoMeta:          parseFloat(rd.bonoMeta) || 0,
+    sancion:           parseFloat(rd.sancion) || 0,
+    totalDia:          parseFloat(rd.totalDia) || 0,
+    auditado:          !!rd.auditado,
+    evaluacionesCount: parseInt(rd.evaluacionesCount) || 0,
+    scoreFinal:        parseFloat(rd.scoreFinal) || 0,
+    tarifaEnvasado:    parseFloat(rd.tarifaEnvasado) || 0,
+    presente:          !!rd.presente,
+    estado:            estadoExist,
+    idPago:            idPagoExist,
+    ts_creado:         tsCreadoExist,
+    ts_actualizado:    nowStr
+  };
+  var rowArr = hdrs.map(function(h){ return newRow[h] !== undefined ? newRow[h] : ''; });
+  if (existingIdx >= 0) {
+    sh.getRange(existingIdx + 1, 1, 1, hdrs.length).setValues([rowArr]);
+  } else {
+    sh.appendRow(rowArr);
+  }
+  return idDia;
+}
+
+// Recompute UNA fila (idPersonal × fecha) — llamado tras crear audit
+function _liqDiaRecomputar(idPersonal, fecha) {
+  try {
+    var rs = getResumenDia({ idPersonal: idPersonal, fecha: fecha });
+    if (!rs || !rs.ok) return false;
+    _liqDiaUpsertRow(rs.data, fecha);
+    return true;
+  } catch(e) { Logger.log('_liqDiaRecomputar fallo: ' + e.message); return false; }
+}
+
+// Sync TODOS los presentes de una fecha (heavy — llama getResumenTodosDia)
+function _liqDiaSync(fecha) {
+  try {
+    var rsm = getResumenTodosDia({ fecha: fecha });
+    if (!rsm || !rsm.ok || !Array.isArray(rsm.data)) return { sincronizadas: 0 };
+    var n = 0;
+    rsm.data.forEach(function(r) {
+      if (!r || !r.presente) return;
+      if (_liqDiaIsBlocked(r.rol)) return;
+      _liqDiaUpsertRow(r, fecha);
+      n++;
+    });
+    return { sincronizadas: n };
+  } catch(e) { Logger.log('_liqDiaSync(' + fecha + '): ' + e.message); return { sincronizadas: 0, error: e.message }; }
+}
+
+// ── Endpoint: leer Pendientes desde la sheet (instantáneo) ──
+function getLiquidacionesPendientesDia(params) {
+  params = params || {};
+  var hasta = params.hasta || _liqHoy();
+  var desde = params.desde || _fechaOffset(hasta, -29);
+
+  // Auto-refresh de HOY (1 día) — captura eventos del día actual.
+  // Throttle con script cache (60s) para no resyncear en cada request.
+  try {
+    var ssCache = CacheService.getScriptCache();
+    var last = ssCache.get('ldia_hoy_sync');
+    if (!last) {
+      _liqDiaSync(_liqHoy());
+      ssCache.put('ldia_hoy_sync', '' + Date.now(), 60);
+    }
+  } catch(_) { try { _liqDiaSync(_liqHoy()); } catch(__){} }
+
+  var sh = _liqDiaGetSheet();
+  var rows = _sheetToObjects(sh);
+  var tz = Session.getScriptTimeZone();
+
+  // Filtrar por rango + estado=PENDIENTE
+  var pendientes = rows.filter(function(r) {
+    if (String(r.estado || '').toUpperCase() !== 'PENDIENTE') return false;
+    var f = r.fecha instanceof Date
+      ? Utilities.formatDate(r.fecha, tz, 'yyyy-MM-dd')
+      : String(r.fecha || '').substring(0, 10);
+    return f >= desde && f <= hasta;
+  });
+
+  // Agrupar por idPersonal
+  var acum = {};
+  pendientes.forEach(function(r) {
+    var idP = String(r.idPersonal);
+    if (!acum[idP]) {
+      var virtBool = (typeof r.virtual === 'boolean') ? r.virtual
+                   : (String(r.virtual).toLowerCase() === 'true')
+                   || (idP.indexOf('MEX:') === 0);
+      acum[idP] = {
+        idPersonal: idP,
+        nombre:     String(r.nombre || ''),
+        rol:        String(r.rol || '').toUpperCase(),
+        appOrigen:  String(r.appOrigen || ''),
+        virtual:    virtBool,
+        dias:       []
+      };
+    }
+    var f = r.fecha instanceof Date
+      ? Utilities.formatDate(r.fecha, tz, 'yyyy-MM-dd')
+      : String(r.fecha || '').substring(0, 10);
+    acum[idP].dias.push({
+      fecha:             f,
+      presente:          true,
+      auditado:          (r.auditado === true) || (String(r.auditado).toLowerCase() === 'true'),
+      montoBase:         parseFloat(r.montoBase) || 0,
+      pagoEnvasado:      parseFloat(r.pagoEnvasado) || 0,
+      bonoMeta:          parseFloat(r.bonoMeta) || 0,
+      sancion:           parseFloat(r.sancion) || 0,
+      totalDia:          parseFloat(r.totalDia) || 0,
+      scoreFinal:        parseFloat(r.scoreFinal) || 0,
+      evaluacionesCount: parseInt(r.evaluacionesCount) || 0,
+      tarifaEnvasado:    parseFloat(r.tarifaEnvasado) || 0
+    });
+  });
+
+  var out = Object.keys(acum).map(function(k) {
+    var p = acum[k];
+    p.dias.sort(function(a,b){ return String(a.fecha).localeCompare(String(b.fecha)); });
+    var total = p.dias.reduce(function(s,d){ return s + d.totalDia; }, 0);
+    p.total = Math.round(total * 100) / 100;
+    p.cantidadDias = p.dias.length;
+    return p;
+  }).filter(function(p){ return p.cantidadDias > 0; });
+
+  out.sort(function(a,b){
+    if (b.total !== a.total) return b.total - a.total;
+    return String(a.nombre).localeCompare(String(b.nombre));
+  });
+
+  return { ok: true, data: out, rango: { desde: desde, hasta: hasta }, fast: true };
+}
+
+// ── Migración / backfill: poblar últimos N días desde resúmenes ──
+function backfillLiquidacionesDia(params) {
+  params = params || {};
+  var dias = parseInt(params.dias) || 30;
+  var hoy = _liqHoy();
+  _liqDiaGetSheet(); // crear hoja si no existe
+
+  // Backfill
+  var total = 0;
+  for (var i = 0; i < dias; i++) {
+    var f = _fechaOffset(hoy, -i);
+    var r = _liqDiaSync(f);
+    total += r.sincronizadas || 0;
+  }
+
+  // Cross-check con LIQUIDACIONES_PAGOS para marcar PAGADAS
+  var marcadasPagadas = 0;
+  try {
+    var pagosSh = _liqGetSheet();
+    var pagosData = _sheetToObjects(pagosSh);
+    var pagosMap = {};  // 'idPersonal::fecha' → idPago
+    var tzPag = Session.getScriptTimeZone();
+    pagosData.forEach(function(p) {
+      if (String(p.estado || '').toUpperCase() === 'ANULADA') return;
+      var fp = p.fecha instanceof Date
+        ? Utilities.formatDate(p.fecha, tzPag, 'yyyy-MM-dd')
+        : String(p.fecha || '').substring(0, 10);
+      pagosMap[String(p.idPersonal) + '::' + fp] = String(p.idPago);
+    });
+
+    var sh = _liqDiaGetSheet();
+    var data = sh.getDataRange().getValues();
+    var hdrs = data[0];
+    var iIdP = hdrs.indexOf('idPersonal');
+    var iF   = hdrs.indexOf('fecha');
+    var iEst = hdrs.indexOf('estado');
+    var iIdPago = hdrs.indexOf('idPago');
+    var iTsAct = hdrs.indexOf('ts_actualizado');
+    var nowStr = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
+    for (var rIdx = 1; rIdx < data.length; rIdx++) {
+      var idP = String(data[rIdx][iIdP]);
+      var ff  = data[rIdx][iF];
+      var fStr = ff instanceof Date
+        ? Utilities.formatDate(ff, tzPag, 'yyyy-MM-dd')
+        : String(ff || '').substring(0, 10);
+      var k = idP + '::' + fStr;
+      if (pagosMap[k] && String(data[rIdx][iEst]).toUpperCase() !== 'PAGADA') {
+        sh.getRange(rIdx + 1, iEst    + 1).setValue('PAGADA');
+        sh.getRange(rIdx + 1, iIdPago + 1).setValue(pagosMap[k]);
+        sh.getRange(rIdx + 1, iTsAct  + 1).setValue(nowStr);
+        marcadasPagadas++;
+      }
+    }
+  } catch(eP) { Logger.log('Cross-check pagos: ' + eP.message); }
+
+  return { ok: true, data: { dias: dias, sincronizadas: total, marcadasPagadas: marcadasPagadas, msg: 'Backfill OK: ' + total + ' filas, ' + marcadasPagadas + ' marcadas PAGADAS' } };
+}
+
+// Update LIQUIDACIONES_DIA al pagar/anular (llamados desde marcarPagos/anularPago)
+function _liqDiaMarcarPagadas(idPersonal, fechas, idPago) {
+  try {
+    var sh = _liqDiaGetSheet();
+    var data = sh.getDataRange().getValues();
+    var hdrs = data[0];
+    var iIdDia  = hdrs.indexOf('idDia');
+    var iEst    = hdrs.indexOf('estado');
+    var iIdPago = hdrs.indexOf('idPago');
+    var iTsAct  = hdrs.indexOf('ts_actualizado');
+    var nowStr = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
+    fechas.forEach(function(f) {
+      var idDia = _liqDiaKey(idPersonal, f);
+      var found = false;
+      for (var i = 1; i < data.length; i++) {
+        if (String(data[i][iIdDia]) === idDia) {
+          sh.getRange(i + 1, iEst    + 1).setValue('PAGADA');
+          sh.getRange(i + 1, iIdPago + 1).setValue(idPago);
+          sh.getRange(i + 1, iTsAct  + 1).setValue(nowStr);
+          found = true;
+          break;
+        }
+      }
+      // Si la fila no existe, intentamos crearla con un sync rápido
+      if (!found) {
+        _liqDiaRecomputar(idPersonal, f);
+        // Reintentamos marcar (el upsert puede no haber agregado si no había presencia)
+        try {
+          var sh2 = _liqDiaGetSheet();
+          var data2 = sh2.getDataRange().getValues();
+          for (var j = 1; j < data2.length; j++) {
+            if (String(data2[j][iIdDia]) === idDia) {
+              sh2.getRange(j + 1, iEst    + 1).setValue('PAGADA');
+              sh2.getRange(j + 1, iIdPago + 1).setValue(idPago);
+              sh2.getRange(j + 1, iTsAct  + 1).setValue(nowStr);
+              break;
+            }
+          }
+        } catch(_){}
+      }
+    });
+  } catch(e) { Logger.log('_liqDiaMarcarPagadas fallo: ' + e.message); }
+}
+
+function _liqDiaRevertirPagadas(idPago) {
+  try {
+    var sh = _liqDiaGetSheet();
+    var data = sh.getDataRange().getValues();
+    var hdrs = data[0];
+    var iEst    = hdrs.indexOf('estado');
+    var iIdPago = hdrs.indexOf('idPago');
+    var iTsAct  = hdrs.indexOf('ts_actualizado');
+    var nowStr = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
+    var revertidas = 0;
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][iIdPago]) === String(idPago)) {
+        sh.getRange(i + 1, iEst    + 1).setValue('PENDIENTE');
+        sh.getRange(i + 1, iIdPago + 1).setValue('');
+        sh.getRange(i + 1, iTsAct  + 1).setValue(nowStr);
+        revertidas++;
+      }
+    }
+    return revertidas;
+  } catch(e) { Logger.log('_liqDiaRevertirPagadas fallo: ' + e.message); return 0; }
+}
+
+// Trigger diario 23:30 — sweep del día completo (catch-all)
+function _liqDiaCronDiario() {
+  try { _liqDiaSync(_liqHoy()); }
+  catch(e) { Logger.log('Cron LDIA fallo: ' + e.message); }
+}
+function configurarTriggerLiquidacionDia() {
+  ScriptApp.getProjectTriggers().forEach(function(t){
+    if (t.getHandlerFunction() === '_liqDiaCronDiario') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('_liqDiaCronDiario')
+    .timeBased().everyDays(1).atHour(23).nearMinute(30).create();
+  return { ok: true, msg: 'Trigger creado: _liqDiaCronDiario diario 23:30' };
 }
 
 // ============================================================

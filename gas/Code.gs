@@ -210,6 +210,10 @@ function _route(method, e) {
       case 'getPagoDetalle':             return getPagoDetalle(params);
       case 'imprimirTicketPago':         return imprimirTicketPago(params);
       case 'migrarLiquidacionesV2':      return migrarLiquidacionesV2();
+      // Liquidaciones DIA (materializado)
+      case 'getLiquidacionesPendientesDia':     return getLiquidacionesPendientesDia(params);
+      case 'backfillLiquidacionesDia':          return backfillLiquidacionesDia(params);
+      case 'configurarTriggerLiquidacionDia':   return configurarTriggerLiquidacionDia();
 
       // ── Liquidaciones legacy (stubs que delegan o devuelven vacío) ──
       case 'getLiquidacionesPendientesSemana': return getLiquidacionesPendientesSemana(params);

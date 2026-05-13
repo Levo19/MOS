@@ -85,6 +85,14 @@ function crearEvaluacion(params) {
     Math.max(0, parseFloat(params.sancion) || 0),     // monto a descontar
     String(params.sancionMotivo || '')
   ]);
+  // ⚡ Hook materialización: recomputar la fila LIQUIDACIONES_DIA de este
+  // (idPersonal × fecha) para que el cambio se refleje al instante en Pendientes.
+  try {
+    if (typeof _liqDiaRecomputar === 'function' && params.fecha) {
+      _liqDiaRecomputar(params.idPersonal, params.fecha);
+    }
+  } catch(eH) { Logger.log('Hook _liqDiaRecomputar fallo: ' + eH.message); }
+
   return { ok: true, data: { idEval: id } };
 }
 

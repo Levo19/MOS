@@ -18963,10 +18963,11 @@ const MOS = (() => {
     _liqState.tab = 'pendientes';
     _liqState.seleccion = {};
     _liqState.expandidos = {};
-    // Default: últimos 3 días (rápido). Botón "Cargar más" extiende a 14d.
+    // ⚡ Materializado: backend lee directo de LIQUIDACIONES_DIA, podemos
+    // pedir 30 días sin penalización
     var hoy = _liqHoy();
     _liqState.hasta = hoy;
-    _liqState.desde = _liqOffset(hoy, -2);
+    _liqState.desde = _liqOffset(hoy, -29);
     openModal('modalLiquidaciones');
     _liqSfx('open');
     // Pintar desde cache instantáneamente si existe
@@ -19100,7 +19101,7 @@ const MOS = (() => {
     }
     try {
       if (tabActual === 'pendientes') {
-        const res = await _liqFetchConTimeout('getLiquidacionesPendientes', { desde: _liqState.desde, hasta: _liqState.hasta }, 60000);
+        const res = await _liqFetchConTimeout('getLiquidacionesPendientes', { desde: _liqState.desde, hasta: _liqState.hasta }, 15000);
         if (_liqState.tab !== tabActual) return; // user cambió de tab mientras esperaba
         const arr = Array.isArray(res) ? res : ((res && res.data) || []);
         _liqState.pendientes = arr;
@@ -19137,22 +19138,13 @@ const MOS = (() => {
     const body = $('liqBody');
     if (!body) return;
     const list = _liqState.pendientes || [];
-    const diasRango = _diff(_liqState.desde, _liqState.hasta) + 1;
-    const verMasBtn = diasRango < 60 ? `
-      <div class="text-center py-4 mt-2">
-        <button onclick="MOS.liqCargarMasDias(event)" class="btn-ghost btn-ripple text-xs px-4 py-2"
-                style="border:1px dashed rgba(168,85,247,.4);color:#a5b4fc">
-          📅 Cargar más días (ver atrás)
-        </button>
-        <div class="text-[10px] text-slate-600 mt-1">Actualmente: últimos ${diasRango} día${diasRango !== 1 ? 's' : ''}</div>
-      </div>` : '';
     if (!list.length) {
       body.innerHTML = `<div class="liq-empty">
         <div class="liq-empty-emoji">🎉</div>
         <div class="text-sm">Todo al día</div>
-        <div class="text-xs text-slate-600 mt-1">No hay liquidaciones pendientes en los últimos ${diasRango} días.</div>
-      </div>
-      ${verMasBtn}`;
+        <div class="text-xs text-slate-600 mt-1">No hay liquidaciones pendientes.</div>
+        <div class="text-[10px] text-slate-700 mt-3">¿Primera vez con el módulo? Ve a <strong>📊 Resumen</strong> → <strong>🔧 Inicializar Liquidación Diaria</strong></div>
+      </div>`;
       return;
     }
     const totalGeneral = list.reduce((s, p) => s + p.total, 0);
@@ -19162,7 +19154,6 @@ const MOS = (() => {
         <div class="text-xs text-slate-400">
           <strong class="text-amber-400">${list.length}</strong> persona${list.length !== 1 ? 's' : ''} ·
           <strong class="text-amber-400">${totalDias}</strong> día${totalDias !== 1 ? 's' : ''}
-          <span class="text-[10px] text-slate-600 ml-2">(${diasRango}d)</span>
         </div>
         <div class="text-right">
           <div class="text-[10px] uppercase text-slate-500 tracking-wider">Adeudado total</div>
@@ -19170,7 +19161,6 @@ const MOS = (() => {
         </div>
       </div>
       ${list.map((p, i) => _liqCardPersona(p, i)).join('')}
-      ${verMasBtn}
     `;
   }
 
@@ -19663,14 +19653,51 @@ const MOS = (() => {
           </div>
         </div>
         <div class="rounded-xl p-3" style="background:rgba(15,23,42,.5);border:1px solid #1e293b">
-          <div class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">⚙ Migración</div>
+          <div class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">⚡ Performance (LIQUIDACIONES_DIA)</div>
+          <button onclick="MOS._liqBackfillDia(event)" class="btn-primary btn-ripple w-full text-xs"
+                  style="background:linear-gradient(135deg,#7c3aed,#a78bfa);color:#fff">
+            🔧 Inicializar / Reconstruir Liquidación Diaria
+          </button>
+          <p class="text-[10px] text-slate-600 mt-1">Pobla la hoja materializada con últimos 30 días. <strong>Tarda ~90s la primera vez</strong>, después las lecturas son instantáneas.</p>
+        </div>
+        <div class="rounded-xl p-3" style="background:rgba(15,23,42,.5);border:1px solid #1e293b">
+          <div class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">⚙ Migración legacy</div>
           <button onclick="MOS._liqMigrar(event)" class="btn-ghost btn-ripple w-full text-xs"
                   style="border:1px dashed rgba(99,102,241,.35);color:#a5b4fc">
             🔄 Migrar histórico de LIQUIDACIONES legacy
           </button>
-          <p class="text-[10px] text-slate-600 mt-1">Mueve las liquidaciones PAGADAS de la hoja vieja al nuevo modelo. Idempotente.</p>
+          <p class="text-[10px] text-slate-600 mt-1">Mueve PAGADAS de la hoja vieja al nuevo modelo (one-shot, idempotente).</p>
         </div>`;
     });
+  }
+
+  // Backfill / Inicializar LIQUIDACIONES_DIA
+  async function _liqBackfillDia(ev) {
+    if (ev && typeof _liqRipple === 'function') _liqRipple(ev);
+    const btn = ev?.target?.closest('button');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Procesando 30 días... (~90s)'; }
+    try {
+      const res = await Promise.race([
+        API.post('backfillLiquidacionesDia', { dias: 30 }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('Timeout — vuelve a intentar, los días que se alcanzaron ya están guardados')), 120000))
+      ]);
+      _liqSfx('success');
+      try {
+        const r = btn?.getBoundingClientRect();
+        if (r) _liqConfetti(r.left + r.width/2, r.top + r.height/2, '#a78bfa');
+      } catch(_){}
+      toast(res?.msg || '✓ Inicialización completada', 'ok');
+      _liqCacheClear();
+      // Recarga pendientes con los datos materializados
+      if (_liqState.tab === 'pendientes' || _liqState.tab === 'resumen') {
+        await liqLoadCurrent();
+      }
+    } catch(e) {
+      _liqSfx('error');
+      toast('Error: ' + (e.message || e), 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '🔧 Inicializar / Reconstruir Liquidación Diaria'; }
+    }
   }
 
   async function _liqMigrar(ev) {
@@ -23837,7 +23864,7 @@ const MOS = (() => {
     liqAbrirConfirmacion, liqConfirmarPago,
     liqReimprimirPago, liqAnularPago,
     _liqTogglePersona, _liqToggleDia, _liqToggleAll,
-    _liqEditarDia, _liqAbrirPagoDet, _liqMigrar,
+    _liqEditarDia, _liqAbrirPagoDet, _liqMigrar, _liqBackfillDia,
     // Legacy stubs (no-op)
     liqVerDetallePend, liqEmitirIndividual, liqEmitirTodos,
     liqAnularPersona, liqAnularDia,
