@@ -18978,6 +18978,39 @@ const MOS = (() => {
       _liqUpdatePayBar();
     }
     await liqLoadCurrent();
+    // 🚀 Prefetch Historial (pagadas) en background — al cambiar tab será
+    // instantáneo. No bloquea la UI del tab actual.
+    _liqPrefetchTab('pagadas');
+  }
+
+  // Prefetch silencioso del tab no activo. Si ya hay cache fresh o state
+  // poblado, no hace nada. Si falla, no muestra error — solo deja el tab
+  // sin cache (cuando el user vaya, hará fetch normal).
+  function _liqPrefetchTab(tab) {
+    try {
+      // Si ya tenemos el state poblado, no re-fetch
+      if (tab === 'pendientes' && _liqState.pendientes && _liqState.pendientes.length) return;
+      if (tab === 'pagadas'   && _liqState.pagadas    && _liqState.pagadas.length)    return;
+      // Si hay cache fresh, hidratar state y no fetch
+      const cached = _liqCacheLoad(tab);
+      if (cached) {
+        if (tab === 'pendientes') _liqState.pendientes = cached;
+        else if (tab === 'pagadas') _liqState.pagadas = cached;
+        return;
+      }
+      // Fetch silencioso — no bloquea
+      const params = tab === 'pendientes'
+        ? { desde: _liqState.desde, hasta: _liqState.hasta }
+        : { desde: _liqOffset(_liqHoy(), -89), hasta: _liqHoy() };
+      const endpoint = tab === 'pendientes' ? 'getLiquidacionesPendientes' : 'getLiquidacionesPagadas';
+      const ms = tab === 'pendientes' ? 15000 : 30000;
+      _liqFetchConTimeout(endpoint, params, ms).then(res => {
+        const arr = Array.isArray(res) ? res : ((res && res.data) || []);
+        if (tab === 'pendientes') _liqState.pendientes = arr;
+        else if (tab === 'pagadas') _liqState.pagadas = arr;
+        _liqCacheSave(tab, arr);
+      }).catch(() => { /* silent — prefetch best-effort */ });
+    } catch(_) { /* tolerar */ }
   }
 
   // Cargar más días: extender el rango hacia atrás (acumular días viejos)
@@ -19017,13 +19050,43 @@ const MOS = (() => {
     });
     _liqUpdatePayBar();
     _liqSfx('switch');
-    // Cache instantáneo del tab destino
-    const cached = _liqCacheLoad(tab);
-    if (cached) {
-      if (tab === 'pendientes') { _liqState.pendientes = cached; _liqRenderPendientes(); }
-      else if (tab === 'pagadas') { _liqState.pagadas = cached; _liqRenderPagadas(); }
+
+    // 🚀 INSTANTÁNEO: si ya tenemos data en state (prefetched o cacheado),
+    // pintar de una vez SIN esperar fetch. Antes el cambio de tab Historial→
+    // Pendientes "se colgaba" 10-15s esperando getLiquidacionesPendientes
+    // aunque la data ya estuviera en cache localStorage.
+    const body = $('liqBody');
+    if (body) body.dataset._hasCache = '';
+    let pintadoInstantaneo = false;
+    if (tab === 'pendientes') {
+      const datos = (_liqState.pendientes && _liqState.pendientes.length)
+        ? _liqState.pendientes
+        : _liqCacheLoad('pendientes');
+      if (datos) {
+        _liqState.pendientes = datos;
+        _liqRenderPendientes();
+        if (body) body.dataset._hasCache = '1';
+        pintadoInstantaneo = true;
+      }
+    } else if (tab === 'pagadas') {
+      const datos = (_liqState.pagadas && _liqState.pagadas.length)
+        ? _liqState.pagadas
+        : _liqCacheLoad('pagadas');
+      if (datos) {
+        _liqState.pagadas = datos;
+        _liqRenderPagadas();
+        if (body) body.dataset._hasCache = '1';
+        pintadoInstantaneo = true;
+      }
     }
+
+    // Fetch fresco (en background si pintamos instantáneamente, foreground si no)
     liqLoadCurrent();
+
+    // Prefetch del tab opuesto para que la siguiente navegación también
+    // sea instantánea.
+    const opuesto = tab === 'pendientes' ? 'pagadas' : (tab === 'pagadas' ? 'pendientes' : null);
+    if (opuesto) _liqPrefetchTab(opuesto);
   }
 
   function liqRefresh() {
