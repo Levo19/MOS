@@ -11,9 +11,26 @@
 function getFinanzasDia(params) {
   var fecha = params.fecha || _hoy();
   try {
-    // Auto-sincronizar jornadas: si hay personal con presencia detectada
-    // (ventas, sesiones, cajas) pero sin JORNADA registrada, la crea ahora.
-    // Esto garantiza que finanzas, evaluaciones y liquidaciones siempre cuadren.
+    // ⚡ Asegurar materialización LIQUIDACIONES_DIA antes de calcular personal.
+    // Si fecha = hoy: throttle 60s (cron-style). Si fecha pasada: sólo si
+    // explícitamente se pide refresh (params.forceLiqSync).
+    try {
+      var esHoy = (fecha === _hoy());
+      if (esHoy) {
+        var cache = CacheService.getScriptCache();
+        var lastSync = cache.get('fin_ldia_sync_' + fecha);
+        if (!lastSync) {
+          _liqDiaSync(fecha);
+          cache.put('fin_ldia_sync_' + fecha, '' + Date.now(), 60);
+        }
+      } else if (params && params.forceLiqSync) {
+        _liqDiaSync(fecha);
+      }
+    } catch(eMat) { Logger.log('Sync LIQ_DIA: ' + eMat.message); }
+
+    // Auto-sincronizar jornadas legacy (algunos flujos manuales aún las usan).
+    // _calcularPersonal ya lee de LIQUIDACIONES_DIA, pero las jornadas siguen
+    // existiendo para vetos/rehabilitaciones manuales.
     try { _sincronizarJornadasAutoDelDia(fecha); } catch(eS) { Logger.log('Sync jornadas: ' + eS.message); }
     var ingresos   = _calcularIngresos(fecha);
     var costos     = _calcularCostoVentas(fecha, ingresos.cobradosIds);
@@ -544,11 +561,22 @@ function _calcularCostoVentas(fecha, detalleIds) {
 }
 
 function _calcularPersonal(fecha) {
-  var tz   = Session.getScriptTimeZone();
+  var tz = Session.getScriptTimeZone();
 
-  // ── Resolución de monto (PERSONAL_MASTER + sinónimo VENDEDOR↔CAJERO) ──
-  // Lo construimos ANTES del filtro de rows para poder cruzar el rol real
-  // del master con el rol stale que pueda haber en JORNADAS.
+  // ════════════════════════════════════════════════════════════════
+  // FUENTE PRIMARIA: LIQUIDACIONES_DIA (tabla materializada)
+  // ════════════════════════════════════════════════════════════════
+  // Antes esto leía JORNADAS y dependía de _sincronizarJornadasAutoDelDia
+  // para crear filas. Eso fallaba silenciosamente y la card mostraba sólo
+  // gente con jornada manual o ya escrita. Ahora leemos directo de la
+  // tabla materializada que ya tiene todos los presentes (alimentada
+  // por _liqDiaSync cada 60s desde getLiquidacionesPendientesDia, +
+  // forzado al inicio de getFinanzasDia).
+  //
+  // JORNADAS queda como hoja secundaria SÓLO para detectar VETOS
+  // (rows con fuente=ELIMINADA por nombre) — ahí vive el toggle 💸.
+
+  // 1) Cargar PERSONAL_MASTER para cross-check de roles admin/excluidos
   var personalMaster = _sheetToObjects(getSheet('PERSONAL_MASTER'));
   var personalByNombre = {};
   personalMaster.forEach(function(p) {
@@ -558,128 +586,151 @@ function _calcularPersonal(fecha) {
     if (kFull && kFull !== k) personalByNombre[kFull] = p;
   });
 
-  // Set de roles válidos para "personal del día" (sin admin/master):
-  //   - WH: ALMACENERO, ENVASADOR, OPERADOR (operativos)
-  //   - ME: CAJERO, VENDEDOR
   function _esRolValido(rol) {
     var r = String(rol || '').toUpperCase();
     return r === 'ALMACENERO' || r === 'ENVASADOR' || r === 'OPERADOR'
         || r === 'CAJERO'     || r === 'VENDEDOR';
   }
+  function _esExcluido(rolM, appM) {
+    if (String(appM || '') === 'MOS') return true;
+    var r = String(rolM || '').toUpperCase();
+    if (r === 'MASTER' || r === 'ADMINISTRADOR' || r === 'ADMIN') return true;
+    if (r && !_esRolValido(r)) return true;
+    return false;
+  }
 
-  // Incluimos también las ELIMINADA (tombstones) para poder mostrarlas en el card
-  // con efecto "vetada" — no cuentan al total, pero quedan visibles.
-  // FILTRO doble:
-  //  1. rol/app en JORNADAS no sea admin/master/MOS
-  //  2. SI existe match en PERSONAL_MASTER → el rol REAL del master es válido
-  //     (esto descarta admins cuya JORNADA quedó con rol stale tipo VENDEDOR
-  //     por auto-detección antigua)
-  var rows = _sheetToObjects(getSheet('JORNADAS'))
-    .filter(function(r) {
+  // 2) Leer tombstones de JORNADAS por nombre+fecha (para detectar vetos)
+  //    Se preserva nombre del veto + idJornada para que el botón 💵
+  //    Rehabilitar siga funcionando.
+  var tombstonesByNombre = {};
+  var activasByNombre = {};
+  try {
+    _sheetToObjects(getSheet('JORNADAS')).forEach(function(j) {
+      var f = j.fecha instanceof Date
+        ? Utilities.formatDate(j.fecha, tz, 'yyyy-MM-dd')
+        : String(j.fecha || '').substring(0, 10);
+      if (f !== fecha) return;
+      var k = String(j.nombre || '').trim().toLowerCase();
+      if (!k) return;
+      var fuente = String(j.fuente || '').toUpperCase();
+      if (fuente === 'ELIMINADA') {
+        // Quedarse con el último tombstone si hay varios
+        var prev = tombstonesByNombre[k];
+        var prevTs = prev ? (_parseVetoTs(prev.observacion) || 0) : 0;
+        var thisTs = _parseVetoTs(j.observacion) || 0;
+        if (!prev || thisTs > prevTs) tombstonesByNombre[k] = j;
+      } else {
+        activasByNombre[k] = j;
+      }
+    });
+  } catch(eJ) { Logger.log('Lectura JORNADAS para tombstones: ' + eJ.message); }
+
+  // 3) Leer LIQUIDACIONES_DIA filtrado por fecha (fuente de verdad)
+  var ldiaRows = [];
+  try {
+    var ldiaSh = _liqDiaGetSheet();
+    ldiaRows = _sheetToObjects(ldiaSh).filter(function(r) {
       var f = r.fecha instanceof Date
         ? Utilities.formatDate(r.fecha, tz, 'yyyy-MM-dd')
         : String(r.fecha || '').substring(0, 10);
       if (f !== fecha) return false;
-      var rolJ = String(r.rol || '').toUpperCase();
-      var app = String(r.appOrigen || '');
-      if (app === 'MOS' || rolJ === 'MASTER' || rolJ === 'ADMINISTRADOR' || rolJ === 'ADMIN') return false;
-      // Cross-check con PERSONAL_MASTER (source of truth)
-      var k = String(r.nombre || '').trim().toLowerCase();
-      var pm = personalByNombre[k];
-      if (pm) {
-        var rolM = String(pm.rol || '').toUpperCase();
-        var appM = String(pm.appOrigen || '');
-        if (appM === 'MOS') return false;
-        if (rolM === 'MASTER' || rolM === 'ADMINISTRADOR' || rolM === 'ADMIN') return false;
-        // Si master tiene rol pero no es de los válidos → excluir
-        if (rolM && !_esRolValido(rolM)) return false;
-      }
-      return true;
+      var presente = (r.presente === true) || (String(r.presente).toLowerCase() === 'true');
+      return presente;
     });
-  function _equivRol(a, b) {
-    if (a === b) return true;
-    var sin = { 'VENDEDOR': 'CAJERO', 'CAJERO': 'VENDEDOR' };
-    return sin[a] === b;
-  }
-  function _montoPorRol(rol) {
-    var r = String(rol || '').toUpperCase();
-    var pl = personalMaster.find(function(p){
-      var pr = String(p.rol || '').toUpperCase();
-      return _equivRol(r, pr) && (parseFloat(p.montoBase) || 0) > 0;
-    });
-    return pl ? (parseFloat(pl.montoBase) || 0) : 0;
-  }
-  function _resolverMonto(r) {
-    var raw = parseFloat(r.montoJornal) || 0;
-    if (raw > 0) return raw;
-    var k = String(r.nombre || '').trim().toLowerCase();
-    var pm = personalByNombre[k];
-    if (pm && (parseFloat(pm.montoBase) || 0) > 0) return parseFloat(pm.montoBase) || 0;
-    return _montoPorRol(r.rol);
-  }
-  // Resuelve el rol REAL desde PERSONAL_MASTER (fuente de verdad).
-  // JORNADAS puede tener rol stale (auto-detect con default 'VENDEDOR' cuando
-  // no encontraba match en master, o rol viejo si la persona cambió de rol).
-  function _resolverRol(r) {
-    var k = String(r.nombre || '').trim().toLowerCase();
+  } catch(eL) { Logger.log('Lectura LIQUIDACIONES_DIA: ' + eL.message); }
+
+  // 4) Helpers de resolución
+  function _resolverRol(nombre, rolRaw) {
+    var k = String(nombre || '').trim().toLowerCase();
     var pm = personalByNombre[k];
     if (pm && pm.rol) return String(pm.rol).toUpperCase();
-    return String(r.rol || '').toUpperCase();
+    return String(rolRaw || '').toUpperCase();
   }
 
-  // ── Agrupar por nombre: separar activas vs tombstones ──
-  // Si hay activas → suma el mejor (por prioridad). Las tombstones quedan como
-  // detalle "vetada" para que el frontend las muestre con efecto sin contarlas.
-  var prioridad = { 'MANUAL': 0, 'AUTO_CAJAS': 1, 'AUTO_VENTA': 2, 'AUTO_LOGIN': 3 };
-  var grupos = {};
-  rows.forEach(function(r) {
-    var key = String(r.nombre || '').trim().toLowerCase();
-    if (!key) return;
-    if (!grupos[key]) grupos[key] = { activas: [], tombstones: [] };
-    var fuente = String(r.fuente || '').toUpperCase();
-    if (fuente === 'ELIMINADA') grupos[key].tombstones.push(r);
-    else grupos[key].activas.push(r);
-  });
-
+  // 5) Armar detalle desde LIQUIDACIONES_DIA + cruzar con tombstones
+  var procesados = {};
   var total = 0;
   var detalle = [];
   var personasPagadas = 0;
-  Object.keys(grupos).forEach(function(key) {
-    var g = grupos[key];
-    if (g.activas.length > 0) {
-      // Elegir la activa de mayor prioridad
-      var best = null, bestP = 99;
-      g.activas.forEach(function(r) {
-        var p = prioridad[String(r.fuente || '')] !== undefined ? prioridad[String(r.fuente)] : 99;
-        if (p < bestP) { best = r; bestP = p; }
-      });
-      var monto = _resolverMonto(best);
+
+  ldiaRows.forEach(function(r) {
+    var nombre = String(r.nombre || '').trim();
+    var key = nombre.toLowerCase();
+    if (!key || procesados[key]) return;
+    procesados[key] = true;
+
+    // Cross-check: excluir admins/MOS aunque hayan caído en la tabla
+    var pm = personalByNombre[key];
+    if (pm && _esExcluido(pm.rol, pm.appOrigen)) return;
+
+    var rolFinal = _resolverRol(nombre, r.rol);
+    var appFinal = String(r.appOrigen || (pm ? pm.appOrigen : ''));
+
+    var tomb = tombstonesByNombre[key];
+    if (tomb) {
+      // Persona presente PERO con tombstone activo → vetada
       detalle.push({
-        idJornada: best.idJornada || '',
-        nombre:    best.nombre,
-        rol:       _resolverRol(best),
-        zona:      best.zona || '',
-        monto:     monto,
-        fuente:    best.fuente || 'MANUAL',
-        vetada:    false
+        idJornada:  tomb.idJornada || '',
+        idPersonal: String(r.idPersonal || ''),
+        nombre:     nombre,
+        rol:        rolFinal,
+        zona:       String(tomb.zona || ''),
+        appOrigen:  appFinal,
+        monto:      0,
+        fuente:     'ELIMINADA',
+        vetada:     true,
+        vetoTs:     _parseVetoTs(tomb.observacion) || 0,
+        vetoObs:    String(tomb.observacion || ''),
+        presente:   true
+      });
+    } else {
+      // Persona presente activa
+      var jornAct = activasByNombre[key];
+      var idJornada = jornAct ? (jornAct.idJornada || '') : '';
+      var monto = parseFloat(r.totalDia) || 0;
+      // Si totalDia es 0 (sin auditoría todavía), usar montoBase
+      if (!monto || monto <= 0) monto = parseFloat(r.montoBase) || 0;
+
+      detalle.push({
+        idJornada:  idJornada,
+        idPersonal: String(r.idPersonal || ''),
+        nombre:     nombre,
+        rol:        rolFinal,
+        zona:       jornAct ? String(jornAct.zona || '') : '',
+        appOrigen:  appFinal,
+        monto:      monto,
+        fuente:     jornAct ? String(jornAct.fuente || 'AUTO') : 'AUTO_VENTA',
+        vetada:     false,
+        presente:   true
       });
       total += monto;
       personasPagadas++;
-    } else if (g.tombstones.length > 0) {
-      // Solo tombstones → vetada visible (no cuenta para total)
-      var last = g.tombstones[g.tombstones.length - 1];
-      detalle.push({
-        idJornada: last.idJornada || '',
-        nombre:    last.nombre,
-        rol:       _resolverRol(last),
-        zona:      last.zona || '',
-        monto:     0,
-        fuente:    'ELIMINADA',
-        vetada:    true,
-        vetoTs:    _parseVetoTs(last.observacion) || 0,
-        vetoObs:   String(last.observacion || '')
-      });
     }
+  });
+
+  // 6) Tombstones HUÉRFANOS — vetados que ya no aparecen en LIQUIDACIONES_DIA
+  //    (ej. user vetado retroactivamente sin actividad ese día). Igual los
+  //    mostramos para auditoría visual.
+  Object.keys(tombstonesByNombre).forEach(function(key) {
+    if (procesados[key]) return;
+    procesados[key] = true;
+    var tomb = tombstonesByNombre[key];
+    var pm = personalByNombre[key];
+    if (pm && _esExcluido(pm.rol, pm.appOrigen)) return;
+    detalle.push({
+      idJornada:  tomb.idJornada || '',
+      idPersonal: '',
+      nombre:     String(tomb.nombre || ''),
+      rol:        _resolverRol(tomb.nombre, tomb.rol),
+      zona:       String(tomb.zona || ''),
+      appOrigen:  String(tomb.appOrigen || (pm ? pm.appOrigen : '')),
+      monto:      0,
+      fuente:     'ELIMINADA',
+      vetada:     true,
+      vetoTs:     _parseVetoTs(tomb.observacion) || 0,
+      vetoObs:    String(tomb.observacion || ''),
+      presente:   false
+    });
   });
 
   return { total: _r2(total), personas: personasPagadas, detalle: detalle };
