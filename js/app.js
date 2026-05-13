@@ -21937,13 +21937,63 @@ const MOS = (() => {
       if (newLimpProf > (r.manual.limpiezaProfPct || 0)) r.manual.limpiezaProfPct = newLimpProf;
       r.manual.checksAcum = Object.assign({}, r.manual.checksAcum || {});
       Object.keys(checksFull).forEach(k => { if (checksFull[k]) r.manual.checksAcum[k] = true; });
+
+      // ── Optimistic update de la LIQUIDACIÓN DEL DÍA ──
+      // Para que el total de Personal en Finanzas reaccione al instante
+      // (descuento por sanción / no aplicar bono meta), recalculamos
+      // r.totalDia con la misma fórmula que el backend en _armarPL:
+      //   totalDia = max(0, base + pagoEnvasado + bonoMeta_efectivo − sancion_total)
+      const sancionPrev = parseFloat(r.sancion) || 0;
+      const sancionNueva = sancionPrev + sancion;  // sumamos al acumulado del día
+      r.sancion = Math.round(sancionNueva * 100) / 100;
+      if (sancion > 0) {
+        r.sancionesDetalle = (r.sancionesDetalle || []).slice();
+        r.sancionesDetalle.push({
+          hora: new Date().toTimeString().slice(0,5),
+          monto: sancion,
+          motivo: sancionMotivo
+        });
+      }
+      // Bono meta efectivo: si admin desactivó el toggle, queda en 0
+      const baseV = parseFloat(r.montoBase) || 0;
+      const envV  = parseFloat(r.pagoEnvasado) || 0;
+      const aplicaMeta = !!params.aplicaBonoMeta;
+      if (!aplicaMeta) r.bonoMeta = 0; // efecto del toggle
+      const metaEf = aplicaMeta ? (parseFloat(r.bonoMeta) || 0) : 0;
+      r.totalDia = Math.max(0, Math.round((baseV + envV + metaEf - r.sancion) * 100) / 100);
+
       _renderEvalLista();
+      // Re-render de Finanzas Personal (cards + subtotales + total general)
+      // para que el "Gasto Personal" refleje el descuento al instante.
+      try {
+        if (typeof _finPL !== 'undefined' && _finPL && typeof _finRenderPersonal === 'function') {
+          // Invalidar el anti-flicker para forzar repaint con totalDia nuevo
+          const cont = $('finPersonalList');
+          if (cont) cont.dataset._lastHtml = '';
+          _finRenderPersonal(_finPL, _evalState.fecha);
+        }
+      } catch(_){}
     }
 
     try {
       await API.post('crearEvaluacion', params);
       // Pull fresh data del servidor (en bg) para reflejar score real con KPIs auto
       refreshEvaluacion().catch(() => {});
+      // Si Finanzas está cargado, re-fetchar resumenes y repintar Personal
+      // con los datos REALES del servidor (sancion totalizada, totalDia, etc.)
+      try {
+        if (typeof _finPL !== 'undefined' && _finPL) {
+          const f = _evalState.fecha;
+          const fresh = await API.get('getResumenTodosDia', { fecha: f });
+          if (Array.isArray(fresh)) {
+            _evalState.resumenes = fresh;
+            try { localStorage.setItem('mos_fin_resum_' + f, JSON.stringify({ ts: Date.now(), data: fresh })); } catch {}
+            const cont = $('finPersonalList');
+            if (cont) cont.dataset._lastHtml = '';
+            if (typeof _finRenderPersonal === 'function') _finRenderPersonal(_finPL, f);
+          }
+        }
+      } catch(_){}
     } catch (e) {
       toast('Error al guardar: ' + e.message, 'error');
       refreshEvaluacion().catch(() => {});
