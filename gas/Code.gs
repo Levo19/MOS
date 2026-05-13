@@ -194,7 +194,16 @@ function _route(method, e) {
       case 'getPrintNodePrinters':      return listarImpresorasPN();
       case 'imprimirLiquidacionDia':    return imprimirLiquidacionDia(params);
 
-      // ── Liquidaciones (snapshot inmutable) ─────────────────
+      // ── Liquidaciones v2 (modelo acumulativo por día) ──────
+      case 'getLiquidacionesPendientes': return getLiquidacionesPendientes(params);
+      case 'marcarPagos':                return marcarPagos(params);
+      case 'anularPago':                 return anularPago(params);
+      case 'getLiquidacionesPagadas':    return getLiquidacionesPagadas(params);
+      case 'getPagoDetalle':             return getPagoDetalle(params);
+      case 'imprimirTicketPago':         return imprimirTicketPago(params);
+      case 'migrarLiquidacionesV2':      return migrarLiquidacionesV2();
+
+      // ── Liquidaciones legacy (stubs que delegan o devuelven vacío) ──
       case 'getLiquidacionesPendientesSemana': return getLiquidacionesPendientesSemana(params);
       case 'getDetalleDiasPendientes':         return getDetalleDiasPendientes(params);
       case 'emitirLiquidacion':                return emitirLiquidacion(params);

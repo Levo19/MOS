@@ -13018,31 +13018,214 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
     #liqPrintWrap, #liqPrintWrap * { visibility: visible !important; }
     #liqPrintWrap { position: absolute; left: 0; top: 0; width: 100%; }
   }
+
+  /* ── Nuevo modelo: presets + cards persona + pay bar ───────── */
+  .liq-preset-btn {
+    padding: 4px 10px; font-size: 11px; border-radius: 6px;
+    background: rgba(99,102,241,.08); color: #a5b4fc;
+    border: 1px solid rgba(99,102,241,.25);
+    cursor: pointer; transition: all .15s cubic-bezier(.34,1.56,.64,1);
+  }
+  .liq-preset-btn:hover {
+    background: rgba(251,191,36,.12); color: #fbbf24;
+    border-color: rgba(251,191,36,.35); transform: translateY(-1px);
+  }
+  .liq-preset-btn:active { transform: scale(.95); }
+  .liq-preset-btn.active {
+    background: rgba(251,191,36,.15); color: #fbbf24;
+    border-color: rgba(251,191,36,.5);
+  }
+
+  /* Card de persona (Pendientes / Pagadas) */
+  .liq-pers-card {
+    position: relative; overflow: hidden;
+    background: linear-gradient(135deg,#0c1424 0%,#0f172a 45%,#0a1428 100%);
+    border: 1px solid #1e293b; border-radius: 12px;
+    padding: 14px; margin-bottom: 12px;
+    transition: all .25s cubic-bezier(.34,1.56,.64,1);
+    animation: liqCardIn .35s cubic-bezier(.34,1.56,.64,1) backwards;
+  }
+  .liq-pers-card { animation-delay: calc(var(--i,0) * 35ms); }
+  @keyframes liqCardIn {
+    from { opacity: 0; transform: translateY(8px) scale(.96); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .liq-pers-card::before {
+    content:''; position:absolute; top:0; left:-100%; width:60%; height:100%;
+    background: linear-gradient(120deg, transparent 30%, rgba(251,191,36,.08) 50%, transparent 80%);
+    pointer-events:none; transition: left .7s cubic-bezier(.34,1.56,.64,1);
+  }
+  .liq-pers-card:hover::before { left: 130%; }
+  .liq-pers-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(251,191,36,.35);
+    box-shadow: 0 8px 26px -8px rgba(251,191,36,.3);
+  }
+  .liq-pers-card.has-selection {
+    border-color: rgba(251,191,36,.5);
+    box-shadow: 0 0 0 1px rgba(251,191,36,.18) inset, 0 6px 18px -6px rgba(251,191,36,.35);
+  }
+
+  /* Día row dentro de la card */
+  .liq-dia-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; background: #060d1f;
+    border: 1px solid #1e293b; border-radius: 8px;
+    transition: all .15s ease;
+    margin-top: 6px;
+  }
+  .liq-dia-row:hover { border-color: rgba(251,191,36,.3); background: rgba(251,191,36,.04); }
+  .liq-dia-row.selected {
+    border-color: rgba(251,191,36,.55); background: rgba(251,191,36,.06);
+    box-shadow: 0 0 0 1px rgba(251,191,36,.2) inset;
+  }
+  .liq-dia-row.no-aud { border-left: 3px solid rgba(245,158,11,.4); }
+  .liq-dia-row.aud-ok { border-left: 3px solid rgba(16,185,129,.4); }
+
+  /* Checkbox custom amber */
+  .liq-check {
+    width: 18px; height: 18px; flex-shrink: 0; cursor: pointer;
+    accent-color: #fbbf24;
+  }
+  .liq-check-master { width: 16px; height: 16px; cursor: pointer; accent-color: #fbbf24; }
+
+  /* Botón pay con pulse */
+  @keyframes liqPayPulse {
+    0%,100% { box-shadow: 0 6px 18px -4px rgba(251,191,36,.5); }
+    50%     { box-shadow: 0 6px 22px -2px rgba(251,191,36,.85); }
+  }
+
+  /* Empty states */
+  .liq-empty {
+    text-align: center; padding: 40px 20px; color: #64748b;
+  }
+  .liq-empty-emoji { font-size: 48px; opacity: .5; margin-bottom: 8px; }
+
+  /* Batch card (Pagadas) */
+  .liq-batch-card {
+    position: relative; overflow: hidden;
+    background: linear-gradient(135deg,#06120a 0%,#0a1f12 45%,#08170d 100%);
+    border: 1px solid rgba(34,197,94,.22); border-radius: 12px;
+    padding: 12px 14px; margin-bottom: 10px;
+    transition: all .2s cubic-bezier(.34,1.56,.64,1);
+    cursor: pointer;
+  }
+  .liq-batch-card:hover {
+    transform: translateY(-1px);
+    border-color: rgba(34,197,94,.45);
+    box-shadow: 0 6px 20px -8px rgba(34,197,94,.4);
+  }
+  .liq-batch-card.anulada {
+    background: linear-gradient(135deg,#1a0a0a 0%,#1f0a14 45%,#170808 100%);
+    border-color: rgba(100,116,139,.25); opacity: .65;
+  }
 </style>
 <div id="modalLiquidaciones" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.liqClose()">
-  <div class="modal-box p-0">
+  <div class="modal-box p-0" style="background:linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,8,23,.98));backdrop-filter:blur(14px);box-shadow:0 24px 60px -10px rgba(251,191,36,.18),0 0 0 1px rgba(251,191,36,.08);">
     <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0 gap-2" style="border-bottom: 1px solid #1e293b">
       <div class="min-w-0 flex-1">
         <h3 class="font-semibold text-amber-400 text-base">💼 Liquidaciones de personal</h3>
-        <p id="liqHeaderInfo" class="text-xs text-slate-500 mt-0.5"></p>
+        <p id="liqHeaderInfo" class="text-xs text-slate-500 mt-0.5">Pago día a día · acumulativo</p>
       </div>
       <button onclick="MOS.liqClose()" class="modal-close-x">×</button>
     </div>
 
     <div class="px-5 pt-2 flex gap-1" style="border-bottom: 1px solid #1e293b">
-      <div class="liq-tab active" data-liqtab="pendientes" onclick="MOS.liqSetTab('pendientes')">⏳ Esta semana</div>
-      <div class="liq-tab"        data-liqtab="emitidas"   onclick="MOS.liqSetTab('emitidas')">📦 Emitidas</div>
-      <div class="liq-tab"        data-liqtab="pagadas"    onclick="MOS.liqSetTab('pagadas')">💵 Pagadas</div>
-      <div class="liq-tab"        data-liqtab="historico"  onclick="MOS.liqSetTab('historico')">📚 Histórico</div>
+      <div class="liq-tab active" data-liqtab="pendientes" onclick="MOS.liqSetTab('pendientes')">📋 Pendientes</div>
+      <div class="liq-tab"        data-liqtab="pagadas"    onclick="MOS.liqSetTab('pagadas')">💰 Pagadas</div>
+      <div class="liq-tab"        data-liqtab="resumen"    onclick="MOS.liqSetTab('resumen')">📊 Resumen</div>
+    </div>
+
+    <!-- Filtros de rango -->
+    <div class="px-5 py-2 flex items-center gap-2 flex-wrap" style="border-bottom: 1px solid #1e293b; background:rgba(15,23,42,.4)">
+      <div class="flex items-center gap-1">
+        <label class="text-[10px] uppercase text-slate-500 font-bold tracking-wider">Desde</label>
+        <input type="date" id="liqRangoDesde" class="inp" style="padding:4px 8px;font-size:11px;width:130px">
+      </div>
+      <div class="flex items-center gap-1">
+        <label class="text-[10px] uppercase text-slate-500 font-bold tracking-wider">Hasta</label>
+        <input type="date" id="liqRangoHasta" class="inp" style="padding:4px 8px;font-size:11px;width:130px">
+      </div>
+      <div class="flex items-center gap-1 ml-auto">
+        <button onclick="MOS.liqSetRangoPreset('hoy')"      class="liq-preset-btn">Hoy</button>
+        <button onclick="MOS.liqSetRangoPreset('semana')"   class="liq-preset-btn">Sem actual</button>
+        <button onclick="MOS.liqSetRangoPreset('quincena')" class="liq-preset-btn">Quincena</button>
+        <button onclick="MOS.liqSetRangoPreset('mes')"      class="liq-preset-btn">Mes</button>
+        <button onclick="MOS.liqRefresh()" class="liq-preset-btn" title="Refrescar (Ctrl+R)">↻</button>
+      </div>
     </div>
 
     <div id="liqBody" class="overflow-y-auto px-5 py-4" style="flex: 1">
       <div class="text-xs text-slate-500 italic">Cargando...</div>
     </div>
 
-    <div id="liqFooter" class="px-5 py-3 flex items-center gap-3 flex-wrap" style="border-top: 1px solid #1e293b">
-      <div id="liqFooterInfo" class="text-xs text-slate-500 flex-1"></div>
-      <div id="liqFooterActions" class="flex gap-2"></div>
+    <!-- Sticky bottom bar para pagar (solo aparece en tab Pendientes con selección > 0) -->
+    <div id="liqPayBar" class="hidden" style="border-top: 1px solid rgba(251,191,36,.35); background:linear-gradient(180deg,rgba(251,191,36,.08),rgba(251,191,36,.02)); padding:12px 20px; flex-shrink:0;">
+      <div class="flex items-center gap-3 flex-wrap">
+        <div class="flex-1 min-w-0">
+          <div class="text-[10px] uppercase text-amber-400 font-bold tracking-wider">💵 Seleccionado</div>
+          <div id="liqPaySubtitle" class="text-xs text-slate-300 mt-0.5">—</div>
+        </div>
+        <div class="text-right">
+          <div class="text-[10px] uppercase text-slate-500 font-bold tracking-wider">Total</div>
+          <div id="liqPayTotal" class="text-xl font-bold" style="color:#fbbf24">S/0.00</div>
+        </div>
+        <button id="liqPayBtn" onclick="MOS.liqAbrirConfirmacion()"
+                class="btn-primary btn-ripple px-4 py-2 text-sm font-semibold"
+                style="box-shadow:0 6px 18px -4px rgba(251,191,36,.6); animation: liqPayPulse 2s ease-in-out infinite;">
+          💸 Pagar y emitir
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL CONFIRMACIÓN DE PAGO ═══ -->
+<div id="modalLiqConfirmar" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalLiqConfirmar')">
+  <div class="modal-box p-0 max-w-md w-full" style="max-height:88vh;display:flex;flex-direction:column;background:linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,8,23,.98));backdrop-filter:blur(14px);box-shadow:0 24px 60px -10px rgba(251,191,36,.22),0 0 0 1px rgba(251,191,36,.08);">
+    <div class="px-5 pt-5 pb-3 flex items-center justify-between border-b border-slate-800">
+      <div>
+        <h3 class="font-semibold text-white text-base">💰 Confirmar pago</h3>
+        <p id="liqConfirmSubtitle" class="text-xs text-slate-500">—</p>
+      </div>
+      <button onclick="MOS.closeModal('modalLiqConfirmar')" class="modal-close-x">×</button>
+    </div>
+    <div class="overflow-y-auto px-5 py-4 space-y-3" style="flex:1">
+      <div id="liqConfirmDetalle" class="space-y-3"></div>
+      <div class="mt-2 pt-2 border-t border-amber-500/20 flex items-center justify-between">
+        <span class="text-sm font-bold text-slate-300">TOTAL A PAGAR</span>
+        <span id="liqConfirmTotal" class="text-lg font-bold" style="color:#fbbf24">S/0.00</span>
+      </div>
+      <label class="flex items-center gap-2 text-sm pt-3 cursor-pointer">
+        <input type="checkbox" id="liqConfirmImprimir" checked
+               style="width:16px;height:16px;accent-color:#fbbf24;cursor:pointer">
+        <span class="text-slate-300">🖨 Imprimir ticket al confirmar</span>
+      </label>
+      <textarea id="liqConfirmComentario" placeholder="Comentario opcional (ej: pago semanal, adelanto, etc.)"
+                class="inp text-xs" rows="2" style="margin-top:4px"></textarea>
+    </div>
+    <div class="px-5 py-3 border-t border-slate-800 flex gap-2">
+      <button onclick="MOS.closeModal('modalLiqConfirmar')" class="btn-ghost flex-1">Cancelar</button>
+      <button onclick="MOS.liqConfirmarPago(event)" class="btn-primary btn-ripple flex-1" id="liqConfirmBtn">💸 Confirmar y pagar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL DETALLE DE PAGO (pestaña Pagadas) ═══ -->
+<div id="modalLiqPagoDet" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalLiqPagoDet')">
+  <div class="modal-box p-0 max-w-md w-full" style="max-height:88vh;display:flex;flex-direction:column;background:linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,8,23,.98));">
+    <div class="px-5 pt-5 pb-3 flex items-center justify-between border-b border-slate-800">
+      <div>
+        <h3 id="liqPagoDetTitle" class="font-semibold text-white text-base">Detalle del pago</h3>
+        <p id="liqPagoDetSubtitle" class="text-xs text-slate-500">—</p>
+      </div>
+      <button onclick="MOS.closeModal('modalLiqPagoDet')" class="modal-close-x">×</button>
+    </div>
+    <div id="liqPagoDetBody" class="overflow-y-auto px-5 py-4 space-y-2" style="flex:1"></div>
+    <div class="px-5 py-3 border-t border-slate-800 flex gap-2 flex-wrap">
+      <button onclick="MOS.closeModal('modalLiqPagoDet')" class="btn-ghost flex-1">Cerrar</button>
+      <button id="liqPagoDetReprintBtn" onclick="MOS.liqReimprimirPago()" class="btn-primary btn-ripple">🖨 Reimprimir</button>
+      <button id="liqPagoDetAnularBtn" onclick="MOS.liqAnularPago()" class="btn-ghost" style="color:#f87171;border-color:rgba(248,113,113,.3)">↺ Anular</button>
     </div>
   </div>
 </div>

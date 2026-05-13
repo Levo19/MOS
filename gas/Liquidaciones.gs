@@ -1,625 +1,662 @@
 // ============================================================
-// ProyectoMOS — Liquidaciones.gs
-// Sistema de liquidación de jornales con cierre flexible:
-//   - Cálculo dinámico hasta emitir (refleja cambios en bonos/jornadas)
-//   - Snapshot inmutable al emitir (los datos quedan congelados)
-//   - Soporta liquidación parcial (renuncias, adelantos)
-//   - Días YA liquidados (en estado != ANULADA) no vuelven a aparecer
-//   - Al marcar PAGADA → genera gasto automático en GASTOS / categoría JORNALES
+// ProyectoMOS — Liquidaciones.gs (v2: pagos acumulados por día)
+//
+// Modelo:
+//   - 1 fila = 1 persona × 1 día pagado (en LIQUIDACIONES_PAGOS).
+//   - "Pendientes" = días con presencia que NO están en esa hoja.
+//   - Cada batch "Pagar" = 1 idPago (LIQ-XXXX) por persona × N días.
+//   - Editable: mientras el día NO esté pagado, se puede re-auditar y
+//     el monto se recalcula al instante.
+//   - Anular pago: estado=ANULADA → los días vuelven a Pendientes.
+//
+// Compatibilidad:
+//   - Se conserva la hoja vieja como LIQUIDACIONES_LEGACY (migración
+//     one-shot mueve filas PAGADA → LIQUIDACIONES_PAGOS).
+//   - Endpoints legacy quedan como stubs que delegan al modelo nuevo.
 // ============================================================
 
-var _ESTADOS_LIQUIDACION = ['PENDIENTE', 'PAGADA', 'ANULADA'];
+var _LIQ_SHEET = 'LIQUIDACIONES_PAGOS';
+var _LIQ_HDRS  = [
+  'idPago', 'fecha', 'idPersonal', 'nombre', 'rol', 'appOrigen',
+  'montoBase', 'pagoEnvasado', 'bonoMeta', 'sancion', 'totalDia',
+  'ticketJobId', 'pagadoPor', 'pagadoTs', 'estado',
+  'comentario', 'idGastoGenerado'
+];
 
 // ── Helpers ─────────────────────────────────────────────────
-
-function _garantizarHojaLiquidaciones() {
+function _liqGetSheet() {
   var ss = getSpreadsheet();
-  var sheet = ss.getSheetByName('LIQUIDACIONES');
-  if (sheet) return sheet;
-  sheet = ss.insertSheet('LIQUIDACIONES');
-  sheet.getRange(1, 1, 1, MOS_HEADERS.LIQUIDACIONES.length).setValues([MOS_HEADERS.LIQUIDACIONES]);
-  sheet.getRange(1, 1, 1, MOS_HEADERS.LIQUIDACIONES.length)
-       .setBackground('#0f3460').setFontColor('#e2e8f0').setFontWeight('bold').setFontSize(10);
-  sheet.setFrozenRows(1);
-  sheet.setColumnWidths(1, MOS_HEADERS.LIQUIDACIONES.length, 140);
-  return sheet;
+  var sh = ss.getSheetByName(_LIQ_SHEET);
+  if (sh) return sh;
+  sh = ss.insertSheet(_LIQ_SHEET);
+  sh.getRange(1, 1, 1, _LIQ_HDRS.length).setValues([_LIQ_HDRS]);
+  sh.getRange(1, 1, 1, _LIQ_HDRS.length)
+    .setBackground('#1e3a8a').setFontColor('#e2e8f0').setFontWeight('bold').setFontSize(10);
+  sh.setFrozenRows(1);
+  // Forzar columnas idPago e idPersonal como texto
+  try {
+    sh.getRange(2, 1, 5000, 1).setNumberFormat('@');
+    sh.getRange(2, 3, 5000, 1).setNumberFormat('@');
+  } catch(_){}
+  return sh;
 }
 
-// Devuelve { lunes, domingo } como yyyy-MM-dd para una fecha dada (default hoy).
-function _semanaLunDom(fechaRef) {
-  var d = fechaRef ? new Date(fechaRef + 'T12:00:00') : new Date();
-  var dia = d.getDay(); // 0=dom, 1=lun, ..., 6=sáb
-  var diffLun = (dia === 0) ? -6 : (1 - dia); // si es domingo, retroceder 6
-  var lun = new Date(d); lun.setDate(d.getDate() + diffLun);
-  var dom = new Date(lun); dom.setDate(lun.getDate() + 6);
+function _liqHoy() {
+  return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+}
+
+function _liqGenId() {
+  // LIQ-<timestamp> — suficiente unicidad en práctica
+  return 'LIQ-' + new Date().getTime();
+}
+
+// Mapa { 'idPersonal::fecha': {idPago, totalDia, estado, ...} } de días YA pagados
+// (estado=PAGADA). Excluye ANULADA porque al anular el día vuelve a Pendientes.
+function _liqMapaPagados() {
+  var sh = _liqGetSheet();
+  var rows = _sheetToObjects(sh);
+  var map = {};
+  rows.forEach(function(r) {
+    if (String(r.estado || '').toUpperCase() !== 'PAGADA') return;
+    var idP = String(r.idPersonal || '').trim();
+    var fecha = r.fecha instanceof Date
+      ? Utilities.formatDate(r.fecha, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+      : String(r.fecha || '').substring(0, 10);
+    if (!idP || !fecha) return;
+    map[idP + '::' + fecha] = r;
+  });
+  return map;
+}
+
+// ============================================================
+// API NUEVA — el módulo que usa el modal "💼 Liquidaciones"
+// ============================================================
+
+// Devuelve TODAS las personas con días no pagados en el rango.
+// Cada día trae los componentes (base/envasado/bonoMeta/sanción) en vivo
+// desde getResumenDia. Si el día no está auditado, igual aparece con
+// base + envasado (sin bono meta).
+//
+// Params: { desde:'yyyy-MM-dd', hasta:'yyyy-MM-dd' }
+// Retorna: [{ idPersonal, nombre, rol, appOrigen, dias:[{fecha, ...}], total }]
+function getLiquidacionesPendientes(params) {
+  params = params || {};
+  var hasta = params.hasta || _liqHoy();
+  var desde = params.desde || _fechaOffset(hasta, -13); // default: últimos 14 días
+  var mapaPag = _liqMapaPagados();
+
+  // Personal evaluable
+  var personalAll = _sheetToObjects(getSheet('PERSONAL_MASTER')).filter(function(r){
+    return String(r.estado) === '1' && _esPersonalEvaluable(r);
+  });
+
+  var fechas = _rangoFechas(desde, hasta);
+  var hoy = _liqHoy();
+  var out = [];
+
+  // Para evitar N×M llamadas a getResumenDia (costoso), pre-fetchamos
+  // getResumenTodosDia por cada fecha del rango y construimos un índice.
+  var byFechaIdP = {}; // { fecha: { idPersonal: resumen } }
+  fechas.forEach(function(f) {
+    if (f > hoy) return;
+    try {
+      var rsm = getResumenTodosDia({ fecha: f });
+      if (rsm && rsm.ok && Array.isArray(rsm.data)) {
+        byFechaIdP[f] = {};
+        var byNombre = {};
+        rsm.data.forEach(function(r){
+          if (r.idPersonal) byFechaIdP[f][r.idPersonal] = r;
+          var n = String(r.nombre || '').toLowerCase().trim();
+          if (n) byNombre[n] = r;
+        });
+        byFechaIdP[f]._byNombre = byNombre;
+      }
+    } catch(_){}
+  });
+
+  personalAll.forEach(function(p) {
+    var nombreFull = (String(p.nombre || '') + ' ' + String(p.apellido || '')).trim();
+    var nLow = nombreFull.toLowerCase();
+    var dias = [];
+    fechas.forEach(function(f) {
+      if (f > hoy) return; // no incluir futuro
+      var key = p.idPersonal + '::' + f;
+      if (mapaPag[key]) return; // ya pagado
+      // Resumen del día desde el índice (más barato que llamar getResumenDia)
+      var idx = byFechaIdP[f] || {};
+      var rd = idx[p.idPersonal] || (idx._byNombre && idx._byNombre[nLow]);
+      // Si el resumen no incluye a esta persona (no estuvo presente), saltar.
+      if (!rd) return;
+      if (!rd.presente) return;
+      dias.push({
+        fecha:        f,
+        presente:     !!rd.presente,
+        auditado:     !!rd.auditado,
+        montoBase:    parseFloat(rd.montoBase)    || 0,
+        pagoEnvasado: parseFloat(rd.pagoEnvasado) || 0,
+        bonoMeta:     parseFloat(rd.bonoMeta)     || 0,
+        sancion:      parseFloat(rd.sancion)      || 0,
+        totalDia:     parseFloat(rd.totalDia)     || 0,
+        scoreFinal:   parseFloat(rd.scoreFinal)   || 0,
+        evaluacionesCount: parseInt(rd.evaluacionesCount) || 0
+      });
+    });
+    if (dias.length === 0) return;
+    var total = dias.reduce(function(s,d){ return s + d.totalDia; }, 0);
+    out.push({
+      idPersonal: p.idPersonal,
+      nombre:     nombreFull,
+      rol:        String(p.rol || '').toUpperCase(),
+      appOrigen:  p.appOrigen || '',
+      dias:       dias,
+      total:      Math.round(total * 100) / 100,
+      cantidadDias: dias.length
+    });
+  });
+
+  // Ordenar: más adeudado primero, luego alfabético
+  out.sort(function(a,b){
+    if (b.total !== a.total) return b.total - a.total;
+    return String(a.nombre).localeCompare(String(b.nombre));
+  });
+
+  return { ok: true, data: out, rango: { desde: desde, hasta: hasta } };
+}
+
+// Marcar como pagados N días para 1 persona → genera 1 idPago + filas.
+// Params: { idPersonal, fechas:['yyyy-MM-dd', ...], pagadoPor, comentario, imprimir, printerId }
+// Retorna: { ok, data: { idPago, total, jobId? } }
+function marcarPagos(params) {
+  params = params || {};
+  if (!params.idPersonal) return { ok: false, error: 'Requiere idPersonal' };
+  if (!Array.isArray(params.fechas) || !params.fechas.length) {
+    return { ok: false, error: 'Requiere fechas[]' };
+  }
+
+  // Resolver persona
+  var personalAll = _sheetToObjects(getSheet('PERSONAL_MASTER'));
+  var p = personalAll.find(function(r){ return String(r.idPersonal) === String(params.idPersonal); });
+  if (!p) return { ok: false, error: 'Personal no encontrado' };
+  var nombreFull = (String(p.nombre || '') + ' ' + String(p.apellido || '')).trim();
+
+  // Validar que ningún día ya esté pagado (idempotencia básica)
+  var mapaPag = _liqMapaPagados();
+  var yaPagadas = params.fechas.filter(function(f){ return mapaPag[params.idPersonal + '::' + f]; });
+  if (yaPagadas.length > 0) {
+    return { ok: false, error: 'Días ya pagados: ' + yaPagadas.join(', ') };
+  }
+
+  var sh = _liqGetSheet();
+  var idPago = _liqGenId();
+  var pagadoTs = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
+  var pagadoPor = String(params.pagadoPor || 'admin');
+  var comentario = String(params.comentario || '');
+  var rol = String(p.rol || '').toUpperCase();
+  var appO = p.appOrigen || '';
+
+  // Recolectar resúmenes por fecha (para snapshot inmutable de los montos)
+  var filas = [];
+  var totalPago = 0;
+  for (var i = 0; i < params.fechas.length; i++) {
+    var f = String(params.fechas[i]);
+    var rsm;
+    try { rsm = getResumenDia({ idPersonal: params.idPersonal, fecha: f }); } catch(_){}
+    var rd = (rsm && rsm.ok) ? rsm.data : null;
+    var montoBase    = rd ? (parseFloat(rd.montoBase)    || 0) : 0;
+    var pagoEnvasado = rd ? (parseFloat(rd.pagoEnvasado) || 0) : 0;
+    var bonoMeta     = rd ? (parseFloat(rd.bonoMeta)     || 0) : 0;
+    var sancion      = rd ? (parseFloat(rd.sancion)      || 0) : 0;
+    var totalDia     = rd ? (parseFloat(rd.totalDia)     || 0) : 0;
+    totalPago += totalDia;
+    filas.push([
+      idPago, f, String(params.idPersonal), nombreFull, rol, appO,
+      montoBase, pagoEnvasado, bonoMeta, sancion, totalDia,
+      '',                  // ticketJobId (se llena después si imprime)
+      pagadoPor, pagadoTs, 'PAGADA',
+      comentario, ''       // idGastoGenerado (se llena después)
+    ]);
+  }
+
+  // Insertar todas las filas de golpe
+  if (filas.length > 0) {
+    sh.getRange(sh.getLastRow() + 1, 1, filas.length, _LIQ_HDRS.length).setValues(filas);
+  }
+  totalPago = Math.round(totalPago * 100) / 100;
+
+  // Registrar como GASTO categoría JORNALES (1 gasto por idPago)
+  var idGasto = '';
+  try {
+    if (typeof crearGasto === 'function') {
+      var gastoRes = crearGasto({
+        fecha:       params.fechas[0] || _liqHoy(),
+        descripcion: 'Liquidación ' + idPago + ' · ' + nombreFull + ' · ' + filas.length + ' día(s)',
+        monto:       totalPago,
+        categoria:   'JORNALES',
+        tipo:        'FIJO',
+        proveedor:   nombreFull,
+        observacion: 'Pago de jornales ' + idPago,
+        creadoPor:   pagadoPor
+      });
+      if (gastoRes && gastoRes.ok && gastoRes.data) idGasto = gastoRes.data.idGasto || '';
+    }
+  } catch(_){}
+
+  // Backfill idGastoGenerado en todas las filas del batch
+  if (idGasto) {
+    try {
+      var data = sh.getDataRange().getValues();
+      var hdrs = data[0];
+      var iIdPago = hdrs.indexOf('idPago');
+      var iIdGas  = hdrs.indexOf('idGastoGenerado');
+      for (var r = data.length - 1; r >= 1; r--) {
+        if (String(data[r][iIdPago]) === idPago) {
+          sh.getRange(r + 1, iIdGas + 1).setValue(idGasto);
+        }
+      }
+    } catch(_){}
+  }
+
+  // Imprimir ticket si se pidió
+  var jobId = null;
+  if (params.imprimir && params.printerId) {
+    try {
+      var imp = imprimirTicketPago({ idPago: idPago, printerId: params.printerId });
+      if (imp && imp.ok && imp.data) jobId = imp.data.printJobId;
+    } catch(eP) { Logger.log('Print fallo: ' + eP.message); }
+  }
+
+  return { ok: true, data: { idPago: idPago, total: totalPago, jobId: jobId, dias: filas.length } };
+}
+
+// Anular pago: estado=ANULADA → los días vuelven a Pendientes.
+// Requiere clave admin de 8 dig.
+function anularPago(params) {
+  params = params || {};
+  if (!params.idPago) return { ok: false, error: 'Requiere idPago' };
+  if (!params.claveAdmin) return { ok: false, error: 'Requiere claveAdmin' };
+
+  var auth = verificarClaveAdmin({
+    clave: params.claveAdmin,
+    accion: 'ANULAR_PAGO',
+    refDocumento: params.idPago,
+    detalle: 'Anular pago de liquidación'
+  });
+  if (!auth.ok) return auth;
+  if (!auth.data || !auth.data.autorizado) {
+    return { ok: true, data: { autorizado: false, error: auth.data?.error || 'Clave incorrecta' } };
+  }
+
+  var sh = _liqGetSheet();
+  var data = sh.getDataRange().getValues();
+  var hdrs = data[0];
+  var iIdPago = hdrs.indexOf('idPago');
+  var iEstado = hdrs.indexOf('estado');
+  var iComent = hdrs.indexOf('comentario');
+  var anuladas = 0;
+  var nombrePago = '';
+  var idGastoLiq = '';
+  for (var r = 1; r < data.length; r++) {
+    if (String(data[r][iIdPago]) !== String(params.idPago)) continue;
+    if (String(data[r][iEstado]).toUpperCase() === 'ANULADA') continue;
+    sh.getRange(r + 1, iEstado + 1).setValue('ANULADA');
+    var prevC = String(data[r][iComent] || '');
+    sh.getRange(r + 1, iComent + 1).setValue(
+      prevC + (prevC ? ' · ' : '') + '↺ ANULADO por ' + (auth.data.validadoPor || 'admin') + ' (' + _liqHoy() + ')'
+    );
+    if (!nombrePago) nombrePago = data[r][hdrs.indexOf('nombre')] || '';
+    var idG = data[r][hdrs.indexOf('idGastoGenerado')];
+    if (idG && !idGastoLiq) idGastoLiq = String(idG);
+    anuladas++;
+  }
+  if (!anuladas) return { ok: false, error: 'idPago no encontrado o ya anulado' };
+
+  // Anular gasto vinculado si existe
+  if (idGastoLiq) {
+    try {
+      if (typeof anularGasto === 'function') {
+        anularGasto({ idGasto: idGastoLiq, motivo: 'Pago ' + params.idPago + ' anulado' });
+      } else {
+        // Fallback: setear estado=ANULADO en GASTOS
+        var shG = getSheet('GASTOS');
+        var dG = shG.getDataRange().getValues();
+        var hG = dG[0];
+        var iIdG = hG.indexOf('idGasto');
+        var iEstG = hG.indexOf('estado');
+        for (var rg = 1; rg < dG.length; rg++) {
+          if (String(dG[rg][iIdG]) === idGastoLiq && iEstG >= 0) {
+            shG.getRange(rg + 1, iEstG + 1).setValue('ANULADO');
+            break;
+          }
+        }
+      }
+    } catch(_){}
+  }
+
+  return { ok: true, data: { autorizado: true, anuladas: anuladas, nombre: nombrePago, anuladoPor: auth.data.validadoPor } };
+}
+
+// Pagos del rango (los que el user ve en pestaña "Pagadas")
+// Agrupa por idPago para mostrarlos como batches.
+function getLiquidacionesPagadas(params) {
+  params = params || {};
+  var hasta = params.hasta || _liqHoy();
+  var desde = params.desde || _fechaOffset(hasta, -29);
   var tz = Session.getScriptTimeZone();
+  var sh = _liqGetSheet();
+  var rows = _sheetToObjects(sh);
+  var batches = {};
+  rows.forEach(function(r) {
+    if (String(r.estado || '').toUpperCase() === 'ANULADA') return; // ocultar anuladas por default (param.incluirAnuladas)
+    var fechaPago = r.pagadoTs instanceof Date
+      ? Utilities.formatDate(r.pagadoTs, tz, 'yyyy-MM-dd')
+      : String(r.pagadoTs || '').substring(0, 10);
+    if (fechaPago < desde || fechaPago > hasta) return;
+    var idPago = String(r.idPago || '');
+    if (!idPago) return;
+    if (!batches[idPago]) {
+      batches[idPago] = {
+        idPago:    idPago,
+        pagadoTs:  String(r.pagadoTs || ''),
+        pagadoPor: String(r.pagadoPor || ''),
+        idPersonal: String(r.idPersonal || ''),
+        nombre:    String(r.nombre || ''),
+        rol:       String(r.rol || ''),
+        dias:      [],
+        total:     0,
+        ticketJobId: String(r.ticketJobId || ''),
+        idGastoGenerado: String(r.idGastoGenerado || ''),
+        comentario: String(r.comentario || '')
+      };
+    }
+    var f = r.fecha instanceof Date
+      ? Utilities.formatDate(r.fecha, tz, 'yyyy-MM-dd')
+      : String(r.fecha || '').substring(0,10);
+    batches[idPago].dias.push({
+      fecha: f,
+      montoBase:    parseFloat(r.montoBase)    || 0,
+      pagoEnvasado: parseFloat(r.pagoEnvasado) || 0,
+      bonoMeta:     parseFloat(r.bonoMeta)     || 0,
+      sancion:      parseFloat(r.sancion)      || 0,
+      totalDia:     parseFloat(r.totalDia)     || 0
+    });
+    batches[idPago].total += parseFloat(r.totalDia) || 0;
+  });
+  var arr = Object.keys(batches).map(function(k){
+    batches[k].total = Math.round(batches[k].total * 100) / 100;
+    batches[k].cantidadDias = batches[k].dias.length;
+    return batches[k];
+  });
+  arr.sort(function(a,b){ return String(b.pagadoTs).localeCompare(String(a.pagadoTs)); });
+  return { ok: true, data: arr, rango: { desde: desde, hasta: hasta } };
+}
+
+// Detalle de un batch (todos los días + montos)
+function getPagoDetalle(params) {
+  if (!params || !params.idPago) return { ok: false, error: 'Requiere idPago' };
+  var sh = _liqGetSheet();
+  var rows = _sheetToObjects(sh).filter(function(r){ return String(r.idPago) === String(params.idPago); });
+  if (!rows.length) return { ok: false, error: 'idPago no encontrado' };
+  var tz = Session.getScriptTimeZone();
+  var dias = rows.map(function(r){
+    var f = r.fecha instanceof Date
+      ? Utilities.formatDate(r.fecha, tz, 'yyyy-MM-dd')
+      : String(r.fecha || '').substring(0,10);
+    return {
+      fecha: f,
+      montoBase:    parseFloat(r.montoBase)    || 0,
+      pagoEnvasado: parseFloat(r.pagoEnvasado) || 0,
+      bonoMeta:     parseFloat(r.bonoMeta)     || 0,
+      sancion:      parseFloat(r.sancion)      || 0,
+      totalDia:     parseFloat(r.totalDia)     || 0
+    };
+  });
+  var total = dias.reduce(function(s,d){ return s + d.totalDia; }, 0);
   return {
-    lunes:   Utilities.formatDate(lun, tz, 'yyyy-MM-dd'),
-    domingo: Utilities.formatDate(dom, tz, 'yyyy-MM-dd')
+    ok: true,
+    data: {
+      idPago:    String(rows[0].idPago),
+      idPersonal: String(rows[0].idPersonal),
+      nombre:    String(rows[0].nombre),
+      rol:       String(rows[0].rol),
+      pagadoPor: String(rows[0].pagadoPor),
+      pagadoTs:  String(rows[0].pagadoTs),
+      estado:    String(rows[0].estado),
+      ticketJobId: String(rows[0].ticketJobId || ''),
+      idGastoGenerado: String(rows[0].idGastoGenerado || ''),
+      comentario: String(rows[0].comentario || ''),
+      dias: dias,
+      total: Math.round(total * 100) / 100,
+      cantidadDias: dias.length
+    }
   };
 }
 
-// Lista de fechas yyyy-MM-dd entre fechaIni y fechaFin (inclusivos).
-function _rangoFechas(fechaIni, fechaFin) {
+// ============================================================
+// IMPRESIÓN — Ticket 80mm del batch (mismo motor que liquidación)
+// ============================================================
+function imprimirTicketPago(params) {
+  if (!params || !params.idPago) return { ok: false, error: 'Requiere idPago' };
+  if (!params.printerId)         return { ok: false, error: 'Requiere printerId' };
+
+  var det = getPagoDetalle({ idPago: params.idPago });
+  if (!det || !det.ok) return det;
+  var d = det.data;
+
+  // Helpers ESC/POS 80mm (W=48)
+  var W = 48;
+  function _rep(ch, n)  { var s=''; for (var i=0;i<n;i++) s+=ch; return s; }
+  function _pEnd(s, w)  { s=String(s||'').substring(0,w); while(s.length<w) s+=' '; return s; }
+  function _pSt(s, w)   { s=String(s||''); while(s.length<w) s=' '+s; return s; }
+  function _amtP(n, w)  { return _pSt('S/'+(parseFloat(n)||0).toFixed(2), w); }
+  function _amtN(n, w)  { var v=parseFloat(n)||0; return _pSt((v<0?'-':' ')+'S/'+Math.abs(v).toFixed(2), w); }
+  function _norm(s)     { return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^\x20-\x7E]/g,'?'); }
+  function _sHdr(t)     { var s=' '+t+' '; var l=Math.floor((W-s.length)/2); return _rep('=',Math.max(0,l))+s+_rep('=',Math.max(0,W-s.length-l))+'\n'; }
+
+  var SEP  = _rep('=', W) + '\n';
+  var SEPd = _rep('-', W) + '\n';
+
+  var txt = '';
+  txt += '\x1b\x40\x1b\x61\x01\x1b\x21\x30';
+  txt += _norm('LIQUIDACION DE PAGO') + '\n';
+  txt += '\x1b\x21\x00' + _norm('ProyectoMOS') + '\n';
+  txt += '\x1b\x61\x00' + SEP;
+  txt += _pEnd('ID PAGO',  12) + ': ' + d.idPago + '\n';
+  txt += _pEnd('FECHA',    12) + ': ' + Utilities.formatDate(new Date(d.pagadoTs || new Date()), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm') + '\n';
+  txt += _pEnd('PAGO',     12) + ': ' + _norm(d.pagadoPor) + '\n';
+  txt += SEPd;
+  txt += _pEnd('PERSONAL', 12) + ': ' + _norm(d.nombre) + '\n';
+  txt += _pEnd('ROL',      12) + ': ' + _norm(d.rol) + '\n';
+  txt += SEP;
+
+  // Detalle por día
+  txt += _sHdr('DIAS LIQUIDADOS');
+  d.dias.forEach(function(dia) {
+    var f = dia.fecha;
+    var d1 = new Date(f + 'T12:00:00');
+    var dStr = Utilities.formatDate(d1, Session.getScriptTimeZone(), 'EEE dd MMM');
+    txt += _pEnd(_norm(dStr), W-12) + _amtP(dia.totalDia, 12) + '\n';
+    var sub = [];
+    if (dia.montoBase    > 0) sub.push('base '   + dia.montoBase.toFixed(2));
+    if (dia.pagoEnvasado > 0) sub.push('env '    + dia.pagoEnvasado.toFixed(2));
+    if (dia.bonoMeta     > 0) sub.push('+meta '  + dia.bonoMeta.toFixed(2));
+    if (dia.sancion      > 0) sub.push('-san '   + dia.sancion.toFixed(2));
+    if (sub.length) txt += '  ' + _norm(sub.join('  ')) + '\n';
+  });
+  txt += SEPd;
+
+  // Total
+  txt += '\x1b\x21\x30';
+  txt += _pEnd('TOTAL', W/2-6) + _amtP(d.total, W/2-4) + '\n';
+  txt += '\x1b\x21\x00';
+  txt += SEPd;
+
+  if (d.comentario) {
+    txt += _sHdr('COMENTARIO');
+    var c = _norm(d.comentario);
+    while (c.length > W) { txt += c.substring(0, W) + '\n'; c = c.substring(W); }
+    if (c) txt += c + '\n';
+    txt += SEPd;
+  }
+
+  // Firmas
+  txt += '\n' + _pEnd('Firma personal', 20) + ' ' + _rep('_', W-22) + '\n\n';
+  txt += _pEnd('V.B. admin/master', 20) + ' ' + _rep('_', W-22) + '\n\n';
+  txt += '\x1b\x61\x01\x1b\x45\x01*** FIN ***\x1b\x45\x00\n';
+  txt += _norm('Impreso desde ProyectoMOS') + '\n';
+  txt += Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm:ss') + '\n';
+  txt += '\n\n\n\n\n\x1d\x56\x00';
+
+  // PrintNode
+  var pnKey;
+  try { pnKey = PropertiesService.getScriptProperties().getProperty('PRINTNODE_API_KEY'); } catch(_){}
+  if (!pnKey) return { ok: false, error: 'PRINTNODE_API_KEY no configurado' };
+
+  var bytes = [];
+  for (var ci = 0; ci < txt.length; ci++) bytes.push(txt.charCodeAt(ci) & 0xFF);
+  var content = Utilities.base64Encode(bytes);
+
+  try {
+    var pj = UrlFetchApp.fetch('https://api.printnode.com/printjobs', {
+      method:      'post',
+      headers:     { 'Authorization': 'Basic ' + Utilities.base64Encode(pnKey + ':') },
+      contentType: 'application/json',
+      payload:     JSON.stringify({
+        printerId:   parseInt(String(params.printerId), 10),
+        title:       'Liquidacion ' + d.idPago + ' ' + d.nombre,
+        contentType: 'raw_base64',
+        content:     content,
+        source:      'ProyectoMOS · Pago'
+      }),
+      muteHttpExceptions: true
+    });
+    var code = pj.getResponseCode();
+    if (code !== 201) return { ok: false, error: 'PrintNode HTTP ' + code + ': ' + pj.getContentText().substring(0, 200) };
+
+    // Backfill ticketJobId en todas las filas del batch
+    try {
+      var jobId = String(pj.getContentText());
+      var sh = _liqGetSheet();
+      var data = sh.getDataRange().getValues();
+      var hdrs = data[0];
+      var iIdPago = hdrs.indexOf('idPago');
+      var iJob   = hdrs.indexOf('ticketJobId');
+      for (var rr = 1; rr < data.length; rr++) {
+        if (String(data[rr][iIdPago]) === d.idPago) {
+          sh.getRange(rr + 1, iJob + 1).setValue(jobId);
+        }
+      }
+    } catch(_){}
+    return { ok: true, data: { printJobId: pj.getContentText() } };
+  } catch(e) {
+    return { ok: false, error: 'PrintNode fetch fallo: ' + e.message };
+  }
+}
+
+// ============================================================
+// MIGRACIÓN ONE-SHOT — corre 1 vez para mover legacy → nuevo
+// ============================================================
+//
+// 1. Renombra hoja LIQUIDACIONES → LIQUIDACIONES_LEGACY
+// 2. Crea LIQUIDACIONES_PAGOS
+// 3. Por cada fila legacy con estado=PAGADA:
+//    - parsea diasJSON
+//    - inserta 1 fila por día con monto proporcional al totalDia
+//
+// Idempotente: si ya migrado, sale rápido.
+function migrarLiquidacionesV2() {
+  var ss = getSpreadsheet();
+  var nueva = ss.getSheetByName(_LIQ_SHEET);
+  if (nueva && nueva.getLastRow() > 1) {
+    return { ok: true, data: { msg: 'Ya migrado (hoja ' + _LIQ_SHEET + ' tiene ' + (nueva.getLastRow()-1) + ' filas)' } };
+  }
+  // Asegurar hoja nueva
+  _liqGetSheet();
+
+  var vieja = ss.getSheetByName('LIQUIDACIONES');
+  if (!vieja) {
+    return { ok: true, data: { msg: 'No hay LIQUIDACIONES legacy. Migración omitida.', migradas: 0 } };
+  }
+
+  // Leer legacy ANTES de renombrar
+  var rows = _sheetToObjects(vieja);
+  var insertadas = 0;
+  var batchByLegacyId = {};
+
+  rows.forEach(function(r) {
+    if (String(r.estado || '').toUpperCase() !== 'PAGADA') return;
+    var idPersonal = String(r.idPersonal || '');
+    var nombre     = String(r.nombrePersonal || '');
+    var rol        = String(r.rol || '').toUpperCase();
+    var app        = String(r.appOrigen || '');
+    var pagadoPor  = String(r.pagadoPor || 'migrado');
+    var pagadoTs   = r.fechaPago instanceof Date
+      ? Utilities.formatDate(r.fechaPago, 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'")
+      : String(r.fechaPago || '');
+    var idGasto    = String(r.idGastoGenerado || '');
+    var idPagoNew  = 'LIQ-LEGACY-' + (r.idLiquidacion || ('' + new Date().getTime()));
+    var dias = [];
+    try {
+      dias = typeof r.diasJSON === 'string' ? JSON.parse(r.diasJSON || '[]') : (r.diasJSON || []);
+    } catch(_){}
+    if (!Array.isArray(dias)) dias = [];
+
+    var sh = _liqGetSheet();
+    dias.forEach(function(d) {
+      if (!d || !d.fecha) return;
+      var totalDia = parseFloat(d.totalDia) || 0;
+      sh.appendRow([
+        idPagoNew, d.fecha, idPersonal, nombre, rol, app,
+        parseFloat(d.base)  || 0,
+        0,                          // pagoEnvasado: no existía
+        parseFloat(d.meta)  || 0,
+        0,                          // sanción: no existía
+        totalDia,
+        '',
+        pagadoPor, pagadoTs, 'PAGADA',
+        'Migrado desde LIQUIDACIONES legacy',
+        idGasto
+      ]);
+      insertadas++;
+    });
+  });
+
+  // Renombrar la vieja a _LEGACY
+  try {
+    vieja.setName('LIQUIDACIONES_LEGACY');
+  } catch(_) { /* puede que ya exista */ }
+
+  return { ok: true, data: { migradas: insertadas, msg: 'Migrados ' + insertadas + ' días desde legacy.' } };
+}
+
+// ============================================================
+// STUBS — compat con frontend viejo (Liquidación semanal antigua).
+// Quedan como NO-OP retornando datos vacíos para que nada explote
+// mientras se completa la transición. El frontend nuevo usa la API v2.
+// ============================================================
+function getLiquidacionesPendientesSemana() { return { ok: true, data: [], deprecado: true }; }
+function getDetalleDiasPendientes()         { return { ok: true, data: { dias: [] }, deprecado: true }; }
+function emitirLiquidacion()                { return { ok: false, error: 'Endpoint deprecado. Usa marcarPagos.' }; }
+function emitirLiquidacionesTodas()         { return { ok: false, error: 'Endpoint deprecado. Usa marcarPagos.' }; }
+function marcarLiquidacionPagada()          { return { ok: false, error: 'Endpoint deprecado. Usa marcarPagos.' }; }
+function anularLiquidacion(params)          { return anularPago(params); }
+function getLiquidacionesEmitidas(params)   { return getLiquidacionesPagadas(params); }
+function getLiquidacionDetalle(params)      { return getPagoDetalle(params); }
+function anularJornadas()                   { return { ok: false, error: 'Endpoint deprecado.' }; }
+
+// Helpers reusados
+function _fechaOffset(fecha, dias) {
+  var d = new Date(fecha + 'T12:00:00');
+  d.setDate(d.getDate() + dias);
+  return Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+}
+function _rangoFechas(desde, hasta) {
   var out = [];
-  var d = new Date(fechaIni + 'T12:00:00');
-  var fin = new Date(fechaFin + 'T12:00:00');
+  var d = new Date(desde + 'T12:00:00');
+  var fin = new Date(hasta + 'T12:00:00');
   var tz = Session.getScriptTimeZone();
   while (d <= fin) {
     out.push(Utilities.formatDate(d, tz, 'yyyy-MM-dd'));
     d.setDate(d.getDate() + 1);
   }
   return out;
-}
-
-// Devuelve mapa { 'idPersonal::fecha': true } de días YA liquidados (en estado ≠ ANULADA).
-function _cargarDiasYaLiquidados() {
-  _garantizarHojaLiquidaciones();
-  var rows = _sheetToObjects(getSheet('LIQUIDACIONES'));
-  var map = {};
-  rows.forEach(function(r) {
-    if (String(r.estado || '').toUpperCase() === 'ANULADA') return;
-    var idP = String(r.idPersonal || '').trim();
-    if (!idP) return;
-    try {
-      var dias = typeof r.diasJSON === 'string' ? JSON.parse(r.diasJSON || '[]') : (r.diasJSON || []);
-      dias.forEach(function(d) {
-        if (d && d.fecha) map[idP + '::' + d.fecha] = true;
-      });
-    } catch(_){}
-  });
-  return map;
-}
-
-// Construye el detalle de un día específico para un personal usando getResumenDia.
-// Retorna { fecha, presente, auditado, base, bonus, meta, totalDia, logros[], pendientes[] }
-function _calcularDiaDetalle(idPersonal, fecha) {
-  var r = getResumenDia({ idPersonal: idPersonal, fecha: fecha });
-  if (!r || !r.ok) {
-    return { fecha: fecha, presente: false, auditado: false, base: 0, bonus: 0, meta: 0, totalDia: 0, logros: [], pendientes: [] };
-  }
-  var rd = r.data;
-  var logros = [];
-  var pendientes = [];
-  if (rd.presente) {
-    if (rd.auditado) {
-      var limpEst  = rd.manual && rd.manual.limpiezaPct;
-      var limpProf = rd.manual && rd.manual.limpiezaProfPct;
-      if (limpEst >= 70)      logros.push('Limpieza estación ' + Math.round(limpEst) + '%');
-      else if (limpEst >= 0)  pendientes.push('Limpieza estación bajó a ' + Math.round(limpEst) + '%');
-      if (limpProf >= 70)     logros.push('Limpieza profunda ' + Math.round(limpProf) + '%');
-      else if (limpProf >= 0) pendientes.push('Limpieza profunda bajó a ' + Math.round(limpProf) + '%');
-      if (rd.scoreFinal >= 80) logros.push('Score ' + rd.scoreFinal + '/100');
-      else                     pendientes.push('Score ' + rd.scoreFinal + '/100 (objetivo 80)');
-      if (rd.bonoMeta > 0)     logros.push('Meta del día alcanzada (S/ ' + rd.bonoMeta + ' bono)');
-      else                     pendientes.push('Meta del día no alcanzada');
-    } else {
-      pendientes.push('Día sin auditoría — solo paga base');
-    }
-  } else {
-    pendientes.push('Ausente — no se paga');
-  }
-  return {
-    fecha:     fecha,
-    presente:  !!rd.presente,
-    auditado:  !!rd.auditado,
-    base:      rd.montoBase  || 0,
-    bonus:     rd.bonusScore || 0,
-    meta:      rd.bonoMeta   || 0,
-    totalDia:  rd.totalDia   || 0,
-    score:     rd.scoreFinal || 0,
-    logros:    logros,
-    pendientes: pendientes
-  };
-}
-
-// Para un personal y semana, calcula días pendientes (con jornada y NO ya liquidados).
-function _calcularDiasPendientesPersonal(idPersonal, lunes, domingo, mapaYaLiq) {
-  var fechas = _rangoFechas(lunes, domingo);
-  var hoy = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
-  var diasDetalle = [];
-  fechas.forEach(function(f) {
-    if (f > hoy) return; // no incluir días futuros
-    if (mapaYaLiq[idPersonal + '::' + f]) return; // ya liquidado
-    var det = _calcularDiaDetalle(idPersonal, f);
-    if (det.presente || det.totalDia > 0) {
-      diasDetalle.push(det);
-    }
-  });
-  return diasDetalle;
-}
-
-// ── Endpoints públicos ──────────────────────────────────────
-
-// Lista personal con días pendientes en la semana actual (o referencia).
-// Retorna: { semanaInicio, semanaFin, hoy, personal: [{ idPersonal, nombre, ..., dias, totales }] }
-function getLiquidacionesPendientesSemana(params) {
-  try {
-    _garantizarHojaLiquidaciones();
-    var fechaRef = (params && params.fechaRef) || null;
-    var sem = _semanaLunDom(fechaRef);
-    var hoy = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
-    var mapaYaLiq = _cargarDiasYaLiquidados();
-    var tz = Session.getScriptTimeZone();
-
-    // 1. Personal del PERSONAL_MASTER (evaluables)
-    var personalMaster = _sheetToObjects(getSheet('PERSONAL_MASTER')).filter(function(p) {
-      var ac = p.estado;
-      var activo = (ac === undefined || ac === '' || ac === 1 || ac === '1' || ac === true);
-      if (!activo) return false;
-      if (typeof _esPersonalEvaluable === 'function') return _esPersonalEvaluable(p);
-      return true;
-    });
-
-    // 2. Personal VIRTUAL detectado en JORNADAS de la semana pero NO presente
-    // en PERSONAL_MASTER. Típicamente cajeros de MosExpress (id MEX:<nombre>).
-    // Los excluimos si el rol es MASTER/ADMINISTRADOR/MOS (no son evaluables).
-    var jornadas = _sheetToObjects(getSheet('JORNADAS'));
-    var jornadasSem = jornadas.filter(function(j) {
-      var f = j.fecha instanceof Date
-        ? Utilities.formatDate(j.fecha, tz, 'yyyy-MM-dd')
-        : String(j.fecha || '').substring(0, 10);
-      return f >= sem.lunes && f <= sem.domingo;
-    });
-    var nombresMaster = {};
-    personalMaster.forEach(function(p) {
-      var nombreFull = (p.nombre + ' ' + (p.apellido || '')).trim().toLowerCase();
-      nombresMaster[nombreFull] = true;
-      nombresMaster[String(p.nombre || '').toLowerCase()] = true;
-    });
-    var virtualesMap = {};
-    jornadasSem.forEach(function(j) {
-      var rol = String(j.rol || '').toUpperCase();
-      var app = String(j.appOrigen || '');
-      if (app === 'MOS' || rol === 'MASTER' || rol === 'ADMINISTRADOR' || rol === 'ADMIN') return;
-      var nombre = String(j.nombre || '').trim();
-      if (!nombre) return;
-      var key = nombre.toLowerCase();
-      if (nombresMaster[key]) return;          // ya está en master
-      if (virtualesMap[key]) return;            // ya agregado
-      virtualesMap[key] = {
-        idPersonal: 'MEX:' + nombre,
-        nombre:     nombre,
-        apellido:   '',
-        rol:        j.rol || 'CAJERO',
-        appOrigen:  j.appOrigen || 'mosExpress',
-        _virtual:   true
-      };
-    });
-    var virtuales = Object.values(virtualesMap);
-
-    // 3. Procesar TODOS — master + virtuales
-    var personal = personalMaster.concat(virtuales);
-
-    var resultado = [];
-    personal.forEach(function(p) {
-      var dias = _calcularDiasPendientesPersonal(p.idPersonal, sem.lunes, sem.domingo, mapaYaLiq);
-      if (!dias.length) return;
-      var tBase = 0, tBonus = 0, tMeta = 0;
-      var diasAuditados = 0;
-      dias.forEach(function(d) {
-        tBase  += d.base  || 0;
-        tBonus += d.bonus || 0;
-        tMeta  += d.meta  || 0;
-        if (d.auditado) diasAuditados++;
-      });
-      resultado.push({
-        idPersonal:     p.idPersonal,
-        nombre:         (p.nombre + ' ' + (p.apellido || '')).trim(),
-        rol:            p.rol     || '',
-        appOrigen:      p.appOrigen || '',
-        esVirtual:      !!p._virtual,
-        diasPendientes: dias.length,
-        diasAuditados:  diasAuditados,
-        fechas:         dias.map(function(d){ return d.fecha; }),
-        montoBase:      Math.round(tBase  * 100) / 100,
-        montoBonus:     Math.round(tBonus * 100) / 100,
-        montoMeta:      Math.round(tMeta  * 100) / 100,
-        montoTotal:     Math.round((tBase + tBonus + tMeta) * 100) / 100
-      });
-    });
-
-    // Ordenar: más días pendientes primero
-    resultado.sort(function(a, b){ return b.diasPendientes - a.diasPendientes; });
-
-    var totalGeneral = resultado.reduce(function(s, r){ return s + r.montoTotal; }, 0);
-
-    return { ok: true, data: {
-      semanaInicio: sem.lunes,
-      semanaFin:    sem.domingo,
-      hoy:          hoy,
-      personal:     resultado,
-      totalGeneral: Math.round(totalGeneral * 100) / 100
-    }};
-  } catch(e) {
-    return { ok: false, error: 'Error pendientes: ' + e.message };
-  }
-}
-
-// ── Anular jornadas (eliminar filas en JORNADAS) ────────────
-// Útil para sacar a alguien del cálculo de liquidación cuando el admin
-// decide no pagarle por un día (o por la semana entera).
-//
-// params: { idPersonal? | nombre?, fecha?, fechas?, motivo?, usuario? }
-// Si pasas `fecha` o `fechas` → solo borra esos días.
-// Si NO pasas fechas → borra todas las jornadas del rango lunDom de la
-// semana de referencia (params.fechaRef opcional).
-function anularJornadas(params) {
-  try {
-    if (!params || (!params.idPersonal && !params.nombre)) {
-      return { ok: false, error: 'Requiere idPersonal o nombre' };
-    }
-    var sheet = getSheet('JORNADAS');
-    var data = sheet.getDataRange().getValues();
-    if (data.length < 2) return { ok: true, data: { eliminadas: 0 } };
-    var hdrs = data[0];
-    var iId      = hdrs.indexOf('idPersonal');
-    var iNombre  = hdrs.indexOf('nombre');
-    var iFecha   = hdrs.indexOf('fecha');
-    var iRol     = hdrs.indexOf('rol');
-    var iApp     = hdrs.indexOf('appOrigen');
-    var tz = Session.getScriptTimeZone();
-
-    // Resolver fechas objetivo
-    var fechasObj = {};
-    if (params.fecha)  fechasObj[String(params.fecha).substring(0, 10)] = true;
-    if (Array.isArray(params.fechas)) params.fechas.forEach(function(f){ fechasObj[String(f).substring(0, 10)] = true; });
-    var rangoCompleto = !Object.keys(fechasObj).length;
-    var sem = rangoCompleto ? _semanaLunDom(params.fechaRef || null) : null;
-
-    // Resolver identidad: si viene idPersonal con MEX:, usamos nombre
-    var idTarget = params.idPersonal ? String(params.idPersonal) : '';
-    var nombreTarget = params.nombre ? String(params.nombre).toLowerCase() : '';
-    if (idTarget.indexOf('MEX:') === 0 && !nombreTarget) {
-      nombreTarget = idTarget.substring(4).toLowerCase();
-    }
-
-    // Recolectar filas a borrar (de mayor a menor para no descuadrar índices)
-    var rowsToDelete = [];
-    var detalle = [];
-    for (var i = 1; i < data.length; i++) {
-      var row = data[i];
-      var idR  = String(row[iId] || '');
-      var nomR = String(row[iNombre] || '').toLowerCase();
-      var matchPersona = false;
-      if (idTarget && idTarget.indexOf('MEX:') !== 0 && idR === idTarget) matchPersona = true;
-      else if (nombreTarget && nomR === nombreTarget) matchPersona = true;
-      if (!matchPersona) continue;
-
-      var f = row[iFecha] instanceof Date
-        ? Utilities.formatDate(row[iFecha], tz, 'yyyy-MM-dd')
-        : String(row[iFecha] || '').substring(0, 10);
-
-      var matchFecha;
-      if (rangoCompleto) {
-        matchFecha = (f >= sem.lunes && f <= sem.domingo);
-      } else {
-        matchFecha = !!fechasObj[f];
-      }
-      if (!matchFecha) continue;
-
-      rowsToDelete.push(i + 1);  // 1-based para deleteRow
-      detalle.push({ fecha: f, nombre: row[iNombre], rol: row[iRol], app: row[iApp] });
-    }
-    // Borrar de mayor a menor para preservar índices
-    rowsToDelete.sort(function(a, b){ return b - a; });
-    rowsToDelete.forEach(function(rowIdx){
-      try { sheet.deleteRow(rowIdx); } catch(_){}
-    });
-
-    return { ok: true, data: {
-      eliminadas: rowsToDelete.length,
-      detalle:    detalle,
-      motivo:     params.motivo || '',
-      usuario:    params.usuario || ''
-    }};
-  } catch(e) {
-    return { ok: false, error: 'Error anular: ' + e.message };
-  }
-}
-
-// Detalle día por día de un personal — para mostrar antes de emitir o en preview.
-function getDetalleDiasPendientes(params) {
-  try {
-    if (!params || !params.idPersonal) return { ok: false, error: 'idPersonal requerido' };
-    var fechaRef = params.fechaRef || null;
-    var sem = _semanaLunDom(fechaRef);
-    var mapaYaLiq = _cargarDiasYaLiquidados();
-    var p = _resolverPersona(params.idPersonal);
-    if (!p) return { ok: false, error: 'Personal no encontrado' };
-    var dias = _calcularDiasPendientesPersonal(params.idPersonal, sem.lunes, sem.domingo, mapaYaLiq);
-    var tBase = 0, tBonus = 0, tMeta = 0;
-    dias.forEach(function(d) {
-      tBase  += d.base  || 0;
-      tBonus += d.bonus || 0;
-      tMeta  += d.meta  || 0;
-    });
-    return { ok: true, data: {
-      idPersonal:   p.idPersonal,
-      nombre:       (p.nombre + ' ' + (p.apellido || '')).trim(),
-      rol:          p.rol      || '',
-      appOrigen:    p.appOrigen || '',
-      semanaInicio: sem.lunes,
-      semanaFin:    sem.domingo,
-      dias:         dias,
-      montoBase:    Math.round(tBase  * 100) / 100,
-      montoBonus:   Math.round(tBonus * 100) / 100,
-      montoMeta:    Math.round(tMeta  * 100) / 100,
-      montoTotal:   Math.round((tBase + tBonus + tMeta) * 100) / 100
-    }};
-  } catch(e) {
-    return { ok: false, error: 'Error detalle: ' + e.message };
-  }
-}
-
-// Emite liquidación para un personal con un set específico de fechas.
-// params: { idPersonal, fechas?: ['yyyy-MM-dd', ...], comentario?, usuario? }
-// Si no se pasan fechas, usa todos los días pendientes de la semana actual.
-function emitirLiquidacion(params) {
-  try {
-    _garantizarHojaLiquidaciones();
-    if (!params || !params.idPersonal) return { ok: false, error: 'idPersonal requerido' };
-
-    var p = _resolverPersona(params.idPersonal);
-    if (!p) return { ok: false, error: 'Personal no encontrado' };
-
-    // Bloquear roles no evaluables (MASTER, ADMINISTRADOR, appOrigen=MOS)
-    if (typeof _esPersonalEvaluable === 'function' && !_esPersonalEvaluable(p)) {
-      return { ok: false, error: 'Este rol no es evaluable ni se le paga jornada (MASTER/ADMINISTRADOR/auditor)' };
-    }
-
-    var sem = _semanaLunDom(params.fechaRef || null);
-    var mapaYaLiq = _cargarDiasYaLiquidados();
-
-    // Determinar las fechas a liquidar
-    var fechasObjetivo;
-    if (params.fechas && Array.isArray(params.fechas) && params.fechas.length) {
-      fechasObjetivo = params.fechas.slice();
-    } else {
-      // Default: días pendientes de la semana actual
-      var pendientes = _calcularDiasPendientesPersonal(p.idPersonal, sem.lunes, sem.domingo, mapaYaLiq);
-      fechasObjetivo = pendientes.map(function(d){ return d.fecha; });
-    }
-
-    if (!fechasObjetivo.length) {
-      return { ok: false, error: 'No hay días pendientes para liquidar' };
-    }
-
-    // Validar que ninguna fecha esté ya liquidada (defensa contra carrera)
-    var conflictos = [];
-    fechasObjetivo.forEach(function(f) {
-      if (mapaYaLiq[p.idPersonal + '::' + f]) conflictos.push(f);
-    });
-    if (conflictos.length) {
-      return { ok: false, error: 'Algunas fechas ya están liquidadas: ' + conflictos.join(', ') };
-    }
-
-    // Calcular detalle para cada fecha
-    var diasDetalle = fechasObjetivo.sort().map(function(f) {
-      return _calcularDiaDetalle(p.idPersonal, f);
-    });
-
-    // Acumular totales
-    var tBase = 0, tBonus = 0, tMeta = 0;
-    diasDetalle.forEach(function(d) {
-      tBase  += d.base  || 0;
-      tBonus += d.bonus || 0;
-      tMeta  += d.meta  || 0;
-    });
-    var tTotal = tBase + tBonus + tMeta;
-
-    var fechaInicio = diasDetalle[0].fecha;
-    var fechaFin    = diasDetalle[diasDetalle.length - 1].fecha;
-    var rangoSemana = _rangoFechas(sem.lunes, sem.domingo);
-    var esParcial   = (fechasObjetivo.length < rangoSemana.length) || (fechaInicio > sem.lunes) || (fechaFin < sem.domingo);
-
-    var idLiq = 'LIQ' + new Date().getTime();
-    var sheet = getSheet('LIQUIDACIONES');
-    sheet.appendRow([
-      idLiq,
-      p.idPersonal,
-      (p.nombre + ' ' + (p.apellido || '')).trim(),
-      p.rol      || '',
-      p.appOrigen || '',
-      sem.lunes,                                                          // semanaReferencia
-      fechaInicio,
-      fechaFin,
-      JSON.stringify(diasDetalle),                                        // diasJSON
-      diasDetalle.length,
-      Math.round(tBase  * 100) / 100,
-      Math.round(tBonus * 100) / 100,
-      Math.round(tMeta  * 100) / 100,
-      Math.round(tTotal * 100) / 100,
-      'PENDIENTE',
-      esParcial ? 1 : 0,
-      new Date(),
-      params.usuario || '',
-      '',                                                                 // fechaPago
-      '',                                                                 // pagadoPor
-      '',                                                                 // idGastoGenerado
-      params.comentario || ''
-    ]);
-
-    return { ok: true, data: {
-      idLiquidacion: idLiq,
-      idPersonal:    p.idPersonal,
-      nombre:        (p.nombre + ' ' + (p.apellido || '')).trim(),
-      cantidadDias:  diasDetalle.length,
-      montoTotal:    Math.round(tTotal * 100) / 100,
-      esParcial:     esParcial
-    }};
-  } catch(e) {
-    return { ok: false, error: 'Error emitiendo: ' + e.message };
-  }
-}
-
-// Emite TODAS las liquidaciones pendientes de la semana actual (bulk).
-function emitirLiquidacionesTodas(params) {
-  try {
-    var pend = getLiquidacionesPendientesSemana(params || {});
-    if (!pend.ok) return pend;
-    var personas = pend.data.personal || [];
-    var emitidas = [], errores = [];
-    personas.forEach(function(per) {
-      var r = emitirLiquidacion({
-        idPersonal: per.idPersonal,
-        fechas:     per.fechas,
-        usuario:    (params && params.usuario) || '',
-        comentario: (params && params.comentario) || 'Cierre semanal'
-      });
-      if (r.ok) emitidas.push(r.data);
-      else errores.push({ idPersonal: per.idPersonal, error: r.error });
-    });
-    return { ok: true, data: {
-      emitidas: emitidas,
-      errores:  errores,
-      total:    emitidas.reduce(function(s, e){ return s + (e.montoTotal || 0); }, 0)
-    }};
-  } catch(e) {
-    return { ok: false, error: 'Error emisión bulk: ' + e.message };
-  }
-}
-
-// Marca una liquidación como PAGADA y auto-genera gasto en GASTOS / categoría JORNALES.
-function marcarLiquidacionPagada(params) {
-  try {
-    if (!params || !params.idLiquidacion) return { ok: false, error: 'idLiquidacion requerido' };
-    var sheet = _garantizarHojaLiquidaciones();
-    var data = sheet.getDataRange().getValues();
-    var hdrs = data[0];
-    var idxId = hdrs.indexOf('idLiquidacion');
-    var idxEstado = hdrs.indexOf('estado');
-    var idxFechaPago = hdrs.indexOf('fechaPago');
-    var idxPagadoPor = hdrs.indexOf('pagadoPor');
-    var idxIdGasto = hdrs.indexOf('idGastoGenerado');
-    var idxNombre = hdrs.indexOf('nombrePersonal');
-    var idxFI = hdrs.indexOf('fechaInicio');
-    var idxFF = hdrs.indexOf('fechaFin');
-    var idxMonto = hdrs.indexOf('montoTotal');
-
-    for (var i = 1; i < data.length; i++) {
-      if (String(data[i][idxId]) !== String(params.idLiquidacion)) continue;
-      var estadoActual = String(data[i][idxEstado] || '').toUpperCase();
-      if (estadoActual === 'PAGADA') return { ok: false, error: 'Ya estaba pagada' };
-      if (estadoActual === 'ANULADA') return { ok: false, error: 'Está anulada — no se puede pagar' };
-
-      var nombre = data[i][idxNombre];
-      var fi     = data[i][idxFI];
-      var ff     = data[i][idxFF];
-      var monto  = parseFloat(data[i][idxMonto]) || 0;
-
-      // Auto-generar gasto
-      var idGasto = '';
-      try {
-        var gastoSheet = getSheet('GASTOS');
-        idGasto = 'GA' + new Date().getTime();
-        gastoSheet.appendRow([
-          idGasto,
-          new Date(),
-          'JORNALES',
-          'VARIABLE',
-          'Liquidación ' + fi + ' a ' + ff + ' · ' + nombre,
-          monto,
-          params.idLiquidacion,         // comprobante = idLiquidacion (audit trail)
-          params.usuario || ''
-        ]);
-      } catch(eG) { Logger.log('No se pudo crear gasto: ' + eG.message); }
-
-      sheet.getRange(i + 1, idxEstado + 1).setValue('PAGADA');
-      sheet.getRange(i + 1, idxFechaPago + 1).setValue(new Date());
-      sheet.getRange(i + 1, idxPagadoPor + 1).setValue(params.usuario || '');
-      sheet.getRange(i + 1, idxIdGasto + 1).setValue(idGasto);
-
-      return { ok: true, data: { idLiquidacion: params.idLiquidacion, idGastoGenerado: idGasto } };
-    }
-    return { ok: false, error: 'Liquidación no encontrada' };
-  } catch(e) {
-    return { ok: false, error: 'Error pagando: ' + e.message };
-  }
-}
-
-// Anula una liquidación. Si tenía gasto vinculado, lo anula también.
-// Después de anular, los días vuelven a estar disponibles para una nueva liquidación.
-function anularLiquidacion(params) {
-  try {
-    if (!params || !params.idLiquidacion) return { ok: false, error: 'idLiquidacion requerido' };
-    var sheet = _garantizarHojaLiquidaciones();
-    var data = sheet.getDataRange().getValues();
-    var hdrs = data[0];
-    var idxId = hdrs.indexOf('idLiquidacion');
-    var idxEstado = hdrs.indexOf('estado');
-    var idxIdGasto = hdrs.indexOf('idGastoGenerado');
-    var idxComent = hdrs.indexOf('comentario');
-
-    for (var i = 1; i < data.length; i++) {
-      if (String(data[i][idxId]) !== String(params.idLiquidacion)) continue;
-      var estadoActual = String(data[i][idxEstado] || '').toUpperCase();
-      if (estadoActual === 'ANULADA') return { ok: true, yaAnulada: true };
-
-      // Si tenía gasto, removerlo (eliminar fila de GASTOS)
-      var idGasto = String(data[i][idxIdGasto] || '').trim();
-      if (idGasto) {
-        try {
-          var gastoSheet = getSheet('GASTOS');
-          var dG = gastoSheet.getDataRange().getValues();
-          for (var j = 1; j < dG.length; j++) {
-            if (String(dG[j][0]) === idGasto) { gastoSheet.deleteRow(j + 1); break; }
-          }
-        } catch(_){}
-      }
-
-      sheet.getRange(i + 1, idxEstado + 1).setValue('ANULADA');
-      var motivoTxt = (params.motivo ? '[Anulada: ' + params.motivo + '] ' : '[Anulada] ');
-      sheet.getRange(i + 1, idxComent + 1).setValue(motivoTxt + (data[i][idxComent] || ''));
-      return { ok: true, data: { idLiquidacion: params.idLiquidacion } };
-    }
-    return { ok: false, error: 'Liquidación no encontrada' };
-  } catch(e) {
-    return { ok: false, error: 'Error anulando: ' + e.message };
-  }
-}
-
-// Lista liquidaciones emitidas con filtros.
-// params: { estado?: PENDIENTE|PAGADA|ANULADA, mes?: 'yyyy-MM', idPersonal?: string }
-function getLiquidacionesEmitidas(params) {
-  try {
-    _garantizarHojaLiquidaciones();
-    var rows = _sheetToObjects(getSheet('LIQUIDACIONES'));
-    var p = params || {};
-    if (p.estado)     rows = rows.filter(function(r){ return String(r.estado).toUpperCase() === String(p.estado).toUpperCase(); });
-    if (p.idPersonal) rows = rows.filter(function(r){ return r.idPersonal === p.idPersonal; });
-    if (p.mes) {
-      var mes = String(p.mes); // 'yyyy-MM'
-      rows = rows.filter(function(r){
-        var ref = String(r.semanaReferencia || r.fechaInicio || '').substring(0, 7);
-        return ref === mes;
-      });
-    }
-    // Ordenar: fecha generación desc
-    rows.sort(function(a, b){
-      var fa = new Date(a.fechaGeneracion).getTime() || 0;
-      var fb = new Date(b.fechaGeneracion).getTime() || 0;
-      return fb - fa;
-    });
-    return { ok: true, data: rows };
-  } catch(e) {
-    return { ok: false, error: 'Error listando: ' + e.message };
-  }
-}
-
-// Devuelve detalle completo de una liquidación (para impresión / vista).
-function getLiquidacionDetalle(params) {
-  try {
-    if (!params || !params.idLiquidacion) return { ok: false, error: 'idLiquidacion requerido' };
-    _garantizarHojaLiquidaciones();
-    var rows = _sheetToObjects(getSheet('LIQUIDACIONES'));
-    var liq = rows.find(function(r){ return String(r.idLiquidacion) === String(params.idLiquidacion); });
-    if (!liq) return { ok: false, error: 'Liquidación no encontrada' };
-    try {
-      liq.dias = typeof liq.diasJSON === 'string' ? JSON.parse(liq.diasJSON || '[]') : (liq.diasJSON || []);
-    } catch(_){ liq.dias = []; }
-    return { ok: true, data: liq };
-  } catch(e) {
-    return { ok: false, error: 'Error detalle: ' + e.message };
-  }
 }
