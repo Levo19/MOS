@@ -282,17 +282,54 @@ function marcarPegadasBatch(params) {
   return { ok: true, data: { pegadas: n, total: params.idEtiqs.length } };
 }
 
+// ── Resolver código a imprimir (misma lógica que ME imprimirMembrete) ──
+// Si hay equivalencias activas asociadas al skuBase → imprimir SKU_Base
+// (porque hay múltiples códigos válidos para el mismo producto).
+// Si no hay equivalencias y hay un único codigoBarra → imprimir ese.
+// Retorna { codigo, cantEquiv }
+function _etiqResolverCodigo(skuBase, codigoBarra) {
+  var sku = String(skuBase || '').trim();
+  var cb  = String(codigoBarra || '').trim();
+  // Buscar equivalencias activas para este sku
+  var cantEquiv = 0;
+  try {
+    var eqRows = _sheetToObjects(getSheet('EQUIVALENCIAS'));
+    eqRows.forEach(function(e) {
+      var ac = e.activo;
+      var activo = (ac === undefined || ac === '' || ac === 1 || ac === '1'
+                 || ac === true || String(ac).toLowerCase() === 'true');
+      if (!activo) return;
+      if (String(e.skuBase || '').trim() === sku) cantEquiv++;
+    });
+  } catch(_){}
+  // Si tiene equivalencias activas → imprimir SKU_Base
+  if (cantEquiv > 0 && sku) {
+    return { codigo: sku, cantEquiv: cantEquiv, usoSku: true };
+  }
+  // Si no, usar codigoBarra; fallback al skuBase si codigoBarra está vacío
+  return { codigo: cb || sku, cantEquiv: 0, usoSku: !cb };
+}
+
 // ── ESC/POS membrete (idéntico al imprimirMembrete de ME) ──
 // Formato 80mm × ~30mm: nombre bold doble alto + barcode Code128 + precio doble alto+ancho
+// + indicador "+N equiv." si el producto tiene equivalencias asignadas
 function _etiqGenerarESCPOS(producto) {
-  // producto: { descripcion, codigo, precio }
+  // producto: { descripcion, skuBase, codigoBarra, precio }
   var MAX_N = 24;
   var desc = String(producto.descripcion || '').toUpperCase();
   var n1 = desc.substring(0, MAX_N);
   var n2 = desc.length > MAX_N ? desc.substring(MAX_N, MAX_N * 2) : '';
-  var codigo = String(producto.codigo || '');
+
+  // Decidir qué imprimir como código de barras
+  var resolv = _etiqResolverCodigo(producto.skuBase, producto.codigoBarra);
+  var codigo = resolv.codigo;
   var precio = parseFloat(producto.precio) || 0;
   var bLen = String.fromCharCode(codigo.length);
+
+  // Línea inferior con +N equiv. si aplica (texto pequeño, no estorba)
+  var lineaEquiv = resolv.cantEquiv > 0
+    ? '+' + resolv.cantEquiv + ' equiv.\n'
+    : '';
 
   var raw = '\x1b\x40'        // init
           + '\x1b\x33\x10'    // interlineado 16
@@ -314,6 +351,7 @@ function _etiqGenerarESCPOS(producto) {
           + 'S/ ' + precio.toFixed(2) + '\n'
           + '\x1b\x21\x00'
           + '\x1b\x45\x00'
+          + lineaEquiv        // +N equiv. (pequeño, solo si hay)
           + '\x07'            // beep
           + '\x1d\x56\x42\x00'; // corte parcial
   return raw;
@@ -352,7 +390,8 @@ function imprimirBatchEtiquetasZona(params) {
     try {
       var escpos = _etiqGenerarESCPOS({
         descripcion: r.descripcion || r.skuBase || '',
-        codigo:      r.codigoBarra || r.skuBase || '',
+        skuBase:     r.skuBase || '',
+        codigoBarra: r.codigoBarra || '',
         precio:      r.precioNuevo
       });
       var content = _etiqToBase64(escpos);
@@ -419,7 +458,8 @@ function reimprimirEtiqueta(params) {
   try {
     var escpos = _etiqGenerarESCPOS({
       descripcion: r.descripcion || r.skuBase || '',
-      codigo:      r.codigoBarra || r.skuBase || '',
+      skuBase:     r.skuBase || '',
+      codigoBarra: r.codigoBarra || '',
       precio:      r.precioNuevo
     });
     var content = _etiqToBase64(escpos);
