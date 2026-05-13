@@ -18955,6 +18955,22 @@ const MOS = (() => {
 
     _finUpdateBadge(fecha);
 
+    // Marcar inmediatamente la fecha del listado de Personal para que
+    // cualquier paint async pendiente (de la fecha previa) sea ignorado.
+    // Si la fecha CAMBIÓ, además limpiar el DOM ya — no queremos que el
+    // usuario vea el personal del día anterior parado mientras carga.
+    const personalCont = $('finPersonalList');
+    if (personalCont) {
+      const prevFecha = personalCont.dataset.fecha;
+      personalCont.dataset.fecha = fecha;
+      if (prevFecha && prevFecha !== fecha) {
+        personalCont.dataset._lastHtml = ''; // reset anti-flicker
+        personalCont.innerHTML = `
+          <div class="fin-skel" style="height: 64px;"></div>
+          <div class="fin-skel" style="height: 64px;"></div>`;
+      }
+    }
+
     // 1. Pintar desde cache local si existe (instantáneo) — sino, RESET visual
     //    completo. Evita que el user vea datos del día anterior mezclados con
     //    el nuevo (Personal, Gastos, break-even bar quedaban stale).
@@ -19747,6 +19763,13 @@ const MOS = (() => {
     const cont = $('finPersonalList');
     const tot  = $('finPersonalTotal');
     if (!cont) return;
+    // Guard de fecha: si pl es para otro día que el currently displayed,
+    // descartamos. Pasaba que el render con datos cached del día previo
+    // se aplicaba arriba del fresh, dejando cards stale por una visita.
+    if (pl && pl._fechaStamp && pl._fechaStamp !== fecha) return;
+    // Stamp del contenedor: cualquier pint posterior verifica que aún
+    // estemos en la misma fecha antes de tocar el DOM.
+    cont.dataset.fecha = fecha;
     if (typeof _evalState !== 'undefined' && _evalState && fecha) {
       _evalState.fecha = fecha;
     }
@@ -19793,6 +19816,8 @@ const MOS = (() => {
     }
 
     function _pintarConResumenes(resumenes) {
+      // Si la fecha cambió mientras este paint estaba pendiente, abortar.
+      if (cont.dataset.fecha !== fecha) return;
       const byNombre = {};
       const byIdPersonal = {};
       const arr = Array.isArray(resumenes) ? resumenes : [];
@@ -19802,10 +19827,6 @@ const MOS = (() => {
         if (r.idPersonal) byIdPersonal[r.idPersonal] = r;
       });
 
-      // CRÍTICO: mantener _evalState.resumenes sincronizado con la fecha
-      // que Finanzas está pintando. Sin esto, abrirAuditar leía resumenes
-      // de otro día (típicamente hoy) y mostraba KPIs distintos a los de
-      // la card. Source-of-truth ÚNICO para esta vista.
       _evalState.resumenes = arr;
       _evalState.fecha = fecha;
       _evalState.byNombre = byNombre;
@@ -19815,16 +19836,22 @@ const MOS = (() => {
       html += _renderGrupo(grupos.POS,     'POS · Cajeros',        '🛒', 'POS',     byNombre, byIdPersonal);
       html += _renderGrupo(grupos.ALMACEN, 'Almacén',              '🏭', 'ALMACEN', byNombre, byIdPersonal);
       html += _renderGrupo(grupos.OTRO,    'Otros',                '👤', 'OTRO',    byNombre, byIdPersonal);
-      cont.innerHTML = html || '<p class="text-slate-500 text-xs">Sin registros</p>';
+      const finalHtml = html || '<p class="text-slate-500 text-xs">Sin registros</p>';
+      // Anti-flicker: si el HTML es idéntico al ya pintado, no re-escribir
+      // el DOM (evita el "parpadeo" en navegación de fechas y al re-paint
+      // cuando cache==fresh).
+      if (cont.dataset._lastHtml === finalHtml) return;
+      cont.dataset._lastHtml = finalHtml;
+      cont.innerHTML = finalHtml;
     }
 
     _pintarConResumenes(cachedResumenes);
 
     // Guard contra respuestas out-of-order: si el usuario cambia de día
     // rápido, podemos descartar una respuesta vieja cuya fecha ya no es
-    // la mostrada. _evalState.fecha es el "request id" de la vista.
+    // la mostrada (data-fecha del cont es el "request id" del paint).
     API.get('getResumenTodosDia', { fecha: fecha }).then(resumenes => {
-      if (_evalState.fecha !== fecha) return; // descartar respuesta obsoleta
+      if (cont.dataset.fecha !== fecha) return; // ya no estamos en esta fecha
       try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: resumenes })); } catch {}
       if (JSON.stringify(cachedResumenes) !== JSON.stringify(resumenes)) {
         _pintarConResumenes(resumenes);
