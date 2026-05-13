@@ -1071,6 +1071,14 @@ function notificarInicioSesionVendedor(params) {
   var deviceId = String(params.deviceId || '').trim();
   if (!nombre) return { ok: false, error: 'Requiere nombre' };
 
+  // Si ME indica que es cajero Y va a abrir caja de inmediato → no dispar
+  // la push aquí, deja que la push de apertura de caja la cubra (evita doble).
+  // Si esCajero=false (vendedor puro sin caja), siempre disparamos.
+  var esCajero = params.esCajero === true || String(params.esCajero) === 'true';
+  if (esCajero) {
+    return { ok: true, data: { sinPush: true, motivo: 'cajero (cubierto por apertura caja)', nombre: nombre } };
+  }
+
   // Anti-spam: solo notificar si esta sesión es nueva (no había heartbeat reciente)
   try {
     var sheetD = getSheet('DISPOSITIVOS');
@@ -1086,27 +1094,28 @@ function notificarInicioSesionVendedor(params) {
       var uc = dataD[rd][iUcD];
       var ts = uc instanceof Date ? uc.getTime() : (uc ? new Date(uc).getTime() : 0);
       if (!ts) continue;
-      // Si tuvo conexión en últimos 30 min → ya estaba activo, no es "ingreso nuevo"
       if (ahora - ts < 30 * 60 * 1000) {
         return { ok: true, data: { yaEstabaActivo: true, sinPush: true } };
       }
     }
   } catch(e) {}
 
-  // Push silencioso a master + admin
-  var appLbl = appOrigen.toLowerCase().indexOf('warehouse') >= 0 ? 'warehouseMos' : 'MosExpress';
-  var icono  = appOrigen.toLowerCase().indexOf('warehouse') >= 0 ? '🏭' : '🛒';
+  // Push diferenciado: vendedor (ME), operador (WH)
+  var esWH = appOrigen.toLowerCase().indexOf('warehouse') >= 0;
+  var appLbl = esWH ? 'warehouseMos' : 'MosExpress';
+  var icono  = esWH ? '🏭' : '🛍';   // 🛍 para vendedor (sin caja), distinto del 🛒 cajero
+  var verbo  = esWH ? 'ingresó al almacén' : 'inició sesión como vendedor';
   try {
     if (typeof _enviarPushTodos === 'function') {
       _enviarPushTodos(
-        icono + ' ' + nombre + ' inició sesión',
-        'En ' + appLbl + (params.estacion ? ' · ' + params.estacion : ''),
+        icono + ' ' + nombre + ' ' + verbo,
+        appLbl + (params.estacion ? ' · ' + params.estacion : '') + (params.zona ? ' · ' + params.zona : ''),
         { soloRolesAdmin: true, excluirUsuario: nombre, idNotif: 'MOS_LOGIN_VENDEDOR' }
       );
     }
   } catch(eP) { Logger.log('Push inicio sesión fallo: ' + eP.message); }
 
-  return { ok: true, data: { notificado: true, nombre: nombre } };
+  return { ok: true, data: { notificado: true, nombre: nombre, icono: icono, verbo: verbo } };
 }
 
 // Limpia los rows PENDIENTE_APROBACION huérfanos creados por browsers MOS antes
