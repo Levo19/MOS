@@ -12,8 +12,52 @@ function _garantizarColPoliticaZona() {
   var hdrs    = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   if (hdrs.indexOf('politicaJSON') === -1) {
     sheet.getRange(1, lastCol + 1).setValue('politicaJSON');
+    SpreadsheetApp.flush();  // forzar commit antes de continuar
   }
   return sheet;
+}
+
+// ── ONE-SHOT: inicializar columna politicaJSON manualmente ──────────────
+// Ejecutar desde el editor de Apps Script si el guardado desde el UI no
+// crea la columna automáticamente (suele pasar si el deployment del web
+// app está congelado en una versión vieja).
+//
+// También permite SETEAR una política específica desde el editor para
+// validar sin pasar por la UI:
+//   setupZonasPolitica({ZONA-01: {metaDiaria: 1500, comisionExcedentePct: 5, metaAuditorias: 30}})
+function setupZonasPolitica(politicasPorIdZona) {
+  var sheet = _garantizarColPoliticaZona();
+  if (!sheet) return { ok: false, error: 'No se encontró hoja ZONAS' };
+  var data    = sheet.getDataRange().getValues();
+  var hdrs    = data[0].map(function(h){ return String(h); });
+  var idxId   = hdrs.indexOf('idZona');
+  var idxPol  = hdrs.indexOf('politicaJSON');
+  if (idxId < 0 || idxPol < 0) return { ok: false, error: 'Headers idZona/politicaJSON no encontrados' };
+
+  var actualizadas = [];
+  if (politicasPorIdZona && typeof politicasPorIdZona === 'object') {
+    for (var i = 1; i < data.length; i++) {
+      var idz = String(data[i][idxId] || '');
+      if (politicasPorIdZona[idz]) {
+        var pol = politicasPorIdZona[idz];
+        var json = typeof pol === 'string' ? pol : JSON.stringify(pol);
+        sheet.getRange(i + 1, idxPol + 1).setValue(json);
+        actualizadas.push(idz + ' → ' + json);
+      }
+    }
+  }
+
+  // Mostrar estado completo
+  var resumen = [];
+  for (var j = 1; j < data.length; j++) {
+    var idj  = String(data[j][idxId] || '');
+    var raw  = String(sheet.getRange(j + 1, idxPol + 1).getValue() || '');
+    resumen.push(idj + ': ' + (raw || '(vacío)'));
+  }
+  Logger.log('Política por zona — estado actual:');
+  resumen.forEach(function(r){ Logger.log('  ' + r); });
+  if (actualizadas.length) Logger.log('Actualizadas: ' + actualizadas.length);
+  return { ok: true, actualizadas: actualizadas, estado: resumen };
 }
 
 function getZonas(params) {
