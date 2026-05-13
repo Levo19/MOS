@@ -136,7 +136,7 @@ function verificarSinSenal() {
     if (sinSenal.length > 3) cuerpo += '\n+ ' + (sinSenal.length - 3) + ' más';
 
     try {
-      _enviarPushTodos(titulo, cuerpo, { soloRolesMaster: true });
+      _enviarPushTodos(titulo, cuerpo, { soloRolesMaster: true, idNotif: 'MOS_GPS_SIN_SENAL' });
     } catch(e) { Logger.log('Push sin señal: ' + e.message); }
   }
 

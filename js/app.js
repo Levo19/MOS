@@ -10349,7 +10349,7 @@ const MOS = (() => {
 
   function setCfgTab(tab) {
     S.cfgTab = tab;
-    const tabs = ['infra','personal','categorias'];
+    const tabs = ['infra','personal','categorias','notifs'];
     tabs.forEach(t => {
       const btn = $('cfgTab' + t.charAt(0).toUpperCase() + t.slice(1));
       if (btn) btn.classList.toggle('active', t === tab);
@@ -10368,6 +10368,408 @@ const MOS = (() => {
       case 'infra':        renderInfra();        break;
       case 'personal':     renderPersonal();     break;
       case 'categorias':   renderCategorias();   break;
+      case 'notifs':       renderNotifsPanel();  break;
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // NOTIFICACIONES — pestaña Configuraciones (solo Master edita)
+  // ════════════════════════════════════════════════════════════
+  const _notifState = {
+    items: [],
+    filtroOrigen: 'all',
+    filtroEstado: 'all',
+    log: [],
+    expandido: {},
+    cargado: false
+  };
+  const NOTIF_ROLES_DISP = [
+    { key: 'MASTER',         label: 'Master',     cls: 'master' },
+    { key: 'ADMIN',          label: 'Admin',      cls: 'admin' },
+    { key: 'ADMINISTRADOR',  label: 'Administ',   cls: 'admin' },
+    { key: 'CAJERO',         label: 'Cajeros',    cls: 'cajero' },
+    { key: 'VENDEDOR',       label: 'Vendedores', cls: 'cajero' },
+    { key: 'ALMACENERO',     label: 'Almaceneros',cls: 'almacen' },
+    { key: 'ENVASADOR',      label: 'Envasadores',cls: 'almacen' }
+  ];
+
+  function _notifIsMaster() {
+    const rol = String(S.session?.rol || '').toUpperCase();
+    return rol === 'MASTER';
+  }
+
+  async function renderNotifsPanel() {
+    const cont = $('notifsList');
+    if (!cont) return;
+    // Mostrar permiso badge
+    const badge = $('notifsPermisoBadge');
+    if (badge) {
+      if (_notifIsMaster()) {
+        badge.textContent = '✓ Modo edición Master';
+        badge.style.color = '#34d399';
+      } else {
+        badge.textContent = 'Solo Master puede editar (estás en modo lectura)';
+        badge.style.color = '#fbbf24';
+      }
+    }
+    if (!_notifState.cargado) {
+      cont.innerHTML = `<div class="text-center py-12 text-slate-500 text-sm">
+        <div class="inline-block animate-spin">⏳</div> Cargando catálogo...
+      </div>`;
+      try {
+        const res = await API.get('getNotificacionesConfig', {});
+        _notifState.items = Array.isArray(res) ? res : ((res && res.data) || []);
+        _notifState.cargado = true;
+      } catch(e) {
+        cont.innerHTML = `<div class="text-center py-12 text-rose-400 text-sm">⚠ Error: ${e.message || e}</div>`;
+        return;
+      }
+    }
+    _renderNotifs();
+  }
+
+  async function refreshNotifs(ev) {
+    if (ev && typeof _evalRipple === 'function') _evalRipple(ev);
+    _notifState.cargado = false;
+    if (typeof _evalSfx === 'function') _evalSfx('tap');
+    await renderNotifsPanel();
+  }
+
+  function notifSetFiltro(origen, ev) {
+    _notifState.filtroOrigen = origen;
+    document.querySelectorAll('#notifsFilterBar [data-f]').forEach(b =>
+      b.classList.toggle('active', b.dataset.f === origen));
+    if (typeof _evalSfx === 'function') _evalSfx('switch');
+    _renderNotifs();
+  }
+  function notifSetEstado(estado, ev) {
+    _notifState.filtroEstado = estado;
+    document.querySelectorAll('#notifsFilterBar [data-e]').forEach(b =>
+      b.classList.toggle('active', b.dataset.e === estado));
+    if (typeof _evalSfx === 'function') _evalSfx('switch');
+    _renderNotifs();
+  }
+
+  function _notifFiltrar(items) {
+    return items.filter(it => {
+      if (_notifState.filtroOrigen !== 'all' && String(it.origen).toUpperCase() !== _notifState.filtroOrigen) return false;
+      const activa = !!it.activa;
+      if (_notifState.filtroEstado === 'ON'  && !activa) return false;
+      if (_notifState.filtroEstado === 'OFF' &&  activa) return false;
+      return true;
+    });
+  }
+
+  function _renderNotifs() {
+    const cont = $('notifsList');
+    if (!cont) return;
+    const items = _notifFiltrar(_notifState.items || []);
+    if (!items.length) {
+      cont.innerHTML = `<div class="text-center py-10 text-slate-500 text-sm">
+        <div class="text-3xl mb-2 opacity-50">🔕</div>
+        Sin notificaciones que coincidan con el filtro
+      </div>`;
+      return;
+    }
+    // Agrupar por origen
+    const grupos = { MOS: [], ME: [], WH: [] };
+    items.forEach(it => {
+      const o = String(it.origen).toUpperCase();
+      (grupos[o] || (grupos[o] = [])).push(it);
+    });
+    const titulos = { MOS: '🎯 MOS · Sistema y administración', ME: '🛒 MosExpress · POS', WH: '🏭 warehouseMos · Almacén' };
+    let html = '';
+    let idx = 0;
+    ['MOS','ME','WH'].forEach(o => {
+      const arr = grupos[o] || [];
+      if (!arr.length) return;
+      html += `<div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-3 mb-2 px-1">${titulos[o]}</div>`;
+      arr.forEach(it => { html += _notifCard(it, idx++); });
+    });
+    cont.innerHTML = html;
+  }
+
+  function _notifCard(n, idx) {
+    const isOn = !!n.activa;
+    const expandido = !!_notifState.expandido[n.idNotif];
+    const silenciada = n.silenciada_hasta && new Date(n.silenciada_hasta).getTime() > Date.now();
+    const prioridad = String(n.prioridad || 'normal').toLowerCase();
+    const cardCls = [
+      'notif-card',
+      !isOn ? 'silenciada' : '',
+      prioridad === 'alta' ? 'alta' : ''
+    ].filter(Boolean).join(' ');
+    const silenciaTxt = silenciada ? `<span class="text-[10px] text-amber-400 ml-1">🔕 hasta ${new Date(n.silenciada_hasta).toLocaleString('es-PE', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}</span>` : '';
+    const rolesSet = new Set(String(n.audiencia_roles || '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean));
+    const usuariosExtra = String(n.audiencia_usuarios || '').split(',').map(s => s.trim()).filter(Boolean);
+
+    const chipsRoles = NOTIF_ROLES_DISP.map(r => {
+      const on = rolesSet.has(r.key);
+      return `<span class="notif-rol-chip ${r.cls}${on ? ' on' : ''}"
+                onclick="MOS._notifToggleRol('${n.idNotif}', '${r.key}', event)">${r.label}</span>`;
+    }).join(' ');
+
+    return `
+      <div class="${cardCls}" style="--i:${Math.min(idx,18)}" data-id="${n.idNotif}">
+        <div class="flex items-center gap-3 cursor-pointer" onclick="MOS._notifToggleExpand('${n.idNotif}', event)">
+          <span style="font-size:22px">${n.icono || '🔔'}</span>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="font-semibold text-slate-100 text-sm truncate">${n.titulo}</span>
+              ${prioridad === 'alta' ? '<span class="text-[9px] text-rose-400 font-bold">🚨 ALTA</span>' : ''}
+              ${silenciaTxt}
+            </div>
+            <div class="text-[11px] text-slate-500 mt-0.5">${n.descripcion || ''}</div>
+            <div class="flex items-center gap-1 mt-1 flex-wrap">
+              ${Array.from(rolesSet).slice(0,3).map(r => `<span class="text-[9px] text-slate-500">· ${r}</span>`).join('')}
+              ${usuariosExtra.length ? `<span class="text-[9px] text-emerald-400">+${usuariosExtra.length} usuario(s) extra</span>` : ''}
+            </div>
+          </div>
+          <div class="notif-toggle ${isOn ? 'on' : ''}"
+               onclick="event.stopPropagation();MOS._notifToggleActiva('${n.idNotif}', event)"
+               title="${isOn ? 'Activa' : 'Silenciada'}"></div>
+          <span style="color:#64748b;font-size:14px">${expandido ? '▾' : '▸'}</span>
+        </div>
+        ${expandido ? `
+          <div class="mt-3 pt-3 border-t border-slate-800 space-y-3">
+            <div>
+              <div class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5">👥 Audiencia por rol</div>
+              <div class="flex flex-wrap gap-1.5">${chipsRoles}</div>
+            </div>
+            <div>
+              <div class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5">➕ Usuarios específicos (extra)</div>
+              <input type="text" class="inp text-xs"
+                     id="notifExtra_${n.idNotif}"
+                     placeholder="Nombres separados por coma (ej: Carlos, Jorgenis)"
+                     value="${usuariosExtra.join(', ').replace(/"/g, '&quot;')}"
+                     onchange="MOS._notifSetExtra('${n.idNotif}', this.value)">
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <div class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5">⚡ Prioridad</div>
+                <div class="flex gap-1">
+                  ${['baja','normal','alta'].map(p => {
+                    const on = prioridad === p ? ' on ' + p + '-on' : ' ' + p + '-on';
+                    return `<span class="notif-priority-pill${on}" onclick="MOS._notifSetPrioridad('${n.idNotif}', '${p}', event)">${p.toUpperCase()}</span>`;
+                  }).join('')}
+                </div>
+              </div>
+              <div>
+                <div class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5">🚫 Excluir origen</div>
+                <label class="flex items-center gap-2 text-xs cursor-pointer">
+                  <input type="checkbox" ${n.excluir_origen ? 'checked' : ''}
+                         style="width:14px;height:14px;accent-color:#fbbf24;cursor:pointer"
+                         onchange="MOS._notifSetExcluir('${n.idNotif}', this.checked)">
+                  <span class="text-slate-300">Quien dispara no recibe</span>
+                </label>
+              </div>
+            </div>
+            <div>
+              <div class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5">🔕 Silenciar temporal</div>
+              <div class="flex gap-1 flex-wrap">
+                <button onclick="MOS._notifSilenciar('${n.idNotif}','1h', event)"     class="btn-ghost btn-ripple text-[10px] px-2 py-1">1 hora</button>
+                <button onclick="MOS._notifSilenciar('${n.idNotif}','manana', event)" class="btn-ghost btn-ripple text-[10px] px-2 py-1">Mañana 8am</button>
+                <button onclick="MOS._notifSilenciar('${n.idNotif}','lunes', event)"  class="btn-ghost btn-ripple text-[10px] px-2 py-1">Lunes 7am</button>
+                ${silenciada ? `<button onclick="MOS._notifSilenciar('${n.idNotif}','', event)" class="btn-ghost btn-ripple text-[10px] px-2 py-1" style="color:#34d399;border-color:rgba(34,197,94,.4)">↺ Quitar silencio</button>` : ''}
+              </div>
+            </div>
+            <div class="flex gap-2 flex-wrap pt-2 border-t border-slate-800">
+              <button onclick="MOS._notifRestaurarDefault('${n.idNotif}', event)" class="btn-ghost btn-ripple text-xs flex-1">↺ Restaurar default</button>
+              <button onclick="MOS._notifProbar('${n.idNotif}', event)" class="btn-primary btn-ripple text-xs flex-1">🧪 Probar a mí</button>
+            </div>
+          </div>
+        ` : ''}
+      </div>`;
+  }
+
+  // ── Handlers ──
+  function _notifToggleExpand(id, ev) {
+    if (ev && ev.target.closest('.notif-toggle, input, button, .notif-rol-chip')) return;
+    _notifState.expandido[id] = !_notifState.expandido[id];
+    if (typeof _evalSfx === 'function') _evalSfx(_notifState.expandido[id] ? 'expand' : 'collapse');
+    _renderNotifs();
+  }
+  async function _notifToggleActiva(id, ev) {
+    if (!_notifIsMaster()) { toast('Solo Master puede editar', 'error'); if (typeof _evalSfx === 'function') _evalSfx('error'); return; }
+    const it = _notifState.items.find(x => x.idNotif === id);
+    if (!it) return;
+    const nuevoEstado = !it.activa;
+    it.activa = nuevoEstado;  // optimistic
+    if (typeof _evalSfx === 'function') _evalSfx(nuevoEstado ? 'add' : 'remove');
+    if (ev && typeof _evalRipple === 'function') _evalRipple(ev);
+    _renderNotifs();
+    try {
+      await API.post('actualizarNotifConfig', { idNotif: id, activa: nuevoEstado, actualizado_por: S.session?.nombre || 'admin' });
+      toast(`${nuevoEstado ? '✓ Activada' : '🔕 Silenciada'} · ${it.titulo}`, 'ok');
+    } catch(e) {
+      it.activa = !nuevoEstado; // rollback
+      toast('Error: ' + e.message, 'error');
+      if (typeof _evalSfx === 'function') _evalSfx('error');
+      _renderNotifs();
+    }
+  }
+  async function _notifToggleRol(id, rol, ev) {
+    if (!_notifIsMaster()) { toast('Solo Master puede editar', 'error'); if (typeof _evalSfx === 'function') _evalSfx('error'); return; }
+    const it = _notifState.items.find(x => x.idNotif === id);
+    if (!it) return;
+    const rolesSet = new Set(String(it.audiencia_roles || '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean));
+    if (rolesSet.has(rol)) rolesSet.delete(rol); else rolesSet.add(rol);
+    const nuevoCsv = Array.from(rolesSet).join(',');
+    it.audiencia_roles = nuevoCsv;
+    if (typeof _evalSfx === 'function') _evalSfx('tap');
+    _renderNotifs();
+    try {
+      await API.post('actualizarNotifConfig', { idNotif: id, audiencia_roles: nuevoCsv, actualizado_por: S.session?.nombre || 'admin' });
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+  async function _notifSetExtra(id, valor) {
+    if (!_notifIsMaster()) return;
+    const csv = String(valor || '').split(',').map(s => s.trim()).filter(Boolean).join(',');
+    const it = _notifState.items.find(x => x.idNotif === id);
+    if (it) it.audiencia_usuarios = csv;
+    try {
+      await API.post('actualizarNotifConfig', { idNotif: id, audiencia_usuarios: csv, actualizado_por: S.session?.nombre || 'admin' });
+      if (typeof _evalSfx === 'function') _evalSfx('add');
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+  async function _notifSetPrioridad(id, prio, ev) {
+    if (!_notifIsMaster()) return;
+    const it = _notifState.items.find(x => x.idNotif === id);
+    if (!it) return;
+    it.prioridad = prio;
+    if (typeof _evalSfx === 'function') _evalSfx('switch');
+    _renderNotifs();
+    try {
+      await API.post('actualizarNotifConfig', { idNotif: id, prioridad: prio, actualizado_por: S.session?.nombre || 'admin' });
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+  async function _notifSetExcluir(id, val) {
+    if (!_notifIsMaster()) return;
+    const it = _notifState.items.find(x => x.idNotif === id);
+    if (it) it.excluir_origen = val;
+    if (typeof _evalSfx === 'function') _evalSfx('tap');
+    try {
+      await API.post('actualizarNotifConfig', { idNotif: id, excluir_origen: val, actualizado_por: S.session?.nombre || 'admin' });
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+  async function _notifSilenciar(id, preset, ev) {
+    if (!_notifIsMaster()) return;
+    let hastaIso = '';
+    if (preset === '1h')     hastaIso = new Date(Date.now() + 3600*1000).toISOString();
+    if (preset === 'manana') {
+      const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(8, 0, 0, 0);
+      hastaIso = d.toISOString();
+    }
+    if (preset === 'lunes') {
+      const d = new Date();
+      const dia = d.getDay() || 7;
+      d.setDate(d.getDate() + (8 - dia)); d.setHours(7, 0, 0, 0);
+      hastaIso = d.toISOString();
+    }
+    const it = _notifState.items.find(x => x.idNotif === id);
+    if (it) it.silenciada_hasta = hastaIso;
+    if (typeof _evalSfx === 'function') _evalSfx(hastaIso ? 'switch' : 'success');
+    if (ev && typeof _evalRipple === 'function') _evalRipple(ev);
+    _renderNotifs();
+    try {
+      await API.post('actualizarNotifConfig', { idNotif: id, silenciada_hasta: hastaIso, actualizado_por: S.session?.nombre || 'admin' });
+      toast(hastaIso ? `🔕 Silenciada` : `✓ Reactivada`, 'ok');
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+  async function _notifRestaurarDefault(id, ev) {
+    if (!_notifIsMaster()) return;
+    if (ev && typeof _evalRipple === 'function') _evalRipple(ev);
+    try {
+      await API.post('restaurarNotifDefault', { idNotif: id, actualizado_por: S.session?.nombre || 'admin' });
+      _notifState.cargado = false;
+      if (typeof _evalSfx === 'function') _evalSfx('pop');
+      toast('↺ Restaurada al default', 'ok');
+      renderNotifsPanel();
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+  async function _notifProbar(id, ev) {
+    if (ev && typeof _evalRipple === 'function') _evalRipple(ev);
+    try {
+      await API.post('probarNotificacion', { idNotif: id, soloAMi: true, miUsuario: S.session?.nombre || '' });
+      if (typeof _evalSfx === 'function') _evalSfx('success');
+      try {
+        const r = ev?.target?.getBoundingClientRect();
+        if (r && typeof _evalConfetti === 'function') _evalConfetti(r.left + r.width/2, r.top + r.height/2, '#a78bfa');
+      } catch(_){}
+      toast('🧪 Push de prueba enviada · revisa tu device', 'ok');
+    } catch(e) {
+      if (typeof _evalSfx === 'function') _evalSfx('error');
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  // ── Historial ──
+  async function abrirNotifLog() {
+    if (typeof _evalSfx === 'function') _evalSfx('open');
+    // Llenar select de notifIds
+    const sel = $('notifLogFiltroId');
+    if (sel) {
+      sel.innerHTML = '<option value="">Todas</option>' +
+        (_notifState.items || []).map(n => `<option value="${n.idNotif}">${n.icono || ''} ${n.titulo}</option>`).join('');
+    }
+    openModal('modalNotifLog');
+    refreshNotifLog();
+  }
+  async function refreshNotifLog(ev) {
+    if (ev && typeof _evalRipple === 'function') _evalRipple(ev);
+    const body = $('notifLogBody');
+    if (!body) return;
+    body.innerHTML = `<div class="text-center text-xs text-slate-500 py-8"><div class="inline-block animate-spin">⏳</div> Cargando...</div>`;
+    const params = { limit: 100 };
+    const idF = $('notifLogFiltroId')?.value || '';
+    const desde = $('notifLogDesde')?.value || '';
+    if (idF) params.idNotif = idF;
+    if (desde) params.desde = desde;
+    try {
+      const res = await API.get('getNotifLog', params);
+      const rows = Array.isArray(res) ? res : ((res && res.data) || []);
+      _notifState.log = rows;
+      if (!rows.length) {
+        body.innerHTML = `<div class="text-center py-10 text-slate-500 text-sm">
+          <div class="text-3xl mb-2 opacity-50">📭</div>
+          Sin notificaciones en el rango
+        </div>`;
+        return;
+      }
+      body.innerHTML = rows.map((r, i) => {
+        const ts = new Date(r.ts).toLocaleString('es-PE', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+        const esError = String(r.estado || '').toUpperCase() === 'ERROR' || String(r.estado).indexOf('silenc') >= 0;
+        return `<div class="notif-log-row${esError ? ' error' : ''}" style="--i:${Math.min(i,18)};animation-delay:${Math.min(i,18)*20}ms">
+          <div class="flex items-center justify-between gap-2 mb-1">
+            <span class="text-xs font-semibold text-slate-200 truncate">${r.titulo || '—'}</span>
+            <span class="text-[10px] text-slate-500 shrink-0">${ts}</span>
+          </div>
+          <div class="text-[10px] text-slate-500 mb-1">${(r.cuerpo || '').substring(0, 120)}</div>
+          <div class="flex items-center gap-2 flex-wrap text-[10px]">
+            <span class="font-mono text-slate-600">${r.idNotif || ''}</span>
+            ${r.entregadas > 0 ? `<span class="text-emerald-400">✓ ${r.entregadas} entregadas</span>` : ''}
+            ${r.errores > 0 ? `<span class="text-rose-400">⚠ ${r.errores} error${r.errores!==1?'es':''}</span>` : ''}
+            ${r.estado && r.estado !== 'OK' ? `<span class="text-amber-400">${r.estado}</span>` : ''}
+            <button onclick="MOS._notifReenviar('${r.idLog}', event)"
+                    class="text-[10px] px-2 py-0.5 rounded ml-auto"
+                    style="background:rgba(99,102,241,.1);color:#a5b4fc;border:1px solid rgba(99,102,241,.3)">🔄 Reenviar</button>
+          </div>
+        </div>`;
+      }).join('');
+    } catch(e) {
+      body.innerHTML = `<div class="text-center text-xs text-rose-400 py-8">⚠ Error: ${e.message || e}</div>`;
+    }
+  }
+  async function _notifReenviar(idLog, ev) {
+    if (ev && typeof _evalRipple === 'function') _evalRipple(ev);
+    try {
+      await API.post('reenviarNotificacion', { idLog });
+      if (typeof _evalSfx === 'function') _evalSfx('success');
+      toast('🔄 Reenviada', 'ok');
+      refreshNotifLog();
+    } catch(e) {
+      if (typeof _evalSfx === 'function') _evalSfx('error');
+      toast('Error: ' + e.message, 'error');
     }
   }
 
@@ -23057,6 +23459,12 @@ const MOS = (() => {
     abrirModalPago, guardarPago, abrirModalPedido,
     // Config
     setCfgTab,
+    // Notificaciones (pestaña Configuraciones)
+    renderNotifsPanel, refreshNotifs, notifSetFiltro, notifSetEstado,
+    abrirNotifLog, refreshNotifLog,
+    _notifToggleExpand, _notifToggleActiva, _notifToggleRol,
+    _notifSetExtra, _notifSetPrioridad, _notifSetExcluir,
+    _notifSilenciar, _notifRestaurarDefault, _notifProbar, _notifReenviar,
     auditCorrer, auditResolver, auditResolverTodas, renderIntegridad,
     abrirModalZona, guardarZona,
     abrirModalCategoria, guardarCategoria, _catOnModoChange,

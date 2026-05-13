@@ -7265,6 +7265,7 @@
           <button class="tab-btn active" id="cfgTabInfra"     onclick="MOS.setCfgTab('infra')">🏗️ Infraestructura</button>
           <button class="tab-btn" id="cfgTabPersonal"          onclick="MOS.setCfgTab('personal')">👥 Personal</button>
           <button class="tab-btn" id="cfgTabCategorias"        onclick="MOS.setCfgTab('categorias')">🏷️ Categorías</button>
+          <button class="tab-btn" id="cfgTabNotifs"            onclick="MOS.setCfgTab('notifs')">🔔 Notificaciones</button>
         </div>
       </div>
       <div class="text-xs text-slate-600 italic mb-3 sm:hidden">→ Desliza las tablas y los tabs para ver todo</div>
@@ -7332,6 +7333,39 @@
         </div>
         <div class="text-[11px] text-slate-600 italic mt-2">
           ℹ️ <strong>MARGEN</strong>: precio venta = costo / (1 - margen/100). <strong>FIJO</strong>: no se sugiere cambio. <strong>COMPETITIVO</strong>: usa margen pero respeta el tope. <strong>LIBRE</strong>: todo manual.
+        </div>
+      </div>
+
+      <!-- ════════════════════════════════════════════════════════
+           🔔 NOTIFICACIONES — catálogo de pushes del ecosistema
+           ════════════════════════════════════════════════════════ -->
+      <div id="cfgPanelNotifs" class="hidden">
+        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+          <div class="flex-1 min-w-0">
+            <h3 class="font-semibold text-sm text-slate-200">🔔 Notificaciones push</h3>
+            <p class="text-xs text-slate-500 mt-0.5">Configura quién recibe cada alerta del ecosistema MOS · ME · WH.
+              <span class="text-amber-400 font-semibold ml-1" id="notifsPermisoBadge">Solo Master puede editar</span>
+            </p>
+          </div>
+          <div class="flex gap-2 shrink-0">
+            <button onclick="MOS.abrirNotifLog()" class="btn-ghost text-xs px-3 py-1.5">📊 Historial</button>
+            <button onclick="MOS.refreshNotifs(event)" class="btn-ghost btn-ripple text-xs px-3 py-1.5">↻ Refrescar</button>
+          </div>
+        </div>
+        <!-- Filtros -->
+        <div class="flex items-center gap-2 flex-wrap mb-3" id="notifsFilterBar">
+          <button onclick="MOS.notifSetFiltro('all', event)"  class="notif-pill active" data-f="all">Todas</button>
+          <button onclick="MOS.notifSetFiltro('MOS', event)"  class="notif-pill" data-f="MOS">🎯 MOS</button>
+          <button onclick="MOS.notifSetFiltro('ME', event)"   class="notif-pill" data-f="ME">🛒 ME</button>
+          <button onclick="MOS.notifSetFiltro('WH', event)"   class="notif-pill" data-f="WH">🏭 WH</button>
+          <span class="text-slate-600">·</span>
+          <button onclick="MOS.notifSetEstado('all', event)"  class="notif-pill active" data-e="all">Todas</button>
+          <button onclick="MOS.notifSetEstado('ON', event)"   class="notif-pill" data-e="ON">✓ Activas</button>
+          <button onclick="MOS.notifSetEstado('OFF', event)"  class="notif-pill" data-e="OFF">✗ Silenciadas</button>
+        </div>
+        <!-- Lista -->
+        <div id="notifsList" class="space-y-2">
+          <div class="text-center py-12 text-slate-500 text-sm">Cargando catálogo...</div>
         </div>
       </div>
 
@@ -13019,6 +13053,110 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
     #liqPrintWrap { position: absolute; left: 0; top: 0; width: 100%; }
   }
 
+  /* ── NOTIFICACIONES (pestaña config) ─────────────────────── */
+  .notif-pill {
+    padding: 4px 10px; font-size: 11px; border-radius: 999px;
+    background: rgba(148,163,184,.08); color: #94a3b8;
+    border: 1px solid rgba(148,163,184,.2);
+    cursor: pointer; font-weight: 600;
+    transition: all .2s cubic-bezier(.34,1.56,.64,1);
+  }
+  .notif-pill:hover { color: #fbbf24; border-color: rgba(251,191,36,.35); transform: translateY(-1px); }
+  .notif-pill.active {
+    background: rgba(251,191,36,.15); color: #fbbf24;
+    border-color: rgba(251,191,36,.5);
+    box-shadow: 0 0 12px -2px rgba(251,191,36,.35);
+  }
+  .notif-card {
+    position: relative; overflow: hidden;
+    background: linear-gradient(135deg,#0c1424 0%,#0f172a 45%,#0a1428 100%);
+    border: 1px solid #1e293b; border-radius: 12px;
+    padding: 14px;
+    transition: all .25s cubic-bezier(.34,1.56,.64,1);
+    animation: notifCardIn .35s cubic-bezier(.34,1.56,.64,1) backwards;
+  }
+  .notif-card { animation-delay: calc(var(--i,0) * 25ms); }
+  @keyframes notifCardIn {
+    from { opacity: 0; transform: translateY(8px) scale(.96); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .notif-card::before {
+    content:''; position:absolute; top:0; left:-100%; width:60%; height:100%;
+    background: linear-gradient(120deg, transparent 30%, rgba(251,191,36,.08) 50%, transparent 80%);
+    pointer-events:none; transition: left .7s cubic-bezier(.34,1.56,.64,1);
+  }
+  .notif-card:hover::before { left: 130%; }
+  .notif-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(251,191,36,.35);
+    box-shadow: 0 8px 26px -8px rgba(251,191,36,.3);
+  }
+  .notif-card.silenciada {
+    opacity: 0.62;
+    background: linear-gradient(135deg,#1a1424 0%,#1a1828 45%,#181428 100%);
+  }
+  .notif-card.silenciada::after {
+    content:''; position:absolute; top:0; left:0; right:0; height:2px;
+    background: linear-gradient(90deg, transparent, #94a3b8 50%, transparent);
+  }
+  .notif-card.alta {
+    border-color: rgba(248,113,113,.3);
+  }
+  .notif-card.alta::after {
+    content:''; position:absolute; top:0; left:0; right:0; height:2px;
+    background: linear-gradient(90deg, transparent, #f87171 30%, #fca5a5 50%, #f87171 70%, transparent);
+    animation: notifAltaGlow 2s ease-in-out infinite;
+  }
+  @keyframes notifAltaGlow {
+    0%,100% { opacity: .35; }
+    50%     { opacity: 1; }
+  }
+  .notif-toggle {
+    position: relative; width: 44px; height: 24px; border-radius: 999px;
+    background: #1e293b; cursor: pointer; transition: all .2s;
+    flex-shrink: 0; border: 1px solid #334155;
+  }
+  .notif-toggle::after {
+    content:''; position:absolute; top: 2px; left: 2px;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #94a3b8; transition: all .25s cubic-bezier(.34,1.56,.64,1);
+  }
+  .notif-toggle.on { background: rgba(251,191,36,.25); border-color: rgba(251,191,36,.5); }
+  .notif-toggle.on::after {
+    left: 22px; background: #fbbf24;
+    box-shadow: 0 0 8px #fbbf24;
+  }
+  .notif-rol-chip {
+    display:inline-flex; align-items:center; gap:4px;
+    padding: 3px 8px; border-radius: 999px;
+    font-size: 10px; font-weight: 600;
+    cursor: pointer; transition: all .15s;
+    user-select: none; line-height: 1.2;
+  }
+  .notif-rol-chip.master    { background: rgba(168,85,247,.12); color: #c4b5fd; border: 1px solid rgba(168,85,247,.3); }
+  .notif-rol-chip.admin     { background: rgba(59,130,246,.12); color: #93c5fd; border: 1px solid rgba(59,130,246,.3); }
+  .notif-rol-chip.cajero    { background: rgba(34,197,94,.12);  color: #86efac; border: 1px solid rgba(34,197,94,.3); }
+  .notif-rol-chip.almacen   { background: rgba(245,158,11,.12); color: #fcd34d; border: 1px solid rgba(245,158,11,.3); }
+  .notif-rol-chip:not(.on) { opacity: .35; }
+  .notif-rol-chip:hover { transform: translateY(-1px) scale(1.04); }
+  .notif-priority-pill {
+    padding: 2px 8px; border-radius: 999px;
+    font-size: 9px; font-weight: 700; letter-spacing: .5px;
+    cursor: pointer; transition: all .15s;
+  }
+  .notif-priority-pill.baja-on    { background: rgba(100,116,139,.2); color: #cbd5e1; }
+  .notif-priority-pill.normal-on  { background: rgba(99,102,241,.18); color: #a5b4fc; }
+  .notif-priority-pill.alta-on    { background: rgba(248,113,113,.18); color: #fca5a5; }
+  .notif-priority-pill:not(.on)   { opacity: .35; }
+
+  .notif-log-row {
+    background: rgba(15,23,42,.5); border: 1px solid #1e293b; border-radius: 8px;
+    padding: 10px 12px; transition: all .15s ease;
+    animation: notifCardIn .3s cubic-bezier(.34,1.56,.64,1) backwards;
+  }
+  .notif-log-row:hover { border-color: rgba(99,102,241,.3); }
+  .notif-log-row.error { border-color: rgba(248,113,113,.3); background: rgba(248,113,113,.03); }
+
   /* ── Nuevo modelo: presets + cards persona + pay bar ───────── */
   .liq-preset-btn {
     padding: 4px 10px; font-size: 11px; border-radius: 6px;
@@ -13176,6 +13314,29 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
           💸 Pagar y emitir
         </button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL HISTORIAL NOTIFICACIONES ═══ -->
+<div id="modalNotifLog" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalNotifLog')">
+  <div class="modal-box p-0 max-w-lg w-full" style="max-height:90vh;display:flex;flex-direction:column;background:linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,8,23,.98));backdrop-filter:blur(14px);box-shadow:0 24px 60px -10px rgba(168,85,247,.18),0 0 0 1px rgba(168,85,247,.08);">
+    <div class="px-5 pt-5 pb-3 flex items-center justify-between border-b border-slate-800">
+      <div>
+        <h3 class="font-semibold text-white text-base">📊 Historial de notificaciones</h3>
+        <p class="text-xs text-slate-500" id="notifLogSubtitle">Últimas 100 enviadas</p>
+      </div>
+      <button onclick="MOS.closeModal('modalNotifLog')" class="modal-close-x">×</button>
+    </div>
+    <div class="px-5 py-2 flex items-center gap-2 border-b border-slate-800" style="background:rgba(15,23,42,.4)">
+      <select id="notifLogFiltroId" class="inp text-xs" style="padding:4px 8px"
+              onchange="MOS.refreshNotifLog()"><option value="">Todas</option></select>
+      <input id="notifLogDesde" type="date" class="inp text-xs" style="padding:4px 8px;width:140px"
+             onchange="MOS.refreshNotifLog()">
+      <button onclick="MOS.refreshNotifLog(event)" class="btn-ghost btn-ripple text-xs px-2 py-1 ml-auto">↻</button>
+    </div>
+    <div id="notifLogBody" class="overflow-y-auto px-5 py-4 space-y-2" style="flex:1">
+      <div class="text-center text-xs text-slate-500 py-8">Cargando...</div>
     </div>
   </div>
 </div>

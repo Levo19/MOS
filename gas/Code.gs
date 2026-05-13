@@ -190,6 +190,14 @@ function _route(method, e) {
       case 'getResumenDia':             return getResumenDia(params);
       case 'getResumenTodosDia':        return getResumenTodosDia(params);
       case 'getLiquidacionSemana':      return getLiquidacionSemana(params);
+
+      // ── Notificaciones (catálogo + log + test) ─────────────
+      case 'getNotificacionesConfig':   return getNotificacionesConfig();
+      case 'actualizarNotifConfig':     return actualizarNotifConfig(params);
+      case 'restaurarNotifDefault':     return restaurarNotifDefault(params);
+      case 'probarNotificacion':        return probarNotificacion(params);
+      case 'getNotifLog':                return getNotifLog(params);
+      case 'reenviarNotificacion':       return reenviarNotificacion(params);
       case 'listarImpresorasPN':        return listarImpresorasPN();
       case 'getPrintNodePrinters':      return listarImpresorasPN();
       case 'imprimirLiquidacionDia':    return imprimirLiquidacionDia(params);

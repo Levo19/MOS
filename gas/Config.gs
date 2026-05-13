@@ -525,7 +525,7 @@ function _notificarAprobacionDispositivo(deviceId, app, nombreEquipo, aprobadoPo
     var quien    = aprobadoPor || 'admin';
     var via      = accion === 'creado' ? 'in-situ' : (accion === 'reactivado' ? 'in-situ (reactivado)' : 'desde panel');
     var cuerpo   = nombre + ' · ' + appLabel + ' · aprobado por ' + quien + ' (' + via + ')';
-    _enviarPushTodos(titulo, cuerpo, { soloRolesAdmin: true });
+    _enviarPushTodos(titulo, cuerpo, { soloRolesAdmin: true, idNotif: 'MOS_DEVICE_APROBADO' });
   } catch (e) { Logger.log('Push aprobación falló: ' + e.message); }
 }
 
@@ -739,7 +739,7 @@ function registrarSesionDispositivo(params) {
     var detalle = (deviceLabel || appNueva.toUpperCase()) + ' · UUID ' + deviceId.substring(0, 8) + '...';
     if (params.idEstacion) detalle += ' · estación ' + params.idEstacion;
     if (params.vendedor)   detalle += ' · cajero ' + params.vendedor;
-    _enviarPushTodos('🔔 Nuevo dispositivo solicita acceso', detalle, { soloRolesMaster: true });
+    _enviarPushTodos('🔔 Nuevo dispositivo solicita acceso', detalle, { soloRolesMaster: true, idNotif: 'MOS_DEVICE_PENDIENTE' });
   } catch(e) { Logger.log('Push pendiente fallo: ' + e.message); }
 
   return { ok: true, data: { autorizado: false, estado: 'PENDIENTE_APROBACION', error: 'Dispositivo nuevo — esperando aprobación del administrador' } };
@@ -1101,7 +1101,7 @@ function notificarInicioSesionVendedor(params) {
       _enviarPushTodos(
         icono + ' ' + nombre + ' inició sesión',
         'En ' + appLbl + (params.estacion ? ' · ' + params.estacion : ''),
-        { soloRolesAdmin: true, excluirUsuario: nombre }
+        { soloRolesAdmin: true, excluirUsuario: nombre, idNotif: 'MOS_LOGIN_VENDEDOR' }
       );
     }
   } catch(eP) { Logger.log('Push inicio sesión fallo: ' + eP.message); }

@@ -123,16 +123,36 @@ function _seleccionarTokensActivos(data, opciones) {
     return false;
   }
 
-  // Si filtramos por rol, cargar set de usuarios permitidos
+  // ── NUEVO: filtros de NotifConfig (rolesPermitidos, soloUsuarios, usuariosExtra) ──
+  // Si vienen estos, sobrescriben el filtro de rol legacy.
+  var rolesPermitidos = null;
+  if (Array.isArray(opciones.rolesPermitidos) && opciones.rolesPermitidos.length > 0) {
+    rolesPermitidos = {};
+    opciones.rolesPermitidos.forEach(function(r){ rolesPermitidos[String(r).toUpperCase()] = true; });
+  }
+  var soloUsuarios = null;
+  if (Array.isArray(opciones.soloUsuarios) && opciones.soloUsuarios.length > 0) {
+    soloUsuarios = {};
+    opciones.soloUsuarios.forEach(function(u){ soloUsuarios[String(u).trim().toLowerCase()] = true; });
+  }
+  var usuariosExtra = null;
+  if (Array.isArray(opciones.usuariosExtra) && opciones.usuariosExtra.length > 0) {
+    usuariosExtra = {};
+    opciones.usuariosExtra.forEach(function(u){ usuariosExtra[String(u).trim().toLowerCase()] = true; });
+  }
+
+  // Set de usuarios permitidos por rol (combina legacy + nuevo)
   var rolSet = null;
-  if (opciones.soloRolesMaster || opciones.soloRolesAdmin) {
+  if (opciones.soloRolesMaster || opciones.soloRolesAdmin || rolesPermitidos) {
     rolSet = {};
     try {
       var personas = _sheetToObjects(getSheet('PERSONAL_MASTER'));
       personas.forEach(function(p) {
         var rol = String(p.rol || '').toUpperCase();
         var permitido = false;
-        if (opciones.soloRolesMaster) {
+        if (rolesPermitidos) {
+          permitido = !!rolesPermitidos[rol];
+        } else if (opciones.soloRolesMaster) {
           permitido = (rol === 'MASTER');
         } else if (opciones.soloRolesAdmin) {
           permitido = (rol === 'MASTER' || rol === 'ADMIN' || rol === 'ADMINISTRADOR');
@@ -140,7 +160,6 @@ function _seleccionarTokensActivos(data, opciones) {
         if (permitido && String(p.estado) === '1') {
           var n = (String(p.nombre || '') + ' ' + String(p.apellido || '')).trim().toLowerCase();
           rolSet[n] = true;
-          // También aceptar solo nombre (si el token se registró sin apellido)
           rolSet[String(p.nombre || '').trim().toLowerCase()] = true;
         }
       });
@@ -156,7 +175,12 @@ function _seleccionarTokensActivos(data, opciones) {
     if (!token) continue;
     if (activo === false || String(activo) === '0' || String(activo) === 'false') continue;
     if (excNorm && usuario === excNorm) continue; // excluir al sender
-    if (rolSet && !rolSet[usuario]) continue;     // filtro por rol (master o admin+master)
+    // Filtro nuevo: si soloUsuarios (test), solo esos. Si usuariosExtra suma a los roles.
+    if (soloUsuarios) {
+      if (!soloUsuarios[usuario]) continue;
+    } else if (rolSet) {
+      if (!rolSet[usuario] && !(usuariosExtra && usuariosExtra[usuario])) continue;
+    }
     if (appOrigenFiltro && !_matchApp(appOrig, appOrigenFiltro)) continue; // filtro por app (WH/ME/MOS)
     var ultVezRaw = data[i][6];
     var ultVez = 0;
@@ -176,7 +200,34 @@ function _seleccionarTokensActivos(data, opciones) {
 // opciones (todas opcionales):
 //   excluirUsuario: nombre del que originó la acción (no auto-notificarse)
 //   soloRolesAdmin: true → solo MASTER/ADMIN/ADMINISTRADOR
+//   soloRolesMaster: true → solo MASTER
+//   appOrigen: 'WH'|'ME'|'MOS' → filtra por app del token
+//   idNotif: si está en NOTIFICACIONES_CONFIG, lee config (activa, audiencia,
+//            silencio temporal, prioridad) y la usa para resolver destinatarios.
+//            Si la notificación está silenciada, NO se envía y queda en log.
+//   soloUsuarios: ['nombre1', 'nombre2'] → fuerza envío solo a esos (usado en test)
 function _enviarPushTodos(titulo, cuerpo, opciones) {
+  // ── Integración con NOTIFICACIONES_CONFIG ──
+  // Si hay idNotif, resolvemos audiencia desde la config (en lugar de los
+  // filtros legacy). Si la notif está apagada/silenciada → no enviar y log.
+  var origenUsuario = (opciones && opciones.excluirUsuario) || '';
+  try {
+    if (opciones && opciones.idNotif && typeof _ntfResolverFiltros === 'function') {
+      var res = _ntfResolverFiltros(opciones);
+      if (!res.permitir) {
+        // Bloqueada por config — log con estado SILENCIADA
+        try { _ntfLogEnvio(opciones.idNotif, titulo, cuerpo, '', 0, 0, 0, origenUsuario, res.motivo || 'silenciada', { cfg: res.cfg }); } catch(_){}
+        Logger.log('[Push] Silenciada por config: ' + opciones.idNotif + ' (' + res.motivo + ')');
+        return;
+      }
+      // Pisar filtros legacy con los de la config (mismas keys que entiende _seleccionarTokensActivos)
+      opciones = Object.assign({}, opciones, res.filtros || {});
+      // El selector legacy no sabe de rolesPermitidos/soloUsuarios/usuariosExtra,
+      // así que los mapeamos al formato que sí entiende: rol múltiple. Para mantener
+      // compat, agregamos en opciones flags adicionales y los reinterpretamos abajo.
+    }
+  } catch(eN) { Logger.log('[Push] Error resolviendo config: ' + eN.message); }
+
   try {
     var sheet       = _getPushTokensSheet();
     var data        = sheet.getDataRange().getValues();
@@ -242,8 +293,31 @@ function _enviarPushTodos(titulo, cuerpo, opciones) {
       }
     });
     Logger.log('[Push] Resumen: ' + sent + ' enviados (1 por usuario), ' + cleaned + ' tokens limpiados');
+
+    // ── Log a NOTIFICACIONES_LOG ──
+    try {
+      if (opciones && opciones.idNotif && typeof _ntfLogEnvio === 'function') {
+        var audDesc = [];
+        if (opciones.rolesPermitidos) audDesc.push('roles:' + opciones.rolesPermitidos.join('+'));
+        else if (opciones.soloRolesMaster) audDesc.push('master');
+        else if (opciones.soloRolesAdmin) audDesc.push('admin+');
+        if (opciones.soloUsuarios) audDesc.push('test→' + opciones.soloUsuarios.join(','));
+        if (opciones.usuariosExtra) audDesc.push('+extra:' + opciones.usuariosExtra.join(','));
+        _ntfLogEnvio(
+          opciones.idNotif, titulo, cuerpo,
+          audDesc.join(' '), seleccion.length, sent, cleaned,
+          origenUsuario || '', 'OK',
+          { reenvio: !!opciones._reenvio, test: !!opciones._esTest }
+        );
+      }
+    } catch(eLg) { Logger.log('[Push] log fallo: ' + eLg.message); }
   } catch(e) {
     Logger.log('_enviarPushTodos error: ' + e.message);
+    try {
+      if (opciones && opciones.idNotif && typeof _ntfLogEnvio === 'function') {
+        _ntfLogEnvio(opciones.idNotif, titulo, cuerpo, '', 0, 0, 0, origenUsuario || '', 'ERROR', { error: e.message });
+      }
+    } catch(_){}
   }
 }
 
@@ -295,7 +369,8 @@ function enviarPushNotif(params) {
     soloRolesMaster: params.soloRolesMaster === true || String(params.soloRolesMaster) === 'true',
     soloRolesWH:     params.soloRolesWH === true || String(params.soloRolesWH) === 'true',
     soloRolesME:     params.soloRolesME === true || String(params.soloRolesME) === 'true',
-    soloAppOrigen:   params.soloAppOrigen || ''
+    soloAppOrigen:   params.soloAppOrigen || '',
+    idNotif:         params.idNotif || ''  // permite que apps hijas pasen idNotif
   };
   _enviarPushTodos(params.titulo, params.cuerpo || '', opciones);
   return { ok: true };
