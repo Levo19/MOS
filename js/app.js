@@ -10894,6 +10894,10 @@ const MOS = (() => {
         <!-- Series documentales (chips) -->
         ${seriesHTML}
 
+        <!-- Chips de política de la zona (meta + comisión + auditorías o
+             tarifa de almacén) — muestran lo configurado en politicaJSON -->
+        ${_renderChipsPoliticaZona(z)}
+
         <!-- Grid de estaciones -->
         ${estZona.length > 0
           ? `<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">${estsHTML}</div>`
@@ -11851,6 +11855,62 @@ const MOS = (() => {
   let _personalNotifCount = 0;
 
   // Chip de meta editable inline (click → input)
+  // Chips bonitos de política dentro de la card de cada zona en Infra.
+  // Para zonas POS: meta diaria, comisión %, meta auditorías
+  // Para almacén: tarifa envasado, meta guías, meta auditorías (de CONFIG_MOS)
+  function _renderChipsPoliticaZona(z) {
+    const esAlmacen = _esZonaAlmacen(z);
+    let chips = [];
+
+    if (esAlmacen) {
+      // Datos del almacén vienen de CONFIG_MOS global
+      const cfg = cfgData.config || {};
+      const tarifa = cfg.evalTarifaEnvasadoPorUnidad != null ? parseFloat(cfg.evalTarifaEnvasadoPorUnidad) : null;
+      const metaGuias = parseFloat(cfg.evalMetaAlmacenero) || 0;
+      const metaAud   = parseFloat(cfg.evalMetaAuditorias) || 0;
+      if (tarifa != null && !isNaN(tarifa)) {
+        chips.push(_chipPolitica('💵', 'Envasado', 'S/ ' + tarifa.toFixed(2), '/und', '#10b981'));
+      }
+      if (metaGuias > 0) chips.push(_chipPolitica('📦', 'Meta guías', String(metaGuias), '/día', '#ea580c'));
+      if (metaAud > 0)   chips.push(_chipPolitica('📋', 'Auditorías', String(metaAud), '/día', '#fbbf24'));
+      if (!chips.length) return _chipsAvisoVacio('almacen');
+    } else {
+      // Política POS desde politicaJSON de la zona
+      let pol = {};
+      try {
+        pol = z.politicaJSON ? (typeof z.politicaJSON === 'string' ? JSON.parse(z.politicaJSON) : z.politicaJSON) : {};
+      } catch(_){}
+      const meta = parseFloat(pol.metaDiaria);
+      const pct  = parseFloat(pol.comisionExcedentePct);
+      const aud  = parseFloat(pol.metaAuditorias);
+      if (!isNaN(meta) && meta > 0)  chips.push(_chipPolitica('💰', 'Meta venta', 'S/ ' + meta.toFixed(0), '/día', '#f59e0b'));
+      if (!isNaN(pct)  && pct  >= 0) chips.push(_chipPolitica('🎯', 'Comisión',   pct + '%',                'excedente', '#10b981'));
+      if (!isNaN(aud)  && aud  > 0)  chips.push(_chipPolitica('📋', 'Auditorías', String(aud),              '/día', '#fbbf24'));
+      if (!chips.length) return _chipsAvisoVacio('pos', z.idZona);
+    }
+    return `<div class="flex flex-wrap gap-1.5 mb-3 px-1">${chips.join('')}</div>`;
+  }
+
+  function _chipPolitica(icon, label, valor, unidad, color) {
+    return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px]"
+      style="background:rgba(99,102,241,0.05);border:1px solid ${color}66;color:#e2e8f0">
+      <span>${icon}</span>
+      <span class="text-slate-400 text-[10px]">${label}</span>
+      <span style="color:${color}" class="font-black">${valor}</span>
+      <span class="text-slate-500 text-[9px]">${unidad}</span>
+    </span>`;
+  }
+
+  function _chipsAvisoVacio(tipo, idZona) {
+    const mensaje = tipo === 'almacen'
+      ? '⚠ Almacén sin tarifa/metas configuradas — edita en Personal → Operadores'
+      : '⚠ Sin meta configurada — click ✏️ arriba para llenarla';
+    return `<div class="px-3 py-2 mb-3 rounded-lg text-[11px] text-red-300"
+      style="background:rgba(248,113,113,0.08);border:1px dashed rgba(248,113,113,0.4)">
+      ${mensaje}
+    </div>`;
+  }
+
   // ── Render compacto: meta + comisión POR ZONA ─────────────────
   // Reemplaza el chip global confuso. Cada zona se edita aparte abriendo
   // su modal de edición. Si no tiene política configurada → badge ⚠.
@@ -12499,8 +12559,8 @@ const MOS = (() => {
     const bloqMap = {};
     (cfgData.bloqueosME || []).forEach(b => { bloqMap[_norm(b.nombre)] = b; });
 
-    // Cruzar con DISPOSITIVOS para detectar última conexión por Ultima_Sesion (nombre del cajero)
-    // Toma el dispositivo MÁS reciente que tiene este cajero como Ultima_Sesion
+    // Cruzar con DISPOSITIVOS para detectar última conexión + zona principal
+    // del cajero (via Ultima_Zona del dispositivo donde tiene Ultima_Sesion).
     const dispPorCajero = {};
     (cfgData.dispositivos || []).forEach(d => {
       if (String(d.Estado).toUpperCase() !== 'ACTIVO') return;
@@ -12513,7 +12573,18 @@ const MOS = (() => {
       }
     });
 
-    cont.innerHTML = cajeros.map(c => {
+    // Agrupar cajeros por zona inferida (Ultima_Zona del dispositivo)
+    // Si no tiene dispositivo / Ultima_Zona → grupo "Sin zona"
+    const grupos = {};
+    cajeros.forEach(c => {
+      const disp = dispPorCajero[_norm(c.nombre)];
+      const zonaId = String(disp?.Ultima_Zona || '').trim() || '__SIN_ZONA__';
+      if (!grupos[zonaId]) grupos[zonaId] = [];
+      grupos[zonaId].push(c);
+    });
+
+    // Función render de una persona (común a todos los grupos)
+    const renderPersona = (c) => {
       const initials = String(c.nombre || '?').split(/\s+/).map(s => s[0] || '').join('').slice(0, 2).toUpperCase();
       const monto = parseFloat(c.montoTotal) || 0;
       const dias = parseInt(c.diasPendientes) || 0;
@@ -12566,6 +12637,35 @@ const MOS = (() => {
           <input type="checkbox" ${bloqueado ? '' : 'checked'} onchange="MOS.toggleVendedorME('${safeNombre}', event)">
           <span class="pers-switch-slider"></span>
         </label>
+      </div>`;
+    };
+
+    // Render por grupo (zona). Ordena las zonas alfabéticamente y deja
+    // "Sin zona" al final.
+    const zonaNombres = {};
+    (cfgData.zonas || []).forEach(z => { zonaNombres[String(z.idZona)] = z.nombre || z.idZona; });
+    const keys = Object.keys(grupos).sort((a,b) => {
+      if (a === '__SIN_ZONA__') return 1;
+      if (b === '__SIN_ZONA__') return -1;
+      return (zonaNombres[a] || a).localeCompare(zonaNombres[b] || b);
+    });
+    cont.innerHTML = keys.map(zKey => {
+      const lista = grupos[zKey];
+      const nombreZona = zKey === '__SIN_ZONA__' ? '🌫 Sin zona asignada' : ('🏬 ' + (zonaNombres[zKey] || zKey));
+      const rolesEnGrupo = {};
+      lista.forEach(c => {
+        const r = (c.rol || 'CAJERO').toUpperCase();
+        rolesEnGrupo[r] = (rolesEnGrupo[r] || 0) + 1;
+      });
+      const desgloseRol = Object.keys(rolesEnGrupo)
+        .map(r => `${rolesEnGrupo[r]} ${r.toLowerCase()}${rolesEnGrupo[r] !== 1 ? 's' : ''}`)
+        .join(' · ');
+      return `<div class="mb-3">
+        <div class="flex items-center justify-between px-1 mb-1.5">
+          <span class="text-[10px] uppercase tracking-wider text-amber-300/70 font-bold">${nombreZona}</span>
+          <span class="text-[10px] text-slate-500">${desgloseRol}</span>
+        </div>
+        <div class="space-y-2">${lista.map(renderPersona).join('')}</div>
       </div>`;
     }).join('');
   }

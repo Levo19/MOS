@@ -334,15 +334,18 @@ function getResumenDia(params) {
   var montoBase  = parseFloat(p.montoBase) || 0;
   var bonusScore = aplicaComision ? (montoBase * bonusPctScore / 100) : 0;
 
-  // Bono por meta: para POS usa la meta efectiva (kpis.metaVenta de la
-  // zona principal). ENVASADOR NO tiene bono por meta — solo pago por
-  // unidad envasada. ALMACENERO sí mantiene bono por meta de guías.
+  // Bono por meta SOLO aplica a CAJERO/VENDEDOR (POS). Usa la meta
+  // efectiva (kpis.metaVenta de la zona principal). Ni ALMACENERO ni
+  // ENVASADOR tienen bono por meta:
+  //   - ENVASADOR: pago = unidades × tarifa (puro)
+  //   - ALMACENERO: pago = base diario + envasado opcional + bono score
   var bonoMeta = 0, metaPct = 0;
   if (aplicaBonoMeta) {
     var meta = 0, real = 0;
-    if (p.rol === 'CAJERO' || p.rol === 'VENDEDOR') { meta = kpis.metaVenta || cfg.metaCajero; real = kpis.ventasReales; }
-    else if (p.rol === 'ALMACENERO')                 { meta = cfg.metaAlmacenero;              real = kpis.guias; }
-    // ENVASADOR: sin bono. Su pago es solo unidades × tarifa
+    if (p.rol === 'CAJERO' || p.rol === 'VENDEDOR') {
+      meta = kpis.metaVenta || cfg.metaCajero;
+      real = kpis.ventasReales;
+    }
     if (meta > 0) {
       metaPct = Math.round((real / meta) * 1000) / 10;
       if (real >= meta * 2) bonoMeta = cfg.bonoMetaDoble;
