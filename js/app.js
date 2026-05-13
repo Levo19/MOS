@@ -19853,7 +19853,9 @@ const MOS = (() => {
       // Subtotal REAL = totalDia del resumen si existe (incluye envasado +
       // bono meta − sanción). Fallback a p.monto (jornal base) cuando no
       // hay resumen todavía. Así el header del grupo cuadra con las cards.
+      // VETADOS quedan FUERA (no reciben pago).
       const subtotal = arr.reduce((s, p) => {
+        if (p.vetada || p.fuente === 'ELIMINADA') return s;
         const ev = byIdPersonal[p.idPersonal] || byNombre[String(p.nombre || '').toLowerCase().trim()] || null;
         const real = (ev && typeof ev.totalDia === 'number') ? ev.totalDia : (parseFloat(p.monto) || 0);
         return s + real;
@@ -19892,21 +19894,51 @@ const MOS = (() => {
       _evalState.byNombre = byNombre;
       _evalState.byIdPersonal = byIdPersonal;
 
-      // ── Total general REAL (suma cards visibles) ──
+      // ── Total general REAL + propagación a KPIs del P&L ──
       // Antes pl.gastoPersonal venía del backend basado solo en JORNADAS.
-      // Para que el "Gasto Personal" cuadre con la suma visible (que
-      // incluye envasado, bono meta y descuenta sanciones), re-sumamos
-      // aquí usando totalDia de los resúmenes con fallback al jornal.
+      // Aquí re-calculamos totalReal con totalDia de los resúmenes (incluye
+      // envasado + bono meta − sanción, excluye vetados) y ESCALAMOS hacia
+      // arriba: Gasto Personal, Gastos totales, Costos Fijos, Utilidad
+      // Neta, Margen Neto y Punto de Equilibrio TODOS se reconectan al
+      // valor en vivo. Sin esto el break-even quedaba "frío".
       if (arr.length > 0) {
         let totalReal = 0;
         ['POS','ALMACEN','OTRO'].forEach(area => {
           (grupos[area] || []).forEach(p => {
+            if (p.vetada || p.fuente === 'ELIMINADA') return; // vetados no cuentan
             const ev = byIdPersonal[p.idPersonal] || byNombre[String(p.nombre || '').toLowerCase().trim()] || null;
             const real = (ev && typeof ev.totalDia === 'number') ? ev.totalDia : (parseFloat(p.monto) || 0);
             totalReal += real;
           });
         });
         if (tot) _animateCount(tot, totalReal, { prefix: 'S/ ' });
+
+        // Propagar al objeto pl + re-render de los KPIs dependientes
+        try {
+          if (typeof _finPL !== 'undefined' && _finPL && pl === _finPL) {
+            const r2 = n => Math.round(n * 100) / 100;
+            const gastosFijos = parseFloat(_finPL.gastosFijos) || 0;
+            const gastosVariables = parseFloat(_finPL.totalGastos) - (parseFloat(_finPL.gastoPersonal) || 0) - (parseFloat(_finPL.gastosFijos) || 0);
+            const otrosGastos = parseFloat(_finPL.totalGastos || 0) - (parseFloat(_finPL.gastoPersonal) || 0);
+            // ── Actualizar campos derivados ──
+            _finPL.gastoPersonal = r2(totalReal);
+            _finPL.totalGastos   = r2(totalReal + otrosGastos);
+            _finPL.costosFijos   = r2(totalReal + gastosFijos);
+            const ventasNetas = parseFloat(_finPL.ventasNetas) || 0;
+            const utilidadBruta = parseFloat(_finPL.utilidadBruta);
+            _finPL.utilidadNeta  = r2((isFinite(utilidadBruta) ? utilidadBruta : 0) - _finPL.totalGastos);
+            _finPL.margenNetoPct = ventasNetas > 0 ? r2(_finPL.utilidadNeta / ventasNetas * 100) : 0;
+            const costoVentas = parseFloat(_finPL.costoVentas) || 0;
+            const margenContrib = ventasNetas > 0 ? (ventasNetas - costoVentas) / ventasNetas : 0;
+            _finPL.breakEvenVentas = margenContrib > 0 ? r2(_finPL.costosFijos / margenContrib) : null;
+            _finPL.breakEvenPct = (_finPL.breakEvenVentas && ventasNetas > 0)
+              ? r2(Math.min(_finPL.breakEvenVentas / ventasNetas * 100, 100)) : 0;
+            _finPL.superaBreakEven = _finPL.breakEvenVentas !== null && ventasNetas >= _finPL.breakEvenVentas;
+
+            // Re-render solo KPIs (skipPersonal preserva los cards que ya pintamos)
+            try { _finRender(_finPL, fecha, { skipPersonal: true }); } catch(_){}
+          }
+        } catch(_){}
       }
 
       let html = '';
@@ -20015,16 +20047,16 @@ const MOS = (() => {
   }
 
   function _finRenderPersonalCard(p, ev, fecha, area) {
+    const esVetada = !!(p.vetada || p.fuente === 'ELIMINADA');
     const esPOS = (area || _finClasificarRol(p.rol)) === 'POS';
     const score = ev ? (ev.scoreFinal || 0) : null;
     const scoreClass = score !== null ? _evalScoreClass(score) : '';
     const rolClass = _evalRolBadgeClass(p.rol || (ev && ev.rol));
     const evalCount = ev ? (ev.evaluacionesCount || 0) : 0;
-    // Pasar p.rol como override: el rol de PERSONAL_MASTER es source of
-    // truth; el ev.rol puede venir de detección automática (cajas/ventas).
     const kpiTxt = ev ? _evalKpiSummary(ev, p.rol) : '';
-    const totalDia = (ev && ev.totalDia) ? ev.totalDia : (parseFloat(p.monto) || 0);
-    const idForEval = (ev && ev.idPersonal) || p.idPersonal || '';
+    // Vetado: NO recibe pago, NO se audita, NO entra a la liquidación
+    const totalDia = esVetada ? 0 : ((ev && ev.totalDia) ? ev.totalDia : (parseFloat(p.monto) || 0));
+    const idForEval = esVetada ? '' : ((ev && ev.idPersonal) || p.idPersonal || '');
     const fuenteTag = p.fuente === 'AUTO_VENTA' ? '<span class="fin-tag fin-tag-green ml-1" title="Detectado por venta">auto</span>'
                     : p.fuente === 'AUTO_LOGIN' ? '<span class="fin-tag fin-tag-green ml-1" title="Detectado por sesión">auto</span>'
                     : p.fuente === 'AUTO_CAJAS' ? '<span class="fin-tag fin-tag-green ml-1" title="Importado de cajas">auto</span>'
@@ -20041,7 +20073,6 @@ const MOS = (() => {
     const scoreCircle = `<div class="fin-pers-avatar-wrap${ringCls}" style="position:relative;flex-shrink:0;"
       title="${isFresh ? '🟢 ' + act.label : (ultCx ? '⚫ ' + act.label : '')}"
       >${innerScore}${dotPulse}</div>`;
-    const esVetada = !!(p.vetada || p.fuente === 'ELIMINADA');
     const vetadaCls = esVetada ? ' fin-vetada-card' : '';
     const vetadaOverlay = esVetada
       ? `<div class="fin-vetada-overlay">
