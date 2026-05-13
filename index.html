@@ -12072,7 +12072,9 @@
   function _mosStartAutoCd() {
     if (_mosAutoCdActive) return;
     _mosAutoCdActive = true;
-    let secs = 60;
+    // Auto-apply en 8s (antes 60s — muchos users no alcanzaban a ver el
+    // banner y se quedaban en versión vieja durante toda la sesión).
+    let secs = 8;
     const cdNum = document.getElementById('mosUpdateCdNum');
     if (cdNum) cdNum.textContent = secs;
     _mosAutoCdInterval = setInterval(() => {
@@ -12245,8 +12247,14 @@
       window.location.reload();
     });
 
-    // Polling cada 5 min para detectar actualizaciones en segundo plano
-    setInterval(() => _reg?.update().catch(() => {}), 5 * 60 * 1000);
+    // Polling cada 60s para detectar actualizaciones en segundo plano.
+    // Antes era 5 min — ahora más agresivo: el deploy se ve <1 min después.
+    setInterval(() => _reg?.update().catch(() => {}), 60 * 1000);
+
+    // 🧹 Limpiar snooze al cargar: PWA siempre debe actualizarse al iniciar
+    // sesión, no permitir que un snooze viejo bloquee el banner para
+    // siempre. Si el SW realmente no tiene update, no pasa nada.
+    try { localStorage.removeItem('mos_upd_snooze_until'); } catch(_){}
 
   }).catch(e => console.warn('[SW register]', e)).finally(() => {
     MOS.init();

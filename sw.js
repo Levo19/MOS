@@ -27,7 +27,7 @@ _fcmMsg.onBackgroundMessage(payload => {
   });
 });
 
-const VERSION = '2.37.0';
+const VERSION = '2.37.1';
 const CACHE   = 'mos-v' + VERSION;
 const ASSETS  = [
   './',
@@ -42,8 +42,10 @@ const ASSETS  = [
 
 // ── Instalar: cachear secuencial con reporte de progreso ──
 // postMessage al cliente por cada asset → banner muestra barra real.
-// NO skipWaiting automático: queda en 'waiting' para que el banner
-// avise al user antes de aplicar.
+// 🔥 SKIP_WAITING AUTOMÁTICO: la nueva versión activa inmediatamente
+// sin esperar clic del usuario. El banner se mantiene visible (informa
+// al user que va a recargar) y el cliente reacciona a controllerchange
+// para hacer el reload suave.
 self.addEventListener('install', e => {
   e.waitUntil((async () => {
     const cache = await caches.open(CACHE);
@@ -62,6 +64,8 @@ self.addEventListener('install', e => {
       await _broadcast({ type: 'sw-install-progress', done, total, version: VERSION });
     }
     await _broadcast({ type: 'sw-install-done', total, version: VERSION });
+    // Activar inmediato — toma el control al recargar
+    self.skipWaiting();
   })());
 });
 
@@ -76,17 +80,50 @@ self.addEventListener('activate', e => {
   );
 });
 
-// ── Fetch: caché primero, red como fallback ──────────────────
+// ── Fetch: estrategia híbrida ─────────────────────────────────
+//   - Network-first (con timeout 2.5s y fallback cache): HTML, app.js,
+//     api.js, version.json. Garantiza versión fresca SIEMPRE que haya
+//     red. Si red lenta o offline → cache.
+//   - Cache-first: el resto (imágenes, fonts, manifest, etc.).
+// Esto resuelve el "veo versión vieja aunque haya deployado nueva":
+// la próxima vez que abras la app, los archivos críticos vienen frescos.
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
-  // No cachear llamadas externas (GAS, etc.)
   if (url.origin !== self.location.origin) return;
-  // Siempre desde red: version.json y turno.html (se actualizan frecuentemente)
-  if (url.pathname.endsWith('version.json') || url.pathname.endsWith('turno.html') || url.pathname.endsWith('liquidacion.html')) {
-    e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
+
+  const path = url.pathname;
+  const esCritico =
+    path === '/' ||
+    path.endsWith('/') ||
+    path.endsWith('.html') ||
+    path.endsWith('app.js') ||
+    path.endsWith('api.js') ||
+    path.endsWith('version.json');
+
+  if (esCritico) {
+    // Network-first con timeout 2.5s → cache fallback
+    e.respondWith((async () => {
+      try {
+        const netPromise = fetch(e.request);
+        const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 2500));
+        const res = await Promise.race([netPromise, timeout]);
+        if (res && res.status === 200 && res.type !== 'opaque') {
+          const clone = res.clone();
+          caches.open(CACHE).then(c => c.put(e.request, clone)).catch(()=>{});
+        }
+        return res;
+      } catch(_) {
+        const cached = await caches.match(e.request);
+        if (cached) return cached;
+        // Último recurso: intentar red sin timeout
+        return fetch(e.request);
+      }
+    })());
     return;
   }
+
+  // Cache-first para assets estáticos
   e.respondWith(
     caches.match(e.request).then(cached => {
       if (cached) return cached;
