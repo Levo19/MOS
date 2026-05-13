@@ -10148,25 +10148,30 @@
         </div>
       </div>
 
-      <!-- Política de comisión por zona (meta diaria + % sobre excedente) -->
+      <!-- Política de la zona (solo para zonas de VENTA / POS) -->
       <div class="pers-section" style="border-top:1px dashed #1e293b;padding-top:14px;margin-top:14px">
         <div class="pers-section-title" style="display:flex;align-items:center;gap:6px;color:#86efac">
-          <span>💰 Política de comisión</span>
-          <span class="text-[10px] text-slate-500 font-normal normal-case">(meta y comisión sobre lo cobrado)</span>
+          <span>💰 Política de la zona</span>
+          <span class="text-[10px] text-slate-500 font-normal normal-case">(meta cajero + auditorías POS)</span>
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="lbl">Meta diaria (S/)</label>
+            <label class="lbl">Meta venta diaria (S/)</label>
             <input id="zonaMetaDiaria" class="inp" type="number" min="0" step="50" placeholder="1500">
-            <p class="text-[10px] text-slate-500 mt-1">Vacío = usa global de CONFIG_MOS</p>
+            <p class="text-[10px] text-slate-500 mt-1">Sobre lo cobrado del turno</p>
           </div>
           <div>
             <label class="lbl">Comisión sobre excedente (%)</label>
             <input id="zonaComisionPct" class="inp" type="number" min="0" max="100" step="0.5" placeholder="5">
-            <p class="text-[10px] text-slate-500 mt-1">Ej: 5 = 5% del excedente al lograr meta</p>
+            <p class="text-[10px] text-slate-500 mt-1">Solo si se logra la meta</p>
+          </div>
+          <div class="col-span-2">
+            <label class="lbl">Meta auditorías diarias (POS)</label>
+            <input id="zonaMetaAuditorias" class="inp" type="number" min="0" step="1" placeholder="30">
+            <p class="text-[10px] text-slate-500 mt-1">Cantidad de productos que cada cajero/vendedor de esta zona debe auditar por día. Vacío = usa global de CONFIG_MOS.</p>
           </div>
           <div class="col-span-2 text-[11px] text-slate-400 italic p-2 rounded" style="background:rgba(34,197,94,.05);border:1px dashed rgba(34,197,94,.3)">
-            ⓘ La meta se mide sobre lo cobrado (efectivo + virtual + mixto). Crédito y anulado no cuentan. La comisión se reparte proporcional al cobrado por cada vendedor del turno.
+            ⓘ Estos campos aplican a la operación POS (cajeros y vendedores). El almacén tiene sus propias reglas (guías + envasado + auditorías generales) en la sección Operadores.
           </div>
         </div>
       </div>

@@ -11526,7 +11526,7 @@ const MOS = (() => {
   }
 
   function abrirModalZona(id) {
-    ['Id','Nombre','Direccion','Responsable','Desc','MetaDiaria','ComisionPct'].forEach(f => {
+    ['Id','Nombre','Direccion','Responsable','Desc','MetaDiaria','ComisionPct','MetaAuditorias'].forEach(f => {
       const el = $('zona' + f); if (el) el.value = '';
     });
     const estadoWrap = $('zonaEstadoWrap');
@@ -11547,8 +11547,9 @@ const MOS = (() => {
         const pol = z.politicaJSON
           ? (typeof z.politicaJSON === 'string' ? JSON.parse(z.politicaJSON) : z.politicaJSON)
           : {};
-        if (pol.metaDiaria != null)            $('zonaMetaDiaria').value  = String(pol.metaDiaria);
-        if (pol.comisionExcedentePct != null)  $('zonaComisionPct').value = String(pol.comisionExcedentePct);
+        if (pol.metaDiaria != null)            $('zonaMetaDiaria').value      = String(pol.metaDiaria);
+        if (pol.comisionExcedentePct != null)  $('zonaComisionPct').value     = String(pol.comisionExcedentePct);
+        if (pol.metaAuditorias != null)        $('zonaMetaAuditorias').value  = String(pol.metaAuditorias);
       } catch(_){}
       if (tg) tg.checked = String(z.estado) === '1' || z.estado === 1 || z.estado === true;
       if (estadoWrap) estadoWrap.classList.remove('hidden');
@@ -11571,13 +11572,15 @@ const MOS = (() => {
     const idEdit = $('zonaId')?.value || undefined;
     const tg = $('zonaEstadoToggle');
     const estado = idEdit ? (tg && tg.checked ? '1' : '0') : '1';
-    // Construir politicaJSON (meta diaria + comisión sobre excedente).
-    // Si los campos están vacíos, mandar string '' para que use la global.
-    const metaRaw = parseFloat($('zonaMetaDiaria')?.value);
-    const pctRaw  = parseFloat($('zonaComisionPct')?.value);
+    // Construir politicaJSON (meta de venta + % comisión + meta auditorías).
+    // Cada campo vacío se omite del JSON (para distinguir "no configurado").
+    const metaRaw    = parseFloat($('zonaMetaDiaria')?.value);
+    const pctRaw     = parseFloat($('zonaComisionPct')?.value);
+    const metaAudRaw = parseFloat($('zonaMetaAuditorias')?.value);
     const politica = {};
-    if (!isNaN(metaRaw) && metaRaw >= 0)  politica.metaDiaria = metaRaw;
-    if (!isNaN(pctRaw)  && pctRaw  >= 0)  politica.comisionExcedentePct = pctRaw;
+    if (!isNaN(metaRaw)    && metaRaw    >= 0)  politica.metaDiaria            = metaRaw;
+    if (!isNaN(pctRaw)     && pctRaw     >= 0)  politica.comisionExcedentePct  = pctRaw;
+    if (!isNaN(metaAudRaw) && metaAudRaw >= 0)  politica.metaAuditorias        = metaAudRaw;
     const politicaJSON = Object.keys(politica).length ? JSON.stringify(politica) : '';
 
     const params = {
@@ -11823,10 +11826,12 @@ const MOS = (() => {
       try {
         pol = z.politicaJSON ? (typeof z.politicaJSON === 'string' ? JSON.parse(z.politicaJSON) : z.politicaJSON) : {};
       } catch(_){}
-      const meta = parseFloat(pol.metaDiaria);
-      const pct  = parseFloat(pol.comisionExcedentePct);
+      const meta    = parseFloat(pol.metaDiaria);
+      const pct     = parseFloat(pol.comisionExcedentePct);
+      const metaAud = parseFloat(pol.metaAuditorias);
       const hasMeta = !isNaN(meta) && meta > 0;
       const hasPct  = !isNaN(pct)  && pct  >= 0;
+      const hasAud  = !isNaN(metaAud) && metaAud > 0;
       const completa = hasMeta && hasPct;
       const idAttr = String(z.idZona).replace(/'/g, '&#39;');
       return `<div class="flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all hover:scale-[1.01]"
@@ -11835,15 +11840,18 @@ const MOS = (() => {
         <span class="text-base flex-shrink-0">🏬</span>
         <div class="flex-1 min-w-0">
           <div class="text-[12px] font-bold text-amber-100 truncate">${esc(z.nombre || z.idZona)}</div>
-          <div class="flex items-center gap-3 text-[11px] mt-0.5">
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] mt-0.5">
             <span class="${hasMeta ? 'text-amber-300' : 'text-red-400'}">
               <span class="opacity-70">Meta:</span>
               <span class="font-bold">${hasMeta ? 'S/ ' + meta.toFixed(0) : 'sin configurar'}</span>
             </span>
-            <span class="text-slate-500">·</span>
             <span class="${hasPct ? 'text-emerald-300' : 'text-red-400'}">
               <span class="opacity-70">Comisión:</span>
               <span class="font-bold">${hasPct ? pct + '%' : 'sin configurar'}</span>
+            </span>
+            <span class="${hasAud ? 'text-sky-300' : 'text-slate-500'}">
+              <span class="opacity-70">Auditorías:</span>
+              <span class="font-bold">${hasAud ? metaAud.toFixed(0) + '/día' : 'global'}</span>
             </span>
           </div>
         </div>
@@ -11966,7 +11974,7 @@ const MOS = (() => {
         <div class="flex flex-wrap gap-1.5">
           ${_renderMetaChip('Meta guías', 'evalMetaAlmacenero', metaAlmacenero, '/día', '#ea580c')}
           ${_renderMetaChip('Meta envasado', 'evalMetaEnvasador', metaEnvasador, 'uds', '#fb923c')}
-          ${_renderMetaChip('Meta auditorías', 'evalMetaAuditorias', metaAuditorias, '/día', '#fbbf24')}
+          ${_renderMetaChip('Auditorías almacén', 'evalMetaAuditorias', metaAuditorias, '/día', '#fbbf24')}
         </div>
         <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalPersonal(null,'warehouseMos')">+ operador</button>
       </div>

@@ -603,13 +603,8 @@ function datosTurno(params) {
       pTotal:     pTotal,
       impresoras:  impresoras,
       auditorias:  auditorias,
-      // Lee la meta real de CONFIG_MOS.evalMetaAuditorias (default 30 como antes)
-      metaAudit:   (function(){
-        try {
-          var r = _sheetToObjects(getSheet('CONFIG_MOS')).find(function(c){ return c.clave === 'evalMetaAuditorias'; });
-          return r && parseFloat(r.valor) > 0 ? parseFloat(r.valor) : 30;
-        } catch(_) { return 30; }
-      })(),
+      // Meta de auditorías: zona (politicaJSON.metaAuditorias) → fallback global
+      metaAudit:   policy.metaAuditorias,
       meta:        metaInfo,
       totales: {
         efectivo:             tEfectivo,
@@ -1003,15 +998,9 @@ function imprimirTicketZCierre(params) {
 
   // PARTE 8b: AUDITORÍAS DEL DÍA
   var auditMapZ = {};
-  // Meta de auditorías ahora viene de CONFIG_MOS (evalMetaAuditorias).
-  // Antes era hardcoded 30; permitía que turno.html y ticket Z mostraran
-  // valores distintos al usado por la evaluación interna.
-  var META_Z    = (function(){
-    try {
-      var r = _sheetToObjects(getSheet('CONFIG_MOS')).find(function(c){ return c.clave === 'evalMetaAuditorias'; });
-      return r && parseFloat(r.valor) > 0 ? parseFloat(r.valor) : 30;
-    } catch(_) { return 30; }
-  })();
+  // Meta de auditorías: política de la zona (politicaJSON.metaAuditorias) con
+  // fallback a CONFIG_MOS.evalMetaAuditorias si la zona no la configuró.
+  var META_Z = policyZ.metaAuditorias;
   var auditSheetZ = ss.getSheetByName('AUDITORIAS');
   if (auditSheetZ && caja.fechaDia) {
     var auditDataZ = auditSheetZ.getDataRange().getValues();

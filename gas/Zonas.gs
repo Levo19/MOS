@@ -70,7 +70,7 @@ function actualizarZona(params) {
 // meta válida, retorna configurada:false para que UI muestre "FALTA
 // CONFIGURAR" en lugar de heredar un valor por defecto confuso.
 function _resolverPoliticaZona(idZona) {
-  var meta = 0, pct = 0, configurada = false;
+  var meta = 0, pct = 0, metaAud = 0, configurada = false;
   if (idZona) {
     try {
       _garantizarColPoliticaZona();
@@ -80,14 +80,18 @@ function _resolverPoliticaZona(idZona) {
         var raw = String(z.politicaJSON || '').trim();
         if (raw) {
           var pol = JSON.parse(raw);
-          if (pol && parseFloat(pol.metaDiaria) > 0)             meta = parseFloat(pol.metaDiaria);
-          if (pol && parseFloat(pol.comisionExcedentePct) >= 0)  pct  = parseFloat(pol.comisionExcedentePct);
+          if (pol && parseFloat(pol.metaDiaria) > 0)             meta    = parseFloat(pol.metaDiaria);
+          if (pol && parseFloat(pol.comisionExcedentePct) >= 0)  pct     = parseFloat(pol.comisionExcedentePct);
+          if (pol && parseFloat(pol.metaAuditorias) > 0)         metaAud = parseFloat(pol.metaAuditorias);
           if (meta > 0)                                          configurada = true;
         }
       }
     } catch(_) {}
   }
-  return { metaDiaria: meta, comisionExcedentePct: pct, configurada: configurada };
+  // metaAuditorias: SIN fallback al global. evalMetaAuditorias es para
+  // almacén, no para POS. Si la zona no la tiene → metaAud = 0 (el UI
+  // mostrará "sin configurar" igual que para meta de venta).
+  return { metaDiaria: meta, comisionExcedentePct: pct, metaAuditorias: metaAud, configurada: configurada };
 }
 
 // Helper interno: setea (o crea) una clave en CONFIG_MOS
