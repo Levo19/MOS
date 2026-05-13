@@ -21226,68 +21226,95 @@ const MOS = (() => {
     if (!cont) return;
     if (!list || !list.length) {
       cont.innerHTML = `<div class="text-center text-xs text-slate-500 py-8">
-        ⚠ No hay impresoras disponibles en PrintNode.
+        <div class="text-3xl mb-2 opacity-50">🖨</div>
+        No hay impresoras registradas en el catálogo MOS.<br>
+        <span class="text-[10px]">Configúralas en Infraestructura → Impresoras.</span>
       </div>`;
       return;
     }
-    // Agrupación intuitiva:
-    // 1° por zona del catálogo (idZona si está registrada en IMPRESORAS)
-    // 2° por app si no tiene zona
-    // 3° "No registradas" para impresoras detectadas pero sin row en IMPRESORAS
-    const grupos = {};
+    // Agrupación: 📍 Zona (nombre) → 🏷 Estación (nombre) → impresoras
+    // Solo viene catálogo activo (filtrado en backend).
+    const zonas = {}; // { zonaKey: { label, estaciones: { estKey: { label, printers[] } }, sinEst: [] } }
     list.forEach(p => {
-      let key, label, prio;
-      if (p.registrada && p.idZona) {
-        key = 'zona:' + p.idZona;
-        label = '📍 Zona ' + p.idZona;
-        prio = 1;
-      } else if (p.registrada && p.appOrigen) {
-        const app = p.appOrigen;
-        key = 'app:' + app;
-        label = (app === 'mosExpress' ? '🛒 MosExpress'
-              : app === 'warehouseMos' ? '🏭 warehouseMos'
-              : app === 'mos' ? '🎯 MOS' : ('· ' + app));
-        prio = 2;
+      const zonaKey = p.idZona || '_sin_zona';
+      const zonaLbl = p.zonaNombre || p.idZona || '(sin zona)';
+      if (!zonas[zonaKey]) zonas[zonaKey] = { label: zonaLbl, estaciones: {}, sinEst: [] };
+      if (p.idEstacion) {
+        const estKey = p.idEstacion;
+        const estLbl = p.estacionNombre || p.idEstacion;
+        if (!zonas[zonaKey].estaciones[estKey]) {
+          zonas[zonaKey].estaciones[estKey] = { label: estLbl, printers: [] };
+        }
+        zonas[zonaKey].estaciones[estKey].printers.push(p);
       } else {
-        key = 'sinreg';
-        label = '⚙ Sin registrar en catálogo MOS';
-        prio = 9;
+        zonas[zonaKey].sinEst.push(p);
       }
-      if (!grupos[key]) grupos[key] = { label, prio, printers: [] };
-      grupos[key].printers.push(p);
     });
-    const html = Object.keys(grupos)
-      .sort((a,b) => grupos[a].prio - grupos[b].prio || grupos[a].label.localeCompare(grupos[b].label))
-      .map(k => {
-        const g = grupos[k];
-        const items = g.printers
-          .sort((a,b) => (b.online?1:0) - (a.online?1:0) || String(a.nombre||'').localeCompare(String(b.nombre||'')))
-          .map((p, idx) => {
-            const offClass = p.online ? '' : 'opacity-60';
-            const dotCls = p.online ? 'printer-dot-online' : '';
-            const dotColor = p.online ? '#34d399' : '#f87171';
-            const offTag = p.online
-              ? '<span class="text-[9px] text-emerald-400 ml-1 font-semibold">online</span>'
-              : '<span class="text-[9px] text-rose-400 ml-1">offline</span>';
-            const meta = [
-              p.nombreCatalogo,
-              p.idEstacion ? '· ' + p.idEstacion : '',
-              p.computer ? '· ' + p.computer : ''
-            ].filter(Boolean).join(' ');
-            return `<button onclick="MOS._liqEnviarPrint(${p.id}, this, event)"
-                            class="printer-card btn-ripple w-full text-left rounded-lg p-2 ${offClass}"
-                            style="background:linear-gradient(135deg,#060d1f,#0a1428);border:1px solid #1e293b;animation: checklistItemIn .35s cubic-bezier(.34,1.56,.64,1) backwards; animation-delay:${idx*45}ms">
-              <div class="flex items-center gap-2">
-                <span class="${dotCls}" style="width:10px;height:10px;border-radius:999px;background:${dotColor};box-shadow:0 0 8px ${dotColor}"></span>
-                <span class="text-sm text-slate-200 font-medium flex-1">${p.nombre}</span>
-                ${offTag}
+
+    const pCard = (p, idx) => {
+      const offClass = p.online ? '' : 'opacity-60';
+      const dotCls = p.online ? 'printer-dot-online' : '';
+      const dotColor = p.online ? '#34d399' : '#f87171';
+      const offTag = p.online
+        ? '<span class="text-[9px] text-emerald-400 ml-1 font-semibold">online</span>'
+        : '<span class="text-[9px] text-rose-400 ml-1">offline</span>';
+      // Línea sub: tipo · nombre PrintNode crudo · PC
+      const tipoIco = p.tipo === 'ADHESIVO' ? '🏷' : '🧾';
+      const subMeta = [
+        tipoIco + ' ' + (p.tipo || 'TICKET'),
+        p.nombrePN && p.nombrePN !== p.nombre ? '· ' + p.nombrePN : '',
+        p.computer ? '· 💻 ' + p.computer : ''
+      ].filter(Boolean).join(' ');
+      return `<button onclick="MOS._liqEnviarPrint(${p.id}, this, event)"
+                      class="printer-card btn-ripple w-full text-left rounded-lg p-2 ${offClass}"
+                      style="background:linear-gradient(135deg,#060d1f,#0a1428);border:1px solid #1e293b;
+                             animation: checklistItemIn .35s cubic-bezier(.34,1.56,.64,1) backwards;
+                             animation-delay:${idx*40}ms">
+        <div class="flex items-center gap-2">
+          <span class="${dotCls}" style="width:10px;height:10px;border-radius:999px;background:${dotColor};box-shadow:0 0 8px ${dotColor}"></span>
+          <span class="text-sm text-slate-100 font-semibold flex-1">${p.nombre}</span>
+          ${offTag}
+        </div>
+        ${subMeta ? `<div class="text-[10px] text-slate-500 mt-1 pl-4">${subMeta}</div>` : ''}
+      </button>`;
+    };
+
+    const html = Object.keys(zonas)
+      .sort((a,b) => zonas[a].label.localeCompare(zonas[b].label))
+      .map(zk => {
+        const z = zonas[zk];
+        // Estaciones de esta zona, ordenadas alfabéticamente
+        let printerIdx = 0;
+        const estHtml = Object.keys(z.estaciones)
+          .sort((a,b) => z.estaciones[a].label.localeCompare(z.estaciones[b].label))
+          .map(ek => {
+            const e = z.estaciones[ek];
+            const items = e.printers
+              .sort((a,b) => (b.online?1:0) - (a.online?1:0) || String(a.nombre||'').localeCompare(String(b.nombre||'')))
+              .map(p => pCard(p, printerIdx++))
+              .join('');
+            return `<div class="mb-2">
+              <div class="text-[10px] font-semibold tracking-wider text-amber-400/70 mb-1 pl-1 flex items-center gap-1">
+                <span>🏷</span><span>${e.label}</span>
+                <span class="text-[9px] text-slate-600 ml-auto">${e.printers.length} imp.</span>
               </div>
-              ${meta ? `<div class="text-[10px] text-slate-500 mt-0.5 pl-4">${meta}</div>` : ''}
-            </button>`;
+              <div class="space-y-1">${items}</div>
+            </div>`;
           }).join('');
-        return `<div>
-          <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 px-1">${g.label}</div>
-          <div class="space-y-1">${items}</div>
+        // Impresoras de la zona sin estación asignada
+        const sinEstHtml = z.sinEst.length ? `<div class="mb-2">
+          <div class="text-[10px] font-semibold tracking-wider text-slate-500 mb-1 pl-1">
+            (sin estación asignada)
+          </div>
+          <div class="space-y-1">${z.sinEst.sort((a,b) => (b.online?1:0) - (a.online?1:0)).map(p => pCard(p, printerIdx++)).join('')}</div>
+        </div>` : '';
+
+        return `<div class="rounded-lg p-2"
+                     style="background:rgba(251,191,36,.03);border:1px solid rgba(251,191,36,.12)">
+          <div class="text-[11px] font-bold uppercase tracking-wider text-amber-300 mb-2 px-1 flex items-center gap-1">
+            <span>📍</span><span>${z.label}</span>
+          </div>
+          ${estHtml}${sinEstHtml}
         </div>`;
       }).join('');
     cont.innerHTML = html;

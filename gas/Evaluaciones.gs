@@ -954,46 +954,69 @@ function listarImpresorasPN() {
     return { ok: false, error: 'PrintNode fetch fallo: ' + e.message };
   }
 
-  // Cruzar con IMPRESORAS (catálogo MOS) para metadata enriquecida
+  // Cruzar con IMPRESORAS (catálogo MOS) + ZONAS + ESTACIONES para
+  // metadata enriquecida + nombres legibles de zona/estación.
   var meta = {};
   try {
     var rows = _sheetToObjects(getSheet('IMPRESORAS'));
     rows.forEach(function(r){
       var pid = String(r.printNodeId || '').trim();
       if (!pid) return;
+      var act = String(r.activo) === '1' || String(r.activo).toLowerCase() === 'true';
+      if (!act) return; // solo impresoras activas en el catálogo
       meta[pid] = {
         nombreCatalogo: String(r.nombre || ''),
         idEstacion:     String(r.idEstacion || ''),
         idZona:         String(r.idZona || ''),
         appOrigen:      String(r.appOrigen || ''),
         tipo:           String(r.tipo || 'TICKET'),
-        activo:         String(r.activo) === '1' || String(r.activo).toLowerCase() === 'true',
         descripcion:    String(r.descripcion || '')
       };
     });
   } catch(_){}
 
-  var data = pnList.map(function(p){
-    var pid = String(p.id);
-    var m = meta[pid] || null;
-    var compName = '';
-    try {
-      compName = (p.computer && p.computer.name) ? String(p.computer.name) : '';
-    } catch(_){}
-    return {
-      id:           parseInt(pid, 10),
-      nombre:       String(p.name || ''),
-      computer:     compName,
-      online:       String(p.state || '').toLowerCase() === 'online',
-      // Metadata desde el catálogo IMPRESORAS (puede ser null si no registrada)
-      registrada:   !!m,
-      nombreCatalogo: m ? m.nombreCatalogo : '',
-      idEstacion:   m ? m.idEstacion : '',
-      idZona:       m ? m.idZona : '',
-      appOrigen:    m ? m.appOrigen : '',
-      tipo:         m ? m.tipo : ''
-    };
-  });
+  // Lookups de nombres (zona + estación) para etiquetas friendly
+  var zonaNom = {};
+  try {
+    _sheetToObjects(getSheet('ZONAS')).forEach(function(z){
+      zonaNom[String(z.idZona)] = String(z.nombre || z.idZona);
+    });
+  } catch(_){}
+  var estNom = {};
+  try {
+    _sheetToObjects(getSheet('ESTACIONES')).forEach(function(e){
+      estNom[String(e.idEstacion)] = String(e.nombre || e.idEstacion);
+    });
+  } catch(_){}
+
+  // FILTRO: solo impresoras del catálogo MOS (descartar virtuales tipo
+  // Microsoft Print to PDF, OneNote, impresoras de otras PCs sin
+  // registrar en IMPRESORAS, etc.). Esto evita confusión al admin.
+  var data = pnList
+    .map(function(p){
+      var pid = String(p.id);
+      var m = meta[pid];
+      if (!m) return null; // descartar
+      var compName = '';
+      try { compName = (p.computer && p.computer.name) ? String(p.computer.name) : ''; } catch(_){}
+      return {
+        id:             parseInt(pid, 10),
+        nombrePN:       String(p.name || ''),  // nombre crudo PrintNode (subtítulo)
+        nombre:         m.nombreCatalogo || String(p.name || ''), // friendly del catálogo
+        nombreCatalogo: m.nombreCatalogo,
+        computer:       compName,
+        online:         String(p.state || '').toLowerCase() === 'online',
+        registrada:     true,
+        idEstacion:     m.idEstacion,
+        estacionNombre: estNom[m.idEstacion] || m.idEstacion || '',
+        idZona:         m.idZona,
+        zonaNombre:     zonaNom[m.idZona] || m.idZona || '',
+        appOrigen:      m.appOrigen,
+        tipo:           m.tipo
+      };
+    })
+    .filter(function(x){ return x !== null; });
+
   return { ok: true, data: data };
 }
 
