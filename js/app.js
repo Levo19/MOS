@@ -11525,6 +11525,16 @@ const MOS = (() => {
     sub.textContent = nom ? (activo ? '🟢 activa' : '🔴 inactiva') + ' · zona' : 'Punto de venta físico';
   }
 
+  // ¿Es la zona de almacén? Detección heurística por id o nombre.
+  // El almacén usa configuración global, no por zona — así que el modal
+  // oculta la sección "Política de la zona" para evitar confusión.
+  function _esZonaAlmacen(z) {
+    if (!z) return false;
+    const id = String(z.idZona || '').toUpperCase();
+    const nm = String(z.nombre || '').toUpperCase();
+    return id === 'ALMACEN' || id === 'ALMACÉN' || nm.indexOf('ALMACEN') >= 0 || nm.indexOf('ALMACÉN') >= 0;
+  }
+
   function abrirModalZona(id) {
     ['Id','Nombre','Direccion','Responsable','Desc','MetaDiaria','ComisionPct','MetaAuditorias'].forEach(f => {
       const el = $('zona' + f); if (el) el.value = '';
@@ -11562,6 +11572,39 @@ const MOS = (() => {
       if (estadoWrap) estadoWrap.classList.add('hidden');
       if (btnElim)    btnElim.classList.add('hidden');
     }
+
+    // Si es la zona de almacén, ocultar sección "Política de la zona" y
+    // mostrar nota — su configuración va en CONFIG_MOS (chips de Operadores).
+    const z2 = id ? cfgData.zonas.find(x => x.idZona === id) : null;
+    const esAlmacen = _esZonaAlmacen(z2 || { idZona: id });
+    const seccionPolitica = document.querySelector('#modalZona .pers-section:has(#zonaMetaDiaria)');
+    let notaAlmacen = document.getElementById('zonaNotaAlmacen');
+    if (esAlmacen) {
+      if (seccionPolitica) seccionPolitica.style.display = 'none';
+      if (!notaAlmacen) {
+        notaAlmacen = document.createElement('div');
+        notaAlmacen.id = 'zonaNotaAlmacen';
+        notaAlmacen.className = 'pers-section';
+        notaAlmacen.style.cssText = 'border-top:1px dashed #1e293b;padding-top:14px;margin-top:14px';
+        notaAlmacen.innerHTML = `
+          <div class="pers-section-title" style="display:flex;align-items:center;gap:6px;color:#fbbf24">
+            <span>🏭 Zona de almacén</span>
+          </div>
+          <div class="text-[11px] text-slate-400 p-3 rounded leading-relaxed" style="background:rgba(251,191,36,.05);border:1px dashed rgba(251,191,36,.3)">
+            <p>Esta zona es operativa del almacén central. No tiene meta de venta diaria ni comisión porque <b>aquí no se vende</b>.</p>
+            <p class="mt-2">La configuración del almacén (tarifa de envasado + meta de auditorías) es <b>global</b> en CONFIG_MOS. Edítala desde:</p>
+            <p class="mt-1 text-amber-400 font-bold">Configuración → Personal → sección "Operadores Almacén" (chips arriba a la derecha).</p>
+          </div>`;
+        const body = document.querySelector('#modalZona .overflow-y-auto');
+        if (body) body.appendChild(notaAlmacen);
+      } else {
+        notaAlmacen.style.display = '';
+      }
+    } else {
+      if (seccionPolitica) seccionPolitica.style.display = '';
+      if (notaAlmacen) notaAlmacen.style.display = 'none';
+    }
+
     _zonaActualizarPreview();
     openModal('modalZona');
   }
@@ -11812,7 +11855,13 @@ const MOS = (() => {
   // Reemplaza el chip global confuso. Cada zona se edita aparte abriendo
   // su modal de edición. Si no tiene política configurada → badge ⚠.
   function _renderMetasPorZona() {
-    const zonas = (cfgData.zonas || []).filter(z => String(z.estado) === '1' || z.estado === 1 || z.estado === true);
+    // Excluir zonas de almacén — no tienen política de venta. Sus reglas
+    // (tarifa envasado + meta auditorías) viven en CONFIG_MOS global y se
+    // editan desde la sección "Operadores Almacén".
+    const zonas = (cfgData.zonas || []).filter(z => {
+      const activa = String(z.estado) === '1' || z.estado === 1 || z.estado === true;
+      return activa && !_esZonaAlmacen(z);
+    });
     if (!zonas.length) {
       return `<div class="p-3 mb-3 rounded-lg text-[12px] text-slate-500 italic text-center"
                    style="background:#0a1424;border:1px dashed #334155">
@@ -11914,6 +11963,7 @@ const MOS = (() => {
     const metaEnvasador  = cfg.evalMetaEnvasador  || '';
     const metaAlmacenero = cfg.evalMetaAlmacenero || '';
     const metaAuditorias = cfg.evalMetaAuditorias || '';
+    const tarifaEnvasado = cfg.evalTarifaEnvasadoPorUnidad != null ? cfg.evalTarifaEnvasadoPorUnidad : '0.10';
 
     // ── Grupo 1: ADMIN/MASTER (MOS) ─────
     const grupoMOS = `<div class="card p-4" style="background:linear-gradient(135deg,#1e1b4b 0%,#0d1526 100%);border:1px solid #6366f1;">
@@ -11973,7 +12023,7 @@ const MOS = (() => {
         </div>
         <div class="flex flex-wrap gap-1.5">
           ${_renderMetaChip('Meta guías', 'evalMetaAlmacenero', metaAlmacenero, '/día', '#ea580c')}
-          ${_renderMetaChip('Meta envasado', 'evalMetaEnvasador', metaEnvasador, 'uds', '#fb923c')}
+          ${_renderMetaChip('Tarifa envasado', 'evalTarifaEnvasadoPorUnidad', tarifaEnvasado, 'S/und', '#10b981')}
           ${_renderMetaChip('Auditorías almacén', 'evalMetaAuditorias', metaAuditorias, '/día', '#fbbf24')}
         </div>
         <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalPersonal(null,'warehouseMos')">+ operador</button>

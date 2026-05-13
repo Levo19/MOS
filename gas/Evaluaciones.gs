@@ -40,6 +40,9 @@ function _getEvalConfig() {
     metaAuditorias:  parseFloat(cfg.evalMetaAuditorias  || 30),
     bonoMetaBase:    parseFloat(cfg.evalBonoMetaBase    || 8),
     bonoMetaDoble:   parseFloat(cfg.evalBonoMetaDoble   || 15),
+    // Tarifa por unidad envasada — aplica a ENVASADOR (único pago) y a
+    // ALMACENERO (pago extra si decide envasar además de sus tareas).
+    tarifaEnvasadoPorUnidad: parseFloat(cfg.evalTarifaEnvasadoPorUnidad || 0.10),
     pesoVentas:     parseFloat(cfg.evalPesoVentas     || 30) / 100,
     pesoAuditoria:  parseFloat(cfg.evalPesoAudit      || 20) / 100,
     pesoLimpieza:   parseFloat(cfg.evalPesoLimp       || 15) / 100,
@@ -331,14 +334,15 @@ function getResumenDia(params) {
   var montoBase  = parseFloat(p.montoBase) || 0;
   var bonusScore = aplicaComision ? (montoBase * bonusPctScore / 100) : 0;
 
-  // Bono por meta: para POS usa la meta efectiva que ya resolvió KPIs
-  // (kpis.metaVenta proviene de politicaJSON.metaDiaria de su zona principal).
+  // Bono por meta: para POS usa la meta efectiva (kpis.metaVenta de la
+  // zona principal). ENVASADOR NO tiene bono por meta — solo pago por
+  // unidad envasada. ALMACENERO sí mantiene bono por meta de guías.
   var bonoMeta = 0, metaPct = 0;
   if (aplicaBonoMeta) {
     var meta = 0, real = 0;
     if (p.rol === 'CAJERO' || p.rol === 'VENDEDOR') { meta = kpis.metaVenta || cfg.metaCajero; real = kpis.ventasReales; }
-    else if (p.rol === 'ENVASADOR')                  { meta = cfg.metaEnvasador;               real = kpis.envasados; }
     else if (p.rol === 'ALMACENERO')                 { meta = cfg.metaAlmacenero;              real = kpis.guias; }
+    // ENVASADOR: sin bono. Su pago es solo unidades × tarifa
     if (meta > 0) {
       metaPct = Math.round((real / meta) * 1000) / 10;
       if (real >= meta * 2) bonoMeta = cfg.bonoMetaDoble;
@@ -346,15 +350,27 @@ function getResumenDia(params) {
     }
   }
 
-  // Lógica de pago:
-  // - Si trabajó ese día (presente) → cobra montoBase si o sí
-  // - Si además fue auditado → suma bonus + meta
-  // - Si no trabajó → 0 (no cobra nada)
+  // Pago por envasado (aplica a ENVASADOR siempre y ALMACENERO cuando
+  // también envasa). Suma directo al total del día. Es independiente
+  // del bono/auditoría (cobra aunque no haya sido auditado).
+  var pagoEnvasado = 0;
+  if (p.rol === 'ENVASADOR' || p.rol === 'ALMACENERO') {
+    pagoEnvasado = Math.round((parseFloat(kpis.envasados) || 0) * cfg.tarifaEnvasadoPorUnidad * 100) / 100;
+  }
+
+  // Lógica de pago por rol:
+  // - ENVASADOR: solo pago por envasado (sin base diaria, sin bono)
+  // - ALMACENERO + otros: base diaria + bono score + bono meta + envasado
+  //   - Base diaria: solo si presente
+  //   - Bonos: solo si presente Y auditado
+  //   - Envasado: solo si presente (es por trabajo real)
   var presente = _estaPresente(p, fecha);
   var auditado = evals.length > 0;
-  var baseEfectiva  = presente ? montoBase : 0;
-  var bonusEfectivo = (presente && auditado) ? bonusScore : 0;
-  var metaEfectivo  = (presente && auditado) ? bonoMeta   : 0;
+  var esEnvasadorPuro = (p.rol === 'ENVASADOR');
+  var baseEfectiva  = (presente && !esEnvasadorPuro) ? montoBase : 0;
+  var bonusEfectivo = (presente && auditado && !esEnvasadorPuro) ? bonusScore : 0;
+  var metaEfectivo  = (presente && auditado && !esEnvasadorPuro) ? bonoMeta   : 0;
+  var envasadoEfectivo = presente ? pagoEnvasado : 0;
 
   return {
     ok: true,
@@ -382,9 +398,12 @@ function getResumenDia(params) {
       bonusScore:    Math.round(bonusEfectivo * 100) / 100,
       bonoMeta:      metaEfectivo,
       metaPct:       metaPct,
+      pagoEnvasado:  Math.round(envasadoEfectivo * 100) / 100,  // nuevo
+      tarifaEnvasado: cfg.tarifaEnvasadoPorUnidad,                // info: cuánto S/uds
+      unidadesEnvasadas: parseFloat(kpis.envasados) || 0,
       montoBase:     baseEfectiva,
       tarifaDiaria:  montoBase, // tarifa configurada (info)
-      totalDia:      Math.round((baseEfectiva + bonusEfectivo + metaEfectivo) * 100) / 100,
+      totalDia:      Math.round((baseEfectiva + bonusEfectivo + metaEfectivo + envasadoEfectivo) * 100) / 100,
       aplicaComision: aplicaComision,
       aplicaBonoMeta: aplicaBonoMeta
     }
