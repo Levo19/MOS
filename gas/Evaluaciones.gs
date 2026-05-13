@@ -918,3 +918,316 @@ function cerrarSemanaAutomatico() {
     Logger.log('cerrarSemanaAutomatico error: ' + e.message);
   }
 }
+
+// ============================================================
+// ── IMPRESIÓN DE LIQUIDACIÓN INDIVIDUAL (80mm · PrintNode) ───
+// Llamado desde el modal Auditar de MOS, botón "🖨 Imprimir".
+// Imprime un resumen profesional del día con todos los KPIs +
+// checklist + sanciones + total liquidado. Útil para que el
+// empleado se lleve su comprobante al cerrar turno.
+// ============================================================
+
+// Listar impresoras de PrintNode disponibles. Cruza con la hoja
+// IMPRESORAS para anotar zona/estación/app a cada printer físico
+// (cuando coincide el printNodeId), para que el frontend pueda
+// agruparlas de forma intuitiva.
+function listarImpresorasPN() {
+  var pnKey;
+  try {
+    pnKey = PropertiesService.getScriptProperties().getProperty('PRINTNODE_API_KEY');
+  } catch(_){}
+  if (!pnKey) return { ok: false, error: 'PRINTNODE_API_KEY no configurado en Script Properties de ProyectoMOS' };
+
+  var pnList;
+  try {
+    var resp = UrlFetchApp.fetch('https://api.printnode.com/printers', {
+      method: 'get',
+      headers: { 'Authorization': 'Basic ' + Utilities.base64Encode(pnKey + ':') },
+      muteHttpExceptions: true
+    });
+    var code = resp.getResponseCode();
+    if (code !== 200) return { ok: false, error: 'PrintNode HTTP ' + code + ': ' + resp.getContentText().substring(0, 200) };
+    pnList = JSON.parse(resp.getContentText() || '[]');
+  } catch(e) {
+    return { ok: false, error: 'PrintNode fetch fallo: ' + e.message };
+  }
+
+  // Cruzar con IMPRESORAS (catálogo MOS) para metadata enriquecida
+  var meta = {};
+  try {
+    var rows = _sheetToObjects(getSheet('IMPRESORAS'));
+    rows.forEach(function(r){
+      var pid = String(r.printNodeId || '').trim();
+      if (!pid) return;
+      meta[pid] = {
+        nombreCatalogo: String(r.nombre || ''),
+        idEstacion:     String(r.idEstacion || ''),
+        idZona:         String(r.idZona || ''),
+        appOrigen:      String(r.appOrigen || ''),
+        tipo:           String(r.tipo || 'TICKET'),
+        activo:         String(r.activo) === '1' || String(r.activo).toLowerCase() === 'true',
+        descripcion:    String(r.descripcion || '')
+      };
+    });
+  } catch(_){}
+
+  var data = pnList.map(function(p){
+    var pid = String(p.id);
+    var m = meta[pid] || null;
+    var compName = '';
+    try {
+      compName = (p.computer && p.computer.name) ? String(p.computer.name) : '';
+    } catch(_){}
+    return {
+      id:           parseInt(pid, 10),
+      nombre:       String(p.name || ''),
+      computer:     compName,
+      online:       String(p.state || '').toLowerCase() === 'online',
+      // Metadata desde el catálogo IMPRESORAS (puede ser null si no registrada)
+      registrada:   !!m,
+      nombreCatalogo: m ? m.nombreCatalogo : '',
+      idEstacion:   m ? m.idEstacion : '',
+      idZona:       m ? m.idZona : '',
+      appOrigen:    m ? m.appOrigen : '',
+      tipo:         m ? m.tipo : ''
+    };
+  });
+  return { ok: true, data: data };
+}
+
+// Compat: alias para frontend que use camelCase legacy
+function getPrintNodePrinters() { return listarImpresorasPN(); }
+
+// Construye el ticket 80mm (~48 chars) y lo manda a PrintNode.
+// Reusa getResumenDia para hidratar todos los KPIs + bonos + sanción del día.
+//
+// params: { idPersonal, fecha, printerId, comentarioExtra? }
+function imprimirLiquidacionDia(params) {
+  if (!params || !params.idPersonal) return { ok: false, error: 'Requiere idPersonal' };
+  if (!params.printerId)             return { ok: false, error: 'Requiere printerId' };
+
+  var fecha = params.fecha || _hoy();
+  var resR = getResumenDia({ idPersonal: params.idPersonal, fecha: fecha });
+  if (!resR || !resR.ok) return { ok: false, error: (resR && resR.error) || 'No se pudo obtener resumen' };
+  var r = resR.data;
+
+  // ── Helpers de formato (mismos que tickets de cierre Z) ──
+  var W = 48;
+  function _rep(ch, n)  { var s=''; for (var i=0;i<n;i++) s+=ch; return s; }
+  function _pEnd(s, w)  { s=String(s||'').substring(0,w); while(s.length<w) s+=' '; return s; }
+  function _pSt(s, w)   { s=String(s||''); while(s.length<w) s=' '+s; return s; }
+  function _amtP(n, w)  { return _pSt('S/'+(parseFloat(n)||0).toFixed(2), w); }
+  function _amtN(n, w)  { var v=parseFloat(n)||0; return _pSt((v<0?'-':' ')+'S/'+Math.abs(v).toFixed(2), w); }
+  function _norm(s)     { return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^\x20-\x7E]/g,'?'); }
+  function _center(s)   { var n=_norm(s); var l=Math.floor((W-n.length)/2); return _rep(' ',Math.max(0,l))+n+'\n'; }
+  function _sHdr(t)     { var s=' '+t+' '; var l=Math.floor((W-s.length)/2); return _rep('=',Math.max(0,l))+s+_rep('=',Math.max(0,W-s.length-l))+'\n'; }
+  function _bar(pct)    { var f=Math.round((parseFloat(pct)||0)*26/100); if(f<0)f=0; if(f>26)f=26; return '  ['+_rep('#',f)+_rep('-',26-f)+'] '+_pSt(String(Math.round(parseFloat(pct)||0)),3)+'%\n'; }
+
+  var SEP  = _rep('=', W) + '\n';
+  var SEPd = _rep('-', W) + '\n';
+  var rolU = String(r.rol || '').toUpperCase();
+  var esPos = (rolU === 'CAJERO' || rolU === 'VENDEDOR');
+  var esAlm = (rolU === 'ALMACENERO' || rolU === 'ENVASADOR');
+
+  var txt = '';
+  // ── HEADER ─────────────────────────────────────────────────
+  txt += '\x1b\x40';                       // init
+  txt += '\x1b\x61\x01';                   // center
+  txt += '\x1b\x21\x30';                   // double height+width
+  txt += _norm('LIQUIDACION DEL DIA') + '\n';
+  txt += '\x1b\x21\x00';                   // reset
+  txt += _norm('ProyectoMOS · Personal') + '\n';
+  txt += '\x1b\x61\x00';                   // left
+  txt += SEP;
+
+  txt += _pEnd('FECHA', 12)     + ': ' + fecha + '\n';
+  txt += _pEnd('HORA',  12)     + ': ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'HH:mm:ss') + '\n';
+  txt += _pEnd('PERSONAL', 12)  + ': ' + _norm(r.nombre) + '\n';
+  txt += _pEnd('ROL', 12)       + ': ' + _norm(r.rol || '') + '\n';
+  txt += _pEnd('ID', 12)        + ': ' + _norm(r.idPersonal) + '\n';
+  if (r.kpis && r.kpis.zonaPrincipal) {
+    txt += _pEnd('ZONA', 12)    + ': ' + _norm(r.kpis.zonaPrincipal) + '\n';
+  }
+  txt += _pEnd('PRESENTE', 12)  + ': ' + (r.presente ? 'SI' : 'NO') + '\n';
+  txt += _pEnd('AUDITADO', 12)  + ': ' + (r.auditado ? (r.evaluacionesCount + 'x hoy') : 'NO') + '\n';
+  txt += SEP;
+
+  // ── PUNTO 1+2: KPIs por rol ───────────────────────────────
+  txt += _sHdr('LOGROS DEL DIA');
+  if (esPos) {
+    var metaV  = parseFloat(r.kpis.metaVenta) || 0;
+    var realV  = parseFloat(r.kpis.ventasReales) || 0;
+    var pctV   = metaV > 0 ? Math.min(100, realV/metaV*100) : 0;
+    txt += 'META DE VENTA (zona)\n';
+    if (metaV > 0) {
+      txt += '  ' + _pEnd('Real: S/'+realV.toFixed(2), 24)
+                  + _pSt('Meta: S/'+metaV.toFixed(0), 18) + '\n';
+      txt += _bar(pctV);
+    } else {
+      txt += '  Sin meta configurada · ver Infra\n';
+    }
+    var aud = parseFloat(r.kpis.auditoriasHechas) || 0;
+    var mAud = parseFloat(r.kpis.metaAuditorias) || 30;
+    txt += 'AUDITORIAS DE PRODUCTOS\n';
+    txt += '  ' + _pSt(aud + ' / ' + mAud, W-2) + '\n';
+    txt += _bar(r.kpis.auditPct || 0);
+  } else if (esAlm) {
+    var aud2 = parseFloat(r.kpis.auditoriasHechas) || 0;
+    var mAud2 = parseFloat(r.kpis.metaAuditorias) || 30;
+    txt += 'AUDITORIAS\n';
+    txt += '  ' + _pSt(aud2 + ' / ' + mAud2, W-2) + '\n';
+    txt += _bar(r.kpis.auditPct || 0);
+    var uds = parseFloat(r.kpis.envasados) || 0;
+    var tar = parseFloat(r.tarifaEnvasado) || 0;
+    txt += 'ENVASADO DEL DIA\n';
+    if (uds > 0) {
+      txt += '  ' + _norm(uds + ' uds x S/'+tar.toFixed(2)+' = S/'+(uds*tar).toFixed(2)) + '\n';
+    } else {
+      txt += '  Sin envasar\n';
+    }
+  }
+  txt += SEPd;
+
+  // ── PUNTO 3+4: limpieza ────────────────────────────────────
+  var l1 = parseFloat(r.manual && r.manual.limpiezaPct) || 0;
+  var l2 = parseFloat(r.manual && r.manual.limpiezaProfPct) || 0;
+  txt += _pEnd('Limpieza estacion', 22) + _pSt(l1.toFixed(0)+'%', 6) + '\n';
+  txt += _bar(l1);
+  txt += _pEnd('Limpieza profunda', 22) + _pSt(l2.toFixed(0)+'%', 6) + '\n';
+  txt += _bar(l2);
+  txt += SEPd;
+
+  // ── PUNTO 5: Checklist (control diario) ────────────────────
+  txt += _sHdr('CONTROL DIARIO');
+  try {
+    var cfgAll = getConfigMos();
+    var cfg = (cfgAll && cfgAll.data) || {};
+    var clKey = 'evalChecklist' + rolU;
+    var items = null;
+    try {
+      var raw = cfg[clKey];
+      if (raw) items = (typeof raw === 'string' ? JSON.parse(raw) : raw);
+    } catch(_){}
+    if (!items || !items.length) {
+      // Fallback: defaults básicos
+      items = (rolU === 'CAJERO' || rolU === 'VENDEDOR')
+        ? ['Amabilidad','Cobra correcto','Guias ingreso','Reposicion','Conoce precios','Maneja efectivo','Reporta incidencias','Puntualidad']
+        : ['Buen uso del sistema','Acomoda productos','Rotula correcto','FIFO','Recibe mercaderia','EPP','Reporta mermas','Puntualidad'];
+    }
+    var checks = (r.manual && r.manual.checksAcum) || {};
+    items.forEach(function(it, i){
+      var marca = checks['c'+i] ? '[X]' : '[ ]';
+      // Cortar item a W-5 para que entre con marca
+      var maxLen = W - 5;
+      var t = _norm(it);
+      if (t.length > maxLen) t = t.substring(0, maxLen-1) + '~';
+      txt += marca + ' ' + t + '\n';
+    });
+    var cnt = (r.manual && r.manual.checkCount) || 0;
+    var tot = items.length;
+    txt += _pEnd('Cumplidos: ' + cnt + ' / ' + tot, W) + '\n';
+  } catch(eCl) {
+    txt += _norm('(checklist no disponible)') + '\n';
+  }
+  txt += SEPd;
+
+  // ── SCORE FINAL ────────────────────────────────────────────
+  txt += _pEnd('SCORE FINAL DEL DIA', 28) + _pSt((r.scoreFinal || 0).toFixed(1)+'%', 10) + '\n';
+  txt += _bar(r.scoreFinal || 0);
+  txt += _pEnd('Bono por desempeno', 28) + _pSt('+'+(r.bonusPctScore || 0)+'%', 10) + '\n';
+  if (esPos && r.metaPct) {
+    txt += _pEnd('Avance meta venta', 28) + _pSt((r.metaPct).toFixed(1)+'%', 10) + '\n';
+  }
+  txt += SEPd;
+
+  // ── SANCIONES (si las hay) ─────────────────────────────────
+  if (r.sancion && parseFloat(r.sancion) > 0) {
+    txt += _sHdr('SANCIONES DEL DIA');
+    (r.sancionesDetalle || []).forEach(function(s){
+      var motivo = _norm(s.motivo || '(sin motivo)');
+      if (motivo.length > W-10) motivo = motivo.substring(0, W-11) + '~';
+      txt += _pEnd('[' + (s.hora || '--:--') + '] ' + motivo, W-12) + _amtN(-Math.abs(s.monto), 12) + '\n';
+    });
+    txt += _pEnd('TOTAL SANCIONES', W-12) + _amtN(-Math.abs(r.sancion), 12) + '\n';
+    txt += SEPd;
+  }
+
+  // ── LIQUIDACION FINAL ──────────────────────────────────────
+  txt += '\x1b\x21\x10'; // alto doble
+  txt += _sHdr('LIQUIDACION');
+  txt += '\x1b\x21\x00';
+  txt += _pEnd('Base diaria', W-12)         + _amtP(r.montoBase, 12) + '\n';
+  if (esPos) {
+    txt += _pEnd('Bono desempeno', W-12)    + _amtP(r.bonusScore, 12) + '\n';
+    txt += _pEnd('Bono por meta', W-12)     + _amtP(r.bonoMeta, 12) + '\n';
+  } else if (esAlm) {
+    txt += _pEnd('Pago envasado', W-12)     + _amtP(r.pagoEnvasado, 12) + '\n';
+    txt += _pEnd('Bono desempeno', W-12)    + _amtP(r.bonusScore, 12) + '\n';
+  }
+  if (r.sancion && parseFloat(r.sancion) > 0) {
+    txt += _pEnd('Sancion del dia', W-12)   + _amtN(-Math.abs(r.sancion), 12) + '\n';
+  }
+  txt += SEPd;
+  txt += '\x1b\x21\x30'; // doble alto+ancho
+  txt += _pEnd('TOTAL A PAGAR', W/2-6)      + _amtP(r.totalDia, W/2-4) + '\n';
+  txt += '\x1b\x21\x00';
+  txt += SEPd;
+
+  // ── COMENTARIOS DEL AUDITOR ────────────────────────────────
+  if (r.manual && r.manual.comentarios) {
+    txt += _sHdr('COMENTARIOS');
+    var coms = String(r.manual.comentarios).split('\n');
+    coms.forEach(function(c){
+      var t = _norm(c);
+      while (t.length > W) {
+        txt += t.substring(0, W) + '\n';
+        t = t.substring(W);
+      }
+      if (t) txt += t + '\n';
+    });
+    txt += SEPd;
+  }
+
+  // ── FIRMA + PIE ────────────────────────────────────────────
+  txt += '\n';
+  txt += _pEnd('Firma personal', 20) + ' ' + _rep('_', W-22) + '\n\n';
+  txt += _pEnd('V.B. admin/master', 20) + ' ' + _rep('_', W-22) + '\n\n';
+  txt += '\x1b\x61\x01';
+  txt += '\x1b\x45\x01*** FIN ***\x1b\x45\x00\n';
+  txt += _norm('Impreso desde ProyectoMOS') + '\n';
+  txt += Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm:ss') + '\n';
+  // Feed + corte
+  txt += '\n\n\n\n\n\x1d\x56\x00';
+
+  // ── ENVIO A PRINTNODE ──────────────────────────────────────
+  var pnKey;
+  try { pnKey = PropertiesService.getScriptProperties().getProperty('PRINTNODE_API_KEY'); } catch(_){}
+  if (!pnKey) return { ok: false, error: 'PRINTNODE_API_KEY no configurado' };
+
+  var bytes = [];
+  for (var ci = 0; ci < txt.length; ci++) bytes.push(txt.charCodeAt(ci) & 0xFF);
+  var content = Utilities.base64Encode(bytes);
+
+  try {
+    var pj = UrlFetchApp.fetch('https://api.printnode.com/printjobs', {
+      method:      'post',
+      headers:     { 'Authorization': 'Basic ' + Utilities.base64Encode(pnKey + ':') },
+      contentType: 'application/json',
+      payload:     JSON.stringify({
+        printerId:   parseInt(String(params.printerId), 10),
+        title:       'Liquidacion ' + r.nombre + ' ' + fecha,
+        contentType: 'raw_base64',
+        content:     content,
+        source:      'ProyectoMOS · Liquidacion'
+      }),
+      muteHttpExceptions: true
+    });
+    var code2 = pj.getResponseCode();
+    if (code2 !== 201) {
+      return { ok: false, error: 'PrintNode HTTP ' + code2 + ': ' + pj.getContentText().substring(0, 200) };
+    }
+    return { ok: true, data: { printJobId: pj.getContentText(), totalDia: r.totalDia } };
+  } catch(e) {
+    return { ok: false, error: 'PrintNode fetch fallo: ' + e.message };
+  }
+}

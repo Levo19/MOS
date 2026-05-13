@@ -5302,6 +5302,33 @@
       transition: width .3s ease;
     }
 
+    /* ── Editor de checklists ─────────────────────────────── */
+    .checklist-tab { color:#64748b; background:transparent; transition:all .2s; }
+    .checklist-tab:hover { color:#fbbf24; background:rgba(251,191,36,.04); }
+    .checklist-tab.active { color:#fbbf24; border-bottom-color:#fbbf24 !important; background:rgba(251,191,36,.06); }
+    .checklist-item-row {
+      display:flex; align-items:center; gap:8px; padding:8px 10px;
+      background:#060d1f; border:1px solid #1e293b; border-radius:8px;
+      transition: all .15s ease;
+    }
+    .checklist-item-row:hover { border-color:#334155; }
+    .checklist-item-row.dragging { opacity:.45; }
+    .checklist-handle {
+      cursor:grab; color:#475569; user-select:none;
+      font-size:14px; line-height:1; padding:2px;
+    }
+    .checklist-handle:active { cursor:grabbing; }
+    .checklist-item-input {
+      flex:1; background:transparent; color:#e2e8f0; border:none; outline:none;
+      font-size:.85rem;
+    }
+    .checklist-item-input:focus { color:#fbbf24; }
+    .checklist-del {
+      color:#64748b; background:transparent; border:none; cursor:pointer;
+      padding:2px 6px; border-radius:4px; transition: all .15s;
+    }
+    .checklist-del:hover { color:#f87171; background:rgba(248,113,113,.08); }
+
     /* ── Update banner (nueva versión disponible) ───────── */
     #mosUpdateBanner {
       position:fixed;bottom:24px;left:50%;
@@ -8492,6 +8519,27 @@
               class="inp mt-1 text-xs" style="border-color:rgba(248,113,113,.2)">
           </div>
 
+          <!-- ── Liquidación del día (en vivo) ───────────────── -->
+          <div id="auditLiquidacionWrap" class="rounded-xl p-3"
+               style="background:linear-gradient(135deg,rgba(251,191,36,.08),rgba(245,158,11,.04));
+                      border:1px solid rgba(251,191,36,.25)">
+            <div class="flex items-center justify-between mb-2">
+              <div class="text-xs font-bold uppercase tracking-wider" style="color:#fbbf24">
+                💰 Liquidación del día <span class="text-[9px] text-slate-500 font-normal">en vivo</span>
+              </div>
+              <button type="button" id="auditPrintBtn" onclick="MOS.imprimirLiquidacionDia()"
+                      class="text-xs px-2 py-1 rounded-md font-semibold"
+                      style="background:rgba(251,191,36,.15);color:#fbbf24;border:1px solid rgba(251,191,36,.35)">
+                🖨 Imprimir
+              </button>
+            </div>
+            <div id="auditLiquidacionLines" class="space-y-1 text-xs"></div>
+            <div class="mt-2 pt-2 border-t border-amber-500/20 flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-300">TOTAL A PAGAR HOY</span>
+              <span id="auditLiquidacionTotal" class="text-lg font-bold" style="color:#fbbf24">S/0.00</span>
+            </div>
+          </div>
+
           <!-- Comentario -->
           <div>
             <label class="lbl">Comentario</label>
@@ -8565,10 +8613,99 @@
               <span class="text-slate-400">&lt;50% = 0% · 50-69% = +3% · 70-84% = +7% · 85-94% = +12% · 95+ = +18%</span>
             </div>
           </div>
+
+          <!-- Editor de checklists por rol -->
+          <div class="pt-3 border-t border-slate-800">
+            <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">📝 Checklists de evaluación</div>
+            <button onclick="MOS.abrirEditorChecklists()" class="btn-ghost w-full text-sm flex items-center justify-center gap-2"
+                    style="border:1px dashed rgba(251,191,36,.35);color:#fbbf24">
+              📝 Editar checklists por rol
+            </button>
+            <p class="text-[10px] text-slate-500 mt-1">Personaliza los ítems del control diario que aparece en cada auditoría.</p>
+          </div>
         </div>
         <div class="px-5 py-3 border-t border-slate-800 flex gap-2">
           <button onclick="MOS.closeModal('modalConfigEval')" class="btn-ghost flex-1">Cancelar</button>
           <button onclick="MOS.guardarConfigEval()" class="btn-primary flex-1" id="cfgEvalSaveBtn">Guardar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Modal: Selector de impresora (Liquidación 80mm) ─────────── -->
+    <div class="modal-backdrop hidden" id="modalSelPrinterLiq">
+      <div class="modal-box p-0 max-w-md w-full" style="max-height:88vh;display:flex;flex-direction:column">
+        <div class="px-5 pt-5 pb-3 flex items-center justify-between border-b border-slate-800">
+          <div>
+            <h3 class="font-semibold text-white text-base">🖨 Imprimir liquidación</h3>
+            <p class="text-xs text-slate-500" id="liqPrintSubtitle">—</p>
+          </div>
+          <button onclick="MOS.closeModal('modalSelPrinterLiq')" class="modal-close-x">×</button>
+        </div>
+        <div class="overflow-y-auto px-5 py-4 space-y-3" style="flex:1">
+          <div class="rounded-lg p-2 text-[11px] text-slate-400"
+               style="background:rgba(56,189,248,.06);border:1px solid rgba(56,189,248,.18)">
+            💡 Elige la impresora donde imprimir el ticket de 80mm. Solo las <strong class="text-emerald-400">en línea</strong> reciben el job. Las del catálogo MOS aparecen agrupadas por zona/app.
+          </div>
+          <div id="liqPrinterList" class="space-y-3">
+            <div class="text-center text-xs text-slate-500 py-8">Cargando impresoras...</div>
+          </div>
+        </div>
+        <div class="px-5 py-3 border-t border-slate-800 flex gap-2">
+          <button onclick="MOS.closeModal('modalSelPrinterLiq')" class="btn-ghost flex-1">Cancelar</button>
+          <button id="liqPrintRefreshBtn" onclick="MOS._liqLoadPrinters(true)" class="btn-ghost text-xs px-3">↻ Refrescar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Modal: Editor de checklists por rol ─────────────────────── -->
+    <div class="modal-backdrop hidden" id="modalEvalChecklists">
+      <div class="modal-box p-0 max-w-lg w-full" style="max-height:92vh;display:flex;flex-direction:column">
+        <div class="px-5 pt-5 pb-3 flex items-center justify-between border-b border-slate-800">
+          <div>
+            <h3 class="font-semibold text-white text-base">📝 Editor de checklists</h3>
+            <p class="text-xs text-slate-500">Ítems del control diario por rol — guardado en CONFIG_MOS</p>
+          </div>
+          <button onclick="MOS.closeModal('modalEvalChecklists')" class="modal-close-x">×</button>
+        </div>
+
+        <!-- Tabs por rol -->
+        <div id="checklistTabs" class="flex border-b border-slate-800 overflow-x-auto" style="flex-shrink:0">
+          <button data-rol="CAJERO"     onclick="MOS.checklistSetRol('CAJERO')"
+                  class="checklist-tab flex-1 px-3 py-2 text-xs font-semibold whitespace-nowrap"
+                  style="border-bottom:2px solid transparent">🛒 Cajero</button>
+          <button data-rol="VENDEDOR"   onclick="MOS.checklistSetRol('VENDEDOR')"
+                  class="checklist-tab flex-1 px-3 py-2 text-xs font-semibold whitespace-nowrap"
+                  style="border-bottom:2px solid transparent">🛍 Vendedor</button>
+          <button data-rol="ALMACENERO" onclick="MOS.checklistSetRol('ALMACENERO')"
+                  class="checklist-tab flex-1 px-3 py-2 text-xs font-semibold whitespace-nowrap"
+                  style="border-bottom:2px solid transparent">🏭 Almacenero</button>
+          <button data-rol="ENVASADOR"  onclick="MOS.checklistSetRol('ENVASADOR')"
+                  class="checklist-tab flex-1 px-3 py-2 text-xs font-semibold whitespace-nowrap"
+                  style="border-bottom:2px solid transparent">🏷 Envasador</button>
+        </div>
+
+        <div class="overflow-y-auto px-5 py-4 space-y-3" style="flex:1">
+          <div class="rounded-lg p-2 text-[11px] text-slate-400"
+               style="background:rgba(56,189,248,.06);border:1px solid rgba(56,189,248,.18)">
+            💡 Estos ítems aparecen como casillas ✓ en cada modal de auditoría. Marca/desmarca = ↑ ó ↓ en el "score control" del personal.
+          </div>
+          <div id="checklistItems" class="space-y-2"></div>
+
+          <div class="flex gap-2 pt-2">
+            <input id="checklistNewItem" type="text" class="inp flex-1 text-sm"
+                   placeholder="Añadir nuevo ítem (ej: Usa EPP correctamente)"
+                   onkeydown="if(event.key==='Enter'){event.preventDefault();MOS.checklistAddItem();}">
+            <button onclick="MOS.checklistAddItem()" class="btn-primary text-sm px-3">+ Añadir</button>
+          </div>
+
+          <button onclick="MOS.checklistResetRol()" class="text-xs text-slate-500 hover:text-amber-400 underline">
+            ↺ Restaurar checklist por defecto para este rol
+          </button>
+        </div>
+
+        <div class="px-5 py-3 border-t border-slate-800 flex gap-2">
+          <button onclick="MOS.closeModal('modalEvalChecklists')" class="btn-ghost flex-1">Cancelar</button>
+          <button onclick="MOS.guardarChecklists()" class="btn-primary flex-1" id="checklistSaveBtn">💾 Guardar todos</button>
         </div>
       </div>
     </div>

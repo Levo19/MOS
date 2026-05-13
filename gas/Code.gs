@@ -190,6 +190,9 @@ function _route(method, e) {
       case 'getResumenDia':             return getResumenDia(params);
       case 'getResumenTodosDia':        return getResumenTodosDia(params);
       case 'getLiquidacionSemana':      return getLiquidacionSemana(params);
+      case 'listarImpresorasPN':        return listarImpresorasPN();
+      case 'getPrintNodePrinters':      return listarImpresorasPN();
+      case 'imprimirLiquidacionDia':    return imprimirLiquidacionDia(params);
 
       // ── Liquidaciones (snapshot inmutable) ─────────────────
       case 'getLiquidacionesPendientesSemana': return getLiquidacionesPendientesSemana(params);

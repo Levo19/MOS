@@ -21111,10 +21111,12 @@ const MOS = (() => {
     $('auditTogComision').classList.add('on');
     $('auditTogMeta').classList.add('on');
     // Reset sanción al abrir (se vuelve a llenar si se quiere aplicar)
-    const sa = $('auditSancion');         if (sa) sa.value = '';
+    const sa = $('auditSancion');         if (sa) { sa.value = ''; sa.oninput = _renderAuditLiquidacion; }
     const sm = $('auditSancionMotivo');   if (sm) sm.value = '';
+    _evalState.auditR = r;
     _renderAuditKpis(r);
     _renderAuditChecklist(r.rol);
+    _renderAuditLiquidacion();
     openModal('modalAuditar');
   }
 
@@ -21157,7 +21159,7 @@ const MOS = (() => {
     } else if (rol === 'ALMACENERO' || rol === 'ENVASADOR') {
       // Almacén — punto 1: auditorías
       rows.push(_kpiRow('📋 Auditorías diarias', `${k.auditoriasHechas || 0}/${auditMeta}`, k.auditPct || 0));
-      // Almacén — punto 2: unidades envasadas + pago calculado
+      // Almacén — punto 2: unidades envasadas + pago calculado (línea única)
       const envasados = parseFloat(k.envasados) || 0;
       const tarifa = parseFloat(r.tarifaEnvasado) || 0;
       const pagoEnvasado = parseFloat(r.pagoEnvasado) || (envasados * tarifa);
@@ -21165,10 +21167,6 @@ const MOS = (() => {
         ? `${envasados} uds × S/${tarifa.toFixed(2)} = S/${pagoEnvasado.toFixed(2)}`
         : `${envasados} uds`;
       rows.push(_kpiRow('🏷 Envasado del día', tipoEnv, Math.min(100, envasados / 5)));
-      // Para almacenero extra: guías procesadas (info, sin meta vinculada al bono)
-      if (rol === 'ALMACENERO' && k.guias > 0) {
-        rows.push(_kpiRow('📦 Guías procesadas (info)', `${k.guias || 0}`, 0));
-      }
     } else {
       rows.push(_kpiRow('Actividad del día', `${k.auditoriasHechas || 0}/${auditMeta}`, k.auditPct || 0));
     }
@@ -21188,6 +21186,200 @@ const MOS = (() => {
     </div>`;
   }
 
+  // ── Impresión liquidación 80mm desde modal Auditar ────────────
+  // Abre selector de impresora (cacheado), agrupa por zona/app y envía
+  // el job a PrintNode. La data del personal se hidrata server-side desde
+  // getResumenDia para garantizar consistencia con liquidación semanal.
+  async function imprimirLiquidacionDia() {
+    const r = _evalState.auditR;
+    if (!r) { toast('Abre primero una auditoría', 'error'); return; }
+    const sub = $('liqPrintSubtitle');
+    if (sub) sub.textContent = `${r.nombre || ''} · ${r.rol || ''} · ${_evalState.fecha}`;
+    openModal('modalSelPrinterLiq');
+    await _liqLoadPrinters(false);
+  }
+
+  async function _liqLoadPrinters(forceRefresh) {
+    const cont = $('liqPrinterList');
+    if (!cont) return;
+    if (!forceRefresh && _evalState.pnPrinters && _evalState.pnPrinters.length) {
+      _liqRenderPrinters(_evalState.pnPrinters);
+      return;
+    }
+    cont.innerHTML = `<div class="text-center text-xs text-slate-500 py-8">
+      <div class="inline-block animate-spin">⏳</div> Consultando PrintNode...
+    </div>`;
+    try {
+      const data = await API.get('listarImpresorasPN', {});
+      _evalState.pnPrinters = Array.isArray(data) ? data : (data && data.data) || [];
+      _liqRenderPrinters(_evalState.pnPrinters);
+    } catch(e) {
+      cont.innerHTML = `<div class="text-center text-xs text-rose-400 py-8">
+        ⚠ Error: ${(e && e.message) || e}
+      </div>`;
+    }
+  }
+
+  function _liqRenderPrinters(list) {
+    const cont = $('liqPrinterList');
+    if (!cont) return;
+    if (!list || !list.length) {
+      cont.innerHTML = `<div class="text-center text-xs text-slate-500 py-8">
+        ⚠ No hay impresoras disponibles en PrintNode.
+      </div>`;
+      return;
+    }
+    // Agrupación intuitiva:
+    // 1° por zona del catálogo (idZona si está registrada en IMPRESORAS)
+    // 2° por app si no tiene zona
+    // 3° "No registradas" para impresoras detectadas pero sin row en IMPRESORAS
+    const grupos = {};
+    list.forEach(p => {
+      let key, label, prio;
+      if (p.registrada && p.idZona) {
+        key = 'zona:' + p.idZona;
+        label = '📍 Zona ' + p.idZona;
+        prio = 1;
+      } else if (p.registrada && p.appOrigen) {
+        const app = p.appOrigen;
+        key = 'app:' + app;
+        label = (app === 'mosExpress' ? '🛒 MosExpress'
+              : app === 'warehouseMos' ? '🏭 warehouseMos'
+              : app === 'mos' ? '🎯 MOS' : ('· ' + app));
+        prio = 2;
+      } else {
+        key = 'sinreg';
+        label = '⚙ Sin registrar en catálogo MOS';
+        prio = 9;
+      }
+      if (!grupos[key]) grupos[key] = { label, prio, printers: [] };
+      grupos[key].printers.push(p);
+    });
+    const html = Object.keys(grupos)
+      .sort((a,b) => grupos[a].prio - grupos[b].prio || grupos[a].label.localeCompare(grupos[b].label))
+      .map(k => {
+        const g = grupos[k];
+        const items = g.printers
+          .sort((a,b) => (b.online?1:0) - (a.online?1:0) || String(a.nombre||'').localeCompare(String(b.nombre||'')))
+          .map(p => {
+            const offClass = p.online ? '' : 'opacity-60';
+            const dotColor = p.online ? '#34d399' : '#f87171';
+            const offTag = p.online ? '' : '<span class="text-[9px] text-rose-400 ml-1">offline</span>';
+            const meta = [
+              p.nombreCatalogo,
+              p.idEstacion ? '· ' + p.idEstacion : '',
+              p.computer ? '· ' + p.computer : ''
+            ].filter(Boolean).join(' ');
+            return `<button onclick="MOS._liqEnviarPrint(${p.id})"
+                            class="w-full text-left rounded-lg p-2 transition hover:bg-slate-800/60 ${offClass}"
+                            style="background:#060d1f;border:1px solid #1e293b">
+              <div class="flex items-center gap-2">
+                <span style="width:8px;height:8px;border-radius:999px;background:${dotColor};box-shadow:0 0 6px ${dotColor}"></span>
+                <span class="text-sm text-slate-200 font-medium flex-1">${p.nombre}</span>
+                ${offTag}
+              </div>
+              ${meta ? `<div class="text-[10px] text-slate-500 mt-0.5 pl-4">${meta}</div>` : ''}
+            </button>`;
+          }).join('');
+        return `<div>
+          <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 px-1">${g.label}</div>
+          <div class="space-y-1">${items}</div>
+        </div>`;
+      }).join('');
+    cont.innerHTML = html;
+  }
+
+  async function _liqEnviarPrint(printerId) {
+    const r = _evalState.auditR;
+    if (!r) { toast('Falta resumen', 'error'); return; }
+    const cont = $('liqPrinterList');
+    if (cont) cont.innerHTML = `<div class="text-center text-xs text-amber-400 py-8">
+      <div class="inline-block animate-pulse">🖨</div> Enviando a PrintNode...
+    </div>`;
+    try {
+      const res = await API.post('imprimirLiquidacionDia', {
+        idPersonal: r.idPersonal,
+        fecha:      _evalState.fecha,
+        printerId:  parseInt(printerId, 10)
+      });
+      if (res && res.printJobId) {
+        toast(`✓ Liquidación enviada · job ${res.printJobId}`, 'ok');
+      } else {
+        toast(`✓ Liquidación enviada · S/${(res?.totalDia || 0).toFixed(2)}`, 'ok');
+      }
+      closeModal('modalSelPrinterLiq');
+    } catch(e) {
+      toast('Error: ' + ((e && e.message) || e), 'error');
+      _liqRenderPrinters(_evalState.pnPrinters || []);
+    }
+  }
+
+  // ── Liquidación en vivo dentro del modal Auditar ──────────────
+  // Recalcula base + bonos + envasado − sanción y lo muestra como
+  // desglose profesional. Se reactiva ante:
+  //   - cambios en sanción (input)
+  //   - toggle de comisión (afecta bono score)
+  //   - toggle de meta (afecta bono meta)
+  function _renderAuditLiquidacion() {
+    const wrap  = $('auditLiquidacionWrap');
+    const lines = $('auditLiquidacionLines');
+    const totEl = $('auditLiquidacionTotal');
+    if (!wrap || !lines || !totEl) return;
+    const r = _evalState.auditR;
+    if (!r) return;
+
+    const rol = String(r.rol || '').toUpperCase();
+    const esPos = (rol === 'CAJERO' || rol === 'VENDEDOR');
+    const esAlm = (rol === 'ALMACENERO' || rol === 'ENVASADOR');
+
+    const base       = parseFloat(r.montoBase)    || 0;
+    const bonusScore = parseFloat(r.bonusScore)   || 0;
+    const bonoMeta   = parseFloat(r.bonoMeta)     || 0;
+    const pagoEnv    = parseFloat(r.pagoEnvasado) || 0;
+    const sancion    = parseFloat($('auditSancion')?.value) || 0;
+
+    const togCom  = $('auditTogComision');
+    const togMeta = $('auditTogMeta');
+    const aplicaCom  = togCom  ? togCom.classList.contains('on')  : true;
+    const aplicaMeta = togMeta ? togMeta.classList.contains('on') : true;
+
+    const bonusEf = aplicaCom  ? bonusScore : 0;
+    const metaEf  = aplicaMeta ? bonoMeta   : 0;
+
+    const items = [];
+    items.push(['💵 Base diaria', base, false]);
+    if (esPos) {
+      items.push(['🌟 Bono por desempeño', bonusEf, false, !aplicaCom ? 'comisión desactivada' : '']);
+      items.push(['🎯 Bono por meta', metaEf, false, !aplicaMeta ? 'meta desactivada' : (bonoMeta === 0 ? 'meta no lograda' : '')]);
+    } else if (esAlm) {
+      items.push(['🏷 Pago envasado', pagoEnv, false]);
+      items.push(['🌟 Bono por desempeño', bonusEf, false, !aplicaCom ? 'comisión desactivada' : '']);
+    } else {
+      items.push(['🌟 Bono por desempeño', bonusEf, false]);
+    }
+    if (sancion > 0) items.push(['⚠ Sanción del día', sancion, true]);
+
+    lines.innerHTML = items.map(([lbl, val, neg, note]) => {
+      const signo = neg ? '−' : '';
+      const color = neg ? '#f87171' : (val > 0 ? '#e2e8f0' : '#64748b');
+      const noteHtml = note ? `<span class="text-[9px] text-slate-500 ml-1">(${note})</span>` : '';
+      return `<div class="flex items-center justify-between">
+        <span class="text-slate-400">${lbl}${noteHtml}</span>
+        <span style="color:${color};font-variant-numeric:tabular-nums">${signo}S/${val.toFixed(2)}</span>
+      </div>`;
+    }).join('');
+
+    const total = Math.max(0, base + bonusEf + metaEf + (esAlm ? pagoEnv : 0) - sancion);
+    totEl.textContent = `S/${total.toFixed(2)}`;
+    if (sancion > 0 && (base + bonusEf + metaEf + (esAlm ? pagoEnv : 0) - sancion) < 0) {
+      totEl.style.color = '#f87171';
+      totEl.title = 'Sanción excede el total, se trunca a S/0.00';
+    } else {
+      totEl.style.color = '#fbbf24';
+      totEl.title = '';
+    }
+  }
+
   function _renderAuditChecklist(rol) {
     const cont = $('auditControlList');
     if (!cont) return;
@@ -21201,6 +21393,160 @@ const MOS = (() => {
           <span>${txt}</span>
         </div>`;
     }).join('');
+  }
+
+  // ============================================================
+  // ── EDITOR DE CHECKLISTS (modalEvalChecklists) ───────────────
+  // ============================================================
+  // Estado del editor: copia mutable de _evalState.rolItems
+  // que se commitea a CONFIG_MOS al pulsar "Guardar todos".
+  const _checklistEditor = {
+    rolActivo: 'CAJERO',
+    items: { CAJERO: [], VENDEDOR: [], ALMACENERO: [], ENVASADOR: [] },
+    dirty: false
+  };
+
+  async function abrirEditorChecklists() {
+    // Asegurar que _evalState.rolItems esté hidratado (forzar refresh por si cfgData cambió)
+    _evalState.rolItems = null;
+    ['CAJERO','VENDEDOR','ALMACENERO','ENVASADOR'].forEach(r => _evalChecklistDe(r));
+    // Clonar al editor
+    ['CAJERO','VENDEDOR','ALMACENERO','ENVASADOR'].forEach(r => {
+      _checklistEditor.items[r] = (_evalState.rolItems[r] || []).slice();
+    });
+    _checklistEditor.rolActivo = 'CAJERO';
+    _checklistEditor.dirty = false;
+    _renderChecklistEditor();
+    openModal('modalEvalChecklists');
+  }
+
+  function _renderChecklistEditor() {
+    // Tabs activas
+    document.querySelectorAll('#checklistTabs .checklist-tab').forEach(b => {
+      b.classList.toggle('active', b.dataset.rol === _checklistEditor.rolActivo);
+    });
+    const cont = $('checklistItems');
+    if (!cont) return;
+    const list = _checklistEditor.items[_checklistEditor.rolActivo] || [];
+    if (!list.length) {
+      cont.innerHTML = `<div class="text-center text-xs text-slate-500 py-6">
+        Sin ítems. Añade al menos uno o usa "Restaurar por defecto".
+      </div>`;
+      return;
+    }
+    cont.innerHTML = list.map((txt, i) => `
+      <div class="checklist-item-row" draggable="true" data-idx="${i}"
+           ondragstart="MOS._checklistDragStart(event,${i})"
+           ondragover="MOS._checklistDragOver(event)"
+           ondrop="MOS._checklistDrop(event,${i})"
+           ondragend="MOS._checklistDragEnd(event)">
+        <span class="checklist-handle" title="Arrastra para reordenar">⋮⋮</span>
+        <input type="text" class="checklist-item-input" value="${String(txt).replace(/"/g,'&quot;')}"
+               oninput="MOS._checklistEditItem(${i}, this.value)">
+        <button class="checklist-del" onclick="MOS._checklistDelItem(${i})" title="Eliminar">✕</button>
+      </div>
+    `).join('');
+  }
+
+  function checklistSetRol(rol) {
+    _checklistEditor.rolActivo = String(rol || 'CAJERO').toUpperCase();
+    _renderChecklistEditor();
+  }
+
+  function checklistAddItem() {
+    const inp = $('checklistNewItem');
+    if (!inp) return;
+    const val = String(inp.value || '').trim();
+    if (!val) return;
+    _checklistEditor.items[_checklistEditor.rolActivo].push(val);
+    _checklistEditor.dirty = true;
+    inp.value = '';
+    _renderChecklistEditor();
+    inp.focus();
+  }
+
+  function _checklistEditItem(idx, val) {
+    const list = _checklistEditor.items[_checklistEditor.rolActivo];
+    if (list && list[idx] !== undefined) {
+      list[idx] = String(val || '');
+      _checklistEditor.dirty = true;
+    }
+  }
+
+  function _checklistDelItem(idx) {
+    const list = _checklistEditor.items[_checklistEditor.rolActivo];
+    if (!list || list[idx] === undefined) return;
+    list.splice(idx, 1);
+    _checklistEditor.dirty = true;
+    _renderChecklistEditor();
+  }
+
+  // Drag & drop reorder
+  let _dragIdx = null;
+  function _checklistDragStart(ev, idx) {
+    _dragIdx = idx;
+    try { ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', String(idx)); } catch(_){}
+    ev.currentTarget.classList.add('dragging');
+  }
+  function _checklistDragOver(ev) { ev.preventDefault(); try { ev.dataTransfer.dropEffect = 'move'; } catch(_){} }
+  function _checklistDrop(ev, dstIdx) {
+    ev.preventDefault();
+    const src = _dragIdx;
+    if (src === null || src === dstIdx) return;
+    const list = _checklistEditor.items[_checklistEditor.rolActivo];
+    const [moved] = list.splice(src, 1);
+    list.splice(dstIdx, 0, moved);
+    _checklistEditor.dirty = true;
+    _renderChecklistEditor();
+  }
+  function _checklistDragEnd(ev) {
+    _dragIdx = null;
+    document.querySelectorAll('.checklist-item-row.dragging').forEach(r => r.classList.remove('dragging'));
+  }
+
+  function checklistResetRol() {
+    const rol = _checklistEditor.rolActivo;
+    const def = _evalState.rolItemsDefault[rol] || [];
+    _checklistEditor.items[rol] = def.slice();
+    _checklistEditor.dirty = true;
+    _renderChecklistEditor();
+    toast(`Checklist de ${rol} restaurada al default`, 'info');
+  }
+
+  async function guardarChecklists() {
+    const btn = $('checklistSaveBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+    try {
+      const pares = ['CAJERO','VENDEDOR','ALMACENERO','ENVASADOR'].map(r => ({
+        clave: 'evalChecklist' + r,
+        valor: JSON.stringify(_checklistEditor.items[r] || [])
+      }));
+      await Promise.all(pares.map(p =>
+        API.post('setConfig', { clave: p.clave, valor: p.valor })
+      ));
+      // Propagar a la sesión actual: pisar _evalState.rolItems y limpiar cfg cache
+      _evalState.rolItems = {
+        CAJERO:     _checklistEditor.items.CAJERO.slice(),
+        VENDEDOR:   _checklistEditor.items.VENDEDOR.slice(),
+        ALMACENERO: _checklistEditor.items.ALMACENERO.slice(),
+        ENVASADOR:  _checklistEditor.items.ENVASADOR.slice()
+      };
+      try {
+        if (cfgData.config) {
+          cfgData.config.evalChecklistCAJERO     = JSON.stringify(_evalState.rolItems.CAJERO);
+          cfgData.config.evalChecklistVENDEDOR   = JSON.stringify(_evalState.rolItems.VENDEDOR);
+          cfgData.config.evalChecklistALMACENERO = JSON.stringify(_evalState.rolItems.ALMACENERO);
+          cfgData.config.evalChecklistENVASADOR  = JSON.stringify(_evalState.rolItems.ENVASADOR);
+        }
+      } catch(_){}
+      _checklistEditor.dirty = false;
+      toast('✓ Checklists guardados — aplicado a la próxima auditoría', 'ok');
+      closeModal('modalEvalChecklists');
+    } catch(e) {
+      toast('Error guardando: ' + (e.message || e), 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar todos'; }
+    }
   }
 
   function auditToggleCheck(key) {
@@ -21220,6 +21566,8 @@ const MOS = (() => {
   function auditToggle(id) {
     const el = $(id);
     if (el) el.classList.toggle('on');
+    // Recalcula liquidación al vuelo
+    if (id === 'auditTogComision' || id === 'auditTogMeta') _renderAuditLiquidacion();
   }
 
   function cerrarAuditar() { closeModal('modalAuditar'); }
@@ -22163,7 +22511,13 @@ const MOS = (() => {
     // Evaluación de personal
     loadEvaluacion, refreshEvaluacion, evalSetApp,
     abrirAuditar, cerrarAuditar, guardarAuditoria,
-    auditToggleCheck, auditCheckAll, auditToggle,
+    auditToggleCheck, auditCheckAll, auditToggle, imprimirLiquidacionDia,
+    _liqLoadPrinters, _liqEnviarPrint,
+    // Editor de checklists
+    abrirEditorChecklists, checklistSetRol, checklistAddItem,
+    checklistResetRol, guardarChecklists,
+    _checklistEditItem, _checklistDelItem,
+    _checklistDragStart, _checklistDragOver, _checklistDrop, _checklistDragEnd,
     updateRateSlider, abrirConfigEval, guardarConfigEval,
     renderConfigEvalPanel, guardarConfigEvalPanel,
     abrirLiquidacion,
