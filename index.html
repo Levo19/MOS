@@ -10147,6 +10147,29 @@
           <input type="hidden" id="zonaEstado" value="1">
         </div>
       </div>
+
+      <!-- Política de comisión por zona (meta diaria + % sobre excedente) -->
+      <div class="pers-section" style="border-top:1px dashed #1e293b;padding-top:14px;margin-top:14px">
+        <div class="pers-section-title" style="display:flex;align-items:center;gap:6px;color:#86efac">
+          <span>💰 Política de comisión</span>
+          <span class="text-[10px] text-slate-500 font-normal normal-case">(meta y comisión sobre lo cobrado)</span>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="lbl">Meta diaria (S/)</label>
+            <input id="zonaMetaDiaria" class="inp" type="number" min="0" step="50" placeholder="1500">
+            <p class="text-[10px] text-slate-500 mt-1">Vacío = usa global de CONFIG_MOS</p>
+          </div>
+          <div>
+            <label class="lbl">Comisión sobre excedente (%)</label>
+            <input id="zonaComisionPct" class="inp" type="number" min="0" max="100" step="0.5" placeholder="5">
+            <p class="text-[10px] text-slate-500 mt-1">Ej: 5 = 5% del excedente al lograr meta</p>
+          </div>
+          <div class="col-span-2 text-[11px] text-slate-400 italic p-2 rounded" style="background:rgba(34,197,94,.05);border:1px dashed rgba(34,197,94,.3)">
+            ⓘ La meta se mide sobre lo cobrado (efectivo + virtual + mixto). Crédito y anulado no cuentan. La comisión se reparte proporcional al cobrado por cada vendedor del turno.
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="flex gap-2 px-5 py-3 flex-shrink-0" style="border-top:1px solid #1e293b">

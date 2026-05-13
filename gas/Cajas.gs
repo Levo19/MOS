@@ -539,6 +539,53 @@ function datosTurno(params) {
     }
   }
 
+  // ── 8. META DIARIA + COMISIÓN SOBRE EXCEDENTE ────────────────
+  // Política por zona (con fallback global desde CONFIG_MOS):
+  //   politicaJSON.metaDiaria
+  //   politicaJSON.comisionExcedentePct
+  // La meta se mide contra lo COBRADO (EFECTIVO + VIRTUAL + MIXTO).
+  // Crédito y anulado NO suman. Todos los vendedores del turno aportan
+  // y comparten la comisión proporcional a su % de venta cobrada.
+  var policy = _resolverPoliticaZona(caja.zona || '');
+  var totalCobrado = Math.round((tEfectivo + tVirtual) * 100) / 100;
+  var metaLograda  = totalCobrado >= policy.metaDiaria;
+  var excedente    = Math.max(0, Math.round((totalCobrado - policy.metaDiaria) * 100) / 100);
+  var comisionTotal = Math.round(excedente * policy.comisionExcedentePct) / 100;
+
+  // Reparto proporcional por vendedor (solo cobrados — crédito no aporta)
+  // Construye pMap exclusivo de venta cobrada para no inflar a quien
+  // dejó muchos créditos sin cobrar.
+  var pMapCobrado = {};
+  cobrados.filter(function(t){ return t.metodo !== 'CREDITO'; }).forEach(function(t){
+    var n = t.vendedor || 'Sin nombre';
+    if (!pMapCobrado[n]) pMapCobrado[n] = { tks: 0, total: 0 };
+    pMapCobrado[n].tks++;
+    pMapCobrado[n].total += t.total;
+  });
+  var totalCobradoPMap = Object.keys(pMapCobrado).reduce(function(s,k){ return s + pMapCobrado[k].total; }, 0);
+  var comisionPorVendedor = Object.keys(pMapCobrado).map(function(n){
+    var venta = pMapCobrado[n].total;
+    var pctVend = totalCobradoPMap > 0 ? (venta / totalCobradoPMap) : 0;
+    return {
+      nombre: n,
+      venta: Math.round(venta * 100) / 100,
+      pct:   Math.round(pctVend * 1000) / 10,    // 1 decimal
+      comision: comisionTotal > 0 ? Math.round(comisionTotal * pctVend * 100) / 100 : 0
+    };
+  }).sort(function(a,b){ return b.venta - a.venta; });
+
+  var metaInfo = {
+    metaDiaria:           policy.metaDiaria,
+    comisionPct:          policy.comisionExcedentePct,
+    totalCobrado:         totalCobrado,
+    metaLograda:          metaLograda,
+    excedente:            excedente,
+    faltante:             metaLograda ? 0 : Math.round((policy.metaDiaria - totalCobrado) * 100) / 100,
+    progresoPct:          policy.metaDiaria > 0 ? Math.round(totalCobrado / policy.metaDiaria * 1000) / 10 : 0,
+    comisionTotal:        comisionTotal,
+    comisionPorVendedor:  comisionPorVendedor
+  };
+
   return {
     ok: true,
     data: {
@@ -555,7 +602,14 @@ function datosTurno(params) {
       pTotal:     pTotal,
       impresoras:  impresoras,
       auditorias:  auditorias,
-      metaAudit:   30,
+      // Lee la meta real de CONFIG_MOS.evalMetaAuditorias (default 30 como antes)
+      metaAudit:   (function(){
+        try {
+          var r = _sheetToObjects(getSheet('CONFIG_MOS')).find(function(c){ return c.clave === 'evalMetaAuditorias'; });
+          return r && parseFloat(r.valor) > 0 ? parseFloat(r.valor) : 30;
+        } catch(_) { return 30; }
+      })(),
+      meta:        metaInfo,
       totales: {
         efectivo:             tEfectivo,
         virtual:              tVirtual,
@@ -894,9 +948,61 @@ function imprimirTicketZCierre(params) {
     txt += '  Sin datos de vendedores en este turno\n';
   }
 
+  // PARTE 8a: META DIARIA + COMISIÓN (sobre lo cobrado)
+  // Recalcula igual que datosTurno para no depender de él. La meta se
+  // resuelve por zona (politicaJSON.metaDiaria) con fallback global.
+  var policyZ = _resolverPoliticaZona(caja.zona || '');
+  var totalCobradoZ = Math.round((tEfectivo + tVirtual) * 100) / 100;
+  var metaLogradaZ  = totalCobradoZ >= policyZ.metaDiaria;
+  var excedenteZ    = Math.max(0, Math.round((totalCobradoZ - policyZ.metaDiaria) * 100) / 100);
+  var comisionTotalZ = Math.round(excedenteZ * policyZ.comisionExcedentePct) / 100;
+  // pMap solo de cobrados (no crédito) para reparto proporcional
+  var pMapCobZ = {};
+  cobrados.filter(function(t){ return t.metodo !== 'CREDITO'; }).forEach(function(t){
+    var n = t.vendedor || 'Sin nombre';
+    if (!pMapCobZ[n]) pMapCobZ[n] = 0;
+    pMapCobZ[n] += t.total;
+  });
+  var totalCobZ = Object.keys(pMapCobZ).reduce(function(s,k){ return s + pMapCobZ[k]; }, 0);
+
+  txt += _sHdr('META DIARIA · ' + _amtP(policyZ.metaDiaria, 0).trim());
+  if (metaLogradaZ) {
+    txt += '\x1b\x45\x01';
+    txt += _pSt('>> META LOGRADA <<' , 24) + _amtP(totalCobradoZ, 24).trim() + '\n';
+    txt += '\x1b\x45\x00';
+    txt += '  Excedente: +' + _amtP(excedenteZ, 0).trim() + '\n';
+    if (comisionTotalZ > 0) {
+      txt += '  Comision ' + policyZ.comisionExcedentePct + '% del excedente: ' +
+             _amtP(comisionTotalZ, 0).trim() + '\n';
+      txt += SEPd;
+      // Reparto proporcional
+      Object.keys(pMapCobZ).sort(function(a,b){ return pMapCobZ[b] - pMapCobZ[a]; }).forEach(function(n){
+        var pctV = totalCobZ > 0 ? (pMapCobZ[n] / totalCobZ) : 0;
+        var comV = Math.round(comisionTotalZ * pctV * 100) / 100;
+        var pctStr = (Math.round(pctV * 1000) / 10) + '%';
+        txt += '  ' + _pEnd(_norm(n), 18) + _pSt(pctStr, 6) + '  ' + _amtP(comV, 10).trim() + '\n';
+      });
+    } else {
+      txt += '  (sin comision configurada para esta zona)\n';
+    }
+  } else {
+    txt += _pSt('META NO LOGRADA', 24) + _amtP(totalCobradoZ, 24).trim() + '\n';
+    var faltaZ = Math.round((policyZ.metaDiaria - totalCobradoZ) * 100) / 100;
+    txt += '  Faltan: ' + _amtP(faltaZ, 0).trim() + '\n';
+    txt += '  (sin comision generada)\n';
+  }
+
   // PARTE 8b: AUDITORÍAS DEL DÍA
   var auditMapZ = {};
-  var META_Z    = 30;
+  // Meta de auditorías ahora viene de CONFIG_MOS (evalMetaAuditorias).
+  // Antes era hardcoded 30; permitía que turno.html y ticket Z mostraran
+  // valores distintos al usado por la evaluación interna.
+  var META_Z    = (function(){
+    try {
+      var r = _sheetToObjects(getSheet('CONFIG_MOS')).find(function(c){ return c.clave === 'evalMetaAuditorias'; });
+      return r && parseFloat(r.valor) > 0 ? parseFloat(r.valor) : 30;
+    } catch(_) { return 30; }
+  })();
   var auditSheetZ = ss.getSheetByName('AUDITORIAS');
   if (auditSheetZ && caja.fechaDia) {
     var auditDataZ = auditSheetZ.getDataRange().getValues();

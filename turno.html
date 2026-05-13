@@ -716,6 +716,71 @@ function render(data) {
       }).join('')
     : '<div style="text-align:center;padding:16px;color:var(--muted);font-size:12px;">Sin datos de vendedores.</div>';
 
+  // ── Meta diaria + comisión sobre excedente ────────────────────
+  // Resuelta por zona en backend (politicaJSON.metaDiaria + comisionExcedentePct)
+  // con fallback a CONFIG_MOS global. Se mide sobre lo COBRADO (no crédito).
+  const meta = data.meta || {};
+  const metaDiaria   = parseFloat(meta.metaDiaria)   || 0;
+  const comisionPct  = parseFloat(meta.comisionPct)  || 0;
+  const totalCobrado = parseFloat(meta.totalCobrado) || 0;
+  const metaLograda  = !!meta.metaLograda;
+  const excedente    = parseFloat(meta.excedente)    || 0;
+  const faltante     = parseFloat(meta.faltante)     || 0;
+  const progresoPct  = parseFloat(meta.progresoPct)  || 0;
+  const comisionTotal= parseFloat(meta.comisionTotal)|| 0;
+  const comisionPorVendedor = Array.isArray(meta.comisionPorVendedor) ? meta.comisionPorVendedor : [];
+
+  let metaHtml = '';
+  if (metaDiaria > 0) {
+    if (metaLograda) {
+      const repartoHtml = comisionPorVendedor.length && comisionTotal > 0
+        ? `<div class="vend-list" style="margin-top:10px;border-top:1px dashed rgba(34,197,94,.3);padding-top:10px">
+            ${comisionPorVendedor.map(v => `<div class="vend-row" style="padding:6px 0">
+              <div class="vend-top">
+                <div><span class="vend-name">${esc(v.nombre)}</span>
+                     <div class="vend-meta">${v.pct}% del cobrado</div></div>
+                <div style="text-align:right;color:var(--green);font-weight:800;">${fm(v.comision)}</div>
+              </div>
+            </div>`).join('')}
+          </div>`
+        : '';
+      metaHtml = `<div style="background:linear-gradient(135deg,rgba(34,197,94,.10),rgba(34,197,94,.02));border:1px solid rgba(34,197,94,.45);border-radius:12px;padding:14px;">
+        <div style="text-align:center;margin-bottom:10px">
+          <div style="font-size:13px;color:var(--green);font-weight:800;letter-spacing:.04em;text-transform:uppercase">✅ Meta lograda</div>
+          <div style="font-size:22px;font-weight:900;color:#86efac;margin-top:4px">${fm(totalCobrado)}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">de ${fm(metaDiaria)} · ${progresoPct.toFixed(1)}%</div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;padding:8px 0;border-top:1px dashed rgba(34,197,94,.3)">
+          <span style="color:var(--muted)">Excedente</span>
+          <span style="color:var(--green);font-weight:700">+${fm(excedente)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0">
+          <span style="color:var(--muted)">💰 Comisión <span style="font-size:10px">(${comisionPct}%)</span></span>
+          <span style="color:var(--green);font-weight:900;font-size:14px">${fm(comisionTotal)}</span>
+        </div>
+        ${repartoHtml}
+      </div>`;
+    } else {
+      metaHtml = `<div style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.4);border-radius:12px;padding:14px;">
+        <div style="text-align:center">
+          <div style="font-size:13px;color:#fbbf24;font-weight:800;letter-spacing:.04em;text-transform:uppercase">⏳ Meta no lograda</div>
+          <div style="font-size:22px;font-weight:900;color:#fde68a;margin-top:4px">${fm(totalCobrado)}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">de ${fm(metaDiaria)} · ${progresoPct.toFixed(1)}%</div>
+        </div>
+        <div style="height:6px;background:rgba(0,0,0,.3);border-radius:99px;overflow:hidden;margin:10px 0 8px">
+          <div style="height:100%;background:linear-gradient(90deg,#f59e0b,#fbbf24);width:${Math.min(100, progresoPct)}%"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px">
+          <span style="color:var(--muted)">Faltan</span>
+          <span style="color:#fbbf24;font-weight:700">${fm(faltante)}</span>
+        </div>
+        <div style="text-align:center;font-size:11px;color:var(--muted);margin-top:8px;font-style:italic">
+          Sin comisión generada en este turno
+        </div>
+      </div>`;
+    }
+  }
+
   // ── Auditorías del día ────────────────────────────────────────
   const auditMap  = data.auditorias || {};
   const META_AUD  = data.metaAudit  || 30;
@@ -870,6 +935,20 @@ function render(data) {
     </div>
     <div class="sec-body open" id="sec-vend" style="background:var(--bg2);">${vendHtml}</div>
   </div>
+
+  ${metaHtml ? `<!-- Meta diaria + comisión -->
+  <div class="sec">
+    <div class="sec-hdr" onclick="toggleSec('sec-meta')">
+      <div class="sec-title">🎯 Meta diaria
+        <span class="sec-badge" style="background:${metaLograda ? 'rgba(34,197,94,.2)' : 'rgba(245,158,11,.2)'};color:${metaLograda ? 'var(--green)' : '#fbbf24'};">${metaLograda ? '✅ lograda' : 'pendiente'}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span class="sec-total" style="color:${metaLograda ? 'var(--green)' : '#fbbf24'}">${comisionTotal > 0 ? '+'+fm(comisionTotal) : fm(metaDiaria)}</span>
+        <span class="sec-chev" id="chev-sec-meta">▾</span>
+      </div>
+    </div>
+    <div class="sec-body open" id="sec-meta" style="background:var(--bg2);padding:12px;">${metaHtml}</div>
+  </div>` : ''}
 
   <!-- Auditorías del día -->
   <div class="sec">

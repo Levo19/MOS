@@ -73,7 +73,7 @@ var MOS_HEADERS = {
   ALERTAS_LOG:       ['id','tipo','urgencia','mensaje','appOrigen','datos','fecha','leida'],
 
   // Puntos de venta — cada zona agrupa 1 o más estaciones
-  ZONAS:               ['idZona','nombre','descripcion','direccion','responsable','estado'],
+  ZONAS:               ['idZona','nombre','descripcion','direccion','responsable','estado','politicaJSON'],
 
   // Estaciones físicas: cajas MosExpress + almacenes warehouseMos
   // adminPin: PIN para anulaciones/créditos en ME, o edición sensible en WH

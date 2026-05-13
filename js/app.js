@@ -11526,7 +11526,7 @@ const MOS = (() => {
   }
 
   function abrirModalZona(id) {
-    ['Id','Nombre','Direccion','Responsable','Desc'].forEach(f => {
+    ['Id','Nombre','Direccion','Responsable','Desc','MetaDiaria','ComisionPct'].forEach(f => {
       const el = $('zona' + f); if (el) el.value = '';
     });
     const estadoWrap = $('zonaEstadoWrap');
@@ -11542,6 +11542,14 @@ const MOS = (() => {
       $('zonaResponsable').value = z.responsable || '';
       $('zonaEstado').value      = String(z.estado ?? '1');
       $('zonaDesc').value        = z.descripcion || '';
+      // Parsear politicaJSON si existe
+      try {
+        const pol = z.politicaJSON
+          ? (typeof z.politicaJSON === 'string' ? JSON.parse(z.politicaJSON) : z.politicaJSON)
+          : {};
+        if (pol.metaDiaria != null)            $('zonaMetaDiaria').value  = String(pol.metaDiaria);
+        if (pol.comisionExcedentePct != null)  $('zonaComisionPct').value = String(pol.comisionExcedentePct);
+      } catch(_){}
       if (tg) tg.checked = String(z.estado) === '1' || z.estado === 1 || z.estado === true;
       if (estadoWrap) estadoWrap.classList.remove('hidden');
       if (btnElim)    btnElim.classList.remove('hidden');
@@ -11563,13 +11571,23 @@ const MOS = (() => {
     const idEdit = $('zonaId')?.value || undefined;
     const tg = $('zonaEstadoToggle');
     const estado = idEdit ? (tg && tg.checked ? '1' : '0') : '1';
+    // Construir politicaJSON (meta diaria + comisión sobre excedente).
+    // Si los campos están vacíos, mandar string '' para que use la global.
+    const metaRaw = parseFloat($('zonaMetaDiaria')?.value);
+    const pctRaw  = parseFloat($('zonaComisionPct')?.value);
+    const politica = {};
+    if (!isNaN(metaRaw) && metaRaw >= 0)  politica.metaDiaria = metaRaw;
+    if (!isNaN(pctRaw)  && pctRaw  >= 0)  politica.comisionExcedentePct = pctRaw;
+    const politicaJSON = Object.keys(politica).length ? JSON.stringify(politica) : '';
+
     const params = {
-      idZona:      idEdit,
+      idZona:        idEdit,
       nombre,
-      descripcion: $('zonaDesc')?.value || '',
-      direccion:   $('zonaDireccion')?.value || '',
-      responsable: $('zonaResponsable')?.value || '',
-      estado
+      descripcion:   $('zonaDesc')?.value || '',
+      direccion:     $('zonaDireccion')?.value || '',
+      responsable:   $('zonaResponsable')?.value || '',
+      estado,
+      politicaJSON:  politicaJSON
     };
     if (!params.idZona) delete params.idZona;
     // OPTIMISTA
