@@ -18805,15 +18805,46 @@ const MOS = (() => {
     if (typeof _evalConfetti === 'function') _evalConfetti(x, y, color);
   }
 
+  // Cache localStorage para apertura optimista
+  const _LIQ_CACHE_PFX = 'mos_liq2_';
+  const _LIQ_CACHE_TTL = 30 * 60 * 1000;
+  function _liqCacheKey(tab) { return _LIQ_CACHE_PFX + tab; }
+  function _liqCacheLoad(tab) {
+    try {
+      const raw = localStorage.getItem(_liqCacheKey(tab));
+      if (!raw) return null;
+      const p = JSON.parse(raw);
+      if (Date.now() - (p.ts || 0) > _LIQ_CACHE_TTL) return null;
+      return p.data;
+    } catch { return null; }
+  }
+  function _liqCacheSave(tab, data) {
+    try { localStorage.setItem(_liqCacheKey(tab), JSON.stringify({ ts: Date.now(), data })); } catch(_){}
+  }
+  function _liqCacheClear() {
+    try {
+      localStorage.removeItem(_liqCacheKey('pendientes'));
+      localStorage.removeItem(_liqCacheKey('pagadas'));
+    } catch(_){}
+  }
+
   async function liqOpen() {
     _liqState.tab = 'pendientes';
     _liqState.seleccion = {};
     _liqState.expandidos = {};
-    // Default: semana actual
-    if (!_liqState.desde || !_liqState.hasta) _liqRangoPreset('semana', true);
-    _liqSyncRangoInputs();
+    // Default: últimos 30 días (todo se acumula, sin filtro UI)
+    var hoy = _liqHoy();
+    _liqState.hasta = hoy;
+    _liqState.desde = _liqOffset(hoy, -29);
     openModal('modalLiquidaciones');
     _liqSfx('open');
+    // Pintar desde cache instantáneamente si existe
+    const cached = _liqCacheLoad('pendientes');
+    if (cached) {
+      _liqState.pendientes = cached;
+      _liqRenderPendientes();
+      _liqUpdatePayBar();
+    }
     await liqLoadCurrent();
   }
 
@@ -18831,6 +18862,12 @@ const MOS = (() => {
     });
     _liqUpdatePayBar();
     _liqSfx('switch');
+    // Cache instantáneo del tab destino
+    const cached = _liqCacheLoad(tab);
+    if (cached) {
+      if (tab === 'pendientes') { _liqState.pendientes = cached; _liqRenderPendientes(); }
+      else if (tab === 'pagadas') { _liqState.pagadas = cached; _liqRenderPagadas(); }
+    }
     liqLoadCurrent();
   }
 
@@ -18888,18 +18925,27 @@ const MOS = (() => {
 
   // ── Carga + render ──
   async function liqLoadCurrent() {
-    _liqLeerRangoInputs();
     const body = $('liqBody');
     if (!body) return;
-    body.innerHTML = `<div class="text-center text-xs text-slate-500 py-8"><div class="inline-block animate-spin">⏳</div> Cargando ${_liqState.tab}...</div>`;
+    // Si NO hay cache previo pintado, mostrar skeleton. Si SÍ hay → no parpadeo.
+    if (!_liqState.pendientes || !_liqState.pendientes.length) {
+      if (_liqState.tab === 'pendientes' && !body.dataset._hasCache) {
+        body.innerHTML = `<div class="text-center text-xs text-slate-500 py-8"><div class="inline-block animate-spin">⏳</div> Cargando ${_liqState.tab}...</div>`;
+      }
+    }
     try {
       if (_liqState.tab === 'pendientes') {
         const res = await API.get('getLiquidacionesPendientes', { desde: _liqState.desde, hasta: _liqState.hasta });
-        _liqState.pendientes = Array.isArray(res) ? res : ((res && res.data) || []);
+        const arr = Array.isArray(res) ? res : ((res && res.data) || []);
+        _liqState.pendientes = arr;
+        _liqCacheSave('pendientes', arr);
+        body.dataset._hasCache = '1';
         _liqRenderPendientes();
       } else if (_liqState.tab === 'pagadas') {
-        const res = await API.get('getLiquidacionesPagadas', { desde: _liqState.desde, hasta: _liqState.hasta });
-        _liqState.pagadas = Array.isArray(res) ? res : ((res && res.data) || []);
+        const res = await API.get('getLiquidacionesPagadas', { desde: _liqOffset(_liqHoy(), -89), hasta: _liqHoy() });
+        const arr = Array.isArray(res) ? res : ((res && res.data) || []);
+        _liqState.pagadas = arr;
+        _liqCacheSave('pagadas', arr);
         _liqRenderPagadas();
       } else if (_liqState.tab === 'resumen') {
         _liqRenderResumen();
@@ -19069,18 +19115,73 @@ const MOS = (() => {
   }
 
   // ── Editar día (re-auditar) ──
+  // OPTIMISTA: abrimos el modal Auditar al instante usando los datos que ya
+  // tenemos del state (pendiente). Después fetch real en background y
+  // re-renderizamos las secciones del modal con la data fresca.
   async function _liqEditarDia(idPersonal, fecha) {
     _liqSfx('tap');
-    // Setea la fecha del módulo Evaluación y abre el modal Auditar.
-    // Si no hay resumen en cache, lo fetcha.
     _evalState.fecha = fecha;
+
+    // 1. Construir resumen sintético desde _liqState.pendientes (instantáneo)
+    const p = _liqState.pendientes.find(x => x.idPersonal === idPersonal);
+    const dia = p ? p.dias.find(d => d.fecha === fecha) : null;
+    if (p && dia) {
+      const tarifa = parseFloat(dia.tarifaEnvasado) || 0.10;
+      const envasados = tarifa > 0 ? Math.round(dia.pagoEnvasado / tarifa) : 0;
+      const synth = {
+        idPersonal: p.idPersonal,
+        nombre:     p.nombre,
+        rol:        p.rol,
+        appOrigen:  p.appOrigen,
+        fecha:      fecha,
+        presente:   true,
+        auditado:   !!dia.auditado,
+        evaluacionesCount: dia.evaluacionesCount || 0,
+        montoBase:    dia.montoBase || 0,
+        pagoEnvasado: dia.pagoEnvasado || 0,
+        bonoMeta:     dia.bonoMeta || 0,
+        sancion:      dia.sancion || 0,
+        totalDia:     dia.totalDia || 0,
+        scoreFinal:   dia.scoreFinal || 0,
+        tarifaEnvasado: tarifa,
+        unidadesEnvasadas: envasados,
+        kpis: {
+          auditoriasHechas: 0,
+          metaAuditorias: 30,
+          envasados: envasados,
+          ventasReales: 0,
+          metaVenta: 0,
+          auditPct: 0
+        },
+        manual: { limpiezaPct: 0, limpiezaProfPct: 0, checksAcum: {} },
+        sancionesDetalle: [],
+        aplicaComision: true,
+        aplicaBonoMeta: true,
+        bonusScore: 0
+      };
+      // Reemplazar resumenes con el sintético + cualquier otro previo
+      const otros = (_evalState.resumenes || []).filter(r => r.idPersonal !== idPersonal);
+      _evalState.resumenes = [...otros, synth];
+    }
+
+    // 2. Abrir modal Auditar AL INSTANTE (sin esperar fetch)
+    abrirAuditar(idPersonal);
+
+    // 3. Fetch real en background → reemplazar datos sintéticos
     try {
-      // Fetch resumenes del día específico
       const res = await API.get('getResumenTodosDia', { fecha });
-      _evalState.resumenes = Array.isArray(res) ? res : [];
+      if (Array.isArray(res)) {
+        _evalState.resumenes = res;
+        const r = res.find(x => x.idPersonal === idPersonal);
+        if (r) {
+          _evalState.auditR = r;
+          // Re-pintar las secciones internas del modal Auditar
+          try { if (typeof _renderAuditKpis === 'function') _renderAuditKpis(r); } catch(_){}
+          try { if (typeof _renderAuditChecklist === 'function') _renderAuditChecklist(r.rol); } catch(_){}
+          try { if (typeof _renderAuditLiquidacion === 'function') _renderAuditLiquidacion(); } catch(_){}
+        }
+      }
     } catch(_){}
-    // Llamar abrirAuditar — re-fetcha si no encuentra
-    await abrirAuditar(idPersonal);
   }
 
   // ── Confirmar pago (modal) ──
@@ -19134,7 +19235,13 @@ const MOS = (() => {
         const p = _liqState.pendientes.find(x => x.idPersonal === idP);
         if (!p) return null;
         const fechas = p.dias.filter(d => sel.has(d.fecha)).map(d => d.fecha);
-        return { idPersonal: idP, nombre: p.nombre, fechas };
+        return {
+          idPersonal: idP,
+          nombre: p.nombre,
+          rol: p.rol,
+          appOrigen: p.appOrigen,
+          fechas
+        };
       })
       .filter(Boolean);
 
@@ -19159,6 +19266,9 @@ const MOS = (() => {
         const res = await API.post('marcarPagos', {
           idPersonal: persona.idPersonal,
           fechas: persona.fechas,
+          nombre: persona.nombre,
+          rol: persona.rol,
+          appOrigen: persona.appOrigen,
           pagadoPor,
           comentario,
           imprimir: !!printerId,
@@ -19181,6 +19291,8 @@ const MOS = (() => {
       toast(`✓ ${idPagos.length} pago(s) registrado(s) · ${_liqMoney(totalPagado)}`, 'ok');
       _liqState.seleccion = {};
       closeModal('modalLiqConfirmar');
+      // Invalidar cache para que el siguiente fetch traiga la realidad
+      _liqCacheClear();
       // Refrescar
       await liqLoadCurrent();
     }

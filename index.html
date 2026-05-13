@@ -13263,7 +13263,7 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
     <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0 gap-2" style="border-bottom: 1px solid #1e293b">
       <div class="min-w-0 flex-1">
         <h3 class="font-semibold text-amber-400 text-base">💼 Liquidaciones de personal</h3>
-        <p id="liqHeaderInfo" class="text-xs text-slate-500 mt-0.5">Pago día a día · acumulativo</p>
+        <p id="liqHeaderInfo" class="text-xs text-amber-400/70 mt-0.5">Pago día a día · acumulativo · auto-incluye virtuales</p>
       </div>
       <button onclick="MOS.liqClose()" class="modal-close-x">×</button>
     </div>
@@ -13274,23 +13274,10 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
       <div class="liq-tab"        data-liqtab="resumen"    onclick="MOS.liqSetTab('resumen')">📊 Resumen</div>
     </div>
 
-    <!-- Filtros de rango -->
+    <!-- Barra mini (solo refrescar) — Pendientes acumula todo, Pagadas se muestra historial sin filtro -->
     <div class="px-5 py-2 flex items-center gap-2 flex-wrap" style="border-bottom: 1px solid #1e293b; background:rgba(15,23,42,.4)">
-      <div class="flex items-center gap-1">
-        <label class="text-[10px] uppercase text-slate-500 font-bold tracking-wider">Desde</label>
-        <input type="date" id="liqRangoDesde" class="inp" style="padding:4px 8px;font-size:11px;width:130px">
-      </div>
-      <div class="flex items-center gap-1">
-        <label class="text-[10px] uppercase text-slate-500 font-bold tracking-wider">Hasta</label>
-        <input type="date" id="liqRangoHasta" class="inp" style="padding:4px 8px;font-size:11px;width:130px">
-      </div>
-      <div class="flex items-center gap-1 ml-auto">
-        <button onclick="MOS.liqSetRangoPreset('hoy')"      class="liq-preset-btn">Hoy</button>
-        <button onclick="MOS.liqSetRangoPreset('semana')"   class="liq-preset-btn">Sem actual</button>
-        <button onclick="MOS.liqSetRangoPreset('quincena')" class="liq-preset-btn">Quincena</button>
-        <button onclick="MOS.liqSetRangoPreset('mes')"      class="liq-preset-btn">Mes</button>
-        <button onclick="MOS.liqRefresh()" class="liq-preset-btn" title="Refrescar (Ctrl+R)">↻</button>
-      </div>
+      <div id="liqRangoInfo" class="text-[10px] text-slate-500">Últimos 30 días acumulados</div>
+      <button onclick="MOS.liqRefresh()" class="liq-preset-btn ml-auto" title="Refrescar (Ctrl+R)">↻ Refrescar</button>
     </div>
 
     <div id="liqBody" class="overflow-y-auto px-5 py-4" style="flex: 1">

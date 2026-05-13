@@ -73,86 +73,87 @@ function _liqMapaPagados() {
 // ============================================================
 
 // Devuelve TODAS las personas con días no pagados en el rango.
-// Cada día trae los componentes (base/envasado/bonoMeta/sanción) en vivo
-// desde getResumenDia. Si el día no está auditado, igual aparece con
-// base + envasado (sin bono meta).
+// INCLUYE virtuales (MEX:...) detectados automáticamente de cajas/ventas
+// que no están en PERSONAL_MASTER pero tienen presencia y monto.
+//
+// Lógica de agrupado de identidad:
+//   - idPersonal real (PERSONAL_MASTER) → 1 entrada por persona
+//   - idPersonal virtual (MEX:nombre)  → 1 entrada por nombre detectado
+// Ningún día se duplica: si Carlos aparece como virtual hoy y mañana como
+// real (se agregó a master), se trata como personas distintas porque su
+// idPersonal cambió. Aceptable porque el master debe agregarlo en su
+// momento.
 //
 // Params: { desde:'yyyy-MM-dd', hasta:'yyyy-MM-dd' }
-// Retorna: [{ idPersonal, nombre, rol, appOrigen, dias:[{fecha, ...}], total }]
+// Retorna: [{ idPersonal, nombre, rol, appOrigen, virtual, dias:[{fecha, ...}], total }]
 function getLiquidacionesPendientes(params) {
   params = params || {};
   var hasta = params.hasta || _liqHoy();
-  var desde = params.desde || _fechaOffset(hasta, -13); // default: últimos 14 días
+  // Default: últimos 30 días para que las cosas no pagadas se acumulen
+  var desde = params.desde || _fechaOffset(hasta, -29);
   var mapaPag = _liqMapaPagados();
-
-  // Personal evaluable
-  var personalAll = _sheetToObjects(getSheet('PERSONAL_MASTER')).filter(function(r){
-    return String(r.estado) === '1' && _esPersonalEvaluable(r);
-  });
 
   var fechas = _rangoFechas(desde, hasta);
   var hoy = _liqHoy();
-  var out = [];
 
-  // Para evitar N×M llamadas a getResumenDia (costoso), pre-fetchamos
-  // getResumenTodosDia por cada fecha del rango y construimos un índice.
-  var byFechaIdP = {}; // { fecha: { idPersonal: resumen } }
+  // Acumulador: { idPersonal: { metadata, dias[] } }
+  var acum = {};
+
+  // Pre-fetch resumen por cada fecha del rango (incluye reales + virtuales).
   fechas.forEach(function(f) {
     if (f > hoy) return;
-    try {
-      var rsm = getResumenTodosDia({ fecha: f });
-      if (rsm && rsm.ok && Array.isArray(rsm.data)) {
-        byFechaIdP[f] = {};
-        var byNombre = {};
-        rsm.data.forEach(function(r){
-          if (r.idPersonal) byFechaIdP[f][r.idPersonal] = r;
-          var n = String(r.nombre || '').toLowerCase().trim();
-          if (n) byNombre[n] = r;
-        });
-        byFechaIdP[f]._byNombre = byNombre;
-      }
-    } catch(_){}
-  });
+    var rsm;
+    try { rsm = getResumenTodosDia({ fecha: f }); } catch(_){ return; }
+    if (!rsm || !rsm.ok || !Array.isArray(rsm.data)) return;
 
-  personalAll.forEach(function(p) {
-    var nombreFull = (String(p.nombre || '') + ' ' + String(p.apellido || '')).trim();
-    var nLow = nombreFull.toLowerCase();
-    var dias = [];
-    fechas.forEach(function(f) {
-      if (f > hoy) return; // no incluir futuro
-      var key = p.idPersonal + '::' + f;
-      if (mapaPag[key]) return; // ya pagado
-      // Resumen del día desde el índice (más barato que llamar getResumenDia)
-      var idx = byFechaIdP[f] || {};
-      var rd = idx[p.idPersonal] || (idx._byNombre && idx._byNombre[nLow]);
-      // Si el resumen no incluye a esta persona (no estuvo presente), saltar.
-      if (!rd) return;
-      if (!rd.presente) return;
-      dias.push({
+    rsm.data.forEach(function(r) {
+      if (!r || !r.presente) return;
+      var idP = String(r.idPersonal || '').trim();
+      if (!idP) return;
+      var key = idP + '::' + f;
+      if (mapaPag[key]) return; // ya pagado, no incluir
+
+      // Filtro: si el rol es admin/master → no liquidable
+      var rol = String(r.rol || '').toUpperCase();
+      if (rol === 'MASTER' || rol === 'ADMIN' || rol === 'ADMINISTRADOR') return;
+
+      // Crear entrada si no existe (primer día de esta persona en el rango)
+      if (!acum[idP]) {
+        acum[idP] = {
+          idPersonal: idP,
+          nombre:     String(r.nombre || ''),
+          rol:        rol,
+          appOrigen:  String(r.appOrigen || ''),
+          virtual:    !!r.__virtual || idP.indexOf('MEX:') === 0,
+          dias:       []
+        };
+      }
+      // Agregar día
+      acum[idP].dias.push({
         fecha:        f,
-        presente:     !!rd.presente,
-        auditado:     !!rd.auditado,
-        montoBase:    parseFloat(rd.montoBase)    || 0,
-        pagoEnvasado: parseFloat(rd.pagoEnvasado) || 0,
-        bonoMeta:     parseFloat(rd.bonoMeta)     || 0,
-        sancion:      parseFloat(rd.sancion)      || 0,
-        totalDia:     parseFloat(rd.totalDia)     || 0,
-        scoreFinal:   parseFloat(rd.scoreFinal)   || 0,
-        evaluacionesCount: parseInt(rd.evaluacionesCount) || 0
+        presente:     true,
+        auditado:     !!r.auditado,
+        montoBase:    parseFloat(r.montoBase)    || 0,
+        pagoEnvasado: parseFloat(r.pagoEnvasado) || 0,
+        bonoMeta:     parseFloat(r.bonoMeta)     || 0,
+        sancion:      parseFloat(r.sancion)      || 0,
+        totalDia:     parseFloat(r.totalDia)     || 0,
+        scoreFinal:   parseFloat(r.scoreFinal)   || 0,
+        evaluacionesCount: parseInt(r.evaluacionesCount) || 0,
+        tarifaEnvasado: parseFloat(r.tarifaEnvasado) || 0
       });
     });
-    if (dias.length === 0) return;
-    var total = dias.reduce(function(s,d){ return s + d.totalDia; }, 0);
-    out.push({
-      idPersonal: p.idPersonal,
-      nombre:     nombreFull,
-      rol:        String(p.rol || '').toUpperCase(),
-      appOrigen:  p.appOrigen || '',
-      dias:       dias,
-      total:      Math.round(total * 100) / 100,
-      cantidadDias: dias.length
-    });
   });
+
+  // Materializar y ordenar días por fecha
+  var out = Object.keys(acum).map(function(k) {
+    var p = acum[k];
+    p.dias.sort(function(a,b){ return String(a.fecha).localeCompare(String(b.fecha)); });
+    var total = p.dias.reduce(function(s,d){ return s + d.totalDia; }, 0);
+    p.total = Math.round(total * 100) / 100;
+    p.cantidadDias = p.dias.length;
+    return p;
+  }).filter(function(p){ return p.cantidadDias > 0; });
 
   // Ordenar: más adeudado primero, luego alfabético
   out.sort(function(a,b){
@@ -173,9 +174,32 @@ function marcarPagos(params) {
     return { ok: false, error: 'Requiere fechas[]' };
   }
 
-  // Resolver persona
+  // Resolver persona (acepta reales y virtuales MEX:nombre)
   var personalAll = _sheetToObjects(getSheet('PERSONAL_MASTER'));
   var p = personalAll.find(function(r){ return String(r.idPersonal) === String(params.idPersonal); });
+  var esVirtual = String(params.idPersonal).indexOf('MEX:') === 0;
+  if (!p && !esVirtual) {
+    // Tampoco está en master ni es virtual conocido → intentar resolverlo
+    // por getResumenDia de la primera fecha (puede que el resumen lo tenga
+    // como virtual detectado).
+    try {
+      var rs = getResumenDia({ idPersonal: params.idPersonal, fecha: params.fechas[0] });
+      if (rs && rs.ok && rs.data) {
+        p = { idPersonal: rs.data.idPersonal, nombre: rs.data.nombre, apellido: '',
+              rol: rs.data.rol, appOrigen: rs.data.appOrigen };
+      }
+    } catch(_){}
+  }
+  if (!p && esVirtual) {
+    // Virtual: usar nombre/rol/appOrigen del params o del resumen
+    p = {
+      idPersonal: params.idPersonal,
+      nombre:     params.nombre || String(params.idPersonal).substring(4),
+      apellido:   '',
+      rol:        String(params.rol || '').toUpperCase(),
+      appOrigen:  params.appOrigen || 'mosExpress'
+    };
+  }
   if (!p) return { ok: false, error: 'Personal no encontrado' };
   var nombreFull = (String(p.nombre || '') + ' ' + String(p.apellido || '')).trim();
 
