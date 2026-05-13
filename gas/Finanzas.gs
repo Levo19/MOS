@@ -576,14 +576,24 @@ function _calcularPersonal(fecha) {
   // JORNADAS queda como hoja secundaria SÓLO para detectar VETOS
   // (rows con fuente=ELIMINADA por nombre) — ahí vive el toggle 💸.
 
-  // 1) Cargar PERSONAL_MASTER para cross-check de roles admin/excluidos
+  // 1) Cargar PERSONAL_MASTER para cross-check de roles admin/excluidos.
+  //    REGLA: solo indexar por nombre solo si el master NO tiene apellido.
+  //    Si tiene apellido → indexar SOLO por nombre+apellido. Esto evita el
+  //    falso positivo donde "javier" vendedor real era excluido porque
+  //    "Javier Vasquez" admin matcheaba por primer nombre.
   var personalMaster = _sheetToObjects(getSheet('PERSONAL_MASTER'));
   var personalByNombre = {};
   personalMaster.forEach(function(p) {
-    var k = String(p.nombre || '').trim().toLowerCase();
-    if (k) personalByNombre[k] = p;
-    var kFull = ((p.nombre || '') + ' ' + (p.apellido || '')).trim().toLowerCase();
-    if (kFull && kFull !== k) personalByNombre[kFull] = p;
+    var nombreLow = String(p.nombre || '').trim().toLowerCase();
+    var apellLow  = String(p.apellido || '').trim().toLowerCase();
+    if (!nombreLow) return;
+    if (apellLow) {
+      // Tiene apellido → matching seguro requiere nombre+apellido
+      personalByNombre[nombreLow + ' ' + apellLow] = p;
+    } else {
+      // Sin apellido → indexar por nombre solo es legítimo (ej. virtuales)
+      personalByNombre[nombreLow] = p;
+    }
   });
 
   function _esRolValido(rol) {
