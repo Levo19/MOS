@@ -1479,6 +1479,58 @@ const MOS = (() => {
     return r;
   }
 
+  // ── SFX + efectos del catálogo (mismo motor del modal Auditar) ──
+  // Sonidos sintetizados con WebAudio + ripple visual al click.
+  let _catAudioCtx = null;
+  function _catSfx(tipo) {
+    try {
+      if (!_catAudioCtx) _catAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = _catAudioCtx; const t = ctx.currentTime;
+      function tone(freq, dur, gainVal, opts) {
+        const o = ctx.createOscillator(); const g = ctx.createGain();
+        o.type = (opts && opts.type) || 'sine';
+        o.frequency.setValueAtTime(freq, t + (opts?.delay || 0));
+        if (opts?.glide) o.frequency.exponentialRampToValueAtTime(opts.glide, t + (opts?.delay || 0) + dur);
+        g.gain.setValueAtTime(gainVal, t + (opts?.delay || 0));
+        g.gain.exponentialRampToValueAtTime(0.0001, t + (opts?.delay || 0) + dur);
+        o.connect(g); g.connect(ctx.destination);
+        o.start(t + (opts?.delay || 0)); o.stop(t + (opts?.delay || 0) + dur + 0.01);
+      }
+      switch (tipo) {
+        case 'expand':   tone(620, .05, .04, { type:'triangle' }); tone(880, .06, .04, { delay:.05, type:'triangle' }); break;
+        case 'collapse': tone(880, .05, .04, { type:'triangle' }); tone(620, .06, .04, { delay:.05, type:'triangle' }); break;
+        case 'tap':      tone(1300, .035, .035, { type:'triangle' }); break;
+        case 'price':    tone(900, .06, .045); tone(1300, .07, .05, { delay:.05 }); tone(1700, .08, .04, { delay:.10 }); break;
+        case 'success':  tone(660, .08, .06); tone(990, .08, .06, { delay:.08 }); tone(1320, .12, .065, { delay:.16 }); break;
+        case 'error':    tone(220, .22, .07, { type:'square', glide: 140 }); break;
+      }
+    } catch(_){}
+  }
+  function _catRipple(ev, el) {
+    try {
+      const host = el || ev.currentTarget?.closest('.cat-card');
+      if (!host) return;
+      const rect = host.getBoundingClientRect();
+      const size = Math.max(rect.width, rect.height) * 0.7;
+      const r = document.createElement('span');
+      r.className = 'cat-ripple';
+      r.style.width = r.style.height = size + 'px';
+      r.style.left = (ev.clientX - rect.left - size/2) + 'px';
+      r.style.top  = (ev.clientY - rect.top  - size/2) + 'px';
+      host.appendChild(r);
+      setTimeout(() => { try { r.remove(); } catch(_){} }, 700);
+    } catch(_){}
+  }
+  // Click en el header del card del catálogo: ripple + sonido + expand
+  function _catCardClick(ev, idProducto) {
+    _catRipple(ev);
+    // Decidir tono según vaya a expandir o colapsar
+    const wrap = $('pres-' + CSS.escape(idProducto));
+    const yaAbierto = wrap && wrap.classList.contains('pres-open');
+    _catSfx(yaAbierto ? 'collapse' : 'expand');
+    if (typeof togglePresentaciones === 'function') togglePresentaciones(idProducto);
+  }
+
   // ── Render ──────────────────────────────────────────────────
   function renderCatalogo() {
     const container = $('listCatalogo');
@@ -1582,11 +1634,12 @@ const MOS = (() => {
       return;
     }
 
-    container.innerHTML = result.map(g => {
+    container.innerHTML = result.map((g, idx) => {
       const { base, pres, score } = g;
       const eid   = CSS.escape(base.idProducto);
       const activo = _isProdActivo(base);
       const hlDesc = _highlight(base.descripcion || '—', words);
+      const staggerIdx = Math.min(idx, 20); // tope para no esperar mil ms en listas grandes
 
       // Badges
       const badgeCat  = base.idCategoria ? `<span class="badge badge-gray text-xs">${base.idCategoria}</span>` : '';
@@ -1681,9 +1734,9 @@ const MOS = (() => {
           </div>
         </div>` : '';
 
-      return `<div class="cat-card mb-3${activo ? '' : ' cat-inactive'}" id="fc-${eid}" data-cat-id="${base.idProducto}">
+      return `<div class="cat-card mb-3${activo ? '' : ' cat-inactive'}${hasAnyAlert ? ' cat-card-has-alert' : ''}" id="fc-${eid}" data-cat-id="${base.idProducto}" style="--i:${staggerIdx}">
         <!-- Header -->
-        <div class="p-4 cursor-pointer select-none" onclick="MOS.togglePresentaciones('${base.idProducto}')">
+        <div class="p-4 cursor-pointer select-none" onclick="MOS._catCardClick(event,'${base.idProducto}')">
           <div class="flex items-start gap-3">
             <div class="flex-1 min-w-0">
               <div class="flex flex-wrap gap-1 mb-2">${badgeCat}${badgeEnv}${badgePres}${badgeInac}</div>
@@ -19797,7 +19850,14 @@ const MOS = (() => {
 
     function _renderGrupo(arr, titulo, icono, area, byNombre, byIdPersonal) {
       if (!arr.length) return '';
-      const subtotal = arr.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
+      // Subtotal REAL = totalDia del resumen si existe (incluye envasado +
+      // bono meta − sanción). Fallback a p.monto (jornal base) cuando no
+      // hay resumen todavía. Así el header del grupo cuadra con las cards.
+      const subtotal = arr.reduce((s, p) => {
+        const ev = byIdPersonal[p.idPersonal] || byNombre[String(p.nombre || '').toLowerCase().trim()] || null;
+        const real = (ev && typeof ev.totalDia === 'number') ? ev.totalDia : (parseFloat(p.monto) || 0);
+        return s + real;
+      }, 0);
       return `
         <div class="fin-pers-group" data-area="${area}">
           <div class="fin-pers-group-hdr">
@@ -19831,6 +19891,23 @@ const MOS = (() => {
       _evalState.fecha = fecha;
       _evalState.byNombre = byNombre;
       _evalState.byIdPersonal = byIdPersonal;
+
+      // ── Total general REAL (suma cards visibles) ──
+      // Antes pl.gastoPersonal venía del backend basado solo en JORNADAS.
+      // Para que el "Gasto Personal" cuadre con la suma visible (que
+      // incluye envasado, bono meta y descuenta sanciones), re-sumamos
+      // aquí usando totalDia de los resúmenes con fallback al jornal.
+      if (arr.length > 0) {
+        let totalReal = 0;
+        ['POS','ALMACEN','OTRO'].forEach(area => {
+          (grupos[area] || []).forEach(p => {
+            const ev = byIdPersonal[p.idPersonal] || byNombre[String(p.nombre || '').toLowerCase().trim()] || null;
+            const real = (ev && typeof ev.totalDia === 'number') ? ev.totalDia : (parseFloat(p.monto) || 0);
+            totalReal += real;
+          });
+        });
+        if (tot) _animateCount(tot, totalReal, { prefix: 'S/ ' });
+      }
 
       let html = '';
       html += _renderGrupo(grupos.POS,     'POS · Cajeros',        '🛒', 'POS',     byNombre, byIdPersonal);
@@ -22714,6 +22791,7 @@ const MOS = (() => {
     init, nav, refresh, fabAction, iconBusy,
     openConfig, saveConfig, testConnection, closeModal, openEcoModal,
     filterCatalogo, setCatTab, toggleDerivs, togglePresentaciones, guardarPrecioRapido,
+    _catCardClick, _catSfx, _catRipple,
     abrirModalPN, cerrarModalPN, lanzarAProduccion, refreshPNManual,
     pnBuscarParaCorregir, pnSeleccionarParaCorregir,
     togglePNBanner, openImagePreview, closeImagePreview,

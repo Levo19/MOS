@@ -16,13 +16,41 @@ function getFinanzasDia(params) {
     // Esto garantiza que finanzas, evaluaciones y liquidaciones siempre cuadren.
     try { _sincronizarJornadasAutoDelDia(fecha); } catch(eS) { Logger.log('Sync jornadas: ' + eS.message); }
     var ingresos   = _calcularIngresos(fecha);
-    // Costo se calcula SOLO sobre tickets COBRADOS (no POR_COBRAR/CRÉDITO).
-    // Antes usaba ingresos.detalleIds (todos los no-anulados), produciendo
-    // margen aparente menor al estimado del 15% por la mezcla con créditos
-    // pendientes.
     var costos     = _calcularCostoVentas(fecha, ingresos.cobradosIds);
     var personal   = _calcularPersonal(fecha);
     var gastosList = _calcularGastos(fecha);
+
+    // ── Ajuste de costo REAL del personal ──
+    // _calcularPersonal devuelve solo el monto base (de JORNADAS). El costo
+    // real incluye: + pago envasado + bono por meta − sanciones del día.
+    // Cruzamos con getResumenTodosDia (que ya computa totalDia por persona)
+    // para que utilidad neta, margen neto y "Gasto Personal" reflejen la
+    // liquidación real, no solo los jornales.
+    try {
+      if (typeof getResumenTodosDia === 'function') {
+        var rsm = getResumenTodosDia({ fecha: fecha });
+        if (rsm && rsm.ok && Array.isArray(rsm.data)) {
+          var byNombre = {};
+          rsm.data.forEach(function(r){
+            var n = String(r.nombre || '').toLowerCase().trim();
+            if (n) byNombre[n] = r;
+          });
+          var totalReal = 0;
+          (personal.detalle || []).forEach(function(p){
+            if (p.vetada) return; // tombstones no cuentan
+            var n = String(p.nombre || '').toLowerCase().trim();
+            var r = byNombre[n];
+            if (r && typeof r.totalDia === 'number') {
+              p.monto = Math.round(r.totalDia * 100) / 100;
+              p.montoBaseJornal = parseFloat(p.monto) || 0; // info
+            }
+            totalReal += parseFloat(p.monto) || 0;
+          });
+          personal.total = Math.round(totalReal * 100) / 100;
+        }
+      }
+    } catch(eAj) { Logger.log('Ajuste personal real falló: ' + eAj.message); }
+
     return { ok: true, data: _armarPL(fecha, ingresos, costos, personal, gastosList) };
   } catch(e) {
     return { ok: false, error: e.message };

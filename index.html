@@ -5658,12 +5658,84 @@
     .mos-perms-btn-listo:not(:disabled):active { transform:scale(.98); }
     .mos-perms-progress-text { font-size:.7em;color:#94a3b8;font-weight:700; }
 
-    /* ── Catalog cards ──────────────────────────────────── */
+    /* ── Catalog cards (premium · efectos modernos) ─────── */
     .cat-card {
-      background: #0f172a; border: 1px solid #1e293b; border-radius: 14px; overflow: hidden;
-      transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+      position: relative;
+      background: linear-gradient(135deg, #0c1424 0%, #0f172a 45%, #0a1428 100%);
+      border: 1px solid #1e293b;
+      border-radius: 14px;
+      overflow: hidden;
+      transition:
+        transform .25s cubic-bezier(.34,1.56,.64,1),
+        box-shadow .25s ease,
+        border-color .2s ease,
+        background .3s ease;
+      animation: catCardIn .35s cubic-bezier(.34,1.56,.64,1) backwards;
     }
-    .cat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(99,102,241,.13); border-color: #2d3f5a; }
+    /* Stagger de entrada (asignado por JS via style="--i:N") */
+    .cat-card { animation-delay: calc(var(--i, 0) * 30ms); }
+    @keyframes catCardIn {
+      from { opacity: 0; transform: translateY(8px) scale(.97); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    /* Sheen diagonal en hover */
+    .cat-card::before {
+      content:''; position:absolute; top:0; left:-100%; width:60%; height:100%;
+      background: linear-gradient(120deg, transparent 30%, rgba(99,102,241,.10) 50%, rgba(168,85,247,.06) 65%, transparent 80%);
+      pointer-events:none; transition: left .7s cubic-bezier(.34,1.56,.64,1);
+      z-index: 1;
+    }
+    .cat-card:hover::before { left: 130%; }
+    .cat-card:hover {
+      transform: translateY(-3px) scale(1.003);
+      box-shadow:
+        0 12px 32px -8px rgba(99,102,241,.28),
+        0 0 0 1px rgba(99,102,241,.15) inset;
+      border-color: rgba(99,102,241,.45);
+      background: linear-gradient(135deg, #0e1730 0%, #11193a 45%, #0c1530 100%);
+    }
+    .cat-card:active { transform: translateY(-1px) scale(.998); }
+    /* Card con alerta: borde dorado pulsante */
+    .cat-card.cat-card-has-alert {
+      border-color: rgba(251,191,36,.35);
+      box-shadow: 0 0 0 1px rgba(251,191,36,.12) inset;
+    }
+    .cat-card.cat-card-has-alert::after {
+      content:''; position:absolute; top:0; left:0; right:0; height:2px;
+      background: linear-gradient(90deg, transparent, #fbbf24 30%, #fde68a 50%, #fbbf24 70%, transparent);
+      animation: catAlertGlow 2.4s ease-in-out infinite;
+      pointer-events:none;
+    }
+    @keyframes catAlertGlow {
+      0%,100% { opacity: .35; }
+      50%     { opacity: 1; }
+    }
+    /* Ripple universal en card */
+    .cat-card .cat-ripple {
+      position: absolute; border-radius: 50%; transform: scale(0);
+      background: rgba(168,85,247,.35);
+      animation: catRippleExpand .6s ease-out;
+      pointer-events: none; z-index: 2;
+    }
+    @keyframes catRippleExpand {
+      to { transform: scale(4); opacity: 0; }
+    }
+    /* Header del card respira sutil al hacer hover */
+    .cat-card > .p-4 { position: relative; z-index: 2; }
+    /* Precio: glow al cambiar (clase cat-price-bump aplicada por JS) */
+    .cat-card .cat-price {
+      transition: transform .35s cubic-bezier(.34,1.56,.64,1), text-shadow .35s, color .2s;
+    }
+    .cat-card .cat-price.cat-price-bump {
+      animation: catPriceBump .45s cubic-bezier(.34,1.56,.64,1);
+      text-shadow: 0 0 14px rgba(168,85,247,.8), 0 0 28px rgba(99,102,241,.4);
+    }
+    @keyframes catPriceBump {
+      0%   { transform: scale(1); }
+      35%  { transform: scale(1.22); }
+      70%  { transform: scale(.96); }
+      100% { transform: scale(1); }
+    }
     /* Pulso visual al crear/editar — confirma visualmente que se guardó */
     .cat-card.cat-card-pulse {
       animation: catCardPulse 2s cubic-bezier(.4,0,.2,1);
