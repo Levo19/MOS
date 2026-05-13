@@ -4,7 +4,7 @@
 // y liquidación semanal con bonos por score (tramos) y por meta.
 // ============================================================
 
-// ── Hoja EVALUACIONES (auto-crear) ─────────────────────────────
+// ── Hoja EVALUACIONES (auto-crear + agregar columnas faltantes) ──
 function _getEvalSheet() {
   var ss = getSpreadsheet();
   var sheet = ss.getSheetByName('EVALUACIONES');
@@ -14,9 +14,21 @@ function _getEvalSheet() {
       'idEval', 'fecha', 'idPersonal', 'rol', 'hora',
       'limpiezaPct', 'limpiezaProfPct',
       'controlChecks', 'comentario', 'evaluadoPor',
-      'aplicaComision', 'aplicaBonoMeta', 'activo'
+      'aplicaComision', 'aplicaBonoMeta', 'activo',
+      'sancion', 'sancionMotivo'  // nuevos
     ]);
     sheet.setFrozenRows(1);
+  } else {
+    // Migración: agregar columnas faltantes si la hoja ya existía sin ellas
+    var lastCol = sheet.getLastColumn();
+    var hdrs = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    if (hdrs.indexOf('sancion') === -1) {
+      sheet.getRange(1, lastCol + 1).setValue('sancion');
+      lastCol++;
+    }
+    if (hdrs.indexOf('sancionMotivo') === -1) {
+      sheet.getRange(1, lastCol + 1).setValue('sancionMotivo');
+    }
   }
   return sheet;
 }
@@ -69,7 +81,9 @@ function crearEvaluacion(params) {
     params.evaluadoPor || '',
     params.aplicaComision === false || String(params.aplicaComision) === 'false' ? false : true,
     params.aplicaBonoMeta === false || String(params.aplicaBonoMeta) === 'false' ? false : true,
-    true
+    true,
+    Math.max(0, parseFloat(params.sancion) || 0),     // monto a descontar
+    String(params.sancionMotivo || '')
   ]);
   return { ok: true, data: { idEval: id } };
 }
@@ -286,12 +300,15 @@ function getResumenDia(params) {
     return rf === fecha && r.idPersonal === idPersonal;
   });
 
-  // Acumulativo: MAX para limpiezas, OR para checks
+  // Acumulativo: MAX para limpiezas, OR para checks. SUMA para sanciones
+  // (cada evaluación del día puede tener su propia sanción independiente).
   var maxLimp = 0, maxLimpProf = 0;
   var checksAcum = {};
   var totalKeysVistos = {};   // todas las llaves del checklist enviadas
   var comentarios = [];
   var aplicaComision = true, aplicaBonoMeta = true;
+  var sancionTotal = 0;
+  var sancionesDetalle = [];  // [{ hora, monto, motivo }]
   evals.forEach(function(e){
     var l  = parseFloat(e.limpiezaPct) || 0;
     if (l  > maxLimp)     maxLimp     = l;
@@ -309,7 +326,16 @@ function getResumenDia(params) {
     if (e.comentario) comentarios.push('[' + e.hora + '] ' + e.comentario);
     if (e.aplicaComision === false || String(e.aplicaComision) === 'false') aplicaComision = false;
     if (e.aplicaBonoMeta === false || String(e.aplicaBonoMeta) === 'false') aplicaBonoMeta = false;
+    // Sanción: las sanciones SE SUMAN entre evaluaciones del día (no MAX)
+    var sancRow = parseFloat(e.sancion) || 0;
+    if (sancRow > 0) {
+      sancionTotal += sancRow;
+      sancionesDetalle.push({
+        hora: e.hora || '', monto: sancRow, motivo: String(e.sancionMotivo || '')
+      });
+    }
   });
+  sancionTotal = Math.round(sancionTotal * 100) / 100;
 
   var checkCount = Object.keys(checksAcum).length;
   var checkTotal = Object.keys(totalKeysVistos).length || 9;
@@ -404,9 +430,13 @@ function getResumenDia(params) {
       pagoEnvasado:  Math.round(envasadoEfectivo * 100) / 100,  // nuevo
       tarifaEnvasado: cfg.tarifaEnvasadoPorUnidad,                // info: cuánto S/uds
       unidadesEnvasadas: parseFloat(kpis.envasados) || 0,
+      sancion:       sancionTotal,                                // monto descontado del día
+      sancionesDetalle: sancionesDetalle,
       montoBase:     baseEfectiva,
       tarifaDiaria:  montoBase, // tarifa configurada (info)
-      totalDia:      Math.round((baseEfectiva + bonusEfectivo + metaEfectivo + envasadoEfectivo) * 100) / 100,
+      // totalDia ya descuenta la sanción del día. Si la sanción es mayor
+      // que lo que ganó, queda en 0 (no negativo — no se le debe al admin).
+      totalDia:      Math.max(0, Math.round((baseEfectiva + bonusEfectivo + metaEfectivo + envasadoEfectivo - sancionTotal) * 100) / 100),
       aplicaComision: aplicaComision,
       aplicaBonoMeta: aplicaBonoMeta
     }

@@ -20865,51 +20865,74 @@ const MOS = (() => {
     resumenes: [],
     fecha: today(),
     auditChecks: {},
-    rolItems: {
+    // Checklists DEFAULT — overridables desde CONFIG_MOS con claves:
+    //   evalChecklistCAJERO, evalChecklistVENDEDOR,
+    //   evalChecklistALMACENERO, evalChecklistENVASADOR
+    // (cada uno es un JSON array de strings).
+    // El editor se accede desde Configuración → Personal → "📝 Editar checklists".
+    rolItemsDefault: {
       CAJERO: [
-        'Atención al cliente cordial y rápida',
-        'Sigue procedimiento de cobro',
-        'Usa el sistema correctamente (sin manipular tickets)',
-        'Maneja efectivo correctamente',
-        'Cuadre de caja sin diferencias',
-        'Estación limpia y ordenada',
+        'Vende con amabilidad y trato cordial',
+        'Cobra correctamente (sin manipular tickets)',
+        'Hace guías de ingreso bien (productos + cantidades + precios)',
+        'Rellena/repone productos del exhibidor durante el turno',
+        'Conoce los precios y promociones vigentes',
+        'Maneja efectivo sin diferencias en el cuadre',
         'Reporta incidencias y anomalías',
-        'Uniforme y presentación adecuada',
-        'Puntualidad de entrada/salida'
+        'Uniforme y puntualidad correctos'
       ],
       VENDEDOR: [
-        'Atención al cliente cordial y rápida',
-        'Sigue procedimiento de cobro',
-        'Usa el sistema correctamente (sin manipular tickets)',
-        'Maneja efectivo correctamente',
-        'Cuadre de caja sin diferencias',
-        'Estación limpia y ordenada',
+        'Vende con amabilidad y trato cordial',
+        'Cobra correctamente (sin manipular tickets)',
+        'Hace guías de ingreso bien (productos + cantidades + precios)',
+        'Rellena/repone productos del exhibidor durante el turno',
+        'Conoce los precios y promociones vigentes',
         'Reporta incidencias y anomalías',
-        'Uniforme y presentación adecuada',
-        'Puntualidad de entrada/salida'
+        'Uniforme y puntualidad correctos'
       ],
       ALMACENERO: [
-        'Productos con membretes correctos',
-        'Stock organizado por zonas',
-        'Productos en buen estado / sin deterioro',
-        'Rotación FIFO respetada',
+        'Buen uso del sistema (registra todo en WH)',
+        'Productos bien acomodados en sus zonas',
+        'Productos bien rotulados (lote, fecha, código)',
+        'Stock organizado y FIFO respetada',
+        'Recibe mercadería con cuidado y verificación',
         'Equipos de seguridad usados',
-        'Reporte de mermas / anomalías',
-        'Estación limpia y ordenada',
+        'Reporta mermas y anomalías',
         'Puntualidad de entrada/salida'
       ],
       ENVASADOR: [
+        'Buen uso del sistema (registra cada envasado)',
         'Envasado uniforme (peso/volumen)',
         'Sellado correcto (sin fugas)',
         'Etiquetado completo (lote, fecha, código)',
         'Preservación e higiene de insumos',
-        'Equipos de seguridad usados',
         'Limpieza tras cada envasado',
         'Reporte de mermas',
         'Puntualidad de entrada/salida'
       ]
-    }
+    },
+    // Computed dinámico al cargar: si CONFIG_MOS tiene override, lo usa
+    rolItems: null
   };
+
+  // Helper: resuelve checklist de un rol (CONFIG_MOS override → fallback default)
+  function _evalChecklistDe(rol) {
+    const ROL = String(rol || '').toUpperCase();
+    if (!_evalState.rolItems) {
+      _evalState.rolItems = {};
+      const cfg = cfgData.config || {};
+      ['CAJERO','VENDEDOR','ALMACENERO','ENVASADOR'].forEach(r => {
+        const k = 'evalChecklist' + r;
+        const raw = cfg[k];
+        let arr = null;
+        if (raw) {
+          try { arr = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch(_){}
+        }
+        _evalState.rolItems[r] = (Array.isArray(arr) && arr.length) ? arr : _evalState.rolItemsDefault[r];
+      });
+    }
+    return _evalState.rolItems[ROL] || _evalState.rolItems.CAJERO;
+  }
 
   function _evalScoreClass(score) {
     if (score >= 85) return 'eval-score-high';
@@ -21087,6 +21110,9 @@ const MOS = (() => {
 
     $('auditTogComision').classList.add('on');
     $('auditTogMeta').classList.add('on');
+    // Reset sanción al abrir (se vuelve a llenar si se quiere aplicar)
+    const sa = $('auditSancion');         if (sa) sa.value = '';
+    const sm = $('auditSancionMotivo');   if (sm) sm.value = '';
     _renderAuditKpis(r);
     _renderAuditChecklist(r.rol);
     openModal('modalAuditar');
@@ -21112,29 +21138,42 @@ const MOS = (() => {
     let rows = [];
 
     if (rol === 'CAJERO' || rol === 'VENDEDOR') {
-      // POS: ventas + auditorías de productos vendidos
-      rows.push(_kpiRow('🛒 Ventas del día',         `S/${(k.ventasReales || 0).toFixed(2)}`, k.ventasPct || 0));
-      rows.push(_kpiRow('📋 Auditorías de productos', `${k.auditoriasHechas || 0}/${auditMeta}`, k.auditPct || 0));
-    } else if (rol === 'ENVASADOR') {
-      // Envasador: unidades producidas + eficiencia (real vs esperado) + mermas
-      const efic = (k.eficienciaPromedio != null) ? k.eficienciaPromedio
-                 : (k.eficienciaPct != null)     ? k.eficienciaPct : 0;
-      rows.push(_kpiRow('🏷 Unidades envasadas',    `${k.envasados || 0}`,              k.ventasPct || 0));
-      rows.push(_kpiRow('⚡ Eficiencia promedio',   `${parseFloat(efic).toFixed(1)}%`,  parseFloat(efic) || 0));
-      if (k.mermaPct != null) {
-        rows.push(_kpiRow('🗑 Merma %', `${parseFloat(k.mermaPct).toFixed(1)}%`, Math.min(100, parseFloat(k.mermaPct) || 0)));
+      // POS — punto 1: meta diaria compartida de la zona
+      const metaZona = parseFloat(k.metaVenta) || 0;
+      const venta    = parseFloat(k.ventasReales) || 0;
+      const zonaNom  = k.zonaPrincipal ? ` · zona ${k.zonaPrincipal}` : '';
+      if (metaZona > 0) {
+        const pct = Math.min(100, (venta / metaZona) * 100);
+        rows.push(_kpiRow(
+          `🎯 Meta diaria${zonaNom}`,
+          `S/${venta.toFixed(2)} / S/${metaZona.toFixed(0)}`,
+          pct
+        ));
+      } else {
+        rows.push(_kpiRow('🎯 Meta diaria', '⚠ Sin meta configurada · ver Infra', 0));
       }
-    } else if (rol === 'ALMACENERO') {
-      // Almacenero: guías procesadas + auditorías de stock + diferencias
-      rows.push(_kpiRow('📦 Guías procesadas',          `${k.guias || 0}`,                        k.ventasPct || 0));
-      rows.push(_kpiRow('🕵 Auditorías de inventario',  `${k.auditoriasHechas || 0}/${auditMeta}`, k.auditPct || 0));
-      if (k.diferenciasDetectadas != null) {
-        rows.push(_kpiRow('⚠ Diferencias detectadas', `${k.diferenciasDetectadas || 0}`, 0));
+      // POS — punto 2: auditorías de productos
+      rows.push(_kpiRow('📋 Auditorías de productos', `${k.auditoriasHechas || 0}/${auditMeta}`, k.auditPct || 0));
+    } else if (rol === 'ALMACENERO' || rol === 'ENVASADOR') {
+      // Almacén — punto 1: auditorías
+      rows.push(_kpiRow('📋 Auditorías diarias', `${k.auditoriasHechas || 0}/${auditMeta}`, k.auditPct || 0));
+      // Almacén — punto 2: unidades envasadas + pago calculado
+      const envasados = parseFloat(k.envasados) || 0;
+      const tarifa = parseFloat(r.tarifaEnvasado) || 0;
+      const pagoEnvasado = parseFloat(r.pagoEnvasado) || (envasados * tarifa);
+      const tipoEnv = envasados > 0
+        ? `${envasados} uds × S/${tarifa.toFixed(2)} = S/${pagoEnvasado.toFixed(2)}`
+        : `${envasados} uds`;
+      rows.push(_kpiRow('🏷 Envasado del día', tipoEnv, Math.min(100, envasados / 5)));
+      // Para almacenero extra: guías procesadas (info, sin meta vinculada al bono)
+      if (rol === 'ALMACENERO' && k.guias > 0) {
+        rows.push(_kpiRow('📦 Guías procesadas (info)', `${k.guias || 0}`, 0));
       }
     } else {
       rows.push(_kpiRow('Actividad del día', `${k.auditoriasHechas || 0}/${auditMeta}`, k.auditPct || 0));
     }
 
+    // Score final y total estimado del día (info)
     rows.push(_kpiRow('🎯 Score acumulado', `${r.scoreFinal || 0}%`, r.scoreFinal || 0));
     cont.innerHTML = rows.join('');
   }
@@ -21152,7 +21191,7 @@ const MOS = (() => {
   function _renderAuditChecklist(rol) {
     const cont = $('auditControlList');
     if (!cont) return;
-    const items = _evalState.rolItems[String(rol || '').toUpperCase()] || _evalState.rolItems.CAJERO;
+    const items = _evalChecklistDe(rol);
     cont.innerHTML = items.map((txt, i) => {
       const key = 'c' + i;
       const checked = !!_evalState.auditChecks[key];
@@ -21191,12 +21230,20 @@ const MOS = (() => {
     if (!idPersonal || !rol) { toast('Datos incompletos', 'error'); return; }
 
     // Construir checklist completo: incluye TRUE y FALSE para todos los items del rol
-    const items = _evalState.rolItems[String(rol).toUpperCase()] || _evalState.rolItems.CAJERO;
+    const items = _evalChecklistDe(rol);
     const checksFull = {};
     items.forEach((_, i) => {
       const k = 'c' + i;
       checksFull[k] = !!_evalState.auditChecks[k];
     });
+
+    // Sanción opcional (monto negativo). El motivo se anexa al comentario.
+    const sancion = Math.max(0, parseFloat($('auditSancion')?.value) || 0);
+    const sancionMotivo = String($('auditSancionMotivo')?.value || '').trim();
+    const comentarioBase = $('auditComentario').value || '';
+    const comentarioFinal = sancion > 0
+      ? (comentarioBase + (comentarioBase ? '\n' : '') + `⚠ Sanción S/${sancion.toFixed(2)}${sancionMotivo ? ' — ' + sancionMotivo : ''}`)
+      : comentarioBase;
 
     const params = {
       idPersonal,
@@ -21205,7 +21252,9 @@ const MOS = (() => {
       limpiezaPct: parseFloat($('auditLimpieza').value) || 0,
       limpiezaProfPct: parseFloat($('auditLimpiezaProf').value) || 0,
       controlChecks: JSON.stringify(checksFull),
-      comentario: $('auditComentario').value || '',
+      comentario: comentarioFinal,
+      sancion: sancion,                // NUEVO: monto negativo del día
+      sancionMotivo: sancionMotivo,    // NUEVO: motivo para auditoría
       evaluadoPor: S.session?.nombre || '',
       aplicaComision: $('auditTogComision').classList.contains('on'),
       aplicaBonoMeta: $('auditTogMeta').classList.contains('on')

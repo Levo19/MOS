@@ -8477,6 +8477,21 @@
             <div id="auditControlList" class="space-y-1"></div>
           </div>
 
+          <!-- Sanción (opcional) — monto negativo que se resta del totalDia -->
+          <div class="pt-3" style="border-top:1px dashed rgba(248,113,113,.25)">
+            <label class="lbl flex items-center justify-between">
+              <span>⚠ Sanción del día (opcional)</span>
+              <span class="text-[10px] text-slate-500 font-normal">monto a descontar</span>
+            </label>
+            <div class="flex items-center gap-2">
+              <span class="text-sm text-slate-500">−S/</span>
+              <input id="auditSancion" type="number" min="0" step="0.50" placeholder="0.00"
+                class="inp flex-1" style="border-color:rgba(248,113,113,.3)">
+            </div>
+            <input id="auditSancionMotivo" type="text" placeholder="Motivo de la sanción (ej: falta de aseo, incumplimiento)"
+              class="inp mt-1 text-xs" style="border-color:rgba(248,113,113,.2)">
+          </div>
+
           <!-- Comentario -->
           <div>
             <label class="lbl">Comentario</label>
