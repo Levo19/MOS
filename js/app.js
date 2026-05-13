@@ -11850,6 +11850,7 @@ const MOS = (() => {
     const metaEnvasador  = cfg.evalMetaEnvasador  || '';
     const metaAlmacenero = cfg.evalMetaAlmacenero || '';
     const metaAuditorias = cfg.evalMetaAuditorias || '';
+    const comisionExcPct = cfg.evalComisionExcedentePct != null ? cfg.evalComisionExcedentePct : '5';
 
     // ── Grupo 1: ADMIN/MASTER (MOS) ─────
     const grupoMOS = `<div class="card p-4" style="background:linear-gradient(135deg,#1e1b4b 0%,#0d1526 100%);border:1px solid #6366f1;">
@@ -11885,8 +11886,14 @@ const MOS = (() => {
           </div>
         </div>
         <div class="flex flex-wrap gap-1.5">
-          ${_renderMetaChip('Meta venta diaria', 'evalMetaCajero', metaCajero, 'S/', '#f59e0b')}
+          ${_renderMetaChip('Meta venta diaria',       'evalMetaCajero',            metaCajero,     'S/', '#f59e0b')}
+          ${_renderMetaChip('Comisión sobre excedente','evalComisionExcedentePct',  comisionExcPct, '%',  '#10b981')}
         </div>
+      </div>
+      <div class="text-[10px] text-slate-500 italic px-1 mb-2">
+        ⓘ Valores globales (fallback). Cada zona puede sobrescribir su meta y % en
+        <a href="javascript:MOS.nav('config');setTimeout(()=>MOS.setCfgTab('infra'),50)" class="text-amber-400 hover:underline">Infraestructura</a>
+        editando la zona.
       </div>
       <div id="listMeCajeros" class="space-y-2"></div>
       <span id="cfgMeCajerosCount" class="hidden"></span>
