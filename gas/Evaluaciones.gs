@@ -352,13 +352,13 @@ function getResumenDia(params) {
                  + (controlPct          * cfg.pesoControl);
   scoreFinal = Math.round(scoreFinal * 10) / 10;
 
-  // Bonus por tramo de score
+  // ── Bono por desempeño ELIMINADO ──
+  // Antes existía un "bono score" calculado por tramos sobre montoBase.
+  // El user pidió retirarlo: no está entre los 5 puntos de evaluación,
+  // así que aquí lo dejamos en 0 (los lectores legacy ven 0, sin romper).
   var bonusPctScore = 0;
-  for (var i = 0; i < cfg.bonoTramos.length; i++) {
-    if (scoreFinal >= cfg.bonoTramos[i].min) { bonusPctScore = cfg.bonoTramos[i].pct; break; }
-  }
   var montoBase  = parseFloat(p.montoBase) || 0;
-  var bonusScore = aplicaComision ? (montoBase * bonusPctScore / 100) : 0;
+  var bonusScore = 0;
 
   // Bono por meta SOLO aplica a CAJERO/VENDEDOR (POS). Usa la meta
   // efectiva (kpis.metaVenta de la zona principal). Ni ALMACENERO ni
@@ -388,16 +388,18 @@ function getResumenDia(params) {
   }
 
   // Lógica de pago por rol:
-  // - ENVASADOR: solo pago por envasado (sin base diaria, sin bono)
-  // - ALMACENERO + otros: base diaria + bono score + bono meta + envasado
+  // - ENVASADOR: solo pago por envasado (sin base diaria)
+  // - ALMACENERO: base diaria + envasado opcional
+  // - CAJERO/VENDEDOR: base diaria + bono por meta (si la zona la logró)
+  // Reglas:
   //   - Base diaria: solo si presente
-  //   - Bonos: solo si presente Y auditado
-  //   - Envasado: solo si presente (es por trabajo real)
+  //   - Bono por meta: solo presente + auditado (no aplica a almacén)
+  //   - Envasado: solo si presente (es por trabajo real, sin auditoría requerida)
   var presente = _estaPresente(p, fecha);
   var auditado = evals.length > 0;
   var esEnvasadorPuro = (p.rol === 'ENVASADOR');
   var baseEfectiva  = (presente && !esEnvasadorPuro) ? montoBase : 0;
-  var bonusEfectivo = (presente && auditado && !esEnvasadorPuro) ? bonusScore : 0;
+  var bonusEfectivo = 0; // Bono por desempeño eliminado
   var metaEfectivo  = (presente && auditado && !esEnvasadorPuro) ? bonoMeta   : 0;
   var envasadoEfectivo = presente ? pagoEnvasado : 0;
 
@@ -1134,7 +1136,6 @@ function imprimirLiquidacionDia(params) {
   // ── SCORE FINAL ────────────────────────────────────────────
   txt += _pEnd('SCORE FINAL DEL DIA', 28) + _pSt((r.scoreFinal || 0).toFixed(1)+'%', 10) + '\n';
   txt += _bar(r.scoreFinal || 0);
-  txt += _pEnd('Bono por desempeno', 28) + _pSt('+'+(r.bonusPctScore || 0)+'%', 10) + '\n';
   if (esPos && r.metaPct) {
     txt += _pEnd('Avance meta venta', 28) + _pSt((r.metaPct).toFixed(1)+'%', 10) + '\n';
   }
@@ -1158,11 +1159,9 @@ function imprimirLiquidacionDia(params) {
   txt += '\x1b\x21\x00';
   txt += _pEnd('Base diaria', W-12)         + _amtP(r.montoBase, 12) + '\n';
   if (esPos) {
-    txt += _pEnd('Bono desempeno', W-12)    + _amtP(r.bonusScore, 12) + '\n';
     txt += _pEnd('Bono por meta', W-12)     + _amtP(r.bonoMeta, 12) + '\n';
   } else if (esAlm) {
     txt += _pEnd('Pago envasado', W-12)     + _amtP(r.pagoEnvasado, 12) + '\n';
-    txt += _pEnd('Bono desempeno', W-12)    + _amtP(r.bonusScore, 12) + '\n';
   }
   if (r.sancion && parseFloat(r.sancion) > 0) {
     txt += _pEnd('Sancion del dia', W-12)   + _amtN(-Math.abs(r.sancion), 12) + '\n';

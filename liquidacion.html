@@ -170,7 +170,6 @@
         <td><strong>${x.diaSemana}</strong> <span style="color:#64748b">${x.fecha.substring(8,10)}/${x.fecha.substring(5,7)}</span></td>
         <td class="center">${pill(x.score, x.presente, x.auditado)}</td>
         <td class="right">${x.presente ? fmt(x.montoBase) : '—'}</td>
-        <td class="right" style="color:${x.bonusScore > 0 ? '#fbbf24' : '#475569'}">${x.bonusScore > 0 ? '+' + fmt(x.bonusScore) : '—'}</td>
         <td class="right" style="color:${x.bonoMeta > 0 ? '#4ade80' : '#475569'}">${x.bonoMeta > 0 ? '+' + fmt(x.bonoMeta) : '—'}</td>
         <td class="right"><strong>${x.presente ? fmt(x.totalDia) : '—'}</strong></td>
       </tr>`;
@@ -206,7 +205,6 @@
               <th>Día</th>
               <th class="center">Score</th>
               <th class="right">Base</th>
-              <th class="right">Bonus%</th>
               <th class="right">Meta</th>
               <th class="right">Total</th>
             </tr>
@@ -215,7 +213,6 @@
         </table>
         <div class="total-summary">
           <div class="row"><span>Base total</span><span>${fmt(t.base)}</span></div>
-          <div class="row"><span>Bonus por score</span><span style="color:#fbbf24">+${fmt(t.bonus)}</span></div>
           <div class="row"><span>Bonos por meta</span><span style="color:#4ade80">+${fmt(t.meta)}</span></div>
           <div class="row big"><span>A cobrar</span><span>${fmt(t.aCobrar)}</span></div>
         </div>
@@ -243,14 +240,12 @@
         x.diaSemana.padEnd(4) + ' ' + x.fecha +
         '  ' + marca +
         '  base ' + (x.presente ? fmt(x.montoBase) : '   ---') +
-        '  bono ' + fmt(x.bonusScore) +
         '  meta ' + fmt(x.bonoMeta) +
         '  =>  ' + (x.presente ? fmt(x.totalDia) : '   ---')
       );
     });
     lineas.push('');
     lineas.push('Base total: ' + fmt(t.base));
-    lineas.push('Bonus:      ' + fmt(t.bonus));
     lineas.push('Meta:       ' + fmt(t.meta));
     lineas.push('A COBRAR:   ' + fmt(t.aCobrar));
     document.getElementById('planoTxt').textContent = lineas.join('\n');

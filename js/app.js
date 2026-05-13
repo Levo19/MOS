@@ -21349,29 +21349,23 @@ const MOS = (() => {
     const esAlm = (rol === 'ALMACENERO' || rol === 'ENVASADOR');
 
     const base       = parseFloat(r.montoBase)    || 0;
-    const bonusScore = parseFloat(r.bonusScore)   || 0;
     const bonoMeta   = parseFloat(r.bonoMeta)     || 0;
     const pagoEnv    = parseFloat(r.pagoEnvasado) || 0;
     const sancion    = parseFloat($('auditSancion')?.value) || 0;
 
-    const togCom  = $('auditTogComision');
     const togMeta = $('auditTogMeta');
-    const aplicaCom  = togCom  ? togCom.classList.contains('on')  : true;
     const aplicaMeta = togMeta ? togMeta.classList.contains('on') : true;
+    const metaEf  = aplicaMeta ? bonoMeta : 0;
 
-    const bonusEf = aplicaCom  ? bonusScore : 0;
-    const metaEf  = aplicaMeta ? bonoMeta   : 0;
-
+    // ── Bono por desempeño ELIMINADO ──
+    // No está entre los 5 puntos de evaluación. La liquidación solo
+    // considera: base + (bono meta POS | pago envasado almacén) − sanción.
     const items = [];
     items.push(['💵 Base diaria', base, false]);
     if (esPos) {
-      items.push(['🌟 Bono por desempeño', bonusEf, false, !aplicaCom ? 'comisión desactivada' : '']);
       items.push(['🎯 Bono por meta', metaEf, false, !aplicaMeta ? 'meta desactivada' : (bonoMeta === 0 ? 'meta no lograda' : '')]);
     } else if (esAlm) {
       items.push(['🏷 Pago envasado', pagoEnv, false]);
-      items.push(['🌟 Bono por desempeño', bonusEf, false, !aplicaCom ? 'comisión desactivada' : '']);
-    } else {
-      items.push(['🌟 Bono por desempeño', bonusEf, false]);
     }
     if (sancion > 0) items.push(['⚠ Sanción del día', sancion, true]);
 
@@ -21385,11 +21379,11 @@ const MOS = (() => {
       </div>`;
     }).join('');
 
-    const total = Math.max(0, base + bonusEf + metaEf + (esAlm ? pagoEnv : 0) - sancion);
+    const total = Math.max(0, base + metaEf + (esAlm ? pagoEnv : 0) - sancion);
     const totalStr = `S/${total.toFixed(2)}`;
     const cambio = totEl.textContent !== totalStr;
     totEl.textContent = totalStr;
-    if (sancion > 0 && (base + bonusEf + metaEf + (esAlm ? pagoEnv : 0) - sancion) < 0) {
+    if (sancion > 0 && (base + metaEf + (esAlm ? pagoEnv : 0) - sancion) < 0) {
       totEl.style.color = '#f87171';
       totEl.title = 'Sanción excede el total, se trunca a S/0.00';
     } else {

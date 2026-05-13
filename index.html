@@ -8710,16 +8710,14 @@
             <textarea id="auditComentario" class="inp" rows="2" placeholder="Observaciones, méritos, incidencias..."></textarea>
           </div>
 
-          <!-- Toggles comisión -->
+          <!-- Toggle: aplicar bono por meta (POS) -->
           <div class="space-y-2 pt-2 border-t border-slate-800">
-            <label class="flex items-center justify-between text-sm cursor-pointer">
-              <span class="text-slate-300">Aplicar a comisión del día</span>
-              <button type="button" id="auditTogComision" class="toggle-sw on" onclick="MOS.auditToggle('auditTogComision')"><span class="toggle-sw-knob"></span></button>
-            </label>
             <label class="flex items-center justify-between text-sm cursor-pointer">
               <span class="text-slate-300">Aplicar bono por meta</span>
               <button type="button" id="auditTogMeta" class="toggle-sw on" onclick="MOS.auditToggle('auditTogMeta')"><span class="toggle-sw-knob"></span></button>
             </label>
+            <!-- Toggle de comisión eliminado — bono por desempeño ya no existe -->
+            <button type="button" id="auditTogComision" class="hidden"></button>
           </div>
         </div>
         <div class="px-5 py-3 border-t border-slate-800 flex gap-2">
@@ -8769,12 +8767,6 @@
                 <label class="lbl">Meta doble (S/)</label>
                 <input type="number" step="1" id="cfgBonoMetaDoble" class="inp" placeholder="15">
               </div>
-            </div>
-          </div>
-          <div class="pt-2 border-t border-slate-800">
-            <div class="text-xs text-slate-500">
-              Tramos de bonus por score (no editables aquí):<br>
-              <span class="text-slate-400">&lt;50% = 0% · 50-69% = +3% · 70-84% = +7% · 85-94% = +12% · 95+ = +18%</span>
             </div>
           </div>
 
