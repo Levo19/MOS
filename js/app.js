@@ -21442,19 +21442,61 @@ const MOS = (() => {
 
   async function finGuardarMargenDefault() {
     const v = parseFloat($('finMargenDefaultInput')?.value);
-    if (isNaN(v) || v < 0 || v >= 100) { toast('Margen debe ser 0-99', 'error'); return; }
-    const btn = $('finMargenDefaultSaveBtn');
-    if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
-    try {
-      await API.post('setConfig', { clave: 'finMargenDefault', valor: String(v) });
-      toast(`Margen default ${v}% guardado ✓`, 'ok');
-      finCerrarEditorMargenDefault();
-      finCargar();
-    } catch(e) {
-      toast('Error: ' + e.message, 'error');
-    } finally {
-      if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
+    if (isNaN(v) || v < 0 || v >= 100) {
+      toast('Margen debe ser 0-99', 'error');
+      if (typeof _evalSfx === 'function') _evalSfx('error');
+      return;
     }
+    // OPTIMISTA: feedback inmediato
+    if (typeof _evalSfx === 'function') _evalSfx('success');
+    try {
+      const btn = $('finMargenDefaultSaveBtn');
+      if (btn && typeof _evalConfetti === 'function') {
+        const r = btn.getBoundingClientRect();
+        _evalConfetti(r.left + r.width/2, r.top + r.height/2, '#fbbf24');
+      }
+    } catch(_){}
+    toast(`Margen default ${v}% guardado ✓`, 'ok');
+    finCerrarEditorMargenDefault();
+    // Patch local _finPL.defaultMargenUsado y re-render solo el KPI de margen
+    // (sin esperar a finCargar completo, que tarda 3-5s).
+    try {
+      if (_finPL) {
+        _finPL.defaultMargenUsado = v;
+        // Re-pintar el KPI de margen promedio si está visible
+        const estimEl = $('finKpiMargenEstim');
+        if (estimEl && _finPL.cantidadEstimados) {
+          estimEl.textContent = `${_finPL.cantidadEstimados} SKU${_finPL.cantidadEstimados === 1 ? '' : 's'} estim. al ${v}%`;
+        }
+        // Refrescar el badge de color comparando margen real vs nuevo default
+        const margenEl = $('finKpiMargenProm');
+        if (margenEl && typeof _finPL.margenPromedioPct === 'number') {
+          const real = parseFloat(_finPL.margenPromedioPct);
+          margenEl.style.color = real >= v ? '#34d399' : '#fbbf24';
+        }
+      }
+    } catch(_){}
+    // Backend: el setConfig YA se guardó. Pidamos un refresh suave en bg
+    // (sin animaciones de skeleton, solo actualiza si difiere).
+    try {
+      API.post('setConfig', { clave: 'finMargenDefault', valor: String(v) }).catch(() => {});
+    } catch(_){}
+    // Fetch fresh en bg para validar (Finanzas recalcula con el nuevo margen)
+    setTimeout(() => {
+      try {
+        const fecha = $('finFecha')?.value || today();
+        API.get('getFinanzasDia', { fecha }).then(pl => {
+          if (pl) {
+            pl._fechaStamp = fecha;
+            _finPL = pl;
+            _finSaveCache && _finSaveCache('pl_' + fecha, pl);
+            if (S.view === 'finanzas' && typeof _finRender === 'function') {
+              _finRender(pl, fecha);
+            }
+          }
+        }).catch(() => {});
+      } catch(_){}
+    }, 100);
   }
 
   async function finGuardarCostoSku() {
