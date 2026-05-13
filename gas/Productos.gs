@@ -821,7 +821,30 @@ function publicarPrecio(params) {
     );
   }
 
-  return { ok: true, data: { precioNuevo: params.precioNuevo, alertaGenerada: !!params.imprimirMembretes } };
+  // ⚡ Generar etiquetas pendientes para cada zona (excepto ALMACÉN)
+  // Se ejecuta SIEMPRE que cambia el precio (no requiere flag explícito).
+  // Los cajeros/vendedores las verán en su badge y el auto-print al
+  // abrir caja se encargará del resto.
+  var etiqResult = null;
+  try {
+    if (typeof _etiqGenerarParaZonas === 'function') {
+      etiqResult = _etiqGenerarParaZonas({
+        idProducto:     params.idProducto || '',
+        codigoBarra:    params.codigoBarra || '',
+        skuBase:        params.skuBase || '',
+        descripcion:    params.descripcion || '',
+        precioAnterior: parseFloat(params.precioAnterior) || 0,
+        precioNuevo:    _precioNuevo,
+        usuario:        usuarioFinal || ''
+      });
+    }
+  } catch(eEtiq) { Logger.log('[publicarPrecio] _etiqGenerarParaZonas: ' + eEtiq.message); }
+
+  return { ok: true, data: {
+    precioNuevo: params.precioNuevo,
+    alertaGenerada: !!params.imprimirMembretes,
+    etiquetas: etiqResult ? etiqResult.data : null
+  }};
 }
 
 function _registrarHistorialPrecio(idProd, skuBase, codBarra, desc, anterior, nuevo, usuario, motivo, app) {

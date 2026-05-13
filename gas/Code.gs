@@ -215,6 +215,16 @@ function _route(method, e) {
       case 'backfillLiquidacionesDia':          return backfillLiquidacionesDia(params);
       case 'configurarTriggerLiquidacionDia':   return configurarTriggerLiquidacionDia();
 
+      // ── Etiquetas (membretes por zona) ─────────────────────
+      case 'getEtiquetasPendientes':            return getEtiquetasPendientes(params);
+      case 'marcarVistoEtiqueta':               return marcarVistoEtiqueta(params);
+      case 'marcarPegadaEtiqueta':              return marcarPegadaEtiqueta(params);
+      case 'marcarPegadasBatch':                return marcarPegadasBatch(params);
+      case 'imprimirBatchEtiquetasZona':        return imprimirBatchEtiquetasZona(params);
+      case 'reimprimirEtiqueta':                return reimprimirEtiqueta(params);
+      case 'getEtiquetasPorZona':               return getEtiquetasPorZona();
+      case 'configurarTriggerEtiquetas':        return configurarTriggerEtiquetas();
+
       // ── Liquidaciones legacy (stubs que delegan o devuelven vacío) ──
       case 'getLiquidacionesPendientesSemana': return getLiquidacionesPendientesSemana(params);
       case 'getDetalleDiasPendientes':         return getDetalleDiasPendientes(params);

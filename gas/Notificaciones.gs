@@ -115,7 +115,24 @@ function _ntfCatalogoDefault() {
       titulo: 'Nuevo preingreso',
       descripcion: 'Operador registra preingreso de mercadería.',
       activa: true, audiencia_roles: 'MASTER,ADMIN,ADMINISTRADOR', audiencia_usuarios: '',
-      excluir_origen: false, prioridad: 'normal' }
+      excluir_origen: false, prioridad: 'normal' },
+
+    // ── Etiquetas (membretes de cambio de precio) ─────────
+    { idNotif: 'MOS_ETIQUETA_NUEVA',     origen: 'MOS', icono: '🏷',
+      titulo: 'Nueva etiqueta de precio',
+      descripcion: 'Admin cambió un precio. Push a cajeros/vendedores activos para revisar el badge y pegar la etiqueta nueva.',
+      activa: true, audiencia_roles: 'CAJERO,VENDEDOR', audiencia_usuarios: '',
+      excluir_origen: true, prioridad: 'normal' },
+    { idNotif: 'MOS_ETIQUETA_REVISAR',   origen: 'MOS', icono: '⚠',
+      titulo: 'Etiquetas sin revisar (>2h)',
+      descripcion: 'Cron horario: recuerda al cajero/vendedor que hay etiquetas sin marcar como vistas hace más de 2 horas.',
+      activa: true, audiencia_roles: 'CAJERO,VENDEDOR', audiencia_usuarios: '',
+      excluir_origen: false, prioridad: 'alta' },
+    { idNotif: 'MOS_ETIQUETA_SIN_PEGAR_ADMIN', origen: 'MOS', icono: '🚨',
+      titulo: 'Zona no actualiza etiquetas (>4h)',
+      descripcion: 'Escalación al admin/master cuando una zona dejó etiquetas impresas sin pegar por más de 4 horas.',
+      activa: true, audiencia_roles: 'MASTER,ADMIN', audiencia_usuarios: '',
+      excluir_origen: false, prioridad: 'alta' }
   ];
 }
 
