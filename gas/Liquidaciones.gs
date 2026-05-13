@@ -89,10 +89,10 @@ function _liqMapaPagados() {
 function getLiquidacionesPendientes(params) {
   params = params || {};
   var hasta = params.hasta || _liqHoy();
-  // Default: últimos 7 días. Cada llamada a getResumenTodosDia es costosa
-  // (~3s); 7 días = ~21s en peor caso. Si el admin necesita ver más atrás
-  // puede pedir desde explícito. Lo normal es liquidar al menos semanal.
-  var desde = params.desde || _fechaOffset(hasta, -6);
+  // Default: últimos 3 días para abrir rápido. Si el admin quiere ver más
+  // atrás, llama con desde= explícito (UI: botón "Cargar más días").
+  // Cada día = ~3s en backend; 3 días = ~9s, dentro del timeout del cliente.
+  var desde = params.desde || _fechaOffset(hasta, -2);
   var mapaPag = _liqMapaPagados();
 
   var fechas = _rangoFechas(desde, hasta);

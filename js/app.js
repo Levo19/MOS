@@ -18963,10 +18963,10 @@ const MOS = (() => {
     _liqState.tab = 'pendientes';
     _liqState.seleccion = {};
     _liqState.expandidos = {};
-    // Default: últimos 30 días (todo se acumula, sin filtro UI)
+    // Default: últimos 3 días (rápido). Botón "Cargar más" extiende a 14d.
     var hoy = _liqHoy();
     _liqState.hasta = hoy;
-    _liqState.desde = _liqOffset(hoy, -29);
+    _liqState.desde = _liqOffset(hoy, -2);
     openModal('modalLiquidaciones');
     _liqSfx('open');
     // Pintar desde cache instantáneamente si existe
@@ -18977,6 +18977,29 @@ const MOS = (() => {
       _liqUpdatePayBar();
     }
     await liqLoadCurrent();
+  }
+
+  // Cargar más días: extender el rango hacia atrás (acumular días viejos)
+  async function liqCargarMasDias() {
+    _liqSfx('tap');
+    const hoy = _liqHoy();
+    // Si actualmente vemos 3 días, extendemos a 14. Si vemos 14, a 30.
+    const diasActuales = _diff(_liqState.desde, _liqState.hasta);
+    const nuevoDesde = diasActuales < 7  ? _liqOffset(hoy, -13)
+                     : diasActuales < 20 ? _liqOffset(hoy, -29)
+                     :                     _liqOffset(hoy, -59);
+    _liqState.desde = nuevoDesde;
+    _liqState.hasta = hoy;
+    // Forzar fresh fetch (no cache)
+    await liqLoadCurrent();
+    toast(`📅 Mostrando últimos ${_diff(nuevoDesde, hoy) + 1} días`, 'info');
+  }
+  function _diff(d1, d2) {
+    try {
+      const a = new Date(d1 + 'T12:00:00').getTime();
+      const b = new Date(d2 + 'T12:00:00').getTime();
+      return Math.round((b - a) / 86400000);
+    } catch { return 0; }
   }
 
   function liqClose() {
@@ -19058,7 +19081,7 @@ const MOS = (() => {
   function _liqFetchConTimeout(endpoint, params, ms) {
     return Promise.race([
       API.get(endpoint, params || {}),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout — el backend está tardando demasiado')), ms || 25000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout — el backend está tardando demasiado')), ms || 60000))
     ]);
   }
 
@@ -19077,7 +19100,7 @@ const MOS = (() => {
     }
     try {
       if (tabActual === 'pendientes') {
-        const res = await _liqFetchConTimeout('getLiquidacionesPendientes', { desde: _liqState.desde, hasta: _liqState.hasta }, 25000);
+        const res = await _liqFetchConTimeout('getLiquidacionesPendientes', { desde: _liqState.desde, hasta: _liqState.hasta }, 60000);
         if (_liqState.tab !== tabActual) return; // user cambió de tab mientras esperaba
         const arr = Array.isArray(res) ? res : ((res && res.data) || []);
         _liqState.pendientes = arr;
@@ -19085,7 +19108,7 @@ const MOS = (() => {
         body.dataset._hasCache = '1';
         _liqRenderPendientes();
       } else if (tabActual === 'pagadas') {
-        const res = await _liqFetchConTimeout('getLiquidacionesPagadas', { desde: _liqOffset(_liqHoy(), -89), hasta: _liqHoy() }, 20000);
+        const res = await _liqFetchConTimeout('getLiquidacionesPagadas', { desde: _liqOffset(_liqHoy(), -89), hasta: _liqHoy() }, 30000);
         if (_liqState.tab !== tabActual) return;
         const arr = Array.isArray(res) ? res : ((res && res.data) || []);
         _liqState.pagadas = arr;
@@ -19114,12 +19137,22 @@ const MOS = (() => {
     const body = $('liqBody');
     if (!body) return;
     const list = _liqState.pendientes || [];
+    const diasRango = _diff(_liqState.desde, _liqState.hasta) + 1;
+    const verMasBtn = diasRango < 60 ? `
+      <div class="text-center py-4 mt-2">
+        <button onclick="MOS.liqCargarMasDias(event)" class="btn-ghost btn-ripple text-xs px-4 py-2"
+                style="border:1px dashed rgba(168,85,247,.4);color:#a5b4fc">
+          📅 Cargar más días (ver atrás)
+        </button>
+        <div class="text-[10px] text-slate-600 mt-1">Actualmente: últimos ${diasRango} día${diasRango !== 1 ? 's' : ''}</div>
+      </div>` : '';
     if (!list.length) {
       body.innerHTML = `<div class="liq-empty">
         <div class="liq-empty-emoji">🎉</div>
         <div class="text-sm">Todo al día</div>
-        <div class="text-xs text-slate-600 mt-1">No hay liquidaciones pendientes en este rango.</div>
-      </div>`;
+        <div class="text-xs text-slate-600 mt-1">No hay liquidaciones pendientes en los últimos ${diasRango} días.</div>
+      </div>
+      ${verMasBtn}`;
       return;
     }
     const totalGeneral = list.reduce((s, p) => s + p.total, 0);
@@ -19129,6 +19162,7 @@ const MOS = (() => {
         <div class="text-xs text-slate-400">
           <strong class="text-amber-400">${list.length}</strong> persona${list.length !== 1 ? 's' : ''} ·
           <strong class="text-amber-400">${totalDias}</strong> día${totalDias !== 1 ? 's' : ''}
+          <span class="text-[10px] text-slate-600 ml-2">(${diasRango}d)</span>
         </div>
         <div class="text-right">
           <div class="text-[10px] uppercase text-slate-500 tracking-wider">Adeudado total</div>
@@ -19136,6 +19170,7 @@ const MOS = (() => {
         </div>
       </div>
       ${list.map((p, i) => _liqCardPersona(p, i)).join('')}
+      ${verMasBtn}
     `;
   }
 
@@ -23798,6 +23833,7 @@ const MOS = (() => {
     finAbrirEditorMargenDefault, finCerrarEditorMargenDefault, finGuardarMargenDefault,
     // Liquidaciones v2
     liqOpen, liqClose, liqSetTab, liqRefresh, liqSetRangoPreset,
+    liqCargarMasDias,
     liqAbrirConfirmacion, liqConfirmarPago,
     liqReimprimirPago, liqAnularPago,
     _liqTogglePersona, _liqToggleDia, _liqToggleAll,
