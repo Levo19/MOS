@@ -4164,6 +4164,36 @@
       box-shadow: 0 0 0 0 rgba(16,185,129, 0.7);
       animation: dispDotPulse 1.6s ease-in-out infinite;
     }
+
+    /* ── Estado de impresoras PrintNode en Infraestructura ───── */
+    .imp-estado {
+      display: inline-block;
+      font-size: 8.5px; font-weight: 800;
+      padding: 1px 5px; border-radius: 5px;
+      letter-spacing: 0.03em; vertical-align: middle;
+      margin-left: 2px;
+    }
+    .imp-on {
+      background: rgba(16,185,129,0.16); color: #6ee7b7;
+      border: 1px solid rgba(16,185,129,0.4);
+    }
+    .imp-off {
+      background: rgba(239,68,68,0.18); color: #fca5a5;
+      border: 1px solid rgba(239,68,68,0.55);
+      animation: impOffBlink 1.3s ease-in-out infinite;
+    }
+    .imp-noinfo {
+      background: rgba(100,116,139,0.2); color: #94a3b8;
+      border: 1px solid rgba(100,116,139,0.4);
+    }
+    @keyframes impOffBlink {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+      50%      { opacity: 0.75; box-shadow: 0 0 8px 1px rgba(239,68,68,0.35); }
+    }
+    .imp-row-off {
+      border-color: rgba(239,68,68,0.45) !important;
+      background: rgba(127,29,29,0.18) !important;
+    }
     .disp-dot-pulse::before {
       content: '';
       position: absolute;

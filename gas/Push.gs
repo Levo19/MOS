@@ -373,6 +373,27 @@ function enviarPushNotif(params) {
     idNotif:         params.idNotif || ''  // permite que apps hijas pasen idNotif
   };
   _enviarPushTodos(params.titulo, params.cuerpo || '', opciones);
+
+  // ── Gancho: verificación de impresoras por evento de presencia ──
+  // Cuando llega un idNotif de "alguien entró a operar" (login WH, apertura
+  // de caja ME, login de vendedor), verificamos el estado de TODAS las
+  // impresoras. Si hay alguna offline → alerta MOS_IMPRESORA_OFFLINE.
+  // _verificarImpresorasYAlertar ya tiene anti-spam, así que aunque entren
+  // varios operadores seguidos no genera spam. Tolerante a errores: nunca
+  // rompe el push original.
+  var EVENTOS_PRESENCIA = {
+    'WH_OPERADOR_LOGIN': true,
+    'ME_CAJA_APERTURA':  true,
+    'MOS_LOGIN_VENDEDOR': true
+  };
+  if (opciones.idNotif && EVENTOS_PRESENCIA[opciones.idNotif]) {
+    try {
+      if (typeof _verificarImpresorasYAlertar === 'function') {
+        _verificarImpresorasYAlertar('evento:' + opciones.idNotif);
+      }
+    } catch(eImp) { Logger.log('Verificación impresoras (' + opciones.idNotif + '): ' + eImp.message); }
+  }
+
   return { ok: true };
 }
 

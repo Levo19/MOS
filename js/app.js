@@ -10974,9 +10974,49 @@ const MOS = (() => {
     }
   }
 
+  // Estado en vivo de impresoras (PrintNode). Mapa printNodeId → {online, computer}.
+  // Lo llena _refrescarEstadoImpresoras; lo consume _renderInfraEstacion.
+  let _impPNEstado = {};
+  let _impPNCargado = false;
+  async function _refrescarEstadoImpresoras(reRender) {
+    try {
+      const r = await API.get('getPrintNodePrinters', {});
+      const lista = Array.isArray(r) ? r : ((r && r.data) || []);
+      if (!Array.isArray(lista)) return;
+      const prev = _impPNEstado;
+      const nuevo = {};
+      let hayCaidaNueva = false;
+      lista.forEach(p => {
+        const pid = String(p.id);
+        nuevo[pid] = { online: !!p.online, computer: p.computer || '', nombre: p.nombre || '' };
+        // Detectar transición online → offline para el sonido de alerta
+        if (_impPNCargado && prev[pid] && prev[pid].online && !p.online) hayCaidaNueva = true;
+      });
+      _impPNEstado = nuevo;
+      _impPNCargado = true;
+      if (hayCaidaNueva) {
+        try { _evalSfx && _evalSfx('error'); } catch(_){}
+        try {
+          const caidas = lista.filter(p => !p.online).map(p => p.nombre).join(', ');
+          toast('🖨 Impresora offline: ' + caidas, 'error', 6000);
+        } catch(_){}
+      }
+      if (reRender && S.cfgTab === 'infra') { try { renderInfra(); } catch(_){} }
+    } catch(_) { /* tolerar — PrintNode puede tardar o no responder */ }
+  }
+
   // Auto-refresh dinámico de dispositivos (cada 30s mientras Infra esté visible)
   let _intervalInfra = null;
   function _arrancarRefreshInfra() {
+    // Carga inicial del estado de impresoras + sonido si al ABRIR ya hay caídas
+    _refrescarEstadoImpresoras(true).then(() => {
+      if (S.cfgTab === 'infra') {
+        const offline = Object.values(_impPNEstado).filter(e => !e.online);
+        if (offline.length) {
+          try { _evalSfx && _evalSfx('error'); } catch(_){}
+        }
+      }
+    });
     if (_intervalInfra) return;
     _intervalInfra = setInterval(async () => {
       if (S.cfgTab !== 'infra' || document.hidden) return;
@@ -10993,6 +11033,11 @@ const MOS = (() => {
         }
       } catch(_) { /* tolerar */ }
     }, 15 * 1000); // cada 15s para sentir tiempo real
+    // Estado de impresoras PrintNode cada 25s mientras Infra esté abierto
+    setInterval(() => {
+      if (S.cfgTab !== 'infra' || document.hidden) return;
+      _refrescarEstadoImpresoras(true);
+    }, 25 * 1000);
     // Re-render local cada 10s para que los "hace Xs" se actualicen sin esperar fetch
     setInterval(() => {
       if (S.cfgTab !== 'infra' || document.hidden) return;
@@ -11760,11 +11805,24 @@ const MOS = (() => {
       ? imps.map(i => {
           const impActiva = String(i.activo) === '1' || i.activo === 1 || i.activo === true;
           const impIcon = { TICKET: '🖨️', ADHESIVO: '🏷️', ZPL: '📄' }[i.tipo] || '🖨️';
-          return `<div class="flex items-center gap-2 px-2 py-1.5 rounded ${impActiva ? '' : 'opacity-50'}" style="background:#0a1424;border:1px solid #1e293b;">
+          // Estado real de PrintNode (si ya cargó). 🟢 online · 🔴 offline · ⚪ sin info
+          const pnSt = _impPNEstado[String(i.printNodeId)];
+          let estadoBadge = '';
+          if (i.printNodeId && _impPNCargado) {
+            if (pnSt && pnSt.online) {
+              estadoBadge = '<span class="imp-estado imp-on" title="Impresora en línea">🟢 online</span>';
+            } else if (pnSt && !pnSt.online) {
+              estadoBadge = '<span class="imp-estado imp-off" title="Apagada o PC desconectada">🔴 OFFLINE</span>';
+            } else {
+              estadoBadge = '<span class="imp-estado imp-noinfo" title="No reportada por PrintNode — revisar registro/PC">⚪ sin señal</span>';
+            }
+          }
+          const offlineCls = (pnSt && !pnSt.online && _impPNCargado) ? ' imp-row-off' : '';
+          return `<div class="flex items-center gap-2 px-2 py-1.5 rounded ${impActiva ? '' : 'opacity-50'}${offlineCls}" style="background:#0a1424;border:1px solid #1e293b;">
             <span class="text-sm shrink-0">${impIcon}</span>
             <div class="flex-1 min-w-0">
-              <div class="text-xs font-medium text-slate-200 truncate">${i.nombre}</div>
-              <div class="text-[10px] text-slate-500 truncate">PN ${i.printNodeId || '—'} · ${i.tipo}</div>
+              <div class="text-xs font-medium text-slate-200 truncate">${i.nombre} ${estadoBadge}</div>
+              <div class="text-[10px] text-slate-500 truncate">PN ${i.printNodeId || '—'} · ${i.tipo}${pnSt && pnSt.computer ? ' · ' + pnSt.computer : ''}</div>
             </div>
             <label class="pers-switch" style="transform:scale(0.7);" title="${impActiva ? 'Desactivar' : 'Activar'}" onclick="event.stopPropagation()">
               <input type="checkbox" ${impActiva ? 'checked' : ''} onchange="MOS.toggleImpresoraActiva('${i.idImpresora}', event)">

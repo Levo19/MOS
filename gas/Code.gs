@@ -198,6 +198,9 @@ function _route(method, e) {
       case 'probarNotificacion':        return probarNotificacion(params);
       case 'getNotifLog':                return getNotifLog(params);
       case 'reenviarNotificacion':       return reenviarNotificacion(params);
+
+      // ── Monitoreo de impresoras ────────────────────────────
+      case 'verificarImpresorasAhora':   return verificarImpresorasAhora();
       case 'listarImpresorasPN':        return listarImpresorasPN();
       case 'getPrintNodePrinters':      return listarImpresorasPN();
       case 'imprimirLiquidacionDia':    return imprimirLiquidacionDia(params);

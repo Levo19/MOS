@@ -1102,6 +1102,121 @@ function listarImpresorasPN() {
 // Compat: alias para frontend que use camelCase legacy
 function getPrintNodePrinters() { return listarImpresorasPN(); }
 
+// ════════════════════════════════════════════════════════════════════
+// MONITOREO DE IMPRESORAS — verificación + alerta inteligente
+// ════════════════════════════════════════════════════════════════════
+// _verificarImpresorasYAlertar: consulta el estado real de TODAS las
+// impresoras del catálogo (vía PrintNode) y, si hay alguna offline,
+// emite UNA notificación MOS_IMPRESORA_OFFLINE con el resumen.
+//
+// Anti-spam: guarda en CacheService los printNodeId ya reportados (TTL
+// 30 min). Solo vuelve a emitir si aparece una caída NUEVA. Cuando todo
+// vuelve a estar online, limpia el cache para que la próxima caída sí
+// alerte de inmediato.
+function _verificarImpresorasYAlertar(origenTrigger) {
+  try {
+    var res = listarImpresorasPN();
+    if (!res || !res.ok || !Array.isArray(res.data)) {
+      return { ok: false, error: (res && res.error) || 'No se pudo consultar PrintNode' };
+    }
+    var offline = res.data.filter(function(p) { return !p.online; });
+    var cache = CacheService.getScriptCache();
+
+    if (!offline.length) {
+      // Todo OK → limpiar el registro de reportadas para que la próxima
+      // caída alerte sin esperar el TTL.
+      try { cache.remove('imp_offline_reportadas'); } catch(_){}
+      return { ok: true, data: { offline: 0, origen: origenTrigger || '' } };
+    }
+
+    // ── Anti-spam ────────────────────────────────────────────
+    var yaReportadas = {};
+    try {
+      var raw = cache.get('imp_offline_reportadas');
+      if (raw) JSON.parse(raw).forEach(function(id) { yaReportadas[String(id)] = true; });
+    } catch(_){}
+    var hayNueva = offline.some(function(p) { return !yaReportadas[String(p.id)]; });
+    if (!hayNueva) {
+      return { ok: true, data: { offline: offline.length, sinPush: true,
+                                 motivo: 'ya reportadas (anti-spam 30min)' } };
+    }
+
+    // ── Emitir UNA notificación con TODAS las offline ────────
+    var lineas = offline.map(function(p) {
+      var ub = p.zonaNombre || p.estacionNombre || p.appOrigen || '';
+      return '• ' + p.nombre + (ub ? ' · ' + ub : '') +
+             (p.computer ? ' (PC: ' + p.computer + ')' : '');
+    });
+    var titulo = offline.length === 1
+      ? '🖨 Impresora offline: ' + offline[0].nombre
+      : '🖨 ' + offline.length + ' impresoras offline';
+    var cuerpo = lineas.join('\n') + '\n\nRevisar: encendido · cable · PC conectada a internet.';
+
+    if (typeof _enviarPushTodos === 'function') {
+      _enviarPushTodos(titulo, cuerpo, { soloRolesAdmin: true, idNotif: 'MOS_IMPRESORA_OFFLINE' });
+    }
+
+    // Registrar las offline actuales (anti-spam por 30 min)
+    try {
+      cache.put('imp_offline_reportadas',
+                JSON.stringify(offline.map(function(p) { return p.id; })), 1800);
+    } catch(_){}
+
+    return { ok: true, data: { offline: offline.length, notificado: true,
+                               origen: origenTrigger || '' } };
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+// Heartbeat: verificación periódica PERO solo si hay gente operando ahora.
+// Si no hay ningún dispositivo ME/WH con conexión reciente (<20 min) →
+// la tienda está cerrada/inactiva → NO verifica → cero alertas falsas
+// de madrugada. Lo dispara un trigger time-based cada ~15 min.
+function _heartbeatImpresoras() {
+  var hayActividad = false;
+  try {
+    var sheetD = getSheet('DISPOSITIVOS');
+    var dataD  = sheetD.getDataRange().getValues();
+    var hdrs   = dataD[0];
+    var iUc    = hdrs.indexOf('Ultima_Conexion');
+    var iApp   = hdrs.indexOf('App');
+    var iEst   = hdrs.indexOf('Estado');
+    var ahora  = Date.now();
+    for (var i = 1; i < dataD.length && !hayActividad; i++) {
+      var app = String(dataD[i][iApp] || '').toLowerCase();
+      if (app === 'mos') continue; // dispositivos del panel admin no son "operación"
+      var est = String(dataD[i][iEst] || '').toUpperCase();
+      if (est === 'INACTIVO') continue;
+      var uc = dataD[i][iUc];
+      var ts = uc instanceof Date ? uc.getTime() : (uc ? new Date(uc).getTime() : 0);
+      if (ts && (ahora - ts) < 20 * 60 * 1000) hayActividad = true;
+    }
+  } catch(e) { Logger.log('_heartbeatImpresoras DISPOSITIVOS: ' + e.message); }
+
+  if (!hayActividad) {
+    return { ok: true, data: { skip: true, motivo: 'sin actividad operativa' } };
+  }
+  return _verificarImpresorasYAlertar('heartbeat');
+}
+
+// Endpoint público — el frontend (panel Infraestructura) puede forzar una
+// verificación manual además de leer getPrintNodePrinters.
+function verificarImpresorasAhora() {
+  return _verificarImpresorasYAlertar('manual');
+}
+
+// Instala el trigger del heartbeat de impresoras (cada 15 min).
+// Ejecutar UNA vez desde el editor de Apps Script. Idempotente: borra
+// el trigger previo antes de crear el nuevo.
+function configurarTriggerImpresoras() {
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === '_heartbeatImpresoras') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('_heartbeatImpresoras').timeBased().everyMinutes(15).create();
+  return { ok: true, msg: 'Trigger creado: _heartbeatImpresoras cada 15 min' };
+}
+
 // Construye el ticket 80mm (~48 chars) y lo manda a PrintNode.
 // Reusa getResumenDia para hidratar todos los KPIs + bonos + sanción del día.
 //

@@ -132,6 +132,11 @@ function _ntfCatalogoDefault() {
       titulo: 'Zona no actualiza etiquetas (>4h)',
       descripcion: 'Escalación al admin/master cuando una zona dejó etiquetas impresas sin pegar por más de 4 horas.',
       activa: true, audiencia_roles: 'MASTER,ADMIN', audiencia_usuarios: '',
+      excluir_origen: false, prioridad: 'alta' },
+    { idNotif: 'MOS_IMPRESORA_OFFLINE', origen: 'MOS', icono: '🖨',
+      titulo: 'Impresora(s) offline',
+      descripcion: 'Se detectó una o más impresoras del ecosistema apagadas o con la PC desconectada. Se dispara cuando alguien inicia sesión / abre caja y al heartbeat de zonas activas. Con anti-spam (no repite la misma caída antes de 30 min).',
+      activa: true, audiencia_roles: 'MASTER,ADMIN,ADMINISTRADOR', audiencia_usuarios: '',
       excluir_origen: false, prioridad: 'alta' }
   ];
 }

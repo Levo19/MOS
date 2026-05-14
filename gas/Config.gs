@@ -1071,6 +1071,16 @@ function notificarInicioSesionVendedor(params) {
   var deviceId = String(params.deviceId || '').trim();
   if (!nombre) return { ok: false, error: 'Requiere nombre' };
 
+  // ── Gancho: verificación de impresoras por evento de presencia ──
+  // Alguien (cajero, vendedor u operador WH) está iniciando sesión →
+  // verificamos el estado de todas las impresoras. Anti-spam interno
+  // evita repetir la misma caída. Tolerante a errores.
+  try {
+    if (typeof _verificarImpresorasYAlertar === 'function') {
+      _verificarImpresorasYAlertar('login:' + appOrigen);
+    }
+  } catch(eImp) { Logger.log('Verificación impresoras (login): ' + eImp.message); }
+
   // Si ME indica que es cajero Y va a abrir caja de inmediato → no dispar
   // la push aquí, deja que la push de apertura de caja la cubra (evita doble).
   // Si esCajero=false (vendedor puro sin caja), siempre disparamos.
