@@ -1772,11 +1772,11 @@ const MOS = (() => {
       const barcodeTag = base.codigoBarra
         ? `<button type="button" class="cat-barcode cat-cod-btn"
              onclick="event.stopPropagation();MOS.verCodigoBarra('${String(base.codigoBarra).replace(/'/g,'&#39;')}','${_descCard}','canónico')"
-             title="Ver código de barra en grande">▌${base.codigoBarra}<span class="cat-cod-ico">📲</span></button>` : '';
+             title="Ver código de barra en grande">▌${base.codigoBarra}<span class="cat-cod-ico">▐│▌║▏</span></button>` : '';
       const equivTags  = equivList.map((cb, i) =>
         `<button type="button" class="cat-equiv-bar cat-equiv-bar-${Math.min(i, 3)} cat-cod-btn"
            onclick="event.stopPropagation();MOS.verCodigoBarra('${String(cb).replace(/'/g,'&#39;')}','${_descCard}','equivalente')"
-           title="Ver código de barra en grande">▌${cb}<span class="cat-cod-ico">📲</span></button>`
+           title="Ver código de barra en grande">▌${cb}<span class="cat-cod-ico">▐│▌║▏</span></button>`
       ).join('');
       const brandTag   = base.marca
         ? `<span class="cat-brand">${base.marca}</span>` : '';

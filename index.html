@@ -6046,9 +6046,12 @@
       -webkit-tap-highlight-color: transparent;
       touch-action: manipulation;
     }
+    /* Ícono = mini "código de barra" tipográfico. Barras pegadas con
+       letter-spacing negativo → se lee como un código escaneable. */
     .cat-cod-ico {
-      font-size: .82em; margin-left: .12rem; opacity: .85;
-      filter: grayscale(.2);
+      margin-left: .22rem; opacity: .9;
+      letter-spacing: -.12em; font-weight: 700;
+      font-family: 'Courier New', monospace;
     }
     .cat-cod-btn:active {
       transform: scale(.94);
