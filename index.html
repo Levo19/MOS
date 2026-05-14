@@ -12037,7 +12037,9 @@
 <div id="toast" class="hide fixed z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-xl text-white" style="background:#1e293b;border:1px solid #334155;max-width:320px;top:calc(env(safe-area-inset-top,0) + 1rem);right:calc(env(safe-area-inset-right,0) + 1rem);"></div>
 
 <!-- ── CÓDIGO DE BARRA DIGITAL — overlay desde los chips del catálogo ── -->
-<div id="codBarraOverlay" class="codbarra-overlay">
+<!-- onclick en el overlay: cierra al tocar el fondo (event.target === el
+     overlay mismo, no un hijo). El ✕ sigue funcionando igual. -->
+<div id="codBarraOverlay" class="codbarra-overlay" onclick="if(event.target===this)MOS.cerrarCodigoBarra()">
   <div class="codbarra-modal">
     <div class="codbarra-header">
       <span class="codbarra-header-ico">📲</span>
