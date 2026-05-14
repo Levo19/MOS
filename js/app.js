@@ -12874,9 +12874,24 @@ const MOS = (() => {
       return;
     }
     if (err) err.textContent = '';
+
+    // 🚀 OPTIMISTA: revelar el panel YA con skeleton shimmer mientras llega
+    // el fetch. Si el PIN falla, volvemos al login.
+    const loginBox = $('claveGlobalLogin');
+    const revBox   = $('claveGlobalRevelada');
+    const digEl    = $('claveGlobalDigits');
+    if (loginBox && revBox) {
+      loginBox.classList.add('hidden');
+      revBox.classList.remove('hidden');
+      if (digEl) digEl.innerHTML = '<span class="cg-skel-pin cg-skel-pin-lg"></span>';
+    }
+
     try {
       const data = await API.get('getClaveAdminGlobal', { pinAdmin: pin });
       if (!data?.autorizado) {
+        // PIN malo → volver al login con error
+        if (revBox) revBox.classList.add('hidden');
+        if (loginBox) loginBox.classList.remove('hidden');
         if (err) err.textContent = data?.error || 'PIN incorrecto';
         $('claveGlobalPin').value = '';
         return;
@@ -12886,6 +12901,8 @@ const MOS = (() => {
       // Actualizar caché global del avatar menú
       if (typeof _segActualizarCacheLocal === 'function') _segActualizarCacheLocal(data);
     } catch(e) {
+      if (revBox) revBox.classList.add('hidden');
+      if (loginBox) loginBox.classList.remove('hidden');
       if (err) err.textContent = e?.message || 'Sin conexión';
     }
   }
@@ -18868,9 +18885,28 @@ const MOS = (() => {
       return;
     }
     if (err) err.textContent = '';
+
+    // 🚀 OPTIMISTA: mostrar YA el bloque revelado con skeleton shimmer en
+    // lugar de dejar al user mirando el botón sin respuesta. El fetch
+    // corre en background; al llegar se reemplaza el skeleton por la clave.
+    const box      = $('avMenuClaveBox');
+    const loginBox = $('avMenuClaveLogin');
+    const elPin    = $('avMenuClavePin');
+    const elDias   = $('avMenuClaveDias');
+    if (box && loginBox) {
+      loginBox.classList.add('hidden');
+      box.classList.remove('hidden');
+      if (elPin)  elPin.innerHTML = '<span class="cg-skel-pin"></span>';
+      if (elDias) { elDias.textContent = '···'; elDias.style.color = '#475569'; }
+      box.onclick = null; box.style.cursor = 'default';
+    }
+
     try {
       const data = await API.get('getClaveAdminGlobal', { pinAdmin: pin });
       if (!data?.autorizado) {
+        // PIN malo → volver al input con error
+        if (box) box.classList.add('hidden');
+        if (loginBox) loginBox.classList.remove('hidden');
         if (err) err.textContent = data?.error || 'PIN incorrecto';
         if (inp) inp.value = '';
         return;
@@ -18879,6 +18915,9 @@ const MOS = (() => {
       _segPintarEnAvatarMenu();
     } catch(e) {
       console.error('[av_consultarClaveDesdeMenu]', e);
+      // Error de red → volver al input con error
+      if (box) box.classList.add('hidden');
+      if (loginBox) loginBox.classList.remove('hidden');
       if (err) err.textContent = e?.message || 'Sin conexión';
     }
   }

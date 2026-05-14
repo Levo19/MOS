@@ -4972,6 +4972,23 @@
       50%      { transform: scale(1.2); }
     }
 
+    /* Skeleton para los dígitos de la clave global mientras carga */
+    .cg-skel-pin {
+      display: inline-block;
+      width: 88px; height: 1em;
+      vertical-align: middle;
+      border-radius: 5px;
+      background: linear-gradient(
+        90deg,
+        rgba(51,65,85,0.55) 0%,
+        rgba(99,102,241,0.35) 50%,
+        rgba(51,65,85,0.55) 100%
+      );
+      background-size: 600px 100%;
+      animation: liqShimmer 1.2s ease-in-out infinite;
+    }
+    .cg-skel-pin-lg { width: 150px; height: 1.1em; border-radius: 7px; }
+
     /* ── Card BLOQUEADA persistente (dispositivos encarcelados) ── */
     /* Variante: sin animación de caída (no flickea en cada re-render),
        más sobria, queda combinable con veto. */
