@@ -1601,6 +1601,50 @@ const MOS = (() => {
     if (typeof togglePresentaciones === 'function') togglePresentaciones(idProducto);
   }
 
+  // ── Código de barra digital — overlay desde los chips del catálogo ──
+  // El admin/operador toca un chip de código → ve el barcode en grande
+  // para escanearlo de la pantalla (mismo concepto que el membrete
+  // digital de warehouseMos).
+  function verCodigoBarra(codigo, descripcion, tipo) {
+    codigo = String(codigo || '').trim();
+    if (!codigo) return;
+    const ov   = $('codBarraOverlay');
+    const tit  = $('codBarraTitulo');
+    const sub  = $('codBarraSub');
+    const body = $('codBarraBody');
+    if (tit) tit.textContent = descripcion || codigo;
+    if (sub) sub.textContent = (tipo === 'canónico' ? '★ Código canónico' : 'Código equivalente');
+    if (body) {
+      body.innerHTML = `
+        <div class="codbarra-card">
+          <svg class="codbarra-svg" id="codBarraSvg"></svg>
+          <div class="codbarra-num">${codigo.replace(/</g,'&lt;')}</div>
+        </div>`;
+    }
+    if (ov) { ov.style.display = 'flex'; requestAnimationFrame(() => ov.classList.add('is-open')); }
+    try { _catSfx && _catSfx('expand'); } catch(_){}
+    // Render del barcode tras el reflow del overlay
+    setTimeout(() => {
+      const svg = $('codBarraSvg');
+      if (!svg || typeof JsBarcode === 'undefined') {
+        if (svg) svg.outerHTML = '<div class="codbarra-err">⚠ No se pudo generar el código</div>';
+        return;
+      }
+      try {
+        JsBarcode(svg, codigo, {
+          format: 'CODE128', width: 2.6, height: 100,
+          displayValue: false, margin: 16, background: '#ffffff', lineColor: '#000000'
+        });
+      } catch(e) {
+        svg.outerHTML = '<div class="codbarra-err">⚠ Código no válido para barra</div>';
+      }
+    }, 60);
+  }
+  function cerrarCodigoBarra() {
+    const ov = $('codBarraOverlay');
+    if (ov) { ov.classList.remove('is-open'); setTimeout(() => { ov.style.display = 'none'; }, 240); }
+  }
+
   // ── Render ──────────────────────────────────────────────────
   function renderCatalogo() {
     const container = $('listCatalogo');
@@ -1721,10 +1765,18 @@ const MOS = (() => {
       const equivList = S.equivMap[base.skuBase || base.idProducto] || [];
 
       // Meta tags: barcode + equivalencias + brand + unidad
+      // Los códigos (canónico + equivalencias) son BOTONES: al tocarlos
+      // abren el barcode digital en grande para escanear de la pantalla.
+      // Marca y unidad NO son botones (no son códigos).
+      const _descCard = (base.descripcion || base.skuBase || '').replace(/'/g, '&#39;');
       const barcodeTag = base.codigoBarra
-        ? `<span class="cat-barcode">▌${base.codigoBarra}</span>` : '';
+        ? `<button type="button" class="cat-barcode cat-cod-btn"
+             onclick="event.stopPropagation();MOS.verCodigoBarra('${String(base.codigoBarra).replace(/'/g,'&#39;')}','${_descCard}','canónico')"
+             title="Ver código de barra en grande">▌${base.codigoBarra}<span class="cat-cod-ico">📲</span></button>` : '';
       const equivTags  = equivList.map((cb, i) =>
-        `<span class="cat-equiv-bar cat-equiv-bar-${Math.min(i, 3)}" title="Equivalencia">▌${cb}</span>`
+        `<button type="button" class="cat-equiv-bar cat-equiv-bar-${Math.min(i, 3)} cat-cod-btn"
+           onclick="event.stopPropagation();MOS.verCodigoBarra('${String(cb).replace(/'/g,'&#39;')}','${_descCard}','equivalente')"
+           title="Ver código de barra en grande">▌${cb}<span class="cat-cod-ico">📲</span></button>`
       ).join('');
       const brandTag   = base.marca
         ? `<span class="cat-brand">${base.marca}</span>` : '';
@@ -24206,6 +24258,7 @@ const MOS = (() => {
     openConfig, saveConfig, testConnection, closeModal, openEcoModal,
     filterCatalogo, setCatTab, toggleDerivs, togglePresentaciones, guardarPrecioRapido,
     _catCardClick, _catSfx, _catRipple,
+    verCodigoBarra, cerrarCodigoBarra,
     abrirModalPN, cerrarModalPN, lanzarAProduccion, refreshPNManual,
     pnBuscarParaCorregir, pnSeleccionarParaCorregir,
     togglePNBanner, openImagePreview, closeImagePreview,

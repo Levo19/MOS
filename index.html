@@ -9,6 +9,8 @@
   <link rel="manifest" href="manifest.json">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <!-- JsBarcode — códigos de barra digitales en el catálogo -->
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
   <style>
     :root { --accent: #6366f1; --accent2: #8b5cf6; }
     * { box-sizing: border-box; }
@@ -6034,6 +6036,96 @@
     .cat-equiv-bar-1 { background: rgba(245,158,11,.13); border: 1px solid rgba(245,158,11,.35); color: #fbbf24; }
     .cat-equiv-bar-2 { background: rgba(20,184,166,.13); border: 1px solid rgba(20,184,166,.35); color: #2dd4bf; }
     .cat-equiv-bar-3 { background: rgba(236,72,153,.13); border: 1px solid rgba(236,72,153,.3);  color: #f472b6; }
+    /* ── Chips de código como BOTÓN (táctil-friendly) ────────────
+       En móvil no hay hover → 3 señales que NO dependen de hover:
+       ícono 📲 persistente + relieve sutil + :active que se hunde. */
+    .cat-cod-btn {
+      cursor: pointer;
+      box-shadow: 0 1px 3px rgba(0,0,0,.35);
+      transition: transform .1s ease, box-shadow .15s ease, filter .15s ease;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    .cat-cod-ico {
+      font-size: .82em; margin-left: .12rem; opacity: .85;
+      filter: grayscale(.2);
+    }
+    .cat-cod-btn:active {
+      transform: scale(.94);
+      box-shadow: inset 0 1px 4px rgba(0,0,0,.45);
+      filter: brightness(1.1);
+    }
+    /* Desktop: hover eleva + el ícono brilla (bonus, no esencial) */
+    @media (hover: hover) {
+      .cat-cod-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 3px 8px rgba(0,0,0,.4);
+        filter: brightness(1.12);
+      }
+      .cat-cod-btn:hover .cat-cod-ico { opacity: 1; filter: none; }
+    }
+
+    /* ── Overlay del código de barra digital ─────────────────────── */
+    .codbarra-overlay {
+      display: none; position: fixed; inset: 0; z-index: 9992;
+      background: rgba(2,6,23,.86); backdrop-filter: blur(7px);
+      align-items: center; justify-content: center; padding: 14px;
+      opacity: 0; transition: opacity .25s ease;
+    }
+    .codbarra-overlay.is-open { opacity: 1; }
+    .codbarra-modal {
+      width: 100%; max-width: 480px; max-height: 90vh;
+      background: linear-gradient(160deg,#1e293b,#0f172a);
+      border: 1px solid rgba(99,102,241,.45); border-radius: 20px;
+      box-shadow: 0 20px 60px -10px rgba(0,0,0,.7);
+      display: flex; flex-direction: column; overflow: hidden;
+      transform: scale(.9) translateY(20px);
+      transition: transform .3s cubic-bezier(.34,1.56,.64,1);
+    }
+    .codbarra-overlay.is-open .codbarra-modal { transform: scale(1) translateY(0); }
+    .codbarra-header {
+      display: flex; align-items: center; gap: 11px; padding: 14px 16px;
+      border-bottom: 1px solid rgba(51,65,85,.6);
+    }
+    .codbarra-header-ico {
+      font-size: 24px; width: 44px; height: 44px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center; border-radius: 12px;
+      background: linear-gradient(135deg,rgba(99,102,241,.28),rgba(99,102,241,.1));
+      border: 1px solid rgba(99,102,241,.5);
+    }
+    .codbarra-header-title { font-size: 1.02em; font-weight: 800; color: #f1f5f9; line-height: 1.1; }
+    .codbarra-header-sub {
+      font-size: .74em; color: #94a3b8; margin-top: 2px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .codbarra-close {
+      width: 34px; height: 34px; flex-shrink: 0; border-radius: 10px;
+      background: rgba(71,85,105,.3); border: 1px solid rgba(71,85,105,.5);
+      color: #cbd5e1; font-size: 16px; font-weight: 900; cursor: pointer;
+    }
+    .codbarra-close:active { transform: scale(.9); }
+    .codbarra-body { padding: 18px 16px; }
+    .codbarra-card {
+      background: #ffffff; border-radius: 14px; padding: 16px 12px 12px;
+      display: flex; flex-direction: column; align-items: center;
+      box-shadow: 0 4px 14px -2px rgba(0,0,0,.4);
+      animation: codbarraCardIn .35s cubic-bezier(.34,1.56,.64,1) both;
+    }
+    @keyframes codbarraCardIn {
+      from { opacity: 0; transform: translateY(14px) scale(.96); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .codbarra-svg { width: 100%; max-width: 420px; height: auto; }
+    .codbarra-num {
+      font-family: ui-monospace, Menlo, monospace; font-size: 15px; font-weight: 800;
+      color: #0f172a; letter-spacing: .04em; margin-top: 4px;
+    }
+    .codbarra-err { color: #dc2626; font-size: 13px; font-weight: 700; padding: 24px; }
+    .codbarra-foot {
+      padding: 10px 16px 14px; font-size: .66em; color: #64748b; text-align: center;
+      border-top: 1px solid rgba(51,65,85,.4);
+    }
+
     /* Brand */
     .cat-brand { font-size: .68rem; color: #475569; }
     /* Unidad de medida (SUNAT) */
@@ -11943,6 +12035,22 @@
 
 <!-- Toast -->
 <div id="toast" class="hide fixed z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-xl text-white" style="background:#1e293b;border:1px solid #334155;max-width:320px;top:calc(env(safe-area-inset-top,0) + 1rem);right:calc(env(safe-area-inset-right,0) + 1rem);"></div>
+
+<!-- ── CÓDIGO DE BARRA DIGITAL — overlay desde los chips del catálogo ── -->
+<div id="codBarraOverlay" class="codbarra-overlay">
+  <div class="codbarra-modal">
+    <div class="codbarra-header">
+      <span class="codbarra-header-ico">📲</span>
+      <div class="flex-1 min-w-0">
+        <p class="codbarra-header-title" id="codBarraTitulo">Producto</p>
+        <p class="codbarra-header-sub" id="codBarraSub">Código</p>
+      </div>
+      <button class="codbarra-close" onclick="MOS.cerrarCodigoBarra()">✕</button>
+    </div>
+    <div class="codbarra-body" id="codBarraBody"></div>
+    <p class="codbarra-foot">Apunta un escáner a la pantalla para leer este código</p>
+  </div>
+</div>
 
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
