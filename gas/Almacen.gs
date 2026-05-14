@@ -1112,12 +1112,19 @@ function llenarCostosGuia(params) {
     // Refrescar lookup con costos actualizados (si se aplicó actualizarPrecioCosto)
     if (params.actualizarPrecioCosto) prodLookup = _buildProdLookup();
 
+    // ⚡ OPTIMIZACIÓN: precargar el contexto FIFO UNA SOLA VEZ.
+    // Antes _calcularLotizacionFIFO + _stockTotalProducto releían todas las
+    // guías de WH + GUIA_DETALLE completo + STOCK + STOCK_ZONAS por CADA
+    // producto. Con 10 items → 10 relecturas de lo mismo. Ahora se lee 1 vez
+    // y se pasa como ctx a las funciones de cálculo.
+    var fifoCtx = _construirFifoCtx();
+
     params.items.forEach(function(it) {
       var costoNuevo = parseFloat(it.precioUnitario) || 0;
       if (costoNuevo <= 0) return;
       var p = prodLookup[it.codigoProducto];
       if (!p || !p.idProducto) return;
-      var sug = _construirSugerenciaPrecio(p, costoNuevo, mapaCat, params.idGuia, mapaCanonicos);
+      var sug = _construirSugerenciaPrecio(p, costoNuevo, mapaCat, params.idGuia, mapaCanonicos, fifoCtx);
       if (sug) sugerencias.push(sug);
     });
   } catch(eS) {
@@ -1134,15 +1141,38 @@ function llenarCostosGuia(params) {
   }};
 }
 
+// Precarga TODAS las lecturas pesadas que el cálculo FIFO necesita, una
+// sola vez. Se pasa como `ctx` a _construirSugerenciaPrecio →
+// _calcularLotizacionFIFO + _stockTotalProducto. Si una función recibe
+// ctx === null/undefined cae al comportamiento legacy (relee cada vez),
+// así nada se rompe si se llama desde otro lado sin ctx.
+function _construirFifoCtx() {
+  var ctx = {
+    guias:        [],
+    detalles:     [],
+    stockWh:      [],
+    stockMeZonas: [],
+    equiv:        null
+  };
+  try { ctx.guias = _safeReadWhGuias(); } catch(_){}
+  try { ctx.detalles = _readSheetPreservandoFecha(_abrirWhSheet('GUIA_DETALLE')); } catch(_){}
+  try { ctx.stockWh = _safeReadWhStock(); } catch(_){}
+  try { ctx.stockMeZonas = _safeReadMeStockZonas(); } catch(_){}
+  try { ctx.equiv = _readEquivalencias(); } catch(_){}
+  return ctx;
+}
+
 // Construye la sugerencia de precio venta para un producto dado un costo nuevo.
 // Incluye lotización FIFO: lee guías de ingreso y arma desglose hasta cubrir stock.
-function _construirSugerenciaPrecio(producto, costoNuevoConIgv, mapaCategorias, idGuiaActual, mapaCanonicos) {
+// `fifoCtx` (opcional): contexto precargado por _construirFifoCtx para evitar
+// relecturas. Si no se pasa, cada sub-función relee (comportamiento legacy).
+function _construirSugerenciaPrecio(producto, costoNuevoConIgv, mapaCategorias, idGuiaActual, mapaCanonicos, fifoCtx) {
   var politica = _resolverPoliticaProducto(producto, mapaCategorias, mapaCanonicos);
   var precioVentaActual = parseFloat(producto.precioVenta) || 0;
   var costoAnterior = parseFloat(producto.precioCosto) || 0;
   var sugerido = _calcularPrecioVentaSugerido(costoNuevoConIgv, politica);
 
-  var lotizacion = _calcularLotizacionFIFO(producto, costoNuevoConIgv, idGuiaActual);
+  var lotizacion = _calcularLotizacionFIFO(producto, costoNuevoConIgv, idGuiaActual, fifoCtx);
 
   return {
     idProducto:        producto.idProducto,
@@ -1169,8 +1199,9 @@ function _construirSugerenciaPrecio(producto, costoNuevoConIgv, mapaCategorias, 
 // - Acumula cantidades hasta cubrir el stock actual
 // - Calcula promedio ponderado de los lotes "vivos"
 // Excluye la guía actual (ya está representada en costoNuevo).
-function _calcularLotizacionFIFO(producto, costoNuevoConIgv, idGuiaActual) {
-  var stockTotal = _stockTotalProducto(producto);
+// `fifoCtx` (opcional): contexto precargado. Si no viene, relee de sheets.
+function _calcularLotizacionFIFO(producto, costoNuevoConIgv, idGuiaActual, fifoCtx) {
+  var stockTotal = _stockTotalProducto(producto, fifoCtx);
   if (stockTotal <= 0) {
     return { stockTotal: 0, hayLoteAnterior: false, costoPonderado: costoNuevoConIgv, desglose: [] };
   }
@@ -1180,7 +1211,7 @@ function _calcularLotizacionFIFO(producto, costoNuevoConIgv, idGuiaActual) {
   if (producto.idProducto)  codigos[String(producto.idProducto).toUpperCase()] = true;
   if (producto.codigoBarra) codigos[String(producto.codigoBarra).toUpperCase()] = true;
   try {
-    var equiv = _readEquivalencias();
+    var equiv = (fifoCtx && fifoCtx.equiv) ? fifoCtx.equiv : _readEquivalencias();
     var skuBase = producto.skuBase || producto.idProducto;
     var equivList = equiv.porSku[skuBase] || [];
     equivList.forEach(function(e){ if (e.codigoBarra) codigos[String(e.codigoBarra).toUpperCase()] = true; });
@@ -1189,14 +1220,17 @@ function _calcularLotizacionFIFO(producto, costoNuevoConIgv, idGuiaActual) {
   // Leer GUIAS de WH + GUIA_DETALLE, filtrar ingresos del producto
   var guiasIngreso = [];
   try {
-    var guias = _safeReadWhGuias().filter(function(g) {
+    var guiasRaw = (fifoCtx && fifoCtx.guias) ? fifoCtx.guias : _safeReadWhGuias();
+    var guias = guiasRaw.filter(function(g) {
       return String(g.tipo || '').toUpperCase().indexOf('INGRESO') === 0
           && String(g.estado || '').toUpperCase() === 'CERRADA';
     });
     var guiaMap = {};
     guias.forEach(function(g){ guiaMap[g.idGuia] = g; });
 
-    var detalles = _readSheetPreservandoFecha(_abrirWhSheet('GUIA_DETALLE'));
+    var detalles = (fifoCtx && fifoCtx.detalles)
+      ? fifoCtx.detalles
+      : _readSheetPreservandoFecha(_abrirWhSheet('GUIA_DETALLE'));
     detalles.forEach(function(d) {
       if (String(d.observacion || '').toUpperCase() === 'ANULADO') return;
       var cb = String(d.codigoProducto || '').toUpperCase();
@@ -1264,12 +1298,13 @@ function _calcularLotizacionFIFO(producto, costoNuevoConIgv, idGuiaActual) {
 }
 
 // Suma stock del producto en WH (STOCK) + ME (STOCK_ZONAS).
-function _stockTotalProducto(producto) {
+// `fifoCtx` (opcional): contexto precargado. Si no viene, relee de sheets.
+function _stockTotalProducto(producto, fifoCtx) {
   var codigos = {};
   if (producto.idProducto)  codigos[String(producto.idProducto).toUpperCase()] = true;
   if (producto.codigoBarra) codigos[String(producto.codigoBarra).toUpperCase()] = true;
   try {
-    var equiv = _readEquivalencias();
+    var equiv = (fifoCtx && fifoCtx.equiv) ? fifoCtx.equiv : _readEquivalencias();
     var skuBase = producto.skuBase || producto.idProducto;
     (equiv.porSku[skuBase] || []).forEach(function(e){
       if (e.codigoBarra) codigos[String(e.codigoBarra).toUpperCase()] = true;
@@ -1278,13 +1313,15 @@ function _stockTotalProducto(producto) {
 
   var total = 0;
   try {
-    _safeReadWhStock().forEach(function(s){
+    var stockWh = (fifoCtx && fifoCtx.stockWh) ? fifoCtx.stockWh : _safeReadWhStock();
+    stockWh.forEach(function(s){
       var cb = String(s.codigoProducto || s.codigoBarra || '').toUpperCase();
       if (codigos[cb]) total += parseFloat(s.cantidad) || 0;
     });
   } catch(_){}
   try {
-    _safeReadMeStockZonas().forEach(function(s){
+    var stockMe = (fifoCtx && fifoCtx.stockMeZonas) ? fifoCtx.stockMeZonas : _safeReadMeStockZonas();
+    stockMe.forEach(function(s){
       var cb = String(s.Cod_Barras || '').toUpperCase();
       if (codigos[cb]) total += parseFloat(s.Cantidad) || 0;
     });

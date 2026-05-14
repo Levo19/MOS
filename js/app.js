@@ -4271,6 +4271,9 @@ const MOS = (() => {
         S._opsData = opsRes.value || {};
         _almSaveCache('opsData', S._opsData);
         almRenderOps();
+        // 🚀 Prefetch silencioso del detalle de guías de ingreso con foto
+        // → el modal 💰 abre instantáneo.
+        _prefetchCostosGuias();
       } else if (!S._opsData) {
         const lst = $('almOpsList');
         if (lst) lst.innerHTML = '<div class="text-xs text-rose-400 py-3 text-center">Error cargando operaciones</div>';
@@ -4278,6 +4281,44 @@ const MOS = (() => {
     } catch(e) {
       console.warn('[almLoadOps] error:', e);
     }
+  }
+
+  // Cache de detalle de guías precargado (key: fuente+'_'+idGuia).
+  // Lo llena _prefetchCostosGuias, lo consume abrirCostosGuia.
+  S._costosGuiaPrefetch = S._costosGuiaPrefetch || {};
+
+  // Prefetch en background del detalle de las guías de ingreso WH con foto
+  // (las únicas que muestran el botón 💰). Limita concurrencia para no
+  // saturar el backend. Falla silencioso — el modal igual puede fetchear.
+  function _prefetchCostosGuias() {
+    try {
+      const data = S._opsData || {};
+      const candidatas = [];
+      (data.porDia || []).forEach(d => (d.operaciones || []).forEach(op => {
+        const tipo = String(op.tipo || '').toUpperCase();
+        const esIngreso = op.fuente === 'WH' && tipo.indexOf('INGRESO') >= 0 && !op.esPreingreso;
+        const tieneFoto = !!(op.foto && String(op.foto).trim());
+        if (esIngreso && tieneFoto) {
+          const key = op.fuente + '_' + op.idGuia;
+          if (!S._costosGuiaPrefetch[key]) candidatas.push({ idGuia: op.idGuia, fuente: op.fuente, key });
+        }
+      }));
+      if (!candidatas.length) return;
+      // Concurrencia limitada: 2 a la vez
+      let idx = 0;
+      const worker = async () => {
+        while (idx < candidatas.length) {
+          const c = candidatas[idx++];
+          try {
+            const r = await API.get('getOperacionDetalle', { fuente: c.fuente, idGuia: c.idGuia });
+            if (r && r.lineas) {
+              S._costosGuiaPrefetch[c.key] = { lineas: r.lineas, ts: Date.now() };
+            }
+          } catch(_) { /* silent */ }
+        }
+      };
+      worker(); worker(); // 2 workers paralelos
+    } catch(_) { /* tolerar */ }
   }
 
   async function almRefreshOps() {
@@ -4528,21 +4569,48 @@ const MOS = (() => {
     };
     $('costosGuiaInfo').textContent = idGuia + (nombreProveedor ? ' · ' + nombreProveedor : '');
     const body = $('costosGuiaBody');
-    body.innerHTML = '<div class="text-xs text-slate-500 italic py-4">Cargando líneas…</div>';
     openModal('modalCostosGuia');
-    try {
-      const r = await API.get('getOperacionDetalle', { fuente, idGuia });
-      const lineas = (r && r.lineas) || [];
-      // Inicializar inputValue desde el precioUnitario existente (interpretado como bruto c/IGV).
-      // Default modal: TOTAL + INCLUIDO → mostramos el total bruto = bruto * cant
+
+    // Helper: inicializa inputValue y pinta. Reusado por prefetch y fetch.
+    const _hidratarLineas = (lineas) => {
       lineas.forEach(l => {
         const bruto = parseFloat(l.precioUnitario) || 0;
         l.inputValue = bruto > 0 ? +(bruto * (parseFloat(l.cantidad) || 1)).toFixed(2) : '';
       });
       S._costosGuiaState.lineas = lineas;
       _renderCostosGuiaBody();
+    };
+
+    // 🚀 Si hay prefetch fresco (<5 min) → pintar INSTANTÁNEO sin esperar red.
+    const pfKey = fuente + '_' + idGuia;
+    const pf = S._costosGuiaPrefetch && S._costosGuiaPrefetch[pfKey];
+    const pfFresco = pf && pf.lineas && (Date.now() - (pf.ts || 0) < 5 * 60 * 1000);
+    if (pfFresco) {
+      _hidratarLineas(pf.lineas.map(l => ({ ...l })));
+    } else {
+      body.innerHTML = `
+        <div class="liq-skel-stage">
+          <div class="liq-skel-row"></div>
+          <div class="liq-skel-row" style="animation-delay:.12s"></div>
+          <div class="liq-skel-row" style="animation-delay:.24s"></div>
+          <div class="liq-skel-stage-hint">
+            <span class="liq-skel-hint-dot"></span> Cargando líneas de la guía...
+          </div>
+        </div>`;
+    }
+
+    // Fetch fresco siempre (actualiza prefetch + corrige si cambió algo).
+    // Si ya pintamos desde prefetch, esto es refresh silencioso en background.
+    try {
+      const r = await API.get('getOperacionDetalle', { fuente, idGuia });
+      const lineas = (r && r.lineas) || [];
+      if (S._costosGuiaPrefetch) S._costosGuiaPrefetch[pfKey] = { lineas, ts: Date.now() };
+      // Solo re-pintar si el modal sigue en esta guía (user no cerró/cambió)
+      if (S._costosGuiaState && S._costosGuiaState.idGuia === idGuia) {
+        _hidratarLineas(lineas.map(l => ({ ...l })));
+      }
     } catch(e) {
-      body.innerHTML = `<div class="text-xs text-rose-400 py-4">Error: ${e.message}</div>`;
+      if (!pfFresco) body.innerHTML = `<div class="text-xs text-rose-400 py-4">Error: ${e.message}</div>`;
     }
   }
 
@@ -4716,7 +4784,13 @@ const MOS = (() => {
     }
     const updateMaster = !!$('costosGuiaUpdMaster')?.checked;
     closeModal('modalCostosGuia');
-    toast('Guardando costos…', 'info');
+
+    // 🚀 OPTIMISTA: abrir el panel de impacto YA con skeleton premium.
+    // Antes el user veía un toast "Guardando..." y esperaba 5-10s bloqueado
+    // hasta que el backend terminara el FIFO. Ahora el modal aparece al
+    // instante con shimmer y se rellena cuando llegan las sugerencias.
+    _mostrarPanelImpactoSkeleton(idGuia);
+
     try {
       const resp = await API.post('llenarCostosGuia', {
         idGuia, items, actualizarPrecioCosto: updateMaster, usuario: S.session?.nombre || ''
@@ -4738,14 +4812,43 @@ const MOS = (() => {
       });
       if (relevantes.length) {
         _mostrarPanelImpacto(relevantes, idGuia);
+      } else {
+        // No hay cambios relevantes → cerrar el skeleton con feedback amable
+        closeModal('modalImpactoCostos');
+        toast('✓ Costos guardados · sin cambios de precio sugeridos', 'ok');
       }
     } catch(e) {
+      closeModal('modalImpactoCostos');
       toast('Error: ' + e.message, 'error');
     }
   }
 
   // ── Panel: Impacto de costos en precios de venta ─────────
   S._impactoState = S._impactoState || { sugerencias: [], idGuia: null };
+
+  // Abre el modal de impacto INMEDIATAMENTE con skeleton shimmer, antes de
+  // que el backend termine de calcular las sugerencias FIFO. Se reemplaza
+  // por _renderImpactoBody cuando llegan los datos reales.
+  function _mostrarPanelImpactoSkeleton(idGuia) {
+    const info = $('impactoCostosInfo');
+    if (info) info.textContent = `Guía ${idGuia} · calculando impacto en precios...`;
+    const body = $('impactoCostosBody');
+    if (body) {
+      body.innerHTML = `
+        <div class="liq-skel-stage">
+          <div class="liq-skel-card"></div>
+          <div class="liq-skel-card" style="animation-delay:.14s"></div>
+          <div class="liq-skel-card" style="animation-delay:.28s"></div>
+          <div class="liq-skel-stage-hint">
+            <span class="liq-skel-hint-dot"></span>
+            Analizando costos y lotización FIFO...
+          </div>
+        </div>`;
+    }
+    const resEl = $('impactoCostosResumen');
+    if (resEl) resEl.textContent = '';
+    openModal('modalImpactoCostos');
+  }
 
   function _mostrarPanelImpacto(sugerencias, idGuia) {
     // Inicializar cada una con seleccionado=true por default (excepto FIJO/LIBRE sin sugerencia)
