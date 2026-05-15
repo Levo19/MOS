@@ -297,6 +297,8 @@ function _route(method, e) {
       // [v40.3] Sistema de cobro asignado de créditos
       case 'meGetCreditosPendientes':   return meGetCreditosPendientes(params);
       case 'meAsignarCobroCajero':      return meAsignarCobroCajero(params);
+      // [v41.3] Cierre forzado de caja por admin/master desde MOS
+      case 'meCerrarCajaForzado':       return meCerrarCajaForzado(params);
 
       default:
         return { ok: false, error: 'Acción no reconocida: ' + action };

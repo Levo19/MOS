@@ -1320,3 +1320,49 @@ function meAsignarCobroCajero(params) {
     }
   });
 }
+
+// ── Cerrar caja forzadamente desde MOS (admin/master) ──
+// Dispara el endpoint atómico CIERRE_CAJA_FORZADO en ME que con LockService:
+// anula POR_COBRAR de esa caja, calcula montoFinal automático, marca CERRADA.
+// Solución al bug histórico de cierres incompletos (caja ABIERTA con POR_COBRAR
+// ya anulados) por falta de atomicidad en el flow del cajero.
+//
+// Requiere clave admin 8 dígitos (4 globales + 4 personales). La valida
+// con verificarClaveAdmin antes de invocar el bridge ME.
+function meCerrarCajaForzado(params) {
+  if (!params || !params.idCaja)     return { ok: false, error: 'idCaja requerido' };
+  if (!params.claveAdmin)            return { ok: false, error: 'Requiere claveAdmin (8 dígitos)' };
+
+  var verif = verificarClaveAdmin({
+    clave:        String(params.claveAdmin).trim(),
+    accion:       'CIERRE_CAJA_FORZADO',
+    refDocumento: String(params.idCaja),
+    appOrigen:    'MOS',
+    detalle:      'Cierre forzado de caja desde MOS/Cajas'
+  });
+  if (!verif.ok || !verif.data || !verif.data.autorizado) {
+    return { ok: true, data: {
+      autorizado: false,
+      error: (verif.data && verif.data.error) || 'Clave incorrecta'
+    }};
+  }
+  var validadoPor = verif.data.validadoPor || {};
+
+  var res = _meBridgeEvento('CIERRE_CAJA_FORZADO', {
+    idCaja: params.idCaja,
+    motivo: params.motivo || 'Cierre forzado por admin desde MOS',
+    auth:   _meAuthFromMos(params),
+    adminAuth: {
+      nombre:     String(validadoPor.nombre || validadoPor.usuario || 'admin-MOS'),
+      rol:        String(validadoPor.rol || 'ADMIN'),
+      via:        'PIN_8DIG',
+      idPersonal: String(validadoPor.idPersonal || '')
+    }
+  });
+  // Adjuntar quién autorizó para confirmación visual en el frontend
+  if (res && res.ok && res.data) {
+    res.data.autorizado = true;
+    res.data.cerradoPor = String(validadoPor.nombre || 'admin');
+  }
+  return res;
+}

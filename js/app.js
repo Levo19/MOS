@@ -15123,10 +15123,15 @@ const MOS = (() => {
       ? (sinMov ? 'alerta' : 'activa')
       : 'cerrada';
 
-    // Botones
+    // Botones. [v41.3] Cierre forzado solo para admin/master en cajas ABIERTAS.
+    const _esAdmin = _esAdminOMaster();
+    const btnCerrarForzado = esActiva && _esAdmin
+      ? `<button onclick="event.stopPropagation();MOS.cjCerrarCajaForzado('${idAttr}','${safeNombre}')" class="cj-caja-btn cj-caja-btn-danger" title="Cerrar caja forzadamente (admin)">🔒 Cerrar caja</button>`
+      : '';
     const btnActiva = esActiva ? `
       <button onclick="event.stopPropagation();MOS.cjVerTicketsCaja('${idAttr}')" class="cj-caja-btn cj-caja-btn-primary" title="Ver tickets de esta caja">🧾 Tickets</button>
-      <button onclick="event.stopPropagation();MOS.cjAbrirTurno('${idAttr}')" class="cj-caja-btn" title="Ver turno completo">📊 Turno</button>` : `
+      <button onclick="event.stopPropagation();MOS.cjAbrirTurno('${idAttr}')" class="cj-caja-btn" title="Ver turno completo">📊 Turno</button>
+      ${btnCerrarForzado}` : `
       <button onclick="event.stopPropagation();MOS.cjVerTicketsCaja('${idAttr}')" class="cj-caja-btn cj-caja-btn-primary">🧾 Tickets del turno</button>
       <button onclick="event.stopPropagation();MOS.cjAbrirTurno('${idAttr}')" class="cj-caja-btn" title="Ver turno completo">📜 Ver cierre</button>`;
 
@@ -16709,6 +16714,75 @@ const MOS = (() => {
   function cjAbrirTurno(idCaja) {
     _finBeep('click');
     window.open('./turno.html?idCaja=' + idCaja + '&api=' + encodeURIComponent(API.getUrl()), '_blank');
+  }
+
+  // ── [v41.3] Cerrar caja forzadamente desde MOS (admin/master) ─────
+  // Pide PIN admin 8 dígitos, ejecuta el endpoint atómico de ME que:
+  //   1. Anula POR_COBRAR de esa caja
+  //   2. Calcula montoFinal automático (apertura + efectivo + ingresos - egresos)
+  //   3. Marca CERRADA + montoFinal + fechaCierre con LockService
+  //   4. Notifica al cajero original que su caja fue cerrada por admin
+  // Resuelve el bug histórico de cierres incompletos sin atomicidad.
+  async function cjCerrarCajaForzado(idCaja, nombreCajero) {
+    _finBeep('click');
+    if (!_esAdminOMaster()) {
+      toast('Solo admin/master pueden cerrar caja forzadamente', 'error');
+      return;
+    }
+    // Preview rápida: monto inicial + tickets + por cobrar
+    const c = (S._todasCajas || []).find(x => String(x.idCaja) === String(idCaja));
+    if (!c) { toast('Caja no encontrada', 'error'); return; }
+    const preview = [
+      `🔒 CERRAR CAJA FORZADAMENTE`,
+      ``,
+      `Cajero:        ${c.vendedor || '—'}`,
+      `Zona/Estación: ${c.zona || c.estacion || '—'}`,
+      `Apertura:      ${c.fechaApertura || '—'}`,
+      `Monto inicial: S/ ${parseFloat(c.montoInicial || 0).toFixed(2)}`,
+      ``,
+      `Tickets:       ${c.tickets || 0}`,
+      `Efectivo:      S/ ${parseFloat(c.efectivo || 0).toFixed(2)}`,
+      `Por cobrar:    ${c.sinCobrar || 0}  ← se ANULAN`,
+      ``,
+      `Efectivo esperado: S/ ${parseFloat(c.efectivoEsperado || 0).toFixed(2)}`,
+      ``,
+      `¿Continuar? Se cerrará en ME y el cajero recibirá un push.`
+    ].join('\n');
+    if (!confirm(preview)) return;
+
+    const clave = await _pedirClaveAdmin('CIERRE_CAJA_FORZADO · ' + (c.vendedor || idCaja));
+    if (!/^\d{8}$/.test(clave)) {
+      toast('Clave inválida (8 dígitos)', 'error');
+      return;
+    }
+    // Loading visual: deshabilitar botón
+    const cardBtn = document.querySelector(`#cjcard-${idCaja} .cj-caja-btn-danger`);
+    if (cardBtn) { cardBtn.disabled = true; cardBtn.textContent = '⌛ Cerrando...'; }
+    try {
+      const r = await API.post('meCerrarCajaForzado', {
+        idCaja:     idCaja,
+        claveAdmin: clave,
+        motivo:     'Cierre forzado desde MOS/Cajas'
+      });
+      const d = (r && r.data) ? r.data : (r || {});
+      if (!d.autorizado) {
+        toast(d.error || 'Clave incorrecta', 'error');
+        return;
+      }
+      try { _finBeep?.('success'); } catch(_){}
+      const msg = [
+        `🔒 Caja cerrada por ${d.cerradoPor || 'admin'}`,
+        `Monto final: S/ ${parseFloat(d.montoFinal || 0).toFixed(2)}`,
+        d.anulados > 0 ? `${d.anulados} ticket(s) POR_COBRAR anulados` : 'Sin POR_COBRAR pendientes'
+      ].join(' · ');
+      toast(msg, 'success');
+      // Refrescar lista de cajas para que la caja pase a CERRADA en la UI
+      setTimeout(() => _cajasRefreshSilencioso?.(), 400);
+    } catch(e) {
+      toast('Error: ' + (e.message || e), 'error');
+    } finally {
+      if (cardBtn) { cardBtn.disabled = false; cardBtn.textContent = '🔒 Cerrar caja'; }
+    }
   }
 
   // ── MODO TV fullscreen ──────────────────────────
@@ -24805,6 +24879,7 @@ const MOS = (() => {
     // Cajas modernizado
     cjDia, cjIrHoy, cjAbrirCalendario, cjCalNavMes, cjElegirFecha,
     cjToggleCajaDetail, cjVerTodosTickets, cjVerTicketsCaja, cjAbrirTurno,
+    cjCerrarCajaForzado,
     cjScrollToCaja, cjModoTV,
     _cjTkRender, _cjTkSetFiltro,
     // [v40.4] Cobro asignado de créditos — mano de cartas
