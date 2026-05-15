@@ -14886,9 +14886,11 @@ const MOS = (() => {
     _cjRenderCajas(abiertas, cerradas, fecha, esHoy, idCajaLider);
     _cjRenderActividad(tkDia, esHoy);
     _cjRender7d(fecha);
-    // [v40.3] Cargar créditos pendientes (solo si es hoy, evita ruido en archivo)
-    if (esHoy) _cjCargarCreditosPendientes();
-    else { const deck = $('cjCreditosDeck'); if (deck) deck.classList.add('hidden'); }
+    // [v40.4] Cargar créditos (1 fetch trae 30 días, después renderiza la mano
+    // de la fecha activa según el filtro). Cuando el usuario cambie la fecha,
+    // _cjRenderManoDelDia se vuelve a invocar sin refetch.
+    if (!_cjCreditosState.todosLosGrupos.length) _cjCargarCreditosPendientes();
+    else _cjRenderManoDelDia();
 
     // Empty state
     const empty = $('cajasEmpty');
@@ -15481,58 +15483,31 @@ const MOS = (() => {
   }
 
   // ════════════════════════════════════════════════════════
-  // [v40.3] CRÉDITOS PENDIENTES — deck de cartas en /cajas
+  // [v40.4] CRÉDITOS — MANO DE CARTAS estilo poker hand
+  // Una sola mano de la fecha activa. Cartas peeking + shuffle ciclico.
+  // Click → mesa overlay. Click carta → detalle con FAB enviar.
   // ════════════════════════════════════════════════════════
-  // State para el flow asignar
   let _cjCreditosState = {
-    grupos: [],                    // [{fecha, tickets, total, cuenta}]
-    diaAbierto: null,              // fecha YYYY-MM-DD del modal abierto
-    asignarCtx: null,              // {idVenta, cliente, monto, ...} en proceso
-    asignarCaja: null,             // idCaja elegida
-    asignarMetodo: 'EFECTIVO'      // método seleccionado
+    todosLosGrupos: [],            // [{fecha, tickets, ...}]  cache 30d desde backend
+    ticketsActivos: [],            // tickets de la fecha actualmente visible
+    fechaActiva:    null,          // fecha actualmente visible
+    shuffleTimer:   null,          // setInterval para barajar
+    shuffleIdx:     0,             // qué carta está al frente
+    detalleTicket:  null,          // ticket en overlay detalle
+    asignarCtx:     null,
+    asignarCaja:    null,
+    asignarMetodo:  'EFECTIVO'
   };
 
-  // Carga créditos desde ME (vía bridge MOS)
   async function _cjCargarCreditosPendientes() {
     try {
       const r = await API.post('meGetCreditosPendientes', { diasAtras: 30 });
       const d = (r && r.data) ? r.data : (r || {});
-      _cjCreditosState.grupos = d.grupos || [];
-      _cjRenderCreditosPendientes(d);
+      _cjCreditosState.todosLosGrupos = d.grupos || [];
+      _cjRenderManoDelDia();
     } catch(e) {
       console.warn('[creditos] error cargando:', e?.message || e);
     }
-  }
-
-  function _cjRenderCreditosPendientes(d) {
-    const deck   = $('cjCreditosDeck');
-    const badge  = $('cjCreditoBadge');
-    const total  = $('cjCreditoTotal');
-    const cards  = $('cjCreditoCards');
-    if (!deck || !cards) return;
-
-    const grupos = (d && d.grupos) || [];
-    if (!grupos.length) {
-      deck.classList.add('hidden');
-      return;
-    }
-    deck.classList.remove('hidden');
-    if (badge) badge.textContent = (d.totalTickets || 0) + ' ticket' + ((d.totalTickets||0) === 1 ? '' : 's');
-    if (total) total.textContent = 'S/ ' + (parseFloat(d.totalAcumulado || 0)).toFixed(2);
-
-    cards.innerHTML = grupos.map(g => {
-      const yaAsignados = g.tickets.filter(t => t.asignado).length;
-      const badgeAsig = yaAsignados > 0
-        ? `<span class="cj-credito-card-asignados">${yaAsignados} ✈</span>`
-        : '';
-      return `<div class="cj-credito-card" onclick="MOS.cjAbrirCreditosDia('${g.fecha}')">
-        <div class="cj-credito-card-fecha">📅 ${_cjFmtFechaCorta(g.fecha)}</div>
-        <div class="cj-credito-card-cuenta">${g.cuenta}</div>
-        <div class="cj-credito-card-cuenta-lbl">ticket${g.cuenta === 1 ? '' : 's'}</div>
-        <div class="cj-credito-card-monto">S/ ${parseFloat(g.total).toFixed(2)}</div>
-        ${badgeAsig}
-      </div>`;
-    }).join('');
   }
 
   function _cjFmtFechaCorta(yyyyMmDd) {
@@ -15546,44 +15521,182 @@ const MOS = (() => {
     return parts[2] + ' ' + meses[parseInt(parts[1],10)-1];
   }
 
-  function cjAbrirCreditosDia(fecha) {
-    _cjCreditosState.diaAbierto = fecha;
-    const grupo = _cjCreditosState.grupos.find(g => g.fecha === fecha);
-    if (!grupo) return;
-    const titulo = $('cjCreditoModalTitulo');
-    if (titulo) titulo.textContent = '💳 Créditos · ' + _cjFmtFechaCorta(fecha) + ' (' + grupo.cuenta + ')';
-    const lista = $('cjCreditoModalLista');
-    if (lista) {
-      lista.innerHTML = grupo.tickets.map(t => {
+  // Renderiza la mano de cartas para la fecha que está activa en el filtro de cajas
+  function _cjRenderManoDelDia() {
+    const fechaActiva = $('cjFecha')?.value || today();
+    const grupo = _cjCreditosState.todosLosGrupos.find(g => g.fecha === fechaActiva);
+    const mano = $('cjCreditosMano');
+    if (!mano) return;
+
+    if (!grupo || !grupo.tickets || !grupo.tickets.length) {
+      mano.classList.add('hidden');
+      _cjCreditosState.ticketsActivos = [];
+      _cjCreditosState.fechaActiva = null;
+      _cjStopShuffle();
+      return;
+    }
+    mano.classList.remove('hidden');
+    _cjCreditosState.fechaActiva = fechaActiva;
+    _cjCreditosState.ticketsActivos = grupo.tickets;
+    _cjCreditosState.shuffleIdx = 0;
+
+    // Labels
+    const lblFecha = $('cjManoFechaLabel');
+    if (lblFecha) lblFecha.textContent = _cjFmtFechaCorta(fechaActiva);
+    const badge   = $('cjManoBadge');
+    if (badge)   badge.textContent = grupo.cuenta + ' ticket' + (grupo.cuenta === 1 ? '' : 's');
+    const total   = $('cjManoTotal');
+    if (total)   total.textContent = 'S/ ' + parseFloat(grupo.total).toFixed(2);
+
+    _cjPintarCartasMano();
+
+    // Arrancar shuffle automático cada 4s (solo si hay >= 2 cartas)
+    _cjStopShuffle();
+    if (grupo.tickets.length >= 2) {
+      _cjCreditosState.shuffleTimer = setInterval(_cjShuffleStep, 4000);
+    }
+  }
+
+  function _cjPintarCartasMano() {
+    const cont = $('cjManoContenedor');
+    if (!cont) return;
+    const tickets = _cjCreditosState.ticketsActivos;
+    const idxFront = _cjCreditosState.shuffleIdx;
+    // Construir HTML: para cada ticket, su posición = (i - idxFront + N) % N
+    const N = tickets.length;
+    cont.innerHTML = tickets.map((t, i) => {
+      const pos = (i - idxFront + N) % N;
+      const posAttr = pos >= 5 ? '5+' : String(pos);
+      const asigBadge = t.asignado
+        ? `<span class="cj-carta-asignado-badge">✈ asignado</span>`
+        : '';
+      const cliente = _esc((t.cliente || 'VARIOS').toUpperCase());
+      const doc = t.clienteDoc ? `<div class="cj-carta-doc">${_esc(t.clienteDoc)}</div>` : '';
+      return `<div class="cj-carta-mano" data-pos="${posAttr}" data-idx="${i}"
+                   onclick="event.stopPropagation();MOS.cjAbrirDetalleCarta(${i})">
+        ${asigBadge}
+        <div class="cj-carta-cliente">${cliente}</div>
+        ${doc}
+        <div class="cj-carta-monto">S/ ${parseFloat(t.total).toFixed(2)}</div>
+        <div class="cj-carta-meta">${_esc(t.correlativo)} · ${_esc(t.vendedor)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  function _cjShuffleStep() {
+    const tickets = _cjCreditosState.ticketsActivos;
+    if (!tickets || tickets.length < 2) return;
+    // Si el overlay de mesa o detalle está abierto, pausar shuffle
+    const mesa = $('modalMesaCartas'); const det = $('modalDetalleCarta');
+    if ((mesa && !mesa.classList.contains('hidden')) || (det && !det.classList.contains('hidden'))) return;
+    _cjCreditosState.shuffleIdx = (_cjCreditosState.shuffleIdx + 1) % tickets.length;
+    _cjPintarCartasMano();
+  }
+
+  function _cjStopShuffle() {
+    if (_cjCreditosState.shuffleTimer) {
+      clearInterval(_cjCreditosState.shuffleTimer);
+      _cjCreditosState.shuffleTimer = null;
+    }
+  }
+
+  // Click en la mano → repartir las cartas en la mesa
+  function cjRepartirMano() {
+    const tickets = _cjCreditosState.ticketsActivos;
+    if (!tickets || !tickets.length) return;
+    try { _finBeep?.('click'); } catch(_){}
+    const fecha = _cjCreditosState.fechaActiva;
+    const lblF = $('cjMesaFechaLabel'); if (lblF) lblF.textContent = _cjFmtFechaCorta(fecha);
+    const lblS = $('cjMesaSubtitulo');
+    if (lblS) lblS.textContent = tickets.length + ' ticket' + (tickets.length === 1 ? '' : 's') + ' · toca una carta para ver detalle';
+
+    const grid = $('cjMesaGrid');
+    if (grid) {
+      grid.innerHTML = tickets.map((t, i) => {
         const asig = t.asignado;
-        return `<div class="cj-credito-ticket ${asig ? 'is-asignado' : ''}">
-          <div class="cj-credito-ticket-head">
-            <div style="flex:1; min-width:0">
-              <div class="cj-credito-ticket-cliente">${_esc(t.cliente || 'VARIOS')}</div>
-              <div class="cj-credito-ticket-doc">${_esc(t.clienteDoc || '—')} · ${_esc(t.correlativo)}</div>
-            </div>
-            <div class="cj-credito-ticket-monto">S/ ${parseFloat(t.total).toFixed(2)}</div>
-          </div>
-          <div class="cj-credito-ticket-meta">
-            🕐 ${t.fechaISO} · 👤 ${_esc(t.vendedor)} · 💼 ${_esc(t.idCaja || '—')}
-          </div>
-          ${t.obs ? `<div class="cj-credito-ticket-obs">📝 ${_esc(t.obs)}</div>` : ''}
-          ${asig
-            ? `<div class="cj-credito-ticket-asig-badge">✈ Asignado a ${_esc(asig.vendedorDest)} (${_esc(asig.cajaDestino)})</div>`
-            : `<button class="cj-credito-ticket-btn" onclick="MOS.cjAbrirAsignar('${_esc(t.idVenta)}')">💳 Enviar a caja para cobrar</button>`
-          }
+        const asigClass = asig ? 'is-asignada' : '';
+        const asigBadge = asig
+          ? `<span class="cj-carta-asignado-badge" style="position:relative; top:0; right:0; margin-bottom:8px; display:inline-block;">✈ ${_esc(asig.vendedorDest)}</span>`
+          : '';
+        const cliente = _esc((t.cliente || 'VARIOS').toUpperCase());
+        return `<div class="cj-mesa-carta ${asigClass}"
+                     style="animation-delay: ${i * 80}ms"
+                     onclick="MOS.cjAbrirDetalleCarta(${i})">
+          ${asigBadge}
+          <div class="cj-carta-cliente">${cliente}</div>
+          ${t.clienteDoc ? `<div class="cj-carta-doc">${_esc(t.clienteDoc)}</div>` : ''}
+          <div class="cj-carta-monto">S/ ${parseFloat(t.total).toFixed(2)}</div>
+          <div class="cj-carta-meta">${_esc(t.correlativo)} · ${_esc(t.vendedor)}</div>
         </div>`;
       }).join('');
     }
-    const modal = $('modalCreditosDia');
+    const modal = $('modalMesaCartas');
     if (modal) modal.classList.remove('hidden');
   }
 
-  function cjCerrarCreditosDia(ev) {
-    if (ev && ev.target && ev.target.id !== 'modalCreditosDia') return;
-    const modal = $('modalCreditosDia');
+  function cjCerrarMesa(ev) {
+    if (ev && ev.target && ev.target.id !== 'modalMesaCartas') return;
+    const modal = $('modalMesaCartas');
     if (modal) modal.classList.add('hidden');
-    _cjCreditosState.diaAbierto = null;
+  }
+
+  // Abre el detalle de una carta específica
+  function cjAbrirDetalleCarta(idx) {
+    const t = _cjCreditosState.ticketsActivos[idx];
+    if (!t) return;
+    _cjCreditosState.detalleTicket = t;
+    try { _finBeep?.('click'); } catch(_){}
+
+    const cont = $('cjDetalleContenido');
+    if (cont) {
+      cont.innerHTML = `
+        <span class="cj-detalle-corner">🃏</span>
+        <span class="cj-detalle-corner-br">🃏</span>
+        <div class="cj-det-cliente">${_esc((t.cliente || 'VARIOS').toUpperCase())}</div>
+        ${t.clienteDoc ? `<div class="cj-det-doc">${_esc(t.clienteDoc)}</div>` : ''}
+        <div class="cj-det-monto">S/ ${parseFloat(t.total).toFixed(2)}</div>
+        <div class="cj-det-row">
+          <span class="cj-det-row-label">📄 Ticket</span>
+          <span class="cj-det-row-val">${_esc(t.correlativo)}</span>
+        </div>
+        <div class="cj-det-row">
+          <span class="cj-det-row-label">🕐 Emitido</span>
+          <span class="cj-det-row-val">${_esc(t.fechaISO)}</span>
+        </div>
+        <div class="cj-det-row">
+          <span class="cj-det-row-label">👤 Cajero original</span>
+          <span class="cj-det-row-val">${_esc(t.vendedor)}</span>
+        </div>
+        <div class="cj-det-row">
+          <span class="cj-det-row-label">💼 Caja origen</span>
+          <span class="cj-det-row-val">${_esc(t.idCaja || '—')}</span>
+        </div>
+        ${t.obs ? `<div class="cj-det-obs">📝 ${_esc(t.obs)}</div>` : ''}
+        ${t.asignado ? `<div class="cj-det-asignado-banner">
+          ✈ Ya asignado a <strong>${_esc(t.asignado.vendedorDest)}</strong>
+          (${_esc(t.asignado.cajaDestino)}) — esperando confirmación
+        </div>` : ''}
+      `;
+    }
+    // El botón FAB se oculta si ya está asignado
+    const fab = $('cjDetalleFloating');
+    if (fab) fab.style.display = t.asignado ? 'none' : '';
+    const modal = $('modalDetalleCarta');
+    if (modal) modal.classList.remove('hidden');
+  }
+
+  function cjCerrarDetalleCarta(ev) {
+    if (ev && ev.target && ev.target.id !== 'modalDetalleCarta') return;
+    const modal = $('modalDetalleCarta');
+    if (modal) modal.classList.add('hidden');
+    _cjCreditosState.detalleTicket = null;
+  }
+
+  // Abre el modal de asignar caja desde el detalle (continúa flow existente)
+  function cjAbrirAsignarDesdeDetalle() {
+    const t = _cjCreditosState.detalleTicket;
+    if (!t) return;
+    cjAbrirAsignar(t.idVenta);
   }
 
   async function cjAbrirAsignar(idVenta) {
@@ -24615,8 +24728,9 @@ const MOS = (() => {
     cjToggleCajaDetail, cjVerTodosTickets, cjVerTicketsCaja, cjAbrirTurno,
     cjScrollToCaja, cjModoTV,
     _cjTkRender, _cjTkSetFiltro,
-    // [v40.3] Cobro asignado de créditos
-    cjAbrirCreditosDia, cjCerrarCreditosDia,
+    // [v40.4] Cobro asignado de créditos — mano de cartas
+    cjRepartirMano, cjCerrarMesa,
+    cjAbrirDetalleCarta, cjCerrarDetalleCarta, cjAbrirAsignarDesdeDetalle,
     cjAbrirAsignar, cjCerrarAsignar,
     cjSetMetodoAsignar, cjSetCajaAsignar, cjConfirmarAsignar,
     // F2 — Acciones editables sobre tickets

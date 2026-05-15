@@ -1268,167 +1268,286 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       [v40.3] CRÉDITOS PENDIENTES — deck de cartas apiladas
+       [v40.4] CRÉDITOS — MANO DE CARTAS estilo poker hand
     ════════════════════════════════════════════════════════ */
-    .cj-credito-deck {
+    .cj-mano-deck {
       background: linear-gradient(135deg, #1f1303 0%, #2a1809 100%);
       border: 1.5px solid #f59e0b;
       border-radius: 16px;
-      padding: 14px 16px;
+      padding: 14px 16px 10px;
       box-shadow: 0 8px 24px -8px rgba(245,158,11,.35);
       position: relative;
       overflow: hidden;
     }
-    .cj-credito-deck::before {
+    .cj-mano-deck::before {
       content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
       background: linear-gradient(90deg, #f59e0b, #fbbf24, #f59e0b);
-      animation: cjCreditoShine 3s linear infinite;
+      background-size: 200% 100%;
+      animation: cjManoShine 3s linear infinite;
     }
-    @keyframes cjCreditoShine {
+    @keyframes cjManoShine {
       0%   { background-position:   0% 50%; }
       100% { background-position: 200% 50%; }
     }
-    .cj-credito-header {
+    .cj-mano-header {
       display: flex; justify-content: space-between; align-items: center;
-      margin-bottom: 14px; padding-bottom: 10px;
+      margin-bottom: 8px; padding-bottom: 8px;
       border-bottom: 1px dashed rgba(245,158,11,.3);
     }
-    .cj-credito-eyebrow {
-      display: flex; align-items: center; gap: 8px;
-    }
-    .cj-credito-ico { font-size: 24px; }
-    .cj-credito-titulo {
-      font-weight: 900; color: #fbbf24; font-size: 15px;
+    .cj-mano-eyebrow { display: flex; align-items: center; gap: 8px; }
+    .cj-mano-ico { font-size: 22px; }
+    .cj-mano-titulo {
+      font-weight: 900; color: #fbbf24; font-size: 14px;
       text-transform: uppercase; letter-spacing: .04em;
     }
-    .cj-credito-badge {
+    .cj-mano-badge {
       background: rgba(245,158,11,.2); color: #fbbf24;
       padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 800;
       border: 1px solid rgba(245,158,11,.4);
     }
-    .cj-credito-stats { text-align: right; }
-    .cj-credito-total {
+    .cj-mano-stats { text-align: right; }
+    .cj-mano-total {
       font-weight: 900; font-size: 20px; color: #fcd34d;
       font-variant-numeric: tabular-nums;
     }
-    .cj-credito-sub {
+    .cj-mano-sub {
       display: block; font-size: 10px; color: #d97706;
       text-transform: uppercase; letter-spacing: .05em;
     }
-    /* Cards apiladas tipo deck */
-    .cj-credito-cards-row {
-      display: flex; gap: 14px; overflow-x: auto; padding: 6px 4px 12px;
-      scrollbar-width: thin;
+    /* Contenedor de la mano: cartas absolute superpuestas */
+    .cj-mano-contenedor {
+      position: relative; height: 200px; padding: 6px 0 0; cursor: pointer;
+      perspective: 1000px;
     }
-    .cj-credito-card {
-      flex-shrink: 0;
-      min-width: 150px;
+    .cj-mano-hint {
+      text-align: center; font-size: 10px; color: #d97706;
+      margin-top: 2px; text-transform: uppercase; letter-spacing: .05em;
+      opacity: .8;
+    }
+    .cj-mano-deck:hover .cj-mano-hint { color: #fbbf24; opacity: 1; }
+
+    /* Cada carta de la mano */
+    .cj-carta-mano {
+      position: absolute;
+      top: 0; left: 50%;
+      width: 230px;
+      height: 180px;
       background: linear-gradient(135deg, #fef3c7, #fde68a);
-      color: #78350f;
       border: 2px solid #f59e0b;
-      border-radius: 14px;
+      border-radius: 12px;
       padding: 14px 16px;
+      color: #78350f;
+      transform-origin: bottom center;
+      transition: all .6s cubic-bezier(.34,1.56,.64,1);
+      box-shadow: 0 8px 16px -4px rgba(0,0,0,.6);
       cursor: pointer;
-      position: relative;
-      box-shadow:
-        0 4px 12px -4px rgba(245,158,11,.5),
-        4px 0 0 -2px #fbbf24,
-        8px 0 0 -4px #f59e0b;
-      transition: all .25s cubic-bezier(.34,1.56,.64,1);
     }
-    .cj-credito-card:hover {
-      transform: translateY(-4px) scale(1.02);
-      box-shadow:
-        0 12px 24px -4px rgba(245,158,11,.6),
-        6px 0 0 -2px #fbbf24,
-        12px 0 0 -4px #f59e0b;
+    /* Posiciones según el orden (0 = front, peeking offsets) */
+    .cj-carta-mano[data-pos="0"] {
+      transform: translateX(-50%) translateY(0)    rotate(0deg);
+      z-index: 10;
     }
-    .cj-credito-card-fecha {
-      font-weight: 900; font-size: 13px; text-transform: uppercase;
-      letter-spacing: .04em; opacity: .85;
+    .cj-carta-mano[data-pos="1"] {
+      transform: translateX(-72%) translateY(-8px) rotate(-7deg);
+      z-index: 9; opacity: .92;
     }
-    .cj-credito-card-cuenta {
-      font-weight: 900; font-size: 28px; line-height: 1; margin: 6px 0 2px;
+    .cj-carta-mano[data-pos="2"] {
+      transform: translateX(-28%) translateY(-8px) rotate(7deg);
+      z-index: 9; opacity: .92;
     }
-    .cj-credito-card-cuenta-lbl {
-      font-size: 9px; text-transform: uppercase; letter-spacing: .05em;
-      opacity: .75; font-weight: 700;
+    .cj-carta-mano[data-pos="3"] {
+      transform: translateX(-90%) translateY(-14px) rotate(-13deg);
+      z-index: 8; opacity: .82;
     }
-    .cj-credito-card-monto {
-      font-weight: 900; font-size: 16px; margin-top: 10px;
-      padding-top: 8px; border-top: 1.5px dashed rgba(120,53,15,.3);
-      font-variant-numeric: tabular-nums;
+    .cj-carta-mano[data-pos="4"] {
+      transform: translateX(-10%) translateY(-14px) rotate(13deg);
+      z-index: 8; opacity: .82;
     }
-    .cj-credito-card-asignados {
-      display: inline-block; margin-top: 6px; padding: 2px 8px;
-      background: rgba(59,130,246,.15); color: #1d4ed8;
-      border-radius: 999px; font-size: 10px; font-weight: 800;
+    .cj-carta-mano[data-pos="5+"] {
+      transform: translateX(-50%) translateY(-20px) scale(.94);
+      z-index: 7; opacity: .55;
+    }
+    .cj-mano-deck:hover .cj-carta-mano[data-pos="0"] {
+      transform: translateX(-50%) translateY(-6px) rotate(0deg) scale(1.03);
+      box-shadow: 0 16px 28px -6px rgba(0,0,0,.7);
+    }
+    .cj-carta-cliente {
+      font-weight: 900; font-size: 15px; text-transform: uppercase;
+      line-height: 1.15; max-height: 36px; overflow: hidden;
+    }
+    .cj-carta-doc {
+      font-size: 10px; color: #92400e; font-family: monospace;
+      margin-top: 2px; opacity: .85;
+    }
+    .cj-carta-monto {
+      font-weight: 900; font-size: 30px; line-height: 1;
+      margin: 8px 0; font-variant-numeric: tabular-nums;
+    }
+    .cj-carta-meta {
+      font-size: 10px; color: #92400e; opacity: .8;
+      position: absolute; bottom: 14px; left: 16px; right: 16px;
+      padding-top: 6px; border-top: 1px dashed rgba(120,53,15,.3);
+    }
+    .cj-carta-asignado-badge {
+      position: absolute; top: 8px; right: 8px;
+      background: #3b82f6; color: white;
+      font-size: 9px; font-weight: 900;
+      padding: 3px 8px; border-radius: 999px;
+      letter-spacing: .05em;
+    }
+    /* Animación cuando la carta del frente se va al fondo */
+    .cj-carta-shuffle-out {
+      animation: cjCartaShuffle .7s cubic-bezier(.5,0,.5,1) forwards;
+    }
+    @keyframes cjCartaShuffle {
+      0%   { transform: translateX(-50%) translateY(0) rotate(0deg); opacity: 1; }
+      50%  { transform: translateX(-50%) translateY(-50px) rotate(8deg) scale(1.05); opacity: .9; }
+      100% { transform: translateX(-50%) translateY(-20px) rotate(0deg) scale(.94); opacity: .55; }
     }
 
-    /* Modal de detalle de día */
-    .cj-credito-modal {
-      max-width: 720px !important; max-height: 85vh; overflow: hidden;
-      display: flex; flex-direction: column;
+    /* ── MESA OVERLAY: cartas repartidas ────────────────────── */
+    .cj-mesa-overlay {
+      position: fixed; inset: 0;
+      background: radial-gradient(circle at center, #064e3b 0%, #021a14 100%);
+      z-index: 9000;
+      padding: 24px;
+      overflow-y: auto;
+      animation: cjMesaFadeIn .35s ease;
     }
-    .cj-credito-modal-head {
+    @keyframes cjMesaFadeIn {
+      0%   { opacity: 0; }
+      100% { opacity: 1; }
+    }
+    .cj-mesa-head {
       display: flex; justify-content: space-between; align-items: center;
-      margin-bottom: 12px; padding-bottom: 10px;
-      border-bottom: 1px solid #334155;
+      margin-bottom: 24px; padding-bottom: 14px;
+      border-bottom: 2px solid rgba(245,158,11,.3);
     }
-    .cj-credito-modal-lista {
-      flex: 1; overflow-y: auto; max-height: 65vh; padding-right: 4px;
+    .cj-mesa-close {
+      background: rgba(0,0,0,.4); color: #fcd34d;
+      width: 38px; height: 38px; border-radius: 999px;
+      font-size: 18px; font-weight: 900; border: 1px solid rgba(245,158,11,.4);
+      cursor: pointer; transition: transform .15s ease;
     }
-    .cj-credito-ticket {
-      background: linear-gradient(135deg, #422006, #292524);
-      border: 1.5px solid #f59e0b;
-      border-radius: 12px;
-      padding: 12px 14px;
-      margin-bottom: 10px;
+    .cj-mesa-close:hover { transform: scale(1.1) rotate(90deg); }
+    .cj-mesa-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 20px;
+      padding: 8px;
+    }
+    .cj-mesa-carta {
+      background: linear-gradient(135deg, #fef3c7, #fde68a);
+      border: 2px solid #f59e0b;
+      border-radius: 14px;
+      padding: 16px;
+      color: #78350f;
+      cursor: pointer;
       position: relative;
+      box-shadow: 0 12px 24px -8px rgba(0,0,0,.7);
+      transition: all .25s cubic-bezier(.34,1.56,.64,1);
+      animation: cjMesaCartaDeal .5s cubic-bezier(.34,1.56,.64,1) backwards;
     }
-    .cj-credito-ticket.is-asignado {
-      border-color: #3b82f6;
-      background: linear-gradient(135deg, #1e3a8a, #1e293b);
+    .cj-mesa-carta:hover {
+      transform: translateY(-8px) rotate(-1.5deg) scale(1.03);
+      box-shadow: 0 24px 36px -10px rgba(0,0,0,.8), 0 0 0 3px rgba(245,158,11,.4);
     }
-    .cj-credito-ticket-head {
-      display: flex; justify-content: space-between; align-items: flex-start;
-      margin-bottom: 8px; gap: 10px;
+    .cj-mesa-carta.is-asignada {
+      background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+      color: #1e3a8a; border-color: #3b82f6;
     }
-    .cj-credito-ticket-cliente {
-      font-weight: 900; color: #fcd34d; font-size: 14px;
+    @keyframes cjMesaCartaDeal {
+      0%   { transform: translateY(-100vh) rotate(-30deg) scale(.5); opacity: 0; }
+      60%  { transform: translateY(20px) rotate(5deg) scale(1.05);  opacity: 1; }
+      100% { transform: translateY(0) rotate(0) scale(1); }
     }
-    .cj-credito-ticket-doc {
-      color: #d97706; font-size: 11px; font-family: monospace;
+
+    /* ── DETALLE CARTA OVERLAY ──────────────────────────────── */
+    .cj-detalle-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.85);
+      backdrop-filter: blur(8px);
+      z-index: 9100;
+      display: flex; align-items: center; justify-content: center;
+      padding: 24px;
+      animation: cjMesaFadeIn .25s ease;
     }
-    .cj-credito-ticket-monto {
-      font-weight: 900; font-size: 20px; color: #fcd34d; line-height: 1;
+    .cj-detalle-card {
+      background: linear-gradient(135deg, #fef3c7, #fcd34d);
+      color: #78350f;
+      border: 3px solid #f59e0b;
+      border-radius: 20px;
+      padding: 28px 24px 80px;
+      max-width: 460px; width: 100%;
+      position: relative;
+      box-shadow: 0 30px 60px -10px rgba(0,0,0,.8), 0 0 0 4px rgba(245,158,11,.2);
+      animation: cjMesaCartaDeal .4s cubic-bezier(.34,1.56,.64,1);
+    }
+    .cj-detalle-close {
+      position: absolute; top: 12px; right: 12px;
+      background: rgba(0,0,0,.1); color: #78350f;
+      width: 32px; height: 32px; border-radius: 999px;
+      font-size: 16px; font-weight: 900; border: 1px solid rgba(120,53,15,.3);
+      cursor: pointer;
+    }
+    .cj-detalle-fab {
+      position: absolute; bottom: 18px; left: 50%;
+      transform: translateX(-50%);
+      background: linear-gradient(135deg, #059669, #047857);
+      color: white;
+      padding: 14px 28px; border-radius: 999px;
+      font-weight: 900; font-size: 13px; text-transform: uppercase;
+      letter-spacing: .05em; cursor: pointer; border: none;
+      box-shadow: 0 12px 24px -4px rgba(5,150,105,.6);
+      display: flex; align-items: center; gap: 8px;
+      animation: cjFabPulse 2s ease-in-out infinite;
+    }
+    .cj-detalle-fab:hover { transform: translateX(-50%) translateY(-2px) scale(1.03); }
+    .cj-detalle-fab-ico { font-size: 18px; }
+    @keyframes cjFabPulse {
+      0%, 100% { box-shadow: 0 12px 24px -4px rgba(5,150,105,.6); }
+      50%      { box-shadow: 0 12px 30px -2px rgba(5,150,105,.9); }
+    }
+    .cj-detalle-corner {
+      position: absolute; top: 14px; left: 18px;
+      font-size: 24px; opacity: .35;
+    }
+    .cj-detalle-corner-br {
+      position: absolute; bottom: 78px; right: 18px;
+      font-size: 24px; opacity: .35; transform: rotate(180deg);
+    }
+    .cj-det-cliente {
+      font-weight: 900; font-size: 20px; text-align: center;
+      margin-top: 12px; line-height: 1.2;
+    }
+    .cj-det-doc {
+      text-align: center; font-family: monospace; font-size: 12px;
+      color: #92400e; margin-top: 2px;
+    }
+    .cj-det-monto {
+      text-align: center; font-weight: 900;
+      font-size: 44px; line-height: 1;
+      margin: 18px 0 16px;
       font-variant-numeric: tabular-nums;
     }
-    .cj-credito-ticket-meta {
-      font-size: 11px; color: #cbd5e1; margin-top: 4px;
+    .cj-det-row {
+      display: flex; justify-content: space-between;
+      padding: 8px 4px; border-top: 1px dashed rgba(120,53,15,.3);
+      font-size: 12px;
     }
-    .cj-credito-ticket-obs {
-      font-size: 11px; color: #94a3b8; font-style: italic; margin-top: 6px;
-      padding: 6px 8px; background: rgba(0,0,0,.3); border-radius: 6px;
+    .cj-det-row-label { font-weight: 800; opacity: .8; }
+    .cj-det-row-val   { font-weight: 600; text-align: right; }
+    .cj-det-obs {
+      margin-top: 12px; padding: 10px 12px;
+      background: rgba(120,53,15,.1); border-radius: 8px;
+      font-size: 11px; font-style: italic; line-height: 1.5;
     }
-    .cj-credito-ticket-asig-badge {
-      display: inline-block; padding: 3px 10px;
-      background: rgba(59,130,246,.2); color: #93c5fd;
-      border-radius: 999px; font-size: 10px; font-weight: 800;
-      border: 1px solid rgba(59,130,246,.5);
-      margin-top: 6px;
+    .cj-det-asignado-banner {
+      margin-top: 12px; padding: 10px 12px;
+      background: rgba(59,130,246,.15); border: 1.5px solid rgba(59,130,246,.5);
+      color: #1e40af; border-radius: 8px;
+      font-size: 11px; font-weight: 800; text-align: center;
     }
-    .cj-credito-ticket-btn {
-      width: 100%; margin-top: 10px;
-      padding: 10px;
-      background: linear-gradient(135deg, #f59e0b, #d97706);
-      color: #1c1917;
-      font-weight: 900; text-transform: uppercase; letter-spacing: .05em;
-      border-radius: 10px; border: none; cursor: pointer; font-size: 12px;
-      transition: transform .15s ease;
-    }
-    .cj-credito-ticket-btn:hover { transform: scale(1.02); }
-    .cj-credito-ticket-btn:active { transform: scale(.98); }
 
     /* Modal asignar caja */
     .cj-asignar-modal { max-width: 540px !important; }
@@ -8312,34 +8431,51 @@
       </div>
 
       <!-- ════════════════════════════════════════════════════════
-           [v40.3] CRÉDITOS PENDIENTES — deck de cartas por día
-           Cards apiladas que se despliegan al click. Cada card representa
-           un día con N tickets en crédito. Al click → modal con la lista
-           para asignar cada ticket a una caja activa.
+           [v40.4] CRÉDITOS PENDIENTES — MANO DE CARTAS estilo poker
+           Una sola mano con los tickets en crédito de la fecha activa.
+           Cartas apiladas con esquinas visibles. Animación shuffle cíclica.
+           Click → overlay "mesa" donde las cartas se reparten.
+           Click carta → overlay detalle con botón flotante "enviar a caja".
       ═══════════════════════════════════════════════════════════ -->
-      <div id="cjCreditosDeck" class="cj-credito-deck mb-5 hidden">
-        <div class="cj-credito-header">
-          <div class="cj-credito-eyebrow">
-            <span class="cj-credito-ico">💳</span>
-            <span class="cj-credito-titulo">Créditos pendientes</span>
-            <span id="cjCreditoBadge" class="cj-credito-badge">—</span>
+      <div id="cjCreditosMano" class="cj-mano-deck mb-5 hidden">
+        <div class="cj-mano-header">
+          <div class="cj-mano-eyebrow">
+            <span class="cj-mano-ico">💳</span>
+            <span class="cj-mano-titulo">Créditos · <span id="cjManoFechaLabel">—</span></span>
+            <span id="cjManoBadge" class="cj-mano-badge">—</span>
           </div>
-          <div class="cj-credito-stats">
-            <span id="cjCreditoTotal" class="cj-credito-total">S/ —</span>
-            <span class="cj-credito-sub">acumulado</span>
+          <div class="cj-mano-stats">
+            <span id="cjManoTotal" class="cj-mano-total">S/ —</span>
+            <span class="cj-mano-sub">pendiente</span>
           </div>
         </div>
-        <div id="cjCreditoCards" class="cj-credito-cards-row"></div>
+        <div id="cjManoContenedor" class="cj-mano-contenedor" onclick="MOS.cjRepartirMano()">
+          <!-- cartas inyectadas por JS -->
+        </div>
+        <p class="cj-mano-hint">🃏 Toca la mano para repartir las cartas</p>
       </div>
 
-      <!-- Modal de detalle de un día (créditos del día seleccionado) -->
-      <div id="modalCreditosDia" class="modal-overlay hidden" onclick="MOS.cjCerrarCreditosDia(event)">
-        <div class="modal-box cj-credito-modal" onclick="event.stopPropagation()">
-          <div class="cj-credito-modal-head">
-            <h3 id="cjCreditoModalTitulo" class="text-lg font-bold text-white">💳 Créditos del día</h3>
-            <button onclick="MOS.cjCerrarCreditosDia()" class="text-slate-400 hover:text-white text-xl">✕</button>
+      <!-- Overlay: MESA de cartas (cartas repartidas para elegir) -->
+      <div id="modalMesaCartas" class="cj-mesa-overlay hidden" onclick="MOS.cjCerrarMesa(event)">
+        <div class="cj-mesa-head">
+          <div>
+            <h3 class="text-xl font-bold text-white">🃏 Créditos · <span id="cjMesaFechaLabel">—</span></h3>
+            <p id="cjMesaSubtitulo" class="text-xs text-amber-300 mt-0.5">— tickets · toca una carta para ver detalle</p>
           </div>
-          <div id="cjCreditoModalLista" class="cj-credito-modal-lista"></div>
+          <button onclick="MOS.cjCerrarMesa()" class="cj-mesa-close">✕</button>
+        </div>
+        <div id="cjMesaGrid" class="cj-mesa-grid"></div>
+      </div>
+
+      <!-- Overlay: DETALLE de un ticket -->
+      <div id="modalDetalleCarta" class="cj-detalle-overlay hidden" onclick="MOS.cjCerrarDetalleCarta(event)">
+        <div class="cj-detalle-card" onclick="event.stopPropagation()">
+          <button onclick="MOS.cjCerrarDetalleCarta()" class="cj-detalle-close">✕</button>
+          <div id="cjDetalleContenido"></div>
+          <button id="cjDetalleFloating" class="cj-detalle-fab" onclick="MOS.cjAbrirAsignarDesdeDetalle()">
+            <span class="cj-detalle-fab-ico">💳</span>
+            <span>Enviar a caja para cobrar</span>
+          </button>
         </div>
       </div>
 
