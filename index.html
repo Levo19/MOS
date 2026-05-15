@@ -1266,6 +1266,229 @@
       position: relative;
       height: 40px;
     }
+
+    /* ════════════════════════════════════════════════════════
+       [v40.3] CRÉDITOS PENDIENTES — deck de cartas apiladas
+    ════════════════════════════════════════════════════════ */
+    .cj-credito-deck {
+      background: linear-gradient(135deg, #1f1303 0%, #2a1809 100%);
+      border: 1.5px solid #f59e0b;
+      border-radius: 16px;
+      padding: 14px 16px;
+      box-shadow: 0 8px 24px -8px rgba(245,158,11,.35);
+      position: relative;
+      overflow: hidden;
+    }
+    .cj-credito-deck::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, #f59e0b, #fbbf24, #f59e0b);
+      animation: cjCreditoShine 3s linear infinite;
+    }
+    @keyframes cjCreditoShine {
+      0%   { background-position:   0% 50%; }
+      100% { background-position: 200% 50%; }
+    }
+    .cj-credito-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 14px; padding-bottom: 10px;
+      border-bottom: 1px dashed rgba(245,158,11,.3);
+    }
+    .cj-credito-eyebrow {
+      display: flex; align-items: center; gap: 8px;
+    }
+    .cj-credito-ico { font-size: 24px; }
+    .cj-credito-titulo {
+      font-weight: 900; color: #fbbf24; font-size: 15px;
+      text-transform: uppercase; letter-spacing: .04em;
+    }
+    .cj-credito-badge {
+      background: rgba(245,158,11,.2); color: #fbbf24;
+      padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 800;
+      border: 1px solid rgba(245,158,11,.4);
+    }
+    .cj-credito-stats { text-align: right; }
+    .cj-credito-total {
+      font-weight: 900; font-size: 20px; color: #fcd34d;
+      font-variant-numeric: tabular-nums;
+    }
+    .cj-credito-sub {
+      display: block; font-size: 10px; color: #d97706;
+      text-transform: uppercase; letter-spacing: .05em;
+    }
+    /* Cards apiladas tipo deck */
+    .cj-credito-cards-row {
+      display: flex; gap: 14px; overflow-x: auto; padding: 6px 4px 12px;
+      scrollbar-width: thin;
+    }
+    .cj-credito-card {
+      flex-shrink: 0;
+      min-width: 150px;
+      background: linear-gradient(135deg, #fef3c7, #fde68a);
+      color: #78350f;
+      border: 2px solid #f59e0b;
+      border-radius: 14px;
+      padding: 14px 16px;
+      cursor: pointer;
+      position: relative;
+      box-shadow:
+        0 4px 12px -4px rgba(245,158,11,.5),
+        4px 0 0 -2px #fbbf24,
+        8px 0 0 -4px #f59e0b;
+      transition: all .25s cubic-bezier(.34,1.56,.64,1);
+    }
+    .cj-credito-card:hover {
+      transform: translateY(-4px) scale(1.02);
+      box-shadow:
+        0 12px 24px -4px rgba(245,158,11,.6),
+        6px 0 0 -2px #fbbf24,
+        12px 0 0 -4px #f59e0b;
+    }
+    .cj-credito-card-fecha {
+      font-weight: 900; font-size: 13px; text-transform: uppercase;
+      letter-spacing: .04em; opacity: .85;
+    }
+    .cj-credito-card-cuenta {
+      font-weight: 900; font-size: 28px; line-height: 1; margin: 6px 0 2px;
+    }
+    .cj-credito-card-cuenta-lbl {
+      font-size: 9px; text-transform: uppercase; letter-spacing: .05em;
+      opacity: .75; font-weight: 700;
+    }
+    .cj-credito-card-monto {
+      font-weight: 900; font-size: 16px; margin-top: 10px;
+      padding-top: 8px; border-top: 1.5px dashed rgba(120,53,15,.3);
+      font-variant-numeric: tabular-nums;
+    }
+    .cj-credito-card-asignados {
+      display: inline-block; margin-top: 6px; padding: 2px 8px;
+      background: rgba(59,130,246,.15); color: #1d4ed8;
+      border-radius: 999px; font-size: 10px; font-weight: 800;
+    }
+
+    /* Modal de detalle de día */
+    .cj-credito-modal {
+      max-width: 720px !important; max-height: 85vh; overflow: hidden;
+      display: flex; flex-direction: column;
+    }
+    .cj-credito-modal-head {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 12px; padding-bottom: 10px;
+      border-bottom: 1px solid #334155;
+    }
+    .cj-credito-modal-lista {
+      flex: 1; overflow-y: auto; max-height: 65vh; padding-right: 4px;
+    }
+    .cj-credito-ticket {
+      background: linear-gradient(135deg, #422006, #292524);
+      border: 1.5px solid #f59e0b;
+      border-radius: 12px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+      position: relative;
+    }
+    .cj-credito-ticket.is-asignado {
+      border-color: #3b82f6;
+      background: linear-gradient(135deg, #1e3a8a, #1e293b);
+    }
+    .cj-credito-ticket-head {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      margin-bottom: 8px; gap: 10px;
+    }
+    .cj-credito-ticket-cliente {
+      font-weight: 900; color: #fcd34d; font-size: 14px;
+    }
+    .cj-credito-ticket-doc {
+      color: #d97706; font-size: 11px; font-family: monospace;
+    }
+    .cj-credito-ticket-monto {
+      font-weight: 900; font-size: 20px; color: #fcd34d; line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .cj-credito-ticket-meta {
+      font-size: 11px; color: #cbd5e1; margin-top: 4px;
+    }
+    .cj-credito-ticket-obs {
+      font-size: 11px; color: #94a3b8; font-style: italic; margin-top: 6px;
+      padding: 6px 8px; background: rgba(0,0,0,.3); border-radius: 6px;
+    }
+    .cj-credito-ticket-asig-badge {
+      display: inline-block; padding: 3px 10px;
+      background: rgba(59,130,246,.2); color: #93c5fd;
+      border-radius: 999px; font-size: 10px; font-weight: 800;
+      border: 1px solid rgba(59,130,246,.5);
+      margin-top: 6px;
+    }
+    .cj-credito-ticket-btn {
+      width: 100%; margin-top: 10px;
+      padding: 10px;
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      color: #1c1917;
+      font-weight: 900; text-transform: uppercase; letter-spacing: .05em;
+      border-radius: 10px; border: none; cursor: pointer; font-size: 12px;
+      transition: transform .15s ease;
+    }
+    .cj-credito-ticket-btn:hover { transform: scale(1.02); }
+    .cj-credito-ticket-btn:active { transform: scale(.98); }
+
+    /* Modal asignar caja */
+    .cj-asignar-modal { max-width: 540px !important; }
+    .cj-asignar-head { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+    .cj-asignar-info {
+      background: rgba(245,158,11,.1); border: 1px solid rgba(245,158,11,.3);
+      border-radius: 10px; padding: 10px 12px; margin-bottom: 14px;
+    }
+    .cj-asignar-info-cliente { font-weight: 900; color: #fcd34d; font-size: 14px; }
+    .cj-asignar-info-monto   { font-weight: 900; font-size: 18px; color: #fef3c7; }
+    .cj-asignar-section { margin-bottom: 14px; }
+    .cj-asignar-label {
+      display: block; font-size: 11px; color: #94a3b8; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px;
+    }
+    .cj-asignar-cajas { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+    .cj-asignar-caja-btn {
+      padding: 10px 12px; background: #0f172a; border: 1.5px solid #334155;
+      border-radius: 10px; cursor: pointer; text-align: left;
+      transition: all .15s ease; color: #cbd5e1;
+    }
+    .cj-asignar-caja-btn:hover { border-color: #10b981; transform: translateY(-1px); }
+    .cj-asignar-caja-btn.is-active {
+      border-color: #10b981; background: rgba(16,185,129,.1);
+      box-shadow: 0 0 0 2px rgba(16,185,129,.2);
+    }
+    .cj-asignar-caja-vendedor { font-weight: 900; font-size: 13px; color: #f1f5f9; }
+    .cj-asignar-caja-meta     { font-size: 10px; color: #64748b; margin-top: 2px; }
+    .cj-asignar-metodos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .cj-asignar-metodo-btn {
+      padding: 12px 8px; background: #0f172a; border: 1.5px solid #334155;
+      border-radius: 10px; cursor: pointer; color: #cbd5e1; font-weight: 800;
+      font-size: 12px; transition: all .15s ease;
+    }
+    .cj-asignar-metodo-btn:hover { border-color: #06b6d4; }
+    .cj-asignar-metodo-btn.is-active {
+      border-color: #06b6d4; background: rgba(6,182,212,.1); color: #67e8f9;
+    }
+    .cj-asignar-footer {
+      display: flex; gap: 10px; margin-top: 16px;
+      padding-top: 14px; border-top: 1px solid #334155;
+    }
+    .cj-asignar-footer .cj-btn { flex: 1; padding: 12px; font-weight: 900;
+      border-radius: 10px; border: none; cursor: pointer; text-transform: uppercase;
+      font-size: 12px; letter-spacing: .04em; transition: all .15s ease; }
+    .cj-btn-secondary { background: #334155; color: #cbd5e1; }
+    .cj-btn-secondary:hover { background: #475569; }
+    .cj-btn-primary { background: linear-gradient(135deg, #10b981, #059669); color: white; }
+    .cj-btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 16px -4px rgba(16,185,129,.4); }
+    .cj-btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* Animación "vuela al cajero" cuando se envía */
+    .cj-credito-fly {
+      animation: cjCreditoFly .8s cubic-bezier(.5, -0.3, .8, .4) forwards;
+    }
+    @keyframes cjCreditoFly {
+      0%   { transform: scale(1) rotate(0deg); opacity: 1; }
+      50%  { transform: scale(0.7) translate(40vw, -20vh) rotate(15deg); opacity: 0.8; }
+      100% { transform: scale(0.2) translate(80vw, -40vh) rotate(45deg); opacity: 0; }
+    }
     .cj-ticker::before, .cj-ticker::after {
       content: ''; position: absolute; top: 0; bottom: 0;
       width: 60px; pointer-events: none; z-index: 2;
@@ -8085,6 +8308,68 @@
       <div id="cjTicker" class="cj-ticker mb-4">
         <div class="cj-ticker-content" id="cjTickerContent">
           <span class="cj-ticker-item">⌛ Cargando datos del día...</span>
+        </div>
+      </div>
+
+      <!-- ════════════════════════════════════════════════════════
+           [v40.3] CRÉDITOS PENDIENTES — deck de cartas por día
+           Cards apiladas que se despliegan al click. Cada card representa
+           un día con N tickets en crédito. Al click → modal con la lista
+           para asignar cada ticket a una caja activa.
+      ═══════════════════════════════════════════════════════════ -->
+      <div id="cjCreditosDeck" class="cj-credito-deck mb-5 hidden">
+        <div class="cj-credito-header">
+          <div class="cj-credito-eyebrow">
+            <span class="cj-credito-ico">💳</span>
+            <span class="cj-credito-titulo">Créditos pendientes</span>
+            <span id="cjCreditoBadge" class="cj-credito-badge">—</span>
+          </div>
+          <div class="cj-credito-stats">
+            <span id="cjCreditoTotal" class="cj-credito-total">S/ —</span>
+            <span class="cj-credito-sub">acumulado</span>
+          </div>
+        </div>
+        <div id="cjCreditoCards" class="cj-credito-cards-row"></div>
+      </div>
+
+      <!-- Modal de detalle de un día (créditos del día seleccionado) -->
+      <div id="modalCreditosDia" class="modal-overlay hidden" onclick="MOS.cjCerrarCreditosDia(event)">
+        <div class="modal-box cj-credito-modal" onclick="event.stopPropagation()">
+          <div class="cj-credito-modal-head">
+            <h3 id="cjCreditoModalTitulo" class="text-lg font-bold text-white">💳 Créditos del día</h3>
+            <button onclick="MOS.cjCerrarCreditosDia()" class="text-slate-400 hover:text-white text-xl">✕</button>
+          </div>
+          <div id="cjCreditoModalLista" class="cj-credito-modal-lista"></div>
+        </div>
+      </div>
+
+      <!-- Modal de asignar a caja -->
+      <div id="modalAsignarCobro" class="modal-overlay hidden" onclick="MOS.cjCerrarAsignar(event)">
+        <div class="modal-box cj-asignar-modal" onclick="event.stopPropagation()">
+          <div class="cj-asignar-head">
+            <span class="text-2xl">✈</span>
+            <h3 class="text-lg font-bold text-white">Enviar cobro a caja</h3>
+          </div>
+          <div id="cjAsignarInfo" class="cj-asignar-info"></div>
+          <div class="cj-asignar-section">
+            <label class="cj-asignar-label">¿A qué caja enviar?</label>
+            <div id="cjAsignarCajas" class="cj-asignar-cajas"></div>
+          </div>
+          <div class="cj-asignar-section">
+            <label class="cj-asignar-label">Método de cobro acordado</label>
+            <div class="cj-asignar-metodos">
+              <button data-metodo="EFECTIVO" onclick="MOS.cjSetMetodoAsignar('EFECTIVO')" class="cj-asignar-metodo-btn">💵 Efectivo</button>
+              <button data-metodo="VIRTUAL" onclick="MOS.cjSetMetodoAsignar('VIRTUAL')" class="cj-asignar-metodo-btn">📱 Virtual</button>
+              <button data-metodo="MIXTO" onclick="MOS.cjSetMetodoAsignar('MIXTO')" class="cj-asignar-metodo-btn">🔀 Mixto</button>
+            </div>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-2">💡 El cajero recibirá un push. El monto entra como INGRESO a su caja, no como nueva venta.</p>
+          <div class="cj-asignar-footer">
+            <button onclick="MOS.cjCerrarAsignar()" class="cj-btn cj-btn-secondary">Cancelar</button>
+            <button id="cjAsignarOkBtn" onclick="MOS.cjConfirmarAsignar()" class="cj-btn cj-btn-primary" disabled>
+              ✈ Enviar a cajero
+            </button>
+          </div>
         </div>
       </div>
 

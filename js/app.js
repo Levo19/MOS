@@ -14886,6 +14886,9 @@ const MOS = (() => {
     _cjRenderCajas(abiertas, cerradas, fecha, esHoy, idCajaLider);
     _cjRenderActividad(tkDia, esHoy);
     _cjRender7d(fecha);
+    // [v40.3] Cargar créditos pendientes (solo si es hoy, evita ruido en archivo)
+    if (esHoy) _cjCargarCreditosPendientes();
+    else { const deck = $('cjCreditosDeck'); if (deck) deck.classList.add('hidden'); }
 
     // Empty state
     const empty = $('cajasEmpty');
@@ -15476,6 +15479,227 @@ const MOS = (() => {
       try { renderChart('chartCajasBarsTV', opts); } catch (_) {}
     }
   }
+
+  // ════════════════════════════════════════════════════════
+  // [v40.3] CRÉDITOS PENDIENTES — deck de cartas en /cajas
+  // ════════════════════════════════════════════════════════
+  // State para el flow asignar
+  let _cjCreditosState = {
+    grupos: [],                    // [{fecha, tickets, total, cuenta}]
+    diaAbierto: null,              // fecha YYYY-MM-DD del modal abierto
+    asignarCtx: null,              // {idVenta, cliente, monto, ...} en proceso
+    asignarCaja: null,             // idCaja elegida
+    asignarMetodo: 'EFECTIVO'      // método seleccionado
+  };
+
+  // Carga créditos desde ME (vía bridge MOS)
+  async function _cjCargarCreditosPendientes() {
+    try {
+      const r = await API.post('meGetCreditosPendientes', { diasAtras: 30 });
+      const d = (r && r.data) ? r.data : (r || {});
+      _cjCreditosState.grupos = d.grupos || [];
+      _cjRenderCreditosPendientes(d);
+    } catch(e) {
+      console.warn('[creditos] error cargando:', e?.message || e);
+    }
+  }
+
+  function _cjRenderCreditosPendientes(d) {
+    const deck   = $('cjCreditosDeck');
+    const badge  = $('cjCreditoBadge');
+    const total  = $('cjCreditoTotal');
+    const cards  = $('cjCreditoCards');
+    if (!deck || !cards) return;
+
+    const grupos = (d && d.grupos) || [];
+    if (!grupos.length) {
+      deck.classList.add('hidden');
+      return;
+    }
+    deck.classList.remove('hidden');
+    if (badge) badge.textContent = (d.totalTickets || 0) + ' ticket' + ((d.totalTickets||0) === 1 ? '' : 's');
+    if (total) total.textContent = 'S/ ' + (parseFloat(d.totalAcumulado || 0)).toFixed(2);
+
+    cards.innerHTML = grupos.map(g => {
+      const yaAsignados = g.tickets.filter(t => t.asignado).length;
+      const badgeAsig = yaAsignados > 0
+        ? `<span class="cj-credito-card-asignados">${yaAsignados} ✈</span>`
+        : '';
+      return `<div class="cj-credito-card" onclick="MOS.cjAbrirCreditosDia('${g.fecha}')">
+        <div class="cj-credito-card-fecha">📅 ${_cjFmtFechaCorta(g.fecha)}</div>
+        <div class="cj-credito-card-cuenta">${g.cuenta}</div>
+        <div class="cj-credito-card-cuenta-lbl">ticket${g.cuenta === 1 ? '' : 's'}</div>
+        <div class="cj-credito-card-monto">S/ ${parseFloat(g.total).toFixed(2)}</div>
+        ${badgeAsig}
+      </div>`;
+    }).join('');
+  }
+
+  function _cjFmtFechaCorta(yyyyMmDd) {
+    if (!yyyyMmDd) return '—';
+    const today = (new Date()).toISOString().substring(0, 10);
+    const ayer  = (() => { const d = new Date(); d.setDate(d.getDate()-1); return d.toISOString().substring(0,10); })();
+    if (yyyyMmDd === today) return 'Hoy';
+    if (yyyyMmDd === ayer)  return 'Ayer';
+    const parts = yyyyMmDd.split('-');
+    const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    return parts[2] + ' ' + meses[parseInt(parts[1],10)-1];
+  }
+
+  function cjAbrirCreditosDia(fecha) {
+    _cjCreditosState.diaAbierto = fecha;
+    const grupo = _cjCreditosState.grupos.find(g => g.fecha === fecha);
+    if (!grupo) return;
+    const titulo = $('cjCreditoModalTitulo');
+    if (titulo) titulo.textContent = '💳 Créditos · ' + _cjFmtFechaCorta(fecha) + ' (' + grupo.cuenta + ')';
+    const lista = $('cjCreditoModalLista');
+    if (lista) {
+      lista.innerHTML = grupo.tickets.map(t => {
+        const asig = t.asignado;
+        return `<div class="cj-credito-ticket ${asig ? 'is-asignado' : ''}">
+          <div class="cj-credito-ticket-head">
+            <div style="flex:1; min-width:0">
+              <div class="cj-credito-ticket-cliente">${_esc(t.cliente || 'VARIOS')}</div>
+              <div class="cj-credito-ticket-doc">${_esc(t.clienteDoc || '—')} · ${_esc(t.correlativo)}</div>
+            </div>
+            <div class="cj-credito-ticket-monto">S/ ${parseFloat(t.total).toFixed(2)}</div>
+          </div>
+          <div class="cj-credito-ticket-meta">
+            🕐 ${t.fechaISO} · 👤 ${_esc(t.vendedor)} · 💼 ${_esc(t.idCaja || '—')}
+          </div>
+          ${t.obs ? `<div class="cj-credito-ticket-obs">📝 ${_esc(t.obs)}</div>` : ''}
+          ${asig
+            ? `<div class="cj-credito-ticket-asig-badge">✈ Asignado a ${_esc(asig.vendedorDest)} (${_esc(asig.cajaDestino)})</div>`
+            : `<button class="cj-credito-ticket-btn" onclick="MOS.cjAbrirAsignar('${_esc(t.idVenta)}')">💳 Enviar a caja para cobrar</button>`
+          }
+        </div>`;
+      }).join('');
+    }
+    const modal = $('modalCreditosDia');
+    if (modal) modal.classList.remove('hidden');
+  }
+
+  function cjCerrarCreditosDia(ev) {
+    if (ev && ev.target && ev.target.id !== 'modalCreditosDia') return;
+    const modal = $('modalCreditosDia');
+    if (modal) modal.classList.add('hidden');
+    _cjCreditosState.diaAbierto = null;
+  }
+
+  async function cjAbrirAsignar(idVenta) {
+    // Buscar el ticket en el state
+    let ticket = null;
+    for (const g of _cjCreditosState.grupos) {
+      ticket = g.tickets.find(t => t.idVenta === idVenta);
+      if (ticket) break;
+    }
+    if (!ticket) { toast('Ticket no encontrado', 'error'); return; }
+    if (ticket.asignado) { toast('Este ticket ya está asignado', 'warn'); return; }
+
+    _cjCreditosState.asignarCtx = ticket;
+    _cjCreditosState.asignarCaja = null;
+    _cjCreditosState.asignarMetodo = 'EFECTIVO';
+
+    // Info
+    const info = $('cjAsignarInfo');
+    if (info) info.innerHTML = `
+      <div class="cj-asignar-info-cliente">${_esc(ticket.cliente || 'VARIOS')}</div>
+      <div class="cj-asignar-info-monto">S/ ${parseFloat(ticket.total).toFixed(2)}</div>
+      <div class="text-xs text-slate-400 mt-1">${_esc(ticket.correlativo)} · ${ticket.fechaISO}</div>
+    `;
+
+    // Cargar cajas abiertas
+    const cajasDiv = $('cjAsignarCajas');
+    if (cajasDiv) {
+      cajasDiv.innerHTML = '<div class="text-slate-400 text-sm col-span-full">⌛ Cargando cajas...</div>';
+      try {
+        const r = await API.post('meCajasAbiertas', {});
+        const lista = (r && r.data) ? r.data : (r || []);
+        if (!lista.length) {
+          cajasDiv.innerHTML = '<div class="text-amber-400 text-sm col-span-full">⚠ No hay cajas abiertas. Pedile a un cajero que abra caja primero.</div>';
+        } else {
+          cajasDiv.innerHTML = lista.map(c => `
+            <div class="cj-asignar-caja-btn" onclick="MOS.cjSetCajaAsignar('${_esc(c.idCaja)}')" data-caja="${_esc(c.idCaja)}">
+              <div class="cj-asignar-caja-vendedor">👤 ${_esc(c.vendedor)}</div>
+              <div class="cj-asignar-caja-meta">${_esc(c.estacion)} · ${_esc(c.zona || '—')}</div>
+            </div>
+          `).join('');
+        }
+      } catch(e) {
+        cajasDiv.innerHTML = '<div class="text-red-400 text-sm">Error cargando cajas: ' + (e.message || e) + '</div>';
+      }
+    }
+    // Default método EFECTIVO
+    cjSetMetodoAsignar('EFECTIVO');
+    _cjUpdAsignarOkBtn();
+
+    const modal = $('modalAsignarCobro');
+    if (modal) modal.classList.remove('hidden');
+  }
+
+  function cjCerrarAsignar(ev) {
+    if (ev && ev.target && ev.target.id !== 'modalAsignarCobro') return;
+    const modal = $('modalAsignarCobro');
+    if (modal) modal.classList.add('hidden');
+    _cjCreditosState.asignarCtx = null;
+  }
+
+  function cjSetMetodoAsignar(metodo) {
+    _cjCreditosState.asignarMetodo = metodo;
+    document.querySelectorAll('.cj-asignar-metodo-btn').forEach(b => {
+      b.classList.toggle('is-active', b.dataset.metodo === metodo);
+    });
+    _cjUpdAsignarOkBtn();
+  }
+
+  function cjSetCajaAsignar(idCaja) {
+    _cjCreditosState.asignarCaja = idCaja;
+    document.querySelectorAll('.cj-asignar-caja-btn').forEach(b => {
+      b.classList.toggle('is-active', b.dataset.caja === idCaja);
+    });
+    _cjUpdAsignarOkBtn();
+  }
+
+  function _cjUpdAsignarOkBtn() {
+    const btn = $('cjAsignarOkBtn');
+    if (!btn) return;
+    btn.disabled = !(_cjCreditosState.asignarCaja && _cjCreditosState.asignarMetodo);
+  }
+
+  async function cjConfirmarAsignar() {
+    const ctx = _cjCreditosState.asignarCtx;
+    if (!ctx || !_cjCreditosState.asignarCaja || !_cjCreditosState.asignarMetodo) return;
+    const btn = $('cjAsignarOkBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '⌛ Enviando...'; }
+    try {
+      const r = await API.post('meAsignarCobroCajero', {
+        idVenta:        ctx.idVenta,
+        cajaDestino:    _cjCreditosState.asignarCaja,
+        metodoSugerido: _cjCreditosState.asignarMetodo
+      });
+      const d = (r && r.data) ? r.data : (r || {});
+      // Animación "voló al cajero"
+      try {
+        const ticketEl = document.querySelector('.cj-credito-ticket-btn[onclick*="' + ctx.idVenta + '"]')?.closest('.cj-credito-ticket');
+        if (ticketEl) {
+          ticketEl.classList.add('cj-credito-fly');
+          setTimeout(() => ticketEl.remove(), 800);
+        }
+      } catch(_){}
+      try { _finBeep?.('success'); } catch(_){}
+      toast('✈ Enviado a ' + (d.cajeroDestino || 'cajero') + ' · esperando confirmación', 'success');
+      cjCerrarAsignar();
+      // Refrescar
+      setTimeout(() => _cjCargarCreditosPendientes(), 600);
+    } catch(e) {
+      toast('Error: ' + (e.message || e), 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '✈ Enviar a cajero'; }
+    }
+  }
+
+  // Helper de escape (existe en MOS? si no, fallback)
+  function _esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
   // ── MODAL TICKETS (compartido cajas + finanzas-style) ─
   function cjVerTodosTickets(filtroInicial) {
@@ -24391,6 +24615,10 @@ const MOS = (() => {
     cjToggleCajaDetail, cjVerTodosTickets, cjVerTicketsCaja, cjAbrirTurno,
     cjScrollToCaja, cjModoTV,
     _cjTkRender, _cjTkSetFiltro,
+    // [v40.3] Cobro asignado de créditos
+    cjAbrirCreditosDia, cjCerrarCreditosDia,
+    cjAbrirAsignar, cjCerrarAsignar,
+    cjSetMetodoAsignar, cjSetCajaAsignar, cjConfirmarAsignar,
     // F2 — Acciones editables sobre tickets
     cjAbrirAccionesTicket, _tkAccion,
     _tkCobrarSetMetodo, _tkCobrarSetCaja, _tkCobrarValidarMixto, _tkCobrarConfirmar,

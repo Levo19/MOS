@@ -294,6 +294,9 @@ function _route(method, e) {
       case 'meDetalleVenta':            return meDetalleVenta(params);
       case 'meCajasAbiertas':           return meCajasAbiertas();
       case 'meConsultarCliente':        return meConsultarCliente(params);
+      // [v40.3] Sistema de cobro asignado de créditos
+      case 'meGetCreditosPendientes':   return meGetCreditosPendientes(params);
+      case 'meAsignarCobroCajero':      return meAsignarCobroCajero(params);
 
       default:
         return { ok: false, error: 'Acción no reconocida: ' + action };

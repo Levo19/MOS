@@ -1289,3 +1289,34 @@ function meConsultarCliente(params) {
   if (!params.doc) return { ok: false, error: 'doc requerido' };
   return _meBridgeGet({ accion: 'consultar_cliente', doc: params.doc });
 }
+
+// ============================================================
+// [v40.3] Sistema de cobro asignado de créditos
+// ============================================================
+
+// ── Lista todos los créditos pendientes agrupados por día (proxy ME) ──
+function meGetCreditosPendientes(params) {
+  var dias = parseInt((params || {}).diasAtras || 30, 10);
+  return _meBridgeGet({ accion: 'creditos_pendientes', diasAtras: dias });
+}
+
+// ── Asigna un crédito a una caja activa para que el cajero lo cobre ──
+// Requiere admin/master ya validado por _audit del panel MOS.
+function meAsignarCobroCajero(params) {
+  if (!params.idVenta)        return { ok: false, error: 'idVenta requerido' };
+  if (!params.cajaDestino)    return { ok: false, error: 'cajaDestino requerida' };
+  if (!params.metodoSugerido) return { ok: false, error: 'metodoSugerido requerido' };
+  // El _audit viene de la validación de PIN admin en MOS frontend
+  var aud = params._audit || {};
+  return _meBridgeEvento('ASIGNAR_COBRO_CAJERO', {
+    idVenta:        params.idVenta,
+    cajaDestino:    params.cajaDestino,
+    metodoSugerido: params.metodoSugerido,
+    auth:           _meAuthFromMos(params),
+    adminAuth: {
+      nombre: aud.usuario || 'admin-MOS',
+      rol:    aud.rol     || 'ADMIN',
+      via:    'PIN_8DIG'
+    }
+  });
+}
