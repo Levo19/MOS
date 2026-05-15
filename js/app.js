@@ -15496,7 +15496,10 @@ const MOS = (() => {
     detalleTicket:  null,          // ticket en overlay detalle
     asignarCtx:     null,
     asignarCaja:    null,
-    asignarMetodo:  'EFECTIVO'
+    asignarMetodo:  'EFECTIVO',
+    // [v41] Set de idVenta ya vistos en renders previos. Las cartas con id que
+    // no esté aquí se marcan como nuevas y se animan con cj-carta-nueva.
+    idsVistos:      new Set()
   };
 
   async function _cjCargarCreditosPendientes() {
@@ -15536,9 +15539,16 @@ const MOS = (() => {
       return;
     }
     mano.classList.remove('hidden');
+    // [v41] Solo resetear shuffleIdx si cambió la fecha activa. Si solo es un
+    // refresh (mismo día, nuevos tickets), preservar el progreso del shuffle.
+    const fechaCambia = _cjCreditosState.fechaActiva !== fechaActiva;
     _cjCreditosState.fechaActiva = fechaActiva;
     _cjCreditosState.ticketsActivos = grupo.tickets;
-    _cjCreditosState.shuffleIdx = 0;
+    if (fechaCambia) _cjCreditosState.shuffleIdx = 0;
+    // Si el idx quedó fuera de rango (porque desaparecieron cartas), normalizar
+    if (_cjCreditosState.shuffleIdx >= grupo.tickets.length) {
+      _cjCreditosState.shuffleIdx = 0;
+    }
 
     // Labels
     const lblFecha = $('cjManoFechaLabel');
@@ -15557,12 +15567,31 @@ const MOS = (() => {
     }
   }
 
+  // Genera el resumen de items (top 2) para mostrar en la cara de la carta.
+  // Si hay más, agrega "+N más".
+  function _cjResumenItems(items, max) {
+    if (!items || !items.length) return '';
+    const top = items.slice(0, max);
+    const restantes = items.length - top.length;
+    const html = top.map(it => {
+      const nombre = _esc((it.nombre || '').toString().substring(0, 22));
+      const cant = parseFloat(it.cantidad) || 0;
+      return `<div class="cj-carta-items-item">${cant > 0 ? cant + '× ' : ''}${nombre}</div>`;
+    }).join('');
+    const mas = restantes > 0 ? `<div class="cj-carta-items-mas">+${restantes} más…</div>` : '';
+    return `<div class="cj-carta-items">${html}${mas}</div>`;
+  }
+
   function _cjPintarCartasMano() {
     const cont = $('cjManoContenedor');
     if (!cont) return;
     const tickets = _cjCreditosState.ticketsActivos;
     const idxFront = _cjCreditosState.shuffleIdx;
     const N = tickets.length;
+    const idsVistos = _cjCreditosState.idsVistos;
+    // [v41] Solo marcamos cartas nuevas si ya hubo un render previo (idsVistos > 0).
+    // En el primer render, todas las cartas son "vistas" desde el arranque.
+    const esPrimerRender = idsVistos.size === 0;
     const cartas = tickets.map((t, i) => {
       const pos = (i - idxFront + N) % N;
       const posAttr = pos >= 5 ? '5+' : String(pos);
@@ -15571,17 +15600,25 @@ const MOS = (() => {
         : '';
       const cliente = _esc((t.cliente || 'VARIOS').toUpperCase());
       const doc = t.clienteDoc ? `<div class="cj-carta-doc">${_esc(t.clienteDoc)}</div>` : '';
-      return `<div class="cj-carta-mano" data-pos="${posAttr}" data-idx="${i}">
+      const esNuevo = !esPrimerRender && !idsVistos.has(t.idVenta);
+      const claseNueva = esNuevo ? ' cj-carta-nueva' : '';
+      return `<div class="cj-carta-mano${claseNueva}" data-pos="${posAttr}" data-idx="${i}">
         ${asigBadge}
         <div class="cj-carta-cliente">${cliente}</div>
         ${doc}
         <div class="cj-carta-monto">S/ ${parseFloat(t.total).toFixed(2)}</div>
+        ${_cjResumenItems(t.items, 2)}
         <div class="cj-carta-meta">${_esc(t.correlativo)} · ${_esc(t.vendedor)}</div>
       </div>`;
     }).join('');
-    // Badge "+N más" cuando hay más de 5 cartas
     const masBadge = N > 5 ? `<div class="cj-mano-mas">+${N - 5} más</div>` : '';
     cont.innerHTML = cartas + masBadge;
+    tickets.forEach(t => idsVistos.add(t.idVenta));
+    // Beep + vibración cuando llega una carta nueva (no en primer render)
+    if (!esPrimerRender && cont.querySelector('.cj-carta-nueva')) {
+      try { _finBeep?.('alert'); } catch(_){}
+      try { if (navigator.vibrate) navigator.vibrate([30, 60, 30]); } catch(_){}
+    }
   }
 
   function _cjShuffleStep() {
@@ -15627,6 +15664,7 @@ const MOS = (() => {
           <div class="cj-carta-cliente">${cliente}</div>
           ${t.clienteDoc ? `<div class="cj-carta-doc">${_esc(t.clienteDoc)}</div>` : ''}
           <div class="cj-carta-monto">S/ ${parseFloat(t.total).toFixed(2)}</div>
+          ${_cjResumenItems(t.items, 3)}
           <div class="cj-carta-meta">${_esc(t.correlativo)} · ${_esc(t.vendedor)}</div>
         </div>`;
       }).join('');
@@ -15650,6 +15688,22 @@ const MOS = (() => {
 
     const cont = $('cjDetalleContenido');
     if (cont) {
+      // [v41] Listado completo de items del ticket
+      const itemsHtml = (t.items && t.items.length)
+        ? `<div class="cj-det-items">
+             <div class="cj-det-items-titulo">🛒 Productos (${t.items.length})</div>
+             ${t.items.map(it => {
+                const nombre = _esc((it.nombre || '').substring(0, 38));
+                const cant = parseFloat(it.cantidad) || 0;
+                const sub = parseFloat(it.subtotal) || 0;
+                return `<div class="cj-det-item-row">
+                  <span class="cj-det-item-cant">${cant}×</span>
+                  <span class="cj-det-item-nombre">${nombre}</span>
+                  <span class="cj-det-item-sub">S/ ${sub.toFixed(2)}</span>
+                </div>`;
+             }).join('')}
+           </div>`
+        : '';
       cont.innerHTML = `
         <span class="cj-detalle-corner">🃏</span>
         <span class="cj-detalle-corner-br">🃏</span>
@@ -15672,6 +15726,7 @@ const MOS = (() => {
           <span class="cj-det-row-label">💼 Caja origen</span>
           <span class="cj-det-row-val">${_esc(t.idCaja || '—')}</span>
         </div>
+        ${itemsHtml}
         ${t.obs ? `<div class="cj-det-obs">📝 ${_esc(t.obs)}</div>` : ''}
         ${t.asignado ? `<div class="cj-det-asignado-banner">
           ✈ Ya asignado a <strong>${_esc(t.asignado.vendedorDest)}</strong>
@@ -16692,6 +16747,12 @@ const MOS = (() => {
     // Sonido al entrar al módulo
     _finBeep('nav');
 
+    // [v41] Precarga de créditos pendientes en paralelo al fetch principal.
+    // Así cuando se renderice la vista, las cartas ya están listas sin delay.
+    if (!_cjCreditosState.todosLosGrupos.length) {
+      _cjCargarCreditosPendientes();
+    }
+
     // Datos en cache → render inmediato
     if (S._cajasLoaded && S._todasCajas) {
       loading?.classList.add('hidden');
@@ -16916,6 +16977,9 @@ const MOS = (() => {
         if (modalTk && !modalTk.classList.contains('hidden')) _cjTkRender();
         // Sonido sutil si hay tickets nuevos
         if (nuevos.length > 0 && prevIds.size > 0) _finBeep('click');
+        // [v41] Refresh paralelo de créditos: si hay uno nuevo, _cjPintarCartasMano
+        // lo detecta vía idsVistos y lo anima con cj-carta-nueva.
+        _cjCargarCreditosPendientes();
       }
     } catch(e) { console.warn('[CajasRefresh]', e.message); }
     finally { iconBusy('cajas', false); }
