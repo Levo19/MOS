@@ -15562,9 +15562,8 @@ const MOS = (() => {
     if (!cont) return;
     const tickets = _cjCreditosState.ticketsActivos;
     const idxFront = _cjCreditosState.shuffleIdx;
-    // Construir HTML: para cada ticket, su posición = (i - idxFront + N) % N
     const N = tickets.length;
-    cont.innerHTML = tickets.map((t, i) => {
+    const cartas = tickets.map((t, i) => {
       const pos = (i - idxFront + N) % N;
       const posAttr = pos >= 5 ? '5+' : String(pos);
       const asigBadge = t.asignado
@@ -15572,8 +15571,7 @@ const MOS = (() => {
         : '';
       const cliente = _esc((t.cliente || 'VARIOS').toUpperCase());
       const doc = t.clienteDoc ? `<div class="cj-carta-doc">${_esc(t.clienteDoc)}</div>` : '';
-      return `<div class="cj-carta-mano" data-pos="${posAttr}" data-idx="${i}"
-                   onclick="event.stopPropagation();MOS.cjAbrirDetalleCarta(${i})">
+      return `<div class="cj-carta-mano" data-pos="${posAttr}" data-idx="${i}">
         ${asigBadge}
         <div class="cj-carta-cliente">${cliente}</div>
         ${doc}
@@ -15581,6 +15579,9 @@ const MOS = (() => {
         <div class="cj-carta-meta">${_esc(t.correlativo)} · ${_esc(t.vendedor)}</div>
       </div>`;
     }).join('');
+    // Badge "+N más" cuando hay más de 5 cartas
+    const masBadge = N > 5 ? `<div class="cj-mano-mas">+${N - 5} más</div>` : '';
+    cont.innerHTML = cartas + masBadge;
   }
 
   function _cjShuffleStep() {

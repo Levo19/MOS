@@ -1314,62 +1314,81 @@
       display: block; font-size: 10px; color: #d97706;
       text-transform: uppercase; letter-spacing: .05em;
     }
-    /* Contenedor de la mano: cartas absolute superpuestas */
+    /* Contenedor de la mano: cartas absolute en abanico (fan-out) */
     .cj-mano-contenedor {
-      position: relative; height: 200px; padding: 6px 0 0; cursor: pointer;
-      perspective: 1000px;
+      position: relative; height: 210px; padding: 8px 0 0; cursor: pointer;
+      perspective: 1200px;
+      display: flex; align-items: flex-end; justify-content: center;
     }
     .cj-mano-hint {
-      text-align: center; font-size: 10px; color: #d97706;
-      margin-top: 2px; text-transform: uppercase; letter-spacing: .05em;
-      opacity: .8;
+      text-align: center; font-size: 11px; color: #fbbf24;
+      margin-top: 4px; text-transform: uppercase; letter-spacing: .06em;
+      font-weight: 700; opacity: .85;
+      animation: cjHintBlink 2.4s ease-in-out infinite;
     }
-    .cj-mano-deck:hover .cj-mano-hint { color: #fbbf24; opacity: 1; }
+    @keyframes cjHintBlink {
+      0%, 100% { opacity: .55; }
+      50%      { opacity: 1; }
+    }
+    .cj-mano-deck:hover .cj-mano-hint { color: #fde68a; opacity: 1; }
 
-    /* Cada carta de la mano */
+    /* Cada carta de la mano — fan-out elegante */
     .cj-carta-mano {
       position: absolute;
-      top: 0; left: 50%;
-      width: 230px;
-      height: 180px;
-      background: linear-gradient(135deg, #fef3c7, #fde68a);
-      border: 2px solid #f59e0b;
-      border-radius: 12px;
-      padding: 14px 16px;
+      bottom: 8px; left: 50%;
+      width: 200px;
+      height: 170px;
+      background: linear-gradient(135deg, #fef9c3 0%, #fde68a 50%, #fcd34d 100%);
+      border: 2.5px solid #f59e0b;
+      border-radius: 14px;
+      padding: 12px 14px;
       color: #78350f;
-      transform-origin: bottom center;
-      transition: all .6s cubic-bezier(.34,1.56,.64,1);
-      box-shadow: 0 8px 16px -4px rgba(0,0,0,.6);
-      cursor: pointer;
+      transform-origin: 50% 110%;
+      transition: all .55s cubic-bezier(.34,1.56,.64,1);
+      box-shadow: 0 6px 14px -3px rgba(0,0,0,.55),
+                  inset 0 -2px 4px rgba(120,53,15,.08);
+      pointer-events: none;  /* el click siempre va al contenedor */
     }
-    /* Posiciones según el orden (0 = front, peeking offsets) */
+    /* Posiciones en abanico (max 5 cartas visibles, resto apiladas detrás) */
     .cj-carta-mano[data-pos="0"] {
       transform: translateX(-50%) translateY(0)    rotate(0deg);
-      z-index: 10;
+      z-index: 50;
     }
     .cj-carta-mano[data-pos="1"] {
-      transform: translateX(-72%) translateY(-8px) rotate(-7deg);
-      z-index: 9; opacity: .92;
+      transform: translateX(-50%) translate(-90px, -6px) rotate(-9deg);
+      z-index: 49; opacity: .95;
     }
     .cj-carta-mano[data-pos="2"] {
-      transform: translateX(-28%) translateY(-8px) rotate(7deg);
-      z-index: 9; opacity: .92;
+      transform: translateX(-50%) translate( 90px, -6px) rotate( 9deg);
+      z-index: 49; opacity: .95;
     }
     .cj-carta-mano[data-pos="3"] {
-      transform: translateX(-90%) translateY(-14px) rotate(-13deg);
-      z-index: 8; opacity: .82;
+      transform: translateX(-50%) translate(-170px, -16px) rotate(-18deg);
+      z-index: 48; opacity: .85;
     }
     .cj-carta-mano[data-pos="4"] {
-      transform: translateX(-10%) translateY(-14px) rotate(13deg);
-      z-index: 8; opacity: .82;
+      transform: translateX(-50%) translate( 170px, -16px) rotate( 18deg);
+      z-index: 48; opacity: .85;
     }
+    /* Cartas 5 en adelante: apiladas atrás (no se ven) */
     .cj-carta-mano[data-pos="5+"] {
-      transform: translateX(-50%) translateY(-20px) scale(.94);
-      z-index: 7; opacity: .55;
+      transform: translateX(-50%) translateY(-28px) scale(.9);
+      z-index: 47; opacity: 0;
+      pointer-events: none;
     }
-    .cj-mano-deck:hover .cj-carta-mano[data-pos="0"] {
-      transform: translateX(-50%) translateY(-6px) rotate(0deg) scale(1.03);
-      box-shadow: 0 16px 28px -6px rgba(0,0,0,.7);
+    .cj-mano-contenedor:hover .cj-carta-mano[data-pos="0"] {
+      transform: translateX(-50%) translateY(-10px) rotate(0deg) scale(1.04);
+      box-shadow: 0 18px 32px -6px rgba(0,0,0,.75);
+    }
+    /* Badge que indica cuántas cartas hay (cuando son >5) */
+    .cj-mano-mas {
+      position: absolute; top: 50%; right: 8px;
+      transform: translateY(-50%);
+      background: rgba(15,23,42,.85); color: #fbbf24;
+      padding: 4px 10px; border-radius: 999px;
+      font-size: 11px; font-weight: 900;
+      border: 1px solid rgba(245,158,11,.4);
+      z-index: 100;
     }
     .cj-carta-cliente {
       font-weight: 900; font-size: 15px; text-transform: uppercase;
