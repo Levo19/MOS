@@ -15550,14 +15550,6 @@ const MOS = (() => {
       _cjCreditosState.shuffleIdx = 0;
     }
 
-    // Labels
-    const lblFecha = $('cjManoFechaLabel');
-    if (lblFecha) lblFecha.textContent = _cjFmtFechaCorta(fechaActiva);
-    const badge   = $('cjManoBadge');
-    if (badge)   badge.textContent = grupo.cuenta + ' ticket' + (grupo.cuenta === 1 ? '' : 's');
-    const total   = $('cjManoTotal');
-    if (total)   total.textContent = 'S/ ' + parseFloat(grupo.total).toFixed(2);
-
     _cjPintarCartasMano();
 
     // Arrancar shuffle automático cada 4s (solo si hay >= 2 cartas)
@@ -15567,19 +15559,38 @@ const MOS = (() => {
     }
   }
 
-  // Genera el resumen de items (top 2) para mostrar en la cara de la carta.
-  // Si hay más, agrega "+N más".
-  function _cjResumenItems(items, max) {
-    if (!items || !items.length) return '';
+  // Limpia el nombre de producto: quita la parte parentética redundante "(nombre repetido)"
+  // que se ve en los datos (ej. "ALSABOR SALSA INGLESA (ALSABOR SALSA INGLESA)").
+  function _cjLimpiarNombreItem(nombre) {
+    const s = String(nombre || '').trim();
+    return s.replace(/\s*\([^)]*\)\s*$/, '').trim();
+  }
+
+  // Genera el resumen voucher de items para mostrar en la cara de la carta.
+  // Formato: "1× IDEAL LECHE CREMOSITA ........ S/ 4.20"
+  // Trunca el nombre a 16 chars para que entre. Si hay más items, "+N más" al final.
+  function _cjResumenItemsVoucher(items, max, nombreMaxChars) {
+    if (!items || !items.length) {
+      return `<div class="cj-carta-items"><div class="cj-carta-items-mas">sin productos</div></div>`;
+    }
     const top = items.slice(0, max);
     const restantes = items.length - top.length;
-    const html = top.map(it => {
-      const nombre = _esc((it.nombre || '').toString().substring(0, 22));
+    const filas = top.map(it => {
+      const nombre = _esc(_cjLimpiarNombreItem(it.nombre).substring(0, nombreMaxChars || 16));
       const cant = parseFloat(it.cantidad) || 0;
-      return `<div class="cj-carta-items-item">${cant > 0 ? cant + '× ' : ''}${nombre}</div>`;
+      const sub = parseFloat(it.subtotal) || 0;
+      // Formateo de cantidad: enteros sin decimales, granel con 1-2 decimales
+      const cantStr = Number.isInteger(cant) ? String(cant) : cant.toFixed(2).replace(/\.?0+$/, '');
+      return `<div class="cj-carta-items-item">
+        <span class="cj-carta-items-cant">${cantStr}×</span>
+        <span class="cj-carta-items-nom">${nombre}</span>
+        <span class="cj-carta-items-sub">${sub.toFixed(2)}</span>
+      </div>`;
     }).join('');
-    const mas = restantes > 0 ? `<div class="cj-carta-items-mas">+${restantes} más…</div>` : '';
-    return `<div class="cj-carta-items">${html}${mas}</div>`;
+    const mas = restantes > 0
+      ? `<div class="cj-carta-items-mas">+${restantes} más…</div>`
+      : '';
+    return `<div class="cj-carta-items">${filas}${mas}</div>`;
   }
 
   function _cjPintarCartasMano() {
@@ -15589,32 +15600,32 @@ const MOS = (() => {
     const idxFront = _cjCreditosState.shuffleIdx;
     const N = tickets.length;
     const idsVistos = _cjCreditosState.idsVistos;
-    // [v41] Solo marcamos cartas nuevas si ya hubo un render previo (idsVistos > 0).
-    // En el primer render, todas las cartas son "vistas" desde el arranque.
     const esPrimerRender = idsVistos.size === 0;
     const cartas = tickets.map((t, i) => {
       const pos = (i - idxFront + N) % N;
       const posAttr = pos >= 5 ? '5+' : String(pos);
       const asigBadge = t.asignado
-        ? `<span class="cj-carta-asignado-badge">✈ asignado</span>`
+        ? `<span class="cj-carta-asignado-badge">✈</span>`
         : '';
       const cliente = _esc((t.cliente || 'VARIOS').toUpperCase());
-      const doc = t.clienteDoc ? `<div class="cj-carta-doc">${_esc(t.clienteDoc)}</div>` : '';
+      const doc = t.clienteDoc && t.clienteDoc !== '66666'
+        ? `<div class="cj-carta-doc">${_esc(t.clienteDoc)}</div>` : '';
       const esNuevo = !esPrimerRender && !idsVistos.has(t.idVenta);
       const claseNueva = esNuevo ? ' cj-carta-nueva' : '';
       return `<div class="cj-carta-mano${claseNueva}" data-pos="${posAttr}" data-idx="${i}">
         ${asigBadge}
-        <div class="cj-carta-cliente">${cliente}</div>
+        <div class="cj-carta-head">
+          <span class="cj-carta-cliente">${cliente}</span>
+          <span class="cj-carta-monto">S/${parseFloat(t.total).toFixed(2)}</span>
+        </div>
         ${doc}
-        <div class="cj-carta-monto">S/ ${parseFloat(t.total).toFixed(2)}</div>
-        ${_cjResumenItems(t.items, 2)}
-        <div class="cj-carta-meta">${_esc(t.correlativo)} · ${_esc(t.vendedor)}</div>
+        <div class="cj-carta-sep"></div>
+        ${_cjResumenItemsVoucher(t.items, 4, 15)}
+        <div class="cj-carta-meta">${_esc(t.correlativo)}</div>
       </div>`;
     }).join('');
-    const masBadge = N > 5 ? `<div class="cj-mano-mas">+${N - 5} más</div>` : '';
-    cont.innerHTML = cartas + masBadge;
+    cont.innerHTML = cartas;
     tickets.forEach(t => idsVistos.add(t.idVenta));
-    // Beep + vibración cuando llega una carta nueva (no en primer render)
     if (!esPrimerRender && cont.querySelector('.cj-carta-nueva')) {
       try { _finBeep?.('alert'); } catch(_){}
       try { if (navigator.vibrate) navigator.vibrate([30, 60, 30]); } catch(_){}
@@ -15661,10 +15672,13 @@ const MOS = (() => {
                      style="animation-delay: ${i * 80}ms"
                      onclick="MOS.cjAbrirDetalleCarta(${i})">
           ${asigBadge}
-          <div class="cj-carta-cliente">${cliente}</div>
-          ${t.clienteDoc ? `<div class="cj-carta-doc">${_esc(t.clienteDoc)}</div>` : ''}
-          <div class="cj-carta-monto">S/ ${parseFloat(t.total).toFixed(2)}</div>
-          ${_cjResumenItems(t.items, 3)}
+          <div class="cj-carta-head">
+            <span class="cj-carta-cliente">${cliente}</span>
+            <span class="cj-carta-monto">S/${parseFloat(t.total).toFixed(2)}</span>
+          </div>
+          ${t.clienteDoc && t.clienteDoc !== '66666' ? `<div class="cj-carta-doc">${_esc(t.clienteDoc)}</div>` : ''}
+          <div class="cj-carta-sep"></div>
+          ${_cjResumenItemsVoucher(t.items, 6, 22)}
           <div class="cj-carta-meta">${_esc(t.correlativo)} · ${_esc(t.vendedor)}</div>
         </div>`;
       }).join('');

@@ -1268,160 +1268,106 @@
     }
 
     /* ════════════════════════════════════════════════════════
-       [v40.4 / v41] CRÉDITOS — MANO DE CARTAS estilo poker hand
-       Widget flotante en esquina opuesta del cuadro Cajas del día.
+       [v40.4 / v41 / v41.1] CRÉDITOS — BARAJA FLOTANTE estilo voucher
+       Sin cuadro contenedor. Solo cartas flotando dentro del cuadro Cajas.
     ════════════════════════════════════════════════════════ */
     .cj-section-with-deck { position: relative; }
-    /* [v41] Cuando el deck es visible, reservar margen-derecha en el grid de cajas */
+    /* Cuando la baraja es visible, reservar margen-derecha en el grid de cajas */
     .cj-section-with-deck:has(#cjCreditosMano:not(.hidden)) #cjCajasGrid {
-      padding-right: 270px;
+      padding-right: 220px;
     }
     @media (max-width: 720px) {
       .cj-section-with-deck:has(#cjCreditosMano:not(.hidden)) #cjCajasGrid {
         padding-right: 0;
       }
     }
-    .cj-mano-deck {
-      background: linear-gradient(135deg, #1f1303 0%, #2a1809 100%);
-      border: 1.5px solid #f59e0b;
-      border-radius: 16px;
-      padding: 10px 12px 8px;
-      box-shadow: 0 8px 24px -8px rgba(245,158,11,.35);
-      position: relative;
-      overflow: hidden;
-    }
-    /* [v41] Variante flotante: pegado a la esquina superior-derecha del cuadro Cajas,
-       debajo del header de la sección para no tapar los pills "abiertas / cerradas". */
-    .cj-mano-floating {
+    /* [v41.1] Wrapper de la baraja — NO tiene cuadro, fondo ni borde. Solo posiciona. */
+    .cj-mano-naked {
       position: absolute;
-      top: 56px;
-      right: 14px;
-      width: 250px;
+      top: 50px;
+      right: 6px;
+      width: 200px;
       z-index: 30;
+      cursor: pointer;
+      pointer-events: auto;
       animation: cjManoFloatPulse 5s ease-in-out infinite;
       transform-origin: top right;
     }
     @keyframes cjManoFloatPulse {
       0%, 100% { transform: scale(1) rotate(0deg); }
-      50%      { transform: scale(1.015) rotate(.4deg); }
+      50%      { transform: scale(1.02) rotate(.6deg); }
     }
-    /* En pantallas chicas (mobile): bajo al final del cuadro de cajas para no tapar */
     @media (max-width: 720px) {
-      .cj-mano-floating {
+      .cj-mano-naked {
         position: static;
-        width: auto;
+        width: auto; min-height: 200px;
         margin-top: 14px;
         animation: none;
       }
     }
-    .cj-mano-deck::before {
-      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
-      background: linear-gradient(90deg, #f59e0b, #fbbf24, #f59e0b);
-      background-size: 200% 100%;
-      animation: cjManoShine 3s linear infinite;
-    }
-    @keyframes cjManoShine {
-      0%   { background-position:   0% 50%; }
-      100% { background-position: 200% 50%; }
-    }
-    .cj-mano-header {
-      display: flex; justify-content: space-between; align-items: center;
-      margin-bottom: 4px; padding-bottom: 4px;
-      border-bottom: 1px dashed rgba(245,158,11,.25);
-    }
-    .cj-mano-eyebrow { display: flex; align-items: center; gap: 5px; min-width: 0; }
-    .cj-mano-ico { font-size: 16px; }
-    .cj-mano-titulo {
-      font-weight: 900; color: #fbbf24; font-size: 10.5px;
-      text-transform: uppercase; letter-spacing: .03em;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .cj-mano-badge {
-      background: rgba(245,158,11,.2); color: #fbbf24;
-      padding: 2px 7px; border-radius: 999px; font-size: 9px; font-weight: 800;
-      border: 1px solid rgba(245,158,11,.4);
-      white-space: nowrap;
-    }
-    .cj-mano-stats { text-align: right; }
-    .cj-mano-total {
-      font-weight: 900; font-size: 14px; color: #fcd34d;
-      font-variant-numeric: tabular-nums;
-    }
-    .cj-mano-sub {
-      display: block; font-size: 8px; color: #d97706;
-      text-transform: uppercase; letter-spacing: .04em;
-    }
-    /* Contenedor de la mano: cartas absolute en abanico (fan-out) — más compacto */
+    /* Contenedor de la mano: cartas absolute en abanico */
     .cj-mano-contenedor {
-      position: relative; height: 150px; padding: 6px 0 0; cursor: pointer;
+      position: relative; height: 200px; cursor: pointer;
       perspective: 1200px;
       display: flex; align-items: flex-end; justify-content: center;
     }
-    .cj-mano-hint {
-      text-align: center; font-size: 10px; color: #fbbf24;
-      margin-top: 2px; text-transform: uppercase; letter-spacing: .05em;
-      font-weight: 700; opacity: .85;
-      animation: cjHintBlink 2.4s ease-in-out infinite;
-    }
-    @keyframes cjHintBlink {
-      0%, 100% { opacity: .55; }
-      50%      { opacity: 1; }
-    }
-    .cj-mano-deck:hover .cj-mano-hint { color: #fde68a; opacity: 1; }
 
-    /* Cada carta de la mano — fan-out elegante, más chica */
+    /* Cada carta — estilo voucher de ticket */
     .cj-carta-mano {
       position: absolute;
-      bottom: 6px; left: 50%;
-      width: 150px;
-      height: 130px;
-      background: linear-gradient(135deg, #fef9c3 0%, #fde68a 50%, #fcd34d 100%);
-      border: 2px solid #f59e0b;
-      border-radius: 12px;
-      padding: 8px 10px;
+      bottom: 0; left: 50%;
+      width: 160px;
+      height: 190px;
+      background:
+        repeating-linear-gradient(0deg, transparent 0 18px, rgba(120,53,15,.05) 18px 19px),
+        linear-gradient(180deg, #fffbeb 0%, #fef3c7 70%, #fde68a 100%);
+      border: 1.5px solid #d97706;
+      border-radius: 10px;
+      padding: 8px 9px;
       color: #78350f;
       transform-origin: 50% 110%;
-      /* [v41] Transición más suave: easing material + duración mayor para fluidez */
       transition: transform .9s cubic-bezier(.25,.1,.25,1),
                   opacity   .9s cubic-bezier(.25,.1,.25,1),
                   box-shadow .35s ease;
       will-change: transform, opacity;
-      box-shadow: 0 4px 10px -2px rgba(0,0,0,.5),
-                  inset 0 -1.5px 3px rgba(120,53,15,.08);
+      box-shadow: 0 5px 12px -3px rgba(0,0,0,.55),
+                  inset 0 -2px 4px rgba(120,53,15,.06);
       pointer-events: none;  /* el click siempre va al contenedor */
       overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
-    /* [v41] Jerarquía: carta del frente más grande, las de atrás más chicas */
+    /* Jerarquía: carta del frente más grande, las de atrás más chicas */
     .cj-carta-mano[data-pos="0"] {
-      transform: translateX(-50%) translateY(0) rotate(0deg) scale(1.06);
+      transform: translateX(-50%) translateY(0) rotate(0deg) scale(1.04);
       z-index: 50;
-      box-shadow: 0 8px 18px -3px rgba(0,0,0,.65), inset 0 -1.5px 3px rgba(120,53,15,.08);
+      box-shadow: 0 10px 22px -4px rgba(0,0,0,.7), inset 0 -2px 4px rgba(120,53,15,.06);
     }
     .cj-carta-mano[data-pos="1"] {
-      transform: translateX(-50%) translate(-58px, -4px) rotate(-7deg) scale(.92);
+      transform: translateX(-50%) translate(-46px, -3px) rotate(-7deg) scale(.94);
       z-index: 49; opacity: .94;
     }
     .cj-carta-mano[data-pos="2"] {
-      transform: translateX(-50%) translate( 58px, -4px) rotate( 7deg) scale(.92);
+      transform: translateX(-50%) translate( 46px, -3px) rotate( 7deg) scale(.94);
       z-index: 49; opacity: .94;
     }
     .cj-carta-mano[data-pos="3"] {
-      transform: translateX(-50%) translate(-110px, -12px) rotate(-14deg) scale(.86);
-      z-index: 48; opacity: .8;
+      transform: translateX(-50%) translate(-86px, -10px) rotate(-14deg) scale(.88);
+      z-index: 48; opacity: .82;
     }
     .cj-carta-mano[data-pos="4"] {
-      transform: translateX(-50%) translate( 110px, -12px) rotate( 14deg) scale(.86);
-      z-index: 48; opacity: .8;
+      transform: translateX(-50%) translate( 86px, -10px) rotate( 14deg) scale(.88);
+      z-index: 48; opacity: .82;
     }
-    /* Cartas 5 en adelante: ocultas */
+    /* Cartas 5 en adelante: ocultas detrás */
     .cj-carta-mano[data-pos="5+"] {
-      transform: translateX(-50%) translateY(-20px) scale(.8);
+      transform: translateX(-50%) translateY(-18px) scale(.78);
       z-index: 47; opacity: 0;
       pointer-events: none;
     }
-    .cj-mano-contenedor:hover .cj-carta-mano[data-pos="0"] {
-      transform: translateX(-50%) translateY(-6px) rotate(0deg) scale(1.1);
-      box-shadow: 0 14px 26px -6px rgba(0,0,0,.75);
+    .cj-mano-naked:hover .cj-carta-mano[data-pos="0"] {
+      transform: translateX(-50%) translateY(-6px) rotate(0deg) scale(1.08);
+      box-shadow: 0 18px 32px -8px rgba(0,0,0,.8);
     }
     /* [v41] Animación de entrada para cartas nuevas (recién aparecidas en el deck) */
     .cj-carta-mano.cj-carta-nueva {
@@ -1453,39 +1399,66 @@
       border: 1px solid rgba(245,158,11,.4);
       z-index: 100;
     }
+    /* [v41.1] Estilo voucher: header con cliente + monto, línea punteada, lista de items */
+    .cj-carta-head {
+      display: flex; justify-content: space-between; align-items: baseline;
+      gap: 6px; margin-bottom: 1px;
+    }
     .cj-carta-cliente {
-      font-weight: 900; font-size: 11px; text-transform: uppercase;
-      line-height: 1.1; max-height: 24px; overflow: hidden;
-      letter-spacing: .02em;
+      font-weight: 900; font-size: 10px; text-transform: uppercase;
+      line-height: 1.1; letter-spacing: .02em;
+      flex: 1; min-width: 0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .cj-carta-monto {
+      font-weight: 900; font-size: 13px; line-height: 1;
+      color: #b45309; font-variant-numeric: tabular-nums;
+      flex-shrink: 0;
     }
     .cj-carta-doc {
       font-size: 8px; color: #92400e; font-family: monospace;
-      margin-top: 1px; opacity: .8;
+      opacity: .8; line-height: 1; margin-bottom: 3px;
     }
-    .cj-carta-monto {
-      font-weight: 900; font-size: 18px; line-height: 1;
-      margin: 4px 0 2px; font-variant-numeric: tabular-nums;
+    /* Línea punteada estilo recibo */
+    .cj-carta-sep {
+      border-top: 1px dashed rgba(120,53,15,.45);
+      margin: 3px 0 3px;
     }
-    /* [v41] Mini-resumen de items del ticket (top 2-3 productos) */
+    /* Lista de productos */
     .cj-carta-items {
-      font-size: 8.5px; color: #78350f;
-      line-height: 1.2; opacity: .82;
-      margin-top: 2px;
-      max-height: 28px; overflow: hidden;
-      border-top: 1px dashed rgba(120,53,15,.25);
-      padding-top: 3px;
+      flex: 1; min-height: 0; overflow: hidden;
+      font-size: 8.5px; color: #78350f; line-height: 1.25;
     }
     .cj-carta-items-item {
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      display: flex; justify-content: space-between; align-items: baseline;
+      gap: 4px;
+      white-space: nowrap;
+    }
+    .cj-carta-items-cant {
+      font-weight: 900; color: #b45309; flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
+      min-width: 16px;
+    }
+    .cj-carta-items-nom {
+      flex: 1; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis;
+    }
+    .cj-carta-items-sub {
+      font-weight: 800; flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
     }
     .cj-carta-items-mas {
-      font-style: italic; opacity: .65;
+      font-style: italic; opacity: .65; text-align: center;
+      margin-top: 2px;
     }
+    /* Correlativo chiquito al fondo del voucher */
     .cj-carta-meta {
-      font-size: 8px; color: #92400e; opacity: .75;
-      position: absolute; bottom: 6px; left: 10px; right: 10px;
-      padding-top: 3px;
+      font-size: 7.5px; color: #92400e; opacity: .65;
+      text-align: center; margin-top: 2px;
+      padding-top: 2px;
+      border-top: 1px dotted rgba(120,53,15,.25);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      letter-spacing: .04em;
     }
     .cj-carta-asignado-badge {
       position: absolute; top: 4px; right: 4px;
@@ -1493,6 +1466,7 @@
       font-size: 7.5px; font-weight: 900;
       padding: 2px 5px; border-radius: 999px;
       letter-spacing: .03em;
+      z-index: 5;
     }
     /* Animación cuando la carta del frente se va al fondo — más suave */
     .cj-carta-shuffle-out {
@@ -8707,25 +8681,14 @@
             <p class="text-slate-500 text-xs text-center py-6 col-span-full">Sin cajas en esta fecha</p>
           </div>
 
-          <!-- [v41] BARAJA DE CRÉDITOS — widget flotante en esquina opuesta del cuadro Cajas
-               Se reduce de tamaño, llama la atención con shine + leve pulso.
-               Click → mesa con todos los tickets repartidos. -->
-          <div id="cjCreditosMano" class="cj-mano-deck cj-mano-floating hidden">
-            <div class="cj-mano-header">
-              <div class="cj-mano-eyebrow">
-                <span class="cj-mano-ico">💳</span>
-                <span class="cj-mano-titulo">Créditos · <span id="cjManoFechaLabel">—</span></span>
-                <span id="cjManoBadge" class="cj-mano-badge">—</span>
-              </div>
-              <div class="cj-mano-stats">
-                <span id="cjManoTotal" class="cj-mano-total">S/ —</span>
-                <span class="cj-mano-sub">pendiente</span>
-              </div>
-            </div>
-            <div id="cjManoContenedor" class="cj-mano-contenedor" onclick="MOS.cjRepartirMano()">
+          <!-- [v41.1] BARAJA DE CRÉDITOS — solo cartas flotantes (sin cuadro contenedor).
+               Las cartas estilo voucher se posan dentro del cuadro Cajas del día,
+               en la esquina superior-derecha. Click → mesa con todos los tickets. -->
+          <div id="cjCreditosMano" class="cj-mano-naked hidden"
+               onclick="MOS.cjRepartirMano()" title="Tocá para repartir los créditos">
+            <div id="cjManoContenedor" class="cj-mano-contenedor">
               <!-- cartas inyectadas por JS -->
             </div>
-            <p class="cj-mano-hint">🃏 Tocá para repartir</p>
           </div>
         </div>
 
