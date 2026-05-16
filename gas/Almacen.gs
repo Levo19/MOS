@@ -956,16 +956,21 @@ function _getOperacionesUnificadasImpl(dias) {
     });
 
     // 3. ME GUIAS_CABECERA (de cada zona)
+    var diagME = { leidas: 0, filtroFecha: 0, agregadas: 0, error: '', meSsId: '', sinSheet: false };
     try {
-      var ssMe = SpreadsheetApp.openById(_getProp('ME_SS_ID'));
+      var meSsId = _getProp('ME_SS_ID');
+      diagME.meSsId = meSsId ? (String(meSsId).substring(0, 8) + '…') : 'NULL';
+      var ssMe = SpreadsheetApp.openById(meSsId);
       var shGC = ssMe.getSheetByName('GUIAS_CABECERA');
+      if (!shGC) { diagME.sinSheet = true; }
       if (shGC) {
         var data = shGC.getDataRange().getValues();
+        diagME.leidas = data.length - 1;
         if (data.length >= 2) {
-          // Schema: ID_Guia | Fecha | Vendedor | Zona_ID | Tipo | Observacion | Zona_Destino | Estado
           for (var i = 1; i < data.length; i++) {
             var fechaME = _parseFecha(data[i][1]);
-            if (!fechaME || fechaME < desde) continue;
+            if (!fechaME) { continue; }
+            if (fechaME < desde) { diagME.filtroFecha++; continue; }
             var zonaRaw = String(data[i][3] || '').trim();
             var canon = zonaRaw ? resolver.resolve(zonaRaw) : { id: '', nombre: '' };
             operaciones.push({
@@ -984,10 +989,11 @@ function _getOperacionesUnificadasImpl(dias) {
               montoTotal:     0,
               esPreingreso:   false
             });
+            diagME.agregadas++;
           }
         }
       }
-    } catch(_){}
+    } catch(eME){ diagME.error = String(eME && eME.message || eME); }
 
     // Ordenar por fecha desc
     operaciones.sort(function(a, b){ return new Date(b.fecha) - new Date(a.fecha); });
@@ -1019,6 +1025,7 @@ function _getOperacionesUnificadasImpl(dias) {
         timezone:     tz,
         nowIso:       new Date().toISOString(),
         nowLocal:     Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss'),
+        meStats:      diagME,
         primerasFechasWh: whGuias.slice(-3).map(function(g){
           var f = _parseFecha(g.fecha);
           return {
@@ -1378,14 +1385,32 @@ function aplicarPreciosVentaSugeridos(params) {
 // indexación por idGuia → ops llegan con sus líneas pegadas.
 function getOperacionesConDetalle(params) {
   var dias = parseInt(params && params.dias) || 7;
-  return _almCached('opsConDet' + dias, 60, params, function() {
+  // Cache subido a 5min (era 60s): los detalles cambian poco y el endpoint
+  // es pesado (lee múltiples sheets enteras). User puede forzar con _refresh.
+  return _almCached('opsConDet' + dias, 300, params, function() {
     var base = _getOperacionesUnificadasImpl(dias);
     if (!base.ok || !base.data) return base;
 
+    var diagWH = 0, diagME = 0, diagLinWH = 0, diagLinME = 0;
     try {
       var prodLookup = _buildProdLookup();
 
-      // ── 1. WH: una sola lectura, agrupado por idGuia ──
+      // ── 0. Construir Set de idGuia válidos por fuente (solo del rango) ──
+      // CLAVE OPTIMIZACIÓN: en lugar de leer TODO el histórico de detalle
+      // y mapearlo, filtramos solo las líneas de las ops que están en el
+      // rango. Reduce trabajo 10x si hay muchos meses de histórico.
+      var validWH = {}, validME = {};
+      (base.data.porDia || []).forEach(function(dia) {
+        (dia.operaciones || []).forEach(function(op) {
+          if (op.esPreingreso) return;
+          var id = String(op.idGuia || '');
+          if (!id) return;
+          if (op.fuente === 'WH') { validWH[id] = true; diagWH++; }
+          else                    { validME[id] = true; diagME++; }
+        });
+      });
+
+      // ── 1. WH GUIA_DETALLE — solo idGuias del rango ──
       var lineasWH = {};
       try {
         var whSheet = _abrirWhSheet('GUIA_DETALLE');
@@ -1393,7 +1418,7 @@ function getOperacionesConDetalle(params) {
           var allDet = _sheetToObjects(whSheet);
           allDet.forEach(function(l) {
             var id = String(l.idGuia || '');
-            if (!id) return;
+            if (!id || !validWH[id]) return;
             var p = prodLookup[l.codigoProducto] || {};
             var esEquiv = p.idProducto && p.idProducto !== l.codigoProducto && p.codigoBarra !== l.codigoProducto;
             var cant = parseFloat(l.cantidadRecibida || l.cantidad) || parseFloat(l.cantidadEsperada) || 0;
@@ -1409,11 +1434,12 @@ function getOperacionesConDetalle(params) {
               subtotal:        cant * precio,
               fechaVencimiento: l.fechaVencimiento || ''
             });
+            diagLinWH++;
           });
         }
       } catch(_){}
 
-      // ── 2. ME: una sola lectura, agrupado por idGuia ──
+      // ── 2. ME GUIAS_DETALLE — solo idGuias del rango ──
       var lineasME = {};
       try {
         var ssMe = SpreadsheetApp.openById(_getProp('ME_SS_ID'));
@@ -1422,7 +1448,7 @@ function getOperacionesConDetalle(params) {
           var data = shGD.getDataRange().getValues();
           for (var i = 1; i < data.length; i++) {
             var id = String(data[i][0] || '');
-            if (!id) continue;
+            if (!id || !validME[id]) continue;
             var cb = String(data[i][1] || '').trim();
             var p = prodLookup[cb] || {};
             var esEquivME = p.idProducto && p.codigoBarra !== cb;
@@ -1436,11 +1462,12 @@ function getOperacionesConDetalle(params) {
               precioUnitario: precioME,
               subtotal:       cantME * precioME
             });
+            diagLinME++;
           }
         }
       } catch(_){}
 
-      // ── 3. Embeber lineas en cada op (excepto preingresos: no tienen) ──
+      // ── 3. Embeber lineas en cada op ──
       (base.data.porDia || []).forEach(function(dia) {
         (dia.operaciones || []).forEach(function(op) {
           if (op.esPreingreso) { op.lineas = []; op.lineasCount = 0; return; }
@@ -1448,7 +1475,6 @@ function getOperacionesConDetalle(params) {
           var ls = src[String(op.idGuia)] || [];
           op.lineas = ls;
           op.lineasCount = ls.length;
-          // Recalcular monto total si la op no traía monto y hay subtotales
           if (!op.montoTotal) {
             op.montoTotal = ls.reduce(function(s, l){ return s + (l.subtotal || 0); }, 0);
           }
@@ -1456,9 +1482,12 @@ function getOperacionesConDetalle(params) {
       });
 
       base.data._conDetalle = true;
+      base.data._diagDet = {
+        opsWH: diagWH, opsME: diagME,
+        linWH: diagLinWH, linME: diagLinME
+      };
       return base;
     } catch(e) {
-      // Si algo falla, devolver al menos las ops sin líneas (degradación gradual)
       base.data._detError = e.message;
       return base;
     }

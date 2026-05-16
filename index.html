@@ -2719,14 +2719,16 @@
       color: #34d399; border-color: rgba(52,211,153,.3);
       background: rgba(52,211,153,.08);
     }
-    /* Container de vouchers — masonry con column-count para que las alturas
-       distintas no dejen huecos como en un grid. */
+    /* Container de vouchers — masonry con column-count.
+       v41.13: más respiración entre cards + leve rotación random tipo
+       "pila de papeles" para que se vean como vouchers separados, no pegados. */
     .alm-ops-zona-vouchers {
-      column-gap: 18px;
+      column-gap: 28px;
       column-count: 3;
+      padding: 6px 4px;
     }
     @media (max-width: 1100px) {
-      .alm-ops-zona-vouchers { column-count: 2; }
+      .alm-ops-zona-vouchers { column-count: 2; column-gap: 22px; }
     }
     @media (max-width: 640px) {
       .alm-ops-zona-vouchers { column-count: 1; }
@@ -2735,9 +2737,17 @@
       break-inside: avoid;
       -webkit-column-break-inside: avoid;
       page-break-inside: avoid;
-      margin-bottom: 18px;
+      margin-bottom: 26px;
       display: inline-block;
       width: 100%;
+    }
+    /* Rotación sutil distinta por voucher para look "pila de papeles" */
+    .alm-ops-zona-vouchers > .alm-voucher:nth-child(3n)   { transform: rotate(-.7deg); }
+    .alm-ops-zona-vouchers > .alm-voucher:nth-child(3n+1) { transform: rotate(.5deg);  }
+    .alm-ops-zona-vouchers > .alm-voucher:nth-child(3n+2) { transform: rotate(-.3deg); }
+    .alm-ops-zona-vouchers > .alm-voucher:hover {
+      transform: translateY(-4px) rotate(0) scale(1.02) !important;
+      z-index: 10;
     }
 
     /* VOUCHER — el papel principal (compactado para masonry de 3 cols) */
@@ -2961,17 +2971,28 @@
       padding: 1px 5px; border-radius: 999px;
       margin-left: 4px; vertical-align: middle;
     }
-    /* Skeleton voucher mientras carga */
+    /* Skeleton voucher con shimmer barriendo y pulso suave */
     .alm-voucher-skel {
-      animation: almSkelPulse 1.5s ease-in-out infinite;
+      position: relative; overflow: hidden;
+      animation: almSkelPulse 1.8s ease-in-out infinite;
     }
     @keyframes almSkelPulse {
-      0%, 100% { opacity: .55; }
+      0%, 100% { opacity: .7; }
       50%      { opacity: 1; }
+    }
+    .alm-voucher-skel::after {
+      content: ''; position: absolute; inset: 0; pointer-events: none;
+      background: linear-gradient(100deg, transparent 20%, rgba(252,211,77,.55) 50%, transparent 80%);
+      transform: translateX(-100%);
+      animation: almSkelShimmer 1.7s ease-in-out infinite;
+    }
+    @keyframes almSkelShimmer {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
     }
     .alm-skel-line {
       height: 12px; border-radius: 5px;
-      background: rgba(120,53,15,.18);
+      background: rgba(120,53,15,.22);
       margin: 8px 0;
     }
     .alm-skel-line.w-50 { width: 50%; }
@@ -2979,12 +3000,39 @@
     .alm-skel-line.w-75 { width: 75%; }
     .alm-skel-line.w-80 { width: 80%; }
     .alm-skel-line.w-90 { width: 90%; }
+    /* Banner "buscando operaciones" mientras carga (más visible que skeleton solo) */
+    .alm-ops-loading-banner {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 18px; margin-bottom: 20px;
+      background: linear-gradient(135deg, rgba(14,165,233,.10), rgba(34,211,238,.05));
+      border: 1px solid rgba(34,211,238,.3);
+      border-radius: 14px;
+      color: #cbd5e1; font-size: 13px; font-weight: 600;
+      animation: almLoadingPulse 2s ease-in-out infinite;
+    }
+    @keyframes almLoadingPulse {
+      0%, 100% { border-color: rgba(34,211,238,.3); }
+      50%      { border-color: rgba(34,211,238,.65); box-shadow: 0 0 14px -2px rgba(34,211,238,.4); }
+    }
+    .alm-ops-loading-spin {
+      width: 18px; height: 18px;
+      border: 2px solid rgba(34,211,238,.2);
+      border-top-color: #22d3ee;
+      border-radius: 50%;
+      animation: almSpinning .8s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes almSpinning { to { transform: rotate(360deg); } }
+    .alm-ops-loading-text { flex: 1; min-width: 0; }
+    .alm-ops-loading-text-main { color: #f1f5f9; font-weight: 700; }
+    .alm-ops-loading-text-sub  { color: #94a3b8; font-size: 11px; margin-top: 2px; }
+
     /* Empty state */
     .alm-ops-empty {
-      text-align: center; padding: 40px 20px;
+      text-align: center; padding: 60px 20px;
       color: #64748b; font-size: 13px;
     }
-    .alm-ops-empty-emoji { font-size: 48px; margin-bottom: 10px; opacity: .6; }
+    .alm-ops-empty-emoji { font-size: 56px; margin-bottom: 14px; opacity: .6; }
     /* Wrapper para tabs con scroll horizontal + fade indicator a la derecha */
     .tab-scroll-wrap { position: relative; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
     .tab-scroll-wrap::-webkit-scrollbar { display: none; }

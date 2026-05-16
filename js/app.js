@@ -4311,22 +4311,36 @@ const MOS = (() => {
   S._opsIdsVistos = S._opsIdsVistos || new Set();
 
   async function almLoadOps(forceRefresh) {
-    // Pintar inmediato desde cache local
-    if (S._opsData) { try { almRenderOps(); } catch {} }
+    // [v41.13] Cargar cache local persistido primero (instantáneo).
+    // _almHidratarTodos ya pone S._opsData, pero por las dudas garantizamos.
+    if (!S._opsData) {
+      try {
+        const cached = typeof _almLoadCache === 'function' && _almLoadCache('opsData');
+        if (cached) {
+          S._opsData = cached;
+          _opsPopulateDetCacheFromData(cached);
+        }
+      } catch(_){}
+    }
+    // Pintar inmediato desde cache (si hay) — UI optimista
+    if (S._opsData) {
+      try { almRenderOps(); } catch {}
+    } else {
+      // Sin cache → mostrar banner explícito de carga (no skeleton plano)
+      _opsShowLoadingBanner();
+    }
     const dias = S._opsRangoDias;
     const params = { dias };
     if (forceRefresh) params._refresh = 'true';
     try {
-      // [v41.11] Endpoint nuevo: ops + líneas en 1 request
       const opsRes = await API.get('getOperacionesConDetalle', params);
       if (opsRes) {
         S._opsData = opsRes;
         _almSaveCache('opsData', S._opsData);
-        // Poblar cache de detalles con las líneas ya precargadas
         _opsPopulateDetCacheFromData(S._opsData);
-        // Detectar IDs nuevos para sonido + animación
         const idsActuales = new Set();
-        ((S._opsData.porDia) || []).forEach(d => (d.operaciones || []).forEach(op => {
+        const data = S._opsData.data || S._opsData;
+        ((data.porDia) || []).forEach(d => (d.operaciones || []).forEach(op => {
           idsActuales.add((op.fuente || '') + '_' + (op.idGuia || ''));
         }));
         const esPrimerCarga = S._opsIdsVistos.size === 0;
@@ -4334,17 +4348,37 @@ const MOS = (() => {
         idsActuales.forEach(id => { if (!S._opsIdsVistos.has(id)) idsNuevos.push(id); });
         S._opsIdsVistos = idsActuales;
         almRenderOps();
-        // Ping suave si llegó una op nueva en background (no primera carga)
-        if (!esPrimerCarga && idsNuevos.length > 0) {
-          _opsBeep('ping');
-        }
+        if (!esPrimerCarga && idsNuevos.length > 0) _opsBeep('ping');
       } else if (!S._opsData) {
         const lst = $('almOpsList');
         if (lst) lst.innerHTML = '<div class="alm-ops-empty"><div class="alm-ops-empty-emoji">⚠</div>Error cargando operaciones</div>';
       }
     } catch(e) {
       console.warn('[almLoadOps] error:', e);
+      if (!S._opsData) {
+        const lst = $('almOpsList');
+        if (lst) lst.innerHTML = '<div class="alm-ops-empty"><div class="alm-ops-empty-emoji">⚠</div>Sin conexión — reintentá</div>';
+      }
     }
+  }
+
+  function _opsShowLoadingBanner() {
+    const lst = $('almOpsList');
+    if (!lst) return;
+    lst.innerHTML = `
+      <div class="alm-ops-loading-banner">
+        <div class="alm-ops-loading-spin"></div>
+        <div class="alm-ops-loading-text">
+          <div class="alm-ops-loading-text-main">Buscando operaciones de los últimos ${S._opsRangoDias} días…</div>
+          <div class="alm-ops-loading-text-sub">Almacén central + todas las zonas. Esto puede tardar unos segundos la primera vez.</div>
+        </div>
+      </div>
+      <div class="alm-ops-zona-vouchers">
+        <div class="alm-voucher alm-voucher-skel"><div class="alm-skel-line w-60"></div><div class="alm-skel-line w-90"></div><div class="alm-skel-line w-75"></div><div class="alm-skel-line w-80"></div></div>
+        <div class="alm-voucher alm-voucher-skel"><div class="alm-skel-line w-50"></div><div class="alm-skel-line w-80"></div><div class="alm-skel-line w-60"></div><div class="alm-skel-line w-90"></div></div>
+        <div class="alm-voucher alm-voucher-skel"><div class="alm-skel-line w-75"></div><div class="alm-skel-line w-60"></div><div class="alm-skel-line w-90"></div></div>
+        <div class="alm-voucher alm-voucher-skel"><div class="alm-skel-line w-80"></div><div class="alm-skel-line w-50"></div><div class="alm-skel-line w-75"></div></div>
+      </div>`;
   }
 
   // Llena S._opsDetCache con las líneas que ya vienen embebidas en cada op
