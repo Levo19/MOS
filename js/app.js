@@ -4676,15 +4676,40 @@ const MOS = (() => {
       tipoLabel = 'PREINGRESO'; tipoEmoji = '⏳';
       variantClass = 'alm-voucher-preing';
       selloTxt = 'PENDIENTE'; selloClass = 'alm-v-sello-pendiente';
-    } else if (tipo === 'INGRESO_PROVEEDOR' || tipo.indexOf('INGRESO') >= 0) {
-      tipoLabel = tipo === 'INGRESO_PROVEEDOR' ? 'INGRESO PROVEEDOR' : 'INGRESO';
-      tipoEmoji = '🟢';
+    } else if (tipo === 'INGRESO_PROVEEDOR') {
+      tipoLabel = 'INGRESO PROVEEDOR'; tipoEmoji = '🟢';
+      variantClass = 'alm-voucher-ingreso';
+      selloTxt = 'INGRESADO'; selloClass = 'alm-v-sello-ingresado';
+    } else if (tipo === 'ENTRADA_LIBRE') {
+      // [v41.16] Entrada manual en zona — usualmente proveedor externo directo
+      tipoLabel = 'INGRESO EXTERNO (zona)'; tipoEmoji = '🟢';
+      variantClass = 'alm-voucher-ingreso';
+      selloTxt = 'INGRESADO'; selloClass = 'alm-v-sello-ingresado';
+    } else if (tipo === 'ENTRADA_ALMACEN') {
+      tipoLabel = 'INGRESO DESDE ALMACÉN'; tipoEmoji = '📥';
+      variantClass = 'alm-voucher-ingreso';
+      selloTxt = 'RECIBIDO'; selloClass = 'alm-v-sello-ingresado';
+    } else if (tipo === 'ENTRADA_TRASLADO') {
+      tipoLabel = 'TRASLADO RECIBIDO'; tipoEmoji = '🔄';
+      variantClass = 'alm-voucher-traslado';
+      selloTxt = 'TRASLADADO'; selloClass = 'alm-v-sello-ingresado';
+    } else if (tipo.indexOf('INGRESO') >= 0 || tipo.indexOf('ENTRADA') >= 0) {
+      tipoLabel = 'INGRESO'; tipoEmoji = '🟢';
       variantClass = 'alm-voucher-ingreso';
       selloTxt = 'INGRESADO'; selloClass = 'alm-v-sello-ingresado';
     } else if (tipo.indexOf('SALIDA_VENTAS') >= 0 || tipo === 'SALIDA_VENTAS') {
       tipoLabel = 'VENTAS'; tipoEmoji = '🛒';
       variantClass = 'alm-voucher-venta';
       selloTxt = 'VENDIDO'; selloClass = 'alm-v-sello-venta';
+    } else if (tipo === 'SALIDA_MOVIMIENTO') {
+      // Movimiento entre zonas (origen)
+      tipoLabel = 'SALIDA TRASLADO'; tipoEmoji = '📤';
+      variantClass = 'alm-voucher-traslado';
+      selloTxt = 'TRASLADADO'; selloClass = 'alm-v-sello-ingresado';
+    } else if (tipo === 'SALIDA_JEFA') {
+      tipoLabel = 'SALIDA AUTORIZADA'; tipoEmoji = '👑';
+      variantClass = 'alm-voucher-despacho';
+      selloTxt = 'AUTORIZADO'; selloClass = 'alm-v-sello-despachado';
     } else if (tipo.indexOf('SALIDA_ZONA') >= 0 || tipo.indexOf('DESPACHO') >= 0) {
       tipoLabel = 'DESPACHO'; tipoEmoji = '📦';
       variantClass = 'alm-voucher-despacho';
@@ -4698,7 +4723,7 @@ const MOS = (() => {
       variantClass = 'alm-voucher-traslado';
       selloTxt = 'TRASLADADO'; selloClass = 'alm-v-sello-ingresado';
     } else {
-      tipoLabel = tipo; tipoEmoji = '📋';
+      tipoLabel = tipo || 'OPERACIÓN'; tipoEmoji = '📋';
       variantClass = '';
       selloTxt = ''; selloClass = '';
     }
@@ -4717,11 +4742,21 @@ const MOS = (() => {
     const provStr = op.nombreProveedor || op.idProveedor || '';
     const monto = op.montoTotal > 0 ? `S/ ${op.montoTotal.toLocaleString('es-PE', { maximumFractionDigits: 2 })}` : '';
 
-    // Botón 💰 Llenar costos para guías INGRESO_PROVEEDOR con foto
-    const esIngreso = op.fuente === 'WH' && tipo.indexOf('INGRESO') >= 0 && !op.esPreingreso;
-    const tieneFoto = !!(op.foto && String(op.foto).trim());
-    const btnCostos = (esIngreso && tieneFoto)
-      ? `<button class="alm-v-btn-costos" onclick="event.stopPropagation();MOS.abrirCostosGuia('${_escapeHtml(op.idGuia)}', '${op.fuente}')" title="Llenar costos desde foto">💰 Costos</button>`
+    // [v41.16] Botón 💰 Costos para TODAS las guías de ingreso de proveedor
+    // (con o sin foto). Antes requería foto, ahora aparece siempre que sea
+    // INGRESO_PROVEEDOR — el modal de costos funciona igual sin foto.
+    const esIngresoProv = op.fuente === 'WH' && tipo === 'INGRESO_PROVEEDOR' && !op.esPreingreso;
+    const btnCostos = esIngresoProv
+      ? `<button class="alm-v-btn-costos" onclick="event.stopPropagation();MOS.abrirCostosGuia('${_escapeHtml(op.idGuia)}', '${op.fuente}')" title="Llenar / editar costos de la guía">💰 Costos</button>`
+      : '';
+
+    // [v41.16] Thumb de foto si la guía tiene imagen adjunta (proveedor)
+    const fotoUrl = (op.foto && String(op.foto).trim()) || '';
+    const fotoThumbHtml = fotoUrl
+      ? `<button class="alm-v-foto-thumb" onclick="event.stopPropagation();MOS.abrirFotoOverlay('${_escapeHtml(fotoUrl)}')" title="Ver foto en grande">
+           <img src="${_escapeHtml(fotoUrl)}" alt="foto" loading="lazy" onerror="this.style.display='none';this.parentNode.classList.add('cj-foto-error')">
+           <span class="alm-v-foto-ico">🔍</span>
+         </button>`
       : '';
 
     // Preview de líneas (máx 3) — siempre visible
@@ -4760,6 +4795,7 @@ const MOS = (() => {
         </div>
       </div>
       ${op.comentario ? `<div class="text-[11px] italic" style="color:#6b4423">${_escapeHtml(op.comentario)}</div>` : ''}
+      ${fotoThumbHtml}
       ${previewHtml}
       <div class="alm-v-footer">
         <div class="alm-v-total">${monto}</div>
@@ -4965,6 +5001,29 @@ const MOS = (() => {
     if (overlay) overlay.classList.add('hidden');
     // Limpiar expanded state para no inflar memoria
     S._opsExpanded = {};
+  }
+
+  // [v41.16] Overlay para ver foto de la guía en grande
+  function abrirFotoOverlay(url) {
+    if (!url) return;
+    _opsBeep('tac');
+    let overlay = $('almFotoOverlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'almFotoOverlay';
+      overlay.className = 'alm-foto-overlay';
+      overlay.onclick = (e) => {
+        if (e.target.id === 'almFotoOverlay' || e.target.classList.contains('alm-foto-close')) {
+          overlay.classList.add('hidden');
+        }
+      };
+      document.body.appendChild(overlay);
+    }
+    overlay.innerHTML = `
+      <button class="alm-foto-close" title="Cerrar">✕</button>
+      <img class="alm-foto-grande" src="${_escapeHtml(url)}" alt="Foto de la guía">
+      <a class="alm-foto-link" href="${_escapeHtml(url)}" target="_blank" rel="noopener">↗ Abrir en pestaña nueva</a>`;
+    overlay.classList.remove('hidden');
   }
 
   // ── Llenar costos de guía (con foto de factura) ──
@@ -25319,7 +25378,7 @@ const MOS = (() => {
     setAlmTab,
     almLoadResumen, almRefreshResumen, almFiltrarStock, almRefreshCatalogo, almToggleStockExpand,
     almLoadOps, almRefreshOps, almRenderOps, almToggleOpExpand, almSetRangoOps,
-    abrirOpsDetalleOverlay, cerrarOpsDetalleOverlay,
+    abrirOpsDetalleOverlay, cerrarOpsDetalleOverlay, abrirFotoOverlay,
     abrirCostosGuia, _costosGuiaUpdLinea, _costosGuiaSetMode, _costosGuiaSetIgv, cerrarCostosGuia, guardarCostosGuia,
     _impactoTogglesel, _impactoSetPrecio, cerrarImpactoCostos, aplicarSugerenciasSeleccionadas,
     almLoadZonas, almRefreshZonas, almAbrirStockDetalle, cerrarStockDetalle, almRefreshStockDetalle,

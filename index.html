@@ -3083,6 +3083,86 @@
       0% { opacity: 0; transform: scale(.92); }
       100% { opacity: 1; transform: scale(1); }
     }
+
+    /* [v41.16] Thumb de foto dentro del voucher (ingresos con imagen) */
+    .alm-v-foto-thumb {
+      position: relative;
+      display: block;
+      width: 100%;
+      height: 90px;
+      margin: 8px 0 6px;
+      border-radius: 8px;
+      overflow: hidden;
+      cursor: pointer;
+      border: 2px solid rgba(180,83,9,.35);
+      background: #2a1a08;
+      transition: transform .2s, box-shadow .2s;
+      padding: 0;
+    }
+    .alm-v-foto-thumb:hover {
+      transform: scale(1.02);
+      box-shadow: 0 6px 14px -3px rgba(0,0,0,.5);
+      border-color: rgba(245,158,11,.7);
+    }
+    .alm-v-foto-thumb img {
+      width: 100%; height: 100%; object-fit: cover;
+      display: block;
+    }
+    .alm-v-foto-thumb.cj-foto-error::after {
+      content: '🖼 sin preview';
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: #2a1a08; color: #a78b6d; font-size: 11px;
+    }
+    .alm-v-foto-ico {
+      position: absolute; bottom: 6px; right: 6px;
+      background: rgba(0,0,0,.65); color: #fcd34d;
+      width: 24px; height: 24px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px;
+      backdrop-filter: blur(4px);
+    }
+
+    /* [v41.16] Overlay foto en grande */
+    .alm-foto-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.92);
+      backdrop-filter: blur(10px);
+      z-index: 9500;
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column; gap: 14px;
+      padding: 20px;
+      animation: almOverlayFade .25s ease;
+      cursor: pointer;
+    }
+    .alm-foto-overlay.hidden { display: none; }
+    .alm-foto-grande {
+      max-width: 95vw; max-height: 80vh;
+      object-fit: contain;
+      border-radius: 12px;
+      box-shadow: 0 20px 50px -10px rgba(0,0,0,.8);
+      animation: almFotoZoom .35s cubic-bezier(.34,1.56,.64,1);
+    }
+    @keyframes almFotoZoom {
+      0% { opacity: 0; transform: scale(.7); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+    .alm-foto-close {
+      position: absolute; top: 20px; right: 20px;
+      background: rgba(0,0,0,.65); color: #fff;
+      width: 44px; height: 44px;
+      border-radius: 50%; border: 2px solid rgba(255,255,255,.3);
+      font-size: 20px; font-weight: 900;
+      cursor: pointer; transition: transform .15s;
+    }
+    .alm-foto-close:hover { transform: scale(1.1) rotate(90deg); }
+    .alm-foto-link {
+      color: #fcd34d; font-size: 12px; font-weight: 700;
+      text-decoration: underline;
+      background: rgba(0,0,0,.5);
+      padding: 8px 16px; border-radius: 999px;
+    }
     /* Wrapper para tabs con scroll horizontal + fade indicator a la derecha */
     .tab-scroll-wrap { position: relative; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
     .tab-scroll-wrap::-webkit-scrollbar { display: none; }
