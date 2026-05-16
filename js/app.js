@@ -15508,6 +15508,14 @@ const MOS = (() => {
   };
 
   async function _cjCargarCreditosPendientes() {
+    // [v41.9] Mostrar skeleton mientras se carga si NO hay datos previos.
+    // Si ya hay grupos cargados (refresh silencioso cada 20s), no perturbar la UI.
+    const mano = $('cjCreditosMano');
+    const yaHayData = _cjCreditosState.todosLosGrupos.length > 0;
+    if (mano && !yaHayData) {
+      mano.classList.remove('hidden');
+      _cjPintarSkeleton();
+    }
     try {
       const r = await API.post('meGetCreditosPendientes', { diasAtras: 30 });
       const d = (r && r.data) ? r.data : (r || {});
@@ -15515,7 +15523,32 @@ const MOS = (() => {
       _cjRenderManoDelDia();
     } catch(e) {
       console.warn('[creditos] error cargando:', e?.message || e);
+      // Si falló y no había data previa, ocultar la baraja (mejor que dejar skeleton infinito)
+      if (mano && !yaHayData) mano.classList.add('hidden');
     }
+  }
+
+  // [v41.9] Skeleton mientras carga: 3 cartas placeholder en abanico con shimmer.
+  // Reusa las posiciones data-pos del fan-out real, así la transición a las cartas
+  // reales es continua (sin "salto" de layout).
+  function _cjPintarSkeleton() {
+    const cont = $('cjManoContenedor');
+    if (!cont) return;
+    cont.innerHTML = [0, 1, 2].map(pos => `
+      <div class="cj-carta-mano cj-carta-skeleton" data-pos="${pos}">
+        <div class="cj-skel-head">
+          <span class="cj-skel-line cj-skel-w60"></span>
+          <span class="cj-skel-line cj-skel-w35 cj-skel-tall"></span>
+        </div>
+        <span class="cj-skel-line cj-skel-w30 cj-skel-thin"></span>
+        <div class="cj-skel-sep"></div>
+        <span class="cj-skel-line cj-skel-w90"></span>
+        <span class="cj-skel-line cj-skel-w75"></span>
+        <span class="cj-skel-line cj-skel-w85"></span>
+        <span class="cj-skel-line cj-skel-w70"></span>
+        <div class="cj-skel-spinner"></div>
+      </div>
+    `).join('');
   }
 
   function _cjFmtFechaCorta(yyyyMmDd) {

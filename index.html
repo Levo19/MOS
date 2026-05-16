@@ -1468,6 +1468,73 @@
       letter-spacing: .03em;
       z-index: 5;
     }
+    /* [v41.9] SKELETON LOADING: cartas placeholder con shimmer mientras carga.
+       Comparte data-pos con las cartas reales para que no haya salto de layout. */
+    .cj-carta-mano.cj-carta-skeleton {
+      background: linear-gradient(135deg, rgba(254,243,199,.35), rgba(252,211,77,.20));
+      border: 1.5px dashed rgba(245,158,11,.45);
+      box-shadow: 0 4px 12px -3px rgba(0,0,0,.35);
+      overflow: hidden;
+      gap: 5px;
+    }
+    /* shimmer pasa de izq a der barriendo la carta */
+    .cj-carta-mano.cj-carta-skeleton::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: linear-gradient(100deg,
+        transparent 20%,
+        rgba(252,211,77,.55) 50%,
+        transparent 80%);
+      transform: translateX(-100%);
+      animation: cjSkelShimmer 1.5s ease-in-out infinite;
+      pointer-events: none;
+    }
+    @keyframes cjSkelShimmer {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+    /* línea base del skeleton: rectángulo redondeado pulsante */
+    .cj-skel-line {
+      display: block;
+      height: 9px; border-radius: 5px;
+      background: rgba(180,83,9,.22);
+      animation: cjSkelPulse 1.8s ease-in-out infinite;
+    }
+    @keyframes cjSkelPulse {
+      0%, 100% { opacity: .55; }
+      50%      { opacity: .9; }
+    }
+    .cj-skel-tall   { height: 14px; border-radius: 4px; }
+    .cj-skel-thin   { height: 6px;  border-radius: 3px; }
+    .cj-skel-w30 { width: 30%; }
+    .cj-skel-w35 { width: 35%; }
+    .cj-skel-w60 { width: 60%; }
+    .cj-skel-w70 { width: 70%; }
+    .cj-skel-w75 { width: 75%; }
+    .cj-skel-w85 { width: 85%; }
+    .cj-skel-w90 { width: 90%; }
+    .cj-skel-head {
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 6px; margin-bottom: 1px;
+    }
+    .cj-skel-sep {
+      border-top: 1px dashed rgba(180,83,9,.3);
+      margin: 4px 0 2px;
+    }
+    /* spinner dorado mini en la esquina inferior derecha (acento visual) */
+    .cj-skel-spinner {
+      position: absolute; bottom: 8px; right: 8px;
+      width: 14px; height: 14px;
+      border: 2px solid rgba(180,83,9,.2);
+      border-top-color: #d97706;
+      border-radius: 50%;
+      animation: cjSkelSpin .7s linear infinite;
+      z-index: 3;
+    }
+    @keyframes cjSkelSpin {
+      to { transform: rotate(360deg); }
+    }
+
     /* Animación cuando la carta del frente se va al fondo — más suave */
     .cj-carta-shuffle-out {
       animation: cjCartaShuffle 1.05s cubic-bezier(.4,.0,.2,1) forwards;
