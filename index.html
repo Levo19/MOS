@@ -3434,6 +3434,97 @@
       font-size: 11px;
     }
     .alm-cu-totales b { color: #fbbf24; font-family: ui-monospace, monospace; }
+
+    /* ════════════════════════════════════════════════════════
+       [v41.21] MODO COSTOS dentro del overlay del voucher
+       Reutiliza el estilo papel del voucher y agrega inputs editables
+       + slot para sugerencia inline (cyan slide-down).
+    ════════════════════════════════════════════════════════ */
+    .alm-v-costos-toggles {
+      display: flex; flex-wrap: wrap; gap: 10px;
+      padding: 10px 12px; margin-bottom: 12px;
+      background: rgba(120,53,15,.06);
+      border: 1px dashed rgba(180,83,9,.35);
+      border-radius: 10px;
+    }
+    .alm-v-tg { display: flex; align-items: center; gap: 4px; }
+    .alm-v-tg span {
+      font-size: 10px; color: #6b4423;
+      text-transform: uppercase; letter-spacing: .04em; font-weight: 700;
+      margin-right: 4px;
+    }
+    .alm-v-tg-btn {
+      padding: 4px 9px; font-size: 11px; font-weight: 700;
+      background: rgba(254,243,199,.5); color: #6b4423;
+      border: 1px solid rgba(180,83,9,.3);
+      border-radius: 6px; cursor: pointer; transition: all .15s;
+    }
+    .alm-v-tg-btn.active {
+      background: #b45309; color: #fef9e7; border-color: #b45309;
+    }
+    .alm-v-tg-check {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 10.5px; color: #6b4423; font-weight: 700;
+      margin-left: auto; cursor: pointer;
+    }
+    /* Línea de costo editable */
+    .alm-v-costo-line {
+      background: rgba(254,243,199,.4);
+      border: 1px solid rgba(180,83,9,.25);
+      border-radius: 9px;
+      padding: 9px 11px;
+      margin-bottom: 8px;
+      animation: almLineaIn .35s ease-out backwards;
+      transition: border-color .2s;
+    }
+    .alm-v-costo-line:has(.alm-v-costo-input:focus) {
+      border-color: rgba(180,83,9,.6);
+      box-shadow: 0 0 0 3px rgba(245,158,11,.15);
+    }
+    .alm-v-costo-row {
+      display: grid;
+      grid-template-columns: 1fr 45px 100px auto;
+      gap: 8px; align-items: center;
+    }
+    .alm-v-costo-desc {
+      min-width: 0;
+      font-size: 11.5px; color: #3f2a14; font-weight: 700;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .alm-v-costo-cod {
+      font-size: 9px; color: #78350f; font-family: ui-monospace, monospace;
+      opacity: .7;
+    }
+    .alm-v-costo-cant {
+      font-size: 11px; color: #b45309; font-weight: 800;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .alm-v-costo-input {
+      width: 100%;
+      background: #fffbeb;
+      border: 1.5px solid #d97706;
+      border-radius: 7px;
+      padding: 6px 9px;
+      color: #78350f;
+      font-size: 12.5px; font-weight: 800;
+      text-align: right;
+      font-family: ui-monospace, monospace;
+      outline: none;
+    }
+    .alm-v-costo-input:focus { border-color: #b45309; }
+    .alm-v-costo-helper {
+      font-size: 9.5px; color: #78350f;
+      text-align: right; white-space: nowrap;
+    }
+    /* Totales en el modo costos */
+    .alm-v-costo-totales {
+      display: flex; justify-content: flex-end; gap: 14px;
+      padding-top: 10px; margin-top: 8px;
+      border-top: 1.5px dashed rgba(120,53,15,.4);
+      font-size: 11px; color: #6b4423;
+    }
+    .alm-v-costo-totales b { font-family: ui-monospace, monospace; color: #78350f; }
     /* Wrapper para tabs con scroll horizontal + fade indicator a la derecha */
     .tab-scroll-wrap { position: relative; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
     .tab-scroll-wrap::-webkit-scrollbar { display: none; }

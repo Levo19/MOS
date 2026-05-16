@@ -4750,13 +4750,28 @@ const MOS = (() => {
     const provStr = op.nombreProveedor || op.idProveedor || '';
     const monto = op.montoTotal > 0 ? `S/ ${op.montoTotal.toLocaleString('es-PE', { maximumFractionDigits: 2 })}` : '';
 
-    // [v41.16] Botón 💰 Costos para TODAS las guías de ingreso de proveedor
-    // (con o sin foto). Antes requería foto, ahora aparece siempre que sea
-    // INGRESO_PROVEEDOR — el modal de costos funciona igual sin foto.
+    // [v41.21] Botón 💰 Costos: si el voucher es lista → abre overlay con modo costos.
+    //          Si el voucher ya está en overlay normal → entra a modo costos in-place.
+    //          Si ya está en modo costos → muestra Guardar/Cancelar en su lugar.
     const esIngresoProv = op.fuente === 'WH' && tipo === 'INGRESO_PROVEEDOR' && !op.esPreingreso;
-    const btnCostos = esIngresoProv
-      ? `<button class="alm-v-btn-costos" onclick="event.stopPropagation();MOS.abrirCostosGuia('${_escapeHtml(op.idGuia)}', '${op.fuente}')" title="Llenar / editar costos de la guía">💰 Costos</button>`
-      : '';
+    const modoCostos = !!S._opsModoCostos && expanded;
+    let btnCostos = '';
+    if (esIngresoProv) {
+      if (!expanded) {
+        // Card en la lista — botón abre overlay directo en modo costos
+        btnCostos = `<button class="alm-v-btn-costos" onclick="event.stopPropagation();MOS.opsEntrarModoCostos('${op.fuente}','${_escapeHtml(op.idGuia)}')" title="Editar costos">💰 Costos</button>`;
+      } else if (!modoCostos) {
+        // Overlay lectura — botón entra a modo edición sin cerrar
+        btnCostos = `<button class="alm-v-btn-costos" onclick="MOS.opsEntrarModoCostos('${op.fuente}','${_escapeHtml(op.idGuia)}')" title="Editar costos">💰 Editar costos</button>`;
+      } else {
+        // Overlay en modo edición — botones guardar/cancelar
+        btnCostos = `
+          <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 3px 8px -2px rgba(16,185,129,.5)"
+                  onclick="MOS.guardarCostosGuia()" title="Guardar costos">💾 Guardar</button>
+          <button class="alm-v-btn-costos" style="background:rgba(71,85,105,.6);box-shadow:none"
+                  onclick="MOS.opsSalirModoCostos()" title="Cancelar edición">✕ Cancelar</button>`;
+      }
+    }
 
     // [v41.16] Thumb de foto si la guía tiene imagen adjunta (proveedor)
     const fotoUrl = (op.foto && String(op.foto).trim()) || '';
@@ -4822,6 +4837,8 @@ const MOS = (() => {
   }
 
   // Detalle completo (todas las líneas con stagger animation)
+  // [v41.21] Si está en modoCostos, renderiza líneas editables con input
+  //          de costo + sugerencia inline slide-down (mismo overlay voucher).
   function _renderVoucherDetalleCompleto(op) {
     if (op.esPreingreso) {
       return `<div class="text-[11px]" style="color:#3f2a14">
@@ -4831,28 +4848,96 @@ const MOS = (() => {
         ${op.idGuiaGenerada ? `<div style="color:#6b4423"><b>Guía generada:</b> <span class="font-mono" style="color:#047857">${_escapeHtml(op.idGuiaGenerada)}</span></div>` : ''}
       </div>`;
     }
-    const key = op.fuente + '_' + op.idGuia;
-    const cached = S._opsDetCache[key];
-    if (!cached || !cached.lineas) {
-      // Cache vacío (fallback raro: backend no devolvió líneas embebidas) → fetch on-demand
+    const modoCostos = !!S._opsModoCostos;
+    // En modo costos usamos el state de costos (con inputValue + _sugerencia)
+    const lineas = modoCostos
+      ? (S._costosGuiaState && S._costosGuiaState.lineas) || []
+      : (S._opsDetCache[op.fuente + '_' + op.idGuia] || {}).lineas || [];
+    if (!modoCostos && (!S._opsDetCache[op.fuente + '_' + op.idGuia] || !lineas.length)) {
       _fetchOpDetalle(op.fuente, op.idGuia);
       return '<div style="font-size:11px;color:#78350f;font-style:italic">Cargando líneas…</div>';
     }
-    const lineas = cached.lineas;
     if (!lineas.length) return '<div style="font-size:11px;color:#78350f;font-style:italic">Sin líneas registradas</div>';
-    return lineas.map((l, i) => {
+
+    if (!modoCostos) {
+      // Modo LECTURA — render como estaba
+      return lineas.map((l, i) => {
+        const desc = _escapeHtml(String(l.descripcion || l.codigoProducto || l.codigoBarra || ''));
+        const cod = _escapeHtml(String(l.codigoBarra || l.codigoProducto || ''));
+        const equivBadge = l.esEquivalencia ? '<span class="alm-v-equiv-badge">EQUIV</span>' : '';
+        return `<div class="alm-v-linea-full" style="animation-delay: ${Math.min(i, 12) * 35}ms">
+          <span class="alm-v-linea-full-cant">${l.cantidad}u</span>
+          <div class="alm-v-linea-full-desc">
+            ${desc}${equivBadge}
+            <div class="alm-v-linea-full-desc-cod">▌ ${cod}${l.fechaVencimiento ? ' · venc ' + fmtDate(l.fechaVencimiento) : ''}</div>
+          </div>
+          <span class="alm-v-linea-full-sub">${l.subtotal > 0 ? 'S/ ' + l.subtotal.toFixed(2) : '—'}</span>
+        </div>`;
+      }).join('');
+    }
+
+    // Modo COSTOS — editable + sugerencia inline
+    const st = S._costosGuiaState;
+    const togglesHtml = `
+      <div class="alm-v-costos-toggles">
+        <div class="alm-v-tg">
+          <span>Ingreso:</span>
+          <button onclick="MOS._costosGuiaSetMode('TOTAL')" class="alm-v-tg-btn ${st.inputMode === 'TOTAL' ? 'active' : ''}">Total</button>
+          <button onclick="MOS._costosGuiaSetMode('UNITARIO')" class="alm-v-tg-btn ${st.inputMode === 'UNITARIO' ? 'active' : ''}">Unit</button>
+        </div>
+        <div class="alm-v-tg">
+          <span>IGV:</span>
+          <button onclick="MOS._costosGuiaSetIgv('INCLUIDO')" class="alm-v-tg-btn ${st.igvMode === 'INCLUIDO' ? 'active' : ''}">Incluido</button>
+          <button onclick="MOS._costosGuiaSetIgv('SIN_IGV')" class="alm-v-tg-btn ${st.igvMode === 'SIN_IGV' ? 'active' : ''}">Sin IGV</button>
+        </div>
+        <label class="alm-v-tg-check">
+          <input type="checkbox" id="costosGuiaUpdMaster" checked>
+          <span>Actualizar catálogo</span>
+        </label>
+      </div>`;
+
+    const filasHtml = lineas.map((l, i) => {
+      const cant = parseFloat(l.cantidad) || 0;
+      const brutoUnit = _costosGuiaCalcularBruto(l, st);
+      const netoUnit  = brutoUnit / (1 + _IGV_RATE);
       const desc = _escapeHtml(String(l.descripcion || l.codigoProducto || l.codigoBarra || ''));
       const cod = _escapeHtml(String(l.codigoBarra || l.codigoProducto || ''));
       const equivBadge = l.esEquivalencia ? '<span class="alm-v-equiv-badge">EQUIV</span>' : '';
-      return `<div class="alm-v-linea-full" style="animation-delay: ${Math.min(i, 12) * 35}ms">
-        <span class="alm-v-linea-full-cant">${l.cantidad}u</span>
-        <div class="alm-v-linea-full-desc">
-          ${desc}${equivBadge}
-          <div class="alm-v-linea-full-desc-cod">▌ ${cod}${l.fechaVencimiento ? ' · venc ' + fmtDate(l.fechaVencimiento) : ''}</div>
+      const placeholder = st.inputMode === 'TOTAL' ? 'Total' : 'Unit';
+      const helper = brutoUnit > 0
+        ? `<span style="color:#b45309;font-weight:800;font-family:ui-monospace,monospace">S/ ${brutoUnit.toFixed(4)}</span>/u`
+        : '<span style="opacity:.4">sin costo</span>';
+      const sugHtml = l._sugerencia ? _renderSugerenciaInline(i, l._sugerencia) : '';
+      const sugOpen = l._sugerencia ? ' is-open' : '';
+      return `<div class="alm-v-costo-line" style="animation-delay: ${Math.min(i, 12) * 30}ms">
+        <div class="alm-v-costo-row">
+          <div>
+            <div class="alm-v-costo-desc">${desc}${equivBadge}</div>
+            <div class="alm-v-costo-cod">▌ ${cod}</div>
+          </div>
+          <div class="alm-v-costo-cant">${cant}u</div>
+          <input type="number" step="0.01" min="0" class="alm-v-costo-input"
+                 value="${l.inputValue || ''}"
+                 oninput="MOS._costosGuiaUpdLinea(${i}, this.value)"
+                 placeholder="${placeholder}">
+          <div class="alm-v-costo-helper" id="costoGuiaSubtot_${i}">${helper}</div>
         </div>
-        <span class="alm-v-linea-full-sub">${l.subtotal > 0 ? 'S/ ' + l.subtotal.toFixed(2) : '—'}</span>
+        <div class="alm-cu-sug${sugOpen}" id="sugSlot_${i}">${sugHtml}</div>
       </div>`;
     }).join('');
+
+    let totalBruto = 0;
+    lineas.forEach(l => { totalBruto += _costosGuiaCalcularBruto(l, st) * (parseFloat(l.cantidad) || 0); });
+    const totalNeto = totalBruto / (1 + _IGV_RATE);
+
+    return `<input type="hidden" id="costosGuiaInfo" value="${_escapeHtml(op.idGuia)}">
+      ${togglesHtml}
+      ${filasHtml}
+      <div class="alm-v-costo-totales">
+        <span>Neto: <b id="costosGuiaTotalNeto">S/ ${totalNeto.toFixed(2)}</b></span>
+        <span>IGV: <b id="costosGuiaTotalIgv">S/ ${(totalBruto - totalNeto).toFixed(2)}</b></span>
+        <span style="color:#b45309">Total: <b id="costosGuiaTotalBruto">S/ ${totalBruto.toFixed(2)}</b></span>
+      </div>`;
   }
 
   // Helper escape HTML (si no existe ya, lo defino tolerante)
@@ -4975,34 +5060,36 @@ const MOS = (() => {
     }
   }
 
-  // [v41.15] Click voucher → abre overlay modal con detalle completo
-  // (antes expandía in-place y rompía el masonry layout).
+  // [v41.21] Click voucher → overlay con detalle. Si tiene botón Costos
+  // y se hace click ahí, mismo overlay entra en "modo edición costos"
+  // (no abre uno nuevo). La foto ya está en el thumb del voucher.
   function almToggleOpExpand(fuente, idGuia, esPreingreso) {
     _opsBeep('tac');
     abrirOpsDetalleOverlay(fuente, idGuia, esPreingreso === true || esPreingreso === 'true');
   }
 
-  function abrirOpsDetalleOverlay(fuente, idGuia, esPreingreso) {
+  function abrirOpsDetalleOverlay(fuente, idGuia, esPreingreso, modoCostos) {
     const op = _findOpByKey(fuente + '_' + idGuia);
     if (!op) return;
     const cont = $('almOpsDetalleContent');
     if (!cont) return;
-    // Marcar expandido para que el detalle se rinda completo
     const key = fuente + '_' + idGuia + (esPreingreso ? '_PRE' : '');
     S._opsExpanded[key] = true;
-    // Render del voucher completo dentro del overlay
+    S._opsModoCostos = !!modoCostos;
+    // Render del voucher completo
     cont.innerHTML = _renderVoucher(op, 0);
-    // Quitar onclick para que el voucher dentro del overlay no haga nada
     const v = cont.querySelector('.alm-voucher');
     if (v) v.onclick = null;
     const overlay = $('almOpsDetalleOverlay');
     if (overlay) overlay.classList.remove('hidden');
-    // Si no hay líneas en cache, fetchear (raro: el endpoint nuevo o el prefetch deberían tenerlas)
+    // Asegurar líneas en cache
     if (!op.esPreingreso) {
       const k2 = op.fuente + '_' + op.idGuia;
-      if (!S._opsDetCache[k2]) {
-        _fetchOpDetalle(op.fuente, op.idGuia);
-      }
+      if (!S._opsDetCache[k2]) _fetchOpDetalle(op.fuente, op.idGuia);
+    }
+    // Si entró en modo costos, inicializar state de costos para esta guía
+    if (modoCostos && op.fuente === 'WH' && !op.esPreingreso) {
+      _opsCostosInitState(op);
     }
   }
 
@@ -5010,8 +5097,48 @@ const MOS = (() => {
     if (ev && ev.target && ev.target.id !== 'almOpsDetalleOverlay') return;
     const overlay = $('almOpsDetalleOverlay');
     if (overlay) overlay.classList.add('hidden');
-    // Limpiar expanded state para no inflar memoria
     S._opsExpanded = {};
+    S._opsModoCostos = false;
+  }
+
+  // [v41.21] Conmutar el modo costos dentro del MISMO overlay del voucher
+  function opsEntrarModoCostos(fuente, idGuia) {
+    _opsBeep('tac');
+    abrirOpsDetalleOverlay(fuente, idGuia, false, true);
+  }
+  function opsSalirModoCostos() {
+    S._opsModoCostos = false;
+    // Re-render del overlay actual
+    const op = S._costosGuiaState && _findOpByKey(S._costosGuiaState.fuente + '_' + S._costosGuiaState.idGuia);
+    if (op) {
+      const cont = $('almOpsDetalleContent');
+      if (cont) cont.innerHTML = _renderVoucher(op, 0);
+    }
+  }
+
+  // Inicializa S._costosGuiaState para una op + carga líneas en cache
+  function _opsCostosInitState(op) {
+    const k = op.fuente + '_' + op.idGuia;
+    const cached = (S._opsDetCache[k] && S._opsDetCache[k].lineas) || op.lineas || [];
+    // Hidratar inputValue desde precioUnitario existente
+    const lineas = cached.map(l => {
+      const bruto = parseFloat(l.precioUnitario) || 0;
+      return {
+        ...l,
+        inputValue: bruto > 0 ? +(bruto * (parseFloat(l.cantidad) || 1)).toFixed(2) : '',
+        _sugerencia: null
+      };
+    });
+    S._costosGuiaState = {
+      idGuia: op.idGuia,
+      fuente: op.fuente,
+      lineas,
+      foto: op.foto || '',
+      idProveedor: op.idProveedor || '',
+      nombreProveedor: op.nombreProveedor || op.idProveedor || '',
+      inputMode: 'TOTAL',
+      igvMode: 'INCLUIDO'
+    };
   }
 
   // [v41.16] Overlay para ver foto de la guía en grande
@@ -5064,7 +5191,16 @@ const MOS = (() => {
     return st.inputMode === 'TOTAL' ? (valorConIgv / cant) : valorConIgv;
   }
 
+  // [v41.21] Redirigir abrirCostosGuia al overlay del voucher en modo costos.
+  // Mantengo la firma por compat con el botón 💰 viejo si lo llama otro lugar.
   async function abrirCostosGuia(idGuia, fuente) {
+    if (!idGuia || !fuente) return;
+    opsEntrarModoCostos(fuente, idGuia);
+  }
+
+  // Función vieja (modal split) — mantenida como _legacy por si algún code path
+  // antiguo la llama. NO se invoca desde el flow nuevo.
+  async function abrirCostosGuiaLegacy(idGuia, fuente) {
     if (!idGuia) return;
     let foto = '', idProveedor = '', nombreProveedor = '';
     const data = S._opsData || {};
@@ -5149,24 +5285,21 @@ const MOS = (() => {
   }
 
   function _costosGuiaSetMode(modo) {
-    // Convertir inputValue actual al nuevo modo preservando el unitario bruto (c/IGV)
     const st = S._costosGuiaState;
     if (st.inputMode === modo) return;
     st.lineas.forEach(l => {
       const brutoUnit = _costosGuiaCalcularBruto(l, st);
       const cant = parseFloat(l.cantidad) || 1;
-      // valor a mostrar según el régimen IGV declarado
       const valorBase = st.igvMode === 'INCLUIDO' ? brutoUnit : (brutoUnit / (1 + _IGV_RATE));
       l.inputValue = brutoUnit > 0 ? +(modo === 'TOTAL' ? valorBase * cant : valorBase).toFixed(2) : '';
     });
     st.inputMode = modo;
-    _renderCostosGuiaBody();
+    _costosGuiaReRender();
   }
 
   function _costosGuiaSetIgv(modo) {
     const st = S._costosGuiaState;
     if (st.igvMode === modo) return;
-    // Convertir inputValue al nuevo régimen IGV preservando el unitario bruto
     st.lineas.forEach(l => {
       const brutoUnit = _costosGuiaCalcularBruto(l, st);
       const cant = parseFloat(l.cantidad) || 1;
@@ -5174,7 +5307,20 @@ const MOS = (() => {
       l.inputValue = brutoUnit > 0 ? +(st.inputMode === 'TOTAL' ? valorBase * cant : valorBase).toFixed(2) : '';
     });
     st.igvMode = modo;
-    _renderCostosGuiaBody();
+    _costosGuiaReRender();
+  }
+
+  // [v41.21] Re-render según contexto: modo costos del voucher overlay
+  // re-pinta el voucher; modal viejo (legacy) re-pinta el body del modal.
+  function _costosGuiaReRender() {
+    if (S._opsModoCostos) {
+      const st = S._costosGuiaState;
+      const op = st && _findOpByKey(st.fuente + '_' + st.idGuia);
+      const cont = $('almOpsDetalleContent');
+      if (op && cont) cont.innerHTML = _renderVoucher(op, 0);
+    } else {
+      _renderCostosGuiaBody();
+    }
   }
 
   function _renderCostosGuiaBody() {
@@ -5429,7 +5575,13 @@ const MOS = (() => {
         precioVentaSugerido: l._sugerencia._precioEditado
       }));
 
-    closeModal('modalCostosGuia');
+    // [v41.21] Cerrar el modo correcto: voucher overlay o modal legacy
+    if (S._opsModoCostos) {
+      // Cerrar overlay del voucher al guardar exitoso
+      cerrarOpsDetalleOverlay();
+    } else {
+      closeModal('modalCostosGuia');
+    }
 
     try {
       const resp = await API.post('llenarCostosGuia', {
@@ -25547,6 +25699,7 @@ const MOS = (() => {
     abrirOpsDetalleOverlay, cerrarOpsDetalleOverlay, abrirFotoOverlay,
     abrirCostosGuia, _costosGuiaUpdLinea, _costosGuiaSetMode, _costosGuiaSetIgv, cerrarCostosGuia, guardarCostosGuia,
     _costosGuiaSugerirDebounce, _costosGuiaSugUpdate, _costosGuiaSugToggle,
+    opsEntrarModoCostos, opsSalirModoCostos,
     _impactoTogglesel, _impactoSetPrecio, cerrarImpactoCostos, aplicarSugerenciasSeleccionadas,
     almLoadZonas, almRefreshZonas, almAbrirStockDetalle, cerrarStockDetalle, almRefreshStockDetalle,
     _almGenerarPedidoFromInsight, _almPickProveedor, cerrarSelProveedor,
