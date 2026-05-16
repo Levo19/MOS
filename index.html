@@ -2674,40 +2674,78 @@
       color: #fff; box-shadow: 0 2px 8px -1px rgba(14,165,233,.45);
     }
     .alm-ops-list {
-      display: flex; flex-direction: column; gap: 22px;
+      display: flex; flex-direction: column;
+      gap: 36px;  /* más respiración entre días */
     }
-    /* Header de día — sticky */
+    /* Header de día — sticky, más prominente */
     .alm-ops-dia {
       position: sticky; top: 0; z-index: 5;
       display: flex; justify-content: space-between; align-items: center;
-      padding: 8px 12px; margin: 0 -4px 10px;
-      background: linear-gradient(180deg, #0a1428, rgba(10,20,40,.92));
-      backdrop-filter: blur(6px);
-      border-bottom: 1px dashed rgba(245,158,11,.25);
-      font-size: 12px; font-weight: 800;
-      color: #fbbf24; letter-spacing: .04em;
+      padding: 12px 16px; margin: 0 -4px 16px;
+      background: linear-gradient(135deg, rgba(15,23,42,.95), rgba(30,41,59,.85));
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(245,158,11,.35);
+      border-radius: 12px;
+      font-size: 13px; font-weight: 800;
+      color: #fbbf24; letter-spacing: .05em;
+      box-shadow: 0 6px 14px -4px rgba(0,0,0,.5);
     }
-    .alm-ops-dia-stats { font-size: 11px; color: #64748b; font-weight: 600; }
-    /* Sub-grupo por zona */
+    .alm-ops-dia-stats {
+      font-size: 11px; color: #94a3b8; font-weight: 700;
+      background: rgba(15,23,42,.5);
+      padding: 4px 10px; border-radius: 999px;
+      border: 1px solid rgba(51,65,85,.4);
+    }
+    /* Sub-grupo por zona — más espacio + chip header */
     .alm-ops-grupo-zona {
-      margin-bottom: 14px;
+      margin-bottom: 28px;
     }
+    .alm-ops-grupo-zona:last-child { margin-bottom: 0; }
     .alm-ops-zona-head {
-      display: flex; align-items: center; gap: 8px;
-      font-size: 10.5px; font-weight: 700;
-      color: #38bdf8; text-transform: uppercase; letter-spacing: .05em;
-      margin: 6px 4px 8px;
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 11px; font-weight: 800;
+      color: #38bdf8; text-transform: uppercase; letter-spacing: .06em;
+      margin: 0 0 12px 4px;
+      padding: 5px 12px;
+      border-radius: 999px;
+      background: rgba(15,23,42,.55);
+      border: 1px solid rgba(56,189,248,.25);
     }
-    .alm-ops-zona-head.is-wh { color: #fbbf24; }
-    .alm-ops-zona-head.is-zona { color: #34d399; }
+    .alm-ops-zona-head.is-wh {
+      color: #fbbf24; border-color: rgba(251,191,36,.3);
+      background: rgba(251,191,36,.08);
+    }
+    .alm-ops-zona-head.is-zona {
+      color: #34d399; border-color: rgba(52,211,153,.3);
+      background: rgba(52,211,153,.08);
+    }
+    /* Container de vouchers — masonry con column-count para que las alturas
+       distintas no dejen huecos como en un grid. */
+    .alm-ops-zona-vouchers {
+      column-gap: 18px;
+      column-count: 3;
+    }
+    @media (max-width: 1100px) {
+      .alm-ops-zona-vouchers { column-count: 2; }
+    }
+    @media (max-width: 640px) {
+      .alm-ops-zona-vouchers { column-count: 1; }
+    }
+    .alm-ops-zona-vouchers > .alm-voucher {
+      break-inside: avoid;
+      -webkit-column-break-inside: avoid;
+      page-break-inside: avoid;
+      margin-bottom: 18px;
+      display: inline-block;
+      width: 100%;
+    }
 
-    /* VOUCHER — el papel principal */
+    /* VOUCHER — el papel principal (compactado para masonry de 3 cols) */
     .alm-voucher {
       position: relative;
       background: linear-gradient(180deg, #fef9e7 0%, #faf3d5 100%);
       color: #3f2a14;
-      padding: 18px 18px 16px;
-      margin: 4px 6px 0;
+      padding: 14px 14px 12px;
       box-shadow:
         0 6px 14px -4px rgba(0,0,0,.55),
         inset 0 1px 0 rgba(255,255,255,.6);
@@ -2717,8 +2755,8 @@
       /* líneas horizontales sutiles tipo cuaderno */
       background-image:
         repeating-linear-gradient(180deg,
-          transparent 0px, transparent 23px,
-          rgba(120,53,15,.06) 23px, rgba(120,53,15,.06) 24px),
+          transparent 0px, transparent 22px,
+          rgba(120,53,15,.05) 22px, rgba(120,53,15,.05) 23px),
         linear-gradient(180deg, #fef9e7 0%, #faf3d5 100%);
     }
     @keyframes almVoucherDrop {

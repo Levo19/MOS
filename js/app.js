@@ -4507,14 +4507,18 @@ const MOS = (() => {
       if (byFuente.WH.length) {
         secciones += `<div class="alm-ops-grupo-zona">
           <div class="alm-ops-zona-head is-wh">🏭 Almacén central · ${byFuente.WH.length}</div>
-          ${byFuente.WH.map((op, i) => _renderVoucher(op, i)).join('')}
+          <div class="alm-ops-zona-vouchers">
+            ${byFuente.WH.map((op, i) => _renderVoucher(op, i)).join('')}
+          </div>
         </div>`;
       }
       Object.keys(byFuente.zonas).forEach(zk => {
         const z = byFuente.zonas[zk];
         secciones += `<div class="alm-ops-grupo-zona">
           <div class="alm-ops-zona-head is-zona">🏪 ${_escapeHtml(z.nombre)} · ${z.ops.length}</div>
-          ${z.ops.map((op, i) => _renderVoucher(op, i)).join('')}
+          <div class="alm-ops-zona-vouchers">
+            ${z.ops.map((op, i) => _renderVoucher(op, i)).join('')}
+          </div>
         </div>`;
       });
       return `<div>${headerHtml}${secciones}</div>`;
