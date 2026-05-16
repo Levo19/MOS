@@ -4110,17 +4110,25 @@ const MOS = (() => {
           if (r) { S._almGuiasYPre = r; _almSaveCache('guiasYPre', r);
             try { _almPintarGuiasYPre(r); } catch {} }
         }).catch(() => {}),
-        // [v41.11] Operaciones — feed enriquecido con líneas precargadas.
-        // Al entrar al módulo Almacén, este fetch trae ops + líneas en 1 request
-        // → cuando el user abra la pestaña Operaciones ya está todo en cache,
-        // el expandir voucher es instantáneo (0 delay).
-        API.get('getOperacionesConDetalle', { dias: 7 }).then(r => {
+        // [v41.14] Operaciones — intenta endpoint nuevo con fallback al viejo.
+        // Si el GAS de prod no tiene aún el endpoint nuevo (no se pudo deploy
+        // por límite de versiones), cae al viejo y dispara prefetch de detalle.
+        (async () => {
+          let r = null, traeDet = false;
+          try {
+            r = await API.get('getOperacionesConDetalle', { dias: 7 });
+            traeDet = !!(r && (r.data ? r.data._conDetalle : r._conDetalle));
+          } catch(_){}
+          if (!r || !((r.data || r).porDia)) {
+            try { r = await API.get('getOperacionesUnificadas', { dias: 7 }); } catch(_){}
+          }
           if (r) {
             S._opsData = r; _almSaveCache('opsData', r);
             _opsPopulateDetCacheFromData(r);
             try { almRenderOps(); } catch {}
+            if (!traeDet) _opsPrefetchTodosLosDetalles();
           }
-        }).catch(() => {}),
+        })(),
         // Resumen — insights / sugerencias
         API.get('getInsightsStock', { dias: 30 }).then(r => {
           const ins = (r && r.insights) || [];
@@ -4311,8 +4319,7 @@ const MOS = (() => {
   S._opsIdsVistos = S._opsIdsVistos || new Set();
 
   async function almLoadOps(forceRefresh) {
-    // [v41.13] Cargar cache local persistido primero (instantáneo).
-    // _almHidratarTodos ya pone S._opsData, pero por las dudas garantizamos.
+    // [v41.14] Cargar cache local primero (UI optimista)
     if (!S._opsData) {
       try {
         const cached = typeof _almLoadCache === 'function' && _almLoadCache('opsData');
@@ -4322,18 +4329,28 @@ const MOS = (() => {
         }
       } catch(_){}
     }
-    // Pintar inmediato desde cache (si hay) — UI optimista
     if (S._opsData) {
       try { almRenderOps(); } catch {}
     } else {
-      // Sin cache → mostrar banner explícito de carga (no skeleton plano)
       _opsShowLoadingBanner();
     }
     const dias = S._opsRangoDias;
     const params = { dias };
     if (forceRefresh) params._refresh = 'true';
     try {
-      const opsRes = await API.get('getOperacionesConDetalle', params);
+      // [v41.14] Intentar endpoint nuevo. Si no está desplegado (404/error),
+      // fallback al endpoint viejo getOperacionesUnificadas que SÍ está en
+      // producción + prefetch en background del detalle.
+      let opsRes = null;
+      let traeDetalle = false;
+      try {
+        opsRes = await API.get('getOperacionesConDetalle', params);
+        traeDetalle = !!(opsRes && (opsRes.data ? opsRes.data._conDetalle : opsRes._conDetalle));
+      } catch(_){}
+      if (!opsRes || !((opsRes.data || opsRes).porDia)) {
+        // Fallback al endpoint viejo
+        opsRes = await API.get('getOperacionesUnificadas', params);
+      }
       if (opsRes) {
         S._opsData = opsRes;
         _almSaveCache('opsData', S._opsData);
@@ -4349,6 +4366,8 @@ const MOS = (() => {
         S._opsIdsVistos = idsActuales;
         almRenderOps();
         if (!esPrimerCarga && idsNuevos.length > 0) _opsBeep('ping');
+        // Si vino sin detalle (endpoint viejo) → prefetch silencioso en background
+        if (!traeDetalle) _opsPrefetchTodosLosDetalles();
       } else if (!S._opsData) {
         const lst = $('almOpsList');
         if (lst) lst.innerHTML = '<div class="alm-ops-empty"><div class="alm-ops-empty-emoji">⚠</div>Error cargando operaciones</div>';
@@ -4360,6 +4379,57 @@ const MOS = (() => {
         if (lst) lst.innerHTML = '<div class="alm-ops-empty"><div class="alm-ops-empty-emoji">⚠</div>Sin conexión — reintentá</div>';
       }
     }
+  }
+
+  // [v41.14] Prefetch silencioso del detalle de TODAS las ops (4 en paralelo).
+  // Reemplaza al _prefetchCostosGuias viejo que solo cubría INGRESO con foto.
+  function _opsPrefetchTodosLosDetalles() {
+    try {
+      const data = (S._opsData && (S._opsData.data || S._opsData)) || {};
+      const candidatas = [];
+      (data.porDia || []).forEach(d => (d.operaciones || []).forEach(op => {
+        if (op.esPreingreso) return;
+        if (!op.idGuia || !op.fuente) return;
+        const key = op.fuente + '_' + op.idGuia;
+        if (S._opsDetCache[key]) return; // ya en cache
+        candidatas.push({ fuente: op.fuente, idGuia: op.idGuia, key });
+      }));
+      if (!candidatas.length) return;
+      let idx = 0;
+      const worker = async () => {
+        while (idx < candidatas.length) {
+          const c = candidatas[idx++];
+          try {
+            const r = await API.get('getOperacionDetalle', { fuente: c.fuente, idGuia: c.idGuia });
+            const lineas = (r && (r.data ? r.data.lineas : r.lineas)) || [];
+            S._opsDetCache[c.key] = { lineas, ts: Date.now() };
+            // Re-pintar SOLO si el voucher está expandido visible
+            if (S._opsExpanded[c.key]) {
+              try { almRenderOps(); } catch {}
+            }
+            // Re-pintar preview si tiene 0 líneas en la op actual
+            const op = _findOpByKey(c.key);
+            if (op && (!op.lineas || !op.lineas.length)) {
+              op.lineas = lineas;
+              op.lineasCount = lineas.length;
+              if (!op.montoTotal) op.montoTotal = lineas.reduce((s,l)=>s+(l.subtotal||0),0);
+            }
+          } catch(_){}
+        }
+      };
+      // 4 workers paralelos
+      worker(); worker(); worker(); worker();
+    } catch(_){}
+  }
+
+  function _findOpByKey(key) {
+    const data = (S._opsData && (S._opsData.data || S._opsData)) || {};
+    for (const d of (data.porDia || [])) {
+      for (const op of (d.operaciones || [])) {
+        if ((op.fuente + '_' + op.idGuia) === key) return op;
+      }
+    }
+    return null;
   }
 
   function _opsShowLoadingBanner() {
