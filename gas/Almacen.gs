@@ -1368,6 +1368,103 @@ function aplicarPreciosVentaSugeridos(params) {
 }
 
 // Detalle de una operación específica (líneas/items)
+// ============================================================
+// getOperacionesConDetalle — versión enriquecida (v41.11)
+// ============================================================
+// Devuelve ops + lineas inline en UNA sola respuesta.
+// Antes el frontend hacía 1 fetch de ops + N fetches de detalle (uno
+// por click expandir). Con muchas ops esto era 50+ requests lentos.
+// Ahora 1 lectura de GUIA_DETALLE (WH) + 1 de GUIAS_DETALLE (ME) +
+// indexación por idGuia → ops llegan con sus líneas pegadas.
+function getOperacionesConDetalle(params) {
+  var dias = parseInt(params && params.dias) || 7;
+  return _almCached('opsConDet' + dias, 60, params, function() {
+    var base = _getOperacionesUnificadasImpl(dias);
+    if (!base.ok || !base.data) return base;
+
+    try {
+      var prodLookup = _buildProdLookup();
+
+      // ── 1. WH: una sola lectura, agrupado por idGuia ──
+      var lineasWH = {};
+      try {
+        var whSheet = _abrirWhSheet('GUIA_DETALLE');
+        if (whSheet) {
+          var allDet = _sheetToObjects(whSheet);
+          allDet.forEach(function(l) {
+            var id = String(l.idGuia || '');
+            if (!id) return;
+            var p = prodLookup[l.codigoProducto] || {};
+            var esEquiv = p.idProducto && p.idProducto !== l.codigoProducto && p.codigoBarra !== l.codigoProducto;
+            var cant = parseFloat(l.cantidadRecibida || l.cantidad) || parseFloat(l.cantidadEsperada) || 0;
+            var precio = parseFloat(l.precioUnitario) || 0;
+            (lineasWH[id] = lineasWH[id] || []).push({
+              idDetalle:       l.idDetalle || '',
+              codigoProducto:  l.codigoProducto,
+              codigoBarra:     l.codigoProducto,
+              descripcion:     p.descripcion || ('⚠ ' + l.codigoProducto + ' (no en catálogo)'),
+              esEquivalencia:  esEquiv,
+              cantidad:        cant,
+              precioUnitario:  precio,
+              subtotal:        cant * precio,
+              fechaVencimiento: l.fechaVencimiento || ''
+            });
+          });
+        }
+      } catch(_){}
+
+      // ── 2. ME: una sola lectura, agrupado por idGuia ──
+      var lineasME = {};
+      try {
+        var ssMe = SpreadsheetApp.openById(_getProp('ME_SS_ID'));
+        var shGD = ssMe.getSheetByName('GUIAS_DETALLE');
+        if (shGD) {
+          var data = shGD.getDataRange().getValues();
+          for (var i = 1; i < data.length; i++) {
+            var id = String(data[i][0] || '');
+            if (!id) continue;
+            var cb = String(data[i][1] || '').trim();
+            var p = prodLookup[cb] || {};
+            var esEquivME = p.idProducto && p.codigoBarra !== cb;
+            var cantME = parseFloat(data[i][2]) || 0;
+            var precioME = parseFloat(p.precioVenta) || 0;
+            (lineasME[id] = lineasME[id] || []).push({
+              codigoBarra:    cb,
+              descripcion:    p.descripcion || ('⚠ ' + cb + ' (no en catálogo)'),
+              esEquivalencia: esEquivME,
+              cantidad:       cantME,
+              precioUnitario: precioME,
+              subtotal:       cantME * precioME
+            });
+          }
+        }
+      } catch(_){}
+
+      // ── 3. Embeber lineas en cada op (excepto preingresos: no tienen) ──
+      (base.data.porDia || []).forEach(function(dia) {
+        (dia.operaciones || []).forEach(function(op) {
+          if (op.esPreingreso) { op.lineas = []; op.lineasCount = 0; return; }
+          var src = (op.fuente === 'WH') ? lineasWH : lineasME;
+          var ls = src[String(op.idGuia)] || [];
+          op.lineas = ls;
+          op.lineasCount = ls.length;
+          // Recalcular monto total si la op no traía monto y hay subtotales
+          if (!op.montoTotal) {
+            op.montoTotal = ls.reduce(function(s, l){ return s + (l.subtotal || 0); }, 0);
+          }
+        });
+      });
+
+      base.data._conDetalle = true;
+      return base;
+    } catch(e) {
+      // Si algo falla, devolver al menos las ops sin líneas (degradación gradual)
+      base.data._detError = e.message;
+      return base;
+    }
+  });
+}
+
 function getOperacionDetalle(params) {
   if (!params || !params.fuente || !params.idGuia) {
     return { ok: false, error: 'Requiere fuente y idGuia' };

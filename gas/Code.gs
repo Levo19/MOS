@@ -58,6 +58,7 @@ function _route(method, e) {
       case 'getStockUnificado':      return getStockUnificado(params);
       case 'getGuiasYPreingresos':   return getGuiasYPreingresos(params);
       case 'getOperacionesUnificadas': return getOperacionesUnificadas(params);
+      case 'getOperacionesConDetalle': return getOperacionesConDetalle(params);
       case 'getOperacionDetalle':    return getOperacionDetalle(params);
       case 'llenarCostosGuia':       return llenarCostosGuia(params);
       case 'aplicarPreciosVentaSugeridos': return aplicarPreciosVentaSugeridos(params);

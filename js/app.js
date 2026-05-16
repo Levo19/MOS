@@ -4110,10 +4110,16 @@ const MOS = (() => {
           if (r) { S._almGuiasYPre = r; _almSaveCache('guiasYPre', r);
             try { _almPintarGuiasYPre(r); } catch {} }
         }).catch(() => {}),
-        // Operaciones — feed unificado
-        API.get('getOperacionesUnificadas', { dias: 7 }).then(r => {
-          if (r) { S._opsData = r; _almSaveCache('opsData', r);
-            try { almRenderOps(); } catch {} }
+        // [v41.11] Operaciones — feed enriquecido con líneas precargadas.
+        // Al entrar al módulo Almacén, este fetch trae ops + líneas en 1 request
+        // → cuando el user abra la pestaña Operaciones ya está todo en cache,
+        // el expandir voucher es instantáneo (0 delay).
+        API.get('getOperacionesConDetalle', { dias: 7 }).then(r => {
+          if (r) {
+            S._opsData = r; _almSaveCache('opsData', r);
+            _opsPopulateDetCacheFromData(r);
+            try { almRenderOps(); } catch {}
+          }
         }).catch(() => {}),
         // Resumen — insights / sugerencias
         API.get('getInsightsStock', { dias: 30 }).then(r => {
@@ -4295,44 +4301,105 @@ const MOS = (() => {
   }
 
   // ── ALMACÉN: OPERACIONES UNIFICADAS (WH + zonas) por día ──
-  S._opsData = S._opsData || null;
+  // [v41.11] Refactor: usa getOperacionesConDetalle que trae líneas inline.
+  // Frontend popula _opsDetCache con esas líneas → 0 delay al expandir.
+  // Vista vouchers de papel con sellos rotados, perforación zigzag, sonidos.
+  S._opsData     = S._opsData || null;
   S._opsExpanded = S._opsExpanded || {};
   S._opsDetCache = S._opsDetCache || {};
+  S._opsRangoDias = S._opsRangoDias || 7;
+  S._opsIdsVistos = S._opsIdsVistos || new Set();
 
   async function almLoadOps(forceRefresh) {
-    // 1. Pintar inmediato desde cache local (si existe)
+    // Pintar inmediato desde cache local
     if (S._opsData) { try { almRenderOps(); } catch {} }
-    if (S._almGuiasYPre) { try { _almPintarGuiasYPre(S._almGuiasYPre); } catch {} }
-    // 2. Fetch fresco
-    const dias = parseInt($('almGuiasFiltro')?.value) || 7;
+    const dias = S._opsRangoDias;
     const params = { dias };
     if (forceRefresh) params._refresh = 'true';
     try {
-      const [opsRes, gpRes] = await Promise.allSettled([
-        API.get('getOperacionesUnificadas', params),
-        API.get('getGuiasYPreingresos', params)
-      ]);
-      // Resumen del día (KPIs) + badge de preingresos pendientes
-      if (gpRes.status === 'fulfilled') {
-        S._almGuiasYPre = gpRes.value || {};
-        _almSaveCache('guiasYPre', S._almGuiasYPre);
-        _almPintarGuiasYPre(S._almGuiasYPre);
-      }
-      // Operaciones unificadas
-      if (opsRes.status === 'fulfilled') {
-        S._opsData = opsRes.value || {};
+      // [v41.11] Endpoint nuevo: ops + líneas en 1 request
+      const opsRes = await API.get('getOperacionesConDetalle', params);
+      if (opsRes) {
+        S._opsData = opsRes;
         _almSaveCache('opsData', S._opsData);
+        // Poblar cache de detalles con las líneas ya precargadas
+        _opsPopulateDetCacheFromData(S._opsData);
+        // Detectar IDs nuevos para sonido + animación
+        const idsActuales = new Set();
+        ((S._opsData.porDia) || []).forEach(d => (d.operaciones || []).forEach(op => {
+          idsActuales.add((op.fuente || '') + '_' + (op.idGuia || ''));
+        }));
+        const esPrimerCarga = S._opsIdsVistos.size === 0;
+        const idsNuevos = [];
+        idsActuales.forEach(id => { if (!S._opsIdsVistos.has(id)) idsNuevos.push(id); });
+        S._opsIdsVistos = idsActuales;
         almRenderOps();
-        // 🚀 Prefetch silencioso del detalle de guías de ingreso con foto
-        // → el modal 💰 abre instantáneo.
-        _prefetchCostosGuias();
+        // Ping suave si llegó una op nueva en background (no primera carga)
+        if (!esPrimerCarga && idsNuevos.length > 0) {
+          _opsBeep('ping');
+        }
       } else if (!S._opsData) {
         const lst = $('almOpsList');
-        if (lst) lst.innerHTML = '<div class="text-xs text-rose-400 py-3 text-center">Error cargando operaciones</div>';
+        if (lst) lst.innerHTML = '<div class="alm-ops-empty"><div class="alm-ops-empty-emoji">⚠</div>Error cargando operaciones</div>';
       }
     } catch(e) {
       console.warn('[almLoadOps] error:', e);
     }
+  }
+
+  // Llena S._opsDetCache con las líneas que ya vienen embebidas en cada op
+  function _opsPopulateDetCacheFromData(data) {
+    if (!data) return;
+    const ops = data.data || data;  // soporta wrapper {ok,data} o plano
+    ((ops.porDia) || []).forEach(d => {
+      (d.operaciones || []).forEach(op => {
+        if (op.lineas && Array.isArray(op.lineas)) {
+          const key = op.fuente + '_' + op.idGuia;
+          S._opsDetCache[key] = { lineas: op.lineas, ts: Date.now() };
+        }
+      });
+    });
+  }
+
+  // Cambiar rango (chip Hoy/7d/30d)
+  function almSetRangoOps(dias) {
+    S._opsRangoDias = dias;
+    document.querySelectorAll('#almOpsRangoChips .alm-rango-chip').forEach(c => {
+      c.classList.toggle('active', parseInt(c.dataset.d) === dias);
+    });
+    almLoadOps(true);
+  }
+
+  // Helper de sonido — WebAudio para clicks/pings sin assets
+  let _opsAudioCtx = null;
+  function _opsBeep(tipo) {
+    try {
+      if (!_opsAudioCtx) _opsAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = _opsAudioCtx;
+      const now = ctx.currentTime;
+      if (tipo === 'tac') {
+        // Click corto seco — al expandir voucher
+        const osc = ctx.createOscillator(), gain = ctx.createGain();
+        osc.type = 'square'; osc.frequency.setValueAtTime(900, now);
+        osc.frequency.exponentialRampToValueAtTime(400, now + 0.04);
+        gain.gain.setValueAtTime(0.08, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(now); osc.stop(now + 0.07);
+      } else if (tipo === 'ping') {
+        // 2 notas ascendentes — nueva operación
+        [880, 1320].forEach((f, i) => {
+          const o = ctx.createOscillator(), g = ctx.createGain();
+          const t0 = now + i * 0.09;
+          o.type = 'sine'; o.frequency.setValueAtTime(f, t0);
+          g.gain.setValueAtTime(0.0001, t0);
+          g.gain.exponentialRampToValueAtTime(0.15, t0 + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.32);
+          o.connect(g).connect(ctx.destination);
+          o.start(t0); o.stop(t0 + 0.35);
+        });
+      }
+    } catch(_){}
   }
 
   // Cache de detalle de guías precargado (key: fuente+'_'+idGuia).
@@ -4396,63 +4463,207 @@ const MOS = (() => {
   function almRenderOps() {
     const list = $('almOpsList');
     if (!list) return;
-    const data = S._opsData || {};
+    const raw = S._opsData || {};
+    // Soporta wrapper {ok, data: {porDia}} o plano {porDia}
+    const data = raw.data || raw;
     const dias = data.porDia || [];
-    const debugInfo = data._debug;
-    // Sección debug colapsable al final
-    const debugHtml = debugInfo ? `
-      <details class="mt-3 text-[10px] text-slate-600">
-        <summary class="cursor-pointer hover:text-slate-400">🔍 Debug fechas (verifica timezone)</summary>
-        <div class="mt-1 p-2 rounded font-mono whitespace-pre-wrap" style="background:#060d1f;border:1px solid #1e293b">
-          <div>Server TZ: <span class="text-emerald-300">${debugInfo.timezone}</span></div>
-          <div>Server now: ${debugInfo.nowLocal} (${debugInfo.nowIso})</div>
-          <div class="mt-1 text-slate-500">Últimas 3 fechas WH parseadas:</div>
-          ${(debugInfo.primerasFechasWh || []).map(f =>
-            `· raw="${f.raw}" → ${f.local} (${f.parsed})`
-          ).join('<br>')}
-        </div>
-      </details>` : '';
+    const sub = $('almOpsHeaderSub');
+    const totalOps = dias.reduce((s, d) => s + (d.operaciones || []).length, 0);
+    const totalMonto = dias.reduce((s, d) => s + (d.totalMonto || 0), 0);
+    if (sub) {
+      sub.textContent = totalOps
+        ? `${totalOps} operación${totalOps === 1 ? '' : 'es'} · S/ ${totalMonto.toLocaleString('es-PE', { maximumFractionDigits: 0 })}`
+        : 'Sin operaciones en el rango';
+    }
     if (!dias.length) {
-      list.innerHTML = '<div class="text-xs text-slate-600 italic py-3 text-center">Sin operaciones en el rango</div>' + debugHtml;
+      list.innerHTML = `
+        <div class="alm-ops-empty">
+          <div class="alm-ops-empty-emoji">📭</div>
+          <div>Sin operaciones en el rango seleccionado</div>
+        </div>`;
       return;
     }
-    const filtroFuente = $('almOpsFiltroFuente')?.value || '';
     list.innerHTML = dias.map(dia => {
-      const ops = dia.operaciones.filter(op => !filtroFuente || op.fuente === filtroFuente);
+      const ops = dia.operaciones || [];
       if (!ops.length) return '';
-      // Sub-agrupar por fuente: WH vs zonas (con sus canon)
+      // Sub-agrupar por fuente: WH primero, después zonas
       const byFuente = { WH: [], zonas: {} };
       ops.forEach(op => {
         if (op.fuente === 'WH') byFuente.WH.push(op);
         else {
-          const zk = op.idZonaCanonId || 'sin-zona';
-          if (!byFuente.zonas[zk]) byFuente.zonas[zk] = { nombre: op.idZonaCanonNom || op.idZona || 'Sin zona', ops: [] };
+          const zk = op.idZonaCanonId || op.idZona || 'sin-zona';
+          if (!byFuente.zonas[zk]) byFuente.zonas[zk] = {
+            nombre: op.idZonaCanonNom || op.idZona || 'Sin zona', ops: []
+          };
           byFuente.zonas[zk].ops.push(op);
         }
       });
       const fechaDisp = _formatFechaCorta(dia.fecha);
-      const headerHtml = `<div class="flex items-center justify-between mb-2 sticky top-0 z-5" style="background:#0a1428;padding:6px 0">
-          <div class="text-sm font-semibold text-slate-200">📅 ${fechaDisp}</div>
-          <div class="text-xs text-slate-500">${ops.length} ops${dia.totalMonto > 0 ? ' · S/ ' + dia.totalMonto.toLocaleString('es-PE', { maximumFractionDigits: 0 }) : ''}</div>
+      const headerHtml = `<div class="alm-ops-dia">
+          <div>📅 ${fechaDisp}</div>
+          <div class="alm-ops-dia-stats">${ops.length} ops${dia.totalMonto > 0 ? ' · S/ ' + dia.totalMonto.toLocaleString('es-PE', { maximumFractionDigits: 0 }) : ''}</div>
         </div>`;
       let secciones = '';
-      // Sección WH
       if (byFuente.WH.length) {
-        secciones += `<div class="mb-3">
-          <div class="text-[11px] font-semibold text-blue-400 uppercase mb-1.5 ml-2">🏭 Almacén central (${byFuente.WH.length})</div>
-          <div class="space-y-1.5">${byFuente.WH.map(_renderOpCard).join('')}</div>
+        secciones += `<div class="alm-ops-grupo-zona">
+          <div class="alm-ops-zona-head is-wh">🏭 Almacén central · ${byFuente.WH.length}</div>
+          ${byFuente.WH.map((op, i) => _renderVoucher(op, i)).join('')}
         </div>`;
       }
-      // Sección zonas
       Object.keys(byFuente.zonas).forEach(zk => {
         const z = byFuente.zonas[zk];
-        secciones += `<div class="mb-3">
-          <div class="text-[11px] font-semibold text-emerald-400 uppercase mb-1.5 ml-2">🏪 ${z.nombre} (${z.ops.length})</div>
-          <div class="space-y-1.5">${z.ops.map(_renderOpCard).join('')}</div>
+        secciones += `<div class="alm-ops-grupo-zona">
+          <div class="alm-ops-zona-head is-zona">🏪 ${_escapeHtml(z.nombre)} · ${z.ops.length}</div>
+          ${z.ops.map((op, i) => _renderVoucher(op, i)).join('')}
         </div>`;
       });
-      return `<div class="mb-4">${headerHtml}${secciones}</div>`;
-    }).join('') + debugHtml;
+      return `<div>${headerHtml}${secciones}</div>`;
+    }).join('');
+  }
+
+  // Render de un voucher individual (estilo recibo de papel)
+  function _renderVoucher(op, idxAnim) {
+    const tipo = String(op.tipo || '').toUpperCase();
+    let tipoLabel, tipoEmoji, variantClass, selloTxt, selloClass;
+    if (op.esPreingreso) {
+      tipoLabel = 'PREINGRESO'; tipoEmoji = '⏳';
+      variantClass = 'alm-voucher-preing';
+      selloTxt = 'PENDIENTE'; selloClass = 'alm-v-sello-pendiente';
+    } else if (tipo === 'INGRESO_PROVEEDOR' || tipo.indexOf('INGRESO') >= 0) {
+      tipoLabel = tipo === 'INGRESO_PROVEEDOR' ? 'INGRESO PROVEEDOR' : 'INGRESO';
+      tipoEmoji = '🟢';
+      variantClass = 'alm-voucher-ingreso';
+      selloTxt = 'INGRESADO'; selloClass = 'alm-v-sello-ingresado';
+    } else if (tipo.indexOf('SALIDA_VENTAS') >= 0 || tipo === 'SALIDA_VENTAS') {
+      tipoLabel = 'VENTAS'; tipoEmoji = '🛒';
+      variantClass = 'alm-voucher-venta';
+      selloTxt = 'VENDIDO'; selloClass = 'alm-v-sello-venta';
+    } else if (tipo.indexOf('SALIDA_ZONA') >= 0 || tipo.indexOf('DESPACHO') >= 0) {
+      tipoLabel = 'DESPACHO'; tipoEmoji = '📦';
+      variantClass = 'alm-voucher-despacho';
+      selloTxt = 'DESPACHADO'; selloClass = 'alm-v-sello-despachado';
+    } else if (tipo.indexOf('ENVASADO') >= 0) {
+      tipoLabel = 'ENVASADO'; tipoEmoji = '🏷️';
+      variantClass = 'alm-voucher-envasado';
+      selloTxt = 'ENVASADO'; selloClass = 'alm-v-sello-envasado';
+    } else if (tipo.indexOf('TRASLADO') >= 0) {
+      tipoLabel = 'TRASLADO'; tipoEmoji = '🔄';
+      variantClass = 'alm-voucher-traslado';
+      selloTxt = 'TRASLADADO'; selloClass = 'alm-v-sello-ingresado';
+    } else {
+      tipoLabel = tipo; tipoEmoji = '📋';
+      variantClass = '';
+      selloTxt = ''; selloClass = '';
+    }
+    const estadoUp = String(op.estado || '').toUpperCase();
+    if (estadoUp === 'ANULADO' || estadoUp === 'ANULADA') {
+      selloTxt = 'ANULADO'; selloClass = 'alm-v-sello-anulado';
+    }
+    const expandKey = op.fuente + '_' + op.idGuia + (op.esPreingreso ? '_PRE' : '');
+    const expanded = !!S._opsExpanded[expandKey];
+
+    const horaStr = (function(){
+      try { return new Date(op.fecha).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }); }
+      catch(_){ return ''; }
+    })();
+    const userStr = op.usuario ? _escapeHtml(op.usuario) : '';
+    const provStr = op.nombreProveedor || op.idProveedor || '';
+    const monto = op.montoTotal > 0 ? `S/ ${op.montoTotal.toLocaleString('es-PE', { maximumFractionDigits: 2 })}` : '';
+
+    // Botón 💰 Llenar costos para guías INGRESO_PROVEEDOR con foto
+    const esIngreso = op.fuente === 'WH' && tipo.indexOf('INGRESO') >= 0 && !op.esPreingreso;
+    const tieneFoto = !!(op.foto && String(op.foto).trim());
+    const btnCostos = (esIngreso && tieneFoto)
+      ? `<button class="alm-v-btn-costos" onclick="event.stopPropagation();MOS.abrirCostosGuia('${_escapeHtml(op.idGuia)}', '${op.fuente}')" title="Llenar costos desde foto">💰 Costos</button>`
+      : '';
+
+    // Preview de líneas (máx 3) — siempre visible
+    const lineas = op.lineas || [];
+    const previewHtml = lineas.length ? `
+      <hr class="alm-v-sep">
+      <div class="alm-v-lineas">
+        ${lineas.slice(0, 3).map(l => {
+          const desc = _escapeHtml(String(l.descripcion || l.codigoProducto || l.codigoBarra || '').substring(0, 28));
+          return `<div class="alm-v-linea">
+            <span class="alm-v-linea-cant">${l.cantidad}u</span>
+            <span class="alm-v-linea-desc">${desc}</span>
+            ${l.subtotal > 0 ? `<span class="alm-v-linea-sub">S/ ${l.subtotal.toFixed(2)}</span>` : ''}
+          </div>`;
+        }).join('')}
+        ${lineas.length > 3 ? `<div class="alm-v-mas">+${lineas.length - 3} línea${lineas.length - 3 === 1 ? '' : 's'} más…</div>` : ''}
+      </div>` : (op.esPreingreso ? '<hr class="alm-v-sep"><div class="alm-v-mas">Preingreso sin líneas hasta aprobación</div>' : '');
+
+    // Detalle completo (en el bloque expandible)
+    const detalleHtml = expanded ? _renderVoucherDetalleCompleto(op) : '';
+
+    return `<div class="alm-voucher ${variantClass} ${expanded ? 'is-expanded' : ''}"
+                 id="opVouch_${expandKey}"
+                 style="animation-delay: ${Math.min(idxAnim, 8) * 40}ms"
+                 onclick="MOS.almToggleOpExpand('${op.fuente}','${_escapeHtml(op.idGuia)}', ${op.esPreingreso ? 'true' : 'false'})">
+      ${selloTxt ? `<span class="alm-v-sello ${selloClass}">${selloTxt}</span>` : ''}
+      <div class="alm-v-head">
+        <div class="alm-v-tipo">
+          <span class="alm-v-tipo-emoji">${tipoEmoji}</span>
+          <span>${tipoLabel}</span>
+        </div>
+        <div class="alm-v-meta">
+          <div class="alm-v-id">#${_escapeHtml(op.idGuia)}</div>
+          <div>${horaStr}${userStr ? ' · ' + userStr : ''}</div>
+          ${provStr ? `<div>${_escapeHtml(provStr)}</div>` : ''}
+        </div>
+      </div>
+      ${op.comentario ? `<div class="text-[11px] italic" style="color:#6b4423">${_escapeHtml(op.comentario)}</div>` : ''}
+      ${previewHtml}
+      <div class="alm-v-footer">
+        <div class="alm-v-total">${monto}</div>
+        <div class="alm-v-acciones">
+          ${btnCostos}
+          <span class="alm-v-chevron">▾</span>
+        </div>
+      </div>
+      <div class="alm-v-detalle" id="opDet_${expandKey}">
+        <div class="alm-v-detalle-inner">${detalleHtml}</div>
+      </div>
+    </div>`;
+  }
+
+  // Detalle completo (todas las líneas con stagger animation)
+  function _renderVoucherDetalleCompleto(op) {
+    if (op.esPreingreso) {
+      return `<div class="text-[11px]" style="color:#3f2a14">
+        <div>📋 Preingreso pendiente de aprobación</div>
+        ${op.idProveedor ? `<div style="color:#6b4423"><b>Proveedor:</b> ${_escapeHtml(op.idProveedor)}</div>` : ''}
+        ${op.usuario ? `<div style="color:#6b4423"><b>Usuario:</b> ${_escapeHtml(op.usuario)}</div>` : ''}
+        ${op.idGuiaGenerada ? `<div style="color:#6b4423"><b>Guía generada:</b> <span class="font-mono" style="color:#047857">${_escapeHtml(op.idGuiaGenerada)}</span></div>` : ''}
+      </div>`;
+    }
+    const key = op.fuente + '_' + op.idGuia;
+    const cached = S._opsDetCache[key];
+    if (!cached || !cached.lineas) {
+      // Cache vacío (fallback raro: backend no devolvió líneas embebidas) → fetch on-demand
+      _fetchOpDetalle(op.fuente, op.idGuia);
+      return '<div style="font-size:11px;color:#78350f;font-style:italic">Cargando líneas…</div>';
+    }
+    const lineas = cached.lineas;
+    if (!lineas.length) return '<div style="font-size:11px;color:#78350f;font-style:italic">Sin líneas registradas</div>';
+    return lineas.map((l, i) => {
+      const desc = _escapeHtml(String(l.descripcion || l.codigoProducto || l.codigoBarra || ''));
+      const cod = _escapeHtml(String(l.codigoBarra || l.codigoProducto || ''));
+      const equivBadge = l.esEquivalencia ? '<span class="alm-v-equiv-badge">EQUIV</span>' : '';
+      return `<div class="alm-v-linea-full" style="animation-delay: ${Math.min(i, 12) * 35}ms">
+        <span class="alm-v-linea-full-cant">${l.cantidad}u</span>
+        <div class="alm-v-linea-full-desc">
+          ${desc}${equivBadge}
+          <div class="alm-v-linea-full-desc-cod">▌ ${cod}${l.fechaVencimiento ? ' · venc ' + fmtDate(l.fechaVencimiento) : ''}</div>
+        </div>
+        <span class="alm-v-linea-full-sub">${l.subtotal > 0 ? 'S/ ' + l.subtotal.toFixed(2) : '—'}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // Helper escape HTML (si no existe ya, lo defino tolerante)
+  function _escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
   function _renderOpCard(op) {
@@ -4573,6 +4784,7 @@ const MOS = (() => {
   function almToggleOpExpand(fuente, idGuia, esPreingreso) {
     const key = fuente + '_' + idGuia + (esPreingreso ? '_PRE' : '');
     S._opsExpanded[key] = !S._opsExpanded[key];
+    _opsBeep('tac');
     almRenderOps();
   }
 
@@ -24927,7 +25139,7 @@ const MOS = (() => {
     abrirModalPrecio, publicarPrecio,
     setAlmTab,
     almLoadResumen, almRefreshResumen, almFiltrarStock, almRefreshCatalogo, almToggleStockExpand,
-    almLoadOps, almRefreshOps, almRenderOps, almToggleOpExpand,
+    almLoadOps, almRefreshOps, almRenderOps, almToggleOpExpand, almSetRangoOps,
     abrirCostosGuia, _costosGuiaUpdLinea, _costosGuiaSetMode, _costosGuiaSetIgv, cerrarCostosGuia, guardarCostosGuia,
     _impactoTogglesel, _impactoSetPrecio, cerrarImpactoCostos, aplicarSugerenciasSeleccionadas,
     almLoadZonas, almRefreshZonas, almAbrirStockDetalle, cerrarStockDetalle, almRefreshStockDetalle,
