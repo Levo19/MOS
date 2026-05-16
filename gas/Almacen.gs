@@ -901,11 +901,36 @@ function _getOperacionesUnificadasImpl(dias) {
       return isNaN(d2.getTime()) ? null : d2;
     }
 
-    // 1. WH GUIAS
+    // 1. WH GUIAS — [v41.22] Anidar datos del preingreso vinculado para que
+    // el voucher en Operaciones MOS muestre el preingreso original como
+    // anexo (fotos, comentario, tags, cargadores con estados de carreta).
     var whGuias = _safeReadWhGuias();
+    // Indexar preingresos por id UNA vez para evitar O(n*m)
+    var allPre = _safeReadWhPreingresos();
+    var preMap = {};
+    allPre.forEach(function(p) { if (p.idPreingreso) preMap[String(p.idPreingreso)] = p; });
+
     whGuias.forEach(function(g) {
       var fecha = _parseFecha(g.fecha);
       if (!fecha || fecha < desde) return;
+
+      // Anidar preingreso si esta guía nace de uno
+      var anexoPre = null;
+      if (g.idPreingreso && preMap[String(g.idPreingreso)]) {
+        var pi = preMap[String(g.idPreingreso)];
+        var fechaPi = _parseFecha(pi.fecha);
+        anexoPre = {
+          idPreingreso: pi.idPreingreso || '',
+          monto:        parseFloat(pi.monto) || 0,
+          comentario:   pi.comentario || '',
+          fotos:        pi.fotos || '',
+          cargadores:   pi.cargadores || '',
+          usuario:      pi.usuario || '',
+          estado:       pi.estado || '',
+          fecha:        fechaPi ? fechaPi.toISOString() : ''
+        };
+      }
+
       operaciones.push({
         fuente:           'WH',
         fuenteLabel:      'Almacén central',
@@ -923,13 +948,15 @@ function _getOperacionesUnificadasImpl(dias) {
         montoTotal:       parseFloat(g.montoTotal) || 0,
         estado:           g.estado || '',
         idPreingreso:     g.idPreingreso || '',
+        preingreso:       anexoPre,
         foto:             g.foto || '',
         esPreingreso:     false
       });
     });
 
     // 2. WH PREINGRESOS — SOLO PENDIENTES (los PROCESADO ya están como guía en sección 1)
-    var preingresos = _safeReadWhPreingresos();
+    // Reusamos allPre cargado arriba para indexar preMap (evita doble lectura).
+    var preingresos = allPre;
     preingresos.forEach(function(p) {
       var estado = String(p.estado || '').toUpperCase();
       // Si tiene idGuia o está PROCESADO, ya aparece como guía → no duplicar

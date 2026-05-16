@@ -4830,7 +4830,14 @@ const MOS = (() => {
     // Detalle completo (en el bloque expandible, solo cuando overlay abierto)
     const detalleHtml = expanded ? _renderVoucherDetalleCompleto(op) : '';
 
-    return `<div class="alm-voucher ${variantClass} ${expanded ? 'is-expanded' : ''}"
+    // [v41.22] Si la guía tiene preingreso anexo, agregar clase para efecto papel doble
+    const tieneAnexo = !!op.preingreso;
+    const anexoCls   = tieneAnexo ? ' alm-voucher-con-anexo' : '';
+    const anexoChip  = tieneAnexo
+      ? `<span class="alm-v-chip-anexo" title="Esta guía tiene preingreso adjunto">📎 anexa preingreso</span>`
+      : '';
+
+    return `<div class="alm-voucher ${variantClass}${anexoCls} ${expanded ? 'is-expanded' : ''}"
                  id="opVouch_${expandKey}"
                  style="animation-delay: ${Math.min(idxAnim, 8) * 40}ms"
                  onclick="MOS.almToggleOpExpand('${op.fuente}','${_escapeHtml(op.idGuia)}', ${op.esPreingreso ? 'true' : 'false'})">
@@ -4839,6 +4846,7 @@ const MOS = (() => {
         <div class="alm-v-tipo">
           <span class="alm-v-tipo-emoji">${tipoEmoji}</span>
           <span>${tipoLabel}</span>
+          ${anexoChip}
         </div>
         <div class="alm-v-meta">
           <div class="alm-v-id">#${_escapeHtml(op.idGuia)}</div>
@@ -4886,8 +4894,8 @@ const MOS = (() => {
     if (!lineas.length) return '<div style="font-size:11px;color:#78350f;font-style:italic">Sin líneas registradas</div>';
 
     if (!modoCostos) {
-      // Modo LECTURA — render como estaba
-      return lineas.map((l, i) => {
+      // Modo LECTURA — render como estaba + [v41.22] anexo del preingreso vinculado
+      const lineasHtml = lineas.map((l, i) => {
         const desc = _escapeHtml(String(l.descripcion || l.codigoProducto || l.codigoBarra || ''));
         const cod = _escapeHtml(String(l.codigoBarra || l.codigoProducto || ''));
         const equivBadge = l.esEquivalencia ? '<span class="alm-v-equiv-badge">EQUIV</span>' : '';
@@ -4900,6 +4908,8 @@ const MOS = (() => {
           <span class="alm-v-linea-full-sub">${l.subtotal > 0 ? 'S/ ' + l.subtotal.toFixed(2) : '—'}</span>
         </div>`;
       }).join('');
+      const anexoHtml = op.preingreso ? _renderAnexoPreingreso(op.preingreso, op.montoTotal) : '';
+      return lineasHtml + anexoHtml;
     }
 
     // Modo COSTOS — editable + sugerencia inline
@@ -4969,6 +4979,98 @@ const MOS = (() => {
   // Helper escape HTML (si no existe ya, lo defino tolerante)
   function _escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // [v41.22] Parser de comentario WH (Comprobante: Sí|No · Completo: Sí|No · texto libre)
+  function _parseTagsPI(comentario) {
+    const s = String(comentario || '');
+    const tags = { comp: null, compl: null };
+    if (/comprobante:\s*sí/i.test(s))      tags.comp  = 'si';
+    else if (/comprobante:\s*no/i.test(s)) tags.comp  = 'no';
+    if (/completo:\s*sí/i.test(s))         tags.compl = 'si';
+    else if (/completo:\s*no/i.test(s))    tags.compl = 'no';
+    const libre = s
+      .replace(/Comprobante:\s*(Sí|No)\s*\|?\s*/gi, '')
+      .replace(/Completo:\s*(Sí|No)\s*\|?\s*/gi, '')
+      .replace(/^\s*\|\s*/, '').replace(/\s*\|\s*$/, '').trim();
+    return { tags, libre };
+  }
+
+  // [v41.22] Bloque anexo del preingreso — se enchufa al final del voucher
+  // expandido. Continúa el mismo estilo visual con una "perforación" arriba.
+  // Galería de fotos: click abre lightbox grande (abrirFotoOverlay).
+  function _renderAnexoPreingreso(p, montoGuia) {
+    if (!p) return '';
+    const idPre = _escapeHtml(p.idPreingreso || '');
+    const usr   = _escapeHtml(p.usuario || '');
+    let horaPi  = '';
+    try { horaPi = p.fecha ? new Date(p.fecha).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }) : ''; } catch(_){}
+
+    // Tags + texto libre
+    const parsed = _parseTagsPI(p.comentario);
+    const tagBadges = [];
+    if (parsed.tags.comp === 'si')  tagBadges.push('<span class="alm-v-anx-tag alm-v-anx-tag-ok">✓ Con comprobante</span>');
+    if (parsed.tags.comp === 'no')  tagBadges.push('<span class="alm-v-anx-tag alm-v-anx-tag-warn">⚠ Sin comprobante</span>');
+    if (parsed.tags.compl === 'si') tagBadges.push('<span class="alm-v-anx-tag alm-v-anx-tag-ok">✓ Completo</span>');
+    if (parsed.tags.compl === 'no') tagBadges.push('<span class="alm-v-anx-tag alm-v-anx-tag-warn">⚠ Incompleto</span>');
+
+    // Monto pactado vs guía
+    const montoPi = parseFloat(p.monto) || 0;
+    const delta = montoPi && montoGuia ? (montoGuia - montoPi) : 0;
+    const deltaHtml = (montoPi > 0 && Math.abs(delta) > 0.01)
+      ? `<span class="alm-v-anx-delta ${delta > 0 ? 'pos' : 'neg'}">${delta > 0 ? '+' : ''}${delta.toFixed(2)} vs pactado</span>`
+      : '';
+
+    // Fotos
+    const fotos = String(p.fotos || '').split(',').map(f => f.trim()).filter(Boolean);
+    const fotosHtml = fotos.length ? `
+      <div class="alm-v-anx-galeria">
+        ${fotos.map((u, i) => `
+          <button class="alm-v-anx-foto" onclick="event.stopPropagation();MOS.abrirFotoOverlay('${_escapeHtml(u)}')" title="Ver grande">
+            <img src="${_escapeHtml(u)}" alt="foto ${i+1}" loading="lazy"
+                 onerror="this.style.display='none';this.parentNode.classList.add('cj-foto-error')">
+            <span class="alm-v-anx-foto-num">${i+1}</span>
+          </button>`).join('')}
+      </div>` : '';
+
+    // Cargadores — leer JSON y mostrar nombre + estados de carreta como chips
+    let cargs = [];
+    try { cargs = JSON.parse(p.cargadores || '[]'); } catch(_) { cargs = []; }
+    const cargHtml = (Array.isArray(cargs) && cargs.length) ? `
+      <div class="alm-v-anx-cargs">
+        <div class="alm-v-anx-label">🛺 Cargadores</div>
+        ${cargs.map(c => {
+          const n = Math.max(1, parseInt(c.carretas) || 1);
+          let est = Array.isArray(c.estados) ? c.estados.slice(0, n) : [];
+          while (est.length < n) est.push('LLENA');
+          const chips = est.map(e => {
+            const cl = String(e || 'LLENA').toLowerCase();
+            const emo = e === 'MEDIA' ? '🟡' : (e === 'VACIA' ? '🔴' : '🟢');
+            return `<span class="alm-v-anx-chip alm-v-anx-chip-${cl}">${emo}</span>`;
+          }).join('');
+          return `<div class="alm-v-anx-carg">
+            <span class="alm-v-anx-carg-nom">${_escapeHtml(c.nombre || c.idPersonal || '')}</span>
+            <span class="alm-v-anx-carg-num">${n}c</span>
+            <span class="alm-v-anx-carg-chips">${chips}</span>
+          </div>`;
+        }).join('')}
+      </div>` : '';
+
+    return `
+      <div class="alm-v-perf" aria-hidden="true"></div>
+      <div class="alm-v-anexo">
+        <div class="alm-v-anx-head">
+          <span class="alm-v-anx-tipo">⏳ PREINGRESO</span>
+          <span class="alm-v-anx-id">#${idPre}</span>
+          <span class="alm-v-anx-sello">CUMPLIDO</span>
+        </div>
+        <div class="alm-v-anx-sub">${[horaPi, usr].filter(Boolean).join(' · ')}</div>
+        ${montoPi > 0 ? `<div class="alm-v-anx-monto">💰 Pactado: <b>S/ ${montoPi.toFixed(2)}</b> ${deltaHtml}</div>` : ''}
+        ${tagBadges.length ? `<div class="alm-v-anx-tags">${tagBadges.join('')}</div>` : ''}
+        ${fotosHtml}
+        ${parsed.libre ? `<div class="alm-v-anx-coment">💬 ${_escapeHtml(parsed.libre)}</div>` : ''}
+        ${cargHtml}
+      </div>`;
   }
 
   function _renderOpCard(op) {

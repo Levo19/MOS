@@ -2810,6 +2810,196 @@
         repeating-linear-gradient(180deg, transparent 0 23px, rgba(180,83,9,.07) 23px 24px),
         linear-gradient(180deg, #fff7d6 0%, #fceeb5 100%); }
 
+    /* [v41.22] Voucher con anexo de preingreso — efecto "papel doble" */
+    .alm-voucher-con-anexo {
+      box-shadow:
+        8px 8px 0 -2px #faecb0,
+        10px 10px 0 -4px rgba(245,158,11,.25),
+        0 6px 14px -4px rgba(0,0,0,.55),
+        inset 0 1px 0 rgba(255,255,255,.6);
+    }
+    .alm-voucher-con-anexo:hover {
+      box-shadow:
+        10px 10px 0 -2px #faecb0,
+        13px 13px 0 -4px rgba(245,158,11,.3),
+        0 16px 28px -6px rgba(0,0,0,.7),
+        inset 0 1px 0 rgba(255,255,255,.7);
+    }
+    .alm-v-chip-anexo {
+      display: inline-flex; align-items: center;
+      margin-left: 6px;
+      padding: 1px 7px;
+      background: rgba(245,158,11,.18);
+      border: 1px solid rgba(180,83,9,.35);
+      border-radius: 999px;
+      font-size: 9.5px; font-weight: 700;
+      color: #92400e; text-transform: none; letter-spacing: 0;
+    }
+
+    /* Perforación INTERNA — separa la sección guía de la sección anexo */
+    .alm-v-perf {
+      position: relative;
+      height: 10px;
+      margin: 14px -14px 12px;
+      background-image:
+        radial-gradient(circle at 5px 5px, transparent 4px, transparent 4.5px),
+        linear-gradient(to right, transparent, transparent);
+      border-top: 2px dashed rgba(120,53,15,.35);
+      border-bottom: 2px dashed rgba(120,53,15,.35);
+    }
+    .alm-v-perf::before, .alm-v-perf::after {
+      content: ''; position: absolute; top: 50%; width: 14px; height: 14px;
+      background: #1e293b; border-radius: 50%;
+      transform: translateY(-50%);
+    }
+    .alm-v-perf::before { left: -7px; }
+    .alm-v-perf::after  { right: -7px; }
+
+    /* Sección anexo dentro del voucher — variante ámbar suave */
+    .alm-v-anexo {
+      animation: almAnexoIn .35s ease-out backwards;
+      padding: 4px 2px 0;
+    }
+    @keyframes almAnexoIn {
+      0%   { opacity: 0; transform: translateY(-6px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+    .alm-v-anx-head {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 2px;
+    }
+    .alm-v-anx-tipo {
+      font-weight: 900; font-size: 12px; letter-spacing: .04em;
+      color: #78350f; text-transform: uppercase;
+    }
+    .alm-v-anx-id {
+      font-family: ui-monospace, Menlo, monospace;
+      font-size: 11px; font-weight: 700; color: #92400e;
+    }
+    .alm-v-anx-sello {
+      margin-left: auto;
+      padding: 2px 10px;
+      border: 2px double #94a3b8;
+      border-radius: 4px;
+      color: #64748b; font-size: 10px; font-weight: 900;
+      letter-spacing: .08em; text-transform: uppercase;
+      transform: rotate(-3deg);
+      background: rgba(148,163,184,.08);
+    }
+    .alm-v-anx-sub {
+      font-size: 10px; color: #6b4423; margin-bottom: 6px;
+    }
+    .alm-v-anx-monto {
+      font-size: 11.5px; color: #3f2a14; margin-bottom: 6px;
+    }
+    .alm-v-anx-monto b { color: #b45309; font-family: ui-monospace, monospace; }
+    .alm-v-anx-delta {
+      display: inline-block; margin-left: 6px;
+      padding: 1px 7px; border-radius: 999px;
+      font-size: 10px; font-weight: 800;
+      font-family: ui-monospace, monospace;
+    }
+    .alm-v-anx-delta.neg { background: rgba(239,68,68,.18); color: #b91c1c; border: 1px solid rgba(239,68,68,.4); }
+    .alm-v-anx-delta.pos { background: rgba(16,185,129,.18); color: #047857; border: 1px solid rgba(16,185,129,.4); }
+    .alm-v-anx-tags {
+      display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px;
+    }
+    .alm-v-anx-tag {
+      padding: 2px 8px; border-radius: 999px;
+      font-size: 10px; font-weight: 700;
+    }
+    .alm-v-anx-tag-ok   { background: rgba(16,185,129,.15); color: #047857; border: 1px solid rgba(16,185,129,.35); }
+    .alm-v-anx-tag-warn { background: rgba(245,158,11,.15); color: #92400e; border: 1px solid rgba(245,158,11,.4); }
+
+    /* Galería de fotos del proveedor — carrusel horizontal scroll */
+    .alm-v-anx-galeria {
+      display: flex; gap: 6px;
+      overflow-x: auto;
+      padding-bottom: 4px; margin-bottom: 8px;
+      scrollbar-width: thin;
+    }
+    .alm-v-anx-galeria::-webkit-scrollbar { height: 6px; }
+    .alm-v-anx-galeria::-webkit-scrollbar-thumb {
+      background: rgba(180,83,9,.4); border-radius: 3px;
+    }
+    .alm-v-anx-foto {
+      flex: 0 0 auto;
+      width: 84px; height: 84px;
+      border: 2px solid rgba(180,83,9,.3);
+      border-radius: 8px;
+      padding: 0; background: #fef9e7;
+      overflow: hidden; cursor: zoom-in;
+      position: relative;
+      transition: transform .15s, border-color .15s;
+    }
+    .alm-v-anx-foto:hover {
+      transform: scale(1.05);
+      border-color: #b45309;
+    }
+    .alm-v-anx-foto img {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .alm-v-anx-foto-num {
+      position: absolute; bottom: 2px; right: 4px;
+      background: rgba(0,0,0,.65); color: #fff;
+      font-size: 9px; font-weight: 700;
+      padding: 1px 5px; border-radius: 4px;
+    }
+    .alm-v-anx-foto.cj-foto-error {
+      background: repeating-linear-gradient(45deg, #fbbf24 0 8px, #f59e0b 8px 16px);
+    }
+
+    /* Comentario libre */
+    .alm-v-anx-coment {
+      padding: 6px 10px;
+      background: rgba(254,243,199,.6);
+      border-left: 3px solid #f59e0b;
+      border-radius: 4px;
+      font-size: 11px; font-style: italic;
+      color: #3f2a14;
+      margin-bottom: 8px;
+      line-height: 1.4;
+    }
+
+    /* Cargadores y carretas */
+    .alm-v-anx-cargs { margin-top: 6px; }
+    .alm-v-anx-label {
+      font-size: 10px; font-weight: 800; color: #78350f;
+      text-transform: uppercase; letter-spacing: .05em;
+      margin-bottom: 4px;
+    }
+    .alm-v-anx-carg {
+      display: flex; align-items: center; gap: 8px;
+      padding: 4px 6px;
+      background: rgba(254,243,199,.45);
+      border: 1px solid rgba(180,83,9,.15);
+      border-radius: 6px;
+      margin-bottom: 3px;
+    }
+    .alm-v-anx-carg-nom {
+      font-size: 11px; font-weight: 700; color: #3f2a14;
+      flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .alm-v-anx-carg-num {
+      font-size: 10px; font-weight: 700; color: #b45309;
+      font-family: ui-monospace, monospace;
+    }
+    .alm-v-anx-carg-chips { display: flex; gap: 2px; }
+    .alm-v-anx-chip {
+      width: 18px; height: 18px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 4px;
+      font-size: 11px;
+    }
+    .alm-v-anx-chip-llena { background: rgba(16,185,129,.18); }
+    .alm-v-anx-chip-media {
+      background: linear-gradient(to top,
+        rgba(16,185,129,.25) 0 50%, rgba(239,68,68,.25) 50% 100%);
+    }
+    .alm-v-anx-chip-vacia { background: rgba(239,68,68,.18); }
+
     /* Header del voucher */
     .alm-v-head {
       display: flex; justify-content: space-between; align-items: flex-start;
