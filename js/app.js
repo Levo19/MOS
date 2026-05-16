@@ -4042,8 +4042,32 @@ const MOS = (() => {
       const p = $('almPanel' + t.charAt(0).toUpperCase() + t.slice(1));
       if (p) p.classList.toggle('hidden', t !== tab);
     });
+    // [v41.24] Polling cada 60s solo cuando la pestaña env está activa
+    _envPollingControl(tab === 'env');
     if (!S.loaded['almacen']) { loadAlmacen(); return; }
     renderAlmTab(tab);
+  }
+
+  // [v41.24] Polling 60s pestaña envasados
+  S._envPollTimer = S._envPollTimer || null;
+  function _envPollingControl(activar) {
+    if (activar) {
+      if (S._envPollTimer) return;
+      S._envPollTimer = setInterval(async () => {
+        try {
+          if (S.almTab !== 'env') return;
+          const r = await API.get('getEnvasadosWarehouse', { limit: '500' });
+          const e = r || [];
+          if (JSON.stringify(e) !== JSON.stringify(S.envasados)) {
+            S.envasados = e;
+            _almSaveCache('envasados', e);
+            renderEnvTable();
+          }
+        } catch(_){}
+      }, 60000); // 60s
+    } else {
+      if (S._envPollTimer) { clearInterval(S._envPollTimer); S._envPollTimer = null; }
+    }
   }
 
   function renderAlmTab(tab) {
@@ -6775,21 +6799,25 @@ const MOS = (() => {
     renderEnvTable();
   }
 
+  // [v41.24] Estado tracking de IDs vistos para animar nuevos en polling
+  S._envIdsVistos = S._envIdsVistos || new Set();
+
   function renderEnvTable() {
     const cont = $('envList');
     const summaryEl = $('envSummary');
     if (!cont) return;
     if (!S.envasados.length) {
-      cont.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm">Sin envasados recientes</div>';
+      cont.innerHTML = '<div class="text-center py-12 text-slate-500 text-sm"><div class="text-4xl opacity-40 mb-2">🏷️</div>Sin envasados recientes</div>';
       if (summaryEl) summaryEl.textContent = '';
+      _envRenderKpis({uds:0, env:0, ops:0, efi:0});
       return;
     }
 
-    // Poblar selector de operadores (una vez por carga)
+    // Poblar selector de operadores
     const selOp = $('envFiltroOperador');
     if (selOp && selOp.options.length <= 1) {
       const opsSet = new Set();
-      S.envasados.forEach(e => { if (e.usuario) opsSet.add(e.usuario); });
+      S.envasados.forEach(e => { if (e.usuario && _envEsCompleto(e)) opsSet.add(e.usuario.trim()); });
       Array.from(opsSet).sort().forEach(u => {
         const opt = document.createElement('option');
         opt.value = u; opt.textContent = '👤 ' + u;
@@ -6797,7 +6825,8 @@ const MOS = (() => {
       });
     }
 
-    // Aplicar filtros (rango + operador)
+    // Filtros (rango + operador). NOTA: incluyo anulados acá para poder
+    // mostrarlos tachados, pero NO se cuentan en KPIs ni en totales.
     const { desde, hasta } = _envCalcularRango();
     const opFiltro = String(_envFiltros.operador || '').toLowerCase().trim();
     const filtrados = S.envasados.filter(e => {
@@ -6807,99 +6836,197 @@ const MOS = (() => {
       if (opFiltro && String(e.usuario || '').toLowerCase().trim() !== opFiltro) return false;
       return true;
     });
+    const completos = filtrados.filter(_envEsCompleto);
 
     if (!filtrados.length) {
-      cont.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm">Sin envasados en este rango</div>';
+      cont.innerHTML = '<div class="text-center py-12 text-slate-500 text-sm"><div class="text-4xl opacity-40 mb-2">📭</div>Sin envasados en este rango</div>';
       if (summaryEl) summaryEl.textContent = '0 envasados';
+      _envRenderKpis({uds:0, env:0, ops:0, efi:0});
       return;
     }
 
-    // Resumen
-    const totEnv = filtrados.length;
-    const totUds = filtrados.reduce((s, e) => s + (parseFloat(e.unidadesProducidas) || 0), 0);
+    // KPIs: solo COMPLETADOS
+    const totUds = completos.reduce((s, e) => s + (parseFloat(e.unidadesProducidas) || 0), 0);
+    const opsSet = new Set();
+    completos.forEach(e => { if (e.usuario) opsSet.add(e.usuario.trim()); });
+    const efPromedio = completos.length
+      ? completos.reduce((s, e) => s + (parseFloat(e.eficienciaPct) || 0), 0) / completos.length
+      : 0;
+    _envRenderKpis({uds: totUds, env: completos.length, ops: opsSet.size, efi: efPromedio});
     if (summaryEl) {
-      summaryEl.innerHTML = `${totEnv} envasado${totEnv === 1 ? '' : 's'} · <b class="text-slate-300">${totUds}</b> uds totales`;
+      const anulados = filtrados.length - completos.length;
+      summaryEl.innerHTML = `${completos.length} envasado${completos.length === 1 ? '' : 's'} completado${completos.length === 1 ? '' : 's'}`
+        + (anulados ? ` · <span class="text-rose-400">${anulados} anulado${anulados === 1 ? '' : 's'} (no cuentan)</span>` : '');
     }
 
-    // Agrupar según toggle (fecha u operador)
-    const porGrupo = {};
-    filtrados.forEach(e => {
-      const key = _envFiltros.agrupar === 'operador'
-        ? (e.usuario || '— sin operador')
-        : String(e.fecha || '').substring(0, 10);
-      if (!porGrupo[key]) porGrupo[key] = [];
-      porGrupo[key].push(e);
+    // [v41.24] Detectar nuevos para animar
+    const idsActuales = new Set(filtrados.map(e => e.idEnvasado));
+    const esPrimerRender = S._envIdsVistos.size === 0;
+    const nuevos = [];
+    idsActuales.forEach(id => { if (!S._envIdsVistos.has(id)) nuevos.push(id); });
+    S._envIdsVistos = idsActuales;
+
+    // Doble agrupación según vista: fecha→usuario o usuario→fecha
+    const esPorOp = _envFiltros.agrupar === 'operador';
+    const grupos = _envAgruparDoble(filtrados, esPorOp);
+    cont.innerHTML = grupos.map(g => _envRenderGrupo(g, esPorOp, nuevos)).join('');
+
+    // Beep + bounce si hay nuevos (no primer render)
+    if (!esPrimerRender && nuevos.length > 0) {
+      try { _opsBeep && _opsBeep('ping'); } catch(_){}
+    }
+  }
+
+  // ── Helpers v41.24 ──
+  function _envEsCompleto(e) {
+    return String(e.estado || '').toUpperCase() === 'COMPLETADO';
+  }
+
+  // Count-up animado en KPI numérico
+  function _envRenderKpis({uds, env, ops, efi}) {
+    _envCountUp('envKpiUds', uds);
+    _envCountUp('envKpiEnv', env);
+    _envCountUp('envKpiOps', ops);
+    const el = $('envKpiEfi');
+    if (el) el.textContent = efi > 0 ? Math.round(efi) + '%' : '—';
+  }
+  function _envCountUp(id, target) {
+    const el = $(id);
+    if (!el) return;
+    const from = parseInt(el.textContent.replace(/\D/g, ''), 10) || 0;
+    if (from === target) { el.textContent = target; return; }
+    const duration = 600, start = Date.now();
+    const tick = () => {
+      const p = Math.min(1, (Date.now() - start) / duration);
+      const ease = 1 - Math.pow(1 - p, 3);
+      const val = Math.round(from + (target - from) * ease);
+      el.textContent = val;
+      if (p < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+
+  // Agrupa por [primaria, secundaria]. Si esPorOp: usuario→fecha. Si no: fecha→usuario.
+  function _envAgruparDoble(items, esPorOp) {
+    const map = {};
+    items.forEach(e => {
+      const fecha = String(e.fecha || '').substring(0, 10);
+      const usuario = String(e.usuario || '— sin operador').trim();
+      const k1 = esPorOp ? usuario : fecha;
+      const k2 = esPorOp ? fecha : usuario;
+      if (!k1 || !k2) return;
+      if (!map[k1]) map[k1] = { key: k1, esPorOp, sub: {} };
+      if (!map[k1].sub[k2]) map[k1].sub[k2] = { key: k2, items: [] };
+      map[k1].sub[k2].items.push(e);
     });
-    // Sort: por fecha desc, por operador alfabético
-    const claves = Object.keys(porGrupo).sort((a, b) => {
-      if (_envFiltros.agrupar === 'operador') return a.localeCompare(b);
-      return b.localeCompare(a);
+    // Sort de grupos primarios
+    return Object.values(map).sort((a, b) => {
+      if (esPorOp) return a.key.localeCompare(b.key);
+      return b.key.localeCompare(a.key);
     });
+  }
 
-    cont.innerHTML = claves.map(diaKey => {
-      const items = porGrupo[diaKey];
-      const totDiaUds = items.reduce((s, e) => s + (parseFloat(e.unidadesProducidas) || 0), 0);
-      const efPromDia = items.length
-        ? items.reduce((s, e) => s + (parseFloat(e.eficienciaPct) || 0), 0) / items.length
-        : 0;
-      // Usuarios distintos del grupo (solo si agrupado por fecha)
-      const usuariosSet = new Set();
-      items.forEach(e => { if (e.usuario) usuariosSet.add(e.usuario); });
-      const usuariosDia = Array.from(usuariosSet).join(', ') || '—';
+  // Avatar: iniciales del usuario con color hash
+  function _envAvatarHTML(usuario) {
+    const iniciales = String(usuario || '?').split(/\s+/).map(p => (p[0] || '')).slice(0, 2).join('').toUpperCase() || '??';
+    const colores = ['#6366f1', '#22d3ee', '#10b981', '#f59e0b', '#ec4899', '#a855f7', '#0ea5e9', '#84cc16'];
+    let h = 0;
+    for (let i = 0; i < usuario.length; i++) h = (h * 31 + usuario.charCodeAt(i)) | 0;
+    const color = colores[Math.abs(h) % colores.length];
+    return `<div class="env-avatar" style="background:linear-gradient(135deg,${color},${color}88)">${iniciales}</div>`;
+  }
 
-      const itemsHtml = items
-        .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')))
-        .map(e => {
-          // Envasado: usar el producto EXACTO (no subir al canónico)
-          // — el código del envasado apunta a la PRESENTACIÓN específica
-          // (ej. WHAJARUM250GR), no al granel base.
-          const baseLbl = _labelProducto(e.codigoProductoBase, true);
-          const envLbl  = e.codigoProductoEnvasado
-            ? _labelProducto(e.codigoProductoEnvasado, true)
-            : '<span class="text-slate-600 italic">sin código envasado</span>';
-          const hora = String(e.fecha || '').substring(11, 16) || '';
-          const cantBase = parseFloat(e.cantidadBase) || 0;
-          const cantBaseTxt = cantBase > 0 ? `${cantBase} ${e.unidadBase || ''}` : '—';
-          const estadoBadge = e.estado === 'COMPLETADO'
-            ? ''  // estado completado = default, no mostrar badge para limpieza
-            : `<span class="badge badge-gray">${e.estado || '—'}</span>`;
+  // Render de un grupo primario
+  function _envRenderGrupo(g, esPorOp, nuevos) {
+    // Métricas del grupo primario (solo completos)
+    const completos = [];
+    const todos = [];
+    Object.values(g.sub).forEach(s => s.items.forEach(it => {
+      todos.push(it);
+      if (_envEsCompleto(it)) completos.push(it);
+    }));
+    const totUds = completos.reduce((s, e) => s + (parseFloat(e.unidadesProducidas) || 0), 0);
+    const totEnv = completos.length;
+    const titulo = esPorOp
+      ? `${_envAvatarHTML(g.key)}<div><div class="env-grupo-nombre">${_escapeHtml(g.key)}</div><div class="env-grupo-sub">operador</div></div>`
+      : `<div class="env-grupo-fecha-emoji">📅</div><div><div class="env-grupo-nombre">${_envFmtFechaLarga(g.key)}</div><div class="env-grupo-sub">${Object.keys(g.sub).length} operador${Object.keys(g.sub).length === 1 ? '' : 'es'}</div></div>`;
 
-          return `<div class="env-card-v2">
-            <div class="env-card-v2-row">
-              <div class="env-card-v2-out">
-                <div class="env-card-v2-out-name">${envLbl}</div>
-                <div class="env-card-v2-out-from">
-                  <span class="env-card-v2-from-lbl">desde</span> ${baseLbl} <span class="text-slate-500">· ${cantBaseTxt}</span>
-                </div>
-              </div>
-              <div class="env-card-v2-meta">
-                <div class="env-card-v2-uds">${e.unidadesProducidas || 0}<span class="env-card-v2-uds-lbl"> uds</span></div>
-                <div class="env-card-v2-foot">
-                  <span>${hora}</span>
-                  ${e.usuario ? `<span>·</span><span class="text-indigo-300">👤 ${e.usuario}</span>` : ''}
-                  ${estadoBadge ? `<span>·</span>${estadoBadge}` : ''}
-                </div>
-              </div>
-            </div>
-          </div>`;
-        }).join('');
+    // Render sub-grupos
+    const subKeys = Object.keys(g.sub).sort((a, b) => esPorOp ? b.localeCompare(a) : a.localeCompare(b));
+    const subsHtml = subKeys.map(sk => _envRenderSubGrupo(g.sub[sk], !esPorOp, nuevos)).join('');
 
-      // Header dinámico según modo de agrupación
-      const esPorOperador = _envFiltros.agrupar === 'operador';
-      const headerTitulo = esPorOperador
-        ? `👤 <span class="text-indigo-300">${diaKey}</span>`
-        : `📅 ${_envFmtFechaLarga(diaKey)}`;
-      const headerMeta = esPorOperador
-        ? `${items.length} envasado${items.length === 1 ? '' : 's'} · <b class="text-slate-300">${totDiaUds}</b> uds`
-        : `${items.length} envasado${items.length === 1 ? '' : 's'} · <b class="text-slate-300">${totDiaUds}</b> uds · 👤 ${usuariosDia}`;
-      return `<div class="mb-3">
-        <div class="flex items-center justify-between mb-2 px-1 flex-wrap gap-2">
-          <div class="text-sm font-bold text-amber-400">${headerTitulo}</div>
-          <div class="text-[11px] text-slate-500">${headerMeta}</div>
+    return `<section class="env-grupo">
+      <header class="env-grupo-head">
+        <div class="env-grupo-titulo">${titulo}</div>
+        <div class="env-grupo-stats">
+          <div class="env-grupo-stat-uds">${totUds}<span>uds</span></div>
+          <div class="env-grupo-stat-env">${totEnv} env${totEnv === 1 ? '' : 's'}</div>
         </div>
-        <div class="space-y-1.5">${itemsHtml}</div>
-      </div>`;
-    }).join('');
+      </header>
+      <div class="env-grupo-body">${subsHtml}</div>
+    </section>`;
+  }
+
+  // Sub-grupo (segundo nivel) + timeline interno
+  function _envRenderSubGrupo(s, esUsuario, nuevos) {
+    const completos = s.items.filter(_envEsCompleto);
+    const totUds = completos.reduce((sum, e) => sum + (parseFloat(e.unidadesProducidas) || 0), 0);
+    const titulo = esUsuario
+      ? `<div class="env-sub-head-user">${_envAvatarHTML(s.key)}<span class="env-sub-head-name">${_escapeHtml(s.key)}</span></div>`
+      : `<div class="env-sub-head-fecha">📅 ${_envFmtFechaLarga(s.key)}</div>`;
+
+    // Items ordenados cronológicamente
+    const sorted = s.items.slice().sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')));
+    const timeline = sorted.map((e, i) => _envRenderTimelineItem(e, i, nuevos)).join('');
+
+    return `<div class="env-sub">
+      <div class="env-sub-head">
+        ${titulo}
+        <div class="env-sub-stats">${completos.length} env · <b>${totUds}</b> uds</div>
+      </div>
+      <div class="env-timeline">${timeline}</div>
+    </div>`;
+  }
+
+  // Item del timeline (envasado individual)
+  function _envRenderTimelineItem(e, idx, nuevos) {
+    const completo = _envEsCompleto(e);
+    const esNuevo = nuevos && nuevos.indexOf(e.idEnvasado) !== -1;
+    const baseLbl = _labelProducto(e.codigoProductoBase, true);
+    const envLbl = e.codigoProductoEnvasado
+      ? _labelProducto(e.codigoProductoEnvasado, true)
+      : '<span class="text-slate-600 italic">sin código envasado</span>';
+    const hora = String(e.fecha || '').substring(11, 16) || '';
+    const cantBase = parseFloat(e.cantidadBase) || 0;
+    const cantBaseTxt = cantBase > 0 ? `${cantBase} ${e.unidadBase || ''}` : '—';
+    const uds = parseFloat(e.unidadesProducidas) || 0;
+    const efic = parseFloat(e.eficienciaPct) || 0;
+    const obs = e.observacion ? `<div class="env-tl-obs">📝 ${_escapeHtml(String(e.observacion).substring(0, 80))}</div>` : '';
+
+    const stateClass = completo ? '' : 'env-tl-item-anulado';
+    const dotClass = completo ? 'env-tl-dot-ok' : 'env-tl-dot-anul';
+    const nuevoClass = esNuevo ? ' env-tl-item-nuevo' : '';
+
+    return `<div class="env-tl-item ${stateClass}${nuevoClass}" style="animation-delay:${Math.min(idx, 12) * 40}ms">
+      <div class="${dotClass}"></div>
+      <div class="env-tl-content">
+        <div class="env-tl-row">
+          <div class="env-tl-hora">${hora}</div>
+          <div class="env-tl-trans">
+            <div class="env-tl-base">${baseLbl} <span class="env-tl-base-cant">· ${cantBaseTxt}</span></div>
+            <div class="env-tl-arrow">⬇</div>
+            <div class="env-tl-out">${envLbl}</div>
+          </div>
+          <div class="env-tl-uds">
+            <span class="env-tl-uds-num">${uds}</span>
+            <span class="env-tl-uds-lbl">uds</span>
+            ${efic && completo ? `<div class="env-tl-efi ${_envEfColor(efic)}">${Math.round(efic)}% efic</div>` : ''}
+          </div>
+        </div>
+        ${obs}
+        ${!completo ? `<div class="env-tl-anul-tag">✕ ANULADO · no cuenta</div>` : ''}
+      </div>
+    </div>`;
   }
 
   function _envEfColor(pct) {

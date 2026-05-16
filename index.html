@@ -5380,6 +5380,252 @@
       flex-wrap: wrap; justify-content: flex-end;
     }
 
+    /* ════════════════════════════════════════════════════════
+       [v41.24] ENVASADOS — KPIs bento + timeline por operador
+    ════════════════════════════════════════════════════════ */
+    .env-kpis-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px; margin-bottom: 14px;
+    }
+    @media (max-width: 640px) { .env-kpis-grid { grid-template-columns: repeat(2, 1fr); } }
+    .env-kpi {
+      background: linear-gradient(135deg, rgba(15,23,42,.85), rgba(30,41,59,.5));
+      border: 1px solid rgba(51,65,85,.5);
+      border-radius: 14px;
+      padding: 14px 16px;
+      position: relative; overflow: hidden;
+      transition: transform .2s, box-shadow .2s;
+    }
+    .env-kpi:hover { transform: translateY(-2px); }
+    .env-kpi::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, var(--accent, #f59e0b), transparent);
+    }
+    .env-kpi-uds::before { background: linear-gradient(90deg, #a855f7, #c084fc); }
+    .env-kpi-env::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+    .env-kpi-ops::before { background: linear-gradient(90deg, #22d3ee, #67e8f9); }
+    .env-kpi-efi::before { background: linear-gradient(90deg, #10b981, #34d399); }
+    .env-kpi-num {
+      font-size: 28px; font-weight: 900; line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .env-kpi-uds .env-kpi-num { color: #c4b5fd; }
+    .env-kpi-env .env-kpi-num { color: #fcd34d; }
+    .env-kpi-ops .env-kpi-num { color: #67e8f9; }
+    .env-kpi-efi .env-kpi-num { color: #6ee7b7; }
+    .env-kpi-lbl {
+      font-size: 10px; color: #64748b;
+      text-transform: uppercase; letter-spacing: .06em;
+      font-weight: 700; margin-top: 4px;
+    }
+
+    /* ── Lista y grupos ── */
+    .env-list { display: flex; flex-direction: column; gap: 22px; }
+    .env-grupo {
+      background: rgba(15,23,42,.5);
+      border: 1px solid rgba(51,65,85,.4);
+      border-radius: 16px;
+      padding: 14px 16px;
+      animation: envGrupoIn .35s ease-out backwards;
+    }
+    @keyframes envGrupoIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .env-grupo-head {
+      display: flex; justify-content: space-between; align-items: center;
+      padding-bottom: 10px; margin-bottom: 12px;
+      border-bottom: 1.5px dashed rgba(245,158,11,.3);
+      gap: 12px;
+    }
+    .env-grupo-titulo { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .env-grupo-fecha-emoji { font-size: 28px; }
+    .env-grupo-nombre {
+      font-weight: 900; color: #fbbf24; font-size: 15px;
+      letter-spacing: .02em;
+    }
+    .env-grupo-sub {
+      font-size: 10px; color: #94a3b8; text-transform: uppercase;
+      letter-spacing: .04em; font-weight: 600; margin-top: 1px;
+    }
+    .env-grupo-stats { text-align: right; }
+    .env-grupo-stat-uds {
+      font-weight: 900; font-size: 22px; color: #c4b5fd;
+      font-variant-numeric: tabular-nums;
+    }
+    .env-grupo-stat-uds span {
+      font-size: 11px; color: #94a3b8; margin-left: 4px;
+      font-weight: 700; text-transform: uppercase;
+    }
+    .env-grupo-stat-env {
+      font-size: 11px; color: #64748b; font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    /* ── Sub-grupo (segundo nivel: usuario o fecha) ── */
+    .env-grupo-body { display: flex; flex-direction: column; gap: 18px; }
+    .env-sub {
+      background: rgba(2,6,23,.4);
+      border-radius: 12px;
+      padding: 10px 12px;
+    }
+    .env-sub-head {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 8px;
+    }
+    .env-sub-head-user, .env-sub-head-fecha {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12.5px; font-weight: 700; color: #e2e8f0;
+    }
+    .env-sub-head-fecha { color: #93c5fd; }
+    .env-sub-head-name { color: #f1f5f9; }
+    .env-sub-stats {
+      font-size: 11px; color: #94a3b8;
+      background: rgba(15,23,42,.6); padding: 3px 9px;
+      border-radius: 999px; border: 1px solid rgba(51,65,85,.4);
+    }
+    .env-sub-stats b { color: #c4b5fd; font-variant-numeric: tabular-nums; }
+
+    /* ── Avatar de operador ── */
+    .env-avatar {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 800; color: #fff;
+      letter-spacing: .04em;
+      flex-shrink: 0;
+      box-shadow: 0 4px 10px -2px rgba(0,0,0,.4);
+    }
+    .env-sub-head-user .env-avatar { width: 28px; height: 28px; font-size: 10px; }
+
+    /* ── Timeline vertical de envasados ── */
+    .env-timeline {
+      position: relative;
+      padding-left: 18px;
+      margin-top: 8px;
+    }
+    .env-timeline::before {
+      content: ''; position: absolute; left: 7px; top: 8px; bottom: 8px;
+      width: 2px; background: linear-gradient(180deg, rgba(245,158,11,.5), rgba(245,158,11,.1));
+    }
+    .env-tl-item {
+      position: relative;
+      padding: 8px 0 10px 16px;
+      animation: envTlIn .4s cubic-bezier(.34,1.56,.64,1) backwards;
+    }
+    @keyframes envTlIn {
+      from { opacity: 0; transform: translateX(-8px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    .env-tl-dot-ok, .env-tl-dot-anul {
+      position: absolute;
+      left: -18px; top: 12px;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      box-shadow: 0 0 0 3px rgba(10,20,40,.85);
+    }
+    .env-tl-dot-ok {
+      background: linear-gradient(135deg, #10b981, #059669);
+      box-shadow: 0 0 0 3px rgba(10,20,40,.85), 0 0 8px rgba(16,185,129,.55);
+    }
+    .env-tl-dot-anul {
+      background: #475569;
+      opacity: .5;
+    }
+    .env-tl-content {
+      background: rgba(30,41,59,.45);
+      border: 1px solid rgba(51,65,85,.4);
+      border-radius: 10px;
+      padding: 8px 12px;
+      transition: border-color .2s, transform .2s;
+    }
+    .env-tl-content:hover {
+      border-color: rgba(245,158,11,.4);
+      transform: translateX(2px);
+    }
+    .env-tl-row {
+      display: grid;
+      grid-template-columns: 50px 1fr auto;
+      gap: 12px; align-items: center;
+    }
+    .env-tl-hora {
+      font-size: 11px; font-weight: 800; color: #fbbf24;
+      font-variant-numeric: tabular-nums;
+    }
+    .env-tl-trans { min-width: 0; }
+    .env-tl-base {
+      font-size: 10.5px; color: #94a3b8;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .env-tl-base-cant { color: #64748b; }
+    .env-tl-arrow {
+      color: #64748b; font-size: 10px;
+      margin: 1px 0;
+    }
+    .env-tl-out {
+      font-size: 12.5px; font-weight: 800; color: #f1f5f9;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .env-tl-uds {
+      text-align: right; min-width: 60px;
+    }
+    .env-tl-uds-num {
+      font-size: 18px; font-weight: 900;
+      color: #c4b5fd;
+      font-variant-numeric: tabular-nums;
+    }
+    .env-tl-uds-lbl {
+      font-size: 10px; color: #64748b; margin-left: 2px;
+      font-weight: 700;
+    }
+    .env-tl-efi {
+      font-size: 9.5px; font-weight: 700;
+      margin-top: 1px;
+    }
+    .env-tl-obs {
+      font-size: 10.5px; color: #94a3b8;
+      margin-top: 4px; font-style: italic;
+      padding: 4px 6px; background: rgba(245,158,11,.06);
+      border-left: 2px solid rgba(245,158,11,.4); border-radius: 3px;
+    }
+    /* ── Anulados ── */
+    .env-tl-item-anulado {
+      opacity: .45;
+    }
+    .env-tl-item-anulado .env-tl-content {
+      background: rgba(127,29,29,.08);
+      position: relative;
+      overflow: hidden;
+    }
+    .env-tl-item-anulado .env-tl-content::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: repeating-linear-gradient(
+        135deg,
+        transparent 0, transparent 12px,
+        rgba(248,113,113,.10) 12px, rgba(248,113,113,.10) 14px
+      );
+      pointer-events: none;
+    }
+    .env-tl-item-anulado .env-tl-out {
+      text-decoration: line-through;
+      color: #94a3b8;
+    }
+    .env-tl-anul-tag {
+      font-size: 9.5px; font-weight: 800; color: #f87171;
+      margin-top: 4px; text-transform: uppercase; letter-spacing: .04em;
+    }
+    /* ── Nuevo (slide-in animado del polling) ── */
+    .env-tl-item-nuevo .env-tl-content {
+      animation: envTlNuevo 1.4s ease-out;
+      border-color: #10b981;
+    }
+    @keyframes envTlNuevo {
+      0%   { background: rgba(16,185,129,.25); box-shadow: 0 0 0 4px rgba(16,185,129,.3); }
+      100% { background: rgba(30,41,59,.45);   box-shadow: 0 0 0 0 rgba(16,185,129,0); }
+    }
+
     /* ── Indicador de carga en icono de módulo (sidebar / bnav) ──
        Línea dorada sutil que indica fetch en progreso, sin bloquear.
        Toggle vía clase .icon-busy / .icon-done.                      */
@@ -9076,10 +9322,27 @@
           </div>
         </div>
 
-        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
-          <div class="text-xs text-slate-500" id="envSummary">—</div>
+        <!-- [v41.24] KPIs bento — solo cuenta COMPLETADOS (anulados se descartan) -->
+        <div id="envKpis" class="env-kpis-grid">
+          <div class="env-kpi env-kpi-uds">
+            <div class="env-kpi-num" id="envKpiUds">0</div>
+            <div class="env-kpi-lbl">uds producidas</div>
+          </div>
+          <div class="env-kpi env-kpi-env">
+            <div class="env-kpi-num" id="envKpiEnv">0</div>
+            <div class="env-kpi-lbl">envasados</div>
+          </div>
+          <div class="env-kpi env-kpi-ops">
+            <div class="env-kpi-num" id="envKpiOps">0</div>
+            <div class="env-kpi-lbl">operadores</div>
+          </div>
+          <div class="env-kpi env-kpi-efi">
+            <div class="env-kpi-num" id="envKpiEfi">—</div>
+            <div class="env-kpi-lbl">eficiencia</div>
+          </div>
         </div>
-        <div id="envList" class="space-y-3">
+        <div class="text-xs text-slate-500 mb-3 mt-1" id="envSummary">—</div>
+        <div id="envList" class="env-list">
           <div class="text-center py-8 text-slate-500 text-sm">Cargando...</div>
         </div>
       </div>
