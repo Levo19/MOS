@@ -6882,6 +6882,24 @@ const MOS = (() => {
     return String(e.estado || '').toUpperCase() === 'COMPLETADO';
   }
 
+  // [v41.25] Extrae HH:mm de cualquier formato de fecha:
+  // "4/24/2026 15:04:33", "2026-05-15 12:49:55", "2026-05-15T12:49:55Z", etc.
+  // Hace fallback con Date() si no encuentra HH:MM por regex (ej. ISO pure).
+  function _envExtraerHora(fechaStr) {
+    if (!fechaStr) return '';
+    const s = String(fechaStr);
+    const m = s.match(/(\d{1,2}):(\d{2})/);
+    if (m) return m[1].padStart(2, '0') + ':' + m[2];
+    try {
+      const d = new Date(s);
+      if (!isNaN(d.getTime())) {
+        return String(d.getHours()).padStart(2, '0') + ':'
+             + String(d.getMinutes()).padStart(2, '0');
+      }
+    } catch(_){}
+    return '';
+  }
+
   // Count-up animado en KPI numérico
   function _envRenderKpis({uds, env, ops, efi}) {
     _envCountUp('envKpiUds', uds);
@@ -6996,7 +7014,8 @@ const MOS = (() => {
     const envLbl = e.codigoProductoEnvasado
       ? _labelProducto(e.codigoProductoEnvasado, true)
       : '<span class="text-slate-600 italic">sin código envasado</span>';
-    const hora = String(e.fecha || '').substring(11, 16) || '';
+    // [v41.25] Parser robusto: acepta "4/24/2026 15:04:33", ISO, etc.
+    const hora = _envExtraerHora(e.fecha) || '—:—';
     const cantBase = parseFloat(e.cantidadBase) || 0;
     const cantBaseTxt = cantBase > 0 ? `${cantBase} ${e.unidadBase || ''}` : '—';
     const uds = parseFloat(e.unidadesProducidas) || 0;
