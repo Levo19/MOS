@@ -4568,9 +4568,20 @@ const MOS = (() => {
     const list = $('almOpsList');
     if (!list) return;
     const raw = S._opsData || {};
-    // Soporta wrapper {ok, data: {porDia}} o plano {porDia}
     const data = raw.data || raw;
     const dias = data.porDia || [];
+    // [v41.15] Anti-parpadeo: si la firma de contenido NO cambió, no re-renderear.
+    // Cubre los refresh silenciosos del poll cada 20s — antes redibujaba todo y
+    // se veía flicker. La firma incluye IDs + estados + cantidad de líneas.
+    const sig = JSON.stringify(dias.map(d => ({
+      f: d.fecha,
+      ops: (d.operaciones || []).map(o => o.fuente + '_' + o.idGuia + '_' + (o.estado || '') + '_' + (o.lineasCount || (o.lineas || []).length))
+    })));
+    if (sig === S._opsLastSig && !list.classList.contains('alm-ops-needs-render')) {
+      return; // sin cambios — skip render para no parpadear
+    }
+    S._opsLastSig = sig;
+    list.classList.remove('alm-ops-needs-render');
     const sub = $('almOpsHeaderSub');
     const totalOps = dias.reduce((s, d) => s + (d.operaciones || []).length, 0);
     const totalMonto = dias.reduce((s, d) => s + (d.totalMonto || 0), 0);
@@ -4627,6 +4638,34 @@ const MOS = (() => {
       });
       return `<div>${headerHtml}${secciones}</div>`;
     }).join('');
+    // [v41.15] Debug colapsable al final: muestra qué leyó el backend
+    // de ME GUIAS_CABECERA — útil para diagnosticar por qué no aparecen zonas.
+    const dbg = (data._debug && data._debug.meStats) || null;
+    const diagDet = data._diagDet || null;
+    if (dbg || diagDet) {
+      const dbgHtml = `
+        <details style="margin-top:24px;font-size:11px;color:#64748b" open>
+          <summary style="cursor:pointer;color:#94a3b8;padding:6px 0">🔍 Diagnóstico backend (clic para ver/ocultar)</summary>
+          <div style="margin-top:8px;padding:10px;background:#0a1428;border:1px solid #1e293b;border-radius:8px;font-family:ui-monospace,monospace">
+            ${dbg ? `
+              <div style="color:#fbbf24;font-weight:700;margin-bottom:4px">📊 ME GUIAS_CABECERA (zonas):</div>
+              <div>SS ID:         ${dbg.meSsId || 'NULL'}</div>
+              <div>Filas leídas:  ${dbg.leidas || 0}</div>
+              <div>Filtradas (fuera de rango): ${dbg.filtroFecha || 0}</div>
+              <div style="color:#34d399">Agregadas al feed: ${dbg.agregadas || 0}</div>
+              ${dbg.error ? `<div style="color:#fca5a5">Error: ${_escapeHtml(dbg.error)}</div>` : ''}
+              ${dbg.sinSheet ? `<div style="color:#fca5a5">⚠ Sheet GUIAS_CABECERA NO encontrada en ME</div>` : ''}
+            ` : ''}
+            ${diagDet ? `
+              <div style="color:#fbbf24;font-weight:700;margin:8px 0 4px">📦 Detalle líneas:</div>
+              <div>WH: ${diagDet.opsWH || 0} ops · ${diagDet.linWH || 0} líneas</div>
+              <div>ME: ${diagDet.opsME || 0} ops · ${diagDet.linME || 0} líneas</div>
+            ` : ''}
+            ${data._detError ? `<div style="color:#fca5a5;margin-top:4px">DetError: ${_escapeHtml(data._detError)}</div>` : ''}
+          </div>
+        </details>`;
+      list.insertAdjacentHTML('beforeend', dbgHtml);
+    }
   }
 
   // Render de un voucher individual (estilo recibo de papel)
@@ -4889,11 +4928,43 @@ const MOS = (() => {
     }
   }
 
+  // [v41.15] Click voucher → abre overlay modal con detalle completo
+  // (antes expandía in-place y rompía el masonry layout).
   function almToggleOpExpand(fuente, idGuia, esPreingreso) {
-    const key = fuente + '_' + idGuia + (esPreingreso ? '_PRE' : '');
-    S._opsExpanded[key] = !S._opsExpanded[key];
     _opsBeep('tac');
-    almRenderOps();
+    abrirOpsDetalleOverlay(fuente, idGuia, esPreingreso === true || esPreingreso === 'true');
+  }
+
+  function abrirOpsDetalleOverlay(fuente, idGuia, esPreingreso) {
+    const op = _findOpByKey(fuente + '_' + idGuia);
+    if (!op) return;
+    const cont = $('almOpsDetalleContent');
+    if (!cont) return;
+    // Marcar expandido para que el detalle se rinda completo
+    const key = fuente + '_' + idGuia + (esPreingreso ? '_PRE' : '');
+    S._opsExpanded[key] = true;
+    // Render del voucher completo dentro del overlay
+    cont.innerHTML = _renderVoucher(op, 0);
+    // Quitar onclick para que el voucher dentro del overlay no haga nada
+    const v = cont.querySelector('.alm-voucher');
+    if (v) v.onclick = null;
+    const overlay = $('almOpsDetalleOverlay');
+    if (overlay) overlay.classList.remove('hidden');
+    // Si no hay líneas en cache, fetchear (raro: el endpoint nuevo o el prefetch deberían tenerlas)
+    if (!op.esPreingreso) {
+      const k2 = op.fuente + '_' + op.idGuia;
+      if (!S._opsDetCache[k2]) {
+        _fetchOpDetalle(op.fuente, op.idGuia);
+      }
+    }
+  }
+
+  function cerrarOpsDetalleOverlay(ev) {
+    if (ev && ev.target && ev.target.id !== 'almOpsDetalleOverlay') return;
+    const overlay = $('almOpsDetalleOverlay');
+    if (overlay) overlay.classList.add('hidden');
+    // Limpiar expanded state para no inflar memoria
+    S._opsExpanded = {};
   }
 
   // ── Llenar costos de guía (con foto de factura) ──
@@ -25248,6 +25319,7 @@ const MOS = (() => {
     setAlmTab,
     almLoadResumen, almRefreshResumen, almFiltrarStock, almRefreshCatalogo, almToggleStockExpand,
     almLoadOps, almRefreshOps, almRenderOps, almToggleOpExpand, almSetRangoOps,
+    abrirOpsDetalleOverlay, cerrarOpsDetalleOverlay,
     abrirCostosGuia, _costosGuiaUpdLinea, _costosGuiaSetMode, _costosGuiaSetIgv, cerrarCostosGuia, guardarCostosGuia,
     _impactoTogglesel, _impactoSetPrecio, cerrarImpactoCostos, aplicarSugerenciasSeleccionadas,
     almLoadZonas, almRefreshZonas, almAbrirStockDetalle, cerrarStockDetalle, almRefreshStockDetalle,

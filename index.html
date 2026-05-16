@@ -3033,6 +3033,56 @@
       color: #64748b; font-size: 13px;
     }
     .alm-ops-empty-emoji { font-size: 56px; margin-bottom: 14px; opacity: .6; }
+
+    /* [v41.15] Overlay modal de detalle (en lugar de expand in-place) */
+    .alm-ops-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.78);
+      backdrop-filter: blur(8px);
+      z-index: 9200;
+      display: flex; align-items: center; justify-content: center;
+      padding: 24px;
+      animation: almOverlayFade .25s ease;
+      overflow-y: auto;
+    }
+    @keyframes almOverlayFade {
+      0%   { opacity: 0; }
+      100% { opacity: 1; }
+    }
+    .alm-ops-overlay-card {
+      position: relative;
+      max-width: 560px; width: 100%; max-height: 90vh;
+      overflow-y: auto;
+      animation: almOverlayDrop .4s cubic-bezier(.34,1.56,.64,1);
+      padding-top: 12px;
+    }
+    @keyframes almOverlayDrop {
+      0%   { transform: translateY(-40px) scale(.9); opacity: 0; }
+      60%  { transform: translateY(8px)   scale(1.02); opacity: 1; }
+      100% { transform: translateY(0)     scale(1); }
+    }
+    .alm-ops-overlay-close {
+      position: absolute; top: 4px; right: 4px;
+      background: rgba(0,0,0,.5); color: #fcd34d;
+      width: 38px; height: 38px; border-radius: 999px;
+      font-size: 18px; font-weight: 900; border: 1px solid rgba(245,158,11,.4);
+      cursor: pointer; transition: transform .15s; z-index: 20;
+    }
+    .alm-ops-overlay-close:hover { transform: scale(1.1) rotate(90deg); }
+    /* El voucher dentro del overlay es más grande y sin rotación */
+    .alm-ops-overlay-card .alm-voucher {
+      animation: almVoucherDropOverlay .5s cubic-bezier(.34,1.56,.64,1);
+      transform: none !important;
+      cursor: default;
+      padding: 22px 22px 18px;
+    }
+    .alm-ops-overlay-card .alm-voucher:hover {
+      transform: none !important;
+    }
+    @keyframes almVoucherDropOverlay {
+      0% { opacity: 0; transform: scale(.92); }
+      100% { opacity: 1; transform: scale(1); }
+    }
     /* Wrapper para tabs con scroll horizontal + fade indicator a la derecha */
     .tab-scroll-wrap { position: relative; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
     .tab-scroll-wrap::-webkit-scrollbar { display: none; }
@@ -8484,6 +8534,14 @@
           <!-- 3 vouchers skeleton mientras carga -->
           <div class="alm-voucher alm-voucher-skel"><div class="alm-skel-line w-60"></div><div class="alm-skel-line w-90"></div><div class="alm-skel-line w-75"></div></div>
           <div class="alm-voucher alm-voucher-skel"><div class="alm-skel-line w-50"></div><div class="alm-skel-line w-80"></div><div class="alm-skel-line w-60"></div></div>
+        </div>
+      </div>
+
+      <!-- [v41.15] Overlay modal de detalle de operación (no expand in-place que rompe masonry) -->
+      <div id="almOpsDetalleOverlay" class="alm-ops-overlay hidden" onclick="MOS.cerrarOpsDetalleOverlay(event)">
+        <div class="alm-ops-overlay-card" onclick="event.stopPropagation()">
+          <button onclick="MOS.cerrarOpsDetalleOverlay()" class="alm-ops-overlay-close">✕</button>
+          <div id="almOpsDetalleContent"></div>
         </div>
       </div>
 
