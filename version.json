@@ -1,1 +1,1 @@
-{ "version": "2.41.7", "build": "20260515-cierre-forzado-dispara-impresion-z" }
+{ "version": "2.41.8", "build": "20260515-fix-fecha-mesa-utc-vs-local" }

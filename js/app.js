@@ -15520,10 +15520,15 @@ const MOS = (() => {
 
   function _cjFmtFechaCorta(yyyyMmDd) {
     if (!yyyyMmDd) return '—';
-    const today = (new Date()).toISOString().substring(0, 10);
-    const ayer  = (() => { const d = new Date(); d.setDate(d.getDate()-1); return d.toISOString().substring(0,10); })();
-    if (yyyyMmDd === today) return 'Hoy';
-    if (yyyyMmDd === ayer)  return 'Ayer';
+    // [v41.8 FIX] Antes usaba toISOString() (UTC) → en Lima (UTC-5), ventas
+    // de las 19:00 quedaban marcadas como del día siguiente UTC y se veían
+    // como "Ayer". Ahora usa today() global que computa fecha LOCAL.
+    const hoyLoc = today();
+    const z = n => String(n).padStart(2,'0');
+    const dAyer = new Date(); dAyer.setDate(dAyer.getDate() - 1);
+    const ayerLoc = `${dAyer.getFullYear()}-${z(dAyer.getMonth()+1)}-${z(dAyer.getDate())}`;
+    if (yyyyMmDd === hoyLoc) return 'Hoy';
+    if (yyyyMmDd === ayerLoc) return 'Ayer';
     const parts = yyyyMmDd.split('-');
     const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
     return parts[2] + ' ' + meses[parseInt(parts[1],10)-1];
