@@ -840,7 +840,8 @@ function _getGuiasYPreingresosImpl(params) {
 // ── OPERACIONES UNIFICADAS — WH + ME por día, agrupado ──────────
 function getOperacionesUnificadas(params) {
   var dias = parseInt(params && params.dias) || 7;
-  return _almCached('opsUnif' + dias, 60, params, function() {
+  // [v41.22] key bumpeada para invalidar cache que no traía op.preingreso anidado
+  return _almCached('opsUnifV2_' + dias, 60, params, function() {
     return _getOperacionesUnificadasImpl(dias);
   });
 }
@@ -1580,7 +1581,8 @@ function getOperacionesConDetalle(params) {
   var dias = parseInt(params && params.dias) || 7;
   // Cache subido a 5min (era 60s): los detalles cambian poco y el endpoint
   // es pesado (lee múltiples sheets enteras). User puede forzar con _refresh.
-  return _almCached('opsConDet' + dias, 300, params, function() {
+  // [v41.22] key bumpeada para invalidar cache sin op.preingreso anidado
+  return _almCached('opsConDetV2_' + dias, 300, params, function() {
     var base = _getOperacionesUnificadasImpl(dias);
     if (!base.ok || !base.data) return base;
 
