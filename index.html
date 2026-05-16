@@ -1503,11 +1503,85 @@
       cursor: pointer; transition: transform .15s ease;
     }
     .cj-mesa-close:hover { transform: scale(1.1) rotate(90deg); }
+    /* [v41.4] Mesa ahora usa secciones por fecha. El grid plano se reemplaza
+       por flex vertical donde cada sección tiene su propio grid de cartas. */
     .cj-mesa-grid {
+      display: flex; flex-direction: column;
+      gap: 28px;
+      padding: 8px 4px;
+    }
+    .cj-mesa-grupo {
+      position: relative;
+      padding: 14px 16px 18px;
+      border-radius: 18px;
+      background: rgba(15, 33, 27, .55);
+      border: 1px solid rgba(245,158,11,.18);
+      animation: cjMesaGrupoFade .4s ease-out backwards;
+    }
+    @keyframes cjMesaGrupoFade {
+      0%   { opacity: 0; transform: translateY(12px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+    /* Sección "Hoy" — destacada con borde dorado brillante + glow */
+    .cj-mesa-grupo-hoy {
+      background: linear-gradient(135deg, rgba(245,158,11,.16), rgba(217,119,6,.08));
+      border: 2px solid rgba(252,211,77,.55);
+      box-shadow: 0 0 0 1px rgba(252,211,77,.2), 0 8px 32px -10px rgba(245,158,11,.45);
+    }
+    .cj-mesa-grupo-hoy::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, #fcd34d, #fbbf24, #f59e0b, #fbbf24, #fcd34d);
+      background-size: 200% 100%;
+      border-radius: 18px 18px 0 0;
+      animation: cjGrupoHoyShine 2.5s linear infinite;
+    }
+    @keyframes cjGrupoHoyShine {
+      0%   { background-position: 0% 50%; }
+      100% { background-position: 200% 50%; }
+    }
+    .cj-mesa-grupo-head {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 14px; padding-bottom: 10px;
+      border-bottom: 1px dashed rgba(245,158,11,.25);
+    }
+    .cj-mesa-grupo-titulo { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .cj-mesa-grupo-emoji  { font-size: 22px; }
+    .cj-mesa-grupo-fecha {
+      font-weight: 900; color: #fde68a; font-size: 18px;
+      text-transform: uppercase; letter-spacing: .03em;
+    }
+    .cj-mesa-grupo-hoy .cj-mesa-grupo-fecha { color: #fef3c7; font-size: 20px; }
+    .cj-mesa-grupo-sub {
+      font-size: 11px; color: #d97706; font-weight: 700;
+      background: rgba(245,158,11,.15); padding: 3px 8px; border-radius: 999px;
+      border: 1px solid rgba(245,158,11,.3);
+      text-transform: uppercase; letter-spacing: .04em;
+    }
+    .cj-mesa-grupo-hoy .cj-mesa-grupo-sub {
+      background: rgba(252,211,77,.25); color: #fef3c7;
+      border-color: rgba(252,211,77,.5);
+      animation: cjGrupoHoyBlink 1.8s ease-in-out infinite;
+    }
+    @keyframes cjGrupoHoyBlink {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(252,211,77,.5); }
+      50%      { box-shadow: 0 0 0 6px rgba(252,211,77,0); }
+    }
+    .cj-mesa-grupo-stats {
+      display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+    }
+    .cj-mesa-grupo-cuenta {
+      font-size: 10px; color: #d97706; font-weight: 800;
+      text-transform: uppercase; letter-spacing: .05em;
+    }
+    .cj-mesa-grupo-monto {
+      font-weight: 900; font-size: 18px; color: #fcd34d;
+      font-variant-numeric: tabular-nums;
+    }
+    .cj-mesa-grupo-hoy .cj-mesa-grupo-monto { color: #fef3c7; font-size: 22px; }
+    .cj-mesa-grupo-cartas {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
       gap: 20px;
-      padding: 8px;
     }
     .cj-mesa-carta {
       background: linear-gradient(135deg, #fef3c7, #fde68a);
@@ -8537,7 +8611,7 @@
       <div id="modalMesaCartas" class="cj-mesa-overlay hidden" onclick="MOS.cjCerrarMesa(event)">
         <div class="cj-mesa-head">
           <div>
-            <h3 class="text-xl font-bold text-white">🃏 Créditos · <span id="cjMesaFechaLabel">—</span></h3>
+            <h3 class="text-xl font-bold text-white">🃏 <span id="cjMesaFechaLabel">Créditos pendientes</span></h3>
             <p id="cjMesaSubtitulo" class="text-xs text-amber-300 mt-0.5">— tickets · toca una carta para ver detalle</p>
           </div>
           <button onclick="MOS.cjCerrarMesa()" class="cj-mesa-close">✕</button>

@@ -15654,28 +15654,56 @@ const MOS = (() => {
     }
   }
 
-  // Click en la mano → repartir las cartas en la mesa
+  // Click en la mano → repartir TODAS las cartas en la mesa, agrupadas por
+  // fecha. La sección "Hoy" se destaca con badge brillante. Los días anteriores
+  // van debajo en orden cronológico inverso, así el admin puede cobrar un
+  // crédito viejo sin tener que cambiar el filtro de fecha del módulo.
   function cjRepartirMano() {
-    const tickets = _cjCreditosState.ticketsActivos;
-    if (!tickets || !tickets.length) return;
+    const grupos = _cjCreditosState.todosLosGrupos || [];
+    if (!grupos.length) return;
     try { _finBeep?.('click'); } catch(_){}
-    const fecha = _cjCreditosState.fechaActiva;
-    const lblF = $('cjMesaFechaLabel'); if (lblF) lblF.textContent = _cjFmtFechaCorta(fecha);
+
+    const hoyStr = today();
+    const totalTickets = grupos.reduce((s, g) => s + (g.tickets ? g.tickets.length : 0), 0);
+    const totalMonto = grupos.reduce((s, g) => s + (parseFloat(g.total) || 0), 0);
+
+    const lblF = $('cjMesaFechaLabel');
+    if (lblF) lblF.textContent = `Todos · ${totalTickets} ticket${totalTickets === 1 ? '' : 's'}`;
     const lblS = $('cjMesaSubtitulo');
-    if (lblS) lblS.textContent = tickets.length + ' ticket' + (tickets.length === 1 ? '' : 's') + ' · toca una carta para ver detalle';
+    if (lblS) lblS.textContent = `S/ ${totalMonto.toFixed(2)} pendientes en ${grupos.length} día${grupos.length === 1 ? '' : 's'} · tocá una carta para ver detalle`;
+
+    // Días ordenados: hoy primero, luego los más recientes
+    const ordenados = grupos.slice().sort((a, b) => {
+      if (a.fecha === hoyStr) return -1;
+      if (b.fecha === hoyStr) return 1;
+      return b.fecha.localeCompare(a.fecha);
+    });
 
     const grid = $('cjMesaGrid');
-    if (grid) {
-      grid.innerHTML = tickets.map((t, i) => {
+    if (!grid) return;
+
+    let cartaGlobalIdx = 0; // animation-delay continuo entre secciones
+    grid.innerHTML = ordenados.map(g => {
+      const esHoy = g.fecha === hoyStr;
+      const fechaLbl = _cjFmtFechaCorta(g.fecha);
+      const diasAtras = _cjDiasDesde(g.fecha);
+      const subFecha = esHoy
+        ? '🔥 ACTIVOS'
+        : (diasAtras === 1 ? 'ayer' : `hace ${diasAtras} días`);
+      const tickets = g.tickets || [];
+      const totalDia = parseFloat(g.total || 0);
+
+      const cartas = tickets.map(t => {
         const asig = t.asignado;
         const asigClass = asig ? 'is-asignada' : '';
         const asigBadge = asig
           ? `<span class="cj-carta-asignado-badge" style="position:relative; top:0; right:0; margin-bottom:8px; display:inline-block;">✈ ${_esc(asig.vendedorDest)}</span>`
           : '';
         const cliente = _esc((t.cliente || 'VARIOS').toUpperCase());
+        const delay = (cartaGlobalIdx++) * 60;
         return `<div class="cj-mesa-carta ${asigClass}"
-                     style="animation-delay: ${i * 80}ms"
-                     onclick="MOS.cjAbrirDetalleCarta(${i})">
+                     style="animation-delay: ${delay}ms"
+                     onclick="MOS.cjAbrirDetalleCarta('${_esc(t.idVenta)}')">
           ${asigBadge}
           <div class="cj-carta-head">
             <span class="cj-carta-cliente">${cliente}</span>
@@ -15687,9 +15715,37 @@ const MOS = (() => {
           <div class="cj-carta-meta">${_esc(t.correlativo)} · ${_esc(t.vendedor)}</div>
         </div>`;
       }).join('');
-    }
+
+      return `<section class="cj-mesa-grupo ${esHoy ? 'cj-mesa-grupo-hoy' : ''}">
+        <header class="cj-mesa-grupo-head">
+          <div class="cj-mesa-grupo-titulo">
+            <span class="cj-mesa-grupo-emoji">${esHoy ? '🌟' : '📅'}</span>
+            <span class="cj-mesa-grupo-fecha">${_esc(fechaLbl)}</span>
+            <span class="cj-mesa-grupo-sub">${subFecha}</span>
+          </div>
+          <div class="cj-mesa-grupo-stats">
+            <span class="cj-mesa-grupo-cuenta">${tickets.length} ticket${tickets.length === 1 ? '' : 's'}</span>
+            <span class="cj-mesa-grupo-monto">S/ ${totalDia.toFixed(2)}</span>
+          </div>
+        </header>
+        <div class="cj-mesa-grupo-cartas">${cartas}</div>
+      </section>`;
+    }).join('');
+
     const modal = $('modalMesaCartas');
     if (modal) modal.classList.remove('hidden');
+  }
+
+  // Días enteros entre la fecha dada (yyyy-MM-dd) y hoy. >0 si es pasada.
+  function _cjDiasDesde(yyyyMmDd) {
+    if (!yyyyMmDd) return 0;
+    try {
+      const [y, m, d] = yyyyMmDd.split('-').map(Number);
+      const ayer = new Date(y, m - 1, d);
+      const hoy = new Date();
+      const ms = (new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())) - ayer;
+      return Math.round(ms / (1000 * 60 * 60 * 24));
+    } catch(_) { return 0; }
   }
 
   function cjCerrarMesa(ev) {
@@ -15698,9 +15754,22 @@ const MOS = (() => {
     if (modal) modal.classList.add('hidden');
   }
 
-  // Abre el detalle de una carta específica
-  function cjAbrirDetalleCarta(idx) {
-    const t = _cjCreditosState.ticketsActivos[idx];
+  // Abre el detalle de una carta específica — busca por idVenta en todos los grupos
+  // (la mesa ahora muestra cartas de varias fechas, no solo del día activo).
+  function cjAbrirDetalleCarta(idVentaOrIdx) {
+    let t = null;
+    // Compatibilidad: si recibe número, asume idx del ticketsActivos viejo
+    if (typeof idVentaOrIdx === 'number') {
+      t = _cjCreditosState.ticketsActivos[idVentaOrIdx];
+    } else {
+      const idV = String(idVentaOrIdx);
+      for (const g of (_cjCreditosState.todosLosGrupos || [])) {
+        const found = (g.tickets || []).find(x => String(x.idVenta) === idV);
+        if (found) { t = found; break; }
+      }
+      // Fallback al array de la fecha activa
+      if (!t) t = (_cjCreditosState.ticketsActivos || []).find(x => String(x.idVenta) === idV);
+    }
     if (!t) return;
     _cjCreditosState.detalleTicket = t;
     try { _finBeep?.('click'); } catch(_){}
@@ -15775,10 +15844,10 @@ const MOS = (() => {
   }
 
   async function cjAbrirAsignar(idVenta) {
-    // Buscar el ticket en el state
+    // Buscar el ticket en el state — busca en TODOS los grupos (no solo activo)
     let ticket = null;
-    for (const g of _cjCreditosState.grupos) {
-      ticket = g.tickets.find(t => t.idVenta === idVenta);
+    for (const g of (_cjCreditosState.todosLosGrupos || [])) {
+      ticket = (g.tickets || []).find(t => String(t.idVenta) === String(idVenta));
       if (ticket) break;
     }
     if (!ticket) { toast('Ticket no encontrado', 'error'); return; }
