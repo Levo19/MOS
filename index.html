@@ -13543,6 +13543,30 @@
 <!-- [v41.19] modalImpactoCostos eliminado — la sección de sugerencias ahora
      vive embebida dentro del overlay unificado de costos (cguSugerenciasSection). -->
 
+<!-- [v41.22] Selector de impresora para imprimir reporte de costos de guía.
+     Modal chico que se abre encima del overlay del voucher. Reusa listarImpresorasPN. -->
+<div id="modalSelPrinterCostos" class="modal-backdrop hidden" style="z-index:9400"
+     onclick="if(event.target.id==='modalSelPrinterCostos') MOS.cerrarSelPrinterCostos()">
+  <div class="modal-box p-0" style="max-width:480px;max-height:80vh;display:flex;flex-direction:column"
+       onclick="event.stopPropagation()">
+    <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
+      <div class="min-w-0 flex-1">
+        <h3 class="font-semibold text-cyan-400 text-base">🖨 Elegir impresora</h3>
+        <p id="selPrCostosSub" class="text-xs text-slate-500 mt-0.5 font-mono truncate">—</p>
+      </div>
+      <button onclick="MOS.cerrarSelPrinterCostos()" class="modal-close-x">×</button>
+    </div>
+    <div id="selPrCostosList" class="overflow-y-auto px-4 py-3 space-y-2" style="flex:1">
+      <div class="text-center text-xs text-slate-500 py-8">
+        <div class="inline-block animate-spin">⏳</div> Cargando impresoras...
+      </div>
+    </div>
+    <div class="px-4 py-3 flex-shrink-0" style="border-top:1px solid #1e293b">
+      <button onclick="MOS._opsRecargarPrinters()" class="btn-ghost text-xs w-full">↺ Recargar lista</button>
+    </div>
+  </div>
+</div>
+
 <!-- [v41.19] Overlay UNIFICADO costos + sugerencias precios + foto fija
      Split horizontal: foto a la izquierda (siempre visible) + costos
      editables a la derecha. Reemplaza modalCostosGuia + modalImpactoCostos.

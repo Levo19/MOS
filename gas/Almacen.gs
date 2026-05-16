@@ -1383,6 +1383,172 @@ function aplicarPreciosVentaSugeridos(params) {
 // por click expandir). Con muchas ops esto era 50+ requests lentos.
 // Ahora 1 lectura de GUIA_DETALLE (WH) + 1 de GUIAS_DETALLE (ME) +
 // indexación por idGuia → ops llegan con sus líneas pegadas.
+// ============================================================
+// imprimirCostosGuia — ESC/POS 80mm con análisis de margen
+// ============================================================
+// Imprime un reporte físico de la guía de proveedor con:
+//   - Cabecera: proveedor, fecha, factura, cajero
+//   - Por cada producto (bloque): nombre, cantidad × costo = subtotal,
+//     precio venta, margen %, alerta visual según umbral
+//   - Total factura, leyenda de alertas, footer
+//
+// Umbrales globales (v41.22):
+//   margen < 20%  → [ /!\ MARGEN BAJO ]
+//   20% ≤ x ≤ 60% → [ OK -- margen normal ]
+//   margen > 60%  → [ * MARGEN ALTO ]
+//
+// params: { idGuia, printerId }
+function imprimirCostosGuia(params) {
+  if (!params || !params.idGuia)  return { ok: false, error: 'idGuia requerido' };
+  if (!params.printerId)          return { ok: false, error: 'printerId requerido' };
+
+  var pnKey = PropertiesService.getScriptProperties().getProperty('PRINTNODE_API_KEY');
+  if (!pnKey) return { ok: false, error: 'PRINTNODE_API_KEY no configurado' };
+
+  // ── 1. Cargar guía cabecera ──
+  var idGuia = String(params.idGuia);
+  var whGuias = _safeReadWhGuias();
+  var guia = whGuias.find(function(g){ return String(g.idGuia) === idGuia; });
+  if (!guia) return { ok: false, error: 'Guía no encontrada en WH' };
+
+  // ── 2. Cargar líneas de detalle ──
+  var det;
+  try {
+    var detSh = _abrirWhSheet('GUIA_DETALLE');
+    if (!detSh) return { ok: false, error: 'GUIA_DETALLE no encontrada' };
+    var allDet = _sheetToObjects(detSh);
+    det = allDet.filter(function(l){ return String(l.idGuia) === idGuia; });
+  } catch(e) { return { ok: false, error: 'Error leyendo detalle: ' + e.message }; }
+  if (!det.length) return { ok: false, error: 'Guía sin líneas' };
+
+  // ── 3. Cruzar con catálogo MOS (precio venta actual) ──
+  var prodLookup = _buildProdLookup();
+
+  // ── 4. Resolver nombre proveedor ──
+  var nombreProv = '';
+  try {
+    var provs = _sheetToObjects(getSheet('PROVEEDORES_MASTER'));
+    var pr = provs.find(function(p){ return String(p.idProveedor) === String(guia.idProveedor || ''); });
+    if (pr) nombreProv = pr.nombre || pr.idProveedor;
+  } catch(_){}
+  if (!nombreProv) nombreProv = guia.idProveedor || '(sin proveedor)';
+
+  // ── 5. Generar ESC/POS ──
+  var tz = Session.getScriptTimeZone();
+  var ahora = Utilities.formatDate(new Date(), tz, 'dd/MM/yyyy HH:mm');
+  var fechaGuia = '';
+  try {
+    var fg = guia.fecha instanceof Date ? guia.fecha : new Date(guia.fecha);
+    if (!isNaN(fg.getTime())) fechaGuia = Utilities.formatDate(fg, tz, 'dd/MM/yy HH:mm');
+  } catch(_){}
+
+  var W = 32;            // 80mm typical
+  var SEP = '================================';
+  var SEPd = '--------------------------------';
+  function _pad(s, n) { s = String(s || ''); while (s.length < n) s += ' '; return s; }
+  function _norm(s) {
+    // Quitar tildes y caracteres raros para impresora ESC/POS sin codepage configurado
+    return String(s || '')
+      .replace(/[áàäâ]/gi, 'a').replace(/[éèëê]/gi, 'e')
+      .replace(/[íìïî]/gi, 'i').replace(/[óòöô]/gi, 'o')
+      .replace(/[úùüû]/gi, 'u').replace(/ñ/g, 'n').replace(/Ñ/g, 'N')
+      .replace(/[^\x20-\x7e]/g, '');
+  }
+
+  var txt = '';
+  // Reset + Center
+  txt += '\x1b\x40';                            // ESC @ reset
+  txt += '\x1b\x61\x01';                        // center
+  // Título doble alto
+  txt += '\x1b\x21\x10' + _norm('INVERSION MOS SAC') + '\x1b\x21\x00\n';
+  txt += _norm('REPORTE COSTOS INGRESO') + '\n';
+  txt += SEP + '\n';
+  // Volver a left align
+  txt += '\x1b\x61\x00';
+  txt += _pad('Guia:', 11) + _norm(idGuia) + '\n';
+  txt += _pad('Fecha:', 11) + (fechaGuia || ahora) + '\n';
+  txt += _pad('Proveedor:', 11) + _norm(nombreProv).substring(0, W - 11) + '\n';
+  if (guia.numeroDocumento) txt += _pad('Factura:', 11) + _norm(guia.numeroDocumento).substring(0, W - 11) + '\n';
+  if (guia.usuario)         txt += _pad('Cajero:', 11)  + _norm(guia.usuario) + '\n';
+
+  txt += SEPd + '\n';
+  txt += '\x1b\x61\x01PRODUCTOS Y MARGENES\x1b\x61\x00\n';
+  txt += SEPd + '\n\n';
+
+  var totalFactura = 0;
+  det.forEach(function(l) {
+    var p = prodLookup[l.codigoProducto] || {};
+    var cant = parseFloat(l.cantidadRecibida || l.cantidad) || parseFloat(l.cantidadEsperada) || 0;
+    var costo = parseFloat(l.precioUnitario) || 0;
+    var subtotal = costo * cant;
+    totalFactura += subtotal;
+    var precioVenta = parseFloat(p.precioVenta) || 0;
+    var margenPct = costo > 0 ? ((precioVenta - costo) / costo) * 100 : null;
+    // Umbrales globales v41.22
+    var alertaTxt;
+    if (margenPct === null || precioVenta <= 0) alertaTxt = '[ sin precio venta ]';
+    else if (margenPct < 20)  alertaTxt = '[ /!\\ MARGEN BAJO ]';
+    else if (margenPct > 60)  alertaTxt = '[ * MARGEN ALTO ]';
+    else                      alertaTxt = '[ OK margen normal ]';
+
+    var nombre = _norm(p.descripcion || l.codigoProducto || '').substring(0, W);
+    txt += '\x1b\x21\x08' + nombre + '\x1b\x21\x00\n';  // bold
+    txt += '  ' + cant + 'u x S/ ' + costo.toFixed(2) + ' = S/' + subtotal.toFixed(2) + '\n';
+    if (precioVenta > 0) {
+      var signo = margenPct >= 0 ? '+' : '';
+      txt += '  >> P.Venta: S/ ' + precioVenta.toFixed(2)
+           + ' (' + signo + (margenPct === null ? '?' : margenPct.toFixed(0)) + '%)\n';
+    } else {
+      txt += '  >> P.Venta: (sin definir)\n';
+    }
+    txt += '  ' + alertaTxt + '\n\n';
+  });
+
+  txt += SEPd + '\n';
+  txt += '\x1b\x21\x10' + _pad('TOTAL FACTURA:', 16) + 'S/' + totalFactura.toFixed(2) + '\x1b\x21\x00\n';
+  txt += SEPd + '\n\n';
+
+  // Leyenda
+  txt += 'LEYENDA:\n';
+  txt += '  OK   margen 20-60% normal\n';
+  txt += '  /!\\  margen < 20% revisar\n';
+  txt += '  *    margen > 60% alto\n\n';
+
+  // Footer
+  txt += '\x1b\x61\x01';
+  txt += ahora + ' - MOSexpress\n';
+  // Cortar papel
+  txt += '\n\n\n\n\x1d\x56\x00';
+
+  // ── 6. Enviar a PrintNode ──
+  var bytes = [];
+  for (var ci = 0; ci < txt.length; ci++) bytes.push(txt.charCodeAt(ci) & 0xFF);
+  var content = Utilities.base64Encode(bytes);
+
+  try {
+    var resp = UrlFetchApp.fetch('https://api.printnode.com/printjobs', {
+      method:      'post',
+      headers:     { 'Authorization': 'Basic ' + Utilities.base64Encode(pnKey + ':') },
+      contentType: 'application/json',
+      payload:     JSON.stringify({
+        printerId:   parseInt(String(params.printerId), 10),
+        title:       'Costos Guia ' + idGuia + ' - ' + nombreProv,
+        contentType: 'raw_base64',
+        content:     content,
+        source:      'ProyectoMOS-Ops'
+      }),
+      muteHttpExceptions: true
+    });
+    var code = resp.getResponseCode();
+    if (code !== 201) {
+      return { ok: false, error: 'PrintNode HTTP ' + code + ': ' + resp.getContentText().substring(0, 200) };
+    }
+    return { ok: true, jobId: resp.getContentText(), totalFactura: totalFactura };
+  } catch(e) {
+    return { ok: false, error: 'PrintNode fallo: ' + e.message };
+  }
+}
+
 function getOperacionesConDetalle(params) {
   var dias = parseInt(params && params.dias) || 7;
   // Cache subido a 5min (era 60s): los detalles cambian poco y el endpoint

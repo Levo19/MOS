@@ -4764,10 +4764,12 @@ const MOS = (() => {
         // Overlay lectura — botón entra a modo edición sin cerrar
         btnCostos = `<button class="alm-v-btn-costos" onclick="MOS.opsEntrarModoCostos('${op.fuente}','${_escapeHtml(op.idGuia)}')" title="Editar costos">💰 Editar costos</button>`;
       } else {
-        // Overlay en modo edición — botones guardar/cancelar
+        // Overlay en modo edición — botones guardar/cancelar/imprimir
         btnCostos = `
           <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 3px 8px -2px rgba(16,185,129,.5)"
                   onclick="MOS.guardarCostosGuia()" title="Guardar costos">💾 Guardar</button>
+          <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#0ea5e9,#06b6d4);box-shadow:0 3px 8px -2px rgba(14,165,233,.5)"
+                  onclick="MOS.abrirSelPrinterCostos('${op.fuente}','${_escapeHtml(op.idGuia)}')" title="Imprimir reporte de costos">🖨 Imprimir</button>
           <button class="alm-v-btn-costos" style="background:rgba(71,85,105,.6);box-shadow:none"
                   onclick="MOS.opsSalirModoCostos()" title="Cancelar edición">✕ Cancelar</button>`;
       }
@@ -5099,6 +5101,138 @@ const MOS = (() => {
     if (overlay) overlay.classList.add('hidden');
     S._opsExpanded = {};
     S._opsModoCostos = false;
+  }
+
+  // [v41.22] Selector de impresora para reporte de costos de guía.
+  // Reusa listarImpresorasPN (mismo endpoint del modal liq) pero con
+  // un modal propio chico y un handler distinto.
+  S._opsImpCtx = S._opsImpCtx || null;
+
+  function abrirSelPrinterCostos(fuente, idGuia) {
+    _opsBeep('tac');
+    S._opsImpCtx = { fuente, idGuia };
+    const sub = $('selPrCostosSub');
+    if (sub) sub.textContent = idGuia + ' · costos de proveedor';
+    openModal('modalSelPrinterCostos');
+    _opsCargarPrinters(false);
+  }
+  function cerrarSelPrinterCostos() {
+    closeModal('modalSelPrinterCostos');
+    S._opsImpCtx = null;
+  }
+  function _opsRecargarPrinters() { _opsCargarPrinters(true); }
+
+  async function _opsCargarPrinters(force) {
+    const cont = $('selPrCostosList');
+    if (!cont) return;
+    // Cache simple en S._opsPrintersCache
+    if (!force && S._opsPrintersCache && S._opsPrintersCache.length) {
+      _opsRenderPrinters(S._opsPrintersCache);
+      return;
+    }
+    cont.innerHTML = `<div class="text-center text-xs text-slate-500 py-8">
+      <div class="inline-block animate-spin">⏳</div> Consultando PrintNode...
+    </div>`;
+    try {
+      const data = await API.get('listarImpresorasPN', {});
+      const list = Array.isArray(data) ? data : (data && data.data) || [];
+      S._opsPrintersCache = list;
+      _opsRenderPrinters(list);
+    } catch(e) {
+      cont.innerHTML = `<div class="text-center text-xs text-rose-400 py-8">⚠ Error: ${e.message || e}</div>`;
+    }
+  }
+
+  function _opsRenderPrinters(list) {
+    const cont = $('selPrCostosList');
+    if (!cont) return;
+    if (!list.length) {
+      cont.innerHTML = `<div class="text-center text-xs text-slate-500 py-8">
+        <div class="text-3xl mb-2 opacity-50">🖨</div>
+        No hay impresoras registradas.<br>
+        <span class="text-[10px]">Configúralas en Infraestructura.</span>
+      </div>`;
+      return;
+    }
+    // Agrupado por zona/estación (mismo patrón que liq)
+    const zonas = {};
+    list.forEach(p => {
+      const zk = p.idZona || '_sin';
+      if (!zonas[zk]) zonas[zk] = { label: p.zonaNombre || p.idZona || '(sin zona)', items: [] };
+      zonas[zk].items.push(p);
+    });
+    const pCard = (p, idx) => {
+      const offCls = p.online ? '' : 'opacity-60';
+      const dotColor = p.online ? '#34d399' : '#f87171';
+      const offTag = p.online
+        ? '<span class="text-[9px] text-emerald-400 ml-1 font-semibold">online</span>'
+        : '<span class="text-[9px] text-rose-400 ml-1">offline</span>';
+      const subMeta = [
+        (p.tipo === 'ADHESIVO' ? '🏷' : '🧾') + ' ' + (p.tipo || 'TICKET'),
+        p.estacionNombre ? '· ' + p.estacionNombre : '',
+        p.computer ? '· 💻 ' + p.computer : ''
+      ].filter(Boolean).join(' ');
+      return `<button onclick="MOS._opsEnviarPrintCostos(${p.id}, this)"
+        class="w-full text-left rounded-lg p-2 ${offCls}"
+        style="background:linear-gradient(135deg,#060d1f,#0a1428);border:1px solid #1e293b;
+               cursor:pointer;transition:all .15s;
+               animation: checklistItemIn .35s cubic-bezier(.34,1.56,.64,1) backwards;
+               animation-delay:${idx*40}ms"
+        onmouseover="this.style.borderColor='#0ea5e9';this.style.transform='translateY(-1px)'"
+        onmouseout="this.style.borderColor='#1e293b';this.style.transform=''">
+        <div class="flex items-center gap-2">
+          <span style="width:10px;height:10px;border-radius:999px;background:${dotColor};box-shadow:0 0 8px ${dotColor}"></span>
+          <span class="text-sm text-slate-100 font-semibold flex-1">${_escapeHtml(p.nombre || 'Impresora')}</span>
+          ${offTag}
+        </div>
+        ${subMeta ? `<div class="text-[10px] text-slate-500 mt-1 pl-4">${subMeta}</div>` : ''}
+      </button>`;
+    };
+    let idx = 0;
+    cont.innerHTML = Object.keys(zonas).sort((a,b) => zonas[a].label.localeCompare(zonas[b].label)).map(zk => {
+      const z = zonas[zk];
+      return `<div>
+        <div class="text-[10px] uppercase font-bold text-cyan-400 mb-1 mt-2 px-1">📍 ${_escapeHtml(z.label)}</div>
+        <div class="space-y-1.5">${z.items.map(p => pCard(p, idx++)).join('')}</div>
+      </div>`;
+    }).join('');
+  }
+
+  async function _opsEnviarPrintCostos(printerId, btn) {
+    const ctx = S._opsImpCtx;
+    if (!ctx) return;
+    if (btn) {
+      btn.disabled = true;
+      btn.style.opacity = '0.5';
+      btn.style.pointerEvents = 'none';
+      btn.innerHTML += '<div class="text-[10px] text-cyan-400 mt-1 pl-4">⏳ Enviando...</div>';
+    }
+    try {
+      const r = await API.post('imprimirCostosGuia', {
+        idGuia: ctx.idGuia,
+        printerId: printerId
+      });
+      const ok = r && (r.ok === true || (r.data && r.data.ok === true));
+      if (ok) {
+        toast('🖨 Reporte enviado a impresora', 'ok');
+        cerrarSelPrinterCostos();
+      } else {
+        const err = (r && (r.error || (r.data && r.data.error))) || 'Error desconocido';
+        toast('⚠ Error: ' + err, 'error');
+        if (btn) {
+          btn.disabled = false;
+          btn.style.opacity = '';
+          btn.style.pointerEvents = '';
+        }
+      }
+    } catch(e) {
+      toast('⚠ Error: ' + (e.message || e), 'error');
+      if (btn) {
+        btn.disabled = false;
+        btn.style.opacity = '';
+        btn.style.pointerEvents = '';
+      }
+    }
   }
 
   // [v41.21] Conmutar el modo costos dentro del MISMO overlay del voucher
@@ -25700,6 +25834,7 @@ const MOS = (() => {
     abrirCostosGuia, _costosGuiaUpdLinea, _costosGuiaSetMode, _costosGuiaSetIgv, cerrarCostosGuia, guardarCostosGuia,
     _costosGuiaSugerirDebounce, _costosGuiaSugUpdate, _costosGuiaSugToggle,
     opsEntrarModoCostos, opsSalirModoCostos,
+    abrirSelPrinterCostos, cerrarSelPrinterCostos, _opsRecargarPrinters, _opsEnviarPrintCostos,
     _impactoTogglesel, _impactoSetPrecio, cerrarImpactoCostos, aplicarSugerenciasSeleccionadas,
     almLoadZonas, almRefreshZonas, almAbrirStockDetalle, cerrarStockDetalle, almRefreshStockDetalle,
     _almGenerarPedidoFromInsight, _almPickProveedor, cerrarSelProveedor,

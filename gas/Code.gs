@@ -60,6 +60,7 @@ function _route(method, e) {
       case 'getOperacionesUnificadas': return getOperacionesUnificadas(params);
       case 'getOperacionesConDetalle': return getOperacionesConDetalle(params);
       case 'getOperacionDetalle':    return getOperacionDetalle(params);
+      case 'imprimirCostosGuia':     return imprimirCostosGuia(params);
       case 'llenarCostosGuia':       return llenarCostosGuia(params);
       case 'aplicarPreciosVentaSugeridos': return aplicarPreciosVentaSugeridos(params);
       case 'getRankingZonas':        return getRankingZonas(params);
