@@ -1590,15 +1590,18 @@ function getOperacionesConDetalle(params) {
             var cant = parseFloat(l.cantidadRecibida || l.cantidad) || parseFloat(l.cantidadEsperada) || 0;
             var precio = parseFloat(l.precioUnitario) || 0;
             (lineasWH[id] = lineasWH[id] || []).push({
-              idDetalle:       l.idDetalle || '',
-              codigoProducto:  l.codigoProducto,
-              codigoBarra:     l.codigoProducto,
-              descripcion:     p.descripcion || ('⚠ ' + l.codigoProducto + ' (no en catálogo)'),
-              esEquivalencia:  esEquiv,
-              cantidad:        cant,
-              precioUnitario:  precio,
-              subtotal:        cant * precio,
-              fechaVencimiento: l.fechaVencimiento || ''
+              idDetalle:         l.idDetalle || '',
+              codigoProducto:    l.codigoProducto,
+              codigoBarra:       l.codigoProducto,
+              descripcion:       p.descripcion || ('⚠ ' + l.codigoProducto + ' (no en catálogo)'),
+              esEquivalencia:    esEquiv,
+              cantidad:          cant,
+              precioUnitario:    precio,
+              subtotal:          cant * precio,
+              fechaVencimiento:  l.fechaVencimiento || '',
+              precioVentaActual: parseFloat(p.precioVenta) || 0,  // [v41.23] catálogo MOS
+              precioCostoActual: parseFloat(p.precioCosto) || 0,
+              categoria:         p.categoria || ''
             });
             diagLinWH++;
           });
@@ -1621,12 +1624,15 @@ function getOperacionesConDetalle(params) {
             var cantME = parseFloat(data[i][2]) || 0;
             var precioME = parseFloat(p.precioVenta) || 0;
             (lineasME[id] = lineasME[id] || []).push({
-              codigoBarra:    cb,
-              descripcion:    p.descripcion || ('⚠ ' + cb + ' (no en catálogo)'),
-              esEquivalencia: esEquivME,
-              cantidad:       cantME,
-              precioUnitario: precioME,
-              subtotal:       cantME * precioME
+              codigoBarra:       cb,
+              descripcion:       p.descripcion || ('⚠ ' + cb + ' (no en catálogo)'),
+              esEquivalencia:    esEquivME,
+              cantidad:          cantME,
+              precioUnitario:    precioME,
+              subtotal:          cantME * precioME,
+              precioVentaActual: precioME,  // [v41.23] mismo dato (ME guarda venta no costo)
+              precioCostoActual: parseFloat(p.precioCosto) || 0,
+              categoria:         p.categoria || ''
             });
             diagLinME++;
           }
@@ -1677,14 +1683,17 @@ function getOperacionDetalle(params) {
         var cant = parseFloat(l.cantidadRecibida || l.cantidad) || parseFloat(l.cantidadEsperada) || 0;
         var precio = parseFloat(l.precioUnitario) || 0;
         return {
-          idDetalle:       l.idDetalle || '',
-          codigoProducto:  l.codigoProducto,
-          descripcion:     p.descripcion || '⚠ ' + l.codigoProducto + ' (no en catálogo)',
-          esEquivalencia:  esEquiv,
-          cantidad:        cant,
-          precioUnitario:  precio,
-          subtotal:        cant * precio,
-          fechaVencimiento: l.fechaVencimiento || ''
+          idDetalle:         l.idDetalle || '',
+          codigoProducto:    l.codigoProducto,
+          descripcion:       p.descripcion || '⚠ ' + l.codigoProducto + ' (no en catálogo)',
+          esEquivalencia:    esEquiv,
+          cantidad:          cant,
+          precioUnitario:    precio,
+          subtotal:          cant * precio,
+          fechaVencimiento:  l.fechaVencimiento || '',
+          precioVentaActual: parseFloat(p.precioVenta) || 0,   // [v41.23]
+          precioCostoActual: parseFloat(p.precioCosto) || 0,
+          categoria:         p.categoria || ''
         };
       });
       return { ok: true, data: { fuente: 'WH', idGuia: params.idGuia, lineas: lineas } };
