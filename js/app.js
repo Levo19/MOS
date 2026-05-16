@@ -16845,6 +16845,29 @@ const MOS = (() => {
         d.anulados > 0 ? `${d.anulados} ticket(s) POR_COBRAR anulados` : 'Sin POR_COBRAR pendientes'
       ].join(' · ');
       toast(msg, 'success');
+      // [v41.7] Disparar impresión del Ticket Z en la impresora original de
+      // la caja. PrintNode_ID quedó guardado al abrir caja en CAJAS col 10.
+      // Si no hay impresora asociada o la impresora está offline, avisamos
+      // pero el cierre lógico ya quedó hecho.
+      if (d.printNodeId) {
+        try {
+          const rImp = await API.post('imprimirTicketZCierre', {
+            idCaja:    d.idCaja || idCaja,
+            printerId: d.printNodeId,
+            estacion:  d.estacion || ''
+          });
+          const dImp = (rImp && rImp.data) ? rImp.data : (rImp || {});
+          if (dImp.ok) {
+            setTimeout(() => toast('🖨 Ticket Z enviado a impresora de ' + (d.estacion || 'la caja'), 'success'), 600);
+          } else {
+            setTimeout(() => toast('⚠ Cierre OK · impresión falló: ' + (dImp.error || 'PrintNode rechazó'), 'warn'), 600);
+          }
+        } catch(eImp) {
+          setTimeout(() => toast('⚠ Cierre OK · impresión falló: ' + (eImp.message || eImp), 'warn'), 600);
+        }
+      } else {
+        setTimeout(() => toast('⚠ Cierre OK · sin impresora asociada a esta caja', 'warn'), 600);
+      }
       // Refrescar lista de cajas para que la caja pase a CERRADA en la UI
       setTimeout(() => _cajasRefreshSilencioso?.(), 400);
     } catch(e) {
