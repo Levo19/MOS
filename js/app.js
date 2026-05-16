@@ -5081,6 +5081,27 @@ const MOS = (() => {
       inputMode: 'TOTAL', igvMode: 'INCLUIDO'
     };
     $('costosGuiaInfo').textContent = idGuia + (nombreProveedor ? ' · ' + nombreProveedor : '');
+    // [v41.20] Poblar foto en el lado izquierdo del overlay split
+    const fImg = $('cguFotoImg');
+    const fEmp = $('cguFotoEmpty');
+    if (fImg && fEmp) {
+      if (foto) {
+        fImg.style.display = 'block';
+        fImg.src = foto;
+        fEmp.style.display = 'none';
+        S._cguFotoUrl = foto;
+        fImg.onclick = () => abrirFotoOverlay(foto);
+      } else {
+        fImg.style.display = 'none';
+        fEmp.style.display = 'flex';
+        S._cguFotoUrl = '';
+      }
+    }
+    // El botón Pantalla completa lee de S._cguFotoUrl
+    const fBtn = $('cguFotoFullBtn');
+    if (fBtn) fBtn.onclick = () => abrirFotoOverlay(S._cguFotoUrl || '');
+    // Ocultar sección sugerencias al abrir (queda inline por producto)
+    _ocultarSeccionSugerencias && _ocultarSeccionSugerencias();
     const body = $('costosGuiaBody');
     openModal('modalCostosGuia');
 
@@ -5165,92 +5186,195 @@ const MOS = (() => {
       body.innerHTML = '<div class="text-xs text-slate-500 italic py-4">Esta guía no tiene líneas registradas.</div>';
       return;
     }
-    const fotoHtml = foto
-      ? `<div class="mb-3">
-          <div class="text-[10px] text-slate-500 uppercase mb-1">📸 Foto de factura</div>
-          <a href="${foto}" target="_blank" rel="noopener">
-            <img src="${foto}" alt="Factura" class="rounded-lg cursor-zoom-in" style="max-width:100%;max-height:280px;object-fit:contain;background:#020617;border:1px solid #1e293b">
-          </a>
-          <div class="text-[10px] text-slate-600 mt-1">Click para ampliar en pestaña nueva</div>
-        </div>`
-      : '<div class="text-xs text-amber-400 italic mb-3">Esta guía no tiene foto adjunta.</div>';
-
-    const segBtn = (active, label, onclick) => `<button onclick="${onclick}"
-      class="px-2.5 py-1 text-[11px] font-semibold rounded transition"
-      style="${active ? 'background:#f59e0b;color:#0b1220' : 'background:#0f172a;color:#94a3b8;border:1px solid #1e293b'}">${label}</button>`;
+    // [v41.20] Nuevo layout: cada línea es una card individual con su propio
+    // slot para sugerencia inline (slide-down al detectar costo llenado).
+    // La foto ya no va embebida acá (vive en el lado izquierdo del overlay
+    // split). En mobile (<820px) el overlay hace stack vertical y la foto
+    // va arriba — igualmente cubierto sin duplicar.
     const togglesHtml = `
-      <div class="flex flex-wrap items-center gap-3 mb-3 pb-3" style="border-bottom:1px dashed #1e293b">
-        <div class="flex items-center gap-1.5">
-          <span class="text-[10px] text-slate-500 uppercase">Ingreso:</span>
-          ${segBtn(inputMode === 'TOTAL',    'Total línea',  "MOS._costosGuiaSetMode('TOTAL')")}
-          ${segBtn(inputMode === 'UNITARIO', 'Por unidad',   "MOS._costosGuiaSetMode('UNITARIO')")}
+      <div class="alm-cu-toggles">
+        <div class="alm-cu-toggle-group">
+          <span>Ingreso:</span>
+          <button onclick="MOS._costosGuiaSetMode('TOTAL')"
+                  class="alm-cu-seg-btn ${inputMode === 'TOTAL' ? 'active' : ''}">Total línea</button>
+          <button onclick="MOS._costosGuiaSetMode('UNITARIO')"
+                  class="alm-cu-seg-btn ${inputMode === 'UNITARIO' ? 'active' : ''}">Por unidad</button>
         </div>
-        <div class="flex items-center gap-1.5">
-          <span class="text-[10px] text-slate-500 uppercase">IGV:</span>
-          ${segBtn(igvMode === 'INCLUIDO', 'Incluido (18%)', "MOS._costosGuiaSetIgv('INCLUIDO')")}
-          ${segBtn(igvMode === 'SIN_IGV',  'Sin IGV',        "MOS._costosGuiaSetIgv('SIN_IGV')")}
+        <div class="alm-cu-toggle-group">
+          <span>IGV:</span>
+          <button onclick="MOS._costosGuiaSetIgv('INCLUIDO')"
+                  class="alm-cu-seg-btn ${igvMode === 'INCLUIDO' ? 'active' : ''}">Incluido (18%)</button>
+          <button onclick="MOS._costosGuiaSetIgv('SIN_IGV')"
+                  class="alm-cu-seg-btn ${igvMode === 'SIN_IGV' ? 'active' : ''}">Sin IGV</button>
         </div>
       </div>`;
 
     let totalBruto = 0, totalNeto = 0;
+    const placeholderIn = inputMode === 'TOTAL' ? 'Total' : 'P. unit.';
+
     const filasHtml = lineas.map((l, i) => {
       const cant = parseFloat(l.cantidad) || 0;
       const brutoUnit = _costosGuiaCalcularBruto(l, st);
       const netoUnit  = brutoUnit / (1 + _IGV_RATE);
       const subBruto  = brutoUnit * cant;
-      const subNeto   = netoUnit * cant;
       totalBruto += subBruto;
-      totalNeto  += subNeto;
-      const equivBadge = l.esEquivalencia ? ' <span class="text-[9px] text-purple-400 bg-purple-500/10 px-1 rounded">EQUIV</span>' : '';
-      const placeholder = inputMode === 'TOTAL' ? 'Total línea' : 'P. unit.';
+      totalNeto  += netoUnit * cant;
+      const equivBadge = l.esEquivalencia ? ' <span style="font-size:9px;color:#a855f7;background:rgba(168,85,247,.1);padding:1px 5px;border-radius:999px">EQUIV</span>' : '';
       const helperTxt = brutoUnit > 0
-        ? `<div class="text-[10px] leading-tight">
-             <div><span class="text-amber-500 font-semibold">Costo unit. c/IGV:</span> <span class="text-amber-400 font-mono font-bold">S/ ${brutoUnit.toFixed(4)}</span></div>
-             <div><span class="text-slate-600">(neto: <span class="font-mono">S/ ${netoUnit.toFixed(4)}</span>)</span></div>
-           </div>`
-        : '<span class="text-[10px] text-slate-700">—</span>';
-      return `<tr>
-        <td class="py-2 pr-2">
-          <div class="text-xs text-slate-200 truncate">${l.descripcion}${equivBadge}</div>
-          <div class="text-[10px] text-slate-500 font-mono">▌ ${l.codigoProducto || '—'}</div>
-        </td>
-        <td class="py-2 pr-2 text-right text-xs text-slate-400 whitespace-nowrap">${cant}u</td>
-        <td class="py-2 pr-2">
-          <input type="number" step="0.01" min="0" class="inp text-xs text-right" style="width:100px"
-                 value="${l.inputValue || ''}"
-                 oninput="MOS._costosGuiaUpdLinea(${i}, this.value)" placeholder="${placeholder}">
-        </td>
-        <td class="py-2 text-right whitespace-nowrap" id="costoGuiaSubtot_${i}">
-          ${helperTxt}
-        </td>
-      </tr>`;
+        ? `<div><span class="alm-cu-line-helper-bruto">S/ ${brutoUnit.toFixed(4)}</span>/u</div>
+           <div style="opacity:.65">neto S/ ${netoUnit.toFixed(4)}</div>`
+        : '<span style="opacity:.4">—</span>';
+      // Slot vacío para sugerencia — se rellena al cambiar el costo.
+      // Estado preservado entre renders en S._costosGuiaState.lineas[i]._sugerencia
+      const sugCache = l._sugerencia;
+      const sugHtml = sugCache
+        ? _renderSugerenciaInline(i, sugCache)
+        : '';
+      const sugOpen = sugCache ? ' is-open' : '';
+      return `<div class="alm-cu-line">
+        <div class="alm-cu-line-row">
+          <div>
+            <div class="alm-cu-line-desc">${l.descripcion}${equivBadge}</div>
+            <div class="alm-cu-line-cod">▌ ${l.codigoProducto || '—'}</div>
+          </div>
+          <div class="alm-cu-line-cant">${cant}u</div>
+          <div>
+            <input type="number" step="0.01" min="0" class="alm-cu-input"
+                   value="${l.inputValue || ''}"
+                   oninput="MOS._costosGuiaUpdLinea(${i}, this.value)"
+                   onblur="MOS._costosGuiaSugerirDebounce(${i})"
+                   placeholder="${placeholderIn}">
+          </div>
+          <div class="alm-cu-line-helper" id="costoGuiaSubtot_${i}">${helperTxt}</div>
+        </div>
+        <div class="alm-cu-sug${sugOpen}" id="sugSlot_${i}">${sugHtml}</div>
+      </div>`;
     }).join('');
-    const colHeaderInput = inputMode === 'TOTAL' ? 'Total línea' : 'Precio unit.';
-    const colHeaderIgv   = igvMode === 'INCLUIDO' ? '(con IGV)'  : '(sin IGV)';
-    body.innerHTML = `${fotoHtml}${togglesHtml}
-      <div class="text-[10px] text-slate-500 uppercase mb-1">Líneas (${lineas.length})</div>
-      <table class="w-full text-sm">
-        <thead>
-          <tr class="text-[10px] text-slate-600 uppercase border-b border-slate-800">
-            <th class="text-left pb-1">Producto</th>
-            <th class="text-right pb-1">Cant</th>
-            <th class="text-right pb-1">${colHeaderInput} <span class="text-slate-700 normal-case">${colHeaderIgv}</span></th>
-            <th class="text-right pb-1">Cálculo</th>
-          </tr>
-        </thead>
-        <tbody>${filasHtml}</tbody>
-        <tfoot>
-          <tr class="border-t border-slate-800">
-            <td colspan="4" class="pt-3">
-              <div class="flex justify-end gap-4 text-[11px]">
-                <div><span class="text-slate-500">Neto:</span> <span class="text-slate-300 font-mono" id="costosGuiaTotalNeto">S/ ${totalNeto.toFixed(2)}</span></div>
-                <div><span class="text-slate-500">IGV:</span>  <span class="text-slate-300 font-mono" id="costosGuiaTotalIgv">S/ ${(totalBruto - totalNeto).toFixed(2)}</span></div>
-                <div><span class="text-amber-400 font-semibold">Total:</span> <span class="text-amber-400 font-mono font-bold" id="costosGuiaTotalBruto">S/ ${totalBruto.toFixed(2)}</span></div>
-              </div>
-            </td>
-          </tr>
-        </tfoot>
-      </table>`;
+
+    body.innerHTML = `${togglesHtml}
+      <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">
+        ${lineas.length} producto${lineas.length === 1 ? '' : 's'}
+      </div>
+      ${filasHtml}
+      <div class="alm-cu-totales">
+        <div><span style="color:#94a3b8">Neto:</span> <b id="costosGuiaTotalNeto">S/ ${totalNeto.toFixed(2)}</b></div>
+        <div><span style="color:#94a3b8">IGV:</span>  <b id="costosGuiaTotalIgv">S/ ${(totalBruto - totalNeto).toFixed(2)}</b></div>
+        <div><span style="color:#fbbf24">Total:</span> <b id="costosGuiaTotalBruto">S/ ${totalBruto.toFixed(2)}</b></div>
+      </div>`;
+  }
+
+  // [v41.20] Render de la sugerencia inline debajo de una línea de costo
+  function _renderSugerenciaInline(idx, sug) {
+    const actual = parseFloat(sug.precioVentaActual) || 0;
+    const sugVal = sug._precioEditado != null ? sug._precioEditado : (parseFloat(sug.precioVentaSugerido) || 0);
+    const seleccionado = sug._seleccionado !== false; // default true
+    let deltaHtml = '';
+    if (actual <= 0) {
+      deltaHtml = '<span class="alm-cu-sug-delta new">NUEVO</span>';
+    } else {
+      const deltaPct = ((sugVal - actual) / actual) * 100;
+      const sign = deltaPct >= 0 ? '+' : '';
+      const cls = deltaPct > 0 ? 'up' : 'down';
+      deltaHtml = `<span class="alm-cu-sug-delta ${cls}">${sign}${deltaPct.toFixed(0)}%</span>`;
+    }
+    return `<div class="alm-cu-sug-inner">
+      <span class="alm-cu-sug-icon">💡</span>
+      <div>
+        <div class="alm-cu-sug-label">Precio venta sugerido ${deltaHtml}</div>
+        <div class="alm-cu-sug-actual">Actual: ${actual > 0 ? 'S/ ' + actual.toFixed(2) : '— sin precio anterior'}</div>
+      </div>
+      <input type="number" step="0.01" min="0" class="alm-cu-sug-input"
+             value="${sugVal.toFixed(2)}"
+             oninput="MOS._costosGuiaSugUpdate(${idx}, this.value)">
+      <label class="alm-cu-sug-check">
+        <input type="checkbox" ${seleccionado ? 'checked' : ''}
+               onchange="MOS._costosGuiaSugToggle(${idx}, this.checked)">
+        <span>Aplicar</span>
+      </label>
+    </div>`;
+  }
+
+  // Editar precio sugerido inline
+  function _costosGuiaSugUpdate(idx, valor) {
+    const l = S._costosGuiaState.lineas[idx];
+    if (!l || !l._sugerencia) return;
+    l._sugerencia._precioEditado = parseFloat(valor) || 0;
+  }
+  // Toggle de aplicar la sugerencia
+  function _costosGuiaSugToggle(idx, checked) {
+    const l = S._costosGuiaState.lineas[idx];
+    if (!l || !l._sugerencia) return;
+    l._sugerencia._seleccionado = checked;
+  }
+
+  // [v41.20] Debounce 600ms al perder foco / cambiar costo: pide sugerencia
+  // al backend para ese producto específico.
+  const _sugDebounceTimers = {};
+  function _costosGuiaSugerirDebounce(idx) {
+    clearTimeout(_sugDebounceTimers[idx]);
+    _sugDebounceTimers[idx] = setTimeout(() => _costosGuiaFetchSugerencia(idx), 600);
+  }
+
+  async function _costosGuiaFetchSugerencia(idx) {
+    const st = S._costosGuiaState;
+    const l = st.lineas[idx];
+    if (!l) return;
+    const brutoUnit = _costosGuiaCalcularBruto(l, st);
+    if (brutoUnit <= 0) {
+      // Sin costo → ocultar sugerencia
+      l._sugerencia = null;
+      const slot = $('sugSlot_' + idx);
+      if (slot) { slot.classList.remove('is-open'); setTimeout(() => slot.innerHTML = '', 300); }
+      return;
+    }
+    // Mostrar loading en el slot
+    const slot = $('sugSlot_' + idx);
+    if (slot) {
+      slot.innerHTML = `<div class="alm-cu-sug-inner" style="grid-template-columns:auto 1fr;justify-content:start">
+        <span class="alm-cu-sug-icon">⏳</span>
+        <span class="alm-cu-sug-label">Calculando sugerencia...</span>
+      </div>`;
+      slot.classList.add('is-open');
+    }
+    try {
+      const r = await API.get('getSugerenciaPrecioIndividual', {
+        idGuia: st.idGuia,
+        codigoProducto: l.codigoProducto,
+        costoUnitarioBruto: brutoUnit
+      });
+      const data = (r && (r.data || r)) || {};
+      if (data.ok === false || !data.precioVentaSugerido) {
+        // Backend respondió pero sin sugerencia útil → calcular fallback frontend
+        l._sugerencia = _costosGuiaSugFallback(l, brutoUnit);
+      } else {
+        l._sugerencia = {
+          precioVentaActual: data.precioVentaActual || 0,
+          precioVentaSugerido: data.precioVentaSugerido || 0,
+          _seleccionado: true,
+          _precioEditado: data.precioVentaSugerido || 0
+        };
+      }
+    } catch(e) {
+      // Sin backend / falla → fallback frontend (margen 25%)
+      l._sugerencia = _costosGuiaSugFallback(l, brutoUnit);
+    }
+    // Pintar
+    if (slot) {
+      slot.innerHTML = _renderSugerenciaInline(idx, l._sugerencia);
+      slot.classList.add('is-open');
+    }
+  }
+
+  // Cálculo fallback frontend: costo bruto × 1.25 (25% margen)
+  function _costosGuiaSugFallback(l, brutoUnit) {
+    const sug = +(brutoUnit * 1.25).toFixed(2);
+    return {
+      precioVentaActual: parseFloat(l.precioVentaActual) || 0,
+      precioVentaSugerido: sug,
+      _seleccionado: true,
+      _precioEditado: sug,
+      _fallback: true
+    };
   }
 
   function _costosGuiaUpdLinea(idx, valor) {
@@ -5263,11 +5387,9 @@ const MOS = (() => {
     const cell = $('costoGuiaSubtot_' + idx);
     if (cell) {
       cell.innerHTML = brutoUnit > 0
-        ? `<div class="text-[10px] leading-tight">
-             <div><span class="text-amber-500 font-semibold">Costo unit. c/IGV:</span> <span class="text-amber-400 font-mono font-bold">S/ ${brutoUnit.toFixed(4)}</span></div>
-             <div><span class="text-slate-600">(neto: <span class="font-mono">S/ ${netoUnit.toFixed(4)}</span>)</span></div>
-           </div>`
-        : '<span class="text-[10px] text-slate-700">—</span>';
+        ? `<div><span class="alm-cu-line-helper-bruto">S/ ${brutoUnit.toFixed(4)}</span>/u</div>
+           <div style="opacity:.65">neto S/ ${netoUnit.toFixed(4)}</div>`
+        : '<span style="opacity:.4">—</span>';
     }
     // Recalcular totales
     let totalBruto = 0;
@@ -5276,6 +5398,8 @@ const MOS = (() => {
     const elN = $('costosGuiaTotalNeto');  if (elN) elN.textContent = 'S/ ' + totalNeto.toFixed(2);
     const elI = $('costosGuiaTotalIgv');   if (elI) elI.textContent = 'S/ ' + (totalBruto - totalNeto).toFixed(2);
     const elB = $('costosGuiaTotalBruto'); if (elB) elB.textContent = 'S/ ' + totalBruto.toFixed(2);
+    // [v41.20] Dispara debounce para refrescar sugerencia inline
+    _costosGuiaSugerirDebounce(idx);
   }
 
   function cerrarCostosGuia() { closeModal('modalCostosGuia'); }
@@ -5296,22 +5420,31 @@ const MOS = (() => {
       return;
     }
     const updateMaster = !!$('costosGuiaUpdMaster')?.checked;
-    closeModal('modalCostosGuia');
 
-    // 🚀 OPTIMISTA: abrir el panel de impacto YA con skeleton premium.
-    // Antes el user veía un toast "Guardando..." y esperaba 5-10s bloqueado
-    // hasta que el backend terminara el FIFO. Ahora el modal aparece al
-    // instante con shimmer y se rellena cuando llegan las sugerencias.
-    _mostrarPanelImpactoSkeleton(idGuia);
+    // [v41.20] Capturar sugerencias inline marcadas para aplicar
+    const sugerenciasInline = lineas
+      .filter(l => l._sugerencia && l._sugerencia._seleccionado && (l._sugerencia._precioEditado > 0))
+      .map(l => ({
+        codigoProducto: l.codigoProducto,
+        precioVentaSugerido: l._sugerencia._precioEditado
+      }));
+
+    closeModal('modalCostosGuia');
 
     try {
       const resp = await API.post('llenarCostosGuia', {
-        idGuia, items, actualizarPrecioCosto: updateMaster, usuario: S.session?.nombre || ''
+        idGuia, items, actualizarPrecioCosto: updateMaster,
+        usuario: S.session?.nombre || '',
+        sugerenciasInline                       // [v41.20] aplica directo desde inline
       });
-      toast('✓ ' + items.length + ' costos guardados' + (updateMaster ? ' + catálogo MOS actualizado' : ''), 'ok');
+      toast('✓ ' + items.length + ' costos guardados'
+            + (updateMaster ? ' + catálogo MOS' : '')
+            + (sugerenciasInline.length ? ' · ' + sugerenciasInline.length + ' precios aplicados' : ''),
+            'ok');
       await almLoadOps(true);
 
-      // Si hay sugerencias relevantes, abrir panel de impacto
+      // [v41.20] Las sugerencias ya se aplicaron inline; no abrir modal viejo.
+      // Mantengo la lógica de getter por compat (algunos endpoints siguen devolviéndolas).
       const sugerencias = (resp && resp.sugerenciasPrecioVenta) || (resp && resp.data && resp.data.sugerenciasPrecioVenta) || [];
       const relevantes = sugerencias.filter(s => {
         // Mostrar solo si hay sugerencia activa Y precio sugerido difiere significativamente del actual
@@ -5326,14 +5459,28 @@ const MOS = (() => {
       if (relevantes.length) {
         _mostrarPanelImpacto(relevantes, idGuia);
       } else {
-        // No hay cambios relevantes → cerrar el skeleton con feedback amable
-        closeModal('modalImpactoCostos');
+        // No hay cambios relevantes → ocultar sección sugerencias
+        _ocultarSeccionSugerencias();
         toast('✓ Costos guardados · sin cambios de precio sugeridos', 'ok');
       }
     } catch(e) {
-      closeModal('modalImpactoCostos');
+      _ocultarSeccionSugerencias();
       toast('Error: ' + e.message, 'error');
     }
+  }
+
+  // [v41.19] Mostrar/ocultar la sección embebida de sugerencias dentro del
+  // overlay unificado de costos (reemplaza al modalImpactoCostos standalone).
+  function _mostrarSeccionSugerencias() {
+    const sec = $('cguSugerenciasSection');
+    if (sec) {
+      sec.classList.remove('hidden');
+      setTimeout(() => { try { sec.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch(_){} }, 100);
+    }
+  }
+  function _ocultarSeccionSugerencias() {
+    const sec = $('cguSugerenciasSection');
+    if (sec) sec.classList.add('hidden');
   }
 
   // ── Panel: Impacto de costos en precios de venta ─────────
@@ -25399,6 +25546,7 @@ const MOS = (() => {
     almLoadOps, almRefreshOps, almRenderOps, almToggleOpExpand, almSetRangoOps,
     abrirOpsDetalleOverlay, cerrarOpsDetalleOverlay, abrirFotoOverlay,
     abrirCostosGuia, _costosGuiaUpdLinea, _costosGuiaSetMode, _costosGuiaSetIgv, cerrarCostosGuia, guardarCostosGuia,
+    _costosGuiaSugerirDebounce, _costosGuiaSugUpdate, _costosGuiaSugToggle,
     _impactoTogglesel, _impactoSetPrecio, cerrarImpactoCostos, aplicarSugerenciasSeleccionadas,
     almLoadZonas, almRefreshZonas, almAbrirStockDetalle, cerrarStockDetalle, almRefreshStockDetalle,
     _almGenerarPedidoFromInsight, _almPickProveedor, cerrarSelProveedor,
