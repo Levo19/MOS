@@ -4690,7 +4690,10 @@ const MOS = (() => {
       variantClass = 'alm-voucher-ingreso';
       selloTxt = 'RECIBIDO'; selloClass = 'alm-v-sello-ingresado';
     } else if (tipo === 'ENTRADA_TRASLADO') {
-      tipoLabel = 'TRASLADO RECIBIDO'; tipoEmoji = '🔄';
+      // Origen del traslado viene en op.zonaDestino (que aquí significa "zona origen")
+      const origen = op.zonaDestino || '';
+      tipoLabel = origen ? `TRASLADO ← ${origen}` : 'TRASLADO RECIBIDO';
+      tipoEmoji = '🔄';
       variantClass = 'alm-voucher-traslado';
       selloTxt = 'TRASLADADO'; selloClass = 'alm-v-sello-ingresado';
     } else if (tipo.indexOf('INGRESO') >= 0 || tipo.indexOf('ENTRADA') >= 0) {
@@ -4702,8 +4705,10 @@ const MOS = (() => {
       variantClass = 'alm-voucher-venta';
       selloTxt = 'VENDIDO'; selloClass = 'alm-v-sello-venta';
     } else if (tipo === 'SALIDA_MOVIMIENTO') {
-      // Movimiento entre zonas (origen)
-      tipoLabel = 'SALIDA TRASLADO'; tipoEmoji = '📤';
+      // Movimiento entre zonas — destino viene en op.zonaDestino
+      const dest = op.zonaDestino || '';
+      tipoLabel = dest ? `TRASLADO → ${dest}` : 'SALIDA TRASLADO';
+      tipoEmoji = '📤';
       variantClass = 'alm-voucher-traslado';
       selloTxt = 'TRASLADADO'; selloClass = 'alm-v-sello-ingresado';
     } else if (tipo === 'SALIDA_JEFA') {
@@ -4711,7 +4716,10 @@ const MOS = (() => {
       variantClass = 'alm-voucher-despacho';
       selloTxt = 'AUTORIZADO'; selloClass = 'alm-v-sello-despachado';
     } else if (tipo.indexOf('SALIDA_ZONA') >= 0 || tipo.indexOf('DESPACHO') >= 0) {
-      tipoLabel = 'DESPACHO'; tipoEmoji = '📦';
+      // [v41.17] Mostrar zona destino en label si está disponible
+      const destino = op.idZona || op.zonaDestino || '';
+      tipoLabel = destino ? `DESPACHO → ${destino}` : 'DESPACHO';
+      tipoEmoji = '📦';
       variantClass = 'alm-voucher-despacho';
       selloTxt = 'DESPACHADO'; selloClass = 'alm-v-sello-despachado';
     } else if (tipo.indexOf('ENVASADO') >= 0) {
@@ -4759,9 +4767,12 @@ const MOS = (() => {
          </button>`
       : '';
 
-    // Preview de líneas (máx 3) — siempre visible
+    // [v41.17] Preview de líneas (máx 3) — solo visible cuando NO está expandido.
+    // Cuando está en overlay (expanded=true), el detalle completo abajo cubre todo,
+    // mostrar también el preview duplicaba la info. Ahora si está expandido,
+    // saltamos el preview y solo dejamos el detalle full.
     const lineas = op.lineas || [];
-    const previewHtml = lineas.length ? `
+    const previewHtml = (!expanded && lineas.length) ? `
       <hr class="alm-v-sep">
       <div class="alm-v-lineas">
         ${lineas.slice(0, 3).map(l => {
@@ -4773,9 +4784,9 @@ const MOS = (() => {
           </div>`;
         }).join('')}
         ${lineas.length > 3 ? `<div class="alm-v-mas">+${lineas.length - 3} línea${lineas.length - 3 === 1 ? '' : 's'} más…</div>` : ''}
-      </div>` : (op.esPreingreso ? '<hr class="alm-v-sep"><div class="alm-v-mas">Preingreso sin líneas hasta aprobación</div>' : '');
+      </div>` : (op.esPreingreso && !expanded ? '<hr class="alm-v-sep"><div class="alm-v-mas">Preingreso sin líneas hasta aprobación</div>' : '');
 
-    // Detalle completo (en el bloque expandible)
+    // Detalle completo (en el bloque expandible, solo cuando overlay abierto)
     const detalleHtml = expanded ? _renderVoucherDetalleCompleto(op) : '';
 
     return `<div class="alm-voucher ${variantClass} ${expanded ? 'is-expanded' : ''}"
