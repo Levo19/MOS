@@ -17338,11 +17338,19 @@ const MOS = (() => {
         return;
       }
       try { _finBeep?.('success'); } catch(_){}
-      const msg = [
-        `🔒 Caja cerrada por ${d.cerradoPor || 'admin'}`,
-        `Monto final: S/ ${parseFloat(d.montoFinal || 0).toFixed(2)}`,
-        d.anulados > 0 ? `${d.anulados} ticket(s) POR_COBRAR anulados` : 'Sin POR_COBRAR pendientes'
-      ].join(' · ');
+      let msg;
+      if (d.yaCerrada) {
+        // Caja ya estaba cerrada — reportar si se reparó la guía
+        msg = d.guiaRegenerada
+          ? `✓ Caja ya cerrada · Guía SALIDA_VENTAS regenerada (faltaba del cierre original)`
+          : `✓ Caja ya estaba cerrada · Guía ya existía`;
+      } else {
+        msg = [
+          `🔒 Caja cerrada por ${d.cerradoPor || 'admin'}`,
+          `Monto final: S/ ${parseFloat(d.montoFinal || 0).toFixed(2)}`,
+          d.anulados > 0 ? `${d.anulados} ticket(s) POR_COBRAR anulados` : 'Sin POR_COBRAR pendientes'
+        ].join(' · ');
+      }
       toast(msg, 'success');
       // [v41.7] Disparar impresión del Ticket Z en la impresora original de
       // la caja. PrintNode_ID quedó guardado al abrir caja en CAJAS col 10.
