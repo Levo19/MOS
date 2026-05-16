@@ -6882,21 +6882,15 @@ const MOS = (() => {
     return String(e.estado || '').toUpperCase() === 'COMPLETADO';
   }
 
-  // [v41.25] Extrae HH:mm de cualquier formato de fecha:
-  // "4/24/2026 15:04:33", "2026-05-15 12:49:55", "2026-05-15T12:49:55Z", etc.
-  // Hace fallback con Date() si no encuentra HH:MM por regex (ej. ISO pure).
+  // [v41.26] Extrae HH:mm SOLO via regex. Antes había fallback a new Date()
+  // que con strings tipo "2026-05-15" sin hora daba 19:00 falso (UTC midnight
+  // → Lima UTC-5 = 19:00 día anterior). Si el string no tiene hora explícita,
+  // mejor mostrar vacío que mostrar una hora incorrecta.
   function _envExtraerHora(fechaStr) {
     if (!fechaStr) return '';
     const s = String(fechaStr);
     const m = s.match(/(\d{1,2}):(\d{2})/);
     if (m) return m[1].padStart(2, '0') + ':' + m[2];
-    try {
-      const d = new Date(s);
-      if (!isNaN(d.getTime())) {
-        return String(d.getHours()).padStart(2, '0') + ':'
-             + String(d.getMinutes()).padStart(2, '0');
-      }
-    } catch(_){}
     return '';
   }
 

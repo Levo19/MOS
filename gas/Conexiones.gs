@@ -37,11 +37,17 @@ function _sheetToObjectsLocal(sheet) {
   var data = sheet.getDataRange().getValues();
   if (data.length < 2) return [];
   var headers = data[0];
+  var tz = Session.getScriptTimeZone();
   return data.slice(1).map(function(row) {
     var obj = {};
     headers.forEach(function(h, i) {
       var v = row[i];
-      obj[h] = v instanceof Date ? Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd') : v;
+      // [v41.26] Preservar HORA al serializar Date.
+      // Antes formato 'yyyy-MM-dd' truncaba la hora → frontend recibía
+      // "2026-05-15" y new Date(s) lo interpretaba como UTC midnight,
+      // dando 19:00 hora local en Lima (UTC-5) para todas las fechas.
+      // Consumidores que solo quieren la fecha pueden hacer .substring(0,10).
+      obj[h] = v instanceof Date ? Utilities.formatDate(v, tz, 'yyyy-MM-dd HH:mm:ss') : v;
     });
     return obj;
   }).filter(function(obj) {

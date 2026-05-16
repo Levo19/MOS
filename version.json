@@ -1,1 +1,1 @@
-{ "version": "2.41.25", "build": "20260516-envasados-hora-chip-dorado-parser-multiformato" }
+{ "version": "2.41.26", "build": "20260516-fix-hora-envasados-backend-preserva-y-frontend-sin-fallback" }
