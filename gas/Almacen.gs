@@ -841,7 +841,7 @@ function _getGuiasYPreingresosImpl(params) {
 function getOperacionesUnificadas(params) {
   var dias = parseInt(params && params.dias) || 7;
   // [v41.22] key bumpeada para invalidar cache que no traía op.preingreso anidado
-  return _almCached('opsUnifV2_' + dias, 60, params, function() {
+  return _almCached('opsUnifV3_' + dias, 60, params, function() {
     return _getOperacionesUnificadasImpl(dias);
   });
 }
@@ -853,11 +853,21 @@ function _getOperacionesUnificadasImpl(dias) {
     var tz = Session.getScriptTimeZone();
     var operaciones = [];
 
-    // Mapa idProveedor → nombre (para enriquecer ops)
+    // Mapa idProveedor → nombre (para enriquecer ops). [v41.22] Fusiona
+    // PROVEEDORES_MASTER (MOS) + PROVEEDORES (WH) — los preingresos WH
+    // pueden tener IDs que no están en master, sin esto el voucher mostraba
+    // solo el ID en lugar del nombre del proveedor.
     var provMap = {};
     try {
       _sheetToObjects(getSheet('PROVEEDORES_MASTER')).forEach(function(pr) {
-        if (pr.idProveedor) provMap[pr.idProveedor] = pr.nombre || pr.idProveedor;
+        if (pr.idProveedor) provMap[String(pr.idProveedor)] = pr.nombre || pr.idProveedor;
+      });
+    } catch(_){}
+    try {
+      _sheetToObjects(_abrirWhSheet('PROVEEDORES')).forEach(function(pr) {
+        if (pr.idProveedor && !provMap[String(pr.idProveedor)]) {
+          provMap[String(pr.idProveedor)] = pr.nombre || pr.idProveedor;
+        }
       });
     } catch(_){}
 
@@ -910,6 +920,14 @@ function _getOperacionesUnificadasImpl(dias) {
     var allPre = _safeReadWhPreingresos();
     var preMap = {};
     allPre.forEach(function(p) { if (p.idPreingreso) preMap[String(p.idPreingreso)] = p; });
+    // [v41.22] Cross-check inverso: indexar las guías que apuntan a un preingreso.
+    // Sirve para detectar preingresos ya procesados aunque su columna idGuia
+    // haya quedado vacía por race condition o error de actualización en WH.
+    var preProcesadosByGuia = {};
+    whGuias.forEach(function(g) {
+      var idPre = String(g.idPreingreso || '').trim();
+      if (idPre) preProcesadosByGuia[idPre] = true;
+    });
 
     whGuias.forEach(function(g) {
       var fecha = _parseFecha(g.fecha);
@@ -940,7 +958,7 @@ function _getOperacionesUnificadasImpl(dias) {
         fecha:            fecha.toISOString(),
         usuario:          g.usuario || '',
         idProveedor:      g.idProveedor || '',
-        nombreProveedor:  g.idProveedor ? (provMap[g.idProveedor] || g.idProveedor) : '',
+        nombreProveedor:  g.idProveedor ? (provMap[String(g.idProveedor)] || g.idProveedor) : '',
         idZona:           g.idZona || '',
         idZonaCanonId:    g.idZona ? resolver.resolve(g.idZona).id : '',
         idZonaCanonNom:   g.idZona ? resolver.resolve(g.idZona).nombre : '',
@@ -960,8 +978,16 @@ function _getOperacionesUnificadasImpl(dias) {
     var preingresos = allPre;
     preingresos.forEach(function(p) {
       var estado = String(p.estado || '').toUpperCase();
-      // Si tiene idGuia o está PROCESADO, ya aparece como guía → no duplicar
-      if (estado === 'PROCESADO' || (p.idGuia && String(p.idGuia).trim())) return;
+      var idPre  = String(p.idPreingreso || '').trim();
+      // [v41.22] Skip si:
+      //   a) estado es PROCESADO o ANULADO
+      //   b) tiene idGuia poblado en su propia fila
+      //   c) Cross-check: alguna guía ya apunta a este preingreso (idGuia vacío
+      //      por bug histórico no debe duplicar el voucher en Operaciones MOS)
+      if (estado === 'PROCESADO' || estado === 'ANULADO') return;
+      if (p.idGuia && String(p.idGuia).trim()) return;
+      if (idPre && preProcesadosByGuia[idPre]) return;
+
       var fecha = _parseFecha(p.fecha);
       if (!fecha || fecha < desde) return;
       operaciones.push({
@@ -972,7 +998,7 @@ function _getOperacionesUnificadasImpl(dias) {
         fecha:            fecha.toISOString(),
         usuario:          p.usuario || '',
         idProveedor:      p.idProveedor || '',
-        nombreProveedor:  p.idProveedor ? (provMap[p.idProveedor] || p.idProveedor) : '',
+        nombreProveedor:  p.idProveedor ? (provMap[String(p.idProveedor)] || p.idProveedor) : '',
         idZona:           '',
         comentario:       p.comentario || '',
         montoTotal:       parseFloat(p.monto) || 0,
@@ -1582,7 +1608,7 @@ function getOperacionesConDetalle(params) {
   // Cache subido a 5min (era 60s): los detalles cambian poco y el endpoint
   // es pesado (lee múltiples sheets enteras). User puede forzar con _refresh.
   // [v41.22] key bumpeada para invalidar cache sin op.preingreso anidado
-  return _almCached('opsConDetV2_' + dias, 300, params, function() {
+  return _almCached('opsConDetV3_' + dias, 300, params, function() {
     var base = _getOperacionesUnificadasImpl(dias);
     if (!base.ok || !base.data) return base;
 
