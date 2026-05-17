@@ -935,6 +935,36 @@ function getResumenTodosDia(params) {
     return null;
   }).filter(Boolean);
 
+  // [v2.41.43] Cruzar con LIQUIDACIONES_DIA para que Personal del Día
+  // refleje el estado REAL de cada liquidación (VETADA/PAGADA/PENDIENTE).
+  // Sin esto, vetar desde Liquidaciones (botón 🚫) no se reflejaba como
+  // overlay vetada en la card de Personal del Día.
+  try {
+    var ldiaSh = _liqDiaGetSheet();
+    var ldiaRows = _sheetToObjects(ldiaSh);
+    var tz = Session.getScriptTimeZone();
+    var estadoMap = {};
+    ldiaRows.forEach(function(row) {
+      var f = (typeof _liqNormFecha === 'function')
+        ? _liqNormFecha(row.fecha, tz)
+        : (row.fecha instanceof Date
+            ? Utilities.formatDate(row.fecha, tz, 'yyyy-MM-dd')
+            : String(row.fecha || '').substring(0, 10));
+      if (f !== fecha) return;
+      var idP = String(row.idPersonal || '').trim();
+      if (!idP) return;
+      estadoMap[idP] = String(row.estado || '').toUpperCase();
+    });
+    resumenes.forEach(function(r) {
+      var est = estadoMap[String(r.idPersonal)] || 'PENDIENTE';
+      r.liqEstado = est;
+      // Si está VETADA, marcar el flag estandarizado que el frontend ya lee
+      if (est === 'VETADA') {
+        r.vetada = true;
+      }
+    });
+  } catch(eL) { Logger.log('[getResumenTodosDia] liqEstado cross: ' + eL.message); }
+
   return { ok: true, data: resumenes };
 }
 
