@@ -23191,6 +23191,22 @@ const MOS = (() => {
       _evalState.byNombre = byNombre;
       _evalState.byIdPersonal = byIdPersonal;
 
+      // [v2.41.45] Propagar VETADA desde LIQUIDACIONES_DIA → personalDetalle.
+      // El backend en getResumenTodosDia ya hace el cruce y devuelve
+      // r.vetada=true cuando r.liqEstado === 'VETADA'. Aquí lo aplicamos
+      // a los items del personalDetalle para que _finRenderPersonalCard
+      // muestre overlay enmallado consistentemente.
+      pl.personalDetalle.forEach(p => {
+        const ev = byIdPersonal[p.idPersonal] || byNombre[String(p.nombre || '').toLowerCase().trim()] || null;
+        if (ev && (ev.vetada === true || ev.liqEstado === 'VETADA')) {
+          p.vetada = true;
+        } else if (ev && ev.liqEstado && ev.liqEstado !== 'VETADA' && p.fuente !== 'ELIMINADA') {
+          // Si LIQUIDACIONES_DIA dice que NO está vetada (PENDIENTE/PAGADA),
+          // y el item local lo había marcado por sincronía vieja, limpiar.
+          if (p.vetada === true) p.vetada = false;
+        }
+      });
+
       // ── Total general REAL + propagación a KPIs del P&L ──
       // Antes pl.gastoPersonal venía del backend basado solo en JORNADAS.
       // Aquí re-calculamos totalReal con totalDia de los resúmenes (incluye
@@ -23580,13 +23596,13 @@ const MOS = (() => {
   // Veto de pago — la persona sigue operando, pero no se cuenta su jornada en esta fecha.
   // El card NO se elimina: queda con efecto vetada (violeta + tachado + badge). Si el sistema
   // detecta actividad POSTERIOR al veto (nuevo ticket/sesión), reaparece automáticamente.
+  // [v2.41.45] SIMPLIFICADO — vetar = SOLO cambiar estado en LIQUIDACIONES_DIA.
+  // Antes había 2 flujos confusos (eliminarJornada + vetarLiquidacionDia).
+  // Ahora ambos botones (🚫 Liquidaciones y 💸 Personal Día) hacen exactamente
+  // lo mismo: marcar VETADA en la hoja. Una fuente de verdad. Cero confusión.
   async function finVetarPago(idJornada, fecha, nombre) {
-    if (!idJornada) {
-      toast('No se puede vetar: jornada sin idJornada', 'warn');
-      return;
-    }
     const fechaTxt = _formatFechaCorta(fecha);
-    if (!confirm(`💸 VETAR el pago de ${nombre || 'esta persona'} del ${fechaTxt}?\n\n• No se le pagará por este día.\n• La persona puede seguir operando (no la bloquea).\n• Tras vetar, el botón cambiará a 💵 para rehabilitar.\n\nUsá 🔒 si querés bloquear su dispositivo.`)) return;
+    if (!confirm(`💸 VETAR el pago de ${nombre || 'esta persona'} del ${fechaTxt}?\n\n• No se le pagará por este día.\n• La persona puede seguir operando (no la bloquea).\n• Tras vetar, el botón cambiará a 💵 para rehabilitar.`)) return;
 
     // SONIDO OPTIMISTA: dispara INMEDIATO al confirmar (sincronizado con el click).
     // Si después falla el back, sonará 'error'.
@@ -23648,42 +23664,70 @@ const MOS = (() => {
       try { _finRender(_finPL, fecha, { skipPersonal: true }); } catch {}
     }
 
+    // [v2.41.45] ÚNICA acción: vetar en LIQUIDACIONES_DIA. Sin eliminarJornada.
+    // El render del Personal del Día lee el estado VETADA desde la hoja
+    // (cruce backend en getResumenTodosDia) → overlay aparece consistente.
+    const persona = (_finPL?.personalDetalle || []).find(p => String(p.idJornada) === String(idJornada));
+    const idPersonal = persona?.idPersonal;
+    if (!idPersonal) {
+      toast('No se puede vetar: persona sin idPersonal', 'warn');
+      _finBeep('error');
+      return;
+    }
     try {
-      await API.post('eliminarJornada', { idJornada, actor: S.session?.nombre || '' });
-      // [v2.41.41] UNIFICAR vetar: además de eliminarJornada (que afecta P&L),
-      // marcar VETADA en LIQUIDACIONES_DIA para que el día NO aparezca en
-      // Pendientes de Liquidaciones (mismo estado que el botón 🚫 de Liq).
-      try {
-        const persona = (_finPL?.personalDetalle || []).find(p => String(p.idJornada) === String(idJornada));
-        if (persona && persona.idPersonal && fecha) {
-          API.post('vetarLiquidacionDia', {
-            idPersonal: persona.idPersonal,
-            fecha: fecha,
-            localId: 'L' + Date.now() + Math.random().toString(36).slice(2, 8)
-          }).then(() => {
-            // [v2.41.42] Invalidar cache local de Liquidaciones para que
-            // la próxima visita traiga data sin este día vetado.
-            try { _liqCacheClear && _liqCacheClear(); } catch(_){}
-            // Si el state ya tiene esa persona/día, quitarlo optimista
-            try {
-              if (_liqState && Array.isArray(_liqState.pendientes)) {
-                const pLocal = _liqState.pendientes.find(x => x.idPersonal === persona.idPersonal);
-                if (pLocal) {
-                  pLocal.dias = pLocal.dias.filter(d => d.fecha !== fecha);
-                  pLocal.cantidadDias = pLocal.dias.length;
-                  pLocal.total = Math.round(pLocal.dias.reduce((s, d) => s + d.totalDia, 0) * 100) / 100;
-                  if (!pLocal.dias.length) {
-                    _liqState.pendientes = _liqState.pendientes.filter(p => p !== pLocal);
-                  }
-                }
-              }
-            } catch(_){}
-          }).catch(e => console.warn('[finVetar] vetarLiq error:', e?.message));
+      const r = await API.post('vetarLiquidacionDia', {
+        idPersonal: idPersonal,
+        fecha: fecha,
+        localId: 'L' + Date.now() + Math.random().toString(36).slice(2, 8)
+      });
+      if (!r || r.ok === false) {
+        const err = r?.error || 'error';
+        if (err === 'YA_PAGADA') {
+          toast('Esta liquidación ya está PAGADA — no se puede vetar.', 'warn', 5000);
+        } else {
+          toast('No se pudo vetar: ' + err, 'error');
         }
-      } catch(_) {}
+        _finBeep('error');
+        if (card) {
+          const ov = card.querySelector('.fin-vetada-overlay');
+          if (ov) ov.remove();
+          card.classList.remove('fin-vetada-card');
+        }
+        return;
+      }
+      // Optimista: mantener el overlay aplicado y actualizar P&L local
+      if (persona) persona.vetada = true;
+      // Invalidar cache local del Personal Día y Liquidaciones
+      try {
+        const resKey = 'mos_fin_resum_' + fecha;
+        const raw = localStorage.getItem(resKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed.data)) {
+            parsed.data.forEach(rr => {
+              if (rr.idPersonal === idPersonal) rr.vetada = true;
+            });
+            localStorage.setItem(resKey, JSON.stringify(parsed));
+          }
+        }
+      } catch(_){}
+      try { _liqCacheClear && _liqCacheClear(); } catch(_){}
+      // Optimista en liq state
+      try {
+        if (_liqState && Array.isArray(_liqState.pendientes)) {
+          const pLocal = _liqState.pendientes.find(x => x.idPersonal === idPersonal);
+          if (pLocal) {
+            pLocal.dias = pLocal.dias.filter(d => d.fecha !== fecha);
+            pLocal.cantidadDias = pLocal.dias.length;
+            pLocal.total = Math.round(pLocal.dias.reduce((s, d) => s + d.totalDia, 0) * 100) / 100;
+            if (!pLocal.dias.length) {
+              _liqState.pendientes = _liqState.pendientes.filter(p => p !== pLocal);
+            }
+          }
+        }
+      } catch(_){}
       toast(`💸 Vetado · ${nombre || ''} · -S/ ${pagoEliminado.toFixed(2)} · ahora aparece 💵 para rehabilitar`, 'ok', 4500);
-      // Esperar que la animación del overlay complete (700ms) antes de
-      // reemplazar el card, así el botón cambia 💸 → 💵 sin perder la animación.
+      // Reemplazar card tras animación
       setTimeout(() => _finReemplazarCardJornada(idJornada, fecha), 720);
     } catch(e) {
       _finBeep('error');
@@ -23730,12 +23774,8 @@ const MOS = (() => {
   // Rehabilita el veto: animación de "rejas suben" del overlay vetada,
   // restaura monto, recalcula KPIs locales, y persiste en GAS.
   async function finRehabilitarPago(idJornada, fecha, nombre) {
-    if (!idJornada) {
-      toast('No se puede rehabilitar: jornada sin idJornada', 'warn');
-      return;
-    }
     const fechaTxt = _formatFechaCorta(fecha);
-    if (!confirm(`💵 REHABILITAR el pago de ${nombre || 'esta persona'} del ${fechaTxt}?\n\n• Se restaurará el monto desde PERSONAL_MASTER.\n• Volverá a contarse en gastos y liquidación.\n• Tras rehabilitar, el botón vuelve a ser 💸.\n• Quedará rastro de auditoría (REHAB_TS).`)) return;
+    if (!confirm(`💵 REHABILITAR el pago de ${nombre || 'esta persona'} del ${fechaTxt}?\n\n• Volverá a contarse en gastos y liquidación.\n• Tras rehabilitar, el botón vuelve a ser 💸.`)) return;
 
     // SONIDO OPTIMISTA: dispara INMEDIATO al confirmar.
     _finBeep('rehab');
@@ -23826,28 +23866,38 @@ const MOS = (() => {
       try { _finRender(_finPL, fecha, { skipPersonal: true }); } catch {}
     }
 
+    // [v2.41.45] ÚNICA acción: desvetar en LIQUIDACIONES_DIA.
+    const persona = (_finPL?.personalDetalle || []).find(p => String(p.idJornada) === String(idJornada));
+    const idPersonal = persona?.idPersonal;
+    if (!idPersonal) {
+      toast('No se puede rehabilitar: persona sin idPersonal', 'warn');
+      _finBeep('error');
+      return;
+    }
     try {
-      const r = await API.post('rehabilitarJornada', { idJornada, actor: S.session?.nombre || '' });
-      if (!r || r.error) throw new Error(r?.error || 'Error desconocido');
-      // [v2.41.41] UNIFICAR rehabilitar: también desveta en LIQUIDACIONES_DIA
+      const r = await API.post('desvetarLiquidacionDia', {
+        idPersonal: idPersonal,
+        fecha: fecha,
+        localId: 'L' + Date.now() + Math.random().toString(36).slice(2, 8)
+      });
+      if (!r || r.ok === false) throw new Error(r?.error || 'Error desconocido');
+      if (persona) persona.vetada = false;
+      // Invalidar cache local
       try {
-        const persona = (_finPL?.personalDetalle || []).find(p => String(p.idJornada) === String(idJornada));
-        if (persona && persona.idPersonal && fecha) {
-          API.post('desvetarLiquidacionDia', {
-            idPersonal: persona.idPersonal,
-            fecha: fecha,
-            localId: 'L' + Date.now() + Math.random().toString(36).slice(2, 8)
-          }).then(() => {
-            // [v2.41.42] Invalidar cache para que pendientes se rehidrate
-            // con el día desvetado disponible.
-            try { _liqCacheClear && _liqCacheClear(); } catch(_){}
-          }).catch(e => console.warn('[finRehabilitar] desvetarLiq error:', e?.message));
+        const resKey = 'mos_fin_resum_' + fecha;
+        const raw = localStorage.getItem(resKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed.data)) {
+            parsed.data.forEach(rr => {
+              if (rr.idPersonal === idPersonal) rr.vetada = false;
+            });
+            localStorage.setItem(resKey, JSON.stringify(parsed));
+          }
         }
-      } catch(_) {}
-      const monto = (r.data && r.data.monto) || montoRestaurar;
-      toast(`💵 Rehabilitado · ${nombre || ''} · +S/ ${parseFloat(monto || 0).toFixed(2)} · ahora aparece 💸 para vetar`, 'ok', 4500);
-      // Esperar a que la animación de salida del overlay (450ms) complete antes
-      // de reemplazar el card. Así el botón cambia 💵 → 💸 sin parpadeo.
+      } catch(_){}
+      try { _liqCacheClear && _liqCacheClear(); } catch(_){}
+      toast(`💵 Rehabilitado · ${nombre || ''} · +S/ ${parseFloat(montoRestaurar || 0).toFixed(2)} · ahora aparece 💸 para vetar`, 'ok', 4500);
       setTimeout(() => _finReemplazarCardJornada(idJornada, fecha), 480);
     } catch(e) {
       _finBeep('error');
