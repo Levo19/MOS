@@ -7074,6 +7074,55 @@
       100% { opacity: 1; }
     }
 
+    /* ── [v2.41.50] Card PAGADA: sello verde diagonal "✓ PAGADA" ── */
+    .fin-pagada-card {
+      filter: brightness(0.92);
+      border-color: rgba(34,197,94,0.5) !important;
+    }
+    .fin-pagada-card .text-sm,
+    .fin-pagada-card .text-xs {
+      opacity: 0.82;
+    }
+    .fin-pagada-overlay {
+      position: absolute; inset: 0; pointer-events: none;
+      border-radius: 12px; overflow: hidden; z-index: 4;
+      animation: finPagadaIn 0.6s cubic-bezier(0.34,1.56,0.64,1);
+    }
+    .fin-pagada-stripe {
+      position: absolute; inset: 0;
+      background:
+        radial-gradient(circle at 90% 10%, rgba(34,197,94,0.12), transparent 40%),
+        radial-gradient(circle at 10% 90%, rgba(34,197,94,0.08), transparent 35%);
+    }
+    .fin-pagada-sello {
+      position: absolute;
+      top: 50%; right: -10px;
+      transform: translateY(-50%) rotate(-14deg);
+      background: rgba(15,23,42,0.92);
+      color: #34d399;
+      font-size: 11px; font-weight: 900;
+      padding: 5px 14px 5px 10px;
+      border: 2px solid rgba(34,197,94,0.7);
+      border-radius: 4px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      box-shadow: 0 0 14px rgba(34,197,94,0.45), inset 0 0 8px rgba(34,197,94,0.15);
+      text-shadow: 0 0 6px rgba(34,197,94,0.5);
+      white-space: nowrap;
+    }
+    .fin-pagada-sello::before {
+      content: ''; position: absolute;
+      inset: -6px;
+      border: 1px dashed rgba(34,197,94,0.4);
+      border-radius: 6px;
+      pointer-events: none;
+    }
+    @keyframes finPagadaIn {
+      0%   { opacity: 0; transform: scale(1.15) rotate(8deg); }
+      60%  { opacity: 1; transform: scale(0.96) rotate(-2deg); }
+      100% { opacity: 1; transform: scale(1) rotate(0deg); }
+    }
+
     /* ── ESCUCHA REMOTA: widget flotante ────────────────── */
     #audioFlotante {
       position: fixed; bottom: 16px; right: 16px;

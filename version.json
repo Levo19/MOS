@@ -1,1 +1,1 @@
-{ "version": "2.41.49", "build": "20260517-fix-fecha-impresion-liquidacion-en-vivo" }
+{ "version": "2.41.50", "build": "20260517-fix-vetar-liq-uniforme-sello-pagada" }

@@ -21484,7 +21484,7 @@ const MOS = (() => {
                 title="Auditar / editar este día">✏</button>
         <button onclick="event.stopPropagation();MOS._liqVetarDia('${idPersonal}', '${d.fecha}')"
                 class="liq-btn-vetar"
-                title="Vetar: quita este día de pendientes (no paga, no computa). Reversible.">🚫</button>
+                title="Vetar: quita este día de pendientes (no paga, no computa). Reversible.">💸</button>
       </div>`;
   }
 
@@ -21563,69 +21563,57 @@ const MOS = (() => {
     const personaIdx = _liqState.pendientes.indexOf(p);
 
     setTimeout(() => {
-      // Remover día
       p.dias.splice(diaIdx, 1);
-      // Recalcular total persona
       p.total = Math.round(p.dias.reduce((s, d) => s + d.totalDia, 0) * 100) / 100;
       p.cantidadDias = p.dias.length;
-      // Si persona sin días, quitar
       if (!p.dias.length) {
         _liqState.pendientes.splice(personaIdx, 1);
       }
       _liqRenderPendientes();
     }, 280);
 
-    // Backend en background
+    // [v2.41.50] FIX: API.post devuelve d.data (no d). Si vetarLiquidacionDia
+    // responde {ok:true}, API.post resuelve con undefined → la rama
+    // "if(!res||!res.ok)" lanzaba falso negativo "Backend no respondió".
+    // Solución: confiar en que API.post resuelve → éxito; .catch → error real
+    // (e.message trae el error key del backend: YA_PAGADA, NO_ENCONTRADA…).
     try {
-      const res = await API.post('vetarLiquidacionDia', {
+      await API.post('vetarLiquidacionDia', {
         idPersonal, fecha,
         localId: 'L' + Date.now() + Math.random().toString(36).slice(2, 8)
       });
-      if (!res || !res.ok) {
-        // [v2.41.38] Log completo de la respuesta para diagnóstico
-        console.warn('[vetar] RESPUESTA COMPLETA:', JSON.stringify(res));
-        console.warn('[vetar] params enviados:', { idPersonal, fecha });
-        const errKey = res?.error || 'sin_respuesta';
-        let msg;
-        if (errKey === 'YA_PAGADA') msg = 'Esta liquidación ya está PAGADA — no se puede vetar.';
-        else if (errKey === 'NO_ENCONTRADA') msg = `No encontrada en hoja: ${fecha} para ${idPersonal}. Toca el lápiz primero para materializar.`;
-        else if (errKey === 'sin_respuesta') msg = 'Backend no respondió (timeout o offline)';
-        else msg = `No se pudo vetar [${errKey}]` + (res?.mensaje ? ': ' + res.mensaje : '');
-        toast(msg, 'warn', 7000);
-        // Rollback
-        if (!_liqState.pendientes.includes(p)) _liqState.pendientes.push(p);
-        if (!p.dias.find(d => d.fecha === fecha)) p.dias.push(diaSnapshot);
-        p.total = Math.round(p.dias.reduce((s, d) => s + d.totalDia, 0) * 100) / 100;
-        p.cantidadDias = p.dias.length;
-        _liqRenderPendientes();
-      } else {
-        toast(`🚫 Vetada · ${_liqFmtFechaCorta ? _liqFmtFechaCorta(fecha) : fecha}`, 'info', 2500);
-      }
+      toast(`💸 Vetada · ${_liqFmtFechaCorta ? _liqFmtFechaCorta(fecha) : fecha}`, 'info', 2500);
     } catch(e) {
-      toast('Sin conexión — la veto se aplicó local, pero podría reaparecer al refrescar', 'warn', 5000);
+      const errKey = (e && e.message) || 'sin_respuesta';
+      let msg;
+      if (errKey === 'YA_PAGADA') msg = 'Esta liquidación ya está PAGADA — no se puede vetar.';
+      else if (errKey === 'NO_ENCONTRADA') msg = `No encontrada en hoja: ${fecha} para ${idPersonal}. Toca el lápiz primero para materializar.`;
+      else msg = `No se pudo vetar: ${errKey}`;
+      toast(msg, 'warn', 6000);
+      // Rollback
+      if (!_liqState.pendientes.includes(p)) _liqState.pendientes.push(p);
+      if (!p.dias.find(d => d.fecha === fecha)) p.dias.push(diaSnapshot);
+      p.total = Math.round(p.dias.reduce((s, d) => s + d.totalDia, 0) * 100) / 100;
+      p.cantidadDias = p.dias.length;
+      _liqRenderPendientes();
     }
   }
 
   async function _liqDesvetarDia(idPersonal, fecha) {
     _liqSfx('tap');
+    // [v2.41.50] Igual fix: confiar en resolve → éxito.
     try {
-      const res = await API.post('desvetarLiquidacionDia', {
+      await API.post('desvetarLiquidacionDia', {
         idPersonal, fecha,
         localId: 'L' + Date.now() + Math.random().toString(36).slice(2, 8)
       });
-      if (!res || !res.ok) {
-        toast('No se pudo desvetar: ' + (res?.error || 'error'), 'warn', 4000);
-        return;
-      }
-      toast(`🔓 Desvetada · ${fecha}`, 'ok', 2500);
-      // Refrescar ambas listas
+      toast(`💵 Desvetada · ${fecha}`, 'ok', 2500);
       _liqState.vetadas = (_liqState.vetadas || []).filter(v =>
         !(v.idPersonal === idPersonal && v.fecha === fecha));
       _liqRenderVetadas();
-      // Forzar recarga de pendientes (la liquidación vuelve a aparecer)
       try { liqLoadCurrent(); } catch(_){}
     } catch(e) {
-      toast('Sin conexión', 'warn');
+      toast('No se pudo desvetar: ' + ((e && e.message) || 'error'), 'warn', 4000);
     }
   }
 
@@ -23380,12 +23368,21 @@ const MOS = (() => {
     const scoreCircle = `<div class="fin-pers-avatar-wrap${ringCls}" style="position:relative;flex-shrink:0;"
       title="${isFresh ? '🟢 ' + act.label : (ultCx ? '⚫ ' + act.label : '')}"
       >${innerScore}${dotPulse}</div>`;
+    // [v2.41.50] PAGADA = liquidación ya cerrada → sello verde no editable
+    const esPagada = !esVetada && (ev && ev.liqEstado === 'PAGADA') || (p.liqEstado === 'PAGADA');
     const vetadaCls = esVetada ? ' fin-vetada-card' : '';
+    const pagadaCls = esPagada ? ' fin-pagada-card' : '';
     const bloqCls   = esBloqueado ? ' fin-bloq-card' : '';
     const vetadaOverlay = esVetada
       ? `<div class="fin-vetada-overlay">
            <div class="fin-vetada-stripe"></div>
            <div class="fin-vetada-badge">💸 VETADA · S/ 0.00</div>
+         </div>`
+      : '';
+    const pagadaOverlay = esPagada
+      ? `<div class="fin-pagada-overlay">
+           <div class="fin-pagada-stripe"></div>
+           <div class="fin-pagada-sello">✓ PAGADA · S/ ${parseFloat((ev && ev.totalDia) || p.monto || 0).toFixed(2)}</div>
          </div>`
       : '';
     // Overlay de rejas persistente: si el usuario tiene devices encarcelados.
@@ -23406,8 +23403,9 @@ const MOS = (() => {
          </div>`
       : '';
     return `
-      <div class="eval-card${vetadaCls}${bloqCls}" data-id="${idForEval}" style="position:relative;">
+      <div class="eval-card${vetadaCls}${pagadaCls}${bloqCls}" data-id="${idForEval}" style="position:relative;">
         ${vetadaOverlay}
+        ${pagadaOverlay}
         ${bloqOverlay}
         <div class="flex items-center gap-3">
           ${scoreCircle}
