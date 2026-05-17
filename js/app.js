@@ -17184,7 +17184,9 @@ const MOS = (() => {
     _cjCreditosState.detalleTicket = null;
   }
 
-  // Abre el modal de asignar caja desde el detalle (continúa flow existente)
+  // [v2.41.56] Panel INLINE de asignar caja — se despliega DENTRO del modal
+  // detalle (no modal apilado que quedaba atrás). Animación slide-down con
+  // sonidos, cards de cajas con glow, optimismo al confirmar.
   function cjAbrirAsignarDesdeDetalle() {
     const t = _cjCreditosState.detalleTicket;
     if (!t) return;
@@ -17205,48 +17207,130 @@ const MOS = (() => {
     _cjCreditosState.asignarCaja = null;
     _cjCreditosState.asignarMetodo = 'EFECTIVO';
 
-    // Info
-    const info = $('cjAsignarInfo');
-    if (info) info.innerHTML = `
-      <div class="cj-asignar-info-cliente">${_esc(ticket.cliente || 'VARIOS')}</div>
-      <div class="cj-asignar-info-monto">S/ ${parseFloat(ticket.total).toFixed(2)}</div>
-      <div class="text-xs text-slate-400 mt-1">${_esc(ticket.correlativo)} · ${ticket.fechaISO}</div>
-    `;
+    // Sonido apertura panel
+    try { _finBeep?.('expand') || _finBeep?.('click'); } catch(_){}
 
-    // Cargar cajas abiertas
+    // Ocultar el FAB mientras el panel está abierto
+    const fab = $('cjDetalleFloating');
+    if (fab) fab.style.display = 'none';
+
+    // Insertar panel inline dentro del modal detalle si no existe
+    let panel = $('cjAsignarInlinePanel');
+    if (!panel) {
+      const card = document.querySelector('#modalDetalleCarta .cj-detalle-card');
+      if (!card) return;
+      panel = document.createElement('div');
+      panel.id = 'cjAsignarInlinePanel';
+      panel.className = 'cj-asignar-inline';
+      card.appendChild(panel);
+    }
+    panel.innerHTML = `
+      <div class="cj-asignar-inline-head">
+        <span style="font-size:22px">✈</span>
+        <div>
+          <div class="cj-asignar-inline-titulo">Enviar cobro a caja</div>
+          <div class="cj-asignar-inline-sub">${_esc(ticket.cliente || 'VARIOS')} · S/ ${parseFloat(ticket.total).toFixed(2)}</div>
+        </div>
+        <button onclick="MOS.cjCerrarAsignar()" class="cj-asignar-inline-close" title="Cerrar">✕</button>
+      </div>
+      <div class="cj-asignar-inline-section">
+        <label class="cj-asignar-inline-label">
+          <span class="cj-asignar-inline-step">1</span>
+          <span>¿A qué caja enviar?</span>
+        </label>
+        <div id="cjAsignarCajas" class="cj-asignar-inline-cajas">
+          <div class="cj-asignar-inline-loading">
+            <div class="cj-asignar-inline-spin"></div>
+            <span>Buscando cajas abiertas…</span>
+          </div>
+        </div>
+      </div>
+      <div class="cj-asignar-inline-section">
+        <label class="cj-asignar-inline-label">
+          <span class="cj-asignar-inline-step">2</span>
+          <span>Método de cobro acordado</span>
+        </label>
+        <div class="cj-asignar-inline-metodos">
+          <button data-metodo="EFECTIVO" onclick="MOS.cjSetMetodoAsignar('EFECTIVO')" class="cj-asignar-metodo-btn is-active">
+            <span class="cj-asignar-metodo-ico">💵</span>
+            <span class="cj-asignar-metodo-lbl">Efectivo</span>
+          </button>
+          <button data-metodo="VIRTUAL" onclick="MOS.cjSetMetodoAsignar('VIRTUAL')" class="cj-asignar-metodo-btn">
+            <span class="cj-asignar-metodo-ico">📱</span>
+            <span class="cj-asignar-metodo-lbl">Virtual</span>
+          </button>
+          <button data-metodo="MIXTO" onclick="MOS.cjSetMetodoAsignar('MIXTO')" class="cj-asignar-metodo-btn">
+            <span class="cj-asignar-metodo-ico">🔀</span>
+            <span class="cj-asignar-metodo-lbl">Mixto</span>
+          </button>
+        </div>
+      </div>
+      <p class="cj-asignar-inline-hint">💡 El cajero recibirá un push. El monto entra como INGRESO a su caja, no como nueva venta.</p>
+      <div class="cj-asignar-inline-footer">
+        <button onclick="MOS.cjCerrarAsignar()" class="cj-btn cj-btn-secondary">Cancelar</button>
+        <button id="cjAsignarOkBtn" onclick="MOS.cjConfirmarAsignar()" class="cj-btn cj-btn-primary" disabled>
+          ✈ Enviar a cajero
+        </button>
+      </div>`;
+
+    // Trigger animación entrar (force reflow)
+    panel.classList.remove('is-open');
+    void panel.offsetWidth;
+    panel.classList.add('is-open');
+
+    // Cargar cajas
     const cajasDiv = $('cjAsignarCajas');
     if (cajasDiv) {
-      cajasDiv.innerHTML = '<div class="text-slate-400 text-sm col-span-full">⌛ Cargando cajas...</div>';
       try {
         const r = await API.post('meCajasAbiertas', {});
         const lista = (r && r.data) ? r.data : (r || []);
         if (!lista.length) {
-          cajasDiv.innerHTML = '<div class="text-amber-400 text-sm col-span-full">⚠ No hay cajas abiertas. Pedile a un cajero que abra caja primero.</div>';
+          cajasDiv.innerHTML = '<div class="cj-asignar-inline-empty">⚠ No hay cajas abiertas.<br><span class="text-xs opacity-70">Pedile a un cajero que abra caja primero.</span></div>';
         } else {
-          cajasDiv.innerHTML = lista.map(c => `
-            <div class="cj-asignar-caja-btn" onclick="MOS.cjSetCajaAsignar('${_esc(c.idCaja)}')" data-caja="${_esc(c.idCaja)}">
-              <div class="cj-asignar-caja-vendedor">👤 ${_esc(c.vendedor)}</div>
-              <div class="cj-asignar-caja-meta">${_esc(c.estacion)} · ${_esc(c.zona || '—')}</div>
-            </div>
+          cajasDiv.innerHTML = lista.map((c, i) => `
+            <button class="cj-asignar-caja-btn"
+                    style="animation-delay:${i*60}ms"
+                    onclick="MOS.cjSetCajaAsignar('${_esc(c.idCaja)}')"
+                    data-caja="${_esc(c.idCaja)}">
+              <div class="cj-asignar-caja-avatar">👤</div>
+              <div class="cj-asignar-caja-info">
+                <div class="cj-asignar-caja-vendedor">${_esc(c.vendedor)}</div>
+                <div class="cj-asignar-caja-meta">${_esc(c.estacion)}${c.zona ? ' · ' + _esc(c.zona) : ''}</div>
+              </div>
+              <div class="cj-asignar-caja-check">✓</div>
+            </button>
           `).join('');
         }
       } catch(e) {
-        cajasDiv.innerHTML = '<div class="text-red-400 text-sm">Error cargando cajas: ' + (e.message || e) + '</div>';
+        cajasDiv.innerHTML = '<div class="cj-asignar-inline-empty" style="color:#fca5a5">⚠ Error: ' + _esc(e.message || e) + '</div>';
       }
     }
-    // Default método EFECTIVO
     cjSetMetodoAsignar('EFECTIVO');
     _cjUpdAsignarOkBtn();
 
-    const modal = $('modalAsignarCobro');
-    if (modal) modal.classList.remove('hidden');
+    // Scroll suave al panel
+    setTimeout(() => {
+      try { panel.scrollIntoView({ behavior: 'smooth', block: 'end' }); } catch(_){}
+    }, 100);
   }
 
   function cjCerrarAsignar(ev) {
-    if (ev && ev.target && ev.target.id !== 'modalAsignarCobro') return;
-    const modal = $('modalAsignarCobro');
-    if (modal) modal.classList.add('hidden');
+    // Soporta clicks fuera (legacy del modal viejo) y close button
+    if (ev && ev.target && ev.target.id === 'modalAsignarCobro') {
+      const oldModal = $('modalAsignarCobro');
+      if (oldModal) oldModal.classList.add('hidden');
+    }
+    const panel = $('cjAsignarInlinePanel');
+    if (panel) {
+      panel.classList.remove('is-open');
+      panel.classList.add('is-closing');
+      setTimeout(() => { try { panel.remove(); } catch(_){} }, 320);
+    }
+    const fab = $('cjDetalleFloating');
+    const t = _cjCreditosState.detalleTicket;
+    if (fab && t && !t.asignado) fab.style.display = '';
     _cjCreditosState.asignarCtx = null;
+    try { _finBeep?.('collapse') || _finBeep?.('tap'); } catch(_){}
   }
 
   function cjSetMetodoAsignar(metodo) {
@@ -17263,6 +17347,7 @@ const MOS = (() => {
       b.classList.toggle('is-active', b.dataset.caja === idCaja);
     });
     _cjUpdAsignarOkBtn();
+    try { _finBeep?.('tap'); } catch(_){}
   }
 
   function _cjUpdAsignarOkBtn() {
@@ -17283,19 +17368,25 @@ const MOS = (() => {
         metodoSugerido: _cjCreditosState.asignarMetodo
       });
       const d = (r && r.data) ? r.data : (r || {});
-      // Animación "voló al cajero"
+      // [v2.41.56] Animación de vuelo en la carta de la mesa + cerrar panel
       try {
-        const ticketEl = document.querySelector('.cj-credito-ticket-btn[onclick*="' + ctx.idVenta + '"]')?.closest('.cj-credito-ticket');
-        if (ticketEl) {
-          ticketEl.classList.add('cj-credito-fly');
-          setTimeout(() => ticketEl.remove(), 800);
+        const cartaEl = document.querySelector('.cj-mesa-carta[onclick*="' + ctx.idVenta + '"]');
+        if (cartaEl) {
+          cartaEl.classList.add('cj-credito-fly');
+          setTimeout(() => { try { cartaEl.remove(); } catch(_){} }, 800);
         }
       } catch(_){}
       try { _finBeep?.('success'); } catch(_){}
       toast('✈ Enviado a ' + (d.cajeroDestino || 'cajero') + ' · esperando confirmación', 'success');
       cjCerrarAsignar();
+      // Cerrar también modal de detalle (la carta voló, ya no hay qué mostrar)
+      setTimeout(() => {
+        const det = $('modalDetalleCarta');
+        if (det) det.classList.add('hidden');
+        _cjCreditosState.detalleTicket = null;
+      }, 350);
       // Refrescar
-      setTimeout(() => _cjCargarCreditosPendientes(), 600);
+      setTimeout(() => _cjCargarCreditosPendientes(), 800);
     } catch(e) {
       toast('Error: ' + (e.message || e), 'error');
     } finally {

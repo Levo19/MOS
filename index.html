@@ -1843,6 +1843,206 @@
     .cj-btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 16px -4px rgba(16,185,129,.4); }
     .cj-btn-primary:disabled { opacity: .4; cursor: not-allowed; }
 
+    /* [v2.41.56] Panel inline asignar caja — vive dentro del modal detalle.
+       Reemplaza al modalAsignarCobro (que quedaba atrás visualmente). */
+    .cj-asignar-inline {
+      margin-top: 14px;
+      background: linear-gradient(135deg, #0a1428, #060d1f);
+      border: 1.5px solid #1e3a8a;
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 0 0 1px rgba(59,130,246,.15), 0 10px 32px -8px rgba(0,0,0,.6);
+      max-height: 0; overflow: hidden;
+      opacity: 0; transform: translateY(-8px) scale(.96);
+      transition: max-height .35s cubic-bezier(.4,0,.2,1),
+                  opacity .25s ease-out,
+                  transform .35s cubic-bezier(.34,1.56,.64,1),
+                  margin-top .3s ease-out;
+    }
+    .cj-asignar-inline.is-open {
+      max-height: 720px;
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      animation: cjAsignarGlow 2.4s ease-in-out infinite;
+    }
+    .cj-asignar-inline.is-closing {
+      opacity: 0; transform: translateY(-8px) scale(.96); max-height: 0;
+      margin-top: 0; padding-top: 0; padding-bottom: 0;
+    }
+    @keyframes cjAsignarGlow {
+      0%, 100% { box-shadow: 0 0 0 1px rgba(59,130,246,.15), 0 10px 32px -8px rgba(0,0,0,.6); }
+      50%      { box-shadow: 0 0 0 1px rgba(59,130,246,.35), 0 10px 32px -4px rgba(59,130,246,.25); }
+    }
+    .cj-asignar-inline-head {
+      display: flex; align-items: center; gap: 10px;
+      padding-bottom: 12px; margin-bottom: 12px;
+      border-bottom: 1px solid rgba(59,130,246,.2);
+    }
+    .cj-asignar-inline-titulo {
+      font-size: 14px; font-weight: 900; color: #f1f5f9;
+      letter-spacing: .02em; text-transform: uppercase;
+    }
+    .cj-asignar-inline-sub {
+      font-size: 11px; color: #94a3b8; margin-top: 1px;
+    }
+    .cj-asignar-inline-close {
+      margin-left: auto; width: 30px; height: 30px; border-radius: 50%;
+      background: rgba(248,113,113,.12); border: 1px solid rgba(248,113,113,.4);
+      color: #fca5a5; font-weight: 900; font-size: 14px; cursor: pointer;
+      transition: all .15s ease; display: flex; align-items: center; justify-content: center;
+    }
+    .cj-asignar-inline-close:hover {
+      background: rgba(248,113,113,.25); transform: scale(1.1);
+    }
+    .cj-asignar-inline-section { margin-bottom: 14px; }
+    .cj-asignar-inline-label {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 11px; font-weight: 800; color: #cbd5e1;
+      text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px;
+    }
+    .cj-asignar-inline-step {
+      width: 22px; height: 22px; border-radius: 50%;
+      background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+      color: #fff; font-weight: 900; font-size: 11px;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 0 0 2px rgba(59,130,246,.25);
+    }
+    .cj-asignar-inline-cajas {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 8px;
+    }
+    .cj-asignar-inline-cajas .cj-asignar-caja-btn {
+      padding: 12px; background: linear-gradient(135deg, #0f172a, #060d1f);
+      border: 1.5px solid #334155; border-radius: 12px; cursor: pointer;
+      transition: all .2s cubic-bezier(.34,1.56,.64,1);
+      display: flex; align-items: center; gap: 10px;
+      animation: cjCajaBtnIn .4s cubic-bezier(.34,1.56,.64,1) backwards;
+      position: relative; overflow: hidden;
+    }
+    .cj-asignar-inline-cajas .cj-asignar-caja-btn::before {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(135deg, transparent, rgba(59,130,246,.06));
+      opacity: 0; transition: opacity .2s;
+    }
+    .cj-asignar-inline-cajas .cj-asignar-caja-btn:hover {
+      border-color: #3b82f6; transform: translateY(-2px);
+      box-shadow: 0 6px 16px -4px rgba(59,130,246,.3);
+    }
+    .cj-asignar-inline-cajas .cj-asignar-caja-btn:hover::before { opacity: 1; }
+    .cj-asignar-inline-cajas .cj-asignar-caja-btn.is-active {
+      border-color: #10b981; background: linear-gradient(135deg, rgba(16,185,129,.15), rgba(16,185,129,.05));
+      box-shadow: 0 0 0 2px rgba(16,185,129,.4), 0 6px 20px -4px rgba(16,185,129,.4);
+      transform: translateY(-1px);
+    }
+    .cj-asignar-inline-cajas .cj-asignar-caja-btn.is-active .cj-asignar-caja-check {
+      opacity: 1; transform: scale(1);
+    }
+    .cj-asignar-caja-avatar {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      border: 2px solid #334155;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; flex-shrink: 0; transition: all .2s;
+    }
+    .cj-asignar-inline-cajas .cj-asignar-caja-btn.is-active .cj-asignar-caja-avatar {
+      border-color: #10b981;
+      background: linear-gradient(135deg, rgba(16,185,129,.2), rgba(16,185,129,.05));
+    }
+    .cj-asignar-caja-info { flex: 1; min-width: 0; text-align: left; }
+    .cj-asignar-inline-cajas .cj-asignar-caja-vendedor {
+      font-weight: 800; font-size: 12.5px; color: #f1f5f9;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .cj-asignar-inline-cajas .cj-asignar-caja-meta {
+      font-size: 10px; color: #94a3b8; margin-top: 1px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .cj-asignar-caja-check {
+      width: 22px; height: 22px; border-radius: 50%;
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: white; font-weight: 900; font-size: 13px;
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; transform: scale(.3);
+      transition: all .25s cubic-bezier(.34,1.56,.64,1);
+      box-shadow: 0 0 12px rgba(16,185,129,.5);
+      flex-shrink: 0;
+    }
+    @keyframes cjCajaBtnIn {
+      from { opacity: 0; transform: translateY(8px) scale(.9); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .cj-asignar-inline-metodos {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+    }
+    .cj-asignar-inline-metodos .cj-asignar-metodo-btn {
+      padding: 14px 8px; background: linear-gradient(135deg, #0f172a, #060d1f);
+      border: 1.5px solid #334155; border-radius: 12px; cursor: pointer;
+      color: #cbd5e1; font-weight: 800; font-size: 11px;
+      transition: all .2s cubic-bezier(.34,1.56,.64,1);
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+    }
+    .cj-asignar-metodo-ico { font-size: 22px; transition: transform .25s; }
+    .cj-asignar-inline-metodos .cj-asignar-metodo-btn:hover {
+      border-color: #06b6d4; transform: translateY(-2px);
+    }
+    .cj-asignar-inline-metodos .cj-asignar-metodo-btn:hover .cj-asignar-metodo-ico {
+      transform: scale(1.15) rotate(-3deg);
+    }
+    .cj-asignar-inline-metodos .cj-asignar-metodo-btn.is-active {
+      border-color: #06b6d4;
+      background: linear-gradient(135deg, rgba(6,182,212,.18), rgba(6,182,212,.04));
+      color: #67e8f9;
+      box-shadow: 0 0 0 2px rgba(6,182,212,.35), 0 6px 16px -4px rgba(6,182,212,.4);
+    }
+    .cj-asignar-inline-metodos .cj-asignar-metodo-btn.is-active .cj-asignar-metodo-ico {
+      transform: scale(1.1);
+      filter: drop-shadow(0 0 6px rgba(6,182,212,.6));
+    }
+    .cj-asignar-inline-hint {
+      font-size: 10.5px; color: #64748b; padding: 8px 10px;
+      background: rgba(15,23,42,.5); border-radius: 8px;
+      border-left: 3px solid #fbbf24;
+    }
+    .cj-asignar-inline-footer {
+      display: flex; gap: 10px; margin-top: 14px;
+      padding-top: 12px; border-top: 1px solid rgba(59,130,246,.15);
+    }
+    .cj-asignar-inline-footer .cj-btn {
+      flex: 1; padding: 12px; font-weight: 900; border-radius: 10px;
+      border: none; cursor: pointer; text-transform: uppercase;
+      font-size: 12px; letter-spacing: .04em; transition: all .2s ease;
+    }
+    .cj-asignar-inline-footer .cj-btn-primary {
+      background: linear-gradient(135deg, #10b981, #059669); color: white;
+      box-shadow: 0 4px 14px -2px rgba(16,185,129,.4);
+    }
+    .cj-asignar-inline-footer .cj-btn-primary:hover:not(:disabled) {
+      transform: translateY(-2px) scale(1.02);
+      box-shadow: 0 8px 24px -4px rgba(16,185,129,.6);
+    }
+    .cj-asignar-inline-footer .cj-btn-primary:disabled {
+      opacity: .35; cursor: not-allowed;
+      background: linear-gradient(135deg, #334155, #1e293b);
+      box-shadow: none;
+    }
+    .cj-asignar-inline-loading {
+      display: flex; align-items: center; gap: 10px;
+      padding: 18px; color: #94a3b8; font-size: 12px;
+      justify-content: center;
+    }
+    .cj-asignar-inline-spin {
+      width: 18px; height: 18px; border-radius: 50%;
+      border: 2.5px solid #1e293b; border-top-color: #3b82f6;
+      animation: spin .7s linear infinite;
+    }
+    .cj-asignar-inline-empty {
+      padding: 16px; text-align: center; color: #fbbf24;
+      font-size: 12px; font-weight: 700;
+      background: rgba(245,158,11,.08); border-radius: 10px;
+      border: 1px dashed rgba(245,158,11,.3);
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
     /* Animación "vuela al cajero" cuando se envía */
     .cj-credito-fly {
       animation: cjCreditoFly .8s cubic-bezier(.5, -0.3, .8, .4) forwards;
