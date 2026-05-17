@@ -21777,8 +21777,13 @@ const MOS = (() => {
     if (!personas.length) { toast('Selección vacía', 'error'); if (btn) { btn.disabled = false; btn.textContent = '💸 Confirmar y pagar'; } return; }
 
     // Si va a imprimir → primero pedir impresora (UNA vez para todos)
+    // [v2.41.37] Cerrar modalLiqConfirmar ANTES de abrir el selector para
+    // evitar que queden 2 modales apilados (el de impresora atrás → no
+    // se podía clickear). Si el operador cancela en el selector, el toast
+    // ya avisa que no se imprimió.
     let printerId = null;
     if (imprimir) {
+      closeModal('modalLiqConfirmar');
       printerId = await _liqElegirImpresora();
       if (!printerId) {
         // Usuario canceló → solo guardar pagos sin imprimir

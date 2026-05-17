@@ -456,17 +456,52 @@ function getPagoDetalle(params) {
   var rows = _sheetToObjects(sh).filter(function(r){ return String(r.idPago) === String(params.idPago); });
   if (!rows.length) return { ok: false, error: 'idPago no encontrado' };
   var tz = Session.getScriptTimeZone();
+
+  // [v2.41.37] Cargar LIQUIDACIONES_DIA + EVALUACIONES para enriquecer
+  // cada día del pago con contexto: auditado, score, unidades, motivo sanción.
+  var ldiaMap = {};  // key: idPersonal|fecha → fila
+  try {
+    var ldiaSh = _liqDiaGetSheet();
+    _sheetToObjects(ldiaSh).forEach(function(r) {
+      var f = _liqNormFecha(r.fecha, tz);
+      var k = String(r.idPersonal) + '|' + f;
+      ldiaMap[k] = r;
+    });
+  } catch(_) {}
+  var sancionMotivoMap = {};  // key: idPersonal|fecha → motivo (último con sanción)
+  try {
+    var evalSh = _getEvalSheet();
+    _sheetToObjects(evalSh).forEach(function(r) {
+      var s = parseFloat(r.sancion) || 0;
+      if (s <= 0) return;
+      var f = _liqNormFecha(r.fecha, tz);
+      var k = String(r.idPersonal) + '|' + f;
+      sancionMotivoMap[k] = String(r.sancionMotivo || r.motivoSancion || 'sin motivo registrado');
+    });
+  } catch(_) {}
+
+  var idPers = String(rows[0].idPersonal);
   var dias = rows.map(function(r){
-    var f = r.fecha instanceof Date
-      ? Utilities.formatDate(r.fecha, tz, 'yyyy-MM-dd')
-      : String(r.fecha || '').substring(0,10);
+    var f = _liqNormFecha(r.fecha, tz);
+    var k = idPers + '|' + f;
+    var ld = ldiaMap[k] || {};
+    var pagoEnv = parseFloat(r.pagoEnvasado) || 0;
+    var tarifa  = parseFloat(ld.tarifaEnvasado) || 0;
+    var uds     = (tarifa > 0) ? Math.round(pagoEnv / tarifa) : 0;
     return {
       fecha: f,
       montoBase:    parseFloat(r.montoBase)    || 0,
-      pagoEnvasado: parseFloat(r.pagoEnvasado) || 0,
+      pagoEnvasado: pagoEnv,
       bonoMeta:     parseFloat(r.bonoMeta)     || 0,
       sancion:      parseFloat(r.sancion)      || 0,
-      totalDia:     parseFloat(r.totalDia)     || 0
+      totalDia:     parseFloat(r.totalDia)     || 0,
+      // Enriquecidos
+      auditado:          (ld.auditado === true) || (String(ld.auditado).toLowerCase() === 'true'),
+      scoreFinal:        parseFloat(ld.scoreFinal) || 0,
+      evaluacionesCount: parseInt(ld.evaluacionesCount) || 0,
+      tarifaEnvasado:    tarifa,
+      unidadesEnvasadas: uds,
+      sancionMotivo:     sancionMotivoMap[k] || ''
     };
   });
   var total = dias.reduce(function(s,d){ return s + d.totalDia; }, 0);
@@ -527,19 +562,48 @@ function imprimirTicketPago(params) {
   txt += _pEnd('ROL',      12) + ': ' + _norm(d.rol) + '\n';
   txt += SEP;
 
-  // Detalle por día
-  txt += _sHdr('DIAS LIQUIDADOS');
+  // Detalle por día — [v2.41.37] con contexto enriquecido por día
+  txt += _sHdr('DIAS LIQUIDADOS (' + d.dias.length + ')');
+  // Acumuladores para el resumen final
+  var diasAuditados = 0, diasConSancion = 0, totalEnvasados = 0, totalBonoMeta = 0, tarifaUsada = 0;
   d.dias.forEach(function(dia) {
     var f = dia.fecha;
     var d1 = new Date(f + 'T12:00:00');
     var dStr = Utilities.formatDate(d1, Session.getScriptTimeZone(), 'EEE dd MMM');
     txt += _pEnd(_norm(dStr), W-12) + _amtP(dia.totalDia, 12) + '\n';
+    // Subcomponentes monetarios
     var sub = [];
     if (dia.montoBase    > 0) sub.push('base '   + dia.montoBase.toFixed(2));
-    if (dia.pagoEnvasado > 0) sub.push('env '    + dia.pagoEnvasado.toFixed(2));
+    if (dia.pagoEnvasado > 0) {
+      var udsTxt = dia.unidadesEnvasadas > 0 ? ' (' + dia.unidadesEnvasadas + ' uds)' : '';
+      sub.push('env ' + dia.pagoEnvasado.toFixed(2) + udsTxt);
+    }
     if (dia.bonoMeta     > 0) sub.push('+meta '  + dia.bonoMeta.toFixed(2));
     if (dia.sancion      > 0) sub.push('-san '   + dia.sancion.toFixed(2));
-    if (sub.length) txt += '  ' + _norm(sub.join('  ')) + '\n';
+    if (sub.length) txt += '  ' + _norm(sub.join(' · ')) + '\n';
+    // Contexto: auditado / score
+    if (dia.auditado) {
+      var scoreTxt = dia.scoreFinal > 0 ? ' · score ' + dia.scoreFinal.toFixed(1) + '/5' : '';
+      txt += '  [OK] auditado' + scoreTxt + '\n';
+      diasAuditados++;
+    } else {
+      txt += '  [!] SIN AUDITAR\n';
+    }
+    // Sanción con motivo si lo hay
+    if (dia.sancion > 0) {
+      diasConSancion++;
+      var mot = (dia.sancionMotivo || '').substring(0, W - 16);
+      if (mot) {
+        txt += '  [!] Sancion: ' + _norm(mot) + '\n';
+      } else {
+        txt += '  [!] Sancion -S/' + dia.sancion.toFixed(2) + '\n';
+      }
+    }
+    txt += '\n';
+    // Acumular
+    totalEnvasados += dia.unidadesEnvasadas || 0;
+    totalBonoMeta  += dia.bonoMeta || 0;
+    if (dia.tarifaEnvasado > 0) tarifaUsada = dia.tarifaEnvasado;
   });
   txt += SEPd;
 
@@ -547,6 +611,23 @@ function imprimirTicketPago(params) {
   txt += '\x1b\x21\x30';
   txt += _pEnd('TOTAL', W/2-6) + _amtP(d.total, W/2-4) + '\n';
   txt += '\x1b\x21\x00';
+  txt += SEPd;
+
+  // [v2.41.37] Resumen del período (contexto)
+  txt += _sHdr('RESUMEN DEL PERIODO');
+  txt += _pEnd('  Dias liquidados', W-6)  + _pSt(String(d.dias.length), 6) + '\n';
+  var pctAud = d.dias.length > 0 ? Math.round((diasAuditados / d.dias.length) * 100) : 0;
+  txt += _pEnd('  Dias auditados',  W-12) + _pSt(diasAuditados + '/' + d.dias.length + ' ' + pctAud + '%', 12) + '\n';
+  txt += _pEnd('  Dias con sancion', W-6) + _pSt(String(diasConSancion), 6) + '\n';
+  if (totalEnvasados > 0) {
+    txt += _pEnd('  Total envasados', W-10) + _pSt(totalEnvasados + ' uds', 10) + '\n';
+    if (tarifaUsada > 0) {
+      txt += '    (a S/' + tarifaUsada.toFixed(2) + ' c/u)\n';
+    }
+  }
+  if (totalBonoMeta > 0) {
+    txt += _pEnd('  Bono meta logrado', W-12) + _amtP(totalBonoMeta, 12) + '\n';
+  }
   txt += SEPd;
 
   if (d.comentario) {
