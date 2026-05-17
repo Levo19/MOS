@@ -11179,19 +11179,34 @@
             <div id="auditControlList" class="space-y-1"></div>
           </div>
 
-          <!-- Sanción (opcional) — monto negativo que se resta del totalDia -->
-          <div class="pt-3" style="border-top:1px dashed rgba(248,113,113,.25)">
+          <!-- [v2.41.51] Ajuste opcional: SANCIÓN (descuenta) o BONIFICACIÓN (suma) -->
+          <div class="pt-3" style="border-top:1px dashed rgba(148,163,184,.25)">
             <label class="lbl flex items-center justify-between">
-              <span>⚠ Sanción del día (opcional)</span>
-              <span class="text-[10px] text-slate-500 font-normal">monto a descontar</span>
+              <span>💱 Ajuste del día (opcional)</span>
+              <span id="auditAjusteHint" class="text-[10px] text-slate-500 font-normal">descuenta o suma al total</span>
             </label>
+            <div id="auditAjusteToggle" class="flex gap-1 mb-2">
+              <button type="button" data-tipo="sancion" onclick="MOS._auditSetAjuste('sancion')"
+                class="flex-1 py-1.5 rounded-md text-xs font-bold transition-all"
+                style="background:rgba(248,113,113,.15);color:#f87171;border:1px solid rgba(248,113,113,.4)">
+                ⚠ Sanción (−)
+              </button>
+              <button type="button" data-tipo="bonificacion" onclick="MOS._auditSetAjuste('bonificacion')"
+                class="flex-1 py-1.5 rounded-md text-xs font-bold transition-all"
+                style="background:rgba(15,23,42,.5);color:#94a3b8;border:1px solid rgba(148,163,184,.2)">
+                🎁 Bonificación (+)
+              </button>
+            </div>
             <div class="flex items-center gap-2">
-              <span class="text-sm text-slate-500">−S/</span>
-              <input id="auditSancion" type="number" min="0" step="0.50" placeholder="0.00"
+              <span id="auditAjusteSigno" class="text-sm text-slate-500 font-bold w-6 text-right">−S/</span>
+              <input id="auditAjusteMonto" type="number" min="0" step="0.50" placeholder="0.00"
                 class="inp flex-1" style="border-color:rgba(248,113,113,.3)">
             </div>
-            <input id="auditSancionMotivo" type="text" placeholder="Motivo de la sanción (ej: falta de aseo, incumplimiento)"
-              class="inp mt-1 text-xs" style="border-color:rgba(248,113,113,.2)">
+            <input id="auditAjusteMotivo" type="text" placeholder="Motivo (ej: falta de aseo / esfuerzo extra)"
+              class="inp mt-1 text-xs" style="border-color:rgba(148,163,184,.2)">
+            <!-- Inputs ocultos legacy para compat con código antiguo -->
+            <input id="auditSancion" type="hidden">
+            <input id="auditSancionMotivo" type="hidden">
           </div>
 
           <!-- ── Liquidación del día (en vivo) ───────────────── -->

@@ -24800,9 +24800,11 @@ const MOS = (() => {
 
     $('auditTogComision').classList.add('on');
     $('auditTogMeta').classList.add('on');
-    // Reset sanción al abrir (se vuelve a llenar si se quiere aplicar)
-    const sa = $('auditSancion');         if (sa) { sa.value = ''; sa.oninput = _renderAuditLiquidacion; }
-    const sm = $('auditSancionMotivo');   if (sm) sm.value = '';
+    // [v2.41.51] Reset ajuste (sanción/bonificación) al abrir
+    _evalState.auditAjusteTipo = 'sancion';
+    const am = $('auditAjusteMonto');     if (am) { am.value = ''; am.oninput = _renderAuditLiquidacion; }
+    const amo = $('auditAjusteMotivo');   if (amo) amo.value = '';
+    _auditSetAjuste('sancion');
     _evalState.auditR = r;
     _renderAuditKpis(r);
     _renderAuditChecklist(r.rol);
@@ -25057,6 +25059,50 @@ const MOS = (() => {
   // ── Liquidación en vivo dentro del modal Auditar ──────────────
   // Recalcula base + bonos + envasado − sanción y lo muestra como
   // desglose profesional. Se reactiva ante:
+  // [v2.41.51] Toggle entre sanción (-) y bonificación (+). Aplica a todos
+  // los roles. Cambia el color del input y el signo.
+  function _auditSetAjuste(tipo) {
+    if (tipo !== 'sancion' && tipo !== 'bonificacion') tipo = 'sancion';
+    _evalState.auditAjusteTipo = tipo;
+    const tog = document.getElementById('auditAjusteToggle');
+    const sig = document.getElementById('auditAjusteSigno');
+    const inp = document.getElementById('auditAjusteMonto');
+    const mot = document.getElementById('auditAjusteMotivo');
+    const hint = document.getElementById('auditAjusteHint');
+    if (tog) {
+      tog.querySelectorAll('button[data-tipo]').forEach(b => {
+        const activo = b.dataset.tipo === tipo;
+        if (tipo === 'sancion') {
+          b.style.background = activo ? 'rgba(248,113,113,.25)' : 'rgba(15,23,42,.5)';
+          b.style.color      = activo ? '#fca5a5' : '#94a3b8';
+          b.style.borderColor= activo ? 'rgba(248,113,113,.55)' : 'rgba(148,163,184,.2)';
+        } else {
+          b.style.background = activo ? 'rgba(34,197,94,.22)' : 'rgba(15,23,42,.5)';
+          b.style.color      = activo ? '#86efac' : '#94a3b8';
+          b.style.borderColor= activo ? 'rgba(34,197,94,.55)' : 'rgba(148,163,184,.2)';
+        }
+      });
+    }
+    if (tipo === 'sancion') {
+      if (sig) { sig.textContent = '−S/'; sig.style.color = '#f87171'; }
+      if (inp) inp.style.borderColor = 'rgba(248,113,113,.3)';
+      if (mot) {
+        mot.placeholder = 'Motivo de la sanción (ej: falta de aseo, incumplimiento)';
+        mot.style.borderColor = 'rgba(248,113,113,.2)';
+      }
+      if (hint) hint.textContent = 'descuenta del total';
+    } else {
+      if (sig) { sig.textContent = '+S/'; sig.style.color = '#34d399'; }
+      if (inp) inp.style.borderColor = 'rgba(34,197,94,.35)';
+      if (mot) {
+        mot.placeholder = 'Motivo de la bonificación (ej: esfuerzo extra, día complicado)';
+        mot.style.borderColor = 'rgba(34,197,94,.25)';
+      }
+      if (hint) hint.textContent = 'suma al total';
+    }
+    if (typeof _renderAuditLiquidacion === 'function') _renderAuditLiquidacion();
+  }
+
   //   - cambios en sanción (input)
   //   - toggle de comisión (afecta bono score)
   //   - toggle de meta (afecta bono meta)
@@ -25075,15 +25121,16 @@ const MOS = (() => {
     const base       = parseFloat(r.montoBase)    || 0;
     const bonoMeta   = parseFloat(r.bonoMeta)     || 0;
     const pagoEnv    = parseFloat(r.pagoEnvasado) || 0;
-    const sancion    = parseFloat($('auditSancion')?.value) || 0;
+    // [v2.41.51] Ajuste único: sancion (descuenta) o bonificacion (suma)
+    const ajusteTipo = _evalState.auditAjusteTipo || 'sancion';
+    const ajusteMonto = Math.max(0, parseFloat($('auditAjusteMonto')?.value) || 0);
+    const sancion      = ajusteTipo === 'sancion' ? ajusteMonto : 0;
+    const bonificacion = ajusteTipo === 'bonificacion' ? ajusteMonto : 0;
 
     const togMeta = $('auditTogMeta');
     const aplicaMeta = togMeta ? togMeta.classList.contains('on') : true;
     const metaEf  = aplicaMeta ? bonoMeta : 0;
 
-    // ── Bono por desempeño ELIMINADO ──
-    // No está entre los 5 puntos de evaluación. La liquidación solo
-    // considera: base + (bono meta POS | pago envasado almacén) − sanción.
     const items = [];
     items.push(['💵 Base diaria', base, false]);
     if (esPos) {
@@ -25091,11 +25138,14 @@ const MOS = (() => {
     } else if (esAlm) {
       items.push(['🏷 Pago envasado', pagoEnv, false]);
     }
+    if (bonificacion > 0) items.push(['🎁 Bonificación', bonificacion, false]);
     if (sancion > 0) items.push(['⚠ Sanción del día', sancion, true]);
 
     lines.innerHTML = items.map(([lbl, val, neg, note]) => {
       const signo = neg ? '−' : '';
-      const color = neg ? '#f87171' : (val > 0 ? '#e2e8f0' : '#64748b');
+      const color = neg ? '#f87171'
+                       : lbl.indexOf('Bonificación') === 0 ? '#34d399'
+                       : (val > 0 ? '#e2e8f0' : '#64748b');
       const noteHtml = note ? `<span class="text-[9px] text-slate-500 ml-1">(${note})</span>` : '';
       return `<div class="flex items-center justify-between">
         <span class="text-slate-400">${lbl}${noteHtml}</span>
@@ -25103,11 +25153,11 @@ const MOS = (() => {
       </div>`;
     }).join('');
 
-    const total = Math.max(0, base + metaEf + (esAlm ? pagoEnv : 0) - sancion);
+    const total = Math.max(0, base + metaEf + (esAlm ? pagoEnv : 0) + bonificacion - sancion);
     const totalStr = `S/${total.toFixed(2)}`;
     const cambio = totEl.textContent !== totalStr;
     totEl.textContent = totalStr;
-    if (sancion > 0 && (base + metaEf + (esAlm ? pagoEnv : 0) - sancion) < 0) {
+    if (sancion > 0 && (base + metaEf + (esAlm ? pagoEnv : 0) + bonificacion - sancion) < 0) {
       totEl.style.color = '#f87171';
       totEl.title = 'Sanción excede el total, se trunca a S/0.00';
     } else {
@@ -25451,13 +25501,23 @@ const MOS = (() => {
       checksFull[k] = !!_evalState.auditChecks[k];
     });
 
-    // Sanción opcional (monto negativo). El motivo se anexa al comentario.
-    const sancion = Math.max(0, parseFloat($('auditSancion')?.value) || 0);
-    const sancionMotivo = String($('auditSancionMotivo')?.value || '').trim();
+    // [v2.41.51] Ajuste: SANCIÓN (descuenta) o BONIFICACIÓN (suma)
+    const ajusteTipo  = _evalState.auditAjusteTipo || 'sancion';
+    const ajusteMonto = Math.max(0, parseFloat($('auditAjusteMonto')?.value) || 0);
+    const ajusteMotivo = String($('auditAjusteMotivo')?.value || '').trim();
+    const sancion       = ajusteTipo === 'sancion'      ? ajusteMonto : 0;
+    const sancionMotivo = ajusteTipo === 'sancion'      ? ajusteMotivo : '';
+    const bonificacion       = ajusteTipo === 'bonificacion' ? ajusteMonto : 0;
+    const bonificacionMotivo = ajusteTipo === 'bonificacion' ? ajusteMotivo : '';
+
     const comentarioBase = $('auditComentario').value || '';
-    const comentarioFinal = sancion > 0
-      ? (comentarioBase + (comentarioBase ? '\n' : '') + `⚠ Sanción S/${sancion.toFixed(2)}${sancionMotivo ? ' — ' + sancionMotivo : ''}`)
-      : comentarioBase;
+    let comentarioFinal = comentarioBase;
+    if (sancion > 0) {
+      comentarioFinal += (comentarioFinal ? '\n' : '') + `⚠ Sanción S/${sancion.toFixed(2)}${sancionMotivo ? ' — ' + sancionMotivo : ''}`;
+    }
+    if (bonificacion > 0) {
+      comentarioFinal += (comentarioFinal ? '\n' : '') + `🎁 Bonificación S/${bonificacion.toFixed(2)}${bonificacionMotivo ? ' — ' + bonificacionMotivo : ''}`;
+    }
 
     const params = {
       idPersonal,
@@ -25467,8 +25527,10 @@ const MOS = (() => {
       limpiezaProfPct: parseFloat($('auditLimpiezaProf').value) || 0,
       controlChecks: JSON.stringify(checksFull),
       comentario: comentarioFinal,
-      sancion: sancion,                // NUEVO: monto negativo del día
-      sancionMotivo: sancionMotivo,    // NUEVO: motivo para auditoría
+      sancion: sancion,
+      sancionMotivo: sancionMotivo,
+      bonificacion: bonificacion,
+      bonificacionMotivo: bonificacionMotivo,
       evaluadoPor: S.session?.nombre || '',
       aplicaComision: $('auditTogComision').classList.contains('on'),
       aplicaBonoMeta: $('auditTogMeta').classList.contains('on')
@@ -25495,7 +25557,7 @@ const MOS = (() => {
       // r.totalDia con la misma fórmula que el backend en _armarPL:
       //   totalDia = max(0, base + pagoEnvasado + bonoMeta_efectivo − sancion_total)
       const sancionPrev = parseFloat(r.sancion) || 0;
-      const sancionNueva = sancionPrev + sancion;  // sumamos al acumulado del día
+      const sancionNueva = sancionPrev + sancion;
       r.sancion = Math.round(sancionNueva * 100) / 100;
       if (sancion > 0) {
         r.sancionesDetalle = (r.sancionesDetalle || []).slice();
@@ -25505,13 +25567,24 @@ const MOS = (() => {
           motivo: sancionMotivo
         });
       }
+      // [v2.41.51] Acumular bonificación
+      const bonifPrev = parseFloat(r.bonificacion) || 0;
+      r.bonificacion = Math.round((bonifPrev + bonificacion) * 100) / 100;
+      if (bonificacion > 0) {
+        r.bonificacionesDetalle = (r.bonificacionesDetalle || []).slice();
+        r.bonificacionesDetalle.push({
+          hora: new Date().toTimeString().slice(0,5),
+          monto: bonificacion,
+          motivo: bonificacionMotivo
+        });
+      }
       // Bono meta efectivo: si admin desactivó el toggle, queda en 0
       const baseV = parseFloat(r.montoBase) || 0;
       const envV  = parseFloat(r.pagoEnvasado) || 0;
       const aplicaMeta = !!params.aplicaBonoMeta;
-      if (!aplicaMeta) r.bonoMeta = 0; // efecto del toggle
+      if (!aplicaMeta) r.bonoMeta = 0;
       const metaEf = aplicaMeta ? (parseFloat(r.bonoMeta) || 0) : 0;
-      r.totalDia = Math.max(0, Math.round((baseV + envV + metaEf - r.sancion) * 100) / 100);
+      r.totalDia = Math.max(0, Math.round((baseV + envV + metaEf + r.bonificacion - r.sancion) * 100) / 100);
 
       _renderEvalLista();
       // Re-render de Finanzas Personal (cards + subtotales + total general)
@@ -26430,6 +26503,7 @@ const MOS = (() => {
     loadEvaluacion, refreshEvaluacion, evalSetApp,
     abrirAuditar, cerrarAuditar, guardarAuditoria,
     auditToggleCheck, auditCheckAll, auditToggle, imprimirLiquidacionDia,
+    _auditSetAjuste,
     _liqLoadPrinters, _liqEnviarPrint,
     // Editor de checklists
     abrirEditorChecklists, checklistSetRol, checklistAddItem,

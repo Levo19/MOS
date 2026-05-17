@@ -15,7 +15,8 @@ function _getEvalSheet() {
       'limpiezaPct', 'limpiezaProfPct',
       'controlChecks', 'comentario', 'evaluadoPor',
       'aplicaComision', 'aplicaBonoMeta', 'activo',
-      'sancion', 'sancionMotivo'  // nuevos
+      'sancion', 'sancionMotivo',
+      'bonificacion', 'bonificacionMotivo'  // [v2.41.51] extra discrecional
     ]);
     sheet.setFrozenRows(1);
   } else {
@@ -28,6 +29,14 @@ function _getEvalSheet() {
     }
     if (hdrs.indexOf('sancionMotivo') === -1) {
       sheet.getRange(1, lastCol + 1).setValue('sancionMotivo');
+      lastCol++;
+    }
+    if (hdrs.indexOf('bonificacion') === -1) {
+      sheet.getRange(1, lastCol + 1).setValue('bonificacion');
+      lastCol++;
+    }
+    if (hdrs.indexOf('bonificacionMotivo') === -1) {
+      sheet.getRange(1, lastCol + 1).setValue('bonificacionMotivo');
     }
   }
   return sheet;
@@ -82,8 +91,10 @@ function crearEvaluacion(params) {
     params.aplicaComision === false || String(params.aplicaComision) === 'false' ? false : true,
     params.aplicaBonoMeta === false || String(params.aplicaBonoMeta) === 'false' ? false : true,
     true,
-    Math.max(0, parseFloat(params.sancion) || 0),     // monto a descontar
-    String(params.sancionMotivo || '')
+    Math.max(0, parseFloat(params.sancion) || 0),
+    String(params.sancionMotivo || ''),
+    Math.max(0, parseFloat(params.bonificacion) || 0),    // [v2.41.51] extra
+    String(params.bonificacionMotivo || '')
   ]);
   // ⚡ Hook materialización: recomputar la fila LIQUIDACIONES_DIA de este
   // (idPersonal × fecha) para que el cambio se refleje al instante en Pendientes.
@@ -349,6 +360,8 @@ function getResumenDia(params) {
   var aplicaComision = true, aplicaBonoMeta = true;
   var sancionTotal = 0;
   var sancionesDetalle = [];  // [{ hora, monto, motivo }]
+  var bonificacionTotal = 0;
+  var bonificacionesDetalle = [];  // [{ hora, monto, motivo }]
   evals.forEach(function(e){
     var l  = parseFloat(e.limpiezaPct) || 0;
     if (l  > maxLimp)     maxLimp     = l;
@@ -374,8 +387,17 @@ function getResumenDia(params) {
         hora: e.hora || '', monto: sancRow, motivo: String(e.sancionMotivo || '')
       });
     }
+    // [v2.41.51] Bonificación: también se SUMA entre evaluaciones del día
+    var bonRow = parseFloat(e.bonificacion) || 0;
+    if (bonRow > 0) {
+      bonificacionTotal += bonRow;
+      bonificacionesDetalle.push({
+        hora: e.hora || '', monto: bonRow, motivo: String(e.bonificacionMotivo || '')
+      });
+    }
   });
   sancionTotal = Math.round(sancionTotal * 100) / 100;
+  bonificacionTotal = Math.round(bonificacionTotal * 100) / 100;
 
   var checkCount = Object.keys(checksAcum).length;
   var checkTotal = Object.keys(totalKeysVistos).length || 9;
@@ -474,11 +496,13 @@ function getResumenDia(params) {
       unidadesEnvasadas: parseFloat(kpis.envasados) || 0,
       sancion:       sancionTotal,                                // monto descontado del día
       sancionesDetalle: sancionesDetalle,
+      bonificacion:  bonificacionTotal,                            // [v2.41.51] extra del día
+      bonificacionesDetalle: bonificacionesDetalle,
       montoBase:     baseEfectiva,
       tarifaDiaria:  montoBase, // tarifa configurada (info)
-      // totalDia ya descuenta la sanción del día. Si la sanción es mayor
-      // que lo que ganó, queda en 0 (no negativo — no se le debe al admin).
-      totalDia:      Math.max(0, Math.round((baseEfectiva + bonusEfectivo + metaEfectivo + envasadoEfectivo - sancionTotal) * 100) / 100),
+      // totalDia: base + bonus + meta + envasado + bonificación − sanción.
+      // Si la sanción es mayor que lo que ganó, queda en 0 (no negativo).
+      totalDia:      Math.max(0, Math.round((baseEfectiva + bonusEfectivo + metaEfectivo + envasadoEfectivo + bonificacionTotal - sancionTotal) * 100) / 100),
       aplicaComision: aplicaComision,
       aplicaBonoMeta: aplicaBonoMeta
     }

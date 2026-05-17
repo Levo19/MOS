@@ -778,7 +778,7 @@ function migrarLiquidacionesV2() {
 var _LDIA_SHEET = 'LIQUIDACIONES_DIA';
 var _LDIA_HDRS  = [
   'idDia', 'fecha', 'idPersonal', 'nombre', 'rol', 'appOrigen', 'virtual',
-  'montoBase', 'pagoEnvasado', 'bonoMeta', 'sancion', 'totalDia',
+  'montoBase', 'pagoEnvasado', 'bonoMeta', 'bonificacion', 'sancion', 'totalDia',
   'auditado', 'evaluacionesCount', 'scoreFinal', 'tarifaEnvasado', 'presente',
   'estado', 'idPago', 'ts_creado', 'ts_actualizado'
 ];
@@ -786,7 +786,18 @@ var _LDIA_HDRS  = [
 function _liqDiaGetSheet() {
   var ss = getSpreadsheet();
   var sh = ss.getSheetByName(_LDIA_SHEET);
-  if (sh) return sh;
+  if (sh) {
+    // [v2.41.51] Auto-migración: agregar columna bonificacion si falta
+    try {
+      var lc = sh.getLastColumn();
+      var hdrs = sh.getRange(1, 1, 1, lc).getValues()[0];
+      if (hdrs.indexOf('bonificacion') === -1) {
+        sh.getRange(1, lc + 1).setValue('bonificacion');
+        sh.getRange(1, lc + 1).setBackground('#7c3aed').setFontColor('#fff').setFontWeight('bold').setFontSize(10);
+      }
+    } catch(_){}
+    return sh;
+  }
   sh = ss.insertSheet(_LDIA_SHEET);
   sh.getRange(1, 1, 1, _LDIA_HDRS.length).setValues([_LDIA_HDRS]);
   sh.getRange(1, 1, 1, _LDIA_HDRS.length)
@@ -856,6 +867,7 @@ function _liqDiaUpsertRow(rd, fecha) {
     montoBase:         parseFloat(rd.montoBase) || 0,
     pagoEnvasado:      parseFloat(rd.pagoEnvasado) || 0,
     bonoMeta:          parseFloat(rd.bonoMeta) || 0,
+    bonificacion:      parseFloat(rd.bonificacion) || 0,
     sancion:           parseFloat(rd.sancion) || 0,
     totalDia:          parseFloat(rd.totalDia) || 0,
     auditado:          !!rd.auditado,
@@ -957,6 +969,7 @@ function getLiquidacionesPendientesDia(params) {
       montoBase:         parseFloat(r.montoBase) || 0,
       pagoEnvasado:      parseFloat(r.pagoEnvasado) || 0,
       bonoMeta:          parseFloat(r.bonoMeta) || 0,
+      bonificacion:      parseFloat(r.bonificacion) || 0,
       sancion:           parseFloat(r.sancion) || 0,
       totalDia:          parseFloat(r.totalDia) || 0,
       scoreFinal:        parseFloat(r.scoreFinal) || 0,
