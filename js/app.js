@@ -22023,6 +22023,10 @@ const MOS = (() => {
   async function liqReimprimirPago() {
     const d = _liqState.currentPagoDet;
     if (!d) return;
+    // [v2.41.53] Cerrar modal detalle ANTES de abrir selector impresora.
+    // Sin esto, el modalSelPrinterLiq quedaba atrás del modalLiqPagoDet y
+    // no se podía clickear.
+    closeModal('modalLiqPagoDet');
     const printerId = await _liqElegirImpresora();
     if (!printerId) return;
     try {
