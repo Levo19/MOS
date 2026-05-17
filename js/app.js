@@ -21133,6 +21133,9 @@ const MOS = (() => {
     document.querySelectorAll('#modalLiquidaciones .liq-tab').forEach(el => {
       el.classList.toggle('active', el.dataset.liqtab === tab);
     });
+    // [v2.41.38] Mostrar/ocultar barra de filtro por persona según tab
+    const filtroBar = document.getElementById('liqFiltroBar');
+    if (filtroBar) filtroBar.style.display = (tab === 'pendientes') ? 'block' : 'none';
     _liqUpdatePayBar();
     _liqSfx('switch');
 
@@ -21305,13 +21308,28 @@ const MOS = (() => {
   function _liqRenderPendientes() {
     const body = $('liqBody');
     if (!body) return;
-    const list = _liqState.pendientes || [];
-    if (!list.length) {
+    const all = _liqState.pendientes || [];
+    // [v2.41.38] Renderizar chips de personas SIEMPRE (aunque haya 0 después de filtrar)
+    _liqRenderFiltroChips(all);
+    if (!all.length) {
       body.innerHTML = `<div class="liq-empty">
         <div class="liq-empty-emoji">🎉</div>
         <div class="text-sm">Todo al día</div>
         <div class="text-xs text-slate-600 mt-1">No hay liquidaciones pendientes.</div>
         <div class="text-[10px] text-slate-700 mt-3">¿Primera vez con el módulo? Ve a <strong>📊 Resumen</strong> → <strong>🔧 Inicializar Liquidación Diaria</strong></div>
+      </div>`;
+      return;
+    }
+    // [v2.41.38] Aplicar filtro de personas si hay activo
+    const filtroSel = _liqState.filtroPersonas;
+    const list = (filtroSel && filtroSel.size > 0)
+      ? all.filter(p => filtroSel.has(p.idPersonal))
+      : all;
+    if (!list.length) {
+      body.innerHTML = `<div class="liq-empty">
+        <div class="liq-empty-emoji">🔍</div>
+        <div class="text-sm">Sin resultados para el filtro</div>
+        <div class="text-xs text-slate-600 mt-1">Toca el chip para quitar el filtro</div>
       </div>`;
       return;
     }
@@ -21330,6 +21348,58 @@ const MOS = (() => {
       </div>
       ${list.map((p, i) => _liqCardPersona(p, i)).join('')}
     `;
+  }
+
+  // [v2.41.38] Render chips de filtro por persona — multi-select.
+  // Muestra avatar (iniciales) + nombre + badge con N días.
+  function _liqRenderFiltroChips(all) {
+    const cont = document.getElementById('liqFiltroChips');
+    if (!cont) return;
+    if (_liqState.tab !== 'pendientes' || !all.length) {
+      cont.innerHTML = '';
+      cont.style.display = 'none';
+      return;
+    }
+    cont.style.display = 'flex';
+    _liqState.filtroPersonas = _liqState.filtroPersonas || new Set();
+    const sel = _liqState.filtroPersonas;
+    // Ordenar por mayor cantidad de días primero
+    const ordenadas = [...all].sort((a, b) => b.cantidadDias - a.cantidadDias);
+    const iniciales = (nom) => {
+      const partes = String(nom || '').trim().split(/\s+/);
+      return ((partes[0]?.[0] || '?') + (partes[1]?.[0] || '')).toUpperCase();
+    };
+    const chips = ordenadas.map(p => {
+      const isAct = sel.has(p.idPersonal);
+      return `<div class="liq-chip-persona${isAct ? ' is-active' : ''}"
+                   onclick="MOS._liqToggleFiltroPersona('${escAttr(p.idPersonal)}')"
+                   title="${escAttr(p.nombre)} · ${p.cantidadDias} día(s) · ${_liqMoney(p.total)}">
+                <span class="liq-chip-avatar">${escHtml(iniciales(p.nombre))}</span>
+                <span class="liq-chip-nombre">${escHtml(p.nombre.split(' ')[0] || p.nombre)}</span>
+                <span class="liq-chip-badge">${p.cantidadDias}</span>
+              </div>`;
+    }).join('');
+    const clearBtn = sel.size > 0
+      ? `<div class="liq-chip-clear" onclick="MOS._liqLimpiarFiltroPersonas()" title="Quitar filtro">✕ limpiar (${sel.size})</div>`
+      : '';
+    cont.innerHTML = chips + clearBtn;
+  }
+
+  function _liqToggleFiltroPersona(idPersonal) {
+    _liqState.filtroPersonas = _liqState.filtroPersonas || new Set();
+    if (_liqState.filtroPersonas.has(idPersonal)) {
+      _liqState.filtroPersonas.delete(idPersonal);
+    } else {
+      _liqState.filtroPersonas.add(idPersonal);
+    }
+    try { _liqSfx('tap'); } catch(_){}
+    _liqRenderPendientes();
+  }
+
+  function _liqLimpiarFiltroPersonas() {
+    _liqState.filtroPersonas = new Set();
+    try { _liqSfx('tap'); } catch(_){}
+    _liqRenderPendientes();
   }
 
   function _liqCardPersona(p, idx) {
@@ -21505,13 +21575,16 @@ const MOS = (() => {
         localId: 'L' + Date.now() + Math.random().toString(36).slice(2, 8)
       });
       if (!res || !res.ok) {
-        const errKey = res?.error || 'error';
+        // [v2.41.38] Log completo de la respuesta para diagnóstico
+        console.warn('[vetar] RESPUESTA COMPLETA:', JSON.stringify(res));
+        console.warn('[vetar] params enviados:', { idPersonal, fecha });
+        const errKey = res?.error || 'sin_respuesta';
         let msg;
         if (errKey === 'YA_PAGADA') msg = 'Esta liquidación ya está PAGADA — no se puede vetar.';
-        else if (errKey === 'NO_ENCONTRADA') msg = 'Fila no encontrada en hoja LIQUIDACIONES_DIA — toca el lápiz una vez para materializar, luego intenta vetar.';
-        else msg = 'No se pudo vetar: ' + errKey + (res?.mensaje ? ' · ' + res.mensaje : '');
-        console.warn('[vetar] error:', res);
-        toast(msg, 'warn', 6000);
+        else if (errKey === 'NO_ENCONTRADA') msg = `No encontrada en hoja: ${fecha} para ${idPersonal}. Toca el lápiz primero para materializar.`;
+        else if (errKey === 'sin_respuesta') msg = 'Backend no respondió (timeout o offline)';
+        else msg = `No se pudo vetar [${errKey}]` + (res?.mensaje ? ': ' + res.mensaje : '');
+        toast(msg, 'warn', 7000);
         // Rollback
         if (!_liqState.pendientes.includes(p)) _liqState.pendientes.push(p);
         if (!p.dias.find(d => d.fecha === fecha)) p.dias.push(diaSnapshot);
@@ -26383,6 +26456,8 @@ const MOS = (() => {
     _liqVetarDia, _liqDesvetarDia, _liqToggleVetadasPanel,
     // [v2.41.32] Recalcular rango (backfill)
     liqRecalcularRango,
+    // [v2.41.38] Filtro de personas
+    _liqToggleFiltroPersona, _liqLimpiarFiltroPersonas,
     // Legacy stubs (no-op)
     liqVerDetallePend, liqEmitirIndividual, liqEmitirTodos,
     liqAnularPersona, liqAnularDia,

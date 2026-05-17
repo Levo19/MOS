@@ -15771,6 +15771,79 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
   }
   .liq-empty-emoji { font-size: 48px; opacity: .5; margin-bottom: 8px; }
 
+  /* [v2.41.38] Filtro de personas — chips con avatar */
+  .liq-filtro-chips {
+    display: flex; gap: 6px; flex-wrap: wrap;
+    max-height: 110px; overflow-y: auto;
+    padding-right: 2px;
+    scrollbar-width: thin;
+  }
+  .liq-chip-persona {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 9px 4px 4px;
+    border-radius: 999px;
+    background: rgba(15,23,42,.7);
+    border: 1px solid rgba(99,102,241,.3);
+    color: #cbd5e1;
+    cursor: pointer;
+    transition: all .15s;
+    -webkit-tap-highlight-color: transparent;
+    font-size: 11px;
+    user-select: none;
+  }
+  .liq-chip-persona:hover {
+    border-color: rgba(251,191,36,.55);
+    transform: translateY(-1px);
+  }
+  .liq-chip-persona:active { transform: scale(.96); }
+  .liq-chip-persona.is-active {
+    background: linear-gradient(135deg, rgba(251,191,36,.22), rgba(245,158,11,.15));
+    border-color: rgba(251,191,36,.7);
+    color: #fde68a;
+    box-shadow: 0 2px 8px -2px rgba(251,191,36,.4);
+  }
+  .liq-chip-avatar {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 800;
+    background: linear-gradient(135deg, #6366f1, #4f46e5);
+    color: #fff;
+    flex-shrink: 0;
+  }
+  .liq-chip-persona.is-active .liq-chip-avatar {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+  }
+  .liq-chip-nombre {
+    font-weight: 700;
+    max-width: 110px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .liq-chip-badge {
+    font-size: 9.5px; font-weight: 700;
+    padding: 1px 5px; border-radius: 99px;
+    background: rgba(251,191,36,.22);
+    color: #fbbf24;
+    font-family: ui-monospace, monospace;
+  }
+  .liq-chip-persona.is-active .liq-chip-badge {
+    background: rgba(255,255,255,.25);
+    color: #fff;
+  }
+  /* Chip "Limpiar filtro" */
+  .liq-chip-clear {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: rgba(239,68,68,.12);
+    border: 1px solid rgba(239,68,68,.35);
+    color: #fca5a5;
+    font-size: 10.5px; font-weight: 700;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .liq-chip-clear:active { transform: scale(.94); }
+
   /* Batch card (Pagadas) */
   .liq-batch-card {
     position: relative; overflow: hidden;
@@ -15806,15 +15879,17 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
       <div class="liq-tab"        data-liqtab="resumen"    onclick="MOS.liqSetTab('resumen')">📊 Resumen</div>
     </div>
 
-    <!-- Barra mini (solo refrescar) — Pendientes acumula todo, Pagadas se muestra historial sin filtro -->
-    <div class="px-5 py-2 flex items-center gap-2 flex-wrap" style="border-bottom: 1px solid #1e293b; background:rgba(15,23,42,.4)">
-      <div id="liqRangoInfo" class="text-[10px] text-slate-500">Últimos 30 días acumulados</div>
-      <!-- [v2.41.31] Botón para ver vetadas -->
-      <button onclick="MOS._liqToggleVetadasPanel()" class="liq-preset-btn" title="Ver liquidaciones vetadas">🚫 Vetadas</button>
-      <button onclick="MOS.liqRefresh()" class="liq-preset-btn" title="Refrescar (Ctrl+R)">↻ Refrescar</button>
-      <!-- [v2.41.33] Botón Recalcular 30d removido del UI normal — el cron
-           horario auto-sincroniza últimos 3 días. Disponible solo desde
-           consola como MOS.liqRecalcularRango() en caso de emergencia. -->
+    <!-- [v2.41.38] Filtro de personas — chips con avatar + nombre + cantidad
+         de días pendientes. Multi-select. Click = filtra. Solo visible en
+         pestaña Pendientes. La barra incluye también accesos secundarios
+         (Vetadas / Refresh) en formato compacto. -->
+    <div id="liqFiltroBar" class="px-5 py-2" style="border-bottom: 1px solid #1e293b; background:rgba(15,23,42,.4)">
+      <div class="flex items-center gap-2 mb-1.5">
+        <div id="liqRangoInfo" class="text-[10px] text-slate-500 flex-1">Últimos 30 días · toca personas para filtrar</div>
+        <button onclick="MOS._liqToggleVetadasPanel()" class="liq-preset-btn" title="Ver liquidaciones vetadas">🚫</button>
+        <button onclick="MOS.liqRefresh()" class="liq-preset-btn" title="Refrescar (Ctrl+R)">↻</button>
+      </div>
+      <div id="liqFiltroChips" class="liq-filtro-chips"></div>
     </div>
 
     <!-- [v2.41.31] Panel colapsable de liquidaciones VETADAS -->

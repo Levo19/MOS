@@ -914,6 +914,8 @@ function getLiquidacionesPendientesDia(params) {
   // (_liqSyncJob, setup con setupLiqSyncTrigger). El endpoint solo lee.
   // Auto-instalación del trigger si no existe (silencioso, 1 sola vez).
   try { _liqEnsureSyncTrigger(); } catch(_){}
+  // [v2.41.38] También auto-instala el trigger de cierre nocturno 23h.
+  try { _liqEnsureCierreNocturnoTrigger(); } catch(_){}
 
   var sh = _liqDiaGetSheet();
   var rows = _sheetToObjects(sh);
@@ -1508,6 +1510,25 @@ function setupCierreNocturnoTrigger() {
   ScriptApp.newTrigger(TRG).timeBased().atHour(23).everyDays(1).create();
   Logger.log('[Trigger] ' + TRG + ' creado · diario 23:00');
   return { ok: true, mensaje: 'Trigger creado · diario 23:00' };
+}
+
+// [v2.41.38] Auto-instalación silenciosa del trigger de cierre nocturno.
+// Mismo patrón que _liqEnsureSyncTrigger. Throttle 1h para retries.
+function _liqEnsureCierreNocturnoTrigger() {
+  var ssCache;
+  try { ssCache = CacheService.getScriptCache(); } catch(_) { return; }
+  if (!ssCache) return;
+  if (ssCache.get('cierrenoct_trg_check')) return;
+  ssCache.put('cierrenoct_trg_check', '1', 3600);
+  try {
+    var existe = ScriptApp.getProjectTriggers().some(function(t) {
+      return t.getHandlerFunction() === 'cierreNocturnoTodos';
+    });
+    if (!existe) {
+      ScriptApp.newTrigger('cierreNocturnoTodos').timeBased().atHour(23).everyDays(1).create();
+      Logger.log('[CierreNocturnoTrigger] auto-instalado · diario 23:00');
+    }
+  } catch(e) { Logger.log('[CierreNocturnoTrigger] auto fallo: ' + e.message); }
 }
 
 // Auto-instalación silenciosa: si NO existe el trigger, crearlo.
