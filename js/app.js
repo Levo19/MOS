@@ -21656,9 +21656,58 @@ const MOS = (() => {
           try { if (typeof _renderAuditKpis === 'function') _renderAuditKpis(r); } catch(_){}
           try { if (typeof _renderAuditChecklist === 'function') _renderAuditChecklist(r.rol); } catch(_){}
           try { if (typeof _renderAuditLiquidacion === 'function') _renderAuditLiquidacion(); } catch(_){}
+          // [v2.41.32] SYNC: recomputar la fila en LIQUIDACIONES_DIA y reflejar
+          // en _liqState.pendientes para que el lápiz, pendientes y resumen
+          // de personal del día muestren EL MISMO monto siempre.
+          try {
+            await API.post('recomputarLiquidacionDia', {
+              idPersonal, fecha,
+              localId: 'L' + Date.now() + Math.random().toString(36).slice(2, 8)
+            });
+            // Actualizar la fila local con los valores correctos del resumen vivo
+            const pLocal = (_liqState.pendientes || []).find(x => x.idPersonal === idPersonal);
+            if (pLocal) {
+              const diaLocal = pLocal.dias.find(d => d.fecha === fecha);
+              if (diaLocal) {
+                diaLocal.montoBase    = parseFloat(r.montoBase)    || 0;
+                diaLocal.pagoEnvasado = parseFloat(r.pagoEnvasado) || 0;
+                diaLocal.bonoMeta     = parseFloat(r.bonoMeta)     || 0;
+                diaLocal.sancion      = parseFloat(r.sancion)      || 0;
+                diaLocal.totalDia     = parseFloat(r.totalDia)     || 0;
+                diaLocal.auditado     = !!r.auditado;
+                diaLocal.evaluacionesCount = parseInt(r.evaluacionesCount) || 0;
+                diaLocal.tarifaEnvasado    = parseFloat(r.tarifaEnvasado)  || 0;
+                // Recalcular total persona
+                pLocal.total = Math.round(pLocal.dias.reduce((s, d) => s + d.totalDia, 0) * 100) / 100;
+                _liqRenderPendientes();
+              }
+            }
+          } catch(_){}
         }
       }
     } catch(_){}
+  }
+
+  // [v2.41.32] Recalcular liquidaciones de los últimos N días (backfill).
+  // Útil cuando hay desincronización vieja entre la hoja LIQUIDACIONES_DIA
+  // y los cálculos en vivo (ej: por un fix de lógica posterior a la creación).
+  async function liqRecalcularRango() {
+    if (!confirm('Recalcular liquidaciones de los últimos 30 días? Puede tardar 20-60 segundos.')) return;
+    toast('🔄 Recalculando 30 días... esto demora', 'info', 30000);
+    try {
+      const res = await API.post('backfillLiquidacionesDia', {
+        dias: 30,
+        localId: 'L' + Date.now() + Math.random().toString(36).slice(2, 8)
+      });
+      if (res?.ok) {
+        toast(`✓ Recalculadas — refrescando lista...`, 'ok', 3000);
+        setTimeout(() => liqRefresh && liqRefresh(), 800);
+      } else {
+        toast('Error recalculando: ' + (res?.error || 'sin respuesta'), 'warn');
+      }
+    } catch(e) {
+      toast('Sin conexión o timeout', 'warn');
+    }
   }
 
   // ── Confirmar pago (modal) ──
@@ -26324,6 +26373,8 @@ const MOS = (() => {
     _liqEditarDia, _liqAbrirPagoDet, _liqMigrar, _liqBackfillDia,
     // [v2.41.31] Vetar/desvetar inline
     _liqVetarDia, _liqDesvetarDia, _liqToggleVetadasPanel,
+    // [v2.41.32] Recalcular rango (backfill)
+    liqRecalcularRango,
     // Legacy stubs (no-op)
     liqVerDetallePend, liqEmitirIndividual, liqEmitirTodos,
     liqAnularPersona, liqAnularDia,

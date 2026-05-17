@@ -983,6 +983,37 @@ function desvetarLiquidacionDia(params) {
   return { ok: false, error: 'NO_ENCONTRADA' };
 }
 
+// [v2.41.32] Endpoint público: recomputa UNA fila (idPersonal × fecha)
+// y devuelve los valores actualizados. Usado por el botón "lápiz" de
+// liquidaciones para garantizar que pendientes esté en sync con el
+// resumen vivo (getResumenTodosDia).
+function recomputarLiquidacionDia(params) {
+  var idPersonal = String(params.idPersonal || '').trim();
+  var fecha      = String(params.fecha || '').trim();
+  if (!idPersonal || !fecha) return { ok: false, error: 'idPersonal y fecha requeridos' };
+  try {
+    var rs = getResumenDia({ idPersonal: idPersonal, fecha: fecha });
+    if (!rs || !rs.ok) return { ok: false, error: 'getResumenDia falló' };
+    _liqDiaUpsertRow(rs.data, fecha);
+    // Devolver la fila actualizada
+    var sh = _liqDiaGetSheet();
+    var data = sh.getDataRange().getValues();
+    var hdrs = data[0];
+    var idDia = _liqDiaKey(idPersonal, fecha);
+    var iIdDia = hdrs.indexOf('idDia');
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][iIdDia]) === idDia) {
+        var fila = {};
+        hdrs.forEach(function(h, k) { fila[h] = data[i][k]; });
+        return { ok: true, data: fila };
+      }
+    }
+    return { ok: true, data: rs.data };
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
+}
+
 function getLiquidacionesVetadas(params) {
   params = params || {};
   var hasta = params.hasta || _liqHoy();

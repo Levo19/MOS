@@ -216,6 +216,9 @@ function _route(method, e) {
       case 'vetarLiquidacionDia':        return vetarLiquidacionDia(params);
       case 'desvetarLiquidacionDia':     return desvetarLiquidacionDia(params);
       case 'getLiquidacionesVetadas':    return getLiquidacionesVetadas(params);
+      // [v2.41.32] Recomputar fila individual + backfill últimos N días
+      case 'recomputarLiquidacionDia':   return recomputarLiquidacionDia(params);
+      case 'backfillLiquidacionesDia':   return backfillLiquidacionesDia(params);
       case 'getPagoDetalle':             return getPagoDetalle(params);
       case 'imprimirTicketPago':         return imprimirTicketPago(params);
       case 'migrarLiquidacionesV2':      return migrarLiquidacionesV2();
