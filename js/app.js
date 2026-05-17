@@ -21389,7 +21389,7 @@ const MOS = (() => {
     if (d.bonoMeta     > 0) partes.push(`<span style="color:#34d399">+meta ${d.bonoMeta.toFixed(2)}</span>`);
     if (d.sancion      > 0) partes.push(`<span style="color:#f87171">−san ${d.sancion.toFixed(2)}</span>`);
     return `
-      <div class="liq-dia-row ${audCls}${sel}">
+      <div class="liq-dia-row ${audCls}${sel}" data-row-key="${idPersonal}|${d.fecha}">
         <input type="checkbox" class="liq-check" ${isSelected ? 'checked' : ''}
                onchange="MOS._liqToggleDia('${idPersonal}', '${d.fecha}', this.checked, event)">
         <div class="flex-1 min-w-0">
@@ -21405,6 +21405,9 @@ const MOS = (() => {
                 class="text-xs px-2 py-1 rounded transition-all hover:scale-110"
                 style="background:rgba(99,102,241,.1);color:#a5b4fc;border:1px solid rgba(99,102,241,.3)"
                 title="Auditar / editar este día">✏</button>
+        <button onclick="event.stopPropagation();MOS._liqVetarDia('${idPersonal}', '${d.fecha}')"
+                class="liq-btn-vetar"
+                title="Vetar: quita este día de pendientes (no paga, no computa). Reversible.">🚫</button>
       </div>`;
   }
 
@@ -21464,6 +21467,134 @@ const MOS = (() => {
   // OPTIMISTA: abrimos el modal Auditar al instante usando los datos que ya
   // tenemos del state (pendiente). Después fetch real en background y
   // re-renderizamos las secciones del modal con la data fresca.
+  // [v2.41.31] Vetar/Desvetar inline desde lista pendientes ─────────
+  // Optimista: la fila se desintegra al instante. Backend marca VETADA.
+  // Si falla, restauramos local + warn.
+  async function _liqVetarDia(idPersonal, fecha) {
+    _liqSfx('tap');
+    // Animación de salida en la fila
+    const row = document.querySelector(`.liq-dia-row[data-row-key="${idPersonal}|${fecha}"]`);
+    if (row) {
+      row.classList.add('liq-row-vetando');
+    }
+    // Optimista: quitar del state local
+    const p = (_liqState.pendientes || []).find(x => x.idPersonal === idPersonal);
+    if (!p) return;
+    const diaIdx = p.dias.findIndex(d => d.fecha === fecha);
+    if (diaIdx < 0) return;
+    const diaSnapshot = p.dias[diaIdx];
+    const personaIdx = _liqState.pendientes.indexOf(p);
+
+    setTimeout(() => {
+      // Remover día
+      p.dias.splice(diaIdx, 1);
+      // Recalcular total persona
+      p.total = Math.round(p.dias.reduce((s, d) => s + d.totalDia, 0) * 100) / 100;
+      p.cantidadDias = p.dias.length;
+      // Si persona sin días, quitar
+      if (!p.dias.length) {
+        _liqState.pendientes.splice(personaIdx, 1);
+      }
+      _liqRenderPendientes();
+    }, 280);
+
+    // Backend en background
+    try {
+      const res = await API.post('vetarLiquidacionDia', {
+        idPersonal, fecha,
+        localId: 'L' + Date.now() + Math.random().toString(36).slice(2, 8)
+      });
+      if (!res || !res.ok) {
+        const msg = res?.error === 'YA_PAGADA'
+          ? 'Esta liquidación ya está PAGADA — no se puede vetar.'
+          : 'No se pudo vetar: ' + (res?.error || 'error');
+        toast(msg, 'warn', 5000);
+        // Rollback
+        if (!_liqState.pendientes.includes(p)) _liqState.pendientes.push(p);
+        if (!p.dias.find(d => d.fecha === fecha)) p.dias.push(diaSnapshot);
+        p.total = Math.round(p.dias.reduce((s, d) => s + d.totalDia, 0) * 100) / 100;
+        p.cantidadDias = p.dias.length;
+        _liqRenderPendientes();
+      } else {
+        toast(`🚫 Vetada · ${_liqFmtFechaCorta ? _liqFmtFechaCorta(fecha) : fecha}`, 'info', 2500);
+      }
+    } catch(e) {
+      toast('Sin conexión — la veto se aplicó local, pero podría reaparecer al refrescar', 'warn', 5000);
+    }
+  }
+
+  async function _liqDesvetarDia(idPersonal, fecha) {
+    _liqSfx('tap');
+    try {
+      const res = await API.post('desvetarLiquidacionDia', {
+        idPersonal, fecha,
+        localId: 'L' + Date.now() + Math.random().toString(36).slice(2, 8)
+      });
+      if (!res || !res.ok) {
+        toast('No se pudo desvetar: ' + (res?.error || 'error'), 'warn', 4000);
+        return;
+      }
+      toast(`🔓 Desvetada · ${fecha}`, 'ok', 2500);
+      // Refrescar ambas listas
+      _liqState.vetadas = (_liqState.vetadas || []).filter(v =>
+        !(v.idPersonal === idPersonal && v.fecha === fecha));
+      _liqRenderVetadas();
+      // Forzar recarga de pendientes (la liquidación vuelve a aparecer)
+      try { liqLoadCurrent(); } catch(_){}
+    } catch(e) {
+      toast('Sin conexión', 'warn');
+    }
+  }
+
+  async function _liqCargarVetadas() {
+    try {
+      const res = await API.get('getLiquidacionesVetadas', {});
+      if (res?.ok) {
+        _liqState.vetadas = res.data || [];
+        _liqRenderVetadas();
+      }
+    } catch(_) {}
+  }
+
+  function _liqRenderVetadas() {
+    const cont = document.getElementById('liqVetadasBody');
+    if (!cont) return;
+    const list = _liqState.vetadas || [];
+    if (!list.length) {
+      cont.innerHTML = '<div class="text-xs text-slate-500 italic text-center py-4">Sin liquidaciones vetadas</div>';
+      return;
+    }
+    cont.innerHTML = list.map(v => {
+      const fechaCorta = _liqFmtFechaLarga ? _liqFmtFechaLarga(v.fecha) : v.fecha;
+      return `
+        <div class="liq-dia-row" style="opacity:.75">
+          <span style="font-size:18px;flex-shrink:0">🚫</span>
+          <div class="flex-1 min-w-0">
+            <div class="text-xs text-slate-300 font-medium">${escHtml(v.nombre)}</div>
+            <div class="text-[10px] text-slate-500 mt-0.5">${escHtml(v.rol)} · ${fechaCorta}</div>
+          </div>
+          <div class="text-right shrink-0">
+            <div class="text-sm font-bold text-slate-500" style="text-decoration:line-through">${_liqMoney(v.totalDia)}</div>
+          </div>
+          <button onclick="MOS._liqDesvetarDia('${v.idPersonal}', '${v.fecha}')"
+                  class="liq-btn-desvetar"
+                  title="Desvetar — vuelve a la lista de pendientes">🔓</button>
+        </div>`;
+    }).join('');
+  }
+
+  function _liqToggleVetadasPanel() {
+    const panel = document.getElementById('liqVetadasPanel');
+    if (!panel) return;
+    const abierto = panel.style.display !== 'none';
+    if (abierto) {
+      panel.style.display = 'none';
+    } else {
+      panel.style.display = 'block';
+      _liqCargarVetadas();
+    }
+  }
+
   async function _liqEditarDia(idPersonal, fecha) {
     _liqSfx('tap');
     _evalState.fecha = fecha;
@@ -26191,6 +26322,8 @@ const MOS = (() => {
     liqReimprimirPago, liqAnularPago,
     _liqTogglePersona, _liqToggleDia, _liqToggleAll,
     _liqEditarDia, _liqAbrirPagoDet, _liqMigrar, _liqBackfillDia,
+    // [v2.41.31] Vetar/desvetar inline
+    _liqVetarDia, _liqDesvetarDia, _liqToggleVetadasPanel,
     // Legacy stubs (no-op)
     liqVerDetallePend, liqEmitirIndividual, liqEmitirTodos,
     liqAnularPersona, liqAnularDia,

@@ -15704,6 +15704,54 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
   .liq-dia-row.no-aud { border-left: 3px solid rgba(245,158,11,.4); }
   .liq-dia-row.aud-ok { border-left: 3px solid rgba(16,185,129,.4); }
 
+  /* [v2.41.31] Botones vetar/desvetar inline */
+  .liq-btn-vetar {
+    font-size: 14px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid rgba(239,68,68,.3);
+    background: rgba(239,68,68,.08);
+    color: #fca5a5;
+    cursor: pointer;
+    transition: all .15s ease;
+    -webkit-tap-highlight-color: transparent;
+    flex-shrink: 0;
+  }
+  .liq-btn-vetar:hover {
+    background: rgba(239,68,68,.2);
+    border-color: rgba(239,68,68,.55);
+    transform: scale(1.12) rotate(-8deg);
+  }
+  .liq-btn-vetar:active { transform: scale(.92); }
+  .liq-btn-desvetar {
+    font-size: 14px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid rgba(168,85,247,.4);
+    background: rgba(168,85,247,.1);
+    color: #d8b4fe;
+    cursor: pointer;
+    transition: all .15s ease;
+    -webkit-tap-highlight-color: transparent;
+    flex-shrink: 0;
+  }
+  .liq-btn-desvetar:hover {
+    background: rgba(168,85,247,.25);
+    transform: scale(1.12) rotate(8deg);
+  }
+  .liq-btn-desvetar:active { transform: scale(.92); }
+
+  /* Animación de salida cuando se veta */
+  .liq-dia-row.liq-row-vetando {
+    animation: liqRowVetar .28s cubic-bezier(.55,0,.68,.05) forwards;
+    pointer-events: none;
+  }
+  @keyframes liqRowVetar {
+    0%   { transform: scale(1)    rotate(0); opacity: 1; max-height: 80px; padding: 8px 10px; margin-top: 6px; filter: blur(0); }
+    50%  { transform: scale(1.05) rotate(-3deg); opacity: .85; }
+    100% { transform: scale(.6)   rotate(-12deg) translateY(-15px); opacity: 0; max-height: 0; padding: 0; margin-top: 0; filter: blur(4px); border-width: 0; }
+  }
+
   /* Checkbox custom amber */
   .liq-check {
     width: 18px; height: 18px; flex-shrink: 0; cursor: pointer;
@@ -15761,7 +15809,20 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
     <!-- Barra mini (solo refrescar) — Pendientes acumula todo, Pagadas se muestra historial sin filtro -->
     <div class="px-5 py-2 flex items-center gap-2 flex-wrap" style="border-bottom: 1px solid #1e293b; background:rgba(15,23,42,.4)">
       <div id="liqRangoInfo" class="text-[10px] text-slate-500">Últimos 30 días acumulados</div>
-      <button onclick="MOS.liqRefresh()" class="liq-preset-btn ml-auto" title="Refrescar (Ctrl+R)">↻ Refrescar</button>
+      <!-- [v2.41.31] Botón para ver vetadas -->
+      <button onclick="MOS._liqToggleVetadasPanel()" class="liq-preset-btn" title="Ver liquidaciones vetadas">🚫 Vetadas</button>
+      <button onclick="MOS.liqRefresh()" class="liq-preset-btn" title="Refrescar (Ctrl+R)">↻ Refrescar</button>
+    </div>
+
+    <!-- [v2.41.31] Panel colapsable de liquidaciones VETADAS -->
+    <div id="liqVetadasPanel" style="display:none;border-bottom:1px solid #1e293b;background:rgba(15,23,42,.6);padding:12px 20px">
+      <div class="flex items-center gap-2 mb-2">
+        <span style="font-size:16px">🚫</span>
+        <span class="text-xs font-bold text-slate-300 uppercase tracking-wider">Liquidaciones vetadas</span>
+        <span class="text-[10px] text-slate-500">(últimos 30 días)</span>
+        <button onclick="MOS._liqToggleVetadasPanel()" class="ml-auto text-slate-500 hover:text-slate-300" style="background:none;border:none;cursor:pointer;font-size:18px;line-height:1">✕</button>
+      </div>
+      <div id="liqVetadasBody"></div>
     </div>
 
     <div id="liqBody" class="overflow-y-auto px-5 py-4" style="flex: 1">

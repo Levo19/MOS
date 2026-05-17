@@ -212,6 +212,10 @@ function _route(method, e) {
       case 'marcarPagos':                return marcarPagos(params);
       case 'anularPago':                 return anularPago(params);
       case 'getLiquidacionesPagadas':    return getLiquidacionesPagadas(params);
+      // [v2.41.31] Vetar/desvetar inline desde pendientes
+      case 'vetarLiquidacionDia':        return vetarLiquidacionDia(params);
+      case 'desvetarLiquidacionDia':     return desvetarLiquidacionDia(params);
+      case 'getLiquidacionesVetadas':    return getLiquidacionesVetadas(params);
       case 'getPagoDetalle':             return getPagoDetalle(params);
       case 'imprimirTicketPago':         return imprimirTicketPago(params);
       case 'migrarLiquidacionesV2':      return migrarLiquidacionesV2();

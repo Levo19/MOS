@@ -829,15 +829,20 @@ function getLiquidacionesPendientesDia(params) {
   var desde = params.desde || _fechaOffset(hasta, -29);
 
   // Auto-refresh de HOY (1 día) — captura eventos del día actual.
-  // Throttle con script cache (60s) para no resyncear en cada request.
+  // [v2.41.31] TTL subido 60s → 300s para evitar timeouts en la UI cuando
+  // el sync se ejecuta justo durante el primer load (resync de getResumenTodosDia
+  // tarda ~3-8s y bloqueaba el endpoint).
   try {
     var ssCache = CacheService.getScriptCache();
     var last = ssCache.get('ldia_hoy_sync');
     if (!last) {
-      _liqDiaSync(_liqHoy());
-      ssCache.put('ldia_hoy_sync', '' + Date.now(), 60);
+      // Marcar cache ANTES de syncear para que requests paralelos no
+      // dispararan otro sync. Best-effort: si el sync falla, igual cacheamos
+      // (la próxima request rehidrata).
+      ssCache.put('ldia_hoy_sync', '' + Date.now(), 300);
+      try { _liqDiaSync(_liqHoy()); } catch(__){}
     }
-  } catch(_) { try { _liqDiaSync(_liqHoy()); } catch(__){} }
+  } catch(_) {}
 
   var sh = _liqDiaGetSheet();
   var rows = _sheetToObjects(sh);
@@ -902,6 +907,117 @@ function getLiquidacionesPendientesDia(params) {
   });
 
   return { ok: true, data: out, rango: { desde: desde, hasta: hasta }, fast: true };
+}
+
+// [v2.41.31] VETAR / DESVETAR — alternativa rápida a marcar como pagado.
+// El operador toca el botón 🚫 inline y la liquidación del día queda VETADA
+// (no aparece más en Pendientes). Puede desvetar después si fue por error.
+// VETADA NO se cobra ni computa para liquidaciones; es como un "skip".
+function vetarLiquidacionDia(params) {
+  var idPersonal = String(params.idPersonal || '').trim();
+  var fecha      = String(params.fecha || '').trim();
+  if (!idPersonal || !fecha) return { ok: false, error: 'idPersonal y fecha requeridos' };
+  var sh = _liqDiaGetSheet();
+  var data = sh.getDataRange().getValues();
+  var hdrs = data[0];
+  var iIdPersonal = hdrs.indexOf('idPersonal');
+  var iFecha      = hdrs.indexOf('fecha');
+  var iEstado     = hdrs.indexOf('estado');
+  var iTsAct      = hdrs.indexOf('ts_actualizado');
+  if (iIdPersonal < 0 || iFecha < 0 || iEstado < 0) {
+    return { ok: false, error: 'Hoja sin columnas requeridas' };
+  }
+  var tz = Session.getScriptTimeZone();
+  for (var i = 1; i < data.length; i++) {
+    var idP = String(data[i][iIdPersonal] || '');
+    var f   = data[i][iFecha] instanceof Date
+              ? Utilities.formatDate(data[i][iFecha], tz, 'yyyy-MM-dd')
+              : String(data[i][iFecha] || '').substring(0, 10);
+    if (idP === idPersonal && f === fecha) {
+      var est = String(data[i][iEstado] || '').toUpperCase();
+      if (est === 'PAGADA') return { ok: false, error: 'YA_PAGADA' };
+      sh.getRange(i + 1, iEstado + 1).setValue('VETADA');
+      if (iTsAct >= 0) {
+        sh.getRange(i + 1, iTsAct + 1).setValue(
+          Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'")
+        );
+      }
+      return { ok: true };
+    }
+  }
+  return { ok: false, error: 'NO_ENCONTRADA' };
+}
+
+function desvetarLiquidacionDia(params) {
+  var idPersonal = String(params.idPersonal || '').trim();
+  var fecha      = String(params.fecha || '').trim();
+  if (!idPersonal || !fecha) return { ok: false, error: 'idPersonal y fecha requeridos' };
+  var sh = _liqDiaGetSheet();
+  var data = sh.getDataRange().getValues();
+  var hdrs = data[0];
+  var iIdPersonal = hdrs.indexOf('idPersonal');
+  var iFecha      = hdrs.indexOf('fecha');
+  var iEstado     = hdrs.indexOf('estado');
+  var iTsAct      = hdrs.indexOf('ts_actualizado');
+  if (iIdPersonal < 0 || iFecha < 0 || iEstado < 0) {
+    return { ok: false, error: 'Hoja sin columnas requeridas' };
+  }
+  var tz = Session.getScriptTimeZone();
+  for (var i = 1; i < data.length; i++) {
+    var idP = String(data[i][iIdPersonal] || '');
+    var f   = data[i][iFecha] instanceof Date
+              ? Utilities.formatDate(data[i][iFecha], tz, 'yyyy-MM-dd')
+              : String(data[i][iFecha] || '').substring(0, 10);
+    if (idP === idPersonal && f === fecha) {
+      var est = String(data[i][iEstado] || '').toUpperCase();
+      if (est !== 'VETADA') return { ok: false, error: 'NO_VETADA', mensaje: 'Estado actual: ' + est };
+      sh.getRange(i + 1, iEstado + 1).setValue('PENDIENTE');
+      if (iTsAct >= 0) {
+        sh.getRange(i + 1, iTsAct + 1).setValue(
+          Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'")
+        );
+      }
+      return { ok: true };
+    }
+  }
+  return { ok: false, error: 'NO_ENCONTRADA' };
+}
+
+function getLiquidacionesVetadas(params) {
+  params = params || {};
+  var hasta = params.hasta || _liqHoy();
+  var desde = params.desde || _fechaOffset(hasta, -29);
+  var sh = _liqDiaGetSheet();
+  var rows = _sheetToObjects(sh);
+  var tz = Session.getScriptTimeZone();
+  var vetadas = rows.filter(function(r) {
+    if (String(r.estado || '').toUpperCase() !== 'VETADA') return false;
+    var f = r.fecha instanceof Date
+            ? Utilities.formatDate(r.fecha, tz, 'yyyy-MM-dd')
+            : String(r.fecha || '').substring(0, 10);
+    return f >= desde && f <= hasta;
+  }).map(function(r) {
+    var f = r.fecha instanceof Date
+            ? Utilities.formatDate(r.fecha, tz, 'yyyy-MM-dd')
+            : String(r.fecha || '').substring(0, 10);
+    return {
+      idPersonal: String(r.idPersonal || ''),
+      nombre:     String(r.nombre || ''),
+      rol:        String(r.rol || '').toUpperCase(),
+      appOrigen:  String(r.appOrigen || ''),
+      fecha:      f,
+      montoBase:  parseFloat(r.montoBase) || 0,
+      pagoEnvasado: parseFloat(r.pagoEnvasado) || 0,
+      totalDia:   parseFloat(r.totalDia) || 0,
+      ts_actualizado: String(r.ts_actualizado || '')
+    };
+  });
+  // Más recientes (por fecha desc, luego nombre)
+  vetadas.sort(function(a, b) {
+    if (a.fecha !== b.fecha) return b.fecha.localeCompare(a.fecha);
+    return a.nombre.localeCompare(b.nombre);
+  });
+  return { ok: true, data: vetadas, rango: { desde: desde, hasta: hasta } };
 }
 
 // ── Migración / backfill: poblar últimos N días desde resúmenes ──

@@ -626,7 +626,9 @@ function _calcularKpisAutoDia(p, fecha) {
           for (var r = 1; r < d.length; r++) {
             var f = _normalizarFechaWh(d[r][idxFecha], tzWh);
             if (f !== fecha) continue;
-            if (idxEstado >= 0 && String(d[r][idxEstado]).toUpperCase() === 'ANULADO') continue;
+            // [v2.41.31] Solo COMPLETADO cuenta para pago. Antes solo excluía
+            // ANULADO, pero podía colar EN_PROCESO/PENDIENTE/etc. que no son pagos reales.
+            if (idxEstado >= 0 && String(d[r][idxEstado]).toUpperCase() !== 'COMPLETADO') continue;
             var u = String(d[r][idxUser] || '').toLowerCase().trim();
             if (!u) continue;
             if (u === nLow || u.indexOf(p.nombre.toLowerCase()) >= 0 || nLow.indexOf(u) >= 0) {
@@ -689,7 +691,8 @@ function _calcularKpisAutoDia(p, fecha) {
           for (var rE = 1; rE < dE.length; rE++) {
             var fE = _normalizarFechaWh(dE[rE][iFE], tzWhE);
             if (fE !== fecha) continue;
-            if (iEstE >= 0 && String(dE[rE][iEstE]).toUpperCase() === 'ANULADO') continue;
+            // [v2.41.31] Solo COMPLETADO cuenta para pago
+            if (iEstE >= 0 && String(dE[rE][iEstE]).toUpperCase() !== 'COMPLETADO') continue;
             var uE = String(dE[rE][iUE] || '').toLowerCase().trim();
             if (!uE) continue;
             if (uE === nLowE || uE.indexOf(p.nombre.toLowerCase()) >= 0 || nLowE.indexOf(uE) >= 0) {

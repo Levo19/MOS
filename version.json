@@ -1,1 +1,1 @@
-{ "version": "2.41.30", "build": "20260517-fix-liq-almacenero-pago-envasado" }
+{ "version": "2.41.31", "build": "20260517-vetar-liquidacion-fix-completado-fix-timeout" }
