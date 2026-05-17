@@ -668,6 +668,36 @@ function _calcularKpisAutoDia(p, fecha) {
           }
         }
       } catch(eG){ Logger.log('KPI guias error: ' + eG.message); }
+      // [v2.41.30] BUG FIX: el almacenero también envasa y debe cobrar por unidad.
+      // Antes solo el bloque ENVASADOR leía la hoja ENVASADOS, así que kpis.envasados
+      // quedaba en 0 para almaceneros aunque hubieran envasado, y luego el cálculo
+      // de pagoEnvasado (que SÍ aplica al ALMACENERO en línea ~426) daba 0.
+      try {
+        var shE = _abrirWhSheet('ENVASADOS');
+        if (shE) {
+          var dE = shE.getDataRange().getValues();
+          var hE = (dE[0] || []).map(function(h){ return String(h || ''); });
+          var iFE   = hE.indexOf('fecha');
+          var iUE   = hE.indexOf('usuario');
+          var iUds  = hE.indexOf('unidadesProducidas');
+          var iEstE = hE.indexOf('estado');
+          if (iFE < 0) iFE = 9;
+          if (iUE < 0) iUE = 10;
+          if (iUds < 0) iUds = 6;
+          var tzWhE = Session.getScriptTimeZone();
+          var nLowE = (p.nombre + ' ' + (p.apellido || '')).toLowerCase().trim();
+          for (var rE = 1; rE < dE.length; rE++) {
+            var fE = _normalizarFechaWh(dE[rE][iFE], tzWhE);
+            if (fE !== fecha) continue;
+            if (iEstE >= 0 && String(dE[rE][iEstE]).toUpperCase() === 'ANULADO') continue;
+            var uE = String(dE[rE][iUE] || '').toLowerCase().trim();
+            if (!uE) continue;
+            if (uE === nLowE || uE.indexOf(p.nombre.toLowerCase()) >= 0 || nLowE.indexOf(uE) >= 0) {
+              envasados += parseFloat(dE[rE][iUds]) || 0;
+            }
+          }
+        }
+      } catch(eE2){ Logger.log('KPI envasados (almacenero) error: ' + eE2.message); }
       ventasPct = Math.min(100, (guias / cfg.metaAlmacenero) * 100);
     }
   } catch(_){}
