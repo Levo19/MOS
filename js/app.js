@@ -24886,7 +24886,9 @@ const MOS = (() => {
     const r = _evalState.auditR;
     if (!r) { _evalSfx('error'); toast('Abre primero una auditoría', 'error'); return; }
     const sub = $('liqPrintSubtitle');
-    if (sub) sub.textContent = `${r.nombre || ''} · ${r.rol || ''} · ${_evalState.fecha}`;
+    // [v2.41.49] Usar r.fecha (la fecha REAL del resumen abierto), no
+    // _evalState.fecha (global que cambia al navegar entre días).
+    if (sub) sub.textContent = `${r.nombre || ''} · ${r.rol || ''} · ${r.fecha || _evalState.fecha}`;
     openModal('modalSelPrinterLiq');
     _evalSfx('open');
     await _liqLoadPrinters(false);
@@ -25022,9 +25024,14 @@ const MOS = (() => {
     const printBtn = $('auditPrintBtn');
     if (printBtn) printBtn.classList.add('printing');
     try {
+      // [v2.41.49] BUG FIX: usar r.fecha (fecha del resumen real abierto),
+      // no _evalState.fecha (global que muta al navegar entre días). Antes
+      // si abrías auditoría del 11 y luego cambiabas a hoy, al imprimir
+      // salía la fecha de hoy en vez de la del 11.
+      const fechaImp = r.fecha || _evalState.fecha;
       const res = await API.post('imprimirLiquidacionDia', {
         idPersonal: r.idPersonal,
-        fecha:      _evalState.fecha,
+        fecha:      fechaImp,
         printerId:  parseInt(printerId, 10)
       });
       _evalSfx('success');
