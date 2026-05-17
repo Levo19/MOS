@@ -22101,22 +22101,7 @@ const MOS = (() => {
             <div class="text-xs text-slate-500 mt-1">${totalBatches} batch(es)</div>
           </div>
         </div>
-        <div class="rounded-xl p-3" style="background:rgba(15,23,42,.5);border:1px solid #1e293b">
-          <div class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">⚡ Performance (LIQUIDACIONES_DIA)</div>
-          <button onclick="MOS._liqBackfillDia(event)" class="btn-primary btn-ripple w-full text-xs"
-                  style="background:linear-gradient(135deg,#7c3aed,#a78bfa);color:#fff">
-            🔧 Inicializar / Reconstruir Liquidación Diaria
-          </button>
-          <p class="text-[10px] text-slate-600 mt-1">Pobla la hoja materializada con últimos 30 días. <strong>Tarda ~90s la primera vez</strong>, después las lecturas son instantáneas.</p>
-        </div>
-        <div class="rounded-xl p-3" style="background:rgba(15,23,42,.5);border:1px solid #1e293b">
-          <div class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">⚙ Migración legacy</div>
-          <button onclick="MOS._liqMigrar(event)" class="btn-ghost btn-ripple w-full text-xs"
-                  style="border:1px dashed rgba(99,102,241,.35);color:#a5b4fc">
-            🔄 Migrar histórico de LIQUIDACIONES legacy
-          </button>
-          <p class="text-[10px] text-slate-600 mt-1">Mueve PAGADAS de la hoja vieja al nuevo modelo (one-shot, idempotente).</p>
-        </div>`;
+        `;
     });
   }
 
