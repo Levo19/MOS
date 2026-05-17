@@ -842,6 +842,19 @@ function getLiquidacionesPendientesDia(params) {
       ssCache.put('ldia_hoy_sync', '' + Date.now(), 300);
       try { _liqDiaSync(_liqHoy()); } catch(__){}
     }
+    // [v2.41.33] AUTO-RESYNC últimos 3 días cada hora — cubre cambios en WH
+    // (envasados nuevos/anulados, ajustes) sin requerir bridge ni acción manual.
+    var last3d = ssCache.get('ldia_3d_sync');
+    if (!last3d) {
+      ssCache.put('ldia_3d_sync', '' + Date.now(), 3600);
+      try {
+        var hoyStr = _liqHoy();
+        for (var dk = 1; dk <= 3; dk++) {
+          var fDk = _fechaOffset(hoyStr, -dk);
+          try { _liqDiaSync(fDk); } catch(__){}
+        }
+      } catch(__){}
+    }
   } catch(_) {}
 
   var sh = _liqDiaGetSheet();

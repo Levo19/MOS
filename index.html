@@ -15811,9 +15811,10 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
       <div id="liqRangoInfo" class="text-[10px] text-slate-500">Últimos 30 días acumulados</div>
       <!-- [v2.41.31] Botón para ver vetadas -->
       <button onclick="MOS._liqToggleVetadasPanel()" class="liq-preset-btn" title="Ver liquidaciones vetadas">🚫 Vetadas</button>
-      <!-- [v2.41.32] Recalcular últimos 30 días (sync masivo con resumen vivo) -->
-      <button onclick="MOS.liqRecalcularRango()" class="liq-preset-btn" title="Recalcular últimos 30 días — fuerza sync con resumen vivo">🔄 Recalcular 30d</button>
       <button onclick="MOS.liqRefresh()" class="liq-preset-btn" title="Refrescar (Ctrl+R)">↻ Refrescar</button>
+      <!-- [v2.41.33] Botón Recalcular 30d removido del UI normal — el cron
+           horario auto-sincroniza últimos 3 días. Disponible solo desde
+           consola como MOS.liqRecalcularRango() en caso de emergencia. -->
     </div>
 
     <!-- [v2.41.31] Panel colapsable de liquidaciones VETADAS -->
