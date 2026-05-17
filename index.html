@@ -3671,6 +3671,29 @@
       border-color: rgba(180,83,9,.6);
       box-shadow: 0 0 0 3px rgba(245,158,11,.15);
     }
+    /* [v2.41.54] Items SIN costo: borde rojo punteado + bg rosado */
+    .alm-v-costo-line--falta {
+      background: rgba(254,226,226,.55);
+      border: 2px dashed rgba(220,38,38,.55);
+      animation: almLineaFalta .9s ease-out infinite alternate;
+    }
+    .alm-cu-line--falta {
+      background: rgba(127,29,29,.12);
+      border: 2px dashed rgba(248,113,113,.55) !important;
+    }
+    @keyframes almLineaFalta {
+      0%   { box-shadow: 0 0 0 0 rgba(220,38,38,.18); }
+      100% { box-shadow: 0 0 0 4px rgba(220,38,38,.0); }
+    }
+    /* [v2.41.54] Pulso verde tras autoguardado exitoso */
+    .autosave-flash {
+      animation: autosaveFlash .6s ease-out;
+    }
+    @keyframes autosaveFlash {
+      0%   { transform: scale(1); }
+      40%  { transform: scale(1.4); text-shadow: 0 0 10px rgba(52,211,153,.9); }
+      100% { transform: scale(1); text-shadow: none; }
+    }
     .alm-v-costo-row {
       display: grid;
       grid-template-columns: 1fr 45px 100px auto;

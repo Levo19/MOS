@@ -4945,10 +4945,17 @@ const MOS = (() => {
         : '<span style="opacity:.4">sin costo</span>';
       const sugHtml = l._sugerencia ? _renderSugerenciaInline(i, l._sugerencia) : '';
       const sugOpen = l._sugerencia ? ' is-open' : '';
-      return `<div class="alm-v-costo-line" style="animation-delay: ${Math.min(i, 12) * 30}ms">
+      const marcaIni = brutoUnit > 0
+        ? '<span title="Costo registrado" style="color:#16a34a;font-weight:700">✓</span>'
+        : '<span title="Falta costo" style="color:#dc2626;font-weight:700">⚠</span>';
+      const faltaCls = brutoUnit > 0 ? '' : ' alm-v-costo-line--falta';
+      return `<div class="alm-v-costo-line${faltaCls}" style="animation-delay: ${Math.min(i, 12) * 30}ms">
         <div class="alm-v-costo-row">
           <div>
-            <div class="alm-v-costo-desc">${desc}${equivBadge}</div>
+            <div class="alm-v-costo-desc">
+              <span id="costoGuiaMarca_${i}" style="margin-right:6px;display:inline-block;min-width:14px">${marcaIni}</span>
+              ${desc}${equivBadge}
+            </div>
             <div class="alm-v-costo-cod">▌ ${cod}</div>
           </div>
           <div class="alm-v-costo-cant">${cant}u</div>
@@ -4966,8 +4973,27 @@ const MOS = (() => {
     lineas.forEach(l => { totalBruto += _costosGuiaCalcularBruto(l, st) * (parseFloat(l.cantidad) || 0); });
     const totalNeto = totalBruto / (1 + _IGV_RATE);
 
+    // [v2.41.54] Header progreso "X/Y con costo" + autoguardado hint
+    const totLin = lineas.length;
+    let conCostoIni = 0;
+    lineas.forEach(l => { if (_costosGuiaCalcularBruto(l, st) > 0) conCostoIni++; });
+    const pct = totLin > 0 ? Math.round((conCostoIni / totLin) * 100) : 0;
+    const completo = conCostoIni === totLin;
+    const progresoHtml = `
+      <div id="costosGuiaProgreso" style="font-size:11px;display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:6px 10px;border-radius:8px;background:rgba(15,23,42,.35);margin-bottom:8px">
+        <span style="color:${completo ? '#16a34a' : (conCostoIni > 0 ? '#b45309' : '#94a3b8')};font-weight:800">
+          ${completo ? '✓ ' : ''}${conCostoIni}/${totLin} producto${totLin === 1 ? '' : 's'} con costo
+        </span>
+        <span style="color:#64748b;margin-left:6px">· ${pct}%</span>
+        ${!completo ? '<span style="color:#dc2626;margin-left:6px;font-size:10px;font-weight:700">⚠ faltan ' + (totLin - conCostoIni) + '</span>' : ''}
+      </div>
+      <div style="font-size:10px;color:#78350f;font-style:italic;margin-bottom:8px">
+        💾 Autoguardado activo · los costos se persisten al instante
+      </div>`;
+
     return `<input type="hidden" id="costosGuiaInfo" value="${_escapeHtml(op.idGuia)}">
       ${togglesHtml}
+      ${progresoHtml}
       ${filasHtml}
       <div class="alm-v-costo-totales">
         <span>Neto: <b id="costosGuiaTotalNeto">S/ ${totalNeto.toFixed(2)}</b></span>
@@ -5179,13 +5205,38 @@ const MOS = (() => {
     try {
       const r = await API.get('getOperacionDetalle', { fuente, idGuia });
       S._opsDetCache[key] = r || {};
+      // Inline (modo viejo, ya no usado en el overlay)
       const cont = $('opExp_' + key);
       if (cont && S._opsExpanded[key]) cont.innerHTML = _renderOpDetalle(fuente, idGuia);
+      // [v2.41.54] Overlay nuevo: si el detalle abierto es esta guía,
+      // re-renderizar el voucher con líneas frescas.
+      _opsRefreshOverlayIfMatches(key);
     } catch(e) {
       S._opsDetCache[key] = { error: e.message };
       const cont = $('opExp_' + key);
       if (cont && S._opsExpanded[key]) cont.innerHTML = _renderOpDetalle(fuente, idGuia);
+      _opsRefreshOverlayIfMatches(key);
     }
+  }
+
+  // [v2.41.54] Re-pinta el overlay del detalle si está mostrando ESTA guía.
+  // Llamado tras un fetch de detalle para que el "Cargando…" se reemplace
+  // por las líneas reales sin que el user tenga que hacer nada.
+  function _opsRefreshOverlayIfMatches(key) {
+    if (!S._opsOverlayKey) return;
+    if (S._opsOverlayKey !== key && S._opsOverlayKey !== key + '_PRE') return;
+    const overlay = $('almOpsDetalleOverlay');
+    if (!overlay || overlay.classList.contains('hidden')) return;
+    const cont = $('almOpsDetalleContent');
+    if (!cont) return;
+    const parts = key.split('_');
+    const fuente = parts.shift();
+    const idGuia = parts.join('_');
+    const op = _findOpByKey(fuente + '_' + idGuia);
+    if (!op) return;
+    cont.innerHTML = _renderVoucher(op, 0);
+    const v = cont.querySelector('.alm-voucher');
+    if (v) v.onclick = null;
   }
 
   // [v41.21] Click voucher → overlay con detalle. Si tiene botón Costos
@@ -5202,17 +5253,34 @@ const MOS = (() => {
     const cont = $('almOpsDetalleContent');
     if (!cont) return;
     const key = fuente + '_' + idGuia + (esPreingreso ? '_PRE' : '');
+    // [v2.41.54] LIMPIEZA: descartar expansiones de OTRAS guías para no
+    // contaminar el render con state viejo. Esto resuelve el bug "abro guía
+    // nueva y aparece detalle de la anterior un instante".
+    S._opsExpanded = {};
     S._opsExpanded[key] = true;
     S._opsModoCostos = !!modoCostos;
-    // Render del voucher completo
-    cont.innerHTML = _renderVoucher(op, 0);
+    S._opsOverlayKey = key;
+    // [v2.41.54] Loader explícito ANTES del render — si no hay cache, no se
+    // ve nada raro mientras llega el detalle.
+    const k2 = op.fuente + '_' + op.idGuia;
+    const tieneCache = !!(S._opsDetCache[k2] && (S._opsDetCache[k2].lineas || []).length);
+    if (!tieneCache && !modoCostos && !op.esPreingreso) {
+      cont.innerHTML = `<div class="alm-ops-loading-banner" style="margin:24px auto;">
+        <div class="alm-ops-loading-spin"></div>
+        <div class="alm-ops-loading-text">
+          <div class="alm-ops-loading-text-main">Cargando guía #${_escapeHtml(idGuia)}…</div>
+          <div class="alm-ops-loading-text-sub">Buscando líneas del detalle</div>
+        </div>
+      </div>`;
+    } else {
+      cont.innerHTML = _renderVoucher(op, 0);
+    }
     const v = cont.querySelector('.alm-voucher');
     if (v) v.onclick = null;
     const overlay = $('almOpsDetalleOverlay');
     if (overlay) overlay.classList.remove('hidden');
-    // Asegurar líneas en cache
+    // Asegurar líneas en cache — al volver actualiza el overlay
     if (!op.esPreingreso) {
-      const k2 = op.fuente + '_' + op.idGuia;
       if (!S._opsDetCache[k2]) _fetchOpDetalle(op.fuente, op.idGuia);
     }
     // Si entró en modo costos, inicializar state de costos para esta guía
@@ -5227,6 +5295,7 @@ const MOS = (() => {
     if (overlay) overlay.classList.add('hidden');
     S._opsExpanded = {};
     S._opsModoCostos = false;
+    S._opsOverlayKey = null;
   }
 
   // [v41.22] Selector de impresora para reporte de costos de guía.
@@ -5637,10 +5706,17 @@ const MOS = (() => {
         ? _renderSugerenciaInline(i, sugCache)
         : '';
       const sugOpen = sugCache ? ' is-open' : '';
-      return `<div class="alm-cu-line">
+      const marcaIni = brutoUnit > 0
+        ? '<span title="Costo registrado" style="color:#34d399;font-weight:700">✓</span>'
+        : '<span title="Falta costo" style="color:#f87171;font-weight:700;animation:pulse 1.6s infinite">⚠</span>';
+      const faltaCls = brutoUnit > 0 ? '' : ' alm-cu-line--falta';
+      return `<div class="alm-cu-line${faltaCls}">
         <div class="alm-cu-line-row">
           <div>
-            <div class="alm-cu-line-desc">${l.descripcion}${equivBadge}</div>
+            <div class="alm-cu-line-desc">
+              <span id="costoGuiaMarca_${i}" style="margin-right:6px;display:inline-block;min-width:14px">${marcaIni}</span>
+              ${l.descripcion}${equivBadge}
+            </div>
             <div class="alm-cu-line-cod">▌ ${l.codigoProducto || '—'}</div>
           </div>
           <div class="alm-cu-line-cant">${cant}u</div>
@@ -5657,10 +5733,26 @@ const MOS = (() => {
       </div>`;
     }).join('');
 
-    body.innerHTML = `${togglesHtml}
-      <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">
-        ${lineas.length} producto${lineas.length === 1 ? '' : 's'}
+    // [v2.41.54] Header con progreso "X de Y con costo" + autoguardado hint
+    const totalLin = lineas.length;
+    let conCostoIni = 0;
+    lineas.forEach(l => { if (_costosGuiaCalcularBruto(l, st) > 0) conCostoIni++; });
+    const progresoIni = totalLin > 0 ? Math.round((conCostoIni / totalLin) * 100) : 0;
+    const completoIni = conCostoIni === totalLin;
+    const progresoHtml = `
+      <div id="costosGuiaProgreso" style="font-size:11px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+        <span style="color:${completoIni ? '#34d399' : (conCostoIni > 0 ? '#fbbf24' : '#94a3b8')};font-weight:800">
+          ${completoIni ? '✓ ' : ''}${conCostoIni}/${totalLin} producto${totalLin === 1 ? '' : 's'} con costo
+        </span>
+        <span style="color:#64748b;margin-left:6px">· ${progresoIni}%</span>
+        ${!completoIni ? '<span style="color:#f87171;margin-left:6px;font-size:10px">⚠ faltan ' + (totalLin - conCostoIni) + '</span>' : ''}
       </div>
+      <div style="font-size:9px;color:#64748b;font-style:italic;margin-top:2px">
+        💾 Autoguardado activo · los costos se persisten al instante
+      </div>`;
+
+    body.innerHTML = `${togglesHtml}
+      ${progresoHtml}
       ${filasHtml}
       <div class="alm-cu-totales">
         <div><span style="color:#94a3b8">Neto:</span> <b id="costosGuiaTotalNeto">S/ ${totalNeto.toFixed(2)}</b></div>
@@ -5673,7 +5765,8 @@ const MOS = (() => {
   function _renderSugerenciaInline(idx, sug) {
     const actual = parseFloat(sug.precioVentaActual) || 0;
     const sugVal = sug._precioEditado != null ? sug._precioEditado : (parseFloat(sug.precioVentaSugerido) || 0);
-    const seleccionado = sug._seleccionado !== false; // default true
+    // [v2.41.54] Default OFF — admin decide manualmente si aplicar.
+    const seleccionado = sug._seleccionado === true;
     let deltaHtml = '';
     if (actual <= 0) {
       deltaHtml = '<span class="alm-cu-sug-delta new">NUEVO</span>';
@@ -5756,7 +5849,7 @@ const MOS = (() => {
         l._sugerencia = {
           precioVentaActual: data.precioVentaActual || 0,
           precioVentaSugerido: data.precioVentaSugerido || 0,
-          _seleccionado: true,
+          _seleccionado: false,  // [v2.41.54] default OFF
           _precioEditado: data.precioVentaSugerido || 0
         };
       }
@@ -5777,7 +5870,7 @@ const MOS = (() => {
     return {
       precioVentaActual: parseFloat(l.precioVentaActual) || 0,
       precioVentaSugerido: sug,
-      _seleccionado: true,
+      _seleccionado: false,  // [v2.41.54] default OFF
       _precioEditado: sug,
       _fallback: true
     };
@@ -5806,6 +5899,87 @@ const MOS = (() => {
     const elB = $('costosGuiaTotalBruto'); if (elB) elB.textContent = 'S/ ' + totalBruto.toFixed(2);
     // [v41.20] Dispara debounce para refrescar sugerencia inline
     _costosGuiaSugerirDebounce(idx);
+    // [v2.41.54] Marca visual: el ✓/⚠ de esta línea se recalcula
+    _costosGuiaUpdMarca(idx);
+    _costosGuiaUpdProgreso();
+    // [v2.41.54] Autoguardado por línea debounced 1.5s — el user no tiene
+    // que pulsar "Guardar" para que el costo persista. El backend acepta
+    // upsert por idDetalle/codigoProducto, idempotente.
+    _costosGuiaAutosaveDebounce(idx);
+  }
+
+  // [v2.41.54] Marca visual ✓/⚠ por línea según si tiene costo > 0
+  function _costosGuiaUpdMarca(idx) {
+    const st = S._costosGuiaState;
+    if (!st) return;
+    const linea = st.lineas[idx];
+    if (!linea) return;
+    const marca = $('costoGuiaMarca_' + idx);
+    if (!marca) return;
+    const bruto = _costosGuiaCalcularBruto(linea, st);
+    if (bruto > 0) {
+      marca.innerHTML = '<span title="Costo registrado" style="color:#34d399;font-weight:700">✓</span>';
+    } else {
+      marca.innerHTML = '<span title="Falta costo" style="color:#f87171;font-weight:700;animation:pulse 1.6s infinite">⚠</span>';
+    }
+  }
+
+  // [v2.41.54] Contador en el header: "X de Y con costo"
+  function _costosGuiaUpdProgreso() {
+    const st = S._costosGuiaState;
+    if (!st) return;
+    const total = st.lineas.length;
+    let conCosto = 0;
+    st.lineas.forEach(l => { if (_costosGuiaCalcularBruto(l, st) > 0) conCosto++; });
+    const cont = $('costosGuiaProgreso');
+    if (!cont) return;
+    const pct = total > 0 ? Math.round((conCosto / total) * 100) : 0;
+    const completo = (conCosto === total);
+    cont.innerHTML = `
+      <span style="color:${completo ? '#34d399' : (conCosto > 0 ? '#fbbf24' : '#94a3b8')};font-weight:800">
+        ${completo ? '✓ ' : ''}${conCosto}/${total} producto${total === 1 ? '' : 's'} con costo
+      </span>
+      <span style="color:#64748b;margin-left:6px">· ${pct}%</span>
+      ${!completo ? '<span style="color:#f87171;margin-left:6px;font-size:10px">⚠ faltan ' + (total - conCosto) + '</span>' : ''}`;
+  }
+
+  // [v2.41.54] Autoguardado por línea — debounce 1.5s tras último cambio
+  const _costosAutosaveTimers = {};
+  function _costosGuiaAutosaveDebounce(idx) {
+    clearTimeout(_costosAutosaveTimers[idx]);
+    _costosAutosaveTimers[idx] = setTimeout(() => _costosGuiaAutosaveLinea(idx), 1500);
+  }
+  async function _costosGuiaAutosaveLinea(idx) {
+    const st = S._costosGuiaState;
+    if (!st || !st.idGuia) return;
+    const l = st.lineas[idx];
+    if (!l) return;
+    const bruto = _costosGuiaCalcularBruto(l, st);
+    if (bruto <= 0) return; // sin costo: no enviar (evitar borrar)
+    const marca = $('costoGuiaMarca_' + idx);
+    if (marca) marca.innerHTML = '<span title="Guardando…" style="color:#fbbf24">⏳</span>';
+    try {
+      await API.post('llenarCostosGuia', {
+        idGuia: st.idGuia,
+        items: [{
+          idDetalle: l.idDetalle,
+          codigoProducto: l.codigoProducto,
+          precioUnitario: bruto
+        }],
+        actualizarPrecioCosto: false,
+        usuario: S.session?.nombre || '',
+        sugerenciasInline: [],
+        _autosave: true
+      });
+      // Restaurar marca ✓ tras éxito
+      _costosGuiaUpdMarca(idx);
+      if (marca) {
+        marca.classList.add('autosave-flash');
+        setTimeout(() => marca.classList.remove('autosave-flash'), 600);
+      }
+    } catch(e) {
+      if (marca) marca.innerHTML = '<span title="Error guardando · reintenta editando" style="color:#f87171">✗</span>';
+    }
   }
 
   function cerrarCostosGuia() { closeModal('modalCostosGuia'); }

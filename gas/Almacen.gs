@@ -1529,6 +1529,11 @@ function imprimirCostosGuia(params) {
   txt += '\x1b\x61\x01PRODUCTOS Y MARGENES\x1b\x61\x00\n';
   txt += SEPd + '\n\n';
 
+  // [v2.41.54] Margen objetivo para sugerir precio venta cuando el actual
+  // no existe o queda fuera del rango sano (cálculo simple, mismo umbral
+  // que la leyenda). 40% se usa como "redondeo dulce" para venta minorista.
+  var MARGEN_OBJETIVO = 0.40;
+
   var totalFactura = 0;
   det.forEach(function(l) {
     var p = prodLookup[l.codigoProducto] || {};
@@ -1545,6 +1550,12 @@ function imprimirCostosGuia(params) {
     else if (margenPct > 60)  alertaTxt = '[ * MARGEN ALTO ]';
     else                      alertaTxt = '[ OK margen normal ]';
 
+    // [v2.41.54] Precio venta SUGERIDO — solo si actual no existe o margen <20%
+    var precioSugerido = null;
+    if (costo > 0 && (precioVenta <= 0 || (margenPct !== null && margenPct < 20))) {
+      precioSugerido = Math.round(costo * (1 + MARGEN_OBJETIVO) * 10) / 10; // redondeo a 0.10
+    }
+
     var nombre = _norm(p.descripcion || l.codigoProducto || '').substring(0, W);
     txt += '\x1b\x21\x08' + nombre + '\x1b\x21\x00\n';  // bold
     txt += '  ' + cant + 'u x S/ ' + costo.toFixed(2) + ' = S/' + subtotal.toFixed(2) + '\n';
@@ -1554,6 +1565,14 @@ function imprimirCostosGuia(params) {
            + ' (' + signo + (margenPct === null ? '?' : margenPct.toFixed(0)) + '%)\n';
     } else {
       txt += '  >> P.Venta: (sin definir)\n';
+    }
+    // [v2.41.54] Línea sugerencia para que la jefa sepa cuánto cobrar
+    if (precioSugerido !== null) {
+      var sugMargenPct = Math.round(MARGEN_OBJETIVO * 100);
+      txt += '\x1b\x21\x08';                 // bold ON
+      txt += '  $$ SUGERIDO: S/ ' + precioSugerido.toFixed(2)
+           + ' (+' + sugMargenPct + '%)\n';
+      txt += '\x1b\x21\x00';                 // bold OFF
     }
     txt += '  ' + alertaTxt + '\n\n';
   });
@@ -1566,7 +1585,9 @@ function imprimirCostosGuia(params) {
   txt += 'LEYENDA:\n';
   txt += '  OK   margen 20-60% normal\n';
   txt += '  /!\\  margen < 20% revisar\n';
-  txt += '  *    margen > 60% alto\n\n';
+  txt += '  *    margen > 60% alto\n';
+  txt += '  $$   precio venta sugerido\n';
+  txt += '       (margen 40% redondeo 0.10)\n\n';
 
   // Footer
   txt += '\x1b\x61\x01';
