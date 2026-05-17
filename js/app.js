@@ -21168,6 +21168,12 @@ const MOS = (() => {
       }
     }
 
+    // [v2.41.39] Si NO se pintó instantáneo, limpiar el body para evitar
+    // que se vea data del tab anterior mientras se hace el fetch.
+    if (!pintadoInstantaneo && body) {
+      body.innerHTML = '<div class="text-xs text-slate-500 italic text-center py-6">Cargando...</div>';
+    }
+
     // Fetch fresco (en background si pintamos instantáneamente, foreground si no)
     liqLoadCurrent();
 
@@ -21371,11 +21377,12 @@ const MOS = (() => {
     };
     const chips = ordenadas.map(p => {
       const isAct = sel.has(p.idPersonal);
+      const idEsc = _escapeHtml(p.idPersonal).replace(/'/g, "\\'");
       return `<div class="liq-chip-persona${isAct ? ' is-active' : ''}"
-                   onclick="MOS._liqToggleFiltroPersona('${escAttr(p.idPersonal)}')"
-                   title="${escAttr(p.nombre)} · ${p.cantidadDias} día(s) · ${_liqMoney(p.total)}">
-                <span class="liq-chip-avatar">${escHtml(iniciales(p.nombre))}</span>
-                <span class="liq-chip-nombre">${escHtml(p.nombre.split(' ')[0] || p.nombre)}</span>
+                   onclick="MOS._liqToggleFiltroPersona('${idEsc}')"
+                   title="${_escapeHtml(p.nombre)} · ${p.cantidadDias} día(s) · ${_liqMoney(p.total)}">
+                <span class="liq-chip-avatar">${_escapeHtml(iniciales(p.nombre))}</span>
+                <span class="liq-chip-nombre">${_escapeHtml(p.nombre.split(' ')[0] || p.nombre)}</span>
                 <span class="liq-chip-badge">${p.cantidadDias}</span>
               </div>`;
     }).join('');
