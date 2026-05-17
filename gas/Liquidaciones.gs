@@ -1274,6 +1274,161 @@ function setupLiqSyncTrigger() {
   return { ok: true, mensaje: 'Trigger horario creado' };
 }
 
+// ============================================================
+// [v2.41.36] CIERRE NOCTURNO TOTAL — 23:00 diario
+// ------------------------------------------------------------
+// Cierra automáticamente:
+//   - SESIONES en WH (almaceneros, envasadores) que quedaron ACTIVAS
+//   - CAJAS en MosExpress (cajeros, vendedores) que quedaron ABIERTAS
+// Push al MOS rol admin/master con resumen.
+// MASTER/ADMINISTRADOR no se les cierra sesión (24/7 sin restricción).
+// ============================================================
+function cierreNocturnoTodos() {
+  var resultado = {
+    fecha:  Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm'),
+    wh:     { cerradas: 0, omitidas: 0, errores: 0, detalles: [] },
+    me:     { cerradas: 0, errores: 0, detalles: [] }
+  };
+
+  // ── 1. WH SESIONES ──
+  try {
+    var whSh = _abrirWhSheet('SESIONES');
+    if (whSh) {
+      var d = whSh.getDataRange().getValues();
+      var h = d[0];
+      var iEstado = h.indexOf('estado');
+      var iIdP    = h.indexOf('idPersonal');
+      var iFFin   = h.indexOf('fechaFin');
+      var iHFin   = h.indexOf('horaFin');
+      var iMinAct = h.indexOf('minutosActivos');
+      var iFIni   = h.indexOf('fechaInicio');
+      var iHIni   = h.indexOf('horaInicio');
+
+      // Cargar mapa idPersonal → rol (para excluir admin/master)
+      var rolMap = {};
+      try {
+        var perSh = _abrirWhSheet('PERSONAL');
+        if (perSh) {
+          _sheetToObjects(perSh).forEach(function(p) {
+            rolMap[String(p.idPersonal)] = String(p.rol || '').toUpperCase();
+          });
+        }
+      } catch(_) {}
+
+      var tz = Session.getScriptTimeZone();
+      var now = new Date();
+      var fechaStr = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
+      var horaStr  = Utilities.formatDate(now, tz, 'HH:mm');
+      for (var i = 1; i < d.length; i++) {
+        var est = String(d[i][iEstado] || '').toUpperCase();
+        if (est !== 'ACTIVA') continue;
+        var idPers = String(d[i][iIdP] || '');
+        var rolP   = rolMap[idPers] || '';
+        if (rolP === 'MASTER' || rolP === 'ADMINISTRADOR') {
+          resultado.wh.omitidas++;
+          continue;
+        }
+        try {
+          whSh.getRange(i + 1, iEstado + 1).setValue('CERRADA_AUTO');
+          if (iFFin >= 0) whSh.getRange(i + 1, iFFin + 1).setValue(fechaStr);
+          if (iHFin >= 0) whSh.getRange(i + 1, iHFin + 1).setValue(horaStr);
+          // Calcular minutos activos si tenemos fechaInicio/horaInicio
+          if (iMinAct >= 0 && iFIni >= 0 && iHIni >= 0) {
+            try {
+              var fIni = String(d[i][iFIni] || '').substring(0, 10);
+              var hIni = String(d[i][iHIni] || '00:00');
+              var ini = new Date(fIni + 'T' + hIni + ':00');
+              if (!isNaN(ini.getTime())) {
+                var mins = Math.round((now - ini) / 60000);
+                whSh.getRange(i + 1, iMinAct + 1).setValue(Math.max(0, mins));
+              }
+            } catch(_){}
+          }
+          resultado.wh.cerradas++;
+          resultado.wh.detalles.push(idPers);
+        } catch(eS) {
+          resultado.wh.errores++;
+          Logger.log('[CierreNoct] WH error idPersonal=' + idPers + ': ' + eS.message);
+        }
+      }
+    }
+  } catch(eW) {
+    resultado.wh.errores++;
+    Logger.log('[CierreNoct] WH fatal: ' + eW.message);
+  }
+
+  // ── 2. ME CAJAS ──
+  try {
+    var meSs = _meSS();
+    var meCajas = meSs.getSheetByName('CAJAS');
+    if (meCajas) {
+      var dC = meCajas.getDataRange().getValues();
+      var hC = dC[0];
+      var iEstC = hC.indexOf('Estado');
+      var iIdC  = hC.indexOf('idCaja');
+      if (iEstC < 0) iEstC = 0;
+      if (iIdC  < 0) iIdC  = 0;
+      for (var j = 1; j < dC.length; j++) {
+        var estC = String(dC[j][iEstC] || '').toUpperCase().trim();
+        if (estC !== 'ABIERTA') continue;
+        var idCaja = String(dC[j][iIdC] || '');
+        if (!idCaja) continue;
+        try {
+          // Llamar al bridge ME — el endpoint del lado ME calcula totales y cierra
+          var r = _meBridgeEvento('CIERRE_CAJA_FORZADO', {
+            idCaja: idCaja,
+            motivo: 'cierre_nocturno_auto_23h',
+            auth: { nombre: 'sistema_cron_MOS', rol: 'SYSTEM' },
+            adminAuth: { nombre: 'sistema', rol: 'SYSTEM', via: 'CRON' }
+          });
+          if (r && r.ok) {
+            resultado.me.cerradas++;
+            resultado.me.detalles.push(idCaja);
+          } else {
+            resultado.me.errores++;
+            Logger.log('[CierreNoct] ME error idCaja=' + idCaja + ': ' + (r && r.error || 'desconocido'));
+          }
+        } catch(eC) {
+          resultado.me.errores++;
+          Logger.log('[CierreNoct] ME excepción idCaja=' + idCaja + ': ' + eC.message);
+        }
+      }
+    }
+  } catch(eM) {
+    resultado.me.errores++;
+    Logger.log('[CierreNoct] ME fatal: ' + eM.message);
+  }
+
+  // ── 3. Push al MOS admin/master ──
+  try {
+    if (resultado.wh.cerradas + resultado.me.cerradas > 0 ||
+        resultado.wh.errores  + resultado.me.errores  > 0) {
+      var titulo = '🌙 Cierre nocturno auto · 23h';
+      var partes = [];
+      partes.push('WH: ' + resultado.wh.cerradas + ' sesiones cerradas');
+      if (resultado.wh.omitidas) partes.push(resultado.wh.omitidas + ' admin omitidas');
+      partes.push('ME: ' + resultado.me.cerradas + ' cajas cerradas');
+      var errTotal = resultado.wh.errores + resultado.me.errores;
+      if (errTotal > 0) partes.push('⚠ ' + errTotal + ' errores (ver Logger)');
+      var cuerpo = partes.join(' · ');
+      _notificarMOS(titulo, cuerpo, null, 'CIERRE_NOCTURNO_AUTO');
+    }
+  } catch(eP) { Logger.log('[CierreNoct] push fallo: ' + eP.message); }
+
+  Logger.log('[CierreNoct] DONE · ' + JSON.stringify(resultado));
+  return { ok: true, data: resultado };
+}
+
+function setupCierreNocturnoTrigger() {
+  var TRG = 'cierreNocturnoTodos';
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === TRG) ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger(TRG).timeBased().atHour(23).everyDays(1).create();
+  Logger.log('[Trigger] ' + TRG + ' creado · diario 23:00');
+  return { ok: true, mensaje: 'Trigger creado · diario 23:00' };
+}
+
 // Auto-instalación silenciosa: si NO existe el trigger, crearlo.
 // Marca un cache para no reintentarlo más de 1 vez por hora si falla.
 function _liqEnsureSyncTrigger() {

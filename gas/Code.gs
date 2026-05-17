@@ -221,6 +221,9 @@ function _route(method, e) {
       case 'backfillLiquidacionesDia':   return backfillLiquidacionesDia(params);
       // [v2.41.34] Setup trigger horario de auto-sync
       case 'setupLiqSyncTrigger':        return setupLiqSyncTrigger();
+      // [v2.41.36] Cierre nocturno 23h — sesiones WH + cajas ME
+      case 'cierreNocturnoTodos':        return cierreNocturnoTodos();
+      case 'setupCierreNocturnoTrigger': return setupCierreNocturnoTrigger();
       case 'getPagoDetalle':             return getPagoDetalle(params);
       case 'imprimirTicketPago':         return imprimirTicketPago(params);
       case 'migrarLiquidacionesV2':      return migrarLiquidacionesV2();
