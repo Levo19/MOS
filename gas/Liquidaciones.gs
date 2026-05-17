@@ -828,34 +828,11 @@ function getLiquidacionesPendientesDia(params) {
   var hasta = params.hasta || _liqHoy();
   var desde = params.desde || _fechaOffset(hasta, -29);
 
-  // Auto-refresh de HOY (1 día) — captura eventos del día actual.
-  // [v2.41.31] TTL subido 60s → 300s para evitar timeouts en la UI cuando
-  // el sync se ejecuta justo durante el primer load (resync de getResumenTodosDia
-  // tarda ~3-8s y bloqueaba el endpoint).
-  try {
-    var ssCache = CacheService.getScriptCache();
-    var last = ssCache.get('ldia_hoy_sync');
-    if (!last) {
-      // Marcar cache ANTES de syncear para que requests paralelos no
-      // dispararan otro sync. Best-effort: si el sync falla, igual cacheamos
-      // (la próxima request rehidrata).
-      ssCache.put('ldia_hoy_sync', '' + Date.now(), 300);
-      try { _liqDiaSync(_liqHoy()); } catch(__){}
-    }
-    // [v2.41.33] AUTO-RESYNC últimos 3 días cada hora — cubre cambios en WH
-    // (envasados nuevos/anulados, ajustes) sin requerir bridge ni acción manual.
-    var last3d = ssCache.get('ldia_3d_sync');
-    if (!last3d) {
-      ssCache.put('ldia_3d_sync', '' + Date.now(), 3600);
-      try {
-        var hoyStr = _liqHoy();
-        for (var dk = 1; dk <= 3; dk++) {
-          var fDk = _fechaOffset(hoyStr, -dk);
-          try { _liqDiaSync(fDk); } catch(__){}
-        }
-      } catch(__){}
-    }
-  } catch(_) {}
+  // [v2.41.34] NO sync inline dentro del endpoint — causa timeouts cuando
+  // getResumenTodosDia tarda. El sync corre en trigger time-based horario
+  // (_liqSyncJob, setup con setupLiqSyncTrigger). El endpoint solo lee.
+  // Auto-instalación del trigger si no existe (silencioso, 1 sola vez).
+  try { _liqEnsureSyncTrigger(); } catch(_){}
 
   var sh = _liqDiaGetSheet();
   var rows = _sheetToObjects(sh);
@@ -1233,4 +1210,63 @@ function _rangoFechas(desde, hasta) {
     d.setDate(d.getDate() + 1);
   }
   return out;
+}
+
+// ============================================================
+// [v2.41.34] AUTO-SYNC LIQUIDACIONES_DIA — trigger time-based
+// ------------------------------------------------------------
+// Antes el endpoint público sincronizaba dentro de la respuesta
+// (HOY cada 5min, últimos 3d cada 1h). Esto causaba timeouts cuando
+// getResumenTodosDia tardaba (~3-8s × 3 días = hasta 30s bloqueando
+// al operador). Solución: mover el sync a un trigger time-based
+// horario que corre en background, totalmente desacoplado de las
+// requests UI. El endpoint solo LEE de la hoja, instantáneo.
+// ============================================================
+
+// Job que corre el trigger horario — sync de HOY + últimos 3 días
+function _liqSyncJob() {
+  try {
+    var hoy = _liqHoy();
+    Logger.log('[LiqSyncJob] inicio · hoy=' + hoy);
+    try { _liqDiaSync(hoy); } catch(e1) { Logger.log('  HOY error: ' + e1.message); }
+    for (var dk = 1; dk <= 3; dk++) {
+      try {
+        var fDk = _fechaOffset(hoy, -dk);
+        _liqDiaSync(fDk);
+      } catch(e2) { Logger.log('  -' + dk + 'd error: ' + e2.message); }
+    }
+    Logger.log('[LiqSyncJob] fin OK');
+  } catch(e) { Logger.log('[LiqSyncJob] fatal: ' + e.message); }
+}
+
+// Setup público — el operador lo ejecuta UNA vez desde el editor para
+// crear el trigger horario. Idempotente: borra triggers viejos del
+// mismo handler antes de crear.
+function setupLiqSyncTrigger() {
+  var TRG = '_liqSyncJob';
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === TRG) ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger(TRG).timeBased().everyHours(1).create();
+  Logger.log('[Trigger] ' + TRG + ' creado · cada 1 hora');
+  return { ok: true, mensaje: 'Trigger horario creado' };
+}
+
+// Auto-instalación silenciosa: si NO existe el trigger, crearlo.
+// Marca un cache para no reintentarlo más de 1 vez por hora si falla.
+function _liqEnsureSyncTrigger() {
+  var ssCache;
+  try { ssCache = CacheService.getScriptCache(); } catch(_) { return; }
+  if (!ssCache) return;
+  if (ssCache.get('ldia_trg_check')) return;
+  ssCache.put('ldia_trg_check', '1', 3600);
+  try {
+    var existe = ScriptApp.getProjectTriggers().some(function(t) {
+      return t.getHandlerFunction() === '_liqSyncJob';
+    });
+    if (!existe) {
+      ScriptApp.newTrigger('_liqSyncJob').timeBased().everyHours(1).create();
+      Logger.log('[LiqSyncTrigger] auto-instalado');
+    }
+  } catch(e) { Logger.log('[LiqSyncTrigger] auto-instalación fallo: ' + e.message); }
 }

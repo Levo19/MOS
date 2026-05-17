@@ -1,1 +1,1 @@
-{ "version": "2.41.33", "build": "20260517-auto-resync-liquidaciones-3d-horario" }
+{ "version": "2.41.34", "build": "20260517-fix-timeout-liquidaciones-trigger-background" }

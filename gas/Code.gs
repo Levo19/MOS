@@ -219,6 +219,8 @@ function _route(method, e) {
       // [v2.41.32] Recomputar fila individual + backfill últimos N días
       case 'recomputarLiquidacionDia':   return recomputarLiquidacionDia(params);
       case 'backfillLiquidacionesDia':   return backfillLiquidacionesDia(params);
+      // [v2.41.34] Setup trigger horario de auto-sync
+      case 'setupLiqSyncTrigger':        return setupLiqSyncTrigger();
       case 'getPagoDetalle':             return getPagoDetalle(params);
       case 'imprimirTicketPago':         return imprimirTicketPago(params);
       case 'migrarLiquidacionesV2':      return migrarLiquidacionesV2();
