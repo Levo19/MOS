@@ -1016,22 +1016,49 @@ function vetarLiquidacionDia(params) {
   var fecha      = String(params.fecha || '').trim();
   if (!idPersonal || !fecha) return { ok: false, error: 'idPersonal y fecha requeridos' };
   var sh = _liqDiaGetSheet();
-  var data = sh.getDataRange().getValues();
-  var hdrs = data[0];
+  var hdrs = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  var iIdDia      = hdrs.indexOf('idDia');
   var iIdPersonal = hdrs.indexOf('idPersonal');
   var iFecha      = hdrs.indexOf('fecha');
   var iEstado     = hdrs.indexOf('estado');
   var iTsAct      = hdrs.indexOf('ts_actualizado');
-  if (iIdPersonal < 0 || iFecha < 0 || iEstado < 0) {
+  if (iEstado < 0) return { ok: false, error: 'Hoja sin columna estado' };
+
+  // [v2.41.40] FAST PATH: buscar por idDia con TextFinder (O(log n))
+  // en lugar de iterar toda la hoja (que para hojas grandes timeout-ea).
+  // _liqDiaKey ya nos da la clave compuesta única.
+  try {
+    var idDia = _liqDiaKey(idPersonal, fecha);
+    var finder = sh.getRange(1, iIdDia + 1, sh.getLastRow(), 1).createTextFinder(idDia).matchEntireCell(true);
+    var hit = finder.findNext();
+    if (hit) {
+      var row = hit.getRow();
+      var estCell = sh.getRange(row, iEstado + 1).getValue();
+      var est = String(estCell || '').toUpperCase();
+      if (est === 'PAGADA') return { ok: false, error: 'YA_PAGADA' };
+      sh.getRange(row, iEstado + 1).setValue('VETADA');
+      if (iTsAct >= 0) {
+        sh.getRange(row, iTsAct + 1).setValue(
+          Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'")
+        );
+      }
+      return { ok: true };
+    }
+  } catch(eF) { Logger.log('[vetar] TextFinder error: ' + eF.message); }
+
+  // FALLBACK lento: si TextFinder no encuentra (idDia distinto) iterar
+  // por idPersonal+fecha
+  if (iIdPersonal < 0 || iFecha < 0) {
     return { ok: false, error: 'Hoja sin columnas requeridas' };
   }
+  var data = sh.getDataRange().getValues();
   var tz = Session.getScriptTimeZone();
   for (var i = 1; i < data.length; i++) {
     var idP = String(data[i][iIdPersonal] || '').trim();
     var f   = _liqNormFecha(data[i][iFecha], tz);
     if (idP === idPersonal && f === fecha) {
-      var est = String(data[i][iEstado] || '').toUpperCase();
-      if (est === 'PAGADA') return { ok: false, error: 'YA_PAGADA' };
+      var est2 = String(data[i][iEstado] || '').toUpperCase();
+      if (est2 === 'PAGADA') return { ok: false, error: 'YA_PAGADA' };
       sh.getRange(i + 1, iEstado + 1).setValue('VETADA');
       if (iTsAct >= 0) {
         sh.getRange(i + 1, iTsAct + 1).setValue(
@@ -1050,22 +1077,43 @@ function desvetarLiquidacionDia(params) {
   var fecha      = String(params.fecha || '').trim();
   if (!idPersonal || !fecha) return { ok: false, error: 'idPersonal y fecha requeridos' };
   var sh = _liqDiaGetSheet();
-  var data = sh.getDataRange().getValues();
-  var hdrs = data[0];
-  var iIdPersonal = hdrs.indexOf('idPersonal');
-  var iFecha      = hdrs.indexOf('fecha');
+  var hdrs = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  var iIdDia      = hdrs.indexOf('idDia');
   var iEstado     = hdrs.indexOf('estado');
   var iTsAct      = hdrs.indexOf('ts_actualizado');
-  if (iIdPersonal < 0 || iFecha < 0 || iEstado < 0) {
-    return { ok: false, error: 'Hoja sin columnas requeridas' };
-  }
+  if (iEstado < 0) return { ok: false, error: 'Hoja sin columna estado' };
+
+  // [v2.41.40] FAST PATH con TextFinder por idDia
+  try {
+    var idDia = _liqDiaKey(idPersonal, fecha);
+    var finder = sh.getRange(1, iIdDia + 1, sh.getLastRow(), 1).createTextFinder(idDia).matchEntireCell(true);
+    var hit = finder.findNext();
+    if (hit) {
+      var row = hit.getRow();
+      var est = String(sh.getRange(row, iEstado + 1).getValue() || '').toUpperCase();
+      if (est !== 'VETADA') return { ok: false, error: 'NO_VETADA', mensaje: 'Estado actual: ' + est };
+      sh.getRange(row, iEstado + 1).setValue('PENDIENTE');
+      if (iTsAct >= 0) {
+        sh.getRange(row, iTsAct + 1).setValue(
+          Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'")
+        );
+      }
+      return { ok: true };
+    }
+  } catch(eF) { Logger.log('[desvetar] TextFinder error: ' + eF.message); }
+
+  // Fallback
+  var iIdPersonal = hdrs.indexOf('idPersonal');
+  var iFecha      = hdrs.indexOf('fecha');
+  if (iIdPersonal < 0 || iFecha < 0) return { ok: false, error: 'Hoja sin columnas requeridas' };
+  var data = sh.getDataRange().getValues();
   var tz = Session.getScriptTimeZone();
   for (var i = 1; i < data.length; i++) {
     var idP = String(data[i][iIdPersonal] || '').trim();
     var f   = _liqNormFecha(data[i][iFecha], tz);
     if (idP === idPersonal && f === fecha) {
-      var est = String(data[i][iEstado] || '').toUpperCase();
-      if (est !== 'VETADA') return { ok: false, error: 'NO_VETADA', mensaje: 'Estado actual: ' + est };
+      var est2 = String(data[i][iEstado] || '').toUpperCase();
+      if (est2 !== 'VETADA') return { ok: false, error: 'NO_VETADA', mensaje: 'Estado actual: ' + est2 };
       sh.getRange(i + 1, iEstado + 1).setValue('PENDIENTE');
       if (iTsAct >= 0) {
         sh.getRange(i + 1, iTsAct + 1).setValue(
