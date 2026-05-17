@@ -21505,10 +21505,13 @@ const MOS = (() => {
         localId: 'L' + Date.now() + Math.random().toString(36).slice(2, 8)
       });
       if (!res || !res.ok) {
-        const msg = res?.error === 'YA_PAGADA'
-          ? 'Esta liquidación ya está PAGADA — no se puede vetar.'
-          : 'No se pudo vetar: ' + (res?.error || 'error');
-        toast(msg, 'warn', 5000);
+        const errKey = res?.error || 'error';
+        let msg;
+        if (errKey === 'YA_PAGADA') msg = 'Esta liquidación ya está PAGADA — no se puede vetar.';
+        else if (errKey === 'NO_ENCONTRADA') msg = 'Fila no encontrada en hoja LIQUIDACIONES_DIA — toca el lápiz una vez para materializar, luego intenta vetar.';
+        else msg = 'No se pudo vetar: ' + errKey + (res?.mensaje ? ' · ' + res.mensaje : '');
+        console.warn('[vetar] error:', res);
+        toast(msg, 'warn', 6000);
         // Rollback
         if (!_liqState.pendientes.includes(p)) _liqState.pendientes.push(p);
         if (!p.dias.find(d => d.fecha === fecha)) p.dias.push(diaSnapshot);

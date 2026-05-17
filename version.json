@@ -1,1 +1,1 @@
-{ "version": "2.41.34", "build": "20260517-fix-timeout-liquidaciones-trigger-background" }
+{ "version": "2.41.35", "build": "20260517-fix-vetar-fecha-matching" }

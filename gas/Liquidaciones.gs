@@ -903,6 +903,31 @@ function getLiquidacionesPendientesDia(params) {
 // El operador toca el botón 🚫 inline y la liquidación del día queda VETADA
 // (no aparece más en Pendientes). Puede desvetar después si fue por error.
 // VETADA NO se cobra ni computa para liquidaciones; es como un "skip".
+// [v2.41.35] Helper robusto para normalizar fechas de la hoja a yyyy-MM-dd.
+// Acepta Date, ISO, M/D/YYYY (US), D/M/YYYY (LATAM con heurística dd>12).
+function _liqNormFecha(raw, tz) {
+  if (raw == null || raw === '') return '';
+  if (raw instanceof Date) return Utilities.formatDate(raw, tz, 'yyyy-MM-dd');
+  var s = String(raw).trim();
+  if (!s) return '';
+  // ISO yyyy-MM-dd o con T
+  var iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) {
+    return iso[1] + '-' + ('0' + iso[2]).slice(-2) + '-' + ('0' + iso[3]).slice(-2);
+  }
+  // M/D/YYYY o D/M/YYYY (heurística: si primer número > 12 es DD)
+  var slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (slash) {
+    var a = parseInt(slash[1], 10), b = parseInt(slash[2], 10), yy = slash[3];
+    var m, d;
+    if (a > 12)      { d = a; m = b; }   // D/M/YYYY
+    else             { m = a; d = b; }   // default US M/D/YYYY
+    return yy + '-' + ('0' + m).slice(-2) + '-' + ('0' + d).slice(-2);
+  }
+  // Fallback: dejar pasar el string como vino (substring 10)
+  return s.substring(0, 10);
+}
+
 function vetarLiquidacionDia(params) {
   var idPersonal = String(params.idPersonal || '').trim();
   var fecha      = String(params.fecha || '').trim();
@@ -919,10 +944,8 @@ function vetarLiquidacionDia(params) {
   }
   var tz = Session.getScriptTimeZone();
   for (var i = 1; i < data.length; i++) {
-    var idP = String(data[i][iIdPersonal] || '');
-    var f   = data[i][iFecha] instanceof Date
-              ? Utilities.formatDate(data[i][iFecha], tz, 'yyyy-MM-dd')
-              : String(data[i][iFecha] || '').substring(0, 10);
+    var idP = String(data[i][iIdPersonal] || '').trim();
+    var f   = _liqNormFecha(data[i][iFecha], tz);
     if (idP === idPersonal && f === fecha) {
       var est = String(data[i][iEstado] || '').toUpperCase();
       if (est === 'PAGADA') return { ok: false, error: 'YA_PAGADA' };
@@ -935,7 +958,8 @@ function vetarLiquidacionDia(params) {
       return { ok: true };
     }
   }
-  return { ok: false, error: 'NO_ENCONTRADA' };
+  Logger.log('[vetar] NO encontrada idPersonal=' + idPersonal + ' fecha=' + fecha + ' filas=' + (data.length - 1));
+  return { ok: false, error: 'NO_ENCONTRADA', mensaje: 'No hay fila para ' + idPersonal + ' @ ' + fecha };
 }
 
 function desvetarLiquidacionDia(params) {
@@ -954,10 +978,8 @@ function desvetarLiquidacionDia(params) {
   }
   var tz = Session.getScriptTimeZone();
   for (var i = 1; i < data.length; i++) {
-    var idP = String(data[i][iIdPersonal] || '');
-    var f   = data[i][iFecha] instanceof Date
-              ? Utilities.formatDate(data[i][iFecha], tz, 'yyyy-MM-dd')
-              : String(data[i][iFecha] || '').substring(0, 10);
+    var idP = String(data[i][iIdPersonal] || '').trim();
+    var f   = _liqNormFecha(data[i][iFecha], tz);
     if (idP === idPersonal && f === fecha) {
       var est = String(data[i][iEstado] || '').toUpperCase();
       if (est !== 'VETADA') return { ok: false, error: 'NO_VETADA', mensaje: 'Estado actual: ' + est };
