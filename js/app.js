@@ -23660,6 +23660,24 @@ const MOS = (() => {
             idPersonal: persona.idPersonal,
             fecha: fecha,
             localId: 'L' + Date.now() + Math.random().toString(36).slice(2, 8)
+          }).then(() => {
+            // [v2.41.42] Invalidar cache local de Liquidaciones para que
+            // la próxima visita traiga data sin este día vetado.
+            try { _liqCacheClear && _liqCacheClear(); } catch(_){}
+            // Si el state ya tiene esa persona/día, quitarlo optimista
+            try {
+              if (_liqState && Array.isArray(_liqState.pendientes)) {
+                const pLocal = _liqState.pendientes.find(x => x.idPersonal === persona.idPersonal);
+                if (pLocal) {
+                  pLocal.dias = pLocal.dias.filter(d => d.fecha !== fecha);
+                  pLocal.cantidadDias = pLocal.dias.length;
+                  pLocal.total = Math.round(pLocal.dias.reduce((s, d) => s + d.totalDia, 0) * 100) / 100;
+                  if (!pLocal.dias.length) {
+                    _liqState.pendientes = _liqState.pendientes.filter(p => p !== pLocal);
+                  }
+                }
+              }
+            } catch(_){}
           }).catch(e => console.warn('[finVetar] vetarLiq error:', e?.message));
         }
       } catch(_) {}
@@ -23819,6 +23837,10 @@ const MOS = (() => {
             idPersonal: persona.idPersonal,
             fecha: fecha,
             localId: 'L' + Date.now() + Math.random().toString(36).slice(2, 8)
+          }).then(() => {
+            // [v2.41.42] Invalidar cache para que pendientes se rehidrate
+            // con el día desvetado disponible.
+            try { _liqCacheClear && _liqCacheClear(); } catch(_){}
           }).catch(e => console.warn('[finRehabilitar] desvetarLiq error:', e?.message));
         }
       } catch(_) {}
