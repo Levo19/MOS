@@ -676,29 +676,34 @@ function _calcularPersonal(fecha) {
     var rolFinal = _resolverRol(nombre, r.rol);
     var appFinal = String(r.appOrigen || (pm ? pm.appOrigen : ''));
 
+    // [v2.41.46] ÚNICA fuente de verdad: LIQUIDACIONES_DIA.estado.
+    // Tombstones de JORNADAS son legacy (pre-LIQUIDACIONES_DIA) y solo
+    // se usan para idJornada/vetoObs si la fila está VETADA.
+    var liqEstado = String(r.estado || 'PENDIENTE').toUpperCase();
+    var esVetada = (liqEstado === 'VETADA');
     var tomb = tombstonesByNombre[key];
-    if (tomb) {
-      // Persona presente PERO con tombstone activo → vetada
+
+    if (esVetada) {
       detalle.push({
-        idJornada:  tomb.idJornada || '',
+        idJornada:  tomb ? (tomb.idJornada || '') : '',
         idPersonal: String(r.idPersonal || ''),
         nombre:     nombre,
         rol:        rolFinal,
-        zona:       String(tomb.zona || ''),
+        zona:       tomb ? String(tomb.zona || '') : '',
         appOrigen:  appFinal,
         monto:      0,
         fuente:     'ELIMINADA',
         vetada:     true,
-        vetoTs:     _parseVetoTs(tomb.observacion) || 0,
-        vetoObs:    String(tomb.observacion || ''),
-        presente:   true
+        vetoTs:     tomb ? (_parseVetoTs(tomb.observacion) || 0) : 0,
+        vetoObs:    tomb ? String(tomb.observacion || '') : '',
+        presente:   true,
+        liqEstado:  liqEstado
       });
     } else {
-      // Persona presente activa
+      // PENDIENTE / PAGADA — persona presente activa (ignorar tombstone legacy)
       var jornAct = activasByNombre[key];
       var idJornada = jornAct ? (jornAct.idJornada || '') : '';
       var monto = parseFloat(r.totalDia) || 0;
-      // Si totalDia es 0 (sin auditoría todavía), usar montoBase
       if (!monto || monto <= 0) monto = parseFloat(r.montoBase) || 0;
 
       detalle.push({
@@ -711,7 +716,8 @@ function _calcularPersonal(fecha) {
         monto:      monto,
         fuente:     jornAct ? String(jornAct.fuente || 'AUTO') : 'AUTO_VENTA',
         vetada:     false,
-        presente:   true
+        presente:   true,
+        liqEstado:  liqEstado
       });
       total += monto;
       personasPagadas++;
