@@ -21903,12 +21903,25 @@ const MOS = (() => {
         if (r) _liqConfetti(r.left + r.width/2, r.top + r.height/2, '#fbbf24');
       } catch(_){}
       toast(`✓ ${idPagos.length} pago(s) registrado(s) · ${_liqMoney(totalPagado)}`, 'ok');
+
+      // [v2.41.41] OPTIMISTA: quitar local YA los días pagados de _liqState.pendientes
+      // para que la lista se actualice instantáneo. El refresh detrás confirma.
+      personas.forEach(persona => {
+        const pLocal = _liqState.pendientes.find(x => x.idPersonal === persona.idPersonal);
+        if (!pLocal) return;
+        const setFechas = new Set(persona.fechas);
+        pLocal.dias = pLocal.dias.filter(d => !setFechas.has(d.fecha));
+        pLocal.cantidadDias = pLocal.dias.length;
+        pLocal.total = Math.round(pLocal.dias.reduce((s, d) => s + d.totalDia, 0) * 100) / 100;
+      });
+      // Quitar personas sin días pendientes
+      _liqState.pendientes = _liqState.pendientes.filter(p => p.cantidadDias > 0);
       _liqState.seleccion = {};
+      _liqRenderPendientes();  // pinta inmediato
       closeModal('modalLiqConfirmar');
-      // Invalidar cache para que el siguiente fetch traiga la realidad
+      // Invalidar cache + fetch en background (no bloquea UI)
       _liqCacheClear();
-      // Refrescar
-      await liqLoadCurrent();
+      liqLoadCurrent();
     }
 
     if (btn) { btn.disabled = false; btn.textContent = '💸 Confirmar y pagar'; }
@@ -23637,6 +23650,19 @@ const MOS = (() => {
 
     try {
       await API.post('eliminarJornada', { idJornada, actor: S.session?.nombre || '' });
+      // [v2.41.41] UNIFICAR vetar: además de eliminarJornada (que afecta P&L),
+      // marcar VETADA en LIQUIDACIONES_DIA para que el día NO aparezca en
+      // Pendientes de Liquidaciones (mismo estado que el botón 🚫 de Liq).
+      try {
+        const persona = (_finPL?.personalDetalle || []).find(p => String(p.idJornada) === String(idJornada));
+        if (persona && persona.idPersonal && fecha) {
+          API.post('vetarLiquidacionDia', {
+            idPersonal: persona.idPersonal,
+            fecha: fecha,
+            localId: 'L' + Date.now() + Math.random().toString(36).slice(2, 8)
+          }).catch(e => console.warn('[finVetar] vetarLiq error:', e?.message));
+        }
+      } catch(_) {}
       toast(`💸 Vetado · ${nombre || ''} · -S/ ${pagoEliminado.toFixed(2)} · ahora aparece 💵 para rehabilitar`, 'ok', 4500);
       // Esperar que la animación del overlay complete (700ms) antes de
       // reemplazar el card, así el botón cambia 💸 → 💵 sin perder la animación.
@@ -23785,6 +23811,17 @@ const MOS = (() => {
     try {
       const r = await API.post('rehabilitarJornada', { idJornada, actor: S.session?.nombre || '' });
       if (!r || r.error) throw new Error(r?.error || 'Error desconocido');
+      // [v2.41.41] UNIFICAR rehabilitar: también desveta en LIQUIDACIONES_DIA
+      try {
+        const persona = (_finPL?.personalDetalle || []).find(p => String(p.idJornada) === String(idJornada));
+        if (persona && persona.idPersonal && fecha) {
+          API.post('desvetarLiquidacionDia', {
+            idPersonal: persona.idPersonal,
+            fecha: fecha,
+            localId: 'L' + Date.now() + Math.random().toString(36).slice(2, 8)
+          }).catch(e => console.warn('[finRehabilitar] desvetarLiq error:', e?.message));
+        }
+      } catch(_) {}
       const monto = (r.data && r.data.monto) || montoRestaurar;
       toast(`💵 Rehabilitado · ${nombre || ''} · +S/ ${parseFloat(monto || 0).toFixed(2)} · ahora aparece 💸 para vetar`, 'ok', 4500);
       // Esperar a que la animación de salida del overlay (450ms) complete antes
