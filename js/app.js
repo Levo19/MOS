@@ -23661,28 +23661,18 @@ const MOS = (() => {
       _finBeep('error');
       return;
     }
+    // [v2.41.52] FIX OPTIMISMO: API.post devuelve d.data (undefined si backend
+    // retorna {ok:true} sin data). El check viejo "if(!r||r.ok===false)" caía
+    // en falso negativo, revertía el overlay y daba sensación de no-optimista.
+    // Ahora: si await resuelve = éxito. Errores reales caen al catch(e) via
+    // _fetch que tira throw cuando d.ok=false. (e.message = error key).
     try {
-      const r = await API.post('vetarLiquidacionDia', {
+      await API.post('vetarLiquidacionDia', {
         idPersonal: idPersonal,
         fecha: fecha,
         localId: 'L' + Date.now() + Math.random().toString(36).slice(2, 8)
       });
-      if (!r || r.ok === false) {
-        const err = r?.error || 'error';
-        if (err === 'YA_PAGADA') {
-          toast('Esta liquidación ya está PAGADA — no se puede vetar.', 'warn', 5000);
-        } else {
-          toast('No se pudo vetar: ' + err, 'error');
-        }
-        _finBeep('error');
-        if (card) {
-          const ov = card.querySelector('.fin-vetada-overlay');
-          if (ov) ov.remove();
-          card.classList.remove('fin-vetada-card');
-        }
-        return;
-      }
-      // Optimista: mantener el overlay aplicado y actualizar P&L local
+      // Mantener el overlay aplicado y P&L local
       if (persona) persona.vetada = true;
       // Invalidar cache local del Personal Día y Liquidaciones
       try {
@@ -23723,8 +23713,26 @@ const MOS = (() => {
         if (ov) ov.remove();
         card.classList.remove('fin-vetada-card');
       }
-      toast('Error: ' + e.message + ' — recargando...', 'error');
-      finCargar();
+      const errKey = (e && e.message) || 'error';
+      let msg;
+      if (errKey === 'YA_PAGADA') msg = 'Esta liquidación ya está PAGADA — no se puede vetar.';
+      else msg = 'No se pudo vetar: ' + errKey;
+      toast(msg, 'error', 5000);
+      // Rollback del P&L local (revertir el descuento ya aplicado)
+      if (persona) {
+        persona.vetada = false;
+        persona.monto = pagoEliminado;
+        persona.fuente = persona.fuente === 'ELIMINADA' ? 'MANUAL' : persona.fuente;
+        delete persona.vetoTs;
+        if (_finPL) {
+          _finPL.personas = (_finPL.personas || 0) + 1;
+          _finPL.gastoPersonal = (parseFloat(_finPL.gastoPersonal) || 0) + pagoEliminado;
+          _finPL.totalGastos   = (parseFloat(_finPL.totalGastos) || 0) + pagoEliminado;
+          _finPL.utilidadNeta  = (parseFloat(_finPL.utilidadNeta) || 0) - pagoEliminado;
+          _finPL.costosFijos   = (parseFloat(_finPL.costosFijos) || 0) + pagoEliminado;
+          try { _finRender(_finPL, fecha, { skipPersonal: true }); } catch {}
+        }
+      }
     }
   }
 
@@ -23861,13 +23869,13 @@ const MOS = (() => {
       _finBeep('error');
       return;
     }
+    // [v2.41.52] Mismo fix: confiar en resolve = éxito.
     try {
-      const r = await API.post('desvetarLiquidacionDia', {
+      await API.post('desvetarLiquidacionDia', {
         idPersonal: idPersonal,
         fecha: fecha,
         localId: 'L' + Date.now() + Math.random().toString(36).slice(2, 8)
       });
-      if (!r || r.ok === false) throw new Error(r?.error || 'Error desconocido');
       if (persona) persona.vetada = false;
       // Invalidar cache local
       try {
