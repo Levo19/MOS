@@ -1042,6 +1042,8 @@ function vetarLiquidacionDia(params) {
           Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'")
         );
       }
+      // [v2.41.44] Invalidar cache de getResumenTodosDia para esta fecha
+      try { CacheService.getScriptCache().remove('rsmTd_' + fecha); } catch(_){}
       return { ok: true };
     }
   } catch(eF) { Logger.log('[vetar] TextFinder error: ' + eF.message); }
@@ -1098,6 +1100,8 @@ function desvetarLiquidacionDia(params) {
           Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'")
         );
       }
+      // [v2.41.44] Invalidar cache de getResumenTodosDia para esta fecha
+      try { CacheService.getScriptCache().remove('rsmTd_' + fecha); } catch(_){}
       return { ok: true };
     }
   } catch(eF) { Logger.log('[desvetar] TextFinder error: ' + eF.message); }

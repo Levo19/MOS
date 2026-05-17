@@ -744,6 +744,20 @@ function _esPersonalEvaluable(p) {
 
 function getResumenTodosDia(params) {
   var fecha    = params.fecha || _hoy();
+  // [v2.41.44] Cache 120s con CacheService — evita recalcular las 30-50 lecturas
+  // de hoja en cada hit. Frontend lo llama varias veces (Personal del Día,
+  // resumen, audit, etc.). params._refresh=true para forzar bypass.
+  var ssCache, cacheKey;
+  if (!params._refresh) {
+    try {
+      ssCache = CacheService.getScriptCache();
+      cacheKey = 'rsmTd_' + fecha;
+      var hit = ssCache.get(cacheKey);
+      if (hit) {
+        try { return JSON.parse(hit); } catch(_){}
+      }
+    } catch(_){}
+  }
   var todosPersonal = _sheetToObjects(getSheet('PERSONAL_MASTER')).filter(function(r){
     return String(r.estado) === '1';
   });
@@ -965,7 +979,16 @@ function getResumenTodosDia(params) {
     });
   } catch(eL) { Logger.log('[getResumenTodosDia] liqEstado cross: ' + eL.message); }
 
-  return { ok: true, data: resumenes };
+  var resp = { ok: true, data: resumenes };
+  // [v2.41.44] Persistir en cache 120s
+  if (ssCache && cacheKey) {
+    try {
+      var ser = JSON.stringify(resp);
+      // CacheService permite hasta 100KB por entrada. Si excede, no cachear (raro).
+      if (ser.length < 95000) ssCache.put(cacheKey, ser, 120);
+    } catch(_){}
+  }
+  return resp;
 }
 
 // ── Liquidación semanal ────────────────────────────────────────
