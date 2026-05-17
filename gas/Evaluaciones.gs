@@ -751,7 +751,7 @@ function getResumenTodosDia(params) {
   if (!params._refresh) {
     try {
       ssCache = CacheService.getScriptCache();
-      cacheKey = 'rsmTd_' + fecha;
+      cacheKey = 'rsmTd2_' + fecha;
       var hit = ssCache.get(cacheKey);
       if (hit) {
         try { return JSON.parse(hit); } catch(_){}

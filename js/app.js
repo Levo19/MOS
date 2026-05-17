@@ -23152,7 +23152,7 @@ const MOS = (() => {
       // hay resumen todavía. Así el header del grupo cuadra con las cards.
       // VETADOS quedan FUERA (no reciben pago).
       const subtotal = arr.reduce((s, p) => {
-        if (p.vetada || p.fuente === 'ELIMINADA') return s;
+        if (p.vetada) return s;
         const ev = byIdPersonal[p.idPersonal] || byNombre[String(p.nombre || '').toLowerCase().trim()] || null;
         const real = (ev && typeof ev.totalDia === 'number') ? ev.totalDia : (parseFloat(p.monto) || 0);
         return s + real;
@@ -23191,19 +23191,19 @@ const MOS = (() => {
       _evalState.byNombre = byNombre;
       _evalState.byIdPersonal = byIdPersonal;
 
-      // [v2.41.45] Propagar VETADA desde LIQUIDACIONES_DIA → personalDetalle.
-      // El backend en getResumenTodosDia ya hace el cruce y devuelve
-      // r.vetada=true cuando r.liqEstado === 'VETADA'. Aquí lo aplicamos
-      // a los items del personalDetalle para que _finRenderPersonalCard
-      // muestre overlay enmallado consistentemente.
+      // [v2.41.46] Propagar VETADA desde LIQUIDACIONES_DIA → personalDetalle.
+      // ÚNICA fuente de verdad: ev.liqEstado. Si no es 'VETADA', el card
+      // NO debe estar enmallado, sin importar marcas históricas en
+      // p.fuente='ELIMINADA' (legacy de cuando vetar llamaba eliminarJornada).
       pl.personalDetalle.forEach(p => {
         const ev = byIdPersonal[p.idPersonal] || byNombre[String(p.nombre || '').toLowerCase().trim()] || null;
-        if (ev && (ev.vetada === true || ev.liqEstado === 'VETADA')) {
-          p.vetada = true;
-        } else if (ev && ev.liqEstado && ev.liqEstado !== 'VETADA' && p.fuente !== 'ELIMINADA') {
-          // Si LIQUIDACIONES_DIA dice que NO está vetada (PENDIENTE/PAGADA),
-          // y el item local lo había marcado por sincronía vieja, limpiar.
-          if (p.vetada === true) p.vetada = false;
+        if (ev && ev.liqEstado) {
+          // Backend tiene liqEstado → es autoritativo
+          p.vetada = (ev.liqEstado === 'VETADA');
+          if (!p.vetada && p.fuente === 'ELIMINADA') {
+            // Limpiar marca histórica para que el render no la mire
+            p.fuente = 'AUTO_RECOV';
+          }
         }
       });
 
@@ -23218,7 +23218,7 @@ const MOS = (() => {
         let totalReal = 0;
         ['POS','ALMACEN','OTRO'].forEach(area => {
           (grupos[area] || []).forEach(p => {
-            if (p.vetada || p.fuente === 'ELIMINADA') return; // vetados no cuentan
+            if (p.vetada) return; // vetados no cuentan
             const ev = byIdPersonal[p.idPersonal] || byNombre[String(p.nombre || '').toLowerCase().trim()] || null;
             const real = (ev && typeof ev.totalDia === 'number') ? ev.totalDia : (parseFloat(p.monto) || 0);
             totalReal += real;
@@ -23360,7 +23360,11 @@ const MOS = (() => {
   }
 
   function _finRenderPersonalCard(p, ev, fecha, area) {
-    const esVetada = !!(p.vetada || p.fuente === 'ELIMINADA');
+    // [v2.41.46] Única fuente de verdad: LIQUIDACIONES_DIA.estado (propagado
+    // a p.vetada en _pintarConResumenes). Si por fallback no hay liqEstado
+    // todavía, usar p.vetada del backend. NO mirar p.fuente='ELIMINADA'
+    // (marca histórica del flujo viejo eliminarJornada).
+    const esVetada = !!p.vetada;
     // ¿Tiene dispositivos encarcelados? Lookup por nombre (lowercased + trim).
     const nLowCard = String(p.nombre || '').toLowerCase().trim();
     const bloqInfo = (_finBloqueados && _finBloqueados.porNombre)

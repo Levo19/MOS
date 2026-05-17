@@ -1043,7 +1043,7 @@ function vetarLiquidacionDia(params) {
         );
       }
       // [v2.41.44] Invalidar cache de getResumenTodosDia para esta fecha
-      try { CacheService.getScriptCache().remove('rsmTd_' + fecha); } catch(_){}
+      try { CacheService.getScriptCache().remove('rsmTd2_' + fecha); } catch(_){}
       return { ok: true };
     }
   } catch(eF) { Logger.log('[vetar] TextFinder error: ' + eF.message); }
@@ -1101,7 +1101,7 @@ function desvetarLiquidacionDia(params) {
         );
       }
       // [v2.41.44] Invalidar cache de getResumenTodosDia para esta fecha
-      try { CacheService.getScriptCache().remove('rsmTd_' + fecha); } catch(_){}
+      try { CacheService.getScriptCache().remove('rsmTd2_' + fecha); } catch(_){}
       return { ok: true };
     }
   } catch(eF) { Logger.log('[desvetar] TextFinder error: ' + eF.message); }
