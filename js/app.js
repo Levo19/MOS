@@ -22144,7 +22144,7 @@ const MOS = (() => {
     const fecha = b.pagadoTs ? new Date(b.pagadoTs).toLocaleString('es-PE', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—';
     const ico = _liqRolIco(b.rol);
     return `
-      <div class="liq-batch-card" style="--i:${Math.min(idx,15)}" onclick="MOS._liqAbrirPagoDet('${b.idPago}')">
+      <div class="liq-batch-card" style="--i:${Math.min(idx,15)}" onclick="MOS._liqAbrirPagoDet('${b.idPago}', ${idx})">
         <div class="flex items-center gap-3">
           <span style="font-size:18px">${ico}</span>
           <div class="flex-1 min-w-0">
@@ -22163,34 +22163,72 @@ const MOS = (() => {
       </div>`;
   }
 
-  async function _liqAbrirPagoDet(idPago) {
+  // [v2.41.55] OPTIMISTA: abrir modal al instante con datos del listado local,
+  // pintar skeleton para días, y completar al llegar el fetch. Antes el await
+  // bloqueaba el openModal → percibido como lentitud.
+  async function _liqAbrirPagoDet(idPago, idx) {
     _liqSfx('open');
+    // 1) Datos optimistas desde el listado local de pagadas
+    const local = (typeof idx === 'number' ? (_liqState.pagadas || [])[idx] : null)
+              || (_liqState.pagadas || []).find(p => p.idPago === idPago);
+    const cantDias = local ? local.cantidadDias : 0;
+    const titleEl = $('liqPagoDetTitle');
+    const subEl   = $('liqPagoDetSubtitle');
+    const bodyEl  = $('liqPagoDetBody');
+    if (titleEl) titleEl.textContent = local
+      ? `${_liqRolIco(local.rol)} ${local.nombre} · ${local.idPago}`
+      : `Cargando · ${idPago}`;
+    if (subEl) subEl.textContent = local
+      ? `${cantDias} día(s) · pagó ${local.pagadoPor} · ${new Date(local.pagadoTs).toLocaleString('es-PE')}`
+      : 'Cargando detalle…';
+    if (bodyEl) {
+      const skeleton = Array.from({ length: Math.max(cantDias, 3) }, () =>
+        `<div class="rounded-lg p-2" style="background:rgba(15,23,42,.4);border:1px solid #1e293b">
+          <div class="flex items-center justify-between">
+            <div class="alm-skel-line w-50" style="height:14px"></div>
+            <div class="alm-skel-line w-30" style="height:14px"></div>
+          </div>
+          <div class="alm-skel-line w-75 mt-2" style="height:10px"></div>
+        </div>`
+      ).join('');
+      bodyEl.innerHTML = skeleton + (local ? `
+        <div class="mt-2 pt-2 border-t border-slate-800 flex items-center justify-between">
+          <span class="text-sm font-bold text-slate-300">TOTAL</span>
+          <span class="text-lg font-bold" style="color:#fbbf24">${_liqMoney(local.total)}</span>
+        </div>` : '');
+    }
+    openModal('modalLiqPagoDet');
+
+    // 2) Fetch real en background y reemplaza el body
     try {
       const res = await API.get('getPagoDetalle', { idPago });
       const d = res && res.data ? res.data : res;
+      if (!d) return;
       _liqState.currentPagoDet = d;
-      $('liqPagoDetTitle').textContent = `${_liqRolIco(d.rol)} ${d.nombre} · ${d.idPago}`;
-      $('liqPagoDetSubtitle').textContent = `${d.cantidadDias} día(s) · pagó ${d.pagadoPor} · ${new Date(d.pagadoTs).toLocaleString('es-PE')}`;
-      $('liqPagoDetBody').innerHTML = d.dias.map(dia => {
-        const partes = [];
-        if (dia.montoBase    > 0) partes.push(`base ${dia.montoBase.toFixed(2)}`);
-        if (dia.pagoEnvasado > 0) partes.push(`env ${dia.pagoEnvasado.toFixed(2)}`);
-        if (dia.bonoMeta     > 0) partes.push(`+meta ${dia.bonoMeta.toFixed(2)}`);
-        if (dia.sancion      > 0) partes.push(`−san ${dia.sancion.toFixed(2)}`);
-        return `<div class="rounded-lg p-2" style="background:rgba(15,23,42,.4);border:1px solid #1e293b">
-          <div class="flex items-center justify-between">
-            <span class="text-sm text-slate-200">${_liqFmtFechaLarga(dia.fecha)}</span>
-            <span class="text-sm font-bold text-amber-400">${_liqMoney(dia.totalDia)}</span>
-          </div>
-          ${partes.length ? `<div class="text-[10px] text-slate-500 mt-0.5">${partes.join(' · ')}</div>` : ''}
+      if (titleEl) titleEl.textContent = `${_liqRolIco(d.rol)} ${d.nombre} · ${d.idPago}`;
+      if (subEl)   subEl.textContent = `${d.cantidadDias} día(s) · pagó ${d.pagadoPor} · ${new Date(d.pagadoTs).toLocaleString('es-PE')}`;
+      if (bodyEl) {
+        bodyEl.innerHTML = d.dias.map(dia => {
+          const partes = [];
+          if (dia.montoBase    > 0) partes.push(`base ${dia.montoBase.toFixed(2)}`);
+          if (dia.pagoEnvasado > 0) partes.push(`env ${dia.pagoEnvasado.toFixed(2)}`);
+          if (dia.bonoMeta     > 0) partes.push(`+meta ${dia.bonoMeta.toFixed(2)}`);
+          if (dia.bonificacion > 0) partes.push(`+bono ${dia.bonificacion.toFixed(2)}`);
+          if (dia.sancion      > 0) partes.push(`−san ${dia.sancion.toFixed(2)}`);
+          return `<div class="rounded-lg p-2" style="background:rgba(15,23,42,.4);border:1px solid #1e293b">
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-slate-200">${_liqFmtFechaLarga(dia.fecha)}</span>
+              <span class="text-sm font-bold text-amber-400">${_liqMoney(dia.totalDia)}</span>
+            </div>
+            ${partes.length ? `<div class="text-[10px] text-slate-500 mt-0.5">${partes.join(' · ')}</div>` : ''}
+          </div>`;
+        }).join('') + `<div class="mt-2 pt-2 border-t border-slate-800 flex items-center justify-between">
+          <span class="text-sm font-bold text-slate-300">TOTAL</span>
+          <span class="text-lg font-bold" style="color:#fbbf24">${_liqMoney(d.total)}</span>
         </div>`;
-      }).join('') + `<div class="mt-2 pt-2 border-t border-slate-800 flex items-center justify-between">
-        <span class="text-sm font-bold text-slate-300">TOTAL</span>
-        <span class="text-lg font-bold" style="color:#fbbf24">${_liqMoney(d.total)}</span>
-      </div>`;
-      openModal('modalLiqPagoDet');
+      }
     } catch(e) {
-      toast('Error: ' + e.message, 'error');
+      if (bodyEl) bodyEl.innerHTML = `<div class="text-rose-400 text-sm py-4">Error cargando detalle: ${e.message}</div>`;
     }
   }
 
