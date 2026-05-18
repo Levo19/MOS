@@ -21403,6 +21403,8 @@ const MOS = (() => {
     _liqState.desde = _liqOffset(hoy, -29);
     openModal('modalLiquidaciones');
     _liqSfx('open');
+    _liqSetSyncState('idle');
+    _liqRenderRangoPresets();
     // Pintar desde cache instantáneamente si existe
     const cached = _liqCacheLoad('pendientes');
     if (cached) {
@@ -21416,6 +21418,16 @@ const MOS = (() => {
     _liqPrefetchTab('pagadas');
     // [v2.41.58] Polling background cada 30s mientras el modal esté abierto
     _liqStartPolling();
+  }
+
+  // [v2.41.74] Indicador visual de sincronización (header dot)
+  function _liqSetSyncState(estado) {
+    const el = document.getElementById('liqSyncDot');
+    if (!el) return;
+    el.classList.remove('is-loading', 'is-error');
+    if (estado === 'loading') { el.classList.add('is-loading'); el.textContent = 'sync'; el.title = 'Refrescando datos…'; }
+    else if (estado === 'error') { el.classList.add('is-error'); el.textContent = 'err'; el.title = 'Error al sincronizar — reintenta con ↻'; }
+    else { el.textContent = 'live'; el.title = 'Sincronizado · auto-refresh cada 30s'; }
   }
 
   // [v2.41.58] Polling bg 30s — refresca SOLO el tab actual sin parpadeo.
@@ -21687,6 +21699,7 @@ const MOS = (() => {
     // (polling + click manual), solo la última gana — evita race conditions
     // donde una respuesta vieja pinta sobre datos frescos del mismo tab.
     const _myToken = (window._liqLoadToken = (window._liqLoadToken || 0) + 1);
+    _liqSetSyncState('loading');
     try {
       if (tabActual === 'pendientes') {
         const res = await _liqFetchConTimeout('getLiquidacionesPendientes', { desde: _liqState.desde, hasta: _liqState.hasta }, 15000);
@@ -21709,6 +21722,7 @@ const MOS = (() => {
         _liqRenderResumen();
       }
     } catch(e) {
+      _liqSetSyncState('error');
       // Si ya había datos pintados (de cache), mantenerlos y solo mostrar toast
       if (body.dataset._hasCache) {
         toast('⚠ ' + (e.message || 'Error de red, mostrando cache'), 'error');
@@ -21719,7 +21733,10 @@ const MOS = (() => {
           <button onclick="MOS.liqRefresh()" class="btn-primary btn-ripple text-xs px-4 py-2 mt-2">↻ Reintentar</button>
         </div>`;
       }
+      _liqUpdatePayBar();
+      return;
     }
+    _liqSetSyncState('idle');
     _liqUpdatePayBar();
   }
 
@@ -21754,13 +21771,24 @@ const MOS = (() => {
     }
     const totalGeneral = list.reduce((s, p) => s + p.total, 0);
     const totalDias = list.reduce((s, p) => s + p.cantidadDias, 0);
+    // [v2.41.74] Estado de selección global → botón ☑ TODOS / ✕ Limpiar
+    let totalSel = 0;
+    list.forEach(p => {
+      const sel = _liqState.seleccion[p.idPersonal];
+      if (sel && sel.size) totalSel += sel.size;
+    });
+    const todoSeleccionado = totalSel === totalDias && totalDias > 0;
+    const btnGlobal = todoSeleccionado
+      ? `<button class="liq-select-all-global" onclick="MOS._liqDeseleccionarTodoRango()" title="Limpiar selección">✕ Limpiar selección (${totalSel})</button>`
+      : `<button class="liq-select-all-global" onclick="MOS._liqSeleccionarTodoRango()" title="Seleccionar todos los días visibles">☑ Marcar TODOS los días (${totalDias})</button>`;
     body.innerHTML = `
-      <div class="flex items-center justify-between mb-3 pb-2 border-b border-slate-800">
+      <div class="flex items-center justify-between gap-2 mb-3 pb-2 border-b border-slate-800 flex-wrap">
         <div class="text-xs text-slate-400">
           <strong class="text-amber-400">${list.length}</strong> persona${list.length !== 1 ? 's' : ''} ·
           <strong class="text-amber-400">${totalDias}</strong> día${totalDias !== 1 ? 's' : ''}
         </div>
-        <div class="text-right">
+        ${btnGlobal}
+        <div class="text-right ml-auto">
           <div class="text-[10px] uppercase text-slate-500 tracking-wider">Adeudado total</div>
           <div class="text-lg font-bold" style="color:#fbbf24">${_liqMoney(totalGeneral)}</div>
         </div>
@@ -21769,9 +21797,70 @@ const MOS = (() => {
     `;
   }
 
+  // [v2.41.74] Selección global — marcar/limpiar TODOS los días visibles
+  function _liqSeleccionarTodoRango() {
+    const all = _liqState.pendientes || [];
+    const filtroSel = _liqState.filtroPersonas;
+    const list = (filtroSel && filtroSel.size > 0) ? all.filter(p => filtroSel.has(p.idPersonal)) : all;
+    list.forEach(p => {
+      _liqState.seleccion[p.idPersonal] = new Set(p.dias.map(d => d.fecha));
+    });
+    _liqSaveSeleccion();
+    _liqSfx('add');
+    _liqRenderPendientes();
+    _liqUpdatePayBar();
+  }
+  function _liqDeseleccionarTodoRango() {
+    _liqState.seleccion = {};
+    _liqSaveSeleccion();
+    _liqSfx('remove');
+    _liqRenderPendientes();
+    _liqUpdatePayBar();
+  }
+
+  // [v2.41.74] Render chips presets de rango (siempre visibles)
+  function _liqRenderRangoPresets() {
+    const cont = document.getElementById('liqRangoPresets');
+    if (!cont) return;
+    const hoy = _liqHoy();
+    const presets = [
+      { id: 'hoy',      label: '📅 Hoy',     desde: hoy, hasta: hoy },
+      { id: 'semana',   label: '📆 Semana',  desde: _liqLunes(hoy), hasta: _liqOffset(_liqLunes(hoy), 6) },
+      { id: 'quincena', label: '🗓 15 días', desde: _liqOffset(hoy, -14), hasta: hoy },
+      { id: 'mes30',    label: '📊 30 días', desde: _liqOffset(hoy, -29), hasta: hoy },
+      { id: 'mes',      label: '📅 Mes',     desde: (function(){ const d = new Date(hoy + 'T12:00:00'); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-01'; })(), hasta: hoy }
+    ];
+    cont.innerHTML = presets.map(p => {
+      const isAct = _liqState.desde === p.desde && _liqState.hasta === p.hasta;
+      return `<div class="liq-rango-preset-chip${isAct ? ' is-active' : ''}"
+                   onclick="MOS._liqAplicarRangoPreset('${p.id}')">${p.label}</div>`;
+    }).join('');
+  }
+  function _liqAplicarRangoPreset(id) {
+    const hoy = _liqHoy();
+    let desde = hoy, hasta = hoy;
+    if (id === 'hoy') { desde = hoy; hasta = hoy; }
+    else if (id === 'semana')   { desde = _liqLunes(hoy); hasta = _liqOffset(desde, 6); }
+    else if (id === 'quincena') { desde = _liqOffset(hoy, -14); hasta = hoy; }
+    else if (id === 'mes30')    { desde = _liqOffset(hoy, -29); hasta = hoy; }
+    else if (id === 'mes') {
+      const d = new Date(hoy + 'T12:00:00');
+      desde = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-01';
+      hasta = hoy;
+    }
+    if (_liqState.desde === desde && _liqState.hasta === hasta) return;
+    _liqState.desde = desde; _liqState.hasta = hasta;
+    _liqSfx('tap');
+    try { _liqCacheClear(); } catch(_){}
+    _liqRenderRangoPresets();
+    liqLoadCurrent();
+  }
+
   // [v2.41.38] Render chips de filtro por persona — multi-select.
   // Muestra avatar (iniciales) + nombre + badge con N días.
   function _liqRenderFiltroChips(all) {
+    // [v2.41.74] Re-render rango presets si cambió
+    _liqRenderRangoPresets();
     const cont = document.getElementById('liqFiltroChips');
     if (!cont) return;
     if (_liqState.tab !== 'pendientes' || !all.length) {
@@ -21908,10 +21997,10 @@ const MOS = (() => {
           <div class="text-sm font-bold text-amber-400">${_liqMoney(d.totalDia)}</div>
         </div>
         <button onclick="event.stopPropagation();MOS._liqEditarDia('${idPersonal}', '${d.fecha}')"
-                class="text-xs px-2 py-1 rounded transition-all hover:scale-110"
+                class="text-xs px-2 py-1 rounded transition-all hover:scale-110 liq-btn-edit-tip"
                 style="background:rgba(99,102,241,.1);color:#a5b4fc;border:1px solid rgba(99,102,241,.3)"
-                title="Auditar / editar este día">✏</button>
-        <button onclick="event.stopPropagation();MOS._liqVetarDia('${idPersonal}', '${d.fecha}')"
+                aria-label="Auditar y recomputar este día">✏</button>
+        <button onclick="event.stopPropagation();MOS._liqConfirmarVetar('${idPersonal}', '${d.fecha}')"
                 class="liq-btn-vetar"
                 title="Vetar: quita este día de pendientes (no paga, no computa). Reversible.">💸</button>
       </div>`;
@@ -21994,6 +22083,49 @@ const MOS = (() => {
   // OPTIMISTA: abrimos el modal Auditar al instante usando los datos que ya
   // tenemos del state (pendiente). Después fetch real en background y
   // re-renderizamos las secciones del modal con la data fresca.
+  // [v2.41.74] Confirmación antes de vetar — evita clicks accidentales.
+  // Mini modal in-page, NO modifica el state hasta confirmar.
+  function _liqConfirmarVetar(idPersonal, fecha) {
+    _liqSfx('open');
+    const p = (_liqState.pendientes || []).find(x => x.idPersonal === idPersonal);
+    const d = p ? p.dias.find(x => x.fecha === fecha) : null;
+    if (!p || !d) return _liqVetarDia(idPersonal, fecha);
+    // Quita anterior si existía
+    document.querySelectorAll('.liq-confirm-vetar-backdrop').forEach(el => el.remove());
+    const ov = document.createElement('div');
+    ov.className = 'liq-confirm-vetar-backdrop';
+    ov.innerHTML = `
+      <div class="liq-confirm-vetar-box" onclick="event.stopPropagation()">
+        <div class="liq-confirm-vetar-icon">💸</div>
+        <div class="text-center mb-3">
+          <div class="text-base font-bold text-rose-300 mb-1">¿Vetar este día?</div>
+          <div class="text-xs text-slate-400">Quita el día de pendientes — no se paga ni se computa.<br>Puedes desvetar después desde el panel 🚫.</div>
+        </div>
+        <div class="rounded-lg p-3 mb-4" style="background:rgba(15,23,42,.6);border:1px solid #1e293b">
+          <div class="flex items-center justify-between">
+            <div class="min-w-0 flex-1">
+              <div class="text-sm font-semibold text-slate-200 truncate">${_escapeHtml(p.nombre)}</div>
+              <div class="text-[10px] text-slate-500">${_liqFmtFechaLarga(fecha)}</div>
+            </div>
+            <div class="text-base font-bold text-amber-400">${_liqMoney(d.totalDia || 0)}</div>
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn-ghost flex-1" data-act="cancel">Cancelar</button>
+          <button class="btn-primary flex-1" data-act="ok" style="background:linear-gradient(135deg,#ef4444,#dc2626);border-color:#dc2626">💸 Vetar</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    const close = () => { try { ov.remove(); } catch(_){} document.removeEventListener('keydown', escH, true); };
+    const escH = (e) => {
+      if (e.key === 'Escape') { e.stopImmediatePropagation(); close(); _liqSfx('tap'); }
+    };
+    document.addEventListener('keydown', escH, true);
+    ov.addEventListener('click', () => { close(); _liqSfx('tap'); });
+    ov.querySelector('[data-act="cancel"]').onclick = (e) => { e.stopPropagation(); close(); _liqSfx('tap'); };
+    ov.querySelector('[data-act="ok"]').onclick = (e) => { e.stopPropagation(); close(); _liqVetarDia(idPersonal, fecha); };
+  }
+
   // [v2.41.31] Vetar/Desvetar inline desde lista pendientes ─────────
   // Optimista: la fila se desintegra al instante. Backend marca VETADA.
   // Si falla, restauramos local + warn.
@@ -22112,7 +22244,8 @@ const MOS = (() => {
     cont.innerHTML = list.map(v => {
       const fechaCorta = _liqFmtFechaLarga ? _liqFmtFechaLarga(v.fecha) : v.fecha;
       return `
-        <div class="liq-dia-row" style="opacity:.75">
+        <div class="liq-dia-row" style="opacity:.75;position:relative">
+          <span class="liq-stamp vetado" style="top:50%;right:60px">Vetado</span>
           <span style="font-size:18px;flex-shrink:0">🚫</span>
           <div class="flex-1 min-w-0">
             <div class="text-xs text-slate-300 font-medium">${_esc(v.nombre)}</div>
@@ -22331,13 +22464,20 @@ const MOS = (() => {
 
     if (!personas.length) { toast('Selección vacía', 'error'); if (btn) { btn.disabled = false; btn.textContent = '💸 Confirmar y pagar'; } return; }
 
-    // Si va a imprimir → primero pedir impresora (UNA vez para todos)
+    // Si va a imprimir → primero PREVIEW del ticket, luego pedir impresora
     let printerId = null;
     if (imprimir) {
       closeModal('modalLiqConfirmar');
-      printerId = await _liqElegirImpresora();
-      if (!printerId) {
-        toast('Pago se registró sin imprimir', 'info');
+      // [v2.41.74] Preview ASCII antes de elegir impresora
+      const seguir = await _liqAbrirPreviewTicket(personas, comentario, pagadoPor);
+      if (!seguir) {
+        // User canceló desde preview → no liberar lock todavía: igual proceder con pago sin imprimir
+        toast('Pago se registrará sin imprimir', 'info', 3000);
+      } else {
+        printerId = await _liqElegirImpresora();
+        if (!printerId) {
+          toast('Pago se registró sin imprimir', 'info');
+        }
       }
     }
 
@@ -22360,10 +22500,14 @@ const MOS = (() => {
     _liqState.seleccion = {};
     _liqRenderPendientes();
     closeModal('modalLiqConfirmar');
-    _liqSfx('success');
+    // [v2.41.74] Sonido cash distintivo (sustituye success genérico) + animación ticket si se imprimió
+    _liqSfx('cash');
     try {
       const r = btn?.getBoundingClientRect();
-      if (r) _liqConfetti(r.left + r.width/2, r.top + r.height/2, '#fbbf24');
+      const cx = r ? r.left + r.width/2 : window.innerWidth/2;
+      const cy = r ? r.top  + r.height/2 : window.innerHeight/2;
+      _liqConfetti(cx, cy, '#fbbf24');
+      if (printerId) _liqTicketFly(cx, cy, Math.min(personas.length, 3));
     } catch(_){}
     toast(`💸 Procesando ${personas.length} pago(s)…`, 'info', 3000);
 
@@ -22421,6 +22565,113 @@ const MOS = (() => {
     _liqPayLock = false;
   }
 
+  // [v2.41.74] Preview ASCII del ticket — abre modal con texto monoespaciado
+  // que aproxima cómo se imprimirá. Devuelve Promise<boolean>.
+  let _liqPreviewResolve = null;
+  function _liqAbrirPreviewTicket(personas, comentario, pagadoPor) {
+    return new Promise(resolve => {
+      _liqPreviewResolve = resolve;
+      const pre = document.getElementById('liqPreviewTicketContent');
+      const sub = document.getElementById('liqPreviewSubtitle');
+      if (pre) pre.textContent = _liqGenerarTicketAscii(personas, comentario, pagadoPor);
+      if (sub) {
+        const n = personas.length;
+        const td = personas.reduce((s, p) => s + (p.fechas?.length || 0), 0);
+        sub.textContent = `${n} ticket(s) · ${td} día(s)`;
+      }
+      openModal('modalLiqPreviewTicket');
+      _liqSfx('open');
+    });
+  }
+  function _liqCerrarPreview(seguir) {
+    closeModal('modalLiqPreviewTicket');
+    _liqSfx(seguir ? 'tap' : 'tap');
+    if (_liqPreviewResolve) {
+      const r = _liqPreviewResolve;
+      _liqPreviewResolve = null;
+      r(!!seguir);
+    }
+  }
+  // Genera ASCII ticket — un bloque por persona, con desglose por día
+  function _liqGenerarTicketAscii(personas, comentario, pagadoPor) {
+    const W = 32; // ancho típico ticket térmico 58mm
+    const linea = (c) => Array(W + 1).join(c || '-');
+    const centrar = (s) => {
+      s = String(s || '');
+      if (s.length >= W) return s.slice(0, W);
+      const pad = Math.floor((W - s.length) / 2);
+      return ' '.repeat(pad) + s;
+    };
+    const dosCol = (izq, der) => {
+      izq = String(izq || ''); der = String(der || '');
+      const max = W - der.length - 1;
+      if (izq.length > max) izq = izq.slice(0, max);
+      const pad = W - izq.length - der.length;
+      return izq + ' '.repeat(Math.max(1, pad)) + der;
+    };
+    const fmtMon = (n) => 'S/' + (Math.round((n || 0) * 100) / 100).toFixed(2);
+    const fmtFecha = (f) => {
+      try { const d = new Date(f + 'T12:00:00'); return d.toLocaleDateString('es-PE', { day:'2-digit', month:'2-digit' }); }
+      catch { return f; }
+    };
+    let out = '';
+    personas.forEach((per, idx) => {
+      if (idx > 0) out += '\n' + linea('=') + '\n\n';
+      out += centrar('INVERSIONMOS') + '\n';
+      out += centrar('Comprobante de pago') + '\n';
+      out += linea('-') + '\n';
+      out += dosCol('Persona:', '') + '\n';
+      out += '  ' + per.nombre + '\n';
+      out += dosCol('Rol:', per.rol) + '\n';
+      out += dosCol('Fecha:', new Date().toLocaleString('es-PE', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' })) + '\n';
+      out += dosCol('Pagado por:', pagadoPor || '-') + '\n';
+      out += linea('-') + '\n';
+      out += 'Detalle:\n';
+      // Buscar montos desde el state
+      const pState = _liqState.pendientes.find(x => x.idPersonal === per.idPersonal);
+      let subtotal = 0;
+      (per.fechas || []).forEach(f => {
+        const d = pState ? pState.dias.find(x => x.fecha === f) : null;
+        const m = d ? d.totalDia : 0;
+        subtotal += m;
+        out += dosCol('  ' + fmtFecha(f), fmtMon(m)) + '\n';
+      });
+      out += linea('-') + '\n';
+      out += dosCol('TOTAL', fmtMon(subtotal)) + '\n';
+      if (comentario) {
+        out += linea('-') + '\n';
+        out += 'Comentario:\n';
+        // wrap a W chars
+        const words = String(comentario).split(/\s+/);
+        let lineBuf = '  ';
+        words.forEach(w => {
+          if ((lineBuf + w).length > W) { out += lineBuf + '\n'; lineBuf = '  '; }
+          lineBuf += w + ' ';
+        });
+        if (lineBuf.trim()) out += lineBuf + '\n';
+      }
+      out += linea('=') + '\n';
+      out += centrar('Gracias') + '\n';
+    });
+    return out;
+  }
+
+  // [v2.41.74] Animación "ticket impreso" — papel sale flotando del centro
+  function _liqTicketFly(originX, originY, count) {
+    count = count || 1;
+    for (let i = 0; i < count; i++) {
+      const el = document.createElement('div');
+      el.className = 'liq-ticket-fly';
+      const x = (originX != null ? originX : window.innerWidth / 2) - 45 + (i * 12 - count * 6);
+      const y = (originY != null ? originY : window.innerHeight / 2) - 65;
+      el.style.left = x + 'px';
+      el.style.top  = y + 'px';
+      el.style.animationDelay = (i * 0.12) + 's';
+      document.body.appendChild(el);
+      setTimeout(() => { try { el.remove(); } catch(_){} }, 1700 + i * 120);
+    }
+  }
+
   // ── Elegir impresora — reusa el modal modalSelPrinterLiq del audit ──
   function _liqElegirImpresora() {
     return new Promise(resolve => {
@@ -22475,8 +22726,15 @@ const MOS = (() => {
   function _liqCardBatch(b, idx) {
     const fecha = b.pagadoTs ? new Date(b.pagadoTs).toLocaleString('es-PE', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—';
     const ico = _liqRolIco(b.rol);
+    // [v2.41.74] Sello visual según estado
+    const anulada = !!b.anulada;
+    const stamp = anulada
+      ? '<span class="liq-stamp anulado">Anulado</span>'
+      : '<span class="liq-stamp pagado">Pagado</span>';
+    const cardCls = anulada ? 'liq-batch-card anulada' : 'liq-batch-card';
     return `
-      <div class="liq-batch-card" style="--i:${Math.min(idx,15)}" onclick="MOS._liqAbrirPagoDet('${b.idPago}', ${idx})">
+      <div class="${cardCls}" style="--i:${Math.min(idx,15)}" onclick="MOS._liqAbrirPagoDet('${b.idPago}', ${idx})">
+        ${stamp}
         <div class="flex items-center gap-3">
           <span style="font-size:18px">${ico}</span>
           <div class="flex-1 min-w-0">
@@ -26013,6 +26271,8 @@ const MOS = (() => {
         case 'drop':    tone(880,  .07,  .045); tone(660, .08, .04, { delay:.04 }); break;
         case 'switch':  tone(800,  .04,  .04, { type:'triangle' }); tone(1100, .04, .04, { delay:.04, type:'triangle' }); break;
         case 'success': tone(660,  .08,  .06); tone(990, .08, .06, { delay:.08 }); tone(1320, .12, .065, { delay:.16 }); break;
+        // [v2.41.74] 'cash' — sonido caja registradora para pagos
+        case 'cash':    tone(1320, .05, .07, { type:'square' }); tone(1760, .05, .07, { delay:.06, type:'square' }); tone(880, .06, .05, { delay:.13, type:'triangle' }); tone(1320, .14, .06, { delay:.22, type:'sine' }); tone(990, .12, .05, { delay:.30, type:'sine' }); break;
         case 'print':   tone(440,  .15,  .04, { type:'sawtooth' }); tone(880, .18, .045, { delay:.05, type:'sawtooth' }); break;
         case 'error':   tone(220,  .22,  .07, { type:'square', glide: 140 }); break;
         case 'open':    tone(520,  .06,  .04); tone(780, .08, .045, { delay:.04 }); break;
@@ -27502,6 +27762,11 @@ const MOS = (() => {
     _liqEditarDia, _liqAbrirPagoDet, _liqMigrar, _liqBackfillDia,
     // [v2.41.31] Vetar/desvetar inline
     _liqVetarDia, _liqDesvetarDia, _liqToggleVetadasPanel,
+    // [v2.41.74] Confirmación, preview ticket, selección global, rango presets
+    _liqConfirmarVetar, _liqAbrirPreviewTicket, _liqCerrarPreview,
+    _liqSeleccionarTodoRango, _liqDeseleccionarTodoRango,
+    _liqRenderRangoPresets, _liqAplicarRangoPreset,
+    _liqSetSyncState, _liqTicketFly,
     // [v2.41.32] Recalcular rango (backfill)
     liqRecalcularRango,
     // [v2.41.38] Filtro de personas

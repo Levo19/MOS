@@ -16154,12 +16154,274 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
     background: linear-gradient(135deg,#1a0a0a 0%,#1f0a14 45%,#170808 100%);
     border-color: rgba(100,116,139,.25); opacity: .65;
   }
+
+  /* ═══ [v2.41.74] UX 10 mejoras ═══ */
+
+  /* 1. Indicador visual del polling background (header) */
+  .liq-sync-dot {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 9.5px; font-weight: 700;
+    color: #64748b; letter-spacing: .04em;
+    text-transform: uppercase;
+    user-select: none;
+    transition: color .25s;
+    cursor: default;
+  }
+  .liq-sync-dot::before {
+    content: ''; display: inline-block;
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #10b981;
+    box-shadow: 0 0 6px rgba(16,185,129,.6);
+    transition: all .25s;
+  }
+  .liq-sync-dot.is-loading { color: #fbbf24; }
+  .liq-sync-dot.is-loading::before {
+    background: #fbbf24;
+    box-shadow: 0 0 8px rgba(251,191,36,.7);
+    animation: liqSyncPulse 1s ease-in-out infinite;
+  }
+  .liq-sync-dot.is-error { color: #f87171; }
+  .liq-sync-dot.is-error::before {
+    background: #f87171;
+    box-shadow: 0 0 8px rgba(248,113,113,.6);
+    animation: liqSyncBlink .8s ease-in-out infinite;
+  }
+  @keyframes liqSyncPulse {
+    0%,100% { transform: scale(1);   opacity: 1; }
+    50%     { transform: scale(1.35); opacity: .6; }
+  }
+  @keyframes liqSyncBlink {
+    0%,100% { opacity: 1; }
+    50%     { opacity: .35; }
+  }
+
+  /* 2. Mini modal de confirmar vetar — inline (no backdrop completo) */
+  .liq-confirm-vetar-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.55);
+    backdrop-filter: blur(4px);
+    z-index: 9700;
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+    animation: liqConfirmFadeIn .18s ease;
+  }
+  .liq-confirm-vetar-box {
+    background: linear-gradient(180deg,#0f172a,#020817);
+    border: 1px solid rgba(239,68,68,.5);
+    border-radius: 14px;
+    padding: 20px;
+    max-width: 360px; width: 100%;
+    box-shadow: 0 24px 70px -10px rgba(239,68,68,.5),0 0 0 1px rgba(239,68,68,.15);
+    animation: liqConfirmZoom .25s cubic-bezier(.34,1.56,.64,1);
+  }
+  @keyframes liqConfirmFadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes liqConfirmZoom {
+    from { transform: scale(.85); opacity: 0; }
+    to   { transform: scale(1);   opacity: 1; }
+  }
+  .liq-confirm-vetar-icon {
+    font-size: 36px; text-align: center; margin-bottom: 8px;
+    animation: liqConfirmShake .5s ease;
+  }
+  @keyframes liqConfirmShake {
+    0%,100% { transform: rotate(0); }
+    25%     { transform: rotate(-8deg); }
+    75%     { transform: rotate(8deg); }
+  }
+
+  /* 3. Bottom-sheet en mobile para modalLiquidaciones */
+  @media (max-width: 640px) {
+    #modalLiquidaciones { padding: 0; align-items: flex-end; }
+    #modalLiquidaciones .modal-box {
+      max-width: 100%; width: 100%;
+      max-height: 92dvh;
+      border-radius: 18px 18px 0 0;
+      animation: liqSheetUp .32s cubic-bezier(.22,1,.36,1);
+    }
+    #modalLiquidaciones .modal-box::before {
+      content: ''; display: block;
+      width: 40px; height: 4px;
+      border-radius: 2px;
+      background: rgba(148,163,184,.4);
+      margin: 6px auto 2px;
+      flex-shrink: 0;
+    }
+    @keyframes liqSheetUp {
+      from { transform: translateY(100%); }
+      to   { transform: translateY(0); }
+    }
+    /* tap targets ≥40px en mobile */
+    #modalLiquidaciones .liq-btn-vetar,
+    #modalLiquidaciones .liq-dia-row button {
+      min-width: 40px; min-height: 40px;
+    }
+  }
+
+  /* 5. Preview ticket ASCII */
+  .liq-preview-ticket-pre {
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 11px; line-height: 1.5;
+    color: #1e293b; background: #f8fafc;
+    border: 1px dashed #94a3b8;
+    border-radius: 8px;
+    padding: 14px 12px;
+    max-height: 320px; overflow-y: auto;
+    white-space: pre;
+    box-shadow: 0 4px 12px -2px rgba(0,0,0,.4);
+  }
+  .liq-preview-ticket-hint {
+    font-size: 10px; color: #64748b;
+    text-align: center; margin-top: 8px;
+    font-style: italic;
+  }
+
+  /* 7. Sticky bar — botón "marcar todo el rango" */
+  .liq-select-all-global {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: rgba(99,102,241,.12);
+    border: 1px solid rgba(99,102,241,.4);
+    color: #a5b4fc;
+    font-size: 11px; font-weight: 700;
+    cursor: pointer;
+    transition: all .15s;
+    -webkit-tap-highlight-color: transparent;
+    white-space: nowrap;
+  }
+  .liq-select-all-global:hover {
+    background: rgba(99,102,241,.22);
+    border-color: rgba(99,102,241,.6);
+  }
+  .liq-select-all-global:active { transform: scale(.96); }
+
+  /* 8. Selector rango más visual — chips presets siempre visibles */
+  .liq-rango-presets {
+    display: flex; gap: 5px; flex-wrap: wrap;
+    margin-top: 2px;
+  }
+  .liq-rango-preset-chip {
+    display: inline-flex; align-items: center;
+    padding: 3px 9px;
+    border-radius: 99px;
+    background: rgba(15,23,42,.6);
+    border: 1px solid rgba(100,116,139,.3);
+    color: #94a3b8;
+    font-size: 10px; font-weight: 700;
+    cursor: pointer;
+    transition: all .15s;
+    -webkit-tap-highlight-color: transparent;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+  }
+  .liq-rango-preset-chip:hover {
+    border-color: rgba(251,191,36,.5);
+    color: #fbbf24;
+  }
+  .liq-rango-preset-chip.is-active {
+    background: linear-gradient(135deg,rgba(251,191,36,.2),rgba(245,158,11,.12));
+    border-color: rgba(251,191,36,.7);
+    color: #fde68a;
+    box-shadow: 0 2px 6px -2px rgba(251,191,36,.4);
+  }
+  .liq-rango-preset-chip:active { transform: scale(.94); }
+
+  /* 9. Animación "ticket impreso" — papel que sale de la impresora */
+  .liq-ticket-fly {
+    position: fixed;
+    z-index: 9999;
+    pointer-events: none;
+    width: 90px; height: 130px;
+    background:
+      repeating-linear-gradient(180deg,
+        #f8fafc 0 4px,
+        #e2e8f0 4px 6px),
+      #f8fafc;
+    border-radius: 4px;
+    box-shadow:
+      0 10px 30px -4px rgba(251,191,36,.5),
+      0 0 0 1px rgba(0,0,0,.2),
+      inset 0 -2px 0 rgba(0,0,0,.08);
+    animation: liqTicketFly 1.6s cubic-bezier(.22,1,.36,1) forwards;
+    transform-origin: top center;
+  }
+  .liq-ticket-fly::before {
+    content: '🧾';
+    position: absolute; top: 8px; left: 50%;
+    transform: translateX(-50%);
+    font-size: 22px;
+  }
+  .liq-ticket-fly::after {
+    content: 'TICKET';
+    position: absolute; bottom: 12px; left: 0; right: 0;
+    text-align: center;
+    font-family: ui-monospace, monospace;
+    font-size: 9px; font-weight: 800;
+    color: #1e293b;
+    letter-spacing: .1em;
+  }
+  @keyframes liqTicketFly {
+    0%   { transform: translateY(-20px) rotate(0)    scale(.6); opacity: 0; }
+    18%  { transform: translateY(0)     rotate(-3deg) scale(1);  opacity: 1; }
+    65%  { transform: translateY(120px) rotate(6deg)  scale(1);  opacity: 1; }
+    100% { transform: translateY(420px) rotate(18deg) scale(.4); opacity: 0; }
+  }
+
+  /* 10. Sellos PAGADO / VETADO sobre las cards */
+  .liq-batch-card { position: relative; }
+  .liq-stamp {
+    position: absolute;
+    top: 50%; right: 16px;
+    transform: translateY(-50%) rotate(-12deg);
+    padding: 2px 12px;
+    border: 2.5px solid currentColor;
+    border-radius: 6px;
+    font-family: ui-monospace, monospace;
+    font-size: 13px; font-weight: 900;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    pointer-events: none;
+    opacity: .55;
+    text-shadow: 0 1px 0 rgba(0,0,0,.2);
+  }
+  .liq-stamp.pagado  { color: #34d399; }
+  .liq-stamp.vetado  { color: #94a3b8; }
+  .liq-stamp.anulado { color: #f87171; }
+  @media (max-width: 480px) {
+    .liq-stamp { font-size: 10px; padding: 1px 8px; right: 10px; }
+  }
+
+  /* Tooltip mejorado para botón lápiz */
+  .liq-btn-edit-tip {
+    position: relative;
+  }
+  .liq-btn-edit-tip:hover::after {
+    content: 'Auditar/recomputar este día — recalcula monto desde KPIs en vivo';
+    position: absolute; bottom: 110%; right: 0;
+    background: #020817; color: #cbd5e1;
+    border: 1px solid rgba(99,102,241,.5);
+    padding: 6px 10px; border-radius: 6px;
+    font-size: 10.5px; font-weight: 500;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 100;
+    box-shadow: 0 8px 20px -4px rgba(0,0,0,.6);
+    animation: liqTipFadeIn .15s ease;
+  }
+  @keyframes liqTipFadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @media (max-width: 640px) { .liq-btn-edit-tip:hover::after { display: none; } }
 </style>
 <div id="modalLiquidaciones" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.liqClose()">
   <div class="modal-box p-0" style="background:linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,8,23,.98));backdrop-filter:blur(14px);box-shadow:0 24px 60px -10px rgba(251,191,36,.18),0 0 0 1px rgba(251,191,36,.08);">
     <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0 gap-2" style="border-bottom: 1px solid #1e293b">
       <div class="min-w-0 flex-1">
-        <h3 class="font-semibold text-amber-400 text-base">💼 Liquidaciones de personal</h3>
+        <h3 class="font-semibold text-amber-400 text-base flex items-center gap-2">
+          💼 Liquidaciones de personal
+          <span id="liqSyncDot" class="liq-sync-dot" title="Sincronización automática cada 30s">sync</span>
+        </h3>
         <p id="liqHeaderInfo" class="text-xs text-amber-400/70 mt-0.5">Pago día a día · acumulativo · auto-incluye virtuales</p>
       </div>
       <button onclick="MOS.liqClose()" class="modal-close-x">×</button>
@@ -16181,6 +16443,8 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
         <button onclick="MOS._liqToggleVetadasPanel()" class="liq-preset-btn" title="Ver liquidaciones vetadas">🚫</button>
         <button onclick="MOS.liqRefresh()" class="liq-preset-btn" title="Refrescar (Ctrl+R)">↻</button>
       </div>
+      <!-- [v2.41.74] Presets de rango visibles siempre -->
+      <div id="liqRangoPresets" class="liq-rango-presets mb-1.5"></div>
       <div id="liqFiltroChips" class="liq-filtro-chips"></div>
     </div>
 
@@ -16270,6 +16534,27 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
     <div class="px-5 py-3 border-t border-slate-800 flex gap-2">
       <button onclick="MOS.closeModal('modalLiqConfirmar')" class="btn-ghost flex-1">Cancelar</button>
       <button onclick="MOS.liqConfirmarPago(event)" class="btn-primary btn-ripple flex-1" id="liqConfirmBtn">💸 Confirmar y pagar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ [v2.41.74] MODAL PREVIEW DE TICKET (antes de imprimir) ═══ -->
+<div id="modalLiqPreviewTicket" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS._liqCerrarPreview(false)">
+  <div class="modal-box p-0 max-w-md w-full" style="max-height:90vh;display:flex;flex-direction:column;background:linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,8,23,.98));backdrop-filter:blur(14px);box-shadow:0 24px 60px -10px rgba(251,191,36,.22),0 0 0 1px rgba(251,191,36,.08);">
+    <div class="px-5 pt-5 pb-3 flex items-center justify-between border-b border-slate-800">
+      <div>
+        <h3 class="font-semibold text-white text-base">🧾 Vista previa del ticket</h3>
+        <p id="liqPreviewSubtitle" class="text-xs text-slate-500">Revisa antes de imprimir</p>
+      </div>
+      <button onclick="MOS._liqCerrarPreview(false)" class="modal-close-x">×</button>
+    </div>
+    <div class="overflow-y-auto px-5 py-4" style="flex:1">
+      <pre id="liqPreviewTicketContent" class="liq-preview-ticket-pre"></pre>
+      <div class="liq-preview-ticket-hint">El ticket real puede variar levemente según la impresora.</div>
+    </div>
+    <div class="px-5 py-3 border-t border-slate-800 flex gap-2">
+      <button onclick="MOS._liqCerrarPreview(false)" class="btn-ghost flex-1">← Volver</button>
+      <button onclick="MOS._liqCerrarPreview(true)" class="btn-primary btn-ripple flex-1">🖨 Imprimir</button>
     </div>
   </div>
 </div>
