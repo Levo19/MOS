@@ -25683,8 +25683,10 @@ const MOS = (() => {
     const bonoMeta   = parseFloat(r.bonoMeta)     || 0;
     const pagoEnv    = parseFloat(r.pagoEnvasado) || 0;
     // [v2.41.51] Ajuste único: sancion (descuenta) o bonificacion (suma)
+    // [v2.41.65] Aceptar coma O punto como separador decimal
     const ajusteTipo = _evalState.auditAjusteTipo || 'sancion';
-    const ajusteMonto = Math.max(0, parseFloat($('auditAjusteMonto')?.value) || 0);
+    const _rawMon = String($('auditAjusteMonto')?.value || '').replace(',', '.');
+    const ajusteMonto = Math.max(0, parseFloat(_rawMon) || 0);
     const sancion      = ajusteTipo === 'sancion' ? ajusteMonto : 0;
     const bonificacion = ajusteTipo === 'bonificacion' ? ajusteMonto : 0;
 
@@ -26063,8 +26065,11 @@ const MOS = (() => {
     });
 
     // [v2.41.51] Ajuste: SANCIÓN (descuenta) o BONIFICACIÓN (suma)
+    // [v2.41.65] Aceptar tanto "." como "," como separador decimal (es-PE).
+    // parseFloat("8,9") = 8 (mal). Normalizamos coma → punto antes.
     const ajusteTipo  = _evalState.auditAjusteTipo || 'sancion';
-    const ajusteMonto = Math.max(0, parseFloat($('auditAjusteMonto')?.value) || 0);
+    const _rawMonto   = String($('auditAjusteMonto')?.value || '').replace(',', '.');
+    const ajusteMonto = Math.max(0, parseFloat(_rawMonto) || 0);
     const ajusteMotivo = String($('auditAjusteMotivo')?.value || '').trim();
     const sancion       = ajusteTipo === 'sancion'      ? ajusteMonto : 0;
     const sancionMotivo = ajusteTipo === 'sancion'      ? ajusteMotivo : '';

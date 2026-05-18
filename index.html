@@ -11422,7 +11422,8 @@
             </div>
             <div class="flex items-center gap-2">
               <span id="auditAjusteSigno" class="text-sm text-slate-500 font-bold w-6 text-right">−S/</span>
-              <input id="auditAjusteMonto" type="number" min="0" step="0.50" placeholder="0.00"
+              <input id="auditAjusteMonto" type="text" inputmode="decimal" pattern="[0-9.,]*"
+                placeholder="0.00 o 0,00"
                 class="inp flex-1" style="border-color:rgba(248,113,113,.3)">
             </div>
             <input id="auditAjusteMotivo" type="text" placeholder="Motivo (ej: falta de aseo / esfuerzo extra)"
