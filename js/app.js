@@ -25294,6 +25294,8 @@ const MOS = (() => {
     _renderAuditLiquidacion();
     openModal('modalAuditar');
     // Fetch en bg el valor actual de LIQUIDACIONES_DIA y prellenar
+    _evalState.auditPrevBon = 0;
+    _evalState.auditPrevSan = 0;
     (async () => {
       try {
         const resp = await API.get('getLiqDiaBonSan', {
@@ -25303,7 +25305,9 @@ const MOS = (() => {
         const d = (resp && resp.data) || resp || {};
         const bonAct = parseFloat(d.bonificacion) || 0;
         const sanAct = parseFloat(d.sancion) || 0;
-        // Si hay sanción previa, mostrar sanción. Si hay bonificación, bonificación.
+        // [v2.41.61] Capturar valores previos para calcular delta en guardarAuditoria
+        _evalState.auditPrevBon = bonAct;
+        _evalState.auditPrevSan = sanAct;
         if (sanAct > 0) {
           _evalState.auditAjusteTipo = 'sancion';
           _auditSetAjuste('sancion');
@@ -25313,7 +25317,6 @@ const MOS = (() => {
           _auditSetAjuste('bonificacion');
           if (am) am.value = bonAct.toFixed(2);
         }
-        // Mostrar hint "actual: S/X — modificable"
         const hint = $('auditAjusteHint');
         if (hint && (bonAct > 0 || sanAct > 0)) {
           const tipoLbl = sanAct > 0 ? 'sanción' : 'bonificación';
@@ -26023,13 +26026,33 @@ const MOS = (() => {
     const bonificacion       = ajusteTipo === 'bonificacion' ? ajusteMonto : 0;
     const bonificacionMotivo = ajusteTipo === 'bonificacion' ? ajusteMotivo : '';
 
+    // [v2.41.61] Enriquecer motivo con DELTA respecto al valor previo.
+    // _evalState.auditPrevBon/auditPrevSan fueron capturados al abrir el modal
+    // (de getLiqDiaBonSan). Permite rastrear "quién aumentó cuánto" en EVALUACIONES.
+    const prevBon = parseFloat(_evalState.auditPrevBon) || 0;
+    const prevSan = parseFloat(_evalState.auditPrevSan) || 0;
+    let bonificacionMotivoFinal = bonificacionMotivo;
+    let sancionMotivoFinal = sancionMotivo;
+    if (bonificacion > 0 && bonificacion !== prevBon) {
+      const delta = bonificacion - prevBon;
+      const signo = delta >= 0 ? '+' : '';
+      const tag = `📊 S/${prevBon.toFixed(2)} → S/${bonificacion.toFixed(2)} (${signo}${delta.toFixed(2)})`;
+      bonificacionMotivoFinal = bonificacionMotivo ? bonificacionMotivo + ' · ' + tag : tag;
+    }
+    if (sancion > 0 && sancion !== prevSan) {
+      const delta = sancion - prevSan;
+      const signo = delta >= 0 ? '+' : '';
+      const tag = `📊 S/${prevSan.toFixed(2)} → S/${sancion.toFixed(2)} (${signo}${delta.toFixed(2)})`;
+      sancionMotivoFinal = sancionMotivo ? sancionMotivo + ' · ' + tag : tag;
+    }
+
     const comentarioBase = $('auditComentario').value || '';
     let comentarioFinal = comentarioBase;
     if (sancion > 0) {
-      comentarioFinal += (comentarioFinal ? '\n' : '') + `⚠ Sanción S/${sancion.toFixed(2)}${sancionMotivo ? ' — ' + sancionMotivo : ''}`;
+      comentarioFinal += (comentarioFinal ? '\n' : '') + `⚠ Sanción S/${sancion.toFixed(2)}${sancionMotivoFinal ? ' — ' + sancionMotivoFinal : ''}`;
     }
     if (bonificacion > 0) {
-      comentarioFinal += (comentarioFinal ? '\n' : '') + `🎁 Bonificación S/${bonificacion.toFixed(2)}${bonificacionMotivo ? ' — ' + bonificacionMotivo : ''}`;
+      comentarioFinal += (comentarioFinal ? '\n' : '') + `🎁 Bonificación S/${bonificacion.toFixed(2)}${bonificacionMotivoFinal ? ' — ' + bonificacionMotivoFinal : ''}`;
     }
 
     const params = {
@@ -26041,9 +26064,9 @@ const MOS = (() => {
       controlChecks: JSON.stringify(checksFull),
       comentario: comentarioFinal,
       sancion: sancion,
-      sancionMotivo: sancionMotivo,
+      sancionMotivo: sancionMotivoFinal,
       bonificacion: bonificacion,
-      bonificacionMotivo: bonificacionMotivo,
+      bonificacionMotivo: bonificacionMotivoFinal,
       evaluadoPor: S.session?.nombre || '',
       aplicaComision: $('auditTogComision').classList.contains('on'),
       aplicaBonoMeta: $('auditTogMeta').classList.contains('on')
