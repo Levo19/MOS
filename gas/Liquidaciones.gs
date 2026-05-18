@@ -953,8 +953,8 @@ function _liqDiaSetBonSan(idPersonal, fecha, bonificacion, sancion) {
           Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'")
         );
       }
-      // Invalidar cache backend de getResumenTodosDia para esta fecha
-      try { CacheService.getScriptCache().remove('rsmTd2_' + fecha); } catch(_){}
+      // Invalidar caches backend para esta fecha (getResumenTodosDia + getPersonalDiaFast)
+      try { var _c1 = CacheService.getScriptCache(); _c1.remove('rsmTd2_' + fecha); _c1.remove('pdFast_' + fecha); } catch(_){}
       return true;
     }
     return false;
@@ -1094,6 +1094,103 @@ function getLiquidacionesPendientesDia(params) {
   return { ok: true, data: out, rango: { desde: desde, hasta: hasta }, fast: true };
 }
 
+// ============================================================
+// [v2.41.62] getPersonalDiaFast — endpoint OPTIMIZADO para UI
+// ------------------------------------------------------------
+// Lee DIRECTO de LIQUIDACIONES_DIA (tabla materializada plana) para 1
+// fecha específica. <500ms vs los 5-15s de getResumenTodosDia que
+// recompute todo desde EVALUACIONES + ENVASADOS + VENTAS + AUDITORIAS.
+//
+// Devuelve el mismo formato que la UI de Personal del Día consume,
+// con totalDia, bonificacion, sancion, estado, score, etc. ya
+// persistidos en la tabla.
+//
+// Cache 60s (CacheService) para hits repetidos del polling.
+//
+// Para auditar (que SÍ necesita kpis live como envasados/ventas en vivo),
+// la UI sigue usando getResumenDia individual al abrir el modal.
+// ============================================================
+function getPersonalDiaFast(params) {
+  params = params || {};
+  var fecha = params.fecha || _liqHoy();
+
+  // Cache 60s — alivia el polling 30s del frontend
+  var ssCache, cacheKey;
+  if (!params._refresh) {
+    try {
+      ssCache = CacheService.getScriptCache();
+      cacheKey = 'pdFast_' + fecha;
+      var hit = ssCache.get(cacheKey);
+      if (hit) { try { return JSON.parse(hit); } catch(_){} }
+    } catch(_){}
+  }
+
+  var sh = _liqDiaGetSheet();
+  var rows = _sheetToObjects(sh);
+  var tz = Session.getScriptTimeZone();
+
+  var data = rows.filter(function(r) {
+    var f = r.fecha instanceof Date
+      ? Utilities.formatDate(r.fecha, tz, 'yyyy-MM-dd')
+      : String(r.fecha || '').substring(0, 10);
+    return f === fecha;
+  }).map(function(r) {
+    var liqEstado = String(r.estado || 'PENDIENTE').toUpperCase();
+    var totalDia  = parseFloat(r.totalDia) || 0;
+    return {
+      idPersonal:        String(r.idPersonal || ''),
+      nombre:            String(r.nombre || ''),
+      rol:               String(r.rol || '').toUpperCase(),
+      appOrigen:         String(r.appOrigen || ''),
+      virtual:           (typeof r.virtual === 'boolean') ? r.virtual : (String(r.virtual).toLowerCase() === 'true'),
+      fecha:             fecha,
+      presente:          true,
+      auditado:          (r.auditado === true) || (String(r.auditado).toLowerCase() === 'true'),
+      evaluacionesCount: parseInt(r.evaluacionesCount) || 0,
+      scoreFinal:        parseFloat(r.scoreFinal) || 0,
+      montoBase:         parseFloat(r.montoBase) || 0,
+      pagoEnvasado:      parseFloat(r.pagoEnvasado) || 0,
+      bonoMeta:          parseFloat(r.bonoMeta) || 0,
+      bonificacion:      parseFloat(r.bonificacion) || 0,
+      sancion:           parseFloat(r.sancion) || 0,
+      totalDia:          totalDia,
+      tarifaEnvasado:    parseFloat(r.tarifaEnvasado) || 0.1,
+      unidadesEnvasadas: (parseFloat(r.pagoEnvasado) || 0) / (parseFloat(r.tarifaEnvasado) || 0.1),
+      // Estado workflow (fuente: LIQUIDACIONES_DIA.estado)
+      liqEstado:         liqEstado,
+      vetada:            liqEstado === 'VETADA',
+      idPago:            String(r.idPago || ''),
+      // KPIs stub — la UI rica los pide bajo demanda al abrir audit
+      kpis:              { ventasReales: 0, ventasPct: 0, auditoriasHechas: 0, envasados: 0, guias: 0 },
+      manual:            { limpiezaPct: 0, limpiezaProfPct: 0, checksAcum: {}, checkCount: 0, checkTotal: 0, controlPct: 0, comentarios: '' }
+    };
+  });
+
+  // Ordenar: cajeros primero, después almacén, después otros — alfabético
+  data.sort(function(a, b) {
+    var clasA = _clasiRol(a.rol);
+    var clasB = _clasiRol(b.rol);
+    if (clasA !== clasB) return clasA - clasB;
+    return String(a.nombre).localeCompare(String(b.nombre));
+  });
+
+  var resp = { ok: true, data: data, fast: true, fecha: fecha };
+  if (ssCache && cacheKey) {
+    try {
+      var ser = JSON.stringify(resp);
+      if (ser.length < 95000) ssCache.put(cacheKey, ser, 60);
+    } catch(_){}
+  }
+  return resp;
+}
+
+function _clasiRol(rol) {
+  var r = String(rol || '').toUpperCase();
+  if (r === 'CAJERO' || r === 'VENDEDOR') return 1;
+  if (r === 'ALMACENERO' || r === 'ENVASADOR') return 2;
+  return 3;
+}
+
 // [v2.41.31] VETAR / DESVETAR — alternativa rápida a marcar como pagado.
 // El operador toca el botón 🚫 inline y la liquidación del día queda VETADA
 // (no aparece más en Pendientes). Puede desvetar después si fue por error.
@@ -1154,8 +1251,8 @@ function vetarLiquidacionDia(params) {
           Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'")
         );
       }
-      // [v2.41.44] Invalidar cache de getResumenTodosDia para esta fecha
-      try { CacheService.getScriptCache().remove('rsmTd2_' + fecha); } catch(_){}
+      // Invalidar caches backend (getResumenTodosDia + getPersonalDiaFast)
+      try { var _cv = CacheService.getScriptCache(); _cv.remove('rsmTd2_' + fecha); _cv.remove('pdFast_' + fecha); } catch(_){}
       return { ok: true };
     }
   } catch(eF) { Logger.log('[vetar] TextFinder error: ' + eF.message); }
@@ -1212,8 +1309,8 @@ function desvetarLiquidacionDia(params) {
           Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'")
         );
       }
-      // [v2.41.44] Invalidar cache de getResumenTodosDia para esta fecha
-      try { CacheService.getScriptCache().remove('rsmTd2_' + fecha); } catch(_){}
+      // Invalidar caches backend (getResumenTodosDia + getPersonalDiaFast)
+      try { var _cv = CacheService.getScriptCache(); _cv.remove('rsmTd2_' + fecha); _cv.remove('pdFast_' + fecha); } catch(_){}
       return { ok: true };
     }
   } catch(eF) { Logger.log('[desvetar] TextFinder error: ' + eF.message); }
@@ -1379,6 +1476,11 @@ function _liqDiaMarcarPagadas(idPersonal, fechas, idPago) {
     var iIdPago = hdrs.indexOf('idPago');
     var iTsAct  = hdrs.indexOf('ts_actualizado');
     var nowStr = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
+    // [v2.41.62] Invalidar caches de cada fecha afectada
+    try {
+      var _cmp = CacheService.getScriptCache();
+      fechas.forEach(function(f) { _cmp.remove('rsmTd2_' + f); _cmp.remove('pdFast_' + f); });
+    } catch(_){}
     fechas.forEach(function(f) {
       var idDia = _liqDiaKey(idPersonal, f);
       var found = false;
@@ -1417,19 +1519,33 @@ function _liqDiaRevertirPagadas(idPago) {
     var sh = _liqDiaGetSheet();
     var data = sh.getDataRange().getValues();
     var hdrs = data[0];
+    var iFecha  = hdrs.indexOf('fecha');
     var iEst    = hdrs.indexOf('estado');
     var iIdPago = hdrs.indexOf('idPago');
     var iTsAct  = hdrs.indexOf('ts_actualizado');
     var nowStr = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
+    var tz = Session.getScriptTimeZone();
+    var fechasAfect = {};
     var revertidas = 0;
     for (var i = 1; i < data.length; i++) {
       if (String(data[i][iIdPago]) === String(idPago)) {
         sh.getRange(i + 1, iEst    + 1).setValue('PENDIENTE');
         sh.getRange(i + 1, iIdPago + 1).setValue('');
         sh.getRange(i + 1, iTsAct  + 1).setValue(nowStr);
+        var fAfect = data[i][iFecha] instanceof Date
+          ? Utilities.formatDate(data[i][iFecha], tz, 'yyyy-MM-dd')
+          : String(data[i][iFecha] || '').substring(0, 10);
+        if (fAfect) fechasAfect[fAfect] = true;
         revertidas++;
       }
     }
+    // [v2.41.62] Invalidar caches de las fechas afectadas
+    try {
+      var _cr = CacheService.getScriptCache();
+      Object.keys(fechasAfect).forEach(function(f) {
+        _cr.remove('rsmTd2_' + f); _cr.remove('pdFast_' + f);
+      });
+    } catch(_){}
     return revertidas;
   } catch(e) { Logger.log('_liqDiaRevertirPagadas fallo: ' + e.message); return 0; }
 }

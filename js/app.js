@@ -621,13 +621,16 @@ const MOS = (() => {
     _startFinanzasRefresh();
     _prefetchLiquidaciones();   // las 4 pestañas a localStorage
     _prefetchConfigModulos();   // notificaciones + categorías + personal + dispositivos
-    // Prefetch resumen evaluativo del día (Cierre/Finanzas + Evaluaciones + Auditar)
+    // [v2.41.62] Prefetch FAST de Personal del Día — usa lectura plana de
+    // LIQUIDACIONES_DIA (<500ms). Antes era getResumenTodosDia que recompute
+    // todo (5-15s y bloqueaba la precarga inicial).
     (function _prefetchResumenDia() {
       const _fhoy = today();
-      API.get('getResumenTodosDia', { fecha: _fhoy }).then(r => {
-        if (Array.isArray(r)) {
-          try { localStorage.setItem('mos_fin_resum_' + _fhoy, JSON.stringify({ ts: Date.now(), data: r })); } catch {}
-          _evalState.resumenes = r;
+      API.get('getPersonalDiaFast', { fecha: _fhoy }).then(r => {
+        const arr = Array.isArray(r) ? r : ((r && r.data) || []);
+        if (arr.length) {
+          try { localStorage.setItem('mos_fin_resum_' + _fhoy, JSON.stringify({ ts: Date.now(), data: arr })); } catch {}
+          _evalState.resumenes = arr;
           _evalState.fecha = _fhoy;
         }
       }).catch(() => {});
@@ -23714,16 +23717,19 @@ const MOS = (() => {
 
     _pintarConResumenes(cachedResumenes);
 
-    // Guard contra respuestas out-of-order: si el usuario cambia de día
-    // rápido, podemos descartar una respuesta vieja cuya fecha ya no es
-    // la mostrada (data-fecha del cont es el "request id" del paint).
-    API.get('getResumenTodosDia', { fecha: fecha }).then(resumenes => {
+    // [v2.41.62] FAST: lectura plana de LIQUIDACIONES_DIA (10-20× más rápido
+    // que getResumenTodosDia que recompute todo). La UI muestra los valores
+    // YA persistidos (totalDia, bonificacion, sancion, estado, etc.) sin
+    // depender del recompute pesado. El recompute completo (con kpis live)
+    // solo se hace al abrir auditoría individual.
+    API.get('getPersonalDiaFast', { fecha: fecha }).then(resumenes => {
       if (cont.dataset.fecha !== fecha) return; // ya no estamos en esta fecha
-      try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: resumenes })); } catch {}
-      if (JSON.stringify(cachedResumenes) !== JSON.stringify(resumenes)) {
-        _pintarConResumenes(resumenes);
+      const arr = Array.isArray(resumenes) ? resumenes : ((resumenes && resumenes.data) || []);
+      try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: arr })); } catch {}
+      if (JSON.stringify(cachedResumenes) !== JSON.stringify(arr)) {
+        _pintarConResumenes(arr);
       } else {
-        _evalState.resumenes = Array.isArray(resumenes) ? resumenes : [];
+        _evalState.resumenes = arr;
         _evalState.fecha = fecha;
       }
     }).catch(() => { /* si falla, queda lo del cache o sin score */ });

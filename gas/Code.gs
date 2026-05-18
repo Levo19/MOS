@@ -221,6 +221,8 @@ function _route(method, e) {
       case 'backfillLiquidacionesDia':   return backfillLiquidacionesDia(params);
       // [v2.41.60] Lectura/escritura directa de bonificacion/sancion en LIQUIDACIONES_DIA
       case 'getLiqDiaBonSan':            return getLiqDiaBonSan(params);
+      // [v2.41.62] Endpoint fast: lee Personal del Día directo de la tabla plana
+      case 'getPersonalDiaFast':         return getPersonalDiaFast(params);
       // [v2.41.34] Setup trigger horario de auto-sync
       case 'setupLiqSyncTrigger':        return setupLiqSyncTrigger();
       // [v2.41.36] Cierre nocturno 23h — sesiones WH + cajas ME
