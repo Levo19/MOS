@@ -780,21 +780,26 @@ var _LDIA_HDRS  = [
   'idDia', 'fecha', 'idPersonal', 'nombre', 'rol', 'appOrigen', 'virtual',
   'montoBase', 'pagoEnvasado', 'bonoMeta', 'bonificacion', 'sancion', 'totalDia',
   'auditado', 'evaluacionesCount', 'scoreFinal', 'tarifaEnvasado', 'presente',
-  'estado', 'idPago', 'ts_creado', 'ts_actualizado'
+  'estado', 'idPago', 'ts_creado', 'ts_actualizado',
+  'bonificacionMotivo', 'sancionMotivo'  // [v2.41.66] motivos persistidos
 ];
 
 function _liqDiaGetSheet() {
   var ss = getSpreadsheet();
   var sh = ss.getSheetByName(_LDIA_SHEET);
   if (sh) {
-    // [v2.41.51] Auto-migración: agregar columna bonificacion si falta
+    // Auto-migración: agregar columnas faltantes
     try {
       var lc = sh.getLastColumn();
       var hdrs = sh.getRange(1, 1, 1, lc).getValues()[0];
-      if (hdrs.indexOf('bonificacion') === -1) {
-        sh.getRange(1, lc + 1).setValue('bonificacion');
-        sh.getRange(1, lc + 1).setBackground('#7c3aed').setFontColor('#fff').setFontWeight('bold').setFontSize(10);
-      }
+      var faltantes = [];
+      if (hdrs.indexOf('bonificacion') === -1) faltantes.push('bonificacion');
+      if (hdrs.indexOf('bonificacionMotivo') === -1) faltantes.push('bonificacionMotivo');
+      if (hdrs.indexOf('sancionMotivo') === -1) faltantes.push('sancionMotivo');
+      faltantes.forEach(function(col, i) {
+        sh.getRange(1, lc + 1 + i).setValue(col);
+        sh.getRange(1, lc + 1 + i).setBackground('#7c3aed').setFontColor('#fff').setFontWeight('bold').setFontSize(10);
+      });
     } catch(_){}
     return sh;
   }
@@ -920,7 +925,7 @@ function _liqDiaUpsertRow(rd, fecha) {
 // (reemplaza, no suma). Llamado desde crearEvaluacion: el último audit
 // "gana" — admin ve el valor actual y decide mantener/cambiar.
 // También recomputa totalDia con los valores actualizados.
-function _liqDiaSetBonSan(idPersonal, fecha, bonificacion, sancion) {
+function _liqDiaSetBonSan(idPersonal, fecha, bonificacion, sancion, bonificacionMotivo, sancionMotivo) {
   if (!idPersonal || !fecha) return false;
   try {
     var sh = _liqDiaGetSheet();
@@ -929,6 +934,8 @@ function _liqDiaSetBonSan(idPersonal, fecha, bonificacion, sancion) {
     var iIdDia = hdrs.indexOf('idDia');
     var iBon = hdrs.indexOf('bonificacion');
     var iSan = hdrs.indexOf('sancion');
+    var iBonMot = hdrs.indexOf('bonificacionMotivo');
+    var iSanMot = hdrs.indexOf('sancionMotivo');
     var iBase = hdrs.indexOf('montoBase');
     var iEnv  = hdrs.indexOf('pagoEnvasado');
     var iMeta = hdrs.indexOf('bonoMeta');
@@ -948,12 +955,14 @@ function _liqDiaSetBonSan(idPersonal, fecha, bonificacion, sancion) {
       sh.getRange(i + 1, iBon + 1).setValue(bon);
       sh.getRange(i + 1, iSan + 1).setValue(san);
       sh.getRange(i + 1, iTot + 1).setValue(totalFinal);
+      // [v2.41.66] Persistir motivos junto al monto
+      if (iBonMot >= 0) sh.getRange(i + 1, iBonMot + 1).setValue(String(bonificacionMotivo || ''));
+      if (iSanMot >= 0) sh.getRange(i + 1, iSanMot + 1).setValue(String(sancionMotivo || ''));
       if (iTs >= 0) {
         sh.getRange(i + 1, iTs + 1).setValue(
           Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'")
         );
       }
-      // Invalidar caches backend para esta fecha (getResumenTodosDia + getPersonalDiaFast)
       try { var _c1 = CacheService.getScriptCache(); _c1.remove('rsmTd2_' + fecha); _c1.remove('pdFast_' + fecha); } catch(_){}
       return true;
     }
@@ -975,16 +984,20 @@ function getLiqDiaBonSan(params) {
     var iIdDia = hdrs.indexOf('idDia');
     var iBon = hdrs.indexOf('bonificacion');
     var iSan = hdrs.indexOf('sancion');
+    var iBonMot = hdrs.indexOf('bonificacionMotivo');
+    var iSanMot = hdrs.indexOf('sancionMotivo');
     var idDia = _liqDiaKey(idPersonal, fecha);
     for (var i = 1; i < data.length; i++) {
       if (String(data[i][iIdDia]) !== idDia) continue;
       return { ok: true, data: {
         bonificacion: parseFloat(data[i][iBon]) || 0,
         sancion:      parseFloat(data[i][iSan]) || 0,
+        bonificacionMotivo: iBonMot >= 0 ? String(data[i][iBonMot] || '') : '',
+        sancionMotivo:      iSanMot >= 0 ? String(data[i][iSanMot] || '') : '',
         existe:       true
       }};
     }
-    return { ok: true, data: { bonificacion: 0, sancion: 0, existe: false } };
+    return { ok: true, data: { bonificacion: 0, sancion: 0, bonificacionMotivo: '', sancionMotivo: '', existe: false } };
   } catch(e) { return { ok: false, error: e.message }; }
 }
 
@@ -1153,6 +1166,8 @@ function getPersonalDiaFast(params) {
       bonoMeta:          parseFloat(r.bonoMeta) || 0,
       bonificacion:      parseFloat(r.bonificacion) || 0,
       sancion:           parseFloat(r.sancion) || 0,
+      bonificacionMotivo: String(r.bonificacionMotivo || ''),
+      sancionMotivo:      String(r.sancionMotivo || ''),
       totalDia:          totalDia,
       tarifaEnvasado:    parseFloat(r.tarifaEnvasado) || 0.1,
       unidadesEnvasadas: (parseFloat(r.pagoEnvasado) || 0) / (parseFloat(r.tarifaEnvasado) || 0.1),

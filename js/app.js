@@ -23904,10 +23904,23 @@ const MOS = (() => {
             ${kpiTxt ? `<div class="text-xs text-slate-500 mb-1">${kpiTxt}</div>` : ''}
             <div class="flex items-center gap-2 flex-wrap">
               ${evalCount > 0
-                ? `<span class="audit-count-pill">${evalCount} auditoría${evalCount !== 1 ? 's' : ''} hoy</span>`
+                ? `<span class="audit-count-pill">${evalCount} auditoría${evalCount !== 1 ? 's' : ''}</span>`
                 : `<span class="audit-count-pill" style="background:rgba(245,158,11,.12);color:#fbbf24;border-color:rgba(245,158,11,.3)">⚠ Sin auditar</span>`}
               <span class="text-xs text-slate-400">Pago día: <strong class="text-amber-400">S/ ${parseFloat(totalDia).toFixed(2)}</strong></span>
             </div>
+            ${(() => {
+              // [v2.41.66] Mostrar motivos de bonificación/sanción debajo del pago
+              const bon = ev && parseFloat(ev.bonificacion) || 0;
+              const san = ev && parseFloat(ev.sancion) || 0;
+              const bonMot = (ev && ev.bonificacionMotivo) || '';
+              const sanMot = (ev && ev.sancionMotivo) || '';
+              const partes = [];
+              if (bon > 0) partes.push(`<span style="color:#34d399;font-weight:700">🎁 +S/${bon.toFixed(2)}</span>${bonMot ? `<span style="color:#94a3b8"> · ${_escapeHtml(bonMot.substring(0, 60))}</span>` : ''}`);
+              if (san > 0) partes.push(`<span style="color:#f87171;font-weight:700">⚠ -S/${san.toFixed(2)}</span>${sanMot ? `<span style="color:#94a3b8"> · ${_escapeHtml(sanMot.substring(0, 60))}</span>` : ''}`);
+              return partes.length
+                ? `<div class="text-[11px] mt-1" style="line-height:1.3">${partes.join(' · ')}</div>`
+                : '';
+            })()}
           </div>
           <div class="flex flex-col gap-1 shrink-0 items-end">
             <div class="flex gap-1 mb-0.5">
@@ -26105,10 +26118,15 @@ const MOS = (() => {
       comentarioFinal += (comentarioFinal ? '\n' : '') + `🎁 Bonificación S/${bonificacion.toFixed(2)}${bonificacionMotivoFinal ? ' — ' + bonificacionMotivoFinal : ''}`;
     }
 
+    // [v2.41.66] BUG FIX: usar r.fecha (fecha del card auditado) — no
+    // _evalState.fecha (global mutable). Si el user navegó días o el polling
+    // refrescó, _evalState.fecha podría ser hoy mientras el audit es de
+    // otro día. Igual al fix de v2.41.49 para imprimir liquidación.
+    const fechaAudit = (_evalState.auditR && _evalState.auditR.fecha) || _evalState.fecha;
     const params = {
       idPersonal,
       rol,
-      fecha: _evalState.fecha,
+      fecha: fechaAudit,
       limpiezaPct: parseFloat($('auditLimpieza').value) || 0,
       limpiezaProfPct: parseFloat($('auditLimpiezaProf').value) || 0,
       controlChecks: JSON.stringify(checksFull),
@@ -26183,8 +26201,9 @@ const MOS = (() => {
       // viene de getPersonalDiaFast (no getResumenTodosDia). Para que se vea
       // al instante: invalidar cache local + repaint con _evalState.resumenes
       // actualizado, y forzar refetch en bg.
+      // [v2.41.66] Usar r.fecha (la fecha REAL del card) — no _evalState.fecha
       try {
-        const f = _evalState.fecha;
+        const f = r.fecha || _evalState.fecha;
         // Persistir cambios optimistas en cache local
         try {
           localStorage.setItem('mos_fin_resum_' + f, JSON.stringify({ ts: Date.now(), data: _evalState.resumenes }));
@@ -26194,6 +26213,22 @@ const MOS = (() => {
           if (cont) cont.dataset._lastHtml = '';
           _finRenderPersonal(_finPL, f);
         }
+        // [v2.41.65] Marcar mutación reciente para que el polling 30s
+        // refresque con _refresh=true (bypass cache backend 60s) durante 90s.
+        window._finLastMutationTs = Date.now();
+        // [v2.41.65] FLASH verde sobre el card editado — feedback visual instantáneo
+        setTimeout(() => {
+          try {
+            const cards = document.querySelectorAll('#finPersonalList .eval-card');
+            for (const c of cards) {
+              if (c.dataset.id === idPersonal) {
+                c.classList.add('fin-card-audit-flash');
+                setTimeout(() => c.classList.remove('fin-card-audit-flash'), 1100);
+                break;
+              }
+            }
+          } catch(_){}
+        }, 50);
       } catch(_){}
       // Beep optimista de éxito
       try { _finBeep && _finBeep('ok'); } catch(_){}
@@ -26207,7 +26242,8 @@ const MOS = (() => {
       // plana (getPersonalDiaFast). Reemplaza al uso viejo de getResumenTodosDia
       // que recompute pesado (5-15s) y no respetaba LIQUIDACIONES_DIA.
       try {
-        const f = _evalState.fecha;
+        // [v2.41.66] Usar fechaAudit (la fecha REAL del card), no _evalState.fecha
+        const f = fechaAudit;
         try { localStorage.removeItem('mos_fin_resum_' + f); } catch {}
         if (typeof _finPL !== 'undefined' && _finPL) {
           const fresh = await API.get('getPersonalDiaFast', { fecha: f, _refresh: 'true' });
@@ -26224,8 +26260,6 @@ const MOS = (() => {
             setTimeout(() => { try { finCargar({ animate: false, _silent: true }); } catch(_){} }, 200);
           }
         }
-        // [v2.41.64] Invalidar cache localStorage de EVALUACIONES del día
-        // para que el próximo abrirAuditar lea los datos frescos (con el delta nuevo)
         try { localStorage.removeItem('mos_evals_' + f); } catch {}
       } catch(_){}
     } catch (e) {

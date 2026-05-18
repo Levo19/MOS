@@ -113,7 +113,13 @@ function crearEvaluacion(params) {
     if (typeof _liqDiaRecomputar === 'function' && params.fecha) {
       _liqDiaRecomputar(params.idPersonal, params.fecha);
       if (typeof _liqDiaSetBonSan === 'function' && ajusteTocado) {
-        _liqDiaSetBonSan(params.idPersonal, params.fecha, bonNueva, sanNueva);
+        // [v2.41.66] También pasa los motivos para que se vean en el card
+        _liqDiaSetBonSan(
+          params.idPersonal, params.fecha,
+          bonNueva, sanNueva,
+          String(params.bonificacionMotivo || ''),
+          String(params.sancionMotivo || '')
+        );
       }
     }
   } catch(eH) { Logger.log('Hook _liqDia* fallo: ' + eH.message); }
