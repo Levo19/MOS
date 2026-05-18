@@ -25290,8 +25290,20 @@ const MOS = (() => {
     // como prellenado en el modal. Admin ve lo que ya está y decide mantener
     // o cambiar. Si valor previo era sanción, abrir en pestaña sanción;
     // si era bonificación, abrir en bonificación; si ambos > 0, sanción.
-    const am  = $('auditAjusteMonto');     if (am) { am.value = ''; am.oninput = _renderAuditLiquidacion; }
-    const amo = $('auditAjusteMotivo');    if (amo) amo.value = '';
+    // [v2.41.63] _ajusteTocado: tracker para diferenciar "admin no tocó el
+    // ajuste" (preservar bon/san en LIQUIDACIONES_DIA) vs "admin lo editó
+    // explícitamente a 0/vacío" (resetear). Sin esto, borrar el 44 no funcionaba.
+    _evalState.auditAjusteTocado = false;
+    const am  = $('auditAjusteMonto');
+    if (am) {
+      am.value = '';
+      am.oninput = () => { _evalState.auditAjusteTocado = true; _renderAuditLiquidacion(); };
+    }
+    const amo = $('auditAjusteMotivo');
+    if (amo) {
+      amo.value = '';
+      amo.oninput = () => { _evalState.auditAjusteTocado = true; };
+    }
     _evalState.auditAjusteTipo = 'sancion';
     _auditSetAjuste('sancion');
     _evalState.auditR = r;
@@ -25583,9 +25595,11 @@ const MOS = (() => {
   // desglose profesional. Se reactiva ante:
   // [v2.41.51] Toggle entre sanción (-) y bonificación (+). Aplica a todos
   // los roles. Cambia el color del input y el signo.
-  function _auditSetAjuste(tipo) {
+  function _auditSetAjuste(tipo, userInitiated) {
     if (tipo !== 'sancion' && tipo !== 'bonificacion') tipo = 'sancion';
     _evalState.auditAjusteTipo = tipo;
+    // [v2.41.63] Si el user hizo click manual en el toggle, marcar tocado
+    if (userInitiated === true) _evalState.auditAjusteTocado = true;
     const tog = document.getElementById('auditAjusteToggle');
     const sig = document.getElementById('auditAjusteSigno');
     const inp = document.getElementById('auditAjusteMonto');
@@ -26075,7 +26089,12 @@ const MOS = (() => {
       bonificacionMotivo: bonificacionMotivoFinal,
       evaluadoPor: S.session?.nombre || '',
       aplicaComision: $('auditTogComision').classList.contains('on'),
-      aplicaBonoMeta: $('auditTogMeta').classList.contains('on')
+      aplicaBonoMeta: $('auditTogMeta').classList.contains('on'),
+      // [v2.41.63] Marca si admin tocó la sección ajuste (input/toggle/motivo).
+      // Backend: si tocado=true, REEMPLAZA bon/san en LIQUIDACIONES_DIA con
+      // los valores nuevos (incluye 0 — para borrar el bono previo).
+      // Si tocado=false, preserva los valores actuales.
+      _ajusteTocado: !!_evalState.auditAjusteTocado
     };
 
     // PREDICTIVO: cerrar modal + toast inmediato; sync en background
