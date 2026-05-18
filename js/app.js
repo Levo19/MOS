@@ -25280,16 +25280,49 @@ const MOS = (() => {
 
     $('auditTogComision').classList.add('on');
     $('auditTogMeta').classList.add('on');
-    // [v2.41.51] Reset ajuste (sanción/bonificación) al abrir
+    // [v2.41.60] Mostrar bonificacion/sancion ACTUALES de LIQUIDACIONES_DIA
+    // como prellenado en el modal. Admin ve lo que ya está y decide mantener
+    // o cambiar. Si valor previo era sanción, abrir en pestaña sanción;
+    // si era bonificación, abrir en bonificación; si ambos > 0, sanción.
+    const am  = $('auditAjusteMonto');     if (am) { am.value = ''; am.oninput = _renderAuditLiquidacion; }
+    const amo = $('auditAjusteMotivo');    if (amo) amo.value = '';
     _evalState.auditAjusteTipo = 'sancion';
-    const am = $('auditAjusteMonto');     if (am) { am.value = ''; am.oninput = _renderAuditLiquidacion; }
-    const amo = $('auditAjusteMotivo');   if (amo) amo.value = '';
     _auditSetAjuste('sancion');
     _evalState.auditR = r;
     _renderAuditKpis(r);
     _renderAuditChecklist(r.rol);
     _renderAuditLiquidacion();
     openModal('modalAuditar');
+    // Fetch en bg el valor actual de LIQUIDACIONES_DIA y prellenar
+    (async () => {
+      try {
+        const resp = await API.get('getLiqDiaBonSan', {
+          idPersonal: idPersonal,
+          fecha: _evalState.fecha
+        });
+        const d = (resp && resp.data) || resp || {};
+        const bonAct = parseFloat(d.bonificacion) || 0;
+        const sanAct = parseFloat(d.sancion) || 0;
+        // Si hay sanción previa, mostrar sanción. Si hay bonificación, bonificación.
+        if (sanAct > 0) {
+          _evalState.auditAjusteTipo = 'sancion';
+          _auditSetAjuste('sancion');
+          if (am) am.value = sanAct.toFixed(2);
+        } else if (bonAct > 0) {
+          _evalState.auditAjusteTipo = 'bonificacion';
+          _auditSetAjuste('bonificacion');
+          if (am) am.value = bonAct.toFixed(2);
+        }
+        // Mostrar hint "actual: S/X — modificable"
+        const hint = $('auditAjusteHint');
+        if (hint && (bonAct > 0 || sanAct > 0)) {
+          const tipoLbl = sanAct > 0 ? 'sanción' : 'bonificación';
+          const monto = (sanAct > 0 ? sanAct : bonAct).toFixed(2);
+          hint.innerHTML = `📌 actual: <strong style="color:#fbbf24">S/${monto}</strong> de ${tipoLbl} · podés cambiarlo`;
+        }
+        _renderAuditLiquidacion();
+      } catch(_){}
+    })();
   }
 
   // Actualiza visualmente el slider con el valor + track dorado proporcional

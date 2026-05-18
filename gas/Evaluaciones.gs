@@ -96,15 +96,29 @@ function crearEvaluacion(params) {
     Math.max(0, parseFloat(params.bonificacion) || 0),    // [v2.41.51] extra
     String(params.bonificacionMotivo || '')
   ]);
-  // ⚡ Hook materialización: recomputar la fila LIQUIDACIONES_DIA de este
-  // (idPersonal × fecha) para que el cambio se refleje al instante en Pendientes.
+  // [v2.41.60] Hook materialización en 2 pasos:
+  // 1. _liqDiaRecomputar: asegura que la fila existe + actualiza montoBase/
+  //    pagoEnvasado/bonoMeta auto (recomputed de actividad real).
+  //    PRESERVA bonificacion/sancion/estado de fila existente (no sobreescribe).
+  // 2. _liqDiaSetBonSan: REEMPLAZA bonificacion y sancion con los valores
+  //    de ESTE audit (params). El último admin gana — admin ve actual y
+  //    decide mantener o cambiar.
+  var bonNueva = Math.max(0, parseFloat(params.bonificacion) || 0);
+  var sanNueva = Math.max(0, parseFloat(params.sancion) || 0);
   try {
     if (typeof _liqDiaRecomputar === 'function' && params.fecha) {
       _liqDiaRecomputar(params.idPersonal, params.fecha);
+      // Solo setear bon/san si el admin pasó alguno > 0 (si pasó 0, mantener actual).
+      // Para REEMPLAZAR explícitamente con 0, frontend debe pasar params._resetBonSan=true.
+      if (typeof _liqDiaSetBonSan === 'function') {
+        if (bonNueva > 0 || sanNueva > 0 || params._resetBonSan === true || String(params._resetBonSan) === 'true') {
+          _liqDiaSetBonSan(params.idPersonal, params.fecha, bonNueva, sanNueva);
+        }
+      }
     }
-  } catch(eH) { Logger.log('Hook _liqDiaRecomputar fallo: ' + eH.message); }
+  } catch(eH) { Logger.log('Hook _liqDia* fallo: ' + eH.message); }
 
-  return { ok: true, data: { idEval: id } };
+  return { ok: true, data: { idEval: id, bonificacion: bonNueva, sancion: sanNueva } };
 }
 
 // ── Lista de evaluaciones del día (todas o de una persona) ─────

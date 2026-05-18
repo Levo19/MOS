@@ -822,7 +822,19 @@ function _liqDiaIsBlocked(rol) {
   return r === 'MASTER' || r === 'ADMIN' || r === 'ADMINISTRADOR';
 }
 
-// Upsert una fila desde un resumen ya computado (de getResumenDia.data)
+// Upsert una fila desde un resumen ya computado (de getResumenDia.data).
+//
+// [v2.41.60] CAMBIO IMPORTANTE: LIQUIDACIONES_DIA es ahora la FUENTE DE
+// VERDAD editable. Esta función PRESERVA bonificacion/sancion/estado de
+// la fila existente — NO los sobreescribe con lo recalculado.
+//   - bonificacion / sancion: solo se escriben si la fila no existe (fila
+//     nueva). Si ya existe, mantener el valor (que pudo ser editado a mano
+//     o seteado por crearEvaluacion).
+//   - estado: ya se preservaba, sigue igual.
+//   - montoBase / pagoEnvasado / bonoMeta: SÍ se recomputan (vienen de
+//     actividad real: jornadas, envasados, ventas).
+//   - totalDia: se recalcula con los valores FINALES (preservados +
+//     recomputados).
 function _liqDiaUpsertRow(rd, fecha) {
   if (!rd) return null;
   if (!rd.presente) return null;
@@ -831,10 +843,12 @@ function _liqDiaUpsertRow(rd, fecha) {
   var sh = _liqDiaGetSheet();
   var data = sh.getDataRange().getValues();
   var hdrs = data[0];
-  var iIdDia = hdrs.indexOf('idDia');
-  var iEstado = hdrs.indexOf('estado');
-  var iIdPago = hdrs.indexOf('idPago');
+  var iIdDia    = hdrs.indexOf('idDia');
+  var iEstado   = hdrs.indexOf('estado');
+  var iIdPago   = hdrs.indexOf('idPago');
   var iTsCreado = hdrs.indexOf('ts_creado');
+  var iBon      = hdrs.indexOf('bonificacion');
+  var iSan      = hdrs.indexOf('sancion');
 
   var idDia = _liqDiaKey(rd.idPersonal, fecha);
   var nowStr = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
@@ -847,15 +861,28 @@ function _liqDiaUpsertRow(rd, fecha) {
     if (String(data[i][iIdDia]) === idDia) { existingIdx = i; break; }
   }
 
-  // Preserve estado/idPago si la fila ya está PAGADA o ANULADA
+  // Preserve estado/idPago/bonificacion/sancion si la fila ya existe
   var estadoExist = 'PENDIENTE', idPagoExist = '', tsCreadoExist = nowStr;
+  var bonExist = null, sanExist = null;
   if (existingIdx >= 0) {
     estadoExist = String(data[existingIdx][iEstado] || 'PENDIENTE').toUpperCase();
     idPagoExist = String(data[existingIdx][iIdPago] || '');
     tsCreadoExist = data[existingIdx][iTsCreado] || nowStr;
+    if (iBon >= 0) bonExist = parseFloat(data[existingIdx][iBon]) || 0;
+    if (iSan >= 0) sanExist = parseFloat(data[existingIdx][iSan]) || 0;
   }
-  // Si está PAGADA conservamos esos valores; si está PENDIENTE/ANULADA tampoco
-  // recalculamos estado, solo actualizamos los montos.
+
+  // Valores finales: preservar si existe, sino usar rd
+  var bonFinal = (bonExist !== null) ? bonExist : (parseFloat(rd.bonificacion) || 0);
+  var sanFinal = (sanExist !== null) ? sanExist : (parseFloat(rd.sancion) || 0);
+
+  // Recalcular totalDia con valores FINALES (no usar rd.totalDia que asumía
+  // los recomputados — usamos los preservados + montos auto-recomputados).
+  var baseV = parseFloat(rd.montoBase) || 0;
+  var envV  = parseFloat(rd.pagoEnvasado) || 0;
+  var metaV = parseFloat(rd.bonoMeta) || 0;
+  var totalFinal = Math.max(0, Math.round((baseV + envV + metaV + bonFinal - sanFinal) * 100) / 100);
+
   var newRow = {
     idDia:             idDia,
     fecha:             fecha,
@@ -864,12 +891,12 @@ function _liqDiaUpsertRow(rd, fecha) {
     rol:               String(rd.rol || '').toUpperCase(),
     appOrigen:         String(rd.appOrigen || ''),
     virtual:           isVirtual,
-    montoBase:         parseFloat(rd.montoBase) || 0,
-    pagoEnvasado:      parseFloat(rd.pagoEnvasado) || 0,
-    bonoMeta:          parseFloat(rd.bonoMeta) || 0,
-    bonificacion:      parseFloat(rd.bonificacion) || 0,
-    sancion:           parseFloat(rd.sancion) || 0,
-    totalDia:          parseFloat(rd.totalDia) || 0,
+    montoBase:         baseV,
+    pagoEnvasado:      envV,
+    bonoMeta:          metaV,
+    bonificacion:      bonFinal,
+    sancion:           sanFinal,
+    totalDia:          totalFinal,
     auditado:          !!rd.auditado,
     evaluacionesCount: parseInt(rd.evaluacionesCount) || 0,
     scoreFinal:        parseFloat(rd.scoreFinal) || 0,
@@ -887,6 +914,78 @@ function _liqDiaUpsertRow(rd, fecha) {
     sh.appendRow(rowArr);
   }
   return idDia;
+}
+
+// [v2.41.60] Setea bonificacion/sancion DIRECTAMENTE en LIQUIDACIONES_DIA
+// (reemplaza, no suma). Llamado desde crearEvaluacion: el último audit
+// "gana" — admin ve el valor actual y decide mantener/cambiar.
+// También recomputa totalDia con los valores actualizados.
+function _liqDiaSetBonSan(idPersonal, fecha, bonificacion, sancion) {
+  if (!idPersonal || !fecha) return false;
+  try {
+    var sh = _liqDiaGetSheet();
+    var data = sh.getDataRange().getValues();
+    var hdrs = data[0];
+    var iIdDia = hdrs.indexOf('idDia');
+    var iBon = hdrs.indexOf('bonificacion');
+    var iSan = hdrs.indexOf('sancion');
+    var iBase = hdrs.indexOf('montoBase');
+    var iEnv  = hdrs.indexOf('pagoEnvasado');
+    var iMeta = hdrs.indexOf('bonoMeta');
+    var iTot  = hdrs.indexOf('totalDia');
+    var iTs   = hdrs.indexOf('ts_actualizado');
+    if (iBon < 0 || iSan < 0 || iTot < 0) return false;
+
+    var idDia = _liqDiaKey(idPersonal, fecha);
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][iIdDia]) !== idDia) continue;
+      var bon = parseFloat(bonificacion) || 0;
+      var san = parseFloat(sancion) || 0;
+      var baseV = parseFloat(data[i][iBase]) || 0;
+      var envV  = parseFloat(data[i][iEnv])  || 0;
+      var metaV = parseFloat(data[i][iMeta]) || 0;
+      var totalFinal = Math.max(0, Math.round((baseV + envV + metaV + bon - san) * 100) / 100);
+      sh.getRange(i + 1, iBon + 1).setValue(bon);
+      sh.getRange(i + 1, iSan + 1).setValue(san);
+      sh.getRange(i + 1, iTot + 1).setValue(totalFinal);
+      if (iTs >= 0) {
+        sh.getRange(i + 1, iTs + 1).setValue(
+          Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'")
+        );
+      }
+      // Invalidar cache backend de getResumenTodosDia para esta fecha
+      try { CacheService.getScriptCache().remove('rsmTd2_' + fecha); } catch(_){}
+      return true;
+    }
+    return false;
+  } catch(e) { Logger.log('_liqDiaSetBonSan error: ' + e.message); return false; }
+}
+
+// [v2.41.60] Obtener bonificacion/sancion ACTUALES de LIQUIDACIONES_DIA.
+// Usado por el modal de Auditoría para mostrar al admin lo que ya está
+// registrado antes de que decida mantener o cambiar.
+function getLiqDiaBonSan(params) {
+  var idPersonal = params && params.idPersonal;
+  var fecha      = params && params.fecha;
+  if (!idPersonal || !fecha) return { ok: false, error: 'idPersonal+fecha requeridos' };
+  try {
+    var sh = _liqDiaGetSheet();
+    var data = sh.getDataRange().getValues();
+    var hdrs = data[0];
+    var iIdDia = hdrs.indexOf('idDia');
+    var iBon = hdrs.indexOf('bonificacion');
+    var iSan = hdrs.indexOf('sancion');
+    var idDia = _liqDiaKey(idPersonal, fecha);
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][iIdDia]) !== idDia) continue;
+      return { ok: true, data: {
+        bonificacion: parseFloat(data[i][iBon]) || 0,
+        sancion:      parseFloat(data[i][iSan]) || 0,
+        existe:       true
+      }};
+    }
+    return { ok: true, data: { bonificacion: 0, sancion: 0, existe: false } };
+  } catch(e) { return { ok: false, error: e.message }; }
 }
 
 // Recompute UNA fila (idPersonal × fecha) — llamado tras crear audit
@@ -1399,7 +1498,11 @@ function _liqSyncJob() {
     var hoy = _liqHoy();
     Logger.log('[LiqSyncJob] inicio · hoy=' + hoy);
     try { _liqDiaSync(hoy); } catch(e1) { Logger.log('  HOY error: ' + e1.message); }
-    for (var dk = 1; dk <= 3; dk++) {
+    // [v2.41.60] Ampliado de 3 a 14 días — cubre reauditorías retroactivas
+    // (admin que edita un día pasado, eval que llega tarde, columna nueva
+    // que necesita backfill). Sync solo toca montos auto (envasado/base/meta);
+    // bonificacion/sancion/estado se preservan (LIQUIDACIONES_DIA es la fuente).
+    for (var dk = 1; dk <= 14; dk++) {
       try {
         var fDk = _fechaOffset(hoy, -dk);
         _liqDiaSync(fDk);
