@@ -768,6 +768,11 @@ function _esPersonalEvaluable(p) {
 
 function getResumenTodosDia(params) {
   var fecha    = params.fecha || _hoy();
+  // [v2.41.57] Auto-instala el trigger nocturno de cierre 23h también aquí
+  // (no solo en Liquidaciones). Personal del Día se abre TODOS los días desde
+  // Finanzas → garantiza que el cron quede registrado aunque nadie abra
+  // Liquidaciones por días.
+  try { if (typeof _liqEnsureCierreNocturnoTrigger === 'function') _liqEnsureCierreNocturnoTrigger(); } catch(_){}
   // [v2.41.44] Cache 120s con CacheService — evita recalcular las 30-50 lecturas
   // de hoja en cada hit. Frontend lo llama varias veces (Personal del Día,
   // resumen, audit, etc.). params._refresh=true para forzar bypass.
