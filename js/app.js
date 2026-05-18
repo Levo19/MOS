@@ -22168,72 +22168,90 @@ const MOS = (() => {
     if (!personas.length) { toast('Selección vacía', 'error'); if (btn) { btn.disabled = false; btn.textContent = '💸 Confirmar y pagar'; } return; }
 
     // Si va a imprimir → primero pedir impresora (UNA vez para todos)
-    // [v2.41.37] Cerrar modalLiqConfirmar ANTES de abrir el selector para
-    // evitar que queden 2 modales apilados (el de impresora atrás → no
-    // se podía clickear). Si el operador cancela en el selector, el toast
-    // ya avisa que no se imprimió.
     let printerId = null;
     if (imprimir) {
       closeModal('modalLiqConfirmar');
       printerId = await _liqElegirImpresora();
       if (!printerId) {
-        // Usuario canceló → solo guardar pagos sin imprimir
         toast('Pago se registró sin imprimir', 'info');
       }
     }
 
-    // Ejecutar marcarPagos por cada persona
-    const idPagos = [];
-    let totalPagado = 0;
-    let huboError = false;
-    for (const persona of personas) {
-      try {
-        const res = await API.post('marcarPagos', {
-          idPersonal: persona.idPersonal,
-          fechas: persona.fechas,
-          nombre: persona.nombre,
-          rol: persona.rol,
-          appOrigen: persona.appOrigen,
-          pagadoPor,
-          comentario,
-          imprimir: !!printerId,
-          printerId: printerId || ''
-        });
-        idPagos.push({ idPago: res.idPago, nombre: persona.nombre, total: res.total });
-        totalPagado += parseFloat(res.total) || 0;
-      } catch(e) {
-        huboError = true;
-        toast(`Error con ${persona.nombre}: ${e.message || e}`, 'error');
-      }
+    // [v2.41.71] OPTIMISTA INMEDIATO — antes del loop:
+    //   1. Quitar días pagados del state local + repaint
+    //   2. Cerrar modal
+    //   3. Sonido + confetti
+    //   4. POSTs en PARALELO (Promise.allSettled) no en serie → 3x más rápido
+    //   5. Toast final con resumen
+    const personasSnap = JSON.parse(JSON.stringify(personas)); // por si revert
+    personas.forEach(persona => {
+      const pLocal = _liqState.pendientes.find(x => x.idPersonal === persona.idPersonal);
+      if (!pLocal) return;
+      const setFechas = new Set(persona.fechas);
+      pLocal.dias = pLocal.dias.filter(d => !setFechas.has(d.fecha));
+      pLocal.cantidadDias = pLocal.dias.length;
+      pLocal.total = Math.round(pLocal.dias.reduce((s, d) => s + d.totalDia, 0) * 100) / 100;
+    });
+    _liqState.pendientes = _liqState.pendientes.filter(p => p.cantidadDias > 0);
+    _liqState.seleccion = {};
+    _liqRenderPendientes();
+    closeModal('modalLiqConfirmar');
+    _liqSfx('success');
+    try {
+      const r = btn?.getBoundingClientRect();
+      if (r) _liqConfetti(r.left + r.width/2, r.top + r.height/2, '#fbbf24');
+    } catch(_){}
+    toast(`💸 Procesando ${personas.length} pago(s)…`, 'info', 3000);
+
+    // POSTs PARALELOS — Promise.allSettled para no abortar si uno falla
+    const results = await Promise.allSettled(personas.map(persona =>
+      API.post('marcarPagos', {
+        idPersonal: persona.idPersonal,
+        fechas: persona.fechas,
+        nombre: persona.nombre,
+        rol: persona.rol,
+        appOrigen: persona.appOrigen,
+        pagadoPor,
+        comentario,
+        imprimir: !!printerId,
+        printerId: printerId || ''
+      }).then(res => ({ ok: true, persona, res }))
+        .catch(e => ({ ok: false, persona, error: e.message || String(e) }))
+    ));
+
+    const okList  = results.filter(r => r.status === 'fulfilled' && r.value.ok).map(r => r.value);
+    const errList = results.filter(r => r.status === 'fulfilled' && !r.value.ok).map(r => r.value);
+    const totalPagado = okList.reduce((s, r) => s + (parseFloat(r.res.total) || 0), 0);
+
+    if (okList.length) {
+      toast(`✓ ${okList.length} pago(s) registrado(s) · ${_liqMoney(totalPagado)}`, 'ok', 5000);
     }
-
-    if (idPagos.length > 0) {
-      _liqSfx('success');
-      try {
-        const r = btn?.getBoundingClientRect();
-        if (r) _liqConfetti(r.left + r.width/2, r.top + r.height/2, '#fbbf24');
-      } catch(_){}
-      toast(`✓ ${idPagos.length} pago(s) registrado(s) · ${_liqMoney(totalPagado)}`, 'ok');
-
-      // [v2.41.41] OPTIMISTA: quitar local YA los días pagados de _liqState.pendientes
-      // para que la lista se actualice instantáneo. El refresh detrás confirma.
-      personas.forEach(persona => {
-        const pLocal = _liqState.pendientes.find(x => x.idPersonal === persona.idPersonal);
-        if (!pLocal) return;
-        const setFechas = new Set(persona.fechas);
-        pLocal.dias = pLocal.dias.filter(d => !setFechas.has(d.fecha));
-        pLocal.cantidadDias = pLocal.dias.length;
-        pLocal.total = Math.round(pLocal.dias.reduce((s, d) => s + d.totalDia, 0) * 100) / 100;
+    if (errList.length) {
+      // Restaurar al state los que fallaron
+      errList.forEach(({ persona, error }) => {
+        toast(`Error con ${persona.nombre}: ${error}`, 'error', 6000);
+        const snap = personasSnap.find(p => p.idPersonal === persona.idPersonal);
+        if (snap) {
+          let pLocal = _liqState.pendientes.find(x => x.idPersonal === snap.idPersonal);
+          if (!pLocal) {
+            pLocal = { idPersonal: snap.idPersonal, nombre: snap.nombre, rol: snap.rol,
+                       appOrigen: snap.appOrigen, dias: [], total: 0, cantidadDias: 0 };
+            _liqState.pendientes.push(pLocal);
+          }
+          snap.fechas.forEach(f => {
+            if (!pLocal.dias.find(d => d.fecha === f)) {
+              pLocal.dias.push({ fecha: f, totalDia: 0, montoBase: 0, pagoEnvasado: 0 });
+            }
+          });
+          pLocal.cantidadDias = pLocal.dias.length;
+        }
       });
-      // Quitar personas sin días pendientes
-      _liqState.pendientes = _liqState.pendientes.filter(p => p.cantidadDias > 0);
-      _liqState.seleccion = {};
-      _liqRenderPendientes();  // pinta inmediato
-      closeModal('modalLiqConfirmar');
-      // Invalidar cache + fetch en background (no bloquea UI)
-      _liqCacheClear();
-      liqLoadCurrent();
+      _liqRenderPendientes();
     }
+
+    // Invalidar cache + fetch fresco en bg
+    _liqCacheClear();
+    liqLoadCurrent();
 
     if (btn) { btn.disabled = false; btn.textContent = '💸 Confirmar y pagar'; }
   }
@@ -22419,8 +22437,10 @@ const MOS = (() => {
       // [v2.41.70] Estilos inline garantizan que el modal aparezca POR ENCIMA
       // del nav inferior (z-30) y de cualquier otro overlay. Sin esto, modal
       // quedaba en z-0 y el nav lo tapaba.
+      // [v2.41.71] z-index 9500 — sobre modal-backdrop (9400) para que el
+      // modal de clave admin aparezca encima del modal de detalle de pago.
       modal.style.cssText = 'position:fixed;inset:0;background:rgba(2,6,23,.85);' +
-        'z-index:200;display:flex;align-items:center;justify-content:center;' +
+        'z-index:9500;display:flex;align-items:center;justify-content:center;' +
         'padding:16px;backdrop-filter:blur(4px);';
       modal.onclick = (ev) => { if (ev.target === modal) _liqCerrarModalAnular(); };
       document.body.appendChild(modal);

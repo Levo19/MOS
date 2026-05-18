@@ -278,7 +278,11 @@
     .btn-ghost:hover { border-color: #334155; color: #e2e8f0; }
 
     /* Modal */
-    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 100; display: none; align-items: center; justify-content: center; padding: 16px; }
+    /* [v2.41.71] z-index 9400 — antes 100 quedaba tapado por avatar menu (300),
+       FABs de etiquetas (50), SW update banner (9000+), toasts (9999) y otros
+       overlays. 9400 deja sitio a toasts (9999), banners SW (9000-9100) y
+       overlays especiales tipo modalLiqAnular (200) que necesite mayor. */
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 9400; display: none; align-items: center; justify-content: center; padding: 16px; }
     .modal-backdrop.open { display: flex; }
     .modal-box { background: #0f172a; border: 1px solid #1e293b; border-radius: 16px; width: 100%; max-width: 540px; max-height: 90vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
     /* Tap target ≥40px para botones de cierre × en modales */

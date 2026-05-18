@@ -321,6 +321,17 @@ function marcarPagos(params) {
   // ⚡ Materialización: marcar los días como PAGADA en LIQUIDACIONES_DIA
   try { _liqDiaMarcarPagadas(String(params.idPersonal), params.fechas, idPago); } catch(_){}
 
+  // [v2.41.71] Invalidar cache backend de getLiquidacionesPagadas — el polling
+  // 30s tomaría hasta 1min en reflejar este pago sin esto.
+  try {
+    var _cp = CacheService.getScriptCache();
+    var _hoy = _liqHoy();
+    // Invalidar varias combinaciones comunes de rangos
+    [29, 30, 89, 90].forEach(function(d){
+      _cp.remove('liqPag_' + _fechaOffset(_hoy, -d) + '_' + _hoy);
+    });
+  } catch(_){}
+
   return { ok: true, data: { idPago: idPago, total: totalPago, jobId: jobId, dias: filas.length } };
 }
 
@@ -391,6 +402,15 @@ function anularPago(params) {
   // ⚡ Materialización: revertir los días a PENDIENTE en LIQUIDACIONES_DIA
   try { _liqDiaRevertirPagadas(params.idPago); } catch(_){}
 
+  // [v2.41.71] Invalidar cache backend de getLiquidacionesPagadas
+  try {
+    var _ca = CacheService.getScriptCache();
+    var _hoyA = _liqHoy();
+    [29, 30, 89, 90].forEach(function(d){
+      _ca.remove('liqPag_' + _fechaOffset(_hoyA, -d) + '_' + _hoyA);
+    });
+  } catch(_){}
+
   return { ok: true, data: { autorizado: true, anuladas: anuladas, nombre: nombrePago, anuladoPor: auth.data.validadoPor } };
 }
 
@@ -400,6 +420,20 @@ function getLiquidacionesPagadas(params) {
   params = params || {};
   var hasta = params.hasta || _liqHoy();
   var desde = params.desde || _fechaOffset(hasta, -29);
+
+  // [v2.41.71] Cache backend 60s — la tabla LIQUIDACIONES_PAGOS rara vez cambia
+  // (solo cuando admin paga o anula). Antes leía TODA la hoja en cada llamada.
+  // Polling 30s del frontend hacía esto 2x por minuto.
+  var ssCache, cacheKey;
+  if (!params._refresh) {
+    try {
+      ssCache = CacheService.getScriptCache();
+      cacheKey = 'liqPag_' + desde + '_' + hasta;
+      var hit = ssCache.get(cacheKey);
+      if (hit) { try { return JSON.parse(hit); } catch(_){} }
+    } catch(_){}
+  }
+
   var tz = Session.getScriptTimeZone();
   var sh = _liqGetSheet();
   var rows = _sheetToObjects(sh);
@@ -446,7 +480,14 @@ function getLiquidacionesPagadas(params) {
     return batches[k];
   });
   arr.sort(function(a,b){ return String(b.pagadoTs).localeCompare(String(a.pagadoTs)); });
-  return { ok: true, data: arr, rango: { desde: desde, hasta: hasta } };
+  var resp = { ok: true, data: arr, rango: { desde: desde, hasta: hasta } };
+  if (ssCache && cacheKey) {
+    try {
+      var ser = JSON.stringify(resp);
+      if (ser.length < 95000) ssCache.put(cacheKey, ser, 60);
+    } catch(_){}
+  }
+  return resp;
 }
 
 // Detalle de un batch (todos los días + montos)
