@@ -26138,11 +26138,10 @@ const MOS = (() => {
       evaluadoPor: S.session?.nombre || '',
       aplicaComision: $('auditTogComision').classList.contains('on'),
       aplicaBonoMeta: $('auditTogMeta').classList.contains('on'),
-      // [v2.41.63] Marca si admin tocó la sección ajuste (input/toggle/motivo).
-      // Backend: si tocado=true, REEMPLAZA bon/san en LIQUIDACIONES_DIA con
-      // los valores nuevos (incluye 0 — para borrar el bono previo).
-      // Si tocado=false, preserva los valores actuales.
-      _ajusteTocado: !!_evalState.auditAjusteTocado
+      _ajusteTocado: !!_evalState.auditAjusteTocado,
+      // [v2.41.67] ajusteTipo activo: backend usa esto para preservar el OTRO
+      // tipo. Ej: admin solo cambia sanción → bonificación previa se mantiene.
+      ajusteTipo: ajusteTipo
     };
 
     // PREDICTIVO: cerrar modal + toast inmediato; sync en background
@@ -26160,29 +26159,26 @@ const MOS = (() => {
       r.manual.checksAcum = Object.assign({}, r.manual.checksAcum || {});
       Object.keys(checksFull).forEach(k => { if (checksFull[k]) r.manual.checksAcum[k] = true; });
 
-      // ── [v2.41.64] Optimistic update REAL — modelo "reemplaza" no suma ──
-      // Backend ahora reemplaza bonificacion/sancion en LIQUIDACIONES_DIA
-      // con el valor del audit (si admin tocó). Frontend debe reflejar lo
-      // mismo: el nuevo valor REEMPLAZA al previo, no suma.
-      // Si admin no tocó el ajuste, conservar el valor actual.
+      // ── [v2.41.67] Optimistic update — solo el tipo ACTIVO se reemplaza ──
+      // Si admin solo cambió sanción, NO toca bonificación previa (y viceversa).
+      // Antes ambos campos se sobreescribían a 0 si el otro no estaba activo,
+      // y el card mostraba un total incorrecto.
       const tocado = !!_evalState.auditAjusteTocado;
       if (tocado) {
-        r.sancion = Math.round(sancion * 100) / 100;
-        r.bonificacion = Math.round(bonificacion * 100) / 100;
-        // Reset detalles si el valor cambió drásticamente
-        if (sancion > 0) {
-          r.sancionesDetalle = [{
+        if (ajusteTipo === 'sancion') {
+          r.sancion = Math.round(sancion * 100) / 100;
+          r.sancionMotivo = sancionMotivoFinal;
+          r.sancionesDetalle = sancion > 0 ? [{
             hora: new Date().toTimeString().slice(0,5), monto: sancion, motivo: sancionMotivo
-          }];
-        } else {
-          r.sancionesDetalle = [];
-        }
-        if (bonificacion > 0) {
-          r.bonificacionesDetalle = [{
+          }] : [];
+          // bonificación PRESERVA su valor previo
+        } else if (ajusteTipo === 'bonificacion') {
+          r.bonificacion = Math.round(bonificacion * 100) / 100;
+          r.bonificacionMotivo = bonificacionMotivoFinal;
+          r.bonificacionesDetalle = bonificacion > 0 ? [{
             hora: new Date().toTimeString().slice(0,5), monto: bonificacion, motivo: bonificacionMotivo
-          }];
-        } else {
-          r.bonificacionesDetalle = [];
+          }] : [];
+          // sanción PRESERVA su valor previo
         }
       }
       // Bono meta efectivo: si admin desactivó el toggle, queda en 0

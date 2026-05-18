@@ -113,12 +113,24 @@ function crearEvaluacion(params) {
     if (typeof _liqDiaRecomputar === 'function' && params.fecha) {
       _liqDiaRecomputar(params.idPersonal, params.fecha);
       if (typeof _liqDiaSetBonSan === 'function' && ajusteTocado) {
-        // [v2.41.66] También pasa los motivos para que se vean en el card
+        // [v2.41.67] Preservar el OTRO tipo cuando admin solo editó uno.
+        // ajusteTipoActivo viene del frontend ('sancion' o 'bonificacion').
+        // Si bonNueva>0 y sanNueva=0 y no hay flag explícito → tipo activo es bon.
+        var ajusteTipoActivo = String(params.ajusteTipo || '').toLowerCase();
+        var soloTipo = null;
+        if (ajusteTipoActivo === 'sancion' || ajusteTipoActivo === 'bonificacion') {
+          soloTipo = ajusteTipoActivo;
+        } else if (bonNueva > 0 && sanNueva === 0) {
+          soloTipo = 'bonificacion';
+        } else if (sanNueva > 0 && bonNueva === 0) {
+          soloTipo = 'sancion';
+        }
         _liqDiaSetBonSan(
           params.idPersonal, params.fecha,
           bonNueva, sanNueva,
           String(params.bonificacionMotivo || ''),
-          String(params.sancionMotivo || '')
+          String(params.sancionMotivo || ''),
+          { soloTipo: soloTipo }
         );
       }
     }

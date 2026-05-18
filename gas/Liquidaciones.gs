@@ -925,8 +925,16 @@ function _liqDiaUpsertRow(rd, fecha) {
 // (reemplaza, no suma). Llamado desde crearEvaluacion: el último audit
 // "gana" — admin ve el valor actual y decide mantener/cambiar.
 // También recomputa totalDia con los valores actualizados.
-function _liqDiaSetBonSan(idPersonal, fecha, bonificacion, sancion, bonificacionMotivo, sancionMotivo) {
+// [v2.41.67] opts.soloTipo: 'sancion'|'bonificacion'|null
+//   - 'sancion'      → solo actualiza sancion + sancionMotivo. bonificacion se PRESERVA.
+//   - 'bonificacion' → solo actualiza bonificacion + bonificacionMotivo. sancion se PRESERVA.
+//   - null/undefined → actualiza ambos (comportamiento legacy).
+// Esto evita que cuando admin solo cambia uno (sanción), se le borre el
+// otro (bonificación) que ya tenía.
+function _liqDiaSetBonSan(idPersonal, fecha, bonificacion, sancion, bonificacionMotivo, sancionMotivo, opts) {
   if (!idPersonal || !fecha) return false;
+  opts = opts || {};
+  var soloTipo = opts.soloTipo || null;
   try {
     var sh = _liqDiaGetSheet();
     var data = sh.getDataRange().getValues();
@@ -946,18 +954,37 @@ function _liqDiaSetBonSan(idPersonal, fecha, bonificacion, sancion, bonificacion
     var idDia = _liqDiaKey(idPersonal, fecha);
     for (var i = 1; i < data.length; i++) {
       if (String(data[i][iIdDia]) !== idDia) continue;
-      var bon = parseFloat(bonificacion) || 0;
-      var san = parseFloat(sancion) || 0;
+
+      var bonNueva = parseFloat(bonificacion) || 0;
+      var sanNueva = parseFloat(sancion) || 0;
+      var bonExist = parseFloat(data[i][iBon]) || 0;
+      var sanExist = parseFloat(data[i][iSan]) || 0;
+      var bonMotExist = iBonMot >= 0 ? String(data[i][iBonMot] || '') : '';
+      var sanMotExist = iSanMot >= 0 ? String(data[i][iSanMot] || '') : '';
+
+      // Resolver valores finales según soloTipo
+      var bonFinal = bonNueva, sanFinal = sanNueva;
+      var bonMotFinal = String(bonificacionMotivo || '');
+      var sanMotFinal = String(sancionMotivo || '');
+      if (soloTipo === 'sancion') {
+        // Preservar bonificación + su motivo
+        bonFinal = bonExist;
+        bonMotFinal = bonMotExist;
+      } else if (soloTipo === 'bonificacion') {
+        // Preservar sanción + su motivo
+        sanFinal = sanExist;
+        sanMotFinal = sanMotExist;
+      }
+
       var baseV = parseFloat(data[i][iBase]) || 0;
       var envV  = parseFloat(data[i][iEnv])  || 0;
       var metaV = parseFloat(data[i][iMeta]) || 0;
-      var totalFinal = Math.max(0, Math.round((baseV + envV + metaV + bon - san) * 100) / 100);
-      sh.getRange(i + 1, iBon + 1).setValue(bon);
-      sh.getRange(i + 1, iSan + 1).setValue(san);
+      var totalFinal = Math.max(0, Math.round((baseV + envV + metaV + bonFinal - sanFinal) * 100) / 100);
+      sh.getRange(i + 1, iBon + 1).setValue(bonFinal);
+      sh.getRange(i + 1, iSan + 1).setValue(sanFinal);
       sh.getRange(i + 1, iTot + 1).setValue(totalFinal);
-      // [v2.41.66] Persistir motivos junto al monto
-      if (iBonMot >= 0) sh.getRange(i + 1, iBonMot + 1).setValue(String(bonificacionMotivo || ''));
-      if (iSanMot >= 0) sh.getRange(i + 1, iSanMot + 1).setValue(String(sancionMotivo || ''));
+      if (iBonMot >= 0) sh.getRange(i + 1, iBonMot + 1).setValue(bonMotFinal);
+      if (iSanMot >= 0) sh.getRange(i + 1, iSanMot + 1).setValue(sanMotFinal);
       if (iTs >= 0) {
         sh.getRange(i + 1, iTs + 1).setValue(
           Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'")
