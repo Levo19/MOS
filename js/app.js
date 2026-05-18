@@ -26234,45 +26234,43 @@ const MOS = (() => {
       try { _finBeep && _finBeep('ok'); } catch(_){}
     }
 
-    try {
-      await API.post('crearEvaluacion', params);
-      // Pull fresh data del servidor (en bg) para reflejar score real con KPIs auto
-      refreshEvaluacion().catch(() => {});
-      // [v2.41.64] Tras auditar — fuerza repaint con datos FRESCOS desde tabla
-      // plana (getPersonalDiaFast). Reemplaza al uso viejo de getResumenTodosDia
-      // que recompute pesado (5-15s) y no respetaba LIQUIDACIONES_DIA.
-      try {
-        // [v2.41.66] Usar fechaAudit (la fecha REAL del card), no _evalState.fecha
-        const f = fechaAudit;
+    // [v2.41.67] FIRE-AND-FORGET: la UI ya está optimista (modal cerrado, card
+    // actualizado, beep ok). El POST a backend va sin await. Si falla, polling
+    // 30s lo detecta y un toast warn aparece. Sin esto la pantalla "guardando..."
+    // tardaba 2-5s incluso con optimismo aplicado.
+    const f = fechaAudit;
+    API.post('crearEvaluacion', params)
+      .then(() => {
+        // Background: refresh con datos frescos del backend
         try { localStorage.removeItem('mos_fin_resum_' + f); } catch {}
-        if (typeof _finPL !== 'undefined' && _finPL) {
-          const fresh = await API.get('getPersonalDiaFast', { fecha: f, _refresh: 'true' });
-          const arr = Array.isArray(fresh) ? fresh : ((fresh && fresh.data) || []);
-          if (arr.length) {
-            _evalState.resumenes = arr;
-            try { localStorage.setItem('mos_fin_resum_' + f, JSON.stringify({ ts: Date.now(), data: arr })); } catch {}
-            const cont = $('finPersonalList');
-            if (cont) cont.dataset._lastHtml = '';
-            if (typeof _finRenderPersonal === 'function') _finRenderPersonal(_finPL, f);
-          }
-          // Refresh full P&L silencioso para KPIs (gastoPersonal, breakeven)
-          if (S.view === 'finanzas' && typeof finCargar === 'function') {
-            setTimeout(() => { try { finCargar({ animate: false, _silent: true }); } catch(_){} }, 200);
-          }
-        }
         try { localStorage.removeItem('mos_evals_' + f); } catch {}
-      } catch(_){}
-    } catch (e) {
-      // [v2.41.64] Revertir optimistic update si falla el backend
-      toast('Error al guardar: ' + e.message + ' · revirtiendo', 'error');
-      refreshEvaluacion().catch(() => {});
-      // Forzar refresh full para recuperar el estado real
-      try {
-        if (typeof _finPL !== 'undefined' && _finPL && S.view === 'finanzas') {
-          finCargar({ animate: false });
-        }
-      } catch(_){}
-    }
+        refreshEvaluacion().catch(() => {});
+        API.get('getPersonalDiaFast', { fecha: f, _refresh: 'true' })
+          .then(fresh => {
+            const arr = Array.isArray(fresh) ? fresh : ((fresh && fresh.data) || []);
+            if (arr.length && typeof _finPL !== 'undefined' && _finPL) {
+              _evalState.resumenes = arr;
+              try { localStorage.setItem('mos_fin_resum_' + f, JSON.stringify({ ts: Date.now(), data: arr })); } catch {}
+              const cont = $('finPersonalList');
+              if (cont) cont.dataset._lastHtml = '';
+              if (typeof _finRenderPersonal === 'function') _finRenderPersonal(_finPL, f);
+            }
+            if (S.view === 'finanzas' && typeof finCargar === 'function') {
+              setTimeout(() => { try { finCargar({ animate: false, _silent: true }); } catch(_){} }, 200);
+            }
+          })
+          .catch(() => {});
+      })
+      .catch(e => {
+        // Falla del backend tras optimismo: aviso al usuario + refresh full
+        toast('⚠ Backend rechazó el audit: ' + (e.message || 'error') + ' · refrescando', 'warn', 6000);
+        refreshEvaluacion().catch(() => {});
+        try {
+          if (typeof _finPL !== 'undefined' && _finPL && S.view === 'finanzas') {
+            finCargar({ animate: false });
+          }
+        } catch(_){}
+      });
   }
 
   // ── Liquidación ──────────────────────────────────────────────
