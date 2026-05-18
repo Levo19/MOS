@@ -21185,6 +21185,53 @@ const MOS = (() => {
   // Modelo: cada día con presencia es una liquidación pendiente.
   // Admin selecciona días → "Pagar" → genera batch LIQ-XXXX por persona.
   // ════════════════════════════════════════════════════════════
+  // ── [v2.41.72] Constantes y helpers compartidos ──────────────
+  const Z_MODAL_BACKDROP = 9400;   // .modal-backdrop (estándar)
+  const Z_MODAL_OVERLAY  = 9500;   // modales sobre otro modal (anular sobre detalle)
+  const Z_MODAL_CRITICAL = 9700;   // alertas críticas (sobre todo)
+
+  // Parser unificado de respuestas API — algunas devuelven array directo,
+  // otras { ok, data }. Centraliza el unwrap.
+  function _liqParseResp(res) {
+    if (Array.isArray(res)) return res;
+    if (res && Array.isArray(res.data)) return res.data;
+    if (res && res.data && typeof res.data === 'object') return res.data;
+    return res || {};
+  }
+
+  // localStorage safe con toast de aviso si falla (quota/private mode)
+  function _liqLsSet(key, val) {
+    try { localStorage.setItem(key, val); return true; }
+    catch(e) {
+      try { toast('💾 No se pudo guardar cache local (' + (e.name || 'error') + ')', 'warn', 4000); } catch(_){}
+      return false;
+    }
+  }
+
+  // Formato fecha corta con guard (B9)
+  function _liqFmtFechaCortaSafe(fecha) {
+    if (typeof _liqFmtFechaCorta === 'function') return _liqFmtFechaCorta(fecha);
+    return String(fecha || '—');
+  }
+
+  // Validación rango fechas (B3)
+  function _liqValidarRango(desde, hasta) {
+    const re = /^\d{4}-\d{2}-\d{2}$/;
+    if (!re.test(String(desde)) || !re.test(String(hasta))) return false;
+    if (desde > hasta) return false;
+    return true;
+  }
+
+  // AbortController activo por petición (B1)
+  let _liqAbortCtrl = null;
+  function _liqAbortPrevious() {
+    if (_liqAbortCtrl) {
+      try { _liqAbortCtrl.abort(); } catch(_){}
+    }
+    _liqAbortCtrl = new AbortController();
+    return _liqAbortCtrl.signal;
+  }
+
   const _liqState = {
     tab: 'pendientes',
     desde: null,
@@ -21209,7 +21256,8 @@ const MOS = (() => {
     } catch { return null; }
   }
   function _liqSaveCache(key, data) {
-    try { localStorage.setItem(LIQ_CACHE_PFX + key, JSON.stringify({ ts: Date.now(), data })); } catch {}
+    // [v2.41.72-B8] Usar helper con toast si falla quota/private mode
+    _liqLsSet(LIQ_CACHE_PFX + key, JSON.stringify({ ts: Date.now(), data }));
   }
   // Pre-cargar al iniciar sesión y persistir
   // Prefetch de TODAS las tablas del módulo Configuraciones para que
@@ -21332,7 +21380,8 @@ const MOS = (() => {
     } catch { return null; }
   }
   function _liqCacheSave(tab, data) {
-    try { localStorage.setItem(_liqCacheKey(tab), JSON.stringify({ ts: Date.now(), data })); } catch(_){}
+    // [v2.41.72-B8] usar helper con feedback
+    _liqLsSet(_liqCacheKey(tab), JSON.stringify({ ts: Date.now(), data }));
   }
   function _liqCacheClear() {
     try {
@@ -21372,6 +21421,7 @@ const MOS = (() => {
   // el fetch, la respuesta vieja se descarta. Cada respuesta repinta solo
   // si la firma de datos cambió (anti-flicker).
   let _liqPollInt = null;
+  let _liqEscHandler = null;
   function _liqStartPolling() {
     _liqStopPolling();
     _liqPollInt = setInterval(() => {
@@ -21385,9 +21435,21 @@ const MOS = (() => {
       // También refresh vetadas si está cargado
       if (_liqState.vetadas) _liqCargarVetadas();
     }, 30000);
+    // [v2.41.72-B10] Escape key también para de polling sin esperar el check
+    _liqEscHandler = (e) => {
+      if (e.key === 'Escape' || e.keyCode === 27) {
+        const modal = document.getElementById('modalLiquidaciones');
+        if (modal && !modal.classList.contains('hidden')) {
+          liqClose();
+        }
+      }
+    };
+    document.addEventListener('keydown', _liqEscHandler);
   }
   function _liqStopPolling() {
     if (_liqPollInt) { clearInterval(_liqPollInt); _liqPollInt = null; }
+    if (_liqEscHandler) { document.removeEventListener('keydown', _liqEscHandler); _liqEscHandler = null; }
+    if (_liqAbortCtrl) { try { _liqAbortCtrl.abort(); } catch(_){} _liqAbortCtrl = null; }
   }
 
   // Prefetch silencioso del tab no activo. Si ya hay cache fresh o state
@@ -21412,11 +21474,16 @@ const MOS = (() => {
       const endpoint = tab === 'pendientes' ? 'getLiquidacionesPendientes' : 'getLiquidacionesPagadas';
       const ms = tab === 'pendientes' ? 15000 : 30000;
       _liqFetchConTimeout(endpoint, params, ms).then(res => {
-        const arr = Array.isArray(res) ? res : ((res && res.data) || []);
-        if (tab === 'pendientes') _liqState.pendientes = arr;
-        else if (tab === 'pagadas') _liqState.pagadas = arr;
-        _liqCacheSave(tab, arr);
-      }).catch(() => { /* silent — prefetch best-effort */ });
+        const arr = _liqParseResp(res);
+        const list = Array.isArray(arr) ? arr : (arr.data || []);
+        if (tab === 'pendientes') _liqState.pendientes = list;
+        else if (tab === 'pagadas') _liqState.pagadas = list;
+        _liqCacheSave(tab, list);
+      }).catch(err => {
+        // [v2.41.72-B5] Log silencioso pero visible en consola — antes era
+        // catch(()=>{}) y el prefetch fallaba sin rastro alguno.
+        console.warn('[liqPrefetchTab ' + tab + '] fallo:', err && err.message || err);
+      });
     } catch(_) { /* tolerar */ }
   }
 
@@ -21554,8 +21621,18 @@ const MOS = (() => {
   function _liqLeerRangoInputs() {
     const d = $('liqRangoDesde');
     const h = $('liqRangoHasta');
-    if (d && d.value) _liqState.desde = d.value;
-    if (h && h.value) _liqState.hasta = h.value;
+    // [v2.41.72-B3] Validar formato + orden antes de aceptar
+    const dv = d && d.value;
+    const hv = h && h.value;
+    if (dv && hv && !_liqValidarRango(dv, hv)) {
+      toast('📅 Rango inválido (desde > hasta o formato incorrecto)', 'warn', 4000);
+      // Restaurar valores previos en los inputs
+      _liqSyncRangoInputs();
+      return false;
+    }
+    if (dv) _liqState.desde = dv;
+    if (hv) _liqState.hasta = hv;
+    return true;
   }
 
   // Helper: race API.get contra un timeout para que la UI no se quede eternamente cargando
@@ -21599,21 +21676,27 @@ const MOS = (() => {
           </div>`;
       }
     }
+    // [v2.41.72-B1] Token único por llamada. Si otra llamada se dispara
+    // (polling + click manual), solo la última gana — evita race conditions
+    // donde una respuesta vieja pinta sobre datos frescos del mismo tab.
+    const _myToken = (window._liqLoadToken = (window._liqLoadToken || 0) + 1);
     try {
       if (tabActual === 'pendientes') {
         const res = await _liqFetchConTimeout('getLiquidacionesPendientes', { desde: _liqState.desde, hasta: _liqState.hasta }, 15000);
-        if (_liqState.tab !== tabActual) return; // user cambió de tab mientras esperaba
-        const arr = Array.isArray(res) ? res : ((res && res.data) || []);
-        _liqState.pendientes = arr;
-        _liqCacheSave('pendientes', arr);
+        if (_liqState.tab !== tabActual || _myToken !== window._liqLoadToken) return;
+        const arr = _liqParseResp(res);
+        const list = Array.isArray(arr) ? arr : (arr.data || []);
+        _liqState.pendientes = list;
+        _liqCacheSave('pendientes', list);
         body.dataset._hasCache = '1';
         _liqRenderPendientes();
       } else if (tabActual === 'pagadas') {
         const res = await _liqFetchConTimeout('getLiquidacionesPagadas', { desde: _liqOffset(_liqHoy(), -89), hasta: _liqHoy() }, 30000);
-        if (_liqState.tab !== tabActual) return;
-        const arr = Array.isArray(res) ? res : ((res && res.data) || []);
-        _liqState.pagadas = arr;
-        _liqCacheSave('pagadas', arr);
+        if (_liqState.tab !== tabActual || _myToken !== window._liqLoadToken) return;
+        const arr = _liqParseResp(res);
+        const list = Array.isArray(arr) ? arr : (arr.data || []);
+        _liqState.pagadas = list;
+        _liqCacheSave('pagadas', list);
         _liqRenderPagadas();
       } else if (tabActual === 'resumen') {
         _liqRenderResumen();
@@ -21905,7 +21988,7 @@ const MOS = (() => {
         idPersonal, fecha,
         localId: 'L' + Date.now() + Math.random().toString(36).slice(2, 8)
       });
-      toast(`💸 Vetada · ${_liqFmtFechaCorta ? _liqFmtFechaCorta(fecha) : fecha}`, 'info', 2500);
+      toast(`💸 Vetada · ${_liqFmtFechaCortaSafe(fecha)}`, 'info', 2500);
     } catch(e) {
       const errKey = (e && e.message) || 'sin_respuesta';
       let msg;
@@ -21964,8 +22047,8 @@ const MOS = (() => {
         <div class="liq-dia-row" style="opacity:.75">
           <span style="font-size:18px;flex-shrink:0">🚫</span>
           <div class="flex-1 min-w-0">
-            <div class="text-xs text-slate-300 font-medium">${escHtml(v.nombre)}</div>
-            <div class="text-[10px] text-slate-500 mt-0.5">${escHtml(v.rol)} · ${fechaCorta}</div>
+            <div class="text-xs text-slate-300 font-medium">${_esc(v.nombre)}</div>
+            <div class="text-[10px] text-slate-500 mt-0.5">${_esc(v.rol)} · ${fechaCorta}</div>
           </div>
           <div class="text-right shrink-0">
             <div class="text-sm font-bold text-slate-500" style="text-decoration:line-through">${_liqMoney(v.totalDia)}</div>
@@ -22139,7 +22222,12 @@ const MOS = (() => {
     _liqSfx('open');
   }
 
+  // [v2.41.72-B11] Lock anti-doble-click: si ya se está procesando un pago,
+  // no permitir disparar otro.
+  let _liqPayLock = false;
   async function liqConfirmarPago(ev) {
+    if (_liqPayLock) { try { toast('⏳ Ya se está procesando el pago…', 'info', 2000); } catch(_){} return; }
+    _liqPayLock = true;
     if (ev) _liqRipple(ev);
     const btn = $('liqConfirmBtn');
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Procesando...'; }
@@ -22254,6 +22342,7 @@ const MOS = (() => {
     liqLoadCurrent();
 
     if (btn) { btn.disabled = false; btn.textContent = '💸 Confirmar y pagar'; }
+    _liqPayLock = false;
   }
 
   // ── Elegir impresora — reusa el modal modalSelPrinterLiq del audit ──
