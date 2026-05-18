@@ -147,6 +147,10 @@ const MOS = (() => {
     else _almDetenerAutoRefresh();
     if (viewName === 'config') _cfgIniciarAutoRefresh();
     else _cfgDetenerAutoRefresh();
+    // [v2.41.58] Polling 30s Personal del Día: solo en finanzas
+    if (viewName !== 'finanzas' && typeof _finStopPolling === 'function') {
+      try { _finStopPolling(); } catch(_){}
+    }
 
     document.querySelectorAll('.view').forEach(v => {
       v.classList.remove('active');
@@ -21139,9 +21143,27 @@ const MOS = (() => {
         _finRender7d(rango);
       } catch(_) {}
       _finPrefetchAdyacentes(fecha);
+      _finStartPolling();
       return;
     }
     await finCargar();
+    _finStartPolling();
+  }
+
+  // [v2.41.58] Polling bg 30s mientras estamos en vista Finanzas. Refresca
+  // silenciosamente (sin animación, sin badge spinner) el día actual. Si el
+  // user navega entre días, el polling sigue refrescando el día visible.
+  let _finPollInt = null;
+  function _finStartPolling() {
+    _finStopPolling();
+    _finPollInt = setInterval(() => {
+      if (S.view !== 'finanzas') { _finStopPolling(); return; }
+      // Refresh silencioso del día visible — sin animación
+      try { finCargar({ animate: false, _silent: true }); } catch(_){}
+    }, 30000);
+  }
+  function _finStopPolling() {
+    if (_finPollInt) { clearInterval(_finPollInt); _finPollInt = null; }
   }
 
   // ── Sync / Update ────────────────────────────────────────────
@@ -21331,6 +21353,31 @@ const MOS = (() => {
     // 🚀 Prefetch Historial (pagadas) en background — al cambiar tab será
     // instantáneo. No bloquea la UI del tab actual.
     _liqPrefetchTab('pagadas');
+    // [v2.41.58] Polling background cada 30s mientras el modal esté abierto
+    _liqStartPolling();
+  }
+
+  // [v2.41.58] Polling bg 30s — refresca SOLO el tab actual sin parpadeo.
+  // El render tiene guard interno por tab → si user cambió de tab durante
+  // el fetch, la respuesta vieja se descarta. Cada respuesta repinta solo
+  // si la firma de datos cambió (anti-flicker).
+  let _liqPollInt = null;
+  function _liqStartPolling() {
+    _liqStopPolling();
+    _liqPollInt = setInterval(() => {
+      const modal = document.getElementById('modalLiquidaciones');
+      if (!modal || modal.classList.contains('hidden')) {
+        _liqStopPolling();
+        return;
+      }
+      // Silent refresh: re-fetch tab actual sin animación
+      liqLoadCurrent();
+      // También refresh vetadas si está cargado
+      if (_liqState.vetadas) _liqCargarVetadas();
+    }, 30000);
+  }
+  function _liqStopPolling() {
+    if (_liqPollInt) { clearInterval(_liqPollInt); _liqPollInt = null; }
   }
 
   // Prefetch silencioso del tab no activo. Si ya hay cache fresh o state
@@ -21388,6 +21435,7 @@ const MOS = (() => {
 
   function liqClose() {
     _liqState.seleccion = {};
+    _liqStopPolling();
     closeModal('modalLiquidaciones');
   }
 
@@ -22342,28 +22390,131 @@ const MOS = (() => {
     }
   }
 
+  // [v2.41.58] Modal anular custom in-app (antes era prompt() nativo del
+  // browser, inconsistente con el resto de modales admin). Pide clave 8
+  // dígitos con keypad numérico.
   async function liqAnularPago() {
     const d = _liqState.currentPagoDet;
     if (!d) return;
-    const clave = prompt(`↺ Anular pago ${d.idPago}\n${d.nombre} · ${_liqMoney(d.total)}\n\nIngresa la clave admin de 8 dígitos:`);
-    if (!clave) { _liqSfx('tap'); return; }
+    _liqSfx('open');
+    _liqAbrirModalAnular(d);
+  }
+
+  function _liqAbrirModalAnular(d) {
+    let modal = document.getElementById('modalLiqAnular');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'modalLiqAnular';
+      modal.className = 'modal-overlay';
+      modal.onclick = (ev) => { if (ev.target === modal) _liqCerrarModalAnular(); };
+      document.body.appendChild(modal);
+    }
+    modal.innerHTML = `
+      <div class="modal-box" onclick="event.stopPropagation()" style="max-width:380px;padding:0;overflow:hidden">
+        <div style="background:linear-gradient(135deg,#7f1d1d,#450a0a);padding:18px 20px;text-align:center;color:#fff">
+          <div style="font-size:28px;margin-bottom:6px">↺</div>
+          <div style="font-size:13px;font-weight:900;text-transform:uppercase;letter-spacing:.04em">Anular pago</div>
+          <div style="font-size:11px;opacity:.8;margin-top:4px">${_esc(d.idPago)}</div>
+        </div>
+        <div style="padding:16px 20px">
+          <div style="background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.3);border-radius:10px;padding:10px 12px;margin-bottom:14px">
+            <div style="font-weight:800;color:#f1f5f9;font-size:13px">${_esc(d.nombre)}</div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:2px">${d.cantidadDias} día(s) · <span style="color:#fbbf24;font-weight:800">${_liqMoney(d.total)}</span></div>
+            <div style="font-size:10px;color:#fca5a5;margin-top:6px">⚠ Los días volverán a Pendientes y la guía se anulará.</div>
+          </div>
+          <label style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">
+            🔑 Clave admin (8 dígitos)
+          </label>
+          <input id="liqAnularInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off"
+                 placeholder="••••••••"
+                 style="width:100%;padding:14px;border:2px solid #334155;border-radius:10px;background:#0f172a;color:#f1f5f9;font-size:22px;text-align:center;letter-spacing:.5em;font-family:ui-monospace,monospace;font-weight:900"
+                 oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,8); if(this.value.length===8) MOS._liqConfirmarAnular();">
+          <div id="liqAnularError" style="font-size:11px;color:#fca5a5;margin-top:8px;min-height:14px;text-align:center"></div>
+          <div style="display:flex;gap:10px;margin-top:14px">
+            <button onclick="MOS._liqCerrarModalAnular()" class="cj-btn cj-btn-secondary" style="flex:1;padding:12px;border-radius:10px;border:none;background:#334155;color:#cbd5e1;font-weight:900;cursor:pointer">Cancelar</button>
+            <button id="liqAnularOk" onclick="MOS._liqConfirmarAnular()" class="cj-btn cj-btn-primary" style="flex:1;padding:12px;border-radius:10px;border:none;background:linear-gradient(135deg,#dc2626,#7f1d1d);color:#fff;font-weight:900;cursor:pointer">
+              ↺ Anular
+            </button>
+          </div>
+        </div>
+      </div>`;
+    modal.classList.remove('hidden');
+    setTimeout(() => { try { document.getElementById('liqAnularInput')?.focus(); } catch(_){} }, 50);
+  }
+  function _liqCerrarModalAnular() {
+    const m = document.getElementById('modalLiqAnular');
+    if (m) m.classList.add('hidden');
+  }
+  async function _liqConfirmarAnular() {
+    const d = _liqState.currentPagoDet;
+    if (!d) return;
+    const inp = document.getElementById('liqAnularInput');
+    const err = document.getElementById('liqAnularError');
+    if (!inp) return;
+    const clave = String(inp.value || '').trim();
+    if (!clave || clave.length < 4) {
+      if (err) err.textContent = 'Ingresa la clave (mín 4 dígitos)';
+      inp.focus();
+      return;
+    }
+    if (err) err.textContent = '';
+    const btn = document.getElementById('liqAnularOk');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Anulando...'; }
     await _liqEjecutarAnular(d.idPago, clave);
   }
+
   async function _liqEjecutarAnular(idPago, claveAdmin) {
+    // [v2.41.58] OPTIMISTA: mover el batch de pagadas → quitar visual al instante.
+    // Si falla, revertir.
+    const pagSnap = (_liqState.pagadas || []).find(p => p.idPago === idPago);
+    const idxSnap = pagSnap ? (_liqState.pagadas || []).indexOf(pagSnap) : -1;
+    const fechaAfectada = pagSnap?.pagadoTs ? new Date(pagSnap.pagadoTs).toISOString().slice(0, 10) : null;
+    if (pagSnap) {
+      _liqState.pagadas = (_liqState.pagadas || []).filter(p => p.idPago !== idPago);
+      if (_liqState.tab === 'pagadas') _liqRenderPagadas();
+    }
     try {
       const res = await API.post('anularPago', { idPago, claveAdmin });
       if (res && res.autorizado === false) {
+        // Revertir
+        if (pagSnap && idxSnap >= 0) {
+          _liqState.pagadas.splice(idxSnap, 0, pagSnap);
+          if (_liqState.tab === 'pagadas') _liqRenderPagadas();
+        }
+        const err = document.getElementById('liqAnularError');
+        if (err) err.textContent = res.error || 'Clave incorrecta';
+        const btn = document.getElementById('liqAnularOk');
+        if (btn) { btn.disabled = false; btn.textContent = '↺ Anular'; }
         _liqSfx('error');
-        toast(res.error || 'Clave incorrecta', 'error');
         return;
       }
       _liqSfx('remove');
-      toast(`↺ Pago ${idPago} anulado · ${res.anuladas || 0} día(s) volvieron a Pendientes`, 'ok');
+      _liqCerrarModalAnular();
       closeModal('modalLiqPagoDet');
+      toast(`↺ Pago ${idPago} anulado · ${res.anuladas || 0} día(s) volvieron a Pendientes`, 'ok', 4500);
+      // Invalidar cache Liq + Finanzas para forzar fetch fresco
+      try { _liqCacheClear(); } catch(_){}
+      if (fechaAfectada) {
+        try { localStorage.removeItem('mos_fin_resum_' + fechaAfectada); } catch(_){}
+      }
+      // Refresh ambas listas en bg
       await liqLoadCurrent();
+      _liqPrefetchTab('pendientes');
+      // Notificar a Finanzas si está abierto → repaint del Personal del Día
+      if (S.view === 'finanzas' && typeof finCargar === 'function') {
+        try { finCargar({ animate: false }); } catch(_){}
+      }
     } catch(e) {
+      // Revertir
+      if (pagSnap && idxSnap >= 0) {
+        _liqState.pagadas.splice(idxSnap, 0, pagSnap);
+        if (_liqState.tab === 'pagadas') _liqRenderPagadas();
+      }
+      const err = document.getElementById('liqAnularError');
+      if (err) err.textContent = 'Error: ' + (e.message || e);
+      const btn = document.getElementById('liqAnularOk');
+      if (btn) { btn.disabled = false; btn.textContent = '↺ Anular'; }
       _liqSfx('error');
-      toast('Error: ' + e.message, 'error');
     }
   }
 
@@ -22582,29 +22733,42 @@ const MOS = (() => {
       personalCont.dataset.fecha = fecha;
       if (prevFecha && prevFecha !== fecha) {
         personalCont.dataset._lastHtml = ''; // reset anti-flicker
+        // [v2.41.58] Skeleton SIEMPRE al cambiar fecha — no dejar info stale.
+        // Antes solo mostraba 2 cards skeleton, ahora algo más informativo.
         personalCont.innerHTML = `
+          <div class="text-center text-xs text-slate-500 py-3" style="opacity:.7">
+            <div class="inline-block animate-spin" style="font-size:14px">⌛</div>
+            Cargando ${_formatFechaCorta(fecha)}…
+          </div>
+          <div class="fin-skel" style="height: 64px;"></div>
           <div class="fin-skel" style="height: 64px;"></div>
           <div class="fin-skel" style="height: 64px;"></div>`;
       }
     }
 
+    // [v2.41.58] Si es refresh silencioso del polling 30s y la fecha NO cambió,
+    // NO mostrar skeleton ni invalidar cache — actualizar in-place al final.
+    const esSilent = !!opts._silent;
+
     // 1. Pintar desde cache local si existe (instantáneo) — sino, RESET visual
     //    completo. Evita que el user vea datos del día anterior mezclados con
     //    el nuevo (Personal, Gastos, break-even bar quedaban stale).
-    const cachedPL = _finLoadCache('pl_' + fecha);
-    if (cachedPL) {
-      cachedPL._fechaStamp = fecha; // stamp para detectar mismatch al reabrir
-      _finPL = cachedPL;
-      try { _finRender(cachedPL, fecha); } catch {}
-    } else {
-      _finMostrarSkeleton(true);
-      _finPL = null;
+    if (!esSilent) {
+      const cachedPL = _finLoadCache('pl_' + fecha);
+      if (cachedPL) {
+        cachedPL._fechaStamp = fecha;
+        _finPL = cachedPL;
+        try { _finRender(cachedPL, fecha); } catch {}
+      } else {
+        _finMostrarSkeleton(true);
+        _finPL = null;
+      }
+      const cachedRango = _finLoadCache('rango_' + fecha);
+      if (cachedRango) { try { _finRender7d(cachedRango); } catch {} }
     }
-    const cachedRango = _finLoadCache('rango_' + fecha);
-    if (cachedRango) { try { _finRender7d(cachedRango); } catch {} }
 
     // 2. Fetch fresco en background — actualiza cuando responda
-    iconBusy('finanzas', true);
+    if (!esSilent) iconBusy('finanzas', true);
     try {
       const pl = await API.get('getFinanzasDia', { fecha });
       // Race check: si el user navegó a otra fecha, descartar esta respuesta
@@ -22625,9 +22789,9 @@ const MOS = (() => {
         }
       } catch(_) { _finBloqueados = { porNombre: {}, fecha }; }
 
-      _finMostrarSkeleton(false);
+      if (!esSilent) _finMostrarSkeleton(false);
       _finRender(pl, fecha);
-      _finBeep('ok');
+      if (!esSilent) _finBeep('ok');
 
       const hasta  = fecha;
       const desde7 = _fechaOffset(fecha, -6);
@@ -22640,10 +22804,11 @@ const MOS = (() => {
       _finPrefetchAdyacentes(fecha);
     } catch(e) {
       if (myGen !== _finGenId) return; // race: ya no nos importa este error
-      _finMostrarSkeleton(false);
-      if (!cachedPL) toast('Error Finanzas: ' + e.message, 'error');
+      if (!esSilent) _finMostrarSkeleton(false);
+      // Silencioso: no toast en polling background (evita spam si red flota)
+      if (!esSilent && !_finPL) toast('Error Finanzas: ' + e.message, 'error');
     } finally {
-      if (myGen === _finGenId) iconBusy('finanzas', false);
+      if (myGen === _finGenId && !esSilent) iconBusy('finanzas', false);
     }
   }
 
@@ -25918,18 +26083,26 @@ const MOS = (() => {
       await API.post('crearEvaluacion', params);
       // Pull fresh data del servidor (en bg) para reflejar score real con KPIs auto
       refreshEvaluacion().catch(() => {});
-      // Si Finanzas está cargado, re-fetchar resumenes y repintar Personal
-      // con los datos REALES del servidor (sancion totalizada, totalDia, etc.)
+      // [v2.41.58] Tras auditar — fuerza repaint del card con datos FRESCOS:
+      // 1. Invalida cache local resumenes para esta fecha
+      // 2. Invalida cache backend (params._refresh=true → bypass CacheService 120s)
+      // 3. Fetch fresh + persist local + repaint personal
+      // 4. También fuerza _finPL refresh para que totalDia/gastoPersonal cuadren
       try {
+        const f = _evalState.fecha;
+        try { localStorage.removeItem('mos_fin_resum_' + f); } catch {}
         if (typeof _finPL !== 'undefined' && _finPL) {
-          const f = _evalState.fecha;
-          const fresh = await API.get('getResumenTodosDia', { fecha: f });
+          const fresh = await API.get('getResumenTodosDia', { fecha: f, _refresh: 'true' });
           if (Array.isArray(fresh)) {
             _evalState.resumenes = fresh;
             try { localStorage.setItem('mos_fin_resum_' + f, JSON.stringify({ ts: Date.now(), data: fresh })); } catch {}
             const cont = $('finPersonalList');
             if (cont) cont.dataset._lastHtml = '';
             if (typeof _finRenderPersonal === 'function') _finRenderPersonal(_finPL, f);
+          }
+          // Refresh full P&L silencioso para KPIs (gastoPersonal, breakeven)
+          if (S.view === 'finanzas' && typeof finCargar === 'function') {
+            setTimeout(() => { try { finCargar({ animate: false, _silent: true }); } catch(_){} }, 200);
           }
         }
       } catch(_){}
@@ -26949,6 +27122,7 @@ const MOS = (() => {
     liqCargarMasDias,
     liqAbrirConfirmacion, liqConfirmarPago,
     liqReimprimirPago, liqAnularPago,
+    _liqCerrarModalAnular, _liqConfirmarAnular,
     _liqTogglePersona, _liqToggleDia, _liqToggleAll,
     _liqEditarDia, _liqAbrirPagoDet, _liqMigrar, _liqBackfillDia,
     // [v2.41.31] Vetar/desvetar inline
