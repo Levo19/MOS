@@ -22416,11 +22416,20 @@ const MOS = (() => {
       modal = document.createElement('div');
       modal.id = 'modalLiqAnular';
       modal.className = 'modal-overlay';
+      // [v2.41.70] Estilos inline garantizan que el modal aparezca POR ENCIMA
+      // del nav inferior (z-30) y de cualquier otro overlay. Sin esto, modal
+      // quedaba en z-0 y el nav lo tapaba.
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(2,6,23,.85);' +
+        'z-index:200;display:flex;align-items:center;justify-content:center;' +
+        'padding:16px;backdrop-filter:blur(4px);';
       modal.onclick = (ev) => { if (ev.target === modal) _liqCerrarModalAnular(); };
       document.body.appendChild(modal);
     }
+    // Si ya existía oculto, mostrar
+    modal.style.display = 'flex';
+    modal.classList.remove('hidden');
     modal.innerHTML = `
-      <div class="modal-box" onclick="event.stopPropagation()" style="max-width:380px;padding:0;overflow:hidden">
+      <div class="modal-box" onclick="event.stopPropagation()" style="max-width:380px;padding:0;overflow:hidden;background:#0f172a;border-radius:14px;box-shadow:0 24px 64px rgba(0,0,0,.6);width:100%">
         <div style="background:linear-gradient(135deg,#7f1d1d,#450a0a);padding:18px 20px;text-align:center;color:#fff">
           <div style="font-size:28px;margin-bottom:6px">↺</div>
           <div style="font-size:13px;font-weight:900;text-transform:uppercase;letter-spacing:.04em">Anular pago</div>
@@ -22453,7 +22462,7 @@ const MOS = (() => {
   }
   function _liqCerrarModalAnular() {
     const m = document.getElementById('modalLiqAnular');
-    if (m) m.classList.add('hidden');
+    if (m) { m.style.display = 'none'; m.classList.add('hidden'); }
   }
   async function _liqConfirmarAnular() {
     const d = _liqState.currentPagoDet;
