@@ -321,15 +321,25 @@ function marcarPagos(params) {
   // ⚡ Materialización: marcar los días como PAGADA en LIQUIDACIONES_DIA
   try { _liqDiaMarcarPagadas(String(params.idPersonal), params.fechas, idPago); } catch(_){}
 
-  // [v2.41.71] Invalidar cache backend de getLiquidacionesPagadas — el polling
-  // 30s tomaría hasta 1min en reflejar este pago sin esto.
+  // [v2.41.71] Invalidar cache backend de getLiquidacionesPagadas
   try {
     var _cp = CacheService.getScriptCache();
     var _hoy = _liqHoy();
-    // Invalidar varias combinaciones comunes de rangos
     [29, 30, 89, 90].forEach(function(d){
       _cp.remove('liqPag_' + _fechaOffset(_hoy, -d) + '_' + _hoy);
     });
+  } catch(_){}
+
+  // [v2.41.73-B17] Push a admin/master con resumen del pago
+  try {
+    if (typeof _enviarPushTodos === 'function') {
+      var nombrePago = String(params.nombre || params.idPersonal || 'personal');
+      _enviarPushTodos(
+        '💵 Pago liquidación · S/ ' + (Math.round(totalPago * 100) / 100).toFixed(2),
+        nombrePago + ' · ' + filas.length + ' día(s) · por ' + String(params.pagadoPor || 'admin'),
+        { idNotif: 'MOS_ADMIN_AUTH', excluirUsuario: String(params.pagadoPor || '') }
+      );
+    }
   } catch(_){}
 
   return { ok: true, data: { idPago: idPago, total: totalPago, jobId: jobId, dias: filas.length } };

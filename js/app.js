@@ -21392,7 +21392,9 @@ const MOS = (() => {
 
   async function liqOpen() {
     _liqState.tab = 'pendientes';
-    _liqState.seleccion = {};
+    // [B2 + B7] Restaurar selección y filtro persistente del usuario
+    _liqState.seleccion = _liqLoadSeleccion();
+    _liqState.filtroPersonas = _liqLoadFiltroPersonas();
     _liqState.expandidos = {};
     // ⚡ Materializado: backend lee directo de LIQUIDACIONES_DIA, podemos
     // pedir 30 días sin penalización
@@ -21491,14 +21493,19 @@ const MOS = (() => {
   async function liqCargarMasDias() {
     _liqSfx('tap');
     const hoy = _liqHoy();
-    // Si actualmente vemos 3 días, extendemos a 14. Si vemos 14, a 30.
     const diasActuales = _diff(_liqState.desde, _liqState.hasta);
     const nuevoDesde = diasActuales < 7  ? _liqOffset(hoy, -13)
                      : diasActuales < 20 ? _liqOffset(hoy, -29)
                      :                     _liqOffset(hoy, -59);
+    // [B3] Validar rango antes de fetch
+    if (!_liqValidarRango(nuevoDesde, hoy)) {
+      toast('📅 Rango inválido', 'warn', 3000);
+      return;
+    }
     _liqState.desde = nuevoDesde;
     _liqState.hasta = hoy;
-    // Forzar fresh fetch (no cache)
+    // [B4] Invalidar cache del rango anterior para forzar fresh
+    try { _liqCacheClear(); } catch(_){}
     await liqLoadCurrent();
     toast(`📅 Mostrando últimos ${_diff(nuevoDesde, hoy) + 1} días`, 'info');
   }
@@ -21798,6 +21805,20 @@ const MOS = (() => {
     cont.innerHTML = chips + clearBtn;
   }
 
+  // [B7] Persistir filtroPersonas en localStorage para sobrevivir polling
+  function _liqSaveFiltroPersonas() {
+    try {
+      const arr = Array.from(_liqState.filtroPersonas || []);
+      _liqLsSet('mos_liq_filtro_personas', JSON.stringify(arr));
+    } catch(_){}
+  }
+  function _liqLoadFiltroPersonas() {
+    try {
+      const raw = localStorage.getItem('mos_liq_filtro_personas');
+      if (!raw) return new Set();
+      return new Set(JSON.parse(raw));
+    } catch(_) { return new Set(); }
+  }
   function _liqToggleFiltroPersona(idPersonal) {
     _liqState.filtroPersonas = _liqState.filtroPersonas || new Set();
     if (_liqState.filtroPersonas.has(idPersonal)) {
@@ -21805,12 +21826,14 @@ const MOS = (() => {
     } else {
       _liqState.filtroPersonas.add(idPersonal);
     }
+    _liqSaveFiltroPersonas();
     try { _liqSfx('tap'); } catch(_){}
     _liqRenderPendientes();
   }
 
   function _liqLimpiarFiltroPersonas() {
     _liqState.filtroPersonas = new Set();
+    _liqSaveFiltroPersonas();
     try { _liqSfx('tap'); } catch(_){}
     _liqRenderPendientes();
   }
@@ -21902,10 +21925,31 @@ const MOS = (() => {
     _liqRenderPendientes();
   }
 
+  // [B2] Persistir selección en localStorage para sobrevivir polling 30s
+  function _liqSaveSeleccion() {
+    try {
+      const obj = {};
+      Object.keys(_liqState.seleccion || {}).forEach(k => {
+        obj[k] = Array.from(_liqState.seleccion[k] || []);
+      });
+      _liqLsSet('mos_liq_seleccion', JSON.stringify(obj));
+    } catch(_){}
+  }
+  function _liqLoadSeleccion() {
+    try {
+      const raw = localStorage.getItem('mos_liq_seleccion');
+      if (!raw) return {};
+      const obj = JSON.parse(raw);
+      const out = {};
+      Object.keys(obj).forEach(k => { out[k] = new Set(obj[k] || []); });
+      return out;
+    } catch(_) { return {}; }
+  }
   function _liqToggleDia(idPersonal, fecha, checked, ev) {
     if (!_liqState.seleccion[idPersonal]) _liqState.seleccion[idPersonal] = new Set();
     const set = _liqState.seleccion[idPersonal];
     if (checked) set.add(fecha); else set.delete(fecha);
+    _liqSaveSeleccion();
     if (set.size === 0) delete _liqState.seleccion[idPersonal];
     _liqSfx('tap');
     _liqRenderPendientes();
@@ -21983,12 +22027,20 @@ const MOS = (() => {
     // "if(!res||!res.ok)" lanzaba falso negativo "Backend no respondió".
     // Solución: confiar en que API.post resuelve → éxito; .catch → error real
     // (e.message trae el error key del backend: YA_PAGADA, NO_ENCONTRADA…).
+    // [B1] Marcar mutación reciente (60s) — el polling chequea esto y pasa
+    // _refresh=true para no traer cache stale del backend.
+    window._liqLastMutationTs = Date.now();
     try {
       await API.post('vetarLiquidacionDia', {
         idPersonal, fecha,
         localId: 'L' + Date.now() + Math.random().toString(36).slice(2, 8)
       });
       toast(`💸 Vetada · ${_liqFmtFechaCortaSafe(fecha)}`, 'info', 2500);
+      // [B15] Invalidar cache cruzado de Finanzas
+      try { localStorage.removeItem('mos_fin_resum_' + fecha); } catch(_){}
+      if (S.view === 'finanzas' && typeof finCargar === 'function') {
+        try { finCargar({ animate: false, _silent: true }); } catch(_){}
+      }
     } catch(e) {
       const errKey = (e && e.message) || 'sin_respuesta';
       let msg;
@@ -22007,7 +22059,6 @@ const MOS = (() => {
 
   async function _liqDesvetarDia(idPersonal, fecha) {
     _liqSfx('tap');
-    // [v2.41.50] Igual fix: confiar en resolve → éxito.
     try {
       await API.post('desvetarLiquidacionDia', {
         idPersonal, fecha,
@@ -22017,20 +22068,37 @@ const MOS = (() => {
       _liqState.vetadas = (_liqState.vetadas || []).filter(v =>
         !(v.idPersonal === idPersonal && v.fecha === fecha));
       _liqRenderVetadas();
+      // [B5] Invalidar TODOS los caches + forzar refresh pendientes para que
+      // la persona desvetada vuelva a aparecer al instante (sin esperar polling).
+      try { _liqCacheClear(); } catch(_){}
+      try { localStorage.removeItem('mos_fin_resum_' + fecha); } catch(_){}
       try { liqLoadCurrent(); } catch(_){}
+      // [B14] Notificar a Finanzas si está abierto
+      if (S.view === 'finanzas' && typeof finCargar === 'function') {
+        try { finCargar({ animate: false, _silent: true }); } catch(_){}
+      }
     } catch(e) {
       toast('No se pudo desvetar: ' + ((e && e.message) || 'error'), 'warn', 4000);
     }
   }
 
   async function _liqCargarVetadas() {
+    // [B6] Mostrar loading mientras carga vetadas (antes silencioso)
+    const cont = document.getElementById('liqVetadasBody');
+    if (cont && !_liqState.vetadas?.length) {
+      cont.innerHTML = '<div class="text-xs text-slate-500 italic text-center py-4"><span class="inline-block animate-spin">⌛</span> Cargando vetadas…</div>';
+    }
     try {
       const res = await API.get('getLiquidacionesVetadas', {});
       if (res?.ok) {
         _liqState.vetadas = res.data || [];
         _liqRenderVetadas();
+      } else if (cont) {
+        cont.innerHTML = '<div class="text-xs text-rose-400 italic text-center py-4">Error cargando vetadas</div>';
       }
-    } catch(_) {}
+    } catch(e) {
+      if (cont) cont.innerHTML = '<div class="text-xs text-rose-400 italic text-center py-4">⚠ ' + (e.message || 'error') + '</div>';
+    }
   }
 
   function _liqRenderVetadas() {
@@ -22159,7 +22227,15 @@ const MOS = (() => {
                 _liqRenderPendientes();
               }
             }
-          } catch(_){}
+            // [B14] Notificar a Finanzas si está abierto + invalidar su cache
+            try { localStorage.removeItem('mos_fin_resum_' + fecha); } catch(_){}
+            if (S.view === 'finanzas' && typeof finCargar === 'function') {
+              try { finCargar({ animate: false, _silent: true }); } catch(_){}
+            }
+          } catch(eRec) {
+            // [B13] Toast claro si recompute falla (antes era silencioso)
+            toast('⚠ No se pudo recomputar el día: ' + ((eRec && eRec.message) || 'error'), 'warn', 5000);
+          }
         }
       }
     } catch(_){}
@@ -22488,15 +22564,16 @@ const MOS = (() => {
     }
   }
 
+  // [v2.41.73-B10] Lock anti-doble-click en reimpresión
+  let _liqReimpLock = false;
   async function liqReimprimirPago() {
+    if (_liqReimpLock) { try { toast('⏳ Ya se está reimprimiendo…', 'info', 2000); } catch(_){} return; }
+    _liqReimpLock = true;
     const d = _liqState.currentPagoDet;
-    if (!d) return;
-    // [v2.41.53] Cerrar modal detalle ANTES de abrir selector impresora.
-    // Sin esto, el modalSelPrinterLiq quedaba atrás del modalLiqPagoDet y
-    // no se podía clickear.
+    if (!d) { _liqReimpLock = false; return; }
     closeModal('modalLiqPagoDet');
     const printerId = await _liqElegirImpresora();
-    if (!printerId) return;
+    if (!printerId) { _liqReimpLock = false; return; }
     try {
       const res = await API.post('imprimirTicketPago', { idPago: d.idPago, printerId });
       _liqSfx('success');
@@ -22504,6 +22581,8 @@ const MOS = (() => {
     } catch(e) {
       _liqSfx('error');
       toast('Error: ' + e.message, 'error');
+    } finally {
+      _liqReimpLock = false;
     }
   }
 
@@ -22526,10 +22605,21 @@ const MOS = (() => {
       // [v2.41.70] Estilos inline garantizan que el modal aparezca POR ENCIMA
       // del nav inferior (z-30) y de cualquier otro overlay. Sin esto, modal
       // quedaba en z-0 y el nav lo tapaba.
-      // [v2.41.71] z-index 9500 — sobre modal-backdrop (9400) para que el
-      // modal de clave admin aparezca encima del modal de detalle de pago.
+      // [v2.41.73-B9] z-index DINÁMICO: lee el z-index efectivo del modal
+      // padre visible y suma 100. Antes era 9500 fijo → si ya había un
+      // overlay z=9600 (ej. impresora), el modal anular quedaba detrás.
+      let zParent = 9400;
+      try {
+        const visibles = Array.from(document.querySelectorAll('.modal-backdrop, [class*="modal-overlay"]'))
+          .filter(el => el !== modal && (el.classList.contains('open') || (el.style.display && el.style.display !== 'none')));
+        visibles.forEach(el => {
+          const z = parseInt(window.getComputedStyle(el).zIndex, 10);
+          if (!isNaN(z) && z > zParent) zParent = z;
+        });
+      } catch(_){}
+      const zDinamico = Math.max(9500, zParent + 100);
       modal.style.cssText = 'position:fixed;inset:0;background:rgba(2,6,23,.85);' +
-        'z-index:9500;display:flex;align-items:center;justify-content:center;' +
+        'z-index:' + zDinamico + ';display:flex;align-items:center;justify-content:center;' +
         'padding:16px;backdrop-filter:blur(4px);';
       modal.onclick = (ev) => { if (ev.target === modal) _liqCerrarModalAnular(); };
       document.body.appendChild(modal);
