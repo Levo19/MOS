@@ -1559,7 +1559,13 @@ function cierreNocturnoTodos() {
       var errTotal = resultado.wh.errores + resultado.me.errores;
       if (errTotal > 0) partes.push('⚠ ' + errTotal + ' errores (ver Logger)');
       var cuerpo = partes.join(' · ');
-      _notificarMOS(titulo, cuerpo, null, 'CIERRE_NOCTURNO_AUTO');
+      // [v2.41.59] Usar _enviarPushTodos con idNotif del catálogo. Antes
+      // llamaba _notificarMOS (función que no existe) → push silencioso.
+      try {
+        if (typeof _enviarPushTodos === 'function') {
+          _enviarPushTodos(titulo, cuerpo, { idNotif: 'MOS_CIERRE_NOCTURNO' });
+        }
+      } catch(_){}
     }
   } catch(eP) { Logger.log('[CierreNoct] push fallo: ' + eP.message); }
 

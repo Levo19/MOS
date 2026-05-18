@@ -139,7 +139,8 @@ function verificarClaveAdmin(params) {
     return { ok: true, data: { autorizado: false, error: 'Clave incorrecta' } };
   }
 
-  // Auditoría
+  // Auditoría — registro en hoja AUDITORIA_ACCIONES
+  var nombreCompleto = (admin.nombre + ' ' + (admin.apellido || '')).trim();
   try {
     var sheet = _garantizarHojaAuditoria();
     sheet.appendRow([
@@ -148,20 +149,42 @@ function verificarClaveAdmin(params) {
       params.accion || 'GENERICA',
       params.refDocumento || '',
       admin.idPersonal,
-      admin.nombre + ' ' + (admin.apellido || ''),
+      nombreCompleto,
       params.appOrigen || '',
       params.dispositivo || '',
       params.detalle || ''
     ]);
   } catch(e) { /* no bloquear validación si auditoría falla */ }
 
+  // [v2.41.59] Push a admin/master cuando se autoriza acción con clave.
+  // Usa idNotif='MOS_ADMIN_AUTH' del catálogo → respeta config (silencio,
+  // audiencia, prioridad) + queda en NOTIFICACIONES_LOG con su idLog único.
+  // Cubre TODO lo que pasa por verificarClaveAdmin: anular pago/venta,
+  // desbloquear dispositivo, cierre forzado, etc.
+  try {
+    if (typeof _enviarPushTodos === 'function') {
+      var accionTxt = String(params.accion || 'ACCIÓN ADMIN').replace(/_/g, ' ');
+      var titulo = '🔐 ' + accionTxt;
+      var partes = [];
+      partes.push('por ' + nombreCompleto);
+      if (params.refDocumento) partes.push(String(params.refDocumento));
+      if (params.detalle)      partes.push(String(params.detalle));
+      if (params.appOrigen)    partes.push('desde ' + params.appOrigen);
+      var cuerpo = partes.join(' · ');
+      _enviarPushTodos(titulo, cuerpo, {
+        idNotif: 'MOS_ADMIN_AUTH',
+        excluirUsuario: nombreCompleto  // el mismo admin que ejecutó no se auto-notifica
+      });
+    }
+  } catch(eN) { /* push best-effort */ }
+
   return {
     ok: true,
     data: {
       autorizado: true,
-      validadoPor: 'admin:' + (admin.nombre + ' ' + (admin.apellido || '')).trim(),
+      validadoPor: 'admin:' + nombreCompleto,
       idPersonal: admin.idPersonal,
-      nombre: admin.nombre + ' ' + (admin.apellido || ''),
+      nombre: nombreCompleto,
       rol: String(admin.rol || '').toUpperCase()  // expuesto para que callers
                                                    // puedan validar admin vs master
     }

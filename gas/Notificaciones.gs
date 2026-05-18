@@ -137,7 +137,22 @@ function _ntfCatalogoDefault() {
       titulo: 'Impresora(s) offline',
       descripcion: 'Se detectó una o más impresoras del ecosistema apagadas o con la PC desconectada. Se dispara cuando alguien inicia sesión / abre caja y al heartbeat de zonas activas. Con anti-spam (no repite la misma caída antes de 30 min).',
       activa: true, audiencia_roles: 'MASTER,ADMIN,ADMINISTRADOR', audiencia_usuarios: '',
-      excluir_origen: false, prioridad: 'alta' }
+      excluir_origen: false, prioridad: 'alta' },
+    // [v2.41.59] Toda acción autorizada con clave admin (8 dígitos) dispara
+    // este push: ANULAR_PAGO, ANULAR_VENTA, DESBLOQUEAR_DISPOSITIVO,
+    // CIERRE_FORZADO_CAJA, etc. Origen único para que el master pueda
+    // silenciarlo o ajustar audiencia desde el panel.
+    { idNotif: 'MOS_ADMIN_AUTH',         origen: 'MOS', icono: '🔐',
+      titulo: 'Acción autorizada por admin',
+      descripcion: 'Se ejecutó una acción crítica con clave admin de 8 dígitos. Incluye anular pago, anular venta, desbloquear dispositivo, cierre forzado, etc. El título indica qué acción y quién la autorizó. Siempre queda en hoja AUDITORIA_ACCIONES.',
+      activa: true, audiencia_roles: 'MASTER,ADMIN,ADMINISTRADOR', audiencia_usuarios: '',
+      excluir_origen: true, prioridad: 'alta' },
+    // [v2.41.59] Cierre nocturno auto del cron 23h (cierra cajas ME + sesiones WH).
+    { idNotif: 'MOS_CIERRE_NOCTURNO',    origen: 'MOS', icono: '🌙',
+      titulo: 'Cierre nocturno automático',
+      descripcion: 'Trigger 23:00 diario cerró cajas abiertas en MosExpress y sesiones activas en warehouseMos. Resumen de qué se cerró y posibles errores.',
+      activa: true, audiencia_roles: 'MASTER,ADMIN,ADMINISTRADOR', audiencia_usuarios: '',
+      excluir_origen: false, prioridad: 'normal' }
   ];
 }
 
