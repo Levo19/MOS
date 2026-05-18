@@ -634,6 +634,13 @@ const MOS = (() => {
           _evalState.fecha = _fhoy;
         }
       }).catch(() => {});
+      // [v2.41.64] Prefetch EVALUACIONES del día — al abrir modal Auditar,
+      // ya tenemos los registros previos en localStorage → modal instantáneo
+      // sin esperar getEvaluacionesDia. Sin esto, el modal demoraba 1-2s.
+      API.get('getEvaluacionesDia', { fecha: _fhoy }).then(r => {
+        const arr = Array.isArray(r) ? r : ((r && r.data) || []);
+        try { localStorage.setItem('mos_evals_' + _fhoy, JSON.stringify({ ts: Date.now(), data: arr })); } catch {}
+      }).catch(() => {});
     })();
     _refreshPNPendientes(); // PN pendientes — pre-carga inmediata
     _startPNAutoRefresh();   // refresca cada 90s automáticamente
@@ -25311,19 +25318,33 @@ const MOS = (() => {
     _renderAuditChecklist(r.rol);
     _renderAuditLiquidacion();
     openModal('modalAuditar');
-    // Fetch en bg el valor actual de LIQUIDACIONES_DIA y prellenar
+    // [v2.41.64] BUG FIX race condition: si abrías audit OP002, cerrabas,
+    // y antes que llegara el fetch abrías OP001, el fetch viejo de OP002
+    // escribía "44" sobre el modal de OP001 (que tenía bon=0 → no entraba
+    // a la rama de limpieza). Guard con token: solo aplicar el prefill si
+    // el modal sigue mostrando ESTE idPersonal.
     _evalState.auditPrevBon = 0;
     _evalState.auditPrevSan = 0;
+    _evalState.auditFetchToken = (_evalState.auditFetchToken || 0) + 1;
+    const _myToken = _evalState.auditFetchToken;
+    const _myIdPersonal = idPersonal;
+    const _myFecha = _evalState.fecha;
     (async () => {
       try {
         const resp = await API.get('getLiqDiaBonSan', {
-          idPersonal: idPersonal,
-          fecha: _evalState.fecha
+          idPersonal: _myIdPersonal,
+          fecha: _myFecha
         });
+        // GUARDS: si el modal cambió a otro personal/fecha, o ya hay otro
+        // fetch en vuelo más nuevo, descartar este resultado.
+        if (_myToken !== _evalState.auditFetchToken) return;
+        if (!_evalState.auditR || _evalState.auditR.idPersonal !== _myIdPersonal) return;
+        if (_evalState.fecha !== _myFecha) return;
+
         const d = (resp && resp.data) || resp || {};
         const bonAct = parseFloat(d.bonificacion) || 0;
         const sanAct = parseFloat(d.sancion) || 0;
-        // [v2.41.61] Capturar valores previos para calcular delta en guardarAuditoria
+        // Capturar valores previos para calcular delta en guardarAuditoria
         _evalState.auditPrevBon = bonAct;
         _evalState.auditPrevSan = sanAct;
         if (sanAct > 0) {
@@ -25336,10 +25357,14 @@ const MOS = (() => {
           if (am) am.value = bonAct.toFixed(2);
         }
         const hint = $('auditAjusteHint');
-        if (hint && (bonAct > 0 || sanAct > 0)) {
-          const tipoLbl = sanAct > 0 ? 'sanción' : 'bonificación';
-          const monto = (sanAct > 0 ? sanAct : bonAct).toFixed(2);
-          hint.innerHTML = `📌 actual: <strong style="color:#fbbf24">S/${monto}</strong> de ${tipoLbl} · podés cambiarlo`;
+        if (hint) {
+          if (bonAct > 0 || sanAct > 0) {
+            const tipoLbl = sanAct > 0 ? 'sanción' : 'bonificación';
+            const monto = (sanAct > 0 ? sanAct : bonAct).toFixed(2);
+            hint.innerHTML = `📌 actual: <strong style="color:#fbbf24">S/${monto}</strong> de ${tipoLbl} · podés cambiarlo`;
+          } else {
+            hint.textContent = 'descuenta o suma al total';
+          }
         }
         _renderAuditLiquidacion();
       } catch(_){}
@@ -26112,32 +26137,30 @@ const MOS = (() => {
       r.manual.checksAcum = Object.assign({}, r.manual.checksAcum || {});
       Object.keys(checksFull).forEach(k => { if (checksFull[k]) r.manual.checksAcum[k] = true; });
 
-      // ── Optimistic update de la LIQUIDACIÓN DEL DÍA ──
-      // Para que el total de Personal en Finanzas reaccione al instante
-      // (descuento por sanción / no aplicar bono meta), recalculamos
-      // r.totalDia con la misma fórmula que el backend en _armarPL:
-      //   totalDia = max(0, base + pagoEnvasado + bonoMeta_efectivo − sancion_total)
-      const sancionPrev = parseFloat(r.sancion) || 0;
-      const sancionNueva = sancionPrev + sancion;
-      r.sancion = Math.round(sancionNueva * 100) / 100;
-      if (sancion > 0) {
-        r.sancionesDetalle = (r.sancionesDetalle || []).slice();
-        r.sancionesDetalle.push({
-          hora: new Date().toTimeString().slice(0,5),
-          monto: sancion,
-          motivo: sancionMotivo
-        });
-      }
-      // [v2.41.51] Acumular bonificación
-      const bonifPrev = parseFloat(r.bonificacion) || 0;
-      r.bonificacion = Math.round((bonifPrev + bonificacion) * 100) / 100;
-      if (bonificacion > 0) {
-        r.bonificacionesDetalle = (r.bonificacionesDetalle || []).slice();
-        r.bonificacionesDetalle.push({
-          hora: new Date().toTimeString().slice(0,5),
-          monto: bonificacion,
-          motivo: bonificacionMotivo
-        });
+      // ── [v2.41.64] Optimistic update REAL — modelo "reemplaza" no suma ──
+      // Backend ahora reemplaza bonificacion/sancion en LIQUIDACIONES_DIA
+      // con el valor del audit (si admin tocó). Frontend debe reflejar lo
+      // mismo: el nuevo valor REEMPLAZA al previo, no suma.
+      // Si admin no tocó el ajuste, conservar el valor actual.
+      const tocado = !!_evalState.auditAjusteTocado;
+      if (tocado) {
+        r.sancion = Math.round(sancion * 100) / 100;
+        r.bonificacion = Math.round(bonificacion * 100) / 100;
+        // Reset detalles si el valor cambió drásticamente
+        if (sancion > 0) {
+          r.sancionesDetalle = [{
+            hora: new Date().toTimeString().slice(0,5), monto: sancion, motivo: sancionMotivo
+          }];
+        } else {
+          r.sancionesDetalle = [];
+        }
+        if (bonificacion > 0) {
+          r.bonificacionesDetalle = [{
+            hora: new Date().toTimeString().slice(0,5), monto: bonificacion, motivo: bonificacionMotivo
+          }];
+        } else {
+          r.bonificacionesDetalle = [];
+        }
       }
       // Bono meta efectivo: si admin desactivó el toggle, queda en 0
       const baseV = parseFloat(r.montoBase) || 0;
@@ -26145,38 +26168,48 @@ const MOS = (() => {
       const aplicaMeta = !!params.aplicaBonoMeta;
       if (!aplicaMeta) r.bonoMeta = 0;
       const metaEf = aplicaMeta ? (parseFloat(r.bonoMeta) || 0) : 0;
-      r.totalDia = Math.max(0, Math.round((baseV + envV + metaEf + r.bonificacion - r.sancion) * 100) / 100);
+      r.totalDia = Math.max(0, Math.round((baseV + envV + metaEf + (parseFloat(r.bonificacion)||0) - (parseFloat(r.sancion)||0)) * 100) / 100);
+      r.evaluacionesCount = (parseInt(r.evaluacionesCount) || 0) + 1;
+      r.auditado = true;
+      r.liqEstado = r.liqEstado || 'PENDIENTE';
 
       _renderEvalLista();
-      // Re-render de Finanzas Personal (cards + subtotales + total general)
-      // para que el "Gasto Personal" refleje el descuento al instante.
+      // [v2.41.64] Actualizar también la card de Personal del Día — ese render
+      // viene de getPersonalDiaFast (no getResumenTodosDia). Para que se vea
+      // al instante: invalidar cache local + repaint con _evalState.resumenes
+      // actualizado, y forzar refetch en bg.
       try {
+        const f = _evalState.fecha;
+        // Persistir cambios optimistas en cache local
+        try {
+          localStorage.setItem('mos_fin_resum_' + f, JSON.stringify({ ts: Date.now(), data: _evalState.resumenes }));
+        } catch {}
         if (typeof _finPL !== 'undefined' && _finPL && typeof _finRenderPersonal === 'function') {
-          // Invalidar el anti-flicker para forzar repaint con totalDia nuevo
           const cont = $('finPersonalList');
           if (cont) cont.dataset._lastHtml = '';
-          _finRenderPersonal(_finPL, _evalState.fecha);
+          _finRenderPersonal(_finPL, f);
         }
       } catch(_){}
+      // Beep optimista de éxito
+      try { _finBeep && _finBeep('ok'); } catch(_){}
     }
 
     try {
       await API.post('crearEvaluacion', params);
       // Pull fresh data del servidor (en bg) para reflejar score real con KPIs auto
       refreshEvaluacion().catch(() => {});
-      // [v2.41.58] Tras auditar — fuerza repaint del card con datos FRESCOS:
-      // 1. Invalida cache local resumenes para esta fecha
-      // 2. Invalida cache backend (params._refresh=true → bypass CacheService 120s)
-      // 3. Fetch fresh + persist local + repaint personal
-      // 4. También fuerza _finPL refresh para que totalDia/gastoPersonal cuadren
+      // [v2.41.64] Tras auditar — fuerza repaint con datos FRESCOS desde tabla
+      // plana (getPersonalDiaFast). Reemplaza al uso viejo de getResumenTodosDia
+      // que recompute pesado (5-15s) y no respetaba LIQUIDACIONES_DIA.
       try {
         const f = _evalState.fecha;
         try { localStorage.removeItem('mos_fin_resum_' + f); } catch {}
         if (typeof _finPL !== 'undefined' && _finPL) {
-          const fresh = await API.get('getResumenTodosDia', { fecha: f, _refresh: 'true' });
-          if (Array.isArray(fresh)) {
-            _evalState.resumenes = fresh;
-            try { localStorage.setItem('mos_fin_resum_' + f, JSON.stringify({ ts: Date.now(), data: fresh })); } catch {}
+          const fresh = await API.get('getPersonalDiaFast', { fecha: f, _refresh: 'true' });
+          const arr = Array.isArray(fresh) ? fresh : ((fresh && fresh.data) || []);
+          if (arr.length) {
+            _evalState.resumenes = arr;
+            try { localStorage.setItem('mos_fin_resum_' + f, JSON.stringify({ ts: Date.now(), data: arr })); } catch {}
             const cont = $('finPersonalList');
             if (cont) cont.dataset._lastHtml = '';
             if (typeof _finRenderPersonal === 'function') _finRenderPersonal(_finPL, f);
@@ -26186,10 +26219,20 @@ const MOS = (() => {
             setTimeout(() => { try { finCargar({ animate: false, _silent: true }); } catch(_){} }, 200);
           }
         }
+        // [v2.41.64] Invalidar cache localStorage de EVALUACIONES del día
+        // para que el próximo abrirAuditar lea los datos frescos (con el delta nuevo)
+        try { localStorage.removeItem('mos_evals_' + f); } catch {}
       } catch(_){}
     } catch (e) {
-      toast('Error al guardar: ' + e.message, 'error');
+      // [v2.41.64] Revertir optimistic update si falla el backend
+      toast('Error al guardar: ' + e.message + ' · revirtiendo', 'error');
       refreshEvaluacion().catch(() => {});
+      // Forzar refresh full para recuperar el estado real
+      try {
+        if (typeof _finPL !== 'undefined' && _finPL && S.view === 'finanzas') {
+          finCargar({ animate: false });
+        }
+      } catch(_){}
     }
   }
 
