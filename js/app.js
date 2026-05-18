@@ -25357,17 +25357,27 @@ const MOS = (() => {
         const d = (resp && resp.data) || resp || {};
         const bonAct = parseFloat(d.bonificacion) || 0;
         const sanAct = parseFloat(d.sancion) || 0;
+        const bonMotAct = String(d.bonificacionMotivo || '');
+        const sanMotAct = String(d.sancionMotivo || '');
         // Capturar valores previos para calcular delta en guardarAuditoria
         _evalState.auditPrevBon = bonAct;
         _evalState.auditPrevSan = sanAct;
+        _evalState.auditPrevBonMot = bonMotAct;
+        _evalState.auditPrevSanMot = sanMotAct;
+        // [v2.41.69] Prellenar también el MOTIVO (no solo el monto). El motivo
+        // proviene de LIQUIDACIONES_DIA que ahora es la concatenación de todos
+        // los motivos de EVALUACIONES del día/persona.
+        const amotEl = $('auditAjusteMotivo');
         if (sanAct > 0) {
           _evalState.auditAjusteTipo = 'sancion';
           _auditSetAjuste('sancion');
           if (am) am.value = sanAct.toFixed(2);
+          if (amotEl) amotEl.value = sanMotAct;
         } else if (bonAct > 0) {
           _evalState.auditAjusteTipo = 'bonificacion';
           _auditSetAjuste('bonificacion');
           if (am) am.value = bonAct.toFixed(2);
+          if (amotEl) amotEl.value = bonMotAct;
         }
         const hint = $('auditAjusteHint');
         if (hint) {

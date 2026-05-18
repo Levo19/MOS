@@ -113,9 +113,6 @@ function crearEvaluacion(params) {
     if (typeof _liqDiaRecomputar === 'function' && params.fecha) {
       _liqDiaRecomputar(params.idPersonal, params.fecha);
       if (typeof _liqDiaSetBonSan === 'function' && ajusteTocado) {
-        // [v2.41.67] Preservar el OTRO tipo cuando admin solo editó uno.
-        // ajusteTipoActivo viene del frontend ('sancion' o 'bonificacion').
-        // Si bonNueva>0 y sanNueva=0 y no hay flag explícito → tipo activo es bon.
         var ajusteTipoActivo = String(params.ajusteTipo || '').toLowerCase();
         var soloTipo = null;
         if (ajusteTipoActivo === 'sancion' || ajusteTipoActivo === 'bonificacion') {
@@ -125,11 +122,47 @@ function crearEvaluacion(params) {
         } else if (sanNueva > 0 && bonNueva === 0) {
           soloTipo = 'sancion';
         }
+
+        // [v2.41.69] FUSIÓN motivos: concatenar todos los motivos de
+        // EVALUACIONES del día/persona como timeline (incluyendo el actual).
+        // Así LIQUIDACIONES_DIA.bonificacionMotivo refleja TODAS las razones
+        // que llevaron al monto actual. Si el último admin puso 0 (borrar),
+        // el motivo también queda vacío.
+        var bonMotivoFinal = String(params.bonificacionMotivo || '');
+        var sanMotivoFinal = String(params.sancionMotivo || '');
+        try {
+          var evalsTodas = _sheetToObjects(_getEvalSheet()).filter(function(e){
+            if (e.activo === false || String(e.activo) === '0' || String(e.activo) === 'false') return false;
+            var ef = e.fecha instanceof Date
+              ? Utilities.formatDate(e.fecha, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+              : String(e.fecha || '').substring(0, 10);
+            return ef === params.fecha && String(e.idPersonal) === String(params.idPersonal);
+          });
+          // Solo concatenar si el tipo activo tiene valor > 0
+          if (bonNueva > 0 && (soloTipo === 'bonificacion' || soloTipo === null)) {
+            var bonMots = evalsTodas
+              .filter(function(e){ return (parseFloat(e.bonificacion) || 0) > 0; })
+              .map(function(e){ return String(e.bonificacionMotivo || '').trim(); })
+              .filter(function(m){ return m.length > 0; });
+            if (bonMots.length) bonMotivoFinal = bonMots.join(' · ');
+          } else if (bonNueva === 0 && soloTipo === 'bonificacion') {
+            bonMotivoFinal = ''; // user borró el bono → limpiar motivo
+          }
+          if (sanNueva > 0 && (soloTipo === 'sancion' || soloTipo === null)) {
+            var sanMots = evalsTodas
+              .filter(function(e){ return (parseFloat(e.sancion) || 0) > 0; })
+              .map(function(e){ return String(e.sancionMotivo || '').trim(); })
+              .filter(function(m){ return m.length > 0; });
+            if (sanMots.length) sanMotivoFinal = sanMots.join(' · ');
+          } else if (sanNueva === 0 && soloTipo === 'sancion') {
+            sanMotivoFinal = '';
+          }
+        } catch(eM) { Logger.log('Fusión motivos fallo: ' + eM.message); }
+
         _liqDiaSetBonSan(
           params.idPersonal, params.fecha,
           bonNueva, sanNueva,
-          String(params.bonificacionMotivo || ''),
-          String(params.sancionMotivo || ''),
+          bonMotivoFinal, sanMotivoFinal,
           { soloTipo: soloTipo }
         );
       }
