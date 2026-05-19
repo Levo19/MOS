@@ -296,37 +296,15 @@ function _verificarPresenciaME(nombre, fecha) {
     }
   } catch(_){}
 
-  // DISPOSITIVOS: login activo en ME (entrenamiento, descanso, todavía
-  // no vendió). Regla acordada: basta con loguearse para contar como
-  // presente del día. Si no se le quiere pagar → vetar la jornada
-  // manualmente desde Finanzas.
-  try {
-    var dSh = getSheet('DISPOSITIVOS');
-    if (dSh) {
-      var dd = dSh.getDataRange().getValues();
-      var hdrs = dd[0] || [];
-      var iSes = hdrs.indexOf('Ultima_Sesion');
-      var iUc  = hdrs.indexOf('Ultima_Conexion');
-      var iApp = hdrs.indexOf('App');
-      var iEst = hdrs.indexOf('Estado');
-      if (iSes >= 0 && iUc >= 0) {
-        for (var rd = 1; rd < dd.length; rd++) {
-          var nomD = String(dd[rd][iSes] || '').toLowerCase().trim();
-          if (!nomD) continue;
-          if (nomD !== nLow && nomD.indexOf(nLow) < 0 && nLow.indexOf(nomD) < 0) continue;
-          var app = iApp >= 0 ? String(dd[rd][iApp] || '').toLowerCase() : '';
-          if (app === 'mos') continue; // app de admin, no operativo
-          var est = iEst >= 0 ? String(dd[rd][iEst] || '').toUpperCase() : '';
-          if (est === 'INACTIVO' || est === 'PENDIENTE_APROBACION') continue;
-          var ucD = dd[rd][iUc];
-          var fStrD = ucD instanceof Date
-            ? Utilities.formatDate(ucD, tz, 'yyyy-MM-dd')
-            : String(ucD || '').substring(0, 10);
-          if (fStrD === fecha) return true;
-        }
-      }
-    }
-  } catch(_){}
+  // [v2.41.76] REMOVIDO criterio Ultima_Conexion como presencia.
+  // Antes: "basta con loguearse para contar como presente" → causaba
+  // que vendedores que solo abrían la PWA (sin vender, sin caja) figuren
+  // como presentes hoy aunque hayan iniciado sesión AYER y nunca
+  // cerraran. Ahora la presencia se basa SOLO en evidencia operativa:
+  //   • CAJAS de ese día (cajero abrió caja)
+  //   • VENTAS_CABECERA de ese día (vendedor selló ticket)
+  //   • SESIONES WH de ese día (almacenero/envasador inició sesión)
+  // Si alguien solo "estuvo logueado" pero no trabajó, NO presente.
   return false;
 }
 
@@ -954,36 +932,15 @@ function getResumenTodosDia(params) {
     }
   } catch(e){ Logger.log('No se pudo leer VENTAS_CABECERA: ' + e.message); }
 
-  // 2c. SESIONES sin venta — vendedor que ingresó a ME (entrenamiento, descanso,
-  //     todavía no vendió). Cruzar DISPOSITIVOS: Ultima_Sesion (nombre) y
-  //     Ultima_Conexion del día actual.
-  try {
-    var sheetD = getSheet('DISPOSITIVOS');
-    var dataD = sheetD.getDataRange().getValues();
-    var hdrsD = dataD[0];
-    var iSesD = hdrsD.indexOf('Ultima_Sesion');
-    var iUcD  = hdrsD.indexOf('Ultima_Conexion');
-    var iAppD = hdrsD.indexOf('App');
-    var iEstD = hdrsD.indexOf('Estado');
-    for (var rd = 1; rd < dataD.length; rd++) {
-      var nomD = String(dataD[rd][iSesD] || '').trim();
-      if (!nomD) continue;
-      var ucD  = dataD[rd][iUcD];
-      var fStrD;
-      if (ucD instanceof Date) fStrD = Utilities.formatDate(ucD, tz, 'yyyy-MM-dd');
-      else fStrD = String(ucD || '').substring(0, 10);
-      if (fStrD !== fecha) continue;
-      var appD = String(dataD[rd][iAppD] || '').toLowerCase();
-      var estD = String(dataD[rd][iEstD] || '').toUpperCase();
-      if (estD === 'INACTIVO' || estD === 'PENDIENTE_APROBACION') continue;
-      // Solo apps de operación (mosExpress y warehouseMos)
-      if (appD === 'mos') continue;
-      // Si ya está rolado por venta/caja, mantener ese rol
-      if (!rolesDelDia[nomD]) {
-        rolesDelDia[nomD] = appD.indexOf('warehouse') >= 0 ? 'OPERADOR' : 'VENDEDOR';
-      }
-    }
-  } catch(e) { Logger.log('No se pudo leer DISPOSITIVOS: ' + e.message); }
+  // [v2.41.76] REMOVIDO bloque 2c (DISPOSITIVOS heartbeat).
+  // Antes incluía como "presente" a quien solo abrió la PWA aunque no
+  // hubiera vendido ni abierto caja. Eso causaba que vendedores de AYER
+  // aparecieran HOY si abrían la app un instante. Ahora la lista del día
+  // sale SOLO de evidencia operativa real:
+  //   • CAJAS (2a) — cajero abrió caja
+  //   • VENTAS_CABECERA (2b) — vendedor selló ticket
+  // El admin que quiera ver "quién está logueado ahora" tiene el panel
+  // Config → Dispositivos. Esto NO es lo mismo que "trabajó hoy".
 
   // 3. Para cada nombre detectado: matchear con master o crear virtual
   //

@@ -514,7 +514,12 @@ function verificarPinPersonal(params) {
 
 var _DISP_COLS_EXTRA = ['Ultima_Zona', 'Ultima_Estacion', 'Ultima_Sesion',
                         'Permisos_JSON', 'Permisos_LastUpdate',
-                        'Forzar_Wizard', 'Suspendido_Desde'];
+                        'Forzar_Wizard', 'Suspendido_Desde',
+                        // [v2.41.76] Cierre nocturno: cuando el cron 23h corre,
+                        // marca Forzar_Logout='1' + Logout_Auto_Ts=ISO. La PWA
+                        // ve el flag al próximo poll de consultarEstadoDispositivo
+                        // y cierra sesión local + caja (si abierta) + va al login.
+                        'Forzar_Logout', 'Logout_Auto_Ts'];
 
 // Push helper · notifica a admin/master cuando se aprueba un dispositivo
 function _notificarAprobacionDispositivo(deviceId, app, nombreEquipo, aprobadoPor, accion) {
@@ -712,7 +717,16 @@ function registrarSesionDispositivo(params) {
     if (iUZ >= 0   && params.idZona      !== undefined) sheet.getRange(i + 1, iUZ + 1).setValue(params.idZona || '');
     if (iUEs >= 0  && params.idEstacion  !== undefined) sheet.getRange(i + 1, iUEs + 1).setValue(params.idEstacion || '');
     if (iUSe >= 0  && params.vendedor    !== undefined) sheet.getRange(i + 1, iUSe + 1).setValue(params.vendedor || '');
-    return { ok: true, data: { autorizado: true, estado: 'ACTIVO', nombre: data[i][hdrs.indexOf('Nombre_Equipo')] } };
+    // [v2.41.76] Devolver flag forzar_logout para que ME/WH cierren sesión
+    var iFL2   = hdrs.indexOf('Forzar_Logout');
+    var iFLts2 = hdrs.indexOf('Logout_Auto_Ts');
+    var fl2 = iFL2 >= 0 ? String(data[i][iFL2] || '') : '';
+    return { ok: true, data: {
+      autorizado: true, estado: 'ACTIVO',
+      nombre: data[i][hdrs.indexOf('Nombre_Equipo')],
+      forzar_logout: fl2 === '1' || fl2.toLowerCase() === 'true',
+      logout_auto_ts: iFLts2 >= 0 ? String(data[i][iFLts2] || '') : ''
+    }};
   }
 
   // No existe → crear como PENDIENTE_APROBACION con nombre legible
@@ -777,6 +791,8 @@ function consultarEstadoDispositivo(params) {
   var iUC   = hdrs.indexOf('Ultima_Conexion');
   var iFW   = hdrs.indexOf('Forzar_Wizard');
   var iSus  = hdrs.indexOf('Suspendido_Desde');
+  var iFL   = hdrs.indexOf('Forzar_Logout');
+  var iFLts = hdrs.indexOf('Logout_Auto_Ts');
   // ISO UTC explícito como string — formato consistente entre todos los heartbeats
   var nowStr = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
   for (var i = 1; i < data.length; i++) {
@@ -786,12 +802,19 @@ function consultarEstadoDispositivo(params) {
     // Si estaba suspendido por inactividad y reapareció, limpiar el flag
     if (iSus >= 0 && data[i][iSus]) sheet.getRange(i + 1, iSus + 1).setValue('');
     var fw = iFW >= 0 ? String(data[i][iFW] || '') : '';
+    var fl = iFL >= 0 ? String(data[i][iFL] || '') : '';
+    var flTs = iFLts >= 0 ? String(data[i][iFLts] || '') : '';
     return { ok: true, data: {
       registrado:    true,
       estado:        String(data[i][iEst] || ''),
       nombre:        data[i][iNom] || '',
       app:           data[i][iApp] || '',
-      forzar_wizard: fw === '1' || fw.toLowerCase() === 'true'
+      forzar_wizard: fw === '1' || fw.toLowerCase() === 'true',
+      // [v2.41.76] Cuando el cron 23h corre, marca '1'. La PWA cierra
+      // sesión + caja (si aplica) y va al login. Cliente debe llamar
+      // 'marcarLogoutHonrado' para que el flag no quede en bucle.
+      forzar_logout:    fl === '1' || fl.toLowerCase() === 'true',
+      logout_auto_ts:   flTs
     }};
   }
   return { ok: true, data: { registrado: false, estado: 'NO_REGISTRADO' } };

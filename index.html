@@ -9852,6 +9852,15 @@
           Jerarquía: <strong class="text-slate-300">Zonas</strong> → <strong class="text-slate-300">Estaciones</strong> → <strong class="text-slate-300">Impresoras</strong>. Usa los botones contextuales dentro de cada card para agregar.
         </p>
 
+        <!-- [v2.41.76] Acceso a diagnóstico del cron de cierre nocturno -->
+        <div class="flex items-center gap-2 mb-3 flex-wrap">
+          <button onclick="MOS.abrirCronStatus()" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105"
+                  style="background:linear-gradient(135deg,#1e1b4b,#0d0d2e);border:1px solid rgba(168,85,247,.4);color:#c4b5fd"
+                  title="Ver estado del trigger 23h + últimas corridas">
+            🌙 <span class="ml-1">Cierre nocturno</span>
+          </button>
+        </div>
+
         <!-- Vista jerárquica -->
         <div id="infraContenedor" class="space-y-4">
           <div class="text-center py-12 text-slate-500 text-sm">Cargando infraestructura...</div>
@@ -16534,6 +16543,27 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
     <div class="px-5 py-3 border-t border-slate-800 flex gap-2">
       <button onclick="MOS.closeModal('modalLiqConfirmar')" class="btn-ghost flex-1">Cancelar</button>
       <button onclick="MOS.liqConfirmarPago(event)" class="btn-primary btn-ripple flex-1" id="liqConfirmBtn">💸 Confirmar y pagar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ [v2.41.76] MODAL ESTADO CIERRE NOCTURNO ═══ -->
+<div id="modalCronStatus" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalCronStatus')">
+  <div class="modal-box p-0 max-w-2xl w-full" style="max-height:90vh;display:flex;flex-direction:column;background:linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,8,23,.98));backdrop-filter:blur(14px);box-shadow:0 24px 60px -10px rgba(168,85,247,.22),0 0 0 1px rgba(168,85,247,.12);">
+    <div class="px-5 pt-5 pb-3 flex items-center justify-between border-b border-slate-800">
+      <div>
+        <h3 class="font-semibold text-base" style="color:#c4b5fd">🌙 Estado del cierre nocturno</h3>
+        <p class="text-xs text-slate-500">Trigger 23h · log persistente CIERRE_NOCT_LOG</p>
+      </div>
+      <button onclick="MOS.closeModal('modalCronStatus')" class="modal-close-x">×</button>
+    </div>
+    <div id="cronStatusBody" class="overflow-y-auto px-5 py-4" style="flex:1">
+      <div class="text-center py-8 text-xs text-slate-500"><span class="inline-block animate-spin">⌛</span> Consultando…</div>
+    </div>
+    <div class="px-5 py-3 border-t border-slate-800 flex gap-2 flex-wrap">
+      <button onclick="MOS.abrirCronStatus()" class="btn-ghost text-xs">↻ Refrescar</button>
+      <button onclick="MOS.cronReinstalarTrigger()" class="btn-ghost text-xs" style="border-color:rgba(99,102,241,.5);color:#a5b4fc">🔧 Reinstalar trigger 23h</button>
+      <button onclick="MOS.cronEjecutarAhora()" class="btn-primary text-xs ml-auto" style="background:linear-gradient(135deg,#7c3aed,#5b21b6)">▶ Ejecutar ahora</button>
     </div>
   </div>
 </div>

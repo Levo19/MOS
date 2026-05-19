@@ -1744,10 +1744,13 @@ function setupLiqSyncTrigger() {
 // MASTER/ADMINISTRADOR no se les cierra sesión (24/7 sin restricción).
 // ============================================================
 function cierreNocturnoTodos() {
+  var tStart = new Date();
   var resultado = {
-    fecha:  Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm'),
+    fecha:  Utilities.formatDate(tStart, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm'),
     wh:     { cerradas: 0, omitidas: 0, errores: 0, detalles: [] },
-    me:     { cerradas: 0, errores: 0, detalles: [] }
+    me:     { cerradas: 0, errores: 0, detalles: [] },
+    // [v2.41.76] Forzar logout en TODOS los dispositivos ME/WH activos
+    devices:{ marcados: 0, omitidos: 0, errores: 0 }
   };
 
   // ── 1. WH SESIONES ──
@@ -1859,16 +1862,110 @@ function cierreNocturnoTodos() {
     Logger.log('[CierreNoct] ME fatal: ' + eM.message);
   }
 
-  // ── 3. Push al MOS admin/master ──
+  // ── 3. DISPOSITIVOS — marcar Forzar_Logout para apps operativas ──
+  // [v2.41.76] Por cada dispositivo de mosExpress/warehouseMos cuyo
+  // Ultima_Sesion NO sea admin/master, marca Forzar_Logout='1' + ts.
+  // La PWA cliente, al hacer su próximo heartbeat consultarEstadoDispositivo,
+  // recibe forzar_logout=true y cierra sesión local + caja (si aplica).
   try {
-    if (resultado.wh.cerradas + resultado.me.cerradas > 0 ||
-        resultado.wh.errores  + resultado.me.errores  > 0) {
+    if (typeof _garantizarColumnasDispositivos === 'function') _garantizarColumnasDispositivos();
+    var dispoSh = getSheet('DISPOSITIVOS');
+    if (dispoSh) {
+      var dd = dispoSh.getDataRange().getValues();
+      var hdrs = dd[0] || [];
+      var iApp = hdrs.indexOf('App');
+      var iSes = hdrs.indexOf('Ultima_Sesion');
+      var iEst = hdrs.indexOf('Estado');
+      var iFL  = hdrs.indexOf('Forzar_Logout');
+      var iFLts= hdrs.indexOf('Logout_Auto_Ts');
+      // Set de nombres admin/master para EXCLUIRLOS del logout forzado
+      var adminsNorm = {};
+      try {
+        var perAll = _sheetToObjects(getSheet('PERSONAL_MASTER'));
+        perAll.forEach(function(p) {
+          var rol = String(p.rol || '').toUpperCase();
+          if (rol === 'MASTER' || rol === 'ADMINISTRADOR' || rol === 'ADMIN' ||
+              String(p.appOrigen || '') === 'MOS') {
+            var n2 = (String(p.nombre || '') + ' ' + String(p.apellido || '')).toLowerCase().trim();
+            if (n2) adminsNorm[n2] = true;
+            var n1 = String(p.nombre || '').toLowerCase().trim();
+            if (n1) adminsNorm[n1] = true;
+          }
+        });
+      } catch(_){}
+      var nowStrUTC = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
+      for (var rd = 1; rd < dd.length; rd++) {
+        var app = String(dd[rd][iApp] || '').toLowerCase();
+        // Solo apps operativas — mos es panel admin, se excluye
+        if (app !== 'mosexpress' && app !== 'warehousemos') {
+          resultado.devices.omitidos++;
+          continue;
+        }
+        var ses = String(dd[rd][iSes] || '').toLowerCase().trim();
+        if (ses && adminsNorm[ses]) {
+          resultado.devices.omitidos++;
+          continue;
+        }
+        var est = String(dd[rd][iEst] || '').toUpperCase();
+        if (est === 'INACTIVO' || est === 'PENDIENTE_APROBACION') {
+          resultado.devices.omitidos++;
+          continue;
+        }
+        try {
+          if (iFL >= 0)   dispoSh.getRange(rd + 1, iFL + 1).setValue('1');
+          if (iFLts >= 0) dispoSh.getRange(rd + 1, iFLts + 1).setValue(nowStrUTC);
+          resultado.devices.marcados++;
+        } catch(eD) {
+          resultado.devices.errores++;
+          Logger.log('[CierreNoct] device error fila=' + (rd+1) + ': ' + eD.message);
+        }
+      }
+    }
+  } catch(eD2) {
+    resultado.devices.errores++;
+    Logger.log('[CierreNoct] DISPOSITIVOS fatal: ' + eD2.message);
+  }
+
+  // ── 4. Log persistente CIERRE_NOCT_LOG ──
+  // [v2.41.76] Sin este log no sabemos si el trigger está corriendo.
+  // Hoja se auto-crea con headers al primer use.
+  try {
+    var ss = getSpreadsheet();
+    var logSh = ss.getSheetByName('CIERRE_NOCT_LOG');
+    if (!logSh) {
+      logSh = ss.insertSheet('CIERRE_NOCT_LOG');
+      logSh.appendRow(['ts_inicio', 'ts_fin', 'duracion_ms',
+                       'wh_cerradas', 'wh_omitidas', 'wh_errores',
+                       'me_cerradas', 'me_errores',
+                       'dev_marcados', 'dev_omitidos', 'dev_errores',
+                       'detalles_json']);
+      logSh.getRange(1, 1, 1, 12).setFontWeight('bold')
+           .setBackground('#1f2937').setFontColor('#fff');
+    }
+    var tEnd = new Date();
+    var dur = tEnd.getTime() - tStart.getTime();
+    logSh.appendRow([
+      Utilities.formatDate(tStart, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss'),
+      Utilities.formatDate(tEnd,   Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss'),
+      dur,
+      resultado.wh.cerradas, resultado.wh.omitidas, resultado.wh.errores,
+      resultado.me.cerradas, resultado.me.errores,
+      resultado.devices.marcados, resultado.devices.omitidos, resultado.devices.errores,
+      JSON.stringify({ wh: resultado.wh.detalles, me: resultado.me.detalles })
+    ]);
+  } catch(eLog) { Logger.log('[CierreNoct] log fallo: ' + eLog.message); }
+
+  // ── 5. Push al MOS admin/master ──
+  try {
+    if (resultado.wh.cerradas + resultado.me.cerradas + resultado.devices.marcados > 0 ||
+        resultado.wh.errores  + resultado.me.errores  + resultado.devices.errores  > 0) {
       var titulo = '🌙 Cierre nocturno auto · 23h';
       var partes = [];
       partes.push('WH: ' + resultado.wh.cerradas + ' sesiones cerradas');
       if (resultado.wh.omitidas) partes.push(resultado.wh.omitidas + ' admin omitidas');
       partes.push('ME: ' + resultado.me.cerradas + ' cajas cerradas');
-      var errTotal = resultado.wh.errores + resultado.me.errores;
+      partes.push('Dev: ' + resultado.devices.marcados + ' deslog forz.');
+      var errTotal = resultado.wh.errores + resultado.me.errores + resultado.devices.errores;
       if (errTotal > 0) partes.push('⚠ ' + errTotal + ' errores (ver Logger)');
       var cuerpo = partes.join(' · ');
       // [v2.41.59] Usar _enviarPushTodos con idNotif del catálogo. Antes
@@ -1893,6 +1990,88 @@ function setupCierreNocturnoTrigger() {
   ScriptApp.newTrigger(TRG).timeBased().atHour(23).everyDays(1).create();
   Logger.log('[Trigger] ' + TRG + ' creado · diario 23:00');
   return { ok: true, mensaje: 'Trigger creado · diario 23:00' };
+}
+
+// [v2.41.76] Diagnóstico de triggers + última corrida del cierre nocturno.
+// Lee CIERRE_NOCT_LOG (auto-creada en cierreNocturnoTodos).
+function getCronStatus() {
+  var out = {
+    triggers: [],
+    cierreNocturno: {
+      trigger_instalado: false,
+      hora_programada:   null,
+      tz_script:         Session.getScriptTimeZone(),
+      ahora_script:      Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss'),
+      ultima_corrida:    null,
+      total_corridas:    0,
+      ultimas_5:         []
+    }
+  };
+  try {
+    ScriptApp.getProjectTriggers().forEach(function(t) {
+      var info = {
+        handler:    t.getHandlerFunction(),
+        type:       String(t.getEventType()),
+        triggerId:  t.getUniqueId()
+      };
+      try {
+        // Para time-based, no hay método público para leer la hora exacta.
+        // Usamos el handler como pista.
+      } catch(_){}
+      out.triggers.push(info);
+      if (t.getHandlerFunction() === 'cierreNocturnoTodos') {
+        out.cierreNocturno.trigger_instalado = true;
+        out.cierreNocturno.hora_programada = '23:00 (Lima)';
+      }
+    });
+  } catch(eT) { out.triggersError = eT.message; }
+
+  // Leer log de últimas corridas
+  try {
+    var ss = getSpreadsheet();
+    var logSh = ss.getSheetByName('CIERRE_NOCT_LOG');
+    if (logSh) {
+      var last = logSh.getLastRow();
+      out.cierreNocturno.total_corridas = Math.max(0, last - 1);
+      if (last > 1) {
+        var ini = Math.max(2, last - 4);
+        var data = logSh.getRange(ini, 1, last - ini + 1, 12).getValues();
+        var hdrs = ['ts_inicio','ts_fin','duracion_ms',
+                    'wh_cerradas','wh_omitidas','wh_errores',
+                    'me_cerradas','me_errores',
+                    'dev_marcados','dev_omitidos','dev_errores',
+                    'detalles_json'];
+        out.cierreNocturno.ultimas_5 = data.map(function(row) {
+          var obj = {};
+          hdrs.forEach(function(h, i) { obj[h] = row[i]; });
+          return obj;
+        }).reverse();
+        out.cierreNocturno.ultima_corrida = out.cierreNocturno.ultimas_5[0];
+      }
+    }
+  } catch(eL) { out.cierreNocturnoLogError = eL.message; }
+
+  return { ok: true, data: out };
+}
+
+// [v2.41.76] El cliente llama esto tras honrar el flag Forzar_Logout
+// para que no quede en bucle (sino la próxima sesión también se cerraría
+// inmediatamente). Limpia el flag pero deja Logout_Auto_Ts como log.
+function marcarLogoutHonrado(params) {
+  var deviceId = String(params.deviceId || params.ID_Dispositivo || '').trim();
+  if (!deviceId) return { ok: false, error: 'Requiere deviceId' };
+  if (typeof _garantizarColumnasDispositivos === 'function') _garantizarColumnasDispositivos();
+  var sheet = getSheet('DISPOSITIVOS');
+  var data  = sheet.getDataRange().getValues();
+  var hdrs  = data[0] || [];
+  var iId   = hdrs.indexOf('ID_Dispositivo');
+  var iFL   = hdrs.indexOf('Forzar_Logout');
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][iId]) !== deviceId) continue;
+    if (iFL >= 0) sheet.getRange(i + 1, iFL + 1).setValue('');
+    return { ok: true };
+  }
+  return { ok: false, error: 'Dispositivo no encontrado' };
 }
 
 // [v2.41.38] Auto-instalación silenciosa del trigger de cierre nocturno.

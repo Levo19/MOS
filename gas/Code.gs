@@ -228,6 +228,9 @@ function _route(method, e) {
       // [v2.41.36] Cierre nocturno 23h — sesiones WH + cajas ME
       case 'cierreNocturnoTodos':        return cierreNocturnoTodos();
       case 'setupCierreNocturnoTrigger': return setupCierreNocturnoTrigger();
+      // [v2.41.76] Diagnóstico cron + manejo flag Forzar_Logout
+      case 'getCronStatus':              return getCronStatus();
+      case 'marcarLogoutHonrado':        return marcarLogoutHonrado(params);
       case 'getPagoDetalle':             return getPagoDetalle(params);
       case 'imprimirTicketPago':         return imprimirTicketPago(params);
       case 'migrarLiquidacionesV2':      return migrarLiquidacionesV2();

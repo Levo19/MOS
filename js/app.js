@@ -27662,9 +27662,129 @@ const MOS = (() => {
     }
   }
 
+  // [v2.41.76] Diagnóstico cierre nocturno ────────────────────
+  async function abrirCronStatus() {
+    openModal('modalCronStatus');
+    const body = $('cronStatusBody');
+    if (!body) return;
+    body.innerHTML = `<div class="text-center py-8 text-xs text-slate-500"><span class="inline-block animate-spin">⌛</span> Consultando estado…</div>`;
+    try {
+      const res = await API.get('getCronStatus', {});
+      const d = (res && res.data) || res || {};
+      _renderCronStatus(d);
+    } catch(e) {
+      body.innerHTML = `<div class="text-rose-400 text-xs py-6 text-center">⚠ ${_escapeHtml(e.message || String(e))}</div>`;
+    }
+  }
+  function _renderCronStatus(d) {
+    const body = $('cronStatusBody');
+    if (!body) return;
+    const cn = d.cierreNocturno || {};
+    const trgOK = cn.trigger_instalado;
+    const ultima = cn.ultima_corrida;
+    const ultimas = cn.ultimas_5 || [];
+    const cardTrigger = `
+      <div class="rounded-xl p-3 mb-3" style="background:rgba(15,23,42,.6);border:1px solid ${trgOK ? 'rgba(34,197,94,.4)' : 'rgba(239,68,68,.5)'}">
+        <div class="flex items-center gap-2 mb-2">
+          <span style="font-size:18px">${trgOK ? '✅' : '❌'}</span>
+          <span class="text-sm font-bold ${trgOK ? 'text-emerald-300' : 'text-rose-300'}">
+            Trigger ${trgOK ? 'INSTALADO' : 'NO INSTALADO'}
+          </span>
+        </div>
+        <div class="text-[11px] text-slate-400 space-y-1">
+          <div>Hora programada: <strong>${cn.hora_programada || '—'}</strong></div>
+          <div>Timezone script: <strong>${cn.tz_script || '—'}</strong></div>
+          <div>Hora actual script: <strong>${cn.ahora_script || '—'}</strong></div>
+          <div>Total corridas registradas: <strong>${cn.total_corridas || 0}</strong></div>
+        </div>
+        ${!trgOK ? `<div class="text-[11px] text-rose-300 mt-2">⚠ Toca "🔧 Reinstalar trigger 23h" abajo para activar el cron.</div>` : ''}
+      </div>`;
+    let cardUltima = '';
+    if (ultima) {
+      const totalCerrado = (parseInt(ultima.wh_cerradas) || 0) + (parseInt(ultima.me_cerradas) || 0);
+      const totalErr = (parseInt(ultima.wh_errores) || 0) + (parseInt(ultima.me_errores) || 0) + (parseInt(ultima.dev_errores) || 0);
+      cardUltima = `
+        <div class="rounded-xl p-3 mb-3" style="background:linear-gradient(135deg,rgba(99,102,241,.08),rgba(99,102,241,.02));border:1px solid rgba(99,102,241,.3)">
+          <div class="text-[10px] uppercase tracking-wider text-indigo-300 font-bold mb-1">Última corrida</div>
+          <div class="text-sm text-slate-200">${_escapeHtml(String(ultima.ts_inicio || '—'))}</div>
+          <div class="text-[11px] text-slate-400 mt-1">
+            WH: <strong>${ultima.wh_cerradas || 0}</strong> cerradas · ${ultima.wh_omitidas || 0} admin omit ·
+            ME: <strong>${ultima.me_cerradas || 0}</strong> cajas ·
+            Dev: <strong>${ultima.dev_marcados || 0}</strong> forzados<br>
+            Duración: ${ultima.duracion_ms || 0}ms · Total cerrado: <strong>${totalCerrado}</strong>${totalErr > 0 ? ` · <span class="text-rose-300">⚠ ${totalErr} errores</span>` : ''}
+          </div>
+        </div>`;
+    } else {
+      cardUltima = `
+        <div class="rounded-xl p-3 mb-3" style="background:rgba(239,68,68,.05);border:1px solid rgba(239,68,68,.3)">
+          <div class="text-sm font-bold text-rose-300 mb-1">⚠ Sin corridas registradas</div>
+          <div class="text-[11px] text-slate-400">
+            La tabla CIERRE_NOCT_LOG está vacía. El trigger ${trgOK ? 'está instalado pero nunca corrió' : 'NO está instalado'}.
+            ${trgOK ? 'Espera a las 23:00 Lima o ejecuta manualmente con el botón abajo.' : 'Reinstala el trigger primero.'}
+          </div>
+        </div>`;
+    }
+    let historial = '';
+    if (ultimas.length > 0) {
+      historial = `
+        <div class="rounded-xl p-3" style="background:rgba(15,23,42,.4);border:1px solid #1e293b">
+          <div class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">Últimas ${ultimas.length} corridas</div>
+          <div class="space-y-1">
+            ${ultimas.map(r => {
+              const cerr = (parseInt(r.wh_cerradas)||0) + (parseInt(r.me_cerradas)||0);
+              const err  = (parseInt(r.wh_errores)||0) + (parseInt(r.me_errores)||0) + (parseInt(r.dev_errores)||0);
+              return `<div class="flex items-center justify-between text-[11px] py-1 border-b border-slate-800">
+                <span class="text-slate-400">${_escapeHtml(String(r.ts_inicio || ''))}</span>
+                <span class="text-slate-300">${cerr} cerradas · ${r.dev_marcados || 0} forz${err > 0 ? ` · <span class="text-rose-400">${err} err</span>` : ''}</span>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>`;
+    }
+    let triggers = '';
+    if (d.triggers && d.triggers.length) {
+      triggers = `
+        <details class="mt-3 text-[11px]">
+          <summary class="text-slate-500 cursor-pointer">▸ Todos los triggers instalados (${d.triggers.length})</summary>
+          <div class="mt-2 space-y-1 pl-3">
+            ${d.triggers.map(t => `<div class="text-slate-400">${_escapeHtml(t.handler)} <span class="text-slate-600">· ${_escapeHtml(t.type)}</span></div>`).join('')}
+          </div>
+        </details>`;
+    }
+    body.innerHTML = cardTrigger + cardUltima + historial + triggers;
+  }
+  async function cronReinstalarTrigger() {
+    if (!confirm('Reinstalar trigger 23h? Borra el actual y crea uno nuevo.')) return;
+    try {
+      const res = await API.get('setupCierreNocturnoTrigger', {});
+      toast(res?.mensaje || '✓ Trigger reinstalado', 'ok', 4000);
+      abrirCronStatus();
+    } catch(e) {
+      toast('Error: ' + (e.message || e), 'error');
+    }
+  }
+  async function cronEjecutarAhora() {
+    if (!confirm('Ejecutar cierre nocturno AHORA? Cerrará sesiones WH + cajas ME + forzará logout en dispositivos.')) return;
+    const btn = event && event.target;
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Ejecutando…'; }
+    try {
+      const res = await API.get('cierreNocturnoTodos', {});
+      const r = (res && res.data) || res || {};
+      const total = (r.wh?.cerradas || 0) + (r.me?.cerradas || 0) + (r.devices?.marcados || 0);
+      toast(`✓ Cierre ejecutado · ${total} elementos`, 'ok', 5000);
+      abrirCronStatus();
+    } catch(e) {
+      toast('Error: ' + (e.message || e), 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '▶ Ejecutar ahora'; }
+    }
+  }
+
   // ── PUBLIC API ───────────────────────────────────────────────
   return {
     init, nav, refresh, fabAction, iconBusy,
+    // [v2.41.76] Cron diagnóstico
+    abrirCronStatus, cronReinstalarTrigger, cronEjecutarAhora,
     openConfig, saveConfig, testConnection, closeModal, openEcoModal,
     filterCatalogo, setCatTab, toggleDerivs, togglePresentaciones, guardarPrecioRapido,
     _catCardClick, _catSfx, _catRipple,
