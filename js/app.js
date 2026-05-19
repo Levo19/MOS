@@ -264,24 +264,79 @@ const MOS = (() => {
     }
 
     // ─────────────────────────────────────────────────────────
-    // PREFETCH POST-LOGIN — descargar Liquidaciones en background
-    // para que el primer click sea instantáneo. Falla silencioso.
+    // [v2.41.75] PREFETCH POST-LOGIN — descargar TODO lo pesado
+    // en paralelo para que el primer click sea instantáneo en
+    // CUALQUIER módulo (Liquidaciones, Finanzas, Resumen).
+    // Falla silencioso. Telemetría en console para diagnóstico.
     // ─────────────────────────────────────────────────────────
     function _prefetchSesionEnLinea() {
       if (!navigator.onLine) return;
-      // Pequeño delay: no compitamos con la carga del dashboard
+      const t0 = Date.now();
+      _netSyncStart('PRECARGANDO');
+
+      // Warmup ping ULTRALIGERO — calienta el script GAS antes del fan-out.
+      // Si el primer hit a GAS demora 2-5s en frío, el resto irá más rápido.
+      const warmup = (typeof API !== 'undefined' && API.get)
+        ? API.get('ping', {}).catch(() => null)
+        : Promise.resolve();
+
+      // Fan-out: lanzamos TODO en paralelo (no esperan al ping si ya está
+      // caliente). 200ms de buffer para no competir con el render inicial.
       setTimeout(() => {
+        const tasks = [];
+        const hoy = (typeof today === 'function') ? today() :
+          (new Date()).toISOString().slice(0, 10);
+
+        // 1) Liquidaciones: pendientes + pagadas
+        if (typeof _liqPrefetchTab === 'function') {
+          try { _liqPrefetchTab('pendientes'); _liqPrefetchTab('pagadas'); } catch(_){}
+        }
+
+        // 2) Finanzas día actual → cache mos_fin_pl_<hoy>
+        tasks.push(API.get('getFinanzasDia', { fecha: hoy }).then(pl => {
+          try {
+            if (pl) pl._fechaStamp = hoy;
+            localStorage.setItem('mos_fin_pl_' + hoy, JSON.stringify({ ts: Date.now(), data: pl }));
+            if (typeof _finPL !== 'undefined') _finPL = pl;
+          } catch(_){}
+        }).catch(() => null));
+
+        // 3) Finanzas rango 7d → cache mos_fin_rango_<hoy>
         try {
-          _netSyncStart('PRECARGANDO');
-          // Liquidaciones: ambos tabs
-          if (typeof _liqPrefetchTab === 'function') {
-            _liqPrefetchTab('pendientes');
-            _liqPrefetchTab('pagadas');
+          const desde7 = (typeof _fechaOffset === 'function') ? _fechaOffset(hoy, -6) : null;
+          if (desde7) {
+            tasks.push(API.get('getFinanzasRango', { desde: desde7, hasta: hoy }).then(r => {
+              try { localStorage.setItem('mos_fin_rango_' + hoy, JSON.stringify({ ts: Date.now(), data: r })); } catch(_){}
+            }).catch(() => null));
           }
-        } catch(_) {}
-        // Liberar el chip tras un margen razonable (los prefetches son async)
-        setTimeout(() => _netSyncEnd(), 8000);
-      }, 1200);
+        } catch(_){}
+
+        // 4) Resumen Personal del Día (heavy) → cache mos_fin_resum_<hoy>
+        // Solo si no hay cache reciente (<10 min) para no abusar.
+        try {
+          const raw = localStorage.getItem('mos_fin_resum_' + hoy);
+          let stale = true;
+          if (raw) {
+            const p = JSON.parse(raw);
+            if (Date.now() - (p.ts || 0) < 10 * 60 * 1000) stale = false;
+          }
+          if (stale) {
+            tasks.push(API.get('getResumenTodosDia', { fecha: hoy }).then(r => {
+              try { localStorage.setItem('mos_fin_resum_' + hoy, JSON.stringify({ ts: Date.now(), data: r })); } catch(_){}
+            }).catch(() => null));
+          }
+        } catch(_){}
+
+        Promise.allSettled(tasks).then(results => {
+          const ok = results.filter(x => x.status === 'fulfilled').length;
+          const ms = Date.now() - t0;
+          console.log(`[prefetch] ${ok}/${results.length} OK · ${ms}ms · módulos calientes`);
+          _netSyncEnd();
+        });
+      }, 200);
+
+      // Failsafe si el chip queda colgado
+      setTimeout(() => _netSyncEnd(), 15000);
     }
 
     // Session check
@@ -22995,16 +23050,13 @@ const MOS = (() => {
   }
 
   // ── Render RESUMEN ──
+  // [v2.41.75] Resumen ahora usa state local primero → INSTANT.
+  // Fetch en background solo si el state está vacío o cache localStorage está stale.
   function _liqRenderResumen() {
     const body = $('liqBody');
     if (!body) return;
-    // Cargar ambas listas y mostrar agregados rápidos
-    Promise.all([
-      API.get('getLiquidacionesPendientes', { desde: _liqState.desde, hasta: _liqState.hasta }).catch(() => []),
-      API.get('getLiquidacionesPagadas',    { desde: _liqState.desde, hasta: _liqState.hasta }).catch(() => [])
-    ]).then(([pend, pag]) => {
-      const pendArr = Array.isArray(pend) ? pend : ((pend && pend.data) || []);
-      const pagArr  = Array.isArray(pag)  ? pag  : ((pag  && pag.data)  || []);
+    // 1) Pintar inmediato desde state local o cache
+    function pintar(pendArr, pagArr) {
       const totalPend = pendArr.reduce((s,p) => s + p.total, 0);
       const totalPag  = pagArr.reduce( (s,b) => s + b.total, 0);
       const personasPend = pendArr.length;
@@ -23022,9 +23074,36 @@ const MOS = (() => {
             <div class="text-2xl font-bold mt-1" style="color:#34d399">${_liqMoney(totalPag)}</div>
             <div class="text-xs text-slate-500 mt-1">${totalBatches} batch(es)</div>
           </div>
-        </div>
-        `;
-    });
+        </div>`;
+    }
+    const pendLocal = _liqState.pendientes || _liqCacheLoad('pendientes') || null;
+    const pagLocal  = _liqState.pagadas    || _liqCacheLoad('pagadas')    || null;
+    if (pendLocal && pagLocal) {
+      pintar(pendLocal, pagLocal);
+    } else {
+      // Sin state ni cache → skeleton mientras llega
+      body.innerHTML = `<div class="liq-skel-stage">
+        <div class="liq-skel-card"></div>
+        <div class="liq-skel-card" style="animation-delay:.12s"></div>
+      </div>`;
+    }
+    // 2) Refresh silencioso en bg si state está vacío o cache vieja
+    if (!pendLocal || !pagLocal) {
+      _liqSetSyncState('loading');
+      Promise.all([
+        _liqFetchConTimeout('getLiquidacionesPendientes', { desde: _liqState.desde, hasta: _liqState.hasta }, 15000).catch(() => []),
+        _liqFetchConTimeout('getLiquidacionesPagadas',    { desde: _liqOffset(_liqHoy(), -89), hasta: _liqHoy() }, 30000).catch(() => [])
+      ]).then(([pend, pag]) => {
+        const pendArr = Array.isArray(pend) ? pend : ((pend && pend.data) || []);
+        const pagArr  = Array.isArray(pag)  ? pag  : ((pag  && pag.data)  || []);
+        _liqState.pendientes = pendArr;
+        _liqState.pagadas    = pagArr;
+        _liqCacheSave('pendientes', pendArr);
+        _liqCacheSave('pagadas',    pagArr);
+        if (_liqState.tab === 'resumen') pintar(pendArr, pagArr);
+        _liqSetSyncState('idle');
+      }).catch(() => _liqSetSyncState('error'));
+    }
   }
 
   // Backfill / Inicializar LIQUIDACIONES_DIA

@@ -318,6 +318,10 @@ function _route(method, e) {
       // [v41.3] Cierre forzado de caja por admin/master desde MOS
       case 'meCerrarCajaForzado':       return meCerrarCajaForzado(params);
 
+      // [v2.41.75] Warmup ping ultraligero — calienta el script GAS
+      // post-login para que las próximas llamadas no paguen el frío.
+      case 'ping': return { ok: true, pong: Date.now() };
+
       default:
         return { ok: false, error: 'Acción no reconocida: ' + action };
     }})();
