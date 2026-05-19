@@ -6153,6 +6153,223 @@
       40%  { transform: scale(1.02); box-shadow: 0 0 0 4px rgba(16,185,129,.25), 0 6px 18px -4px rgba(16,185,129,.4); }
       100% { transform: scale(1);    box-shadow: none; }
     }
+    /* ═══════════════════════════════════════════════════════════════
+       [v2.41.83] AdminAuthModal UNIVERSAL (las 3 apps usan este CSS)
+       ═══════════════════════════════════════════════════════════════ */
+    .aam-modal { z-index: 9700; }
+    .aam-box {
+      max-width: 360px; width: 100%;
+      background: linear-gradient(180deg, #0a1424 0%, #060d1f 100%);
+      border: 1px solid rgba(168,85,247,.35);
+      border-radius: 18px;
+      box-shadow: 0 24px 70px -10px rgba(168,85,247,.45), 0 0 0 1px rgba(168,85,247,.08);
+      padding: 18px 16px 14px;
+      animation: aamZoomIn .28s cubic-bezier(.34,1.56,.64,1);
+    }
+    @keyframes aamZoomIn {
+      0%   { transform: scale(.85); opacity: 0; }
+      100% { transform: scale(1);   opacity: 1; }
+    }
+    .aam-box.shake { animation: aamShake .42s ease; }
+    @keyframes aamShake {
+      0%,100% { transform: translateX(0); }
+      20%,60% { transform: translateX(-7px); }
+      40%,80% { transform: translateX(7px); }
+    }
+    .aam-box.success { animation: aamSuccess .5s ease forwards; }
+    @keyframes aamSuccess {
+      0%   { box-shadow: 0 24px 70px -10px rgba(168,85,247,.45); }
+      50%  { box-shadow: 0 24px 70px -10px rgba(16,185,129,.7), 0 0 0 3px rgba(16,185,129,.4); }
+      100% { transform: scale(.96); opacity: 0; }
+    }
+    .aam-header {
+      display: flex; align-items: center; gap: 10px;
+      padding-bottom: 12px; border-bottom: 1px solid rgba(168,85,247,.2);
+      margin-bottom: 12px;
+    }
+    .aam-lock-icon {
+      font-size: 24px; width: 40px; height: 40px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(168,85,247,.2), rgba(99,102,241,.15));
+      border: 1px solid rgba(168,85,247,.35);
+      flex-shrink: 0;
+    }
+    .aam-lock-icon.spin { animation: aamSpin 1s linear infinite; }
+    @keyframes aamSpin { to { transform: rotate(360deg); } }
+    .aam-titles { flex: 1; min-width: 0; }
+    .aam-title {
+      font-size: 14px; font-weight: 800; color: #f1f5f9;
+      letter-spacing: .01em;
+    }
+    .aam-subtitle {
+      font-size: 11px; color: #94a3b8; margin-top: 1px;
+    }
+    .aam-close {
+      background: none; border: none; color: #64748b;
+      font-size: 22px; cursor: pointer; padding: 2px 8px;
+      border-radius: 6px; transition: all .15s;
+    }
+    .aam-close:hover { background: rgba(148,163,184,.15); color: #cbd5e1; }
+    .aam-context {
+      font-size: 11.5px; color: #cbd5e1;
+      background: rgba(15,23,42,.6);
+      border: 1px solid rgba(51,65,85,.5);
+      border-radius: 10px; padding: 8px 11px;
+      margin-bottom: 10px; line-height: 1.4;
+    }
+    .aam-context:empty { display: none; }
+    .aam-session {
+      font-size: 10.5px; color: #64748b;
+      margin-bottom: 12px; text-align: center;
+    }
+    .aam-session-name { color: #c4b5fd; font-weight: 700; }
+    .aam-cache-info {
+      display: flex; align-items: center; gap: 6px;
+      background: linear-gradient(135deg, rgba(16,185,129,.12), rgba(16,185,129,.04));
+      border: 1px solid rgba(16,185,129,.4);
+      border-radius: 8px; padding: 6px 10px;
+      margin-bottom: 10px; font-size: 10.5px; color: #6ee7b7;
+    }
+    .aam-cache-info.hidden { display: none; }
+    .aam-cache-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #34d399;
+      box-shadow: 0 0 6px rgba(52,211,153,.7);
+      animation: aamCacheDot 1.6s ease-in-out infinite;
+    }
+    @keyframes aamCacheDot {
+      0%,100% { transform: scale(1);   opacity: 1; }
+      50%     { transform: scale(1.4); opacity: .5; }
+    }
+    .aam-cache-use {
+      margin-left: auto; padding: 3px 8px;
+      background: rgba(16,185,129,.25); border: 1px solid rgba(16,185,129,.5);
+      color: #6ee7b7; font-size: 10px; font-weight: 800;
+      border-radius: 6px; cursor: pointer;
+      transition: all .15s;
+    }
+    .aam-cache-use:hover { background: rgba(16,185,129,.4); transform: scale(1.05); }
+    .aam-input-wrap {
+      position: relative;
+      padding: 14px 0 6px;
+      text-align: center;
+    }
+    .aam-dots {
+      display: flex; justify-content: center; align-items: center;
+      gap: 6px; font-size: 0;
+    }
+    .aam-dot {
+      width: 13px; height: 13px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(148,163,184,.4);
+      background: transparent;
+      transition: all .15s cubic-bezier(.34,1.56,.64,1);
+    }
+    .aam-dot.filled {
+      background: linear-gradient(135deg, #a78bfa, #6366f1);
+      border-color: rgba(167,139,250,.7);
+      transform: scale(1.15);
+      box-shadow: 0 0 8px rgba(167,139,250,.5);
+    }
+    .aam-dot.error {
+      background: #ef4444;
+      border-color: rgba(239,68,68,.7);
+    }
+    .aam-dot.success {
+      background: #34d399;
+      border-color: rgba(52,211,153,.7);
+    }
+    .aam-sep {
+      color: #475569; font-size: 18px; font-weight: 600;
+      margin: 0 4px;
+    }
+    .aam-input-labels {
+      display: flex; justify-content: center; gap: 60px;
+      font-size: 9px; color: #475569;
+      letter-spacing: .08em; text-transform: uppercase; font-weight: 700;
+      margin-top: 6px;
+    }
+    .aam-keypad {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+      margin: 14px 0 10px;
+    }
+    .aam-key {
+      padding: 12px 0;
+      font-size: 17px; font-weight: 700;
+      background: linear-gradient(180deg, rgba(30,41,59,.85), rgba(15,23,42,.85));
+      border: 1px solid rgba(51,65,85,.5);
+      color: #e2e8f0;
+      border-radius: 11px;
+      cursor: pointer;
+      transition: all .12s;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    .aam-key:hover {
+      background: linear-gradient(180deg, rgba(51,65,85,.85), rgba(30,41,59,.85));
+      border-color: rgba(167,139,250,.5);
+      transform: translateY(-1px);
+    }
+    .aam-key:active {
+      transform: scale(.94);
+      background: rgba(99,102,241,.3);
+      box-shadow: inset 0 2px 4px rgba(0,0,0,.3);
+    }
+    .aam-key-del {
+      color: #fca5a5; font-size: 15px;
+      background: linear-gradient(180deg, rgba(127,29,29,.4), rgba(69,10,10,.5));
+      border-color: rgba(239,68,68,.4);
+    }
+    .aam-key-ok {
+      color: #6ee7b7;
+      background: linear-gradient(180deg, rgba(6,78,59,.5), rgba(4,47,38,.6));
+      border-color: rgba(16,185,129,.5);
+    }
+    .aam-key-ok:hover {
+      background: linear-gradient(180deg, rgba(16,185,129,.5), rgba(6,78,59,.7));
+    }
+    .aam-message {
+      text-align: center; font-size: 12px;
+      padding: 8px 10px; border-radius: 8px;
+      margin-bottom: 8px;
+    }
+    .aam-message.hidden { display: none; }
+    .aam-message.error {
+      background: rgba(239,68,68,.12);
+      border: 1px solid rgba(239,68,68,.4);
+      color: #fca5a5;
+    }
+    .aam-message.success {
+      background: rgba(16,185,129,.15);
+      border: 1px solid rgba(16,185,129,.4);
+      color: #6ee7b7;
+    }
+    .aam-footer {
+      display: flex; align-items: center; gap: 8px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(51,65,85,.4);
+    }
+    .aam-tier-badge {
+      font-size: 9px; font-weight: 800; letter-spacing: .04em;
+      padding: 3px 8px; border-radius: 99px;
+      background: rgba(168,85,247,.18);
+      border: 1px solid rgba(168,85,247,.35);
+      color: #c4b5fd; text-transform: uppercase;
+    }
+    .aam-cancel {
+      margin-left: auto; padding: 7px 16px;
+      background: transparent;
+      border: 1px solid rgba(148,163,184,.3);
+      color: #94a3b8; font-size: 12px;
+      border-radius: 8px; cursor: pointer;
+      transition: all .15s;
+    }
+    .aam-cancel:hover {
+      background: rgba(148,163,184,.1);
+      color: #cbd5e1;
+    }
+
     /* [v2.41.79] Alerta prominente costo estimado en modal Productos */
     .fin-prod-alerta-grande {
       border-radius: 10px;
@@ -16703,6 +16920,81 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
     <div class="px-5 py-3 border-t border-slate-800 flex gap-2">
       <button onclick="MOS.closeModal('modalLiqConfirmar')" class="btn-ghost flex-1">Cancelar</button>
       <button onclick="MOS.liqConfirmarPago(event)" class="btn-primary btn-ripple flex-1" id="liqConfirmBtn">💸 Confirmar y pagar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ [v2.41.83] ADMIN AUTH MODAL — UNIVERSAL para las 3 apps ═══ -->
+<!-- Reemplaza prompt() nativos + modalLiqAnular custom + sheets de WH.
+     Keypad numérico, cache inteligente por tier, SFX, vibración.
+     API: pedirAuth({accion, refDocumento, contexto, tier?, allowCache?}) -->
+<div id="modalAdminAuth" class="modal-backdrop hidden aam-modal"
+     style="z-index:9700"
+     onclick="if(event.target===this) MOS._aamCancelar()">
+  <div class="aam-box" onclick="event.stopPropagation()">
+    <div class="aam-header">
+      <div class="aam-lock-icon" id="aamLockIcon">🔐</div>
+      <div class="aam-titles">
+        <div class="aam-title" id="aamTitle">Autorización requerida</div>
+        <div class="aam-subtitle" id="aamSubtitle">Acción protegida</div>
+      </div>
+      <button class="aam-close" onclick="MOS._aamCancelar()" title="Cancelar (ESC)">×</button>
+    </div>
+
+    <div class="aam-context" id="aamContext"></div>
+
+    <div class="aam-session" id="aamSession">
+      <span class="aam-session-label">Sesión:</span>
+      <span class="aam-session-name" id="aamSessionName">—</span>
+    </div>
+
+    <div class="aam-cache-info hidden" id="aamCacheInfo">
+      <span class="aam-cache-dot"></span>
+      <span id="aamCacheText">caché válido por 8 min</span>
+      <button class="aam-cache-use" id="aamCacheUseBtn" onclick="MOS._aamUsarCache()">⚡ Usar caché</button>
+    </div>
+
+    <div class="aam-input-wrap">
+      <div class="aam-dots" id="aamDots">
+        <span class="aam-dot" data-i="0"></span>
+        <span class="aam-dot" data-i="1"></span>
+        <span class="aam-dot" data-i="2"></span>
+        <span class="aam-dot" data-i="3"></span>
+        <span class="aam-sep">·</span>
+        <span class="aam-dot" data-i="4"></span>
+        <span class="aam-dot" data-i="5"></span>
+        <span class="aam-dot" data-i="6"></span>
+        <span class="aam-dot" data-i="7"></span>
+      </div>
+      <div class="aam-input-labels">
+        <span>global</span><span>personal</span>
+      </div>
+      <input id="aamHiddenInput" type="text" inputmode="numeric"
+             autocomplete="off" autocapitalize="off"
+             style="position:absolute;opacity:0;height:0;width:0;pointer-events:none"
+             onkeydown="MOS._aamOnKey(event)" />
+    </div>
+
+    <div class="aam-keypad">
+      <button class="aam-key" onclick="MOS._aamPress('1')">1</button>
+      <button class="aam-key" onclick="MOS._aamPress('2')">2</button>
+      <button class="aam-key" onclick="MOS._aamPress('3')">3</button>
+      <button class="aam-key" onclick="MOS._aamPress('4')">4</button>
+      <button class="aam-key" onclick="MOS._aamPress('5')">5</button>
+      <button class="aam-key" onclick="MOS._aamPress('6')">6</button>
+      <button class="aam-key" onclick="MOS._aamPress('7')">7</button>
+      <button class="aam-key" onclick="MOS._aamPress('8')">8</button>
+      <button class="aam-key" onclick="MOS._aamPress('9')">9</button>
+      <button class="aam-key aam-key-del" onclick="MOS._aamDelete()" title="Borrar">⌫</button>
+      <button class="aam-key" onclick="MOS._aamPress('0')">0</button>
+      <button class="aam-key aam-key-ok" id="aamOkBtn" onclick="MOS._aamConfirmar()" title="Confirmar">✓</button>
+    </div>
+
+    <div class="aam-message hidden" id="aamMessage"></div>
+
+    <div class="aam-footer">
+      <span class="aam-tier-badge" id="aamTierBadge">Tier 2 · cache 5 min</span>
+      <button class="aam-cancel" onclick="MOS._aamCancelar()">Cancelar</button>
     </div>
   </div>
 </div>

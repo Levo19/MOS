@@ -281,6 +281,8 @@ function _route(method, e) {
       case 'rotarClaveAdminGlobal':     return rotarClaveAdminGlobal(params);
       case 'getAdminPinsCache':         return getAdminPinsCache(params);
       case 'getAuditoriaAdmin':         return getAuditoriaAdmin(params);
+      // [v2.41.83] Catálogo de acciones admin para AdminAuthModal universal
+      case 'getAuthCatalogo':           return getAuthCatalogo();
 
       // ── Audio: escucha remota on-demand desde MOS ─────────
       case 'iniciarEscuchaAudio':       return iniciarEscuchaAudio(params);

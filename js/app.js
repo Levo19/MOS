@@ -9764,6 +9764,282 @@ const MOS = (() => {
   function openModal(id)  { const el = $(id); if (el) { el.classList.remove('hidden'); el.classList.add('open'); } }
   function closeModal(id) { const el = $(id); if (el) { el.classList.remove('open'); el.classList.add('hidden'); } }
 
+  // ════════════════════════════════════════════════════════════
+  // [v2.41.83] ADMIN AUTH MODAL — UNIVERSAL (las 3 apps usan esto)
+  //
+  // Uso:
+  //   const auth = await pedirAuth({
+  //     accion:        'VETAR_LIQUIDACION',
+  //     refDocumento:  'idPersonal|fecha',
+  //     contexto:      'Vetar día de Javier · 2026-05-19',
+  //     tier:          2,                  // opcional; lo infiere del catálogo
+  //     allowCache:    true                // default true
+  //   });
+  //   if (!auth) return; // user canceló o falló
+  //   // → auth = { clave, validadoPor, idPersonal, nombre, rol, cacheHit }
+  // ════════════════════════════════════════════════════════════
+  const _AAM_CACHE_KEY = 'mos_admin_auth_cache_v1';
+  const _AAM_TIER_TTL  = { 1: 10 * 60 * 1000, 2: 5 * 60 * 1000, 3: 0 };
+  let _aamState = null;  // { resolve, accion, refDocumento, tier, value, t0 }
+  let _aamCatalogo = null; // {ACCION: {tier, label}}
+
+  function _aamLoadCatalogo() {
+    if (_aamCatalogo) return Promise.resolve(_aamCatalogo);
+    return API.get('getAuthCatalogo', {}).then(r => {
+      _aamCatalogo = (r && r.data) || {};
+      return _aamCatalogo;
+    }).catch(() => ({}));
+  }
+
+  function _aamCacheGet(accion, tier) {
+    if (!tier || _AAM_TIER_TTL[tier] === 0) return null;
+    try {
+      const raw = localStorage.getItem(_AAM_CACHE_KEY);
+      if (!raw) return null;
+      const cache = JSON.parse(raw);
+      const entry = cache[accion];
+      if (!entry) return null;
+      if (Date.now() > entry.expires) {
+        delete cache[accion];
+        localStorage.setItem(_AAM_CACHE_KEY, JSON.stringify(cache));
+        return null;
+      }
+      return entry;
+    } catch(_) { return null; }
+  }
+  function _aamCacheSet(accion, tier, auth) {
+    const ttl = _AAM_TIER_TTL[tier] || 0;
+    if (!ttl) return;
+    try {
+      const raw = localStorage.getItem(_AAM_CACHE_KEY);
+      const cache = raw ? JSON.parse(raw) : {};
+      cache[accion] = {
+        clave: auth.clave,
+        validadoPor: auth.validadoPor,
+        idPersonal: auth.idPersonal,
+        nombre: auth.nombre,
+        rol: auth.rol,
+        tier: tier,
+        expires: Date.now() + ttl
+      };
+      localStorage.setItem(_AAM_CACHE_KEY, JSON.stringify(cache));
+    } catch(_){}
+  }
+  function _aamCacheClear(accion) {
+    try {
+      const raw = localStorage.getItem(_AAM_CACHE_KEY);
+      if (!raw) return;
+      const cache = JSON.parse(raw);
+      if (accion) delete cache[accion];
+      else Object.keys(cache).forEach(k => delete cache[k]);
+      localStorage.setItem(_AAM_CACHE_KEY, JSON.stringify(cache));
+    } catch(_){}
+  }
+
+  async function pedirAuth(opts) {
+    opts = opts || {};
+    const accion = String(opts.accion || 'GENERICA').toUpperCase();
+    const allowCache = opts.allowCache !== false;
+    await _aamLoadCatalogo();
+    const catEntry = _aamCatalogo[accion] || { tier: 2, label: opts.accion };
+    const tier = parseInt(opts.tier, 10) || catEntry.tier || 2;
+
+    // ── Verificar cache ──
+    if (allowCache) {
+      const hit = _aamCacheGet(accion, tier);
+      if (hit) {
+        // Auditar cache_hit en bg (fire-and-forget)
+        try {
+          API.post('verificarClaveAdmin', {
+            clave: hit.clave,
+            accion: accion,
+            refDocumento: opts.refDocumento || '',
+            appOrigen: 'MOS',
+            detalle: opts.contexto || '',
+            tier: tier,
+            cache_hit: 1,
+            tiempo_verify_ms: 0,
+            deviceId: (S.session && S.session.deviceId) || ''
+          }).catch(() => {});
+        } catch(_){}
+        return Object.assign({}, hit, { cacheHit: true });
+      }
+    }
+
+    return new Promise(resolve => {
+      _aamState = {
+        resolve, accion, tier,
+        refDocumento: opts.refDocumento || '',
+        contexto:     opts.contexto || '',
+        value:        '',
+        t0:           Date.now(),
+        allowCache
+      };
+      _aamMostrar(catEntry.label || opts.accion, opts.contexto || '', tier);
+    });
+  }
+  function _aamMostrar(label, contexto, tier) {
+    const tit = document.getElementById('aamTitle');
+    const sub = document.getElementById('aamSubtitle');
+    const ctx = document.getElementById('aamContext');
+    const sess = document.getElementById('aamSessionName');
+    const tierBadge = document.getElementById('aamTierBadge');
+    const msg = document.getElementById('aamMessage');
+    if (tit) tit.textContent = label || 'Autorización requerida';
+    if (sub) sub.textContent = 'Acción protegida · 8 dígitos';
+    if (ctx) ctx.textContent = contexto || '';
+    if (sess) sess.textContent = ((S.session && S.session.nombre) || '—') + ' (' + ((S.session && S.session.rol) || '?') + ')';
+    if (tierBadge) {
+      const tierLbl = tier === 1 ? 'Tier 1 · cache 10 min'
+                    : tier === 2 ? 'Tier 2 · cache 5 min'
+                    : 'Tier 3 · sin cache';
+      tierBadge.textContent = tierLbl;
+    }
+    if (msg) { msg.className = 'aam-message hidden'; msg.textContent = ''; }
+    _aamState.value = '';
+    _aamRenderDots();
+    const box = document.querySelector('#modalAdminAuth .aam-box');
+    if (box) { box.classList.remove('shake', 'success'); }
+    openModal('modalAdminAuth');
+    try { _evalSfx && _evalSfx('open'); } catch(_){}
+    // Focus hidden input para keyboard input
+    setTimeout(() => {
+      const inp = document.getElementById('aamHiddenInput');
+      if (inp) inp.focus();
+    }, 80);
+    // Listener ESC
+    document.addEventListener('keydown', _aamEscHandler, true);
+  }
+  function _aamEscHandler(e) {
+    if (!_aamState) return;
+    if (e.key === 'Escape') {
+      e.stopImmediatePropagation();
+      _aamCancelar();
+    }
+  }
+  function _aamRenderDots() {
+    const dots = document.querySelectorAll('#aamDots .aam-dot');
+    const v = (_aamState && _aamState.value) || '';
+    dots.forEach((d, i) => {
+      d.classList.remove('filled', 'error', 'success');
+      if (i < v.length) d.classList.add('filled');
+    });
+  }
+  function _aamPress(digit) {
+    if (!_aamState) return;
+    if (_aamState.value.length >= 8) return;
+    _aamState.value += String(digit);
+    _aamRenderDots();
+    try { _evalSfx && _evalSfx('tap'); } catch(_){}
+    try { if (navigator.vibrate) navigator.vibrate(15); } catch(_){}
+    if (_aamState.value.length === 8) {
+      // Auto-confirmar al 8º dígito
+      setTimeout(_aamConfirmar, 120);
+    }
+  }
+  function _aamDelete() {
+    if (!_aamState) return;
+    if (!_aamState.value.length) return;
+    _aamState.value = _aamState.value.slice(0, -1);
+    _aamRenderDots();
+    try { _evalSfx && _evalSfx('tap'); } catch(_){}
+  }
+  function _aamOnKey(e) {
+    if (!_aamState) return;
+    if (e.key === 'Backspace') { e.preventDefault(); _aamDelete(); return; }
+    if (e.key === 'Enter') { e.preventDefault(); _aamConfirmar(); return; }
+    if (/^[0-9]$/.test(e.key)) { e.preventDefault(); _aamPress(e.key); return; }
+  }
+  async function _aamConfirmar() {
+    if (!_aamState) return;
+    if (_aamState.value.length !== 8) {
+      _aamMostrarError('Ingresa 8 dígitos');
+      return;
+    }
+    const ico = document.getElementById('aamLockIcon');
+    if (ico) ico.classList.add('spin');
+    const t0 = _aamState.t0;
+    const tiempo_verify_ms = Date.now() - t0;
+    try {
+      const r = await API.post('verificarClaveAdmin', {
+        clave: _aamState.value,
+        accion: _aamState.accion,
+        refDocumento: _aamState.refDocumento,
+        appOrigen: 'MOS',
+        detalle: _aamState.contexto,
+        tier: _aamState.tier,
+        cache_hit: 0,
+        tiempo_verify_ms: tiempo_verify_ms,
+        deviceId: (S.session && S.session.deviceId) || ''
+      });
+      const d = (r && r.data) || {};
+      if (ico) ico.classList.remove('spin');
+      if (!d.autorizado) {
+        _aamMostrarError(d.error || 'Clave incorrecta');
+        return;
+      }
+      // Éxito
+      try { _evalSfx && _evalSfx('success'); } catch(_){}
+      try { if (navigator.vibrate) navigator.vibrate([20, 30, 40]); } catch(_){}
+      document.querySelectorAll('#aamDots .aam-dot').forEach(dot => dot.classList.add('success'));
+      const box = document.querySelector('#modalAdminAuth .aam-box');
+      if (box) box.classList.add('success');
+      const auth = {
+        clave:       _aamState.value,
+        validadoPor: d.validadoPor,
+        idPersonal:  d.idPersonal,
+        nombre:      d.nombre,
+        rol:         d.rol,
+        cacheHit:    false
+      };
+      if (_aamState.allowCache) {
+        _aamCacheSet(_aamState.accion, _aamState.tier, auth);
+      }
+      const resolveFn = _aamState.resolve;
+      setTimeout(() => {
+        closeModal('modalAdminAuth');
+        document.removeEventListener('keydown', _aamEscHandler, true);
+        _aamState = null;
+        resolveFn(auth);
+      }, 500);
+    } catch(e) {
+      if (ico) ico.classList.remove('spin');
+      _aamMostrarError('Error: ' + (e.message || e));
+    }
+  }
+  function _aamMostrarError(txt) {
+    try { _evalSfx && _evalSfx('error'); } catch(_){}
+    try { if (navigator.vibrate) navigator.vibrate([60, 50, 60]); } catch(_){}
+    const msg = document.getElementById('aamMessage');
+    if (msg) {
+      msg.className = 'aam-message error';
+      msg.textContent = '⚠ ' + txt;
+    }
+    document.querySelectorAll('#aamDots .aam-dot').forEach(dot => dot.classList.add('error'));
+    const box = document.querySelector('#modalAdminAuth .aam-box');
+    if (box) {
+      box.classList.add('shake');
+      setTimeout(() => box.classList.remove('shake'), 420);
+    }
+    setTimeout(() => {
+      if (_aamState) {
+        _aamState.value = '';
+        _aamRenderDots();
+        _aamState.t0 = Date.now(); // reset timer
+      }
+    }, 600);
+  }
+  function _aamCancelar() {
+    if (!_aamState) return;
+    const resolveFn = _aamState.resolve;
+    closeModal('modalAdminAuth');
+    document.removeEventListener('keydown', _aamEscHandler, true);
+    _aamState = null;
+    try { _evalSfx && _evalSfx('tap'); } catch(_){}
+    resolveFn(null);
+  }
+  function _aamUsarCache() { /* placeholder — el cache se aplica antes del modal */ }
+
   function openEcoModal(app) {
     const eco = S._ecoData;
     const titleEl = $('ecoModalTitle');
@@ -13690,21 +13966,26 @@ const MOS = (() => {
     }
   }
 
+  // [v2.41.83] DEPRECATED — usar pedirAuth(opts) en lugar de prompt()
   async function _pedirClaveAdmin(accion) {
-    return new Promise((resolve) => {
-      const clave = prompt(`Ingresa tu clave admin (8 dígitos = global 4 + tu PIN 4) para: ${accion}`);
-      resolve((clave || '').trim());
-    });
+    const auth = await pedirAuth({ accion: accion, contexto: 'Acción protegida' });
+    return auth ? auth.clave : '';
   }
 
   async function revocarDispositivoUUID(id) {
     const d = (cfgData.dispositivos || []).find(x => String(x.ID_Dispositivo) === String(id));
     if (!d) return;
     if (!confirm(`¿Revocar el acceso de "${d.Nombre_Equipo}"?\n\nEl dispositivo quedará bloqueado y no podrá usar la app.`)) return;
-    const clave = await _pedirClaveAdmin('REVOCAR_DISPOSITIVO');
-    if (!/^\d{8}$/.test(clave)) { toast('Clave inválida (8 dígitos)', 'error'); return; }
+    // [v2.41.83] AdminAuthModal universal (antes prompt() nativo)
+    const auth = await pedirAuth({
+      accion: 'REVOCAR_DISPOSITIVO',
+      refDocumento: id,
+      contexto: `Revocar "${d.Nombre_Equipo}" (${d.App}) · acción crítica`,
+      allowCache: false  // tier 3 ya no cachea, pero forzamos por claridad
+    });
+    if (!auth) return;
     try {
-      const r = await API.post('revocarDispositivo', { deviceId: id, claveAdmin: clave, app: d.App });
+      const r = await API.post('revocarDispositivo', { deviceId: id, claveAdmin: auth.clave, app: d.App });
       if (!r?.data?.autorizado) {
         toast(r?.data?.error || 'Clave incorrecta', 'error');
         return;
@@ -13720,10 +14001,15 @@ const MOS = (() => {
     const d = (cfgData.dispositivos || []).find(x => String(x.ID_Dispositivo) === String(id));
     if (!d) return;
     if (!confirm(`Al próximo arranque de "${d.Nombre_Equipo}" se mostrará el wizard de permisos.\n\n¿Continuar?`)) return;
-    const clave = await _pedirClaveAdmin('FORZAR_WIZARD');
-    if (!/^\d{8}$/.test(clave)) { toast('Clave inválida (8 dígitos)', 'error'); return; }
+    // [v2.41.83] AdminAuthModal universal
+    const auth = await pedirAuth({
+      accion: 'FORZAR_WIZARD',
+      refDocumento: id,
+      contexto: `Forzar wizard en "${d.Nombre_Equipo}" (${d.App})`
+    });
+    if (!auth) return;
     try {
-      const r = await API.post('forzarWizardDispositivo', { deviceId: id, claveAdmin: clave, app: d.App });
+      const r = await API.post('forzarWizardDispositivo', { deviceId: id, claveAdmin: auth.clave, app: d.App });
       if (!r?.data?.autorizado) {
         toast(r?.data?.error || 'Clave incorrecta', 'error');
         return;
@@ -18391,11 +18677,14 @@ const MOS = (() => {
     ].join('\n');
     if (!confirm(preview)) return;
 
-    const clave = await _pedirClaveAdmin('CIERRE_CAJA_FORZADO · ' + (c.vendedor || idCaja));
-    if (!/^\d{8}$/.test(clave)) {
-      toast('Clave inválida (8 dígitos)', 'error');
-      return;
-    }
+    // [v2.41.83] AdminAuthModal universal — tier 3 (sin cache, crítico)
+    const auth = await pedirAuth({
+      accion: 'CIERRE_CAJA_FORZADO',
+      refDocumento: idCaja,
+      contexto: `Cerrar caja de ${c.vendedor || '?'} (${c.zona || c.estacion || '—'})`
+    });
+    if (!auth) return;
+    const clave = auth.clave;
     // Loading visual: deshabilitar botón
     const cardBtn = document.querySelector(`#cjcard-${idCaja} .cj-caja-btn-danger`);
     if (cardBtn) { cardBtn.disabled = true; cardBtn.textContent = '⌛ Cerrando...'; }
@@ -22274,6 +22563,15 @@ const MOS = (() => {
   // Si falla, restauramos local + warn.
   async function _liqVetarDia(idPersonal, fecha) {
     _liqSfx('tap');
+    // [v2.41.83] AdminAuthModal (antes solo confirm()) — tier 2 cache 5min
+    const persona = (_liqState.pendientes || []).find(x => x.idPersonal === idPersonal);
+    const nomP = persona ? persona.nombre : idPersonal;
+    const auth = await pedirAuth({
+      accion: 'VETAR_LIQUIDACION',
+      refDocumento: idPersonal + '|' + fecha,
+      contexto: `Vetar día de ${nomP} · ${fecha}`
+    });
+    if (!auth) return;
     // Animación de salida en la fila
     const row = document.querySelector(`.liq-dia-row[data-row-key="${idPersonal}|${fecha}"]`);
     if (row) {
@@ -22334,6 +22632,14 @@ const MOS = (() => {
 
   async function _liqDesvetarDia(idPersonal, fecha) {
     _liqSfx('tap');
+    // [v2.41.83] AdminAuthModal (antes click directo sin clave) — tier 1 cache 10min
+    const vetada = (_liqState.vetadas || []).find(v => v.idPersonal === idPersonal && v.fecha === fecha);
+    const auth = await pedirAuth({
+      accion: 'DESVETAR_LIQUIDACION',
+      refDocumento: idPersonal + '|' + fecha,
+      contexto: `Desvetar ${vetada ? vetada.nombre : idPersonal} · ${fecha}`
+    });
+    if (!auth) return;
     try {
       await API.post('desvetarLiquidacionDia', {
         idPersonal, fecha,
@@ -23083,14 +23389,20 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
   }
 
-  // [v2.41.58] Modal anular custom in-app (antes era prompt() nativo del
-  // browser, inconsistente con el resto de modales admin). Pide clave 8
-  // dígitos con keypad numérico.
+  // [v2.41.83] Migrado a AdminAuthModal universal — antes usaba un modal
+  // custom modalLiqAnular con keypad propio. Ahora un solo modal unificado.
+  // Reusa _liqEjecutarAnular pero ya con la clave validada.
   async function liqAnularPago() {
     const d = _liqState.currentPagoDet;
     if (!d) return;
     _liqSfx('open');
-    _liqAbrirModalAnular(d);
+    const auth = await pedirAuth({
+      accion: 'ANULAR_PAGO',
+      refDocumento: d.idPago,
+      contexto: `Anular pago ${d.idPago} · ${d.nombre} · ${_liqMoney(d.total)}`
+    });
+    if (!auth) return;
+    await _liqEjecutarAnular(d.idPago, auth.clave);
   }
 
   function _liqAbrirModalAnular(d) {
@@ -25329,9 +25641,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   async function finBloquearUsuario(nombre, appOrigen, idPersonal) {
     if (!nombre) return;
     const apoyo = (appOrigen || '').toLowerCase().indexOf('warehouse') >= 0
-      ? 'pantalla de candado en su tablet/celular WH'
-      : 'pantalla de candado en su POS de MosExpress';
-    if (!confirm(`🔒 ¿Encarcelar dispositivo(s) de ${nombre}?\n\nSe bloquearán TODOS sus dispositivos asociados (UUID).\nVa a aparecer ${apoyo} en <30s.\nSi borra cache y obtiene UUID nuevo → tendrá que ser aprobado in situ por admin+master.\n\n⚠ Para liberar: requiere clave admin (8 dígitos).`)) return;
+      ? 'tablet/celular WH'
+      : 'POS de MosExpress';
+    // [v2.41.83] AdminAuthModal (antes solo confirm()) — tier 2 cache 5min
+    const auth = await pedirAuth({
+      accion: 'BLOQUEAR_DISPOSITIVO',
+      refDocumento: nombre,
+      contexto: `Encarcelar dispositivos de ${nombre} (${apoyo}). Aparecerá candado en <30s.`
+    });
+    if (!auth) return;
 
     _finBeep('bloquear');
 
@@ -25347,7 +25665,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const r = await API.post('bloquearDispositivosDeUsuario', {
         nombre,
         appOrigen: appOrigen || 'mosExpress',
-        bloqueadoPor: S.session?.nombre || 'admin',
+        bloqueadoPor: auth.nombre || S.session?.nombre || 'admin',
+        claveAdmin: auth.clave,
         motivo: 'bloqueo_desde_personal_dia'
       });
       if (r && r.ok !== false) {
@@ -25396,19 +25715,22 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       return;
     }
     const devices = info.dispositivos;
-    const clave = prompt(`🔓 Liberar ${devices.length} dispositivo(s) de ${nombre}\n\nIngresá la clave admin (8 dígitos: 4 globales + 4 personales):`);
-    if (!clave) return;
-    if (!/^\d{8}$/.test(clave.trim())) {
-      toast('La clave debe ser de 8 dígitos numéricos', 'error');
-      return;
-    }
+    // [v2.41.83] AdminAuthModal universal (antes prompt() nativo).
+    // Una sola clave para liberar todos los devices del usuario (la clave
+    // se reutiliza en el loop interno).
+    const auth = await pedirAuth({
+      accion: 'LIBERAR_DISPOSITIVO_BLOQUEADO',
+      refDocumento: nombre,
+      contexto: `Liberar ${devices.length} dispositivo(s) de ${nombre}`
+    });
+    if (!auth) return;
     _finBeep('bloquear');
     let liberados = 0, fallados = 0, errMsg = '';
     for (const d of devices) {
       try {
         const r = await API.post('liberarDispositivoBloqueado', {
           deviceId: d.deviceId,
-          claveAdmin: clave.trim(),
+          claveAdmin: auth.clave,
           motivo: 'liberacion_desde_personal_dia'
         });
         if (r?.ok && r.data?.autorizado && !r.data?.error) {
@@ -28286,6 +28608,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _liqLoadPrinters, _liqEnviarPrint, _liqAvisarImpresoraNoLista,
     // [v2.41.82] PrinterPicker universal
     abrirPrinterPicker, _pPickToggleFiltroZona, _pPickToggleFiltroTipo, _pPickActualizarBotones,
+    // [v2.41.83] AdminAuthModal universal
+    pedirAuth, _aamPress, _aamDelete, _aamConfirmar, _aamCancelar, _aamOnKey, _aamUsarCache,
     // Editor de checklists
     abrirEditorChecklists, checklistSetRol, checklistAddItem,
     checklistResetRol, guardarChecklists,

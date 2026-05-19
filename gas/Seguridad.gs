@@ -16,7 +16,13 @@
 var AUDITORIA_ADMIN_HEADERS = [
   'idAccion', 'fecha', 'accion', 'refDocumento',
   'idPersonalAutoriza', 'nombreAutoriza', 'appOrigen',
-  'dispositivo', 'detalle'
+  'dispositivo', 'detalle',
+  // [v2.41.83] Columnas para AdminAuthModal universal — métricas y trazabilidad
+  'tier',            // 1=rutina · 2=sensible · 3=critica
+  'cache_hit',       // 1 si reutilizó caché, 0 si pidió clave
+  'tiempo_verify_ms',// ms desde abrir modal a confirmación OK
+  'deviceId',        // huella del dispositivo solicitante
+  'cliente_meta'     // JSON con ip/userAgent/etc opcional
 ];
 
 var ROTACION_DIAS = 30;
@@ -64,6 +70,17 @@ function _garantizarHojaAuditoria() {
     sheet.getRange(1, 1, 1, AUDITORIA_ADMIN_HEADERS.length)
          .setFontWeight('bold').setBackground('#1f2937').setFontColor('#fff');
     sheet.setFrozenRows(1);
+    return sheet;
+  }
+  // [v2.41.83] Migrar headers — agregar columnas nuevas si faltan
+  var firstRow = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), AUDITORIA_ADMIN_HEADERS.length)).getValues()[0];
+  var current = firstRow.map(function(h){ return String(h || '').trim(); });
+  var faltan = AUDITORIA_ADMIN_HEADERS.filter(function(h) { return current.indexOf(h) === -1; });
+  if (faltan.length > 0) {
+    var startCol = sheet.getLastColumn() + 1;
+    sheet.getRange(1, startCol, 1, faltan.length).setValues([faltan]);
+    sheet.getRange(1, startCol, 1, faltan.length)
+         .setFontWeight('bold').setBackground('#1f2937').setFontColor('#fff');
   }
   return sheet;
 }
@@ -91,6 +108,44 @@ function _escribirConfigMos(clave, valor) {
 function _esRolAdmin(rol) {
   var r = String(rol || '').toUpperCase();
   return r === 'MASTER' || r === 'ADMIN' || r === 'ADMINISTRADOR';
+}
+
+// [v2.41.83] Catálogo de acciones admin con su TIER de sensibilidad.
+//   Tier 1 = rutinaria (cache 10 min)
+//   Tier 2 = sensible  (cache 5 min)
+//   Tier 3 = crítica   (NUNCA cachea — clave fresca siempre)
+// Si una acción no está aquí, default = tier 2 (conservador).
+var _AUTH_CATALOGO = {
+  // === MOS ===
+  'ANULAR_PAGO':                  { tier: 2, label: 'Anular pago liquidación' },
+  'VETAR_LIQUIDACION':            { tier: 2, label: 'Vetar liquidación día' },
+  'DESVETAR_LIQUIDACION':         { tier: 1, label: 'Desvetar liquidación' },
+  'BLOQUEAR_DISPOSITIVO':         { tier: 2, label: 'Bloquear dispositivo(s)' },
+  'LIBERAR_DISPOSITIVO_BLOQUEADO':{ tier: 2, label: 'Liberar dispositivo' },
+  'REVOCAR_DISPOSITIVO':          { tier: 3, label: 'Revocar dispositivo' },
+  'FORZAR_WIZARD':                { tier: 2, label: 'Forzar wizard remoto' },
+  'CIERRE_CAJA_FORZADO':          { tier: 3, label: 'Cierre forzado de caja' },
+  // === MosExpress ===
+  'ANULACION':                    { tier: 1, label: 'Anular venta' },
+  'CREDITO_DIRECTO':              { tier: 1, label: 'Crédito directo' },
+  'CREDITAR_VENTA':               { tier: 1, label: 'Marcar como crédito' },
+  'COBRAR_VENTA':                 { tier: 1, label: 'Cambiar método de pago' },
+  'COBRAR_CREDITO_CON_EXTRA':     { tier: 1, label: 'Cobrar crédito (caja receptora)' },
+  'CONVERTIR_NV_A_CPE':           { tier: 2, label: 'Convertir NV → CPE' },
+  'BAJA_CPE':                     { tier: 3, label: 'Baja CPE a SUNAT' },
+  'EDITAR_CLIENTE_VENTA':         { tier: 2, label: 'Editar cliente venta' },
+  'ACTIVAR_POS_60':               { tier: 2, label: 'Activar POS 60 min' },
+  'DESBLOQUEO_TEMPORAL':          { tier: 2, label: 'Desbloqueo temporal' },
+  // === Warehouse ===
+  'REABRIR_GUIA':                 { tier: 1, label: 'Reabrir guía cerrada' },
+  'ANULAR_ENVASADO':              { tier: 2, label: 'Anular envasado' },
+  'EDITAR_ENVASADO':              { tier: 1, label: 'Editar envasado' },
+  'APROBAR_DISPOSITIVO_INSITU':   { tier: 2, label: 'Aprobar dispositivo' },
+  'PROCESAR_MERMAS':              { tier: 2, label: 'Procesar mermas' }
+};
+function _inferirTierAccion(accion) {
+  var x = _AUTH_CATALOGO[String(accion || '').toUpperCase()];
+  return x ? x.tier : 2; // default conservador
 }
 
 function _buscarAdminPorPin(pin4digitos) {
@@ -139,10 +194,23 @@ function verificarClaveAdmin(params) {
     return { ok: true, data: { autorizado: false, error: 'Clave incorrecta' } };
   }
 
-  // Auditoría — registro en hoja AUDITORIA_ACCIONES
+  // Auditoría — registro en hoja AUDITORIA_ADMIN
   var nombreCompleto = (admin.nombre + ' ' + (admin.apellido || '')).trim();
   try {
     var sheet = _garantizarHojaAuditoria();
+    // [v2.41.83] Determinar tier por defecto si no viene del cliente
+    var tier = parseInt(params.tier, 10);
+    if (!tier || tier < 1 || tier > 3) {
+      tier = _inferirTierAccion(String(params.accion || ''));
+    }
+    var clienteMeta = '';
+    try {
+      if (params.cliente_meta) {
+        clienteMeta = typeof params.cliente_meta === 'string'
+          ? params.cliente_meta
+          : JSON.stringify(params.cliente_meta);
+      }
+    } catch(_){}
     sheet.appendRow([
       _generateId('AUD'),
       new Date(),
@@ -152,7 +220,12 @@ function verificarClaveAdmin(params) {
       nombreCompleto,
       params.appOrigen || '',
       params.dispositivo || '',
-      params.detalle || ''
+      params.detalle || '',
+      tier,
+      params.cache_hit ? 1 : 0,
+      parseInt(params.tiempo_verify_ms, 10) || 0,
+      String(params.deviceId || ''),
+      clienteMeta
     ]);
   } catch(e) { /* no bloquear validación si auditoría falla */ }
 
@@ -340,6 +413,19 @@ function getAuditoriaAdmin(params) {
   var limit = parseInt((params && params.limit), 10) || 100;
   rows = rows.slice(0, limit);
   return { ok: true, data: rows };
+}
+
+// ────────────────────────────────────────────────────────────
+// [v2.41.83] Catálogo de acciones admin para AdminAuthModal universal.
+// El frontend lo lee para mostrar el label correcto + saber el tier
+// (y decidir si cachear la autorización).
+// ────────────────────────────────────────────────────────────
+function getAuthCatalogo() {
+  var out = {};
+  Object.keys(_AUTH_CATALOGO).forEach(function(k) {
+    out[k] = { tier: _AUTH_CATALOGO[k].tier, label: _AUTH_CATALOGO[k].label };
+  });
+  return { ok: true, data: out };
 }
 
 // ────────────────────────────────────────────────────────────
