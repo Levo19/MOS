@@ -25485,32 +25485,35 @@ const MOS = (() => {
     if (!tbody) return;
     tbody.innerHTML = lista.map(p => {
       const alertBadge = p.sinCosto
-        ? `<span class="text-amber-400 font-bold" title="Sin costo">⚠</span>` : '';
-      // [v2.41.79] Tooltip explica cómo se calculó el costo (factor × canónico)
-      const tipCosto = p.esPresentacion && p.factor > 1
-        ? `title="Presentación ×${p.factor} · costo canónico S/${parseFloat(p.costoCanonico||0).toFixed(2)} × ${p.factor} = S/${parseFloat(p.costoUnit).toFixed(2)}"`
-        : '';
-      const presBadge = p.esPresentacion && p.factor > 1
-        ? `<span class="fin-prod-factor-pill" title="${p.factor} unidades canónicas por presentación">×${p.factor}</span>` : '';
+        ? `<span class="text-amber-400 font-bold" title="Sin costo canónico">⚠</span>` : '';
+      // [v2.41.80] Cada fila es un GRUPO por skuBase. Cantidad = unidades base.
+      // cantPresent = cuántas presentaciones/líneas distintas se agruparon.
+      const cantPresent = parseFloat(p.cantPresent || 0);
+      const cantUds     = parseFloat(p.cantidad || 0);
+      // Mostrar "Nuds (Mpres)" si N != M (significa que hubo presentaciones)
+      const cantStr = cantUds !== cantPresent
+        ? `<strong>${cantUds}</strong><span class="text-[10px] text-slate-500 ml-1">uds · ${cantPresent} pres.</span>`
+        : `<strong>${cantUds}</strong>`;
       const costoUnitStr = p.sinCosto
         ? `<span class="text-amber-400/60">—</span>`
-        : `<span ${tipCosto}>${fmtM(p.costoUnit)}</span>`;
+        : `<span title="Costo canónico (por unidad base)">${fmtM(p.costoUnit)}</span>`;
       const costoTotalStr = p.sinCosto
-        ? `<span class="text-amber-400/60">—</span>` : fmtM(p.costoTotal);
+        ? `<span class="text-amber-400/60">—</span>`
+        : `<span title="${cantUds} uds × ${fmtM(p.costoUnit)}">${fmtM(p.costoTotal)}</span>`;
       const editBtn = p.sinCosto
-        ? `<button onclick="MOS.finEditarCostoProd('${p.sku}')" class="text-amber-400 hover:text-amber-200 px-1" title="Asignar costo">✎</button>`
-        : `<button onclick="MOS.finEditarCostoProd('${p.sku}')" class="text-slate-600 hover:text-slate-300 px-1" title="Editar costo">✎</button>`;
+        ? `<button onclick="MOS.finEditarCostoProd('${p.sku}')" class="text-amber-400 hover:text-amber-200 px-1" title="Asignar costo canónico">✎</button>`
+        : `<button onclick="MOS.finEditarCostoProd('${p.sku}')" class="text-slate-600 hover:text-slate-300 px-1" title="Editar costo canónico">✎</button>`;
       return `<tr class="hover:bg-slate-800/30 transition-colors">
         <td class="px-3 py-2">
           <div class="flex items-start gap-1.5">
             ${alertBadge}
             <div>
               <div class="text-slate-200 text-xs leading-snug">${p.nombre || p.sku}</div>
-              <div class="font-mono text-slate-500 text-xs flex items-center gap-1.5">${p.sku}${presBadge}</div>
+              <div class="font-mono text-slate-500 text-xs">${p.sku}</div>
             </div>
           </div>
         </td>
-        <td class="px-2 py-2 text-right font-bold text-slate-200 whitespace-nowrap">${p.cantidad}</td>
+        <td class="px-2 py-2 text-right text-slate-200 whitespace-nowrap">${cantStr}</td>
         <td class="px-2 py-2 text-right text-slate-400 whitespace-nowrap hidden sm:table-cell">${fmtM(p.precio)}</td>
         <td class="px-2 py-2 text-right whitespace-nowrap hidden sm:table-cell">${costoUnitStr}</td>
         <td class="px-2 py-2 text-right whitespace-nowrap">${costoTotalStr}</td>

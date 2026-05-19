@@ -476,137 +476,146 @@ function _calcularCostoVentas(fecha, detalleIds) {
   // VENTAS_DETALLE no tiene fecha propia → filtrar por ID_Venta del día
   var items_dia = detalle.filter(function(d){ return detalleIds[String(d.ID_Venta || '')]; });
 
-  // [v2.41.79] Índices por idProducto + skuBase + codigoBarra para lookup O(1)
-  // Antes era productos.find() en cada línea → O(n × m). Con cientos de
-  // productos × decenas de líneas → varios miles de comparaciones.
-  // Normalizamos a string trim + upper para tolerar mayúsculas/espacios.
+  // ════════════════════════════════════════════════════════════════
+  // [v2.41.80] AGRUPACIÓN POR skuBase (clave canónica única)
+  // ════════════════════════════════════════════════════════════════
+  // El idProducto (IDPRO0001708) es solo un id técnico de fila.
+  // La VERDADERA clave es skuBase: todas las presentaciones del mismo
+  // producto comparten skuBase (ej: LEV009 para Ajinomoto).
+  //
+  // Estructura típica:
+  //   skuBase=LEV009
+  //     ├─ canónico  · factor=1  · precioCosto=13.20
+  //     ├─ pres 10UN · factor=10 · precioCosto=0 (heredado de canónico)
+  //     └─ pres 18UN · factor=18 · precioCosto=0 (heredado de canónico)
+  //
+  // Regla de cálculo:
+  //   1. Agrupar todas las ventas por skuBase
+  //   2. Cantidad agrupada = Σ(cant_línea × factor_línea) → uds base
+  //   3. Costo unitario = precioCosto del canónico (factor=1)
+  //   4. Costo total agrupado = cantidad × costoUnitario
   function _norm(s) { return String(s || '').trim().toUpperCase(); }
-  var idxPorId   = {};
-  var idxPorSku  = {};
-  var idxPorCod  = {};
+  var idxPorId  = {};
+  var idxPorCod = {};
+  var idxPorSku = {};         // primer producto con ese skuBase (cualquiera)
+  var gruposPorSku = {};       // skuBase → { canonico, productos[] }
   productos.forEach(function(p) {
     var id  = _norm(p.idProducto);
-    var skb = _norm(p.skuBase);
     var cod = _norm(p.codigoBarra);
+    var sku = _norm(p.skuBase);
     if (id)  idxPorId[id]   = p;
-    if (skb && !idxPorSku[skb]) idxPorSku[skb] = p; // primer match gana (el canónico tiene skuBase===idProducto)
     if (cod) idxPorCod[cod] = p;
+    if (sku) {
+      if (!idxPorSku[sku]) idxPorSku[sku] = p;
+      if (!gruposPorSku[sku]) gruposPorSku[sku] = { canonico: null, productos: [] };
+      gruposPorSku[sku].productos.push(p);
+      // El canónico es la fila con factor=1 (o factor vacío → 1)
+      var f = parseFloat(p.factorConversion) || 1;
+      if (f === 1 && !gruposPorSku[sku].canonico) {
+        gruposPorSku[sku].canonico = p;
+      }
+    }
   });
-  // Helper: localiza canónico de una presentación. Si el producto es canónico,
-  // se devuelve él mismo. Si es presentación (idProducto !== skuBase), busca
-  // su canónico por skuBase.
-  function _canonicoDe(prod) {
-    if (!prod) return null;
-    var idP = _norm(prod.idProducto);
-    var skb = _norm(prod.skuBase);
-    if (!skb || skb === idP) return prod; // ya es canónico
-    return idxPorId[skb] || prod;
-  }
+  // Fallback: si un grupo no tiene canónico con factor=1, usar el primero
+  Object.keys(gruposPorSku).forEach(function(k) {
+    var g = gruposPorSku[k];
+    if (!g.canonico && g.productos.length) g.canonico = g.productos[0];
+  });
 
   var costoTotal      = 0;
-  var costoReal       = 0;     // suma con precioCosto explícito
-  var costoEstimado   = 0;     // suma con margen default
-  var ingresoTotal    = 0;     // para calcular margen promedio
-  var sinCostoSet     = {};    // skus únicos sin costo
-  var unidades        = 0;
-  var skusSet         = {};
+  var costoReal       = 0;
+  var costoEstimado   = 0;
+  var ingresoTotal    = 0;
+  var unidadesBaseTotal = 0;
+  var sinCostoSet     = {};
   var bySkuMap        = {};
 
   items_dia.forEach(function(d) {
-    var sku    = String(d.SKU || '');
-    var nombre = String(d.Nombre || '');
-    var cant   = parseFloat(d.Cantidad || 0);
-    var precio = parseFloat(d.Precio || 0);
-    var skuN   = _norm(sku);
-    var codN   = _norm(d.Cod_Barras || d.codBarras || '');
+    var skuLinea = String(d.SKU || '');
+    var nombre   = String(d.Nombre || '');
+    var cant     = parseFloat(d.Cantidad || 0);
+    var precio   = parseFloat(d.Precio || 0);
+    var skuN     = _norm(skuLinea);
+    var codN     = _norm(d.Cod_Barras || d.codBarras || '');
 
-    // [v2.41.79] Lookup robusto: prioriza idProducto exacto → codigoBarra →
-    // skuBase. Antes con find() un SKU con espacios o case distinto fallaba.
+    // Lookup producto vendido: idProducto → codigoBarra → skuBase
     var prod = idxPorId[skuN] || idxPorCod[skuN] || idxPorCod[codN] || idxPorSku[skuN] || null;
 
-    // [v2.41.79] Si es PRESENTACIÓN, calculamos el costo desde el CANÓNICO
-    // aplicando factorConversion. Esta es la regla "factor × costo_canónico":
-    //   • Canónico → costoUnit = canonico.precioCosto
-    //   • Presentación → costoUnit = canonico.precioCosto × factor
-    // Ejemplo: presentación 18 UN, factor=18, costo_canónico=13.20
-    //          costoUnit = 13.20 × 18 = 237.60 (por presentación vendida)
-    //   El precioCosto que pudiera tener la presentación se IGNORA (la fuente
-    //   de verdad del costo es el canónico).
-    var canonico = _canonicoDe(prod);
-    var factor   = prod ? (parseFloat(prod.factorConversion) || 1) : 1;
-    var esPresentacion = !!(prod && canonico && prod !== canonico);
-    var costoCanon = canonico ? (parseFloat(canonico.precioCosto || 0) || 0) : 0;
-
-    var costoUnitReal;
-    if (esPresentacion && costoCanon > 0) {
-      // Presentación con canónico válido → factor × costo canónico
-      costoUnitReal = costoCanon * factor;
-    } else if (costoCanon > 0) {
-      // Canónico directo (factor=1 implícito)
-      costoUnitReal = costoCanon;
-    } else if (prod && parseFloat(prod.precioCosto || 0) > 0) {
-      // Caso edge: el canónico no tiene costo pero la presentación sí
-      // (datos inconsistentes — respetamos el valor pero notamos en log).
-      costoUnitReal = parseFloat(prod.precioCosto) * factor;
+    var factor, grupoSku, canonico = null;
+    if (prod) {
+      factor   = parseFloat(prod.factorConversion) || 1;
+      grupoSku = _norm(prod.skuBase);
+      canonico = gruposPorSku[grupoSku] ? gruposPorSku[grupoSku].canonico : prod;
     } else {
-      costoUnitReal = 0;
+      // Sin match en PRODUCTOS_MASTER → fallback: usa SKU de línea como clave
+      factor = 1;
+      grupoSku = skuN || codN || _norm(nombre).substring(0, 30);
     }
 
-    // Si no hay precioCosto, estimar con margen default sobre venta
-    var costoUnit;
-    var esEstimado;
-    if (costoUnitReal > 0) {
-      costoUnit  = costoUnitReal;
-      esEstimado = false;
+    // Costo del CANÓNICO (S/13.20 para Ajinomoto) — fuente de verdad
+    var costoCanonicoUnit = canonico ? (parseFloat(canonico.precioCosto || 0) || 0) : 0;
+
+    // Unidades base de esta línea = cant_línea × factor
+    var unidadesBase = cant * factor;
+    var ingresoLinea = precio * cant;
+
+    var costoLinea, esEstimado;
+    if (costoCanonicoUnit > 0) {
+      costoLinea  = unidadesBase * costoCanonicoUnit;
+      esEstimado  = false;
     } else {
-      costoUnit  = precio * (1 - defaultMargen / 100);  // costo = venta × (1 − m%)
+      // Sin costo canónico → estimar al margen default sobre venta
+      costoLinea = ingresoLinea * (1 - defaultMargen / 100);
       esEstimado = true;
-      if (sku) sinCostoSet[sku] = true;
+      sinCostoSet[grupoSku] = true;
     }
 
-    var costoLinea   = costoUnit * cant;
-    var ingresoLinea = precio    * cant;
-    costoTotal   += costoLinea;
-    ingresoTotal += ingresoLinea;
+    costoTotal        += costoLinea;
+    ingresoTotal      += ingresoLinea;
+    unidadesBaseTotal += unidadesBase;
     if (esEstimado) costoEstimado += costoLinea;
     else            costoReal     += costoLinea;
-    // [v2.41.79] unidades EQUIVALENTES en canónico (presentación × factor)
-    unidades += cant * factor;
-    if (sku) skusSet[sku] = true;
 
-    if (sku) {
-      if (!bySkuMap[sku]) {
-        bySkuMap[sku] = {
-          sku: sku, nombre: nombre, cantidad: 0,
-          precio: precio, costoUnit: costoUnit,
-          esEstimado: esEstimado, sinCosto: esEstimado,
-          // [v2.41.79] Datos auxiliares para el panel
-          factor: factor,
-          esPresentacion: esPresentacion,
-          skuCanonico: canonico ? canonico.idProducto : null,
-          costoCanonico: costoCanon
-        };
-      }
-      bySkuMap[sku].cantidad += cant;
-      if (!bySkuMap[sku].nombre && nombre) bySkuMap[sku].nombre = nombre;
+    // ── AGRUPAR POR skuBase (no por SKU técnico de la línea) ──
+    var clave = grupoSku;
+    if (!bySkuMap[clave]) {
+      bySkuMap[clave] = {
+        sku:               clave,           // skuBase canónico (LEV009)
+        nombre:            canonico ? canonico.descripcion : nombre,
+        cantidad:          0,                // suma de UNIDADES BASE
+        cantPresentaciones: 0,                // suma de cantidades de línea
+        ingreso:           0,                // suma de ingresos
+        costoUnit:         costoCanonicoUnit, // costo canónico (sin factor)
+        esEstimado:        esEstimado,
+        sinCosto:          esEstimado,
+        codigoCanonico:    canonico ? canonico.codigoBarra : '',
+        precioCanonico:    canonico ? parseFloat(canonico.precioVenta || 0) : 0
+      };
+    }
+    bySkuMap[clave].cantidad           += unidadesBase;
+    bySkuMap[clave].cantPresentaciones += cant;
+    bySkuMap[clave].ingreso            += ingresoLinea;
+    // Si alguna línea del grupo es estimada → el grupo entero queda "mixto"
+    if (esEstimado) {
+      bySkuMap[clave].esEstimado = true;
+      bySkuMap[clave].sinCosto   = true;
     }
   });
 
   var detalleProductos = Object.keys(bySkuMap).map(function(k) {
     var p = bySkuMap[k];
     return {
-      sku: p.sku, nombre: p.nombre,
-      cantidad:   Math.round(p.cantidad * 100) / 100,
-      precio:     p.precio,
-      costoUnit:  Math.round(p.costoUnit * 100) / 100,
-      costoTotal: _r2(p.costoUnit * p.cantidad),
+      sku:        p.sku,                                  // skuBase canónico
+      nombre:     p.nombre,
+      cantidad:   Math.round(p.cantidad * 100) / 100,     // unidades base
+      cantPresent:Math.round(p.cantPresentaciones * 100) / 100,
+      precio:     p.cantidad > 0 ? _r2(p.ingreso / p.cantidad) : 0,  // promedio por uds base
+      costoUnit:  _r2(p.costoUnit),                       // canonico.precioCosto
+      costoTotal: _r2(p.costoUnit * p.cantidad),          // qty × costo canónico
       esEstimado: p.esEstimado,
       sinCosto:   p.sinCosto,
-      // [v2.41.79] Datos para mostrar en UI por qué un costo es el que es
-      factor:        p.factor || 1,
-      esPresentacion: !!p.esPresentacion,
-      skuCanonico:   p.skuCanonico || null,
-      costoCanonico: p.costoCanonico || 0
+      codigoCanonico: p.codigoCanonico,
+      precioCanonico: p.precioCanonico
     };
   }).sort(function(a, b) { return b.cantidad - a.cantidad; });
 
@@ -622,8 +631,10 @@ function _calcularCostoVentas(fecha, detalleIds) {
     items:           items_dia.length,
     sinCosto:        Object.keys(sinCostoSet),
     cantidadEstimados: Object.keys(sinCostoSet).length,
-    unidades:        Math.round(unidades),
-    skusDistintos:   Object.keys(skusSet).length,
+    // [v2.41.80] unidades en BASE (cant × factor) — refleja uds reales movidas
+    unidades:        Math.round(unidadesBaseTotal),
+    // SKUs distintos = grupos canónicos (skuBase únicos), no SKUs de línea
+    skusDistintos:   Object.keys(bySkuMap).length,
     detalleProductos: detalleProductos,
     margenPromedioPct: margenPromedioPct,
     defaultMargenUsado: defaultMargen
@@ -951,23 +962,35 @@ function actualizarCostoPorSku(params) {
   var sheet = getSheet('PRODUCTOS_MASTER');
   var data  = sheet.getDataRange().getValues();
   var hdrs  = data[0].map(function(h){ return String(h).trim(); });
-  var idxSku   = hdrs.indexOf('skuBase');
-  var idxCod   = hdrs.indexOf('codigoBarra');
-  var idxId    = hdrs.indexOf('idProducto');
-  var idxCosto = hdrs.indexOf('precioCosto');
+  var idxSku    = hdrs.indexOf('skuBase');
+  var idxCod    = hdrs.indexOf('codigoBarra');
+  var idxId     = hdrs.indexOf('idProducto');
+  var idxCosto  = hdrs.indexOf('precioCosto');
+  var idxFactor = hdrs.indexOf('factorConversion');
 
   if (idxCosto < 0) return { ok: false, error: 'Columna precioCosto no encontrada en PRODUCTOS_MASTER' };
 
+  // [v2.41.80] Buscar siempre el CANÓNICO (fila con factor=1) cuando el match
+  // viene por skuBase. Las presentaciones NO deben tener precioCosto propio —
+  // el costo lo hereda del canónico vía factorConversion en el cálculo.
+  // Prioridad de matching:
+  //   1. idProducto exacto → actualiza esa fila puntual (override directo)
+  //   2. codigoBarra exacto → actualiza esa fila (caso código de barras real)
+  //   3. skuBase + factor=1 → el canónico del grupo (caso común)
+  var rowCanonico = -1;
+  var rowExacto   = -1;
   for (var i = 1; i < data.length; i++) {
-    var match = (idxSku >= 0 && String(data[i][idxSku]) === sku)
-             || (idxCod >= 0 && String(data[i][idxCod]) === sku)
-             || (idxId  >= 0 && String(data[i][idxId])  === sku);
-    if (match) {
-      sheet.getRange(i + 1, idxCosto + 1).setValue(costo);
-      return { ok: true };
+    if (idxId >= 0 && String(data[i][idxId]) === sku) { rowExacto = i; break; }
+    if (idxCod >= 0 && String(data[i][idxCod]) === sku && rowExacto < 0) { rowExacto = i; }
+    if (idxSku >= 0 && String(data[i][idxSku]) === sku) {
+      var f = idxFactor >= 0 ? (parseFloat(data[i][idxFactor]) || 1) : 1;
+      if (f === 1 && rowCanonico < 0) rowCanonico = i;
     }
   }
-  return { ok: false, error: 'Producto no encontrado: ' + sku };
+  var rowTarget = rowExacto >= 0 ? rowExacto : rowCanonico;
+  if (rowTarget < 0) return { ok: false, error: 'Producto no encontrado: ' + sku };
+  sheet.getRange(rowTarget + 1, idxCosto + 1).setValue(costo);
+  return { ok: true, fila: rowTarget + 1 };
 }
 
 // ════════════════════════════════════════════════════════════
