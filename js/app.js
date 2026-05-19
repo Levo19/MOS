@@ -28441,6 +28441,179 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
   }
 
+  // ════════════════════════════════════════════════════════════
+  // [v2.41.84] AUDITORÍA ADMIN — viewer del log AUDITORIA_ADMIN
+  // Muestra todas las autorizaciones admin de las 3 apps con filtros,
+  // estadísticas y export CSV.
+  // ════════════════════════════════════════════════════════════
+  var _audAdmRows = [];      // últimas filas cargadas (para export)
+  var _audAdmCatalogo = null; // catálogo de acciones para el select
+
+  async function abrirAuditoriaAdmin() {
+    openModal('modalAuditoriaAdmin');
+    const body  = document.getElementById('audAdmBody');
+    const stats = document.getElementById('audAdmStats');
+    const totLbl= document.getElementById('audAdmTotal');
+    if (body) body.innerHTML = `<div class="text-center py-8 text-xs text-slate-500"><span class="inline-block animate-spin">⌛</span> Cargando…</div>`;
+
+    // Cargar catálogo de acciones la primera vez (para poblar el select)
+    if (!_audAdmCatalogo) {
+      try {
+        const cat = await API.get('getAuthCatalogo', {});
+        _audAdmCatalogo = (cat && cat.data) || {};
+        const sel = document.getElementById('audAdmFiltroAccion');
+        if (sel) {
+          const cur = sel.value;
+          const opts = Object.keys(_audAdmCatalogo)
+            .sort()
+            .map(k => `<option value="${k}">${_audAdmCatalogo[k].label || k}</option>`)
+            .join('');
+          sel.innerHTML = `<option value="">Todas las acciones</option>` + opts;
+          sel.value = cur;
+        }
+      } catch(_){}
+    }
+
+    const params = {
+      limit:     parseInt(document.getElementById('audAdmFiltroLimit')?.value, 10) || 100,
+      accion:    document.getElementById('audAdmFiltroAccion')?.value || '',
+      appOrigen: document.getElementById('audAdmFiltroApp')?.value || ''
+    };
+    try {
+      const r = await API.get('getAuditoriaAdmin', params);
+      let rows = (r && r.data) || [];
+      // Filtro tier (local porque el endpoint no lo soporta)
+      const filtroTier = document.getElementById('audAdmFiltroTier')?.value;
+      if (filtroTier) {
+        rows = rows.filter(x => parseInt(x.tier, 10) === parseInt(filtroTier, 10));
+      }
+      _audAdmRows = rows;
+      _audAdmRenderStats(rows);
+      _audAdmRenderTabla(rows);
+      if (totLbl) totLbl.textContent = `${rows.length} acción${rows.length !== 1 ? 'es' : ''} · MOS + ME + WH unificado`;
+    } catch(e) {
+      if (body) body.innerHTML = `<div class="text-rose-400 text-xs py-6 text-center">⚠ ${_escapeHtml(e.message || String(e))}</div>`;
+    }
+  }
+  function _audAdmRenderStats(rows) {
+    const cont = document.getElementById('audAdmStats');
+    if (!cont) return;
+    if (!rows.length) { cont.innerHTML = ''; return; }
+    // KPIs: total, cache_hit rate, tier3 count, admins únicos, tiempo prom
+    const total = rows.length;
+    const cacheHits = rows.filter(r => parseInt(r.cache_hit, 10) === 1).length;
+    const cacheHitPct = total > 0 ? Math.round(cacheHits / total * 100) : 0;
+    const tier3 = rows.filter(r => parseInt(r.tier, 10) === 3).length;
+    const admins = new Set(rows.map(r => r.nombreAutoriza)).size;
+    const tiempos = rows.map(r => parseInt(r.tiempo_verify_ms, 10) || 0).filter(t => t > 0);
+    const tiempoProm = tiempos.length ? Math.round(tiempos.reduce((a,b) => a+b, 0) / tiempos.length) : 0;
+    cont.innerHTML = `
+      <div class="rounded-lg p-2" style="background:rgba(168,85,247,.08);border:1px solid rgba(168,85,247,.3)">
+        <div class="text-[9px] uppercase tracking-wider text-purple-300 font-bold">Total</div>
+        <div class="text-lg font-bold text-white">${total}</div>
+      </div>
+      <div class="rounded-lg p-2" style="background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.3)">
+        <div class="text-[9px] uppercase tracking-wider text-emerald-300 font-bold">Cache hits</div>
+        <div class="text-lg font-bold text-white">${cacheHits} <span class="text-xs text-emerald-300">(${cacheHitPct}%)</span></div>
+      </div>
+      <div class="rounded-lg p-2" style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3)">
+        <div class="text-[9px] uppercase tracking-wider text-rose-300 font-bold">Tier 3 críticas</div>
+        <div class="text-lg font-bold text-white">${tier3}</div>
+      </div>
+      <div class="rounded-lg p-2" style="background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.3)">
+        <div class="text-[9px] uppercase tracking-wider text-indigo-300 font-bold">Tiempo prom</div>
+        <div class="text-lg font-bold text-white">${tiempoProm}ms</div>
+      </div>`;
+  }
+  function _audAdmRenderTabla(rows) {
+    const cont = document.getElementById('audAdmBody');
+    if (!cont) return;
+    if (!rows.length) {
+      cont.innerHTML = `<div class="text-center text-xs text-slate-500 py-8">
+        <div class="text-3xl mb-2 opacity-50">🔐</div>
+        Sin registros con los filtros actuales
+      </div>`;
+      return;
+    }
+    const tierBadge = (t) => {
+      const n = parseInt(t, 10);
+      if (n === 1) return '<span class="aud-tier aud-tier-1" title="Tier 1 · rutina">T1</span>';
+      if (n === 2) return '<span class="aud-tier aud-tier-2" title="Tier 2 · sensible">T2</span>';
+      if (n === 3) return '<span class="aud-tier aud-tier-3" title="Tier 3 · crítica">T3</span>';
+      return '<span class="aud-tier aud-tier-x">—</span>';
+    };
+    const appBadge = (a) => {
+      const ap = String(a || '').toUpperCase();
+      if (ap === 'MOS') return '<span class="aud-app aud-app-mos">MOS</span>';
+      if (ap === 'MOSEXPRESS') return '<span class="aud-app aud-app-me">ME</span>';
+      if (ap === 'WAREHOUSEMOS') return '<span class="aud-app aud-app-wh">WH</span>';
+      return `<span class="aud-app aud-app-x">${_escapeHtml(a || '?')}</span>`;
+    };
+    const fmtFecha = (f) => {
+      try {
+        const d = new Date(f);
+        if (isNaN(d.getTime())) return String(f || '');
+        return d.toLocaleString('es-PE', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+      } catch(_) { return String(f || ''); }
+    };
+    const fmtMs = (ms) => {
+      const n = parseInt(ms, 10) || 0;
+      if (!n) return '<span class="text-slate-600">—</span>';
+      if (n < 1000) return n + 'ms';
+      return (n / 1000).toFixed(1) + 's';
+    };
+    cont.innerHTML = `
+      <table class="w-full text-xs aud-tabla">
+        <thead class="sticky top-0" style="background:rgba(15,23,42,.95);z-index:1">
+          <tr class="text-slate-500 text-left text-[10px] uppercase tracking-wider">
+            <th class="px-2 py-2">Fecha</th>
+            <th class="px-2 py-2">App</th>
+            <th class="px-2 py-2">Acción</th>
+            <th class="px-2 py-2">Tier</th>
+            <th class="px-2 py-2">Admin</th>
+            <th class="px-2 py-2 text-right">⌛</th>
+            <th class="px-2 py-2">Ref</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => {
+            const cacheIco = parseInt(r.cache_hit, 10) === 1 ? '⚡' : '🔑';
+            const cacheTip = parseInt(r.cache_hit, 10) === 1 ? 'Caché reutilizado' : 'Clave fresca ingresada';
+            return `<tr class="border-t border-slate-800 hover:bg-slate-900/40">
+              <td class="px-2 py-1.5 text-slate-400 whitespace-nowrap text-[10.5px]">${_escapeHtml(fmtFecha(r.fecha))}</td>
+              <td class="px-2 py-1.5">${appBadge(r.appOrigen)}</td>
+              <td class="px-2 py-1.5 text-slate-200 font-mono text-[10.5px]">${_escapeHtml(r.accion || '')}</td>
+              <td class="px-2 py-1.5">${tierBadge(r.tier)} <span title="${cacheTip}">${cacheIco}</span></td>
+              <td class="px-2 py-1.5 text-slate-300 truncate" style="max-width:140px">${_escapeHtml(r.nombreAutoriza || '?')}</td>
+              <td class="px-2 py-1.5 text-right text-slate-500">${fmtMs(r.tiempo_verify_ms)}</td>
+              <td class="px-2 py-1.5 text-slate-500 font-mono text-[10px] truncate" style="max-width:160px" title="${_escapeHtml(r.refDocumento || '')}">${_escapeHtml(r.refDocumento || '')}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>`;
+  }
+  function _audAdmExportCSV() {
+    if (!_audAdmRows.length) { toast('Sin datos para exportar', 'warn'); return; }
+    const headers = ['idAccion','fecha','accion','refDocumento','idPersonalAutoriza','nombreAutoriza','appOrigen','dispositivo','detalle','tier','cache_hit','tiempo_verify_ms','deviceId'];
+    const lines = [headers.join(',')];
+    _audAdmRows.forEach(r => {
+      const row = headers.map(h => {
+        const v = (r[h] !== undefined && r[h] !== null) ? String(r[h]) : '';
+        return '"' + v.replace(/"/g, '""') + '"';
+      });
+      lines.push(row.join(','));
+    });
+    const csv = lines.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const fecha = new Date().toISOString().slice(0, 10);
+    a.href = url; a.download = `auditoria_admin_${fecha}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast('✓ CSV descargado · ' + _audAdmRows.length + ' filas', 'ok');
+  }
+
   // [v2.41.76] Diagnóstico cierre nocturno ────────────────────
   async function abrirCronStatus() {
     openModal('modalCronStatus');
@@ -28564,6 +28737,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     init, nav, refresh, fabAction, iconBusy,
     // [v2.41.76] Cron diagnóstico
     abrirCronStatus, cronReinstalarTrigger, cronEjecutarAhora,
+    // [v2.41.84] Auditoría admin viewer
+    abrirAuditoriaAdmin, _audAdmExportCSV,
     openConfig, saveConfig, testConnection, closeModal, openEcoModal,
     filterCatalogo, setCatTab, toggleDerivs, togglePresentaciones, guardarPrecioRapido,
     _catCardClick, _catSfx, _catRipple,

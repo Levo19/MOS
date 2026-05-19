@@ -6370,6 +6370,28 @@
       color: #cbd5e1;
     }
 
+    /* [v2.41.84] Auditoría admin viewer — badges de tier + app */
+    .aud-tier {
+      display: inline-block; padding: 1px 6px; border-radius: 5px;
+      font-size: 9px; font-weight: 900; letter-spacing: .04em;
+      vertical-align: middle;
+    }
+    .aud-tier-1 { background: rgba(16,185,129,.15); color: #6ee7b7; border: 1px solid rgba(16,185,129,.4); }
+    .aud-tier-2 { background: rgba(251,191,36,.15); color: #fcd34d; border: 1px solid rgba(251,191,36,.4); }
+    .aud-tier-3 { background: rgba(239,68,68,.15); color: #fca5a5; border: 1px solid rgba(239,68,68,.5); }
+    .aud-tier-x { background: rgba(100,116,139,.15); color: #94a3b8; border: 1px solid rgba(100,116,139,.4); }
+    .aud-app {
+      display: inline-block; padding: 1px 7px; border-radius: 5px;
+      font-size: 9.5px; font-weight: 900; letter-spacing: .03em;
+    }
+    .aud-app-mos { background: rgba(168,85,247,.18); color: #d8b4fe; border: 1px solid rgba(168,85,247,.4); }
+    .aud-app-me  { background: rgba(34,197,94,.18);  color: #86efac; border: 1px solid rgba(34,197,94,.4); }
+    .aud-app-wh  { background: rgba(217,119,6,.2);   color: #fbbf24; border: 1px solid rgba(217,119,6,.45); }
+    .aud-app-x   { background: rgba(100,116,139,.15);color: #94a3b8; border: 1px solid rgba(100,116,139,.4); }
+    .aud-tabla { border-collapse: collapse; width: 100%; }
+    .aud-tabla th { font-size: 9.5px; padding: 6px 8px !important; }
+    .aud-tabla td { vertical-align: middle; }
+
     /* [v2.41.79] Alerta prominente costo estimado en modal Productos */
     .fin-prod-alerta-grande {
       border-radius: 10px;
@@ -10216,6 +10238,12 @@
                   style="background:linear-gradient(135deg,#1e1b4b,#0d0d2e);border:1px solid rgba(168,85,247,.4);color:#c4b5fd"
                   title="Ver estado del trigger 23h + últimas corridas">
             🌙 <span class="ml-1">Cierre nocturno</span>
+          </button>
+          <!-- [v2.41.84] Viewer auditoría de acciones admin -->
+          <button onclick="MOS.abrirAuditoriaAdmin()" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105"
+                  style="background:linear-gradient(135deg,#3b0764,#1e1b4b);border:1px solid rgba(217,70,239,.5);color:#f0abfc"
+                  title="Ver registro de autorizaciones admin (MOS + ME + WH)">
+            🔐 <span class="ml-1">Auditoría admin</span>
           </button>
         </div>
 
@@ -17020,6 +17048,50 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
     </div>
     <div class="px-5 py-3 border-t border-slate-800 flex">
       <button onclick="MOS.cerrarModalHistorialCajas()" class="btn-ghost flex-1 text-xs">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ [v2.41.84] MODAL AUDITORÍA ADMIN — viewer del log unificado ═══ -->
+<div id="modalAuditoriaAdmin" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalAuditoriaAdmin')">
+  <div class="modal-box p-0 max-w-4xl w-full" style="max-height:92vh;display:flex;flex-direction:column;background:linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,8,23,.98));backdrop-filter:blur(14px);box-shadow:0 24px 60px -10px rgba(217,70,239,.25),0 0 0 1px rgba(217,70,239,.12);">
+    <div class="px-5 pt-5 pb-3 flex items-center justify-between border-b border-slate-800">
+      <div>
+        <h3 class="font-semibold text-base" style="color:#f0abfc">🔐 Auditoría admin</h3>
+        <p class="text-xs text-slate-500" id="audAdmTotal">Cargando…</p>
+      </div>
+      <button onclick="MOS.closeModal('modalAuditoriaAdmin')" class="modal-close-x">×</button>
+    </div>
+    <!-- Filtros -->
+    <div class="px-5 py-2 border-b border-slate-800 flex items-center gap-2 flex-wrap" style="background:rgba(15,23,42,.4)">
+      <span class="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Filtros:</span>
+      <select id="audAdmFiltroApp" class="inp text-xs" style="padding:4px 8px" onchange="MOS.abrirAuditoriaAdmin()">
+        <option value="">Todas las apps</option>
+        <option value="MOS">MOS</option>
+        <option value="mosExpress">MosExpress</option>
+        <option value="warehouseMos">Warehouse</option>
+      </select>
+      <select id="audAdmFiltroAccion" class="inp text-xs" style="padding:4px 8px;min-width:160px" onchange="MOS.abrirAuditoriaAdmin()">
+        <option value="">Todas las acciones</option>
+      </select>
+      <select id="audAdmFiltroTier" class="inp text-xs" style="padding:4px 8px" onchange="MOS.abrirAuditoriaAdmin()">
+        <option value="">Todos los tiers</option>
+        <option value="1">Tier 1 · rutina</option>
+        <option value="2">Tier 2 · sensible</option>
+        <option value="3">Tier 3 · crítica</option>
+      </select>
+      <input id="audAdmFiltroLimit" type="number" min="20" max="500" value="100" class="inp text-xs"
+             style="padding:4px 8px;width:80px" onchange="MOS.abrirAuditoriaAdmin()" title="N filas">
+      <button onclick="MOS.abrirAuditoriaAdmin()" class="btn-ghost text-xs px-2 py-1 ml-auto">↻ Refrescar</button>
+      <button onclick="MOS._audAdmExportCSV()" class="btn-ghost text-xs px-2 py-1"
+              style="border-color:rgba(34,197,94,.4);color:#86efac">⬇ CSV</button>
+    </div>
+    <!-- KPIs / estadísticas rápidas -->
+    <div id="audAdmStats" class="px-5 py-2 border-b border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs"
+         style="background:rgba(15,23,42,.3)"></div>
+    <!-- Tabla -->
+    <div id="audAdmBody" class="overflow-y-auto px-3 py-3" style="flex:1">
+      <div class="text-center py-8 text-xs text-slate-500"><span class="inline-block animate-spin">⌛</span> Cargando registro…</div>
     </div>
   </div>
 </div>
