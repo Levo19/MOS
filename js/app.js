@@ -24451,6 +24451,15 @@ const MOS = (() => {
               ${evalCount > 0
                 ? `<span class="audit-count-pill">${evalCount} auditoría${evalCount !== 1 ? 's' : ''}</span>`
                 : `<span class="audit-count-pill" style="background:rgba(245,158,11,.12);color:#fbbf24;border-color:rgba(245,158,11,.3)">⚠ Sin auditar</span>`}
+              ${(() => {
+                // [v2.41.77] Pill de última actividad visible siempre.
+                // Verde <5min (LIVE), verde claro <60min, amarillo <24h, naranja <7d, rojo +7d.
+                if (!ultCx) return '<span class="audit-count-pill" style="background:rgba(100,116,139,.12);color:#94a3b8;border-color:rgba(100,116,139,.3)" title="Sin actividad registrada">⚫ sin actividad</span>';
+                const bg = `rgba(${act.color === '#10b981' ? '16,185,129' : act.color === '#fbbf24' ? '251,191,36' : act.color === '#f97316' ? '249,115,22' : '239,68,68'},.14)`;
+                const bd = `rgba(${act.color === '#10b981' ? '16,185,129' : act.color === '#fbbf24' ? '251,191,36' : act.color === '#f97316' ? '249,115,22' : '239,68,68'},.4)`;
+                const pulse = isFresh ? ' style="animation:finPillPulse 1.4s ease-in-out infinite"' : '';
+                return `<span class="audit-count-pill"${pulse} style="background:${bg};color:${act.color};border-color:${bd}" title="Última actividad detectada">${act.dot} ${_escapeHtml(act.label)}</span>`;
+              })()}
               <span class="text-xs text-slate-400">Pago día: <strong class="text-amber-400">S/ ${parseFloat(totalDia).toFixed(2)}</strong></span>
             </div>
             ${(() => {
