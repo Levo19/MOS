@@ -231,6 +231,8 @@ function _route(method, e) {
       // [v2.41.76] Diagnóstico cron + manejo flag Forzar_Logout
       case 'getCronStatus':              return getCronStatus();
       case 'marcarLogoutHonrado':        return marcarLogoutHonrado(params);
+      // [v2.41.82] PrinterPicker — verificar estado fresh de 1 impresora
+      case 'verificarImpresoraAhora':    return verificarImpresoraAhora(params);
       case 'getPagoDetalle':             return getPagoDetalle(params);
       case 'imprimirTicketPago':         return imprimirTicketPago(params);
       case 'migrarLiquidacionesV2':      return migrarLiquidacionesV2();

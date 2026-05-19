@@ -1323,6 +1323,60 @@ function listarImpresorasPN() {
 // Compat: alias para frontend que use camelCase legacy
 function getPrintNodePrinters() { return listarImpresorasPN(); }
 
+// [v2.41.82] Verifica el estado FRESH de UNA impresora puntual.
+// Se llama justo antes de mandar un job de impresión para evitar enviar
+// trabajos a impresoras que cambiaron de estado desde el último listado.
+// Solo hace 2 requests (printer + computer) y devuelve diagnóstico
+// completo. Sin cache.
+function verificarImpresoraAhora(params) {
+  var pid = String(params.printerId || params.id || '').trim();
+  if (!pid) return { ok: false, error: 'Requiere printerId' };
+  var pnKey;
+  try { pnKey = PropertiesService.getScriptProperties().getProperty('PRINTNODE_API_KEY'); } catch(_){}
+  if (!pnKey) return { ok: false, error: 'PRINTNODE_API_KEY no configurado' };
+  var authHeader = 'Basic ' + Utilities.base64Encode(pnKey + ':');
+  try {
+    var resp = UrlFetchApp.fetch('https://api.printnode.com/printers/' + encodeURIComponent(pid), {
+      method: 'get',
+      headers: { 'Authorization': authHeader },
+      muteHttpExceptions: true
+    });
+    if (resp.getResponseCode() === 404) {
+      return { ok: true, data: { state: 'ID_INVALIDO', reason: 'ID ' + pid + ' no existe en PrintNode',
+                                  icon: '❓', color: 'red', online: false, printerId: pid } };
+    }
+    if (resp.getResponseCode() !== 200) {
+      return { ok: false, error: 'PrintNode HTTP ' + resp.getResponseCode() };
+    }
+    var json = JSON.parse(resp.getContentText() || '[]');
+    var p = Array.isArray(json) ? json[0] : json;
+    if (!p) return { ok: true, data: { state: 'ID_INVALIDO', reason: 'No reportada', icon: '❓', color: 'red', online: false } };
+
+    // Estado de la PC
+    var compState = '';
+    var compName = '';
+    if (p.computer) {
+      compName = String(p.computer.name || '');
+      compState = String(p.computer.state || '').toLowerCase();
+    }
+    var diag = _interpretarEstadoImpresora(String(p.state || ''), compState, String(p.description || ''));
+    return { ok: true, data: {
+      printerId:        pid,
+      nombrePN:         String(p.name || ''),
+      computer:         compName,
+      computerState:    compState,
+      printerStateRaw:  String(p.state || ''),
+      state:            diag.state,
+      reason:           diag.reason,
+      icon:             diag.icon,
+      color:            diag.color,
+      online:           diag.state === 'ONLINE'
+    }};
+  } catch(e) {
+    return { ok: false, error: 'PrintNode fetch fallo: ' + e.message };
+  }
+}
+
 // ════════════════════════════════════════════════════════════════════
 // MONITOREO DE IMPRESORAS — verificación + alerta inteligente
 // ════════════════════════════════════════════════════════════════════

@@ -11694,7 +11694,9 @@
       </div>
     </div>
 
-    <!-- ── Modal: Selector de impresora (Liquidación 80mm) ─────────── -->
+    <!-- ── Modal: Selector universal de impresora (PrinterPicker v2.41.82) ─────────── -->
+    <!-- Reusado por: liquidación, costos guía, etiquetas, reimpresión, batches.
+         Título y subtítulo se setean dinámicamente vía abrirPrinterPicker(opts). -->
     <div class="modal-backdrop hidden" id="modalSelPrinterLiq">
       <div class="modal-box p-0 max-w-md w-full" style="max-height:88vh;display:flex;flex-direction:column;
            background:linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,8,23,.98));
@@ -11702,18 +11704,31 @@
            box-shadow: 0 24px 60px -10px rgba(251,191,36,.18), 0 0 0 1px rgba(251,191,36,.08);">
         <div class="px-5 pt-5 pb-3 flex items-center justify-between border-b border-slate-800">
           <div>
-            <h3 class="font-semibold text-white text-base">🖨 Imprimir liquidación</h3>
+            <h3 id="liqPrintTitle" class="font-semibold text-white text-base">🖨 Elegir impresora</h3>
             <p class="text-xs text-slate-500" id="liqPrintSubtitle">—</p>
           </div>
           <button onclick="MOS.closeModal('modalSelPrinterLiq')" class="modal-close-x">×</button>
         </div>
+        <!-- [v2.41.82] Filtros — tipo + zona (toggle ver todas) -->
+        <div id="liqPrintFiltros" class="px-5 py-2 flex items-center gap-2 flex-wrap border-b border-slate-800" style="background:rgba(15,23,42,.4)">
+          <span class="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Filtrar:</span>
+          <button id="ppFiltZonaBtn" class="text-xs px-2 py-1 rounded-full transition-all"
+                  style="background:rgba(99,102,241,.18);border:1px solid rgba(99,102,241,.4);color:#c4b5fd"
+                  onclick="MOS._pPickToggleFiltroZona()">📍 mi zona</button>
+          <button id="ppFiltTipoBtn" class="text-xs px-2 py-1 rounded-full transition-all hidden"
+                  style="background:rgba(168,85,247,.18);border:1px solid rgba(168,85,247,.4);color:#d8b4fe"
+                  onclick="MOS._pPickToggleFiltroTipo()">🧾 todos los tipos</button>
+          <span class="text-[10px] text-slate-500 ml-auto" id="ppCount">—</span>
+        </div>
         <div class="overflow-y-auto px-5 py-4 space-y-3" style="flex:1">
           <div class="rounded-lg p-2 text-[11px] text-slate-400"
                style="background:rgba(56,189,248,.06);border:1px solid rgba(56,189,248,.18)">
-            💡 Solo se muestran las impresoras <strong class="text-amber-400">registradas en el catálogo MOS</strong>, agrupadas por <strong class="text-amber-400">📍 zona</strong> y <strong class="text-amber-400">🏷 estación</strong>. Las <strong class="text-emerald-400">online</strong> reciben el job al instante.
+            💡 <strong class="text-emerald-400">Verde</strong> = lista para imprimir · <strong class="text-amber-400">Amarilla</strong> = revisar (sin papel, tinta, tapa) · <strong class="text-rose-400">Roja</strong> = no disponible (PC apagada, error). Toca cualquier card para ver el detalle.
           </div>
           <div id="liqPrinterList" class="space-y-3">
-            <div class="text-center text-xs text-slate-500 py-8">Cargando impresoras...</div>
+            <div class="text-center text-xs text-slate-500 py-8">
+              <span class="inline-block animate-spin">⌛</span> Cargando impresoras...
+            </div>
           </div>
         </div>
         <div class="px-5 py-3 border-t border-slate-800 flex gap-2">

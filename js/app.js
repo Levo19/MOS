@@ -327,6 +327,17 @@ const MOS = (() => {
           }
         } catch(_){}
 
+        // 5) [v2.41.82] PrinterPicker — precargar el listado de impresoras +
+        //    estado PrintNode para que el modal abra INSTANT.
+        tasks.push(API.get('listarImpresorasPN', {}).then(r => {
+          const arr = Array.isArray(r) ? r : ((r && r.data) || []);
+          try {
+            window._evalState = window._evalState || {};
+            window._evalState.pnPrinters = arr;
+            localStorage.setItem('mos_printers_cache', JSON.stringify({ ts: Date.now(), data: arr }));
+          } catch(_){}
+        }).catch(() => null));
+
         Promise.allSettled(tasks).then(results => {
           const ok = results.filter(x => x.status === 'fulfilled').length;
           const ms = Date.now() - t0;
@@ -5372,16 +5383,27 @@ const MOS = (() => {
   // un modal propio chico y un handler distinto.
   S._opsImpCtx = S._opsImpCtx || null;
 
-  function abrirSelPrinterCostos(fuente, idGuia) {
+  // [v2.41.82] Selector de impresora para costos de guía — DELEGA al
+  // PrinterPicker universal. Antes era un modal aparte con render propio
+  // de estado simple (online/offline). Ahora usa el componente unificado
+  // con 12 estados granulares + verify on-click + filtro por zona.
+  async function abrirSelPrinterCostos(fuente, idGuia) {
     _opsBeep('tac');
     S._opsImpCtx = { fuente, idGuia };
-    const sub = $('selPrCostosSub');
-    if (sub) sub.textContent = idGuia + ' · costos de proveedor';
-    openModal('modalSelPrinterCostos');
-    _opsCargarPrinters(false);
+    const printerId = await abrirPrinterPicker({
+      titulo:    '🖨 Imprimir costos de guía',
+      subtitulo: idGuia + ' · costos de proveedor',
+      filtroTipo: 'TICKET'
+    });
+    if (printerId) {
+      await _opsEnviarPrintCostos(printerId, null);
+    } else {
+      S._opsImpCtx = null;
+    }
   }
   function cerrarSelPrinterCostos() {
     closeModal('modalSelPrinterCostos');
+    closeModal('modalSelPrinterLiq');
     S._opsImpCtx = null;
   }
   function _opsRecargarPrinters() { _opsCargarPrinters(true); }
@@ -22795,20 +22817,75 @@ const MOS = (() => {
 
   // ── Elegir impresora — reusa el modal modalSelPrinterLiq del audit ──
   function _liqElegirImpresora() {
+    return abrirPrinterPicker({
+      titulo: '🖨 Imprimir liquidación',
+      subtitulo: `Pago de liquidación · ${(_liqState.tab === 'pendientes' ? 'pendientes' : 'reimpresión')}`,
+      filtroTipo: 'TICKET'
+    });
+  }
+
+  // [v2.41.82] PrinterPicker UNIVERSAL — selector de impresora reusable
+  // por todos los flujos (liquidación, costos guía, etiquetas, batches).
+  // Devuelve una Promise<printerId | null>. Verifica el estado fresh
+  // antes de resolver (verificarImpresoraAhora) para evitar enviar jobs
+  // a impresoras que cambiaron de estado entre listar y elegir.
+  //
+  // opts:
+  //   titulo:    string  ('🖨 Imprimir X')
+  //   subtitulo: string  (contexto del job: 'Guía G-0042 · S/450')
+  //   filtroTipo: 'TICKET' | 'ADHESIVO' | 'ZPL' | undefined (todos)
+  //   filtroZona: idZona  (si undefined, usa zona del admin si está set)
+  //   verify:    bool (true por default — verifica antes de resolver)
+var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
+  function abrirPrinterPicker(opts) {
+    opts = opts || {};
     return new Promise(resolve => {
-      const sub = $('liqPrintSubtitle');
-      if (sub) sub.textContent = `Pago de liquidación · ${(_liqState.tab === 'pendientes' ? 'pendientes' : 'reimpresión')}`;
-      // Pisar la función de envío de print para que en lugar de imprimir
-      // la liquidación de audit, resuelva con el printerId elegido.
+      // Setear título/subtítulo dinámicos
+      const tit = document.getElementById('liqPrintTitle');
+      const sub = document.getElementById('liqPrintSubtitle');
+      if (tit) tit.textContent = opts.titulo || '🖨 Elegir impresora';
+      if (sub) sub.textContent = opts.subtitulo || '—';
+
+      // Setear filtros iniciales
+      _pPickState.filtroTipo = opts.filtroTipo || null;
+      _pPickState.filtroZona = opts.filtroZona !== undefined
+        ? opts.filtroZona
+        : ((S.session && S.session.idZona) || null);
+      _pPickState.mostrarTodas = !_pPickState.filtroZona;
+
+      // Botón filtro tipo visible solo si NO se está forzando uno específico
+      const btnTipo = document.getElementById('ppFiltTipoBtn');
+      if (btnTipo) btnTipo.classList.toggle('hidden', !!opts.filtroTipo);
+
+      _pPickActualizarBotones();
+
+      // Hook: el resolve se llama cuando _liqEnviarPrint es invocado o se cierra
       const prevSend = MOS._liqEnviarPrint;
-      MOS._liqEnviarPrint = function(printerId, btnEl, ev) {
-        // Cleanup y resolver
+      MOS._liqEnviarPrint = async function(printerId, btnEl, ev) {
+        // Verify on-click — fresh state antes de cerrar el modal
+        if (opts.verify !== false) {
+          if (btnEl) { btnEl.classList.add('sending'); }
+          try {
+            const r = await API.get('verificarImpresoraAhora', { printerId });
+            const d = (r && r.data) || {};
+            if (d.state && d.state !== 'ONLINE') {
+              // Estado cambió entre listar y elegir — bloquear
+              try { _evalSfx && _evalSfx('error'); } catch(_){}
+              if (btnEl) btnEl.classList.remove('sending');
+              toast(`🖨 ${d.reason || 'No disponible'} · refrescando…`, 'error', 5000);
+              if (typeof _liqLoadPrinters === 'function') _liqLoadPrinters(true);
+              return;
+            }
+          } catch(eV) {
+            console.warn('[PrinterPicker] verify falló — siguiendo con la elección:', eV);
+          }
+        }
         MOS._liqEnviarPrint = prevSend;
         closeModal('modalSelPrinterLiq');
         resolve(parseInt(printerId, 10));
       };
-      // Listener de cancelación (cerrar modal sin elegir)
-      const backdrop = $('modalSelPrinterLiq');
+      // Listener cancelación
+      const backdrop = document.getElementById('modalSelPrinterLiq');
       const closeBtns = backdrop ? backdrop.querySelectorAll('button[onclick*="closeModal"]') : [];
       closeBtns.forEach(b => b.addEventListener('click', function once() {
         MOS._liqEnviarPrint = prevSend;
@@ -22817,6 +22894,47 @@ const MOS = (() => {
       }, { once: true }));
       openModal('modalSelPrinterLiq');
       if (typeof _liqLoadPrinters === 'function') _liqLoadPrinters(false);
+    });
+  }
+
+  // Toggle filtro zona (mi zona ↔ todas)
+  function _pPickToggleFiltroZona() {
+    _pPickState.mostrarTodas = !_pPickState.mostrarTodas;
+    _pPickActualizarBotones();
+    if (typeof _liqLoadPrinters === 'function') _liqLoadPrinters(false);
+  }
+  function _pPickToggleFiltroTipo() {
+    // Cycle: null → TICKET → ADHESIVO → ZPL → null
+    const tipos = [null, 'TICKET', 'ADHESIVO', 'ZPL'];
+    const idx = tipos.indexOf(_pPickState.filtroTipo);
+    _pPickState.filtroTipo = tipos[(idx + 1) % tipos.length];
+    _pPickActualizarBotones();
+    if (typeof _liqLoadPrinters === 'function') _liqLoadPrinters(false);
+  }
+  function _pPickActualizarBotones() {
+    const btnZ = document.getElementById('ppFiltZonaBtn');
+    const btnT = document.getElementById('ppFiltTipoBtn');
+    if (btnZ) {
+      btnZ.textContent = _pPickState.mostrarTodas ? '🌐 todas las zonas' : '📍 mi zona';
+      btnZ.style.background = _pPickState.mostrarTodas ? 'rgba(168,85,247,.18)' : 'rgba(99,102,241,.18)';
+      btnZ.style.borderColor = _pPickState.mostrarTodas ? 'rgba(168,85,247,.4)' : 'rgba(99,102,241,.4)';
+      btnZ.style.color = _pPickState.mostrarTodas ? '#d8b4fe' : '#c4b5fd';
+    }
+    if (btnT) {
+      btnT.textContent = _pPickState.filtroTipo
+        ? (_pPickState.filtroTipo === 'TICKET' ? '🧾 tickets'
+         : _pPickState.filtroTipo === 'ADHESIVO' ? '🏷 adhesivos'
+         : '📄 ZPL')
+        : '🧾 todos los tipos';
+    }
+  }
+  // Filtra una lista de impresoras según _pPickState. La consume _liqRenderPrinters.
+  function _pPickAplicarFiltros(lista) {
+    if (!Array.isArray(lista)) return [];
+    return lista.filter(p => {
+      if (_pPickState.filtroTipo && String(p.tipo || '').toUpperCase() !== _pPickState.filtroTipo) return false;
+      if (!_pPickState.mostrarTodas && _pPickState.filtroZona && p.idZona !== _pPickState.filtroZona) return false;
+      return true;
     });
   }
 
@@ -26325,8 +26443,21 @@ const MOS = (() => {
   async function _liqLoadPrinters(forceRefresh) {
     const cont = $('liqPrinterList');
     if (!cont) return;
+    // [v2.41.82] Aplicar filtros del PrinterPicker antes de renderizar
+    const _render = (rawList) => {
+      const lista = (typeof _pPickAplicarFiltros === 'function')
+        ? _pPickAplicarFiltros(rawList)
+        : rawList;
+      // Actualizar contador
+      const cnt = document.getElementById('ppCount');
+      if (cnt) {
+        const tot = (rawList || []).length;
+        cnt.textContent = lista.length === tot ? `${tot} impresora${tot !== 1 ? 's' : ''}` : `${lista.length} de ${tot}`;
+      }
+      _liqRenderPrinters(lista);
+    };
     if (!forceRefresh && _evalState.pnPrinters && _evalState.pnPrinters.length) {
-      _liqRenderPrinters(_evalState.pnPrinters);
+      _render(_evalState.pnPrinters);
       return;
     }
     cont.innerHTML = `<div class="text-center text-xs text-slate-500 py-8">
@@ -26335,7 +26466,7 @@ const MOS = (() => {
     try {
       const data = await API.get('listarImpresorasPN', {});
       _evalState.pnPrinters = Array.isArray(data) ? data : (data && data.data) || [];
-      _liqRenderPrinters(_evalState.pnPrinters);
+      _render(_evalState.pnPrinters);
     } catch(e) {
       cont.innerHTML = `<div class="text-center text-xs text-rose-400 py-8">
         ⚠ Error: ${(e && e.message) || e}
@@ -28153,6 +28284,8 @@ const MOS = (() => {
     auditToggleCheck, auditCheckAll, auditToggle, imprimirLiquidacionDia,
     _auditSetAjuste,
     _liqLoadPrinters, _liqEnviarPrint, _liqAvisarImpresoraNoLista,
+    // [v2.41.82] PrinterPicker universal
+    abrirPrinterPicker, _pPickToggleFiltroZona, _pPickToggleFiltroTipo, _pPickActualizarBotones,
     // Editor de checklists
     abrirEditorChecklists, checklistSetRol, checklistAddItem,
     checklistResetRol, guardarChecklists,
