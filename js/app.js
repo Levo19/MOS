@@ -21215,20 +21215,44 @@ const MOS = (() => {
     _finStartPolling();
   }
 
-  // [v2.41.58] Polling bg 30s mientras estamos en vista Finanzas. Refresca
-  // silenciosamente (sin animación, sin badge spinner) el día actual. Si el
-  // user navega entre días, el polling sigue refrescando el día visible.
+  // [v2.41.78] POLLING UNIFICADO — un solo intervalo cada 30s mientras
+  // estamos en vista Finanzas. Antes había DOS pollings (30s + 60s) que
+  // causaban 3-4 requests/min innecesarios + el parpadeo característico.
+  // Ahora 1 solo refresca P&L + dispara refresh side-effects (liq) solo
+  // cada 2 ticks (60s) para mantener la misma cadencia de antes en lo
+  // accesorio.
   let _finPollInt = null;
+  let _finPollTickCount = 0;
   function _finStartPolling() {
     _finStopPolling();
+    _finPollTickCount = 0;
     _finPollInt = setInterval(() => {
       if (S.view !== 'finanzas') { _finStopPolling(); return; }
-      // Refresh silencioso del día visible — sin animación
+      _finPollTickCount++;
+      // Refresh silencioso del día visible — sin animación. finCargar usa
+      // hash rápido para detectar cambios y _finRenderPersonal usa diff
+      // minimal → no parpadea si nada cambió.
       try { finCargar({ animate: false, _silent: true }); } catch(_){}
+      // Cada 2 ticks (60s) refresca también liquidaciones pendientes —
+      // antes esto lo hacía _finanzasRefreshSilencioso a 60s, ahora se
+      // hace en el mismo tren del polling 30s. Evita duplicar intervals.
+      if (_finPollTickCount % 2 === 0) {
+        try {
+          API.get('getLiquidacionesPendientesSemana', {}).then(r => {
+            if (r) {
+              try { _liqSaveCache('pendientes', r); } catch(_){}
+              if (S.view === 'config' && S.cfgTab === 'personal') {
+                try { _cfgRenderMeCajeros(); } catch {}
+              }
+            }
+          }).catch(() => {});
+        } catch(_){}
+      }
     }, 30000);
   }
   function _finStopPolling() {
     if (_finPollInt) { clearInterval(_finPollInt); _finPollInt = null; }
+    _finPollTickCount = 0;
   }
 
   // ── Sync / Update ────────────────────────────────────────────
@@ -23189,6 +23213,67 @@ const MOS = (() => {
     void v.offsetWidth;
     v.classList.add('alm-flash');
   }
+
+  // [v2.41.78] Actualiza badges del nav Finanzas según estado del día:
+  //   • Cajas abiertas → rojo (alerta)
+  //   • Liquidaciones pendientes (>0) → amarillo (default)
+  //   • Sin pendientes, alguien LIVE → verde con pulso
+  //   • Nada → oculto
+  function _finUpdateNavBadge(opts) {
+    opts = opts || {};
+    const sels = ['#finNavBadgeSidebar', '#finNavBadgeBnav'];
+    const cajasAbiertas = parseInt(opts.cajasAbiertas) || 0;
+    const liqPend       = parseInt(opts.liqPendientes) || 0;
+    const live          = !!opts.live;
+    sels.forEach(s => {
+      const el = document.querySelector(s);
+      if (!el) return;
+      el.classList.remove('is-live', 'is-alert', 'is-info');
+      if (cajasAbiertas > 0) {
+        el.textContent = cajasAbiertas > 99 ? '99+' : String(cajasAbiertas);
+        el.classList.add('is-alert');
+        el.classList.remove('hidden');
+        el.title = `${cajasAbiertas} caja(s) abiertas`;
+      } else if (liqPend > 0) {
+        el.textContent = liqPend > 99 ? '99+' : String(liqPend);
+        el.classList.add('is-info');
+        el.classList.remove('hidden');
+        el.title = `${liqPend} liquidación(es) pendiente(s)`;
+      } else if (live) {
+        el.textContent = '●';
+        el.classList.add('is-live');
+        el.classList.remove('hidden');
+        el.title = 'Operadores activos ahora';
+      } else {
+        el.classList.add('hidden');
+      }
+    });
+  }
+
+  // [v2.41.78] Lazy-render de charts Chart.js para evitar bloquear el
+  // main thread. Antes renderChart() era síncrono → 200-400ms de freeze
+  // al cargar Finanzas (charts 7d + waterfall). Ahora difiere a
+  // requestIdleCallback (o setTimeout fallback) → el resto del UI pinta
+  // primero, charts aparecen 1-2 frames después sin bloquear.
+  // Dedup por id: si llega otra config para el mismo chart antes de
+  // que se renderice, gana la última (cancela la previa pendiente).
+  const _finChartPending = {};
+  function _finChartDeferred(id, config) {
+    if (_finChartPending[id]) {
+      try { (_finChartPending[id].cancel || (() => {}))(); } catch(_){}
+    }
+    const run = () => {
+      delete _finChartPending[id];
+      try { renderChart(id, config); } catch(_){}
+    };
+    if (typeof window.requestIdleCallback === 'function') {
+      const handle = window.requestIdleCallback(run, { timeout: 800 });
+      _finChartPending[id] = { cancel: () => window.cancelIdleCallback && window.cancelIdleCallback(handle) };
+    } else {
+      const t = setTimeout(run, 16);
+      _finChartPending[id] = { cancel: () => clearTimeout(t) };
+    }
+  }
   // Hidratar PL del día actual al cargar el script
   (function _finHidratar() {
     const f = today();
@@ -23196,14 +23281,89 @@ const MOS = (() => {
     if (cached) { cached._fechaStamp = f; _finPL = cached; }
   })();
 
+  // [v2.41.78] DEPRECATED el setInterval 60s — ahora todo polling vive
+  // en _finStartPolling (30s, único, activo solo en vista Finanzas).
+  // Mantenemos la función para el "fetch inmediato al autenticar" que
+  // hidrata _finPL desde el login (precarga). Si el user entra a Finanzas
+  // antes de que llegue, ya tiene cache; si no, el polling 30s lo
+  // refrescará al entrar.
   function _startFinanzasRefresh() {
     _stopFinanzasRefresh();
-    _finanzasRefreshSilencioso(); // fetch inmediato al autenticar
-    _finanzasRefreshTimer = setInterval(_finanzasRefreshSilencioso, 60000);
+    _finanzasRefreshSilencioso(); // fetch inmediato post-login (hidrata _finPL)
+    // ANTES: setInterval cada 60s — eliminado. _finStartPolling (30s) cubre el rol.
   }
   function _stopFinanzasRefresh() {
     if (_finanzasRefreshTimer) { clearInterval(_finanzasRefreshTimer); _finanzasRefreshTimer = null; }
   }
+  // [v2.41.78] Hash rápido de P&L — sustituye JSON.stringify (10KB+ por
+  // llamada → CPU spike cada polling). Solo combina los campos que
+  // realmente importan para detectar "cambio relevante".
+  function _finHashPL(pl) {
+    if (!pl) return '';
+    const k = [
+      pl.ventasNetas, pl.ventasBrutas, pl.tickets, pl.ticketsAnulados,
+      pl.efectivo, pl.virtual, pl.credito,
+      pl.costoVentas, pl.margenBruto, pl.utilidadNeta,
+      pl.unidades, pl.skus, pl.ticketProm, pl.margenProm,
+      pl.gastoPersonal, pl.gastoOtros, pl.gastoFijo, pl.gastoVariable,
+      (pl.personalDetalle || []).length,
+      (pl.gastos || []).length
+    ];
+    // Sumar también una huella de personalDetalle (suma de totales y
+    // nombres) para captar cambios en cards individuales.
+    let pdSig = 0;
+    (pl.personalDetalle || []).forEach((p, i) => {
+      pdSig += (parseFloat(p.totalDia) || 0) * (i + 1);
+    });
+    k.push(Math.round(pdSig * 100));
+    return k.join('|');
+  }
+
+  // [v2.41.78] Detección de cambios relevantes entre dos P&L —
+  // dispara efectos visuales/sonoros cuando algo importante pasa
+  // (venta nueva, ticket anulado, caja nueva, gasto agregado).
+  function _finDetectarCambios(plOld, plNew) {
+    if (!plOld || !plNew) return null;
+    const out = {};
+    const dVentas = (parseFloat(plNew.ventasNetas) || 0) - (parseFloat(plOld.ventasNetas) || 0);
+    const dTickets = (parseInt(plNew.tickets) || 0) - (parseInt(plOld.tickets) || 0);
+    const dAnulados = (parseInt(plNew.anulados) || 0) - (parseInt(plOld.anulados) || 0);
+    const dCajas = (parseInt(plNew.cajasAbiertas) || 0) - (parseInt(plOld.cajasAbiertas) || 0);
+    if (dVentas > 0.01 && dTickets > 0) { out.ventaNueva = { monto: dVentas, count: dTickets }; }
+    if (dAnulados > 0) out.ticketAnulado = { count: dAnulados };
+    if (dCajas > 0) out.cajaAbierta = { count: dCajas };
+    if (dCajas < 0) out.cajaCerrada = { count: -dCajas };
+    return Object.keys(out).length ? out : null;
+  }
+  function _finCelebrarCambios(cambios) {
+    if (!cambios || S.view !== 'finanzas') return;
+    if (cambios.ventaNueva) {
+      // Flash + bounce del KPI ventas + sonido cash
+      const card = document.getElementById('finKpiVentas')?.closest('.alm-card') ||
+                   document.getElementById('finKpiVentas');
+      if (card) {
+        card.classList.remove('fin-kpi-flash');
+        void card.offsetWidth;
+        card.classList.add('fin-kpi-flash');
+        setTimeout(() => card.classList.remove('fin-kpi-flash'), 1200);
+      }
+      try { _finBeep('agregar'); } catch(_){}
+      try {
+        toast(`💸 +${cambios.ventaNueva.count} venta${cambios.ventaNueva.count > 1 ? 's' : ''} · S/${cambios.ventaNueva.monto.toFixed(2)}`, 'ok', 3000);
+      } catch(_){}
+    }
+    if (cambios.ticketAnulado) {
+      try { _finBeep('eliminar'); } catch(_){}
+    }
+    if (cambios.cajaAbierta) {
+      try { _finBeep('importar'); } catch(_){}
+      try { toast(`🛒 ${cambios.cajaAbierta.count} caja${cambios.cajaAbierta.count > 1 ? 's' : ''} abierta${cambios.cajaAbierta.count > 1 ? 's' : ''}`, 'info', 3000); } catch(_){}
+    }
+    if (cambios.cajaCerrada) {
+      try { _finBeep('ok'); } catch(_){}
+    }
+  }
+
   async function _finanzasRefreshSilencioso() {
     if (!S.session) return;
     if (document.visibilityState !== 'visible') return;
@@ -23211,7 +23371,10 @@ const MOS = (() => {
     try {
       const fecha  = $('finFecha')?.value || today();
       const pl     = await API.get('getFinanzasDia', { fecha });
-      const changedPL = JSON.stringify(pl) !== JSON.stringify(_finPL);
+      // [v2.41.78] Hash rápido en vez de JSON.stringify costoso
+      const changedPL = _finHashPL(pl) !== _finHashPL(_finPL);
+      // Detectar y celebrar cambios relevantes (venta nueva, caja, anulado)
+      const cambios = _finDetectarCambios(_finPL, pl);
       if (pl) pl._fechaStamp = fecha;
       _finPL = pl;
       _finSaveCache('pl_' + fecha, pl);
@@ -23219,6 +23382,8 @@ const MOS = (() => {
         // Pulso del dot indicando refresh silencioso exitoso
         _finPulsoPoll();
         if (changedPL) { _finRender(pl, fecha); _finFlash(); }
+        // [v2.41.78] Celebrar cambios DESPUÉS del render (cards ya pintados)
+        if (cambios) _finCelebrarCambios(cambios);
         const hasta  = fecha;
         const desde7 = _fechaOffset(fecha, -6);
         const rango  = await API.get('getFinanzasRango', { desde: desde7, hasta });
@@ -23367,7 +23532,12 @@ const MOS = (() => {
     }
   }
 
+  // [v2.41.78] Debounce navegación de días — evita salto múltiple en double-click
+  let _finDiaLock = false;
   function finDia(delta) {
+    if (_finDiaLock) return;
+    _finDiaLock = true;
+    setTimeout(() => { _finDiaLock = false; }, 260); // tiempo del slide
     const inp = $('finFecha');
     if (!inp) return;
     const cur = inp.value || today();
@@ -23816,6 +23986,40 @@ const MOS = (() => {
     const fmt  = v => 'S/ ' + parseFloat(v || 0).toFixed(2);
     const pct  = v => parseFloat(v || 0).toFixed(1) + '%';
 
+    // [v2.41.78] Actualizar badge del nav Finanzas con datos en vivo.
+    // Solo cuando pintamos HOY (no días pasados/futuros).
+    try {
+      const hoy = today();
+      if (fecha === hoy) {
+        const cajasAbiertas = parseInt(pl.cajasAbiertas) || 0;
+        // Liq pendientes lo leemos del cache si está
+        let liqPend = 0;
+        try {
+          const raw = localStorage.getItem('mos_liq2_pendientes');
+          if (raw) {
+            const p = JSON.parse(raw);
+            liqPend = ((p.data && p.data.length) || 0);
+          }
+        } catch(_){}
+        // "live" si alguien tiene Ultima_Conexion en últimos 5min
+        let live = false;
+        try {
+          if (Array.isArray(pl.personalDetalle)) {
+            for (const p of pl.personalDetalle) {
+              const ultCx = _finBuscarActividadPersonal(p, null);
+              if (ultCx) {
+                const t = _parseTsUtc(ultCx);
+                if (!isNaN(t) && Date.now() - t < 5 * 60 * 1000) { live = true; break; }
+              }
+            }
+          }
+        } catch(_){}
+        _finUpdateNavBadge({ cajasAbiertas, liqPendientes: liqPend, live });
+      } else {
+        _finUpdateNavBadge({}); // ocultar si vemos días pasados
+      }
+    } catch(_){}
+
     // KPI cards — los montos animan countup
     _animateCount('finKpiVentas', pl.ventasNetas, { prefix: 'S/ ' });
     _setText('finKpiTickets', pl.tickets + ' ticket' + (pl.tickets !== 1 ? 's' : '') +
@@ -24011,7 +24215,7 @@ const MOS = (() => {
       utilNeta >= 0 ? '#818cf8' : '#f87171'
     ];
 
-    renderChart('finChartWaterfall', {
+    _finChartDeferred('finChartWaterfall', {
       type: 'bar',
       data: {
         labels,
@@ -24079,7 +24283,7 @@ const MOS = (() => {
       }).join('');
     }
 
-    renderChart('finChart7d', {
+    _finChartDeferred('finChart7d', {
       type: 'bar',
       data: {
         labels,
@@ -24274,11 +24478,16 @@ const MOS = (() => {
     // YA persistidos (totalDia, bonificacion, sancion, estado, etc.) sin
     // depender del recompute pesado. El recompute completo (con kpis live)
     // solo se hace al abrir auditoría individual.
+    // [v2.41.78] Hash rápido en vez de JSON.stringify de los resúmenes.
     API.get('getPersonalDiaFast', { fecha: fecha }).then(resumenes => {
       if (cont.dataset.fecha !== fecha) return; // ya no estamos en esta fecha
       const arr = Array.isArray(resumenes) ? resumenes : ((resumenes && resumenes.data) || []);
       try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: arr })); } catch {}
-      if (JSON.stringify(cachedResumenes) !== JSON.stringify(arr)) {
+      const _hashRes = (xs) => {
+        if (!Array.isArray(xs)) return '';
+        return xs.map(r => [r.idPersonal || r.nombre, r.totalDia, r.bonificacion, r.sancion, r.liqEstado, r.evaluacionesCount].join(',')).join('|');
+      };
+      if (_hashRes(cachedResumenes) !== _hashRes(arr)) {
         _pintarConResumenes(arr);
       } else {
         _evalState.resumenes = arr;
