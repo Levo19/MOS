@@ -6153,6 +6153,31 @@
       40%  { transform: scale(1.02); box-shadow: 0 0 0 4px rgba(16,185,129,.25), 0 6px 18px -4px rgba(16,185,129,.4); }
       100% { transform: scale(1);    box-shadow: none; }
     }
+    /* [v2.41.79] Alerta prominente costo estimado en modal Productos */
+    .fin-prod-alerta-grande {
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: linear-gradient(135deg, rgba(245,158,11,.16), rgba(245,158,11,.06));
+      border: 1px solid rgba(245,158,11,.5);
+      box-shadow: 0 4px 14px -4px rgba(245,158,11,.25);
+      animation: finProdAlertaPulse 2.4s ease-in-out infinite;
+    }
+    @keyframes finProdAlertaPulse {
+      0%, 100% { box-shadow: 0 4px 14px -4px rgba(245,158,11,.25); }
+      50%      { box-shadow: 0 4px 18px -2px rgba(245,158,11,.45); }
+    }
+    /* Pill que muestra factor de presentación junto al SKU */
+    .fin-prod-factor-pill {
+      display: inline-flex; align-items: center;
+      font-size: 9.5px; font-weight: 800;
+      padding: 1px 5px;
+      border-radius: 99px;
+      background: rgba(99,102,241,.18);
+      color: #a5b4fc;
+      border: 1px solid rgba(99,102,241,.35);
+      letter-spacing: .04em;
+      line-height: 1.2;
+    }
     /* Skeleton breathing — más natural que shimmer estático */
     .fin-skel-on {
       background: linear-gradient(90deg,
@@ -11824,6 +11849,8 @@
       </div>
       <button onclick="MOS.cerrarModalFin('finModalProductos')" class="modal-close-x">×</button>
     </div>
+    <!-- [v2.41.79] Alerta prominente cuando >50% del costo es estimado -->
+    <div id="finProdAlerta" class="hidden px-4 pt-3"></div>
     <!-- inline cost editor dentro del modal -->
     <div id="finProdCostoWrap" class="hidden p-3 border-b border-amber-900/40 bg-amber-950/20 flex items-center gap-2 flex-wrap">
       <span class="text-xs text-slate-400">Nuevo costo para</span>

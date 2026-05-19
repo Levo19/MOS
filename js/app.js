@@ -25447,6 +25447,37 @@ const MOS = (() => {
     const haySinCosto = todos.some(p => p.sinCosto);
     const btn = $('finProdBtnSinCosto');
     if (btn) btn.classList.toggle('hidden', !haySinCosto);
+
+    // [v2.41.79] Alerta prominente si >50% del COSTO total es estimado.
+    // Margen del día no es confiable → admin debe llenar precioCosto.
+    const costoReal      = parseFloat(pl.costoVentasReal     || 0);
+    const costoEstimado  = parseFloat(pl.costoVentasEstimado || 0);
+    const costoTotal     = costoReal + costoEstimado;
+    const pctEstimado    = costoTotal > 0 ? (costoEstimado / costoTotal) * 100 : 0;
+    const skusSinCosto   = todos.filter(p => p.sinCosto).length;
+    const alertWrap = $('finProdAlerta');
+    if (alertWrap) {
+      if (pctEstimado > 50 || (skusSinCosto > 0 && skusSinCosto / Math.max(1, todos.length) > 0.5)) {
+        alertWrap.innerHTML = `
+          <div class="fin-prod-alerta-grande">
+            <div class="flex items-center gap-2">
+              <span style="font-size:22px">⚠</span>
+              <div class="flex-1">
+                <div class="text-sm font-bold text-amber-300">Margen del día NO confiable</div>
+                <div class="text-[11px] text-amber-200/80 mt-0.5">
+                  ${skusSinCosto} de ${todos.length} SKU(s) sin costo real ·
+                  ${pctEstimado.toFixed(0)}% del costo es estimado al ${(pl.defaultMargenUsado||20)}%
+                </div>
+              </div>
+            </div>
+          </div>`;
+        alertWrap.classList.remove('hidden');
+      } else {
+        alertWrap.innerHTML = '';
+        alertWrap.classList.add('hidden');
+      }
+    }
+
     const lista = _finProdFiltroSinCosto ? todos.filter(p => p.sinCosto) : todos;
     const conteo = $('finProdConteo');
     if (conteo) conteo.textContent = lista.length + ' de ' + todos.length + ' SKUs';
@@ -25455,8 +25486,15 @@ const MOS = (() => {
     tbody.innerHTML = lista.map(p => {
       const alertBadge = p.sinCosto
         ? `<span class="text-amber-400 font-bold" title="Sin costo">⚠</span>` : '';
+      // [v2.41.79] Tooltip explica cómo se calculó el costo (factor × canónico)
+      const tipCosto = p.esPresentacion && p.factor > 1
+        ? `title="Presentación ×${p.factor} · costo canónico S/${parseFloat(p.costoCanonico||0).toFixed(2)} × ${p.factor} = S/${parseFloat(p.costoUnit).toFixed(2)}"`
+        : '';
+      const presBadge = p.esPresentacion && p.factor > 1
+        ? `<span class="fin-prod-factor-pill" title="${p.factor} unidades canónicas por presentación">×${p.factor}</span>` : '';
       const costoUnitStr = p.sinCosto
-        ? `<span class="text-amber-400/60">—</span>` : fmtM(p.costoUnit);
+        ? `<span class="text-amber-400/60">—</span>`
+        : `<span ${tipCosto}>${fmtM(p.costoUnit)}</span>`;
       const costoTotalStr = p.sinCosto
         ? `<span class="text-amber-400/60">—</span>` : fmtM(p.costoTotal);
       const editBtn = p.sinCosto
@@ -25468,7 +25506,7 @@ const MOS = (() => {
             ${alertBadge}
             <div>
               <div class="text-slate-200 text-xs leading-snug">${p.nombre || p.sku}</div>
-              <div class="font-mono text-slate-500 text-xs">${p.sku}</div>
+              <div class="font-mono text-slate-500 text-xs flex items-center gap-1.5">${p.sku}${presBadge}</div>
             </div>
           </div>
         </td>
