@@ -12418,18 +12418,39 @@ const MOS = (() => {
       const nuevo = {};
       let hayCaidaNueva = false;
       lista.forEach(p => {
-        const pid = String(p.id);
-        nuevo[pid] = { online: !!p.online, computer: p.computer || '', nombre: p.nombre || '' };
-        // Detectar transición online → offline para el sonido de alerta
-        if (_impPNCargado && prev[pid] && prev[pid].online && !p.online) hayCaidaNueva = true;
+        // [v2.41.81] Indexamos por printNodeId (string) — para SIN_ID el id
+        // viene null, así que usamos un id sintético por idEstacion para no
+        // colisionar. El render mira pnSt por printNodeId, si no hay key,
+        // cae al SIN_ID por defecto.
+        const pid = p.printNodeId ? String(p.printNodeId) : '';
+        if (!pid) return; // SIN_ID no se indexa, el frontend lo detecta solo
+        nuevo[pid] = {
+          // Retro-compat
+          online:   p.state === 'ONLINE',
+          computer: p.computer || '',
+          nombre:   p.nombre || '',
+          // [v2.41.81] Diagnóstico semántico nuevo
+          state:    p.state    || 'UNKNOWN',
+          reason:   p.reason   || '',
+          icon:     p.icon     || '',
+          color:    p.color    || '',
+          computerState:    p.computerState    || '',
+          printerStateRaw:  p.printerStateRaw  || ''
+        };
+        // Detectar transición ONLINE → no-ONLINE para alerta sonora
+        if (_impPNCargado && prev[pid] && prev[pid].state === 'ONLINE' && p.state !== 'ONLINE') {
+          hayCaidaNueva = true;
+        }
       });
       _impPNEstado = nuevo;
       _impPNCargado = true;
       if (hayCaidaNueva) {
         try { _evalSfx && _evalSfx('error'); } catch(_){}
         try {
-          const caidas = lista.filter(p => !p.online).map(p => p.nombre).join(', ');
-          toast('🖨 Impresora offline: ' + caidas, 'error', 6000);
+          const caidas = lista.filter(p => p.state !== 'ONLINE' && p.printNodeId)
+                              .map(p => `${p.nombre || p.printNodeId} (${p.reason || p.state})`)
+                              .join(', ');
+          toast('🖨 Impresora con problema: ' + caidas, 'error', 6000);
         } catch(_){}
       }
       if (reRender && S.cfgTab === 'infra') { try { renderInfra(); } catch(_){} }
@@ -13236,19 +13257,40 @@ const MOS = (() => {
       ? imps.map(i => {
           const impActiva = String(i.activo) === '1' || i.activo === 1 || i.activo === true;
           const impIcon = { TICKET: '🖨️', ADHESIVO: '🏷️', ZPL: '📄' }[i.tipo] || '🖨️';
-          // Estado real de PrintNode (si ya cargó). 🟢 online · 🔴 offline · ⚪ sin info
+          // [v2.41.81] Estado semántico de PrintNode con 11 diagnósticos
+          // distintos (SIN_ID, ID_INVALIDO, PC_OFFLINE, SIN_PAPEL, SIN_TINTA,
+          // ATASCO, TAPA_ABIERTA, PAUSED, DISABLED, ERROR, ONLINE, UNKNOWN).
+          // El backend devuelve {state, reason, icon, color}. El frontend
+          // solo mapea a clase CSS — no decide el diagnóstico.
           const pnSt = _impPNEstado[String(i.printNodeId)];
+          const _impStateMap = {
+            ONLINE:          { cls: 'imp-on',       tx: 'online' },
+            PC_OFFLINE:      { cls: 'imp-pc-off',   tx: 'PC apagada' },
+            PRINTER_OFFLINE: { cls: 'imp-off',      tx: 'apagada' },
+            SIN_PAPEL:       { cls: 'imp-warn',     tx: 'sin papel' },
+            SIN_TINTA:       { cls: 'imp-warn',     tx: 'sin tinta' },
+            ATASCO:          { cls: 'imp-err',      tx: 'atasco' },
+            TAPA_ABIERTA:    { cls: 'imp-warn',     tx: 'tapa abierta' },
+            PAUSED:          { cls: 'imp-paused',   tx: 'pausada' },
+            DISABLED:        { cls: 'imp-disabled', tx: 'deshabilitada' },
+            ERROR:           { cls: 'imp-err',      tx: 'error' },
+            SIN_ID:          { cls: 'imp-noid',     tx: 'sin ID' },
+            ID_INVALIDO:     { cls: 'imp-err',      tx: 'ID inválido' },
+            UNKNOWN:         { cls: 'imp-noinfo',   tx: 'sin señal' }
+          };
           let estadoBadge = '';
-          if (i.printNodeId && _impPNCargado) {
-            if (pnSt && pnSt.online) {
-              estadoBadge = '<span class="imp-estado imp-on" title="Impresora en línea">🟢 online</span>';
-            } else if (pnSt && !pnSt.online) {
-              estadoBadge = '<span class="imp-estado imp-off" title="Apagada o PC desconectada">🔴 OFFLINE</span>';
-            } else {
-              estadoBadge = '<span class="imp-estado imp-noinfo" title="No reportada por PrintNode — revisar registro/PC">⚪ sin señal</span>';
-            }
+          if (_impPNCargado) {
+            // Si no hay printNodeId, el badge "SIN_ID" igualmente debe verse
+            // (lo trae el backend ahora). Si por algún motivo no llegó info,
+            // sigue cayendo a UNKNOWN.
+            const st = (pnSt && pnSt.state) ? pnSt.state : (i.printNodeId ? 'UNKNOWN' : 'SIN_ID');
+            const cfg = _impStateMap[st] || _impStateMap.UNKNOWN;
+            const icon = (pnSt && pnSt.icon) || '❔';
+            const reason = (pnSt && pnSt.reason) || cfg.tx;
+            estadoBadge = `<span class="imp-estado ${cfg.cls}" title="${_escapeHtml(reason)}">${icon} ${cfg.tx}</span>`;
           }
-          const offlineCls = (pnSt && !pnSt.online && _impPNCargado) ? ' imp-row-off' : '';
+          const stCur = pnSt && pnSt.state;
+          const offlineCls = (_impPNCargado && stCur && stCur !== 'ONLINE') ? ' imp-row-off' : '';
           return `<div class="flex items-center gap-2 px-2 py-1.5 rounded ${impActiva ? '' : 'opacity-50'}${offlineCls}" style="background:#0a1424;border:1px solid #1e293b;">
             <span class="text-sm shrink-0">${impIcon}</span>
             <div class="flex-1 min-w-0">
@@ -26332,28 +26374,46 @@ const MOS = (() => {
     });
 
     const pCard = (p, idx) => {
-      const offClass = p.online ? '' : 'opacity-60';
-      const dotCls = p.online ? 'printer-dot-online' : '';
-      const dotColor = p.online ? '#34d399' : '#f87171';
-      const offTag = p.online
-        ? '<span class="text-[9px] text-emerald-400 ml-1 font-semibold">online</span>'
-        : '<span class="text-[9px] text-rose-400 ml-1">offline</span>';
-      // Línea sub: tipo · nombre PrintNode crudo · PC
+      // [v2.41.81] Estado semántico — deshabilita la card si NO está ONLINE
+      // y muestra la razón específica del problema (sin papel, PC apagada,
+      // ID inválido, etc.) en vez del genérico "offline" anterior.
+      const stateOk = p.state === 'ONLINE' || (p.online === true && !p.state);
+      const offClass    = stateOk ? '' : 'printer-card-disabled';
+      const dotColor    = stateOk ? '#34d399'
+                        : (p.color === 'orange'  ? '#f97316'
+                        :  p.color === 'yellow'  ? '#fbbf24'
+                        :  '#f87171');
+      const dotCls      = stateOk ? 'printer-dot-online' : '';
+      const tagTxt      = stateOk ? 'online'
+                        : (p.icon ? (p.icon + ' ' + (p.reason || p.state || 'problema')) : (p.reason || 'offline'));
+      const tagCls      = stateOk ? 'text-emerald-400 font-semibold'
+                        : (p.color === 'orange'  ? 'text-orange-400'
+                        :  p.color === 'yellow'  ? 'text-amber-400'
+                        :  'text-rose-400');
+      const tagHtml     = `<span class="text-[9px] ${tagCls} ml-1">${_escapeHtml(tagTxt)}</span>`;
+      // Línea sub: tipo · nombre PrintNode crudo · PC (con estado de la PC si offline)
       const tipoIco = p.tipo === 'ADHESIVO' ? '🏷' : '🧾';
+      const compTag = p.computer
+        ? '· 💻 ' + p.computer + (p.computerState && p.computerState !== 'connected' ? ' <span class="text-orange-400">(desconectada)</span>' : '')
+        : '';
       const subMeta = [
         tipoIco + ' ' + (p.tipo || 'TICKET'),
         p.nombrePN && p.nombrePN !== p.nombre ? '· ' + p.nombrePN : '',
-        p.computer ? '· 💻 ' + p.computer : ''
+        compTag
       ].filter(Boolean).join(' ');
-      return `<button onclick="MOS._liqEnviarPrint(${p.id}, this, event)"
+      const onClick = stateOk
+        ? `onclick="MOS._liqEnviarPrint(${p.id}, this, event)"`
+        : `onclick="event.preventDefault();MOS._liqAvisarImpresoraNoLista(${p.id || 'null'}, '${_escapeHtml(p.reason || p.state || 'No disponible').replace(/'/g, '&#39;')}')"`;
+      return `<button ${onClick}
                       class="printer-card btn-ripple w-full text-left rounded-lg p-2 ${offClass}"
-                      style="background:linear-gradient(135deg,#060d1f,#0a1428);border:1px solid #1e293b;
+                      title="${_escapeHtml(p.reason || tagTxt)}"
+                      style="background:linear-gradient(135deg,#060d1f,#0a1428);border:1px solid ${stateOk ? '#1e293b' : 'rgba(239,68,68,.35)'};
                              animation: checklistItemIn .35s cubic-bezier(.34,1.56,.64,1) backwards;
                              animation-delay:${idx*40}ms">
         <div class="flex items-center gap-2">
           <span class="${dotCls}" style="width:10px;height:10px;border-radius:999px;background:${dotColor};box-shadow:0 0 8px ${dotColor}"></span>
           <span class="text-sm text-slate-100 font-semibold flex-1">${p.nombre}</span>
-          ${offTag}
+          ${tagHtml}
         </div>
         ${subMeta ? `<div class="text-[10px] text-slate-500 mt-1 pl-4">${subMeta}</div>` : ''}
       </button>`;
@@ -26398,6 +26458,13 @@ const MOS = (() => {
         </div>`;
       }).join('');
     cont.innerHTML = html;
+  }
+
+  // [v2.41.81] Aviso al tocar una impresora no-ONLINE en el modal de selección.
+  // Le explica al admin POR QUÉ no puede imprimir ahora con la razón concreta.
+  function _liqAvisarImpresoraNoLista(printerId, razon) {
+    try { _evalSfx && _evalSfx('error'); } catch(_){}
+    toast(`🖨 No puedo imprimir: ${razon}`, 'error', 5000);
   }
 
   async function _liqEnviarPrint(printerId, btnEl, ev) {
@@ -28085,7 +28152,7 @@ const MOS = (() => {
     abrirAuditar, cerrarAuditar, guardarAuditoria,
     auditToggleCheck, auditCheckAll, auditToggle, imprimirLiquidacionDia,
     _auditSetAjuste,
-    _liqLoadPrinters, _liqEnviarPrint,
+    _liqLoadPrinters, _liqEnviarPrint, _liqAvisarImpresoraNoLista,
     // Editor de checklists
     abrirEditorChecklists, checklistSetRol, checklistAddItem,
     checklistResetRol, guardarChecklists,

@@ -1149,6 +1149,54 @@ function cerrarSemanaAutomatico() {
 // IMPRESORAS para anotar zona/estación/app a cada printer físico
 // (cuando coincide el printNodeId), para que el frontend pueda
 // agruparlas de forma intuitiva.
+// [v2.41.81] Diagnóstico inteligente de estado de impresora.
+// PrintNode tiene DOS estados independientes: computer (la PC) y printer.
+// Antes solo mirábamos printer.state → falso positivo cuando la PC estaba
+// disconnected. Ahora fusionamos ambos + detectamos errores específicos
+// del driver (sin papel, sin tinta, atasco, tapa abierta, etc.) por
+// palabras clave en state/description.
+function _interpretarEstadoImpresora(printerState, computerState, descripcion) {
+  var cs = String(computerState || '').toLowerCase().trim();
+  var ps = String(printerState  || '').toLowerCase().trim();
+  var ds = String(descripcion   || '').toLowerCase();
+  var combined = ps + ' ' + ds;
+
+  // 1. PC desconectada gana sobre cualquier otro estado del printer
+  if (cs && cs !== 'connected') {
+    return { state: 'PC_OFFLINE', reason: 'PC desconectada · revisa internet o cliente PrintNode',
+             icon: '🔌', color: 'orange' };
+  }
+  // 2. Detalles específicos del driver (mayor utilidad operativa)
+  if (/jam|atasco|atasc/.test(combined)) {
+    return { state: 'ATASCO', reason: 'Papel atascado · revisa la bandeja',
+             icon: '⚠', color: 'red' };
+  }
+  if (/paper.?out|out.?of.?paper|sin.?papel|no.?paper|paperout/.test(combined)) {
+    return { state: 'SIN_PAPEL', reason: 'Sin papel · cargar bandeja',
+             icon: '📄', color: 'yellow' };
+  }
+  if (/ink|toner|tinta|cartridge|low.?supplies/.test(combined)) {
+    return { state: 'SIN_TINTA', reason: 'Tinta/toner bajo o ausente',
+             icon: '🟡', color: 'yellow' };
+  }
+  if (/door.?open|tapa|cover.?open|cover\-?open/.test(combined)) {
+    return { state: 'TAPA_ABIERTA', reason: 'Tapa abierta · cerrar para imprimir',
+             icon: '🚪', color: 'yellow' };
+  }
+  // 3. Estados crudos de PrintNode
+  if (ps === 'paused')   return { state: 'PAUSED',   reason: 'Pausada en la cola del OS',     icon: '⏸', color: 'gray' };
+  if (ps === 'disabled') return { state: 'DISABLED', reason: 'Deshabilitada manualmente',     icon: '🚫', color: 'gray' };
+  if (ps === 'error' || /error/.test(ps))
+                          return { state: 'ERROR',    reason: descripcion || 'Error del driver', icon: '⚠', color: 'red' };
+  if (ps === 'offline' || ps === 'disconnected')
+                          return { state: 'PRINTER_OFFLINE', reason: 'Impresora apagada o cable desconectado', icon: '🔴', color: 'red' };
+  if (ps === 'online')    return { state: 'ONLINE',   reason: 'Lista para imprimir',           icon: '🟢', color: 'green' };
+  if (ps === 'unknown' || !ps)
+                          return { state: 'UNKNOWN',  reason: 'Estado no reportado por driver', icon: '❔', color: 'gray' };
+  // Caso fallback — estado raro que no reconocemos
+  return { state: 'ERROR', reason: 'Estado: ' + printerState, icon: '⚠', color: 'red' };
+}
+
 function listarImpresorasPN() {
   var pnKey;
   try {
@@ -1156,40 +1204,39 @@ function listarImpresorasPN() {
   } catch(_){}
   if (!pnKey) return { ok: false, error: 'PRINTNODE_API_KEY no configurado en Script Properties de ProyectoMOS' };
 
-  var pnList;
+  // [v2.41.81] Fetch en PARALELO de /printers y /computers — 1 sola
+  // latencia para ambos endpoints. Antes solo se traía /printers y se
+  // ignoraba el estado de la PC host → falso positivo "online" cuando
+  // DESKTOP-Q872N86 estaba disconnected.
+  var pnList, pnComps;
+  var authHeader = 'Basic ' + Utilities.base64Encode(pnKey + ':');
   try {
-    var resp = UrlFetchApp.fetch('https://api.printnode.com/printers', {
-      method: 'get',
-      headers: { 'Authorization': 'Basic ' + Utilities.base64Encode(pnKey + ':') },
-      muteHttpExceptions: true
-    });
-    var code = resp.getResponseCode();
-    if (code !== 200) return { ok: false, error: 'PrintNode HTTP ' + code + ': ' + resp.getContentText().substring(0, 200) };
-    pnList = JSON.parse(resp.getContentText() || '[]');
+    var responses = UrlFetchApp.fetchAll([
+      { url: 'https://api.printnode.com/printers',  method: 'get', headers: { 'Authorization': authHeader }, muteHttpExceptions: true },
+      { url: 'https://api.printnode.com/computers', method: 'get', headers: { 'Authorization': authHeader }, muteHttpExceptions: true }
+    ]);
+    if (responses[0].getResponseCode() !== 200) {
+      return { ok: false, error: 'PrintNode printers HTTP ' + responses[0].getResponseCode() + ': ' + responses[0].getContentText().substring(0, 200) };
+    }
+    pnList  = JSON.parse(responses[0].getContentText() || '[]');
+    pnComps = responses[1].getResponseCode() === 200
+            ? JSON.parse(responses[1].getContentText() || '[]')
+            : [];
   } catch(e) {
     return { ok: false, error: 'PrintNode fetch fallo: ' + e.message };
   }
 
-  // Cruzar con IMPRESORAS (catálogo MOS) + ZONAS + ESTACIONES para
-  // metadata enriquecida + nombres legibles de zona/estación.
-  var meta = {};
-  try {
-    var rows = _sheetToObjects(getSheet('IMPRESORAS'));
-    rows.forEach(function(r){
-      var pid = String(r.printNodeId || '').trim();
-      if (!pid) return;
-      var act = String(r.activo) === '1' || String(r.activo).toLowerCase() === 'true';
-      if (!act) return; // solo impresoras activas en el catálogo
-      meta[pid] = {
-        nombreCatalogo: String(r.nombre || ''),
-        idEstacion:     String(r.idEstacion || ''),
-        idZona:         String(r.idZona || ''),
-        appOrigen:      String(r.appOrigen || ''),
-        tipo:           String(r.tipo || 'TICKET'),
-        descripcion:    String(r.descripcion || '')
-      };
-    });
-  } catch(_){}
+  // Mapa idComputer → {name, state}
+  var compMap = {};
+  pnComps.forEach(function(c){
+    compMap[String(c.id)] = {
+      name:  String(c.name || ''),
+      state: String(c.state || '').toLowerCase()
+    };
+  });
+  // Mapa idPrinter → printer crudo
+  var printerMap = {};
+  pnList.forEach(function(p){ printerMap[String(p.id)] = p; });
 
   // Lookups de nombres (zona + estación) para etiquetas friendly
   var zonaNom = {};
@@ -1205,33 +1252,70 @@ function listarImpresorasPN() {
     });
   } catch(_){}
 
-  // FILTRO: solo impresoras del catálogo MOS (descartar virtuales tipo
-  // Microsoft Print to PDF, OneNote, impresoras de otras PCs sin
-  // registrar en IMPRESORAS, etc.). Esto evita confusión al admin.
-  var data = pnList
-    .map(function(p){
-      var pid = String(p.id);
-      var m = meta[pid];
-      if (!m) return null; // descartar
-      var compName = '';
-      try { compName = (p.computer && p.computer.name) ? String(p.computer.name) : ''; } catch(_){}
-      return {
-        id:             parseInt(pid, 10),
-        nombrePN:       String(p.name || ''),  // nombre crudo PrintNode (subtítulo)
-        nombre:         m.nombreCatalogo || String(p.name || ''), // friendly del catálogo
-        nombreCatalogo: m.nombreCatalogo,
-        computer:       compName,
-        online:         String(p.state || '').toLowerCase() === 'online',
-        registrada:     true,
-        idEstacion:     m.idEstacion,
-        estacionNombre: estNom[m.idEstacion] || m.idEstacion || '',
-        idZona:         m.idZona,
-        zonaNombre:     zonaNom[m.idZona] || m.idZona || '',
-        appOrigen:      m.appOrigen,
-        tipo:           m.tipo
-      };
-    })
-    .filter(function(x){ return x !== null; });
+  // [v2.41.81] Iteramos sobre IMPRESORAS (catálogo MOS) — no sobre la
+  // respuesta de PrintNode — para PODER REPORTAR los 2 casos críticos
+  // que antes desaparecían:
+  //   • SIN_ID:       fila en catálogo SIN printNodeId asignado
+  //   • ID_INVALIDO:  printNodeId asignado pero NO existe en PrintNode
+  var data = [];
+  try {
+    var rowsCat = _sheetToObjects(getSheet('IMPRESORAS'));
+    rowsCat.forEach(function(r) {
+      var act = String(r.activo) === '1' || String(r.activo).toLowerCase() === 'true';
+      if (!act) return;
+      var pid       = String(r.printNodeId || '').trim();
+      var nombreCat = String(r.nombre || '');
+      var idEst     = String(r.idEstacion || '');
+      var idZona    = String(r.idZona || '');
+      var tipo      = String(r.tipo || 'TICKET');
+
+      var diag, compName = '', compState = '', printerName = '', printerStateRaw = '';
+
+      if (!pid) {
+        diag = { state: 'SIN_ID', reason: 'Falta asignar ID de PrintNode',
+                 icon: '⚙', color: 'gray' };
+      } else if (!printerMap[pid]) {
+        diag = { state: 'ID_INVALIDO', reason: 'ID ' + pid + ' no existe en PrintNode (verifica que esté registrada)',
+                 icon: '❓', color: 'red' };
+      } else {
+        var p = printerMap[pid];
+        var cid = (p.computer && p.computer.id) ? String(p.computer.id) : '';
+        var comp = compMap[cid] || { name: '', state: '' };
+        compName = comp.name || (p.computer && p.computer.name ? String(p.computer.name) : '');
+        compState = comp.state || '';
+        printerName = String(p.name || '');
+        printerStateRaw = String(p.state || '');
+        var desc = String(p.description || (p.default && 'default') || '');
+        diag = _interpretarEstadoImpresora(printerStateRaw, compState, desc);
+      }
+
+      data.push({
+        id:               pid ? parseInt(pid, 10) : null,
+        printNodeId:      pid,
+        nombrePN:         printerName,
+        nombre:           nombreCat || printerName,
+        nombreCatalogo:   nombreCat,
+        computer:         compName,
+        computerState:    compState,      // 'connected' | 'disconnected' | ''
+        printerStateRaw:  printerStateRaw, // crudo de PrintNode
+        // ── Diagnóstico semántico unificado ──
+        state:            diag.state,     // 'ONLINE' | 'PC_OFFLINE' | 'SIN_PAPEL' | etc
+        reason:           diag.reason,    // texto humano accionable
+        icon:             diag.icon,
+        color:            diag.color,
+        online:           diag.state === 'ONLINE', // retro-compat para código viejo
+        registrada:       true,
+        idEstacion:       idEst,
+        estacionNombre:   estNom[idEst] || idEst || '',
+        idZona:           idZona,
+        zonaNombre:       zonaNom[idZona] || idZona || '',
+        appOrigen:        String(r.appOrigen || ''),
+        tipo:             tipo
+      });
+    });
+  } catch(eC) {
+    return { ok: false, error: 'No se pudo leer catálogo IMPRESORAS: ' + eC.message };
+  }
 
   return { ok: true, data: data };
 }
