@@ -6370,6 +6370,167 @@
       color: #cbd5e1;
     }
 
+    /* ═══════════════════════════════════════════════════════════════
+       [v2.41.85] MODAL PROYECCIÓN — Roadmap estratégico
+       ═══════════════════════════════════════════════════════════════ */
+    .proy-section { margin-bottom: 22px; }
+    .proy-section-title {
+      font-size: 11px; font-weight: 900; letter-spacing: .1em;
+      text-transform: uppercase; color: #6ee7b7;
+      padding-bottom: 8px; margin-bottom: 12px;
+      border-bottom: 1.5px solid rgba(16,185,129,.25);
+    }
+    .proy-arquitectura {
+      background: linear-gradient(135deg, rgba(16,185,129,.04), rgba(99,102,241,.04));
+      border: 1px solid rgba(100,116,139,.3);
+      border-radius: 14px; padding: 16px;
+      font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+      font-size: 11px; line-height: 1.7;
+      color: #cbd5e1;
+      white-space: pre;
+      overflow-x: auto;
+    }
+    .proy-tier {
+      background: rgba(15,23,42,.5);
+      border-radius: 14px; padding: 14px;
+      margin-bottom: 14px;
+      border-left: 3px solid;
+    }
+    .proy-tier-1 { border-left-color: #10b981; }
+    .proy-tier-2 { border-left-color: #6366f1; }
+    .proy-tier-3 { border-left-color: #f59e0b; }
+    .proy-tier-4 { border-left-color: #94a3b8; }
+    .proy-tier-header {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 12px;
+    }
+    .proy-tier-num {
+      width: 32px; height: 32px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 900;
+      flex-shrink: 0;
+    }
+    .proy-tier-1 .proy-tier-num { background: rgba(16,185,129,.2); color: #6ee7b7; border: 1.5px solid rgba(16,185,129,.5); }
+    .proy-tier-2 .proy-tier-num { background: rgba(99,102,241,.2); color: #c4b5fd; border: 1.5px solid rgba(99,102,241,.5); }
+    .proy-tier-3 .proy-tier-num { background: rgba(245,158,11,.2); color: #fcd34d; border: 1.5px solid rgba(245,158,11,.5); }
+    .proy-tier-4 .proy-tier-num { background: rgba(148,163,184,.2); color: #cbd5e1; border: 1.5px solid rgba(148,163,184,.4); }
+    .proy-tier-name { font-size: 12px; font-weight: 800; color: #f1f5f9; flex: 1; }
+    .proy-tier-tag {
+      font-size: 9px; font-weight: 800; letter-spacing: .04em;
+      padding: 2px 8px; border-radius: 99px;
+      background: rgba(99,102,241,.15); color: #c4b5fd;
+      text-transform: uppercase;
+    }
+    .proy-item {
+      display: flex; align-items: flex-start; gap: 10px;
+      background: rgba(2,8,23,.6);
+      border: 1px solid #1e293b;
+      border-radius: 10px; padding: 10px 12px;
+      margin-bottom: 6px;
+      transition: all .15s;
+      cursor: pointer;
+    }
+    .proy-item:hover {
+      border-color: rgba(16,185,129,.4);
+      background: rgba(2,8,23,.85);
+      transform: translateX(2px);
+    }
+    .proy-item.done {
+      opacity: .55;
+      background: rgba(16,185,129,.05);
+      border-color: rgba(16,185,129,.4);
+    }
+    .proy-item.done .proy-item-titulo { text-decoration: line-through; color: #94a3b8; }
+    .proy-item-check {
+      width: 22px; height: 22px;
+      border-radius: 7px;
+      background: rgba(15,23,42,.8);
+      border: 1.5px solid rgba(148,163,184,.4);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      font-size: 14px; font-weight: 900;
+      transition: all .15s;
+    }
+    .proy-item.done .proy-item-check {
+      background: linear-gradient(135deg, #10b981, #059669);
+      border-color: #10b981;
+      color: white;
+    }
+    .proy-item-body { flex: 1; min-width: 0; }
+    .proy-item-titulo {
+      font-size: 12px; font-weight: 700; color: #f1f5f9;
+      display: flex; align-items: center; gap: 6px;
+      flex-wrap: wrap;
+    }
+    .proy-item-id {
+      font-size: 10px; font-weight: 900;
+      padding: 1px 6px; border-radius: 5px;
+      background: rgba(99,102,241,.18); color: #c4b5fd;
+      letter-spacing: .03em;
+    }
+    .proy-item-impacto {
+      font-size: 10px; color: #fbbf24; font-weight: 700;
+    }
+    .proy-item-desc {
+      font-size: 10.5px; color: #94a3b8; margin-top: 3px; line-height: 1.5;
+    }
+    .proy-item-meta {
+      display: flex; gap: 8px; margin-top: 5px;
+      font-size: 9.5px; color: #64748b;
+      flex-wrap: wrap;
+    }
+    .proy-item-tag {
+      padding: 1px 6px; border-radius: 4px;
+      background: rgba(51,65,85,.4);
+      letter-spacing: .03em; text-transform: uppercase; font-weight: 700;
+    }
+    .proy-item-tag.tag-ai { background: rgba(168,85,247,.18); color: #d8b4fe; }
+    .proy-item-tag.tag-effort { background: rgba(251,191,36,.15); color: #fcd34d; }
+    .proy-item-tag.tag-mes { background: rgba(34,197,94,.15); color: #86efac; }
+    .proy-resumen {
+      background: linear-gradient(135deg, rgba(16,185,129,.08), rgba(6,78,59,.06));
+      border: 1px solid rgba(16,185,129,.3);
+      border-radius: 12px; padding: 14px;
+      margin-top: 14px;
+    }
+    .proy-progress-bar {
+      height: 8px; border-radius: 4px;
+      background: rgba(15,23,42,.8);
+      overflow: hidden;
+      margin: 8px 0;
+    }
+    .proy-progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #10b981, #34d399);
+      transition: width .4s cubic-bezier(.34,1.56,.64,1);
+      box-shadow: 0 0 8px rgba(16,185,129,.5);
+    }
+    .proy-mes {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 99px;
+      background: rgba(34,197,94,.15);
+      border: 1px solid rgba(34,197,94,.35);
+      color: #86efac;
+      font-size: 10px; font-weight: 800;
+      letter-spacing: .04em; text-transform: uppercase;
+      margin-right: 6px; margin-bottom: 4px;
+    }
+    .proy-info-card {
+      background: rgba(15,23,42,.5);
+      border: 1px solid #1e293b;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 11px; color: #cbd5e1;
+      line-height: 1.5;
+    }
+    .proy-info-card strong { color: #f1f5f9; }
+    .proy-info-card.amber {
+      background: rgba(251,191,36,.06);
+      border-color: rgba(251,191,36,.3);
+    }
+    .proy-info-card.amber strong { color: #fcd34d; }
+
     /* [v2.41.84] Auditoría admin viewer — badges de tier + app */
     .aud-tier {
       display: inline-block; padding: 1px 6px; border-radius: 5px;
@@ -10244,6 +10405,12 @@
                   style="background:linear-gradient(135deg,#3b0764,#1e1b4b);border:1px solid rgba(217,70,239,.5);color:#f0abfc"
                   title="Ver registro de autorizaciones admin (MOS + ME + WH)">
             🔐 <span class="ml-1">Auditoría admin</span>
+          </button>
+          <!-- [v2.41.85] Roadmap de proyección estratégica -->
+          <button onclick="MOS.abrirProyeccion()" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105"
+                  style="background:linear-gradient(135deg,#064e3b,#022c22);border:1px solid rgba(16,185,129,.5);color:#6ee7b7"
+                  title="Roadmap estratégico InversionMos · plan de mejoras">
+            🗺 <span class="ml-1">Proyección</span>
           </button>
         </div>
 
@@ -17048,6 +17215,27 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
     </div>
     <div class="px-5 py-3 border-t border-slate-800 flex">
       <button onclick="MOS.cerrarModalHistorialCajas()" class="btn-ghost flex-1 text-xs">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ [v2.41.85] MODAL PROYECCIÓN — Roadmap estratégico InversionMos ═══ -->
+<div id="modalProyeccion" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalProyeccion')">
+  <div class="modal-box p-0 max-w-5xl w-full" style="max-height:94vh;display:flex;flex-direction:column;background:linear-gradient(180deg,rgba(2,8,23,.98) 0%,rgba(6,12,25,.98) 100%);box-shadow:0 24px 80px -10px rgba(16,185,129,.3),0 0 0 1px rgba(16,185,129,.15);">
+    <div class="px-5 pt-5 pb-3 flex items-center justify-between border-b border-slate-800 flex-shrink-0">
+      <div>
+        <h3 class="font-bold text-base" style="color:#6ee7b7">🗺 Proyección — Plan estratégico InversionMos</h3>
+        <p class="text-xs text-slate-500 mt-0.5">Tienda de abarrotes · Pisco, Ica · 2 tiendas + almacén central · roadmap 2026</p>
+      </div>
+      <button onclick="MOS.closeModal('modalProyeccion')" class="modal-close-x">×</button>
+    </div>
+
+    <div id="proyeccionBody" class="overflow-y-auto px-5 py-4" style="flex:1"></div>
+
+    <div class="px-5 py-3 border-t border-slate-800 flex items-center gap-2 flex-shrink-0">
+      <span class="text-[10px] text-slate-500" id="proyProgreso">0 / 12 items</span>
+      <button onclick="MOS._proyResetEstado()" class="btn-ghost text-xs px-2 py-1 ml-auto">↻ Reset</button>
+      <button onclick="MOS._proyExportar()" class="btn-ghost text-xs px-2 py-1" style="border-color:rgba(16,185,129,.4);color:#86efac">⬇ Exportar</button>
     </div>
   </div>
 </div>

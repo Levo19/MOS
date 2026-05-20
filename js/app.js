@@ -28442,6 +28442,254 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
 
   // ════════════════════════════════════════════════════════════
+  // [v2.41.85] PROYECCIÓN — Roadmap estratégico InversionMos
+  // Modal con todo el plan de mejoras priorizadas + checkboxes
+  // persistidos en localStorage (clave: mos_proy_estado_v1).
+  // ════════════════════════════════════════════════════════════
+  const _PROY_LS_KEY = 'mos_proy_estado_v1';
+  const _PROY_ROADMAP = [
+    // ─── TIER 1: Ahorro DIRECTO de plata ───
+    { id: 'T1-01', tier: 1, titulo: 'Pronóstico demanda + reposición automática',
+      impacto: '💰💰💰 -30% stockouts · -15% capital atado', esfuerzo: '4-5 días', mes: 'Jun 2026',
+      tags: ['ML simple'],
+      desc: 'Stock crítico calculado desde VENTAS_DETALLE últimos 60d. Genera orden de compra automática al proveedor 2 días antes del stockout. Considera lead time + seasonality (fin de mes/quincena).' },
+    { id: 'T1-02', tier: 1, titulo: 'Alertas vencimiento + FIFO inteligente',
+      impacto: '💰💰 -60-80% mermas vencimiento', esfuerzo: '2 días', mes: 'Jun 2026',
+      tags: [],
+      desc: 'Lista priorizada de productos que vencen en 3/7/15 días con cantidad + acción sugerida (rebaja 30%, oferta combo, dar a empleados, descartar). Detecta cuando se vende lote nuevo antes que el viejo (FIFO violado).' },
+    { id: 'T1-03', tier: 1, titulo: 'Detección mermas anómalas',
+      impacto: '💰💰 Control de fugas crónicas', esfuerzo: '2 días', mes: 'Ago 2026',
+      tags: [],
+      desc: 'Histórico de % merma por producto. Si hoy un producto tuvo 12% de merma vs su histórico de 3% → alerta. Causa probable: robo, mala manipulación, vencimiento masivo no reportado.' },
+    // ─── TIER 2: IA / LLM (el wow) ───
+    { id: 'T2-04', tier: 2, titulo: 'Asistente chat almacén (Claude API)',
+      impacto: '🤖 Time-to-answer <5s', esfuerzo: '3 días', mes: 'Jul 2026',
+      tags: ['IA', 'LLM'],
+      desc: 'El personal pregunta en lenguaje natural: "¿cuánto arroz Costeño hay?", "¿qué vence mañana?", "¿última guía de Cabanossi?". El LLM lee Sheets + responde con datos + sugerencia accionable.' },
+    { id: 'T2-05', tier: 2, titulo: 'Resumen ejecutivo diario LLM (10pm)',
+      impacto: '🤖 Decisión en 2 min vs 30 min', esfuerzo: '2 días', mes: 'Jul 2026',
+      tags: ['IA', 'LLM'],
+      desc: 'Push notification a las 10pm con narrativa generada por Claude: ventas vs promedio, urgencias (vencimientos próximos, mermas anómalas), comparativo entre tiendas, próximas acciones. Reemplaza media hora de mirar 15 hojas.' },
+    { id: 'T2-06', tier: 2, titulo: 'OCR de facturas proveedor',
+      impacto: '🤖 -80% tiempo entrada · pillas a proveedores chuecos', esfuerzo: '3 días', mes: 'Jul 2026',
+      tags: ['IA', 'Vision'],
+      desc: 'Foto de factura/boleta → JSON {proveedor, fecha, items[], total, IGV}. Auto-crea PREINGRESO + valida vs pedido. Detecta diferencias entre lo facturado y lo recibido físicamente.' },
+    // ─── TIER 3: Crecimiento de venta ───
+    { id: 'T3-07', tier: 3, titulo: 'Análisis de canasta (Market Basket)',
+      impacto: '📈 +5-10% ticket promedio', esfuerzo: '3 días', mes: 'Sep 2026',
+      tags: ['ML simple'],
+      desc: 'Detecta qué productos se venden juntos (% co-ocurrencia, soporte, confianza, lift). Habilita bundling inteligente, sugerencia en caja al pagar, mejor ubicación física en góndola.' },
+    { id: 'T3-08', tier: 3, titulo: 'Análisis RFM clientes frecuentes + campañas',
+      impacto: '📈 +10-20% recuperación clientes en riesgo', esfuerzo: '4 días', mes: 'Ago 2026',
+      tags: [],
+      desc: 'Segmenta tu CLIENTES_FRECUENTES en 4 grupos (Campeones, Leales, En riesgo, Dormidos) según Recency/Frequency/Monetary. Campañas SMS/WhatsApp por segmento.' },
+    { id: 'T3-09', tier: 3, titulo: 'Comparativo entre tiendas',
+      impacto: '📈 Replicar prácticas best-store', esfuerzo: '2 días', mes: 'Jul 2026',
+      tags: [],
+      desc: 'Side-by-side ME1 vs ME2: ventas, ticket promedio, métodos de pago, hora pico, productos top, ranking cajeros por eficiencia + honestidad.' },
+    // ─── TIER 4: Optimización fina ───
+    { id: 'T4-10', tier: 4, titulo: 'Pricing inteligente',
+      impacto: '⚙ Margen + rotación balanceados', esfuerzo: '3 días', mes: 'Oct 2026',
+      tags: [],
+      desc: 'Sugiere cambio de precio semanal por producto: slow-mover con vencimiento próximo → -10% liquidación; demanda subiendo + competencia → +5% sin perder volumen.' },
+    { id: 'T4-11', tier: 4, titulo: 'Detección fraude en cajas',
+      impacto: '⚙ Disuasión + recuperación', esfuerzo: '3 días', mes: 'Sep 2026',
+      tags: [],
+      desc: 'Anomalías: sobrante > 2σ del histórico del cajero, tickets fuera del rango habitual, cierres con discrepancia repetida. Genera alerta con evidencia para investigación.' },
+    { id: 'T4-12', tier: 4, titulo: 'NubeFact — facturación electrónica formal',
+      impacto: '⚙ Cumplimiento SUNAT', esfuerzo: '2 días', mes: 'Nov 2026',
+      tags: [],
+      desc: 'VENTAS_DETALLE ya captura Tipo_IGV, Unidad_Medida, Cod_SUNAT. Solo falta conectar API key NubeFact + webhook de reconciliación. Habilita Boletas/Facturas electrónicas oficiales.' }
+  ];
+  function _proyLoadEstado() {
+    try {
+      const raw = localStorage.getItem(_PROY_LS_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch(_) { return {}; }
+  }
+  function _proySaveEstado(estado) {
+    try { localStorage.setItem(_PROY_LS_KEY, JSON.stringify(estado)); } catch(_){}
+  }
+  function _proyToggle(id) {
+    const estado = _proyLoadEstado();
+    estado[id] = !estado[id];
+    if (estado[id]) {
+      estado[id + '_ts'] = new Date().toISOString();
+    } else {
+      delete estado[id + '_ts'];
+    }
+    _proySaveEstado(estado);
+    _proyRender();
+    try { _evalSfx && _evalSfx(estado[id] ? 'success' : 'tap'); } catch(_){}
+  }
+  function _proyResetEstado() {
+    if (!confirm('¿Reiniciar todo el progreso del roadmap? Los checks se borran.')) return;
+    _proySaveEstado({});
+    _proyRender();
+  }
+  function _proyExportar() {
+    const estado = _proyLoadEstado();
+    let txt = 'ROADMAP ESTRATÉGICO INVERSIONMOS\n';
+    txt += '=================================\n';
+    txt += 'Generado: ' + new Date().toLocaleString('es-PE') + '\n\n';
+    const tiers = { 1: '💰 TIER 1 — AHORRO DIRECTO', 2: '🤖 TIER 2 — IA/LLM', 3: '📈 TIER 3 — CRECIMIENTO VENTAS', 4: '⚙ TIER 4 — OPTIMIZACIÓN' };
+    [1,2,3,4].forEach(t => {
+      txt += '\n' + tiers[t] + '\n' + '-'.repeat(40) + '\n';
+      _PROY_ROADMAP.filter(x => x.tier === t).forEach(it => {
+        const done = estado[it.id] ? '[✓]' : '[ ]';
+        txt += `${done} ${it.id} · ${it.titulo}\n`;
+        txt += `      ${it.impacto} · ${it.esfuerzo} · ${it.mes}\n`;
+        if (estado[it.id] && estado[it.id + '_ts']) {
+          txt += `      ✓ Completado: ${new Date(estado[it.id + '_ts']).toLocaleString('es-PE')}\n`;
+        }
+      });
+    });
+    const total = _PROY_ROADMAP.length;
+    const done = _PROY_ROADMAP.filter(x => estado[x.id]).length;
+    txt += `\n\nProgreso: ${done}/${total} items (${Math.round(done/total*100)}%)\n`;
+    const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `roadmap_inversion_mos_${new Date().toISOString().slice(0,10)}.txt`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast('✓ Roadmap exportado', 'ok');
+  }
+  function abrirProyeccion() { _proyRender(); openModal('modalProyeccion'); }
+  function _proyRender() {
+    const cont = document.getElementById('proyeccionBody');
+    if (!cont) return;
+    const estado = _proyLoadEstado();
+    const done = _PROY_ROADMAP.filter(x => estado[x.id]).length;
+    const total = _PROY_ROADMAP.length;
+    const pct = Math.round(done / total * 100);
+    const progLbl = document.getElementById('proyProgreso');
+    if (progLbl) progLbl.textContent = `${done} / ${total} items · ${pct}% completado`;
+
+    const arquitectura = `         ┌──────────────────────────────────────────────────┐
+         │             🎯 CAPA SUPERIOR — DECISIÓN           │
+         │   🅼 MOS  · admin + master · catálogo · finanzas  │
+         │   precios · personal · liquidaciones · auditoría  │
+         └─────────────────────┬────────────────────────────┘
+                               │
+        ┌──────────────────────┼──────────────────────────┐
+        ▼                      ▼                          ▼
+┌──────────────┐    ┌────────────────┐         ┌────────────────┐
+│ 🆆 WAREHOUSE │    │ 🅼 TIENDA 01   │         │ 🅼 TIENDA 02   │
+│ Almacén ctrl.│    │ POS · ventas   │         │ POS · ventas   │
+│ Ingresos     │    │ Caja apert/cie │         │ Caja apert/cie │
+│ Envasados    │    │ Clientes frec  │         │ Clientes frec  │
+│ Mermas/FIFO  │    │ Boletas CPE    │         │ Boletas CPE    │
+│ Despachos    │    │                │         │                │
+└──────────────┘    └────────────────┘         └────────────────┘`;
+
+    const tierTitle = { 1: '💰 TIER 1 — Ahorro DIRECTO de plata', 2: '🤖 TIER 2 — IA / LLM (el "wow")', 3: '📈 TIER 3 — Crecimiento de venta', 4: '⚙ TIER 4 — Optimización fina' };
+    const tierTag = { 1: 'arrancar aquí', 2: 'IA generativa', 3: 'top-line', 4: 'fine tuning' };
+
+    let html = `
+      <div class="proy-section">
+        <div class="proy-section-title">🏗 Arquitectura actual</div>
+        <div class="proy-arquitectura">${arquitectura}</div>
+        <div class="proy-info-card mt-2" style="margin-top:10px">
+          Tu sistema ya es <strong>maduro y robusto</strong>: 3 PWAs + GAS serverless + Sheets como BD.
+          Catálogo unificado, liquidaciones día-a-día, trazabilidad con fotos, idempotencia + cola offline,
+          auditoría enriquecida (recién terminada con AdminAuthModal universal).
+          El siguiente salto es <strong>inteligencia para decisiones</strong>, no más operaciones.
+        </div>
+      </div>
+
+      <div class="proy-section">
+        <div class="proy-section-title">📊 Progreso del roadmap</div>
+        <div class="proy-resumen">
+          <div style="display:flex;align-items:center;gap:10px;font-size:12px">
+            <span style="color:#94a3b8">Avance:</span>
+            <strong style="color:#34d399;font-size:18px">${done} / ${total}</strong>
+            <span style="color:#94a3b8">items completados</span>
+            <strong style="color:#fbbf24;font-size:14px;margin-left:auto">${pct}%</strong>
+          </div>
+          <div class="proy-progress-bar">
+            <div class="proy-progress-fill" style="width:${pct}%"></div>
+          </div>
+          <div class="text-[10px] text-slate-500" style="margin-top:4px">
+            🎯 Foco confirmado: <strong style="color:#86efac">No sabes qué pedir al proveedor y cuándo</strong> → arrancar por T1-01 (pronóstico demanda)
+          </div>
+        </div>
+      </div>
+
+      <div class="proy-section">
+        <div class="proy-section-title">🗓 Cronograma sugerido</div>
+        <div>
+          <span class="proy-mes">Jun 2026</span> T1-01 pronóstico · T1-02 vencimientos · T2-05 resumen LLM
+          <br><span class="proy-mes" style="margin-top:6px">Jul 2026</span> T2-04 chat · T2-06 OCR · T3-09 comparativo tiendas
+          <br><span class="proy-mes" style="margin-top:6px">Ago 2026</span> T1-03 mermas anómalas · T3-08 RFM clientes
+          <br><span class="proy-mes" style="margin-top:6px">Sep 2026</span> T3-07 canasta · T4-11 fraude cajas
+          <br><span class="proy-mes" style="margin-top:6px">Oct-Nov 2026</span> T4-10 pricing · T4-12 NubeFact
+        </div>
+      </div>`;
+
+    // Items agrupados por tier
+    [1, 2, 3, 4].forEach(t => {
+      const items = _PROY_ROADMAP.filter(x => x.tier === t);
+      html += `
+        <div class="proy-section">
+          <div class="proy-tier proy-tier-${t}">
+            <div class="proy-tier-header">
+              <div class="proy-tier-num">${t}</div>
+              <div class="proy-tier-name">${tierTitle[t]}</div>
+              <div class="proy-tier-tag">${tierTag[t]}</div>
+            </div>
+            ${items.map(it => {
+              const isDone = !!estado[it.id];
+              const tagsHtml = (it.tags || []).map(tg => {
+                const cls = tg === 'IA' || tg === 'LLM' || tg === 'Vision' ? 'tag-ai'
+                          : tg === 'ML simple' ? 'tag-ai' : '';
+                return `<span class="proy-item-tag ${cls}">${tg}</span>`;
+              }).join('');
+              return `
+                <div class="proy-item ${isDone ? 'done' : ''}" onclick="MOS._proyToggle('${it.id}')">
+                  <div class="proy-item-check">${isDone ? '✓' : ''}</div>
+                  <div class="proy-item-body">
+                    <div class="proy-item-titulo">
+                      <span class="proy-item-id">${it.id}</span>
+                      ${_escapeHtml(it.titulo)}
+                    </div>
+                    <div class="proy-item-desc">${_escapeHtml(it.desc)}</div>
+                    <div class="proy-item-meta">
+                      <span class="proy-item-impacto">${it.impacto}</span>
+                      <span class="proy-item-tag tag-effort">⏱ ${it.esfuerzo}</span>
+                      <span class="proy-item-tag tag-mes">${it.mes}</span>
+                      ${tagsHtml}
+                    </div>
+                  </div>
+                </div>`;
+            }).join('')}
+          </div>
+        </div>`;
+    });
+
+    html += `
+      <div class="proy-section">
+        <div class="proy-section-title">⚡ Bugs / emergencias resueltas</div>
+        <div class="proy-info-card amber">
+          ✅ <strong>v2.5.26 (20-may-2026)</strong> · Fix pantalla blanca en ME al recibir cobro asignado desde MOS<br>
+          <span class="text-xs text-slate-400">Causa: uso de unidad <code>dvh</code> CSS rota en Chromium viejo de tablets POS. Cambiado a <code>vh</code>.</span>
+        </div>
+      </div>
+
+      <div class="proy-section">
+        <div class="proy-section-title">💡 Mi recomendación</div>
+        <div class="proy-info-card">
+          Para abarrotes, tus 4 enemigos son: <strong style="color:#f87171">mermas, stockouts, robo hormiga y sobrestock</strong>.
+          Los items <strong style="color:#34d399">T1-01, T1-02, T1-03</strong> atacan los 4. Y los datos para hacerlos
+          <strong>ya los estás capturando</strong> — solo falta la lógica de análisis.<br><br>
+          El item <strong style="color:#c4b5fd">T2-05 (resumen ejecutivo LLM)</strong> es el que más te va a cambiar
+          la vida personal: en 2 min sabes todo el día sin abrir 15 hojas.
+        </div>
+      </div>`;
+    cont.innerHTML = html;
+  }
+
+  // ════════════════════════════════════════════════════════════
   // [v2.41.84] AUDITORÍA ADMIN — viewer del log AUDITORIA_ADMIN
   // Muestra todas las autorizaciones admin de las 3 apps con filtros,
   // estadísticas y export CSV.
@@ -28739,6 +28987,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirCronStatus, cronReinstalarTrigger, cronEjecutarAhora,
     // [v2.41.84] Auditoría admin viewer
     abrirAuditoriaAdmin, _audAdmExportCSV,
+    // [v2.41.85] Proyección — roadmap estratégico
+    abrirProyeccion, _proyToggle, _proyResetEstado, _proyExportar,
     openConfig, saveConfig, testConnection, closeModal, openEcoModal,
     filterCatalogo, setCatTab, toggleDerivs, togglePresentaciones, guardarPrecioRapido,
     _catCardClick, _catSfx, _catRipple,
