@@ -16620,6 +16620,8 @@ const MOS = (() => {
     // _cjRenderManoDelDia se vuelve a invocar sin refetch.
     if (!_cjCreditosState.todosLosGrupos.length) _cjCargarCreditosPendientes();
     else _cjRenderManoDelDia();
+    // [v2.41.87] Cargar cobros en vuelo (panel arriba de la baraja)
+    _cjCargarEnVuelo(true);
 
     // Empty state
     const empty = $('cajasEmpty');
@@ -17231,10 +17233,212 @@ const MOS = (() => {
     asignarCtx:     null,
     asignarCaja:    null,
     asignarMetodo:  'EFECTIVO',
+    asignarTTL:     1,             // [v2.41.86] tiempo límite (1/2/4/6h)
+    asignarMensaje: '',            // [v2.41.87] mensaje opcional al cajero
     // [v41] Set de idVenta ya vistos en renders previos. Las cartas con id que
     // no esté aquí se marcan como nuevas y se animan con cj-carta-nueva.
-    idsVistos:      new Set()
+    idsVistos:      new Set(),
+    // [v2.41.87] Cobros en vuelo + recientes para panel admin
+    enVuelo:        [],
+    recientes:      [],
+    enVueloLastFetch: 0,
+    enVueloTick:    0              // forzar reactividad countdown live
   };
+  // [v2.41.87] Tick reactivo cada 30s para countdown en cobros en vuelo
+  setInterval(() => {
+    _cjCreditosState.enVueloTick++;
+    const cont = document.getElementById('cjEnVueloPanel');
+    if (cont && !cont.classList.contains('hidden')) {
+      _cjRenderEnVuelo();
+    }
+  }, 30000);
+
+  // ════════════════════════════════════════════════════════════
+  // [v2.41.87] COBROS EN VUELO — Panel admin con countdown live,
+  // cancelar y reasignar. Se renderiza arriba de la baraja de
+  // créditos pendientes en Cajas.
+  // ════════════════════════════════════════════════════════════
+  async function _cjCargarEnVuelo(silent) {
+    try {
+      const r = await API.get('meCobrosEnVuelo', {});
+      const d = (r && r.data) ? r.data : (r || {});
+      _cjCreditosState.enVuelo = d.enVuelo || [];
+      _cjCreditosState.recientes = d.recientes || [];
+      _cjCreditosState.enVueloLastFetch = Date.now();
+      _cjRenderEnVuelo();
+    } catch(e) {
+      if (!silent) console.warn('[enVuelo] error:', e?.message || e);
+    }
+  }
+
+  function _cjRestanteTxt(cobro) {
+    if (!cobro || !cobro.fechaVencimiento) return '';
+    const t = new Date(cobro.fechaVencimiento).getTime();
+    if (isNaN(t)) return '';
+    const diffMs = t - Date.now();
+    if (diffMs <= 0) return '⏰ vencido';
+    const min = Math.floor(diffMs / 60000);
+    if (min < 60) return min + ' min';
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    return h + 'h ' + (m > 0 ? m + 'm' : '');
+  }
+  function _cjUrgenciaClase(cobro) {
+    if (!cobro || !cobro.fechaVencimiento) return 'ok';
+    const t = new Date(cobro.fechaVencimiento).getTime();
+    if (isNaN(t)) return 'ok';
+    const diffMin = (t - Date.now()) / 60000;
+    if (diffMin <= 5) return 'critical';
+    if (diffMin <= 15) return 'warn';
+    return 'ok';
+  }
+
+  function _cjRenderEnVuelo() {
+    const cont = document.getElementById('cjEnVueloPanel');
+    if (!cont) return;
+    const enVuelo = _cjCreditosState.enVuelo || [];
+    const recientes = _cjCreditosState.recientes || [];
+    if (!enVuelo.length && !recientes.length) {
+      cont.classList.add('hidden');
+      cont.innerHTML = '';
+      return;
+    }
+    cont.classList.remove('hidden');
+    const _esc = (s) => _escapeHtml(String(s || ''));
+    const cardVuelo = (c) => {
+      const u = _cjUrgenciaClase(c);
+      const restante = _cjRestanteTxt(c);
+      const reasignBadge = c.reasignaciones > 0 ? `<span class="cj-vuelo-reasignado" title="Reasignado ${c.reasignaciones} vez(es)">↺ ${c.reasignaciones}</span>` : '';
+      const mensaje = c.mensajeAdmin ? `<div class="cj-vuelo-msg">💬 "${_esc(c.mensajeAdmin)}"</div>` : '';
+      return `<div class="cj-vuelo-card cj-vuelo-${u}">
+        <div class="cj-vuelo-head">
+          <div class="cj-vuelo-cliente">
+            <span class="cj-vuelo-flecha">✈</span>
+            <strong>${_esc(c.cliente || 'VARIOS')}</strong>
+            <span class="cj-vuelo-flecha-to">→</span>
+            <span class="cj-vuelo-cajero">${_esc(c.vendedorDest)}</span>
+            ${reasignBadge}
+          </div>
+          <span class="cj-vuelo-monto">S/ ${parseFloat(c.monto || 0).toFixed(2)}</span>
+        </div>
+        <div class="cj-vuelo-meta">
+          <span class="cj-vuelo-metodo">${c.metodoSug === 'EFECTIVO' ? '💵' : c.metodoSug === 'VIRTUAL' ? '📱' : '🔀'} ${_esc(c.metodoSug)}</span>
+          <span class="cj-vuelo-corr">${_esc(c.correlativo)}</span>
+          <span class="cj-vuelo-tiempo cj-vuelo-tiempo-${u}">⏱ ${restante}</span>
+        </div>
+        ${mensaje}
+        <div class="cj-vuelo-actions">
+          <button onclick="MOS.cjReasignarCobro('${_esc(c.idCobro)}')" class="cj-vuelo-btn cj-vuelo-btn-reasignar">↺ Reasignar</button>
+          <button onclick="MOS.cjCancelarCobro('${_esc(c.idCobro)}')" class="cj-vuelo-btn cj-vuelo-btn-cancelar">✕ Cancelar</button>
+        </div>
+      </div>`;
+    };
+    const cardReciente = (c) => {
+      const estTxt = c.estado === 'COBRADO' ? '✓ Cobrado'
+        : c.estado === 'EXPIRADO' ? '⏰ Expirado'
+        : c.estado === 'CANCELADO_ADMIN' ? '⊘ Cancelado'
+        : c.estado === 'RECHAZADO' ? '✗ Rechazado'
+        : c.estado === 'REASIGNADO' ? '↺ Reasignado'
+        : c.estado;
+      const estClass = c.estado === 'COBRADO' ? 'reciente-ok'
+        : c.estado === 'EXPIRADO' || c.estado === 'CANCELADO_ADMIN' ? 'reciente-warn'
+        : 'reciente-info';
+      return `<div class="cj-vuelo-reciente ${estClass}">
+        <span class="cj-vuelo-reciente-estado">${estTxt}</span>
+        <strong>${_esc(c.cliente || 'VARIOS')}</strong>
+        <span class="cj-vuelo-reciente-monto">S/ ${parseFloat(c.monto || 0).toFixed(2)}</span>
+        <span class="cj-vuelo-reciente-cajero">${_esc(c.vendedorDest)}</span>
+      </div>`;
+    };
+    let html = '';
+    if (enVuelo.length) {
+      html += `<div class="cj-vuelo-section">
+        <div class="cj-vuelo-section-titulo">
+          ✈ Cobros en vuelo · <strong>${enVuelo.length}</strong>
+          <button onclick="MOS._cjCargarEnVuelo()" class="cj-vuelo-refresh" title="Refrescar">↻</button>
+        </div>
+        <div class="cj-vuelo-list">
+          ${enVuelo.map(cardVuelo).join('')}
+        </div>
+      </div>`;
+    }
+    if (recientes.length) {
+      html += `<div class="cj-vuelo-section">
+        <details class="cj-vuelo-recientes-wrap">
+          <summary class="cj-vuelo-section-titulo cj-vuelo-section-recientes">
+            🕒 Recientes · ${recientes.length} <span class="cj-vuelo-section-hint">click para expandir</span>
+          </summary>
+          <div class="cj-vuelo-recientes-list">
+            ${recientes.map(cardReciente).join('')}
+          </div>
+        </details>
+      </div>`;
+    }
+    cont.innerHTML = html;
+  }
+
+  async function cjCancelarCobro(idCobro) {
+    if (!idCobro) return;
+    const auth = await pedirAuth({
+      accion: 'CANCELAR_COBRO_ASIGNADO',
+      refDocumento: idCobro,
+      contexto: 'Cancelar cobro · vuelve a CRÉDITO'
+    });
+    if (!auth) return;
+    const razon = prompt('Razón del cancelar (opcional):') || '';
+    try {
+      const r = await API.post('meCancelarCobroAsignado', {
+        idCobro: idCobro,
+        razon: razon,
+        adminAuth: { nombre: auth.nombre, rol: auth.rol, via: 'PIN_8DIG' }
+      });
+      const d = (r && r.data) ? r.data : (r || {});
+      try { _finBeep?.('remove'); } catch(_){}
+      toast('⊘ Cobro cancelado · ticket vuelve a CRÉDITO', 'ok', 4000);
+      _cjCargarEnVuelo();
+      _cjCargarCreditosPendientes();
+    } catch(e) {
+      toast('Error: ' + (e.message || e), 'error');
+    }
+  }
+
+  async function cjReasignarCobro(idCobro) {
+    if (!idCobro) return;
+    const cobro = (_cjCreditosState.enVuelo || []).find(c => c.idCobro === idCobro);
+    if (!cobro) { toast('Cobro no encontrado', 'error'); return; }
+    // Fetch cajas abiertas para elegir nueva
+    let cajas = [];
+    try {
+      const r = await API.post('meCajasAbiertas', {});
+      cajas = (r && r.data) ? r.data : (r || []);
+    } catch(e) { toast('No se pudieron cargar cajas', 'error'); return; }
+    cajas = cajas.filter(c => c.idCaja !== cobro.cajaDestino);
+    if (!cajas.length) { toast('No hay otra caja abierta para reasignar', 'warn'); return; }
+    const opciones = cajas.map((c, i) => `${i + 1}. ${c.vendedor} (${c.idCaja})`).join('\n');
+    const sel = prompt('¿A qué caja reasignar?\n\n' + opciones + '\n\nIngresa el número:');
+    if (!sel) return;
+    const idx = parseInt(sel, 10) - 1;
+    if (isNaN(idx) || !cajas[idx]) { toast('Selección inválida', 'error'); return; }
+    const nuevaCaja = cajas[idx];
+    const auth = await pedirAuth({
+      accion: 'REASIGNAR_COBRO_ASIGNADO',
+      refDocumento: idCobro,
+      contexto: `Reasignar a ${nuevaCaja.vendedor}`
+    });
+    if (!auth) return;
+    try {
+      const r = await API.post('meReasignarCobroAsignado', {
+        idCobro: idCobro,
+        cajaDestino: nuevaCaja.idCaja,
+        adminAuth: { nombre: auth.nombre, rol: auth.rol, via: 'PIN_8DIG' }
+      });
+      try { _finBeep?.('success'); } catch(_){}
+      toast('↺ Reasignado a ' + nuevaCaja.vendedor, 'ok', 4000);
+      _cjCargarEnVuelo();
+    } catch(e) {
+      toast('Error: ' + (e.message || e), 'error');
+    }
+  }
 
   async function _cjCargarCreditosPendientes() {
     // [v41.9] Mostrar skeleton mientras se carga si NO hay datos previos.
@@ -17709,7 +17913,17 @@ const MOS = (() => {
           </button>
         </div>
       </div>
-      <p class="cj-asignar-inline-hint">💡 El cajero recibirá un push. El monto entra como INGRESO a su caja. <strong>Si no se cobra en el tiempo elegido, el ticket vuelve automáticamente a estado CRÉDITO.</strong></p>
+      <!-- [v2.41.87] Mensaje opcional al cajero (140 chars) -->
+      <div class="cj-asignar-inline-section">
+        <label class="cj-asignar-inline-label">
+          <span class="cj-asignar-inline-step">4</span>
+          <span>Mensaje al cajero (opcional)</span>
+        </label>
+        <input id="cjAsignarMensaje" type="text" maxlength="140" placeholder="ej: cliente paga exacto, recoge antes de las 4pm..."
+               oninput="MOS._cjOnMensajeAsignar(this.value)"
+               class="cj-asignar-inline-msg" />
+      </div>
+      <p class="cj-asignar-inline-hint">💡 El cajero recibirá un push. El monto entra como <strong>INGRESO ADICIONAL</strong> a su caja (no como nueva venta). <strong>Si no se cobra en el tiempo elegido, el ticket vuelve automáticamente a estado CRÉDITO.</strong></p>
       <div class="cj-asignar-inline-footer">
         <button onclick="MOS.cjCerrarAsignar()" class="cj-btn cj-btn-secondary">Cancelar</button>
         <button id="cjAsignarOkBtn" onclick="MOS.cjConfirmarAsignar()" class="cj-btn cj-btn-primary" disabled>
@@ -17751,6 +17965,9 @@ const MOS = (() => {
     }
     cjSetMetodoAsignar('EFECTIVO');
     cjSetTTLAsignar(1); // [v2.41.86] Default 1h
+    _cjCreditosState.asignarMensaje = ''; // [v2.41.87] limpiar mensaje
+    const inpMsg = document.getElementById('cjAsignarMensaje');
+    if (inpMsg) inpMsg.value = '';
     _cjUpdAsignarOkBtn();
 
     // Scroll suave al panel
@@ -17810,19 +18027,26 @@ const MOS = (() => {
     try { _finBeep?.('tap'); } catch(_){}
   }
 
+  // [v2.41.87] Captura mensaje opcional al cajero
+  function _cjOnMensajeAsignar(v) {
+    _cjCreditosState.asignarMensaje = String(v || '').substring(0, 140);
+  }
+
   async function cjConfirmarAsignar() {
     const ctx = _cjCreditosState.asignarCtx;
     if (!ctx || !_cjCreditosState.asignarCaja || !_cjCreditosState.asignarMetodo) return;
     const btn = $('cjAsignarOkBtn');
     if (btn) { btn.disabled = true; btn.textContent = '⌛ Enviando...'; }
     try {
-      // [v2.41.86] Pasa horasTTL al backend (default 1h)
+      // [v2.41.86/87] Pasa horasTTL + mensaje opcional al backend
       const horasTTL = parseInt(_cjCreditosState.asignarTTL, 10) || 1;
+      const mensajeAdmin = (_cjCreditosState.asignarMensaje || '').trim();
       const r = await API.post('meAsignarCobroCajero', {
         idVenta:        ctx.idVenta,
         cajaDestino:    _cjCreditosState.asignarCaja,
         metodoSugerido: _cjCreditosState.asignarMetodo,
-        horasTTL:       horasTTL
+        horasTTL:       horasTTL,
+        mensajeAdmin:   mensajeAdmin
       });
       const d = (r && r.data) ? r.data : (r || {});
       // [v2.41.56] Animación de vuelo en la carta de la mesa + cerrar panel
@@ -17844,7 +18068,10 @@ const MOS = (() => {
         _cjCreditosState.detalleTicket = null;
       }, 350);
       // Refrescar
-      setTimeout(() => _cjCargarCreditosPendientes(), 800);
+      setTimeout(() => {
+        _cjCargarCreditosPendientes();
+        _cjCargarEnVuelo(); // [v2.41.87] mostrar en el panel inmediato
+      }, 800);
     } catch(e) {
       toast('Error: ' + (e.message || e), 'error');
     } finally {
@@ -29179,6 +29406,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     cjAbrirDetalleCarta, cjCerrarDetalleCarta, cjAbrirAsignarDesdeDetalle,
     cjAbrirAsignar, cjCerrarAsignar,
     cjSetMetodoAsignar, cjSetCajaAsignar, cjSetTTLAsignar, cjConfirmarAsignar,
+    _cjOnMensajeAsignar, _cjCargarEnVuelo, cjCancelarCobro, cjReasignarCobro,
     // F2 — Acciones editables sobre tickets
     cjAbrirAccionesTicket, _tkAccion,
     _tkCobrarSetMetodo, _tkCobrarSetCaja, _tkCobrarValidarMixto, _tkCobrarConfirmar,

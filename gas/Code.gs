@@ -322,6 +322,10 @@ function _route(method, e) {
       // [v40.3] Sistema de cobro asignado de créditos
       case 'meGetCreditosPendientes':   return meGetCreditosPendientes(params);
       case 'meAsignarCobroCajero':      return meAsignarCobroCajero(params);
+      // [v2.41.87] Cobros en vuelo + cancelar + reasignar
+      case 'meCobrosEnVuelo':           return meCobrosEnVuelo();
+      case 'meCancelarCobroAsignado':   return meCancelarCobroAsignado(params);
+      case 'meReasignarCobroAsignado':  return meReasignarCobroAsignado(params);
       // [v41.3] Cierre forzado de caja por admin/master desde MOS
       case 'meCerrarCajaForzado':       return meCerrarCajaForzado(params);
 

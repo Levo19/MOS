@@ -2028,6 +2028,177 @@
       color: #fbbf24;
       text-shadow: 0 0 8px rgba(251,191,36,.5);
     }
+    /* [v2.41.87] Input mensaje opcional al cajero */
+    .cj-asignar-inline-msg {
+      width: 100%; padding: 10px 12px;
+      background: rgba(15,23,42,.7);
+      border: 1.5px solid #334155;
+      border-radius: 10px;
+      color: #e2e8f0; font-size: 12px;
+      transition: border-color .15s;
+    }
+    .cj-asignar-inline-msg:focus {
+      outline: none;
+      border-color: #06b6d4;
+      box-shadow: 0 0 0 2px rgba(6,182,212,.25);
+    }
+    .cj-asignar-inline-msg::placeholder { color: #475569; font-style: italic; }
+
+    /* [v2.41.87] Panel "Cobros en vuelo" — arriba de la baraja */
+    .cj-vuelo-panel {
+      margin-bottom: 16px;
+      animation: cjVueloFadeIn .35s ease;
+    }
+    @keyframes cjVueloFadeIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .cj-vuelo-section { margin-bottom: 12px; }
+    .cj-vuelo-section-titulo {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 11px; font-weight: 800; letter-spacing: .04em;
+      color: #a5b4fc; text-transform: uppercase;
+      padding: 4px 0 8px;
+      cursor: pointer;
+    }
+    .cj-vuelo-section-recientes {
+      color: #94a3b8;
+    }
+    .cj-vuelo-section-hint {
+      font-size: 9px; color: #64748b; font-weight: 600;
+      letter-spacing: .02em; text-transform: none;
+      margin-left: auto;
+    }
+    .cj-vuelo-refresh {
+      margin-left: auto;
+      background: rgba(99,102,241,.15);
+      border: 1px solid rgba(99,102,241,.35);
+      color: #a5b4fc;
+      padding: 2px 8px; border-radius: 6px;
+      font-size: 11px; cursor: pointer;
+      transition: all .15s;
+    }
+    .cj-vuelo-refresh:hover { background: rgba(99,102,241,.3); }
+    .cj-vuelo-list { display: flex; flex-direction: column; gap: 8px; }
+    .cj-vuelo-card {
+      background: linear-gradient(135deg, rgba(99,102,241,.1), rgba(99,102,241,.04));
+      border: 1.5px solid rgba(99,102,241,.4);
+      border-radius: 12px;
+      padding: 10px 12px;
+      transition: all .2s;
+      position: relative;
+    }
+    .cj-vuelo-card.cj-vuelo-warn {
+      background: linear-gradient(135deg, rgba(251,191,36,.12), rgba(251,191,36,.04));
+      border-color: rgba(251,191,36,.5);
+    }
+    .cj-vuelo-card.cj-vuelo-critical {
+      background: linear-gradient(135deg, rgba(239,68,68,.15), rgba(239,68,68,.05));
+      border-color: rgba(239,68,68,.6);
+      animation: cjVueloCriticalPulse 1.4s ease-in-out infinite;
+    }
+    @keyframes cjVueloCriticalPulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,.4); }
+      50%     { box-shadow: 0 0 0 4px rgba(239,68,68,0); }
+    }
+    .cj-vuelo-head {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; margin-bottom: 6px;
+    }
+    .cj-vuelo-cliente {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 12.5px; color: #f1f5f9; flex: 1; min-width: 0;
+    }
+    .cj-vuelo-cliente strong { font-weight: 800; }
+    .cj-vuelo-flecha { color: #a5b4fc; font-size: 14px; }
+    .cj-vuelo-flecha-to { color: #64748b; }
+    .cj-vuelo-cajero { color: #86efac; font-weight: 700; }
+    .cj-vuelo-monto {
+      font-size: 13px; font-weight: 900; color: #fbbf24;
+      white-space: nowrap;
+    }
+    .cj-vuelo-meta {
+      display: flex; gap: 10px; flex-wrap: wrap;
+      font-size: 10.5px; color: #94a3b8;
+      margin-bottom: 6px;
+    }
+    .cj-vuelo-metodo { color: #cbd5e1; }
+    .cj-vuelo-corr { font-family: ui-monospace, monospace; color: #64748b; }
+    .cj-vuelo-tiempo {
+      font-weight: 800; margin-left: auto;
+    }
+    .cj-vuelo-tiempo.cj-vuelo-tiempo-ok { color: #86efac; }
+    .cj-vuelo-tiempo.cj-vuelo-tiempo-warn { color: #fcd34d; }
+    .cj-vuelo-tiempo.cj-vuelo-tiempo-critical { color: #fca5a5; animation: cjVueloCriticalPulse 1s ease-in-out infinite; }
+    .cj-vuelo-reasignado {
+      background: rgba(168,85,247,.18);
+      color: #d8b4fe;
+      border: 1px solid rgba(168,85,247,.4);
+      padding: 1px 6px; border-radius: 99px;
+      font-size: 9px; font-weight: 800;
+    }
+    .cj-vuelo-msg {
+      font-size: 10.5px; color: #cbd5e1;
+      background: rgba(15,23,42,.5);
+      border: 1px dashed rgba(6,182,212,.3);
+      border-radius: 6px;
+      padding: 5px 8px;
+      margin-top: 4px;
+      font-style: italic;
+    }
+    .cj-vuelo-actions {
+      display: flex; gap: 6px; margin-top: 8px;
+    }
+    .cj-vuelo-btn {
+      flex: 1; padding: 6px 8px;
+      border-radius: 7px; cursor: pointer;
+      font-size: 11px; font-weight: 700;
+      transition: all .15s;
+    }
+    .cj-vuelo-btn-reasignar {
+      background: rgba(168,85,247,.15);
+      border: 1px solid rgba(168,85,247,.4);
+      color: #d8b4fe;
+    }
+    .cj-vuelo-btn-reasignar:hover { background: rgba(168,85,247,.3); }
+    .cj-vuelo-btn-cancelar {
+      background: rgba(239,68,68,.12);
+      border: 1px solid rgba(239,68,68,.4);
+      color: #fca5a5;
+    }
+    .cj-vuelo-btn-cancelar:hover { background: rgba(239,68,68,.25); }
+    /* Recientes — compactos */
+    .cj-vuelo-recientes-wrap summary { list-style: none; outline: none; }
+    .cj-vuelo-recientes-wrap summary::-webkit-details-marker { display: none; }
+    .cj-vuelo-recientes-list {
+      display: flex; flex-direction: column; gap: 4px;
+      margin-top: 6px;
+    }
+    .cj-vuelo-reciente {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 10px; border-radius: 7px;
+      font-size: 11px;
+      background: rgba(15,23,42,.5);
+      border: 1px solid #1e293b;
+    }
+    .cj-vuelo-reciente.reciente-ok {
+      border-color: rgba(16,185,129,.4);
+      background: rgba(16,185,129,.06);
+    }
+    .cj-vuelo-reciente.reciente-warn {
+      border-color: rgba(245,158,11,.4);
+      background: rgba(245,158,11,.05);
+    }
+    .cj-vuelo-reciente-estado {
+      font-weight: 800; min-width: 80px;
+    }
+    .cj-vuelo-reciente.reciente-ok .cj-vuelo-reciente-estado { color: #6ee7b7; }
+    .cj-vuelo-reciente.reciente-warn .cj-vuelo-reciente-estado { color: #fcd34d; }
+    .cj-vuelo-reciente.reciente-info .cj-vuelo-reciente-estado { color: #94a3b8; }
+    .cj-vuelo-reciente strong { color: #e2e8f0; flex: 1; min-width: 0; }
+    .cj-vuelo-reciente-monto { color: #fbbf24; font-weight: 700; }
+    .cj-vuelo-reciente-cajero { color: #94a3b8; font-size: 10px; }
+
     .cj-asignar-inline-hint {
       font-size: 10.5px; color: #64748b; padding: 8px 10px;
       background: rgba(15,23,42,.5); border-radius: 8px;
@@ -11099,6 +11270,11 @@
           </div>
           <div id="cjCajasGrid" class="cj-cajas-grid">
             <p class="text-slate-500 text-xs text-center py-6 col-span-full">Sin cajas en esta fecha</p>
+          </div>
+
+          <!-- [v2.41.87] Panel "Cobros en vuelo" + recientes -->
+          <div id="cjEnVueloPanel" class="cj-vuelo-panel hidden">
+            <!-- inyectado por _cjRenderEnVuelo -->
           </div>
 
           <!-- [v41.1] BARAJA DE CRÉDITOS — solo cartas flotantes (sin cuadro contenedor).

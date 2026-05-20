@@ -1312,10 +1312,50 @@ function meAsignarCobroCajero(params) {
     idVenta:        params.idVenta,
     cajaDestino:    params.cajaDestino,
     metodoSugerido: params.metodoSugerido,
+    // [v2.41.86/87] Tiempo límite + mensaje opcional al cajero
+    horasTTL:       parseInt(params.horasTTL, 10) || 1,
+    mensajeAdmin:   String(params.mensajeAdmin || '').substring(0, 140),
     auth:           _meAuthFromMos(params),
     adminAuth: {
       nombre: aud.usuario || 'admin-MOS',
       rol:    aud.rol     || 'ADMIN',
+      via:    'PIN_8DIG'
+    }
+  });
+}
+
+// [v2.41.87] Bridge para cobros en vuelo + cancelar + reasignar
+function meCobrosEnVuelo() {
+  return _meBridgeGet({ accion: 'cobros_en_vuelo_admin' });
+}
+
+function meCancelarCobroAsignado(params) {
+  if (!params.idCobro) return { ok: false, error: 'idCobro requerido' };
+  var aud = params._audit || {};
+  return _meBridgeEvento('CANCELAR_COBRO_ASIGNADO', {
+    idCobro:   params.idCobro,
+    razon:     String(params.razon || ''),
+    adminAuth: {
+      nombre: (params.adminAuth && params.adminAuth.nombre) || aud.usuario || 'admin-MOS',
+      rol:    (params.adminAuth && params.adminAuth.rol)    || aud.rol     || 'ADMIN',
+      via:    'PIN_8DIG'
+    }
+  });
+}
+
+function meReasignarCobroAsignado(params) {
+  if (!params.idCobro)     return { ok: false, error: 'idCobro requerido' };
+  if (!params.cajaDestino) return { ok: false, error: 'cajaDestino requerida' };
+  var aud = params._audit || {};
+  return _meBridgeEvento('REASIGNAR_COBRO_ASIGNADO', {
+    idCobro:        params.idCobro,
+    cajaDestino:    params.cajaDestino,
+    metodoSugerido: params.metodoSugerido,
+    horasTTL:       params.horasTTL,
+    mensajeAdmin:   params.mensajeAdmin,
+    adminAuth: {
+      nombre: (params.adminAuth && params.adminAuth.nombre) || aud.usuario || 'admin-MOS',
+      rol:    (params.adminAuth && params.adminAuth.rol)    || aud.rol     || 'ADMIN',
       via:    'PIN_8DIG'
     }
   });
