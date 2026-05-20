@@ -17970,10 +17970,19 @@ const MOS = (() => {
     if (inpMsg) inpMsg.value = '';
     _cjUpdAsignarOkBtn();
 
-    // Scroll suave al panel
+    // [v2.41.88] Scroll dentro de la carta (ahora tiene overflow-y) hasta el
+    // footer del panel — así el botón "Enviar a cajero" queda visible aunque
+    // el ticket tenga muchísimos productos.
     setTimeout(() => {
-      try { panel.scrollIntoView({ behavior: 'smooth', block: 'end' }); } catch(_){}
-    }, 100);
+      try {
+        const card = document.querySelector('#modalDetalleCarta .cj-detalle-card');
+        if (card) {
+          card.scrollTo({ top: card.scrollHeight, behavior: 'smooth' });
+        } else {
+          panel.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+      } catch(_){}
+    }, 150);
   }
 
   function cjCerrarAsignar(ev) {
