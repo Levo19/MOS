@@ -2002,6 +2002,32 @@
       transform: scale(1.1);
       filter: drop-shadow(0 0 6px rgba(6,182,212,.6));
     }
+    /* [v2.41.86] Chips de tiempo (TTL) — 1h default · 2h · 4h · 6h */
+    .cj-asignar-inline-ttls {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
+    }
+    .cj-asignar-ttl-btn {
+      padding: 10px 4px; background: linear-gradient(135deg, #0f172a, #060d1f);
+      border: 1.5px solid #334155; border-radius: 10px; cursor: pointer;
+      color: #cbd5e1; font-weight: 800;
+      transition: all .2s cubic-bezier(.34,1.56,.64,1);
+      display: flex; flex-direction: column; align-items: center; gap: 2px;
+    }
+    .cj-asignar-ttl-num { font-size: 16px; }
+    .cj-asignar-ttl-lbl { font-size: 8.5px; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
+    .cj-asignar-ttl-btn:hover {
+      border-color: #f59e0b; transform: translateY(-2px);
+    }
+    .cj-asignar-ttl-btn.is-active {
+      border-color: #f59e0b;
+      background: linear-gradient(135deg, rgba(245,158,11,.18), rgba(245,158,11,.04));
+      color: #fcd34d;
+      box-shadow: 0 0 0 2px rgba(245,158,11,.35), 0 6px 16px -4px rgba(245,158,11,.4);
+    }
+    .cj-asignar-ttl-btn.is-active .cj-asignar-ttl-num {
+      color: #fbbf24;
+      text-shadow: 0 0 8px rgba(251,191,36,.5);
+    }
     .cj-asignar-inline-hint {
       font-size: 10.5px; color: #64748b; padding: 8px 10px;
       background: rgba(15,23,42,.5); border-radius: 8px;

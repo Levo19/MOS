@@ -17684,7 +17684,32 @@ const MOS = (() => {
           </button>
         </div>
       </div>
-      <p class="cj-asignar-inline-hint">💡 El cajero recibirá un push. El monto entra como INGRESO a su caja, no como nueva venta.</p>
+      <!-- [v2.41.86] Paso 3: tiempo límite con chips rápidos -->
+      <div class="cj-asignar-inline-section">
+        <label class="cj-asignar-inline-label">
+          <span class="cj-asignar-inline-step">3</span>
+          <span>Tiempo límite para cobrar</span>
+        </label>
+        <div class="cj-asignar-inline-ttls">
+          <button data-ttl="1" onclick="MOS.cjSetTTLAsignar(1)" class="cj-asignar-ttl-btn is-active">
+            <span class="cj-asignar-ttl-num">1h</span>
+            <span class="cj-asignar-ttl-lbl">por defecto</span>
+          </button>
+          <button data-ttl="2" onclick="MOS.cjSetTTLAsignar(2)" class="cj-asignar-ttl-btn">
+            <span class="cj-asignar-ttl-num">2h</span>
+            <span class="cj-asignar-ttl-lbl">relajado</span>
+          </button>
+          <button data-ttl="4" onclick="MOS.cjSetTTLAsignar(4)" class="cj-asignar-ttl-btn">
+            <span class="cj-asignar-ttl-num">4h</span>
+            <span class="cj-asignar-ttl-lbl">media jornada</span>
+          </button>
+          <button data-ttl="6" onclick="MOS.cjSetTTLAsignar(6)" class="cj-asignar-ttl-btn">
+            <span class="cj-asignar-ttl-num">6h</span>
+            <span class="cj-asignar-ttl-lbl">todo el turno</span>
+          </button>
+        </div>
+      </div>
+      <p class="cj-asignar-inline-hint">💡 El cajero recibirá un push. El monto entra como INGRESO a su caja. <strong>Si no se cobra en el tiempo elegido, el ticket vuelve automáticamente a estado CRÉDITO.</strong></p>
       <div class="cj-asignar-inline-footer">
         <button onclick="MOS.cjCerrarAsignar()" class="cj-btn cj-btn-secondary">Cancelar</button>
         <button id="cjAsignarOkBtn" onclick="MOS.cjConfirmarAsignar()" class="cj-btn cj-btn-primary" disabled>
@@ -17725,6 +17750,7 @@ const MOS = (() => {
       }
     }
     cjSetMetodoAsignar('EFECTIVO');
+    cjSetTTLAsignar(1); // [v2.41.86] Default 1h
     _cjUpdAsignarOkBtn();
 
     // Scroll suave al panel
@@ -17775,16 +17801,28 @@ const MOS = (() => {
     btn.disabled = !(_cjCreditosState.asignarCaja && _cjCreditosState.asignarMetodo);
   }
 
+  // [v2.41.86] Setea el TTL del cobro (1h default · 2h · 4h · 6h)
+  function cjSetTTLAsignar(horas) {
+    _cjCreditosState.asignarTTL = parseInt(horas, 10) || 1;
+    document.querySelectorAll('.cj-asignar-ttl-btn').forEach(b => {
+      b.classList.toggle('is-active', parseInt(b.dataset.ttl, 10) === _cjCreditosState.asignarTTL);
+    });
+    try { _finBeep?.('tap'); } catch(_){}
+  }
+
   async function cjConfirmarAsignar() {
     const ctx = _cjCreditosState.asignarCtx;
     if (!ctx || !_cjCreditosState.asignarCaja || !_cjCreditosState.asignarMetodo) return;
     const btn = $('cjAsignarOkBtn');
     if (btn) { btn.disabled = true; btn.textContent = '⌛ Enviando...'; }
     try {
+      // [v2.41.86] Pasa horasTTL al backend (default 1h)
+      const horasTTL = parseInt(_cjCreditosState.asignarTTL, 10) || 1;
       const r = await API.post('meAsignarCobroCajero', {
         idVenta:        ctx.idVenta,
         cajaDestino:    _cjCreditosState.asignarCaja,
-        metodoSugerido: _cjCreditosState.asignarMetodo
+        metodoSugerido: _cjCreditosState.asignarMetodo,
+        horasTTL:       horasTTL
       });
       const d = (r && r.data) ? r.data : (r || {});
       // [v2.41.56] Animación de vuelo en la carta de la mesa + cerrar panel
@@ -17796,7 +17834,8 @@ const MOS = (() => {
         }
       } catch(_){}
       try { _finBeep?.('success'); } catch(_){}
-      toast('✈ Enviado a ' + (d.cajeroDestino || 'cajero') + ' · esperando confirmación', 'success');
+      const ttlMsg = d.horasTTL ? ` · vence en ${d.horasTTL}h` : '';
+      toast('✈ Enviado a ' + (d.cajeroDestino || 'cajero') + ttlMsg + ' · si no cobra, vuelve a CRÉDITO', 'success');
       cjCerrarAsignar();
       // Cerrar también modal de detalle (la carta voló, ya no hay qué mostrar)
       setTimeout(() => {
@@ -29139,7 +29178,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     cjRepartirMano, cjCerrarMesa,
     cjAbrirDetalleCarta, cjCerrarDetalleCarta, cjAbrirAsignarDesdeDetalle,
     cjAbrirAsignar, cjCerrarAsignar,
-    cjSetMetodoAsignar, cjSetCajaAsignar, cjConfirmarAsignar,
+    cjSetMetodoAsignar, cjSetCajaAsignar, cjSetTTLAsignar, cjConfirmarAsignar,
     // F2 — Acciones editables sobre tickets
     cjAbrirAccionesTicket, _tkAccion,
     _tkCobrarSetMetodo, _tkCobrarSetCaja, _tkCobrarValidarMixto, _tkCobrarConfirmar,
