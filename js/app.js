@@ -22238,6 +22238,31 @@ const MOS = (() => {
     } catch(e) { toast('Error: ' + (e.message || e), 'error'); }
   }
 
+  // [v2.41.94] OCR masivo retroactivo del mes — procesa todas las fotos
+  // de boletas/facturas de proveedor sin OCR. Muestra progress y stats.
+  async function tribOCRMasivo() {
+    const auth = await pedirAuth({ accion: 'TRIBUTARIO_OCR_MASIVO', refDocumento: _tribState.mes + '/' + _tribState.anio });
+    if (!auth) return;
+    if (!confirm('¿Procesar con Claude todas las fotos de boletas/facturas SIN OCR del mes ' + _tribState.mes + '/' + _tribState.anio + '?\n\nPuede tardar 1-2 minutos (30 guías ≈ 60s).')) return;
+    toast('🤖 Procesando OCR del mes... esperá 1-2 min', 'info');
+    try {
+      const res = await API.post('tribOCRMasivo', {
+        mes: _tribState.mes, anio: _tribState.anio, soloSinProcesar: true
+      });
+      const s = res?.data || res || {};
+      if (s.ok || s.procesadas !== undefined) {
+        toast('✓ OCR: ' + (s.procesadas || 0) + ' procesadas · ' + (s.conIGV || 0) + ' con IGV (' + _tribFmtSoles(s.totalIGVRecuperado || 0) + ')' +
+              (s.sinIGV ? ' · ' + s.sinIGV + ' sin IGV' : '') +
+              (s.ilegibles ? ' · ' + s.ilegibles + ' ilegibles' : '') +
+              (s.errores ? ' · ' + s.errores + ' errores' : ''), 'success');
+        _finBeep && _finBeep('success');
+      } else {
+        toast('OCR masivo falló: ' + (res?.error || 'sin detalle'), 'warn');
+      }
+      tribCargar(); // refresh KPIs con el IGV nuevo
+    } catch(e) { toast('Error: ' + (e.message || e), 'error'); }
+  }
+
   async function tribLimpiarHuerfanas() {
     const auth = await pedirAuth({ accion: 'TRIBUTARIO_LIMPIAR_HUERFANAS', refDocumento: 'global' });
     if (!auth) return;
@@ -29989,6 +30014,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     tribLimpiarHuerfanas, tribAbrirHistorico,
     // [v2.41.93] Tributario polish
     tribToggleAyuda, _tribPrecargarBoot,
+    // [v2.41.94] OCR masivo retroactivo
+    tribOCRMasivo,
     // F2 — Acciones editables sobre tickets
     cjAbrirAccionesTicket, _tkAccion,
     _tkCobrarSetMetodo, _tkCobrarSetCaja, _tkCobrarValidarMixto, _tkCobrarConfirmar,

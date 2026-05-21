@@ -141,7 +141,13 @@ var _AUTH_CATALOGO = {
   'ANULAR_ENVASADO':              { tier: 2, label: 'Anular envasado' },
   'EDITAR_ENVASADO':              { tier: 1, label: 'Editar envasado' },
   'APROBAR_DISPOSITIVO_INSITU':   { tier: 2, label: 'Aprobar dispositivo' },
-  'PROCESAR_MERMAS':              { tier: 2, label: 'Procesar mermas' }
+  'PROCESAR_MERMAS':              { tier: 2, label: 'Procesar mermas' },
+  // === Centro Tributario (admin/master) ===
+  'TRIBUTARIO_LIMPIAR_HUERFANAS': { tier: 2, label: 'Limpiar ventas huérfanas' },
+  'TRIBUTARIO_RECONCILIAR_TODOS': { tier: 2, label: 'Reconciliar CPE con SUNAT' },
+  'TRIBUTARIO_REINTENTAR_CPE':    { tier: 2, label: 'Reintentar CPE individual' },
+  'TRIBUTARIO_REPROCESAR_OCR':    { tier: 1, label: 'Reprocesar OCR factura' },
+  'TRIBUTARIO_OCR_MASIVO':        { tier: 2, label: 'OCR masivo del mes' }
 };
 function _inferirTierAccion(accion) {
   var x = _AUTH_CATALOGO[String(accion || '').toUpperCase()];

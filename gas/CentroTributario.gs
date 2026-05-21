@@ -136,6 +136,21 @@ function tribReprocesarOCR(params) {
 }
 
 // ============================================================
+// [v2.41.94] tribOCRMasivo — corre OCR sobre TODAS las guías sin OCR
+// del mes especificado. Útil para arranque del módulo (procesar fotos
+// históricas) o mensual.
+// params: { mes, anio, soloSinProcesar: bool (default true) }
+// ============================================================
+function tribOCRMasivo(params) {
+  return _whBridgeGet({
+    action: 'procesarOCRMasivoMes',
+    mes: params.mes,
+    anio: params.anio || params.año,
+    soloSinProcesar: params.soloSinProcesar !== false
+  });
+}
+
+// ============================================================
 // tribHistorico12meses — datos para chart histórico
 // ============================================================
 function tribHistorico12meses() {
