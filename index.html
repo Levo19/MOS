@@ -2366,6 +2366,147 @@
     }
     .trib-btn-mini:hover { background: rgba(59,130,246,.3); color: #fff; }
 
+    /* Tooltip ⓘ inline para explicar cada KPI */
+    .trib-tip {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 14px; height: 14px; border-radius: 50%;
+      background: rgba(148,163,184,.2); color: #94a3b8;
+      font-size: 9px; font-weight: 900; cursor: help;
+      margin-left: 4px; transition: all .15s;
+      font-style: normal;
+    }
+    .trib-tip:hover {
+      background: rgba(251,191,36,.3); color: #fbbf24;
+      transform: scale(1.15);
+    }
+    .trib-tip:hover::after {
+      content: attr(data-tip);
+      position: absolute; max-width: 280px;
+      background: #0f172a; color: #e2e8f0;
+      padding: 8px 12px; border-radius: 8px;
+      font-size: 11px; font-weight: 500; line-height: 1.4;
+      letter-spacing: 0;
+      box-shadow: 0 8px 24px rgba(0,0,0,.4);
+      border: 1px solid #475569;
+      z-index: 100;
+      margin-top: 18px; margin-left: -120px;
+      animation: tribTipFade .2s ease-out;
+      white-space: normal;
+      pointer-events: none;
+    }
+    @keyframes tribTipFade {
+      0%   { opacity: 0; transform: translateY(-4px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Botón ? grande del header */
+    .trib-help-btn {
+      width: 26px; height: 26px; border-radius: 50%;
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      color: #422006; font-size: 14px; font-weight: 900;
+      border: none; cursor: pointer; margin-left: 4px;
+      box-shadow: 0 2px 8px rgba(251,191,36,.4);
+      transition: transform .15s;
+    }
+    .trib-help-btn:hover { transform: scale(1.1) rotate(8deg); }
+    .trib-help-close {
+      background: transparent; border: none; color: #94a3b8;
+      font-size: 18px; cursor: pointer;
+    }
+    .trib-help-close:hover { color: #fff; }
+
+    /* Panel de ayuda expandible */
+    .trib-ayuda-panel {
+      background: linear-gradient(135deg, rgba(251,191,36,.06), rgba(245,158,11,.03));
+      border: 1px solid rgba(251,191,36,.25);
+      border-radius: 14px; padding: 14px 16px; margin-bottom: 14px;
+      animation: tribAyudaSlide .35s cubic-bezier(.16,1,.3,1) both;
+    }
+    @keyframes tribAyudaSlide {
+      0%   { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; }
+      100% { opacity: 1; max-height: 600px; }
+    }
+    .trib-ayuda-header {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 13px; color: #fbbf24; margin-bottom: 8px;
+    }
+    .trib-ayuda-body {
+      font-size: 11.5px; color: #cbd5e1; line-height: 1.55;
+    }
+    .trib-ayuda-row { padding: 6px 0; border-bottom: 1px solid rgba(251,191,36,.1); }
+    .trib-ayuda-row:last-child { border-bottom: none; }
+    .trib-ayuda-row strong { color: #fde047; }
+    .trib-ayuda-row.trib-ayuda-tip {
+      background: rgba(52,211,153,.08); border-radius: 8px;
+      padding: 8px 12px; margin-top: 6px; border: 1px solid rgba(52,211,153,.2);
+    }
+    .trib-ayuda-row.trib-ayuda-tip strong { color: #34d399; }
+    .trib-ayuda-row code {
+      background: rgba(15,23,42,.7); padding: 1px 6px; border-radius: 4px;
+      font-size: 10px; color: #fbbf24;
+    }
+
+    /* Histórico chart modal */
+    .trib-hist-modal {
+      position: fixed; inset: 0; z-index: 9000;
+      background: rgba(0,0,0,.75); backdrop-filter: blur(6px);
+      display: flex; align-items: center; justify-content: center; padding: 16px;
+    }
+    .trib-hist-card {
+      background: linear-gradient(135deg, #0f172a, #1e293b);
+      border: 1px solid #475569; border-radius: 18px;
+      padding: 20px 24px; max-width: 720px; width: 100%;
+      max-height: 92vh; overflow-y: auto;
+      animation: tribAyudaSlide .35s ease-out both;
+    }
+    .trib-hist-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+      margin-bottom: 12px;
+    }
+    .trib-hist-stat {
+      background: rgba(15,23,42,.5); padding: 10px;
+      border-radius: 10px; text-align: center; border: 1px solid #334155;
+    }
+    .trib-hist-stat-lbl { font-size: 9.5px; color: #94a3b8; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .04em; }
+    .trib-hist-stat-val { font-size: 1.15rem; font-weight: 900;
+      color: #f1f5f9; font-variant-numeric: tabular-nums; margin-top: 2px; }
+    .trib-hist-chart {
+      background: rgba(15,23,42,.4); border-radius: 12px; padding: 12px;
+      margin: 12px 0; border: 1px solid #334155;
+    }
+    .trib-hist-bar-row {
+      display: flex; align-items: center; gap: 8px; padding: 5px 0;
+      font-size: 10.5px;
+    }
+    .trib-hist-bar-mes { width: 50px; color: #94a3b8; font-weight: 700; }
+    .trib-hist-bar-cont {
+      flex: 1; height: 22px; background: rgba(15,23,42,.7); border-radius: 6px;
+      position: relative; overflow: hidden;
+    }
+    .trib-hist-bar-favor, .trib-hist-bar-pagar {
+      position: absolute; top: 1px; height: 10px; border-radius: 4px;
+      transition: width .8s cubic-bezier(.16,1,.3,1);
+    }
+    .trib-hist-bar-favor {
+      background: linear-gradient(90deg, #10b981, #34d399); top: 1px;
+    }
+    .trib-hist-bar-pagar {
+      background: linear-gradient(90deg, #f59e0b, #fbbf24); top: 12px;
+    }
+    .trib-hist-bar-val {
+      width: 95px; text-align: right; font-weight: 700;
+      color: #cbd5e1; font-variant-numeric: tabular-nums;
+    }
+    .trib-hist-bar-val small { color: #94a3b8; font-weight: 500; }
+    .trib-hist-leg {
+      display: flex; gap: 16px; justify-content: center; padding-top: 8px;
+      border-top: 1px solid #334155; margin-top: 8px;
+      font-size: 10.5px; color: #94a3b8;
+    }
+    .trib-hist-leg-item { display: flex; align-items: center; gap: 6px; }
+    .trib-hist-leg-dot { width: 10px; height: 10px; border-radius: 50%; }
+
     /* [v2.41.91] Confetti micro para cruces de hitos S/ 1k / 2k / 3k */
     .cj-confetti-particle {
       position: absolute;
@@ -10846,6 +10987,7 @@
         <div>
           <h1 class="text-xl font-black text-slate-100 flex items-center gap-2">
             <span class="text-2xl">📊</span> Centro Tributario
+            <button onclick="MOS.tribToggleAyuda()" class="trib-help-btn" title="¿Cómo entender este panel?">?</button>
           </h1>
           <p id="tribSub" class="text-xs text-slate-500">Cargando balance del mes...</p>
         </div>
@@ -10868,17 +11010,51 @@
       </div>
 
       <div id="tribContent" class="hidden">
+        <!-- Panel de ayuda expandible (oculto por defecto, se abre con tap ?) -->
+        <div id="tribAyuda" class="trib-ayuda-panel hidden">
+          <div class="trib-ayuda-header">
+            <strong>💡 ¿Cómo leer este panel?</strong>
+            <button onclick="MOS.tribToggleAyuda()" class="trib-help-close">✕</button>
+          </div>
+          <div class="trib-ayuda-body">
+            <div class="trib-ayuda-row">
+              <strong>💚 IGV A FAVOR:</strong> total del IGV que <em>pagaste</em> a tus proveedores este mes (en sus facturas). SUNAT te lo devuelve restándolo del IGV que tienes que pagar. Se calcula automáticamente leyendo las fotos de boletas/facturas en las guías INGRESO_PROVEEDOR del almacén.
+            </div>
+            <div class="trib-ayuda-row">
+              <strong>💰 IGV A PAGAR:</strong> total del IGV que <em>cobraste</em> a tus clientes en boletas y facturas emitidas (CPE). Es el IGV bruto que deberías a SUNAT antes de restar el IGV a favor.
+            </div>
+            <div class="trib-ayuda-row">
+              <strong>⚖ BALANCE NETO:</strong> <code>IGV a pagar − IGV a favor</code>. Es lo que realmente le debes a SUNAT este mes. Si sale negativo, tienes <em>crédito fiscal</em> arrastrable al mes siguiente.
+            </div>
+            <div class="trib-ayuda-row">
+              <strong>📈 RENTA MYPE:</strong> 1.5% de tus ventas. Régimen MYPE Tributario. Se declara con el PDT 621 junto con el IGV cada mes.
+            </div>
+            <div class="trib-ayuda-row">
+              <strong>🧾 ESTADO CPE:</strong> Las boletas y facturas que emitiste van a NubeFact, que las envía a SUNAT. Estados: 🟢 emitidos (SUNAT los aceptó) · 🟡 pendientes (NubeFact reintenta solo) · 🔴 error (necesitan tu atención).
+            </div>
+            <div class="trib-ayuda-row trib-ayuda-tip">
+              <strong>📌 TIP:</strong> Subir todas las fotos de boletas de proveedores en cada guía. El sistema lee el IGV automáticamente con IA (Claude). Si la foto está borrosa o la boleta no tiene IGV, lo marca pero no la cuenta.
+            </div>
+          </div>
+        </div>
+
         <!-- 2 cards grandes lado a lado -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
           <div class="trib-kpi-card trib-kpi-favor">
-            <div class="trib-kpi-label">💚 IGV A FAVOR</div>
+            <div class="trib-kpi-label">
+              💚 IGV A FAVOR
+              <span class="trib-tip" data-tip="Lo que pagaste de IGV a tus proveedores. SUNAT te lo devuelve restándolo del IGV que pagas.">ⓘ</span>
+            </div>
             <div class="trib-kpi-monto" id="tribIGVFavor">S/ 0.00</div>
             <div class="trib-kpi-sub" id="tribIGVFavorSub">— guías leídas</div>
             <div class="trib-kpi-progress"><div class="trib-kpi-progress-fill bg-emerald-500" id="tribIGVFavorBar" style="width:0%"></div></div>
             <button onclick="MOS.tribAbrirIGVFavor()" class="trib-kpi-btn">Ver detalle →</button>
           </div>
           <div class="trib-kpi-card trib-kpi-pagar">
-            <div class="trib-kpi-label">💰 IGV A PAGAR</div>
+            <div class="trib-kpi-label">
+              💰 IGV A PAGAR
+              <span class="trib-tip" data-tip="IGV bruto que cobraste a clientes en boletas y facturas. Solo CPE emitidos cuentan.">ⓘ</span>
+            </div>
             <div class="trib-kpi-monto" id="tribIGVPagar">S/ 0.00</div>
             <div class="trib-kpi-sub" id="tribIGVPagarSub">— CPE emitidos</div>
             <div class="trib-kpi-progress"><div class="trib-kpi-progress-fill bg-amber-500" id="tribIGVPagarBar" style="width:0%"></div></div>
@@ -10888,7 +11064,10 @@
 
         <!-- Balance neto destacado -->
         <div class="trib-balance-card">
-          <div class="trib-balance-label">⚖ BALANCE NETO IGV (a pagar SUNAT)</div>
+          <div class="trib-balance-label">
+            ⚖ BALANCE NETO IGV (a pagar SUNAT)
+            <span class="trib-tip" data-tip="Lo que realmente debes pagar a SUNAT este mes. Si es negativo, tienes crédito fiscal arrastrable al próximo mes.">ⓘ</span>
+          </div>
           <div class="trib-balance-monto" id="tribBalanceNeto">S/ 0.00</div>
           <div class="trib-balance-sub" id="tribBalanceSub">Vence en — días · — del — del mes</div>
           <div class="trib-balance-bar"><div class="trib-balance-bar-fill" id="tribPeriodoBar" style="width:0%"></div></div>

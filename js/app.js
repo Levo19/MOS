@@ -301,6 +301,12 @@ const MOS = (() => {
           } catch(_){}
         }).catch(() => null));
 
+        // [v2.41.93] 2b) Centro Tributario — precarga del mes en curso con
+        // efecto de loading en el icono del menú (igual que otros módulos).
+        if (typeof _tribPrecargarBoot === 'function') {
+          tasks.push(_tribPrecargarBoot().catch(() => null));
+        }
+
         // 3) Finanzas rango 7d → cache mos_fin_rango_<hoy>
         try {
           const desde7 = (typeof _fechaOffset === 'function') ? _fechaOffset(hoy, -6) : null;
@@ -21997,11 +22003,32 @@ const MOS = (() => {
     const parts = (sel?.value || '').split('|');
     const mes  = parseInt(parts[0], 10) || (new Date().getMonth() + 1);
     const anio = parseInt(parts[1], 10) || new Date().getFullYear();
+    const esMismoMes = _tribState.data && _tribState.mes === mes && _tribState.anio === anio;
     _tribState.mes = mes; _tribState.anio = anio;
     _tribState.busy = true;
 
+    // [v2.41.93] Si ya tenemos data precargada del mismo mes (de boot),
+    // renderizar al instante y refrescar en background — sensación instantánea.
+    if (esMismoMes) {
+      _tribRender(_tribState.data);
+      $('tribLoading').classList.add('hidden');
+      $('tribContent').classList.remove('hidden');
+      // Refresh silencioso en bg
+      iconBusy('tributario', true);
+      try {
+        const res = await API.post('tribResumenMes', { mes, anio });
+        const d = (res && res.data) ? res.data : (res || {});
+        _tribState.data = d;
+        _tribRender(d);
+      } catch(_) {}
+      finally { iconBusy('tributario', false); _tribState.busy = false; }
+      return;
+    }
+
+    // Sin cache: loading visible
     $('tribLoading').classList.remove('hidden');
     $('tribContent').classList.add('hidden');
+    iconBusy('tributario', true);
 
     try {
       const res = await API.post('tribResumenMes', { mes, anio });
@@ -22014,6 +22041,7 @@ const MOS = (() => {
       console.error('[Tributario] cargar:', e);
       $('tribLoading').textContent = '❌ Error cargando: ' + (e.message || e);
     } finally {
+      iconBusy('tributario', false);
       _tribState.busy = false;
     }
   }
@@ -22222,9 +22250,130 @@ const MOS = (() => {
     } catch(e) { toast('Error: ' + (e.message || e), 'error'); }
   }
 
+  // [v2.41.93] Histórico 12 meses con chart de barras dual + stats agregados
   async function tribAbrirHistorico() {
-    toast('Histórico 12 meses · próxima iteración', 'info');
-    // Placeholder — implementación visual con chart en v2.41.93
+    // Construir modal
+    let modal = $('tribHistModal');
+    if (modal) modal.remove();
+    modal = document.createElement('div');
+    modal.id = 'tribHistModal';
+    modal.className = 'trib-hist-modal';
+    modal.innerHTML = `
+      <div class="trib-hist-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <h2 style="font-size:1.2rem;font-weight:900;color:#f1f5f9">📊 Histórico 12 meses</h2>
+          <button onclick="document.getElementById('tribHistModal').remove()" style="background:transparent;border:none;color:#94a3b8;font-size:1.5rem;cursor:pointer">✕</button>
+        </div>
+        <div id="tribHistContent">
+          <div class="text-center py-8 text-slate-500 text-sm">
+            <svg class="w-6 h-6 animate-spin mx-auto mb-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+            Cargando histórico (12 meses)...
+          </div>
+        </div>
+      </div>`;
+    // Click outside cierra
+    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+    document.body.appendChild(modal);
+    _finBeep && _finBeep('expand');
+
+    try {
+      const res = await API.post('tribHistorico12meses', {});
+      const data = (res?.data || res) || [];
+      if (!data.length) {
+        $('tribHistContent').innerHTML = '<div class="text-slate-500 text-center py-6">Sin datos para mostrar</div>';
+        return;
+      }
+      // Stats agregados
+      const totalFavor   = data.reduce((s, m) => s + (m.igvFavor || 0), 0);
+      const totalEmitido = data.reduce((s, m) => s + (m.igvEmitido || 0), 0);
+      const totalNeto    = totalEmitido - totalFavor;
+      const totalVentas  = data.reduce((s, m) => s + (m.ventas || 0), 0);
+      const totalRenta   = data.reduce((s, m) => s + (m.renta || 0), 0);
+      const promVentas   = data.length > 0 ? totalVentas / data.length : 0;
+
+      // Max bar para escalar
+      const maxBar = Math.max(...data.map(m => Math.max(m.igvFavor || 0, m.igvEmitido || 0)), 1);
+
+      const barsHTML = data.map(m => {
+        const wF = Math.round(((m.igvFavor   || 0) / maxBar) * 100);
+        const wP = Math.round(((m.igvEmitido || 0) / maxBar) * 100);
+        return `<div class="trib-hist-bar-row">
+          <div class="trib-hist-bar-mes">${m.label} ${String(m.anio).slice(-2)}</div>
+          <div class="trib-hist-bar-cont">
+            <div class="trib-hist-bar-favor" style="width:${wF}%" title="IGV a favor: ${_tribFmtSoles(m.igvFavor)}"></div>
+            <div class="trib-hist-bar-pagar" style="width:${wP}%" title="IGV a pagar: ${_tribFmtSoles(m.igvEmitido)}"></div>
+          </div>
+          <div class="trib-hist-bar-val">
+            ${_tribFmtSoles(m.balance)}<br><small>${_tribFmtSoles(m.ventas)}</small>
+          </div>
+        </div>`;
+      }).join('');
+
+      $('tribHistContent').innerHTML = `
+        <div class="trib-hist-grid">
+          <div class="trib-hist-stat">
+            <div class="trib-hist-stat-lbl">IGV pagado total</div>
+            <div class="trib-hist-stat-val" style="color:#fbbf24">${_tribFmtSoles(totalNeto)}</div>
+          </div>
+          <div class="trib-hist-stat">
+            <div class="trib-hist-stat-lbl">Ventas total</div>
+            <div class="trib-hist-stat-val">${_tribFmtSoles(totalVentas)}</div>
+          </div>
+          <div class="trib-hist-stat">
+            <div class="trib-hist-stat-lbl">Renta total</div>
+            <div class="trib-hist-stat-val" style="color:#34d399">${_tribFmtSoles(totalRenta)}</div>
+          </div>
+        </div>
+        <div class="trib-hist-chart">
+          ${barsHTML}
+          <div class="trib-hist-leg">
+            <div class="trib-hist-leg-item"><span class="trib-hist-leg-dot" style="background:#34d399"></span>IGV favor</div>
+            <div class="trib-hist-leg-item"><span class="trib-hist-leg-dot" style="background:#fbbf24"></span>IGV emitido</div>
+            <div class="trib-hist-leg-item"><span style="color:#cbd5e1">Balance neto · Ventas mes</span></div>
+          </div>
+        </div>
+        <p style="font-size:11px;color:#64748b;text-align:center;margin-top:8px">
+          Promedio mensual de ventas: <strong style="color:#cbd5e1">${_tribFmtSoles(promVentas)}</strong>
+        </p>`;
+    } catch(e) {
+      $('tribHistContent').innerHTML = '<div class="text-red-400 text-center py-6">❌ ' + (e.message || e) + '</div>';
+    }
+  }
+
+  // [v2.41.93] Toggle panel ayuda
+  function tribToggleAyuda() {
+    const p = $('tribAyuda');
+    if (p) p.classList.toggle('hidden');
+    _finBeep && _finBeep('click');
+  }
+
+  // [v2.41.93] Pre-carga al boot — corre en background al login
+  async function _tribPrecargarBoot() {
+    try {
+      iconBusy('tributario', true);
+      const res = await API.post('tribResumenMes', {});
+      if (res && res.data) {
+        _tribState.data = res.data;
+        _tribState.mes  = res.data.mes;
+        _tribState.anio = res.data.anio;
+        // Badge: si hay alertas (errores CPE u OCR), mostrar en nav
+        const alertas = (res.data.cpeErrores || 0) + (res.data.guiasIlegibles || 0);
+        const badge = $('tribNavBadge');
+        if (badge) {
+          if (alertas > 0) {
+            badge.textContent = String(alertas);
+            badge.classList.remove('hidden');
+            badge.title = alertas + ' CPE/OCR requieren atención';
+          } else {
+            badge.classList.add('hidden');
+          }
+        }
+      }
+    } catch(e) {
+      console.warn('[Tributario precarga]', e.message);
+    } finally {
+      iconBusy('tributario', false);
+    }
   }
 
   async function _loadFinanzas() {
@@ -29838,6 +29987,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _loadTributario, tribCargar, tribAbrirIGVFavor, tribAbrirIGVEmitido,
     tribReprocesarOCR, tribReintentarCPE, tribReconciliarCPEs,
     tribLimpiarHuerfanas, tribAbrirHistorico,
+    // [v2.41.93] Tributario polish
+    tribToggleAyuda, _tribPrecargarBoot,
     // F2 — Acciones editables sobre tickets
     cjAbrirAccionesTicket, _tkAccion,
     _tkCobrarSetMetodo, _tkCobrarSetCaja, _tkCobrarValidarMixto, _tkCobrarConfirmar,
