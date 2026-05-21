@@ -1305,13 +1305,12 @@ function meGetCreditosPendientes(params) {
 function meAsignarCobroCajero(params) {
   if (!params.idVenta)        return { ok: false, error: 'idVenta requerido' };
   if (!params.cajaDestino)    return { ok: false, error: 'cajaDestino requerida' };
-  if (!params.metodoSugerido) return { ok: false, error: 'metodoSugerido requerido' };
-  // El _audit viene de la validación de PIN admin en MOS frontend
+  // [v2.41.90] metodoSugerido ya NO es obligatorio — el cajero elige al cobrar
   var aud = params._audit || {};
   return _meBridgeEvento('ASIGNAR_COBRO_CAJERO', {
     idVenta:        params.idVenta,
     cajaDestino:    params.cajaDestino,
-    metodoSugerido: params.metodoSugerido,
+    metodoSugerido: String(params.metodoSugerido || ''),
     // [v2.41.86/87] Tiempo límite + mensaje opcional al cajero
     horasTTL:       parseInt(params.horasTTL, 10) || 1,
     mensajeAdmin:   String(params.mensajeAdmin || '').substring(0, 140),

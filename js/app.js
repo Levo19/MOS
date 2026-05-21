@@ -17333,8 +17333,29 @@ const MOS = (() => {
         </div>
       </div>`;
     };
+    // [v2.41.90] Hora en formato HH:mm de la fecha de resolución
+    const _horaRes = (iso) => {
+      try {
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return '';
+        return d.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: false });
+      } catch(_) { return ''; }
+    };
+    // [v2.41.90] Cuánto hace que se resolvió ("hace 5min", "hace 1h 12min")
+    const _haceCuanto = (iso) => {
+      try {
+        const ms = Date.now() - new Date(iso).getTime();
+        if (isNaN(ms) || ms < 0) return '';
+        const mins = Math.floor(ms / 60000);
+        if (mins < 1) return 'ahora mismo';
+        if (mins < 60) return 'hace ' + mins + 'min';
+        const h = Math.floor(mins / 60);
+        const m = mins % 60;
+        return 'hace ' + h + 'h' + (m ? ' ' + m + 'min' : '');
+      } catch(_) { return ''; }
+    };
     const cardReciente = (c) => {
-      const estTxt = c.estado === 'COBRADO' ? '✓ Cobrado'
+      const estTxt = c.estado === 'COBRADO' ? '✓ COBRADO'
         : c.estado === 'EXPIRADO' ? '⏰ Expirado'
         : c.estado === 'CANCELADO_ADMIN' ? '⊘ Cancelado'
         : c.estado === 'RECHAZADO' ? '✗ Rechazado'
@@ -17343,13 +17364,26 @@ const MOS = (() => {
       const estClass = c.estado === 'COBRADO' ? 'reciente-ok'
         : c.estado === 'EXPIRADO' || c.estado === 'CANCELADO_ADMIN' ? 'reciente-warn'
         : 'reciente-info';
+      const hora = _horaRes(c.fechaRes);
+      const hace = _haceCuanto(c.fechaRes);
       return `<div class="cj-vuelo-reciente ${estClass}">
         <span class="cj-vuelo-reciente-estado">${estTxt}</span>
         <strong>${_esc(c.cliente || 'VARIOS')}</strong>
         <span class="cj-vuelo-reciente-monto">S/ ${parseFloat(c.monto || 0).toFixed(2)}</span>
-        <span class="cj-vuelo-reciente-cajero">${_esc(c.vendedorDest)}</span>
+        <span class="cj-vuelo-reciente-cajero">👤 ${_esc(c.vendedorDest)}</span>
+        ${hora ? `<span class="cj-vuelo-reciente-hora" title="${_esc(hace)}">🕐 ${hora}</span>` : ''}
       </div>`;
     };
+    // [v2.41.90] Separar cobrados de últimas 4h del resto (no esconder en details)
+    const ahora = Date.now();
+    const _esCobroRecienteHoy = (c) => {
+      try {
+        const t = new Date(c.fechaRes).getTime();
+        return c.estado === 'COBRADO' && (ahora - t) < 4 * 60 * 60 * 1000;
+      } catch(_) { return false; }
+    };
+    const cobradosHoy = recientes.filter(_esCobroRecienteHoy);
+    const otrosRecientes = recientes.filter(c => !_esCobroRecienteHoy(c));
     let html = '';
     if (enVuelo.length) {
       html += `<div class="cj-vuelo-section">
@@ -17362,14 +17396,26 @@ const MOS = (() => {
         </div>
       </div>`;
     }
-    if (recientes.length) {
+    // [v2.41.90] Cobrados hoy: sección destacada, abierta por default
+    if (cobradosHoy.length) {
+      html += `<div class="cj-vuelo-section">
+        <div class="cj-vuelo-section-titulo cj-vuelo-section-cobrados-titulo">
+          💚 Cobrados hoy · <strong>${cobradosHoy.length}</strong>
+          <span class="cj-vuelo-section-hint">huella de auditoría · sin acción requerida</span>
+        </div>
+        <div class="cj-vuelo-recientes-list">
+          ${cobradosHoy.map(cardReciente).join('')}
+        </div>
+      </div>`;
+    }
+    if (otrosRecientes.length) {
       html += `<div class="cj-vuelo-section">
         <details class="cj-vuelo-recientes-wrap">
           <summary class="cj-vuelo-section-titulo cj-vuelo-section-recientes">
-            🕒 Recientes · ${recientes.length} <span class="cj-vuelo-section-hint">click para expandir</span>
+            🕒 Otros recientes · ${otrosRecientes.length} <span class="cj-vuelo-section-hint">click para expandir</span>
           </summary>
           <div class="cj-vuelo-recientes-list">
-            ${recientes.map(cardReciente).join('')}
+            ${otrosRecientes.map(cardReciente).join('')}
           </div>
         </details>
       </div>`;
@@ -17828,7 +17874,7 @@ const MOS = (() => {
 
     _cjCreditosState.asignarCtx = ticket;
     _cjCreditosState.asignarCaja = null;
-    _cjCreditosState.asignarMetodo = 'EFECTIVO';
+    _cjCreditosState.asignarMetodo = ''; // [v2.41.90] ya no se usa
 
     // Sonido apertura panel
     try { _finBeep?.('expand') || _finBeep?.('click'); } catch(_){}
@@ -17868,30 +17914,12 @@ const MOS = (() => {
           </div>
         </div>
       </div>
+      <!-- [v2.41.90] Paso 2: tiempo límite (antes había selector de método
+           pero el cajero igual lo elige al cobrar — quitamos para evitar
+           confusión cuando el admin marca VIRTUAL y el cajero deja EFECTIVO) -->
       <div class="cj-asignar-inline-section">
         <label class="cj-asignar-inline-label">
           <span class="cj-asignar-inline-step">2</span>
-          <span>Método de cobro acordado</span>
-        </label>
-        <div class="cj-asignar-inline-metodos">
-          <button data-metodo="EFECTIVO" onclick="MOS.cjSetMetodoAsignar('EFECTIVO')" class="cj-asignar-metodo-btn is-active">
-            <span class="cj-asignar-metodo-ico">💵</span>
-            <span class="cj-asignar-metodo-lbl">Efectivo</span>
-          </button>
-          <button data-metodo="VIRTUAL" onclick="MOS.cjSetMetodoAsignar('VIRTUAL')" class="cj-asignar-metodo-btn">
-            <span class="cj-asignar-metodo-ico">📱</span>
-            <span class="cj-asignar-metodo-lbl">Virtual</span>
-          </button>
-          <button data-metodo="MIXTO" onclick="MOS.cjSetMetodoAsignar('MIXTO')" class="cj-asignar-metodo-btn">
-            <span class="cj-asignar-metodo-ico">🔀</span>
-            <span class="cj-asignar-metodo-lbl">Mixto</span>
-          </button>
-        </div>
-      </div>
-      <!-- [v2.41.86] Paso 3: tiempo límite con chips rápidos -->
-      <div class="cj-asignar-inline-section">
-        <label class="cj-asignar-inline-label">
-          <span class="cj-asignar-inline-step">3</span>
           <span>Tiempo límite para cobrar</span>
         </label>
         <div class="cj-asignar-inline-ttls">
@@ -17916,14 +17944,14 @@ const MOS = (() => {
       <!-- [v2.41.87] Mensaje opcional al cajero (140 chars) -->
       <div class="cj-asignar-inline-section">
         <label class="cj-asignar-inline-label">
-          <span class="cj-asignar-inline-step">4</span>
+          <span class="cj-asignar-inline-step">3</span>
           <span>Mensaje al cajero (opcional)</span>
         </label>
         <input id="cjAsignarMensaje" type="text" maxlength="140" placeholder="ej: cliente paga exacto, recoge antes de las 4pm..."
                oninput="MOS._cjOnMensajeAsignar(this.value)"
                class="cj-asignar-inline-msg" />
       </div>
-      <p class="cj-asignar-inline-hint">💡 El cajero recibirá un push. El monto entra como <strong>INGRESO ADICIONAL</strong> a su caja (no como nueva venta). <strong>Si no se cobra en el tiempo elegido, el ticket vuelve automáticamente a estado CRÉDITO.</strong></p>
+      <p class="cj-asignar-inline-hint">💡 El cajero recibirá <strong>push + impresión física del ticket</strong> y elige al cobrar si es efectivo · virtual · mixto. El monto entra como <strong>INGRESO ADICIONAL</strong> a su caja. <strong>Si no se cobra en el tiempo elegido, el ticket vuelve automáticamente a estado CRÉDITO.</strong></p>
       <div class="cj-asignar-inline-footer">
         <button onclick="MOS.cjCerrarAsignar()" class="cj-btn cj-btn-secondary">Cancelar</button>
         <button id="cjAsignarOkBtn" onclick="MOS.cjConfirmarAsignar()" class="cj-btn cj-btn-primary" disabled>
@@ -17963,7 +17991,7 @@ const MOS = (() => {
         cajasDiv.innerHTML = '<div class="cj-asignar-inline-empty" style="color:#fca5a5">⚠ Error: ' + _esc(e.message || e) + '</div>';
       }
     }
-    cjSetMetodoAsignar('EFECTIVO');
+    // [v2.41.90] Removido cjSetMetodoAsignar — el método lo elige el cajero
     cjSetTTLAsignar(1); // [v2.41.86] Default 1h
     _cjCreditosState.asignarMensaje = ''; // [v2.41.87] limpiar mensaje
     const inpMsg = document.getElementById('cjAsignarMensaje');
@@ -18024,7 +18052,8 @@ const MOS = (() => {
   function _cjUpdAsignarOkBtn() {
     const btn = $('cjAsignarOkBtn');
     if (!btn) return;
-    btn.disabled = !(_cjCreditosState.asignarCaja && _cjCreditosState.asignarMetodo);
+    // [v2.41.90] Solo requiere caja destino — el método ya no se elige aquí
+    btn.disabled = !_cjCreditosState.asignarCaja;
   }
 
   // [v2.41.86] Setea el TTL del cobro (1h default · 2h · 4h · 6h)
@@ -18043,17 +18072,17 @@ const MOS = (() => {
 
   async function cjConfirmarAsignar() {
     const ctx = _cjCreditosState.asignarCtx;
-    if (!ctx || !_cjCreditosState.asignarCaja || !_cjCreditosState.asignarMetodo) return;
+    if (!ctx || !_cjCreditosState.asignarCaja) return;
     const btn = $('cjAsignarOkBtn');
     if (btn) { btn.disabled = true; btn.textContent = '⌛ Enviando...'; }
     try {
-      // [v2.41.86/87] Pasa horasTTL + mensaje opcional al backend
+      // [v2.41.90] Sin metodoSugerido — el cajero elige al cobrar
       const horasTTL = parseInt(_cjCreditosState.asignarTTL, 10) || 1;
       const mensajeAdmin = (_cjCreditosState.asignarMensaje || '').trim();
       const r = await API.post('meAsignarCobroCajero', {
         idVenta:        ctx.idVenta,
         cajaDestino:    _cjCreditosState.asignarCaja,
-        metodoSugerido: _cjCreditosState.asignarMetodo,
+        metodoSugerido: '', // [v2.41.90] vacío — el cajero decide al cobrar
         horasTTL:       horasTTL,
         mensajeAdmin:   mensajeAdmin
       });
