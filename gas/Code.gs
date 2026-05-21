@@ -318,6 +318,7 @@ function _route(method, e) {
       case 'meHistorialExtra':          return meHistorialExtra(params);
       case 'meDetalleVenta':            return meDetalleVenta(params);
       case 'meCajasAbiertas':           return meCajasAbiertas();
+      case 'meEstadoCajas':             return meEstadoCajas();
       case 'meConsultarCliente':        return meConsultarCliente(params);
       // [v40.3] Sistema de cobro asignado de créditos
       case 'meGetCreditosPendientes':   return meGetCreditosPendientes(params);

@@ -2223,6 +2223,88 @@
     .cj-vuelo-reciente-monto { color: #fbbf24; font-weight: 700; }
     .cj-vuelo-reciente-cajero { color: #94a3b8; font-size: 10px; }
     .cj-vuelo-reciente-hora { color: #cbd5e1; font-size: 10px; font-weight: 600; }
+    /* [v2.41.91] Confetti micro para cruces de hitos S/ 1k / 2k / 3k */
+    .cj-confetti-particle {
+      position: absolute;
+      top: 50%; left: 50%;
+      width: 8px; height: 8px;
+      pointer-events: none; z-index: 50;
+      animation: cjConfettiFall 1.8s ease-out forwards;
+      transform-origin: center;
+    }
+    @keyframes cjConfettiFall {
+      0%   { opacity: 1; transform: translate(0,0) rotate(0deg) scale(1); }
+      100% { opacity: 0; transform: translate(var(--dx,0), var(--dy,140px)) rotate(540deg) scale(.4); }
+    }
+
+    /* [v2.41.91] Balance en vivo dentro de cards de caja ABIERTA */
+    .cj-balance-live {
+      margin: 10px 0 8px;
+      padding: 10px 12px;
+      background: linear-gradient(135deg, rgba(16,185,129,.12), rgba(5,150,105,.06));
+      border: 1px solid rgba(52,211,153,.25);
+      border-left: 3px solid #34d399;
+      border-radius: 12px;
+    }
+    .cj-balance-live-row {
+      display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+    }
+    .cj-balance-live-lbl {
+      font-size: 10px; font-weight: 800; letter-spacing: .08em;
+      color: #6ee7b7; text-transform: uppercase;
+    }
+    .cj-balance-live-monto {
+      font-size: 22px; font-weight: 900; color: #34d399;
+      font-variant-numeric: tabular-nums;
+      transition: color .25s;
+    }
+    .cj-balance-live-monto.bump {
+      animation: cjBalanceBump .4s ease-out;
+    }
+    @keyframes cjBalanceBump {
+      0%   { transform: scale(1);    color: #fbbf24; }
+      50%  { transform: scale(1.12); color: #fde047; }
+      100% { transform: scale(1);    color: #34d399; }
+    }
+    .cj-balance-live-detail {
+      display: flex; flex-wrap: wrap; gap: 6px 10px; margin-top: 4px;
+      font-size: 10px; color: #94a3b8;
+    }
+    .cj-balance-hitos {
+      display: flex; align-items: center; gap: 8px; margin-top: 8px;
+    }
+    .cj-balance-hito-actual {
+      font-size: 11px; font-weight: 800;
+      background: linear-gradient(135deg, #fbbf24, #f59e0b);
+      color: #422006; padding: 3px 8px; border-radius: 99px;
+      box-shadow: 0 0 0 1px rgba(251,191,36,.4), 0 0 12px rgba(251,191,36,.3);
+    }
+    .cj-balance-hito-progress {
+      flex: 1; height: 5px; background: rgba(15,23,42,.5);
+      border-radius: 99px; overflow: hidden; position: relative;
+    }
+    .cj-balance-hito-progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #fbbf24, #f59e0b);
+      transition: width .4s ease;
+      box-shadow: 0 0 8px rgba(251,191,36,.5);
+    }
+    .cj-balance-hito-prox {
+      font-size: 10px; color: #cbd5e1; font-weight: 700;
+    }
+    .cj-balance-alertas {
+      margin-top: 8px;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .cj-balance-alerta {
+      display: flex; align-items: center; gap: 6px;
+      padding: 4px 8px; border-radius: 8px;
+      background: rgba(248,113,113,.12);
+      border: 1px solid rgba(248,113,113,.3);
+      color: #fca5a5;
+      font-size: 10.5px; font-weight: 600;
+    }
+
     /* [v2.41.90] Sección destacada "Cobrados hoy" — verde brillante, no oculta */
     .cj-vuelo-section-cobrados-titulo {
       background: linear-gradient(135deg, rgba(16,185,129,.18), rgba(5,150,105,.12)) !important;

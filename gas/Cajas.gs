@@ -1264,6 +1264,13 @@ function meDetalleVenta(params) {
   return _meBridgeGet({ accion: 'detalle_venta', id_venta: params.idVenta });
 }
 
+// [v2.41.91] Estado completo de cajas con analítica live — usado por el panel
+// "Cajas activas en vivo" del admin/master en /cajas. Proxy al endpoint
+// estado_cajas de ME que ya calcula efectivoEsperado, ventas, extras, etc.
+function meEstadoCajas() {
+  return _meBridgeGet({ accion: 'estado_cajas' });
+}
+
 // ── Cajas abiertas (para selector receptora) ──
 function meCajasAbiertas() {
   var ss;

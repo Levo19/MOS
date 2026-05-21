@@ -16791,6 +16791,65 @@ const MOS = (() => {
     if (esHoy) _cjDetectarTicketsNuevos(abiertas);
   }
 
+  // [v2.41.91] Bloque "Balance en vivo" — solo en cajas ABIERTAS.
+  // Muestra el efectivo esperado calculado (lo que el cajero debería tener
+  // en mano), separación virtual/crédito/por_cobrar, y celebra hitos.
+  function _cjBuildBalanceLive(c) {
+    const inicial = parseFloat(c.montoInicial) || 0;
+    const efectivo = parseFloat(c.efectivo) || 0;
+    const entradas = parseFloat(c.entradas) || 0;
+    const salidas = parseFloat(c.salidas) || 0;
+    const esperado = parseFloat(c.efectivoEsperado) || (inicial + efectivo + entradas - salidas);
+
+    // Hitos S/ 500, 1k, 2k, 3k → emojis crecientes
+    const hitos = [
+      { mark: 3000, emoji: '🏆', label: '3K+' },
+      { mark: 2000, emoji: '🔥', label: '2K+' },
+      { mark: 1000, emoji: '⭐', label: '1K+' },
+      { mark:  500, emoji: '💪', label: '500+' }
+    ];
+    const hitoAlcanzado = hitos.find(h => esperado >= h.mark);
+    const proximoHito = hitos.slice().reverse().find(h => esperado < h.mark);
+    const progresoPct = proximoHito ? Math.min(100, (esperado / proximoHito.mark) * 100) : 100;
+
+    // Anomalías
+    const totalVentas = parseFloat(c.totalVentas) || 0;
+    const anulados = c.anulados || 0;
+    const tickets = Math.max(1, c.tickets || 0);
+    const ratioAnul = anulados / tickets;
+    const alertas = [];
+    if (ratioAnul >= 0.20 && anulados >= 3) alertas.push({ icon: '⚠', txt: anulados + ' anulaciones (' + Math.round(ratioAnul*100) + '%) — revisar' });
+    if (salidas > entradas + 100) alertas.push({ icon: '💸', txt: 'Egresos > ingresos por S/ ' + (salidas - entradas).toFixed(0) });
+
+    return `
+    <div class="cj-balance-live">
+      <div class="cj-balance-live-row">
+        <span class="cj-balance-live-lbl">💚 ESPERADO EN CAJA</span>
+        <span class="cj-balance-live-monto" data-monto="${esperado.toFixed(2)}">S/ ${esperado.toFixed(2)}</span>
+      </div>
+      <div class="cj-balance-live-detail">
+        <span>S/ ${inicial.toFixed(0)} inicial</span>
+        ${efectivo > 0 ? `<span>+ S/ ${efectivo.toFixed(0)} ventas</span>` : ''}
+        ${entradas > 0 ? `<span>+ S/ ${entradas.toFixed(0)} ing</span>` : ''}
+        ${salidas > 0 ? `<span>− S/ ${salidas.toFixed(0)} egr</span>` : ''}
+      </div>
+      ${hitoAlcanzado || proximoHito ? `
+      <div class="cj-balance-hitos">
+        ${hitoAlcanzado ? `<span class="cj-balance-hito-actual">${hitoAlcanzado.emoji} ${hitoAlcanzado.label}</span>` : ''}
+        ${proximoHito ? `
+          <div class="cj-balance-hito-progress" title="Próximo hito: S/ ${proximoHito.mark}">
+            <div class="cj-balance-hito-progress-fill" style="width:${progresoPct}%"></div>
+          </div>
+          <span class="cj-balance-hito-prox">${proximoHito.emoji} ${proximoHito.label}</span>
+        ` : ''}
+      </div>` : ''}
+      ${alertas.length ? `
+      <div class="cj-balance-alertas">
+        ${alertas.map(a => `<div class="cj-balance-alerta"><span>${a.icon}</span><span>${a.txt}</span></div>`).join('')}
+      </div>` : ''}
+    </div>`;
+  }
+
   function _cjBuildCajaCard(c, esActiva, fecha, esLider) {
     const idAttr = String(c.idCaja).replace(/'/g, '&#39;');
     const elapsed = _cajaElapsed(c.fechaApertura);
@@ -16894,6 +16953,7 @@ const MOS = (() => {
           <div class="cj-caja-salud-bar"><div class="cj-caja-salud-bar-fill" style="width:${salud}%"></div></div>
         </div>
       </div>
+      ${esActiva ? _cjBuildBalanceLive(c) : ''}
       <div class="cj-caja-pago-bar">
         ${efPct > 0 ? `<div class="cj-caja-pago-bar-ef" style="width:${efPct}%">${efPct >= 12 ? '💵' : ''}</div>` : ''}
         ${viPct > 0 ? `<div class="cj-caja-pago-bar-vi" style="width:${viPct}%">${viPct >= 12 ? '📱' : ''}</div>` : ''}
@@ -19307,6 +19367,66 @@ const MOS = (() => {
     return true;
   }
 
+  // [v2.41.91] Snapshot del esperado por caja para detectar cruces de hitos
+  if (typeof window._cjBalancePrev === 'undefined') window._cjBalancePrev = {};
+  const HITOS_MARKS = [500, 1000, 2000, 3000, 5000];
+
+  function _cjDetectarHitos(abiertasActual) {
+    abiertasActual.forEach(c => {
+      const id = String(c.idCaja || '');
+      if (!id) return;
+      const actual = parseFloat(c.efectivoEsperado) || 0;
+      const previo = window._cjBalancePrev[id] || 0;
+      window._cjBalancePrev[id] = actual;
+      // Detectar cruces de hito (sube de previo<H a actual>=H)
+      HITOS_MARKS.forEach(mark => {
+        if (previo > 0 && previo < mark && actual >= mark) {
+          _cjCelebrarHito(c, mark);
+        }
+      });
+      // Animar monto (clase .bump) si cambió
+      if (Math.abs(actual - previo) >= 0.01 && previo > 0) {
+        setTimeout(() => {
+          const card = document.getElementById('cjcard-' + id.replace(/'/g, '&#39;'));
+          if (card) {
+            const monto = card.querySelector('.cj-balance-live-monto');
+            if (monto) {
+              monto.classList.remove('bump');
+              void monto.offsetWidth; // force reflow
+              monto.classList.add('bump');
+            }
+          }
+        }, 100);
+      }
+    });
+  }
+
+  function _cjCelebrarHito(c, mark) {
+    try { _finBeep && _finBeep('jackpot'); } catch(_) {
+      try { _finBeep && _finBeep('success'); } catch(__) {}
+    }
+    // Confetti micro en la card del cajero
+    setTimeout(() => {
+      const card = document.getElementById('cjcard-' + String(c.idCaja || '').replace(/'/g, '&#39;'));
+      if (!card) return;
+      // 18 partículas de confetti animadas
+      for (let i = 0; i < 18; i++) {
+        const conf = document.createElement('div');
+        conf.className = 'cj-confetti-particle';
+        conf.style.left = (50 + (Math.random() - 0.5) * 60) + '%';
+        conf.style.background = ['#fbbf24','#34d399','#22d3ee','#ec4899','#a78bfa','#f97316'][i % 6];
+        conf.style.setProperty('--dx', ((Math.random() - 0.5) * 220) + 'px');
+        conf.style.setProperty('--dy', (140 + Math.random() * 160) + 'px');
+        conf.style.animationDelay = (Math.random() * .25) + 's';
+        card.appendChild(conf);
+        setTimeout(() => { try { conf.remove(); } catch(_){} }, 2400);
+      }
+    }, 100);
+    if (typeof toast === 'function') {
+      toast(`🎉 ${c.vendedor || 'Cajero'} cruzó S/ ${mark.toLocaleString('es-PE')}`, 'success');
+    }
+  }
+
   async function _cajasRefreshSilencioso() {
     if (!API.isConfigured()) return;
     iconBusy('cajas', true);
@@ -19323,6 +19443,8 @@ const MOS = (() => {
       S._todasCajas  = [...abiertas, ...cerradas];
       S._cajasLoaded = true;
       S._cajasGenTs  = generadoEn || '';
+      // [v2.41.91] Detectar cruces de hitos antes de re-renderizar
+      _cjDetectarHitos(abiertas);
       if (S.view === 'cajas') {
         _cjRender();
         _cjPulsoPoll();
