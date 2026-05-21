@@ -28774,7 +28774,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     { id: 'T4-12', tier: 4, titulo: 'NubeFact — facturación electrónica formal',
       impacto: '⚙ Cumplimiento SUNAT', esfuerzo: '2 días', mes: 'Nov 2026',
       tags: [],
-      desc: 'VENTAS_DETALLE ya captura Tipo_IGV, Unidad_Medida, Cod_SUNAT. Solo falta conectar API key NubeFact + webhook de reconciliación. Habilita Boletas/Facturas electrónicas oficiales.' }
+      desc: 'VENTAS_DETALLE ya captura Tipo_IGV, Unidad_Medida, Cod_SUNAT. Solo falta conectar API key NubeFact + webhook de reconciliación. Habilita Boletas/Facturas electrónicas oficiales.' },
+    // ─── TIER 2 (cont.): Rediseño UX + IA en WH ───
+    { id: 'T2-13', tier: 2, titulo: 'Rediseño módulo Guías WH (4 tiers, ver análisis)',
+      impacto: '🚀 -80% tiempo abrir guía con PIN · UX moderno · IA productividad', esfuerzo: '2-3 semanas (por tiers)', mes: 'Jul-Ago 2026',
+      tags: ['UX', 'IA', 'Performance'],
+      desc: 'Plan completo guardado en warehouseMos/ANALISIS_GUIAS_2026-05-20.md (commit 947482b). Tier 1: PIN admin con caché optimista + pre-carga + eliminar sleep(1500)x3. Tier 2: Centro Operaciones + Quick Create 1-paso + modal PIN moderno + timeline detalle. Tier 3: optimistic UI universal + endpoints compuestos + hojas índice. Tier 4 IA: OCR boleta · dictado voz · chat almacén · validación inteligente al cerrar.' }
   ];
   function _proyLoadEstado() {
     try {
