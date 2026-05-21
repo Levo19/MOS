@@ -1191,9 +1191,23 @@ const MOS = (() => {
                       && JSON.stringify(equivMap) === JSON.stringify(S.equivMap);
       if (sinCambios) return;
 
-      S.productos = productos;
+      // [v2.41.95] Proteger productos con toggle en flight o recientemente
+      // togglados: el refresh silencioso NO debe sobrescribir su estado local
+      // (race con el POST → Sheets aún devuelve estado viejo en lecturas).
+      const productosProtegidos = productos.map(p => {
+        if (typeof _toggleEstaProtegido === 'function' && _toggleEstaProtegido(p.idProducto)) {
+          const prev = prevMap[p.idProducto];
+          if (prev && prev.estado !== p.estado) {
+            // Mantener el estado local que el user acaba de tocar
+            console.info('[catRefresh] preservando estado local de', p.idProducto, '(prev=' + prev.estado + ' remote=' + p.estado + ')');
+            return Object.assign({}, p, { estado: prev.estado });
+          }
+        }
+        return p;
+      });
+      S.productos = productosProtegidos;
       S.equivMap  = equivMap;
-      _catSaveCache({ productos, equivMap });
+      _catSaveCache({ productos: productosProtegidos, equivMap });
 
       // KPI dashboard
       const kpiProd = $('dashTotalProductos');
@@ -11451,6 +11465,29 @@ const MOS = (() => {
     }
   }
 
+  // [v2.41.95] Set de IDs con toggle en flight — protege el optimistic UI
+  // contra el polling silencioso de catálogo que corre cada 60s. Sin esto,
+  // si el polling corre entre el optimistic y la confirmación del POST,
+  // sobrescribe con el estado viejo y el producto "vuelve a activarse".
+  const _togglesEnVuelo = new Set();
+  // También: timestamp por idProducto para que el refresh ignore por X seg
+  // tras un toggle, incluso si el POST ya respondió (Sheets puede tardar
+  // hasta unos segundos en reflejar el cambio en lecturas posteriores).
+  const _togglesRecientes = new Map(); // idProducto → timestamp
+  const _TOGGLE_PROTECCION_MS = 8000; // 8s post-POST
+
+  function _toggleEstaProtegido(idProducto) {
+    if (_togglesEnVuelo.has(idProducto)) return true;
+    const ts = _togglesRecientes.get(idProducto);
+    if (ts && (Date.now() - ts) < _TOGGLE_PROTECCION_MS) return true;
+    return false;
+  }
+  function _marcarToggleReciente(idProducto) {
+    _togglesRecientes.set(idProducto, Date.now());
+    // Cleanup automático tras la protección
+    setTimeout(() => _togglesRecientes.delete(idProducto), _TOGGLE_PROTECCION_MS + 1000);
+  }
+
   // ── Toggle estado activo/inactivo de producto ────────────────
   // esBase=true: si apagas → flip visual + confirmación. Si prendes → cascada directa.
   // esBase=false: solo toggle local (presentación independiente).
@@ -11471,7 +11508,11 @@ const MOS = (() => {
     // OPTIMISTIC: actualizar UI primero
     p.estado = nuevoEstado;
     _actualizarVisualProducto(idProducto, nuevoEstado === '1');
-    toast(nuevoEstado === '1' ? 'Activado ✓' : 'Apagado ✓', 'ok');
+    _togglesEnVuelo.add(idProducto); // proteger del polling
+    // Toast más claro con flash visual del cambio
+    toast(nuevoEstado === '1' ? '🟢 Activado · ' + (p.descripcion || idProducto).substring(0, 30)
+                              : '⚫ Apagado · ' + (p.descripcion || idProducto).substring(0, 30),
+          'ok', 1800);
 
     // Si es base prendiendo, cascadear visualmente a las presentaciones del grupo
     if (esBase && nuevoEstado === '1') {
@@ -11481,6 +11522,7 @@ const MOS = (() => {
           if (!_isProdActivo(pp)) {
             pp.estado = '1';
             _actualizarVisualProducto(pp.idProducto, true);
+            _togglesEnVuelo.add(pp.idProducto);
           }
         }
       });
@@ -11488,16 +11530,29 @@ const MOS = (() => {
 
     // POST en background sin bloquear UI
     try {
-      await API.post('actualizarProducto', { _source: 'MOS_TOGGLE', idProducto, estado: nuevoEstado });
+      const res = await API.post('actualizarProducto', { _source: 'MOS_TOGGLE', idProducto, estado: nuevoEstado });
+      if (res && res.ok === false) {
+        throw new Error(res.error || 'GAS rechazó el cambio');
+      }
       if (esBase && nuevoEstado === '1') {
         // Prender hijos en backend (presentaciones + equivalencias)
         _prenderHijos(p).catch(() => {});
+      }
+      // Marcar como reciente para que el polling siga respetando este cambio
+      _marcarToggleReciente(idProducto);
+      if (esBase && nuevoEstado === '1') {
+        const skuBase = p.skuBase || idProducto;
+        S.productos.forEach(pp => {
+          if ((pp.skuBase || pp.idProducto) === skuBase) _marcarToggleReciente(pp.idProducto);
+        });
       }
     } catch(e) {
       // Revertir en caso de error
       p.estado = activoActual ? '1' : '0';
       _actualizarVisualProducto(idProducto, activoActual);
-      toast('Error: ' + e.message, 'error');
+      toast('⚠ No se pudo guardar: ' + (e.message || e), 'error');
+    } finally {
+      _togglesEnVuelo.delete(idProducto);
     }
   }
 
