@@ -1654,6 +1654,46 @@
       grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
       gap: 20px;
     }
+    /* [v2.41.96] Carta COBRADA — sello dorado, fondo verde sutil, no interactiva */
+    .cj-mesa-carta-cobrada {
+      background: linear-gradient(135deg, rgba(16,185,129,.18), rgba(5,150,105,.10)) !important;
+      border: 2px solid #34d399 !important;
+      color: #064e3b !important;
+      box-shadow: 0 8px 18px -6px rgba(16,185,129,.5), 0 0 0 1px rgba(52,211,153,.3) !important;
+      cursor: default !important;
+      position: relative;
+      overflow: visible;
+    }
+    .cj-mesa-carta-cobrada:hover { transform: none !important; }
+    .cj-carta-sello-cobrado {
+      position: absolute; top: -10px; right: -10px;
+      background: linear-gradient(135deg, #10b981, #047857);
+      color: #fff;
+      padding: 5px 12px;
+      border-radius: 99px;
+      font-size: 10px; font-weight: 900;
+      letter-spacing: .08em;
+      border: 2px solid #064e3b;
+      box-shadow: 0 4px 12px rgba(16,185,129,.4);
+      transform: rotate(8deg);
+      animation: selloPulse 2.4s ease-in-out infinite;
+      z-index: 5;
+    }
+    @keyframes selloPulse {
+      0%, 100% { transform: rotate(8deg) scale(1); }
+      50%      { transform: rotate(8deg) scale(1.05); box-shadow: 0 4px 18px rgba(16,185,129,.7); }
+    }
+    .cj-mesa-carta-cobrada .cj-carta-cliente { color: #064e3b; }
+    .cj-mesa-carta-cobrada .cj-carta-monto   { color: #047857; }
+    .cj-mesa-carta-cobrada .cj-carta-meta    { color: #065f46; opacity: .85; }
+    /* Sub-grupo "Cobrados hoy" con título verde discreto */
+    .cj-mesa-grupo-cobrados .cj-mesa-grupo-head {
+      border-left: 3px solid #10b981;
+      padding-left: 12px;
+    }
+    .cj-mesa-grupo-cobrados .cj-mesa-grupo-emoji  { filter: drop-shadow(0 0 6px rgba(16,185,129,.6)); }
+    .cj-mesa-grupo-cobrados .cj-mesa-grupo-fecha  { color: #34d399; }
+
     .cj-mesa-carta {
       background: linear-gradient(135deg, #fef3c7, #fde68a);
       border: 2px solid #f59e0b;

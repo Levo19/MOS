@@ -17518,18 +17518,29 @@ const MOS = (() => {
         </div>
       </div>`;
     }
-    // [v2.41.90] Cobrados hoy: sección destacada, abierta por default
-    if (cobradosHoy.length) {
-      html += `<div class="cj-vuelo-section">
-        <div class="cj-vuelo-section-titulo cj-vuelo-section-cobrados-titulo">
-          💚 Cobrados hoy · <strong>${cobradosHoy.length}</strong>
-          <span class="cj-vuelo-section-hint">huella de auditoría · sin acción requerida</span>
-        </div>
-        <div class="cj-vuelo-recientes-list">
-          ${cobradosHoy.map(cardReciente).join('')}
-        </div>
-      </div>`;
-    }
+    // [v2.41.96] Cobrados hoy YA NO se muestran en este panel — el user pidió
+    // que aparezcan en la mesa de póker (baraja de créditos) con sello visual
+    // de "COBRADO" para que la auditoría sea natural sin un panel separado.
+    // Exponemos un set de idVenta cobrados para que _cjPintarCartasMano los
+    // marque con sello dorado.
+    try {
+      window._cjCobradosHoyIdsVenta = new Set(cobradosHoy.map(c => String(c.idVenta || '')));
+      window._cjCobradosHoyData = {};
+      cobradosHoy.forEach(c => {
+        window._cjCobradosHoyData[String(c.idVenta || '')] = {
+          cliente: c.cliente || 'VARIOS',
+          cajero: c.vendedorDest,
+          fechaRes: c.fechaRes,
+          monto: c.monto,
+          horaTxt: _horaRes(c.fechaRes)
+        };
+      });
+      // Re-pintar la mesa si está abierta (para que aparezcan los nuevos cobrados)
+      const mesa = document.getElementById('modalMesaCreditos');
+      if (mesa && !mesa.classList.contains('hidden') && typeof cjRepartirMano === 'function') {
+        setTimeout(() => { try { cjRepartirMano(); } catch(_) {} }, 100);
+      }
+    } catch(_) {}
     if (otrosRecientes.length) {
       html += `<div class="cj-vuelo-section">
         <details class="cj-vuelo-recientes-wrap">
@@ -17822,7 +17833,43 @@ const MOS = (() => {
     if (!grid) return;
 
     let cartaGlobalIdx = 0; // animation-delay continuo entre secciones
-    grid.innerHTML = ordenados.map(g => {
+
+    // [v2.41.96] Sección "💚 Cobrados hoy" — al inicio de la mesa con sello
+    // visual de COBRADO. Usa _cjCobradosHoyData poblado por _cjCargarEnVuelo.
+    const cobradosIds = Array.from(window._cjCobradosHoyIdsVenta || []);
+    const cobradosData = window._cjCobradosHoyData || {};
+    let htmlCobrados = '';
+    if (cobradosIds.length) {
+      const cartasCobr = cobradosIds.map(idV => {
+        const d = cobradosData[idV] || {};
+        const delay = (cartaGlobalIdx++) * 60;
+        return `<div class="cj-mesa-carta cj-mesa-carta-cobrada"
+                     style="animation-delay: ${delay}ms"
+                     title="Cobrado por ${_esc(d.cajero || '')}">
+          <div class="cj-carta-sello-cobrado">✓ COBRADO</div>
+          <div class="cj-carta-head">
+            <span class="cj-carta-cliente">${_esc((d.cliente || 'VARIOS').toUpperCase())}</span>
+            <span class="cj-carta-monto">S/${parseFloat(d.monto || 0).toFixed(2)}</span>
+          </div>
+          <div class="cj-carta-meta">👤 ${_esc(d.cajero || '—')} · 🕐 ${_esc(d.horaTxt || '')}</div>
+        </div>`;
+      }).join('');
+      htmlCobrados = `<section class="cj-mesa-grupo cj-mesa-grupo-cobrados">
+        <header class="cj-mesa-grupo-head">
+          <div class="cj-mesa-grupo-titulo">
+            <span class="cj-mesa-grupo-emoji">💚</span>
+            <span class="cj-mesa-grupo-fecha">Cobrados hoy</span>
+            <span class="cj-mesa-grupo-sub">huella de auditoría · ya no requieren acción</span>
+          </div>
+          <div class="cj-mesa-grupo-stats">
+            <span class="cj-mesa-grupo-cuenta">${cobradosIds.length} ✓</span>
+          </div>
+        </header>
+        <div class="cj-mesa-cartas">${cartasCobr}</div>
+      </section>`;
+    }
+
+    grid.innerHTML = htmlCobrados + ordenados.map(g => {
       const esHoy = g.fecha === hoyStr;
       const fechaLbl = _cjFmtFechaCorta(g.fecha);
       const diasAtras = _cjDiasDesde(g.fecha);
