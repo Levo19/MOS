@@ -2223,6 +2223,149 @@
     .cj-vuelo-reciente-monto { color: #fbbf24; font-weight: 700; }
     .cj-vuelo-reciente-cajero { color: #94a3b8; font-size: 10px; }
     .cj-vuelo-reciente-hora { color: #cbd5e1; font-size: 10px; font-weight: 600; }
+    /* [v2.41.92] CENTRO TRIBUTARIO — KPI cards + balance + mini cards */
+    .trib-kpi-card {
+      padding: 18px 20px; border-radius: 18px; position: relative; overflow: hidden;
+      border: 1px solid; transition: transform .15s, box-shadow .15s;
+    }
+    .trib-kpi-card:hover { transform: translateY(-2px); }
+    .trib-kpi-favor {
+      background: linear-gradient(135deg, rgba(16,185,129,.12), rgba(5,150,105,.08));
+      border-color: rgba(52,211,153,.3);
+      box-shadow: 0 4px 18px -8px rgba(16,185,129,.4);
+    }
+    .trib-kpi-pagar {
+      background: linear-gradient(135deg, rgba(245,158,11,.12), rgba(217,119,6,.08));
+      border-color: rgba(251,191,36,.3);
+      box-shadow: 0 4px 18px -8px rgba(245,158,11,.4);
+    }
+    .trib-kpi-label {
+      font-size: 10.5px; font-weight: 800; letter-spacing: .08em;
+      text-transform: uppercase; color: #94a3b8;
+    }
+    .trib-kpi-monto {
+      font-size: 2rem; font-weight: 900; margin-top: 4px;
+      font-variant-numeric: tabular-nums; line-height: 1.1;
+    }
+    .trib-kpi-favor .trib-kpi-monto { color: #34d399; }
+    .trib-kpi-pagar .trib-kpi-monto { color: #fbbf24; }
+    .trib-kpi-monto.bump { animation: tribBump .4s ease-out; }
+    @keyframes tribBump {
+      0%   { transform: scale(1); }
+      50%  { transform: scale(1.1); filter: brightness(1.3); }
+      100% { transform: scale(1); }
+    }
+    .trib-kpi-sub { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+    .trib-kpi-progress {
+      height: 5px; background: rgba(15,23,42,.6); border-radius: 99px;
+      margin: 10px 0 12px; overflow: hidden;
+    }
+    .trib-kpi-progress-fill { height: 100%; transition: width .6s ease; box-shadow: 0 0 8px currentColor; }
+    .trib-kpi-btn {
+      font-size: 11px; font-weight: 700; color: #cbd5e1;
+      background: rgba(15,23,42,.5); padding: 5px 12px; border-radius: 99px;
+      border: 1px solid rgba(255,255,255,.05); cursor: pointer;
+    }
+    .trib-kpi-btn:hover { background: rgba(15,23,42,.8); color: #fff; }
+
+    .trib-balance-card {
+      padding: 20px 24px; border-radius: 18px;
+      background: linear-gradient(135deg, #0f172a, #1e293b);
+      border: 2px solid #475569; position: relative; text-align: center;
+    }
+    .trib-balance-label {
+      font-size: 10.5px; font-weight: 800; letter-spacing: .08em;
+      text-transform: uppercase; color: #94a3b8;
+    }
+    .trib-balance-monto {
+      font-size: 2.6rem; font-weight: 900; color: #f1f5f9;
+      font-variant-numeric: tabular-nums; line-height: 1.1; margin: 4px 0;
+    }
+    .trib-balance-monto.positivo { color: #fbbf24; }
+    .trib-balance-monto.negativo { color: #34d399; }
+    .trib-balance-sub { font-size: 12px; color: #94a3b8; }
+    .trib-balance-bar {
+      height: 4px; background: rgba(255,255,255,.08); border-radius: 99px;
+      margin-top: 12px; overflow: hidden;
+    }
+    .trib-balance-bar-fill {
+      height: 100%; background: linear-gradient(90deg, #38bdf8, #6366f1);
+      transition: width .6s ease;
+    }
+
+    .trib-mini-card {
+      padding: 12px 14px; border-radius: 14px;
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      border: 1px solid #334155;
+    }
+    .trib-mini-card.trib-mini-alert {
+      border-color: #f87171;
+      background: linear-gradient(135deg, rgba(248,113,113,.12), rgba(127,29,29,.06));
+      animation: tribAlertPulse 2.4s ease-in-out infinite;
+    }
+    @keyframes tribAlertPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(248,113,113,.4); }
+      50%      { box-shadow: 0 0 0 6px rgba(248,113,113,0); }
+    }
+    .trib-mini-icon { font-size: 1.2rem; line-height: 1; }
+    .trib-mini-lbl {
+      font-size: 9.5px; font-weight: 800; letter-spacing: .06em;
+      text-transform: uppercase; color: #94a3b8; margin-top: 2px;
+    }
+    .trib-mini-val {
+      font-size: 1.2rem; font-weight: 900; color: #e2e8f0; line-height: 1.1;
+      font-variant-numeric: tabular-nums;
+    }
+    .trib-mini-sub { font-size: 10px; color: #64748b; margin-top: 2px; }
+
+    .trib-action-btn {
+      font-size: 12px; font-weight: 700;
+      background: linear-gradient(135deg, #1e293b, #334155);
+      color: #cbd5e1; padding: 8px 14px; border-radius: 10px;
+      border: 1px solid #475569; cursor: pointer; transition: all .15s;
+    }
+    .trib-action-btn:hover { background: linear-gradient(135deg, #334155, #475569); color: #fff; }
+
+    .trib-details {
+      margin-bottom: 8px; border: 1px solid #334155; border-radius: 12px;
+      background: rgba(15,23,42,.4); overflow: hidden;
+    }
+    .trib-details-summary {
+      cursor: pointer; padding: 12px 16px;
+      font-size: 12.5px; font-weight: 700; color: #e2e8f0;
+      list-style: none; display: flex; justify-content: space-between; align-items: center;
+    }
+    .trib-details-summary::after {
+      content: '▾'; font-size: 0.9rem; color: #94a3b8;
+      transition: transform .2s;
+    }
+    .trib-details[open] .trib-details-summary::after { transform: rotate(180deg); }
+    .trib-details-body {
+      padding: 8px 16px 16px; border-top: 1px solid #334155;
+      font-size: 11.5px; color: #cbd5e1;
+    }
+    .trib-row {
+      display: flex; align-items: center; gap: 8px; padding: 8px 0;
+      border-bottom: 1px solid rgba(71,85,105,.4);
+      font-size: 11.5px;
+    }
+    .trib-row:last-child { border-bottom: none; }
+    .trib-row-icon { font-size: 1.1rem; }
+    .trib-row-data { flex: 1; min-width: 0; }
+    .trib-row-data strong { color: #f1f5f9; }
+    .trib-row-data small { color: #94a3b8; }
+    .trib-row-monto { font-weight: 800; color: #fbbf24; font-variant-numeric: tabular-nums; }
+    .trib-row-est-ok    { color: #34d399; }
+    .trib-row-est-warn  { color: #fbbf24; }
+    .trib-row-est-error { color: #f87171; }
+    .trib-row-est-info  { color: #94a3b8; }
+    .trib-btn-mini {
+      font-size: 10px; font-weight: 700;
+      padding: 3px 8px; border-radius: 6px; cursor: pointer;
+      background: rgba(59,130,246,.15); color: #93c5fd; border: 1px solid rgba(59,130,246,.3);
+    }
+    .trib-btn-mini:hover { background: rgba(59,130,246,.3); color: #fff; }
+
     /* [v2.41.91] Confetti micro para cruces de hitos S/ 1k / 2k / 3k */
     .cj-confetti-particle {
       position: absolute;
@@ -10071,6 +10214,13 @@
       <!-- [v2.41.78] Badges: cajas abiertas + liq pendientes + pulso live -->
       <span id="finNavBadgeSidebar" class="fin-nav-badge hidden"></span>
     </button>
+    <!-- [v2.41.92] Centro Tributario — IGV a favor (OCR proveedores) + IGV emitido (CPE) + Renta -->
+    <button data-view="tributario" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm relative" onclick="MOS.nav('tributario')">
+      <div class="nav-dot"></div>
+      <svg class="nav-icon shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6l9-3 9 3v6c0 5.5-3.9 10.6-9 12-5.1-1.4-9-6.5-9-12V6z"/><path d="M9 12l2 2 4-4"/></svg>
+      <span class="nav-label whitespace-nowrap">Tributario</span>
+      <span id="tribNavBadge" class="fin-nav-badge hidden"></span>
+    </button>
     <div class="mt-2 pt-2 border-t border-slate-800">
       <button data-view="config" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('config')">
         <div class="nav-dot"></div>
@@ -10683,6 +10833,112 @@
         <div id="envList" class="env-list">
           <div class="text-center py-8 text-slate-500 text-sm">Cargando...</div>
         </div>
+      </div>
+    </section>
+
+    <!-- ═══ VIEW: CENTRO TRIBUTARIO [v2.41.92] ══════════════════════
+         IGV a favor (OCR boletas proveedor en WH) + IGV emitido (CPE
+         emitidos por ME via NubeFact) + Renta MYPE + Histórico 12 meses.
+    ════════════════════════════════════════════════════════════════ -->
+    <section id="view-tributario" class="view hidden">
+      <!-- Header -->
+      <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <h1 class="text-xl font-black text-slate-100 flex items-center gap-2">
+            <span class="text-2xl">📊</span> Centro Tributario
+          </h1>
+          <p id="tribSub" class="text-xs text-slate-500">Cargando balance del mes...</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <select id="tribMesSelect" class="bg-slate-800 border border-slate-700 text-slate-100 text-xs rounded-lg px-3 py-2"
+                  onchange="MOS.tribCargar()">
+            <!-- opciones inyectadas por JS -->
+          </select>
+          <button onclick="MOS.tribCargar()" class="bg-slate-700 hover:bg-slate-600 text-slate-100 text-xs font-bold px-3 py-2 rounded-lg flex items-center gap-1">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.65 4.36A9 9 0 0 0 20.5 15"/></svg>
+            Actualizar
+          </button>
+        </div>
+      </div>
+
+      <!-- KPI Hero — 2 cards principales en flex -->
+      <div id="tribLoading" class="text-center py-12 text-slate-500 text-sm">
+        <svg class="w-8 h-8 animate-spin mx-auto mb-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+        Cargando datos tributarios...
+      </div>
+
+      <div id="tribContent" class="hidden">
+        <!-- 2 cards grandes lado a lado -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+          <div class="trib-kpi-card trib-kpi-favor">
+            <div class="trib-kpi-label">💚 IGV A FAVOR</div>
+            <div class="trib-kpi-monto" id="tribIGVFavor">S/ 0.00</div>
+            <div class="trib-kpi-sub" id="tribIGVFavorSub">— guías leídas</div>
+            <div class="trib-kpi-progress"><div class="trib-kpi-progress-fill bg-emerald-500" id="tribIGVFavorBar" style="width:0%"></div></div>
+            <button onclick="MOS.tribAbrirIGVFavor()" class="trib-kpi-btn">Ver detalle →</button>
+          </div>
+          <div class="trib-kpi-card trib-kpi-pagar">
+            <div class="trib-kpi-label">💰 IGV A PAGAR</div>
+            <div class="trib-kpi-monto" id="tribIGVPagar">S/ 0.00</div>
+            <div class="trib-kpi-sub" id="tribIGVPagarSub">— CPE emitidos</div>
+            <div class="trib-kpi-progress"><div class="trib-kpi-progress-fill bg-amber-500" id="tribIGVPagarBar" style="width:0%"></div></div>
+            <button onclick="MOS.tribAbrirIGVEmitido()" class="trib-kpi-btn">Ver CPE →</button>
+          </div>
+        </div>
+
+        <!-- Balance neto destacado -->
+        <div class="trib-balance-card">
+          <div class="trib-balance-label">⚖ BALANCE NETO IGV (a pagar SUNAT)</div>
+          <div class="trib-balance-monto" id="tribBalanceNeto">S/ 0.00</div>
+          <div class="trib-balance-sub" id="tribBalanceSub">Vence en — días · — del — del mes</div>
+          <div class="trib-balance-bar"><div class="trib-balance-bar-fill" id="tribPeriodoBar" style="width:0%"></div></div>
+        </div>
+
+        <!-- Mini cards: Renta + CPE Status + Alertas -->
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-2 mt-3 mb-3">
+          <div class="trib-mini-card">
+            <div class="trib-mini-icon">📈</div>
+            <div class="trib-mini-lbl">Ventas mes</div>
+            <div class="trib-mini-val" id="tribVentas">S/ 0</div>
+            <div class="trib-mini-sub" id="tribVentasSub">Renta 1.5%: S/ 0</div>
+          </div>
+          <div class="trib-mini-card">
+            <div class="trib-mini-icon">🧾</div>
+            <div class="trib-mini-lbl">Estado CPE</div>
+            <div class="trib-mini-val" id="tribCPEStatus">— emitidos</div>
+            <div class="trib-mini-sub" id="tribCPESub">— pendientes · — error</div>
+          </div>
+          <div class="trib-mini-card trib-mini-alert" id="tribAlertCard" style="display:none">
+            <div class="trib-mini-icon">🚨</div>
+            <div class="trib-mini-lbl">Atención</div>
+            <div class="trib-mini-val" id="tribAlertCount">0</div>
+            <div class="trib-mini-sub" id="tribAlertSub">CPE / OCR pendientes</div>
+          </div>
+        </div>
+
+        <!-- Acciones rápidas -->
+        <div class="flex gap-2 mb-4 flex-wrap">
+          <button onclick="MOS.tribReconciliarCPEs()" class="trib-action-btn">
+            🔄 Reconciliar CPE con SUNAT
+          </button>
+          <button onclick="MOS.tribLimpiarHuerfanas()" class="trib-action-btn">
+            🧹 Limpiar ventas huérfanas
+          </button>
+          <button onclick="MOS.tribAbrirHistorico()" class="trib-action-btn">
+            📊 Histórico 12 meses
+          </button>
+        </div>
+
+        <!-- Listas detalladas (cards expandibles) -->
+        <details class="trib-details">
+          <summary class="trib-details-summary">📋 IGV a favor — boletas/facturas de proveedores OCR'd</summary>
+          <div id="tribIGVFavorList" class="trib-details-body">Cargando...</div>
+        </details>
+
+        <details class="trib-details">
+          <summary class="trib-details-summary">🧾 CPE emitidos — estado de boletas y facturas</summary>
+          <div id="tribIGVEmitidoList" class="trib-details-body">Cargando...</div>
+        </details>
       </div>
     </section>
 

@@ -772,6 +772,7 @@ const MOS = (() => {
         case 'proveedores':  await loadProveedores();  break;
         case 'cajas':        await loadCajas(true);    break;
         case 'finanzas':     await _loadFinanzas();    break;
+        case 'tributario':   await _loadTributario();  break;
         case 'promociones':  await loadPromociones();  break;
       }
     } catch (e) {
@@ -21965,6 +21966,267 @@ const MOS = (() => {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // [v2.41.92] CENTRO TRIBUTARIO — IGV a favor + IGV emitido + Renta
+  // ═══════════════════════════════════════════════════════════════
+  const _tribState = { mes: null, anio: null, data: null, busy: false };
+
+  async function _loadTributario() {
+    _finBeep && _finBeep('nav');
+    // Inicializar selector de mes (12 meses hacia atrás)
+    const sel = $('tribMesSelect');
+    if (sel && !sel.options.length) {
+      const hoy = new Date();
+      for (let i = 0; i < 12; i++) {
+        const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+        const m = d.getMonth() + 1, a = d.getFullYear();
+        const nombres = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+        const opt = document.createElement('option');
+        opt.value = m + '|' + a;
+        opt.textContent = nombres[d.getMonth()] + ' ' + a;
+        if (i === 0) opt.selected = true;
+        sel.appendChild(opt);
+      }
+    }
+    await tribCargar();
+  }
+
+  async function tribCargar() {
+    if (_tribState.busy) return;
+    const sel = $('tribMesSelect');
+    const parts = (sel?.value || '').split('|');
+    const mes  = parseInt(parts[0], 10) || (new Date().getMonth() + 1);
+    const anio = parseInt(parts[1], 10) || new Date().getFullYear();
+    _tribState.mes = mes; _tribState.anio = anio;
+    _tribState.busy = true;
+
+    $('tribLoading').classList.remove('hidden');
+    $('tribContent').classList.add('hidden');
+
+    try {
+      const res = await API.post('tribResumenMes', { mes, anio });
+      const d = (res && res.data) ? res.data : (res || {});
+      _tribState.data = d;
+      _tribRender(d);
+      $('tribLoading').classList.add('hidden');
+      $('tribContent').classList.remove('hidden');
+    } catch(e) {
+      console.error('[Tributario] cargar:', e);
+      $('tribLoading').textContent = '❌ Error cargando: ' + (e.message || e);
+    } finally {
+      _tribState.busy = false;
+    }
+  }
+
+  function _tribFmtSoles(n) {
+    return 'S/ ' + (parseFloat(n) || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function _tribCountUp(el, target) {
+    if (!el) return;
+    const start = parseFloat(el.dataset.cur || 0);
+    const duration = 800;
+    const t0 = performance.now();
+    function step(t) {
+      const p = Math.min(1, (t - t0) / duration);
+      const e = 1 - Math.pow(1 - p, 3); // ease-out cubic
+      const v = start + (target - start) * e;
+      el.textContent = _tribFmtSoles(v);
+      if (p < 1) requestAnimationFrame(step);
+      else el.dataset.cur = target;
+    }
+    requestAnimationFrame(step);
+  }
+
+  function _tribRender(d) {
+    if (!d) return;
+    const nombres = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    $('tribSub').textContent = 'Balance de ' + nombres[d.mes - 1] + ' ' + d.anio + ' · día ' + d.diaActual + ' de ' + d.ultimoDia;
+
+    // KPI principales con countUp
+    _tribCountUp($('tribIGVFavor'), d.igvFavor);
+    _tribCountUp($('tribIGVPagar'), d.igvEmitido);
+    $('tribIGVFavorSub').textContent = (d.guiasConIGV || 0) + ' de ' + (d.guiasMes || 0) + ' guías con IGV recuperable' +
+                                      (d.guiasSinFoto > 0 ? ' · ' + d.guiasSinFoto + ' s/foto' : '');
+    $('tribIGVPagarSub').textContent = (d.cpeEmitidos || 0) + ' / ' + (d.cpeTotal || 0) + ' CPE emitidos';
+
+    const pctFavor = d.guiasMes > 0 ? (d.guiasConIGV / d.guiasMes) * 100 : 0;
+    const pctPagar = d.cpeTotal > 0 ? (d.cpeEmitidos / d.cpeTotal) * 100 : 0;
+    $('tribIGVFavorBar').style.width = pctFavor.toFixed(0) + '%';
+    $('tribIGVPagarBar').style.width = pctPagar.toFixed(0) + '%';
+
+    // Balance neto
+    const balanceEl = $('tribBalanceNeto');
+    _tribCountUp(balanceEl, Math.abs(d.balanceNetoIGV));
+    balanceEl.classList.toggle('positivo', d.balanceNetoIGV >= 0);
+    balanceEl.classList.toggle('negativo', d.balanceNetoIGV < 0);
+    balanceEl.classList.remove('bump'); void balanceEl.offsetWidth; balanceEl.classList.add('bump');
+    if (d.balanceNetoIGV < 0) {
+      $('tribBalanceSub').innerHTML = '✨ <strong>Crédito fiscal a favor</strong> · arrastrable al mes siguiente';
+    } else {
+      const fecha = new Date(d.fechaVencimiento);
+      const fStr = fecha.toLocaleDateString('es-PE', { day: 'numeric', month: 'short', year: 'numeric' });
+      $('tribBalanceSub').innerHTML = 'Vence: <strong>' + fStr + '</strong> · faltan ' + d.diasParaVencer + ' días';
+    }
+    $('tribPeriodoBar').style.width = (d.pctMes || 0) + '%';
+
+    // Mini cards
+    $('tribVentas').textContent = _tribFmtSoles(d.totalVentas);
+    $('tribVentasSub').textContent = 'Renta MYPE 1.5%: ' + _tribFmtSoles(d.rentaMensual);
+    $('tribCPEStatus').textContent = (d.cpeEmitidos || 0) + ' emitidos';
+    $('tribCPESub').textContent = (d.cpePendientes || 0) + ' pendientes · ' + (d.cpeErrores || 0) + ' error';
+
+    // Alertas
+    const alertas = (d.cpeErrores || 0) + (d.guiasIlegibles || 0) + (d.guiasSinFoto || 0);
+    if (alertas > 0) {
+      $('tribAlertCard').style.display = '';
+      $('tribAlertCount').textContent = alertas;
+      const partes = [];
+      if (d.cpeErrores > 0)    partes.push(d.cpeErrores + ' CPE error');
+      if (d.guiasIlegibles > 0) partes.push(d.guiasIlegibles + ' OCR ilegibles');
+      if (d.guiasSinFoto > 0)   partes.push(d.guiasSinFoto + ' s/foto');
+      $('tribAlertSub').textContent = partes.join(' · ');
+    } else {
+      $('tribAlertCard').style.display = 'none';
+    }
+  }
+
+  async function tribAbrirIGVFavor() {
+    const cont = $('tribIGVFavorList');
+    cont.innerHTML = '<div class="text-slate-500 text-xs">Cargando guías...</div>';
+    // Auto-expandir details
+    const det = cont.closest('details'); if (det) det.open = true;
+    try {
+      const res = await API.post('tribIGVFavorMes', { mes: _tribState.mes, anio: _tribState.anio });
+      const lista = (res?.data?.guias || []);
+      if (!lista.length) {
+        cont.innerHTML = '<div class="text-slate-500 text-xs italic">Sin guías de ingreso proveedor en este mes</div>';
+        return;
+      }
+      cont.innerHTML = lista.map(g => {
+        const estCls = g.ocrEstado === 'PROCESADO' ? 'trib-row-est-ok'
+                     : g.ocrEstado === 'SIN_IGV'   ? 'trib-row-est-info'
+                     : g.ocrEstado === 'ILEGIBLE' || g.ocrEstado === 'NO_COMPROBANTE' ? 'trib-row-est-error'
+                     : 'trib-row-est-warn';
+        const estTxt = g.ocrEstado === 'PROCESADO' ? '🟢 ' + (g.confidence || 0) + '%'
+                     : g.ocrEstado === 'SIN_IGV'   ? '⊘ sin IGV'
+                     : g.ocrEstado === 'ILEGIBLE'  ? '🔴 ilegible'
+                     : g.ocrEstado === 'NO_COMPROBANTE' ? '🔴 no es comprob.'
+                     : g.tieneFoto ? '🟡 procesando' : '⚪ s/foto';
+        return `<div class="trib-row">
+          <span class="trib-row-icon">📄</span>
+          <div class="trib-row-data">
+            <strong>${_escapeHtml(g.idGuia)}</strong> · ${_escapeHtml(g.razonSocial || g.idProveedor || '—')}
+            <br><small>${(new Date(g.fecha)).toLocaleDateString('es-PE')} · ${_escapeHtml(g.serie || '')}${g.numero ? '-' + _escapeHtml(g.numero) : ''}</small>
+          </div>
+          <span class="trib-row-monto">${g.igvRecuperable > 0 ? _tribFmtSoles(g.igvRecuperable) : '—'}</span>
+          <span class="${estCls}" style="font-size:10.5px">${estTxt}</span>
+          ${g.tieneFoto ? `<button class="trib-btn-mini" onclick="MOS.tribReprocesarOCR('${_escapeHtml(g.idGuia)}')">↻</button>` : ''}
+        </div>`;
+      }).join('');
+    } catch(e) {
+      cont.innerHTML = '<div class="text-red-400 text-xs">❌ ' + (e.message || e) + '</div>';
+    }
+  }
+
+  async function tribAbrirIGVEmitido() {
+    const cont = $('tribIGVEmitidoList');
+    cont.innerHTML = '<div class="text-slate-500 text-xs">Cargando CPE...</div>';
+    const det = cont.closest('details'); if (det) det.open = true;
+    try {
+      const res = await API.post('tribIGVEmitidoMes', { mes: _tribState.mes, anio: _tribState.anio });
+      const lista = (res?.cpe || []);
+      if (!lista.length) {
+        cont.innerHTML = '<div class="text-slate-500 text-xs italic">Sin CPE emitidos este mes</div>';
+        return;
+      }
+      cont.innerHTML = lista.map(c => {
+        const estCls = c.nfEstado === 'EMITIDO' ? 'trib-row-est-ok'
+                     : c.nfEstado === 'RECHAZADO_SUNAT' || c.nfEstado === 'ERROR' ? 'trib-row-est-error'
+                     : 'trib-row-est-warn';
+        const estTxt = c.nfEstado === 'EMITIDO' ? '🟢 emitido'
+                     : c.nfEstado === 'RECHAZADO_SUNAT' ? '🔴 rechazado SUNAT'
+                     : c.nfEstado === 'ERROR' ? '🔴 error'
+                     : c.nfEstado === 'PENDIENTE' ? '🟡 pendiente'
+                     : '⚪ ' + (c.nfEstado || 'sin estado');
+        return `<div class="trib-row">
+          <span class="trib-row-icon">${c.tipo === 'FACTURA' ? '📋' : '🧾'}</span>
+          <div class="trib-row-data">
+            <strong>${_escapeHtml(c.correlativo)}</strong> · ${_escapeHtml(c.cliente || 'sin cliente')}
+            <br><small>${(new Date(c.fecha)).toLocaleString('es-PE')} · ${_escapeHtml(c.tipo)}</small>
+          </div>
+          <span class="trib-row-monto">${_tribFmtSoles(c.total)}</span>
+          <span class="${estCls}" style="font-size:10.5px">${estTxt}</span>
+          ${c.nfEstado !== 'EMITIDO' ? `<button class="trib-btn-mini" onclick="MOS.tribReintentarCPE('${_escapeHtml(c.idVenta)}')">🔄</button>` : ''}
+        </div>`;
+      }).join('');
+    } catch(e) {
+      cont.innerHTML = '<div class="text-red-400 text-xs">❌ ' + (e.message || e) + '</div>';
+    }
+  }
+
+  async function tribReprocesarOCR(idGuia) {
+    const auth = await pedirAuth({ accion: 'TRIBUTARIO_REPROCESAR_OCR', refDocumento: idGuia });
+    if (!auth) return;
+    toast('🔄 Reprocesando OCR de ' + idGuia + '...', 'info');
+    try {
+      const res = await API.post('tribReprocesarOCR', { idGuia });
+      if (res?.ok && res.data) {
+        toast('✓ OCR ' + res.data.estado + (res.data.igvRecuperable > 0 ? ' · IGV ' + _tribFmtSoles(res.data.igvRecuperable) : ''), 'success');
+        _finBeep && _finBeep('success');
+      } else {
+        toast('OCR falló: ' + (res?.error || 'desconocido'), 'warn');
+      }
+      tribCargar(); // refresh
+    } catch(e) { toast('Error: ' + (e.message || e), 'error'); }
+  }
+
+  async function tribReintentarCPE(idVenta) {
+    const auth = await pedirAuth({ accion: 'TRIBUTARIO_REINTENTAR_CPE', refDocumento: idVenta });
+    if (!auth) return;
+    toast('🔄 Reintentando CPE...', 'info');
+    try {
+      const res = await API.post('tribReintentarCPE', { idVenta });
+      if (res?.status === 'success' || res?.ok) {
+        toast('✓ CPE ' + (res.nuevoEstado || 'reconciliado') + (res.aceptada ? ' · aceptado SUNAT' : ''), 'success');
+        _finBeep && _finBeep('success');
+      } else {
+        toast('Reintento falló: ' + (res?.error || 'desconocido'), 'warn');
+      }
+      tribCargar();
+    } catch(e) { toast('Error: ' + (e.message || e), 'error'); }
+  }
+
+  async function tribReconciliarCPEs() {
+    const auth = await pedirAuth({ accion: 'TRIBUTARIO_RECONCILIAR_TODOS', refDocumento: 'mes-actual' });
+    if (!auth) return;
+    toast('🔄 Reconciliando todos los CPE pendientes con NubeFact/SUNAT...', 'info');
+    try {
+      const res = await API.post('tribReconciliarCPEs', {});
+      const stats = res?.data || res || {};
+      toast('✓ ' + (stats.emitidos || 0) + ' reconciliados · ' + (stats.rechazados || 0) + ' rechazados · ' + (stats.sin_cambio || 0) + ' sin cambio', 'success');
+      _finBeep && _finBeep('success');
+      tribCargar();
+    } catch(e) { toast('Error: ' + (e.message || e), 'error'); }
+  }
+
+  async function tribLimpiarHuerfanas() {
+    const auth = await pedirAuth({ accion: 'TRIBUTARIO_LIMPIAR_HUERFANAS', refDocumento: 'global' });
+    if (!auth) return;
+    if (!confirm('¿Marcar las filas con correlativo "undefined-*" como HUERFANA_LIMPIADA?')) return;
+    try {
+      const res = await API.post('tribLimpiarVentasHuerfanas', {});
+      const n = res?.limpiadas || res?.data?.limpiadas || 0;
+      toast('🧹 ' + n + ' filas huérfanas marcadas', 'success');
+      _finBeep && _finBeep('success');
+    } catch(e) { toast('Error: ' + (e.message || e), 'error'); }
+  }
+
+  async function tribAbrirHistorico() {
+    toast('Histórico 12 meses · próxima iteración', 'info');
+    // Placeholder — implementación visual con chart en v2.41.93
+  }
+
   async function _loadFinanzas() {
     const inp = $('finFecha');
     const hoy = today();
@@ -29572,6 +29834,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     cjAbrirAsignar, cjCerrarAsignar,
     cjSetMetodoAsignar, cjSetCajaAsignar, cjSetTTLAsignar, cjConfirmarAsignar,
     _cjOnMensajeAsignar, _cjCargarEnVuelo, cjCancelarCobro, cjReasignarCobro,
+    // [v2.41.92] Centro Tributario
+    _loadTributario, tribCargar, tribAbrirIGVFavor, tribAbrirIGVEmitido,
+    tribReprocesarOCR, tribReintentarCPE, tribReconciliarCPEs,
+    tribLimpiarHuerfanas, tribAbrirHistorico,
     // F2 — Acciones editables sobre tickets
     cjAbrirAccionesTicket, _tkAccion,
     _tkCobrarSetMetodo, _tkCobrarSetCaja, _tkCobrarValidarMixto, _tkCobrarConfirmar,

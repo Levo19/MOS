@@ -320,6 +320,15 @@ function _route(method, e) {
       case 'meCajasAbiertas':           return meCajasAbiertas();
       case 'meEstadoCajas':             return meEstadoCajas();
       case 'meConsultarCliente':        return meConsultarCliente(params);
+      // [v2.41.92] Centro Tributario (admin/master)
+      case 'tribResumenMes':            return tribResumenMes(params);
+      case 'tribIGVFavorMes':           return tribIGVFavorMes(params);
+      case 'tribIGVEmitidoMes':         return tribIGVEmitidoMes(params);
+      case 'tribReintentarCPE':         return tribReintentarCPE(params);
+      case 'tribReprocesarOCR':         return tribReprocesarOCR(params);
+      case 'tribHistorico12meses':      return tribHistorico12meses();
+      case 'tribLimpiarVentasHuerfanas': return tribLimpiarVentasHuerfanas();
+      case 'tribReconciliarCPEs':       return tribReconciliarCPEsPendientes();
       // [v40.3] Sistema de cobro asignado de créditos
       case 'meGetCreditosPendientes':   return meGetCreditosPendientes(params);
       case 'meAsignarCobroCajero':      return meAsignarCobroCajero(params);
