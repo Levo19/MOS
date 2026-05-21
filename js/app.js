@@ -10538,6 +10538,389 @@ const MOS = (() => {
     if (ch) ch.textContent = h ? '▶' : '▼';
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // [v2.41.97] PRICING POR SEGMENTOS — Editor de tramos para graneles
+  // ═══════════════════════════════════════════════════════════════
+  let _segState = {
+    idProducto: null,
+    precioCanonico: 0,
+    segmentos: [],
+    editandoId: null,    // si null, modal es "nuevo"
+    modalUnidad: 'g',    // 'g' | 'kg' para el modal CRUD
+    modalMinIncl: true,
+    modalMaxIncl: false
+  };
+
+  function prodToggleSegmentos() {
+    const sec = $('segmentosContent');
+    const ch  = $('segChevron');
+    if (!sec) return;
+    const h = sec.classList.toggle('hidden');
+    if (ch) ch.textContent = h ? '▶' : '▼';
+  }
+
+  // Mostrar u ocultar la sección de segmentos según unidad del producto.
+  // Llamado desde el modal de producto al cargar/cambiar unidad.
+  function segActualizarVisibilidad() {
+    const unidad = ($('prodUnidad')?.value || '').toUpperCase();
+    const factorConv = parseFloat($('prodFactorConversion')?.value || 1);
+    const sec = $('modalSegmentosSection');
+    if (!sec) return;
+    // Solo visible si es KGM y es el canónico (factor=1)
+    if (unidad === 'KGM' && factorConv === 1) {
+      sec.classList.remove('hidden');
+    } else {
+      sec.classList.add('hidden');
+    }
+  }
+
+  // Cargar segmentos del producto activo en el modal
+  function segCargarParaProducto(producto) {
+    if (!producto) return;
+    _segState.idProducto = producto.idProducto;
+    _segState.precioCanonico = parseFloat(producto.precioVenta) || 0;
+    let segs = [];
+    try {
+      const raw = producto.segmentos_precio || producto.segmentosPrecio || '';
+      if (raw && typeof raw === 'string') segs = JSON.parse(raw);
+      else if (Array.isArray(raw)) segs = raw;
+    } catch(_) { segs = []; }
+    _segState.segmentos = segs;
+    segRenderEditor();
+  }
+
+  // Render del editor principal (línea visual + cards)
+  function segRenderEditor() {
+    segRenderLineaVisual();
+    segRenderLista();
+    segCalcular();
+  }
+
+  function _segFmtRango(s) {
+    const lo = s.minIncl ? '[' : '(';
+    const hi = s.maxIncl ? ']' : ')';
+    const maxLbl = s.max === null ? '∞' : (s.max >= 1000 ? (s.max/1000) + 'kg' : s.max + 'g');
+    const minLbl = s.min >= 1000 ? (s.min/1000) + 'kg' : s.min + 'g';
+    return lo + minLbl + ' — ' + maxLbl + hi;
+  }
+
+  function segRenderLineaVisual() {
+    const cont = $('segLineaVisual');
+    if (!cont) return;
+    if (!_segState.segmentos.length) {
+      cont.innerHTML = '<div class="text-center text-xs text-slate-500 py-4 italic">— Sin segmentos · solo se usa el precio canónico —</div>';
+      return;
+    }
+    // Escala: si todos tienen max definido, usar el max global como 100%; si hay infinito, dejar 75% para él
+    const segConMax = _segState.segmentos.filter(s => s.max !== null);
+    const maxFinito = segConMax.length ? Math.max(...segConMax.map(s => s.max)) : 1000;
+    const escalaMax = maxFinito * 1.2;
+    const html = _segState.segmentos.map(s => {
+      const cls = s.ajustePct > 0 ? 'positivo' : 'negativo';
+      const left = (s.min / escalaMax) * 100;
+      const widthRaw = s.max === null ? (100 - left) : ((s.max - s.min) / escalaMax) * 100;
+      const width = Math.min(widthRaw, 100 - left);
+      const sign = s.ajustePct > 0 ? '+' : '';
+      return `<div class="seg-banda ${cls}" style="left:${left}%; width:${width}%"
+                   title="${_escapeHtml(_segFmtRango(s))}">
+        <span class="seg-banda-pct">${sign}${s.ajustePct}%</span>
+        <span class="seg-banda-lbl">${_escapeHtml(s.nombre || 'segmento')}</span>
+      </div>`;
+    }).join('');
+    cont.innerHTML = html + `<div class="seg-linea-eje"><span>0g</span><span>${maxFinito/2}g</span><span>${maxFinito}g+</span></div>`;
+  }
+
+  function segRenderLista() {
+    const cont = $('segListaSegmentos');
+    if (!cont) return;
+    if (!_segState.segmentos.length) { cont.innerHTML = ''; return; }
+    const pc = _segState.precioCanonico;
+    cont.innerHTML = _segState.segmentos.map(s => {
+      const cls = s.ajustePct > 0 ? 'positivo' : 'negativo';
+      const sign = s.ajustePct > 0 ? '+' : '';
+      const precioAjustado = pc * (1 + s.ajustePct / 100);
+      return `<div class="seg-card">
+        <div class="seg-card-color ${cls}"></div>
+        <div class="seg-card-info">
+          <div class="seg-card-nombre">${_escapeHtml(s.nombre || 'Sin nombre')}</div>
+          <div class="seg-card-rango">${_escapeHtml(_segFmtRango(s))}</div>
+          <div class="seg-card-resultado">S/ ${precioAjustado.toFixed(2)}/kg ajustado</div>
+        </div>
+        <div class="seg-card-pct ${cls}">${sign}${s.ajustePct}%</div>
+        <div class="seg-card-acciones">
+          <button onclick="MOS.segEditar('${s.id}')" class="seg-card-btn" title="Editar">✏</button>
+          <button onclick="MOS.segEliminar('${s.id}')" class="seg-card-btn danger" title="Eliminar">🗑</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function segCalcular() {
+    const inp = $('segCalcInput');
+    const sel = $('segCalcUnidad');
+    const res = $('segCalcResultado');
+    const sug = $('segCalcSugerencias');
+    if (!inp || !res) return;
+    const valor = parseFloat(inp.value);
+    const unidad = sel?.value || 'g';
+    if (!valor || valor <= 0) {
+      res.classList.remove('activo');
+      res.textContent = 'Ingresa una cantidad para ver el precio';
+      sug.innerHTML = '';
+      return;
+    }
+    const gramos = unidad === 'kg' ? valor * 1000 : valor;
+    const calc = _segCalcularPrecio(gramos);
+    res.classList.add('activo');
+    const segTxt = calc.segmento
+      ? '🎯 Cae en <strong>' + _escapeHtml(calc.segmento.nombre || 'segmento') + '</strong> (' + (calc.ajustePct > 0 ? '+' : '') + calc.ajustePct + '%)'
+      : '⚪ Sin segmento · usa <strong>canónico</strong>';
+    res.innerHTML = '💰 <strong>S/ ' + calc.precio.toFixed(2) + '</strong> · ' + segTxt;
+    // Sugerencias en otros gramajes
+    const sugs = [50, 100, 250, 500, 1000, 2500, 5000].filter(g => g !== gramos);
+    sug.innerHTML = sugs.map(g => {
+      const c = _segCalcularPrecio(g);
+      const lbl = g >= 1000 ? (g/1000) + 'kg' : g + 'g';
+      return `<span class="seg-calc-sug-btn" onclick="document.getElementById('segCalcInput').value=${g};document.getElementById('segCalcUnidad').value='g';MOS.segCalcular()">${lbl} → S/${c.precio.toFixed(2)}</span>`;
+    }).join('');
+  }
+
+  function _segCalcularPrecio(gramos) {
+    const pc = _segState.precioCanonico;
+    let aplicado = null;
+    for (const s of _segState.segmentos) {
+      const cumpleMin = s.minIncl ? gramos >= s.min : gramos > s.min;
+      if (!cumpleMin) continue;
+      const cumpleMax = s.max === null ? true : (s.maxIncl ? gramos <= s.max : gramos < s.max);
+      if (cumpleMax) { aplicado = s; break; }
+    }
+    const ajuste = aplicado ? aplicado.ajustePct : 0;
+    const precioKg = pc * (1 + ajuste / 100);
+    const precio = Math.round(precioKg * (gramos / 1000) * 100) / 100;
+    return { precio, precioKg, ajustePct: ajuste, segmento: aplicado };
+  }
+
+  // ── Modal CRUD ──
+  function segNuevo() {
+    _segState.editandoId = null;
+    _segState.modalUnidad = 'g';
+    _segState.modalMinIncl = true;
+    _segState.modalMaxIncl = false;
+    $('segModalTitulo').textContent = '➕ Nuevo segmento';
+    $('segInputNombre').value = '';
+    $('segInputMin').value = '';
+    $('segInputMax').value = '';
+    $('segInputAjuste').value = 10;
+    segOnSliderAjuste(10);
+    segToggleUnidad('g');
+    _segActualizarBracketsUI();
+    openModal('modalSegmento');
+    setTimeout(() => $('segInputMin')?.focus(), 100);
+  }
+
+  function segEditar(idSeg) {
+    const s = _segState.segmentos.find(x => x.id === idSeg);
+    if (!s) return;
+    _segState.editandoId = idSeg;
+    _segState.modalMinIncl = s.minIncl;
+    _segState.modalMaxIncl = s.maxIncl;
+    // Detectar unidad razonable: si min y max son múltiplos de 1000 grandes, usar kg
+    const usarKg = (s.min >= 1000 || (s.max && s.max >= 1000));
+    _segState.modalUnidad = usarKg ? 'kg' : 'g';
+    $('segModalTitulo').textContent = '✏ Editar segmento';
+    $('segInputNombre').value = s.nombre || '';
+    $('segInputMin').value = usarKg ? s.min / 1000 : s.min;
+    $('segInputMax').value = s.max === null ? '' : (usarKg ? s.max / 1000 : s.max);
+    $('segInputAjuste').value = s.ajustePct;
+    segOnSliderAjuste(s.ajustePct);
+    segToggleUnidad(_segState.modalUnidad);
+    _segActualizarBracketsUI();
+    openModal('modalSegmento');
+  }
+
+  function segCerrarModal() { closeModal('modalSegmento'); }
+
+  function segToggleUnidad(u) {
+    _segState.modalUnidad = u;
+    $('segUnidadG').classList.toggle('active', u === 'g');
+    $('segUnidadKg').classList.toggle('active', u === 'kg');
+    const lbl = u === 'g' ? 'g' : 'kg';
+    $('segUnidadMinLbl').textContent = lbl;
+    $('segUnidadMaxLbl').textContent = lbl;
+    $('segInputMin').step = u === 'g' ? '1' : '0.01';
+    $('segInputMax').step = u === 'g' ? '1' : '0.01';
+    segValidarLive();
+  }
+
+  function segToggleBracket(lado, incl) {
+    if (lado === 'min') {
+      _segState.modalMinIncl = incl;
+    } else {
+      _segState.modalMaxIncl = incl;
+    }
+    _segActualizarBracketsUI();
+    segValidarLive();
+  }
+
+  function _segActualizarBracketsUI() {
+    $('segMinIncl').classList.toggle('active', _segState.modalMinIncl);
+    $('segMinExcl').classList.toggle('active', !_segState.modalMinIncl);
+    $('segMaxIncl').classList.toggle('active', _segState.modalMaxIncl);
+    $('segMaxExcl').classList.toggle('active', !_segState.modalMaxIncl);
+    $('segMinHelp').textContent = _segState.modalMinIncl ? 'cerrado · incluye' : 'abierto · no incluye';
+    $('segMaxHelp').textContent = _segState.modalMaxIncl ? 'cerrado · incluye' : 'abierto · no incluye';
+  }
+
+  function segAtajo(minG, maxG) {
+    const u = _segState.modalUnidad;
+    $('segInputMin').value = u === 'kg' ? minG/1000 : minG;
+    $('segInputMax').value = maxG === null ? '' : (u === 'kg' ? maxG/1000 : maxG);
+    // Brackets típicos: min cerrado, max abierto
+    _segState.modalMinIncl = true;
+    _segState.modalMaxIncl = false;
+    _segActualizarBracketsUI();
+    segValidarLive();
+  }
+
+  function segOnSliderAjuste(v) {
+    const n = parseInt(v, 10) || 0;
+    const sign = n > 0 ? '+' : '';
+    const el = $('segPctDisplay');
+    if (el) {
+      el.textContent = sign + n + ' %';
+      el.style.color = n > 0 ? '#fbbf24' : (n < 0 ? '#34d399' : '#94a3b8');
+    }
+    segValidarLive();
+  }
+
+  function _segValoresModalEnGramos() {
+    const u = _segState.modalUnidad;
+    const minRaw = parseFloat($('segInputMin').value);
+    const maxRaw = $('segInputMax').value.trim();
+    const min = u === 'kg' ? minRaw * 1000 : minRaw;
+    const max = maxRaw === '' ? null : (u === 'kg' ? parseFloat(maxRaw) * 1000 : parseFloat(maxRaw));
+    const ajuste = parseFloat($('segInputAjuste').value);
+    return { min, max, minIncl: _segState.modalMinIncl, maxIncl: _segState.modalMaxIncl, ajustePct: ajuste };
+  }
+
+  function segValidarLive() {
+    const v = _segValoresModalEnGramos();
+    const msg = $('segValidacionMsg');
+    const btn = $('segBtnGuardar');
+    const pc = _segState.precioCanonico;
+
+    // Preview
+    $('segPreviewCanonico').textContent = 'S/ ' + pc.toFixed(2) + ' / kg';
+    const ajustado = pc * (1 + (v.ajustePct || 0) / 100);
+    $('segPreviewAjustado').textContent = 'S/ ' + ajustado.toFixed(2) + ' / kg';
+
+    // Ejemplos a 50/99/100/500/1000g si están en rango
+    let ejemplos = '';
+    [50, 99, 100, 500, 1000].forEach(g => {
+      const enRango = (v.minIncl ? g >= v.min : g > v.min) &&
+                      (v.max === null ? true : (v.maxIncl ? g <= v.max : g < v.max));
+      const lbl = g >= 1000 ? (g/1000) + 'kg' : g + 'g';
+      const precio = enRango
+        ? (ajustado * (g/1000)).toFixed(2)
+        : (pc * (g/1000)).toFixed(2);
+      const tag = enRango ? '🎯' : '⚪';
+      ejemplos += `<div class="seg-preview-ej-row"><span>${tag} ${lbl}</span><span>S/ ${precio}</span></div>`;
+    });
+    $('segPreviewEjemplos').innerHTML = ejemplos;
+
+    // Validar
+    let err = null;
+    if (isNaN(v.min) || v.min < 0) err = 'Indica el mínimo';
+    else if (v.max !== null && (isNaN(v.max) || v.max <= v.min)) err = 'El máximo debe ser mayor que el mínimo';
+    else if (isNaN(v.ajustePct)) err = 'Indica el ajuste';
+    else if (v.ajustePct === 0) err = 'El ajuste no puede ser 0% (sin sentido)';
+    else if (v.ajustePct < -50 || v.ajustePct > 50) err = 'Ajuste fuera de rango (-50% a +50%)';
+    else {
+      // Check solapamiento con otros segmentos (excluyendo el que se está editando)
+      const otros = _segState.segmentos.filter(s => s.id !== _segState.editandoId);
+      const conflicto = otros.find(s => _segDosSegmentosSolapan(v, s));
+      if (conflicto) err = 'Solapa con "' + (conflicto.nombre || 'otro segmento') + '"';
+    }
+
+    if (err) {
+      msg.className = 'seg-validacion err';
+      msg.textContent = '⚠ ' + err;
+      if (btn) btn.disabled = true;
+    } else {
+      msg.className = 'seg-validacion ok';
+      msg.textContent = '✓ Listo para guardar';
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function _segDosSegmentosSolapan(a, b) {
+    const aMax = a.max === null ? Infinity : a.max;
+    const bMax = b.max === null ? Infinity : b.max;
+    if (aMax < b.min) return false;
+    if (aMax === b.min) { if (!a.maxIncl || !b.minIncl) return false; }
+    if (bMax < a.min) return false;
+    if (bMax === a.min) { if (!b.maxIncl || !a.minIncl) return false; }
+    return true;
+  }
+
+  function segGuardar() {
+    const v = _segValoresModalEnGramos();
+    const nombre = $('segInputNombre').value.trim();
+    const id = _segState.editandoId || ('seg-' + Date.now());
+    const nuevo = {
+      id,
+      nombre,
+      min: Math.round(v.min),
+      max: v.max === null ? null : Math.round(v.max),
+      minIncl: v.minIncl,
+      maxIncl: v.maxIncl,
+      ajustePct: v.ajustePct,
+      creadoEn: new Date().toISOString()
+    };
+    if (_segState.editandoId) {
+      const idx = _segState.segmentos.findIndex(s => s.id === id);
+      if (idx >= 0) _segState.segmentos[idx] = nuevo;
+    } else {
+      _segState.segmentos.push(nuevo);
+    }
+    segCerrarModal();
+    segRenderEditor();
+    _finBeep && _finBeep('success');
+    toast('💾 Segmento guardado · recordá guardar el producto', 'success');
+  }
+
+  function segEliminar(idSeg) {
+    if (!confirm('¿Eliminar este segmento?')) return;
+    _segState.segmentos = _segState.segmentos.filter(s => s.id !== idSeg);
+    segRenderEditor();
+    _finBeep && _finBeep('tap');
+    toast('🗑 Segmento eliminado', 'info');
+  }
+
+  // Helper: persistir segmentos al guardar producto. Llamado desde el flujo
+  // de guardar producto del modal (después del save normal).
+  async function segPersistirSiCambio() {
+    if (!_segState.idProducto) return;
+    try {
+      const audit = (typeof _auditCtx === 'function') ? _auditCtx() : {};
+      const res = await API.post('actualizarSegmentosPrecio', {
+        _source: 'MOS_SEGMENTOS_PRECIO',
+        _audit: audit,
+        idProducto: _segState.idProducto,
+        segmentos: _segState.segmentos
+      });
+      if (res?.ok) {
+        // Reflejar en cache local
+        const p = S.productos.find(x => x.idProducto === _segState.idProducto);
+        if (p) p.segmentos_precio = JSON.stringify(_segState.segmentos);
+      } else {
+        toast('⚠ Segmentos no guardados: ' + (res?.error || 'error'), 'warn');
+      }
+    } catch(e) {
+      toast('Error guardando segmentos: ' + (e.message || e), 'error');
+    }
+  }
+
   // ── LOG de cambios de productos (master) ──────────────────
   // Estado del log (UI compacta)
   let _logProdState = {
@@ -11329,6 +11712,18 @@ const MOS = (() => {
       _prodOnPoliticaOverride();
       _prodActualizarPoliticaEfectiva();
     }
+    // [v2.41.97] Cargar segmentos del producto + mostrar sección si KGM
+    try {
+      const prodCargar = id ? S.productos.find(x => x.idProducto === id) : null;
+      if (prodCargar) {
+        segCargarParaProducto(prodCargar);
+      } else {
+        _segState.idProducto = null;
+        _segState.precioCanonico = 0;
+        _segState.segmentos = [];
+      }
+      segActualizarVisibilidad();
+    } catch(_) {}
     openModal('modalProducto');
   }
 
@@ -11759,6 +12154,15 @@ const MOS = (() => {
       const action = isEdit ? 'actualizarProducto' : 'crearProducto';
       const r = await API.post(action, params);
       toast(isEdit ? 'Producto actualizado ✓' : 'Producto creado ✓', 'ok');
+      // [v2.41.97] Si es KGM canónico y el editor de segmentos está cargado,
+      // persistir también los segmentos. Silencioso, no bloquea el flujo.
+      if (isEdit && _segState && _segState.idProducto === params.idProducto) {
+        const um = String(params.Unidad_Medida || params.unidad || '').toUpperCase();
+        const fc = parseFloat(params.factorConversion || 1);
+        if (um === 'KGM' && fc === 1) {
+          segPersistirSiCambio().catch(() => {});
+        }
+      }
       // Refresh catálogo
       S.loaded['catalogo'] = false;
       await loadCatalogo(true);
@@ -30118,6 +30522,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     tribToggleAyuda, _tribPrecargarBoot,
     // [v2.41.94] OCR masivo retroactivo
     tribOCRMasivo,
+    // [v2.41.97] Pricing por segmentos (graneles)
+    prodToggleSegmentos, segActualizarVisibilidad, segNuevo, segEditar, segEliminar,
+    segCalcular, segToggleUnidad, segToggleBracket, segAtajo, segOnSliderAjuste,
+    segValidarLive, segGuardar, segCerrarModal,
     // F2 — Acciones editables sobre tickets
     cjAbrirAccionesTicket, _tkAccion,
     _tkCobrarSetMetodo, _tkCobrarSetCaja, _tkCobrarValidarMixto, _tkCobrarConfirmar,

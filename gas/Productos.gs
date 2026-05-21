@@ -14,7 +14,8 @@ var _SOURCES_AUTORIZADOS = [
   'MOS_PN_APROBACION',   // lanzarProductoNuevo (crea producto al aprobar PN)
   'MOS_PN_CORRECCION',   // lanzarProductoNuevo tipo CORREGIR_CODIGO
   'MOS_PROV_MINMAX',     // edición inline de stockMinimo/stockMaximo desde proveedores
-  'MOS_MIGRACION'        // import bulk
+  'MOS_MIGRACION',       // import bulk
+  'MOS_SEGMENTOS_PRECIO' // [v2.41.97] editor de pricing por segmentos (graneles)
 ];
 
 function _validarSource(params, accion, tabla) {
@@ -865,4 +866,184 @@ function _registrarHistorialPrecio(idProd, skuBase, codBarra, desc, anterior, nu
 function _registrarAlerta(tipo, urgencia, mensaje, appOrigen, datos) {
   var sheet = getSheet('ALERTAS_LOG');
   sheet.appendRow([_generateId('AL'), tipo, urgencia, mensaje, appOrigen, datos || '', new Date(), '0']);
+}
+
+// ============================================================
+// [v2.41.97] PRICING POR SEGMENTOS — solo productos KGM (graneles)
+// Permite definir tramos sobre la cantidad en gramos que aplican
+// un ajuste porcentual al precio canónico por kg.
+//
+// Estructura interna (siempre en GRAMOS):
+//   [{ id, nombre, min, max, minIncl, maxIncl, ajustePct, creadoEn }]
+//
+// Reglas:
+//   - min/max en gramos. max=null = infinito.
+//   - minIncl/maxIncl bool (cerrado/abierto).
+//   - ajustePct entre -50 y +50, NO puede ser 0 (sino el segmento no tiene sentido).
+//   - No solapan entre sí.
+//   - min < max (si max no es null).
+// ============================================================
+function _validarSegmentosPrecio(segmentos) {
+  if (!Array.isArray(segmentos)) return { ok: false, error: 'Debe ser un array' };
+  if (segmentos.length === 0) return { ok: true, segmentos: [] };
+  // Validar cada segmento
+  var limpios = [];
+  for (var i = 0; i < segmentos.length; i++) {
+    var s = segmentos[i];
+    if (typeof s.min !== 'number' || isNaN(s.min) || s.min < 0) {
+      return { ok: false, error: 'Segmento ' + (i+1) + ': min debe ser número >= 0' };
+    }
+    if (s.max !== null && (typeof s.max !== 'number' || isNaN(s.max) || s.max <= s.min)) {
+      return { ok: false, error: 'Segmento ' + (i+1) + ': max debe ser > min (o null para infinito)' };
+    }
+    if (typeof s.ajustePct !== 'number' || isNaN(s.ajustePct)) {
+      return { ok: false, error: 'Segmento ' + (i+1) + ': ajustePct requerido' };
+    }
+    if (s.ajustePct === 0) {
+      return { ok: false, error: 'Segmento ' + (i+1) + ': el ajuste no puede ser 0% (sería redundante)' };
+    }
+    if (s.ajustePct < -50 || s.ajustePct > 50) {
+      return { ok: false, error: 'Segmento ' + (i+1) + ': ajustePct debe estar entre -50 y +50' };
+    }
+    limpios.push({
+      id:        String(s.id || ('seg-' + Date.now() + '-' + i)),
+      nombre:    String(s.nombre || '').substring(0, 40),
+      min:       Math.round(s.min),
+      max:       s.max === null ? null : Math.round(s.max),
+      minIncl:   s.minIncl !== false,
+      maxIncl:   s.maxIncl === true,
+      ajustePct: Math.round(s.ajustePct * 100) / 100,
+      creadoEn:  String(s.creadoEn || new Date().toISOString())
+    });
+  }
+  // Detectar solapamientos: para cada par, ver si se intersectan
+  for (var a = 0; a < limpios.length; a++) {
+    for (var b = a + 1; b < limpios.length; b++) {
+      if (_segmentosSolapan(limpios[a], limpios[b])) {
+        return { ok: false, error: 'Solapamiento entre "' + (limpios[a].nombre || a+1) + '" y "' + (limpios[b].nombre || b+1) + '"' };
+      }
+    }
+  }
+  return { ok: true, segmentos: limpios };
+}
+
+function _segmentosSolapan(a, b) {
+  // Normalizar: convertir bounds inclusivos/exclusivos a "ranges abiertos"
+  // para comparación. min con minIncl=true es [min, ...) y minIncl=false es (min, ...)
+  // max con maxIncl=true es [..., max] y maxIncl=false es [..., max)
+  var aMaxEff = a.max === null ? Infinity : a.max;
+  var bMaxEff = b.max === null ? Infinity : b.max;
+  // ¿a y b tienen algún punto en común?
+  // No solapan si a termina antes (o exactamente en frontera abierta) de que b empiece.
+  if (aMaxEff < b.min) return false;
+  if (aMaxEff === b.min) {
+    // Frontera: solapan solo si AMBOS extremos son cerrados
+    if (!a.maxIncl || !b.minIncl) return false;
+  }
+  if (bMaxEff < a.min) return false;
+  if (bMaxEff === a.min) {
+    if (!b.maxIncl || !a.minIncl) return false;
+  }
+  return true;
+}
+
+// Helper: determina si una cantidad (en gramos) cae dentro de un segmento.
+function _gramosEnSegmento(gramos, s) {
+  var cumpleMin = s.minIncl ? gramos >= s.min : gramos > s.min;
+  if (!cumpleMin) return false;
+  if (s.max === null) return true;
+  return s.maxIncl ? gramos <= s.max : gramos < s.max;
+}
+
+// Helper público: calcula el precio total de X gramos de un granel dado su
+// precio canónico/kg y los segmentos configurados. Usado por ME al vender.
+function calcularPrecioGranel(precioCanonico, gramos, segmentos) {
+  var pc = parseFloat(precioCanonico) || 0;
+  var g  = parseFloat(gramos) || 0;
+  if (pc <= 0 || g <= 0) return { precio: 0, ajustePct: 0, segmento: null };
+  var lista = Array.isArray(segmentos) ? segmentos : [];
+  var aplicado = null;
+  for (var i = 0; i < lista.length; i++) {
+    if (_gramosEnSegmento(g, lista[i])) {
+      aplicado = lista[i];
+      break;
+    }
+  }
+  var ajuste = aplicado ? aplicado.ajustePct : 0;
+  var precioKg = pc * (1 + ajuste / 100);
+  var precioTotal = Math.round(precioKg * (g / 1000) * 100) / 100;
+  return {
+    precio: precioTotal,
+    precioKg: Math.round(precioKg * 100) / 100,
+    ajustePct: ajuste,
+    segmento: aplicado ? { id: aplicado.id, nombre: aplicado.nombre, min: aplicado.min, max: aplicado.max } : null
+  };
+}
+
+// ── Endpoint: actualizarSegmentosPrecio ──
+// Persiste segmentos validados en columna `segmentos_precio` de PRODUCTOS_MASTER.
+// Solo aplicable si el producto tiene Unidad_Medida === 'KGM'.
+function actualizarSegmentosPrecio(params) {
+  var bloqueo = _validarSource(params, 'segmentos', 'PRODUCTOS_MASTER');
+  if (bloqueo) return bloqueo;
+  if (!params.idProducto) return { ok: false, error: 'idProducto requerido' };
+
+  // Validar segmentos
+  var val = _validarSegmentosPrecio(params.segmentos || []);
+  if (!val.ok) return val;
+
+  var sheet = getSheet('PRODUCTOS_MASTER');
+  var data = sheet.getDataRange().getValues();
+  var hdrs = data[0];
+  // Auto-crear columna segmentos_precio si no existe (idempotente)
+  var idxSeg = hdrs.indexOf('segmentos_precio');
+  if (idxSeg < 0) {
+    sheet.getRange(1, sheet.getLastColumn() + 1).setValue('segmentos_precio').setFontWeight('bold');
+    SpreadsheetApp.flush();
+    hdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    idxSeg = hdrs.indexOf('segmentos_precio');
+  }
+  var idxUM = hdrs.indexOf('Unidad_Medida');
+  var idxFC = hdrs.indexOf('factorConversion');
+
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][0] !== params.idProducto) continue;
+    // Validar que sea granel (KGM)
+    var um = String(data[i][idxUM] || '').toUpperCase();
+    if (um !== 'KGM') {
+      return { ok: false, error: 'Solo productos KGM (granel) admiten segmentos · este es ' + (um || 'sin unidad') };
+    }
+    // Validar que sea canónico (factor=1) — los segmentos viven en el canónico
+    var fc = parseFloat(data[i][idxFC] || 1);
+    if (fc !== 1) {
+      return { ok: false, error: 'Los segmentos se configuran en el canónico (factor=1), no en presentaciones' };
+    }
+    // Persistir
+    var json = JSON.stringify(val.segmentos);
+    sheet.getRange(i + 1, idxSeg + 1).setValue(json);
+    SpreadsheetApp.flush();
+    // Audit
+    try {
+      var ts = new Date().toISOString();
+      var aud = params._audit || {};
+      var entrada = {
+        ts: ts,
+        usuario: aud.usuario || params.usuario || 'admin',
+        source: 'MOS_SEGMENTOS_PRECIO',
+        accion: 'actualizar_segmentos',
+        cambios: [{ campo: 'segmentos_precio', cantidad: val.segmentos.length }]
+      };
+      var idxHist = hdrs.indexOf('historialCambios');
+      if (idxHist >= 0) {
+        var existente = String(data[i][idxHist] || '[]');
+        var arr;
+        try { arr = JSON.parse(existente); } catch(_) { arr = []; }
+        if (!Array.isArray(arr)) arr = [];
+        arr.push(entrada);
+        sheet.getRange(i + 1, idxHist + 1).setValue(JSON.stringify(arr.slice(-50)));
+      }
+    } catch(_) {}
+    return { ok: true, segmentos: val.segmentos, total: val.segmentos.length };
+  }
+  return { ok: false, error: 'Producto no encontrado: ' + params.idProducto };
 }
