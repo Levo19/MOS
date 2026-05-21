@@ -1059,12 +1059,29 @@ const MOS = (() => {
     try {
       const mi = _calcularMargenInfo(producto);
       if (!mi) return '';
-      const cls = mi.estado === 'bajo' ? 'text-rose-400' : mi.estado === 'sin-regla' ? 'text-slate-500' : 'text-emerald-400';
-      const icon = mi.estado === 'bajo' ? '⚠' : '';
+      // [v2.41.98] Chip de margen llamativo con coloración por nivel:
+      //   ≥ 40% → excelente (verde brillante + pulse)
+      //   25-39% → bueno (verde)
+      //   15-24% → ok (ámbar)
+      //   5-14%  → bajo (naranja)
+      //   < 5%   → crítico (rojo + pulse fuerte)
+      //   < 0%   → pérdida (rojo profundo)
+      const m = mi.margen;
+      let nivel, ico;
+      if (m < 0)        { nivel = 'perdida';   ico = '🚨'; }
+      else if (m < 5)   { nivel = 'critico';   ico = '⚠';  }
+      else if (m < 15)  { nivel = 'bajo';      ico = '⚡'; }
+      else if (m < 25)  { nivel = 'ok';        ico = ''; }
+      else if (m < 40)  { nivel = 'bueno';     ico = '✓'; }
+      else              { nivel = 'excelente'; ico = '🔥'; }
       const tip = (mi.modo === 'FIJO' || mi.modo === 'LIBRE')
         ? 'Modo ' + mi.modo + ' (sin objetivo)'
-        : 'Objetivo ' + (parseFloat(mi.objetivo) || 0).toFixed(1) + '%';
-      return '<div class="text-[10px] ' + cls + '" title="' + tip + '">Margen: ' + mi.margen.toFixed(1) + '% ' + icon + '</div>';
+        : 'Objetivo política: ' + (parseFloat(mi.objetivo) || 0).toFixed(1) + '%';
+      return `<div class="cat-margen-chip cat-margen-${nivel}" title="${tip}">
+        <span class="cat-margen-ico">${ico}</span>
+        <span class="cat-margen-num">${m.toFixed(1)}%</span>
+        <span class="cat-margen-lbl">MARGEN</span>
+      </div>`;
     } catch (_) { return ''; }
   }
 
@@ -1994,6 +2011,7 @@ const MOS = (() => {
             </div>
           </div>
         </div>
+        ${_renderSegmentosMini(base)}
         ${presHtml}
       </div>`;
     }).join('');
@@ -2002,6 +2020,119 @@ const MOS = (() => {
   function togglePresentaciones(idProducto) {
     const el = document.getElementById('pres-' + CSS.escape(idProducto));
     if (el) el.classList.toggle('open');
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // [v2.41.98] Mini-mapa de segmentos en la card del catálogo (granel)
+  // Banda horizontal con bandas coloreadas (ámbar + / verde -) + eje con
+  // puntos de corte. Click en banda → modal de edición del segmento.
+  // Estado vacío con CTA "🎚 Agregar pricing por tramos".
+  // ─────────────────────────────────────────────────────────────────
+  function _renderSegmentosMini(producto) {
+    // Solo aplica a granel canónico
+    const um = String(producto.unidad || producto.Unidad_Medida || '').toUpperCase();
+    const fc = parseFloat(producto.factorConversion || 1);
+    if (um !== 'KGM' || fc !== 1) return '';
+
+    let segs = [];
+    try {
+      const raw = producto.segmentos_precio || '';
+      if (typeof raw === 'string' && raw.trim()) segs = JSON.parse(raw);
+      else if (Array.isArray(raw)) segs = raw;
+    } catch(_) { segs = []; }
+
+    const idProdEsc = String(producto.idProducto).replace(/'/g, '&#39;');
+
+    // Estado vacío: CTA llamativo
+    if (!Array.isArray(segs) || !segs.length) {
+      return `<div class="cat-seg-mini cat-seg-empty"
+                   onclick="event.stopPropagation();MOS.abrirModalProducto('${idProdEsc}')">
+        <span class="cat-seg-empty-ico">🎚</span>
+        <span class="cat-seg-empty-txt">
+          <strong>Agregar pricing por tramos</strong>
+          <small>Define rangos con ajuste % al canónico</small>
+        </span>
+        <span class="cat-seg-empty-arrow">→</span>
+      </div>`;
+    }
+
+    // Calcular escala: si todos tienen max, max global; si hay infinito, +20%
+    const maxFinitos = segs.filter(s => s.max !== null).map(s => s.max);
+    const maxF = maxFinitos.length ? Math.max(...maxFinitos) : 1000;
+    const escalaMax = maxF * 1.25;
+    const fmtG = g => g >= 1000 ? (g/1000) + 'kg' : g + 'g';
+
+    // Bandas
+    const bandas = segs.map(s => {
+      const cls = s.ajustePct > 0 ? 'positivo' : 'negativo';
+      const left = Math.max(0, (s.min / escalaMax) * 100);
+      const widthRaw = s.max === null ? (100 - left) : ((s.max - s.min) / escalaMax) * 100;
+      const width = Math.max(2, Math.min(widthRaw, 100 - left));
+      const sign = s.ajustePct > 0 ? '+' : '';
+      const sidEsc = String(s.id).replace(/'/g, '&#39;');
+      return `<div class="cat-seg-banda ${cls}"
+                   style="left:${left}%; width:${width}%"
+                   onclick="event.stopPropagation();MOS.segEditarDesdeCard('${idProdEsc}','${sidEsc}')"
+                   title="${_escapeHtml(s.nombre || '')} · ${sign}${s.ajustePct}% · click para editar">
+        <span class="cat-seg-banda-pct">${sign}${s.ajustePct}%</span>
+      </div>`;
+    }).join('');
+
+    // Marcas del eje: 0g + cada breakpoint único + maxF
+    const cortes = new Set();
+    cortes.add(0);
+    segs.forEach(s => {
+      if (s.min > 0) cortes.add(s.min);
+      if (s.max !== null && s.max < escalaMax) cortes.add(s.max);
+    });
+    cortes.add(maxF);
+    const cortesArr = Array.from(cortes).sort((a, b) => a - b);
+    const ejeMarcas = cortesArr.map(g => {
+      const left = (g / escalaMax) * 100;
+      return `<span class="cat-seg-eje-marca" style="left:${left}%">${fmtG(g)}</span>`;
+    }).join('') + `<span class="cat-seg-eje-marca cat-seg-eje-inf" style="left:97%">∞</span>`;
+
+    // Nombres de segmentos debajo (si tienen nombre)
+    const nombres = segs.map(s => {
+      if (!s.nombre) return '';
+      const left = Math.max(0, (s.min / escalaMax) * 100);
+      const widthRaw = s.max === null ? (100 - left) : ((s.max - s.min) / escalaMax) * 100;
+      const width = Math.max(2, Math.min(widthRaw, 100 - left));
+      const center = left + (width / 2);
+      return `<span class="cat-seg-nombre" style="left:${center}%">${_escapeHtml(s.nombre)}</span>`;
+    }).join('');
+
+    return `<div class="cat-seg-mini">
+      <div class="cat-seg-titulo">
+        🎚 <strong>Segmentos</strong>
+        <span class="cat-seg-count">${segs.length} activo${segs.length !== 1 ? 's' : ''}</span>
+        <button type="button" class="cat-seg-edit-btn"
+                onclick="event.stopPropagation();MOS.abrirModalProducto('${idProdEsc}')"
+                title="Editar segmentos">✏</button>
+      </div>
+      <div class="cat-seg-band-container">
+        <div class="cat-seg-band-bg">${bandas}</div>
+        <div class="cat-seg-eje">${ejeMarcas}</div>
+        ${nombres ? `<div class="cat-seg-nombres">${nombres}</div>` : ''}
+      </div>
+    </div>`;
+  }
+
+  // Abre el modal del producto y, una vez cargado, dispara directo el
+  // modal de edición del segmento específico (atajo desde la card).
+  function segEditarDesdeCard(idProducto, idSegmento) {
+    abrirModalProducto(idProducto);
+    // Esperar a que el modal se monte + segmentos se carguen
+    setTimeout(() => {
+      // Expandir sección de segmentos si está colapsada
+      const sec = document.getElementById('segmentosContent');
+      const ch = document.getElementById('segChevron');
+      if (sec && sec.classList.contains('hidden')) {
+        sec.classList.remove('hidden');
+        if (ch) ch.textContent = '▼';
+      }
+      try { segEditar(idSegmento); } catch(_) {}
+    }, 250);
   }
 
   function toggleDerivs(id) { togglePresentaciones(id); } // backward compat
@@ -10814,9 +10945,41 @@ const MOS = (() => {
     const ajustado = pc * (1 + (v.ajustePct || 0) / 100);
     $('segPreviewAjustado').textContent = 'S/ ' + ajustado.toFixed(2) + ' / kg';
 
-    // Ejemplos a 50/99/100/500/1000g si están en rango
+    // [v2.41.98] Ejemplos auto-calculados según los breakpoints actuales:
+    //   - El min y max del segmento que se está editando (frontera)
+    //   - 1g antes y después de cada borde (transición)
+    //   - 1 punto central del rango (medio típico)
+    //   - Los breakpoints de OTROS segmentos del producto (para ver el efecto cruzado)
+    let puntos = new Set();
+    // bordes propios
+    if (!isNaN(v.min)) {
+      puntos.add(Math.max(0, v.min));
+      if (v.min > 0) puntos.add(v.min - 1);
+      puntos.add(v.min + 1);
+    }
+    if (v.max !== null && !isNaN(v.max)) {
+      if (v.max > 0) puntos.add(v.max - 1);
+      puntos.add(v.max);
+      puntos.add(v.max + 1);
+    }
+    // centro del rango si es finito
+    if (v.max !== null && !isNaN(v.min) && !isNaN(v.max)) {
+      puntos.add(Math.round((v.min + v.max) / 2));
+    } else if (v.max === null && !isNaN(v.min)) {
+      puntos.add(v.min * 2 || 500); // un valor "típico" más allá del min abierto
+    }
+    // breakpoints de otros segmentos
+    _segState.segmentos.filter(s => s.id !== _segState.editandoId).forEach(s => {
+      puntos.add(s.min);
+      if (s.max !== null) puntos.add(s.max);
+    });
+    // ordenar ascendente, descartar negativos y duplicados
+    const puntosArr = Array.from(puntos)
+      .filter(p => p >= 0 && p <= 100000)
+      .sort((a, b) => a - b)
+      .slice(0, 8); // top 8 ejemplos
     let ejemplos = '';
-    [50, 99, 100, 500, 1000].forEach(g => {
+    puntosArr.forEach(g => {
       const enRango = (v.minIncl ? g >= v.min : g > v.min) &&
                       (v.max === null ? true : (v.maxIncl ? g <= v.max : g < v.max));
       const lbl = g >= 1000 ? (g/1000) + 'kg' : g + 'g';
@@ -10824,7 +10987,8 @@ const MOS = (() => {
         ? (ajustado * (g/1000)).toFixed(2)
         : (pc * (g/1000)).toFixed(2);
       const tag = enRango ? '🎯' : '⚪';
-      ejemplos += `<div class="seg-preview-ej-row"><span>${tag} ${lbl}</span><span>S/ ${precio}</span></div>`;
+      const cls = enRango ? 'seg-preview-ej-row enRango' : 'seg-preview-ej-row';
+      ejemplos += `<div class="${cls}"><span>${tag} ${lbl}</span><span>S/ ${precio}</span></div>`;
     });
     $('segPreviewEjemplos').innerHTML = ejemplos;
 
@@ -30526,6 +30690,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     prodToggleSegmentos, segActualizarVisibilidad, segNuevo, segEditar, segEliminar,
     segCalcular, segToggleUnidad, segToggleBracket, segAtajo, segOnSliderAjuste,
     segValidarLive, segGuardar, segCerrarModal,
+    // [v2.41.98] Atajo desde card
+    segEditarDesdeCard,
     // F2 — Acciones editables sobre tickets
     cjAbrirAccionesTicket, _tkAccion,
     _tkCobrarSetMetodo, _tkCobrarSetCaja, _tkCobrarValidarMixto, _tkCobrarConfirmar,

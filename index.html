@@ -297,6 +297,175 @@
     .prod-section-title { font-size:10px; font-weight:800; color:#475569; text-transform:uppercase; letter-spacing:.08em; margin-bottom:10px; }
     .prod-section-toggle { display:flex; width:100%; align-items:center; justify-content:space-between; padding:9px 0; font-size:12px; font-weight:700; color:#64748b; transition:color .15s; border-top:1px solid #1e293b; }
 
+    /* [v2.41.98] ═══ CHIP DE MARGEN MODERNO (todas las cards) ═══ */
+    .cat-margen-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 8px; border-radius: 99px;
+      font-size: 10px; font-weight: 800;
+      letter-spacing: .03em; line-height: 1;
+      box-shadow: 0 0 0 1px rgba(0,0,0,.2);
+      transition: transform .15s ease, box-shadow .15s;
+    }
+    .cat-margen-chip:hover { transform: scale(1.05); }
+    .cat-margen-num { font-size: 11px; font-variant-numeric: tabular-nums; }
+    .cat-margen-lbl {
+      font-size: 8px; font-weight: 700; opacity: .7;
+      letter-spacing: .06em;
+    }
+    .cat-margen-ico { font-size: 11px; }
+    .cat-margen-excelente {
+      background: linear-gradient(135deg, #10b981, #047857);
+      color: #fff;
+      box-shadow: 0 0 0 1px rgba(16,185,129,.5), 0 0 12px rgba(16,185,129,.4);
+      animation: catMargenPulseGood 2.4s ease-in-out infinite;
+    }
+    @keyframes catMargenPulseGood {
+      0%, 100% { box-shadow: 0 0 0 1px rgba(16,185,129,.5), 0 0 12px rgba(16,185,129,.4); }
+      50%      { box-shadow: 0 0 0 1px rgba(16,185,129,.7), 0 0 18px rgba(16,185,129,.6); }
+    }
+    .cat-margen-bueno {
+      background: linear-gradient(135deg, rgba(16,185,129,.25), rgba(5,150,105,.15));
+      color: #34d399;
+      box-shadow: 0 0 0 1px rgba(52,211,153,.3);
+    }
+    .cat-margen-ok {
+      background: linear-gradient(135deg, rgba(251,191,36,.2), rgba(245,158,11,.1));
+      color: #fbbf24;
+      box-shadow: 0 0 0 1px rgba(251,191,36,.3);
+    }
+    .cat-margen-bajo {
+      background: linear-gradient(135deg, rgba(249,115,22,.22), rgba(234,88,12,.12));
+      color: #fb923c;
+      box-shadow: 0 0 0 1px rgba(251,146,60,.3);
+    }
+    .cat-margen-critico {
+      background: linear-gradient(135deg, rgba(239,68,68,.25), rgba(220,38,38,.12));
+      color: #fca5a5;
+      box-shadow: 0 0 0 1px rgba(248,113,113,.4);
+      animation: catMargenPulseBad 1.4s ease-in-out infinite;
+    }
+    @keyframes catMargenPulseBad {
+      0%, 100% { box-shadow: 0 0 0 1px rgba(248,113,113,.4), 0 0 0 0 rgba(248,113,113,.4); }
+      50%      { box-shadow: 0 0 0 1px rgba(248,113,113,.6), 0 0 12px rgba(248,113,113,.5); }
+    }
+    .cat-margen-perdida {
+      background: linear-gradient(135deg, #dc2626, #991b1b);
+      color: #fff;
+      box-shadow: 0 0 0 1px rgba(220,38,38,.6), 0 0 16px rgba(220,38,38,.4);
+      animation: catMargenPulseBad 1s ease-in-out infinite;
+    }
+
+    /* [v2.41.98] ═══ MINI-MAPA DE SEGMENTOS EN CARD (granel) ═══ */
+    .cat-seg-mini {
+      margin: 4px 16px 12px;
+      background: linear-gradient(135deg, rgba(15,23,42,.6), rgba(30,41,59,.4));
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 10px 12px;
+      transition: all .2s;
+    }
+    .cat-seg-mini.cat-seg-empty {
+      display: flex; align-items: center; gap: 10px;
+      background: linear-gradient(135deg, rgba(59,130,246,.08), rgba(37,99,235,.04));
+      border: 1px dashed rgba(59,130,246,.3);
+      cursor: pointer;
+    }
+    .cat-seg-empty:hover {
+      background: linear-gradient(135deg, rgba(59,130,246,.15), rgba(37,99,235,.08));
+      border-style: solid; border-color: #3b82f6;
+      transform: translateY(-1px);
+    }
+    .cat-seg-empty-ico { font-size: 1.3rem; flex-shrink: 0; }
+    .cat-seg-empty-txt { flex: 1; display: flex; flex-direction: column; gap: 1px; }
+    .cat-seg-empty-txt strong { color: #93c5fd; font-size: 12px; font-weight: 800; }
+    .cat-seg-empty-txt small { color: #64748b; font-size: 10.5px; }
+    .cat-seg-empty-arrow { color: #3b82f6; font-size: 1.1rem; font-weight: 900; }
+
+    .cat-seg-titulo {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11px; color: #cbd5e1; margin-bottom: 6px;
+    }
+    .cat-seg-titulo strong { color: #f1f5f9; font-size: 11.5px; }
+    .cat-seg-count {
+      background: rgba(15,23,42,.7); padding: 1px 8px;
+      border-radius: 99px; font-size: 9.5px; color: #94a3b8;
+      border: 1px solid #334155;
+    }
+    .cat-seg-edit-btn {
+      margin-left: auto; background: transparent;
+      border: 1px solid #475569; color: #94a3b8;
+      width: 22px; height: 22px; border-radius: 6px;
+      font-size: 11px; cursor: pointer; transition: all .15s;
+    }
+    .cat-seg-edit-btn:hover {
+      background: rgba(59,130,246,.2); color: #93c5fd; border-color: #3b82f6;
+    }
+    .cat-seg-band-container {
+      position: relative; padding: 0 4px;
+    }
+    .cat-seg-band-bg {
+      position: relative; height: 28px;
+      background: linear-gradient(90deg,
+        rgba(148,163,184,.08) 0%,
+        rgba(148,163,184,.15) 50%,
+        rgba(148,163,184,.08) 100%);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .cat-seg-banda {
+      position: absolute; top: 0; bottom: 0;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-weight: 800;
+      cursor: pointer; transition: all .2s;
+      animation: catSegBandaIn .55s cubic-bezier(.16,1,.3,1) both;
+      opacity: 0;
+    }
+    @keyframes catSegBandaIn {
+      0%   { opacity: 0; transform: scaleX(.5); transform-origin: left; }
+      100% { opacity: .95; transform: scaleX(1); }
+    }
+    .cat-seg-banda:hover {
+      opacity: 1;
+      box-shadow: 0 0 0 2px rgba(255,255,255,.3), 0 0 12px rgba(0,0,0,.3);
+      z-index: 2;
+      filter: brightness(1.1);
+    }
+    .cat-seg-banda.positivo {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      box-shadow: inset 0 -2px 0 rgba(0,0,0,.15);
+    }
+    .cat-seg-banda.negativo {
+      background: linear-gradient(135deg, #10b981, #047857);
+      box-shadow: inset 0 -2px 0 rgba(0,0,0,.15);
+    }
+    .cat-seg-banda-pct {
+      font-size: 11px; line-height: 1;
+      text-shadow: 0 1px 2px rgba(0,0,0,.4);
+      font-variant-numeric: tabular-nums;
+    }
+    .cat-seg-eje {
+      position: relative; height: 14px; margin-top: 2px;
+    }
+    .cat-seg-eje-marca {
+      position: absolute; top: 0;
+      font-size: 8.5px; color: #64748b; font-weight: 700;
+      transform: translateX(-50%);
+      white-space: nowrap;
+    }
+    .cat-seg-eje-marca.cat-seg-eje-inf {
+      color: #fbbf24; font-size: 11px; top: -1px;
+    }
+    .cat-seg-nombres {
+      position: relative; height: 14px; margin-top: 2px;
+    }
+    .cat-seg-nombre {
+      position: absolute; top: 0;
+      font-size: 9px; color: #cbd5e1; font-weight: 700;
+      transform: translateX(-50%);
+      white-space: nowrap;
+      text-shadow: 0 1px 2px rgba(0,0,0,.3);
+    }
+
     /* [v2.41.97] ═══ PRICING POR SEGMENTOS (graneles) ═══ */
     .seg-explica {
       background: linear-gradient(135deg, rgba(52,211,153,.06), rgba(16,185,129,.03));
@@ -522,6 +691,11 @@
     .seg-preview-ej-row {
       display: flex; justify-content: space-between; padding: 2px 0;
       color: #cbd5e1; font-variant-numeric: tabular-nums;
+    }
+    .seg-preview-ej-row.enRango {
+      color: #fbbf24; font-weight: 700;
+      background: rgba(251,191,36,.08);
+      border-radius: 4px; padding: 2px 6px;
     }
     .seg-validacion {
       margin-top: 10px; font-size: 11px; padding: 6px 10px; border-radius: 6px;
