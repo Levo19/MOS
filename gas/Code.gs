@@ -276,6 +276,10 @@ function _route(method, e) {
       case 'liberarDispositivoBloqueado':   return liberarDispositivoBloqueado(params);
       case 'getDispositivosBloqueados':     return getDispositivosBloqueados(params);
 
+      // ── DeviceState: snapshot remoto de sesión por deviceId ──
+      case 'syncDeviceState':           return syncDeviceState(params);
+      case 'getDeviceState':            return getDeviceState(params.deviceId);
+
       // ── Seguridad: clave admin global unificada ────────────
       case 'verificarClaveAdmin':       return verificarClaveAdmin(params);
       case 'getClaveAdminGlobal':       return getClaveAdminGlobal(params);
