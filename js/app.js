@@ -20251,10 +20251,15 @@ const MOS = (() => {
           ? `✓ Caja ya cerrada · Guía SALIDA_VENTAS regenerada (faltaba del cierre original)`
           : `✓ Caja ya estaba cerrada · Guía ya existía`;
       } else {
+        // [v2.42.00] devueltosACredito reemplaza al legacy "anulados"
+        const devN = d.devueltosACredito !== undefined ? d.devueltosACredito : (d.anulados || 0);
+        const cobN = d.cobrosLiberados || 0;
         msg = [
           `🔒 Caja cerrada por ${d.cerradoPor || 'admin'}`,
           `Monto final: S/ ${parseFloat(d.montoFinal || 0).toFixed(2)}`,
-          d.anulados > 0 ? `${d.anulados} ticket(s) POR_COBRAR anulados` : 'Sin POR_COBRAR pendientes'
+          devN > 0
+            ? `${devN} ticket(s) → mesa créditos${cobN ? ` · ${cobN} cobro(s) liberados` : ''}`
+            : 'Sin POR_COBRAR pendientes'
         ].join(' · ');
       }
       toast(msg, 'success');
