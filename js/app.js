@@ -23774,42 +23774,177 @@ const MOS = (() => {
     }
   }
 
+  // [v2.42.10] Estado del filtro del detalle IGV a favor
+  const _tribIGVFiltro = { estado: 'TODOS' }; // TODOS · PROCESADO · SIN_IGV · ILEGIBLE · SIN_FOTO
+
   async function tribAbrirIGVFavor() {
     const cont = $('tribIGVFavorList');
     cont.innerHTML = '<div class="text-slate-500 text-xs">Cargando guías...</div>';
-    // Auto-expandir details
     const det = cont.closest('details'); if (det) det.open = true;
     try {
       const res = await API.post('tribIGVFavorMes', { mes: _tribState.mes, anio: _tribState.anio });
       const lista = (res?.data?.guias || []);
-      if (!lista.length) {
-        cont.innerHTML = '<div class="text-slate-500 text-xs italic">Sin guías de ingreso proveedor en este mes</div>';
-        return;
-      }
-      cont.innerHTML = lista.map(g => {
+      // Guardar en state para re-render con filtros sin re-fetch
+      _tribIGVFavorListaCache = lista;
+      _tribRenderIGVFavorDetalle(lista);
+    } catch(e) {
+      cont.innerHTML = '<div class="text-red-400 text-xs">❌ ' + (e.message || e) + '</div>';
+    }
+  }
+
+  let _tribIGVFavorListaCache = [];
+
+  function _tribRenderIGVFavorDetalle(lista) {
+    const cont = $('tribIGVFavorList');
+    if (!cont) return;
+    if (!lista.length) {
+      cont.innerHTML = '<div class="text-slate-500 text-xs italic">Sin guías de ingreso proveedor en este mes</div>';
+      return;
+    }
+    // Aplicar filtro
+    const filtro = _tribIGVFiltro.estado;
+    const filtrada = lista.filter(g => {
+      if (filtro === 'TODOS') return true;
+      if (filtro === 'PROCESADO')  return g.ocrEstado === 'PROCESADO' && g.igvRecuperable > 0;
+      if (filtro === 'SIN_IGV')    return g.ocrEstado === 'SIN_IGV';
+      if (filtro === 'ILEGIBLE')   return g.ocrEstado === 'ILEGIBLE' || g.ocrEstado === 'NO_COMPROBANTE' || (g.tieneFoto && !g.ocrEstado);
+      if (filtro === 'SIN_FOTO')   return !g.tieneFoto;
+      return true;
+    });
+
+    // Contadores por estado para los chips
+    let cTodo = lista.length, cProc = 0, cSinIGV = 0, cIleg = 0, cSinFoto = 0;
+    lista.forEach(g => {
+      if (g.ocrEstado === 'PROCESADO' && g.igvRecuperable > 0) cProc++;
+      else if (g.ocrEstado === 'SIN_IGV') cSinIGV++;
+      else if (g.ocrEstado === 'ILEGIBLE' || g.ocrEstado === 'NO_COMPROBANTE' || (g.tieneFoto && !g.ocrEstado)) cIleg++;
+      else if (!g.tieneFoto) cSinFoto++;
+    });
+
+    // Chips de filtro
+    const mkChip = (key, label, count, color) => {
+      const active = filtro === key;
+      const bg = active ? color : 'rgba(71,85,105,.3)';
+      const tc = active ? '#0f172a' : color;
+      return `<button onclick="MOS._tribSetIGVFiltro('${key}')"
+        style="background:${bg};color:${tc};border:1px solid ${color};padding:4px 10px;border-radius:99px;font-size:10.5px;font-weight:800;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:4px;margin-right:4px;margin-bottom:4px"
+        title="${label}">
+        ${label} <span style="opacity:.8">·</span> <span style="font-weight:900">${count}</span>
+      </button>`;
+    };
+    const chipsHtml = `<div style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(71,85,105,.3)">
+      ${mkChip('TODOS',     'Todos',         cTodo,    '#64748b')}
+      ${mkChip('PROCESADO', '🟢 Con IGV',    cProc,    '#10b981')}
+      ${mkChip('SIN_IGV',   '⊘ Sin IGV',     cSinIGV,  '#94a3b8')}
+      ${mkChip('ILEGIBLE',  '🔴 Ilegibles',  cIleg,    '#ef4444')}
+      ${mkChip('SIN_FOTO',  '⚪ Sin foto',   cSinFoto, '#f59e0b')}
+    </div>`;
+
+    if (!filtrada.length) {
+      cont.innerHTML = chipsHtml + '<div class="text-slate-500 text-xs italic text-center py-4">Sin guías con este filtro</div>';
+      return;
+    }
+
+    // Agrupar por proveedor (razonSocial > idProveedor)
+    const grupos = {};
+    filtrada.forEach(g => {
+      const key = (g.razonSocial && g.razonSocial.trim()) || g.idProveedor || '(Sin proveedor)';
+      if (!grupos[key]) grupos[key] = { nombre: key, ruc: g.rucEmisor || '', items: [], totalIGV: 0, totalDoc: 0 };
+      grupos[key].items.push(g);
+      grupos[key].totalIGV += g.igvRecuperable || 0;
+      grupos[key].totalDoc += g.total || 0;
+      if (!grupos[key].ruc && g.rucEmisor) grupos[key].ruc = g.rucEmisor;
+    });
+    // Sort grupos por totalIGV desc (más relevante arriba)
+    const ordenados = Object.values(grupos).sort((a, b) => b.totalIGV - a.totalIGV);
+
+    const gruposHtml = ordenados.map(grupo => {
+      const itemsHtml = grupo.items.map(g => {
         const estCls = g.ocrEstado === 'PROCESADO' ? 'trib-row-est-ok'
                      : g.ocrEstado === 'SIN_IGV'   ? 'trib-row-est-info'
-                     : g.ocrEstado === 'ILEGIBLE' || g.ocrEstado === 'NO_COMPROBANTE' ? 'trib-row-est-error'
+                     : (g.ocrEstado === 'ILEGIBLE' || g.ocrEstado === 'NO_COMPROBANTE') ? 'trib-row-est-error'
                      : 'trib-row-est-warn';
         const estTxt = g.ocrEstado === 'PROCESADO' ? '🟢 ' + (g.confidence || 0) + '%'
                      : g.ocrEstado === 'SIN_IGV'   ? '⊘ sin IGV'
                      : g.ocrEstado === 'ILEGIBLE'  ? '🔴 ilegible'
                      : g.ocrEstado === 'NO_COMPROBANTE' ? '🔴 no es comprob.'
                      : g.tieneFoto ? '🟡 procesando' : '⚪ s/foto';
-        return `<div class="trib-row">
-          <span class="trib-row-icon">📄</span>
-          <div class="trib-row-data">
-            <strong>${_escapeHtml(g.idGuia)}</strong> · ${_escapeHtml(g.razonSocial || g.idProveedor || '—')}
-            <br><small>${(new Date(g.fecha)).toLocaleDateString('es-PE')} · ${_escapeHtml(g.serie || '')}${g.numero ? '-' + _escapeHtml(g.numero) : ''}</small>
+        // Thumbnail clickeable si hay foto
+        const fotoHtml = g.urlFoto
+          ? `<button onclick="MOS.tribAbrirFotoComprobante('${_escapeHtml(g.urlFoto)}','${_escapeHtml(g.idGuia)}')"
+                style="background:none;border:none;cursor:pointer;padding:0;flex-shrink:0"
+                title="Ver comprobante">
+              <img src="${_escapeHtml(g.urlFoto)}" alt="📄"
+                   style="width:36px;height:48px;object-fit:cover;border-radius:6px;border:1px solid #334155;background:#0f172a"
+                   loading="lazy"
+                   onerror="this.style.display='none'">
+            </button>`
+          : `<span style="width:36px;height:48px;display:flex;align-items:center;justify-content:center;background:#1e293b;border-radius:6px;border:1px solid #334155;flex-shrink:0;font-size:18px;color:#475569">📄</span>`;
+        const fechaCmp = g.fechaComprobante || (g.fecha ? new Date(g.fecha).toLocaleDateString('es-PE') : '');
+        const serieNum = (g.serie || '') + (g.numero ? '-' + g.numero : '');
+        return `<div class="trib-row" style="padding:8px 10px;gap:10px">
+          ${fotoHtml}
+          <div class="trib-row-data" style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:12px;color:#e2e8f0">${_escapeHtml(g.idGuia)}</div>
+            <div style="font-size:10px;color:#94a3b8;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              <span>${_escapeHtml(fechaCmp)}</span>
+              ${serieNum ? `<span>· <span style="font-family:monospace">${_escapeHtml(serieNum)}</span></span>` : ''}
+              ${g.total > 0 ? `<span>· Doc S/ ${g.total.toFixed(2)}</span>` : ''}
+            </div>
           </div>
-          <span class="trib-row-monto">${g.igvRecuperable > 0 ? _tribFmtSoles(g.igvRecuperable) : '—'}</span>
-          <span class="${estCls}" style="font-size:10.5px">${estTxt}</span>
-          ${g.tieneFoto ? `<button class="trib-btn-mini" onclick="MOS.tribReprocesarOCR('${_escapeHtml(g.idGuia)}')">↻</button>` : ''}
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-weight:900;font-size:13px;color:${g.igvRecuperable > 0 ? '#34d399' : '#475569'}">
+              ${g.igvRecuperable > 0 ? _tribFmtSoles(g.igvRecuperable) : '—'}
+            </div>
+            <div class="${estCls}" style="font-size:9.5px;margin-top:2px">${estTxt}</div>
+          </div>
+          ${g.tieneFoto ? `<button class="trib-btn-mini" title="Re-procesar OCR" onclick="MOS.tribReprocesarOCR('${_escapeHtml(g.idGuia)}')">↻</button>` : ''}
         </div>`;
       }).join('');
-    } catch(e) {
-      cont.innerHTML = '<div class="text-red-400 text-xs">❌ ' + (e.message || e) + '</div>';
+
+      return `<div style="margin-bottom:12px;border:1px solid #1e293b;border-radius:10px;overflow:hidden;background:rgba(15,23,42,.4)">
+        <div style="padding:8px 12px;background:linear-gradient(135deg,rgba(16,185,129,.12),rgba(5,150,105,.05));border-bottom:1px solid #1e293b;display:flex;align-items:center;gap:10px">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:900;font-size:13px;color:#f1f5f9">🏢 ${_escapeHtml(grupo.nombre)}</div>
+            <div style="font-size:10px;color:#94a3b8">
+              ${grupo.ruc ? `RUC ${_escapeHtml(grupo.ruc)} · ` : ''}${grupo.items.length} documento${grupo.items.length === 1 ? '' : 's'}
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">IGV total</div>
+            <div style="font-weight:900;font-size:14px;color:#34d399">${_tribFmtSoles(grupo.totalIGV)}</div>
+          </div>
+        </div>
+        <div style="padding:4px">${itemsHtml}</div>
+      </div>`;
+    }).join('');
+
+    cont.innerHTML = chipsHtml + gruposHtml;
+  }
+
+  function _tribSetIGVFiltro(estado) {
+    _tribIGVFiltro.estado = estado;
+    _tribRenderIGVFavorDetalle(_tribIGVFavorListaCache);
+  }
+
+  // [v2.42.10] Overlay para ver el comprobante en grande con zoom
+  function tribAbrirFotoComprobante(url, idGuia) {
+    if (!url) return;
+    _finBeep && _finBeep('tap');
+    let overlay = document.getElementById('tribFotoOverlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'tribFotoOverlay';
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.92);display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(8px);cursor:pointer';
+      overlay.onclick = (e) => { if (e.target === overlay || e.target.classList.contains('trib-foto-close')) overlay.remove(); };
+      document.body.appendChild(overlay);
     }
+    overlay.innerHTML = `
+      <button class="trib-foto-close" style="position:absolute;top:20px;right:20px;background:rgba(255,255,255,.15);color:#fff;width:44px;height:44px;border-radius:50%;border:none;font-size:18px;cursor:pointer;font-weight:800">✕</button>
+      <div style="position:absolute;top:20px;left:20px;background:rgba(0,0,0,.6);color:#fff;padding:8px 14px;border-radius:99px;font-size:12px;font-weight:700">📄 ${_escapeHtml(idGuia || 'Comprobante')}</div>
+      <img src="${_escapeHtml(url)}" alt="Comprobante"
+           style="max-width:95vw;max-height:90vh;object-fit:contain;border-radius:8px;box-shadow:0 30px 60px rgba(0,0,0,.7)"
+           onerror="this.parentElement.innerHTML='<div style=color:#fca5a5;font-weight:700>⚠ No se pudo cargar la foto</div>'">`;
   }
 
   async function tribAbrirIGVEmitido() {
@@ -23915,6 +24050,12 @@ const MOS = (() => {
         toast('OCR masivo falló: ' + (res?.error || 'sin detalle'), 'warn');
       }
       tribCargar(); // refresh KPIs con el IGV nuevo
+      // [v2.42.10] Si el detalle IGV a favor está abierto, refrescar también
+      const detalle = document.querySelector('#tribIGVFavorList');
+      const det = detalle && detalle.closest('details');
+      if (det && det.open) {
+        setTimeout(() => tribAbrirIGVFavor(), 400);
+      }
     } catch(e) { toast('Error: ' + (e.message || e), 'error'); }
   }
 
@@ -31681,7 +31822,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.41.93] Tributario polish
     tribToggleAyuda, _tribPrecargarBoot,
     // [v2.41.94] OCR masivo retroactivo
-    tribOCRMasivo,
+    tribOCRMasivo, _tribSetIGVFiltro, tribAbrirFotoComprobante,
     // [v2.41.97] Pricing por segmentos (graneles)
     prodToggleSegmentos, segActualizarVisibilidad, segNuevo, segEditar, segEliminar,
     segCalcular, segToggleUnidad, segToggleBracket, segAtajo, segOnSliderAjuste,
