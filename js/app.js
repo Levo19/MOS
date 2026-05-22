@@ -17583,6 +17583,12 @@ const MOS = (() => {
 
     // Detectar tickets nuevos (flash en card de la caja correspondiente)
     if (esHoy) _cjDetectarTicketsNuevos(abiertas);
+
+    // [v2.42.00] Pegar manojo de postits (cobros en vuelo) sobre el cuadro de
+    // cada caja activa. Llamamos después del render porque necesita los nodos
+    // .cj-caja-card en el DOM. _cjPintarPostitsManojos itera _cjCreditosState.enVuelo
+    // y monta/desmonta el manojo según la caja destino.
+    try { _cjPintarPostitsManojos(); } catch(_){}
   }
 
   // [v2.41.91] Bloque "Balance en vivo" — solo en cajas ABIERTAS.
@@ -18593,66 +18599,88 @@ const MOS = (() => {
     cont.innerHTML = html;
   }
 
+  // [v2.42.00] Cancelar cobro asignado — modal custom moderno + auth admin.
+  // Optimista: cierra modal inmediato, fire-and-forget al backend, rollback si falla.
   async function cjCancelarCobro(idCobro) {
     if (!idCobro) return;
+    const cobro = (_cjCreditosState.enVuelo || []).find(c => String(c.idCobro) === String(idCobro));
+    if (!cobro) { toast('Cobro no encontrado', 'error'); return; }
+    // Cerrar modal del postit antes de abrir el custom
+    try { _cjCerrarPostitModal(); } catch(_){}
+    // Modal custom de razón (reemplaza prompt nativo)
+    const res = await _cjModalCancelarCobro(cobro);
+    if (!res) return;
     const auth = await pedirAuth({
       accion: 'CANCELAR_COBRO_ASIGNADO',
       refDocumento: idCobro,
       contexto: 'Cancelar cobro · vuelve a CRÉDITO'
     });
     if (!auth) return;
-    const razon = prompt('Razón del cancelar (opcional):') || '';
+    // Optimista: quitar postit inmediato
+    _cjCreditosState.enVuelo = (_cjCreditosState.enVuelo || []).filter(c => c.idCobro !== idCobro);
+    try { _cjPintarPostitsManojos(); } catch(_){}
+    try { _finBeep?.('remove') || _finBeep?.('tap'); } catch(_){}
+    toast('⊘ Cobro cancelado · ticket vuelve a CRÉDITO', 'ok', 4000);
     try {
-      const r = await API.post('meCancelarCobroAsignado', {
+      await API.post('meCancelarCobroAsignado', {
         idCobro: idCobro,
-        razon: razon,
+        razon:   res.razon || '',
         adminAuth: { nombre: auth.nombre, rol: auth.rol, via: 'PIN_8DIG' }
       });
-      const d = (r && r.data) ? r.data : (r || {});
-      try { _finBeep?.('remove'); } catch(_){}
-      toast('⊘ Cobro cancelado · ticket vuelve a CRÉDITO', 'ok', 4000);
+      // Refresh definitivo
       _cjCargarEnVuelo();
       _cjCargarCreditosPendientes();
     } catch(e) {
-      toast('Error: ' + (e.message || e), 'error');
+      toast('⚠ Error cancelando: ' + (e.message || e) + ' · refresca', 'error', 6000);
+      _cjCargarEnVuelo();   // re-fetch para restaurar estado real
     }
   }
 
+  // [v2.42.00] Reasignar cobro a otra caja — modal custom (sin prompt nativo)
+  // + optimista + auth admin + rollback en error.
   async function cjReasignarCobro(idCobro) {
     if (!idCobro) return;
-    const cobro = (_cjCreditosState.enVuelo || []).find(c => c.idCobro === idCobro);
+    const cobro = (_cjCreditosState.enVuelo || []).find(c => String(c.idCobro) === String(idCobro));
     if (!cobro) { toast('Cobro no encontrado', 'error'); return; }
-    // Fetch cajas abiertas para elegir nueva
-    let cajas = [];
-    try {
-      const r = await API.post('meCajasAbiertas', {});
-      cajas = (r && r.data) ? r.data : (r || []);
-    } catch(e) { toast('No se pudieron cargar cajas', 'error'); return; }
-    cajas = cajas.filter(c => c.idCaja !== cobro.cajaDestino);
-    if (!cajas.length) { toast('No hay otra caja abierta para reasignar', 'warn'); return; }
-    const opciones = cajas.map((c, i) => `${i + 1}. ${c.vendedor} (${c.idCaja})`).join('\n');
-    const sel = prompt('¿A qué caja reasignar?\n\n' + opciones + '\n\nIngresa el número:');
-    if (!sel) return;
-    const idx = parseInt(sel, 10) - 1;
-    if (isNaN(idx) || !cajas[idx]) { toast('Selección inválida', 'error'); return; }
-    const nuevaCaja = cajas[idx];
+    try { _cjCerrarPostitModal(); } catch(_){}
+    // Modal custom selector de caja (reemplaza prompt nativo + lista numerada)
+    const nuevaCaja = await _cjModalReasignar(cobro);
+    if (!nuevaCaja) return;
     const auth = await pedirAuth({
       accion: 'REASIGNAR_COBRO_ASIGNADO',
       refDocumento: idCobro,
       contexto: `Reasignar a ${nuevaCaja.vendedor}`
     });
     if (!auth) return;
+    // Optimista: actualizar el postit en memoria (cambia cajaDestino + vendedorDest)
+    const cobroIdx = (_cjCreditosState.enVuelo || []).findIndex(c => c.idCobro === idCobro);
+    const cobroSnap = cobroIdx >= 0 ? { ..._cjCreditosState.enVuelo[cobroIdx] } : null;
+    if (cobroIdx >= 0) {
+      _cjCreditosState.enVuelo[cobroIdx] = {
+        ..._cjCreditosState.enVuelo[cobroIdx],
+        cajaDestino:  nuevaCaja.idCaja,
+        vendedorDest: nuevaCaja.vendedor,
+        reasignaciones: (_cjCreditosState.enVuelo[cobroIdx].reasignaciones || 0) + 1
+      };
+      try { _cjPintarPostitsManojos({ optimisticId: idCobro }); } catch(_){}
+    }
+    try { _finBeep?.('success'); } catch(_){}
+    toast('↺ Reasignado a ' + nuevaCaja.vendedor, 'ok', 4000);
     try {
-      const r = await API.post('meReasignarCobroAsignado', {
-        idCobro: idCobro,
+      await API.post('meReasignarCobroAsignado', {
+        idCobro:     idCobro,
         cajaDestino: nuevaCaja.idCaja,
-        adminAuth: { nombre: auth.nombre, rol: auth.rol, via: 'PIN_8DIG' }
+        adminAuth:   { nombre: auth.nombre, rol: auth.rol, via: 'PIN_8DIG' }
       });
-      try { _finBeep?.('success'); } catch(_){}
-      toast('↺ Reasignado a ' + nuevaCaja.vendedor, 'ok', 4000);
       _cjCargarEnVuelo();
     } catch(e) {
-      toast('Error: ' + (e.message || e), 'error');
+      // Rollback al snapshot
+      if (cobroSnap && cobroIdx >= 0) {
+        _cjCreditosState.enVuelo[cobroIdx] = cobroSnap;
+        try { _cjPintarPostitsManojos(); } catch(_){}
+      }
+      toast('⚠ Error reasignando: ' + (e.message || e), 'error', 6000);
+      _cjCargarEnVuelo();
     }
   }
 
@@ -31188,6 +31216,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     cjAbrirAsignar, cjCerrarAsignar,
     cjSetMetodoAsignar, cjSetCajaAsignar, cjSetTTLAsignar, cjConfirmarAsignar,
     _cjOnMensajeAsignar, _cjCargarEnVuelo, cjCancelarCobro, cjReasignarCobro,
+    // [v2.42.00] Postits manojo + click modal acciones (Reasignar/Cancelar)
+    _cjAbrirPostitModal, _cjCerrarPostitModal, _cjPintarPostitsManojos,
     // [v2.41.92] Centro Tributario
     _loadTributario, tribCargar, tribAbrirIGVFavor, tribAbrirIGVEmitido,
     tribReprocesarOCR, tribReintentarCPE, tribReconciliarCPEs,

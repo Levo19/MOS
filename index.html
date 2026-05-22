@@ -3228,8 +3228,317 @@
       padding: 14px 16px;
       transition: all 0.25s ease-out;
       position: relative;
-      overflow: hidden;
+      /* [v2.42.00] overflow visible para que los postits del manojo asomen
+         arriba a la derecha sin recortarse. El gradient ::before se mantiene
+         dentro porque su propio overflow no depende del padre. */
+      overflow: visible;
     }
+    /* Para evitar que el bg ::before se desborde, lo encapsulamos */
+    .cj-caja-card > * { position: relative; z-index: 1; }
+
+    /* ════════════════════════════════════════════════════════════
+       [v2.42.00] POSTITS — manojo de cobros en vuelo apilados
+       como abanico sobre el cuadro de la caja activa del cajero.
+       Color por urgencia (verde >2h, ámbar 30min-2h, rojo <30min).
+       Hover endereza + agranda. Click → modal mini con acciones.
+       ════════════════════════════════════════════════════════════ */
+    .cj-postit-manojo {
+      position: absolute;
+      top: -14px; right: -8px;
+      z-index: 5;
+      pointer-events: none;          /* el container no captura clicks */
+      width: 100px; height: 110px;
+    }
+    .cj-postit-manojo > .cj-postit,
+    .cj-postit-manojo > .cj-postit-pin { pointer-events: auto; }
+    .cj-postit-pin {
+      position: absolute; top: -8px; right: 28px;
+      font-size: 18px; z-index: 10;
+      filter: drop-shadow(0 2px 3px rgba(0,0,0,.5));
+      animation: cjPinBob 3s ease-in-out infinite;
+    }
+    @keyframes cjPinBob {
+      0%,100% { transform: rotate(-8deg) translateY(0); }
+      50%     { transform: rotate(-12deg) translateY(-2px); }
+    }
+    .cj-postit {
+      position: absolute;
+      top: 0; right: 0;
+      width: 88px; min-height: 72px;
+      padding: 6px 7px 5px;
+      border: none;
+      border-radius: 3px 3px 8px 3px;       /* esquina inferior derecha redondeada (estilo postit) */
+      font-family: 'Caveat', 'Comic Sans MS', system-ui, sans-serif;
+      color: #1f2937;
+      cursor: pointer;
+      transform: rotate(var(--rot, 0deg)) translate(var(--offx, 0), var(--offy, 0));
+      transform-origin: top right;
+      transition: transform .25s cubic-bezier(.34,1.56,.64,1), box-shadow .2s, z-index 0s;
+      box-shadow:
+        0 2px 4px rgba(0,0,0,.3),
+        0 6px 12px rgba(0,0,0,.2),
+        inset -1px -1px 4px rgba(0,0,0,.08);
+      z-index: var(--zi, 1);
+      text-align: left;
+      line-height: 1.05;
+    }
+    .cj-postit:hover {
+      transform: rotate(0deg) translate(0, 0) scale(1.45);
+      z-index: 99;
+      box-shadow:
+        0 6px 12px rgba(0,0,0,.5),
+        0 16px 32px rgba(0,0,0,.35),
+        0 0 0 1px rgba(255,255,255,.1);
+    }
+    .cj-postit:active { transform: rotate(0deg) translate(0, 0) scale(1.4); }
+    .cj-postit-cliente {
+      font-size: 12px; font-weight: 800;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      padding-bottom: 2px;
+      border-bottom: 1px dashed rgba(0,0,0,.18);
+      margin-bottom: 3px;
+    }
+    .cj-postit-monto {
+      font-size: 14px; font-weight: 900;
+      letter-spacing: -.02em;
+    }
+    .cj-postit-foot {
+      display: flex; align-items: center; gap: 4px;
+      margin-top: 3px;
+      font-size: 9.5px; font-weight: 700;
+      opacity: .82;
+    }
+    .cj-postit-tiempo { flex: 1; }
+    .cj-postit-reasig {
+      background: rgba(0,0,0,.15);
+      padding: 0 4px; border-radius: 6px;
+      font-size: 9px;
+    }
+    .cj-postit-opt { animation: cjPostitOptSpin 1s linear infinite; display: inline-block; }
+    @keyframes cjPostitOptSpin { to { transform: rotate(360deg); } }
+    /* Color por urgencia */
+    .cj-postit-ok       { background: linear-gradient(180deg, #d9f99d 0%, #bef264 100%); }
+    .cj-postit-warn     { background: linear-gradient(180deg, #fef08a 0%, #fde047 100%); }
+    .cj-postit-critical {
+      background: linear-gradient(180deg, #fecaca 0%, #fca5a5 100%);
+      animation: cjPostitCritFlash 1.6s ease-in-out infinite;
+    }
+    @keyframes cjPostitCritFlash {
+      0%,100% { box-shadow: 0 2px 4px rgba(0,0,0,.3), 0 6px 12px rgba(0,0,0,.2), 0 0 0 0 rgba(239,68,68,0); }
+      50%     { box-shadow: 0 2px 4px rgba(0,0,0,.3), 0 6px 12px rgba(0,0,0,.2), 0 0 0 6px rgba(239,68,68,.25); }
+    }
+    .cj-postit-optimistic { opacity: .85; }
+    .cj-postit-landing { animation: cjPostitLanding .6s cubic-bezier(.34,1.56,.64,1); }
+    @keyframes cjPostitLanding {
+      0%   { transform: rotate(0) translate(60px, -40px) scale(.4); opacity: 0; }
+      55%  { transform: rotate(calc(var(--rot, 0deg) - 8deg)) translate(0, 0) scale(1.1); opacity: 1; }
+      100% { transform: rotate(var(--rot, 0deg)) translate(var(--offx, 0), var(--offy, 0)) scale(1); opacity: 1; }
+    }
+
+    /* ─── Modal mini del postit (al hacer click) ─── */
+    .cj-postit-modal-backdrop {
+      position: fixed; inset: 0; z-index: 1200;
+      background: rgba(0, 0, 0, .55);
+      backdrop-filter: blur(8px);
+      display: flex; align-items: center; justify-content: center;
+      padding: 16px;
+      opacity: 0; pointer-events: none;
+      transition: opacity .2s;
+    }
+    .cj-postit-modal-backdrop.is-open { opacity: 1; pointer-events: auto; }
+    .cj-postit-modal {
+      width: 100%; max-width: 360px;
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      border-radius: 18px;
+      padding: 18px;
+      border: 1px solid #475569;
+      box-shadow: 0 25px 50px -12px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.04);
+      transform: scale(.94);
+      transition: transform .25s cubic-bezier(.34,1.56,.64,1);
+    }
+    .cj-postit-modal-backdrop.is-open .cj-postit-modal { transform: scale(1); }
+    .cj-postit-modal.cj-postit-ok       { border-color: #84cc16; }
+    .cj-postit-modal.cj-postit-warn     { border-color: #f59e0b; }
+    .cj-postit-modal.cj-postit-critical { border-color: #ef4444; }
+    .cj-postit-modal-head {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 12px; padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+    }
+    .cj-postit-modal-flecha { font-size: 22px; flex-shrink: 0; }
+    .cj-postit-modal-titulo { flex: 1; min-width: 0; }
+    .cj-postit-modal-titulo strong { display: block; color: #f1f5f9; font-size: 15px; }
+    .cj-postit-modal-titulo span { display: block; color: #94a3b8; font-size: 12px; margin-top: 2px; }
+    .cj-postit-modal-close {
+      background: rgba(255,255,255,.06); color: #cbd5e1;
+      width: 28px; height: 28px; border-radius: 50%;
+      border: none; cursor: pointer; font-size: 14px;
+      transition: all .15s;
+    }
+    .cj-postit-modal-close:hover { background: rgba(239,68,68,.4); color: #fff; }
+    .cj-postit-modal-monto {
+      text-align: center; font-size: 30px; font-weight: 900;
+      color: #fbbf24; padding: 8px 0; letter-spacing: -.02em;
+    }
+    .cj-postit-modal-meta {
+      display: flex; justify-content: space-between;
+      font-size: 11px; color: #94a3b8;
+      margin-bottom: 10px;
+    }
+    .cj-postit-modal-msg {
+      background: rgba(0,0,0,.3); padding: 8px 10px;
+      border-radius: 10px; font-size: 12px; color: #cbd5e1;
+      margin-bottom: 12px; font-style: italic;
+      border-left: 3px solid #60a5fa;
+    }
+    .cj-postit-modal-actions {
+      display: flex; gap: 8px; margin-top: 6px;
+    }
+    .cj-postit-modal-btn {
+      flex: 1; padding: 10px 8px;
+      border: none; border-radius: 12px;
+      font-weight: 800; font-size: 12px; cursor: pointer;
+      transition: all .15s;
+      display: flex; align-items: center; justify-content: center; gap: 4px;
+    }
+    .cj-postit-modal-btn span { font-size: 14px; }
+    .cj-postit-modal-btn-ghost  { background: rgba(255,255,255,.06); color: #cbd5e1; }
+    .cj-postit-modal-btn-ghost:hover { background: rgba(255,255,255,.1); }
+    .cj-postit-modal-btn-reasig { background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff; }
+    .cj-postit-modal-btn-reasig:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(99,102,241,.5); }
+    .cj-postit-modal-btn-cancel { background: linear-gradient(135deg, #ef4444, #dc2626); color: #fff; }
+    .cj-postit-modal-btn-cancel:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(239,68,68,.5); }
+
+    /* ─── Modales custom Reasignar / Cancelar (reemplazan prompt) ─── */
+    .cj-modal-action-backdrop {
+      position: fixed; inset: 0; z-index: 1300;
+      background: rgba(0,0,0,.6); backdrop-filter: blur(10px);
+      display: flex; align-items: center; justify-content: center;
+      padding: 16px;
+      opacity: 0; pointer-events: none;
+      transition: opacity .2s;
+    }
+    .cj-modal-action-backdrop.is-open { opacity: 1; pointer-events: auto; }
+    .cj-modal-action {
+      width: 100%; max-width: 480px; max-height: 88vh;
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      border-radius: 22px;
+      box-shadow: 0 30px 60px -12px rgba(0,0,0,.7);
+      transform: scale(.94) translateY(8px);
+      transition: transform .3s cubic-bezier(.34,1.56,.64,1);
+      overflow: hidden;
+      display: flex; flex-direction: column;
+    }
+    .cj-modal-action-backdrop.is-open .cj-modal-action { transform: scale(1) translateY(0); }
+    .cj-modal-action-reasig { border: 2px solid #6366f1; }
+    .cj-modal-action-cancel { border: 2px solid #ef4444; }
+    .cj-modal-action-head {
+      display: flex; align-items: center; gap: 12px;
+      padding: 16px 18px;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+    }
+    .cj-modal-action-ico {
+      font-size: 26px; width: 44px; height: 44px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 50%; flex-shrink: 0;
+    }
+    .cj-modal-action-reasig .cj-modal-action-ico { background: rgba(99,102,241,.2); color: #a5b4fc; }
+    .cj-modal-action-cancel .cj-modal-action-ico { background: rgba(239,68,68,.2);  color: #fca5a5; }
+    .cj-modal-action-titulo { flex: 1; min-width: 0; }
+    .cj-modal-action-titulo strong { display: block; color: #f1f5f9; font-size: 16px; font-weight: 900; }
+    .cj-modal-action-titulo span { display: block; color: #94a3b8; font-size: 12px; margin-top: 2px; }
+    .cj-modal-action-close {
+      background: rgba(255,255,255,.06); color: #cbd5e1;
+      width: 32px; height: 32px; border-radius: 50%;
+      border: none; cursor: pointer; font-size: 14px;
+      transition: all .15s;
+    }
+    .cj-modal-action-close:hover { background: rgba(239,68,68,.4); color: #fff; }
+    .cj-modal-action-body { padding: 16px 18px; overflow-y: auto; flex: 1; }
+    .cj-modal-action-label {
+      display: block; color: #94a3b8; font-size: 11px;
+      text-transform: uppercase; letter-spacing: .05em;
+      font-weight: 700; margin-bottom: 8px;
+    }
+    .cj-modal-action-cajas {
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .cj-modal-action-caja {
+      display: flex; align-items: center; gap: 10px;
+      width: 100%;
+      padding: 12px 14px;
+      background: rgba(99,102,241,.08);
+      border: 1px solid rgba(99,102,241,.25);
+      border-radius: 14px;
+      color: #f1f5f9; cursor: pointer; font-family: inherit;
+      transition: all .15s;
+      animation: cjModalCajaEnter .35s cubic-bezier(.34,1.56,.64,1) backwards;
+    }
+    @keyframes cjModalCajaEnter {
+      from { opacity: 0; transform: translateX(-12px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    .cj-modal-action-caja:hover {
+      background: rgba(99,102,241,.18);
+      border-color: rgba(99,102,241,.55);
+      transform: translateX(4px);
+    }
+    .cj-modal-action-caja.is-selected {
+      background: linear-gradient(135deg, #6366f1, #4f46e5);
+      transform: scale(.98);
+      box-shadow: 0 0 0 2px rgba(165,180,252,.5);
+    }
+    .cj-modal-action-caja-avatar {
+      font-size: 18px; width: 38px; height: 38px;
+      background: rgba(255,255,255,.08); border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .cj-modal-action-caja-info { flex: 1; text-align: left; min-width: 0; }
+    .cj-modal-action-caja-nom { font-weight: 800; font-size: 14px; color: #f1f5f9; }
+    .cj-modal-action-caja-sub { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+    .cj-modal-action-caja-check {
+      font-size: 18px; color: #a5b4fc; font-weight: 900;
+    }
+    .cj-modal-action-warn {
+      background: rgba(239,68,68,.1); border-left: 3px solid #ef4444;
+      color: #fca5a5; font-size: 12px; padding: 10px 12px;
+      border-radius: 10px; margin-bottom: 14px;
+      line-height: 1.45;
+    }
+    .cj-modal-action-warn strong { color: #fecaca; }
+    .cj-modal-action-textarea {
+      width: 100%; min-height: 70px;
+      background: rgba(0,0,0,.35);
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 12px;
+      padding: 10px 12px;
+      color: #f1f5f9; font-family: inherit; font-size: 13px;
+      resize: vertical;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .cj-modal-action-textarea:focus { border-color: #ef4444; }
+    .cj-modal-action-footer {
+      display: flex; gap: 8px; padding: 14px 18px;
+      border-top: 1px solid rgba(255,255,255,.06);
+      background: rgba(0,0,0,.2);
+    }
+    .cj-modal-action-btn {
+      flex: 1; padding: 11px 14px;
+      border: none; border-radius: 14px;
+      font-weight: 800; font-size: 13px; cursor: pointer;
+      transition: all .15s;
+      font-family: inherit;
+    }
+    .cj-modal-action-btn-ghost { background: rgba(255,255,255,.06); color: #cbd5e1; }
+    .cj-modal-action-btn-ghost:hover { background: rgba(255,255,255,.12); }
+    .cj-modal-action-btn-danger {
+      background: linear-gradient(135deg, #ef4444, #dc2626); color: #fff;
+      box-shadow: 0 4px 12px rgba(239,68,68,.3);
+    }
+    .cj-modal-action-btn-danger:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(239,68,68,.5); }
+
     .cj-caja-card.activa {
       border-color: #10b981;
       border-left-color: #10b981;
