@@ -4585,6 +4585,19 @@ const MOS = (() => {
         }
       } catch(_){}
     }
+    // [v2.41.99] Cargar también cache persistente del detalle (líneas
+    // completas con costos por guía). Al volver a la pestaña, vouchers
+    // expanden instantáneo. TTL 10min.
+    try {
+      const detRaw = localStorage.getItem('mos_ops_det_cache_v1');
+      if (detRaw) {
+        const parsed = JSON.parse(detRaw);
+        const ts = parsed?.ts || 0;
+        if (Date.now() - ts < 10 * 60 * 1000 && parsed.data) {
+          Object.assign(S._opsDetCache, parsed.data);
+        }
+      }
+    } catch(_) {}
     if (S._opsData) {
       try { almRenderOps(); } catch {}
     } else {
@@ -4722,6 +4735,16 @@ const MOS = (() => {
   }
 
   // Cambiar rango (chip Hoy/7d/30d)
+  // [v2.41.99] Toggle filtro "Solo ingresos" en operaciones
+  function almToggleFiltroIngreso() {
+    S._opsFiltroSoloIngreso = !S._opsFiltroSoloIngreso;
+    try { _opsBeep && _opsBeep('tap'); } catch(_) {}
+    // Forzar re-render (la firma cambió por el sufijo |sf=)
+    const list = $('almOpsList');
+    if (list) list.classList.add('alm-ops-needs-render');
+    almRenderOps();
+  }
+
   function almSetRangoOps(dias) {
     S._opsRangoDias = dias;
     document.querySelectorAll('#almOpsRangoChips .alm-rango-chip').forEach(c => {
@@ -4825,32 +4848,76 @@ const MOS = (() => {
     if (!list) return;
     const raw = S._opsData || {};
     const data = raw.data || raw;
-    const dias = data.porDia || [];
-    // [v41.15] Anti-parpadeo: si la firma de contenido NO cambió, no re-renderear.
-    // Cubre los refresh silenciosos del poll cada 20s — antes redibujaba todo y
-    // se veía flicker. La firma incluye IDs + estados + cantidad de líneas.
+    let dias = data.porDia || [];
+    // [v2.41.99] Si el chip "Solo ingresos" está activo, filtrar
+    const soloIng = !!S._opsFiltroSoloIngreso;
+    if (soloIng) {
+      dias = dias.map(d => ({
+        ...d,
+        operaciones: (d.operaciones || []).filter(op => {
+          const t = String(op.tipo || '').toUpperCase();
+          return t === 'INGRESO_PROVEEDOR' || t === 'ENTRADA_LIBRE';
+        })
+      })).filter(d => (d.operaciones || []).length > 0);
+    }
     const sig = JSON.stringify(dias.map(d => ({
       f: d.fecha,
       ops: (d.operaciones || []).map(o => o.fuente + '_' + o.idGuia + '_' + (o.estado || '') + '_' + (o.lineasCount || (o.lineas || []).length))
-    })));
+    }))) + '|sf=' + soloIng;
     if (sig === S._opsLastSig && !list.classList.contains('alm-ops-needs-render')) {
-      return; // sin cambios — skip render para no parpadear
+      return;
     }
     S._opsLastSig = sig;
     list.classList.remove('alm-ops-needs-render');
+
+    // [v2.41.99] KPIs del header — incluyendo conteo de salud de costos
     const sub = $('almOpsHeaderSub');
-    const totalOps = dias.reduce((s, d) => s + (d.operaciones || []).length, 0);
-    const totalMonto = dias.reduce((s, d) => s + (d.totalMonto || 0), 0);
+    let totalIng = 0, ingOk = 0, ingParc = 0, ingSin = 0;
+    let totalOps = 0, totalMonto = 0;
+    dias.forEach(d => {
+      (d.operaciones || []).forEach(op => {
+        totalOps++;
+        totalMonto += (op.montoTotal || 0);
+        const cls = _opsClasificarCostos(op);
+        if (cls && cls.estado) {
+          totalIng++;
+          if (cls.estado === 'completo') ingOk++;
+          else if (cls.estado === 'parcial') ingParc++;
+          else ingSin++;
+        }
+      });
+    });
     if (sub) {
+      let extra = '';
+      if (totalIng > 0) {
+        const ok = ingOk, parc = ingParc, sin = ingSin;
+        extra = ` · 💚 ${ok}`;
+        if (parc) extra += ` · 🟡 ${parc}`;
+        if (sin)  extra += ` · 🔴 ${sin}`;
+        extra += ` de ${totalIng} ingresos`;
+      }
       sub.textContent = totalOps
-        ? `${totalOps} operación${totalOps === 1 ? '' : 'es'} · S/ ${totalMonto.toLocaleString('es-PE', { maximumFractionDigits: 0 })}`
-        : 'Sin operaciones en el rango';
+        ? `${totalOps} operación${totalOps === 1 ? '' : 'es'} · S/ ${totalMonto.toLocaleString('es-PE', { maximumFractionDigits: 0 })}${extra}`
+        : (soloIng ? 'Sin ingresos en el rango' : 'Sin operaciones en el rango');
     }
+    // Contador del chip filtro
+    const chipCount = $('almOpsFiltroIngresoCount');
+    if (chipCount) {
+      if (totalIng > 0 && soloIng) {
+        chipCount.textContent = String(totalIng);
+        chipCount.style.display = '';
+      } else {
+        chipCount.style.display = 'none';
+      }
+    }
+    const chip = $('almOpsFiltroIngreso');
+    if (chip) chip.classList.toggle('active', soloIng);
+
     if (!dias.length) {
       list.innerHTML = `
         <div class="alm-ops-empty">
           <div class="alm-ops-empty-emoji">📭</div>
-          <div>Sin operaciones en el rango seleccionado</div>
+          <div>${soloIng ? 'Sin ingresos en el rango seleccionado' : 'Sin operaciones en el rango seleccionado'}</div>
         </div>`;
       return;
     }
@@ -5069,7 +5136,41 @@ const MOS = (() => {
       ? `<span class="alm-v-chip-anexo" title="Esta guía tiene preingreso adjunto">📎 anexa preingreso</span>`
       : '';
 
-    return `<div class="alm-voucher ${variantClass}${anexoCls} ${expanded ? 'is-expanded' : ''}"
+    // [v2.41.99] Sello de costos para ingresos (proveedor + entrada libre)
+    const costosCls = _opsClasificarCostos(op);
+    let selloCostosHtml = '';
+    if (costosCls && costosCls.estado) {
+      const stEstado = costosCls.estado;
+      const stIco = stEstado === 'completo' ? '💚' : stEstado === 'parcial' ? '🟡' : '🔴';
+      const stLbl = stEstado === 'completo' ? 'COSTOS COMPLETOS'
+                  : stEstado === 'parcial'  ? 'COSTOS PARCIALES'
+                  : 'SIN COSTOS ASIGNADOS';
+      const stSub = stEstado === 'completo'
+        ? `${costosCls.conCosto}/${costosCls.total} items · S/ ${costosCls.monto.toFixed(2)}`
+        : stEstado === 'parcial'
+          ? `Faltan ${costosCls.total - costosCls.conCosto} item${costosCls.total - costosCls.conCosto !== 1 ? 's' : ''} por costear`
+          : `Tap 💰 Costos para cargar (${costosCls.total} ítems)`;
+      selloCostosHtml = `<div class="alm-v-costo-sello alm-v-costo-${stEstado}"
+                              title="${costosCls.conCosto} de ${costosCls.total} items con costo">
+        <span class="alm-v-costo-sello-ico">${stIco}</span>
+        <div class="alm-v-costo-sello-txt">
+          <strong>${stLbl}</strong>
+          <small>${stSub}</small>
+        </div>
+      </div>`;
+    }
+
+    // [v2.41.99] Botón "Imprimir reporte" en compact para ingresos proveedor.
+    // Funciona con o sin costos: el GAS imprime sugerencias basadas en margen
+    // configurado cuando no hay costos cargados aún.
+    let btnImprimirCompact = '';
+    if (esIngresoProv && !expanded) {
+      btnImprimirCompact = `<button class="alm-v-btn-imprimir"
+        onclick="event.stopPropagation();MOS.abrirSelPrinterCostos('${op.fuente}','${_escapeHtml(op.idGuia)}')"
+        title="Imprimir reporte de costos (incluye sugerencias si no hay costos)">🖨 Reporte</button>`;
+    }
+
+    return `<div class="alm-voucher ${variantClass}${anexoCls} ${expanded ? 'is-expanded' : ''}${costosCls && costosCls.estado === 'completo' ? ' alm-voucher-costos-ok' : ''}"
                  id="opVouch_${expandKey}"
                  style="animation-delay: ${Math.min(idxAnim, 8) * 40}ms"
                  onclick="MOS.almToggleOpExpand('${op.fuente}','${_escapeHtml(op.idGuia)}', ${op.esPreingreso ? 'true' : 'false'})">
@@ -5088,10 +5189,12 @@ const MOS = (() => {
       </div>
       ${op.comentario ? `<div class="text-[11px] italic" style="color:#6b4423">${_escapeHtml(op.comentario)}</div>` : ''}
       ${fotoThumbHtml}
+      ${selloCostosHtml}
       ${previewHtml}
       <div class="alm-v-footer">
         <div class="alm-v-total">${monto}</div>
         <div class="alm-v-acciones">
+          ${btnImprimirCompact}
           ${btnCostos}
           <span class="alm-v-chevron">▾</span>
         </div>
@@ -5437,18 +5540,74 @@ const MOS = (() => {
     try {
       const r = await API.get('getOperacionDetalle', { fuente, idGuia });
       S._opsDetCache[key] = r || {};
-      // Inline (modo viejo, ya no usado en el overlay)
+      _opsPersistDetCache();
       const cont = $('opExp_' + key);
       if (cont && S._opsExpanded[key]) cont.innerHTML = _renderOpDetalle(fuente, idGuia);
-      // [v2.41.54] Overlay nuevo: si el detalle abierto es esta guía,
-      // re-renderizar el voucher con líneas frescas.
       _opsRefreshOverlayIfMatches(key);
+      // [v2.41.99] Re-renderizar la lista para que el sello de costos se
+      // actualice (la guía pasa de "sin/parcial" a "completo" si todos los
+      // items vinieron con costo).
+      try {
+        if (typeof almRenderOps === 'function' && S.almTab === 'ops') almRenderOps();
+      } catch(_) {}
     } catch(e) {
       S._opsDetCache[key] = { error: e.message };
       const cont = $('opExp_' + key);
       if (cont && S._opsExpanded[key]) cont.innerHTML = _renderOpDetalle(fuente, idGuia);
       _opsRefreshOverlayIfMatches(key);
     }
+  }
+
+  // [v2.41.99] Persistir el cache de detalle en localStorage para que al
+  // volver al panel los vouchers expandan instantáneo.
+  let _opsPersistDebounceTimer = null;
+  function _opsPersistDetCache() {
+    if (_opsPersistDebounceTimer) clearTimeout(_opsPersistDebounceTimer);
+    _opsPersistDebounceTimer = setTimeout(() => {
+      try {
+        // Solo persistir entries que tengan lineas reales (sin errores)
+        const limpio = {};
+        Object.keys(S._opsDetCache || {}).forEach(k => {
+          const e = S._opsDetCache[k];
+          if (e && Array.isArray(e.lineas) && e.lineas.length) limpio[k] = e;
+        });
+        const total = Object.keys(limpio).length;
+        if (total > 0) {
+          localStorage.setItem('mos_ops_det_cache_v1', JSON.stringify({
+            ts: Date.now(), data: limpio
+          }));
+        }
+      } catch(_) {}
+    }, 500);
+  }
+
+  // [v2.41.99] Helper: clasifica una operación según sus costos.
+  // Retorna { estado: 'completo'|'parcial'|'sin'|null, conCosto, total, monto }
+  // null = no aplica (no es ingreso proveedor).
+  function _opsClasificarCostos(op) {
+    if (!op || op.esPreingreso) return null;
+    const tipo = String(op.tipo || '').toUpperCase();
+    const esIngreso = tipo === 'INGRESO_PROVEEDOR' || tipo === 'ENTRADA_LIBRE';
+    if (!esIngreso) return null;
+    const k = op.fuente + '_' + op.idGuia;
+    const cached = S._opsDetCache[k];
+    const lineas = (cached && cached.lineas) || op.lineas || [];
+    if (!lineas.length) return { estado: null, conCosto: 0, total: 0, monto: 0 };
+    let conCosto = 0;
+    let monto = 0;
+    lineas.forEach(l => {
+      const pu = parseFloat(l.precioUnitario) || 0;
+      const st = parseFloat(l.subtotal) || 0;
+      if (pu > 0 || st > 0) {
+        conCosto++;
+        monto += st > 0 ? st : (pu * (parseFloat(l.cantidad) || 1));
+      }
+    });
+    let estado;
+    if (conCosto === 0) estado = 'sin';
+    else if (conCosto === lineas.length) estado = 'completo';
+    else estado = 'parcial';
+    return { estado, conCosto, total: lineas.length, monto };
   }
 
   // [v2.41.54] Re-pinta el overlay del detalle si está mostrando ESTA guía.
@@ -5485,39 +5644,39 @@ const MOS = (() => {
     const cont = $('almOpsDetalleContent');
     if (!cont) return;
     const key = fuente + '_' + idGuia + (esPreingreso ? '_PRE' : '');
-    // [v2.41.54] LIMPIEZA: descartar expansiones de OTRAS guías para no
-    // contaminar el render con state viejo. Esto resuelve el bug "abro guía
-    // nueva y aparece detalle de la anterior un instante".
     S._opsExpanded = {};
     S._opsExpanded[key] = true;
     S._opsModoCostos = !!modoCostos;
     S._opsOverlayKey = key;
-    // [v2.41.54] Loader explícito ANTES del render — si no hay cache, no se
-    // ve nada raro mientras llega el detalle.
     const k2 = op.fuente + '_' + op.idGuia;
     const tieneCache = !!(S._opsDetCache[k2] && (S._opsDetCache[k2].lineas || []).length);
-    if (!tieneCache && !modoCostos && !op.esPreingreso) {
+
+    // [v2.41.99] FIX bug "botón Costos hace desaparecer detalle":
+    // Si entra a modo costos, inicializar state ANTES de renderizar para que
+    // _renderVoucher tenga las líneas. Si hay cache, render instantáneo.
+    if (modoCostos && op.fuente === 'WH' && !op.esPreingreso) {
+      _opsCostosInitState(op);
+    }
+
+    if (tieneCache || modoCostos || op.esPreingreso) {
+      // Render con cache (o sin líneas para preingreso — es OK)
+      cont.innerHTML = _renderVoucher(op, 0);
+    } else {
+      // Sin cache → loader breve mientras llega
       cont.innerHTML = `<div class="alm-ops-loading-banner" style="margin:24px auto;">
         <div class="alm-ops-loading-spin"></div>
         <div class="alm-ops-loading-text">
           <div class="alm-ops-loading-text-main">Cargando guía #${_escapeHtml(idGuia)}…</div>
-          <div class="alm-ops-loading-text-sub">Buscando líneas del detalle</div>
+          <div class="alm-ops-loading-text-sub">Primera vez · próxima será instantánea</div>
         </div>
       </div>`;
-    } else {
-      cont.innerHTML = _renderVoucher(op, 0);
     }
     const v = cont.querySelector('.alm-voucher');
     if (v) v.onclick = null;
     const overlay = $('almOpsDetalleOverlay');
     if (overlay) overlay.classList.remove('hidden');
-    // Asegurar líneas en cache — al volver actualiza el overlay
-    if (!op.esPreingreso) {
-      if (!S._opsDetCache[k2]) _fetchOpDetalle(op.fuente, op.idGuia);
-    }
-    // Si entró en modo costos, inicializar state de costos para esta guía
-    if (modoCostos && op.fuente === 'WH' && !op.esPreingreso) {
-      _opsCostosInitState(op);
+    if (!op.esPreingreso && !tieneCache) {
+      _fetchOpDetalle(op.fuente, op.idGuia);
     }
   }
 
@@ -30584,6 +30743,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     setAlmTab,
     almLoadResumen, almRefreshResumen, almFiltrarStock, almRefreshCatalogo, almToggleStockExpand,
     almLoadOps, almRefreshOps, almRenderOps, almToggleOpExpand, almSetRangoOps,
+    // [v2.41.99] Filtro solo ingresos
+    almToggleFiltroIngreso,
     abrirOpsDetalleOverlay, cerrarOpsDetalleOverlay, abrirFotoOverlay,
     abrirCostosGuia, _costosGuiaUpdLinea, _costosGuiaSetMode, _costosGuiaSetIgv, cerrarCostosGuia, guardarCostosGuia,
     _costosGuiaSugerirDebounce, _costosGuiaSugUpdate, _costosGuiaSugToggle,
