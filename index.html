@@ -3539,6 +3539,107 @@
     }
     .cj-modal-action-btn-danger:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(239,68,68,.5); }
 
+    /* ════════════════════════════════════════════════════════════
+       [v2.42.04] MODAL genérico Confirm/Prompt (reemplaza alert/
+       confirm/prompt nativos del browser). Mismo estilo de la app.
+       ════════════════════════════════════════════════════════════ */
+    .mos-modal-generic-backdrop {
+      position: fixed; inset: 0; z-index: 1500;
+      background: rgba(2, 6, 23, .72);
+      backdrop-filter: blur(10px);
+      display: flex; align-items: center; justify-content: center;
+      padding: 16px;
+      opacity: 0; pointer-events: none;
+      transition: opacity .18s ease-out;
+    }
+    .mos-modal-generic-backdrop.is-open { opacity: 1; pointer-events: auto; }
+    .mos-modal-generic {
+      width: 100%; max-width: 460px; max-height: 86vh;
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      border-radius: 22px;
+      box-shadow: 0 32px 64px -16px rgba(0,0,0,.75), 0 0 0 1px rgba(255,255,255,.04);
+      overflow: hidden;
+      display: flex; flex-direction: column;
+      transform: scale(.92) translateY(10px);
+      transition: transform .25s cubic-bezier(.34,1.56,.64,1);
+      border: 2px solid transparent;
+    }
+    .mos-modal-generic-backdrop.is-open .mos-modal-generic { transform: scale(1) translateY(0); }
+    .mos-modal-generic-primary { border-color: rgba(99,102,241,.5); }
+    .mos-modal-generic-warn    { border-color: rgba(245,158,11,.5); }
+    .mos-modal-generic-danger  { border-color: rgba(239,68,68,.5); }
+    .mos-modal-generic-head {
+      display: flex; align-items: center; gap: 10px;
+      padding: 14px 18px;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+    }
+    .mos-modal-generic-head strong {
+      flex: 1; color: #f1f5f9; font-size: 15px; font-weight: 900;
+      min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .mos-modal-generic-ico {
+      width: 36px; height: 36px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; flex-shrink: 0;
+    }
+    .mos-modal-generic-primary .mos-modal-generic-ico { background: rgba(99,102,241,.2); color: #a5b4fc; }
+    .mos-modal-generic-warn .mos-modal-generic-ico    { background: rgba(245,158,11,.2); color: #fcd34d; }
+    .mos-modal-generic-danger .mos-modal-generic-ico  { background: rgba(239,68,68,.2);  color: #fca5a5; }
+    .mos-modal-generic-close {
+      background: rgba(255,255,255,.06); color: #cbd5e1;
+      width: 28px; height: 28px; border-radius: 50%;
+      border: none; cursor: pointer; font-size: 12px;
+      transition: all .15s;
+    }
+    .mos-modal-generic-close:hover { background: rgba(239,68,68,.4); color: #fff; }
+    .mos-modal-generic-body {
+      padding: 16px 20px; overflow-y: auto; flex: 1;
+      color: #cbd5e1; font-size: 13.5px; line-height: 1.55;
+    }
+    .mos-modal-generic-body p { margin: 0 0 10px; }
+    .mos-modal-generic-body p:last-child { margin-bottom: 0; }
+    .mos-modal-generic-label {
+      display: block; color: #94a3b8; font-size: 11px;
+      text-transform: uppercase; letter-spacing: .05em;
+      font-weight: 700; margin-bottom: 8px;
+    }
+    .mos-modal-generic-input {
+      width: 100%;
+      background: rgba(0,0,0,.35);
+      border: 1.5px solid rgba(255,255,255,.1);
+      border-radius: 12px;
+      padding: 11px 14px;
+      color: #f1f5f9; font-family: inherit; font-size: 14.5px;
+      outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .mos-modal-generic-input:focus {
+      border-color: #6366f1;
+      box-shadow: 0 0 0 3px rgba(99,102,241,.18);
+    }
+    textarea.mos-modal-generic-input { resize: vertical; min-height: 70px; }
+    .mos-modal-generic-foot {
+      display: flex; gap: 8px;
+      padding: 13px 18px;
+      border-top: 1px solid rgba(255,255,255,.06);
+      background: rgba(0,0,0,.22);
+    }
+    .mos-modal-generic-btn {
+      flex: 1; padding: 11px 14px;
+      border: none; border-radius: 12px;
+      font-weight: 800; font-size: 13px; cursor: pointer;
+      transition: all .15s;
+      font-family: inherit;
+    }
+    .mos-modal-generic-btn-ghost { background: rgba(255,255,255,.06); color: #cbd5e1; }
+    .mos-modal-generic-btn-ghost:hover { background: rgba(255,255,255,.12); }
+    .mos-modal-generic-btn-primary { background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff; box-shadow: 0 4px 12px rgba(99,102,241,.3); }
+    .mos-modal-generic-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(99,102,241,.5); }
+    .mos-modal-generic-btn-warn { background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; box-shadow: 0 4px 12px rgba(245,158,11,.3); }
+    .mos-modal-generic-btn-warn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(245,158,11,.5); }
+    .mos-modal-generic-btn-danger { background: linear-gradient(135deg, #ef4444, #dc2626); color: #fff; box-shadow: 0 4px 12px rgba(239,68,68,.3); }
+    .mos-modal-generic-btn-danger:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(239,68,68,.5); }
+
     .cj-caja-card.activa {
       border-color: #10b981;
       border-left-color: #10b981;

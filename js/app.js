@@ -10097,7 +10097,8 @@ const MOS = (() => {
   function _aamLoadCatalogo() {
     if (_aamCatalogo) return Promise.resolve(_aamCatalogo);
     return API.get('getAuthCatalogo', {}).then(r => {
-      _aamCatalogo = (r && r.data) || {};
+      // [v2.42.04 fix] API.get devuelve d.data — r ya es el catálogo, no envuelto
+      _aamCatalogo = r || {};
       return _aamCatalogo;
     }).catch(() => ({}));
   }
@@ -10321,6 +10322,121 @@ const MOS = (() => {
       _aamMostrarError('Error: ' + (e.message || e));
     }
   }
+  // ════════════════════════════════════════════════════════════════════
+  // [v2.42.04] HELPERS genéricos para reemplazar confirm/prompt nativos.
+  // Cumplen regla feedback-modales-optimistas-modernos: backdrop blur,
+  // animación scale entrada, beep al abrir, paleta MOS (slate + accent).
+  // Drop-in:
+  //    if (!confirm('texto')) return     →    if (!await _modalConfirm('texto')) return
+  //    const v = prompt('label', def)    →    const v = await _modalPrompt('label', def)
+  // Devuelven Promise — la función caller debe ser async.
+  // ════════════════════════════════════════════════════════════════════
+  function _modalConfirm(msg, opts) {
+    opts = opts || {};
+    return new Promise((resolve) => {
+      const _esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const accent  = opts.danger ? 'danger' : (opts.warning ? 'warn' : 'primary');
+      const icoMap  = { danger: '⚠', warn: '🟡', primary: '❓' };
+      const titulo  = opts.titulo || (opts.danger ? 'Confirmar acción' : '¿Continuar?');
+      const okTxt   = opts.okText || (opts.danger ? 'Sí, continuar' : 'Aceptar');
+      const cancelTxt = opts.cancelText || 'Cancelar';
+      const backdrop = document.createElement('div');
+      backdrop.className = 'mos-modal-generic-backdrop';
+      backdrop.innerHTML = `
+        <div class="mos-modal-generic mos-modal-generic-${accent}" role="dialog" aria-modal="true">
+          <div class="mos-modal-generic-head">
+            <span class="mos-modal-generic-ico">${icoMap[accent]}</span>
+            <strong>${_esc(titulo)}</strong>
+            <button class="mos-modal-generic-close" data-cancel aria-label="Cerrar">✕</button>
+          </div>
+          <div class="mos-modal-generic-body">${(msg || '').split('\n\n').map(p => '<p>' + _esc(p).replace(/\n/g, '<br>') + '</p>').join('')}</div>
+          <div class="mos-modal-generic-foot">
+            <button class="mos-modal-generic-btn mos-modal-generic-btn-ghost" data-cancel>${_esc(cancelTxt)}</button>
+            <button class="mos-modal-generic-btn mos-modal-generic-btn-ok mos-modal-generic-btn-${accent}" data-ok>${_esc(okTxt)}</button>
+          </div>
+        </div>`;
+      const cerrar = (val) => {
+        backdrop.classList.remove('is-open');
+        setTimeout(() => { try { backdrop.remove(); } catch(_){} }, 200);
+        resolve(val);
+      };
+      backdrop.addEventListener('click', (ev) => {
+        const t = ev.target;
+        if (t === backdrop || (t.closest && t.closest('[data-cancel]'))) cerrar(false);
+        else if (t.closest && t.closest('[data-ok]')) {
+          try { _finBeep?.(opts.danger ? 'warn' : 'success'); } catch(_){}
+          cerrar(true);
+        }
+      });
+      document.body.appendChild(backdrop);
+      requestAnimationFrame(() => backdrop.classList.add('is-open'));
+      try { _finBeep?.('tap'); } catch(_){}
+      setTimeout(() => { try { backdrop.querySelector('[data-ok]')?.focus(); } catch(_){} }, 220);
+    });
+  }
+
+  function _modalPrompt(label, defaultValue, opts) {
+    opts = opts || {};
+    return new Promise((resolve) => {
+      const _esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const titulo = opts.titulo || 'Ingresar dato';
+      const okTxt  = opts.okText || 'Aceptar';
+      const ph     = opts.placeholder || '';
+      const isLong = opts.textarea === true;
+      const inputHtml = isLong
+        ? `<textarea class="mos-modal-generic-input" rows="3" maxlength="${opts.maxlength || 240}" placeholder="${_esc(ph)}">${_esc(defaultValue || '')}</textarea>`
+        : `<input type="${opts.inputType || 'text'}" inputmode="${opts.inputMode || ''}" maxlength="${opts.maxlength || ''}" class="mos-modal-generic-input" value="${_esc(defaultValue || '')}" placeholder="${_esc(ph)}" />`;
+      const backdrop = document.createElement('div');
+      backdrop.className = 'mos-modal-generic-backdrop';
+      backdrop.innerHTML = `
+        <div class="mos-modal-generic mos-modal-generic-primary" role="dialog" aria-modal="true">
+          <div class="mos-modal-generic-head">
+            <span class="mos-modal-generic-ico">✏</span>
+            <strong>${_esc(titulo)}</strong>
+            <button class="mos-modal-generic-close" data-cancel>✕</button>
+          </div>
+          <div class="mos-modal-generic-body">
+            <label class="mos-modal-generic-label">${_esc(label || '')}</label>
+            ${inputHtml}
+          </div>
+          <div class="mos-modal-generic-foot">
+            <button class="mos-modal-generic-btn mos-modal-generic-btn-ghost" data-cancel>Cancelar</button>
+            <button class="mos-modal-generic-btn mos-modal-generic-btn-ok mos-modal-generic-btn-primary" data-ok>${_esc(okTxt)}</button>
+          </div>
+        </div>`;
+      const cerrar = (val) => {
+        backdrop.classList.remove('is-open');
+        setTimeout(() => { try { backdrop.remove(); } catch(_){} }, 200);
+        resolve(val);
+      };
+      const getVal = () => {
+        const i = backdrop.querySelector('.mos-modal-generic-input');
+        return i ? String(i.value || '') : '';
+      };
+      backdrop.addEventListener('click', (ev) => {
+        const t = ev.target;
+        if (t === backdrop || (t.closest && t.closest('[data-cancel]'))) cerrar(null);
+        else if (t.closest && t.closest('[data-ok]')) {
+          try { _finBeep?.('success'); } catch(_){}
+          cerrar(getVal());
+        }
+      });
+      backdrop.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter' && !isLong) {
+          try { _finBeep?.('success'); } catch(_){}
+          cerrar(getVal());
+        } else if (ev.key === 'Escape') cerrar(null);
+      });
+      document.body.appendChild(backdrop);
+      requestAnimationFrame(() => backdrop.classList.add('is-open'));
+      try { _finBeep?.('tap'); } catch(_){}
+      setTimeout(() => {
+        try { backdrop.querySelector('.mos-modal-generic-input')?.focus(); } catch(_){}
+        try { backdrop.querySelector('.mos-modal-generic-input')?.select(); } catch(_){}
+      }, 220);
+    });
+  }
+
   function _aamMostrarError(txt) {
     try { _evalSfx && _evalSfx('error'); } catch(_){}
     try { if (navigator.vibrate) navigator.vibrate([60, 50, 60]); } catch(_){}
@@ -14038,7 +14154,7 @@ const MOS = (() => {
       const data = (r && r.data) ? r.data : r;
       const alertas = (data && data.alertas) || [];
       if (!alertas.length) { toast('No hay alertas activas', 'info'); return; }
-      if (!confirm('¿Marcar las ' + alertas.length + ' alertas como resueltas?')) return;
+      if (!await _modalConfirm('¿Marcar las ' + alertas.length + ' alertas como resueltas?', { titulo: 'Resolver alertas' })) return;
       await Promise.all(alertas.map(a => API.post('resolverAlertaAuditoria', { idAlerta: a.idAlerta }).catch(() => {})));
       toast(alertas.length + ' alertas archivadas', 'ok');
       await renderIntegridad();
@@ -14767,7 +14883,7 @@ const MOS = (() => {
   async function revocarDispositivoUUID(id) {
     const d = (cfgData.dispositivos || []).find(x => String(x.ID_Dispositivo) === String(id));
     if (!d) return;
-    if (!confirm(`¿Revocar el acceso de "${d.Nombre_Equipo}"?\n\nEl dispositivo quedará bloqueado y no podrá usar la app.`)) return;
+    if (!await _modalConfirm(`¿Revocar el acceso de "${d.Nombre_Equipo}"?\n\nEl dispositivo quedará bloqueado y no podrá usar la app.`, { danger: true, titulo: 'Revocar dispositivo', okText: 'Sí, revocar' })) return;
     // [v2.41.83] AdminAuthModal universal (antes prompt() nativo)
     const auth = await pedirAuth({
       accion: 'REVOCAR_DISPOSITIVO',
@@ -14793,7 +14909,7 @@ const MOS = (() => {
   async function forzarWizardRemoto(id) {
     const d = (cfgData.dispositivos || []).find(x => String(x.ID_Dispositivo) === String(id));
     if (!d) return;
-    if (!confirm(`Al próximo arranque de "${d.Nombre_Equipo}" se mostrará el wizard de permisos.\n\n¿Continuar?`)) return;
+    if (!await _modalConfirm(`Al próximo arranque de "${d.Nombre_Equipo}" se mostrará el wizard de permisos.\n\n¿Continuar?`, { warning: true, titulo: 'Forzar wizard remoto' })) return;
     // [v2.41.83] AdminAuthModal universal
     const auth = await pedirAuth({
       accion: 'FORZAR_WIZARD',
@@ -15562,7 +15678,7 @@ const MOS = (() => {
     if (!/^\d{4}$/.test(pin)) {
       toast('PIN inválido', 'error'); return;
     }
-    if (!confirm('¿Generar una nueva clave global aleatoria? La clave actual dejará de funcionar inmediatamente en MosExpress y warehouseMos.')) return;
+    if (!await _modalConfirm('¿Generar una nueva clave global aleatoria?\n\nLa clave actual dejará de funcionar inmediatamente en MosExpress y warehouseMos.', { danger: true, titulo: 'Rotar clave admin global', okText: 'Rotar ahora' })) return;
     try {
       const data = await API.post('rotarClaveAdminGlobal', { manual: true, pinAdmin: pin });
       if (!data?.autorizado && data?.error) { toast(data.error, 'error'); return; }
@@ -16166,14 +16282,14 @@ const MOS = (() => {
     const pin = String(inp?.value || '').trim();
     let pinUsar = pin;
     if (!/^\d{4}$/.test(pinUsar)) {
-      pinUsar = prompt('Ingresa tu PIN admin de 4 dígitos para confirmar la rotación:');
+      pinUsar = await _modalPrompt('Ingresa tu PIN admin (4 dígitos) para confirmar la rotación:', '', { titulo: '🔐 Confirmar rotación', inputType: 'tel', inputMode: 'numeric', maxlength: 4 });
       if (!pinUsar || !/^\d{4}$/.test(pinUsar.trim())) {
         toast('Rotación cancelada · PIN inválido', 'warn');
         return;
       }
       pinUsar = pinUsar.trim();
     }
-    if (!confirm('¿Generar una nueva clave global aleatoria? La clave actual dejará de funcionar inmediatamente en MosExpress y warehouseMos.')) return;
+    if (!await _modalConfirm('¿Generar una nueva clave global aleatoria?\n\nLa clave actual dejará de funcionar inmediatamente en MosExpress y warehouseMos.', { danger: true, titulo: 'Rotar clave admin global', okText: 'Rotar ahora' })) return;
     try {
       const data = await API.post('rotarClaveAdminGlobal', { manual: true, pinAdmin: pinUsar });
       if (!data?.autorizado && data?.error) { toast(data.error, 'danger'); return; }
@@ -17000,7 +17116,7 @@ const MOS = (() => {
     const list = isMOS ? cfgData.personalMOS : cfgData.personal;
     const p = (list || []).find(x => x.idPersonal === id);
     if (!p) return;
-    if (!confirm(`¿Eliminar a ${p.nombre} ${p.apellido || ''}? Esta acción no se puede deshacer.`)) return;
+    if (!await _modalConfirm(`¿Eliminar a ${p.nombre} ${p.apellido || ''}?\n\nEsta acción no se puede deshacer.`, { danger: true, titulo: 'Eliminar personal', okText: 'Sí, eliminar' })) return;
     closeModal('modalPersonal');
     // OPTIMISTA
     const backup = list.slice();
@@ -19979,7 +20095,7 @@ const MOS = (() => {
     if (tipo === 'FACTURA' && !dir) { toast('Factura requiere dirección', 'error'); return; }
     if (!ser) { toast('Ingresa la serie', 'error'); return; }
 
-    if (!confirm(`¿Emitir ${tipo} en SUNAT para ${nom}?\n\nLa NV original quedará anulada.`)) return;
+    if (!await _modalConfirm(`¿Emitir ${tipo} en SUNAT para ${nom}?\n\nLa NV original quedará anulada.`, { warning: true, titulo: 'Emitir CPE', okText: 'Emitir' })) return;
 
     const btn = $('tkConvBtnOK');
     if (btn) { btn.disabled = true; btn.textContent = 'Emitiendo...'; }
@@ -20029,7 +20145,7 @@ const MOS = (() => {
     const t = _tkAcc.ticket;
     const motivo = _tkAcc.baja.motivoFinal || _tkAcc.baja.motivo || ($('tkBajaMotivoTxt').value || '').trim();
     if (!motivo || motivo.length < 3) { toast('Motivo obligatorio', 'error'); return; }
-    if (!confirm(`¿Comunicar baja del ${t.tipoDoc} ${t.correlativo} a SUNAT?\n\nEsta acción es irreversible.`)) return;
+    if (!await _modalConfirm(`¿Comunicar baja del ${t.tipoDoc} ${t.correlativo} a SUNAT?\n\nEsta acción es irreversible.`, { danger: true, titulo: 'Baja CPE SUNAT', okText: 'Enviar baja' })) return;
     const btn = $('tkBajaBtnOK');
     if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
     try {
@@ -20049,7 +20165,7 @@ const MOS = (() => {
   // EDITAR CLIENTE (modo prompt rápido — solo NV o pre-CPE)
   // ──────────────────────────────────────────────────────────
   async function _tkEditarClienteOpen(t) {
-    const docNuevo = prompt('DNI (8) / RUC (11) — vacío para sin doc:', t.clienteDoc || '');
+    const docNuevo = await _modalPrompt('DNI (8) / RUC (11) — vacío para sin doc:', t.clienteDoc || '', { titulo: 'Editar cliente · paso 1/3', inputMode: 'numeric', maxlength: 11 });
     if (docNuevo === null) return;
     const docTrim = (docNuevo || '').trim();
     if (docTrim && docTrim.length !== 8 && docTrim.length !== 11) {
@@ -20066,13 +20182,13 @@ const MOS = (() => {
       } catch(_) {}
     }
 
-    nombre = prompt('Nombre / Razón social:', nombre || '');
+    nombre = await _modalPrompt('Nombre / Razón social:', nombre || '', { titulo: 'Editar cliente · paso 2/3', maxlength: 120 });
     if (nombre === null) return;
     if (!docTrim && !nombre.trim()) {
       toast('Ingresa al menos un dato (doc o nombre)', 'error'); return;
     }
 
-    const motivo = prompt('Motivo del cambio:', '') || '';
+    const motivo = await _modalPrompt('Motivo del cambio (mín. 3 caracteres):', '', { titulo: 'Editar cliente · paso 3/3', textarea: true, maxlength: 180 }) || '';
     if (motivo.trim().length < 3) { toast('Motivo obligatorio', 'error'); return; }
 
     try {
@@ -20095,7 +20211,7 @@ const MOS = (() => {
   // ANULAR VENTA INTERNA (sin afectar SUNAT)
   // ──────────────────────────────────────────────────────────
   async function _tkAnularSimple(t) {
-    if (!confirm(`¿Anular ${t.tipoDoc || 'ticket'} ${t.correlativo || t.idVenta}?\n\nMonto: S/ ${t.total.toFixed(2)}\n\nSi tiene CPE emitido, también debes solicitar la baja en SUNAT.`)) return;
+    if (!await _modalConfirm(`¿Anular ${t.tipoDoc || 'ticket'} ${t.correlativo || t.idVenta}?\n\nMonto: S/ ${t.total.toFixed(2)}\n\nSi tiene CPE emitido, también debes solicitar la baja en SUNAT.`, { danger: true, titulo: 'Anular ticket', okText: 'Anular' })) return;
     try {
       await API.post('anularTicketME', { idVenta: t.idVenta });
       toast('✓ Ticket anulado', 'success');
@@ -20241,13 +20357,13 @@ const MOS = (() => {
       ``,
       `Tickets:       ${c.tickets || 0}`,
       `Efectivo:      S/ ${parseFloat(c.efectivo || 0).toFixed(2)}`,
-      `Por cobrar:    ${c.sinCobrar || 0}  ← se ANULAN`,
+      `Por cobrar:    ${c.sinCobrar || 0}  ← vuelven a mesa créditos`,
       ``,
       `Efectivo esperado: S/ ${parseFloat(c.efectivoEsperado || 0).toFixed(2)}`,
       ``,
-      `¿Continuar? Se cerrará en ME y el cajero recibirá un push.`
+      `Se cerrará en ME y el cajero recibirá un push.`
     ].join('\n');
-    if (!confirm(preview)) return;
+    if (!await _modalConfirm(preview, { danger: true, titulo: '🔐 Cerrar caja forzado', okText: 'Cerrar caja' })) return;
 
     // [v2.41.83] AdminAuthModal universal — tier 3 (sin cache, crítico)
     const auth = await pedirAuth({
@@ -20998,7 +21114,7 @@ const MOS = (() => {
 
   async function confirmarAnularTicket(idVenta, label, desdeModal) {
     if (!idVenta) { toast('ID de ticket inválido', 'error'); return; }
-    if (!confirm(`¿Anular el ticket ${label}?\nEsta acción no se puede deshacer.`)) return;
+    if (!await _modalConfirm(`¿Anular el ticket ${label}?\n\nEsta acción no se puede deshacer.`, { danger: true, titulo: 'Anular ticket', okText: 'Anular' })) return;
     if (desdeModal) cerrarModalMetodo();
     const id = String(idVenta).trim();
     try {
@@ -21546,7 +21662,7 @@ const MOS = (() => {
     if (!id) return;
     const d = cfgData.dispositivos.find(x => x.ID_Dispositivo === id);
     if (!d) return;
-    if (!confirm(`¿Bloquear el dispositivo "${d.Nombre_Equipo}"?\n\nNo podrá iniciar sesión en ninguna app. Puedes reactivarlo cuando quieras.`)) return;
+    if (!await _modalConfirm(`¿Bloquear el dispositivo "${d.Nombre_Equipo}"?\n\nNo podrá iniciar sesión en ninguna app. Puedes reactivarlo cuando quieras.`, { warning: true, titulo: 'Bloquear dispositivo', okText: 'Bloquear' })) return;
     cerrarModalDispositivo();
     const previo = d.Estado;
     d.Estado = 'INACTIVO';
@@ -25241,7 +25357,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           if (btnEl) { btnEl.classList.add('sending'); }
           try {
             const r = await API.get('verificarImpresoraAhora', { printerId });
-            const d = (r && r.data) || {};
+            // [v2.42.04 fix] API.get devuelve d.data — r ya es el estado
+            const d = r || {};
             if (d.state && d.state !== 'ONLINE') {
               // Estado cambió entre listar y elegir — bloquear
               try { _evalSfx && _evalSfx('error'); } catch(_){}
@@ -27746,7 +27863,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           _finBloqueados.porNombre = _finBloqueados.porNombre || {};
           _finBloqueados.porNombre[nLow] = {
             nombre,
-            dispositivos: r.data.bloqueados || []
+            // [v2.42.04 fix] r ya es data desempaquetado (API.post)
+            dispositivos: r?.bloqueados || []
           };
           // Re-render del personal para pintar overlay persistente
           if (_finPL) _finRenderPersonal(_finPL, _finPL._fechaStamp || $('finFecha')?.value || today());
@@ -30802,7 +30920,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     };
     try {
       const r = await API.get('getAuditoriaAdmin', params);
-      let rows = (r && r.data) || [];
+      // [v2.42.04 fix] r ya es el array de rows (API.get desempaqueta d.data)
+      let rows = Array.isArray(r) ? r : [];
       // Filtro tier (local porque el endpoint no lo soporta)
       const filtroTier = document.getElementById('audAdmFiltroTier')?.value;
       if (filtroTier) {
