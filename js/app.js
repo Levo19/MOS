@@ -5087,14 +5087,18 @@ const MOS = (() => {
         // Overlay lectura — botón entra a modo edición sin cerrar
         btnCostos = `<button class="alm-v-btn-costos" onclick="MOS.opsEntrarModoCostos('${op.fuente}','${_escapeHtml(op.idGuia)}')" title="Editar costos">💰 Editar costos</button>`;
       } else {
-        // Overlay en modo edición — botones guardar/cancelar/imprimir
+        // Overlay en modo edición — botones guardar/imprimir/jefa/cancelar
         btnCostos = `
           <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 3px 8px -2px rgba(16,185,129,.5)"
                   onclick="MOS.guardarCostosGuia()" title="Guardar costos">💾 Guardar</button>
           <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#0ea5e9,#06b6d4);box-shadow:0 3px 8px -2px rgba(14,165,233,.5)"
-                  onclick="MOS.abrirSelPrinterCostos('${op.fuente}','${_escapeHtml(op.idGuia)}')" title="Imprimir reporte de costos">🖨 Imprimir</button>
+                  onclick="MOS.abrirSelPrinterCostos('${op.fuente}','${_escapeHtml(op.idGuia)}')" title="Imprimir reporte clásico de costos">🖨 Costos</button>
+          <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#a855f7,#7c3aed);box-shadow:0 3px 8px -2px rgba(168,85,247,.5)"
+                  onclick="MOS.abrirSelPrinterJefa('${op.fuente}','${_escapeHtml(op.idGuia)}')" title="Imprimir ticket para que la jefa decida precios">📋 Para jefa</button>
+          <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#f59e0b,#d97706);box-shadow:0 3px 8px -2px rgba(245,158,11,.5)"
+                  onclick="MOS.opsAbrirAplicarRespuestaJefa('${_escapeHtml(op.idGuia)}')" title="Subir foto del ticket lleno por la jefa">📷 Aplicar respuesta</button>
           <button class="alm-v-btn-costos" style="background:rgba(71,85,105,.6);box-shadow:none"
-                  onclick="MOS.opsSalirModoCostos()" title="Cancelar edición">✕ Cancelar</button>`;
+                  onclick="MOS.opsSalirModoCostos()" title="Cancelar edición">✕</button>`;
       }
     }
 
@@ -5700,7 +5704,7 @@ const MOS = (() => {
   // con 12 estados granulares + verify on-click + filtro por zona.
   async function abrirSelPrinterCostos(fuente, idGuia) {
     _opsBeep('tac');
-    S._opsImpCtx = { fuente, idGuia };
+    S._opsImpCtx = { fuente, idGuia, formato: null };
     const printerId = await abrirPrinterPicker({
       titulo:    '🖨 Imprimir costos de guía',
       subtitulo: idGuia + ' · costos de proveedor',
@@ -5710,6 +5714,273 @@ const MOS = (() => {
       await _opsEnviarPrintCostos(printerId, null);
     } else {
       S._opsImpCtx = null;
+    }
+  }
+
+  // [v2.42.07] Ticket profesional "para la jefa" con cuadros, AUTO/DECIDIR/
+  // REVISAR. Reusa picker de impresora — pasa formato='jefa' en el payload.
+  async function abrirSelPrinterJefa(fuente, idGuia) {
+    _opsBeep('tac');
+    S._opsImpCtx = { fuente, idGuia, formato: 'jefa' };
+    const printerId = await abrirPrinterPicker({
+      titulo:    '🖨 Imprimir reporte para jefa',
+      subtitulo: idGuia + ' · cuadros para decidir costos/precios',
+      filtroTipo: 'TICKET'
+    });
+    if (printerId) {
+      await _opsEnviarPrintCostos(printerId, null);
+    } else {
+      S._opsImpCtx = null;
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // [v2.42.07] MODAL "Aplicar respuesta jefa"
+  // ──────────────────────────────────────────────────────────
+  // Paso 6-9 del flow: admin sube foto del ticket lleno por la jefa,
+  // OCR Claude extrae los cambios, modal muestra resultados con
+  // confidence híbrido (auto-aplica si TODO ≥95, muestra dudosos si
+  // 80-95, modal completo si <80). Admin confirma con PIN admin, se
+  // actualiza catálogo + propaga a presentaciones + imprime ticket de
+  // confirmación.
+  // ════════════════════════════════════════════════════════════
+  const _opsJefaState = {
+    idGuia: null,
+    contexto: [],          // [{skuBase, descripcion, costo, ventaActual, margenActualPct}]
+    correcciones: [],      // resultado del OCR + edición manual del admin
+    confidenceGlobal: 0,
+    procesando: false
+  };
+
+  async function opsAbrirAplicarRespuestaJefa(idGuia) {
+    _opsBeep('tac');
+    _opsJefaState.idGuia = idGuia;
+    _opsJefaState.contexto = [];
+    _opsJefaState.correcciones = [];
+    _opsJefaState.confidenceGlobal = 0;
+    // Construir HTML del modal
+    let modal = document.getElementById('modalAplicarRespuestaJefa');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'modalAplicarRespuestaJefa';
+      modal.className = 'fixed inset-0 z-[1100] bg-black/70 backdrop-blur-md flex items-center justify-center p-4 hidden';
+      modal.innerHTML = `
+        <div class="bg-slate-900 border-2 border-emerald-500/50 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+          <div class="flex items-center gap-3 px-5 py-4 border-b border-slate-700/60">
+            <span class="text-2xl">📷</span>
+            <div class="flex-1 min-w-0">
+              <div class="font-black text-emerald-300">Aplicar respuesta jefa</div>
+              <div class="text-xs text-slate-400" id="opsJefaSubtitle">Guía: —</div>
+            </div>
+            <button onclick="MOS.opsCerrarAplicarRespuestaJefa()" class="w-9 h-9 rounded-full bg-slate-800 hover:bg-rose-500/40 transition-all text-slate-300">✕</button>
+          </div>
+          <div class="px-5 py-4 overflow-y-auto flex-1" id="opsJefaBody">
+            <div class="text-center py-12 text-slate-400">
+              <div class="text-5xl mb-3">📸</div>
+              <p class="text-sm mb-4">Saca foto del ticket que la jefa rellenó</p>
+              <input type="file" id="opsJefaFotoInput" accept="image/*" capture="environment" class="hidden">
+              <button onclick="document.getElementById('opsJefaFotoInput').click()"
+                      class="px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 active:scale-95 text-white font-black rounded-xl shadow-lg shadow-emerald-500/40">
+                📷 Tomar / Subir foto
+              </button>
+              <p class="text-[10px] text-slate-500 mt-3">Claude OCR leerá lo que escribió la jefa</p>
+            </div>
+          </div>
+        </div>`;
+      document.body.appendChild(modal);
+      // Bind input file
+      modal.querySelector('#opsJefaFotoInput').addEventListener('change', _opsJefaOnFotoSelected);
+    }
+    document.getElementById('opsJefaSubtitle').textContent = 'Guía: ' + idGuia;
+    modal.classList.remove('hidden');
+    // Cargar contexto en background
+    try {
+      const r = await API.post('getContextoTicketJefa', { idGuia });
+      _opsJefaState.contexto = (r && r.items) || (r && r.data && r.data.items) || [];
+    } catch(e) {
+      toast('Error cargando contexto: ' + (e.message || e), 'error');
+    }
+  }
+
+  function opsCerrarAplicarRespuestaJefa() {
+    const m = document.getElementById('modalAplicarRespuestaJefa');
+    if (m) m.classList.add('hidden');
+    _opsJefaState.idGuia = null;
+    _opsJefaState.contexto = [];
+    _opsJefaState.correcciones = [];
+  }
+
+  async function _opsJefaOnFotoSelected(ev) {
+    const file = ev.target.files && ev.target.files[0];
+    if (!file) return;
+    if (_opsJefaState.procesando) return;
+    _opsJefaState.procesando = true;
+    const body = document.getElementById('opsJefaBody');
+    body.innerHTML = `
+      <div class="text-center py-12">
+        <div class="text-5xl mb-3 animate-bounce">🤖</div>
+        <p class="text-sm text-slate-300 font-bold">Procesando con Claude OCR...</p>
+        <p class="text-xs text-slate-500 mt-2">Esto tarda ~5-15 segundos</p>
+      </div>`;
+    try {
+      const fotoBase64 = await _opsFileToBase64(file);
+      const r = await API.post('ocrTicketJefa', {
+        fotoBase64:    fotoBase64,
+        contextoItems: _opsJefaState.contexto
+      });
+      const d = (r && r.data) || r || {};
+      _opsJefaState.correcciones = (d.correcciones || []).map(c => ({
+        ...c,
+        // Hidratar info del contexto para mostrar nombre + costo
+        descripcion: (_opsJefaState.contexto.find(x => x.skuBase === c.skuBase) || {}).descripcion || c.skuBase,
+        costo:       (_opsJefaState.contexto.find(x => x.skuBase === c.skuBase) || {}).costo || 0,
+        editado:     false
+      }));
+      _opsJefaState.confidenceGlobal = d.confidenceGlobal || 0;
+      _opsJefaRenderResultados();
+    } catch(e) {
+      body.innerHTML = `<div class="text-center py-12 text-rose-400">
+        <div class="text-4xl mb-2">⚠</div>
+        <p class="text-sm">Error OCR: ${_escapeHtml(e.message || e)}</p>
+        <button onclick="MOS.opsAbrirAplicarRespuestaJefa('${_opsJefaState.idGuia}')" class="mt-4 px-4 py-2 bg-emerald-500 rounded-lg text-white">Reintentar</button>
+      </div>`;
+    } finally {
+      _opsJefaState.procesando = false;
+    }
+  }
+
+  function _opsFileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function _opsJefaRenderResultados() {
+    const body = document.getElementById('opsJefaBody');
+    const corr = _opsJefaState.correcciones;
+    const cg = _opsJefaState.confidenceGlobal;
+    // Determinar modo según confidence híbrido
+    const tieneDudosos = corr.some(c => c.confidence < 95);
+    const tieneCriticos = corr.some(c => c.confidence < 80);
+    const banner = tieneCriticos
+      ? `<div class="bg-rose-900/40 border border-rose-500/50 rounded-xl p-3 mb-4 text-xs">
+           <strong class="text-rose-300">⚠ Confianza baja</strong> — revisa TODOS los valores manualmente antes de aplicar.
+         </div>`
+      : tieneDudosos
+      ? `<div class="bg-amber-900/40 border border-amber-500/50 rounded-xl p-3 mb-4 text-xs">
+           <strong class="text-amber-300">⚠ Algunos valores dudosos</strong> — revisa los marcados en ámbar.
+         </div>`
+      : `<div class="bg-emerald-900/40 border border-emerald-500/50 rounded-xl p-3 mb-4 text-xs">
+           <strong class="text-emerald-300">✓ Lectura confiable</strong> — verifica visualmente y aplica.
+         </div>`;
+    if (!corr.length) {
+      body.innerHTML = `${banner}
+        <div class="text-center py-8 text-slate-400 text-sm">
+          OCR no detectó cambios en el ticket. ¿Probar otra foto?
+        </div>
+        <button onclick="document.getElementById('opsJefaFotoInput').click()" class="w-full bg-slate-700 text-slate-200 py-2 rounded-lg">📷 Subir otra foto</button>`;
+      return;
+    }
+    body.innerHTML = banner + corr.map((c, idx) => {
+      const confCls = c.confidence >= 95 ? 'border-emerald-500/40 bg-emerald-950/30'
+                    : c.confidence >= 80 ? 'border-amber-500/50 bg-amber-950/30'
+                    : 'border-rose-500/50 bg-rose-950/30';
+      const confTxt = c.confidence >= 95 ? '✓ alta'
+                    : c.confidence >= 80 ? '⚠ media'
+                    : '⚠ baja';
+      return `<div class="rounded-xl border ${confCls} p-3 mb-3">
+        <div class="flex items-center justify-between mb-2">
+          <div class="font-bold text-slate-100 text-sm">#${idx+1} ${_escapeHtml(c.descripcion || c.skuBase)}</div>
+          <span class="text-[10px] text-slate-400">${confTxt} · ${c.confidence}%</span>
+        </div>
+        <div class="text-[11px] text-slate-500 mb-2">SKU: ${_escapeHtml(c.skuBase)} · Costo: S/ ${parseFloat(c.costo).toFixed(2)}</div>
+        ${c.tachado ? `<div class="text-rose-300 text-xs">⊘ Tachado por jefa — NO se aplicará</div>` : `
+          <div class="grid grid-cols-2 gap-2">
+            <label class="text-[10px] text-slate-400">
+              Venta nueva
+              <input type="number" step="0.01" value="${c.ventaNueva != null ? c.ventaNueva : ''}"
+                     oninput="MOS._opsJefaEditar(${idx}, 'ventaNueva', this.value)"
+                     class="w-full mt-1 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-slate-100">
+            </label>
+            <label class="text-[10px] text-slate-400">
+              Margen objetivo (%)
+              <input type="number" step="0.1" value="${c.margenNuevoPct != null ? (c.margenNuevoPct * 100).toFixed(1) : ''}"
+                     oninput="MOS._opsJefaEditar(${idx}, 'margenNuevoPct', this.value / 100)"
+                     class="w-full mt-1 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-slate-100">
+            </label>
+          </div>
+          ${c.notas ? `<div class="text-[10px] text-slate-500 italic mt-1">"${_escapeHtml(c.notas)}"</div>` : ''}
+        `}
+      </div>`;
+    }).join('') + `
+      <div class="sticky bottom-0 bg-slate-900 pt-3 mt-2 border-t border-slate-700/60">
+        <button onclick="MOS._opsJefaConfirmarAplicar()"
+                class="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 active:scale-95 text-white font-black py-3 rounded-xl shadow-lg shadow-emerald-500/40">
+          ✓ Aplicar cambios (requiere PIN admin)
+        </button>
+      </div>`;
+  }
+
+  function _opsJefaEditar(idx, campo, valor) {
+    const c = _opsJefaState.correcciones[idx];
+    if (!c) return;
+    if (valor === '' || isNaN(parseFloat(valor))) c[campo] = null;
+    else c[campo] = parseFloat(valor);
+    c.editado = true;
+  }
+
+  async function _opsJefaConfirmarAplicar() {
+    const items = _opsJefaState.correcciones
+      .filter(c => !c.tachado && (c.ventaNueva != null || c.margenNuevoPct != null))
+      .map(c => ({
+        skuBase:        c.skuBase,
+        descripcion:    c.descripcion,
+        costoNuevo:     c.costo,
+        ventaNueva:     c.ventaNueva,
+        margenNuevoPct: c.margenNuevoPct
+      }));
+    if (!items.length) {
+      toast('No hay cambios para aplicar', 'warning');
+      return;
+    }
+    // Pedir PIN admin con el modal universal
+    const auth = await pedirAuth({
+      accion: 'APLICAR_RESPUESTA_JEFA',
+      refDocumento: _opsJefaState.idGuia,
+      contexto: `Aplicar ${items.length} cambios al catálogo · guía ${_opsJefaState.idGuia}`
+    });
+    if (!auth) return;
+    // Elegir impresora para el ticket de confirmación
+    const printerId = await abrirPrinterPicker({
+      titulo: '🖨 Impresora para ticket de confirmación',
+      subtitulo: 'Auditoría visual de los cambios aplicados',
+      filtroTipo: 'TICKET',
+      omitirOpcion: true
+    }).catch(() => null);
+    try {
+      const r = await API.post('aplicarRespuestaJefa', {
+        idGuia:     _opsJefaState.idGuia,
+        claveAdmin: auth.clave,
+        items:      items,
+        printerId:  printerId || ''
+      });
+      const d = (r && r.data) || r || {};
+      if (!d.autorizado) {
+        toast(d.error || 'Clave incorrecta', 'error');
+        return;
+      }
+      toast(`✓ ${d.aplicados} cambio(s) aplicados al catálogo` +
+            (d.ticketImpreso ? ' · ticket impreso' : ''), 'success', 6000);
+      if (d.errores && d.errores.length) {
+        console.warn('Errores al aplicar:', d.errores);
+        toast(`⚠ ${d.errores.length} con error — revisa consola`, 'warning', 8000);
+      }
+      opsCerrarAplicarRespuestaJefa();
+    } catch(e) {
+      toast('Error: ' + (e.message || e), 'error');
     }
   }
   function cerrarSelPrinterCostos() {
@@ -5805,10 +6076,9 @@ const MOS = (() => {
       btn.innerHTML += '<div class="text-[10px] text-cyan-400 mt-1 pl-4">⏳ Enviando...</div>';
     }
     try {
-      const r = await API.post('imprimirCostosGuia', {
-        idGuia: ctx.idGuia,
-        printerId: printerId
-      });
+      const payload = { idGuia: ctx.idGuia, printerId: printerId };
+      if (ctx.formato === 'jefa') payload.formato = 'jefa';
+      const r = await API.post('imprimirCostosGuia', payload);
       const ok = r && (r.ok === true || (r.data && r.data.ok === true));
       if (ok) {
         toast('🖨 Reporte enviado a impresora', 'ok');
@@ -31247,6 +31517,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _costosGuiaSugerirDebounce, _costosGuiaSugUpdate, _costosGuiaSugToggle,
     opsEntrarModoCostos, opsSalirModoCostos,
     abrirSelPrinterCostos, cerrarSelPrinterCostos, _opsRecargarPrinters, _opsEnviarPrintCostos,
+    // [v2.42.07] Flow para-jefa: ticket profesional + aplicar respuesta + OCR
+    abrirSelPrinterJefa, opsAbrirAplicarRespuestaJefa, opsCerrarAplicarRespuestaJefa,
+    _opsJefaEditar, _opsJefaConfirmarAplicar,
     _impactoTogglesel, _impactoSetPrecio, cerrarImpactoCostos, aplicarSugerenciasSeleccionadas,
     almLoadZonas, almRefreshZonas, almAbrirStockDetalle, cerrarStockDetalle, almRefreshStockDetalle,
     _almGenerarPedidoFromInsight, _almPickProveedor, cerrarSelProveedor,

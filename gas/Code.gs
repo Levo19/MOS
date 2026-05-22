@@ -62,6 +62,10 @@ function _route(method, e) {
       case 'getOperacionesConDetalle': return getOperacionesConDetalle(params);
       case 'getOperacionDetalle':    return getOperacionDetalle(params);
       case 'imprimirCostosGuia':     return imprimirCostosGuia(params);
+      case 'aplicarRespuestaJefa':   return aplicarRespuestaJefa(params);
+      case 'ocrComprobanteGuia':     return ocrComprobanteGuia(params);
+      case 'ocrTicketJefa':          return ocrTicketJefa(params);
+      case 'getContextoTicketJefa':  return getContextoTicketJefa(params);
       case 'llenarCostosGuia':       return llenarCostosGuia(params);
       case 'aplicarPreciosVentaSugeridos': return aplicarPreciosVentaSugeridos(params);
       case 'getRankingZonas':        return getRankingZonas(params);

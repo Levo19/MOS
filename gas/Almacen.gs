@@ -1438,6 +1438,303 @@ function aplicarPreciosVentaSugeridos(params) {
 // Ahora 1 lectura de GUIA_DETALLE (WH) + 1 de GUIAS_DETALLE (ME) +
 // indexación por idGuia → ops llegan con sus líneas pegadas.
 // ============================================================
+// [v2.42.07] HELPERS REPORTE PARA JEFA — Bloque A
+// ============================================================
+//
+// _calcMargenSobreVenta(venta, costo) → margen como decimal (0.30 = 30%)
+// Fórmula UNIFICADA en TODO el ecosistema: margen = (venta - costo) / venta
+//
+// Por qué sobre venta y no sobre costo:
+//   - Finanzas ya usa esta fórmula en todos los KPIs (líneas 1093, 27106,
+//     27555, 27769 de app.js).
+//   - Es la fórmula contable estándar para retail ("margen bruto").
+//   - Si costo=10, venta=15:
+//       sobre venta: (15-10)/15 = 33%
+//       sobre costo: (15-10)/10 = 50% ← se llama "markup", no margen
+// ============================================================
+function _calcMargenSobreVenta(venta, costo) {
+  venta = parseFloat(venta) || 0;
+  costo = parseFloat(costo) || 0;
+  if (venta <= 0) return null;
+  return (venta - costo) / venta;
+}
+
+// Inverso: dado costo + margen objetivo, calcular venta sugerida.
+// venta = costo / (1 - margen). Redondea a 0.10 para retail.
+function _calcVentaDesdeMargen(costo, margenPct) {
+  costo = parseFloat(costo) || 0;
+  margenPct = parseFloat(margenPct) || 0;
+  if (costo <= 0 || margenPct <= 0 || margenPct >= 0.99) return null;
+  var venta = costo / (1 - margenPct);
+  return Math.round(venta * 10) / 10;
+}
+
+// Word-wrap GREEDY — corta por palabras, nunca parte una palabra.
+// Si una palabra individual excede el ancho, la corta forzosamente.
+// Retorna array de líneas. Máximo `maxLineas` líneas (resto con "…").
+function _wordWrapGreedy(texto, maxWidth, maxLineas) {
+  texto = String(texto || '').trim();
+  if (!texto) return [''];
+  maxWidth = parseInt(maxWidth, 10) || 28;
+  maxLineas = parseInt(maxLineas, 10) || 3;
+  var palabras = texto.split(/\s+/);
+  var lineas = [];
+  var cur = '';
+  for (var i = 0; i < palabras.length; i++) {
+    var w = palabras[i];
+    if (w.length > maxWidth) {
+      // Palabra más larga que el ancho — partir forzoso
+      if (cur) { lineas.push(cur); cur = ''; }
+      while (w.length > maxWidth) {
+        lineas.push(w.substring(0, maxWidth));
+        w = w.substring(maxWidth);
+        if (lineas.length >= maxLineas) break;
+      }
+      cur = w;
+      continue;
+    }
+    if (!cur) { cur = w; continue; }
+    if (cur.length + 1 + w.length <= maxWidth) cur += ' ' + w;
+    else { lineas.push(cur); cur = w; if (lineas.length >= maxLineas) break; }
+  }
+  if (cur && lineas.length < maxLineas) lineas.push(cur);
+  // Truncar con "…" si hay palabras restantes
+  if (lineas.length === maxLineas && i < palabras.length - 1) {
+    var ult = lineas[maxLineas - 1];
+    if (ult.length > maxWidth - 1) ult = ult.substring(0, maxWidth - 1);
+    lineas[maxLineas - 1] = ult + (ult.endsWith('…') ? '' : '…');
+  }
+  return lineas;
+}
+
+// [v2.42.07] Construye el ESC/POS del REPORTE PARA JEFA (cuadros por
+// producto, word-wrap, estados AUTO/DECIDIR/REVISAR, líneas para llenar
+// a mano). Margen UNIFICADO sobre venta.
+function _buildEscPosReporteJefa(guia, det, prodLookup, nombreProv, idGuia, ahora, fechaGuia, _norm) {
+  var W = 32;                                   // 80mm térmica típica
+  var SEP    = '================================';
+  var SEPd   = '--------------------------------';
+  var CUADRO_TOP    = '+------------------------------+';
+  var CUADRO_BOT    = '+------------------------------+';
+  // Margen sugerido por categoría cuando producto no tiene objetivo
+  var MARGEN_CAT_DEFAULT = 0.40;
+  // Threshold para marcar "REVISAR" si costo subió mucho
+  var COSTO_SUBIDA_ALERTA = 0.10;               // +10%
+
+  function _line(s) { return s + '\n'; }
+  function _pad(s, n) { s = String(s || ''); while (s.length < n) s += ' '; return s; }
+  function _padCenter(s, n) {
+    s = String(s || '');
+    if (s.length >= n) return s.substring(0, n);
+    var pad = n - s.length;
+    var pl = Math.floor(pad / 2);
+    var pr = pad - pl;
+    return new Array(pl + 1).join(' ') + s + new Array(pr + 1).join(' ');
+  }
+  // Línea dentro del cuadro: "| <content max 28 chars> |"
+  function _cuadroLine(content) {
+    content = String(content || '');
+    if (content.length > 28) content = content.substring(0, 28);
+    return '| ' + _pad(content, 28) + ' |\n';
+  }
+
+  // Estadísticas globales de la guía
+  var totalItems = det.length;
+  var auto = 0, decidir = 0, revisar = 0;
+  var margenAcumNum = 0, margenAcumDen = 0;     // margen ponderado por unidades
+  det.forEach(function(l) {
+    var p = prodLookup[l.codigoProducto] || {};
+    var venta = parseFloat(p.precioVenta) || 0;
+    var costo = parseFloat(l.precioUnitario) || 0;
+    var cant  = parseFloat(l.cantidadRecibida || l.cantidad || l.cantidadEsperada) || 0;
+    if (venta > 0 && costo > 0) {
+      var m = _calcMargenSobreVenta(venta, costo);
+      if (m !== null) { margenAcumNum += m * cant; margenAcumDen += cant; }
+    }
+  });
+  var margenProm = margenAcumDen > 0 ? margenAcumNum / margenAcumDen : null;
+
+  var txt = '';
+  // Reset + center cabecera
+  txt += '\x1b\x40';                            // ESC @ reset
+  txt += '\x1b\x61\x01';                        // center
+  txt += SEP + '\n';
+  txt += '\x1b\x21\x10' + _padCenter('INVERSIONMOS', W) + '\x1b\x21\x00\n';   // double
+  txt += _padCenter(_norm('Costos · Para la jefa'), W) + '\n';
+  txt += SEP + '\n';
+  txt += '\x1b\x61\x00';                        // left
+
+  txt += _pad('Guia    :', 11) + _norm(idGuia) + '\n';
+  txt += _pad('Fecha   :', 11) + (fechaGuia || ahora) + '\n';
+  txt += _pad('Provee  :', 11) + _norm(nombreProv).substring(0, W - 11) + '\n';
+  if (guia.numeroDocumento) {
+    txt += _pad('Factura :', 11) + _norm(guia.numeroDocumento).substring(0, W - 11) + '\n';
+  }
+  txt += _pad('Items   :', 11) + totalItems + '\n';
+  if (margenProm !== null) {
+    txt += _pad('Margen  :', 11) + (margenProm * 100).toFixed(0) + '% prom hoy\n';
+  }
+  txt += SEP + '\n\n';
+
+  // Cuadros por producto
+  det.forEach(function(l, idx) {
+    var p = prodLookup[l.codigoProducto] || {};
+    var costo = parseFloat(l.precioUnitario) || 0;
+    var cant  = parseFloat(l.cantidadRecibida || l.cantidad || l.cantidadEsperada) || 0;
+    var ventaActual = parseFloat(p.precioVenta) || 0;
+    var margenObjetivo = parseFloat(p.margenPct) || 0;
+    // [v2.42.07] margenPct en PRODUCTO_BASE se ASUME sobre venta a partir
+    // de v2.42.07 (unificación). Productos viejos con valores sobre costo
+    // se refinarán cuando la jefa los autorice via este flow.
+
+    // Costo anterior si existe en catálogo
+    var costoAnterior = parseFloat(p.costoUltimo || p.ultimoCosto) || 0;
+    var costoSubio = costoAnterior > 0 && costo > costoAnterior * (1 + COSTO_SUBIDA_ALERTA);
+
+    // Calcular venta sugerida si tiene margen objetivo
+    var ventaSugerida = null;
+    var estado = 'DECIDIR';                     // default
+    if (margenObjetivo > 0 && costo > 0) {
+      // Producto YA tiene margen objetivo previo → AUTO
+      ventaSugerida = _calcVentaDesdeMargen(costo, margenObjetivo);
+      estado = costoSubio ? 'REVISAR' : 'AUTO';
+    } else if (costo > 0) {
+      // Sin margen objetivo → sugerir por categoría
+      ventaSugerida = _calcVentaDesdeMargen(costo, MARGEN_CAT_DEFAULT);
+      estado = 'DECIDIR';
+    }
+
+    if (estado === 'AUTO')    auto++;
+    if (estado === 'DECIDIR') decidir++;
+    if (estado === 'REVISAR') revisar++;
+
+    // Etiqueta del estado en el cuadro
+    var etiquetaEstado;
+    if (estado === 'AUTO')    etiquetaEstado = '#' + (idx + 1) + ' --- AUTO ✓';
+    if (estado === 'DECIDIR') etiquetaEstado = '#' + (idx + 1) + ' - DECIDIR jefa';
+    if (estado === 'REVISAR') etiquetaEstado = '#' + (idx + 1) + ' --- REVISAR !';
+
+    txt += CUADRO_TOP + '\n';
+    txt += _cuadroLine(etiquetaEstado);
+
+    // Nombre con word-wrap (max 3 líneas, 28 chars c/u)
+    var nombre = _norm(p.descripcion || l.codigoProducto || '');
+    var lineas = _wordWrapGreedy(nombre, 28, 3);
+    lineas.forEach(function(ln){ txt += _cuadroLine(ln); });
+
+    // Subtítulo: cantidad
+    txt += _cuadroLine(cant + ' unidades');
+    txt += _cuadroLine('');
+
+    // Costo
+    var costoTxt = costo > 0 ? 'S/ ' + costo.toFixed(2) : '(sin definir)';
+    if (costoAnterior > 0 && costo !== costoAnterior) {
+      costoTxt += ' (era ' + costoAnterior.toFixed(2) + ')';
+    }
+    txt += _cuadroLine('Costo : ' + costoTxt);
+
+    // Venta — depende del estado
+    if (estado === 'AUTO') {
+      // Auto-aplicada: mostrar venta sugerida + margen objetivo
+      var ventaTxt = ventaActual > 0
+        ? 'S/ ' + ventaActual.toFixed(2) + ' -> ' + ventaSugerida.toFixed(2)
+        : 'S/ ' + ventaSugerida.toFixed(2);
+      txt += _cuadroLine('Venta : ' + ventaTxt);
+      txt += _cuadroLine('Margen: ' + (margenObjetivo * 100).toFixed(0) + '% (objetivo)');
+      txt += _cuadroLine('');
+      txt += _cuadroLine('AUTO con margen previo');
+    } else if (estado === 'REVISAR') {
+      txt += _cuadroLine('Venta : S/ ' + ventaActual.toFixed(2) + ' -> ' + ventaSugerida.toFixed(2));
+      txt += _cuadroLine('Margen: ' + (margenObjetivo * 100).toFixed(0) + '%');
+      txt += _cuadroLine('');
+      txt += _cuadroLine('!! COSTO SUBIO +10%');
+      txt += _cuadroLine('Revisa por si subes margen');
+    } else { // DECIDIR
+      txt += _cuadroLine('Venta : ' + (ventaActual > 0 ? 'S/ ' + ventaActual.toFixed(2) : '(sin definir)'));
+      txt += _cuadroLine('Margen: NUNCA configurado');
+      txt += _cuadroLine('');
+      if (ventaSugerida) {
+        txt += _cuadroLine('Sugerido (cat. ' + (MARGEN_CAT_DEFAULT * 100).toFixed(0) + '%):');
+        txt += _cuadroLine('  S/ ' + ventaSugerida.toFixed(2));
+      }
+    }
+
+    // Línea para llenar a mano siempre
+    txt += _cuadroLine('');
+    txt += _cuadroLine('Cambiar venta? S/_______');
+    txt += _cuadroLine('o margen objetivo: ___%');
+    txt += CUADRO_BOT + '\n\n';
+  });
+
+  // Resumen final
+  txt += SEP + '\n';
+  txt += '\x1b\x21\x08' + _padCenter('RESUMEN GUIA', W) + '\x1b\x21\x00\n';
+  txt += SEP + '\n';
+  txt += _pad(' Auto-aplicados :', 22) + auto + ' items\n';
+  txt += _pad(' Decidir jefa   :', 22) + decidir + ' items\n';
+  if (revisar > 0) {
+    txt += _pad(' Revisar (costo+):',22) + revisar + ' items\n';
+  }
+  txt += '\n';
+  txt += ' Aplica al SKU base \n';
+  txt += ' Todas las presentaciones\n';
+  txt += ' del producto se actualizan\n';
+  txt += ' juntas con el margen\n';
+  txt += SEP + '\n';
+  txt += '\x1b\x21\x08' + _padCenter('LEYENDA', W) + '\x1b\x21\x00\n';
+  txt += SEP + '\n';
+  txt += ' AUTO    = Margen previo\n';
+  txt += '           ya aplicado\n';
+  txt += ' DECIDIR = Sin margen,\n';
+  txt += '           jefa elige\n';
+  txt += ' REVISAR = Costo subio\n';
+  txt += '           +10%, opcional\n';
+  txt += '\n';
+  txt += ' Margen = (venta-costo) / venta\n';
+  txt += '          (sobre venta)\n';
+  txt += SEP + '\n\n';
+  txt += '\x1b\x61\x01';                        // center
+  txt += _norm('Gracias jefa! Devuelve a Luis') + '\n';
+  txt += ahora + '\n';
+
+  // Cortar papel
+  txt += '\n\n\n\n\x1d\x56\x00';
+  return txt;
+}
+
+// [v2.42.07] Wrapper para envío a PrintNode (refactor para reuso entre
+// formato legacy y formato 'jefa').
+function _enviarPrintnode(txt, printerId, pnKey, title) {
+  var bytes = [];
+  for (var ci = 0; ci < txt.length; ci++) bytes.push(txt.charCodeAt(ci) & 0xFF);
+  var content = Utilities.base64Encode(bytes);
+  try {
+    var resp = UrlFetchApp.fetch('https://api.printnode.com/printjobs', {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { 'Authorization': 'Basic ' + Utilities.base64Encode(pnKey + ':') },
+      payload: JSON.stringify({
+        printerId: parseInt(printerId, 10),
+        title:     title || 'Reporte Costos',
+        contentType: 'raw_base64',
+        content:   content,
+        source:    'MOS-Almacen-Reporte'
+      }),
+      muteHttpExceptions: true
+    });
+    var code = resp.getResponseCode();
+    if (code >= 200 && code < 300) {
+      var jobId = '';
+      try { jobId = String(JSON.parse(resp.getContentText())); } catch(_){}
+      return { ok: true, data: { jobId: jobId } };
+    }
+    return { ok: false, error: 'PrintNode HTTP ' + code + ': ' + resp.getContentText().substring(0, 200) };
+  } catch(eP) {
+    return { ok: false, error: 'PrintNode error: ' + eP.message };
+  }
+}
+
+// ============================================================
 // imprimirCostosGuia — ESC/POS 80mm con análisis de margen
 // ============================================================
 // Imprime un reporte físico de la guía de proveedor con:
@@ -1507,6 +1804,14 @@ function imprimirCostosGuia(params) {
       .replace(/[íìïî]/gi, 'i').replace(/[óòöô]/gi, 'o')
       .replace(/[úùüû]/gi, 'u').replace(/ñ/g, 'n').replace(/Ñ/g, 'N')
       .replace(/[^\x20-\x7e]/g, '');
+  }
+
+  // [v2.42.07] Si formato='jefa', usar el nuevo template profesional con
+  // cuadros por producto, texto grande, AUTO/DECIDIR/REVISAR. Margen
+  // unificado sobre venta. Líneas para llenar a mano cuando jefa decide.
+  if (params.formato === 'jefa' || params.forJefa === true) {
+    var txtJefa = _buildEscPosReporteJefa(guia, det, prodLookup, nombreProv, idGuia, ahora, fechaGuia, _norm);
+    return _enviarPrintnode(txtJefa, params.printerId, pnKey, 'Reporte Jefa ' + idGuia);
   }
 
   var txt = '';
@@ -2639,4 +2944,345 @@ function _getInsightsStockImpl(params) {
   } catch(e) {
     return { ok: false, error: 'Error insights: ' + e.message };
   }
+}
+
+// ============================================================
+// [v2.42.07] aplicarRespuestaJefa — Bloque A
+// ============================================================
+//
+// Aplica las decisiones de la jefa (venta nueva o margen objetivo nuevo
+// por producto) al catálogo. Cada item se actualiza por SKU BASE (el
+// canónico), propagando automáticamente a TODAS sus presentaciones.
+// Registra historial completo para auditoría.
+//
+// Valida clave admin antes de aplicar (acción tier 2).
+//
+// params:
+//   idGuia:     id de la guía origen
+//   claveAdmin: 8 dígitos (global+personal)
+//   items:      array de objetos por producto:
+//     { skuBase, codigoBarra (opcional), descripcion (info),
+//       costoNuevo:     número (lo confirmado/corregido por admin),
+//       ventaNueva:     número o null (lo que escribió jefa),
+//       margenNuevoPct: número 0..1 o null (alternativa a ventaNueva)
+//     }
+//     Si jefa solo escribió venta → margen se calcula automático
+//     Si jefa solo escribió margen → venta se calcula automático
+//     Si NO escribió nada → item se ignora (no toca catálogo)
+//   printerId (opcional): si viene, imprime ticket de confirmación
+//
+// Retorna: { ok: true, data: { aplicados, cambios: [...] } } o error
+function aplicarRespuestaJefa(params) {
+  if (!params || !params.idGuia)     return { ok: false, error: 'idGuia requerido' };
+  if (!params.claveAdmin)            return { ok: false, error: 'Requiere claveAdmin (8 dígitos)' };
+  if (!params.items || !Array.isArray(params.items)) return { ok: false, error: 'Requiere items[]' };
+
+  // 1. Validar clave admin (tier 2)
+  var verif = verificarClaveAdmin({
+    clave:        String(params.claveAdmin).trim(),
+    accion:       'APLICAR_RESPUESTA_JEFA',
+    refDocumento: String(params.idGuia),
+    appOrigen:    'MOS',
+    detalle:      'Actualiza catálogo con decisión de jefa · ' + params.items.length + ' items'
+  });
+  if (!verif.ok || !verif.data || !verif.data.autorizado) {
+    return { ok: true, data: {
+      autorizado: false,
+      error: (verif.data && verif.data.error) || 'Clave incorrecta'
+    }};
+  }
+  var validadoPor = verif.data.validadoPor || {};
+  var usuario = String(validadoPor.nombre || 'admin-MOS');
+
+  // 2. Procesar cada item
+  var cambios = [];
+  var errores = [];
+  var presentacionesAfectadas = {};   // {skuBase: [idProducto, idProducto, ...]}
+
+  params.items.forEach(function(it, idx) {
+    if (!it || !it.skuBase) {
+      errores.push({ idx: idx, error: 'item sin skuBase' });
+      return;
+    }
+    var skuBase = String(it.skuBase).trim();
+    var costoNuevo = parseFloat(it.costoNuevo) || 0;
+    var ventaNueva = it.ventaNueva !== undefined && it.ventaNueva !== null && it.ventaNueva !== ''
+      ? parseFloat(it.ventaNueva) : null;
+    var margenNuevoPct = it.margenNuevoPct !== undefined && it.margenNuevoPct !== null && it.margenNuevoPct !== ''
+      ? parseFloat(it.margenNuevoPct) : null;
+    if (ventaNueva === null && margenNuevoPct === null) {
+      // Jefa no decidió este item → no tocar catálogo
+      return;
+    }
+
+    // Calcular el complementario
+    if (ventaNueva !== null && margenNuevoPct === null) {
+      // Jefa puso venta → calcular margen
+      margenNuevoPct = _calcMargenSobreVenta(ventaNueva, costoNuevo);
+    } else if (margenNuevoPct !== null && ventaNueva === null) {
+      // Jefa puso margen → calcular venta
+      ventaNueva = _calcVentaDesdeMargen(costoNuevo, margenNuevoPct);
+    }
+    // Validaciones
+    if (ventaNueva === null || ventaNueva <= 0) {
+      errores.push({ idx: idx, skuBase: skuBase, error: 'venta calculada inválida' });
+      return;
+    }
+    if (margenNuevoPct === null || margenNuevoPct < -0.5 || margenNuevoPct > 0.99) {
+      errores.push({ idx: idx, skuBase: skuBase, error: 'margen fuera de rango (-50% a 99%)' });
+      return;
+    }
+
+    // Buscar el producto canónico + sus presentaciones por skuBase
+    var prodCanonico = null;
+    var presentaciones = [];
+    try {
+      var todosProds = _sheetToObjects(getSheet('PRODUCTO_BASE'));
+      todosProds.forEach(function(p) {
+        if (String(p.skuBase || '') === skuBase) {
+          if (String(p.idProducto || '') === skuBase) {
+            prodCanonico = p;
+          } else {
+            presentaciones.push(p);
+          }
+        }
+      });
+      // Si idProducto === skuBase no se distinguió, fallback: buscar por idProducto
+      if (!prodCanonico) {
+        prodCanonico = todosProds.find(function(p){ return String(p.idProducto || '') === skuBase; }) || null;
+      }
+    } catch(eP) {
+      errores.push({ idx: idx, skuBase: skuBase, error: 'Error leyendo PRODUCTO_BASE: ' + eP.message });
+      return;
+    }
+    if (!prodCanonico) {
+      errores.push({ idx: idx, skuBase: skuBase, error: 'skuBase no encontrado en catálogo' });
+      return;
+    }
+
+    // Snapshot del estado actual para el log de cambios
+    var snap = {
+      skuBase: skuBase,
+      descripcion: String(prodCanonico.descripcion || ''),
+      costoAnterior: parseFloat(prodCanonico.costoUltimo || prodCanonico.ultimoCosto) || 0,
+      ventaAnterior: parseFloat(prodCanonico.precioVenta) || 0,
+      margenAnterior: parseFloat(prodCanonico.margenPct) || 0,
+      costoNuevo: costoNuevo,
+      ventaNueva: ventaNueva,
+      margenNuevo: margenNuevoPct,
+      presentacionesAfectadas: presentaciones.length
+    };
+    cambios.push(snap);
+    presentacionesAfectadas[skuBase] = presentaciones.map(function(p){ return p.idProducto; });
+
+    // Actualizar canónico
+    try {
+      var r = actualizarProductoMaster({
+        _source:      'MOS_RESPUESTA_JEFA',
+        _audit:       params._audit,
+        idProducto:   prodCanonico.idProducto,
+        precioVenta:  ventaNueva,
+        margenPct:    margenNuevoPct,
+        usuario:      usuario,
+        motivoPrecio: 'Respuesta jefa · guía ' + params.idGuia
+      });
+      if (!r.ok) {
+        errores.push({ idx: idx, skuBase: skuBase, error: 'actualizar canónico: ' + r.error });
+        return;
+      }
+    } catch(eU) {
+      errores.push({ idx: idx, skuBase: skuBase, error: 'Exception canónico: ' + eU.message });
+      return;
+    }
+
+    // Propagar a presentaciones (solo margenPct; precioVenta de cada
+    // presentación se calcula según el factor de conversión que cada una
+    // tenga vs el canónico — eso lo maneja actualizarProductoMaster con
+    // su propia lógica de propagación).
+    presentaciones.forEach(function(pres) {
+      try {
+        actualizarProductoMaster({
+          _source:      'MOS_RESPUESTA_JEFA_PROPAG',
+          _audit:       params._audit,
+          idProducto:   pres.idProducto,
+          margenPct:    margenNuevoPct,
+          usuario:      usuario,
+          motivoPrecio: 'Margen propagado desde canónico ' + skuBase
+        });
+      } catch(_) {}
+    });
+
+    // Registrar en HISTORIAL_PRECIOS
+    try {
+      _registrarHistorialPrecio(
+        prodCanonico.idProducto,
+        skuBase,
+        prodCanonico.codigoBarra || '',
+        prodCanonico.descripcion || '',
+        snap.ventaAnterior,
+        ventaNueva,
+        usuario,
+        'Respuesta jefa · guía ' + params.idGuia + ' · margen ' + (margenNuevoPct * 100).toFixed(1) + '%',
+        'MOS_RESPUESTA_JEFA'
+      );
+    } catch(eH) { Logger.log('HISTORIAL_PRECIOS: ' + eH.message); }
+  });
+
+  // 3. Si viene printerId, imprimir ticket de confirmación
+  var ticketImpreso = false;
+  if (params.printerId && cambios.length > 0) {
+    try {
+      var pnKey = PropertiesService.getScriptProperties().getProperty('PRINTNODE_API_KEY');
+      if (pnKey) {
+        var txt = _buildEscPosTicketConfirmacionJefa(params.idGuia, cambios, presentacionesAfectadas, usuario);
+        var rPr = _enviarPrintnode(txt, params.printerId, pnKey, 'Cambios Catalogo ' + params.idGuia);
+        ticketImpreso = rPr.ok;
+      }
+    } catch(eTk) { Logger.log('Ticket confirmacion: ' + eTk.message); }
+  }
+
+  return { ok: true, data: {
+    autorizado:      true,
+    aplicados:       cambios.length,
+    errores:         errores,
+    cambios:         cambios,
+    ticketImpreso:   ticketImpreso,
+    autorizadoPor:   usuario
+  }};
+}
+
+// ============================================================
+// [v2.42.07] Bridges OCR MOS → WH (Bloque C)
+// ============================================================
+// Reutilizan postToWarehouse para llamar a las funciones OCR de WH
+// (extraerCostosFactura / extraerCorreccionesJefa) y devolver el
+// resultado al frontend MOS sin exponer la URL de WH al cliente.
+// ============================================================
+function ocrComprobanteGuia(params) {
+  if (!params || !params.idGuia) return { ok: false, error: 'idGuia requerido' };
+  try {
+    var r = postToWarehouse('extraerCostosFactura', { idGuia: String(params.idGuia) });
+    // postToWarehouse devuelve el JSON crudo (con .ok/.data o .status/.error)
+    if (r && r.ok && r.data) return r;
+    if (r && r.status === 'success') return { ok: true, data: r };
+    return { ok: false, error: (r && (r.error || r.mensaje)) || 'OCR comprobante falló' };
+  } catch(e) {
+    return { ok: false, error: 'Bridge WH error: ' + e.message };
+  }
+}
+
+function ocrTicketJefa(params) {
+  if (!params || !params.fotoBase64) return { ok: false, error: 'fotoBase64 requerida' };
+  if (!params.contextoItems || !params.contextoItems.length) {
+    return { ok: false, error: 'contextoItems[] requerido' };
+  }
+  try {
+    var r = postToWarehouse('extraerCorreccionesJefa', {
+      fotoBase64:    params.fotoBase64,
+      contextoItems: params.contextoItems
+    });
+    if (r && r.ok && r.data) return r;
+    if (r && r.status === 'success') return { ok: true, data: r };
+    return { ok: false, error: (r && (r.error || r.mensaje)) || 'OCR ticket jefa falló' };
+  } catch(e) {
+    return { ok: false, error: 'Bridge WH error: ' + e.message };
+  }
+}
+
+// [v2.42.07] Helper que devuelve el contexto necesario para llamar a
+// ocrTicketJefa: lista de productos de la guía con costo + venta actual
+// + margen objetivo, listo para que Claude haga matching.
+function getContextoTicketJefa(params) {
+  if (!params || !params.idGuia) return { ok: false, error: 'idGuia requerido' };
+  var idGuia = String(params.idGuia);
+  var whGuias = _safeReadWhGuias();
+  var guia = whGuias.find(function(g){ return String(g.idGuia) === idGuia; });
+  if (!guia) return { ok: false, error: 'Guía no encontrada' };
+
+  var detSh = _abrirWhSheet('GUIA_DETALLE');
+  if (!detSh) return { ok: false, error: 'GUIA_DETALLE no encontrada' };
+  var det = _sheetToObjects(detSh).filter(function(l){ return String(l.idGuia) === idGuia; });
+  var prodLookup = _buildProdLookup();
+
+  var ctx = det.map(function(l) {
+    var p = prodLookup[l.codigoProducto] || {};
+    // Resolver skuBase: si el producto del catálogo tiene skuBase explícito,
+    // usarlo. Si no, asumir que idProducto ES el skuBase (canónico).
+    var skuBase = String(p.skuBase || p.idProducto || l.codigoProducto || '');
+    return {
+      skuBase:         skuBase,
+      descripcion:     String(p.descripcion || l.codigoProducto || ''),
+      costo:           parseFloat(l.precioUnitario) || 0,
+      ventaActual:     parseFloat(p.precioVenta) || 0,
+      margenActualPct: parseFloat(p.margenPct) || 0
+    };
+  });
+  return { ok: true, data: { items: ctx } };
+}
+
+// [v2.42.07] Ticket de confirmación post-aplicación. Auditoría visual
+// para el admin y la jefa: qué cambió, cuántas presentaciones afectadas.
+function _buildEscPosTicketConfirmacionJefa(idGuia, cambios, presentacionesAfectadas, usuario) {
+  var W = 32;
+  var SEP  = '================================';
+  var SEPd = '--------------------------------';
+  function _pad(s, n) { s = String(s || ''); while (s.length < n) s += ' '; return s; }
+  function _padCenter(s, n) {
+    s = String(s || '');
+    if (s.length >= n) return s.substring(0, n);
+    var pad = n - s.length;
+    var pl = Math.floor(pad / 2);
+    var pr = pad - pl;
+    return new Array(pl + 1).join(' ') + s + new Array(pr + 1).join(' ');
+  }
+  function _norm(s) {
+    return String(s || '')
+      .replace(/[áàäâ]/gi, 'a').replace(/[éèëê]/gi, 'e')
+      .replace(/[íìïî]/gi, 'i').replace(/[óòöô]/gi, 'o')
+      .replace(/[úùüû]/gi, 'u').replace(/ñ/g, 'n').replace(/Ñ/g, 'N')
+      .replace(/[^\x20-\x7e]/g, '');
+  }
+  var tz = Session.getScriptTimeZone();
+  var ahora = Utilities.formatDate(new Date(), tz, 'dd/MM/yyyy HH:mm');
+
+  var txt = '';
+  txt += '\x1b\x40\x1b\x61\x01';                 // reset + center
+  txt += SEP + '\n';
+  txt += '\x1b\x21\x10' + _padCenter('CATALOGO ACTUALIZADO', W) + '\x1b\x21\x00\n';
+  txt += _padCenter('Cambios aplicados', W) + '\n';
+  txt += SEP + '\n';
+  txt += '\x1b\x61\x00';                          // left
+
+  txt += _pad('Guia    :', 11) + _norm(idGuia) + '\n';
+  txt += _pad('Aplicado:', 11) + ahora + '\n';
+  txt += _pad('Por     :', 11) + _norm(usuario) + '\n';
+  txt += SEP + '\n\n';
+
+  cambios.forEach(function(c) {
+    txt += '+------------------------------+\n';
+    txt += '| ' + _pad(_norm(c.descripcion).substring(0, 28), 28) + ' |\n';
+    txt += '| ' + _pad('SKU: ' + _norm(c.skuBase).substring(0, 23), 28) + ' |\n';
+    txt += '|                              |\n';
+    var costoLn = 'Costo : S/ ' + c.costoAnterior.toFixed(2) + ' -> ' + c.costoNuevo.toFixed(2);
+    txt += '| ' + _pad(costoLn.substring(0, 28), 28) + ' |\n';
+    var ventaLn = 'Venta : S/ ' + c.ventaAnterior.toFixed(2) + ' -> ' + c.ventaNueva.toFixed(2);
+    txt += '| ' + _pad(ventaLn.substring(0, 28), 28) + ' |\n';
+    var margenLn = 'Margen: ' + (c.margenAnterior * 100).toFixed(0) + '% -> ' + (c.margenNuevo * 100).toFixed(1) + '%';
+    txt += '| ' + _pad(margenLn.substring(0, 28), 28) + ' |\n';
+    if (c.presentacionesAfectadas > 0) {
+      txt += '|                              |\n';
+      txt += '| ' + _pad('Propaga a ' + c.presentacionesAfectadas + ' present.', 28) + ' |\n';
+    }
+    txt += '+------------------------------+\n\n';
+  });
+
+  txt += SEP + '\n';
+  txt += _padCenter('Total: ' + cambios.length + ' productos', W) + '\n';
+  txt += _padCenter('actualizados', W) + '\n';
+  txt += SEP + '\n';
+  txt += '\x1b\x61\x01';                          // center
+  txt += _norm('Proxima compra: el margen') + '\n';
+  txt += _norm('nuevo se aplica automatico') + '\n';
+  txt += '\n\n\n\n\x1d\x56\x00';
+  return txt;
 }
