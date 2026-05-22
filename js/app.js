@@ -10283,7 +10283,10 @@ const MOS = (() => {
         tiempo_verify_ms: tiempo_verify_ms,
         deviceId: (S.session && S.session.deviceId) || ''
       });
-      const d = (r && r.data) || {};
+      // [v2.42.00 fix] API.post devuelve d.data directamente — NO hay r.data anidado.
+      // Bug histórico: el modal siempre mostraba "Clave incorrecta" porque buscaba
+      // r.data.autorizado cuando r ya ERA el data desempaquetado.
+      const d = r || {};
       if (ico) ico.classList.remove('spin');
       if (!d.autorizado) {
         _aamMostrarError(d.error || 'Clave incorrecta');
@@ -14775,11 +14778,12 @@ const MOS = (() => {
     if (!auth) return;
     try {
       const r = await API.post('revocarDispositivo', { deviceId: id, claveAdmin: auth.clave, app: d.App });
-      if (!r?.data?.autorizado) {
-        toast(r?.data?.error || 'Clave incorrecta', 'error');
+      // [v2.42.00 fix] API.post devuelve data directo, no envuelto en r.data
+      if (!r?.autorizado) {
+        toast(r?.error || 'Clave incorrecta', 'error');
         return;
       }
-      toast('Dispositivo revocado por ' + r.data.revocadoPor, 'ok');
+      toast('Dispositivo revocado por ' + r.revocadoPor, 'ok');
       d.Estado = 'INACTIVO';
       cerrarDetalleDispositivo();
       renderInfra();
@@ -14799,11 +14803,12 @@ const MOS = (() => {
     if (!auth) return;
     try {
       const r = await API.post('forzarWizardDispositivo', { deviceId: id, claveAdmin: auth.clave, app: d.App });
-      if (!r?.data?.autorizado) {
-        toast(r?.data?.error || 'Clave incorrecta', 'error');
+      // [v2.42.00 fix] API.post devuelve data directo, no envuelto en r.data
+      if (!r?.autorizado) {
+        toast(r?.error || 'Clave incorrecta', 'error');
         return;
       }
-      toast('Wizard forzado por ' + r.data.forzadoPor, 'ok');
+      toast('Wizard forzado por ' + r.forzadoPor, 'ok');
       cerrarDetalleDispositivo();
     } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
@@ -18091,7 +18096,10 @@ const MOS = (() => {
     enVuelo:        [],
     recientes:      [],
     enVueloLastFetch: 0,
-    enVueloTick:    0              // forzar reactividad countdown live
+    enVueloTick:    0,             // forzar reactividad countdown live
+    // [v2.42.00] Cache cajas abiertas para asignación instantánea
+    cajasAbiertasCache:     [],
+    cajasAbiertasCacheTs:   0      // ms epoch del último fetch (TTL 30s)
   };
   // [v2.41.87] Tick reactivo cada 30s para countdown en cobros en vuelo
   setInterval(() => {
@@ -18115,9 +18123,311 @@ const MOS = (() => {
       _cjCreditosState.recientes = d.recientes || [];
       _cjCreditosState.enVueloLastFetch = Date.now();
       _cjRenderEnVuelo();
+      // [v2.42.00] Re-pintar postits encima de cada cuadro de caja
+      try { _cjPintarPostitsManojos(); } catch(_){}
     } catch(e) {
       if (!silent) console.warn('[enVuelo] error:', e?.message || e);
     }
+  }
+
+  // [v2.42.00] Precarga cajas abiertas + cache 30s. Lo llamamos al abrir la
+  // mesa de créditos para que cuando el admin haga click en "Asignar a caja"
+  // los chips de cajeros aparezcan instantáneo. Sin esta precarga, el modal
+  // muestra spinner ~1.5s mientras el GAS responde.
+  async function _cjPrecargarCajasAbiertas(forzar) {
+    const ahora = Date.now();
+    const fresca = (ahora - (_cjCreditosState.cajasAbiertasCacheTs || 0)) < 30000;
+    if (!forzar && fresca && _cjCreditosState.cajasAbiertasCache.length) {
+      return _cjCreditosState.cajasAbiertasCache;
+    }
+    try {
+      const r = await API.post('meCajasAbiertas', {});
+      const lista = (r && r.data) ? r.data : (r || []);
+      _cjCreditosState.cajasAbiertasCache    = Array.isArray(lista) ? lista : [];
+      _cjCreditosState.cajasAbiertasCacheTs  = ahora;
+      return _cjCreditosState.cajasAbiertasCache;
+    } catch(e) {
+      console.warn('[precargaCajas] error:', e?.message || e);
+      return _cjCreditosState.cajasAbiertasCache || [];
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // [v2.42.00] POSTITS MANOJO — los cobros en vuelo aparecen como
+  // un manojo de postits rotados, pegados con un pin sobre el cuadro
+  // de la caja activa del cajero asignado. Hover endereza + agranda,
+  // click abre modal mini con acciones admin (Reasignar/Cancelar).
+  // ════════════════════════════════════════════════════════════
+  function _cjPostitColorClass(cobro) {
+    try {
+      const t = new Date(cobro.fechaVencimiento).getTime();
+      const minMs = t - Date.now();
+      if (isNaN(minMs)) return 'cj-postit-warn';
+      if (minMs <= 30 * 60000)      return 'cj-postit-critical';  // <30min rojo
+      if (minMs <= 2  * 60 * 60000) return 'cj-postit-warn';      // 30min-2h ámbar
+      return 'cj-postit-ok';                                       // >2h verde
+    } catch(_) { return 'cj-postit-warn'; }
+  }
+
+  function _cjPostitRestante(cobro) {
+    try {
+      const t = new Date(cobro.fechaVencimiento).getTime();
+      const diffMin = Math.floor((t - Date.now()) / 60000);
+      if (isNaN(diffMin)) return '';
+      if (diffMin <= 0) return 'vencido';
+      if (diffMin < 60) return diffMin + 'm';
+      const h = Math.floor(diffMin / 60), m = diffMin % 60;
+      return h + 'h' + (m > 0 ? ' ' + m + 'm' : '');
+    } catch(_) { return ''; }
+  }
+
+  function _cjPintarPostitsManojos(opts) {
+    opts = opts || {};
+    const enVuelo = _cjCreditosState.enVuelo || [];
+    // Agrupar por cajaDestino
+    const porCaja = {};
+    for (const c of enVuelo) {
+      const id = String(c.cajaDestino || '');
+      if (!id) continue;
+      if (!porCaja[id]) porCaja[id] = [];
+      porCaja[id].push(c);
+    }
+    // Iterar todos los cards de caja en pantalla y montar/desmontar el manojo
+    const cards = document.querySelectorAll('.cj-caja-card');
+    cards.forEach(card => {
+      const idCaja = card.dataset.idcaja;
+      if (!idCaja) return;
+      // Asegurar contenedor manojo
+      let manojo = card.querySelector('.cj-postit-manojo');
+      const cobros = porCaja[idCaja] || [];
+      if (!cobros.length) {
+        if (manojo) { try { manojo.remove(); } catch(_){} }
+        return;
+      }
+      if (!manojo) {
+        manojo = document.createElement('div');
+        manojo.className = 'cj-postit-manojo';
+        manojo.setAttribute('aria-label', 'Cobros en vuelo asignados');
+        card.appendChild(manojo);
+        // El manojo no debe disparar el toggle del card
+        manojo.addEventListener('click', (ev) => { ev.stopPropagation(); });
+      }
+      // Render postits: rotación variable + offset apilado tipo abanico
+      const N = cobros.length;
+      const _esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      let html = `<div class="cj-postit-pin" title="${N} cobro${N>1?'s':''} en vuelo">📌</div>`;
+      // Render del más reciente al fondo, primero arriba para que al hacer fan-out se vea
+      cobros.forEach((c, i) => {
+        const colorCls = _cjPostitColorClass(c);
+        const restTxt  = _cjPostitRestante(c);
+        // Ángulo y offset estables por idCobro (hash simple)
+        const seed = (String(c.idCobro || i)).split('').reduce((a, ch) => a + ch.charCodeAt(0), 0);
+        const rotDeg  = (seed % 13) - 6;             // -6..+6
+        const offX    = (seed % 7);                  // 0..6 px
+        const offY    = i * 8;                       // apilado vertical 8px
+        const reasignBadge = (c.reasignaciones > 0) ? `<span class="cj-postit-reasig" title="Reasignado ${c.reasignaciones}×">↺${c.reasignaciones}</span>` : '';
+        const optBadge = c._optimistic ? '<span class="cj-postit-opt" title="Enviando…">⌛</span>' : '';
+        html += `<button type="button"
+                   class="cj-postit ${colorCls} ${c._optimistic ? 'cj-postit-optimistic' : ''}"
+                   data-idcobro="${_esc(c.idCobro)}"
+                   data-idventa="${_esc(c.idVenta)}"
+                   style="--rot:${rotDeg}deg; --offx:${offX}px; --offy:${offY}px; --zi:${100 - i};"
+                   onclick="event.stopPropagation();MOS._cjAbrirPostitModal('${_esc(c.idCobro)}')"
+                   title="${_esc(c.cliente || 'VARIOS')} · S/ ${parseFloat(c.monto || 0).toFixed(2)} → ${_esc(c.vendedorDest || '')}">
+          <div class="cj-postit-cliente">${_esc((c.cliente || 'VARIOS').substring(0, 14))}</div>
+          <div class="cj-postit-monto">S/ ${parseFloat(c.monto || 0).toFixed(2)}</div>
+          <div class="cj-postit-foot">
+            <span class="cj-postit-tiempo">⏱ ${_esc(restTxt)}</span>
+            ${reasignBadge}${optBadge}
+          </div>
+        </button>`;
+      });
+      manojo.innerHTML = html;
+      // Animación de aterrizaje si es nuevo (postit optimista nuevo)
+      if (opts.optimisticId) {
+        const nuevo = manojo.querySelector(`[data-idcobro="${opts.optimisticId}"]`);
+        if (nuevo) {
+          nuevo.classList.add('cj-postit-landing');
+          try { _finBeep?.('whoosh') || _finBeep?.('tap'); } catch(_){}
+          setTimeout(() => { try { nuevo.classList.remove('cj-postit-landing'); } catch(_){} }, 700);
+        }
+      }
+    });
+  }
+
+  // Modal mini con acciones admin sobre un postit
+  function _cjAbrirPostitModal(idCobro) {
+    const cobro = (_cjCreditosState.enVuelo || []).find(c => String(c.idCobro) === String(idCobro));
+    if (!cobro) { toast('Cobro no encontrado', 'warn'); return; }
+    try { _finBeep?.('expand') || _finBeep?.('tap'); } catch(_){}
+    let backdrop = document.getElementById('cjPostitModal');
+    if (!backdrop) {
+      backdrop = document.createElement('div');
+      backdrop.id = 'cjPostitModal';
+      backdrop.className = 'cj-postit-modal-backdrop';
+      backdrop.addEventListener('click', (ev) => { if (ev.target === backdrop) _cjCerrarPostitModal(); });
+      document.body.appendChild(backdrop);
+    }
+    const _esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const restTxt = _cjPostitRestante(cobro);
+    const colorCls = _cjPostitColorClass(cobro);
+    const msg = cobro.mensajeAdmin ? `<div class="cj-postit-modal-msg">💬 "${_esc(cobro.mensajeAdmin)}"</div>` : '';
+    backdrop.innerHTML = `
+      <div class="cj-postit-modal ${colorCls}" role="dialog" aria-modal="true">
+        <div class="cj-postit-modal-head">
+          <div class="cj-postit-modal-flecha">✈</div>
+          <div class="cj-postit-modal-titulo">
+            <strong>${_esc(cobro.cliente || 'VARIOS')}</strong>
+            <span>→ ${_esc(cobro.vendedorDest || 'cajero')}</span>
+          </div>
+          <button class="cj-postit-modal-close" onclick="MOS._cjCerrarPostitModal()" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="cj-postit-modal-monto">S/ ${parseFloat(cobro.monto || 0).toFixed(2)}</div>
+        <div class="cj-postit-modal-meta">
+          <span>📋 ${_esc(cobro.correlativo || '')}</span>
+          <span>⏱ ${_esc(restTxt)}</span>
+        </div>
+        ${msg}
+        <div class="cj-postit-modal-actions">
+          <button class="cj-postit-modal-btn cj-postit-modal-btn-ghost" onclick="MOS._cjCerrarPostitModal()">Cerrar</button>
+          <button class="cj-postit-modal-btn cj-postit-modal-btn-reasig" onclick="MOS.cjReasignarCobro('${_esc(cobro.idCobro)}')">
+            <span>↺</span> Reasignar
+          </button>
+          <button class="cj-postit-modal-btn cj-postit-modal-btn-cancel" onclick="MOS.cjCancelarCobro('${_esc(cobro.idCobro)}')">
+            <span>✕</span> Cancelar
+          </button>
+        </div>
+      </div>`;
+    requestAnimationFrame(() => backdrop.classList.add('is-open'));
+  }
+
+  function _cjCerrarPostitModal() {
+    const b = document.getElementById('cjPostitModal');
+    if (!b) return;
+    b.classList.remove('is-open');
+    setTimeout(() => { try { b.remove(); } catch(_){} }, 200);
+    try { _finBeep?.('collapse') || _finBeep?.('tap'); } catch(_){}
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // [v2.42.00] MODAL CUSTOM Reasignar — reemplaza prompt() nativo
+  // ════════════════════════════════════════════════════════════
+  async function _cjModalReasignar(cobro) {
+    return new Promise(async (resolve) => {
+      const cajas = await _cjPrecargarCajasAbiertas();
+      const validas = (cajas || []).filter(c => String(c.idCaja) !== String(cobro.cajaDestino));
+      if (!validas.length) { resolve(null); toast('No hay otra caja abierta', 'warn'); return; }
+      const _esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      let backdrop = document.createElement('div');
+      backdrop.className = 'cj-modal-action-backdrop';
+      backdrop.innerHTML = `
+        <div class="cj-modal-action cj-modal-action-reasig">
+          <div class="cj-modal-action-head">
+            <span class="cj-modal-action-ico">↺</span>
+            <div class="cj-modal-action-titulo">
+              <strong>Reasignar cobro</strong>
+              <span>${_esc(cobro.cliente || 'VARIOS')} · S/ ${parseFloat(cobro.monto || 0).toFixed(2)}</span>
+            </div>
+            <button class="cj-modal-action-close" data-close>✕</button>
+          </div>
+          <div class="cj-modal-action-body">
+            <div class="cj-modal-action-label">Mover de <strong>${_esc(cobro.vendedorDest || '')}</strong> a:</div>
+            <div class="cj-modal-action-cajas">
+              ${validas.map((c, i) => `
+                <button class="cj-modal-action-caja" data-caja="${_esc(c.idCaja)}" style="animation-delay:${i*50}ms">
+                  <div class="cj-modal-action-caja-avatar">👤</div>
+                  <div class="cj-modal-action-caja-info">
+                    <div class="cj-modal-action-caja-nom">${_esc(c.vendedor)}</div>
+                    <div class="cj-modal-action-caja-sub">${_esc(c.estacion || '')}${c.zona ? ' · ' + _esc(c.zona) : ''}</div>
+                  </div>
+                  <span class="cj-modal-action-caja-check">→</span>
+                </button>
+              `).join('')}
+            </div>
+          </div>
+          <div class="cj-modal-action-footer">
+            <button class="cj-modal-action-btn cj-modal-action-btn-ghost" data-close>Cancelar</button>
+          </div>
+        </div>`;
+      backdrop.addEventListener('click', (ev) => {
+        const t = ev.target;
+        if (t === backdrop || (t.closest && t.closest('[data-close]'))) {
+          backdrop.classList.remove('is-open');
+          setTimeout(() => { try { backdrop.remove(); } catch(_){} }, 200);
+          resolve(null);
+          return;
+        }
+        const cajaBtn = t.closest && t.closest('[data-caja]');
+        if (cajaBtn) {
+          const id = cajaBtn.dataset.caja;
+          const elegida = validas.find(c => String(c.idCaja) === String(id));
+          cajaBtn.classList.add('is-selected');
+          try { _finBeep?.('success'); } catch(_){}
+          setTimeout(() => {
+            backdrop.classList.remove('is-open');
+            setTimeout(() => { try { backdrop.remove(); } catch(_){} }, 200);
+            resolve(elegida);
+          }, 180);
+        }
+      });
+      document.body.appendChild(backdrop);
+      requestAnimationFrame(() => backdrop.classList.add('is-open'));
+      try { _finBeep?.('expand') || _finBeep?.('tap'); } catch(_){}
+    });
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // [v2.42.00] MODAL CUSTOM Cancelar — reemplaza prompt() nativo
+  // ════════════════════════════════════════════════════════════
+  function _cjModalCancelarCobro(cobro) {
+    return new Promise((resolve) => {
+      const _esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const backdrop = document.createElement('div');
+      backdrop.className = 'cj-modal-action-backdrop';
+      backdrop.innerHTML = `
+        <div class="cj-modal-action cj-modal-action-cancel">
+          <div class="cj-modal-action-head">
+            <span class="cj-modal-action-ico">⊘</span>
+            <div class="cj-modal-action-titulo">
+              <strong>Cancelar cobro asignado</strong>
+              <span>${_esc(cobro.cliente || 'VARIOS')} · S/ ${parseFloat(cobro.monto || 0).toFixed(2)}</span>
+            </div>
+            <button class="cj-modal-action-close" data-close>✕</button>
+          </div>
+          <div class="cj-modal-action-body">
+            <div class="cj-modal-action-warn">
+              ⚠ El ticket vuelve a estado <strong>CRÉDITO</strong> y el cajero pierde la asignación. Esta acción queda en auditoría.
+            </div>
+            <label class="cj-modal-action-label">Razón (opcional · queda en log)</label>
+            <textarea class="cj-modal-action-textarea" maxlength="180" rows="3"
+                      placeholder="Cliente ya no vendrá hoy / asignación errónea / etc."></textarea>
+          </div>
+          <div class="cj-modal-action-footer">
+            <button class="cj-modal-action-btn cj-modal-action-btn-ghost" data-close>Cerrar</button>
+            <button class="cj-modal-action-btn cj-modal-action-btn-danger" data-confirm>
+              ⊘ Sí, cancelar
+            </button>
+          </div>
+        </div>`;
+      backdrop.addEventListener('click', (ev) => {
+        const t = ev.target;
+        if (t === backdrop || (t.closest && t.closest('[data-close]'))) {
+          backdrop.classList.remove('is-open');
+          setTimeout(() => { try { backdrop.remove(); } catch(_){} }, 200);
+          resolve(null);
+        } else if (t.closest && t.closest('[data-confirm]')) {
+          const ta = backdrop.querySelector('.cj-modal-action-textarea');
+          const razon = ta ? ta.value.trim() : '';
+          try { _finBeep?.('warn') || _finBeep?.('tap'); } catch(_){}
+          backdrop.classList.remove('is-open');
+          setTimeout(() => { try { backdrop.remove(); } catch(_){} }, 200);
+          resolve({ razon });
+        }
+      });
+      document.body.appendChild(backdrop);
+      requestAnimationFrame(() => backdrop.classList.add('is-open'));
+      try { _finBeep?.('expand') || _finBeep?.('tap'); } catch(_){}
+    });
   }
 
   function _cjRestanteTxt(cobro) {
@@ -18860,31 +19170,40 @@ const MOS = (() => {
     void panel.offsetWidth;
     panel.classList.add('is-open');
 
-    // Cargar cajas
+    // [v2.42.00] Render desde cache si está caliente (instant). Si no hay cache,
+    // mostrar skeleton + fetch en background. Refrescar siempre en background
+    // para detectar cajeros que abrieron caja mientras tanto.
     const cajasDiv = $('cjAsignarCajas');
+    const _pintarCajas = (lista) => {
+      if (!cajasDiv) return;
+      if (!lista.length) {
+        cajasDiv.innerHTML = '<div class="cj-asignar-inline-empty">⚠ No hay cajas abiertas.<br><span class="text-xs opacity-70">Pedile a un cajero que abra caja primero.</span></div>';
+      } else {
+        cajasDiv.innerHTML = lista.map((c, i) => `
+          <button class="cj-asignar-caja-btn"
+                  style="animation-delay:${i*60}ms"
+                  onclick="MOS.cjSetCajaAsignar('${_esc(c.idCaja)}')"
+                  data-caja="${_esc(c.idCaja)}">
+            <div class="cj-asignar-caja-avatar">👤</div>
+            <div class="cj-asignar-caja-info">
+              <div class="cj-asignar-caja-vendedor">${_esc(c.vendedor)}</div>
+              <div class="cj-asignar-caja-meta">${_esc(c.estacion)}${c.zona ? ' · ' + _esc(c.zona) : ''}</div>
+            </div>
+            <div class="cj-asignar-caja-check">✓</div>
+          </button>
+        `).join('');
+      }
+    };
     if (cajasDiv) {
-      try {
-        const r = await API.post('meCajasAbiertas', {});
-        const lista = (r && r.data) ? r.data : (r || []);
-        if (!lista.length) {
-          cajasDiv.innerHTML = '<div class="cj-asignar-inline-empty">⚠ No hay cajas abiertas.<br><span class="text-xs opacity-70">Pedile a un cajero que abra caja primero.</span></div>';
-        } else {
-          cajasDiv.innerHTML = lista.map((c, i) => `
-            <button class="cj-asignar-caja-btn"
-                    style="animation-delay:${i*60}ms"
-                    onclick="MOS.cjSetCajaAsignar('${_esc(c.idCaja)}')"
-                    data-caja="${_esc(c.idCaja)}">
-              <div class="cj-asignar-caja-avatar">👤</div>
-              <div class="cj-asignar-caja-info">
-                <div class="cj-asignar-caja-vendedor">${_esc(c.vendedor)}</div>
-                <div class="cj-asignar-caja-meta">${_esc(c.estacion)}${c.zona ? ' · ' + _esc(c.zona) : ''}</div>
-              </div>
-              <div class="cj-asignar-caja-check">✓</div>
-            </button>
-          `).join('');
-        }
-      } catch(e) {
-        cajasDiv.innerHTML = '<div class="cj-asignar-inline-empty" style="color:#fca5a5">⚠ Error: ' + _esc(e.message || e) + '</div>';
+      const cache = _cjCreditosState.cajasAbiertasCache || [];
+      const fresca = (Date.now() - (_cjCreditosState.cajasAbiertasCacheTs || 0)) < 30000;
+      if (cache.length && fresca) {
+        _pintarCajas(cache);                            // instantáneo
+        _cjPrecargarCajasAbiertas(true).then(_pintarCajas).catch(()=>{}); // refresco background
+      } else {
+        _cjPrecargarCajasAbiertas(true).then(_pintarCajas).catch(e => {
+          if (cajasDiv) cajasDiv.innerHTML = '<div class="cj-asignar-inline-empty" style="color:#fca5a5">⚠ Error: ' + _esc(e.message || e) + '</div>';
+        });
       }
     }
     // [v2.41.90] Removido cjSetMetodoAsignar — el método lo elige el cajero
@@ -18966,50 +19285,75 @@ const MOS = (() => {
     _cjCreditosState.asignarMensaje = String(v || '').substring(0, 140);
   }
 
+  // [v2.42.00] Asignación OPTIMISTA — cerrar modal + volar carta + pegar
+  // postit fantasma en el cuadro del cajero INSTANTE. Llamada en background.
+  // Si el backend rechaza: rollback (devolver carta a la mesa) + toast rojo.
   async function cjConfirmarAsignar() {
     const ctx = _cjCreditosState.asignarCtx;
-    if (!ctx || !_cjCreditosState.asignarCaja) return;
-    const btn = $('cjAsignarOkBtn');
-    if (btn) { btn.disabled = true; btn.textContent = '⌛ Enviando...'; }
+    const cajaDest = _cjCreditosState.asignarCaja;
+    if (!ctx || !cajaDest) return;
+    const horasTTL = parseInt(_cjCreditosState.asignarTTL, 10) || 1;
+    const mensajeAdmin = (_cjCreditosState.asignarMensaje || '').trim();
+    // Snapshot para rollback
+    const cajaInfo = (_cjCreditosState.cajasAbiertasCache || []).find(c => String(c.idCaja) === String(cajaDest)) || {};
+    const cajeroNom = cajaInfo.vendedor || 'cajero';
+    // 1. Cerrar panel + modal detalle inmediato
+    try { _finBeep?.('success'); } catch(_){}
+    toast('✈ Enviado a ' + cajeroNom + ` · vence en ${horasTTL}h`, 'success', 3500);
+    cjCerrarAsignar();
+    setTimeout(() => {
+      const det = $('modalDetalleCarta');
+      if (det) det.classList.add('hidden');
+      _cjCreditosState.detalleTicket = null;
+    }, 200);
+    // 2. Volar carta de la mesa + agregar postit OPTIMISTA al manojo del cajero
+    const cartaEl = document.querySelector('.cj-mesa-carta[onclick*="' + ctx.idVenta + '"]');
+    const optimisticId = 'CB-OPT-' + Date.now();
+    const optimisticCobro = {
+      idCobro: optimisticId,
+      idVenta: ctx.idVenta,
+      cajaDestino: cajaDest,
+      vendedorDest: cajeroNom,
+      cliente: ctx.cliente || 'VARIOS',
+      monto: ctx.total,
+      correlativo: ctx.correlativo || '',
+      metodoSug: '',
+      horasTTL: horasTTL,
+      mensajeAdmin: mensajeAdmin,
+      reasignaciones: 0,
+      fechaVencimiento: new Date(Date.now() + horasTTL * 3600000).toISOString(),
+      _optimistic: true
+    };
+    _cjCreditosState.enVuelo = [optimisticCobro, ...(_cjCreditosState.enVuelo || [])];
+    try { _cjPintarPostitsManojos({ optimisticId, cartaOrigen: cartaEl }); } catch(_){}
+    if (cartaEl) {
+      cartaEl.classList.add('cj-credito-fly');
+      setTimeout(() => { try { cartaEl.remove(); } catch(_){} }, 800);
+    }
+    // 3. Fire-and-forget al backend
     try {
-      // [v2.41.90] Sin metodoSugerido — el cajero elige al cobrar
-      const horasTTL = parseInt(_cjCreditosState.asignarTTL, 10) || 1;
-      const mensajeAdmin = (_cjCreditosState.asignarMensaje || '').trim();
       const r = await API.post('meAsignarCobroCajero', {
         idVenta:        ctx.idVenta,
-        cajaDestino:    _cjCreditosState.asignarCaja,
-        metodoSugerido: '', // [v2.41.90] vacío — el cajero decide al cobrar
+        cajaDestino:    cajaDest,
+        metodoSugerido: '',
         horasTTL:       horasTTL,
         mensajeAdmin:   mensajeAdmin
       });
       const d = (r && r.data) ? r.data : (r || {});
-      // [v2.41.56] Animación de vuelo en la carta de la mesa + cerrar panel
-      try {
-        const cartaEl = document.querySelector('.cj-mesa-carta[onclick*="' + ctx.idVenta + '"]');
-        if (cartaEl) {
-          cartaEl.classList.add('cj-credito-fly');
-          setTimeout(() => { try { cartaEl.remove(); } catch(_){} }, 800);
-        }
-      } catch(_){}
-      try { _finBeep?.('success'); } catch(_){}
-      const ttlMsg = d.horasTTL ? ` · vence en ${d.horasTTL}h` : '';
-      toast('✈ Enviado a ' + (d.cajeroDestino || 'cajero') + ttlMsg + ' · si no cobra, vuelve a CRÉDITO', 'success');
-      cjCerrarAsignar();
-      // Cerrar también modal de detalle (la carta voló, ya no hay qué mostrar)
-      setTimeout(() => {
-        const det = $('modalDetalleCarta');
-        if (det) det.classList.add('hidden');
-        _cjCreditosState.detalleTicket = null;
-      }, 350);
-      // Refrescar
+      // Reemplazar el postit optimista por el real (matchear por idVenta)
+      _cjCreditosState.enVuelo = (_cjCreditosState.enVuelo || []).filter(c => c.idCobro !== optimisticId);
+      // Refrescar para traer el cobro real con su idCobro definitivo
       setTimeout(() => {
         _cjCargarCreditosPendientes();
-        _cjCargarEnVuelo(); // [v2.41.87] mostrar en el panel inmediato
-      }, 800);
+        _cjCargarEnVuelo();
+      }, 400);
     } catch(e) {
-      toast('Error: ' + (e.message || e), 'error');
-    } finally {
-      if (btn) { btn.disabled = false; btn.textContent = '✈ Enviar a cajero'; }
+      // ROLLBACK: quitar postit optimista + restaurar carta en mesa + toast rojo
+      _cjCreditosState.enVuelo = (_cjCreditosState.enVuelo || []).filter(c => c.idCobro !== optimisticId);
+      try { _cjPintarPostitsManojos(); } catch(_){}
+      try { _finBeep?.('error') || _finBeep?.('tap'); } catch(_){}
+      toast('⚠ No se pudo asignar: ' + (e.message || e) + ' · refresca y reintenta', 'error', 6500);
+      setTimeout(() => _cjCargarCreditosPendientes(), 300);
     }
   }
 
