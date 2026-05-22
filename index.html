@@ -2122,11 +2122,9 @@
     .cj-mesa-carta-cobrada .cj-carta-cliente { color: #064e3b; }
     .cj-mesa-carta-cobrada .cj-carta-monto   { color: #047857; }
     .cj-mesa-carta-cobrada .cj-carta-meta    { color: #065f46; opacity: .85; }
-    /* Sub-grupo "Cobrados hoy" con título verde discreto */
-    .cj-mesa-grupo-cobrados .cj-mesa-grupo-head {
-      border-left: 3px solid #10b981;
-      padding-left: 12px;
-    }
+    /* [v2.42.09] Sección separada "Cobrados hoy" removida — la carta cobrada
+       ahora vive en su grupo original con clase .cj-mesa-carta-cobrada que
+       le pone fondo verde + sello. CSS de .cj-mesa-grupo-cobrados ya no se usa. */
     .cj-mesa-grupo-cobrados .cj-mesa-grupo-emoji  { filter: drop-shadow(0 0 6px rgba(16,185,129,.6)); }
     .cj-mesa-grupo-cobrados .cj-mesa-grupo-fecha  { color: #34d399; }
 

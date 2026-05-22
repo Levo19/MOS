@@ -19362,42 +19362,14 @@ const MOS = (() => {
 
     let cartaGlobalIdx = 0; // animation-delay continuo entre secciones
 
-    // [v2.41.96] Sección "💚 Cobrados hoy" — al inicio de la mesa con sello
-    // visual de COBRADO. Usa _cjCobradosHoyData poblado por _cjCargarEnVuelo.
-    const cobradosIds = Array.from(window._cjCobradosHoyIdsVenta || []);
+    // [v2.42.09] Cobrados hoy YA NO van en sección separada. En su lugar la
+    // carta original (que SIGUE en el grupo "Hoy ACTIVOS") cambia de fondo
+    // a verde + sello COBRADO encima. User pidió "mismo ticket, mismo lugar,
+    // otro color de fondo y sello cobrado".
+    const cobradosIds = window._cjCobradosHoyIdsVenta || new Set();
     const cobradosData = window._cjCobradosHoyData || {};
-    let htmlCobrados = '';
-    if (cobradosIds.length) {
-      const cartasCobr = cobradosIds.map(idV => {
-        const d = cobradosData[idV] || {};
-        const delay = (cartaGlobalIdx++) * 60;
-        return `<div class="cj-mesa-carta cj-mesa-carta-cobrada"
-                     style="animation-delay: ${delay}ms"
-                     title="Cobrado por ${_esc(d.cajero || '')}">
-          <div class="cj-carta-sello-cobrado">✓ COBRADO</div>
-          <div class="cj-carta-head">
-            <span class="cj-carta-cliente">${_esc((d.cliente || 'VARIOS').toUpperCase())}</span>
-            <span class="cj-carta-monto">S/${parseFloat(d.monto || 0).toFixed(2)}</span>
-          </div>
-          <div class="cj-carta-meta">👤 ${_esc(d.cajero || '—')} · 🕐 ${_esc(d.horaTxt || '')}</div>
-        </div>`;
-      }).join('');
-      htmlCobrados = `<section class="cj-mesa-grupo cj-mesa-grupo-cobrados">
-        <header class="cj-mesa-grupo-head">
-          <div class="cj-mesa-grupo-titulo">
-            <span class="cj-mesa-grupo-emoji">💚</span>
-            <span class="cj-mesa-grupo-fecha">Cobrados hoy</span>
-            <span class="cj-mesa-grupo-sub">huella de auditoría · ya no requieren acción</span>
-          </div>
-          <div class="cj-mesa-grupo-stats">
-            <span class="cj-mesa-grupo-cuenta">${cobradosIds.length} ✓</span>
-          </div>
-        </header>
-        <div class="cj-mesa-cartas">${cartasCobr}</div>
-      </section>`;
-    }
 
-    grid.innerHTML = htmlCobrados + ordenados.map(g => {
+    grid.innerHTML = ordenados.map(g => {
       const esHoy = g.fecha === hoyStr;
       const fechaLbl = _cjFmtFechaCorta(g.fecha);
       const diasAtras = _cjDiasDesde(g.fecha);
@@ -19415,9 +19387,23 @@ const MOS = (() => {
           : '';
         const cliente = _esc((t.cliente || 'VARIOS').toUpperCase());
         const delay = (cartaGlobalIdx++) * 60;
-        return `<div class="cj-mesa-carta ${asigClass}"
+        // [v2.42.09] Si el ticket fue cobrado hoy via cobro asignado, aplicar
+        // clase cobrada (fondo verde + sello) en su lugar original sin
+        // separarlo del grupo. _cjCobradosHoyIdsVenta es Set poblado por
+        // _cjCargarEnVuelo a partir de los recientes COBRADO de últimas 4h.
+        const esCobrado = cobradosIds.has(String(t.idVenta));
+        const cobrInfo = esCobrado ? cobradosData[String(t.idVenta)] : null;
+        const cobradoClass = esCobrado ? 'cj-mesa-carta-cobrada' : '';
+        const selloCobrado = esCobrado
+          ? `<div class="cj-carta-sello-cobrado">✓ COBRADO</div>`
+          : '';
+        const metaCobrado = esCobrado && cobrInfo
+          ? ` · 👤 ${_esc(cobrInfo.cajero || '—')} · 🕐 ${_esc(cobrInfo.horaTxt || '')}`
+          : '';
+        return `<div class="cj-mesa-carta ${asigClass} ${cobradoClass}"
                      style="animation-delay: ${delay}ms"
                      onclick="MOS.cjAbrirDetalleCarta('${_esc(t.idVenta)}')">
+          ${selloCobrado}
           ${asigBadge}
           <div class="cj-carta-head">
             <span class="cj-carta-cliente">${cliente}</span>
@@ -19426,7 +19412,7 @@ const MOS = (() => {
           ${t.clienteDoc && t.clienteDoc !== '66666' ? `<div class="cj-carta-doc">${_esc(t.clienteDoc)}</div>` : ''}
           <div class="cj-carta-sep"></div>
           ${_cjResumenItemsVoucher(t.items, 6, 22)}
-          <div class="cj-carta-meta">${_esc(t.correlativo)} · ${_esc(t.vendedor)}</div>
+          <div class="cj-carta-meta">${_esc(t.correlativo)} · ${_esc(t.vendedor)}${metaCobrado}</div>
         </div>`;
       }).join('');
 
