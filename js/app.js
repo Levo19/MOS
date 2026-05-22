@@ -23759,18 +23759,62 @@ const MOS = (() => {
     $('tribCPEStatus').textContent = (d.cpeEmitidos || 0) + ' emitidos';
     $('tribCPESub').textContent = (d.cpePendientes || 0) + ' pendientes · ' + (d.cpeErrores || 0) + ' error';
 
-    // Alertas
+    // [v2.42.11] Alertas accionables — cada una con monto en juego + botón directo
     const alertas = (d.cpeErrores || 0) + (d.guiasIlegibles || 0) + (d.guiasSinFoto || 0);
     if (alertas > 0) {
       $('tribAlertCard').style.display = '';
       $('tribAlertCount').textContent = alertas;
       const partes = [];
-      if (d.cpeErrores > 0)    partes.push(d.cpeErrores + ' CPE error');
-      if (d.guiasIlegibles > 0) partes.push(d.guiasIlegibles + ' OCR ilegibles');
-      if (d.guiasSinFoto > 0)   partes.push(d.guiasSinFoto + ' s/foto');
+      // Estimación de IGV perdido por guías sin foto / ilegibles
+      // (proporcional al ratio promedio del mes)
+      const igvPromedioPorGuia = (d.guiasConIGV > 0) ? (d.igvFavor / d.guiasConIGV) : 0;
+      if (d.cpeErrores > 0)    partes.push('🔴 ' + d.cpeErrores + ' CPE error');
+      if (d.guiasIlegibles > 0) {
+        const perdidaEstim = (d.guiasIlegibles * igvPromedioPorGuia).toFixed(0);
+        partes.push('🔴 ' + d.guiasIlegibles + ' ilegibles · puedes recuperar ~S/ ' + perdidaEstim);
+      }
+      if (d.guiasSinFoto > 0) {
+        const perdidaEstim = (d.guiasSinFoto * igvPromedioPorGuia).toFixed(0);
+        partes.push('🟡 ' + d.guiasSinFoto + ' s/foto · ~S/ ' + perdidaEstim + ' en juego');
+      }
       $('tribAlertSub').textContent = partes.join(' · ');
     } else {
       $('tribAlertCard').style.display = 'none';
+    }
+
+    // [v2.42.11] Proyección de cierre de mes — solo si NO es fin de mes
+    const proy = _tribCalcProyeccion(d);
+    let proyEl = $('tribProyeccion');
+    if (!proyEl && proy && d.pctMes < 95) {
+      // Crear el elemento si no existe (primera vez)
+      const after = $('tribAlertCard') || $('tribIGVFavor')?.closest('section');
+      if (after) {
+        proyEl = document.createElement('div');
+        proyEl.id = 'tribProyeccion';
+        proyEl.style.cssText = 'background:linear-gradient(135deg,rgba(99,102,241,.15),rgba(79,70,229,.05));border:1px solid rgba(99,102,241,.4);border-radius:14px;padding:14px 16px;margin:10px 0;display:flex;align-items:center;gap:14px;animation:scaleIn .35s cubic-bezier(.34,1.56,.64,1)';
+        after.parentNode.insertBefore(proyEl, after.nextSibling);
+      }
+    }
+    if (proyEl) {
+      if (!proy || d.pctMes >= 95) {
+        proyEl.style.display = 'none';
+      } else {
+        proyEl.style.display = 'flex';
+        const signo = proy.balanceNetoProy >= 0 ? 'pagar' : 'a favor';
+        const color = proy.balanceNetoProy >= 0 ? '#fbbf24' : '#34d399';
+        proyEl.innerHTML = `
+          <span style="font-size:28px">🔮</span>
+          <div style="flex:1">
+            <div style="font-size:11px;font-weight:900;color:#a5b4fc;text-transform:uppercase;letter-spacing:.05em">Proyección fin de mes</div>
+            <div style="font-size:13px;color:#cbd5e1;margin-top:2px">
+              Al ritmo actual (${d.pctMes.toFixed(0)}% del mes) cierras con
+              <strong style="color:${color}">S/ ${Math.abs(proy.balanceNetoProy).toFixed(0)}</strong> IGV ${signo}
+            </div>
+            <div style="font-size:10px;color:#94a3b8;margin-top:1px">
+              Compras proy. S/ ${proy.igvFavorProy.toFixed(0)} · Ventas proy. S/ ${proy.igvEmitidoProy.toFixed(0)} · Faltan ${proy.diasRestantes} día${proy.diasRestantes === 1 ? '' : 's'}
+            </div>
+          </div>`;
+      }
     }
   }
 
@@ -24026,6 +24070,106 @@ const MOS = (() => {
       _finBeep && _finBeep('success');
       tribCargar();
     } catch(e) { toast('Error: ' + (e.message || e), 'error'); }
+  }
+
+  // [v2.42.11] Exportar a Excel — descarga CSV (compatible con Excel) con
+  // 2 secciones: COMPRAS (IGV a favor del mes) y VENTAS (CPE emitidos).
+  // Sin requerir librerías extras — genera el archivo en el cliente.
+  async function tribExportarExcel() {
+    if (!_tribState.mes || !_tribState.anio) {
+      toast('Selecciona un mes primero', 'warning');
+      return;
+    }
+    const nombreMes = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'][_tribState.mes - 1];
+    toast('📥 Generando Excel...', 'info', 3000);
+    try {
+      _finBeep && _finBeep('tap');
+      // Cargar compras (IGV a favor) y ventas (CPE emitidos) en paralelo
+      const [resCompras, resVentas] = await Promise.all([
+        API.post('tribIGVFavorMes',   { mes: _tribState.mes, anio: _tribState.anio }),
+        API.post('tribIGVEmitidoMes', { mes: _tribState.mes, anio: _tribState.anio })
+      ]);
+      const compras = (resCompras?.data?.guias || []);
+      const ventas  = (resVentas?.cpe || resVentas?.data?.cpe || []);
+      // Construir CSV con BOM UTF-8 para que Excel respete acentos
+      const sep = ';';   // Excel ES suele esperar punto y coma
+      const esc = (v) => {
+        const s = String(v == null ? '' : v).replace(/"/g, '""');
+        return /[";\n]/.test(s) ? '"' + s + '"' : s;
+      };
+      let csv = '﻿'; // BOM UTF-8
+      // Sección compras
+      csv += 'COMPRAS - IGV A FAVOR · ' + nombreMes + ' ' + _tribState.anio + '\n';
+      csv += ['Fecha','Guia','RUC Emisor','Razón Social','Serie','Número','Total Doc','IGV Recuperable','Estado OCR','Confidence'].map(esc).join(sep) + '\n';
+      let totalCompras = 0, totalIGVFavor = 0;
+      compras.forEach(g => {
+        const fecha = g.fechaComprobante || (g.fecha ? new Date(g.fecha).toLocaleDateString('es-PE') : '');
+        csv += [
+          fecha, g.idGuia, g.rucEmisor, g.razonSocial,
+          g.serie, g.numero, g.total, g.igvRecuperable,
+          g.ocrEstado, g.confidence
+        ].map(esc).join(sep) + '\n';
+        totalCompras  += parseFloat(g.total) || 0;
+        totalIGVFavor += parseFloat(g.igvRecuperable) || 0;
+      });
+      csv += ['','','','','','TOTAL', totalCompras.toFixed(2), totalIGVFavor.toFixed(2),'',''].map(esc).join(sep) + '\n';
+      csv += '\n\n';
+      // Sección ventas
+      csv += 'VENTAS - CPE EMITIDOS · ' + nombreMes + ' ' + _tribState.anio + '\n';
+      csv += ['Fecha','Tipo Doc','Correlativo','RUC/DNI Cliente','Razón Social','Total','IGV Emitido','Estado SUNAT','Vendedor'].map(esc).join(sep) + '\n';
+      let totalVentas = 0, totalIGVEmitido = 0;
+      ventas.forEach(v => {
+        const fecha = v.fecha || '';
+        const igvCalc = v.igv != null ? parseFloat(v.igv) : (parseFloat(v.total) || 0) * 0.18 / 1.18;
+        csv += [
+          fecha, v.tipoDoc, v.correlativo, v.docCliente,
+          v.nombreCliente, v.total, igvCalc.toFixed(2),
+          v.estadoSUNAT || v.nfEstado || '', v.vendedor
+        ].map(esc).join(sep) + '\n';
+        totalVentas    += parseFloat(v.total) || 0;
+        totalIGVEmitido += igvCalc;
+      });
+      csv += ['','','','','TOTAL', totalVentas.toFixed(2), totalIGVEmitido.toFixed(2),'',''].map(esc).join(sep) + '\n';
+      csv += '\n\n';
+      // Resumen tributario
+      csv += 'RESUMEN TRIBUTARIO\n';
+      csv += ['IGV a favor (compras)','S/ ' + totalIGVFavor.toFixed(2)].map(esc).join(sep) + '\n';
+      csv += ['IGV emitido (ventas)', 'S/ ' + totalIGVEmitido.toFixed(2)].map(esc).join(sep) + '\n';
+      csv += ['IGV neto (a pagar)',   'S/ ' + (totalIGVEmitido - totalIGVFavor).toFixed(2)].map(esc).join(sep) + '\n';
+      csv += ['Total compras',        'S/ ' + totalCompras.toFixed(2)].map(esc).join(sep) + '\n';
+      csv += ['Total ventas',         'S/ ' + totalVentas.toFixed(2)].map(esc).join(sep) + '\n';
+      csv += ['Renta MYPE 1.5%',      'S/ ' + (totalVentas * 0.015).toFixed(2)].map(esc).join(sep) + '\n';
+      // Descargar
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `tributario_${_tribState.anio}-${String(_tribState.mes).padStart(2,'0')}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      _finBeep && _finBeep('success');
+      toast(`✓ Excel listo · ${compras.length} compras · ${ventas.length} ventas`, 'success', 6000);
+    } catch(e) {
+      _finBeep && _finBeep('error');
+      toast('Error generando Excel: ' + (e.message || e), 'error');
+    }
+  }
+
+  // [v2.42.11] Proyección de cierre de mes basado en ritmo actual.
+  // Si vamos al 71% del mes con S/ 1000 de IGV, proyectamos 1000/0.71 = 1408.
+  function _tribCalcProyeccion(d) {
+    if (!d || !d.pctMes || d.pctMes <= 0) return null;
+    const factor = 100 / d.pctMes;
+    return {
+      igvFavorProy:    (d.igvFavor || 0)   * factor,
+      igvEmitidoProy:  (d.igvEmitido || 0) * factor,
+      balanceNetoProy: (d.balanceNetoIGV || 0) * factor,
+      ventasProy:      (d.totalVentas || 0) * factor,
+      pctMes:          d.pctMes,
+      diasRestantes:   (d.ultimoDia || 30) - (d.diaActual || 0)
+    };
   }
 
   // [v2.41.94] OCR masivo retroactivo del mes — procesa todas las fotos
@@ -31823,6 +31967,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     tribToggleAyuda, _tribPrecargarBoot,
     // [v2.41.94] OCR masivo retroactivo
     tribOCRMasivo, _tribSetIGVFiltro, tribAbrirFotoComprobante,
+    tribExportarExcel,
     // [v2.41.97] Pricing por segmentos (graneles)
     prodToggleSegmentos, segActualizarVisibilidad, segNuevo, segEditar, segEliminar,
     segCalcular, segToggleUnidad, segToggleBracket, segAtajo, segOnSliderAjuste,
