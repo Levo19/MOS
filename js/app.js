@@ -5087,10 +5087,12 @@ const MOS = (() => {
         // Overlay lectura — botón entra a modo edición sin cerrar
         btnCostos = `<button class="alm-v-btn-costos" onclick="MOS.opsEntrarModoCostos('${op.fuente}','${_escapeHtml(op.idGuia)}')" title="Editar costos">💰 Editar costos</button>`;
       } else {
-        // Overlay en modo edición — botones guardar/imprimir/jefa/cancelar
+        // Overlay en modo edición — botones guardar/OCR/imprimir/jefa/cancelar
         btnCostos = `
           <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 3px 8px -2px rgba(16,185,129,.5)"
                   onclick="MOS.guardarCostosGuia()" title="Guardar costos">💾 Guardar</button>
+          <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#22d3ee,#0891b2);box-shadow:0 3px 8px -2px rgba(34,211,238,.5)"
+                  onclick="MOS.opsOcrComprobantePrepoblar('${_escapeHtml(op.idGuia)}')" title="Leer comprobante con Claude OCR y pre-poblar costos">🤖 OCR comprobante</button>
           <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#0ea5e9,#06b6d4);box-shadow:0 3px 8px -2px rgba(14,165,233,.5)"
                   onclick="MOS.abrirSelPrinterCostos('${op.fuente}','${_escapeHtml(op.idGuia)}')" title="Imprimir reporte clásico de costos">🖨 Costos</button>
           <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#a855f7,#7c3aed);box-shadow:0 3px 8px -2px rgba(168,85,247,.5)"
@@ -5719,6 +5721,81 @@ const MOS = (() => {
 
   // [v2.42.07] Ticket profesional "para la jefa" con cuadros, AUTO/DECIDIR/
   // REVISAR. Reusa picker de impresora — pasa formato='jefa' en el payload.
+  // ════════════════════════════════════════════════════════════
+  // [v2.42.07] OCR comprobante proveedor → pre-puebla costos
+  // ──────────────────────────────────────────────────────────
+  // Paso 2-3 del flow: el admin tiene la guía abierta en modo costos
+  // y aprieta este botón. El sistema llama a Claude OCR (vía bridge a
+  // WH) sobre la foto del comprobante ya subida, obtiene items línea
+  // por línea con confidence, hace fuzzy-match con las líneas de la
+  // guía actual, y pre-puebla los inputs de costo. Reduce ~90% el
+  // tipeo del admin. Si algo no calza, el admin corrige a mano.
+  // ════════════════════════════════════════════════════════════
+  function _opsFuzzyScore(a, b) {
+    // Score simple basado en palabras en común (Jaccard, ignora <3 chars)
+    const wa = new Set(String(a || '').toLowerCase().split(/\s+/).filter(w => w.length >= 3));
+    const wb = new Set(String(b || '').toLowerCase().split(/\s+/).filter(w => w.length >= 3));
+    if (wa.size === 0 || wb.size === 0) return 0;
+    let common = 0;
+    wa.forEach(w => { if (wb.has(w)) common++; });
+    const union = new Set([...wa, ...wb]).size;
+    return common / union;
+  }
+
+  async function opsOcrComprobantePrepoblar(idGuia) {
+    if (!S._costosGuiaState || S._costosGuiaState.idGuia !== idGuia) {
+      toast('Abre primero el modo costos de esta guía', 'warning');
+      return;
+    }
+    if (S._opsOcrEnVuelo) {
+      toast('Ya hay un OCR en proceso · esperá', 'warning');
+      return;
+    }
+    S._opsOcrEnVuelo = true;
+    _opsBeep('tac');
+    toast('🤖 Procesando OCR del comprobante... 5-15s', 'info', 15000);
+    try {
+      const r = await API.post('ocrComprobanteGuia', { idGuia });
+      const d = (r && r.data) || r || {};
+      const items = d.items || [];
+      if (!items.length) {
+        toast('⚠ OCR no detectó items en la foto del comprobante', 'warning', 6000);
+        return;
+      }
+      const lineas = S._costosGuiaState.lineas;
+      const usados = new Set();
+      let aplicados = 0, dudosos = 0, sinMatch = 0;
+      // Por cada item OCR busca la mejor línea de la guía por fuzzy
+      items.forEach(it => {
+        let bestIdx = -1, bestScore = 0;
+        lineas.forEach((l, idx) => {
+          if (usados.has(idx)) return;
+          const s = _opsFuzzyScore(it.descripcion, l.descripcion || '');
+          if (s > bestScore) { bestScore = s; bestIdx = idx; }
+        });
+        if (bestIdx < 0 || bestScore < 0.30) { sinMatch++; return; }
+        // Subtotal preferido si existe; si no, cantidad × precioUnit
+        const subt = it.subtotal > 0 ? it.subtotal : (it.precioUnitario || 0) * (it.cantidad || 1);
+        // Si la línea ya tiene un valor ingresado, NO sobrescribir
+        if (parseFloat(lineas[bestIdx].inputValue) > 0) return;
+        lineas[bestIdx].inputValue = +subt.toFixed(2);
+        lineas[bestIdx]._ocrConfidence = it.confidence;
+        usados.add(bestIdx);
+        if (it.confidence >= 80) aplicados++; else dudosos++;
+      });
+      // Re-render del panel para mostrar valores nuevos
+      try { almRenderOps(); } catch(_) {}
+      const total = items.length;
+      const msg = `🤖 OCR: ${aplicados} ✓ · ${dudosos} ⚠ · ${sinMatch} sin match (${total} items detectados)`;
+      toast(msg, aplicados > 0 ? 'success' : 'warning', 9000);
+      try { _opsBeep(aplicados > 0 ? 'cliclic' : 'tac'); } catch(_) {}
+    } catch(e) {
+      toast('⚠ Error OCR comprobante: ' + (e.message || e), 'error', 8000);
+    } finally {
+      S._opsOcrEnVuelo = false;
+    }
+  }
+
   async function abrirSelPrinterJefa(fuente, idGuia) {
     _opsBeep('tac');
     S._opsImpCtx = { fuente, idGuia, formato: 'jefa' };
@@ -31519,7 +31596,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirSelPrinterCostos, cerrarSelPrinterCostos, _opsRecargarPrinters, _opsEnviarPrintCostos,
     // [v2.42.07] Flow para-jefa: ticket profesional + aplicar respuesta + OCR
     abrirSelPrinterJefa, opsAbrirAplicarRespuestaJefa, opsCerrarAplicarRespuestaJefa,
-    _opsJefaEditar, _opsJefaConfirmarAplicar,
+    _opsJefaEditar, _opsJefaConfirmarAplicar, opsOcrComprobantePrepoblar,
     _impactoTogglesel, _impactoSetPrecio, cerrarImpactoCostos, aplicarSugerenciasSeleccionadas,
     almLoadZonas, almRefreshZonas, almAbrirStockDetalle, cerrarStockDetalle, almRefreshStockDetalle,
     _almGenerarPedidoFromInsight, _almPickProveedor, cerrarSelProveedor,
