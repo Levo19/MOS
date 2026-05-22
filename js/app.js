@@ -3188,11 +3188,11 @@ const MOS = (() => {
 
   // Auto-genera código NMLEV en sección NUEVO. Si el campo YA tiene contenido,
   // pide confirmación antes de sobrescribir.
-  function pnAutogenBarcode() {
+  async function pnAutogenBarcode() {
     const inp = $('pnCodigoFinal');
     if (!inp) return;
     const actual = String(inp.value || '').trim();
-    if (actual && !confirm(`El código actual "${actual}" será reemplazado por uno automático.\n\n¿Continuar?`)) {
+    if (actual && !await _modalConfirm(`El código actual "${actual}" será reemplazado por uno automático.\n\n¿Continuar?`, { warning: true, titulo: 'Autogenerar código' })) {
       return;
     }
     const ts = Date.now().toString().slice(-6);
@@ -9263,7 +9263,7 @@ const MOS = (() => {
 
   // ── Editar unidadesPorBulto inline (prompt nativo, simple) ──
   async function provEditarBulto(idPP, current) {
-    const nuevoStr = prompt('¿Cuántas unidades vienen por bulto/caja del proveedor?', current || 1);
+    const nuevoStr = await _modalPrompt('¿Cuántas unidades vienen por bulto/caja del proveedor?', String(current || 1), { titulo: 'Unidades por bulto', inputMode: 'numeric', maxlength: 5 });
     if (nuevoStr === null) return;
     const nuevo = Math.max(1, parseInt(nuevoStr) || 1);
     if (nuevo === current) return;
@@ -9621,21 +9621,21 @@ const MOS = (() => {
     const cur = (S.provCarritos[id] && S.provCarritos[id].items[idPP] && S.provCarritos[id].items[idPP].qty) || 0;
     carritoSetQty(idPP, Math.max(0, cur + delta));
   }
-  function carritoLimpiar() {
+  async function carritoLimpiar() {
     const id = S._carritoModalProvId || S.provSelId;
     if (!id) return;
     if (!Object.keys((S.provCarritos[id] && S.provCarritos[id].items) || {}).length) return;
-    if (!confirm('¿Limpiar el carrito de este proveedor?')) return;
+    if (!await _modalConfirm('¿Limpiar el carrito de este proveedor?', { warning: true, titulo: 'Limpiar carrito' })) return;
     S.provCarritos[id] = { items: {}, ts: Date.now() };
     _provCarritosSave();
     _renderCarrito();
     _refreshProvCarritoBadge(id);
     _provFabRender();
   }
-  function carritoAplicarSugerencias() {
+  async function carritoAplicarSugerencias() {
     const id = S._carritoModalProvId || S.provSelId;
     if (!id) return;
-    if (!confirm('¿Reemplazar el carrito con las sugerencias actuales? Pierdes ajustes manuales.')) return;
+    if (!await _modalConfirm('¿Reemplazar el carrito con las sugerencias actuales?\n\nPierdes ajustes manuales.', { warning: true, titulo: 'Aplicar sugerencias' })) return;
     const productos = (S.provProductos && S.provProductos[id]) || [];
     const items = {};
     productos.forEach(pp => {
@@ -9770,8 +9770,8 @@ const MOS = (() => {
     if (!id) return;
     const items = (S.provCarritos[id] && S.provCarritos[id].items) || {};
     if (!Object.keys(items).length) return;
-    setTimeout(() => {
-      if (confirm('¿Marcar el pedido como enviado y limpiar el carrito de este proveedor?')) {
+    setTimeout(async () => {
+      if (await _modalConfirm('¿Marcar el pedido como enviado y limpiar el carrito de este proveedor?', { titulo: 'Limpiar tras envío' })) {
         S.provCarritos[id] = { items: {}, ts: Date.now() };
         _provCarritosSave();
         _renderCarritoIfOpen();
@@ -10799,12 +10799,12 @@ const MOS = (() => {
 
   // Si silencioso=true: solo regenera (uso interno, ej. al guardar con campo vacío).
   // Si silencioso=false (click del botón): confirma antes de sobrescribir si hay contenido.
-  function prodAutogenBarcode(silencioso) {
+  async function prodAutogenBarcode(silencioso) {
     const cb = $('prodCodigoBarra');
     if (!cb) return;
     const actual = String(cb.value || '').trim();
     if (!silencioso && actual) {
-      if (!confirm(`El código actual "${actual}" será reemplazado por uno automático.\n\n¿Continuar?`)) {
+      if (!await _modalConfirm(`El código actual "${actual}" será reemplazado por uno automático.\n\n¿Continuar?`, { warning: true, titulo: 'Autogenerar código' })) {
         return;
       }
     }
@@ -11331,8 +11331,8 @@ const MOS = (() => {
     toast('💾 Segmento guardado · recordá guardar el producto', 'success');
   }
 
-  function segEliminar(idSeg) {
-    if (!confirm('¿Eliminar este segmento?')) return;
+  async function segEliminar(idSeg) {
+    if (!await _modalConfirm('¿Eliminar este segmento?', { danger: true, titulo: 'Eliminar segmento', okText: 'Eliminar' })) return;
     _segState.segmentos = _segState.segmentos.filter(s => s.id !== idSeg);
     segRenderEditor();
     _finBeep && _finBeep('tap');
@@ -15139,7 +15139,7 @@ const MOS = (() => {
     const msg = numEst > 0
       ? `¿Desactivar la zona "${z.nombre}"?\n\nTiene ${numEst} estación${numEst === 1 ? '' : 'es'} asociada${numEst === 1 ? '' : 's'} que dejarán de aparecer en las apps. Puedes reactivarla luego.`
       : `¿Desactivar la zona "${z.nombre}"?\n\nPodrás reactivarla cuando quieras.`;
-    if (!confirm(msg)) return;
+    if (!await _modalConfirm(msg, { warning: true, titulo: 'Desactivar zona' })) return;
     closeModal('modalZona');
     // OPTIMISTA: marcar inactiva
     const previo = z.estado;
@@ -16158,7 +16158,7 @@ const MOS = (() => {
     const checked = ev?.target?.checked;
     // checked=true → activar (sin bloqueo) ; checked=false → bloquear
     const accion = checked ? 'activar' : 'BLOQUEAR (mostrar pantalla de candado en su dispositivo)';
-    if (!confirm(`¿${accion.charAt(0).toUpperCase() + accion.slice(1)} a ${nombre}?\n\nSolo afecta al dispositivo donde "${nombre}" esté logueado en MosExpress. Otros cajeros siguen vendiendo normal.`)) {
+    if (!await _modalConfirm(`¿${accion.charAt(0).toUpperCase() + accion.slice(1)} a ${nombre}?\n\nSolo afecta al dispositivo donde "${nombre}" esté logueado en MosExpress. Otros cajeros siguen vendiendo normal.`, { warning: !checked, titulo: checked ? 'Activar vendedor' : 'Bloquear vendedor' })) {
       if (ev?.target) ev.target.checked = !checked;
       return;
     }
@@ -16710,7 +16710,7 @@ const MOS = (() => {
     const msg = numImp > 0
       ? `¿Desactivar la estación "${e.nombre}"?\n\nTiene ${numImp} impresora${numImp === 1 ? '' : 's'} asociada${numImp === 1 ? '' : 's'}. Puedes reactivarla luego.`
       : `¿Desactivar la estación "${e.nombre}"?\n\nPodrás reactivarla cuando quieras.`;
-    if (!confirm(msg)) return;
+    if (!await _modalConfirm(msg, { warning: true, titulo: 'Desactivar estación' })) return;
     closeModal('modalEstacion');
     const previo = e.activo;
     e.activo = '0';
@@ -16847,7 +16847,7 @@ const MOS = (() => {
     if (!id) return;
     const i = cfgData.impresoras.find(x => x.idImpresora === id);
     if (!i) return;
-    if (!confirm(`¿Desactivar la impresora "${i.nombre}"?\n\nDejará de recibir trabajos de impresión. Puedes reactivarla luego.`)) return;
+    if (!await _modalConfirm(`¿Desactivar la impresora "${i.nombre}"?\n\nDejará de recibir trabajos de impresión. Puedes reactivarla luego.`, { warning: true, titulo: 'Desactivar impresora' })) return;
     closeModal('modalImpresora');
     const previo = i.activo;
     i.activo = '0';
@@ -17089,7 +17089,7 @@ const MOS = (() => {
     if (!p) return;
     const nuevoEstado = String(p.estado) === '1' ? '0' : '1';
     const accion = nuevoEstado === '1' ? 'activar' : 'desactivar';
-    if (!confirm(`¿${accion.charAt(0).toUpperCase() + accion.slice(1)} a ${p.nombre} ${p.apellido || ''}?`)) return;
+    if (!await _modalConfirm(`¿${accion.charAt(0).toUpperCase() + accion.slice(1)} a ${p.nombre} ${p.apellido || ''}?`, { titulo: nuevoEstado === '1' ? 'Activar personal' : 'Desactivar personal' })) return;
     // OPTIMISTA
     const previo = p.estado;
     p.estado = nuevoEstado;
@@ -17292,7 +17292,7 @@ const MOS = (() => {
     if (!idZona || !tipoDocumento) return;
     const seriesActuales = (cfgData.series || []).filter(s => s.idZona === idZona && s.tipoDocumento === tipoDocumento);
     if (!seriesActuales.length) return;
-    if (!confirm(`¿Desactivar la serie ${tipoDocumento} en ${seriesActuales.length} estación(es) de esta zona?\n\nMosExpress dejará de emitir documentos de este tipo. Puedes reactivarla luego.`)) return;
+    if (!await _modalConfirm(`¿Desactivar la serie ${tipoDocumento} en ${seriesActuales.length} estación(es) de esta zona?\n\nMosExpress dejará de emitir documentos de este tipo. Puedes reactivarla luego.`, { warning: true, titulo: 'Desactivar serie' })) return;
     closeModal('modalSerie');
 
     const backup = cfgData.series.slice();
@@ -21687,7 +21687,7 @@ const MOS = (() => {
     if (!d) return;
     let nombre = (d.Nombre_Equipo || '').trim() || ('Dispositivo ' + id.substring(0, 8));
     if (opts.renombrar) {
-      const nuevoNombre = prompt('Nombre del dispositivo:', nombre);
+      const nuevoNombre = await _modalPrompt('Nombre del dispositivo:', nombre, { titulo: 'Renombrar dispositivo', maxlength: 60 });
       if (nuevoNombre === null) return;
       const t = (nuevoNombre || '').trim();
       if (!t) { toast('El nombre no puede estar vacío', 'error'); return; }
@@ -21728,7 +21728,7 @@ const MOS = (() => {
   async function rechazarDispositivo(id) {
     const d = cfgData.dispositivos.find(x => x.ID_Dispositivo === id);
     if (!d) return;
-    if (!confirm(`¿Rechazar este dispositivo? Quedará bloqueado y no podrá conectarse.`)) return;
+    if (!await _modalConfirm(`¿Rechazar este dispositivo?\n\nQuedará bloqueado y no podrá conectarse.`, { danger: true, titulo: 'Rechazar dispositivo', okText: 'Rechazar' })) return;
     const safeId = String(id).replace(/'/g, '&#39;');
     const card = document.querySelector(`[data-pend-card="${safeId}"]`);
     if (card) {
@@ -21999,7 +21999,7 @@ const MOS = (() => {
     if (minsTranscurridos > 10) {
       const horas = Math.floor(minsTranscurridos / 60);
       const txt = horas > 0 ? `hace ${horas}h` : `hace ${Math.floor(minsTranscurridos)}min`;
-      if (!confirm(`⚠ Última conexión de ${nombre} fue ${txt}.\n\nLa app puede estar cerrada — el comando de escucha puede no llegar.\n\n¿Iniciar igual?`)) return;
+      if (!await _modalConfirm(`⚠ Última conexión de ${nombre} fue ${txt}.\n\nLa app puede estar cerrada — el comando de escucha puede no llegar.\n\n¿Iniciar igual?`, { warning: true, titulo: 'Iniciar escucha' })) return;
     }
     if (devs.length === 1) {
       abrirModalAudioRouted(devs[0].ID_Dispositivo);
@@ -22328,7 +22328,7 @@ const MOS = (() => {
 
   async function _audioFlotanteDetener() {
     if (!_audioFlot) return;
-    if (!confirm('¿Detener escucha?')) return;
+    if (!await _modalConfirm('¿Detener escucha?', { titulo: 'Detener escucha' })) return;
     await _audioFlotanteDetenerInterno(true);
     toast('⏹️ Escucha detenida', 'ok');
   }
@@ -22405,7 +22405,7 @@ const MOS = (() => {
 
     // 1) Si ya hay otra sesión activa, confirmar switch
     if (_espiaState && _espiaState.deviceId !== idDispositivo) {
-      if (!confirm(`Ya estás espiando a ${_espiaState.nombre}.\n\n¿Detener esa sesión y empezar a espiar a ${nombre}?\n\n• Si dices NO, seguirás espiando a ${_espiaState.nombre}.`)) return;
+      if (!await _modalConfirm(`Ya estás espiando a ${_espiaState.nombre}.\n\n¿Detener esa sesión y empezar a espiar a ${nombre}?\n\nSi dices NO, seguirás espiando a ${_espiaState.nombre}.`, { warning: true, titulo: 'Cambiar de objetivo', okText: 'Sí, cambiar' })) return;
       _espiaDetenerTodo(true); // sin await — limpieza en background
     }
 
@@ -22530,10 +22530,10 @@ const MOS = (() => {
 
   // Detiene audio + gps + remueve widget + cierra modal
   // Cierre INMEDIATO de UI; las llamadas API se hacen en background.
-  function _espiaDetenerTodo(silencioso) {
+  async function _espiaDetenerTodo(silencioso) {
     if (!silencioso) {
       const nom = _espiaState?.nombre || 'el usuario';
-      if (!confirm(`🛑 DETENER el espionaje de ${nom}?\n\n• Se cierra el audio y el rastreo GPS.\n• El indicador del widget desaparece.\n• Si querés solo minimizar (seguir grabando en background), usá el botón ▾ del modal.\n\n¿Detener todo ahora?`)) return;
+      if (!await _modalConfirm(`🛑 DETENER el espionaje de ${nom}?\n\nSe cierra el audio y el rastreo GPS.\nEl indicador del widget desaparece.\n\nSi solo querés minimizar (seguir grabando en background), usá el botón ▾ del modal.`, { warning: true, titulo: 'Detener espionaje', okText: 'Detener todo' })) return;
     }
     if (!_espiaState && !document.getElementById('espiaFlotante') && !_audioFlot) return;
 
@@ -22929,7 +22929,7 @@ const MOS = (() => {
   }
 
   async function _audioLiveIniciar(deviceId) {
-    if (!confirm('¿Iniciar escucha? El dispositivo grabará en chunks de 15s. Auto-detiene a los 30 min.')) return;
+    if (!await _modalConfirm('¿Iniciar escucha?\n\nEl dispositivo grabará en chunks de 15s. Auto-detiene a los 30 min.', { warning: true, titulo: 'Iniciar escucha en vivo', okText: 'Iniciar' })) return;
     try {
       await API.post('iniciarEscuchaAudio', {
         deviceId,
@@ -23565,7 +23565,7 @@ const MOS = (() => {
   async function tribOCRMasivo() {
     const auth = await pedirAuth({ accion: 'TRIBUTARIO_OCR_MASIVO', refDocumento: _tribState.mes + '/' + _tribState.anio });
     if (!auth) return;
-    if (!confirm('¿Procesar con Claude todas las fotos de boletas/facturas SIN OCR del mes ' + _tribState.mes + '/' + _tribState.anio + '?\n\nPuede tardar 1-2 minutos (30 guías ≈ 60s).')) return;
+    if (!await _modalConfirm('¿Procesar con Claude todas las fotos de boletas/facturas SIN OCR del mes ' + _tribState.mes + '/' + _tribState.anio + '?\n\nPuede tardar 1-2 minutos (30 guías ≈ 60s).', { warning: true, titulo: 'OCR masivo del mes', okText: 'Procesar' })) return;
     toast('🤖 Procesando OCR del mes... esperá 1-2 min', 'info');
     try {
       const res = await API.post('tribOCRMasivo', {
@@ -23588,7 +23588,7 @@ const MOS = (() => {
   async function tribLimpiarHuerfanas() {
     const auth = await pedirAuth({ accion: 'TRIBUTARIO_LIMPIAR_HUERFANAS', refDocumento: 'global' });
     if (!auth) return;
-    if (!confirm('¿Marcar las filas con correlativo "undefined-*" como HUERFANA_LIMPIADA?')) return;
+    if (!await _modalConfirm('¿Marcar las filas con correlativo "undefined-*" como HUERFANA_LIMPIADA?', { warning: true, titulo: 'Limpiar huérfanas' })) return;
     try {
       const res = await API.post('tribLimpiarVentasHuerfanas', {});
       const n = res?.limpiadas || res?.data?.limpiadas || 0;
@@ -25011,7 +25011,7 @@ const MOS = (() => {
   // Útil cuando hay desincronización vieja entre la hoja LIQUIDACIONES_DIA
   // y los cálculos en vivo (ej: por un fix de lógica posterior a la creación).
   async function liqRecalcularRango() {
-    if (!confirm('Recalcular liquidaciones de los últimos 30 días? Puede tardar 20-60 segundos.')) return;
+    if (!await _modalConfirm('¿Recalcular liquidaciones de los últimos 30 días?\n\nPuede tardar 20-60 segundos.', { titulo: 'Recalcular 30 días', okText: 'Recalcular' })) return;
     toast('🔄 Recalculando 30 días... esto demora', 'info', 30000);
     try {
       const res = await API.post('backfillLiquidacionesDia', {
@@ -27490,7 +27490,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
 
   async function finEliminarGasto(idGasto, fecha) {
-    if (!idGasto || !confirm('¿Eliminar este gasto?')) return;
+    if (!idGasto) return;
+    if (!await _modalConfirm('¿Eliminar este gasto?', { danger: true, titulo: 'Eliminar gasto', okText: 'Eliminar' })) return;
     try {
       await API.post('eliminarGasto', { idGasto });
       toast('Gasto eliminado', 'ok');
@@ -27507,7 +27508,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // lo mismo: marcar VETADA en la hoja. Una fuente de verdad. Cero confusión.
   async function finVetarPago(idJornada, fecha, nombre) {
     const fechaTxt = _formatFechaCorta(fecha);
-    if (!confirm(`💸 VETAR el pago de ${nombre || 'esta persona'} del ${fechaTxt}?\n\n• No se le pagará por este día.\n• La persona puede seguir operando (no la bloquea).\n• Tras vetar, el botón cambiará a 💵 para rehabilitar.`)) return;
+    if (!await _modalConfirm(`💸 VETAR el pago de ${nombre || 'esta persona'} del ${fechaTxt}?\n\nNo se le pagará por este día.\nLa persona puede seguir operando (no la bloquea).\nTras vetar, el botón cambiará a 💵 para rehabilitar.`, { danger: true, titulo: 'Vetar pago', okText: 'Vetar' })) return;
 
     // SONIDO OPTIMISTA: dispara INMEDIATO al confirmar (sincronizado con el click).
     // Si después falla el back, sonará 'error'.
@@ -27688,7 +27689,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // restaura monto, recalcula KPIs locales, y persiste en GAS.
   async function finRehabilitarPago(idJornada, fecha, nombre) {
     const fechaTxt = _formatFechaCorta(fecha);
-    if (!confirm(`💵 REHABILITAR el pago de ${nombre || 'esta persona'} del ${fechaTxt}?\n\n• Volverá a contarse en gastos y liquidación.\n• Tras rehabilitar, el botón vuelve a ser 💸.`)) return;
+    if (!await _modalConfirm(`💵 REHABILITAR el pago de ${nombre || 'esta persona'} del ${fechaTxt}?\n\nVolverá a contarse en gastos y liquidación.\nTras rehabilitar, el botón vuelve a ser 💸.`, { titulo: 'Rehabilitar pago', okText: 'Rehabilitar' })) return;
 
     // SONIDO OPTIMISTA: dispara INMEDIATO al confirmar.
     _finBeep('rehab');
@@ -30022,7 +30023,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // Eliminar desde el botón 🗑️ de cada card (sin abrir modal)
   async function eliminarProvProductoRapido(idPP) {
     if (!idPP) return;
-    if (!confirm('¿Eliminar este producto del catálogo del proveedor?')) return;
+    if (!await _modalConfirm('¿Eliminar este producto del catálogo del proveedor?', { danger: true, titulo: 'Eliminar del catálogo', okText: 'Eliminar' })) return;
     const idProveedor = S.provSelId;
     // OPTIMISTIC
     if (S.provProductos && S.provProductos[idProveedor]) {
@@ -30039,7 +30040,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   async function jalarProductosProveedor() {
     const idProveedor = S.provSelId;
     if (!idProveedor) return;
-    if (!confirm('¿Importar al catálogo todos los productos comprados a este proveedor según las guías cerradas?\n\nNo borra nada — solo agrega los que falten y actualiza precios.')) return;
+    if (!await _modalConfirm('¿Importar al catálogo todos los productos comprados a este proveedor según las guías cerradas?\n\nNo borra nada — solo agrega los que falten y actualiza precios.', { titulo: 'Jalar catálogo desde guías', okText: 'Importar' })) return;
     const btn = $('btnJalarProds');
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Jalando…'; }
     try {
@@ -30066,7 +30067,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   async function eliminarProvProducto() {
     const idPP = $('ppId').value;
     if (!idPP) return;
-    if (!confirm('¿Eliminar esta cotización?')) return;
+    if (!await _modalConfirm('¿Eliminar esta cotización?', { danger: true, titulo: 'Eliminar cotización', okText: 'Eliminar' })) return;
     const idProveedor = S.provSelId;
 
     // OPTIMISTIC
@@ -30606,7 +30607,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
   async function promoEliminar() {
     if (!_promoState.editando) return;
-    if (!confirm('¿Eliminar esta promoción?')) return;
+    if (!await _modalConfirm('¿Eliminar esta promoción?', { danger: true, titulo: 'Eliminar promoción', okText: 'Eliminar' })) return;
     const idPromo = _promoState.editando;
     // OPTIMISTIC: cerrar modal + remover de lista local
     const backup = _promoState.lista.slice();
@@ -30713,8 +30714,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _proyRender();
     try { _evalSfx && _evalSfx(estado[id] ? 'success' : 'tap'); } catch(_){}
   }
-  function _proyResetEstado() {
-    if (!confirm('¿Reiniciar todo el progreso del roadmap? Los checks se borran.')) return;
+  async function _proyResetEstado() {
+    if (!await _modalConfirm('¿Reiniciar todo el progreso del roadmap?\n\nLos checks se borran.', { danger: true, titulo: 'Reset roadmap', okText: 'Reiniciar' })) return;
     _proySaveEstado({});
     _proyRender();
   }
@@ -31146,7 +31147,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     body.innerHTML = cardTrigger + cardUltima + historial + triggers;
   }
   async function cronReinstalarTrigger() {
-    if (!confirm('Reinstalar trigger 23h? Borra el actual y crea uno nuevo.')) return;
+    if (!await _modalConfirm('¿Reinstalar trigger 23h?\n\nBorra el actual y crea uno nuevo.', { warning: true, titulo: 'Reinstalar trigger' })) return;
     try {
       const res = await API.get('setupCierreNocturnoTrigger', {});
       toast(res?.mensaje || '✓ Trigger reinstalado', 'ok', 4000);
@@ -31156,7 +31157,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
   }
   async function cronEjecutarAhora() {
-    if (!confirm('Ejecutar cierre nocturno AHORA? Cerrará sesiones WH + cajas ME + forzará logout en dispositivos.')) return;
+    if (!await _modalConfirm('¿Ejecutar cierre nocturno AHORA?\n\nCerrará sesiones WH + cajas ME + forzará logout en dispositivos.', { danger: true, titulo: 'Cierre nocturno manual', okText: 'Ejecutar ahora' })) return;
     const btn = event && event.target;
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Ejecutando…'; }
     try {
