@@ -5290,6 +5290,34 @@ const MOS = (() => {
         ? '<span title="Costo registrado" style="color:#16a34a;font-weight:700">✓</span>'
         : '<span title="Falta costo" style="color:#dc2626;font-weight:700">⚠</span>';
       const faltaCls = brutoUnit > 0 ? '' : ' alm-v-costo-line--falta';
+
+      // [v2.43.1] MARGEN ACTUAL VISIBLE — busca el producto canónico en el
+      // catálogo por codigoBarra y muestra precio venta + margen actual.
+      // Si el admin está escribiendo costo nuevo, muestra TAMBIÉN el margen
+      // resultante con el costo nuevo (cálculo en vivo).
+      let margenInfoHtml = '';
+      try {
+        const codStr = String(l.codigoBarra || l.codigoProducto || '').trim();
+        if (codStr) {
+          const prodCat = (S.productos || []).find(p => String(p.codigoBarra || '').trim() === codStr);
+          if (prodCat) {
+            const venta = parseFloat(prodCat.precioVenta) || 0;
+            const costoCatActual = parseFloat(prodCat.precioCosto) || 0;
+            if (venta > 0) {
+              const margenActual = costoCatActual > 0 ? ((venta - costoCatActual) / venta) * 100 : null;
+              const margenNuevo  = brutoUnit > 0 ? ((venta - brutoUnit) / venta) * 100 : null;
+              const colorM = (m) => m === null ? '#9ca3af' : m < 10 ? '#dc2626' : m < 20 ? '#d97706' : '#16a34a';
+              const mostrarCambio = margenNuevo !== null && margenActual !== null && Math.abs(margenNuevo - margenActual) > 0.5;
+              margenInfoHtml = `<div style="font-size:11px;padding:5px 9px;background:rgba(168,85,247,.06);border-left:3px solid #a855f7;border-radius:6px;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;line-height:1.4">
+                <span style="color:#64748b">📊 Venta: <b style="color:#1f2937">S/ ${venta.toFixed(2)}</b></span>
+                ${margenActual !== null ? `<span style="color:#64748b">·</span><span style="color:#64748b">Margen actual: <b style="color:${colorM(margenActual)}">${margenActual.toFixed(1)}%</b></span>` : ''}
+                ${mostrarCambio ? `<span style="color:#64748b">→</span><span style="color:#64748b">Con costo nuevo: <b style="color:${colorM(margenNuevo)}">${margenNuevo.toFixed(1)}%</b></span>` : ''}
+              </div>`;
+            }
+          }
+        }
+      } catch(_) {}
+
       return `<div class="alm-v-costo-line${faltaCls}" style="animation-delay: ${Math.min(i, 12) * 30}ms">
         <div class="alm-v-costo-row">
           <div>
@@ -5306,6 +5334,7 @@ const MOS = (() => {
                  placeholder="${placeholder}">
           <div class="alm-v-costo-helper" id="costoGuiaSubtot_${i}">${helper}</div>
         </div>
+        ${margenInfoHtml}
         <div class="alm-cu-sug${sugOpen}" id="sugSlot_${i}">${sugHtml}</div>
       </div>`;
     }).join('');
