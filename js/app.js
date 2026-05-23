@@ -6065,6 +6065,20 @@ const MOS = (() => {
         <button onclick="document.getElementById('opsJefaFotoInput').click()" class="w-full bg-slate-700 text-slate-200 py-2 rounded-lg">📷 Subir otra foto</button>`;
       return;
     }
+    // [v2.43.4] Inicializar opción A/B/C por correción basado en lo que vino del OCR.
+    // A = sin cambio (default cuando OCR no detectó nada)
+    // B = nuevo precio venta (cuando jefa escribió precio nuevo)
+    // C = nuevo margen % (cuando jefa escribió margen nuevo)
+    corr.forEach(c => {
+      if (c._opcionInicializada) return;
+      if (c.ventaNueva != null && c.ventaNueva > 0) c.opcion = 'B';
+      else if (c.margenNuevoPct != null && c.margenNuevoPct > 0) c.opcion = 'C';
+      else c.opcion = 'A';
+      c._opcionInicializada = true;
+      // Default: propagar a presentaciones (lo que admin espera, casi siempre)
+      if (c.propagar === undefined) c.propagar = true;
+    });
+
     body.innerHTML = banner + corr.map((c, idx) => {
       const confCls = c.confidence >= 95 ? 'border-emerald-500/40 bg-emerald-950/30'
                     : c.confidence >= 80 ? 'border-amber-500/50 bg-amber-950/30'
@@ -6072,37 +6086,96 @@ const MOS = (() => {
       const confTxt = c.confidence >= 95 ? '✓ alta'
                     : c.confidence >= 80 ? '⚠ media'
                     : '⚠ baja';
-      return `<div class="rounded-xl border ${confCls} p-3 mb-3">
+      const costo = parseFloat(c.costo) || 0;
+      // Buscar precio venta y margen actual del catálogo (si producto existe)
+      const prodCat = (S.productos || []).find(p => String(p.SKU_Base || p.skuBase || '').trim() === String(c.skuBase || '').trim());
+      const ventaActual  = prodCat ? (parseFloat(prodCat.precioVenta) || 0) : 0;
+      const margenActual = (costo > 0 && ventaActual > 0) ? ((ventaActual - costo) / ventaActual) * 100 : null;
+      // Live calc según opción
+      const ventaB = c.opcion === 'B' && c.ventaNueva ? parseFloat(c.ventaNueva) : null;
+      const margenB = (ventaB && costo > 0) ? ((ventaB - costo) / ventaB) * 100 : null;
+      const margenC = c.opcion === 'C' && c.margenNuevoPct ? parseFloat(c.margenNuevoPct) * 100 : null;
+      const ventaC = (margenC && costo > 0) ? +(costo / (1 - margenC / 100)).toFixed(2) : null;
+      const colorM = (m) => m === null ? '#94a3b8' : m < 10 ? '#f87171' : m < 20 ? '#fbbf24' : '#34d399';
+      const ventaFinal = c.opcion === 'B' ? ventaB : (c.opcion === 'C' ? ventaC : ventaActual);
+      const margenFinal = c.opcion === 'B' ? margenB : (c.opcion === 'C' ? margenC : margenActual);
+      return `<div class="rounded-xl border ${confCls} p-3 mb-3" style="animation:opsBadgeIn .25s cubic-bezier(.34,1.56,.64,1) ${idx * 0.04}s both">
         <div class="flex items-center justify-between mb-2">
           <div class="font-bold text-slate-100 text-sm">#${idx+1} ${_escapeHtml(c.descripcion || c.skuBase)}</div>
           <span class="text-[10px] text-slate-400">${confTxt} · ${c.confidence}%</span>
         </div>
-        <div class="text-[11px] text-slate-500 mb-2">SKU: ${_escapeHtml(c.skuBase)} · Costo: S/ ${parseFloat(c.costo).toFixed(2)}</div>
+        <div class="text-[11px] text-slate-500 mb-2 flex items-center gap-2 flex-wrap">
+          <span>SKU: ${_escapeHtml(c.skuBase)}</span>
+          <span>·</span>
+          <span>💰 Costo: <b class="text-amber-300">S/ ${costo.toFixed(2)}</b></span>
+          ${ventaActual > 0 ? `<span>·</span><span>📊 Venta actual: <b class="text-slate-300">S/ ${ventaActual.toFixed(2)}</b></span>` : ''}
+          ${margenActual !== null ? `<span>·</span><span>Margen actual: <b style="color:${colorM(margenActual)}">${margenActual.toFixed(1)}%</b></span>` : ''}
+        </div>
         ${c.tachado ? `<div class="text-rose-300 text-xs">⊘ Tachado por jefa — NO se aplicará</div>` : `
-          <div class="grid grid-cols-2 gap-2">
-            <label class="text-[10px] text-slate-400">
-              Venta nueva
-              <input type="number" step="0.01" value="${c.ventaNueva != null ? c.ventaNueva : ''}"
-                     oninput="MOS._opsJefaEditar(${idx}, 'ventaNueva', this.value)"
-                     class="w-full mt-1 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-slate-100">
+          <!-- [v2.43.4] 3 opciones A/B/C con radio buttons elegantes -->
+          <div class="space-y-1.5 mt-2">
+            <label class="flex items-center gap-2 cursor-pointer p-2 rounded-lg ${c.opcion === 'A' ? 'bg-slate-800/80 border border-slate-600' : 'hover:bg-slate-800/40'}" onclick="MOS._opsJefaSetOpcion(${idx},'A')">
+              <input type="radio" name="opcJefa${idx}" ${c.opcion === 'A' ? 'checked' : ''} class="accent-slate-400">
+              <span class="text-xs text-slate-300"><b>A.</b> Sin cambio · dejar como está</span>
             </label>
-            <label class="text-[10px] text-slate-400">
-              Margen objetivo (%)
+            <label class="flex items-center gap-2 cursor-pointer p-2 rounded-lg ${c.opcion === 'B' ? 'bg-emerald-900/40 border border-emerald-500/50' : 'hover:bg-slate-800/40'}" onclick="MOS._opsJefaSetOpcion(${idx},'B')">
+              <input type="radio" name="opcJefa${idx}" ${c.opcion === 'B' ? 'checked' : ''} class="accent-emerald-400">
+              <span class="text-xs text-slate-300 flex-1"><b>B.</b> Nuevo precio:</span>
+              <input type="number" step="0.01" value="${c.ventaNueva != null ? c.ventaNueva : ''}"
+                     oninput="MOS._opsJefaEditar(${idx},'ventaNueva',this.value)"
+                     onclick="event.stopPropagation();MOS._opsJefaSetOpcion(${idx},'B')"
+                     placeholder="S/ ___"
+                     class="w-24 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-slate-100 font-bold text-right">
+              ${margenB !== null ? `<span class="text-[10px]" style="color:${colorM(margenB)}">→ ${margenB.toFixed(1)}%</span>` : ''}
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer p-2 rounded-lg ${c.opcion === 'C' ? 'bg-cyan-900/40 border border-cyan-500/50' : 'hover:bg-slate-800/40'}" onclick="MOS._opsJefaSetOpcion(${idx},'C')">
+              <input type="radio" name="opcJefa${idx}" ${c.opcion === 'C' ? 'checked' : ''} class="accent-cyan-400">
+              <span class="text-xs text-slate-300 flex-1"><b>C.</b> Nuevo margen:</span>
               <input type="number" step="0.1" value="${c.margenNuevoPct != null ? (c.margenNuevoPct * 100).toFixed(1) : ''}"
-                     oninput="MOS._opsJefaEditar(${idx}, 'margenNuevoPct', this.value / 100)"
-                     class="w-full mt-1 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-slate-100">
+                     oninput="MOS._opsJefaEditar(${idx},'margenNuevoPct',this.value/100)"
+                     onclick="event.stopPropagation();MOS._opsJefaSetOpcion(${idx},'C')"
+                     placeholder="___%"
+                     class="w-20 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-slate-100 font-bold text-right">
+              ${ventaC !== null ? `<span class="text-[10px] text-cyan-300">→ S/${ventaC.toFixed(2)}</span>` : ''}
             </label>
           </div>
-          ${c.notas ? `<div class="text-[10px] text-slate-500 italic mt-1">"${_escapeHtml(c.notas)}"</div>` : ''}
+          <!-- Propagación a presentaciones (default ON) -->
+          ${c.opcion !== 'A' ? `
+            <label class="flex items-center gap-2 mt-2 px-2 py-1.5 rounded-lg bg-purple-900/20 border border-purple-500/30 cursor-pointer">
+              <input type="checkbox" ${c.propagar ? 'checked' : ''} onchange="MOS._opsJefaTogglePropagar(${idx}, this.checked)" class="accent-purple-400">
+              <span class="text-[11px] text-purple-200">📦 Propagar a presentaciones del canónico</span>
+            </label>
+          ` : ''}
+          ${c.notas ? `<div class="text-[10px] text-slate-500 italic mt-2">"${_escapeHtml(c.notas)}"</div>` : ''}
         `}
       </div>`;
     }).join('') + `
       <div class="sticky bottom-0 bg-slate-900 pt-3 mt-2 border-t border-slate-700/60">
         <button onclick="MOS._opsJefaConfirmarAplicar()"
-                class="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 active:scale-95 text-white font-black py-3 rounded-xl shadow-lg shadow-emerald-500/40">
-          ✓ Aplicar cambios (requiere PIN admin)
+                class="ops-cta-jefa w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 active:scale-95 text-white font-black py-3 rounded-xl shadow-lg shadow-emerald-500/40"
+                style="transition:transform .15s ease,box-shadow .2s ease">
+          🔐 Aplicar + imprimir comprobante
         </button>
+        <p class="text-[10px] text-slate-500 text-center mt-2">Requiere PIN admin · auto-imprime ticket de auditoría con cambios resaltados</p>
       </div>`;
+  }
+
+  // [v2.43.4] Cambia la opción A/B/C de un item — con sonido suave + re-render
+  function _opsJefaSetOpcion(idx, opcion) {
+    const c = _opsJefaState.correcciones[idx];
+    if (!c) return;
+    if (c.opcion === opcion) return; // no-op
+    c.opcion = opcion;
+    try { _opsBeep('tac'); } catch(_){}
+    _opsJefaRenderResultados();
+  }
+
+  // [v2.43.4] Toggle propagar a presentaciones
+  function _opsJefaTogglePropagar(idx, val) {
+    const c = _opsJefaState.correcciones[idx];
+    if (!c) return;
+    c.propagar = !!val;
+    try { _opsBeep('tac'); } catch(_){}
   }
 
   function _opsJefaEditar(idx, campo, valor) {
@@ -6111,22 +6184,40 @@ const MOS = (() => {
     if (valor === '' || isNaN(parseFloat(valor))) c[campo] = null;
     else c[campo] = parseFloat(valor);
     c.editado = true;
+    // [v2.43.4] Live re-render con debounce para actualizar el cálculo
+    // de margen/precio resultante mientras el admin escribe.
+    clearTimeout(_opsJefaState._renderTimer);
+    _opsJefaState._renderTimer = setTimeout(() => {
+      try { _opsJefaRenderResultados(); } catch(_){}
+    }, 250);
   }
 
   async function _opsJefaConfirmarAplicar() {
+    // [v2.43.4] Respetar opción A/B/C elegida por el cajero:
+    //   A → no incluir (sin cambio explícito)
+    //   B → solo ventaNueva (backend calcula margen)
+    //   C → solo margenNuevoPct (backend calcula precio)
+    //   propagar → flag para que backend afecte presentaciones
     const items = _opsJefaState.correcciones
-      .filter(c => !c.tachado && (c.ventaNueva != null || c.margenNuevoPct != null))
+      .filter(c => !c.tachado && c.opcion && c.opcion !== 'A')
+      .filter(c => (c.opcion === 'B' && c.ventaNueva != null && c.ventaNueva > 0)
+                || (c.opcion === 'C' && c.margenNuevoPct != null && c.margenNuevoPct > 0))
       .map(c => ({
         skuBase:        c.skuBase,
         descripcion:    c.descripcion,
         costoNuevo:     c.costo,
-        ventaNueva:     c.ventaNueva,
-        margenNuevoPct: c.margenNuevoPct
+        // Enviar solo el campo que corresponde a la opción (evita ambigüedad en backend)
+        ventaNueva:     c.opcion === 'B' ? c.ventaNueva     : null,
+        margenNuevoPct: c.opcion === 'C' ? c.margenNuevoPct : null,
+        opcion:         c.opcion,
+        propagar:       c.propagar !== false  // default true
       }));
     if (!items.length) {
-      toast('No hay cambios para aplicar', 'warning');
+      try { _opsBeep('warn'); } catch(_){}
+      toast('No hay cambios para aplicar — todos están en opción A', 'warning');
       return;
     }
+    try { _opsBeep('tac'); } catch(_){}
     // Pedir PIN admin con el modal universal
     const auth = await pedirAuth({
       accion: 'APLICAR_RESPUESTA_JEFA',
@@ -6134,13 +6225,14 @@ const MOS = (() => {
       contexto: `Aplicar ${items.length} cambios al catálogo · guía ${_opsJefaState.idGuia}`
     });
     if (!auth) return;
-    // Elegir impresora para el ticket de confirmación
+    // Elegir impresora para el ticket de confirmación (recordada por flowKey)
     const printerId = await abrirPrinterPicker({
       titulo: '🖨 Impresora para ticket de confirmación',
       subtitulo: 'Auditoría visual de los cambios aplicados',
       filtroTipo: 'TICKET',
-      omitirOpcion: true
+      flowKey:    'jefa_conf'   // [v2.43.4] memorizar última impresora
     }).catch(() => null);
+    try { _toast?.('info', '⚙ Aplicando cambios al catálogo...'); } catch(_){}
     try {
       const r = await API.post('aplicarRespuestaJefa', {
         idGuia:     _opsJefaState.idGuia,
@@ -6150,9 +6242,11 @@ const MOS = (() => {
       });
       const d = (r && r.data) || r || {};
       if (!d.autorizado) {
+        try { _opsBeep('warn'); } catch(_){}
         toast(d.error || 'Clave incorrecta', 'error');
         return;
       }
+      try { _opsBeep('ok'); } catch(_){}
       toast(`✓ ${d.aplicados} cambio(s) aplicados al catálogo` +
             (d.ticketImpreso ? ' · ticket impreso' : ''), 'success', 6000);
       if (d.errores && d.errores.length) {
@@ -6161,6 +6255,7 @@ const MOS = (() => {
       }
       opsCerrarAplicarRespuestaJefa();
     } catch(e) {
+      try { _opsBeep('warn'); } catch(_){}
       toast('Error: ' + (e.message || e), 'error');
     }
   }
@@ -32139,6 +32234,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.42.07] Flow para-jefa: ticket profesional + aplicar respuesta + OCR
     abrirSelPrinterJefa, opsAbrirAplicarRespuestaJefa, opsCerrarAplicarRespuestaJefa,
     _opsJefaEditar, _opsJefaConfirmarAplicar, opsOcrComprobantePrepoblar,
+    // [v2.43.4] Modal jefa A/B/C
+    _opsJefaSetOpcion, _opsJefaTogglePropagar,
     _impactoTogglesel, _impactoSetPrecio, cerrarImpactoCostos, aplicarSugerenciasSeleccionadas,
     almLoadZonas, almRefreshZonas, almAbrirStockDetalle, cerrarStockDetalle, almRefreshStockDetalle,
     _almGenerarPedidoFromInsight, _almPickProveedor, cerrarSelProveedor,
