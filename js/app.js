@@ -4755,7 +4755,31 @@ const MOS = (() => {
 
   // Helper de sonido — WebAudio para clicks/pings sin assets
   let _opsAudioCtx = null;
+  // [v2.43.2] Inyectar keyframes CSS para animaciones modernas (badge OCR,
+  // pulse de margen, glow del CTA). Se inyecta una sola vez al cargar.
+  function _opsInyectarKeyframes() {
+    if (S._opsKeyframesInjected) return;
+    S._opsKeyframesInjected = true;
+    try {
+      const style = document.createElement('style');
+      style.id = 'opsAnimKeyframes';
+      style.textContent = `
+        @keyframes opsBadgeIn { 0% { opacity: 0; transform: translateY(-12px) scale(.92); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
+        @keyframes opsBadgeOut { 0% { opacity: 1; transform: translateY(0) scale(1); } 100% { opacity: 0; transform: translateY(-8px) scale(.95); } }
+        @keyframes opsBadgeCheck { 0% { transform: scale(0); } 60% { transform: scale(1.35); } 100% { transform: scale(1); } }
+        @keyframes opsSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes opsNumPulse { 0% { transform: scale(1); opacity: .5; } 50% { transform: scale(1.18); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+        @keyframes opsCtaGlow { 0%, 100% { box-shadow: 0 4px 12px -2px rgba(168,85,247,.55); } 50% { box-shadow: 0 6px 22px -2px rgba(168,85,247,.85); } }
+        @keyframes opsMargenSlide { 0% { opacity: 0; transform: translateX(-6px); } 100% { opacity: 1; transform: translateX(0); } }
+        .ops-cta-jefa:hover { animation: opsCtaGlow 1.4s ease-in-out infinite; transform: translateY(-1px); }
+        .ops-cta-jefa:active { transform: translateY(0) scale(.98); }
+      `;
+      document.head.appendChild(style);
+    } catch(_){}
+  }
+  // Inyectar en el primer beep (cualquier acción de ops dispara esto)
   function _opsBeep(tipo) {
+    _opsInyectarKeyframes();
     try {
       if (!_opsAudioCtx) _opsAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
       const ctx = _opsAudioCtx;
@@ -4781,6 +4805,41 @@ const MOS = (() => {
           o.connect(g).connect(ctx.destination);
           o.start(t0); o.stop(t0 + 0.35);
         });
+      } else if (tipo === 'ok') {
+        // [v2.43.2] 3 notas tipo arpegio mayor — éxito de acción importante
+        [523, 659, 784].forEach((f, i) => {
+          const o = ctx.createOscillator(), g = ctx.createGain();
+          const t0 = now + i * 0.07;
+          o.type = 'sine'; o.frequency.setValueAtTime(f, t0);
+          g.gain.setValueAtTime(0.0001, t0);
+          g.gain.exponentialRampToValueAtTime(0.18, t0 + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.28);
+          o.connect(g).connect(ctx.destination);
+          o.start(t0); o.stop(t0 + 0.3);
+        });
+      } else if (tipo === 'warn') {
+        // [v2.43.2] 2 notas descendentes — alerta (margen bajo, etc.)
+        [600, 380].forEach((f, i) => {
+          const o = ctx.createOscillator(), g = ctx.createGain();
+          const t0 = now + i * 0.11;
+          o.type = 'triangle'; o.frequency.setValueAtTime(f, t0);
+          g.gain.setValueAtTime(0.0001, t0);
+          g.gain.exponentialRampToValueAtTime(0.12, t0 + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.25);
+          o.connect(g).connect(ctx.destination);
+          o.start(t0); o.stop(t0 + 0.27);
+        });
+      } else if (tipo === 'shimmer') {
+        // [v2.43.2] Sonido suave de "procesando" — barre frecuencias
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(600, now);
+        o.frequency.linearRampToValueAtTime(1400, now + 0.4);
+        g.gain.setValueAtTime(0.0001, now);
+        g.gain.exponentialRampToValueAtTime(0.06, now + 0.05);
+        g.gain.exponentialRampToValueAtTime(0.001, now + 0.42);
+        o.connect(g).connect(ctx.destination);
+        o.start(now); o.stop(now + 0.45);
       }
     } catch(_){}
   }
@@ -5092,7 +5151,7 @@ const MOS = (() => {
         // re-OCR para casos donde admin quiere re-procesar manualmente).
         btnCostos = `
           <!-- CTA PRINCIPAL: guarda + abre picker + imprime ticket para jefa -->
-          <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#a855f7,#7c3aed);box-shadow:0 4px 12px -2px rgba(168,85,247,.6);font-size:13px;padding:10px 14px;font-weight:700"
+          <button class="alm-v-btn-costos ops-cta-jefa" style="background:linear-gradient(135deg,#a855f7,#7c3aed);box-shadow:0 4px 12px -2px rgba(168,85,247,.6);font-size:13px;padding:10px 14px;font-weight:700;transition:transform .15s ease,box-shadow .2s ease"
                   onclick="MOS.guardarCostosEImprimirJefa()" title="Guarda costos y manda el ticket a la jefa para que decida precios">💾📋 Guardar e imprimir para jefa</button>
           <!-- Secundarios: re-OCR (override manual) y aplicar respuesta jefa -->
           <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#22d3ee,#0891b2);box-shadow:0 2px 6px -2px rgba(34,211,238,.5);font-size:11px;padding:7px 10px"
@@ -5308,10 +5367,15 @@ const MOS = (() => {
               const margenNuevo  = brutoUnit > 0 ? ((venta - brutoUnit) / venta) * 100 : null;
               const colorM = (m) => m === null ? '#9ca3af' : m < 10 ? '#dc2626' : m < 20 ? '#d97706' : '#16a34a';
               const mostrarCambio = margenNuevo !== null && margenActual !== null && Math.abs(margenNuevo - margenActual) > 0.5;
-              margenInfoHtml = `<div style="font-size:11px;padding:5px 9px;background:rgba(168,85,247,.06);border-left:3px solid #a855f7;border-radius:6px;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;line-height:1.4">
+              // [v2.43.2] animación opsMargenSlide al aparecer "Con costo nuevo"
+              // + opsNumPulse en el % nuevo para llamar la atención del cajero.
+              const cambioBlockHtml = mostrarCambio
+                ? `<span style="color:#64748b;animation:opsMargenSlide .35s ease both">→</span><span style="color:#64748b;animation:opsMargenSlide .35s ease .05s both">Con costo nuevo: <b style="color:${colorM(margenNuevo)};display:inline-block;animation:opsNumPulse .45s cubic-bezier(.34,1.56,.64,1)">${margenNuevo.toFixed(1)}%</b></span>`
+                : '';
+              margenInfoHtml = `<div style="font-size:11px;padding:5px 9px;background:rgba(168,85,247,.06);border-left:3px solid #a855f7;border-radius:6px;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;line-height:1.4;transition:background .2s ease">
                 <span style="color:#64748b">📊 Venta: <b style="color:#1f2937">S/ ${venta.toFixed(2)}</b></span>
                 ${margenActual !== null ? `<span style="color:#64748b">·</span><span style="color:#64748b">Margen actual: <b style="color:${colorM(margenActual)}">${margenActual.toFixed(1)}%</b></span>` : ''}
-                ${mostrarCambio ? `<span style="color:#64748b">→</span><span style="color:#64748b">Con costo nuevo: <b style="color:${colorM(margenNuevo)}">${margenNuevo.toFixed(1)}%</b></span>` : ''}
+                ${cambioBlockHtml}
               </div>`;
             }
           }
@@ -6212,7 +6276,7 @@ const MOS = (() => {
   function opsEntrarModoCostos(fuente, idGuia) {
     _opsBeep('tac');
     abrirOpsDetalleOverlay(fuente, idGuia, false, true);
-    // [v2.43.0] AUTO-OCR: si la guía tiene foto y ninguna línea tiene costo
+    // [v2.43.0+2] AUTO-OCR: si la guía tiene foto y ninguna línea tiene costo
     // todavía, disparar OCR automático al entrar (sin botón manual).
     // Si el admin ya tocó costos antes, NO sobreescribir.
     setTimeout(() => {
@@ -6225,24 +6289,79 @@ const MOS = (() => {
         if (S._opsOcrYaCorrido && S._opsOcrYaCorrido[idGuia]) return; // ya corrió en esta sesión
         S._opsOcrYaCorrido = S._opsOcrYaCorrido || {};
         S._opsOcrYaCorrido[idGuia] = true;
-        opsOcrComprobantePrepoblar(idGuia);
+        // [v2.43.2] Feedback visual + sonoro elegante para que se sienta vivo
+        _opsBeep('shimmer');
+        _opsMostrarBadgeOcrAuto('procesando');
+        opsOcrComprobantePrepoblar(idGuia).then(() => {
+          _opsMostrarBadgeOcrAuto('listo');
+          _opsBeep('ok');
+        }).catch(() => {
+          _opsMostrarBadgeOcrAuto('error');
+          _opsBeep('warn');
+        });
       } catch(e) { console.warn('[auto-OCR costos]', e); }
     }, 600); // delay 600ms para que el overlay termine de renderizar
   }
 
-  // [v2.43.0] CTA combinado: guardar costos + abrir picker de impresora + imprimir
-  // ticket para jefa, todo en una sola acción. Reduce 2 botones a 1.
+  // [v2.43.2] Badge flotante elegante para indicar estado del auto-OCR.
+  // 'procesando' = anillo girando con shimmer · 'listo' = check verde con pulse
+  // · 'error' = X roja · todos se auto-ocultan tras 3s salvo 'procesando' que
+  // dura hasta que termine el fetch.
+  function _opsMostrarBadgeOcrAuto(estado) {
+    try {
+      let badge = document.getElementById('opsBadgeOcrAuto');
+      if (!badge) {
+        badge = document.createElement('div');
+        badge.id = 'opsBadgeOcrAuto';
+        badge.style.cssText = 'position:fixed;top:18px;right:18px;z-index:9999;padding:10px 14px;border-radius:14px;font-size:13px;font-weight:700;font-family:system-ui,-apple-system,sans-serif;display:flex;align-items:center;gap:8px;box-shadow:0 10px 30px -8px rgba(0,0,0,.4);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);animation:opsBadgeIn .3s cubic-bezier(.34,1.56,.64,1) both;';
+        document.body.appendChild(badge);
+      }
+      if (estado === 'procesando') {
+        badge.style.background = 'linear-gradient(135deg,rgba(34,211,238,.95),rgba(8,145,178,.95))';
+        badge.style.color = '#fff';
+        badge.innerHTML = '<span style="display:inline-block;animation:opsSpin 1s linear infinite">🤖</span> Leyendo factura...';
+      } else if (estado === 'listo') {
+        badge.style.background = 'linear-gradient(135deg,rgba(16,185,129,.95),rgba(5,150,105,.95))';
+        badge.style.color = '#fff';
+        badge.innerHTML = '<span style="display:inline-block;animation:opsBadgeCheck .5s cubic-bezier(.34,1.56,.64,1)">✓</span> OCR procesado';
+        setTimeout(() => _opsOcultarBadgeOcrAuto(), 3000);
+      } else if (estado === 'error') {
+        badge.style.background = 'linear-gradient(135deg,rgba(239,68,68,.95),rgba(220,38,38,.95))';
+        badge.style.color = '#fff';
+        badge.innerHTML = '⚠ OCR falló — ajusta manual';
+        setTimeout(() => _opsOcultarBadgeOcrAuto(), 4000);
+      }
+    } catch(_){}
+  }
+  function _opsOcultarBadgeOcrAuto() {
+    try {
+      const badge = document.getElementById('opsBadgeOcrAuto');
+      if (badge) {
+        badge.style.animation = 'opsBadgeOut .25s ease forwards';
+        setTimeout(() => { try { badge.remove(); } catch(_){} }, 280);
+      }
+    } catch(_){}
+  }
+
+  // [v2.43.0+2] CTA combinado: guardar costos + abrir picker de impresora +
+  // imprimir ticket para jefa, todo en una sola acción.
+  // [v2.43.2] OPTIMISTA: toast inmediato + sonido al click. Si falla, se nota
+  // por el toast de error que ya emite guardarCostosGuia internamente.
   async function guardarCostosEImprimirJefa() {
     const st = S._costosGuiaState;
     if (!st) return;
+    _opsBeep('tac');
+    try { _toast?.('info', '💾 Guardando costos...'); } catch(_){}
     try {
       await guardarCostosGuia();
+      _opsBeep('ok');
       // Esperar un tick para que el guardado persista antes de imprimir
       await new Promise(r => setTimeout(r, 300));
       abrirSelPrinterJefa(st.fuente, st.idGuia);
     } catch(e) {
       console.error('[guardarCostosEImprimirJefa]', e);
-      _toast('error', '❌ Error al guardar costos: ' + (e.message || e));
+      _opsBeep('warn');
+      try { _toast?.('error', '❌ Error al guardar costos: ' + (e.message || e)); } catch(_){}
     }
   }
   function opsSalirModoCostos() {
