@@ -23825,16 +23825,43 @@ const MOS = (() => {
     const cont = $('tribIGVFavorList');
     cont.innerHTML = '<div class="text-slate-500 text-xs">Cargando guías...</div>';
     const det = cont.closest('details'); if (det) det.open = true;
+    // [v2.42.12] Si ya tenemos precarga del mes actual, usar instant
+    if (_tribIGVFavorPrecargado && _tribIGVFavorPrecargado.mes === _tribState.mes
+        && _tribIGVFavorPrecargado.anio === _tribState.anio) {
+      _tribIGVFavorListaCache = _tribIGVFavorPrecargado.lista;
+      _tribRenderIGVFavorDetalle(_tribIGVFavorPrecargado.lista);
+      // Aún así refrescar en background por si hubo cambios desde la precarga
+      _tribFetchIGVFavor(true);
+      return;
+    }
+    await _tribFetchIGVFavor(false);
+  }
+
+  // [v2.42.12] Fetch separado para reusar entre precarga y abrir manual.
+  // El bug: el backend tribIGVFavorMes devuelve directo {ok,data:{guias:[]}},
+  // pero API.post desempaqueta d.data → frontend recibe {guias:[]} directo.
+  // Antes leíamos res?.data?.guias (undefined) cuando debe ser res?.guias.
+  async function _tribFetchIGVFavor(silent) {
+    const cont = $('tribIGVFavorList');
     try {
       const res = await API.post('tribIGVFavorMes', { mes: _tribState.mes, anio: _tribState.anio });
-      const lista = (res?.data?.guias || []);
-      // Guardar en state para re-render con filtros sin re-fetch
+      // [v2.42.12 fix] res ya es el data desempaquetado (API.post hace return d.data)
+      const lista = (res?.guias) || (res?.data?.guias) || [];
       _tribIGVFavorListaCache = lista;
-      _tribRenderIGVFavorDetalle(lista);
+      // Actualizar precarga global
+      _tribIGVFavorPrecargado = { mes: _tribState.mes, anio: _tribState.anio, lista };
+      if (cont) _tribRenderIGVFavorDetalle(lista);
     } catch(e) {
-      cont.innerHTML = '<div class="text-red-400 text-xs">❌ ' + (e.message || e) + '</div>';
+      if (!silent && cont) {
+        cont.innerHTML = '<div class="text-red-400 text-xs">❌ ' + (e.message || e) + '</div>';
+      }
     }
   }
+
+  // [v2.42.12] Precarga del IGV a favor — se llena al iniciar sesión Admin
+  // o al cambiar de mes en el panel. Permite que al abrir el detalle no
+  // espere el roundtrip a WH.
+  let _tribIGVFavorPrecargado = null;
 
   let _tribIGVFavorListaCache = [];
 
@@ -23997,7 +24024,9 @@ const MOS = (() => {
     const det = cont.closest('details'); if (det) det.open = true;
     try {
       const res = await API.post('tribIGVEmitidoMes', { mes: _tribState.mes, anio: _tribState.anio });
-      const lista = (res?.cpe || []);
+      // [v2.42.12] res ya viene desempaquetado (API.post hace return d.data).
+      // Fallback defensivo a res.data.cpe por si algún día cambia el shape.
+      const lista = (res?.cpe) || (res?.data?.cpe) || [];
       if (!lista.length) {
         cont.innerHTML = '<div class="text-slate-500 text-xs italic">Sin CPE emitidos este mes</div>';
         return;
@@ -24321,6 +24350,10 @@ const MOS = (() => {
         _tribState.data = res.data;
         _tribState.mes  = res.data.mes;
         _tribState.anio = res.data.anio;
+        // [v2.42.12] Precargar también la lista de IGV a favor del mes para que
+        // el detalle abra instantáneo (sin esperar el roundtrip a WH al hacer
+        // click en "Ver detalle"). Silent + fire-and-forget: no bloquea el login.
+        _tribFetchIGVFavor(true);
         // Badge: si hay alertas (errores CPE u OCR), mostrar en nav
         const alertas = (res.data.cpeErrores || 0) + (res.data.guiasIlegibles || 0);
         const badge = $('tribNavBadge');
