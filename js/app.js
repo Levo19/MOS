@@ -6152,13 +6152,11 @@ const MOS = (() => {
               ${ventaC !== null ? `<span class="text-[10px] text-cyan-300">→ S/${ventaC.toFixed(2)}</span>` : ''}
             </label>
           </div>
-          <!-- Propagación a presentaciones (default ON) -->
-          ${c.opcion !== 'A' ? `
-            <label class="flex items-center gap-2 mt-2 px-2 py-1.5 rounded-lg bg-purple-900/20 border border-purple-500/30 cursor-pointer">
-              <input type="checkbox" ${c.propagar ? 'checked' : ''} onchange="MOS._opsJefaTogglePropagar(${idx}, this.checked)" class="accent-purple-400">
-              <span class="text-[11px] text-purple-200">📦 Propagar a presentaciones del canónico</span>
-            </label>
-          ` : ''}
+          <!-- [v2.43.6] Propagación a presentaciones — lista expandida con
+               checkboxes por presentación + cálculo del precio nuevo según
+               opción elegida (B → ventaCanónico × factor · C → costo / (1-m)).
+               El canónico va primero, luego presentaciones ordenadas por factor. -->
+          ${c.opcion !== 'A' ? _opsJefaRenderPresentaciones(idx, c, costo) : ''}
           ${c.notas ? `<div class="text-[10px] text-slate-500 italic mt-2">"${_escapeHtml(c.notas)}"</div>` : ''}
         `}
       </div>`;
@@ -6212,12 +6210,116 @@ const MOS = (() => {
     _opsJefaRenderResultados();
   }
 
-  // [v2.43.4] Toggle propagar a presentaciones
+  // [v2.43.4] Toggle propagar a presentaciones (global — legacy compat)
   function _opsJefaTogglePropagar(idx, val) {
     const c = _opsJefaState.correcciones[idx];
     if (!c) return;
     c.propagar = !!val;
     try { _opsBeep('tac'); } catch(_){}
+  }
+
+  // [v2.43.6] Render expandido de presentaciones del canónico con checkbox
+  // por presentación + precio nuevo calculado en vivo según opción B/C.
+  // El canónico aparece primero, luego presentaciones ordenadas por factor.
+  function _opsJefaRenderPresentaciones(idx, c, costo) {
+    try {
+      const skuBase = String(c.skuBase || '').trim();
+      if (!skuBase) return '';
+      // Buscar canónico (factorConversion=1 o igual al skuBase)
+      const canonico = (S.productos || []).find(p =>
+        String(p.SKU_Base || p.skuBase || '').trim() === skuBase
+        && (parseFloat(p.factorConversion) === 1 || p.idProducto === skuBase || p.skuBase === p.idProducto)
+      );
+      // Buscar presentaciones (mismo skuBase, factor != 1)
+      const presentaciones = (S.productos || []).filter(p =>
+        String(p.SKU_Base || p.skuBase || '').trim() === skuBase
+        && parseFloat(p.factorConversion) > 1
+      ).sort((a, b) => parseFloat(a.factorConversion) - parseFloat(b.factorConversion));
+
+      // Lista combinada: canónico primero + presentaciones
+      const todas = [];
+      if (canonico) todas.push({ ...canonico, _esCanon: true, factor: 1 });
+      presentaciones.forEach(p => {
+        todas.push({ ...p, _esCanon: false, factor: parseFloat(p.factorConversion) || 1 });
+      });
+      if (!todas.length) {
+        // Sin productos en cat — mostrar mensaje simple con check global compat
+        return `<label class="flex items-center gap-2 mt-2 px-2 py-1.5 rounded-lg bg-purple-900/20 border border-purple-500/30 cursor-pointer">
+          <input type="checkbox" ${c.propagar ? 'checked' : ''} onchange="MOS._opsJefaTogglePropagar(${idx}, this.checked)" class="accent-purple-400">
+          <span class="text-[11px] text-purple-200">📦 Propagar a presentaciones (no se encontraron en cat)</span>
+        </label>`;
+      }
+
+      // Inicializar mapa de propagación por presentación si no existe
+      if (!c.presPropagar) {
+        c.presPropagar = {};
+        todas.forEach(p => { c.presPropagar[p.idProducto] = true; });
+      }
+      // Asegurar que productos nuevos tengan default true
+      todas.forEach(p => {
+        if (c.presPropagar[p.idProducto] === undefined) c.presPropagar[p.idProducto] = true;
+      });
+
+      // Calcular precio nuevo del canónico según opción
+      let precioCanonicoNuevo = null;
+      if (c.opcion === 'B' && c.ventaNueva > 0) {
+        precioCanonicoNuevo = parseFloat(c.ventaNueva);
+      } else if (c.opcion === 'C' && c.margenNuevoPct > 0 && costo > 0) {
+        precioCanonicoNuevo = +(costo / (1 - parseFloat(c.margenNuevoPct))).toFixed(2);
+      }
+
+      const totalSeleccionados = todas.filter(p => c.presPropagar[p.idProducto]).length;
+      const totalDisponibles = todas.length;
+
+      // Render
+      const filasHtml = todas.map(p => {
+        const precioActual = parseFloat(p.precioVenta) || 0;
+        const precioNuevo = (precioCanonicoNuevo !== null) ? +(precioCanonicoNuevo * p.factor).toFixed(2) : null;
+        const cambio = (precioNuevo !== null && Math.abs(precioNuevo - precioActual) > 0.005);
+        const checked = c.presPropagar[p.idProducto];
+        const factorLabel = p._esCanon ? 'CANÓNICO' : `×${p.factor}`;
+        const factorCls = p._esCanon ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'bg-slate-700 text-slate-300';
+        return `<label class="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer ${checked ? 'bg-purple-900/30 border border-purple-500/40' : 'bg-slate-900/40 border border-slate-700 opacity-60'}" style="transition:all .15s ease">
+          <input type="checkbox" ${checked ? 'checked' : ''} onchange="MOS._opsJefaTogglePresentacion(${idx}, '${_escapeHtml(p.idProducto)}', this.checked)" class="accent-purple-400 shrink-0">
+          <span class="text-[10px] font-bold px-1.5 py-0.5 rounded ${factorCls} shrink-0">${factorLabel}</span>
+          <span class="text-[11px] text-slate-200 flex-1 truncate" title="${_escapeHtml(p.descripcion || p.idProducto)}">${_escapeHtml(p.descripcion || p.idProducto)}</span>
+          <span class="text-[10px] text-slate-400 font-mono shrink-0">S/${precioActual.toFixed(2)}</span>
+          ${cambio ? `<span class="text-[10px] text-purple-300 shrink-0">→</span><span class="text-[11px] font-bold text-purple-200 shrink-0" style="animation:opsNumPulse .4s cubic-bezier(.34,1.56,.64,1)">S/${precioNuevo.toFixed(2)}</span>` : ''}
+        </label>`;
+      }).join('');
+
+      return `<div class="mt-2 p-2 rounded-lg bg-purple-950/30 border border-purple-500/30">
+        <div class="flex items-center justify-between mb-1.5 px-1">
+          <span class="text-[11px] font-bold text-purple-200">📦 Propagar a presentaciones (${totalSeleccionados}/${totalDisponibles})</span>
+          <button onclick="MOS._opsJefaTodasPresentaciones(${idx}, ${totalSeleccionados !== totalDisponibles})"
+                  class="text-[10px] text-purple-300 hover:text-purple-100 underline">
+            ${totalSeleccionados === totalDisponibles ? 'Ninguno' : 'Todos'}
+          </button>
+        </div>
+        <div class="space-y-1">${filasHtml}</div>
+      </div>`;
+    } catch(e) {
+      console.warn('[_opsJefaRenderPresentaciones]', e);
+      return '';
+    }
+  }
+
+  // [v2.43.6] Toggle propagación de UNA presentación específica
+  function _opsJefaTogglePresentacion(idx, idProducto, val) {
+    const c = _opsJefaState.correcciones[idx];
+    if (!c || !c.presPropagar) return;
+    c.presPropagar[idProducto] = !!val;
+    try { _opsBeep('tac'); } catch(_){}
+    _opsJefaRenderResultados();
+  }
+
+  // [v2.43.6] Toggle masivo: todos los checkboxes a true (selectAll=true) o false
+  function _opsJefaTodasPresentaciones(idx, selectAll) {
+    const c = _opsJefaState.correcciones[idx];
+    if (!c || !c.presPropagar) return;
+    Object.keys(c.presPropagar).forEach(k => { c.presPropagar[k] = !!selectAll; });
+    try { _opsBeep('ok'); } catch(_){}
+    _opsJefaRenderResultados();
   }
 
   function _opsJefaEditar(idx, campo, valor) {
@@ -6244,16 +6346,25 @@ const MOS = (() => {
       .filter(c => !c.tachado && c.opcion && c.opcion !== 'A')
       .filter(c => (c.opcion === 'B' && c.ventaNueva != null && c.ventaNueva > 0)
                 || (c.opcion === 'C' && c.margenNuevoPct != null && c.margenNuevoPct > 0))
-      .map(c => ({
-        skuBase:        c.skuBase,
-        descripcion:    c.descripcion,
-        costoNuevo:     c.costo,
-        // Enviar solo el campo que corresponde a la opción (evita ambigüedad en backend)
-        ventaNueva:     c.opcion === 'B' ? c.ventaNueva     : null,
-        margenNuevoPct: c.opcion === 'C' ? c.margenNuevoPct : null,
-        opcion:         c.opcion,
-        propagar:       c.propagar !== false  // default true
-      }));
+      .map(c => {
+        // [v2.43.6] Lista de presentaciones específicas a propagar (subset
+        // de las elegidas por checkbox). Si presPropagar no existe, se asume
+        // que el backend propaga a todas (default histórico).
+        const presentacionesPropagar = c.presPropagar
+          ? Object.keys(c.presPropagar).filter(k => c.presPropagar[k])
+          : null;
+        return {
+          skuBase:        c.skuBase,
+          descripcion:    c.descripcion,
+          costoNuevo:     c.costo,
+          // Enviar solo el campo que corresponde a la opción (evita ambigüedad en backend)
+          ventaNueva:     c.opcion === 'B' ? c.ventaNueva     : null,
+          margenNuevoPct: c.opcion === 'C' ? c.margenNuevoPct : null,
+          opcion:         c.opcion,
+          propagar:       c.propagar !== false,  // default true (legacy compat)
+          presentacionesPropagar: presentacionesPropagar  // [v2.43.6] subset específico
+        };
+      });
     if (!items.length) {
       try { _opsBeep('warn'); } catch(_){}
       toast('No hay cambios para aplicar — todos están en opción A', 'warning');
@@ -32276,8 +32387,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.42.07] Flow para-jefa: ticket profesional + aplicar respuesta + OCR
     abrirSelPrinterJefa, opsAbrirAplicarRespuestaJefa, opsCerrarAplicarRespuestaJefa,
     _opsJefaEditar, _opsJefaConfirmarAplicar, opsOcrComprobantePrepoblar,
-    // [v2.43.4-5] Modal jefa A/B/C + entrada manual
+    // [v2.43.4-6] Modal jefa A/B/C + entrada manual + presentaciones individuales
     _opsJefaSetOpcion, _opsJefaTogglePropagar, _opsJefaIniciarManual,
+    _opsJefaTogglePresentacion, _opsJefaTodasPresentaciones,
     // [v2.43.5] Exponer _opsBeep para callers inline desde template
     _opsBeep,
     _impactoTogglesel, _impactoSetPrecio, cerrarImpactoCostos, aplicarSugerenciasSeleccionadas,
