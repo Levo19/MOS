@@ -1077,7 +1077,16 @@ const MOS = (() => {
       const tip = (mi.modo === 'FIJO' || mi.modo === 'LIBRE')
         ? 'Modo ' + mi.modo + ' (sin objetivo)'
         : 'Objetivo política: ' + (parseFloat(mi.objetivo) || 0).toFixed(1) + '%';
-      return `<div class="cat-margen-chip cat-margen-${nivel}" title="${tip}">
+      // [v2.43.3] Chip clicable: tap → atajo directo al modal de producto con
+      // sección "Política de precios" abierta. Antes eran 4 taps (✏️ → expandir
+      // → activar override → editar), ahora es 1.
+      const idProd = producto.idProducto || producto.SKU_Base || '';
+      return `<div class="cat-margen-chip cat-margen-${nivel} cat-margen-chip-tap" title="${tip} · tap para ajustar"
+                   onclick="event.stopPropagation();MOS.abrirModalProducto('${_escapeHtml(String(idProd))}',{focusPolitica:true})"
+                   style="cursor:pointer;transition:transform .15s cubic-bezier(.34,1.56,.64,1)"
+                   onmousedown="this.style.transform='scale(.94)'"
+                   onmouseup="this.style.transform='scale(1)'"
+                   onmouseleave="this.style.transform='scale(1)'">
         <span class="cat-margen-ico">${ico}</span>
         <span class="cat-margen-num">${m.toFixed(1)}%</span>
         <span class="cat-margen-lbl">MARGEN</span>
@@ -5803,7 +5812,8 @@ const MOS = (() => {
     const printerId = await abrirPrinterPicker({
       titulo:    '🖨 Imprimir costos de guía',
       subtitulo: idGuia + ' · costos de proveedor',
-      filtroTipo: 'TICKET'
+      filtroTipo: 'TICKET',
+      flowKey:   'costos'   // [v2.43.3] recordar última impresora
     });
     if (printerId) {
       await _opsEnviarPrintCostos(printerId, null);
@@ -5895,7 +5905,8 @@ const MOS = (() => {
     const printerId = await abrirPrinterPicker({
       titulo:    '🖨 Imprimir reporte para jefa',
       subtitulo: idGuia + ' · cuadros para decidir costos/precios',
-      filtroTipo: 'TICKET'
+      filtroTipo: 'TICKET',
+      flowKey:   'jefa'   // [v2.43.3] recordar última impresora de este flow
     });
     if (printerId) {
       await _opsEnviarPrintCostos(printerId, null);
@@ -6794,8 +6805,14 @@ const MOS = (() => {
   }
 
   // Cálculo fallback frontend: costo bruto × 1.25 (25% margen)
+  // [v2.43.3] Margen objetivo fallback unificado a 40% (antes 25%).
+  // Coincide con MARGEN_OBJETIVO del backend (Almacen.gs:1840). Antes
+  // había inconsistencia: front usaba 25%, back usaba 40% — generaba
+  // sugerencias distintas según quién respondía primero.
+  // Cálculo precio = costo / (1 - margen) → margen 40% = costo / 0.60.
   function _costosGuiaSugFallback(l, brutoUnit) {
-    const sug = +(brutoUnit * 1.25).toFixed(2);
+    const MARGEN_FALLBACK = 0.40;
+    const sug = +(brutoUnit / (1 - MARGEN_FALLBACK)).toFixed(2);
     return {
       precioVentaActual: parseFloat(l.precioVentaActual) || 0,
       precioVentaSugerido: sug,
@@ -12550,7 +12567,22 @@ const MOS = (() => {
   }
 
   // ── Product modal — abrir ─────────────────────────────────
-  function abrirModalProducto(id) {
+  function abrirModalProducto(id, opts) {
+    opts = opts || {};
+    // [v2.43.3] Si llamaron con focusPolitica, scroll + expandir sección política
+    // tras 250ms (después de renderizar el modal). Ahorra 3 taps al cajero.
+    if (opts.focusPolitica) {
+      setTimeout(() => {
+        try {
+          const sec = document.querySelector('[id*="Politica"],[data-section="politica"],.prod-sec-politica,#prodSecPolitica');
+          if (sec && sec.classList.contains('hidden')) {
+            (typeof prodTogglePolitica === 'function') && prodTogglePolitica();
+          }
+          if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          _opsBeep?.('tac');
+        } catch(_){}
+      }, 280);
+    }
     // Reset
     ['prodDescripcion','prodCodigoBarra','prodMarca','prodPrecioVenta','prodPrecioCosto',
      'prodFactorConvBase','prodMerma','prodFactor','prodIGV','prodCodSUNAT'].forEach(i => { const el=$(i); if(el) el.value=''; });
@@ -26160,6 +26192,28 @@ const MOS = (() => {
 var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   function abrirPrinterPicker(opts) {
     opts = opts || {};
+    // [v2.43.3] Memoria de última impresora por tipo de flow.
+    // Si opts.flowKey está dado y hay impresora cacheada online → usar directo.
+    // Si opts.flowKey === '__skipCache' → ignorar memoria (admin quiere elegir).
+    const _LSKEY = opts.flowKey ? 'mos_lastPrinter_' + opts.flowKey : null;
+    if (_LSKEY && opts.flowKey !== '__skipCache') {
+      try {
+        const cachedId = localStorage.getItem(_LSKEY);
+        if (cachedId) {
+          // Verificar online en background (sin esperar para no demorar al cajero)
+          API.get('verificarImpresoraAhora', { printerId: cachedId }).then(r => {
+            if (!(r && r.data && r.data.estado === 'ONLINE')) {
+              // Si está offline, limpiar caché para forzar elección manual la próxima
+              try { localStorage.removeItem(_LSKEY); } catch(_){}
+            }
+          }).catch(() => {});
+          // Toast optimista + retornar inmediato (la verificación queda en bg)
+          try { _toast?.('info', '🖨 Usando última impresora · tap para cambiar'); } catch(_){}
+          try { _opsBeep?.('tac'); } catch(_){}
+          return Promise.resolve(cachedId);
+        }
+      } catch(_){}
+    }
     return new Promise(resolve => {
       // Setear título/subtítulo dinámicos
       const tit = document.getElementById('liqPrintTitle');
@@ -26204,6 +26258,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         }
         MOS._liqEnviarPrint = prevSend;
         closeModal('modalSelPrinterLiq');
+        // [v2.43.3] Guardar elección para recordar próxima vez si flowKey existe
+        if (_LSKEY) {
+          try { localStorage.setItem(_LSKEY, String(printerId)); } catch(_){}
+        }
         resolve(parseInt(printerId, 10));
       };
       // Listener cancelación
