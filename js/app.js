@@ -5087,19 +5087,19 @@ const MOS = (() => {
         // Overlay lectura — botón entra a modo edición sin cerrar
         btnCostos = `<button class="alm-v-btn-costos" onclick="MOS.opsEntrarModoCostos('${op.fuente}','${_escapeHtml(op.idGuia)}')" title="Editar costos">💰 Editar costos</button>`;
       } else {
-        // Overlay en modo edición — botones guardar/OCR/imprimir/jefa/cancelar
+        // [v2.43.0] Overlay en modo edición — UN SOLO CTA principal + secundarios
+        // chicos. OCR ahora corre automático al entrar (solo mantengo botón de
+        // re-OCR para casos donde admin quiere re-procesar manualmente).
         btnCostos = `
-          <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 3px 8px -2px rgba(16,185,129,.5)"
-                  onclick="MOS.guardarCostosGuia()" title="Guardar costos">💾 Guardar</button>
-          <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#22d3ee,#0891b2);box-shadow:0 3px 8px -2px rgba(34,211,238,.5)"
-                  onclick="MOS.opsOcrComprobantePrepoblar('${_escapeHtml(op.idGuia)}')" title="Leer comprobante con Claude OCR y pre-poblar costos">🤖 OCR comprobante</button>
-          <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#0ea5e9,#06b6d4);box-shadow:0 3px 8px -2px rgba(14,165,233,.5)"
-                  onclick="MOS.abrirSelPrinterCostos('${op.fuente}','${_escapeHtml(op.idGuia)}')" title="Imprimir reporte clásico de costos">🖨 Costos</button>
-          <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#a855f7,#7c3aed);box-shadow:0 3px 8px -2px rgba(168,85,247,.5)"
-                  onclick="MOS.abrirSelPrinterJefa('${op.fuente}','${_escapeHtml(op.idGuia)}')" title="Imprimir ticket para que la jefa decida precios">📋 Para jefa</button>
-          <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#f59e0b,#d97706);box-shadow:0 3px 8px -2px rgba(245,158,11,.5)"
-                  onclick="MOS.opsAbrirAplicarRespuestaJefa('${_escapeHtml(op.idGuia)}')" title="Subir foto del ticket lleno por la jefa">📷 Aplicar respuesta</button>
-          <button class="alm-v-btn-costos" style="background:rgba(71,85,105,.6);box-shadow:none"
+          <!-- CTA PRINCIPAL: guarda + abre picker + imprime ticket para jefa -->
+          <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#a855f7,#7c3aed);box-shadow:0 4px 12px -2px rgba(168,85,247,.6);font-size:13px;padding:10px 14px;font-weight:700"
+                  onclick="MOS.guardarCostosEImprimirJefa()" title="Guarda costos y manda el ticket a la jefa para que decida precios">💾📋 Guardar e imprimir para jefa</button>
+          <!-- Secundarios: re-OCR (override manual) y aplicar respuesta jefa -->
+          <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#22d3ee,#0891b2);box-shadow:0 2px 6px -2px rgba(34,211,238,.5);font-size:11px;padding:7px 10px"
+                  onclick="MOS.opsOcrComprobantePrepoblar('${_escapeHtml(op.idGuia)}')" title="Re-procesar foto con Claude OCR (sobreescribe valores actuales)">🔄 Re-OCR</button>
+          <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#f59e0b,#d97706);box-shadow:0 2px 6px -2px rgba(245,158,11,.5);font-size:11px;padding:7px 10px"
+                  onclick="MOS.opsAbrirAplicarRespuestaJefa('${_escapeHtml(op.idGuia)}')" title="Subir foto del ticket lleno por la jefa">📷 Respuesta jefa</button>
+          <button class="alm-v-btn-costos" style="background:rgba(71,85,105,.6);box-shadow:none;font-size:11px;padding:7px 10px"
                   onclick="MOS.opsSalirModoCostos()" title="Cancelar edición">✕</button>`;
       }
     }
@@ -6183,6 +6183,38 @@ const MOS = (() => {
   function opsEntrarModoCostos(fuente, idGuia) {
     _opsBeep('tac');
     abrirOpsDetalleOverlay(fuente, idGuia, false, true);
+    // [v2.43.0] AUTO-OCR: si la guía tiene foto y ninguna línea tiene costo
+    // todavía, disparar OCR automático al entrar (sin botón manual).
+    // Si el admin ya tocó costos antes, NO sobreescribir.
+    setTimeout(() => {
+      try {
+        const st = S._costosGuiaState;
+        if (!st || String(st.idGuia) !== String(idGuia)) return;
+        if (!st.foto || String(st.foto).trim() === '') return;  // sin foto, nada que OCR
+        const algunoTieneCosto = (st.lineas || []).some(l => parseFloat(l.precioUnitario) > 0 || (l.inputValue !== '' && l.inputValue !== null));
+        if (algunoTieneCosto) return; // admin ya tocó, no auto-overrite
+        if (S._opsOcrYaCorrido && S._opsOcrYaCorrido[idGuia]) return; // ya corrió en esta sesión
+        S._opsOcrYaCorrido = S._opsOcrYaCorrido || {};
+        S._opsOcrYaCorrido[idGuia] = true;
+        opsOcrComprobantePrepoblar(idGuia);
+      } catch(e) { console.warn('[auto-OCR costos]', e); }
+    }, 600); // delay 600ms para que el overlay termine de renderizar
+  }
+
+  // [v2.43.0] CTA combinado: guardar costos + abrir picker de impresora + imprimir
+  // ticket para jefa, todo en una sola acción. Reduce 2 botones a 1.
+  async function guardarCostosEImprimirJefa() {
+    const st = S._costosGuiaState;
+    if (!st) return;
+    try {
+      await guardarCostosGuia();
+      // Esperar un tick para que el guardado persista antes de imprimir
+      await new Promise(r => setTimeout(r, 300));
+      abrirSelPrinterJefa(st.fuente, st.idGuia);
+    } catch(e) {
+      console.error('[guardarCostosEImprimirJefa]', e);
+      _toast('error', '❌ Error al guardar costos: ' + (e.message || e));
+    }
   }
   function opsSalirModoCostos() {
     S._opsModoCostos = false;
@@ -31896,7 +31928,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirOpsDetalleOverlay, cerrarOpsDetalleOverlay, abrirFotoOverlay,
     abrirCostosGuia, _costosGuiaUpdLinea, _costosGuiaSetMode, _costosGuiaSetIgv, cerrarCostosGuia, guardarCostosGuia,
     _costosGuiaSugerirDebounce, _costosGuiaSugUpdate, _costosGuiaSugToggle,
-    opsEntrarModoCostos, opsSalirModoCostos,
+    opsEntrarModoCostos, opsSalirModoCostos, guardarCostosEImprimirJefa,
     abrirSelPrinterCostos, cerrarSelPrinterCostos, _opsRecargarPrinters, _opsEnviarPrintCostos,
     // [v2.42.07] Flow para-jefa: ticket profesional + aplicar respuesta + OCR
     abrirSelPrinterJefa, opsAbrirAplicarRespuestaJefa, opsCerrarAplicarRespuestaJefa,
