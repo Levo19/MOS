@@ -5956,15 +5956,28 @@ const MOS = (() => {
             <button onclick="MOS.opsCerrarAplicarRespuestaJefa()" class="w-9 h-9 rounded-full bg-slate-800 hover:bg-rose-500/40 transition-all text-slate-300">✕</button>
           </div>
           <div class="px-5 py-4 overflow-y-auto flex-1" id="opsJefaBody">
-            <div class="text-center py-12 text-slate-400">
-              <div class="text-5xl mb-3">📸</div>
-              <p class="text-sm mb-4">Saca foto del ticket que la jefa rellenó</p>
+            <div class="text-center py-10 text-slate-400">
+              <div class="text-5xl mb-3">📋</div>
+              <p class="text-sm mb-5">¿Cómo me das la autorización de la jefa?</p>
               <input type="file" id="opsJefaFotoInput" accept="image/*" capture="environment" class="hidden">
-              <button onclick="document.getElementById('opsJefaFotoInput').click()"
-                      class="px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 active:scale-95 text-white font-black rounded-xl shadow-lg shadow-emerald-500/40">
-                📷 Tomar / Subir foto
-              </button>
-              <p class="text-[10px] text-slate-500 mt-3">Claude OCR leerá lo que escribió la jefa</p>
+              <!-- [v2.43.5] 2 opciones lado a lado: OCR foto · Entrada manual sin OCR -->
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md mx-auto">
+                <button onclick="document.getElementById('opsJefaFotoInput').click(); try{MOS._opsBeep?.('tac')}catch(_){}"
+                        class="ops-cta-jefa px-4 py-5 bg-gradient-to-br from-emerald-500 to-emerald-700 hover:from-emerald-400 active:scale-95 text-white font-black rounded-2xl shadow-lg shadow-emerald-500/40 flex flex-col items-center gap-2 transition"
+                        style="transition:transform .15s ease,box-shadow .2s ease">
+                  <span class="text-3xl">📷</span>
+                  <span class="text-sm">Subir foto del ticket</span>
+                  <span class="text-[10px] opacity-80 font-normal">Claude OCR auto</span>
+                </button>
+                <button onclick="MOS._opsJefaIniciarManual()"
+                        class="ops-cta-jefa px-4 py-5 bg-gradient-to-br from-cyan-500 to-cyan-700 hover:from-cyan-400 active:scale-95 text-white font-black rounded-2xl shadow-lg shadow-cyan-500/40 flex flex-col items-center gap-2"
+                        style="transition:transform .15s ease,box-shadow .2s ease">
+                  <span class="text-3xl">✏️</span>
+                  <span class="text-sm">Entrada manual</span>
+                  <span class="text-[10px] opacity-80 font-normal">Sin OCR · tipear directo</span>
+                </button>
+              </div>
+              <p class="text-[10px] text-slate-500 mt-5">Si la foto es borrosa o no la tienes, usa entrada manual.</p>
             </div>
           </div>
         </div>`;
@@ -6158,6 +6171,35 @@ const MOS = (() => {
         </button>
         <p class="text-[10px] text-slate-500 text-center mt-2">Requiere PIN admin · auto-imprime ticket de auditoría con cambios resaltados</p>
       </div>`;
+  }
+
+  // [v2.43.5] Entrada manual sin OCR: llena correcciones desde el contexto
+  // de la guía (los items que existen) con valores vacíos. Admin elige opción
+  // y tipea precio/margen para los que corresponda. Mucho más rápido cuando
+  // la foto no está clara o se quiere ir directo.
+  function _opsJefaIniciarManual() {
+    try { _opsBeep('tac'); } catch(_){}
+    const ctx = _opsJefaState.contexto || [];
+    if (!ctx.length) {
+      toast('Sin productos en el contexto de la guía', 'warning');
+      return;
+    }
+    _opsJefaState.correcciones = ctx.map(item => ({
+      skuBase:        item.skuBase,
+      descripcion:    item.descripcion,
+      costo:          item.costo || 0,
+      ventaNueva:     null,
+      margenNuevoPct: null,
+      tachado:        false,
+      confidence:     100,  // entrada manual = 100% confianza por defecto
+      notas:          '',
+      editado:        false,
+      opcion:         'A',  // todos en sin cambio por default
+      _opcionInicializada: true,
+      propagar:       true
+    }));
+    _opsJefaState.confidenceGlobal = 100;
+    _opsJefaRenderResultados();
   }
 
   // [v2.43.4] Cambia la opción A/B/C de un item — con sonido suave + re-render
@@ -32234,8 +32276,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.42.07] Flow para-jefa: ticket profesional + aplicar respuesta + OCR
     abrirSelPrinterJefa, opsAbrirAplicarRespuestaJefa, opsCerrarAplicarRespuestaJefa,
     _opsJefaEditar, _opsJefaConfirmarAplicar, opsOcrComprobantePrepoblar,
-    // [v2.43.4] Modal jefa A/B/C
-    _opsJefaSetOpcion, _opsJefaTogglePropagar,
+    // [v2.43.4-5] Modal jefa A/B/C + entrada manual
+    _opsJefaSetOpcion, _opsJefaTogglePropagar, _opsJefaIniciarManual,
+    // [v2.43.5] Exponer _opsBeep para callers inline desde template
+    _opsBeep,
     _impactoTogglesel, _impactoSetPrecio, cerrarImpactoCostos, aplicarSugerenciasSeleccionadas,
     almLoadZonas, almRefreshZonas, almAbrirStockDetalle, cerrarStockDetalle, almRefreshStockDetalle,
     _almGenerarPedidoFromInsight, _almPickProveedor, cerrarSelProveedor,
