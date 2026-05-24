@@ -5334,6 +5334,30 @@ const MOS = (() => {
 
     // Modo COSTOS — editable + sugerencia inline
     const st = S._costosGuiaState;
+
+    // [v2.43.8] CARDS DE ORIGEN — mismo patrón que el modal jefa (2 cards
+    // arriba). Hace explícito el origen de los costos: foto OCR o manual.
+    const tieneFoto = !!(st.foto && String(st.foto).trim());
+    const ocrYaCorrido = !!(S._opsOcrYaCorrido && S._opsOcrYaCorrido[st.idGuia]);
+    const algunoTieneCosto = (st.lineas || []).some(l => parseFloat(l.precioUnitario) > 0 || (l.inputValue !== '' && l.inputValue != null && parseFloat(l.inputValue) > 0));
+    const modoOrigen = S._costosModoOrigen || (tieneFoto && ocrYaCorrido ? 'foto' : (algunoTieneCosto ? 'manual' : 'foto'));
+
+    const cardsOrigenHtml = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <button onclick="MOS.costosUsarOrigenFoto('${op.fuente}','${_escapeHtml(op.idGuia)}')"
+                class="ops-cta-jefa" style="padding:12px;border-radius:14px;border:0;cursor:pointer;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:4px;color:#fff;transition:transform .15s ease,box-shadow .2s ease;${modoOrigen === 'foto' ? 'background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 6px 16px -2px rgba(16,185,129,.55);outline:3px solid rgba(16,185,129,.35);outline-offset:1px' : 'background:linear-gradient(135deg,rgba(16,185,129,.35),rgba(5,150,105,.35));opacity:.7'}">
+          <span style="font-size:24px">📷</span>
+          <span style="font-size:12px">${tieneFoto ? 'OCR de foto' : 'Sin foto en guía'}</span>
+          <span style="font-size:9px;opacity:.85;font-weight:500">${tieneFoto ? (ocrYaCorrido ? '✓ Procesada · tap = re-OCR' : 'Tap para procesar') : 'Sube foto desde WH primero'}</span>
+        </button>
+        <button onclick="MOS.costosUsarOrigenManual()"
+                class="ops-cta-jefa" style="padding:12px;border-radius:14px;border:0;cursor:pointer;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:4px;color:#fff;transition:transform .15s ease,box-shadow .2s ease;${modoOrigen === 'manual' ? 'background:linear-gradient(135deg,#06b6d4,#0891b2);box-shadow:0 6px 16px -2px rgba(6,182,212,.55);outline:3px solid rgba(6,182,212,.35);outline-offset:1px' : 'background:linear-gradient(135deg,rgba(6,182,212,.35),rgba(8,145,178,.35));opacity:.7'}">
+          <span style="font-size:24px">✏️</span>
+          <span style="font-size:12px">Entrada manual</span>
+          <span style="font-size:9px;opacity:.85;font-weight:500">${modoOrigen === 'manual' ? 'Activo · escribe abajo' : 'Tap para vaciar y escribir'}</span>
+        </button>
+      </div>`;
+
     const togglesHtml = `
       <div class="alm-v-costos-toggles">
         <div class="alm-v-tg">
@@ -5460,6 +5484,7 @@ const MOS = (() => {
       </div>`;
 
     return `<input type="hidden" id="costosGuiaInfo" value="${_escapeHtml(op.idGuia)}">
+      ${cardsOrigenHtml}
       ${togglesHtml}
       ${progresoHtml}
       ${filasHtml}
@@ -6625,6 +6650,47 @@ const MOS = (() => {
         setTimeout(() => { try { badge.remove(); } catch(_){} }, 280);
       }
     } catch(_){}
+  }
+
+  // [v2.43.8] Handlers de las 2 cards de origen del overlay de costos.
+  // El admin elige explícitamente si quiere usar OCR de foto o llenar manual.
+  // Sigue el mismo patrón visual/UX que el modal jefa (📷 foto · ✏️ manual).
+  function costosUsarOrigenFoto(fuente, idGuia) {
+    try { _opsBeep('tac'); } catch(_){}
+    const st = S._costosGuiaState;
+    if (!st) return;
+    if (!st.foto || !String(st.foto).trim()) {
+      try { _opsBeep('warn'); } catch(_){}
+      try { _toast?.('warn', '📷 Esta guía no tiene foto. Sube una desde WH primero.'); } catch(_){}
+      return;
+    }
+    S._costosModoOrigen = 'foto';
+    // Disparar / re-disparar OCR — opsOcrComprobantePrepoblar ya maneja el feedback visual
+    opsOcrComprobantePrepoblar(idGuia);
+  }
+  function costosUsarOrigenManual() {
+    try { _opsBeep('tac'); } catch(_){}
+    const st = S._costosGuiaState;
+    if (!st) return;
+    // Confirmar si hay costos ya tipeados — no perder data por accidente
+    const algunoConDato = (st.lineas || []).some(l => l.inputValue !== '' && l.inputValue != null && parseFloat(l.inputValue) > 0);
+    if (algunoConDato) {
+      // Usamos confirm nativo solo por simplicidad — si te molesta, lo cambio por modal custom
+      if (!confirm('Hay costos ya escritos. ¿Vaciar todo para empezar manual?')) return;
+    }
+    // Vaciar todos los inputValue y limpiar sugerencias
+    (st.lineas || []).forEach(l => { l.inputValue = ''; l._sugerencia = null; });
+    S._costosModoOrigen = 'manual';
+    try { _opsBeep('ok'); } catch(_){}
+    try { _toast?.('info', '✏️ Modo manual · escribe cada costo abajo'); } catch(_){}
+    // Re-render del voucher actual
+    try {
+      const op = S._costosGuiaState && _findOpByKey(S._costosGuiaState.fuente + '_' + S._costosGuiaState.idGuia);
+      if (op) {
+        const cont = $('almOpsDetalleContent');
+        if (cont) cont.innerHTML = _renderVoucher(op, 0);
+      }
+    } catch(e) { console.warn('[costosUsarOrigenManual] re-render falló:', e); }
   }
 
   // [v2.43.0+2] CTA combinado: guardar costos + abrir picker de impresora +
@@ -32408,6 +32474,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirCostosGuia, _costosGuiaUpdLinea, _costosGuiaSetMode, _costosGuiaSetIgv, cerrarCostosGuia, guardarCostosGuia,
     _costosGuiaSugerirDebounce, _costosGuiaSugUpdate, _costosGuiaSugToggle,
     opsEntrarModoCostos, opsSalirModoCostos, guardarCostosEImprimirJefa,
+    // [v2.43.8] Cards origen (foto/manual) en overlay de costos
+    costosUsarOrigenFoto, costosUsarOrigenManual,
     abrirSelPrinterCostos, cerrarSelPrinterCostos, _opsRecargarPrinters, _opsEnviarPrintCostos,
     // [v2.42.07] Flow para-jefa: ticket profesional + aplicar respuesta + OCR
     abrirSelPrinterJefa, opsAbrirAplicarRespuestaJefa, opsCerrarAplicarRespuestaJefa,
