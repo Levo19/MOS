@@ -5219,6 +5219,7 @@ const MOS = (() => {
                   title="${pctCostos}% de ítems costeados">💰 Actualizar costos${_lblCostos}</button>
           <button class="alm-v-btn-costos" style="${_bgPrecios};box-shadow:0 4px 10px -2px rgba(245,158,11,.5);font-size:12px;font-weight:700;padding:9px 13px;transition:background .4s ease"
                   onclick="event.stopPropagation();MOS.opsAbrirAplicarRespuestaJefa('${_escapeHtml(op.idGuia)}')"
+                  onpointerenter="MOS._opsJefaPrecargarContexto('${_escapeHtml(op.idGuia)}')"
                   title="${pctPrecios}% precios aplicados">🏷 Actualizar precios${_lblPrecios}</button>`;
       } else if (!modoCostos) {
         // Overlay lectura — mismo par de botones que en la card
@@ -5228,6 +5229,7 @@ const MOS = (() => {
                   title="Editar costos">💰 Actualizar costos</button>
           <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#f59e0b,#d97706);box-shadow:0 4px 10px -2px rgba(245,158,11,.55);font-size:12px;font-weight:700;padding:9px 13px"
                   onclick="MOS.opsAbrirAplicarRespuestaJefa('${_escapeHtml(op.idGuia)}')"
+                  onpointerenter="MOS._opsJefaPrecargarContexto('${_escapeHtml(op.idGuia)}')"
                   title="Subir foto de la jefa o ingresar manual">🏷 Actualizar precios</button>`;
       } else {
         // [v2.43.7] Overlay modo costos AUTOCONTENIDO — solo lo necesario para
@@ -6463,6 +6465,52 @@ const MOS = (() => {
     procesando: false
   };
 
+  // [v2.43.19] Revalidación silenciosa del contexto (no toca la UI a menos que
+  // detecte cambios). Se usa cuando ya servimos cache stale.
+  async function _opsJefaRevalidarContextoBg(idGuia) {
+    try {
+      const r = await API.post('getContextoTicketJefa', { idGuia });
+      const items = (r && r.items) || (r && r.data && r.data.items) || [];
+      if (!items.length) return;
+      const prevHash = JSON.stringify((_opsJefaState.contexto || []).map(c => c.skuBase + '|' + c.costo));
+      const newHash  = JSON.stringify(items.map(c => c.skuBase + '|' + c.costo));
+      S._opsJefaContextoCache = S._opsJefaContextoCache || {};
+      S._opsJefaContextoCache[idGuia] = { items, ts: Date.now() };
+      // Solo re-render si cambió Y todavía estamos en esa guía Y modal abierto
+      if (prevHash !== newHash
+          && _opsJefaState.idGuia === idGuia
+          && !document.getElementById('modalAplicarRespuestaJefa')?.classList.contains('hidden')) {
+        _opsJefaState.contexto = items;
+        // Si admin no tocó nada, refrescar. Si ya editó, no pisar.
+        const algoEditado = (_opsJefaState.correcciones || []).some(c => c.editado || c.opcion !== 'A');
+        if (!algoEditado) {
+          _opsJefaState.correcciones = [];
+          _opsJefaRenderBody();
+          try { toast('✓ Contexto actualizado', 'info', 2000); } catch(_){}
+        }
+      }
+    } catch(_) { /* silencioso — es bg */ }
+  }
+
+  // [v2.43.19] PRECARGA: al expandir un voucher en la lista de ops, dispara
+  // fetch de contexto en background. Si el admin tap "Actualizar precios"
+  // después, el modal abre instantáneo desde cache.
+  function _opsJefaPrecargarContexto(idGuia) {
+    if (!idGuia) return;
+    S._opsJefaContextoCache = S._opsJefaContextoCache || {};
+    const cached = S._opsJefaContextoCache[idGuia];
+    if (cached && (Date.now() - cached.ts < 300000)) return; // ya hay cache reciente
+    // Fire-and-forget — no esperamos respuesta, solo poblamos cache
+    API.post('getContextoTicketJefa', { idGuia })
+      .then(r => {
+        const items = (r && r.items) || (r && r.data && r.data.items) || [];
+        if (items.length) {
+          S._opsJefaContextoCache[idGuia] = { items, ts: Date.now() };
+        }
+      })
+      .catch(() => { /* silencioso */ });
+  }
+
   async function opsAbrirAplicarRespuestaJefa(idGuia) {
     _opsBeep('tac');
     _opsJefaState.idGuia = idGuia;
@@ -6513,13 +6561,32 @@ const MOS = (() => {
     }
     document.getElementById('opsJefaSubtitle').textContent = 'Guía: ' + idGuia;
     modal.classList.remove('hidden');
-    // Render inicial con spinner de carga de contexto
+    // [v2.43.19] Stale-while-revalidate: si tenemos cache reciente del
+    // contexto, lo usamos INSTANT (sin spinner), y revalidamos en bg.
+    // Si no hay cache → spinner de carga + await.
+    S._opsJefaContextoCache = S._opsJefaContextoCache || {};
+    const cached = S._opsJefaContextoCache[idGuia];
+    const cacheFresca = cached && (Date.now() - cached.ts < 300000); // 5 min
+    if (cacheFresca && cached.items && cached.items.length) {
+      _opsJefaState.contexto = cached.items;
+      _opsJefaState.cargandoContexto = false;
+      _opsJefaRenderCards();
+      _opsJefaRenderBody();
+      // Revalidar silenciosamente — si trae más items, re-render
+      _opsJefaRevalidarContextoBg(idGuia);
+      return;
+    }
+    // Sin cache → spinner inicial
     _opsJefaRenderCards();
     _opsJefaRenderBody();
     // Cargar contexto en background — al terminar re-render del body
     try {
       const r = await API.post('getContextoTicketJefa', { idGuia });
       _opsJefaState.contexto = (r && r.items) || (r && r.data && r.data.items) || [];
+      // Persistir en cache
+      if (_opsJefaState.contexto.length) {
+        S._opsJefaContextoCache[idGuia] = { items: _opsJefaState.contexto, ts: Date.now() };
+      }
     } catch(e) {
       console.warn('[opsJefa] getContextoTicketJefa fall:', e);
       _opsJefaState.contexto = [];
@@ -6578,12 +6645,12 @@ const MOS = (() => {
           <span>📷</span><span>Subir foto del ticket de la jefa (opcional)</span>
         </div>
         <div class="grid grid-cols-3 gap-1.5">
-          <label for="opsJefaFotoCam"
-                 class="ops-cta-jefa cursor-pointer py-2.5 px-2 rounded-xl flex flex-col items-center justify-center gap-0.5 transition select-none text-white font-bold text-center"
+          <button onclick="MOS._opsJefaAbrirCamara()"
+                 class="ops-cta-jefa cursor-pointer py-2.5 px-2 rounded-xl flex flex-col items-center justify-center gap-0.5 transition select-none text-white font-bold text-center border-0"
                  style="background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 4px 10px -2px rgba(16,185,129,.45)">
             <span class="text-lg">📸</span>
             <span class="text-[10px] leading-tight">Cámara</span>
-          </label>
+          </button>
           <label for="opsJefaFotoFile"
                  class="ops-cta-jefa cursor-pointer py-2.5 px-2 rounded-xl flex flex-col items-center justify-center gap-0.5 transition select-none text-white font-bold text-center"
                  style="background:linear-gradient(135deg,#0891b2,#0e7490);box-shadow:0 4px 10px -2px rgba(8,145,178,.45)">
@@ -6602,6 +6669,121 @@ const MOS = (() => {
         </p>
       </div>
     `;
+  }
+
+  // [v2.43.19] Cámara real con getUserMedia. En PC abre la webcam, no el
+  // explorador. En móvil/tablet también usa getUserMedia → cámara nativa.
+  // Si getUserMedia no soporta → fallback al input file con capture.
+  async function _opsJefaAbrirCamara() {
+    try { _opsBeep('tac'); } catch(_){}
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      // Fallback: input nativo con capture (móvil suele tener mejor UX nativo)
+      document.getElementById('opsJefaFotoCam').click();
+      return;
+    }
+    // Pedir stream — facingMode environment = cámara trasera en móvil
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false
+      });
+    } catch(e) {
+      console.warn('[opsJefa] getUserMedia denied/fail:', e);
+      try { toast('No se pudo abrir cámara · usa Archivo o Pegar', 'warning', 4500); } catch(_){}
+      // Fallback al input nativo
+      document.getElementById('opsJefaFotoCam').click();
+      return;
+    }
+    // Construir overlay de captura
+    let camOv = document.getElementById('opsJefaCamOverlay');
+    if (!camOv) {
+      camOv = document.createElement('div');
+      camOv.id = 'opsJefaCamOverlay';
+      camOv.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(2,6,23,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px';
+      camOv.innerHTML = `
+        <div style="position:relative;width:100%;max-width:720px;background:#000;border-radius:18px;overflow:hidden;border:2px solid rgba(16,185,129,.5);box-shadow:0 25px 60px -10px rgba(0,0,0,.7)">
+          <video id="opsJefaCamVideo" autoplay playsinline style="width:100%;display:block;background:#000"></video>
+          <div style="position:absolute;top:12px;right:12px;display:flex;gap:8px">
+            <button id="opsJefaCamFlip" style="width:44px;height:44px;border-radius:50%;background:rgba(15,23,42,.85);color:#fff;border:1px solid rgba(148,163,184,.3);cursor:pointer;font-size:18px;backdrop-filter:blur(8px)" title="Cambiar cámara">🔄</button>
+            <button id="opsJefaCamClose" style="width:44px;height:44px;border-radius:50%;background:rgba(220,38,38,.85);color:#fff;border:0;cursor:pointer;font-size:18px;font-weight:900" title="Cerrar">✕</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:14px;margin-top:18px;align-items:center">
+          <button id="opsJefaCamCapture" style="width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:4px solid #fff;cursor:pointer;font-size:32px;box-shadow:0 8px 20px -4px rgba(16,185,129,.6);transition:transform .15s ease" title="Capturar">📸</button>
+        </div>
+        <p style="color:#cbd5e1;font-size:11px;margin-top:10px;text-align:center">Encuadra el ticket de la jefa y tap el botón verde</p>
+      `;
+      document.body.appendChild(camOv);
+    } else {
+      camOv.style.display = 'flex';
+    }
+    const video = document.getElementById('opsJefaCamVideo');
+    video.srcObject = stream;
+    S._opsJefaCamStream = stream;
+    S._opsJefaCamFacing = 'environment';
+    // Handlers
+    document.getElementById('opsJefaCamClose').onclick = _opsJefaCerrarCamara;
+    document.getElementById('opsJefaCamCapture').onclick = _opsJefaCapturarFoto;
+    document.getElementById('opsJefaCamFlip').onclick = _opsJefaFlipCamara;
+  }
+
+  function _opsJefaCerrarCamara() {
+    try { _opsBeep('tac'); } catch(_){}
+    const stream = S._opsJefaCamStream;
+    if (stream) {
+      stream.getTracks().forEach(t => { try { t.stop(); } catch(_){} });
+      S._opsJefaCamStream = null;
+    }
+    const ov = document.getElementById('opsJefaCamOverlay');
+    if (ov) ov.style.display = 'none';
+  }
+
+  async function _opsJefaFlipCamara() {
+    try { _opsBeep('tac'); } catch(_){}
+    const stream = S._opsJefaCamStream;
+    if (stream) stream.getTracks().forEach(t => { try { t.stop(); } catch(_){} });
+    S._opsJefaCamFacing = (S._opsJefaCamFacing === 'environment') ? 'user' : 'environment';
+    try {
+      const ns = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: S._opsJefaCamFacing }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false
+      });
+      const video = document.getElementById('opsJefaCamVideo');
+      if (video) video.srcObject = ns;
+      S._opsJefaCamStream = ns;
+    } catch(e) {
+      try { toast('Sin segunda cámara disponible', 'warning', 3000); } catch(_){}
+    }
+  }
+
+  function _opsJefaCapturarFoto() {
+    try { _opsBeep('ok'); } catch(_){}
+    const video = document.getElementById('opsJefaCamVideo');
+    if (!video || !video.videoWidth) {
+      try { toast('Cámara aún no lista · esperá 1s', 'warning', 2500); } catch(_){}
+      return;
+    }
+    // Flash visual rápido
+    const cap = document.getElementById('opsJefaCamCapture');
+    if (cap) {
+      cap.style.transform = 'scale(.85)';
+      setTimeout(() => { cap.style.transform = ''; }, 150);
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(blob => {
+      if (!blob) {
+        try { toast('Error al capturar foto', 'error', 3000); } catch(_){}
+        return;
+      }
+      const file = new File([blob], 'camara.jpg', { type: 'image/jpeg' });
+      _opsJefaCerrarCamara();
+      _opsJefaOnFotoSelected({ target: { files: [file], value: '' } });
+    }, 'image/jpeg', 0.92);
   }
 
   // [v2.43.17] Paste image desde portapapeles (Ctrl+V dentro del modal abierto)
@@ -6857,14 +7039,39 @@ const MOS = (() => {
       const prodCat = (S.productos || []).find(p => String(p.SKU_Base || p.skuBase || '').trim() === String(c.skuBase || '').trim());
       const ventaActual  = prodCat ? (parseFloat(prodCat.precioVenta) || 0) : 0;
       const margenActual = (costo > 0 && ventaActual > 0) ? ((ventaActual - costo) / ventaActual) * 100 : null;
+      // [v2.43.19] Margen OBJETIVO registrado en master (producto o categoría).
+      // Opción A = RESPETAR este margen. Si costo subió, venta sube proporcional.
+      // Sin fallback inventado — null si no hay registro.
+      let margenObj = null;
+      if (prodCat) {
+        const oMargRaw = prodCat.margenPct;
+        if (oMargRaw !== '' && oMargRaw != null && !isNaN(parseFloat(oMargRaw))) {
+          margenObj = parseFloat(oMargRaw) / 100;  // normalizar a fracción
+        } else if (prodCat.categoria) {
+          const cat = (S.categorias || []).find(ct => ct.nombre === prodCat.categoria);
+          if (cat && cat.margenPct !== '' && cat.margenPct != null && !isNaN(parseFloat(cat.margenPct))) {
+            margenObj = parseFloat(cat.margenPct) / 100;
+          }
+        }
+      }
+      const ventaAutoA = (margenObj !== null && costo > 0 && margenObj > 0 && margenObj < 0.99)
+        ? +(costo / (1 - margenObj)).toFixed(2)
+        : null;
+      // Cachear en el item para que el label de A los muestre sin recalcular
+      c._margenObj = margenObj;
+      c._ventaAutoA = ventaAutoA;
       // Live calc según opción
       const ventaB = c.opcion === 'B' && c.ventaNueva ? parseFloat(c.ventaNueva) : null;
       const margenB = (ventaB && costo > 0) ? ((ventaB - costo) / ventaB) * 100 : null;
       const margenC = c.opcion === 'C' && c.margenNuevoPct ? parseFloat(c.margenNuevoPct) * 100 : null;
       const ventaC = (margenC && costo > 0) ? +(costo / (1 - margenC / 100)).toFixed(2) : null;
       const colorM = (m) => m === null ? '#94a3b8' : m < 10 ? '#f87171' : m < 20 ? '#fbbf24' : '#34d399';
-      const ventaFinal = c.opcion === 'B' ? ventaB : (c.opcion === 'C' ? ventaC : ventaActual);
-      const margenFinal = c.opcion === 'B' ? margenB : (c.opcion === 'C' ? margenC : margenActual);
+      const ventaFinal = c.opcion === 'A' ? (ventaAutoA || ventaActual)
+                       : c.opcion === 'B' ? ventaB
+                       : c.opcion === 'C' ? ventaC : ventaActual;
+      const margenFinal = c.opcion === 'A' ? (margenObj !== null ? margenObj * 100 : margenActual)
+                        : c.opcion === 'B' ? margenB
+                        : c.opcion === 'C' ? margenC : margenActual;
       return `<div class="rounded-xl border ${confCls} p-3 mb-3" style="animation:opsBadgeIn .25s cubic-bezier(.34,1.56,.64,1) ${idx * 0.04}s both">
         <div class="flex items-center justify-between mb-2">
           <div class="font-bold text-slate-100 text-sm">#${idx+1} ${_escapeHtml(c.descripcion || c.skuBase)}</div>
@@ -6878,11 +7085,15 @@ const MOS = (() => {
           ${margenActual !== null ? `<span>·</span><span>Margen actual: <b style="color:${colorM(margenActual)}">${margenActual.toFixed(1)}%</b></span>` : ''}
         </div>
         ${c.tachado ? `<div class="text-rose-300 text-xs">⊘ Tachado por jefa — NO se aplicará</div>` : `
-          <!-- [v2.43.4] 3 opciones A/B/C con radio buttons elegantes -->
+          <!-- [v2.43.4/19] 3 opciones A/B/C con radio buttons elegantes.
+               A AHORA = respetar margen objetivo registrado en master:
+               si el costo sube, el precio sube proporcional para mantener
+               el margen. Si no hay margen registrado → A es no-op real. -->
           <div class="space-y-1.5 mt-2">
-            <label class="flex items-center gap-2 cursor-pointer p-2 rounded-lg ${c.opcion === 'A' ? 'bg-slate-800/80 border border-slate-600' : 'hover:bg-slate-800/40'}" onclick="MOS._opsJefaSetOpcion(${idx},'A')">
-              <input type="radio" name="opcJefa${idx}" ${c.opcion === 'A' ? 'checked' : ''} class="accent-slate-400">
-              <span class="text-xs text-slate-300"><b>A.</b> Sin cambio · dejar como está</span>
+            <label class="flex items-center gap-2 cursor-pointer p-2 rounded-lg ${c.opcion === 'A' ? 'bg-violet-900/40 border border-violet-500/50' : 'hover:bg-slate-800/40'}" onclick="MOS._opsJefaSetOpcion(${idx},'A')">
+              <input type="radio" name="opcJefa${idx}" ${c.opcion === 'A' ? 'checked' : ''} class="accent-violet-400">
+              <span class="text-xs text-slate-300 flex-1"><b>A.</b> ${c._margenObj !== null && c._margenObj !== undefined ? `Mantener margen objetivo <b class="text-violet-300">${(c._margenObj*100).toFixed(1)}%</b>` : 'Sin cambio (no hay margen registrado)'}</span>
+              ${c._ventaAutoA !== null && c._ventaAutoA !== undefined ? `<span class="text-[11px] text-violet-300 font-bold">→ S/${c._ventaAutoA.toFixed(2)}</span>` : ''}
             </label>
             <label class="flex items-center gap-2 cursor-pointer p-2 rounded-lg ${c.opcion === 'B' ? 'bg-emerald-900/40 border border-emerald-500/50' : 'hover:bg-slate-800/40'}" onclick="MOS._opsJefaSetOpcion(${idx},'B')">
               <input type="radio" name="opcJefa${idx}" ${c.opcion === 'B' ? 'checked' : ''} class="accent-emerald-400">
@@ -7094,15 +7305,20 @@ const MOS = (() => {
   }
 
   async function _opsJefaConfirmarAplicar() {
-    // [v2.43.4] Respetar opción A/B/C elegida por el cajero:
-    //   A → no incluir (sin cambio explícito)
-    //   B → solo ventaNueva (backend calcula margen)
-    //   C → solo margenNuevoPct (backend calcula precio)
+    // [v2.43.19] Semántica REVISADA de opciones:
+    //   A → RESPETAR margen objetivo (auto: venta = costo / (1-margenObj))
+    //        Si producto NO tiene margen registrado → no se envía (no-op real)
+    //   B → ventaNueva explícita (backend calcula margen)
+    //   C → margenNuevoPct explícito (backend calcula precio)
     //   propagar → flag para que backend afecte presentaciones
     const items = _opsJefaState.correcciones
-      .filter(c => !c.tachado && c.opcion && c.opcion !== 'A')
-      .filter(c => (c.opcion === 'B' && c.ventaNueva != null && c.ventaNueva > 0)
-                || (c.opcion === 'C' && c.margenNuevoPct != null && c.margenNuevoPct > 0))
+      .filter(c => !c.tachado && c.opcion)
+      .filter(c => {
+        if (c.opcion === 'A') return c._margenObj !== null && c._margenObj !== undefined && c._ventaAutoA > 0;
+        if (c.opcion === 'B') return c.ventaNueva != null && c.ventaNueva > 0;
+        if (c.opcion === 'C') return c.margenNuevoPct != null && c.margenNuevoPct > 0;
+        return false;
+      })
       .map(c => {
         // [v2.43.6] Lista de presentaciones específicas a propagar (subset
         // de las elegidas por checkbox). Si presPropagar no existe, se asume
@@ -7110,21 +7326,37 @@ const MOS = (() => {
         const presentacionesPropagar = c.presPropagar
           ? Object.keys(c.presPropagar).filter(k => c.presPropagar[k])
           : null;
+        // [v2.43.19] A se envía al backend como B con la venta auto-calculada
+        // (backend ya sabe procesar B). Flag _origenA para que el ticket
+        // marque que vino de 'mantener margen' y no de tipeo manual.
+        if (c.opcion === 'A') {
+          return {
+            skuBase:        c.skuBase,
+            descripcion:    c.descripcion,
+            costoNuevo:     c.costo,
+            ventaNueva:     c._ventaAutoA,
+            margenNuevoPct: null,
+            opcion:         'B',
+            _origenA:       true,
+            _margenObjetivoRespetado: c._margenObj,
+            propagar:       c.propagar !== false,
+            presentacionesPropagar: presentacionesPropagar
+          };
+        }
         return {
           skuBase:        c.skuBase,
           descripcion:    c.descripcion,
           costoNuevo:     c.costo,
-          // Enviar solo el campo que corresponde a la opción (evita ambigüedad en backend)
           ventaNueva:     c.opcion === 'B' ? c.ventaNueva     : null,
           margenNuevoPct: c.opcion === 'C' ? c.margenNuevoPct : null,
           opcion:         c.opcion,
-          propagar:       c.propagar !== false,  // default true (legacy compat)
-          presentacionesPropagar: presentacionesPropagar  // [v2.43.6] subset específico
+          propagar:       c.propagar !== false,
+          presentacionesPropagar: presentacionesPropagar
         };
       });
     if (!items.length) {
       try { _opsBeep('warn'); } catch(_){}
-      toast('No hay cambios para aplicar — todos están en opción A', 'warning');
+      toast('No hay cambios para aplicar', 'warning');
       return;
     }
     try { _opsBeep('tac'); } catch(_){}
@@ -33220,6 +33452,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _opsJefaRenderCards, _opsJefaRenderBody,
     // [v2.43.17] Picker OCR inteligente (cámara/archivo/paste/drag-drop)
     _opsJefaPedirPaste, _opsJefaOnPaste, _opsJefaOnDragOver, _opsJefaOnDragLeave, _opsJefaOnDrop,
+    // [v2.43.19] Cámara real con getUserMedia + precarga contexto
+    _opsJefaAbrirCamara, _opsJefaCerrarCamara, _opsJefaCapturarFoto, _opsJefaFlipCamara,
+    _opsJefaPrecargarContexto, _opsJefaRevalidarContextoBg,
     // [v2.43.5] Exponer _opsBeep para callers inline desde template
     _opsBeep,
     _impactoTogglesel, _impactoSetPrecio, cerrarImpactoCostos, aplicarSugerenciasSeleccionadas,
