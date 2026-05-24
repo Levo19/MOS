@@ -6444,14 +6444,23 @@ const MOS = (() => {
     } catch(e) {
       toast('⚠ Error OCR comprobante: ' + (e.message || e), 'error', 8000);
     } finally {
-      // [v2.43.20] SIEMPRE limpiar flag en vuelo + actualizar chip directo
-      // (sin depender de re-render del voucher). El chip tiene id estable.
+      // [v2.43.20/21] SIEMPRE limpiar flag en vuelo + actualizar chip directo +
+      // re-render del modal de costos unificado si está abierto para esta guía.
       S._opsOcrEnVuelo = false;
       if (S._opsOcrEnVueloMap) S._opsOcrEnVueloMap[idGuia] = false;
       S._opsOcrYaCorrido = S._opsOcrYaCorrido || {};
       S._opsOcrYaCorrido[idGuia] = true;
       _opsActualizarChipOcr(idGuia);
-      // Y por las dudas, también re-render canónico
+      // [v2.43.21] Re-render del modal unificado si activo en esta guía
+      try {
+        const modal = document.getElementById('modalCostosGuiaUnif');
+        if (modal && !modal.classList.contains('hidden')
+            && S._costosGuiaState && S._costosGuiaState.idGuia === idGuia) {
+          const op = _findOpByKey(S._costosGuiaState.fuente + '_' + idGuia);
+          if (op) _renderModalCostosCompleto(op);
+        }
+      } catch(_){}
+      // Por compat (overlay viejo si está abierto)
       try { _opsRefreshOverlayIfMatches('WH_' + idGuia); } catch(_) {}
     }
   }
@@ -7624,10 +7633,459 @@ const MOS = (() => {
     }
   }
 
+  // [v2.43.21] ──────── MODAL COSTOS UNIFICADO ─────────────────────────────
+  // Estructura espejo del modal jefa: header / sub-header / body / footer.
+  // Cero overrides — diseño 1:1 con el de precios.
+
+  function _abrirModalCostosUnificado(op) {
+    _opsInyectarKeyframes();
+    _opsInyectarCSSModalCostosUnificado();
+    let modal = document.getElementById('modalCostosGuiaUnif');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'modalCostosGuiaUnif';
+      modal.className = 'fixed inset-0 z-[1100] bg-black/70 backdrop-blur-md flex items-center justify-center p-4 hidden';
+      modal.innerHTML = `
+        <div class="bg-slate-900 border-2 border-emerald-500/50 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+          <div class="flex items-center gap-3 px-5 py-4 border-b border-slate-700/60">
+            <span class="text-2xl">💰</span>
+            <div class="flex-1 min-w-0">
+              <div class="font-black text-emerald-300">Actualizar costos</div>
+              <div class="text-xs text-slate-400" id="opsCostosSubtitle">Guía: —</div>
+            </div>
+            <button onclick="MOS.opsSalirModoCostos()" class="w-9 h-9 rounded-full bg-slate-800 hover:bg-rose-500/40 transition-all text-slate-300" title="Cerrar">✕</button>
+          </div>
+          <div class="px-5 pt-3 pb-3 border-b border-slate-800" id="opsCostosSubheader"></div>
+          <div class="px-5 py-4 overflow-y-auto flex-1 ops-costos-scroll" id="opsCostosBody"></div>
+          <div class="px-5 pt-3 pb-4 border-t border-slate-700/60 bg-slate-900 rounded-b-2xl" id="opsCostosFooter"></div>
+        </div>`;
+      document.body.appendChild(modal);
+    }
+    document.getElementById('opsCostosSubtitle').textContent =
+      'Guía: ' + op.idGuia + ' · ' + (op.tipo || '').replace(/_/g,' ');
+    modal.classList.remove('hidden');
+    _renderModalCostosCompleto(op);
+  }
+
+  // Re-render completo del modal (subheader + body + footer). Usado tras
+  // OCR, cambios de toggle, etc.
+  function _renderModalCostosCompleto(op) {
+    const st = S._costosGuiaState;
+    if (!st) return;
+    const sub = document.getElementById('opsCostosSubheader');
+    const body = document.getElementById('opsCostosBody');
+    const foot = document.getElementById('opsCostosFooter');
+    if (!sub || !body || !foot) return;
+    sub.innerHTML  = _renderCostosSubheader(op);
+    body.innerHTML = _renderCostosBody(op);
+    foot.innerHTML = _renderCostosFooter(op);
+  }
+
+  function _renderCostosSubheader(op) {
+    const st = S._costosGuiaState;
+    const tieneFoto = !!(st.foto && String(st.foto).trim());
+    const enVuelo = !!(S._opsOcrEnVueloMap && S._opsOcrEnVueloMap[st.idGuia]);
+    const yaCorrio = !!(S._opsOcrYaCorrido && S._opsOcrYaCorrido[st.idGuia]);
+    const totLin = (st.lineas || []).length;
+    const conCosto = (st.lineas || []).filter(l => parseFloat(l.precioUnitario) > 0 || (l.inputValue !== '' && l.inputValue != null && parseFloat(l.inputValue) > 0)).length;
+    const pct = totLin > 0 ? Math.round((conCosto / totLin) * 100) : 0;
+    // Chip OCR
+    let chipOcr = '';
+    if (!tieneFoto) {
+      chipOcr = `<div id="opsChipOcrStatus" class="ops-chip-info">📷 Sin foto · escribe los costos manual</div>`;
+    } else if (enVuelo) {
+      chipOcr = `<div id="opsChipOcrStatus" class="ops-chip-cyan"><span style="animation:opsSpin 1s linear infinite;display:inline-block">🤖</span> Leyendo foto con IA…</div>`;
+    } else {
+      const cls = pct >= 80 ? 'ops-chip-ok' : pct >= 50 ? 'ops-chip-warn' : 'ops-chip-err';
+      chipOcr = `<div id="opsChipOcrStatus" class="${cls}">🤖 ${yaCorrio ? 'OCR procesado' : 'Sin OCR'} · ${conCosto}/${totLin} (${pct}%)
+        <button onclick="MOS.opsOcrComprobantePrepoblar('${_escapeHtml(op.idGuia)}')" title="${yaCorrio ? 'Re-procesar foto' : 'Procesar foto'}" class="ops-chip-btn">🔄</button>
+      </div>`;
+    }
+    // Progreso visual
+    const progCls = pct === 100 ? 'alm-v-prog-ok' : (conCosto > 0 ? 'alm-v-prog-parcial' : 'alm-v-prog-empty');
+    const progreso = `<div id="costosGuiaProgreso" class="ops-prog-bar">
+      <div class="ops-prog-fill" style="width:${pct}%"></div>
+      <div class="ops-prog-text">
+        <span class="${progCls}"><b>${pct === 100 ? '✓ ' : ''}${conCosto}/${totLin}</b> con costo · ${pct}%</span>
+        ${pct < 100 ? `<span class="alm-v-progreso-faltan">⚠ faltan ${totLin - conCosto}</span>` : ''}
+      </div>
+    </div>`;
+    // Toggles modo input + IGV
+    const toggles = `<div class="ops-toggles-grid">
+      <div class="ops-tg-group">
+        <span class="ops-tg-lbl">Ingreso</span>
+        <button onclick="MOS._costosGuiaSetMode('TOTAL')"    class="ops-tg-btn ${st.inputMode === 'TOTAL' ? 'is-active' : ''}">Total</button>
+        <button onclick="MOS._costosGuiaSetMode('UNITARIO')" class="ops-tg-btn ${st.inputMode === 'UNITARIO' ? 'is-active' : ''}">Unit</button>
+      </div>
+      <div class="ops-tg-group">
+        <span class="ops-tg-lbl">IGV</span>
+        <button onclick="MOS._costosGuiaSetIgv('INCLUIDO')" class="ops-tg-btn ${st.igvMode === 'INCLUIDO' ? 'is-active' : ''}">Incluido</button>
+        <button onclick="MOS._costosGuiaSetIgv('SIN_IGV')"  class="ops-tg-btn ${st.igvMode === 'SIN_IGV'  ? 'is-active' : ''}">Sin IGV</button>
+      </div>
+      <label class="ops-tg-check">
+        <input type="checkbox" id="costosGuiaUpdMaster" checked>
+        <span>Actualizar catálogo</span>
+      </label>
+    </div>`;
+    return `<div class="flex flex-col gap-2">${chipOcr}${progreso}${toggles}</div>`;
+  }
+
+  function _renderCostosBody(op) {
+    const st = S._costosGuiaState;
+    const lineas = (st && st.lineas) || [];
+    if (!lineas.length) {
+      return `<div class="text-center py-12 text-slate-400">
+        <div class="text-4xl mb-3 opacity-50">📦</div>
+        <p class="text-sm">Sin líneas registradas en esta guía</p>
+      </div>`;
+    }
+    return `<input type="hidden" id="costosGuiaInfo" value="${_escapeHtml(op.idGuia)}">
+      <div class="flex flex-col gap-2">${_renderCostosLineasInner(op)}</div>`;
+  }
+
+  // Solo las cards de productos — reutiliza la lógica de filas existente
+  function _renderCostosLineasInner(op) {
+    const st = S._costosGuiaState;
+    const lineas = st.lineas || [];
+    return lineas.map((l, i) => _renderCostosLineaItem(op, l, i, st)).join('');
+  }
+
+  function _renderCostosLineaItem(op, l, i, st) {
+    const cant = parseFloat(l.cantidad) || 0;
+    const brutoUnit = _costosGuiaCalcularBruto(l, st);
+    const netoUnit  = brutoUnit / (1 + _IGV_RATE);
+    const desc = _escapeHtml(String(l.descripcion || l.codigoProducto || l.codigoBarra || ''));
+    const cod  = _escapeHtml(String(l.codigoBarra || l.codigoProducto || ''));
+    const equivBadge = l.esEquivalencia ? '<span class="alm-v-equiv-badge">EQUIV</span>' : '';
+    const placeholder = st.inputMode === 'TOTAL' ? 'Total' : 'Unit';
+    const helper = brutoUnit > 0
+      ? `<span class="alm-v-costo-helper-bruto">S/ ${brutoUnit.toFixed(4)}</span><span class="alm-v-costo-helper-u">/u</span>${netoUnit > 0 ? `<div class="alm-v-costo-helper-neto">neto S/ ${netoUnit.toFixed(4)}</div>` : ''}`
+      : '<span class="alm-v-costo-helper-empty">sin costo</span>';
+    const _ocrCorrido = S._opsOcrYaCorrido && S._opsOcrYaCorrido[st.idGuia];
+    const _conFoto = st.foto && String(st.foto).trim() !== '';
+    const _ocrFallo = !brutoUnit && _ocrCorrido && _conFoto;
+    const marcaIni = brutoUnit > 0
+      ? '<span title="Costo registrado" class="alm-v-marca-ok">✓</span>'
+      : (_ocrFallo
+          ? '<span title="OCR no pudo leer este ítem" class="alm-v-marca-ocr">🤖⚠</span>'
+          : '<span title="Falta costo" class="alm-v-marca-falta">⚠</span>');
+    const faltaCls = brutoUnit > 0 ? '' : ' alm-v-costo-line--falta';
+    const ocrNoEntendioBadge = _ocrFallo
+      ? '<div class="ops-badge-ocr-fail">🤖 OCR no entendió — escribe el costo a mano</div>'
+      : '';
+    // Bloque IMPACTO (margen actual + sugerido)
+    let margenInfoHtml = '';
+    try {
+      const codStr = String(l.codigoBarra || l.codigoProducto || '').trim();
+      if (codStr) {
+        const prodCat = (S.productos || []).find(p => String(p.codigoBarra || '').trim() === codStr);
+        if (prodCat) {
+          const ventaActual = parseFloat(prodCat.precioVenta) || 0;
+          let margenObjetivo = null;
+          const oMargRaw = prodCat.margenPct;
+          if (oMargRaw !== '' && oMargRaw != null && !isNaN(parseFloat(oMargRaw))) {
+            margenObjetivo = parseFloat(oMargRaw);
+          } else if (prodCat.categoria) {
+            const cat = (S.categorias || []).find(c => c.nombre === prodCat.categoria);
+            if (cat && cat.margenPct !== '' && cat.margenPct != null && !isNaN(parseFloat(cat.margenPct))) {
+              margenObjetivo = parseFloat(cat.margenPct);
+            }
+          }
+          const margenConCostoNuevo = (ventaActual > 0 && brutoUnit > 0)
+            ? ((ventaActual - brutoUnit) / ventaActual) * 100 : null;
+          const ventaSugerida = (margenObjetivo !== null && brutoUnit > 0 && margenObjetivo > 0 && margenObjetivo < 99)
+            ? brutoUnit / (1 - margenObjetivo / 100) : null;
+          const colorM = (m) => m === null ? '#9ca3af' : m < 10 ? '#f87171' : m < 20 ? '#fbbf24' : '#34d399';
+          if (ventaActual > 0 || margenObjetivo !== null) {
+            let filaMargen = '';
+            if (margenObjetivo !== null) {
+              const diff = (margenConCostoNuevo !== null) ? (margenConCostoNuevo - margenObjetivo) : null;
+              const alerta = (diff !== null && diff < -2) ? ' ⚠' : '';
+              filaMargen = `<div class="alm-v-impacto-fila">
+                <span class="alm-v-impacto-label">Margen</span>
+                <span class="alm-v-impacto-actual"><b>${margenObjetivo.toFixed(1)}%</b><span class="alm-v-impacto-hint">objetivo</span></span>
+                <span class="alm-v-impacto-flecha">→</span>
+                <span class="alm-v-impacto-nuevo"><b style="color:${colorM(margenConCostoNuevo)};${margenConCostoNuevo !== null ? 'animation:opsNumPulse .4s cubic-bezier(.34,1.56,.64,1)' : ''}">${margenConCostoNuevo !== null ? margenConCostoNuevo.toFixed(1) + '%' : '— sin costo'}</b>${alerta ? `<span style="color:#f87171">${alerta}</span>` : ''}</span>
+              </div>`;
+            } else if (margenConCostoNuevo !== null) {
+              filaMargen = `<div class="alm-v-impacto-fila">
+                <span class="alm-v-impacto-label">Margen</span>
+                <span class="alm-v-impacto-actual" style="opacity:.7"><b>—</b><span class="alm-v-impacto-hint">sin objetivo</span></span>
+                <span class="alm-v-impacto-flecha">→</span>
+                <span class="alm-v-impacto-nuevo"><b style="color:${colorM(margenConCostoNuevo)};animation:opsNumPulse .4s cubic-bezier(.34,1.56,.64,1)">${margenConCostoNuevo.toFixed(1)}%</b><span class="alm-v-impacto-hint" title="Si aceptas en precios, queda como objetivo">se grabará ⓘ</span></span>
+              </div>`;
+            } else if (ventaActual > 0) {
+              const costoCat = parseFloat(prodCat.precioCosto) || 0;
+              const margenCat = (costoCat > 0) ? ((ventaActual - costoCat) / ventaActual) * 100 : null;
+              if (margenCat !== null) {
+                filaMargen = `<div class="alm-v-impacto-fila">
+                  <span class="alm-v-impacto-label">Margen</span>
+                  <span class="alm-v-impacto-actual"><b style="color:${colorM(margenCat)}">${margenCat.toFixed(1)}%</b><span class="alm-v-impacto-hint">actual (catálogo)</span></span>
+                  <span class="alm-v-impacto-hint" style="margin-left:auto;opacity:.5">escribe el costo →</span>
+                </div>`;
+              }
+            }
+            let filaPrecio = '';
+            if (ventaActual > 0) {
+              let bloqueSugerido = '';
+              if (ventaSugerida !== null) {
+                const diffPct = ((ventaSugerida - ventaActual) / ventaActual) * 100;
+                const signo = diffPct >= 0 ? '+' : '';
+                const colorDiff = Math.abs(diffPct) < 1 ? '#94a3b8' : (diffPct > 0 ? '#fbbf24' : '#34d399');
+                bloqueSugerido = `<span class="alm-v-impacto-flecha">→</span>
+                  <span class="alm-v-impacto-nuevo"><b style="animation:opsNumPulse .4s cubic-bezier(.34,1.56,.64,1)">S/ ${ventaSugerida.toFixed(2)}</b><span class="alm-v-impacto-hint" style="color:${colorDiff}">${signo}${diffPct.toFixed(1)}%</span></span>`;
+              } else if (margenConCostoNuevo !== null) {
+                bloqueSugerido = `<span class="alm-v-impacto-flecha">=</span>
+                  <span class="alm-v-impacto-nuevo"><b>S/ ${ventaActual.toFixed(2)}</b><span class="alm-v-impacto-hint">mantener</span></span>`;
+              }
+              filaPrecio = `<div class="alm-v-impacto-fila">
+                <span class="alm-v-impacto-label">Precio</span>
+                <span class="alm-v-impacto-actual"><b>S/ ${ventaActual.toFixed(2)}</b><span class="alm-v-impacto-hint">actual</span></span>
+                ${bloqueSugerido || '<span class="alm-v-impacto-hint" style="margin-left:auto;opacity:.5">escribe el costo →</span>'}
+              </div>`;
+            }
+            margenInfoHtml = `<div class="alm-v-impacto">${filaMargen}${filaPrecio}</div>`;
+          }
+        }
+      }
+    } catch(_) {}
+    return `<div class="alm-v-costo-line${faltaCls}" style="animation-delay:${Math.min(i,12)*30}ms">
+      <div class="alm-v-costo-head">
+        <span id="costoGuiaMarca_${i}" class="alm-v-costo-marca">${marcaIni}</span>
+        <div class="alm-v-costo-head-text">
+          <div class="alm-v-costo-desc">${desc}${equivBadge}</div>
+          <div class="alm-v-costo-cod">▌ ${cod}</div>
+        </div>
+      </div>
+      <div class="alm-v-costo-controls">
+        <div class="alm-v-costo-cant">${cant}u</div>
+        <input type="number" step="0.01" min="0" class="alm-v-costo-input"
+               value="${l.inputValue || ''}"
+               oninput="MOS._costosGuiaUpdLinea(${i}, this.value)"
+               placeholder="${placeholder}">
+        <div class="alm-v-costo-helper" id="costoGuiaSubtot_${i}">${helper}</div>
+      </div>
+      ${ocrNoEntendioBadge}
+      ${margenInfoHtml}
+    </div>`;
+  }
+
+  function _renderCostosFooter(op) {
+    const st = S._costosGuiaState;
+    const lineas = (st && st.lineas) || [];
+    let totalBruto = 0;
+    lineas.forEach(l => { totalBruto += _costosGuiaCalcularBruto(l, st) * (parseFloat(l.cantidad) || 0); });
+    const totalNeto = totalBruto / (1 + _IGV_RATE);
+    return `<div class="ops-costos-totales">
+      <span class="ops-tot-lbl">Neto</span> <b id="costosGuiaTotalNeto">S/ ${totalNeto.toFixed(2)}</b>
+      <span class="ops-tot-sep">·</span>
+      <span class="ops-tot-lbl">IGV</span>  <b id="costosGuiaTotalIgv">S/ ${(totalBruto - totalNeto).toFixed(2)}</b>
+      <span class="ops-tot-sep">·</span>
+      <span class="ops-tot-lbl ops-tot-bruto">Total</span> <b id="costosGuiaTotalBruto" class="ops-tot-bruto">S/ ${totalBruto.toFixed(2)}</b>
+    </div>
+    <div class="ops-costos-actions">
+      <button onclick="MOS.guardarCostosEImprimirJefa()" class="ops-cta-jefa ops-btn-primary" title="Guarda costos y manda el ticket a la jefa para que decida precios">
+        💾📋 Guardar e imprimir comprobante jefa
+      </button>
+      <button onclick="MOS.opsOcrComprobantePrepoblar('${_escapeHtml(op.idGuia)}')" class="ops-btn-ghost" title="Re-procesar foto con OCR">🔄 Re-OCR</button>
+    </div>`;
+  }
+
+  function _opsInyectarCSSModalCostosUnificado() {
+    if (S._opsCSSModalCostosUnifInjected) return;
+    S._opsCSSModalCostosUnifInjected = true;
+    const style = document.createElement('style');
+    style.id = 'opsCSSModalCostosUnif';
+    style.textContent = `
+      /* ───── Modal costos unificado — paridad visual con modal jefa ───── */
+
+      /* Scrollbar custom emerald sutil — ambos modales */
+      .ops-costos-scroll::-webkit-scrollbar { width: 8px; }
+      .ops-costos-scroll::-webkit-scrollbar-track { background: rgba(15,23,42,.4); border-radius: 4px; }
+      .ops-costos-scroll::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, rgba(16,185,129,.55), rgba(5,150,105,.55));
+        border-radius: 4px;
+      }
+      .ops-costos-scroll::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(180deg, rgba(16,185,129,.85), rgba(5,150,105,.85));
+      }
+      #modalAplicarRespuestaJefa #opsJefaBody::-webkit-scrollbar { width: 8px; }
+      #modalAplicarRespuestaJefa #opsJefaBody::-webkit-scrollbar-track { background: rgba(15,23,42,.4); border-radius: 4px; }
+      #modalAplicarRespuestaJefa #opsJefaBody::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, rgba(16,185,129,.55), rgba(5,150,105,.55));
+        border-radius: 4px;
+      }
+
+      /* Chips OCR */
+      #modalCostosGuiaUnif .ops-chip-info, #modalCostosGuiaUnif .ops-chip-cyan,
+      #modalCostosGuiaUnif .ops-chip-ok, #modalCostosGuiaUnif .ops-chip-warn,
+      #modalCostosGuiaUnif .ops-chip-err {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 5px 10px; border-radius: 999px;
+        font-size: 11px; font-weight: 700; width: fit-content;
+      }
+      #modalCostosGuiaUnif .ops-chip-info { background: rgba(107,114,128,.18); border: 1px solid rgba(107,114,128,.4); color: #9ca3af; }
+      #modalCostosGuiaUnif .ops-chip-cyan { background: rgba(34,211,238,.15); border: 1px solid rgba(34,211,238,.4); color: #22d3ee; font-weight: 600; }
+      #modalCostosGuiaUnif .ops-chip-ok   { background: rgba(52,211,153,.15); border: 1px solid rgba(52,211,153,.45); color: #34d399; }
+      #modalCostosGuiaUnif .ops-chip-warn { background: rgba(251,191,36,.15); border: 1px solid rgba(251,191,36,.45); color: #fbbf24; }
+      #modalCostosGuiaUnif .ops-chip-err  { background: rgba(248,113,113,.15); border: 1px solid rgba(248,113,113,.45); color: #f87171; }
+      #modalCostosGuiaUnif .ops-chip-btn  { background: transparent; border: 0; cursor: pointer; color: inherit; font-size: 11px; padding: 0 0 0 4px; opacity: .8; }
+      #modalCostosGuiaUnif .ops-chip-btn:hover { opacity: 1; }
+
+      /* Barra progreso real */
+      #modalCostosGuiaUnif .ops-prog-bar {
+        position: relative;
+        background: rgba(15,23,42,.55);
+        border: 1px solid rgba(148,163,184,.18);
+        border-radius: 8px;
+        overflow: hidden;
+        padding: 6px 10px;
+      }
+      #modalCostosGuiaUnif .ops-prog-fill {
+        position: absolute; inset: 0;
+        background: linear-gradient(90deg, rgba(16,185,129,.18), rgba(5,150,105,.10));
+        transition: width .35s ease;
+        pointer-events: none;
+      }
+      #modalCostosGuiaUnif .ops-prog-text {
+        position: relative; z-index: 1;
+        display: flex; align-items: center; gap: 6px;
+        font-size: 11px; color: #cbd5e1;
+      }
+      #modalCostosGuiaUnif .alm-v-prog-ok      { color: #34d399; font-weight: 800; }
+      #modalCostosGuiaUnif .alm-v-prog-parcial { color: #fbbf24; font-weight: 800; }
+      #modalCostosGuiaUnif .alm-v-prog-empty   { color: #94a3b8; font-weight: 800; }
+      #modalCostosGuiaUnif .alm-v-progreso-faltan { margin-left: auto; color: #f87171; font-size: 10px; font-weight: 700; }
+
+      /* Toggles */
+      #modalCostosGuiaUnif .ops-toggles-grid {
+        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+        padding: 6px 10px;
+        background: rgba(15,23,42,.55);
+        border: 1px solid rgba(148,163,184,.15);
+        border-radius: 8px;
+      }
+      #modalCostosGuiaUnif .ops-tg-group { display: flex; align-items: center; gap: 4px; }
+      #modalCostosGuiaUnif .ops-tg-lbl { font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; margin-right: 4px; }
+      #modalCostosGuiaUnif .ops-tg-btn {
+        font-size: 11px; padding: 4px 9px; border-radius: 7px;
+        background: rgba(71,85,105,.4); color: #cbd5e1;
+        border: 1px solid transparent; cursor: pointer; font-weight: 700;
+        transition: all .15s ease;
+      }
+      #modalCostosGuiaUnif .ops-tg-btn:hover { background: rgba(71,85,105,.65); }
+      #modalCostosGuiaUnif .ops-tg-btn.is-active {
+        background: linear-gradient(135deg,#10b981,#059669); color: #fff;
+        box-shadow: 0 2px 6px -1px rgba(16,185,129,.45);
+      }
+      #modalCostosGuiaUnif .ops-tg-check {
+        display: flex; align-items: center; gap: 4px;
+        font-size: 11px; color: #cbd5e1; font-weight: 600; cursor: pointer;
+        margin-left: auto;
+      }
+      #modalCostosGuiaUnif .ops-tg-check input { accent-color: #10b981; }
+
+      /* Líneas de costo (cards) */
+      #modalCostosGuiaUnif .alm-v-costo-line {
+        background: rgba(30,41,59,.65);
+        border: 1px solid rgba(148,163,184,.18);
+        border-radius: 12px;
+        padding: 12px 14px;
+        animation: opsBadgeIn .25s cubic-bezier(.34,1.56,.64,1) both;
+      }
+      #modalCostosGuiaUnif .alm-v-costo-line--falta {
+        background: rgba(120,53,15,.15);
+        border-color: rgba(217,119,6,.4);
+      }
+      #modalCostosGuiaUnif .alm-v-costo-desc { color: #f8fafc; font-weight: 700; line-height: 1.3; word-break: break-word; overflow-wrap: anywhere; }
+      #modalCostosGuiaUnif .alm-v-costo-cod  { color: #94a3b8; font-size: 11px; opacity: .8; margin-top: 2px; font-family: ui-monospace,monospace; }
+      #modalCostosGuiaUnif .alm-v-costo-cant {
+        font-weight: 800; font-size: 14px; text-align: center;
+        padding: 6px 4px; border-radius: 8px;
+        background: rgba(15,23,42,.65); color: #cbd5e1;
+        border: 1px solid rgba(148,163,184,.18);
+      }
+      #modalCostosGuiaUnif .alm-v-costo-input {
+        background: #0f172a; color: #f8fafc;
+        border: 1px solid #475569; border-radius: 8px;
+        padding: 8px 10px;
+        font-size: 15px; font-weight: 700; text-align: right;
+        font-family: ui-monospace,monospace; width: 100%;
+      }
+      #modalCostosGuiaUnif .alm-v-costo-input:focus {
+        outline: 2px solid rgba(16,185,129,.4);
+        border-color: #10b981;
+      }
+      #modalCostosGuiaUnif .alm-v-costo-helper { color: #cbd5e1; text-align: right; font-size: 11px; line-height: 1.3; font-family: ui-monospace,monospace; }
+      #modalCostosGuiaUnif .alm-v-costo-helper-bruto { color: #fbbf24; font-weight: 800; }
+      #modalCostosGuiaUnif .alm-v-marca-ok    { color: #34d399; font-weight: 700; }
+      #modalCostosGuiaUnif .alm-v-marca-ocr   { color: #fbbf24; font-weight: 700; }
+      #modalCostosGuiaUnif .alm-v-marca-falta { color: #f87171; font-weight: 700; animation: pulse 1.6s infinite; }
+      #modalCostosGuiaUnif .alm-v-equiv-badge { font-size: 9px; color: #c4b5fd; background: rgba(167,139,250,.15); padding: 1px 6px; border-radius: 999px; margin-left: 6px; font-weight: 700; }
+      #modalCostosGuiaUnif .ops-badge-ocr-fail {
+        font-size: 10px; color: #fbbf24;
+        background: rgba(217,119,6,.12);
+        border-left: 3px solid #d97706;
+        padding: 4px 8px; border-radius: 4px; margin-top: 4px; font-weight: 600;
+      }
+      /* Bloque IMPACTO override slate dentro del modal nuevo */
+      #modalCostosGuiaUnif .alm-v-impacto {
+        background: rgba(16,185,129,.10);
+        border-left-color: #34d399;
+      }
+      #modalCostosGuiaUnif .alm-v-impacto-label  { color: #cbd5e1; }
+      #modalCostosGuiaUnif .alm-v-impacto-actual b { color: #f1f5f9; }
+      #modalCostosGuiaUnif .alm-v-impacto-nuevo b  { color: #f8fafc; }
+      #modalCostosGuiaUnif .alm-v-impacto-hint   { color: #94a3b8; }
+      #modalCostosGuiaUnif .alm-v-impacto-flecha { color: #34d399; opacity: 1; }
+
+      /* Footer totales + acciones */
+      #modalCostosGuiaUnif .ops-costos-totales {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+        font-size: 12px; color: #cbd5e1;
+        padding: 6px 10px; border-radius: 8px;
+        background: rgba(15,23,42,.55);
+        border: 1px solid rgba(148,163,184,.15);
+        margin-bottom: 10px;
+      }
+      #modalCostosGuiaUnif .ops-tot-lbl { color: #94a3b8; font-weight: 700; text-transform: uppercase; font-size: 10px; letter-spacing: .3px; }
+      #modalCostosGuiaUnif .ops-tot-sep { color: #475569; }
+      #modalCostosGuiaUnif .ops-tot-bruto, #modalCostosGuiaUnif b.ops-tot-bruto { color: #fbbf24; }
+
+      #modalCostosGuiaUnif .ops-costos-actions {
+        display: flex; gap: 8px;
+      }
+      #modalCostosGuiaUnif .ops-btn-primary {
+        flex: 1;
+        background: linear-gradient(135deg,#10b981,#059669);
+        color: #fff; font-weight: 900;
+        padding: 12px 16px; border-radius: 12px;
+        border: 0; cursor: pointer;
+        box-shadow: 0 6px 14px -2px rgba(16,185,129,.55);
+        font-size: 14px;
+      }
+      #modalCostosGuiaUnif .ops-btn-primary:hover { transform: translateY(-1px); }
+      #modalCostosGuiaUnif .ops-btn-primary:active { transform: translateY(0) scale(.98); }
+      #modalCostosGuiaUnif .ops-btn-ghost {
+        background: rgba(71,85,105,.45); color: #cbd5e1;
+        border: 1px solid rgba(148,163,184,.2);
+        padding: 10px 14px; border-radius: 12px;
+        cursor: pointer; font-weight: 700; font-size: 12px;
+      }
+      #modalCostosGuiaUnif .ops-btn-ghost:hover { background: rgba(71,85,105,.7); }
+    `;
+    document.head.appendChild(style);
+  }
+
   // [v41.21] Conmutar el modo costos dentro del MISMO overlay del voucher
   function opsEntrarModoCostos(fuente, idGuia) {
     _opsBeep('tac');
-    abrirOpsDetalleOverlay(fuente, idGuia, false, true);
+    // Inicializar state ANTES de abrir el modal (necesita las líneas)
+    const op = _findOpByKey(fuente + '_' + idGuia);
+    if (!op) { toast('Operación no encontrada', 'error'); return; }
+    S._opsModoCostos = true;
+    _opsCostosInitState(op);
+    _abrirModalCostosUnificado(op);
     // [v2.43.0+2] AUTO-OCR: si la guía tiene foto y ninguna línea tiene costo
     // todavía, disparar OCR automático al entrar (sin botón manual).
     // Si el admin ya tocó costos antes, NO sobreescribir.
@@ -7763,10 +8221,13 @@ const MOS = (() => {
   }
   function opsSalirModoCostos() {
     S._opsModoCostos = false;
-    // [v2.43.12] Volver al look cream del voucher (quitar dark slate)
+    // [v2.43.21] Cerrar el modal unificado de costos
+    const modal = document.getElementById('modalCostosGuiaUnif');
+    if (modal) modal.classList.add('hidden');
+    // Por compat (overlay viejo si quedó abierto en algún flow)
     const overlay = $('almOpsDetalleOverlay');
     if (overlay) overlay.classList.remove('is-costos-mode');
-    // Re-render del overlay actual
+    // Re-render del overlay viejo si tiene la guía abierta en lectura
     const op = S._costosGuiaState && _findOpByKey(S._costosGuiaState.fuente + '_' + S._costosGuiaState.idGuia);
     if (op) {
       const cont = $('almOpsDetalleContent');
@@ -7968,12 +8429,17 @@ const MOS = (() => {
     _costosGuiaReRender();
   }
 
-  // [v41.21] Re-render según contexto: modo costos del voucher overlay
-  // re-pinta el voucher; modal viejo (legacy) re-pinta el body del modal.
+  // [v2.43.21] Re-render según contexto: modo costos usa el modal unificado
+  // nuevo; modal viejo (legacy) re-pinta el body del modal antiguo.
   function _costosGuiaReRender() {
     if (S._opsModoCostos) {
       const st = S._costosGuiaState;
       const op = st && _findOpByKey(st.fuente + '_' + st.idGuia);
+      if (op && document.getElementById('modalCostosGuiaUnif')) {
+        _renderModalCostosCompleto(op);
+        return;
+      }
+      // Fallback al overlay viejo (compat)
       const cont = $('almOpsDetalleContent');
       if (op && cont) cont.innerHTML = _renderVoucher(op, 0);
     } else {
@@ -33555,6 +34021,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.43.19] Cámara real con getUserMedia + precarga contexto
     _opsJefaAbrirCamara, _opsJefaCerrarCamara, _opsJefaCapturarFoto, _opsJefaFlipCamara,
     _opsJefaPrecargarContexto, _opsJefaRevalidarContextoBg,
+    // [v2.43.21] Modal costos unificado
+    _abrirModalCostosUnificado, _renderModalCostosCompleto,
     // [v2.43.5] Exponer _opsBeep para callers inline desde template
     _opsBeep,
     _impactoTogglesel, _impactoSetPrecio, cerrarImpactoCostos, aplicarSugerenciasSeleccionadas,
