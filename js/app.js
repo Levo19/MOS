@@ -5384,17 +5384,20 @@ const MOS = (() => {
     // Este overlay solo actualiza COSTOS al catálogo. El OCR ya corre auto en
     // background (TODO: idealmente disparar en WH al subir foto a la guía).
     const tieneFoto = !!(st.foto && String(st.foto).trim());
+    // [v2.43.20] Distinguir EN VUELO (corriendo ahora) vs YA CORRIDO (terminó).
+    // Antes solo había YA CORRIDO, lo que causaba chip 'Leyendo IA' eterno.
+    const enVueloOcr = !!(S._opsOcrEnVueloMap && S._opsOcrEnVueloMap[st.idGuia]);
     const ocrYaCorrido = !!(S._opsOcrYaCorrido && S._opsOcrYaCorrido[st.idGuia]);
     const totalLineas = (st.lineas || []).length;
     const lineasConCosto = (st.lineas || []).filter(l => parseFloat(l.precioUnitario) > 0 || (l.inputValue !== '' && l.inputValue != null && parseFloat(l.inputValue) > 0)).length;
     const pctCoincidencia = totalLineas > 0 ? Math.round((lineasConCosto / totalLineas) * 100) : 0;
     let chipOcrHtml = '';
     if (!tieneFoto) {
-      chipOcrHtml = `<div style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:rgba(107,114,128,.15);border:1px solid rgba(107,114,128,.3);border-radius:999px;font-size:11px;color:#6b7280;font-weight:600;margin-bottom:8px">
+      chipOcrHtml = `<div id="opsChipOcrStatus" style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:rgba(107,114,128,.15);border:1px solid rgba(107,114,128,.3);border-radius:999px;font-size:11px;color:#9ca3af;font-weight:600;margin-bottom:8px">
         📷 Sin foto · escribe los costos manual abajo
       </div>`;
-    } else if (!ocrYaCorrido) {
-      chipOcrHtml = `<div style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:rgba(34,211,238,.15);border:1px solid rgba(34,211,238,.4);border-radius:999px;font-size:11px;color:#0891b2;font-weight:600;margin-bottom:8px">
+    } else if (enVueloOcr) {
+      chipOcrHtml = `<div id="opsChipOcrStatus" style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:rgba(34,211,238,.15);border:1px solid rgba(34,211,238,.4);border-radius:999px;font-size:11px;color:#22d3ee;font-weight:600;margin-bottom:8px">
         <span style="animation:opsSpin 1s linear infinite;display:inline-block">🤖</span> Leyendo foto con IA...
       </div>`;
     } else {
@@ -5402,9 +5405,9 @@ const MOS = (() => {
       const colorChip = pctCoincidencia >= 80 ? '#34d399' : pctCoincidencia >= 50 ? '#fbbf24' : '#f87171';
       const bgChip    = pctCoincidencia >= 80 ? 'rgba(52,211,153,.15)' : pctCoincidencia >= 50 ? 'rgba(251,191,36,.15)' : 'rgba(248,113,113,.15)';
       const bdChip    = pctCoincidencia >= 80 ? 'rgba(52,211,153,.45)' : pctCoincidencia >= 50 ? 'rgba(251,191,36,.45)' : 'rgba(248,113,113,.45)';
-      chipOcrHtml = `<div style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:${bgChip};border:1px solid ${bdChip};border-radius:999px;font-size:11px;color:${colorChip};font-weight:700;margin-bottom:8px">
-        🤖 OCR procesado · ${lineasConCosto}/${totalLineas} ítems (${pctCoincidencia}% coincidencia)
-        <button onclick="MOS.opsOcrComprobantePrepoblar('${_escapeHtml(op.idGuia)}')" title="Re-procesar foto" style="background:transparent;border:0;cursor:pointer;color:${colorChip};font-size:11px;padding:0 0 0 4px;opacity:.7">🔄</button>
+      chipOcrHtml = `<div id="opsChipOcrStatus" style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:${bgChip};border:1px solid ${bdChip};border-radius:999px;font-size:11px;color:${colorChip};font-weight:700;margin-bottom:8px">
+        🤖 ${ocrYaCorrido ? 'OCR procesado' : 'Sin OCR'} · ${lineasConCosto}/${totalLineas} ítems (${pctCoincidencia}% coincidencia)
+        <button onclick="MOS.opsOcrComprobantePrepoblar('${_escapeHtml(op.idGuia)}')" title="${ocrYaCorrido ? 'Re-procesar foto' : 'Procesar foto con OCR'}" style="background:transparent;border:0;cursor:pointer;color:${colorChip};font-size:11px;padding:0 0 0 4px;opacity:.7">🔄</button>
       </div>`;
     }
 
@@ -5465,12 +5468,12 @@ const MOS = (() => {
         ? '<div style="font-size:10px;color:#d97706;background:rgba(217,119,6,.1);border-left:3px solid #d97706;padding:3px 8px;border-radius:4px;margin-top:3px;font-weight:600">🤖 OCR no entendió este ítem — escribe el costo a mano</div>'
         : '';
 
-      // [v2.43.18] Bloque de IMPACTO completo — muestra:
-      //   Margen objetivo (registrado) → margen actual con costo nuevo
-      //   Precio venta actual → precio sugerido (si se quiere mantener objetivo)
-      // Pidió el user: "casi parecido al cuadro que se le imprime a la jefa
-      // diciéndole lo que está ahora y cómo afectaría". Solo se muestra si
-      // hay margen objetivo REGISTRADO (producto o categoría) — sin fallback.
+      // [v2.43.20] Bloque IMPACTO — siempre que se pueda calcular margen actual
+      // se muestra. Si no hay objetivo registrado, el margen actual SE PROPONE
+      // como nuevo objetivo (si admin acepta esa info al actualizar precios,
+      // queda grabado). Pidió el user: "si tienes precio de costo y ya tienes
+      // precio de venta obviamente tienes margen actual no crees? así el jefe
+      // sabe que si mantiene el precio, ese margen quedará grabado".
       let margenInfoHtml = '';
       try {
         const codStr = String(l.codigoBarra || l.codigoProducto || '').trim();
@@ -5478,8 +5481,7 @@ const MOS = (() => {
           const prodCat = (S.productos || []).find(p => String(p.codigoBarra || '').trim() === codStr);
           if (prodCat) {
             const ventaActual = parseFloat(prodCat.precioVenta) || 0;
-            // Margen objetivo: solo si está REGISTRADO (producto o categoría).
-            // Sin fallback inventado.
+            // Margen OBJETIVO registrado (puede ser null)
             let margenObjetivo = null;
             const oMargRaw = prodCat.margenPct;
             if (oMargRaw !== '' && oMargRaw != null && !isNaN(parseFloat(oMargRaw))) {
@@ -5490,19 +5492,18 @@ const MOS = (() => {
                 margenObjetivo = parseFloat(cat.margenPct);
               }
             }
-            // Margen actual con el NUEVO costo
+            // Margen actual CON el costo nuevo (si admin escribió costo)
             const margenConCostoNuevo = (ventaActual > 0 && brutoUnit > 0)
               ? ((ventaActual - brutoUnit) / ventaActual) * 100
               : null;
-            // Precio venta sugerido para mantener el margen objetivo
+            // Precio venta sugerido para mantener el objetivo
             const ventaSugerida = (margenObjetivo !== null && brutoUnit > 0 && margenObjetivo > 0 && margenObjetivo < 99)
               ? brutoUnit / (1 - margenObjetivo / 100)
               : null;
             const colorM = (m) => m === null ? '#9ca3af' : m < 10 ? '#f87171' : m < 20 ? '#fbbf24' : '#34d399';
-            // Render solo si hay info útil que mostrar
             const tieneAlgo = ventaActual > 0 || margenObjetivo !== null;
             if (tieneAlgo) {
-              // Fila 1: Margen objetivo → actual con costo nuevo
+              // Fila MARGEN — siempre que se pueda mostrar algo:
               let filaMargen = '';
               if (margenObjetivo !== null) {
                 const diff = (margenConCostoNuevo !== null) ? (margenConCostoNuevo - margenObjetivo) : null;
@@ -5513,8 +5514,28 @@ const MOS = (() => {
                   <span class="alm-v-impacto-flecha">→</span>
                   <span class="alm-v-impacto-nuevo"><b style="color:${colorM(margenConCostoNuevo)};${margenConCostoNuevo !== null ? 'animation:opsNumPulse .4s cubic-bezier(.34,1.56,.64,1)' : ''}">${margenConCostoNuevo !== null ? margenConCostoNuevo.toFixed(1) + '%' : '— sin costo nuevo'}</b>${alerta ? `<span style="color:#f87171">${alerta}</span>` : ''}</span>
                 </div>`;
+              } else if (margenConCostoNuevo !== null) {
+                // SIN objetivo registrado pero PUDIMOS calcular margen actual
+                // → mostrarlo como "se grabará si aceptas en precios"
+                filaMargen = `<div class="alm-v-impacto-fila">
+                  <span class="alm-v-impacto-label">Margen</span>
+                  <span class="alm-v-impacto-actual" style="opacity:.7"><b>—</b><span class="alm-v-impacto-hint">sin objetivo</span></span>
+                  <span class="alm-v-impacto-flecha">→</span>
+                  <span class="alm-v-impacto-nuevo"><b style="color:${colorM(margenConCostoNuevo)};animation:opsNumPulse .4s cubic-bezier(.34,1.56,.64,1)">${margenConCostoNuevo.toFixed(1)}%</b><span class="alm-v-impacto-hint" title="Si aceptas en Actualizar precios, este margen queda registrado como objetivo">se grabará ⓘ</span></span>
+                </div>`;
+              } else if (ventaActual > 0) {
+                // Hay venta pero falta costo nuevo → mostrar margen actual del catálogo
+                const costoCat = parseFloat(prodCat.precioCosto) || 0;
+                const margenCat = (costoCat > 0) ? ((ventaActual - costoCat) / ventaActual) * 100 : null;
+                if (margenCat !== null) {
+                  filaMargen = `<div class="alm-v-impacto-fila">
+                    <span class="alm-v-impacto-label">Margen</span>
+                    <span class="alm-v-impacto-actual"><b style="color:${colorM(margenCat)}">${margenCat.toFixed(1)}%</b><span class="alm-v-impacto-hint">actual (catálogo)</span></span>
+                    <span class="alm-v-impacto-hint" style="margin-left:auto;opacity:.5">escribe el costo nuevo →</span>
+                  </div>`;
+                }
               }
-              // Fila 2: Precio venta actual → sugerido para mantener objetivo
+              // Fila PRECIO actual → sugerido (solo si hay venta actual)
               let filaPrecio = '';
               if (ventaActual > 0) {
                 let bloqueSugerido = '';
@@ -5524,11 +5545,15 @@ const MOS = (() => {
                   const colorDiff = Math.abs(diffPct) < 1 ? '#94a3b8' : (diffPct > 0 ? '#fbbf24' : '#34d399');
                   bloqueSugerido = `<span class="alm-v-impacto-flecha">→</span>
                     <span class="alm-v-impacto-nuevo"><b style="animation:opsNumPulse .4s cubic-bezier(.34,1.56,.64,1)">S/ ${ventaSugerida.toFixed(2)}</b><span class="alm-v-impacto-hint" style="color:${colorDiff}">${signo}${diffPct.toFixed(1)}%</span></span>`;
+                } else if (margenConCostoNuevo !== null) {
+                  // Sin objetivo → precio sugerido = mantener venta actual (no cambia)
+                  bloqueSugerido = `<span class="alm-v-impacto-flecha">=</span>
+                    <span class="alm-v-impacto-nuevo"><b>S/ ${ventaActual.toFixed(2)}</b><span class="alm-v-impacto-hint">mantener</span></span>`;
                 }
                 filaPrecio = `<div class="alm-v-impacto-fila">
                   <span class="alm-v-impacto-label">Precio</span>
                   <span class="alm-v-impacto-actual"><b>S/ ${ventaActual.toFixed(2)}</b><span class="alm-v-impacto-hint">actual</span></span>
-                  ${bloqueSugerido || '<span class="alm-v-impacto-hint" style="margin-left:auto;opacity:.5">sin margen objetivo</span>'}
+                  ${bloqueSugerido || '<span class="alm-v-impacto-hint" style="margin-left:auto;opacity:.5">escribe el costo nuevo →</span>'}
                 </div>`;
               }
               margenInfoHtml = `<div class="alm-v-impacto">${filaMargen}${filaPrecio}</div>`;
@@ -5849,6 +5874,10 @@ const MOS = (() => {
     const tipo = String(op.tipo || '').toUpperCase();
     const esIngreso = tipo === 'INGRESO_PROVEEDOR' || tipo === 'ENTRADA_LIBRE';
     if (!esIngreso) return null;
+    // [v2.43.20] Excluir guías ANULADAS del conteo de salud. Sin esto,
+    // ingresos anulados aparecían como '🔴 sin costo' inflando el contador.
+    const estUp = String(op.estado || '').toUpperCase();
+    if (estUp === 'ANULADO' || estUp === 'ANULADA') return null;
     const k = op.fuente + '_' + op.idGuia;
     const cached = S._opsDetCache[k];
     const lineas = (cached && cached.lineas) || op.lineas || [];
@@ -5976,7 +6005,8 @@ const MOS = (() => {
           background: linear-gradient(160deg, #0f172a 0%, #1e293b 60%, #0f172a 100%) !important;
           color: #e2e8f0 !important;
           border-radius: 18px !important;
-          border: 2px solid rgba(168, 85, 247, .35) !important;
+          /* [v2.43.20] Borde EMERALD igual al modal de precios — mismo lenguaje visual */
+          border: 2px solid rgba(16, 185, 129, .5) !important;
           box-shadow: 0 25px 60px -15px rgba(0,0,0,.7) !important;
         }
         /* OCULTAR todo lo decorativo tipo recibo */
@@ -5992,11 +6022,11 @@ const MOS = (() => {
         #almOpsDetalleOverlay.is-costos-mode .alm-voucher::after {
           display: none !important;
         }
-        /* Header del voucher (tipo) — reformatear a estilo modal jefa */
+        /* [v2.43.20] Header del voucher con acento emerald (igual modal jefa) */
         #almOpsDetalleOverlay.is-costos-mode .alm-v-cabecera {
-          border-bottom: 1px solid rgba(148,163,184,.2) !important;
+          border-bottom: 1px solid rgba(16,185,129,.25) !important;
           padding: 12px 14px !important;
-          background: linear-gradient(180deg, rgba(168,85,247,.08), transparent) !important;
+          background: linear-gradient(180deg, rgba(16,185,129,.08), transparent) !important;
         }
         #almOpsDetalleOverlay.is-costos-mode .alm-v-cabecera *,
         #almOpsDetalleOverlay.is-costos-mode .alm-v-meta,
@@ -6119,8 +6149,8 @@ const MOS = (() => {
           border: 1px solid #475569 !important;
         }
         #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-input:focus {
-          border-color: #a855f7 !important;
-          outline: 2px solid rgba(168,85,247,.35) !important;
+          border-color: #10b981 !important;
+          outline: 2px solid rgba(16,185,129,.35) !important;
         }
         #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-helper {
           color: #cbd5e1 !important;
@@ -6198,8 +6228,8 @@ const MOS = (() => {
           margin-top: 6px;
           padding: 8px 10px;
           border-radius: 8px;
-          border-left: 3px solid #a855f7;
-          background: rgba(168,85,247,.06);
+          border-left: 3px solid #10b981;
+          background: rgba(16,185,129,.07);
           display: flex;
           flex-direction: column;
           gap: 4px;
@@ -6234,21 +6264,21 @@ const MOS = (() => {
           font-weight: 600;
         }
         .alm-v-impacto-flecha {
-          color: #a855f7;
+          color: #10b981;
           font-weight: 900;
           font-size: 14px;
           opacity: .7;
         }
-        /* Overrides slate */
+        /* [v2.43.20] Overrides slate — acento emerald (consistente con bordes) */
         #almOpsDetalleOverlay.is-costos-mode .alm-v-impacto {
-          background: rgba(168,85,247,.14) !important;
-          border-left-color: #c084fc !important;
+          background: rgba(16,185,129,.10) !important;
+          border-left-color: #34d399 !important;
         }
         #almOpsDetalleOverlay.is-costos-mode .alm-v-impacto-label  { color: #cbd5e1 !important; }
         #almOpsDetalleOverlay.is-costos-mode .alm-v-impacto-actual b { color: #f1f5f9 !important; }
         #almOpsDetalleOverlay.is-costos-mode .alm-v-impacto-nuevo b  { color: #f8fafc !important; }
         #almOpsDetalleOverlay.is-costos-mode .alm-v-impacto-hint   { color: #94a3b8 !important; }
-        #almOpsDetalleOverlay.is-costos-mode .alm-v-impacto-flecha { color: #c084fc !important; opacity: 1; }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-impacto-flecha { color: #34d399 !important; opacity: 1; }
         #almOpsDetalleOverlay.is-costos-mode .alm-v-costos-toggles {
           background: rgba(15,23,42,.6) !important;
           border: 1px solid rgba(148,163,184,.15) !important;
@@ -6367,6 +6397,13 @@ const MOS = (() => {
       return;
     }
     S._opsOcrEnVuelo = true;
+    // [v2.43.20] Marcar EN VUELO en map por guía (el flag global S._opsOcrEnVuelo
+    // sigue funcionando, pero el chip del render usa este map).
+    S._opsOcrEnVueloMap = S._opsOcrEnVueloMap || {};
+    S._opsOcrEnVueloMap[idGuia] = true;
+    // Forzar update del chip al estado "Leyendo IA..." (por si el render
+    // anterior fue antes de marcar el flag)
+    _opsActualizarChipOcr(idGuia);
     _opsBeep('tac');
     toast('🤖 Procesando OCR del comprobante... 5-15s', 'info', 15000);
     try {
@@ -6400,22 +6437,55 @@ const MOS = (() => {
       });
       // Re-render del panel para mostrar valores nuevos
       try { almRenderOps(); } catch(_) {}
-      // [v2.43.18] Re-render del OVERLAY de detalle si está abierto para esa
-      // misma guía. Sin esto, el chip "🤖 Leyendo foto con IA..." quedaba
-      // pegado eternamente (bug reportado por user).
-      try { _opsRerenderOverlayDetalle(idGuia); } catch(_) {}
       const total = items.length;
       const msg = `🤖 OCR: ${aplicados} ✓ · ${dudosos} ⚠ · ${sinMatch} sin match (${total} items detectados)`;
       toast(msg, aplicados > 0 ? 'success' : 'warning', 9000);
       try { _opsBeep(aplicados > 0 ? 'cliclic' : 'tac'); } catch(_) {}
     } catch(e) {
       toast('⚠ Error OCR comprobante: ' + (e.message || e), 'error', 8000);
-      // [v2.43.18] Re-render también en error — el chip de "leyendo" debe
-      // desaparecer aunque falle.
-      try { _opsRerenderOverlayDetalle(idGuia); } catch(_) {}
     } finally {
+      // [v2.43.20] SIEMPRE limpiar flag en vuelo + actualizar chip directo
+      // (sin depender de re-render del voucher). El chip tiene id estable.
       S._opsOcrEnVuelo = false;
+      if (S._opsOcrEnVueloMap) S._opsOcrEnVueloMap[idGuia] = false;
+      S._opsOcrYaCorrido = S._opsOcrYaCorrido || {};
+      S._opsOcrYaCorrido[idGuia] = true;
+      _opsActualizarChipOcr(idGuia);
+      // Y por las dudas, también re-render canónico
+      try { _opsRefreshOverlayIfMatches('WH_' + idGuia); } catch(_) {}
     }
+  }
+
+  // [v2.43.20] Update DIRECTO del chip "Leyendo IA"/"OCR procesado" por ID
+  // estable. No depende de re-renderizar todo el voucher. Si el chip no existe
+  // (overlay cerrado o de otra guía), no-op.
+  function _opsActualizarChipOcr(idGuia) {
+    const chip = document.getElementById('opsChipOcrStatus');
+    if (!chip) return;
+    // Solo si estamos en esta guía (S._costosGuiaState)
+    if (!S._costosGuiaState || S._costosGuiaState.idGuia !== idGuia) return;
+    const st = S._costosGuiaState;
+    const tieneFoto = !!(st.foto && String(st.foto).trim());
+    const enVuelo = !!(S._opsOcrEnVueloMap && S._opsOcrEnVueloMap[idGuia]);
+    const yaCorrio = !!(S._opsOcrYaCorrido && S._opsOcrYaCorrido[idGuia]);
+    const totalLineas = (st.lineas || []).length;
+    const conCosto = (st.lineas || []).filter(l => parseFloat(l.precioUnitario) > 0 || (l.inputValue !== '' && l.inputValue != null && parseFloat(l.inputValue) > 0)).length;
+    const pct = totalLineas > 0 ? Math.round((conCosto / totalLineas) * 100) : 0;
+    if (!tieneFoto) {
+      chip.outerHTML = `<div id="opsChipOcrStatus" style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:rgba(107,114,128,.15);border:1px solid rgba(107,114,128,.3);border-radius:999px;font-size:11px;color:#9ca3af;font-weight:600;margin-bottom:8px">📷 Sin foto · escribe los costos manual abajo</div>`;
+      return;
+    }
+    if (enVuelo) {
+      chip.outerHTML = `<div id="opsChipOcrStatus" style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:rgba(34,211,238,.15);border:1px solid rgba(34,211,238,.4);border-radius:999px;font-size:11px;color:#22d3ee;font-weight:600;margin-bottom:8px"><span style="animation:opsSpin 1s linear infinite;display:inline-block">🤖</span> Leyendo foto con IA...</div>`;
+      return;
+    }
+    const color = pct >= 80 ? '#34d399' : pct >= 50 ? '#fbbf24' : '#f87171';
+    const bg    = pct >= 80 ? 'rgba(52,211,153,.15)' : pct >= 50 ? 'rgba(251,191,36,.15)' : 'rgba(248,113,113,.15)';
+    const bd    = pct >= 80 ? 'rgba(52,211,153,.45)' : pct >= 50 ? 'rgba(251,191,36,.45)' : 'rgba(248,113,113,.45)';
+    chip.outerHTML = `<div id="opsChipOcrStatus" style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:${bg};border:1px solid ${bd};border-radius:999px;font-size:11px;color:${color};font-weight:700;margin-bottom:8px">
+      🤖 ${yaCorrio ? 'OCR procesado' : 'Sin OCR'} · ${conCosto}/${totalLineas} ítems (${pct}% coincidencia)
+      <button onclick="MOS.opsOcrComprobantePrepoblar('${idGuia}')" title="${yaCorrio ? 'Re-procesar foto' : 'Procesar foto'}" style="background:transparent;border:0;cursor:pointer;color:${color};font-size:11px;padding:0 0 0 4px;opacity:.7">🔄</button>
+    </div>`;
   }
 
   // [v2.43.18] Re-renderiza el body del overlay de detalle si está abierto
@@ -7039,14 +7109,16 @@ const MOS = (() => {
       const prodCat = (S.productos || []).find(p => String(p.SKU_Base || p.skuBase || '').trim() === String(c.skuBase || '').trim());
       const ventaActual  = prodCat ? (parseFloat(prodCat.precioVenta) || 0) : 0;
       const margenActual = (costo > 0 && ventaActual > 0) ? ((ventaActual - costo) / ventaActual) * 100 : null;
-      // [v2.43.19] Margen OBJETIVO registrado en master (producto o categoría).
-      // Opción A = RESPETAR este margen. Si costo subió, venta sube proporcional.
-      // Sin fallback inventado — null si no hay registro.
+      // [v2.43.19/20] Margen OBJETIVO registrado en master (puede ser null).
+      // Opción A:
+      //  - Si hay objetivo registrado → respetar margen, venta = costo/(1-marg)
+      //  - Si NO hay objetivo PERO hay venta + costo nuevo → aceptar el margen
+      //    actual calculado y grabarlo como objetivo (no cambia precio venta)
       let margenObj = null;
       if (prodCat) {
         const oMargRaw = prodCat.margenPct;
         if (oMargRaw !== '' && oMargRaw != null && !isNaN(parseFloat(oMargRaw))) {
-          margenObj = parseFloat(oMargRaw) / 100;  // normalizar a fracción
+          margenObj = parseFloat(oMargRaw) / 100;
         } else if (prodCat.categoria) {
           const cat = (S.categorias || []).find(ct => ct.nombre === prodCat.categoria);
           if (cat && cat.margenPct !== '' && cat.margenPct != null && !isNaN(parseFloat(cat.margenPct))) {
@@ -7057,9 +7129,14 @@ const MOS = (() => {
       const ventaAutoA = (margenObj !== null && costo > 0 && margenObj > 0 && margenObj < 0.99)
         ? +(costo / (1 - margenObj)).toFixed(2)
         : null;
-      // Cachear en el item para que el label de A los muestre sin recalcular
+      // [v2.43.20] Sub-caso A2: sin objetivo pero PUEDO calcular margen actual
+      // y grabarlo como objetivo manteniendo el precio. margenAGrabar = (venta-costo)/venta.
+      const margenAGrabar = (margenObj === null && ventaActual > 0 && costo > 0)
+        ? (ventaActual - costo) / ventaActual
+        : null;
       c._margenObj = margenObj;
       c._ventaAutoA = ventaAutoA;
+      c._margenAGrabar = margenAGrabar;   // [v2.43.20] fracción (no %)
       // Live calc según opción
       const ventaB = c.opcion === 'B' && c.ventaNueva ? parseFloat(c.ventaNueva) : null;
       const margenB = (ventaB && costo > 0) ? ((ventaB - costo) / ventaB) * 100 : null;
@@ -7090,10 +7167,20 @@ const MOS = (() => {
                si el costo sube, el precio sube proporcional para mantener
                el margen. Si no hay margen registrado → A es no-op real. -->
           <div class="space-y-1.5 mt-2">
-            <label class="flex items-center gap-2 cursor-pointer p-2 rounded-lg ${c.opcion === 'A' ? 'bg-violet-900/40 border border-violet-500/50' : 'hover:bg-slate-800/40'}" onclick="MOS._opsJefaSetOpcion(${idx},'A')">
-              <input type="radio" name="opcJefa${idx}" ${c.opcion === 'A' ? 'checked' : ''} class="accent-violet-400">
-              <span class="text-xs text-slate-300 flex-1"><b>A.</b> ${c._margenObj !== null && c._margenObj !== undefined ? `Mantener margen objetivo <b class="text-violet-300">${(c._margenObj*100).toFixed(1)}%</b>` : 'Sin cambio (no hay margen registrado)'}</span>
-              ${c._ventaAutoA !== null && c._ventaAutoA !== undefined ? `<span class="text-[11px] text-violet-300 font-bold">→ S/${c._ventaAutoA.toFixed(2)}</span>` : ''}
+            <label class="flex items-center gap-2 cursor-pointer p-2 rounded-lg ${c.opcion === 'A' ? 'bg-emerald-900/30 border border-emerald-500/50' : 'hover:bg-slate-800/40'}" onclick="MOS._opsJefaSetOpcion(${idx},'A')">
+              <input type="radio" name="opcJefa${idx}" ${c.opcion === 'A' ? 'checked' : ''} class="accent-emerald-400">
+              <span class="text-xs text-slate-300 flex-1"><b>A.</b> ${
+                c._margenObj !== null && c._margenObj !== undefined
+                  ? `Mantener margen objetivo <b class="text-emerald-300">${(c._margenObj*100).toFixed(1)}%</b>`
+                  : c._margenAGrabar !== null && c._margenAGrabar !== undefined
+                    ? `Aceptar margen actual <b class="text-emerald-300">${(c._margenAGrabar*100).toFixed(1)}%</b> <span class="text-[9px] text-slate-400" title="Queda registrado como objetivo">(se grabará)</span>`
+                    : 'Sin cambio (sin datos suficientes)'
+              }</span>
+              ${c._ventaAutoA !== null && c._ventaAutoA !== undefined
+                ? `<span class="text-[11px] text-emerald-300 font-bold">→ S/${c._ventaAutoA.toFixed(2)}</span>`
+                : c._margenAGrabar !== null && c._margenAGrabar !== undefined
+                  ? `<span class="text-[11px] text-emerald-300 font-bold">= S/${ventaActual.toFixed(2)}</span>`
+                  : ''}
             </label>
             <label class="flex items-center gap-2 cursor-pointer p-2 rounded-lg ${c.opcion === 'B' ? 'bg-emerald-900/40 border border-emerald-500/50' : 'hover:bg-slate-800/40'}" onclick="MOS._opsJefaSetOpcion(${idx},'B')">
               <input type="radio" name="opcJefa${idx}" ${c.opcion === 'B' ? 'checked' : ''} class="accent-emerald-400">
@@ -7314,31 +7401,40 @@ const MOS = (() => {
     const items = _opsJefaState.correcciones
       .filter(c => !c.tachado && c.opcion)
       .filter(c => {
-        if (c.opcion === 'A') return c._margenObj !== null && c._margenObj !== undefined && c._ventaAutoA > 0;
+        if (c.opcion === 'A') {
+          // A1: tiene margen objetivo → recalcular precio
+          // A2: sin objetivo pero margen calculable → grabar margen (precio igual)
+          return (c._margenObj !== null && c._margenObj !== undefined && c._ventaAutoA > 0)
+              || (c._margenAGrabar !== null && c._margenAGrabar !== undefined);
+        }
         if (c.opcion === 'B') return c.ventaNueva != null && c.ventaNueva > 0;
         if (c.opcion === 'C') return c.margenNuevoPct != null && c.margenNuevoPct > 0;
         return false;
       })
       .map(c => {
-        // [v2.43.6] Lista de presentaciones específicas a propagar (subset
-        // de las elegidas por checkbox). Si presPropagar no existe, se asume
-        // que el backend propaga a todas (default histórico).
         const presentacionesPropagar = c.presPropagar
           ? Object.keys(c.presPropagar).filter(k => c.presPropagar[k])
           : null;
-        // [v2.43.19] A se envía al backend como B con la venta auto-calculada
-        // (backend ya sabe procesar B). Flag _origenA para que el ticket
-        // marque que vino de 'mantener margen' y no de tipeo manual.
+        // [v2.43.19/20] A → backend lo procesa como C (margen) para que el
+        // backend grabe el margenPct nuevo en master. Sub-casos:
+        //   A1 (objetivo registrado): venta nueva = costo/(1-margenObj) ya
+        //       calculada, mandamos margenNuevoPct = margenObj para grabarlo
+        //       Y ventaNueva como pista de la venta exacta.
+        //   A2 (sin objetivo, hay margen actual): grabar margen actual.
+        //       Precio venta queda igual (backend lo deriva del margen + costo).
         if (c.opcion === 'A') {
+          const margenFinal = c._margenObj !== null && c._margenObj !== undefined
+            ? c._margenObj
+            : c._margenAGrabar;
           return {
             skuBase:        c.skuBase,
             descripcion:    c.descripcion,
             costoNuevo:     c.costo,
-            ventaNueva:     c._ventaAutoA,
-            margenNuevoPct: null,
-            opcion:         'B',
+            ventaNueva:     c._ventaAutoA || null,
+            margenNuevoPct: margenFinal,
+            opcion:         'A',
             _origenA:       true,
-            _margenObjetivoRespetado: c._margenObj,
+            _origenA_sub:   c._margenObj !== null ? 'A1_objetivo' : 'A2_grabar',
             propagar:       c.propagar !== false,
             presentacionesPropagar: presentacionesPropagar
           };
@@ -7543,8 +7639,12 @@ const MOS = (() => {
         const algunoTieneCosto = (st.lineas || []).some(l => parseFloat(l.precioUnitario) > 0 || (l.inputValue !== '' && l.inputValue !== null));
         if (algunoTieneCosto) return; // admin ya tocó, no auto-overrite
         if (S._opsOcrYaCorrido && S._opsOcrYaCorrido[idGuia]) return; // ya corrió en esta sesión
-        S._opsOcrYaCorrido = S._opsOcrYaCorrido || {};
-        S._opsOcrYaCorrido[idGuia] = true;
+        // [v2.43.20] NO seteamos _opsOcrYaCorrido aquí — eso ahora lo hace el
+        // finally de opsOcrComprobantePrepoblar. Sí seteamos enVuelo para que
+        // el chip se actualice a 'Leyendo IA...'.
+        S._opsOcrEnVueloMap = S._opsOcrEnVueloMap || {};
+        S._opsOcrEnVueloMap[idGuia] = true;
+        _opsActualizarChipOcr(idGuia);
         // [v2.43.2] Feedback visual + sonoro elegante para que se sienta vivo
         _opsBeep('shimmer');
         _opsMostrarBadgeOcrAuto('procesando');
