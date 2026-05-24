@@ -6160,10 +6160,12 @@ const MOS = (() => {
     _opsJefaState.contexto = [];
     _opsJefaState.correcciones = [];
     _opsJefaState.confidenceGlobal = 0;
-    _opsJefaState.modoOrigen = null;  // 'foto' | 'manual' (null = aún no eligió)
-    // [v2.43.14] Modal UNIFICADO: header + cards origen SIEMPRE arriba +
-    // body abajo. Sin 'cambio de pantalla' al elegir foto/manual — solo
-    // re-render del body inferior. UN solo modal de principio a fin.
+    _opsJefaState.modoOrigen = 'manual';  // [v2.43.15] manual es DEFAULT siempre
+    _opsJefaState.ocrCorrido = false;
+    _opsJefaState.procesando = false;
+    // [v2.43.15] Modal UNIFICADO: header + UN solo botón OCR opcional arriba +
+    // lista de productos editable abajo (manual default). Si admin quiere
+    // acelerar usa el botón OCR que pre-puebla los inputs.
     let modal = document.getElementById('modalAplicarRespuestaJefa');
     if (!modal) {
       modal = document.createElement('div');
@@ -6179,10 +6181,10 @@ const MOS = (() => {
             </div>
             <button onclick="MOS.opsCerrarAplicarRespuestaJefa()" class="w-9 h-9 rounded-full bg-slate-800 hover:bg-rose-500/40 transition-all text-slate-300">✕</button>
           </div>
-          <!-- Cards origen SIEMPRE visibles arriba -->
-          <div class="px-5 pt-4 pb-2 border-b border-slate-800">
+          <!-- Botón OCR opcional arriba (manual es default) -->
+          <div class="px-5 pt-4 pb-3 border-b border-slate-800">
             <input type="file" id="opsJefaFotoInput" accept="image/*" class="hidden">
-            <div class="grid grid-cols-2 gap-2" id="opsJefaCardsOrigen"></div>
+            <div id="opsJefaCardsOrigen"></div>
           </div>
           <div class="px-5 py-4 overflow-y-auto flex-1" id="opsJefaBody"></div>
         </div>`;
@@ -6229,48 +6231,41 @@ const MOS = (() => {
     _opsJefaRenderBody();
   }
 
-  // [v2.43.14] Render de las 2 cards origen (foto/manual) — SIEMPRE arriba.
-  // El estado activo cambia color. Click en una re-renderiza.
+  // [v2.43.15] Solo 1 botón OCR arriba. Manual es el DEFAULT al abrir el modal.
+  // Si admin quiere acelerar usando foto → tap el botón → file picker (OS
+  // muestra opciones: cámara / galería / archivos según el dispositivo).
   function _opsJefaRenderCards() {
     const cont = document.getElementById('opsJefaCardsOrigen');
     if (!cont) return;
-    const modo = _opsJefaState.modoOrigen;
-    const isFoto = modo === 'foto';
-    const isManual = modo === 'manual';
+    const procesando = !!_opsJefaState.procesando;
+    const yaCorrioOcr = !!_opsJefaState.ocrCorrido;
+    const txt = procesando ? 'Procesando con IA…' : (yaCorrioOcr ? '✓ OCR procesado · tap para re-procesar' : '📷 Analizar foto con OCR (opcional)');
     cont.innerHTML = `
-      <label for="opsJefaFotoInput" class="ops-cta-jefa cursor-pointer p-3 rounded-2xl flex flex-col items-center gap-1 transition select-none text-white font-bold"
-             style="${isFoto
-               ? 'background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 6px 14px -2px rgba(16,185,129,.55);outline:2px solid rgba(16,185,129,.4)'
-               : 'background:linear-gradient(135deg,rgba(16,185,129,.35),rgba(5,150,105,.35));opacity:.75'}">
-        <span class="text-2xl">📷</span>
-        <span class="text-xs">${isFoto ? 'Foto OCR · activo' : 'Subir foto · OCR'}</span>
+      <label for="opsJefaFotoInput" class="ops-cta-jefa cursor-pointer w-full py-3 px-4 rounded-2xl flex items-center justify-center gap-3 transition select-none text-white font-bold"
+             style="background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 6px 14px -2px rgba(16,185,129,.5);${procesando ? 'opacity:.65;pointer-events:none' : ''}">
+        <span class="text-xl" ${procesando ? 'style="animation:opsSpin 1.4s linear infinite"' : ''}>${procesando ? '🤖' : '📷'}</span>
+        <span class="text-sm">${txt}</span>
       </label>
-      <button onclick="MOS._opsJefaIniciarManual()"
-              class="ops-cta-jefa p-3 rounded-2xl flex flex-col items-center gap-1 transition border-0 cursor-pointer text-white font-bold"
-              style="${isManual
-                ? 'background:linear-gradient(135deg,#06b6d4,#0891b2);box-shadow:0 6px 14px -2px rgba(6,182,212,.55);outline:2px solid rgba(6,182,212,.4)'
-                : 'background:linear-gradient(135deg,rgba(6,182,212,.35),rgba(8,145,178,.35));opacity:.75'}">
-        <span class="text-2xl">✏️</span>
-        <span class="text-xs">${isManual ? 'Manual · activo' : 'Entrada manual'}</span>
-      </button>
+      <p class="text-[10px] text-slate-500 text-center mt-1.5 leading-tight">
+        Manual: escribe directo en cada fila abajo · OCR: toma foto del ticket de la jefa y se rellena solo
+      </p>
     `;
   }
 
-  // [v2.43.14] Render del body — depende del estado:
-  //   - sin modoOrigen → mensaje "Elige una opción arriba"
-  //   - foto + procesando → spinner OCR
-  //   - cualquiera con correcciones → lista A/B/C (la que ya tenía _opsJefaRenderResultados)
+  // [v2.43.15] Render del body — manual es el DEFAULT.
+  // Al abrir el modal con contexto, llena correcciones desde el contexto y
+  // muestra la lista A/B/C. Admin escribe directo. Si quiere usar OCR para
+  // acelerar, tap el botón arriba que pre-puebla los inputs.
   function _opsJefaRenderBody() {
     const body = document.getElementById('opsJefaBody');
     if (!body) return;
-    const modo = _opsJefaState.modoOrigen;
     const tieneContexto = (_opsJefaState.contexto || []).length > 0;
     const tieneCorrecciones = (_opsJefaState.correcciones || []).length > 0;
     if (_opsJefaState.procesando) {
       body.innerHTML = `<div class="text-center py-12">
         <div class="text-5xl mb-3" style="animation:opsSpin 1.4s linear infinite;display:inline-block">🤖</div>
         <p class="text-sm text-slate-300 font-bold">Procesando con Claude OCR...</p>
-        <p class="text-xs text-slate-500 mt-2">5-15 segundos</p>
+        <p class="text-xs text-slate-500 mt-2">5-15 segundos · espera por favor</p>
       </div>`;
       return;
     }
@@ -6279,22 +6274,21 @@ const MOS = (() => {
       _opsJefaRenderResultados();
       return;
     }
-    if (!modo) {
-      body.innerHTML = `<div class="text-center py-12 text-slate-400">
-        <div class="text-4xl mb-3 opacity-50">👆</div>
-        <p class="text-sm">Elige una opción arriba</p>
-        <p class="text-[11px] mt-2 text-slate-500">
-          📷 Foto = OCR automático leyendo lo escrito por la jefa<br>
-          ✏️ Manual = tipear directo cada decisión
-        </p>
-        ${!tieneContexto ? `<p class="text-[10px] mt-4 text-amber-400 italic">⚠ Esta guía aún no tiene costos cargados.<br>Primero pasa por 'Actualizar costos'.</p>` : ''}
-      </div>`;
-    } else if (modo === 'foto') {
-      body.innerHTML = `<div class="text-center py-10 text-slate-400">
-        <p class="text-sm mb-3">Selecciona la foto del ticket lleno por la jefa</p>
-        <label for="opsJefaFotoInput" class="inline-block px-5 py-3 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold rounded-xl cursor-pointer">📷 Elegir foto</label>
-      </div>`;
+    // Sin correcciones — si hay contexto, auto-cargar en modo manual (default).
+    // Si no hay contexto, mostrar mensaje claro.
+    if (tieneContexto) {
+      // Trigger manual automático al abrir
+      _opsJefaIniciarManual();
+      return;
     }
+    body.innerHTML = `<div class="text-center py-12 text-slate-400">
+      <div class="text-4xl mb-3">⚠</div>
+      <p class="text-sm text-amber-400">Esta guía aún no tiene productos cargados.</p>
+      <p class="text-[11px] mt-2 text-slate-500">
+        Primero pasa por '💰 Actualizar costos' y guarda al menos 1 ítem.<br>
+        Después vuelve aquí para actualizar precios.
+      </p>
+    </div>`;
   }
 
   function opsCerrarAplicarRespuestaJefa() {
@@ -6310,8 +6304,8 @@ const MOS = (() => {
     if (!file) return;
     if (_opsJefaState.procesando) return;
     _opsJefaState.procesando = true;
-    _opsJefaState.modoOrigen = 'foto';
-    // [v2.43.14] Cards arriba se actualizan también — feedback visual
+    // [v2.43.15] Sin modoOrigen — manual sigue siendo default. OCR solo
+    // pre-puebla los inputs y deja la lista A/B/C lista para ajustar.
     try { _opsJefaRenderCards(); } catch(_){}
     const body = document.getElementById('opsJefaBody');
     body.innerHTML = `
@@ -6335,16 +6329,24 @@ const MOS = (() => {
         editado:     false
       }));
       _opsJefaState.confidenceGlobal = d.confidenceGlobal || 0;
+      _opsJefaState.ocrCorrido = true;
+      try { _opsBeep('ok'); } catch(_){}
+      try { toast('🤖 OCR listo — revisa los valores y ajusta lo que necesites', 'success', 3500); } catch(_){}
+      _opsJefaRenderCards();
       _opsJefaRenderResultados();
     } catch(e) {
-      body.innerHTML = `<div class="text-center py-12 text-rose-400">
+      try { _opsBeep('warn'); } catch(_){}
+      body.innerHTML = `<div class="text-center py-10 text-rose-400">
         <div class="text-4xl mb-2">⚠</div>
         <p class="text-sm">Error OCR: ${_escapeHtml(e.message || e)}</p>
-        <button onclick="MOS.opsAbrirAplicarRespuestaJefa('${_opsJefaState.idGuia}')" class="mt-4 px-4 py-2 bg-emerald-500 rounded-lg text-white">Reintentar</button>
+        <p class="text-xs text-slate-400 mt-2">Puedes seguir escribiendo manualmente abajo.</p>
+        <button onclick="MOS._opsJefaIniciarManual()" class="mt-4 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 rounded-lg text-white font-bold">✏️ Continuar manual</button>
       </div>`;
     } finally {
       _opsJefaState.procesando = false;
     }
+    // Reset input para permitir re-seleccionar la misma foto si quieren reintentar
+    try { ev.target.value = ''; } catch(_){}
   }
 
   function _opsFileToBase64(file) {
@@ -6479,15 +6481,13 @@ const MOS = (() => {
   // de la guía (los items que existen) con valores vacíos. Admin elige opción
   // y tipea precio/margen para los que corresponda. Mucho más rápido cuando
   // la foto no está clara o se quiere ir directo.
+  // [v2.43.15] DEFAULT del modal. Llamada automática desde _opsJefaRenderBody
+  // cuando hay contexto. Inicializa correcciones manual (opcion='A',
+  // ventaNueva=null) para que el admin escriba directo. Sin toast warning —
+  // si no hay contexto, el renderBody ya muestra el mensaje claro arriba.
   function _opsJefaIniciarManual() {
-    try { _opsBeep('tac'); } catch(_){}
-    _opsJefaState.modoOrigen = 'manual';
     const ctx = _opsJefaState.contexto || [];
     if (!ctx.length) {
-      // [v2.43.14] Sin contexto y sin fallback — mostrar mensaje claro
-      // pero mantener cards visibles para que el admin entienda.
-      try { toast('⚠ Esta guía no tiene productos. Primero pasa por Actualizar costos.', 'warn', 4000); } catch(_){}
-      _opsJefaRenderCards();
       _opsJefaRenderBody();
       return;
     }
