@@ -5332,31 +5332,37 @@ const MOS = (() => {
       return lineasHtml + anexoHtml;
     }
 
-    // Modo COSTOS — editable + sugerencia inline
+    // Modo COSTOS — editable
     const st = S._costosGuiaState;
 
-    // [v2.43.8] CARDS DE ORIGEN — mismo patrón que el modal jefa (2 cards
-    // arriba). Hace explícito el origen de los costos: foto OCR o manual.
+    // [v2.43.9] Chip pequeño de estado del OCR (no acción, solo info).
+    // Quité las cards grandes (foto/manual) — esas son del overlay de PRECIOS.
+    // Este overlay solo actualiza COSTOS al catálogo. El OCR ya corre auto en
+    // background (TODO: idealmente disparar en WH al subir foto a la guía).
     const tieneFoto = !!(st.foto && String(st.foto).trim());
     const ocrYaCorrido = !!(S._opsOcrYaCorrido && S._opsOcrYaCorrido[st.idGuia]);
-    const algunoTieneCosto = (st.lineas || []).some(l => parseFloat(l.precioUnitario) > 0 || (l.inputValue !== '' && l.inputValue != null && parseFloat(l.inputValue) > 0));
-    const modoOrigen = S._costosModoOrigen || (tieneFoto && ocrYaCorrido ? 'foto' : (algunoTieneCosto ? 'manual' : 'foto'));
-
-    const cardsOrigenHtml = `
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-        <button onclick="MOS.costosUsarOrigenFoto('${op.fuente}','${_escapeHtml(op.idGuia)}')"
-                class="ops-cta-jefa" style="padding:12px;border-radius:14px;border:0;cursor:pointer;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:4px;color:#fff;transition:transform .15s ease,box-shadow .2s ease;${modoOrigen === 'foto' ? 'background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 6px 16px -2px rgba(16,185,129,.55);outline:3px solid rgba(16,185,129,.35);outline-offset:1px' : 'background:linear-gradient(135deg,rgba(16,185,129,.35),rgba(5,150,105,.35));opacity:.7'}">
-          <span style="font-size:24px">📷</span>
-          <span style="font-size:12px">${tieneFoto ? 'OCR de foto' : 'Sin foto en guía'}</span>
-          <span style="font-size:9px;opacity:.85;font-weight:500">${tieneFoto ? (ocrYaCorrido ? '✓ Procesada · tap = re-OCR' : 'Tap para procesar') : 'Sube foto desde WH primero'}</span>
-        </button>
-        <button onclick="MOS.costosUsarOrigenManual()"
-                class="ops-cta-jefa" style="padding:12px;border-radius:14px;border:0;cursor:pointer;font-weight:700;display:flex;flex-direction:column;align-items:center;gap:4px;color:#fff;transition:transform .15s ease,box-shadow .2s ease;${modoOrigen === 'manual' ? 'background:linear-gradient(135deg,#06b6d4,#0891b2);box-shadow:0 6px 16px -2px rgba(6,182,212,.55);outline:3px solid rgba(6,182,212,.35);outline-offset:1px' : 'background:linear-gradient(135deg,rgba(6,182,212,.35),rgba(8,145,178,.35));opacity:.7'}">
-          <span style="font-size:24px">✏️</span>
-          <span style="font-size:12px">Entrada manual</span>
-          <span style="font-size:9px;opacity:.85;font-weight:500">${modoOrigen === 'manual' ? 'Activo · escribe abajo' : 'Tap para vaciar y escribir'}</span>
-        </button>
+    const totalLineas = (st.lineas || []).length;
+    const lineasConCosto = (st.lineas || []).filter(l => parseFloat(l.precioUnitario) > 0 || (l.inputValue !== '' && l.inputValue != null && parseFloat(l.inputValue) > 0)).length;
+    const pctCoincidencia = totalLineas > 0 ? Math.round((lineasConCosto / totalLineas) * 100) : 0;
+    let chipOcrHtml = '';
+    if (!tieneFoto) {
+      chipOcrHtml = `<div style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:rgba(107,114,128,.15);border:1px solid rgba(107,114,128,.3);border-radius:999px;font-size:11px;color:#6b7280;font-weight:600;margin-bottom:8px">
+        📷 Sin foto · escribe los costos manual abajo
       </div>`;
+    } else if (!ocrYaCorrido) {
+      chipOcrHtml = `<div style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:rgba(34,211,238,.15);border:1px solid rgba(34,211,238,.4);border-radius:999px;font-size:11px;color:#0891b2;font-weight:600;margin-bottom:8px">
+        <span style="animation:opsSpin 1s linear infinite;display:inline-block">🤖</span> Leyendo foto con IA...
+      </div>`;
+    } else {
+      // OCR ya corrió — mostrar coincidencia
+      const colorChip = pctCoincidencia >= 80 ? '#16a34a' : pctCoincidencia >= 50 ? '#d97706' : '#dc2626';
+      const bgChip    = pctCoincidencia >= 80 ? 'rgba(22,163,74,.12)' : pctCoincidencia >= 50 ? 'rgba(217,119,6,.12)' : 'rgba(220,38,38,.12)';
+      const bdChip    = pctCoincidencia >= 80 ? 'rgba(22,163,74,.4)' : pctCoincidencia >= 50 ? 'rgba(217,119,6,.4)' : 'rgba(220,38,38,.4)';
+      chipOcrHtml = `<div style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:${bgChip};border:1px solid ${bdChip};border-radius:999px;font-size:11px;color:${colorChip};font-weight:700;margin-bottom:8px">
+        🤖 OCR procesado · ${lineasConCosto}/${totalLineas} ítems (${pctCoincidencia}% coincidencia)
+        <button onclick="MOS.opsOcrComprobantePrepoblar('${_escapeHtml(op.idGuia)}')" title="Re-procesar foto" style="background:transparent;border:0;cursor:pointer;color:${colorChip};font-size:11px;padding:0 0 0 4px;opacity:.7">🔄</button>
+      </div>`;
+    }
 
     const togglesHtml = `
       <div class="alm-v-costos-toggles">
@@ -5387,8 +5393,11 @@ const MOS = (() => {
       const helper = brutoUnit > 0
         ? `<span style="color:#b45309;font-weight:800;font-family:ui-monospace,monospace">S/ ${brutoUnit.toFixed(4)}</span>/u`
         : '<span style="opacity:.4">sin costo</span>';
-      const sugHtml = l._sugerencia ? _renderSugerenciaInline(i, l._sugerencia) : '';
-      const sugOpen = l._sugerencia ? ' is-open' : '';
+      // [v2.43.9] Sugerencias de precio venta REMOVIDAS del overlay de costos.
+      // Ese info pertenece al overlay de PRECIOS (modal jefa). Aquí solo
+      // actualizamos costos. Cero confusión sobre qué se está actualizando.
+      const sugHtml = '';
+      const sugOpen = '';
       // [v2.43.7] Etiqueta clara según resultado del OCR auto.
       // Si la guía tiene foto Y el OCR ya corrió (flag S._opsOcrYaCorrido) Y
       // esta línea quedó sin costo → el OCR NO entendió esa línea → mostrar
@@ -5484,7 +5493,7 @@ const MOS = (() => {
       </div>`;
 
     return `<input type="hidden" id="costosGuiaInfo" value="${_escapeHtml(op.idGuia)}">
-      ${cardsOrigenHtml}
+      ${chipOcrHtml}
       ${togglesHtml}
       ${progresoHtml}
       ${filasHtml}
