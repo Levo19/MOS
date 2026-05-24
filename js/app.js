@@ -5408,9 +5408,12 @@ const MOS = (() => {
       const cod = _escapeHtml(String(l.codigoBarra || l.codigoProducto || ''));
       const equivBadge = l.esEquivalencia ? '<span class="alm-v-equiv-badge">EQUIV</span>' : '';
       const placeholder = st.inputMode === 'TOTAL' ? 'Total' : 'Unit';
+      // [v2.43.16] Helper sin color hardcoded — el CSS del modo costos (slate)
+      // o del modal viejo (cream) define el color. Mono-font con b mejora
+      // legibilidad de números fraccionales.
       const helper = brutoUnit > 0
-        ? `<span style="color:#b45309;font-weight:800;font-family:ui-monospace,monospace">S/ ${brutoUnit.toFixed(4)}</span>/u`
-        : '<span style="opacity:.4">sin costo</span>';
+        ? `<span class="alm-v-costo-helper-bruto">S/ ${brutoUnit.toFixed(4)}</span><span class="alm-v-costo-helper-u">/u</span>${netoUnit > 0 ? `<div class="alm-v-costo-helper-neto">neto S/ ${netoUnit.toFixed(4)}</div>` : ''}`
+        : '<span class="alm-v-costo-helper-empty">sin costo</span>';
       // [v2.43.9] Sugerencias de precio venta REMOVIDAS del overlay de costos.
       // Ese info pertenece al overlay de PRECIOS (modal jefa). Aquí solo
       // actualizamos costos. Cero confusión sobre qué se está actualizando.
@@ -5454,11 +5457,14 @@ const MOS = (() => {
               // [v2.43.2] animación opsMargenSlide al aparecer "Con costo nuevo"
               // + opsNumPulse en el % nuevo para llamar la atención del cajero.
               const cambioBlockHtml = mostrarCambio
-                ? `<span style="color:#64748b;animation:opsMargenSlide .35s ease both">→</span><span style="color:#64748b;animation:opsMargenSlide .35s ease .05s both">Con costo nuevo: <b style="color:${colorM(margenNuevo)};display:inline-block;animation:opsNumPulse .45s cubic-bezier(.34,1.56,.64,1)">${margenNuevo.toFixed(1)}%</b></span>`
+                ? `<span class="alm-v-margen-sep" style="animation:opsMargenSlide .35s ease both">→</span><span class="alm-v-margen-label" style="animation:opsMargenSlide .35s ease .05s both">Con costo nuevo: <b style="color:${colorM(margenNuevo)};display:inline-block;animation:opsNumPulse .45s cubic-bezier(.34,1.56,.64,1)">${margenNuevo.toFixed(1)}%</b></span>`
                 : '';
-              margenInfoHtml = `<div style="font-size:11px;padding:5px 9px;background:rgba(168,85,247,.06);border-left:3px solid #a855f7;border-radius:6px;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;line-height:1.4;transition:background .2s ease">
-                <span style="color:#64748b">📊 Venta: <b style="color:#1f2937">S/ ${venta.toFixed(2)}</b></span>
-                ${margenActual !== null ? `<span style="color:#64748b">·</span><span style="color:#64748b">Margen actual: <b style="color:${colorM(margenActual)}">${margenActual.toFixed(1)}%</b></span>` : ''}
+              // [v2.43.16] Sin colores hardcoded para fondos — usa clases que el
+              // CSS adapta según contexto (cream o slate). Solo los colores
+              // semánticos del margen (rojo/ámbar/verde via colorM) van inline.
+              margenInfoHtml = `<div class="alm-v-margen-info">
+                <span class="alm-v-margen-label">📊 Venta: <b class="alm-v-margen-venta">S/ ${venta.toFixed(2)}</b></span>
+                ${margenActual !== null ? `<span class="alm-v-margen-sep">·</span><span class="alm-v-margen-label">Margen actual: <b style="color:${colorM(margenActual)}">${margenActual.toFixed(1)}%</b></span>` : ''}
                 ${cambioBlockHtml}
               </div>`;
             }
@@ -5466,15 +5472,20 @@ const MOS = (() => {
         }
       } catch(_) {}
 
+      // [v2.43.16] Layout REESTRUCTURADO en 2 filas:
+      //   Fila 1: marca + desc (puede wrapear a varios renglones) + código abajo
+      //   Fila 2: GRILLA fija [cant | input | helper] — siempre misma altura,
+      //           mismo ancho de columnas, perfecta alineación entre items.
+      // Antes era 1 fila con grid 4-col donde el desc largo desalineaba todo.
       return `<div class="alm-v-costo-line${faltaCls}" style="animation-delay: ${Math.min(i, 12) * 30}ms">
-        <div class="alm-v-costo-row">
-          <div>
-            <div class="alm-v-costo-desc">
-              <span id="costoGuiaMarca_${i}" style="margin-right:6px;display:inline-block;min-width:14px">${marcaIni}</span>
-              ${desc}${equivBadge}
-            </div>
+        <div class="alm-v-costo-head">
+          <span id="costoGuiaMarca_${i}" class="alm-v-costo-marca">${marcaIni}</span>
+          <div class="alm-v-costo-head-text">
+            <div class="alm-v-costo-desc">${desc}${equivBadge}</div>
             <div class="alm-v-costo-cod">▌ ${cod}</div>
           </div>
+        </div>
+        <div class="alm-v-costo-controls">
           <div class="alm-v-costo-cant">${cant}u</div>
           <input type="number" step="0.01" min="0" class="alm-v-costo-input"
                  value="${l.inputValue || ''}"
@@ -5484,7 +5495,6 @@ const MOS = (() => {
         </div>
         ${ocrNoEntendioBadge}
         ${margenInfoHtml}
-        <div class="alm-cu-sug${sugOpen}" id="sugSlot_${i}">${sugHtml}</div>
       </div>`;
     }).join('');
 
@@ -5929,35 +5939,155 @@ const MOS = (() => {
           color: #cbd5e1 !important;
           background: transparent !important;
         }
-        /* Líneas de costo como cards limpias */
+        /* ─── LAYOUT UNIFORME (BASE) ───
+           Aplica SIEMPRE (cream + slate). Estructura en 2 filas:
+           1) head (marca + desc) — desc multi-línea libre
+           2) controls (cant | input | helper) — grilla de 3 cols con
+              ANCHO Y ALTURA FIJOS para perfecta alineación entre items. */
+        .alm-v-costo-line {
+          display: block;
+        }
+        .alm-v-costo-head {
+          display: flex;
+          align-items: flex-start;
+          gap: 8px;
+          margin-bottom: 8px;
+        }
+        .alm-v-costo-marca {
+          flex-shrink: 0;
+          min-width: 18px;
+          text-align: center;
+          font-weight: 700;
+          padding-top: 2px;
+        }
+        .alm-v-costo-head-text {
+          flex: 1 1 auto;
+          min-width: 0;
+        }
+        .alm-v-costo-desc {
+          font-weight: 700;
+          line-height: 1.3;
+          word-break: break-word;
+          overflow-wrap: anywhere;
+        }
+        .alm-v-costo-cod {
+          font-size: 11px;
+          opacity: .75;
+          margin-top: 2px;
+          font-family: ui-monospace,monospace;
+        }
+        .alm-v-costo-controls {
+          display: grid;
+          grid-template-columns: 60px 1fr 100px;
+          gap: 10px;
+          align-items: center;
+          min-height: 44px;
+        }
+        .alm-v-costo-cant {
+          font-weight: 800;
+          text-align: center;
+          font-size: 14px;
+          padding: 6px 4px;
+          border-radius: 8px;
+        }
+        .alm-v-costo-input {
+          width: 100%;
+          padding: 8px 10px;
+          font-size: 15px;
+          font-weight: 700;
+          text-align: right;
+          font-family: ui-monospace,monospace;
+          border-radius: 8px;
+        }
+        .alm-v-costo-helper {
+          font-size: 11px;
+          text-align: right;
+          line-height: 1.3;
+          font-family: ui-monospace,monospace;
+        }
+        .alm-v-costo-helper-bruto {
+          font-weight: 800;
+          font-family: ui-monospace,monospace;
+        }
+        .alm-v-costo-helper-u { opacity: .7; }
+        .alm-v-costo-helper-neto { opacity: .6; font-size: 10px; }
+        .alm-v-costo-helper-empty { opacity: .45; font-style: italic; }
+        .alm-v-margen-info {
+          font-size: 11px;
+          padding: 6px 9px;
+          border-left: 3px solid #a855f7;
+          border-radius: 6px;
+          margin-top: 6px;
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+          align-items: center;
+          line-height: 1.4;
+        }
+
+        /* ─── PALETA: MODO COSTOS (SLATE) ─── */
         #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-line {
-          background: rgba(30, 41, 59, .6) !important;
-          border: 1px solid rgba(148,163,184,.15) !important;
+          background: rgba(30, 41, 59, .65) !important;
+          border: 1px solid rgba(148,163,184,.18) !important;
           border-radius: 12px !important;
-          padding: 10px 12px !important;
-          margin-bottom: 8px !important;
+          padding: 12px 14px !important;
+          margin-bottom: 10px !important;
         }
         #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-line--falta {
-          background: rgba(120, 53, 15, .12) !important;
-          border-color: rgba(217, 119, 6, .35) !important;
+          background: rgba(120, 53, 15, .15) !important;
+          border-color: rgba(217, 119, 6, .4) !important;
         }
         #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-desc {
-          color: #f1f5f9 !important;
+          color: #f8fafc !important;
         }
         #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-cod {
           color: #94a3b8 !important;
         }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-cant {
+          background: rgba(15,23,42,.65) !important;
+          color: #cbd5e1 !important;
+          border: 1px solid rgba(148,163,184,.18) !important;
+        }
         #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-input {
           background: #0f172a !important;
-          color: #e2e8f0 !important;
+          color: #f8fafc !important;
           border: 1px solid #475569 !important;
-          border-radius: 8px !important;
-          padding: 6px 10px !important;
         }
         #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-input:focus {
           border-color: #a855f7 !important;
           outline: 2px solid rgba(168,85,247,.35) !important;
         }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-helper {
+          color: #cbd5e1 !important;
+        }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-helper-bruto {
+          color: #fbbf24 !important;
+        }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-margen-info {
+          background: rgba(168,85,247,.12) !important;
+          color: #cbd5e1 !important;
+        }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-margen-label {
+          color: #cbd5e1 !important;
+        }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-margen-venta {
+          color: #f8fafc !important;
+        }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-margen-sep {
+          color: #64748b !important;
+        }
+
+        /* ─── PALETA: MODO BASE (cream, modal viejo o voucher normal) ─── */
+        .alm-v-costo-line:not(.is-costos-mode .alm-v-costo-line) {
+          /* sin override — usa el styling original */
+        }
+        .alm-v-costo-helper-bruto { color: #b45309; }
+        .alm-v-margen-info {
+          background: rgba(168,85,247,.06);
+        }
+        .alm-v-margen-label { color: #64748b; }
+        .alm-v-margen-venta { color: #1f2937; }
+        .alm-v-margen-sep { color: #64748b; }
         #almOpsDetalleOverlay.is-costos-mode .alm-v-costos-toggles {
           background: rgba(15,23,42,.6) !important;
           border: 1px solid rgba(148,163,184,.15) !important;
@@ -7360,11 +7490,21 @@ const MOS = (() => {
   // al backend para ese producto específico.
   const _sugDebounceTimers = {};
   function _costosGuiaSugerirDebounce(idx) {
+    // [v2.43.16] En el overlay nuevo (modo costos en voucher) NO debe aparecer
+    // sugerencia de precio venta — eso pertenece al modal de PRECIOS jefa.
+    // El user reportó: "sigo viendo el PRECIO venta sugerido en el modal de
+    // costos xq? se supone que son solo costos". Detectamos si el slot está
+    // dentro de #almOpsDetalleOverlay y si sí, abortamos.
+    const slot = $('sugSlot_' + idx);
+    if (slot && slot.closest && slot.closest('#almOpsDetalleOverlay')) return;
     clearTimeout(_sugDebounceTimers[idx]);
     _sugDebounceTimers[idx] = setTimeout(() => _costosGuiaFetchSugerencia(idx), 600);
   }
 
   async function _costosGuiaFetchSugerencia(idx) {
+    // [v2.43.16] Defensa adicional — si el slot está en el overlay nuevo, salir.
+    const slotPre = $('sugSlot_' + idx);
+    if (slotPre && slotPre.closest && slotPre.closest('#almOpsDetalleOverlay')) return;
     const st = S._costosGuiaState;
     const l = st.lineas[idx];
     if (!l) return;
