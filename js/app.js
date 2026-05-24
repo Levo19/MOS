@@ -5149,24 +5149,37 @@ const MOS = (() => {
     let btnCostos = '';
     if (esIngresoProv) {
       if (!expanded) {
-        // Card en la lista — botón abre overlay directo en modo costos
-        btnCostos = `<button class="alm-v-btn-costos" onclick="event.stopPropagation();MOS.opsEntrarModoCostos('${op.fuente}','${_escapeHtml(op.idGuia)}')" title="Editar costos">💰 Costos</button>`;
-      } else if (!modoCostos) {
-        // Overlay lectura — botón entra a modo edición sin cerrar
-        btnCostos = `<button class="alm-v-btn-costos" onclick="MOS.opsEntrarModoCostos('${op.fuente}','${_escapeHtml(op.idGuia)}')" title="Editar costos">💰 Editar costos</button>`;
-      } else {
-        // [v2.43.0] Overlay en modo edición — UN SOLO CTA principal + secundarios
-        // chicos. OCR ahora corre automático al entrar (solo mantengo botón de
-        // re-OCR para casos donde admin quiere re-procesar manualmente).
+        // [v2.43.7] CARD COMPACT — SOLO 2 botones grandes y claros.
+        // 'Actualizar costos' abre overlay con OCR + edición. 'Actualizar
+        // precios' abre directo el modal de jefa (foto/manual + A/B/C).
+        // Cada uno autocontenido, sin más botones secundarios en la card.
         btnCostos = `
-          <!-- CTA PRINCIPAL: guarda + abre picker + imprime ticket para jefa -->
+          <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#a855f7,#7c3aed);box-shadow:0 4px 10px -2px rgba(168,85,247,.55);font-size:12px;font-weight:700;padding:9px 13px"
+                  onclick="event.stopPropagation();MOS.opsEntrarModoCostos('${op.fuente}','${_escapeHtml(op.idGuia)}')"
+                  title="Abrir overlay con costos y OCR auto">💰 Actualizar costos</button>
+          <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#f59e0b,#d97706);box-shadow:0 4px 10px -2px rgba(245,158,11,.55);font-size:12px;font-weight:700;padding:9px 13px"
+                  onclick="event.stopPropagation();MOS.opsAbrirAplicarRespuestaJefa('${_escapeHtml(op.idGuia)}')"
+                  title="Subir foto de la jefa o ingresar manual">🏷 Actualizar precios</button>`;
+      } else if (!modoCostos) {
+        // Overlay lectura — mismo par de botones que en la card
+        btnCostos = `
+          <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#a855f7,#7c3aed);box-shadow:0 4px 10px -2px rgba(168,85,247,.55);font-size:12px;font-weight:700;padding:9px 13px"
+                  onclick="MOS.opsEntrarModoCostos('${op.fuente}','${_escapeHtml(op.idGuia)}')"
+                  title="Editar costos">💰 Actualizar costos</button>
+          <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#f59e0b,#d97706);box-shadow:0 4px 10px -2px rgba(245,158,11,.55);font-size:12px;font-weight:700;padding:9px 13px"
+                  onclick="MOS.opsAbrirAplicarRespuestaJefa('${_escapeHtml(op.idGuia)}')"
+                  title="Subir foto de la jefa o ingresar manual">🏷 Actualizar precios</button>`;
+      } else {
+        // [v2.43.7] Overlay modo costos AUTOCONTENIDO — solo lo necesario para
+        // su flow propio: guardar + imprimir para jefa, re-OCR si admin quiere
+        // override manual, y cancelar. El botón 'Respuesta jefa' YA NO va aquí:
+        // ese es flow SEPARADO accesible desde el botón 'Actualizar precios'
+        // de la vista principal (autocontenido también).
+        btnCostos = `
           <button class="alm-v-btn-costos ops-cta-jefa" style="background:linear-gradient(135deg,#a855f7,#7c3aed);box-shadow:0 4px 12px -2px rgba(168,85,247,.6);font-size:13px;padding:10px 14px;font-weight:700;transition:transform .15s ease,box-shadow .2s ease"
                   onclick="MOS.guardarCostosEImprimirJefa()" title="Guarda costos y manda el ticket a la jefa para que decida precios">💾📋 Guardar e imprimir para jefa</button>
-          <!-- Secundarios: re-OCR (override manual) y aplicar respuesta jefa -->
           <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#22d3ee,#0891b2);box-shadow:0 2px 6px -2px rgba(34,211,238,.5);font-size:11px;padding:7px 10px"
                   onclick="MOS.opsOcrComprobantePrepoblar('${_escapeHtml(op.idGuia)}')" title="Re-procesar foto con Claude OCR (sobreescribe valores actuales)">🔄 Re-OCR</button>
-          <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#f59e0b,#d97706);box-shadow:0 2px 6px -2px rgba(245,158,11,.5);font-size:11px;padding:7px 10px"
-                  onclick="MOS.opsAbrirAplicarRespuestaJefa('${_escapeHtml(op.idGuia)}')" title="Subir foto del ticket lleno por la jefa">📷 Respuesta jefa</button>
           <button class="alm-v-btn-costos" style="background:rgba(71,85,105,.6);box-shadow:none;font-size:11px;padding:7px 10px"
                   onclick="MOS.opsSalirModoCostos()" title="Cancelar edición">✕</button>`;
       }
@@ -5235,14 +5248,12 @@ const MOS = (() => {
     }
 
     // [v2.41.99] Botón "Imprimir reporte" en compact para ingresos proveedor.
-    // Funciona con o sin costos: el GAS imprime sugerencias basadas en margen
-    // configurado cuando no hay costos cargados aún.
+    // [v2.43.7] ELIMINADO el botón '🖨 Reporte' de la card compact.
+    // La regla pedida por el usuario: solo 2 botones en vista principal —
+    // 'Actualizar costos' y 'Actualizar precios'. Cada uno con su overlay
+    // autocontenido. El reporte clásico ya no se imprime desde aquí; el
+    // flow normal pasa por overlay→guardar costos→imprime ticket para jefa.
     let btnImprimirCompact = '';
-    if (esIngresoProv && !expanded) {
-      btnImprimirCompact = `<button class="alm-v-btn-imprimir"
-        onclick="event.stopPropagation();MOS.abrirSelPrinterCostos('${op.fuente}','${_escapeHtml(op.idGuia)}')"
-        title="Imprimir reporte de costos (incluye sugerencias si no hay costos)">🖨 Reporte</button>`;
-    }
 
     return `<div class="alm-voucher ${variantClass}${anexoCls} ${expanded ? 'is-expanded' : ''}${costosCls && costosCls.estado === 'completo' ? ' alm-voucher-costos-ok' : ''}"
                  id="opVouch_${expandKey}"
@@ -5354,10 +5365,23 @@ const MOS = (() => {
         : '<span style="opacity:.4">sin costo</span>';
       const sugHtml = l._sugerencia ? _renderSugerenciaInline(i, l._sugerencia) : '';
       const sugOpen = l._sugerencia ? ' is-open' : '';
+      // [v2.43.7] Etiqueta clara según resultado del OCR auto.
+      // Si la guía tiene foto Y el OCR ya corrió (flag S._opsOcrYaCorrido) Y
+      // esta línea quedó sin costo → el OCR NO entendió esa línea → mostrar
+      // badge ámbar 'OCR no entendió' para que admin sepa que debe escribir manual.
+      const _ocrCorrido = S._opsOcrYaCorrido && S._opsOcrYaCorrido[st.idGuia];
+      const _conFoto = st.foto && String(st.foto).trim() !== '';
+      const _ocrFalloEstaLinea = !brutoUnit && _ocrCorrido && _conFoto;
       const marcaIni = brutoUnit > 0
         ? '<span title="Costo registrado" style="color:#16a34a;font-weight:700">✓</span>'
-        : '<span title="Falta costo" style="color:#dc2626;font-weight:700">⚠</span>';
+        : (_ocrFalloEstaLinea
+            ? '<span title="OCR no pudo leer este ítem · escribe el costo a mano" style="color:#d97706;font-weight:700">🤖⚠</span>'
+            : '<span title="Falta costo" style="color:#dc2626;font-weight:700">⚠</span>');
       const faltaCls = brutoUnit > 0 ? '' : ' alm-v-costo-line--falta';
+      // Badge informativo si OCR no entendió esta línea
+      const ocrNoEntendioBadge = _ocrFalloEstaLinea
+        ? '<div style="font-size:10px;color:#d97706;background:rgba(217,119,6,.1);border-left:3px solid #d97706;padding:3px 8px;border-radius:4px;margin-top:3px;font-weight:600">🤖 OCR no entendió este ítem — escribe el costo a mano</div>'
+        : '';
 
       // [v2.43.1] MARGEN ACTUAL VISIBLE — busca el producto canónico en el
       // catálogo por codigoBarra y muestra precio venta + margen actual.
@@ -5407,6 +5431,7 @@ const MOS = (() => {
                  placeholder="${placeholder}">
           <div class="alm-v-costo-helper" id="costoGuiaSubtot_${i}">${helper}</div>
         </div>
+        ${ocrNoEntendioBadge}
         ${margenInfoHtml}
         <div class="alm-cu-sug${sugOpen}" id="sugSlot_${i}">${sugHtml}</div>
       </div>`;
