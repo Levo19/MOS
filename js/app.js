@@ -5146,6 +5146,11 @@ const MOS = (() => {
     //          Si ya está en modo costos → muestra Guardar/Cancelar en su lugar.
     const esIngresoProv = op.fuente === 'WH' && tipo === 'INGRESO_PROVEEDOR' && !op.esPreingreso;
     const modoCostos = !!S._opsModoCostos && expanded;
+    // [v2.43.13] FIX TDZ — declarar costosCls AQUÍ antes del bloque de botones
+    // (antes estaba más abajo y crasheaba con "Cannot access 'costosCls' before
+    // initialization" al toggle del chip 'Solo ingresos'). Devuelve null si no
+    // aplica — el bloque if-esIngresoProv ya guarda.
+    const costosCls = _opsClasificarCostos(op);
     let btnCostos = '';
     if (esIngresoProv) {
       if (!expanded) {
@@ -5257,7 +5262,7 @@ const MOS = (() => {
     // [v2.41.99 → v2.43.11] Sello de costos REMOVIDO de la card compact.
     // El progreso ahora se ve directamente como BARRA dentro del botón
     // 'Actualizar costos' (ver más abajo). El sello redundante y feo se elimina.
-    const costosCls = _opsClasificarCostos(op);
+    // [v2.43.13] costosCls ya declarado arriba (antes del bloque de botones).
     let selloCostosHtml = '';
 
     // [v2.41.99] Botón "Imprimir reporte" en compact para ingresos proveedor.
