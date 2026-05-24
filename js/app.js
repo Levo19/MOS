@@ -5885,6 +5885,9 @@ const MOS = (() => {
       const style = document.createElement('style');
       style.id = 'opsCSSCostosMode';
       style.textContent = `
+        /* [v2.43.14] Overlay de costos = mismo lenguaje visual que el modal jefa.
+           Oculta TODO lo decorativo del voucher (sellos, chips, separadores tipo
+           recibo) y deja solo lo funcional: header limpio + cards + CTA. */
         #almOpsDetalleOverlay.is-costos-mode {
           background: rgba(2, 6, 23, 0.85) !important;
           backdrop-filter: blur(8px);
@@ -5898,21 +5901,44 @@ const MOS = (() => {
           background: linear-gradient(160deg, #0f172a 0%, #1e293b 60%, #0f172a 100%) !important;
           color: #e2e8f0 !important;
           border-radius: 18px !important;
-          border: 1px solid rgba(148, 163, 184, .15) !important;
+          border: 2px solid rgba(168, 85, 247, .35) !important;
           box-shadow: 0 25px 60px -15px rgba(0,0,0,.7) !important;
         }
-        #almOpsDetalleOverlay.is-costos-mode .alm-voucher * {
-          border-color: rgba(148,163,184,.2) !important;
+        /* OCULTAR todo lo decorativo tipo recibo */
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-sello,
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-sello-ingresado,
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-sello-venta,
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-sello-anulado,
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-chip-anexo,
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-sello,
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-foto-thumb,
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-separador-recibo,
+        #almOpsDetalleOverlay.is-costos-mode .alm-voucher::before,
+        #almOpsDetalleOverlay.is-costos-mode .alm-voucher::after {
+          display: none !important;
         }
+        /* Header del voucher (tipo) — reformatear a estilo modal jefa */
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-cabecera {
+          border-bottom: 1px solid rgba(148,163,184,.2) !important;
+          padding: 12px 14px !important;
+          background: linear-gradient(180deg, rgba(168,85,247,.08), transparent) !important;
+        }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-cabecera *,
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-meta,
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-meta * {
+          color: #cbd5e1 !important;
+          background: transparent !important;
+        }
+        /* Líneas de costo como cards limpias */
         #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-line {
           background: rgba(30, 41, 59, .6) !important;
           border: 1px solid rgba(148,163,184,.15) !important;
-          border-radius: 10px !important;
-          padding: 8px 10px !important;
-          margin-bottom: 7px !important;
+          border-radius: 12px !important;
+          padding: 10px 12px !important;
+          margin-bottom: 8px !important;
         }
         #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-line--falta {
-          background: rgba(120, 53, 15, .15) !important;
+          background: rgba(120, 53, 15, .12) !important;
           border-color: rgba(217, 119, 6, .35) !important;
         }
         #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-desc {
@@ -5926,6 +5952,7 @@ const MOS = (() => {
           color: #e2e8f0 !important;
           border: 1px solid #475569 !important;
           border-radius: 8px !important;
+          padding: 6px 10px !important;
         }
         #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-input:focus {
           border-color: #a855f7 !important;
@@ -5936,6 +5963,7 @@ const MOS = (() => {
           border: 1px solid rgba(148,163,184,.15) !important;
           border-radius: 12px !important;
           padding: 8px 10px !important;
+          margin-bottom: 10px !important;
         }
         #almOpsDetalleOverlay.is-costos-mode .alm-v-tg-btn {
           background: rgba(71,85,105,.4) !important;
@@ -5946,29 +5974,32 @@ const MOS = (() => {
           background: linear-gradient(135deg,#a855f7,#7c3aed) !important;
           color: #fff !important;
         }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-tg-check {
+          color: #cbd5e1 !important;
+        }
         #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-totales {
           background: rgba(15,23,42,.6) !important;
           border: 1px solid rgba(148,163,184,.15) !important;
           color: #f1f5f9 !important;
           border-radius: 10px !important;
+          padding: 10px 14px !important;
+          margin-top: 10px !important;
+        }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-totales * {
+          color: #f1f5f9 !important;
         }
         #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-helper {
           color: #94a3b8 !important;
-        }
-        /* Header del voucher en modo costos */
-        #almOpsDetalleOverlay.is-costos-mode .alm-v-cabecera,
-        #almOpsDetalleOverlay.is-costos-mode .alm-v-meta,
-        #almOpsDetalleOverlay.is-costos-mode .alm-v-meta * {
-          color: #cbd5e1 !important;
         }
         /* Footer sticky con CTA */
         #almOpsDetalleOverlay.is-costos-mode .alm-v-acciones {
           position: sticky;
           bottom: -6px;
           background: linear-gradient(0deg, rgba(15,23,42,.98) 70%, rgba(15,23,42,0));
-          padding: 10px 0 6px;
+          padding: 12px 0 8px;
           border-top: 1px solid rgba(148,163,184,.15);
-          margin-top: 8px;
+          margin-top: 10px;
+          z-index: 10;
         }
       `;
       document.head.appendChild(style);
@@ -6129,7 +6160,10 @@ const MOS = (() => {
     _opsJefaState.contexto = [];
     _opsJefaState.correcciones = [];
     _opsJefaState.confidenceGlobal = 0;
-    // Construir HTML del modal
+    _opsJefaState.modoOrigen = null;  // 'foto' | 'manual' (null = aún no eligió)
+    // [v2.43.14] Modal UNIFICADO: header + cards origen SIEMPRE arriba +
+    // body abajo. Sin 'cambio de pantalla' al elegir foto/manual — solo
+    // re-render del body inferior. UN solo modal de principio a fin.
     let modal = document.getElementById('modalAplicarRespuestaJefa');
     if (!modal) {
       modal = document.createElement('div');
@@ -6138,51 +6172,128 @@ const MOS = (() => {
       modal.innerHTML = `
         <div class="bg-slate-900 border-2 border-emerald-500/50 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
           <div class="flex items-center gap-3 px-5 py-4 border-b border-slate-700/60">
-            <span class="text-2xl">📷</span>
+            <span class="text-2xl">🏷</span>
             <div class="flex-1 min-w-0">
-              <div class="font-black text-emerald-300">Aplicar respuesta jefa</div>
+              <div class="font-black text-emerald-300">Actualizar precios</div>
               <div class="text-xs text-slate-400" id="opsJefaSubtitle">Guía: —</div>
             </div>
             <button onclick="MOS.opsCerrarAplicarRespuestaJefa()" class="w-9 h-9 rounded-full bg-slate-800 hover:bg-rose-500/40 transition-all text-slate-300">✕</button>
           </div>
-          <div class="px-5 py-4 overflow-y-auto flex-1" id="opsJefaBody">
-            <div class="text-center py-10 text-slate-400">
-              <div class="text-5xl mb-3">📋</div>
-              <p class="text-sm mb-5">¿Cómo me das la autorización de la jefa?</p>
-              <input type="file" id="opsJefaFotoInput" accept="image/*" capture="environment" class="hidden">
-              <!-- [v2.43.5] 2 opciones lado a lado: OCR foto · Entrada manual sin OCR -->
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md mx-auto">
-                <button onclick="document.getElementById('opsJefaFotoInput').click(); try{MOS._opsBeep?.('tac')}catch(_){}"
-                        class="ops-cta-jefa px-4 py-5 bg-gradient-to-br from-emerald-500 to-emerald-700 hover:from-emerald-400 active:scale-95 text-white font-black rounded-2xl shadow-lg shadow-emerald-500/40 flex flex-col items-center gap-2 transition"
-                        style="transition:transform .15s ease,box-shadow .2s ease">
-                  <span class="text-3xl">📷</span>
-                  <span class="text-sm">Subir foto del ticket</span>
-                  <span class="text-[10px] opacity-80 font-normal">Claude OCR auto</span>
-                </button>
-                <button onclick="MOS._opsJefaIniciarManual()"
-                        class="ops-cta-jefa px-4 py-5 bg-gradient-to-br from-cyan-500 to-cyan-700 hover:from-cyan-400 active:scale-95 text-white font-black rounded-2xl shadow-lg shadow-cyan-500/40 flex flex-col items-center gap-2"
-                        style="transition:transform .15s ease,box-shadow .2s ease">
-                  <span class="text-3xl">✏️</span>
-                  <span class="text-sm">Entrada manual</span>
-                  <span class="text-[10px] opacity-80 font-normal">Sin OCR · tipear directo</span>
-                </button>
-              </div>
-              <p class="text-[10px] text-slate-500 mt-5">Si la foto es borrosa o no la tienes, usa entrada manual.</p>
-            </div>
+          <!-- Cards origen SIEMPRE visibles arriba -->
+          <div class="px-5 pt-4 pb-2 border-b border-slate-800">
+            <input type="file" id="opsJefaFotoInput" accept="image/*" class="hidden">
+            <div class="grid grid-cols-2 gap-2" id="opsJefaCardsOrigen"></div>
           </div>
+          <div class="px-5 py-4 overflow-y-auto flex-1" id="opsJefaBody"></div>
         </div>`;
       document.body.appendChild(modal);
-      // Bind input file
       modal.querySelector('#opsJefaFotoInput').addEventListener('change', _opsJefaOnFotoSelected);
     }
     document.getElementById('opsJefaSubtitle').textContent = 'Guía: ' + idGuia;
     modal.classList.remove('hidden');
-    // Cargar contexto en background
+    // Render inicial (sin contexto aún)
+    _opsJefaRenderCards();
+    _opsJefaRenderBody();
+    // Cargar contexto en background — al terminar re-render del body
     try {
       const r = await API.post('getContextoTicketJefa', { idGuia });
       _opsJefaState.contexto = (r && r.items) || (r && r.data && r.data.items) || [];
     } catch(e) {
-      toast('Error cargando contexto: ' + (e.message || e), 'error');
+      console.warn('[opsJefa] getContextoTicketJefa fall:', e);
+      _opsJefaState.contexto = [];
+    }
+    // [v2.43.14] Si el contexto del backend está vacío (guía sin costos
+    // aún), usar las líneas de WH como fallback para que el admin pueda
+    // entrar manual igual con los productos de la guía.
+    if (!_opsJefaState.contexto.length) {
+      try {
+        const opLocal = _findOpByKey('WH_' + idGuia);
+        const cacheKey = 'WH_' + idGuia;
+        const cached = S._opsDetCache && S._opsDetCache[cacheKey];
+        const lineasGuia = (cached && cached.lineas) || (opLocal && opLocal.lineas) || [];
+        if (lineasGuia.length) {
+          _opsJefaState.contexto = lineasGuia.map(l => ({
+            skuBase:     l.codigoProducto || l.codigoBarra || l.skuBase || '',
+            descripcion: l.descripcion || l.nombre || '',
+            costo:       parseFloat(l.precioUnitario) || 0,
+            ventaActual: 0,
+            margenActualPct: 0
+          })).filter(it => it.skuBase);
+          if (_opsJefaState.contexto.length) {
+            console.log('[opsJefa] contexto cargado desde fallback WH:', _opsJefaState.contexto.length, 'items');
+          }
+        }
+      } catch(eF) { console.warn('[opsJefa] fallback WH fall:', eF); }
+    }
+    _opsJefaRenderCards();
+    _opsJefaRenderBody();
+  }
+
+  // [v2.43.14] Render de las 2 cards origen (foto/manual) — SIEMPRE arriba.
+  // El estado activo cambia color. Click en una re-renderiza.
+  function _opsJefaRenderCards() {
+    const cont = document.getElementById('opsJefaCardsOrigen');
+    if (!cont) return;
+    const modo = _opsJefaState.modoOrigen;
+    const isFoto = modo === 'foto';
+    const isManual = modo === 'manual';
+    cont.innerHTML = `
+      <label for="opsJefaFotoInput" class="ops-cta-jefa cursor-pointer p-3 rounded-2xl flex flex-col items-center gap-1 transition select-none text-white font-bold"
+             style="${isFoto
+               ? 'background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 6px 14px -2px rgba(16,185,129,.55);outline:2px solid rgba(16,185,129,.4)'
+               : 'background:linear-gradient(135deg,rgba(16,185,129,.35),rgba(5,150,105,.35));opacity:.75'}">
+        <span class="text-2xl">📷</span>
+        <span class="text-xs">${isFoto ? 'Foto OCR · activo' : 'Subir foto · OCR'}</span>
+      </label>
+      <button onclick="MOS._opsJefaIniciarManual()"
+              class="ops-cta-jefa p-3 rounded-2xl flex flex-col items-center gap-1 transition border-0 cursor-pointer text-white font-bold"
+              style="${isManual
+                ? 'background:linear-gradient(135deg,#06b6d4,#0891b2);box-shadow:0 6px 14px -2px rgba(6,182,212,.55);outline:2px solid rgba(6,182,212,.4)'
+                : 'background:linear-gradient(135deg,rgba(6,182,212,.35),rgba(8,145,178,.35));opacity:.75'}">
+        <span class="text-2xl">✏️</span>
+        <span class="text-xs">${isManual ? 'Manual · activo' : 'Entrada manual'}</span>
+      </button>
+    `;
+  }
+
+  // [v2.43.14] Render del body — depende del estado:
+  //   - sin modoOrigen → mensaje "Elige una opción arriba"
+  //   - foto + procesando → spinner OCR
+  //   - cualquiera con correcciones → lista A/B/C (la que ya tenía _opsJefaRenderResultados)
+  function _opsJefaRenderBody() {
+    const body = document.getElementById('opsJefaBody');
+    if (!body) return;
+    const modo = _opsJefaState.modoOrigen;
+    const tieneContexto = (_opsJefaState.contexto || []).length > 0;
+    const tieneCorrecciones = (_opsJefaState.correcciones || []).length > 0;
+    if (_opsJefaState.procesando) {
+      body.innerHTML = `<div class="text-center py-12">
+        <div class="text-5xl mb-3" style="animation:opsSpin 1.4s linear infinite;display:inline-block">🤖</div>
+        <p class="text-sm text-slate-300 font-bold">Procesando con Claude OCR...</p>
+        <p class="text-xs text-slate-500 mt-2">5-15 segundos</p>
+      </div>`;
+      return;
+    }
+    if (tieneCorrecciones) {
+      // Render la lista A/B/C (función existente, ahora solo el body)
+      _opsJefaRenderResultados();
+      return;
+    }
+    if (!modo) {
+      body.innerHTML = `<div class="text-center py-12 text-slate-400">
+        <div class="text-4xl mb-3 opacity-50">👆</div>
+        <p class="text-sm">Elige una opción arriba</p>
+        <p class="text-[11px] mt-2 text-slate-500">
+          📷 Foto = OCR automático leyendo lo escrito por la jefa<br>
+          ✏️ Manual = tipear directo cada decisión
+        </p>
+        ${!tieneContexto ? `<p class="text-[10px] mt-4 text-amber-400 italic">⚠ Esta guía aún no tiene costos cargados.<br>Primero pasa por 'Actualizar costos'.</p>` : ''}
+      </div>`;
+    } else if (modo === 'foto') {
+      body.innerHTML = `<div class="text-center py-10 text-slate-400">
+        <p class="text-sm mb-3">Selecciona la foto del ticket lleno por la jefa</p>
+        <label for="opsJefaFotoInput" class="inline-block px-5 py-3 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold rounded-xl cursor-pointer">📷 Elegir foto</label>
+      </div>`;
     }
   }
 
@@ -6199,10 +6310,13 @@ const MOS = (() => {
     if (!file) return;
     if (_opsJefaState.procesando) return;
     _opsJefaState.procesando = true;
+    _opsJefaState.modoOrigen = 'foto';
+    // [v2.43.14] Cards arriba se actualizan también — feedback visual
+    try { _opsJefaRenderCards(); } catch(_){}
     const body = document.getElementById('opsJefaBody');
     body.innerHTML = `
       <div class="text-center py-12">
-        <div class="text-5xl mb-3 animate-bounce">🤖</div>
+        <div class="text-5xl mb-3" style="animation:opsSpin 1.4s linear infinite;display:inline-block">🤖</div>
         <p class="text-sm text-slate-300 font-bold">Procesando con Claude OCR...</p>
         <p class="text-xs text-slate-500 mt-2">Esto tarda ~5-15 segundos</p>
       </div>`;
@@ -6367,9 +6481,14 @@ const MOS = (() => {
   // la foto no está clara o se quiere ir directo.
   function _opsJefaIniciarManual() {
     try { _opsBeep('tac'); } catch(_){}
+    _opsJefaState.modoOrigen = 'manual';
     const ctx = _opsJefaState.contexto || [];
     if (!ctx.length) {
-      toast('Sin productos en el contexto de la guía', 'warning');
+      // [v2.43.14] Sin contexto y sin fallback — mostrar mensaje claro
+      // pero mantener cards visibles para que el admin entienda.
+      try { toast('⚠ Esta guía no tiene productos. Primero pasa por Actualizar costos.', 'warn', 4000); } catch(_){}
+      _opsJefaRenderCards();
+      _opsJefaRenderBody();
       return;
     }
     _opsJefaState.correcciones = ctx.map(item => ({
@@ -6379,14 +6498,15 @@ const MOS = (() => {
       ventaNueva:     null,
       margenNuevoPct: null,
       tachado:        false,
-      confidence:     100,  // entrada manual = 100% confianza por defecto
+      confidence:     100,
       notas:          '',
       editado:        false,
-      opcion:         'A',  // todos en sin cambio por default
+      opcion:         'A',
       _opcionInicializada: true,
       propagar:       true
     }));
     _opsJefaState.confidenceGlobal = 100;
+    _opsJefaRenderCards();
     _opsJefaRenderResultados();
   }
 
@@ -32639,6 +32759,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.43.4-6] Modal jefa A/B/C + entrada manual + presentaciones individuales
     _opsJefaSetOpcion, _opsJefaTogglePropagar, _opsJefaIniciarManual,
     _opsJefaTogglePresentacion, _opsJefaTodasPresentaciones,
+    // [v2.43.14] Modal jefa unificado (cards arriba + body abajo)
+    _opsJefaRenderCards, _opsJefaRenderBody,
     // [v2.43.5] Exponer _opsBeep para callers inline desde template
     _opsBeep,
     _impactoTogglesel, _impactoSetPrecio, cerrarImpactoCostos, aplicarSugerenciasSeleccionadas,
