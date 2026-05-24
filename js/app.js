@@ -4782,6 +4782,30 @@ const MOS = (() => {
         @keyframes opsMargenSlide { 0% { opacity: 0; transform: translateX(-6px); } 100% { opacity: 1; transform: translateX(0); } }
         .ops-cta-jefa:hover { animation: opsCtaGlow 1.4s ease-in-out infinite; transform: translateY(-1px); }
         .ops-cta-jefa:active { transform: translateY(0) scale(.98); }
+        /* [v2.43.17] Dragover sobre modal jefa — overlay púrpura difuminado */
+        #modalAplicarRespuestaJefa > div { position: relative; }
+        #modalAplicarRespuestaJefa.ops-jefa-dragover > div {
+          outline: 3px dashed #a855f7 !important;
+          outline-offset: -8px;
+          box-shadow: 0 0 0 200px rgba(168,85,247,.10) inset, 0 0 60px rgba(168,85,247,.4) !important;
+          transition: box-shadow .15s ease, outline-color .15s ease;
+        }
+        #modalAplicarRespuestaJefa.ops-jefa-dragover > div::after {
+          content: '⬇  Suelta la imagen aquí';
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 22px;
+          font-weight: 900;
+          color: #a855f7;
+          background: rgba(15,23,42,.7);
+          backdrop-filter: blur(3px);
+          border-radius: 18px;
+          pointer-events: none;
+          z-index: 10;
+        }
       `;
       document.head.appendChild(style);
     } catch(_){}
@@ -6293,9 +6317,9 @@ const MOS = (() => {
     _opsJefaState.modoOrigen = 'manual';  // [v2.43.15] manual es DEFAULT siempre
     _opsJefaState.ocrCorrido = false;
     _opsJefaState.procesando = false;
-    // [v2.43.15] Modal UNIFICADO: header + UN solo botón OCR opcional arriba +
-    // lista de productos editable abajo (manual default). Si admin quiere
-    // acelerar usa el botón OCR que pre-puebla los inputs.
+    _opsJefaState.cargandoContexto = true;  // [v2.43.17] flag race-condition
+    // [v2.43.17] Modal UNIFICADO con 3 vías de input OCR (cámara/archivo/
+    // drag-drop + paste), y spinner mientras carga contexto inicial.
     let modal = document.getElementById('modalAplicarRespuestaJefa');
     if (!modal) {
       modal = document.createElement('div');
@@ -6311,19 +6335,30 @@ const MOS = (() => {
             </div>
             <button onclick="MOS.opsCerrarAplicarRespuestaJefa()" class="w-9 h-9 rounded-full bg-slate-800 hover:bg-rose-500/40 transition-all text-slate-300">✕</button>
           </div>
-          <!-- Botón OCR opcional arriba (manual es default) -->
+          <!-- Botón OCR opcional arriba (cámara/archivo/drop/paste) -->
           <div class="px-5 pt-4 pb-3 border-b border-slate-800">
-            <input type="file" id="opsJefaFotoInput" accept="image/*" class="hidden">
+            <!-- 2 inputs ocultos: uno con cámara, otro libre -->
+            <input type="file" id="opsJefaFotoCam"  accept="image/*" capture="environment" class="hidden">
+            <input type="file" id="opsJefaFotoFile" accept="image/*" class="hidden">
             <div id="opsJefaCardsOrigen"></div>
           </div>
           <div class="px-5 py-4 overflow-y-auto flex-1" id="opsJefaBody"></div>
         </div>`;
       document.body.appendChild(modal);
-      modal.querySelector('#opsJefaFotoInput').addEventListener('change', _opsJefaOnFotoSelected);
+      modal.querySelector('#opsJefaFotoCam').addEventListener('change', _opsJefaOnFotoSelected);
+      modal.querySelector('#opsJefaFotoFile').addEventListener('change', _opsJefaOnFotoSelected);
+      // [v2.43.17] Paste clipboard image (Ctrl+V cuando el modal está abierto)
+      modal.addEventListener('paste', _opsJefaOnPaste);
+      // [v2.43.17] Drag & drop sobre TODO el modal (no solo el botón) — UX
+      // generosa: tirar la foto desde el explorador funciona en cualquier
+      // punto del modal.
+      modal.addEventListener('dragover', _opsJefaOnDragOver);
+      modal.addEventListener('dragleave', _opsJefaOnDragLeave);
+      modal.addEventListener('drop', _opsJefaOnDrop);
     }
     document.getElementById('opsJefaSubtitle').textContent = 'Guía: ' + idGuia;
     modal.classList.remove('hidden');
-    // Render inicial (sin contexto aún)
+    // Render inicial con spinner de carga de contexto
     _opsJefaRenderCards();
     _opsJefaRenderBody();
     // Cargar contexto en background — al terminar re-render del body
@@ -6334,9 +6369,7 @@ const MOS = (() => {
       console.warn('[opsJefa] getContextoTicketJefa fall:', e);
       _opsJefaState.contexto = [];
     }
-    // [v2.43.14] Si el contexto del backend está vacío (guía sin costos
-    // aún), usar las líneas de WH como fallback para que el admin pueda
-    // entrar manual igual con los productos de la guía.
+    // [v2.43.14] Fallback WH si backend vacío
     if (!_opsJefaState.contexto.length) {
       try {
         const opLocal = _findOpByKey('WH_' + idGuia);
@@ -6357,35 +6390,155 @@ const MOS = (() => {
         }
       } catch(eF) { console.warn('[opsJefa] fallback WH fall:', eF); }
     }
+    _opsJefaState.cargandoContexto = false;
     _opsJefaRenderCards();
     _opsJefaRenderBody();
   }
 
-  // [v2.43.15] Solo 1 botón OCR arriba. Manual es el DEFAULT al abrir el modal.
-  // Si admin quiere acelerar usando foto → tap el botón → file picker (OS
-  // muestra opciones: cámara / galería / archivos según el dispositivo).
+  // [v2.43.17] Picker INTELIGENTE de fuente de imagen:
+  //   📸 Cámara · 📁 Archivo · 🖼 Pegar (Ctrl+V) · ⬇ Arrastrar
+  // 3 botones explícitos + dropzone activa sobre todo el modal + paste listener.
+  // Manual sigue siendo el default — esto es solo si el admin quiere acelerar.
   function _opsJefaRenderCards() {
     const cont = document.getElementById('opsJefaCardsOrigen');
     if (!cont) return;
     const procesando = !!_opsJefaState.procesando;
     const yaCorrioOcr = !!_opsJefaState.ocrCorrido;
-    const txt = procesando ? 'Procesando con IA…' : (yaCorrioOcr ? '✓ OCR procesado · tap para re-procesar' : '📷 Analizar foto con OCR (opcional)');
+    if (procesando) {
+      cont.innerHTML = `
+        <div class="w-full py-3 px-4 rounded-2xl flex items-center justify-center gap-3 select-none text-white font-bold"
+             style="background:linear-gradient(135deg,#10b981,#059669);opacity:.7">
+          <span class="text-xl" style="animation:opsSpin 1.4s linear infinite">🤖</span>
+          <span class="text-sm">Procesando con IA…</span>
+        </div>`;
+      return;
+    }
+    const checkBadge = yaCorrioOcr
+      ? `<span style="position:absolute;top:-6px;right:-6px;background:#10b981;color:#fff;font-size:9px;font-weight:900;padding:2px 6px;border-radius:999px;box-shadow:0 2px 6px rgba(16,185,129,.5)">✓ OCR</span>`
+      : '';
     cont.innerHTML = `
-      <label for="opsJefaFotoInput" class="ops-cta-jefa cursor-pointer w-full py-3 px-4 rounded-2xl flex items-center justify-center gap-3 transition select-none text-white font-bold"
-             style="background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 6px 14px -2px rgba(16,185,129,.5);${procesando ? 'opacity:.65;pointer-events:none' : ''}">
-        <span class="text-xl" ${procesando ? 'style="animation:opsSpin 1.4s linear infinite"' : ''}>${procesando ? '🤖' : '📷'}</span>
-        <span class="text-sm">${txt}</span>
-      </label>
-      <p class="text-[10px] text-slate-500 text-center mt-1.5 leading-tight">
-        Manual: escribe directo en cada fila abajo · OCR: toma foto del ticket de la jefa y se rellena solo
-      </p>
+      <div class="rounded-2xl p-2.5 relative" style="background:linear-gradient(135deg,rgba(16,185,129,.12),rgba(5,150,105,.08));border:1.5px dashed rgba(16,185,129,.45)">
+        ${checkBadge}
+        <div class="text-center text-[11px] font-bold text-emerald-300 mb-2 flex items-center justify-center gap-1.5">
+          <span>📷</span><span>Subir foto del ticket de la jefa (opcional)</span>
+        </div>
+        <div class="grid grid-cols-3 gap-1.5">
+          <label for="opsJefaFotoCam"
+                 class="ops-cta-jefa cursor-pointer py-2.5 px-2 rounded-xl flex flex-col items-center justify-center gap-0.5 transition select-none text-white font-bold text-center"
+                 style="background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 4px 10px -2px rgba(16,185,129,.45)">
+            <span class="text-lg">📸</span>
+            <span class="text-[10px] leading-tight">Cámara</span>
+          </label>
+          <label for="opsJefaFotoFile"
+                 class="ops-cta-jefa cursor-pointer py-2.5 px-2 rounded-xl flex flex-col items-center justify-center gap-0.5 transition select-none text-white font-bold text-center"
+                 style="background:linear-gradient(135deg,#0891b2,#0e7490);box-shadow:0 4px 10px -2px rgba(8,145,178,.45)">
+            <span class="text-lg">📁</span>
+            <span class="text-[10px] leading-tight">Archivo</span>
+          </label>
+          <button onclick="MOS._opsJefaPedirPaste()"
+                  class="ops-cta-jefa cursor-pointer py-2.5 px-2 rounded-xl flex flex-col items-center justify-center gap-0.5 transition select-none text-white font-bold text-center border-0"
+                  style="background:linear-gradient(135deg,#7c3aed,#6d28d9);box-shadow:0 4px 10px -2px rgba(124,58,237,.45)">
+            <span class="text-lg">🖼</span>
+            <span class="text-[10px] leading-tight">Pegar</span>
+          </button>
+        </div>
+        <p class="text-[9px] text-center text-slate-400 mt-1.5 leading-tight">
+          o <b>arrastra</b> una imagen aquí · <kbd style="background:rgba(124,58,237,.2);padding:0 4px;border-radius:3px;font-family:ui-monospace,monospace">Ctrl+V</kbd> para pegar
+        </p>
+      </div>
     `;
   }
 
-  // [v2.43.15] Render del body — manual es el DEFAULT.
-  // Al abrir el modal con contexto, llena correcciones desde el contexto y
-  // muestra la lista A/B/C. Admin escribe directo. Si quiere usar OCR para
-  // acelerar, tap el botón arriba que pre-puebla los inputs.
+  // [v2.43.17] Paste image desde portapapeles (Ctrl+V dentro del modal abierto)
+  function _opsJefaOnPaste(ev) {
+    if (_opsJefaState.procesando) return;
+    const items = (ev.clipboardData && ev.clipboardData.items) || [];
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it.type && it.type.indexOf('image') === 0) {
+        const file = it.getAsFile();
+        if (file) {
+          ev.preventDefault();
+          try { _opsBeep('tac'); } catch(_){}
+          try { toast('🖼 Imagen pegada · procesando OCR...', 'info', 2500); } catch(_){}
+          _opsJefaOnFotoSelected({ target: { files: [file], value: '' } });
+          return;
+        }
+      }
+    }
+  }
+
+  // [v2.43.17] Trigger manual para que el browser pida permiso de clipboard.
+  // En PCs modernas, navigator.clipboard.read() permite leer imágenes sin
+  // depender del foco en input. Fallback: toast con instrucción.
+  async function _opsJefaPedirPaste() {
+    if (_opsJefaState.procesando) return;
+    try { _opsBeep('tac'); } catch(_){}
+    if (navigator.clipboard && navigator.clipboard.read) {
+      try {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          const imgType = item.types.find(t => t.indexOf('image') === 0);
+          if (imgType) {
+            const blob = await item.getType(imgType);
+            const file = new File([blob], 'pegado.png', { type: blob.type });
+            try { toast('🖼 Imagen pegada · procesando OCR...', 'info', 2500); } catch(_){}
+            _opsJefaOnFotoSelected({ target: { files: [file], value: '' } });
+            return;
+          }
+        }
+        try { toast('No hay imagen en el portapapeles · copia una primero', 'warning', 4000); } catch(_){}
+      } catch(e) {
+        // Permiso denegado o no soportado → fallback instructivo
+        try { toast('Presiona Ctrl+V para pegar la imagen', 'info', 4000); } catch(_){}
+      }
+    } else {
+      try { toast('Presiona Ctrl+V para pegar la imagen', 'info', 4000); } catch(_){}
+    }
+  }
+
+  // [v2.43.17] Drag & drop sobre cualquier parte del modal
+  function _opsJefaOnDragOver(ev) {
+    if (_opsJefaState.procesando) return;
+    if (!ev.dataTransfer || !ev.dataTransfer.types) return;
+    if (Array.from(ev.dataTransfer.types).indexOf('Files') < 0) return;
+    ev.preventDefault();
+    const modal = document.getElementById('modalAplicarRespuestaJefa');
+    if (modal) modal.classList.add('ops-jefa-dragover');
+  }
+  function _opsJefaOnDragLeave(ev) {
+    // Solo quitar si realmente salió del modal (no entró a un hijo)
+    const modal = document.getElementById('modalAplicarRespuestaJefa');
+    if (!modal) return;
+    const rect = modal.getBoundingClientRect();
+    if (ev.clientX <= rect.left || ev.clientX >= rect.right || ev.clientY <= rect.top || ev.clientY >= rect.bottom) {
+      modal.classList.remove('ops-jefa-dragover');
+    }
+  }
+  function _opsJefaOnDrop(ev) {
+    if (_opsJefaState.procesando) return;
+    ev.preventDefault();
+    const modal = document.getElementById('modalAplicarRespuestaJefa');
+    if (modal) modal.classList.remove('ops-jefa-dragover');
+    const files = ev.dataTransfer && ev.dataTransfer.files;
+    if (!files || !files.length) return;
+    const file = files[0];
+    if (!file.type || file.type.indexOf('image') !== 0) {
+      try { toast('Solo imágenes (JPG/PNG)', 'warning', 3500); } catch(_){}
+      return;
+    }
+    try { _opsBeep('tac'); } catch(_){}
+    try { toast('🖼 Imagen recibida · procesando OCR...', 'info', 2500); } catch(_){}
+    _opsJefaOnFotoSelected({ target: { files: [file], value: '' } });
+  }
+
+  // [v2.43.17] Render del body — manual es el DEFAULT.
+  // Estados en orden de prioridad:
+  //   1. procesando OCR → spinner OCR
+  //   2. cargandoContexto → spinner de carga inicial (race-fix)
+  //   3. tieneCorrecciones → lista A/B/C
+  //   4. tieneContexto → auto-cargar manual
+  //   5. nada → mensaje warning
   function _opsJefaRenderBody() {
     const body = document.getElementById('opsJefaBody');
     if (!body) return;
@@ -6399,15 +6552,24 @@ const MOS = (() => {
       </div>`;
       return;
     }
+    // [v2.43.17] Spinner de carga inicial — evita el flash "sin productos"
+    // mientras llega la respuesta del backend (getContextoTicketJefa puede
+    // tardar 1-3 segundos en guías grandes).
+    if (_opsJefaState.cargandoContexto) {
+      body.innerHTML = `<div class="text-center py-12">
+        <div class="text-5xl mb-3" style="animation:opsSpin 1.4s linear infinite;display:inline-block">⏳</div>
+        <p class="text-sm text-slate-300 font-bold">Cargando productos de la guía...</p>
+        <p class="text-[11px] text-slate-500 mt-2">consultando backend</p>
+      </div>`;
+      return;
+    }
     if (tieneCorrecciones) {
       // Render la lista A/B/C (función existente, ahora solo el body)
       _opsJefaRenderResultados();
       return;
     }
     // Sin correcciones — si hay contexto, auto-cargar en modo manual (default).
-    // Si no hay contexto, mostrar mensaje claro.
     if (tieneContexto) {
-      // Trigger manual automático al abrir
       _opsJefaIniciarManual();
       return;
     }
@@ -32901,6 +33063,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _opsJefaTogglePresentacion, _opsJefaTodasPresentaciones,
     // [v2.43.14] Modal jefa unificado (cards arriba + body abajo)
     _opsJefaRenderCards, _opsJefaRenderBody,
+    // [v2.43.17] Picker OCR inteligente (cámara/archivo/paste/drag-drop)
+    _opsJefaPedirPaste, _opsJefaOnPaste, _opsJefaOnDragOver, _opsJefaOnDragLeave, _opsJefaOnDrop,
     // [v2.43.5] Exponer _opsBeep para callers inline desde template
     _opsBeep,
     _impactoTogglesel, _impactoSetPrecio, cerrarImpactoCostos, aplicarSugerenciasSeleccionadas,
