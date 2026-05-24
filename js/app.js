@@ -5396,10 +5396,10 @@ const MOS = (() => {
         <span style="animation:opsSpin 1s linear infinite;display:inline-block">🤖</span> Leyendo foto con IA...
       </div>`;
     } else {
-      // OCR ya corrió — mostrar coincidencia
-      const colorChip = pctCoincidencia >= 80 ? '#16a34a' : pctCoincidencia >= 50 ? '#d97706' : '#dc2626';
-      const bgChip    = pctCoincidencia >= 80 ? 'rgba(22,163,74,.12)' : pctCoincidencia >= 50 ? 'rgba(217,119,6,.12)' : 'rgba(220,38,38,.12)';
-      const bdChip    = pctCoincidencia >= 80 ? 'rgba(22,163,74,.4)' : pctCoincidencia >= 50 ? 'rgba(217,119,6,.4)' : 'rgba(220,38,38,.4)';
+      // OCR ya corrió — mostrar coincidencia. Colores adaptativos para dark slate.
+      const colorChip = pctCoincidencia >= 80 ? '#34d399' : pctCoincidencia >= 50 ? '#fbbf24' : '#f87171';
+      const bgChip    = pctCoincidencia >= 80 ? 'rgba(52,211,153,.15)' : pctCoincidencia >= 50 ? 'rgba(251,191,36,.15)' : 'rgba(248,113,113,.15)';
+      const bdChip    = pctCoincidencia >= 80 ? 'rgba(52,211,153,.45)' : pctCoincidencia >= 50 ? 'rgba(251,191,36,.45)' : 'rgba(248,113,113,.45)';
       chipOcrHtml = `<div style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:${bgChip};border:1px solid ${bdChip};border-radius:999px;font-size:11px;color:${colorChip};font-weight:700;margin-bottom:8px">
         🤖 OCR procesado · ${lineasConCosto}/${totalLineas} ítems (${pctCoincidencia}% coincidencia)
         <button onclick="MOS.opsOcrComprobantePrepoblar('${_escapeHtml(op.idGuia)}')" title="Re-procesar foto" style="background:transparent;border:0;cursor:pointer;color:${colorChip};font-size:11px;padding:0 0 0 4px;opacity:.7">🔄</button>
@@ -5450,47 +5450,86 @@ const MOS = (() => {
       const _ocrCorrido = S._opsOcrYaCorrido && S._opsOcrYaCorrido[st.idGuia];
       const _conFoto = st.foto && String(st.foto).trim() !== '';
       const _ocrFalloEstaLinea = !brutoUnit && _ocrCorrido && _conFoto;
+      // [v2.43.18] Colores adaptativos vía clase — el CSS define el tono
+      // según fondo cream o slate (rojos #dc2626 ilegibles en dark slate).
       const marcaIni = brutoUnit > 0
-        ? '<span title="Costo registrado" style="color:#16a34a;font-weight:700">✓</span>'
+        ? '<span title="Costo registrado" class="alm-v-marca-ok">✓</span>'
         : (_ocrFalloEstaLinea
-            ? '<span title="OCR no pudo leer este ítem · escribe el costo a mano" style="color:#d97706;font-weight:700">🤖⚠</span>'
-            : '<span title="Falta costo" style="color:#dc2626;font-weight:700">⚠</span>');
+            ? '<span title="OCR no pudo leer este ítem · escribe el costo a mano" class="alm-v-marca-ocr">🤖⚠</span>'
+            : '<span title="Falta costo" class="alm-v-marca-falta">⚠</span>');
       const faltaCls = brutoUnit > 0 ? '' : ' alm-v-costo-line--falta';
       // Badge informativo si OCR no entendió esta línea
       const ocrNoEntendioBadge = _ocrFalloEstaLinea
         ? '<div style="font-size:10px;color:#d97706;background:rgba(217,119,6,.1);border-left:3px solid #d97706;padding:3px 8px;border-radius:4px;margin-top:3px;font-weight:600">🤖 OCR no entendió este ítem — escribe el costo a mano</div>'
         : '';
 
-      // [v2.43.1] MARGEN ACTUAL VISIBLE — busca el producto canónico en el
-      // catálogo por codigoBarra y muestra precio venta + margen actual.
-      // Si el admin está escribiendo costo nuevo, muestra TAMBIÉN el margen
-      // resultante con el costo nuevo (cálculo en vivo).
+      // [v2.43.18] Bloque de IMPACTO completo — muestra:
+      //   Margen objetivo (registrado) → margen actual con costo nuevo
+      //   Precio venta actual → precio sugerido (si se quiere mantener objetivo)
+      // Pidió el user: "casi parecido al cuadro que se le imprime a la jefa
+      // diciéndole lo que está ahora y cómo afectaría". Solo se muestra si
+      // hay margen objetivo REGISTRADO (producto o categoría) — sin fallback.
       let margenInfoHtml = '';
       try {
         const codStr = String(l.codigoBarra || l.codigoProducto || '').trim();
         if (codStr) {
           const prodCat = (S.productos || []).find(p => String(p.codigoBarra || '').trim() === codStr);
           if (prodCat) {
-            const venta = parseFloat(prodCat.precioVenta) || 0;
-            const costoCatActual = parseFloat(prodCat.precioCosto) || 0;
-            if (venta > 0) {
-              const margenActual = costoCatActual > 0 ? ((venta - costoCatActual) / venta) * 100 : null;
-              const margenNuevo  = brutoUnit > 0 ? ((venta - brutoUnit) / venta) * 100 : null;
-              const colorM = (m) => m === null ? '#9ca3af' : m < 10 ? '#dc2626' : m < 20 ? '#d97706' : '#16a34a';
-              const mostrarCambio = margenNuevo !== null && margenActual !== null && Math.abs(margenNuevo - margenActual) > 0.5;
-              // [v2.43.2] animación opsMargenSlide al aparecer "Con costo nuevo"
-              // + opsNumPulse en el % nuevo para llamar la atención del cajero.
-              const cambioBlockHtml = mostrarCambio
-                ? `<span class="alm-v-margen-sep" style="animation:opsMargenSlide .35s ease both">→</span><span class="alm-v-margen-label" style="animation:opsMargenSlide .35s ease .05s both">Con costo nuevo: <b style="color:${colorM(margenNuevo)};display:inline-block;animation:opsNumPulse .45s cubic-bezier(.34,1.56,.64,1)">${margenNuevo.toFixed(1)}%</b></span>`
-                : '';
-              // [v2.43.16] Sin colores hardcoded para fondos — usa clases que el
-              // CSS adapta según contexto (cream o slate). Solo los colores
-              // semánticos del margen (rojo/ámbar/verde via colorM) van inline.
-              margenInfoHtml = `<div class="alm-v-margen-info">
-                <span class="alm-v-margen-label">📊 Venta: <b class="alm-v-margen-venta">S/ ${venta.toFixed(2)}</b></span>
-                ${margenActual !== null ? `<span class="alm-v-margen-sep">·</span><span class="alm-v-margen-label">Margen actual: <b style="color:${colorM(margenActual)}">${margenActual.toFixed(1)}%</b></span>` : ''}
-                ${cambioBlockHtml}
-              </div>`;
+            const ventaActual = parseFloat(prodCat.precioVenta) || 0;
+            // Margen objetivo: solo si está REGISTRADO (producto o categoría).
+            // Sin fallback inventado.
+            let margenObjetivo = null;
+            const oMargRaw = prodCat.margenPct;
+            if (oMargRaw !== '' && oMargRaw != null && !isNaN(parseFloat(oMargRaw))) {
+              margenObjetivo = parseFloat(oMargRaw);
+            } else if (prodCat.categoria) {
+              const cat = (S.categorias || []).find(c => c.nombre === prodCat.categoria);
+              if (cat && cat.margenPct !== '' && cat.margenPct != null && !isNaN(parseFloat(cat.margenPct))) {
+                margenObjetivo = parseFloat(cat.margenPct);
+              }
+            }
+            // Margen actual con el NUEVO costo
+            const margenConCostoNuevo = (ventaActual > 0 && brutoUnit > 0)
+              ? ((ventaActual - brutoUnit) / ventaActual) * 100
+              : null;
+            // Precio venta sugerido para mantener el margen objetivo
+            const ventaSugerida = (margenObjetivo !== null && brutoUnit > 0 && margenObjetivo > 0 && margenObjetivo < 99)
+              ? brutoUnit / (1 - margenObjetivo / 100)
+              : null;
+            const colorM = (m) => m === null ? '#9ca3af' : m < 10 ? '#f87171' : m < 20 ? '#fbbf24' : '#34d399';
+            // Render solo si hay info útil que mostrar
+            const tieneAlgo = ventaActual > 0 || margenObjetivo !== null;
+            if (tieneAlgo) {
+              // Fila 1: Margen objetivo → actual con costo nuevo
+              let filaMargen = '';
+              if (margenObjetivo !== null) {
+                const diff = (margenConCostoNuevo !== null) ? (margenConCostoNuevo - margenObjetivo) : null;
+                const alerta = (diff !== null && diff < -2) ? ' ⚠' : '';
+                filaMargen = `<div class="alm-v-impacto-fila">
+                  <span class="alm-v-impacto-label">Margen</span>
+                  <span class="alm-v-impacto-actual"><b>${margenObjetivo.toFixed(1)}%</b><span class="alm-v-impacto-hint">objetivo</span></span>
+                  <span class="alm-v-impacto-flecha">→</span>
+                  <span class="alm-v-impacto-nuevo"><b style="color:${colorM(margenConCostoNuevo)};${margenConCostoNuevo !== null ? 'animation:opsNumPulse .4s cubic-bezier(.34,1.56,.64,1)' : ''}">${margenConCostoNuevo !== null ? margenConCostoNuevo.toFixed(1) + '%' : '— sin costo nuevo'}</b>${alerta ? `<span style="color:#f87171">${alerta}</span>` : ''}</span>
+                </div>`;
+              }
+              // Fila 2: Precio venta actual → sugerido para mantener objetivo
+              let filaPrecio = '';
+              if (ventaActual > 0) {
+                let bloqueSugerido = '';
+                if (ventaSugerida !== null) {
+                  const diffPct = ((ventaSugerida - ventaActual) / ventaActual) * 100;
+                  const signo = diffPct >= 0 ? '+' : '';
+                  const colorDiff = Math.abs(diffPct) < 1 ? '#94a3b8' : (diffPct > 0 ? '#fbbf24' : '#34d399');
+                  bloqueSugerido = `<span class="alm-v-impacto-flecha">→</span>
+                    <span class="alm-v-impacto-nuevo"><b style="animation:opsNumPulse .4s cubic-bezier(.34,1.56,.64,1)">S/ ${ventaSugerida.toFixed(2)}</b><span class="alm-v-impacto-hint" style="color:${colorDiff}">${signo}${diffPct.toFixed(1)}%</span></span>`;
+                }
+                filaPrecio = `<div class="alm-v-impacto-fila">
+                  <span class="alm-v-impacto-label">Precio</span>
+                  <span class="alm-v-impacto-actual"><b>S/ ${ventaActual.toFixed(2)}</b><span class="alm-v-impacto-hint">actual</span></span>
+                  ${bloqueSugerido || '<span class="alm-v-impacto-hint" style="margin-left:auto;opacity:.5">sin margen objetivo</span>'}
+                </div>`;
+              }
+              margenInfoHtml = `<div class="alm-v-impacto">${filaMargen}${filaPrecio}</div>`;
             }
           }
         }
@@ -5532,17 +5571,17 @@ const MOS = (() => {
     lineas.forEach(l => { if (_costosGuiaCalcularBruto(l, st) > 0) conCostoIni++; });
     const pct = totLin > 0 ? Math.round((conCostoIni / totLin) * 100) : 0;
     const completo = conCostoIni === totLin;
+    // [v2.43.18] Progreso con clases adaptativas (cream/slate)
+    const progresoEstadoCls = completo ? 'alm-v-prog-ok' : (conCostoIni > 0 ? 'alm-v-prog-parcial' : 'alm-v-prog-empty');
     const progresoHtml = `
-      <div id="costosGuiaProgreso" style="font-size:11px;display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:6px 10px;border-radius:8px;background:rgba(15,23,42,.35);margin-bottom:8px">
-        <span style="color:${completo ? '#16a34a' : (conCostoIni > 0 ? '#b45309' : '#94a3b8')};font-weight:800">
+      <div id="costosGuiaProgreso" class="alm-v-progreso">
+        <span class="alm-v-progreso-estado ${progresoEstadoCls}">
           ${completo ? '✓ ' : ''}${conCostoIni}/${totLin} producto${totLin === 1 ? '' : 's'} con costo
         </span>
-        <span style="color:#64748b;margin-left:6px">· ${pct}%</span>
-        ${!completo ? '<span style="color:#dc2626;margin-left:6px;font-size:10px;font-weight:700">⚠ faltan ' + (totLin - conCostoIni) + '</span>' : ''}
+        <span class="alm-v-progreso-pct">· ${pct}%</span>
+        ${!completo ? '<span class="alm-v-progreso-faltan">⚠ faltan ' + (totLin - conCostoIni) + '</span>' : ''}
       </div>
-      <div style="font-size:10px;color:#78350f;font-style:italic;margin-bottom:8px">
-        💾 Autoguardado activo · los costos se persisten al instante
-      </div>`;
+      <div class="alm-v-autosave-hint">💾 Autoguardado activo · los costos se persisten al instante</div>`;
 
     return `<input type="hidden" id="costosGuiaInfo" value="${_escapeHtml(op.idGuia)}">
       ${chipOcrHtml}
@@ -5552,7 +5591,7 @@ const MOS = (() => {
       <div class="alm-v-costo-totales">
         <span>Neto: <b id="costosGuiaTotalNeto">S/ ${totalNeto.toFixed(2)}</b></span>
         <span>IGV: <b id="costosGuiaTotalIgv">S/ ${(totalBruto - totalNeto).toFixed(2)}</b></span>
-        <span style="color:#b45309">Total: <b id="costosGuiaTotalBruto">S/ ${totalBruto.toFixed(2)}</b></span>
+        <span class="alm-v-total-bruto">Total: <b id="costosGuiaTotalBruto">S/ ${totalBruto.toFixed(2)}</b></span>
       </div>`;
   }
 
@@ -6106,12 +6145,108 @@ const MOS = (() => {
           /* sin override — usa el styling original */
         }
         .alm-v-costo-helper-bruto { color: #b45309; }
-        .alm-v-margen-info {
-          background: rgba(168,85,247,.06);
-        }
+        .alm-v-margen-info { background: rgba(168,85,247,.06); }
         .alm-v-margen-label { color: #64748b; }
         .alm-v-margen-venta { color: #1f2937; }
         .alm-v-margen-sep { color: #64748b; }
+
+        /* ─── MARCAS POR LÍNEA (✓/⚠/🤖⚠) ─── */
+        .alm-v-marca-ok    { color: #16a34a; font-weight: 700; }
+        .alm-v-marca-ocr   { color: #d97706; font-weight: 700; }
+        .alm-v-marca-falta { color: #dc2626; font-weight: 700; }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-marca-ok    { color: #34d399 !important; }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-marca-ocr   { color: #fbbf24 !important; }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-marca-falta { color: #f87171 !important; animation: pulse 1.6s infinite; }
+
+        /* ─── PROGRESO HEADER (X/Y con costo) ─── */
+        .alm-v-progreso {
+          font-size: 11px;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          flex-wrap: wrap;
+          padding: 6px 10px;
+          border-radius: 8px;
+          background: rgba(15,23,42,.08);
+          margin-bottom: 8px;
+        }
+        .alm-v-progreso-estado { font-weight: 800; }
+        .alm-v-progreso-pct    { color: #64748b; margin-left: 6px; }
+        .alm-v-progreso-faltan { margin-left: 6px; font-size: 10px; font-weight: 700; color: #dc2626; }
+        .alm-v-prog-ok      { color: #16a34a; }
+        .alm-v-prog-parcial { color: #b45309; }
+        .alm-v-prog-empty   { color: #94a3b8; }
+        .alm-v-autosave-hint { font-size: 10px; color: #78350f; font-style: italic; margin-bottom: 8px; }
+        .alm-v-total-bruto { color: #b45309; }
+        /* Overrides en modo slate */
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-progreso {
+          background: rgba(15,23,42,.55) !important;
+          border: 1px solid rgba(148,163,184,.15);
+        }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-prog-ok      { color: #34d399 !important; }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-prog-parcial { color: #fbbf24 !important; }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-prog-empty   { color: #cbd5e1 !important; }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-progreso-pct    { color: #94a3b8 !important; }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-progreso-faltan { color: #f87171 !important; }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-autosave-hint   { color: #fbbf24 !important; }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-total-bruto     { color: #fbbf24 !important; }
+
+        /* ─── BLOQUE IMPACTO (margen objetivo → actual + precio actual → sugerido) ─── */
+        .alm-v-impacto {
+          margin-top: 6px;
+          padding: 8px 10px;
+          border-radius: 8px;
+          border-left: 3px solid #a855f7;
+          background: rgba(168,85,247,.06);
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+        .alm-v-impacto-fila {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 11px;
+          line-height: 1.3;
+          flex-wrap: wrap;
+        }
+        .alm-v-impacto-label {
+          font-weight: 800;
+          min-width: 48px;
+          color: #64748b;
+          text-transform: uppercase;
+          letter-spacing: .3px;
+          font-size: 10px;
+        }
+        .alm-v-impacto-actual,
+        .alm-v-impacto-nuevo {
+          display: inline-flex;
+          align-items: baseline;
+          gap: 4px;
+        }
+        .alm-v-impacto-actual b { color: #475569; font-family: ui-monospace,monospace; }
+        .alm-v-impacto-nuevo b  { font-family: ui-monospace,monospace; }
+        .alm-v-impacto-hint {
+          font-size: 9px;
+          opacity: .65;
+          font-weight: 600;
+        }
+        .alm-v-impacto-flecha {
+          color: #a855f7;
+          font-weight: 900;
+          font-size: 14px;
+          opacity: .7;
+        }
+        /* Overrides slate */
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-impacto {
+          background: rgba(168,85,247,.14) !important;
+          border-left-color: #c084fc !important;
+        }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-impacto-label  { color: #cbd5e1 !important; }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-impacto-actual b { color: #f1f5f9 !important; }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-impacto-nuevo b  { color: #f8fafc !important; }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-impacto-hint   { color: #94a3b8 !important; }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-impacto-flecha { color: #c084fc !important; opacity: 1; }
         #almOpsDetalleOverlay.is-costos-mode .alm-v-costos-toggles {
           background: rgba(15,23,42,.6) !important;
           border: 1px solid rgba(148,163,184,.15) !important;
@@ -6263,15 +6398,35 @@ const MOS = (() => {
       });
       // Re-render del panel para mostrar valores nuevos
       try { almRenderOps(); } catch(_) {}
+      // [v2.43.18] Re-render del OVERLAY de detalle si está abierto para esa
+      // misma guía. Sin esto, el chip "🤖 Leyendo foto con IA..." quedaba
+      // pegado eternamente (bug reportado por user).
+      try { _opsRerenderOverlayDetalle(idGuia); } catch(_) {}
       const total = items.length;
       const msg = `🤖 OCR: ${aplicados} ✓ · ${dudosos} ⚠ · ${sinMatch} sin match (${total} items detectados)`;
       toast(msg, aplicados > 0 ? 'success' : 'warning', 9000);
       try { _opsBeep(aplicados > 0 ? 'cliclic' : 'tac'); } catch(_) {}
     } catch(e) {
       toast('⚠ Error OCR comprobante: ' + (e.message || e), 'error', 8000);
+      // [v2.43.18] Re-render también en error — el chip de "leyendo" debe
+      // desaparecer aunque falle.
+      try { _opsRerenderOverlayDetalle(idGuia); } catch(_) {}
     } finally {
       S._opsOcrEnVuelo = false;
     }
+  }
+
+  // [v2.43.18] Re-renderiza el body del overlay de detalle si está abierto
+  // para la guía indicada. Si está cerrado o es de otra guía, no-op.
+  function _opsRerenderOverlayDetalle(idGuia) {
+    const overlay = document.getElementById('almOpsDetalleOverlay');
+    if (!overlay || overlay.classList.contains('hidden')) return;
+    if (!S._opsOverlayKey || !String(S._opsOverlayKey).endsWith('_' + idGuia)) return;
+    const cont = document.getElementById('almOpsDetalleContent');
+    if (!cont) return;
+    const op = _findOpByKey(S._opsOverlayKey.replace('_PRE', ''));
+    if (!op) return;
+    cont.innerHTML = _renderVoucher(op, 0);
   }
 
   async function abrirSelPrinterJefa(fuente, idGuia) {
