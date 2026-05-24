@@ -1146,21 +1146,46 @@ function llenarCostosGuia(params) {
     return { ok: false, error: 'WH no respondió: ' + ((resWh && resWh.error) || 'sin detalle') };
   }
   // 2. Si actualizarPrecioCosto=true, propagar a PRODUCTOS_MASTER.precioCosto
+  // [v2.43.10] AUTO-RECALCULAR precio venta si producto tiene margenPct
+  // configurado. Regla del negocio: si jefa NO modifica nada Y el margen
+  // está establecido → mantener ese margen con el costo nuevo (auto-aplicar).
+  // Solo desactivar pasando params.autoAplicarMargen === false explícitamente.
   var actualizadosCosto = 0;
+  var actualizadosVentaAuto = 0;
+  var ventaAutoLog = [];   // detalles para toast frontend
   var prodLookup = _buildProdLookup();
   if (params.actualizarPrecioCosto) {
+    var autoAplicarMargen = params.autoAplicarMargen !== false; // default true
     params.items.forEach(function(it) {
       var precio = parseFloat(it.precioUnitario) || 0;
       if (precio <= 0) return;
       var p = prodLookup[it.codigoProducto];
       if (!p || !p.idProducto) return;
       try {
-        actualizarProductoMaster({
+        // Update precioCosto
+        var patch = {
           _source:     'MOS_MODAL_PRODUCTO',
           idProducto:  p.idProducto,
           precioCosto: precio,
           usuario:     params.usuario || ''
-        });
+        };
+        // Auto-aplicar venta si hay margenPct configurado
+        var margenObj = parseFloat(p.margenPct) || 0;
+        if (autoAplicarMargen && margenObj > 0 && margenObj < 0.99) {
+          // venta = costo / (1 - margen) — margen es sobre venta
+          var ventaCalc = Math.round((precio / (1 - margenObj)) * 100) / 100;
+          patch.precioVenta = ventaCalc;
+          actualizadosVentaAuto++;
+          ventaAutoLog.push({
+            idProducto:  p.idProducto,
+            descripcion: p.descripcion || '',
+            costoNuevo:  precio,
+            ventaAnterior: parseFloat(p.precioVenta) || 0,
+            ventaNueva:  ventaCalc,
+            margenObj:   margenObj
+          });
+        }
+        actualizarProductoMaster(patch);
         actualizadosCosto++;
       } catch(_){}
     });
@@ -1197,6 +1222,9 @@ function llenarCostosGuia(params) {
   return { ok: true, data: {
     lineasActualizadas:    resWh.data && resWh.data.actualizados || 0,
     productosActualizados: actualizadosCosto,
+    // [v2.43.10] Auto-recalculo de precio venta cuando hay margen objetivo
+    productosVentaAutoActualizada: actualizadosVentaAuto,
+    ventaAutoLog:          ventaAutoLog,
     montoTotalNuevo:       resWh.data && resWh.data.montoTotalNuevo || 0,
     sugerenciasPrecioVenta: sugerencias
   }};
@@ -1626,43 +1654,60 @@ function _buildEscPosReporteJefa(guia, det, prodLookup, nombreProv, idGuia, ahor
     txt += _cuadroLine(cant + ' unidades');
     txt += _cuadroLine('');
 
+    // [v2.43.10] Bloque homogéneo para TODOS los estados — la jefa siempre ve:
+    //   1) Costo nuevo (con "era" si cambió)
+    //   2) Venta actual del catálogo
+    //   3) Margen ACTUAL (con costo nuevo + venta actual) — clave para decidir
+    //   4) Si tiene política → Objetivo % + venta calculada con esa política
+    //   5) Si no tiene política → sugerencia con margen categoría
+    //   6) Campos vacíos para escribir nuevo precio o nuevo margen
     // Costo
     var costoTxt = costo > 0 ? 'S/ ' + costo.toFixed(2) : '(sin definir)';
     if (costoAnterior > 0 && costo !== costoAnterior) {
       costoTxt += ' (era ' + costoAnterior.toFixed(2) + ')';
     }
-    txt += _cuadroLine('Costo : ' + costoTxt);
+    txt += _cuadroLine('Costo nuevo: ' + costoTxt);
 
-    // Venta — depende del estado
+    // Venta actual del catálogo
+    txt += _cuadroLine('Venta actual: ' + (ventaActual > 0 ? 'S/ ' + ventaActual.toFixed(2) : '(sin definir)'));
+
+    // [v2.43.10] MARGEN ACTUAL — calculado con costo NUEVO + venta actual.
+    // Es lo que ganaría la jefa si NO cambia nada y se aplica el costo nuevo.
+    if (costo > 0 && ventaActual > 0) {
+      var margenActualPct = ((ventaActual - costo) / ventaActual) * 100;
+      var simbActual = margenActualPct < 10 ? ' (bajo!)' : (margenActualPct < 20 ? ' (apretado)' : '');
+      txt += _cuadroLine('Margen ACTUAL: ' + margenActualPct.toFixed(0) + '%' + simbActual);
+    } else {
+      txt += _cuadroLine('Margen ACTUAL: -');
+    }
+
+    txt += _cuadroLine('');
+
+    // Bloque política / sugerencia
     if (estado === 'AUTO') {
-      // Auto-aplicada: mostrar venta sugerida + margen objetivo
-      var ventaTxt = ventaActual > 0
-        ? 'S/ ' + ventaActual.toFixed(2) + ' -> ' + ventaSugerida.toFixed(2)
-        : 'S/ ' + ventaSugerida.toFixed(2);
-      txt += _cuadroLine('Venta : ' + ventaTxt);
-      txt += _cuadroLine('Margen: ' + (margenObjetivo * 100).toFixed(0) + '% (objetivo)');
+      txt += _cuadroLine('Objetivo (cat): ' + (margenObjetivo * 100).toFixed(0) + '%');
+      txt += _cuadroLine('Sugerido: S/ ' + ventaSugerida.toFixed(2));
       txt += _cuadroLine('');
-      txt += _cuadroLine('AUTO con margen previo');
+      txt += _cuadroLine('-> Sube venta a sug. para');
+      txt += _cuadroLine('   mantener tu margen obj.');
     } else if (estado === 'REVISAR') {
-      txt += _cuadroLine('Venta : S/ ' + ventaActual.toFixed(2) + ' -> ' + ventaSugerida.toFixed(2));
-      txt += _cuadroLine('Margen: ' + (margenObjetivo * 100).toFixed(0) + '%');
+      txt += _cuadroLine('Objetivo (cat): ' + (margenObjetivo * 100).toFixed(0) + '%');
+      txt += _cuadroLine('Sugerido: S/ ' + ventaSugerida.toFixed(2));
       txt += _cuadroLine('');
       txt += _cuadroLine('!! COSTO SUBIO +10%');
-      txt += _cuadroLine('Revisa por si subes margen');
+      txt += _cuadroLine('Revisa precio o margen');
     } else { // DECIDIR
-      txt += _cuadroLine('Venta : ' + (ventaActual > 0 ? 'S/ ' + ventaActual.toFixed(2) : '(sin definir)'));
-      txt += _cuadroLine('Margen: NUNCA configurado');
-      txt += _cuadroLine('');
+      txt += _cuadroLine('Objetivo: NO CONFIGURADO');
       if (ventaSugerida) {
-        txt += _cuadroLine('Sugerido (cat. ' + (MARGEN_CAT_DEFAULT * 100).toFixed(0) + '%):');
+        txt += _cuadroLine('Sugerencia con ' + (MARGEN_CAT_DEFAULT * 100).toFixed(0) + '%:');
         txt += _cuadroLine('  S/ ' + ventaSugerida.toFixed(2));
       }
     }
 
-    // Línea para llenar a mano siempre
+    // Líneas para llenar a mano siempre (las 2 opciones B/C del modal jefa)
     txt += _cuadroLine('');
-    txt += _cuadroLine('Cambiar venta? S/_______');
-    txt += _cuadroLine('o margen objetivo: ___%');
+    txt += _cuadroLine('B) Nueva venta: S/______');
+    txt += _cuadroLine('C) Nuevo margen: ____%');
     txt += CUADRO_BOT + '\n\n';
   });
 

@@ -5149,17 +5149,48 @@ const MOS = (() => {
     let btnCostos = '';
     if (esIngresoProv) {
       if (!expanded) {
-        // [v2.43.7] CARD COMPACT — SOLO 2 botones grandes y claros.
-        // 'Actualizar costos' abre overlay con OCR + edición. 'Actualizar
-        // precios' abre directo el modal de jefa (foto/manual + A/B/C).
-        // Cada uno autocontenido, sin más botones secundarios en la card.
+        // [v2.43.11] CARD COMPACT — SOLO 2 botones con BARRA DE PROGRESO interna.
+        // Cada botón muestra su avance proporcional como fondo gradiente:
+        //   - Costos: % de items con precioUnitario > 0 en la guía.
+        //   - Precios: % de items con precio venta aplicado (localStorage).
+        // Visual: barra verde se llena de izq a der, el resto del botón
+        // queda con su color base. Cero etiquetas extras, cero clutter.
+        var _totalItems = (costosCls && costosCls.total) || 0;
+        var _conCosto = (costosCls && costosCls.conCosto) || 0;
+        var pctCostos = _totalItems > 0 ? Math.round((_conCosto / _totalItems) * 100) : 0;
+        // Precios: leer count guardado de respuesta jefa (formato "X/Y")
+        var pctPrecios = 0;
+        try {
+          var rawJ = localStorage.getItem('mos_jefa_aplicada_' + op.idGuia);
+          if (rawJ) {
+            var partes = String(rawJ).split('|');
+            // Formato nuevo: "ts|aplicados|total"  · viejo: solo "ts"
+            if (partes.length >= 3) {
+              var apl = parseInt(partes[1], 10) || 0;
+              var tot = parseInt(partes[2], 10) || 0;
+              pctPrecios = tot > 0 ? Math.round((apl / tot) * 100) : 100;
+            } else {
+              pctPrecios = 100; // legacy: solo sabemos que se aplicó
+            }
+          }
+        } catch(_) {}
+        function _bgBarra(pct, baseColorA, baseColorB) {
+          if (pct === 0) return 'background:linear-gradient(135deg,' + baseColorA + ',' + baseColorB + ')';
+          if (pct >= 100) return 'background:linear-gradient(135deg,#16a34a,#15803d)';
+          // barra verde a la izq + color base a la der
+          return 'background:linear-gradient(to right, #15803d 0%, #16a34a ' + pct + '%, ' + baseColorA + ' ' + pct + '%, ' + baseColorB + ' 100%)';
+        }
+        var _bgCostos  = _bgBarra(pctCostos, '#a855f7', '#7c3aed');
+        var _bgPrecios = _bgBarra(pctPrecios, '#f59e0b', '#d97706');
+        var _lblCostos  = pctCostos > 0 && pctCostos < 100  ? ' (' + pctCostos + '%)'  : (pctCostos === 100 ? ' ✓' : '');
+        var _lblPrecios = pctPrecios > 0 && pctPrecios < 100 ? ' (' + pctPrecios + '%)' : (pctPrecios === 100 ? ' ✓' : '');
         btnCostos = `
-          <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#a855f7,#7c3aed);box-shadow:0 4px 10px -2px rgba(168,85,247,.55);font-size:12px;font-weight:700;padding:9px 13px"
+          <button class="alm-v-btn-costos" style="${_bgCostos};box-shadow:0 4px 10px -2px rgba(168,85,247,.5);font-size:12px;font-weight:700;padding:9px 13px;transition:background .4s ease"
                   onclick="event.stopPropagation();MOS.opsEntrarModoCostos('${op.fuente}','${_escapeHtml(op.idGuia)}')"
-                  title="Abrir overlay con costos y OCR auto">💰 Actualizar costos</button>
-          <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#f59e0b,#d97706);box-shadow:0 4px 10px -2px rgba(245,158,11,.55);font-size:12px;font-weight:700;padding:9px 13px"
+                  title="${pctCostos}% de ítems costeados">💰 Actualizar costos${_lblCostos}</button>
+          <button class="alm-v-btn-costos" style="${_bgPrecios};box-shadow:0 4px 10px -2px rgba(245,158,11,.5);font-size:12px;font-weight:700;padding:9px 13px;transition:background .4s ease"
                   onclick="event.stopPropagation();MOS.opsAbrirAplicarRespuestaJefa('${_escapeHtml(op.idGuia)}')"
-                  title="Subir foto de la jefa o ingresar manual">🏷 Actualizar precios</button>`;
+                  title="${pctPrecios}% precios aplicados">🏷 Actualizar precios${_lblPrecios}</button>`;
       } else if (!modoCostos) {
         // Overlay lectura — mismo par de botones que en la card
         btnCostos = `
@@ -5223,29 +5254,11 @@ const MOS = (() => {
       ? `<span class="alm-v-chip-anexo" title="Esta guía tiene preingreso adjunto">📎 anexa preingreso</span>`
       : '';
 
-    // [v2.41.99] Sello de costos para ingresos (proveedor + entrada libre)
+    // [v2.41.99 → v2.43.11] Sello de costos REMOVIDO de la card compact.
+    // El progreso ahora se ve directamente como BARRA dentro del botón
+    // 'Actualizar costos' (ver más abajo). El sello redundante y feo se elimina.
     const costosCls = _opsClasificarCostos(op);
     let selloCostosHtml = '';
-    if (costosCls && costosCls.estado) {
-      const stEstado = costosCls.estado;
-      const stIco = stEstado === 'completo' ? '💚' : stEstado === 'parcial' ? '🟡' : '🔴';
-      const stLbl = stEstado === 'completo' ? 'COSTOS COMPLETOS'
-                  : stEstado === 'parcial'  ? 'COSTOS PARCIALES'
-                  : 'SIN COSTOS ASIGNADOS';
-      const stSub = stEstado === 'completo'
-        ? `${costosCls.conCosto}/${costosCls.total} items · S/ ${costosCls.monto.toFixed(2)}`
-        : stEstado === 'parcial'
-          ? `Faltan ${costosCls.total - costosCls.conCosto} item${costosCls.total - costosCls.conCosto !== 1 ? 's' : ''} por costear`
-          : `Tap 💰 Costos para cargar (${costosCls.total} ítems)`;
-      selloCostosHtml = `<div class="alm-v-costo-sello alm-v-costo-${stEstado}"
-                              title="${costosCls.conCosto} de ${costosCls.total} items con costo">
-        <span class="alm-v-costo-sello-ico">${stIco}</span>
-        <div class="alm-v-costo-sello-txt">
-          <strong>${stLbl}</strong>
-          <small>${stSub}</small>
-        </div>
-      </div>`;
-    }
 
     // [v2.41.99] Botón "Imprimir reporte" en compact para ingresos proveedor.
     // [v2.43.7] ELIMINADO el botón '🖨 Reporte' de la card compact.
@@ -6459,6 +6472,14 @@ const MOS = (() => {
         return;
       }
       try { _opsBeep('ok'); } catch(_){}
+      // [v2.43.10/11] Marcar localStorage que precios fueron actualizados.
+      // Formato: "ts|aplicados|totalContexto" para que el botón muestre barra
+      // proporcional. 'aplicados' = items con cambio real (B o C). 'total' =
+      // items del ticket original (incluye los que la jefa dejó vacíos).
+      try {
+        var _totCtx = (_opsJefaState.correcciones || []).length || (_opsJefaState.contexto || []).length || items.length;
+        localStorage.setItem('mos_jefa_aplicada_' + _opsJefaState.idGuia, Date.now() + '|' + items.length + '|' + _totCtx);
+      } catch(_){}
       toast(`✓ ${d.aplicados} cambio(s) aplicados al catálogo` +
             (d.ticketImpreso ? ' · ticket impreso' : ''), 'success', 6000);
       if (d.errores && d.errores.length) {
@@ -7317,10 +7338,15 @@ const MOS = (() => {
         usuario: S.session?.nombre || '',
         sugerenciasInline                       // [v41.20] aplica directo desde inline
       });
+      const respData = (resp && resp.data) || resp || {};
+      const ventaAuto = parseInt(respData.productosVentaAutoActualizada || 0, 10);
       toast('✓ ' + items.length + ' costos guardados'
             + (updateMaster ? ' + catálogo MOS' : '')
+            + (ventaAuto > 0 ? ' · ✨ ' + ventaAuto + ' precios auto-recalc. con margen objetivo' : '')
             + (sugerenciasInline.length ? ' · ' + sugerenciasInline.length + ' precios aplicados' : ''),
             'ok');
+      // [v2.43.10] Marcar localStorage que costos fueron actualizados (✓ en botón)
+      try { localStorage.setItem('mos_costos_aplicada_' + idGuia, String(Date.now())); } catch(_){}
       await almLoadOps(true);
 
       // [v41.20] Las sugerencias ya se aplicaron inline; no abrir modal viejo.
