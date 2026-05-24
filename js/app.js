@@ -5854,16 +5854,129 @@ const MOS = (() => {
     const v = cont.querySelector('.alm-voucher');
     if (v) v.onclick = null;
     const overlay = $('almOpsDetalleOverlay');
-    if (overlay) overlay.classList.remove('hidden');
+    if (overlay) {
+      overlay.classList.remove('hidden');
+      // [v2.43.12] Aplicar clase 'is-costos-mode' al overlay cuando admin
+      // entra a editar costos → activa CSS que cambia el look cream del
+      // voucher a dark slate elegante (mismo estilo que el modal jefa).
+      // El overlay de SOLO LECTURA (click en card) se queda con su look
+      // original tipo recibo de papel — pedido explícito del usuario.
+      _opsInyectarKeyframes();
+      _opsInyectarCSSCostosMode();
+      overlay.classList.toggle('is-costos-mode', !!modoCostos);
+    }
     if (!op.esPreingreso && !tieneCache) {
       _fetchOpDetalle(op.fuente, op.idGuia);
     }
   }
 
+  // [v2.43.12] CSS que reviste el overlay en modo costos con la estética
+  // limpia/formal del modal jefa: dark slate, sombras, cards con borde,
+  // sticky CTA. Se inyecta UNA sola vez al body.
+  function _opsInyectarCSSCostosMode() {
+    if (S._opsCSSCostosInjected) return;
+    S._opsCSSCostosInjected = true;
+    try {
+      const style = document.createElement('style');
+      style.id = 'opsCSSCostosMode';
+      style.textContent = `
+        #almOpsDetalleOverlay.is-costos-mode {
+          background: rgba(2, 6, 23, 0.85) !important;
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+        }
+        #almOpsDetalleOverlay.is-costos-mode .alm-voucher,
+        #almOpsDetalleOverlay.is-costos-mode .alm-voucher-ingreso,
+        #almOpsDetalleOverlay.is-costos-mode .alm-voucher-venta,
+        #almOpsDetalleOverlay.is-costos-mode .alm-voucher-traslado,
+        #almOpsDetalleOverlay.is-costos-mode .alm-voucher-despacho {
+          background: linear-gradient(160deg, #0f172a 0%, #1e293b 60%, #0f172a 100%) !important;
+          color: #e2e8f0 !important;
+          border-radius: 18px !important;
+          border: 1px solid rgba(148, 163, 184, .15) !important;
+          box-shadow: 0 25px 60px -15px rgba(0,0,0,.7) !important;
+        }
+        #almOpsDetalleOverlay.is-costos-mode .alm-voucher * {
+          border-color: rgba(148,163,184,.2) !important;
+        }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-line {
+          background: rgba(30, 41, 59, .6) !important;
+          border: 1px solid rgba(148,163,184,.15) !important;
+          border-radius: 10px !important;
+          padding: 8px 10px !important;
+          margin-bottom: 7px !important;
+        }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-line--falta {
+          background: rgba(120, 53, 15, .15) !important;
+          border-color: rgba(217, 119, 6, .35) !important;
+        }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-desc {
+          color: #f1f5f9 !important;
+        }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-cod {
+          color: #94a3b8 !important;
+        }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-input {
+          background: #0f172a !important;
+          color: #e2e8f0 !important;
+          border: 1px solid #475569 !important;
+          border-radius: 8px !important;
+        }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-input:focus {
+          border-color: #a855f7 !important;
+          outline: 2px solid rgba(168,85,247,.35) !important;
+        }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-costos-toggles {
+          background: rgba(15,23,42,.6) !important;
+          border: 1px solid rgba(148,163,184,.15) !important;
+          border-radius: 12px !important;
+          padding: 8px 10px !important;
+        }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-tg-btn {
+          background: rgba(71,85,105,.4) !important;
+          color: #cbd5e1 !important;
+          border: 1px solid transparent !important;
+        }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-tg-btn.active {
+          background: linear-gradient(135deg,#a855f7,#7c3aed) !important;
+          color: #fff !important;
+        }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-totales {
+          background: rgba(15,23,42,.6) !important;
+          border: 1px solid rgba(148,163,184,.15) !important;
+          color: #f1f5f9 !important;
+          border-radius: 10px !important;
+        }
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-costo-helper {
+          color: #94a3b8 !important;
+        }
+        /* Header del voucher en modo costos */
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-cabecera,
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-meta,
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-meta * {
+          color: #cbd5e1 !important;
+        }
+        /* Footer sticky con CTA */
+        #almOpsDetalleOverlay.is-costos-mode .alm-v-acciones {
+          position: sticky;
+          bottom: -6px;
+          background: linear-gradient(0deg, rgba(15,23,42,.98) 70%, rgba(15,23,42,0));
+          padding: 10px 0 6px;
+          border-top: 1px solid rgba(148,163,184,.15);
+          margin-top: 8px;
+        }
+      `;
+      document.head.appendChild(style);
+    } catch(_){}
+  }
+
   function cerrarOpsDetalleOverlay(ev) {
     if (ev && ev.target && ev.target.id !== 'almOpsDetalleOverlay') return;
     const overlay = $('almOpsDetalleOverlay');
-    if (overlay) overlay.classList.add('hidden');
+    if (overlay) {
+      overlay.classList.add('hidden');
+      overlay.classList.remove('is-costos-mode'); // [v2.43.12] limpiar look slate
+    }
     S._opsExpanded = {};
     S._opsModoCostos = false;
     S._opsOverlayKey = null;
@@ -6746,6 +6859,9 @@ const MOS = (() => {
   }
   function opsSalirModoCostos() {
     S._opsModoCostos = false;
+    // [v2.43.12] Volver al look cream del voucher (quitar dark slate)
+    const overlay = $('almOpsDetalleOverlay');
+    if (overlay) overlay.classList.remove('is-costos-mode');
     // Re-render del overlay actual
     const op = S._costosGuiaState && _findOpByKey(S._costosGuiaState.fuente + '_' + S._costosGuiaState.idGuia);
     if (op) {
