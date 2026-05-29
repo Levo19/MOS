@@ -566,6 +566,8 @@ const MOS = (() => {
         _saveSession(S.session);
         _applySession();
         _refreshAuditCtx();
+        // [v2.43.31] Check horario MOS (custom gana sobre admin_libre)
+        try { _mosVerificarHorarioMioInterval(); } catch(_){}
         // Cachear la clave admin global en sessionStorage (solo master/admin)
         _segCachearGlobalEnLogin(res.rol, pin);
         // Mostrar welcome screen + iniciar carga en background
@@ -17934,6 +17936,69 @@ const MOS = (() => {
     return { color: '#ef4444', label: `inactivo ${Math.floor(min/60/24)}d`, dot: '🔴', minutos: min };
   }
 
+  // [v2.43.31] ═════════ BLOQUEO HORARIO PROPIO MOS ═══════════════════
+  // Verifica si el admin logueado puede entrar (respeta horarioCustom).
+  // Si fuera de horario → muestra overlay full-screen no-cerrable.
+  S._mosHorarioInterval = null;
+  async function _mosVerificarHorarioPropio() {
+    if (!S.session || !S.session.idPersonal) return;
+    try {
+      const r = await API.post('resolverHorarioPersonal', {
+        idPersonal: S.session.idPersonal,
+        rol:        S.session.rol || '',
+        app:        'MOS'
+      });
+      const d = (r && r.data) || r || {};
+      if (d.permitido === false) {
+        _mosMostrarBloqueoHorario(d);
+      } else {
+        const ex = document.getElementById('mosHorarioBloqueoOverlay');
+        if (ex) ex.remove();
+      }
+    } catch(_) { /* offline → no bloquear */ }
+  }
+  function _mosVerificarHorarioMioInterval() {
+    if (S._mosHorarioInterval) clearInterval(S._mosHorarioInterval);
+    _mosVerificarHorarioPropio();
+    S._mosHorarioInterval = setInterval(_mosVerificarHorarioPropio, 5 * 60 * 1000);
+  }
+  function _mosMostrarBloqueoHorario(info) {
+    let ov = document.getElementById('mosHorarioBloqueoOverlay');
+    if (!ov) {
+      ov = document.createElement('div');
+      ov.id = 'mosHorarioBloqueoOverlay';
+      ov.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(10px);background:linear-gradient(160deg,#3730a3 0%,#0f172a 60%,#3730a3 100%)';
+      document.body.appendChild(ov);
+    }
+    const motivoTxt = info.motivo === 'antes_apertura' ? 'Aún no es hora de apertura'
+                    : info.motivo === 'despues_cierre' ? 'Ya pasó la hora de cierre'
+                    : info.motivo === 'dia_cerrado'    ? 'Hoy el panel está cerrado'
+                    : 'Fuera de horario asignado';
+    ov.innerHTML = `
+      <div style="max-width:440px;text-align:center;color:#fff">
+        <div style="font-size:80px;animation:mosHorPulse 1.8s ease-in-out infinite">🔒</div>
+        <div style="font-size:1.75rem;font-weight:900;color:#a5b4fc;margin-top:8px">Panel cerrado</div>
+        <div style="font-size:14px;color:#c7d2fe;margin-top:6px">${motivoTxt}</div>
+        <div style="background:rgba(15,23,42,.8);border:1px solid rgba(165,180,252,.4);border-radius:14px;padding:14px;margin:18px 0;backdrop-filter:blur(8px)">
+          <div style="font-size:10px;color:#a5b4fc;text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:6px">Tu horario asignado</div>
+          <div style="font-size:22px;font-weight:900;color:#fff">${info.apertura || '--'} <span style="color:#64748b">→</span> ${info.cierre || '--'}</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:6px">
+            Día: <b style="color:#fbbf24">${info.dia || '?'}</b>
+            ${info.fuente === 'custom' ? '<span style="margin-left:8px;color:#c4b5fd">🕐 horario personalizado</span>' : ''}
+          </div>
+        </div>
+        <button onclick="MOS._mosCerrarBloqueoYsalir()" style="padding:10px 22px;background:linear-gradient(135deg,#6366f1,#4338ca);color:#fff;border:0;border-radius:10px;font-weight:900;cursor:pointer;font-size:13px;box-shadow:0 8px 20px -5px rgba(99,102,241,.5)">Cerrar sesión</button>
+      </div>
+      <style>@keyframes mosHorPulse{0%,100%{transform:scale(1);opacity:.85}50%{transform:scale(1.1);opacity:1}}</style>`;
+  }
+  function _mosCerrarBloqueoYsalir() {
+    try {
+      // Limpiar sesión y volver al login
+      localStorage.removeItem('mos_session');
+      location.reload();
+    } catch(_) { location.reload(); }
+  }
+
   // [v2.43.30] ═════════ HORARIOS APPS + CUSTOM USUARIO ═════════════
   S._horariosAppsCache = null; S._horariosAppsCacheTs = 0;
   const _DIAS_HOR = [
@@ -17994,7 +18059,7 @@ const MOS = (() => {
   // Listener para re-pintar luego de cada renderPersonal (interval ligero)
   setInterval(() => {
     if (S.cfgTab !== 'personal') return;
-    ['mosExpress', 'warehouseMos'].forEach(app => {
+    ['mosExpress', 'warehouseMos', 'MOS'].forEach(app => {
       if ($(`horAppTtl_${app}`)) _refrescarHorarioCard(app);
     });
   }, 8000);
@@ -18018,8 +18083,12 @@ const MOS = (() => {
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
     const data = await _cargarHorariosApps(true);
     const conf = data[app] || { horario: {}, admins_libres: true };
-    const titulo = app === 'warehouseMos' ? '📦 warehouseMos' : '📱 mosExpress';
-    const accent = app === 'warehouseMos' ? '#ea580c' : '#f59e0b';
+    const titulo = app === 'warehouseMos' ? '📦 warehouseMos'
+                 : app === 'mosExpress'   ? '📱 mosExpress'
+                 : '👑 MOS Admin';
+    const accent = app === 'warehouseMos' ? '#ea580c'
+                 : app === 'mosExpress'   ? '#f59e0b'
+                 : '#6366f1';
     _renderModalHorario({
       titulo: `⚙ Horario ${titulo}`,
       subtitulo: 'Control general de apertura/cierre de la app',
@@ -18297,8 +18366,8 @@ const MOS = (() => {
         </label>
         <button onclick="event.stopPropagation();MOS.abrirModalPersonal('${safeId}','${appOrigen}')"
                 class="text-[10px] text-slate-500 hover:text-white p-1" title="Editar">✏️</button>
-        ${appOrigen !== 'MOS' ? `<button onclick="event.stopPropagation();MOS.abrirModalHorarioCustom('${safeId}')"
-                class="text-[12px] text-slate-500 hover:text-violet-300 p-1" title="Horario custom">🕐</button>` : ''}
+        <button onclick="event.stopPropagation();MOS.abrirModalHorarioCustom('${safeId}')"
+                class="text-[12px] text-slate-500 hover:text-violet-300 p-1" title="Horario custom">🕐</button>
       </div>
       ${_renderChipHorarioCustom(p)}
       ${auditExpand}
@@ -18496,6 +18565,8 @@ const MOS = (() => {
         </div>
         <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalPersonal(null,'MOS')">+ admin</button>
       </div>
+      <!-- [v2.43.31] Card horario app MOS -->
+      ${_renderHorarioAppCard('MOS', '#6366f1')}
       ${adminsMOS.length === 0
         ? '<p class="text-center py-4 text-slate-500 text-sm">Sin admins/master registrados</p>'
         : `<div class="space-y-2">${adminsMOS.map(p => _renderPersonaCard(p, 'MOS')).join('')}</div>`}
@@ -34583,6 +34654,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.43.30] Horarios apps + custom usuario
     abrirModalHorarioApp, abrirModalHorarioCustom, eliminarHorarioCustom,
     cerrarModalHorario, _horToggleDia, _horGuardarModal, _horEliminarCustomDesdeModal,
+    _mosCerrarBloqueoYsalir,
     almLoadResumen, almRefreshResumen, almFiltrarStock, almRefreshCatalogo, almToggleStockExpand,
     almLoadOps, almRefreshOps, almRenderOps, almToggleOpExpand, almSetRangoOps,
     // [v2.41.99] Filtro solo ingresos

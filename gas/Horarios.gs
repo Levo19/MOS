@@ -52,8 +52,19 @@ function _asegurarHojaHorariosApps() {
       sab: { activo: true, apertura: '06:00', cierre: '23:00' },
       dom: { activo: true, apertura: '07:00', cierre: '22:00' }
     };
+    // [v2.43.31] App MOS — 24/7 por defecto (admins libres)
+    var defaultMOS = {
+      lun: { activo: true, apertura: '00:00', cierre: '23:59' },
+      mar: { activo: true, apertura: '00:00', cierre: '23:59' },
+      mie: { activo: true, apertura: '00:00', cierre: '23:59' },
+      jue: { activo: true, apertura: '00:00', cierre: '23:59' },
+      vie: { activo: true, apertura: '00:00', cierre: '23:59' },
+      sab: { activo: true, apertura: '00:00', cierre: '23:59' },
+      dom: { activo: true, apertura: '00:00', cierre: '23:59' }
+    };
     sh.appendRow(['warehouseMos', JSON.stringify(defaultWH), true, 'sistema', new Date()]);
     sh.appendRow(['mosExpress',   JSON.stringify(defaultME), true, 'sistema', new Date()]);
+    sh.appendRow(['MOS',          JSON.stringify(defaultMOS), true, 'sistema', new Date()]);
   }
   return sh;
 }
@@ -82,8 +93,8 @@ function getHorariosApps() {
 function setHorarioApp(params) {
   var app = String(params.app || '').trim();
   if (!app) return { ok: false, error: 'app requerida' };
-  if (app !== 'warehouseMos' && app !== 'mosExpress') {
-    return { ok: false, error: 'app no soportada (warehouseMos | mosExpress)' };
+  if (app !== 'warehouseMos' && app !== 'mosExpress' && app !== 'MOS') {
+    return { ok: false, error: 'app no soportada (warehouseMos | mosExpress | MOS)' };
   }
   var horario = params.horario || {};
   // Validar 7 días
@@ -238,11 +249,9 @@ function resolverHorarioPersonal(params) {
   var byApp = (horariosRes && horariosRes.data) || {};
   var appConf = byApp[app] || { horario: {}, admins_libres: true };
 
-  if ((rol === 'MASTER' || rol === 'ADMINISTRADOR') && appConf.admins_libres) {
-    return { ok: true, data: { permitido: true, motivo: 'rol_admin_libre', fuente: 'app' } };
-  }
-
-  // Buscar horarioCustom del operador
+  // [v2.43.31] Política refinada: horarioCustom GANA SOBRE admins_libres
+  // Si un admin tiene horario custom específico, ese se respeta. Sino,
+  // el flag admins_libres de la app le da paso libre.
   var horarioOperador = null;
   var fuente = 'app';
   if (idPersonal) {
@@ -270,6 +279,10 @@ function resolverHorarioPersonal(params) {
         }
       }
     } catch(_){}
+  }
+  // Si NO hay custom y rol es admin con admins_libres → permitido siempre
+  if (!horarioOperador && (rol === 'MASTER' || rol === 'ADMINISTRADOR') && appConf.admins_libres) {
+    return { ok: true, data: { permitido: true, motivo: 'rol_admin_libre', fuente: 'app' } };
   }
   if (!horarioOperador) horarioOperador = appConf.horario || {};
 
