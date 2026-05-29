@@ -114,6 +114,14 @@ function _route(method, e) {
       // ── Devoluciones zona (two-party witness · puente ME ↔ WH desde MOS) ──
       case 'reportarQuotaDispositivo':       return reportarQuotaDispositivo(params);
       case 'wh_crearDevolucionZona':         return postToWarehouse('crearDevolucionZona', params);
+      // [v2.43.29] Salud de stock WH (auditoría + reconciliación desde MOS)
+      case 'wh_auditarStockGlobal':          return postToWarehouse('auditarStockGlobal', params);
+      case 'wh_getAlertasStock':             return postToWarehouse('getAlertasStock', params);
+      case 'wh_reconciliarStockMasivo':      return postToWarehouse('reconciliarStockMasivo', params);
+      case 'wh_reconciliarStockProducto':    return postToWarehouse('reconciliarStockProducto', params);
+      case 'wh_aceptarTeoricoAlerta':        return postToWarehouse('aceptarTeoricoAlerta', params);
+      case 'cronSaludStockWH':               return cronSaludStockWH();
+      case 'setupSaludStockTrigger':         return setupSaludStockTrigger();
       case 'wh_getDevolucionesZona':         return postToWarehouse('getDevolucionesZona', params);
       case 'wh_getDevolucionDetalle':        return postToWarehouse('getDevolucionDetalle', params);
       case 'wh_confirmarRecepcionDevolucion': return postToWarehouse('confirmarRecepcionDevolucion', params);

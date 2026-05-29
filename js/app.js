@@ -4405,7 +4405,7 @@ const MOS = (() => {
 
   function setAlmTab(tab) {
     S.almTab = tab;
-    ['resumen','stock','ops','zonas','venc','merma','env'].forEach(t => {
+    ['resumen','stock','ops','zonas','venc','merma','env','salud'].forEach(t => {
       const b = $('almTab' + t.charAt(0).toUpperCase() + t.slice(1));
       if (b) b.classList.toggle('active', t === tab);
       const p = $('almPanel' + t.charAt(0).toUpperCase() + t.slice(1));
@@ -4413,8 +4413,180 @@ const MOS = (() => {
     });
     // [v41.24] Polling cada 60s solo cuando la pestaña env está activa
     _envPollingControl(tab === 'env');
+    // [v2.43.29] Auto-cargar salud al entrar (con cache 5min)
+    if (tab === 'salud') saludLoadIfNeeded();
     if (!S.loaded['almacen']) { loadAlmacen(); return; }
     renderAlmTab(tab);
+  }
+
+  // [v2.43.29] ═══ PANEL SALUD STOCK WH ═══════════════════════════════
+  S._saludCache = null; S._saludCacheTs = 0;
+  function saludLoadIfNeeded() {
+    if (S._saludCache && (Date.now() - S._saludCacheTs) < 5 * 60000) {
+      _saludRender(S._saludCache);
+      return;
+    }
+    saludRefresh();
+  }
+  async function saludRefresh() {
+    const ico = $('saludRefreshIco');
+    if (ico) ico.classList.add('is-spin');
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    try {
+      // 1. Re-correr auditoría WH (fuerza recálculo teórico)
+      await API.post('wh_auditarStockGlobal', {});
+      // 2. Leer alertas pendientes
+      const r = await API.post('wh_getAlertasStock', { soloPendientes: true });
+      const data = (r && r.data) || [];
+      S._saludCache = data;
+      S._saludCacheTs = Date.now();
+      _saludRender(data);
+      try {
+        if (data.length === 0) _opsBeep && _opsBeep('ok');
+        else if (data.length > 5) _opsBeep && _opsBeep('warn');
+        else _opsBeep && _opsBeep('shimmer');
+      } catch(_){}
+    } catch(e) {
+      toast('⚠ Error consultando salud: ' + (e.message || e), 'error');
+      try { _opsBeep && _opsBeep('warn'); } catch(_){}
+    } finally {
+      if (ico) setTimeout(() => ico.classList.remove('is-spin'), 200);
+    }
+  }
+  function _saludRender(alertas) {
+    // Update badge global
+    const badge = $('almSaludBadge');
+    if (badge) {
+      if (alertas.length > 0) { badge.textContent = String(alertas.length); badge.classList.remove('hidden'); }
+      else badge.classList.add('hidden');
+    }
+    // Subtítulo
+    const sub = $('saludSubtitulo');
+    if (sub) sub.textContent = alertas.length === 0
+      ? '✓ Stock cuadra con teórico · sin desbalances detectados'
+      : `${alertas.length} producto${alertas.length === 1 ? '' : 's'} con discrepancia · revisa abajo`;
+    // KPIs
+    let absSum = 0, graves = 0, leves = 0;
+    alertas.forEach(a => {
+      const ad = Math.abs(parseFloat(a.diferencia) || 0);
+      absSum += ad;
+      if (ad > 10) graves++; else leves++;
+    });
+    const kpiHtml = `
+      <div class="salud-kpi is-${alertas.length === 0 ? 'ok' : 'warn'}">
+        <div class="salud-kpi-num">${alertas.length}</div>
+        <div class="salud-kpi-lbl">Productos descalibrados</div>
+      </div>
+      <div class="salud-kpi is-${graves > 0 ? 'danger' : 'ok'}">
+        <div class="salud-kpi-num">${graves}</div>
+        <div class="salud-kpi-lbl">Discrepancias graves (>10u)</div>
+      </div>
+      <div class="salud-kpi is-info">
+        <div class="salud-kpi-num">${absSum.toFixed(1)}</div>
+        <div class="salud-kpi-lbl">|Δ| total acumulado</div>
+      </div>`;
+    const kEl = $('saludKpis');
+    if (kEl) kEl.innerHTML = kpiHtml;
+    // Lista o estado vacío feliz
+    const lEl = $('saludLista');
+    if (!lEl) return;
+    if (alertas.length === 0) {
+      lEl.innerHTML = `
+        <div class="salud-empty-ok">
+          <div class="salud-empty-ok-icon">✅</div>
+          <div style="font-weight:900;font-size:1rem">Todo cuadra perfecto</div>
+          <div style="font-size:12px;color:#a7f3d0;margin-top:4px">El stock snapshot coincide con la suma teórica de movimientos</div>
+        </div>`;
+      return;
+    }
+    lEl.innerHTML = alertas
+      .sort((a, b) => Math.abs(parseFloat(b.diferencia) || 0) - Math.abs(parseFloat(a.diferencia) || 0))
+      .map((a, idx) => {
+        const diff = parseFloat(a.diferencia) || 0;
+        const absD = Math.abs(diff);
+        const cls  = absD > 10 ? 'is-grave' : absD > 2 ? 'is-warn' : '';
+        const sign = diff >= 0 ? '+' : '−';
+        return `<div class="salud-row ${cls}" style="animation-delay:${Math.min(idx, 15) * 35}ms" data-cb="${_escapeHtml(a.codigoProducto)}">
+          <div>
+            <div class="salud-row-desc">${_escapeHtml(a.descripcion || a.codigoProducto)}</div>
+            <div class="salud-row-cb">▌ ${_escapeHtml(a.codigoProducto)}</div>
+          </div>
+          <div class="salud-num salud-num-real" title="Stock snapshot">${_fmtNum(a.stockReal)}</div>
+          <div class="salud-num salud-num-teor" title="Stock teórico = Σ guías + ajustes">${_fmtNum(a.stockTeorico)}</div>
+          <div class="salud-num salud-num-diff ${diff >= 0 ? 'is-positive' : ''}" data-sign="${sign}" title="Real − Teórico">${absD.toFixed(1)}</div>
+          <button class="salud-row-btn" onclick="MOS.saludReconciliarUno('${_escapeHtml(a.codigoProducto)}', '${_escapeHtml(a.idAlerta || '')}', this)">⚡ Reconciliar</button>
+        </div>`;
+      }).join('');
+  }
+  function _fmtNum(n) {
+    const v = parseFloat(n) || 0;
+    return v.toLocaleString('es-PE', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  }
+  async function saludReconciliarUno(codigoBarra, idAlerta, btnEl) {
+    if (btnEl) { btnEl.disabled = true; btnEl.textContent = '⏳ Aplicando…'; }
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    try {
+      const auth = await pedirAuth({ accion: 'RECONCILIAR_STOCK', refDocumento: codigoBarra,
+        contexto: 'Aplicar AJUSTE para igualar stock real al teórico · ' + codigoBarra });
+      if (!auth) {
+        if (btnEl) { btnEl.disabled = false; btnEl.textContent = '⚡ Reconciliar'; }
+        return;
+      }
+      const r = await API.post('wh_reconciliarStockProducto', {
+        codigoBarra: codigoBarra,
+        autorizadoPor: auth.nombre || 'admin-mos'
+      });
+      const d = (r && r.data) || r || {};
+      if (d.accion === 'CORREGIDO') {
+        try { _opsBeep && _opsBeep('ok'); } catch(_){}
+        toast(`✓ Reconciliado · Δ ${d.ajusteAplicado >= 0 ? '+' : ''}${d.ajusteAplicado} aplicado`, 'success', 4000);
+        // Quitar la fila con animación
+        const row = btnEl ? btnEl.closest('.salud-row') : null;
+        if (row) {
+          row.style.transition = 'all .35s cubic-bezier(.4,0,.2,1)';
+          row.style.transform = 'translateX(120%)';
+          row.style.opacity = '0';
+          setTimeout(() => { row.remove(); saludRefresh(); }, 350);
+        } else { saludRefresh(); }
+      } else if (d.accion === 'YA_CUADRA') {
+        try { _opsBeep && _opsBeep('ok'); } catch(_){}
+        toast('✓ Ya cuadraba · sin ajuste necesario', 'success');
+        if (btnEl) btnEl.textContent = '✓';
+      } else {
+        try { _opsBeep && _opsBeep('warn'); } catch(_){}
+        toast('⚠ ' + ((r && r.error) || 'Error reconciliando'), 'warning');
+        if (btnEl) { btnEl.disabled = false; btnEl.textContent = '⚡ Reconciliar'; }
+      }
+    } catch(e) {
+      try { _opsBeep && _opsBeep('warn'); } catch(_){}
+      toast('⚠ Error: ' + (e.message || e), 'error');
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = '⚡ Reconciliar'; }
+    }
+  }
+  async function saludReconciliarMasivo() {
+    const total = (S._saludCache || []).length;
+    if (total === 0) { toast('Sin desbalances para reconciliar', 'info'); return; }
+    const ok = confirm(`¿Aplicar AJUSTES auditados a ${total} producto${total === 1 ? '' : 's'}?\n\nCada corrección queda registrada en AJUSTES con motivo "Reconciliación masiva".`);
+    if (!ok) return;
+    try { _opsBeep && _opsBeep('shimmer'); } catch(_){}
+    const auth = await pedirAuth({ accion: 'RECONCILIAR_STOCK_MASIVO',
+      contexto: `Reconciliar ${total} productos con AJUSTES auditados` });
+    if (!auth) return;
+    toast('⚙ Reconciliando masivamente…', 'info', 2500);
+    try {
+      const r = await API.post('wh_reconciliarStockMasivo', {
+        autorizadoPor: auth.nombre || 'admin-mos',
+        motivo: 'Reconciliación masiva desde MOS panel salud'
+      });
+      const d = (r && r.data) || r || {};
+      try { _opsBeep && _opsBeep('ok'); } catch(_){}
+      toast(`✓ ${d.corregidas} corregidas · ${d.omitidas} omitidas · ${d.errores} errores`, 'success', 6000);
+      // refresh
+      saludRefresh();
+    } catch(e) {
+      try { _opsBeep && _opsBeep('warn'); } catch(_){}
+      toast('⚠ Error: ' + (e.message || e), 'error');
+    }
   }
 
   // [v41.24] Polling 60s pestaña envasados
@@ -34125,6 +34297,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirLiquidacion,
     abrirModalPrecio, publicarPrecio,
     setAlmTab,
+    // [v2.43.29] Panel salud stock
+    saludLoadIfNeeded, saludRefresh, saludReconciliarUno, saludReconciliarMasivo,
     almLoadResumen, almRefreshResumen, almFiltrarStock, almRefreshCatalogo, almToggleStockExpand,
     almLoadOps, almRefreshOps, almRenderOps, almToggleOpExpand, almSetRangoOps,
     // [v2.41.99] Filtro solo ingresos

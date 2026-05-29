@@ -2134,3 +2134,48 @@ function _liqEnsureSyncTrigger() {
     }
   } catch(e) { Logger.log('[LiqSyncTrigger] auto-instalación fallo: ' + e.message); }
 }
+
+// ════════════════════════════════════════════════════════════════════
+// [v2.43.29] Cron MOS 22:30 — Salud de stock WH
+// Corre DESPUÉS de la auditoría WH 22:00. Lee alertas pendientes y
+// notifica push agrupado a MASTER + ADMIN si hay desbalances.
+// ════════════════════════════════════════════════════════════════════
+function cronSaludStockWH() {
+  try {
+    // 1. Forzar auditoría fresca (en caso que la WH no haya corrido)
+    var auditRes = postToWarehouse('auditarStockGlobal', {});
+    if (!auditRes || !auditRes.ok) {
+      Logger.log('[saludStock] auditarStockGlobal WH fallo: ' + JSON.stringify(auditRes));
+    }
+    // 2. Leer alertas pendientes
+    var alertRes = postToWarehouse('getAlertasStock', { soloPendientes: true });
+    if (!alertRes || !alertRes.ok) return { ok: false, error: 'getAlertasStock fallo' };
+    var pendientes = (alertRes.data || []);
+    if (pendientes.length === 0) {
+      Logger.log('[saludStock] sin desbalances · stock WH cuadra ✓');
+      return { ok: true, data: { pendientes: 0 } };
+    }
+    // 3. Push agrupado a admins
+    try {
+      var totalAbs = pendientes.reduce(function(s, a) { return s + Math.abs(parseFloat(a.diferencia) || 0); }, 0);
+      var titulo   = '⚠ Salud stock WH · ' + pendientes.length + ' producto' + (pendientes.length === 1 ? '' : 's');
+      var cuerpo   = '|Δ| total: ' + totalAbs.toFixed(1) + 'u · revisa panel "Salud Stock"';
+      if (typeof _enviarPushTodos === 'function') {
+        _enviarPushTodos(titulo, cuerpo, { idNotif: 'MOS_SALUD_STOCK_WH' });
+      }
+    } catch(eP) { Logger.log('[saludStock] push fallo: ' + eP.message); }
+    return { ok: true, data: { pendientes: pendientes.length } };
+  } catch(e) {
+    Logger.log('[saludStock] excepción: ' + e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+function setupSaludStockTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === 'cronSaludStockWH') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('cronSaludStockWH').timeBased().atHour(22).nearMinute(30).everyDays(1).create();
+  Logger.log('[saludStock] cron instalado 22:30 daily');
+  return { ok: true };
+}
