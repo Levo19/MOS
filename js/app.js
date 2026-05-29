@@ -2366,7 +2366,14 @@ const MOS = (() => {
     }
 
     // Cantidad pre-cargada con la registrada en WH
-    $('pnCantidad').value = pn.cantidad != null ? pn.cantidad : '';
+    const cantInput = $('pnCantidad');
+    cantInput.value = pn.cantidad != null ? pn.cantidad : '';
+    // [v2.43.22] Auto-sync de cantidad → propaga a PRODUCTO_NUEVO + GUIA_DETALLE
+    // en WH. El usuario puede corregir la cantidad antes de aprobar y se refleja
+    // en la guía sin pasar por flow de aprobación completo.
+    cantInput.dataset.pnIdActual = pn.idProductoNuevo;
+    cantInput.dataset.pnCantOriginal = String(pn.cantidad != null ? pn.cantidad : '');
+    cantInput.onblur = () => _pnSyncCantidad(cantInput);
 
     // Sección NUEVO pre-cargada
     $('pnDesc').value         = pn.descripcion || '';
@@ -2411,6 +2418,48 @@ const MOS = (() => {
   function cerrarModalPN() {
     const modal = $('modalPN');
     if (modal) { modal.classList.add('hidden'); modal.classList.remove('open'); }
+  }
+
+  // [v2.43.22] Sincroniza cantidad editada en el modal MOS hacia WH backend
+  // (PRODUCTO_NUEVO + GUIA_DETALLE) sin abandonar el modal de aprobación.
+  // Solo dispara si cambió respecto a la original cargada. Si el PN ya fue
+  // aprobado, el backend devuelve error y deshabilitamos el input.
+  async function _pnSyncCantidad(inputEl) {
+    if (!inputEl) return;
+    const idPN     = inputEl.dataset.pnIdActual || '';
+    const original = parseFloat(inputEl.dataset.pnCantOriginal || '0') || 0;
+    const nueva    = parseFloat(inputEl.value || '0') || 0;
+    if (!idPN) return;
+    if (!(nueva > 0)) return;
+    if (Math.abs(nueva - original) < 0.001) return; // sin cambio real
+    // Lock visual sutil
+    inputEl.style.borderColor = '#f59e0b';
+    try {
+      const r = await API.post('wh_editarPNCantidad', { idProductoNuevo: idPN, cantidad: nueva });
+      const d = (r && r.data) || r || {};
+      if (d.ok === false || (r && r.error)) {
+        // Backend rechazó (p.ej. PN ya aprobado) — revertir y avisar
+        inputEl.value = original;
+        inputEl.style.borderColor = '#dc2626';
+        const msg = (d.error || r.error || 'No se pudo modificar la cantidad');
+        toast('⚠ ' + msg, 'warn', 4500);
+        setTimeout(() => { inputEl.style.borderColor = ''; }, 2500);
+        return;
+      }
+      // Éxito — actualizar marcador original + en el state local
+      inputEl.dataset.pnCantOriginal = String(nueva);
+      inputEl.style.borderColor = '#10b981';
+      const pnList = S.pnPendientes || [];
+      const idx = pnList.findIndex(p => String(p.idProductoNuevo) === String(idPN));
+      if (idx >= 0) pnList[idx].cantidad = nueva;
+      toast(`✓ Cantidad actualizada: ${original} → ${nueva}`, 'success', 3000);
+      setTimeout(() => { inputEl.style.borderColor = ''; }, 1800);
+    } catch(e) {
+      inputEl.value = original;
+      inputEl.style.borderColor = '#dc2626';
+      toast('⚠ Error al sincronizar cantidad', 'warn', 3500);
+      setTimeout(() => { inputEl.style.borderColor = ''; }, 2500);
+    }
   }
 
   // ── Modal: Crear Producto Nuevo MANUAL (admin/master) ──────────────────

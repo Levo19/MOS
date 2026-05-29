@@ -110,6 +110,7 @@ function _route(method, e) {
       case 'getGuiasWarehouse':    return getGuiasWarehouse(params);
       case 'getProductosNuevosWH': return getProductosNuevosWarehouse(params);
       case 'lanzarProductoNuevo':  return lanzarProductoNuevo(params);
+      case 'wh_editarPNCantidad':  return postToWarehouse('editarPNCantidad', params);
       case 'getVentasMosExpress':  return getVentasMosExpress(params);
       case 'getRotacion':            return getRotacionProductos(params);
       case 'getAnaliticaProducto':   return getAnaliticaProducto(params);
