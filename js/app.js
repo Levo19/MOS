@@ -18097,16 +18097,82 @@ const MOS = (() => {
   }, 60000);
 
   // Render del CHIP de horario custom dentro de la card del operador
+  // [v2.43.35] Chip de horario custom — ahora muestra SOLO los días que
+  // DIFIEREN del horario base del app. Lógica del usuario:
+  //   - Si Lun-Mar-Mie igual al base → no mostrar (es obvio que están abiertos)
+  //   - Si Jue-Vie-Sab tienen horas distintas → mostrar EN ROJO con sus horas
+  //   - Si un día está cerrado y en el base no → mostrar como "cerrado" en rojo
+  // Esto reduce ruido visual y enfoca lo realmente "custom".
   function _renderChipHorarioCustom(p) {
     if (!p.horarioCustom) return '';
     let hc;
     try { hc = typeof p.horarioCustom === 'string' ? JSON.parse(p.horarioCustom) : p.horarioCustom; } catch(_) { return ''; }
-    if (!hc || !hc.activo) return '';
-    const resumen = _resumirHorario(hc.dias);
-    return `<div class="hor-custom-chip" onclick="event.stopPropagation();MOS.abrirModalHorarioCustom('${p.idPersonal}')">
-      <span class="hor-custom-icon">🕐</span>
-      <span class="hor-custom-txt">${resumen}${hc.motivo ? ' · ' + _escapeHtml(hc.motivo) : ''}</span>
-      <button class="hor-custom-x" onclick="event.stopPropagation();MOS.eliminarHorarioCustom('${p.idPersonal}')" title="Quitar horario custom">✕</button>
+    if (!hc || !hc.activo || !hc.dias) return '';
+
+    // Resolver el horario base del app del operador
+    const appPersona = _appDePersona(p);
+    const base       = _horarioBaseDeApp(appPersona);
+    // Calcular diferencias por día
+    const difs = []; // [{ lbl, txt, cerrado }]
+    _DIAS_HOR.forEach(d => {
+      const c = hc.dias[d.k] || {};
+      const b = base[d.k]    || {};
+      const cAct = c.activo !== false;
+      const bAct = b.activo !== false;
+      const cAp  = _hrOnly(c.apertura), cCi = _hrOnly(c.cierre);
+      const bAp  = _hrOnly(b.apertura), bCi = _hrOnly(b.cierre);
+      const iguales = cAct === bAct && (cAct === false || (cAp === bAp && cCi === bCi));
+      if (iguales) return; // omitir días iguales al base
+      if (!cAct) {
+        difs.push({ lbl: d.lbl, txt: 'cerrado', cerrado: true });
+      } else {
+        difs.push({ lbl: d.lbl, txt: `${cAp}h → ${cCi}h`, cerrado: false });
+      }
+    });
+
+    // Si NO hay diferencias → el custom es idéntico al base → no mostrar chip
+    if (!difs.length) return '';
+
+    // Agrupar días consecutivos con misma txt para resumir "Vie a Sab 07h→22h"
+    const grupos = [];
+    let actual = null;
+    difs.forEach(d => {
+      if (actual && actual.txt === d.txt) actual.dias.push(d.lbl);
+      else { actual = { txt: d.txt, cerrado: d.cerrado, dias: [d.lbl] }; grupos.push(actual); }
+    });
+    // Diferencias de hora → ámbar suave. Días cerrados → rojo suave (rosa).
+    // Sin negrita agresiva; el contraste de color es suficiente.
+    const resumenDifs = grupos.map(g => {
+      const rango = g.dias.length === 1 ? g.dias[0] : `${g.dias[0]} a ${g.dias[g.dias.length-1]}`;
+      const color = g.cerrado ? '#fca5a5' : '#fcd34d';
+      return `<span style="color:${color}"><span style="color:#cbd5e1">${rango}:</span> ${g.txt}</span>`;
+    }).join(' &middot; ');
+
+    // Diseño limpio: fondo sutil indigo + label discreto + spans coloreados solo
+    // en los datos diferentes. Sin bordes agresivos. Hover suave para indicar
+    // que es clickeable.
+    const pendiente = p._horCustomPendiente
+      ? '<span style="margin-left:6px;font-size:9px;color:#a5b4fc;font-weight:600">guardando…</span>'
+      : '';
+    const motivoTxt = hc.motivo
+      ? `<span style="color:#94a3b8;font-style:italic">${_escapeHtml(hc.motivo)}</span>`
+      : '';
+    return `<div class="hor-custom-inline" onclick="event.stopPropagation();MOS.abrirModalHorarioCustom('${p.idPersonal}')"
+                 style="margin-top:8px;padding:8px 10px;background:rgba(99,102,241,.07);border-left:2px solid #6366f1;border-radius:4px;cursor:pointer;transition:background .15s"
+                 onmouseover="this.style.background='rgba(99,102,241,.14)'"
+                 onmouseout="this.style.background='rgba(99,102,241,.07)'">
+      <div style="display:flex;align-items:center;gap:6px;font-size:9px;color:#a5b4fc;font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:3px">
+        <span style="font-size:11px">🕐</span>
+        <span>Excepciones del general</span>
+        ${pendiente}
+        <button onclick="event.stopPropagation();MOS.eliminarHorarioCustom('${p.idPersonal}')"
+                style="margin-left:auto;background:none;border:none;color:#64748b;cursor:pointer;font-size:13px;padding:0;line-height:1;opacity:.6"
+                onmouseover="this.style.opacity='1';this.style.color='#f87171'"
+                onmouseout="this.style.opacity='.6';this.style.color='#64748b'"
+                title="Quitar horario custom">✕</button>
+      </div>
+      <div style="font-size:11px;line-height:1.4;color:#e0e7ff">${resumenDifs}</div>
+      ${motivoTxt ? `<div style="font-size:10px;color:#94a3b8;margin-top:3px;line-height:1.3">${motivoTxt}</div>` : ''}
     </div>`;
   }
 
@@ -18245,24 +18311,60 @@ const MOS = (() => {
       horarioBaseCargado: cacheCargo,  // [v2.43.34] avisa al modal si el base es real o fallback
       teniaCustom: !!hc.dias,
       onGuardar: (horario, activo, motivo) => {
-        // [v2.43.33 BUG 4 FIX] Toast preciso según contexto:
-        //   - Tenía custom + lo deshabilitaste (toggle OFF) → "eliminado"
-        //   - No tenía custom + toggle ON → "creado/guardado"
-        //   - Tenía custom + lo guardaste con toggle ON → "actualizado"
         const teniaCustom = !!hc.dias;
         const msg = activo
           ? (teniaCustom ? '🕐 Horario personal actualizado' : '🕐 Horario personal creado')
           : (teniaCustom ? '🕐 Horario personal eliminado' : '🕐 Sin cambios');
-        // Optimismo: actualizar local + cerrar + toast
-        p.horarioCustom = activo ? JSON.stringify({ activo:true, dias: horario, motivo }) : '';
+
+        // [v2.43.35 FIX OPTIMISMO REAL] Bug: el polling cada 30s reemplazaba
+        // cfgData.personal entero, pisando la mutación local antes de que el
+        // backend persistiera. Fix:
+        //   1. Mutar p (referencia actual del modal)
+        //   2. Buscar TAMBIÉN en cfgData.personal y personalMOS por idPersonal
+        //      y mutarlos por si son arrays distintos
+        //   3. Marcar _horCustomPendiente:true para que el polling lo respete
+        //   4. Cuando API.post confirma → limpiar el flag y re-render
+        //   5. Si falla → toast error + limpiar flag (queda con el dato local
+        //      que el polling pisará en su próximo ciclo)
+        const nuevoValor = activo ? JSON.stringify({ activo:true, dias: horario, motivo }) : '';
+        const aplicarMutacion = (obj) => {
+          if (!obj) return;
+          obj.horarioCustom = nuevoValor;
+          obj._horCustomPendiente = true;
+        };
+        aplicarMutacion(p);
+        (cfgData.personal || []).forEach(x => {
+          if (String(x.idPersonal) === String(idPersonal)) aplicarMutacion(x);
+        });
+        (cfgData.personalMOS || []).forEach(x => {
+          if (String(x.idPersonal) === String(idPersonal)) aplicarMutacion(x);
+        });
+
         cerrarModalHorario();
         toast(msg, 'success', 2500);
         if (typeof renderPersonal === 'function') renderPersonal();
+
         API.post('setHorarioCustomPersonal', {
           idPersonal, horarioCustom: { activo, dias: horario, motivo }
         })
-          .then(() => { try { _opsBeep && _opsBeep('ok'); } catch(_){} })
-          .catch(e => { toast('⚠ Error guardando: ' + e.message, 'error', 5000); });
+          .then(() => {
+            try { _opsBeep && _opsBeep('ok'); } catch(_){}
+            // Limpiar flag pendiente en todas las referencias
+            const limpiar = (obj) => { if (obj) delete obj._horCustomPendiente; };
+            limpiar(p);
+            (cfgData.personal || []).forEach(x => { if (String(x.idPersonal) === String(idPersonal)) limpiar(x); });
+            (cfgData.personalMOS || []).forEach(x => { if (String(x.idPersonal) === String(idPersonal)) limpiar(x); });
+            if (typeof renderPersonal === 'function') renderPersonal();
+          })
+          .catch(e => {
+            // Limpiar flag aunque haya error (no queremos un fantasma "guardando…" eterno)
+            const limpiar = (obj) => { if (obj) delete obj._horCustomPendiente; };
+            limpiar(p);
+            (cfgData.personal || []).forEach(x => { if (String(x.idPersonal) === String(idPersonal)) limpiar(x); });
+            (cfgData.personalMOS || []).forEach(x => { if (String(x.idPersonal) === String(idPersonal)) limpiar(x); });
+            toast('⚠ Error guardando: ' + e.message, 'error', 5000);
+            if (typeof renderPersonal === 'function') renderPersonal();
+          });
       }
     });
   }
