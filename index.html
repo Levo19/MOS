@@ -4430,6 +4430,136 @@
     .salud-empty-ok-icon { font-size: 2.5rem; margin-bottom: 6px; animation: saludOkPop .6s cubic-bezier(.34,1.56,.64,1) both; }
     @keyframes saludOkPop { 0% { transform: scale(0); } 60% { transform: scale(1.3); } 100% { transform: scale(1); } }
 
+    /* [v2.43.30] HORARIOS — cards + chips + modal */
+    .hor-app-card {
+      background: rgba(15,23,42,.55); border: 1px solid rgba(148,163,184,.18);
+      border-radius: 10px; padding: 10px 12px; margin: 10px 0;
+      animation: horSlideIn .3s cubic-bezier(.34,1.56,.64,1) both;
+    }
+    .hor-app-row { display: flex; align-items: center; gap: 10px; }
+    .hor-app-ico { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+    .hor-app-ttl { font-weight: 800; font-size: 12px; color: #f1f5f9; line-height: 1.3; }
+    .hor-app-sub { font-size: 10px; color: #94a3b8; margin-top: 2px; }
+    .hor-app-btn {
+      padding: 6px 12px; border-radius: 8px; border: 1px solid rgba(148,163,184,.3);
+      background: rgba(71,85,105,.4); color: #cbd5e1; font-size: 11px; font-weight: 700;
+      cursor: pointer; transition: all .15s; flex-shrink: 0;
+    }
+    .hor-app-btn:hover { background: rgba(71,85,105,.7); transform: translateY(-1px); }
+    @keyframes horSlideIn { 0% { opacity:0; transform: translateY(-4px); } 100% { opacity:1; transform: translateY(0); } }
+
+    /* Chip horario custom en card de operador */
+    .hor-custom-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: linear-gradient(135deg, rgba(168,85,247,.18), rgba(124,58,237,.08));
+      border: 1px solid rgba(168,85,247,.4); border-radius: 999px;
+      padding: 3px 10px; margin-top: 5px; font-size: 10px;
+      cursor: pointer; transition: all .15s;
+      animation: horChipIn .25s cubic-bezier(.34,1.56,.64,1) both;
+    }
+    .hor-custom-chip:hover { background: linear-gradient(135deg, rgba(168,85,247,.3), rgba(124,58,237,.15)); }
+    .hor-custom-icon { font-size: 11px; }
+    .hor-custom-txt { color: #c4b5fd; font-weight: 700; }
+    .hor-custom-x { background: transparent; border: 0; color: #f87171; font-weight: 800; cursor: pointer; padding: 0 0 0 4px; font-size: 11px; }
+    .hor-custom-x:hover { color: #ef4444; transform: scale(1.2); }
+    @keyframes horChipIn { 0% { opacity:0; transform: scale(.85); } 100% { opacity:1; transform: scale(1); } }
+
+    /* Modal */
+    .hor-modal-backdrop {
+      position: fixed; inset: 0; z-index: 9999;
+      background: rgba(2,6,23,.75); backdrop-filter: blur(8px);
+      display: flex; align-items: center; justify-content: center; padding: 16px;
+      animation: horFadeIn .2s ease;
+    }
+    @keyframes horFadeIn { from { opacity:0; } to { opacity:1; } }
+    .hor-modal {
+      background: linear-gradient(160deg, #0f172a 0%, #1e293b 60%, #0f172a 100%);
+      border: 2px solid; border-radius: 18px; max-width: 520px; width: 100%;
+      max-height: 90vh; overflow: hidden; display: flex; flex-direction: column;
+      animation: horModalIn .35s cubic-bezier(.34,1.56,.64,1) both;
+    }
+    @keyframes horModalIn { 0% { opacity:0; transform: scale(.94) translateY(8px); } 100% { opacity:1; transform: scale(1) translateY(0); } }
+    .hor-modal-hdr {
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+      padding: 14px 18px;
+    }
+    .hor-modal-ttl { font-weight: 900; font-size: 1rem; letter-spacing: .3px; }
+    .hor-modal-sub { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+    .hor-modal-x {
+      background: rgba(15,23,42,.6); border: 1px solid rgba(148,163,184,.25);
+      color: #cbd5e1; width: 32px; height: 32px; border-radius: 50%;
+      font-size: 14px; font-weight: 900; cursor: pointer; transition: all .15s; flex-shrink: 0;
+    }
+    .hor-modal-x:hover { background: rgba(220,38,38,.4); border-color: #dc2626; transform: rotate(90deg); }
+    .hor-modal-body { padding: 14px 18px 18px; overflow-y: auto; }
+
+    .hor-toggle-row { display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+    .hor-toggle-row input[type="checkbox"] { display: none; }
+    .hor-toggle-track {
+      width: 42px; height: 22px; background: rgba(71,85,105,.6); border-radius: 999px;
+      position: relative; transition: background .2s ease; flex-shrink: 0;
+    }
+    .hor-toggle-dot {
+      width: 18px; height: 18px; background: #f1f5f9; border-radius: 50%;
+      position: absolute; top: 2px; left: 2px; transition: transform .25s cubic-bezier(.34,1.56,.64,1);
+      box-shadow: 0 2px 6px rgba(0,0,0,.3);
+    }
+    .hor-toggle-row input:checked + .hor-toggle-track { background: linear-gradient(135deg, #a855f7, #7c3aed); }
+    .hor-toggle-row input:checked + .hor-toggle-track .hor-toggle-dot { transform: translateX(20px); }
+    .hor-toggle-lbl { color: #e2e8f0; font-weight: 700; font-size: 13px; }
+    .hor-toggle-hint { color: #64748b; font-size: 10px; margin-left: 52px; margin-bottom: 10px; }
+
+    .hor-dias-grid { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; }
+    .hor-dia-row {
+      display: grid; grid-template-columns: auto 1fr auto 1fr;
+      align-items: center; gap: 8px;
+      padding: 7px 10px; background: rgba(15,23,42,.5);
+      border: 1px solid rgba(148,163,184,.15); border-radius: 8px;
+      transition: all .2s;
+    }
+    .hor-dia-row.is-on { border-color: rgba(34,211,238,.4); }
+    .hor-dia-row.is-off { opacity: .55; background: rgba(127,29,29,.1); border-color: rgba(248,113,113,.3); }
+    .hor-dia-check { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    .hor-dia-checkbox { accent-color: #22d3ee; width: 15px; height: 15px; }
+    .hor-dia-lbl { color: #cbd5e1; font-weight: 700; font-size: 11px; min-width: 24px; }
+    .hor-time {
+      background: rgba(15,23,42,.7); color: #e2e8f0; border: 1px solid rgba(148,163,184,.3);
+      border-radius: 6px; padding: 4px 6px; font-size: 12px; font-weight: 700;
+      font-family: ui-monospace,monospace; width: 90px;
+    }
+    .hor-time:disabled { opacity: .4; cursor: not-allowed; }
+    .hor-arrow { color: #64748b; font-weight: 900; font-size: 14px; text-align: center; }
+
+    .hor-motivo-wrap { margin-top: 12px; }
+    .hor-motivo-lbl { display: block; font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 5px; }
+    .hor-motivo-input {
+      width: 100%; background: rgba(15,23,42,.7); color: #e2e8f0;
+      border: 1px solid rgba(168,85,247,.3); border-radius: 8px;
+      padding: 8px 12px; font-size: 13px; outline: none;
+    }
+    .hor-motivo-input:focus { border-color: #a855f7; box-shadow: 0 0 0 3px rgba(168,85,247,.2); }
+
+    .hor-modal-footer {
+      display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap;
+    }
+    .hor-btn-cancel, .hor-btn-del {
+      padding: 9px 14px; border-radius: 9px; border: 1px solid rgba(148,163,184,.3);
+      background: rgba(71,85,105,.4); color: #cbd5e1; font-weight: 800; font-size: 12px;
+      cursor: pointer; transition: all .15s;
+    }
+    .hor-btn-cancel:hover { background: rgba(71,85,105,.7); }
+    .hor-btn-del {
+      background: rgba(127,29,29,.4); border-color: rgba(220,38,38,.5); color: #fca5a5; margin-right: auto;
+    }
+    .hor-btn-del:hover { background: rgba(220,38,38,.55); }
+    .hor-btn-save {
+      padding: 9px 18px; border-radius: 9px; border: 0; color: #fff;
+      font-weight: 900; font-size: 13px; cursor: pointer;
+      box-shadow: 0 6px 14px -2px rgba(0,0,0,.4); transition: all .15s;
+    }
+    .hor-btn-save:hover { transform: translateY(-1px); }
+    .hor-btn-save:active { transform: translateY(0) scale(.98); }
+
     /* ════════════════════════════════════════════════════════
        [v41.11] OPERACIONES — vista vouchers de papel
        Cada operación se renderiza como recibo de imprenta:

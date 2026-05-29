@@ -17934,6 +17934,266 @@ const MOS = (() => {
     return { color: '#ef4444', label: `inactivo ${Math.floor(min/60/24)}d`, dot: '🔴', minutos: min };
   }
 
+  // [v2.43.30] ═════════ HORARIOS APPS + CUSTOM USUARIO ═════════════
+  S._horariosAppsCache = null; S._horariosAppsCacheTs = 0;
+  const _DIAS_HOR = [
+    { k:'lun', lbl:'Lun' }, { k:'mar', lbl:'Mar' }, { k:'mie', lbl:'Mie' },
+    { k:'jue', lbl:'Jue' }, { k:'vie', lbl:'Vie' }, { k:'sab', lbl:'Sab' }, { k:'dom', lbl:'Dom' }
+  ];
+  async function _cargarHorariosApps(force) {
+    if (!force && S._horariosAppsCache && (Date.now() - S._horariosAppsCacheTs) < 5 * 60000) {
+      return S._horariosAppsCache;
+    }
+    try {
+      const r = await API.post('getHorariosApps', {});
+      const d = (r && r.data) || r || {};
+      S._horariosAppsCache = d;
+      S._horariosAppsCacheTs = Date.now();
+      return d;
+    } catch(_) { return {}; }
+  }
+  function _renderHorarioAppCard(app, color) {
+    return `<div class="hor-app-card" data-app="${app}">
+      <div class="hor-app-row">
+        <div class="hor-app-ico" style="background:${color}22;color:${color}">🕐</div>
+        <div class="flex-1 min-w-0">
+          <div class="hor-app-ttl" id="horAppTtl_${app}">Cargando horario…</div>
+          <div class="hor-app-sub" id="horAppSub_${app}"></div>
+        </div>
+        <button class="hor-app-btn" onclick="MOS.abrirModalHorarioApp('${app}')">⚙ Editar</button>
+      </div>
+    </div>`;
+  }
+  function _resumirHorario(hor) {
+    if (!hor) return 'No configurado';
+    const dias = _DIAS_HOR.map(d => hor[d.k] || {});
+    // Si todos activos y mismo rango → mostrar simple
+    const allEqual = dias.every(c => c.activo && c.apertura === dias[0].apertura && c.cierre === dias[0].cierre);
+    if (allEqual && dias[0].activo) return `Todos los días · ${dias[0].apertura} → ${dias[0].cierre}`;
+    // Sino, mostrar resumen por día
+    return _DIAS_HOR.map((d, i) => {
+      const c = dias[i];
+      if (!c.activo) return `${d.lbl}: cerrado`;
+      return `${d.lbl} ${c.apertura}-${c.cierre}`;
+    }).join(' · ');
+  }
+  // Render asíncrono — actualiza el texto cuando llega la respuesta
+  (async () => { /* warmup en boot */ try { await _cargarHorariosApps(); } catch(_){} })();
+
+  async function _refrescarHorarioCard(app) {
+    const data = await _cargarHorariosApps();
+    const conf = data[app];
+    const ttl  = $(`horAppTtl_${app}`);
+    const sub  = $(`horAppSub_${app}`);
+    if (!ttl || !conf) return;
+    ttl.textContent = _resumirHorario(conf.horario);
+    if (sub) sub.textContent = `${conf.admins_libres ? '👑 admins libres · ' : ''}actualizado por ${conf.actualizadoPor || '—'}`;
+  }
+  // Auto-refrescar las cards cuando el panel se monta
+  const _origRenderPersonal = (typeof renderPersonal === 'function') ? renderPersonal : null;
+  // Listener para re-pintar luego de cada renderPersonal (interval ligero)
+  setInterval(() => {
+    if (S.cfgTab !== 'personal') return;
+    ['mosExpress', 'warehouseMos'].forEach(app => {
+      if ($(`horAppTtl_${app}`)) _refrescarHorarioCard(app);
+    });
+  }, 8000);
+
+  // Render del CHIP de horario custom dentro de la card del operador
+  function _renderChipHorarioCustom(p) {
+    if (!p.horarioCustom) return '';
+    let hc;
+    try { hc = typeof p.horarioCustom === 'string' ? JSON.parse(p.horarioCustom) : p.horarioCustom; } catch(_) { return ''; }
+    if (!hc || !hc.activo) return '';
+    const resumen = _resumirHorario(hc.dias);
+    return `<div class="hor-custom-chip" onclick="event.stopPropagation();MOS.abrirModalHorarioCustom('${p.idPersonal}')">
+      <span class="hor-custom-icon">🕐</span>
+      <span class="hor-custom-txt">${resumen}${hc.motivo ? ' · ' + _escapeHtml(hc.motivo) : ''}</span>
+      <button class="hor-custom-x" onclick="event.stopPropagation();MOS.eliminarHorarioCustom('${p.idPersonal}')" title="Quitar horario custom">✕</button>
+    </div>`;
+  }
+
+  // ────── MODAL Editar horario APP ──────
+  async function abrirModalHorarioApp(app) {
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    const data = await _cargarHorariosApps(true);
+    const conf = data[app] || { horario: {}, admins_libres: true };
+    const titulo = app === 'warehouseMos' ? '📦 warehouseMos' : '📱 mosExpress';
+    const accent = app === 'warehouseMos' ? '#ea580c' : '#f59e0b';
+    _renderModalHorario({
+      titulo: `⚙ Horario ${titulo}`,
+      subtitulo: 'Control general de apertura/cierre de la app',
+      accent: accent,
+      modoApp: true,
+      horarioActual: conf.horario,
+      adminsLibres: conf.admins_libres,
+      onGuardar: async (horario, adminsLibres) => {
+        try { _opsBeep && _opsBeep('shimmer'); } catch(_){}
+        await API.post('setHorarioApp', { app, horario, admins_libres: adminsLibres, actualizadoPor: S.session?.nombre || 'admin' });
+        try { _opsBeep && _opsBeep('ok'); } catch(_){}
+        toast('🕐 Horario actualizado · operadores notificados', 'success', 4000);
+        S._horariosAppsCache = null;
+        await _refrescarHorarioCard(app);
+      }
+    });
+  }
+  async function abrirModalHorarioCustom(idPersonal) {
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    const all = (cfgData.personal || []).concat(cfgData.personalMOS || []);
+    const p = all.find(x => String(x.idPersonal) === String(idPersonal));
+    if (!p) { toast('Persona no encontrada', 'error'); return; }
+    let hc = { activo: false, dias: null, motivo: '' };
+    try { if (p.horarioCustom) hc = typeof p.horarioCustom === 'string' ? JSON.parse(p.horarioCustom) : p.horarioCustom; } catch(_){}
+    const dias = hc.dias || {
+      lun: { activo:true, apertura:'12:00', cierre:'22:00' },
+      mar: { activo:true, apertura:'12:00', cierre:'22:00' },
+      mie: { activo:true, apertura:'12:00', cierre:'22:00' },
+      jue: { activo:true, apertura:'12:00', cierre:'22:00' },
+      vie: { activo:true, apertura:'12:00', cierre:'22:00' },
+      sab: { activo:true, apertura:'12:00', cierre:'22:00' },
+      dom: { activo:true, apertura:'12:00', cierre:'22:00' }
+    };
+    _renderModalHorario({
+      titulo: `🕐 Horario custom`,
+      subtitulo: `${p.nombre || ''} ${p.apellido || ''} · ${p.rol || ''}`,
+      accent: '#a855f7',
+      modoApp: false,
+      horarioActual: dias,
+      activoToggle: hc.activo,
+      motivoActual: hc.motivo || '',
+      onGuardar: async (horario, activo, motivo) => {
+        try { _opsBeep && _opsBeep('shimmer'); } catch(_){}
+        await API.post('setHorarioCustomPersonal', {
+          idPersonal, horarioCustom: { activo, dias: horario, motivo }
+        });
+        try { _opsBeep && _opsBeep('ok'); } catch(_){}
+        toast(activo ? '🕐 Horario custom guardado · operador notificado' : '🕐 Horario custom eliminado', 'success', 4000);
+        // Actualizar local
+        p.horarioCustom = activo ? JSON.stringify({ activo:true, dias: horario, motivo }) : '';
+        if (typeof renderPersonal === 'function') renderPersonal();
+      }
+    });
+  }
+  async function eliminarHorarioCustom(idPersonal) {
+    if (!confirm('¿Quitar el horario custom de este operador? Vuelve al horario general de la app.')) return;
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    try {
+      await API.post('setHorarioCustomPersonal', { idPersonal, horarioCustom: { activo: false } });
+      try { _opsBeep && _opsBeep('ok'); } catch(_){}
+      toast('🕐 Horario custom eliminado', 'success');
+      const all = (cfgData.personal || []).concat(cfgData.personalMOS || []);
+      const p = all.find(x => String(x.idPersonal) === String(idPersonal));
+      if (p) p.horarioCustom = '';
+      if (typeof renderPersonal === 'function') renderPersonal();
+    } catch(e) {
+      try { _opsBeep && _opsBeep('warn'); } catch(_){}
+      toast('Error: ' + e.message, 'error');
+    }
+  }
+
+  function _renderModalHorario(opts) {
+    const dias = _DIAS_HOR.map(d => {
+      const c = (opts.horarioActual || {})[d.k] || { activo: true, apertura: '07:00', cierre: '19:00' };
+      return { ...d, activo: c.activo !== false, apertura: c.apertura || '07:00', cierre: c.cierre || '19:00' };
+    });
+    let html = `<div class="hor-modal-backdrop" id="modalHorarioWrap" onclick="if(event.target===this)MOS.cerrarModalHorario()">
+      <div class="hor-modal" style="border-color:${opts.accent}80;box-shadow:0 25px 60px -15px rgba(0,0,0,.7),0 0 0 1px ${opts.accent}33">
+        <div class="hor-modal-hdr" style="background:linear-gradient(135deg,${opts.accent}22,${opts.accent}05);border-bottom:1px solid ${opts.accent}40">
+          <div>
+            <div class="hor-modal-ttl" style="color:${opts.accent}">${opts.titulo}</div>
+            <div class="hor-modal-sub">${opts.subtitulo || ''}</div>
+          </div>
+          <button class="hor-modal-x" onclick="MOS.cerrarModalHorario()">✕</button>
+        </div>
+        <div class="hor-modal-body">`;
+    if (!opts.modoApp) {
+      html += `<label class="hor-toggle-row">
+        <input type="checkbox" id="horCustomActivo" ${opts.activoToggle ? 'checked' : ''}>
+        <span class="hor-toggle-track"><span class="hor-toggle-dot"></span></span>
+        <span class="hor-toggle-lbl">Habilitar horario personalizado</span>
+      </label>
+      <div class="hor-toggle-hint">OFF = usa el horario general de la app</div>`;
+    }
+    html += `<div class="hor-dias-grid" id="horDiasGrid">`;
+    dias.forEach((d, i) => {
+      html += `<div class="hor-dia-row ${d.activo ? 'is-on' : 'is-off'}" data-dia="${d.k}">
+        <label class="hor-dia-check">
+          <input type="checkbox" class="hor-dia-checkbox" data-i="${i}" ${d.activo ? 'checked' : ''} onchange="MOS._horToggleDia(${i}, this.checked)">
+          <span class="hor-dia-lbl">${d.lbl}</span>
+        </label>
+        <input type="time" class="hor-time" data-i="${i}" data-k="apertura" value="${d.apertura}" ${d.activo ? '' : 'disabled'}>
+        <span class="hor-arrow">→</span>
+        <input type="time" class="hor-time" data-i="${i}" data-k="cierre" value="${d.cierre}" ${d.activo ? '' : 'disabled'}>
+      </div>`;
+    });
+    html += `</div>`;
+    if (opts.modoApp) {
+      html += `<label class="hor-toggle-row" style="margin-top:14px">
+        <input type="checkbox" id="horAdminsLibres" ${opts.adminsLibres !== false ? 'checked' : ''}>
+        <span class="hor-toggle-track"><span class="hor-toggle-dot"></span></span>
+        <span class="hor-toggle-lbl">👑 MASTER/ADMIN sin restricción horaria</span>
+      </label>`;
+    } else {
+      html += `<div class="hor-motivo-wrap">
+        <label class="hor-motivo-lbl">💬 Motivo (visible para admin)</label>
+        <input type="text" id="horMotivo" class="hor-motivo-input" placeholder="Ej: Solo turno tarde" value="${_escapeHtml(opts.motivoActual || '')}">
+      </div>`;
+    }
+    html += `<div class="hor-modal-footer">`;
+    if (!opts.modoApp) {
+      html += `<button class="hor-btn-del" onclick="MOS._horEliminarCustomDesdeModal()">Eliminar custom</button>`;
+    }
+    html += `<button class="hor-btn-cancel" onclick="MOS.cerrarModalHorario()">Cancelar</button>
+        <button class="hor-btn-save" style="background:linear-gradient(135deg,${opts.accent},${opts.accent}cc)" onclick="MOS._horGuardarModal()">💾 Guardar</button>
+      </div></div></div></div>`;
+    const old = $('modalHorarioWrap');
+    if (old) old.remove();
+    document.body.insertAdjacentHTML('beforeend', html);
+    // Guardar opts en window para _horGuardarModal
+    window._horModalOpts = opts;
+  }
+  function cerrarModalHorario() {
+    const m = $('modalHorarioWrap');
+    if (m) m.remove();
+    window._horModalOpts = null;
+  }
+  function _horToggleDia(i, checked) {
+    const row = document.querySelectorAll('.hor-dia-row')[i];
+    if (!row) return;
+    row.classList.toggle('is-on', checked);
+    row.classList.toggle('is-off', !checked);
+    row.querySelectorAll('.hor-time').forEach(inp => inp.disabled = !checked);
+    try { _opsBeep && _opsBeep(checked ? 'tac' : 'tac'); } catch(_){}
+  }
+  async function _horGuardarModal() {
+    const opts = window._horModalOpts;
+    if (!opts) return;
+    const horario = {};
+    _DIAS_HOR.forEach((d, i) => {
+      const row = document.querySelectorAll('.hor-dia-row')[i];
+      if (!row) return;
+      const activo = row.querySelector('.hor-dia-checkbox').checked;
+      const apert  = row.querySelector(`.hor-time[data-k="apertura"]`).value || '07:00';
+      const cierre = row.querySelector(`.hor-time[data-k="cierre"]`).value || '19:00';
+      horario[d.k] = { activo, apertura: apert, cierre };
+    });
+    if (opts.modoApp) {
+      const adminsLibres = $('horAdminsLibres')?.checked !== false;
+      await opts.onGuardar(horario, adminsLibres);
+    } else {
+      const activo = $('horCustomActivo')?.checked === true;
+      const motivo = $('horMotivo')?.value || '';
+      await opts.onGuardar(horario, activo, motivo);
+    }
+    cerrarModalHorario();
+  }
+  function _horEliminarCustomDesdeModal() {
+    const opts = window._horModalOpts;
+    if (!opts || opts.modoApp) return;
+    if ($('horCustomActivo')) $('horCustomActivo').checked = false;
+    _horGuardarModal();
+  }
+
   // Render unificado de card de persona con avatar, indicador online, switch y click
   // Para admins/master: agrega botón 🔑 + sección expandible con auditoría hoy
   function _renderPersonaCard(p, appOrigen) {
@@ -18037,7 +18297,10 @@ const MOS = (() => {
         </label>
         <button onclick="event.stopPropagation();MOS.abrirModalPersonal('${safeId}','${appOrigen}')"
                 class="text-[10px] text-slate-500 hover:text-white p-1" title="Editar">✏️</button>
+        ${appOrigen !== 'MOS' ? `<button onclick="event.stopPropagation();MOS.abrirModalHorarioCustom('${safeId}')"
+                class="text-[12px] text-slate-500 hover:text-violet-300 p-1" title="Horario custom">🕐</button>` : ''}
       </div>
+      ${_renderChipHorarioCustom(p)}
       ${auditExpand}
     </div>`;
   }
@@ -18254,6 +18517,9 @@ const MOS = (() => {
         <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalPersonal(null,'mosExpress')">+ cajero/vendedor</button>
       </div>
 
+      <!-- [v2.43.30] Card horario app ME -->
+      ${_renderHorarioAppCard('mosExpress', '#f59e0b')}
+
       <!-- Metas y comisiones POR ZONA — cada zona se edita aparte (click → modal Zona) -->
       ${_renderMetasPorZona()}
 
@@ -18281,6 +18547,8 @@ const MOS = (() => {
         </div>
         <button class="btn-primary text-xs px-3 py-1.5" onclick="MOS.abrirModalPersonal(null,'warehouseMos')">+ operador</button>
       </div>
+      <!-- [v2.43.30] Card horario app WH -->
+      ${_renderHorarioAppCard('warehouseMos', '#ea580c')}
       ${operadoresWH.length === 0
         ? '<p class="text-center py-4 text-slate-500 text-sm">Sin operadores registrados</p>'
         : `<div class="space-y-2">${operadoresWH.map(p => _renderPersonaCard(p, 'warehouseMos')).join('')}</div>`}
@@ -19784,23 +20052,36 @@ const MOS = (() => {
     if (!params.nombre) { toast('Nombre requerido', 'error'); return; }
     if (!params.idPersonal && !pin) { toast('PIN requerido al crear', 'error'); return; }
 
-    // OPTIMISTA: cerrar modal + actualizar lista local + sincronizar
+    // [v2.43.30] OPTIMISTA REFORZADO: card temp persiste hasta que el real llegue
+    // Bug previo: loadConfig() sobrescribía la lista entera antes de que el real
+    // llegara → la card temp se perdía y el user "no veía nada hasta salir/volver".
+    // Fix: mergeamos la respuesta del API directo en la lista sin esperar loadConfig.
     const list = isMOS ? (cfgData.personalMOS || []) : (cfgData.personal || []);
     const backup = list.slice();
+    const tmpId = 'TMP_' + Date.now();
     if (idEdit) {
       const idx = list.findIndex(x => x.idPersonal === idEdit);
       if (idx >= 0) list[idx] = { ...list[idx], ...params };
     } else {
-      list.unshift({ idPersonal: 'TMP_' + Date.now(), estado: '1', _tmp: true, ...params });
+      list.unshift({ idPersonal: tmpId, estado: '1', _tmp: true, ...params });
     }
     closeModal('modalPersonal');
     renderPersonal();
     toast(idEdit ? 'Actualizado ✓' : 'Creado ✓', 'ok');
     try {
-      await API.post(idEdit ? 'actualizarPersonalMaster' : 'crearPersonalMaster', params);
-      // Refrescar para obtener idPersonal real del servidor
-      S.loaded['config'] = false;
-      loadConfig().catch(() => {});
+      const r = await API.post(idEdit ? 'actualizarPersonalMaster' : 'crearPersonalMaster', params);
+      const d = (r && r.data) || r || {};
+      // Si el backend devuelve el idPersonal real, reemplazar el TMP localmente
+      // sin esperar loadConfig (evita el flicker y la card vacía).
+      if (!idEdit && d.idPersonal) {
+        const idxTmp = list.findIndex(x => x.idPersonal === tmpId);
+        if (idxTmp >= 0) {
+          list[idxTmp] = { ...list[idxTmp], idPersonal: d.idPersonal, _tmp: false };
+          renderPersonal();
+        }
+      }
+      // Refresh en bg sin invalidar lo que tenemos
+      setTimeout(() => { S.loaded['config'] = false; loadConfig().catch(() => {}); }, 1500);
     } catch(e) {
       // Revertir
       if (isMOS) cfgData.personalMOS = backup; else cfgData.personal = backup;
@@ -34299,6 +34580,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     setAlmTab,
     // [v2.43.29] Panel salud stock
     saludLoadIfNeeded, saludRefresh, saludReconciliarUno, saludReconciliarMasivo,
+    // [v2.43.30] Horarios apps + custom usuario
+    abrirModalHorarioApp, abrirModalHorarioCustom, eliminarHorarioCustom,
+    cerrarModalHorario, _horToggleDia, _horGuardarModal, _horEliminarCustomDesdeModal,
     almLoadResumen, almRefreshResumen, almFiltrarStock, almRefreshCatalogo, almToggleStockExpand,
     almLoadOps, almRefreshOps, almRenderOps, almToggleOpExpand, almSetRangoOps,
     // [v2.41.99] Filtro solo ingresos

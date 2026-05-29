@@ -122,6 +122,11 @@ function _route(method, e) {
       case 'wh_aceptarTeoricoAlerta':        return postToWarehouse('aceptarTeoricoAlerta', params);
       case 'cronSaludStockWH':               return cronSaludStockWH();
       case 'setupSaludStockTrigger':         return setupSaludStockTrigger();
+      // [v2.43.30] Horarios apps + custom por usuario
+      case 'getHorariosApps':               return getHorariosApps();
+      case 'setHorarioApp':                 return setHorarioApp(params);
+      case 'setHorarioCustomPersonal':      return setHorarioCustomPersonal(params);
+      case 'resolverHorarioPersonal':       return resolverHorarioPersonal(params);
       case 'wh_getDevolucionesZona':         return postToWarehouse('getDevolucionesZona', params);
       case 'wh_getDevolucionDetalle':        return postToWarehouse('getDevolucionDetalle', params);
       case 'wh_confirmarRecepcionDevolucion': return postToWarehouse('confirmarRecepcionDevolucion', params);
