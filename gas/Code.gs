@@ -112,6 +112,7 @@ function _route(method, e) {
       case 'lanzarProductoNuevo':  return lanzarProductoNuevo(params);
       case 'wh_editarPNCantidad':  return postToWarehouse('editarPNCantidad', params);
       // ── Devoluciones zona (two-party witness · puente ME ↔ WH desde MOS) ──
+      case 'reportarQuotaDispositivo':       return reportarQuotaDispositivo(params);
       case 'wh_crearDevolucionZona':         return postToWarehouse('crearDevolucionZona', params);
       case 'wh_getDevolucionesZona':         return postToWarehouse('getDevolucionesZona', params);
       case 'wh_getDevolucionDetalle':        return postToWarehouse('getDevolucionDetalle', params);

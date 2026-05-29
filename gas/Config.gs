@@ -548,6 +548,41 @@ function _garantizarColumnasDispositivos() {
   return sheet;
 }
 
+/**
+ * [v2.43.28] Telemetría de quota de localStorage de dispositivos ME.
+ * Cuando un cliente ME detecta QuotaExceeded persistente tras GC, envía
+ * una vez al día este reporte. Se guarda en hoja QUOTA_DISPOSITIVOS_LOG
+ * para que el admin sepa qué tablets están al límite y necesitan
+ * intervención (reset master, más memoria, etc).
+ *
+ * No bloquea ni alerta — es solo telemetría. Sin push spammeoso porque
+ * el cliente ya dedup diario localmente.
+ */
+function reportarQuotaDispositivo(params) {
+  try {
+    var ss = getSpreadsheet();
+    var sh = ss.getSheetByName('QUOTA_DISPOSITIVOS_LOG');
+    if (!sh) {
+      sh = ss.insertSheet('QUOTA_DISPOSITIVOS_LOG');
+      sh.appendRow(['ts','deviceId','vendedor','pendingSales','totalKeys','accion']);
+      sh.getRange(1, 1, 1, 6).setFontWeight('bold')
+        .setBackground('#7c2d12').setFontColor('#fff');
+      sh.setFrozenRows(1);
+    }
+    sh.appendRow([
+      new Date(),
+      String(params.deviceId || ''),
+      String(params.vendedor || ''),
+      parseInt(params.pendingSales) || 0,
+      parseInt(params.totalKeys) || 0,
+      'QUOTA_FULL'
+    ]);
+    return ContentService.createTextOutput(JSON.stringify({ ok: true })).setMimeType(ContentService.MimeType.JSON);
+  } catch(e) {
+    return ContentService.createTextOutput(JSON.stringify({ ok: false, error: e.message })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
 function getDispositivos(params) {
   _garantizarColumnasDispositivos();
   var rows = _sheetToObjects(getSheet('DISPOSITIVOS'));
