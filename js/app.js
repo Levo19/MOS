@@ -1649,22 +1649,44 @@ const MOS = (() => {
   function _norm(s) {
     return (s || '').toString().toLowerCase().normalize('NFD').replace(/\p{Mn}/gu, '');
   }
-  function _catScore(p, qn, words) {
-    if (!qn) return 1;
+  // [v2.43.23] _catScoreInfo: además del score numérico devuelve metadata del
+  // match — el campo donde matcheó (cb/desc/sku/equiv/cat), si es exacto o
+  // parcial, y el codigoBarra del equivalente que ganó (cuando aplica).
+  // Esto permite al render mostrar banner "🔗 Match por equivalente" + SFX
+  // distinto según exacto vs parcial + resaltar la parte del texto.
+  function _catScoreInfo(p, qn, words) {
+    if (!qn) return { score: 1 };
     const desc = _norm(p.descripcion);
     const cb   = _norm(p.codigoBarra);
     const sku  = _norm(p.skuBase || p.idProducto);
-    if (cb === qn || sku === qn)                         return 100;
-    if (cb.startsWith(qn))                               return 93;
-    if (desc === qn)                                     return 88;
-    if (desc.startsWith(qn))                             return 82;
-    if (words.length > 1 && words.every(w => desc.includes(w))) return 76;
-    if (cb.includes(qn))                                 return 68;
-    if (desc.includes(qn))                               return 62;
-    if (_norm(p.idCategoria).includes(qn))               return 38;
-    if (words.some(w => desc.includes(w) || cb.includes(w))) return 22;
-    return 0;
+    if (cb === qn)                                       return { score: 100, field: 'cb',   exacto: true };
+    if (sku === qn)                                      return { score: 100, field: 'sku',  exacto: true };
+    if (cb.startsWith(qn))                               return { score: 93,  field: 'cb',   exacto: false };
+    if (desc === qn)                                     return { score: 88,  field: 'desc', exacto: true };
+    if (desc.startsWith(qn))                             return { score: 82,  field: 'desc', exacto: false };
+    if (words.length > 1 && words.every(w => desc.includes(w))) return { score: 76, field: 'desc', exacto: false };
+    if (cb.includes(qn))                                 return { score: 68,  field: 'cb',   exacto: false };
+    if (desc.includes(qn))                               return { score: 62,  field: 'desc', exacto: false };
+    // ── Búsqueda en equivalentes ─────────────────────────────────────
+    // El equivalente da el canónico al que pertenece. Scores justo debajo
+    // del canónico directo para que canónico siempre gane si ambos matchean.
+    const equivs = (S.equivMap && S.equivMap[p.skuBase || p.idProducto]) || [];
+    for (const eqCb of equivs) {
+      const ecbn = _norm(eqCb);
+      if (!ecbn) continue;
+      if (ecbn === qn)         return { score: 95, field: 'equiv', exacto: true,  equivMatch: eqCb };
+      if (ecbn.startsWith(qn)) return { score: 80, field: 'equiv', exacto: false, equivMatch: eqCb };
+      if (ecbn.includes(qn))   return { score: 60, field: 'equiv', exacto: false, equivMatch: eqCb };
+    }
+    if (_norm(p.idCategoria).includes(qn))               return { score: 38, field: 'cat',  exacto: false };
+    if (words.some(w => desc.includes(w) || cb.includes(w))) return { score: 22, field: 'desc', exacto: false };
+    return { score: 0 };
   }
+  // Wrapper compat por si hay callers viejos que esperan solo el número
+  function _catScore(p, qn, words) {
+    return _catScoreInfo(p, qn, words).score;
+  }
+  // Resalta words sueltos en una descripción (legacy)
   function _highlight(text, words) {
     if (!words.length || !text) return text || '';
     let r = String(text);
@@ -1674,6 +1696,14 @@ const MOS = (() => {
       r = r.replace(re, '<mark>$1</mark>');
     });
     return r;
+  }
+  // [v2.43.23] Resalta el query COMPLETO dentro de un texto/código.
+  // Usado para resaltar la subcadena que matcheó en codigoBarra o equiv.
+  function _highlightExact(text, rawQ) {
+    if (!rawQ || !text) return text || '';
+    const safe = rawQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp('(' + safe + ')', 'gi');
+    return String(text).replace(re, '<mark class="cat-mark-hit">$1</mark>');
   }
 
   // ── SFX + efectos del catálogo (mismo motor del modal Auditar) ──
@@ -1700,6 +1730,9 @@ const MOS = (() => {
         case 'price':    tone(900, .06, .045); tone(1300, .07, .05, { delay:.05 }); tone(1700, .08, .04, { delay:.10 }); break;
         case 'success':  tone(660, .08, .06); tone(990, .08, .06, { delay:.08 }); tone(1320, .12, .065, { delay:.16 }); break;
         case 'error':    tone(220, .22, .07, { type:'square', glide: 140 }); break;
+        // [v2.43.23] Resultados de búsqueda — match exacto vs parcial
+        case 'matchExacto':  tone(1320, .07, .06, { type:'triangle' }); tone(1760, .10, .055, { delay:.07, type:'triangle' }); break;
+        case 'matchParcial': tone(880,  .05, .04, { type:'triangle' }); break;
       }
     } catch(_){}
   }
@@ -1842,12 +1875,33 @@ const MOS = (() => {
                    (_tipos.has('inactivo')  && isInactivo);
         if (!ok) return null;
       }
-      const baseScore = _catScore(g.base, qn, words);
-      const presScore = g.pres.reduce((mx, p) => Math.max(mx, _catScore(p, qn, words)), 0);
-      const score = Math.max(baseScore, presScore);
-      if (qn && score === 0) return null;
-      return { ...g, score };
+      // [v2.43.23] Match info enriquecida — recordamos el mejor match para
+      // poder pintar banner "🔗 Match por equivalente" y resaltar substring.
+      const baseInfo = _catScoreInfo(g.base, qn, words);
+      let bestInfo = baseInfo;
+      g.pres.forEach(p => {
+        const pi = _catScoreInfo(p, qn, words);
+        if (pi.score > bestInfo.score) bestInfo = pi;
+      });
+      if (qn && bestInfo.score === 0) return null;
+      return { ...g, score: bestInfo.score, __matchInfo: bestInfo };
     }).filter(Boolean);
+
+    // [v2.43.23] SFX + ayuda visual al primer resultado.
+    // Solo si hubo query nueva — comparamos con la última para no spammar.
+    if (qn && result.length > 0) {
+      const top = result[0].__matchInfo || {};
+      const sigBusqueda = qn + '|' + (top.field || '') + '|' + (top.equivMatch || '') + '|' + (top.exacto ? 'E' : 'P');
+      if (S._catLastSearchSig !== sigBusqueda) {
+        S._catLastSearchSig = sigBusqueda;
+        try {
+          if (top.score >= 95)       _catSfx('matchExacto');
+          else if (top.score >= 60)  _catSfx('matchParcial');
+        } catch(_){}
+      }
+    } else if (!qn) {
+      S._catLastSearchSig = null;
+    }
 
     // Sort: by score desc, then by description
     result.sort((a, b) => {
@@ -1876,10 +1930,16 @@ const MOS = (() => {
     }
 
     container.innerHTML = result.map((g, idx) => {
-      const { base, pres, score } = g;
+      const { base, pres, score, __matchInfo } = g;
       const eid   = CSS.escape(base.idProducto);
       const activo = _isProdActivo(base);
-      const hlDesc = _highlight(base.descripcion || '—', words);
+      const mInfo  = __matchInfo || {};
+      // [v2.43.23] Highlight de descripción — palabras Y query completo si
+      // matcheó en desc (cubre el caso "club social" parcial).
+      let hlDesc = _highlight(base.descripcion || '—', words);
+      if (mInfo.field === 'desc' && rawQ) hlDesc = _highlightExact(hlDesc.replace(/<\/?mark[^>]*>/g, ''), rawQ);
+      // Clase extra cuando la card ganó por match exacto al 100% — gana glow
+      const matchExactoCls = (mInfo.score >= 95) ? ' cat-card-match-exacto' : '';
       const staggerIdx = Math.min(idx, 20); // tope para no esperar mil ms en listas grandes
 
       // Badges
@@ -1896,15 +1956,33 @@ const MOS = (() => {
       // abren el barcode digital en grande para escanear de la pantalla.
       // Marca y unidad NO son botones (no son códigos).
       const _descCard = (base.descripcion || base.skuBase || '').replace(/'/g, '&#39;');
+      // [v2.43.23] Resalta substring del query si matcheó en este código
+      const _cbStr = String(base.codigoBarra || '');
+      const _cbCanonHit = mInfo.field === 'cb' && rawQ;
+      const _cbCanonShow = _cbCanonHit ? _highlightExact(_cbStr, rawQ) : _cbStr;
       const barcodeTag = base.codigoBarra
-        ? `<button type="button" class="cat-barcode cat-cod-btn"
-             onclick="event.stopPropagation();MOS.verCodigoBarra('${String(base.codigoBarra).replace(/'/g,'&#39;')}','${_descCard}','canónico')"
-             title="Ver código de barra en grande">▌${base.codigoBarra}<span class="cat-cod-ico">▐│▌║▏</span></button>` : '';
-      const equivTags  = equivList.map((cb, i) =>
-        `<button type="button" class="cat-equiv-bar cat-equiv-bar-${Math.min(i, 3)} cat-cod-btn"
+        ? `<button type="button" class="cat-barcode cat-cod-btn${_cbCanonHit ? ' cat-cod-btn-hit' : ''}"
+             onclick="event.stopPropagation();MOS.verCodigoBarra('${_cbStr.replace(/'/g,'&#39;')}','${_descCard}','canónico')"
+             title="Ver código de barra en grande">▌${_cbCanonShow}<span class="cat-cod-ico">▐│▌║▏</span></button>` : '';
+      // Si el match top fue por equivalente, marcamos ese chip
+      const _equivHit = (mInfo.field === 'equiv' && mInfo.equivMatch) ? String(mInfo.equivMatch) : '';
+      const equivTags  = equivList.map((cb, i) => {
+        const _isHit = _equivHit && String(cb) === _equivHit;
+        const _show  = _isHit ? _highlightExact(String(cb), rawQ) : cb;
+        return `<button type="button" class="cat-equiv-bar cat-equiv-bar-${Math.min(i, 3)} cat-cod-btn${_isHit ? ' cat-cod-btn-hit' : ''}"
            onclick="event.stopPropagation();MOS.verCodigoBarra('${String(cb).replace(/'/g,'&#39;')}','${_descCard}','equivalente')"
-           title="Ver código de barra en grande">▌${cb}<span class="cat-cod-ico">▐│▌║▏</span></button>`
-      ).join('');
+           title="Ver código de barra en grande">▌${_show}<span class="cat-cod-ico">▐│▌║▏</span></button>`;
+      }).join('');
+      // Banner verde dentro de la card si match top fue por equivalente
+      const equivMatchBanner = (_equivHit) ? `
+        <div class="cat-equiv-match-banner">
+          <span class="cat-equiv-match-icon">🔗</span>
+          <span class="cat-equiv-match-txt">
+            Match por <b>equivalente</b>:
+            <span class="cat-equiv-match-cb">${_highlightExact(_equivHit, rawQ)}</span>
+          </span>
+        </div>
+      ` : '';
       const brandTag   = base.marca
         ? `<span class="cat-brand">${base.marca}</span>` : '';
       const unidadNorm = _normalizarUnidad(base.unidad || base.Unidad_Medida);
@@ -1983,13 +2061,14 @@ const MOS = (() => {
           </div>
         </div>` : '';
 
-      return `<div class="cat-card mb-3${activo ? '' : ' cat-inactive'}${hasAnyAlert ? ' cat-card-has-alert' : ''}" id="fc-${eid}" data-cat-id="${base.idProducto}" style="--i:${staggerIdx}">
+      return `<div class="cat-card mb-3${activo ? '' : ' cat-inactive'}${hasAnyAlert ? ' cat-card-has-alert' : ''}${matchExactoCls}" id="fc-${eid}" data-cat-id="${base.idProducto}" style="--i:${staggerIdx}">
         <!-- Header -->
         <div class="p-4 cursor-pointer select-none" onclick="MOS._catCardClick(event,'${base.idProducto}')">
           <div class="flex items-start gap-3">
             <div class="flex-1 min-w-0">
               <div class="flex flex-wrap gap-1 mb-2">${badgeCat}${badgeEnv}${badgePres}${badgeInac}</div>
               <div class="font-semibold text-slate-100 text-sm leading-snug mb-2">${hlDesc}</div>
+              ${equivMatchBanner}
               <div class="flex flex-wrap items-center gap-1.5">
                 ${barcodeTag}${equivTags}${brandTag}${unidadTag}
               </div>
