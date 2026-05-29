@@ -1821,6 +1821,11 @@ function cierreNocturnoTodos() {
   }
 
   // ── 2. ME CAJAS ──
+  // [v2.43.24] Trackeamos los VENDEDORES de cajas con error para excluirlos
+  // del paso 3 (forzar_logout). Sin esto, una caja que no se cerró bien
+  // queda huérfana (ABIERTA en CAJAS) y el cajero queda bloqueado al volver.
+  var vendedoresConCajaError = {};
+  resultado.me.cajasNoCerradas = [];
   try {
     var meSs = _meSS();
     var meCajas = meSs.getSheetByName('CAJAS');
@@ -1829,6 +1834,7 @@ function cierreNocturnoTodos() {
       var hC = dC[0];
       var iEstC = hC.indexOf('Estado');
       var iIdC  = hC.indexOf('idCaja');
+      var iVenC = hC.indexOf('Vendedor');
       if (iEstC < 0) iEstC = 0;
       if (iIdC  < 0) iIdC  = 0;
       for (var j = 1; j < dC.length; j++) {
@@ -1836,6 +1842,7 @@ function cierreNocturnoTodos() {
         if (estC !== 'ABIERTA') continue;
         var idCaja = String(dC[j][iIdC] || '');
         if (!idCaja) continue;
+        var vendedorCaja = iVenC >= 0 ? String(dC[j][iVenC] || '') : '';
         try {
           // Llamar al bridge ME — el endpoint del lado ME calcula totales y cierra
           var r = _meBridgeEvento('CIERRE_CAJA_FORZADO', {
@@ -1844,16 +1851,23 @@ function cierreNocturnoTodos() {
             auth: { nombre: 'sistema_cron_MOS', rol: 'SYSTEM' },
             adminAuth: { nombre: 'sistema', rol: 'SYSTEM', via: 'CRON' }
           });
-          if (r && r.ok) {
+          // [v2.43.24] El bridge puede devolver ok=true, status='success', o
+          // yaCerrada=true (idempotencia). Cualquiera de esos = OK.
+          var bridgeOk = r && (r.ok === true || r.status === 'success' || r.yaCerrada === true);
+          if (bridgeOk) {
             resultado.me.cerradas++;
             resultado.me.detalles.push(idCaja);
           } else {
             resultado.me.errores++;
-            Logger.log('[CierreNoct] ME error idCaja=' + idCaja + ': ' + (r && r.error || 'desconocido'));
+            resultado.me.cajasNoCerradas.push(idCaja);
+            if (vendedorCaja) vendedoresConCajaError[vendedorCaja.toLowerCase().trim()] = true;
+            Logger.log('[CierreNoct] ME error idCaja=' + idCaja + ' vendedor=' + vendedorCaja + ': ' + JSON.stringify(r));
           }
         } catch(eC) {
           resultado.me.errores++;
-          Logger.log('[CierreNoct] ME excepción idCaja=' + idCaja + ': ' + eC.message);
+          resultado.me.cajasNoCerradas.push(idCaja);
+          if (vendedorCaja) vendedoresConCajaError[vendedorCaja.toLowerCase().trim()] = true;
+          Logger.log('[CierreNoct] ME excepción idCaja=' + idCaja + ' vendedor=' + vendedorCaja + ': ' + eC.message);
         }
       }
     }
@@ -1909,6 +1923,15 @@ function cierreNocturnoTodos() {
         var est = String(dd[rd][iEst] || '').toUpperCase();
         if (est === 'INACTIVO' || est === 'PENDIENTE_APROBACION') {
           resultado.devices.omitidos++;
+          continue;
+        }
+        // [v2.43.24] CRÍTICO: si este vendedor tenía una caja ABIERTA que el
+        // bridge NO logró cerrar, NO marcar forzar_logout. Sino el frontend
+        // mata local y la caja queda HUÉRFANA (ABIERTA en CAJAS sin owner
+        // local). Mejor el cajero vuelve, ve su caja y la cierra manual.
+        if (ses && vendedoresConCajaError[ses]) {
+          resultado.devices.omitidos++;
+          Logger.log('[CierreNoct] OMITIENDO forzar_logout para "' + ses + '" — su caja no cerró bien (cajas: ' + JSON.stringify(resultado.me.cajasNoCerradas) + ')');
           continue;
         }
         try {
