@@ -519,25 +519,85 @@ function datosTurno(params) {
     }
   }
 
-  // ── 8. Auditorías del día (meta 30 por persona) ───────────────
+  // ── 8. Auditorías del día — filtradas por ZONA de la caja ─────
+  // [v2.43.25] Antes contaba TODAS las auditorías del día sin filtrar zona
+  // → en un panel multi-zona se mezclaban auditorías de otras zonas.
+  // Ahora filtra por Zona_ID == caja.zona. Match tolerante (case + trim).
   var auditorias = {};
+  var auditoriasLower = {};   // [v2.43.25] map case-insensitive para matching frontend
   var auditSheet = ss.getSheetByName('AUDITORIAS');
   if (auditSheet && caja.fechaDia) {
     var auditData = auditSheet.getDataRange().getValues();
     var auditHdrs = auditData[0].map(function(h){ return String(h).trim(); });
     var aFechaIdx = auditHdrs.indexOf('Fecha');
     var aVendIdx  = auditHdrs.indexOf('Vendedor');
+    var aZonaIdx  = auditHdrs.indexOf('Zona_ID');
+    var cajaZonaNorm = String(caja.zona || '').trim().toUpperCase();
     for (var ai = 1; ai < auditData.length; ai++) {
       var aFecha = auditData[ai][aFechaIdx];
       var aFechaStr = aFecha instanceof Date
         ? Utilities.formatDate(aFecha, tz, 'yyyy-MM-dd')
         : String(aFecha || '').substring(0, 10);
       if (aFechaStr !== caja.fechaDia) continue;
+      // [v2.43.25] Filtro por zona — solo cuenta si Zona_ID matchea
+      if (aZonaIdx >= 0 && cajaZonaNorm) {
+        var auditZona = String(auditData[ai][aZonaIdx] || '').trim().toUpperCase();
+        if (auditZona && auditZona !== cajaZonaNorm) continue;
+      }
       var aVend = String(auditData[ai][aVendIdx] || '').trim();
       if (!aVend) continue;
       auditorias[aVend] = (auditorias[aVend] || 0) + 1;
+      auditoriasLower[aVend.toLowerCase()] = (auditoriasLower[aVend.toLowerCase()] || 0) + 1;
     }
   }
+
+  // [v2.43.25] ─── ACTORES DE LA ZONA ────────────────────────────
+  // Lista TODOS los actores (vendedores+cajeros) que trabajaron en la
+  // zona ese día — vendieron, auditaron o no. Fuentes combinadas:
+  //   1) Vendedores que vendieron en ESTA caja (claves de pMap)
+  //   2) Cajero asignado a ESTA caja
+  //   3) JORNADAS del día/zona/appOrigen=ME
+  //   4) Personas que auditaron en la zona ese día (claves de auditorias)
+  // Sin esto, los que solo auditaron quedaban invisibles en el reporte Z.
+  var actoresZonaSet = {};
+  function _agregarActor(nombre) {
+    var n = String(nombre || '').trim();
+    if (!n) return;
+    actoresZonaSet[n.toLowerCase()] = n;  // preserva capitalización original
+  }
+  Object.keys(pMap || {}).forEach(_agregarActor);
+  _agregarActor(caja.cajero);
+  Object.keys(auditorias).forEach(_agregarActor);
+  // JORNADAS — fuente histórica de "quién trabajó hoy en esta zona"
+  try {
+    var jornSh = getSheet('JORNADAS');
+    if (jornSh) {
+      var jd = jornSh.getDataRange().getValues();
+      var jh = jd[0].map(function(h){ return String(h).trim(); });
+      var jIdxFecha   = jh.indexOf('fecha');
+      var jIdxNombre  = jh.indexOf('nombre');
+      var jIdxZona    = jh.indexOf('zona');
+      var jIdxAppOrig = jh.indexOf('appOrigen');
+      var cajaZonaUp  = String(caja.zona || '').trim().toUpperCase();
+      for (var ji = 1; ji < jd.length; ji++) {
+        var jFechaRaw = jd[ji][jIdxFecha];
+        var jFechaStr = jFechaRaw instanceof Date
+          ? Utilities.formatDate(jFechaRaw, tz, 'yyyy-MM-dd')
+          : String(jFechaRaw || '').substring(0, 10);
+        if (jFechaStr !== caja.fechaDia) continue;
+        if (jIdxAppOrig >= 0) {
+          var jApp = String(jd[ji][jIdxAppOrig] || '').toUpperCase();
+          if (jApp && jApp !== 'ME') continue;
+        }
+        if (jIdxZona >= 0 && cajaZonaUp) {
+          var jZona = String(jd[ji][jIdxZona] || '').trim().toUpperCase();
+          if (jZona && jZona !== cajaZonaUp) continue;
+        }
+        _agregarActor(jd[ji][jIdxNombre]);
+      }
+    }
+  } catch(eJ) { Logger.log('[datosTurno] JORNADAS lookup error: ' + eJ.message); }
+  var actoresZona = Object.keys(actoresZonaSet).map(function(k){ return actoresZonaSet[k]; }).sort();
 
   // ── 8. META DIARIA + COMISIÓN SOBRE EXCEDENTE ────────────────
   // Política por zona (con fallback global desde CONFIG_MOS):
@@ -602,7 +662,9 @@ function datosTurno(params) {
       pMap:       pMap,
       pTotal:     pTotal,
       impresoras:  impresoras,
-      auditorias:  auditorias,
+      auditorias:      auditorias,
+      auditoriasLower: auditoriasLower,   // [v2.43.25] map case-insensitive
+      actoresZona:     actoresZona,       // [v2.43.25] todos los actores de la zona ese día
       // Meta de auditorías: zona (politicaJSON.metaAuditorias) → fallback global
       metaAudit:   policy.metaAuditorias,
       meta:        metaInfo,

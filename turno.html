@@ -447,13 +447,18 @@ function whatsappShare(data) {
   a(SEP);
 
   // ── 9. AUDITORÍAS ─────────────────────────────────────────────
-  const auditMapW = data.auditorias || {};
-  const META_W    = data.metaAudit  || 30;
-  const auditPersonasW = [...new Set([...Object.keys(data.pMap || {}), c.cajero].filter(Boolean))];
+  // [v2.43.25] Usa actoresZona del backend — incluye a quienes solo auditaron
+  const auditMapW      = data.auditorias || {};
+  const auditMapWLower = data.auditoriasLower || {};
+  const META_W         = data.metaAudit  || 30;
+  const auditPersonasW = Array.isArray(data.actoresZona) && data.actoresZona.length
+    ? data.actoresZona
+    : [...new Set([...Object.keys(data.pMap || {}), c.cajero].filter(Boolean))];
+  const _cntAudW = n => auditMapW[n] != null ? auditMapW[n] : (auditMapWLower[String(n||'').toLowerCase()] || 0);
   sp(); a(`📋 *AUDITORÍAS DEL DÍA (meta: ${META_W})*`);
   if (auditPersonasW.length > 0) {
     auditPersonasW.forEach(n => {
-      const cnt   = auditMapW[n] || 0;
+      const cnt   = _cntAudW(n);
       const pctW  = Math.round(cnt / META_W * 100);
       const barsW = Math.min(10, Math.round(pctW / 10));
       const icon  = cnt >= META_W ? '✅' : cnt >= 20 ? '⚠️' : '❌';
@@ -791,12 +796,17 @@ function render(data) {
   }
 
   // ── Auditorías del día ────────────────────────────────────────
-  const auditMap  = data.auditorias || {};
-  const META_AUD  = data.metaAudit  || 30;
-  const auditPersonas = [...new Set([...Object.keys(pMap), caja.cajero].filter(Boolean))];
+  // [v2.43.25] actoresZona del backend lista TODOS (vendieran o no)
+  const auditMap      = data.auditorias || {};
+  const auditMapLower = data.auditoriasLower || {};
+  const META_AUD      = data.metaAudit  || 30;
+  const auditPersonas = Array.isArray(data.actoresZona) && data.actoresZona.length
+    ? data.actoresZona
+    : [...new Set([...Object.keys(pMap), caja.cajero].filter(Boolean))];
+  const _cntAudHtml = n => auditMap[n] != null ? auditMap[n] : (auditMapLower[String(n||'').toLowerCase()] || 0);
   const auditHtml = auditPersonas.length > 0
     ? auditPersonas.map(nombre => {
-        const cnt  = auditMap[nombre] || 0;
+        const cnt  = _cntAudHtml(nombre);
         const pc   = Math.min(100, cnt / META_AUD * 100);
         const color = cnt >= META_AUD ? 'var(--green)' : cnt >= 20 ? 'var(--amber)' : 'var(--red)';
         const icon  = cnt >= META_AUD ? '✅' : cnt >= 20 ? '⚠️' : '❌';
@@ -1146,15 +1156,23 @@ function buildPrintTicket(data) {
   } else { a('  Sin datos de vendedores en este turno'); }
 
   // ── PARTE 8b: AUDITORÍAS ──────────────────────────────────────
+  // [v2.43.25] Usa actoresZona (backend) — lista TODOS los actores de la zona
+  // del día, incluyendo quienes solo auditaron sin vender. Fallback al
+  // comportamiento legacy si el backend aún no devuelve actoresZona.
   const auditMapP = data.auditorias || {};
+  const auditMapPLower = data.auditoriasLower || {};
   const META_P    = data.metaAudit  || 30;
-  const auditPersonasP = [...new Set([...Object.keys(pMap), caja.cajero].filter(Boolean))];
+  const auditPersonasP = Array.isArray(data.actoresZona) && data.actoresZona.length
+    ? data.actoresZona
+    : [...new Set([...Object.keys(pMap), caja.cajero].filter(Boolean))];
+  // Helper: cuenta tolerante a mayúsculas
+  const _cntAud = n => auditMapP[n] != null ? auditMapP[n] : (auditMapPLower[String(n||'').toLowerCase()] || 0);
   if (auditPersonasP.length > 0) {
     a(sHdr('AUDITORIAS DEL DIA (META:'+META_P+')'));
     a('VENDEDOR'.padEnd(W-14)+'AUDIT'.padStart(7)+'ESTADO'.padStart(7));
     a(sep());
     auditPersonasP.forEach(n => {
-      const cnt   = auditMapP[n] || 0;
+      const cnt   = _cntAud(n);
       const estado = cnt >= META_P ? 'CUMPLE' : cnt >= 20 ? 'PARCIAL' : 'FALTA ';
       const fill  = Math.round(Math.min(cnt, META_P) / META_P * 20);
       a(n.substring(0, W-14).padEnd(W-14) + (cnt+'/'+META_P).padStart(7) + estado.padStart(7));
