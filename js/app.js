@@ -18023,12 +18023,22 @@ const MOS = (() => {
     } catch(_) { return {}; }
   }
   function _renderHorarioAppCard(app, color) {
+    // [v2.43.33 FIX PARPADEO] Pintar desde cache si existe. Antes mostraba
+    // "Cargando horario…" y cada renderPersonal reseteaba el texto → flicker
+    // de 0-8s hasta que setInterval refrescara. Ahora si hay cache, se ve
+    // estable desde el primer paint.
+    const cache = (S && S._horariosAppsCache) || {};
+    const conf  = cache[app];
+    const ttl   = conf && conf.horario ? _resumirHorario(conf.horario) : 'Cargando horario…';
+    const sub   = conf
+      ? `${conf.admins_libres ? '👑 admins libres · ' : ''}actualizado por ${conf.actualizadoPor || '—'}`
+      : '';
     return `<div class="hor-app-card" data-app="${app}">
       <div class="hor-app-row">
         <div class="hor-app-ico" style="background:${color}22;color:${color}">🕐</div>
         <div class="flex-1 min-w-0">
-          <div class="hor-app-ttl" id="horAppTtl_${app}">Cargando horario…</div>
-          <div class="hor-app-sub" id="horAppSub_${app}"></div>
+          <div class="hor-app-ttl" id="horAppTtl_${app}">${ttl}</div>
+          <div class="hor-app-sub" id="horAppSub_${app}">${sub}</div>
         </div>
         <button class="hor-app-btn" onclick="MOS.abrirModalHorarioApp('${app}')">⚙ Editar</button>
       </div>
@@ -18066,18 +18076,25 @@ const MOS = (() => {
     const ttl  = $(`horAppTtl_${app}`);
     const sub  = $(`horAppSub_${app}`);
     if (!ttl || !conf) return;
-    ttl.textContent = _resumirHorario(conf.horario);
-    if (sub) sub.textContent = `${conf.admins_libres ? '👑 admins libres · ' : ''}actualizado por ${conf.actualizadoPor || '—'}`;
+    const nuevoTxt = _resumirHorario(conf.horario);
+    // [v2.43.33 FIX PARPADEO] Solo escribir si cambió. Antes reasignaba textContent
+    // cada vez aunque fuera idéntico → repaint innecesario percibido como "flash".
+    if (ttl.textContent !== nuevoTxt) ttl.textContent = nuevoTxt;
+    if (sub) {
+      const nuevoSub = `${conf.admins_libres ? '👑 admins libres · ' : ''}actualizado por ${conf.actualizadoPor || '—'}`;
+      if (sub.textContent !== nuevoSub) sub.textContent = nuevoSub;
+    }
   }
-  // Auto-refrescar las cards cuando el panel se monta
-  const _origRenderPersonal = (typeof renderPersonal === 'function') ? renderPersonal : null;
-  // Listener para re-pintar luego de cada renderPersonal (interval ligero)
+  // [v2.43.33 FIX PARPADEO] Era cada 8s — muy agresivo. Bajado a 60s.
+  // El refresh real ocurre cuando se guarda (via onGuardar callback) y al
+  // navegar a la pestaña. Polling 60s es solo red de seguridad para que
+  // otro admin que cambió el horario se vea reflejado eventualmente.
   setInterval(() => {
     if (S.cfgTab !== 'personal') return;
     ['mosExpress', 'warehouseMos', 'MOS'].forEach(app => {
       if ($(`horAppTtl_${app}`)) _refrescarHorarioCard(app);
     });
-  }, 8000);
+  }, 60000);
 
   // Render del CHIP de horario custom dentro de la card del operador
   function _renderChipHorarioCustom(p) {
@@ -18126,35 +18143,104 @@ const MOS = (() => {
       }
     });
   }
+  // [v2.43.33] Helper: resuelve el app al que pertenece una persona.
+  // - personalMOS → app 'MOS'
+  // - resto → mirar appOrigen del registro; default 'warehouseMos'
+  function _appDePersona(p) {
+    if (!p) return 'warehouseMos';
+    const enMOS = (cfgData.personalMOS || []).some(x => String(x.idPersonal) === String(p.idPersonal));
+    if (enMOS) return 'MOS';
+    const appOrig = String(p.appOrigen || '').toLowerCase();
+    if (appOrig === 'mosexpress' || appOrig === 'me') return 'mosExpress';
+    if (appOrig === 'warehousemos' || appOrig === 'wh') return 'warehouseMos';
+    return 'warehouseMos';
+  }
+  // [v2.43.33] Default razonable cuando ni el cache ni nada existe: 7→19 todos los días
+  function _horarioPorDefecto() {
+    const dft = {};
+    _DIAS_HOR.forEach(d => {
+      dft[d.k] = { activo: true, apertura: '07:00', cierre: '19:00' };
+    });
+    return dft;
+  }
+  // [v2.43.33] Lee el horario base del app desde cache (no hardcoded 12→22).
+  // Si el general cambia luego, la próxima vez que abras el modal personal,
+  // verás el nuevo base — esa es la "inteligencia" que pedía el usuario.
+  function _horarioBaseDeApp(app) {
+    const cache = S._horariosAppsCache || {};
+    const conf  = cache[app];
+    if (conf && conf.horario && Object.keys(conf.horario).length) {
+      // Clonar para que el modal no mute el cache
+      const out = {};
+      _DIAS_HOR.forEach(d => {
+        const c = conf.horario[d.k] || {};
+        out[d.k] = {
+          activo:   c.activo !== false,
+          apertura: c.apertura || '07:00',
+          cierre:   c.cierre   || '19:00'
+        };
+      });
+      return out;
+    }
+    return _horarioPorDefecto();
+  }
+
   function abrirModalHorarioCustom(idPersonal) {
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
     const all = (cfgData.personal || []).concat(cfgData.personalMOS || []);
     const p = all.find(x => String(x.idPersonal) === String(idPersonal));
     if (!p) { toast('Persona no encontrada', 'error'); return; }
+
+    // [v2.43.33] Refrescar cache de horarios en background ANTES de abrir
+    // (no bloqueante — si tarda, abrimos con cache actual). Esto cubre el
+    // caso "edité el general, ahora abro el personal y debe partir del nuevo".
+    _cargarHorariosApps(true).catch(() => {});
+
     let hc = { activo: false, dias: null, motivo: '' };
     try { if (p.horarioCustom) hc = typeof p.horarioCustom === 'string' ? JSON.parse(p.horarioCustom) : p.horarioCustom; } catch(_){}
-    const dias = hc.dias || {
-      lun: { activo:true, apertura:'12:00', cierre:'22:00' },
-      mar: { activo:true, apertura:'12:00', cierre:'22:00' },
-      mie: { activo:true, apertura:'12:00', cierre:'22:00' },
-      jue: { activo:true, apertura:'12:00', cierre:'22:00' },
-      vie: { activo:true, apertura:'12:00', cierre:'22:00' },
-      sab: { activo:true, apertura:'12:00', cierre:'22:00' },
-      dom: { activo:true, apertura:'12:00', cierre:'22:00' }
-    };
+
+    // Determinar app al que pertenece + leer su horario general como BASE
+    const appPersona = _appDePersona(p);
+    const baseApp    = _horarioBaseDeApp(appPersona);
+
+    // [v2.43.33 BUG 2 FIX] Default = horario general del app (NO 12→22 hardcoded).
+    // Si tiene custom previo → mantiene el custom.
+    // Si no tiene → arranca igual al general del app para que el operador solo
+    // ajuste lo que es distinto.
+    const dias = hc.dias || baseApp;
+
+    // [v2.43.33 BUG 4 FIX] Toggle por defecto ON cuando NO tiene custom previo.
+    // El operador abrió el modal con intención de CREAR — no tiene sentido que
+    // arranque OFF (eso provocaba el toast "Horario personal eliminado" al
+    // guardar sin tocar el toggle).
+    const toggleActivo = hc.dias ? hc.activo !== false : true;
+
     _renderModalHorario({
       titulo: `🕐 Horario personal`,
-      subtitulo: `${p.nombre || ''} ${p.apellido || ''} · ${p.rol || ''}`,
+      subtitulo: `${p.nombre || ''} ${p.apellido || ''} · ${p.rol || ''} · base ${appPersona}`,
       accent: '#a855f7',
       modoApp: false,
       horarioActual: dias,
-      activoToggle: hc.activo,
+      activoToggle: toggleActivo,
       motivoActual: hc.motivo || '',
+      // [v2.43.33] Guardar el app base para mostrarlo en el modal + permitir
+      // "resetear al horario general" si el operador quiere
+      appBase: appPersona,
+      horarioBase: baseApp,
+      teniaCustom: !!hc.dias,
       onGuardar: (horario, activo, motivo) => {
+        // [v2.43.33 BUG 4 FIX] Toast preciso según contexto:
+        //   - Tenía custom + lo deshabilitaste (toggle OFF) → "eliminado"
+        //   - No tenía custom + toggle ON → "creado/guardado"
+        //   - Tenía custom + lo guardaste con toggle ON → "actualizado"
+        const teniaCustom = !!hc.dias;
+        const msg = activo
+          ? (teniaCustom ? '🕐 Horario personal actualizado' : '🕐 Horario personal creado')
+          : (teniaCustom ? '🕐 Horario personal eliminado' : '🕐 Sin cambios');
         // Optimismo: actualizar local + cerrar + toast
         p.horarioCustom = activo ? JSON.stringify({ activo:true, dias: horario, motivo }) : '';
         cerrarModalHorario();
-        toast(activo ? '🕐 Horario personal guardado' : '🕐 Horario personal eliminado', 'success', 2500);
+        toast(msg, 'success', 2500);
         if (typeof renderPersonal === 'function') renderPersonal();
         API.post('setHorarioCustomPersonal', {
           idPersonal, horarioCustom: { activo, dias: horario, motivo }
@@ -18218,12 +18304,31 @@ const MOS = (() => {
         <div class="hor-modal-body">`;
 
     if (!opts.modoApp) {
+      // [v2.43.33] Banner del horario base + botón reset.
+      // El operador ve EXACTAMENTE qué horario está usando como base y puede
+      // resetear al general del app con 1 click si lo modificó por error.
+      if (opts.horarioBase) {
+        const baseResumen = _resumirHorario(opts.horarioBase);
+        const appLbl = opts.appBase === 'warehouseMos' ? '📦 warehouseMos'
+                     : opts.appBase === 'mosExpress'   ? '📱 mosExpress'
+                     : '👑 MOS Admin';
+        html += `<div class="hor-base-banner" style="background:#1e1b4b;border:1px solid #4f46e5;border-radius:10px;padding:10px 12px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:18px">📋</span>
+          <div style="flex:1;min-width:180px">
+            <div style="font-size:10px;color:#a5b4fc;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Base: ${appLbl}</div>
+            <div style="font-size:12px;color:#e0e7ff;margin-top:2px">${baseResumen}</div>
+          </div>
+          <button onclick="MOS._horResetABase()"
+                  style="background:#4f46e5;color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer"
+                  title="Volver al horario general del app">↻ Usar este</button>
+        </div>`;
+      }
       html += `<label class="hor-toggle-row">
         <input type="checkbox" id="horCustomActivo" ${opts.activoToggle ? 'checked' : ''}>
         <span class="hor-toggle-track"><span class="hor-toggle-dot"></span></span>
         <span class="hor-toggle-lbl">Habilitar horario personal</span>
       </label>
-      <div class="hor-toggle-hint">OFF = usa el horario general de la app</div>`;
+      <div class="hor-toggle-hint">${opts.teniaCustom ? 'OFF = elimina el custom y vuelve al horario general' : 'OFF = se descarta este horario; queda usando el general'}</div>`;
     }
 
     // Bloque horario general
@@ -18342,6 +18447,67 @@ const MOS = (() => {
     const hint = row.querySelector('.hor-esp-hint');
     if (hint) hint.style.display = checked ? 'none' : '';
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
+  }
+
+  // [v2.43.33] Reset al horario base del app — rehidrata todos los controles
+  // del modal personal a partir del horarioBase guardado en opts.
+  function _horResetABase() {
+    const opts = window._horModalOpts;
+    if (!opts || !opts.horarioBase) return;
+    const base = opts.horarioBase;
+    // Recalcular general más frecuente del base
+    const counts = {};
+    _DIAS_HOR.forEach(d => {
+      const c = base[d.k] || {};
+      if (c.activo === false) return;
+      const ap = _hrOnly(c.apertura);
+      const ci = _hrOnly(c.cierre);
+      const k = `${ap}-${ci}`;
+      counts[k] = (counts[k] || 0) + 1;
+    });
+    let general = { ap: '07', ci: '19' };
+    let best = 0;
+    Object.entries(counts).forEach(([k, n]) => {
+      if (n > best) { best = n; const [a, c] = k.split('-'); general = { ap: a, ci: c }; }
+    });
+    // Aplicar general a los selects
+    const gAp = document.getElementById('horGenAp');
+    const gCi = document.getElementById('horGenCi');
+    if (gAp) gAp.value = general.ap;
+    if (gCi) gCi.value = general.ci;
+    // Pills de días + estado especial por día
+    const dias = window._horModalDiasState || [];
+    _DIAS_HOR.forEach((d, i) => {
+      const c = base[d.k] || { activo: true };
+      const activo = c.activo !== false;
+      const ap = _hrOnly(c.apertura);
+      const ci = _hrOnly(c.cierre);
+      const especial = activo && (ap !== general.ap || ci !== general.ci);
+      // Actualizar estado interno
+      if (dias[i]) { dias[i].activo = activo; dias[i].apertura = ap; dias[i].cierre = ci; dias[i].especial = especial; }
+      // Pill
+      const pillCb = document.querySelectorAll('.hor-pill-cb')[i];
+      const pill   = document.querySelectorAll('.hor-pill')[i];
+      if (pillCb) pillCb.checked = activo;
+      if (pill)   pill.classList.toggle('is-on', activo);
+      // Especial
+      const espRow = document.querySelector(`.hor-esp-row[data-i="${i}"]`);
+      if (espRow) {
+        const espCb = espRow.querySelector('.hor-esp-cb');
+        const espAp = espRow.querySelector('.hor-esp-ap');
+        const espCi = espRow.querySelector('.hor-esp-ci');
+        const espTimes = espRow.querySelector('.hor-esp-times');
+        const espHint  = espRow.querySelector('.hor-esp-hint');
+        if (espCb) { espCb.checked = especial; espCb.disabled = !activo; }
+        if (espAp) espAp.value = ap;
+        if (espCi) espCi.value = ci;
+        espRow.classList.toggle('is-esp', especial);
+        if (espTimes) espTimes.style.display = especial ? '' : 'none';
+        if (espHint)  { espHint.style.display = especial ? 'none' : ''; espHint.textContent = activo ? 'usa general' : 'cerrado'; }
+      }
+    });
+    try { _opsBeep && _opsBeep('ok'); } catch(_){}
+    toast('🔄 Horario base aplicado', 'info', 1800);
   }
   function cerrarModalHorario() {
     const m = $('modalHorarioWrap');
@@ -34783,7 +34949,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.43.30] Horarios apps + custom usuario
     abrirModalHorarioApp, abrirModalHorarioCustom, eliminarHorarioCustom,
     cerrarModalHorario, _horToggleDia, _horGuardarModal, _horEliminarCustomDesdeModal,
-    _horTogglePill, _horToggleEsp,
+    _horTogglePill, _horToggleEsp, _horResetABase,
     _mosCerrarBloqueoYsalir,
     almLoadResumen, almRefreshResumen, almFiltrarStock, almRefreshCatalogo, almToggleStockExpand,
     almLoadOps, almRefreshOps, almRenderOps, almToggleOpExpand, almSetRangoOps,
