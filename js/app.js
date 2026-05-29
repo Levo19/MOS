@@ -18185,23 +18185,38 @@ const MOS = (() => {
     return _horarioPorDefecto();
   }
 
-  function abrirModalHorarioCustom(idPersonal) {
+  async function abrirModalHorarioCustom(idPersonal) {
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
     const all = (cfgData.personal || []).concat(cfgData.personalMOS || []);
     const p = all.find(x => String(x.idPersonal) === String(idPersonal));
     if (!p) { toast('Persona no encontrada', 'error'); return; }
-
-    // [v2.43.33] Refrescar cache de horarios en background ANTES de abrir
-    // (no bloqueante — si tarda, abrimos con cache actual). Esto cubre el
-    // caso "edité el general, ahora abro el personal y debe partir del nuevo".
-    _cargarHorariosApps(true).catch(() => {});
 
     let hc = { activo: false, dias: null, motivo: '' };
     try { if (p.horarioCustom) hc = typeof p.horarioCustom === 'string' ? JSON.parse(p.horarioCustom) : p.horarioCustom; } catch(_){}
 
     // Determinar app al que pertenece + leer su horario general como BASE
     const appPersona = _appDePersona(p);
-    const baseApp    = _horarioBaseDeApp(appPersona);
+
+    // [v2.43.34 BUG AUDITORIA FIX] Si el cache NO tiene el app de la persona,
+    // ESPERAR el load antes de abrir modal. Antes era no-bloqueante → el banner
+    // mostraba fallback "Lun a Vie 07h→19h" engañoso. Ahora si el cache está
+    // vacío esperamos máx 3s; si no llega, abrimos con fallback marcado como
+    // "Cargando…" para que el operador sepa que el base aún no se cargó.
+    const cacheTieneApp = S._horariosAppsCache && S._horariosAppsCache[appPersona];
+    if (!cacheTieneApp) {
+      try {
+        await Promise.race([
+          _cargarHorariosApps(true),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000))
+        ]);
+      } catch(_) { /* abre igual con lo que haya */ }
+    } else {
+      // Cache OK → refrescar en background para cubrir "general fue editado hace 1m"
+      _cargarHorariosApps(true).catch(() => {});
+    }
+
+    const baseApp     = _horarioBaseDeApp(appPersona);
+    const cacheCargo  = !!(S._horariosAppsCache && S._horariosAppsCache[appPersona]);
 
     // [v2.43.33 BUG 2 FIX] Default = horario general del app (NO 12→22 hardcoded).
     // Si tiene custom previo → mantiene el custom.
@@ -18227,6 +18242,7 @@ const MOS = (() => {
       // "resetear al horario general" si el operador quiere
       appBase: appPersona,
       horarioBase: baseApp,
+      horarioBaseCargado: cacheCargo,  // [v2.43.34] avisa al modal si el base es real o fallback
       teniaCustom: !!hc.dias,
       onGuardar: (horario, activo, motivo) => {
         // [v2.43.33 BUG 4 FIX] Toast preciso según contexto:
@@ -18312,15 +18328,22 @@ const MOS = (() => {
         const appLbl = opts.appBase === 'warehouseMos' ? '📦 warehouseMos'
                      : opts.appBase === 'mosExpress'   ? '📱 mosExpress'
                      : '👑 MOS Admin';
-        html += `<div class="hor-base-banner" style="background:#1e1b4b;border:1px solid #4f46e5;border-radius:10px;padding:10px 12px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <span style="font-size:18px">📋</span>
+        // [v2.43.34] Si el cache NO cargó, marcar visualmente y deshabilitar
+        // el botón para que el operador no copie un horario falso (07-19).
+        const fallback = opts.horarioBaseCargado === false;
+        const banColor = fallback ? '#7c2d12' : '#1e1b4b';
+        const banBord  = fallback ? '#ea580c' : '#4f46e5';
+        const banResum = fallback ? '⏳ Cargando horario real…' : baseResumen;
+        const btnDisab = fallback ? 'disabled style="opacity:.4;cursor:not-allowed"' : '';
+        html += `<div class="hor-base-banner" style="background:${banColor};border:1px solid ${banBord};border-radius:10px;padding:10px 12px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:18px">${fallback ? '⚠' : '📋'}</span>
           <div style="flex:1;min-width:180px">
-            <div style="font-size:10px;color:#a5b4fc;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Base: ${appLbl}</div>
-            <div style="font-size:12px;color:#e0e7ff;margin-top:2px">${baseResumen}</div>
+            <div style="font-size:10px;color:${fallback ? '#fed7aa' : '#a5b4fc'};font-weight:700;text-transform:uppercase;letter-spacing:.5px">Base: ${appLbl}${fallback ? ' · sin conexión' : ''}</div>
+            <div style="font-size:12px;color:${fallback ? '#fde68a' : '#e0e7ff'};margin-top:2px">${banResum}</div>
           </div>
-          <button onclick="MOS._horResetABase()"
-                  style="background:#4f46e5;color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer"
-                  title="Volver al horario general del app">↻ Usar este</button>
+          <button onclick="MOS._horResetABase()" ${btnDisab}
+                  style="background:${fallback ? '#9ca3af' : '#4f46e5'};color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer"
+                  title="${fallback ? 'Esperando que cargue el horario real del app' : 'Volver al horario general del app'}">↻ Usar este</button>
         </div>`;
       }
       html += `<label class="hor-toggle-row">
