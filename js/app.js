@@ -15839,6 +15839,11 @@ const MOS = (() => {
 
   async function loadConfig() {
     S.cfgTab = S.cfgTab || 'infra';
+    // [v2.43.32] Pre-carga horarios en background (no espera) — para que al
+    // abrir el tab Personal o el modal, ya estén disponibles instantáneos.
+    if (!S._horariosAppsCache) {
+      _cargarHorariosApps(true).catch(() => {});
+    }
     // 1) Hidratar inmediato desde cache (zero spinner para usuarios recurrentes)
     const huboCache = _cfgHidratarTodos();
     if (huboCache) renderCfgTab(S.cfgTab);
@@ -18029,17 +18034,27 @@ const MOS = (() => {
       </div>
     </div>`;
   }
+  // [v2.43.32] Resumen agrupado: días consecutivos con mismo horario se juntan
   function _resumirHorario(hor) {
     if (!hor) return 'No configurado';
-    const dias = _DIAS_HOR.map(d => hor[d.k] || {});
-    // Si todos activos y mismo rango → mostrar simple
-    const allEqual = dias.every(c => c.activo && c.apertura === dias[0].apertura && c.cierre === dias[0].cierre);
-    if (allEqual && dias[0].activo) return `Todos los días · ${dias[0].apertura} → ${dias[0].cierre}`;
-    // Sino, mostrar resumen por día
-    return _DIAS_HOR.map((d, i) => {
-      const c = dias[i];
-      if (!c.activo) return `${d.lbl}: cerrado`;
-      return `${d.lbl} ${c.apertura}-${c.cierre}`;
+    const grupos = [];
+    let actual = null;
+    _DIAS_HOR.forEach(d => {
+      const c = hor[d.k] || {};
+      const key = (c.activo === false) ? 'cerrado' : `${c.apertura}-${c.cierre}`;
+      if (actual && actual.key === key) actual.dias.push(d.lbl);
+      else {
+        actual = { key, dias: [d.lbl], apertura: c.apertura, cierre: c.cierre, cerrado: c.activo === false };
+        grupos.push(actual);
+      }
+    });
+    return grupos.map(g => {
+      const rango = g.dias.length === 1 ? g.dias[0] : `${g.dias[0]} a ${g.dias[g.dias.length-1]}`;
+      if (g.cerrado) return `${rango}: cerrado`;
+      // Mostrar horas redondas si los minutos son :00
+      const ap = String(g.apertura || '').replace(':00', 'h');
+      const ci = String(g.cierre   || '').replace(':00', 'h');
+      return `${rango}: ${ap} → ${ci}`;
     }).join(' · ');
   }
   // Render asíncrono — actualiza el texto cuando llega la respuesta
@@ -18078,10 +18093,11 @@ const MOS = (() => {
     </div>`;
   }
 
-  // ────── MODAL Editar horario APP ──────
-  async function abrirModalHorarioApp(app) {
+  // [v2.43.32] UX nueva: horario general + check 7 días + especiales opcionales
+  // Optimismo: cierra modal inmediato + toast + API en background
+  function abrirModalHorarioApp(app) {
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
-    const data = await _cargarHorariosApps(true);
+    const data = S._horariosAppsCache || {};
     const conf = data[app] || { horario: {}, admins_libres: true };
     const titulo = app === 'warehouseMos' ? '📦 warehouseMos'
                  : app === 'mosExpress'   ? '📱 mosExpress'
@@ -18091,22 +18107,26 @@ const MOS = (() => {
                  : '#6366f1';
     _renderModalHorario({
       titulo: `⚙ Horario ${titulo}`,
-      subtitulo: 'Control general de apertura/cierre de la app',
+      subtitulo: 'Configura apertura/cierre general y excepciones por día',
       accent: accent,
       modoApp: true,
       horarioActual: conf.horario,
       adminsLibres: conf.admins_libres,
-      onGuardar: async (horario, adminsLibres) => {
-        try { _opsBeep && _opsBeep('shimmer'); } catch(_){}
-        await API.post('setHorarioApp', { app, horario, admins_libres: adminsLibres, actualizadoPor: S.session?.nombre || 'admin' });
-        try { _opsBeep && _opsBeep('ok'); } catch(_){}
-        toast('🕐 Horario actualizado · operadores notificados', 'success', 4000);
-        S._horariosAppsCache = null;
-        await _refrescarHorarioCard(app);
+      onGuardar: (horario, adminsLibres) => {
+        // Optimismo: actualizar cache local + cerrar modal + toast
+        if (!S._horariosAppsCache) S._horariosAppsCache = {};
+        S._horariosAppsCache[app] = { ...conf, horario, admins_libres: adminsLibres };
+        cerrarModalHorario();
+        toast('🕐 Horario actualizado', 'success', 2500);
+        _refrescarHorarioCard(app);
+        // API en background
+        API.post('setHorarioApp', { app, horario, admins_libres: adminsLibres, actualizadoPor: S.session?.nombre || 'admin' })
+          .then(() => { try { _opsBeep && _opsBeep('ok'); } catch(_){} })
+          .catch(e => { toast('⚠ Error guardando: ' + e.message, 'error', 5000); });
       }
     });
   }
-  async function abrirModalHorarioCustom(idPersonal) {
+  function abrirModalHorarioCustom(idPersonal) {
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
     const all = (cfgData.personal || []).concat(cfgData.personalMOS || []);
     const p = all.find(x => String(x.idPersonal) === String(idPersonal));
@@ -18123,48 +18143,69 @@ const MOS = (() => {
       dom: { activo:true, apertura:'12:00', cierre:'22:00' }
     };
     _renderModalHorario({
-      titulo: `🕐 Horario custom`,
+      titulo: `🕐 Horario personal`,
       subtitulo: `${p.nombre || ''} ${p.apellido || ''} · ${p.rol || ''}`,
       accent: '#a855f7',
       modoApp: false,
       horarioActual: dias,
       activoToggle: hc.activo,
       motivoActual: hc.motivo || '',
-      onGuardar: async (horario, activo, motivo) => {
-        try { _opsBeep && _opsBeep('shimmer'); } catch(_){}
-        await API.post('setHorarioCustomPersonal', {
-          idPersonal, horarioCustom: { activo, dias: horario, motivo }
-        });
-        try { _opsBeep && _opsBeep('ok'); } catch(_){}
-        toast(activo ? '🕐 Horario custom guardado · operador notificado' : '🕐 Horario custom eliminado', 'success', 4000);
-        // Actualizar local
+      onGuardar: (horario, activo, motivo) => {
+        // Optimismo: actualizar local + cerrar + toast
         p.horarioCustom = activo ? JSON.stringify({ activo:true, dias: horario, motivo }) : '';
+        cerrarModalHorario();
+        toast(activo ? '🕐 Horario personal guardado' : '🕐 Horario personal eliminado', 'success', 2500);
         if (typeof renderPersonal === 'function') renderPersonal();
+        API.post('setHorarioCustomPersonal', {
+          idPersonal, horarioCustom: { activo, dias: horario, motivo }
+        })
+          .then(() => { try { _opsBeep && _opsBeep('ok'); } catch(_){} })
+          .catch(e => { toast('⚠ Error guardando: ' + e.message, 'error', 5000); });
       }
     });
   }
-  async function eliminarHorarioCustom(idPersonal) {
-    if (!confirm('¿Quitar el horario custom de este operador? Vuelve al horario general de la app.')) return;
+  function eliminarHorarioCustom(idPersonal) {
+    if (!confirm('¿Quitar el horario personal? Vuelve al horario general de la app.')) return;
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
-    try {
-      await API.post('setHorarioCustomPersonal', { idPersonal, horarioCustom: { activo: false } });
-      try { _opsBeep && _opsBeep('ok'); } catch(_){}
-      toast('🕐 Horario custom eliminado', 'success');
-      const all = (cfgData.personal || []).concat(cfgData.personalMOS || []);
-      const p = all.find(x => String(x.idPersonal) === String(idPersonal));
-      if (p) p.horarioCustom = '';
-      if (typeof renderPersonal === 'function') renderPersonal();
-    } catch(e) {
-      try { _opsBeep && _opsBeep('warn'); } catch(_){}
-      toast('Error: ' + e.message, 'error');
-    }
+    const all = (cfgData.personal || []).concat(cfgData.personalMOS || []);
+    const p = all.find(x => String(x.idPersonal) === String(idPersonal));
+    if (p) p.horarioCustom = '';
+    if (typeof renderPersonal === 'function') renderPersonal();
+    toast('🕐 Horario personal eliminado', 'success', 2200);
+    API.post('setHorarioCustomPersonal', { idPersonal, horarioCustom: { activo: false } })
+      .then(() => { try { _opsBeep && _opsBeep('ok'); } catch(_){} })
+      .catch(e => { toast('⚠ Error: ' + e.message, 'error'); });
   }
 
+  // [v2.43.32] Modal con UX nueva: horario general + selector horas redondas
+  // + 7 días con check + "horario especial" opcional para días específicos
   function _renderModalHorario(opts) {
+    // Calcular horario general (el más común) y excepciones
+    const horActual = opts.horarioActual || {};
     const dias = _DIAS_HOR.map(d => {
-      const c = (opts.horarioActual || {})[d.k] || { activo: true, apertura: '07:00', cierre: '19:00' };
-      return { ...d, activo: c.activo !== false, apertura: c.apertura || '07:00', cierre: c.cierre || '19:00' };
+      const c = horActual[d.k] || { activo: true, apertura: '07', cierre: '19' };
+      return { ...d, activo: c.activo !== false, apertura: _hrOnly(c.apertura), cierre: _hrOnly(c.cierre) };
     });
+    // Detectar horario "general" (el más frecuente)
+    const counts = {};
+    dias.filter(d => d.activo).forEach(d => {
+      const k = `${d.apertura}-${d.cierre}`;
+      counts[k] = (counts[k] || 0) + 1;
+    });
+    let general = { apertura: '07', cierre: '19' };
+    let bestCount = 0;
+    Object.entries(counts).forEach(([k, n]) => {
+      if (n > bestCount) {
+        bestCount = n;
+        const [a, c] = k.split('-');
+        general = { apertura: a, cierre: c };
+      }
+    });
+    // Cada día: activo + especial (true si su horario difiere del general)
+    dias.forEach(d => {
+      d.especial = d.activo && (d.apertura !== general.apertura || d.cierre !== general.cierre);
+    });
+
     let html = `<div class="hor-modal-backdrop" id="modalHorarioWrap" onclick="if(event.target===this)MOS.cerrarModalHorario()">
       <div class="hor-modal" style="border-color:${opts.accent}80;box-shadow:0 25px 60px -15px rgba(0,0,0,.7),0 0 0 1px ${opts.accent}33">
         <div class="hor-modal-hdr" style="background:linear-gradient(135deg,${opts.accent}22,${opts.accent}05);border-bottom:1px solid ${opts.accent}40">
@@ -18175,32 +18216,69 @@ const MOS = (() => {
           <button class="hor-modal-x" onclick="MOS.cerrarModalHorario()">✕</button>
         </div>
         <div class="hor-modal-body">`;
+
     if (!opts.modoApp) {
       html += `<label class="hor-toggle-row">
         <input type="checkbox" id="horCustomActivo" ${opts.activoToggle ? 'checked' : ''}>
         <span class="hor-toggle-track"><span class="hor-toggle-dot"></span></span>
-        <span class="hor-toggle-lbl">Habilitar horario personalizado</span>
+        <span class="hor-toggle-lbl">Habilitar horario personal</span>
       </label>
       <div class="hor-toggle-hint">OFF = usa el horario general de la app</div>`;
     }
-    html += `<div class="hor-dias-grid" id="horDiasGrid">`;
+
+    // Bloque horario general
+    html += `<div class="hor-general-box">
+      <div class="hor-section-ttl">⏰ Horario general</div>
+      <div class="hor-general-row">
+        <div class="hor-general-field">
+          <span class="hor-general-lbl">Apertura</span>
+          <select class="hor-hr-select" id="horGenAp">${_hrOpts(general.apertura)}</select>
+        </div>
+        <span class="hor-arrow-big">→</span>
+        <div class="hor-general-field">
+          <span class="hor-general-lbl">Cierre</span>
+          <select class="hor-hr-select" id="horGenCi">${_hrOpts(general.cierre)}</select>
+        </div>
+      </div>
+    </div>`;
+
+    // Días activos
+    html += `<div class="hor-section-ttl">📅 Días activos</div>
+      <div class="hor-dias-pills">`;
     dias.forEach((d, i) => {
-      html += `<div class="hor-dia-row ${d.activo ? 'is-on' : 'is-off'}" data-dia="${d.k}">
-        <label class="hor-dia-check">
-          <input type="checkbox" class="hor-dia-checkbox" data-i="${i}" ${d.activo ? 'checked' : ''} onchange="MOS._horToggleDia(${i}, this.checked)">
-          <span class="hor-dia-lbl">${d.lbl}</span>
+      html += `<label class="hor-pill ${d.activo ? 'is-on' : ''}">
+        <input type="checkbox" class="hor-pill-cb" data-i="${i}" ${d.activo ? 'checked' : ''} onchange="MOS._horTogglePill(${i}, this.checked)">
+        <span>${d.lbl}</span>
+      </label>`;
+    });
+    html += `</div>`;
+
+    // Horarios especiales por día (toggle opcional)
+    html += `<div class="hor-section-ttl" style="margin-top:14px">⭐ Horarios especiales <span class="hor-section-hint">(opcional, por día)</span></div>
+      <div class="hor-esp-list" id="horEspList">`;
+    dias.forEach((d, i) => {
+      const especialChecked = d.especial ? 'checked' : '';
+      const disabledAttr = d.activo ? '' : 'data-disabled="1"';
+      html += `<div class="hor-esp-row ${d.especial ? 'is-esp' : ''}" data-i="${i}" ${disabledAttr}>
+        <label class="hor-esp-check">
+          <input type="checkbox" class="hor-esp-cb" data-i="${i}" ${especialChecked} ${d.activo ? '' : 'disabled'} onchange="MOS._horToggleEsp(${i}, this.checked)">
+          <span class="hor-esp-lbl">${d.lbl}</span>
         </label>
-        <input type="time" class="hor-time" data-i="${i}" data-k="apertura" value="${d.apertura}" ${d.activo ? '' : 'disabled'}>
-        <span class="hor-arrow">→</span>
-        <input type="time" class="hor-time" data-i="${i}" data-k="cierre" value="${d.cierre}" ${d.activo ? '' : 'disabled'}>
+        <div class="hor-esp-times" style="${d.especial ? '' : 'display:none'}">
+          <select class="hor-hr-select hor-esp-ap" data-i="${i}">${_hrOpts(d.apertura)}</select>
+          <span class="hor-arrow">→</span>
+          <select class="hor-hr-select hor-esp-ci" data-i="${i}">${_hrOpts(d.cierre)}</select>
+        </div>
+        <span class="hor-esp-hint" style="${d.especial ? 'display:none' : ''}">${d.activo ? 'usa general' : 'cerrado'}</span>
       </div>`;
     });
     html += `</div>`;
+
     if (opts.modoApp) {
       html += `<label class="hor-toggle-row" style="margin-top:14px">
         <input type="checkbox" id="horAdminsLibres" ${opts.adminsLibres !== false ? 'checked' : ''}>
         <span class="hor-toggle-track"><span class="hor-toggle-dot"></span></span>
-        <span class="hor-toggle-lbl">👑 MASTER/ADMIN sin restricción horaria</span>
+        <span class="hor-toggle-lbl">👑 MASTER/ADMIN sin restricción</span>
       </label>`;
     } else {
       html += `<div class="hor-motivo-wrap">
@@ -18210,7 +18288,7 @@ const MOS = (() => {
     }
     html += `<div class="hor-modal-footer">`;
     if (!opts.modoApp) {
-      html += `<button class="hor-btn-del" onclick="MOS._horEliminarCustomDesdeModal()">Eliminar custom</button>`;
+      html += `<button class="hor-btn-del" onclick="MOS._horEliminarCustomDesdeModal()">Eliminar</button>`;
     }
     html += `<button class="hor-btn-cancel" onclick="MOS.cerrarModalHorario()">Cancelar</button>
         <button class="hor-btn-save" style="background:linear-gradient(135deg,${opts.accent},${opts.accent}cc)" onclick="MOS._horGuardarModal()">💾 Guardar</button>
@@ -18218,43 +18296,94 @@ const MOS = (() => {
     const old = $('modalHorarioWrap');
     if (old) old.remove();
     document.body.insertAdjacentHTML('beforeend', html);
-    // Guardar opts en window para _horGuardarModal
     window._horModalOpts = opts;
+    window._horModalDiasState = dias;
+  }
+  // Helpers
+  function _hrOnly(s) {
+    if (!s) return '07';
+    const m = String(s).match(/^(\d{1,2})/);
+    return m ? String(parseInt(m[1], 10)).padStart(2, '0') : '07';
+  }
+  function _hrOpts(sel) {
+    let h = '';
+    for (let i = 0; i < 24; i++) {
+      const v = String(i).padStart(2, '0');
+      h += `<option value="${v}" ${v === sel ? 'selected' : ''}>${v} h</option>`;
+    }
+    return h;
+  }
+  function _horTogglePill(i, checked) {
+    const dias = window._horModalDiasState || [];
+    if (dias[i]) dias[i].activo = checked;
+    document.querySelectorAll('.hor-pill')[i]?.classList.toggle('is-on', checked);
+    // Sync con hor-esp-row
+    const espRow = document.querySelector(`.hor-esp-row[data-i="${i}"]`);
+    if (espRow) {
+      const cb = espRow.querySelector('.hor-esp-cb');
+      const hint = espRow.querySelector('.hor-esp-hint');
+      if (!checked) {
+        if (cb) { cb.checked = false; cb.disabled = true; }
+        espRow.classList.remove('is-esp');
+        espRow.querySelector('.hor-esp-times').style.display = 'none';
+        if (hint) { hint.style.display = ''; hint.textContent = 'cerrado'; }
+      } else {
+        if (cb) cb.disabled = false;
+        if (hint) { hint.textContent = 'usa general'; hint.style.display = ''; }
+      }
+    }
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+  }
+  function _horToggleEsp(i, checked) {
+    const row = document.querySelector(`.hor-esp-row[data-i="${i}"]`);
+    if (!row) return;
+    row.classList.toggle('is-esp', checked);
+    row.querySelector('.hor-esp-times').style.display = checked ? '' : 'none';
+    const hint = row.querySelector('.hor-esp-hint');
+    if (hint) hint.style.display = checked ? 'none' : '';
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
   }
   function cerrarModalHorario() {
     const m = $('modalHorarioWrap');
     if (m) m.remove();
     window._horModalOpts = null;
+    window._horModalDiasState = null;
   }
-  function _horToggleDia(i, checked) {
-    const row = document.querySelectorAll('.hor-dia-row')[i];
-    if (!row) return;
-    row.classList.toggle('is-on', checked);
-    row.classList.toggle('is-off', !checked);
-    row.querySelectorAll('.hor-time').forEach(inp => inp.disabled = !checked);
-    try { _opsBeep && _opsBeep(checked ? 'tac' : 'tac'); } catch(_){}
-  }
-  async function _horGuardarModal() {
+  // Legacy compat (botones viejos pueden llamarlo)
+  function _horToggleDia(i, checked) { _horTogglePill(i, checked); }
+  function _horGuardarModal() {
     const opts = window._horModalOpts;
     if (!opts) return;
+    const genAp = ($('horGenAp')?.value || '07') + ':00';
+    const genCi = ($('horGenCi')?.value || '19') + ':00';
     const horario = {};
     _DIAS_HOR.forEach((d, i) => {
-      const row = document.querySelectorAll('.hor-dia-row')[i];
-      if (!row) return;
-      const activo = row.querySelector('.hor-dia-checkbox').checked;
-      const apert  = row.querySelector(`.hor-time[data-k="apertura"]`).value || '07:00';
-      const cierre = row.querySelector(`.hor-time[data-k="cierre"]`).value || '19:00';
-      horario[d.k] = { activo, apertura: apert, cierre };
+      const pillCb = document.querySelectorAll('.hor-pill-cb')[i];
+      const activo = pillCb ? pillCb.checked : true;
+      if (!activo) {
+        horario[d.k] = { activo: false, apertura: genAp, cierre: genCi };
+        return;
+      }
+      // Activo: ¿tiene especial?
+      const espRow = document.querySelector(`.hor-esp-row[data-i="${i}"]`);
+      const espCb  = espRow?.querySelector('.hor-esp-cb');
+      const usaEsp = espCb && espCb.checked;
+      if (usaEsp) {
+        const ap = (espRow.querySelector('.hor-esp-ap').value || '07') + ':00';
+        const ci = (espRow.querySelector('.hor-esp-ci').value || '19') + ':00';
+        horario[d.k] = { activo: true, apertura: ap, cierre: ci };
+      } else {
+        horario[d.k] = { activo: true, apertura: genAp, cierre: genCi };
+      }
     });
     if (opts.modoApp) {
       const adminsLibres = $('horAdminsLibres')?.checked !== false;
-      await opts.onGuardar(horario, adminsLibres);
+      opts.onGuardar(horario, adminsLibres);
     } else {
       const activo = $('horCustomActivo')?.checked === true;
       const motivo = $('horMotivo')?.value || '';
-      await opts.onGuardar(horario, activo, motivo);
+      opts.onGuardar(horario, activo, motivo);
     }
-    cerrarModalHorario();
   }
   function _horEliminarCustomDesdeModal() {
     const opts = window._horModalOpts;
@@ -34654,6 +34783,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.43.30] Horarios apps + custom usuario
     abrirModalHorarioApp, abrirModalHorarioCustom, eliminarHorarioCustom,
     cerrarModalHorario, _horToggleDia, _horGuardarModal, _horEliminarCustomDesdeModal,
+    _horTogglePill, _horToggleEsp,
     _mosCerrarBloqueoYsalir,
     almLoadResumen, almRefreshResumen, almFiltrarStock, almRefreshCatalogo, almToggleStockExpand,
     almLoadOps, almRefreshOps, almRenderOps, almToggleOpExpand, almSetRangoOps,

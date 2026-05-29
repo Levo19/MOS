@@ -133,31 +133,45 @@ function setHorarioApp(params) {
     sh.appendRow([app, JSON.stringify(horValidado), admins_libres, actualizadoPor, ts]);
   }
 
-  // [v2.43.30] Push obligatorio a operadores de la app afectada
+  // [v2.43.32] Push refinado: solo a MASTER+ADMIN (no a TODOS los operadores)
   try {
     var resumen = _resumenHorarioParaPush(horValidado);
-    var titulo  = '🕐 Horario actualizado · ' + (app === 'warehouseMos' ? 'Almacén' : 'POS');
-    var cuerpo  = resumen + ' · revisa al iniciar sesión';
+    var appName = app === 'warehouseMos' ? 'Almacén'
+                : app === 'mosExpress'   ? 'POS'
+                : 'Panel MOS';
+    var titulo  = '🕐 Horario ' + appName + ' actualizado';
+    var cuerpo  = resumen;
     if (typeof _enviarPushTodos === 'function') {
-      var appFiltro = app === 'warehouseMos' ? 'WH' : 'ME';
-      _enviarPushTodos(titulo, cuerpo, { idNotif: 'MOS_HORARIO_APP', soloRolesME: app === 'mosExpress', soloRolesWH: app === 'warehouseMos' });
+      _enviarPushTodos(titulo, cuerpo, { idNotif: 'MOS_HORARIO_APP', soloRolesMOS: true });
     }
   } catch(eP) { Logger.log('[setHorarioApp] push fallo: ' + eP.message); }
 
   return { ok: true, data: { app: app, horario: horValidado, admins_libres: admins_libres } };
 }
 
+// [v2.43.32] Resumen agrupado: días consecutivos con mismo horario se juntan.
+// Ej: "Lun a Vie 7→19 · Sab 7→14 · Dom cerrado"
 function _resumenHorarioParaPush(hor) {
-  var partes = [];
+  var LBL = { lun:'Lun', mar:'Mar', mie:'Mie', jue:'Jue', vie:'Vie', sab:'Sab', dom:'Dom' };
+  var grupos = [];
+  var actual = null;
   _HOR_DIAS.forEach(function(d) {
-    var c = hor[d];
-    if (!c || !c.activo) partes.push(d + ': cerrado');
-    else partes.push(d + ': ' + c.apertura + '-' + c.cierre);
+    var c = hor[d] || {};
+    var key = (c.activo === false) ? 'cerrado' : (String(c.apertura) + '-' + String(c.cierre));
+    if (actual && actual.key === key) {
+      actual.dias.push(d);
+    } else {
+      actual = { key: key, dias: [d], apertura: c.apertura, cierre: c.cierre, cerrado: c.activo === false };
+      grupos.push(actual);
+    }
   });
-  // Si todos iguales, simplifica
-  var primero = partes[0];
-  if (partes.every(function(p) { return p === primero; })) return primero;
-  return partes.join(' · ');
+  return grupos.map(function(g) {
+    var rango = g.dias.length === 1
+      ? LBL[g.dias[0]]
+      : (LBL[g.dias[0]] + ' a ' + LBL[g.dias[g.dias.length-1]]);
+    if (g.cerrado) return rango + ' cerrado';
+    return rango + ' ' + g.apertura + '→' + g.cierre;
+  }).join(' · ');
 }
 
 // [v2.43.30] Set/eliminar horario custom de UN usuario específico.
@@ -184,16 +198,14 @@ function setHorarioCustomPersonal(params) {
     var fila = i + 1;
     if (!horarioCustom || horarioCustom.activo === false) {
       sheet.getRange(fila, idxHC + 1).setValue('');
-      // Push obligatorio al operador
+      // [v2.43.32] Push solo al usuario afectado + admin/master
       try {
         var nombre = String(data[i][hdrs.indexOf('nombre')] || '');
-        if (typeof _enviarPushTodos === 'function') {
-          _enviarPushTodos(
-            '🕐 Horario custom eliminado',
-            'Hola ' + nombre + ' · vuelves al horario general de la app',
-            { idNotif: 'MOS_HORARIO_CUSTOM' }
-          );
-        }
+        _enviarPushSegmentado(
+          idPersonal,
+          '🕐 Tu horario personalizado fue eliminado',
+          'Hola ' + nombre + ' · vuelves al horario general de la app'
+        );
       } catch(_){}
       return { ok: true, data: { idPersonal: idPersonal, accion: 'ELIMINADO' } };
     }
@@ -214,16 +226,14 @@ function setHorarioCustomPersonal(params) {
       ts:      new Date().toISOString()
     };
     sheet.getRange(fila, idxHC + 1).setValue(JSON.stringify(horarioFinal));
-    // Push obligatorio
+    // [v2.43.32] Push al usuario afectado + admin/master
     try {
       var nombre2 = String(data[i][hdrs.indexOf('nombre')] || '');
-      if (typeof _enviarPushTodos === 'function') {
-        _enviarPushTodos(
-          '🕐 Horario personalizado activo',
-          'Hola ' + nombre2 + ' · ' + _resumenHorarioParaPush(hcValido),
-          { idNotif: 'MOS_HORARIO_CUSTOM' }
-        );
-      }
+      _enviarPushSegmentado(
+        idPersonal,
+        '🕐 Tu nuevo horario personalizado',
+        'Hola ' + nombre2 + ' · ' + _resumenHorarioParaPush(hcValido)
+      );
     } catch(_){}
     return { ok: true, data: { idPersonal: idPersonal, accion: 'ACTUALIZADO', horarioCustom: horarioFinal } };
   }
@@ -332,4 +342,56 @@ function _parseHora(s) {
   var m = s.match(/^(\d{1,2}):?(\d{2})?$/);
   if (!m) return null;
   return parseInt(m[1], 10) + (parseInt(m[2] || '0', 10) / 60);
+}
+
+// [v2.43.32] Push dirigido: SOLO al usuario afectado + MASTER+ADMIN
+// (no spammear a todos los operadores). Usa tokens FCM si existen.
+function _enviarPushSegmentado(idPersonalDestino, titulo, cuerpo) {
+  try {
+    var disp = getSheet('DISPOSITIVOS');
+    if (!disp) return;
+    var data = disp.getDataRange().getValues();
+    var hdrs = data[0];
+    var iSes = hdrs.indexOf('Ultima_Sesion');
+    var iApp = hdrs.indexOf('App');
+    var iTok = hdrs.indexOf('FCM_Token');
+    var iEst = hdrs.indexOf('Estado');
+    if (iTok < 0) {
+      // Fallback: si no hay columna token, usa el helper masivo (mejor algo que nada)
+      try { if (typeof _enviarPushTodos === 'function') _enviarPushTodos(titulo, cuerpo, { idNotif: 'MOS_HORARIO_DIRIGIDO' }); } catch(_){}
+      return;
+    }
+    // Cargar PERSONAL_MASTER para resolver nombre del destinatario + admins
+    var per = _sheetToObjects(getSheet('PERSONAL_MASTER'));
+    var nombreDest = '';
+    per.forEach(function(p) {
+      if (String(p.idPersonal) === String(idPersonalDestino)) {
+        nombreDest = (String(p.nombre || '') + ' ' + String(p.apellido || '')).trim().toLowerCase();
+      }
+    });
+    var adminsLow = {};
+    per.forEach(function(p) {
+      var rol = String(p.rol || '').toUpperCase();
+      if (rol === 'MASTER' || rol === 'ADMINISTRADOR' || rol === 'ADMIN' || String(p.appOrigen || '') === 'MOS') {
+        adminsLow[(String(p.nombre || '') + ' ' + String(p.apellido || '')).trim().toLowerCase()] = true;
+        adminsLow[String(p.nombre || '').toLowerCase().trim()] = true;
+      }
+    });
+    var tokens = [];
+    for (var i = 1; i < data.length; i++) {
+      var tok = String(data[i][iTok] || '').trim();
+      var est = String(data[i][iEst] || '').toUpperCase();
+      if (!tok || est === 'INACTIVO') continue;
+      var ses = String(data[i][iSes] || '').toLowerCase().trim();
+      // Match: el usuario afectado O un admin/master
+      if (ses === nombreDest || adminsLow[ses]) tokens.push(tok);
+    }
+    if (!tokens.length) return;
+    // Reusar el sender de Push.gs si existe
+    if (typeof _fcmEnviar === 'function') {
+      _fcmEnviar(tokens, titulo, cuerpo, { idNotif: 'MOS_HORARIO_DIRIGIDO' });
+    } else if (typeof _enviarFCMv1 === 'function') {
+      tokens.forEach(function(t) { try { _enviarFCMv1(t, titulo, cuerpo, {}); } catch(_){} });
+    }
+  } catch(e) { Logger.log('[_enviarPushSegmentado] ' + e.message); }
 }
