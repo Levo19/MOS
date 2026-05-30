@@ -1779,15 +1779,30 @@ const MOS = (() => {
   function toggleFiltroCat(ev) {
     if (ev && ev.stopPropagation) ev.stopPropagation();
     const panel = $('catFiltroPanel');
-    if (!panel) return;
+    if (!panel) {
+      console.warn('[filtro] catFiltroPanel no existe en DOM');
+      return;
+    }
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
     const isOpen = !panel.classList.contains('hidden');
+    // [v2.43.43] Defensa anti-overflow:hidden — forzar al wrap padre que no recorte
+    const wrap = $('catFiltroWrap');
+    if (wrap) {
+      wrap.style.overflow = 'visible';
+      wrap.style.position = 'relative';
+      wrap.style.zIndex   = '50';
+    }
     if (isOpen) { panel.classList.add('hidden'); return; }
     const productos = Array.isArray(S.productos) ? S.productos : [];
     const cats = [...new Set(productos.map(p => p && p.idCategoria).filter(Boolean))].sort();
     _renderFiltroCategList(cats);
     _refrescarFiltroOrdenUI && _refrescarFiltroOrdenUI();
     panel.classList.remove('hidden');
+    // [v2.43.43] Forzar visibilidad inline también — por si algún CSS lo oculta
+    panel.style.display = '';
+    panel.style.visibility = 'visible';
+    panel.style.opacity = '1';
+    panel.style.zIndex = '9000';
     _registrarCierreFiltroCat();
   }
   function _registrarCierreFiltroCat() {

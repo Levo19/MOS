@@ -6093,8 +6093,17 @@
     #catFiltroWrap {
       pointer-events: auto !important;
       transition: none !important;
+      /* [v2.43.43 ROOT CAUSE FINAL] .cat-tool-btn tiene overflow:hidden →
+         recortaba el panel absolute dentro del wrap → el panel SÍ se abría
+         pero quedaba clipped al tamaño del botón = invisible. Forzamos
+         overflow:visible para que el panel pueda salir hacia abajo. */
+      overflow: visible !important;
+      position: relative;
+      z-index: 50;
     }
     #btnFiltrosCat { pointer-events: auto !important; position: relative; z-index: 5; }
+    /* El panel también con z-index alto para no quedar debajo de las cards */
+    #catFiltroPanel { z-index: 9000 !important; }
     /* En mobile el botón "+" muestra solo "+" sin "Nuevo" */
     @media (max-width: 640px) {
       .cat-btn-new-lbl { display: none; }
