@@ -282,9 +282,34 @@
        FABs de etiquetas (50), SW update banner (9000+), toasts (9999) y otros
        overlays. 9400 deja sitio a toasts (9999), banners SW (9000-9100) y
        overlays especiales tipo modalLiqAnular (200) que necesite mayor. */
-    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 9400; display: none; align-items: center; justify-content: center; padding: 16px; }
-    .modal-backdrop.open { display: flex; }
-    .modal-box { background: #0f172a; border: 1px solid #1e293b; border-radius: 16px; width: 100%; max-width: 540px; max-height: 90vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    /* [v2.43.53] Patrón premium: backdrop blur + bounce + halo */
+    .modal-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.65);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      z-index: 9400; display: none;
+      align-items: center; justify-content: center;
+      padding: 16px;
+    }
+    .modal-backdrop.open {
+      display: flex;
+      animation: modalBackdropIn .25s ease-out;
+    }
+    @keyframes modalBackdropIn { from { opacity: 0 } to { opacity: 1 } }
+    .modal-box {
+      background: linear-gradient(180deg, #0f172a, #0a1424);
+      border: 1px solid rgba(99,102,241,.4);
+      border-radius: 16px;
+      width: 100%; max-width: 540px; max-height: 90vh;
+      overflow-y: auto; -webkit-overflow-scrolling: touch;
+      box-shadow: 0 25px 60px -10px rgba(0,0,0,.7), 0 0 0 1px rgba(99,102,241,.15) inset;
+      animation: modalBoxIn .35s cubic-bezier(.34, 1.56, .64, 1);
+    }
+    @keyframes modalBoxIn {
+      from { opacity: 0; transform: translateY(-12px) scale(.96) }
+      to   { opacity: 1; transform: translateY(0) scale(1) }
+    }
     /* Tap target ≥40px para botones de cierre × en modales */
     .modal-close-x { padding: 6px 10px; line-height: 1; font-size: 20px; color: #94a3b8; background: transparent; border: none; cursor: pointer; border-radius: 6px; transition: background .15s, color .15s; }
     .modal-close-x:hover { color: #fff; background: rgba(255,255,255,.05); }
@@ -12228,9 +12253,15 @@
         <button class="cat-tool-btn cat-tool-btn-collapse cat-btn-promo" onclick="MOS.nav('promociones')" title="Gestionar promociones">
           <span>🎯</span><span class="cat-btn-new-lbl">Promos</span>
         </button>
-        <button id="btnLogProductos" class="cat-tool-btn cat-tool-btn-collapse hidden" onclick="MOS.abrirLogProductos()" title="Log de cambios de catálogo (master)" style="background:rgba(168,85,247,0.12);border-color:rgba(168,85,247,0.5);color:#c084fc;">
-          <span>📜</span><span class="cat-btn-new-lbl">Log</span>
+        <!-- [v2.43.53] Kebab Master: dropdown con Purgar + Log de cambios.
+             Reemplaza el botón Log individual. Solo visible si rol=MASTER. -->
+        <button id="btnMasterKebab" type="button" class="cat-tool-btn cat-tool-btn-collapse hidden"
+                title="Acciones Master"
+                style="background:rgba(168,85,247,0.12);border-color:rgba(168,85,247,0.5);color:#c084fc;font-size:1.1rem;padding:6px 10px;min-width:42px">
+          ⋮
         </button>
+        <!-- Legacy: mantengo el id por compatibilidad pero oculto -->
+        <button id="btnLogProductos" class="hidden" onclick="MOS.abrirLogProductos()" style="display:none"></button>
         <button class="btn-primary whitespace-nowrap flex items-center gap-1 cat-tool-btn cat-tool-btn-collapse cat-btn-new" onclick="MOS.abrirModalProducto(null)">
           <span>+</span><span class="cat-btn-new-lbl">Nuevo</span>
         </button>

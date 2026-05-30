@@ -751,9 +751,73 @@ const MOS = (() => {
     });
     const btnAvCfg = $('btnAvatarConfig');
     if (btnAvCfg) btnAvCfg.classList.toggle('hidden', !isMaster);
-    // Botón "📜 Log" del catálogo: solo master
+    // [v2.43.53] Kebab Master con dropdown Purgar+Log (reemplaza btnLogProductos)
+    const btnKeb = $('btnMasterKebab');
+    if (btnKeb) {
+      btnKeb.classList.toggle('hidden', !isMaster);
+      if (isMaster && btnKeb.dataset.bound !== '1') {
+        btnKeb.dataset.bound = '1';
+        btnKeb.addEventListener('click', (e) => {
+          e.stopPropagation();
+          abrirKebabMaster(e);
+        });
+      }
+    }
+    // Legacy btnLogProductos siempre oculto en master mode
     const btnLog = $('btnLogProductos');
-    if (btnLog) btnLog.classList.toggle('hidden', !isMaster);
+    if (btnLog) btnLog.classList.add('hidden');
+  }
+
+  // [v2.43.53] Dropdown del kebab Master en el header (Purgar + Log)
+  function abrirKebabMaster(ev) {
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    const existente = document.getElementById('masterKebabMenu');
+    if (existente) { existente.remove(); return; }
+    const rect = ev && ev.currentTarget ? ev.currentTarget.getBoundingClientRect()
+                                         : { right: window.innerWidth/2, bottom: 80 };
+    const menuW = 240;
+    let left = rect.right - menuW;
+    if (left < 8) left = 8;
+    const top = rect.bottom + 4;
+    const html = `<div id="masterKebabMenu"
+      style="position:fixed;top:${top}px;left:${left}px;width:${menuW}px;background:#0f172a;border:1px solid #6b21a8;border-radius:10px;padding:6px;box-shadow:0 15px 40px -8px rgba(0,0,0,.6),0 0 0 1px rgba(168,85,247,.2);z-index:99998;animation:catKebabIn .15s ease-out"
+      onclick="event.stopPropagation()">
+      <div style="font-size:9px;color:#c084fc;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:4px 8px 6px">👑 Acciones Master</div>
+      <button onclick="MOS._cerrarKebabMaster();MOS.abrirCestaPurga()"
+              style="display:flex;align-items:center;gap:10px;width:100%;background:rgba(248,113,113,.08);border:0;color:#fca5a5;border-radius:6px;padding:10px 12px;font-size:12px;font-weight:600;cursor:pointer;text-align:left;transition:background .15s;margin-bottom:3px"
+              onmouseover="this.style.background='rgba(248,113,113,.18)'"
+              onmouseout="this.style.background='rgba(248,113,113,.08)'">
+        <span style="font-size:16px">🗑</span>
+        <div style="flex:1">
+          <div>Purgar catálogo</div>
+          <div style="font-size:9px;color:#94a3b8;font-weight:400;margin-top:1px">Eliminar items huérfanos</div>
+        </div>
+      </button>
+      <button onclick="MOS._cerrarKebabMaster();MOS.abrirLogProductos()"
+              style="display:flex;align-items:center;gap:10px;width:100%;background:rgba(168,85,247,.08);border:0;color:#c084fc;border-radius:6px;padding:10px 12px;font-size:12px;font-weight:600;cursor:pointer;text-align:left;transition:background .15s"
+              onmouseover="this.style.background='rgba(168,85,247,.18)'"
+              onmouseout="this.style.background='rgba(168,85,247,.08)'">
+        <span style="font-size:16px">📜</span>
+        <div style="flex:1">
+          <div>Log de cambios</div>
+          <div style="font-size:9px;color:#94a3b8;font-weight:400;margin-top:1px">Historial del catálogo</div>
+        </div>
+      </button>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+    setTimeout(() => {
+      const close = (e) => {
+        const m = document.getElementById('masterKebabMenu');
+        if (!m || m.contains(e.target)) return;
+        m.remove();
+        document.removeEventListener('click', close);
+      };
+      document.addEventListener('click', close);
+    }, 0);
+  }
+  function _cerrarKebabMaster() {
+    const m = document.getElementById('masterKebabMenu');
+    if (m) m.remove();
   }
 
   function logout() {
@@ -3939,6 +4003,7 @@ const MOS = (() => {
   function abrirModalPrecioRapido(idProducto) {
     const prod = S.productos.find(p => p.idProducto === idProducto);
     if (!prod) return;
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
     S._editingPrecioId = idProducto;
     S._qpTocadas = {}; // tracking de presentaciones modificadas manualmente
     const nombre = $('qpNombre');
@@ -4729,7 +4794,7 @@ const MOS = (() => {
     const html = `<div id="catKebabMenu"
       style="position:fixed;top:${top}px;left:${left}px;width:${menuW}px;background:#0f172a;border:1px solid #334155;border-radius:10px;padding:6px;box-shadow:0 15px 40px -8px rgba(0,0,0,.6),0 0 0 1px rgba(99,102,241,.15);z-index:99998;animation:catKebabIn .15s ease-out"
       onclick="event.stopPropagation()">
-      <button onclick="MOS._cerrarKebab();MOS.abrirCestaPurga('${_escapeHtml(idProducto)}')"
+      <button onclick="MOS._cerrarKebab();MOS.abrirCestaPurga('${_escapeHtml(idProducto)}',{idProductoFiltro:'${_escapeHtml(idProducto)}'})"
               style="display:flex;align-items:center;gap:8px;width:100%;background:rgba(248,113,113,.08);border:0;color:#fca5a5;border-radius:6px;padding:9px 10px;font-size:12px;font-weight:600;cursor:pointer;text-align:left;transition:background .15s"
               onmouseover="this.style.background='rgba(248,113,113,.18)'"
               onmouseout="this.style.background='rgba(248,113,113,.08)'">
@@ -4755,11 +4820,12 @@ const MOS = (() => {
   }
 
   // Cesta principal — bottom-sheet con grupos colapsables
-  function abrirCestaPurga(idProductoInicial) {
+  // [v2.43.53] Acepta opts.idProductoFiltro para abrir SOLO ese grupo
+  // (modo kebab por card). Sin filtro → cesta global (modo header).
+  function abrirCestaPurga(idProductoInicial, opts) {
     if (!_esMasterSession()) { toast('Solo Master', 'error'); return; }
+    opts = opts || {};
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
-    // [v2.43.52] Si el cache de rotación está vacío, "sin ventas" daría
-    // falsos positivos peligrosos. Forzar carga antes de mostrar la cesta.
     const cacheVacio = !S._rotacionSemanalCache
       || !S._rotacionSemanalCache.productos
       || Object.keys(S._rotacionSemanalCache.productos).length === 0;
@@ -4768,7 +4834,9 @@ const MOS = (() => {
       filtroQ: '',
       soloSinVentas: false,
       idGrupoExpand: idProductoInicial,
-      cacheConfiable: !cacheVacio
+      cacheConfiable: !cacheVacio,
+      // [v2.43.53] Modo grupo único: cesta minimal con sólo ese grupo expandido
+      idProductoFiltro: opts.idProductoFiltro || (opts.modoGrupo ? idProductoInicial : null)
     };
     _renderCestaPurga();
     if (cacheVacio && typeof _cargarRotacionSemanal === 'function') {
@@ -4796,30 +4864,32 @@ const MOS = (() => {
   function _renderCestaPurga() {
     const st = window._purgaState;
     if (!st) return;
-    // Construir lista de grupos desde S.productos + S.equivMap
-    const all = Array.isArray(S.productos) ? S.productos : [];
-    // Por skuBase: { canonico, presentaciones[], equivalentes[] }
-    const grupos = {};
-    all.forEach(p => {
-      const sku = String(p.skuBase || p.idProducto || '').trim();
-      if (!sku) return;
-      if (!grupos[sku]) grupos[sku] = { sku, canonico: null, presentaciones: [], equivalentes: [] };
-      const factor = parseFloat(p.factorConversion) || 1;
-      if (factor === 1) grupos[sku].canonico = p;
-      else grupos[sku].presentaciones.push(p);
-    });
-    Object.keys(S.equivMap || {}).forEach(sku => {
-      if (!grupos[sku]) grupos[sku] = { sku, canonico: null, presentaciones: [], equivalentes: [] };
-      const arr = S.equivMap[sku] || [];
-      arr.forEach(e => {
-        const cb = typeof e === 'string' ? e : (e.codigoBarra || e.cbEquiv || '');
+    // [v2.43.53] Reusar _catGroups del catálogo en vez de armar grupos desde
+    // cero. Antes los items aparecían con nombres genéricos sueltos porque
+    // el agrupado paralelo era inconsistente con el del catálogo.
+    // _catGroups: { skuBase → {base, pres[], __canonicos[]} }
+    if (!_catGroups || !Object.keys(_catGroups).length) {
+      // Si no hay groups todavía, disparar render del catálogo
+      if (typeof renderCatalogo === 'function') { try { renderCatalogo(); } catch(_){} }
+    }
+    const groupsObj = _catGroups || {};
+    let gruposArr = Object.values(groupsObj).filter(g => g.base).map(g => {
+      // Resolver equivalentes desde S.equivMap por skuBase del base
+      const sku = String(g.base.skuBase || g.base.idProducto || '').trim();
+      const equivs = (S.equivMap && S.equivMap[sku]) || [];
+      const equivObjs = equivs.map(e => {
+        const cb = typeof e === 'string' ? e : (e && (e.codigoBarra || e.cbEquiv || ''));
         const desc = typeof e === 'object' ? (e.descripcion || e.descEquiv || cb) : cb;
-        const id   = typeof e === 'object' ? (e.idEquiv || '') : '';
-        grupos[sku].equivalentes.push({ id, codigoBarra: cb, descripcion: desc });
+        const id = typeof e === 'object' ? (e.idEquiv || '') : '';
+        return { id, codigoBarra: cb, descripcion: desc };
       });
+      return { sku, canonico: g.base, presentaciones: g.pres || [], equivalentes: equivObjs };
     });
-    let gruposArr = Object.values(grupos).filter(g => g.canonico);
-    // Aplicar filtro búsqueda
+    // [v2.43.53] Modo grupo único (kebab card): filtrar a SOLO ese grupo
+    if (st.idProductoFiltro) {
+      gruposArr = gruposArr.filter(g => String(g.canonico.idProducto) === String(st.idProductoFiltro));
+    }
+    // Filtro búsqueda
     if (st.filtroQ) {
       const q = st.filtroQ.toLowerCase();
       gruposArr = gruposArr.filter(g => {
@@ -4837,13 +4907,14 @@ const MOS = (() => {
       g.equivalentes.forEach(e => total += _ventasUlt8sem(e.codigoBarra));
       g.ventasTotal = total;
     });
-    // Filtro "solo sin ventas"
     if (st.soloSinVentas) gruposArr = gruposArr.filter(g => g.ventasTotal === 0);
-    // Ordenar: sin ventas primero, luego por descripción
-    gruposArr.sort((a, b) => {
-      if ((a.ventasTotal === 0) !== (b.ventasTotal === 0)) return a.ventasTotal === 0 ? -1 : 1;
-      return String(a.canonico.descripcion || '').localeCompare(String(b.canonico.descripcion || ''));
-    });
+    // [v2.43.53] En modo grupo único, no ordenar (es uno solo)
+    if (!st.idProductoFiltro) {
+      gruposArr.sort((a, b) => {
+        if ((a.ventasTotal === 0) !== (b.ventasTotal === 0)) return a.ventasTotal === 0 ? -1 : 1;
+        return String(a.canonico.descripcion || '').localeCompare(String(b.canonico.descripcion || ''));
+      });
+    }
 
     const stat = (n, sufijo='') => {
       const color = n === 0 ? '#10b981' : n < 10 ? '#f59e0b' : '#ef4444';
@@ -4916,14 +4987,14 @@ const MOS = (() => {
         <div style="padding:16px 20px;border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(248,113,113,.15),rgba(248,113,113,.03));display:flex;align-items:center;gap:12px;flex-shrink:0">
           <div style="font-size:22px">🗑</div>
           <div style="flex:1;min-width:0">
-            <div style="font-size:14px;font-weight:800;color:#fca5a5;letter-spacing:.5px">PURGAR CATÁLOGO</div>
-            <div style="font-size:11px;color:#94a3b8;margin-top:2px">Selecciona items para eliminar — solo MASTER</div>
+            <div style="font-size:14px;font-weight:800;color:#fca5a5;letter-spacing:.5px">${st.idProductoFiltro ? 'ELIMINAR ITEMS DEL GRUPO' : 'PURGAR CATÁLOGO'}</div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:2px">${st.idProductoFiltro ? 'Marca los items que querés eliminar de este grupo' : 'Selecciona items — solo MASTER'}</div>
           </div>
           <button onclick="MOS.cerrarCestaPurga()"
                   style="background:none;border:none;color:#94a3b8;font-size:22px;font-weight:900;cursor:pointer;padding:4px 8px;line-height:1">✕</button>
         </div>
-        <!-- Filtros -->
-        <div style="padding:12px 20px;border-bottom:1px solid #1e293b;display:flex;gap:10px;flex-wrap:wrap;align-items:center;flex-shrink:0">
+        <!-- Filtros (solo en modo cesta global) -->
+        ${st.idProductoFiltro ? '' : `<div style="padding:12px 20px;border-bottom:1px solid #1e293b;display:flex;gap:10px;flex-wrap:wrap;align-items:center;flex-shrink:0">
           <input type="text" placeholder="🔍 Filtrar por nombre…" value="${_escapeHtml(st.filtroQ)}"
                  oninput="MOS._purgaSetFiltro(this.value)"
                  style="flex:1;min-width:140px;background:#0a1424;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:7px 10px;font-size:12px;outline:none">
@@ -4933,8 +5004,8 @@ const MOS = (() => {
                    onchange="MOS._purgaSetSoloSinVentas(this.checked)" style="accent-color:#10b981">
             <span>✨ Solo sin ventas</span>
           </label>
-        </div>
-        ${!st.cacheConfiable ? `<div style="padding:8px 20px;background:rgba(251,191,36,.1);border-bottom:1px solid rgba(251,191,36,.3);font-size:10px;color:#fde68a;display:flex;align-items:center;gap:8px">
+        </div>`}
+        ${!st.cacheConfiable && !st.idProductoFiltro ? `<div style="padding:8px 20px;background:rgba(251,191,36,.1);border-bottom:1px solid rgba(251,191,36,.3);font-size:10px;color:#fde68a;display:flex;align-items:center;gap:8px">
           <span style="font-size:14px">⏳</span>
           <span>Cargando datos de ventas… los stats de cada item pueden estar incompletos por unos segundos.</span>
         </div>` : ''}
@@ -16047,6 +16118,7 @@ const MOS = (() => {
   // ── Product modal — abrir ─────────────────────────────────
   function abrirModalProducto(id, opts) {
     opts = opts || {};
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
     // [v2.43.3] Si llamaron con focusPolitica, scroll + expandir sección política
     // tras 250ms (después de renderizar el modal). Ahorra 3 taps al cajero.
     if (opts.focusPolitica) {
@@ -36588,6 +36660,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _cerrarFiltroFloat, _limpiarYCerrar,
     // [v2.43.51] Purga catálogo (master)
     abrirMenuPurgaGrupo, _cerrarKebab,
+    // [v2.43.53] Kebab Master en header (Purgar + Log)
+    abrirKebabMaster, _cerrarKebabMaster,
     abrirCestaPurga, cerrarCestaPurga,
     _purgaToggleExpand, _purgaToggle, _purgaSetFiltro, _purgaSetSoloSinVentas,
     _purgaConfirmar, _cerrarConfirmPurga, _purgaValidarClave, _purgaEjecutar,
