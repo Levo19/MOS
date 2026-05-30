@@ -5857,11 +5857,37 @@ const MOS = (() => {
     const ico = $('saludRefreshIco');
     if (ico) ico.classList.add('is-spin');
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    // [v2.43.56] Helper de retry para errores transitorios de Apps Script
+    // (típicamente "Service Spreadsheets failed" cuando hay rate limit).
+    // Reintenta hasta 3 veces con backoff exponencial 1s/2s/4s.
+    const esTransitorio = (err) => {
+      const s = String((err && err.message) || err || '').toLowerCase();
+      return s.indexOf('service spreadsheets') >= 0 ||
+             s.indexOf('rate limit') >= 0 ||
+             s.indexOf('quota') >= 0 ||
+             s.indexOf('failed while accessing') >= 0 ||
+             s.indexOf('timeout') >= 0;
+    };
+    const conRetry = async (fn, etiqueta) => {
+      const delays = [1000, 2000, 4000];
+      let ultimoErr = null;
+      for (let i = 0; i <= delays.length; i++) {
+        try {
+          return await fn();
+        } catch(e) {
+          ultimoErr = e;
+          if (!esTransitorio(e) || i >= delays.length) throw e;
+          console.warn(`[salud] ${etiqueta} fallo transitorio · reintento ${i + 1}/${delays.length}`);
+          await new Promise(r => setTimeout(r, delays[i]));
+        }
+      }
+      throw ultimoErr;
+    };
     try {
-      // 1. Re-correr auditoría WH (fuerza recálculo teórico)
-      await API.post('wh_auditarStockGlobal', {});
-      // 2. Leer alertas pendientes
-      const r = await API.post('wh_getAlertasStock', { soloPendientes: true });
+      // 1. Auditoría WH con retry
+      await conRetry(() => API.post('wh_auditarStockGlobal', {}), 'auditarStockGlobal');
+      // 2. Alertas pendientes con retry
+      const r = await conRetry(() => API.post('wh_getAlertasStock', { soloPendientes: true }), 'getAlertasStock');
       const data = (r && r.data) || [];
       S._saludCache = data;
       S._saludCacheTs = Date.now();
@@ -5872,7 +5898,11 @@ const MOS = (() => {
         else _opsBeep && _opsBeep('shimmer');
       } catch(_){}
     } catch(e) {
-      toast('⚠ Error consultando salud: ' + (e.message || e), 'error');
+      // Mensaje user-friendly si es transitorio (probablemente desde el último retry)
+      const msg = esTransitorio(e)
+        ? '⏳ Google Sheets saturado un momento. Intentá en 1 min.'
+        : '⚠ Error consultando salud: ' + (e.message || e);
+      toast(msg, 'error', 5000);
       try { _opsBeep && _opsBeep('warn'); } catch(_){}
     } finally {
       if (ico) setTimeout(() => ico.classList.remove('is-spin'), 200);

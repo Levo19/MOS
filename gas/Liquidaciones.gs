@@ -2142,14 +2142,14 @@ function _liqEnsureSyncTrigger() {
 // ════════════════════════════════════════════════════════════════════
 function cronSaludStockWH() {
   try {
-    // 1. Forzar auditoría fresca (en caso que la WH no haya corrido)
-    var auditRes = postToWarehouse('auditarStockGlobal', {});
+    // [v2.43.56] Retry con backoff exponencial — Apps Script a veces devuelve
+    // "Service Spreadsheets failed" en cargas pico, pero al reintentar funciona.
+    var auditRes = _retryPostWHTransitorio('auditarStockGlobal', {}, 3);
     if (!auditRes || !auditRes.ok) {
-      Logger.log('[saludStock] auditarStockGlobal WH fallo: ' + JSON.stringify(auditRes));
+      Logger.log('[saludStock] auditarStockGlobal WH fallo tras retries: ' + JSON.stringify(auditRes));
     }
-    // 2. Leer alertas pendientes
-    var alertRes = postToWarehouse('getAlertasStock', { soloPendientes: true });
-    if (!alertRes || !alertRes.ok) return { ok: false, error: 'getAlertasStock fallo' };
+    var alertRes = _retryPostWHTransitorio('getAlertasStock', { soloPendientes: true }, 3);
+    if (!alertRes || !alertRes.ok) return { ok: false, error: 'getAlertasStock fallo tras retries' };
     var pendientes = (alertRes.data || []);
     if (pendientes.length === 0) {
       Logger.log('[saludStock] sin desbalances · stock WH cuadra ✓');
@@ -2177,5 +2177,60 @@ function setupSaludStockTrigger() {
   });
   ScriptApp.newTrigger('cronSaludStockWH').timeBased().atHour(22).nearMinute(30).everyDays(1).create();
   Logger.log('[saludStock] cron instalado 22:30 daily');
-  return { ok: true };
+  return { ok: true, data: { instalado: true, hora: '22:30' } };
+}
+
+// [v2.43.56] Status del trigger — para diagnóstico desde el panel
+function verificarTriggerSalud() {
+  var encontrado = null;
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === 'cronSaludStockWH') {
+      encontrado = {
+        handler:  t.getHandlerFunction(),
+        tipo:     String(t.getEventType()),
+        tipoCron: String(t.getTriggerSource())
+      };
+    }
+  });
+  return {
+    ok: true,
+    data: {
+      instalado: !!encontrado,
+      detalle:   encontrado,
+      mensaje:   encontrado
+        ? 'Cron activo · corre diario a las 22:30'
+        : 'Cron NO instalado — ejecuta setupSaludStockTrigger una vez'
+    }
+  };
+}
+
+// [v2.43.56] Helper de retry para postToWarehouse con backoff.
+// Reintenta hasta N veces si el error es "Service Spreadsheets failed",
+// "rate limit", "quota", "timeout", etc. Backoff exponencial 2s/4s/8s.
+function _retryPostWHTransitorio(accion, params, maxIntentos) {
+  var max = maxIntentos || 3;
+  var ultimoErr = null;
+  var delays = [2000, 4000, 8000];
+  for (var i = 0; i < max; i++) {
+    try {
+      var r = postToWarehouse(accion, params);
+      if (r && r.ok !== false) return r;
+      ultimoErr = (r && r.error) || 'sin respuesta';
+      var et = String(ultimoErr).toLowerCase();
+      var transit = et.indexOf('service spreadsheets') >= 0 ||
+                    et.indexOf('rate limit') >= 0 ||
+                    et.indexOf('quota') >= 0 ||
+                    et.indexOf('failed while accessing') >= 0 ||
+                    et.indexOf('timeout') >= 0;
+      if (!transit) return r;
+      Logger.log('[retry] ' + accion + ' fallo transitorio intento ' + (i + 1) + ': ' + ultimoErr);
+    } catch(e) {
+      ultimoErr = e.message;
+      Logger.log('[retry] ' + accion + ' excepcion intento ' + (i + 1) + ': ' + ultimoErr);
+    }
+    if (i < max - 1) {
+      try { Utilities.sleep(delays[i] || 2000); } catch(_){}
+    }
+  }
+  return { ok: false, error: 'Tras ' + max + ' intentos: ' + ultimoErr };
 }

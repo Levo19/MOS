@@ -122,6 +122,7 @@ function _route(method, e) {
       case 'wh_aceptarTeoricoAlerta':        return postToWarehouse('aceptarTeoricoAlerta', params);
       case 'cronSaludStockWH':               return cronSaludStockWH();
       case 'setupSaludStockTrigger':         return setupSaludStockTrigger();
+      case 'verificarTriggerSalud':          return verificarTriggerSalud();
       // [v2.43.30] Horarios apps + custom por usuario
       case 'getHorariosApps':               return getHorariosApps();
       case 'setHorarioApp':                 return setHorarioApp(params);
