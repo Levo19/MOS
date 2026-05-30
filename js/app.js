@@ -27598,16 +27598,29 @@ const MOS = (() => {
       if (!ok) return;
       _espiaV2Cerrar('cambio');
     }
-    // [v2.43.59] Pedir clave admin tier 3 ANTES de crear sesión
-    const claveAdmin = await new Promise((resolve) => {
-      _modalConfirm(`Para iniciar monitoreo en vivo de "${d.Nombre_Equipo || idDispositivo}", ingresá tu clave global+personal (8 dígitos).\n\nSolo MASTER puede usar esta función.`, {
-        warning: true,
+    // [v2.43.64] Pedir clave admin tier 3 ANTES de crear sesión.
+    // Bug histórico: v2.43.59 usaba _modalConfirm con promptInput, pero esa
+    // función NO soporta inputs (es solo Sí/No), por eso devolvía true y el
+    // regex /^\d{8}$/ fallaba → toast "Operación cancelada o clave inválida".
+    // Fix: usar _modalPrompt que sí pinta input password.
+    const claveAdmin = await _modalPrompt(
+      `Para iniciar monitoreo en vivo de "${d.Nombre_Equipo || idDispositivo}":`,
+      '',
+      {
         titulo: '🛰️ Autorización Master',
-        promptInput: { type: 'password', maxlength: 8, placeholder: '••••••••' }
-      }).then(v => resolve(v));
-    });
-    if (!claveAdmin || !/^\d{8}$/.test(String(claveAdmin))) {
-      toast('Operación cancelada o clave inválida', 'warn');
+        okText: 'Conectar',
+        placeholder: '••••••••',
+        inputType: 'password',
+        inputMode: 'numeric',
+        maxlength: 8
+      }
+    );
+    if (claveAdmin === false || claveAdmin == null) {
+      // Cancelado por el user — sin toast estridente
+      return;
+    }
+    if (!/^\d{8}$/.test(String(claveAdmin))) {
+      toast('La clave debe ser 8 dígitos (4 globales + 4 personales)', 'warn');
       return;
     }
     _espiaSfx('pop');
