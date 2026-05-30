@@ -47,6 +47,30 @@ function espiaCrearSesion(params) {
   // [v2.43.59] Limpiar sesiones expiradas como mantenimiento on-write
   try { _purgarSesionesAntiguas(); } catch(_){}
 
+  // [v2.43.62] Detectar sesión PENDIENTE/CONECTANDO/EN_VIVO para mismo deviceId
+  // (lock al buscar+crear para evitar race entre 2 masters).
+  var lockCre = LockService.getScriptLock();
+  try { lockCre.waitLock(10000); } catch(_) { return { ok: false, error: 'Lock timeout' }; }
+  try {
+    var shCheck = _getHojaSignaling();
+    var dataC = shCheck.getDataRange().getValues();
+    var hdrsC = dataC[0];
+    var iDev = hdrsC.indexOf('deviceId');
+    var iEst = hdrsC.indexOf('estado');
+    var iFch = hdrsC.indexOf('fecha');
+    for (var ci = dataC.length - 1; ci >= 1; ci--) {
+      if (String(dataC[ci][iDev]) !== deviceId) continue;
+      var estC = String(dataC[ci][iEst] || '').toUpperCase();
+      if (estC === 'CERRADA') continue;
+      var fchC = dataC[ci][iFch];
+      var fchMs = fchC instanceof Date ? fchC.getTime() : new Date(fchC).getTime();
+      // Si la sesión vieja aún no expiró → bloquear
+      if ((Date.now() - fchMs) < ESPIA_TTL_MS) {
+        return { ok: false, error: 'Ya hay una sesión activa con este dispositivo. Espera ' + Math.ceil((ESPIA_TTL_MS - (Date.now() - fchMs)) / 60000) + 'min o cierra la anterior.' };
+      }
+    }
+  } finally { try { lockCre.releaseLock(); } catch(_){} }
+
   var sesionId = 'ESP-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
   var ahora = new Date();
 
@@ -97,7 +121,26 @@ function espiaSubirRespuesta(params) {
   var sesionId = String(params.sesionId || '').trim();
   var sdp      = String(params.sdp || '');
   if (!sesionId || !sdp) return { ok: false, error: 'Requiere sesionId y sdp' };
+  // [v2.43.62] Validar transición FSM
+  var rowChk = _buscarSesion(sesionId);
+  if (!rowChk) return { ok: false, error: 'Sesión no encontrada' };
+  if (!_validarTransicionEstado(rowChk.estado, 'CONECTANDO')) {
+    return { ok: false, error: 'Transición inválida: ' + rowChk.estado + '→CONECTANDO' };
+  }
   return _actualizarColumnaSesion(sesionId, 'sdpRespuesta', sdp, { estado: 'CONECTANDO' });
+}
+
+// [v2.43.62] FSM válida del espía
+function _validarTransicionEstado(actual, nuevo) {
+  var a = String(actual || '').toUpperCase();
+  var n = String(nuevo || '').toUpperCase();
+  var TRANS = {
+    'PENDIENTE':  ['CONECTANDO', 'CERRADA'],
+    'CONECTANDO': ['EN_VIVO', 'CERRADA'],
+    'EN_VIVO':    ['CERRADA'],
+    'CERRADA':    []
+  };
+  return (TRANS[a] || []).indexOf(n) >= 0;
 }
 
 function espiaLeerRespuesta(params) {

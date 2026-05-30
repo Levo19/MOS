@@ -1190,7 +1190,13 @@ const MOS = (() => {
       if (idp) skuKeys[sku].add(idp);
       skuKeys[sku].add(sku);
     });
-    // Sumar equivalentes
+    // [v2.43.62] Sumar equivalentes — bidireccional para tolerar huérfanos.
+    // ANTES: solo agregaba el equiv a skuKeys[canónico]. Si el canónico estaba
+    // borrado pero el equivalente seguía en S.productos como huérfano, su
+    // rotación se perdía (mostraba "sin movimiento" pese a tener ventas).
+    // AHORA: además agregamos cada equiv como KEY propia apuntando a su CB +
+    // el sku del canónico, así un producto huérfano con skuBase=cbEquiv suma
+    // su rotación + la del canónico difunto (datos históricos preservados).
     if (S.equivMap) {
       Object.keys(S.equivMap).forEach(sku => {
         const skuN = norm(sku);
@@ -1199,7 +1205,12 @@ const MOS = (() => {
         arr.forEach(e => {
           const cb = typeof e === 'string' ? e : (e && (e.codigoBarra || e.cbEquiv));
           const v = norm(cb);
-          if (v) skuKeys[skuN].add(v);
+          if (!v) return;
+          skuKeys[skuN].add(v);
+          // Huérfano: este equiv también puede ser sku propio
+          if (!skuKeys[v]) skuKeys[v] = new Set();
+          skuKeys[v].add(v);
+          skuKeys[v].add(skuN);
         });
       });
     }
@@ -2443,7 +2454,10 @@ const MOS = (() => {
       if (mInfo.field === 'desc' && rawQ) hlDesc = _highlightExact(hlDesc.replace(/<\/?mark[^>]*>/g, ''), rawQ);
       // Clase extra cuando la card ganó por match exacto al 100% — gana glow
       const matchExactoCls = (mInfo.score >= 95) ? ' cat-card-match-exacto' : '';
-      const staggerIdx = Math.min(idx, 20); // tope para no esperar mil ms en listas grandes
+      // [v2.43.62] Stagger consistente: solo primeras 12 cards animan en cascada,
+      // el resto aparece con --i:0 (sin delay). Antes idx>20 quedaban TODAS apiladas
+      // en el mismo frame (=20*40ms=800ms) lo que se veía como "pop colectivo" raro.
+      const staggerIdx = idx < 12 ? idx : 0;
 
       // Badges
       const badgeCat  = base.idCategoria ? `<span class="badge badge-gray text-xs">${base.idCategoria}</span>` : '';
@@ -4647,12 +4661,21 @@ const MOS = (() => {
       toast('⚠ Error guardando foto: ' + e.message, 'error', 6000);
     });
   }
-  // Mini confetti optimista (sin librería externa)
+  // [v2.43.62] Confetti con cleanup garantizado:
+  // - Marca data-confetti=1 para purgar zombies si quedaron de invocaciones anteriores
+  // - setTimeout fuera del try para que SIEMPRE limpie aunque el render falle a mitad
+  // - Si appendChild final falla, limpia inmediato
   function _catFotoConfetti() {
+    // Purgar zombies de invocaciones anteriores que no se limpiaron
+    document.querySelectorAll('[data-confetti="cat-foto"]').forEach(el => {
+      try { el.remove(); } catch(_){}
+    });
+    const cont = document.createElement('div');
+    cont.dataset.confetti = 'cat-foto';
+    cont.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:300';
+    let attached = false;
     try {
       const colors = ['#10b981','#6366f1','#f59e0b','#ec4899','#22d3ee'];
-      const cont = document.createElement('div');
-      cont.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:300';
       for (let i = 0; i < 24; i++) {
         const piece = document.createElement('div');
         const c = colors[i % colors.length];
@@ -4668,8 +4691,12 @@ const MOS = (() => {
         });
       }
       document.body.appendChild(cont);
-      setTimeout(() => cont.remove(), 1400);
+      attached = true;
     } catch(_){}
+    // Cleanup garantizado fuera del try
+    setTimeout(() => {
+      try { cont.remove(); } catch(_){}
+    }, attached ? 1400 : 0);
   }
 
   // [v2.43.37] Modal rotación: gráfico minimalista + insight + recomendación

@@ -1701,23 +1701,29 @@ function _rangoFechas(desde, hasta) {
 // requests UI. El endpoint solo LEE de la hoja, instantáneo.
 // ============================================================
 
-// Job que corre el trigger horario — sync de HOY + últimos 3 días
+// Job que corre el trigger horario — sync de HOY + ventana rotativa
+// [v2.43.62] REDISEÑADO: 15 fetches en 1 ejecución timeoutea (87% error).
+// Ahora HOY siempre + 5 días recientes en cada tick + ventana rotativa
+// 0..14 distribuida por hora del día. Cada ejecución hace ≤6 fetches
+// → cabe holgado en los 6min de Apps Script.
 function _liqSyncJob() {
   try {
     var hoy = _liqHoy();
-    Logger.log('[LiqSyncJob] inicio · hoy=' + hoy);
+    Logger.log('[LiqSyncJob v2.43.62] inicio · hoy=' + hoy);
+    // 1. HOY siempre — es el más sensible
     try { _liqDiaSync(hoy); } catch(e1) { Logger.log('  HOY error: ' + e1.message); }
-    // [v2.41.60] Ampliado de 3 a 14 días — cubre reauditorías retroactivas
-    // (admin que edita un día pasado, eval que llega tarde, columna nueva
-    // que necesita backfill). Sync solo toca montos auto (envasado/base/meta);
-    // bonificacion/sancion/estado se preservan (LIQUIDACIONES_DIA es la fuente).
-    for (var dk = 1; dk <= 14; dk++) {
-      try {
-        var fDk = _fechaOffset(hoy, -dk);
-        _liqDiaSync(fDk);
-      } catch(e2) { Logger.log('  -' + dk + 'd error: ' + e2.message); }
+    // 2. Últimos 5 días siempre (ventana operativa diaria)
+    for (var dk = 1; dk <= 5; dk++) {
+      try { _liqDiaSync(_fechaOffset(hoy, -dk)); }
+      catch(e2) { Logger.log('  -' + dk + 'd error: ' + e2.message); }
     }
-    Logger.log('[LiqSyncJob] fin OK');
+    // 3. Día rotativo histórico (6..14) según hora actual.
+    // Hora 0..23 mapea a offset 6..14 vía módulo, cubre toda la ventana en ≤24h.
+    var hora = new Date().getHours();
+    var offsetRotativo = 6 + (hora % 9); // 6..14
+    try { _liqDiaSync(_fechaOffset(hoy, -offsetRotativo)); }
+    catch(e3) { Logger.log('  rot -' + offsetRotativo + 'd error: ' + e3.message); }
+    Logger.log('[LiqSyncJob] fin OK · cubrió hoy + 1-5 + rot-' + offsetRotativo);
   } catch(e) { Logger.log('[LiqSyncJob] fatal: ' + e.message); }
 }
 
