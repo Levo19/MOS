@@ -1936,7 +1936,13 @@ function cierreNocturnoTodos() {
         }
         try {
           if (iFL >= 0)   dispoSh.getRange(rd + 1, iFL + 1).setValue('1');
-          if (iFLts >= 0) dispoSh.getRange(rd + 1, iFLts + 1).setValue(nowStrUTC);
+          // [v2.43.60] Forzar formato TEXTO (@) en la columna ANTES de setValue
+          // para que Google Sheets no auto-parsee el ISO como Date local.
+          // Sin esto Sheets convertía a Date object con timezone del spreadsheet
+          // (Lima UTC-5), generando errores de 12h al leer de vuelta.
+          if (iFLts >= 0) {
+            dispoSh.getRange(rd + 1, iFLts + 1).setNumberFormat('@').setValue(nowStrUTC);
+          }
           resultado.devices.marcados++;
         } catch(eD) {
           resultado.devices.errores++;

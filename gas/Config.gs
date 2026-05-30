@@ -838,16 +838,32 @@ function consultarEstadoDispositivo(params) {
     if (iSus >= 0 && data[i][iSus]) sheet.getRange(i + 1, iSus + 1).setValue('');
     var fw = iFW >= 0 ? String(data[i][iFW] || '') : '';
     var fl = iFL >= 0 ? String(data[i][iFL] || '') : '';
-    var flTs = iFLts >= 0 ? String(data[i][iFLts] || '') : '';
+    // [v2.43.60] FIX TIMEZONE: si Sheets auto-parseó el ISO al guardar
+    // → getValues devuelve Date object → String(Date) da el toString humano
+    // (ej "Fri May 30 2026 12:26:00 GMT-0500") que el frontend interpretaba mal.
+    // Convertimos explícitamente a ISO UTC con Z final para garantizar
+    // que el frontend reciba siempre el mismo formato.
+    var flTsRaw = iFLts >= 0 ? data[i][iFLts] : '';
+    var flTs = '';
+    if (flTsRaw) {
+      if (flTsRaw instanceof Date && !isNaN(flTsRaw.getTime())) {
+        flTs = flTsRaw.toISOString();   // Date object → "2026-05-30T17:26:00.000Z"
+      } else {
+        flTs = String(flTsRaw);  // string ya en formato adecuado
+        // Si no tiene Z ni offset, asumir UTC (lo que escribimos) y agregar Z
+        if (flTs && !/[zZ]$/.test(flTs) && !/[+-]\d{2}:?\d{2}$/.test(flTs)) {
+          // Intentar convertir si parece "Fri May 30 ..." humano
+          var parsed = new Date(flTs);
+          if (!isNaN(parsed.getTime())) flTs = parsed.toISOString();
+        }
+      }
+    }
     return { ok: true, data: {
       registrado:    true,
       estado:        String(data[i][iEst] || ''),
       nombre:        data[i][iNom] || '',
       app:           data[i][iApp] || '',
       forzar_wizard: fw === '1' || fw.toLowerCase() === 'true',
-      // [v2.41.76] Cuando el cron 23h corre, marca '1'. La PWA cierra
-      // sesión + caja (si aplica) y va al login. Cliente debe llamar
-      // 'marcarLogoutHonrado' para que el flag no quede en bucle.
       forzar_logout:    fl === '1' || fl.toLowerCase() === 'true',
       logout_auto_ts:   flTs
     }};
