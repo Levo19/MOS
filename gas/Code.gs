@@ -137,6 +137,18 @@ function _route(method, e) {
       // [v2.43.51] Purga de catálogo (solo MASTER, tier 3)
       case 'getCandidatosEliminacion':       return getCandidatosEliminacion(params);
       case 'eliminarItemsCatalogo':          return eliminarItemsCatalogo(params);
+      // [v2.43.57] Modo espía WebRTC — signaling p2p admin ↔ dispositivo
+      case 'espiaCrearSesion':               return espiaCrearSesion(params);
+      case 'espiaSubirOferta':               return espiaSubirOferta(params);
+      case 'espiaLeerOferta':                return espiaLeerOferta(params);
+      case 'espiaSubirRespuesta':            return espiaSubirRespuesta(params);
+      case 'espiaLeerRespuesta':             return espiaLeerRespuesta(params);
+      case 'espiaAgregarIce':                return espiaAgregarIce(params);
+      case 'espiaLeerIce':                   return espiaLeerIce(params);
+      case 'espiaEstadoSesion':              return espiaEstadoSesion(params);
+      case 'espiaReportarStreams':           return espiaReportarStreams(params);
+      case 'espiaCerrarSesion':              return espiaCerrarSesion(params);
+      case 'espiaSubirChunk':                return espiaSubirChunk(params);
       case 'wh_getDevolucionesZona':         return postToWarehouse('getDevolucionesZona', params);
       case 'wh_getDevolucionDetalle':        return postToWarehouse('getDevolucionDetalle', params);
       case 'wh_confirmarRecepcionDevolucion': return postToWarehouse('confirmarRecepcionDevolucion', params);

