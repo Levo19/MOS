@@ -1164,11 +1164,16 @@ const MOS = (() => {
       // [v2.43.42] Usar agregación grupal (canónico + presentaciones + equivalentes)
       let serie = _serieRotacionAgregada(p);
       const productos = cache.productos || {};
-      // [v2.43.41] Mostrar "cargando…" SOLO si la promesa sigue en vuelo.
-      // Una vez respondió (con éxito o error) tratamos como vacío real.
-      const enVuelo = !!S._rotacionSemanalLoading || cache._loading === true;
+      // [v2.43.45] "Cargando…" solo si:
+      //   1. Hay una promesa en vuelo Y no han pasado más de 20s desde que arrancó
+      //   2. Sin productos cacheados aún
+      // Si pasó el timeout o ya hay error en el cache → tratar como vacío.
+      const tsInicio = S._rotacionSemanalLoadingStart || 0;
+      const pasoTimeout = (Date.now() - tsInicio) > 22000;
+      const enVuelo = !!S._rotacionSemanalLoading && !pasoTimeout && cache._loading === true;
       const hayData = cache.productos && Object.keys(cache.productos).length > 0;
-      if (enVuelo && !hayData) {
+      const huboError = !!cache._error;
+      if (enVuelo && !hayData && !huboError) {
         return `<div class="cat-spark-wrap" style="font-size:9px;color:#475569;opacity:.6">📦 cargando…</div>`;
       }
       // Sin rotación nunca
@@ -1786,34 +1791,136 @@ const MOS = (() => {
   // Fix: listener PERSISTENTE registrado UNA sola vez (flag _filtroCloseRegistered)
   // que chequea si el panel está abierto Y el click es fuera del wrap.
   // El botón usa stopPropagation para no auto-cerrarse.
+  // [v2.43.45 SOLUCIÓN NUCLEAR]
+  // El panel original vive dentro de #catFiltroWrap que hereda overflow:hidden
+  // de .cat-tool-btn. Aunque forzamos overflow:visible, en algún viewport o
+  // navegador puede no aplicar. Solución definitiva: crear un panel CLON en
+  // document.body con position:fixed y z-index máximo. Imposible recortarlo.
   function toggleFiltroCat(ev) {
     if (ev && ev.stopPropagation) ev.stopPropagation();
-    const panel = $('catFiltroPanel');
-    if (!panel) {
-      console.warn('[filtro] catFiltroPanel no existe en DOM');
+    if (ev && ev.preventDefault) ev.preventDefault();
+    console.log('[filtro] click recibido, abriendo panel flotante');
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+
+    // Si ya hay un panel flotante abierto, cerrarlo (toggle)
+    const existente = document.getElementById('catFiltroPanelFloat');
+    if (existente) {
+      existente.remove();
       return;
     }
-    try { _opsBeep && _opsBeep('tac'); } catch(_){}
-    const isOpen = !panel.classList.contains('hidden');
-    // [v2.43.43] Defensa anti-overflow:hidden — forzar al wrap padre que no recorte
-    const wrap = $('catFiltroWrap');
-    if (wrap) {
-      wrap.style.overflow = 'visible';
-      wrap.style.position = 'relative';
-      wrap.style.zIndex   = '50';
-    }
-    if (isOpen) { panel.classList.add('hidden'); return; }
+    // Ocultar el panel original por las dudas
+    const orig = document.getElementById('catFiltroPanel');
+    if (orig) orig.classList.add('hidden');
+
+    const btn = document.getElementById('btnFiltrosCat');
+    if (!btn) { console.warn('[filtro] btnFiltrosCat no existe'); return; }
+    const rect = btn.getBoundingClientRect();
+    // Posición del panel: justo debajo del botón, alineado a la derecha del btn
+    const panelW = Math.min(320, window.innerWidth - 16);
+    let left = rect.right - panelW;
+    if (left < 8) left = 8;
+    if (left + panelW > window.innerWidth - 8) left = window.innerWidth - panelW - 8;
+    let top = rect.bottom + 6;
+    // Si está muy cerca del fondo, abrir hacia arriba
+    if (top + 380 > window.innerHeight) top = Math.max(8, rect.top - 380 - 6);
+
+    // Categorías
     const productos = Array.isArray(S.productos) ? S.productos : [];
     const cats = [...new Set(productos.map(p => p && p.idCategoria).filter(Boolean))].sort();
-    _renderFiltroCategList(cats);
-    _refrescarFiltroOrdenUI && _refrescarFiltroOrdenUI();
-    panel.classList.remove('hidden');
-    // [v2.43.43] Forzar visibilidad inline también — por si algún CSS lo oculta
-    panel.style.display = '';
-    panel.style.visibility = 'visible';
-    panel.style.opacity = '1';
-    panel.style.zIndex = '9000';
-    _registrarCierreFiltroCat();
+    const curCat = _catFiltros.categoria;
+    const curOrd = _catFiltros.orden || '';
+    const tiposLabels = { envasable:'⚗️ Envasable', conPres:'📦 Con pres.', derivado:'🔗 Derivado', inactivo:'🚫 Inactivos' };
+    const tiposHtml = Object.entries(tiposLabels).map(([k, lbl]) => {
+      const on = _catFiltros.tipos.has(k);
+      return `<div class="cat-fp-chk${on ? ' is-on' : ''}" data-tipo="${k}" style="padding:7px 9px;background:${on ? 'rgba(99,102,241,.2)' : 'rgba(30,41,59,.5)'};border:1px solid ${on ? '#6366f1' : '#334155'};border-radius:6px;cursor:pointer;font-size:11px;color:#cbd5e1;display:flex;align-items:center;gap:6px;margin-bottom:3px;transition:all .15s">
+        <span style="width:14px;height:14px;border-radius:3px;border:1.5px solid ${on ? '#6366f1' : '#475569'};background:${on ? '#6366f1' : 'transparent'};display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:900">${on ? '✓' : ''}</span>
+        <span>${lbl}</span>
+      </div>`;
+    }).join('');
+
+    const html = `<div id="catFiltroPanelFloat"
+      style="position:fixed;top:${top}px;left:${left}px;width:${panelW}px;max-height:80vh;overflow-y:auto;background:#0f172a;border:1px solid #334155;border-radius:12px;padding:14px;box-shadow:0 20px 50px -10px rgba(0,0,0,.7),0 0 0 1px rgba(99,102,241,.2);z-index:99999;animation:catFpIn .2s ease-out">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:12px;font-weight:800;color:#a5b4fc;letter-spacing:.5px">🔍 FILTROS</div>
+        <button onclick="MOS._cerrarFiltroFloat()" style="background:none;border:none;color:#64748b;font-size:18px;cursor:pointer;padding:0 4px;font-weight:900">×</button>
+      </div>
+      <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:6px;letter-spacing:.5px">Categoría</div>
+      <div id="catFpCategList" style="max-height:140px;overflow-y:auto;margin-bottom:12px">
+        <div class="cat-fp-radio${!curCat ? ' is-on' : ''}" data-cat="" style="padding:6px 9px;cursor:pointer;font-size:11px;color:${!curCat ? '#a5b4fc' : '#94a3b8'};border-radius:5px;background:${!curCat ? 'rgba(99,102,241,.15)' : 'transparent'}">Todas</div>
+        ${cats.map(c => `<div class="cat-fp-radio${curCat === c ? ' is-on' : ''}" data-cat="${_escapeHtml(c)}" style="padding:6px 9px;cursor:pointer;font-size:11px;color:${curCat === c ? '#a5b4fc' : '#94a3b8'};border-radius:5px;background:${curCat === c ? 'rgba(99,102,241,.15)' : 'transparent'}">${_escapeHtml(c)}</div>`).join('')}
+      </div>
+      <div style="border-top:1px solid #1e293b;padding-top:10px">
+        <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:6px;letter-spacing:.5px">Tipo de producto</div>
+        ${tiposHtml}
+      </div>
+      <div style="border-top:1px solid #1e293b;padding-top:10px;margin-top:10px">
+        <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:6px;letter-spacing:.5px">Ordenar por</div>
+        ${[
+          { k: '',         lbl: 'Alfabético (default)' },
+          { k: 'rot_desc', lbl: '📦 Rotación: más vendidos primero' },
+          { k: 'rot_asc',  lbl: '🌙 Rotación: lentos primero' },
+          { k: 'mrg_desc', lbl: '💎 Margen: alto → bajo' },
+          { k: 'mrg_asc',  lbl: '⚠ Margen: bajo → alto' }
+        ].map(o => `<div class="cat-fp-ord${curOrd === o.k ? ' is-on' : ''}" data-orden="${o.k}" style="padding:7px 9px;cursor:pointer;font-size:11px;color:${curOrd === o.k ? '#a5b4fc' : '#94a3b8'};border-radius:5px;background:${curOrd === o.k ? 'rgba(99,102,241,.15)' : 'transparent'};margin-bottom:2px">${o.lbl}</div>`).join('')}
+      </div>
+      <div style="border-top:1px solid #1e293b;padding-top:10px;margin-top:10px;text-align:right">
+        <button onclick="MOS._limpiarYCerrar()" style="background:rgba(248,113,113,.15);color:#f87171;border:1px solid rgba(248,113,113,.4);border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">Limpiar todo</button>
+      </div>
+      <style>@keyframes catFpIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}</style>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+
+    // Wire listeners
+    const float = document.getElementById('catFiltroPanelFloat');
+    if (!float) return;
+    float.addEventListener('click', e => e.stopPropagation());
+    float.querySelectorAll('.cat-fp-radio').forEach(el => {
+      el.addEventListener('click', () => {
+        setFiltroCategoria(el.dataset.cat || '');
+        _cerrarFiltroFloat();
+      });
+    });
+    float.querySelectorAll('.cat-fp-chk').forEach(el => {
+      el.addEventListener('click', () => {
+        toggleFiltroTipo(el.dataset.tipo);
+        // refresh visual del check
+        el.classList.toggle('is-on');
+      });
+    });
+    float.querySelectorAll('.cat-fp-ord').forEach(el => {
+      el.addEventListener('click', () => {
+        setFiltroOrden(el.dataset.orden || '');
+        _cerrarFiltroFloat();
+      });
+    });
+
+    // Click fuera cierra + ESC cierra (una sola vez)
+    setTimeout(() => {
+      const closeOnOutside = (e) => {
+        const fp = document.getElementById('catFiltroPanelFloat');
+        if (!fp) { document.removeEventListener('click', closeOnOutside); return; }
+        if (fp.contains(e.target) || (btn && btn.contains(e.target))) return;
+        _cerrarFiltroFloat();
+        document.removeEventListener('click', closeOnOutside);
+      };
+      document.addEventListener('click', closeOnOutside);
+      const closeOnEsc = (e) => {
+        if (e.key !== 'Escape') return;
+        _cerrarFiltroFloat();
+        document.removeEventListener('keydown', closeOnEsc);
+      };
+      document.addEventListener('keydown', closeOnEsc);
+    }, 0);
+
+    toast('🔍 Filtros abiertos', 'info', 1200);
+  }
+  function _cerrarFiltroFloat() {
+    const fp = document.getElementById('catFiltroPanelFloat');
+    if (fp) fp.remove();
+  }
+  function _limpiarYCerrar() {
+    limpiarFiltrosCat();
+    _cerrarFiltroFloat();
   }
   function _registrarCierreFiltroCat() {
     // Idempotente: solo registra una vez
@@ -18710,16 +18817,20 @@ const MOS = (() => {
       return S._rotacionSemanalCache;
     }
     // [v2.43.41] Guard de "cargando in-flight" para evitar disparos múltiples
-    if (S._rotacionSemanalLoading) return S._rotacionSemanalLoading;
-    // Marcar inmediato un cache vacío para que el sparkline NO diga "cargando"
-    // mientras tarda — mejor mostrar "sin rotación" momentáneo que un eterno spinner
+    // [v2.43.45] Si la promesa anterior lleva más de 25s, abandonarla — está colgada
+    const tsAnterior = S._rotacionSemanalLoadingStart || 0;
+    if (S._rotacionSemanalLoading && (Date.now() - tsAnterior) < 25000) {
+      return S._rotacionSemanalLoading;
+    }
     if (!S._rotacionSemanalCache || !S._rotacionSemanalCache.productos) {
       S._rotacionSemanalCache = { etiquetas: [], productos: {}, _loading: true };
     }
+    S._rotacionSemanalLoadingStart = Date.now();
     const setear = (d) => {
       S._rotacionSemanalCache = d;
       S._rotacionSemanalCacheTs = Date.now();
       S._rotacionSemanalLoading = null;
+      S._rotacionSemanalLoadingStart = 0;
       if (S.tab === 'catalogo' && typeof renderCatalogo === 'function') {
         try { renderCatalogo(); } catch(_){}
       }
@@ -35929,6 +36040,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     toggleFiltroCat, setFiltroCategoria, toggleFiltroTipo, limpiarFiltrosCat, toggleFiltroAlertas, toggleAlertPop,
     // [v2.43.37] Catálogo: filtro de orden + modal de rotación
     setFiltroOrden, abrirModalRotacion, cerrarModalRotacion,
+    // [v2.43.45] Panel flotante de filtros (nuclear)
+    _cerrarFiltroFloat, _limpiarYCerrar,
     // [v2.43.38] Foto del producto: subir/cambiar (skuBase como key)
     abrirModalFotoProducto, cerrarModalFotoProducto,
     _catFotoOnFileSelect, _catFotoTomar, _catFotoGuardar,
