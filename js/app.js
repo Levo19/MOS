@@ -4077,13 +4077,33 @@ const MOS = (() => {
     const accent2 = `hsl(${hue},70%,40%)`;
     const fotoActualUrl = String(p.fotoUrl || p.logoUrl || '').trim();
 
-    // Resumen de qué productos comparten esta foto
+    // Resumen de qué productos comparten esta foto:
+    // canónico + presentaciones (PRODUCTOS_MASTER mismo skuBase)
+    // + equivalentes (S.equivMap[skuBase])
     const compartidos = productos.filter(x => String(x.skuBase || x.idProducto) === sku);
-    const listaCompartidos = compartidos.map(x => {
+    const listaCanonicos = compartidos.map(x => {
       const factor = parseFloat(x.factorConversion) || 1;
-      const tag = factor === 1 ? 'canónico' : `×${factor}`;
-      return `<li style="font-size:11px;color:#cbd5e1;line-height:1.5"><span style="color:${accent}">▸</span> ${_escapeHtml(x.descripcion || x.idProducto)} <span style="color:#64748b;font-size:9px">${tag}</span></li>`;
+      const tag = factor === 1 ? 'canónico' : `×${factor} presentación`;
+      const tagColor = factor === 1 ? accent : '#94a3b8';
+      return `<li style="font-size:11px;color:#cbd5e1;line-height:1.5;padding:2px 0">
+        <span style="color:${accent}">▸</span> ${_escapeHtml(x.descripcion || x.idProducto)}
+        <span style="color:${tagColor};font-size:9px;font-weight:700;margin-left:4px">${tag}</span>
+      </li>`;
     }).join('');
+    // [v2.43.39 FIX] Agregar equivalentes desde S.equivMap (faltaban en la lista)
+    const equivs = (S.equivMap && S.equivMap[sku]) || [];
+    const listaEquivs = equivs.map(e => {
+      // e puede ser objeto {codigoBarra, descripcion} o string. Adaptamos.
+      const codigo = typeof e === 'string' ? e : (e.codigoBarra || e.cbEquiv || '');
+      const desc   = typeof e === 'object' ? (e.descripcion || e.descEquiv || codigo) : codigo;
+      return `<li style="font-size:11px;color:#cbd5e1;line-height:1.5;padding:2px 0">
+        <span style="color:#f59e0b">⇆</span> ${_escapeHtml(desc)}
+        <span style="color:#f59e0b;font-size:9px;font-weight:700;margin-left:4px">equivalente</span>
+        ${codigo && codigo !== desc ? `<span style="color:#64748b;font-size:9px;margin-left:4px;font-family:monospace">${_escapeHtml(codigo)}</span>` : ''}
+      </li>`;
+    }).join('');
+    const listaCompartidos = listaCanonicos + listaEquivs;
+    const totalCompartidos = compartidos.length + equivs.length;
 
     const html = `<div class="cat-foto-backdrop" id="catFotoModal" onclick="if(event.target===this)MOS.cerrarModalFotoProducto()"
                        style="position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(8px);z-index:200;display:flex;align-items:flex-end;justify-content:center;animation:catFotoBackIn .3s ease-out">
@@ -4140,7 +4160,10 @@ const MOS = (() => {
               <span style="font-size:18px">📷</span> Tomar foto (cámara)
             </button>
             <div style="border-top:1px solid #1e293b;padding-top:12px;margin-top:auto">
-              <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Se aplica a (${compartidos.length})</div>
+              <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">
+                Se aplica a (${totalCompartidos})
+                ${equivs.length ? `<span style="color:#f59e0b;font-weight:600;text-transform:none;font-size:9px;margin-left:4px">+ ${equivs.length} equiv.</span>` : ''}
+              </div>
               <ul style="list-style:none;padding:0;margin:0;max-height:120px;overflow-y:auto">${listaCompartidos}</ul>
             </div>
           </div>
@@ -18539,18 +18562,49 @@ const MOS = (() => {
   // Resultado: S._rotacionSemanalCache = { etiquetas: ['YYYY-Www',...],
   //                                         productos: { CB: [{semana,unidades}*8] } }
   // TTL 15 min (rotación cambia despacio).
+  //
+  // [v2.43.39] Manejo de errores robusto: si la API falla o el WH no tiene el
+  // endpoint (deployment viejo), seteamos un cache vacío PERO VÁLIDO para que
+  // el sparkline muestre "sin rotación" en vez de quedarse "cargando…" eterno.
   async function _cargarRotacionSemanal(force) {
     const TTL = 15 * 60 * 1000;
-    if (!force && S._rotacionSemanalCache && (Date.now() - (S._rotacionSemanalCacheTs || 0)) < TTL) {
+    if (!force && S._rotacionSemanalCache && S._rotacionSemanalCache.productos
+        && (Date.now() - (S._rotacionSemanalCacheTs || 0)) < TTL) {
       return S._rotacionSemanalCache;
     }
     try {
       const r = await API.post('wh_getRotacionSemanal', { semanas: 8 });
-      const d = (r && r.data) || r || {};
-      S._rotacionSemanalCache = d;
+      // Aceptar dos shapes: API.post puede desempaquetar data o no
+      const d = (r && r.data && r.data.productos) ? r.data
+              : (r && r.productos)                ? r
+              : null;
+      if (d) {
+        S._rotacionSemanalCache = d;
+        S._rotacionSemanalCacheTs = Date.now();
+        // Re-render del catálogo si está abierto para reemplazar el "cargando…"
+        if (S.tab === 'catalogo' && typeof renderCatalogo === 'function') {
+          try { renderCatalogo(); } catch(_){}
+        }
+        return d;
+      }
+      // Backend respondió pero sin shape esperado → marcar como vacío VÁLIDO
+      console.warn('[rotacion] respuesta sin productos:', r);
+      S._rotacionSemanalCache = { etiquetas: [], productos: {}, _error: 'sin_data' };
       S._rotacionSemanalCacheTs = Date.now();
-      return d;
-    } catch(_) { return {}; }
+      if (S.tab === 'catalogo' && typeof renderCatalogo === 'function') {
+        try { renderCatalogo(); } catch(_){}
+      }
+      return S._rotacionSemanalCache;
+    } catch(e) {
+      console.warn('[rotacion] error:', e && e.message);
+      // Cache vacío válido → sparkline muestra "sin rotación" en vez de cargando
+      S._rotacionSemanalCache = { etiquetas: [], productos: {}, _error: String(e && e.message || e) };
+      S._rotacionSemanalCacheTs = Date.now();
+      if (S.tab === 'catalogo' && typeof renderCatalogo === 'function') {
+        try { renderCatalogo(); } catch(_){}
+      }
+      return S._rotacionSemanalCache;
+    }
   }
 
   async function _cargarHorariosApps(force) {
