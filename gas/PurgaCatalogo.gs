@@ -46,6 +46,22 @@ function eliminarItemsCatalogo(params) {
   if (!params.claveAdmin) {
     return { ok: false, error: 'Requiere claveAdmin (8 dígitos)' };
   }
+  // [v2.43.52] Validar cada item antes de procesar — items malformados
+  // antes se ignoraban silenciosamente y el master pensaba que se eliminaron
+  var tiposValidos = { CANONICO: 1, PRESENTACION: 1, EQUIVALENTE: 1 };
+  for (var vi = 0; vi < params.items.length; vi++) {
+    var it = params.items[vi];
+    if (!it || typeof it !== 'object') {
+      return { ok: false, error: 'Item #' + (vi + 1) + ' inválido (no es objeto)' };
+    }
+    if (!it.id || String(it.id).trim() === '') {
+      return { ok: false, error: 'Item #' + (vi + 1) + ' sin id' };
+    }
+    var t = String(it.tipo || '').toUpperCase();
+    if (!tiposValidos[t]) {
+      return { ok: false, error: 'Item #' + (vi + 1) + ' tipo inválido: ' + it.tipo };
+    }
+  }
 
   // 2) Verificar clave (tier 3) Y rol MASTER explícitamente
   var auth = verificarClaveAdmin({
@@ -75,6 +91,16 @@ function eliminarItemsCatalogo(params) {
       nombre:     auth.data.nombre,
       detalle:    params.detalle || ''
     });
+    // [v2.43.52] Si el procesamiento detectó huérfanos, devolver error
+    // controlado al frontend (no eliminó nada — los huérfanos bloquearon)
+    if (resultado && resultado._purgaIntegridadFail) {
+      return {
+        ok: false,
+        error: resultado.mensaje,
+        huerfanos: resultado.huerfanos,
+        codigo: 'INTEGRIDAD'
+      };
+    }
     return { ok: true, data: resultado };
   } catch(e) {
     return { ok: false, error: e.message };
@@ -134,6 +160,46 @@ function _procesarEliminacionItems(items, ctx) {
       if (!foundEq) idsNoEncontrados.push(it.id + ' (EQUIVALENTE)');
     }
   });
+
+  // [v2.43.52] Validación integridad: si eliminás un canónico, sus presentaciones
+  // y equivalentes deben estar incluidos en el batch — si no, quedan huérfanos.
+  // Master debe seleccionar TODO el grupo.
+  var canonicosAEliminar = {};
+  pmRowsToDelete.forEach(function(r) {
+    var p = r.snapshot;
+    var f = parseFloat(p.factorConversion) || 1;
+    if (f === 1) canonicosAEliminar[String(p.idProducto)] = String(p.skuBase || p.idProducto);
+  });
+  var huerfanosBloqueantes = [];
+  Object.keys(canonicosAEliminar).forEach(function(canId) {
+    var skuBaseDelCan = canonicosAEliminar[canId];
+    // Presentaciones (mismo skuBase, factor != 1) que NO estén en el batch
+    for (var pi = 1; pi < pmData.length; pi++) {
+      var sb = String(pmData[pi][pmIdxSku] || '').trim();
+      if (sb !== skuBaseDelCan) continue;
+      var idProdRow = String(pmData[pi][pmIdxId]);
+      if (idProdRow === canId) continue;  // el canónico mismo
+      // ¿Está en el batch?
+      var enBatch = pmRowsToDelete.some(function(r){ return String(r.snapshot.idProducto) === idProdRow; });
+      if (!enBatch) huerfanosBloqueantes.push(idProdRow + ' (presentación de ' + canId + ')');
+    }
+    // Equivalentes con ese skuBase no incluidos
+    for (var ej = 1; ej < eqData.length; ej++) {
+      var skuEq = String(eqData[ej][eqIdxSku] || '').trim();
+      if (skuEq !== skuBaseDelCan) continue;
+      var idEqRow = String(eqData[ej][eqIdxId]);
+      var enBatchEq = eqRowsToDelete.some(function(r){ return String(r.snapshot.idEquiv) === idEqRow; });
+      if (!enBatchEq) huerfanosBloqueantes.push(idEqRow + ' (equivalente de ' + skuBaseDelCan + ')');
+    }
+  });
+  if (huerfanosBloqueantes.length) {
+    return {
+      _purgaIntegridadFail: true,
+      huerfanos: huerfanosBloqueantes,
+      mensaje: 'Si eliminas el canónico debes incluir también sus presentaciones/equivalentes (' +
+               huerfanosBloqueantes.length + ' huérfanos)'
+    };
+  }
 
   // Registrar snapshots en PURGAS_HISTORICAS ANTES de eliminar
   // (si la eliminación falla, el snapshot queda como evidencia del intento)

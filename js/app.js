@@ -1811,7 +1811,6 @@ const MOS = (() => {
       return;
     }
     window._filtroLastToggle = now;
-    console.log('[filtro] click recibido, abriendo panel flotante');
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
 
     // Si ya hay un panel flotante abierto, cerrarlo (toggle)
@@ -1825,7 +1824,6 @@ const MOS = (() => {
     if (orig) orig.classList.add('hidden');
 
     const btn = document.getElementById('btnFiltrosCat');
-    console.log('[filtro] btn rect:', btn ? btn.getBoundingClientRect() : 'null');
 
     // Categorías
     const productos = Array.isArray(S.productos) ? S.productos : [];
@@ -1886,11 +1884,6 @@ const MOS = (() => {
       fpEl.addEventListener('click', e => {
         if (e.target === fpEl) _cerrarFiltroFloat();
       });
-      const r = fpEl.getBoundingClientRect();
-      const cs = getComputedStyle(fpEl);
-      console.log('[filtro] panel CREADO rect:', r,
-                  'display:', cs.display, 'opacity:', cs.opacity,
-                  'visibility:', cs.visibility, 'z-index:', cs.zIndex);
     } else {
       console.error('[filtro] FALLO: insertAdjacentHTML no creó el elemento');
       toast('⚠ Error creando filtro — revisa consola', 'error', 5000);
@@ -2035,8 +2028,16 @@ const MOS = (() => {
   }
   function _refrescarFiltroOrdenUI() {
     const cur = _catFiltros.orden || '';
+    // Panel original (.filtro-radio en #filtroOrdenList)
     document.querySelectorAll('#filtroOrdenList .filtro-radio').forEach(el => {
       el.classList.toggle('active', (el.dataset.orden || '') === cur);
+    });
+    // [v2.43.52] Panel flotante (.cat-fp-ord) — antes no se sincronizaba
+    document.querySelectorAll('.cat-fp-ord').forEach(el => {
+      const on = (el.dataset.orden || '') === cur;
+      el.classList.toggle('is-on', on);
+      el.style.color = on ? '#a5b4fc' : '#94a3b8';
+      el.style.background = on ? 'rgba(99,102,241,.15)' : 'transparent';
     });
   }
 
@@ -2314,30 +2315,29 @@ const MOS = (() => {
     }
 
     // [v2.43.37] Sort: si el usuario eligió un orden, usar ese.
-    // Si no hay orden custom, por score desc → descripción.
-    // Mientras se busca con query, el score gana siempre (más útil).
+    // [v2.43.52 PERF] Pre-cachear getRot/getMrg ANTES del sort. Antes el sort
+    // llamaba getRot N log N veces, y si el agregado se invalidaba, cada call
+    // reconstruía → O(N²). Ahora: 1 pasada O(N) + sort puramente numérico.
     const orden = _catFiltros.orden || '';
     if (orden && !qn) {
-      const getRot = g => {
+      const rotMap = {}, mrgMap = {};
+      result.forEach(g => {
+        const id = g.base.idProducto;
         try {
-          // [v2.43.42] Usar agregación grupal (canónico + equivs + pres)
           const serie = _serieRotacionAgregada(g.base) || [];
-          if (!serie.length) return -1;
-          return serie.reduce((s, x) => s + (parseFloat(x.unidades) || 0), 0) / serie.length;
-        } catch(_) { return -1; }
-      };
-      const getMrg = g => {
+          rotMap[id] = serie.length ? serie.reduce((s,x) => s + (parseFloat(x.unidades)||0), 0) / serie.length : -1;
+        } catch(_) { rotMap[id] = -1; }
         try {
           const mi = _calcularMargenInfo(g.base);
-          return mi ? mi.margen : -999;
-        } catch(_) { return -999; }
-      };
+          mrgMap[id] = mi ? mi.margen : -999;
+        } catch(_) { mrgMap[id] = -999; }
+      });
       result.sort((a, b) => {
-        let va, vb;
-        if (orden === 'rot_desc') { va = getRot(a); vb = getRot(b); return vb - va; }
-        if (orden === 'rot_asc')  { va = getRot(a); vb = getRot(b); return va - vb; }
-        if (orden === 'mrg_desc') { va = getMrg(a); vb = getMrg(b); return vb - va; }
-        if (orden === 'mrg_asc')  { va = getMrg(a); vb = getMrg(b); return va - vb; }
+        const ia = a.base.idProducto, ib = b.base.idProducto;
+        if (orden === 'rot_desc') return rotMap[ib] - rotMap[ia];
+        if (orden === 'rot_asc')  return rotMap[ia] - rotMap[ib];
+        if (orden === 'mrg_desc') return mrgMap[ib] - mrgMap[ia];
+        if (orden === 'mrg_asc')  return mrgMap[ia] - mrgMap[ib];
         return 0;
       });
     } else {
@@ -4521,19 +4521,30 @@ const MOS = (() => {
   function _catFotoGuardar(skuBase) {
     const st = window._catFotoState;
     if (!st || !st.fotoBase64) { toast('Selecciona una foto primero', 'warn'); return; }
-    // Optimismo: cerrar modal + toast + actualización local inmediata
     try { _opsBeep && _opsBeep('ok'); } catch(_){}
     cerrarModalFotoProducto();
     toast('✨ Foto guardando...', 'info', 2500);
-    // Actualizar TODAS las cards del skuBase con preview local (data URL)
+    // [v2.43.52] Snapshot fotoUrl previo POR producto para poder revertir
+    // si el backend rechaza. Antes el optimismo dejaba dataURL local cuando
+    // fallaba → al recargar el catálogo, la foto desaparecía silenciosa.
+    const fotosPrevias = new Map();
+    (S.productos || []).forEach(p => {
+      if (String(p.skuBase || p.idProducto) === skuBase) {
+        fotosPrevias.set(p.idProducto, p.fotoUrl || '');
+      }
+    });
     const dataUrl = 'data:' + st.mimeType + ';base64,' + st.fotoBase64;
     (S.productos || []).forEach(p => {
       if (String(p.skuBase || p.idProducto) === skuBase) p.fotoUrl = dataUrl;
     });
     if (typeof renderCatalogo === 'function') renderCatalogo();
-    // Mini confetti efecto
     _catFotoConfetti();
-    // Fire-and-forget al backend
+    const revertir = () => {
+      (S.productos || []).forEach(p => {
+        if (fotosPrevias.has(p.idProducto)) p.fotoUrl = fotosPrevias.get(p.idProducto);
+      });
+      if (typeof renderCatalogo === 'function') renderCatalogo();
+    };
     API.post('subirFotoProducto', {
       skuBase:    skuBase,
       fotoBase64: st.fotoBase64,
@@ -4549,10 +4560,12 @@ const MOS = (() => {
         }
         toast('✅ Foto guardada', 'success', 2500);
       } else {
-        toast('⚠ Error: ' + ((r && r.error) || 'no se pudo guardar'), 'error', 5000);
+        revertir();
+        toast('⚠ Error guardando foto: ' + ((r && r.error) || 'sin respuesta'), 'error', 6000);
       }
     }).catch(e => {
-      toast('⚠ Error: ' + e.message, 'error', 5000);
+      revertir();
+      toast('⚠ Error guardando foto: ' + e.message, 'error', 6000);
     });
   }
   // Mini confetti optimista (sin librería externa)
@@ -4745,9 +4758,35 @@ const MOS = (() => {
   function abrirCestaPurga(idProductoInicial) {
     if (!_esMasterSession()) { toast('Solo Master', 'error'); return; }
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
-    // Estado global de la cesta
-    window._purgaState = { sel: new Set(), filtroQ: '', soloSinVentas: false, idGrupoExpand: idProductoInicial };
+    // [v2.43.52] Si el cache de rotación está vacío, "sin ventas" daría
+    // falsos positivos peligrosos. Forzar carga antes de mostrar la cesta.
+    const cacheVacio = !S._rotacionSemanalCache
+      || !S._rotacionSemanalCache.productos
+      || Object.keys(S._rotacionSemanalCache.productos).length === 0;
+    window._purgaState = {
+      sel: new Set(),
+      filtroQ: '',
+      soloSinVentas: false,
+      idGrupoExpand: idProductoInicial,
+      cacheConfiable: !cacheVacio
+    };
     _renderCestaPurga();
+    if (cacheVacio && typeof _cargarRotacionSemanal === 'function') {
+      _cargarRotacionSemanal(true).then(() => {
+        const st = window._purgaState;
+        if (!st) return;
+        const c = S._rotacionSemanalCache;
+        st.cacheConfiable = !!(c && c.productos && Object.keys(c.productos).length > 0);
+        _renderCestaPurga();
+      }).catch(() => {});
+    }
+    // ESC cierra
+    const esc = (e) => {
+      if (e.key !== 'Escape') return;
+      cerrarCestaPurga();
+      document.removeEventListener('keydown', esc);
+    };
+    document.addEventListener('keydown', esc);
   }
   function cerrarCestaPurga() {
     const m = document.getElementById('cestaPurgaModal');
@@ -4888,12 +4927,17 @@ const MOS = (() => {
           <input type="text" placeholder="🔍 Filtrar por nombre…" value="${_escapeHtml(st.filtroQ)}"
                  oninput="MOS._purgaSetFiltro(this.value)"
                  style="flex:1;min-width:140px;background:#0a1424;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:7px 10px;font-size:12px;outline:none">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;color:#cbd5e1;background:${st.soloSinVentas ? 'rgba(16,185,129,.15)' : 'transparent'};border:1px solid ${st.soloSinVentas ? '#10b981' : '#334155'};padding:6px 10px;border-radius:8px;transition:all .15s">
-            <input type="checkbox" ${st.soloSinVentas ? 'checked' : ''}
+          <label style="display:flex;align-items:center;gap:6px;cursor:${st.cacheConfiable ? 'pointer' : 'not-allowed'};font-size:11px;color:#cbd5e1;background:${st.soloSinVentas ? 'rgba(16,185,129,.15)' : 'transparent'};border:1px solid ${st.soloSinVentas ? '#10b981' : '#334155'};padding:6px 10px;border-radius:8px;transition:all .15s;opacity:${st.cacheConfiable ? '1' : '.5'}"
+                 title="${st.cacheConfiable ? 'Filtrar items sin ventas (últ 8 sem)' : 'Cargando datos de ventas... espera unos segundos'}">
+            <input type="checkbox" ${st.soloSinVentas ? 'checked' : ''} ${st.cacheConfiable ? '' : 'disabled'}
                    onchange="MOS._purgaSetSoloSinVentas(this.checked)" style="accent-color:#10b981">
             <span>✨ Solo sin ventas</span>
           </label>
         </div>
+        ${!st.cacheConfiable ? `<div style="padding:8px 20px;background:rgba(251,191,36,.1);border-bottom:1px solid rgba(251,191,36,.3);font-size:10px;color:#fde68a;display:flex;align-items:center;gap:8px">
+          <span style="font-size:14px">⏳</span>
+          <span>Cargando datos de ventas… los stats de cada item pueden estar incompletos por unos segundos.</span>
+        </div>` : ''}
         <!-- Lista grupos -->
         <div style="flex:1;overflow-y:auto;padding:12px 20px;min-height:200px">
           ${gruposArr.length
@@ -5012,13 +5056,24 @@ const MOS = (() => {
     </div>`;
     document.body.insertAdjacentHTML('beforeend', html);
     setTimeout(() => { document.getElementById('confirmPurgaClave')?.focus(); }, 100);
+    // [v2.43.52] ESC cierra
+    const escConf = (e) => {
+      if (e.key !== 'Escape') return;
+      _cerrarConfirmPurga();
+      document.removeEventListener('keydown', escConf);
+    };
+    document.addEventListener('keydown', escConf);
   }
   function _cerrarConfirmPurga() {
     const m = document.getElementById('confirmPurgaModal');
     if (m) m.remove();
   }
   function _purgaValidarClave(v) {
-    const valido = /^\d{8}$/.test(String(v || ''));
+    // [v2.43.52] Sanitizar espacios al pegar (paste con "1234 5678")
+    const limpio = String(v || '').replace(/\s+/g, '');
+    const inp = document.getElementById('confirmPurgaClave');
+    if (inp && limpio !== v) inp.value = limpio;
+    const valido = /^\d{8}$/.test(limpio);
     const btn = document.getElementById('confirmPurgaBtn');
     const hint = document.getElementById('confirmPurgaHint');
     const input = document.getElementById('confirmPurgaClave');
@@ -5064,7 +5119,6 @@ const MOS = (() => {
       });
       if (r && r.ok !== false && r.data) {
         try { _opsBeep && _opsBeep('ok'); } catch(_){}
-        // Dissolve effect del modal
         const modal = document.getElementById('confirmPurgaModal');
         if (modal) {
           const card = modal.firstElementChild;
@@ -5073,8 +5127,12 @@ const MOS = (() => {
         }
         cerrarCestaPurga();
         const d = r.data;
-        toast(`🗑 Purgados: ${d.eliminadosProductos} productos + ${d.eliminadosEquivs} equivalentes`, 'success', 5000);
-        // Refrescar catálogo (recargar productos)
+        let msg = `🗑 Purgados: ${d.eliminadosProductos} productos + ${d.eliminadosEquivs} equivalentes`;
+        // [v2.43.52] Warning si hubo items no encontrados (otra purga concurrente)
+        if (Array.isArray(d.idsNoEncontrados) && d.idsNoEncontrados.length) {
+          msg += ` · ⚠ ${d.idsNoEncontrados.length} ya no existían`;
+        }
+        toast(msg, 'success', 6000);
         if (typeof loadCatalogo === 'function') {
           setTimeout(() => loadCatalogo({ force: true }).catch(()=>{}), 500);
         }
@@ -5086,10 +5144,22 @@ const MOS = (() => {
           setTimeout(() => { card.style.animation = ''; }, 1000);
         }
         const inp = document.getElementById('confirmPurgaClave');
-        if (inp) { inp.style.borderColor = '#ef4444'; inp.value = ''; inp.focus(); }
         const hint = document.getElementById('confirmPurgaHint');
-        if (hint) { hint.style.color = '#ef4444'; hint.textContent = '✗ ' + ((r && r.error) || 'Clave incorrecta'); }
-        if (btn) { btn.disabled = false; btn.innerHTML = '🗑 CONFIRMAR'; }
+        // [v2.43.52] Distinguir error de integridad (huérfanos) de clave incorrecta
+        if (r && r.codigo === 'INTEGRIDAD') {
+          if (inp) { inp.style.borderColor = '#f59e0b'; }
+          if (hint) {
+            hint.style.color = '#f59e0b';
+            const lista = (r.huerfanos || []).slice(0, 3).join(', ');
+            const masTxt = (r.huerfanos || []).length > 3 ? ` (+${r.huerfanos.length - 3} más)` : '';
+            hint.innerHTML = `⚠ ${r.error}<br><span style='font-size:9px'>${_escapeHtml(lista)}${masTxt}</span>`;
+          }
+          if (btn) { btn.disabled = false; btn.innerHTML = '🗑 CONFIRMAR'; }
+        } else {
+          if (inp) { inp.style.borderColor = '#ef4444'; inp.value = ''; inp.focus(); }
+          if (hint) { hint.style.color = '#ef4444'; hint.textContent = '✗ ' + ((r && r.error) || 'Clave incorrecta'); }
+          if (btn) { btn.disabled = false; btn.innerHTML = '🗑 CONFIRMAR'; }
+        }
       }
     } catch(e) {
       toast('Error: ' + e.message, 'error', 5000);
@@ -19307,8 +19377,12 @@ const MOS = (() => {
       }
       return d;
     };
-    // Timeout duro de 20s. Si la API no responde, asumimos error y mostramos vacío.
-    const apiCall = (async () => {
+    // [v2.43.52 FIX RACE] Reservar la promise ANTES de await — el guard
+    // de in-flight necesita ver la promise para no disparar otra paralela.
+    let resolverApiCall, rechazarApiCall;
+    const apiCall = new Promise((res, rej) => { resolverApiCall = res; rechazarApiCall = rej; });
+    S._rotacionSemanalLoading = apiCall;
+    (async () => {
       try {
         const r = await Promise.race([
           API.post('wh_getRotacionSemanal', { semanas: 8 }),
@@ -19317,15 +19391,14 @@ const MOS = (() => {
         const d = (r && r.data && r.data.productos) ? r.data
                 : (r && r.productos)                ? r
                 : null;
-        if (d) return setear(d);
+        if (d) { resolverApiCall(setear(d)); return; }
         console.warn('[rotacion] respuesta sin productos:', r);
-        return setear({ etiquetas: [], productos: {}, _error: 'sin_data' });
+        resolverApiCall(setear({ etiquetas: [], productos: {}, _error: 'sin_data' }));
       } catch(e) {
         console.warn('[rotacion] error:', e && e.message);
-        return setear({ etiquetas: [], productos: {}, _error: String(e && e.message || e) });
+        resolverApiCall(setear({ etiquetas: [], productos: {}, _error: String(e && e.message || e) }));
       }
     })();
-    S._rotacionSemanalLoading = apiCall;
     return apiCall;
   }
 
