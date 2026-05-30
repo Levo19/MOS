@@ -4476,6 +4476,103 @@
     /* [v2.43.38] Foto del producto en catálogo — animaciones globales */
     @keyframes catFotoBreath { 0%,100% { transform: scale(1); opacity:.85 } 50% { transform: scale(1.05); opacity:1 } }
 
+    /* [v2.43.47 PERF] Sparkline rotación — clases CSS para hover (no JS inline).
+       Boost de performance: 2000+ cards renderizan instantáneo. */
+    .cat-spark {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 10px;
+      color: #cbd5e1;
+      cursor: pointer;
+      margin-top: 2px;
+      padding: 3px 7px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      background: transparent;
+      transition: background .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+    }
+    .cat-spark .cat-spark-ico { font-size: 11px; }
+    .cat-spark .cat-spark-num { font-weight: 700; }
+    .cat-spark .cat-spark-bars { display: inline-flex; align-items: flex-end; height: 20px; }
+    .cat-spark .cat-spark-arrow {
+      font-weight: 900;
+      font-size: 11px;
+      opacity: 0;
+      transform: translateX(-4px);
+      transition: opacity .15s ease, transform .15s ease;
+      margin-left: 1px;
+    }
+    .cat-spark:hover { transform: translateY(-1px); }
+    .cat-spark:hover .cat-spark-arrow { opacity: 1; transform: translateX(0); }
+    /* Variantes por nivel de rotación (colores dedicados) */
+    .cat-spark-alta .cat-spark-num,
+    .cat-spark-alta .cat-spark-arrow { color: #10b981; }
+    .cat-spark-alta:hover {
+      background: rgba(16,185,129,.08);
+      border-color: rgba(16,185,129,.33);
+      box-shadow: 0 2px 10px -2px rgba(16,185,129,.33);
+    }
+    .cat-spark-media .cat-spark-num,
+    .cat-spark-media .cat-spark-arrow { color: #f59e0b; }
+    .cat-spark-media:hover {
+      background: rgba(245,158,11,.08);
+      border-color: rgba(245,158,11,.33);
+      box-shadow: 0 2px 10px -2px rgba(245,158,11,.33);
+    }
+    .cat-spark-baja .cat-spark-num,
+    .cat-spark-baja .cat-spark-arrow { color: #ef4444; }
+    .cat-spark-baja:hover {
+      background: rgba(239,68,68,.08);
+      border-color: rgba(239,68,68,.33);
+      box-shadow: 0 2px 10px -2px rgba(239,68,68,.33);
+    }
+    .cat-spark-empty {
+      font-size: 9px;
+      color: #64748b;
+    }
+    .cat-spark-empty:hover {
+      background: rgba(148,163,184,.08);
+      border-color: rgba(148,163,184,.25);
+      color: #cbd5e1;
+    }
+
+    /* [v2.43.47 PERF] Foto miniatura del catálogo — clases CSS con var --cat-foto-hue */
+    .cat-foto {
+      position: relative;
+      width: 64px;
+      height: 64px;
+      border-radius: 12px;
+      overflow: hidden;
+      flex-shrink: 0;
+      cursor: pointer;
+      padding: 0;
+      background: radial-gradient(circle at 30% 30%, hsla(var(--cat-foto-hue), 80%, 55%, .2), hsla(var(--cat-foto-hue), 70%, 40%, .07));
+      border: 1px solid hsla(var(--cat-foto-hue), 80%, 55%, .33);
+      box-shadow: 0 4px 14px -3px hsla(var(--cat-foto-hue), 70%, 40%, .4);
+      transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+    }
+    .cat-foto:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 22px -5px hsla(var(--cat-foto-hue), 70%, 40%, .67);
+      border-color: hsl(var(--cat-foto-hue), 80%, 55%);
+    }
+    .cat-foto-img img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 11px;
+      display: block;
+    }
+    .cat-foto-empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-style: dashed;
+      color: hsl(var(--cat-foto-hue), 75%, 70%);
+    }
+    .cat-foto-empty svg { animation: catFotoBreath 3s ease-in-out infinite; }
+
     .hor-modal {
       background: linear-gradient(160deg, #0f172a 0%, #1e293b 60%, #0f172a 100%);
       border: 2px solid; border-radius: 18px; max-width: 520px; width: 100%;

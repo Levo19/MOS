@@ -1067,35 +1067,30 @@ const MOS = (() => {
   // y equivalentes del mismo skuBase comparten la foto.
   function _renderFotoMini(p) {
     try {
-      const url = String(p.fotoUrl || p.logoUrl || '').trim();  // logoUrl legacy fallback
+      const url = String(p.fotoUrl || p.logoUrl || '').trim();
       const cat = String(p.idCategoria || '');
       let hue = 200;
       for (let i = 0; i < cat.length; i++) hue = (hue + cat.charCodeAt(i) * 37) % 360;
-      const halo  = `hsl(${hue},80%,55%)`;
-      const halo2 = `hsl(${hue},70%,40%)`;
-      const svgFg = `hsl(${hue},75%,70%)`;
-      const skuB  = String(p.skuBase || p.idProducto || '').replace(/'/g, '&#39;');
+      const skuB = String(p.skuBase || p.idProducto || '').replace(/'/g, '&#39;');
       const safeSku = _escapeHtml(skuB);
+      // [v2.43.47 PERF] CSS variables para el color de halo → 1 sola clase
+      // en vez de 6+ propiedades inline por foto. Mucho más rápido con 2000 cards.
+      const styleVars = `--cat-foto-hue:${hue}`;
       const clickHandler = `event.stopPropagation();MOS.abrirModalFotoProducto('${safeSku}')`;
-
       if (url) {
-        return `<button type="button" class="cat-foto-wrap" onclick="${clickHandler}"
+        return `<button type="button" class="cat-foto cat-foto-img" onclick="${clickHandler}"
                         title="Click para cambiar foto"
-                        style="position:relative;width:64px;height:64px;border-radius:12px;overflow:hidden;flex-shrink:0;background:radial-gradient(circle at 30% 30%,${halo}33,${halo2}11);padding:2px;border:1px solid ${halo}55;cursor:pointer;box-shadow:0 4px 14px -3px ${halo2}66,0 0 0 0 ${halo}00;transition:transform .25s cubic-bezier(.4,.6,.3,1.4),box-shadow .25s,border-color .25s">
-          <span class="cat-foto-shimmer"></span>
-          <img src="${_escapeHtml(url)}" alt="foto"
-               style="width:100%;height:100%;object-fit:cover;border-radius:10px;display:block"
+                        style="${styleVars}">
+          <img src="${_escapeHtml(url)}" alt="foto" loading="lazy"
                onerror="this.style.display='none';this.parentNode.classList.add('cat-foto-error')">
         </button>`;
       }
-      // SVG default: paquete con respiración
-      return `<button type="button" class="cat-foto-wrap cat-foto-empty" onclick="${clickHandler}"
+      return `<button type="button" class="cat-foto cat-foto-empty" onclick="${clickHandler}"
                       title="Click para subir foto"
-                      style="position:relative;width:64px;height:64px;border-radius:12px;flex-shrink:0;background:radial-gradient(circle at 30% 30%,${halo}33,${halo2}11);display:flex;align-items:center;justify-content:center;cursor:pointer;border:1px dashed ${halo}55;transition:transform .25s,border-color .25s,box-shadow .25s">
-        <svg viewBox="0 0 24 24" width="32" height="32" style="color:${svgFg};animation:catFotoBreath 3s ease-in-out infinite">
+                      style="${styleVars}">
+        <svg viewBox="0 0 24 24" width="32" height="32">
           <path fill="currentColor" d="M3 7l9-4 9 4v10l-9 4-9-4V7zm9-2.18L5.5 7.5 12 10.17 18.5 7.5 12 4.82zM4 8.85v7.4l7 3.11v-7.4L4 8.85zm9 10.51l7-3.11V8.85l-7 2.78v7.73z"/>
         </svg>
-        <span class="cat-foto-add-hint">📷</span>
       </button>`;
     } catch(_) { return ''; }
   }
@@ -1103,56 +1098,73 @@ const MOS = (() => {
   // Alias para compat con código viejo
   function _renderLogoMini(p) { return _renderFotoMini(p); }
 
-  // [v2.43.42] Helper canónico: obtiene la serie de rotación de un producto
-  // sumando TODAS las claves que pertenecen al mismo grupo (skuBase):
-  //   - codigoBarra del canónico
-  //   - codigoBarra de cada presentación con mismo skuBase
-  //   - codigoBarra de cada equivalente del skuBase
-  //
-  // Bug que arregla: el backend WH guarda en GUIA_DETALLE el codigoBarra
-  // EXACTO escaneado (puede ser equivalente o presentación). Buscar solo el
-  // canónico hacía que productos con movimiento via equivalentes se vieran
-  // como "sin rotación" aunque sí se movieron mucho.
-  function _serieRotacionAgregada(p) {
+  // [v2.43.47 OPTIMIZACIÓN] Pre-cómputo agregado por skuBase.
+  // ANTES: cada render del catálogo iteraba S.productos + S.equivMap para
+  // CADA card (2340 cards × N productos cada vez = O(N²) por render).
+  // AHORA: una sola pasada construye S._rotacionAgregadoPorSku como map
+  // {skuBase: serie}; el sparkline lee directo del map.
+  // Se invalida y se reconstruye cuando cambia el cache de rotación o
+  // los productos.
+  function _construirAgregadoRotacion() {
     const cache = S._rotacionSemanalCache || {};
     const productos = cache.productos || {};
-    if (!productos || !Object.keys(productos).length) return null;
-    const skuBase = String(p.skuBase || p.idProducto || '').trim().toUpperCase();
-    // Set de keys a buscar (uppercase + trim)
-    const keys = new Set();
-    const addKey = (v) => {
-      const k = String(v || '').trim().toUpperCase();
-      if (k) keys.add(k);
-    };
-    addKey(p.codigoBarra);
-    addKey(p.idProducto);
-    addKey(p.skuBase);
-    // Presentaciones del mismo skuBase
-    (S.productos || []).forEach(x => {
-      const sb = String(x.skuBase || '').trim().toUpperCase();
-      if (sb === skuBase) {
-        addKey(x.codigoBarra);
-        addKey(x.idProducto);
-      }
+    if (!productos || !Object.keys(productos).length) {
+      S._rotacionAgregadoPorSku = {};
+      S._rotacionAgregadoVersion = (cache.generadoEn || '') + '|' + (S.productos || []).length;
+      return;
+    }
+    // Map de skuBase → set de keys a sumar
+    const skuKeys = {};
+    const norm = v => String(v || '').trim().toUpperCase();
+    (S.productos || []).forEach(p => {
+      const sku = norm(p.skuBase || p.idProducto);
+      if (!sku) return;
+      if (!skuKeys[sku]) skuKeys[sku] = new Set();
+      const cb  = norm(p.codigoBarra);
+      const idp = norm(p.idProducto);
+      if (cb)  skuKeys[sku].add(cb);
+      if (idp) skuKeys[sku].add(idp);
+      skuKeys[sku].add(sku);
     });
-    // Equivalentes (S.equivMap[skuBase] = [codigoBarra | objetos])
-    const equivs = (S.equivMap && S.equivMap[p.skuBase || p.idProducto]) || [];
-    equivs.forEach(e => {
-      const cb = typeof e === 'string' ? e : (e && (e.codigoBarra || e.cbEquiv));
-      addKey(cb);
-    });
-    // Sumar serie elemento a elemento
-    let merged = null;
-    keys.forEach(k => {
-      const s = productos[k];
-      if (s && s.length) {
-        if (!merged) merged = s.map(x => ({ semana: x.semana, unidades: 0 }));
-        s.forEach((x, i) => {
-          if (merged[i]) merged[i].unidades += parseFloat(x.unidades) || 0;
+    // Sumar equivalentes
+    if (S.equivMap) {
+      Object.keys(S.equivMap).forEach(sku => {
+        const skuN = norm(sku);
+        if (!skuKeys[skuN]) skuKeys[skuN] = new Set();
+        const arr = S.equivMap[sku] || [];
+        arr.forEach(e => {
+          const cb = typeof e === 'string' ? e : (e && (e.codigoBarra || e.cbEquiv));
+          const v = norm(cb);
+          if (v) skuKeys[skuN].add(v);
         });
-      }
+      });
+    }
+    // Construir agregado
+    const agreg = {};
+    Object.keys(skuKeys).forEach(sku => {
+      let merged = null;
+      skuKeys[sku].forEach(k => {
+        const s = productos[k];
+        if (s && s.length) {
+          if (!merged) merged = s.map(x => ({ semana: x.semana, unidades: 0 }));
+          s.forEach((x, i) => {
+            if (merged[i]) merged[i].unidades += parseFloat(x.unidades) || 0;
+          });
+        }
+      });
+      if (merged) agreg[sku] = merged;
     });
-    return merged;
+    S._rotacionAgregadoPorSku = agreg;
+    S._rotacionAgregadoVersion = (cache.generadoEn || '') + '|' + (S.productos || []).length;
+  }
+
+  // Devuelve la serie agregada del producto. Reusa el pre-cómputo.
+  function _serieRotacionAgregada(p) {
+    const cache = S._rotacionSemanalCache || {};
+    const verActual = (cache.generadoEn || '') + '|' + (S.productos || []).length;
+    if (S._rotacionAgregadoVersion !== verActual) _construirAgregadoRotacion();
+    const sku = String(p.skuBase || p.idProducto || '').trim().toUpperCase();
+    return (S._rotacionAgregadoPorSku || {})[sku] || null;
   }
 
   // Sparkline de 8 barras (semanas) + comparativo vs semana anterior.
@@ -1178,23 +1190,17 @@ const MOS = (() => {
       }
       // Sin rotación nunca
       if (!serie || !serie.length) {
-        return `<div class="cat-spark-wrap cat-spark-empty" onclick="event.stopPropagation();MOS.abrirModalRotacion('${p.idProducto}')"
-                     style="font-size:9px;color:#64748b;cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border-radius:6px;border:1px solid transparent;transition:all .18s ease"
-                     title="Producto sin movimiento en últimas 8 semanas · click para detalle"
-                     onmouseover="this.style.background='rgba(148,163,184,.08)';this.style.borderColor='rgba(148,163,184,.25)';this.style.color='#cbd5e1'"
-                     onmouseout="this.style.background='transparent';this.style.borderColor='transparent';this.style.color='#64748b'">
-          🌙 <span>sin rotación</span>
+        return `<div class="cat-spark cat-spark-empty" onclick="event.stopPropagation();MOS.abrirModalRotacion('${p.idProducto}')"
+                     title="Producto sin movimiento en últimas 8 semanas · click para detalle">
+          <span class="cat-spark-empty-ico">🌙</span><span>sin rotación</span>
         </div>`;
       }
       const unidades = serie.map(s => parseFloat(s.unidades) || 0);
       const total    = unidades.reduce((a, b) => a + b, 0);
       if (total === 0) {
-        return `<div class="cat-spark-wrap cat-spark-empty" onclick="event.stopPropagation();MOS.abrirModalRotacion('${p.idProducto}')"
-                     style="font-size:9px;color:#64748b;cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border-radius:6px;border:1px solid transparent;transition:all .18s ease"
-                     title="Producto sin movimiento en últimas 8 semanas · click para detalle"
-                     onmouseover="this.style.background='rgba(148,163,184,.08)';this.style.borderColor='rgba(148,163,184,.25)';this.style.color='#cbd5e1'"
-                     onmouseout="this.style.background='transparent';this.style.borderColor='transparent';this.style.color='#64748b'">
-          🌙 <span>sin rotación</span>
+        return `<div class="cat-spark cat-spark-empty" onclick="event.stopPropagation();MOS.abrirModalRotacion('${p.idProducto}')"
+                     title="Producto sin movimiento en últimas 8 semanas · click para detalle">
+          <span class="cat-spark-empty-ico">🌙</span><span>sin rotación</span>
         </div>`;
       }
       const max = Math.max(...unidades, 1);
@@ -1221,19 +1227,16 @@ const MOS = (() => {
         cmpHtml = `<span style="color:#10b981;font-size:10px;font-weight:700;margin-left:4px">↑ nuevo</span>`;
       }
       const promedioStr = promedio >= 10 ? promedio.toFixed(0) : promedio.toFixed(1);
-      // [v2.43.44] Efectos hover: borde sutil del color de rotación, glow,
-      // micro-lift, indicador "→" que aparece. Manteniendo el formato compacto.
-      return `<div class="cat-spark-wrap cat-spark-clickable" onclick="event.stopPropagation();MOS.abrirModalRotacion('${p.idProducto}')"
-                   data-rot-color="${color}"
-                   style="display:inline-flex;align-items:center;gap:5px;font-size:10px;color:#cbd5e1;cursor:pointer;margin-top:2px;padding:3px 7px;border-radius:6px;border:1px solid transparent;background:transparent;transition:all .18s ease;position:relative"
-                   title="Rotación últimas 8 semanas · click para ver detalle"
-                   onmouseover="this.style.background='${color}14';this.style.borderColor='${color}55';this.style.boxShadow='0 2px 10px -2px ${color}55';this.style.transform='translateY(-1px)';this.querySelector('.cat-spark-arrow').style.opacity='1';this.querySelector('.cat-spark-arrow').style.transform='translateX(0)'"
-                   onmouseout="this.style.background='transparent';this.style.borderColor='transparent';this.style.boxShadow='none';this.style.transform='translateY(0)';this.querySelector('.cat-spark-arrow').style.opacity='0';this.querySelector('.cat-spark-arrow').style.transform='translateX(-4px)'">
-        <span style="font-size:11px">📦</span>
-        <span style="font-weight:700;color:${color}">${promedioStr}/sem</span>
-        <span style="display:inline-flex;align-items:flex-end;height:20px">${barras}</span>
+      // [v2.43.47 PERF] Hover via CSS class (NO inline JS) → ~10x más rápido
+      // con 2000+ cards. Nivel decide colores hover ya pre-definidos en CSS.
+      const nivel = promedio >= 10 ? 'alta' : promedio >= 3 ? 'media' : 'baja';
+      return `<div class="cat-spark cat-spark-${nivel}" onclick="event.stopPropagation();MOS.abrirModalRotacion('${p.idProducto}')"
+                   title="Rotación últimas 8 semanas · click para ver detalle">
+        <span class="cat-spark-ico">📦</span>
+        <span class="cat-spark-num">${promedioStr}/sem</span>
+        <span class="cat-spark-bars">${barras}</span>
         ${cmpHtml}
-        <span class="cat-spark-arrow" style="color:${color};font-weight:900;font-size:11px;opacity:0;transform:translateX(-4px);transition:all .18s ease;margin-left:1px">→</span>
+        <span class="cat-spark-arrow">→</span>
       </div>`;
     } catch(_) { return ''; }
   }
