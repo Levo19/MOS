@@ -4472,6 +4472,10 @@
       animation: horFadeIn .2s ease;
     }
     @keyframes horFadeIn { from { opacity:0; } to { opacity:1; } }
+
+    /* [v2.43.38] Foto del producto en catálogo — animaciones globales */
+    @keyframes catFotoBreath { 0%,100% { transform: scale(1); opacity:.85 } 50% { transform: scale(1.05); opacity:1 } }
+
     .hor-modal {
       background: linear-gradient(160deg, #0f172a 0%, #1e293b 60%, #0f172a 100%);
       border: 2px solid; border-radius: 18px; max-width: 520px; width: 100%;

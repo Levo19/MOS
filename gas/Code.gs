@@ -129,8 +129,10 @@ function _route(method, e) {
       case 'resolverHorarioPersonal':       return resolverHorarioPersonal(params);
       // [v2.43.37] Rotación semanal WH para Catálogo (pre-carga al login)
       case 'wh_getRotacionSemanal':          return postToWarehouse('getRotacionSemanal', params);
-      // [v2.43.37] Subir logo de producto a Drive + actualizar PRODUCTOS_MASTER
-      case 'subirLogoProducto':              return subirLogoProducto(params);
+      // [v2.43.38] Foto del producto (canónico + presentaciones + equivalentes
+      // del mismo skuBase comparten la misma foto). Carpeta "MOS Catálogo Fotos".
+      case 'subirFotoProducto':              return subirFotoProducto(params);
+      case 'jalarFotoDePNCatalogo':          return jalarFotoDePNCatalogo(params);
       case 'wh_getDevolucionesZona':         return postToWarehouse('getDevolucionesZona', params);
       case 'wh_getDevolucionDetalle':        return postToWarehouse('getDevolucionDetalle', params);
       case 'wh_confirmarRecepcionDevolucion': return postToWarehouse('confirmarRecepcionDevolucion', params);

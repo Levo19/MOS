@@ -668,6 +668,31 @@ function lanzarProductoNuevo(params) {
     idProducto:      idProductoCreado
   });
 
+  // 3. [v2.43.38] Auto-jalar foto del PN al catálogo si vino fotoUrlPN.
+  //    Falla silencioso — la aprobación NO depende de la foto.
+  var fotoJaladaUrl = '';
+  try {
+    if (whResult.ok && params.fotoUrlPN) {
+      // Determinar skuBase destino:
+      //   NUEVO       → idProductoCreado (es el canónico, su idProducto = skuBase)
+      //   EQUIVALENTE → params.skuBase (heredado)
+      //   CORREGIR    → existente.skuBase
+      var skuBaseDest = '';
+      if (tipo === 'NUEVO')             skuBaseDest = idProductoCreado;
+      else if (tipo === 'EQUIVALENTE')  skuBaseDest = params.skuBase || '';
+      else if (tipo === 'CORREGIR_CODIGO' && typeof existente !== 'undefined' && existente)
+                                        skuBaseDest = existente.skuBase || '';
+      if (skuBaseDest) {
+        var resFoto = jalarFotoDePNCatalogo({
+          skuBase:   skuBaseDest,
+          fotoUrlPN: params.fotoUrlPN,
+          usuario:   params.aprobadoPor || params.usuario || 'auto'
+        });
+        if (resFoto && resFoto.ok) fotoJaladaUrl = resFoto.data.fotoUrl || '';
+      }
+    }
+  } catch(eFP) { Logger.log('[lanzarProductoNuevo] jalar foto fallo: ' + eFP.message); }
+
   return {
     ok: true,
     data: {
@@ -675,7 +700,9 @@ function lanzarProductoNuevo(params) {
       idProducto:     idProductoCreado,
       idEquiv:        idEquivCreado,
       aprobadoEnWH:   whResult.ok,
-      whError:        whResult.ok ? '' : (whResult.error || '')
+      whError:        whResult.ok ? '' : (whResult.error || ''),
+      fotoJalada:     !!fotoJaladaUrl,
+      fotoUrl:        fotoJaladaUrl
     }
   };
 }

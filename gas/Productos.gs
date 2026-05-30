@@ -62,9 +62,8 @@ function _safePreviewParams(p) {
 
 // ── PRODUCTOS_MASTER ─────────────────────────────────────────
 function getProductosMaster(params) {
-  // [v2.43.37] Auto-migración: si la hoja no tiene columna logoUrl, agregarla.
-  // Idempotente, hace nada si ya existe.
-  _asegurarColumnaLogoUrl();
+  // [v2.43.38] Auto-migración: asegurar columna fotoUrl (renombre de logoUrl).
+  _asegurarColumnaFotoUrl();
   var rows = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
   if (params.estado)    rows = rows.filter(function(r){ return String(r.estado) === String(params.estado); });
   if (params.skuBase)   rows = rows.filter(function(r){ return r.skuBase === params.skuBase; });
@@ -80,65 +79,143 @@ function getProductosMaster(params) {
   return { ok: true, data: rows };
 }
 
-// [v2.43.37] Asegura que la columna logoUrl exista en PRODUCTOS_MASTER.
-// Idempotente. Se ejecuta una vez por sesión cuando se carga el catálogo.
-function _asegurarColumnaLogoUrl() {
+// [v2.43.38] Asegura que la columna fotoUrl exista en PRODUCTOS_MASTER.
+// Migración suave: si había una columna logoUrl, copiar valores a fotoUrl
+// la primera vez (no la borra para no romper código viejo).
+function _asegurarColumnaFotoUrl() {
   try {
     var sh = getSheet('PRODUCTOS_MASTER');
     var hdrs = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
-    if (hdrs.indexOf('logoUrl') < 0) {
-      sh.getRange(1, hdrs.length + 1).setValue('logoUrl').setFontWeight('bold');
+    if (hdrs.indexOf('fotoUrl') < 0) {
+      var col = hdrs.length + 1;
+      sh.getRange(1, col).setValue('fotoUrl').setFontWeight('bold');
+      // Migrar de logoUrl si existía
+      var idxLogo = hdrs.indexOf('logoUrl');
+      if (idxLogo >= 0 && sh.getLastRow() > 1) {
+        var data = sh.getRange(2, idxLogo + 1, sh.getLastRow() - 1, 1).getValues();
+        sh.getRange(2, col, data.length, 1).setValues(data);
+      }
     }
-  } catch(e) { Logger.log('[_asegurarColumnaLogoUrl] ' + e.message); }
+  } catch(e) { Logger.log('[_asegurarColumnaFotoUrl] ' + e.message); }
 }
 
-// [v2.43.37] Sube un logo a Drive y guarda la URL en PRODUCTOS_MASTER.logoUrl.
-// params: { idProducto, fotoBase64, mimeType }
-// Carpeta: "MOS Logos Productos" (creada al primer logo)
-function subirLogoProducto(params) {
-  var idProducto = String(params.idProducto || '').trim();
-  var b64        = String(params.fotoBase64 || '').trim();
-  var mime       = String(params.mimeType || 'image/jpeg');
-  if (!idProducto) return { ok: false, error: 'idProducto requerido' };
-  if (!b64)        return { ok: false, error: 'fotoBase64 requerido' };
+// [v2.43.38] Helper: carpeta exclusiva para fotos del catálogo. Lazy create.
+function _getCarpetaFotosCatalogo() {
+  var folderName = 'MOS Catálogo Fotos';
+  var folders = DriveApp.getFoldersByName(folderName);
+  return folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+}
+
+// [v2.43.38] Sube foto de producto a Drive con skuBase como nombre.
+// params: { skuBase, fotoBase64, mimeType, usuario }
+//
+// Política:
+//   - Nombre archivo = `{skuBase}.{jpg|png}` → REEMPLAZA si existe
+//   - Carpeta dedicada "MOS Catálogo Fotos"
+//   - URL pública thumbnail w800 (alta calidad)
+//   - Actualiza fotoUrl en TODOS los productos con el mismo skuBase
+//     (canónico + presentaciones + equivalentes comparten foto)
+function subirFotoProducto(params) {
+  var skuBase = String(params.skuBase || '').trim();
+  var b64     = String(params.fotoBase64 || '').trim();
+  var mime    = String(params.mimeType || 'image/jpeg');
+  if (!skuBase) return { ok: false, error: 'skuBase requerido' };
+  if (!b64)     return { ok: false, error: 'fotoBase64 requerido' };
 
   try {
-    // 1) Obtener/crear carpeta en Drive
-    var folderName = 'MOS Logos Productos';
-    var folders = DriveApp.getFoldersByName(folderName);
-    var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
-
-    // 2) Decodificar y crear blob con nombre estable (idProducto + ext)
+    var folder = _getCarpetaFotosCatalogo();
     var ext  = mime.indexOf('png') >= 0 ? 'png' : 'jpg';
-    var name = 'logo_' + idProducto + '.' + ext;
+    // Nombre del archivo = skuBase exacto + ext. Sanitizar caracteres raros.
+    var nombre = String(skuBase).replace(/[^a-zA-Z0-9_\-\.]/g, '_') + '.' + ext;
     var bytes = Utilities.base64Decode(b64);
-    var blob  = Utilities.newBlob(bytes, mime, name);
+    var blob  = Utilities.newBlob(bytes, mime, nombre);
 
-    // 3) Si ya había un logo previo para este idProducto → eliminar (replace)
-    var prev = folder.getFilesByName(name);
-    while (prev.hasNext()) { try { prev.next().setTrashed(true); } catch(_){} }
+    // Reemplazar foto previa (cualquier extensión)
+    [nombre, skuBase + '.jpg', skuBase + '.png', skuBase + '.jpeg'].forEach(function(n) {
+      var its = folder.getFilesByName(n);
+      while (its.hasNext()) { try { its.next().setTrashed(true); } catch(_){} }
+    });
 
-    // 4) Crear archivo + permisos públicos para que el navegador lo cargue
     var file = folder.createFile(blob);
     try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch(_){}
-    // URL thumbnail pública (más rápida que el view del file)
-    var url = 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w400';
+    // w800 para alta calidad (modal de zoom)
+    var url = 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w800';
 
-    // 5) Actualizar PRODUCTOS_MASTER.logoUrl
-    _asegurarColumnaLogoUrl();
+    // Actualizar fotoUrl en TODOS los productos del mismo skuBase
+    _asegurarColumnaFotoUrl();
     var sh = getSheet('PRODUCTOS_MASTER');
     var data = sh.getDataRange().getValues();
     var hdrs = data[0];
-    var idxId = hdrs.indexOf('idProducto');
-    var idxLogo = hdrs.indexOf('logoUrl');
-    var fila = -1;
-    for (var i = 1; i < data.length; i++) {
-      if (String(data[i][idxId]) === idProducto) { fila = i + 1; break; }
+    var idxSku  = hdrs.indexOf('skuBase');
+    var idxFoto = hdrs.indexOf('fotoUrl');
+    var actualizados = 0;
+    if (idxSku >= 0 && idxFoto >= 0) {
+      for (var i = 1; i < data.length; i++) {
+        if (String(data[i][idxSku]).trim() === skuBase) {
+          sh.getRange(i + 1, idxFoto + 1).setValue(url);
+          actualizados++;
+        }
+      }
     }
-    if (fila < 0) return { ok: false, error: 'idProducto no encontrado en PRODUCTOS_MASTER' };
-    sh.getRange(fila, idxLogo + 1).setValue(url);
+    return {
+      ok: true,
+      data: { skuBase: skuBase, fotoUrl: url, fileId: file.getId(), actualizados: actualizados }
+    };
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
+}
 
-    return { ok: true, data: { idProducto: idProducto, logoUrl: url, fileId: file.getId() } };
+// [v2.43.38] Jala la foto de un Producto Nuevo aprobado al catálogo.
+// Llamado automáticamente desde el flujo de aprobación cuando el PN tiene foto.
+// params: { skuBase, fotoUrlPN }
+//
+// Estrategia: descarga el binario de la URL del PN (Drive público) y lo
+// re-sube a la carpeta "MOS Catálogo Fotos" con el skuBase como nombre,
+// luego actualiza fotoUrl. Si el fetch falla (URL inválida, sin permisos),
+// devuelve error pero no rompe el flujo de aprobación.
+function jalarFotoDePNCatalogo(params) {
+  var skuBase    = String(params.skuBase || '').trim();
+  var fotoUrlPN  = String(params.fotoUrlPN || '').trim();
+  if (!skuBase)   return { ok: false, error: 'skuBase requerido' };
+  if (!fotoUrlPN) return { ok: false, error: 'fotoUrlPN requerido' };
+
+  try {
+    // Si la URL es de Drive thumbnail, extraer el fileId y obtener el binario
+    // directamente (más confiable que fetch del thumbnail).
+    var fileIdMatch = fotoUrlPN.match(/[?&]id=([^&]+)/);
+    var blob;
+    if (fileIdMatch) {
+      var fileId = fileIdMatch[1];
+      try {
+        var fileSrc = DriveApp.getFileById(fileId);
+        blob = fileSrc.getBlob();
+      } catch(eDrv) {
+        // Si no tenemos permisos en Drive, fallback a fetch
+        var resp = UrlFetchApp.fetch(fotoUrlPN, { muteHttpExceptions: true });
+        if (resp.getResponseCode() !== 200) {
+          return { ok: false, error: 'No se pudo descargar foto del PN (HTTP ' + resp.getResponseCode() + ')' };
+        }
+        blob = resp.getBlob();
+      }
+    } else {
+      var resp2 = UrlFetchApp.fetch(fotoUrlPN, { muteHttpExceptions: true });
+      if (resp2.getResponseCode() !== 200) {
+        return { ok: false, error: 'No se pudo descargar foto del PN (HTTP ' + resp2.getResponseCode() + ')' };
+      }
+      blob = resp2.getBlob();
+    }
+
+    var mime = blob.getContentType() || 'image/jpeg';
+    var b64  = Utilities.base64Encode(blob.getBytes());
+
+    // Reusar subirFotoProducto para asegurar misma política/auditoría
+    return subirFotoProducto({
+      skuBase:    skuBase,
+      fotoBase64: b64,
+      mimeType:   mime,
+      usuario:    params.usuario || 'auto-aprobacion-PN'
+    });
   } catch(e) {
     return { ok: false, error: e.message };
   }

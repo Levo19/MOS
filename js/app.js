@@ -1060,28 +1060,48 @@ const MOS = (() => {
   // [v2.43.37] Render helpers de catálogo: logo + sparkline rotación
   // ─────────────────────────────────────────────────────────────────
 
-  // Logo del producto (48x48). Si no hay logoUrl, placeholder con la
-  // primera letra del nombre y color derivado de la categoría.
-  function _renderLogoMini(p) {
+  // [v2.43.38] Foto del producto 64x64 — halo de categoría + shimmer al hover.
+  // Si no hay fotoUrl → SVG paquete con respiración suave + tinte de categoría.
+  // Click → modal de zoom + subir nueva foto.
+  // El key del archivo es skuBase (no idProducto) → canónico, presentaciones
+  // y equivalentes del mismo skuBase comparten la foto.
+  function _renderFotoMini(p) {
     try {
-      const url = String(p.logoUrl || '').trim();
-      const letra = String(p.descripcion || p.idProducto || '?').trim().charAt(0).toUpperCase() || '?';
-      // Color estable derivado del idCategoria (sha-like simple por charcodes)
+      const url = String(p.fotoUrl || p.logoUrl || '').trim();  // logoUrl legacy fallback
       const cat = String(p.idCategoria || '');
       let hue = 200;
       for (let i = 0; i < cat.length; i++) hue = (hue + cat.charCodeAt(i) * 37) % 360;
-      const bg = `hsl(${hue},45%,30%)`;
-      const fg = `hsl(${hue},75%,75%)`;
+      const halo  = `hsl(${hue},80%,55%)`;
+      const halo2 = `hsl(${hue},70%,40%)`;
+      const svgFg = `hsl(${hue},75%,70%)`;
+      const skuB  = String(p.skuBase || p.idProducto || '').replace(/'/g, '&#39;');
+      const safeSku = _escapeHtml(skuB);
+      const clickHandler = `event.stopPropagation();MOS.abrirModalFotoProducto('${safeSku}')`;
+
       if (url) {
-        return `<div style="width:48px;height:48px;border-radius:8px;overflow:hidden;flex-shrink:0;background:${bg};display:flex;align-items:center;justify-content:center">
-          <img src="${_escapeHtml(url)}" alt="logo"
-               style="width:100%;height:100%;object-fit:cover"
-               onerror="this.outerHTML='<span style=\\'font-size:20px;font-weight:900;color:${fg}\\'>${letra}</span>'">
-        </div>`;
+        return `<button type="button" class="cat-foto-wrap" onclick="${clickHandler}"
+                        title="Click para cambiar foto"
+                        style="position:relative;width:64px;height:64px;border-radius:12px;overflow:hidden;flex-shrink:0;background:radial-gradient(circle at 30% 30%,${halo}33,${halo2}11);padding:2px;border:1px solid ${halo}55;cursor:pointer;box-shadow:0 4px 14px -3px ${halo2}66,0 0 0 0 ${halo}00;transition:transform .25s cubic-bezier(.4,.6,.3,1.4),box-shadow .25s,border-color .25s">
+          <span class="cat-foto-shimmer"></span>
+          <img src="${_escapeHtml(url)}" alt="foto"
+               style="width:100%;height:100%;object-fit:cover;border-radius:10px;display:block"
+               onerror="this.style.display='none';this.parentNode.classList.add('cat-foto-error')">
+        </button>`;
       }
-      return `<div style="width:48px;height:48px;border-radius:8px;flex-shrink:0;background:${bg};display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:900;color:${fg}">${letra}</div>`;
+      // SVG default: paquete con respiración
+      return `<button type="button" class="cat-foto-wrap cat-foto-empty" onclick="${clickHandler}"
+                      title="Click para subir foto"
+                      style="position:relative;width:64px;height:64px;border-radius:12px;flex-shrink:0;background:radial-gradient(circle at 30% 30%,${halo}33,${halo2}11);display:flex;align-items:center;justify-content:center;cursor:pointer;border:1px dashed ${halo}55;transition:transform .25s,border-color .25s,box-shadow .25s">
+        <svg viewBox="0 0 24 24" width="32" height="32" style="color:${svgFg};animation:catFotoBreath 3s ease-in-out infinite">
+          <path fill="currentColor" d="M3 7l9-4 9 4v10l-9 4-9-4V7zm9-2.18L5.5 7.5 12 10.17 18.5 7.5 12 4.82zM4 8.85v7.4l7 3.11v-7.4L4 8.85zm9 10.51l7-3.11V8.85l-7 2.78v7.73z"/>
+        </svg>
+        <span class="cat-foto-add-hint">📷</span>
+      </button>`;
     } catch(_) { return ''; }
   }
+
+  // Alias para compat con código viejo
+  function _renderLogoMini(p) { return _renderFotoMini(p); }
 
   // Sparkline de 8 barras (semanas) + comparativo vs semana anterior.
   // Click → modal con insight detallado.
@@ -2215,7 +2235,7 @@ const MOS = (() => {
         <!-- Header -->
         <div class="p-4 cursor-pointer select-none" onclick="MOS._catCardClick(event,'${base.idProducto}')">
           <div class="flex items-start gap-3">
-            ${_renderLogoMini(base)}
+            ${_renderFotoMini(base)}
             <div class="flex-1 min-w-0">
               <div class="flex flex-wrap gap-1 mb-2">${badgeCat}${badgeEnv}${badgePres}${badgeInac}</div>
               <div class="font-semibold text-slate-100 text-sm leading-snug mb-2">${hlDesc}</div>
@@ -4037,6 +4057,231 @@ const MOS = (() => {
     const el = $(id); if (!el) return;
     el.value = Math.max(0, (parseFloat(el.value) || 0) - step);
     el.dispatchEvent(new Event('input'));
+  }
+
+  // [v2.43.38] Modal moderno bottom-sheet para subir foto del producto.
+  // Optimista: cierra inmediato al guardar + toast + confetti.
+  // Sonido tac al click, ok al éxito, error si falla.
+  function abrirModalFotoProducto(skuBase) {
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    // Buscar producto canónico del skuBase
+    const sku = String(skuBase || '').trim();
+    const productos = S.productos || [];
+    const p = productos.find(x => String(x.skuBase || x.idProducto) === sku);
+    if (!p) { toast('Producto no encontrado', 'error'); return; }
+
+    const cat = String(p.idCategoria || '');
+    let hue = 200;
+    for (let i = 0; i < cat.length; i++) hue = (hue + cat.charCodeAt(i) * 37) % 360;
+    const accent  = `hsl(${hue},80%,55%)`;
+    const accent2 = `hsl(${hue},70%,40%)`;
+    const fotoActualUrl = String(p.fotoUrl || p.logoUrl || '').trim();
+
+    // Resumen de qué productos comparten esta foto
+    const compartidos = productos.filter(x => String(x.skuBase || x.idProducto) === sku);
+    const listaCompartidos = compartidos.map(x => {
+      const factor = parseFloat(x.factorConversion) || 1;
+      const tag = factor === 1 ? 'canónico' : `×${factor}`;
+      return `<li style="font-size:11px;color:#cbd5e1;line-height:1.5"><span style="color:${accent}">▸</span> ${_escapeHtml(x.descripcion || x.idProducto)} <span style="color:#64748b;font-size:9px">${tag}</span></li>`;
+    }).join('');
+
+    const html = `<div class="cat-foto-backdrop" id="catFotoModal" onclick="if(event.target===this)MOS.cerrarModalFotoProducto()"
+                       style="position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(8px);z-index:200;display:flex;align-items:flex-end;justify-content:center;animation:catFotoBackIn .3s ease-out">
+      <div class="cat-foto-sheet" style="width:100%;max-width:680px;background:linear-gradient(180deg,#0f172a,#0a1424);border:1px solid ${accent}55;border-radius:20px 20px 0 0;box-shadow:0 -20px 60px -10px ${accent2}66,0 0 0 1px ${accent}22 inset;animation:catFotoSheetIn .4s cubic-bezier(.34,1.56,.64,1)">
+        <!-- Header -->
+        <div style="padding:18px 20px;border-bottom:1px solid #1e293b;display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,${accent}15,${accent2}05)">
+          <div style="font-size:22px">📷</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:14px;font-weight:800;color:${accent};letter-spacing:.3px">FOTO DEL PRODUCTO</div>
+            <div style="font-size:12px;color:#94a3b8;margin-top:2px;font-weight:600">${_escapeHtml(p.descripcion || '')}</div>
+            <div style="font-size:10px;color:#64748b;margin-top:1px;font-family:monospace">sku <span style="color:${accent}">${_escapeHtml(sku)}</span></div>
+          </div>
+          <button onclick="MOS.cerrarModalFotoProducto()"
+                  style="background:none;border:none;color:#64748b;font-size:22px;font-weight:900;cursor:pointer;padding:4px 8px;border-radius:6px;transition:all .2s"
+                  onmouseover="this.style.color='#f87171';this.style.background='rgba(248,113,113,.1)'"
+                  onmouseout="this.style.color='#64748b';this.style.background='none'">✕</button>
+        </div>
+        <!-- Body: preview + controles lado a lado -->
+        <div style="padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:18px;max-height:60vh;overflow-y:auto">
+          <!-- Preview column -->
+          <div>
+            <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Vista previa</div>
+            <div id="catFotoPreviewWrap"
+                 style="position:relative;width:100%;aspect-ratio:1;background:radial-gradient(circle at 30% 30%,${accent}22,${accent2}08);border:2px dashed ${accent}55;border-radius:14px;display:flex;align-items:center;justify-content:center;overflow:hidden;transition:border-color .2s,background .2s">
+              ${fotoActualUrl
+                ? `<img id="catFotoPreviewImg" src="${_escapeHtml(fotoActualUrl)}" style="width:100%;height:100%;object-fit:cover">`
+                : `<div style="text-align:center;color:#64748b">
+                    <svg viewBox="0 0 24 24" width="56" height="56" style="opacity:.4;color:${accent};animation:catFotoBreath 3s ease-in-out infinite">
+                      <path fill="currentColor" d="M3 7l9-4 9 4v10l-9 4-9-4V7z"/>
+                    </svg>
+                    <div style="font-size:11px;margin-top:8px">Sin foto aún</div>
+                  </div>`}
+            </div>
+            <div style="margin-top:8px;font-size:9px;color:#475569;text-align:center;line-height:1.4">
+              Guardado como <span style="font-family:monospace;color:${accent}">${_escapeHtml(sku)}.jpg</span><br>
+              en carpeta <span style="color:#94a3b8">MOS Catálogo Fotos</span>
+            </div>
+          </div>
+          <!-- Controles column -->
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <input type="file" id="catFotoInput" accept="image/*" style="display:none"
+                   onchange="MOS._catFotoOnFileSelect(event)">
+            <button onclick="document.getElementById('catFotoInput').click()"
+                    class="cat-foto-btn-elegir"
+                    style="background:linear-gradient(135deg,#1e293b,#0f172a);border:1px solid ${accent}55;color:#e2e8f0;border-radius:10px;padding:14px 12px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .25s;box-shadow:0 4px 12px -3px rgba(0,0,0,.4)"
+                    onmouseover="this.style.borderColor='${accent}';this.style.boxShadow='0 6px 18px -3px ${accent2}66,0 0 0 1px ${accent}55 inset'"
+                    onmouseout="this.style.borderColor='${accent}55';this.style.boxShadow='0 4px 12px -3px rgba(0,0,0,.4)'">
+              <span style="font-size:18px">📁</span> Elegir foto del dispositivo
+            </button>
+            <button onclick="MOS._catFotoTomar()"
+                    style="background:linear-gradient(135deg,#1e293b,#0f172a);border:1px solid ${accent}55;color:#e2e8f0;border-radius:10px;padding:14px 12px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .25s"
+                    onmouseover="this.style.borderColor='${accent}';this.style.boxShadow='0 6px 18px -3px ${accent2}66'"
+                    onmouseout="this.style.borderColor='${accent}55';this.style.boxShadow='none'">
+              <span style="font-size:18px">📷</span> Tomar foto (cámara)
+            </button>
+            <div style="border-top:1px solid #1e293b;padding-top:12px;margin-top:auto">
+              <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Se aplica a (${compartidos.length})</div>
+              <ul style="list-style:none;padding:0;margin:0;max-height:120px;overflow-y:auto">${listaCompartidos}</ul>
+            </div>
+          </div>
+        </div>
+        <!-- Footer -->
+        <div style="padding:14px 20px;border-top:1px solid #1e293b;display:flex;justify-content:space-between;align-items:center;gap:10px;background:#070d18">
+          <div id="catFotoStatus" style="font-size:11px;color:#64748b">Selecciona una foto para continuar</div>
+          <div style="display:flex;gap:8px">
+            <button onclick="MOS.cerrarModalFotoProducto()"
+                    style="background:rgba(71,85,105,.4);color:#cbd5e1;border:0;border-radius:8px;padding:9px 14px;font-size:11px;font-weight:700;cursor:pointer;transition:all .2s"
+                    onmouseover="this.style.background='rgba(71,85,105,.7)'"
+                    onmouseout="this.style.background='rgba(71,85,105,.4)'">Cancelar</button>
+            <button id="catFotoGuardarBtn" disabled
+                    onclick="MOS._catFotoGuardar('${_escapeHtml(sku)}')"
+                    style="background:linear-gradient(135deg,${accent},${accent2});color:#fff;border:0;border-radius:8px;padding:9px 18px;font-size:11px;font-weight:800;cursor:not-allowed;opacity:.4;transition:all .25s;box-shadow:0 4px 14px -3px ${accent2}99;position:relative;overflow:hidden">
+              <span style="position:relative;z-index:2">✨ Guardar foto</span>
+              <span class="cat-foto-shine"></span>
+            </button>
+          </div>
+        </div>
+      </div>
+      <style>
+        @keyframes catFotoBackIn { from{opacity:0} to{opacity:1} }
+        @keyframes catFotoSheetIn { from{transform:translateY(100%)} to{transform:translateY(0)} }
+        @keyframes catFotoBreath { 0%,100%{transform:scale(1);opacity:.8} 50%{transform:scale(1.06);opacity:1} }
+        @keyframes catFotoShine { 0%{left:-100%} 100%{left:100%} }
+        .cat-foto-shine{position:absolute;top:0;left:-100%;width:60%;height:100%;background:linear-gradient(110deg,transparent,rgba(255,255,255,.35),transparent);transform:skewX(-25deg);animation:catFotoShine 2.5s ease-in-out infinite}
+        .cat-foto-wrap:hover{transform:translateY(-2px) scale(1.03);box-shadow:0 8px 22px -5px ${accent2}aa,0 0 0 2px ${accent}55!important;border-color:${accent}!important}
+        .cat-foto-wrap .cat-foto-shimmer{content:'';position:absolute;top:0;left:-100%;width:50%;height:100%;background:linear-gradient(110deg,transparent,rgba(255,255,255,.18),transparent);transform:skewX(-20deg);opacity:0;transition:opacity .2s;pointer-events:none;z-index:2}
+        .cat-foto-wrap:hover .cat-foto-shimmer{opacity:1;animation:catFotoShine .8s ease-out}
+        .cat-foto-empty .cat-foto-add-hint{position:absolute;bottom:4px;right:4px;background:${accent};color:#fff;font-size:8px;width:14px;height:14px;border-radius:50%;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .2s;font-weight:900}
+        .cat-foto-empty:hover .cat-foto-add-hint{opacity:1}
+      </style>
+    </div>`;
+    const old = document.getElementById('catFotoModal');
+    if (old) old.remove();
+    document.body.insertAdjacentHTML('beforeend', html);
+    window._catFotoState = { skuBase: sku, fotoBase64: '', mimeType: '' };
+  }
+  function cerrarModalFotoProducto() {
+    const m = document.getElementById('catFotoModal');
+    if (m) {
+      m.style.animation = 'catFotoBackIn .25s reverse';
+      setTimeout(() => m.remove(), 240);
+    }
+    window._catFotoState = null;
+  }
+  function _catFotoOnFileSelect(ev) {
+    const file = ev.target.files && ev.target.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast('⚠ La foto excede 5MB. Comprimila antes.', 'warn', 4500);
+      return;
+    }
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      const b64 = String(dataUrl).split(',')[1] || '';
+      window._catFotoState.fotoBase64 = b64;
+      window._catFotoState.mimeType   = file.type || 'image/jpeg';
+      // Actualizar preview
+      const wrap = document.getElementById('catFotoPreviewWrap');
+      if (wrap) {
+        wrap.innerHTML = `<img id="catFotoPreviewImg" src="${dataUrl}" style="width:100%;height:100%;object-fit:cover">`;
+        wrap.style.borderStyle = 'solid';
+      }
+      const st = document.getElementById('catFotoStatus');
+      if (st) { st.textContent = `Lista para subir · ${(file.size/1024).toFixed(0)} KB`; st.style.color = '#10b981'; }
+      const btn = document.getElementById('catFotoGuardarBtn');
+      if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.style.cursor = 'pointer'; }
+    };
+    reader.readAsDataURL(file);
+  }
+  function _catFotoTomar() {
+    // Forzar input file con capture para móviles que soporten cámara
+    const inp = document.getElementById('catFotoInput');
+    if (!inp) return;
+    inp.setAttribute('capture', 'environment');
+    inp.click();
+  }
+  function _catFotoGuardar(skuBase) {
+    const st = window._catFotoState;
+    if (!st || !st.fotoBase64) { toast('Selecciona una foto primero', 'warn'); return; }
+    // Optimismo: cerrar modal + toast + actualización local inmediata
+    try { _opsBeep && _opsBeep('ok'); } catch(_){}
+    cerrarModalFotoProducto();
+    toast('✨ Foto guardando...', 'info', 2500);
+    // Actualizar TODAS las cards del skuBase con preview local (data URL)
+    const dataUrl = 'data:' + st.mimeType + ';base64,' + st.fotoBase64;
+    (S.productos || []).forEach(p => {
+      if (String(p.skuBase || p.idProducto) === skuBase) p.fotoUrl = dataUrl;
+    });
+    if (typeof renderCatalogo === 'function') renderCatalogo();
+    // Mini confetti efecto
+    _catFotoConfetti();
+    // Fire-and-forget al backend
+    API.post('subirFotoProducto', {
+      skuBase:    skuBase,
+      fotoBase64: st.fotoBase64,
+      mimeType:   st.mimeType
+    }).then(r => {
+      if (r && r.ok !== false) {
+        const url = (r.data && r.data.fotoUrl) || (r.data && r.data.url) || '';
+        if (url) {
+          (S.productos || []).forEach(p => {
+            if (String(p.skuBase || p.idProducto) === skuBase) p.fotoUrl = url;
+          });
+          if (typeof renderCatalogo === 'function') renderCatalogo();
+        }
+        toast('✅ Foto guardada', 'success', 2500);
+      } else {
+        toast('⚠ Error: ' + ((r && r.error) || 'no se pudo guardar'), 'error', 5000);
+      }
+    }).catch(e => {
+      toast('⚠ Error: ' + e.message, 'error', 5000);
+    });
+  }
+  // Mini confetti optimista (sin librería externa)
+  function _catFotoConfetti() {
+    try {
+      const colors = ['#10b981','#6366f1','#f59e0b','#ec4899','#22d3ee'];
+      const cont = document.createElement('div');
+      cont.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:300';
+      for (let i = 0; i < 24; i++) {
+        const piece = document.createElement('div');
+        const c = colors[i % colors.length];
+        const left = 40 + Math.random() * 20;
+        const tx = (Math.random() - 0.5) * 400;
+        const ty = -200 - Math.random() * 200;
+        const rot = (Math.random() - 0.5) * 720;
+        piece.style.cssText = `position:absolute;left:${left}%;top:60%;width:8px;height:8px;background:${c};border-radius:2px;opacity:1;transform:translate(0,0) rotate(0);transition:transform 1.2s cubic-bezier(.2,.6,.2,1),opacity 1.2s`;
+        cont.appendChild(piece);
+        requestAnimationFrame(() => {
+          piece.style.transform = `translate(${tx}px,${ty}px) rotate(${rot}deg)`;
+          piece.style.opacity = '0';
+        });
+      }
+      document.body.appendChild(cont);
+      setTimeout(() => cont.remove(), 1400);
+    } catch(_){}
   }
 
   // [v2.43.37] Modal rotación: gráfico minimalista + insight + recomendación
@@ -35490,6 +35735,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     toggleFiltroCat, setFiltroCategoria, toggleFiltroTipo, limpiarFiltrosCat, toggleFiltroAlertas, toggleAlertPop,
     // [v2.43.37] Catálogo: filtro de orden + modal de rotación
     setFiltroOrden, abrirModalRotacion, cerrarModalRotacion,
+    // [v2.43.38] Foto del producto: subir/cambiar (skuBase como key)
+    abrirModalFotoProducto, cerrarModalFotoProducto,
+    _catFotoOnFileSelect, _catFotoTomar, _catFotoGuardar,
     // Cajas
     loadCajas, toggleCajaDetail, toggleKpiVentas,
     toggleKpiTickets, setTicketFiltroFecha, setTicketFiltroEstado, setTicketFiltroTipo,
