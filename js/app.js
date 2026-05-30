@@ -1832,12 +1832,12 @@ const MOS = (() => {
       </div>`;
     }).join('');
 
-    // [v2.43.46] Estrategia MODAL centrado con backdrop — usa el mismo patrón
-    // que los modales que funcionan (foto, rotación). NO depende del rect del
-    // botón ni de coordenadas viewport. Backdrop + panel centrado.
+    // [v2.43.48] Fix BRUTAL: estilos forzados con !important inline + cssText
+    // para que NINGÚN CSS global pueda ocultarlo. Si todavía no aparece,
+    // sabemos que algo externo lo está removiendo y mostramos error.
     const html = `<div id="catFiltroPanelFloat" class="cat-fp-backdrop"
-      style="position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(4px);z-index:99999;display:flex;align-items:flex-start;justify-content:center;padding-top:80px;padding-left:16px;padding-right:16px;animation:catFpBgIn .2s ease-out">
-      <div class="cat-fp-card" style="width:100%;max-width:360px;max-height:75vh;overflow-y:auto;background:#0f172a;border:1px solid #6366f1;border-radius:14px;padding:16px;box-shadow:0 25px 60px -10px rgba(99,102,241,.45),0 0 0 1px rgba(99,102,241,.2);animation:catFpCardIn .25s cubic-bezier(.34,1.56,.64,1)"
+      style="position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:0!important;width:100vw!important;height:100vh!important;background:rgba(0,0,0,.6)!important;z-index:2147483647!important;display:flex!important;align-items:flex-start!important;justify-content:center!important;padding-top:80px!important;padding-left:16px!important;padding-right:16px!important;opacity:1!important;visibility:visible!important;pointer-events:auto!important">
+      <div class="cat-fp-card" style="width:100%!important;max-width:360px!important;max-height:75vh!important;overflow-y:auto!important;background:#0f172a!important;border:2px solid #6366f1!important;border-radius:14px!important;padding:16px!important;box-shadow:0 25px 60px -10px rgba(99,102,241,.6),0 0 0 1px rgba(99,102,241,.3)!important;opacity:1!important;visibility:visible!important;display:block!important"
         onclick="event.stopPropagation()">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <div style="font-size:13px;font-weight:800;color:#a5b4fc;letter-spacing:.5px">🔍 FILTROS DEL CATÁLOGO</div>
@@ -1872,16 +1872,36 @@ const MOS = (() => {
       </style>
     </div>`;
     document.body.insertAdjacentHTML('beforeend', html);
-    // Click en backdrop (no en card) cierra
     const fpEl = document.getElementById('catFiltroPanelFloat');
     if (fpEl) {
       fpEl.addEventListener('click', e => {
         if (e.target === fpEl) _cerrarFiltroFloat();
       });
-      // Debug visual: log del rect del panel
       const r = fpEl.getBoundingClientRect();
-      console.log('[filtro] panel creado, rect:', r);
+      const cs = getComputedStyle(fpEl);
+      console.log('[filtro] panel CREADO rect:', r,
+                  'display:', cs.display, 'opacity:', cs.opacity,
+                  'visibility:', cs.visibility, 'z-index:', cs.zIndex);
+    } else {
+      console.error('[filtro] FALLO: insertAdjacentHTML no creó el elemento');
+      toast('⚠ Error creando filtro — revisa consola', 'error', 5000);
     }
+    // [v2.43.48] Verificación post-creación: si algo lo removió en 100ms, avisamos
+    setTimeout(() => {
+      const stillThere = document.getElementById('catFiltroPanelFloat');
+      if (!stillThere) {
+        console.error('[filtro] PANEL FUE REMOVIDO por algo externo en <100ms');
+        toast('⚠ Algo está bloqueando el filtro — escribe en consola: ?', 'error', 6000);
+      } else {
+        const r2 = stillThere.getBoundingClientRect();
+        const cs2 = getComputedStyle(stillThere);
+        console.log('[filtro] panel SIGUE existiendo después de 100ms · rect:', r2,
+                    'display:', cs2.display, 'opacity:', cs2.opacity);
+        if (r2.width === 0 || r2.height === 0) {
+          console.error('[filtro] panel existe pero tiene tamaño 0 — CSS lo está colapsando');
+        }
+      }
+    }, 100);
 
     // Wire listeners
     const float = document.getElementById('catFiltroPanelFloat');
