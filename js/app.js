@@ -18763,7 +18763,8 @@ const MOS = (() => {
                 </div>
                 ${_pinBtn}
                 <button onclick="event.stopPropagation();MOS.abrirDetalleDispositivo('${idAttr}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(251,191,36,0.18);border:1px solid rgba(251,191,36,0.5);color:#fcd34d;font-size:10px;" title="Permisos y acciones del dispositivo">🛡️</button>
-                <button onclick="event.stopPropagation();MOS.abrirEspiaDispositivo('${idAttr}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(99,102,241,0.18);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;font-size:10px;" title="Espiar dispositivo (audio + GPS)">🕵️</button>
+                <button onclick="event.stopPropagation();MOS.abrirEspiaDispositivo('${idAttr}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(99,102,241,0.18);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;font-size:10px;" title="Espiar (audio + GPS — clásico)">🕵️</button>
+                ${_esMasterSession() ? `<button onclick="event.stopPropagation();MOS.abrirEspiaV2('${idAttr}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:linear-gradient(135deg,rgba(99,102,241,0.25),rgba(168,85,247,0.25));border:1px solid rgba(168,85,247,0.55);color:#c084fc;font-size:10px;animation:espiaBreath 3s infinite" title="Espía V2 · WebRTC live (Master)">🛰️</button>` : ''}
                 <span class="text-[10px] text-slate-500 p-1 cursor-pointer" onclick="event.stopPropagation();MOS.abrirModalDispositivo('${idAttr}')" title="Editar">✏️</span>
               </div>`;
             }).join('')}
