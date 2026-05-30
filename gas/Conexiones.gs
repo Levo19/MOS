@@ -690,7 +690,20 @@ function postToWarehouse(action, params) {
   var url = _getProp('WH_GAS_URL');
   if (!url) return { ok: false, error: 'WH_GAS_URL no configurado' };
   try {
-    var payload = JSON.stringify(Object.assign({ action: action }, params));
+    // [v2.43.36 BUG CRÍTICO FIX] Antes:
+    //   Object.assign({ action: action }, params)
+    // Como params YA TIENE action: 'wh_crearDevolucionZona' (del cliente),
+    // Object.assign lo PISABA → WH recibía 'wh_crearDevolucionZona' (no
+    // reconocida en su router) en vez del action interno 'crearDevolucionZona'.
+    // Síntoma reportado por el user: `Acción no reconocida: wh_crearDevolucionZona`.
+    // Fix: clonar params SIN su action y luego setear el correcto.
+    var clean = {};
+    Object.keys(params || {}).forEach(function(k) {
+      if (k === 'action') return;
+      clean[k] = params[k];
+    });
+    clean.action = action;
+    var payload = JSON.stringify(clean);
     var res = UrlFetchApp.fetch(url, {
       method: 'post',
       contentType: 'text/plain',

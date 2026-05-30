@@ -16455,17 +16455,38 @@ const MOS = (() => {
           API.get('getDispositivos', {})
         ]);
         let cambios = false;
+        // [v2.43.36] Helper: preservar mutaciones optimistas pendientes.
+        // Si el operador acaba de guardar un horario custom y la API aún no
+        // confirmó, NO queremos que el polling pise el cambio con datos viejos.
+        // Reglas:
+        //   - Si la fila vieja tiene _horCustomPendiente=true → conservar
+        //     horarioCustom local + flag en la fila nueva (no pisar mientras
+        //     se está guardando)
+        const preservarPendientes = (oldArr, newArr) => {
+          const oldByid = {};
+          (oldArr || []).forEach(x => {
+            if (x._horCustomPendiente) oldByid[String(x.idPersonal)] = x;
+          });
+          (newArr || []).forEach(n => {
+            const old = oldByid[String(n.idPersonal)];
+            if (old) {
+              n.horarioCustom = old.horarioCustom;
+              n._horCustomPendiente = true;
+            }
+          });
+          return newArr;
+        };
         if (personRes.status === 'fulfilled') {
           const newJson = JSON.stringify(personRes.value || []);
           if (JSON.stringify(cfgData.personal || []) !== newJson) {
-            cfgData.personal = personRes.value || [];
+            cfgData.personal = preservarPendientes(cfgData.personal, personRes.value || []);
             cambios = true;
           }
         }
         if (mosRes.status === 'fulfilled') {
           const newJson = JSON.stringify(mosRes.value || []);
           if (JSON.stringify(cfgData.personalMOS || []) !== newJson) {
-            cfgData.personalMOS = mosRes.value || [];
+            cfgData.personalMOS = preservarPendientes(cfgData.personalMOS, mosRes.value || []);
             cambios = true;
           }
         }
@@ -18112,33 +18133,41 @@ const MOS = (() => {
     // Resolver el horario base del app del operador
     const appPersona = _appDePersona(p);
     const base       = _horarioBaseDeApp(appPersona);
-    // Calcular diferencias por día
-    const difs = []; // [{ lbl, txt, cerrado }]
-    _DIAS_HOR.forEach(d => {
+    // Calcular diferencias por día — incluir idx para agrupar consecutivos reales
+    const difs = []; // [{ idx, lbl, txt, cerrado }]
+    _DIAS_HOR.forEach((d, idx) => {
       const c = hc.dias[d.k] || {};
       const b = base[d.k]    || {};
-      const cAct = c.activo !== false;
-      const bAct = b.activo !== false;
+      const cAct = c.activo !== false && c.activo !== 'false';  // [v2.43.36] tolera "false" string de Sheets
+      const bAct = b.activo !== false && b.activo !== 'false';
       const cAp  = _hrOnly(c.apertura), cCi = _hrOnly(c.cierre);
       const bAp  = _hrOnly(b.apertura), bCi = _hrOnly(b.cierre);
       const iguales = cAct === bAct && (cAct === false || (cAp === bAp && cCi === bCi));
       if (iguales) return; // omitir días iguales al base
       if (!cAct) {
-        difs.push({ lbl: d.lbl, txt: 'cerrado', cerrado: true });
+        difs.push({ idx, lbl: d.lbl, txt: 'cerrado', cerrado: true });
       } else {
-        difs.push({ lbl: d.lbl, txt: `${cAp}h → ${cCi}h`, cerrado: false });
+        difs.push({ idx, lbl: d.lbl, txt: `${cAp}h → ${cCi}h`, cerrado: false });
       }
     });
 
     // Si NO hay diferencias → el custom es idéntico al base → no mostrar chip
     if (!difs.length) return '';
 
-    // Agrupar días consecutivos con misma txt para resumir "Vie a Sab 07h→22h"
+    // [v2.43.36 BUG AGRUPACIÓN FIX] Agrupar solo si los días son CONSECUTIVOS
+    // en la semana (idx contiguos) y tienen el mismo texto. Antes:
+    //   Lun 7→22, Mar cerrado, Mie 7→22 → "Lun a Mie 7→22" (falso, Mar no aplica)
+    // Ahora: detecta el salto en idx y rompe el grupo.
     const grupos = [];
     let actual = null;
     difs.forEach(d => {
-      if (actual && actual.txt === d.txt) actual.dias.push(d.lbl);
-      else { actual = { txt: d.txt, cerrado: d.cerrado, dias: [d.lbl] }; grupos.push(actual); }
+      if (actual && actual.txt === d.txt && d.idx === actual.endIdx + 1) {
+        actual.dias.push(d.lbl);
+        actual.endIdx = d.idx;
+      } else {
+        actual = { txt: d.txt, cerrado: d.cerrado, dias: [d.lbl], endIdx: d.idx };
+        grupos.push(actual);
+      }
     });
     // Diferencias de hora → ámbar suave. Días cerrados → rojo suave (rosa).
     // Sin negrita agresiva; el contraste de color es suficiente.
@@ -18756,40 +18785,46 @@ const MOS = (() => {
         </div>`
       : '';
 
+    // [v2.43.36 FIX VISUAL] El chip de excepciones ahora vive DENTRO del card oscuro.
+    // Antes estaba fuera del div con background → "flotaba" suelto debajo del card.
+    // Cambio el card a flex-col (no flex items-center) y meto la row de contenido
+    // como hijo interno, dejando el chip como segunda fila dentro del mismo card.
     return `<div class="pers-card-wrap">
-      <div class="disp-chip pers-card-clickable flex items-center gap-3 p-3 rounded-lg cursor-pointer ${claseFresh} ${opacityCls}"
+      <div class="disp-chip pers-card-clickable p-3 rounded-lg cursor-pointer ${claseFresh} ${opacityCls}"
         onclick="${esAdmin ? `MOS._togglePersAudit('${safeId}')` : `MOS.abrirModalPersonal('${safeId}','${appOrigen}')`}"
-        style="background:${glowBg};border:1px solid ${glowBorder};transition:all 0.2s;position:relative;"
+        style="background:${glowBg};border:1px solid ${glowBorder};transition:all 0.2s;position:relative;display:flex;flex-direction:column"
         title="${esAdmin ? 'Click para ver auditoría' : 'Click para editar'}">
-        <div class="relative shrink-0">
-          <div class="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold"
-               style="background:${p.color || '#6366f1'}">${ini}</div>
-          ${dotPulse}
-        </div>
-        <div class="flex-1 min-w-0">
-          <div class="font-medium text-sm text-slate-200 truncate">${p.nombre} ${p.apellido || ''}</div>
-          <div class="flex items-center gap-2 mt-0.5 flex-wrap">
-            <span class="badge badge-gray text-[9px] uppercase">${p.rol || '—'}</span>
-            ${p.montoBase ? `<span class="text-[9px] text-slate-500">S/.${parseFloat(p.montoBase).toFixed(2)}/día</span>` : ''}
-            <span class="text-[9px]" style="color:${act.color};">${act.dot} ${act.label}</span>
+        <div style="display:flex;align-items:center;gap:12px">
+          <div class="relative shrink-0">
+            <div class="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold"
+                 style="background:${p.color || '#6366f1'}">${ini}</div>
+            ${dotPulse}
           </div>
-          ${ultAccion}
+          <div class="flex-1 min-w-0">
+            <div class="font-medium text-sm text-slate-200 truncate">${p.nombre} ${p.apellido || ''}</div>
+            <div class="flex items-center gap-2 mt-0.5 flex-wrap">
+              <span class="badge badge-gray text-[9px] uppercase">${p.rol || '—'}</span>
+              ${p.montoBase ? `<span class="text-[9px] text-slate-500">S/.${parseFloat(p.montoBase).toFixed(2)}/día</span>` : ''}
+              <span class="text-[9px]" style="color:${act.color};">${act.dot} ${act.label}</span>
+            </div>
+            ${ultAccion}
+          </div>
+          ${audioBtn}
+          ${gpsBtn}
+          ${pushBtn}
+          ${histBtn}
+          ${llaveBtn}
+          <label class="pers-switch shrink-0" title="${activo ? 'Desactivar' : 'Activar'}" onclick="event.stopPropagation()">
+            <input type="checkbox" ${activo ? 'checked' : ''} onchange="MOS.togglePersonalActivo('${safeId}','${appOrigen}', event)">
+            <span class="pers-switch-slider"></span>
+          </label>
+          <button onclick="event.stopPropagation();MOS.abrirModalPersonal('${safeId}','${appOrigen}')"
+                  class="text-[10px] text-slate-500 hover:text-white p-1" title="Editar">✏️</button>
+          <button onclick="event.stopPropagation();MOS.abrirModalHorarioCustom('${safeId}')"
+                  class="text-[12px] text-slate-500 hover:text-violet-300 p-1" title="Horario custom">🕐</button>
         </div>
-        ${audioBtn}
-        ${gpsBtn}
-        ${pushBtn}
-        ${histBtn}
-        ${llaveBtn}
-        <label class="pers-switch shrink-0" title="${activo ? 'Desactivar' : 'Activar'}" onclick="event.stopPropagation()">
-          <input type="checkbox" ${activo ? 'checked' : ''} onchange="MOS.togglePersonalActivo('${safeId}','${appOrigen}', event)">
-          <span class="pers-switch-slider"></span>
-        </label>
-        <button onclick="event.stopPropagation();MOS.abrirModalPersonal('${safeId}','${appOrigen}')"
-                class="text-[10px] text-slate-500 hover:text-white p-1" title="Editar">✏️</button>
-        <button onclick="event.stopPropagation();MOS.abrirModalHorarioCustom('${safeId}')"
-                class="text-[12px] text-slate-500 hover:text-violet-300 p-1" title="Horario custom">🕐</button>
+        ${_renderChipHorarioCustom(p)}
       </div>
-      ${_renderChipHorarioCustom(p)}
       ${auditExpand}
     </div>`;
   }
