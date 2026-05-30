@@ -1900,23 +1900,28 @@ const MOS = (() => {
     const float = document.getElementById('catFiltroPanelFloat');
     if (!float) return;
     float.addEventListener('click', e => e.stopPropagation());
+    // [v2.43.50] Click optimista: cerrar modal inmediato + render diferido
     float.querySelectorAll('.cat-fp-radio').forEach(el => {
       el.addEventListener('click', () => {
-        setFiltroCategoria(el.dataset.cat || '');
-        _cerrarFiltroFloat();
+        const cat = el.dataset.cat || '';
+        try { _opsBeep && _opsBeep('tac'); } catch(_){}
+        _aplicarFiltroOptimista(() => setFiltroCategoria(cat));
       });
     });
     float.querySelectorAll('.cat-fp-chk').forEach(el => {
       el.addEventListener('click', () => {
-        toggleFiltroTipo(el.dataset.tipo);
-        // refresh visual del check
+        const tipo = el.dataset.tipo;
+        try { _opsBeep && _opsBeep('tac'); } catch(_){}
+        // Feedback visual inmediato del check antes de cerrar
         el.classList.toggle('is-on');
+        _aplicarFiltroOptimista(() => toggleFiltroTipo(tipo));
       });
     });
     float.querySelectorAll('.cat-fp-ord').forEach(el => {
       el.addEventListener('click', () => {
-        setFiltroOrden(el.dataset.orden || '');
-        _cerrarFiltroFloat();
+        const orden = el.dataset.orden || '';
+        try { _opsBeep && _opsBeep('tac'); } catch(_){}
+        _aplicarFiltroOptimista(() => setFiltroOrden(orden));
       });
     });
 
@@ -1979,6 +1984,19 @@ const MOS = (() => {
   setTimeout(_bindBotonFiltroDirecto, 3000);
   // Mantener el viejo nombre por compat con HTML existente que pueda llamarlo
   function _closeFiltroOnOutside() { /* deprecated en v2.43.39 */ }
+
+  // [v2.43.50] Wrapper optimista para aplicar filtros sin lag perceptual.
+  // 1) Cerrar el modal flotante INMEDIATO (feedback visual)
+  // 2) Toast rápido "🔍 Filtrando..."
+  // 3) requestAnimationFrame antes del render → el navegador pinta primero
+  //    el cierre del modal y después corre el render pesado
+  function _aplicarFiltroOptimista(fn) {
+    _cerrarFiltroFloat();
+    // Render diferido para que el cierre del modal se pinte primero
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => { try { fn(); } catch(e) { console.warn(e); } });
+    });
+  }
 
   function setFiltroCategoria(cat) {
     _catFiltros.categoria = cat;
