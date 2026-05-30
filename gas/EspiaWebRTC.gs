@@ -115,14 +115,9 @@ function espiaAgregarIce(params) {
   var ice      = params.ice;
   if (!sesionId || !lado || !ice) return { ok: false, error: 'Requiere sesionId, lado, ice' };
   if (lado !== 'master' && lado !== 'device') return { ok: false, error: 'lado: master|device' };
-
+  // [v2.43.61] Usar helper atómico que lee + agrega + escribe bajo lock
   var col = (lado === 'master') ? 'iceMaster' : 'iceDevice';
-  var row = _buscarSesion(sesionId);
-  if (!row) return { ok: false, error: 'Sesión no encontrada' };
-  var arr = [];
-  try { arr = JSON.parse(row[col] || '[]'); } catch(_) { arr = []; }
-  arr.push({ ts: Date.now(), ice: ice });
-  return _actualizarColumnaSesion(sesionId, col, JSON.stringify(arr));
+  return _agregarAArrayJsonSesion(sesionId, col, { ts: Date.now(), ice: ice });
 }
 
 function espiaLeerIce(params) {
@@ -310,20 +305,54 @@ function _buscarSesion(sesionId) {
 }
 
 function _actualizarColumnaSesion(sesionId, columna, valor, extras) {
-  var row = _buscarSesion(sesionId);
-  if (!row) return { ok: false, error: 'Sesión no encontrada' };
-  var sh = _getHojaSignaling();
-  var hdrs = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
-  var col = hdrs.indexOf(columna);
-  if (col < 0) return { ok: false, error: 'Columna no existe: ' + columna };
-  sh.getRange(row._row, col + 1).setValue(valor);
-  if (extras) {
-    Object.keys(extras).forEach(function(k) {
-      var c = hdrs.indexOf(k);
-      if (c >= 0) sh.getRange(row._row, c + 1).setValue(extras[k]);
-    });
+  // [v2.43.61 LockService] Antes había race condition al hacer leer→modificar→escribir
+  // sobre arrays JSON (iceMaster/iceDevice). Si master y device subían ICE al mismo
+  // tiempo, uno sobreescribía al otro → pérdida de candidatos → conexión inicial
+  // fallaba 5-15% del tiempo. Lock garantiza atomicidad.
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(15000); } catch(_) { return { ok: false, error: 'Lock timeout' }; }
+  try {
+    var row = _buscarSesion(sesionId);
+    if (!row) return { ok: false, error: 'Sesión no encontrada' };
+    var sh = _getHojaSignaling();
+    var hdrs = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    var col = hdrs.indexOf(columna);
+    if (col < 0) return { ok: false, error: 'Columna no existe: ' + columna };
+    sh.getRange(row._row, col + 1).setValue(valor);
+    if (extras) {
+      Object.keys(extras).forEach(function(k) {
+        var c = hdrs.indexOf(k);
+        if (c >= 0) sh.getRange(row._row, c + 1).setValue(extras[k]);
+      });
+    }
+    return { ok: true };
+  } finally {
+    try { lock.releaseLock(); } catch(_){}
   }
-  return { ok: true };
+}
+
+// [v2.43.61] Versión atómica de append a array JSON — para ICE candidates.
+// Lee la celda, agrega elemento, escribe — todo bajo lock para evitar perder ICE.
+function _agregarAArrayJsonSesion(sesionId, columna, elemento) {
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(15000); } catch(_) { return { ok: false, error: 'Lock timeout' }; }
+  try {
+    var row = _buscarSesion(sesionId);
+    if (!row) return { ok: false, error: 'Sesión no encontrada' };
+    var sh = _getHojaSignaling();
+    var hdrs = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    var col = hdrs.indexOf(columna);
+    if (col < 0) return { ok: false, error: 'Columna no existe: ' + columna };
+    // Re-leer la celda DENTRO del lock (el row.X puede estar stale)
+    var actualVal = sh.getRange(row._row, col + 1).getValue();
+    var arr = [];
+    try { arr = JSON.parse(actualVal || '[]'); } catch(_) { arr = []; }
+    arr.push(elemento);
+    sh.getRange(row._row, col + 1).setValue(JSON.stringify(arr));
+    return { ok: true, data: { totalElementos: arr.length } };
+  } finally {
+    try { lock.releaseLock(); } catch(_){}
+  }
 }
 
 function _sesionExpiro(row) {
@@ -367,6 +396,91 @@ function _getCarpetaEspiaBuffer(deviceId) {
   var subs = root.getFoldersByName(subName);
   var sub  = subs.hasNext() ? subs.next() : root.createFolder(subName);
   return sub;
+}
+
+// [v2.43.61] Cron semanal — borra chunks de buffer >7 días + sesiones RTC >24h.
+// Sin esto Drive se llenaba 1.8GB/device/día y RTC_SIGNALING crecía O(n).
+function cronLimpiarBufferEspia() {
+  var resultado = { chunks_borrados: 0, sesiones_borradas: 0, errores: [] };
+  try {
+    var sesionesBorradas = _purgarSesionesAntiguas();
+    resultado.sesiones_borradas = sesionesBorradas;
+  } catch(eS) { resultado.errores.push('purga sesiones: ' + eS.message); }
+  // Limpiar chunks viejos de Drive
+  try {
+    var rootName = 'MOS Espia Buffer';
+    var folders = DriveApp.getFoldersByName(rootName);
+    if (folders.hasNext()) {
+      var root = folders.next();
+      var subs = root.getFolders();
+      var hace7d = Date.now() - 7 * 86400000;
+      while (subs.hasNext()) {
+        var sub = subs.next();
+        var files = sub.getFiles();
+        while (files.hasNext()) {
+          var f = files.next();
+          var creado = f.getDateCreated().getTime();
+          if (creado < hace7d) {
+            try { f.setTrashed(true); resultado.chunks_borrados++; }
+            catch(eF) { resultado.errores.push(f.getName() + ': ' + eF.message); }
+          }
+        }
+      }
+    }
+  } catch(eD) { resultado.errores.push('cleanup drive: ' + eD.message); }
+  Logger.log('[cronLimpiarBufferEspia] ' + JSON.stringify(resultado));
+  return { ok: true, data: resultado };
+}
+
+function setupEspiaCleanupTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === 'cronLimpiarBufferEspia') ScriptApp.deleteTrigger(t);
+  });
+  // Domingos a las 3 AM
+  ScriptApp.newTrigger('cronLimpiarBufferEspia')
+           .timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(3).create();
+  Logger.log('[espia cleanup] cron instalado domingos 3AM');
+  return { ok: true, data: { instalado: true, schedule: 'domingos 3AM' } };
+}
+
+// [v2.43.61] Lista chunks de buffer para timeline en admin.
+// params: { deviceId, desde (ts ms), hasta (ts ms), tipo (opcional) }
+// Retorna [{ fileId, nombre, tipo, ts, tamMB, url }] ordenado por ts DESC.
+function espiaListarChunks(params) {
+  var deviceId = String(params.deviceId || '').trim();
+  if (!deviceId) return { ok: false, error: 'Requiere deviceId' };
+  var desde = parseInt(params.desde) || (Date.now() - 12 * 3600000); // 12h por default
+  var hasta = parseInt(params.hasta) || Date.now();
+  var tipoFiltro = String(params.tipo || '').toLowerCase();
+  try {
+    var sub = _getCarpetaEspiaBuffer(deviceId);
+    var files = sub.getFiles();
+    var arr = [];
+    while (files.hasNext()) {
+      var f = files.next();
+      var nombre = f.getName();
+      // Parsear timestamp del nombre: "deviceId_tipo_TIMESTAMP.webm"
+      var m = nombre.match(/_(audio_video|screen|audio)_(\d+)\./);
+      if (!m) continue;
+      var tipoArchivo = m[1];
+      var ts = parseInt(m[2]);
+      if (isNaN(ts)) continue;
+      if (ts < desde || ts > hasta) continue;
+      if (tipoFiltro && tipoArchivo !== tipoFiltro) continue;
+      arr.push({
+        fileId:  f.getId(),
+        nombre:  nombre,
+        tipo:    tipoArchivo,
+        ts:      ts,
+        tamMB:   Math.round(f.getSize() / (1024 * 1024) * 10) / 10,
+        url:     'https://drive.google.com/file/d/' + f.getId() + '/preview'
+      });
+    }
+    arr.sort(function(a, b) { return b.ts - a.ts; });
+    return { ok: true, data: { chunks: arr, total: arr.length, desde: desde, hasta: hasta } };
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
 }
 
 // Push helper — si no existe el endpoint global, lo definimos mínimo aquí

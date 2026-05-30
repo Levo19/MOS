@@ -149,6 +149,10 @@ function _route(method, e) {
       case 'espiaReportarStreams':           return espiaReportarStreams(params);
       case 'espiaCerrarSesion':              return espiaCerrarSesion(params);
       case 'espiaSubirChunk':                return espiaSubirChunk(params);
+      // [v2.43.61] Timeline + cleanup
+      case 'espiaListarChunks':              return espiaListarChunks(params);
+      case 'cronLimpiarBufferEspia':         return cronLimpiarBufferEspia();
+      case 'setupEspiaCleanupTrigger':       return setupEspiaCleanupTrigger();
       case 'wh_getDevolucionesZona':         return postToWarehouse('getDevolucionesZona', params);
       case 'wh_getDevolucionDetalle':        return postToWarehouse('getDevolucionDetalle', params);
       case 'wh_confirmarRecepcionDevolucion': return postToWarehouse('confirmarRecepcionDevolucion', params);

