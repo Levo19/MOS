@@ -1802,6 +1802,15 @@ const MOS = (() => {
   function toggleFiltroCat(ev) {
     if (ev && ev.stopPropagation) ev.stopPropagation();
     if (ev && ev.preventDefault) ev.preventDefault();
+    // [v2.43.49 FIX DEFINITIVO] Debounce 250ms — el handler estaba siendo
+    // disparado 2 veces (onclick inline + addEventListener) → la 2da llamada
+    // cerraba el panel recién creado. Ahora ignoramos llamadas rápidas.
+    const now = Date.now();
+    if (window._filtroLastToggle && (now - window._filtroLastToggle) < 250) {
+      console.log('[filtro] click duplicado ignorado (' + (now - window._filtroLastToggle) + 'ms)');
+      return;
+    }
+    window._filtroLastToggle = now;
     console.log('[filtro] click recibido, abriendo panel flotante');
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
 
@@ -1886,22 +1895,6 @@ const MOS = (() => {
       console.error('[filtro] FALLO: insertAdjacentHTML no creó el elemento');
       toast('⚠ Error creando filtro — revisa consola', 'error', 5000);
     }
-    // [v2.43.48] Verificación post-creación: si algo lo removió en 100ms, avisamos
-    setTimeout(() => {
-      const stillThere = document.getElementById('catFiltroPanelFloat');
-      if (!stillThere) {
-        console.error('[filtro] PANEL FUE REMOVIDO por algo externo en <100ms');
-        toast('⚠ Algo está bloqueando el filtro — escribe en consola: ?', 'error', 6000);
-      } else {
-        const r2 = stillThere.getBoundingClientRect();
-        const cs2 = getComputedStyle(stillThere);
-        console.log('[filtro] panel SIGUE existiendo después de 100ms · rect:', r2,
-                    'display:', cs2.display, 'opacity:', cs2.opacity);
-        if (r2.width === 0 || r2.height === 0) {
-          console.error('[filtro] panel existe pero tiene tamaño 0 — CSS lo está colapsando');
-        }
-      }
-    }, 100);
 
     // Wire listeners
     const float = document.getElementById('catFiltroPanelFloat');
@@ -1963,30 +1956,19 @@ const MOS = (() => {
     });
   }
 
-  // [v2.43.42 FIX DEFINITIVO BOTÓN FILTRO]
-  // Bind directo del handler al botón cuando el DOM está listo. Esto NO depende
-  // del onclick inline (que podría perderse si MOS namespace falla). Además
-  // fuerza pointer-events:auto en JS por si algún CSS lo desactiva.
-  // También usa pointerdown (no solo click) — captura el tap antes de que
-  // otras animaciones de transition lo intercepten.
+  // [v2.43.49] Bind directo SOLO click (no pointerdown — causaba doble disparo
+  // junto con onclick inline en touch). El onclick inline fue removido del HTML.
   function _bindBotonFiltroDirecto() {
     const btn = document.getElementById('btnFiltrosCat');
     const wrap = document.getElementById('catFiltroWrap');
     if (!btn || btn.dataset.filtroBoundDirecto === '1') return;
     btn.dataset.filtroBoundDirecto = '1';
-    // Forzar estilos
     btn.style.pointerEvents = 'auto';
     btn.style.cursor = 'pointer';
     if (wrap) { wrap.style.pointerEvents = 'auto'; }
-    // Handler defensivo: captura pointerdown Y click
-    const open = (e) => {
+    btn.addEventListener('click', (e) => {
       e.stopPropagation();
       try { toggleFiltroCat(e); } catch(err) { console.warn('[filtro]', err); }
-    };
-    btn.addEventListener('click', open);
-    btn.addEventListener('pointerdown', (e) => {
-      // En tablets/touch, pointerdown es más confiable que click
-      if (e.pointerType === 'touch') open(e);
     });
   }
   // Re-bindear cuando renderCatalogo se ejecuta o el catálogo se monta
