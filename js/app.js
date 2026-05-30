@@ -1240,16 +1240,16 @@ const MOS = (() => {
       // [v2.43.42] Usar agregación grupal (canónico + presentaciones + equivalentes)
       let serie = _serieRotacionAgregada(p);
       const productos = cache.productos || {};
-      // [v2.43.45] "Cargando…" solo si:
-      //   1. Hay una promesa en vuelo Y no han pasado más de 20s desde que arrancó
-      //   2. Sin productos cacheados aún
-      // Si pasó el timeout o ya hay error en el cache → tratar como vacío.
+      // [v2.43.55] "Cargando…" solo durante los primeros 25s de un cargado activo.
+      // Después de 25s sin resolver, asumimos timeout y mostramos "sin rotación".
       const tsInicio = S._rotacionSemanalLoadingStart || 0;
-      const pasoTimeout = (Date.now() - tsInicio) > 22000;
-      const enVuelo = !!S._rotacionSemanalLoading && !pasoTimeout && cache._loading === true;
+      const segundosTranscurridos = tsInicio ? (Date.now() - tsInicio) / 1000 : 999;
+      const enVueloReal = !!S._rotacionSemanalLoading
+                         && cache._loading === true
+                         && segundosTranscurridos < 25;
       const hayData = cache.productos && Object.keys(cache.productos).length > 0;
       const huboError = !!cache._error;
-      if (enVuelo && !hayData && !huboError) {
+      if (enVueloReal && !hayData && !huboError) {
         return `<div class="cat-spark-wrap" style="font-size:9px;color:#475569;opacity:.6">📦 cargando…</div>`;
       }
       // Sin rotación nunca
@@ -19477,41 +19477,67 @@ const MOS = (() => {
   // el sparkline muestre "sin rotación" en vez de quedarse "cargando…" eterno.
   async function _cargarRotacionSemanal(force) {
     const TTL = 15 * 60 * 1000;
+    // [v2.43.55] Si el cache es bueno y reciente → retornar directo
     if (!force && S._rotacionSemanalCache && S._rotacionSemanalCache.productos
+        && Object.keys(S._rotacionSemanalCache.productos).length > 0
         && (Date.now() - (S._rotacionSemanalCacheTs || 0)) < TTL) {
       return S._rotacionSemanalCache;
     }
-    // [v2.43.41] Guard de "cargando in-flight" para evitar disparos múltiples
-    // [v2.43.45] Si la promesa anterior lleva más de 25s, abandonarla — está colgada
+    // Guard de "cargando in-flight" — abandonar si lleva >25s
     const tsAnterior = S._rotacionSemanalLoadingStart || 0;
     if (S._rotacionSemanalLoading && (Date.now() - tsAnterior) < 25000) {
       return S._rotacionSemanalLoading;
     }
-    if (!S._rotacionSemanalCache || !S._rotacionSemanalCache.productos) {
+    // [v2.43.55] FAILSAFE: si llegamos aquí con _loading colgado (>25s), forzar reset
+    if (S._rotacionSemanalLoading) {
+      console.warn('[rotacion] abandono promesa colgada (>25s)');
+      S._rotacionSemanalLoading = null;
+    }
+    console.log('[rotacion] iniciando carga, force=', force);
+    if (!S._rotacionSemanalCache || !S._rotacionSemanalCache.productos
+        || Object.keys(S._rotacionSemanalCache.productos).length === 0) {
       S._rotacionSemanalCache = { etiquetas: [], productos: {}, _loading: true };
     }
     S._rotacionSemanalLoadingStart = Date.now();
     const setear = (d) => {
-      S._rotacionSemanalCache = d;
+      // [v2.43.55] Garantizar que _loading no quede true accidentalmente
+      const limpio = Object.assign({}, d);
+      delete limpio._loading;
+      S._rotacionSemanalCache = limpio;
       S._rotacionSemanalCacheTs = Date.now();
       S._rotacionSemanalLoading = null;
       S._rotacionSemanalLoadingStart = 0;
+      console.log('[rotacion] setear ok. productos:',
+                  Object.keys(limpio.productos || {}).length,
+                  limpio._error ? 'error:' + limpio._error : '');
       if (S.tab === 'catalogo' && typeof renderCatalogo === 'function') {
         try { renderCatalogo(); } catch(_){}
       }
       return d;
     };
-    // [v2.43.52 FIX RACE] Reservar la promise ANTES de await — el guard
-    // de in-flight necesita ver la promise para no disparar otra paralela.
-    let resolverApiCall, rechazarApiCall;
-    const apiCall = new Promise((res, rej) => { resolverApiCall = res; rechazarApiCall = rej; });
+    let resolverApiCall;
+    const apiCall = new Promise((res) => { resolverApiCall = res; });
     S._rotacionSemanalLoading = apiCall;
+
+    // [v2.43.55] DOBLE failsafe: setTimeout absoluto de 25s que fuerza setear()
+    // incluso si la API ni siquiera responde, ni rechaza, ni nada.
+    let yaResolvio = false;
+    const safetyTimer = setTimeout(() => {
+      if (yaResolvio) return;
+      yaResolvio = true;
+      console.warn('[rotacion] SAFETY TIMER 25s — forzando estado vacio');
+      resolverApiCall(setear({ etiquetas: [], productos: {}, _error: 'safety_timeout' }));
+    }, 25000);
+
     (async () => {
       try {
         const r = await Promise.race([
           API.post('wh_getRotacionSemanal', { semanas: 8 }),
           new Promise((_, rej) => setTimeout(() => rej(new Error('timeout 20s')), 20000))
         ]);
+        if (yaResolvio) return;
+        yaResolvio = true;
+        clearTimeout(safetyTimer);
         const d = (r && r.data && r.data.productos) ? r.data
                 : (r && r.productos)                ? r
                 : null;
@@ -19519,6 +19545,9 @@ const MOS = (() => {
         console.warn('[rotacion] respuesta sin productos:', r);
         resolverApiCall(setear({ etiquetas: [], productos: {}, _error: 'sin_data' }));
       } catch(e) {
+        if (yaResolvio) return;
+        yaResolvio = true;
+        clearTimeout(safetyTimer);
         console.warn('[rotacion] error:', e && e.message);
         resolverApiCall(setear({ etiquetas: [], productos: {}, _error: String(e && e.message || e) }));
       }
