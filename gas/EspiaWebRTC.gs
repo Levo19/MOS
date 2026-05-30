@@ -96,6 +96,10 @@ function _espiaCrearSesionImpl(params) {
     '',                   // streamsActivos JSON
     ''                    // detalleFin
   ]);
+  // [v2.43.67] FLUSH OBLIGATORIO — Apps Script bufferea appendRow y el
+  // siguiente HTTP request (espiaSubirOferta) puede leer ANTES del commit.
+  // Síntoma: "Sesión no encontrada" en la petición inmediata posterior.
+  try { SpreadsheetApp.flush(); } catch(_){}
 
   // Notif push al dispositivo con el sesionId
   try {
@@ -386,6 +390,8 @@ function _actualizarColumnaSesion(sesionId, columna, valor, extras) {
         if (c >= 0) sh.getRange(row._row, c + 1).setValue(extras[k]);
       });
     }
+    // [v2.43.67] Flush para que el polling del otro lado vea el cambio inmediato
+    try { SpreadsheetApp.flush(); } catch(_){}
     return { ok: true };
   } finally {
     try { lock.releaseLock(); } catch(_){}
@@ -410,6 +416,8 @@ function _agregarAArrayJsonSesion(sesionId, columna, elemento) {
     try { arr = JSON.parse(actualVal || '[]'); } catch(_) { arr = []; }
     arr.push(elemento);
     sh.getRange(row._row, col + 1).setValue(JSON.stringify(arr));
+    // [v2.43.67] Flush para que el polling del otro lado vea el ICE candidate inmediato
+    try { SpreadsheetApp.flush(); } catch(_){}
     return { ok: true, data: { totalElementos: arr.length } };
   } finally {
     try { lock.releaseLock(); } catch(_){}
