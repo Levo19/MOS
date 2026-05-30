@@ -46,19 +46,54 @@ function diagnosticarProperties() {
       reporte.extras.push({ key: k, length: (todas[k] || '').length });
     }
   });
-  // Verificar password admin en hoja CONFIG
-  var passInfo = { fuente: 'hoja CONFIG' };
+  // [v2.43.62b] Verificar password admin en hoja CONFIG_MOS (NO 'CONFIG' a secas)
+  // La fila se llama ADMIN_GLOBAL_PIN — son los 4 primeros dígitos de la clave admin.
+  // Los 4 últimos vienen de PERSONAL_MASTER.pin del admin/master correspondiente.
+  var passInfo = { fuente: 'hoja CONFIG_MOS · fila ADMIN_GLOBAL_PIN' };
   try {
     var ssMain = SpreadsheetApp.openById(_getProp('SPREADSHEET_ID') || SpreadsheetApp.getActive().getId());
-    var sh = ssMain.getSheetByName('CONFIG');
+    var sh = ssMain.getSheetByName('CONFIG_MOS');
     if (!sh) {
-      passInfo.estado = 'HOJA_CONFIG_NO_EXISTE';
+      passInfo.estado = 'HOJA_CONFIG_MOS_NO_EXISTE — corré setupMOS() para crearla';
     } else {
       var data = sh.getDataRange().getValues();
-      var rows = data.length;
-      passInfo.estado = rows > 1 ? 'CONFIG_TIENE_' + (rows - 1) + '_FILAS' : 'CONFIG_VACIA';
+      var pinFound = false;
+      for (var ri = 1; ri < data.length; ri++) {
+        if (String(data[ri][0]) === 'ADMIN_GLOBAL_PIN') {
+          var pinVal = String(data[ri][1] || '');
+          passInfo.estado = 'OK · ADMIN_GLOBAL_PIN configurado [' + pinVal.length + ' dígitos]';
+          pinFound = true;
+          break;
+        }
+      }
+      if (!pinFound) passInfo.estado = 'CONFIG_MOS existe pero FALTA fila ADMIN_GLOBAL_PIN';
     }
   } catch(e) { passInfo.estado = 'ERROR: ' + e.message; }
+
+  // [v2.43.62b] Listar admins/master activos para diagnosticar bug "Clave incorrecta"
+  var adminsInfo = { lista: [] };
+  try {
+    var perSh = SpreadsheetApp.openById(_getProp('SPREADSHEET_ID') || SpreadsheetApp.getActive().getId()).getSheetByName('PERSONAL_MASTER');
+    if (perSh) {
+      var pd = perSh.getDataRange().getValues();
+      var ph = pd[0];
+      var iRol = ph.indexOf('rol');
+      var iEst = ph.indexOf('estado');
+      var iPin = ph.indexOf('pin');
+      var iNom = ph.indexOf('nombre');
+      for (var pi = 1; pi < pd.length; pi++) {
+        var rol = String(pd[pi][iRol] || '').toUpperCase();
+        if (rol !== 'MASTER' && rol !== 'ADMINISTRADOR' && rol !== 'ADMIN') continue;
+        var pinV = String(pd[pi][iPin] || '');
+        adminsInfo.lista.push({
+          nombre: String(pd[pi][iNom] || ''),
+          rol: rol,
+          estado: String(pd[pi][iEst] || ''),
+          pinConfigurado: pinV.length === 4 ? 'SI [4 dig]' : (pinV ? 'MAL FORMATO [' + pinV.length + ' chars]' : 'NO')
+        });
+      }
+    }
+  } catch(e) { adminsInfo.error = e.message; }
   Logger.log('═══ DIAGNÓSTICO PROPERTIES ═══');
   Logger.log('✅ OK: ' + reporte.ok.length);
   reporte.ok.forEach(function(r){ Logger.log('  ' + r.key + ' → ' + r.preview); });
@@ -68,8 +103,14 @@ function diagnosticarProperties() {
   reporte.opcionales_faltantes.forEach(function(r){ Logger.log('  · ' + r.key); });
   Logger.log('📦 Extras (state persistente): ' + reporte.extras.length);
   reporte.extras.forEach(function(r){ Logger.log('  · ' + r.key + ' [' + r.length + ' chars]'); });
-  Logger.log('🔐 Password admin: ' + passInfo.estado + ' (fuente: ' + passInfo.fuente + ')');
-  return { ok: true, data: { reporte: reporte, passwordAdmin: passInfo } };
+  Logger.log('🔐 Password admin: ' + passInfo.estado);
+  Logger.log('   fuente: ' + passInfo.fuente);
+  Logger.log('👥 Admins/Masters en PERSONAL_MASTER: ' + adminsInfo.lista.length);
+  adminsInfo.lista.forEach(function(a) {
+    Logger.log('  · ' + a.nombre + ' [' + a.rol + '] estado=' + a.estado + ' pin=' + a.pinConfigurado);
+  });
+  if (adminsInfo.error) Logger.log('  ⚠ error leyendo PERSONAL_MASTER: ' + adminsInfo.error);
+  return { ok: true, data: { reporte: reporte, passwordAdmin: passInfo, admins: adminsInfo } };
 }
 
 

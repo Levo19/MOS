@@ -5306,7 +5306,30 @@ const MOS = (() => {
         }
       }
     } catch(e) {
-      toast('Error: ' + e.message, 'error', 5000);
+      // [v2.43.62b] API.post throws cuando backend devuelve ok:false. Convertir el
+      // throw en feedback dentro del modal (no toast suelto) para que el master
+      // entienda QUÉ falló sin perder el contexto del modal abierto.
+      const msg = String(e?.message || 'Error desconocido');
+      const inp = document.getElementById('confirmPurgaClave');
+      const hint = document.getElementById('confirmPurgaHint');
+      const card = document.getElementById('confirmPurgaModal')?.firstElementChild;
+      try { _opsBeep && _opsBeep('error'); } catch(_){}
+      if (card) {
+        card.style.animation = 'catConfirmBuzz .3s ease 3';
+        setTimeout(() => { card.style.animation = ''; }, 1000);
+      }
+      // Clave incorrecta → estado especial con tip claro
+      if (/clave|autorizado|password/i.test(msg)) {
+        if (inp) { inp.style.borderColor = '#ef4444'; inp.value = ''; inp.focus(); }
+        if (hint) {
+          hint.style.color = '#ef4444';
+          hint.innerHTML = '✗ ' + _escapeHtml(msg) +
+            '<br><span style="font-size:9px;opacity:.8">Recordá: 8 dígitos = 4 globales + 4 personales (PIN tu cuenta admin)</span>';
+        }
+      } else {
+        if (hint) { hint.style.color = '#ef4444'; hint.textContent = '⚠ ' + msg; }
+        toast('Error: ' + msg, 'error', 5000);
+      }
       if (btn) { btn.disabled = false; btn.innerHTML = '🗑 CONFIRMAR'; }
     }
   }
