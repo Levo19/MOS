@@ -125,6 +125,7 @@ var _AUTH_CATALOGO = {
   'REVOCAR_DISPOSITIVO':          { tier: 3, label: 'Revocar dispositivo' },
   'FORZAR_WIZARD':                { tier: 2, label: 'Forzar wizard remoto' },
   'CIERRE_CAJA_FORZADO':          { tier: 3, label: 'Cierre forzado de caja' },
+  'PURGAR_CATALOGO':              { tier: 3, label: 'Eliminar items del catálogo' },
   // === MosExpress ===
   'ANULACION':                    { tier: 1, label: 'Anular venta' },
   'CREDITO_DIRECTO':              { tier: 1, label: 'Crédito directo' },

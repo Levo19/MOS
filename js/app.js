@@ -2536,6 +2536,10 @@ const MOS = (() => {
                 <button class="cat-btn" style="font-size:.8rem"
                         onclick="event.stopPropagation();MOS.abrirAnalitica('${base.idProducto}')"
                         title="Ver analítica" style="border-color:rgba(99,102,241,.3)">📊</button>
+                ${_esMasterSession() ? `<button class="cat-btn cat-btn-kebab"
+                        onclick="event.stopPropagation();MOS.abrirMenuPurgaGrupo('${base.idProducto}', event)"
+                        title="Más acciones · Master"
+                        style="font-size:1.05rem;border-color:rgba(248,113,113,.25);color:#94a3b8">⋮</button>` : ''}
               </div>
             </div>
           </div>
@@ -4675,6 +4679,450 @@ const MOS = (() => {
   function cerrarModalRotacion() {
     const m = document.getElementById('modalRotacionWrap');
     if (m) m.remove();
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // [v2.43.51] PURGA DE CATÁLOGO — Master-only
+  // ════════════════════════════════════════════════════════════════════
+  function _esMasterSession() {
+    return String(S.session?.rol || '').toUpperCase() === 'MASTER';
+  }
+
+  // Cuántas veces aparece un codigoBarra en el cache de rotación
+  // (últimas 8 semanas, suma de unidades)
+  function _ventasUlt8sem(codigoBarra) {
+    try {
+      const cache = S._rotacionSemanalCache || {};
+      const productos = cache.productos || {};
+      const cb = String(codigoBarra || '').trim().toUpperCase();
+      const s = productos[cb];
+      if (!s || !s.length) return 0;
+      return Math.round(s.reduce((a, b) => a + (parseFloat(b.unidades) || 0), 0));
+    } catch(_) { return 0; }
+  }
+
+  // Menú kebab — popover pequeño con la acción Eliminar grupo
+  function abrirMenuPurgaGrupo(idProducto, ev) {
+    if (!_esMasterSession()) return;
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    const existente = document.getElementById('catKebabMenu');
+    if (existente) { existente.remove(); return; }
+    const rect = ev && ev.currentTarget ? ev.currentTarget.getBoundingClientRect()
+                                         : { right: window.innerWidth/2, bottom: window.innerHeight/2 };
+    const menuW = 220;
+    let left = rect.right - menuW;
+    if (left < 8) left = 8;
+    const top = rect.bottom + 4;
+    const html = `<div id="catKebabMenu"
+      style="position:fixed;top:${top}px;left:${left}px;width:${menuW}px;background:#0f172a;border:1px solid #334155;border-radius:10px;padding:6px;box-shadow:0 15px 40px -8px rgba(0,0,0,.6),0 0 0 1px rgba(99,102,241,.15);z-index:99998;animation:catKebabIn .15s ease-out"
+      onclick="event.stopPropagation()">
+      <button onclick="MOS._cerrarKebab();MOS.abrirCestaPurga('${_escapeHtml(idProducto)}')"
+              style="display:flex;align-items:center;gap:8px;width:100%;background:rgba(248,113,113,.08);border:0;color:#fca5a5;border-radius:6px;padding:9px 10px;font-size:12px;font-weight:600;cursor:pointer;text-align:left;transition:background .15s"
+              onmouseover="this.style.background='rgba(248,113,113,.18)'"
+              onmouseout="this.style.background='rgba(248,113,113,.08)'">
+        <span style="font-size:14px">🗑</span>
+        <span>Eliminar grupo del catálogo</span>
+      </button>
+      <style>@keyframes catKebabIn{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}</style>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+    setTimeout(() => {
+      const close = (e) => {
+        const m = document.getElementById('catKebabMenu');
+        if (!m || m.contains(e.target)) return;
+        m.remove();
+        document.removeEventListener('click', close);
+      };
+      document.addEventListener('click', close);
+    }, 0);
+  }
+  function _cerrarKebab() {
+    const m = document.getElementById('catKebabMenu');
+    if (m) m.remove();
+  }
+
+  // Cesta principal — bottom-sheet con grupos colapsables
+  function abrirCestaPurga(idProductoInicial) {
+    if (!_esMasterSession()) { toast('Solo Master', 'error'); return; }
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    // Estado global de la cesta
+    window._purgaState = { sel: new Set(), filtroQ: '', soloSinVentas: false, idGrupoExpand: idProductoInicial };
+    _renderCestaPurga();
+  }
+  function cerrarCestaPurga() {
+    const m = document.getElementById('cestaPurgaModal');
+    if (m) { m.style.animation = 'catFotoBackIn .2s reverse'; setTimeout(() => m.remove(), 200); }
+    window._purgaState = null;
+  }
+  function _renderCestaPurga() {
+    const st = window._purgaState;
+    if (!st) return;
+    // Construir lista de grupos desde S.productos + S.equivMap
+    const all = Array.isArray(S.productos) ? S.productos : [];
+    // Por skuBase: { canonico, presentaciones[], equivalentes[] }
+    const grupos = {};
+    all.forEach(p => {
+      const sku = String(p.skuBase || p.idProducto || '').trim();
+      if (!sku) return;
+      if (!grupos[sku]) grupos[sku] = { sku, canonico: null, presentaciones: [], equivalentes: [] };
+      const factor = parseFloat(p.factorConversion) || 1;
+      if (factor === 1) grupos[sku].canonico = p;
+      else grupos[sku].presentaciones.push(p);
+    });
+    Object.keys(S.equivMap || {}).forEach(sku => {
+      if (!grupos[sku]) grupos[sku] = { sku, canonico: null, presentaciones: [], equivalentes: [] };
+      const arr = S.equivMap[sku] || [];
+      arr.forEach(e => {
+        const cb = typeof e === 'string' ? e : (e.codigoBarra || e.cbEquiv || '');
+        const desc = typeof e === 'object' ? (e.descripcion || e.descEquiv || cb) : cb;
+        const id   = typeof e === 'object' ? (e.idEquiv || '') : '';
+        grupos[sku].equivalentes.push({ id, codigoBarra: cb, descripcion: desc });
+      });
+    });
+    let gruposArr = Object.values(grupos).filter(g => g.canonico);
+    // Aplicar filtro búsqueda
+    if (st.filtroQ) {
+      const q = st.filtroQ.toLowerCase();
+      gruposArr = gruposArr.filter(g => {
+        const cd = String(g.canonico.descripcion || '').toLowerCase();
+        if (cd.indexOf(q) >= 0) return true;
+        if (g.presentaciones.some(p => String(p.descripcion || '').toLowerCase().indexOf(q) >= 0)) return true;
+        if (g.equivalentes.some(e => String(e.descripcion || '').toLowerCase().indexOf(q) >= 0)) return true;
+        return false;
+      });
+    }
+    // Calcular ventas total del grupo
+    gruposArr.forEach(g => {
+      let total = _ventasUlt8sem(g.canonico.codigoBarra);
+      g.presentaciones.forEach(p => total += _ventasUlt8sem(p.codigoBarra));
+      g.equivalentes.forEach(e => total += _ventasUlt8sem(e.codigoBarra));
+      g.ventasTotal = total;
+    });
+    // Filtro "solo sin ventas"
+    if (st.soloSinVentas) gruposArr = gruposArr.filter(g => g.ventasTotal === 0);
+    // Ordenar: sin ventas primero, luego por descripción
+    gruposArr.sort((a, b) => {
+      if ((a.ventasTotal === 0) !== (b.ventasTotal === 0)) return a.ventasTotal === 0 ? -1 : 1;
+      return String(a.canonico.descripcion || '').localeCompare(String(b.canonico.descripcion || ''));
+    });
+
+    const stat = (n, sufijo='') => {
+      const color = n === 0 ? '#10b981' : n < 10 ? '#f59e0b' : '#ef4444';
+      const label = n === 0 ? `nunca vendido${sufijo}` : `${n}u últ 8 sem${sufijo}`;
+      return `<span style="display:inline-flex;align-items:center;gap:3px;font-size:9px;font-weight:700;color:${color};background:${color}1a;border:1px solid ${color}55;padding:2px 6px;border-radius:10px">${n === 0 ? '✨' : '📦'} ${label}</span>`;
+    };
+
+    const gruposHtml = gruposArr.map(g => {
+      const idGrupo = String(g.canonico.idProducto);
+      const expanded = st.idGrupoExpand === idGrupo;
+      const grupoSel = st.sel.has('CAN|' + idGrupo);
+      const canVentas = _ventasUlt8sem(g.canonico.codigoBarra);
+
+      const hijosHtml = (g.presentaciones.length || g.equivalentes.length) && expanded ? `
+        <div style="padding:4px 0 4px 30px">
+          ${g.presentaciones.map(p => {
+            const k = 'PRE|' + p.idProducto;
+            const sel = st.sel.has(k);
+            const v = _ventasUlt8sem(p.codigoBarra);
+            return `<div onclick="event.stopPropagation();MOS._purgaToggle('${k}')"
+                         style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:11px;color:#cbd5e1;background:${sel ? 'rgba(99,102,241,.18)' : 'transparent'};transition:background .12s"
+                         onmouseover="if(!${sel})this.style.background='rgba(99,102,241,.07)'"
+                         onmouseout="if(!${sel})this.style.background='transparent'">
+              <span style="width:14px;height:14px;border-radius:3px;border:1.5px solid ${sel ? '#6366f1' : '#475569'};background:${sel ? '#6366f1' : 'transparent'};display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:900;flex-shrink:0">${sel ? '✓' : ''}</span>
+              <span style="color:#a5b4fc;font-size:9px">×${parseFloat(p.factorConversion)||1}</span>
+              <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escapeHtml(p.descripcion || p.idProducto)}</span>
+              ${stat(v)}
+            </div>`;
+          }).join('')}
+          ${g.equivalentes.map(e => {
+            const k = 'EQU|' + (e.id || e.codigoBarra);
+            const sel = st.sel.has(k);
+            const v = _ventasUlt8sem(e.codigoBarra);
+            return `<div onclick="event.stopPropagation();MOS._purgaToggle('${k}')"
+                         style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:11px;color:#cbd5e1;background:${sel ? 'rgba(99,102,241,.18)' : 'transparent'};transition:background .12s"
+                         onmouseover="if(!${sel})this.style.background='rgba(99,102,241,.07)'"
+                         onmouseout="if(!${sel})this.style.background='transparent'">
+              <span style="width:14px;height:14px;border-radius:3px;border:1.5px solid ${sel ? '#6366f1' : '#475569'};background:${sel ? '#6366f1' : 'transparent'};display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:900;flex-shrink:0">${sel ? '✓' : ''}</span>
+              <span style="color:#fbbf24;font-size:11px">⇆</span>
+              <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escapeHtml(e.descripcion || e.codigoBarra)}</span>
+              ${stat(v)}
+            </div>`;
+          }).join('')}
+        </div>` : '';
+
+      return `<div style="border:1px solid #1e293b;border-radius:10px;margin-bottom:6px;background:#0a1424;overflow:hidden">
+        <div onclick="MOS._purgaToggleExpand('${idGrupo}')"
+             style="display:flex;align-items:center;gap:10px;padding:9px 11px;cursor:pointer;background:${grupoSel ? 'rgba(99,102,241,.12)' : 'transparent'};transition:background .15s"
+             onmouseover="this.style.background='rgba(99,102,241,.08)'"
+             onmouseout="this.style.background='${grupoSel ? 'rgba(99,102,241,.12)' : 'transparent'}'">
+          <span style="color:#64748b;font-size:10px">${expanded ? '▼' : '▶'}</span>
+          <span onclick="event.stopPropagation();MOS._purgaToggle('CAN|${idGrupo}')"
+                style="width:16px;height:16px;border-radius:4px;border:1.5px solid ${grupoSel ? '#6366f1' : '#475569'};background:${grupoSel ? '#6366f1' : 'transparent'};display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:900;flex-shrink:0;cursor:pointer">${grupoSel ? '✓' : ''}</span>
+          <span style="color:#fcd34d;font-size:11px">👑</span>
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#e2e8f0;font-weight:600">${_escapeHtml(g.canonico.descripcion || g.canonico.idProducto)}</span>
+          ${stat(canVentas, ' (canónico)')}
+          ${g.presentaciones.length || g.equivalentes.length ? `<span style="font-size:9px;color:#64748b">${g.presentaciones.length}p · ${g.equivalentes.length}e</span>` : ''}
+        </div>
+        ${hijosHtml}
+      </div>`;
+    }).join('');
+
+    const totalSel = st.sel.size;
+    const html = `<div id="cestaPurgaModal"
+      style="position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;background:rgba(0,0,0,.65)!important;backdrop-filter:blur(8px);z-index:2147483646!important;display:flex!important;align-items:flex-end!important;justify-content:center!important;padding:20px 12px 0;animation:catFotoBackIn .25s ease-out"
+      onclick="if(event.target===this)MOS.cerrarCestaPurga()">
+      <div style="width:100%;max-width:680px;max-height:92vh;background:linear-gradient(180deg,#0f172a,#0a1424);border:1px solid rgba(248,113,113,.4);border-radius:18px 18px 0 0;box-shadow:0 -20px 60px -10px rgba(248,113,113,.4),0 0 0 1px rgba(248,113,113,.15) inset;animation:catFotoSheetIn .45s cubic-bezier(.34,1.56,.64,1);display:flex;flex-direction:column"
+        onclick="event.stopPropagation()">
+        <!-- Header -->
+        <div style="padding:16px 20px;border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(248,113,113,.15),rgba(248,113,113,.03));display:flex;align-items:center;gap:12px;flex-shrink:0">
+          <div style="font-size:22px">🗑</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:14px;font-weight:800;color:#fca5a5;letter-spacing:.5px">PURGAR CATÁLOGO</div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:2px">Selecciona items para eliminar — solo MASTER</div>
+          </div>
+          <button onclick="MOS.cerrarCestaPurga()"
+                  style="background:none;border:none;color:#94a3b8;font-size:22px;font-weight:900;cursor:pointer;padding:4px 8px;line-height:1">✕</button>
+        </div>
+        <!-- Filtros -->
+        <div style="padding:12px 20px;border-bottom:1px solid #1e293b;display:flex;gap:10px;flex-wrap:wrap;align-items:center;flex-shrink:0">
+          <input type="text" placeholder="🔍 Filtrar por nombre…" value="${_escapeHtml(st.filtroQ)}"
+                 oninput="MOS._purgaSetFiltro(this.value)"
+                 style="flex:1;min-width:140px;background:#0a1424;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:7px 10px;font-size:12px;outline:none">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;color:#cbd5e1;background:${st.soloSinVentas ? 'rgba(16,185,129,.15)' : 'transparent'};border:1px solid ${st.soloSinVentas ? '#10b981' : '#334155'};padding:6px 10px;border-radius:8px;transition:all .15s">
+            <input type="checkbox" ${st.soloSinVentas ? 'checked' : ''}
+                   onchange="MOS._purgaSetSoloSinVentas(this.checked)" style="accent-color:#10b981">
+            <span>✨ Solo sin ventas</span>
+          </label>
+        </div>
+        <!-- Lista grupos -->
+        <div style="flex:1;overflow-y:auto;padding:12px 20px;min-height:200px">
+          ${gruposArr.length
+            ? gruposHtml
+            : `<div style="text-align:center;padding:40px;color:#475569">
+                <div style="font-size:32px;margin-bottom:10px">🔍</div>
+                Sin resultados con esos filtros
+              </div>`}
+        </div>
+        <!-- Footer -->
+        <div style="padding:14px 20px;border-top:1px solid #1e293b;background:#070d18;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-shrink:0">
+          <div style="font-size:11px;color:${totalSel ? '#fca5a5' : '#64748b'};font-weight:${totalSel ? '700' : '400'}">
+            ${totalSel ? `${totalSel} item${totalSel !== 1 ? 's' : ''} seleccionado${totalSel !== 1 ? 's' : ''}` : 'Selecciona items para continuar'}
+          </div>
+          <div style="display:flex;gap:8px">
+            <button onclick="MOS.cerrarCestaPurga()"
+                    style="background:rgba(71,85,105,.4);color:#cbd5e1;border:0;border-radius:8px;padding:9px 14px;font-size:11px;font-weight:700;cursor:pointer">Cancelar</button>
+            <button onclick="MOS._purgaConfirmar()" ${totalSel ? '' : 'disabled'}
+                    style="background:${totalSel ? 'linear-gradient(135deg,#ef4444,#b91c1c)' : 'rgba(71,85,105,.4)'};color:#fff;border:0;border-radius:8px;padding:9px 16px;font-size:11px;font-weight:800;cursor:${totalSel ? 'pointer' : 'not-allowed'};opacity:${totalSel ? '1' : '.4'};box-shadow:${totalSel ? '0 4px 14px -3px rgba(239,68,68,.6)' : 'none'};transition:all .2s">
+              🗑 Eliminar ${totalSel || ''}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+    const old = document.getElementById('cestaPurgaModal');
+    if (old) old.remove();
+    document.body.insertAdjacentHTML('beforeend', html);
+  }
+  function _purgaToggleExpand(idGrupo) {
+    const st = window._purgaState;
+    if (!st) return;
+    st.idGrupoExpand = (st.idGrupoExpand === idGrupo) ? null : idGrupo;
+    _renderCestaPurga();
+  }
+  function _purgaToggle(key) {
+    const st = window._purgaState;
+    if (!st) return;
+    if (st.sel.has(key)) st.sel.delete(key); else st.sel.add(key);
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    _renderCestaPurga();
+  }
+  function _purgaSetFiltro(v) {
+    const st = window._purgaState;
+    if (!st) return;
+    st.filtroQ = v;
+    clearTimeout(window._purgaFiltroTimer);
+    window._purgaFiltroTimer = setTimeout(_renderCestaPurga, 200);
+  }
+  function _purgaSetSoloSinVentas(v) {
+    const st = window._purgaState;
+    if (!st) return;
+    st.soloSinVentas = !!v;
+    _renderCestaPurga();
+  }
+  function _purgaConfirmar() {
+    const st = window._purgaState;
+    if (!st || !st.sel.size) return;
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    _abrirConfirmacionPurga();
+  }
+
+  // Modal de confirmación con doble clave + lista resumen
+  function _abrirConfirmacionPurga() {
+    const st = window._purgaState;
+    if (!st || !st.sel.size) return;
+    // Resolver items seleccionados a sus datos completos
+    const items = _resolverItemsPurga(st.sel);
+    if (!items.length) { toast('Sin items para purgar', 'error'); return; }
+    const html = `<div id="confirmPurgaModal"
+      style="position:fixed!important;inset:0!important;background:rgba(0,0,0,.75)!important;backdrop-filter:blur(8px);z-index:2147483647!important;display:flex!important;align-items:center!important;justify-content:center!important;padding:16px;animation:catFotoBackIn .2s ease-out"
+      onclick="if(event.target===this)MOS._cerrarConfirmPurga()">
+      <div style="width:100%;max-width:480px;max-height:90vh;background:linear-gradient(180deg,#1a0a0a,#0a1424);border:2px solid #ef4444;border-radius:16px;overflow:hidden;animation:catConfirmShake .5s ease;display:flex;flex-direction:column;box-shadow:0 30px 70px -10px rgba(239,68,68,.5),0 0 0 1px rgba(239,68,68,.3) inset"
+        onclick="event.stopPropagation()">
+        <!-- Header alarmante -->
+        <div style="padding:18px 20px;background:linear-gradient(135deg,rgba(239,68,68,.25),rgba(239,68,68,.05));border-bottom:1px solid rgba(239,68,68,.4)">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+            <span style="font-size:24px;animation:catConfirmWarn 1s ease-in-out infinite">⚠</span>
+            <div style="font-size:15px;font-weight:900;color:#fca5a5;letter-spacing:.5px">ACCIÓN IRREVERSIBLE</div>
+          </div>
+          <div style="font-size:11px;color:#fde68a">${items.length} item${items.length !== 1 ? 's' : ''} se eliminarán permanentemente del catálogo</div>
+        </div>
+        <!-- Lista resumen -->
+        <div style="padding:14px 20px;max-height:200px;overflow-y:auto;border-bottom:1px solid #1e293b">
+          <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Items que se borrarán</div>
+          ${items.map(it => `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:11px;color:#cbd5e1">
+            <span style="color:${it.tipo === 'CANONICO' ? '#fcd34d' : it.tipo === 'EQUIVALENTE' ? '#fbbf24' : '#a5b4fc'};font-size:10px;font-weight:700;width:80px;flex-shrink:0">${it.tipo === 'CANONICO' ? '👑 CANÓNICO' : it.tipo === 'EQUIVALENTE' ? '⇆ equiv' : '×N pres'}</span>
+            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escapeHtml(it.descripcion || it.id)}</span>
+          </div>`).join('')}
+        </div>
+        <!-- Input clave 8 dígitos -->
+        <div style="padding:16px 20px;border-bottom:1px solid #1e293b">
+          <div style="font-size:11px;color:#fbbf24;font-weight:700;margin-bottom:4px;display:flex;align-items:center;gap:6px">🔐 Clave global + personal (8 dígitos)</div>
+          <input type="password" id="confirmPurgaClave" inputmode="numeric" pattern="\\d{8}" maxlength="8" autocomplete="off"
+                 oninput="MOS._purgaValidarClave(this.value)"
+                 style="width:100%;background:#0a1424;border:2px solid #334155;color:#fff;border-radius:10px;padding:12px 14px;font-size:18px;font-weight:700;letter-spacing:8px;text-align:center;font-family:monospace;outline:none;transition:border-color .2s"
+                 placeholder="••••••••">
+          <div id="confirmPurgaHint" style="font-size:10px;color:#64748b;margin-top:6px;font-style:italic">Esperando 8 dígitos…</div>
+        </div>
+        <!-- Footer -->
+        <div style="padding:14px 20px;background:#070d18;display:flex;justify-content:space-between;gap:10px">
+          <button onclick="MOS._cerrarConfirmPurga()"
+                  style="background:rgba(71,85,105,.4);color:#cbd5e1;border:0;border-radius:8px;padding:10px 14px;font-size:11px;font-weight:700;cursor:pointer">Cancelar</button>
+          <button id="confirmPurgaBtn" onclick="MOS._purgaEjecutar()" disabled
+                  style="background:rgba(71,85,105,.4);color:#94a3b8;border:0;border-radius:8px;padding:10px 22px;font-size:11px;font-weight:800;cursor:not-allowed;opacity:.5;transition:all .25s">
+            🗑 CONFIRMAR
+          </button>
+        </div>
+      </div>
+      <style>
+        @keyframes catConfirmShake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-6px)} 40%{transform:translateX(6px)} 60%{transform:translateX(-4px)} 80%{transform:translateX(4px)} }
+        @keyframes catConfirmWarn { 0%,100%{transform:scale(1) rotate(0)} 50%{transform:scale(1.15) rotate(-5deg)} }
+        @keyframes catConfirmBuzz { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
+        @keyframes catConfirmDissolve { to{opacity:0;transform:scale(.9) translateY(-20px)} }
+      </style>
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+    setTimeout(() => { document.getElementById('confirmPurgaClave')?.focus(); }, 100);
+  }
+  function _cerrarConfirmPurga() {
+    const m = document.getElementById('confirmPurgaModal');
+    if (m) m.remove();
+  }
+  function _purgaValidarClave(v) {
+    const valido = /^\d{8}$/.test(String(v || ''));
+    const btn = document.getElementById('confirmPurgaBtn');
+    const hint = document.getElementById('confirmPurgaHint');
+    const input = document.getElementById('confirmPurgaClave');
+    if (btn) {
+      if (valido) {
+        btn.disabled = false;
+        btn.style.background = 'linear-gradient(135deg,#ef4444,#b91c1c)';
+        btn.style.color = '#fff';
+        btn.style.cursor = 'pointer';
+        btn.style.opacity = '1';
+        btn.style.boxShadow = '0 6px 18px -3px rgba(239,68,68,.6)';
+        if (input) input.style.borderColor = '#10b981';
+        if (hint) { hint.style.color = '#10b981'; hint.textContent = '✓ Clave lista para validar'; }
+      } else {
+        btn.disabled = true;
+        btn.style.background = 'rgba(71,85,105,.4)';
+        btn.style.color = '#94a3b8';
+        btn.style.cursor = 'not-allowed';
+        btn.style.opacity = '.5';
+        btn.style.boxShadow = 'none';
+        if (input) input.style.borderColor = '#334155';
+        if (hint) { hint.style.color = '#64748b'; hint.textContent = (v || '').length + '/8 dígitos…'; }
+      }
+    }
+  }
+  async function _purgaEjecutar() {
+    const claveInp = document.getElementById('confirmPurgaClave');
+    const clave = String(claveInp?.value || '').trim();
+    if (!/^\d{8}$/.test(clave)) return;
+    const btn = document.getElementById('confirmPurgaBtn');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span style="display:inline-block;animation:spin 1s linear infinite">⏳</span> Procesando…';
+    }
+    const st = window._purgaState;
+    const items = _resolverItemsPurga(st.sel);
+    try {
+      const r = await API.post('eliminarItemsCatalogo', {
+        items: items,
+        claveAdmin: clave,
+        appOrigen: 'MOS',
+        detalle: items.length + ' items desde Catálogo Master'
+      });
+      if (r && r.ok !== false && r.data) {
+        try { _opsBeep && _opsBeep('ok'); } catch(_){}
+        // Dissolve effect del modal
+        const modal = document.getElementById('confirmPurgaModal');
+        if (modal) {
+          const card = modal.firstElementChild;
+          if (card) card.style.animation = 'catConfirmDissolve .4s ease-out forwards';
+          setTimeout(() => modal.remove(), 400);
+        }
+        cerrarCestaPurga();
+        const d = r.data;
+        toast(`🗑 Purgados: ${d.eliminadosProductos} productos + ${d.eliminadosEquivs} equivalentes`, 'success', 5000);
+        // Refrescar catálogo (recargar productos)
+        if (typeof loadCatalogo === 'function') {
+          setTimeout(() => loadCatalogo({ force: true }).catch(()=>{}), 500);
+        }
+      } else {
+        try { _opsBeep && _opsBeep('error'); } catch(_){}
+        const card = document.getElementById('confirmPurgaModal')?.firstElementChild;
+        if (card) {
+          card.style.animation = 'catConfirmBuzz .3s ease 3';
+          setTimeout(() => { card.style.animation = ''; }, 1000);
+        }
+        const inp = document.getElementById('confirmPurgaClave');
+        if (inp) { inp.style.borderColor = '#ef4444'; inp.value = ''; inp.focus(); }
+        const hint = document.getElementById('confirmPurgaHint');
+        if (hint) { hint.style.color = '#ef4444'; hint.textContent = '✗ ' + ((r && r.error) || 'Clave incorrecta'); }
+        if (btn) { btn.disabled = false; btn.innerHTML = '🗑 CONFIRMAR'; }
+      }
+    } catch(e) {
+      toast('Error: ' + e.message, 'error', 5000);
+      if (btn) { btn.disabled = false; btn.innerHTML = '🗑 CONFIRMAR'; }
+    }
+  }
+  function _resolverItemsPurga(setSel) {
+    const items = [];
+    setSel.forEach(key => {
+      const [tipo, id] = key.split('|');
+      const t = tipo === 'CAN' ? 'CANONICO' : tipo === 'PRE' ? 'PRESENTACION' : 'EQUIVALENTE';
+      // Buscar datos
+      if (t === 'CANONICO' || t === 'PRESENTACION') {
+        const p = (S.productos || []).find(x => String(x.idProducto) === id);
+        if (p) {
+          items.push({ tipo: t, id: id, skuBase: p.skuBase, codigoBarra: p.codigoBarra, descripcion: p.descripcion });
+        }
+      } else {
+        // Buscar en S.equivMap por idEquiv
+        let found = null;
+        Object.keys(S.equivMap || {}).forEach(sku => {
+          (S.equivMap[sku] || []).forEach(e => {
+            if (typeof e === 'object' && String(e.idEquiv || '') === id) {
+              found = { tipo: t, id: id, skuBase: sku, codigoBarra: e.codigoBarra, descripcion: e.descripcion };
+            } else if (typeof e === 'string' && e === id) {
+              found = { tipo: t, id: id, skuBase: sku, codigoBarra: e, descripcion: e };
+            }
+          });
+        });
+        if (found) items.push(found);
+      }
+    });
+    return items;
   }
 
   function abrirAnalitica(idProducto) {
@@ -36065,6 +36513,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     setFiltroOrden, abrirModalRotacion, cerrarModalRotacion,
     // [v2.43.45] Panel flotante de filtros (nuclear)
     _cerrarFiltroFloat, _limpiarYCerrar,
+    // [v2.43.51] Purga catálogo (master)
+    abrirMenuPurgaGrupo, _cerrarKebab,
+    abrirCestaPurga, cerrarCestaPurga,
+    _purgaToggleExpand, _purgaToggle, _purgaSetFiltro, _purgaSetSoloSinVentas,
+    _purgaConfirmar, _cerrarConfirmPurga, _purgaValidarClave, _purgaEjecutar,
     // [v2.43.38] Foto del producto: subir/cambiar (skuBase como key)
     abrirModalFotoProducto, cerrarModalFotoProducto,
     _catFotoOnFileSelect, _catFotoTomar, _catFotoGuardar,

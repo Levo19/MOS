@@ -133,6 +133,9 @@ function _route(method, e) {
       // del mismo skuBase comparten la misma foto). Carpeta "MOS Catálogo Fotos".
       case 'subirFotoProducto':              return subirFotoProducto(params);
       case 'jalarFotoDePNCatalogo':          return jalarFotoDePNCatalogo(params);
+      // [v2.43.51] Purga de catálogo (solo MASTER, tier 3)
+      case 'getCandidatosEliminacion':       return getCandidatosEliminacion(params);
+      case 'eliminarItemsCatalogo':          return eliminarItemsCatalogo(params);
       case 'wh_getDevolucionesZona':         return postToWarehouse('getDevolucionesZona', params);
       case 'wh_getDevolucionDetalle':        return postToWarehouse('getDevolucionDetalle', params);
       case 'wh_confirmarRecepcionDevolucion': return postToWarehouse('confirmarRecepcionDevolucion', params);
