@@ -5306,10 +5306,11 @@ const MOS = (() => {
         }
       }
     } catch(e) {
-      // [v2.43.62b] API.post throws cuando backend devuelve ok:false. Convertir el
-      // throw en feedback dentro del modal (no toast suelto) para que el master
-      // entienda QUÉ falló sin perder el contexto del modal abierto.
+      // [v2.43.63] Distinguir 3 clases de error: red/timeout · clave/auth · otros.
+      // Antes ERR_NETWORK_IO_SUSPENDED dejaba el spinner colgado para siempre
+      // (el await jamás resolvía). Ahora api.js timeout 45s + códigos especiales.
       const msg = String(e?.message || 'Error desconocido');
+      const code = e?.code || '';
       const inp = document.getElementById('confirmPurgaClave');
       const hint = document.getElementById('confirmPurgaHint');
       const card = document.getElementById('confirmPurgaModal')?.firstElementChild;
@@ -5318,14 +5319,22 @@ const MOS = (() => {
         card.style.animation = 'catConfirmBuzz .3s ease 3';
         setTimeout(() => { card.style.animation = ''; }, 1000);
       }
-      // Clave incorrecta → estado especial con tip claro
-      if (/clave|autorizado|password/i.test(msg)) {
+      // Caso 1: timeout / red suspendida / offline → tip de reintentar
+      if (code === 'TIMEOUT' || code === 'NETWORK' || code === 'OFFLINE') {
+        if (hint) {
+          hint.style.color = '#f59e0b';
+          hint.innerHTML = '⚠ ' + _escapeHtml(msg) +
+            '<br><span style="font-size:9px;opacity:.8">Tu clave NO fue consumida. Volvé a hacer click cuando recuperes la red.</span>';
+        }
+      // Caso 2: clave incorrecta / no autorizado → reset input + tip 8 dig
+      } else if (/clave|autorizado|password/i.test(msg)) {
         if (inp) { inp.style.borderColor = '#ef4444'; inp.value = ''; inp.focus(); }
         if (hint) {
           hint.style.color = '#ef4444';
           hint.innerHTML = '✗ ' + _escapeHtml(msg) +
             '<br><span style="font-size:9px;opacity:.8">Recordá: 8 dígitos = 4 globales + 4 personales (PIN tu cuenta admin)</span>';
         }
+      // Caso 3: otros → hint + toast
       } else {
         if (hint) { hint.style.color = '#ef4444'; hint.textContent = '⚠ ' + msg; }
         toast('Error: ' + msg, 'error', 5000);
