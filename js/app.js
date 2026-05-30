@@ -1174,8 +1174,10 @@ const MOS = (() => {
       // Sin rotación nunca
       if (!serie || !serie.length) {
         return `<div class="cat-spark-wrap cat-spark-empty" onclick="event.stopPropagation();MOS.abrirModalRotacion('${p.idProducto}')"
-                     style="font-size:9px;color:#64748b;cursor:pointer;display:flex;align-items:center;gap:4px"
-                     title="Producto sin movimiento en últimas 8 semanas">
+                     style="font-size:9px;color:#64748b;cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border-radius:6px;border:1px solid transparent;transition:all .18s ease"
+                     title="Producto sin movimiento en últimas 8 semanas · click para detalle"
+                     onmouseover="this.style.background='rgba(148,163,184,.08)';this.style.borderColor='rgba(148,163,184,.25)';this.style.color='#cbd5e1'"
+                     onmouseout="this.style.background='transparent';this.style.borderColor='transparent';this.style.color='#64748b'">
           🌙 <span>sin rotación</span>
         </div>`;
       }
@@ -1183,8 +1185,10 @@ const MOS = (() => {
       const total    = unidades.reduce((a, b) => a + b, 0);
       if (total === 0) {
         return `<div class="cat-spark-wrap cat-spark-empty" onclick="event.stopPropagation();MOS.abrirModalRotacion('${p.idProducto}')"
-                     style="font-size:9px;color:#64748b;cursor:pointer;display:flex;align-items:center;gap:4px"
-                     title="Producto sin movimiento en últimas 8 semanas">
+                     style="font-size:9px;color:#64748b;cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border-radius:6px;border:1px solid transparent;transition:all .18s ease"
+                     title="Producto sin movimiento en últimas 8 semanas · click para detalle"
+                     onmouseover="this.style.background='rgba(148,163,184,.08)';this.style.borderColor='rgba(148,163,184,.25)';this.style.color='#cbd5e1'"
+                     onmouseout="this.style.background='transparent';this.style.borderColor='transparent';this.style.color='#64748b'">
           🌙 <span>sin rotación</span>
         </div>`;
       }
@@ -1212,13 +1216,19 @@ const MOS = (() => {
         cmpHtml = `<span style="color:#10b981;font-size:10px;font-weight:700;margin-left:4px">↑ nuevo</span>`;
       }
       const promedioStr = promedio >= 10 ? promedio.toFixed(0) : promedio.toFixed(1);
-      return `<div class="cat-spark-wrap" onclick="event.stopPropagation();MOS.abrirModalRotacion('${p.idProducto}')"
-                   style="display:flex;align-items:center;gap:5px;font-size:10px;color:#cbd5e1;cursor:pointer;margin-top:2px"
-                   title="Rotación últimas 8 semanas · click para ver detalle">
+      // [v2.43.44] Efectos hover: borde sutil del color de rotación, glow,
+      // micro-lift, indicador "→" que aparece. Manteniendo el formato compacto.
+      return `<div class="cat-spark-wrap cat-spark-clickable" onclick="event.stopPropagation();MOS.abrirModalRotacion('${p.idProducto}')"
+                   data-rot-color="${color}"
+                   style="display:inline-flex;align-items:center;gap:5px;font-size:10px;color:#cbd5e1;cursor:pointer;margin-top:2px;padding:3px 7px;border-radius:6px;border:1px solid transparent;background:transparent;transition:all .18s ease;position:relative"
+                   title="Rotación últimas 8 semanas · click para ver detalle"
+                   onmouseover="this.style.background='${color}14';this.style.borderColor='${color}55';this.style.boxShadow='0 2px 10px -2px ${color}55';this.style.transform='translateY(-1px)';this.querySelector('.cat-spark-arrow').style.opacity='1';this.querySelector('.cat-spark-arrow').style.transform='translateX(0)'"
+                   onmouseout="this.style.background='transparent';this.style.borderColor='transparent';this.style.boxShadow='none';this.style.transform='translateY(0)';this.querySelector('.cat-spark-arrow').style.opacity='0';this.querySelector('.cat-spark-arrow').style.transform='translateX(-4px)'">
         <span style="font-size:11px">📦</span>
         <span style="font-weight:700;color:${color}">${promedioStr}/sem</span>
         <span style="display:inline-flex;align-items:flex-end;height:20px">${barras}</span>
         ${cmpHtml}
+        <span class="cat-spark-arrow" style="color:${color};font-weight:900;font-size:11px;opacity:0;transform:translateX(-4px);transition:all .18s ease;margin-left:1px">→</span>
       </div>`;
     } catch(_) { return ''; }
   }
