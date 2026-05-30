@@ -6075,7 +6075,9 @@
       transform-origin: right center;
       overflow: hidden;
     }
-    .cat-toolbar.search-active > .cat-tool-btn {
+    /* [v2.43.41] Cuando search-active: los OTROS botones colapsan pero el
+       botón Filtro NUNCA pierde clickeabilidad (era el bug reportado). */
+    .cat-toolbar.search-active > .cat-tool-btn:not(#catFiltroWrap):not(.cat-tool-btn-keep) {
       max-width: 0 !important;
       opacity: 0;
       margin: 0 !important;
@@ -6083,6 +6085,8 @@
       transform: scale(.7);
       pointer-events: none;
     }
+    /* El wrap del filtro queda visible y clickeable incluso con búsqueda activa */
+    .cat-toolbar.search-active > #catFiltroWrap { pointer-events: auto !important; }
     /* En mobile el botón "+" muestra solo "+" sin "Nuevo" */
     @media (max-width: 640px) {
       .cat-btn-new-lbl { display: none; }

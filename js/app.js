@@ -1114,8 +1114,11 @@ const MOS = (() => {
       const cb = String(p.codigoBarra || '').trim().toUpperCase();
       const idp = String(p.idProducto || '').trim().toUpperCase();
       let serie = productos[cb] || productos[idp];
-      // Si no se cargó aún, placeholder discreto
-      if (!cache.productos) {
+      // [v2.43.41] Mostrar "cargando…" SOLO si la promesa sigue en vuelo.
+      // Una vez respondió (con éxito o error) tratamos como vacío real.
+      const enVuelo = !!S._rotacionSemanalLoading || cache._loading === true;
+      const hayData = cache.productos && Object.keys(cache.productos).length > 0;
+      if (enVuelo && !hayData) {
         return `<div class="cat-spark-wrap" style="font-size:9px;color:#475569;opacity:.6">📦 cargando…</div>`;
       }
       // Sin rotación nunca
@@ -1972,6 +1975,14 @@ const MOS = (() => {
   function renderCatalogo() {
     const container = $('listCatalogo');
     if (!container) return;
+
+    // [v2.43.41] Disparar carga de rotación si no se hizo (lazy + safety net).
+    // Si la precarga del login falló, garantizamos que al menos al entrar al
+    // catálogo se reintente. Falla silencioso → muestra "sin rotación".
+    if (typeof _cargarRotacionSemanal === 'function'
+        && (!S._rotacionSemanalCache || !S._rotacionSemanalCache.productos)) {
+      _cargarRotacionSemanal(true).catch(() => {});
+    }
 
     const rawQ = ($('searchCatalogo')?.value || '').trim();
     const qn   = _norm(rawQ);
@@ -18597,39 +18608,42 @@ const MOS = (() => {
         && (Date.now() - (S._rotacionSemanalCacheTs || 0)) < TTL) {
       return S._rotacionSemanalCache;
     }
-    try {
-      const r = await API.post('wh_getRotacionSemanal', { semanas: 8 });
-      // Aceptar dos shapes: API.post puede desempaquetar data o no
-      const d = (r && r.data && r.data.productos) ? r.data
-              : (r && r.productos)                ? r
-              : null;
-      if (d) {
-        S._rotacionSemanalCache = d;
-        S._rotacionSemanalCacheTs = Date.now();
-        // Re-render del catálogo si está abierto para reemplazar el "cargando…"
-        if (S.tab === 'catalogo' && typeof renderCatalogo === 'function') {
-          try { renderCatalogo(); } catch(_){}
-        }
-        return d;
-      }
-      // Backend respondió pero sin shape esperado → marcar como vacío VÁLIDO
-      console.warn('[rotacion] respuesta sin productos:', r);
-      S._rotacionSemanalCache = { etiquetas: [], productos: {}, _error: 'sin_data' };
-      S._rotacionSemanalCacheTs = Date.now();
-      if (S.tab === 'catalogo' && typeof renderCatalogo === 'function') {
-        try { renderCatalogo(); } catch(_){}
-      }
-      return S._rotacionSemanalCache;
-    } catch(e) {
-      console.warn('[rotacion] error:', e && e.message);
-      // Cache vacío válido → sparkline muestra "sin rotación" en vez de cargando
-      S._rotacionSemanalCache = { etiquetas: [], productos: {}, _error: String(e && e.message || e) };
-      S._rotacionSemanalCacheTs = Date.now();
-      if (S.tab === 'catalogo' && typeof renderCatalogo === 'function') {
-        try { renderCatalogo(); } catch(_){}
-      }
-      return S._rotacionSemanalCache;
+    // [v2.43.41] Guard de "cargando in-flight" para evitar disparos múltiples
+    if (S._rotacionSemanalLoading) return S._rotacionSemanalLoading;
+    // Marcar inmediato un cache vacío para que el sparkline NO diga "cargando"
+    // mientras tarda — mejor mostrar "sin rotación" momentáneo que un eterno spinner
+    if (!S._rotacionSemanalCache || !S._rotacionSemanalCache.productos) {
+      S._rotacionSemanalCache = { etiquetas: [], productos: {}, _loading: true };
     }
+    const setear = (d) => {
+      S._rotacionSemanalCache = d;
+      S._rotacionSemanalCacheTs = Date.now();
+      S._rotacionSemanalLoading = null;
+      if (S.tab === 'catalogo' && typeof renderCatalogo === 'function') {
+        try { renderCatalogo(); } catch(_){}
+      }
+      return d;
+    };
+    // Timeout duro de 20s. Si la API no responde, asumimos error y mostramos vacío.
+    const apiCall = (async () => {
+      try {
+        const r = await Promise.race([
+          API.post('wh_getRotacionSemanal', { semanas: 8 }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout 20s')), 20000))
+        ]);
+        const d = (r && r.data && r.data.productos) ? r.data
+                : (r && r.productos)                ? r
+                : null;
+        if (d) return setear(d);
+        console.warn('[rotacion] respuesta sin productos:', r);
+        return setear({ etiquetas: [], productos: {}, _error: 'sin_data' });
+      } catch(e) {
+        console.warn('[rotacion] error:', e && e.message);
+        return setear({ etiquetas: [], productos: {}, _error: String(e && e.message || e) });
+      }
+    })();
+    S._rotacionSemanalLoading = apiCall;
+    return apiCall;
   }
 
   async function _cargarHorariosApps(force) {

@@ -1,1 +1,1 @@
-{ "version": "2.43.40", "build": "20260529-fix-boton-filtro-tablet-pc-listener-persistente" }
+{ "version": "2.43.41", "build": "20260529-fix-filtro-pointer-events-rotacion-timeout-20s-render-trigger" }
