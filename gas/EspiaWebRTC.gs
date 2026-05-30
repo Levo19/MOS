@@ -24,7 +24,20 @@ var ESPIA_TTL_MS = 10 * 60 * 1000; // 10 min máximo por sesión
 // ── 1. Crear sesión de espionaje (master) ───────────────────────────
 // Devuelve sesionId que el master pasará al device vía push FCM.
 // [v2.43.59 SEGURIDAD] Requiere claveAdmin tier 3 + rol MASTER explícito.
+// [v2.43.66] WRAP DEFENSIVO — capturar TODO error para evitar 500.
+// Cuando Apps Script devuelve 500 no manda headers CORS, browser bloquea
+// la respuesta y frontend ve "Failed to fetch" sin saber el error real.
 function espiaCrearSesion(params) {
+  try {
+    return _espiaCrearSesionImpl(params);
+  } catch(e) {
+    Logger.log('[espiaCrearSesion EXCEPCION FATAL] ' + e.message + ' | stack: ' + e.stack);
+    return { ok: false, error: 'Excepción interna: ' + e.message, stack: String(e.stack || '').substring(0, 500) };
+  }
+}
+
+function _espiaCrearSesionImpl(params) {
+  params = params || {};
   var masterId = String(params.masterId || '').trim();
   var deviceId = String(params.deviceId || '').trim();
   var claveAdmin = String(params.claveAdmin || '').trim();

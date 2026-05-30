@@ -27642,22 +27642,32 @@ const MOS = (() => {
     };
     _espiaV2RenderModal();
     // Crear sesión backend
+    // [v2.43.66] API.post devuelve d.data DIRECTO (no {ok,data}). Bug histórico
+    // documentado en memoria architecture_mos_api_shape.md — caí igual.
     try {
       const r = await API.post('espiaCrearSesion', {
         masterId: S.session?.idPersonal || S.session?.nombre || 'master',
         deviceId: idDispositivo,
         claveAdmin: claveAdmin
       });
-      if (!r || r.ok === false) {
-        toast('Error creando sesión: ' + (r?.error || ''), 'error');
+      // r es directamente { sesionId, ttl, ahora } — NO { ok, data }
+      if (!r || !r.sesionId) {
+        toast('Backend no devolvió sesionId', 'error');
         _espiaV2Cerrar('error_init');
         return;
       }
-      _espiaV2.sesionId = r.data.sesionId;
-      _espiaV2.ttl = r.data.ttl;
+      _espiaV2.sesionId = r.sesionId;
+      _espiaV2.ttl = r.ttl;
       _espiaV2IniciarPeerConnection();
     } catch(e) {
-      toast('Error: ' + e.message, 'error');
+      // [v2.43.66] Si el backend devuelve 500, fetch ve "Failed to fetch" por CORS
+      // (Apps Script no devuelve headers CORS en error). Diferenciamos por code.
+      const msg = String(e?.message || 'Error desconocido');
+      if (e?.code === 'NETWORK' || /Failed to fetch/i.test(msg)) {
+        toast('⚠ Backend rechazó la petición (500). Revisá logs Apps Script o intentá de nuevo.', 'error', 8000);
+      } else {
+        toast('Error: ' + msg, 'error');
+      }
       _espiaV2Cerrar('error_init');
     }
   }
@@ -27740,12 +27750,13 @@ const MOS = (() => {
     if (!_espiaV2 || !_espiaV2.sesionId) return;
     try {
       const t0 = Date.now();
+      // [v2.43.66] API.post desempaqueta — r es directamente el data del backend
       // 1) Si aún no tenemos remoteDescription, leer respuesta
       if (!_espiaV2.pc.remoteDescription) {
         const r = await API.post('espiaLeerRespuesta', { sesionId: _espiaV2.sesionId });
-        if (r?.data?.sdpRespuesta) {
+        if (r?.sdpRespuesta) {
           try {
-            const sdp = JSON.parse(r.data.sdpRespuesta);
+            const sdp = JSON.parse(r.sdpRespuesta);
             await _espiaV2.pc.setRemoteDescription(sdp);
           } catch(e) { console.warn('[espia] respuesta inválida', e); }
         }
@@ -27756,11 +27767,11 @@ const MOS = (() => {
         lado: 'device',
         desde: _espiaV2.pollIceDesde
       });
-      if (ri?.data?.ice?.length) {
-        for (const c of ri.data.ice) {
+      if (ri?.ice?.length) {
+        for (const c of ri.ice) {
           try { await _espiaV2.pc.addIceCandidate(c.ice); } catch(_){}
         }
-        _espiaV2.pollIceDesde = ri.data.tsMax || _espiaV2.pollIceDesde;
+        _espiaV2.pollIceDesde = ri.tsMax || _espiaV2.pollIceDesde;
       }
       // Tracking de lag
       _espiaV2.lagMs = Date.now() - t0;
@@ -28049,7 +28060,8 @@ const MOS = (() => {
         desde: Date.now() - 12 * 3600000,
         hasta: Date.now()
       });
-      const chunks = (r && r.data && r.data.chunks) || [];
+      // [v2.43.66] API.post desempaqueta — r es directo el data
+      const chunks = (r && r.chunks) || [];
       window._espiaTimelineState.chunks = chunks;
       _espiaTimelineRenderLista();
     } catch(e) {
