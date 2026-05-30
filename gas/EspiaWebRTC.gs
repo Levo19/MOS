@@ -23,11 +23,29 @@ var ESPIA_TTL_MS = 10 * 60 * 1000; // 10 min máximo por sesión
 
 // ── 1. Crear sesión de espionaje (master) ───────────────────────────
 // Devuelve sesionId que el master pasará al device vía push FCM.
+// [v2.43.59 SEGURIDAD] Requiere claveAdmin tier 3 + rol MASTER explícito.
 function espiaCrearSesion(params) {
   var masterId = String(params.masterId || '').trim();
   var deviceId = String(params.deviceId || '').trim();
+  var claveAdmin = String(params.claveAdmin || '').trim();
   if (!masterId) return { ok: false, error: 'masterId requerido' };
   if (!deviceId) return { ok: false, error: 'deviceId requerido' };
+  if (!claveAdmin) return { ok: false, error: 'claveAdmin (8 dígitos) requerida' };
+  // Validar clave admin + rol MASTER
+  var auth = verificarClaveAdmin({
+    clave: claveAdmin,
+    accion: 'ESPIA_INICIAR',
+    refDocumento: deviceId
+  });
+  if (!auth.ok) return auth;
+  if (!auth.data || !auth.data.autorizado) {
+    return { ok: false, error: (auth.data && auth.data.error) || 'Clave incorrecta' };
+  }
+  if (String(auth.data.rol || '').toUpperCase() !== 'MASTER') {
+    return { ok: false, error: 'Solo MASTER puede iniciar espía. Tu rol: ' + auth.data.rol };
+  }
+  // [v2.43.59] Limpiar sesiones expiradas como mantenimiento on-write
+  try { _purgarSesionesAntiguas(); } catch(_){}
 
   var sesionId = 'ESP-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
   var ahora = new Date();
@@ -170,21 +188,88 @@ function espiaCerrarSesion(params) {
 // Carpeta "MOS Espia Buffer" en Drive con subcarpeta por device.
 function espiaSubirChunk(params) {
   var deviceId = String(params.deviceId || '').trim();
-  var tipo     = String(params.tipo || '').toLowerCase(); // audio|video|screen
+  var tipo     = String(params.tipo || '').toLowerCase();
   var ts       = parseInt(params.ts) || Date.now();
   var b64      = String(params.contenido || '');
+  var sesionId = String(params.sesionId || '').trim();
   if (!deviceId || !tipo || !b64) return { ok: false, error: 'Requiere deviceId, tipo, contenido' };
+
+  // [v2.43.59] Validar tamaño máximo: 20MB decodificado ≈ 27MB base64
+  if (b64.length > 28 * 1024 * 1024) {
+    return { ok: false, error: 'Chunk demasiado grande (>20MB decodificado)' };
+  }
+  // [v2.43.59] Validar que el deviceId existe + que hay sesión activa para él
+  try {
+    var dispShs = getSheet('DISPOSITIVOS');
+    if (dispShs) {
+      var dispData = dispShs.getDataRange().getValues();
+      var dispHdrs = dispData[0];
+      var idxDevId = dispHdrs.indexOf('ID_Dispositivo');
+      if (idxDevId < 0) idxDevId = dispHdrs.indexOf('deviceId');
+      var existe = false;
+      if (idxDevId >= 0) {
+        for (var di = 1; di < dispData.length; di++) {
+          if (String(dispData[di][idxDevId]).trim() === deviceId) { existe = true; break; }
+        }
+      }
+      if (!existe) return { ok: false, error: 'deviceId no autorizado' };
+    }
+  } catch(_){}
+  // Validar sesión activa si vino sesionId
+  if (sesionId) {
+    var row = _buscarSesion(sesionId);
+    if (!row || String(row.deviceId) !== deviceId) {
+      return { ok: false, error: 'sesionId no corresponde a este deviceId' };
+    }
+    if (_sesionExpiro(row)) return { ok: false, error: 'sesión expirada' };
+  }
 
   try {
     var carpeta = _getCarpetaEspiaBuffer(deviceId);
-    var ext  = tipo === 'audio' ? 'webm' : 'webm';
-    var nombre = deviceId + '_' + tipo + '_' + ts + '.' + ext;
-    var blob = Utilities.newBlob(Utilities.base64Decode(b64), 'video/webm', nombre);
+    var nombre = deviceId + '_' + tipo + '_' + ts + '.webm';
+    var bytes;
+    try { bytes = Utilities.base64Decode(b64); }
+    catch(eD) { return { ok: false, error: 'Base64 inválido: ' + eD.message }; }
+    var blob = Utilities.newBlob(bytes, 'video/webm', nombre);
     var file = carpeta.createFile(blob);
     return { ok: true, data: { fileId: file.getId(), nombre: nombre } };
   } catch(e) {
     return { ok: false, error: e.message };
   }
+}
+
+// [v2.43.59] Limpieza automática de sesiones viejas (>24h cerradas o expiradas).
+// Llamado on-write en espiaCrearSesion (mantenimiento ligero).
+function _purgarSesionesAntiguas() {
+  var sh = _getHojaSignaling();
+  if (sh.getLastRow() < 2) return 0;
+  var data = sh.getDataRange().getValues();
+  var hdrs = data[0];
+  var idxFecha  = hdrs.indexOf('fecha');
+  var idxEstado = hdrs.indexOf('estado');
+  var ahora = Date.now();
+  var limite24h = 24 * 60 * 60 * 1000;
+  var borradas = 0;
+  // Iterar desde el final para no desincronizar
+  for (var i = data.length - 1; i >= 1; i--) {
+    var fechaVal = data[i][idxFecha];
+    var fechaMs = fechaVal instanceof Date ? fechaVal.getTime() : new Date(fechaVal).getTime();
+    if (isNaN(fechaMs)) continue;
+    var diffH = (ahora - fechaMs);
+    var est = String(data[i][idxEstado] || '').toUpperCase();
+    // Borrar si: cerrada hace >24h, o expirada (TTL+24h), o orfana >24h
+    if (diffH > limite24h || (est === 'CERRADA' && diffH > 2 * 60 * 60 * 1000)) {
+      // Auditar antes de borrar si era PENDIENTE/EN_VIVO (sesión zombi)
+      if (est !== 'CERRADA') {
+        var obj = {};
+        hdrs.forEach(function(h, j) { obj[h] = data[i][j]; });
+        try { _logAuditoriaEspia(obj, 0, JSON.stringify({ motivo: 'TTL_EXPIRADA', lado: 'cleanup' })); } catch(_){}
+      }
+      sh.deleteRow(i + 1);
+      borradas++;
+    }
+  }
+  return borradas;
 }
 
 // ── Helpers internos ────────────────────────────────────────────────
@@ -287,11 +372,45 @@ function _getCarpetaEspiaBuffer(deviceId) {
 // Push helper — si no existe el endpoint global, lo definimos mínimo aquí
 // Para no chocar con otros, usamos el del Push.gs si existe
 function _enviarPushDispositivo(deviceId, payload) {
+  // [v2.43.59 FIX] Nombre correcto: enviarPushUsuario (NO enviarPushAUsuario).
+  // Antes el push al device fallaba silencioso → master creía notificar pero device nunca se enteraba.
+  // Buscamos el token FCM del dispositivo y mandamos data-only via _enviarPushFCM si existe,
+  // o caemos a enviarPushUsuario con usuario=deviceId si esta función existe.
   try {
-    // Si existe la función global, usarla
-    if (typeof enviarPushAUsuario === 'function') {
-      return enviarPushAUsuario(deviceId, payload);
+    // 1) Intentar buscar token FCM del device en DISPOSITIVOS
+    var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('DISPOSITIVOS');
+    if (sh) {
+      var data = sh.getDataRange().getValues();
+      var hdrs = data[0];
+      var idxId  = hdrs.indexOf('ID_Dispositivo');
+      if (idxId < 0) idxId = hdrs.indexOf('deviceId');
+      var idxTok = hdrs.indexOf('FCM_Token');
+      if (idxTok < 0) idxTok = hdrs.indexOf('fcmToken');
+      if (idxId >= 0 && idxTok >= 0) {
+        for (var i = 1; i < data.length; i++) {
+          if (String(data[i][idxId]).trim() === String(deviceId)) {
+            var tok = String(data[i][idxTok] || '').trim();
+            if (tok && typeof _enviarPushFCM === 'function') {
+              return _enviarPushFCM(tok, payload, { dataOnly: true });
+            }
+            break;
+          }
+        }
+      }
     }
-    Logger.log('[espia] _enviarPushDispositivo NO IMPLEMENTADO — ' + JSON.stringify(payload));
-  } catch(e) { Logger.log('[espia push] ' + e.message); }
+    // Fallback: usar enviarPushUsuario si existe (formato distinto)
+    if (typeof enviarPushUsuario === 'function') {
+      return enviarPushUsuario({
+        usuario: deviceId,
+        titulo:  'Sesión de monitoreo iniciada',
+        cuerpo:  '',
+        data:    payload
+      });
+    }
+    Logger.log('[espia push] NO se encontró función push compatible. Payload: ' + JSON.stringify(payload));
+    return { ok: false, error: 'No hay función push disponible' };
+  } catch(e) {
+    Logger.log('[espia push] ERROR: ' + e.message);
+    return { ok: false, error: e.message };
+  }
 }

@@ -27538,10 +27538,22 @@ const MOS = (() => {
       if (!ok) return;
       _espiaV2Cerrar('cambio');
     }
+    // [v2.43.59] Pedir clave admin tier 3 ANTES de crear sesión
+    const claveAdmin = await new Promise((resolve) => {
+      _modalConfirm(`Para iniciar monitoreo en vivo de "${d.Nombre_Equipo || idDispositivo}", ingresá tu clave global+personal (8 dígitos).\n\nSolo MASTER puede usar esta función.`, {
+        warning: true,
+        titulo: '🛰️ Autorización Master',
+        promptInput: { type: 'password', maxlength: 8, placeholder: '••••••••' }
+      }).then(v => resolve(v));
+    });
+    if (!claveAdmin || !/^\d{8}$/.test(String(claveAdmin))) {
+      toast('Operación cancelada o clave inválida', 'warn');
+      return;
+    }
     _espiaSfx('pop');
     const nombre = d.Ultima_Sesion || d.Nombre_Equipo || idDispositivo;
-    // Modal optimista — abrir inmediato con estado "conectando"
     _espiaV2 = {
+      _claveAdmin: claveAdmin,
       sesionId: null,
       deviceId: idDispositivo,
       nombre: nombre,
@@ -27560,7 +27572,8 @@ const MOS = (() => {
     try {
       const r = await API.post('espiaCrearSesion', {
         masterId: S.session?.idPersonal || S.session?.nombre || 'master',
-        deviceId: idDispositivo
+        deviceId: idDispositivo,
+        claveAdmin: claveAdmin
       });
       if (!r || r.ok === false) {
         toast('Error creando sesión: ' + (r?.error || ''), 'error');
