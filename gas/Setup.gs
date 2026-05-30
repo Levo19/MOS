@@ -4,6 +4,75 @@
 // maestro del ecosistema InversionMos.
 // ============================================================
 
+// [v2.43.62] Diagnóstico de Properties — corre desde editor para auditar
+// qué Script Properties están seteadas y cuáles faltan.
+// Retorna OK/MISSING por cada property crítica + estado del password admin (hoja CONFIG).
+function diagnosticarProperties() {
+  var props = PropertiesService.getScriptProperties();
+  var todas = props.getProperties();
+  var requeridas = {
+    'WH_SS_ID':        { critica: true,  uso: 'Abrir warehouseMos sheet directo (lectura)' },
+    'WH_GAS_URL':      { critica: true,  uso: 'Escribir a warehouseMos vía HTTP (bridge)' },
+    'ME_SS_ID':        { critica: true,  uso: 'Abrir MosExpress sheet directo (cajas/ventas)' },
+    'ME_GAS_URL':      { critica: true,  uso: 'Escribir a MosExpress vía HTTP' },
+    'FCM_PROJECT_ID':  { critica: true,  uso: 'Push notifications (Firebase)' },
+    'FCM_CLIENT_EMAIL':{ critica: true,  uso: 'Push notifications (service account)' },
+    'FCM_PRIVATE_KEY': { critica: true,  uso: 'Push notifications (firma JWT)' },
+    'PRINTNODE_API_KEY': { critica: false, uso: 'Impresión PrintNode (opcional)' },
+    'NUBEFACT_RUC':    { critica: false, uso: 'Tributario NubeFact (opcional)' },
+    'AUDIO_DRIVE_FOLDER_ID': { critica: false, uso: 'Folder Drive para audios espía' }
+  };
+  var reporte = { ok: [], faltantes: [], opcionales_faltantes: [], extras: [] };
+  Object.keys(requeridas).forEach(function(k) {
+    var v = todas[k] || '';
+    var entry = { key: k, uso: requeridas[k].uso, length: v.length };
+    if (v) {
+      // Para PRIVATE_KEY no mostrar valor (sensitive); para URLs sí (truncado)
+      if (k.indexOf('KEY') >= 0 || k.indexOf('PRIVATE') >= 0) {
+        entry.preview = '[' + v.length + ' chars]';
+      } else {
+        entry.preview = v.length > 60 ? v.substring(0, 60) + '...' : v;
+      }
+      reporte.ok.push(entry);
+    } else if (requeridas[k].critica) {
+      reporte.faltantes.push(entry);
+    } else {
+      reporte.opcionales_faltantes.push(entry);
+    }
+  });
+  // Properties que existen pero no están en la lista esperada (state persistente)
+  Object.keys(todas).forEach(function(k) {
+    if (!requeridas[k]) {
+      reporte.extras.push({ key: k, length: (todas[k] || '').length });
+    }
+  });
+  // Verificar password admin en hoja CONFIG
+  var passInfo = { fuente: 'hoja CONFIG' };
+  try {
+    var ssMain = SpreadsheetApp.openById(_getProp('SPREADSHEET_ID') || SpreadsheetApp.getActive().getId());
+    var sh = ssMain.getSheetByName('CONFIG');
+    if (!sh) {
+      passInfo.estado = 'HOJA_CONFIG_NO_EXISTE';
+    } else {
+      var data = sh.getDataRange().getValues();
+      var rows = data.length;
+      passInfo.estado = rows > 1 ? 'CONFIG_TIENE_' + (rows - 1) + '_FILAS' : 'CONFIG_VACIA';
+    }
+  } catch(e) { passInfo.estado = 'ERROR: ' + e.message; }
+  Logger.log('═══ DIAGNÓSTICO PROPERTIES ═══');
+  Logger.log('✅ OK: ' + reporte.ok.length);
+  reporte.ok.forEach(function(r){ Logger.log('  ' + r.key + ' → ' + r.preview); });
+  Logger.log('🚨 FALTANTES CRÍTICAS: ' + reporte.faltantes.length);
+  reporte.faltantes.forEach(function(r){ Logger.log('  ❌ ' + r.key + ' (' + r.uso + ')'); });
+  Logger.log('⚠ Opcionales faltantes: ' + reporte.opcionales_faltantes.length);
+  reporte.opcionales_faltantes.forEach(function(r){ Logger.log('  · ' + r.key); });
+  Logger.log('📦 Extras (state persistente): ' + reporte.extras.length);
+  reporte.extras.forEach(function(r){ Logger.log('  · ' + r.key + ' [' + r.length + ' chars]'); });
+  Logger.log('🔐 Password admin: ' + passInfo.estado + ' (fuente: ' + passInfo.fuente + ')');
+  return { ok: true, data: { reporte: reporte, passwordAdmin: passInfo } };
+}
+
+
 var MOS_SHEET_NAMES = {
   CONFIG_MOS:           'CONFIG_MOS',
   PRODUCTOS_MASTER:     'PRODUCTOS_MASTER',

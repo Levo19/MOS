@@ -202,8 +202,14 @@ function bustAlmacenCache() {
 // ── WARMUP: precarga todos los endpoints pesados a CacheService ──
 // Ideal para correr via trigger time-driven cada 4-5 minutos.
 // Mantiene el cache "caliente" → user nunca espera.
+// [v2.43.62] Time budget 4.5min + skip cuando se acaba. Antes 9 endpoints
+// pesados secuenciales podian pasar de 6min y Apps Script mataba todo →
+// 19% tasa error. Ahora si quedan <30s, abortamos limpio y guardamos
+// timestamp del progreso parcial.
 function warmupAlmacen() {
   var inicio = new Date().getTime();
+  var BUDGET_MS = 4.5 * 60 * 1000; // 4.5min de 6min hard limit
+  var MIN_RESERVA = 30 * 1000;     // si <30s, no empezamos otro endpoint
   var resultados = {};
   var endpoints = [
     { name: 'dashboard',          fn: function(){ return getDashboardAlmacen({ _refresh: true }); } },
@@ -216,7 +222,16 @@ function warmupAlmacen() {
     { name: 'insights30',         fn: function(){ return getInsightsStock({ dias: 30, _refresh: true }); } },
     { name: 'alertasOps',         fn: function(){ return getAlertasOperativas({ _refresh: true }); } }
   ];
-  endpoints.forEach(function(ep) {
+  var saltados = 0;
+  for (var i = 0; i < endpoints.length; i++) {
+    var ep = endpoints[i];
+    var transcurrido = new Date().getTime() - inicio;
+    var restante = BUDGET_MS - transcurrido;
+    if (restante < MIN_RESERVA) {
+      resultados[ep.name] = { ok: false, skipped: true, reason: 'time_budget' };
+      saltados++;
+      continue;
+    }
     var t = new Date().getTime();
     try {
       var r = ep.fn();
@@ -224,11 +239,13 @@ function warmupAlmacen() {
     } catch(e) {
       resultados[ep.name] = { ok: false, error: e.message, ms: (new Date().getTime() - t) };
     }
-  });
+  }
   resultados._totalMs = new Date().getTime() - inicio;
+  resultados._saltados = saltados;
   resultados._timestamp = new Date().toISOString();
   // Guardar timestamp del último warmup (para mostrar al usuario)
   try { _setProp('ALMACEN_LAST_WARMUP', resultados._timestamp); } catch(_) {}
+  if (saltados > 0) Logger.log('[warmupAlmacen] saltados ' + saltados + '/' + endpoints.length + ' por budget');
   return { ok: true, data: resultados };
 }
 
