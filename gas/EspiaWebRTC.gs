@@ -312,7 +312,12 @@ function _purgarSesionesAntiguas() {
 
 // ── Helpers internos ────────────────────────────────────────────────
 function _getHojaSignaling() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  // [v2.43.65] BUG FIX: getActiveSpreadsheet() devuelve NULL si el GAS es
+  // standalone (no bound al SS). Usar getSpreadsheet() (Code.gs) que abre
+  // por SPREADSHEET_ID de Properties — funciona en ambos casos.
+  // Síntoma del bug: "Cannot read properties of null (reading 'getSheetByName')"
+  // disparado al crear sesión espía → frontend cerraba modal con toast.
+  var ss = getSpreadsheet();
   var sh = ss.getSheetByName('RTC_SIGNALING');
   if (!sh) {
     sh = ss.insertSheet('RTC_SIGNALING');
@@ -410,7 +415,8 @@ function _msHastaExpiracion(row) {
 
 function _logAuditoriaEspia(row, duracionSeg, detalle) {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    // [v2.43.65] Mismo bug que _getHojaSignaling — usar getSpreadsheet()
+    var ss = getSpreadsheet();
     var sh = ss.getSheetByName('AUDITORIA_ESPIA');
     if (!sh) {
       sh = ss.insertSheet('AUDITORIA_ESPIA');
@@ -535,7 +541,8 @@ function _enviarPushDispositivo(deviceId, payload) {
   // o caemos a enviarPushUsuario con usuario=deviceId si esta función existe.
   try {
     // 1) Intentar buscar token FCM del device en DISPOSITIVOS
-    var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('DISPOSITIVOS');
+    // [v2.43.65] Mismo bug que _getHojaSignaling — usar getSpreadsheet()
+    var sh = getSpreadsheet().getSheetByName('DISPOSITIVOS');
     if (sh) {
       var data = sh.getDataRange().getValues();
       var hdrs = data[0];
