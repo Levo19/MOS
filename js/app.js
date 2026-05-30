@@ -1717,22 +1717,47 @@ const MOS = (() => {
     });
   }
 
-  function toggleFiltroCat() {
+  // [v2.43.39 FIX BOTÓN FILTRO]
+  // Bug anterior: el listener `once: true` se re-registraba recursivamente y
+  // en tablets/desktops con mouse el click podía perderse → botón "muerto".
+  // Fix: listener PERSISTENTE registrado UNA sola vez (flag _filtroCloseRegistered)
+  // que chequea si el panel está abierto Y el click es fuera del wrap.
+  // El botón usa stopPropagation para no auto-cerrarse.
+  function toggleFiltroCat(ev) {
+    if (ev && ev.stopPropagation) ev.stopPropagation();
     const panel = $('catFiltroPanel');
     if (!panel) return;
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
     const isOpen = !panel.classList.contains('hidden');
     if (isOpen) { panel.classList.add('hidden'); return; }
     const productos = Array.isArray(S.productos) ? S.productos : [];
     const cats = [...new Set(productos.map(p => p && p.idCategoria).filter(Boolean))].sort();
     _renderFiltroCategList(cats);
+    _refrescarFiltroOrdenUI && _refrescarFiltroOrdenUI();
     panel.classList.remove('hidden');
-    setTimeout(() => document.addEventListener('click', _closeFiltroOnOutside, { once: true }), 0);
+    _registrarCierreFiltroCat();
   }
-  function _closeFiltroOnOutside(e) {
-    const wrap = $('catFiltroWrap');
-    if (wrap && !wrap.contains(e.target)) $('catFiltroPanel')?.classList.add('hidden');
-    else setTimeout(() => document.addEventListener('click', _closeFiltroOnOutside, { once: true }), 0);
+  function _registrarCierreFiltroCat() {
+    // Idempotente: solo registra una vez
+    if (window._filtroCloseRegistered) return;
+    window._filtroCloseRegistered = true;
+    document.addEventListener('click', (e) => {
+      const panel = document.getElementById('catFiltroPanel');
+      if (!panel || panel.classList.contains('hidden')) return;
+      const wrap = document.getElementById('catFiltroWrap');
+      // Click dentro del wrap (botón o panel) → NO cerrar
+      if (wrap && wrap.contains(e.target)) return;
+      panel.classList.add('hidden');
+    });
+    // ESC también cierra
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      const panel = document.getElementById('catFiltroPanel');
+      if (panel && !panel.classList.contains('hidden')) panel.classList.add('hidden');
+    });
   }
+  // Mantener el viejo nombre por compat con HTML existente que pueda llamarlo
+  function _closeFiltroOnOutside() { /* deprecated en v2.43.39 */ }
 
   function setFiltroCategoria(cat) {
     _catFiltros.categoria = cat;
