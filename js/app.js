@@ -1056,6 +1056,100 @@ const MOS = (() => {
     return null;
   }
 
+  // ─────────────────────────────────────────────────────────────────
+  // [v2.43.37] Render helpers de catálogo: logo + sparkline rotación
+  // ─────────────────────────────────────────────────────────────────
+
+  // Logo del producto (48x48). Si no hay logoUrl, placeholder con la
+  // primera letra del nombre y color derivado de la categoría.
+  function _renderLogoMini(p) {
+    try {
+      const url = String(p.logoUrl || '').trim();
+      const letra = String(p.descripcion || p.idProducto || '?').trim().charAt(0).toUpperCase() || '?';
+      // Color estable derivado del idCategoria (sha-like simple por charcodes)
+      const cat = String(p.idCategoria || '');
+      let hue = 200;
+      for (let i = 0; i < cat.length; i++) hue = (hue + cat.charCodeAt(i) * 37) % 360;
+      const bg = `hsl(${hue},45%,30%)`;
+      const fg = `hsl(${hue},75%,75%)`;
+      if (url) {
+        return `<div style="width:48px;height:48px;border-radius:8px;overflow:hidden;flex-shrink:0;background:${bg};display:flex;align-items:center;justify-content:center">
+          <img src="${_escapeHtml(url)}" alt="logo"
+               style="width:100%;height:100%;object-fit:cover"
+               onerror="this.outerHTML='<span style=\\'font-size:20px;font-weight:900;color:${fg}\\'>${letra}</span>'">
+        </div>`;
+      }
+      return `<div style="width:48px;height:48px;border-radius:8px;flex-shrink:0;background:${bg};display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:900;color:${fg}">${letra}</div>`;
+    } catch(_) { return ''; }
+  }
+
+  // Sparkline de 8 barras (semanas) + comparativo vs semana anterior.
+  // Click → modal con insight detallado.
+  // Si no hay rotación nunca → "─ sin movimiento" gris.
+  function _renderRotacionSparkline(p) {
+    try {
+      const cache = S._rotacionSemanalCache || {};
+      const productos = cache.productos || {};
+      // Buscar por codigoBarra (key principal en backend), luego idProducto
+      const cb = String(p.codigoBarra || '').trim().toUpperCase();
+      const idp = String(p.idProducto || '').trim().toUpperCase();
+      let serie = productos[cb] || productos[idp];
+      // Si no se cargó aún, placeholder discreto
+      if (!cache.productos) {
+        return `<div class="cat-spark-wrap" style="font-size:9px;color:#475569;opacity:.6">📦 cargando…</div>`;
+      }
+      // Sin rotación nunca
+      if (!serie || !serie.length) {
+        return `<div class="cat-spark-wrap cat-spark-empty" onclick="event.stopPropagation();MOS.abrirModalRotacion('${p.idProducto}')"
+                     style="font-size:9px;color:#64748b;cursor:pointer;display:flex;align-items:center;gap:4px"
+                     title="Producto sin movimiento en últimas 8 semanas">
+          🌙 <span>sin rotación</span>
+        </div>`;
+      }
+      const unidades = serie.map(s => parseFloat(s.unidades) || 0);
+      const total    = unidades.reduce((a, b) => a + b, 0);
+      if (total === 0) {
+        return `<div class="cat-spark-wrap cat-spark-empty" onclick="event.stopPropagation();MOS.abrirModalRotacion('${p.idProducto}')"
+                     style="font-size:9px;color:#64748b;cursor:pointer;display:flex;align-items:center;gap:4px"
+                     title="Producto sin movimiento en últimas 8 semanas">
+          🌙 <span>sin rotación</span>
+        </div>`;
+      }
+      const max = Math.max(...unidades, 1);
+      // 8 barras con altura proporcional, color según rotación promedio
+      const promedio = total / unidades.length;
+      const color = promedio >= 10 ? '#10b981'   // verde alta
+                  : promedio >= 3  ? '#f59e0b'   // ámbar media
+                  :                  '#ef4444';  // rojo baja
+      const barras = unidades.map(u => {
+        const h = Math.max(2, Math.round((u / max) * 18));
+        const op = u === 0 ? 0.25 : 1;
+        return `<span style="display:inline-block;width:3px;height:${h}px;background:${color};opacity:${op};margin-right:1px;border-radius:1px"></span>`;
+      }).join('');
+      // Comparativo última vs penúltima
+      const ultima = unidades[unidades.length - 1];
+      const penult = unidades[unidades.length - 2] || 0;
+      let cmpHtml = '';
+      if (penult > 0) {
+        const delta = ((ultima - penult) / penult) * 100;
+        const arrow = delta > 5 ? '↑' : delta < -5 ? '↓' : '→';
+        const cmpColor = delta > 5 ? '#10b981' : delta < -5 ? '#ef4444' : '#94a3b8';
+        cmpHtml = `<span style="color:${cmpColor};font-size:10px;font-weight:700;margin-left:4px">${arrow}${Math.abs(Math.round(delta))}%</span>`;
+      } else if (ultima > 0) {
+        cmpHtml = `<span style="color:#10b981;font-size:10px;font-weight:700;margin-left:4px">↑ nuevo</span>`;
+      }
+      const promedioStr = promedio >= 10 ? promedio.toFixed(0) : promedio.toFixed(1);
+      return `<div class="cat-spark-wrap" onclick="event.stopPropagation();MOS.abrirModalRotacion('${p.idProducto}')"
+                   style="display:flex;align-items:center;gap:5px;font-size:10px;color:#cbd5e1;cursor:pointer;margin-top:2px"
+                   title="Rotación últimas 8 semanas · click para ver detalle">
+        <span style="font-size:11px">📦</span>
+        <span style="font-weight:700;color:${color}">${promedioStr}/sem</span>
+        <span style="display:inline-flex;align-items:flex-end;height:20px">${barras}</span>
+        ${cmpHtml}
+      </div>`;
+    } catch(_) { return ''; }
+  }
+
   // Render seguro del badge de margen (cualquier error aquí no debe romper el catálogo)
   function _renderMargenBadge(producto) {
     try {
@@ -1384,7 +1478,8 @@ const MOS = (() => {
   }
 
   // ── Estado de filtros del catálogo ─────────────────────────
-  const _catFiltros = { categoria: '', tipos: new Set(), soloAlertas: false };
+  const _catFiltros = { categoria: '', tipos: new Set(), soloAlertas: false, orden: '' };
+  // [v2.43.37] orden válidos: '' (alfabético), 'rot_desc', 'rot_asc', 'mrg_desc', 'mrg_asc'
 
   // ¿Este grupo tiene alguna alerta?
   // El producto canónico es el que tiene factor=1. Solo puede haber 1 por grupo.
@@ -1577,16 +1672,20 @@ const MOS = (() => {
   }
 
   function _updateFiltroBadge() {
-    const count = (_catFiltros.categoria ? 1 : 0) + _catFiltros.tipos.size;
+    const count = (_catFiltros.categoria ? 1 : 0) + _catFiltros.tipos.size + (_catFiltros.orden ? 1 : 0);
     const badge = $('filtrosBadge');
     if (badge) { badge.textContent = count; badge.classList.toggle('hidden', count === 0); }
 
-    const tipoLabels = { envasable:'⚗️ Envasable', conPres:'📦 Con pres.', derivado:'🔗 Derivado', inactivo:'🚫 Inactivos' };
+    const tipoLabels  = { envasable:'⚗️ Envasable', conPres:'📦 Con pres.', derivado:'🔗 Derivado', inactivo:'🚫 Inactivos' };
+    const ordenLabels = { rot_desc:'📦 Más vendidos', rot_asc:'🌙 Menos vendidos', mrg_desc:'💎 Margen alto', mrg_asc:'⚠ Margen bajo' };
     const chips = $('catFiltroChips');
     if (chips) {
       const parts = [];
       if (_catFiltros.categoria) parts.push(`<span class="cat-chip">📂 ${_catFiltros.categoria} <button onclick="MOS.setFiltroCategoria('')">×</button></span>`);
       _catFiltros.tipos.forEach(t => parts.push(`<span class="cat-chip">${tipoLabels[t]} <button onclick="MOS.toggleFiltroTipo('${t}')">×</button></span>`));
+      if (_catFiltros.orden && ordenLabels[_catFiltros.orden]) {
+        parts.push(`<span class="cat-chip">${ordenLabels[_catFiltros.orden]} <button onclick="MOS.setFiltroOrden('')">×</button></span>`);
+      }
       if (count > 1) parts.push(`<span class="cat-chip cat-chip-clear">Limpiar todo <button onclick="MOS.limpiarFiltrosCat()">×</button></span>`);
       chips.innerHTML = parts.join('');
       chips.classList.toggle('hidden', count === 0);
@@ -1633,11 +1732,28 @@ const MOS = (() => {
   function limpiarFiltrosCat() {
     _catFiltros.categoria = '';
     _catFiltros.tipos.clear();
+    _catFiltros.orden = '';
     _updateFiltroBadge();
     const cats = [...new Set(S.productos.map(p => p.idCategoria).filter(Boolean))].sort();
     _renderFiltroCategList(cats);
+    _refrescarFiltroOrdenUI();
     renderCatalogo();
     $('catFiltroPanel')?.classList.add('hidden');
+  }
+
+  // [v2.43.37] Setter del orden + visual feedback + sonido
+  function setFiltroOrden(orden) {
+    _catFiltros.orden = orden || '';
+    _refrescarFiltroOrdenUI();
+    _updateFiltroBadge();
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    renderCatalogo();
+  }
+  function _refrescarFiltroOrdenUI() {
+    const cur = _catFiltros.orden || '';
+    document.querySelectorAll('#filtroOrdenList .filtro-radio').forEach(el => {
+      el.classList.toggle('active', (el.dataset.orden || '') === cur);
+    });
   }
 
   function filterCatalogo() {
@@ -1905,13 +2021,45 @@ const MOS = (() => {
       S._catLastSearchSig = null;
     }
 
-    // Sort: by score desc, then by description
-    result.sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      const da = String(a.base.descripcion || '');
-      const db = String(b.base.descripcion || '');
-      return da < db ? -1 : da > db ? 1 : 0;
-    });
+    // [v2.43.37] Sort: si el usuario eligió un orden, usar ese.
+    // Si no hay orden custom, por score desc → descripción.
+    // Mientras se busca con query, el score gana siempre (más útil).
+    const orden = _catFiltros.orden || '';
+    if (orden && !qn) {
+      const getRot = g => {
+        try {
+          const cache = S._rotacionSemanalCache || {};
+          const productos = cache.productos || {};
+          const cb = String(g.base.codigoBarra || '').trim().toUpperCase();
+          const idp = String(g.base.idProducto || '').trim().toUpperCase();
+          const serie = productos[cb] || productos[idp] || [];
+          if (!serie.length) return -1;  // sin data
+          return serie.reduce((s, x) => s + (parseFloat(x.unidades) || 0), 0) / serie.length;
+        } catch(_) { return -1; }
+      };
+      const getMrg = g => {
+        try {
+          const mi = _calcularMargenInfo(g.base);
+          return mi ? mi.margen : -999;
+        } catch(_) { return -999; }
+      };
+      result.sort((a, b) => {
+        let va, vb;
+        if (orden === 'rot_desc') { va = getRot(a); vb = getRot(b); return vb - va; }
+        if (orden === 'rot_asc')  { va = getRot(a); vb = getRot(b); return va - vb; }
+        if (orden === 'mrg_desc') { va = getMrg(a); vb = getMrg(b); return vb - va; }
+        if (orden === 'mrg_asc')  { va = getMrg(a); vb = getMrg(b); return va - vb; }
+        return 0;
+      });
+    } else {
+      // Sort: by score desc, then by description
+      result.sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        const da = String(a.base.descripcion || '');
+        const db = String(b.base.descripcion || '');
+        return da < db ? -1 : da > db ? 1 : 0;
+      });
+    }
 
     // Stats
     const stats = $('catStats');
@@ -2067,6 +2215,7 @@ const MOS = (() => {
         <!-- Header -->
         <div class="p-4 cursor-pointer select-none" onclick="MOS._catCardClick(event,'${base.idProducto}')">
           <div class="flex items-start gap-3">
+            ${_renderLogoMini(base)}
             <div class="flex-1 min-w-0">
               <div class="flex flex-wrap gap-1 mb-2">${badgeCat}${badgeEnv}${badgePres}${badgeInac}</div>
               <div class="font-semibold text-slate-100 text-sm leading-snug mb-2">${hlDesc}</div>
@@ -2082,6 +2231,7 @@ const MOS = (() => {
               </div>
               ${base.precioCosto > 0 ? `<div class="cat-cost" data-cat-costo="${base.idProducto}">Costo: ${fmtMoney(base.precioCosto)}</div>` : ''}
               ${_renderMargenBadge(base)}
+              ${_renderRotacionSparkline(base)}
               <div class="flex gap-1.5 mt-1 items-center">
                 <button type="button" class="toggle-sw ${activo ? 'on' : ''}" data-pid="${base.idProducto}"
                         onclick="event.stopPropagation();MOS.toggleProductoActivo('${base.idProducto}', true)"
@@ -3887,6 +4037,109 @@ const MOS = (() => {
     const el = $(id); if (!el) return;
     el.value = Math.max(0, (parseFloat(el.value) || 0) - step);
     el.dispatchEvent(new Event('input'));
+  }
+
+  // [v2.43.37] Modal rotación: gráfico minimalista + insight + recomendación
+  function abrirModalRotacion(idProducto) {
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    const p = (S.productos || []).find(x => String(x.idProducto) === String(idProducto));
+    if (!p) { toast('Producto no encontrado', 'error'); return; }
+    const cache = S._rotacionSemanalCache || {};
+    const productos = cache.productos || {};
+    const cb = String(p.codigoBarra || '').trim().toUpperCase();
+    const idp = String(p.idProducto || '').trim().toUpperCase();
+    const serie = productos[cb] || productos[idp] || [];
+    const unidades = serie.map(s => parseFloat(s.unidades) || 0);
+    const max = Math.max(...unidades, 1);
+    const total = unidades.reduce((a, b) => a + b, 0);
+    const promedio = unidades.length ? total / unidades.length : 0;
+    const ultima = unidades[unidades.length - 1] || 0;
+    const penult = unidades[unidades.length - 2] || 0;
+    const delta = penult > 0 ? ((ultima - penult) / penult) * 100 : (ultima > 0 ? 999 : 0);
+
+    let badge, badgeColor, insightTxt, recomTxt;
+    if (total === 0) {
+      badge = '🌙 SIN ROTACIÓN';        badgeColor = '#64748b';
+      insightTxt = 'Producto sin movimiento en las últimas 8 semanas.';
+      recomTxt = 'Revisá si conviene mantenerlo activo, bajarlo en precio o discontinuarlo.';
+    } else if (promedio >= 10) {
+      badge = `↑ ALTA ROTACIÓN`;        badgeColor = '#10b981';
+      insightTxt = `Producto estrella. ${promedio.toFixed(1)} unidades/semana en promedio.`;
+      recomTxt = `Monitorear stock — considerá reposición frecuente para evitar quiebres.`;
+    } else if (promedio >= 3) {
+      badge = `→ ROTACIÓN MEDIA`;       badgeColor = '#f59e0b';
+      insightTxt = `Producto con movimiento estable: ${promedio.toFixed(1)} u/sem.`;
+      recomTxt = 'Mantené reposición regular acorde al consumo semanal.';
+    } else {
+      badge = `↓ BAJA ROTACIÓN`;        badgeColor = '#ef4444';
+      insightTxt = `Producto lento: solo ${promedio.toFixed(1)} u/sem.`;
+      recomTxt = 'Evaluá si conviene reducir stock o cambiar estrategia de precio.';
+    }
+    let deltaTxt = '';
+    if (penult > 0) {
+      const arrow = delta > 5 ? '↑' : delta < -5 ? '↓' : '→';
+      const c = delta > 5 ? '#10b981' : delta < -5 ? '#ef4444' : '#94a3b8';
+      deltaTxt = `<div style="font-size:13px;color:${c};font-weight:600;margin-top:4px">${arrow} ${Math.abs(Math.round(delta))}% vs semana pasada</div>`;
+    }
+
+    // Gráfico de barras
+    const etiquetas = cache.etiquetas || [];
+    const barras = serie.map((s, i) => {
+      const h = Math.max(4, Math.round((unidades[i] / max) * 100));
+      const color = i === unidades.length - 1 ? badgeColor : '#475569';
+      const lblSem = (s.semana || '').split('-W')[1] || '';
+      return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
+        <div style="font-size:9px;color:#cbd5e1;font-weight:700">${unidades[i] || ''}</div>
+        <div style="width:100%;max-width:36px;height:${h}px;background:${color};border-radius:3px 3px 0 0;transition:height .4s ease-out;animation:catBarGrow .6s ease-out;box-shadow:0 0 8px -2px ${color}80"></div>
+        <div style="font-size:8px;color:#64748b;font-weight:600">W${lblSem}</div>
+      </div>`;
+    }).join('');
+
+    // Stock + cobertura (si tenemos stock en S.productos)
+    const stockTot = parseFloat(p.stockActual || p.cantidadDisponible || 0);
+    const diasCob = promedio > 0 ? (stockTot / promedio) * 7 : null;
+    const stockHtml = stockTot
+      ? `<div style="font-size:11px;color:#94a3b8;margin-top:6px">📦 Stock actual: <span style="color:#e2e8f0;font-weight:700">${stockTot.toFixed(0)} u</span>${diasCob !== null ? ` · cobertura ~ <span style="color:${diasCob < 7 ? '#f87171' : '#10b981'}">${diasCob.toFixed(1)} días</span>` : ''}</div>`
+      : '';
+
+    const html = `<div class="hor-modal-backdrop" id="modalRotacionWrap" onclick="if(event.target===this)MOS.cerrarModalRotacion()">
+      <div class="hor-modal" style="border-color:${badgeColor}80;box-shadow:0 25px 60px -15px rgba(0,0,0,.7),0 0 0 1px ${badgeColor}33">
+        <div class="hor-modal-hdr" style="background:linear-gradient(135deg,${badgeColor}22,${badgeColor}05);border-bottom:1px solid ${badgeColor}40">
+          <div>
+            <div class="hor-modal-ttl" style="color:${badgeColor}">📊 ${_escapeHtml(p.descripcion || '')}</div>
+            <div class="hor-modal-sub">Rotación últimas ${serie.length || 8} semanas · ${_escapeHtml(p.codigoBarra || p.idProducto || '')}</div>
+          </div>
+          <button class="hor-modal-x" onclick="MOS.cerrarModalRotacion()">✕</button>
+        </div>
+        <div class="hor-modal-body">
+          <div style="text-align:center;margin-bottom:14px">
+            <div style="font-size:18px;font-weight:900;color:${badgeColor};letter-spacing:1px">${badge}</div>
+            ${deltaTxt}
+          </div>
+          ${total > 0 ? `<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:4px;height:130px;background:#0a1424;padding:12px 8px;border-radius:8px;border:1px solid #1e293b">${barras}</div>` : `<div style="text-align:center;padding:30px;color:#475569;font-size:13px;background:#0a1424;border-radius:8px;border:1px solid #1e293b">📊 Sin datos en este rango</div>`}
+          <div style="margin-top:14px;padding:12px;background:rgba(99,102,241,.07);border-left:3px solid #6366f1;border-radius:4px">
+            <div style="font-size:10px;color:#a5b4fc;font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px">💡 Insight</div>
+            <div style="font-size:13px;color:#e0e7ff;line-height:1.4">${insightTxt}</div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:6px;line-height:1.4">${recomTxt}</div>
+            ${stockHtml}
+          </div>
+          <div style="margin-top:14px;text-align:right">
+            <button onclick="MOS.cerrarModalRotacion();MOS.abrirAnalitica('${_escapeHtml(p.idProducto)}')"
+                    style="background:linear-gradient(135deg,#6366f1,#4338ca);color:#fff;border:0;border-radius:8px;padding:8px 14px;font-size:11px;font-weight:700;cursor:pointer">
+              📊 Ver analítica completa →
+            </button>
+          </div>
+        </div>
+      </div>
+      <style>@keyframes catBarGrow{from{height:0}}</style>
+    </div>`;
+    const old = document.getElementById('modalRotacionWrap');
+    if (old) old.remove();
+    document.body.insertAdjacentHTML('beforeend', html);
+  }
+  function cerrarModalRotacion() {
+    const m = document.getElementById('modalRotacionWrap');
+    if (m) m.remove();
   }
 
   function abrirAnalitica(idProducto) {
@@ -15844,6 +16097,11 @@ const MOS = (() => {
     if (!S._horariosAppsCache) {
       _cargarHorariosApps(true).catch(() => {});
     }
+    // [v2.43.37] Pre-cargar rotación semanal WH para el catálogo.
+    // Esto hace que al entrar a Catálogo el sparkline aparezca instantáneo.
+    if (!S._rotacionSemanalCache) {
+      _cargarRotacionSemanal(true).catch(() => {});
+    }
     // 1) Hidratar inmediato desde cache (zero spinner para usuarios recurrentes)
     const huboCache = _cfgHidratarTodos();
     if (huboCache) renderCfgTab(S.cfgTab);
@@ -18031,6 +18289,25 @@ const MOS = (() => {
     { k:'lun', lbl:'Lun' }, { k:'mar', lbl:'Mar' }, { k:'mie', lbl:'Mie' },
     { k:'jue', lbl:'Jue' }, { k:'vie', lbl:'Vie' }, { k:'sab', lbl:'Sab' }, { k:'dom', lbl:'Dom' }
   ];
+  // [v2.43.37] Carga la rotación semanal (8 semanas) de WH para todos los
+  // productos. Pre-cargado al login para que el catálogo lo tenga listo.
+  // Resultado: S._rotacionSemanalCache = { etiquetas: ['YYYY-Www',...],
+  //                                         productos: { CB: [{semana,unidades}*8] } }
+  // TTL 15 min (rotación cambia despacio).
+  async function _cargarRotacionSemanal(force) {
+    const TTL = 15 * 60 * 1000;
+    if (!force && S._rotacionSemanalCache && (Date.now() - (S._rotacionSemanalCacheTs || 0)) < TTL) {
+      return S._rotacionSemanalCache;
+    }
+    try {
+      const r = await API.post('wh_getRotacionSemanal', { semanas: 8 });
+      const d = (r && r.data) || r || {};
+      S._rotacionSemanalCache = d;
+      S._rotacionSemanalCacheTs = Date.now();
+      return d;
+    } catch(_) { return {}; }
+  }
+
   async function _cargarHorariosApps(force) {
     if (!force && S._horariosAppsCache && (Date.now() - S._horariosAppsCacheTs) < 5 * 60000) {
       return S._horariosAppsCache;
@@ -35211,6 +35488,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _espiaGpsRefresh, _espiaGpsRangoCambiar,
     toggleAvatarMenu, closeAvatarMenu, installPWA,
     toggleFiltroCat, setFiltroCategoria, toggleFiltroTipo, limpiarFiltrosCat, toggleFiltroAlertas, toggleAlertPop,
+    // [v2.43.37] Catálogo: filtro de orden + modal de rotación
+    setFiltroOrden, abrirModalRotacion, cerrarModalRotacion,
     // Cajas
     loadCajas, toggleCajaDetail, toggleKpiVentas,
     toggleKpiTickets, setTicketFiltroFecha, setTicketFiltroEstado, setTicketFiltroTipo,

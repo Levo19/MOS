@@ -127,6 +127,10 @@ function _route(method, e) {
       case 'setHorarioApp':                 return setHorarioApp(params);
       case 'setHorarioCustomPersonal':      return setHorarioCustomPersonal(params);
       case 'resolverHorarioPersonal':       return resolverHorarioPersonal(params);
+      // [v2.43.37] Rotación semanal WH para Catálogo (pre-carga al login)
+      case 'wh_getRotacionSemanal':          return postToWarehouse('getRotacionSemanal', params);
+      // [v2.43.37] Subir logo de producto a Drive + actualizar PRODUCTOS_MASTER
+      case 'subirLogoProducto':              return subirLogoProducto(params);
       case 'wh_getDevolucionesZona':         return postToWarehouse('getDevolucionesZona', params);
       case 'wh_getDevolucionDetalle':        return postToWarehouse('getDevolucionDetalle', params);
       case 'wh_confirmarRecepcionDevolucion': return postToWarehouse('confirmarRecepcionDevolucion', params);

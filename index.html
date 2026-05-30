@@ -12080,6 +12080,17 @@
                 <label class="filtro-check" id="fchkInactivo"  onclick="MOS.toggleFiltroTipo('inactivo')"><span>🚫</span> Inactivos</label>
               </div>
             </div>
+            <!-- [v2.43.37] Ordenar por rotación / margen -->
+            <div style="border-top:1px solid #334155" class="pt-3 mt-3">
+              <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Ordenar por</div>
+              <div class="space-y-0.5" id="filtroOrdenList">
+                <div class="filtro-radio active" data-orden=""        onclick="MOS.setFiltroOrden('')">Alfabético (default)</div>
+                <div class="filtro-radio"        data-orden="rot_desc" onclick="MOS.setFiltroOrden('rot_desc')">📦 Rotación: más vendidos primero</div>
+                <div class="filtro-radio"        data-orden="rot_asc"  onclick="MOS.setFiltroOrden('rot_asc')">🌙 Rotación: lentos primero</div>
+                <div class="filtro-radio"        data-orden="mrg_desc" onclick="MOS.setFiltroOrden('mrg_desc')">💎 Margen: alto → bajo</div>
+                <div class="filtro-radio"        data-orden="mrg_asc"  onclick="MOS.setFiltroOrden('mrg_asc')">⚠ Margen: bajo → alto</div>
+              </div>
+            </div>
             <div style="border-top:1px solid #334155" class="pt-3 mt-3">
               <button onclick="MOS.limpiarFiltrosCat()" class="text-xs text-slate-500 hover:text-red-400 transition-colors">Limpiar filtros</button>
             </div>

@@ -62,6 +62,9 @@ function _safePreviewParams(p) {
 
 // ── PRODUCTOS_MASTER ─────────────────────────────────────────
 function getProductosMaster(params) {
+  // [v2.43.37] Auto-migración: si la hoja no tiene columna logoUrl, agregarla.
+  // Idempotente, hace nada si ya existe.
+  _asegurarColumnaLogoUrl();
   var rows = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
   if (params.estado)    rows = rows.filter(function(r){ return String(r.estado) === String(params.estado); });
   if (params.skuBase)   rows = rows.filter(function(r){ return r.skuBase === params.skuBase; });
@@ -75,6 +78,70 @@ function getProductosMaster(params) {
     });
   }
   return { ok: true, data: rows };
+}
+
+// [v2.43.37] Asegura que la columna logoUrl exista en PRODUCTOS_MASTER.
+// Idempotente. Se ejecuta una vez por sesión cuando se carga el catálogo.
+function _asegurarColumnaLogoUrl() {
+  try {
+    var sh = getSheet('PRODUCTOS_MASTER');
+    var hdrs = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    if (hdrs.indexOf('logoUrl') < 0) {
+      sh.getRange(1, hdrs.length + 1).setValue('logoUrl').setFontWeight('bold');
+    }
+  } catch(e) { Logger.log('[_asegurarColumnaLogoUrl] ' + e.message); }
+}
+
+// [v2.43.37] Sube un logo a Drive y guarda la URL en PRODUCTOS_MASTER.logoUrl.
+// params: { idProducto, fotoBase64, mimeType }
+// Carpeta: "MOS Logos Productos" (creada al primer logo)
+function subirLogoProducto(params) {
+  var idProducto = String(params.idProducto || '').trim();
+  var b64        = String(params.fotoBase64 || '').trim();
+  var mime       = String(params.mimeType || 'image/jpeg');
+  if (!idProducto) return { ok: false, error: 'idProducto requerido' };
+  if (!b64)        return { ok: false, error: 'fotoBase64 requerido' };
+
+  try {
+    // 1) Obtener/crear carpeta en Drive
+    var folderName = 'MOS Logos Productos';
+    var folders = DriveApp.getFoldersByName(folderName);
+    var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+
+    // 2) Decodificar y crear blob con nombre estable (idProducto + ext)
+    var ext  = mime.indexOf('png') >= 0 ? 'png' : 'jpg';
+    var name = 'logo_' + idProducto + '.' + ext;
+    var bytes = Utilities.base64Decode(b64);
+    var blob  = Utilities.newBlob(bytes, mime, name);
+
+    // 3) Si ya había un logo previo para este idProducto → eliminar (replace)
+    var prev = folder.getFilesByName(name);
+    while (prev.hasNext()) { try { prev.next().setTrashed(true); } catch(_){} }
+
+    // 4) Crear archivo + permisos públicos para que el navegador lo cargue
+    var file = folder.createFile(blob);
+    try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch(_){}
+    // URL thumbnail pública (más rápida que el view del file)
+    var url = 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w400';
+
+    // 5) Actualizar PRODUCTOS_MASTER.logoUrl
+    _asegurarColumnaLogoUrl();
+    var sh = getSheet('PRODUCTOS_MASTER');
+    var data = sh.getDataRange().getValues();
+    var hdrs = data[0];
+    var idxId = hdrs.indexOf('idProducto');
+    var idxLogo = hdrs.indexOf('logoUrl');
+    var fila = -1;
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][idxId]) === idProducto) { fila = i + 1; break; }
+    }
+    if (fila < 0) return { ok: false, error: 'idProducto no encontrado en PRODUCTOS_MASTER' };
+    sh.getRange(fila, idxLogo + 1).setValue(url);
+
+    return { ok: true, data: { idProducto: idProducto, logoUrl: url, fileId: file.getId() } };
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
 }
 
 function getProductoMaster(codigo) {
