@@ -4501,6 +4501,47 @@
     /* [v2.43.38] Foto del producto en catálogo — animaciones globales */
     @keyframes catFotoBreath { 0%,100% { transform: scale(1); opacity:.85 } 50% { transform: scale(1.05); opacity:1 } }
 
+    /* [v2.43.54] Modales premium con halo de categoría dinámico (CSS var --modal-hue).
+       Aplica a editar producto, cambiar precio, y cualquier .modal-box que tenga
+       --modal-hue seteado por JS al abrir. */
+    .modal-box[style*="--modal-hue"] {
+      border-color: hsla(var(--modal-hue), 70%, 55%, .5) !important;
+      box-shadow:
+        0 25px 60px -10px hsla(var(--modal-hue), 70%, 40%, .35),
+        0 0 0 1px hsla(var(--modal-hue), 70%, 55%, .15) inset !important;
+    }
+    /* Shimmer en botones primary dentro de modales premium */
+    .modal-box .btn-primary, .modal-box .qp-save-btn {
+      position: relative;
+      overflow: hidden;
+    }
+    .modal-box .btn-primary::after, .modal-box .qp-save-btn::after {
+      content: '';
+      position: absolute;
+      top: 0; left: -100%;
+      width: 50%; height: 100%;
+      background: linear-gradient(110deg, transparent, rgba(255,255,255,.25), transparent);
+      transform: skewX(-20deg);
+      animation: modalBtnShine 3s ease-in-out infinite;
+      pointer-events: none;
+    }
+    @keyframes modalBtnShine { 0%{left:-100%} 60%{left:200%} 100%{left:200%} }
+    /* Count-up animation para precios */
+    .precio-countup {
+      display: inline-block;
+      animation: precioCountup .6s cubic-bezier(.34, 1.56, .64, 1);
+    }
+    @keyframes precioCountup {
+      0% { transform: scale(.8); opacity: 0; color: #fbbf24 }
+      50% { transform: scale(1.15); color: #fde68a }
+      100% { transform: scale(1); opacity: 1 }
+    }
+
+    /* [v2.43.54] Bugs auditoría restantes */
+    .cat-card {
+      /* AJUSTE: cards reales ~135px en promedio (estaba 110 = scroll jank) */
+    }
+
     /* [v2.43.47 PERF] Sparkline rotación — clases CSS para hover (no JS inline).
        Boost de performance: 2000+ cards renderizan instantáneo. */
     .cat-spark {
@@ -10694,8 +10735,10 @@
       /* [v2.43.50 PERF] Browser solo pinta las cards visibles + intrinsic-size
          reserva el espacio para que el scroll sea suave. Esto baja el render
          de 2340 cards de ~2s a ~80ms. */
+      /* [v2.43.54] Ajustado a 135px — cards reales miden ~120-140px; el 110 viejo
+         causaba scroll-jank al recalcular alturas reales. */
       content-visibility: auto;
-      contain-intrinsic-size: 0 110px;
+      contain-intrinsic-size: 0 135px;
     }
     /* [v2.43.50 PERF] Stagger animation solo en las primeras 40 cards
        para no disparar 2340 keyframes simultáneos. */
@@ -12253,11 +12296,11 @@
         <button class="cat-tool-btn cat-tool-btn-collapse cat-btn-promo" onclick="MOS.nav('promociones')" title="Gestionar promociones">
           <span>🎯</span><span class="cat-btn-new-lbl">Promos</span>
         </button>
-        <!-- [v2.43.53] Kebab Master: dropdown con Purgar + Log de cambios.
-             Reemplaza el botón Log individual. Solo visible si rol=MASTER. -->
-        <button id="btnMasterKebab" type="button" class="cat-tool-btn cat-tool-btn-collapse hidden"
+        <!-- [v2.43.54] Kebab Master en toolbar — SIN cat-tool-btn-collapse para
+             que NO se oculte cuando search-active. Siempre visible al master. -->
+        <button id="btnMasterKebab" type="button" class="hidden"
                 title="Acciones Master"
-                style="background:rgba(168,85,247,0.12);border-color:rgba(168,85,247,0.5);color:#c084fc;font-size:1.1rem;padding:6px 10px;min-width:42px">
+                style="background:rgba(168,85,247,0.15);border:1px solid rgba(168,85,247,0.5);color:#c084fc;font-size:1.4rem;padding:4px 12px;border-radius:8px;min-width:44px;min-height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:900;line-height:1;transition:background .15s,transform .15s;flex-shrink:0">
           ⋮
         </button>
         <!-- Legacy: mantengo el id por compatibilidad pero oculto -->

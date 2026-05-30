@@ -4000,12 +4000,26 @@ const MOS = (() => {
     if (el) { el.textContent = msg; el.style.display = 'block'; }
   }
 
+  // [v2.43.54] Helper: aplica halo de categoría dinámico al modal-box.
+  // El CSS lo usa con var(--modal-hue) para border-color y box-shadow.
+  function _aplicarHaloCategoria(modalBoxEl, prod) {
+    if (!modalBoxEl || !prod) return;
+    const cat = String(prod.idCategoria || '');
+    let hue = 200;
+    for (let i = 0; i < cat.length; i++) hue = (hue + cat.charCodeAt(i) * 37) % 360;
+    modalBoxEl.style.setProperty('--modal-hue', hue);
+  }
+
   function abrirModalPrecioRapido(idProducto) {
     const prod = S.productos.find(p => p.idProducto === idProducto);
     if (!prod) return;
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
     S._editingPrecioId = idProducto;
-    S._qpTocadas = {}; // tracking de presentaciones modificadas manualmente
+    S._qpTocadas = {};
+    // [v2.43.54] Aplicar halo de categoría
+    const qpSheet = document.querySelector('#modalPrecioRapido .qp-sheet, #modalPrecioRapido .modal-box');
+    if (qpSheet) _aplicarHaloCategoria(qpSheet, prod);
+    S._qpPrecioAnterior = parseFloat(prod.precioVenta || 0);
     const nombre = $('qpNombre');
     const subt   = $('qpSubtitulo');
     const inp    = $('qpInput');
@@ -5047,7 +5061,39 @@ const MOS = (() => {
   function _purgaToggle(key) {
     const st = window._purgaState;
     if (!st) return;
-    if (st.sel.has(key)) st.sel.delete(key); else st.sel.add(key);
+    const yaSel = st.sel.has(key);
+    if (yaSel) st.sel.delete(key); else st.sel.add(key);
+    // [v2.43.54] Si marcaste un canónico, auto-marcar su grupo completo
+    // (presentaciones + equivalentes) para evitar el error INTEGRIDAD luego.
+    // Si lo des-marcaste, des-marcar todo el grupo también.
+    if (key.indexOf('CAN|') === 0) {
+      const canId = key.substring(4);
+      const groups = _catGroups || {};
+      // Buscar el grupo que contiene a este canónico
+      let grupoTarget = null;
+      Object.values(groups).forEach(g => {
+        if (g.base && String(g.base.idProducto) === canId) grupoTarget = g;
+      });
+      if (grupoTarget) {
+        const presIds = (grupoTarget.pres || []).map(p => 'PRE|' + p.idProducto);
+        const sku = String(grupoTarget.base.skuBase || grupoTarget.base.idProducto || '');
+        const equivs = (S.equivMap && S.equivMap[sku]) || [];
+        const equivKeys = equivs.map(e => {
+          const id = typeof e === 'object' ? (e.idEquiv || e.codigoBarra || '') : e;
+          return 'EQU|' + id;
+        });
+        if (!yaSel) {
+          // Marcamos el canónico → marcamos todo
+          presIds.forEach(k => st.sel.add(k));
+          equivKeys.forEach(k => st.sel.add(k));
+          toast(`✓ Grupo completo seleccionado (${1 + presIds.length + equivKeys.length} items)`, 'info', 2000);
+        } else {
+          // Des-marcamos el canónico → des-marcamos todo
+          presIds.forEach(k => st.sel.delete(k));
+          equivKeys.forEach(k => st.sel.delete(k));
+        }
+      }
+    }
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
     _renderCestaPurga();
   }
@@ -16119,6 +16165,12 @@ const MOS = (() => {
   function abrirModalProducto(id, opts) {
     opts = opts || {};
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    // [v2.43.54] Aplicar halo de categoría al modal box (efecto premium)
+    setTimeout(() => {
+      const prod = id && Array.isArray(S.productos) ? S.productos.find(p => p.idProducto === id) : null;
+      const box = document.querySelector('#modalProducto .modal-box, #productModal .modal-box');
+      if (box && prod) _aplicarHaloCategoria(box, prod);
+    }, 50);
     // [v2.43.3] Si llamaron con focusPolitica, scroll + expandir sección política
     // tras 250ms (después de renderizar el modal). Ahorra 3 taps al cajero.
     if (opts.focusPolitica) {
