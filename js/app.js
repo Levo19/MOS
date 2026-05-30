@@ -1813,16 +1813,7 @@ const MOS = (() => {
     if (orig) orig.classList.add('hidden');
 
     const btn = document.getElementById('btnFiltrosCat');
-    if (!btn) { console.warn('[filtro] btnFiltrosCat no existe'); return; }
-    const rect = btn.getBoundingClientRect();
-    // Posición del panel: justo debajo del botón, alineado a la derecha del btn
-    const panelW = Math.min(320, window.innerWidth - 16);
-    let left = rect.right - panelW;
-    if (left < 8) left = 8;
-    if (left + panelW > window.innerWidth - 8) left = window.innerWidth - panelW - 8;
-    let top = rect.bottom + 6;
-    // Si está muy cerca del fondo, abrir hacia arriba
-    if (top + 380 > window.innerHeight) top = Math.max(8, rect.top - 380 - 6);
+    console.log('[filtro] btn rect:', btn ? btn.getBoundingClientRect() : 'null');
 
     // Categorías
     const productos = Array.isArray(S.productos) ? S.productos : [];
@@ -1838,11 +1829,16 @@ const MOS = (() => {
       </div>`;
     }).join('');
 
-    const html = `<div id="catFiltroPanelFloat"
-      style="position:fixed;top:${top}px;left:${left}px;width:${panelW}px;max-height:80vh;overflow-y:auto;background:#0f172a;border:1px solid #334155;border-radius:12px;padding:14px;box-shadow:0 20px 50px -10px rgba(0,0,0,.7),0 0 0 1px rgba(99,102,241,.2);z-index:99999;animation:catFpIn .2s ease-out">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <div style="font-size:12px;font-weight:800;color:#a5b4fc;letter-spacing:.5px">🔍 FILTROS</div>
-        <button onclick="MOS._cerrarFiltroFloat()" style="background:none;border:none;color:#64748b;font-size:18px;cursor:pointer;padding:0 4px;font-weight:900">×</button>
+    // [v2.43.46] Estrategia MODAL centrado con backdrop — usa el mismo patrón
+    // que los modales que funcionan (foto, rotación). NO depende del rect del
+    // botón ni de coordenadas viewport. Backdrop + panel centrado.
+    const html = `<div id="catFiltroPanelFloat" class="cat-fp-backdrop"
+      style="position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(4px);z-index:99999;display:flex;align-items:flex-start;justify-content:center;padding-top:80px;padding-left:16px;padding-right:16px;animation:catFpBgIn .2s ease-out">
+      <div class="cat-fp-card" style="width:100%;max-width:360px;max-height:75vh;overflow-y:auto;background:#0f172a;border:1px solid #6366f1;border-radius:14px;padding:16px;box-shadow:0 25px 60px -10px rgba(99,102,241,.45),0 0 0 1px rgba(99,102,241,.2);animation:catFpCardIn .25s cubic-bezier(.34,1.56,.64,1)"
+        onclick="event.stopPropagation()">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div style="font-size:13px;font-weight:800;color:#a5b4fc;letter-spacing:.5px">🔍 FILTROS DEL CATÁLOGO</div>
+        <button onclick="MOS._cerrarFiltroFloat()" style="background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer;padding:0 6px;font-weight:900;line-height:1">×</button>
       </div>
       <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:6px;letter-spacing:.5px">Categoría</div>
       <div id="catFpCategList" style="max-height:140px;overflow-y:auto;margin-bottom:12px">
@@ -1866,9 +1862,23 @@ const MOS = (() => {
       <div style="border-top:1px solid #1e293b;padding-top:10px;margin-top:10px;text-align:right">
         <button onclick="MOS._limpiarYCerrar()" style="background:rgba(248,113,113,.15);color:#f87171;border:1px solid rgba(248,113,113,.4);border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">Limpiar todo</button>
       </div>
-      <style>@keyframes catFpIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}</style>
+      </div>
+      <style>
+        @keyframes catFpBgIn{from{opacity:0}to{opacity:1}}
+        @keyframes catFpCardIn{from{opacity:0;transform:translateY(-12px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+      </style>
     </div>`;
     document.body.insertAdjacentHTML('beforeend', html);
+    // Click en backdrop (no en card) cierra
+    const fpEl = document.getElementById('catFiltroPanelFloat');
+    if (fpEl) {
+      fpEl.addEventListener('click', e => {
+        if (e.target === fpEl) _cerrarFiltroFloat();
+      });
+      // Debug visual: log del rect del panel
+      const r = fpEl.getBoundingClientRect();
+      console.log('[filtro] panel creado, rect:', r);
+    }
 
     // Wire listeners
     const float = document.getElementById('catFiltroPanelFloat');
@@ -1894,23 +1904,13 @@ const MOS = (() => {
       });
     });
 
-    // Click fuera cierra + ESC cierra (una sola vez)
-    setTimeout(() => {
-      const closeOnOutside = (e) => {
-        const fp = document.getElementById('catFiltroPanelFloat');
-        if (!fp) { document.removeEventListener('click', closeOnOutside); return; }
-        if (fp.contains(e.target) || (btn && btn.contains(e.target))) return;
-        _cerrarFiltroFloat();
-        document.removeEventListener('click', closeOnOutside);
-      };
-      document.addEventListener('click', closeOnOutside);
-      const closeOnEsc = (e) => {
-        if (e.key !== 'Escape') return;
-        _cerrarFiltroFloat();
-        document.removeEventListener('keydown', closeOnEsc);
-      };
-      document.addEventListener('keydown', closeOnEsc);
-    }, 0);
+    // ESC cierra (backdrop ya maneja click outside)
+    const closeOnEsc = (e) => {
+      if (e.key !== 'Escape') return;
+      _cerrarFiltroFloat();
+      document.removeEventListener('keydown', closeOnEsc);
+    };
+    document.addEventListener('keydown', closeOnEsc);
 
     toast('🔍 Filtros abiertos', 'info', 1200);
   }
