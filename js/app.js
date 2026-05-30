@@ -1103,17 +1103,67 @@ const MOS = (() => {
   // Alias para compat con código viejo
   function _renderLogoMini(p) { return _renderFotoMini(p); }
 
+  // [v2.43.42] Helper canónico: obtiene la serie de rotación de un producto
+  // sumando TODAS las claves que pertenecen al mismo grupo (skuBase):
+  //   - codigoBarra del canónico
+  //   - codigoBarra de cada presentación con mismo skuBase
+  //   - codigoBarra de cada equivalente del skuBase
+  //
+  // Bug que arregla: el backend WH guarda en GUIA_DETALLE el codigoBarra
+  // EXACTO escaneado (puede ser equivalente o presentación). Buscar solo el
+  // canónico hacía que productos con movimiento via equivalentes se vieran
+  // como "sin rotación" aunque sí se movieron mucho.
+  function _serieRotacionAgregada(p) {
+    const cache = S._rotacionSemanalCache || {};
+    const productos = cache.productos || {};
+    if (!productos || !Object.keys(productos).length) return null;
+    const skuBase = String(p.skuBase || p.idProducto || '').trim().toUpperCase();
+    // Set de keys a buscar (uppercase + trim)
+    const keys = new Set();
+    const addKey = (v) => {
+      const k = String(v || '').trim().toUpperCase();
+      if (k) keys.add(k);
+    };
+    addKey(p.codigoBarra);
+    addKey(p.idProducto);
+    addKey(p.skuBase);
+    // Presentaciones del mismo skuBase
+    (S.productos || []).forEach(x => {
+      const sb = String(x.skuBase || '').trim().toUpperCase();
+      if (sb === skuBase) {
+        addKey(x.codigoBarra);
+        addKey(x.idProducto);
+      }
+    });
+    // Equivalentes (S.equivMap[skuBase] = [codigoBarra | objetos])
+    const equivs = (S.equivMap && S.equivMap[p.skuBase || p.idProducto]) || [];
+    equivs.forEach(e => {
+      const cb = typeof e === 'string' ? e : (e && (e.codigoBarra || e.cbEquiv));
+      addKey(cb);
+    });
+    // Sumar serie elemento a elemento
+    let merged = null;
+    keys.forEach(k => {
+      const s = productos[k];
+      if (s && s.length) {
+        if (!merged) merged = s.map(x => ({ semana: x.semana, unidades: 0 }));
+        s.forEach((x, i) => {
+          if (merged[i]) merged[i].unidades += parseFloat(x.unidades) || 0;
+        });
+      }
+    });
+    return merged;
+  }
+
   // Sparkline de 8 barras (semanas) + comparativo vs semana anterior.
   // Click → modal con insight detallado.
   // Si no hay rotación nunca → "─ sin movimiento" gris.
   function _renderRotacionSparkline(p) {
     try {
       const cache = S._rotacionSemanalCache || {};
+      // [v2.43.42] Usar agregación grupal (canónico + presentaciones + equivalentes)
+      let serie = _serieRotacionAgregada(p);
       const productos = cache.productos || {};
-      // Buscar por codigoBarra (key principal en backend), luego idProducto
-      const cb = String(p.codigoBarra || '').trim().toUpperCase();
-      const idp = String(p.idProducto || '').trim().toUpperCase();
-      let serie = productos[cb] || productos[idp];
       // [v2.43.41] Mostrar "cargando…" SOLO si la promesa sigue en vuelo.
       // Una vez respondió (con éxito o error) tratamos como vacío real.
       const enVuelo = !!S._rotacionSemanalLoading || cache._loading === true;
@@ -1748,17 +1798,48 @@ const MOS = (() => {
       const panel = document.getElementById('catFiltroPanel');
       if (!panel || panel.classList.contains('hidden')) return;
       const wrap = document.getElementById('catFiltroWrap');
-      // Click dentro del wrap (botón o panel) → NO cerrar
       if (wrap && wrap.contains(e.target)) return;
       panel.classList.add('hidden');
     });
-    // ESC también cierra
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
       const panel = document.getElementById('catFiltroPanel');
       if (panel && !panel.classList.contains('hidden')) panel.classList.add('hidden');
     });
   }
+
+  // [v2.43.42 FIX DEFINITIVO BOTÓN FILTRO]
+  // Bind directo del handler al botón cuando el DOM está listo. Esto NO depende
+  // del onclick inline (que podría perderse si MOS namespace falla). Además
+  // fuerza pointer-events:auto en JS por si algún CSS lo desactiva.
+  // También usa pointerdown (no solo click) — captura el tap antes de que
+  // otras animaciones de transition lo intercepten.
+  function _bindBotonFiltroDirecto() {
+    const btn = document.getElementById('btnFiltrosCat');
+    const wrap = document.getElementById('catFiltroWrap');
+    if (!btn || btn.dataset.filtroBoundDirecto === '1') return;
+    btn.dataset.filtroBoundDirecto = '1';
+    // Forzar estilos
+    btn.style.pointerEvents = 'auto';
+    btn.style.cursor = 'pointer';
+    if (wrap) { wrap.style.pointerEvents = 'auto'; }
+    // Handler defensivo: captura pointerdown Y click
+    const open = (e) => {
+      e.stopPropagation();
+      try { toggleFiltroCat(e); } catch(err) { console.warn('[filtro]', err); }
+    };
+    btn.addEventListener('click', open);
+    btn.addEventListener('pointerdown', (e) => {
+      // En tablets/touch, pointerdown es más confiable que click
+      if (e.pointerType === 'touch') open(e);
+    });
+  }
+  // Re-bindear cuando renderCatalogo se ejecuta o el catálogo se monta
+  document.addEventListener('DOMContentLoaded', _bindBotonFiltroDirecto);
+  // Por si DOMContentLoaded ya disparó
+  setTimeout(_bindBotonFiltroDirecto, 100);
+  setTimeout(_bindBotonFiltroDirecto, 1000);
+  setTimeout(_bindBotonFiltroDirecto, 3000);
   // Mantener el viejo nombre por compat con HTML existente que pueda llamarlo
   function _closeFiltroOnOutside() { /* deprecated en v2.43.39 */ }
 
@@ -2084,12 +2165,9 @@ const MOS = (() => {
     if (orden && !qn) {
       const getRot = g => {
         try {
-          const cache = S._rotacionSemanalCache || {};
-          const productos = cache.productos || {};
-          const cb = String(g.base.codigoBarra || '').trim().toUpperCase();
-          const idp = String(g.base.idProducto || '').trim().toUpperCase();
-          const serie = productos[cb] || productos[idp] || [];
-          if (!serie.length) return -1;  // sin data
+          // [v2.43.42] Usar agregación grupal (canónico + equivs + pres)
+          const serie = _serieRotacionAgregada(g.base) || [];
+          if (!serie.length) return -1;
           return serie.reduce((s, x) => s + (parseFloat(x.unidades) || 0), 0) / serie.length;
         } catch(_) { return -1; }
       };
@@ -4349,10 +4427,8 @@ const MOS = (() => {
     const p = (S.productos || []).find(x => String(x.idProducto) === String(idProducto));
     if (!p) { toast('Producto no encontrado', 'error'); return; }
     const cache = S._rotacionSemanalCache || {};
-    const productos = cache.productos || {};
-    const cb = String(p.codigoBarra || '').trim().toUpperCase();
-    const idp = String(p.idProducto || '').trim().toUpperCase();
-    const serie = productos[cb] || productos[idp] || [];
+    // [v2.43.42] Misma agregación que el sparkline (suma canónico + equivs + pres)
+    const serie = _serieRotacionAgregada(p) || [];
     const unidades = serie.map(s => parseFloat(s.unidades) || 0);
     const max = Math.max(...unidades, 1);
     const total = unidades.reduce((a, b) => a + b, 0);

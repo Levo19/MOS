@@ -6075,9 +6075,13 @@
       transform-origin: right center;
       overflow: hidden;
     }
-    /* [v2.43.41] Cuando search-active: los OTROS botones colapsan pero el
-       botón Filtro NUNCA pierde clickeabilidad (era el bug reportado). */
-    .cat-toolbar.search-active > .cat-tool-btn:not(#catFiltroWrap):not(.cat-tool-btn-keep) {
+    /* [v2.43.42] Cuando search-active: los OTROS botones colapsan pero el
+       botón Filtro NUNCA pierde clickeabilidad ni durante la transición.
+       Antes usábamos :not(#catFiltroWrap) — esto fallaba en Safari/Edge viejos
+       Y además la transición .35s dejaba el botón en estado intermedio
+       no-clickeable. Ahora marcamos los botones colapsables con clase
+       .cat-tool-btn-collapse explícita; el filtro queda fuera. */
+    .cat-toolbar.search-active > .cat-tool-btn-collapse {
       max-width: 0 !important;
       opacity: 0;
       margin: 0 !important;
@@ -6085,8 +6089,12 @@
       transform: scale(.7);
       pointer-events: none;
     }
-    /* El wrap del filtro queda visible y clickeable incluso con búsqueda activa */
-    .cat-toolbar.search-active > #catFiltroWrap { pointer-events: auto !important; }
+    /* El wrap del filtro queda 100% interactivo SIN transición de pointer-events */
+    #catFiltroWrap {
+      pointer-events: auto !important;
+      transition: none !important;
+    }
+    #btnFiltrosCat { pointer-events: auto !important; position: relative; z-index: 5; }
     /* En mobile el botón "+" muestra solo "+" sin "Nuevo" */
     @media (max-width: 640px) {
       .cat-btn-new-lbl { display: none; }
@@ -12104,13 +12112,13 @@
             </div>
           </div>
         </div>
-        <button class="cat-tool-btn cat-btn-promo" onclick="MOS.nav('promociones')" title="Gestionar promociones">
+        <button class="cat-tool-btn cat-tool-btn-collapse cat-btn-promo" onclick="MOS.nav('promociones')" title="Gestionar promociones">
           <span>🎯</span><span class="cat-btn-new-lbl">Promos</span>
         </button>
-        <button id="btnLogProductos" class="cat-tool-btn hidden" onclick="MOS.abrirLogProductos()" title="Log de cambios de catálogo (master)" style="background:rgba(168,85,247,0.12);border-color:rgba(168,85,247,0.5);color:#c084fc;">
+        <button id="btnLogProductos" class="cat-tool-btn cat-tool-btn-collapse hidden" onclick="MOS.abrirLogProductos()" title="Log de cambios de catálogo (master)" style="background:rgba(168,85,247,0.12);border-color:rgba(168,85,247,0.5);color:#c084fc;">
           <span>📜</span><span class="cat-btn-new-lbl">Log</span>
         </button>
-        <button class="btn-primary whitespace-nowrap flex items-center gap-1 cat-tool-btn cat-btn-new" onclick="MOS.abrirModalProducto(null)">
+        <button class="btn-primary whitespace-nowrap flex items-center gap-1 cat-tool-btn cat-tool-btn-collapse cat-btn-new" onclick="MOS.abrirModalProducto(null)">
           <span>+</span><span class="cat-btn-new-lbl">Nuevo</span>
         </button>
       </div>
