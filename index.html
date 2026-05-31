@@ -17868,9 +17868,24 @@
       });
     });
 
-    // Cuando el controller cambia (skipWaiting aplicado) → recargar
+    // [v2.43.80] Cleanup centralizado de modales antes de cualquier reload.
+    // Evita que queden zombis (espiaV2Modal, _modalPrompt, etc.) en el DOM
+    // cuando el SW recarga la app. Esos zombis tienen z-index máximo y
+    // tapan los nuevos modales del próximo intento.
+    window._cleanupModalesAntesReload = function() {
+      try { document.getElementById('espiaV2Modal')?.remove(); } catch(_){}
+      try { document.querySelectorAll('.mos-modal-generic-backdrop').forEach(b => b.remove()); } catch(_){}
+      try { document.getElementById('espiaTimelineModal')?.remove(); } catch(_){}
+      try { if (window._espiaV2) { window._espiaV2 = null; } } catch(_){}
+    };
+    // Cuando el controller cambia (skipWaiting aplicado) → cleanup + recargar
     navigator.serviceWorker.addEventListener('controllerchange', () => {
+      window._cleanupModalesAntesReload();
       window.location.reload();
+    });
+    // También en beforeunload por si hay otra causa de reload
+    window.addEventListener('beforeunload', () => {
+      window._cleanupModalesAntesReload();
     });
 
     // Polling cada 60s para detectar actualizaciones en segundo plano.

@@ -206,6 +206,11 @@ const MOS = (() => {
     Chart.defaults.borderColor = '#1e293b';
     Chart.defaults.font.family = 'system-ui, -apple-system, sans-serif';
 
+    // [v2.43.80] Si quedaron modales del intento anterior (page refresh con
+    // espía abierto, SW update mid-flow, crash inesperado), limpiarlos antes
+    // que tapen los nuevos modales con su z-index máximo.
+    try { if (typeof window._cleanupModalesAntesReload === 'function') window._cleanupModalesAntesReload(); } catch(_){}
+
     setStatus(true);
 
     // Set today on date inputs
