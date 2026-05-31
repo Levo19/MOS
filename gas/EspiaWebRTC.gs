@@ -459,6 +459,35 @@ function diagnosticarDeviceEspia() {
   return { ok: true, found: found };
 }
 
+// [v2.43.69e] REPARAR cabeceras de RTC_SIGNALING — operación liviana sin
+// borrar la hoja. Útil cuando resetearHojaSignaling timeoutea entre borrar
+// e insertar — queda la hoja con cabeceras vacías. Esta función solo
+// escribe las cabeceras correctas en la fila 1 (overwrite). 1 sola operación.
+function repararCabecerasSignaling() {
+  var ss = getSpreadsheet();
+  var sh = ss.getSheetByName('RTC_SIGNALING');
+  if (!sh) {
+    // No existe → crear con cabeceras
+    sh = ss.insertSheet('RTC_SIGNALING');
+    Logger.log('[reparar signaling] hoja no existía — creada');
+  }
+  var cabeceras = [
+    'sesionId', 'fecha', 'masterId', 'deviceId',
+    'estado', 'sdpOferta', 'sdpRespuesta',
+    'iceMaster', 'iceDevice', 'streamsActivos', 'detalleFin'
+  ];
+  // Forzar 11 columnas mínimo
+  if (sh.getMaxColumns() < 11) {
+    sh.insertColumnsAfter(sh.getMaxColumns(), 11 - sh.getMaxColumns());
+  }
+  // Escribir cabeceras directo en fila 1 (overwrite si había algo)
+  sh.getRange(1, 1, 1, 11).setValues([cabeceras])
+    .setFontWeight('bold').setBackground('#0f172a').setFontColor('#a5b4fc');
+  sh.setFrozenRows(1);
+  Logger.log('[reparar signaling] cabeceras escritas correctamente: ' + JSON.stringify(cabeceras));
+  return { ok: true, data: { mensaje: 'Cabeceras OK', cabeceras: cabeceras } };
+}
+
 // [v2.43.69] RESET de la hoja RTC_SIGNALING — borra TODAS las sesiones
 // (que no sirven igual porque el WebRTC es efímero) y la recrea con cabeceras
 // correctas. Útil cuando se corrompieron las cabeceras o existían sesiones
