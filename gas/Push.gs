@@ -502,3 +502,60 @@ function _getPushTokensSheet() {
 }
 
 // _hoy() y _sheetToObjects están definidos en otros archivos del proyecto
+
+// ════════════════════════════════════════════════════════════════════════
+// [v2.43.69] PURGA AUTOMÁTICA DE PUSH_TOKENS INACTIVOS
+// PUSH_TOKENS acumula filas históricas (cada getToken nuevo agrega fila,
+// y cuando rota el token la fila queda con activo=FALSE). Sin limpieza
+// llega a miles de filas y el polling se vuelve lento.
+// Política: borrar filas activo=FALSE con ultimaVez > 60 días.
+// Trigger mensual (día 1, 4AM).
+// ════════════════════════════════════════════════════════════════════════
+function cronPurgarPushTokensViejos() {
+  try {
+    var sh = _getPushTokensSheet();
+    var data = sh.getDataRange().getValues();
+    if (data.length < 2) return { ok: true, data: { borradas: 0, motivo: 'tabla vacía' } };
+    var hdrs = data[0];
+    var iAct = hdrs.indexOf('activo');
+    var iUlt = hdrs.indexOf('ultimaVez');
+    if (iAct < 0 || iUlt < 0) {
+      Logger.log('[cronPurgarPushTokens] columnas activo/ultimaVez no existen');
+      return { ok: false, error: 'columnas requeridas no encontradas' };
+    }
+    var CUTOFF_MS = Date.now() - (60 * 24 * 3600 * 1000); // 60 días
+    var aBorrar = [];
+    for (var i = 1; i < data.length; i++) {
+      var act = data[i][iAct];
+      var esInactivo = (act === false || String(act).toLowerCase() === 'false' || String(act) === '0');
+      if (!esInactivo) continue;
+      var ult = data[i][iUlt];
+      var ultMs = 0;
+      try {
+        ultMs = ult instanceof Date ? ult.getTime() : new Date(ult).getTime();
+      } catch(_){}
+      if (isNaN(ultMs) || ultMs < CUTOFF_MS) {
+        aBorrar.push(i + 1); // fila 1-based
+      }
+    }
+    // Borrar de mayor a menor para no desincronizar índices
+    aBorrar.sort(function(a, b){ return b - a; });
+    aBorrar.forEach(function(r){ sh.deleteRow(r); });
+    Logger.log('[cronPurgarPushTokens] borradas ' + aBorrar.length + ' filas (cutoff 60d, activo=FALSE)');
+    return { ok: true, data: { borradas: aBorrar.length, totalRestantes: data.length - 1 - aBorrar.length } };
+  } catch(e) {
+    Logger.log('[cronPurgarPushTokens] error: ' + e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+// Setup mensual día 1 a las 4 AM (después del cron de espía 3AM)
+function setupPurgaPushTokensTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === 'cronPurgarPushTokensViejos') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('cronPurgarPushTokensViejos')
+           .timeBased().onMonthDay(1).atHour(4).create();
+  Logger.log('[purga push tokens] cron instalado día 1 mes a las 4AM');
+  return { ok: true, data: { instalado: true, schedule: 'día 1 mensual 4AM' } };
+}
