@@ -27773,12 +27773,15 @@ const MOS = (() => {
     // Crear sesión backend
     // [v2.43.66] API.post devuelve d.data DIRECTO (no {ok,data}). Bug histórico
     // documentado en memoria architecture_mos_api_shape.md — caí igual.
+    console.log('[espia master] arrancando · deviceId=' + idDispositivo + ' master=' + (S.session?.idPersonal || S.session?.nombre || 'master'));
     try {
+      console.log('[espia master] llamando espiaCrearSesion al backend...');
       const r = await API.post('espiaCrearSesion', {
         masterId: S.session?.idPersonal || S.session?.nombre || 'master',
         deviceId: idDispositivo,
         claveAdmin: claveAdmin
       });
+      console.log('[espia master] respuesta backend:', r);
       // r es directamente { sesionId, ttl, ahora } — NO { ok, data }
       if (!r || !r.sesionId) {
         toast('Backend no devolvió sesionId', 'error');
