@@ -27777,9 +27777,15 @@ const MOS = (() => {
       }
     };
     // Crear oferta y enviarla
+    // [v2.43.70] Guards defensivos contra cierre del modal durante awaits.
+    // Si el user cierra el modal mid-flow, _espiaV2 = null → race que
+    // tiraba "Cannot set properties of null (setting 'pollTimer')".
     const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
+    if (!_espiaV2) return; // canceled by user
     await pc.setLocalDescription(offer);
+    if (!_espiaV2) return;
     await API.post('espiaSubirOferta', { sesionId: _espiaV2.sesionId, sdp: JSON.stringify(offer) });
+    if (!_espiaV2) return;
     // Polling de respuesta + ICE del device
     _espiaV2.pollTimer = setInterval(_espiaV2Poll, 600);
   }
