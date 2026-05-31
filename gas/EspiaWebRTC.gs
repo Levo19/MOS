@@ -459,6 +459,34 @@ function diagnosticarDeviceEspia() {
   return { ok: true, found: found };
 }
 
+// [v2.43.69] RESET de la hoja RTC_SIGNALING — borra TODAS las sesiones
+// (que no sirven igual porque el WebRTC es efímero) y la recrea con cabeceras
+// correctas. Útil cuando se corrompieron las cabeceras o existían sesiones
+// históricas con esquema viejo (síntoma: "Columna no existe: sdpOferta").
+// Ejecutar desde el editor UNA vez.
+function resetearHojaSignaling() {
+  var ss = getSpreadsheet();
+  var sh = ss.getSheetByName('RTC_SIGNALING');
+  var sesionesAntes = 0;
+  if (sh) {
+    sesionesAntes = Math.max(0, sh.getLastRow() - 1);
+    ss.deleteSheet(sh);
+    Logger.log('[reset signaling] borrada hoja vieja con ' + sesionesAntes + ' sesiones');
+  }
+  // Recrear con cabeceras correctas
+  var nueva = ss.insertSheet('RTC_SIGNALING');
+  nueva.appendRow([
+    'sesionId', 'fecha', 'masterId', 'deviceId',
+    'estado', 'sdpOferta', 'sdpRespuesta',
+    'iceMaster', 'iceDevice', 'streamsActivos', 'detalleFin'
+  ]);
+  nueva.getRange(1, 1, 1, 11).setFontWeight('bold')
+       .setBackground('#0f172a').setFontColor('#a5b4fc');
+  nueva.setFrozenRows(1);
+  Logger.log('[reset signaling] hoja recreada con cabeceras correctas');
+  return { ok: true, data: { sesionesAntes: sesionesAntes, mensaje: 'Hoja RTC_SIGNALING reseteada' } };
+}
+
 // [v2.43.67] Diagnóstico: dump del contenido actual de RTC_SIGNALING
 // Ejecutar desde el editor para ver QUÉ tiene la hoja realmente.
 function diagnosticarHojaEspia() {
