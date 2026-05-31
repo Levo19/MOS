@@ -518,6 +518,145 @@ function resetearHojaSignaling() {
   return { ok: true, data: { sesionesAntes: sesionesAntes, mensaje: 'Hoja RTC_SIGNALING reseteada' } };
 }
 
+// [v2.43.72c] Dump de PUSH_TOKENS para ver TODAS las filas que tocan un deviceId
+// o token. Detecta espacios invisibles, mismo token en filas distintas, etc.
+function dumpPushTokens() {
+  var deviceIdBuscar = 'ff2c5833-c69b-4db4-bbe2-beb32920911f';
+  var tokenSubstring = 'cuDAte7p';  // las primeras letras del token (lo que viste en console)
+
+  var sh = getSpreadsheet().getSheetByName('PUSH_TOKENS');
+  if (!sh) { Logger.log('Hoja PUSH_TOKENS no existe'); return; }
+  var data = sh.getDataRange().getValues();
+  Logger.log('═══ DUMP PUSH_TOKENS — ' + (data.length - 1) + ' filas ═══');
+  Logger.log('Cabeceras: ' + JSON.stringify(data[0]));
+  Logger.log('───');
+  var hdrs = data[0];
+  var iTok = hdrs.indexOf('token');
+  var iUser = hdrs.indexOf('usuario');
+  var iApp = hdrs.indexOf('appOrigen');
+  var iAct = hdrs.indexOf('activo');
+  var iDev = hdrs.indexOf('deviceId');
+  var iUlt = hdrs.indexOf('ultimaVez');
+  Logger.log('Buscando: deviceId=' + deviceIdBuscar + ' OR token contiene ' + tokenSubstring);
+  Logger.log('───');
+  var encontrados = 0;
+  for (var i = 1; i < data.length; i++) {
+    var dev = String(data[i][iDev] || '');
+    var tok = String(data[i][iTok] || '');
+    var matchDev = dev.indexOf(deviceIdBuscar.substring(0, 8)) >= 0;
+    var matchTok = tok.indexOf(tokenSubstring) >= 0;
+    if (matchDev || matchTok) {
+      encontrados++;
+      Logger.log('FILA ' + (i + 1) + ':');
+      Logger.log('  token:     ' + tok.substring(0, 40) + '...');
+      Logger.log('  usuario:   "' + data[i][iUser] + '"');
+      Logger.log('  appOrigen: "' + data[i][iApp] + '"');
+      Logger.log('  activo:    ' + data[i][iAct] + ' (typeof: ' + typeof data[i][iAct] + ')');
+      Logger.log('  deviceId:  "' + dev + '" (length: ' + dev.length + ')');
+      Logger.log('  ultimaVez: ' + data[i][iUlt]);
+      Logger.log('  matchDev=' + matchDev + ' matchTok=' + matchTok);
+    }
+  }
+  if (encontrados === 0) {
+    Logger.log('🚨 NINGUNA fila matchea ni el deviceId ni el token. El registro NUNCA llegó.');
+  } else {
+    Logger.log('───');
+    Logger.log('Total filas con ese device/token: ' + encontrados);
+  }
+  return { ok: true, data: { encontrados: encontrados } };
+}
+
+// [v2.43.72] Diagnóstico COMPLETO del último intento de espía de un device.
+// Lee última sesión en RTC_SIGNALING + auditoria + simula push (sin enviar).
+// Reemplaza la necesidad de mirar logs de Apps Script (que pueden ser difíciles
+// de encontrar). Editar deviceIdTarget y ejecutar.
+function diagnosticarUltimoEspia() {
+  // ⬇⬇⬇ EDITAR ⬇⬇⬇
+  var deviceIdTarget = 'ff2c5833-c69b-4db4-bbe2-beb32920911f';
+  // ⬆⬆⬆⬆⬆⬆⬆⬆⬆⬆⬆⬆⬆
+
+  Logger.log('═══ DIAGNÓSTICO ÚLTIMO ESPÍA · ' + deviceIdTarget + ' ═══');
+
+  // 1. Buscar última sesión en RTC_SIGNALING
+  try {
+    var sh = _getHojaSignaling();
+    var data = sh.getDataRange().getValues();
+    if (data.length < 2) {
+      Logger.log('🚨 RTC_SIGNALING está VACÍA (solo cabecera). Nunca se creó una sesión.');
+      Logger.log('   → El master nunca llamó espiaCrearSesion exitosamente.');
+    } else {
+      var hdrs = data[0];
+      var iDev = hdrs.indexOf('deviceId');
+      var iSes = hdrs.indexOf('sesionId');
+      var iFec = hdrs.indexOf('fecha');
+      var iEst = hdrs.indexOf('estado');
+      var iSdpO = hdrs.indexOf('sdpOferta');
+      var iSdpR = hdrs.indexOf('sdpRespuesta');
+      var iIceM = hdrs.indexOf('iceMaster');
+      var iIceD = hdrs.indexOf('iceDevice');
+      var ultima = null;
+      for (var i = data.length - 1; i >= 1; i--) {
+        if (String(data[i][iDev]) === deviceIdTarget) { ultima = data[i]; break; }
+      }
+      if (!ultima) {
+        Logger.log('🚨 NO HAY ninguna sesión en RTC_SIGNALING para este device.');
+        Logger.log('   → El master clickeó 🛰️ pero espiaCrearSesion NO se ejecutó completamente.');
+        Logger.log('   → Causas: clave admin incorrecta, lock timeout, excepción interna.');
+      } else {
+        Logger.log('📋 Última sesión:');
+        Logger.log('   sesionId: ' + ultima[iSes]);
+        Logger.log('   fecha:    ' + ultima[iFec]);
+        Logger.log('   estado:   ' + ultima[iEst]);
+        Logger.log('   sdpOferta:    ' + (ultima[iSdpO] ? '✓ presente (' + String(ultima[iSdpO]).length + ' chars)' : '✗ vacío'));
+        Logger.log('   sdpRespuesta: ' + (ultima[iSdpR] ? '✓ presente (' + String(ultima[iSdpR]).length + ' chars)' : '✗ vacío'));
+        try {
+          var iceM = JSON.parse(ultima[iIceM] || '[]');
+          var iceD = JSON.parse(ultima[iIceD] || '[]');
+          Logger.log('   iceMaster: ' + iceM.length + ' candidates');
+          Logger.log('   iceDevice: ' + iceD.length + ' candidates · ' + (iceD.length === 0 ? '🚨 device NUNCA respondió' : '✓'));
+        } catch(_){}
+        var fechaMs = ultima[iFec] instanceof Date ? ultima[iFec].getTime() : new Date(ultima[iFec]).getTime();
+        var hace = Math.round((Date.now() - fechaMs) / 1000);
+        Logger.log('   hace: ' + hace + ' segundos');
+      }
+    }
+  } catch(eS) { Logger.log('Error leyendo RTC_SIGNALING: ' + eS.message); }
+
+  // 2. Simular búsqueda de tokens (no envía push)
+  Logger.log('───');
+  var tokens = _buscarTokensPushPorDeviceId(deviceIdTarget);
+  if (tokens.length === 0) {
+    Logger.log('🚨 NO hay tokens FCM activos para este deviceId en PUSH_TOKENS');
+    Logger.log('   → El push NUNCA puede llegar al device');
+  } else {
+    Logger.log('✅ ' + tokens.length + ' token(s) FCM activo(s)');
+    tokens.forEach(function(t, i) { Logger.log('   [' + (i+1) + '] ' + t.substring(0, 30) + '...'); });
+  }
+
+  // 3. Test de envío REAL de push silencioso (data-only) — sin sesión
+  Logger.log('───');
+  Logger.log('🧪 Enviando push de PRUEBA al device (data-only, ignorado por SW)...');
+  try {
+    var result = _enviarPushDispositivo(deviceIdTarget, {
+      idNotif: 'TEST_DIAG',
+      sesionId: 'TEST-' + Date.now(),
+      masterId: 'diagnostic',
+      ttl: 0,
+      silencioso: true,
+      _esTest: true
+    });
+    Logger.log('   resultado: ' + JSON.stringify(result));
+    if (result.ok) {
+      Logger.log('✅ Push enviado exitosamente. Si el device no lo recibe → problema del cliente.');
+      Logger.log('   → Verificá en consola del target: "[SW msg] cmd recibido:" o "[Push] comando foreground"');
+    } else {
+      Logger.log('🚨 Push FALLÓ: ' + result.error);
+    }
+  } catch(eP) { Logger.log('Excepción enviando push: ' + eP.message); }
+
+  return { ok: true, data: { mensaje: 'Mirá los logs arriba' } };
+}
+
 // [v2.43.67] Diagnóstico: dump del contenido actual de RTC_SIGNALING
 // Ejecutar desde el editor para ver QUÉ tiene la hoja realmente.
 function diagnosticarHojaEspia() {
@@ -821,41 +960,98 @@ function espiaListarChunks(params) {
   }
 }
 
-// Push helper — busca el token FCM en la hoja PUSH_TOKENS (donde realmente
-// se guardan los tokens vía registrarTokenPush). DISPOSITIVOS NO tiene la
-// columna FCM_Token llena — eso era hipótesis inicial mía que era falsa.
-// [v2.43.68b BUG FIX] Antes buscaba en DISPOSITIVOS.FCM_Token que SIEMPRE
-// está vacío → caía al fallback enviarPushUsuario con usuario=deviceId,
-// pero esa función busca por nombre de usuario, no por UUID → NUNCA matcheaba
-// → push silencioso → device target nunca arrancaba el espía.
+// [v2.43.73 BUG FIX FUNDAMENTAL] Push del espía usa AHORA _enviarPushTokens
+// (que SÍ existe en Push.gs y funciona). Antes intentaba usar _enviarPushFCM
+// que NUNCA fue definida en ningún archivo → el espía SIEMPRE fallaba con
+// "_enviarPushFCM no disponible" silenciosamente → device nunca recibía.
+//
+// Además: usar el MÁS RECIENTE token aunque esté marcado activo=false. FCM
+// puede haberlos marcado UNREGISTERED por rotación pero el último registrado
+// probablemente está vivo (es el que el cliente WH acaba de registrar).
 function _enviarPushDispositivo(deviceId, payload) {
   try {
     var tokens = _buscarTokensPushPorDeviceId(deviceId);
     if (tokens.length === 0) {
-      Logger.log('[espia push] NO hay tokens FCM para deviceId=' + deviceId);
-      return { ok: false, error: 'No hay tokens FCM registrados para este dispositivo' };
+      // [v2.43.73] Fallback: si no hay activos, intentar con el último
+      // registrado aunque esté como activo=false. Mejor intentar que
+      // rendirse — si FCM lo rechaza, no perdimos nada.
+      tokens = _ultimoTokenRegistradoPorDeviceId(deviceId);
+      if (tokens.length === 0) {
+        Logger.log('[espia push] NO hay NINGÚN token FCM (ni activo ni inactivo) para deviceId=' + deviceId);
+        return { ok: false, error: 'No hay tokens FCM registrados para este dispositivo' };
+      }
+      Logger.log('[espia push] Sin activos · usando último token (puede estar UNREGISTERED). Si funciona, reactivamos.');
     }
-    if (typeof _enviarPushFCM !== 'function') {
-      Logger.log('[espia push] _enviarPushFCM no existe');
-      return { ok: false, error: '_enviarPushFCM no disponible' };
-    }
-    // Enviar a TODOS los tokens activos del device (puede ser >1 si reinstaló)
-    var enviados = 0;
-    tokens.forEach(function(tok) {
-      try {
-        _enviarPushFCM(tok, payload, { dataOnly: true });
-        enviados++;
-      } catch(eT) { Logger.log('[espia push] token fallo: ' + eT.message); }
-    });
-    Logger.log('[espia push] enviado a ' + enviados + '/' + tokens.length + ' tokens del device ' + deviceId);
-    return { ok: enviados > 0, data: { enviados: enviados, totalTokens: tokens.length } };
+    // Usar _enviarPushTokens de Push.gs que SÍ existe
+    var titulo = String(payload.titulo || 'MOS Espía');
+    var cuerpo = String(payload.cuerpo || '');
+    // _enviarPushTokens hace UrlFetchApp directo a FCM, con notification + webpush
+    // Esto envía notif visible al device + data payload para que el SW lo intercepte
+    var beforeCount = tokens.length;
+    var dataPayload = {
+      action:    String(payload.action || payload.idNotif || 'MOS_ESPIA_INICIAR'),
+      idNotif:   String(payload.idNotif || 'MOS_ESPIA_INICIAR'),
+      sesionId:  String(payload.sesionId || ''),
+      masterId:  String(payload.masterId || ''),
+      ttl:       String(payload.ttl || ''),
+      silencioso: String(payload.silencioso || 'true')
+    };
+    _enviarPushTokensData(titulo, cuerpo, tokens, dataPayload);
+    Logger.log('[espia push] enviado a ' + beforeCount + ' tokens del device ' + deviceId);
+    return { ok: true, data: { enviados: beforeCount, totalTokens: beforeCount } };
   } catch(e) {
     Logger.log('[espia push] ERROR: ' + e.message);
     return { ok: false, error: e.message };
   }
 }
 
-// [v2.43.68b] Helper que devuelve TODOS los tokens FCM activos del device
+// [v2.43.73] Versión con data payload (para que SW intercepte como mos_command).
+// _enviarPushTokens original NO acepta data — solo notification visible.
+// Esto es lo que faltaba: el push del espía necesita data.action para que
+// el SW haga postMessage({type:'mos_command', data:...}) al cliente.
+function _enviarPushTokensData(titulo, cuerpo, tokens, dataPayload) {
+  if (!tokens || tokens.length === 0) return;
+  var projectId   = PropertiesService.getScriptProperties().getProperty('FCM_PROJECT_ID');
+  var accessToken = _getFcmAccessToken();
+  var url = 'https://fcm.googleapis.com/v1/projects/' + projectId + '/messages:send';
+  tokens.forEach(function(token, idx) {
+    if (!token) return;
+    try {
+      var resp = UrlFetchApp.fetch(url, {
+        method: 'post',
+        contentType: 'application/json',
+        headers: { 'Authorization': 'Bearer ' + accessToken },
+        payload: JSON.stringify({
+          message: {
+            token: token,
+            data: dataPayload, // ← clave: el SW lee payload.data.action
+            // Notification ALSO para que sea visible si la app no está activa
+            notification: { title: titulo, body: cuerpo },
+            webpush: {
+              notification: {
+                title: titulo, body: cuerpo,
+                icon:  'https://levo19.github.io/MOS/icon-192.png',
+                badge: 'https://levo19.github.io/MOS/icon-192.png',
+                vibrate: [100, 50, 100]
+              }
+            }
+          }
+        }),
+        muteHttpExceptions: true
+      });
+      var code = resp.getResponseCode();
+      if (code === 200) {
+        Logger.log('[Push data] OK token[' + idx + ']');
+      } else {
+        Logger.log('[Push data] Error HTTP ' + code + ' token[' + idx + ']: ' + resp.getContentText().substring(0, 200));
+      }
+    } catch(e) {
+      Logger.log('[Push data] excepción token[' + idx + ']: ' + e.message);
+    }
+  });
+}
+
+// [v2.43.68b] Helper que devuelve tokens FCM ACTIVOS del device
 function _buscarTokensPushPorDeviceId(deviceId) {
   var resultado = [];
   try {
@@ -864,7 +1060,6 @@ function _buscarTokensPushPorDeviceId(deviceId) {
     var data = sh.getDataRange().getValues();
     if (data.length < 2) return resultado;
     var hdrs = data[0];
-    // Cabeceras esperadas: idToken | token | usuario | dispositivo | appOrigen | fecha | ultimaVez | activo | deviceId
     var iTok    = hdrs.indexOf('token');
     var iActivo = hdrs.indexOf('activo');
     var iDev    = hdrs.indexOf('deviceId');
@@ -880,4 +1075,32 @@ function _buscarTokensPushPorDeviceId(deviceId) {
     }
   } catch(e) { Logger.log('[_buscarTokensPushPorDeviceId] ' + e.message); }
   return resultado;
+}
+
+// [v2.43.73] Devuelve SOLO el último token registrado para un device, sin
+// filtrar por activo. Para fallback cuando todos están UNREGISTERED.
+function _ultimoTokenRegistradoPorDeviceId(deviceId) {
+  try {
+    var sh = getSpreadsheet().getSheetByName('PUSH_TOKENS');
+    if (!sh) return [];
+    var data = sh.getDataRange().getValues();
+    if (data.length < 2) return [];
+    var hdrs = data[0];
+    var iTok = hdrs.indexOf('token');
+    var iDev = hdrs.indexOf('deviceId');
+    var iUlt = hdrs.indexOf('ultimaVez');
+    if (iDev < 0 || iTok < 0) return [];
+    var devStr = String(deviceId).trim();
+    var mejor = null;
+    var mejorTs = 0;
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][iDev] || '').trim() !== devStr) continue;
+      var tok = String(data[i][iTok] || '').trim();
+      if (!tok) continue;
+      var ts = 0;
+      try { ts = new Date(data[i][iUlt]).getTime() || 0; } catch(_){}
+      if (ts > mejorTs) { mejorTs = ts; mejor = tok; }
+    }
+    return mejor ? [mejor] : [];
+  } catch(_) { return []; }
 }
