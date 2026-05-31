@@ -71,17 +71,33 @@ function _espiaCrearSesionImpl(params) {
     var iDev = hdrsC.indexOf('deviceId');
     var iEst = hdrsC.indexOf('estado');
     var iFch = hdrsC.indexOf('fecha');
+    // [v2.43.75] Cambio de política: si la sesión vieja es PENDIENTE
+    // (nunca conectó) o CONECTANDO (no llegó a EN_VIVO), la cerramos
+    // automáticamente. Solo bloqueamos si está realmente EN_VIVO.
+    // Antes: cualquier sesión <10min bloqueaba al master por sesiones
+    // zombie que quedaron de intentos anteriores fallidos.
     for (var ci = dataC.length - 1; ci >= 1; ci--) {
       if (String(dataC[ci][iDev]) !== deviceId) continue;
       var estC = String(dataC[ci][iEst] || '').toUpperCase();
       if (estC === 'CERRADA') continue;
       var fchC = dataC[ci][iFch];
       var fchMs = fchC instanceof Date ? fchC.getTime() : new Date(fchC).getTime();
-      // Si la sesión vieja aún no expiró → bloquear
-      if ((Date.now() - fchMs) < ESPIA_TTL_MS) {
-        return { ok: false, error: 'Ya hay una sesión activa con este dispositivo. Espera ' + Math.ceil((ESPIA_TTL_MS - (Date.now() - fchMs)) / 60000) + 'min o cierra la anterior.' };
+      if ((Date.now() - fchMs) >= ESPIA_TTL_MS) continue; // ya expiró
+      // Si es EN_VIVO de OTRO master → bloquear (real conflicto)
+      var masterOtra = String(dataC[ci][hdrsC.indexOf('masterId')] || '');
+      if (estC === 'EN_VIVO' && masterOtra !== masterId) {
+        return { ok: false, error: 'Hay una sesión EN VIVO con este dispositivo (otro master). Espera ' + Math.ceil((ESPIA_TTL_MS - (Date.now() - fchMs)) / 60000) + 'min o cierra la anterior.' };
       }
+      // PENDIENTE/CONECTANDO o mismo master → autocerrar la zombie
+      try {
+        var iEstCol = hdrsC.indexOf('estado');
+        var iDetFin = hdrsC.indexOf('detalleFin');
+        shCheck.getRange(ci + 1, iEstCol + 1).setValue('CERRADA');
+        if (iDetFin >= 0) shCheck.getRange(ci + 1, iDetFin + 1).setValue(JSON.stringify({ motivo: 'autocerrada_zombie', lado: 'crear_sesion', estadoAnterior: estC }));
+        Logger.log('[espia] sesión zombi ' + dataC[ci][hdrsC.indexOf('sesionId')] + ' autocerrada (estado anterior: ' + estC + ')');
+      } catch(eZ) { Logger.log('[espia] no pude autocerrar zombie: ' + eZ.message); }
     }
+    try { SpreadsheetApp.flush(); } catch(_){}
   } finally { try { lockCre.releaseLock(); } catch(_){} }
 
   var sesionId = 'ESP-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);

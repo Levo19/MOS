@@ -269,6 +269,10 @@ const MOS = (() => {
     // CUALQUIER módulo (Liquidaciones, Finanzas, Resumen).
     // Falla silencioso. Telemetría en console para diagnóstico.
     // ─────────────────────────────────────────────────────────
+    // [v2.43.75] Expuesta a window para que la llamada de _intentarLogin
+    // (que vive afuera de init) la encuentre. Bug previo: ReferenceError
+    // _prefetchSesionEnLinea is not defined al hacer login completo.
+    window._prefetchSesionEnLinea = _prefetchSesionEnLinea;
     function _prefetchSesionEnLinea() {
       if (!navigator.onLine) return;
       const t0 = Date.now();
@@ -580,7 +584,7 @@ const MOS = (() => {
         // Push: notificar login + registrar token (askPermission=true porque viene de gesto del usuario)
         _pushInit(res.nombre, res.rol, true);
         // 🚀 Prefetch silencioso de módulos pesados para que se sientan instantáneos
-        _prefetchSesionEnLinea();
+        if (typeof window._prefetchSesionEnLinea === 'function') window._prefetchSesionEnLinea();
       } catch(e) {
         toast('Error: ' + (e.message || 'No se pudo validar PIN'), 'error');
         _pinErrorAnim();
