@@ -357,16 +357,48 @@ function _buscarSesion(sesionId) {
   if (sh.getLastRow() < 2) return null;
   var data = sh.getDataRange().getValues();
   var hdrs = data[0];
+  // [v2.43.67] Tolerante a nombres distintos de cabecera. Si la hoja fue
+  // creada con un nombre viejo (idSesion, session_id, etc.) o si la cabecera
+  // está desfazada, igual encontramos por COLUMNA 0 (donde siempre va el ID).
   var idxId = hdrs.indexOf('sesionId');
-  for (var i = data.length - 1; i >= 1; i--) {  // iterar desde el final (más recientes primero)
-    if (String(data[i][idxId]) === sesionId) {
+  if (idxId < 0) idxId = hdrs.indexOf('idSesion');
+  if (idxId < 0) idxId = hdrs.indexOf('session_id');
+  if (idxId < 0) idxId = 0; // fallback duro a la primera columna
+  for (var i = data.length - 1; i >= 1; i--) {
+    if (String(data[i][idxId]).trim() === String(sesionId).trim()) {
       var obj = {};
       hdrs.forEach(function(h, j) { obj[h] = data[i][j]; });
       obj._row = i + 1;
       return obj;
     }
   }
+  // [v2.43.67] LOG diagnóstico — anotar qué se buscaba y qué hay
+  try {
+    var preview = [];
+    for (var k = Math.max(1, data.length - 3); k < data.length; k++) {
+      preview.push('[' + k + '] "' + data[k][idxId] + '"');
+    }
+    Logger.log('[_buscarSesion] NO ENCONTRADA · busqué="' + sesionId + '" idxId=' + idxId +
+               ' hdrs=' + JSON.stringify(hdrs) + ' últimas3=' + preview.join(' | ') +
+               ' totalFilas=' + data.length);
+  } catch(_){}
   return null;
+}
+
+// [v2.43.67] Diagnóstico: dump del contenido actual de RTC_SIGNALING
+// Ejecutar desde el editor para ver QUÉ tiene la hoja realmente.
+function diagnosticarHojaEspia() {
+  var sh = _getHojaSignaling();
+  var data = sh.getDataRange().getValues();
+  Logger.log('═══ HOJA RTC_SIGNALING — ' + data.length + ' filas (incluye cabecera) ═══');
+  if (data.length === 0) { Logger.log('VACÍA'); return { ok: true, data: { filas: 0 } }; }
+  Logger.log('Cabeceras: ' + JSON.stringify(data[0]));
+  var max = Math.min(data.length, 6);
+  for (var i = 1; i < max; i++) {
+    Logger.log('Fila ' + i + ': sesionId="' + data[i][0] + '" estado="' + data[i][4] + '" fecha=' + data[i][1]);
+  }
+  if (data.length > max) Logger.log('... +' + (data.length - max) + ' más');
+  return { ok: true, data: { filas: data.length, cabeceras: data[0] } };
 }
 
 function _actualizarColumnaSesion(sesionId, columna, valor, extras) {
