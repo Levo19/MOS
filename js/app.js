@@ -27718,6 +27718,12 @@ const MOS = (() => {
     if (!_esMasterSession()) { toast('Solo Master puede usar espía v2', 'error'); return; }
     const d = (cfgData.dispositivos || []).find(x => x.ID_Dispositivo === idDispositivo);
     if (!d) { toast('Dispositivo no encontrado', 'error'); return; }
+    // [v2.43.79] Limpiar zombis ANTES de mostrar prompt. Modal espiaV2Modal tiene
+    // z-index 2147483646 (max int). Si quedó zombi de intento anterior, tapa
+    // visualmente al modal de la clave (z-index 1500) y el master ve "nada
+    // pasa" al click. Bug reproducido por el user en v2.43.77.
+    const zombiModal = document.getElementById('espiaV2Modal');
+    if (zombiModal) { console.warn('[espia master] limpiando modal zombi'); zombiModal.remove(); }
     if (_espiaV2 && _espiaV2.deviceId === idDispositivo) {
       toast('Ya estás conectado a este dispositivo', 'info');
       return;
