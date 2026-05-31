@@ -28008,6 +28008,14 @@ const MOS = (() => {
               </div>
               <div id="espiaV2GpsInfo" style="font-size:9px;color:#94a3b8;font-family:monospace;line-height:1.5">esperando…</div>
               <div id="espiaV2GpsMap" style="margin-top:6px;height:80px;background:#020617;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#475569;font-size:20px">🗺️</div>
+              <!-- [v2.43.72] Fallback: si GPS en vivo no llega, ver último registrado -->
+              <button onclick="MOS.verUltimaUbicacionDispositivo('${_espiaV2.deviceId}')"
+                style="margin-top:8px;width:100%;background:linear-gradient(135deg,rgba(59,130,246,.15),rgba(14,165,233,.10));border:1px solid rgba(59,130,246,.45);color:#93c5fd;border-radius:8px;padding:6px 8px;font-size:9px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px;letter-spacing:.3px;transition:all .2s"
+                onmouseover="this.style.background='linear-gradient(135deg,rgba(59,130,246,.25),rgba(14,165,233,.18))'"
+                onmouseout="this.style.background='linear-gradient(135deg,rgba(59,130,246,.15),rgba(14,165,233,.10))'"
+                title="Si el GPS en vivo no llega, mostrar la última ubicación conocida desde el historial">
+                🗺 ÚLTIMA UBICACIÓN
+              </button>
             </div>
             <!-- Stats -->
             <div style="background:rgba(15,23,42,.5);border:1px solid #1e293b;border-radius:8px;padding:8px 10px;font-size:9px;color:#64748b;font-family:monospace;margin-top:auto">
