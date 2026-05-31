@@ -1644,7 +1644,34 @@ const MOS = (() => {
   }
 
   // ── Estado de filtros del catálogo ─────────────────────────
-  const _catFiltros = { categoria: '', tipos: new Set(), soloAlertas: false, orden: '' };
+  // [v2.43.71] Filtros catálogo persisten en localStorage entre sesiones.
+  // Bug previo: Set('tipos') no es JSON-serializable y se perdía al recargar.
+  // Fix: serialize/deserialize via Array.
+  const _CAT_FILTROS_KEY = 'mos_cat_filtros_v1';
+  const _catFiltrosCargar = () => {
+    try {
+      const raw = localStorage.getItem(_CAT_FILTROS_KEY);
+      if (!raw) return null;
+      const obj = JSON.parse(raw);
+      return {
+        categoria:   String(obj.categoria || ''),
+        tipos:       new Set(Array.isArray(obj.tipos) ? obj.tipos : []),
+        soloAlertas: !!obj.soloAlertas,
+        orden:       String(obj.orden || '')
+      };
+    } catch(_) { return null; }
+  };
+  const _catFiltrosGuardar = () => {
+    try {
+      localStorage.setItem(_CAT_FILTROS_KEY, JSON.stringify({
+        categoria:   _catFiltros.categoria,
+        tipos:       Array.from(_catFiltros.tipos),
+        soloAlertas: _catFiltros.soloAlertas,
+        orden:       _catFiltros.orden
+      }));
+    } catch(_){}
+  };
+  const _catFiltros = _catFiltrosCargar() || { categoria: '', tipos: new Set(), soloAlertas: false, orden: '' };
   // [v2.43.37] orden válidos: '' (alfabético), 'rot_desc', 'rot_asc', 'mrg_desc', 'mrg_asc'
 
   // ¿Este grupo tiene alguna alerta?
@@ -1742,6 +1769,7 @@ const MOS = (() => {
 
   function toggleFiltroAlertas() {
     _catFiltros.soloAlertas = !_catFiltros.soloAlertas;
+    _catFiltrosGuardar(); // [v2.43.71]
     const btn = $('btnAlertasCat');
     if (btn) btn.classList.toggle('active', _catFiltros.soloAlertas);
     renderCatalogo();
@@ -2068,6 +2096,7 @@ const MOS = (() => {
 
   function setFiltroCategoria(cat) {
     _catFiltros.categoria = cat;
+    _catFiltrosGuardar(); // [v2.43.71]
     _updateFiltroBadge();
     const cats = [...new Set(S.productos.map(p => p.idCategoria).filter(Boolean))].sort();
     _renderFiltroCategList(cats);
@@ -2077,6 +2106,7 @@ const MOS = (() => {
   function toggleFiltroTipo(tipo) {
     if (_catFiltros.tipos.has(tipo)) _catFiltros.tipos.delete(tipo);
     else _catFiltros.tipos.add(tipo);
+    _catFiltrosGuardar(); // [v2.43.71]
     _updateFiltroBadge();
     renderCatalogo();
   }
@@ -2085,6 +2115,7 @@ const MOS = (() => {
     _catFiltros.categoria = '';
     _catFiltros.tipos.clear();
     _catFiltros.orden = '';
+    _catFiltrosGuardar(); // [v2.43.71]
     _updateFiltroBadge();
     const cats = [...new Set(S.productos.map(p => p.idCategoria).filter(Boolean))].sort();
     _renderFiltroCategList(cats);
@@ -2096,6 +2127,7 @@ const MOS = (() => {
   // [v2.43.37] Setter del orden + visual feedback + sonido
   function setFiltroOrden(orden) {
     _catFiltros.orden = orden || '';
+    _catFiltrosGuardar(); // [v2.43.71]
     _refrescarFiltroOrdenUI();
     _updateFiltroBadge();
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
@@ -19121,6 +19153,15 @@ const MOS = (() => {
                 <div class="text-[10px] text-emerald-300/70">Si no le llegan notifs/comandos/espía, fuerza re-registro del FCM token</div>
               </div>
             </button>
+            <button onclick="MOS.verUltimaUbicacionDispositivo('${idAttr}')"
+              class="w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all hover:scale-[1.01]"
+              style="background:linear-gradient(135deg,rgba(59,130,246,0.10),rgba(14,165,233,0.08));border:1px solid rgba(59,130,246,0.4)">
+              <span class="text-2xl">🗺️</span>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-black text-blue-200">Ver última ubicación GPS</div>
+                <div class="text-[10px] text-blue-300/70">Última posición conocida (no necesita espía activo) · abre en Google Maps</div>
+              </div>
+            </button>
             <button onclick="MOS.revocarDispositivoUUID('${idAttr}')"
               class="w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all hover:scale-[1.01]"
               style="background:linear-gradient(135deg,rgba(248,113,113,0.10),rgba(220,38,38,0.08));border:1px solid rgba(248,113,113,0.4)">
@@ -19219,6 +19260,52 @@ const MOS = (() => {
       toast('Wizard forzado por ' + r.forzadoPor, 'ok');
       cerrarDetalleDispositivo();
     } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  // [v2.43.71] Ver última ubicación GPS del dispositivo (sin necesidad
+  // de espía activo). Útil cuando el device está bloqueado/cerrado pero
+  // queremos saber dónde anduvo por última vez. Consulta la hoja
+  // UBICACIONES_HISTORIAL que llenan _gpsRegistrarWH/_gpsRegistrar cada 5min.
+  async function verUltimaUbicacionDispositivo(id) {
+    const d = (cfgData.dispositivos || []).find(x => String(x.ID_Dispositivo) === String(id));
+    if (!d) return;
+    toast('🗺 Consultando última ubicación…', 'info', 2000);
+    try {
+      const r = await API.post('getUltimaUbicacionDispositivo', { deviceId: id });
+      if (!r) {
+        await _modalConfirm(`"${d.Nombre_Equipo}" no tiene ubicaciones registradas.\n\nEl device debe abrir la app y autorizar geolocalización para empezar a registrar (cada 5min auto).`, { warning: true, titulo: '🗺 Sin ubicaciones', okText: 'Entendido', cancelText: '' });
+        return;
+      }
+      const lat = parseFloat(r.lat || r.latitude || 0);
+      const lng = parseFloat(r.lng || r.longitude || 0);
+      const acc = parseFloat(r.accuracy || r.acc || 0);
+      const ts  = r.timestamp || r.ts || '';
+      if (!lat || !lng) {
+        toast('Última ubicación incompleta (sin lat/lng)', 'warn');
+        return;
+      }
+      const cuandoMs = new Date(ts).getTime();
+      const hace = isNaN(cuandoMs) ? '?' : (() => {
+        const minutos = Math.round((Date.now() - cuandoMs) / 60000);
+        if (minutos < 60) return 'hace ' + minutos + 'min';
+        const horas = Math.round(minutos / 60);
+        if (horas < 24) return 'hace ' + horas + 'h';
+        return 'hace ' + Math.round(horas / 24) + 'd';
+      })();
+      const ok = await _modalConfirm(
+        `📍 Última posición de "${d.Nombre_Equipo}":\n\n` +
+        `🕐 ${hace} (${ts})\n` +
+        `📍 ${lat.toFixed(6)}, ${lng.toFixed(6)}\n` +
+        `🎯 Precisión: ±${Math.round(acc)} m`,
+        { titulo: '🗺 Última ubicación GPS', okText: 'Abrir Google Maps', cancelText: 'Cerrar' }
+      );
+      if (ok) {
+        const url = `https://www.google.com/maps?q=${lat},${lng}`;
+        window.open(url, '_blank');
+      }
+    } catch(e) {
+      toast('Error consultando ubicación: ' + e.message, 'error', 5000);
+    }
   }
 
   // [v2.43.69] Forzar re-registro del FCM token remoto.
@@ -37442,7 +37529,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     toggleVendedorME,
     abrirModalDispositivo, cerrarModalDispositivo, guardarDispositivo, toggleEstadoDispositivo,
     eliminarDispositivo, aprobarDispositivo, aprobarDispositivoConNombre, rechazarDispositivo, dispCopiarUUID, _dispActualizarPreview, _dispZonaCambio,
-    abrirDetalleDispositivo, cerrarDetalleDispositivo, revocarDispositivoUUID, forzarWizardRemoto, forzarPushRemoto,
+    abrirDetalleDispositivo, cerrarDetalleDispositivo, revocarDispositivoUUID, forzarWizardRemoto, forzarPushRemoto, verUltimaUbicacionDispositivo,
     vincularEsteBrowser,
     abrirModalAudio, audioRefrescarEstado, audioIniciar, audioDetener, audioListarSesiones, audioReproducir, audioCerrarReproductor,
     abrirModalAudioRouted, abrirEscuchaDispositivo, abrirEscuchaPorUsuario, abrirGpsPorUsuario,

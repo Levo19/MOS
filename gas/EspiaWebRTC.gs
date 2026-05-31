@@ -287,6 +287,8 @@ function espiaSubirChunk(params) {
     catch(eD) { return { ok: false, error: 'Base64 inválido: ' + eD.message }; }
     var blob = Utilities.newBlob(bytes, 'video/webm', nombre);
     var file = carpeta.createFile(blob);
+    // [v2.43.71 GDPR] Cada chunk nuevo en PRIVATE (solo OWNER puede ver)
+    try { file.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE); } catch(_){}
     return { ok: true, data: { fileId: file.getId(), nombre: nombre } };
   } catch(e) {
     return { ok: false, error: e.message };
@@ -599,16 +601,62 @@ function _msHastaExpiracion(row) {
 
 function _logAuditoriaEspia(row, duracionSeg, detalle) {
   try {
-    // [v2.43.65] Mismo bug que _getHojaSignaling — usar getSpreadsheet()
     var ss = getSpreadsheet();
     var sh = ss.getSheetByName('AUDITORIA_ESPIA');
     if (!sh) {
       sh = ss.insertSheet('AUDITORIA_ESPIA');
       sh.appendRow(['fecha', 'sesionId', 'masterId', 'deviceId',
-                    'duracionSeg', 'streamsActivos', 'detalle']);
-      sh.getRange(1, 1, 1, 7).setFontWeight('bold').setBackground('#0f172a').setFontColor('#fbbf24');
+                    'duracionSeg', 'streamsActivos', 'detalle',
+                    'chunksCount', 'chunksPesoMB', 'iceCountMaster', 'iceCountDevice',
+                    'sdpOK', 'motivoFin', 'streamsConectados']);
+      sh.getRange(1, 1, 1, 14).setFontWeight('bold').setBackground('#0f172a').setFontColor('#fbbf24');
       sh.setFrozenRows(1);
+    } else {
+      // [v2.43.71] Agregar cabeceras nuevas a hojas viejas sin perderse
+      var hdrs = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+      var faltan = ['chunksCount', 'chunksPesoMB', 'iceCountMaster', 'iceCountDevice',
+                    'sdpOK', 'motivoFin', 'streamsConectados'].filter(function(c){ return hdrs.indexOf(c) < 0; });
+      if (faltan.length > 0) {
+        var startCol = sh.getLastColumn() + 1;
+        sh.getRange(1, startCol, 1, faltan.length).setValues([faltan])
+          .setFontWeight('bold').setBackground('#0f172a').setFontColor('#fbbf24');
+      }
     }
+    // [v2.43.71] Métricas granulares calculadas desde la fila de RTC_SIGNALING
+    var iceM = 0, iceD = 0, sdpOK = false;
+    try {
+      iceM = (JSON.parse(row.iceMaster || '[]') || []).length;
+      iceD = (JSON.parse(row.iceDevice || '[]') || []).length;
+      sdpOK = !!(row.sdpOferta && row.sdpRespuesta);
+    } catch(_){}
+    // Contar chunks en Drive para este device durante la sesión
+    var chunksCount = 0, chunksPesoMB = 0;
+    try {
+      if (row.deviceId && row.fecha) {
+        var inicioMs = row.fecha instanceof Date ? row.fecha.getTime() : new Date(row.fecha).getTime();
+        var finMs = inicioMs + (duracionSeg * 1000);
+        var sub = _getCarpetaEspiaBuffer(row.deviceId);
+        var files = sub.getFiles();
+        while (files.hasNext()) {
+          var f = files.next();
+          var created = f.getDateCreated().getTime();
+          if (created >= inicioMs && created <= finMs + 30000) { // +30s buffer
+            chunksCount++;
+            chunksPesoMB += f.getSize() / (1024 * 1024);
+          }
+        }
+      }
+    } catch(_){}
+    var streamsConectados = '';
+    try {
+      var s = row.streamsActivos ? JSON.parse(row.streamsActivos) : null;
+      if (s) streamsConectados = Object.keys(s).filter(function(k){ return s[k]; }).join('+');
+    } catch(_){}
+    var motivoFin = '';
+    try {
+      var d = detalle ? JSON.parse(detalle) : null;
+      if (d && d.motivo) motivoFin = d.motivo;
+    } catch(_){}
     sh.appendRow([
       new Date(),
       row.sesionId,
@@ -616,7 +664,14 @@ function _logAuditoriaEspia(row, duracionSeg, detalle) {
       row.deviceId,
       duracionSeg,
       row.streamsActivos || '',
-      detalle
+      detalle,
+      chunksCount,
+      Math.round(chunksPesoMB * 10) / 10,
+      iceM,
+      iceD,
+      sdpOK ? 1 : 0,
+      motivoFin,
+      streamsConectados
     ]);
   } catch(e) { Logger.log('[espia auditoria] ' + e.message); }
 }
@@ -624,11 +679,61 @@ function _logAuditoriaEspia(row, duracionSeg, detalle) {
 function _getCarpetaEspiaBuffer(deviceId) {
   var rootName = 'MOS Espia Buffer';
   var folders = DriveApp.getFoldersByName(rootName);
-  var root = folders.hasNext() ? folders.next() : DriveApp.createFolder(rootName);
+  var root;
+  if (folders.hasNext()) {
+    root = folders.next();
+  } else {
+    root = DriveApp.createFolder(rootName);
+    // [v2.43.71 GDPR] Bloquear compartición externa del folder root.
+    // Solo el OWNER (el dueño del script) y usuarios que se le agreguen
+    // manualmente como editor pueden acceder. No es ANYONE_WITH_LINK.
+    try {
+      root.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
+    } catch(eS) { Logger.log('[espia GDPR] setSharing fallo: ' + eS.message); }
+  }
   var subName = String(deviceId).replace(/[^a-zA-Z0-9_\-]/g, '_');
   var subs = root.getFoldersByName(subName);
-  var sub  = subs.hasNext() ? subs.next() : root.createFolder(subName);
+  var sub;
+  if (subs.hasNext()) {
+    sub = subs.next();
+  } else {
+    sub = root.createFolder(subName);
+    try { sub.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE); } catch(_){}
+  }
   return sub;
+}
+
+// [v2.43.71] Endurecer permisos de TODOS los chunks ya existentes
+// (one-shot manual desde editor o llamado por trigger semanal).
+// Para folders viejos creados antes del fix, los pone PRIVATE.
+function endurecerPermisosBufferEspia() {
+  var resultado = { foldersAjustados: 0, chunksAjustados: 0, errores: [] };
+  try {
+    var folders = DriveApp.getFoldersByName('MOS Espia Buffer');
+    if (!folders.hasNext()) {
+      Logger.log('[GDPR] No existe el folder MOS Espia Buffer (sin chunks aún)');
+      return { ok: true, data: resultado };
+    }
+    var root = folders.next();
+    try { root.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE); resultado.foldersAjustados++; }
+    catch(eR) { resultado.errores.push('root: ' + eR.message); }
+    var subs = root.getFolders();
+    while (subs.hasNext()) {
+      var sub = subs.next();
+      try { sub.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE); resultado.foldersAjustados++; }
+      catch(eSb) { resultado.errores.push(sub.getName() + ': ' + eSb.message); }
+      var files = sub.getFiles();
+      while (files.hasNext()) {
+        var f = files.next();
+        try { f.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE); resultado.chunksAjustados++; }
+        catch(eF) { resultado.errores.push(f.getName() + ': ' + eF.message); }
+      }
+    }
+    Logger.log('[GDPR] ' + JSON.stringify(resultado));
+    return { ok: true, data: resultado };
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
 }
 
 // [v2.43.61] Cron semanal — borra chunks de buffer >7 días + sesiones RTC >24h.
