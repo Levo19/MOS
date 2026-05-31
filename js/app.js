@@ -21557,6 +21557,10 @@ const MOS = (() => {
       const estado = String(d.Estado).toUpperCase();
       if (estado === 'PENDIENTE_APROBACION') return false; // van en sección aparte
       if (estado === 'INACTIVO') return false;             // bloqueados no se muestran como móviles
+      // [v2.43.68] Excluir dispositivos del MOS Admin — ya aparecen en
+      // "Zona Premium · Admin & Master". Antes el mismo dispositivo se mostraba
+      // duplicado en ambas listas (App=mos siempre cumple !Ultima_Estacion).
+      if (_isAppMOS(d)) return false;
       return !d.Ultima_Estacion; // solo los que nunca tuvieron estación
     });
   }
