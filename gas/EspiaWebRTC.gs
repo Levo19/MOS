@@ -385,6 +385,70 @@ function _buscarSesion(sesionId) {
   return null;
 }
 
+// [v2.43.68] Diagnóstico completo de un dispositivo target del espía.
+// Verifica TODO lo que el espía necesita para funcionar end-to-end.
+// Editar PRIMERO el nombre/id del dispositivo target y luego ejecutar.
+function diagnosticarDeviceEspia() {
+  // ⬇⬇⬇ EDITAR ESTE ID con el que vas a espiar ⬇⬇⬇
+  var deviceIdTarget = ''; // ej: 'df61a710-1e4f-4fee-bcc8-89759bd02b17'
+  var nombreParcial  = 'Tablet zona2'; // si dejás deviceIdTarget vacío, busca por nombre
+  // ⬆⬆⬆⬆⬆⬆⬆⬆⬆⬆⬆⬆⬆⬆⬆⬆⬆⬆⬆⬆⬆⬆⬆⬆⬆
+
+  var sh = getSpreadsheet().getSheetByName('DISPOSITIVOS');
+  if (!sh) { Logger.log('❌ Hoja DISPOSITIVOS no existe'); return { ok: false }; }
+  var data = sh.getDataRange().getValues();
+  var hdrs = data[0];
+  var iId  = hdrs.indexOf('ID_Dispositivo'); if (iId < 0) iId = hdrs.indexOf('deviceId');
+  var iNom = hdrs.indexOf('Nombre_Equipo');
+  var iApp = hdrs.indexOf('App');
+  var iEst = hdrs.indexOf('Estado');
+  var iTok = hdrs.indexOf('FCM_Token'); if (iTok < 0) iTok = hdrs.indexOf('fcmToken');
+  var iSes = hdrs.indexOf('Ultima_Sesion');
+  var iCon = hdrs.indexOf('Ultima_Conexion');
+
+  var found = null;
+  for (var i = 1; i < data.length; i++) {
+    var did = String(data[i][iId]);
+    var nom = String(data[i][iNom] || '');
+    if (deviceIdTarget && did === deviceIdTarget) { found = i; break; }
+    if (!deviceIdTarget && nombreParcial && nom.toLowerCase().indexOf(nombreParcial.toLowerCase()) >= 0) {
+      found = i; break;
+    }
+  }
+  if (found === null) {
+    Logger.log('❌ Dispositivo no encontrado. Buscado: ' + (deviceIdTarget || nombreParcial));
+    return { ok: false };
+  }
+
+  var d = data[found];
+  Logger.log('═══ DIAGNÓSTICO DEVICE ESPÍA ═══');
+  Logger.log('Nombre:    ' + d[iNom]);
+  Logger.log('ID:        ' + d[iId]);
+  Logger.log('App:       ' + d[iApp] + ' ' + (String(d[iApp]).toLowerCase() === 'mos' ? '⚠ MOS Admin NO puede ser target del espía' : ''));
+  Logger.log('Estado:    ' + d[iEst]);
+  Logger.log('Usuario:   ' + (d[iSes] || '(sin login)'));
+  Logger.log('Última conexión: ' + d[iCon]);
+  var tok = String(d[iTok] || '').trim();
+  if (!tok) {
+    Logger.log('🚨 FCM_Token: VACÍO — el push nunca va a llegar al device');
+    Logger.log('   → El device tiene que abrir la app MosExpress/WH y registrar push.');
+  } else {
+    Logger.log('✅ FCM_Token: configurado [' + tok.length + ' chars]');
+    Logger.log('   Preview: ' + tok.substring(0, 20) + '...');
+  }
+  // Verificar Permisos_JSON (cam/mic/screen)
+  var iPerm = hdrs.indexOf('Permisos_JSON');
+  if (iPerm >= 0) {
+    var permRaw = String(d[iPerm] || '');
+    if (!permRaw) {
+      Logger.log('⚠ Permisos_JSON vacío — el device NO ha autorizado cam/mic/pantalla');
+    } else {
+      Logger.log('Permisos:  ' + permRaw);
+    }
+  }
+  return { ok: true, found: found };
+}
+
 // [v2.43.67] Diagnóstico: dump del contenido actual de RTC_SIGNALING
 // Ejecutar desde el editor para ver QUÉ tiene la hoja realmente.
 function diagnosticarHojaEspia() {
