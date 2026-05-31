@@ -429,12 +429,22 @@ function diagnosticarDeviceEspia() {
   Logger.log('Usuario:   ' + (d[iSes] || '(sin login)'));
   Logger.log('Última conexión: ' + d[iCon]);
   var tok = String(d[iTok] || '').trim();
-  if (!tok) {
-    Logger.log('🚨 FCM_Token: VACÍO — el push nunca va a llegar al device');
-    Logger.log('   → El device tiene que abrir la app MosExpress/WH y registrar push.');
+  if (tok) {
+    Logger.log('FCM_Token (DISPOSITIVOS): [' + tok.length + ' chars] · ' + tok.substring(0, 20) + '...');
   } else {
-    Logger.log('✅ FCM_Token: configurado [' + tok.length + ' chars]');
-    Logger.log('   Preview: ' + tok.substring(0, 20) + '...');
+    Logger.log('FCM_Token (DISPOSITIVOS): vacío (esto es OK — los tokens reales viven en PUSH_TOKENS)');
+  }
+  // [v2.43.68b] Verificar PUSH_TOKENS — es donde REALMENTE viven los tokens
+  var tokensPushTokens = _buscarTokensPushPorDeviceId(d[iId]);
+  if (tokensPushTokens.length === 0) {
+    Logger.log('🚨 PUSH_TOKENS: NINGÚN token activo encontrado para este deviceId');
+    Logger.log('   → El device tiene que abrir MosExpress/WH y aprobar notifs para registrar.');
+    Logger.log('   → Verifica que la columna deviceId de PUSH_TOKENS esté llena para este dispositivo.');
+  } else {
+    Logger.log('✅ PUSH_TOKENS: ' + tokensPushTokens.length + ' token(s) activo(s) registrados');
+    tokensPushTokens.forEach(function(t, i) {
+      Logger.log('   [' + (i+1) + '] ' + t.substring(0, 20) + '... (' + t.length + ' chars)');
+    });
   }
   // Verificar Permisos_JSON (cam/mic/screen)
   var iPerm = hdrs.indexOf('Permisos_JSON');
@@ -649,49 +659,63 @@ function espiaListarChunks(params) {
   }
 }
 
-// Push helper — si no existe el endpoint global, lo definimos mínimo aquí
-// Para no chocar con otros, usamos el del Push.gs si existe
+// Push helper — busca el token FCM en la hoja PUSH_TOKENS (donde realmente
+// se guardan los tokens vía registrarTokenPush). DISPOSITIVOS NO tiene la
+// columna FCM_Token llena — eso era hipótesis inicial mía que era falsa.
+// [v2.43.68b BUG FIX] Antes buscaba en DISPOSITIVOS.FCM_Token que SIEMPRE
+// está vacío → caía al fallback enviarPushUsuario con usuario=deviceId,
+// pero esa función busca por nombre de usuario, no por UUID → NUNCA matcheaba
+// → push silencioso → device target nunca arrancaba el espía.
 function _enviarPushDispositivo(deviceId, payload) {
-  // [v2.43.59 FIX] Nombre correcto: enviarPushUsuario (NO enviarPushAUsuario).
-  // Antes el push al device fallaba silencioso → master creía notificar pero device nunca se enteraba.
-  // Buscamos el token FCM del dispositivo y mandamos data-only via _enviarPushFCM si existe,
-  // o caemos a enviarPushUsuario con usuario=deviceId si esta función existe.
   try {
-    // 1) Intentar buscar token FCM del device en DISPOSITIVOS
-    // [v2.43.65] Mismo bug que _getHojaSignaling — usar getSpreadsheet()
-    var sh = getSpreadsheet().getSheetByName('DISPOSITIVOS');
-    if (sh) {
-      var data = sh.getDataRange().getValues();
-      var hdrs = data[0];
-      var idxId  = hdrs.indexOf('ID_Dispositivo');
-      if (idxId < 0) idxId = hdrs.indexOf('deviceId');
-      var idxTok = hdrs.indexOf('FCM_Token');
-      if (idxTok < 0) idxTok = hdrs.indexOf('fcmToken');
-      if (idxId >= 0 && idxTok >= 0) {
-        for (var i = 1; i < data.length; i++) {
-          if (String(data[i][idxId]).trim() === String(deviceId)) {
-            var tok = String(data[i][idxTok] || '').trim();
-            if (tok && typeof _enviarPushFCM === 'function') {
-              return _enviarPushFCM(tok, payload, { dataOnly: true });
-            }
-            break;
-          }
-        }
-      }
+    var tokens = _buscarTokensPushPorDeviceId(deviceId);
+    if (tokens.length === 0) {
+      Logger.log('[espia push] NO hay tokens FCM para deviceId=' + deviceId);
+      return { ok: false, error: 'No hay tokens FCM registrados para este dispositivo' };
     }
-    // Fallback: usar enviarPushUsuario si existe (formato distinto)
-    if (typeof enviarPushUsuario === 'function') {
-      return enviarPushUsuario({
-        usuario: deviceId,
-        titulo:  'Sesión de monitoreo iniciada',
-        cuerpo:  '',
-        data:    payload
-      });
+    if (typeof _enviarPushFCM !== 'function') {
+      Logger.log('[espia push] _enviarPushFCM no existe');
+      return { ok: false, error: '_enviarPushFCM no disponible' };
     }
-    Logger.log('[espia push] NO se encontró función push compatible. Payload: ' + JSON.stringify(payload));
-    return { ok: false, error: 'No hay función push disponible' };
+    // Enviar a TODOS los tokens activos del device (puede ser >1 si reinstaló)
+    var enviados = 0;
+    tokens.forEach(function(tok) {
+      try {
+        _enviarPushFCM(tok, payload, { dataOnly: true });
+        enviados++;
+      } catch(eT) { Logger.log('[espia push] token fallo: ' + eT.message); }
+    });
+    Logger.log('[espia push] enviado a ' + enviados + '/' + tokens.length + ' tokens del device ' + deviceId);
+    return { ok: enviados > 0, data: { enviados: enviados, totalTokens: tokens.length } };
   } catch(e) {
     Logger.log('[espia push] ERROR: ' + e.message);
     return { ok: false, error: e.message };
   }
+}
+
+// [v2.43.68b] Helper que devuelve TODOS los tokens FCM activos del device
+function _buscarTokensPushPorDeviceId(deviceId) {
+  var resultado = [];
+  try {
+    var sh = getSpreadsheet().getSheetByName('PUSH_TOKENS');
+    if (!sh) return resultado;
+    var data = sh.getDataRange().getValues();
+    if (data.length < 2) return resultado;
+    var hdrs = data[0];
+    // Cabeceras esperadas: idToken | token | usuario | dispositivo | appOrigen | fecha | ultimaVez | activo | deviceId
+    var iTok    = hdrs.indexOf('token');
+    var iActivo = hdrs.indexOf('activo');
+    var iDev    = hdrs.indexOf('deviceId');
+    if (iDev < 0 || iTok < 0) return resultado;
+    var devStr = String(deviceId).trim();
+    for (var i = 1; i < data.length; i++) {
+      var rowDev = String(data[i][iDev] || '').trim();
+      if (rowDev !== devStr) continue;
+      var act = data[i][iActivo];
+      if (act === false || String(act) === '0' || String(act).toLowerCase() === 'false') continue;
+      var tok = String(data[i][iTok] || '').trim();
+      if (tok) resultado.push(tok);
+    }
+  } catch(e) { Logger.log('[_buscarTokensPushPorDeviceId] ' + e.message); }
+  return resultado;
 }
