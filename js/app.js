@@ -19112,6 +19112,15 @@ const MOS = (() => {
                 <div class="text-[10px] text-indigo-300/70">Al próximo arranque, mostrarle el wizard de permisos</div>
               </div>
             </button>
+            <button onclick="MOS.forzarPushRemoto('${idAttr}')"
+              class="w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all hover:scale-[1.01]"
+              style="background:linear-gradient(135deg,rgba(16,185,129,0.10),rgba(45,212,191,0.08));border:1px solid rgba(16,185,129,0.4)">
+              <span class="text-2xl">🔄</span>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-black text-emerald-200">Reforzar registro push</div>
+                <div class="text-[10px] text-emerald-300/70">Si no le llegan notifs/comandos/espía, fuerza re-registro del FCM token</div>
+              </div>
+            </button>
             <button onclick="MOS.revocarDispositivoUUID('${idAttr}')"
               class="w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all hover:scale-[1.01]"
               style="background:linear-gradient(135deg,rgba(248,113,113,0.10),rgba(220,38,38,0.08));border:1px solid rgba(248,113,113,0.4)">
@@ -19208,6 +19217,31 @@ const MOS = (() => {
         return;
       }
       toast('Wizard forzado por ' + r.forzadoPor, 'ok');
+      cerrarDetalleDispositivo();
+    } catch(e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  // [v2.43.69] Forzar re-registro del FCM token remoto.
+  // Usado cuando el device no aparece en PUSH_TOKENS y el espía/push directo
+  // no le llega. Cliente al próximo poll consultarEstadoDispositivo verá
+  // forzar_push=true y ejecuta _pushInit + limpia el flag.
+  async function forzarPushRemoto(id) {
+    const d = (cfgData.dispositivos || []).find(x => String(x.ID_Dispositivo) === String(id));
+    if (!d) return;
+    if (!await _modalConfirm(`"${d.Nombre_Equipo}" re-registrará su token de notificaciones en el próximo arranque.\n\nÚtil cuando el device no recibe pushes (espía no conecta, comandos no llegan).\n\n¿Continuar?`, { warning: true, titulo: 'Reforzar registro push' })) return;
+    const auth = await pedirAuth({
+      accion: 'FORZAR_PUSH',
+      refDocumento: id,
+      contexto: `Reforzar push en "${d.Nombre_Equipo}" (${d.App})`
+    });
+    if (!auth) return;
+    try {
+      const r = await API.post('forzarPushDispositivo', { deviceId: id, claveAdmin: auth.clave, app: d.App });
+      if (!r?.autorizado) {
+        toast(r?.error || 'Clave incorrecta', 'error');
+        return;
+      }
+      toast('🔄 Push se re-registrará al próximo arranque del device · por ' + r.forzadoPor, 'ok', 6000);
       cerrarDetalleDispositivo();
     } catch(e) { toast('Error: ' + e.message, 'error'); }
   }
@@ -37402,7 +37436,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     toggleVendedorME,
     abrirModalDispositivo, cerrarModalDispositivo, guardarDispositivo, toggleEstadoDispositivo,
     eliminarDispositivo, aprobarDispositivo, aprobarDispositivoConNombre, rechazarDispositivo, dispCopiarUUID, _dispActualizarPreview, _dispZonaCambio,
-    abrirDetalleDispositivo, cerrarDetalleDispositivo, revocarDispositivoUUID, forzarWizardRemoto,
+    abrirDetalleDispositivo, cerrarDetalleDispositivo, revocarDispositivoUUID, forzarWizardRemoto, forzarPushRemoto,
     vincularEsteBrowser,
     abrirModalAudio, audioRefrescarEstado, audioIniciar, audioDetener, audioListarSesiones, audioReproducir, audioCerrarReproductor,
     abrirModalAudioRouted, abrirEscuchaDispositivo, abrirEscuchaPorUsuario, abrirGpsPorUsuario,

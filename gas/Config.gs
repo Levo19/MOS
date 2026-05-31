@@ -519,7 +519,13 @@ var _DISP_COLS_EXTRA = ['Ultima_Zona', 'Ultima_Estacion', 'Ultima_Sesion',
                         // marca Forzar_Logout='1' + Logout_Auto_Ts=ISO. La PWA
                         // ve el flag al próximo poll de consultarEstadoDispositivo
                         // y cierra sesión local + caja (si abierta) + va al login.
-                        'Forzar_Logout', 'Logout_Auto_Ts'];
+                        'Forzar_Logout', 'Logout_Auto_Ts',
+                        // [v2.43.69] Forzar re-registro del FCM token. Admin lo
+                        // setea desde la card del dispositivo cuando ve que el
+                        // device no tiene token registrado en PUSH_TOKENS. La PWA
+                        // lo lee en consultarEstadoDispositivo y dispara
+                        // _pushInit forzado + limpia el flag.
+                        'Forzar_Push'];
 
 // Push helper · notifica a admin/master cuando se aprueba un dispositivo
 function _notificarAprobacionDispositivo(deviceId, app, nombreEquipo, aprobadoPor, accion) {
@@ -828,6 +834,7 @@ function consultarEstadoDispositivo(params) {
   var iSus  = hdrs.indexOf('Suspendido_Desde');
   var iFL   = hdrs.indexOf('Forzar_Logout');
   var iFLts = hdrs.indexOf('Logout_Auto_Ts');
+  var iFP   = hdrs.indexOf('Forzar_Push'); // [v2.43.69]
   // ISO UTC explícito como string — formato consistente entre todos los heartbeats
   var nowStr = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
   for (var i = 1; i < data.length; i++) {
@@ -858,6 +865,7 @@ function consultarEstadoDispositivo(params) {
         }
       }
     }
+    var fp = iFP >= 0 ? String(data[i][iFP] || '') : '';
     return { ok: true, data: {
       registrado:    true,
       estado:        String(data[i][iEst] || ''),
@@ -865,10 +873,93 @@ function consultarEstadoDispositivo(params) {
       app:           data[i][iApp] || '',
       forzar_wizard: fw === '1' || fw.toLowerCase() === 'true',
       forzar_logout:    fl === '1' || fl.toLowerCase() === 'true',
-      logout_auto_ts:   flTs
+      logout_auto_ts:   flTs,
+      forzar_push:   fp === '1' || fp.toLowerCase() === 'true' // [v2.43.69]
     }};
   }
   return { ok: true, data: { registrado: false, estado: 'NO_REGISTRADO' } };
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// [v2.43.69] FORZAR ACCIONES EN DISPOSITIVO REMOTO
+// Mismo patrón que forzarWizardDispositivo: requiere claveAdmin para
+// auditoría. La PWA cliente lee la flag en su próximo poll
+// consultarEstadoDispositivo, ejecuta la acción y limpia el flag.
+// ════════════════════════════════════════════════════════════════════════
+function forzarPushDispositivo(params) {
+  if (!params.deviceId)   return { ok: false, error: 'Requiere deviceId' };
+  if (!params.claveAdmin) return { ok: false, error: 'Requiere claveAdmin' };
+  var auth = verificarClaveAdmin({
+    clave: params.claveAdmin, accion: 'FORZAR_PUSH',
+    refDocumento: params.deviceId, appOrigen: params.app || '',
+    detalle: 'Forzar re-registro del FCM token'
+  });
+  if (!auth.ok) return auth;
+  if (!auth.data || !auth.data.autorizado) {
+    return { ok: true, data: { autorizado: false, error: auth.data?.error || 'Clave incorrecta' } };
+  }
+  _garantizarColumnasDispositivos();
+  var sheet = getSheet('DISPOSITIVOS');
+  var data  = sheet.getDataRange().getValues();
+  var hdrs  = data[0];
+  var iId   = hdrs.indexOf('ID_Dispositivo');
+  var iFP   = hdrs.indexOf('Forzar_Push');
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][iId]) !== params.deviceId) continue;
+    if (iFP >= 0) sheet.getRange(i + 1, iFP + 1).setNumberFormat('@').setValue('1');
+    try { SpreadsheetApp.flush(); } catch(_){}
+    return { ok: true, data: { autorizado: true, forzadoPor: auth.data.validadoPor } };
+  }
+  return { ok: false, error: 'Dispositivo no encontrado' };
+}
+
+// [v2.43.69] Cliente limpia su propio flag después de ejecutar la acción.
+// No requiere claveAdmin (es el propio dispositivo limpiando su tarea).
+function limpiarFlagDevice(params) {
+  var deviceId = String(params.deviceId || params.ID_Dispositivo || '').trim();
+  var flag = String(params.flag || '').trim();
+  if (!deviceId) return { ok: false, error: 'Requiere deviceId' };
+  var permitidas = { 'Forzar_Push': 1, 'Forzar_Wizard': 1 };
+  if (!permitidas[flag]) return { ok: false, error: 'Flag no permitida: ' + flag };
+  _garantizarColumnasDispositivos();
+  var sheet = getSheet('DISPOSITIVOS');
+  var data  = sheet.getDataRange().getValues();
+  var hdrs  = data[0];
+  var iId   = hdrs.indexOf('ID_Dispositivo');
+  var iCol  = hdrs.indexOf(flag);
+  if (iCol < 0) return { ok: false, error: 'Columna no existe: ' + flag };
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][iId]) !== deviceId) continue;
+    sheet.getRange(i + 1, iCol + 1).setValue('');
+    return { ok: true, data: { limpiado: flag } };
+  }
+  return { ok: false, error: 'Dispositivo no encontrado' };
+}
+
+// [v2.43.69] Endpoint para que el cliente verifique si su token está
+// registrado activo en PUSH_TOKENS. Si false, debe re-ejecutar el registro.
+function verificarMiTokenRegistrado(params) {
+  var deviceId = String(params.deviceId || params.ID_Dispositivo || '').trim();
+  if (!deviceId) return { ok: false, error: 'Requiere deviceId' };
+  try {
+    var sh = getSpreadsheet().getSheetByName('PUSH_TOKENS');
+    if (!sh) return { ok: true, data: { registrado: false, motivo: 'hoja_no_existe' } };
+    var data = sh.getDataRange().getValues();
+    if (data.length < 2) return { ok: true, data: { registrado: false, motivo: 'hoja_vacia' } };
+    var hdrs = data[0];
+    var iTok = hdrs.indexOf('token');
+    var iAct = hdrs.indexOf('activo');
+    var iDev = hdrs.indexOf('deviceId');
+    if (iDev < 0 || iTok < 0) return { ok: true, data: { registrado: false, motivo: 'sin_columna_deviceId' } };
+    var encontrados = 0;
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][iDev] || '').trim() !== deviceId) continue;
+      var act = data[i][iAct];
+      if (act === false || String(act) === '0' || String(act).toLowerCase() === 'false') continue;
+      if (String(data[i][iTok] || '').trim()) encontrados++;
+    }
+    return { ok: true, data: { registrado: encontrados > 0, tokens: encontrados } };
+  } catch(e) { return { ok: false, error: e.message }; }
 }
 
 // ════════════════════════════════════════════════════════════════════════

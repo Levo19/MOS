@@ -178,6 +178,9 @@ function _route(method, e) {
       case 'registrarSesionDispositivo':   return registrarSesionDispositivo(params);
       case 'getDispositivosPendientes':    return getDispositivosPendientes();
       case 'consultarEstadoDispositivo':   return consultarEstadoDispositivo(params);
+      case 'forzarPushDispositivo':        return forzarPushDispositivo(params);
+      case 'limpiarFlagDevice':            return limpiarFlagDevice(params);
+      case 'verificarMiTokenRegistrado':   return verificarMiTokenRegistrado(params);
       case 'aprobarDispositivoPendiente':  return aprobarDispositivoPendiente(params);
       case 'aprobarDispositivoEnSitu':     return aprobarDispositivoEnSitu(params);
       case 'rechazarDispositivoPendiente': return rechazarDispositivoPendiente(params);
