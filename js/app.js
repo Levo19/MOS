@@ -27809,13 +27809,33 @@ const MOS = (() => {
     });
     _espiaV2.pc = pc;
     // Track recibido: asignar al video/audio element del modal
+    // [v2.43.77] Identificación robusta de pantalla. Antes solo miraba si
+    // track.label contenía 'screen'/'display' — falla cuando Chrome devuelve
+    // labels como 'web-contents-media-stream://...' o nombre de ventana →
+    // se trataba como cámara y 'pantalla' quedaba esperando para siempre.
+    // Fix: usar track.getSettings().displaySurface (solo existe en
+    // getDisplayMedia tracks) + fallback al label.
     pc.ontrack = (ev) => {
       const stream = ev.streams[0];
       const track  = ev.track;
       const label  = (track.label || '').toLowerCase();
       let tipo = 'audio';
       if (track.kind === 'video') {
-        tipo = label.indexOf('screen') >= 0 || label.indexOf('display') >= 0 ? 'pantalla' : 'camara';
+        let esPantalla = false;
+        try {
+          const s = track.getSettings ? track.getSettings() : {};
+          // displaySurface = 'monitor' | 'window' | 'browser' | 'application'
+          // Solo getDisplayMedia define esa property
+          if (s.displaySurface || s.logicalSurface !== undefined) esPantalla = true;
+        } catch(_){}
+        // Fallback: label contiene 'screen'/'display'/'web-contents'
+        if (!esPantalla) {
+          esPantalla = label.indexOf('screen') >= 0 ||
+                       label.indexOf('display') >= 0 ||
+                       label.indexOf('web-contents') >= 0;
+        }
+        tipo = esPantalla ? 'pantalla' : 'camara';
+        console.log('[espia ontrack] kind=video label="' + track.label + '" → tipo=' + tipo + ' (displaySurface=' + (track.getSettings?.()?.displaySurface || '?') + ')');
       }
       _espiaV2.streams[tipo] = stream;
       _espiaSfx('chime');
