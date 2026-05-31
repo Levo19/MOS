@@ -333,11 +333,17 @@ function registrarPushToken(params) {
     if (String(data[i][1]) === String(params.token)) {
       sheet.getRange(i + 1, 3).setValue(params.usuario    || data[i][2]);
       sheet.getRange(i + 1, 7).setValue(new Date());
+      // [v2.43.74 BUG FIX] REACTIVAR a true. Antes esta función NO tocaba
+      // 'activo' al actualizar, así que un token marcado false por una
+      // rejection anterior quedaba muerto para siempre, aunque el cliente
+      // lo re-registrara. Si el cliente reporta el token AHORA, está vivo —
+      // FCM la sigue manteniendo hasta nueva prueba.
+      sheet.getRange(i + 1, 8).setValue(true);
       // Actualizar deviceId si nos pasan uno (token reusado en otro device es raro pero posible)
       if (iDev >= 0 && params.deviceId) {
         sheet.getRange(i + 1, iDev + 1).setValue(params.deviceId);
       }
-      return { ok: true, data: { accion: 'actualizado' } };
+      return { ok: true, data: { accion: 'actualizado_reactivado' } };
     }
   }
 
