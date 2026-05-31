@@ -1,1 +1,1 @@
-{ "version": "2.43.75", "build": "20260530-prefetch-scope-fix-espia-autocierra-zombies-PENDIENTE" }
+{ "version": "2.43.76", "build": "20260531-espia-poll-mutex-setRemoteDescription-guards-null-await" }

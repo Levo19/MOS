@@ -27886,33 +27886,43 @@ const MOS = (() => {
     try {
       const t0 = Date.now();
       // [v2.43.66] API.post desempaqueta — r es directamente el data del backend
-      // 1) Si aún no tenemos remoteDescription, leer respuesta
-      if (!_espiaV2.pc.remoteDescription) {
-        const r = await API.post('espiaLeerRespuesta', { sesionId: _espiaV2.sesionId });
-        if (r?.sdpRespuesta) {
-          try {
+      // [v2.43.76] Guard contra race: el poll corre cada 600ms. Si setRemoteDescription
+      // tarda >600ms, el siguiente poll también ve remoteDescription=null y vuelve a
+      // intentar → InvalidStateError "Called in wrong state: stable" cuando el primero
+      // ya conectó. Flag _settingAnswer asegura mutex.
+      if (!_espiaV2.pc.remoteDescription && !_espiaV2._settingAnswer && _espiaV2.pc.signalingState === 'have-local-offer') {
+        _espiaV2._settingAnswer = true;
+        try {
+          const r = await API.post('espiaLeerRespuesta', { sesionId: _espiaV2.sesionId });
+          if (r?.sdpRespuesta && _espiaV2 && !_espiaV2.pc.remoteDescription && _espiaV2.pc.signalingState === 'have-local-offer') {
             const sdp = JSON.parse(r.sdpRespuesta);
             await _espiaV2.pc.setRemoteDescription(sdp);
-          } catch(e) { console.warn('[espia] respuesta inválida', e); }
-        }
+          }
+        } catch(e) { console.warn('[espia] respuesta inválida', e?.message); }
+        finally { if (_espiaV2) _espiaV2._settingAnswer = false; }
       }
+      // [v2.43.76] Guard: si el modal se cerró durante el primer await, abortar
+      if (!_espiaV2) return;
       // 2) Leer ICE candidates del device
       const ri = await API.post('espiaLeerIce', {
         sesionId: _espiaV2.sesionId,
         lado: 'device',
         desde: _espiaV2.pollIceDesde
       });
+      if (!_espiaV2) return; // guard otra vez después del await
       if (ri?.ice?.length) {
         for (const c of ri.ice) {
           try { await _espiaV2.pc.addIceCandidate(c.ice); } catch(_){}
         }
-        _espiaV2.pollIceDesde = ri.tsMax || _espiaV2.pollIceDesde;
+        if (_espiaV2) _espiaV2.pollIceDesde = ri.tsMax || _espiaV2.pollIceDesde;
       }
       // Tracking de lag
-      _espiaV2.lagMs = Date.now() - t0;
-      _espiaV2RenderSyncBadge();
+      if (_espiaV2) {
+        _espiaV2.lagMs = Date.now() - t0;
+        _espiaV2RenderSyncBadge();
+      }
     } catch(e) {
-      console.warn('[espia poll]', e);
+      console.warn('[espia poll]', e?.message || e);
     }
   }
 
