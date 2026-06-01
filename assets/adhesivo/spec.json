@@ -20,10 +20,18 @@
     "formato":      "MES/yyyy",
     "tabla_meses":  ["ENE","FEB","MAR","ABR","MAY","JUN","JUL","AGO","SEP","OCT","NOV","DIC"],
     "anios_validez": 1,
-    "x_dots":       210,
-    "y_dots":       8,
-    "font_tspl":    3,
+    "x_dots":       240,
+    "y_dots":       12,
+    "font_tspl":    2,
     "label":        "Vto"
+  },
+  "tspl_fonts_dots": {
+    "comentario": "Medidas reales TSC TTP-244CE @ 203 DPI. NO usar otras.",
+    "1": { "w": 8,  "h": 12 },
+    "2": { "w": 12, "h": 20 },
+    "3": { "w": 16, "h": 24 },
+    "4": { "w": 24, "h": 32 },
+    "5": { "w": 32, "h": 48 }
   },
   "barcode": {
     "tipo":               "CODE128",

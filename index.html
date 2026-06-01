@@ -8255,13 +8255,33 @@
       0%, 100% { text-shadow: 0 0 0 rgba(251,191,36,0); }
       50%      { text-shadow: 0 0 12px rgba(251,191,36,.55); }
     }
-    /* Barcode: TSPL Y=128, height=44, narrow=1 o 2 → ancho variable.
-       Sin flechas — quiet zone amplio (15×narrow) lo reemplaza. */
+    /* [v2.43.117] Frame del barcode con corner marks tipo cámara/visor QR.
+       Reemplaza el wrap simple anterior. Aprovecha el margen inferior del
+       adhesivo (118-196 dots = 78 dots de alto en TSPL × 1.5 = 117 px). */
+    .adhesivo-codigo-frame {
+      position: relative;
+      margin: 6px 8px 0;
+      padding: 10px 14px 6px;
+      min-height: 90px;  /* 60 dots TSPL × 1.5 */
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+    }
+    /* Corner marks — 4 esquinas en L (12 dots TSPL × 1.5 = 18 px). */
+    .cm {
+      position: absolute;
+      width: 18px; height: 18px;
+      border-color: #000; border-style: solid; border-width: 0;
+    }
+    .cm-tl { top: 0;    left: 0;    border-top-width: 2px; border-left-width: 2px; }
+    .cm-tr { top: 0;    right: 0;   border-top-width: 2px; border-right-width: 2px; }
+    .cm-bl { bottom: 0; left: 0;    border-bottom-width: 2px; border-left-width: 2px; }
+    .cm-br { bottom: 0; right: 0;   border-bottom-width: 2px; border-right-width: 2px; }
+
     .adhesivo-barcode-wrap {
-      margin-top: 4px;
       display: flex; flex-direction: row; align-items: center;
       justify-content: center;
       height: 66px;  /* 44 dots TSPL × 1.5 */
+      width: 100%;
     }
     .adhesivo-barcode-wrap svg {
       height: 66px;
@@ -8272,9 +8292,10 @@
     .adhesivo-codigo {
       font-family: 'Consolas', 'Courier New', monospace;
       font-size: 13px; color: #333;
-      letter-spacing: 1px;
+      letter-spacing: 1.5px;
       text-align: center;
-      margin-top: 2px;
+      margin-top: 6px;
+      width: 100%;
     }
     .adhesivo-cantidad-tag {
       position: absolute; top: 10px; right: 92px;

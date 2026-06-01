@@ -12302,10 +12302,16 @@ const MOS = (() => {
         </div>
         <div class="adhesivo-divider"></div>
         <div class="adhesivo-desc">${linesHTML}</div>
-        <div class="adhesivo-barcode-wrap">
-          <svg id="adhesivoBarcodeSVG" style="width:${bWidthPct}%;"></svg>
+        <div class="adhesivo-codigo-frame">
+          <span class="cm cm-tl"></span>
+          <span class="cm cm-tr"></span>
+          <span class="cm cm-bl"></span>
+          <span class="cm cm-br"></span>
+          <div class="adhesivo-barcode-wrap">
+            <svg id="adhesivoBarcodeSVG" style="width:${bWidthPct}%;"></svg>
+          </div>
+          <div class="adhesivo-codigo">${_escapeHtml(datos.codigoBarra)}</div>
         </div>
-        <div class="adhesivo-codigo">${_escapeHtml(datos.codigoBarra)}</div>
         <div class="adhesivo-cantidad-tag">×${cantidad}</div>
       </div>`;
   }
