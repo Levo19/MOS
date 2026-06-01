@@ -155,6 +155,9 @@ function _route(method, e) {
       // [v2.43.89] Batch endpoints — 1 round-trip por poll en vez de 3
       case 'espiaSync':                      return espiaSync(params);
       case 'espiaPushBatch':                 return espiaPushBatch(params);
+      // [v2.43.90] Production hardening — config (TURN) + device init (token HMAC)
+      case 'espiaConfig':                    return espiaConfig();
+      case 'espiaIniciarDispositivo':        return espiaIniciarDispositivo(params);
       case 'espiaSubirChunk':                return espiaSubirChunk(params);
       // [v2.43.61] Timeline + cleanup
       case 'espiaListarChunks':              return espiaListarChunks(params);

@@ -27793,14 +27793,21 @@ const MOS = (() => {
         claveAdmin: claveAdmin
       });
       console.log('[espia master] respuesta backend:', r);
-      // r es directamente { sesionId, ttl, ahora } — NO { ok, data }
       if (!r || !r.sesionId) {
         toast('Backend no devolvió sesionId', 'error');
         _espiaV2Cerrar('error_init');
         return;
       }
       _espiaV2.sesionId = r.sesionId;
-      _espiaV2.ttl = r.ttl;
+      _espiaV2.token    = r.token || null; // [v2.43.90] token HMAC
+      _espiaV2.ttl      = r.ttl;
+      // [v2.43.90] Si los 3 reintentos de FCM fallaron, avisar al master claramente
+      // y NO crear el WebRTC — el device no se va a enterar de nada.
+      if (r.pushOk === false) {
+        toast('No se pudo notificar al dispositivo (FCM falló ' + (r.pushIntentos || 3) + 'x). Revisá tokens y volvé a intentar.', 'error', 9000);
+        _espiaV2Cerrar('push_fallo');
+        return;
+      }
       _espiaV2IniciarPeerConnection();
     } catch(e) {
       // [v2.43.66] Si el backend devuelve 500, fetch ve "Failed to fetch" por CORS
@@ -27815,13 +27822,49 @@ const MOS = (() => {
     }
   }
 
+  // [v2.43.90] Helper que inyecta token HMAC automáticamente en cada call.
+  // Equivalente al _espiaCliWHPost del cliente. Todas las llamadas del módulo
+  // espía pasan por acá.
+  async function _espiaApiPost(action, params) {
+    const body = Object.assign({}, params || {});
+    const token = _espiaV2?.token;
+    if (token && body.token === undefined) body.token = token;
+    return await API.post(action, body);
+  }
+
   async function _espiaV2IniciarPeerConnection() {
     if (!_espiaV2) return;
-    // STUN público de Google
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }]
-    });
+    // [v2.43.90] Pedir iceServers al backend (TURN si configurado).
+    // Sin TURN, ~10% de redes con NAT simétrico no conectan jamás.
+    let iceServers = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+    try {
+      const cfg = await API.post('espiaConfig', {});
+      if (Array.isArray(cfg?.iceServers) && cfg.iceServers.length) {
+        iceServers = cfg.iceServers;
+        if (cfg.tieneTurn) console.log('[espia master] TURN disponible');
+      }
+    } catch(eC) { console.warn('[espia master] espiaConfig fallo (uso STUN local):', eC?.message); }
+    if (!_espiaV2) return;
+    const pc = new RTCPeerConnection({ iceServers });
     _espiaV2.pc = pc;
+    // [v2.43.90] Watchdog ICE failed → cierre graceful tras 30s
+    _espiaV2._iceFailedDesde = 0;
+    _espiaV2._iceWatchdogTimer = setInterval(() => {
+      if (!_espiaV2 || !_espiaV2._iceFailedDesde) return;
+      if (Date.now() - _espiaV2._iceFailedDesde > 30000) {
+        console.warn('[espia master] ICE failed >30s · cerrando');
+        toast('Conexión perdida con el dispositivo', 'warn');
+        _espiaV2Cerrar('ice_failed_persistente');
+      }
+    }, 5000);
+    // [v2.43.90] Timeout 45s en estado "conectando" — si el device no acepta
+    // permisos o el WebRTC no completa, mostrar mensaje claro en vez de spinner eterno.
+    _espiaV2._timeoutConectando = setTimeout(() => {
+      if (!_espiaV2) return;
+      if (_espiaV2.estado === 'live' || pc.connectionState === 'connected') return;
+      toast('El dispositivo no respondió en 45s. Posibles causas: permisos no aceptados, pantalla apagada, sin red.', 'warn', 10000);
+      _espiaV2Cerrar('timeout_conectando');
+    }, 45000);
     // Track recibido: asignar al video/audio element del modal
     // [v2.43.77] Identificación robusta de pantalla. Antes solo miraba si
     // track.label contenía 'screen'/'display' — falla cuando Chrome devuelve
@@ -27855,8 +27898,7 @@ const MOS = (() => {
       _espiaSfx('chime');
       _espiaV2RenderModal();
       _espiaV2ActualizarStream(tipo, stream);
-      // Reportar streams activos al backend (para audit)
-      API.post('espiaReportarStreams', {
+      _espiaApiPost('espiaReportarStreams', {
         sesionId: _espiaV2.sesionId,
         streams: {
           audio:    !!_espiaV2.streams.audio,
@@ -27872,12 +27914,15 @@ const MOS = (() => {
       const stubDc = pc.createDataChannel('master-stub', { negotiated: false, ordered: true });
       stubDc.onopen = () => console.log('[espia master] stub DC abierto');
     } catch(eS) { console.warn('[espia master] no se pudo crear stub DC:', eS.message); }
-    // [v2.43.84 BLINDAJE] ICE recovery automático
+    // [v2.43.90] ICE recovery + tracking de failed para watchdog 30s
     pc.oniceconnectionstatechange = () => {
       console.log('[espia master] ICE state:', pc.iceConnectionState);
+      if (!_espiaV2) return;
       if (pc.iceConnectionState === 'failed') {
-        console.warn('[espia master] ICE failed · restartIce');
+        if (!_espiaV2._iceFailedDesde) _espiaV2._iceFailedDesde = Date.now();
         try { pc.restartIce(); } catch(eRi) { console.warn('[espia master] restartIce fallo:', eRi.message); }
+      } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        _espiaV2._iceFailedDesde = 0;
       }
     };
     // DataChannel para GPS (device → master)
@@ -27894,22 +27939,35 @@ const MOS = (() => {
         };
       }
     };
-    // ICE local → mandar al backend
+    // [v2.43.90] ICE batch — cola con flush cada 250ms vía espiaPushBatch
+    _espiaV2._iceQueue = [];
     pc.onicecandidate = (ev) => {
-      if (ev.candidate) {
-        API.post('espiaAgregarIce', {
-          sesionId: _espiaV2.sesionId,
-          lado: 'master',
-          ice: ev.candidate.toJSON ? ev.candidate.toJSON() : ev.candidate
-        }).catch(()=>{});
-      }
+      if (!_espiaV2 || !ev.candidate) return;
+      const c = ev.candidate.toJSON ? ev.candidate.toJSON() : ev.candidate;
+      _espiaV2._iceQueue.push(c);
     };
+    _espiaV2._iceFlushTimer = setInterval(async () => {
+      if (!_espiaV2 || !_espiaV2._iceQueue.length) return;
+      const batch = _espiaV2._iceQueue.splice(0, _espiaV2._iceQueue.length);
+      try {
+        await _espiaApiPost('espiaPushBatch', {
+          sesionId: _espiaV2.sesionId, lado: 'master',
+          ice: batch.map(c => ({ ice: c }))
+        });
+      } catch(_){}
+    }, 250);
     pc.onconnectionstatechange = () => {
       const st = pc.connectionState;
-      if (_espiaV2) _espiaV2.estado = st;
+      if (!_espiaV2) return;
+      _espiaV2.estado = st;
       if (st === 'connected') {
         _espiaSfx('chime');
         _espiaV2.estado = 'live';
+        // [v2.43.90] Cancelar timeout 45s "conectando..." — ya conectó
+        if (_espiaV2._timeoutConectando) {
+          clearTimeout(_espiaV2._timeoutConectando);
+          _espiaV2._timeoutConectando = null;
+        }
         _espiaV2RenderModal();
       } else if (st === 'failed' || st === 'disconnected') {
         _espiaSfx('fail');
@@ -27917,15 +27975,12 @@ const MOS = (() => {
         _espiaV2RenderModal();
       }
     };
-    // Crear oferta y enviarla
     // [v2.43.70] Guards defensivos contra cierre del modal durante awaits.
-    // Si el user cierra el modal mid-flow, _espiaV2 = null → race que
-    // tiraba "Cannot set properties of null (setting 'pollTimer')".
     const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
-    if (!_espiaV2) return; // canceled by user
+    if (!_espiaV2) return;
     await pc.setLocalDescription(offer);
     if (!_espiaV2) return;
-    await API.post('espiaSubirOferta', { sesionId: _espiaV2.sesionId, sdp: JSON.stringify(offer) });
+    await _espiaApiPost('espiaSubirOferta', { sesionId: _espiaV2.sesionId, sdp: JSON.stringify(offer) });
     if (!_espiaV2) return;
     // Polling de respuesta + ICE del device
     _espiaV2.pollTimer = setInterval(_espiaV2Poll, 600);
@@ -27948,17 +28003,30 @@ const MOS = (() => {
                                 pc.signalingState === 'have-local-offer';
       const puedeReneg = pc.signalingState === 'stable' && !_espiaV2._renegEnCurso;
 
+      // [v2.43.90] Backoff exponencial — saltamos ticks ante errores consecutivos
+      if (_espiaV2._ticksAEsperar > 0) { _espiaV2._ticksAEsperar--; return; }
+
       // 1 sola llamada al backend que devuelve TODO lo que el master necesita
-      const d = await API.post('espiaSync', {
-        sesionId: _espiaV2.sesionId,
-        lado: 'master',
-        iceDesde: _espiaV2.pollIceDesde || 0,
-        necesito: {
-          sdpRespuesta:    necesitaRespuesta,
-          sdpRenegOferta:  puedeReneg,
-          ice:             true
+      let d;
+      try {
+        d = await _espiaApiPost('espiaSync', {
+          sesionId: _espiaV2.sesionId,
+          lado: 'master',
+          iceDesde: _espiaV2.pollIceDesde || 0,
+          necesito: {
+            sdpRespuesta:    necesitaRespuesta,
+            sdpRenegOferta:  puedeReneg,
+            ice:             true
+          }
+        });
+        if (_espiaV2 && _espiaV2._consErrores > 0) _espiaV2._consErrores = 0;
+      } catch(eS) {
+        if (_espiaV2) {
+          _espiaV2._consErrores = (_espiaV2._consErrores || 0) + 1;
+          _espiaV2._ticksAEsperar = Math.min(14, Math.pow(2, _espiaV2._consErrores) - 1);
         }
-      });
+        throw eS;
+      }
       if (!_espiaV2) return;
       if (!d) return;
 
@@ -28002,7 +28070,7 @@ const MOS = (() => {
             if (yaProcesada && _espiaV2._ultimaAnswerSinSubir) {
               // Subida de respuesta falló antes → solo reintentar subida
               console.log('[espia master] retry subida answer (no reprocesar)');
-              await API.post('espiaSubirRenegRespuesta', {
+              await _espiaApiPost('espiaSubirRenegRespuesta', {
                 sesionId: _espiaV2.sesionId,
                 sdp: _espiaV2._ultimaAnswerSinSubir
               });
@@ -28015,7 +28083,7 @@ const MOS = (() => {
               const answerStr = JSON.stringify(newAnswer);
               _espiaV2._ultimaOfertaProcesada = ofertaStr;
               _espiaV2._ultimaAnswerSinSubir = answerStr;
-              await API.post('espiaSubirRenegRespuesta', {
+              await _espiaApiPost('espiaSubirRenegRespuesta', {
                 sesionId: _espiaV2.sesionId, sdp: answerStr
               });
               _espiaV2._ultimaAnswerSinSubir = null;
@@ -28045,12 +28113,23 @@ const MOS = (() => {
     if (!_espiaV2) return;
     try { _espiaSfx('whoosh'); } catch(_){}
     if (_espiaV2.pollTimer) clearInterval(_espiaV2.pollTimer);
+    // [v2.43.90] Limpiar TODOS los timers nuevos
+    try { clearInterval(_espiaV2._iceFlushTimer); } catch(_){}
+    try { clearInterval(_espiaV2._iceWatchdogTimer); } catch(_){}
+    try { clearTimeout(_espiaV2._timeoutConectando); } catch(_){}
+    // Flush final ICE pendientes
+    if (_espiaV2._iceQueue?.length && _espiaV2.sesionId && _espiaV2.token) {
+      _espiaApiPost('espiaPushBatch', {
+        sesionId: _espiaV2.sesionId, lado: 'master',
+        ice: _espiaV2._iceQueue.map(c => ({ ice: c }))
+      }).catch(()=>{});
+    }
     try { _espiaV2.pc?.close(); } catch(_){}
     Object.values(_espiaV2.streams).forEach(s => {
       try { s?.getTracks().forEach(t => t.stop()); } catch(_){}
     });
     if (_espiaV2.sesionId) {
-      API.post('espiaCerrarSesion', { sesionId: _espiaV2.sesionId, motivo: motivo || 'manual', lado: 'master' }).catch(()=>{});
+      _espiaApiPost('espiaCerrarSesion', { sesionId: _espiaV2.sesionId, motivo: motivo || 'manual', lado: 'master' }).catch(()=>{});
     }
     const modal = document.getElementById('espiaV2Modal');
     if (modal) {

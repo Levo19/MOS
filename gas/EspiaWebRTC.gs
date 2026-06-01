@@ -123,20 +123,35 @@ function _espiaCrearSesionImpl(params) {
   // Síntoma: "Sesión no encontrada" en la petición inmediata posterior.
   try { SpreadsheetApp.flush(); } catch(_){}
 
-  // Notif push al dispositivo con el sesionId
+  // [v2.43.90] Push con reintentos. Devolvemos pushOk al master para que
+  // muestre error claro si los 3 intentos fallaron (en vez de loader infinito).
+  var pushOk = false;
+  var pushIntentos = 0;
   try {
-    if (typeof _enviarPushDispositivo === 'function') {
-      _enviarPushDispositivo(deviceId, {
-        idNotif: 'MOS_ESPIA_INICIAR',
-        sesionId: sesionId,
-        masterId: masterId,
-        ttl: ESPIA_TTL_MS,
-        silencioso: true
-      });
-    }
-  } catch(e) { Logger.log('[espia] push fallo: ' + e.message); }
+    var pushRes = _enviarPushDispositivoConRetry(deviceId, {
+      idNotif: 'MOS_ESPIA_INICIAR',
+      sesionId: sesionId,
+      masterId: masterId,
+      ttl: ESPIA_TTL_MS,
+      silencioso: true
+    }, 3);
+    pushOk = !!(pushRes && pushRes.ok);
+    pushIntentos = (pushRes && pushRes.data && pushRes.data.intentos) || 0;
+    if (!pushOk) Logger.log('[espia] push fallo definitivo: ' + (pushRes && pushRes.error));
+  } catch(e) { Logger.log('[espia] push excepción: ' + e.message); }
 
-  return { ok: true, data: { sesionId: sesionId, ttl: ESPIA_TTL_MS, ahora: ahora.toISOString() } };
+  // [v2.43.90] Token HMAC del master — el frontend lo guarda y lo manda en
+  // cada call subsiguiente. sesionId ya no es secreto suficiente.
+  var tokenMaster = _firmarToken(sesionId, 'master', deviceId);
+
+  return { ok: true, data: {
+    sesionId: sesionId,
+    token: tokenMaster,
+    ttl: ESPIA_TTL_MS,
+    ahora: ahora.toISOString(),
+    pushOk: pushOk,
+    pushIntentos: pushIntentos
+  } };
 }
 
 // ── 2. Master escribe oferta SDP ───────────────────────────────────
@@ -145,6 +160,10 @@ function espiaSubirOferta(params) {
   var sdp      = String(params.sdp || '');
   if (!sesionId || !sdp) return { ok: false, error: 'Requiere sesionId y sdp' };
   if (sdp.length > ESPIA_SDP_MAX_CHARS) return { ok: false, error: 'SDP demasiado grande (' + sdp.length + ' > ' + ESPIA_SDP_MAX_CHARS + ')' };
+  var row = _buscarSesion(sesionId);
+  if (!row) return { ok: false, error: 'Sesión no encontrada' };
+  var authErr = _autenticarEndpoint(params, row);
+  if (authErr) return authErr;
   return _actualizarColumnaSesion(sesionId, 'sdpOferta', sdp);
 }
 
@@ -162,9 +181,10 @@ function espiaSubirRespuesta(params) {
   var sdp      = String(params.sdp || '');
   if (!sesionId || !sdp) return { ok: false, error: 'Requiere sesionId y sdp' };
   if (sdp.length > ESPIA_SDP_MAX_CHARS) return { ok: false, error: 'SDP demasiado grande (' + sdp.length + ' > ' + ESPIA_SDP_MAX_CHARS + ')' };
-  // [v2.43.62] Validar transición FSM
   var rowChk = _buscarSesion(sesionId);
   if (!rowChk) return { ok: false, error: 'Sesión no encontrada' };
+  var authErr = _autenticarEndpoint(params, rowChk);
+  if (authErr) return authErr;
   if (!_validarTransicionEstado(rowChk.estado, 'CONECTANDO')) {
     return { ok: false, error: 'Transición inválida: ' + rowChk.estado + '→CONECTANDO' };
   }
@@ -203,7 +223,10 @@ function espiaAgregarIce(params) {
   var ice      = params.ice;
   if (!sesionId || !lado || !ice) return { ok: false, error: 'Requiere sesionId, lado, ice' };
   if (lado !== 'master' && lado !== 'device') return { ok: false, error: 'lado: master|device' };
-  // [v2.43.61] Usar helper atómico que lee + agrega + escribe bajo lock
+  var row = _buscarSesion(sesionId);
+  if (!row) return { ok: false, error: 'Sesión no encontrada' };
+  var authErr = _autenticarEndpoint(params, row);
+  if (authErr) return authErr;
   var col = (lado === 'master') ? 'iceMaster' : 'iceDevice';
   return _agregarAArrayJsonSesion(sesionId, col, { ts: Date.now(), ice: ice });
 }
@@ -243,9 +266,10 @@ function espiaEstadoSesion(params) {
 function espiaReportarStreams(params) {
   var sesionId = String(params.sesionId || '').trim();
   var streams  = params.streams || {};
-  // [v2.43.87] Validar estado — no reanimar sesiones CERRADAS
   var row = _buscarSesion(sesionId);
   if (!row) return { ok: false, error: 'Sesión no encontrada' };
+  var authErr = _autenticarEndpoint(params, row);
+  if (authErr) return authErr;
   var estActual = String(row.estado || '').toUpperCase();
   if (estActual === 'CERRADA') {
     return { ok: false, error: 'Sesión ya cerrada · no se reportan streams' };
@@ -261,6 +285,9 @@ function espiaCerrarSesion(params) {
   var lado     = String(params.lado || 'desconocido');
   var row = _buscarSesion(sesionId);
   if (!row) return { ok: false, error: 'Sesión no encontrada' };
+  // [v2.43.90] Auth — sin esto, cualquiera con sesionId podía cerrar sesión ajena
+  var authErr = _autenticarEndpoint(params, row);
+  if (authErr) return authErr;
   // [v2.43.87] Idempotente: si ya está CERRADA, no auditar otra vez
   if (String(row.estado || '').toUpperCase() === 'CERRADA') {
     return { ok: true, data: { yaCerrada: true } };
@@ -315,6 +342,8 @@ function espiaSubirChunk(params) {
     if (!row || String(row.deviceId) !== deviceId) {
       return { ok: false, error: 'sesionId no corresponde a este deviceId' };
     }
+    var authErrChk = _autenticarEndpoint(params, row);
+    if (authErrChk) return authErrChk;
     if (_sesionExpiro(row)) return { ok: false, error: 'sesión expirada' };
   }
 
@@ -410,13 +439,13 @@ function espiaSubirRenegOferta(params) {
   var sdp      = String(params.sdp || '');
   if (!sesionId || !sdp) return { ok: false, error: 'Requiere sesionId y sdp' };
   if (sdp.length > ESPIA_SDP_MAX_CHARS) return { ok: false, error: 'SDP demasiado grande (' + sdp.length + ' > ' + ESPIA_SDP_MAX_CHARS + ')' };
-  // [v2.43.87] Solo aceptar reneg de sesiones vivas
   var row = _buscarSesion(sesionId);
   if (!row) return { ok: false, error: 'Sesión no encontrada' };
+  var authErr = _autenticarEndpoint(params, row);
+  if (authErr) return authErr;
   var est = String(row.estado || '').toUpperCase();
   if (est === 'CERRADA') return { ok: false, error: 'Sesión cerrada · no se acepta reneg' };
   if (_sesionExpiro(row)) return { ok: false, error: 'Sesión expirada', codigo: 'EXPIRADO' };
-  // [v2.43.83] Al subir NUEVA oferta, limpiar respuesta vieja
   return _actualizarColumnaSesion(sesionId, 'sdpRenegOferta', sdp, { sdpRenegRespuesta: '' });
 }
 
@@ -432,12 +461,12 @@ function espiaSubirRenegRespuesta(params) {
   var sdp      = String(params.sdp || '');
   if (!sesionId || !sdp) return { ok: false, error: 'Requiere sesionId y sdp' };
   if (sdp.length > ESPIA_SDP_MAX_CHARS) return { ok: false, error: 'SDP demasiado grande (' + sdp.length + ' > ' + ESPIA_SDP_MAX_CHARS + ')' };
-  // [v2.43.87] Validar sesión viva
   var row = _buscarSesion(sesionId);
   if (!row) return { ok: false, error: 'Sesión no encontrada' };
+  var authErr = _autenticarEndpoint(params, row);
+  if (authErr) return authErr;
   var est = String(row.estado || '').toUpperCase();
   if (est === 'CERRADA') return { ok: false, error: 'Sesión cerrada' };
-  // Limpiar la oferta para que el cliente no la vuelva a leer
   return _actualizarColumnaSesion(sesionId, 'sdpRenegRespuesta', sdp, { sdpRenegOferta: '' });
 }
 
@@ -471,6 +500,8 @@ function espiaSync(params) {
 
   var row = _buscarSesion(sesionId);
   if (!row) return { ok: false, error: 'Sesión no encontrada', codigo: 'NO_EXISTE' };
+  var authErr = _autenticarEndpoint(params, row);
+  if (authErr) return authErr;
   if (_sesionExpiro(row)) return { ok: false, error: 'Sesión expirada', codigo: 'EXPIRADO' };
 
   var snap = {
@@ -536,6 +567,8 @@ function espiaPushBatch(params) {
   try {
     var row = _buscarSesion(sesionId);
     if (!row) return { ok: false, error: 'Sesión no encontrada' };
+    var authErr = _autenticarEndpoint(params, row);
+    if (authErr) return authErr;
     var estActual = String(row.estado || '').toUpperCase();
     if (estActual === 'CERRADA' && !params.cerrar) {
       return { ok: false, error: 'Sesión cerrada' };
@@ -1399,4 +1432,153 @@ function _ultimoTokenRegistradoPorDeviceId(deviceId) {
     }
     return mejor ? [mejor] : [];
   } catch(_) { return []; }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// [v2.43.90] PRODUCTION HARDENING — Auth HMAC + TURN + FCM retry
+// ────────────────────────────────────────────────────────────────────
+// Migra el sistema a producción robusta:
+//   1. Tokens HMAC firmados — cada side (master/device) recibe su token al
+//      iniciar; los endpoints lo exigen. sesionId deja de ser secreto.
+//   2. ICE config endpoint — provee TURN si está configurado en Properties.
+//   3. FCM con reintentos — 3 intentos exponenciales antes de rendirse.
+//   4. Compat hacia atrás — durante deprecation window, requests sin token
+//      siguen pasando con WARNING en logs. Sunset a las 2 semanas.
+// ════════════════════════════════════════════════════════════════════
+
+// ── Auth HMAC ────────────────────────────────────────────────────────
+function _obtenerHmacKey() {
+  var props = PropertiesService.getScriptProperties();
+  var key = props.getProperty('ESPIA_HMAC_KEY');
+  if (!key || key.length < 32) {
+    // Auto-generar la primera vez. Borrar el property invalida todos los
+    // tokens existentes (forzando re-handshake) — útil ante leak sospechado.
+    var raw = Utilities.getUuid() + Utilities.getUuid() + Date.now();
+    key = Utilities.base64Encode(Utilities.computeDigest(
+      Utilities.DigestAlgorithm.SHA_256,
+      raw, Utilities.Charset.UTF_8
+    ));
+    props.setProperty('ESPIA_HMAC_KEY', key);
+    Logger.log('[espia auth] ESPIA_HMAC_KEY auto-generada · ' + key.substring(0, 8) + '...');
+  }
+  return key;
+}
+
+// Firma "sesionId|lado|deviceId" → token base64url corto (~44 chars).
+// `deviceId` se incluye para que un token de master no sirva para device.
+function _firmarToken(sesionId, lado, deviceId) {
+  var key = _obtenerHmacKey();
+  var payload = String(sesionId) + '|' + String(lado) + '|' + String(deviceId || '');
+  var raw = Utilities.computeHmacSha256Signature(payload, key);
+  return Utilities.base64Encode(raw).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// Verifica token contra el payload esperado.
+//   null  = sin token (caller decide si permitir por compat)
+//   true  = token válido
+//   false = token presente pero inválido (rechazar)
+function _verificarToken(sesionId, lado, deviceId, token) {
+  if (!token) return null;
+  try {
+    var esperado = _firmarToken(sesionId, lado, deviceId);
+    if (esperado.length !== token.length) return false;
+    // Comparación constante-tiempo (defensa débil contra timing pero best-effort en GAS)
+    var diff = 0;
+    for (var i = 0; i < esperado.length; i++) {
+      diff |= esperado.charCodeAt(i) ^ token.charCodeAt(i);
+    }
+    return diff === 0;
+  } catch(_) { return false; }
+}
+
+// Helper que cada endpoint usa al comienzo. Devuelve null si OK, o {ok:false,...}
+// si auth falló. Durante compat window: sin token → log warning + permitir.
+function _autenticarEndpoint(params, row) {
+  var token = params && params.token ? String(params.token).trim() : '';
+  var lado  = String((params && params.lado) || '').toLowerCase();
+  var deviceId = row ? String(row.deviceId || '') : '';
+  if (lado === 'master' || lado === 'device') {
+    var ok = _verificarToken(row.sesionId, lado, deviceId, token);
+    if (ok === false) return { ok: false, error: 'Token inválido', codigo: 'AUTH_FAIL' };
+    if (ok === null) {
+      Logger.log('[espia auth WARN] endpoint sin token (compat) sesionId=' + row.sesionId + ' lado=' + lado);
+    }
+    return null;
+  }
+  // Lado no declarado: aceptar token de master O device
+  if (token) {
+    var okM = _verificarToken(row.sesionId, 'master', deviceId, token);
+    var okD = _verificarToken(row.sesionId, 'device', deviceId, token);
+    if (!okM && !okD) return { ok: false, error: 'Token inválido', codigo: 'AUTH_FAIL' };
+  } else {
+    Logger.log('[espia auth WARN] endpoint sin token + sin lado (compat) sesionId=' + row.sesionId);
+  }
+  return null;
+}
+
+// ── Endpoint: ICE config (STUN + TURN si está) ───────────────────────
+function espiaConfig() {
+  var props = PropertiesService.getScriptProperties();
+  var iceServers = [
+    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
+  ];
+  var turnUrl  = props.getProperty('ESPIA_TURN_URL');
+  var turnUser = props.getProperty('ESPIA_TURN_USER');
+  var turnCred = props.getProperty('ESPIA_TURN_CRED');
+  if (turnUrl && turnUser && turnCred) {
+    iceServers.push({
+      urls: turnUrl.split(',').map(function(u){ return u.trim(); }).filter(Boolean),
+      username: turnUser,
+      credential: turnCred
+    });
+  }
+  return { ok: true, data: {
+    iceServers: iceServers,
+    tieneTurn: !!(turnUrl && turnUser && turnCred),
+    ttlSesionMs: ESPIA_TTL_MS,
+    ahora: Date.now()
+  } };
+}
+
+// ── Endpoint: device activa su sesión (devuelve token específico) ────
+function espiaIniciarDispositivo(params) {
+  var sesionId = String((params && params.sesionId) || '').trim();
+  var deviceId = String((params && params.deviceId) || '').trim();
+  if (!sesionId) return { ok: false, error: 'sesionId requerido' };
+  if (!deviceId) return { ok: false, error: 'deviceId requerido' };
+  var row = _buscarSesion(sesionId);
+  if (!row) return { ok: false, error: 'Sesión no encontrada' };
+  if (String(row.deviceId || '').trim() !== deviceId) {
+    return { ok: false, error: 'deviceId no coincide con la sesión' };
+  }
+  if (_sesionExpiro(row)) return { ok: false, error: 'Sesión expirada', codigo: 'EXPIRADO' };
+  var token = _firmarToken(sesionId, 'device', deviceId);
+  return { ok: true, data: {
+    token: token,
+    masterId: row.masterId,
+    estado: row.estado,
+    expiraEn: _msHastaExpiracion(row)
+  } };
+}
+
+// ── FCM Push con reintentos ──────────────────────────────────────────
+function _enviarPushDispositivoConRetry(deviceId, payload, intentos) {
+  var maxIntentos = intentos || 3;
+  var ultimoError = '';
+  var espera = [0, 400, 1400]; // backoff entre intentos
+  for (var i = 0; i < maxIntentos; i++) {
+    if (i > 0 && espera[i]) Utilities.sleep(espera[i]);
+    try {
+      var r = _enviarPushDispositivo(deviceId, payload);
+      if (r && r.ok && r.data && r.data.enviados > 0) {
+        if (i > 0) Logger.log('[espia push retry] OK en intento ' + (i + 1));
+        return { ok: true, data: { intentos: i + 1, enviados: r.data.enviados } };
+      }
+      ultimoError = (r && r.error) || 'sin tokens / 0 enviados';
+    } catch(e) {
+      ultimoError = e.message;
+    }
+    Logger.log('[espia push retry] intento ' + (i + 1) + '/' + maxIntentos + ' fallo: ' + ultimoError);
+  }
+  return { ok: false, error: ultimoError, data: { intentos: maxIntentos, enviados: 0 } };
 }
