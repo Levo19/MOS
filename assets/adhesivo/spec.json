@@ -1,0 +1,48 @@
+{
+  "version": "1.0.0",
+  "descripcion": "Especificación canónica del adhesivo Tony's. Single source of truth para WH y MOS.",
+  "tamano_mm":      { "ancho": 50, "alto": 25 },
+  "dpi":            203,
+  "tamano_dots":    { "ancho": 400, "alto": 200 },
+  "margenes_dots":  { "izq": 5, "der": 5, "arriba": 2, "abajo": 2 },
+  "logo": {
+    "archivo_svg":  "logo-tonys.svg",
+    "archivo_png":  "logo-tonys-S.png",
+    "archivo_hex":  "logo-tonys-S.hex",
+    "archivo_b64":  "logo-tonys-S.b64",
+    "ancho_dots":   184,
+    "alto_dots":    36,
+    "bytes_por_row": 23,
+    "x_dots":       5,
+    "y_dots":       4
+  },
+  "fecha": {
+    "formato":      "MES/yyyy",
+    "tabla_meses":  ["ENE","FEB","MAR","ABR","MAY","JUN","JUL","AGO","SEP","OCT","NOV","DIC"],
+    "anios_validez": 1,
+    "x_dots":       210,
+    "y_dots":       8,
+    "font_tspl":    3,
+    "label":        "Vto"
+  },
+  "barcode": {
+    "tipo":               "CODE128",
+    "narrow_dots":        2,
+    "alto_dots":          44,
+    "y_dots":             128,
+    "quiet_zone_factor":  15,
+    "umbral_narrow1_dots": 300,
+    "fallback_narrow":    1
+  },
+  "descripcion_producto": {
+    "y_dots":          54,
+    "max_ancho_dots":  370,
+    "font_normal":     3,
+    "font_highlight":  4,
+    "max_lineas":      2
+  },
+  "codigo_texto": {
+    "y_dots":  170,
+    "font_tspl": 1
+  }
+}

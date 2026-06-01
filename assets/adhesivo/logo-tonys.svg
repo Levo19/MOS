@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Logo Tony's — versión block bold + casita.
+  180×36 dots @ 203 DPI = 22.5mm × 4.5mm.
+  Este SVG es la REPRESENTACIÓN VISUAL del diseño.
+  La impresión y el preview MOS usan logo-tonys-S.png (generado por gen.py),
+  que es 1bpp con dithering Floyd-Steinberg para máxima fidelidad térmica.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 36" width="540" height="108" shape-rendering="crispEdges">
+  <rect width="180" height="36" fill="white"/>
+
+  <!-- Casita (icono isotipo) — 28×30 dots, x=2 y=3 -->
+  <g fill="black">
+    <!-- Techo (triángulo) -->
+    <polygon points="16,3 4,15 28,15"/>
+    <!-- Cuerpo (rectángulo) -->
+    <rect x="6" y="15" width="20" height="17"/>
+    <!-- Puerta (hueco blanco) -->
+    <rect x="13" y="22" width="6" height="10" fill="white"/>
+    <!-- Ventana izq -->
+    <rect x="8" y="18" width="3" height="3" fill="white"/>
+    <!-- Ventana der -->
+    <rect x="21" y="18" width="3" height="3" fill="white"/>
+  </g>
+
+  <!-- Separación 8 dots → texto empieza en x=36 -->
+
+  <!-- TONY'S — geométrico bold, altura 28 dots, baseline en y=32 -->
+  <g fill="black" font-family="Impact, 'Arial Black', sans-serif" font-weight="900" font-size="32">
+    <text x="36" y="31">TONY'S</text>
+  </g>
+
+  <!-- Indicadores (zone safe) — solo visibles en este SVG, no se rasterizan -->
+  <g stroke="red" stroke-width="0.2" fill="none" opacity="0">
+    <rect x="0" y="0" width="180" height="36"/>
+  </g>
+</svg>

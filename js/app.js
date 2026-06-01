@@ -12032,18 +12032,23 @@ const MOS = (() => {
     return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '');
   }
 
+  // [v2.43.115] Formato MES/yyyy (ej "ENE/2027"). Tabla manual MESES_ES
+  // — réplica del backend WH _calcVencimientoEtq. Fuente canónica:
+  // /ProyectoMOS/assets/adhesivo/spec.json
+  const _MESES_ES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+
   function _adhesivoCalcVto(fechaEnvasado) {
     const d = fechaEnvasado ? new Date(fechaEnvasado) : new Date();
     d.setFullYear(d.getFullYear() + 1);
-    return _envFmtDdMmYy(d);
+    return _envFmtMesAnio(d);
   }
 
-  function _envFmtDdMmYy(d) {
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const yy = String(d.getFullYear()).slice(-2);
-    return dd + '/' + mm + '/' + yy;
+  function _envFmtMesAnio(d) {
+    return _MESES_ES[d.getMonth()] + '/' + d.getFullYear();
   }
+  // Aliases legacy (por si quedó alguna referencia en el archivo)
+  const _envFmtMmYy = _envFmtMesAnio;
+  const _envFmtDdMmYy = _envFmtMesAnio;
 
   // Detecta tokens diferenciadores (replica de _detectHighlightsEtq en WH).
   // minPrefix=1 + último siempre highlight.
@@ -12275,24 +12280,21 @@ const MOS = (() => {
       ).join(' ');
       return `<div class="adhesivo-linea">${parts}</div>`;
     }).join('');
-    // [v2.43.113] Replica EXACTA del cálculo del backend: solo mostrar flechas
-    // si en la impresión real van a caber (fuera de la quiet zone Code128).
+    // [v2.43.115] Replica EXACTA del cálculo del backend (Envasados.gs).
+    // Sin flechas — quiet zone amplio (15×narrow) ya garantiza lectura.
+    // Logo: TONY'S block + casita (regenerado, mismo PNG que se imprime).
     const bcLen = (datos.codigoBarra || '').length;
     const modules = 11 * bcLen + 35;
     let narrow = 2;
     let bWidth = modules * narrow;
-    if (bWidth > 360) { narrow = 1; bWidth = modules; }
-    const quietZoneMin = 10 * narrow;
-    const bX = Math.max(20, Math.floor((400 - bWidth) / 2));
-    const bEndX = bX + bWidth;
-    const flechaIzq = bX >= 5 + 16 + quietZoneMin;
-    const flechaDer = (bEndX + 5 >= bEndX + quietZoneMin) && (bEndX + 5 + 16 <= 395);
-    const arrowIzqHTML = flechaIzq ? '<span class="adhesivo-bc-arrow">›</span>' : '<span class="adhesivo-bc-spacer"></span>';
-    const arrowDerHTML = flechaDer ? '<span class="adhesivo-bc-arrow">‹</span>' : '<span class="adhesivo-bc-spacer"></span>';
+    if (bWidth > 300) { narrow = 1; bWidth = modules; }
+    // Ancho del barcode en porcentaje del adhesivo (para CSS) — el preview
+    // refleja exactamente cuánto ocupa en la impresión real (de 400 dots).
+    const bWidthPct = (bWidth / 400 * 100).toFixed(2);
     return `
       <div class="adhesivo-etiqueta">
         <div class="adhesivo-etq-top">
-          <img class="adhesivo-logo-real" src="${_ADHESIVO_LOGO_DATAURI}" alt="Caserito Tony's">
+          <img class="adhesivo-logo-real" src="${_ADHESIVO_LOGO_DATAURI}" alt="Tony's">
           <div class="adhesivo-vto">
             <span class="adhesivo-vto-lbl">Vto</span>
             <span class="adhesivo-vto-val">${datos.vto}</span>
@@ -12301,29 +12303,37 @@ const MOS = (() => {
         <div class="adhesivo-divider"></div>
         <div class="adhesivo-desc">${linesHTML}</div>
         <div class="adhesivo-barcode-wrap">
-          ${arrowIzqHTML}
-          <svg id="adhesivoBarcodeSVG"></svg>
-          ${arrowDerHTML}
+          <svg id="adhesivoBarcodeSVG" style="width:${bWidthPct}%;"></svg>
         </div>
         <div class="adhesivo-codigo">${_escapeHtml(datos.codigoBarra)}</div>
         <div class="adhesivo-cantidad-tag">×${cantidad}</div>
       </div>`;
   }
 
-  // [v2.43.111] Logo bitmap REAL de la etiqueta (PNG 180×36, mismo que
-  // genera Python+Pillow y que termina en LOGO_TSPL_HEX del backend).
-  // 840 bytes en base64. Si el logo cambia, regenerar con:
-  //   base64 -w0 warehouseMos/preview-etiquetas/logo-preview-4x.png
-  const _ADHESIVO_LOGO_DATAURI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAtAAAACQAQAAAAAJ62F0AAACPElEQVR4nO2bW27EIAxFjdV/e/+76w7sFVAZhwzzUpkWt4LhapoHic7HHdfckDZliBKGkWGjb7QNudE25B8MYQ5DjxdOif449qrD0TicuAiay+d7JX4TQ+LqWo+fqgTwMKDo8oZgOJqB2sJWr/Qh6AjhxGgFEAE9GwTTk9jN8io6RDgxmoGssKsUBORXvXp2Q+LQCczai7vc+H4lfRND4uZGhVLU1OElcV7cEIxDp2xlTaWmE9SDZ4Yq+w0LG4JxaMhZbGOCcmoDfi5kg3ZOQgLZu4yADXdoTkMwFM3ttMiXQ2XlS/qrF8jH+tBRwknR2s6KcOWjjVNJJax2iYTy56OE8gQdJpwUzU1ZU1vYJY2YybYXqXdRb/ib1ZAwIQh8JheAllxdXRW2Y18pYZsXfZi60WHCSdHUekd+ctat9Q9QkuPCMW7TaQ86TDglGmre8CSSPYBY1LDVJ/Lm7AOWRWysxpSdQ0Z4nc+rZ82b13Xtb2e+kb8y4sUstiJVqtrbuO3oKra8jh6iddBqOcNKuDyQEzApMNjcaRebqn8dPUjLobk8tZfEbRNk6Se9r2++Qf9Wc6NTug3N+uDuw/fX0AHCZdCU7cPWqM3/krKVfU372UuETvQgLYemR08t+saG/AFavXGQJ740Ev1TrY6WI27vuTHOa7FN7SZ5tgqZBK33zVn3e/QQr8WWTptVvyLlNy6+IX/3pOmyPXW87r3TztcBX6McvjbmUv/q9azFh3HotP+vYIWvETcarvQFMOU6503TLEkAAAAASUVORK5CYII=';
+  // [v2.43.115] Logo bitmap REAL — REGENERADO con TONY'S block + casita
+  // (sin "Caserito"). Fuente: /ProyectoMOS/assets/adhesivo/logo-tonys-S.b64
+  // El bitmap es el MISMO PNG que se imprime físicamente vía LOGO_TSPL_HEX
+  // en Envasados.gs (ambos generados por gen.py, deterministicos).
+  // Para regenerar: cd ProyectoMOS/assets/adhesivo && python gen.py
+  const _ADHESIVO_LOGO_DATAURI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALgAAAAkAQAAAAAS7M1SAAAA1ElEQVR42pWTPQ7DIAxGP9OoZMzWsTlCb5AcqTcIvRm9icd0Y8hAJYQ75I9WRBUswOMJbAwkyDaFYm6yCxI7CYAGyGq+d/4qFhgUIuf3CS6ds0c983HaYEh9joleO9cu3M6ZabGIqW/SQCvPPSBilAD2FLQHgAEIdvEjwJk01QSMK+1B8bEILg1vP0kx0jAwKHgQGXUDzits7eE999XKnd52bfjQb+sMr4Gm+VfHy+u3kJ3wt18VvhNV6NPcPand+Zv68vdpCv3kCKedlrXZbUSF/+UDXd5UlxK2kNcAAAAASUVORK5CYII=';
 
   function _adhesivoDibujarBarcode(codigoBarra) {
     const svg = document.getElementById('adhesivoBarcodeSVG');
     if (!svg || typeof JsBarcode === 'undefined') return;
     try {
-      // [v2.43.112] Más pequeño + márgenes JsBarcode internos = quiet zone visible
+      // [v2.43.115] PIXEL-PERFECT match con TSPL backend.
+      // Replicamos el cálculo de narrow del backend: si con narrow=2 el barcode
+      // supera 300 dots, JsBarcode usa width=1 (más angosto). Si entra cómodo
+      // con narrow=2, usamos width=1.4 (escalado visual). Mantenemos margin=15
+      // que reproduce el quiet zone 15×narrow del backend.
+      const bcLen = String(codigoBarra).length;
+      const wouldOverflow = (11 * bcLen + 35) * 2 > 300;
+      const bcWidth  = wouldOverflow ? 1   : 1.4;
+      const bcMargin = wouldOverflow ? 8   : 15;
       JsBarcode(svg, String(codigoBarra), {
-        format: 'CODE128', width: 1.4, height: 32,
-        displayValue: false, margin: 8, background: '#ffffff', lineColor: '#000000'
+        format: 'CODE128', width: bcWidth, height: 32,
+        displayValue: false, margin: bcMargin,
+        background: '#ffffff', lineColor: '#000000'
       });
     } catch(e) { console.warn('[adhesivo] barcode render fail:', e.message); }
   }

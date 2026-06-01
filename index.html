@@ -8123,7 +8123,7 @@
     @keyframes adhesivoOut { to   { opacity:0; transform:scale(.96) } }
 
     .adhesivo-modal {
-      width: 100%; max-width: 560px;
+      width: 100%; max-width: 680px;  /* [v2.43.115] acomoda adhesivo 600px + padding */
       background: linear-gradient(180deg,#0a1424,#070d18);
       border: 1px solid rgba(251,191,36,.35);
       border-radius: 18px;
@@ -8170,21 +8170,24 @@
     }
     .adhesivo-preview { padding: 6px; }
 
-    /* [v2.43.112] Etiqueta visual a escala 2:1 (400×200 dots reales → 480×240 px)
-       Padding interno mínimo (6px) — más fiel al impreso físico que tiene
-       márgenes muy chicos. El padding viejo de 14px era muy generoso vs la realidad. */
+    /* [v2.43.115] Pixel-perfect match con TSPL2.
+       Escala 1.5× sobre 400×200 dots reales → 600×300 px en CSS.
+       Cada dot TSPL = 1.5 px. Esto permite usar coordenadas TSPL directas
+       multiplicadas por 1.5 y tener fidelidad visual con la impresión. */
     .adhesivo-etiqueta {
-      width: 480px; height: 240px;
+      width: 600px; height: 300px;
       background: #ffffff;
       border-radius: 8px;
       box-shadow: 0 10px 32px -8px rgba(251,191,36,.45),
                   0 0 0 2px rgba(251,191,36,.55),
                   inset 0 0 0 1px rgba(0,0,0,.05);
       position: relative;
-      padding: 6px 8px;
+      /* Padding 7px ≈ 5 dots TSPL × 1.5 — matchea el margen izquierdo
+         del backend (BITMAP 5,2 / BAR 5,42 / barcodeX ≥ 20) */
+      padding: 3px 7px;
       display: flex; flex-direction: column;
       color: #000;
-      font-family: 'Lilita One', 'Arial Black', sans-serif;
+      font-family: 'Arial Black', sans-serif;
       animation: adhesivoGlow 3s ease-in-out infinite alternate;
     }
     @keyframes adhesivoGlow {
@@ -8197,77 +8200,89 @@
     }
     .adhesivo-etq-top {
       display: flex; align-items: flex-start; justify-content: space-between;
-      gap: 12px;
+      gap: 14px;
+      min-height: 54px;   /* logo 36 dots × 1.5 = 54 px */
     }
-    /* [v2.43.111] Logo bitmap REAL embebido en base64 (mismo PNG que LOGO_TSPL_HEX) */
+    /* Logo bitmap REAL (mismo PNG que LOGO_TSPL_HEX). Renderiza nítido
+       gracias a image-rendering: pixelated. Width 276px = 184 dots × 1.5. */
     .adhesivo-logo-real {
-      width: 140px; height: auto;
+      width: 276px; height: auto;
       image-rendering: pixelated;
       image-rendering: -moz-crisp-edges;
       image-rendering: crisp-edges;
       display: block;
     }
+    /* Vto: en TSPL es TEXT 280,12,"2" → font 2 (8w×12h dots) en X=280.
+       "Vto ENE/2027" = 12 chars × 8 = 96 dots wide × 12 tall.
+       En px: 144×18 (escala 1.5×). */
     .adhesivo-vto {
-      text-align: right; font-family: monospace;
+      text-align: right; font-family: 'Consolas', 'Courier New', monospace;
+      padding-top: 12px;     /* 12 dots TSPL */
     }
-    .adhesivo-vto-lbl { font-size: 10px; color: #555; font-weight: 600; }
-    .adhesivo-vto-val { font-size: 14px; font-weight: 900; color: #111; }
+    .adhesivo-vto-lbl { font-size: 11px; color: #555; font-weight: 600; letter-spacing: .5px; }
+    .adhesivo-vto-val { font-size: 18px; font-weight: 900; color: #111; letter-spacing: .5px; }
 
+    /* Divisor: TSPL BAR 5,42,390,1 — línea 1 dot thick a Y=42.
+       En CSS: 1.5px thick (1 dot × 1.5). Margen 6px arriba (4 dots TSPL). */
     .adhesivo-divider {
-      height: 1px; background: #000; margin: 3px 0 4px;
+      height: 1.5px; background: #000; margin: 6px 0 6px;
     }
+    /* Descripción: TSPL startY=46, LINE_H=38, SPACE=8 dots.
+       Font3 normal=16×24 dots, Font4 highlight=24×32 dots. */
     .adhesivo-desc {
       flex: 1; display: flex; flex-direction: column; justify-content: center;
-      align-items: center; gap: 2px; text-align: center;
+      align-items: center; gap: 4px; text-align: center;
+      min-height: 96px;  /* 64 dots TSPL × 1.5 */
     }
     .adhesivo-linea {
-      display: flex; gap: 7px; flex-wrap: wrap; justify-content: center;
+      display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;
       align-items: baseline;
     }
     .adhesivo-tok {
-      font-size: 17px; font-weight: 700; color: #111;
+      /* Font3 TSPL = 16w × 24h dots → 24w × 36h px (escala 1.5×).
+         Pero font-size se mide diferente — uso 22px que visualmente
+         iguala la densidad TSPL. */
+      font-size: 22px; font-weight: 700; color: #111;
       font-family: 'Arial Black', sans-serif;
-      letter-spacing: .5px;
+      letter-spacing: 1px; line-height: 1.05;
     }
     .adhesivo-tok-hl {
-      font-size: 24px; font-weight: 900; color: #000;
+      /* Font4 TSPL = 24w × 32h dots — un 50% más grande que font3. */
+      font-size: 32px; font-weight: 900; color: #000;
       animation: adhesivoTokPulse 2.4s ease-in-out infinite;
     }
     @keyframes adhesivoTokPulse {
       0%, 100% { text-shadow: 0 0 0 rgba(251,191,36,0); }
       50%      { text-shadow: 0 0 12px rgba(251,191,36,.55); }
     }
-    /* [v2.43.112] Barcode más compacto + flechas guía visuales (>...<) */
+    /* Barcode: TSPL Y=128, height=44, narrow=1 o 2 → ancho variable.
+       Sin flechas — quiet zone amplio (15×narrow) lo reemplaza. */
     .adhesivo-barcode-wrap {
-      margin-top: 2px;
+      margin-top: 4px;
       display: flex; flex-direction: row; align-items: center;
-      justify-content: center; gap: 6px;
+      justify-content: center;
+      height: 66px;  /* 44 dots TSPL × 1.5 */
     }
     .adhesivo-barcode-wrap svg {
-      max-width: 200px; height: 32px;
+      height: 66px;
+      max-width: 100%;
     }
-    .adhesivo-bc-arrow {
-      font-family: 'Arial Black', sans-serif;
-      font-size: 22px; font-weight: 900;
-      color: #111; line-height: 1;
-    }
-    /* [v2.43.113] Spacer cuando la flecha no cabe (preserva centrado del barcode) */
-    .adhesivo-bc-spacer {
-      display: inline-block; width: 22px;
-    }
+    /* Código texto: TSPL en font 1 (8w×12h dots) debajo del barcode.
+       En CSS: ~13px monospace centrado, color tenue. */
     .adhesivo-codigo {
-      font-family: monospace; font-size: 9px; color: #333;
-      letter-spacing: .5px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 13px; color: #333;
+      letter-spacing: 1px;
       text-align: center;
-      margin-top: 1px;
+      margin-top: 2px;
     }
     .adhesivo-cantidad-tag {
-      position: absolute; top: 8px; right: 64px;
+      position: absolute; top: 10px; right: 92px;
       background: rgba(251,191,36,.18);
       color: #b45309;
-      padding: 2px 8px;
+      padding: 3px 10px;
       border-radius: 9999px;
-      font-size: 11px; font-weight: 900;
+      font-size: 12px; font-weight: 900;
       border: 1px dashed rgba(180,83,9,.4);
       font-family: monospace;
     }
