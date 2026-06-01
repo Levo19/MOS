@@ -28392,29 +28392,32 @@ const MOS = (() => {
                   </div>` : ''}
               </div>`;
             })()}
-            <!-- [v2.43.100] Cards 'no soportada' — el master ve POR QUÉ falta un stream -->
+            <!-- [v2.43.101] Cards 'no soportada' — usa camsHardware + dualIntentado para no parpadear -->
             ${(() => {
               const c = _espiaV2.capabilities;
               if (!c) return '';
               const cards = [];
+              // PANTALLA: solo si la API no existe en el browser del cliente
               if (c.tienePantalla === false) {
-                cards.push({
-                  icon: '🖥️', label: 'PANTALLA',
-                  motivo: 'No soportada en móvil',
-                  color: '100,116,139'
-                });
+                cards.push({ icon: '🖥️', label: 'PANTALLA', motivo: 'API getDisplayMedia no soportada' });
               }
-              if (c.esMobile && c.camsTotales < 2) {
-                cards.push({
-                  icon: '📸', label: '2DA CÁMARA',
-                  motivo: 'Hardware no permite dual',
-                  color: '100,116,139'
-                });
+              // 2DA CÁMARA:
+              //   camsHardware<2 → "Solo 1 cámara en hardware" (no es bug, no hay)
+              //   camsHardware>=2 && dualIntentado && camsAbiertas<2 → "Hardware no permite dual concurrent"
+              //   dualIntentado=false → no mostrar (probablemente está cargando)
+              const ch = c.camsHardware || 0;
+              const ca = c.camsAbiertas || 0;
+              if (c.dualIntentado) {
+                if (ch < 2) {
+                  cards.push({ icon: '📸', label: '2DA CÁMARA', motivo: 'Hardware solo tiene 1 cámara' });
+                } else if (ca < 2) {
+                  cards.push({ icon: '📸', label: '2DA CÁMARA', motivo: 'Browser no permite dual concurrent' });
+                }
               }
               return cards.map(card => `
-                <div style="background:#0a0f1e;border:1px dashed rgba(${card.color},.4);border-radius:10px;padding:11px;opacity:.65">
+                <div style="background:#0a0f1e;border:1px dashed rgba(100,116,139,.4);border-radius:10px;padding:11px;opacity:.65">
                   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-                    <div style="font-size:9px;font-weight:800;color:rgba(${card.color},1);text-transform:uppercase;letter-spacing:.5px">${card.icon} ${card.label}</div>
+                    <div style="font-size:9px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.5px">${card.icon} ${card.label}</div>
                     <span style="font-size:8px;color:#475569">⛔ N/D</span>
                   </div>
                   <div style="font-size:9px;color:#64748b;line-height:1.4">${card.motivo}</div>
