@@ -27933,8 +27933,16 @@ const MOS = (() => {
 
   async function _espiaV2Poll() {
     if (!_espiaV2 || !_espiaV2.sesionId) return;
+    // [v2.43.86 MUTEX GLOBAL] _espiaV2Poll se invoca cada 600ms pero hace 2-3
+    // await API.post (cada uno 0.5-3s). Múltiples ticks pueden correr en paralelo
+    // → quota wasted + ICE duplicados + race conditions. Mutex global asegura
+    // serialización.
+    if (_espiaV2._pollEnCurso) return;
+    _espiaV2._pollEnCurso = true;
     try {
       const t0 = Date.now();
+      // Guard adicional: pc puede ser null si se está cerrando
+      if (!_espiaV2.pc) return;
       // [v2.43.66] API.post desempaqueta — r es directamente el data del backend
       // [v2.43.76] Guard contra race: el poll corre cada 600ms. Si setRemoteDescription
       // tarda >600ms, el siguiente poll también ve remoteDescription=null y vuelve a
@@ -27962,7 +27970,9 @@ const MOS = (() => {
       if (!_espiaV2) return; // guard otra vez después del await
       if (ri?.ice?.length) {
         for (const c of ri.ice) {
-          try { await _espiaV2.pc.addIceCandidate(c.ice); } catch(_){}
+          // [v2.43.86] Log errores de ICE (antes silenciado)
+          try { await _espiaV2.pc.addIceCandidate(c.ice); }
+          catch(eC) { console.warn('[espia master] addIceCandidate fallo:', eC?.message); }
         }
         if (_espiaV2) _espiaV2.pollIceDesde = ri.tsMax || _espiaV2.pollIceDesde;
       }
@@ -28005,6 +28015,8 @@ const MOS = (() => {
       }
     } catch(e) {
       console.warn('[espia poll]', e?.message || e);
+    } finally {
+      if (_espiaV2) _espiaV2._pollEnCurso = false;
     }
   }
 
