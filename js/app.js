@@ -27879,12 +27879,17 @@ const MOS = (() => {
     // El primer track que llega puede no tener mapping todavía → asignamos por
     // contentHint y reasignamos cuando llegue el __meta. Por eso guardamos
     // referencias a ev.streams[0] junto al trackId para poder rebalancear.
-    _espiaV2._tracksRecibidos = _espiaV2._tracksRecibidos || []; // [{trackId, stream, kind}]
+    _espiaV2._tracksRecibidos = _espiaV2._tracksRecibidos || [];
     pc.ontrack = (ev) => {
       const stream = ev.streams[0];
       const track  = ev.track;
-      _espiaV2._tracksRecibidos.push({ trackId: track.id, stream, kind: track.kind, contentHint: track.contentHint });
-      _espiaV2AsignarTrack({ trackId: track.id, stream, kind: track.kind, contentHint: track.contentHint });
+      const info = { trackId: track.id, stream, kind: track.kind, contentHint: track.contentHint };
+      // [v2.43.99] Dedup por trackId — si llega el mismo track 2 veces (raro
+      // pero posible en renegs largas), actualizar en lugar de duplicar.
+      const idx = _espiaV2._tracksRecibidos.findIndex(t => t.trackId === info.trackId);
+      if (idx >= 0) _espiaV2._tracksRecibidos[idx] = info;
+      else _espiaV2._tracksRecibidos.push(info);
+      _espiaV2AsignarTrack(info);
       _espiaSfx('chime');
       _espiaV2RenderModal();
     };
@@ -28176,22 +28181,33 @@ const MOS = (() => {
     const videos = (_espiaV2._tracksRecibidos || []).filter(t => t.kind === 'video');
     if (!videos.length) return;
 
+    // Early exit: map vacío → nada que aplicar
+    if (Object.keys(map).length === 0) return;
+
     const nuevoEstado = { camara: null, camara2: null, pantalla: null };
-    // Pass 1a: aplicar mapping explícito
+    // Pass 1a: aplicar mapping explícito (tiene prioridad)
     videos.forEach(t => {
       const tipoNuevo = map[t.trackId];
       if (tipoNuevo && ['camara', 'camara2', 'pantalla'].indexOf(tipoNuevo) >= 0) {
         nuevoEstado[tipoNuevo] = t.stream;
       }
     });
-    // Pass 1b: para los videos sin mapping, preservar su slot previo si está libre
+    // Pass 1b: tracks sin mapping → preservar su slot previo si está libre
     videos.forEach(t => {
-      if (map[t.trackId]) return; // ya manejado
+      if (map[t.trackId]) return;
       ['camara', 'camara2', 'pantalla'].forEach(slot => {
         if (_espiaV2.streams[slot] === t.stream && !nuevoEstado[slot]) {
           nuevoEstado[slot] = t.stream;
         }
       });
+    });
+    // Pass 1c: tracks sin mapping cuyo slot previo está ocupado → cualquier slot libre
+    // Sin este pass, un map parcial que mueve trackA al slot de trackB perdía trackB.
+    videos.forEach(t => {
+      if (map[t.trackId]) return;
+      if (['camara','camara2','pantalla'].some(slot => nuevoEstado[slot] === t.stream)) return;
+      const slotLibre = ['camara2', 'camara', 'pantalla'].find(slot => !nuevoEstado[slot]);
+      if (slotLibre) nuevoEstado[slotLibre] = t.stream;
     });
 
     const cambio = nuevoEstado.camara   !== _espiaV2.streams.camara   ||
