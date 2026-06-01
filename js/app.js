@@ -28126,27 +28126,35 @@ const MOS = (() => {
     }).catch(()=>{});
   }
 
-  // Cuando el cliente manda mapping por DataChannel, reasignar TODOS los video tracks.
+  // [v2.43.92 FIX] Mapping PARCIAL preservaba bugs:
+  //   - Primer envío del cliente puede traer solo cam (pantalla agrega async).
+  //   - Si reseteo streams a null, perdemos el track de pantalla que llegó por
+  //     contentHint mientras esperaba mapping completo.
+  // Solución: SOLO actualizar slots cuyos trackIds estén en el map. Para los
+  // tracks no mencionados, mantener su asignación previa por contentHint/heurística.
   function _espiaV2AplicarTrackMap(map) {
     if (!_espiaV2 || !map) return;
     _espiaV2._trackTipoMap = Object.assign({}, _espiaV2._trackTipoMap, map);
     const videos = (_espiaV2._tracksRecibidos || []).filter(t => t.kind === 'video');
     if (!videos.length) return;
-    // Limpiar y reasignar (solo si alguna asignación cambia)
     let cambio = false;
-    const nuevosStreams = { camara: null, pantalla: null };
     videos.forEach(t => {
-      const tipo = map[t.trackId];
-      if (tipo === 'pantalla') nuevosStreams.pantalla = t.stream;
-      else if (tipo === 'camara') nuevosStreams.camara = t.stream;
-      if (_espiaV2.streams[tipo] !== t.stream) cambio = true;
+      const tipoNuevo = map[t.trackId];
+      if (!tipoNuevo) return; // no mencionado en este map → conservar lo anterior
+      if (_espiaV2.streams[tipoNuevo] === t.stream) return; // ya en el slot correcto
+      // Quitar de donde estuviera por error (cámara o pantalla)
+      if (_espiaV2.streams.camara === t.stream && tipoNuevo !== 'camara') {
+        _espiaV2.streams.camara = null;
+      }
+      if (_espiaV2.streams.pantalla === t.stream && tipoNuevo !== 'pantalla') {
+        _espiaV2.streams.pantalla = null;
+      }
+      _espiaV2.streams[tipoNuevo] = t.stream;
+      cambio = true;
     });
     if (cambio) {
-      _espiaV2.streams.camara = nuevosStreams.camara;
-      _espiaV2.streams.pantalla = nuevosStreams.pantalla;
-      console.log('[espia trackMap] reasignado · camara=' + !!nuevosStreams.camara + ' pantalla=' + !!nuevosStreams.pantalla);
+      console.log('[espia trackMap] reasignado · camara=' + !!_espiaV2.streams.camara + ' pantalla=' + !!_espiaV2.streams.pantalla);
       _espiaV2RenderModal();
-      // setTimeout dentro de RenderModal se encarga de re-vincular los <video>
     }
   }
 
@@ -28158,6 +28166,7 @@ const MOS = (() => {
     try { clearInterval(_espiaV2._iceFlushTimer); } catch(_){}
     try { clearInterval(_espiaV2._iceWatchdogTimer); } catch(_){}
     try { clearTimeout(_espiaV2._timeoutConectando); } catch(_){}
+    try { clearTimeout(_espiaV2._renderTimeout); } catch(_){}
     // Flush final ICE pendientes
     if (_espiaV2._iceQueue?.length && _espiaV2.sesionId && _espiaV2.token) {
       _espiaApiPost('espiaPushBatch', {
@@ -28296,9 +28305,12 @@ const MOS = (() => {
     const old = document.getElementById('espiaV2Modal');
     if (old) old.remove();
     document.body.insertAdjacentHTML('beforeend', html);
-    // Re-vincular streams a sus video elements
-    setTimeout(() => {
-      // [v2.43.91] Big = focus, Mini = el otro (dinámico)
+    // [v2.43.92] Cancelar setTimeout previo si renderModal corre múltiples veces
+    // rápido (ej. cascada de ontrack + onconnectionstatechange + trackMap).
+    // Sin esto, N setTimeouts se acumulan haciendo trabajo redundante.
+    if (_espiaV2._renderTimeout) clearTimeout(_espiaV2._renderTimeout);
+    _espiaV2._renderTimeout = setTimeout(() => {
+      if (!_espiaV2) return; // guard: cerraron mid-render
       _espiaV2ActualizarStream(_espiaV2.focus, _espiaV2.streams[_espiaV2.focus]);
       const otro = _espiaV2.focus === 'camara' ? 'pantalla' : 'camara';
       _espiaV2ActualizarStream(otro, _espiaV2.streams[otro], 'espiaV2MiniVideo');
