@@ -11968,9 +11968,12 @@ const MOS = (() => {
     const nuevoClass = esNuevo ? ' env-tl-item-nuevo' : '';
 
     // [v2.43.108] Botón Imprimir adhesivo (solo si completo + tiene codigoBarra envasado)
+    // [v2.43.109 BUG #4] Escapar idEnvasado para HTML/JS (defensivo: hoy nunca
+    // tiene comillas pero blindamos por si el formato cambia).
     const puedeImprimir = completo && e.codigoProductoEnvasado;
+    const idEnvSafe = String(e.idEnvasado || '').replace(/['"\\]/g, '');
     const btnAdhesivo = puedeImprimir
-      ? `<button onclick="MOS.abrirModalImprimirAdhesivo('${e.idEnvasado}')"
+      ? `<button onclick="MOS.abrirModalImprimirAdhesivo('${idEnvSafe}')"
            class="env-tl-btn-adhesivo"
            title="Imprimir adhesivos para este envasado">
           🏷 <span>Imprimir adhesivo</span>
@@ -12159,19 +12162,32 @@ const MOS = (() => {
 
   // ── ABRIR MODAL ────────────────────────────────────────────────
   window.MOS = window.MOS || {};
+  let _adhesivoSeq = 0; // [v2.43.109 BUG #1] secuencial para evitar race entre opens
   MOS.abrirModalImprimirAdhesivo = function(idEnvasado) {
     const env = (S.envasados || []).find(x => x.idEnvasado === idEnvasado);
     if (!env) { toast('Envasado no encontrado', 'error'); return; }
     const datos = _adhesivoExtraerDatos(env);
     if (!datos) { toast('Sin código envasado para imprimir adhesivos', 'warn'); return; }
+    // [v2.43.109 BUG #3] Validar descripción mínima para que el preview tenga sentido
+    if (!datos.descripcion || datos.descripcion === datos.codigoBarra) {
+      toast('Producto sin descripción cargada en catálogo. Refrescá Almacén primero.', 'warn', 6000);
+      return;
+    }
+    const sessionId = ++_adhesivoSeq;
     _adhesivoState = {
+      sessionId,                                         // [BUG #1] identificador único
       env, datos,
       cantidad: datos.defaultCantidad,
       imprimiendo: false,
-      impresoraEstado: 'verificando'
+      impresoraEstado: 'verificando',
+      // [BUG #2] Idempotency key ESTABLE durante esta sesión del modal.
+      // Si el user reintenta el mismo botón, la key incluye sessionId+cantidad
+      // así que reintentos con misma cantidad → mismo print (dedup backend).
+      // Cambio de cantidad → key distinta → nuevo print.
+      sessionTs: Date.now()
     };
     _adhesivoRenderModal();
-    _adhesivoVerificarImpresora(); // async, actualiza chip cuando responda
+    _adhesivoVerificarImpresora(sessionId);
   };
 
   function _adhesivoRenderModal() {
@@ -12304,15 +12320,24 @@ const MOS = (() => {
     if (tag) tag.textContent = '×' + _adhesivoState.cantidad;
   }
 
-  async function _adhesivoVerificarImpresora() {
+  // [v2.43.109 BUG #1] Recibe sessionId — descarta respuesta si el modal
+  // se cerró y se abrió otro con datos distintos en el intermedio.
+  // [v2.43.109 BUG #6] Distingue error de red ('error') de offline real.
+  // Antes una respuesta null se tomaba como offline → mensaje engañoso al user.
+  async function _adhesivoVerificarImpresora(sessionId) {
     try {
       const r = await API.post('wh_estadoImpresoraAdhesivo', {});
-      if (!_adhesivoState) return; // user cerró mientras consultaba
-      _adhesivoState.impresoraEstado = (r && r.esOnline) ? 'online' : 'offline';
-      _adhesivoState.impresoraInfo = r || {};
+      if (!_adhesivoState || _adhesivoState.sessionId !== sessionId) return;
+      if (r && typeof r.esOnline === 'boolean') {
+        _adhesivoState.impresoraEstado = r.esOnline ? 'online' : 'offline';
+        _adhesivoState.impresoraInfo = r;
+      } else {
+        _adhesivoState.impresoraEstado = 'error';
+        _adhesivoState.impresoraInfo = { error: 'Backend no respondió formato esperado' };
+      }
       _adhesivoActualizarChipImpresora();
     } catch(e) {
-      if (!_adhesivoState) return;
+      if (!_adhesivoState || _adhesivoState.sessionId !== sessionId) return;
       _adhesivoState.impresoraEstado = 'error';
       _adhesivoState.impresoraInfo = { error: e?.message || 'error red' };
       _adhesivoActualizarChipImpresora();
@@ -12345,13 +12370,19 @@ const MOS = (() => {
   MOS.adhesivoImprimir = async function() {
     const st = _adhesivoState;
     if (!st || st.imprimiendo) return;
+    const sessionId = st.sessionId;
     st.imprimiendo = true;
     const btn = document.getElementById('adhesivoBtnImprimir');
     const txt = document.getElementById('adhesivoBtnImprimirTxt');
     if (btn) btn.disabled = true;
     if (txt) txt.innerHTML = '<span class="adhesivo-spin">◐</span> Enviando…';
 
-    const idempotencyKey = 'adh_' + st.env.idEnvasado + '_' + st.cantidad + '_' + Date.now();
+    // [v2.43.109 BUG #2] Idempotency key estable durante la sesión del modal.
+    // El sessionTs no cambia entre reintentos del mismo modal → backend dedup
+    // correctamente. Cambio de cantidad rompe la dedup (se incluye en la key)
+    // porque es una intención distinta del operario.
+    const idempotencyKey = 'adh_' + st.env.idEnvasado + '_' + st.cantidad + '_' + st.sessionTs;
+    let exito = false;
     try {
       const r = await API.post('wh_imprimirEtiqueta', {
         codigoBarra:       st.datos.codigoBarra,
@@ -12360,16 +12391,27 @@ const MOS = (() => {
         fechaEnvasado:     st.env.fecha,
         idempotencyKey:    idempotencyKey
       });
+      // Re-check sessionId tras await (user pudo cerrar/abrir otro modal)
+      if (!_adhesivoState || _adhesivoState.sessionId !== sessionId) return;
       if (r && r.ok === false) throw new Error(r.error || 'Backend rechazó');
+      exito = true;
       if (txt) txt.innerHTML = '✅ Enviado · job #' + (r?.jobId || '');
-      toast('🖨 ' + st.cantidad + ' adhesivo(s) enviados a la impresora', 'success');
-      setTimeout(() => MOS.cerrarModalImprimirAdhesivo(), 1400);
+      try { toast('🖨 ' + st.cantidad + ' adhesivo(s) enviados a la impresora', 'success'); } catch(_){}
     } catch(e) {
+      if (!_adhesivoState || _adhesivoState.sessionId !== sessionId) return;
       if (txt) txt.innerHTML = '❌ Error — reintentar';
-      if (btn) { btn.disabled = false; }
-      toast('Error al imprimir: ' + (e?.message || 'desconocido'), 'error', 6000);
-      st.imprimiendo = false;
+      if (btn) btn.disabled = false;
+      try { toast('Error al imprimir: ' + (e?.message || 'desconocido'), 'error', 6000); } catch(_){}
+    } finally {
+      // [v2.43.109 BUG #5] Liberar imprimiendo SIEMPRE en error.
+      // En éxito lo mantenemos true para que un Enter accidental durante
+      // los 1.4s de cierre no dispare otro print.
+      if (_adhesivoState && _adhesivoState.sessionId === sessionId && !exito) {
+        _adhesivoState.imprimiendo = false;
+      }
     }
+    // Cierre auto al éxito (fuera del try para garantizar ejecución)
+    if (exito) setTimeout(() => MOS.cerrarModalImprimirAdhesivo(), 1400);
   };
 
   MOS.cerrarModalImprimirAdhesivo = function() {
