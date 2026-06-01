@@ -27771,7 +27771,7 @@ const MOS = (() => {
       deviceId: idDispositivo,
       nombre: nombre,
       pc: null,
-      streams: { audio: null, camara: null, pantalla: null },
+      streams: { audio: null, camara: null, camara2: null, pantalla: null },
       gpsUlt: null,
       pollTimer: null,
       pollIceDesde: 0,
@@ -28125,22 +28125,26 @@ const MOS = (() => {
     }
   }
 
-  // [v2.43.91] Asigna un track recibido a streams[tipo] según evidencia.
+  // [v2.43.97] Asigna un track recibido a streams[tipo].
+  // Tipos posibles: audio | pantalla | camara | camara2 (smartphone dual-cam)
   function _espiaV2AsignarTrack(info) {
     if (!_espiaV2) return;
     let tipo;
     if (info.kind === 'audio') {
       tipo = 'audio';
     } else {
-      // 1) Mapping explícito del DataChannel (más confiable)
+      // 1) Mapping explícito del DataChannel (incluye 'camara2')
       const mapeado = _espiaV2._trackTipoMap?.[info.trackId];
       if (mapeado) tipo = mapeado;
-      // 2) contentHint vía SDP (Chrome/Firefox modernos)
+      // 2) contentHint vía SDP
       else if (info.contentHint === 'detail') tipo = 'pantalla';
-      else if (info.contentHint === 'motion') tipo = 'camara';
-      // 3) Default optimista: el primer video que llega suele ser cámara.
-      //    Si llegó otro antes (ya hay streams.camara), este es pantalla.
+      else if (info.contentHint === 'motion') {
+        // si ya hay camara, el siguiente motion es camara2 (dual smartphone)
+        tipo = _espiaV2.streams.camara ? 'camara2' : 'camara';
+      }
+      // 3) Default
       else if (_espiaV2.streams.camara && !_espiaV2.streams.pantalla) tipo = 'pantalla';
+      else if (_espiaV2.streams.camara) tipo = 'camara2';
       else tipo = 'camara';
     }
     _espiaV2.streams[tipo] = info.stream;
@@ -28151,6 +28155,7 @@ const MOS = (() => {
       streams: {
         audio:    !!_espiaV2.streams.audio,
         camara:   !!_espiaV2.streams.camara,
+        camara2:  !!_espiaV2.streams.camara2,
         pantalla: !!_espiaV2.streams.pantalla
       }
     }).catch(()=>{});
@@ -28170,20 +28175,19 @@ const MOS = (() => {
     let cambio = false;
     videos.forEach(t => {
       const tipoNuevo = map[t.trackId];
-      if (!tipoNuevo) return; // no mencionado en este map → conservar lo anterior
-      if (_espiaV2.streams[tipoNuevo] === t.stream) return; // ya en el slot correcto
-      // Quitar de donde estuviera por error (cámara o pantalla)
-      if (_espiaV2.streams.camara === t.stream && tipoNuevo !== 'camara') {
-        _espiaV2.streams.camara = null;
-      }
-      if (_espiaV2.streams.pantalla === t.stream && tipoNuevo !== 'pantalla') {
-        _espiaV2.streams.pantalla = null;
-      }
+      if (!tipoNuevo) return;
+      if (_espiaV2.streams[tipoNuevo] === t.stream) return;
+      // Quitar de los 3 slots posibles si está en otro
+      ['camara', 'camara2', 'pantalla'].forEach(slot => {
+        if (_espiaV2.streams[slot] === t.stream && tipoNuevo !== slot) {
+          _espiaV2.streams[slot] = null;
+        }
+      });
       _espiaV2.streams[tipoNuevo] = t.stream;
       cambio = true;
     });
     if (cambio) {
-      console.log('[espia trackMap] reasignado · camara=' + !!_espiaV2.streams.camara + ' pantalla=' + !!_espiaV2.streams.pantalla);
+      console.log('[espia trackMap] reasignado · camara=' + !!_espiaV2.streams.camara + ' camara2=' + !!_espiaV2.streams.camara2 + ' pantalla=' + !!_espiaV2.streams.pantalla);
       _espiaV2RenderModal();
     }
   }
@@ -28245,10 +28249,18 @@ const MOS = (() => {
         <!-- BODY -->
         <div style="flex:1;display:flex;gap:14px;padding:14px;overflow:hidden">
           <!-- Stream grande -->
-          <div id="espiaV2Big" style="flex:1;background:#020617;border-radius:12px;overflow:hidden;position:relative;border:2px solid ${focusEsCamara ? 'rgba(99,102,241,.5)' : 'rgba(16,185,129,.5)'};box-shadow:0 0 30px -10px ${focusEsCamara ? '#6366f155' : '#10b98155'};transition:border-color .3s,box-shadow .3s">
+          ${(() => {
+            // [v2.43.97] Label dinámico según focus actual
+            const meta = {
+              pantalla: { icon: '🖥️', label: 'PANTALLA DEL DISPOSITIVO', color: '16,185,129', glow: '#10b98155' },
+              camara:   { icon: '📷', label: 'CÁMARA TRASERA',            color: '99,102,241', glow: '#6366f155' },
+              camara2:  { icon: '📸', label: 'CÁMARA FRONTAL',            color: '244,114,182', glow: '#f472b655' }
+            }[_espiaV2.focus] || { icon: '📷', label: 'CÁMARA', color: '99,102,241', glow: '#6366f155' };
+            return `<div id="espiaV2Big" style="flex:1;background:#020617;border-radius:12px;overflow:hidden;position:relative;border:2px solid rgba(${meta.color},.5);box-shadow:0 0 30px -10px ${meta.glow};transition:border-color .3s,box-shadow .3s">
             <div id="espiaV2BigLabel" style="position:absolute;top:10px;left:12px;font-size:10px;font-weight:800;color:#fff;background:rgba(0,0,0,.65);padding:4px 10px;border-radius:6px;z-index:5;backdrop-filter:blur(4px)">
-              ${focusEsCamara ? '📷 CÁMARA' : '🖥️ PANTALLA DEL DISPOSITIVO'}
-            </div>
+              ${meta.icon} ${meta.label}
+            </div>`;
+          })()}
             <button onclick="MOS._espiaV2Fullscreen()" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:6px;padding:5px 9px;font-size:13px;cursor:pointer;z-index:5;backdrop-filter:blur(4px);transition:background .15s"
                     onmouseover="this.style.background='rgba(99,102,241,.5)'"
                     onmouseout="this.style.background='rgba(0,0,0,.5)'"
@@ -28279,23 +28291,33 @@ const MOS = (() => {
                  Antes el mini era SIEMPRE cámara → al hacer swap a focus=cámara,
                  grande y mini mostraban lo mismo (cámara) y "pantalla" desaparecía. -->
             ${(() => {
-              const otro = focusEsCamara ? 'pantalla' : 'camara';
-              const otroIcon = otro === 'pantalla' ? '🖥️' : '📷';
-              const otroLabel = otro === 'pantalla' ? 'PANTALLA' : 'CÁMARA';
-              const otroStream = _espiaV2.streams[otro];
-              const otroColor = otro === 'pantalla' ? '16,185,129' : '99,102,241';
-              return `<div id="espiaV2MiniCard" onclick="MOS._espiaV2Swap()" style="background:#0f172a;border:1px solid rgba(${otroColor},.3);border-radius:10px;padding:11px;cursor:pointer;transition:all .25s;box-shadow:0 0 18px -8px rgba(${otroColor},.28)"
-                onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 24px -6px rgba(${otroColor},.55)'"
-                onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 0 18px -8px rgba(${otroColor},.28)'">
+              // [v2.43.97] Mini muestra el SIGUIENTE en el ciclo (pantalla → cam → cam2 → ...)
+              // saltando slots vacíos. Hay marcador "1/N" si hay más de 2 disponibles.
+              const orden = ['pantalla', 'camara', 'camara2'];
+              const disponibles = orden.filter(k => !!_espiaV2.streams[k]);
+              if (disponibles.length === 0) return '';
+              const idxActual = disponibles.indexOf(_espiaV2.focus);
+              const siguienteKey = disponibles[(idxActual + 1) % disponibles.length] || disponibles[0];
+              const metaPorTipo = {
+                pantalla: { icon: '🖥️', label: 'PANTALLA',     color: '16,185,129' },
+                camara:   { icon: '📷', label: 'CÁMARA TRASERA', color: '99,102,241' },
+                camara2:  { icon: '📸', label: 'CÁMARA FRONTAL', color: '244,114,182' }
+              };
+              const meta = metaPorTipo[siguienteKey] || metaPorTipo.camara;
+              const stream = _espiaV2.streams[siguienteKey];
+              const totalMostrable = disponibles.length;
+              return `<div id="espiaV2MiniCard" onclick="MOS._espiaV2Swap()" style="background:#0f172a;border:1px solid rgba(${meta.color},.3);border-radius:10px;padding:11px;cursor:pointer;transition:all .25s;box-shadow:0 0 18px -8px rgba(${meta.color},.28)"
+                onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 24px -6px rgba(${meta.color},.55)'"
+                onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 0 18px -8px rgba(${meta.color},.28)'">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-                  <div style="font-size:9px;font-weight:800;color:rgba(${otroColor},.95);text-transform:uppercase;letter-spacing:.5px">${otroIcon} ${otroLabel}</div>
-                  <span style="font-size:8px;color:#64748b">click=swap</span>
+                  <div style="font-size:9px;font-weight:800;color:rgba(${meta.color},.95);text-transform:uppercase;letter-spacing:.5px">${meta.icon} ${meta.label}</div>
+                  <span style="font-size:8px;color:#64748b">${totalMostrable > 2 ? (disponibles.indexOf(siguienteKey)+1) + '/' + totalMostrable + ' · ' : ''}click=swap</span>
                 </div>
                 <video id="espiaV2MiniVideo" autoplay playsinline muted
                        style="width:100%;height:90px;object-fit:cover;background:#000;border-radius:6px"></video>
-                ${!otroStream ? `
+                ${!stream ? `
                   <div style="position:relative;margin-top:-90px;height:90px;display:flex;align-items:center;justify-content:center;background:#020617;border-radius:6px">
-                    <div style="width:24px;height:24px;border:2px solid rgba(${otroColor},.3);border-top-color:rgba(${otroColor},1);border-radius:50%;animation:espiaSpin 1s linear infinite"></div>
+                    <div style="width:24px;height:24px;border:2px solid rgba(${meta.color},.3);border-top-color:rgba(${meta.color},1);border-radius:50%;animation:espiaSpin 1s linear infinite"></div>
                   </div>` : ''}
               </div>`;
             })()}
@@ -28340,10 +28362,16 @@ const MOS = (() => {
     // Sin esto, N setTimeouts se acumulan haciendo trabajo redundante.
     if (_espiaV2._renderTimeout) clearTimeout(_espiaV2._renderTimeout);
     _espiaV2._renderTimeout = setTimeout(() => {
-      if (!_espiaV2) return; // guard: cerraron mid-render
+      if (!_espiaV2) return;
       _espiaV2ActualizarStream(_espiaV2.focus, _espiaV2.streams[_espiaV2.focus]);
-      const otro = _espiaV2.focus === 'camara' ? 'pantalla' : 'camara';
-      _espiaV2ActualizarStream(otro, _espiaV2.streams[otro], 'espiaV2MiniVideo');
+      // [v2.43.97] Mini = siguiente en ciclo de los disponibles
+      const orden = ['pantalla', 'camara', 'camara2'];
+      const disp = orden.filter(k => !!_espiaV2.streams[k]);
+      if (disp.length >= 2) {
+        const idx = disp.indexOf(_espiaV2.focus);
+        const sigKey = disp[(idx + 1) % disp.length];
+        _espiaV2ActualizarStream(sigKey, _espiaV2.streams[sigKey], 'espiaV2MiniVideo');
+      }
       _espiaV2VincularAudio();
       _espiaV2DibujarWaveform();
       _espiaV2RenderGpsMini();
@@ -28453,7 +28481,18 @@ const MOS = (() => {
   function _espiaV2Swap() {
     if (!_espiaV2) return;
     _espiaSfx('shimmer');
-    _espiaV2.focus = _espiaV2.focus === 'pantalla' ? 'camara' : 'pantalla';
+    // [v2.43.97] Rota entre los video streams REALMENTE disponibles
+    // (orden cíclico: pantalla → camara → camara2 → pantalla...).
+    // Saltea slots null. Si solo hay 1, no rota.
+    const orden = ['pantalla', 'camara', 'camara2'];
+    const disponibles = orden.filter(k => !!_espiaV2.streams[k]);
+    if (disponibles.length <= 1) {
+      _espiaV2RenderModal();
+      return;
+    }
+    const idxActual = disponibles.indexOf(_espiaV2.focus);
+    const siguiente = disponibles[(idxActual + 1) % disponibles.length];
+    _espiaV2.focus = siguiente;
     _espiaV2RenderModal();
   }
   function _espiaV2ToggleMute() {
