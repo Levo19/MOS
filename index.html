@@ -8081,6 +8081,286 @@
       font-size: 9.5px; font-weight: 700;
       margin-top: 1px;
     }
+    /* [v2.43.108] Botón "Imprimir adhesivo" en card de envasado */
+    .env-tl-btn-adhesivo {
+      margin-left: 8px;
+      padding: 5px 10px;
+      font-size: 10.5px; font-weight: 700;
+      border-radius: 8px;
+      background: linear-gradient(135deg, rgba(251,191,36,0.18), rgba(245,158,11,0.10));
+      border: 1px solid rgba(251,191,36,0.45);
+      color: #fbbf24;
+      cursor: pointer;
+      transition: all .18s cubic-bezier(.34,1.56,.64,1);
+      display: inline-flex; align-items: center; gap: 4px;
+      letter-spacing: .2px;
+      box-shadow: 0 0 0 0 rgba(251,191,36,0);
+    }
+    .env-tl-btn-adhesivo:hover {
+      background: linear-gradient(135deg, rgba(251,191,36,0.32), rgba(245,158,11,0.20));
+      border-color: rgba(251,191,36,0.75);
+      color: #fde68a;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px -4px rgba(251,191,36,0.42);
+    }
+    .env-tl-btn-adhesivo:active { transform: translateY(0); }
+
+    /* ═══════════ [v2.43.108] MODAL IMPRIMIR ADHESIVO ═══════════ */
+    .adhesivo-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(2,6,23,.78);
+      backdrop-filter: blur(12px);
+      z-index: 99990;
+      display: flex; align-items: center; justify-content: center;
+      padding: 16px;
+      animation: adhesivoIn .35s cubic-bezier(.34,1.56,.64,1);
+    }
+    @keyframes adhesivoIn  { from { opacity:0 } to { opacity:1 } }
+    @keyframes adhesivoOut { to   { opacity:0; transform:scale(.96) } }
+
+    .adhesivo-modal {
+      width: 100%; max-width: 560px;
+      background: linear-gradient(180deg,#0a1424,#070d18);
+      border: 1px solid rgba(251,191,36,.35);
+      border-radius: 18px;
+      box-shadow: 0 30px 70px -10px rgba(251,191,36,.25),
+                  0 0 0 1px rgba(251,191,36,.12) inset;
+      display: flex; flex-direction: column;
+      max-height: 92vh; overflow: hidden;
+    }
+    .adhesivo-head {
+      padding: 16px 20px;
+      border-bottom: 1px solid #1e293b;
+      background: linear-gradient(135deg,rgba(251,191,36,.10),rgba(245,158,11,.04));
+      display: flex; align-items: center; gap: 14px;
+    }
+    .adhesivo-head-titulo { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+    .adhesivo-head-emoji  { font-size: 32px; line-height: 1; }
+    .adhesivo-head-h1     {
+      font-size: 14px; font-weight: 900; color: #fbbf24;
+      letter-spacing: .5px;
+    }
+    .adhesivo-head-sub    {
+      font-size: 11px; color: #94a3b8; margin-top: 2px;
+      max-width: 380px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .adhesivo-close {
+      background: rgba(248,113,113,.12);
+      border: 1px solid rgba(248,113,113,.35);
+      color: #fca5a5;
+      border-radius: 8px;
+      padding: 6px 11px;
+      font-size: 14px; font-weight: 900;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .adhesivo-close:hover { background: rgba(248,113,113,.22); color: #fff; }
+
+    .adhesivo-preview-wrap {
+      padding: 18px 20px 4px;
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+    }
+    .adhesivo-preview-lbl {
+      font-size: 10px; color: #64748b; text-transform: uppercase;
+      letter-spacing: .5px; font-weight: 700;
+    }
+    .adhesivo-preview { padding: 6px; }
+
+    /* Etiqueta visual a escala 2:1 (400×200 dots reales → 480×240 px) */
+    .adhesivo-etiqueta {
+      width: 480px; height: 240px;
+      background: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 10px 32px -8px rgba(251,191,36,.45),
+                  0 0 0 2px rgba(251,191,36,.55),
+                  inset 0 0 0 1px rgba(0,0,0,.05);
+      position: relative;
+      padding: 10px 14px;
+      display: flex; flex-direction: column;
+      color: #000;
+      font-family: 'Lilita One', 'Arial Black', sans-serif;
+      animation: adhesivoGlow 3s ease-in-out infinite alternate;
+    }
+    @keyframes adhesivoGlow {
+      from { box-shadow: 0 10px 32px -8px rgba(251,191,36,.45),
+                         0 0 0 2px rgba(251,191,36,.55),
+                         inset 0 0 0 1px rgba(0,0,0,.05); }
+      to   { box-shadow: 0 14px 44px -10px rgba(251,191,36,.65),
+                         0 0 0 2px rgba(251,191,36,.85),
+                         inset 0 0 0 1px rgba(0,0,0,.05); }
+    }
+    .adhesivo-etq-top {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 12px;
+    }
+    .adhesivo-logo { line-height: 1; }
+    .adhesivo-logo-script {
+      font-family: 'Brush Script MT', cursive;
+      font-size: 26px; font-style: italic; font-weight: 400;
+      color: #b91c1c;
+      transform: skewX(-6deg);
+    }
+    .adhesivo-logo-bold {
+      font-family: 'Lilita One', 'Arial Black', sans-serif;
+      font-size: 20px; font-weight: 900;
+      color: #111; margin-top: -4px; letter-spacing: 1px;
+    }
+    .adhesivo-vto {
+      text-align: right; font-family: monospace;
+    }
+    .adhesivo-vto-lbl { font-size: 10px; color: #555; font-weight: 600; }
+    .adhesivo-vto-val { font-size: 14px; font-weight: 900; color: #111; }
+
+    .adhesivo-divider {
+      height: 1px; background: #000; margin: 6px 0 10px;
+    }
+    .adhesivo-desc {
+      flex: 1; display: flex; flex-direction: column; justify-content: center;
+      align-items: center; gap: 4px; text-align: center;
+    }
+    .adhesivo-linea {
+      display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+      align-items: baseline;
+    }
+    .adhesivo-tok {
+      font-size: 18px; font-weight: 700; color: #111;
+      font-family: 'Arial Black', sans-serif;
+      letter-spacing: .5px;
+    }
+    .adhesivo-tok-hl {
+      font-size: 26px; font-weight: 900; color: #000;
+      animation: adhesivoTokPulse 2.4s ease-in-out infinite;
+    }
+    @keyframes adhesivoTokPulse {
+      0%, 100% { text-shadow: 0 0 0 rgba(251,191,36,0); }
+      50%      { text-shadow: 0 0 12px rgba(251,191,36,.55); }
+    }
+    .adhesivo-barcode-wrap {
+      margin-top: 6px;
+      display: flex; flex-direction: column; align-items: center; gap: 2px;
+    }
+    .adhesivo-barcode-wrap svg { max-width: 220px; height: 36px; }
+    .adhesivo-codigo {
+      font-family: monospace; font-size: 9px; color: #333;
+      letter-spacing: .5px;
+    }
+    .adhesivo-cantidad-tag {
+      position: absolute; top: 8px; right: 64px;
+      background: rgba(251,191,36,.18);
+      color: #b45309;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-size: 11px; font-weight: 900;
+      border: 1px dashed rgba(180,83,9,.4);
+      font-family: monospace;
+    }
+
+    .adhesivo-controles {
+      padding: 14px 20px;
+      display: flex; flex-direction: column; gap: 14px;
+      border-top: 1px solid #1e293b;
+    }
+    .adhesivo-control-group { display: flex; flex-direction: column; gap: 6px; }
+    .adhesivo-label {
+      font-size: 10px; color: #94a3b8; text-transform: uppercase;
+      letter-spacing: .6px; font-weight: 800;
+    }
+    .adhesivo-cantidad {
+      display: flex; align-items: center; gap: 6px;
+      background: #0f172a; border: 1px solid #1e293b;
+      border-radius: 10px; padding: 6px;
+      width: fit-content;
+    }
+    .adhesivo-cant-btn {
+      background: rgba(251,191,36,.12);
+      border: 1px solid rgba(251,191,36,.4);
+      color: #fbbf24;
+      width: 36px; height: 36px;
+      border-radius: 8px;
+      font-size: 18px; font-weight: 900;
+      cursor: pointer;
+      transition: all .15s;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .adhesivo-cant-btn:hover {
+      background: rgba(251,191,36,.25);
+      transform: scale(1.06);
+    }
+    .adhesivo-cant-input {
+      background: transparent;
+      border: 0;
+      color: #e2e8f0;
+      width: 70px; text-align: center;
+      font-size: 18px; font-weight: 800;
+      font-family: monospace;
+      outline: none;
+    }
+    .adhesivo-cant-input::-webkit-inner-spin-button,
+    .adhesivo-cant-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    .adhesivo-hint {
+      font-size: 10px; color: #64748b; font-style: italic;
+    }
+
+    .adhesivo-impresora {
+      display: flex; align-items: center; gap: 8px;
+      padding: 9px 12px;
+      background: rgba(15,23,42,.6);
+      border: 1px solid #1e293b;
+      border-radius: 10px;
+      font-size: 11px; color: #94a3b8;
+    }
+    .adhesivo-imp-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      animation: espiaBreath 1.6s ease-in-out infinite;
+    }
+    .adhesivo-imp-dot-online      { background: #10b981; box-shadow: 0 0 8px #10b981; }
+    .adhesivo-imp-dot-offline     { background: #ef4444; box-shadow: 0 0 8px #ef4444; }
+    .adhesivo-imp-dot-error       { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
+    .adhesivo-imp-dot-verificando { background: #64748b; }
+    .adhesivo-imp-txt b { color: #e2e8f0; }
+
+    .adhesivo-foot {
+      padding: 12px 20px 14px;
+      border-top: 1px solid #1e293b;
+      display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+    }
+    .adhesivo-btn-secondary {
+      background: transparent;
+      border: 1px solid #334155;
+      color: #94a3b8;
+      padding: 9px 16px;
+      border-radius: 9px;
+      font-size: 13px; font-weight: 700;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .adhesivo-btn-secondary:hover { background: #1e293b; color: #e2e8f0; }
+    .adhesivo-btn-primary {
+      background: linear-gradient(135deg, #fbbf24, #f59e0b);
+      border: 0;
+      color: #451a03;
+      padding: 10px 22px;
+      border-radius: 9px;
+      font-size: 14px; font-weight: 900;
+      cursor: pointer;
+      box-shadow: 0 6px 18px -4px rgba(251,191,36,.55);
+      transition: all .18s cubic-bezier(.34,1.56,.64,1);
+      letter-spacing: .3px;
+    }
+    .adhesivo-btn-primary:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 24px -4px rgba(251,191,36,.7);
+    }
+    .adhesivo-btn-primary:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+    .adhesivo-spin {
+      display: inline-block;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg) } }
     .env-tl-obs {
       font-size: 10.5px; color: #94a3b8;
       margin-top: 4px; font-style: italic;

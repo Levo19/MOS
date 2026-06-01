@@ -167,6 +167,9 @@ function _route(method, e) {
       case 'wh_getDevolucionDetalle':        return postToWarehouse('getDevolucionDetalle', params);
       case 'wh_confirmarRecepcionDevolucion': return postToWarehouse('confirmarRecepcionDevolucion', params);
       case 'wh_reconciliarDevolucionZona':   return postToWarehouse('reconciliarDevolucionZona', params);
+      // Adhesivos / etiquetas (modal en módulo Almacén → Envasado)
+      case 'wh_imprimirEtiqueta':            return postToWarehouse('imprimirEtiqueta', params);
+      case 'wh_estadoImpresoraAdhesivo':     return postToWarehouse('estadoImpresoraAdhesivo', params);
       case 'getVentasMosExpress':  return getVentasMosExpress(params);
       case 'getRotacion':            return getRotacionProductos(params);
       case 'getAnaliticaProducto':   return getAnaliticaProducto(params);

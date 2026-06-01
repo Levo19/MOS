@@ -11967,6 +11967,16 @@ const MOS = (() => {
     const dotClass = completo ? 'env-tl-dot-ok' : 'env-tl-dot-anul';
     const nuevoClass = esNuevo ? ' env-tl-item-nuevo' : '';
 
+    // [v2.43.108] Botón Imprimir adhesivo (solo si completo + tiene codigoBarra envasado)
+    const puedeImprimir = completo && e.codigoProductoEnvasado;
+    const btnAdhesivo = puedeImprimir
+      ? `<button onclick="MOS.abrirModalImprimirAdhesivo('${e.idEnvasado}')"
+           class="env-tl-btn-adhesivo"
+           title="Imprimir adhesivos para este envasado">
+          🏷 <span>Imprimir adhesivo</span>
+        </button>`
+      : '';
+
     return `<div class="env-tl-item ${stateClass}${nuevoClass}" style="animation-delay:${Math.min(idx, 12) * 40}ms">
       <div class="${dotClass}"></div>
       <div class="env-tl-content">
@@ -11982,6 +11992,7 @@ const MOS = (() => {
             <span class="env-tl-uds-lbl">uds</span>
             ${efic && completo ? `<div class="env-tl-efi ${_envEfColor(efic)}">${Math.round(efic)}% efic</div>` : ''}
           </div>
+          ${btnAdhesivo}
         </div>
         ${obs}
         ${!completo ? `<div class="env-tl-anul-tag">✕ ANULADO · no cuenta</div>` : ''}
@@ -11993,6 +12004,390 @@ const MOS = (() => {
     return pct >= 98 ? 'text-emerald-400'
          : pct >= 90 ? 'text-amber-400'
          : 'text-rose-400';
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // [v2.43.108] MÓDULO ADHESIVOS — Modal "Imprimir adhesivo" para envasados
+  // ───────────────────────────────────────────────────────────────────
+  // Replica del backend WH (_detectHighlightsEtq, _wrapTokensEtq) para
+  // generar el preview visual coincidente con el TSPL2 real que imprimirá
+  // la TSC TTP-244CE. El barcode usa JsBarcode (CDN ya incluido).
+  //
+  // Flujo:
+  //   1. Click "🏷 Imprimir adhesivo" en card → abrirModalImprimirAdhesivo
+  //   2. Pre-render con cantidad default = unidadesProducidas + check estado impresora
+  //   3. User ajusta cantidad si quiere → preview se actualiza en vivo
+  //   4. Click Imprimir → optimista: deshabilita, fire-and-forget
+  //   5. Toast confirmación + cierre con animación
+  // ═══════════════════════════════════════════════════════════════════
+
+  // Estado del modal (1 a la vez)
+  let _adhesivoState = null;
+
+  function _adhesivoNormalize(s) {
+    if (s === null || s === undefined) return '';
+    return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '');
+  }
+
+  function _adhesivoCalcVto(fechaEnvasado) {
+    const d = fechaEnvasado ? new Date(fechaEnvasado) : new Date();
+    d.setFullYear(d.getFullYear() + 1);
+    return _envFmtDdMmYy(d);
+  }
+
+  function _envFmtDdMmYy(d) {
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yy = String(d.getFullYear()).slice(-2);
+    return dd + '/' + mm + '/' + yy;
+  }
+
+  // Detecta tokens diferenciadores (replica de _detectHighlightsEtq en WH).
+  // minPrefix=1 + último siempre highlight.
+  function _adhesivoDetectHighlights(targetTokens, allTokenized) {
+    const hl = {};
+    hl[targetTokens.length - 1] = true; // último (peso) siempre destacado
+    for (let i = 0; i < allTokenized.length; i++) {
+      const s = allTokenized[i];
+      if (s === targetTokens) continue;
+      if (s[0] !== targetTokens[0]) continue;
+      for (let pos = 1; pos < targetTokens.length; pos++) {
+        if (hl[pos]) continue;
+        let prior = true;
+        for (let k = 0; k < pos; k++) {
+          if (s[k] !== targetTokens[k]) { prior = false; break; }
+        }
+        if (prior && s[pos] !== undefined && s[pos] !== targetTokens[pos]) {
+          hl[pos] = true;
+          break;
+        }
+      }
+    }
+    const out = [];
+    for (const key in hl) if (hl[key]) out.push(parseInt(key));
+    out.sort((a, b) => a - b);
+    return out;
+  }
+
+  // Word-wrap a max 2 líneas (replica de _wrapTokensEtq).
+  function _adhesivoWrap(tokens, highlights) {
+    const MAX_W = 370, SPACE = 8;
+    const fontW = (isHl) => isHl ? 24 : 16;
+    const widths = tokens.map((t, i) => t.length * fontW(highlights.indexOf(i) >= 0));
+    const isHl = (i) => highlights.indexOf(i) >= 0;
+
+    let total = 0;
+    for (let i = 0; i < widths.length; i++) total += widths[i] + (i > 0 ? SPACE : 0);
+    if (total <= MAX_W) {
+      return [tokens.map((t, i) => ({ tok: t, hl: isHl(i), w: widths[i] }))];
+    }
+    const firstHl = highlights.length > 0 ? highlights[0] : tokens.length;
+    if (firstHl > 0 && firstHl < tokens.length) {
+      const l1 = [], l2 = []; let w1 = 0, w2 = 0;
+      for (let a = 0; a < firstHl; a++) {
+        w1 += widths[a] + (l1.length > 0 ? SPACE : 0);
+        l1.push({ tok: tokens[a], hl: false, w: widths[a] });
+      }
+      for (let b = firstHl; b < tokens.length; b++) {
+        w2 += widths[b] + (l2.length > 0 ? SPACE : 0);
+        l2.push({ tok: tokens[b], hl: isHl(b), w: widths[b] });
+      }
+      if (w1 <= MAX_W && w2 <= MAX_W) return [l1, l2];
+    }
+    // Fallback greedy
+    const lines = [[]]; let curW = 0;
+    for (let c = 0; c < tokens.length; c++) {
+      const sep = lines[lines.length - 1].length === 0 ? 0 : SPACE;
+      if (curW + sep + widths[c] <= MAX_W) {
+        lines[lines.length - 1].push({ tok: tokens[c], hl: isHl(c), w: widths[c] });
+        curW += sep + widths[c];
+      } else if (lines.length === 1) {
+        lines.push([{ tok: tokens[c], hl: isHl(c), w: widths[c] }]);
+        curW = widths[c];
+      } else {
+        lines[1].push({ tok: tokens[c], hl: isHl(c), w: widths[c] });
+        curW += sep + widths[c];
+      }
+    }
+    return lines;
+  }
+
+  // Obtiene los datos del envasado + producto envasable + lista global de envasables
+  // (para que detectHighlights pueda comparar contra los siblings).
+  function _adhesivoExtraerDatos(env) {
+    const codigoBarra = env.codigoProductoEnvasado;
+    if (!codigoBarra) return null;
+    // Buscar el producto en el catálogo de stock (S.catalogoStock)
+    const stockArr = S.catalogoStock || [];
+    const prod = stockArr.find(p =>
+      String(p.codigoBarra || p.idProducto || '').trim() === String(codigoBarra).trim()
+    );
+    const descripcion = prod ? (prod.descripcion || codigoBarra) : codigoBarra;
+
+    // Construir lista de envasables (todos los que empiezan con WH y son derivados)
+    const envasables = [];
+    stockArr.forEach(p => {
+      const c = String(p.codigoBarra || p.idProducto || '').toUpperCase();
+      if (c.indexOf('WH') !== 0) return;
+      const desc = p.descripcion || '';
+      if (!desc) return;
+      envasables.push({
+        codigoBarra: p.codigoBarra || p.idProducto,
+        descripcion: desc,
+        tokens: _adhesivoNormalize(desc).toUpperCase().split(/\s+/)
+      });
+    });
+
+    const descNorm = _adhesivoNormalize(descripcion).toUpperCase();
+    const tokens = descNorm.split(/\s+/);
+    const allTok = envasables.map(p => p.tokens);
+    const highlights = _adhesivoDetectHighlights(tokens, allTok);
+    const lines = _adhesivoWrap(tokens, highlights);
+    const vto = _adhesivoCalcVto(env.fecha);
+
+    return {
+      codigoBarra,
+      descripcion,
+      tokens,
+      highlights,
+      lines,
+      vto,
+      defaultCantidad: parseInt(env.unidadesProducidas) || 1,
+      idEnvasado: env.idEnvasado
+    };
+  }
+
+  // ── ABRIR MODAL ────────────────────────────────────────────────
+  window.MOS = window.MOS || {};
+  MOS.abrirModalImprimirAdhesivo = function(idEnvasado) {
+    const env = (S.envasados || []).find(x => x.idEnvasado === idEnvasado);
+    if (!env) { toast('Envasado no encontrado', 'error'); return; }
+    const datos = _adhesivoExtraerDatos(env);
+    if (!datos) { toast('Sin código envasado para imprimir adhesivos', 'warn'); return; }
+    _adhesivoState = {
+      env, datos,
+      cantidad: datos.defaultCantidad,
+      imprimiendo: false,
+      impresoraEstado: 'verificando'
+    };
+    _adhesivoRenderModal();
+    _adhesivoVerificarImpresora(); // async, actualiza chip cuando responda
+  };
+
+  function _adhesivoRenderModal() {
+    const st = _adhesivoState;
+    if (!st) return;
+    const { datos, cantidad } = st;
+    const old = document.getElementById('adhesivoModal');
+    if (old) old.remove();
+    const html = `
+      <div id="adhesivoModal" class="adhesivo-backdrop"
+           onclick="if(event.target===this) MOS.cerrarModalImprimirAdhesivo()">
+        <div class="adhesivo-modal" onclick="event.stopPropagation()">
+          <header class="adhesivo-head">
+            <div class="adhesivo-head-titulo">
+              <span class="adhesivo-head-emoji">🏷</span>
+              <div>
+                <div class="adhesivo-head-h1">IMPRIMIR ADHESIVO</div>
+                <div class="adhesivo-head-sub">${_escapeHtml(datos.descripcion)}</div>
+              </div>
+            </div>
+            <button onclick="MOS.cerrarModalImprimirAdhesivo()" class="adhesivo-close" title="Cerrar (ESC)">✕</button>
+          </header>
+
+          <section class="adhesivo-preview-wrap">
+            <div class="adhesivo-preview-lbl">Vista previa · 50×25mm reales (escala 2:1)</div>
+            <div class="adhesivo-preview" id="adhesivoPreview">
+              ${_adhesivoRenderEtiquetaHTML(datos, cantidad)}
+            </div>
+          </section>
+
+          <section class="adhesivo-controles">
+            <div class="adhesivo-control-group">
+              <label class="adhesivo-label">Cantidad a imprimir</label>
+              <div class="adhesivo-cantidad">
+                <button onclick="MOS.adhesivoCantidadDelta(-1)" class="adhesivo-cant-btn">−</button>
+                <input type="number" id="adhesivoInput" value="${cantidad}" min="1" max="999"
+                       oninput="MOS.adhesivoCantidadInput(this.value)"
+                       class="adhesivo-cant-input">
+                <button onclick="MOS.adhesivoCantidadDelta(1)" class="adhesivo-cant-btn">+</button>
+              </div>
+              <div class="adhesivo-hint">Por defecto = ${datos.defaultCantidad} (unidades envasadas)</div>
+            </div>
+
+            <div class="adhesivo-impresora" id="adhesivoImpresoraInfo">
+              <span class="adhesivo-imp-dot adhesivo-imp-dot-verificando"></span>
+              <span class="adhesivo-imp-txt">Verificando impresora…</span>
+            </div>
+          </section>
+
+          <footer class="adhesivo-foot">
+            <button onclick="MOS.cerrarModalImprimirAdhesivo()" class="adhesivo-btn-secondary">Cancelar</button>
+            <button id="adhesivoBtnImprimir"
+                    onclick="MOS.adhesivoImprimir()"
+                    class="adhesivo-btn-primary"
+                    disabled
+                    title="Esperando estado de impresora…">
+              <span id="adhesivoBtnImprimirTxt">🖨 Imprimir</span>
+            </button>
+          </footer>
+        </div>
+      </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+    // Render barcode después de insertar (JsBarcode necesita el SVG en el DOM)
+    requestAnimationFrame(() => _adhesivoDibujarBarcode(datos.codigoBarra));
+    // ESC cierra · Enter dispara imprimir (si habilitado)
+    document.addEventListener('keydown', _adhesivoKeydown);
+  }
+
+  function _adhesivoRenderEtiquetaHTML(datos, cantidad) {
+    // Escala 2:1 → 400×200 dots reales = 800×400 px en el preview
+    // Logo "Caserito Tony's" se renderiza con SVG estilizado (no es el bitmap real
+    // pero da idea fiel del layout). Highlights con font más grande + bold.
+    const linesHTML = datos.lines.map(line => {
+      const parts = line.map(p =>
+        `<span class="adhesivo-tok ${p.hl ? 'adhesivo-tok-hl' : ''}">${_escapeHtml(p.tok)}</span>`
+      ).join(' ');
+      return `<div class="adhesivo-linea">${parts}</div>`;
+    }).join('');
+    return `
+      <div class="adhesivo-etiqueta">
+        <div class="adhesivo-etq-top">
+          <div class="adhesivo-logo">
+            <div class="adhesivo-logo-script">Caserito</div>
+            <div class="adhesivo-logo-bold">TONY'S</div>
+          </div>
+          <div class="adhesivo-vto">
+            <div class="adhesivo-vto-lbl">Vto</div>
+            <div class="adhesivo-vto-val">${datos.vto}</div>
+          </div>
+        </div>
+        <div class="adhesivo-divider"></div>
+        <div class="adhesivo-desc">${linesHTML}</div>
+        <div class="adhesivo-barcode-wrap">
+          <svg id="adhesivoBarcodeSVG"></svg>
+          <div class="adhesivo-codigo">${_escapeHtml(datos.codigoBarra)}</div>
+        </div>
+        <div class="adhesivo-cantidad-tag">×${cantidad}</div>
+      </div>`;
+  }
+
+  function _adhesivoDibujarBarcode(codigoBarra) {
+    const svg = document.getElementById('adhesivoBarcodeSVG');
+    if (!svg || typeof JsBarcode === 'undefined') return;
+    try {
+      JsBarcode(svg, String(codigoBarra), {
+        format: 'CODE128', width: 1.5, height: 40,
+        displayValue: false, margin: 0, background: '#ffffff', lineColor: '#000000'
+      });
+    } catch(e) { console.warn('[adhesivo] barcode render fail:', e.message); }
+  }
+
+  MOS.adhesivoCantidadDelta = function(d) {
+    if (!_adhesivoState) return;
+    const nv = Math.max(1, Math.min(999, _adhesivoState.cantidad + d));
+    _adhesivoState.cantidad = nv;
+    _adhesivoActualizarCantidadUI();
+  };
+  MOS.adhesivoCantidadInput = function(v) {
+    if (!_adhesivoState) return;
+    const n = Math.max(1, Math.min(999, parseInt(v) || 1));
+    _adhesivoState.cantidad = n;
+    // Actualizar tag de cantidad en preview SIN re-render completo (preserva barcode)
+    const tag = document.querySelector('#adhesivoPreview .adhesivo-cantidad-tag');
+    if (tag) tag.textContent = '×' + n;
+  };
+  function _adhesivoActualizarCantidadUI() {
+    const input = document.getElementById('adhesivoInput');
+    if (input) input.value = _adhesivoState.cantidad;
+    const tag = document.querySelector('#adhesivoPreview .adhesivo-cantidad-tag');
+    if (tag) tag.textContent = '×' + _adhesivoState.cantidad;
+  }
+
+  async function _adhesivoVerificarImpresora() {
+    try {
+      const r = await API.post('wh_estadoImpresoraAdhesivo', {});
+      if (!_adhesivoState) return; // user cerró mientras consultaba
+      _adhesivoState.impresoraEstado = (r && r.esOnline) ? 'online' : 'offline';
+      _adhesivoState.impresoraInfo = r || {};
+      _adhesivoActualizarChipImpresora();
+    } catch(e) {
+      if (!_adhesivoState) return;
+      _adhesivoState.impresoraEstado = 'error';
+      _adhesivoState.impresoraInfo = { error: e?.message || 'error red' };
+      _adhesivoActualizarChipImpresora();
+    }
+  }
+
+  function _adhesivoActualizarChipImpresora() {
+    const wrap = document.getElementById('adhesivoImpresoraInfo');
+    const btn = document.getElementById('adhesivoBtnImprimir');
+    if (!wrap) return;
+    const st = _adhesivoState;
+    const estado = st.impresoraEstado;
+    const info = st.impresoraInfo || {};
+    if (estado === 'online') {
+      wrap.innerHTML = `<span class="adhesivo-imp-dot adhesivo-imp-dot-online"></span>
+        <span class="adhesivo-imp-txt">🟢 <b>${_escapeHtml(info.nombre || 'Impresora ADHESIVO')}</b> · online</span>`;
+      if (btn) { btn.disabled = false; btn.title = ''; }
+    } else if (estado === 'offline') {
+      wrap.innerHTML = `<span class="adhesivo-imp-dot adhesivo-imp-dot-offline"></span>
+        <span class="adhesivo-imp-txt">🔴 <b>${_escapeHtml(info.nombre || 'Impresora')}</b> offline · revisá PrintNode Client</span>`;
+      if (btn) { btn.disabled = true; btn.title = 'Impresora offline'; }
+    } else {
+      wrap.innerHTML = `<span class="adhesivo-imp-dot adhesivo-imp-dot-error"></span>
+        <span class="adhesivo-imp-txt">⚠ No se pudo verificar (${_escapeHtml(info.error || 'sin detalles')})</span>`;
+      // Si no se pudo verificar igual permitimos intentar — el backend valida real
+      if (btn) { btn.disabled = false; btn.title = 'Intentar igual'; }
+    }
+  }
+
+  MOS.adhesivoImprimir = async function() {
+    const st = _adhesivoState;
+    if (!st || st.imprimiendo) return;
+    st.imprimiendo = true;
+    const btn = document.getElementById('adhesivoBtnImprimir');
+    const txt = document.getElementById('adhesivoBtnImprimirTxt');
+    if (btn) btn.disabled = true;
+    if (txt) txt.innerHTML = '<span class="adhesivo-spin">◐</span> Enviando…';
+
+    const idempotencyKey = 'adh_' + st.env.idEnvasado + '_' + st.cantidad + '_' + Date.now();
+    try {
+      const r = await API.post('wh_imprimirEtiqueta', {
+        codigoBarra:       st.datos.codigoBarra,
+        descripcion:       st.datos.descripcion,
+        unidades:          st.cantidad,
+        fechaEnvasado:     st.env.fecha,
+        idempotencyKey:    idempotencyKey
+      });
+      if (r && r.ok === false) throw new Error(r.error || 'Backend rechazó');
+      if (txt) txt.innerHTML = '✅ Enviado · job #' + (r?.jobId || '');
+      toast('🖨 ' + st.cantidad + ' adhesivo(s) enviados a la impresora', 'success');
+      setTimeout(() => MOS.cerrarModalImprimirAdhesivo(), 1400);
+    } catch(e) {
+      if (txt) txt.innerHTML = '❌ Error — reintentar';
+      if (btn) { btn.disabled = false; }
+      toast('Error al imprimir: ' + (e?.message || 'desconocido'), 'error', 6000);
+      st.imprimiendo = false;
+    }
+  };
+
+  MOS.cerrarModalImprimirAdhesivo = function() {
+    const modal = document.getElementById('adhesivoModal');
+    if (modal) {
+      modal.style.animation = 'adhesivoOut .22s ease-out forwards';
+      setTimeout(() => modal.remove(), 220);
+    }
+    document.removeEventListener('keydown', _adhesivoKeydown);
+    _adhesivoState = null;
+  };
+
+  function _adhesivoKeydown(ev) {
+    if (ev.key === 'Escape') { MOS.cerrarModalImprimirAdhesivo(); return; }
+    if (ev.key === 'Enter') {
+      const btn = document.getElementById('adhesivoBtnImprimir');
+      if (btn && !btn.disabled) MOS.adhesivoImprimir();
+    }
   }
   function _envFmtFechaLarga(yyyymmdd) {
     if (!yyyymmdd) return '—';
