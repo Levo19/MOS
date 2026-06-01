@@ -28392,26 +28392,25 @@ const MOS = (() => {
                   </div>` : ''}
               </div>`;
             })()}
-            <!-- [v2.43.101] Cards 'no soportada' — usa camsHardware + dualIntentado para no parpadear -->
+            <!-- [v2.43.102] Cards 'no soportada' — solo en móviles donde tiene sentido -->
             ${(() => {
               const c = _espiaV2.capabilities;
               if (!c) return '';
               const cards = [];
-              // PANTALLA: solo si la API no existe en el browser del cliente
-              if (c.tienePantalla === false) {
-                cards.push({ icon: '🖥️', label: 'PANTALLA', motivo: 'API getDisplayMedia no soportada' });
+              // PANTALLA solo se muestra como "no soportada" en móvil/tablet.
+              // En desktop sin pantalla la causa real es probablemente otra
+              // (user rechazó, o no la pidió), no que la API falte.
+              if (c.tienePantalla === false && c.esMobile) {
+                cards.push({ icon: '🖥️', label: 'PANTALLA', motivo: 'No disponible en móviles (limitación del navegador)' });
               }
-              // 2DA CÁMARA:
-              //   camsHardware<2 → "Solo 1 cámara en hardware" (no es bug, no hay)
-              //   camsHardware>=2 && dualIntentado && camsAbiertas<2 → "Hardware no permite dual concurrent"
-              //   dualIntentado=false → no mostrar (probablemente está cargando)
-              const ch = c.camsHardware || 0;
-              const ca = c.camsAbiertas || 0;
-              if (c.dualIntentado) {
+              // 2DA CÁMARA: solo en móvil. En desktop no es algo que se espera.
+              if (c.esMobile && c.dualIntentado) {
+                const ch = c.camsHardware || 0;
+                const ca = c.camsAbiertas || 0;
                 if (ch < 2) {
-                  cards.push({ icon: '📸', label: '2DA CÁMARA', motivo: 'Hardware solo tiene 1 cámara' });
+                  cards.push({ icon: '📸', label: '2DA CÁMARA', motivo: 'Este dispositivo solo tiene 1 cámara' });
                 } else if (ca < 2) {
-                  cards.push({ icon: '📸', label: '2DA CÁMARA', motivo: 'Browser no permite dual concurrent' });
+                  cards.push({ icon: '📸', label: '2DA CÁMARA', motivo: 'El navegador no permite usar las 2 cámaras a la vez' });
                 }
               }
               return cards.map(card => `
