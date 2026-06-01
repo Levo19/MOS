@@ -27960,6 +27960,31 @@ const MOS = (() => {
         }
         if (_espiaV2) _espiaV2.pollIceDesde = ri.tsMax || _espiaV2.pollIceDesde;
       }
+      // [v2.43.82] 3) Polling de RENEGOCIACIÓN — cliente envió nueva offer
+      // (porque agregó pantalla post-setup). Master debe procesarla.
+      // Solo cuando ya tenemos remoteDescription estable.
+      if (_espiaV2 && _espiaV2.pc.signalingState === 'stable' && !_espiaV2._renegEnCurso) {
+        try {
+          const rg = await API.post('espiaLeerRenegOferta', { sesionId: _espiaV2.sesionId });
+          if (rg?.sdpRenegOferta && _espiaV2 && _espiaV2.pc.signalingState === 'stable') {
+            _espiaV2._renegEnCurso = true;
+            console.log('[espia master] reneg offer detectada · procesando');
+            const newOffer = JSON.parse(rg.sdpRenegOferta);
+            await _espiaV2.pc.setRemoteDescription(newOffer);
+            const newAnswer = await _espiaV2.pc.createAnswer();
+            await _espiaV2.pc.setLocalDescription(newAnswer);
+            await API.post('espiaSubirRenegRespuesta', {
+              sesionId: _espiaV2.sesionId,
+              sdp: JSON.stringify(newAnswer)
+            });
+            console.log('[espia master] reneg answer enviada · pantalla negociada ✓');
+            if (_espiaV2) _espiaV2._renegEnCurso = false;
+          }
+        } catch(eR) {
+          console.warn('[espia master reneg]', eR?.message);
+          if (_espiaV2) _espiaV2._renegEnCurso = false;
+        }
+      }
       // Tracking de lag
       if (_espiaV2) {
         _espiaV2.lagMs = Date.now() - t0;

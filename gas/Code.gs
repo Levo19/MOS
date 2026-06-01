@@ -143,6 +143,10 @@ function _route(method, e) {
       case 'espiaLeerOferta':                return espiaLeerOferta(params);
       case 'espiaSubirRespuesta':            return espiaSubirRespuesta(params);
       case 'espiaLeerRespuesta':             return espiaLeerRespuesta(params);
+      case 'espiaSubirRenegOferta':          return espiaSubirRenegOferta(params);
+      case 'espiaLeerRenegOferta':           return espiaLeerRenegOferta(params);
+      case 'espiaSubirRenegRespuesta':       return espiaSubirRenegRespuesta(params);
+      case 'espiaLeerRenegRespuesta':        return espiaLeerRenegRespuesta(params);
       case 'espiaAgregarIce':                return espiaAgregarIce(params);
       case 'espiaLeerIce':                   return espiaLeerIce(params);
       case 'espiaEstadoSesion':              return espiaEstadoSesion(params);

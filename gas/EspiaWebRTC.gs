@@ -350,8 +350,6 @@ function _getHojaSignaling() {
   // [v2.43.65] BUG FIX: getActiveSpreadsheet() devuelve NULL si el GAS es
   // standalone (no bound al SS). Usar getSpreadsheet() (Code.gs) que abre
   // por SPREADSHEET_ID de Properties — funciona en ambos casos.
-  // Síntoma del bug: "Cannot read properties of null (reading 'getSheetByName')"
-  // disparado al crear sesión espía → frontend cerraba modal con toast.
   var ss = getSpreadsheet();
   var sh = ss.getSheetByName('RTC_SIGNALING');
   if (!sh) {
@@ -359,15 +357,58 @@ function _getHojaSignaling() {
     sh.appendRow([
       'sesionId', 'fecha', 'masterId', 'deviceId',
       'estado', 'sdpOferta', 'sdpRespuesta',
-      'iceMaster', 'iceDevice', 'streamsActivos', 'detalleFin'
+      'iceMaster', 'iceDevice', 'streamsActivos', 'detalleFin',
+      'sdpRenegOferta', 'sdpRenegRespuesta'
     ]);
-    sh.getRange(1, 1, 1, 11).setFontWeight('bold')
+    sh.getRange(1, 1, 1, 13).setFontWeight('bold')
       .setBackground('#0f172a').setFontColor('#a5b4fc');
     sh.setFrozenRows(1);
-    // Limpieza automática: sesiones cerradas más de 7 días → borrar
-    // (se hace en _purgarSesionesAntiguas, llamado on read)
+  } else {
+    // [v2.43.82] Auto-agregar columnas de renegociación a hojas viejas
+    var hdrs = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    var nuevas = ['sdpRenegOferta', 'sdpRenegRespuesta'].filter(function(c){
+      return hdrs.indexOf(c) < 0;
+    });
+    if (nuevas.length > 0) {
+      var startCol = sh.getLastColumn() + 1;
+      sh.getRange(1, startCol, 1, nuevas.length).setValues([nuevas])
+        .setFontWeight('bold').setBackground('#0f172a').setFontColor('#a5b4fc');
+    }
   }
   return sh;
+}
+
+// [v2.43.82] RENEGOCIACIÓN SDP — cliente WH/ME cuando agrega pantalla
+// despues del PC inicial. Permite que cam/mic/GPS sean 100% independientes
+// del momento en que el user acepta compartir pantalla.
+
+function espiaSubirRenegOferta(params) {
+  var sesionId = String(params.sesionId || '').trim();
+  var sdp      = String(params.sdp || '');
+  if (!sesionId || !sdp) return { ok: false, error: 'Requiere sesionId y sdp' };
+  return _actualizarColumnaSesion(sesionId, 'sdpRenegOferta', sdp);
+}
+
+function espiaLeerRenegOferta(params) {
+  var sesionId = String(params.sesionId || '').trim();
+  var row = _buscarSesion(sesionId);
+  if (!row) return { ok: false, error: 'Sesión no encontrada' };
+  return { ok: true, data: { sdpRenegOferta: row.sdpRenegOferta || '' } };
+}
+
+function espiaSubirRenegRespuesta(params) {
+  var sesionId = String(params.sesionId || '').trim();
+  var sdp      = String(params.sdp || '');
+  if (!sesionId || !sdp) return { ok: false, error: 'Requiere sesionId y sdp' };
+  // Limpiar la oferta para que el cliente no la vuelva a leer
+  return _actualizarColumnaSesion(sesionId, 'sdpRenegRespuesta', sdp, { sdpRenegOferta: '' });
+}
+
+function espiaLeerRenegRespuesta(params) {
+  var sesionId = String(params.sesionId || '').trim();
+  var row = _buscarSesion(sesionId);
+  if (!row) return { ok: false, error: 'Sesión no encontrada' };
+  return { ok: true, data: { sdpRenegRespuesta: row.sdpRenegRespuesta || '' } };
 }
 
 function _buscarSesion(sesionId) {
