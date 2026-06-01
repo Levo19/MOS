@@ -28409,28 +28409,34 @@ const MOS = (() => {
       dot.style.animation = 'espiaBreath 1s';
       setTimeout(() => { if (dot) dot.style.animation = ''; }, 1000);
     }
-    // [v2.43.91] Minimapa OpenStreetMap embed. Sin dependencias JS, sin CDN extra.
-    // bbox ~150m around point para zoom razonable.
+    // [v2.43.94] Google Maps embed sin API key (output=embed). UI limpia,
+    // sin chip de "reportar problema" que tapaba el croquis en OSM embed.
+    // No requiere billing ni Script Properties extra.
     if (mapBox && g.lat != null && g.lng != null) {
       const lat = g.lat, lng = g.lng;
-      const d = 0.0015; // grados ~150m
-      const bbox = `${(lng - d).toFixed(6)},${(lat - d).toFixed(6)},${(lng + d).toFixed(6)},${(lat + d).toFixed(6)}`;
-      const src = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat.toFixed(6)},${lng.toFixed(6)}`;
+      const src = `https://maps.google.com/maps?q=${lat.toFixed(6)},${lng.toFixed(6)}&hl=es&z=17&output=embed`;
+      const linkAmplio = `https://www.google.com/maps?q=${lat.toFixed(6)},${lng.toFixed(6)}&z=17`;
       const iframe = mapBox.querySelector('iframe');
       if (!iframe) {
-        // Crear iframe primer vez
         mapBox.innerHTML = `<iframe src="${src}" style="border:0;width:100%;height:100%;border-radius:6px" loading="lazy" referrerpolicy="no-referrer"></iframe>
-          <a href="https://www.openstreetmap.org/?mlat=${lat.toFixed(6)}&mlon=${lng.toFixed(6)}#map=17/${lat.toFixed(6)}/${lng.toFixed(6)}" target="_blank"
-             style="position:absolute;bottom:4px;right:4px;background:rgba(15,23,42,.85);color:#a5b4fc;font-size:8px;padding:2px 5px;border-radius:4px;text-decoration:none;border:1px solid #1e293b">ampliar ↗</a>`;
+          <a href="${linkAmplio}" target="_blank" rel="noopener"
+             style="position:absolute;top:4px;right:4px;background:rgba(15,23,42,.92);color:#a5b4fc;font-size:9px;font-weight:700;padding:3px 7px;border-radius:5px;text-decoration:none;border:1px solid #1e293b;backdrop-filter:blur(4px);z-index:5">ampliar ↗</a>`;
         mapBox.style.position = 'relative';
-        mapBox.style.height = '110px';
+        mapBox.style.height = '150px';   // más alto: 110 → 150
+        mapBox.style.background = '#020617';
+        mapBox.style.borderRadius = '6px';
+        mapBox.style.overflow = 'hidden';
         mapBox.style.fontSize = '';
         mapBox.style.color = '';
-      } else if (!iframe.dataset.lastSrc || Math.abs(parseFloat(iframe.dataset.lastLat || 0) - lat) > 0.0002 || Math.abs(parseFloat(iframe.dataset.lastLng || 0) - lng) > 0.0002) {
+      } else if (Math.abs(parseFloat(iframe.dataset.lastLat || 0) - lat) > 0.0002 ||
+                 Math.abs(parseFloat(iframe.dataset.lastLng || 0) - lng) > 0.0002) {
         // Refrescar src solo si movió >20m (evita reload constante por jitter)
         iframe.src = src;
         iframe.dataset.lastLat = lat;
         iframe.dataset.lastLng = lng;
+        // Actualizar también el link de ampliar
+        const link = mapBox.querySelector('a');
+        if (link) link.href = linkAmplio;
       }
     }
   }
