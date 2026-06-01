@@ -28018,7 +28018,18 @@ const MOS = (() => {
 
       // (1) Cierre remoto — el device cerró por su lado o TTL expiró
       if (d.estado === 'CERRADA') {
-        console.log('[espia master] backend reporta CERRADA · cerrando UI');
+        console.log('[espia master] backend reporta CERRADA · cerrando UI', d);
+        // [v2.43.93] UX honesto — toast con causa probable antes de cerrar
+        const motivo = d.motivoFin || 'desconocido';
+        let mensaje = 'El dispositivo cerró la sesión';
+        if (/ice_failed/i.test(motivo)) {
+          mensaje = '⚠ Conexión imposible (NAT/firewall). Configurá TURN en Properties para redes móviles/corporativas.';
+        } else if (/page_unload/i.test(motivo)) {
+          mensaje = 'El usuario cerró la app en el dispositivo.';
+        } else if (/connection_/i.test(motivo)) {
+          mensaje = '⚠ La conexión WebRTC falló (' + motivo + '). Probablemente NAT simétrico sin TURN.';
+        }
+        toast(mensaje, 'warn', 8000);
         _espiaV2Cerrar('device_cerro');
         return;
       }
@@ -28035,13 +28046,32 @@ const MOS = (() => {
       }
       if (!_espiaV2) return;
 
-      // (3) ICE candidates del device (batched)
+      // (3) ICE candidates del device (batched).
+      // [v2.43.93] addIceCandidate requiere remoteDescription previo. Si el
+      // cliente sube ICE antes que el answer (ICE gathering empieza apenas
+      // setLocalDescription dispara), los candidates llegan acá pero pc.remoteDescription
+      // es null → se PERDÍAN silenciosos. Encolamos hasta tener remoteDescription.
       if (d.ice?.length) {
-        for (const c of d.ice) {
-          try { await pc.addIceCandidate(c.ice); }
-          catch(eC) { console.warn('[espia master] addIceCandidate fallo:', eC?.message); }
+        if (!pc.remoteDescription) {
+          _espiaV2._iceQueueAplicar = (_espiaV2._iceQueueAplicar || []).concat(d.ice);
+          console.log('[espia master] ICE encolado · ' + d.ice.length + ' (sin remoteDescription aún)');
+        } else {
+          for (const c of d.ice) {
+            try { await pc.addIceCandidate(c.ice); }
+            catch(eC) { console.warn('[espia master] addIceCandidate fallo:', eC?.message); }
+          }
         }
         if (_espiaV2 && d.tsMax) _espiaV2.pollIceDesde = d.tsMax;
+      }
+      // Drenar cola si ya tenemos remoteDescription (fue seteada en esta iter o anterior)
+      if (_espiaV2 && pc.remoteDescription && _espiaV2._iceQueueAplicar?.length) {
+        const cola = _espiaV2._iceQueueAplicar;
+        _espiaV2._iceQueueAplicar = [];
+        for (const c of cola) {
+          try { await pc.addIceCandidate(c.ice); }
+          catch(eC) { console.warn('[espia master] addIceCandidate cola fallo:', eC?.message); }
+        }
+        console.log('[espia master] ICE drenado · ' + cola.length + ' aplicados tras setRemoteDescription');
       }
 
       // (4) Renegociación: device subió oferta nueva (ej. agregó pantalla)

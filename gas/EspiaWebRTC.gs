@@ -512,6 +512,15 @@ function espiaSync(params) {
   if (row.streamsActivos) {
     try { snap.streamsActivos = JSON.parse(row.streamsActivos); } catch(_) { snap.streamsActivos = null; }
   }
+  // [v2.43.93] Si está CERRADA, exponer motivo para que el peer muestre toast claro
+  if (String(row.estado || '').toUpperCase() === 'CERRADA' && row.detalleFin) {
+    try {
+      var det = JSON.parse(row.detalleFin);
+      snap.motivoFin = det.motivo || '';
+      snap.ladoCierre = det.lado || '';
+      snap.duracionSeg = det.duracionSeg || 0;
+    } catch(_){}
+  }
 
   // SDPs selectivos (solo los pedidos, no inflar respuesta)
   if (necesito.sdpOferta)         snap.sdpOferta         = row.sdpOferta         || '';
