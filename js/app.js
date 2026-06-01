@@ -12275,6 +12275,7 @@ const MOS = (() => {
       ).join(' ');
       return `<div class="adhesivo-linea">${parts}</div>`;
     }).join('');
+    // [v2.43.112] Layout fiel al impreso: márgenes mínimos + flechas guía
     return `
       <div class="adhesivo-etiqueta">
         <div class="adhesivo-etq-top">
@@ -12287,9 +12288,11 @@ const MOS = (() => {
         <div class="adhesivo-divider"></div>
         <div class="adhesivo-desc">${linesHTML}</div>
         <div class="adhesivo-barcode-wrap">
+          <span class="adhesivo-bc-arrow adhesivo-bc-arrow-l">›</span>
           <svg id="adhesivoBarcodeSVG"></svg>
-          <div class="adhesivo-codigo">${_escapeHtml(datos.codigoBarra)}</div>
+          <span class="adhesivo-bc-arrow adhesivo-bc-arrow-r">‹</span>
         </div>
+        <div class="adhesivo-codigo">${_escapeHtml(datos.codigoBarra)}</div>
         <div class="adhesivo-cantidad-tag">×${cantidad}</div>
       </div>`;
   }
@@ -12304,9 +12307,10 @@ const MOS = (() => {
     const svg = document.getElementById('adhesivoBarcodeSVG');
     if (!svg || typeof JsBarcode === 'undefined') return;
     try {
+      // [v2.43.112] Más pequeño + márgenes JsBarcode internos = quiet zone visible
       JsBarcode(svg, String(codigoBarra), {
-        format: 'CODE128', width: 1.5, height: 40,
-        displayValue: false, margin: 0, background: '#ffffff', lineColor: '#000000'
+        format: 'CODE128', width: 1.4, height: 32,
+        displayValue: false, margin: 8, background: '#ffffff', lineColor: '#000000'
       });
     } catch(e) { console.warn('[adhesivo] barcode render fail:', e.message); }
   }

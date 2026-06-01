@@ -8170,7 +8170,9 @@
     }
     .adhesivo-preview { padding: 6px; }
 
-    /* Etiqueta visual a escala 2:1 (400×200 dots reales → 480×240 px) */
+    /* [v2.43.112] Etiqueta visual a escala 2:1 (400×200 dots reales → 480×240 px)
+       Padding interno mínimo (6px) — más fiel al impreso físico que tiene
+       márgenes muy chicos. El padding viejo de 14px era muy generoso vs la realidad. */
     .adhesivo-etiqueta {
       width: 480px; height: 240px;
       background: #ffffff;
@@ -8179,7 +8181,7 @@
                   0 0 0 2px rgba(251,191,36,.55),
                   inset 0 0 0 1px rgba(0,0,0,.05);
       position: relative;
-      padding: 10px 14px;
+      padding: 6px 8px;
       display: flex; flex-direction: column;
       color: #000;
       font-family: 'Lilita One', 'Arial Black', sans-serif;
@@ -8212,37 +8214,48 @@
     .adhesivo-vto-val { font-size: 14px; font-weight: 900; color: #111; }
 
     .adhesivo-divider {
-      height: 1px; background: #000; margin: 6px 0 10px;
+      height: 1px; background: #000; margin: 3px 0 4px;
     }
     .adhesivo-desc {
       flex: 1; display: flex; flex-direction: column; justify-content: center;
-      align-items: center; gap: 4px; text-align: center;
+      align-items: center; gap: 2px; text-align: center;
     }
     .adhesivo-linea {
-      display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+      display: flex; gap: 7px; flex-wrap: wrap; justify-content: center;
       align-items: baseline;
     }
     .adhesivo-tok {
-      font-size: 18px; font-weight: 700; color: #111;
+      font-size: 17px; font-weight: 700; color: #111;
       font-family: 'Arial Black', sans-serif;
       letter-spacing: .5px;
     }
     .adhesivo-tok-hl {
-      font-size: 26px; font-weight: 900; color: #000;
+      font-size: 24px; font-weight: 900; color: #000;
       animation: adhesivoTokPulse 2.4s ease-in-out infinite;
     }
     @keyframes adhesivoTokPulse {
       0%, 100% { text-shadow: 0 0 0 rgba(251,191,36,0); }
       50%      { text-shadow: 0 0 12px rgba(251,191,36,.55); }
     }
+    /* [v2.43.112] Barcode más compacto + flechas guía visuales (>...<) */
     .adhesivo-barcode-wrap {
-      margin-top: 6px;
-      display: flex; flex-direction: column; align-items: center; gap: 2px;
+      margin-top: 2px;
+      display: flex; flex-direction: row; align-items: center;
+      justify-content: center; gap: 6px;
     }
-    .adhesivo-barcode-wrap svg { max-width: 220px; height: 36px; }
+    .adhesivo-barcode-wrap svg {
+      max-width: 200px; height: 32px;
+    }
+    .adhesivo-bc-arrow {
+      font-family: 'Arial Black', sans-serif;
+      font-size: 22px; font-weight: 900;
+      color: #111; line-height: 1;
+    }
     .adhesivo-codigo {
       font-family: monospace; font-size: 9px; color: #333;
       letter-spacing: .5px;
+      text-align: center;
+      margin-top: 1px;
     }
     .adhesivo-cantidad-tag {
       position: absolute; top: 8px; right: 64px;
