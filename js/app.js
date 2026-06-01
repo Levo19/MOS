@@ -28024,6 +28024,23 @@ const MOS = (() => {
           if (_espiaV2) _espiaV2._renegEnCurso = false;
         }
       }
+      // [v2.43.88] Polling de estado del backend (~cada 6s, 1 de cada 10 ticks).
+      // Detecta cuando el device cierra (page_unload), TTL expira, o admin
+      // forzó cierre desde otra pestaña. Antes el master se quedaba colgado
+      // esperando datos hasta que pc.connectionState cambiara (puede tardar
+      // 30s+ sin TURN). Ahora cierra UI en <6s.
+      _espiaV2._pollEstadoTick = (_espiaV2._pollEstadoTick || 0) + 1;
+      if (_espiaV2 && _espiaV2._pollEstadoTick >= 10) {
+        _espiaV2._pollEstadoTick = 0;
+        try {
+          const rE = await API.post('espiaEstadoSesion', { sesionId: _espiaV2.sesionId });
+          if (_espiaV2 && rE?.estado === 'CERRADA') {
+            console.log('[espia master] backend reporta CERRADA · cerrando UI');
+            _espiaV2Cerrar('device_cerro');
+            return;
+          }
+        } catch(eEst) { /* silencio - network transitorio */ }
+      }
       // Tracking de lag
       if (_espiaV2) {
         _espiaV2.lagMs = Date.now() - t0;

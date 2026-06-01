@@ -20,6 +20,12 @@
 // ════════════════════════════════════════════════════════════════════
 
 var ESPIA_TTL_MS = 10 * 60 * 1000; // 10 min máximo por sesión
+// [v2.43.88] Límites de seguridad para evitar payloads gigantes que rompen Sheets
+// (celda max ~50000 chars). SDP normal es 3-8KB; reneg con video puede llegar a 15KB.
+var ESPIA_SDP_MAX_CHARS = 45000;
+// ICE candidates: limitar array a 300 últimos por lado (~60KB JSON). Trickle ICE típico
+// genera 5-15 candidates por endpoint; con restartIce x N puede crecer. Cortamos viejos.
+var ESPIA_ICE_MAX_ITEMS = 300;
 
 // ── 1. Crear sesión de espionaje (master) ───────────────────────────
 // Devuelve sesionId que el master pasará al device vía push FCM.
@@ -138,6 +144,7 @@ function espiaSubirOferta(params) {
   var sesionId = String(params.sesionId || '').trim();
   var sdp      = String(params.sdp || '');
   if (!sesionId || !sdp) return { ok: false, error: 'Requiere sesionId y sdp' };
+  if (sdp.length > ESPIA_SDP_MAX_CHARS) return { ok: false, error: 'SDP demasiado grande (' + sdp.length + ' > ' + ESPIA_SDP_MAX_CHARS + ')' };
   return _actualizarColumnaSesion(sesionId, 'sdpOferta', sdp);
 }
 
@@ -154,6 +161,7 @@ function espiaSubirRespuesta(params) {
   var sesionId = String(params.sesionId || '').trim();
   var sdp      = String(params.sdp || '');
   if (!sesionId || !sdp) return { ok: false, error: 'Requiere sesionId y sdp' };
+  if (sdp.length > ESPIA_SDP_MAX_CHARS) return { ok: false, error: 'SDP demasiado grande (' + sdp.length + ' > ' + ESPIA_SDP_MAX_CHARS + ')' };
   // [v2.43.62] Validar transición FSM
   var rowChk = _buscarSesion(sesionId);
   if (!rowChk) return { ok: false, error: 'Sesión no encontrada' };
@@ -401,6 +409,7 @@ function espiaSubirRenegOferta(params) {
   var sesionId = String(params.sesionId || '').trim();
   var sdp      = String(params.sdp || '');
   if (!sesionId || !sdp) return { ok: false, error: 'Requiere sesionId y sdp' };
+  if (sdp.length > ESPIA_SDP_MAX_CHARS) return { ok: false, error: 'SDP demasiado grande (' + sdp.length + ' > ' + ESPIA_SDP_MAX_CHARS + ')' };
   // [v2.43.87] Solo aceptar reneg de sesiones vivas
   var row = _buscarSesion(sesionId);
   if (!row) return { ok: false, error: 'Sesión no encontrada' };
@@ -422,6 +431,7 @@ function espiaSubirRenegRespuesta(params) {
   var sesionId = String(params.sesionId || '').trim();
   var sdp      = String(params.sdp || '');
   if (!sesionId || !sdp) return { ok: false, error: 'Requiere sesionId y sdp' };
+  if (sdp.length > ESPIA_SDP_MAX_CHARS) return { ok: false, error: 'SDP demasiado grande (' + sdp.length + ' > ' + ESPIA_SDP_MAX_CHARS + ')' };
   // [v2.43.87] Validar sesión viva
   var row = _buscarSesion(sesionId);
   if (!row) return { ok: false, error: 'Sesión no encontrada' };
@@ -557,17 +567,19 @@ function repararCabecerasSignaling() {
     sh = ss.insertSheet('RTC_SIGNALING');
     Logger.log('[reparar signaling] hoja no existía — creada');
   }
+  // [v2.43.88] Incluir columnas de renegociación (no perderlas al reparar)
   var cabeceras = [
     'sesionId', 'fecha', 'masterId', 'deviceId',
     'estado', 'sdpOferta', 'sdpRespuesta',
-    'iceMaster', 'iceDevice', 'streamsActivos', 'detalleFin'
+    'iceMaster', 'iceDevice', 'streamsActivos', 'detalleFin',
+    'sdpRenegOferta', 'sdpRenegRespuesta'
   ];
-  // Forzar 11 columnas mínimo
-  if (sh.getMaxColumns() < 11) {
-    sh.insertColumnsAfter(sh.getMaxColumns(), 11 - sh.getMaxColumns());
+  var nCols = cabeceras.length;
+  if (sh.getMaxColumns() < nCols) {
+    sh.insertColumnsAfter(sh.getMaxColumns(), nCols - sh.getMaxColumns());
   }
   // Escribir cabeceras directo en fila 1 (overwrite si había algo)
-  sh.getRange(1, 1, 1, 11).setValues([cabeceras])
+  sh.getRange(1, 1, 1, nCols).setValues([cabeceras])
     .setFontWeight('bold').setBackground('#0f172a').setFontColor('#a5b4fc');
   sh.setFrozenRows(1);
   Logger.log('[reparar signaling] cabeceras escritas correctamente: ' + JSON.stringify(cabeceras));
@@ -588,14 +600,15 @@ function resetearHojaSignaling() {
     ss.deleteSheet(sh);
     Logger.log('[reset signaling] borrada hoja vieja con ' + sesionesAntes + ' sesiones');
   }
-  // Recrear con cabeceras correctas
+  // [v2.43.88] Recrear con cabeceras correctas (incluye reneg)
   var nueva = ss.insertSheet('RTC_SIGNALING');
   nueva.appendRow([
     'sesionId', 'fecha', 'masterId', 'deviceId',
     'estado', 'sdpOferta', 'sdpRespuesta',
-    'iceMaster', 'iceDevice', 'streamsActivos', 'detalleFin'
+    'iceMaster', 'iceDevice', 'streamsActivos', 'detalleFin',
+    'sdpRenegOferta', 'sdpRenegRespuesta'
   ]);
-  nueva.getRange(1, 1, 1, 11).setFontWeight('bold')
+  nueva.getRange(1, 1, 1, 13).setFontWeight('bold')
        .setBackground('#0f172a').setFontColor('#a5b4fc');
   nueva.setFrozenRows(1);
   Logger.log('[reset signaling] hoja recreada con cabeceras correctas');
@@ -803,6 +816,11 @@ function _agregarAArrayJsonSesion(sesionId, columna, elemento) {
     var arr = [];
     try { arr = JSON.parse(actualVal || '[]'); } catch(_) { arr = []; }
     arr.push(elemento);
+    // [v2.43.88] Tope de tamaño — con restartIce repetido el array puede crecer
+    // sin techo y eventualmente romper la celda Sheets (max ~50K chars).
+    if (arr.length > ESPIA_ICE_MAX_ITEMS) {
+      arr = arr.slice(arr.length - ESPIA_ICE_MAX_ITEMS);
+    }
     sh.getRange(row._row, col + 1).setValue(JSON.stringify(arr));
     // [v2.43.67] Flush para que el polling del otro lado vea el ICE candidate inmediato
     try { SpreadsheetApp.flush(); } catch(_){}
@@ -812,14 +830,26 @@ function _agregarAArrayJsonSesion(sesionId, columna, elemento) {
   }
 }
 
+// [v2.43.88] TTL dinámico por estado para no matar sesiones EN_VIVO activas.
+// Antes: ESPIA_TTL_MS=10min mataba cualquier sesión a los 10' aunque master
+// estuviera monitoreando activamente → polling devolvía "Sesión expirada" y
+// el WebRTC seguía vivo pero el signaling moría → fallaban renegs/ICE post-10'.
+// Ahora: PENDIENTE (sin handshake) = 10min, CONECTANDO = 20min, EN_VIVO = 60min.
+function _ttlPorEstado(estado) {
+  var e = String(estado || '').toUpperCase();
+  if (e === 'EN_VIVO')    return 6 * ESPIA_TTL_MS;  // 60 min
+  if (e === 'CONECTANDO') return 2 * ESPIA_TTL_MS;  // 20 min
+  return ESPIA_TTL_MS;                              // 10 min (PENDIENTE default)
+}
+
 function _sesionExpiro(row) {
   var fecha = row.fecha instanceof Date ? row.fecha : new Date(row.fecha);
-  return (Date.now() - fecha.getTime()) > ESPIA_TTL_MS;
+  return (Date.now() - fecha.getTime()) > _ttlPorEstado(row.estado);
 }
 
 function _msHastaExpiracion(row) {
   var fecha = row.fecha instanceof Date ? row.fecha : new Date(row.fecha);
-  return Math.max(0, ESPIA_TTL_MS - (Date.now() - fecha.getTime()));
+  return Math.max(0, _ttlPorEstado(row.estado) - (Date.now() - fecha.getTime()));
 }
 
 function _logAuditoriaEspia(row, duracionSeg, detalle) {
