@@ -27966,14 +27966,18 @@ const MOS = (() => {
         }
         if (_espiaV2) _espiaV2.pollIceDesde = ri.tsMax || _espiaV2.pollIceDesde;
       }
-      // [v2.43.82] 3) Polling de RENEGOCIACIÓN — cliente envió nueva offer
-      // (porque agregó pantalla post-setup). Master debe procesarla.
-      // Solo cuando ya tenemos remoteDescription estable.
+      // [v2.43.85 MUTEX FIX] Polling de RENEG con mutex ANTES del primer await.
+      // Bug previo: setInterval cada 600ms, tick1 en await, tick2 corre con
+      // _renegEnCurso aún false → procesa misma reneg dos veces → setRemoteDescription
+      // duplicado → InvalidStateError.
       if (_espiaV2 && _espiaV2.pc.signalingState === 'stable' && !_espiaV2._renegEnCurso) {
+        _espiaV2._renegEnCurso = true; // SETEAR ANTES de await para evitar race
         try {
           const rg = await API.post('espiaLeerRenegOferta', { sesionId: _espiaV2.sesionId });
-          if (rg?.sdpRenegOferta && _espiaV2 && _espiaV2.pc.signalingState === 'stable') {
-            _espiaV2._renegEnCurso = true;
+          if (!_espiaV2 || _espiaV2.pc.signalingState !== 'stable') {
+            // Estado cambió durante el await — abortar
+            if (_espiaV2) _espiaV2._renegEnCurso = false;
+          } else if (rg?.sdpRenegOferta) {
             console.log('[espia master] reneg offer detectada · procesando');
             const newOffer = JSON.parse(rg.sdpRenegOferta);
             await _espiaV2.pc.setRemoteDescription(newOffer);
@@ -27984,6 +27988,9 @@ const MOS = (() => {
               sdp: JSON.stringify(newAnswer)
             });
             console.log('[espia master] reneg answer enviada · pantalla negociada ✓');
+            if (_espiaV2) _espiaV2._renegEnCurso = false;
+          } else {
+            // No había offer — liberar mutex
             if (_espiaV2) _espiaV2._renegEnCurso = false;
           }
         } catch(eR) {
