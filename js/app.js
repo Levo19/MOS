@@ -28150,6 +28150,8 @@ const MOS = (() => {
     _espiaV2.streams[tipo] = info.stream;
     console.log('[espia ontrack] trackId=' + String(info.trackId).substring(0,8) + ' contentHint=' + (info.contentHint || '?') + ' → tipo=' + tipo);
     _espiaV2ActualizarStream(tipo, info.stream);
+    // [v2.43.98] Si focus actual no tiene stream y este sí, hacer focus
+    if (tipo !== 'audio') _espiaV2AutoFocus();
     _espiaApiPost('espiaReportarStreams', {
       sesionId: _espiaV2.sesionId,
       streams: {
@@ -28161,34 +28163,62 @@ const MOS = (() => {
     }).catch(()=>{});
   }
 
-  // [v2.43.92 FIX] Mapping PARCIAL preservaba bugs:
-  //   - Primer envío del cliente puede traer solo cam (pantalla agrega async).
-  //   - Si reseteo streams a null, perdemos el track de pantalla que llegó por
-  //     contentHint mientras esperaba mapping completo.
-  // Solución: SOLO actualizar slots cuyos trackIds estén en el map. Para los
-  // tracks no mencionados, mantener su asignación previa por contentHint/heurística.
+  // [v2.43.98 FIX BUG #1] Two-pass apply atómico (mejor que el de v2.43.92).
+  // Antes el loop podía borrar un slot recién asignado por otro track:
+  //   trackA → camara2 (limpia camara donde estaba)
+  //   trackB → camara  (limpia camara2 que acabamos de poner a trackA)
+  //   → trackA perdido.
+  // Pass 1 construye state objetivo. Pass 2 asigna de una vez. Los tracks NO
+  // mencionados en el map preservan su slot previo por heurística/contentHint.
   function _espiaV2AplicarTrackMap(map) {
     if (!_espiaV2 || !map) return;
     _espiaV2._trackTipoMap = Object.assign({}, _espiaV2._trackTipoMap, map);
     const videos = (_espiaV2._tracksRecibidos || []).filter(t => t.kind === 'video');
     if (!videos.length) return;
-    let cambio = false;
+
+    const nuevoEstado = { camara: null, camara2: null, pantalla: null };
+    // Pass 1a: aplicar mapping explícito
     videos.forEach(t => {
       const tipoNuevo = map[t.trackId];
-      if (!tipoNuevo) return;
-      if (_espiaV2.streams[tipoNuevo] === t.stream) return;
-      // Quitar de los 3 slots posibles si está en otro
+      if (tipoNuevo && ['camara', 'camara2', 'pantalla'].indexOf(tipoNuevo) >= 0) {
+        nuevoEstado[tipoNuevo] = t.stream;
+      }
+    });
+    // Pass 1b: para los videos sin mapping, preservar su slot previo si está libre
+    videos.forEach(t => {
+      if (map[t.trackId]) return; // ya manejado
       ['camara', 'camara2', 'pantalla'].forEach(slot => {
-        if (_espiaV2.streams[slot] === t.stream && tipoNuevo !== slot) {
-          _espiaV2.streams[slot] = null;
+        if (_espiaV2.streams[slot] === t.stream && !nuevoEstado[slot]) {
+          nuevoEstado[slot] = t.stream;
         }
       });
-      _espiaV2.streams[tipoNuevo] = t.stream;
-      cambio = true;
     });
+
+    const cambio = nuevoEstado.camara   !== _espiaV2.streams.camara   ||
+                   nuevoEstado.camara2  !== _espiaV2.streams.camara2  ||
+                   nuevoEstado.pantalla !== _espiaV2.streams.pantalla;
     if (cambio) {
+      // Pass 2: asignación atómica
+      _espiaV2.streams.camara   = nuevoEstado.camara;
+      _espiaV2.streams.camara2  = nuevoEstado.camara2;
+      _espiaV2.streams.pantalla = nuevoEstado.pantalla;
+      _espiaV2AutoFocus();
       console.log('[espia trackMap] reasignado · camara=' + !!_espiaV2.streams.camara + ' camara2=' + !!_espiaV2.streams.camara2 + ' pantalla=' + !!_espiaV2.streams.pantalla);
       _espiaV2RenderModal();
+    }
+  }
+
+  // [v2.43.98 FIX BUG #2] Auto-switch focus si quedó en slot vacío.
+  // Bug original: focus inicial 'pantalla' en smartphone (donde getDisplayMedia
+  // no existe) bloqueaba la UI con spinner eterno aunque hubiera 2 cámaras
+  // conectadas. Ahora muta al primer slot con stream disponible.
+  function _espiaV2AutoFocus() {
+    if (!_espiaV2) return;
+    if (_espiaV2.streams[_espiaV2.focus]) return;
+    const primero = ['pantalla', 'camara', 'camara2'].find(k => !!_espiaV2.streams[k]);
+    if (primero && primero !== _espiaV2.focus) {
+      console.log('[espia focus] auto-switch · ' + _espiaV2.focus + ' → ' + primero);
+      _espiaV2.focus = primero;
     }
   }
 
@@ -28225,7 +28255,9 @@ const MOS = (() => {
 
   function _espiaV2RenderModal() {
     if (!_espiaV2) return;
-    const focusEsCamara = _espiaV2.focus === 'camara';
+    // [v2.43.98] Auto-focus defensivo antes de render — por si llegamos acá
+    // con focus en slot vacío (race entre RenderModal y AsignarTrack).
+    _espiaV2AutoFocus();
     const html = `<div id="espiaV2Modal" style="position:fixed;inset:0;background:rgba(0,0,0,.78);backdrop-filter:blur(10px);z-index:2147483646;display:flex;align-items:center;justify-content:center;padding:24px;animation:espiaV2In .35s cubic-bezier(.34,1.56,.64,1)">
       <div style="width:100%;max-width:1280px;height:88vh;background:linear-gradient(180deg,#0a1424,#070d18);border:1px solid rgba(99,102,241,.4);border-radius:18px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 70px -10px rgba(99,102,241,.4),0 0 0 1px rgba(99,102,241,.15) inset"
         onclick="event.stopPropagation()">
@@ -28291,11 +28323,11 @@ const MOS = (() => {
                  Antes el mini era SIEMPRE cámara → al hacer swap a focus=cámara,
                  grande y mini mostraban lo mismo (cámara) y "pantalla" desaparecía. -->
             ${(() => {
-              // [v2.43.97] Mini muestra el SIGUIENTE en el ciclo (pantalla → cam → cam2 → ...)
-              // saltando slots vacíos. Hay marcador "1/N" si hay más de 2 disponibles.
+              // [v2.43.97/98] Mini = siguiente en el ciclo. Si solo hay 1 video,
+              // no renderizar el mini (sería redundante: grande y mini iguales).
               const orden = ['pantalla', 'camara', 'camara2'];
               const disponibles = orden.filter(k => !!_espiaV2.streams[k]);
-              if (disponibles.length === 0) return '';
+              if (disponibles.length <= 1) return '';
               const idxActual = disponibles.indexOf(_espiaV2.focus);
               const siguienteKey = disponibles[(idxActual + 1) % disponibles.length] || disponibles[0];
               const metaPorTipo = {
