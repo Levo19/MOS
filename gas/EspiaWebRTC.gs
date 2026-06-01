@@ -1965,3 +1965,115 @@ function limpiarDiagnosticoEspia() {
   sh.deleteRows(2, ult - 1);
   Logger.log('✓ Limpiados ' + (ult - 1) + ' registros de DIAGNOSTICO_ESPIA');
 }
+
+// ════════════════════════════════════════════════════════════════════
+// [v2.43.105] VERIFICADOR DE CONFIG TURN
+// ────────────────────────────────────────────────────────────────────
+// Ejecutar desde el editor Apps Script después de configurar las
+// Properties ESPIA_TURN_URL / ESPIA_TURN_USER / ESPIA_TURN_CRED.
+// Reporta si está OK, si falta algo, o si el formato es inválido.
+// ════════════════════════════════════════════════════════════════════
+function verificarConfigTurn() {
+  var props = PropertiesService.getScriptProperties();
+  var url  = props.getProperty('ESPIA_TURN_URL');
+  var user = props.getProperty('ESPIA_TURN_USER');
+  var cred = props.getProperty('ESPIA_TURN_CRED');
+
+  Logger.log('═══ VERIFICACIÓN CONFIG TURN ═══');
+
+  var problemas = [];
+  if (!url)  problemas.push('ESPIA_TURN_URL no configurada');
+  if (!user) problemas.push('ESPIA_TURN_USER no configurada');
+  if (!cred) problemas.push('ESPIA_TURN_CRED no configurada');
+
+  if (problemas.length === 3) {
+    Logger.log('❌ NINGUNA property configurada todavía.');
+    Logger.log('   Pasos:');
+    Logger.log('   1. Crear cuenta en https://www.metered.ca/tools/openrelay/');
+    Logger.log('   2. Copiar las credenciales que te dan');
+    Logger.log('   3. Acá en el editor: ⚙ Configuración del proyecto → Propiedades del script');
+    Logger.log('   4. Agregar las 3 properties con los valores');
+    Logger.log('   5. Volver a ejecutar verificarConfigTurn()');
+    return { ok: false, faltantes: ['ESPIA_TURN_URL', 'ESPIA_TURN_USER', 'ESPIA_TURN_CRED'] };
+  }
+
+  if (problemas.length > 0) {
+    Logger.log('⚠ Configuración INCOMPLETA:');
+    problemas.forEach(function(p) { Logger.log('   • ' + p); });
+    return { ok: false, faltantes: problemas };
+  }
+
+  // Verificar formato
+  Logger.log('✓ Las 3 properties existen.');
+  Logger.log('───');
+  Logger.log('ESPIA_TURN_URL  = ' + url);
+  Logger.log('ESPIA_TURN_USER = ' + user);
+  Logger.log('ESPIA_TURN_CRED = ' + cred.substring(0, 3) + '••• (' + cred.length + ' chars)');
+  Logger.log('───');
+
+  var warnings = [];
+  // [v2.43.106] Validación estricta de CADA URL separada por coma.
+  // Antes solo verificaba la primera. Si copiabas texto explicativo extra
+  // (paréntesis con notas, espacios sueltos), el validador decía OK pero
+  // el cliente WebRTC fallaba al intentar conectarse.
+  var urlsSeparadas = url.split(',').map(function(s) { return s.trim(); });
+  urlsSeparadas.forEach(function(u, idx) {
+    if (!u) {
+      warnings.push('URL [' + (idx + 1) + '] está vacía (¿coma de más?)');
+    } else if (!/^(turn|stun|turns):[a-z0-9.-]+:\d+(\?[a-z=]+)?$/i.test(u)) {
+      warnings.push('URL [' + (idx + 1) + '] inválida: "' + u + '" — debe ser turn:host:puerto[?transport=tcp] (sin paréntesis ni texto extra)');
+    }
+  });
+  if (user.length < 3) {
+    warnings.push('Username parece muy corto');
+  }
+  if (cred.length < 6) {
+    warnings.push('Credential parece muy corta — Metered te da una contraseña larga');
+  }
+
+  // [v2.43.106] Si hay warnings de URL inválida → ABORTAR antes de declarar OK
+  var tieneUrlInvalida = warnings.some(function(w) { return /URL \[/.test(w); });
+  if (warnings.length > 0) {
+    Logger.log(tieneUrlInvalida ? '❌ PROBLEMAS DE FORMATO (CRÍTICOS):' : '⚠ Warnings menores:');
+    warnings.forEach(function(w) { Logger.log('   • ' + w); });
+    if (tieneUrlInvalida) {
+      Logger.log('───');
+      Logger.log('🚨 NO declarar "TODO LISTO" — el cliente WebRTC va a rechazar estas URLs.');
+      Logger.log('   Corregí ESPIA_TURN_URL en Properties y volvé a ejecutar verificarConfigTurn.');
+      return { ok: false, error: 'URLs malformadas', warnings: warnings };
+    }
+  } else {
+    Logger.log('✓ Formato correcto en las ' + urlsSeparadas.length + ' URL(s).');
+  }
+
+  // Probar el endpoint espiaConfig que es lo que el cliente va a recibir
+  Logger.log('───');
+  Logger.log('Probando endpoint espiaConfig()...');
+  try {
+    var cfg = espiaConfig();
+    if (cfg && cfg.ok && cfg.data) {
+      Logger.log('✓ espiaConfig() OK');
+      Logger.log('  tieneTurn: ' + cfg.data.tieneTurn);
+      Logger.log('  servers totales: ' + cfg.data.iceServers.length);
+      cfg.data.iceServers.forEach(function(srv, i) {
+        var urls = Array.isArray(srv.urls) ? srv.urls.join(', ') : srv.urls;
+        Logger.log('  [' + (i+1) + '] ' + urls + (srv.username ? ' (con auth)' : ' (sin auth · STUN)'));
+      });
+      if (cfg.data.tieneTurn) {
+        Logger.log('───');
+        Logger.log('🎉 TODO LISTO — los clientes nuevos van a usar TURN automáticamente.');
+        Logger.log('   Test real: prueba espía sobre un device con DATOS MÓVILES (no WiFi).');
+        return { ok: true, data: { tieneTurn: true, servers: cfg.data.iceServers.length } };
+      } else {
+        Logger.log('⚠ tieneTurn=false a pesar de las properties. Algo del formato no cuadra.');
+        return { ok: false, error: 'espiaConfig devolvió tieneTurn=false' };
+      }
+    } else {
+      Logger.log('❌ espiaConfig devolvió respuesta inválida: ' + JSON.stringify(cfg));
+      return { ok: false, error: 'respuesta inválida de espiaConfig' };
+    }
+  } catch(e) {
+    Logger.log('❌ excepción en espiaConfig(): ' + e.message);
+    return { ok: false, error: e.message };
+  }
+}

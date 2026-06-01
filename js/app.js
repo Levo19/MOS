@@ -28432,13 +28432,20 @@ const MOS = (() => {
                 cards.push({ icon: '🖥️', label: 'PANTALLA', motivo: 'No disponible en móviles (limitación del navegador)' });
               }
               // 2DA CÁMARA: solo en móvil. En desktop no es algo que se espera.
+              // [v2.43.107] Mensaje específico según dualFallReason del cliente
               if (c.esMobile && c.dualIntentado) {
-                const ch = c.camsHardware || 0;
                 const ca = c.camsAbiertas || 0;
-                if (ch < 2) {
-                  cards.push({ icon: '📸', label: '2DA CÁMARA', motivo: 'Este dispositivo solo tiene 1 cámara' });
-                } else if (ca < 2) {
-                  cards.push({ icon: '📸', label: '2DA CÁMARA', motivo: 'El navegador no permite usar las 2 cámaras a la vez' });
+                if (ca < 2) {
+                  const motivos = {
+                    'hardware_single_cam':       'Este dispositivo solo tiene 1 cámara',
+                    'deviceids_opacos':          'El navegador oculta el ID de la 2da cámara (faltan permisos)',
+                    'browser_no_permite_concurrent': 'El navegador no permite usar las 2 cámaras a la vez',
+                    'browser_devolvio_misma_cam': 'El navegador devolvió la misma cámara al pedir la otra',
+                  };
+                  const motivo = motivos[c.dualFallReason]
+                              || (c.dualFallReason?.startsWith('excepcion:') ? ('Error: ' + c.dualFallReason.substring(10)) : null)
+                              || 'No se pudo abrir la 2da cámara';
+                  cards.push({ icon: '📸', label: '2DA CÁMARA', motivo });
                 }
               }
               return cards.map(card => `
