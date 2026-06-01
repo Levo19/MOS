@@ -12275,7 +12275,20 @@ const MOS = (() => {
       ).join(' ');
       return `<div class="adhesivo-linea">${parts}</div>`;
     }).join('');
-    // [v2.43.112] Layout fiel al impreso: márgenes mínimos + flechas guía
+    // [v2.43.113] Replica EXACTA del cálculo del backend: solo mostrar flechas
+    // si en la impresión real van a caber (fuera de la quiet zone Code128).
+    const bcLen = (datos.codigoBarra || '').length;
+    const modules = 11 * bcLen + 35;
+    let narrow = 2;
+    let bWidth = modules * narrow;
+    if (bWidth > 360) { narrow = 1; bWidth = modules; }
+    const quietZoneMin = 10 * narrow;
+    const bX = Math.max(20, Math.floor((400 - bWidth) / 2));
+    const bEndX = bX + bWidth;
+    const flechaIzq = bX >= 5 + 16 + quietZoneMin;
+    const flechaDer = (bEndX + 5 >= bEndX + quietZoneMin) && (bEndX + 5 + 16 <= 395);
+    const arrowIzqHTML = flechaIzq ? '<span class="adhesivo-bc-arrow">›</span>' : '<span class="adhesivo-bc-spacer"></span>';
+    const arrowDerHTML = flechaDer ? '<span class="adhesivo-bc-arrow">‹</span>' : '<span class="adhesivo-bc-spacer"></span>';
     return `
       <div class="adhesivo-etiqueta">
         <div class="adhesivo-etq-top">
@@ -12288,9 +12301,9 @@ const MOS = (() => {
         <div class="adhesivo-divider"></div>
         <div class="adhesivo-desc">${linesHTML}</div>
         <div class="adhesivo-barcode-wrap">
-          <span class="adhesivo-bc-arrow adhesivo-bc-arrow-l">›</span>
+          ${arrowIzqHTML}
           <svg id="adhesivoBarcodeSVG"></svg>
-          <span class="adhesivo-bc-arrow adhesivo-bc-arrow-r">‹</span>
+          ${arrowDerHTML}
         </div>
         <div class="adhesivo-codigo">${_escapeHtml(datos.codigoBarra)}</div>
         <div class="adhesivo-cantidad-tag">×${cantidad}</div>
