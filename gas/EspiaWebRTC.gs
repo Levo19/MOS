@@ -1591,3 +1591,129 @@ function _enviarPushDispositivoConRetry(deviceId, payload, intentos) {
   }
   return { ok: false, error: ultimoError, data: { intentos: maxIntentos, enviados: 0 } };
 }
+
+// ════════════════════════════════════════════════════════════════════
+// [v2.43.94] AUDITORÍA DE PUSH TOKENS — diagnóstico end-to-end
+// ────────────────────────────────────────────────────────────────────
+// Cruza DISPOSITIVOS × PUSH_TOKENS y reporta cuáles devices están listos
+// para recibir push del espía. Ejecutar manualmente desde el editor:
+//   1. Abrir Apps Script editor
+//   2. Seleccionar `reporteTokensEspia` en el dropdown de funciones
+//   3. Click ▶ (Ejecutar)
+//   4. Ver/Logs (Ctrl+Enter)
+// El return es para inspección programática; los logs son legibles.
+// ════════════════════════════════════════════════════════════════════
+function reporteTokensEspia() {
+  var ss = getSpreadsheet();
+  var shDisp = ss.getSheetByName('DISPOSITIVOS');
+  var shTok  = ss.getSheetByName('PUSH_TOKENS');
+  if (!shDisp) { Logger.log('❌ Hoja DISPOSITIVOS no existe'); return { ok: false }; }
+  if (!shTok)  { Logger.log('❌ Hoja PUSH_TOKENS no existe'); return { ok: false }; }
+
+  var datDisp = shDisp.getDataRange().getValues();
+  var hdrDisp = datDisp[0];
+  var iDevId  = hdrDisp.indexOf('ID_Dispositivo'); if (iDevId < 0) iDevId = hdrDisp.indexOf('deviceId');
+  var iNom    = hdrDisp.indexOf('Nombre_Equipo');
+  var iApp    = hdrDisp.indexOf('App');
+  var iEst    = hdrDisp.indexOf('Estado');
+  var iSes    = hdrDisp.indexOf('Ultima_Sesion');
+  var iCon    = hdrDisp.indexOf('Ultima_Conexion');
+
+  var datTok = shTok.getDataRange().getValues();
+  var hdrTok = datTok[0];
+  var iTokDev = hdrTok.indexOf('deviceId');
+  var iTok    = hdrTok.indexOf('token');
+  var iAct    = hdrTok.indexOf('activo');
+  var iUlt    = hdrTok.indexOf('ultima_actualizacion');
+  if (iUlt < 0) iUlt = hdrTok.indexOf('ultimaActualizacion');
+
+  // Construir índice deviceId → [{token, activo, ultUpdate}]
+  var idx = {};
+  for (var i = 1; i < datTok.length; i++) {
+    var d = String(datTok[i][iTokDev] || '').trim();
+    if (!d) continue;
+    if (!idx[d]) idx[d] = [];
+    var act = datTok[i][iAct];
+    var actBool = !(act === false || String(act) === '0' || String(act).toLowerCase() === 'false');
+    var tok = String(datTok[i][iTok] || '').trim();
+    var ts = 0;
+    if (iUlt >= 0) {
+      try { ts = new Date(datTok[i][iUlt]).getTime() || 0; } catch(_){}
+    }
+    idx[d].push({ token: tok, activo: actBool, ts: ts });
+  }
+
+  Logger.log('═══ AUDITORÍA PUSH TOKENS PARA ESPÍA ═══');
+  Logger.log('Total dispositivos en DISPOSITIVOS: ' + (datDisp.length - 1));
+  Logger.log('Total filas en PUSH_TOKENS: ' + (datTok.length - 1));
+  Logger.log('───');
+
+  var reporte = { listosParaEspia: [], sinToken: [], soloTokensInactivos: [], rechazadosPorEstado: [] };
+  for (var j = 1; j < datDisp.length; j++) {
+    var did = String(datDisp[j][iDevId] || '').trim();
+    if (!did) continue;
+    var nom = String(datDisp[j][iNom] || '');
+    var app = String(datDisp[j][iApp] || '').toUpperCase();
+    var est = String(datDisp[j][iEst] || '').toUpperCase();
+    var ses = String(datDisp[j][iSes] || '');
+
+    var tokens = idx[did] || [];
+    var activos = tokens.filter(function(t){ return t.activo && t.token; });
+    var inactivos = tokens.filter(function(t){ return !t.activo && t.token; });
+
+    var fila = {
+      deviceId: did,
+      nombre:   nom,
+      app:      app,
+      estado:   est,
+      ultimoUser: ses,
+      tokensActivos:   activos.length,
+      tokensInactivos: inactivos.length
+    };
+
+    // MOS Admin no es target legítimo del espía (es el master)
+    if (app === 'MOS') {
+      Logger.log('⚪ ' + did.substring(0,8) + ' [' + nom + '] · APP=MOS · es MASTER, no target');
+      continue;
+    }
+    if (est !== 'ACTIVO' && est !== 'ACTIVA' && est !== '') {
+      Logger.log('⛔ ' + did.substring(0,8) + ' [' + nom + '] · estado=' + est + ' · no recibe push');
+      reporte.rechazadosPorEstado.push(fila);
+      continue;
+    }
+    if (activos.length === 0 && inactivos.length === 0) {
+      Logger.log('🚨 ' + did.substring(0,8) + ' [' + nom + ' / ' + app + '] · SIN TOKENS · espía no llegará');
+      reporte.sinToken.push(fila);
+    } else if (activos.length === 0) {
+      Logger.log('⚠ ' + did.substring(0,8) + ' [' + nom + ' / ' + app + '] · ' + inactivos.length + ' token(s) INACTIVOS · device debe reabrir app');
+      reporte.soloTokensInactivos.push(fila);
+    } else {
+      Logger.log('✅ ' + did.substring(0,8) + ' [' + nom + ' / ' + app + '] · ' + activos.length + ' token(s) activo(s) · LISTO');
+      reporte.listosParaEspia.push(fila);
+    }
+  }
+
+  Logger.log('───');
+  Logger.log('RESUMEN:');
+  Logger.log('  ✅ Listos para espía:        ' + reporte.listosParaEspia.length);
+  Logger.log('  ⚠  Solo tokens inactivos:    ' + reporte.soloTokensInactivos.length);
+  Logger.log('  🚨 Sin ningún token:         ' + reporte.sinToken.length);
+  Logger.log('  ⛔ Rechazados por estado:    ' + reporte.rechazadosPorEstado.length);
+
+  if (reporte.sinToken.length) {
+    Logger.log('───');
+    Logger.log('SIN TOKEN (acción: cada uno debe abrir su PWA y aceptar notificaciones):');
+    reporte.sinToken.forEach(function(f){
+      Logger.log('  • ' + f.nombre + ' (' + f.app + ') · user=' + (f.ultimoUser || 'sin login'));
+    });
+  }
+  if (reporte.soloTokensInactivos.length) {
+    Logger.log('───');
+    Logger.log('TOKENS INACTIVOS (registrarPushToken los reactiva al próximo abrir):');
+    reporte.soloTokensInactivos.forEach(function(f){
+      Logger.log('  • ' + f.nombre + ' (' + f.app + ')');
+    });
+  }
+
+  return { ok: true, data: reporte };
+}
