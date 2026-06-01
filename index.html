@@ -8255,14 +8255,16 @@
       0%, 100% { text-shadow: 0 0 0 rgba(251,191,36,0); }
       50%      { text-shadow: 0 0 12px rgba(251,191,36,.55); }
     }
-    /* [v2.43.117] Frame del barcode con corner marks tipo cámara/visor QR.
-       Reemplaza el wrap simple anterior. Aprovecha el margen inferior del
-       adhesivo (118-196 dots = 78 dots de alto en TSPL × 1.5 = 117 px). */
+    /* [v2.43.118] Frame del barcode con corner marks tipo cámara/visor QR.
+       Pixel-perfect: 78 dots TSPL × 1.5 = 117 px de alto exacto.
+       Frame TSPL: Y=118-196 → CSS: top 177px (118×1.5) sería ideal pero
+       acá se posiciona por flex, lo que cuenta es la ALTURA fija. */
     .adhesivo-codigo-frame {
       position: relative;
       margin: 6px 8px 0;
-      padding: 10px 14px 6px;
-      min-height: 90px;  /* 60 dots TSPL × 1.5 */
+      padding: 12px 14px 14px;
+      height: 117px;  /* 78 dots TSPL × 1.5 — matchea altura impresión */
+      box-sizing: border-box;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
     }
