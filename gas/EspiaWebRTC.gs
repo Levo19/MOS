@@ -491,6 +491,19 @@ function espiaLeerRenegRespuesta(params) {
 // Compat: los endpoints viejos siguen disponibles. Frontend nuevo migra a sync.
 // ════════════════════════════════════════════════════════════════════
 function espiaSync(params) {
+  // [v2.43.95] WRAP DEFENSIVO — cualquier excepción interna devuelve 200 con
+  // {ok:false}. Antes excepciones (cabeceras corruptas, HMAC fail, etc.)
+  // se propagaban a doPost → 500 → el cliente entra en backoff y eventualmente
+  // pierde el polling → modal del master se cierra solo.
+  try {
+    return _espiaSyncImpl(params);
+  } catch(e) {
+    Logger.log('[espiaSync EXCEPCION] ' + e.message + ' | stack: ' + (e.stack || '').substring(0, 300));
+    return { ok: false, error: 'Excepción interna: ' + e.message, codigo: 'EXCEPCION' };
+  }
+}
+
+function _espiaSyncImpl(params) {
   var sesionId = String(params.sesionId || '').trim();
   var lado     = String(params.lado || '').toLowerCase();
   var iceDesde = parseInt(params.iceDesde) || 0;
@@ -557,6 +570,16 @@ function espiaSync(params) {
 // Devuelve `aplicado` con conteo de cada campo escrito.
 // ════════════════════════════════════════════════════════════════════
 function espiaPushBatch(params) {
+  // [v2.43.95] Wrap defensivo — ver espiaSync
+  try {
+    return _espiaPushBatchImpl(params);
+  } catch(e) {
+    Logger.log('[espiaPushBatch EXCEPCION] ' + e.message + ' | stack: ' + (e.stack || '').substring(0, 300));
+    return { ok: false, error: 'Excepción interna: ' + e.message, codigo: 'EXCEPCION' };
+  }
+}
+
+function _espiaPushBatchImpl(params) {
   var sesionId = String(params.sesionId || '').trim();
   var lado     = String(params.lado || '').toLowerCase();
   if (!sesionId) return { ok: false, error: 'sesionId requerido' };
