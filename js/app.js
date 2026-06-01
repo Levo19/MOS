@@ -12161,9 +12161,11 @@ const MOS = (() => {
   }
 
   // ── ABRIR MODAL ────────────────────────────────────────────────
-  window.MOS = window.MOS || {};
-  let _adhesivoSeq = 0; // [v2.43.109 BUG #1] secuencial para evitar race entre opens
-  MOS.abrirModalImprimirAdhesivo = function(idEnvasado) {
+  // [v2.43.110 FIX TDZ] Las funciones se exponen al final del IIFE en el
+  // return { ... } (igual que el resto de MOS). Acá las declaramos como
+  // funciones normales del scope del IIFE.
+  let _adhesivoSeq = 0;
+  function abrirModalImprimirAdhesivo(idEnvasado) {
     const env = (S.envasados || []).find(x => x.idEnvasado === idEnvasado);
     if (!env) { toast('Envasado no encontrado', 'error'); return; }
     const datos = _adhesivoExtraerDatos(env);
@@ -12188,7 +12190,7 @@ const MOS = (() => {
     };
     _adhesivoRenderModal();
     _adhesivoVerificarImpresora(sessionId);
-  };
+  }
 
   function _adhesivoRenderModal() {
     const st = _adhesivoState;
@@ -12299,20 +12301,19 @@ const MOS = (() => {
     } catch(e) { console.warn('[adhesivo] barcode render fail:', e.message); }
   }
 
-  MOS.adhesivoCantidadDelta = function(d) {
+  function adhesivoCantidadDelta(d) {
     if (!_adhesivoState) return;
     const nv = Math.max(1, Math.min(999, _adhesivoState.cantidad + d));
     _adhesivoState.cantidad = nv;
     _adhesivoActualizarCantidadUI();
-  };
-  MOS.adhesivoCantidadInput = function(v) {
+  }
+  function adhesivoCantidadInput(v) {
     if (!_adhesivoState) return;
     const n = Math.max(1, Math.min(999, parseInt(v) || 1));
     _adhesivoState.cantidad = n;
-    // Actualizar tag de cantidad en preview SIN re-render completo (preserva barcode)
     const tag = document.querySelector('#adhesivoPreview .adhesivo-cantidad-tag');
     if (tag) tag.textContent = '×' + n;
-  };
+  }
   function _adhesivoActualizarCantidadUI() {
     const input = document.getElementById('adhesivoInput');
     if (input) input.value = _adhesivoState.cantidad;
@@ -12367,7 +12368,7 @@ const MOS = (() => {
     }
   }
 
-  MOS.adhesivoImprimir = async function() {
+  async function adhesivoImprimir() {
     const st = _adhesivoState;
     if (!st || st.imprimiendo) return;
     const sessionId = st.sessionId;
@@ -12411,10 +12412,10 @@ const MOS = (() => {
       }
     }
     // Cierre auto al éxito (fuera del try para garantizar ejecución)
-    if (exito) setTimeout(() => MOS.cerrarModalImprimirAdhesivo(), 1400);
-  };
+    if (exito) setTimeout(cerrarModalImprimirAdhesivo, 1400);
+  }
 
-  MOS.cerrarModalImprimirAdhesivo = function() {
+  function cerrarModalImprimirAdhesivo() {
     const modal = document.getElementById('adhesivoModal');
     if (modal) {
       modal.style.animation = 'adhesivoOut .22s ease-out forwards';
@@ -12422,13 +12423,13 @@ const MOS = (() => {
     }
     document.removeEventListener('keydown', _adhesivoKeydown);
     _adhesivoState = null;
-  };
+  }
 
   function _adhesivoKeydown(ev) {
-    if (ev.key === 'Escape') { MOS.cerrarModalImprimirAdhesivo(); return; }
+    if (ev.key === 'Escape') { cerrarModalImprimirAdhesivo(); return; }
     if (ev.key === 'Enter') {
       const btn = document.getElementById('adhesivoBtnImprimir');
-      if (btn && !btn.disabled) MOS.adhesivoImprimir();
+      if (btn && !btn.disabled) adhesivoImprimir();
     }
   }
   function _envFmtFechaLarga(yyyymmdd) {
@@ -38600,6 +38601,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     finAbrirModalTickets, finSetTicketFiltro,
     // Envasados — filtros modernos
     envSetRango, envSetOperador, envSetAgrupar, envToggleCustom, envSetCustom,
+    // [v2.43.110] Adhesivos — modal de impresión en card de envasado
+    abrirModalImprimirAdhesivo, cerrarModalImprimirAdhesivo,
+    adhesivoCantidadDelta, adhesivoCantidadInput, adhesivoImprimir,
     activarPush: () => _pushInit(S.session?.nombre || '', S.session?.rol || '', true)
   };
 })();
