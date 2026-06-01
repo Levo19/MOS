@@ -27932,10 +27932,10 @@ const MOS = (() => {
               _espiaV2RenderModal();
               return;
             }
-            // [v2.43.103] Visibility del cliente — pantalla bloqueada / desbloqueada
+            // [v2.43.104] Visibility del cliente — pantalla bloqueada / desbloqueada
             if (data && data.__meta === 'visibility') {
               _espiaV2.deviceVisible = !!data.visible;
-              _espiaV2._ultimoCambioVisibilidad = Date.now();
+              _espiaV2._tsCambioVisibilidad = Date.now(); // usado para overlay timeout
               console.log('[espia master] device visibility:', data.visible ? 'visible' : 'hidden');
               _espiaV2RenderModal();
               return;
@@ -28351,16 +28351,26 @@ const MOS = (() => {
                 <div style="width:50px;height:50px;border:3px solid rgba(99,102,241,.3);border-top-color:#6366f1;border-radius:50%;animation:espiaSpin 1s linear infinite"></div>
                 <div style="margin-top:14px;font-size:11px;color:#94a3b8;font-weight:600">Conectando ${_espiaV2.focus}…</div>
               </div>` : ''}
-            ${(_espiaV2.deviceVisible === false) ? `
-              <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(2,6,23,.78);backdrop-filter:blur(8px);color:#e2e8f0;z-index:10">
-                <div style="font-size:48px;margin-bottom:8px">🌙</div>
-                <div style="font-size:16px;font-weight:800;color:#a5b4fc;letter-spacing:.3px">DISPOSITIVO EN STANDBY</div>
-                <div style="margin-top:10px;font-size:11px;color:#94a3b8;max-width:280px;text-align:center;line-height:1.5">El usuario bloqueó la pantalla o cambió de app.<br>El stream se reanudará al volver.</div>
+            ${(() => {
+              // [v2.43.104] Overlay standby SOLO si el device reportó hidden hace <2 min.
+              // Después de 2 min de hidden sin recuperar, mostrar mensaje degradado
+              // ('probablemente no va a volver') en vez del "esperando reanudación" eterno.
+              if (_espiaV2.deviceVisible !== false) return '';
+              const hidd = _espiaV2._tsCambioVisibilidad ? (Date.now() - _espiaV2._tsCambioVisibilidad) : 0;
+              const segs = Math.floor(hidd / 1000);
+              const muyLargo = hidd > 120000; // 2 min
+              return `<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(2,6,23,.78);backdrop-filter:blur(8px);color:#e2e8f0;z-index:10">
+                <div style="font-size:48px;margin-bottom:8px">${muyLargo ? '⚠️' : '🌙'}</div>
+                <div style="font-size:16px;font-weight:800;color:${muyLargo ? '#f59e0b' : '#a5b4fc'};letter-spacing:.3px">${muyLargo ? 'STANDBY PROLONGADO' : 'DISPOSITIVO EN STANDBY'}</div>
+                <div style="margin-top:10px;font-size:11px;color:#94a3b8;max-width:280px;text-align:center;line-height:1.5">${muyLargo
+                  ? 'Pantalla bloqueada hace +' + Math.floor(segs/60) + 'min. Probablemente los tracks fueron liberados por el SO.<br>Tendrás que reiniciar el espía.'
+                  : 'El usuario bloqueó la pantalla o cambió de app.<br>El stream se reanudará al volver.'}</div>
                 <div style="margin-top:14px;display:flex;align-items:center;gap:8px;font-size:9px;color:#64748b">
-                  <span style="width:6px;height:6px;border-radius:50%;background:#f59e0b;animation:espiaBreath 1.5s ease-in-out infinite"></span>
-                  esperando reanudación
+                  <span style="width:6px;height:6px;border-radius:50%;background:${muyLargo ? '#ef4444' : '#f59e0b'};animation:espiaBreath 1.5s ease-in-out infinite"></span>
+                  ${muyLargo ? 'sin señal del device' : 'esperando reanudación (' + segs + 's)'}
                 </div>
-              </div>` : ''}
+              </div>`;
+            })()}
           </div>
           <!-- Sidebar -->
           <div style="width:260px;display:flex;flex-direction:column;gap:10px;flex-shrink:0">
