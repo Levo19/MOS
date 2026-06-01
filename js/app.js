@@ -27976,35 +27976,51 @@ const MOS = (() => {
         }
         if (_espiaV2) _espiaV2.pollIceDesde = ri.tsMax || _espiaV2.pollIceDesde;
       }
-      // [v2.43.85 MUTEX FIX] Polling de RENEG con mutex ANTES del primer await.
-      // Bug previo: setInterval cada 600ms, tick1 en await, tick2 corre con
-      // _renegEnCurso aún false → procesa misma reneg dos veces → setRemoteDescription
-      // duplicado → InvalidStateError.
+      // [v2.43.87 ANTI-DOUBLE-PROCESS] Tracking local de ofertas ya procesadas.
+      // Bug previo: si setRemoteDescription tuvo éxito pero espiaSubirRenegRespuesta
+      // falló (network), el sdpRenegOferta queda en sheet → próximo poll vuelve
+      // a hacer setRemoteDescription(misma offer) → InvalidStateError.
+      // Fix: comparar SDP antes de aplicar. Si es la misma de la última procesada,
+      // solo reintenta la SUBIDA de respuesta (no setRemoteDescription).
       if (_espiaV2 && _espiaV2.pc.signalingState === 'stable' && !_espiaV2._renegEnCurso) {
-        _espiaV2._renegEnCurso = true; // SETEAR ANTES de await para evitar race
+        _espiaV2._renegEnCurso = true;
         try {
           const rg = await API.post('espiaLeerRenegOferta', { sesionId: _espiaV2.sesionId });
           if (!_espiaV2 || _espiaV2.pc.signalingState !== 'stable') {
-            // Estado cambió durante el await — abortar
             if (_espiaV2) _espiaV2._renegEnCurso = false;
           } else if (rg?.sdpRenegOferta) {
-            console.log('[espia master] reneg offer detectada · procesando');
-            const newOffer = JSON.parse(rg.sdpRenegOferta);
-            await _espiaV2.pc.setRemoteDescription(newOffer);
-            const newAnswer = await _espiaV2.pc.createAnswer();
-            await _espiaV2.pc.setLocalDescription(newAnswer);
-            await API.post('espiaSubirRenegRespuesta', {
-              sesionId: _espiaV2.sesionId,
-              sdp: JSON.stringify(newAnswer)
-            });
-            console.log('[espia master] reneg answer enviada · pantalla negociada ✓');
-            if (_espiaV2) _espiaV2._renegEnCurso = false;
-          } else {
-            // No había offer — liberar mutex
-            if (_espiaV2) _espiaV2._renegEnCurso = false;
+            const ofertaStr = rg.sdpRenegOferta;
+            const yaProcesada = _espiaV2._ultimaOfertaProcesada === ofertaStr;
+            if (yaProcesada && _espiaV2._ultimaAnswerSinSubir) {
+              // Reintentar SOLO subida de respuesta
+              console.log('[espia master] retry subida de answer (no reprocesar)');
+              await API.post('espiaSubirRenegRespuesta', {
+                sesionId: _espiaV2.sesionId,
+                sdp: _espiaV2._ultimaAnswerSinSubir
+              });
+              _espiaV2._ultimaAnswerSinSubir = null;
+              console.log('[espia master] retry exitoso ✓');
+            } else if (!yaProcesada) {
+              console.log('[espia master] reneg offer detectada · procesando');
+              const newOffer = JSON.parse(ofertaStr);
+              await _espiaV2.pc.setRemoteDescription(newOffer);
+              const newAnswer = await _espiaV2.pc.createAnswer();
+              await _espiaV2.pc.setLocalDescription(newAnswer);
+              const answerStr = JSON.stringify(newAnswer);
+              // Marcar como procesada ANTES del API.post para evitar reprocesamiento
+              _espiaV2._ultimaOfertaProcesada = ofertaStr;
+              _espiaV2._ultimaAnswerSinSubir = answerStr; // por si falla subida
+              await API.post('espiaSubirRenegRespuesta', {
+                sesionId: _espiaV2.sesionId,
+                sdp: answerStr
+              });
+              _espiaV2._ultimaAnswerSinSubir = null; // subida OK
+              console.log('[espia master] reneg answer enviada · pantalla negociada ✓');
+            }
           }
         } catch(eR) {
           console.warn('[espia master reneg]', eR?.message);
+        } finally {
           if (_espiaV2) _espiaV2._renegEnCurso = false;
         }
       }

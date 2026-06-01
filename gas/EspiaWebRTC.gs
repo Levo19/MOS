@@ -163,12 +163,16 @@ function espiaSubirRespuesta(params) {
   return _actualizarColumnaSesion(sesionId, 'sdpRespuesta', sdp, { estado: 'CONECTANDO' });
 }
 
-// [v2.43.62] FSM válida del espía
+// [v2.43.87] FSM válida del espía + IDEMPOTENCIA.
+// Antes: si cliente reintentaba subir respuesta (porque la primera falló o el
+// master no la procesó), el segundo intento daba "Transición inválida: CONECTANDO→CONECTANDO".
+// Ahora permitimos transición a sí mismo (operación idempotente).
 function _validarTransicionEstado(actual, nuevo) {
   var a = String(actual || '').toUpperCase();
   var n = String(nuevo || '').toUpperCase();
+  if (a === n) return true; // idempotente
   var TRANS = {
-    'PENDIENTE':  ['CONECTANDO', 'CERRADA'],
+    'PENDIENTE':  ['CONECTANDO', 'EN_VIVO', 'CERRADA'],
     'CONECTANDO': ['EN_VIVO', 'CERRADA'],
     'EN_VIVO':    ['CERRADA'],
     'CERRADA':    []
@@ -230,7 +234,14 @@ function espiaEstadoSesion(params) {
 // ── 6. Device reporta streams activos (audio/video/screen/gps) ─────
 function espiaReportarStreams(params) {
   var sesionId = String(params.sesionId || '').trim();
-  var streams  = params.streams || {};  // {audio:bool, camara:bool, pantalla:bool, gps:bool}
+  var streams  = params.streams || {};
+  // [v2.43.87] Validar estado — no reanimar sesiones CERRADAS
+  var row = _buscarSesion(sesionId);
+  if (!row) return { ok: false, error: 'Sesión no encontrada' };
+  var estActual = String(row.estado || '').toUpperCase();
+  if (estActual === 'CERRADA') {
+    return { ok: false, error: 'Sesión ya cerrada · no se reportan streams' };
+  }
   return _actualizarColumnaSesion(sesionId, 'streamsActivos', JSON.stringify(streams),
                                   { estado: 'EN_VIVO' });
 }
@@ -242,6 +253,10 @@ function espiaCerrarSesion(params) {
   var lado     = String(params.lado || 'desconocido');
   var row = _buscarSesion(sesionId);
   if (!row) return { ok: false, error: 'Sesión no encontrada' };
+  // [v2.43.87] Idempotente: si ya está CERRADA, no auditar otra vez
+  if (String(row.estado || '').toUpperCase() === 'CERRADA') {
+    return { ok: true, data: { yaCerrada: true } };
+  }
 
   // Registrar duración + cerrar
   var inicio = row.fecha instanceof Date ? row.fecha.getTime() : new Date(row.fecha).getTime();
@@ -386,9 +401,13 @@ function espiaSubirRenegOferta(params) {
   var sesionId = String(params.sesionId || '').trim();
   var sdp      = String(params.sdp || '');
   if (!sesionId || !sdp) return { ok: false, error: 'Requiere sesionId y sdp' };
-  // [v2.43.83] Al subir NUEVA oferta, limpiar respuesta vieja para evitar
-  // race entre 2 renegociaciones consecutivas (cliente leería respuesta
-  // vieja antes que master suba nueva).
+  // [v2.43.87] Solo aceptar reneg de sesiones vivas
+  var row = _buscarSesion(sesionId);
+  if (!row) return { ok: false, error: 'Sesión no encontrada' };
+  var est = String(row.estado || '').toUpperCase();
+  if (est === 'CERRADA') return { ok: false, error: 'Sesión cerrada · no se acepta reneg' };
+  if (_sesionExpiro(row)) return { ok: false, error: 'Sesión expirada', codigo: 'EXPIRADO' };
+  // [v2.43.83] Al subir NUEVA oferta, limpiar respuesta vieja
   return _actualizarColumnaSesion(sesionId, 'sdpRenegOferta', sdp, { sdpRenegRespuesta: '' });
 }
 
@@ -403,6 +422,11 @@ function espiaSubirRenegRespuesta(params) {
   var sesionId = String(params.sesionId || '').trim();
   var sdp      = String(params.sdp || '');
   if (!sesionId || !sdp) return { ok: false, error: 'Requiere sesionId y sdp' };
+  // [v2.43.87] Validar sesión viva
+  var row = _buscarSesion(sesionId);
+  if (!row) return { ok: false, error: 'Sesión no encontrada' };
+  var est = String(row.estado || '').toUpperCase();
+  if (est === 'CERRADA') return { ok: false, error: 'Sesión cerrada' };
   // Limpiar la oferta para que el cliente no la vuelva a leer
   return _actualizarColumnaSesion(sesionId, 'sdpRenegRespuesta', sdp, { sdpRenegOferta: '' });
 }
