@@ -491,14 +491,10 @@ function espiaLeerRenegRespuesta(params) {
 // Compat: los endpoints viejos siguen disponibles. Frontend nuevo migra a sync.
 // ════════════════════════════════════════════════════════════════════
 function espiaSync(params) {
-  // [v2.43.95] WRAP DEFENSIVO — cualquier excepción interna devuelve 200 con
-  // {ok:false}. Antes excepciones (cabeceras corruptas, HMAC fail, etc.)
-  // se propagaban a doPost → 500 → el cliente entra en backoff y eventualmente
-  // pierde el polling → modal del master se cierra solo.
   try {
     return _espiaSyncImpl(params);
   } catch(e) {
-    Logger.log('[espiaSync EXCEPCION] ' + e.message + ' | stack: ' + (e.stack || '').substring(0, 300));
+    _registrarExcepcionEspia('espiaSync', e, params);
     return { ok: false, error: 'Excepción interna: ' + e.message, codigo: 'EXCEPCION' };
   }
 }
@@ -570,11 +566,10 @@ function _espiaSyncImpl(params) {
 // Devuelve `aplicado` con conteo de cada campo escrito.
 // ════════════════════════════════════════════════════════════════════
 function espiaPushBatch(params) {
-  // [v2.43.95] Wrap defensivo — ver espiaSync
   try {
     return _espiaPushBatchImpl(params);
   } catch(e) {
-    Logger.log('[espiaPushBatch EXCEPCION] ' + e.message + ' | stack: ' + (e.stack || '').substring(0, 300));
+    _registrarExcepcionEspia('espiaPushBatch', e, params);
     return { ok: false, error: 'Excepción interna: ' + e.message, codigo: 'EXCEPCION' };
   }
 }
@@ -1739,4 +1734,234 @@ function reporteTokensEspia() {
   }
 
   return { ok: true, data: reporte };
+}
+
+// ════════════════════════════════════════════════════════════════════
+// [v2.43.96] DIAGNÓSTICO AUTOMATIZADO DE EXCEPCIONES
+// ────────────────────────────────────────────────────────────────────
+// Captura, clasifica y diagnostica errores que disparan 500/EXCEPCION
+// sin necesidad de leer la UI de Ejecuciones manualmente.
+//
+// Flujo:
+//   1. Cada excepción en espiaSync/espiaPushBatch → _registrarExcepcionEspia
+//      persiste en hoja DIAGNOSTICO_ESPIA (rotativa, máx 200 filas).
+//   2. Ejecutar diagnosticarErroresEspia() en el editor → agrupa por patrón,
+//      identifica causa raíz, sugiere fix con función específica.
+// ════════════════════════════════════════════════════════════════════
+
+function _registrarExcepcionEspia(endpoint, error, params) {
+  try {
+    var ss = getSpreadsheet();
+    var sh = ss.getSheetByName('DIAGNOSTICO_ESPIA');
+    if (!sh) {
+      sh = ss.insertSheet('DIAGNOSTICO_ESPIA');
+      sh.appendRow(['ts', 'endpoint', 'mensaje', 'stack', 'sesionId', 'lado', 'paramsResumen']);
+      sh.getRange(1, 1, 1, 7).setFontWeight('bold').setBackground('#0f172a').setFontColor('#f87171');
+      sh.setFrozenRows(1);
+    }
+    // Sanear params: NUNCA loguear sdp (ruido), token (secret) ni ice (gigante)
+    var p = params || {};
+    var resumen = {};
+    Object.keys(p).forEach(function(k) {
+      if (k === 'sdp' || k === 'token' || k === 'ice' || k === 'sdpOferta' ||
+          k === 'sdpRespuesta' || k === 'sdpRenegOferta' || k === 'sdpRenegRespuesta' ||
+          k === 'contenido') {
+        resumen[k] = '<' + (typeof p[k] === 'string' ? p[k].length + ' chars' : 'present') + '>';
+      } else if (k === 'necesito') {
+        resumen[k] = Object.keys(p[k] || {}).filter(function(f){ return p[k][f]; }).join(',');
+      } else {
+        resumen[k] = p[k];
+      }
+    });
+    var msg = String((error && error.message) || error);
+    var stk = String((error && error.stack) || '').substring(0, 800);
+    sh.appendRow([
+      new Date(),
+      String(endpoint),
+      msg.substring(0, 300),
+      stk,
+      String(p.sesionId || ''),
+      String(p.lado || ''),
+      JSON.stringify(resumen).substring(0, 500)
+    ]);
+    // Rolling: si pasa de 200 filas (+1 header), borrar las viejas en bloque
+    var ult = sh.getLastRow();
+    if (ult > 201) {
+      sh.deleteRows(2, ult - 201);
+    }
+    // También console.log para Cloud Logging
+    Logger.log('[ESPIA EXCEPCION] ' + endpoint + ': ' + msg + ' | params=' + JSON.stringify(resumen));
+  } catch(eReg) {
+    // No queremos que el logger explote si Sheets está roto
+    Logger.log('[_registrarExcepcionEspia FALLO] ' + eReg.message);
+  }
+}
+
+/**
+ * Diagnóstico automatizado: lee últimas N excepciones, agrupa por patrón,
+ * identifica causa raíz y sugiere acción concreta.
+ *
+ * Ejecutar desde Apps Script editor → ▶ → Ctrl+Enter (logs).
+ */
+function diagnosticarErroresEspia() {
+  var ss = getSpreadsheet();
+  var sh = ss.getSheetByName('DIAGNOSTICO_ESPIA');
+  if (!sh || sh.getLastRow() < 2) {
+    Logger.log('✅ No hay excepciones registradas en DIAGNOSTICO_ESPIA.');
+    Logger.log('   Si tu cliente sigue viendo 500, el problema está fuera del wrap defensivo.');
+    return { ok: true, data: { errores: 0 } };
+  }
+
+  var data = sh.getDataRange().getValues();
+  var hdrs = data[0];
+  var iTs   = hdrs.indexOf('ts');
+  var iEnd  = hdrs.indexOf('endpoint');
+  var iMsg  = hdrs.indexOf('mensaje');
+  var iStk  = hdrs.indexOf('stack');
+  var iSes  = hdrs.indexOf('sesionId');
+  var iLado = hdrs.indexOf('lado');
+
+  // Solo últimos 30 min — ignorar histórico viejo
+  var ahora = Date.now();
+  var ventana = 30 * 60 * 1000;
+  var recientes = [];
+  for (var i = data.length - 1; i >= 1; i--) {
+    var ts = data[i][iTs] instanceof Date ? data[i][iTs].getTime() : new Date(data[i][iTs]).getTime();
+    if (isNaN(ts)) continue;
+    if (ahora - ts > ventana) break; // filas antiguas: data está ordenada cronológicamente
+    recientes.push({
+      ts: ts, endpoint: data[i][iEnd], mensaje: data[i][iMsg],
+      stack: data[i][iStk], sesionId: data[i][iSes], lado: data[i][iLado]
+    });
+  }
+
+  Logger.log('═══ DIAGNÓSTICO ESPÍA — últimos 30 min ═══');
+  Logger.log('Excepciones encontradas: ' + recientes.length);
+  if (recientes.length === 0) {
+    Logger.log('✅ Sin excepciones recientes. Si seguís viendo problemas, el cliente puede tener cache vieja.');
+    return { ok: true, data: { errores: 0 } };
+  }
+
+  // Agrupar por mensaje (normalizado: quitar números/uuids)
+  var grupos = {};
+  recientes.forEach(function(r) {
+    var key = String(r.mensaje || '')
+      .replace(/[0-9a-f-]{8,}/gi, '<id>')
+      .replace(/\d+/g, '<N>')
+      .substring(0, 120);
+    var g = grupos[key] || { mensaje: r.mensaje, endpoints: {}, sesiones: {}, lados: {}, count: 0, ejemploStack: r.stack };
+    g.count++;
+    g.endpoints[r.endpoint] = (g.endpoints[r.endpoint] || 0) + 1;
+    if (r.sesionId) g.sesiones[r.sesionId] = (g.sesiones[r.sesionId] || 0) + 1;
+    if (r.lado) g.lados[r.lado] = (g.lados[r.lado] || 0) + 1;
+    grupos[key] = g;
+  });
+
+  Logger.log('───');
+  Logger.log('GRUPOS por patrón:');
+  Object.keys(grupos).forEach(function(key, idx) {
+    var g = grupos[key];
+    Logger.log('');
+    Logger.log('  [' + (idx + 1) + '] ✗ "' + key + '"');
+    Logger.log('      ocurrencias: ' + g.count);
+    Logger.log('      endpoints:   ' + Object.keys(g.endpoints).map(function(e){return e+'×'+g.endpoints[e];}).join(', '));
+    Logger.log('      lados:       ' + Object.keys(g.lados).map(function(l){return l+'×'+g.lados[l];}).join(', '));
+    Logger.log('      sesiones:    ' + Object.keys(g.sesiones).length + ' distintas');
+    if (g.ejemploStack) {
+      Logger.log('      stack (1ª línea): ' + String(g.ejemploStack).split('\n')[0]);
+    }
+    // Diagnóstico + sugerencia
+    var sug = _sugerirFix(g.mensaje, g.ejemploStack);
+    Logger.log('      → DIAGNÓSTICO: ' + sug.diagnostico);
+    Logger.log('      → ACCIÓN:      ' + sug.accion);
+  });
+
+  Logger.log('───');
+  Logger.log('Para limpiar el histórico de DIAGNOSTICO_ESPIA: ejecutá limpiarDiagnosticoEspia()');
+  return { ok: true, data: { errores: recientes.length, grupos: Object.keys(grupos).length } };
+}
+
+function _sugerirFix(mensaje, stack) {
+  var m = String(mensaje || '').toLowerCase();
+  var s = String(stack || '').toLowerCase();
+  if (/cannot read.*null|cannot read.*undefined/.test(m) || /getvalues/.test(s)) {
+    if (/_buscarsesion|_gethojasignaling/.test(s)) {
+      return {
+        diagnostico: 'Cabeceras de RTC_SIGNALING corruptas o columna faltante.',
+        accion: 'Ejecutá repararCabecerasSignaling() — restaura las 13 cabeceras incl. reneg.'
+      };
+    }
+    return {
+      diagnostico: 'Acceso a valor null/undefined en una columna esperada.',
+      accion: 'Mirá el stack completo en DIAGNOSTICO_ESPIA col D. Probablemente una columna falta en alguna hoja.'
+    };
+  }
+  if (/columna no existe/i.test(m)) {
+    return {
+      diagnostico: 'Columna referenciada no existe en RTC_SIGNALING.',
+      accion: 'repararCabecerasSignaling() agrega todas las cabeceras incl. reneg.'
+    };
+  }
+  if (/lock timeout/i.test(m)) {
+    return {
+      diagnostico: 'LockService contention (varios writes simultáneos a la misma fila).',
+      accion: 'Transitorio. Si recurre constante, hay polling demasiado agresivo. El backoff exponencial del frontend lo mitiga.'
+    };
+  }
+  if (/sesión no encontrada|sesion no encontrada/i.test(m)) {
+    return {
+      diagnostico: 'Cliente sigue polleando una sesión purgada (cleanup 24h).',
+      accion: 'Esperado para sesiones viejas. Si recurre: cliente tiene cache vieja del sesionId, debe reabrir el espía.'
+    };
+  }
+  if (/sesión expirada|sesion expirada/i.test(m)) {
+    return {
+      diagnostico: 'TTL de sesión cumplido (PENDIENTE=10min, CONECTANDO=20min, EN_VIVO=60min).',
+      accion: 'Esperado. El master debe reiniciar la sesión.'
+    };
+  }
+  if (/token inválido|token invalido|auth_fail/i.test(m)) {
+    return {
+      diagnostico: 'HMAC token recibido no matchea el firmado por backend.',
+      accion: 'Causa común: el cliente tiene token de una sesión vieja, o ESPIA_HMAC_KEY fue rotada. Cliente debe reabrir espía.'
+    };
+  }
+  if (/hmac|computehmac/i.test(m + s)) {
+    return {
+      diagnostico: 'Fallo en computeHmacSha256Signature.',
+      accion: 'ESPIA_HMAC_KEY puede estar malformada en Properties. Borrarla fuerza auto-regen (todos los tokens activos se invalidan).'
+    };
+  }
+  if (/lado.*master.*device|lado: master\|device/i.test(m)) {
+    return {
+      diagnostico: 'Request sin parámetro lado (frontend viejo cacheado).',
+      accion: 'Cliente con código pre-v2.13.79 que llamó endpoint batch nuevo. Hard refresh del cliente.'
+    };
+  }
+  if (/sdp.*demasiado grande|sdp.*max/i.test(m)) {
+    return {
+      diagnostico: 'SDP > 45000 chars (limit Sheets celda).',
+      accion: 'No típico salvo intento de inyección. Si recurre legítimo, subir ESPIA_SDP_MAX_CHARS.'
+    };
+  }
+  if (/quota|rate/i.test(m)) {
+    return {
+      diagnostico: 'Cuota Apps Script excedida (20k req/día gratuito).',
+      accion: 'Frontends están polling demasiado. Considerá aumentar intervals o el backoff exponencial.'
+    };
+  }
+  return {
+    diagnostico: 'No clasificado.',
+    accion: 'Pega stack completo (col D de DIAGNOSTICO_ESPIA) para análisis manual.'
+  };
+}
+
+function limpiarDiagnosticoEspia() {
+  var ss = getSpreadsheet();
+  var sh = ss.getSheetByName('DIAGNOSTICO_ESPIA');
+  if (!sh) { Logger.log('No existe DIAGNOSTICO_ESPIA'); return; }
+  var ult = sh.getLastRow();
+  if (ult < 2) { Logger.log('Ya vacía'); return; }
+  sh.deleteRows(2, ult - 1);
+  Logger.log('✓ Limpiados ' + (ult - 1) + ' registros de DIAGNOSTICO_ESPIA');
 }
