@@ -386,7 +386,10 @@ function espiaSubirRenegOferta(params) {
   var sesionId = String(params.sesionId || '').trim();
   var sdp      = String(params.sdp || '');
   if (!sesionId || !sdp) return { ok: false, error: 'Requiere sesionId y sdp' };
-  return _actualizarColumnaSesion(sesionId, 'sdpRenegOferta', sdp);
+  // [v2.43.83] Al subir NUEVA oferta, limpiar respuesta vieja para evitar
+  // race entre 2 renegociaciones consecutivas (cliente leería respuesta
+  // vieja antes que master suba nueva).
+  return _actualizarColumnaSesion(sesionId, 'sdpRenegOferta', sdp, { sdpRenegRespuesta: '' });
 }
 
 function espiaLeerRenegOferta(params) {
