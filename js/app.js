@@ -27868,12 +27868,18 @@ const MOS = (() => {
     // [v2.43.81] DataChannel STUB del lado master para forzar m=application
     // en el SDP offer. Sin esto, el cliente WH creaba un DataChannel 'gps'
     // pero el SDP no lo negociaba → readyState quedaba 'connecting' eterno.
-    // Como master no genera DataChannels propios, este stub es solo para
-    // que la sección m=application esté en el offer.
     try {
       const stubDc = pc.createDataChannel('master-stub', { negotiated: false, ordered: true });
-      stubDc.onopen = () => console.log('[espia master] stub DC abierto (señal de que data channels funcionan)');
+      stubDc.onopen = () => console.log('[espia master] stub DC abierto');
     } catch(eS) { console.warn('[espia master] no se pudo crear stub DC:', eS.message); }
+    // [v2.43.84 BLINDAJE] ICE recovery automático
+    pc.oniceconnectionstatechange = () => {
+      console.log('[espia master] ICE state:', pc.iceConnectionState);
+      if (pc.iceConnectionState === 'failed') {
+        console.warn('[espia master] ICE failed · restartIce');
+        try { pc.restartIce(); } catch(eRi) { console.warn('[espia master] restartIce fallo:', eRi.message); }
+      }
+    };
     // DataChannel para GPS (device → master)
     pc.ondatachannel = (ev) => {
       const dc = ev.channel;
