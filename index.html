@@ -8082,26 +8082,30 @@
       margin-top: 1px;
     }
     /* [v2.43.108] Botón "Imprimir adhesivo" en card de envasado */
+    /* [v2.43.111] Agrandado: más visible y profesional */
     .env-tl-btn-adhesivo {
-      margin-left: 8px;
-      padding: 5px 10px;
-      font-size: 10.5px; font-weight: 700;
-      border-radius: 8px;
-      background: linear-gradient(135deg, rgba(251,191,36,0.18), rgba(245,158,11,0.10));
-      border: 1px solid rgba(251,191,36,0.45);
-      color: #fbbf24;
-      cursor: pointer;
-      transition: all .18s cubic-bezier(.34,1.56,.64,1);
-      display: inline-flex; align-items: center; gap: 4px;
-      letter-spacing: .2px;
-      box-shadow: 0 0 0 0 rgba(251,191,36,0);
-    }
-    .env-tl-btn-adhesivo:hover {
-      background: linear-gradient(135deg, rgba(251,191,36,0.32), rgba(245,158,11,0.20));
-      border-color: rgba(251,191,36,0.75);
+      margin-left: 12px;
+      padding: 9px 16px;
+      font-size: 13px; font-weight: 800;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(251,191,36,0.22), rgba(245,158,11,0.14));
+      border: 1.5px solid rgba(251,191,36,0.55);
       color: #fde68a;
-      transform: translateY(-1px);
-      box-shadow: 0 6px 18px -4px rgba(251,191,36,0.42);
+      cursor: pointer;
+      transition: all .2s cubic-bezier(.34,1.56,.64,1);
+      display: inline-flex; align-items: center; gap: 7px;
+      letter-spacing: .3px;
+      box-shadow: 0 2px 12px -3px rgba(251,191,36,0.30);
+      white-space: nowrap;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    .env-tl-btn-adhesivo > :first-child { font-size: 16px; }
+    .env-tl-btn-adhesivo:hover {
+      background: linear-gradient(135deg, rgba(251,191,36,0.40), rgba(245,158,11,0.28));
+      border-color: rgba(251,191,36,0.85);
+      color: #fff;
+      transform: translateY(-2px);
+      box-shadow: 0 10px 24px -4px rgba(251,191,36,0.55);
     }
     .env-tl-btn-adhesivo:active { transform: translateY(0); }
 
@@ -8193,17 +8197,13 @@
       display: flex; align-items: flex-start; justify-content: space-between;
       gap: 12px;
     }
-    .adhesivo-logo { line-height: 1; }
-    .adhesivo-logo-script {
-      font-family: 'Brush Script MT', cursive;
-      font-size: 26px; font-style: italic; font-weight: 400;
-      color: #b91c1c;
-      transform: skewX(-6deg);
-    }
-    .adhesivo-logo-bold {
-      font-family: 'Lilita One', 'Arial Black', sans-serif;
-      font-size: 20px; font-weight: 900;
-      color: #111; margin-top: -4px; letter-spacing: 1px;
+    /* [v2.43.111] Logo bitmap REAL embebido en base64 (mismo PNG que LOGO_TSPL_HEX) */
+    .adhesivo-logo-real {
+      width: 140px; height: auto;
+      image-rendering: pixelated;
+      image-rendering: -moz-crisp-edges;
+      image-rendering: crisp-edges;
+      display: block;
     }
     .adhesivo-vto {
       text-align: right; font-family: monospace;
@@ -8356,6 +8356,24 @@
       cursor: not-allowed;
       box-shadow: none;
     }
+    /* [v2.43.111] Botón Calibrar — secundario pero visible */
+    .adhesivo-btn-calibrar {
+      background: linear-gradient(135deg, rgba(99,102,241,.18), rgba(99,102,241,.10));
+      border: 1px solid rgba(99,102,241,.45);
+      color: #a5b4fc;
+      padding: 9px 14px;
+      border-radius: 9px;
+      font-size: 13px; font-weight: 800;
+      cursor: pointer;
+      transition: all .15s;
+      letter-spacing: .2px;
+    }
+    .adhesivo-btn-calibrar:hover:not(:disabled) {
+      background: linear-gradient(135deg, rgba(99,102,241,.32), rgba(99,102,241,.20));
+      border-color: rgba(99,102,241,.75);
+      color: #fff;
+    }
+    .adhesivo-btn-calibrar:disabled { opacity: .55; cursor: wait; }
     .adhesivo-spin {
       display: inline-block;
       animation: spin 1s linear infinite;

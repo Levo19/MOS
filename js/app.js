@@ -12241,6 +12241,12 @@ const MOS = (() => {
 
           <footer class="adhesivo-foot">
             <button onclick="MOS.cerrarModalImprimirAdhesivo()" class="adhesivo-btn-secondary">Cancelar</button>
+            <button id="adhesivoBtnCalibrar"
+                    onclick="MOS.adhesivoCalibrar()"
+                    class="adhesivo-btn-calibrar"
+                    title="Calibra el sensor de gap. Úsalo si las impresiones salen corridas o al cambiar el rollo. Consume ~3 etiquetas en blanco.">
+              🎯 Calibrar
+            </button>
             <button id="adhesivoBtnImprimir"
                     onclick="MOS.adhesivoImprimir()"
                     class="adhesivo-btn-primary"
@@ -12259,9 +12265,10 @@ const MOS = (() => {
   }
 
   function _adhesivoRenderEtiquetaHTML(datos, cantidad) {
-    // Escala 2:1 → 400×200 dots reales = 800×400 px en el preview
-    // Logo "Caserito Tony's" se renderiza con SVG estilizado (no es el bitmap real
-    // pero da idea fiel del layout). Highlights con font más grande + bold.
+    // [v2.43.111] Preview con el BITMAP REAL del logo (mismo PNG que se
+    // imprime físicamente, embebido en base64). Antes usaba fuentes CSS web
+    // (Brush Script MT + Arial Black) que se veían bastante distinto del
+    // bitmap nativo de la impresora.
     const linesHTML = datos.lines.map(line => {
       const parts = line.map(p =>
         `<span class="adhesivo-tok ${p.hl ? 'adhesivo-tok-hl' : ''}">${_escapeHtml(p.tok)}</span>`
@@ -12271,13 +12278,10 @@ const MOS = (() => {
     return `
       <div class="adhesivo-etiqueta">
         <div class="adhesivo-etq-top">
-          <div class="adhesivo-logo">
-            <div class="adhesivo-logo-script">Caserito</div>
-            <div class="adhesivo-logo-bold">TONY'S</div>
-          </div>
+          <img class="adhesivo-logo-real" src="${_ADHESIVO_LOGO_DATAURI}" alt="Caserito Tony's">
           <div class="adhesivo-vto">
-            <div class="adhesivo-vto-lbl">Vto</div>
-            <div class="adhesivo-vto-val">${datos.vto}</div>
+            <span class="adhesivo-vto-lbl">Vto</span>
+            <span class="adhesivo-vto-val">${datos.vto}</span>
           </div>
         </div>
         <div class="adhesivo-divider"></div>
@@ -12289,6 +12293,12 @@ const MOS = (() => {
         <div class="adhesivo-cantidad-tag">×${cantidad}</div>
       </div>`;
   }
+
+  // [v2.43.111] Logo bitmap REAL de la etiqueta (PNG 180×36, mismo que
+  // genera Python+Pillow y que termina en LOGO_TSPL_HEX del backend).
+  // 840 bytes en base64. Si el logo cambia, regenerar con:
+  //   base64 -w0 warehouseMos/preview-etiquetas/logo-preview-4x.png
+  const _ADHESIVO_LOGO_DATAURI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAtAAAACQAQAAAAAJ62F0AAACPElEQVR4nO2bW27EIAxFjdV/e/+76w7sFVAZhwzzUpkWt4LhapoHic7HHdfckDZliBKGkWGjb7QNudE25B8MYQ5DjxdOif449qrD0TicuAiay+d7JX4TQ+LqWo+fqgTwMKDo8oZgOJqB2sJWr/Qh6AjhxGgFEAE9GwTTk9jN8io6RDgxmoGssKsUBORXvXp2Q+LQCczai7vc+H4lfRND4uZGhVLU1OElcV7cEIxDp2xlTaWmE9SDZ4Yq+w0LG4JxaMhZbGOCcmoDfi5kg3ZOQgLZu4yADXdoTkMwFM3ttMiXQ2XlS/qrF8jH+tBRwknR2s6KcOWjjVNJJax2iYTy56OE8gQdJpwUzU1ZU1vYJY2YybYXqXdRb/ib1ZAwIQh8JheAllxdXRW2Y18pYZsXfZi60WHCSdHUekd+ctat9Q9QkuPCMW7TaQ86TDglGmre8CSSPYBY1LDVJ/Lm7AOWRWysxpSdQ0Z4nc+rZ82b13Xtb2e+kb8y4sUstiJVqtrbuO3oKra8jh6iddBqOcNKuDyQEzApMNjcaRebqn8dPUjLobk8tZfEbRNk6Se9r2++Qf9Wc6NTug3N+uDuw/fX0AHCZdCU7cPWqM3/krKVfU372UuETvQgLYemR08t+saG/AFavXGQJ740Ev1TrY6WI27vuTHOa7FN7SZ5tgqZBK33zVn3e/QQr8WWTptVvyLlNy6+IX/3pOmyPXW87r3TztcBX6McvjbmUv/q9azFh3HotP+vYIWvETcarvQFMOU6503TLEkAAAAASUVORK5CYII=';
 
   function _adhesivoDibujarBarcode(codigoBarra) {
     const svg = document.getElementById('adhesivoBarcodeSVG');
@@ -12413,6 +12423,28 @@ const MOS = (() => {
     }
     // Cierre auto al éxito (fuera del try para garantizar ejecución)
     if (exito) setTimeout(cerrarModalImprimirAdhesivo, 1400);
+  }
+
+  // [v2.43.111] Calibrar impresora — GAPDETECT + FORMFEED en TSPL puro.
+  // Recomendado al cambiar rollo de etiquetas o cuando las impresiones
+  // empiezan a salir corridas. Consume ~3 etiquetas en blanco mientras
+  // la impresora mide el sensor de gap.
+  async function adhesivoCalibrar() {
+    const btn = document.getElementById('adhesivoBtnCalibrar');
+    if (btn && btn.disabled) return;
+    if (!confirm('¿Calibrar la impresora ahora?\n\nLa impresora va a sacar ~3 etiquetas en blanco mientras mide el sensor de gap. Úsalo si las impresiones salen corridas del adhesivo o si recién cambiaste el rollo.')) return;
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Calibrando…'; }
+    try {
+      const r = await API.post('wh_calibrarImpresoraAdhesivo', {});
+      if (r && r.ok === false) throw new Error(r.error || 'Backend rechazó');
+      if (btn) btn.textContent = '✅ Calibrada';
+      try { toast('🎯 Calibración enviada · ya podés imprimir alineado', 'success', 6000); } catch(_){}
+      setTimeout(() => { if (btn) { btn.textContent = '🎯 Calibrar'; btn.disabled = false; } }, 3000);
+    } catch(e) {
+      if (btn) { btn.textContent = '❌ Error'; btn.disabled = false; }
+      try { toast('Error al calibrar: ' + (e?.message || 'desconocido'), 'error', 6000); } catch(_){}
+      setTimeout(() => { if (btn) btn.textContent = '🎯 Calibrar'; }, 3000);
+    }
   }
 
   function cerrarModalImprimirAdhesivo() {
@@ -38601,9 +38633,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     finAbrirModalTickets, finSetTicketFiltro,
     // Envasados — filtros modernos
     envSetRango, envSetOperador, envSetAgrupar, envToggleCustom, envSetCustom,
-    // [v2.43.110] Adhesivos — modal de impresión en card de envasado
+    // [v2.43.110-111] Adhesivos — modal de impresión + calibración
     abrirModalImprimirAdhesivo, cerrarModalImprimirAdhesivo,
-    adhesivoCantidadDelta, adhesivoCantidadInput, adhesivoImprimir,
+    adhesivoCantidadDelta, adhesivoCantidadInput, adhesivoImprimir, adhesivoCalibrar,
     activarPush: () => _pushInit(S.session?.nombre || '', S.session?.rol || '', true)
   };
 })();

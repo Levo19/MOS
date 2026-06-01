@@ -170,6 +170,7 @@ function _route(method, e) {
       // Adhesivos / etiquetas (modal en módulo Almacén → Envasado)
       case 'wh_imprimirEtiqueta':            return postToWarehouse('imprimirEtiqueta', params);
       case 'wh_estadoImpresoraAdhesivo':     return postToWarehouse('estadoImpresoraAdhesivo', params);
+      case 'wh_calibrarImpresoraAdhesivo':   return postToWarehouse('calibrarImpresoraAdhesivo', params);
       case 'getVentasMosExpress':  return getVentasMosExpress(params);
       case 'getRotacion':            return getRotacionProductos(params);
       case 'getAnaliticaProducto':   return getAnaliticaProducto(params);
