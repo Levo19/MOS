@@ -27919,9 +27919,17 @@ const MOS = (() => {
         dc.onmessage = (msg) => {
           try {
             const data = JSON.parse(msg.data);
-            // [v2.43.91] Mensajes meta del cliente (mapping de tracks, etc.)
             if (data && data.__meta === 'trackMap' && data.map) {
               _espiaV2AplicarTrackMap(data.map);
+              return;
+            }
+            // [v2.43.100] Capabilities: el cliente describe su plataforma
+            // (PC/móvil/tablet) para que el modal adapte UI sin adivinar.
+            if (data && data.__meta === 'capabilities' && data.caps) {
+              _espiaV2.capabilities = data.caps;
+              console.log('[espia master] capabilities recibidas:', data.caps);
+              _espiaV2AutoFocus();
+              _espiaV2RenderModal();
               return;
             }
             _espiaV2.gpsUlt = data;
@@ -28224,14 +28232,17 @@ const MOS = (() => {
     }
   }
 
-  // [v2.43.98 FIX BUG #2] Auto-switch focus si quedó en slot vacío.
-  // Bug original: focus inicial 'pantalla' en smartphone (donde getDisplayMedia
-  // no existe) bloqueaba la UI con spinner eterno aunque hubiera 2 cámaras
-  // conectadas. Ahora muta al primer slot con stream disponible.
+  // [v2.43.100] AutoFocus respeta capabilities.
+  // En móvil donde tienePantalla=false, jamás vamos a tener stream de pantalla,
+  // así que no tiene sentido siquiera intentar dejar focus en 'pantalla'.
   function _espiaV2AutoFocus() {
     if (!_espiaV2) return;
     if (_espiaV2.streams[_espiaV2.focus]) return;
-    const primero = ['pantalla', 'camara', 'camara2'].find(k => !!_espiaV2.streams[k]);
+    const caps = _espiaV2.capabilities;
+    const orden = (caps && caps.tienePantalla === false)
+      ? ['camara', 'camara2'] // móvil: pantalla no aplica nunca
+      : ['pantalla', 'camara', 'camara2'];
+    const primero = orden.find(k => !!_espiaV2.streams[k]);
     if (primero && primero !== _espiaV2.focus) {
       console.log('[espia focus] auto-switch · ' + _espiaV2.focus + ' → ' + primero);
       _espiaV2.focus = primero;
@@ -28283,6 +28294,18 @@ const MOS = (() => {
             <span style="width:10px;height:10px;border-radius:50%;background:${_espiaV2.estado === 'live' ? '#10b981' : '#f59e0b'};animation:espiaBreath 2s ease-in-out infinite;box-shadow:0 0 10px ${_espiaV2.estado === 'live' ? '#10b981' : '#f59e0b'}"></span>
             <span style="font-size:11px;font-weight:900;color:${_espiaV2.estado === 'live' ? '#10b981' : '#f59e0b'};letter-spacing:.5px">${_espiaV2.estado === 'live' ? 'EN VIVO' : 'CONECTANDO'}</span>
           </div>
+          ${(() => {
+            // [v2.43.100] Badge de plataforma — el cliente reporta vía DataChannel
+            const c = _espiaV2.capabilities;
+            if (!c) return '';
+            const meta = c.plataforma === 'mobile' ? { icon: '📱', color: '244,114,182' }
+                       : c.plataforma === 'tablet' ? { icon: '📲', color: '139,92,246' }
+                       : { icon: '🖥️', color: '14,165,233' };
+            return `<div style="font-size:10px;font-weight:800;padding:4px 10px;border-radius:20px;background:rgba(${meta.color},.15);color:rgba(${meta.color},1);border:1px solid rgba(${meta.color},.4);display:flex;align-items:center;gap:5px"
+                title="${_escapeHtml(c.modelo || '')} · ${c.camsTotales || 0} cam · pantalla=${c.tienePantalla ? 'sí' : 'no'}">
+                ${meta.icon} ${_escapeHtml((c.modelo || c.plataforma).toUpperCase())}
+              </div>`;
+          })()}
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;font-weight:700;color:#e2e8f0;display:flex;align-items:center;gap:6px">
               👤 ${_escapeHtml(_espiaV2.nombre)}
@@ -28368,6 +28391,34 @@ const MOS = (() => {
                     <div style="width:24px;height:24px;border:2px solid rgba(${meta.color},.3);border-top-color:rgba(${meta.color},1);border-radius:50%;animation:espiaSpin 1s linear infinite"></div>
                   </div>` : ''}
               </div>`;
+            })()}
+            <!-- [v2.43.100] Cards 'no soportada' — el master ve POR QUÉ falta un stream -->
+            ${(() => {
+              const c = _espiaV2.capabilities;
+              if (!c) return '';
+              const cards = [];
+              if (c.tienePantalla === false) {
+                cards.push({
+                  icon: '🖥️', label: 'PANTALLA',
+                  motivo: 'No soportada en móvil',
+                  color: '100,116,139'
+                });
+              }
+              if (c.esMobile && c.camsTotales < 2) {
+                cards.push({
+                  icon: '📸', label: '2DA CÁMARA',
+                  motivo: 'Hardware no permite dual',
+                  color: '100,116,139'
+                });
+              }
+              return cards.map(card => `
+                <div style="background:#0a0f1e;border:1px dashed rgba(${card.color},.4);border-radius:10px;padding:11px;opacity:.65">
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+                    <div style="font-size:9px;font-weight:800;color:rgba(${card.color},1);text-transform:uppercase;letter-spacing:.5px">${card.icon} ${card.label}</div>
+                    <span style="font-size:8px;color:#475569">⛔ N/D</span>
+                  </div>
+                  <div style="font-size:9px;color:#64748b;line-height:1.4">${card.motivo}</div>
+                </div>`).join('');
             })()}
             <!-- GPS mini -->
             <div style="background:#0f172a;border:1px solid rgba(236,72,153,.3);border-radius:10px;padding:11px;box-shadow:0 0 18px -8px #ec489944">
@@ -28529,11 +28580,11 @@ const MOS = (() => {
   function _espiaV2Swap() {
     if (!_espiaV2) return;
     _espiaSfx('shimmer');
-    // [v2.43.97] Rota entre los video streams REALMENTE disponibles
-    // (orden cíclico: pantalla → camara → camara2 → pantalla...).
-    // Saltea slots null. Si solo hay 1, no rota.
-    const orden = ['pantalla', 'camara', 'camara2'];
-    const disponibles = orden.filter(k => !!_espiaV2.streams[k]);
+    const caps = _espiaV2.capabilities;
+    const ordenBase = (caps && caps.tienePantalla === false)
+      ? ['camara', 'camara2']
+      : ['pantalla', 'camara', 'camara2'];
+    const disponibles = ordenBase.filter(k => !!_espiaV2.streams[k]);
     if (disponibles.length <= 1) {
       _espiaV2RenderModal();
       return;
