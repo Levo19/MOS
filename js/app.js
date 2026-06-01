@@ -12315,7 +12315,7 @@ const MOS = (() => {
   // El bitmap es el MISMO PNG que se imprime físicamente vía LOGO_TSPL_HEX
   // en Envasados.gs (ambos generados por gen.py, deterministicos).
   // Para regenerar: cd ProyectoMOS/assets/adhesivo && python gen.py
-  const _ADHESIVO_LOGO_DATAURI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALgAAAAkAQAAAAAS7M1SAAAA1ElEQVR42pWTPQ7DIAxGP9OoZMzWsTlCb5AcqTcIvRm9icd0Y8hAJYQ75I9WRBUswOMJbAwkyDaFYm6yCxI7CYAGyGq+d/4qFhgUIuf3CS6ds0c983HaYEh9joleO9cu3M6ZabGIqW/SQCvPPSBilAD2FLQHgAEIdvEjwJk01QSMK+1B8bEILg1vP0kx0jAwKHgQGXUDzits7eE999XKnd52bfjQb+sMr4Gm+VfHy+u3kJ3wt18VvhNV6NPcPand+Zv68vdpCv3kCKedlrXZbUSF/+UDXd5UlxK2kNcAAAAASUVORK5CYII=';
+  const _ADHESIVO_LOGO_DATAURI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALgAAAAkAQAAAAAS7M1SAAABDElEQVR42oWSO07EMBCGP1sRm4JHSso9AiVV1kfhGlQMEgfJUcJWlJwAZbstKCKUIkjBQ5GYOOAs04z96dc8fo1RkmFZ5f0Kf4dnsz24w/1F/vj0WQT+BkD1Sg3w8hH4TgCVHkCodeI66hjADgaQkXsawE95pGAZaBcDy8SPdJSmyQCDxbiJN3hgMNCi0fw1sRUuPBR48KbfmCa/YqOoqqraL6AaJT0y9+2AY+xMlfZT2gR3Oa5L67c+zYvJt0vgdqacB98WRX6ApaSMdzWSrm9d/c89qMzVI75nf+KuMo38jesPK3fooQAQ52Juf002/7Kw3MIHIzk5wNYs9Xc3Y74+C/1UdvonTviQjG8QMWG0CFaH7gAAAABJRU5ErkJggg==';
 
   function _adhesivoDibujarBarcode(codigoBarra) {
     const svg = document.getElementById('adhesivoBarcodeSVG');

@@ -171,6 +171,7 @@ function _route(method, e) {
       case 'wh_imprimirEtiqueta':            return postToWarehouse('imprimirEtiqueta', params);
       case 'wh_estadoImpresoraAdhesivo':     return postToWarehouse('estadoImpresoraAdhesivo', params);
       case 'wh_calibrarImpresoraAdhesivo':   return postToWarehouse('calibrarImpresoraAdhesivo', params);
+      case 'wh_previsualizarTSPLEtq':        return postToWarehouse('previsualizarTSPLEtq', params);
       case 'getVentasMosExpress':  return getVentasMosExpress(params);
       case 'getRotacion':            return getRotacionProductos(params);
       case 'getAnaliticaProducto':   return getAnaliticaProducto(params);
