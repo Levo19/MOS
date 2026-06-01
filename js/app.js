@@ -27931,90 +27931,94 @@ const MOS = (() => {
     _espiaV2.pollTimer = setInterval(_espiaV2Poll, 600);
   }
 
+  // [v2.43.89 REFACTOR] BATCH SYNC — antes 3-4 round-trips Apps Script por tick,
+  // ahora 1 con espiaSync. Devuelve respuesta inicial + reneg oferta + ICE del
+  // device + estado en una sola llamada. Más rápido, menos cuota, menos races.
   async function _espiaV2Poll() {
     if (!_espiaV2 || !_espiaV2.sesionId) return;
-    // [v2.43.86 MUTEX GLOBAL] _espiaV2Poll se invoca cada 600ms pero hace 2-3
-    // await API.post (cada uno 0.5-3s). Múltiples ticks pueden correr en paralelo
-    // → quota wasted + ICE duplicados + race conditions. Mutex global asegura
-    // serialización.
     if (_espiaV2._pollEnCurso) return;
     _espiaV2._pollEnCurso = true;
     try {
       const t0 = Date.now();
-      // Guard adicional: pc puede ser null si se está cerrando
       if (!_espiaV2.pc) return;
-      // [v2.43.66] API.post desempaqueta — r es directamente el data del backend
-      // [v2.43.76] Guard contra race: el poll corre cada 600ms. Si setRemoteDescription
-      // tarda >600ms, el siguiente poll también ve remoteDescription=null y vuelve a
-      // intentar → InvalidStateError "Called in wrong state: stable" cuando el primero
-      // ya conectó. Flag _settingAnswer asegura mutex.
-      if (!_espiaV2.pc.remoteDescription && !_espiaV2._settingAnswer && _espiaV2.pc.signalingState === 'have-local-offer') {
+
+      const pc = _espiaV2.pc;
+      const necesitaRespuesta = !pc.remoteDescription &&
+                                !_espiaV2._settingAnswer &&
+                                pc.signalingState === 'have-local-offer';
+      const puedeReneg = pc.signalingState === 'stable' && !_espiaV2._renegEnCurso;
+
+      // 1 sola llamada al backend que devuelve TODO lo que el master necesita
+      const d = await API.post('espiaSync', {
+        sesionId: _espiaV2.sesionId,
+        lado: 'master',
+        iceDesde: _espiaV2.pollIceDesde || 0,
+        necesito: {
+          sdpRespuesta:    necesitaRespuesta,
+          sdpRenegOferta:  puedeReneg,
+          ice:             true
+        }
+      });
+      if (!_espiaV2) return;
+      if (!d) return;
+
+      // (1) Cierre remoto — el device cerró por su lado o TTL expiró
+      if (d.estado === 'CERRADA') {
+        console.log('[espia master] backend reporta CERRADA · cerrando UI');
+        _espiaV2Cerrar('device_cerro');
+        return;
+      }
+
+      // (2) Respuesta del handshake inicial
+      if (necesitaRespuesta && d.sdpRespuesta) {
         _espiaV2._settingAnswer = true;
         try {
-          const r = await API.post('espiaLeerRespuesta', { sesionId: _espiaV2.sesionId });
-          if (r?.sdpRespuesta && _espiaV2 && !_espiaV2.pc.remoteDescription && _espiaV2.pc.signalingState === 'have-local-offer') {
-            const sdp = JSON.parse(r.sdpRespuesta);
-            await _espiaV2.pc.setRemoteDescription(sdp);
+          if (_espiaV2 && !pc.remoteDescription && pc.signalingState === 'have-local-offer') {
+            await pc.setRemoteDescription(JSON.parse(d.sdpRespuesta));
           }
         } catch(e) { console.warn('[espia] respuesta inválida', e?.message); }
         finally { if (_espiaV2) _espiaV2._settingAnswer = false; }
       }
-      // [v2.43.76] Guard: si el modal se cerró durante el primer await, abortar
       if (!_espiaV2) return;
-      // 2) Leer ICE candidates del device
-      const ri = await API.post('espiaLeerIce', {
-        sesionId: _espiaV2.sesionId,
-        lado: 'device',
-        desde: _espiaV2.pollIceDesde
-      });
-      if (!_espiaV2) return; // guard otra vez después del await
-      if (ri?.ice?.length) {
-        for (const c of ri.ice) {
-          // [v2.43.86] Log errores de ICE (antes silenciado)
-          try { await _espiaV2.pc.addIceCandidate(c.ice); }
+
+      // (3) ICE candidates del device (batched)
+      if (d.ice?.length) {
+        for (const c of d.ice) {
+          try { await pc.addIceCandidate(c.ice); }
           catch(eC) { console.warn('[espia master] addIceCandidate fallo:', eC?.message); }
         }
-        if (_espiaV2) _espiaV2.pollIceDesde = ri.tsMax || _espiaV2.pollIceDesde;
+        if (_espiaV2 && d.tsMax) _espiaV2.pollIceDesde = d.tsMax;
       }
-      // [v2.43.87 ANTI-DOUBLE-PROCESS] Tracking local de ofertas ya procesadas.
-      // Bug previo: si setRemoteDescription tuvo éxito pero espiaSubirRenegRespuesta
-      // falló (network), el sdpRenegOferta queda en sheet → próximo poll vuelve
-      // a hacer setRemoteDescription(misma offer) → InvalidStateError.
-      // Fix: comparar SDP antes de aplicar. Si es la misma de la última procesada,
-      // solo reintenta la SUBIDA de respuesta (no setRemoteDescription).
-      if (_espiaV2 && _espiaV2.pc.signalingState === 'stable' && !_espiaV2._renegEnCurso) {
+
+      // (4) Renegociación: device subió oferta nueva (ej. agregó pantalla)
+      if (_espiaV2 && puedeReneg && d.sdpRenegOferta) {
         _espiaV2._renegEnCurso = true;
         try {
-          const rg = await API.post('espiaLeerRenegOferta', { sesionId: _espiaV2.sesionId });
-          if (!_espiaV2 || _espiaV2.pc.signalingState !== 'stable') {
-            if (_espiaV2) _espiaV2._renegEnCurso = false;
-          } else if (rg?.sdpRenegOferta) {
-            const ofertaStr = rg.sdpRenegOferta;
+          if (pc.signalingState !== 'stable') {
+            // state cambió mientras esperábamos — descartar
+          } else {
+            const ofertaStr = d.sdpRenegOferta;
             const yaProcesada = _espiaV2._ultimaOfertaProcesada === ofertaStr;
             if (yaProcesada && _espiaV2._ultimaAnswerSinSubir) {
-              // Reintentar SOLO subida de respuesta
-              console.log('[espia master] retry subida de answer (no reprocesar)');
+              // Subida de respuesta falló antes → solo reintentar subida
+              console.log('[espia master] retry subida answer (no reprocesar)');
               await API.post('espiaSubirRenegRespuesta', {
                 sesionId: _espiaV2.sesionId,
                 sdp: _espiaV2._ultimaAnswerSinSubir
               });
               _espiaV2._ultimaAnswerSinSubir = null;
-              console.log('[espia master] retry exitoso ✓');
             } else if (!yaProcesada) {
               console.log('[espia master] reneg offer detectada · procesando');
-              const newOffer = JSON.parse(ofertaStr);
-              await _espiaV2.pc.setRemoteDescription(newOffer);
-              const newAnswer = await _espiaV2.pc.createAnswer();
-              await _espiaV2.pc.setLocalDescription(newAnswer);
+              await pc.setRemoteDescription(JSON.parse(ofertaStr));
+              const newAnswer = await pc.createAnswer();
+              await pc.setLocalDescription(newAnswer);
               const answerStr = JSON.stringify(newAnswer);
-              // Marcar como procesada ANTES del API.post para evitar reprocesamiento
               _espiaV2._ultimaOfertaProcesada = ofertaStr;
-              _espiaV2._ultimaAnswerSinSubir = answerStr; // por si falla subida
+              _espiaV2._ultimaAnswerSinSubir = answerStr;
               await API.post('espiaSubirRenegRespuesta', {
-                sesionId: _espiaV2.sesionId,
-                sdp: answerStr
+                sesionId: _espiaV2.sesionId, sdp: answerStr
               });
-              _espiaV2._ultimaAnswerSinSubir = null; // subida OK
+              _espiaV2._ultimaAnswerSinSubir = null;
               console.log('[espia master] reneg answer enviada · pantalla negociada ✓');
             }
           }
@@ -28024,24 +28028,8 @@ const MOS = (() => {
           if (_espiaV2) _espiaV2._renegEnCurso = false;
         }
       }
-      // [v2.43.88] Polling de estado del backend (~cada 6s, 1 de cada 10 ticks).
-      // Detecta cuando el device cierra (page_unload), TTL expira, o admin
-      // forzó cierre desde otra pestaña. Antes el master se quedaba colgado
-      // esperando datos hasta que pc.connectionState cambiara (puede tardar
-      // 30s+ sin TURN). Ahora cierra UI en <6s.
-      _espiaV2._pollEstadoTick = (_espiaV2._pollEstadoTick || 0) + 1;
-      if (_espiaV2 && _espiaV2._pollEstadoTick >= 10) {
-        _espiaV2._pollEstadoTick = 0;
-        try {
-          const rE = await API.post('espiaEstadoSesion', { sesionId: _espiaV2.sesionId });
-          if (_espiaV2 && rE?.estado === 'CERRADA') {
-            console.log('[espia master] backend reporta CERRADA · cerrando UI');
-            _espiaV2Cerrar('device_cerro');
-            return;
-          }
-        } catch(eEst) { /* silencio - network transitorio */ }
-      }
-      // Tracking de lag
+
+      // Tracking de lag visible en el badge
       if (_espiaV2) {
         _espiaV2.lagMs = Date.now() - t0;
         _espiaV2RenderSyncBadge();

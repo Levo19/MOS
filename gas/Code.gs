@@ -152,6 +152,9 @@ function _route(method, e) {
       case 'espiaEstadoSesion':              return espiaEstadoSesion(params);
       case 'espiaReportarStreams':           return espiaReportarStreams(params);
       case 'espiaCerrarSesion':              return espiaCerrarSesion(params);
+      // [v2.43.89] Batch endpoints — 1 round-trip por poll en vez de 3
+      case 'espiaSync':                      return espiaSync(params);
+      case 'espiaPushBatch':                 return espiaPushBatch(params);
       case 'espiaSubirChunk':                return espiaSubirChunk(params);
       // [v2.43.61] Timeline + cleanup
       case 'espiaListarChunks':              return espiaListarChunks(params);

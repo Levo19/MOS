@@ -448,6 +448,188 @@ function espiaLeerRenegRespuesta(params) {
   return { ok: true, data: { sdpRenegRespuesta: row.sdpRenegRespuesta || '' } };
 }
 
+// ════════════════════════════════════════════════════════════════════
+// [v2.43.89] BATCH SYNC — endpoint único de lectura
+// ────────────────────────────────────────────────────────────────────
+// Reemplaza los 3 setInterval del cliente (oferta + ice + estado) por 1.
+// Antes: 3 polls × N devices × duración → ~7500 req/h por device EN_VIVO.
+// Ahora: 1 poll consolidado → ~1500 req/h por device EN_VIVO. Reducción 80%.
+//
+// El lado pide solo lo que necesita vía flags `necesito` (booleans).
+// Backend devuelve un snapshot atómico — 1 sola lectura de la fila + filter
+// de ICE. Sin locks (read-only, eventually-consistent es ok para polling).
+//
+// Compat: los endpoints viejos siguen disponibles. Frontend nuevo migra a sync.
+// ════════════════════════════════════════════════════════════════════
+function espiaSync(params) {
+  var sesionId = String(params.sesionId || '').trim();
+  var lado     = String(params.lado || '').toLowerCase();
+  var iceDesde = parseInt(params.iceDesde) || 0;
+  var necesito = params.necesito || {};
+  if (!sesionId) return { ok: false, error: 'sesionId requerido' };
+  if (lado !== 'master' && lado !== 'device') return { ok: false, error: 'lado: master|device' };
+
+  var row = _buscarSesion(sesionId);
+  if (!row) return { ok: false, error: 'Sesión no encontrada', codigo: 'NO_EXISTE' };
+  if (_sesionExpiro(row)) return { ok: false, error: 'Sesión expirada', codigo: 'EXPIRADO' };
+
+  var snap = {
+    estado:   row.estado,
+    expiraEn: _msHastaExpiracion(row),
+    ahora:    Date.now()
+  };
+  if (row.streamsActivos) {
+    try { snap.streamsActivos = JSON.parse(row.streamsActivos); } catch(_) { snap.streamsActivos = null; }
+  }
+
+  // SDPs selectivos (solo los pedidos, no inflar respuesta)
+  if (necesito.sdpOferta)         snap.sdpOferta         = row.sdpOferta         || '';
+  if (necesito.sdpRespuesta)      snap.sdpRespuesta      = row.sdpRespuesta      || '';
+  if (necesito.sdpRenegOferta)    snap.sdpRenegOferta    = row.sdpRenegOferta    || '';
+  if (necesito.sdpRenegRespuesta) snap.sdpRenegRespuesta = row.sdpRenegRespuesta || '';
+
+  // ICE del OTRO lado (yo leo lo que el otro publicó)
+  if (necesito.ice) {
+    var colIce = (lado === 'master') ? 'iceDevice' : 'iceMaster';
+    var arr = [];
+    try { arr = JSON.parse(row[colIce] || '[]'); } catch(_) { arr = []; }
+    snap.ice = arr.filter(function(c) { return c && typeof c.ts === 'number' && c.ts > iceDesde; });
+    snap.tsMax = arr.length ? arr[arr.length - 1].ts : iceDesde;
+  }
+
+  return { ok: true, data: snap };
+}
+
+// ════════════════════════════════════════════════════════════════════
+// [v2.43.89] BATCH PUSH — endpoint único de escritura
+// ────────────────────────────────────────────────────────────────────
+// Sube múltiples cambios en una sola transacción (1 lock, 1 flush).
+// Antes el cliente hacía 1 espiaAgregarIce por candidate → si ICE gathering
+// emite 10 candidates en 100ms, eran 10 locks + 10 flushes consecutivos.
+// Ahora batched: 1 sola escritura con el array merged.
+//
+// Acepta cualquier combinación de:
+//   - ice: [{ts, ice}, ...] — array de candidates
+//   - sdpOferta / sdpRespuesta / sdpRenegOferta / sdpRenegRespuesta
+//   - streamsActivos: {audio, camara, pantalla}
+//   - cerrar: { motivo } — atómico con el resto
+//
+// Devuelve `aplicado` con conteo de cada campo escrito.
+// ════════════════════════════════════════════════════════════════════
+function espiaPushBatch(params) {
+  var sesionId = String(params.sesionId || '').trim();
+  var lado     = String(params.lado || '').toLowerCase();
+  if (!sesionId) return { ok: false, error: 'sesionId requerido' };
+  if (lado !== 'master' && lado !== 'device') return { ok: false, error: 'lado: master|device' };
+
+  // Validar tamaños de SDP fuera del lock (cheap)
+  var camposSdp = ['sdpOferta', 'sdpRespuesta', 'sdpRenegOferta', 'sdpRenegRespuesta'];
+  for (var ci = 0; ci < camposSdp.length; ci++) {
+    var v = params[camposSdp[ci]];
+    if (v != null && String(v).length > ESPIA_SDP_MAX_CHARS) {
+      return { ok: false, error: camposSdp[ci] + ' demasiado grande (' + v.length + ')' };
+    }
+  }
+
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(15000); } catch(_) { return { ok: false, error: 'Lock timeout' }; }
+  try {
+    var row = _buscarSesion(sesionId);
+    if (!row) return { ok: false, error: 'Sesión no encontrada' };
+    var estActual = String(row.estado || '').toUpperCase();
+    if (estActual === 'CERRADA' && !params.cerrar) {
+      return { ok: false, error: 'Sesión cerrada' };
+    }
+
+    var sh = _getHojaSignaling();
+    var hdrs = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    var updates = {}; // { columna: valor }
+    var aplicado = {};
+
+    // ── ICE batch (lado actual) ─────────────────────────────────
+    if (Array.isArray(params.ice) && params.ice.length > 0) {
+      var colIce = (lado === 'master') ? 'iceMaster' : 'iceDevice';
+      var iIce = hdrs.indexOf(colIce);
+      if (iIce >= 0) {
+        var actualVal = sh.getRange(row._row, iIce + 1).getValue();
+        var arr = [];
+        try { arr = JSON.parse(actualVal || '[]'); } catch(_) { arr = []; }
+        var now = Date.now();
+        for (var k = 0; k < params.ice.length; k++) {
+          var item = params.ice[k];
+          // Permitir formato corto {ice} (auto-ts) o completo {ts, ice}
+          if (item && item.ice) {
+            arr.push({ ts: item.ts || (now + k), ice: item.ice });
+          }
+        }
+        // Cap al límite global
+        if (arr.length > ESPIA_ICE_MAX_ITEMS) arr = arr.slice(arr.length - ESPIA_ICE_MAX_ITEMS);
+        updates[colIce] = JSON.stringify(arr);
+        aplicado.ice = params.ice.length;
+      }
+    }
+
+    // ── SDPs ────────────────────────────────────────────────────
+    camposSdp.forEach(function(campo) {
+      if (params[campo] != null) {
+        updates[campo] = String(params[campo]);
+        aplicado[campo] = true;
+      }
+    });
+    // Política: subir reneg oferta limpia respuesta vieja; subir reneg respuesta limpia oferta
+    if (updates.sdpRenegOferta && updates.sdpRenegRespuesta == null) updates.sdpRenegRespuesta = '';
+    if (updates.sdpRenegRespuesta && updates.sdpRenegOferta == null) updates.sdpRenegOferta = '';
+
+    // ── streamsActivos (device only) ────────────────────────────
+    if (params.streamsActivos != null && lado === 'device') {
+      updates.streamsActivos = JSON.stringify(params.streamsActivos);
+      aplicado.streamsActivos = true;
+      // Transición a EN_VIVO si veníamos de PENDIENTE/CONECTANDO
+      if (estActual !== 'EN_VIVO' && estActual !== 'CERRADA') updates.estado = 'EN_VIVO';
+    }
+
+    // ── Subir respuesta de handshake inicial → CONECTANDO (compat con FSM) ──
+    if (updates.sdpRespuesta && estActual === 'PENDIENTE') updates.estado = 'CONECTANDO';
+
+    // ── Cierre atómico opcional ─────────────────────────────────
+    var detalleCierre = null;
+    if (params.cerrar && estActual !== 'CERRADA') {
+      updates.estado = 'CERRADA';
+      var inicio = row.fecha instanceof Date ? row.fecha.getTime() : new Date(row.fecha).getTime();
+      detalleCierre = {
+        motivo: String(params.cerrar.motivo || 'manual'),
+        lado:   lado,
+        duracionSeg: Math.round((Date.now() - inicio) / 1000)
+      };
+      updates.detalleFin = JSON.stringify(detalleCierre);
+      aplicado.cerrado = true;
+    }
+
+    // ── Aplicar TODOS los updates ──────────────────────────────
+    Object.keys(updates).forEach(function(col) {
+      var idx = hdrs.indexOf(col);
+      if (idx >= 0) sh.getRange(row._row, idx + 1).setValue(updates[col]);
+    });
+    try { SpreadsheetApp.flush(); } catch(_){}
+
+    // Auditoría post-cierre fuera del lock (no demorar el unlock)
+    var rowParaAudit = null;
+    if (detalleCierre) {
+      rowParaAudit = row;
+      hdrs.forEach(function(h) { if (updates[h] != null) rowParaAudit[h] = updates[h]; });
+    }
+
+    var estFinal = updates.estado || estActual;
+    if (rowParaAudit) {
+      try { _logAuditoriaEspia(rowParaAudit, detalleCierre.duracionSeg, JSON.stringify(detalleCierre)); } catch(_){}
+    }
+
+    return { ok: true, data: { estado: estFinal, aplicado: aplicado } };
+  } finally {
+    try { lock.releaseLock(); } catch(_){}
+  }
+}
+
 function _buscarSesion(sesionId) {
   var sh = _getHojaSignaling();
   if (sh.getLastRow() < 2) return null;
