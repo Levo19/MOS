@@ -106,11 +106,14 @@ def construir_logo() -> Image.Image:
     text_y = (H - th) // 2 - baseline_offset
     draw.text((text_x, text_y), texto, fill=0, font=font)
 
-    # Threshold suave + Floyd-Steinberg.
-    # Threshold 140: el anti-alias gris < 140 cae a negro, > 140 a blanco.
-    # Más agresivo que 128 → preserva trazos finos de la font.
-    bw = img.point(lambda v: 0 if v < 140 else 255, mode='L')
-    bw = bw.convert('1', dither=Image.FLOYDSTEINBERG)
+    # [v2.13.110 AUDIT FIX] Threshold puro SIN dithering.
+    # Floyd-Steinberg introducía puntos sueltos que en impresión térmica
+    # se traducen como "líneas verticales raras" alrededor de letras
+    # con curvas (O, S, Y). Threshold puro deja trazos limpios — mejor
+    # para texto, peor para fotos. Acá tenemos texto bold → ideal.
+    # Threshold 128: punto medio estándar.
+    bw = img.point(lambda v: 0 if v < 128 else 255, mode='L')
+    bw = bw.convert('1', dither=Image.NONE)
     return bw
 
 
