@@ -12547,7 +12547,7 @@ const MOS = (() => {
       tInicio:     Date.now()
     };
     const html = `
-      <div class="adhesivo-overlay" id="loteOverlay">
+      <div class="adhesivo-backdrop" id="loteOverlay" style="z-index:99995">
         <div class="lote-modal">
           <div class="lote-head">
             <div class="lote-head-emoji">🏭</div>
