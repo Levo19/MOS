@@ -12434,41 +12434,53 @@ const MOS = (() => {
     const st = _adhesivoState;
     if (!st || st.imprimiendo) return;
     st.imprimiendo = true;
-    const btn = document.getElementById('adhesivoBtnImprimir');
-    const txt = document.getElementById('adhesivoBtnImprimirTxt');
-    if (btn) btn.disabled = true;
-    if (txt) txt.innerHTML = '<span class="adhesivo-spin">◐</span> Creando lote…';
+
+    // [v2.43.123 OPTIMISTIC] Cerrar modal de imprimir + abrir modal de
+    // progreso INMEDIATAMENTE, sin esperar al backend. El operario ve
+    // feedback instantáneo. El idLote se completa cuando responde.
+    const totalSnapshot     = st.cantidad;
+    const descSnapshot      = st.datos.descripcion;
+    const codigoSnapshot    = st.datos.codigoBarra;
+    const idEnvSnapshot     = st.env.idEnvasado;
+    const fechaSnapshot     = st.env.fecha;
+    const sessionTsSnapshot = st.sessionTs;
+    cerrarModalImprimirAdhesivo(true /* rápido sin animación */);
+    _loteAbrirModalProgreso({
+      idLote:      '',  // placeholder mientras backend crea
+      total:       totalSnapshot,
+      completadas: 0,
+      subJobSize:  10,
+      descripcion: descSnapshot,
+      codigoBarra: codigoSnapshot,
+      vto:         ''
+    });
+    _loteSetStatus('CREADO');
 
     try {
-      const idempotencyKey = 'adh_lote_' + st.env.idEnvasado + '_' + st.cantidad + '_' + st.sessionTs;
+      const idempotencyKey = 'adh_lote_' + idEnvSnapshot + '_' + totalSnapshot + '_' + sessionTsSnapshot;
       const r = await API.post('wh_crearLoteAdhesivo', {
-        codigoBarra:     st.datos.codigoBarra,
-        descripcion:     st.datos.descripcion,
-        total:           st.cantidad,
+        codigoBarra:     codigoSnapshot,
+        descripcion:     descSnapshot,
+        total:           totalSnapshot,
         usuario:         (window.S?.session?.nombre || ''),
         origen:          'MOS',
-        fechaEnvasado:   st.env.fecha,
+        fechaEnvasado:   fechaSnapshot,
         idempotencyKey:  idempotencyKey
       });
       if (r && r.ok === false) throw new Error(r.error || 'Backend rechazó');
-      // Cerrar modal de imprimir, abrir modal de progreso
-      cerrarModalImprimirAdhesivo(true /* sin animación lenta */);
-      _loteAbrirModalProgreso({
-        idLote:      r.idLote,
-        total:       r.total,
-        completadas: 0,
-        subJobSize:  r.subJobSize,
-        descripcion: r.descripcion || st.datos.descripcion,
-        codigoBarra: st.datos.codigoBarra,
-        vto:         r.vto
-      });
-      // Arrancar la orquestación (no await — corre en background)
+      if (!_loteState) return;  // usuario canceló mientras esperaba
+      // Completar metadata real del state
+      _loteState.idLote      = r.idLote;
+      _loteState.total       = r.total || totalSnapshot;
+      _loteState.subJobSize  = r.subJobSize || 10;
+      _loteState.descripcion = r.descripcion || _loteState.descripcion;
+      _loteState.vto         = r.vto || _loteState.vto;
+      _loteRenderProgreso();
+      // Arrancar la orquestación
       _loteOrquestar(r.idLote);
     } catch(e) {
-      if (txt) txt.innerHTML = '❌ Error — reintentar';
-      if (btn) btn.disabled = false;
+      _loteSetStatus('PAUSADO_ERROR', 'No se pudo crear el lote: ' + (e?.message || 'desconocido'));
       if (_adhesivoState) _adhesivoState.imprimiendo = false;
-      try { toast('Error al crear lote: ' + (e?.message || 'desconocido'), 'error', 6000); } catch(_){}
     }
   }
 
