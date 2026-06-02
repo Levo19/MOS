@@ -12478,14 +12478,17 @@ const MOS = (() => {
     if (!_loteState || _loteState.idLote !== idLote) return;
     if (_loteState.orquestando) return;  // ya hay un loop activo
     _loteState.orquestando = true;
-    const requireGapDetect = !!(opts && opts.requireGapDetect);
+    // [v2.43.120 AUDIT FIX #2] requireGapDetect debe consumirse SOLO en el
+    // primer ciclo. Antes era `const` constante → todos los sub-jobs
+    // siguientes hacían GAPDETECT también, perdiendo ~1 etq por cada 10.
+    let pendingGapDetect = !!(opts && opts.requireGapDetect);
     try {
       while (_loteState && _loteState.idLote === idLote) {
         if (['CANCELADO', 'COMPLETADO', 'PAUSADO_USUARIO', 'PAUSADO_OUT_PAPER', 'PAUSADO_ERROR'].indexOf(_loteState.status) >= 0) {
           break;
         }
         // Mostrar "calibrando" si vamos a GAPDETECT
-        const necesitaCal = requireGapDetect || _loteState.completadas === 0 || _loteState.status === 'PAUSADO_OUT_PAPER';
+        const necesitaCal = pendingGapDetect || _loteState.completadas === 0;
         if (necesitaCal) _loteSetStatus('CALIBRANDO');
         let r;
         try {
@@ -12493,6 +12496,8 @@ const MOS = (() => {
             idLote:            idLote,
             requireGapDetect:  necesitaCal
           });
+          // Reset del flag para los siguientes sub-jobs del mismo loop.
+          if (necesitaCal) pendingGapDetect = false;
         } catch (e) {
           _loteSetStatus('PAUSADO_ERROR', 'Sin conexión: ' + (e?.message || ''));
           break;
