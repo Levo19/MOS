@@ -12601,8 +12601,8 @@ const MOS = (() => {
     const chip = document.getElementById('loteStatusChip');
     if (chip) {
       const map = {
-        CREADO:            { cls: 'lote-chip-info',   txt: '⏳ creado' },
-        CALIBRANDO:        { cls: 'lote-chip-warn',   txt: '🔧 calibrando rollo…' },
+        CREADO:            { cls: 'lote-chip-info',   txt: '<span class="adhesivo-spin">◐</span> preparando lote…' },
+        CALIBRANDO:        { cls: 'lote-chip-warn',   txt: '<span class="adhesivo-spin">◐</span> calibrando rollo…' },
         IMPRIMIENDO:       { cls: 'lote-chip-ok',     txt: '🖨 imprimiendo' },
         PAUSADO_USUARIO:   { cls: 'lote-chip-warn',   txt: '⏸ pausado' },
         PAUSADO_OUT_PAPER: { cls: 'lote-chip-error',  txt: '🛑 rollo agotado' },
@@ -12612,7 +12612,7 @@ const MOS = (() => {
       };
       const m = map[_loteState.status] || { cls: 'lote-chip-info', txt: _loteState.status };
       chip.className = 'lote-status-chip ' + m.cls;
-      chip.textContent = m.txt;
+      chip.innerHTML = m.txt;
     }
     // Velocidad y restante (estimado)
     const elapsedSec = (Date.now() - _loteState.tInicio) / 1000;
