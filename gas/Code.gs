@@ -172,6 +172,13 @@ function _route(method, e) {
       case 'wh_estadoImpresoraAdhesivo':     return postToWarehouse('estadoImpresoraAdhesivo', params);
       case 'wh_calibrarImpresoraAdhesivo':   return postToWarehouse('calibrarImpresoraAdhesivo', params);
       case 'wh_previsualizarTSPLEtq':        return postToWarehouse('previsualizarTSPLEtq', params);
+      // [v2.43.119] Sistema de lotes de adhesivos (sub-jobs + tracking + GAPDETECT condicional)
+      case 'wh_crearLoteAdhesivo':           return postToWarehouse('crearLoteAdhesivo', params);
+      case 'wh_imprimirSubLoteAdhesivo':     return postToWarehouse('imprimirSubLoteAdhesivo', params);
+      case 'wh_getEstadoLoteAdhesivo':       return postToWarehouse('getEstadoLoteAdhesivo', params);
+      case 'wh_pausarLoteAdhesivo':          return postToWarehouse('pausarLoteAdhesivo', params);
+      case 'wh_cancelarLoteAdhesivo':        return postToWarehouse('cancelarLoteAdhesivo', params);
+      case 'wh_getLotesAdhesivoPendientes':  return postToWarehouse('getLotesAdhesivoPendientes', params);
       case 'getVentasMosExpress':  return getVentasMosExpress(params);
       case 'getRotacion':            return getRotacionProductos(params);
       case 'getAnaliticaProducto':   return getAnaliticaProducto(params);

@@ -12411,51 +12411,269 @@ const MOS = (() => {
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────
+  // [v2.43.119] Sistema de impresión por LOTES con sub-jobs.
+  //
+  // Flujo:
+  //   1. adhesivoImprimir() — crea el lote en backend + abre modal de progreso
+  //   2. _loteOrquestar() — itera mandando sub-jobs uno a uno
+  //   3. Estado se actualiza en modal en tiempo real
+  //   4. Si OUT_OF_PAPER → muestra modal cambio de rollo → continuar
+  //   5. Si COMPLETADO → cierra modal con celebración
+  //
+  // Reemplaza el "1 sola request a wh_imprimirEtiqueta". Beneficios:
+  //   - Drift acumulativo controlado (GAPDETECT al inicio)
+  //   - Detección de fin de rollo automática
+  //   - Reanudación con calibración nueva
+  //   - Tracking visual del progreso (47/200)
+  // ─────────────────────────────────────────────────────────────────
+  let _loteState = null;
+  // _loteState = { idLote, total, completadas, status, polling, cantConfirmacionRollo }
+
   async function adhesivoImprimir() {
     const st = _adhesivoState;
     if (!st || st.imprimiendo) return;
-    const sessionId = st.sessionId;
     st.imprimiendo = true;
     const btn = document.getElementById('adhesivoBtnImprimir');
     const txt = document.getElementById('adhesivoBtnImprimirTxt');
     if (btn) btn.disabled = true;
-    if (txt) txt.innerHTML = '<span class="adhesivo-spin">◐</span> Enviando…';
+    if (txt) txt.innerHTML = '<span class="adhesivo-spin">◐</span> Creando lote…';
 
-    // [v2.43.109 BUG #2] Idempotency key estable durante la sesión del modal.
-    // El sessionTs no cambia entre reintentos del mismo modal → backend dedup
-    // correctamente. Cambio de cantidad rompe la dedup (se incluye en la key)
-    // porque es una intención distinta del operario.
-    const idempotencyKey = 'adh_' + st.env.idEnvasado + '_' + st.cantidad + '_' + st.sessionTs;
-    let exito = false;
     try {
-      const r = await API.post('wh_imprimirEtiqueta', {
-        codigoBarra:       st.datos.codigoBarra,
-        descripcion:       st.datos.descripcion,
-        unidades:          st.cantidad,
-        fechaEnvasado:     st.env.fecha,
-        idempotencyKey:    idempotencyKey
+      const idempotencyKey = 'adh_lote_' + st.env.idEnvasado + '_' + st.cantidad + '_' + st.sessionTs;
+      const r = await API.post('wh_crearLoteAdhesivo', {
+        codigoBarra:     st.datos.codigoBarra,
+        descripcion:     st.datos.descripcion,
+        total:           st.cantidad,
+        usuario:         (window.S?.session?.nombre || ''),
+        origen:          'MOS',
+        fechaEnvasado:   st.env.fecha,
+        idempotencyKey:  idempotencyKey
       });
-      // Re-check sessionId tras await (user pudo cerrar/abrir otro modal)
-      if (!_adhesivoState || _adhesivoState.sessionId !== sessionId) return;
       if (r && r.ok === false) throw new Error(r.error || 'Backend rechazó');
-      exito = true;
-      if (txt) txt.innerHTML = '✅ Enviado · job #' + (r?.jobId || '');
-      try { toast('🖨 ' + st.cantidad + ' adhesivo(s) enviados a la impresora', 'success'); } catch(_){}
+      // Cerrar modal de imprimir, abrir modal de progreso
+      cerrarModalImprimirAdhesivo(true /* sin animación lenta */);
+      _loteAbrirModalProgreso({
+        idLote:      r.idLote,
+        total:       r.total,
+        completadas: 0,
+        subJobSize:  r.subJobSize,
+        descripcion: r.descripcion || st.datos.descripcion,
+        codigoBarra: st.datos.codigoBarra,
+        vto:         r.vto
+      });
+      // Arrancar la orquestación (no await — corre en background)
+      _loteOrquestar(r.idLote);
     } catch(e) {
-      if (!_adhesivoState || _adhesivoState.sessionId !== sessionId) return;
       if (txt) txt.innerHTML = '❌ Error — reintentar';
       if (btn) btn.disabled = false;
-      try { toast('Error al imprimir: ' + (e?.message || 'desconocido'), 'error', 6000); } catch(_){}
+      if (_adhesivoState) _adhesivoState.imprimiendo = false;
+      try { toast('Error al crear lote: ' + (e?.message || 'desconocido'), 'error', 6000); } catch(_){}
+    }
+  }
+
+  // Orquestador: manda sub-jobs uno a uno hasta completar/pausar/cancelar.
+  // Re-entrante: si llamamos durante un sub-job en curso, no duplica.
+  async function _loteOrquestar(idLote, opts) {
+    if (!_loteState || _loteState.idLote !== idLote) return;
+    if (_loteState.orquestando) return;  // ya hay un loop activo
+    _loteState.orquestando = true;
+    const requireGapDetect = !!(opts && opts.requireGapDetect);
+    try {
+      while (_loteState && _loteState.idLote === idLote) {
+        if (['CANCELADO', 'COMPLETADO', 'PAUSADO_USUARIO', 'PAUSADO_OUT_PAPER', 'PAUSADO_ERROR'].indexOf(_loteState.status) >= 0) {
+          break;
+        }
+        // Mostrar "calibrando" si vamos a GAPDETECT
+        const necesitaCal = requireGapDetect || _loteState.completadas === 0 || _loteState.status === 'PAUSADO_OUT_PAPER';
+        if (necesitaCal) _loteSetStatus('CALIBRANDO');
+        let r;
+        try {
+          r = await API.post('wh_imprimirSubLoteAdhesivo', {
+            idLote:            idLote,
+            requireGapDetect:  necesitaCal
+          });
+        } catch (e) {
+          _loteSetStatus('PAUSADO_ERROR', 'Sin conexión: ' + (e?.message || ''));
+          break;
+        }
+        if (!_loteState || _loteState.idLote !== idLote) break;
+        if (r && r.ok === false) {
+          // Backend ya marcó el lote como PAUSADO_OUT_PAPER o PAUSADO_ERROR
+          _loteSetStatus(r.status || 'PAUSADO_ERROR', r.error || 'Error desconocido');
+          if ((r.status || '') === 'PAUSADO_OUT_PAPER') _loteMostrarRolloAgotado();
+          break;
+        }
+        // OK — actualizar contador y status
+        _loteState.completadas = r.completadas || _loteState.completadas;
+        _loteState.status      = r.status      || 'IMPRIMIENDO';
+        _loteRenderProgreso();
+        if (_loteState.status === 'COMPLETADO') {
+          _loteCelebrarCompletado();
+          break;
+        }
+        // Pequeño respiro entre sub-jobs (la impresora ya está procesando el anterior)
+        await new Promise(res => setTimeout(res, 250));
+      }
     } finally {
-      // [v2.43.109 BUG #5] Liberar imprimiendo SIEMPRE en error.
-      // En éxito lo mantenemos true para que un Enter accidental durante
-      // los 1.4s de cierre no dispare otro print.
-      if (_adhesivoState && _adhesivoState.sessionId === sessionId && !exito) {
-        _adhesivoState.imprimiendo = false;
+      if (_loteState) _loteState.orquestando = false;
+    }
+  }
+
+  function _loteSetStatus(status, errMsg) {
+    if (!_loteState) return;
+    _loteState.status = status;
+    if (errMsg) _loteState.ultimoError = errMsg;
+    _loteRenderProgreso();
+  }
+
+  function _loteAbrirModalProgreso(meta) {
+    _loteState = {
+      idLote:      meta.idLote,
+      total:       meta.total,
+      completadas: 0,
+      subJobSize:  meta.subJobSize || 10,
+      descripcion: meta.descripcion || '',
+      codigoBarra: meta.codigoBarra || '',
+      vto:         meta.vto || '',
+      status:      'CREADO',
+      ultimoError: '',
+      orquestando: false,
+      tInicio:     Date.now()
+    };
+    const html = `
+      <div class="adhesivo-overlay" id="loteOverlay">
+        <div class="lote-modal">
+          <div class="lote-head">
+            <div class="lote-head-emoji">🏭</div>
+            <div class="lote-head-text">
+              <div class="lote-head-h1">LOTE DE IMPRESIÓN</div>
+              <div class="lote-head-sub" id="loteSub">${_escapeHtml(_loteState.descripcion)}</div>
+            </div>
+          </div>
+          <div class="lote-body">
+            <div class="lote-stat-row">
+              <div class="lote-status-chip" id="loteStatusChip">⏳ creando…</div>
+              <div class="lote-counter" id="loteCounter">0 / ${_loteState.total}</div>
+            </div>
+            <div class="lote-progress">
+              <div class="lote-progress-bar" id="loteBar" style="width:0%"></div>
+            </div>
+            <div class="lote-info-row">
+              <span id="loteVelocidad">— etq/min</span>
+              <span id="loteRestante">estimado: —</span>
+            </div>
+            <div class="lote-error" id="loteError" style="display:none"></div>
+            <div class="lote-actions" id="loteActions">
+              <button onclick="MOS.loteCancelar()" class="lote-btn lote-btn-warn">⊘ Cancelar lote</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+    _loteRenderProgreso();
+  }
+
+  function _loteRenderProgreso() {
+    if (!_loteState) return;
+    const pct = _loteState.total > 0 ? (_loteState.completadas / _loteState.total * 100) : 0;
+    const bar = document.getElementById('loteBar');
+    if (bar) bar.style.width = pct.toFixed(1) + '%';
+    const counter = document.getElementById('loteCounter');
+    if (counter) counter.textContent = _loteState.completadas + ' / ' + _loteState.total;
+    const chip = document.getElementById('loteStatusChip');
+    if (chip) {
+      const map = {
+        CREADO:            { cls: 'lote-chip-info',   txt: '⏳ creado' },
+        CALIBRANDO:        { cls: 'lote-chip-warn',   txt: '🔧 calibrando rollo…' },
+        IMPRIMIENDO:       { cls: 'lote-chip-ok',     txt: '🖨 imprimiendo' },
+        PAUSADO_USUARIO:   { cls: 'lote-chip-warn',   txt: '⏸ pausado' },
+        PAUSADO_OUT_PAPER: { cls: 'lote-chip-error',  txt: '🛑 rollo agotado' },
+        PAUSADO_ERROR:     { cls: 'lote-chip-error',  txt: '❌ error' },
+        COMPLETADO:        { cls: 'lote-chip-ok',     txt: '✅ completado' },
+        CANCELADO:         { cls: 'lote-chip-warn',   txt: '⊘ cancelado' }
+      };
+      const m = map[_loteState.status] || { cls: 'lote-chip-info', txt: _loteState.status };
+      chip.className = 'lote-status-chip ' + m.cls;
+      chip.textContent = m.txt;
+    }
+    // Velocidad y restante (estimado)
+    const elapsedSec = (Date.now() - _loteState.tInicio) / 1000;
+    if (_loteState.completadas > 0 && elapsedSec > 1) {
+      const velMin = (_loteState.completadas / elapsedSec * 60).toFixed(0);
+      const restante = _loteState.total - _loteState.completadas;
+      const segRestantes = restante / (_loteState.completadas / elapsedSec);
+      const elVel = document.getElementById('loteVelocidad');
+      const elRest = document.getElementById('loteRestante');
+      if (elVel) elVel.textContent = velMin + ' etq/min';
+      if (elRest) elRest.textContent = 'estimado: ' + Math.ceil(segRestantes) + ' seg';
+    }
+    // Error
+    const elErr = document.getElementById('loteError');
+    if (elErr) {
+      if (_loteState.ultimoError) {
+        elErr.style.display = 'block';
+        elErr.textContent = '⚠ ' + _loteState.ultimoError;
+      } else {
+        elErr.style.display = 'none';
       }
     }
-    // Cierre auto al éxito (fuera del try para garantizar ejecución)
-    if (exito) setTimeout(cerrarModalImprimirAdhesivo, 1400);
+  }
+
+  function _loteMostrarRolloAgotado() {
+    const actions = document.getElementById('loteActions');
+    if (!actions || !_loteState) return;
+    const restante = _loteState.total - _loteState.completadas;
+    actions.innerHTML = `
+      <div class="lote-alert">
+        <div class="lote-alert-titulo">🛑 Rollo agotado</div>
+        <div class="lote-alert-msg">
+          Se imprimieron <b>~${_loteState.completadas}</b> de ${_loteState.total}. Faltan <b>${restante}</b>.<br>
+          Cambiá el rollo y dale a Continuar.<br>
+          <span class="lote-alert-warn">⚠ Hasta ${_loteState.subJobSize} etiquetas pueden duplicarse del rollo viejo (caso del sub-job interrumpido).</span>
+        </div>
+        <div class="lote-alert-btns">
+          <button onclick="MOS.loteContinuar()" class="lote-btn lote-btn-primary">✓ Continuar (rollo nuevo)</button>
+          <button onclick="MOS.loteCancelar()" class="lote-btn lote-btn-warn">⊘ Cancelar lote</button>
+        </div>
+      </div>`;
+  }
+
+  function _loteCelebrarCompletado() {
+    try { toast('✅ Lote completado: ' + _loteState.total + ' adhesivos impresos', 'success', 6000); } catch(_){}
+    try {
+      if (typeof _decirEnVoz === 'function') _decirEnVoz('Lote completado, ' + _loteState.total + ' adhesivos impresos');
+    } catch(_){}
+    // Cerrar modal después de 2.5s
+    setTimeout(() => { loteCerrarModal(); }, 2500);
+  }
+
+  async function loteContinuar() {
+    if (!_loteState) return;
+    // Forzar nuevo GAPDETECT al reanudar
+    _loteSetStatus('CALIBRANDO');
+    const actions = document.getElementById('loteActions');
+    if (actions) actions.innerHTML = '<button onclick="MOS.loteCancelar()" class="lote-btn lote-btn-warn">⊘ Cancelar lote</button>';
+    _loteOrquestar(_loteState.idLote, { requireGapDetect: true });
+  }
+
+  async function loteCancelar() {
+    if (!_loteState) return;
+    if (!confirm('¿Cancelar el lote de impresión?\n\n' + _loteState.completadas + ' de ' + _loteState.total + ' ya impresas no se borran del rollo.')) return;
+    try {
+      await API.post('wh_cancelarLoteAdhesivo', { idLote: _loteState.idLote });
+    } catch(_){}
+    _loteSetStatus('CANCELADO');
+    setTimeout(loteCerrarModal, 800);
+  }
+
+  function loteCerrarModal() {
+    const ov = document.getElementById('loteOverlay');
+    if (ov) {
+      ov.style.animation = 'adhesivoOut .22s ease-out forwards';
+      setTimeout(() => ov.remove(), 220);
+    }
+    _loteState = null;
   }
 
   // [v2.43.111] Calibrar impresora — GAPDETECT + FORMFEED en TSPL puro.
@@ -12480,11 +12698,15 @@ const MOS = (() => {
     }
   }
 
-  function cerrarModalImprimirAdhesivo() {
+  function cerrarModalImprimirAdhesivo(rapido) {
     const modal = document.getElementById('adhesivoModal');
     if (modal) {
-      modal.style.animation = 'adhesivoOut .22s ease-out forwards';
-      setTimeout(() => modal.remove(), 220);
+      if (rapido) {
+        modal.remove();
+      } else {
+        modal.style.animation = 'adhesivoOut .22s ease-out forwards';
+        setTimeout(() => modal.remove(), 220);
+      }
     }
     document.removeEventListener('keydown', _adhesivoKeydown);
     _adhesivoState = null;
@@ -38669,6 +38891,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.43.110-111] Adhesivos — modal de impresión + calibración
     abrirModalImprimirAdhesivo, cerrarModalImprimirAdhesivo,
     adhesivoCantidadDelta, adhesivoCantidadInput, adhesivoImprimir, adhesivoCalibrar,
+    // [v2.43.119] Lote de adhesivos — orquestación con sub-jobs + progreso
+    loteContinuar, loteCancelar, loteCerrarModal,
     activarPush: () => _pushInit(S.session?.nombre || '', S.session?.rol || '', true)
   };
 })();

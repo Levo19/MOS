@@ -8310,6 +8310,115 @@
       font-family: monospace;
     }
 
+    /* ═══════════════════════════════════════════════════════════════
+       [v2.43.119] Modal de progreso de LOTE de impresión.
+       Reusa .adhesivo-overlay como contenedor padre.
+       ═══════════════════════════════════════════════════════════════ */
+    .lote-modal {
+      width: 100%; max-width: 540px;
+      background: linear-gradient(180deg,#0a1424,#070d18);
+      border: 1px solid rgba(251,191,36,.35);
+      border-radius: 18px;
+      box-shadow: 0 30px 70px -10px rgba(251,191,36,.25);
+      display: flex; flex-direction: column;
+      max-height: 92vh; overflow: hidden;
+      animation: adhesivoIn .35s cubic-bezier(.34,1.56,.64,1);
+    }
+    .lote-head {
+      padding: 18px 22px;
+      border-bottom: 1px solid #1e293b;
+      background: linear-gradient(135deg,rgba(251,191,36,.10),rgba(245,158,11,.04));
+      display: flex; align-items: center; gap: 14px;
+    }
+    .lote-head-emoji { font-size: 36px; line-height: 1; }
+    .lote-head-text  { flex: 1; min-width: 0; }
+    .lote-head-h1 {
+      font-size: 14px; font-weight: 900; color: #fbbf24;
+      letter-spacing: .8px;
+    }
+    .lote-head-sub {
+      font-size: 11px; color: #94a3b8; margin-top: 3px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .lote-body { padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; }
+    .lote-stat-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    }
+    .lote-status-chip {
+      padding: 5px 12px; border-radius: 9999px;
+      font-size: 12px; font-weight: 800;
+      border: 1px solid;
+    }
+    .lote-chip-info  { color: #94a3b8; border-color: rgba(148,163,184,.35); background: rgba(148,163,184,.08); }
+    .lote-chip-warn  { color: #fbbf24; border-color: rgba(251,191,36,.5);   background: rgba(251,191,36,.12); }
+    .lote-chip-ok    { color: #34d399; border-color: rgba(52,211,153,.5);   background: rgba(52,211,153,.12); }
+    .lote-chip-error { color: #f87171; border-color: rgba(248,113,113,.5);  background: rgba(248,113,113,.14); }
+
+    .lote-counter {
+      font-family: 'Consolas', monospace;
+      font-size: 22px; font-weight: 900;
+      color: #f1f5f9;
+      letter-spacing: 1px;
+    }
+    .lote-progress {
+      height: 14px;
+      background: rgba(15,23,42,.6);
+      border-radius: 9999px;
+      overflow: hidden;
+      border: 1px solid rgba(251,191,36,.2);
+    }
+    .lote-progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg,#fbbf24,#f59e0b);
+      box-shadow: 0 0 16px rgba(251,191,36,.6);
+      transition: width .35s ease-out;
+      border-radius: 9999px;
+    }
+    .lote-info-row {
+      display: flex; justify-content: space-between;
+      font-size: 11px; color: #64748b;
+      font-family: 'Consolas', monospace;
+    }
+    .lote-error {
+      padding: 8px 12px;
+      background: rgba(248,113,113,.10);
+      border: 1px solid rgba(248,113,113,.35);
+      border-radius: 8px;
+      font-size: 12px; color: #fca5a5;
+    }
+    .lote-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+    .lote-btn {
+      width: 100%;
+      padding: 11px 16px;
+      border-radius: 10px;
+      font-size: 14px; font-weight: 800;
+      border: 1px solid;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .lote-btn:hover { transform: translateY(-1px); }
+    .lote-btn-primary {
+      background: linear-gradient(135deg,#fbbf24,#f59e0b);
+      color: #0a1424; border-color: #fbbf24;
+    }
+    .lote-btn-warn {
+      background: rgba(248,113,113,.12);
+      color: #fca5a5; border-color: rgba(248,113,113,.4);
+    }
+    .lote-alert {
+      padding: 14px 16px;
+      background: rgba(248,113,113,.08);
+      border: 1px solid rgba(248,113,113,.4);
+      border-radius: 12px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .lote-alert-titulo {
+      font-size: 15px; font-weight: 900; color: #fca5a5;
+    }
+    .lote-alert-msg { font-size: 12px; color: #cbd5e1; line-height: 1.55; }
+    .lote-alert-warn { color: #fbbf24; font-size: 11px; }
+    .lote-alert-btns { display: flex; flex-direction: column; gap: 8px; }
+
     .adhesivo-controles {
       padding: 14px 20px;
       display: flex; flex-direction: column; gap: 14px;

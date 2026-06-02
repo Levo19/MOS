@@ -33,6 +33,26 @@
     "4": { "w": 24, "h": 32 },
     "5": { "w": 32, "h": 48 }
   },
+  "impresion_por_lote": {
+    "comentario": "Sistema de lotes con sub-jobs para resiliencia + tracking. Drift acumulativo + cambio de rollo se manejan automáticamente.",
+    "sub_job_size":             10,
+    "gap_detect_al_inicio_lote": true,
+    "gap_detect_post_out_paper": true,
+    "polling_intervalo_ms":      3000,
+    "timeout_sub_job_ms":        45000,
+    "max_reintentos_sub_job":    1,
+    "velocidad_estimada_etq_min": 75,
+    "estados": {
+      "CREADO":               "Lote registrado, esperando primer sub-job",
+      "CALIBRANDO":           "GAPDETECT en curso (rollo nuevo o inicio)",
+      "IMPRIMIENDO":          "Sub-jobs en curso normalmente",
+      "PAUSADO_USUARIO":      "Operador apretó pausa",
+      "PAUSADO_OUT_PAPER":    "Rollo agotado detectado por PrintNode error",
+      "PAUSADO_ERROR":        "Otro error (printer offline, etc)",
+      "COMPLETADO":           "Todas las etiquetas impresas",
+      "CANCELADO":            "Operador canceló el lote"
+    }
+  },
   "barcode": {
     "tipo":               "CODE128",
     "narrow_dots":        2,
