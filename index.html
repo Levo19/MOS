@@ -13200,6 +13200,30 @@
           Jerarquía: <strong class="text-slate-300">Zonas</strong> → <strong class="text-slate-300">Estaciones</strong> → <strong class="text-slate-300">Impresoras</strong>. Usa los botones contextuales dentro de cada card para agregar.
         </p>
 
+        <!-- [v2.43.127] Sistema de membretes (calibración + colas) -->
+        <div class="flex items-center gap-2 mb-3 flex-wrap">
+          <button onclick="window.MembreteSystem && MembreteSystem.abrirCalibrador()" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105"
+                  style="background:linear-gradient(135deg,#1e293b,#0a1424);border:1px solid rgba(251,191,36,.45);color:#fbbf24"
+                  title="Calibrar impresora de adhesivos (drift compensation)">
+            🔧 Calibrar impresora
+          </button>
+          <button onclick="window.MembreteSystem && MembreteSystem.abrirCola('MEMBRETE_ME')" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105"
+                  style="background:linear-gradient(135deg,#1e293b,#0a1424);border:1px solid rgba(251,191,36,.45);color:#fbbf24"
+                  title="Cola de membretes para góndola tienda">
+            🏪 Membretes ME (cola)
+          </button>
+          <button onclick="window.MembreteSystem && MembreteSystem.abrirCola('MEMBRETE_WH')" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105"
+                  style="background:linear-gradient(135deg,#1e293b,#0a1424);border:1px solid rgba(251,191,36,.45);color:#fbbf24"
+                  title="Cola de membretes para andamio almacén">
+            📦 Membretes WH (cola)
+          </button>
+          <button onclick="window.MembreteSystem && MembreteSystem.abrirAlertasPrecio()" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105"
+                  style="background:linear-gradient(135deg,#1e293b,#0a1424);border:1px solid rgba(248,113,113,.45);color:#fca5a5"
+                  title="Productos cuyo precio canónico cambió y necesitan reimprimir">
+            🚨 Alertas precio
+          </button>
+        </div>
+
         <!-- [v2.41.76] Acceso a diagnóstico del cron de cierre nocturno -->
         <div class="flex items-center gap-2 mb-3 flex-wrap">
           <button onclick="MOS.abrirCronStatus()" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105"

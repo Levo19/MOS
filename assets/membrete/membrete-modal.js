@@ -438,6 +438,448 @@
     return _state;
   }
 
+  // ════════════════════════════════════════════════════════════
+  // [v1.1] UI EMBEBIDAS — modal calibrar + cola + menú card
+  // ════════════════════════════════════════════════════════════
+
+  // Cola persistente en localStorage. Cada item = producto a imprimir.
+  var COLA_KEY = 'mos_membrete_cola_';
+
+  function _colaCargar(tipo) {
+    try { return JSON.parse(localStorage.getItem(COLA_KEY + tipo) || '[]'); } catch(_) { return []; }
+  }
+  function _colaGuardar(tipo, arr) {
+    try { localStorage.setItem(COLA_KEY + tipo, JSON.stringify(arr || [])); } catch(_) {}
+  }
+
+  // ── MODAL CALIBRAR ────────────────────────────────────────
+  function abrirCalibrador() {
+    _injectCss();
+    sonidos.click();
+    if (document.getElementById('msCalOverlay')) return;
+    document.body.insertAdjacentHTML('beforeend', ''
+      + '<div class="ms-overlay" id="msCalOverlay">'
+      +   '<div class="ms-modal">'
+      +     '<div class="ms-head">'
+      +       '<div class="ms-emoji">🔧</div>'
+      +       '<div style="flex:1;min-width:0">'
+      +         '<div class="ms-h1">CALIBRACIÓN INTELIGENTE</div>'
+      +         '<div class="ms-sub">drift compensation por print</div>'
+      +       '</div>'
+      +     '</div>'
+      +     '<div class="ms-body" id="msCalBody">'
+      +       '<div style="text-align:center;color:#94a3b8;padding:20px">cargando estado…</div>'
+      +     '</div>'
+      +   '</div>'
+      + '</div>');
+    _calRefrescar();
+  }
+  function _calRefrescar() {
+    estadoCalibracion().then(function(d) {
+      var body = document.getElementById('msCalBody');
+      if (!body) return;
+      var calibrado    = d.calibrado;
+      var driftDots    = parseFloat(d.driftDotsPorPrint) || 0;
+      var driftMm      = +(driftDots / 8).toFixed(2);
+      var prints       = parseInt(d.printsDesdeCal) || 0;
+      var necesitaRec  = d.necesitaRecalibrar;
+      var fechaCal     = String(d.fechaCalibrado || '').substring(0, 16);
+      body.innerHTML = ''
+        + '<div class="ms-stat">'
+        +   '<div class="ms-chip ' + (calibrado ? 'ms-chip-ok' : 'ms-chip-error') + '">'
+        +     (calibrado ? '🟢 Calibrado' : '🔴 Sin calibrar')
+        +   '</div>'
+        +   '<div class="ms-counter">' + prints + ' prints</div>'
+        + '</div>'
+        + '<div class="ms-info">'
+        +   '<span>drift: ' + driftDots + ' dots/print (' + driftMm + ' mm)</span>'
+        +   '<span>' + (fechaCal || '—') + '</span>'
+        + '</div>'
+        + (necesitaRec ? '<div class="ms-err">⚠ >500 prints sin recalibrar · considerá nuevo rollo</div>' : '')
+        + '<div style="height:1px;background:#1e293b;margin:6px 0"></div>'
+        + '<div style="font-size:12px;color:#cbd5e1;font-weight:700;letter-spacing:.5px">🆕 CAMBIASTE EL ROLLO?</div>'
+        + '<button class="ms-btn ms-btn-primary" onclick="MembreteSystem._calCambiarRollo()">🔧 Calibrar rollo nuevo</button>'
+        + '<div style="font-size:11px;color:#64748b">Gasta ~3 etiquetas, resetea drift</div>'
+        + '<div style="height:1px;background:#1e293b;margin:6px 0"></div>'
+        + '<div style="font-size:12px;color:#cbd5e1;font-weight:700;letter-spacing:.5px">⚡ AUTO-DETECTAR DRIFT</div>'
+        + '<div style="font-size:11px;color:#94a3b8;line-height:1.4">'
+        +   'Paso 1: imprimir 10 calibradores. '
+        +   'Paso 2: mirar #10 y contar mm de desvío de la regla.'
+        + '</div>'
+        + '<button class="ms-btn ms-btn-info" onclick="MembreteSystem._calImprimirCals()">🖨 Imprimir 10 calibradores</button>'
+        + '<div style="display:flex;gap:8px;align-items:center">'
+        +   '<input id="msCalMm" type="number" step="0.5" min="0" placeholder="mm en #10" '
+        +     'style="flex:1;padding:9px;background:#0a1424;border:1px solid #1e293b;color:#f1f5f9;border-radius:8px;font-size:13px">'
+        +   '<button class="ms-btn ms-btn-primary" style="width:auto;padding:9px 16px" onclick="MembreteSystem._calAplicarMm()">Aplicar</button>'
+        + '</div>'
+        + '<div style="height:1px;background:#1e293b;margin:6px 0"></div>'
+        + '<button class="ms-btn ms-btn-warn" onclick="MembreteSystem._calCerrar()">Cerrar</button>';
+    }).catch(function(e) {
+      var body = document.getElementById('msCalBody');
+      if (body) body.innerHTML = '<div class="ms-err">⚠ Error: ' + _escapeHtml(e.message) + '</div>';
+    });
+  }
+  function _calCambiarRollo() {
+    if (!confirm('¿Calibrar rollo nuevo?\n\nGasta ~3 etiquetas en blanco mientras la impresora mide el GAP físico. Después reseteamos contador y drift.')) return;
+    calibrarRollo().then(function() { setTimeout(_calRefrescar, 1500); });
+  }
+  function _calImprimirCals() {
+    imprimirCalibradores({ cantidad: 10 }).then(function() { setTimeout(_calRefrescar, 1500); });
+  }
+  function _calAplicarMm() {
+    var inp = document.getElementById('msCalMm');
+    var mm = parseFloat(inp && inp.value);
+    if (isNaN(mm) || mm < 0) { _toast('⚠ Ingresá los mm de desvío', { error: true }); return; }
+    aplicarDrift(mm, 10).then(function() { if (inp) inp.value = ''; setTimeout(_calRefrescar, 800); });
+  }
+  function _calCerrar() {
+    var ov = document.getElementById('msCalOverlay');
+    if (ov) { ov.style.animation = 'ms-out .22s ease-out forwards'; setTimeout(function(){ ov.remove(); }, 220); }
+  }
+
+  // ── MODAL COLA MEMBRETE ──────────────────────────────────────
+  function abrirCola(tipo) {
+    _injectCss();
+    sonidos.click();
+    tipo = tipo || 'MEMBRETE_ME';
+    if (document.getElementById('msColaOverlay')) return;
+    var emoji = tipo === 'MEMBRETE_ME' ? '🏪' : '📦';
+    var label = tipo === 'MEMBRETE_ME' ? 'COLA MEMBRETES ME (góndola)' : 'COLA MEMBRETES WH (andamio)';
+    document.body.insertAdjacentHTML('beforeend', ''
+      + '<div class="ms-overlay" id="msColaOverlay" data-tipo="' + tipo + '">'
+      +   '<div class="ms-modal" style="max-width:620px">'
+      +     '<div class="ms-head">'
+      +       '<div class="ms-emoji">' + emoji + '</div>'
+      +       '<div style="flex:1;min-width:0">'
+      +         '<div class="ms-h1">' + label + '</div>'
+      +         '<div class="ms-sub" id="msColaSub">0 productos en cola</div>'
+      +       '</div>'
+      +     '</div>'
+      +     '<div class="ms-body" style="max-height:65vh;overflow-y:auto">'
+      +       '<input id="msColaBusq" type="text" placeholder="🔍 Buscar producto por código o descripción..." '
+      +         'oninput="MembreteSystem._colaBusqInput(this.value)" '
+      +         'style="width:100%;padding:10px 12px;background:#0a1424;border:1px solid #1e293b;color:#f1f5f9;border-radius:10px;font-size:13px;margin-bottom:8px">'
+      +       '<div id="msColaSugs" style="max-height:120px;overflow-y:auto;display:none;background:#0a1424;border-radius:8px;padding:4px;margin-bottom:8px"></div>'
+      +       '<div id="msColaLista"></div>'
+      +     '</div>'
+      +     '<div class="ms-actions" style="padding:0 22px 18px">'
+      +       '<button class="ms-btn ms-btn-primary" id="msColaImprimir" onclick="MembreteSystem._colaImprimir()" disabled>'
+      +         '🖨 Cola vacía'
+      +       '</button>'
+      +       '<button class="ms-btn ms-btn-warn" onclick="MembreteSystem._colaCerrar()">Cerrar</button>'
+      +     '</div>'
+      +   '</div>'
+      + '</div>');
+    _colaRefrescarLista();
+  }
+  function _colaTipo() {
+    var ov = document.getElementById('msColaOverlay');
+    return ov ? ov.getAttribute('data-tipo') : 'MEMBRETE_ME';
+  }
+  function _colaRefrescarLista() {
+    var tipo = _colaTipo();
+    var items = _colaCargar(tipo);
+    var lista = document.getElementById('msColaLista');
+    var sub   = document.getElementById('msColaSub');
+    var btn   = document.getElementById('msColaImprimir');
+    if (sub) sub.textContent = items.length + ' productos en cola';
+    if (btn) {
+      btn.disabled = items.length === 0;
+      btn.innerHTML = items.length === 0 ? '🖨 Cola vacía'
+                    : '🖨 IMPRIMIR ' + items.length + ' MEMBRETE' + (items.length > 1 ? 'S' : '');
+    }
+    if (!lista) return;
+    if (items.length === 0) {
+      lista.innerHTML = '<div style="text-align:center;color:#64748b;padding:24px 0;font-size:13px">Buscá un producto arriba para agregarlo a la cola</div>';
+      return;
+    }
+    lista.innerHTML = items.map(function(it, i) {
+      var precioBlock = tipo === 'MEMBRETE_ME'
+        ? '<div style="font-size:14px;font-weight:900;color:#fbbf24;font-family:monospace">S/ ' + (parseFloat(it.precio) || 0).toFixed(2) + '</div>'
+        : '';
+      return ''
+        + '<div style="display:flex;align-items:center;gap:10px;padding:10px;background:rgba(15,23,42,.4);border-radius:8px;margin-bottom:6px;border:1px solid #1e293b">'
+        +   '<div style="flex:1;min-width:0">'
+        +     '<div style="font-size:13px;font-weight:700;color:#f1f5f9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + _escapeHtml(it.descripcion || '') + '</div>'
+        +     '<div style="font-size:11px;color:#94a3b8;font-family:monospace">▌' + _escapeHtml(it.codigoBarra || '') + '</div>'
+        +   '</div>'
+        +   precioBlock
+        +   '<button onclick="MembreteSystem._colaQuitar(' + i + ')" style="background:rgba(248,113,113,.12);color:#fca5a5;border:1px solid rgba(248,113,113,.35);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:14px">✕</button>'
+        + '</div>';
+    }).join('');
+  }
+  function _colaBusqInput(q) {
+    q = String(q || '').trim().toLowerCase();
+    var sugs = document.getElementById('msColaSugs');
+    if (!sugs) return;
+    if (q.length < 2) { sugs.style.display = 'none'; return; }
+    // Buscar productos via API (usar getCatalogo o equivalente cacheado)
+    // Fallback: si la app tiene cache de productos en window, usarlo
+    var fuente = null;
+    try {
+      if (window.S && Array.isArray(window.S.catalogo)) fuente = window.S.catalogo;
+      else if (window.OfflineManager && OfflineManager.getProductosCache) fuente = OfflineManager.getProductosCache();
+    } catch(_) {}
+    if (!fuente || fuente.length === 0) {
+      sugs.innerHTML = '<div style="padding:8px;font-size:12px;color:#fbbf24">No hay catálogo cargado · cargá productos en MOS o WH primero</div>';
+      sugs.style.display = 'block';
+      return;
+    }
+    var matches = fuente.filter(function(p) {
+      var desc = String(p.descripcion || p.nombre || '').toLowerCase();
+      var cb   = String(p.codigoBarra || p.idProducto || '').toLowerCase();
+      var sku  = String(p.skuBase || '').toLowerCase();
+      return desc.indexOf(q) >= 0 || cb.indexOf(q) >= 0 || sku.indexOf(q) >= 0;
+    }).slice(0, 8);
+    if (matches.length === 0) {
+      sugs.innerHTML = '<div style="padding:8px;font-size:12px;color:#94a3b8">Sin resultados para "' + _escapeHtml(q) + '"</div>';
+      sugs.style.display = 'block';
+      return;
+    }
+    sugs.innerHTML = matches.map(function(p) {
+      var cb     = String(p.codigoBarra || p.idProducto || '');
+      var desc   = String(p.descripcion || p.nombre || '');
+      var precio = parseFloat(p.precio || p.precioVenta) || 0;
+      var sku    = String(p.skuBase || '');
+      return ''
+        + '<div onclick="MembreteSystem._colaAgregar('
+        +     "'" + cb.replace(/'/g, "\\'") + "',"
+        +     "'" + desc.replace(/'/g, "\\'") + "',"
+        +     precio + ','
+        +     "'" + sku.replace(/'/g, "\\'") + "')"
+        +   '" style="padding:8px 10px;cursor:pointer;border-radius:6px;font-size:12px;color:#cbd5e1" '
+        +   'onmouseover="this.style.background=\'rgba(251,191,36,.10)\'" onmouseout="this.style.background=\'transparent\'">'
+        +   '<span style="font-weight:700">' + _escapeHtml(desc) + '</span> '
+        +   '<span style="font-family:monospace;color:#94a3b8">▌' + _escapeHtml(cb) + '</span>'
+        +   (precio > 0 ? ' <span style="color:#fbbf24;font-weight:700;float:right">S/ ' + precio.toFixed(2) + '</span>' : '')
+        + '</div>';
+    }).join('');
+    sugs.style.display = 'block';
+  }
+  function _colaAgregar(cb, desc, precio, sku) {
+    var tipo = _colaTipo();
+    var items = _colaCargar(tipo);
+    if (items.find(function(it) { return it.codigoBarra === cb; })) {
+      _toast('⚠ Ya está en la cola', { error: true });
+      return;
+    }
+    items.push({ codigoBarra: cb, descripcion: desc, precio: precio, skuBase: sku });
+    _colaGuardar(tipo, items);
+    sonidos.subjobDone();
+    var inp = document.getElementById('msColaBusq');
+    if (inp) inp.value = '';
+    var sugs = document.getElementById('msColaSugs');
+    if (sugs) sugs.style.display = 'none';
+    _colaRefrescarLista();
+  }
+  function _colaQuitar(idx) {
+    var tipo = _colaTipo();
+    var items = _colaCargar(tipo);
+    items.splice(idx, 1);
+    _colaGuardar(tipo, items);
+    _colaRefrescarLista();
+  }
+  function _colaImprimir() {
+    var tipo = _colaTipo();
+    var items = _colaCargar(tipo);
+    if (items.length === 0) return;
+    _colaCerrar();
+    imprimirMembrete({ tipo: tipo, items: items }).then(function() {
+      _colaGuardar(tipo, []);  // limpiar cola tras éxito
+    });
+  }
+  function _colaCerrar() {
+    var ov = document.getElementById('msColaOverlay');
+    if (ov) { ov.style.animation = 'ms-out .22s ease-out forwards'; setTimeout(function(){ ov.remove(); }, 220); }
+  }
+
+  // ── MENÚ rápido para card de producto (ME o WH) ──────────────
+  function abrirMenuProductoCard(producto) {
+    _injectCss();
+    sonidos.click();
+    if (document.getElementById('msMenuOverlay')) return;
+    var precio = parseFloat(producto.precio || producto.precioVenta) || 0;
+    document.body.insertAdjacentHTML('beforeend', ''
+      + '<div class="ms-overlay" id="msMenuOverlay" onclick="if(event.target===this)MembreteSystem._menuCerrar()">'
+      +   '<div class="ms-modal" style="max-width:420px">'
+      +     '<div class="ms-head">'
+      +       '<div class="ms-emoji">🏷</div>'
+      +       '<div style="flex:1;min-width:0">'
+      +         '<div class="ms-h1">IMPRIMIR MEMBRETE</div>'
+      +         '<div class="ms-sub">' + _escapeHtml(producto.descripcion || producto.codigoBarra) + '</div>'
+      +       '</div>'
+      +     '</div>'
+      +     '<div class="ms-body">'
+      +       '<button class="ms-btn ms-btn-primary" onclick="MembreteSystem._menuImprimir(\'MEMBRETE_ME\')">'
+      +         '🏪 ME · Góndola tienda'
+      +         (precio > 0 ? '<div style="font-size:11px;font-weight:600;margin-top:2px;opacity:.85">Precio: S/ ' + precio.toFixed(2) + '</div>' : '')
+      +       '</button>'
+      +       '<button class="ms-btn ms-btn-info" onclick="MembreteSystem._menuImprimir(\'MEMBRETE_WH\')">'
+      +         '📦 WH · Andamio almacén'
+      +         '<div style="font-size:11px;font-weight:600;margin-top:2px;opacity:.85">Multi-código si tiene equivalentes</div>'
+      +       '</button>'
+      +       '<button class="ms-btn ms-btn-warn" onclick="MembreteSystem._menuCerrar()">Cancelar</button>'
+      +     '</div>'
+      +   '</div>'
+      + '</div>');
+    window._msMenuProd = producto;
+  }
+  function _menuImprimir(tipo) {
+    var p = window._msMenuProd;
+    if (!p) return;
+    _menuCerrar();
+    var item = {
+      codigoBarra: String(p.codigoBarra || p.idProducto || ''),
+      descripcion: String(p.descripcion || p.nombre || ''),
+      precio:      parseFloat(p.precio || p.precioVenta) || 0,
+      skuBase:     String(p.skuBase || ''),
+      esSkuBase:   false,
+      codigos:     Array.isArray(p.codigos) ? p.codigos : null
+    };
+    imprimirMembrete({ tipo: tipo, items: [item] });
+  }
+  function _menuCerrar() {
+    var ov = document.getElementById('msMenuOverlay');
+    if (ov) { ov.style.animation = 'ms-out .22s ease-out forwards'; setTimeout(function(){ ov.remove(); }, 220); }
+  }
+
+  // ── MODAL alertas precio cambiado (ME) ──────────────────────
+  function abrirAlertasPrecio() {
+    _injectCss();
+    sonidos.click();
+    if (document.getElementById('msAlertOverlay')) return;
+    document.body.insertAdjacentHTML('beforeend', ''
+      + '<div class="ms-overlay" id="msAlertOverlay">'
+      +   '<div class="ms-modal" style="max-width:540px">'
+      +     '<div class="ms-head">'
+      +       '<div class="ms-emoji">🚨</div>'
+      +       '<div style="flex:1;min-width:0">'
+      +         '<div class="ms-h1">PRECIOS ACTUALIZADOS</div>'
+      +         '<div class="ms-sub" id="msAlertSub">cargando…</div>'
+      +       '</div>'
+      +     '</div>'
+      +     '<div class="ms-body" style="max-height:60vh;overflow-y:auto" id="msAlertBody">'
+      +       '<div style="text-align:center;color:#94a3b8;padding:20px">cargando…</div>'
+      +     '</div>'
+      +     '<div class="ms-actions" style="padding:0 22px 18px">'
+      +       '<button class="ms-btn ms-btn-primary" id="msAlertImpBtn" onclick="MembreteSystem._alertImprimir()" disabled>🖨 Imprimir seleccionados</button>'
+      +       '<button class="ms-btn ms-btn-info" onclick="MembreteSystem._alertIgnorar()" id="msAlertIgnBtn" disabled>🗑 Ignorar seleccionados</button>'
+      +       '<button class="ms-btn ms-btn-warn" onclick="MembreteSystem._alertCerrar()">Cerrar</button>'
+      +     '</div>'
+      +   '</div>'
+      + '</div>');
+    _alertCargar();
+  }
+  function _alertCargar() {
+    _api('getMembretesMePendientes', { limit: 50 }).then(function(d) {
+      var items = (d && d.items) || [];
+      window._msAlerts = items;
+      var body = document.getElementById('msAlertBody');
+      var sub  = document.getElementById('msAlertSub');
+      if (sub) sub.textContent = items.length + ' productos cambiaron de precio';
+      if (!body) return;
+      if (items.length === 0) {
+        body.innerHTML = '<div style="text-align:center;color:#34d399;padding:30px 0;font-size:14px">✅ No hay precios pendientes</div>';
+        return;
+      }
+      body.innerHTML = '<div style="margin-bottom:10px"><label style="font-size:12px;color:#94a3b8;cursor:pointer"><input type="checkbox" id="msAlertAll" onchange="MembreteSystem._alertToggleAll(this.checked)" style="margin-right:6px"> Seleccionar todos</label></div>'
+        + items.map(function(it, i) {
+        var anterior = parseFloat(it.precioAnterior) || 0;
+        var nuevo    = parseFloat(it.precioNuevo) || 0;
+        var delta    = nuevo - anterior;
+        return ''
+          + '<label style="display:flex;align-items:center;gap:10px;padding:10px;background:rgba(15,23,42,.4);border-radius:8px;margin-bottom:6px;border:1px solid #1e293b;cursor:pointer">'
+          +   '<input type="checkbox" class="msAlertChk" data-idx="' + i + '" onchange="MembreteSystem._alertUpdBtns()">'
+          +   '<div style="flex:1;min-width:0">'
+          +     '<div style="font-size:13px;font-weight:700;color:#f1f5f9">' + _escapeHtml(it.descripcion || '') + '</div>'
+          +     '<div style="font-size:11px;color:#94a3b8;font-family:monospace">▌' + _escapeHtml(it.codigoBarra || '') + '</div>'
+          +   '</div>'
+          +   '<div style="text-align:right;font-family:monospace;font-size:12px">'
+          +     '<div style="color:#94a3b8;text-decoration:line-through">S/ ' + anterior.toFixed(2) + '</div>'
+          +     '<div style="color:' + (delta > 0 ? '#34d399' : '#f87171') + ';font-weight:900;font-size:14px">S/ ' + nuevo.toFixed(2) + '</div>'
+          +   '</div>'
+          + '</label>';
+      }).join('');
+    });
+  }
+  function _alertSeleccionados() {
+    var sel = [];
+    document.querySelectorAll('.msAlertChk:checked').forEach(function(c) {
+      sel.push(window._msAlerts[parseInt(c.dataset.idx)]);
+    });
+    return sel;
+  }
+  function _alertToggleAll(on) {
+    document.querySelectorAll('.msAlertChk').forEach(function(c) { c.checked = on; });
+    _alertUpdBtns();
+  }
+  function _alertUpdBtns() {
+    var sel = _alertSeleccionados();
+    var imp = document.getElementById('msAlertImpBtn');
+    var ign = document.getElementById('msAlertIgnBtn');
+    if (imp) { imp.disabled = sel.length === 0; imp.innerHTML = sel.length === 0 ? '🖨 Imprimir seleccionados' : ('🖨 Imprimir ' + sel.length); }
+    if (ign) { ign.disabled = sel.length === 0; ign.innerHTML = sel.length === 0 ? '🗑 Ignorar seleccionados' : ('🗑 Ignorar ' + sel.length); }
+  }
+  function _alertImprimir() {
+    var sel = _alertSeleccionados();
+    if (sel.length === 0) return;
+    var items = sel.map(function(s) {
+      return {
+        codigoBarra: String(s.codigoBarra || ''),
+        descripcion: String(s.descripcion || ''),
+        precio:      parseFloat(s.precioNuevo) || 0,
+        skuBase:     String(s.skuBase || ''),
+        esSkuBase:   false
+      };
+    });
+    var ids = sel.map(function(s) { return String(s.idAlerta); });
+    _alertCerrar();
+    imprimirMembrete({ tipo: 'MEMBRETE_ME', items: items }).then(function(d) {
+      _api('marcarMembreteMeImpreso', { idAlertas: ids, idLote: (d && d.idLote) || '' }).catch(function(){});
+    });
+  }
+  function _alertIgnorar() {
+    var sel = _alertSeleccionados();
+    if (sel.length === 0) return;
+    if (!confirm('¿Ignorar ' + sel.length + ' precio(s)? No volverán a aparecer hasta que cambien de nuevo.')) return;
+    var ids = sel.map(function(s) { return String(s.idAlerta); });
+    _api('ignorarMembreteMe', { idAlertas: ids }).then(function() {
+      sonidos.subjobDone();
+      _toast('🗑 ' + ids.length + ' alertas ignoradas');
+      _alertCargar();
+    });
+  }
+  function _alertCerrar() {
+    var ov = document.getElementById('msAlertOverlay');
+    if (ov) { ov.style.animation = 'ms-out .22s ease-out forwards'; setTimeout(function(){ ov.remove(); }, 220); }
+  }
+
+  // ── Badge flotante de alertas precio (auto-refresh cada 60s) ────
+  var _badgeAlertasTimer = null;
+  function arrancarBadgeAlertas() {
+    if (_badgeAlertasTimer) return;
+    var refresh = function() {
+      _api('getMembretesMePendientes', { limit: 1 }).then(function(d) {
+        var count = (d && d.count) || 0;
+        var existing = document.getElementById('msBadgeAlertas');
+        if (count === 0) { if (existing) existing.remove(); return; }
+        if (!existing) {
+          var div = document.createElement('div');
+          div.id = 'msBadgeAlertas';
+          div.className = 'ms-badge-nav';
+          div.style.background = 'linear-gradient(135deg,#f87171,#ef4444)';
+          div.style.bottom = '70px';
+          div.onclick = abrirAlertasPrecio;
+          document.body.appendChild(div);
+          existing = div;
+        }
+        existing.innerHTML = '🚨 ' + count + ' precio' + (count > 1 ? 's' : '');
+      }).catch(function(){});
+    };
+    refresh();
+    _badgeAlertasTimer = setInterval(refresh, 60000);
+  }
+
   // ── EXPORT ──────────────────────────────────────────────────
   window.MembreteSystem = {
     __loaded:             true,
@@ -451,6 +893,29 @@
     cerrarModal:          cerrarModal,
     estadoActual:         estadoActual,
     sonidos:              sonidos,
-    toast:                _toast
+    toast:                _toast,
+    // UI embebidas
+    abrirCalibrador:      abrirCalibrador,
+    abrirCola:            abrirCola,
+    abrirMenuProductoCard: abrirMenuProductoCard,
+    abrirAlertasPrecio:   abrirAlertasPrecio,
+    arrancarBadgeAlertas: arrancarBadgeAlertas,
+    // Internals (expuestos para handlers inline en HTML)
+    _calCambiarRollo:     _calCambiarRollo,
+    _calImprimirCals:     _calImprimirCals,
+    _calAplicarMm:        _calAplicarMm,
+    _calCerrar:           _calCerrar,
+    _colaBusqInput:       _colaBusqInput,
+    _colaAgregar:         _colaAgregar,
+    _colaQuitar:          _colaQuitar,
+    _colaImprimir:        _colaImprimir,
+    _colaCerrar:          _colaCerrar,
+    _menuImprimir:        _menuImprimir,
+    _menuCerrar:          _menuCerrar,
+    _alertToggleAll:      _alertToggleAll,
+    _alertUpdBtns:        _alertUpdBtns,
+    _alertImprimir:       _alertImprimir,
+    _alertIgnorar:        _alertIgnorar,
+    _alertCerrar:         _alertCerrar
   };
 })();

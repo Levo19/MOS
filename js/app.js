@@ -2669,6 +2669,9 @@ const MOS = (() => {
                 <button class="cat-btn" style="font-size:.8rem"
                         onclick="event.stopPropagation();MOS.abrirAnalitica('${base.idProducto}')"
                         title="Ver analítica" style="border-color:rgba(99,102,241,.3)">📊</button>
+                <button class="cat-btn" style="font-size:.85rem;border-color:rgba(251,191,36,.35);color:#fbbf24"
+                        onclick="event.stopPropagation();MOS.abrirMembreteCard('${base.idProducto}')"
+                        title="Imprimir membrete (ME góndola o WH andamio)">🏷</button>
                 ${_esMasterSession() ? `<button class="cat-btn cat-btn-kebab"
                         onclick="event.stopPropagation();MOS.abrirMenuPurgaGrupo('${base.idProducto}', event)"
                         title="Más acciones · Master"
@@ -38922,6 +38925,29 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.43.110-111] Adhesivos — modal de impresión + calibración
     abrirModalImprimirAdhesivo, cerrarModalImprimirAdhesivo,
     adhesivoCantidadDelta, adhesivoCantidadInput, adhesivoImprimir, adhesivoCalibrar,
+    // [v2.43.127] Membrete desde card de catálogo
+    abrirMembreteCard: function(idProducto) {
+      if (!window.MembreteSystem || !MembreteSystem.abrirMenuProductoCard) {
+        toast('⚠ Sistema de membretes no cargado', 'error');
+        return;
+      }
+      // Buscar producto en catálogo
+      var p = null;
+      try {
+        if (S && Array.isArray(S.catalogo)) {
+          p = S.catalogo.find(function(x) { return String(x.idProducto) === String(idProducto); });
+        }
+      } catch(_){}
+      if (!p) { toast('Producto no encontrado en catálogo', 'error'); return; }
+      MembreteSystem.abrirMenuProductoCard({
+        idProducto:  p.idProducto,
+        codigoBarra: p.codigoBarra || p.idProducto,
+        descripcion: p.descripcion || p.nombre || '',
+        precio:      parseFloat(p.precio || p.precioVenta) || 0,
+        skuBase:     p.skuBase || '',
+        codigos:     p.codigos || null
+      });
+    },
     // [v2.43.119] Lote de adhesivos — orquestación con sub-jobs + progreso
     loteContinuar, loteCancelar, loteCerrarModal,
     activarPush: () => _pushInit(S.session?.nombre || '', S.session?.rol || '', true)
