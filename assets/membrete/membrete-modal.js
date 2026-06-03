@@ -317,6 +317,11 @@
 
   // Imprimir lote de adhesivos de envasado (legacy, mantiene compat)
   function imprimirAdhesivoEnvasado(opts) {
+    if (_state && _state.idLote && ['CREADO','ENCOLADO','IMPRIMIENDO','CALIBRANDO'].indexOf(_state.status) >= 0) {
+      _toast('⚠ Ya hay un lote en curso · esperá a que termine', { error: true });
+      sonidos.error();
+      return Promise.reject(new Error('Lote en curso'));
+    }
     var idempotencyKey = 'mem_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
     sonidos.click();
     _abrirModalProgreso({
@@ -337,6 +342,8 @@
       if (!_state) return;
       _state.idLote = d.idLote;
       _state.total  = d.total || _state.total;
+      // Re-arranque del polling con idLote real
+      _state.polling = false;
       _render();
       _arrancarPolling();
       return d;
@@ -348,6 +355,12 @@
 
   // Imprimir membretes (ME o WH) — items = array de productos
   function imprimirMembrete(opts) {
+    // [AUDIT FIX #2] Guard contra dobles clicks / lotes simultáneos.
+    if (_state && _state.idLote && ['CREADO','ENCOLADO','IMPRIMIENDO','CALIBRANDO'].indexOf(_state.status) >= 0) {
+      _toast('⚠ Ya hay un lote en curso · esperá a que termine', { error: true });
+      sonidos.error();
+      return Promise.reject(new Error('Lote en curso'));
+    }
     var tipo = opts.tipo;  // 'MEMBRETE_ME' | 'MEMBRETE_WH'
     var items = opts.items || [];
     var idempotencyKey = 'mem_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
@@ -368,6 +381,10 @@
       if (!_state) return;
       _state.idLote = d.idLote;
       _state.total  = d.total || _state.total;  // backend expande WH multi-codigo
+      // [AUDIT FIX #1] Resetear polling=false para permitir re-arranque.
+      // Antes _state.polling quedaba en true del primer intento con idLote=''
+      // y el segundo _arrancarPolling() retornaba sin loopear.
+      _state.polling = false;
       _render();
       _arrancarPolling();
       return d;
