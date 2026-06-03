@@ -985,6 +985,23 @@ function publicarPrecio(params) {
     }
   } catch(eEtiq) { Logger.log('[publicarPrecio] _etiqGenerarParaZonas: ' + eEtiq.message); }
 
+  // [v2.43.125] Hook para sistema de membretes ME (alertas flotantes).
+  // Inserta alerta en MEMBRETES_ME_PENDIENTES con expira a 7 días.
+  // El vendedor ME ve badge + modal con lista, elige cuáles imprimir.
+  try {
+    if (typeof _hookPrecioCambiadoParaMembreteME === 'function') {
+      _hookPrecioCambiadoParaMembreteME({
+        idProducto:     params.idProducto || '',
+        codigoBarra:    params.codigoBarra || '',
+        skuBase:        params.skuBase || '',
+        descripcion:    params.descripcion || '',
+        precioAnterior: parseFloat(params.precioAnterior) || 0,
+        precioNuevo:    _precioNuevo,
+        usuario:        usuarioFinal || ''
+      });
+    }
+  } catch(eMem) { Logger.log('[publicarPrecio] _hookPrecioCambiadoParaMembreteME: ' + eMem.message); }
+
   return { ok: true, data: {
     precioNuevo: params.precioNuevo,
     alertaGenerada: !!params.imprimirMembretes,

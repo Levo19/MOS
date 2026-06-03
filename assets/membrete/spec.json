@@ -1,0 +1,95 @@
+{
+  "version": "1.0.0",
+  "descripcion": "Especificación canónica del sistema de membretes/adhesivos. Single source of truth para MOS, WH y ME.",
+  "tipos": {
+    "ADHESIVO_ENVASADO": {
+      "descripcion": "Adhesivo de envasado tradicional (logo Tony's + descripción + barcode + Vto)",
+      "logo": "logo-tonys-S",
+      "tamano_mm": { "ancho": 50, "alto": 25 },
+      "muestra_precio": false,
+      "muestra_vto": true,
+      "muestra_sku_si_hay_equivalentes": false
+    },
+    "MEMBRETE_ME": {
+      "descripcion": "Membrete para góndola tienda. Precio prominente. Soles peruanos.",
+      "logo": "logo-tienda-ME-S",
+      "tamano_mm": { "ancho": 50, "alto": 25 },
+      "muestra_precio": true,
+      "muestra_vto": false,
+      "moneda": "S/",
+      "muestra_sku_si_hay_equivalentes": true,
+      "_comentario_sku": "Si tiene >0 equivalentes, mostrar skuBase con icono ⬢. Si no, codigoBarra con ▌."
+    },
+    "MEMBRETE_WH": {
+      "descripcion": "Membrete para andamio almacén. Nombre del producto MEGA. Sin precio.",
+      "logo": "logo-almacen-WH-S",
+      "tamano_mm": { "ancho": 50, "alto": 25 },
+      "muestra_precio": false,
+      "muestra_vto": false,
+      "muestra_sku_si_hay_equivalentes": true,
+      "multi_membrete": true,
+      "_comentario_multi": "Producto con N códigos = 1 cabecera (skuBase) + N membretes (uno por código)."
+    },
+    "CALIBRADOR": {
+      "descripcion": "Adhesivo de prueba con regla vertical para medir drift. Imprime 10, operador lee mm.",
+      "tamano_mm": { "ancho": 50, "alto": 25 },
+      "muestra_regla_vertical": true,
+      "muestra_numero_print": true
+    }
+  },
+  "dpi": 203,
+  "tamano_dots":   { "ancho": 400, "alto": 200 },
+  "dots_por_mm":   8,
+  "margenes_dots": { "izq": 5, "der": 5, "arriba": 2, "abajo": 2 },
+  "calibracion": {
+    "comentario": "Sistema OFFSET acumulativo. Cal manual al cambiar rollo + auto-detect drift una vez.",
+    "props_keys": {
+      "rollo_calibrado":       "ADHESIVO_ROLLO_CALIBRADO",
+      "gap_mm_medido":         "ADHESIVO_GAP_MM_MEDIDO",
+      "drift_dots_por_print":  "ADHESIVO_DRIFT_DOTS_POR_PRINT",
+      "prints_desde_cal":      "ADHESIVO_PRINTS_DESDE_CAL",
+      "fecha_calibrado":       "ADHESIVO_FECHA_CALIBRADO"
+    },
+    "alerta_prints_sin_cal":   500,
+    "etiquetas_gastadas_cal":  3,
+    "cantidad_calibradores":   10
+  },
+  "impresion_por_lote": {
+    "sub_job_size": 1,
+    "polling_intervalo_ms":   3000,
+    "timeout_sub_job_ms":     25000,
+    "fire_and_forget": true,
+    "trigger_intervalo_min":  1,
+    "trigger_function":       "procesarLotesPendientes",
+    "estados": {
+      "ENCOLADO":              "Lote creado, esperando trigger",
+      "IMPRIMIENDO":           "Trigger procesando sub-jobs",
+      "CALIBRANDO":            "GAPDETECT en curso (solo manual)",
+      "PAUSADO_USUARIO":       "Operador apretó pausa",
+      "PAUSADO_OUT_PAPER":     "Rollo agotado",
+      "PAUSADO_ERROR":         "Otro error",
+      "COMPLETADO":            "Todos los items impresos",
+      "CANCELADO":             "Operador canceló"
+    }
+  },
+  "tspl_fonts_dots": {
+    "1": { "w": 8,  "h": 12 },
+    "2": { "w": 12, "h": 20 },
+    "3": { "w": 16, "h": 24 },
+    "4": { "w": 24, "h": 32 },
+    "5": { "w": 32, "h": 48 }
+  },
+  "iconos_simbolos": {
+    "codigobarra_normal": "▌",
+    "sku_base":           "⬢",
+    "logo_envasado":      "🏠",
+    "logo_tienda":        "🏪",
+    "logo_almacen":       "📦"
+  },
+  "alertas_precio_me": {
+    "comentario": "Sistema de alertas cuando cambia precio canónico. Expira a 7 días.",
+    "sheet":      "MEMBRETES_ME_PENDIENTES",
+    "expira_dias": 7,
+    "trigger_diario": "expirarMembretesMePendientes"
+  }
+}

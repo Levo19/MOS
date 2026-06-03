@@ -206,6 +206,20 @@ const MOS = (() => {
     Chart.defaults.borderColor = '#1e293b';
     Chart.defaults.font.family = 'system-ui, -apple-system, sans-serif';
 
+    // [v2.43.125] Inicializar sistema centralizado de membretes/adhesivos.
+    // Después de esto window.MembreteSystem.imprimirMembrete(...) funciona.
+    try {
+      if (window.MembreteSystem && window.MembreteSystem.iniciar) {
+        window.MembreteSystem.iniciar({
+          apiPost:        function(action, params) { return API.post(action, params); },
+          usuario:        function() { return (window.S && S.session && S.session.nombre) || ''; },
+          origen:         'MOS',
+          unwrapData:     true,  // MOS API.post desempaca data
+          endpointPrefix: 'wh_'
+        });
+      }
+    } catch(_) {}
+
     // [v2.43.80] Si quedaron modales del intento anterior (page refresh con
     // espía abierto, SW update mid-flow, crash inesperado), limpiarlos antes
     // que tapen los nuevos modales con su z-index máximo.

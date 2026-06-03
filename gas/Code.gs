@@ -179,6 +179,17 @@ function _route(method, e) {
       case 'wh_pausarLoteAdhesivo':          return postToWarehouse('pausarLoteAdhesivo', params);
       case 'wh_cancelarLoteAdhesivo':        return postToWarehouse('cancelarLoteAdhesivo', params);
       case 'wh_getLotesAdhesivoPendientes':  return postToWarehouse('getLotesAdhesivoPendientes', params);
+      // [v2.43.125] Calibración inteligente + membretes ME/WH
+      case 'wh_estadoCalibracionRollo':      return postToWarehouse('estadoCalibracionRollo', params);
+      case 'wh_imprimirCalibradoresAdhesivo':return postToWarehouse('imprimirCalibradoresAdhesivo', params);
+      case 'wh_aplicarDriftDetectado':       return postToWarehouse('aplicarDriftDetectado', params);
+      case 'wh_ajustarDriftManual':          return postToWarehouse('ajustarDriftManual', params);
+      case 'wh_resetearContadorPrints':      return postToWarehouse('resetearContadorPrints', params);
+      case 'wh_crearLoteMembrete':           return postToWarehouse('crearLoteMembrete', params);
+      // [v2.43.125] Alertas de precio para membretes ME (locales MOS)
+      case 'getMembretesMePendientes':       return getMembretesMePendientes(params);
+      case 'marcarMembreteMeImpreso':        return marcarMembreteMeImpreso(params);
+      case 'ignorarMembreteMe':              return ignorarMembreteMe(params);
       case 'getVentasMosExpress':  return getVentasMosExpress(params);
       case 'getRotacion':            return getRotacionProductos(params);
       case 'getAnaliticaProducto':   return getAnaliticaProducto(params);
