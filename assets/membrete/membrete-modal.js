@@ -348,7 +348,8 @@
       _arrancarPolling();
       return d;
     }).catch(function(e) {
-      if (_state) { _state.status = 'PAUSADO_ERROR'; _state.ultimoError = e.message; _render(); }
+      // [AUDIT FIX #B] Reset polling=false en error para permitir reintentos
+      if (_state) { _state.status = 'PAUSADO_ERROR'; _state.ultimoError = e.message; _state.polling = false; _render(); }
       sonidos.error();
     });
   }
@@ -389,7 +390,7 @@
       _arrancarPolling();
       return d;
     }).catch(function(e) {
-      if (_state) { _state.status = 'PAUSADO_ERROR'; _state.ultimoError = e.message; _render(); }
+      if (_state) { _state.status = 'PAUSADO_ERROR'; _state.ultimoError = e.message; _state.polling = false; _render(); }
       sonidos.error();
     });
   }
@@ -636,22 +637,26 @@
       sugs.style.display = 'block';
       return;
     }
-    sugs.innerHTML = matches.map(function(p) {
-      var cb     = String(p.codigoBarra || p.idProducto || '');
-      var desc   = String(p.descripcion || p.nombre || '');
-      var precio = parseFloat(p.precio || p.precioVenta) || 0;
-      var sku    = String(p.skuBase || '');
+    // [AUDIT FIX #A] Stash de candidatos en un Map en memoria para evitar
+    // inyectar strings con apóstrofes/comillas/HTML en el onclick inline.
+    // El handler usa data-idx para recuperar el item desde _msColaSugs.
+    window._msColaSugItems = matches.map(function(p) {
+      return {
+        codigoBarra: String(p.codigoBarra || p.idProducto || ''),
+        descripcion: String(p.descripcion || p.nombre || ''),
+        precio:      parseFloat(p.precio || p.precioVenta) || 0,
+        skuBase:     String(p.skuBase || '')
+      };
+    });
+    sugs.innerHTML = window._msColaSugItems.map(function(it, i) {
       return ''
-        + '<div onclick="MembreteSystem._colaAgregar('
-        +     "'" + cb.replace(/'/g, "\\'") + "',"
-        +     "'" + desc.replace(/'/g, "\\'") + "',"
-        +     precio + ','
-        +     "'" + sku.replace(/'/g, "\\'") + "')"
-        +   '" style="padding:8px 10px;cursor:pointer;border-radius:6px;font-size:12px;color:#cbd5e1" '
-        +   'onmouseover="this.style.background=\'rgba(251,191,36,.10)\'" onmouseout="this.style.background=\'transparent\'">'
-        +   '<span style="font-weight:700">' + _escapeHtml(desc) + '</span> '
-        +   '<span style="font-family:monospace;color:#94a3b8">▌' + _escapeHtml(cb) + '</span>'
-        +   (precio > 0 ? ' <span style="color:#fbbf24;font-weight:700;float:right">S/ ' + precio.toFixed(2) + '</span>' : '')
+        + '<div onclick="MembreteSystem._colaAgregarIdx(' + i + ')"'
+        +   ' style="padding:8px 10px;cursor:pointer;border-radius:6px;font-size:12px;color:#cbd5e1"'
+        +   ' onmouseover="this.style.background=\'rgba(251,191,36,.10)\'"'
+        +   ' onmouseout="this.style.background=\'transparent\'">'
+        +   '<span style="font-weight:700">' + _escapeHtml(it.descripcion) + '</span> '
+        +   '<span style="font-family:monospace;color:#94a3b8">▌' + _escapeHtml(it.codigoBarra) + '</span>'
+        +   (it.precio > 0 ? ' <span style="color:#fbbf24;font-weight:700;float:right">S/ ' + it.precio.toFixed(2) + '</span>' : '')
         + '</div>';
     }).join('');
     sugs.style.display = 'block';
@@ -671,6 +676,14 @@
     var sugs = document.getElementById('msColaSugs');
     if (sugs) sugs.style.display = 'none';
     _colaRefrescarLista();
+  }
+
+  // [AUDIT FIX #A] handler robusto via índice — no requiere escapar inline
+  function _colaAgregarIdx(idx) {
+    var items = window._msColaSugItems || [];
+    var it = items[idx];
+    if (!it) return;
+    _colaAgregar(it.codigoBarra, it.descripcion, it.precio, it.skuBase);
   }
   function _colaQuitar(idx) {
     var tipo = _colaTipo();
@@ -907,6 +920,7 @@
     _calCerrar:           _calCerrar,
     _colaBusqInput:       _colaBusqInput,
     _colaAgregar:         _colaAgregar,
+    _colaAgregarIdx:      _colaAgregarIdx,
     _colaQuitar:          _colaQuitar,
     _colaImprimir:        _colaImprimir,
     _colaCerrar:          _colaCerrar,
