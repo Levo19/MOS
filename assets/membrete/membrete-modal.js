@@ -1080,7 +1080,12 @@
     // que el backend use el layout SKU_Base con ícono diferenciador
     // (indica al vendedor que ese producto tiene códigos alternativos).
     var skuB = String(p.skuBase || p.idProducto || '');
-    var codigosDelGrupo = Array.isArray(p.codigos) ? p.codigos.slice() : null;
+    // [v2.43.162 FIX] Antes: Array.isArray([]) pasaba TRUE pero quedaba vacío
+    // → backend recibía codigos:[] y no expandía nada → lote sin items.
+    // Ahora exige length>0 para considerar el array válido; si no, fallback.
+    var codigosDelGrupo = (Array.isArray(p.codigos) && p.codigos.length > 0)
+      ? p.codigos.slice()
+      : null;
     if (!codigosDelGrupo) {
       // Buscar equivalentes del producto en el catálogo
       var cat = _resolverCatalogo();
@@ -1089,7 +1094,17 @@
           return String(e.skuBase || '') === skuB && (e.activo === true || e.activo === undefined || e.activo === '');
         }).map(function(e) { return String(e.codigoBarra || ''); }).filter(Boolean);
         codigosDelGrupo = [String(p.codigoBarra || p.idProducto || skuB)].concat(equivActivos);
+      } else {
+        // [v2.43.162] Sin catálogo accesible (caso WH/ME) → al menos el codigoBarra
+        codigosDelGrupo = [String(p.codigoBarra || p.idProducto || skuB)].filter(Boolean);
       }
+    }
+    // Filtrado final defensivo: solo strings no vacíos
+    codigosDelGrupo = (codigosDelGrupo || []).map(String).filter(Boolean);
+    if (codigosDelGrupo.length === 0) {
+      _toast('⚠ El producto no tiene código de barras para imprimir', { error: true });
+      sonidos.error();
+      return;
     }
     var totalCodigos = (codigosDelGrupo && codigosDelGrupo.length) || 1;
     var item = {
