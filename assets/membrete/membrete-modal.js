@@ -485,19 +485,28 @@
       var driftMm      = +(driftDots / 8).toFixed(2);
       var prints       = parseInt(d.printsDesdeCal) || 0;
       var necesitaRec  = d.necesitaRecalibrar;
+      var rolloCasiAg  = d.rolloCasiAgotado;
+      var capRollo     = parseInt(d.capacidadRollo) || 1000;
       var fechaCal     = String(d.fechaCalibrado || '').substring(0, 16);
+      // [v1.3] Barra visual de progreso del rollo
+      var pctRollo     = Math.min(100, Math.round((prints / capRollo) * 100));
+      var barColor     = pctRollo >= 95 ? '#f87171' : (pctRollo >= 80 ? '#fbbf24' : '#34d399');
       body.innerHTML = ''
         + '<div class="ms-stat">'
         +   '<div class="ms-chip ' + (calibrado ? 'ms-chip-ok' : 'ms-chip-error') + '">'
         +     (calibrado ? '🟢 Calibrado' : '🔴 Sin calibrar')
         +   '</div>'
-        +   '<div class="ms-counter">' + prints + ' prints</div>'
+        +   '<div class="ms-counter">' + prints + '/' + capRollo + ' prints</div>'
+        + '</div>'
+        + '<div style="height:6px;background:#1e293b;border-radius:4px;overflow:hidden;margin:6px 0">'
+        +   '<div style="height:100%;width:' + pctRollo + '%;background:' + barColor + ';transition:width .4s"></div>'
         + '</div>'
         + '<div class="ms-info">'
         +   '<span>drift: ' + driftDots + ' dots/print (' + driftMm + ' mm)</span>'
         +   '<span>' + (fechaCal || '—') + '</span>'
         + '</div>'
-        + (necesitaRec ? '<div class="ms-err">⚠ >500 prints sin recalibrar · considerá nuevo rollo</div>' : '')
+        + (rolloCasiAg ? '<div class="ms-err">🔴 Rollo casi agotado (>950/1000) · prepará rollo nuevo</div>'
+           : necesitaRec ? '<div class="ms-err" style="background:rgba(251,191,36,.1);color:#fbbf24">⚠ >800 prints · rollo cerca del final</div>' : '')
         + '<div style="height:1px;background:#1e293b;margin:6px 0"></div>'
         + '<div style="font-size:12px;color:#cbd5e1;font-weight:700;letter-spacing:.5px">🆕 CAMBIASTE EL ROLLO?</div>'
         + '<button class="ms-btn ms-btn-primary" onclick="MembreteSystem._calCambiarRollo()">🔧 Calibrar rollo nuevo</button>'
@@ -768,6 +777,113 @@
     try { delete window._msMenuProd; } catch(_) { window._msMenuProd = null; }
   }
 
+  // ── [v1.4] HISTORIAL de lotes (incluye Envasados, WH, ME) ──────
+  // Muestra pendientes (en curso) + últimos N completados.
+  // tipoFiltro: 'ADHESIVO_ENVASADO' | 'MEMBRETE_WH' | 'MEMBRETE_ME' | '' (todos)
+  function abrirHistorialLotes(tipoFiltro) {
+    _injectCss();
+    sonidos.click();
+    if (document.getElementById('msHistOverlay')) return;
+    tipoFiltro = String(tipoFiltro || '').toUpperCase();
+    var emoji = tipoFiltro === 'MEMBRETE_ME' ? '🏪'
+              : tipoFiltro === 'MEMBRETE_WH' ? '📦'
+              : tipoFiltro === 'ADHESIVO_ENVASADO' ? '🏭'
+              : '🏷';
+    var titulo = tipoFiltro === 'MEMBRETE_ME' ? 'COLA MEMBRETES ME (góndola)'
+               : tipoFiltro === 'MEMBRETE_WH' ? 'COLA MEMBRETES WH (andamio)'
+               : tipoFiltro === 'ADHESIVO_ENVASADO' ? 'LOTES DE ADHESIVOS · ENVASADOS'
+               : 'TODOS LOS LOTES';
+    document.body.insertAdjacentHTML('beforeend', ''
+      + '<div class="ms-overlay" id="msHistOverlay" data-tipo="' + tipoFiltro + '">'
+      +   '<div class="ms-modal" style="max-width:720px">'
+      +     '<div class="ms-head">'
+      +       '<div class="ms-emoji">' + emoji + '</div>'
+      +       '<div style="flex:1;min-width:0">'
+      +         '<div class="ms-h1">' + titulo + '</div>'
+      +         '<div class="ms-sub" id="msHistSub">cargando…</div>'
+      +       '</div>'
+      +     '</div>'
+      +     '<div class="ms-body" style="max-height:65vh;overflow-y:auto" id="msHistBody">'
+      +       '<div style="text-align:center;color:#94a3b8;padding:20px"><span style="display:inline-block;animation:ms-spin 1s linear infinite">◐</span> cargando…</div>'
+      +     '</div>'
+      +     '<div class="ms-actions" style="padding:0 22px 18px">'
+      +       '<button class="ms-btn ms-btn-info" onclick="MembreteSystem._histRefrescar()">↻ Refrescar</button>'
+      +       '<button class="ms-btn ms-btn-warn" onclick="MembreteSystem._histCerrar()">Cerrar</button>'
+      +     '</div>'
+      +   '</div>'
+      + '</div>');
+    _histRefrescar();
+  }
+  function _histRefrescar() {
+    var ov = document.getElementById('msHistOverlay');
+    if (!ov) return;
+    var tipoFiltro = ov.getAttribute('data-tipo') || '';
+    var body = document.getElementById('msHistBody');
+    var sub  = document.getElementById('msHistSub');
+    if (body) body.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px"><span style="display:inline-block;animation:ms-spin 1s linear infinite">◐</span> cargando…</div>';
+    _api('getLotesAdhesivoHistorial', { tipoEtiqueta: tipoFiltro, limit: 30 }).then(function(d) {
+      var pendientes = (d && d.pendientes) || [];
+      var historial  = (d && d.historial) || [];
+      if (sub) sub.textContent = pendientes.length + ' en curso · ' + historial.length + ' completados';
+      var fmtHora = function(iso) {
+        if (!iso) return '—';
+        try { return String(iso).substring(5, 16).replace('T', ' '); } catch(_) { return '—'; }
+      };
+      var rowHtml = function(lote, esPendiente) {
+        var pct = lote.totalEtq > 0 ? Math.round((lote.completadas / lote.totalEtq) * 100) : 0;
+        var statusColor = lote.status === 'COMPLETADO' ? '#34d399'
+                       : lote.status === 'CANCELADO'  ? '#94a3b8'
+                       : String(lote.status || '').indexOf('PAUSADO') === 0 ? '#f87171'
+                       : '#fbbf24';
+        var statusIcon = lote.status === 'COMPLETADO' ? '✅'
+                       : lote.status === 'CANCELADO'  ? '🗑'
+                       : String(lote.status || '').indexOf('PAUSADO') === 0 ? '⏸'
+                       : '🖨';
+        return ''
+          + '<div style="padding:10px;background:rgba(15,23,42,.4);border:1px solid #1e293b;border-radius:8px;margin-bottom:6px">'
+          +   '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
+          +     '<span style="font-size:14px">' + statusIcon + '</span>'
+          +     '<div style="flex:1;min-width:0">'
+          +       '<div style="font-size:12px;font-weight:700;color:#f1f5f9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
+          +         _escapeHtml(lote.descripcion || lote.codigoBarra || lote.idLote)
+          +       '</div>'
+          +       '<div style="font-size:10px;color:#64748b">'
+          +         lote.usuario + ' · ' + lote.origen + ' · ' + fmtHora(lote.fechaCreacion)
+          +       '</div>'
+          +     '</div>'
+          +     '<div style="text-align:right">'
+          +       '<div style="font-size:13px;font-weight:900;color:' + statusColor + ';font-family:monospace">'
+          +         lote.completadas + '/' + lote.totalEtq
+          +       '</div>'
+          +       '<div style="font-size:9px;color:#64748b">' + lote.status + '</div>'
+          +     '</div>'
+          +   '</div>'
+          +   (esPendiente ? '<div style="height:4px;background:#0f172a;border-radius:2px;overflow:hidden;margin-top:4px"><div style="height:100%;width:' + pct + '%;background:' + statusColor + '"></div></div>' : '')
+          +   (lote.ultimoError ? '<div style="font-size:10px;color:#f87171;margin-top:4px">⚠ ' + _escapeHtml(lote.ultimoError) + '</div>' : '')
+          + '</div>';
+      };
+      var html = '';
+      if (pendientes.length) {
+        html += '<div style="font-size:11px;color:#fbbf24;font-weight:800;margin:4px 0 6px;letter-spacing:.5px">⏳ EN CURSO (' + pendientes.length + ')</div>';
+        html += pendientes.map(function(l){ return rowHtml(l, true); }).join('');
+      }
+      if (historial.length) {
+        html += '<div style="font-size:11px;color:#94a3b8;font-weight:800;margin:12px 0 6px;letter-spacing:.5px">📜 HISTORIAL (últimos ' + historial.length + ')</div>';
+        html += historial.map(function(l){ return rowHtml(l, false); }).join('');
+      }
+      if (!pendientes.length && !historial.length) {
+        html = '<div style="text-align:center;color:#64748b;padding:30px 0;font-size:13px">— sin lotes registrados —</div>';
+      }
+      if (body) body.innerHTML = html;
+    }).catch(function(e) {
+      if (body) body.innerHTML = '<div class="ms-err">⚠ ' + _escapeHtml(e.message) + '</div>';
+    });
+  }
+  function _histCerrar() {
+    var ov = document.getElementById('msHistOverlay');
+    if (ov) { ov.style.animation = 'ms-out .22s ease-out forwards'; setTimeout(function(){ ov.remove(); }, 220); }
+  }
+
   // ── MODAL alertas precio cambiado (ME) ──────────────────────
   function abrirAlertasPrecio() {
     _injectCss();
@@ -929,6 +1045,10 @@
     abrirMenuProductoCard: abrirMenuProductoCard,
     abrirAlertasPrecio:   abrirAlertasPrecio,
     arrancarBadgeAlertas: arrancarBadgeAlertas,
+    // [v1.4] Historial de lotes (botón Cola Envasados/WH/ME)
+    abrirHistorialLotes:  abrirHistorialLotes,
+    _histRefrescar:       _histRefrescar,
+    _histCerrar:          _histCerrar,
     // Internals (expuestos para handlers inline en HTML)
     _calCambiarRollo:     _calCambiarRollo,
     _calImprimirCals:     _calImprimirCals,

@@ -182,6 +182,8 @@ function _route(method, e) {
       case 'wh_pausarLoteAdhesivo':          return postToWarehouse('pausarLoteAdhesivo', params);
       case 'wh_cancelarLoteAdhesivo':        return postToWarehouse('cancelarLoteAdhesivo', params);
       case 'wh_getLotesAdhesivoPendientes':  return postToWarehouse('getLotesAdhesivoPendientes', params);
+      // [v2.43.143] Historial lotes adhesivo por tipoEtiqueta
+      case 'wh_getLotesAdhesivoHistorial':   return postToWarehouse('getLotesAdhesivoHistorial', params);
       // [v2.43.125] Calibración inteligente + membretes ME/WH
       case 'wh_estadoCalibracionRollo':      return postToWarehouse('estadoCalibracionRollo', params);
       case 'wh_imprimirCalibradoresAdhesivo':return postToWarehouse('imprimirCalibradoresAdhesivo', params);
