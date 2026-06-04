@@ -25,7 +25,11 @@
     usuario:        function() { return ''; },
     origen:         'MOS',
     unwrapData:     true,
-    endpointPrefix: 'wh_'
+    endpointPrefix: 'wh_',
+    // [v1.9] La app puede inyectar un provider del catálogo. Útil para ME
+    // donde el catálogo vive dentro de Vue (db.value.PRODUCTO_BASE) y no
+    // es accesible vía window.
+    catalogoProvider: null  // function() { return { productos: [...], equivalencias: [...] } }
   };
 
   // ── Estado del lote en curso ────────────────────────────────
@@ -67,6 +71,10 @@
       '.ms-btn:hover{transform:translateY(-1px)}',
       '.ms-btn-primary{background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#0a1424;border-color:#fbbf24}',
       '.ms-btn-warn{background:rgba(248,113,113,.12);color:#fca5a5;border-color:rgba(248,113,113,.4)}',
+      // [v1.9] Tabs de filtro dentro del modal Lotes
+      '.ms-tab{padding:6px 12px;font-size:11px;font-weight:700;border:1px solid #1e293b;background:transparent;color:#64748b;border-radius:8px 8px 0 0;cursor:pointer;white-space:nowrap;transition:all .15s}',
+      '.ms-tab:hover{color:#cbd5e1;border-color:#334155}',
+      '.ms-tab-active{color:#fbbf24;border-color:rgba(251,191,36,.45);background:rgba(251,191,36,.10)}',
       '.ms-btn-info{background:rgba(99,102,241,.12);color:#a5b4fc;border-color:rgba(99,102,241,.4)}',
       '.ms-spin{display:inline-block;animation:ms-spin 1s linear infinite}',
       '@keyframes ms-spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}',
@@ -653,6 +661,11 @@
   // Devuelve { productos: [...], equivalencias: [...] } o null si no hay cache.
   function _resolverCatalogo() {
     try {
+      // [v1.9] Provider inyectado por la app tiene prioridad (ME via Vue ref).
+      if (typeof _config.catalogoProvider === 'function') {
+        var prov = _config.catalogoProvider();
+        if (prov && Array.isArray(prov.productos) && prov.productos.length) return prov;
+      }
       // MOS — S.productos (canónicos) + S.equivMap {skuBase: [equivs]}
       if (window.S && Array.isArray(window.S.productos) && window.S.productos.length) {
         var equivsArr = [];
@@ -838,13 +851,32 @@
     var p = productoDirecto || window._msMenuProd;
     if (!p) return;
     _menuCerrar();
+    // [v1.9] Detectar cuántos códigos tiene el producto. Si tiene >1 código
+    // (canónico + N equivalentes activos), imprimir con esSkuBase=true para
+    // que el backend use el layout SKU_Base con ícono diferenciador
+    // (indica al vendedor que ese producto tiene códigos alternativos).
+    var skuB = String(p.skuBase || p.idProducto || '');
+    var codigosDelGrupo = Array.isArray(p.codigos) ? p.codigos.slice() : null;
+    if (!codigosDelGrupo) {
+      // Buscar equivalentes del producto en el catálogo
+      var cat = _resolverCatalogo();
+      if (cat && cat.equivalencias && skuB) {
+        var equivActivos = cat.equivalencias.filter(function(e) {
+          return String(e.skuBase || '') === skuB && (e.activo === true || e.activo === undefined || e.activo === '');
+        }).map(function(e) { return String(e.codigoBarra || ''); }).filter(Boolean);
+        codigosDelGrupo = [String(p.codigoBarra || p.idProducto || skuB)].concat(equivActivos);
+      }
+    }
+    var totalCodigos = (codigosDelGrupo && codigosDelGrupo.length) || 1;
     var item = {
       codigoBarra: String(p.codigoBarra || p.idProducto || ''),
       descripcion: String(p.descripcion || p.nombre || ''),
       precio:      parseFloat(p.precio || p.precioVenta) || 0,
-      skuBase:     String(p.skuBase || ''),
-      esSkuBase:   false,
-      codigos:     Array.isArray(p.codigos) ? p.codigos : null
+      skuBase:     skuB,
+      // [v1.9] esSkuBase=true cuando tiene >1 código → backend usa layout SKU_Base
+      // con ícono indicador. Layout normal cuando es único código.
+      esSkuBase:   totalCodigos > 1,
+      codigos:     codigosDelGrupo
     };
     imprimirMembrete({ tipo: tipo, items: [item] });
   }
@@ -881,15 +913,28 @@
       +         '<div class="ms-sub" id="msHistSub">cargando…</div>'
       +       '</div>'
       +     '</div>'
-      +     '<div class="ms-body" style="max-height:65vh;overflow-y:auto" id="msHistBody">'
+      // [v1.9] Tabs dentro del modal para cambiar filtro sin cerrar
+      +     '<div style="display:flex;gap:4px;padding:8px 18px 4px;border-bottom:1px solid #1e293b;overflow-x:auto">'
+      +       '<button onclick="MembreteSystem._histCambiarFiltro(\'\')" class="ms-tab" data-tab="">📋 Todos</button>'
+      +       '<button onclick="MembreteSystem._histCambiarFiltro(\'MEMBRETE_ME\')" class="ms-tab" data-tab="MEMBRETE_ME">🏪 ME góndola</button>'
+      +       '<button onclick="MembreteSystem._histCambiarFiltro(\'MEMBRETE_WH\')" class="ms-tab" data-tab="MEMBRETE_WH">📦 WH andamio</button>'
+      +       '<button onclick="MembreteSystem._histCambiarFiltro(\'ADHESIVO_ENVASADO\')" class="ms-tab" data-tab="ADHESIVO_ENVASADO">🏭 Envasados</button>'
+      +     '</div>'
+      +     '<div class="ms-body" style="max-height:60vh;overflow-y:auto" id="msHistBody">'
       +       '<div style="text-align:center;color:#94a3b8;padding:20px"><span style="display:inline-block;animation:ms-spin 1s linear infinite">◐</span> cargando…</div>'
       +     '</div>'
       +     '<div class="ms-actions" style="padding:0 22px 18px">'
-      +       '<button class="ms-btn ms-btn-info" onclick="MembreteSystem._histRefrescar()">↻ Refrescar</button>'
+      +       '<button class="ms-btn ms-btn-info" onclick="MembreteSystem._histRefrescar()">↻</button>'
       +       '<button class="ms-btn ms-btn-warn" onclick="MembreteSystem._histCerrar()">Cerrar</button>'
       +     '</div>'
       +   '</div>'
       + '</div>');
+    // [v1.9] Marcar tab activo según tipoFiltro inicial
+    setTimeout(function() {
+      document.querySelectorAll('#msHistOverlay .ms-tab').forEach(function(b) {
+        if (b.getAttribute('data-tab') === tipoFiltro) b.classList.add('ms-tab-active');
+      });
+    }, 20);
     _histRefrescar();
   }
   function _histRefrescar() {
@@ -997,6 +1042,19 @@
   function _histCerrar() {
     var ov = document.getElementById('msHistOverlay');
     if (ov) { ov.style.animation = 'ms-out .22s ease-out forwards'; setTimeout(function(){ ov.remove(); }, 220); }
+  }
+  // [v1.9] Cambiar filtro desde tabs internos (optimista: actualiza UI ya)
+  function _histCambiarFiltro(nuevoTipo) {
+    sonidos.click();
+    var ov = document.getElementById('msHistOverlay');
+    if (!ov) return;
+    ov.setAttribute('data-tipo', String(nuevoTipo || '').toUpperCase());
+    // Resaltar tab activo
+    document.querySelectorAll('#msHistOverlay .ms-tab').forEach(function(b) {
+      if (b.getAttribute('data-tab') === String(nuevoTipo || '').toUpperCase()) b.classList.add('ms-tab-active');
+      else b.classList.remove('ms-tab-active');
+    });
+    _histRefrescar();
   }
   // [v1.4] Activador del trigger desde frontend cuando diagnóstico detecta falta
   function _activarTriggerLotes() {
@@ -1196,6 +1254,7 @@
     abrirHistorialLotes:  abrirHistorialLotes,
     _histRefrescar:       _histRefrescar,
     _histCerrar:          _histCerrar,
+    _histCambiarFiltro:   _histCambiarFiltro,
     _activarTriggerLotes: _activarTriggerLotes,
     // Internals (expuestos para handlers inline en HTML)
     _calCambiarRollo:     _calCambiarRollo,
