@@ -603,13 +603,22 @@
     }).catch(function(e) { sonidos.error(); _toast('❌ ' + e.message, { error: true }); });
   }
 
-  function aplicarDrift(mmDesviados, basadoEnPrints) {
+  function aplicarDrift(mmDesviados, basadoEnPrints, direccion) {
     return _api('aplicarDriftDetectado', {
-      mmDesviados: mmDesviados,
-      basadoEnPrints: basadoEnPrints || 10
+      mmDesviados:    mmDesviados,
+      basadoEnPrints: basadoEnPrints || 10,
+      direccion:      direccion || 'arriba'   // [v2.43.161]
     }).then(function(d) {
       sonidos.completado();
-      _toast('✅ Drift aplicado: ' + d.driftDotsPorPrint + ' dots/print');
+      _toast('✅ Drift ' + (d.direccion || direccion) + ' aplicado: ' + d.driftDotsPorPrint + ' dots/print');
+      return d;
+    }).catch(function(e) { sonidos.error(); _toast('❌ ' + e.message, { error: true }); });
+  }
+  // [v2.43.161] Reset de emergencia — limpia drift/offset/contador en backend.
+  function resetearDriftEmergencia() {
+    return _api('resetearDriftEmergencia', {}).then(function(d) {
+      sonidos.completado();
+      _toast('🆘 Drift y offset reseteados a 0');
       return d;
     }).catch(function(e) { sonidos.error(); _toast('❌ ' + e.message, { error: true }); });
   }
@@ -713,11 +722,33 @@
         +   'Paso 2: mirar #10 y contar mm de desvío de la regla.'
         + '</div>'
         + '<button class="ms-btn ms-btn-info" onclick="MembreteSystem._calImprimirCals()">🖨 Imprimir 10 calibradores</button>'
+        // [v2.43.161] Selector de dirección — antes solo se ingresaba magnitud y
+        // se asumía siempre "drift hacia arriba". Si era al revés el operador
+        // amplificaba el bug. Ahora explícito.
+        + '<div style="font-size:11px;color:#cbd5e1;font-weight:600">¿En qué dirección se movió en el #10?</div>'
+        + '<div style="display:flex;gap:6px">'
+        +   '<label style="flex:1;padding:8px;background:#0a1424;border:1px solid #1e293b;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:6px;font-size:12px;color:#f1f5f9">'
+        +     '<input type="radio" name="msCalDir" value="arriba" checked> ⬆ Subió'
+        +   '</label>'
+        +   '<label style="flex:1;padding:8px;background:#0a1424;border:1px solid #1e293b;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:6px;font-size:12px;color:#f1f5f9">'
+        +     '<input type="radio" name="msCalDir" value="abajo"> ⬇ Bajó'
+        +   '</label>'
+        + '</div>'
         + '<div style="display:flex;gap:8px;align-items:center">'
-        +   '<input id="msCalMm" type="number" step="0.5" min="0" placeholder="mm en #10" '
+        +   '<input id="msCalMm" type="number" step="0.5" min="0" placeholder="mm de desvío en #10" '
         +     'style="flex:1;padding:9px;background:#0a1424;border:1px solid #1e293b;color:#f1f5f9;border-radius:8px;font-size:13px">'
         +   '<button class="ms-btn ms-btn-primary" style="width:auto;padding:9px 16px" onclick="MembreteSystem._calAplicarMm()">Aplicar</button>'
         + '</div>'
+        + '<div style="height:1px;background:#1e293b;margin:6px 0"></div>'
+        // [v2.43.161] Reset de emergencia — para deshacer un drift mal configurado
+        // (caso reportado: drift+offset arrastraron a -48 dots y los adhesivos
+        // salieron rotos). Vuelve todo a 0 sin tocar la calibración física.
+        + '<div style="font-size:12px;color:#fca5a5;font-weight:700;letter-spacing:.5px">🆘 RESETEO DE EMERGENCIA</div>'
+        + '<div style="font-size:11px;color:#94a3b8;line-height:1.4">'
+        +   'Si los adhesivos están saliendo descuadrados, esto limpia drift y offset '
+        +   'a 0 (sin gastar etiquetas). Después podés re-medir desde cero.'
+        + '</div>'
+        + '<button class="ms-btn ms-btn-warn" style="background:rgba(248,113,113,.15);border-color:rgba(248,113,113,.4);color:#fca5a5" onclick="MembreteSystem._calResetEmergencia()">🆘 Resetear drift y offset a 0</button>'
         + '<div style="height:1px;background:#1e293b;margin:6px 0"></div>'
         + '<button class="ms-btn ms-btn-warn" onclick="MembreteSystem._calCerrar()">Cerrar</button>';
   }
@@ -753,7 +784,24 @@
     var inp = document.getElementById('msCalMm');
     var mm = parseFloat(inp && inp.value);
     if (isNaN(mm) || mm < 0) { _toast('⚠ Ingresá los mm de desvío', { error: true }); return; }
-    aplicarDrift(mm, 10).then(function() { if (inp) inp.value = ''; setTimeout(_calRefrescar, 800); });
+    // [v2.43.161] Leer dirección seleccionada (default 'arriba').
+    var dirInputs = document.querySelectorAll('input[name="msCalDir"]');
+    var direccion = 'arriba';
+    dirInputs.forEach(function(r) { if (r.checked) direccion = r.value; });
+    aplicarDrift(mm, 10, direccion).then(function() {
+      if (inp) inp.value = '';
+      setTimeout(_calRefrescar, 800);
+      setTimeout(_rolloRefrescarBanners, 1000);
+    });
+  }
+  function _calResetEmergencia() {
+    if (!confirm('🆘 ¿Resetear drift y offset a 0?\n\n'
+      + 'Esto limpia la compensación acumulada que pueda estar rompiendo los adhesivos. '
+      + 'No gasta etiquetas. Después podés re-medir desde cero imprimiendo 10 calibradores.')) return;
+    resetearDriftEmergencia().then(function() {
+      setTimeout(_calRefrescar, 800);
+      setTimeout(_rolloRefrescarBanners, 1000);
+    });
   }
   function _calCerrar() {
     var ov = document.getElementById('msCalOverlay');
@@ -1544,6 +1592,7 @@
     estadoCalibracion:    estadoCalibracion,
     calibrarRollo:        calibrarRollo,
     aplicarDrift:         aplicarDrift,
+    resetearDriftEmergencia: resetearDriftEmergencia,  // [v2.43.161]
     cerrarModal:          cerrarModal,
     estadoActual:         estadoActual,
     sonidos:              sonidos,
@@ -1566,6 +1615,7 @@
     _calCambiarRollo:     _calCambiarRollo,
     _calImprimirCals:     _calImprimirCals,
     _calAplicarMm:        _calAplicarMm,
+    _calResetEmergencia:  _calResetEmergencia,  // [v2.43.161]
     _calCerrar:           _calCerrar,
     _colaBusqInput:       _colaBusqInput,
     _colaAgregar:         _colaAgregar,
