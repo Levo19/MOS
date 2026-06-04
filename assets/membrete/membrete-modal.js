@@ -707,9 +707,23 @@
   }
 
   // ── MENÚ rápido para card de producto (ME o WH) ──────────────
+  // [v1.2 FIX] Si la app NO es MOS (admin), auto-imprime el tipo correcto
+  // sin mostrar menú. Solo MOS muestra el menú con ambas opciones.
   function abrirMenuProductoCard(producto) {
     _injectCss();
     sonidos.click();
+    // Auto-imprimir según origen: WH→andamio, ME→góndola
+    if (_config.origen === 'WH') {
+      window._msMenuProd = producto;
+      _menuImprimir('MEMBRETE_WH');
+      return;
+    }
+    if (_config.origen === 'ME') {
+      window._msMenuProd = producto;
+      _menuImprimir('MEMBRETE_ME');
+      return;
+    }
+    // Solo MOS muestra el menú con ambas opciones
     if (document.getElementById('msMenuOverlay')) return;
     var precio = parseFloat(producto.precio || producto.precioVenta) || 0;
     document.body.insertAdjacentHTML('beforeend', ''
