@@ -992,7 +992,16 @@
     _alertCargar();
   }
   function _alertCargar() {
-    _api('getMembretesMePendientes', { limit: 50 }).then(function(d) {
+    // [v1.7 FIX] Timeout + catch para no quedar 'cargando…' indefinidamente
+    // si el endpoint no existe en el deployment (ej: backend WH llamando un
+    // endpoint que sólo existe en MOS).
+    var timeoutP = new Promise(function(_, reject) {
+      setTimeout(function() { reject(new Error('Timeout · sin respuesta del backend')); }, 10000);
+    });
+    Promise.race([
+      _api('getMembretesMePendientes', { limit: 50 }),
+      timeoutP
+    ]).then(function(d) {
       var items = (d && d.items) || [];
       window._msAlerts = items;
       var body = document.getElementById('msAlertBody');
@@ -1021,6 +1030,12 @@
           +   '</div>'
           + '</label>';
       }).join('');
+    }).catch(function(e) {
+      // [v1.7 FIX] Mostrar error en vez de quedar cargando
+      var body = document.getElementById('msAlertBody');
+      var sub  = document.getElementById('msAlertSub');
+      if (sub) sub.textContent = 'error';
+      if (body) body.innerHTML = '<div class="ms-err" style="text-align:center;padding:20px">⚠ ' + _escapeHtml(e.message || 'error backend') + '<div style="font-size:11px;color:#64748b;margin-top:6px">El endpoint getMembretesMePendientes solo existe en MOS. Si abriste desde WH, esta función no aplica.</div></div>';
     });
   }
   function _alertSeleccionados() {
@@ -1079,8 +1094,12 @@
   }
 
   // ── Badge flotante de alertas precio (auto-refresh cada 60s) ────
+  // [v1.7 FIX] Solo aplica en MOS y ME (el endpoint getMembretesMePendientes
+  // vive en MOS). En WH no tiene sentido — el operario de almacén no maneja precios.
   var _badgeAlertasTimer = null;
   function arrancarBadgeAlertas() {
+    // Saltar si origen es WH (alertas de precio son admin/cajero, no almacén)
+    if (_config.origen === 'WH') return;
     // [v1.2 FIX] Si ya hay timer, limpiarlo antes de crear nuevo (idempotente)
     if (_badgeAlertasTimer) { try { clearInterval(_badgeAlertasTimer); } catch(_){} _badgeAlertasTimer = null; }
     var refresh = function() {

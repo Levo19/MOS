@@ -1,1 +1,1 @@
-{ "version": "2.43.147", "build": "20260604-imprimirAdhesivoEnvasado-tambien-paralelo" }
+{ "version": "2.43.148", "build": "20260604-quita-membreteview-legacy-fix-alert-cargar-loop" }
