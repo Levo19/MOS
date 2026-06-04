@@ -210,13 +210,16 @@ function getSeguridadAlertas(params) {
     if (params.tipo) items = items.filter(function(it) { return String(it.tipo) === String(params.tipo); });
     // Ordenar por fecha desc (más nuevas primero)
     items.sort(function(a, b) { return String(b.fecha).localeCompare(String(a.fecha)); });
-    if (params.limit) items = items.slice(0, parseInt(params.limit));
+    // [v2.43.137 FIX] count = total de pendientes antes del slice por limit.
+    // Antes con limit:1 devolvía count:1 aunque hubiera 100 reales → badge mostraba "1 alerta".
+    var totalCount = items.length;
     var porTipo = {};
     items.forEach(function(it) {
       var k = String(it.tipo || 'OTRO');
       porTipo[k] = (porTipo[k] || 0) + 1;
     });
-    return { ok: true, data: { items: items, count: items.length, porTipo: porTipo } };
+    if (params.limit) items = items.slice(0, parseInt(params.limit));
+    return { ok: true, data: { items: items, count: totalCount, porTipo: porTipo } };
   } catch(e) { return { ok: false, error: e.message }; }
 }
 
@@ -245,6 +248,8 @@ function desbloquearTemporalDispositivo(params) {
     }
     _garantizarColumnasDispositivosExtendidas(true);  // ya estamos dentro del lock
     var sheet = SpreadsheetApp.openById(SS_ID).getSheetByName('DISPOSITIVOS');
+    // [v2.43.137 FIX] Guard: sheet puede ser null en deployment fresco sin setup
+    if (!sheet) return { ok: false, error: 'Sheet DISPOSITIVOS no creada. Ejecuta setupTodoSeguridad() primero.' };
     var data  = sheet.getDataRange().getValues();
     var hdrs  = data[0];
     var iId   = hdrs.indexOf('ID_Dispositivo');
@@ -343,6 +348,8 @@ function reactivarDispositivoSuspendido(params) {
       }
     }
     var sheet = SpreadsheetApp.openById(SS_ID).getSheetByName('DISPOSITIVOS');
+    // [v2.43.137 FIX] Guard sheet null
+    if (!sheet) return { ok: false, error: 'Sheet DISPOSITIVOS no creada' };
     var data = sheet.getDataRange().getValues();
     var hdrs = data[0];
     var iId = hdrs.indexOf('ID_Dispositivo');
