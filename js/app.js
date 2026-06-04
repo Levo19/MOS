@@ -18151,7 +18151,7 @@ const MOS = (() => {
         API.get('getPersonalMaster', { appOrigen: 'MOS' }).then(r => { if (r) { cfgData.personalMOS = r; _cfgSaveCache('personalMOS', r); } }).catch(() => {}),
         API.get('getVendedoresMEBloqueados', {}).then(r => { if (r) { cfgData.bloqueosME = r; _cfgSaveCache('bloqueosME', r); } }).catch(() => {}),
         API.get('getSeries', {}).then(r => { if (r) { cfgData.series = r; _cfgSaveCache('series', r); } }).catch(() => {}),
-        API.get('getDispositivos', {}).then(r => { if (r) { cfgData.dispositivos = r; _cfgSaveCache('dispositivos', r); } }).catch(() => {}),
+        API.get('getDispositivos', {}).then(r => { if (r) { cfgData.dispositivos = _dispAplicarShield(r); _cfgSaveCache('dispositivos', cfgData.dispositivos); } }).catch(() => {}),
         API.get('getCategorias', {}).then(r => { if (r) { cfgData.categorias = r; _cfgSaveCache('categorias', r); } }).catch(() => {}),
         API.get('getConfig', {}).then(r => { if (r) { cfgData.config = r; _cfgSaveCache('config', r); } }).catch(() => {})
       ];
@@ -18189,14 +18189,14 @@ const MOS = (() => {
       // Por pestaña
       if (tab === 'infra') {
         tasks.push(API.get('getImpresoras', {}).then(r => { if (r) { cfgData.impresoras = r; _cfgSaveCache('impresoras', r); } }).catch(() => {}));
-        tasks.push(API.get('getDispositivos', {}).then(r => { if (r) { cfgData.dispositivos = r; _cfgSaveCache('dispositivos', r); } }).catch(() => {}));
+        tasks.push(API.get('getDispositivos', {}).then(r => { if (r) { cfgData.dispositivos = _dispAplicarShield(r); _cfgSaveCache('dispositivos', cfgData.dispositivos); } }).catch(() => {}));
         tasks.push(API.get('getSeries', {}).then(r => { if (r) { cfgData.series = r; _cfgSaveCache('series', r); } }).catch(() => {}));
       }
       if (tab === 'personal') {
         tasks.push(API.get('getPersonalMaster', { appOrigen: 'warehouseMos' }).then(r => { if (r) { cfgData.personal = r; _cfgSaveCache('personal', r); } }).catch(() => {}));
         tasks.push(API.get('getPersonalMaster', { appOrigen: 'MOS' }).then(r => { if (r) { cfgData.personalMOS = r; _cfgSaveCache('personalMOS', r); } }).catch(() => {}));
         tasks.push(API.get('getVendedoresMEBloqueados', {}).then(r => { if (r) { cfgData.bloqueosME = r; _cfgSaveCache('bloqueosME', r); } }).catch(() => {}));
-        tasks.push(API.get('getDispositivos', {}).then(r => { if (r) { cfgData.dispositivos = r; _cfgSaveCache('dispositivos', r); } }).catch(() => {}));
+        tasks.push(API.get('getDispositivos', {}).then(r => { if (r) { cfgData.dispositivos = _dispAplicarShield(r); _cfgSaveCache('dispositivos', cfgData.dispositivos); } }).catch(() => {}));
       }
       if (tab === 'categorias') {
         tasks.push(API.get('getCategorias', {}).then(r => { if (r) { cfgData.categorias = r; _cfgSaveCache('categorias', r); } }).catch(() => {}));
@@ -27764,6 +27764,12 @@ const MOS = (() => {
   // - Nombre por default = el que vino del User-Agent (ej "Windows · Chrome").
   // - Si pasamos { renombrar: true } abre prompt para editarlo.
   // - Animación slide-out del card + sonido + toast inmediato.
+  // [v2.43.155] Shield optimista: protege el estado ACTIVO de un dispositivo
+  // recién aprobado durante 10s contra el polling de getDispositivos que
+  // podría traer aún el estado viejo PENDIENTE_APROBACION del backend.
+  // Causa raíz reportada por el usuario: 'aprueba pero vuelve a por aprobar'.
+  if (!S._dispShield) S._dispShield = {};
+
   async function aprobarDispositivo(id, opts) {
     opts = opts || {};
     const d = cfgData.dispositivos.find(x => x.ID_Dispositivo === id);
@@ -27789,6 +27795,9 @@ const MOS = (() => {
     const previo = d.Estado;
     d.Estado = 'ACTIVO';
     d.Nombre_Equipo = nombre;
+    // [v2.43.155] Activar shield por 10s: el polling NO podrá pisar el estado
+    // ACTIVO de este dispositivo hasta que el backend lo confirme.
+    S._dispShield[id] = { estado: 'ACTIVO', nombre: nombre, hasta: Date.now() + 10000 };
     // Esperar la animación antes del re-render para que se vea desaparecer
     setTimeout(() => renderInfra(), 320);
     try {
@@ -27796,11 +27805,35 @@ const MOS = (() => {
         ID_Dispositivo: id,
         Nombre_Equipo: nombre
       });
+      // Extender shield 3s más para asegurar que el siguiente polling traiga ACTIVO real
+      S._dispShield[id].hasta = Date.now() + 3000;
     } catch(e) {
+      // Rollback: quitar shield y restaurar estado previo
+      delete S._dispShield[id];
       d.Estado = previo;
       renderInfra();
       toast(e.message || 'Error al aprobar', 'error');
     }
+  }
+  // [v2.43.155] Aplicar shield a la lista de dispositivos que llega del backend.
+  // El polling llama getDispositivos y reemplaza cfgData.dispositivos completo;
+  // pasamos el array por este helper antes de asignar para preservar los
+  // recién aprobados en estado ACTIVO durante el shield window.
+  function _dispAplicarShield(arr) {
+    if (!Array.isArray(arr) || !S._dispShield) return arr;
+    const ahora = Date.now();
+    const expirados = [];
+    Object.keys(S._dispShield).forEach(id => {
+      const sh = S._dispShield[id];
+      if (!sh || sh.hasta < ahora) { expirados.push(id); return; }
+      const idx = arr.findIndex(x => String(x.ID_Dispositivo) === String(id));
+      if (idx >= 0) {
+        // Preservar estado + nombre optimistas
+        arr[idx] = { ...arr[idx], Estado: sh.estado, Nombre_Equipo: sh.nombre };
+      }
+    });
+    expirados.forEach(id => delete S._dispShield[id]);
+    return arr;
   }
 
   // Variante: aprobar pero pidiendo nombre antes (botón ✎ Renombrar).
@@ -31400,7 +31433,7 @@ const MOS = (() => {
     }).catch(() => {});
     // Dispositivos (infraestructura)
     API.get('getDispositivos', {}).then(r => {
-      if (Array.isArray(r)) cfgData.dispositivos = r;
+      if (Array.isArray(r)) cfgData.dispositivos = _dispAplicarShield(r);
     }).catch(() => {});
     // Zonas + Estaciones + Impresoras (infra)
     API.get('getZonas',     {}).then(r => { if (Array.isArray(r)) cfgData.zonas = r; }).catch(() => {});
