@@ -154,17 +154,30 @@ function setupTodoSeguridad() {
   return diagnosticoSetupSeguridad();
 }
 
-// Auto-añade Fecha_Caducidad + Desbloqueo_Temporal_Hasta a DISPOSITIVOS
-function _garantizarColumnasDispositivosExtendidas() {
-  var sheet = SpreadsheetApp.openById(SS_ID).getSheetByName('DISPOSITIVOS');
-  if (!sheet) return;
-  var hdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  var needed = ['Fecha_Caducidad', 'Desbloqueo_Temporal_Hasta'];
-  var missing = needed.filter(function(h) { return hdrs.indexOf(h) < 0; });
-  if (missing.length) {
-    var startCol = sheet.getLastColumn() + 1;
-    sheet.getRange(1, startCol, 1, missing.length).setValues([missing]);
-    Logger.log('[_garantizarColumnasDispositivosExtendidas] agregadas: ' + missing.join(', '));
+// Auto-añade Fecha_Caducidad + Desbloqueo_Temporal_Hasta a DISPOSITIVOS.
+// [v2.43.136 FIX] Acepta flag _lockHeld para evitar deadlock cuando el caller
+// ya tiene el script lock (Apps Script LockService NO es re-entrant).
+function _garantizarColumnasDispositivosExtendidas(_lockHeld) {
+  var _lock = null;
+  if (!_lockHeld) {
+    _lock = LockService.getScriptLock();
+    try { _lock.waitLock(15000); } catch(e) { return; }
+  }
+  try {
+    var sheet = SpreadsheetApp.openById(SS_ID).getSheetByName('DISPOSITIVOS');
+    if (!sheet) return;
+    // Double-check pattern: leer hdrs FRESH antes de escribir
+    var hdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var needed = ['Fecha_Caducidad', 'Desbloqueo_Temporal_Hasta'];
+    var missing = needed.filter(function(h) { return hdrs.indexOf(h) < 0; });
+    if (missing.length) {
+      var startCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, startCol, 1, missing.length).setValues([missing]);
+      SpreadsheetApp.flush();  // serializar
+      Logger.log('[_garantizarColumnasDispositivosExtendidas] agregadas: ' + missing.join(', '));
+    }
+  } finally {
+    if (_lock) { try { _lock.releaseLock(); } catch(_){} }
   }
 }
 
@@ -230,7 +243,7 @@ function desbloquearTemporalDispositivo(params) {
     if (duracionHoras < 0.5 || duracionHoras > 12) {
       return { ok: false, error: 'duracionHoras debe estar entre 0.5 y 12' };
     }
-    _garantizarColumnasDispositivosExtendidas();
+    _garantizarColumnasDispositivosExtendidas(true);  // ya estamos dentro del lock
     var sheet = SpreadsheetApp.openById(SS_ID).getSheetByName('DISPOSITIVOS');
     var data  = sheet.getDataRange().getValues();
     var hdrs  = data[0];
@@ -551,17 +564,20 @@ function _extenderHorarioHoyApp(params) {
 // Revisa Properties EXT_HORARIO_HOY_<app> y restaura cierreOriginal; revisa
 // PERSONAL_MASTER.horarioCustom.extensionHoy y limpia el día extendido.
 function revertirExtensionesDiarias() {
-  // [v2.43.132 FIX] Guard contra doble ejecución el mismo día (re-deploys, retry manual)
+  // [v2.43.136 FIX] Lock PRIMERO, guard idempotencia DESPUÉS (dentro del lock)
+  // para evitar race donde 2 procesos pasan el guard antes de que el primero
+  // setee REVERTIR_EXT_ULTIMA_FECHA.
+  var _lock = LockService.getScriptLock();
+  try { _lock.waitLock(15000); } catch(e) { return { ok: false, error: 'Sistema ocupado' }; }
   var _props = PropertiesService.getScriptProperties();
   var _tz = Session.getScriptTimeZone();
   var _hoyKey = Utilities.formatDate(new Date(), _tz, 'yyyy-MM-dd');
   var _ult = _props.getProperty('REVERTIR_EXT_ULTIMA_FECHA') || '';
   if (_ult === _hoyKey) {
+    try { _lock.releaseLock(); } catch(_){}
     Logger.log('[revertirExtensionesDiarias] Ya ejecutado hoy (' + _hoyKey + '), skip');
     return { ok: true, revertidas: 0, skipped: true };
   }
-  var _lock = LockService.getScriptLock();
-  try { _lock.waitLock(15000); } catch(e) { return { ok: false, error: 'Sistema ocupado' }; }
   var revertidas = 0;
   try {
     // A) Apps

@@ -540,18 +540,29 @@ function _notificarAprobacionDispositivo(deviceId, app, nombreEquipo, aprobadoPo
   } catch (e) { Logger.log('Push aprobación falló: ' + e.message); }
 }
 
-function _garantizarColumnasDispositivos() {
-  var sheet = getSheet('DISPOSITIVOS');
-  var data = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues();
-  var hdrs = (data[0] || []).map(function(h) { return String(h).trim(); });
-  var faltan = _DISP_COLS_EXTRA.filter(function(c) { return hdrs.indexOf(c) === -1; });
-  if (faltan.length > 0) {
-    var startCol = sheet.getLastColumn() + 1;
-    sheet.getRange(1, startCol, 1, faltan.length).setValues([faltan]);
-    sheet.getRange(1, startCol, 1, faltan.length)
-         .setFontWeight('bold').setBackground('#1f2937').setFontColor('#fff');
+function _garantizarColumnasDispositivos(_lockHeld) {
+  // [v2.43.136 FIX] Lock opt-in para evitar race entre callers concurrentes
+  var _lock = null;
+  if (!_lockHeld) {
+    _lock = LockService.getScriptLock();
+    try { _lock.waitLock(15000); } catch(e) { /* continúa sin lock; mejor algo que nada */ }
   }
-  return sheet;
+  try {
+    var sheet = getSheet('DISPOSITIVOS');
+    var data = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues();
+    var hdrs = (data[0] || []).map(function(h) { return String(h).trim(); });
+    var faltan = _DISP_COLS_EXTRA.filter(function(c) { return hdrs.indexOf(c) === -1; });
+    if (faltan.length > 0) {
+      var startCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, startCol, 1, faltan.length).setValues([faltan]);
+      sheet.getRange(1, startCol, 1, faltan.length)
+           .setFontWeight('bold').setBackground('#1f2937').setFontColor('#fff');
+      SpreadsheetApp.flush();
+    }
+    return sheet;
+  } finally {
+    if (_lock) { try { _lock.releaseLock(); } catch(_){} }
+  }
 }
 
 /**
@@ -1124,7 +1135,7 @@ function aprobarDispositivoPendiente(params) {
   var _lock = LockService.getScriptLock();
   try { _lock.waitLock(15000); } catch(e) { return { ok: false, error: 'Sistema ocupado' }; }
   try {
-    _garantizarColumnasDispositivos();
+    _garantizarColumnasDispositivos(true);  // ya estamos dentro del lock
     if (!params.ID_Dispositivo) return { ok: false, error: 'Requiere ID_Dispositivo' };
     var sheet = getSheet('DISPOSITIVOS');
     var data  = sheet.getDataRange().getValues();
