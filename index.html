@@ -12582,7 +12582,20 @@
     <!-- Desktop page header -->
     <div class="hidden lg:flex items-center justify-between mb-6">
       <h1 id="pageTitleDesktop" class="text-2xl font-bold text-white">Dashboard</h1>
-      <button onclick="MOS.refresh()" class="btn-ghost text-xs px-3 py-1.5">↺ Actualizar</button>
+      <div class="flex items-center gap-2">
+        <!-- [v2.43.131] Sistema centralizado seguridad: alertas + horarios -->
+        <button id="btnSegAlertasAdmin"
+                onclick="if(window.SeguridadSystem){SeguridadSystem.abrirModalAlertas()}"
+                class="btn-ghost text-xs px-3 py-1.5"
+                style="display:none"
+                title="Gestionar dispositivos y alertas de seguridad">🛡 Seguridad</button>
+        <button id="btnSegHorariosAdmin"
+                onclick="if(window.SeguridadSystem){SeguridadSystem.abrirModalConfigHorarios()}"
+                class="btn-ghost text-xs px-3 py-1.5"
+                style="display:none"
+                title="Configurar horarios de apps + excepciones + extender hoy">🕐 Horarios</button>
+        <button onclick="MOS.refresh()" class="btn-ghost text-xs px-3 py-1.5">↺ Actualizar</button>
+      </div>
     </div>
 
 

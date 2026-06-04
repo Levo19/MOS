@@ -234,6 +234,16 @@ const MOS = (() => {
         // Badge alertas para admin/master (los demás ven el ícono pero count=0)
         setTimeout(function() {
           try { window.SeguridadSystem.arrancarBadgeAlertas(); } catch(_) {}
+          // [v2.43.131] Mostrar botones "🛡 Seguridad" y "🕐 Horarios" solo a MASTER/ADMIN
+          try {
+            var rol = String((window.S && S.session && S.session.rol) || '').toUpperCase();
+            if (rol === 'MASTER' || rol === 'ADMINISTRADOR') {
+              var b1 = document.getElementById('btnSegAlertasAdmin');
+              var b2 = document.getElementById('btnSegHorariosAdmin');
+              if (b1) b1.style.display = '';
+              if (b2) b2.style.display = '';
+            }
+          } catch(_) {}
         }, 2500);
       }
     } catch(_) {}

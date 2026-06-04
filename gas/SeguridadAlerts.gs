@@ -130,6 +130,19 @@ function diagnosticoSetupSeguridad() {
   return { ok: true, data: { allOk: allOk, checks: checks } };
 }
 
+// [v2.43.131] Helper: corre el diagnóstico y LOGUEA el resultado completo
+// (el return de funciones no aparece en el "Registro de ejecución").
+function verDiagnosticoSeguridad() {
+  var r = diagnosticoSetupSeguridad();
+  Logger.log('═══ DIAGNÓSTICO SEGURIDAD ═══');
+  Logger.log('allOk: ' + (r.data && r.data.allOk));
+  (r.data && r.data.checks || []).forEach(function(c) {
+    Logger.log((c.ok ? '✅' : '❌') + ' ' + c.check + (c.valor ? ' [' + c.valor + ']' : ''));
+  });
+  Logger.log('═══════════════════════════════');
+  return r;
+}
+
 function setupTodoSeguridad() {
   setupSeguridadAlertas();
   _garantizarColumnasDispositivosExtendidas();
