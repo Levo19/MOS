@@ -32,6 +32,67 @@
     catalogoProvider: null  // function() { return { productos: [...], equivalencias: [...] } }
   };
 
+  // ── [v1.10] Cache de prefetch (TTL 60s) — UX optimista ─────
+  // Al login se llaman los endpoints en paralelo y se guardan acá.
+  // Los modales muestran el cache instantáneo + refrescan en background.
+  var _cache = {
+    calibracion:    { ts: 0, data: null, inFlight: false },
+    alertasPrecio:  { ts: 0, data: null, inFlight: false },
+    lotesHistorial: { ts: 0, data: null, inFlight: false }
+  };
+  var CACHE_TTL_MS = 60000;  // 1 minuto
+
+  // Helper: obtener datos del cache o hacer fetch nuevo. Si hay cache fresco
+  // ejecuta onCache() inmediato. Si no o si está stale, hace fetch en background.
+  function _conCache(key, fetcher, onCache, onFresh) {
+    var slot = _cache[key];
+    var ahora = Date.now();
+    var freshAge = ahora - slot.ts;
+    // Si hay cache (aunque sea stale), entregar inmediato
+    if (slot.data) {
+      try { onCache && onCache(slot.data, freshAge < CACHE_TTL_MS); } catch(_) {}
+    }
+    // Si está fresh y no se pidió forzar, listo
+    if (freshAge < CACHE_TTL_MS && !slot.inFlight) {
+      try { onFresh && onFresh(slot.data); } catch(_) {}
+      return Promise.resolve(slot.data);
+    }
+    if (slot.inFlight) return slot.inFlight;
+    slot.inFlight = fetcher().then(function(d) {
+      slot.data = d;
+      slot.ts = Date.now();
+      slot.inFlight = false;
+      try { onFresh && onFresh(d); } catch(_) {}
+      return d;
+    }).catch(function(e) {
+      slot.inFlight = false;
+      throw e;
+    });
+    return slot.inFlight;
+  }
+
+  // [v1.10] Prefetch al login — carga los 3 endpoints en paralelo en background.
+  // Se llama desde iniciar() automático tras inyectar config.
+  function prefetchTodo() {
+    try {
+      // Calibración (no aplica para ME — solo MOS/WH manejan rollo)
+      if (_config.origen !== 'ME') {
+        _conCache('calibracion', function() { return _api('estadoCalibracionRollo', {}); });
+      }
+      // Alertas precio (solo MOS y ME — WH no maneja precios)
+      if (_config.origen !== 'WH') {
+        _conCache('alertasPrecio', function() { return _api('getMembretesMePendientes', { limit: 50 }); });
+      }
+      // Lotes historial — sin filtro (todos los tipos)
+      _conCache('lotesHistorial', function() {
+        return Promise.all([
+          _api('getLotesAdhesivoHistorial', { tipoEtiqueta: '', limit: 30 }),
+          _api('diagnosticoTriggerLotes', {}).catch(function() { return null; })
+        ]).then(function(arr) { return { historial: arr[0], diag: arr[1] }; });
+      });
+    } catch(_) {}
+  }
+
   // ── Estado del lote en curso ────────────────────────────────
   var _state = null;
   // _state = { idLote, total, completadas, status, tipo, descripcion, tInicio }
@@ -344,6 +405,12 @@
       Object.keys(config).forEach(function(k) { _config[k] = config[k]; });
     }
     _injectCss();
+    // [v1.10] Prefetch optimista: cargar datos de los 3 modales en background
+    // tras 1.5s del login para no competir con el load inicial de la app.
+    // El usuario los abre y los ve instantáneo desde cache.
+    setTimeout(function() {
+      try { prefetchTodo(); } catch(_) {}
+    }, 1500);
   }
 
   // Imprimir lote de adhesivos de envasado (legacy, mantiene compat)
@@ -512,9 +579,22 @@
     _calRefrescar();
   }
   function _calRefrescar() {
-    estadoCalibracion().then(function(d) {
+    // [v1.10] Optimista: render desde cache si existe, refrescar en background
+    var render = function(d) {
       var body = document.getElementById('msCalBody');
-      if (!body) return;
+      if (!body || !d) return;
+      _renderCalibradorBody(body, d);
+    };
+    _conCache('calibracion',
+      function() { return estadoCalibracion(); },
+      function(cached) { render(cached); },                   // onCache
+      function(fresh)  { render(fresh); }                      // onFresh
+    ).catch(function(e) {
+      var body = document.getElementById('msCalBody');
+      if (body) body.innerHTML = '<div class="ms-err">⚠ ' + _escapeHtml(e.message) + '</div>';
+    });
+  }
+  function _renderCalibradorBody(body, d) {
       var calibrado    = d.calibrado;
       var driftDots    = parseFloat(d.driftDotsPorPrint) || 0;
       var driftMm      = +(driftDots / 8).toFixed(2);
@@ -563,10 +643,6 @@
         + '</div>'
         + '<div style="height:1px;background:#1e293b;margin:6px 0"></div>'
         + '<button class="ms-btn ms-btn-warn" onclick="MembreteSystem._calCerrar()">Cerrar</button>';
-    }).catch(function(e) {
-      var body = document.getElementById('msCalBody');
-      if (body) body.innerHTML = '<div class="ms-err">⚠ Error: ' + _escapeHtml(e.message) + '</div>';
-    });
   }
   function _calCambiarRollo() {
     if (!confirm('¿Calibrar rollo nuevo?\n\nGasta ~3 etiquetas en blanco mientras la impresora mide el GAP físico. Después reseteamos contador y drift.')) return;
@@ -943,30 +1019,54 @@
     var tipoFiltro = ov.getAttribute('data-tipo') || '';
     var body = document.getElementById('msHistBody');
     var sub  = document.getElementById('msHistSub');
-    if (body) body.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px"><span style="display:inline-block;animation:ms-spin 1s linear infinite">◐</span> cargando…</div>';
-    // [v1.5 FIX] Promise.race con timeout 12s para evitar modal infinito en red lenta
-    var timeoutPromise = new Promise(function(_, reject) {
-      setTimeout(function() { reject(new Error('Timeout 12s · red lenta')); }, 12000);
-    });
-    Promise.race([
-      Promise.all([
-        _api('getLotesAdhesivoHistorial', { tipoEtiqueta: tipoFiltro, limit: 30 }),
-        _api('diagnosticoTriggerLotes', {}).catch(function() { return null; })
-      ]),
-      timeoutPromise
-    ]).then(function(arr) {
-      // [v1.5 FIX] Re-check si el modal sigue abierto (usuario pudo cerrarlo)
-      var ovStill = document.getElementById('msHistOverlay');
-      var bodyStill = document.getElementById('msHistBody');
-      if (!ovStill || !bodyStill) return;
-      // Re-asignar body para escribir en el DOM actual
-      body = bodyStill;
-      sub  = document.getElementById('msHistSub');
-      var d = arr[0] || {};
-      var diag = arr[1];
+    // [v1.10] Optimista: si hay cache, NO mostrar spinner — render directo.
+    // Si no hay cache, sí mostrar spinner mientras espera el fetch.
+    var slot = _cache.lotesHistorial;
+    if (!slot.data && body) {
+      body.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px"><span style="display:inline-block;animation:ms-spin 1s linear infinite">◐</span> cargando…</div>';
+    }
+    var render = function(payload) {
+      var d = (payload && payload.historial) || {};
+      var diag = payload && payload.diag;
       var pendientes = (d && d.pendientes) || [];
-      var historial  = (d && d.historial) || [];
-      if (sub) sub.textContent = pendientes.length + ' en curso · ' + historial.length + ' completados';
+      var historial = (d && d.historial) || [];
+      // Aplicar filtro local del lado cliente si tipoFiltro no es vacío
+      if (tipoFiltro) {
+        pendientes = pendientes.filter(function(x) { return String(x.tipoEtiqueta || '').toUpperCase() === tipoFiltro; });
+        historial  = historial.filter(function(x) { return String(x.tipoEtiqueta || '').toUpperCase() === tipoFiltro; });
+      }
+      _renderHistorialBody({ pendientes: pendientes, historial: historial, diag: diag });
+    };
+    _conCache('lotesHistorial',
+      function() {
+        var timeoutPromise = new Promise(function(_, reject) {
+          setTimeout(function() { reject(new Error('Timeout 12s · red lenta')); }, 12000);
+        });
+        return Promise.race([
+          Promise.all([
+            _api('getLotesAdhesivoHistorial', { tipoEtiqueta: '', limit: 30 }),
+            _api('diagnosticoTriggerLotes', {}).catch(function() { return null; })
+          ]).then(function(arr) { return { historial: arr[0], diag: arr[1] }; }),
+          timeoutPromise
+        ]);
+      },
+      function(cached) { render(cached); },
+      function(fresh)  { render(fresh); }
+    ).catch(function(e) {
+      var b = document.getElementById('msHistBody');
+      if (b) b.innerHTML = '<div class="ms-err">⚠ ' + _escapeHtml(e.message) + '</div>';
+    });
+  }
+  // [v1.10] Refactor: renderHistorialBody recibe payload ya filtrado
+  function _renderHistorialBody(arg) {
+    var ovStill = document.getElementById('msHistOverlay');
+    var body = document.getElementById('msHistBody');
+    var sub  = document.getElementById('msHistSub');
+    if (!ovStill || !body) return;
+    var pendientes = (arg && arg.pendientes) || [];
+    var historial  = (arg && arg.historial) || [];
+    var diag = arg && arg.diag;
+    if (sub) sub.textContent = pendientes.length + ' en curso · ' + historial.length + ' completados';
       // Si trigger NO está instalado y hay encolados → mostrar banner crítico
       var bannerTrigger = '';
       if (diag && diag.triggerInstalado === false) {
@@ -1035,9 +1135,6 @@
         html = '<div style="text-align:center;color:#64748b;padding:30px 0;font-size:13px">— sin lotes registrados —</div>';
       }
       if (body) body.innerHTML = bannerTrigger + html;
-    }).catch(function(e) {
-      if (body) body.innerHTML = '<div class="ms-err">⚠ ' + _escapeHtml(e.message) + '</div>';
-    });
   }
   function _histCerrar() {
     var ov = document.getElementById('msHistOverlay');
@@ -1098,16 +1195,26 @@
     _alertCargar();
   }
   function _alertCargar() {
-    // [v1.7 FIX] Timeout + catch para no quedar 'cargando…' indefinidamente
-    // si el endpoint no existe en el deployment (ej: backend WH llamando un
-    // endpoint que sólo existe en MOS).
-    var timeoutP = new Promise(function(_, reject) {
-      setTimeout(function() { reject(new Error('Timeout · sin respuesta del backend')); }, 10000);
+    // [v1.10] Optimista con cache prefetched
+    var render = function(d) { _renderAlertasBody(d); };
+    _conCache('alertasPrecio',
+      function() {
+        // Fetch con timeout 10s para no colgarse
+        var timeoutP = new Promise(function(_, reject) {
+          setTimeout(function() { reject(new Error('Timeout · sin respuesta del backend')); }, 10000);
+        });
+        return Promise.race([_api('getMembretesMePendientes', { limit: 50 }), timeoutP]);
+      },
+      function(cached) { render(cached); },
+      function(fresh)  { render(fresh); }
+    ).catch(function(e) {
+      var body = document.getElementById('msAlertBody');
+      var sub  = document.getElementById('msAlertSub');
+      if (sub) sub.textContent = 'error';
+      if (body) body.innerHTML = '<div class="ms-err" style="text-align:center;padding:20px">⚠ ' + _escapeHtml(e.message || 'error backend') + '<div style="font-size:11px;color:#64748b;margin-top:6px">El endpoint getMembretesMePendientes solo existe en MOS. Si abriste desde WH, esta función no aplica.</div></div>';
     });
-    Promise.race([
-      _api('getMembretesMePendientes', { limit: 50 }),
-      timeoutP
-    ]).then(function(d) {
+  }
+  function _renderAlertasBody(d) {
       var items = (d && d.items) || [];
       window._msAlerts = items;
       var body = document.getElementById('msAlertBody');
@@ -1136,13 +1243,13 @@
           +   '</div>'
           + '</label>';
       }).join('');
-    }).catch(function(e) {
-      // [v1.7 FIX] Mostrar error en vez de quedar cargando
+  }
+  function _alertCargarLegacyErr(e) {
+      // catch genérico (compatibilidad — el manejo nuevo está en _alertCargar arriba)
       var body = document.getElementById('msAlertBody');
       var sub  = document.getElementById('msAlertSub');
       if (sub) sub.textContent = 'error';
-      if (body) body.innerHTML = '<div class="ms-err" style="text-align:center;padding:20px">⚠ ' + _escapeHtml(e.message || 'error backend') + '<div style="font-size:11px;color:#64748b;margin-top:6px">El endpoint getMembretesMePendientes solo existe en MOS. Si abriste desde WH, esta función no aplica.</div></div>';
-    });
+      if (body) body.innerHTML = '<div class="ms-err" style="text-align:center;padding:20px">⚠ ' + _escapeHtml(e.message || 'error backend') + '</div>';
   }
   function _alertSeleccionados() {
     var sel = [];
