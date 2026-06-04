@@ -13220,21 +13220,30 @@
                   title="Calibrar impresora de adhesivos (drift compensation)">
             🔧 Calibrar impresora
           </button>
-          <button onclick="window.MembreteSystem && MembreteSystem.abrirCola('MEMBRETE_ME')" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105"
+          <!-- [v2.43.151] Botones de "cola" rediseñados como FILTROS de historial.
+               Antes abrían una cola local (productos seleccionados sin enviar) que
+               siempre estaba vacía si no agregabas productos a mano. Ahora abren
+               el modal Lotes Envasados FILTRADO por tipo para que veas TODOS los
+               lotes de ese tipo (pendientes + completados). -->
+          <button onclick="window.MembreteSystem && MembreteSystem.abrirHistorialLotes('MEMBRETE_ME')" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105"
                   style="background:linear-gradient(135deg,#1e293b,#0a1424);border:1px solid rgba(251,191,36,.45);color:#fbbf24"
-                  title="Cola de membretes para góndola tienda">
-            🏪 Membretes ME (cola)
+                  title="Ver lotes de membretes ME (góndola tienda) — pendientes + historial">
+            🏪 Lotes ME
           </button>
-          <button onclick="window.MembreteSystem && MembreteSystem.abrirCola('MEMBRETE_WH')" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105"
+          <button onclick="window.MembreteSystem && MembreteSystem.abrirHistorialLotes('MEMBRETE_WH')" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105"
                   style="background:linear-gradient(135deg,#1e293b,#0a1424);border:1px solid rgba(251,191,36,.45);color:#fbbf24"
-                  title="Cola de membretes para andamio almacén">
-            📦 Membretes WH (cola)
+                  title="Ver lotes de membretes WH (andamio almacén) — pendientes + historial">
+            📦 Lotes WH
           </button>
-          <!-- [v2.43.143] Nuevo: lotes de adhesivos de envasados (pendientes + historial) -->
           <button onclick="window.MembreteSystem && MembreteSystem.abrirHistorialLotes('ADHESIVO_ENVASADO')" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105"
                   style="background:linear-gradient(135deg,#1e293b,#0a1424);border:1px solid rgba(192,132,252,.45);color:#c084fc"
                   title="Lotes de adhesivos de envasados (en curso + historial)">
             🏭 Lotes Envasados
+          </button>
+          <button onclick="window.MembreteSystem && MembreteSystem.abrirHistorialLotes('')" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105"
+                  style="background:linear-gradient(135deg,#1e293b,#0a1424);border:1px solid rgba(148,163,184,.45);color:#cbd5e1"
+                  title="Ver TODOS los lotes (sin filtrar)">
+            📋 Todos
           </button>
           <button onclick="window.MembreteSystem && MembreteSystem.abrirAlertasPrecio()" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105"
                   style="background:linear-gradient(135deg,#1e293b,#0a1424);border:1px solid rgba(248,113,113,.45);color:#fca5a5"
@@ -18037,9 +18046,9 @@
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
      bumps de sw.js. Bug reportado: usuario seguía viendo error "Lote en curso"
      de v2.43.146 después de v2.43.148. -->
-<script src="./assets/membrete/membrete-modal.js?v=2.43.150"></script>
-<script src="./assets/seguridad/seguridad-modal.js?v=2.43.150"></script>
-<script src="js/app.js?v=2.43.150"></script>
+<script src="./assets/membrete/membrete-modal.js?v=2.43.151"></script>
+<script src="./assets/seguridad/seguridad-modal.js?v=2.43.151"></script>
+<script src="js/app.js?v=2.43.151"></script>
 
 <!-- ── Service Worker + Update Logic ────────────────────── -->
 <script>
