@@ -405,14 +405,22 @@
     if (ov) { ov.style.animation = 'seg-out .22s ease-out forwards'; setTimeout(function(){ ov.remove(); }, 220); }
   }
 
-  // Acciones admin
+  // Acciones admin — optimistas (feedback inmediato + fire-and-forget + rollback en error)
+  var _accionEnVuelo = {};   // lock anti doble-click por deviceId+action
   function _aprobar(id) {
+    var lockKey = 'aprobar_' + id;
+    if (_accionEnVuelo[lockKey]) return;
+    _accionEnVuelo[lockKey] = true;
     sonidos.click();
-    _api('aprobarDispositivoPendiente', { ID_Dispositivo: id, aprobadoPor: _config.usuario() }).then(function() {
-      sonidos.aprobado();
-      _toast('✅ Dispositivo aprobado', { success: true });
-      _alertasCargar();
-    }).catch(function(e) { sonidos.rechazado(); _toast('❌ ' + e.message, { error: true }); });
+    sonidos.aprobado();
+    _toast('✅ Dispositivo aprobado', { success: true });
+    // Optimista: remover de la lista local inmediatamente
+    _alertasState.dispositivos = (_alertasState.dispositivos || []).filter(function(d) { return String(d.ID_Dispositivo) !== String(id); });
+    _alertasRender();
+    _api('aprobarDispositivoPendiente', { ID_Dispositivo: id, aprobadoPor: _config.usuario() })
+      .then(function() { _alertasCargar(); })
+      .catch(function(e) { sonidos.rechazado(); _toast('❌ ' + _esc(e.message), { error: true }); _alertasCargar(); })
+      .then(function() { _accionEnVuelo[lockKey] = false; });
   }
   function _renombrar(id) {
     _modalPrompt({
@@ -427,7 +435,7 @@
         sonidos.aprobado();
         _toast('✅ Dispositivo aprobado como "' + _esc(nombre) + '"', { success: true });
         _alertasCargar();
-      }).catch(function(e) { _toast('❌ ' + e.message, { error: true }); });
+      }).catch(function(e) { _toast('❌ ' + _esc(e.message), { error: true }); });
     });
   }
   function _rechazar(id) {
@@ -442,7 +450,7 @@
       _api('rechazarDispositivoPendiente', { ID_Dispositivo: id }).then(function() {
         _toast('🗑 Dispositivo rechazado');
         _alertasCargar();
-      }).catch(function(e) { _toast('❌ ' + e.message, { error: true }); });
+      }).catch(function(e) { _toast('❌ ' + _esc(e.message), { error: true }); });
     });
   }
   function _reactivar(id) {
@@ -451,7 +459,7 @@
       sonidos.aprobado();
       _toast('✅ Dispositivo reactivado', { success: true });
       _alertasCargar();
-    }).catch(function(e) { _toast('❌ ' + e.message, { error: true }); });
+    }).catch(function(e) { _toast('❌ ' + _esc(e.message), { error: true }); });
   }
 
   // ════════════════════════════════════════════════════════════
@@ -509,7 +517,7 @@
   function _desbConfirmar(deviceId) {
     var razon = (document.getElementById('segDesbRazon') || {}).value || '';
     var clave = (document.getElementById('segDesbClave') || {}).value || '';
-    if (!razon.trim()) { _toast('⚠ Ingresá una razón', { error: true }); return; }
+    if (!razon.trim()) { _toast('⚠ Ingresa una razón', { error: true }); return; }
     if (!/^\d{8}$/.test(clave)) { _toast('⚠ Clave debe ser 8 dígitos', { error: true }); return; }
     sonidos.click();
     _api('desbloquearTemporalDispositivo', {
@@ -518,14 +526,14 @@
     }).then(function(d) {
       if (d && d.autorizado === false) {
         sonidos.rechazado();
-        _toast('❌ ' + (d.error || 'Clave incorrecta'), { error: true });
+        _toast('❌ ' + _esc(d.error || 'Clave incorrecta'), { error: true });
         return;
       }
       sonidos.aprobado();
       _toast('✅ Desbloqueo temporal hasta ' + String(d.hasta).substring(11, 16), { success: true });
       _desbCerrar();
       if (document.getElementById('segAlertasOverlay')) _alertasCargar();
-    }).catch(function(e) { sonidos.rechazado(); _toast('❌ ' + e.message, { error: true }); });
+    }).catch(function(e) { sonidos.rechazado(); _toast('❌ ' + _esc(e.message), { error: true }); });
   }
   function _desbCerrar() {
     var ov = document.getElementById('segDesbOverlay');
@@ -558,7 +566,7 @@
       +       '</div>'
       +       '<div class="seg-card" style="border-color:rgba(251,191,36,.4)">'
       +         '<div class="seg-card-titulo">🌐 REMOTO (admin a distancia)</div>'
-      +         '<div class="seg-card-sub" style="margin-bottom:8px">Le envío al admin · él aprueba desde MOS · esperás aquí hasta recibir aprobación.</div>'
+      +         '<div class="seg-card-sub" style="margin-bottom:8px">Le envío al admin · él aprueba desde MOS · esperas aquí hasta recibir aprobación.</div>'
       +         '<button class="seg-btn seg-btn-primary" style="width:100%;background:linear-gradient(135deg,#fbbf24,#f59e0b);border-color:#fbbf24;color:#0a1424" onclick="SeguridadSystem._solRemoto()">Enviar solicitud al admin</button>'
       +       '</div>'
       +     '</div>'
@@ -585,13 +593,13 @@
       var d = (_config.unwrapData ? r : (r && r.data ? r.data : r));
       if (d && d.autorizado === false) {
         sonidos.rechazado();
-        _toast('❌ ' + (d.error || 'Clave incorrecta'), { error: true });
+        _toast('❌ ' + _esc(d.error || 'Clave incorrecta'), { error: true });
         return;
       }
       sonidos.aprobado();
       _toast('✅ Aprobado por ' + (d.aprobadoPor || 'admin') + '. Recargando...', { success: true });
       setTimeout(function() { window.location.reload(); }, 1800);
-    }).catch(function(e) { sonidos.rechazado(); _toast('❌ ' + e.message, { error: true }); });
+    }).catch(function(e) { sonidos.rechazado(); _toast('❌ ' + _esc(e.message), { error: true }); });
   }
   function _solRemoto() {
     sonidos.click();
@@ -698,6 +706,11 @@
     }
     var cierreFecha = new Date();
     cierreFecha.setHours(hh, mm, 0, 0);
+    // [v1.0.2 FIX] Si el cierre es ANTES que ahora (cruza medianoche),
+    // sumar 1 día al cierre (turno noche 14:00-02:00, son las 23:00 → cierre mañana 02:00)
+    if (cierreFecha.getTime() < ahora.getTime() && hh < 12) {
+      cierreFecha.setDate(cierreFecha.getDate() + 1);
+    }
     var diff = (cierreFecha.getTime() - ahora.getTime()) / 60000;  // min
     if (diff <= 0) {
       cont.innerHTML = '<div class="seg-widget urgente" onclick="SeguridadSystem.abrirModalHorarioOperador()"><span class="seg-widget-icono">🌙</span><div class="seg-widget-text"><span class="seg-widget-titulo">Fuera de horario</span><span class="seg-widget-tiempo">Cerrado</span></div></div>';
@@ -772,7 +785,7 @@
       ? 'Tu jornada cerró a las ' + (cierre || '—')
       : motivo === 'dia_cerrado'
       ? 'Hoy no es día laboral'
-      : 'No tenés permiso ahora';
+      : 'No tienes permiso ahora';
     sonidos.rechazado();
     document.body.insertAdjacentHTML('beforeend', ''
       + '<div class="seg-overlay" id="segFueraOverlay">'
@@ -811,12 +824,12 @@
         placeholder: 'Ej: cliente importante, inventario...',
         emoji: '📝'
       }).then(function(motivo) {
-        if (!motivo || !motivo.trim()) { _toast('⚠ Ingresá un motivo', { error: true }); return; }
+        if (!motivo || !motivo.trim()) { _toast('⚠ Ingresa un motivo', { error: true }); return; }
         sonidos.click();
         _api('solicitarExtensionHorario', { idPersonal: _config.idPersonal(), minutos: min, motivo: motivo }).then(function() {
           _toast('✅ Solicitud enviada al admin', { success: true });
           _fueraCerrar();
-        }).catch(function(e) { _toast('❌ ' + e.message, { error: true }); });
+        }).catch(function(e) { _toast('❌ ' + _esc(e.message), { error: true }); });
       });
     });
   }
@@ -824,7 +837,7 @@
     sonidos.click();
     _api('notificarmeCuandoAbra', { idPersonal: _config.idPersonal(), apertura: apertura }).then(function() {
       _toast('🔔 Te avisaremos cuando abra', { success: true });
-    }).catch(function(e) { _toast('❌ ' + e.message, { error: true }); });
+    }).catch(function(e) { _toast('❌ ' + _esc(e.message), { error: true }); });
   }
   function _fueraCerrar() {
     var ov = document.getElementById('segFueraOverlay');
@@ -943,7 +956,7 @@
       sonidos.aprobado();
       _toast('✅ Horario guardado para ' + appKey, { success: true });
       _cfgCargar();
-    }).catch(function(e) { _toast('❌ ' + e.message, { error: true }); });
+    }).catch(function(e) { _toast('❌ ' + _esc(e.message), { error: true }); });
   }
   function _cfgRenderExcepciones() {
     var html = '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Excepciones por usuario (típico WH: turno noche, envasador 14-23h).</div>';
@@ -1024,7 +1037,7 @@
             sonidos.aprobado();
             _toast('✅ Excepción guardada', { success: true });
             _cfgCargar();
-          }).catch(function(e) { _toast('❌ ' + e.message, { error: true }); });
+          }).catch(function(e) { _toast('❌ ' + _esc(e.message), { error: true }); });
         });
       });
     });
@@ -1041,7 +1054,7 @@
       _api('setHorarioCustomPersonal', { idPersonal: idPersonal, horarioCustom: { activo: false } }).then(function() {
         _toast('🗑 Excepción quitada');
         _cfgCargar();
-      }).catch(function(e) { _toast('❌ ' + e.message, { error: true }); });
+      }).catch(function(e) { _toast('❌ ' + _esc(e.message), { error: true }); });
     });
   }
   function _cfgRenderExtenderHoy() {
@@ -1065,12 +1078,12 @@
     var cierre = (document.getElementById('segExtCierre') || {}).value || '';
     var razon  = (document.getElementById('segExtRazon')  || {}).value || '';
     if (!/^\d{2}:\d{2}$/.test(cierre)) { _toast('⚠ Cierre inválido', { error: true }); return; }
-    if (!razon.trim()) { _toast('⚠ Ingresá una razón', { error: true }); return; }
+    if (!razon.trim()) { _toast('⚠ Ingresa una razón', { error: true }); return; }
     sonidos.click();
     _api('extenderHorarioHoy', { app: app, cierre: cierre, razon: razon }).then(function() {
       sonidos.aprobado();
       _toast('✅ Cierre extendido hoy hasta ' + cierre, { success: true });
-    }).catch(function(e) { _toast('❌ ' + e.message, { error: true }); });
+    }).catch(function(e) { _toast('❌ ' + _esc(e.message), { error: true }); });
   }
   function _cfgCerrar() {
     var ov = document.getElementById('segCfgOverlay');

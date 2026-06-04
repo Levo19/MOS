@@ -92,24 +92,50 @@ function getHorariosApps() {
 
 // [v2.43.30] Setea horario completo de una app + push a operadores afectados
 function setHorarioApp(params) {
+  var _lock = LockService.getScriptLock();
+  try { _lock.waitLock(15000); } catch(e) { return { ok: false, error: 'Sistema ocupado' }; }
+  try {
   var app = String(params.app || '').trim();
   if (!app) return { ok: false, error: 'app requerida' };
   if (app !== 'warehouseMos' && app !== 'mosExpress' && app !== 'MOS') {
     return { ok: false, error: 'app no soportada (warehouseMos | mosExpress | MOS)' };
   }
+  // [v2.43.132 FIX] Si viene claveAdmin la validamos (admin remoto).
+  // Para llamadas internas desde el panel MOS el usuario ya está autenticado.
+  if (params.claveAdmin) {
+    var authH = verificarClaveAdmin({ clave: params.claveAdmin, accion: 'CAMBIAR_HORARIO_APP', appOrigen: app });
+    if (!authH.ok) return authH;
+    if (!authH.data || !authH.data.autorizado) {
+      return { ok: true, data: { autorizado: false, error: (authH.data && authH.data.error) || 'Clave incorrecta' } };
+    }
+  }
   // [v2.43.130 FIX] Acepta dos shapes: { horario: {lun,...} } (legacy MOS) y
   // { dias: {lun,...} } (SeguridadSystem). Prefiere dias si viene.
   var horario = params.dias || params.horario || {};
+  // [v2.43.132 FIX] Validar formato HH:MM antes de guardar
+  var _validarHHMM = function(s) {
+    var m = String(s || '').match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return false;
+    var hh = parseInt(m[1], 10), mm = parseInt(m[2], 10);
+    return hh >= 0 && hh < 24 && mm >= 0 && mm < 60;
+  };
   // Validar 7 días
   var horValidado = {};
+  var hayInvalido = null;
   _HOR_DIAS.forEach(function(d) {
     var c = horario[d] || {};
+    var ap = String(c.apertura || '07:00');
+    var ci = String(c.cierre || '19:00');
+    if (!_validarHHMM(ap) || !_validarHHMM(ci)) {
+      hayInvalido = d + ' (' + ap + ' / ' + ci + ')';
+    }
     horValidado[d] = {
       activo:   c.activo !== false,
-      apertura: String(c.apertura || '07:00'),
-      cierre:   String(c.cierre   || '19:00')
+      apertura: ap,
+      cierre:   ci
     };
   });
+  if (hayInvalido) return { ok: false, error: 'Hora inválida en día: ' + hayInvalido };
 
   var sh = _asegurarHojaHorariosApps();
   var data = sh.getDataRange().getValues();
@@ -158,6 +184,8 @@ function setHorarioApp(params) {
   } catch(eC) { Logger.log('[setHorarioApp] invalidar cache fallo: ' + eC.message); }
 
   return { ok: true, data: { app: app, horario: horValidado, admins_libres: admins_libres } };
+  } catch(e) { return { ok: false, error: e.message }; }
+  finally { try { _lock.releaseLock(); } catch(_){} }
 }
 
 // [SF2] Llamar al endpoint invalidarCacheHorario de WH (sin idPersonal = global)
@@ -364,7 +392,15 @@ function resolverHorarioPersonal(params) {
   if (apert === null || cierre === null) {
     return { ok: true, data: { permitido: true, motivo: 'hora_invalida_permitir', fuente: fuente, dia: diaKey } };
   }
-  var permitido = horaDecimal >= apert && horaDecimal < cierre;
+  // [v2.43.132 FIX] Soportar horarios que cruzan medianoche (turno noche envasador 14:00-02:00)
+  var permitido;
+  if (cierre > apert) {
+    permitido = horaDecimal >= apert && horaDecimal < cierre;       // 07:00-19:00
+  } else if (cierre < apert) {
+    permitido = horaDecimal >= apert || horaDecimal < cierre;       // 14:00-02:00 (cruza 00:00)
+  } else {
+    permitido = false;                                              // apert === cierre
+  }
   return {
     ok: true,
     data: {

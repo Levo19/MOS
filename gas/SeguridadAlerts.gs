@@ -210,6 +210,8 @@ function getSeguridadAlertas(params) {
 // Desbloqueo temporal de emergencia
 // ────────────────────────────────────────────────────────────────────
 function desbloquearTemporalDispositivo(params) {
+  var _lock = LockService.getScriptLock();
+  try { _lock.waitLock(15000); } catch(e) { return { ok: false, error: 'Sistema ocupado, reintenta' }; }
   try {
     if (!params.deviceId)   return { ok: false, error: 'deviceId requerido' };
     if (!params.claveAdmin) return { ok: false, error: 'claveAdmin requerida' };
@@ -263,10 +265,13 @@ function desbloquearTemporalDispositivo(params) {
     }
     return { ok: false, error: 'Dispositivo no encontrado' };
   } catch(e) { return { ok: false, error: e.message }; }
+  finally { try { _lock.releaseLock(); } catch(_){} }
 }
 
 // Trigger horario: revierte desbloqueos temporales vencidos
 function revertirDesbloqueosVencidos() {
+  var _lock = LockService.getScriptLock();
+  try { _lock.waitLock(15000); } catch(e) { return { ok: false, error: 'Sistema ocupado' }; }
   try {
     var sheet = SpreadsheetApp.openById(SS_ID).getSheetByName('DISPOSITIVOS');
     if (!sheet) return { ok: true, revertidos: 0 };
@@ -294,6 +299,7 @@ function revertirDesbloqueosVencidos() {
     }
     return { ok: true, revertidos: rev };
   } catch(e) { return { ok: false, error: e.message }; }
+  finally { try { _lock.releaseLock(); } catch(_){} }
 }
 
 function instalarTriggerRevertirDesbloqueos() {
@@ -310,8 +316,18 @@ function instalarTriggerRevertirDesbloqueos() {
 // Reactivar dispositivo suspendido (admin)
 // ────────────────────────────────────────────────────────────────────
 function reactivarDispositivoSuspendido(params) {
+  var _lock = LockService.getScriptLock();
+  try { _lock.waitLock(15000); } catch(e) { return { ok: false, error: 'Sistema ocupado' }; }
   try {
     if (!params.deviceId) return { ok: false, error: 'deviceId requerido' };
+    // [v2.43.132 FIX] verificarClaveAdmin si viene clave (admin remoto desde MOS)
+    if (params.claveAdmin) {
+      var authR = verificarClaveAdmin({ clave: params.claveAdmin, accion: 'REACTIVAR_DISPOSITIVO', refDocumento: params.deviceId });
+      if (!authR.ok) return authR;
+      if (!authR.data || !authR.data.autorizado) {
+        return { ok: true, data: { autorizado: false, error: (authR.data && authR.data.error) || 'Clave incorrecta' } };
+      }
+    }
     var sheet = SpreadsheetApp.openById(SS_ID).getSheetByName('DISPOSITIVOS');
     var data = sheet.getDataRange().getValues();
     var hdrs = data[0];
@@ -326,6 +342,7 @@ function reactivarDispositivoSuspendido(params) {
     }
     return { ok: false, error: 'Dispositivo no encontrado' };
   } catch(e) { return { ok: false, error: e.message }; }
+  finally { try { _lock.releaseLock(); } catch(_){} }
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -357,8 +374,20 @@ function solicitarExtensionHorario(params) {
 
 // Aprueba la extensión y la aplica como horarioCustom temporal
 function aprobarExtensionHorario(params) {
+  var _lock = LockService.getScriptLock();
+  try { _lock.waitLock(15000); } catch(e) { return { ok: false, error: 'Sistema ocupado' }; }
   try {
     if (!params.idAlerta) return { ok: false, error: 'idAlerta requerido' };
+    // [v2.43.132 FIX] verificarClaveAdmin si viene clave; usar nombre validado del admin
+    var aprobadoPorReal = String(params.aprobadoPor || 'admin');
+    if (params.claveAdmin) {
+      var authE = verificarClaveAdmin({ clave: params.claveAdmin, accion: 'APROBAR_EXTENSION', refDocumento: params.idAlerta });
+      if (!authE.ok) return authE;
+      if (!authE.data || !authE.data.autorizado) {
+        return { ok: true, data: { autorizado: false, error: (authE.data && authE.data.error) || 'Clave incorrecta' } };
+      }
+      aprobadoPorReal = authE.data.validadoPor || aprobadoPorReal;
+    }
     var sheet = _getSheetSegAlertas();
     var data = sheet.getDataRange().getValues();
     var hdrs = data[0];
@@ -376,7 +405,7 @@ function aprobarExtensionHorario(params) {
       var minutos = parseInt(dx.minutos) || 60;
       // Marcar como REVISADA
       sheet.getRange(i + 1, iEst + 1).setValue('REVISADA');
-      sheet.getRange(i + 1, iRev + 1).setValue(String(params.aprobadoPor || 'admin'));
+      sheet.getRange(i + 1, iRev + 1).setValue(aprobadoPorReal);
       sheet.getRange(i + 1, iRevTs + 1).setValue(new Date().toISOString());
       // Aplicar extensión usando extenderHorarioHoy (más abajo)
       var ext = extenderHorarioHoy({ idPersonal: idPersonal, minutos: minutos });
@@ -390,6 +419,7 @@ function aprobarExtensionHorario(params) {
     }
     return { ok: false, error: 'Alerta no encontrada' };
   } catch(e) { return { ok: false, error: e.message }; }
+  finally { try { _lock.releaseLock(); } catch(_){} }
 }
 
 // Extiende el horario HOY. Dos modos:
@@ -520,6 +550,17 @@ function _extenderHorarioHoyApp(params) {
 // Revisa Properties EXT_HORARIO_HOY_<app> y restaura cierreOriginal; revisa
 // PERSONAL_MASTER.horarioCustom.extensionHoy y limpia el día extendido.
 function revertirExtensionesDiarias() {
+  // [v2.43.132 FIX] Guard contra doble ejecución el mismo día (re-deploys, retry manual)
+  var _props = PropertiesService.getScriptProperties();
+  var _tz = Session.getScriptTimeZone();
+  var _hoyKey = Utilities.formatDate(new Date(), _tz, 'yyyy-MM-dd');
+  var _ult = _props.getProperty('REVERTIR_EXT_ULTIMA_FECHA') || '';
+  if (_ult === _hoyKey) {
+    Logger.log('[revertirExtensionesDiarias] Ya ejecutado hoy (' + _hoyKey + '), skip');
+    return { ok: true, revertidas: 0, skipped: true };
+  }
+  var _lock = LockService.getScriptLock();
+  try { _lock.waitLock(15000); } catch(e) { return { ok: false, error: 'Sistema ocupado' }; }
   var revertidas = 0;
   try {
     // A) Apps
@@ -582,6 +623,9 @@ function revertirExtensionesDiarias() {
       }
     }
   } catch(e) { Logger.log('[revertirExtensionesDiarias] ' + e.message); }
+  finally { try { _lock.releaseLock(); } catch(_){} }
+  // Marcar fecha de ejecución para guard
+  try { _props.setProperty('REVERTIR_EXT_ULTIMA_FECHA', _hoyKey); } catch(_){}
   return { ok: true, revertidas: revertidas };
 }
 
