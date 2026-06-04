@@ -211,7 +211,12 @@ const MOS = (() => {
       if (window.MembreteSystem && window.MembreteSystem.iniciar) {
         window.MembreteSystem.iniciar({
           apiPost:        function(action, params) { return API.post(action, params); },
-          usuario:        function() { return (window.S && S.session && S.session.nombre) || ''; },
+          usuario:        function() {
+            // [v2.43.159] Fallback robusto — antes quedaba vacío en lotes desde MOS
+            var n = (window.S && S.session && S.session.nombre) || '';
+            if (!n && window.S && S.session) n = S.session.idPersonal || '';
+            return n || 'admin-MOS';
+          },
           origen:         'MOS',
           unwrapData:     true,
           endpointPrefix: 'wh_'
@@ -224,7 +229,12 @@ const MOS = (() => {
       if (window.SeguridadSystem && window.SeguridadSystem.iniciar) {
         window.SeguridadSystem.iniciar({
           apiPost:        function(action, params) { return API.post(action, params); },
-          usuario:        function() { return (window.S && S.session && S.session.nombre) || ''; },
+          usuario:        function() {
+            // [v2.43.159] Fallback robusto — antes quedaba vacío en lotes desde MOS
+            var n = (window.S && S.session && S.session.nombre) || '';
+            if (!n && window.S && S.session) n = S.session.idPersonal || '';
+            return n || 'admin-MOS';
+          },
           rol:            function() { return (window.S && S.session && S.session.rol) || ''; },
           idPersonal:     function() { return (window.S && S.session && S.session.idPersonal) || ''; },
           app:            'MOS',
@@ -12528,11 +12538,16 @@ const MOS = (() => {
 
     try {
       const idempotencyKey = 'adh_lote_' + idEnvSnapshot + '_' + totalSnapshot + '_' + sessionTsSnapshot;
+      // [v2.43.159] Fallback robusto del nombre — todos los lotes desde MOS
+      // quedaban con usuario='' porque S.session.nombre podía estar vacío.
+      const _usrAdmin = (window.S?.session?.nombre || '').trim()
+                     || (window.S?.session?.idPersonal || '').trim()
+                     || 'admin-MOS';
       const r = await API.post('wh_crearLoteAdhesivo', {
         codigoBarra:     codigoSnapshot,
         descripcion:     descSnapshot,
         total:           totalSnapshot,
-        usuario:         (window.S?.session?.nombre || ''),
+        usuario:         _usrAdmin,
         origen:          'MOS',
         fechaEnvasado:   fechaSnapshot,
         idempotencyKey:  idempotencyKey
