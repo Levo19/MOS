@@ -197,6 +197,8 @@ function _route(method, e) {
       case 'wh_resetearContadorPrints':      return postToWarehouse('resetearContadorPrints', params);
       case 'wh_resetearDriftEmergencia':     return postToWarehouse('resetearDriftEmergencia', params);  // [v2.43.161]
       case 'wh_inspeccionarSheetLotes':      return postToWarehouse('inspeccionarSheetLotes', params);  // [v2.43.164]
+      case 'wh_repararOrdenSheetLotes':      return postToWarehouse('repararOrdenSheetLotes', params);  // [v2.43.165]
+      case 'wh_diagnosticarBackendLotes':    return postToWarehouse('diagnosticarBackendLotes', params); // [v2.43.165]
       case 'wh_crearLoteMembrete':           return postToWarehouse('crearLoteMembrete', params);
       // [v2.43.125] Alertas de precio para membretes ME (locales MOS)
       case 'getMembretesMePendientes':       return getMembretesMePendientes(params);
