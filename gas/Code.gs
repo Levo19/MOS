@@ -187,6 +187,8 @@ function _route(method, e) {
       // [v2.43.144] Diagnóstico + auto-install trigger procesarLotes
       case 'wh_diagnosticoTriggerLotes':     return postToWarehouse('diagnosticoTriggerLotes', params);
       case 'wh_asegurarTriggerLotes':        return postToWarehouse('asegurarTriggerLotes', params);
+      case 'wh_procesarAhoraTodos':          return postToWarehouse('procesarAhoraTodos', params);
+      case 'wh_diagnosticoPrintNodeAdhesivo':return postToWarehouse('diagnosticoPrintNodeAdhesivo', params);
       // [v2.43.125] Calibración inteligente + membretes ME/WH
       case 'wh_estadoCalibracionRollo':      return postToWarehouse('estadoCalibracionRollo', params);
       case 'wh_imprimirCalibradoresAdhesivo':return postToWarehouse('imprimirCalibradoresAdhesivo', params);

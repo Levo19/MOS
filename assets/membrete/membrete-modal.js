@@ -1057,6 +1057,28 @@
       if (b) b.innerHTML = '<div class="ms-err">⚠ ' + _escapeHtml(e.message) + '</div>';
     });
   }
+  // [v1.11] Forzar procesamiento manual de TODOS los lotes pendientes ahora.
+  // Llamado desde el botón ⚡ en el banner del modal Lotes.
+  function _procesarAhoraTodos() {
+    sonidos.click();
+    _toast('⚡ Forzando procesamiento de todos los lotes pendientes...');
+    _api('procesarAhoraTodos', {}).then(function(d) {
+      var msg = '';
+      if (d && d.intentados !== undefined) {
+        msg = '✅ Procesados ' + d.ok + '/' + d.intentados + ' lotes';
+        if (d.errores > 0) msg += ' · ' + d.errores + ' con error';
+      } else {
+        msg = '✅ Solicitud enviada';
+      }
+      _toast(msg, { duracion: 6000 });
+      // Invalidar cache de lotes para que el siguiente refresh traiga estado real
+      try { _cache.lotesHistorial.ts = 0; } catch(_) {}
+      setTimeout(_histRefrescar, 1500);
+    }).catch(function(e) {
+      sonidos.error();
+      _toast('❌ ' + _escapeHtml(e.message), { error: true });
+    });
+  }
   // [v1.10] Refactor: renderHistorialBody recibe payload ya filtrado
   function _renderHistorialBody(arg) {
     var ovStill = document.getElementById('msHistOverlay');
@@ -1080,8 +1102,10 @@
           + '</div>';
       } else if (diag && diag.triggerInstalado === true && diag.lotesEncolados > 0) {
         bannerTrigger = ''
-          + '<div style="background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.3);padding:8px;border-radius:6px;margin-bottom:10px;font-size:11px;color:#fbbf24">'
-          +   '⏱ ' + diag.lotesEncolados + ' lote(s) encolado(s) — se procesan automáticamente cada 1 min'
+          + '<div style="background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.3);padding:8px;border-radius:6px;margin-bottom:10px;font-size:11px;color:#fbbf24;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+          +   '<span style="flex:1">⏱ ' + diag.lotesEncolados + ' lote(s) encolado(s) — auto cada 1 min</span>'
+          // [v1.11] Botón para forzar procesamiento manual ahora
+          +   '<button class="ms-btn ms-btn-primary" style="padding:6px 12px;font-size:11px;width:auto" onclick="MembreteSystem._procesarAhoraTodos()">⚡ Procesar todos ahora</button>'
           + '</div>';
       }
       var fmtHora = function(iso) {
@@ -1363,6 +1387,7 @@
     _histCerrar:          _histCerrar,
     _histCambiarFiltro:   _histCambiarFiltro,
     _activarTriggerLotes: _activarTriggerLotes,
+    _procesarAhoraTodos:  _procesarAhoraTodos,
     // Internals (expuestos para handlers inline en HTML)
     _calCambiarRollo:     _calCambiarRollo,
     _calImprimirCals:     _calImprimirCals,
