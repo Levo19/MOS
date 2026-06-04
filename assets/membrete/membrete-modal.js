@@ -1015,6 +1015,8 @@
       +     '</div>'
       +     '<div class="ms-actions" style="padding:0 22px 18px">'
       +       '<button class="ms-btn ms-btn-info" onclick="MembreteSystem._histRefrescar()">↻</button>'
+      // [v1.13] Botón diagnóstico impresora — útil cuando los lotes no avanzan
+      +       (origen !== 'ME' ? '<button class="ms-btn ms-btn-info" onclick="MembreteSystem._diagnosticoImpresoraAdhesivo()" title="Verificar qué impresora está configurada y si responde">🔍 Impresora</button>' : '')
       +       '<button class="ms-btn ms-btn-warn" onclick="MembreteSystem._histCerrar()">Cerrar</button>'
       +     '</div>'
       +   '</div>'
@@ -1075,6 +1077,58 @@
       if (b) b.innerHTML = '<div class="ms-err">⚠ ' + _escapeHtml(e.message) + '</div>';
     });
   }
+  // [v1.13] Diagnóstico PrintNode: muestra qué impresora está configurada,
+  // su estado online/offline, y los últimos 10 jobs enviados.
+  function _diagnosticoImpresoraAdhesivo() {
+    sonidos.click();
+    _toast('🔍 Consultando PrintNode...');
+    _api('diagnosticoPrintNodeAdhesivo', {}).then(function(d) {
+      _injectCss();
+      var inf = d.impresoraInfo;
+      var errs = (d.errores || []).join('<br>');
+      var html = ''
+        + '<div class="ms-overlay" id="msDiagOverlay" style="z-index:99998">'
+        +   '<div class="ms-modal" style="max-width:560px">'
+        +     '<div class="ms-head">'
+        +       '<div class="ms-emoji">🔍</div>'
+        +       '<div style="flex:1"><div class="ms-h1">DIAGNÓSTICO IMPRESORA ADHESIVO</div></div>'
+        +     '</div>'
+        +     '<div class="ms-body" style="max-height:60vh;overflow-y:auto">'
+        +       '<div style="font-size:12px;color:#cbd5e1;margin-bottom:6px">Impresora configurada:</div>'
+        +       (inf ?
+            '<div class="seg-card" style="padding:12px;background:rgba(15,23,42,.4);border:1px solid #1e293b;border-radius:8px;margin-bottom:10px">'
+            + '<div style="font-size:13px;font-weight:800;color:#f1f5f9">' + _escapeHtml(inf.name || '?') + '</div>'
+            + '<div style="font-size:11px;color:#94a3b8">ID: ' + _escapeHtml(String(inf.id || d.printerId)) + ' · PC: ' + _escapeHtml(inf.computer || '?') + '</div>'
+            + '<div style="margin-top:8px;font-size:13px;font-weight:900;color:' + (inf.online ? '#34d399' : '#f87171') + '">'
+            + (inf.online ? '🟢 ONLINE' : '🔴 OFFLINE/' + _escapeHtml(inf.state || 'unknown'))
+            + '</div>'
+            + (inf.description ? '<div style="font-size:10px;color:#64748b;margin-top:4px">' + _escapeHtml(inf.description) + '</div>' : '')
+            + '</div>'
+          : '<div class="ms-err">⚠ No se pudo obtener info de la impresora · printerId=' + _escapeHtml(d.printerId || 'NULL') + '</div>')
+        +       (errs ? '<div class="ms-err">' + errs + '</div>' : '')
+        +       '<div style="font-size:12px;color:#cbd5e1;margin:10px 0 6px">Últimos jobs enviados (PrintNode):</div>'
+        +       ((d.jobsRecientes && d.jobsRecientes.length) ?
+            d.jobsRecientes.map(function(j) {
+              var sCol = j.state === 'done' ? '#34d399' : (j.state === 'error' || j.state === 'expired' ? '#f87171' : '#fbbf24');
+              return '<div style="padding:6px 8px;margin-bottom:4px;background:rgba(15,23,42,.4);border-left:3px solid ' + sCol + ';border-radius:4px;font-size:11px">'
+                + '<div style="font-weight:700;color:#f1f5f9">' + _escapeHtml(j.title) + '</div>'
+                + '<div style="color:#94a3b8;font-family:monospace">#' + j.id + ' · <b style="color:' + sCol + '">' + _escapeHtml(j.state) + '</b> · ' + _escapeHtml(String(j.createTimestamp).substring(5, 16)) + '</div>'
+                + '</div>';
+            }).join('')
+          : '<div style="color:#64748b;font-size:11px">— sin jobs recientes —</div>')
+        +     '</div>'
+        +     '<div class="ms-actions" style="padding:0 22px 18px">'
+        +       '<button class="ms-btn ms-btn-warn" onclick="document.getElementById(\'msDiagOverlay\').remove()">Cerrar</button>'
+        +     '</div>'
+        +   '</div>'
+        + '</div>';
+      document.body.insertAdjacentHTML('beforeend', html);
+    }).catch(function(e) {
+      sonidos.error();
+      _toast('❌ ' + _escapeHtml(e.message), { error: true });
+    });
+  }
+
   // [v1.11] Forzar procesamiento manual de TODOS los lotes pendientes ahora.
   // Llamado desde el botón ⚡ en el banner del modal Lotes.
   function _procesarAhoraTodos() {
@@ -1406,6 +1460,7 @@
     _histCambiarFiltro:   _histCambiarFiltro,
     _activarTriggerLotes: _activarTriggerLotes,
     _procesarAhoraTodos:  _procesarAhoraTodos,
+    _diagnosticoImpresoraAdhesivo: _diagnosticoImpresoraAdhesivo,
     // Internals (expuestos para handlers inline en HTML)
     _calCambiarRollo:     _calCambiarRollo,
     _calImprimirCals:     _calImprimirCals,
