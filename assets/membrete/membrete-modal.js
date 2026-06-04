@@ -286,7 +286,8 @@
         _renderBadge();
         if (status === 'COMPLETADO') {
           sonidos.completado();
-          _toast('✅ ' + (d.total || _state.total) + ' adhesivos impresos · ' + (_state.tipo === 'MEMBRETE_ME' ? 'recoger en almacén' : 'OK'));
+          // [v1.2 FIX] Texto correcto: MEMBRETE_ME = para góndola tienda, MEMBRETE_WH = para andamio almacén
+          _toast('✅ ' + (d.total || _state.total) + ' adhesivos impresos · ' + (_state.tipo === 'MEMBRETE_ME' ? 'recoger en almacén' : 'listos en andamio'));
           _state.polling = false;
           setTimeout(function() { cerrarModal(); _state = null; _renderBadge(); }, 2500);
           return;
@@ -768,6 +769,8 @@
   function _menuCerrar() {
     var ov = document.getElementById('msMenuOverlay');
     if (ov) { ov.style.animation = 'ms-out .22s ease-out forwards'; setTimeout(function(){ ov.remove(); }, 220); }
+    // [v1.2 FIX] Limpiar referencia global para evitar reuso accidental
+    try { delete window._msMenuProd; } catch(_) { window._msMenuProd = null; }
   }
 
   // ── MODAL alertas precio cambiado (ME) ──────────────────────
@@ -831,8 +834,11 @@
   }
   function _alertSeleccionados() {
     var sel = [];
+    var lista = window._msAlerts || [];
     document.querySelectorAll('.msAlertChk:checked').forEach(function(c) {
-      sel.push(window._msAlerts[parseInt(c.dataset.idx)]);
+      // [v1.2 FIX] Validar idx antes de acceder al array
+      var idx = parseInt(c.dataset.idx);
+      if (!isNaN(idx) && lista[idx]) sel.push(lista[idx]);
     });
     return sel;
   }
@@ -884,7 +890,8 @@
   // ── Badge flotante de alertas precio (auto-refresh cada 60s) ────
   var _badgeAlertasTimer = null;
   function arrancarBadgeAlertas() {
-    if (_badgeAlertasTimer) return;
+    // [v1.2 FIX] Si ya hay timer, limpiarlo antes de crear nuevo (idempotente)
+    if (_badgeAlertasTimer) { try { clearInterval(_badgeAlertasTimer); } catch(_){} _badgeAlertasTimer = null; }
     var refresh = function() {
       _api('getMembretesMePendientes', { limit: 1 }).then(function(d) {
         var count = (d && d.count) || 0;
