@@ -649,28 +649,76 @@
         + '</div>';
     }).join('');
   }
+  // [v1.8] Resolver fuente de catálogo según la app (MOS/WH/ME).
+  // Devuelve { productos: [...], equivalencias: [...] } o null si no hay cache.
+  function _resolverCatalogo() {
+    try {
+      // MOS — S.productos (canónicos) + S.equivMap {skuBase: [equivs]}
+      if (window.S && Array.isArray(window.S.productos) && window.S.productos.length) {
+        var equivsArr = [];
+        if (window.S.equivMap) {
+          Object.keys(window.S.equivMap).forEach(function(sku) {
+            (window.S.equivMap[sku] || []).forEach(function(e) {
+              equivsArr.push({ skuBase: sku, codigoBarra: e.codigoBarra || e, activo: e.activo });
+            });
+          });
+        }
+        return { productos: window.S.productos, equivalencias: equivsArr, origen: 'MOS' };
+      }
+      // WH — OfflineManager
+      if (window.OfflineManager && OfflineManager.getProductosCache) {
+        var prods = OfflineManager.getProductosCache() || [];
+        if (prods.length) {
+          var eq = (OfflineManager.getEquivalenciasCache && OfflineManager.getEquivalenciasCache()) || [];
+          return { productos: prods, equivalencias: eq, origen: 'WH' };
+        }
+      }
+      // ME — Vue db.value.PRODUCTO_BASE
+      if (window.db && window.db.value && Array.isArray(window.db.value.PRODUCTO_BASE) && window.db.value.PRODUCTO_BASE.length) {
+        var prodsME = window.db.value.PRODUCTO_BASE.map(function(p) {
+          return {
+            idProducto: p.SKU_Base, skuBase: p.SKU_Base,
+            descripcion: p.Descripcion || p.Producto, codigoBarra: p.Codigo_Principal || p.SKU_Base,
+            precio: parseFloat(p.Precio_Venta) || 0
+          };
+        });
+        var eqME = (window.db.value.EQUIVALENCIAS || []).map(function(e) {
+          return { skuBase: e.SKU_Base, codigoBarra: e.Codigo_Equivalente, activo: e.Activo };
+        });
+        return { productos: prodsME, equivalencias: eqME, origen: 'ME' };
+      }
+    } catch(_) {}
+    return null;
+  }
+
   function _colaBusqInput(q) {
     q = String(q || '').trim().toLowerCase();
     var sugs = document.getElementById('msColaSugs');
     if (!sugs) return;
     if (q.length < 2) { sugs.style.display = 'none'; return; }
-    // Buscar productos via API (usar getCatalogo o equivalente cacheado)
-    // Fallback: si la app tiene cache de productos en window, usarlo
-    var fuente = null;
-    try {
-      if (window.S && Array.isArray(window.S.catalogo)) fuente = window.S.catalogo;
-      else if (window.OfflineManager && OfflineManager.getProductosCache) fuente = OfflineManager.getProductosCache();
-    } catch(_) {}
-    if (!fuente || fuente.length === 0) {
-      sugs.innerHTML = '<div style="padding:8px;font-size:12px;color:#fbbf24">No hay catálogo cargado · cargá productos en MOS o WH primero</div>';
+    // [v1.8] Resolver fuente según la app actual
+    var cat = _resolverCatalogo();
+    if (!cat || !cat.productos || cat.productos.length === 0) {
+      sugs.innerHTML = '<div style="padding:8px;font-size:12px;color:#fbbf24">No hay catálogo cargado en esta sesión · refresca la app</div>';
       sugs.style.display = 'block';
       return;
     }
-    var matches = fuente.filter(function(p) {
+    // [v1.8] Buscar en descripción + codigoBarra/idProducto + skuBase + equivalencias
+    // Primero buscar en equivalencias para saber qué skuBase coinciden por código alternativo
+    var skusPorEquiv = {};
+    cat.equivalencias.forEach(function(e) {
+      var cbe = String(e.codigoBarra || '').toLowerCase();
+      if (cbe && cbe.indexOf(q) >= 0) skusPorEquiv[String(e.skuBase || '')] = true;
+    });
+    var matches = cat.productos.filter(function(p) {
       var desc = String(p.descripcion || p.nombre || '').toLowerCase();
       var cb   = String(p.codigoBarra || p.idProducto || '').toLowerCase();
-      var sku  = String(p.skuBase || '').toLowerCase();
-      return desc.indexOf(q) >= 0 || cb.indexOf(q) >= 0 || sku.indexOf(q) >= 0;
+      var sku  = String(p.skuBase || p.idProducto || '').toLowerCase();
+      // Match si: descripcion, codigoBarra principal, skuBase, O algún equivalente
+      return desc.indexOf(q) >= 0
+          || cb.indexOf(q) >= 0
+          || sku.indexOf(q) >= 0
+          || skusPorEquiv[String(p.skuBase || p.idProducto || '')];
     }).slice(0, 8);
     if (matches.length === 0) {
       sugs.innerHTML = '<div style="padding:8px;font-size:12px;color:#94a3b8">Sin resultados para "' + _escapeHtml(q) + '"</div>';
