@@ -228,7 +228,7 @@
       if (diff < 3600) return 'hace ' + Math.floor(diff / 60) + 'min';
       if (diff < 86400) return 'hace ' + Math.floor(diff / 3600) + 'h';
       return 'hace ' + Math.floor(diff / 86400) + 'd';
-    } catch(_) { return iso.substring(0, 16); }
+    } catch(_) { return iso ? String(iso).substring(0, 16) : '—'; }
   }
 
   // ════════════════════════════════════════════════════════════
@@ -245,7 +245,9 @@
     try { localStorage.setItem('seg_badge_count_visto', String(n)); } catch(_) {}
   }
   function arrancarBadgeAlertas() {
-    if (_badgeTimer) return;
+    // [v1.0.3 FIX] Si ya hay timer, limpiarlo antes de crear uno nuevo.
+    // Antes el early return aceptaba un timer huérfano si el flujo era irregular.
+    if (_badgeTimer) { try { clearInterval(_badgeTimer); } catch(_){} _badgeTimer = null; }
     _injectCss();
     var primerRefresh = true;
     var refresh = function() {
@@ -392,7 +394,7 @@
         +         _esc(d.Nombre_Equipo || 'Sin nombre')
         +         ' <span style="font-weight:400;color:#94a3b8">· ' + _esc(d.App || '') + '</span>'
         +       '</div>'
-        +       '<div class="seg-card-sub">UUID: ' + _esc(String(d.ID_Dispositivo).substring(0, 8)) + '… · última: ' + _humanizarFecha(d.Ultima_Conexion) + (diasInactivo ? ' (' + diasInactivo + ')' : '') + '</div>'
+        +       '<div class="seg-card-sub">UUID: ' + _esc(String(d.ID_Dispositivo || '').substring(0, 8)) + '… · última: ' + _humanizarFecha(d.Ultima_Conexion) + (diasInactivo ? ' (' + diasInactivo + ')' : '') + '</div>'
         +     '</div>'
         +     '<span class="seg-chip ' + chipCls + '">' + est + '</span>'
         +   '</div>'
@@ -417,10 +419,15 @@
     // Optimista: remover de la lista local inmediatamente
     _alertasState.dispositivos = (_alertasState.dispositivos || []).filter(function(d) { return String(d.ID_Dispositivo) !== String(id); });
     _alertasRender();
+    // [v1.0.3 FIX] Usar Promise.prototype.finally para garantizar liberación
+    // del lock aunque el .catch lance error síncrono
+    var _libera = function() { _accionEnVuelo[lockKey] = false; };
     _api('aprobarDispositivoPendiente', { ID_Dispositivo: id, aprobadoPor: _config.usuario() })
       .then(function() { _alertasCargar(); })
-      .catch(function(e) { sonidos.rechazado(); _toast('❌ ' + _esc(e.message), { error: true }); _alertasCargar(); })
-      .then(function() { _accionEnVuelo[lockKey] = false; });
+      .catch(function(e) {
+        try { sonidos.rechazado(); _toast('❌ ' + _esc(e.message), { error: true }); _alertasCargar(); } catch(_){}
+      })
+      .then(_libera, _libera);  // ambos paths liberan
   }
   function _renombrar(id) {
     _modalPrompt({
@@ -475,7 +482,7 @@
       +       '<div class="seg-emoji">🚨</div>'
       +       '<div style="flex:1;min-width:0">'
       +         '<div class="seg-h1" style="color:#fca5a5">DESBLOQUEO TEMPORAL</div>'
-      +         '<div class="seg-sub">' + _esc(nombre || deviceId.substring(0, 12)) + '</div>'
+      +         '<div class="seg-sub">' + _esc(nombre || String(deviceId || '').substring(0, 12)) + '</div>'
       +       '</div>'
       +     '</div>'
       +     '<div class="seg-body">'
@@ -538,6 +545,8 @@
   function _desbCerrar() {
     var ov = document.getElementById('segDesbOverlay');
     if (ov) { ov.style.animation = 'seg-out .22s ease-out forwards'; setTimeout(function(){ ov.remove(); }, 220); }
+    // [v1.0.3 FIX] Limpiar duración global para que no contamine la próxima invocación
+    try { delete window._segDesbDuracion; } catch(_) { window._segDesbDuracion = undefined; }
   }
 
   // ════════════════════════════════════════════════════════════
@@ -610,6 +619,9 @@
     _esperandoAprobacion();
   }
   function _esperandoAprobacion() {
+    // [v1.0.3 FIX] Limpiar timer huérfano de invocación previa
+    if (window._segEspTimer) { try { clearInterval(window._segEspTimer); } catch(_){} window._segEspTimer = null; }
+    window._segEspPollingActive = false;
     document.body.insertAdjacentHTML('beforeend', ''
       + '<div class="seg-overlay" id="segEspOverlay">'
       +   '<div class="seg-modal" style="max-width:460px">'
@@ -635,6 +647,9 @@
       var sec = Math.floor((Date.now() - window._segEspInicio) / 1000);
       var sub = document.getElementById('segEspSub');
       if (sub) sub.textContent = 'enviada · ' + (sec < 60 ? sec + ' seg' : Math.floor(sec / 60) + ' min ' + (sec % 60) + ' seg');
+      // [v1.0.3 FIX] Anti-overlap: si polling anterior aún en vuelo, saltar tick
+      if (window._segEspPollingActive) return;
+      window._segEspPollingActive = true;
       // Polling: chequear estado del dispositivo (consultarEstadoDispositivo
       // existe en WH y MOS; apiPost del cliente lo resuelve al GAS correcto)
       var apiAction = 'consultarEstadoDispositivo';
@@ -645,6 +660,7 @@
         var d = (_config.unwrapData ? r : (r && r.data ? r.data : r));
         if (d && String(d.estado).toUpperCase() === 'ACTIVO') {
           clearInterval(window._segEspTimer);
+          window._segEspTimer = null;
           sonidos.aprobado();
           var sub2 = document.getElementById('segEspOverlay');
           if (sub2) sub2.innerHTML = ''
@@ -655,7 +671,8 @@
             + '</div>';
           setTimeout(function() { window.location.reload(); }, 2000);
         }
-      }).catch(function() {});
+      }).catch(function() {})
+        .then(function() { window._segEspPollingActive = false; });
     }, 3000);
   }
   function _espCerrar() {
@@ -720,15 +737,16 @@
     var minRest   = Math.floor(diff % 60);
     var texto = horasRest > 0 ? (horasRest + 'h ' + minRest + 'm') : (minRest + ' min');
     var urgente = diff < 30;
-    // Alertas
-    if (diff < 31 && diff > 29 && !_widgetAlertas30) {
+    // [v1.0.3 FIX] Alertas con umbral: dispara una vez al ENTRAR a la ventana.
+    // Antes era ventana 1 min (29 < diff < 31), que con polling 60s podía saltarse.
+    if (diff <= 30 && !_widgetAlertas30) {
       _widgetAlertas30 = true;
-      _toast('⚠ Quedan 30 min para cerrar tu jornada', { error: true });
+      _toast('⚠ Quedan ' + Math.ceil(diff) + ' min para cerrar tu jornada', { error: true });
       sonidos.warning();
     }
-    if (diff < 6 && diff > 4 && !_widgetAlertas5) {
+    if (diff <= 5 && !_widgetAlertas5) {
       _widgetAlertas5 = true;
-      _toast('🚨 Quedan 5 min para cerrar tu jornada', { error: true, duracion: 8000 });
+      _toast('🚨 Quedan ' + Math.ceil(diff) + ' min para cerrar tu jornada', { error: true, duracion: 8000 });
       sonidos.urgente();
     }
     cont.innerHTML = ''

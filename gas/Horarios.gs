@@ -124,16 +124,14 @@ function setHorarioApp(params) {
   var hayInvalido = null;
   _HOR_DIAS.forEach(function(d) {
     var c = horario[d] || {};
+    var activo = c.activo !== false;
     var ap = String(c.apertura || '07:00');
     var ci = String(c.cierre || '19:00');
-    if (!_validarHHMM(ap) || !_validarHHMM(ci)) {
+    // [v2.43.133 FIX] Validar HH:MM solo si el día está activo (días cerrados pueden tener apertura/cierre arbitrarios)
+    if (activo && (!_validarHHMM(ap) || !_validarHHMM(ci))) {
       hayInvalido = d + ' (' + ap + ' / ' + ci + ')';
     }
-    horValidado[d] = {
-      activo:   c.activo !== false,
-      apertura: ap,
-      cierre:   ci
-    };
+    horValidado[d] = { activo: activo, apertura: ap, cierre: ci };
   });
   if (hayInvalido) return { ok: false, error: 'Hora inválida en día: ' + hayInvalido };
 

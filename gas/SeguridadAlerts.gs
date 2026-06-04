@@ -192,7 +192,7 @@ function getSeguridadAlertas(params) {
       var obj = {};
       SEGURIDAD_ALERTAS_HEADERS.forEach(function(h, i) { obj[h] = row[i]; });
       return obj;
-    }).filter(function(it) { return String(it.estado || '').toUpperCase() === 'PENDIENTE'; });
+    }).filter(function(it) { return String(it.estado || '').trim().toUpperCase() === 'PENDIENTE'; });
     if (params.tipo) items = items.filter(function(it) { return String(it.tipo) === String(params.tipo); });
     // Ordenar por fecha desc (más nuevas primero)
     items.sort(function(a, b) { return String(b.fecha).localeCompare(String(a.fecha)); });
@@ -378,16 +378,15 @@ function aprobarExtensionHorario(params) {
   try { _lock.waitLock(15000); } catch(e) { return { ok: false, error: 'Sistema ocupado' }; }
   try {
     if (!params.idAlerta) return { ok: false, error: 'idAlerta requerido' };
-    // [v2.43.132 FIX] verificarClaveAdmin si viene clave; usar nombre validado del admin
-    var aprobadoPorReal = String(params.aprobadoPor || 'admin');
-    if (params.claveAdmin) {
-      var authE = verificarClaveAdmin({ clave: params.claveAdmin, accion: 'APROBAR_EXTENSION', refDocumento: params.idAlerta });
-      if (!authE.ok) return authE;
-      if (!authE.data || !authE.data.autorizado) {
-        return { ok: true, data: { autorizado: false, error: (authE.data && authE.data.error) || 'Clave incorrecta' } };
-      }
-      aprobadoPorReal = authE.data.validadoPor || aprobadoPorReal;
+    // [v2.43.133 FIX] Clave admin REQUERIDA: aprobar una extensión muta horario;
+    // no se puede confiar en params.aprobadoPor enviado por el cliente.
+    if (!params.claveAdmin) return { ok: false, error: 'claveAdmin requerida para aprobar extensión' };
+    var authE = verificarClaveAdmin({ clave: params.claveAdmin, accion: 'APROBAR_EXTENSION', refDocumento: params.idAlerta });
+    if (!authE.ok) return authE;
+    if (!authE.data || !authE.data.autorizado) {
+      return { ok: true, data: { autorizado: false, error: (authE.data && authE.data.error) || 'Clave incorrecta' } };
     }
+    var aprobadoPorReal = authE.data.validadoPor || 'admin';
     var sheet = _getSheetSegAlertas();
     var data = sheet.getDataRange().getValues();
     var hdrs = data[0];
@@ -444,10 +443,11 @@ function extenderHorarioHoy(params) {
     var res = resolverHorarioPersonal({ idPersonal: params.idPersonal, rol: '', app: appUsuario });
     var cierreActual = res && res.data ? res.data.cierre : null;
     if (!cierreActual) return { ok: false, error: 'No se pudo determinar el cierre actual' };
-    // Calcular nuevo cierre + minutos
-    var partes = String(cierreActual).split(':');
-    var hh = parseInt(partes[0]) || 0;
-    var mm = parseInt(partes[1]) || 0;
+    // [v2.43.133 FIX] Validar formato HH:MM antes de split (evita NaN si cierreActual está corrupto)
+    var matchCierre = String(cierreActual).match(/^(\d{1,2}):(\d{2})$/);
+    if (!matchCierre) return { ok: false, error: 'Cierre actual corrupto: ' + cierreActual };
+    var hh = parseInt(matchCierre[1], 10);
+    var mm = parseInt(matchCierre[2], 10);
     var totalMin = hh * 60 + mm + minutos;
     var nuevoHH = Math.floor(totalMin / 60);
     var nuevoMM = totalMin % 60;

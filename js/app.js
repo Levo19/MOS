@@ -616,6 +616,20 @@ const MOS = (() => {
         S.session = { idPersonal: userId, nombre: res.nombre, rol: res.rol, idSesion: _generaIdSesion() };
         _saveSession(S.session);
         _applySession();
+        // [v2.43.133 FIX] Revelar botones admin del sistema seguridad inmediatamente al login
+        try {
+          var _rolN = String(res.rol || '').toUpperCase();
+          if (_rolN === 'MASTER' || _rolN === 'ADMINISTRADOR') {
+            var _b1 = document.getElementById('btnSegAlertasAdmin');
+            var _b2 = document.getElementById('btnSegHorariosAdmin');
+            if (_b1) _b1.style.display = '';
+            if (_b2) _b2.style.display = '';
+            // Iniciar badge si el módulo ya cargó (idempotente — el fix #2 limpia timer previo)
+            if (window.SeguridadSystem && window.SeguridadSystem.arrancarBadgeAlertas) {
+              try { window.SeguridadSystem.arrancarBadgeAlertas(); } catch(_){}
+            }
+          }
+        } catch(_){}
         _refreshAuditCtx();
         // [v2.43.31] Check horario MOS (custom gana sobre admin_libre)
         try { _mosVerificarHorarioMioInterval(); } catch(_){}
@@ -878,6 +892,17 @@ const MOS = (() => {
     _finPL = null;
     _clearSession();
     if (typeof _segLimpiarCacheLocal === 'function') _segLimpiarCacheLocal();
+    // [v2.43.133 FIX] Ocultar botones admin del sistema seguridad al cerrar sesión
+    try {
+      var b1 = document.getElementById('btnSegAlertasAdmin');
+      var b2 = document.getElementById('btnSegHorariosAdmin');
+      if (b1) b1.style.display = 'none';
+      if (b2) b2.style.display = 'none';
+      // Detener badge y borrar contador visto (otro usuario no debe heredar)
+      try { localStorage.removeItem('seg_badge_count_visto'); } catch(_) {}
+      var sb = document.getElementById('segBadge');
+      if (sb) sb.remove();
+    } catch(_) {}
     S.session = null;
     S.loaded = {};
     S._cajasLoaded = false; S._todasCajas = null; S._todosTickets = null;
