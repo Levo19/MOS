@@ -131,6 +131,79 @@
     }, opts.duracion || 4000);
   }
 
+  // ── Modales nativos sustitutos (memoria: prohibido prompt/confirm/alert) ──
+  function _modalPrompt(opts) {
+    return new Promise(function(resolve) {
+      _injectCss();
+      var id = 'segPrompt_' + Date.now();
+      var defaultVal = opts.default || '';
+      var html = ''
+        + '<div class="seg-overlay" id="' + id + '" style="z-index:99998">'
+        +   '<div class="seg-modal" style="max-width:420px">'
+        +     '<div class="seg-head">'
+        +       '<div class="seg-emoji">' + (opts.emoji || '✏') + '</div>'
+        +       '<div style="flex:1"><div class="seg-h1">' + _esc(opts.title || 'Ingresar') + '</div>'
+        +         (opts.subtitle ? '<div class="seg-sub">' + _esc(opts.subtitle) + '</div>' : '') + '</div>'
+        +     '</div>'
+        +     '<div class="seg-body">'
+        +       (opts.label ? '<label style="font-size:11px;color:#94a3b8;font-weight:700">' + _esc(opts.label) + '</label>' : '')
+        +       '<input class="seg-input" id="' + id + '_in" type="' + (opts.type || 'text') + '" '
+        +         'value="' + _esc(defaultVal) + '" placeholder="' + _esc(opts.placeholder || '') + '" '
+        +         (opts.maxlength ? 'maxlength="' + opts.maxlength + '" ' : '')
+        +         'style="font-size:14px">'
+        +     '</div>'
+        +     '<div style="padding:14px 22px;border-top:1px solid #1e293b;display:flex;gap:8px">'
+        +       '<button class="seg-btn seg-btn-warn" style="flex:1" id="' + id + '_cn">Cancelar</button>'
+        +       '<button class="seg-btn seg-btn-primary" style="flex:2" id="' + id + '_ok">Aceptar</button>'
+        +     '</div>'
+        +   '</div>'
+        + '</div>';
+      document.body.insertAdjacentHTML('beforeend', html);
+      var inp = document.getElementById(id + '_in');
+      setTimeout(function() { inp && inp.focus(); inp && inp.select(); }, 50);
+      var cerrar = function(valor) {
+        var ov = document.getElementById(id);
+        if (ov) { ov.style.animation = 'seg-out .22s ease-out forwards'; setTimeout(function(){ ov.remove(); }, 220); }
+        resolve(valor);
+      };
+      document.getElementById(id + '_ok').onclick = function() { cerrar(inp.value); };
+      document.getElementById(id + '_cn').onclick = function() { cerrar(null); };
+      inp.onkeydown = function(e) {
+        if (e.key === 'Enter') cerrar(inp.value);
+        else if (e.key === 'Escape') cerrar(null);
+      };
+    });
+  }
+  function _modalConfirm(opts) {
+    return new Promise(function(resolve) {
+      _injectCss();
+      var id = 'segConfirm_' + Date.now();
+      var html = ''
+        + '<div class="seg-overlay" id="' + id + '" style="z-index:99998">'
+        +   '<div class="seg-modal" style="max-width:420px;border-color:rgba(248,113,113,.4)">'
+        +     '<div class="seg-head" style="background:linear-gradient(135deg,rgba(248,113,113,.12),rgba(220,38,38,.04))">'
+        +       '<div class="seg-emoji">' + (opts.emoji || '⚠') + '</div>'
+        +       '<div style="flex:1"><div class="seg-h1" style="color:#fca5a5">' + _esc(opts.title || 'Confirmar') + '</div></div>'
+        +     '</div>'
+        +     '<div class="seg-body"><div style="font-size:13px;color:#cbd5e1;padding:8px 0">'
+        +       _esc(opts.message || '¿Estás seguro?') + '</div></div>'
+        +     '<div style="padding:14px 22px;border-top:1px solid #1e293b;display:flex;gap:8px">'
+        +       '<button class="seg-btn seg-btn-warn" style="flex:1" id="' + id + '_cn">' + _esc(opts.cancelLabel || 'Cancelar') + '</button>'
+        +       '<button class="seg-btn seg-btn-primary" style="flex:2" id="' + id + '_ok">' + _esc(opts.okLabel || 'Confirmar') + '</button>'
+        +     '</div>'
+        +   '</div>'
+        + '</div>';
+      document.body.insertAdjacentHTML('beforeend', html);
+      var cerrar = function(v) {
+        var ov = document.getElementById(id);
+        if (ov) { ov.style.animation = 'seg-out .22s ease-out forwards'; setTimeout(function(){ ov.remove(); }, 220); }
+        resolve(v);
+      };
+      document.getElementById(id + '_ok').onclick = function() { cerrar(true); };
+      document.getElementById(id + '_cn').onclick = function() { cerrar(false); };
+    });
+  }
+
   // ── Helpers API ────────────────────────────────────────────
   function _api(action, params) {
     if (!_config.apiPost) return Promise.reject(new Error('SeguridadSystem no inicializado'));
@@ -162,15 +235,28 @@
   // BADGE FLOTANTE alertas admin
   // ════════════════════════════════════════════════════════════
   var _badgeTimer = null;
-  var _badgeCountUltimo = 0;
+  // [v1.0.1 FIX] Persistir último count visto en localStorage por usuario para que
+  // el sonido NO suene en cada recarga de página con alertas ya conocidas.
+  function _badgeCountVisto() {
+    try { return parseInt(localStorage.getItem('seg_badge_count_visto') || '0') || 0; }
+    catch(_) { return 0; }
+  }
+  function _badgeCountVistoSet(n) {
+    try { localStorage.setItem('seg_badge_count_visto', String(n)); } catch(_) {}
+  }
   function arrancarBadgeAlertas() {
     if (_badgeTimer) return;
     _injectCss();
+    var primerRefresh = true;
     var refresh = function() {
       _api('getSeguridadAlertas', { limit: 1 }).then(function(d) {
         var count = (d && d.count) || 0;
         var existing = document.getElementById('segBadge');
-        if (count === 0) { if (existing) existing.remove(); _badgeCountUltimo = 0; return; }
+        if (count === 0) {
+          if (existing) existing.remove();
+          _badgeCountVistoSet(0);
+          return;
+        }
         if (!existing) {
           var div = document.createElement('div');
           div.id = 'segBadge';
@@ -179,13 +265,17 @@
           document.body.appendChild(div);
           existing = div;
         }
-        // Sonido si vino un pendiente nuevo (count subió)
-        if (count > _badgeCountUltimo && _badgeCountUltimo > 0) {
+        // Sonar SOLO si: (a) refresh posterior y count subió, o
+        // (b) primer refresh y hay MÁS alertas que la última vez que el admin
+        // las vio (persistido en localStorage)
+        var ultimoVisto = _badgeCountVisto();
+        if (!primerRefresh && count > ultimoVisto) {
           sonidos.alerta();
-        } else if (count > 0 && _badgeCountUltimo === 0) {
+        } else if (primerRefresh && count > ultimoVisto) {
           sonidos.alerta();
         }
-        _badgeCountUltimo = count;
+        primerRefresh = false;
+        _badgeCountVistoSet(count);
         existing.innerHTML = '🚨 <span>' + count + ' alerta' + (count > 1 ? 's' : '') + ' de seguridad</span>';
       }).catch(function() {});
     };
@@ -325,22 +415,35 @@
     }).catch(function(e) { sonidos.rechazado(); _toast('❌ ' + e.message, { error: true }); });
   }
   function _renombrar(id) {
-    var nombre = prompt('Nuevo nombre del dispositivo:', '');
-    if (!nombre) return;
-    sonidos.click();
-    _api('aprobarDispositivoPendiente', { ID_Dispositivo: id, Nombre_Equipo: nombre, aprobadoPor: _config.usuario() }).then(function() {
-      sonidos.aprobado();
-      _toast('✅ Dispositivo aprobado como "' + _esc(nombre) + '"', { success: true });
-      _alertasCargar();
-    }).catch(function(e) { _toast('❌ ' + e.message, { error: true }); });
+    _modalPrompt({
+      title: 'Renombrar dispositivo',
+      label: 'Nuevo nombre:',
+      placeholder: 'Ej: Caja 1 · TV Almacén',
+      emoji: '✏'
+    }).then(function(nombre) {
+      if (!nombre || !nombre.trim()) return;
+      sonidos.click();
+      _api('aprobarDispositivoPendiente', { ID_Dispositivo: id, Nombre_Equipo: nombre, aprobadoPor: _config.usuario() }).then(function() {
+        sonidos.aprobado();
+        _toast('✅ Dispositivo aprobado como "' + _esc(nombre) + '"', { success: true });
+        _alertasCargar();
+      }).catch(function(e) { _toast('❌ ' + e.message, { error: true }); });
+    });
   }
   function _rechazar(id) {
-    if (!confirm('¿Rechazar este dispositivo? Quedará bloqueado.')) return;
-    sonidos.click();
-    _api('rechazarDispositivoPendiente', { ID_Dispositivo: id }).then(function() {
-      _toast('🗑 Dispositivo rechazado');
-      _alertasCargar();
-    }).catch(function(e) { _toast('❌ ' + e.message, { error: true }); });
+    _modalConfirm({
+      title: 'Rechazar dispositivo',
+      message: 'El dispositivo quedará bloqueado y no podrá acceder.',
+      okLabel: 'Rechazar',
+      emoji: '✗'
+    }).then(function(ok) {
+      if (!ok) return;
+      sonidos.click();
+      _api('rechazarDispositivoPendiente', { ID_Dispositivo: id }).then(function() {
+        _toast('🗑 Dispositivo rechazado');
+        _alertasCargar();
+      }).catch(function(e) { _toast('❌ ' + e.message, { error: true }); });
+    });
   }
   function _reactivar(id) {
     sonidos.click();
@@ -466,7 +569,9 @@
     var clave = (document.getElementById('segSolClave') || {}).value || '';
     if (!/^\d{8}$/.test(clave)) { _toast('⚠ Clave debe ser 8 dígitos', { error: true }); return; }
     sonidos.click();
-    var apiAction = _config.endpointPrefix === 'wh_' ? 'wh_aprobarDispositivoEnSitu' : 'aprobarDispositivoEnSitu';
+    // [v1.0.1 FIX] aprobarDispositivoEnSitu vive en MOS GAS. apiPost del cliente
+    // debe apuntar a MOS (WH lo hace via bridge wh_; ME apunta directo a MOS).
+    var apiAction = 'aprobarDispositivoEnSitu';
     var deviceId = (window.WH_CONFIG && window.WH_CONFIG.deviceId)
                 || localStorage.getItem('mosexpress_deviceId')
                 || localStorage.getItem('wh_device_id') || '';
@@ -522,8 +627,9 @@
       var sec = Math.floor((Date.now() - window._segEspInicio) / 1000);
       var sub = document.getElementById('segEspSub');
       if (sub) sub.textContent = 'enviada · ' + (sec < 60 ? sec + ' seg' : Math.floor(sec / 60) + ' min ' + (sec % 60) + ' seg');
-      // Polling: chequear estado del dispositivo
-      var apiAction = _config.endpointPrefix === 'wh_' ? 'wh_consultarEstadoDispositivo' : 'consultarEstadoDispositivo';
+      // Polling: chequear estado del dispositivo (consultarEstadoDispositivo
+      // existe en WH y MOS; apiPost del cliente lo resuelve al GAS correcto)
+      var apiAction = 'consultarEstadoDispositivo';
       var deviceId = (window.WH_CONFIG && window.WH_CONFIG.deviceId)
                   || localStorage.getItem('mosexpress_deviceId')
                   || localStorage.getItem('wh_device_id') || '';
@@ -557,6 +663,7 @@
   var _widgetCierreHoy = null;  // "HH:MM" string
   var _widgetAlertas30 = false;
   var _widgetAlertas5 = false;
+  var _widgetUltimoDia = null;  // [v1.0.1 FIX] YYYY-MM-DD para resetear alertas al cambiar de día
 
   function arrancarWidgetMiHorario(containerId) {
     _injectCss();
@@ -582,6 +689,13 @@
     var hh = parseInt(partes[0]) || 0;
     var mm = parseInt(partes[1]) || 0;
     var ahora = new Date();
+    // [v1.0.1 FIX] Resetear flags de alerta si cambió el día calendario
+    var hoyKey = ahora.getFullYear() + '-' + (ahora.getMonth() + 1) + '-' + ahora.getDate();
+    if (_widgetUltimoDia !== hoyKey) {
+      _widgetAlertas30 = false;
+      _widgetAlertas5 = false;
+      _widgetUltimoDia = hoyKey;
+    }
     var cierreFecha = new Date();
     cierreFecha.setHours(hh, mm, 0, 0);
     var diff = (cierreFecha.getTime() - ahora.getTime()) / 60000;  // min
@@ -681,15 +795,30 @@
       + '</div>');
   }
   function _fueraSolicitarExtension() {
-    var min = parseInt(prompt('¿Cuántos minutos extra necesitás?', '60')) || 0;
-    if (min <= 0 || min > 240) { _toast('⚠ Entre 1 y 240 min', { error: true }); return; }
-    var motivo = prompt('Motivo para el admin:', '') || '';
-    if (!motivo.trim()) { _toast('⚠ Ingresá un motivo', { error: true }); return; }
-    sonidos.click();
-    _api('solicitarExtensionHorario', { idPersonal: _config.idPersonal(), minutos: min, motivo: motivo }).then(function() {
-      _toast('✅ Solicitud enviada al admin', { success: true });
-      _fueraCerrar();
-    }).catch(function(e) { _toast('❌ ' + e.message, { error: true }); });
+    _modalPrompt({
+      title: 'Solicitar extensión',
+      label: '¿Cuántos minutos extra necesitas?',
+      default: '60',
+      type: 'number',
+      emoji: '⏰'
+    }).then(function(minRaw) {
+      if (!minRaw) return;
+      var min = parseInt(minRaw) || 0;
+      if (min <= 0 || min > 240) { _toast('⚠ Entre 1 y 240 min', { error: true }); return; }
+      _modalPrompt({
+        title: 'Motivo',
+        label: 'Explícale al admin por qué necesitas la extensión:',
+        placeholder: 'Ej: cliente importante, inventario...',
+        emoji: '📝'
+      }).then(function(motivo) {
+        if (!motivo || !motivo.trim()) { _toast('⚠ Ingresá un motivo', { error: true }); return; }
+        sonidos.click();
+        _api('solicitarExtensionHorario', { idPersonal: _config.idPersonal(), minutos: min, motivo: motivo }).then(function() {
+          _toast('✅ Solicitud enviada al admin', { success: true });
+          _fueraCerrar();
+        }).catch(function(e) { _toast('❌ ' + e.message, { error: true }); });
+      });
+    });
   }
   function _fueraNotificarme(apertura) {
     sonidos.click();
@@ -845,41 +974,75 @@
     return html;
   }
   function _cfgNuevaExc() {
-    var idP = prompt('idPersonal del usuario:', '');
-    if (!idP) return;
-    _cfgEditExc(idP);
+    _modalPrompt({
+      title: 'Nueva excepción',
+      label: 'idPersonal del usuario:',
+      placeholder: 'Ej: P001 · P012',
+      emoji: '➕'
+    }).then(function(idP) {
+      if (!idP || !idP.trim()) return;
+      _cfgEditExc(idP.trim());
+    });
   }
   function _cfgEditExc(idPersonal) {
     sonidos.click();
     var p = _cfgState.excepciones.find(function(x) { return x.idPersonal === idPersonal; }) || {};
     var hc = {};
     try { hc = typeof p.horarioCustom === 'string' ? JSON.parse(p.horarioCustom) : (p.horarioCustom || {}); } catch(_) {}
-    var motivo = prompt('Motivo:', hc.motivo || 'turno noche');
-    if (motivo === null) return;
-    var ap = prompt('Apertura (HH:MM):', (hc.dias && hc.dias.lun && hc.dias.lun.apertura) || '14:00');
-    if (!ap) return;
-    var ci = prompt('Cierre (HH:MM):', (hc.dias && hc.dias.lun && hc.dias.lun.cierre) || '23:00');
-    if (!ci) return;
-    var dias = {};
-    DIAS.forEach(function(d) {
-      dias[d.k] = { activo: d.k !== 'dom', apertura: ap, cierre: ci };
+    _modalPrompt({
+      title: 'Motivo',
+      label: '¿Por qué este usuario tiene horario distinto?',
+      default: hc.motivo || 'turno noche',
+      placeholder: 'Ej: envasador turno noche',
+      emoji: '📝'
+    }).then(function(motivo) {
+      if (motivo === null) return;
+      _modalPrompt({
+        title: 'Apertura',
+        label: 'Hora de apertura (HH:MM):',
+        default: (hc.dias && hc.dias.lun && hc.dias.lun.apertura) || '14:00',
+        type: 'time',
+        emoji: '🌅'
+      }).then(function(ap) {
+        if (!ap) return;
+        _modalPrompt({
+          title: 'Cierre',
+          label: 'Hora de cierre (HH:MM):',
+          default: (hc.dias && hc.dias.lun && hc.dias.lun.cierre) || '23:00',
+          type: 'time',
+          emoji: '🌙'
+        }).then(function(ci) {
+          if (!ci) return;
+          var dias = {};
+          DIAS.forEach(function(d) {
+            dias[d.k] = { activo: d.k !== 'dom', apertura: ap, cierre: ci };
+          });
+          _api('setHorarioCustomPersonal', {
+            idPersonal: idPersonal,
+            horarioCustom: { activo: true, dias: dias, motivo: motivo, ts: new Date().toISOString() }
+          }).then(function() {
+            sonidos.aprobado();
+            _toast('✅ Excepción guardada', { success: true });
+            _cfgCargar();
+          }).catch(function(e) { _toast('❌ ' + e.message, { error: true }); });
+        });
+      });
     });
-    _api('setHorarioCustomPersonal', {
-      idPersonal: idPersonal,
-      horarioCustom: { activo: true, dias: dias, motivo: motivo, ts: new Date().toISOString() }
-    }).then(function() {
-      sonidos.aprobado();
-      _toast('✅ Excepción guardada', { success: true });
-      _cfgCargar();
-    }).catch(function(e) { _toast('❌ ' + e.message, { error: true }); });
   }
   function _cfgQuitarExc(idPersonal) {
-    if (!confirm('¿Quitar excepción de horario?')) return;
-    sonidos.click();
-    _api('setHorarioCustomPersonal', { idPersonal: idPersonal, horarioCustom: { activo: false } }).then(function() {
-      _toast('🗑 Excepción quitada');
-      _cfgCargar();
-    }).catch(function(e) { _toast('❌ ' + e.message, { error: true }); });
+    _modalConfirm({
+      title: 'Quitar excepción',
+      message: 'El usuario volverá al horario general de la app.',
+      okLabel: 'Quitar',
+      emoji: '🗑'
+    }).then(function(ok) {
+      if (!ok) return;
+      sonidos.click();
+      _api('setHorarioCustomPersonal', { idPersonal: idPersonal, horarioCustom: { activo: false } }).then(function() {
+        _toast('🗑 Excepción quitada');
+        _cfgCargar();
+      }).catch(function(e) { _toast('❌ ' + e.message, { error: true }); });
+    });
   }
   function _cfgRenderExtenderHoy() {
     return ''

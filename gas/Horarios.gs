@@ -81,6 +81,7 @@ function getHorariosApps() {
     byApp[r.app] = {
       app:            r.app,
       horario:        hor,
+      dias:           hor,  // [v2.43.130 FIX] alias para SeguridadSystem (que lee .dias)
       admins_libres:  String(r.admins_libres) === 'true' || r.admins_libres === true,
       actualizadoPor: r.actualizadoPor || '',
       fechaActualizacion: r.fechaActualizacion instanceof Date ? r.fechaActualizacion.toISOString() : String(r.fechaActualizacion || '')
@@ -96,7 +97,9 @@ function setHorarioApp(params) {
   if (app !== 'warehouseMos' && app !== 'mosExpress' && app !== 'MOS') {
     return { ok: false, error: 'app no soportada (warehouseMos | mosExpress | MOS)' };
   }
-  var horario = params.horario || {};
+  // [v2.43.130 FIX] Acepta dos shapes: { horario: {lun,...} } (legacy MOS) y
+  // { dias: {lun,...} } (SeguridadSystem). Prefiere dias si viene.
+  var horario = params.dias || params.horario || {};
   // Validar 7 días
   var horValidado = {};
   _HOR_DIAS.forEach(function(d) {

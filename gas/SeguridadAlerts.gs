@@ -133,6 +133,10 @@ function diagnosticoSetupSeguridad() {
 function setupTodoSeguridad() {
   setupSeguridadAlertas();
   _garantizarColumnasDispositivosExtendidas();
+  // [v2.43.130 FIX] Instalar TODOS los triggers necesarios automáticamente
+  try { instalarTriggerPurgarDispositivos(); } catch(e) { Logger.log('purgar: ' + e.message); }
+  try { instalarTriggerRevertirDesbloqueos(); } catch(e) { Logger.log('desbloq: ' + e.message); }
+  try { instalarTriggerRevertirExtensiones(); } catch(e) { Logger.log('ext: ' + e.message); }
   return diagnosticoSetupSeguridad();
 }
 
@@ -257,8 +261,10 @@ function revertirDesbloqueosVencidos() {
     var hdrs = data[0];
     var iEst = hdrs.indexOf('Estado');
     var iDT  = hdrs.indexOf('Desbloqueo_Temporal_Hasta');
+    var iSus = hdrs.indexOf('Suspendido_Desde');
     if (iDT < 0) return { ok: true, revertidos: 0 };
     var nowMs = Date.now();
+    var nowIso = new Date(nowMs).toISOString();
     var rev = 0;
     for (var i = 1; i < data.length; i++) {
       var rawDT = data[i][iDT];
@@ -267,9 +273,10 @@ function revertirDesbloqueosVencidos() {
       if (rawDT instanceof Date) hastaMs = rawDT.getTime();
       else { var d = new Date(rawDT); if (!isNaN(d.getTime())) hastaMs = d.getTime(); }
       if (!hastaMs || hastaMs > nowMs) continue;
-      // Vencido → re-suspender + limpiar
+      // [v2.43.130 FIX] Vencido → re-suspender + limpiar DT + setear Suspendido_Desde
       sheet.getRange(i + 1, iEst + 1).setValue('SUSPENDIDO');
       sheet.getRange(i + 1, iDT + 1).setValue('');
+      if (iSus >= 0) sheet.getRange(i + 1, iSus + 1).setValue(nowIso);
       rev++;
     }
     return { ok: true, revertidos: rev };
@@ -372,19 +379,26 @@ function aprobarExtensionHorario(params) {
   } catch(e) { return { ok: false, error: e.message }; }
 }
 
-// Extiende el horario HOY de un usuario por X minutos sobre su cierre actual.
-// Genera un horarioCustom modificado SOLO para hoy. Trigger 23:59 lo revierte.
+// Extiende el horario HOY. Dos modos:
+//   A) Por USUARIO (params: idPersonal + minutos) → patch horarioCustom hoy
+//   B) Por APP    (params: app + cierre + razon)  → patch CONFIG_HORARIOS_APPS hoy
+// El trigger revertirExtensionesDiarias 00:01 quita ambos.
 function extenderHorarioHoy(params) {
   try {
-    if (!params.idPersonal) return { ok: false, error: 'idPersonal requerido' };
+    // [v2.43.130 FIX] Modo APP: el admin extiende cierre global hasta HH:MM
+    if (params.app && params.cierre && !params.idPersonal) {
+      return _extenderHorarioHoyApp(params);
+    }
+    if (!params.idPersonal) return { ok: false, error: 'idPersonal o app+cierre requeridos' };
     var minutos = parseInt(params.minutos) || 60;
     var tz = Session.getScriptTimeZone();
     var hoy = new Date();
     var diaIdx = parseInt(Utilities.formatDate(hoy, tz, 'u'), 10);
     var diaKey = _HOR_DIAS[Math.max(0, Math.min(6, diaIdx - 1))];
 
-    // Obtener horario actual del usuario (custom o app fallback)
-    var res = resolverHorarioPersonal({ idPersonal: params.idPersonal, rol: '', app: 'warehouseMos' });
+    // [v2.43.130 FIX] No hardcodear app; permitir override desde params
+    var appUsuario = String(params.app || 'warehouseMos');
+    var res = resolverHorarioPersonal({ idPersonal: params.idPersonal, rol: '', app: appUsuario });
     var cierreActual = res && res.data ? res.data.cierre : null;
     if (!cierreActual) return { ok: false, error: 'No se pudo determinar el cierre actual' };
     // Calcular nuevo cierre + minutos
@@ -424,6 +438,149 @@ function extenderHorarioHoy(params) {
     }
     return { ok: false, error: 'idPersonal no encontrado' };
   } catch(e) { return { ok: false, error: e.message }; }
+}
+
+// [v2.43.130] Helper modo B: extender cierre HOY de la APP global.
+// Guarda un patch en Script Properties `EXT_HORARIO_HOY_<app>` = `{dia,cierre,ts,razon}`.
+// El trigger 00:01 lo revierte. Mientras tanto, _resolverHorarioPersonal y getHorariosApps
+// deberían consultar este patch — pero por simplicidad guardamos el cierre original
+// en el mismo patch para restaurar después.
+function _extenderHorarioHoyApp(params) {
+  var app = String(params.app || '');
+  var cierre = String(params.cierre || '');
+  var razon = String(params.razon || 'sin razón');
+  if (!/^\d{2}:\d{2}$/.test(cierre)) return { ok: false, error: 'cierre inválido (HH:MM)' };
+
+  var sh = _asegurarHojaHorariosApps();
+  var data = sh.getDataRange().getValues();
+  var hdrs = data[0];
+  var iApp = hdrs.indexOf('app');
+  var iHor = hdrs.indexOf('horarioJson');
+  var filaFound = -1;
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][iApp]) === app) { filaFound = i + 1; break; }
+  }
+  if (filaFound < 0) return { ok: false, error: 'app no encontrada' };
+
+  var horarioActual = {};
+  try { horarioActual = JSON.parse(data[filaFound - 1][iHor] || '{}'); } catch(_) {}
+
+  var tz = Session.getScriptTimeZone();
+  var diaIdx = parseInt(Utilities.formatDate(new Date(), tz, 'u'), 10);
+  var diaKey = _HOR_DIAS[Math.max(0, Math.min(6, diaIdx - 1))];
+
+  var configDia = horarioActual[diaKey] || { activo: true, apertura: '07:00', cierre: '19:00' };
+  var cierreOriginal = String(configDia.cierre || '19:00');
+
+  // Backup en Properties para revertir
+  PropertiesService.getScriptProperties().setProperty(
+    'EXT_HORARIO_HOY_' + app,
+    JSON.stringify({ dia: diaKey, cierreOriginal: cierreOriginal, cierreNuevo: cierre, razon: razon, ts: new Date().toISOString() })
+  );
+
+  // Patch del día actual con nuevo cierre
+  horarioActual[diaKey] = {
+    activo: true,
+    apertura: String(configDia.apertura || '07:00'),
+    cierre: cierre
+  };
+  sh.getRange(filaFound, iHor + 1).setValue(JSON.stringify(horarioActual));
+
+  // Alerta + invalidar cache + push
+  _crearAlertaSeg('EXTENSION_HORARIO_APP', {
+    descripcion: 'Cierre ' + app + ' extendido hoy ' + cierreOriginal + '→' + cierre + ' · ' + razon.substring(0, 100),
+    prioridad: 'MEDIA',
+    datosExtra: { app: app, cierreOriginal: cierreOriginal, cierreNuevo: cierre, razon: razon }
+  });
+  try { _invalidarCacheHorarioApp(app); } catch(_) {}
+  try {
+    if (typeof _enviarPushTodos === 'function') {
+      _enviarPushTodos('🕐 Cierre extendido', app + ' cierra hoy ' + cierre + ' (' + razon + ')',
+        { idNotif: 'MOS_EXT_APP_' + app });
+    }
+  } catch(_) {}
+
+  return { ok: true, data: { app: app, cierreNuevo: cierre, cierreOriginal: cierreOriginal, dia: diaKey } };
+}
+
+// [v2.43.130] Trigger diario 00:01 — revierte todos los patches del día anterior.
+// Revisa Properties EXT_HORARIO_HOY_<app> y restaura cierreOriginal; revisa
+// PERSONAL_MASTER.horarioCustom.extensionHoy y limpia el día extendido.
+function revertirExtensionesDiarias() {
+  var revertidas = 0;
+  try {
+    // A) Apps
+    var props = PropertiesService.getScriptProperties();
+    var all = props.getProperties();
+    Object.keys(all).forEach(function(key) {
+      if (key.indexOf('EXT_HORARIO_HOY_') !== 0) return;
+      var app = key.substring('EXT_HORARIO_HOY_'.length);
+      try {
+        var patch = JSON.parse(all[key]);
+        var sh = _asegurarHojaHorariosApps();
+        var data = sh.getDataRange().getValues();
+        var hdrs = data[0];
+        var iApp = hdrs.indexOf('app');
+        var iHor = hdrs.indexOf('horarioJson');
+        for (var i = 1; i < data.length; i++) {
+          if (String(data[i][iApp]) !== app) continue;
+          var hor = {};
+          try { hor = JSON.parse(data[i][iHor] || '{}'); } catch(_) {}
+          if (hor[patch.dia]) {
+            hor[patch.dia].cierre = patch.cierreOriginal;
+            sh.getRange(i + 1, iHor + 1).setValue(JSON.stringify(hor));
+            revertidas++;
+          }
+          break;
+        }
+        try { _invalidarCacheHorarioApp(app); } catch(_) {}
+      } catch(_) {}
+      props.deleteProperty(key);
+    });
+
+    // B) Usuarios (PERSONAL_MASTER.horarioCustom.extensionHoy)
+    var pSh = getSheet('PERSONAL_MASTER');
+    if (pSh) {
+      var pd = pSh.getDataRange().getValues();
+      var ph = pd[0];
+      var iHC = ph.indexOf('horarioCustom');
+      var iId = ph.indexOf('idPersonal');
+      if (iHC >= 0) {
+        for (var j = 1; j < pd.length; j++) {
+          var raw = pd[j][iHC];
+          if (!raw) continue;
+          try {
+            var hc = JSON.parse(raw);
+            if (hc && hc.extensionHoy) {
+              // Si tenía extensión: quitar el día patcheado y el flag
+              if (hc.dias && hc.extensionHoy.dia) delete hc.dias[hc.extensionHoy.dia];
+              delete hc.extensionHoy;
+              // Si ya no quedan días custom, quitar todo
+              if (!hc.dias || Object.keys(hc.dias).length === 0) {
+                pSh.getRange(j + 1, iHC + 1).setValue('');
+              } else {
+                pSh.getRange(j + 1, iHC + 1).setValue(JSON.stringify(hc));
+              }
+              try { _invalidarCacheHorarioUsuario(String(pd[j][iId])); } catch(_) {}
+              revertidas++;
+            }
+          } catch(_) {}
+        }
+      }
+    }
+  } catch(e) { Logger.log('[revertirExtensionesDiarias] ' + e.message); }
+  return { ok: true, revertidas: revertidas };
+}
+
+function instalarTriggerRevertirExtensiones() {
+  var TRG = 'revertirExtensionesDiarias';
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === TRG) ScriptApp.deleteTrigger(t);
+  });
+  // Apps Script no soporta nearMinute; corre alguna vez entre 0:00-0:59
+  ScriptApp.newTrigger(TRG).timeBased().atHour(0).everyDays(1).create();
+  Logger.log('[Trigger] ' + TRG + ' instalado · diario 0:00-0:59');
+  return { ok: true };
 }
 
 // ────────────────────────────────────────────────────────────────────
