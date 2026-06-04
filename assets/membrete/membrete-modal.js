@@ -31,6 +31,9 @@
   // ── Estado del lote en curso ────────────────────────────────
   var _state = null;
   // _state = { idLote, total, completadas, status, tipo, descripcion, tInicio }
+  // [v1.6] Lotes lanzados en paralelo (mientras el actual estaba activo).
+  // El backend los procesa en cola FIFO; el frontend solo trackea el más reciente.
+  var _lotesEnBackground = [];
 
   // ── INYECCIÓN DE CSS ────────────────────────────────────────
   function _injectCss() {
@@ -244,7 +247,10 @@
     var div = document.createElement('div');
     div.id = 'msBadgeNav';
     div.className = 'ms-badge-nav';
-    div.innerHTML = '🏷 ' + _state.completadas + '/' + _state.total;
+    // [v1.6] Si hay lotes en background, mostrarlos también
+    var extraBg = (_lotesEnBackground && _lotesEnBackground.length) || 0;
+    var sufijo = extraBg > 0 ? ' (+' + extraBg + ' en cola)' : '';
+    div.innerHTML = '🏷 ' + _state.completadas + '/' + _state.total + sufijo;
     div.onclick = function() { _reabrirModal(); };
     document.body.appendChild(div);
   }
@@ -289,7 +295,23 @@
           // [v1.2 FIX] Texto correcto: MEMBRETE_ME = para góndola tienda, MEMBRETE_WH = para andamio almacén
           _toast('✅ ' + (d.total || _state.total) + ' adhesivos impresos · ' + (_state.tipo === 'MEMBRETE_ME' ? 'recoger en almacén' : 'listos en andamio'));
           _state.polling = false;
-          setTimeout(function() { cerrarModal(); _state = null; _renderBadge(); }, 2500);
+          setTimeout(function() {
+            cerrarModal();
+            // [v1.6] Promover el siguiente lote en background a actual (si lo hay)
+            if (_lotesEnBackground && _lotesEnBackground.length) {
+              var next = _lotesEnBackground.shift();
+              _state = {
+                idLote: next.idLote, total: next.total, completadas: 0,
+                status: 'IMPRIMIENDO', tipo: next.tipo,
+                descripcion: 'siguiente lote · ' + next.total + ' adhesivos',
+                polling: false
+              };
+              _arrancarPolling();
+            } else {
+              _state = null;
+            }
+            _renderBadge();
+          }, 2500);
           return;
         }
         if (['CANCELADO','PAUSADO_OUT_PAPER','PAUSADO_ERROR'].indexOf(status) >= 0) {
@@ -356,13 +378,11 @@
   }
 
   // Imprimir membretes (ME o WH) — items = array de productos
+  // [v1.6 FIX] Permitir lanzar MÚLTIPLES lotes seguidos. El backend los
+  // procesa en cola FIFO via el trigger procesarLotesPendientes. El usuario
+  // no tiene que esperar — solo se reemplaza el state del frontend con el
+  // lote nuevo (el anterior sigue procesándose en background).
   function imprimirMembrete(opts) {
-    // [AUDIT FIX #2] Guard contra dobles clicks / lotes simultáneos.
-    if (_state && _state.idLote && ['CREADO','ENCOLADO','IMPRIMIENDO','CALIBRANDO'].indexOf(_state.status) >= 0) {
-      _toast('⚠ Ya hay un lote en curso · esperá a que termine', { error: true });
-      sonidos.error();
-      return Promise.reject(new Error('Lote en curso'));
-    }
     var tipo = opts.tipo;  // 'MEMBRETE_ME' | 'MEMBRETE_WH'
     var items = opts.items || [];
     var idempotencyKey = 'mem_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
@@ -370,6 +390,14 @@
     var desc = tipo === 'MEMBRETE_ME'
       ? items.length + ' productos · góndola'
       : items.length + ' productos · andamio';
+    // [v1.6] Si ya hay un lote en curso, detener polling del anterior y guardarlo
+    // como "lote en background". El badge mostrará la cantidad acumulada.
+    if (_state && _state.idLote && ['CREADO','ENCOLADO','IMPRIMIENDO','CALIBRANDO'].indexOf(_state.status) >= 0) {
+      _state.polling = false;  // detener polling del lote viejo
+      _lotesEnBackground.push({ idLote: _state.idLote, total: _state.total, tipo: _state.tipo });
+      // Toast para feedback de que el anterior sigue
+      _toast('➕ Lote anterior sigue en cola · este se encola detrás');
+    }
     _abrirModalProgreso({
       idLote: '', total: items.length, tipo: tipo, descripcion: desc
     });
@@ -383,9 +411,6 @@
       if (!_state) return;
       _state.idLote = d.idLote;
       _state.total  = d.total || _state.total;  // backend expande WH multi-codigo
-      // [AUDIT FIX #1] Resetear polling=false para permitir re-arranque.
-      // Antes _state.polling quedaba en true del primer intento con idLote=''
-      // y el segundo _arrancarPolling() retornaba sin loopear.
       _state.polling = false;
       _render();
       _arrancarPolling();
