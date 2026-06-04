@@ -1120,26 +1120,36 @@ function purgarDispositivosInactivos7d() {
 }
 
 function aprobarDispositivoPendiente(params) {
-  _garantizarColumnasDispositivos();
-  if (!params.ID_Dispositivo) return { ok: false, error: 'Requiere ID_Dispositivo' };
-  var sheet = getSheet('DISPOSITIVOS');
-  var data  = sheet.getDataRange().getValues();
-  var hdrs  = data[0];
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][0]) !== String(params.ID_Dispositivo)) continue;
-    sheet.getRange(i + 1, hdrs.indexOf('Estado') + 1).setValue('ACTIVO');
-    if (params.Nombre_Equipo) sheet.getRange(i + 1, hdrs.indexOf('Nombre_Equipo') + 1).setValue(params.Nombre_Equipo);
-    if (params.App)           sheet.getRange(i + 1, hdrs.indexOf('App') + 1).setValue(params.App);
+  // [v2.43.134 FIX] Lock + idempotencia: si ya está ACTIVO, no duplicar push/alerta
+  var _lock = LockService.getScriptLock();
+  try { _lock.waitLock(15000); } catch(e) { return { ok: false, error: 'Sistema ocupado' }; }
+  try {
+    _garantizarColumnasDispositivos();
+    if (!params.ID_Dispositivo) return { ok: false, error: 'Requiere ID_Dispositivo' };
+    var sheet = getSheet('DISPOSITIVOS');
+    var data  = sheet.getDataRange().getValues();
+    var hdrs  = data[0];
+    var iEst  = hdrs.indexOf('Estado');
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0]) !== String(params.ID_Dispositivo)) continue;
+      var estadoActual = String(data[i][iEst] || '').toUpperCase();
+      if (estadoActual === 'ACTIVO') {
+        // Idempotente: ya estaba aprobado por otro admin/tab; no duplicar push
+        return { ok: true, skipped: true, motivo: 'ya_activo' };
+      }
+      sheet.getRange(i + 1, iEst + 1).setValue('ACTIVO');
+      if (params.Nombre_Equipo) sheet.getRange(i + 1, hdrs.indexOf('Nombre_Equipo') + 1).setValue(params.Nombre_Equipo);
+      if (params.App)           sheet.getRange(i + 1, hdrs.indexOf('App') + 1).setValue(params.App);
 
-    var nombreFinal = params.Nombre_Equipo || data[i][hdrs.indexOf('Nombre_Equipo')] || '';
-    var appFinal    = params.App || data[i][hdrs.indexOf('App')] || '';
-    _notificarAprobacionDispositivo(params.ID_Dispositivo, appFinal, nombreFinal,
-                                    (params.aprobadoPor || 'panel'), 'panel');
-    // [SF3] Marcar alerta de seguridad como REVISADA
-    try { _marcarAlertaSegRevisadaPorDispositivo(params.ID_Dispositivo, params.aprobadoPor || 'panel'); } catch(_){}
-    return { ok: true };
-  }
-  return { ok: false, error: 'Dispositivo no encontrado' };
+      var nombreFinal = params.Nombre_Equipo || data[i][hdrs.indexOf('Nombre_Equipo')] || '';
+      var appFinal    = params.App || data[i][hdrs.indexOf('App')] || '';
+      _notificarAprobacionDispositivo(params.ID_Dispositivo, appFinal, nombreFinal,
+                                      (params.aprobadoPor || 'panel'), 'panel');
+      try { _marcarAlertaSegRevisadaPorDispositivo(params.ID_Dispositivo, params.aprobadoPor || 'panel'); } catch(_){}
+      return { ok: true };
+    }
+    return { ok: false, error: 'Dispositivo no encontrado' };
+  } finally { try { _lock.releaseLock(); } catch(_){} }
 }
 
 // [SF3] Helper para marcar alertas DISPOSITIVO_PENDIENTE como REVISADA

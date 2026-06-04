@@ -715,7 +715,10 @@
     var mm = parseInt(partes[1]) || 0;
     var ahora = new Date();
     // [v1.0.1 FIX] Resetear flags de alerta si cambió el día calendario
-    var hoyKey = ahora.getFullYear() + '-' + (ahora.getMonth() + 1) + '-' + ahora.getDate();
+    // [v1.0.4 FIX] padStart para consistencia ('2026-6-3' vs '2026-06-03')
+    var hoyKey = ahora.getFullYear() + '-'
+               + String(ahora.getMonth() + 1).padStart(2, '0') + '-'
+               + String(ahora.getDate()).padStart(2, '0');
     if (_widgetUltimoDia !== hoyKey) {
       _widgetAlertas30 = false;
       _widgetAlertas5 = false;

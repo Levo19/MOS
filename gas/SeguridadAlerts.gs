@@ -150,6 +150,7 @@ function setupTodoSeguridad() {
   try { instalarTriggerPurgarDispositivos(); } catch(e) { Logger.log('purgar: ' + e.message); }
   try { instalarTriggerRevertirDesbloqueos(); } catch(e) { Logger.log('desbloq: ' + e.message); }
   try { instalarTriggerRevertirExtensiones(); } catch(e) { Logger.log('ext: ' + e.message); }
+  try { instalarTriggerNotificacionesApertura(); } catch(e) { Logger.log('notifApert: ' + e.message); }
   return diagnosticoSetupSeguridad();
 }
 
@@ -650,8 +651,61 @@ function notificarmeCuandoAbra(params) {
       idPersonal: params.idPersonal,
       descripcion: 'Operador pidió notificación cuando abra horario',
       prioridad: 'BAJA',
-      datosExtra: { apertura: params.apertura || '' }
+      datosExtra: { apertura: params.apertura || '', solicitadoEn: new Date().toISOString() }
     });
     return { ok: true };
   } catch(e) { return { ok: false, error: e.message }; }
+}
+
+// [v2.43.134] Trigger horario: procesa alertas NOTIFICAR_APERTURA y dispara
+// push al operador cuando su horario ya está abierto. Marca la alerta como
+// REVISADA para no volver a notificar.
+function procesarNotificacionesApertura() {
+  try {
+    var sheet = _getSheetSegAlertas();
+    if (sheet.getLastRow() < 2) return { ok: true, procesadas: 0 };
+    var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, SEGURIDAD_ALERTAS_HEADERS.length).getValues();
+    var iIdAl = SEGURIDAD_ALERTAS_HEADERS.indexOf('idAlerta');
+    var iTipo = SEGURIDAD_ALERTAS_HEADERS.indexOf('tipo');
+    var iIdP  = SEGURIDAD_ALERTAS_HEADERS.indexOf('idPersonal');
+    var iEst  = SEGURIDAD_ALERTAS_HEADERS.indexOf('estado');
+    var iRev  = SEGURIDAD_ALERTAS_HEADERS.indexOf('revisada_por');
+    var iRevT = SEGURIDAD_ALERTAS_HEADERS.indexOf('revisada_en');
+    var procesadas = 0;
+    for (var i = 0; i < values.length; i++) {
+      var row = values[i];
+      if (String(row[iTipo] || '').trim() !== 'NOTIFICAR_APERTURA') continue;
+      if (String(row[iEst]  || '').trim().toUpperCase() !== 'PENDIENTE') continue;
+      var idPersonal = String(row[iIdP] || '');
+      if (!idPersonal) continue;
+      // Inferir app del usuario (WH por defecto si rol envasador/operador, sino mosExpress)
+      // Para simplicidad: probar ambas apps; si alguna permite ahora, notificar.
+      var apps = ['warehouseMos', 'mosExpress'];
+      var permitidoAhora = false;
+      for (var a = 0; a < apps.length; a++) {
+        var r = resolverHorarioPersonal({ idPersonal: idPersonal, rol: '', app: apps[a] });
+        if (r && r.data && r.data.permitido) { permitidoAhora = true; break; }
+      }
+      if (!permitidoAhora) continue;
+      // Notificar al operador + marcar REVISADA
+      try { _enviarPushSegmentado(idPersonal, '🔔 Tu horario ya abrió', 'Podés entrar a la app ahora.'); } catch(_){}
+      var filaSh = i + 2;  // offset header + 0-based to 1-based
+      sheet.getRange(filaSh, iEst  + 1).setValue('REVISADA');
+      sheet.getRange(filaSh, iRev  + 1).setValue('cron_apertura');
+      sheet.getRange(filaSh, iRevT + 1).setValue(new Date().toISOString());
+      procesadas++;
+    }
+    return { ok: true, procesadas: procesadas };
+  } catch(e) { Logger.log('[procesarNotificacionesApertura] ' + e.message); return { ok: false, error: e.message }; }
+}
+
+function instalarTriggerNotificacionesApertura() {
+  var TRG = 'procesarNotificacionesApertura';
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === TRG) ScriptApp.deleteTrigger(t);
+  });
+  // Cada 15 min: balance entre latencia (notificar pronto al abrir) y carga
+  ScriptApp.newTrigger(TRG).timeBased().everyMinutes(15).create();
+  Logger.log('[Trigger] ' + TRG + ' instalado · cada 15 min');
+  return { ok: true };
 }
