@@ -821,10 +821,33 @@
     var body = document.getElementById('msHistBody');
     var sub  = document.getElementById('msHistSub');
     if (body) body.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px"><span style="display:inline-block;animation:ms-spin 1s linear infinite">◐</span> cargando…</div>';
-    _api('getLotesAdhesivoHistorial', { tipoEtiqueta: tipoFiltro, limit: 30 }).then(function(d) {
+    // [v1.4] Combinar historial + diagnóstico del trigger en una sola pasada
+    Promise.all([
+      _api('getLotesAdhesivoHistorial', { tipoEtiqueta: tipoFiltro, limit: 30 }),
+      _api('diagnosticoTriggerLotes', {}).catch(function() { return null; })
+    ]).then(function(arr) {
+      var d = arr[0] || {};
+      var diag = arr[1];
       var pendientes = (d && d.pendientes) || [];
       var historial  = (d && d.historial) || [];
       if (sub) sub.textContent = pendientes.length + ' en curso · ' + historial.length + ' completados';
+      // Si trigger NO está instalado y hay encolados → mostrar banner crítico
+      var bannerTrigger = '';
+      if (diag && diag.triggerInstalado === false) {
+        bannerTrigger = ''
+          + '<div class="ms-err" style="background:rgba(248,113,113,.15);border:1px solid #f87171;padding:10px;margin-bottom:10px">'
+          +   '<div style="font-weight:900;color:#f87171">⚠ TRIGGER PROCESADOR APAGADO</div>'
+          +   '<div style="font-size:11px;color:#fca5a5;margin-top:4px">Los lotes quedan en cola pero nadie los procesa.</div>'
+          +   '<button class="ms-btn ms-btn-primary" style="margin-top:8px" onclick="MembreteSystem._activarTriggerLotes()">'
+          +     '🔧 Activar trigger ahora'
+          +   '</button>'
+          + '</div>';
+      } else if (diag && diag.triggerInstalado === true && diag.lotesEncolados > 0) {
+        bannerTrigger = ''
+          + '<div style="background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.3);padding:8px;border-radius:6px;margin-bottom:10px;font-size:11px;color:#fbbf24">'
+          +   '⏱ ' + diag.lotesEncolados + ' lote(s) encolado(s) — se procesan automáticamente cada 1 min'
+          + '</div>';
+      }
       var fmtHora = function(iso) {
         if (!iso) return '—';
         try { return String(iso).substring(5, 16).replace('T', ' '); } catch(_) { return '—'; }
@@ -874,7 +897,7 @@
       if (!pendientes.length && !historial.length) {
         html = '<div style="text-align:center;color:#64748b;padding:30px 0;font-size:13px">— sin lotes registrados —</div>';
       }
-      if (body) body.innerHTML = html;
+      if (body) body.innerHTML = bannerTrigger + html;
     }).catch(function(e) {
       if (body) body.innerHTML = '<div class="ms-err">⚠ ' + _escapeHtml(e.message) + '</div>';
     });
@@ -882,6 +905,19 @@
   function _histCerrar() {
     var ov = document.getElementById('msHistOverlay');
     if (ov) { ov.style.animation = 'ms-out .22s ease-out forwards'; setTimeout(function(){ ov.remove(); }, 220); }
+  }
+  // [v1.4] Activador del trigger desde frontend cuando diagnóstico detecta falta
+  function _activarTriggerLotes() {
+    sonidos.click();
+    _toast('🔧 Instalando trigger procesador...');
+    _api('asegurarTriggerLotes', {}).then(function(d) {
+      sonidos.completado();
+      _toast('✅ Trigger activo · los lotes se procesarán en próximo minuto', { duracion: 5000 });
+      setTimeout(_histRefrescar, 1500);
+    }).catch(function(e) {
+      sonidos.error();
+      _toast('❌ ' + _escapeHtml(e.message), { error: true });
+    });
   }
 
   // ── MODAL alertas precio cambiado (ME) ──────────────────────
@@ -1049,6 +1085,7 @@
     abrirHistorialLotes:  abrirHistorialLotes,
     _histRefrescar:       _histRefrescar,
     _histCerrar:          _histCerrar,
+    _activarTriggerLotes: _activarTriggerLotes,
     // Internals (expuestos para handlers inline en HTML)
     _calCambiarRollo:     _calCambiarRollo,
     _calImprimirCals:     _calImprimirCals,

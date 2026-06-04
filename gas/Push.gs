@@ -63,8 +63,8 @@ function _enviarPushTokens(titulo, cuerpo, tokens) {
               notification: {
                 title: titulo,
                 body:  cuerpo,
-                icon:  'https://levo19.github.io/MOS/icon-192.png',
-                badge: 'https://levo19.github.io/MOS/icon-192.png',
+                icon:  'https://levo19.github.io/MOS/icons/icon-192.png',
+                badge: 'https://levo19.github.io/MOS/icons/icon-192.png',
                 vibrate: [200, 100, 200]
               }
             }
@@ -259,8 +259,8 @@ function _enviarPushTodos(titulo, cuerpo, opciones) {
               webpush: {
                 notification: {
                   title: titulo, body: cuerpo,
-                  icon:  'https://levo19.github.io/MOS/icon-192.png',
-                  badge: 'https://levo19.github.io/MOS/icon-192.png',
+                  icon:  'https://levo19.github.io/MOS/icons/icon-192.png',
+                  badge: 'https://levo19.github.io/MOS/icons/icon-192.png',
                   vibrate: [200, 100, 200]
                 }
               }

@@ -184,6 +184,9 @@ function _route(method, e) {
       case 'wh_getLotesAdhesivoPendientes':  return postToWarehouse('getLotesAdhesivoPendientes', params);
       // [v2.43.143] Historial lotes adhesivo por tipoEtiqueta
       case 'wh_getLotesAdhesivoHistorial':   return postToWarehouse('getLotesAdhesivoHistorial', params);
+      // [v2.43.144] Diagnóstico + auto-install trigger procesarLotes
+      case 'wh_diagnosticoTriggerLotes':     return postToWarehouse('diagnosticoTriggerLotes', params);
+      case 'wh_asegurarTriggerLotes':        return postToWarehouse('asegurarTriggerLotes', params);
       // [v2.43.125] Calibración inteligente + membretes ME/WH
       case 'wh_estadoCalibracionRollo':      return postToWarehouse('estadoCalibracionRollo', params);
       case 'wh_imprimirCalibradoresAdhesivo':return postToWarehouse('imprimirCalibradoresAdhesivo', params);

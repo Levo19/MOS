@@ -35993,8 +35993,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           const reg = await navigator.serviceWorker.ready;
           reg.showNotification(t, {
             body: b,
-            icon:  'https://levo19.github.io/MOS/icon-192.png',
-            badge: 'https://levo19.github.io/MOS/icon-192.png',
+            icon:  'https://levo19.github.io/MOS/icons/icon-192.png',
+            badge: 'https://levo19.github.io/MOS/icons/icon-192.png',
             vibrate: [200, 100, 200],
             tag: 'mos-push'
           });

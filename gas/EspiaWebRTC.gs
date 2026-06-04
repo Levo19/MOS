@@ -1386,8 +1386,8 @@ function _enviarPushTokensData(titulo, cuerpo, tokens, dataPayload) {
             webpush: {
               notification: {
                 title: titulo, body: cuerpo,
-                icon:  'https://levo19.github.io/MOS/icon-192.png',
-                badge: 'https://levo19.github.io/MOS/icon-192.png',
+                icon:  'https://levo19.github.io/MOS/icons/icon-192.png',
+                badge: 'https://levo19.github.io/MOS/icons/icon-192.png',
                 vibrate: [100, 50, 100]
               }
             }

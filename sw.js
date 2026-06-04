@@ -20,14 +20,14 @@ _fcmMsg.onBackgroundMessage(payload => {
   const body  = payload.notification?.body  || '';
   self.registration.showNotification(title, {
     body,
-    icon:    'https://levo19.github.io/MOS/icon-192.png',
-    badge:   'https://levo19.github.io/MOS/icon-192.png',
+    icon:    'https://levo19.github.io/MOS/icons/icon-192.png',
+    badge:   'https://levo19.github.io/MOS/icons/icon-192.png',
     tag:     'mos-push',
     vibrate: [200, 100, 200]
   });
 });
 
-const VERSION = '2.43.143';
+const VERSION = '2.43.144';
 const CACHE   = 'mos-v' + VERSION;
 const ASSETS  = [
   './',
