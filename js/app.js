@@ -38979,16 +38979,18 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirModalImprimirAdhesivo, cerrarModalImprimirAdhesivo,
     adhesivoCantidadDelta, adhesivoCantidadInput, adhesivoImprimir, adhesivoCalibrar,
     // [v2.43.127] Membrete desde card de catálogo
+    // [v2.43.142 FIX] El catálogo en MOS se llama S.productos, no S.catalogo.
+    // El nombre incorrecto causaba "Producto no encontrado en catálogo" siempre.
     abrirMembreteCard: function(idProducto) {
       if (!window.MembreteSystem || !MembreteSystem.abrirMenuProductoCard) {
         toast('⚠ Sistema de membretes no cargado', 'error');
         return;
       }
-      // Buscar producto en catálogo
+      // Buscar producto en S.productos (canónicos del catálogo)
       var p = null;
       try {
-        if (S && Array.isArray(S.catalogo)) {
-          p = S.catalogo.find(function(x) { return String(x.idProducto) === String(idProducto); });
+        if (S && Array.isArray(S.productos)) {
+          p = S.productos.find(function(x) { return String(x.idProducto) === String(idProducto); });
         }
       } catch(_){}
       if (!p) { toast('Producto no encontrado en catálogo', 'error'); return; }
