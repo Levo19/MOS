@@ -27,7 +27,7 @@ _fcmMsg.onBackgroundMessage(payload => {
   });
 });
 
-const VERSION = '2.43.148';
+const VERSION = '2.43.149';
 const CACHE   = 'mos-v' + VERSION;
 const ASSETS  = [
   './',
@@ -37,7 +37,12 @@ const ASSETS  = [
   './js/app.js',
   './js/api.js',
   './manifest.json',
-  './version.json'
+  './version.json',
+  // [v2.43.149] Cachear módulos centralizados también — con cache-buster
+  // para forzar download nuevo. Sin esto el HTTP cache podía servir versión
+  // vieja del archivo (los bumps de sw.js no invalidan recursos no-listados).
+  './assets/membrete/membrete-modal.js?v=2.43.149',
+  './assets/seguridad/seguridad-modal.js?v=2.43.149'
 ];
 
 // ── Instalar: cachear secuencial con reporte de progreso ──

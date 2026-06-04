@@ -18032,11 +18032,14 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
 <script src="js/api.js"></script>
-<!-- [v2.43.125] Sistema centralizado de membretes/adhesivos -->
-<script src="./assets/membrete/membrete-modal.js"></script>
-<!-- [v2.43.129] Sistema centralizado de seguridad (dispositivos + horarios) -->
-<script src="./assets/seguridad/seguridad-modal.js"></script>
-<script src="js/app.js"></script>
+<!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
+     reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
+     puede usar la versión cacheada de HTTP indefinidamente, ignorando los
+     bumps de sw.js. Bug reportado: usuario seguía viendo error "Lote en curso"
+     de v2.43.146 después de v2.43.148. -->
+<script src="./assets/membrete/membrete-modal.js?v=2.43.149"></script>
+<script src="./assets/seguridad/seguridad-modal.js?v=2.43.149"></script>
+<script src="js/app.js?v=2.43.149"></script>
 
 <!-- ── Service Worker + Update Logic ────────────────────── -->
 <script>
