@@ -1,1 +1,1 @@
-{ "version": "2.43.144", "build": "20260604-fix-icon-path-trigger-lotes-auto-install" }
+{ "version": "2.43.145", "build": "20260604-fix-xss-historial-race-timeout-naN-capRollo" }

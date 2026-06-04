@@ -487,9 +487,12 @@
       var necesitaRec  = d.necesitaRecalibrar;
       var rolloCasiAg  = d.rolloCasiAgotado;
       var capRollo     = parseInt(d.capacidadRollo) || 1000;
+      // [v1.5 FIX] Defensa contra NaN / 0
+      if (!capRollo || isNaN(capRollo) || capRollo <= 0) capRollo = 1000;
+      if (isNaN(prints) || prints < 0) prints = 0;
       var fechaCal     = String(d.fechaCalibrado || '').substring(0, 16);
       // [v1.3] Barra visual de progreso del rollo
-      var pctRollo     = Math.min(100, Math.round((prints / capRollo) * 100));
+      var pctRollo     = Math.min(100, Math.max(0, Math.round((prints / capRollo) * 100)));
       var barColor     = pctRollo >= 95 ? '#f87171' : (pctRollo >= 80 ? '#fbbf24' : '#34d399');
       body.innerHTML = ''
         + '<div class="ms-stat">'
@@ -821,11 +824,24 @@
     var body = document.getElementById('msHistBody');
     var sub  = document.getElementById('msHistSub');
     if (body) body.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px"><span style="display:inline-block;animation:ms-spin 1s linear infinite">◐</span> cargando…</div>';
-    // [v1.4] Combinar historial + diagnóstico del trigger en una sola pasada
-    Promise.all([
-      _api('getLotesAdhesivoHistorial', { tipoEtiqueta: tipoFiltro, limit: 30 }),
-      _api('diagnosticoTriggerLotes', {}).catch(function() { return null; })
+    // [v1.5 FIX] Promise.race con timeout 12s para evitar modal infinito en red lenta
+    var timeoutPromise = new Promise(function(_, reject) {
+      setTimeout(function() { reject(new Error('Timeout 12s · red lenta')); }, 12000);
+    });
+    Promise.race([
+      Promise.all([
+        _api('getLotesAdhesivoHistorial', { tipoEtiqueta: tipoFiltro, limit: 30 }),
+        _api('diagnosticoTriggerLotes', {}).catch(function() { return null; })
+      ]),
+      timeoutPromise
     ]).then(function(arr) {
+      // [v1.5 FIX] Re-check si el modal sigue abierto (usuario pudo cerrarlo)
+      var ovStill = document.getElementById('msHistOverlay');
+      var bodyStill = document.getElementById('msHistBody');
+      if (!ovStill || !bodyStill) return;
+      // Re-asignar body para escribir en el DOM actual
+      body = bodyStill;
+      sub  = document.getElementById('msHistSub');
       var d = arr[0] || {};
       var diag = arr[1];
       var pendientes = (d && d.pendientes) || [];
@@ -871,7 +887,8 @@
           +         _escapeHtml(lote.descripcion || lote.codigoBarra || lote.idLote)
           +       '</div>'
           +       '<div style="font-size:10px;color:#64748b">'
-          +         lote.usuario + ' · ' + lote.origen + ' · ' + fmtHora(lote.fechaCreacion)
+          // [v1.5 FIX] Escape XSS — usuario/origen vienen del sheet, podrían tener < > "
+          +         _escapeHtml(lote.usuario || '') + ' · ' + _escapeHtml(lote.origen || '') + ' · ' + fmtHora(lote.fechaCreacion)
           +       '</div>'
           +     '</div>'
           +     '<div style="text-align:right">'
