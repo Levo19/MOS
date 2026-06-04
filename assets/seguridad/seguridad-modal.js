@@ -421,7 +421,8 @@
     _alertasRender();
     // [v1.0.3 FIX] Usar Promise.prototype.finally para garantizar liberación
     // del lock aunque el .catch lance error síncrono
-    var _libera = function() { _accionEnVuelo[lockKey] = false; };
+    // [v1.0.5 FIX] delete en vez de set false (evita acumulación de keys)
+    var _libera = function() { delete _accionEnVuelo[lockKey]; };
     _api('aprobarDispositivoPendiente', { ID_Dispositivo: id, aprobadoPor: _config.usuario() })
       .then(function() { _alertasCargar(); })
       .catch(function(e) {

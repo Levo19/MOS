@@ -661,6 +661,9 @@ function notificarmeCuandoAbra(params) {
 // push al operador cuando su horario ya está abierto. Marca la alerta como
 // REVISADA para no volver a notificar.
 function procesarNotificacionesApertura() {
+  // [v2.43.135 FIX] Lock contra solape (re-deploy + cron normal)
+  var _lock = LockService.getScriptLock();
+  try { _lock.waitLock(15000); } catch(e) { return { ok: false, error: 'Sistema ocupado' }; }
   try {
     var sheet = _getSheetSegAlertas();
     if (sheet.getLastRow() < 2) return { ok: true, procesadas: 0 };
@@ -697,6 +700,7 @@ function procesarNotificacionesApertura() {
     }
     return { ok: true, procesadas: procesadas };
   } catch(e) { Logger.log('[procesarNotificacionesApertura] ' + e.message); return { ok: false, error: e.message }; }
+  finally { try { _lock.releaseLock(); } catch(_){} }
 }
 
 function instalarTriggerNotificacionesApertura() {
