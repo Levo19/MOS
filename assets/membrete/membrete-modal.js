@@ -114,7 +114,12 @@
     var pct       = Math.round((prints / capRollo) * 100);
     var calibrado = d.calibrado === true || d.calibrado === 'true';
     var nivel, icono, mensaje;
-    if (!calibrado) {
+    // [v2.43.163] Si el clamp del drift se activó → drift mal medido o muchos
+    // prints sin recalibrar → priorizar esta alerta sobre las demás.
+    if (d.clampActivo === true) {
+      nivel = 'error'; icono = '⚠';
+      mensaje = 'Drift fuera de rango (' + (d.offsetSinClamp || 0) + ' dots) · resetá y re-medí';
+    } else if (!calibrado) {
       nivel = 'warn';  icono = '⚠';
       mensaje = 'Sin calibrar — clickeá "Calibrar rollo nuevo" cuando lo pongas';
     } else if (pct >= 95) {
