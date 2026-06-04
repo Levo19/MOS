@@ -710,20 +710,14 @@
   // ── MENÚ rápido para card de producto (ME o WH) ──────────────
   // [v1.2 FIX] Si la app NO es MOS (admin), auto-imprime el tipo correcto
   // sin mostrar menú. Solo MOS muestra el menú con ambas opciones.
+  // [v1.3 FIX] Pasar producto directo a _menuImprimir para evitar race condition
+  // con window._msMenuProd cuando hay doble-click rápido.
   function abrirMenuProductoCard(producto) {
     _injectCss();
     sonidos.click();
-    // Auto-imprimir según origen: WH→andamio, ME→góndola
-    if (_config.origen === 'WH') {
-      window._msMenuProd = producto;
-      _menuImprimir('MEMBRETE_WH');
-      return;
-    }
-    if (_config.origen === 'ME') {
-      window._msMenuProd = producto;
-      _menuImprimir('MEMBRETE_ME');
-      return;
-    }
+    // Auto-imprimir según origen: WH→andamio, ME→góndola (sin tocar global)
+    if (_config.origen === 'WH') return _menuImprimir('MEMBRETE_WH', producto);
+    if (_config.origen === 'ME') return _menuImprimir('MEMBRETE_ME', producto);
     // Solo MOS muestra el menú con ambas opciones
     if (document.getElementById('msMenuOverlay')) return;
     var precio = parseFloat(producto.precio || producto.precioVenta) || 0;
@@ -752,8 +746,9 @@
       + '</div>');
     window._msMenuProd = producto;
   }
-  function _menuImprimir(tipo) {
-    var p = window._msMenuProd;
+  function _menuImprimir(tipo, productoDirecto) {
+    // [v1.3 FIX] Aceptar producto directo (auto-mode) o usar global (modal MOS)
+    var p = productoDirecto || window._msMenuProd;
     if (!p) return;
     _menuCerrar();
     var item = {
