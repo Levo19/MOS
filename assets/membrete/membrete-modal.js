@@ -965,11 +965,17 @@
 
   // ── [v1.4] HISTORIAL de lotes (incluye Envasados, WH, ME) ──────
   // Muestra pendientes (en curso) + últimos N completados.
-  // tipoFiltro: 'ADHESIVO_ENVASADO' | 'MEMBRETE_WH' | 'MEMBRETE_ME' | '' (todos)
+  // [v1.12] El filtro inicial Y los tabs disponibles dependen del origen:
+  // - ME  → solo MEMBRETE_ME (sin tabs)
+  // - WH  → MEMBRETE_WH + ADHESIVO_ENVASADO (2 tabs)
+  // - MOS → todos los tipos (4 tabs)
   function abrirHistorialLotes(tipoFiltro) {
     _injectCss();
     sonidos.click();
     if (document.getElementById('msHistOverlay')) return;
+    // [v1.12] Forzar filtro según origen (excepto si el caller pidió uno específico)
+    var origen = String(_config.origen || 'MOS').toUpperCase();
+    if (origen === 'ME' && !tipoFiltro) tipoFiltro = 'MEMBRETE_ME';
     tipoFiltro = String(tipoFiltro || '').toUpperCase();
     var emoji = tipoFiltro === 'MEMBRETE_ME' ? '🏪'
               : tipoFiltro === 'MEMBRETE_WH' ? '📦'
@@ -989,13 +995,21 @@
       +         '<div class="ms-sub" id="msHistSub">cargando…</div>'
       +       '</div>'
       +     '</div>'
-      // [v1.9] Tabs dentro del modal para cambiar filtro sin cerrar
-      +     '<div style="display:flex;gap:4px;padding:8px 18px 4px;border-bottom:1px solid #1e293b;overflow-x:auto">'
-      +       '<button onclick="MembreteSystem._histCambiarFiltro(\'\')" class="ms-tab" data-tab="">📋 Todos</button>'
-      +       '<button onclick="MembreteSystem._histCambiarFiltro(\'MEMBRETE_ME\')" class="ms-tab" data-tab="MEMBRETE_ME">🏪 ME góndola</button>'
-      +       '<button onclick="MembreteSystem._histCambiarFiltro(\'MEMBRETE_WH\')" class="ms-tab" data-tab="MEMBRETE_WH">📦 WH andamio</button>'
-      +       '<button onclick="MembreteSystem._histCambiarFiltro(\'ADHESIVO_ENVASADO\')" class="ms-tab" data-tab="ADHESIVO_ENVASADO">🏭 Envasados</button>'
-      +     '</div>'
+      // [v1.12] Tabs filtrados según origen — solo se ven los que aplican a la app
+      +     (origen === 'MOS' ?
+        '<div style="display:flex;gap:4px;padding:8px 18px 4px;border-bottom:1px solid #1e293b;overflow-x:auto">'
+        + '<button onclick="MembreteSystem._histCambiarFiltro(\'\')" class="ms-tab" data-tab="">📋 Todos</button>'
+        + '<button onclick="MembreteSystem._histCambiarFiltro(\'MEMBRETE_ME\')" class="ms-tab" data-tab="MEMBRETE_ME">🏪 ME góndola</button>'
+        + '<button onclick="MembreteSystem._histCambiarFiltro(\'MEMBRETE_WH\')" class="ms-tab" data-tab="MEMBRETE_WH">📦 WH andamio</button>'
+        + '<button onclick="MembreteSystem._histCambiarFiltro(\'ADHESIVO_ENVASADO\')" class="ms-tab" data-tab="ADHESIVO_ENVASADO">🏭 Envasados</button>'
+        + '</div>'
+      : origen === 'WH' ?
+        '<div style="display:flex;gap:4px;padding:8px 18px 4px;border-bottom:1px solid #1e293b;overflow-x:auto">'
+        + '<button onclick="MembreteSystem._histCambiarFiltro(\'MEMBRETE_WH\')" class="ms-tab" data-tab="MEMBRETE_WH">📦 WH andamio</button>'
+        + '<button onclick="MembreteSystem._histCambiarFiltro(\'ADHESIVO_ENVASADO\')" class="ms-tab" data-tab="ADHESIVO_ENVASADO">🏭 Envasados</button>'
+        + '</div>'
+      : ''  // ME: sin tabs — solo ve sus lotes ME por default
+      )
       +     '<div class="ms-body" style="max-height:60vh;overflow-y:auto" id="msHistBody">'
       +       '<div style="text-align:center;color:#94a3b8;padding:20px"><span style="display:inline-block;animation:ms-spin 1s linear infinite">◐</span> cargando…</div>'
       +     '</div>'
@@ -1017,6 +1031,10 @@
     var ov = document.getElementById('msHistOverlay');
     if (!ov) return;
     var tipoFiltro = ov.getAttribute('data-tipo') || '';
+    // [v1.12] En ME forzar tipo MEMBRETE_ME aunque el atributo sea ''
+    if (String(_config.origen || '').toUpperCase() === 'ME') tipoFiltro = 'MEMBRETE_ME';
+    // En WH, si llega sin filtro, default a 'MEMBRETE_WH' (más útil que ver todo)
+    else if (String(_config.origen || '').toUpperCase() === 'WH' && !tipoFiltro) tipoFiltro = 'MEMBRETE_WH';
     var body = document.getElementById('msHistBody');
     var sub  = document.getElementById('msHistSub');
     // [v1.10] Optimista: si hay cache, NO mostrar spinner — render directo.
