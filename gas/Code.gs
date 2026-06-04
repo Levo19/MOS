@@ -198,6 +198,12 @@ function _route(method, e) {
       case 'getMembretesMePendientes':       return getMembretesMePendientes(params);
       case 'marcarMembreteMeImpreso':        return marcarMembreteMeImpreso(params);
       case 'ignorarMembreteMe':              return ignorarMembreteMe(params);
+      // [v2.43.154] Alias con prefijo wh_ porque el módulo membrete-modal
+      // siempre prefija con 'wh_' (endpointPrefix: 'wh_'), pero estos endpoints
+      // viven EN MOS, no en WH. Bug síntoma: 'Acción no reconocida: wh_getMembretesMePendientes'.
+      case 'wh_getMembretesMePendientes':    return getMembretesMePendientes(params);
+      case 'wh_marcarMembreteMeImpreso':     return marcarMembreteMeImpreso(params);
+      case 'wh_ignorarMembreteMe':           return ignorarMembreteMe(params);
       // [v2.43.129] Seguridad: dispositivos + horarios + alertas
       case 'diagnosticoSetupSeguridad':      return diagnosticoSetupSeguridad();
       case 'getSeguridadAlertas':            return getSeguridadAlertas(params);
