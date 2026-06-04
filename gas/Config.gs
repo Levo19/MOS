@@ -1274,17 +1274,30 @@ function aprobarDispositivoEnSitu(params) {
 
 // Rechazar / bloquear dispositivo pendiente o activo
 function rechazarDispositivoPendiente(params) {
-  _garantizarColumnasDispositivos();
-  if (!params.ID_Dispositivo) return { ok: false, error: 'Requiere ID_Dispositivo' };
-  var sheet = getSheet('DISPOSITIVOS');
-  var data  = sheet.getDataRange().getValues();
-  var hdrs  = data[0];
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][0]) !== String(params.ID_Dispositivo)) continue;
-    sheet.getRange(i + 1, hdrs.indexOf('Estado') + 1).setValue('INACTIVO');
-    return { ok: true };
-  }
-  return { ok: false, error: 'Dispositivo no encontrado' };
+  // [v2.43.138 FIX] Lock + idempotencia: previene sobreescribir un ACTIVO
+  // recién aprobado por otro admin en paralelo (race entre 2 admins).
+  var _lock = LockService.getScriptLock();
+  try { _lock.waitLock(15000); } catch(e) { return { ok: false, error: 'Sistema ocupado' }; }
+  try {
+    _garantizarColumnasDispositivos(true);
+    if (!params.ID_Dispositivo) return { ok: false, error: 'Requiere ID_Dispositivo' };
+    var sheet = getSheet('DISPOSITIVOS');
+    if (!sheet) return { ok: false, error: 'Sheet DISPOSITIVOS no creada' };
+    var data  = sheet.getDataRange().getValues();
+    var hdrs  = data[0];
+    var iEst  = hdrs.indexOf('Estado');
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0]) !== String(params.ID_Dispositivo)) continue;
+      var estadoActual = String(data[i][iEst] || '').toUpperCase();
+      // No rechazar lo que otro admin ya aprobó como ACTIVO (race protection)
+      if (estadoActual === 'ACTIVO') {
+        return { ok: true, skipped: true, motivo: 'ya_activo_no_se_rechaza' };
+      }
+      sheet.getRange(i + 1, iEst + 1).setValue('INACTIVO');
+      return { ok: true };
+    }
+    return { ok: false, error: 'Dispositivo no encontrado' };
+  } finally { try { _lock.releaseLock(); } catch(_){} }
 }
 
 // Notifica a master+admin que un vendedor/operador inició sesión en ME o WH.
