@@ -146,7 +146,43 @@ function setHorarioApp(params) {
     }
   } catch(eP) { Logger.log('[setHorarioApp] push fallo: ' + eP.message); }
 
+  // [SF2] Invalidar cache de horario en WH para aplicar el cambio inmediato.
+  // Sin esto el WH usaría el horario viejo durante 5 min (cache).
+  try {
+    if (app === 'warehouseMos') {
+      _invalidarCacheHorarioApp('warehouseMos');
+    }
+  } catch(eC) { Logger.log('[setHorarioApp] invalidar cache fallo: ' + eC.message); }
+
   return { ok: true, data: { app: app, horario: horValidado, admins_libres: admins_libres } };
+}
+
+// [SF2] Llamar al endpoint invalidarCacheHorario de WH (sin idPersonal = global)
+function _invalidarCacheHorarioApp(app) {
+  if (app !== 'warehouseMos') return;
+  try {
+    var url = PropertiesService.getScriptProperties().getProperty('WH_GAS_URL') || '';
+    if (!url) { Logger.log('[_invalidarCacheHorarioApp] WH_GAS_URL no configurada'); return; }
+    var payload = JSON.stringify({ action: 'invalidarCacheHorario' });
+    UrlFetchApp.fetch(url, {
+      method: 'post', contentType: 'text/plain',
+      payload: payload, muteHttpExceptions: true
+    });
+  } catch(e) { Logger.log('[_invalidarCacheHorarioApp] ' + e.message); }
+}
+
+// [SF2] Llamar a invalidarCacheHorario de WH específico para un usuario
+function _invalidarCacheHorarioUsuario(idPersonal) {
+  if (!idPersonal) return;
+  try {
+    var url = PropertiesService.getScriptProperties().getProperty('WH_GAS_URL') || '';
+    if (!url) return;
+    var payload = JSON.stringify({ action: 'invalidarCacheHorario', idPersonal: String(idPersonal) });
+    UrlFetchApp.fetch(url, {
+      method: 'post', contentType: 'text/plain',
+      payload: payload, muteHttpExceptions: true
+    });
+  } catch(e) { Logger.log('[_invalidarCacheHorarioUsuario] ' + e.message); }
 }
 
 // [v2.43.32] Resumen agrupado: días consecutivos con mismo horario se juntan.
@@ -235,6 +271,8 @@ function setHorarioCustomPersonal(params) {
         'Hola ' + nombre2 + ' · ' + _resumenHorarioParaPush(hcValido)
       );
     } catch(_){}
+    // [SF2] Invalidar cache específico de este usuario en WH
+    try { _invalidarCacheHorarioUsuario(idPersonal); } catch(_){}
     return { ok: true, data: { idPersonal: idPersonal, accion: 'ACTUALIZADO', horarioCustom: horarioFinal } };
   }
   return { ok: false, error: 'idPersonal no encontrado' };
@@ -335,6 +373,50 @@ function resolverHorarioPersonal(params) {
       cierre: configDia.cierre
     }
   };
+}
+
+// [v2.43.129] Alias front-friendly: verificarHorario(idPersonal, rol, app)
+// Compat con SeguridadSystem (ME llama esto desde el GAS MOS via fetch).
+// Si no se pasa app, infiere mosExpress (el caso típico de ME).
+function verificarHorario(params) {
+  var app = String((params && params.app) || 'mosExpress').trim();
+  var r = resolverHorarioPersonal({
+    idPersonal: String((params && params.idPersonal) || '').trim(),
+    rol:        String((params && params.rol) || '').trim(),
+    app:        app
+  });
+  // SeguridadSystem espera { permitido, apertura, cierre, fuente, motivo } directo
+  return r;  // ya viene como { ok, data: {...} }; el wrap se hace al lado JS
+}
+
+// [v2.43.129] Devuelve lista de PERSONAL_MASTER con horarioCustom no vacío
+function getPersonalConHorarioCustom() {
+  try {
+    var sh = getSheet('PERSONAL_MASTER');
+    if (!sh) return { ok: true, data: [] };
+    var rows = sh.getDataRange().getValues();
+    var hdr = rows[0];
+    var iId = hdr.indexOf('idPersonal');
+    var iNom = hdr.indexOf('nombre');
+    var iRol = hdr.indexOf('rol');
+    var iHC = hdr.indexOf('horarioCustom');
+    if (iHC < 0) return { ok: true, data: [] };
+    var out = [];
+    for (var i = 1; i < rows.length; i++) {
+      var hc = rows[i][iHC];
+      if (hc) {
+        out.push({
+          idPersonal: String(rows[i][iId] || ''),
+          nombre: String(rows[i][iNom] || ''),
+          rol: String(rows[i][iRol] || ''),
+          horarioCustom: String(hc)
+        });
+      }
+    }
+    return { ok: true, data: out };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
 }
 
 function _parseHora(s) {

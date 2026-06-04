@@ -128,6 +128,9 @@ function _route(method, e) {
       case 'setHorarioApp':                 return setHorarioApp(params);
       case 'setHorarioCustomPersonal':      return setHorarioCustomPersonal(params);
       case 'resolverHorarioPersonal':       return resolverHorarioPersonal(params);
+      // [v2.43.129] Aliases front + listado para SeguridadSystem
+      case 'verificarHorario':              return verificarHorario(params);
+      case 'getPersonalConHorarioCustom':   return getPersonalConHorarioCustom();
       // [v2.43.37] Rotación semanal WH para Catálogo (pre-carga al login)
       case 'wh_getRotacionSemanal':          return postToWarehouse('getRotacionSemanal', params);
       // [v2.43.38] Foto del producto (canónico + presentaciones + equivalentes
@@ -190,6 +193,17 @@ function _route(method, e) {
       case 'getMembretesMePendientes':       return getMembretesMePendientes(params);
       case 'marcarMembreteMeImpreso':        return marcarMembreteMeImpreso(params);
       case 'ignorarMembreteMe':              return ignorarMembreteMe(params);
+      // [v2.43.129] Seguridad: dispositivos + horarios + alertas
+      case 'diagnosticoSetupSeguridad':      return diagnosticoSetupSeguridad();
+      case 'getSeguridadAlertas':            return getSeguridadAlertas(params);
+      case 'desbloquearTemporalDispositivo': return desbloquearTemporalDispositivo(params);
+      case 'reactivarDispositivoSuspendido': return reactivarDispositivoSuspendido(params);
+      case 'solicitarExtensionHorario':      return solicitarExtensionHorario(params);
+      case 'aprobarExtensionHorario':        return aprobarExtensionHorario(params);
+      case 'notificarmeCuandoAbra':          return notificarmeCuandoAbra(params);
+      case 'extenderHorarioHoy':             return extenderHorarioHoy(params);
+      case 'wh_invalidarCacheHorario':       return postToWarehouse('invalidarCacheHorario', params);
+      case 'wh_verificarHorario':            return postToWarehouse('verificarHorario', params);
       case 'getVentasMosExpress':  return getVentasMosExpress(params);
       case 'getRotacion':            return getRotacionProductos(params);
       case 'getAnaliticaProducto':   return getAnaliticaProducto(params);

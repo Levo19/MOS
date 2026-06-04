@@ -1,0 +1,28 @@
+{
+  "version": "1.0.0",
+  "descripcion": "Sistema centralizado de seguridad (dispositivos + horarios) para MOS, WH, ME.",
+  "polling": {
+    "badge_admin_alertas_ms": 60000,
+    "estado_dispositivo_ms": 15000,
+    "esperando_aprobacion_ms": 3000,
+    "horario_periodic_check_min": 5
+  },
+  "horario": {
+    "alerta_antes_cierre_min": [30, 5],
+    "color_warning_min": 30,
+    "color_critical_min": 5
+  },
+  "dispositivos": {
+    "expira_dias": 7,
+    "duraciones_desbloqueo_emergencia_h": [0.5, 2, 12]
+  },
+  "tipos_alerta": [
+    "DISPOSITIVO_PENDIENTE",
+    "DISPOSITIVO_SUSPENDIDO_AUTO",
+    "DESBLOQUEO_TEMPORAL",
+    "USUARIO_INACTIVO",
+    "EXTENSION_HORARIO_PENDIENTE",
+    "NOTIFICAR_APERTURA"
+  ],
+  "prioridades": ["BAJA", "MEDIA", "ALTA"]
+}

@@ -797,6 +797,23 @@ function registrarSesionDispositivo(params) {
     _enviarPushTodos('🔔 Nuevo dispositivo solicita acceso', detalle, { soloRolesMaster: true, idNotif: 'MOS_DEVICE_PENDIENTE' });
   } catch(e) { Logger.log('Push pendiente fallo: ' + e.message); }
 
+  // [SF3] Crear alerta de seguridad para que aparezca en el badge admin
+  try {
+    if (typeof _crearAlertaSeg === 'function') {
+      _crearAlertaSeg('DISPOSITIVO_PENDIENTE', {
+        idDispositivo: deviceId,
+        descripcion: appNueva.toUpperCase() + ' · ' + (nombreNuevo || 'Sin nombre'),
+        prioridad: appNueva.toUpperCase() === 'MOS' ? 'ALTA' : 'MEDIA',
+        datosExtra: {
+          app: appNueva, nombre: nombreNuevo,
+          userAgent: params.userAgent || '',
+          idZona: params.idZona || '',
+          idEstacion: params.idEstacion || ''
+        }
+      });
+    }
+  } catch(eA) { Logger.log('[SF3] crearAlerta fallo: ' + eA.message); }
+
   return { ok: true, data: { autorizado: false, estado: 'PENDIENTE_APROBACION', error: 'Dispositivo nuevo — esperando aprobación del administrador' } };
 }
 
@@ -1118,9 +1135,33 @@ function aprobarDispositivoPendiente(params) {
     var appFinal    = params.App || data[i][hdrs.indexOf('App')] || '';
     _notificarAprobacionDispositivo(params.ID_Dispositivo, appFinal, nombreFinal,
                                     (params.aprobadoPor || 'panel'), 'panel');
+    // [SF3] Marcar alerta de seguridad como REVISADA
+    try { _marcarAlertaSegRevisadaPorDispositivo(params.ID_Dispositivo, params.aprobadoPor || 'panel'); } catch(_){}
     return { ok: true };
   }
   return { ok: false, error: 'Dispositivo no encontrado' };
+}
+
+// [SF3] Helper para marcar alertas DISPOSITIVO_PENDIENTE como REVISADA
+function _marcarAlertaSegRevisadaPorDispositivo(idDispositivo, revisadaPor) {
+  try {
+    if (typeof _getSheetSegAlertas !== 'function') return;
+    var sheet = _getSheetSegAlertas();
+    if (sheet.getLastRow() < 2) return;
+    var data = sheet.getDataRange().getValues();
+    var hdrs = data[0];
+    var iId = hdrs.indexOf('idDispositivo');
+    var iEst = hdrs.indexOf('estado');
+    var iRev = hdrs.indexOf('revisada_por');
+    var iRevTs = hdrs.indexOf('revisada_en');
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][iId]) !== String(idDispositivo)) continue;
+      if (String(data[i][iEst]).toUpperCase() !== 'PENDIENTE') continue;
+      sheet.getRange(i + 1, iEst + 1).setValue('REVISADA');
+      if (iRev >= 0) sheet.getRange(i + 1, iRev + 1).setValue(String(revisadaPor || ''));
+      if (iRevTs >= 0) sheet.getRange(i + 1, iRevTs + 1).setValue(new Date().toISOString());
+    }
+  } catch(e) { Logger.log('[_marcarAlertaSegRevisadaPorDispositivo] ' + e.message); }
 }
 
 // ════════════════════════════════════════════════════════════════════════

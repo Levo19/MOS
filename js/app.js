@@ -207,16 +207,34 @@ const MOS = (() => {
     Chart.defaults.font.family = 'system-ui, -apple-system, sans-serif';
 
     // [v2.43.125] Inicializar sistema centralizado de membretes/adhesivos.
-    // Después de esto window.MembreteSystem.imprimirMembrete(...) funciona.
     try {
       if (window.MembreteSystem && window.MembreteSystem.iniciar) {
         window.MembreteSystem.iniciar({
           apiPost:        function(action, params) { return API.post(action, params); },
           usuario:        function() { return (window.S && S.session && S.session.nombre) || ''; },
           origen:         'MOS',
-          unwrapData:     true,  // MOS API.post desempaca data
+          unwrapData:     true,
           endpointPrefix: 'wh_'
         });
+      }
+    } catch(_) {}
+
+    // [v2.43.129] Sistema centralizado de seguridad.
+    try {
+      if (window.SeguridadSystem && window.SeguridadSystem.iniciar) {
+        window.SeguridadSystem.iniciar({
+          apiPost:        function(action, params) { return API.post(action, params); },
+          usuario:        function() { return (window.S && S.session && S.session.nombre) || ''; },
+          rol:            function() { return (window.S && S.session && S.session.rol) || ''; },
+          idPersonal:     function() { return (window.S && S.session && S.session.idPersonal) || ''; },
+          app:            'MOS',
+          unwrapData:     true,
+          endpointPrefix: ''
+        });
+        // Badge alertas para admin/master (los demás ven el ícono pero count=0)
+        setTimeout(function() {
+          try { window.SeguridadSystem.arrancarBadgeAlertas(); } catch(_) {}
+        }, 2500);
       }
     } catch(_) {}
 

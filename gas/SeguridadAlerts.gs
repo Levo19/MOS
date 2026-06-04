@@ -1,0 +1,443 @@
+// ============================================================
+// ProyectoMOS — SeguridadAlerts.gs   [v2.43.129]
+// ============================================================
+//
+// Sistema centralizado de alertas de seguridad para el admin.
+//
+// Sheet SEGURIDAD_ALERTAS:
+//   idAlerta · tipo · idDispositivo · idPersonal · fecha · descripcion ·
+//   prioridad · estado · revisada_por · revisada_en · datos_extra_json
+//
+// Tipos:
+//   DISPOSITIVO_PENDIENTE      → nuevo dispositivo solicitando acceso
+//   DISPOSITIVO_SUSPENDIDO_AUTO → inactividad >7 días
+//   DESBLOQUEO_TEMPORAL        → admin usó desbloqueo emergencia
+//   USUARIO_INACTIVO           → operador sin sesion >7d (sugerir limpieza)
+//   EXTENSION_HORARIO_PENDIENTE → operador solicita extensión
+//
+// Estados:
+//   PENDIENTE | REVISADA | DESCARTADA | EXPIRADA
+
+var SEGURIDAD_ALERTAS_HEADERS = [
+  'idAlerta', 'tipo', 'idDispositivo', 'idPersonal',
+  'fecha', 'descripcion', 'prioridad', 'estado',
+  'revisada_por', 'revisada_en', 'datos_extra_json'
+];
+
+function setupSeguridadAlertas() {
+  var ss = SpreadsheetApp.openById(SS_ID);
+  var sheet = ss.getSheetByName('SEGURIDAD_ALERTAS');
+  if (!sheet) {
+    sheet = ss.insertSheet('SEGURIDAD_ALERTAS');
+    sheet.getRange(1, 1, 1, SEGURIDAD_ALERTAS_HEADERS.length)
+         .setValues([SEGURIDAD_ALERTAS_HEADERS])
+         .setFontWeight('bold').setBackground('#0f172a').setFontColor('#fca5a5');
+    sheet.setFrozenRows(1);
+    sheet.getRange('A:A').setNumberFormat('@');
+    Logger.log('[setupSeguridadAlertas] sheet creada');
+  } else {
+    var existing = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var missing = SEGURIDAD_ALERTAS_HEADERS.filter(function(h) { return existing.indexOf(h) < 0; });
+    if (missing.length) {
+      var startCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, startCol, 1, missing.length).setValues([missing]);
+      Logger.log('[setupSeguridadAlertas] cols agregadas: ' + missing.join(', '));
+    }
+  }
+  return { ok: true };
+}
+
+function _getSheetSegAlertas() {
+  var ss = SpreadsheetApp.openById(SS_ID);
+  var sh = ss.getSheetByName('SEGURIDAD_ALERTAS');
+  if (!sh) { setupSeguridadAlertas(); sh = ss.getSheetByName('SEGURIDAD_ALERTAS'); }
+  return sh;
+}
+
+// [SF3] Crear alerta nueva (usado por hooks de otros endpoints)
+function _crearAlertaSeg(tipo, params) {
+  try {
+    var sheet = _getSheetSegAlertas();
+    var now = new Date().toISOString();
+    var idAlerta = 'SEG' + new Date().getTime() + Math.random().toString(36).substr(2, 4).toUpperCase();
+    var fila = SEGURIDAD_ALERTAS_HEADERS.map(function(h) {
+      var v = ({
+        idAlerta:         idAlerta,
+        tipo:             String(tipo || ''),
+        idDispositivo:    String((params && params.idDispositivo) || ''),
+        idPersonal:       String((params && params.idPersonal) || ''),
+        fecha:            now,
+        descripcion:      String((params && params.descripcion) || ''),
+        prioridad:        String((params && params.prioridad) || 'MEDIA'),
+        estado:           'PENDIENTE',
+        revisada_por:     '',
+        revisada_en:      '',
+        datos_extra_json: params && params.datosExtra ? JSON.stringify(params.datosExtra) : ''
+      })[h];
+      return v === undefined ? '' : v;
+    });
+    sheet.appendRow(fila);
+    return { ok: true, idAlerta: idAlerta };
+  } catch(e) {
+    Logger.log('[_crearAlertaSeg] ' + e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+// [SF3] Diagnóstico del setup de seguridad — endpoint público
+function diagnosticoSetupSeguridad() {
+  var checks = [];
+  // Check 1: Sheet SEGURIDAD_ALERTAS
+  try {
+    var sh = SpreadsheetApp.openById(SS_ID).getSheetByName('SEGURIDAD_ALERTAS');
+    checks.push({ check: 'sheet_seguridad_alertas', ok: !!sh });
+  } catch(_) { checks.push({ check: 'sheet_seguridad_alertas', ok: false }); }
+  // Check 2: Trigger purgarDispositivosInactivos7d
+  try {
+    var triggers = ScriptApp.getProjectTriggers();
+    var hayTrigger = triggers.some(function(t) {
+      return t.getHandlerFunction() === 'purgarDispositivosInactivos7d';
+    });
+    checks.push({ check: 'trigger_purgar_inactivos', ok: hayTrigger });
+  } catch(_) { checks.push({ check: 'trigger_purgar_inactivos', ok: false }); }
+  // Check 3: WH_GAS_URL configurada en MOS (para invalidar cache)
+  try {
+    var url = PropertiesService.getScriptProperties().getProperty('WH_GAS_URL') || '';
+    checks.push({ check: 'WH_GAS_URL_en_mos', ok: !!url, valor: url ? url.substring(0, 30) + '...' : '' });
+  } catch(_) { checks.push({ check: 'WH_GAS_URL_en_mos', ok: false }); }
+  // Check 4: Sheet CONFIG_HORARIOS_APPS
+  try {
+    var shH = SpreadsheetApp.openById(SS_ID).getSheetByName('CONFIG_HORARIOS_APPS');
+    checks.push({ check: 'sheet_horarios_apps', ok: !!shH });
+  } catch(_) { checks.push({ check: 'sheet_horarios_apps', ok: false }); }
+  // Check 5: Columna horarioCustom en PERSONAL_MASTER
+  try {
+    var pSh = SpreadsheetApp.openById(SS_ID).getSheetByName('PERSONAL_MASTER');
+    var phdrs = pSh.getRange(1, 1, 1, pSh.getLastColumn()).getValues()[0];
+    checks.push({ check: 'columna_horarioCustom', ok: phdrs.indexOf('horarioCustom') >= 0 });
+  } catch(_) { checks.push({ check: 'columna_horarioCustom', ok: false }); }
+  // Check 6: Columnas nuevas en DISPOSITIVOS (Fecha_Caducidad, Desbloqueo_Temporal_Hasta)
+  try {
+    var dSh = SpreadsheetApp.openById(SS_ID).getSheetByName('DISPOSITIVOS');
+    var dhdrs = dSh.getRange(1, 1, 1, dSh.getLastColumn()).getValues()[0];
+    checks.push({ check: 'columna_fecha_caducidad',          ok: dhdrs.indexOf('Fecha_Caducidad') >= 0 });
+    checks.push({ check: 'columna_desbloqueo_temporal',      ok: dhdrs.indexOf('Desbloqueo_Temporal_Hasta') >= 0 });
+  } catch(_) {
+    checks.push({ check: 'columna_fecha_caducidad', ok: false });
+    checks.push({ check: 'columna_desbloqueo_temporal', ok: false });
+  }
+  var allOk = checks.every(function(c) { return c.ok; });
+  return { ok: true, data: { allOk: allOk, checks: checks } };
+}
+
+function setupTodoSeguridad() {
+  setupSeguridadAlertas();
+  _garantizarColumnasDispositivosExtendidas();
+  return diagnosticoSetupSeguridad();
+}
+
+// Auto-añade Fecha_Caducidad + Desbloqueo_Temporal_Hasta a DISPOSITIVOS
+function _garantizarColumnasDispositivosExtendidas() {
+  var sheet = SpreadsheetApp.openById(SS_ID).getSheetByName('DISPOSITIVOS');
+  if (!sheet) return;
+  var hdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var needed = ['Fecha_Caducidad', 'Desbloqueo_Temporal_Hasta'];
+  var missing = needed.filter(function(h) { return hdrs.indexOf(h) < 0; });
+  if (missing.length) {
+    var startCol = sheet.getLastColumn() + 1;
+    sheet.getRange(1, startCol, 1, missing.length).setValues([missing]);
+    Logger.log('[_garantizarColumnasDispositivosExtendidas] agregadas: ' + missing.join(', '));
+  }
+}
+
+function instalarTriggerPurgarDispositivos() {
+  var TRG = 'purgarDispositivosInactivos7d';
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === TRG) ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger(TRG).timeBased().atHour(2).everyDays(1).create();
+  Logger.log('[Trigger] ' + TRG + ' instalado · diario 2:00');
+  return { ok: true };
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Endpoint público: get alertas activas
+// ────────────────────────────────────────────────────────────────────
+function getSeguridadAlertas(params) {
+  try {
+    params = params || {};
+    var sheet = _getSheetSegAlertas();
+    if (sheet.getLastRow() < 2) {
+      return { ok: true, data: { items: [], count: 0, porTipo: {} } };
+    }
+    var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, SEGURIDAD_ALERTAS_HEADERS.length).getValues();
+    var items = values.map(function(row) {
+      var obj = {};
+      SEGURIDAD_ALERTAS_HEADERS.forEach(function(h, i) { obj[h] = row[i]; });
+      return obj;
+    }).filter(function(it) { return String(it.estado || '').toUpperCase() === 'PENDIENTE'; });
+    if (params.tipo) items = items.filter(function(it) { return String(it.tipo) === String(params.tipo); });
+    // Ordenar por fecha desc (más nuevas primero)
+    items.sort(function(a, b) { return String(b.fecha).localeCompare(String(a.fecha)); });
+    if (params.limit) items = items.slice(0, parseInt(params.limit));
+    var porTipo = {};
+    items.forEach(function(it) {
+      var k = String(it.tipo || 'OTRO');
+      porTipo[k] = (porTipo[k] || 0) + 1;
+    });
+    return { ok: true, data: { items: items, count: items.length, porTipo: porTipo } };
+  } catch(e) { return { ok: false, error: e.message }; }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Desbloqueo temporal de emergencia
+// ────────────────────────────────────────────────────────────────────
+function desbloquearTemporalDispositivo(params) {
+  try {
+    if (!params.deviceId)   return { ok: false, error: 'deviceId requerido' };
+    if (!params.claveAdmin) return { ok: false, error: 'claveAdmin requerida' };
+    if (!params.razon)      return { ok: false, error: 'razón requerida' };
+    var auth = verificarClaveAdmin({
+      clave: params.claveAdmin, accion: 'DESBLOQUEO_TEMPORAL',
+      refDocumento: params.deviceId, appOrigen: params.app || '',
+      detalle: 'Desbloqueo temp: ' + String(params.razon).substring(0, 200)
+    });
+    if (!auth.ok) return auth;
+    if (!auth.data || !auth.data.autorizado) {
+      return { ok: true, data: { autorizado: false, error: auth.data?.error || 'Clave incorrecta' } };
+    }
+    var duracionHoras = parseFloat(params.duracionHoras) || 2;
+    if (duracionHoras < 0.5 || duracionHoras > 12) {
+      return { ok: false, error: 'duracionHoras debe estar entre 0.5 y 12' };
+    }
+    _garantizarColumnasDispositivosExtendidas();
+    var sheet = SpreadsheetApp.openById(SS_ID).getSheetByName('DISPOSITIVOS');
+    var data  = sheet.getDataRange().getValues();
+    var hdrs  = data[0];
+    var iId   = hdrs.indexOf('ID_Dispositivo');
+    var iEst  = hdrs.indexOf('Estado');
+    var iDT   = hdrs.indexOf('Desbloqueo_Temporal_Hasta');
+    var hasta = new Date(Date.now() + duracionHoras * 60 * 60 * 1000);
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][iId]) !== params.deviceId) continue;
+      sheet.getRange(i + 1, iEst + 1).setValue('ACTIVO');
+      if (iDT >= 0) sheet.getRange(i + 1, iDT + 1).setValue(hasta.toISOString());
+      _crearAlertaSeg('DESBLOQUEO_TEMPORAL', {
+        idDispositivo: params.deviceId,
+        descripcion: 'Desbloqueo temp ' + duracionHoras + 'h · razón: ' + String(params.razon).substring(0, 150),
+        prioridad: 'ALTA',
+        datosExtra: { hastaIso: hasta.toISOString(), autorizadoPor: auth.data.validadoPor, razon: params.razon }
+      });
+      try {
+        if (typeof _enviarPushTodos === 'function') {
+          _enviarPushTodos(
+            '🚨 Desbloqueo TEMPORAL de dispositivo',
+            'Hasta ' + Utilities.formatDate(hasta, Session.getScriptTimeZone(), 'HH:mm') + ' · ' + (auth.data.validadoPor || ''),
+            { idNotif: 'MOS_DESBLOQUEO_TEMP', soloRolesMOS: true }
+          );
+        }
+      } catch(_) {}
+      return { ok: true, data: {
+        autorizado: true,
+        hasta: hasta.toISOString(),
+        duracionHoras: duracionHoras,
+        autorizadoPor: auth.data.validadoPor
+      }};
+    }
+    return { ok: false, error: 'Dispositivo no encontrado' };
+  } catch(e) { return { ok: false, error: e.message }; }
+}
+
+// Trigger horario: revierte desbloqueos temporales vencidos
+function revertirDesbloqueosVencidos() {
+  try {
+    var sheet = SpreadsheetApp.openById(SS_ID).getSheetByName('DISPOSITIVOS');
+    if (!sheet) return { ok: true, revertidos: 0 };
+    var data = sheet.getDataRange().getValues();
+    var hdrs = data[0];
+    var iEst = hdrs.indexOf('Estado');
+    var iDT  = hdrs.indexOf('Desbloqueo_Temporal_Hasta');
+    if (iDT < 0) return { ok: true, revertidos: 0 };
+    var nowMs = Date.now();
+    var rev = 0;
+    for (var i = 1; i < data.length; i++) {
+      var rawDT = data[i][iDT];
+      if (!rawDT) continue;
+      var hastaMs = 0;
+      if (rawDT instanceof Date) hastaMs = rawDT.getTime();
+      else { var d = new Date(rawDT); if (!isNaN(d.getTime())) hastaMs = d.getTime(); }
+      if (!hastaMs || hastaMs > nowMs) continue;
+      // Vencido → re-suspender + limpiar
+      sheet.getRange(i + 1, iEst + 1).setValue('SUSPENDIDO');
+      sheet.getRange(i + 1, iDT + 1).setValue('');
+      rev++;
+    }
+    return { ok: true, revertidos: rev };
+  } catch(e) { return { ok: false, error: e.message }; }
+}
+
+function instalarTriggerRevertirDesbloqueos() {
+  var TRG = 'revertirDesbloqueosVencidos';
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === TRG) ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger(TRG).timeBased().everyHours(1).create();
+  Logger.log('[Trigger] ' + TRG + ' instalado · cada 1h');
+  return { ok: true };
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Reactivar dispositivo suspendido (admin)
+// ────────────────────────────────────────────────────────────────────
+function reactivarDispositivoSuspendido(params) {
+  try {
+    if (!params.deviceId) return { ok: false, error: 'deviceId requerido' };
+    var sheet = SpreadsheetApp.openById(SS_ID).getSheetByName('DISPOSITIVOS');
+    var data = sheet.getDataRange().getValues();
+    var hdrs = data[0];
+    var iId = hdrs.indexOf('ID_Dispositivo');
+    var iEst = hdrs.indexOf('Estado');
+    var iSus = hdrs.indexOf('Suspendido_Desde');
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][iId]) !== String(params.deviceId)) continue;
+      sheet.getRange(i + 1, iEst + 1).setValue('ACTIVO');
+      if (iSus >= 0) sheet.getRange(i + 1, iSus + 1).setValue('');
+      return { ok: true };
+    }
+    return { ok: false, error: 'Dispositivo no encontrado' };
+  } catch(e) { return { ok: false, error: e.message }; }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Extensión de horario solicitada por operador
+// ────────────────────────────────────────────────────────────────────
+function solicitarExtensionHorario(params) {
+  try {
+    if (!params.idPersonal) return { ok: false, error: 'idPersonal requerido' };
+    var minutos = parseInt(params.minutos) || 60;
+    var motivo  = String(params.motivo || 'Sin motivo');
+    var alerta = _crearAlertaSeg('EXTENSION_HORARIO_PENDIENTE', {
+      idPersonal: params.idPersonal,
+      descripcion: 'Solicita extensión ' + minutos + 'min · ' + motivo.substring(0, 100),
+      prioridad: 'MEDIA',
+      datosExtra: { minutos: minutos, motivo: motivo, solicitadoEn: new Date().toISOString() }
+    });
+    try {
+      if (typeof _enviarPushTodos === 'function') {
+        _enviarPushTodos(
+          '⏰ Extensión de horario solicitada',
+          minutos + ' min · motivo: ' + motivo.substring(0, 60),
+          { idNotif: 'MOS_EXTENSION_PEND', soloRolesMOS: true }
+        );
+      }
+    } catch(_) {}
+    return { ok: true, data: { idAlerta: alerta.idAlerta, pendiente: true } };
+  } catch(e) { return { ok: false, error: e.message }; }
+}
+
+// Aprueba la extensión y la aplica como horarioCustom temporal
+function aprobarExtensionHorario(params) {
+  try {
+    if (!params.idAlerta) return { ok: false, error: 'idAlerta requerido' };
+    var sheet = _getSheetSegAlertas();
+    var data = sheet.getDataRange().getValues();
+    var hdrs = data[0];
+    var iId = hdrs.indexOf('idAlerta');
+    var iEst = hdrs.indexOf('estado');
+    var iRev = hdrs.indexOf('revisada_por');
+    var iRevTs = hdrs.indexOf('revisada_en');
+    var iDx = hdrs.indexOf('datos_extra_json');
+    var iIdP = hdrs.indexOf('idPersonal');
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][iId]) !== String(params.idAlerta)) continue;
+      var idPersonal = String(data[i][iIdP] || '');
+      var dx = {};
+      try { dx = JSON.parse(data[i][iDx] || '{}'); } catch(_) {}
+      var minutos = parseInt(dx.minutos) || 60;
+      // Marcar como REVISADA
+      sheet.getRange(i + 1, iEst + 1).setValue('REVISADA');
+      sheet.getRange(i + 1, iRev + 1).setValue(String(params.aprobadoPor || 'admin'));
+      sheet.getRange(i + 1, iRevTs + 1).setValue(new Date().toISOString());
+      // Aplicar extensión usando extenderHorarioHoy (más abajo)
+      var ext = extenderHorarioHoy({ idPersonal: idPersonal, minutos: minutos });
+      // Notificar al operador
+      try {
+        _enviarPushSegmentado(idPersonal,
+          '✅ Tu extensión fue aprobada',
+          '+' + minutos + ' min para hoy. Refresca la app.');
+      } catch(_) {}
+      return { ok: true, data: { idPersonal: idPersonal, aplicada: ext.ok } };
+    }
+    return { ok: false, error: 'Alerta no encontrada' };
+  } catch(e) { return { ok: false, error: e.message }; }
+}
+
+// Extiende el horario HOY de un usuario por X minutos sobre su cierre actual.
+// Genera un horarioCustom modificado SOLO para hoy. Trigger 23:59 lo revierte.
+function extenderHorarioHoy(params) {
+  try {
+    if (!params.idPersonal) return { ok: false, error: 'idPersonal requerido' };
+    var minutos = parseInt(params.minutos) || 60;
+    var tz = Session.getScriptTimeZone();
+    var hoy = new Date();
+    var diaIdx = parseInt(Utilities.formatDate(hoy, tz, 'u'), 10);
+    var diaKey = _HOR_DIAS[Math.max(0, Math.min(6, diaIdx - 1))];
+
+    // Obtener horario actual del usuario (custom o app fallback)
+    var res = resolverHorarioPersonal({ idPersonal: params.idPersonal, rol: '', app: 'warehouseMos' });
+    var cierreActual = res && res.data ? res.data.cierre : null;
+    if (!cierreActual) return { ok: false, error: 'No se pudo determinar el cierre actual' };
+    // Calcular nuevo cierre + minutos
+    var partes = String(cierreActual).split(':');
+    var hh = parseInt(partes[0]) || 0;
+    var mm = parseInt(partes[1]) || 0;
+    var totalMin = hh * 60 + mm + minutos;
+    var nuevoHH = Math.floor(totalMin / 60);
+    var nuevoMM = totalMin % 60;
+    if (nuevoHH >= 24) { nuevoHH = 23; nuevoMM = 59; }
+    var nuevoCierre = String(nuevoHH).padStart(2, '0') + ':' + String(nuevoMM).padStart(2, '0');
+
+    // Guardar como horarioCustom HOY (sobre el existente)
+    var pSh = getSheet('PERSONAL_MASTER');
+    var pd = pSh.getDataRange().getValues();
+    var ph = pd[0];
+    var iIdP = ph.indexOf('idPersonal');
+    var iHC = ph.indexOf('horarioCustom');
+    if (iHC < 0) {
+      var newCol = ph.length + 1;
+      pSh.getRange(1, newCol).setValue('horarioCustom');
+      iHC = newCol - 1;
+    }
+    for (var i = 1; i < pd.length; i++) {
+      if (String(pd[i][iIdP]) !== String(params.idPersonal)) continue;
+      var hcExisting = {};
+      try { hcExisting = pd[i][iHC] ? JSON.parse(pd[i][iHC]) : {}; } catch(_) {}
+      var dias = (hcExisting.dias || {});
+      // Reemplazar HOY
+      dias[diaKey] = { activo: true, apertura: (res.data.apertura || '07:00'), cierre: nuevoCierre };
+      hcExisting.activo = true;
+      hcExisting.dias = dias;
+      hcExisting.extensionHoy = { dia: diaKey, hasta: nuevoCierre, ts: new Date().toISOString() };
+      pSh.getRange(i + 1, iHC + 1).setValue(JSON.stringify(hcExisting));
+      try { _invalidarCacheHorarioUsuario(params.idPersonal); } catch(_) {}
+      return { ok: true, data: { idPersonal: params.idPersonal, nuevoCierre: nuevoCierre, dia: diaKey } };
+    }
+    return { ok: false, error: 'idPersonal no encontrado' };
+  } catch(e) { return { ok: false, error: e.message }; }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// "Notificarme cuando abra" — el operador setea un recordatorio
+// ────────────────────────────────────────────────────────────────────
+function notificarmeCuandoAbra(params) {
+  try {
+    if (!params.idPersonal) return { ok: false, error: 'idPersonal requerido' };
+    _crearAlertaSeg('NOTIFICAR_APERTURA', {
+      idPersonal: params.idPersonal,
+      descripcion: 'Operador pidió notificación cuando abra horario',
+      prioridad: 'BAJA',
+      datosExtra: { apertura: params.apertura || '' }
+    });
+    return { ok: true };
+  } catch(e) { return { ok: false, error: e.message }; }
+}
