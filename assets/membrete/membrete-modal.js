@@ -339,11 +339,13 @@
   }
 
   // Imprimir lote de adhesivos de envasado (legacy, mantiene compat)
+  // [v1.6] Mismo comportamiento que imprimirMembrete: lotes en paralelo,
+  // no bloquea si hay otro en curso.
   function imprimirAdhesivoEnvasado(opts) {
     if (_state && _state.idLote && ['CREADO','ENCOLADO','IMPRIMIENDO','CALIBRANDO'].indexOf(_state.status) >= 0) {
-      _toast('⚠ Ya hay un lote en curso · esperá a que termine', { error: true });
-      sonidos.error();
-      return Promise.reject(new Error('Lote en curso'));
+      _state.polling = false;
+      _lotesEnBackground.push({ idLote: _state.idLote, total: _state.total, tipo: _state.tipo });
+      _toast('➕ Lote anterior sigue en cola · este se encola detrás');
     }
     var idempotencyKey = 'mem_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
     sonidos.click();
