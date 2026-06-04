@@ -93,6 +93,71 @@
     } catch(_) {}
   }
 
+  // ── [v2.43.142] BANNER DE ROLLO ─────────────────────────────
+  // El operador clickea "Calibrar rollo nuevo" SOLO cuando pone un rollo nuevo
+  // (le avisamos en el confirm). Desde ahí el sistema cuenta hasta 1000 y
+  // muestra el estado en todos los modales para que sepa cuándo cambiar sin
+  // tener que ir a buscar la info. Estados: ok (<800), warn (800-950), error (>950).
+  function _rolloBannerHtml() {
+    if (_config.origen === 'ME') return '';  // ME no maneja rollo físico
+    var slot = _cache.calibracion;
+    if (!slot || !slot.data) {
+      return '<div class="ms-rollo-banner ms-rollo-loading">📋 Cargando estado del rollo…</div>';
+    }
+    // _api devuelve d.data directo, sin envoltura {ok,data}
+    var d = slot.data;
+    var prints   = parseInt(d.printsDesdeCal) || 0;
+    var capRollo = parseInt(d.capacidadRollo) || 1000;
+    if (!capRollo || isNaN(capRollo)) capRollo = 1000;
+    if (isNaN(prints) || prints < 0) prints = 0;
+    var restantes = Math.max(0, capRollo - prints);
+    var pct       = Math.round((prints / capRollo) * 100);
+    var calibrado = d.calibrado === true || d.calibrado === 'true';
+    var nivel, icono, mensaje;
+    if (!calibrado) {
+      nivel = 'warn';  icono = '⚠';
+      mensaje = 'Sin calibrar — clickeá "Calibrar rollo nuevo" cuando lo pongas';
+    } else if (pct >= 95) {
+      nivel = 'error'; icono = '🔴';
+      mensaje = 'CAMBIAR ROLLO YA · quedan ~' + restantes + ' etiquetas';
+    } else if (pct >= 80) {
+      nivel = 'warn';  icono = '🟡';
+      mensaje = 'Quedan ~' + restantes + ' · prepará rollo nuevo';
+    } else {
+      nivel = 'ok';    icono = '🟢';
+      mensaje = 'Rollo OK · quedan ~' + restantes;
+    }
+    return ''
+      + '<div class="ms-rollo-banner ms-rollo-' + nivel + '">'
+      +   '<span style="font-size:14px">' + icono + '</span>'
+      +   '<span style="font-weight:800">' + prints + '/' + capRollo + '</span>'
+      +   '<span style="opacity:.92;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + mensaje + '</span>'
+      + '</div>';
+  }
+  // Refresca el banner en todos los modales abiertos. Llamar tras calibrar,
+  // tras completar un lote, o cuando se sospecha que el contador cambió.
+  function _rolloRefrescarBanners() {
+    var nodos = document.querySelectorAll('.ms-rollo-banner');
+    if (nodos.length === 0) return;  // Nada que refrescar
+    _cache.calibracion.ts = 0;  // invalida TTL → fuerza fetch fresco
+    _conCache('calibracion',
+      function() { return _api('estadoCalibracionRollo', {}); },
+      null,
+      function() {
+        var html = _rolloBannerHtml();
+        if (!html) return;
+        var tmp = document.createElement('div');
+        tmp.innerHTML = html;
+        var nuevo = tmp.firstChild;
+        if (!nuevo) return;
+        nodos.forEach(function(n) {
+          n.className = nuevo.className;
+          n.innerHTML = nuevo.innerHTML;
+        });
+      }
+    ).catch(function() {});
+  }
+
   // ── Estado del lote en curso ────────────────────────────────
   var _state = null;
   // _state = { idLote, total, completadas, status, tipo, descripcion, tInicio }
@@ -112,6 +177,14 @@
       '.ms-modal{width:100%;max-width:560px;background:linear-gradient(180deg,#0a1424,#070d18);border:1px solid rgba(251,191,36,.35);border-radius:18px;box-shadow:0 30px 70px -10px rgba(251,191,36,.25);display:flex;flex-direction:column;max-height:92vh;overflow:hidden;animation:ms-pop .35s cubic-bezier(.34,1.56,.64,1)}',
       '@keyframes ms-pop{from{transform:scale(.9);opacity:0}to{transform:scale(1);opacity:1}}',
       '.ms-head{padding:18px 22px;border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(251,191,36,.10),rgba(245,158,11,.04));display:flex;align-items:center;gap:14px}',
+      // [v2.43.142] Banner persistente del rollo de adhesivos en todos los modales.
+      // El operador siempre ve cuánto queda sin tener que abrir el panel de calibración.
+      '.ms-rollo-banner{padding:8px 16px;display:flex;align-items:center;gap:8px;font-size:12px;border-bottom:1px solid #1e293b;background:rgba(15,23,42,.6);font-family:system-ui,sans-serif}',
+      '.ms-rollo-ok{color:#86efac;background:rgba(52,211,153,.06);border-bottom-color:rgba(52,211,153,.18)}',
+      '.ms-rollo-warn{color:#fbbf24;background:rgba(251,191,36,.10);border-bottom-color:rgba(251,191,36,.28)}',
+      '.ms-rollo-error{color:#fca5a5;background:rgba(248,113,113,.13);border-bottom-color:rgba(248,113,113,.35);animation:ms-rollo-pulse 1.6s ease-in-out infinite}',
+      '.ms-rollo-loading{color:#64748b;font-style:italic}',
+      '@keyframes ms-rollo-pulse{50%{opacity:.65}}',
       '.ms-emoji{font-size:36px;line-height:1}',
       '.ms-h1{font-size:14px;font-weight:900;color:#fbbf24;letter-spacing:.8px}',
       '.ms-sub{font-size:11px;color:#94a3b8;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
@@ -363,6 +436,9 @@
           sonidos.completado();
           // [v1.2 FIX] Texto correcto: MEMBRETE_ME = para góndola tienda, MEMBRETE_WH = para andamio almacén
           _toast('✅ ' + (d.total || _state.total) + ' adhesivos impresos · ' + (_state.tipo === 'MEMBRETE_ME' ? 'recoger en almacén' : 'listos en andamio'));
+          // [v2.43.142] Refrescar banner del rollo — el contador subió N etiquetas.
+          // El operador ve el nuevo "restantes" en cualquier modal abierto.
+          _rolloRefrescarBanners();
           _state.polling = false;
           setTimeout(function() {
             cerrarModal();
@@ -571,6 +647,7 @@
       +         '<div class="ms-sub">drift compensation por print</div>'
       +       '</div>'
       +     '</div>'
+      +     _rolloBannerHtml()
       +     '<div class="ms-body" id="msCalBody">'
       +       '<div style="text-align:center;color:#94a3b8;padding:20px">cargando estado…</div>'
       +     '</div>'
@@ -645,8 +722,29 @@
         + '<button class="ms-btn ms-btn-warn" onclick="MembreteSystem._calCerrar()">Cerrar</button>';
   }
   function _calCambiarRollo() {
-    if (!confirm('¿Calibrar rollo nuevo?\n\nGasta ~3 etiquetas en blanco mientras la impresora mide el GAP físico. Después reseteamos contador y drift.')) return;
-    calibrarRollo().then(function() { setTimeout(_calRefrescar, 1500); });
+    // [v2.43.142] Confirmación reforzada: "calibrar = rollo nuevo".
+    // Antes del fix algunos operadores re-calibraban a mitad del rollo
+    // "por las dudas" y reseteaban el contador, perdiendo el tracking real.
+    var slot = _cache.calibracion;
+    var prints = 0, capRollo = 1000;
+    if (slot && slot.data) {
+      prints   = parseInt(slot.data.printsDesdeCal) || 0;
+      capRollo = parseInt(slot.data.capacidadRollo) || 1000;
+    }
+    var alertaMitadRollo = '';
+    if (prints > 0 && prints < 600) {
+      alertaMitadRollo = '⚠ OJO: el contador actual está en ' + prints + '/' + capRollo
+        + ' — según el sistema aún te quedan ~' + (capRollo - prints) + ' etiquetas en este rollo.\n\n';
+    }
+    var msg = alertaMitadRollo
+      + '🆕 ¿Realmente pusiste un ROLLO NUEVO?\n\n'
+      + 'SI → gasta ~3 etiquetas calibrando GAP, resetea contador a 0 y guarda fecha.\n'
+      + 'NO → cancelá. Si solo querés re-medir GAP sin cambiar rollo, no uses este botón.';
+    if (!confirm(msg)) return;
+    calibrarRollo().then(function() {
+      setTimeout(_calRefrescar, 1500);
+      setTimeout(_rolloRefrescarBanners, 1700);
+    });
   }
   function _calImprimirCals() {
     imprimirCalibradores({ cantidad: 10 }).then(function() { setTimeout(_calRefrescar, 1500); });
@@ -680,6 +778,7 @@
       +         '<div class="ms-sub" id="msColaSub">0 productos en cola</div>'
       +       '</div>'
       +     '</div>'
+      +     _rolloBannerHtml()
       +     '<div class="ms-body" style="max-height:65vh;overflow-y:auto">'
       +       '<input id="msColaBusq" type="text" placeholder="🔍 Buscar producto por código o descripción..." '
       +         'oninput="MembreteSystem._colaBusqInput(this.value)" '
@@ -907,6 +1006,7 @@
       +         '<div class="ms-sub">' + _escapeHtml(producto.descripcion || producto.codigoBarra) + '</div>'
       +       '</div>'
       +     '</div>'
+      +     _rolloBannerHtml()
       +     '<div class="ms-body">'
       +       '<button class="ms-btn ms-btn-primary" onclick="MembreteSystem._menuImprimir(\'MEMBRETE_ME\')">'
       +         '🏪 ME · Góndola tienda'
@@ -995,6 +1095,7 @@
       +         '<div class="ms-sub" id="msHistSub">cargando…</div>'
       +       '</div>'
       +     '</div>'
+      +     _rolloBannerHtml()
       // [v1.12] Tabs filtrados según origen — solo se ven los que aplican a la app
       +     (origen === 'MOS' ?
         '<div style="display:flex;gap:4px;padding:8px 18px 4px;border-bottom:1px solid #1e293b;overflow-x:auto">'
