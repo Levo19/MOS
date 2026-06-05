@@ -1,5 +1,15 @@
 // ════════════════════════════════════════════════════════════════════
 // ExtensorHorario — módulo compartido de extensión de horario in-situ
+// v1.0.1 — 2026-06-05 — Senior review fixes:
+//          - XSS fix: _esc() para aprobadoPor (admin nombre con HTML/JS).
+//          - Tiempo restante badge actualizado en tiempo real cada 15s.
+//          - Texto vigente corregido ("se mantiene el mayor") tras backend
+//            Math.max — el operador no pierde tiempo si admin elige menos.
+//          - Limpieza: userAgent inútil del body removido.
+//          - onSuccess error ya no se silencia: logguea para debug.
+//          - Multi-tab: dispatch CustomEvent 'extensor-horario:changed' al
+//            recibir storage event (otras pestañas detectan al instante).
+//          - UX: muestra advertencia si backend preservó extensión mayor.
 // v1.0.0 — 2026-06-05
 //
 // Lo cargan ME y WH vía CDN MOS pages. Centraliza el modal de extensión
@@ -33,10 +43,17 @@
   var MODAL_ID    = 'extHorarioModal';
   var CSS_ID      = 'ext-horario-css';
 
-  // ── Helpers de storage ──────────────────────────────────────────────
+  // ── Helpers ──────────────────────────────────────────────────────────
   function _lsGet(k) { try { return localStorage.getItem(k); } catch(_) { return null; } }
   function _lsSet(k, v) { try { localStorage.setItem(k, v); } catch(_){} }
   function _lsRm(k)  { try { localStorage.removeItem(k); } catch(_){} }
+  // [v1.0.1] Escape HTML — usado para nombres venidos del backend.
+  // Sin esto, un admin con nombre "Luis<script>alert(1)</script>" ejecuta XSS.
+  function _esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+      return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+    });
+  }
 
   function _vigente() {
     var raw = _lsGet(STORAGE_KEY);
@@ -192,12 +209,12 @@
     var ov = document.createElement('div');
     ov.id = MODAL_ID;
 
-    // Si hay extensión vigente, mostrar tiempo restante
+    // Si hay extensión vigente, mostrar tiempo restante (actualizado live)
     var ms = _vigente();
     var vigenteHtml = '';
     if (ms > 0) {
       var mins = Math.ceil(ms / 60000);
-      vigenteHtml = '<div class="eh-vigente">⏱ Vigente · <span class="eh-vigente-min">' + mins + ' min</span> restantes</div>';
+      vigenteHtml = '<div class="eh-vigente" id="ehVigenteBox">⏱ Vigente · <span class="eh-vigente-min" id="ehVigenteMins">' + mins + '</span> min restantes <span style="font-size:10px;color:#94a3b8;display:block;margin-top:4px">Se mantiene el tiempo <strong>mayor</strong> entre actual y nuevo</span></div>';
     }
 
     ov.innerHTML = ''
@@ -276,6 +293,26 @@
 
     setTimeout(function(){ if (clave) clave.focus(); }, 80);
 
+    // [v1.0.1] Actualizar tiempo restante en tiempo real cada 15s.
+    // Si vence durante la sesión del modal, el badge desaparece.
+    // Cleared cuando el modal se cierra (remove() lo limpia naturalmente,
+    // pero por defensa adicional guardamos timer en el nodo).
+    var vigenteMinsEl = document.getElementById('ehVigenteMins');
+    var vigenteBoxEl  = document.getElementById('ehVigenteBox');
+    if (vigenteMinsEl) {
+      var vigenteTimer = setInterval(function() {
+        // Si el modal fue cerrado, parar
+        if (!document.body.contains(ov)) { clearInterval(vigenteTimer); return; }
+        var msNow = _vigente();
+        if (msNow > 0) {
+          vigenteMinsEl.textContent = String(Math.ceil(msNow / 60000));
+        } else if (vigenteBoxEl) {
+          vigenteBoxEl.remove();
+          clearInterval(vigenteTimer);
+        }
+      }, 15000);
+    }
+
     function _confirmar() {
       if (btnOk.disabled) return;
       err.textContent = '';
@@ -288,7 +325,6 @@
       btnOk.disabled = true;
       btnOk.textContent = 'Validando...';
 
-      var ua = (navigator.userAgent || '').substring(0, 200);
       fetch(opts.mosGasUrl, {
         method: 'POST',
         body: JSON.stringify({
@@ -296,8 +332,7 @@
           deviceId:   opts.deviceId,
           claveAdmin: clave.value,
           app:        opts.app,
-          minutos:    minSel,
-          userAgent:  ua
+          minutos:    minSel
         })
       })
       .then(function(r){ return r.json(); })
@@ -316,18 +351,32 @@
         _vibrar([100, 50, 100, 50, 100]);
         var card = ov.querySelector('.eh-card');
         if (card) {
+          // [v1.0.1 XSS FIX] Escapar aprobadoPor — admin podría tener un nombre
+          // con HTML/JS en sheet ("Luis<script>alert(1)</script>"). Sin escape
+          // se ejecutaba en innerHTML. _esc cubre & < > " '.
+          // [v1.0.1 UX] Si backend preservó extensión existente más larga,
+          // explicar al admin para evitar confusión.
+          var minRealMs = Date.parse(d.hastaTs || '') - Date.now();
+          var minRealMins = (!isNaN(minRealMs) && minRealMs > 0) ? Math.ceil(minRealMs / 60000) : minSel;
+          var preservoMsg = d.preservoExistente
+            ? '<p class="eh-success-detail" style="color:#fbbf24;margin-top:6px">⚠ Ya había extensión vigente más larga · se mantuvo (' + minRealMins + ' min)</p>'
+            : '';
           card.innerHTML = ''
             + '<div class="eh-success">'
             +   '<div class="eh-success-ico">✅</div>'
             +   '<h3 class="eh-success-title">¡Extensión activada!</h3>'
-            +   '<p class="eh-success-sub">+' + minSel + ' min concedidos por <strong>' + (d.aprobadoPor || 'admin') + '</strong></p>'
-            +   '<p class="eh-success-detail">Vence en ~' + minSel + ' min. La app continuará operativa.</p>'
+            +   '<p class="eh-success-sub">+' + minSel + ' min concedidos por <strong>' + _esc(d.aprobadoPor || 'admin') + '</strong></p>'
+            +   '<p class="eh-success-detail">Vence en ~' + minRealMins + ' min. La app continuará operativa.</p>'
+            +   preservoMsg
             + '</div>';
         }
         setTimeout(function() {
           _cerrarModal();
           if (typeof opts.onSuccess === 'function') {
-            try { opts.onSuccess(d); } catch(_){}
+            try { opts.onSuccess(d); } catch(eOk) {
+              // No silenciar — logguear para debug
+              console.warn('[ExtensorHorario] onSuccess threw:', eOk);
+            }
           }
         }, 1600);
       })
@@ -339,6 +388,24 @@
       });
     }
   }
+
+  // ── Multi-tab sync ───────────────────────────────────────────────────
+  // [v1.0.1] Si admin extiende horario en una pestaña, otra pestaña abierta
+  // en el mismo dispositivo se entera al instante via storage event sin
+  // esperar al heartbeat de 10 min. La pestaña que dispara el setItem no
+  // recibe su propio storage event (spec) — solo otras pestañas.
+  try {
+    window.addEventListener('storage', function(e) {
+      if (e.key !== STORAGE_KEY) return;
+      // Disparar evento custom para que la app pueda reaccionar (ej. cerrar
+      // modal fuera-horario si ahora hay extensión vigente).
+      try {
+        window.dispatchEvent(new CustomEvent('extensor-horario:changed', {
+          detail: { vigente: _vigente() }
+        }));
+      } catch(_){}
+    });
+  } catch(_){}
 
   // ── API pública ──────────────────────────────────────────────────────
   window.ExtensorHorario = {
