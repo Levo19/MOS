@@ -520,20 +520,22 @@
       return Promise.reject(new Error('MOS_GAS_URL no configurado'));
     }
 
-    // [v1.0.7 BUG B FIX] R4 + R1 coexisten: cache local existe pero NO autoriza
-    // optimistamente. Siempre verificamos server PRIMERO antes de quitar
-    // pre-block. Si server confirma rápido (200ms), operador no nota latencia.
-    // Si server falla (sin red), CAEMOS al cache para honrar R4 (fail-soft offline).
+    // [v1.0.7 BUG B FIX + v1.0.8 BUG D FIX] R4 + R1 coexisten:
+    // - Cache local existe pero NO autoriza optimistamente
+    // - Siempre verificamos server PRIMERO antes de quitar pre-block
+    // - Si server confirma rápido (200-500ms), operador no nota latencia
+    // - Si server falla (sin red), CAEMOS al cache para honrar R4 (fail-soft)
     //
-    // Antes (v1.0.6): cache válido → quita pre-block → body visible 1.5s →
-    // bg refresh → reload si ≠ ACTIVO. Pero durante esos 1.5s el operador podía
-    // VER y CLICKEAR la app (R1 violado).
+    // v1.0.8: usamos silencioso=true para que un fetch fallido NO muestre
+    // overlay SIN_VERIFICAR rojo momentáneo antes del fail-soft. Antes (v1.0.7)
+    // el operador veía un flash "📡 Sin conexión" que después desaparecía,
+    // confundiendo la UX.
     if (_cacheValidoHoy()) {
-      // Cache existe pero verificamos server primero. Mientras tanto, overlay
-      // verde "Verificando..." está visible. Pre-block sigue activo.
-      return _consultarBackend(false).catch(function(e) {
-        // Si server falla con cache válido → R4 fail-soft: aceptar cache.
-        console.warn('[DeviceAuth] server falló con cache válido → fail-soft con cache:', e.message);
+      return _consultarBackend(true).catch(function(e) {
+        // Server falla con cache válido → R4 fail-soft silencioso: aceptar cache.
+        // El overlay verde "Verificando dispositivo" se mantuvo todo el tiempo,
+        // ahora pasamos a body visible sin flash de error intermedio.
+        console.warn('[DeviceAuth] server falló con cache válido → fail-soft offline:', e.message);
         _state.estado = 'ACTIVO';
         _ocultarOverlay();
         if (_config.onAuth) try { _config.onAuth(); } catch(_){}
