@@ -525,7 +525,21 @@ var _DISP_COLS_EXTRA = ['Ultima_Zona', 'Ultima_Estacion', 'Ultima_Sesion',
                         // device no tiene token registrado en PUSH_TOKENS. La PWA
                         // lo lee en consultarEstadoDispositivo y dispara
                         // _pushInit forzado + limpia el flag.
-                        'Forzar_Push'];
+                        'Forzar_Push',
+                        // [v2.43.167] Forzar re-verificación inmediata del dispositivo.
+                        // Master lo setea cuando revoca acceso de UN device específico
+                        // sin esperar al cron diario. La PWA lo lee en heartbeat 1h,
+                        // invalida cache local y re-verifica con backend. Si el
+                        // dispositivo está INACTIVO/SUSPENDIDO, queda bloqueado en el
+                        // acto. Cierra ventana de 24h de exposición post-revocación.
+                        'Forzar_ReVerify',
+                        // [v2.43.167] Flag para deduplicar alertas SEGURIDAD_ALERTAS
+                        // del cron 2-7d. Cuando el cron crea una alerta para un
+                        // dispositivo inactivo, marca este flag con ISO timestamp.
+                        // Si el cron corre de nuevo al día siguiente y sigue inactivo,
+                        // NO crea otra alerta (la PENDIENTE sigue ahí).
+                        // Cuando el dispositivo se reconecta, este flag se limpia.
+                        'Inactivo_Alerta_Ts'];
 
 // Push helper · notifica a admin/master cuando se aprueba un dispositivo
 function _notificarAprobacionDispositivo(deviceId, app, nombreEquipo, aprobadoPor, accion) {
@@ -707,6 +721,47 @@ function actualizarDispositivo(params) {
   return { ok: false, error: 'Dispositivo no encontrado: ' + params.ID_Dispositivo };
 }
 
+// [v2.43.167] Helpers compartidos para DeviceAuth
+// Property que se bumpea para forzar re-verificación global de TODOS los devices.
+// Cuando server cambia este número, los clientes detectan que su cache local
+// tiene una versión menor → invalidan cache y re-verifican.
+function _getDeviceVerifyVersion() {
+  var v = parseInt(PropertiesService.getScriptProperties().getProperty('DEVICE_VERIFY_VERSION') || '1', 10);
+  return isNaN(v) ? 1 : v;
+}
+// Fecha "hoy" en TZ Lima en formato YYYY-MM-DD. El cliente la compara con su
+// `lastVerifyDate` para validar "cache válido este mismo día". Defensa contra
+// manipulación del reloj del cliente — el cliente NO confía en su propio reloj
+// para decidir el día, usa siempre el del server.
+function _fechaHoyLima() {
+  return Utilities.formatDate(new Date(), 'America/Lima', 'yyyy-MM-dd');
+}
+// Construir el payload "extra" que se anexa a TODAS las respuestas de
+// registrarSesionDispositivo. Mantiene formato consistente cross-app.
+function _payloadDeviceAuthExtras(rowData, hdrs) {
+  var extras = {
+    verifyVersion: _getDeviceVerifyVersion(),
+    fechaHoyLima:  _fechaHoyLima()
+  };
+  if (rowData && hdrs) {
+    var iFL  = hdrs.indexOf('Forzar_Logout');
+    var iFLts= hdrs.indexOf('Logout_Auto_Ts');
+    var iFRV = hdrs.indexOf('Forzar_ReVerify');
+    var iFPu = hdrs.indexOf('Forzar_Push');
+    var iFWiz= hdrs.indexOf('Forzar_Wizard');
+    var fl  = iFL  >= 0 ? String(rowData[iFL]  || '') : '';
+    var frv = iFRV >= 0 ? String(rowData[iFRV] || '') : '';
+    var fpu = iFPu >= 0 ? String(rowData[iFPu] || '') : '';
+    var fwz = iFWiz>= 0 ? String(rowData[iFWiz]|| '') : '';
+    extras.forzar_logout   = fl  === '1' || fl.toLowerCase()  === 'true';
+    extras.logout_auto_ts  = iFLts >= 0 ? String(rowData[iFLts] || '') : '';
+    extras.forzar_reverify = frv === '1' || frv.toLowerCase() === 'true';
+    extras.forzar_push     = fpu === '1' || fpu.toLowerCase() === 'true';
+    extras.forzar_wizard   = fwz === '1' || fwz.toLowerCase() === 'true';
+  }
+  return extras;
+}
+
 // Registrar última conexión + zona/estación/vendedor de la sesión actual.
 // Llamado por MosExpress al aperturar caja (o cualquier sesión válida).
 // Si el UUID no existe → lo crea como PENDIENTE_APROBACION (admin debe aprobar).
@@ -732,11 +787,33 @@ function registrarSesionDispositivo(params) {
     for (var rm = 1; rm < dataMos.length; rm++) {
       if (String(dataMos[rm][iIdMos]) === deviceId) {
         if (iUCMos >= 0) sheetMos.getRange(rm + 1, iUCMos + 1).setValue(nowM);
-        return { ok: true, data: { autorizado: true, estado: 'ACTIVO', soloHeartbeat: true } };
+        // [v2.43.167] Check Estado del row MOS — puede estar INACTIVO/SUSPENDIDO
+        // aunque no se auto-cree pendiente. Master revocó MOS desde panel.
+        var iEstM = hdrsMos.indexOf('Estado');
+        var estadoM = iEstM >= 0 ? String(dataMos[rm][iEstM] || '').toUpperCase() : 'ACTIVO';
+        if (estadoM === 'INACTIVO') {
+          return { ok: true, data: Object.assign({
+            autorizado: false, estado: 'INACTIVO',
+            error: 'Acceso revocado por el master'
+          }, _payloadDeviceAuthExtras(null, null)) };
+        }
+        if (estadoM === 'SUSPENDIDO') {
+          return { ok: true, data: Object.assign({
+            autorizado: false, estado: 'SUSPENDIDO',
+            error: 'Acceso suspendido por inactividad. Pide reactivación al master.'
+          }, _payloadDeviceAuthExtras(null, null)) };
+        }
+        var extMos = _payloadDeviceAuthExtras(dataMos[rm], hdrsMos);
+        return { ok: true, data: Object.assign({
+          autorizado: true, estado: 'ACTIVO', soloHeartbeat: true
+        }, extMos) };
       }
     }
     // No existe → no hacer nada (MOS no se auto-registra)
-    return { ok: true, data: { autorizado: false, estado: 'NO_REGISTRADO', noEsDispositivoOperativo: true } };
+    return { ok: true, data: Object.assign({
+      autorizado: false, estado: 'NO_REGISTRADO',
+      noEsDispositivoOperativo: true
+    }, _payloadDeviceAuthExtras(null, null)) };
   }
 
   var sheet = getSheet('DISPOSITIVOS');
@@ -757,28 +834,54 @@ function registrarSesionDispositivo(params) {
     if (String(data[i][iId]) !== deviceId) continue;
     var estado = String(data[i][iEst] || '').toUpperCase();
     if (estado === 'INACTIVO') {
-      return { ok: true, data: { autorizado: false, estado: 'INACTIVO', error: 'Dispositivo bloqueado por el admin' } };
+      // [v2.43.167] Incluir extras (verifyVersion, fechaHoyLima) en todos los responses
+      var extInact = _payloadDeviceAuthExtras(null, null);
+      return { ok: true, data: Object.assign({
+        autorizado: false, estado: 'INACTIVO',
+        error: 'Dispositivo bloqueado por el admin'
+      }, extInact) };
+    }
+    // [v2.43.167] SUSPENDIDO = auto-suspendido por cron 7d. El operador puede
+    // pedir reactivación in-situ (admin/master con clave) o desde panel admin.
+    if (estado === 'SUSPENDIDO') {
+      // Refrescar Ultima_Conexion — el operador SÍ está intentando reconectarse,
+      // útil para que admin vea actividad y considere reactivar.
+      if (iUC >= 0) sheet.getRange(i + 1, iUC + 1).setValue(nowStr);
+      var extSusp = _payloadDeviceAuthExtras(null, null);
+      return { ok: true, data: Object.assign({
+        autorizado: false, estado: 'SUSPENDIDO',
+        error: 'Dispositivo suspendido por inactividad. Solicita reactivación al admin.'
+      }, extSusp) };
     }
     if (estado === 'PENDIENTE_APROBACION') {
       // Solo refrescar Ultima_Conexion para que el admin sepa que sigue intentando
       if (iUC >= 0) sheet.getRange(i + 1, iUC + 1).setValue(nowStr);
-      return { ok: true, data: { autorizado: false, estado: 'PENDIENTE_APROBACION', error: 'Esperando aprobación del administrador' } };
+      var extPend = _payloadDeviceAuthExtras(null, null);
+      return { ok: true, data: Object.assign({
+        autorizado: false, estado: 'PENDIENTE_APROBACION',
+        error: 'Esperando aprobación del administrador'
+      }, extPend) };
     }
     // ACTIVO → actualizar contexto
     if (iUC >= 0)  sheet.getRange(i + 1, iUC + 1).setValue(nowStr);
     if (iUZ >= 0   && params.idZona      !== undefined) sheet.getRange(i + 1, iUZ + 1).setValue(params.idZona || '');
     if (iUEs >= 0  && params.idEstacion  !== undefined) sheet.getRange(i + 1, iUEs + 1).setValue(params.idEstacion || '');
     if (iUSe >= 0  && params.vendedor    !== undefined) sheet.getRange(i + 1, iUSe + 1).setValue(params.vendedor || '');
-    // [v2.41.76] Devolver flag forzar_logout para que ME/WH cierren sesión
-    var iFL2   = hdrs.indexOf('Forzar_Logout');
-    var iFLts2 = hdrs.indexOf('Logout_Auto_Ts');
-    var fl2 = iFL2 >= 0 ? String(data[i][iFL2] || '') : '';
-    return { ok: true, data: {
+    // [v2.43.167] Limpiar Inactivo_Alerta_Ts si el device se reconectó
+    // (porque ya está ACTIVO, el cron no debe alertar de nuevo).
+    var iIAT = hdrs.indexOf('Inactivo_Alerta_Ts');
+    if (iIAT >= 0 && data[i][iIAT]) {
+      sheet.getRange(i + 1, iIAT + 1).setValue('');
+    }
+    // [v2.43.167] Response con extras consistentes (verifyVersion, fechaHoyLima,
+    // forzar_logout, forzar_reverify, forzar_push, forzar_wizard).
+    var dataActivo = {
       autorizado: true, estado: 'ACTIVO',
-      nombre: data[i][hdrs.indexOf('Nombre_Equipo')],
-      forzar_logout: fl2 === '1' || fl2.toLowerCase() === 'true',
-      logout_auto_ts: iFLts2 >= 0 ? String(data[i][iFLts2] || '') : ''
-    }};
+      nombre: data[i][hdrs.indexOf('Nombre_Equipo')]
+    };
+    var extras = _payloadDeviceAuthExtras(data[i], hdrs);
+    Object.keys(extras).forEach(function(k) { dataActivo[k] = extras[k]; });
+    return { ok: true, data: dataActivo };
   }
 
   // No existe → crear como PENDIENTE_APROBACION con nombre legible
@@ -825,7 +928,12 @@ function registrarSesionDispositivo(params) {
     }
   } catch(eA) { Logger.log('[SF3] crearAlerta fallo: ' + eA.message); }
 
-  return { ok: true, data: { autorizado: false, estado: 'PENDIENTE_APROBACION', error: 'Dispositivo nuevo — esperando aprobación del administrador' } };
+  // [v2.43.167] Incluir extras al response del dispositivo recién creado
+  var extNuevo = _payloadDeviceAuthExtras(null, null);
+  return { ok: true, data: Object.assign({
+    autorizado: false, estado: 'PENDIENTE_APROBACION',
+    error: 'Dispositivo nuevo — esperando aprobación del administrador'
+  }, extNuevo) };
 }
 
 // Compat: viejo endpoint sigue funcionando (sólo refresca Ultima_Conexion)
@@ -1101,10 +1209,14 @@ function purgarDispositivosInactivos(params) {
   var iEst  = hdrs.indexOf('Estado');
   var iUC   = hdrs.indexOf('Ultima_Conexion');
   var iSus  = hdrs.indexOf('Suspendido_Desde');
+  var iId   = hdrs.indexOf('ID_Dispositivo');
+  var iNom  = hdrs.indexOf('Nombre_Equipo');
+  var iApp  = hdrs.indexOf('App');
   var nowMs = Date.now();
   var limMs = diasMax * 24 * 60 * 60 * 1000;
   var nowStr = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
   var suspendidos = 0;
+  var detallesSuspendidos = [];
   for (var i = 1; i < data.length; i++) {
     var est = String(data[i][iEst] || '').toUpperCase();
     if (est !== 'ACTIVO') continue;
@@ -1120,9 +1232,42 @@ function purgarDispositivosInactivos(params) {
       sheet.getRange(i + 1, iEst + 1).setValue('SUSPENDIDO');
       if (iSus >= 0) sheet.getRange(i + 1, iSus + 1).setValue(nowStr);
       suspendidos++;
+      // [v2.43.167] Capturar detalles para crear alerta de seguridad y push
+      var diasInactivo = Math.floor((nowMs - ucMs) / (24 * 60 * 60 * 1000));
+      detallesSuspendidos.push({
+        idDispositivo: String(data[i][iId] || ''),
+        nombre:        String(data[i][iNom] || ''),
+        app:           String(data[i][iApp] || ''),
+        diasInactivo:  diasInactivo
+      });
     }
   }
-  return { ok: true, data: { suspendidos: suspendidos, dias: diasMax } };
+  // [v2.43.167] Crear alerta SEGURIDAD_ALERTAS + push master por cada suspendido.
+  // Audit-trail: queda registro de QUÉ dispositivos suspendió el cron.
+  detallesSuspendidos.forEach(function(d) {
+    try {
+      if (typeof _crearAlertaSeg === 'function') {
+        _crearAlertaSeg('DISPOSITIVO_SUSPENDIDO_AUTO', {
+          idDispositivo: d.idDispositivo,
+          descripcion:   (d.app || '').toUpperCase() + ' · ' + (d.nombre || 'Sin nombre') + ' · ' + d.diasInactivo + 'd sin uso',
+          prioridad:     'MEDIA',
+          datosExtra:    d
+        });
+      }
+    } catch(eA) { Logger.log('[purgar] crearAlerta fallo: ' + eA.message); }
+  });
+  if (detallesSuspendidos.length > 0) {
+    try {
+      var resumen = detallesSuspendidos.length + ' dispositivo(s) suspendido(s) por inactividad >' + diasMax + 'd';
+      _enviarPushTodos('🚨 Auto-suspensión dispositivos', resumen, {
+        soloRolesMaster: true, idNotif: 'MOS_DEVICE_SUSPENDIDO_AUTO'
+      });
+    } catch(ePu) { Logger.log('[purgar] push master fallo: ' + ePu.message); }
+  }
+  return { ok: true, data: {
+    suspendidos: suspendidos, dias: diasMax,
+    detalles: detallesSuspendidos
+  }};
 }
 
 // Cron-friendly wrapper: instalable como trigger diario sin params.
@@ -1149,6 +1294,14 @@ function aprobarDispositivoPendiente(params) {
         return { ok: true, skipped: true, motivo: 'ya_activo' };
       }
       sheet.getRange(i + 1, iEst + 1).setValue('ACTIVO');
+      // [v2.43.167] Limpiar Forzar_ReVerify y Inactivo_Alerta_Ts al aprobar
+      var iFRV = hdrs.indexOf('Forzar_ReVerify');
+      if (iFRV >= 0) sheet.getRange(i + 1, iFRV + 1).setValue('');
+      var iIAT = hdrs.indexOf('Inactivo_Alerta_Ts');
+      if (iIAT >= 0) sheet.getRange(i + 1, iIAT + 1).setValue('');
+      // [v2.43.167] Si venía SUSPENDIDO, limpiar Suspendido_Desde
+      var iSus = hdrs.indexOf('Suspendido_Desde');
+      if (iSus >= 0 && estadoActual === 'SUSPENDIDO') sheet.getRange(i + 1, iSus + 1).setValue('');
       if (params.Nombre_Equipo) sheet.getRange(i + 1, hdrs.indexOf('Nombre_Equipo') + 1).setValue(params.Nombre_Equipo);
       if (params.App)           sheet.getRange(i + 1, hdrs.indexOf('App') + 1).setValue(params.App);
 
@@ -1157,10 +1310,59 @@ function aprobarDispositivoPendiente(params) {
       _notificarAprobacionDispositivo(params.ID_Dispositivo, appFinal, nombreFinal,
                                       (params.aprobadoPor || 'panel'), 'panel');
       try { _marcarAlertaSegRevisadaPorDispositivo(params.ID_Dispositivo, params.aprobadoPor || 'panel'); } catch(_){}
+
+      // [v2.43.167] AUDITORIA — registrar en AUDITORIA_ADMIN con tier 2.
+      // El admin que aprueba ya pasó por verificarClaveAdmin en el panel front
+      // antes de llamar este endpoint, así que aquí solo registramos el efecto.
+      try {
+        var accionAudit = (estadoActual === 'SUSPENDIDO') ? 'REACTIVAR_DISPOSITIVO_SUSPENDIDO' : 'APROBAR_DISPOSITIVO_REMOTO';
+        _registrarAuditoriaSeg({
+          accion:        accionAudit,
+          refDocumento:  params.ID_Dispositivo,
+          appOrigen:     'MOS',
+          detalle:       (appFinal || '').toUpperCase() + ' · ' + (nombreFinal || 'Sin nombre') + ' · estado previo ' + estadoActual,
+          idPersonal:    params.idPersonalAutoriza || '',
+          nombreAutoriza:params.aprobadoPor || 'panel'
+        });
+      } catch(eAud) { Logger.log('[aprobarDispositivoPendiente] auditoria fallo: ' + eAud.message); }
+
       return { ok: true };
     }
     return { ok: false, error: 'Dispositivo no encontrado' };
   } finally { try { _lock.releaseLock(); } catch(_){} }
+}
+
+// [v2.43.167] Helper para registrar auditoria sin pasar por verificarClaveAdmin
+// (cuando el admin ya autenticó previamente en el panel y solo necesitamos
+// trazar el efecto de la acción).
+function _registrarAuditoriaSeg(params) {
+  try {
+    _garantizarHojaAuditoria();
+    var sheet = getSheet('AUDITORIA_ADMIN');
+    var idAccion = _generateId('AUD');
+    var accion = String(params.accion || '').toUpperCase();
+    var tier = _inferirTierAccion(accion);
+    sheet.appendRow([
+      idAccion,
+      new Date(),
+      accion,
+      String(params.refDocumento || ''),
+      String(params.idPersonal || ''),
+      String(params.nombreAutoriza || ''),
+      String(params.appOrigen || 'MOS'),
+      String(params.dispositivo || ''),
+      String(params.detalle || ''),
+      tier,
+      params.cache_hit === true ? 1 : 0,
+      parseInt(params.tiempo_verify_ms) || 0,
+      String(params.deviceId || ''),
+      JSON.stringify(params.cliente_meta || {})
+    ]);
+    return { ok: true, idAccion: idAccion };
+  } catch(e) {
+    Logger.log('[_registrarAuditoriaSeg] fallo: ' + e.message);
+    return { ok: false, error: e.message };
+  }
 }
 
 // [SF3] Helper para marcar alertas DISPOSITIVO_PENDIENTE como REVISADA
@@ -1200,15 +1402,25 @@ function aprobarDispositivoEnSitu(params) {
   if (!params.deviceId)     return { ok: false, error: 'Requiere deviceId' };
   if (!params.claveAdmin)   return { ok: false, error: 'Requiere claveAdmin' };
 
+  // [v2.43.167] Accion del catalogo según app:
+  //   - WH/ME: APROBAR_DISPOSITIVO_INSITU (tier 2, admin o master)
+  //   - MOS:   APROBAR_DISPOSITIVO_INSITU_MOS (tier 3, master only)
+  // verificarClaveAdmin audita auto en AUDITORIA_ADMIN con esos tipos.
+  var appTargetLower = String(params.app || '').toLowerCase();
+  var accionCatalogo = (appTargetLower === 'mos' || appTargetLower === 'proyectomos')
+    ? 'APROBAR_DISPOSITIVO_INSITU_MOS'
+    : 'APROBAR_DISPOSITIVO_INSITU';
+
   // Validar la clave 8 dig — verificarClaveAdmin retorna ok:true incluso si
   // no autorizado (el flag está en data.autorizado). También deja auditoría.
   var auth = verificarClaveAdmin({
     clave:        params.claveAdmin,
-    accion:       'APROBAR_DISPOSITIVO',
+    accion:       accionCatalogo,
     refDocumento: params.deviceId,
     appOrigen:    params.app || '',
     dispositivo:  params.nombreEquipo || params.userAgent || '',
-    detalle:      'Aprobación in-situ desde el dispositivo nuevo'
+    detalle:      'Aprobación in-situ desde el dispositivo nuevo',
+    deviceId:     params.deviceId
   });
   if (!auth.ok) return auth;
   if (!auth.data || !auth.data.autorizado) {
@@ -1298,6 +1510,183 @@ function rechazarDispositivoPendiente(params) {
     }
     return { ok: false, error: 'Dispositivo no encontrado' };
   } finally { try { _lock.releaseLock(); } catch(_){} }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// [v2.43.167] reactivarDispositivoSuspendido — devuelve un device SUSPENDIDO
+// (por cron 7d sin uso) al estado ACTIVO. Se llama desde:
+//   - Panel MOS: master/admin click "Reactivar" en la card del dispositivo
+//   - In-situ: el dispositivo muestra modal "Solicita reactivación" con clave
+//
+// Requiere clave admin (8 dig). Audita auto vía verificarClaveAdmin con
+// accion REACTIVAR_DISPOSITIVO_SUSPENDIDO (tier 2).
+// ════════════════════════════════════════════════════════════════════════
+function reactivarDispositivoSuspendido(params) {
+  if (!params.deviceId)   return { ok: false, error: 'Requiere deviceId' };
+  if (!params.claveAdmin) return { ok: false, error: 'Requiere claveAdmin' };
+  var auth = verificarClaveAdmin({
+    clave:        params.claveAdmin,
+    accion:       'REACTIVAR_DISPOSITIVO_SUSPENDIDO',
+    refDocumento: params.deviceId,
+    appOrigen:    params.app || 'MOS',
+    detalle:      'Reactivación de dispositivo suspendido por inactividad',
+    deviceId:     params.deviceId
+  });
+  if (!auth.ok) return auth;
+  if (!auth.data || !auth.data.autorizado) {
+    return { ok: true, data: { autorizado: false, error: auth.data && auth.data.error || 'Clave incorrecta' } };
+  }
+  var _lock = LockService.getScriptLock();
+  try { _lock.waitLock(15000); } catch(e) { return { ok: false, error: 'Sistema ocupado' }; }
+  try {
+    _garantizarColumnasDispositivos(true);
+    var sheet = getSheet('DISPOSITIVOS');
+    var data  = sheet.getDataRange().getValues();
+    var hdrs  = data[0];
+    var iId   = hdrs.indexOf('ID_Dispositivo');
+    var iEst  = hdrs.indexOf('Estado');
+    var iSus  = hdrs.indexOf('Suspendido_Desde');
+    var iIAT  = hdrs.indexOf('Inactivo_Alerta_Ts');
+    var iUC   = hdrs.indexOf('Ultima_Conexion');
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][iId]) !== String(params.deviceId)) continue;
+      var estActual = String(data[i][iEst] || '').toUpperCase();
+      if (estActual === 'ACTIVO') {
+        return { ok: true, data: { autorizado: true, skipped: true, motivo: 'ya_activo' } };
+      }
+      if (estActual !== 'SUSPENDIDO') {
+        return { ok: true, data: { autorizado: false, error: 'Estado ' + estActual + ' no es SUSPENDIDO. Use aprobar normal.' } };
+      }
+      sheet.getRange(i + 1, iEst + 1).setValue('ACTIVO');
+      if (iSus >= 0) sheet.getRange(i + 1, iSus + 1).setValue('');
+      if (iIAT >= 0) sheet.getRange(i + 1, iIAT + 1).setValue('');
+      if (iUC  >= 0) sheet.getRange(i + 1, iUC  + 1).setValue(Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'"));
+      var nombreEq = data[i][hdrs.indexOf('Nombre_Equipo')] || '';
+      var appEq    = data[i][hdrs.indexOf('App')] || '';
+      _notificarAprobacionDispositivo(params.deviceId, appEq, nombreEq, auth.data.validadoPor, 'reactivado');
+      return { ok: true, data: { autorizado: true, aprobadoPor: auth.data.validadoPor, accion: 'reactivado' } };
+    }
+    return { ok: false, error: 'Dispositivo no encontrado' };
+  } finally { try { _lock.releaseLock(); } catch(_){} }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// [v2.43.167] forzarReVerifyDispositivo — master setea Forzar_ReVerify=1 en
+// un device. La PWA del device lo detecta en heartbeat 1h, invalida cache
+// local y re-verifica. Si master ya revocó (INACTIVO/SUSPENDIDO), queda
+// bloqueada en el acto. Cierra ventana de exposición post-revocación.
+//
+// Requiere clave admin/master. Audita auto con FORZAR_REVERIFY_DISPOSITIVO.
+// ════════════════════════════════════════════════════════════════════════
+function forzarReVerifyDispositivo(params) {
+  if (!params.deviceId)   return { ok: false, error: 'Requiere deviceId' };
+  if (!params.claveAdmin) return { ok: false, error: 'Requiere claveAdmin' };
+  var auth = verificarClaveAdmin({
+    clave:        params.claveAdmin,
+    accion:       'FORZAR_REVERIFY_DISPOSITIVO',
+    refDocumento: params.deviceId,
+    appOrigen:    'MOS',
+    detalle:      'Forzar re-verificación inmediata sin esperar cron diario',
+    deviceId:     params.deviceId
+  });
+  if (!auth.ok) return auth;
+  if (!auth.data || !auth.data.autorizado) {
+    return { ok: true, data: { autorizado: false, error: auth.data && auth.data.error || 'Clave incorrecta' } };
+  }
+  _garantizarColumnasDispositivos();
+  var sheet = getSheet('DISPOSITIVOS');
+  var data  = sheet.getDataRange().getValues();
+  var hdrs  = data[0];
+  var iId   = hdrs.indexOf('ID_Dispositivo');
+  var iFRV  = hdrs.indexOf('Forzar_ReVerify');
+  if (iFRV < 0) return { ok: false, error: 'Columna Forzar_ReVerify no existe (corre _garantizarColumnasDispositivos)' };
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][iId]) !== String(params.deviceId)) continue;
+    sheet.getRange(i + 1, iFRV + 1).setValue('1');
+    return { ok: true, data: { autorizado: true, deviceId: params.deviceId } };
+  }
+  return { ok: false, error: 'Dispositivo no encontrado' };
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// [v2.43.167] alertarDispositivosInactivos2a7d — cron diario 02:30 que
+// crea alertas SEGURIDAD_ALERTAS + push master para dispositivos ACTIVOS
+// con Ultima_Conexion entre 2 y 7 días atrás. Dedupe vía Inactivo_Alerta_Ts.
+//
+// Después de los 7 días el otro cron (purgarDispositivosInactivos7d) los
+// marca SUSPENDIDO. Este avisa antes de la suspensión.
+// ════════════════════════════════════════════════════════════════════════
+function alertarDispositivosInactivos2a7d() {
+  _garantizarColumnasDispositivos();
+  var sheet = getSheet('DISPOSITIVOS');
+  var data  = sheet.getDataRange().getValues();
+  var hdrs  = data[0];
+  var iId   = hdrs.indexOf('ID_Dispositivo');
+  var iNom  = hdrs.indexOf('Nombre_Equipo');
+  var iApp  = hdrs.indexOf('App');
+  var iEst  = hdrs.indexOf('Estado');
+  var iUC   = hdrs.indexOf('Ultima_Conexion');
+  var iIAT  = hdrs.indexOf('Inactivo_Alerta_Ts');
+  var nowMs = Date.now();
+  var DOS_DIAS_MS = 2 * 24 * 60 * 60 * 1000;
+  var SIETE_DIAS_MS = 7 * 24 * 60 * 60 * 1000;
+  var nowStr = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
+  var alertados = 0;
+  var detalles = [];
+  for (var i = 1; i < data.length; i++) {
+    var est = String(data[i][iEst] || '').toUpperCase();
+    if (est !== 'ACTIVO') continue;
+    // Dedupe: si ya hay alerta abierta (Ts presente), saltar
+    if (iIAT >= 0 && data[i][iIAT]) continue;
+    var uc = data[i][iUC];
+    var ucMs = 0;
+    if (uc instanceof Date) ucMs = uc.getTime();
+    else if (typeof uc === 'string' && uc.trim()) {
+      var d = new Date(uc);
+      if (!isNaN(d.getTime())) ucMs = d.getTime();
+    }
+    if (!ucMs) continue;
+    var lapse = nowMs - ucMs;
+    if (lapse < DOS_DIAS_MS || lapse > SIETE_DIAS_MS) continue;
+    var diasInactivo = Math.floor(lapse / (24 * 60 * 60 * 1000));
+    var idDisp = String(data[i][iId] || '');
+    var nombre = String(data[i][iNom] || '');
+    var appEq  = String(data[i][iApp] || '');
+    try {
+      if (typeof _crearAlertaSeg === 'function') {
+        _crearAlertaSeg('DISPOSITIVO_INACTIVO_AVISO', {
+          idDispositivo: idDisp,
+          descripcion:   (appEq || '').toUpperCase() + ' · ' + (nombre || 'Sin nombre') + ' · ' + diasInactivo + 'd sin uso',
+          prioridad:     'BAJA',
+          datosExtra:    { diasInactivo: diasInactivo, ultimaConexion: String(uc || '') }
+        });
+      }
+    } catch(eA) { Logger.log('[alertarInactivos] crearAlerta fallo: ' + eA.message); }
+    if (iIAT >= 0) sheet.getRange(i + 1, iIAT + 1).setValue(nowStr);
+    alertados++;
+    detalles.push({ idDispositivo: idDisp, nombre: nombre, app: appEq, diasInactivo: diasInactivo });
+  }
+  // Push master consolidado
+  if (alertados > 0) {
+    try {
+      _enviarPushTodos('⚠ Dispositivos sin uso 2-7d', alertados + ' dispositivo(s) sin conectarse · revisar', {
+        soloRolesMaster: true, idNotif: 'MOS_DEVICE_INACTIVO_AVISO'
+      });
+    } catch(ePu) { Logger.log('[alertarInactivos] push fallo: ' + ePu.message); }
+  }
+  return { ok: true, data: { alertados: alertados, detalles: detalles } };
+}
+
+// [v2.43.167] Setup-only: instala el trigger del cron 02:30. Llamar 1 vez
+// desde el editor GAS o desde setupTodoSeguridad. Idempotente.
+function instalarTriggerAlertaInactivos2a7d() {
+  var TRG = 'alertarDispositivosInactivos2a7d';
+  var existing = ScriptApp.getProjectTriggers().filter(function(t) {
+    return t.getHandlerFunction() === TRG;
+  });
+  if (existing.length > 0) return { ok: true, ya: true, count: existing.length };
+  ScriptApp.newTrigger(TRG).timeBased().atHour(2).nearMinute(30).everyDays(1).create();
+  return { ok: true, instalado: true };
 }
 
 // Notifica a master+admin que un vendedor/operador inició sesión en ME o WH.

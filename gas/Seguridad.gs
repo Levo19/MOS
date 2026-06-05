@@ -123,6 +123,11 @@ var _AUTH_CATALOGO = {
   'BLOQUEAR_DISPOSITIVO':         { tier: 2, label: 'Bloquear dispositivo(s)' },
   'LIBERAR_DISPOSITIVO_BLOQUEADO':{ tier: 2, label: 'Liberar dispositivo' },
   'REVOCAR_DISPOSITIVO':          { tier: 3, label: 'Revocar dispositivo' },
+  // [v2.43.167] Eventos faltantes para auditoria completa de seguridad de dispositivos
+  'APROBAR_DISPOSITIVO_REMOTO':   { tier: 2, label: 'Aprobar dispositivo (panel)' },
+  'APROBAR_DISPOSITIVO_INSITU_MOS':{ tier: 3, label: 'Aprobar MOS in-situ (master)' },
+  'REACTIVAR_DISPOSITIVO_SUSPENDIDO':{ tier: 2, label: 'Reactivar dispositivo suspendido' },
+  'FORZAR_REVERIFY_DISPOSITIVO':  { tier: 2, label: 'Forzar re-verificación dispositivo' },
   'FORZAR_WIZARD':                { tier: 2, label: 'Forzar wizard remoto' },
   'CIERRE_CAJA_FORZADO':          { tier: 3, label: 'Cierre forzado de caja' },
   'PURGAR_CATALOGO':              { tier: 3, label: 'Eliminar items del catálogo' },
