@@ -539,7 +539,13 @@ var _DISP_COLS_EXTRA = ['Ultima_Zona', 'Ultima_Estacion', 'Ultima_Sesion',
                         // Si el cron corre de nuevo al día siguiente y sigue inactivo,
                         // NO crea otra alerta (la PENDIENTE sigue ahí).
                         // Cuando el dispositivo se reconecta, este flag se limpia.
-                        'Inactivo_Alerta_Ts'];
+                        'Inactivo_Alerta_Ts',
+                        // [v2.43.172 R6] Timestamp cuando el cron auto-cancelo una
+                        // solicitud PENDIENTE_APROBACION por >20h sin aprobar.
+                        // Si esta presente, el row queda con Estado=CANCELADO_AUTO.
+                        // Al volver el operador, registrarSesionDispositivo lo
+                        // reutiliza pasando a PENDIENTE_APROBACION nueva (limpia el flag).
+                        'Cancelado_Auto_Ts'];
 
 // Push helper · notifica a admin/master cuando se aprueba un dispositivo
 function _notificarAprobacionDispositivo(deviceId, app, nombreEquipo, aprobadoPor, accion) {
@@ -884,6 +890,43 @@ function registrarSesionDispositivo(params) {
         autorizado: false, estado: 'INACTIVO',
         error: 'Dispositivo bloqueado por el admin'
       }, extInact) };
+    }
+    // [v2.43.172 R6] CANCELADO_AUTO = el cron auto-canceló esta solicitud por >20h.
+    // El operador vuelve a abrir la app → reutilizar row como NUEVA PENDIENTE.
+    // No bloquear, no tratar como INACTIVO (que es revocación legítima).
+    if (estado === 'CANCELADO_AUTO') {
+      sheet.getRange(i + 1, iEst + 1).setValue('PENDIENTE_APROBACION');
+      var iCAT2 = hdrs.indexOf('Cancelado_Auto_Ts');
+      if (iCAT2 >= 0) sheet.getRange(i + 1, iCAT2 + 1).setValue('');
+      if (iUC >= 0) sheet.getRange(i + 1, iUC + 1).setValue(nowStr);
+      // Push fresh al admin/master + alerta SEGURIDAD_ALERTAS nueva
+      try {
+        var nombreRow = data[i][hdrs.indexOf('Nombre_Equipo')] || '';
+        var appRow    = data[i][hdrs.indexOf('App')] || '';
+        var appUpper  = String(appRow || '').toUpperCase();
+        var esMosRow  = appUpper === 'MOS' || appUpper === 'PROYECTOMOS';
+        var detRow    = (appUpper || '') + ' · ' + (nombreRow || 'Sin nombre') + ' · re-solicitud tras auto-cancel';
+        _enviarPushTodos(
+          esMosRow ? '🔒 MOS solicita acceso de nuevo (master)' : '🔔 Re-solicitud de acceso',
+          detRow,
+          esMosRow ? { soloRolesMaster: true, idNotif: 'MOS_DEVICE_RESOLICITUD_MOS' }
+                   : { soloRolesAdmin: true, idNotif: 'MOS_DEVICE_RESOLICITUD' }
+        );
+      } catch(eR){}
+      try {
+        if (typeof _crearAlertaSeg === 'function') {
+          _crearAlertaSeg(esMosRow ? 'DISPOSITIVO_PENDIENTE_MOS' : 'DISPOSITIVO_PENDIENTE', {
+            idDispositivo: deviceId,
+            descripcion:   (appUpper || '') + ' · ' + (nombreRow || 'Sin nombre') + ' (re-solicitud)',
+            prioridad:     esMosRow ? 'CRITICA' : 'MEDIA',
+            datosExtra:    { app: appRow, nombre: nombreRow, reSolicitud: true }
+          });
+        }
+      } catch(eA){}
+      return { ok: true, data: Object.assign({
+        autorizado: false, estado: 'PENDIENTE_APROBACION',
+        error: 'Re-solicitud enviada — esperando aprobación'
+      }, _payloadDeviceAuthExtras(null, null)) };
     }
     // [v2.43.167] SUSPENDIDO = auto-suspendido por cron 7d. El operador puede
     // pedir reactivación in-situ (admin/master con clave) o desde panel admin.
@@ -1741,6 +1784,83 @@ function instalarTriggerAlertaInactivos2a7d() {
   });
   if (existing.length > 0) return { ok: true, ya: true, count: existing.length };
   ScriptApp.newTrigger(TRG).timeBased().atHour(2).nearMinute(30).everyDays(1).create();
+  return { ok: true, instalado: true };
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// [v2.43.172 R6] cancelarPendientesAntiguos — auto-cancela solicitudes
+// PENDIENTE_APROBACION viejas para evitar spam de alertas al admin.
+//
+// Lógica: dispositivo PENDIENTE >20h sin aprobar = el admin claramente lo
+// está ignorando o no le interesa. Marca como CANCELADO_AUTO. Al volver el
+// operador (próximo día), registrarSesionDispositivo lo reutiliza pasando
+// a PENDIENTE_APROBACION nueva (con nueva fecha y push fresh).
+//
+// Límite configurable vía Property PENDIENTE_AUTO_CANCEL_HORAS (default 20).
+// Trigger sugerido: cada 1h.
+// ════════════════════════════════════════════════════════════════════════
+function cancelarPendientesAntiguos() {
+  _garantizarColumnasDispositivos();
+  var horasMax = parseInt(PropertiesService.getScriptProperties().getProperty('PENDIENTE_AUTO_CANCEL_HORAS') || '20', 10);
+  if (isNaN(horasMax) || horasMax < 1) horasMax = 20;
+  var sheet = getSheet('DISPOSITIVOS');
+  var data  = sheet.getDataRange().getValues();
+  var hdrs  = data[0];
+  var iId   = hdrs.indexOf('ID_Dispositivo');
+  var iNom  = hdrs.indexOf('Nombre_Equipo');
+  var iApp  = hdrs.indexOf('App');
+  var iEst  = hdrs.indexOf('Estado');
+  var iUC   = hdrs.indexOf('Ultima_Conexion');
+  var iCAT  = hdrs.indexOf('Cancelado_Auto_Ts');
+  var nowMs = Date.now();
+  var limMs = horasMax * 60 * 60 * 1000;
+  var nowStr = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
+  var canceladas = 0;
+  var detalles = [];
+  for (var i = 1; i < data.length; i++) {
+    var est = String(data[i][iEst] || '').toUpperCase();
+    if (est !== 'PENDIENTE_APROBACION') continue;
+    var uc = data[i][iUC];
+    var ucMs = 0;
+    if (uc instanceof Date) ucMs = uc.getTime();
+    else if (typeof uc === 'string' && uc.trim()) {
+      var d = new Date(uc);
+      if (!isNaN(d.getTime())) ucMs = d.getTime();
+    }
+    if (!ucMs) continue;
+    if ((nowMs - ucMs) > limMs) {
+      sheet.getRange(i + 1, iEst + 1).setValue('CANCELADO_AUTO');
+      if (iCAT >= 0) sheet.getRange(i + 1, iCAT + 1).setValue(nowStr);
+      canceladas++;
+      var idDisp = String(data[i][iId] || '');
+      detalles.push({
+        idDispositivo: idDisp,
+        nombre:        String(data[i][iNom] || ''),
+        app:           String(data[i][iApp] || ''),
+        horasInactivo: Math.floor((nowMs - ucMs) / (60 * 60 * 1000))
+      });
+      // Marcar alerta SEGURIDAD_ALERTAS asociada como REVISADA con motivo
+      try {
+        _marcarAlertaSegRevisadaPorDispositivo(idDisp, 'AUTO_CANCEL_20H');
+      } catch(_){}
+    }
+  }
+  return { ok: true, data: { canceladas: canceladas, horas: horasMax, detalles: detalles } };
+}
+
+// Wrapper para trigger horario (sin params)
+function cancelarPendientesAntiguos20h() {
+  return cancelarPendientesAntiguos();
+}
+
+// Setup-only: instala trigger cada 1h. Idempotente.
+function instalarTriggerCancelarPendientes() {
+  var TRG = 'cancelarPendientesAntiguos20h';
+  var existing = ScriptApp.getProjectTriggers().filter(function(t) {
+    return t.getHandlerFunction() === TRG;
+  });
+  if (existing.length > 0) return { ok: true, ya: true, count: existing.length };
+  ScriptApp.newTrigger(TRG).timeBased().everyHours(1).create();
   return { ok: true, instalado: true };
 }
 

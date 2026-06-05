@@ -250,6 +250,8 @@ function _route(method, e) {
       case 'reactivarDispositivoSuspendido': return reactivarDispositivoSuspendido(params);  // [v2.43.167]
       case 'forzarReVerifyDispositivo':    return forzarReVerifyDispositivo(params);         // [v2.43.167]
       case 'alertarDispositivosInactivos2a7d': return alertarDispositivosInactivos2a7d();    // [v2.43.167]
+      case 'cancelarPendientesAntiguos':     return cancelarPendientesAntiguos();             // [v2.43.172 R6]
+      case 'instalarTriggerCancelarPendientes': return instalarTriggerCancelarPendientes();   // [v2.43.172 R6]
       case 'rechazarDispositivoPendiente': return rechazarDispositivoPendiente(params);
       case 'vincularBrowserDispositivo':   return vincularBrowserDispositivo(params);
       case 'limpiarPendientesMOS':         return limpiarPendientesMOS();

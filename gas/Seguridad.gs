@@ -128,6 +128,8 @@ var _AUTH_CATALOGO = {
   'APROBAR_DISPOSITIVO_INSITU_MOS':{ tier: 3, label: 'Aprobar MOS in-situ (master)' },
   'REACTIVAR_DISPOSITIVO_SUSPENDIDO':{ tier: 2, label: 'Reactivar dispositivo suspendido' },
   'FORZAR_REVERIFY_DISPOSITIVO':  { tier: 2, label: 'Forzar re-verificación dispositivo' },
+  // [v2.43.172 R6] Cancelacion automatica de solicitudes PENDIENTE viejas
+  'CANCELACION_AUTO_PENDIENTE':   { tier: 1, label: 'Auto-cancelar solicitud pendiente >20h' },
   'FORZAR_WIZARD':                { tier: 2, label: 'Forzar wizard remoto' },
   'CIERRE_CAJA_FORZADO':          { tier: 3, label: 'Cierre forzado de caja' },
   'PURGAR_CATALOGO':              { tier: 3, label: 'Eliminar items del catálogo' },
