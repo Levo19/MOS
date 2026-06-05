@@ -1,1 +1,1 @@
-{ "version": "2.43.179", "build": "20260604-unificacion-deviceId-app-js-con-DeviceAuth-single-source-of-truth" }
+{ "version": "2.43.182", "build": "20260605-device-auth-1.0.10-bug-E-fix-heartbeat-10min-cleanup-camelCase" }

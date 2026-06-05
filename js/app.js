@@ -44,6 +44,13 @@ const MOS = (() => {
   // Fallback solo si DeviceAuth no cargó (CDN caído). Migración del valor
   // viejo 'mos_deviceId' → 'mos_device_id' si solo existe el viejo.
   function _getOrCreateDeviceId() {
+    // [v2.43.182] Limpieza defensiva de la clave huérfana camelCase. Si el
+    // operador tiene tanto la vieja como la nueva en localStorage (caso real
+    // detectado en testing), preferir la NUEVA y eliminar la vieja para
+    // prevenir drift futuro.
+    if (localStorage.getItem('mos_device_id') && localStorage.getItem('mos_deviceId')) {
+      try { localStorage.removeItem('mos_deviceId'); } catch(_) {}
+    }
     // Source of truth: módulo DeviceAuth si está cargado
     if (window.DeviceAuth && typeof window.DeviceAuth.deviceId === 'function') {
       const daId = window.DeviceAuth.deviceId();
@@ -57,8 +64,10 @@ const MOS = (() => {
       if (viejo) {
         id = viejo;
         localStorage.setItem('mos_device_id', id);
-        // No borramos 'mos_deviceId' todavía por si algún cliente legacy
-        // sigue leyéndolo entre cargas. Se limpiará en próxima iteración.
+        // [v2.43.182] Limpieza: la clave camelCase es legacy y ya nada la lee
+        // en el código actual. Eliminarla previene confusiones futuras y
+        // posible drift si código nuevo accidentalmente la consulta.
+        try { localStorage.removeItem('mos_deviceId'); } catch(_) {}
       } else {
         id = (crypto && crypto.randomUUID) ? crypto.randomUUID()
            : 'DEV-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);

@@ -1622,7 +1622,13 @@ function aprobarDispositivoEnSitu(params) {
       );
       _notificarAprobacionDispositivo(params.deviceId, params.app, params.nombreEquipo || data[i][iNom],
                                       auth.data.validadoPor, 'reactivado');
-      return { ok: true, data: { autorizado: true, aprobadoPor: auth.data.validadoPor, accion: 'reactivado' } };
+      // [v2.43.182 BUG E FIX] Retornar verifyVersion y fechaHoyLima para que el
+      // frontend pueda cachear correctamente sin esperar al próximo boot
+      // (que antes invalidaba+re-guardaba con un fetch extra).
+      return { ok: true, data: Object.assign(
+        { autorizado: true, aprobadoPor: auth.data.validadoPor, accion: 'reactivado' },
+        _payloadDeviceAuthExtras(data[i], hdrs)
+      ) };
     }
   }
 
@@ -1638,7 +1644,13 @@ function aprobarDispositivoEnSitu(params) {
   _notificarAprobacionDispositivo(params.deviceId, params.app,
                                   params.nombreEquipo || params.userAgent,
                                   auth.data.validadoPor, 'creado');
-  return { ok: true, data: { autorizado: true, aprobadoPor: auth.data.validadoPor, accion: 'creado' } };
+  // [v2.43.182 BUG E FIX] Retornar verifyVersion para que frontend cachee correctamente.
+  // Como acabamos de appendRow, no podemos pasar el row a _payloadDeviceAuthExtras
+  // (sería extra fetch). Pasamos (null,null) → solo verifyVersion + fechaHoyLima genéricos.
+  return { ok: true, data: Object.assign(
+    { autorizado: true, aprobadoPor: auth.data.validadoPor, accion: 'creado' },
+    _payloadDeviceAuthExtras(null, null)
+  ) };
 }
 
 // Rechazar / bloquear dispositivo pendiente o activo

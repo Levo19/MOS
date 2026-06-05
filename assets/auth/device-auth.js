@@ -1,8 +1,11 @@
 // ════════════════════════════════════════════════════════════════════
 // DeviceAuth — módulo compartido de verificación de dispositivos
-// v1.0.9 — 2026-06-04 — Bug E (cosmético cache-bust), Bug T (seguridad: PENDIENTE
-//          no invalidaba cache), Bug N (heartbeat sin PENDIENTE_APROBACION),
-//          Bug H (polling en background tab), Bug Q (deadcode cleanup).
+// v1.0.10 — 2026-06-05 — Bug E (in-situ ahora lee verifyVersion del backend
+//           response, eliminando el fetch extra en el próximo boot).
+// v1.0.9 — 2026-06-04 — Bug T (seguridad: PENDIENTE no invalidaba cache),
+//          Bug N (heartbeat sin PENDIENTE_APROBACION), Bug H (polling en
+//          background tab), Bug Q (deadcode cleanup), Bug JJ (polling sin
+//          stop en terminales), Bug LL (verifyPromise zombi).
 //
 // Lo cargan las 3 apps del ecosistema (MOS, MosExpress, warehouseMos)
 // vía CDN MOS pages. Centraliza el flow de verificación:
@@ -468,7 +471,15 @@
         // la clave fue correcta. Ahora muestra "✓ ¡Aprobado!" verde explícito.
         _state.estado = 'ACTIVO';
         _detenerPolling();
-        _guardarCacheExitoso(_fechaHoyLima(), _state.verifyVersion);
+        // [v1.0.10 BUG E FIX] Backend ahora retorna verifyVersion en el response
+        // de in-situ. Antes _state.verifyVersion era 0 (nunca consultamos server),
+        // entonces el cache se guardaba con versión 0 y el próximo boot detectaba
+        // serverVer > 0 → invalidaba cache → re-fetch → re-guardado. Fetch extra
+        // innecesario. Ahora leemos el verifyVersion del response del backend.
+        var verBackend = parseInt(d.verifyVersion || 0, 10);
+        if (verBackend > 0) _state.verifyVersion = verBackend;
+        var fechaBackend = d.fechaHoyLima || _fechaHoyLima();
+        _guardarCacheExitoso(fechaBackend, _state.verifyVersion);
         _sonidoAprobado();
         _vibrar([100, 50, 100, 50, 100]);
         // Cambiar el modal in-situ a "success state" visible
@@ -689,10 +700,16 @@
     }
   }
 
-  // ── Heartbeat 1h: consulta Forzar_ReVerify + bump verifyVersion ──
+  // ── Heartbeat 10min: consulta Forzar_ReVerify + bump verifyVersion ──
+  // [v1.0.10] Bajado de 1h a 10min para reducir ventana de detección de
+  // revocación. Antes una revocación tardaba hasta 1h en propagarse al
+  // cliente; ahora <10min. Trade-off: 6 fetches/h por cliente vs 1.
+  // Acceptable: el endpoint es liviano y respeta visibilityState.
   function _arrancarHeartbeat() {
     if (_state.heartbeatTimer) return;
     _state.heartbeatTimer = setInterval(function() {
+      // [v1.0.10 BUG H consistent] Saltar heartbeat si pestaña oculta
+      if (document.visibilityState === 'hidden') return;
       var url = _config.mosGasUrl
         + '?action=consultarEstadoDispositivo'
         + '&deviceId=' + encodeURIComponent(_state.deviceId);
@@ -722,7 +739,7 @@
           _verificar();
         }
       }).catch(function(){});
-    }, 60 * 60 * 1000);
+    }, 10 * 60 * 1000);  // 10 min (antes 1h)
   }
   function _detenerHeartbeat() {
     if (_state.heartbeatTimer) {
