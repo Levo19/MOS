@@ -13220,6 +13220,12 @@
                   title="Calibrar impresora de adhesivos (drift compensation)">
             🔧 Calibrar impresora
           </button>
+          <!-- [v2.43.193] Editor de Avisos — plantillas custom de adhesivos -->
+          <button onclick="MOS.abrirEditorAdhesivos()" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105 active:scale-95"
+                  style="background:linear-gradient(135deg,#312e81,#1e1b4b);border:1px solid rgba(99,102,241,.55);color:#a5b4fc;font-weight:700"
+                  title="Editor visual de adhesivos personalizados (avisos, alertas, promos)">
+            🎨 Editor de avisos
+          </button>
           <!-- [v2.43.152] Tools simplificado a 2 botones: alertas + lotes globales.
                El filtrado por tipo se hace DENTRO del modal de lotes con tabs. -->
           <button onclick="window.MembreteSystem && MembreteSystem.abrirAlertasPrecio && MembreteSystem.abrirAlertasPrecio()" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105 active:scale-95"
@@ -18114,7 +18120,46 @@ if (false) (function(){
 <!-- [v2.43.187] AdhesivoPreview — render visual del adhesivo unificado con WH.
      Mismo módulo en /assets/adhesivo/preview.js — backend Envasados.gs pixel-perfect. -->
 <script src="./assets/adhesivo/preview.js?v=1.1.0"></script>
-<script src="js/app.js?v=2.43.168"></script>
+<!-- [v2.43.193] Editor de Avisos personalizados (AdhesivosPersonalizados.gs) -->
+<script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
+<script src="./assets/editor-adhesivos/converter.js?v=1.0.0"></script>
+<script src="./assets/editor-adhesivos/editor.js?v=1.0.0"></script>
+<script src="js/app.js?v=2.43.193"></script>
+<!-- [v2.43.193] Bootstrap del Editor de Avisos: adjunta handler al MOS global
+     después que app.js definió MOS. Lazy-setup de iconos en backend la 1ª vez. -->
+<script>
+(function() {
+  if (!window.MOS) return;
+  MOS.abrirEditorAdhesivos = async function() {
+    if (!window.EditorAdhesivos || !window.IconosAdhesivo || !window.EditorAdhesivosConverter) {
+      alert('Editor no cargó completo — refrescá la página');
+      return;
+    }
+    // Setup lazy: subir hex de iconos al backend la 1ª vez. Idempotente (el
+    // backend solo actualiza si difieren). No bloquea la apertura del editor.
+    try {
+      var iconos = {};
+      IconosAdhesivo.listar().forEach(function(i) {
+        iconos[i.id] = IconosAdhesivo.hexTSPL(i.id);
+      });
+      fetch(GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'setupAdhesivosBase',
+          iconos: iconos,
+          tamano_dots: IconosAdhesivo.TAMANO_DOTS
+        })
+      }).then(function(r) { return r.json(); }).then(function(r) {
+        if (!r || !r.ok) console.warn('[EditorAdhesivos] setup falló:', r);
+        else console.log('[EditorAdhesivos] backend sync ✓', r);
+      }).catch(function(e) { console.warn('[EditorAdhesivos] setup fetch err:', e.message); });
+    } catch(e) { console.warn('[EditorAdhesivos] setup err:', e.message); }
+    // Abrir el editor (no espera al setup; funciona si ya estaba subido)
+    window.EDITOR_BACKEND_URL = GAS_URL;
+    EditorAdhesivos.abrir({ backendUrl: GAS_URL });
+  };
+})();
+</script>
 
 <!-- ── Service Worker + Update Logic ────────────────────── -->
 <script>

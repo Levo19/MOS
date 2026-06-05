@@ -474,6 +474,14 @@ function _route(method, e) {
       // post-login para que las próximas llamadas no paguen el frío.
       case 'ping': return { ok: true, pong: Date.now() };
 
+      // [v2.43.193] Editor de avisos personalizados (AdhesivosPersonalizados.gs)
+      case 'setupAdhesivosBase':            return setupAdhesivosBase(params);
+      case 'listarAdhesivosPlantillas':     return listarAdhesivosPlantillas();
+      case 'guardarAdhesivoPlantilla':      return guardarAdhesivoPlantilla(params);
+      case 'eliminarAdhesivoPlantilla':     return eliminarAdhesivoPlantilla(params);
+      case 'imprimirAdhesivoPlantilla':     return imprimirAdhesivoPlantilla(params);
+      case 'testImpresionAdhesivoPlantilla': return testImpresionAdhesivoPlantilla(params);
+
       default:
         return { ok: false, error: 'Acción no reconocida: ' + action };
     }})();
