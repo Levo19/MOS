@@ -894,15 +894,23 @@
       lista.innerHTML = '<div style="text-align:center;color:#64748b;padding:24px 0;font-size:13px">Buscá un producto arriba para agregarlo a la cola</div>';
       return;
     }
+    // [v2026-06-05 UX góndola] MEMBRETE_ME: en góndola SOLO importa precio + nombre.
+    // El código de barras NO se muestra en la cola — confunde al operador (no es
+    // un dato útil para él, sí lo es solo para el barcode impreso). Para WH sí
+    // mostramos código (almacén lo necesita para identificar bin/equivalentes).
     lista.innerHTML = items.map(function(it, i) {
-      var precioBlock = tipo === 'MEMBRETE_ME'
-        ? '<div style="font-size:14px;font-weight:900;color:#fbbf24;font-family:monospace">S/ ' + (parseFloat(it.precio) || 0).toFixed(2) + '</div>'
+      var esME = tipo === 'MEMBRETE_ME';
+      var precioBlock = esME
+        ? '<div style="font-size:16px;font-weight:900;color:#fbbf24;font-family:monospace;text-shadow:0 1px 2px rgba(0,0,0,.4)">S/ ' + (parseFloat(it.precio) || 0).toFixed(2) + '</div>'
         : '';
+      var codigoLinea = esME
+        ? ''
+        : '<div style="font-size:11px;color:#94a3b8;font-family:monospace">▌' + _escapeHtml(it.codigoBarra || '') + '</div>';
       return ''
         + '<div style="display:flex;align-items:center;gap:10px;padding:10px;background:rgba(15,23,42,.4);border-radius:8px;margin-bottom:6px;border:1px solid #1e293b">'
         +   '<div style="flex:1;min-width:0">'
         +     '<div style="font-size:13px;font-weight:700;color:#f1f5f9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + _escapeHtml(it.descripcion || '') + '</div>'
-        +     '<div style="font-size:11px;color:#94a3b8;font-family:monospace">▌' + _escapeHtml(it.codigoBarra || '') + '</div>'
+        +     codigoLinea
         +   '</div>'
         +   precioBlock
         +   '<button onclick="MembreteSystem._colaQuitar(' + i + ')" style="background:rgba(248,113,113,.12);color:#fca5a5;border:1px solid rgba(248,113,113,.35);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:14px">✕</button>'
@@ -1001,15 +1009,25 @@
         skuBase:     String(p.skuBase || '')
       };
     });
+    // [v2026-06-05 UX góndola] MEMBRETE_ME: en sugerencias SOLO descripción + precio.
+    // Quitar ▌codigoBarra — no le sirve al operador en góndola, lo confunde y
+    // mete ruido visual. WH (almacén) sí muestra código abajo en chico.
+    var esME = _colaTipo() === 'MEMBRETE_ME';
     sugs.innerHTML = window._msColaSugItems.map(function(it, i) {
+      var precioHtml = it.precio > 0
+        ? ' <span style="color:#fbbf24;font-weight:900;float:right;font-size:14px;font-family:monospace">S/ ' + it.precio.toFixed(2) + '</span>'
+        : '';
+      var codigoHtml = esME
+        ? ''
+        : ' <span style="font-family:monospace;color:#94a3b8">▌' + _escapeHtml(it.codigoBarra) + '</span>';
       return ''
         + '<div onclick="MembreteSystem._colaAgregarIdx(' + i + ')"'
-        +   ' style="padding:8px 10px;cursor:pointer;border-radius:6px;font-size:12px;color:#cbd5e1"'
+        +   ' style="padding:10px 12px;cursor:pointer;border-radius:6px;font-size:13px;color:#cbd5e1"'
         +   ' onmouseover="this.style.background=\'rgba(251,191,36,.10)\'"'
         +   ' onmouseout="this.style.background=\'transparent\'">'
-        +   '<span style="font-weight:700">' + _escapeHtml(it.descripcion) + '</span> '
-        +   '<span style="font-family:monospace;color:#94a3b8">▌' + _escapeHtml(it.codigoBarra) + '</span>'
-        +   (it.precio > 0 ? ' <span style="color:#fbbf24;font-weight:700;float:right">S/ ' + it.precio.toFixed(2) + '</span>' : '')
+        +   '<span style="font-weight:700">' + _escapeHtml(it.descripcion) + '</span>'
+        +   codigoHtml
+        +   precioHtml
         + '</div>';
     }).join('');
     sugs.style.display = 'block';
