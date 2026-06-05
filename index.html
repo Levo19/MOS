@@ -17428,9 +17428,60 @@
   </div>
 </div>
 
-<!-- Verificación de dispositivo MOS -->
+<!-- ════ [v2.43.168] Verificación de dispositivo MOS — via modulo compartido DeviceAuth ════
+     Reemplaza el flow inline historico (que tenia fail-open sin internet,
+     cache TTL fijo 24h, y NO bloqueaba UI permitiendo que el badge de
+     alertas fuera clickeable sin autorizacion).
+
+     Nuevo flow (R1-R5 cumple todas):
+       - isMaster:true → MOS solo aprueba in-situ con master
+       - Cache por fecha calendario Lima (TZ-aware)
+       - body.da-blocked bloquea TODA la UI mientras no autoriza
+       - Fail-CLOSED en todos los paths (R2)
+       - Polling 15s con celebracion sonora al aprobar (R3 proactivo) ═══ -->
+<script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=1.0.2"></script>
 <script>
 (function(){
+  const GAS_URL = 'https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec';
+  if (!window.DeviceAuth) {
+    // Modulo no cargo (CDN MOS caido o bloqueado) → fail-CLOSED fatal
+    var fatal = document.createElement('div');
+    fatal.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#0c1426;color:#f1f5f9;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:system-ui,-apple-system,sans-serif';
+    fatal.innerHTML = '<div style="font-size:64px;margin-bottom:18px">🔒</div>'
+      + '<h2 style="font-size:20px;margin:0 0 8px;color:#f1f5f9">Modulo de seguridad no cargado</h2>'
+      + '<p style="font-size:14px;color:#94a3b8;max-width:420px;line-height:1.5;margin:0 0 24px">No se pudo cargar el modulo de verificacion de dispositivos. Revisa tu conexion y reintenta.</p>'
+      + '<button onclick="location.reload()" style="padding:12px 22px;border-radius:10px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;font-weight:800;font-size:14px;border:0;cursor:pointer">🔄 Reintentar</button>';
+    document.documentElement.appendChild(fatal);
+    return;
+  }
+  DeviceAuth.init({
+    mosGasUrl: GAS_URL,
+    app: 'MOS',
+    isMaster: true,  // ← MOS solo se activa in-situ con MASTER
+    storageKeys: {
+      deviceId:           'mos_device_id',
+      lastVerifyDate:     'mos_device_auth_date_lima',
+      verifyVersion:      'mos_device_verify_version',
+      lastVerifyDeviceId: 'mos_device_auth_devid'
+    },
+    onAuth: function() {
+      // Compat con cache viejo basado en timestamp (mos_device_auth_ts)
+      try { localStorage.setItem('mos_device_auth_ts', String(Date.now())); } catch(_){}
+    },
+    onAprobado: function() {
+      // Recargar para que app arranque limpia con wizard de permisos
+      setTimeout(function(){ location.reload(); }, 1200);
+    }
+  });
+})();
+</script>
+
+<!-- ↓↓↓ DEPRECATED v2.43.168 — flow inline historico de MOS. NO se invoca (if(false)).
+     Queda como referencia por si surge una regresion antes de validar la migracion.
+     Sera removido completamente cuando se confirme que DeviceAuth no causa
+     problemas en produccion. -->
+<script>
+if (false) (function(){
   const GAS_URL = 'https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec';
   const DEV_KEY = 'mos_device_id';
   const AUTH_CACHE_KEY = 'mos_device_auth_ts';
@@ -18029,8 +18080,8 @@
      bumps de sw.js. Bug reportado: usuario seguía viendo error "Lote en curso"
      de v2.43.146 después de v2.43.148. -->
 <script src="./assets/membrete/membrete-modal.js?v=2.43.166"></script>
-<script src="./assets/seguridad/seguridad-modal.js?v=2.43.166"></script>
-<script src="js/app.js?v=2.43.166"></script>
+<script src="./assets/seguridad/seguridad-modal.js?v=2.43.168"></script>
+<script src="js/app.js?v=2.43.168"></script>
 
 <!-- ── Service Worker + Update Logic ────────────────────── -->
 <script>

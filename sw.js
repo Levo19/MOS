@@ -27,7 +27,7 @@ _fcmMsg.onBackgroundMessage(payload => {
   });
 });
 
-const VERSION = '2.43.166';
+const VERSION = '2.43.168';
 const CACHE   = 'mos-v' + VERSION;
 const ASSETS  = [
   './',
