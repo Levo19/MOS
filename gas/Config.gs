@@ -1002,6 +1002,9 @@ function consultarEstadoDispositivo(params) {
       }
     }
     var fp = iFP >= 0 ? String(data[i][iFP] || '') : '';
+    // [v2.43.167] forzar_reverify para el heartbeat del DeviceAuth module.
+    var iFRV = hdrs.indexOf('Forzar_ReVerify');
+    var frv = iFRV >= 0 ? String(data[i][iFRV] || '') : '';
     return { ok: true, data: {
       registrado:    true,
       estado:        String(data[i][iEst] || ''),
@@ -1010,10 +1013,18 @@ function consultarEstadoDispositivo(params) {
       forzar_wizard: fw === '1' || fw.toLowerCase() === 'true',
       forzar_logout:    fl === '1' || fl.toLowerCase() === 'true',
       logout_auto_ts:   flTs,
-      forzar_push:   fp === '1' || fp.toLowerCase() === 'true' // [v2.43.69]
+      forzar_push:   fp === '1' || fp.toLowerCase() === 'true', // [v2.43.69]
+      // [v2.43.167] Master setea esto para forzar re-verificación inmediata
+      forzar_reverify: frv === '1' || frv.toLowerCase() === 'true',
+      verifyVersion:   _getDeviceVerifyVersion(),
+      fechaHoyLima:    _fechaHoyLima()
     }};
   }
-  return { ok: true, data: { registrado: false, estado: 'NO_REGISTRADO' } };
+  return { ok: true, data: {
+    registrado: false, estado: 'NO_REGISTRADO',
+    verifyVersion: _getDeviceVerifyVersion(),
+    fechaHoyLima:  _fechaHoyLima()
+  }};
 }
 
 // ════════════════════════════════════════════════════════════════════════
