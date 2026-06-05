@@ -17439,7 +17439,37 @@
        - body.da-blocked bloquea TODA la UI mientras no autoriza
        - Fail-CLOSED en todos los paths (R2)
        - Polling 15s con celebracion sonora al aprobar (R3 proactivo) ═══ -->
-<script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=1.0.3"></script>
+<!-- [v2.43.170 SEC FIX] Bloqueo SÍNCRONO ANTES de cargar el módulo.
+     Sin esto había ventana de ~1-2s entre el primer render del body y la
+     respuesta del backend donde Vue montaba la UI completa SIN bloqueo →
+     operador veía/clickeaba badge de alertas sin estar autorizado, violando R1.
+
+     Mecánica: html.da-pre-block hace visibility:hidden a TODO el documento
+     excepto el overlay del DeviceAuth (que tiene visibility:visible !important).
+     El módulo quita esta clase solo cuando autoriza (cache válido o ACTIVO). -->
+<style>
+html.da-pre-block { visibility: hidden !important; overflow: hidden !important; }
+html.da-pre-block #deviceAuthOverlay,
+html.da-pre-block .da-insitu-overlay,
+html.da-pre-block #daApproveToast,
+html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
+</style>
+<script>
+(function(){
+  document.documentElement.classList.add('da-pre-block');
+  // Fallback 10s: si el módulo no carga (CDN caído), mostrar mensaje fatal
+  setTimeout(function(){
+    if (!window.DeviceAuth) {
+      var fatal = document.createElement('div');
+      fatal.id = 'da-fatal-fallback';
+      fatal.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#0c1426;color:#f1f5f9;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:system-ui,-apple-system,sans-serif';
+      fatal.innerHTML = '<div style="font-size:64px;margin-bottom:18px">🔒</div><h2 style="font-size:20px;margin:0 0 8px;color:#f1f5f9">Módulo de seguridad no cargado</h2><p style="font-size:14px;color:#94a3b8;max-width:420px;line-height:1.5;margin:0 0 24px">No se pudo cargar el módulo de verificación. Revisa tu conexión.</p><button onclick="location.reload()" style="padding:12px 22px;border-radius:10px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;font-weight:800;font-size:14px;border:0;cursor:pointer">🔄 Reintentar</button>';
+      document.documentElement.appendChild(fatal);
+    }
+  }, 10000);
+})();
+</script>
+<script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=1.0.4"></script>
 <script>
 (function(){
   const GAS_URL = 'https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec';
