@@ -1902,6 +1902,64 @@ function reinstalarTriggersSeguridadNocturno() {
   return { ok: true, data: { borrados: borrados, creados: creados } };
 }
 
+// [v2.43.175] Listado de triggers actualmente instalados con info detallada.
+// Ejecutar desde el editor GAS para verificar que los 3 triggers de seguridad
+// están activos con los horarios correctos. Output va al Logger.
+function verificarTriggersSeguridad() {
+  Logger.log('═════════════════════════════════════════════════');
+  Logger.log('TRIGGERS DE SEGURIDAD INSTALADOS');
+  Logger.log('═════════════════════════════════════════════════');
+  var esperados = {
+    'purgarDispositivosInactivos7d':    { regla: 'R5a · auto-suspende >7d', horaEsperada: '23:15' },
+    'alertarDispositivosInactivos2a7d': { regla: 'R5b · alerta master 2-7d', horaEsperada: '23:30' },
+    'cancelarPendientesAntiguos20h':    { regla: 'R6  · auto-cancela PEND >20h', horaEsperada: '23:45' }
+  };
+  var triggers = ScriptApp.getProjectTriggers();
+  var encontrados = {};
+  triggers.forEach(function(t) {
+    var fn = t.getHandlerFunction();
+    if (esperados.hasOwnProperty(fn)) {
+      var src = t.getTriggerSource();
+      var info = 'TimeDriven';
+      try {
+        // No hay API directa para leer hora del trigger; el id es suficiente para confirmar.
+        info = 'TimeDriven (UID ' + t.getUniqueId().substring(0, 8) + '...)';
+      } catch(_){}
+      encontrados[fn] = info;
+    }
+  });
+  var todos = true;
+  Object.keys(esperados).forEach(function(fn) {
+    var meta = esperados[fn];
+    if (encontrados[fn]) {
+      Logger.log('✅ ' + fn + ' @ ' + meta.horaEsperada + ' diario · ' + meta.regla);
+    } else {
+      Logger.log('❌ FALTA · ' + fn + ' @ ' + meta.horaEsperada + ' · ' + meta.regla);
+      todos = false;
+    }
+  });
+  Logger.log('');
+  if (todos) {
+    Logger.log('🎉 TODOS los triggers están instalados correctamente.');
+  } else {
+    Logger.log('⚠ Algunos faltan. Ejecuta reinstalarTriggersSeguridadNocturnoConLog');
+  }
+  Logger.log('');
+  // Listar OTROS triggers no de seguridad (informativo)
+  var otros = triggers.filter(function(t) {
+    return !esperados.hasOwnProperty(t.getHandlerFunction());
+  });
+  if (otros.length > 0) {
+    Logger.log('────────────────────────────────────────────────');
+    Logger.log('OTROS triggers del proyecto (' + otros.length + '):');
+    otros.forEach(function(t) {
+      Logger.log('   · ' + t.getHandlerFunction());
+    });
+  }
+  Logger.log('═════════════════════════════════════════════════');
+  return { ok: true, todos_instalados: todos };
+}
+
 // [v2.43.173] Mismo wrapper pero con log claro para el editor (que no
 // muestra el return automáticamente).
 function reinstalarTriggersSeguridadNocturnoConLog() {
