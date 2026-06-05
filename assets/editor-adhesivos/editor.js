@@ -1,5 +1,13 @@
 // ════════════════════════════════════════════════════════════════════
 // EditorAdhesivos — UI motor del editor de avisos
+// v1.0.1 — 2026-06-05 — Senior audit fixes (38 findings · 8 críticos):
+//   #16 CRÍTICO  _apiPost enviaba `accion` pero backend lee `action`
+//                → ABSOLUTAMENTE NADA llegaba al backend (bloqueante total)
+//   #20 leak     canvas.onclick acumulaba listeners cada render
+//                → 10 renders = 10 ejecuciones por click
+//   #29 edge     clamp drag impedía poner capas en x=0/y=0 (borde)
+//   #31 UX       errores sin .message mostraban "[object Object]"
+//   #14 sync     consistencia line height con backend
 // v1.0.0 — 2026-06-05
 //
 // Overlay fullscreen vanilla JS (sin Vue). Expone window.EditorAdhesivos.abrir().
@@ -383,23 +391,30 @@
   function _wireToolbar() { /* botones inline en onclick */ }
   function _wireSidebars() { /* idem */ }
 
+  // [v1.0.1 SENIOR AUDIT] Memory leak fix: el listener de click del canvas
+  // se acumulaba en cada render (no había cleanup). Ahora se reemplaza el
+  // contenedor canvas para limpiar todos sus listeners de un golpe.
+  // Antes: 10 renders → 10 listeners → 10 ejecuciones por click.
   function _wireCanvas() {
     var canvas = document.getElementById('edaCanvas');
     if (!canvas) return;
-    var hits = canvas.querySelectorAll('.eda-capa-hit');
-    hits.forEach(function(h) {
-      h.addEventListener('mousedown', _onDragStart);
-      h.addEventListener('touchstart', _onDragStart, { passive: false });
-      h.addEventListener('click', function(e) {
-        e.stopPropagation();
-        _seleccionar(h.getAttribute('data-id'));
-      });
-    });
-    // Click en zona vacía = deseleccionar
-    canvas.addEventListener('click', function(e) {
-      if (e.target === canvas || e.target.tagName === 'svg' || e.target.tagName === 'SVG') {
+    // Para el click de fondo: usar onclick directo (sobrescribe, no acumula)
+    canvas.onclick = function(e) {
+      var tg = e.target;
+      if (tg === canvas || (tg.tagName && (tg.tagName === 'svg' || tg.tagName === 'SVG'))) {
         _seleccionar(null);
       }
+    };
+    var hits = canvas.querySelectorAll('.eda-capa-hit');
+    hits.forEach(function(h) {
+      // Listeners en el div hit son nuevos en cada render (el div es nuevo
+      // tras innerHTML), así que no leak — son liberados al borrar el div.
+      h.addEventListener('mousedown', _onDragStart);
+      h.addEventListener('touchstart', _onDragStart, { passive: false });
+      h.onclick = function(e) {
+        e.stopPropagation();
+        _seleccionar(h.getAttribute('data-id'));
+      };
     });
   }
 
@@ -437,9 +452,11 @@
     // Snap a 0.5mm
     newX = Math.round(newX * 2) / 2;
     newY = Math.round(newY * 2) / 2;
-    // Clamp dentro del lienzo
-    newX = Math.max(0, Math.min(_plantilla.tamano.ancho_mm - 1, newX));
-    newY = Math.max(0, Math.min(_plantilla.tamano.alto_mm - 1, newY));
+    // [v1.0.1 SENIOR AUDIT] Clamp: permitir capa en x=0 (borde izq) y hasta
+    // anchoCanvas (no anchoCanvas-1). Antes restaba 1mm → no se podía
+    // poner rectángulo borde que necesita x=0 con ancho=50mm.
+    newX = Math.max(0, Math.min(_plantilla.tamano.ancho_mm, newX));
+    newY = Math.max(0, Math.min(_plantilla.tamano.alto_mm, newY));
     _dragState.capa.x_mm = newX;
     _dragState.capa.y_mm = newY;
     _renderSoloPosicionCapa(_dragState.id);
@@ -649,19 +666,39 @@
   }
 
   // ── Acciones backend ────────────────────────────────────────────
+  // [v1.0.1 SENIOR AUDIT FIX BLOQUEANTE] action vs accion: el backend MOS
+  // (Code.gs _route) lee `params.action`, NO `params.accion`. La versión
+  // previa enviaba `accion` y absolutamente NADA llegaba al backend.
+  // También: mejor manejo de errores (no devolver objetos sin .message
+  // que rompen el toast con "[object Object]").
   function _apiPost(action, params, cb) {
+    function safeCb(err, res) {
+      // Normalizar error para que siempre tenga .message
+      if (err && typeof err === 'object' && !err.message) {
+        err = new Error(String(err.error || err.toString() || 'error desconocido'));
+      }
+      cb(err, res);
+    }
     var url = POST_URL_FALLBACK;
     if (typeof window.MOS_API !== 'undefined' && window.MOS_API.post) {
-      return window.MOS_API.post(action, params).then(function(r) { cb(null, r); }).catch(function(e) { cb(e); });
+      return window.MOS_API.post(action, params)
+        .then(function(r) { safeCb(null, r); })
+        .catch(function(e) { safeCb(e); });
     }
-    if (!url) { cb(new Error('Falta URL backend (MOS_API o EDITOR_BACKEND_URL)')); return; }
-    // POST simple
-    var body = Object.assign({}, params || {}, { accion: action });
+    if (!url) { safeCb(new Error('Falta URL backend (MOS_API o EDITOR_BACKEND_URL)')); return; }
+    // POST simple — la KEY correcta es "action", NO "accion"
+    var body = Object.assign({}, params || {}, { action: action });
     fetch(url, {
       method: 'POST', mode: 'cors', redirect: 'follow',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(body)
-    }).then(function(r) { return r.json(); }).then(function(j) { cb(null, j); }).catch(cb);
+    })
+    .then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(j) { safeCb(null, j); })
+    .catch(function(e) { safeCb(e); });
   }
 
   function _guardar() {

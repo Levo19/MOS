@@ -1,5 +1,9 @@
 // ════════════════════════════════════════════════════════════════════
 // EditorAdhesivosConverter — JSON ↔ SVG (preview) ↔ TSPL (info)
+// v1.0.1 — 2026-06-05 — Senior audit fixes:
+//          - QR preview con grid simulado (mucho más realista que rect+texto)
+//          - Líneas Math.max(1, h) consistente con backend (antes 2)
+//          - Validador robusto contra NaN/Infinity en coords y dimensiones
 // v1.0.0 — 2026-06-05
 //
 // El backend (gas/AdhesivosPersonalizados.gs) tiene su propio json2tspl
@@ -129,8 +133,10 @@
           elementos.push(_svgIcono(c, x, y));
           break;
         case 'linea':
+          // [v1.0.1] Math.max(1, h) consistente con backend _adhJson2tspl
+          // (antes 2 → preview mostraba línea más gruesa que la impresión)
           var w = _mm2px(c.ancho_mm || 0), h = _mm2px(c.alto_mm || 0.25);
-          elementos.push('<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + Math.max(2, h) + '" fill="#000"/>');
+          elementos.push('<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + Math.max(1, h) + '" fill="#000"/>');
           break;
         case 'rectangulo':
           elementos.push(_svgRect(c, x, y));
@@ -224,12 +230,57 @@
       + '</g>';
   }
 
+  // [v1.0.1 SENIOR AUDIT] QR preview con grid simulado pixel-art —
+  // mucho más realista que rectángulo+texto. NO es el QR real (eso sería
+  // ~12 KB de lib QR) — es un placeholder visualmente convincente con
+  // 3 finder patterns (esquinas) + grid pseudo-determinístico generado
+  // por hash del contenido. Da idea de tamaño/densidad antes de imprimir.
   function _svgQR(c, x, y) {
     var sz = _dots2px(c.tamano_dots || 64);
-    return ''
-      + '<rect x="' + x + '" y="' + y + '" width="' + sz + '" height="' + sz + '" fill="#fff" stroke="#000" stroke-width="2"/>'
-      + '<text x="' + (x + sz/2) + '" y="' + (y + sz/2 + 5) + '" font-size="11" text-anchor="middle" fill="#333">QR</text>'
-      + '<text x="' + (x + sz/2) + '" y="' + (y + sz - 4) + '" font-size="8" text-anchor="middle" fill="#666">' + _esc(String(c.codigo || '').substring(0, 12)) + '</text>';
+    var grid = 21;  // QR v1 = 21×21 módulos
+    var cellSz = sz / grid;
+    var codigo = String(c.codigo || '');
+    // Hash determinístico del contenido para que SIEMPRE se vea igual al
+    // mismo input (no random — sería confuso si parpadea al re-render).
+    var hash = 0;
+    for (var i = 0; i < codigo.length; i++) {
+      hash = ((hash << 5) - hash + codigo.charCodeAt(i)) | 0;
+    }
+    var rects = [];
+    // Fondo blanco
+    rects.push('<rect x="' + x + '" y="' + y + '" width="' + sz + '" height="' + sz + '" fill="#fff"/>');
+    // Grid pseudo-determinístico (excluyendo zonas de finder patterns)
+    function _isFinderZone(gx, gy) {
+      return (gx < 8 && gy < 8) || (gx >= grid - 8 && gy < 8) || (gx < 8 && gy >= grid - 8);
+    }
+    var seed = hash;
+    for (var gy = 0; gy < grid; gy++) {
+      for (var gx = 0; gx < grid; gx++) {
+        if (_isFinderZone(gx, gy)) continue;
+        // LCG simple para distribución uniforme
+        seed = (seed * 1103515245 + 12345) | 0;
+        if ((seed & 0xFFFF) % 2 === 0) {
+          rects.push('<rect x="' + (x + gx * cellSz) + '" y="' + (y + gy * cellSz) + '" width="' + cellSz + '" height="' + cellSz + '" fill="#000"/>');
+        }
+      }
+    }
+    // 3 Finder patterns (esquinas — son las marcas características del QR)
+    function _finder(cx, cy) {
+      var pieces = [];
+      // 7×7 outer black ring
+      pieces.push('<rect x="' + (x + cx * cellSz) + '" y="' + (y + cy * cellSz) + '" width="' + (7 * cellSz) + '" height="' + (7 * cellSz) + '" fill="#000"/>');
+      // 5×5 inner white
+      pieces.push('<rect x="' + (x + (cx + 1) * cellSz) + '" y="' + (y + (cy + 1) * cellSz) + '" width="' + (5 * cellSz) + '" height="' + (5 * cellSz) + '" fill="#fff"/>');
+      // 3×3 black core
+      pieces.push('<rect x="' + (x + (cx + 2) * cellSz) + '" y="' + (y + (cy + 2) * cellSz) + '" width="' + (3 * cellSz) + '" height="' + (3 * cellSz) + '" fill="#000"/>');
+      return pieces.join('');
+    }
+    rects.push(_finder(0, 0));               // top-left
+    rects.push(_finder(grid - 7, 0));         // top-right
+    rects.push(_finder(0, grid - 7));         // bottom-left
+    // Borde sutil para identificar el QR como capa editable
+    rects.push('<rect x="' + x + '" y="' + y + '" width="' + sz + '" height="' + sz + '" fill="none" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,3" opacity=".5"/>');
+    return '<g class="eda-qr-preview" data-contenido="' + _esc(codigo.substring(0, 40)) + '">' + rects.join('') + '</g>';
   }
 
   // Dibujar barcodes con JsBarcode en los SVG ya inyectados

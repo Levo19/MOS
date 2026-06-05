@@ -23,66 +23,89 @@ var ADH_MAX_CAPAS       = 20;
 
 // ════════════════════════════════════════════════════════════════════
 // SETUP — crea hojas + 6 plantillas semilla
+// [v1.0.1 SENIOR AUDIT] LockService para evitar setup concurrente
+//   que duplicaría las semillas y carrera al actualizar iconos.
 // ════════════════════════════════════════════════════════════════════
 function setupAdhesivosBase(payload) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
   payload = payload || {};
+  var lock = LockService.getScriptLock();
+  var lockHeld = false;
+  try {
+    lock.waitLock(15000);
+    lockHeld = true;
 
-  // 1) Hoja PLANTILLAS
-  var hP = ss.getSheetByName(ADH_HOJA_PLANTILLAS);
-  if (!hP) {
-    hP = ss.insertSheet(ADH_HOJA_PLANTILLAS);
-    hP.appendRow(['idPlantilla', 'nombre', 'descripcion', 'tamanoCanvas', 'json', 'creadoPor', 'fechaCreado', 'fechaUltMod', 'activo']);
-    hP.getRange('A1:I1').setFontWeight('bold').setBackground('#1e293b').setFontColor('#fff');
-    hP.setFrozenRows(1);
-  }
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  // 2) Hoja ICONOS_BITMAPS_ADH
-  var hI = ss.getSheetByName(ADH_HOJA_ICONOS);
-  if (!hI) {
-    hI = ss.insertSheet(ADH_HOJA_ICONOS);
-    hI.appendRow(['idIcono', 'tamano_dots', 'hex']);
-    hI.getRange('A1:C1').setFontWeight('bold').setBackground('#1e293b').setFontColor('#fff');
-    hI.setFrozenRows(1);
-  }
+    // 1) Hoja PLANTILLAS
+    var hP = ss.getSheetByName(ADH_HOJA_PLANTILLAS);
+    var hojaCreada = false;
+    if (!hP) {
+      hP = ss.insertSheet(ADH_HOJA_PLANTILLAS);
+      hP.appendRow(['idPlantilla', 'nombre', 'descripcion', 'tamanoCanvas', 'json', 'creadoPor', 'fechaCreado', 'fechaUltMod', 'activo']);
+      hP.getRange('A1:I1').setFontWeight('bold').setBackground('#1e293b').setFontColor('#fff');
+      hP.setFrozenRows(1);
+      hojaCreada = true;
+    }
 
-  // 3) Cargar hex de iconos enviados desde frontend (formato {estrella:'AABB...', ...})
-  if (payload.iconos && typeof payload.iconos === 'object') {
-    var existentes = _adhListarIconos();
-    var existeKey = {};
-    existentes.forEach(function(r) { existeKey[r.idIcono + '__' + r.tamano_dots] = true; });
-    var tamano = parseInt(payload.tamano_dots) || 48;
-    Object.keys(payload.iconos).forEach(function(idIcono) {
-      var key = idIcono + '__' + tamano;
-      var hex = String(payload.iconos[idIcono] || '');
-      if (!hex) return;
-      if (existeKey[key]) {
-        // Actualizar fila existente
-        var data = hI.getDataRange().getValues();
-        for (var r = 1; r < data.length; r++) {
-          if (String(data[r][0]) === idIcono && parseInt(data[r][1]) === tamano) {
-            hI.getRange(r + 1, 3).setValue(hex);
-            break;
-          }
-        }
-      } else {
-        hI.appendRow([idIcono, tamano, hex]);
+    // 2) Hoja ICONOS_BITMAPS_ADH
+    var hI = ss.getSheetByName(ADH_HOJA_ICONOS);
+    if (!hI) {
+      hI = ss.insertSheet(ADH_HOJA_ICONOS);
+      hI.appendRow(['idIcono', 'tamano_dots', 'hex']);
+      hI.getRange('A1:C1').setFontWeight('bold').setBackground('#1e293b').setFontColor('#fff');
+      hI.setFrozenRows(1);
+    }
+
+    // 3) Cargar hex de iconos enviados desde frontend (formato {estrella:'AABB...', ...})
+    // [v1.0.1] Lee la hoja UNA SOLA VEZ y arma un mapa idx para updates O(1).
+    if (payload.iconos && typeof payload.iconos === 'object') {
+      var dataIconos = hI.getLastRow() > 1 ? hI.getDataRange().getValues() : [['idIcono','tamano_dots','hex']];
+      var indexFila = {};  // key → rowNum (1-based) en la hoja
+      for (var rI = 1; rI < dataIconos.length; rI++) {
+        var key = dataIconos[rI][0] + '__' + dataIconos[rI][1];
+        indexFila[key] = rI + 1;  // +1 porque rango es 1-based
       }
-    });
-  }
+      var tamano = parseInt(payload.tamano_dots) || 48;
+      var nuevasFilas = [];
+      Object.keys(payload.iconos).forEach(function(idIcono) {
+        var key = idIcono + '__' + tamano;
+        var hex = String(payload.iconos[idIcono] || '');
+        if (!hex) return;
+        // [v1.0.1] Validar longitud par del hex (defensa anti-NaN en bytes)
+        if (hex.length % 2 !== 0) {
+          try { Logger.log('[setupAdhesivos] hex impar para ' + idIcono + ' — skip'); } catch(_){}
+          return;
+        }
+        if (indexFila[key]) {
+          hI.getRange(indexFila[key], 3).setValue(hex);
+        } else {
+          nuevasFilas.push([idIcono, tamano, hex]);
+        }
+      });
+      // Inserción batch (mucho más rápido que appendRow N veces)
+      if (nuevasFilas.length > 0) {
+        var startRow = hI.getLastRow() + 1;
+        hI.getRange(startRow, 1, nuevasFilas.length, 3).setValues(nuevasFilas);
+      }
+    }
 
-  // 4) Plantillas semilla (solo si no hay ninguna activa)
-  var plantillasExist = hP.getLastRow() > 1;
-  if (!plantillasExist) {
-    _adhInsertarSemillas(hP);
-  }
+    // 4) Plantillas semilla (solo si NO hay filas — chequeo DENTRO del lock)
+    var plantillasExist = hP.getLastRow() > 1;
+    if (!plantillasExist) {
+      _adhInsertarSemillas(hP);
+    }
 
-  return {
-    ok: true,
-    hojaPlantillasCreada: !plantillasExist,
-    iconosCargados: payload.iconos ? Object.keys(payload.iconos).length : 0,
-    plantillas: _adhListarPlantillas().length
-  };
+    return {
+      ok: true,
+      hojaPlantillasCreada: hojaCreada,
+      iconosCargados: payload.iconos ? Object.keys(payload.iconos).length : 0,
+      plantillas: _adhListarPlantillas().length
+    };
+  } catch(e) {
+    return { ok: false, error: 'setup falló: ' + e.message };
+  } finally {
+    if (lockHeld) try { lock.releaseLock(); } catch(_){}
+  }
 }
 
 function _adhInsertarSemillas(hP) {
@@ -205,44 +228,56 @@ function guardarAdhesivoPlantilla(params) {
     return { ok: false, error: 'Plantilla inválida', detalles: errores };
   }
 
+  // [v1.0.1 SENIOR AUDIT] Lectura de data DENTRO del lock (antes era stale:
+  // si otro proceso modificaba la hoja entre lectura y check, los índices
+  // de fila quedaban incorrectos y podías sobrescribir la plantilla equivocada).
   var lock = LockService.getScriptLock();
+  var lockHeld = false;
   try {
     lock.waitLock(10000);
+    lockHeld = true;
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var hP = ss.getSheetByName(ADH_HOJA_PLANTILLAS);
     if (!hP) return { ok: false, error: 'Hoja ' + ADH_HOJA_PLANTILLAS + ' no existe. Corré setupAdhesivosBase()' };
+    // Re-leer DENTRO del lock — no antes
     var data = hP.getDataRange().getValues();
 
     var ahora = new Date();
     var creador = params.creadoPor || 'ADMIN';
     var idPlantilla = params.idPlantilla;
     var tamanoStr = (jsonObj.tamano.ancho_mm || 50) + 'x' + (jsonObj.tamano.alto_mm || 25);
+    var jsonStr = JSON.stringify(jsonObj);
 
     if (idPlantilla) {
-      // Actualizar fila existente
+      // Actualizar fila existente — batch setValues para 1 sola operación
       for (var r = 1; r < data.length; r++) {
         if (String(data[r][0]) === String(idPlantilla)) {
-          hP.getRange(r + 1, 2).setValue(nombre);
-          hP.getRange(r + 1, 3).setValue(params.descripcion || '');
-          hP.getRange(r + 1, 4).setValue(tamanoStr);
-          hP.getRange(r + 1, 5).setValue(JSON.stringify(jsonObj));
-          hP.getRange(r + 1, 8).setValue(ahora);
-          hP.getRange(r + 1, 9).setValue(true);
+          hP.getRange(r + 1, 2, 1, 4).setValues([[nombre, params.descripcion || '', tamanoStr, jsonStr]]);
+          hP.getRange(r + 1, 8, 1, 2).setValues([[ahora, true]]);
           return { ok: true, idPlantilla: idPlantilla, actualizado: true };
         }
       }
       return { ok: false, error: 'idPlantilla no encontrada: ' + idPlantilla };
     } else {
-      // Crear nueva
+      // [v1.0.1] Chequear que nombre no esté duplicado (case-insensitive)
+      var nombreLc = nombre.toLowerCase();
+      for (var rN = 1; rN < data.length; rN++) {
+        if (String(data[rN][1] || '').toLowerCase() === nombreLc
+            && (data[rN][8] === true || String(data[rN][8]).toUpperCase() === 'TRUE')) {
+          return { ok: false, error: 'Ya existe plantilla activa con nombre "' + nombre + '"' };
+        }
+      }
       idPlantilla = 'ADH-' + Utilities.getUuid().substring(0, 8).toUpperCase();
       hP.appendRow([
         idPlantilla, nombre, params.descripcion || '', tamanoStr,
-        JSON.stringify(jsonObj), creador, ahora, ahora, true
+        jsonStr, creador, ahora, ahora, true
       ]);
       return { ok: true, idPlantilla: idPlantilla, creado: true };
     }
+  } catch(e) {
+    return { ok: false, error: 'guardar falló: ' + e.message };
   } finally {
-    try { lock.releaseLock(); } catch(_){}
+    if (lockHeld) try { lock.releaseLock(); } catch(_){}
   }
 }
 
@@ -268,34 +303,48 @@ function imprimirAdhesivoPlantilla(params) {
   if (!id) return { ok: false, error: 'idPlantilla requerido' };
   if (cantidad < 1 || cantidad > 100) return { ok: false, error: 'cantidad fuera de rango (1-100)' };
 
-  var p = _adhBuscarPlantilla(id);
-  if (!p) return { ok: false, error: 'no encontrada: ' + id };
-  if (!p.activo) return { ok: false, error: 'plantilla inactiva' };
-
-  var jsonObj;
+  // [v1.0.1 SENIOR AUDIT] LockService — antes 2 admins concurrentes leían el
+  // mismo printsCount y los offsets de drift se calculaban mal en la 2ª tanda,
+  // descalibrando la impresora a la mitad del lote.
+  var lock = LockService.getScriptLock();
+  var lockHeld = false;
   try {
-    jsonObj = JSON.parse(p.json);
+    lock.waitLock(15000);
+    lockHeld = true;
+
+    var p = _adhBuscarPlantilla(id);
+    if (!p) return { ok: false, error: 'no encontrada: ' + id };
+    if (p.activo !== true && String(p.activo).toUpperCase() !== 'TRUE') {
+      return { ok: false, error: 'plantilla inactiva' };
+    }
+
+    var jsonObj;
+    try {
+      jsonObj = JSON.parse(p.json);
+    } catch(e) {
+      return { ok: false, error: 'JSON corrupto: ' + e.message };
+    }
+
+    var errores = _adhValidar(jsonObj);
+    if (errores.length > 0) {
+      return { ok: false, error: 'Plantilla inválida', detalles: errores };
+    }
+
+    // Construir TSPL batch (N etiquetas con drift incremental)
+    var bytesTotal = [];
+    var iconosMap = _adhMapaIconos();
+    for (var i = 0; i < cantidad; i++) {
+      var offsetY = _adhCalcularOffsetParaIndice(i);
+      var bytes = _adhJson2tspl(jsonObj, offsetY, iconosMap);
+      bytesTotal = bytesTotal.concat(bytes);
+    }
+
+    return _adhEnviarPrintNode(bytesTotal, cantidad);
   } catch(e) {
-    return { ok: false, error: 'JSON corrupto: ' + e.message };
+    return { ok: false, error: 'imprimir falló: ' + e.message };
+  } finally {
+    if (lockHeld) try { lock.releaseLock(); } catch(_){}
   }
-
-  var errores = _adhValidar(jsonObj);
-  if (errores.length > 0) {
-    return { ok: false, error: 'Plantilla inválida', detalles: errores };
-  }
-
-  // Construir TSPL batch (N etiquetas con drift incremental)
-  var bytesTotal = [];
-  var iconosMap = _adhMapaIconos();
-  for (var i = 0; i < cantidad; i++) {
-    var offsetY = _adhCalcularOffsetParaIndice(i);
-    var bytes = _adhJson2tspl(jsonObj, offsetY, iconosMap);
-    bytesTotal = bytesTotal.concat(bytes);
-  }
-
-  // Enviar a PrintNode
-  var resultado = _adhEnviarPrintNode(bytesTotal, cantidad);
-  return resultado;
 }
 
 function testImpresionAdhesivoPlantilla(params) {
@@ -383,13 +432,21 @@ function _adhMapaIconos() {
   return map;
 }
 
+// [v1.0.1 SENIOR AUDIT] Validador endurecido:
+//   • isFinite() previene NaN/Infinity llegando a TSPL como string "NaN"
+//   • Clamp duro de alto_dots/narrow/tamano_dots → rechaza valores raros
+//   • Validación tipos (rotacion debe ser 0/90/180/270 según TSPL)
+//   • Valida tipo desconocido (capa con tipo='xxx' inválido)
+var ADH_TIPOS_VALIDOS = ['texto', 'icono', 'linea', 'rectangulo', 'barcode', 'qr'];
+var ADH_ROTACIONES_VALIDAS = [0, 90, 180, 270];
+
 function _adhValidar(jsonObj) {
   var errores = [];
   if (!jsonObj || typeof jsonObj !== 'object') {
     errores.push('JSON inválido'); return errores;
   }
-  if (!jsonObj.tamano || !jsonObj.tamano.ancho_mm || !jsonObj.tamano.alto_mm) {
-    errores.push('Falta tamano.ancho_mm / alto_mm');
+  if (!jsonObj.tamano || !isFinite(jsonObj.tamano.ancho_mm) || !isFinite(jsonObj.tamano.alto_mm)) {
+    errores.push('Falta o inválido tamano.ancho_mm / alto_mm');
   }
   if (!Array.isArray(jsonObj.capas)) {
     errores.push('Falta capas[]'); return errores;
@@ -398,19 +455,54 @@ function _adhValidar(jsonObj) {
   if (jsonObj.capas.length > ADH_MAX_CAPAS) {
     errores.push('Demasiadas capas (' + jsonObj.capas.length + ' > ' + ADH_MAX_CAPAS + ')');
   }
-  var anchoMm = jsonObj.tamano.ancho_mm;
-  var altoMm  = jsonObj.tamano.alto_mm;
+  var anchoMm = jsonObj.tamano && jsonObj.tamano.ancho_mm;
+  var altoMm  = jsonObj.tamano && jsonObj.tamano.alto_mm;
   jsonObj.capas.forEach(function(c, i) {
     var prefix = '[Capa ' + (i + 1) + ' ' + (c.tipo || '?') + ']';
-    if (typeof c.x_mm !== 'number' || typeof c.y_mm !== 'number') {
-      errores.push(prefix + ' falta x_mm/y_mm'); return;
+    if (!c || typeof c !== 'object') {
+      errores.push(prefix + ' no es objeto'); return;
+    }
+    if (ADH_TIPOS_VALIDOS.indexOf(c.tipo) < 0) {
+      errores.push(prefix + ' tipo desconocido: ' + c.tipo); return;
+    }
+    if (!isFinite(c.x_mm) || !isFinite(c.y_mm)) {
+      errores.push(prefix + ' x_mm/y_mm no numéricos'); return;
     }
     if (c.x_mm < -1 || c.y_mm < -1) errores.push(prefix + ' posición negativa');
     if (c.x_mm > anchoMm) errores.push(prefix + ' X fuera del lienzo');
     if (c.y_mm > altoMm)  errores.push(prefix + ' Y fuera del lienzo');
-    if (c.tipo === 'texto' && (!c.texto || !String(c.texto).trim())) errores.push(prefix + ' texto vacío');
-    if (c.tipo === 'icono' && !c.idIcono) errores.push(prefix + ' falta idIcono');
-    if (c.tipo === 'barcode' && !c.codigo) errores.push(prefix + ' falta código');
+    if (c.tipo === 'texto') {
+      if (!c.texto || !String(c.texto).trim()) errores.push(prefix + ' texto vacío');
+      if (c.font && [1,2,3,4,5].indexOf(parseInt(c.font)) < 0) errores.push(prefix + ' font inválida');
+      if (c.rotacion !== undefined && ADH_ROTACIONES_VALIDAS.indexOf(parseInt(c.rotacion)) < 0) {
+        errores.push(prefix + ' rotacion debe ser 0/90/180/270');
+      }
+    }
+    if (c.tipo === 'icono') {
+      if (!c.idIcono) errores.push(prefix + ' falta idIcono');
+      if (c.tamano_dots !== undefined && (!isFinite(c.tamano_dots) || c.tamano_dots < 16 || c.tamano_dots > 192)) {
+        errores.push(prefix + ' tamano_dots fuera de rango (16-192)');
+      }
+    }
+    if (c.tipo === 'barcode') {
+      if (!c.codigo) errores.push(prefix + ' falta código');
+      if (c.alto_dots !== undefined && (!isFinite(c.alto_dots) || c.alto_dots < 16 || c.alto_dots > 200)) {
+        errores.push(prefix + ' alto_dots fuera de rango (16-200)');
+      }
+      if (c.narrow !== undefined && (!isFinite(c.narrow) || c.narrow < 1 || c.narrow > 5)) {
+        errores.push(prefix + ' narrow fuera de rango (1-5)');
+      }
+    }
+    if (c.tipo === 'qr') {
+      if (!c.codigo) errores.push(prefix + ' falta contenido QR');
+      if (c.tamano_dots !== undefined && (!isFinite(c.tamano_dots) || c.tamano_dots < 16 || c.tamano_dots > 200)) {
+        errores.push(prefix + ' tamano_dots QR fuera de rango (16-200)');
+      }
+    }
+    if (c.tipo === 'linea' || c.tipo === 'rectangulo') {
+      if (c.ancho_mm !== undefined && !isFinite(c.ancho_mm)) errores.push(prefix + ' ancho_mm inválido');
+      if (c.alto_mm !== undefined && !isFinite(c.alto_mm)) errores.push(prefix + ' alto_mm inválido');
+    }
   });
   return errores;
 }
@@ -451,13 +543,34 @@ function _adhJson2tspl(jsonObj, offsetY, iconosMap) {
     if (c.tipo === 'texto') {
       var font = String(c.font || 3);
       var rot = c.rotacion || 0;
-      var xMul = c.negrita ? 2 : 1, yMul = c.negrita ? 1 : 1;
+      // [v1.0.1] Negrita: usar xMul=2 y yMul=2 (escala uniforme) en lugar
+      // de solo xMul=2 (que estiraba horizontal — preview mostraba peso
+      // pero impresión salía ALARGADA). Ahora coincide con SVG font-weight.
+      var xMul = c.negrita ? 2 : 1, yMul = c.negrita ? 2 : 1;
       var texto = String(c.texto || '').replace(/"/g, "'");
+      // Char width aproximado por Font (Font 1=8, 2=12, 3=16, 4=24, 5=32 dots)
+      var fontW = { '1': 8, '2': 12, '3': 16, '4': 24, '5': 32 }[font] || 16;
+      var fpx = { '1': 12, '2': 20, '3': 24, '4': 32, '5': 48 }[font] || 24;
       // Multilínea por \n
       var lineas = texto.split('\n');
-      var fpx = { '1': 12, '2': 20, '3': 24, '4': 32, '5': 48 }[font] || 24;
       lineas.forEach(function(ln, idx) {
-        lines.push('TEXT ' + x + ',' + (y + idx * Math.round(fpx * 1.05)) + ',"' + font + '",' + rot + ',' + xMul + ',' + yMul + ',"' + ln + '"');
+        var lineWidth = ln.length * fontW * xMul;
+        // [v1.0.1 SENIOR AUDIT] Soporte de alineación CENTER/RIGHT en TSPL —
+        // antes backend siempre alineaba left aunque preview mostraba centro.
+        // Inconsistencia crítica: lo que el admin diseñaba con alineación
+        // centrada salía con alineación izquierda en impresión.
+        var xFinal = x;
+        if (c.alineacion === 'center') {
+          var anchoMm = (c.ancho_mm) ? c.ancho_mm * ADH_DOTS_POR_MM : (jsonObj.tamano.ancho_mm * ADH_DOTS_POR_MM - x);
+          xFinal = x + Math.round((anchoMm - lineWidth) / 2);
+          if (xFinal < 0) xFinal = 0;
+        } else if (c.alineacion === 'right') {
+          var anchoMmR = (c.ancho_mm) ? c.ancho_mm * ADH_DOTS_POR_MM : (jsonObj.tamano.ancho_mm * ADH_DOTS_POR_MM - x);
+          xFinal = x + Math.round(anchoMmR - lineWidth);
+          if (xFinal < 0) xFinal = 0;
+        }
+        var yLine = y + idx * Math.round(fpx * 1.05);
+        lines.push('TEXT ' + xFinal + ',' + yLine + ',"' + font + '",' + rot + ',' + xMul + ',' + yMul + ',"' + ln + '"');
       });
     }
     else if (c.tipo === 'icono') {
@@ -498,12 +611,15 @@ function _adhJson2tspl(jsonObj, offsetY, iconosMap) {
     }
     else if (c.tipo === 'barcode') {
       var codigo = String(c.codigo || '').replace(/"/g, '');
-      var alto = c.alto_dots || 48;
-      var narrow = c.narrow || 2;
+      // [v1.0.1] Clamp defensivo — admin puede haber metido valores raros vía
+      // edición manual del JSON. Sin clamp: alto=99999 → TSPL falla o sale ilegible.
+      var alto = isFinite(c.alto_dots) ? Math.max(16, Math.min(200, c.alto_dots)) : 48;
+      var narrow = isFinite(c.narrow) ? Math.max(1, Math.min(5, c.narrow)) : 2;
       lines.push('BARCODE ' + x + ',' + y + ',"128",' + alto + ',0,0,' + narrow + ',' + narrow + ',"' + codigo + '"');
     }
     else if (c.tipo === 'qr') {
       var qrCod = String(c.codigo || '').replace(/"/g, '');
+      // QRCODE TSPL cellWidth: 1-10 dots por celda
       var qrSize = Math.max(2, Math.min(10, Math.round((c.tamano_dots || 64) / 8)));
       lines.push('QRCODE ' + x + ',' + y + ',L,' + qrSize + ',A,0,"' + qrCod + '"');
     }
@@ -541,9 +657,12 @@ function _adhStrToBytes(s) {
 
 function _adhHexToBytes(hex) {
   var b = [];
-  hex = String(hex || '').replace(/\s+/g, '');
+  hex = String(hex || '').replace(/[^0-9A-Fa-f]/g, '');  // [v1.0.1] solo hex chars
+  // [v1.0.1] Truncar si longitud impar (último char queda colgando = NaN al parsear)
+  if (hex.length % 2 !== 0) hex = hex.substring(0, hex.length - 1);
   for (var i = 0; i < hex.length; i += 2) {
-    b.push(parseInt(hex.substring(i, i + 2), 16));
+    var val = parseInt(hex.substring(i, i + 2), 16);
+    b.push(isNaN(val) ? 0 : val);
   }
   return b;
 }
