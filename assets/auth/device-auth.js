@@ -167,7 +167,15 @@
       '.da-insitu-actions button{flex:1;padding:11px;border-radius:8px;font-weight:800;font-size:14px;border:0;cursor:pointer}',
       '.da-insitu-hint{font-size:11px;color:#64748b;margin-top:8px;line-height:1.4}',
       // Toast aprobado
-      '#daApproveToast{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:linear-gradient(135deg,#10b981,#059669);color:#fff;padding:24px 36px;border-radius:16px;font-size:18px;font-weight:800;z-index:99998;box-shadow:0 20px 60px rgba(16,185,129,.4);animation:da-pop .4s ease-out}'
+      '#daApproveToast{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:linear-gradient(135deg,#10b981,#059669);color:#fff;padding:24px 36px;border-radius:16px;font-size:18px;font-weight:800;z-index:99998;box-shadow:0 20px 60px rgba(16,185,129,.4);animation:da-pop .4s ease-out}',
+      // [v1.0.2 BUG SEC] Bloqueo total de la app cuando overlay está activo.
+      // Sin esto la app sigue cargando UI Vue+badges flotantes que el operador
+      // puede clickear → bypass de autorización. Critico para MOS porque permite
+      // aprobar otros dispositivos sin haber sido autorizado primero.
+      // pointer-events:none bloquea clicks; filter difumina visualmente; overflow
+      // hidden previene scroll/inputs. Solo el overlay y modales DA siguen activos.
+      'body.da-blocked{overflow:hidden!important}',
+      'body.da-blocked > *:not(#' + OVERLAY_ID + '):not(.da-insitu-overlay):not(#daApproveToast):not(#device-auth-css){pointer-events:none!important;filter:blur(4px) brightness(.4) saturate(.5)!important;user-select:none!important}'
     ].join('\n');
     document.head.appendChild(s);
   }
@@ -196,6 +204,8 @@
 
   function _renderOverlay(opts) {
     _injectCss();
+    // [v1.0.2] Bloquear app cuando mostramos overlay
+    _bloquearApp();
     var existing = document.getElementById(OVERLAY_ID);
     if (existing) existing.remove();
     var ov = document.createElement('div');
@@ -226,6 +236,27 @@
   function _ocultarOverlay() {
     var ov = document.getElementById(OVERLAY_ID);
     if (ov) ov.remove();
+    // [v1.0.2] Quitar bloqueo de la app — pointer-events y blur vuelven al estado normal
+    _desbloquearApp();
+  }
+
+  // [v1.0.2 BUG SEC FIX] Bloqueo de toda la UI mientras overlay está activo.
+  // Aplica clase al body que CSS usa para deshabilitar TODO excepto los nodos
+  // del módulo. Previene que el operador interactúe con la app antes de estar
+  // autorizado (caso reportado: badge flotante de alertas accesible sin auth).
+  function _bloquearApp() {
+    var apply = function() {
+      if (document.body) document.body.classList.add('da-blocked');
+    };
+    if (document.body) apply();
+    else if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', apply, { once: true });
+    } else {
+      setTimeout(apply, 0);
+    }
+  }
+  function _desbloquearApp() {
+    if (document.body) document.body.classList.remove('da-blocked');
   }
 
   function _toastAprobado(mensaje) {
@@ -247,12 +278,23 @@
         actions: []
       });
     } else if (estado === 'PENDIENTE_APROBACION') {
+      // [v1.0.2] Labels según rol (MOS=master only, WH/ME=admin/master)
+      var labelInSituP = _config.isMaster
+        ? '🔑 Activar in-situ (master presente)'
+        : '🔑 Activar in-situ (admin o master)';
+      var detailP = _config.isMaster
+        ? 'Tu dispositivo está pendiente de aprobación del master.'
+        : 'Tu dispositivo está pendiente de aprobación del admin/master.';
       _renderOverlay({
         emoji: '⌛', title: 'Esperando aprobación',
-        detail: 'Tu dispositivo está pendiente de aprobación del administrador.',
+        detail: detailP,
         subDetail: 'Re-verificación automática cada 15 segundos.',
         actions: [
-          { id: 'insitu', label: '🔑 Activar in-situ (admin presente)', style: 'primary',
+          // [v1.0.2] Botón re-solicitar siempre presente — operador puede re-empujar
+          // la notificación si el admin no la vio o si ya pasó mucho tiempo.
+          { id: 'reenviar', label: '🔔 Re-enviar solicitud', style: 'secondary',
+            onClick: function() { _solicitarAcceso(); } },
+          { id: 'insitu', label: labelInSituP, style: 'primary',
             onClick: function() { _abrirModalInSitu(); } }
         ]
       });
@@ -274,16 +316,24 @@
         ]
       });
     } else if (estado === 'NO_REGISTRADO') {
+      // [v1.0.2] Labels distinguidos por rol esperado
+      var labelSolicitarN = _config.isMaster
+        ? '📨 Solicitar acceso al master (remoto)'
+        : '📨 Solicitar acceso al admin/master (remoto)';
+      var labelInSituN = _config.isMaster
+        ? '🔑 Activar in-situ (master presente)'
+        : '🔑 Activar in-situ (admin o master)';
+      var subDetailN = _config.isMaster
+        ? 'Solo el master puede activar MOS en un dispositivo nuevo.'
+        : 'Admin o master pueden aprobar este dispositivo.';
       _renderOverlay({
         emoji: '🔒', title: 'Dispositivo no autorizado',
         detail: 'Este dispositivo aún no fue aprobado para esta app.',
-        subDetail: _config.isMaster
-          ? 'Solo el master puede activar MOS en un dispositivo nuevo.'
-          : 'Solicita acceso desde el admin o usa in-situ.',
+        subDetail: subDetailN,
         actions: [
-          { id: 'solicitar', label: '📤 Solicitar acceso (remoto)', style: 'primary',
+          { id: 'solicitar', label: labelSolicitarN, style: 'primary',
             onClick: function() { _solicitarAcceso(); } },
-          { id: 'insitu', label: '🔑 Activar in-situ', style: 'secondary',
+          { id: 'insitu', label: labelInSituN, style: 'secondary',
             onClick: function() { _abrirModalInSitu(); } }
         ]
       });

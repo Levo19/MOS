@@ -809,10 +809,54 @@ function registrarSesionDispositivo(params) {
         }, extMos) };
       }
     }
-    // No existe → no hacer nada (MOS no se auto-registra)
+    // [v2.43.168] MOS dispositivo nuevo → ahora SÍ se crea PENDIENTE_APROBACION
+    // (antes retornaba NO_REGISTRADO silencioso). El master ve la solicitud en
+    // SEGURIDAD_ALERTAS y debe aprobar explícitamente.
+    //
+    // Push EXCLUSIVO al master (no al admin común). Razón: la app MOS solo la
+    // puede activar el master en dispositivos nuevos (regla del usuario).
+    var nombreNuevoMos = params.Nombre_Equipo;
+    if (!nombreNuevoMos || nombreNuevoMos.indexOf('Nuevo dispositivo') === 0) {
+      var labelUAMos = _parseUserAgent(params.userAgent || '');
+      nombreNuevoMos = labelUAMos ? labelUAMos + ' (' + deviceId.substring(0, 6) + ')' : ('Nuevo MOS ' + deviceId.substring(0, 8));
+    }
+    var filaMos = new Array(hdrsMos.length).fill('');
+    filaMos[iIdMos] = deviceId;
+    var iNomMos = hdrsMos.indexOf('Nombre_Equipo');
+    var iAppMos = hdrsMos.indexOf('App');
+    var iEstMos = hdrsMos.indexOf('Estado');
+    if (iNomMos >= 0) filaMos[iNomMos] = nombreNuevoMos;
+    if (iAppMos >= 0) filaMos[iAppMos] = 'MOS';
+    if (iEstMos >= 0) filaMos[iEstMos] = 'PENDIENTE_APROBACION';
+    if (iUCMos >= 0)  filaMos[iUCMos]  = nowM;
+    sheetMos.appendRow(filaMos);
+
+    try {
+      var detalleMos = (labelUAMos || 'MOS') + ' · UUID ' + deviceId.substring(0, 8) + '...';
+      _enviarPushTodos('🔒 Nuevo MOS solicita acceso (master)', detalleMos, {
+        soloRolesMaster: true,  // ← solo master, no admin
+        idNotif: 'MOS_DEVICE_MOS_PENDIENTE'
+      });
+    } catch(ePuMos) { Logger.log('[MOS new] push master fallo: ' + ePuMos.message); }
+
+    try {
+      if (typeof _crearAlertaSeg === 'function') {
+        _crearAlertaSeg('DISPOSITIVO_PENDIENTE_MOS', {
+          idDispositivo: deviceId,
+          descripcion:   'MOS · ' + (nombreNuevoMos || 'Sin nombre'),
+          prioridad:     'CRITICA',  // ← más alta que admin común
+          datosExtra:    {
+            app: 'MOS', nombre: nombreNuevoMos,
+            userAgent: params.userAgent || '',
+            soloVisibleMaster: true  // ← flag para frontend: ocultar de admin común
+          }
+        });
+      }
+    } catch(eAMos) { Logger.log('[MOS new] crearAlerta fallo: ' + eAMos.message); }
+
     return { ok: true, data: Object.assign({
-      autorizado: false, estado: 'NO_REGISTRADO',
-      noEsDispositivoOperativo: true
+      autorizado: false, estado: 'PENDIENTE_APROBACION',
+      error: 'Dispositivo MOS nuevo — esperando aprobación del master'
     }, _payloadDeviceAuthExtras(null, null)) };
   }
 

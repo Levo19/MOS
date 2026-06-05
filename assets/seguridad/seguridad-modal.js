@@ -355,6 +355,18 @@
     } else {
       lista = disps.slice();
     }
+    // [v2.43.168 SEC FIX] Dispositivos MOS solo visibles para MASTER.
+    // Admin común NO debe ver ni aprobar/rechazar dispositivos MOS — eso es
+    // privilegio exclusivo del master según regla del usuario.
+    var rolUser = '';
+    try { rolUser = String((_config.rol && _config.rol()) || '').toUpperCase(); } catch(_){}
+    var esMaster = rolUser === 'MASTER';
+    if (!esMaster) {
+      lista = lista.filter(function(d) {
+        var appD = String(d.App || '').toUpperCase();
+        return appD !== 'MOS' && appD !== 'PROYECTOMOS';
+      });
+    }
     if (sub) sub.textContent = lista.length + ' · tab "' + tab + '"';
     if (lista.length === 0) {
       body.innerHTML = '<div style="text-align:center;color:#34d399;padding:30px 0;font-size:14px">✅ Nada en esta categoría</div>';
