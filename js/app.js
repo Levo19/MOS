@@ -12397,13 +12397,22 @@ const MOS = (() => {
       return `<div class="adhesivo-linea">${parts}</div>`;
     }).join('');
     // [v2.43.115] Replica EXACTA del cálculo del backend (Envasados.gs).
-    // Sin flechas — quiet zone amplio (15×narrow) ya garantiza lectura.
-    // Logo: TONY'S block + casita (regenerado, mismo PNG que se imprime).
+    // [v2026-06-05 FIX SYNC con backend Envasados.gs] Algoritmo adaptativo
+    // de narrow del módulo del barcode. Backend cambió de "narrow=2 con
+    // fallback a narrow=1 si bcLen>=12" → algoritmo adaptativo que NUNCA
+    // baja a narrow=1 (que era ilegible para scanner pistola).
+    // El preview debe reflejar EXACTAMENTE lo que se imprime físicamente.
+    //
+    // bcLen <= 7  → narrow=3 (0.375mm) quiet zone 30 dots — óptimo
+    // bcLen <= 13 → narrow=2 (0.250mm) quiet zone 20 dots — estándar
+    // bcLen = 14  → narrow=2 quiet zone 12 dots — apretado pero legible
+    // bcLen > 14  → narrow=2 quiet zone 8 dots — al límite físico
     const bcLen = (datos.codigoBarra || '').length;
     const modules = 11 * bcLen + 35;
-    let narrow = 2;
-    let bWidth = modules * narrow;
-    if (bWidth > 300) { narrow = 1; bWidth = modules; }
+    let narrow, bWidth;
+    if (modules * 3 <= 340)      { narrow = 3; bWidth = modules * 3; }
+    else if (modules * 2 <= 360) { narrow = 2; bWidth = modules * 2; }
+    else                         { narrow = 2; bWidth = modules * 2; }  // forzado al máximo legible
     // Ancho del barcode en porcentaje del adhesivo (para CSS) — el preview
     // refleja exactamente cuánto ocupa en la impresión real (de 400 dots).
     const bWidthPct = (bWidth / 400 * 100).toFixed(2);
@@ -12443,15 +12452,22 @@ const MOS = (() => {
     const svg = document.getElementById('adhesivoBarcodeSVG');
     if (!svg || typeof JsBarcode === 'undefined') return;
     try {
-      // [v2.43.115] PIXEL-PERFECT match con TSPL backend.
-      // Replicamos el cálculo de narrow del backend: si con narrow=2 el barcode
-      // supera 300 dots, JsBarcode usa width=1 (más angosto). Si entra cómodo
-      // con narrow=2, usamos width=1.4 (escalado visual). Mantenemos margin=15
-      // que reproduce el quiet zone 15×narrow del backend.
+      // [v2026-06-05 FIX SYNC con backend Envasados.gs]
+      // PIXEL-PERFECT match con el TSPL backend. Replica el algoritmo adaptativo:
+      //   narrow=3 → width visual 2.1px (proporcional a 3 dots reales)
+      //   narrow=2 → width visual 1.4px (proporcional a 2 dots reales)
+      // Quiet zone (margin) también adaptativo según narrow:
+      //   narrow=3 → 30 dots (proporcional ~30 en JsBarcode)
+      //   narrow=2 → 20 dots (estándar)
+      // Antes: si bcLen>=12, usaba width=1 (= narrow=1 = ILEGIBLE en scanner pistola).
+      // Ahora: NUNCA baja a width=1, replicando la lógica del backend.
       const bcLen = String(codigoBarra).length;
-      const wouldOverflow = (11 * bcLen + 35) * 2 > 300;
-      const bcWidth  = wouldOverflow ? 1   : 1.4;
-      const bcMargin = wouldOverflow ? 8   : 15;
+      const modules = 11 * bcLen + 35;
+      let bcWidth, bcMargin;
+      if (modules * 3 <= 340)      { bcWidth = 2.1; bcMargin = 30; }
+      else if (modules * 2 <= 360) { bcWidth = 1.4; bcMargin = 20; }
+      else if (modules * 2 <= 376) { bcWidth = 1.4; bcMargin = 12; }
+      else                         { bcWidth = 1.4; bcMargin = 8;  }
       JsBarcode(svg, String(codigoBarra), {
         format: 'CODE128', width: bcWidth, height: 32,
         displayValue: false, margin: bcMargin,
