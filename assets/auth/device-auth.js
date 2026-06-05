@@ -244,6 +244,13 @@
     if (ov) ov.remove();
     // [v1.0.2] Quitar bloqueo de la app — pointer-events y blur vuelven al estado normal
     _desbloquearApp();
+    // [v1.0.4 BUG SEC FIX] Quitar pre-block del <html> (autorización confirmada).
+    // El pre-block es el bloqueo principal — se aplica ANTES de que body se
+    // renderice. Sin esto, había ventana de 1-2s donde Vue montaba sin overlay
+    // visible → operador veía/clickeaba badge sin estar autorizado.
+    if (document.documentElement) {
+      document.documentElement.classList.remove('da-pre-block');
+    }
   }
 
   // [v1.0.2 BUG SEC FIX] Bloqueo de toda la UI mientras overlay está activo.
