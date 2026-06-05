@@ -148,11 +148,17 @@
       '#' + OVERLAY_ID + ' .da-p{font-size:14px;color:#94a3b8;max-width:440px;line-height:1.5;margin:0 0 6px}',
       '#' + OVERLAY_ID + ' .da-dev{font-family:monospace;font-size:11px;color:#fbbf24;background:rgba(251,191,36,.1);padding:6px 12px;border-radius:6px;margin-top:12px;letter-spacing:.5px;word-break:break-all;max-width:90%}',
       '#' + OVERLAY_ID + ' .da-actions{display:flex;gap:10px;margin-top:24px;flex-wrap:wrap;justify-content:center}',
-      '#' + OVERLAY_ID + ' .da-btn{padding:12px 22px;border-radius:10px;font-weight:800;font-size:14px;border:1px solid transparent;cursor:pointer;transition:transform .15s,background .15s}',
-      '#' + OVERLAY_ID + ' .da-btn:active{transform:scale(.96)}',
-      '#' + OVERLAY_ID + ' .da-btn-primary{background:linear-gradient(135deg,#10b981,#059669);color:#fff}',
-      '#' + OVERLAY_ID + ' .da-btn-secondary{background:#1e293b;color:#e2e8f0;border-color:#334155}',
-      '#' + OVERLAY_ID + ' .da-btn-warn{background:rgba(239,68,68,.15);color:#fca5a5;border-color:rgba(239,68,68,.4)}',
+      // [v1.0.3 FIX] Estilos .da-btn GLOBALES — antes scopados a #deviceAuthOverlay,
+      // por eso los botones del modal in-situ aparecían SIN colores (solo el
+      // padding genérico de .da-insitu-actions button). Ahora aplican en ambos.
+      '.da-btn{padding:12px 22px;border-radius:10px;font-weight:800;font-size:14px;border:1px solid transparent;cursor:pointer;transition:transform .15s,background .15s,box-shadow .15s;display:inline-flex;align-items:center;justify-content:center;gap:6px}',
+      '.da-btn:active{transform:scale(.96)}',
+      '.da-btn-primary{background:linear-gradient(135deg,#10b981,#059669);color:#fff;box-shadow:0 4px 14px -2px rgba(16,185,129,.45)}',
+      '.da-btn-primary:hover{box-shadow:0 6px 20px -2px rgba(16,185,129,.6)}',
+      '.da-btn-secondary{background:#1e293b;color:#e2e8f0;border-color:#334155}',
+      '.da-btn-secondary:hover{background:#334155}',
+      '.da-btn-warn{background:rgba(239,68,68,.15);color:#fca5a5;border-color:rgba(239,68,68,.4)}',
+      '.da-btn-warn:hover{background:rgba(239,68,68,.25)}',
       '@keyframes da-pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.94);opacity:.85}}',
       '@keyframes da-pop{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}',
       // Modal in-situ
@@ -645,6 +651,15 @@
     _sonidoAprobado();
     _vibrar([100, 50, 100, 50, 100]);
     _guardarCacheExitoso(_fechaHoyLima(), _state.verifyVersion);
+    // [v1.0.3 FIX] Disparar evento custom para que Vue de la app pueda
+    // actualizar su ref `dispositivoAutorizado` INMEDIATAMENTE sin esperar
+    // al reload. Sin esto, Vue mostraba "verificando dispositivo" durante
+    // 1.2s entre la aprobación y el reload (porque dispositivoAutorizado
+    // seguía en null).
+    try {
+      var evt = new CustomEvent('deviceauth:authorized', { detail: { porQuien: porQuien } });
+      window.dispatchEvent(evt);
+    } catch(_) {}
     if (_config.onAuth) try { _config.onAuth(); } catch(_){}
     // Wizard de permisos / setup post-aprobación
     setTimeout(function() {
