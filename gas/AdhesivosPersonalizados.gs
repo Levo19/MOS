@@ -89,11 +89,13 @@ function setupAdhesivosBase(payload) {
       }
     }
 
-    // 4) Plantillas semilla (solo si NO hay filas — chequeo DENTRO del lock)
-    var plantillasExist = hP.getLastRow() > 1;
-    if (!plantillasExist) {
-      _adhInsertarSemillas(hP);
-    }
+    // 4) Plantillas semilla — idempotente por nombre (case-insensitive).
+    // [v1.0.2] Antes solo se insertaban si la hoja estaba vacía. Ahora
+    // también agrega plantillas semilla NUEVAS que pudieran sumarse en
+    // futuras versiones (como las 3 QR del ecosistema sumadas en v1.0.2).
+    // Si una semilla ya existe por nombre, NO se sobrescribe (respeta
+    // ediciones del admin sobre las semillas originales).
+    _adhInsertarSemillasIdempotente(hP);
 
     return {
       ok: true,
@@ -108,9 +110,13 @@ function setupAdhesivosBase(payload) {
   }
 }
 
-function _adhInsertarSemillas(hP) {
-  var hoy = new Date().toISOString().slice(0, 10);
-  var semillas = [
+// [v1.0.2] Catálogo MAESTRO de semillas. Cualquier plantilla que se agregue
+// aquí se inserta automáticamente en el próximo setupAdhesivosBase si NO
+// existe ya por nombre (case-insensitive). Esto permite versionar semillas
+// nuevas sin perder ediciones del admin sobre las existentes.
+function _adhCatalogoSemillas() {
+  return [
+    // ═══ ORIGINALES v1.0.0 ════════════════════════════════════════
     {
       nombre: 'OFERTA_GENERAL',
       descripcion: 'Banner de oferta con estrella e icono',
@@ -193,14 +199,98 @@ function _adhInsertarSemillas(hP) {
           { id: 'sem-6c', tipo: 'rectangulo', x_mm: 0, y_mm: 0, ancho_mm: 50, alto_mm: 25, grosor: 3, relleno: false }
         ]
       }
+    },
+    // ═══ AGREGADAS v1.0.2 — QR del ecosistema MOS ══════════════════
+    // Diseño profesional: borde rect + icono identificador + branding
+    // grande + tagline + QR escaneable 10mm. El operador puede pegar
+    // estos adhesivos en estaciones de trabajo y abrir las apps
+    // escaneando con la cámara del celular.
+    {
+      nombre: 'ABRIR_MOS_ADMIN',
+      descripcion: 'QR para abrir el panel admin MOS desde el celular',
+      json: {
+        version: 1,
+        tamano: { ancho_mm: 50, alto_mm: 25, tipo: 'adhesivo' },
+        capas: [
+          { id: 'qr-mos-bd', tipo: 'rectangulo', x_mm: 0, y_mm: 0, ancho_mm: 50, alto_mm: 25, grosor: 2, relleno: false },
+          { id: 'qr-mos-ic', tipo: 'icono', x_mm: 2, y_mm: 3, idIcono: 'diana', tamano_dots: 48 },
+          { id: 'qr-mos-t1', tipo: 'texto', x_mm: 10, y_mm: 2, texto: 'MOS', font: 5, alineacion: 'left' },
+          { id: 'qr-mos-ln', tipo: 'linea', x_mm: 2, y_mm: 13, ancho_mm: 22, alto_mm: 0.4 },
+          { id: 'qr-mos-t2', tipo: 'texto', x_mm: 2, y_mm: 14, texto: 'ADMIN', font: 3, alineacion: 'left' },
+          { id: 'qr-mos-t3', tipo: 'texto', x_mm: 2, y_mm: 20, texto: 'Escanea', font: 2, alineacion: 'left' },
+          { id: 'qr-mos-qr', tipo: 'qr', x_mm: 28, y_mm: 4, codigo: 'https://levo19.github.io/MOS/', tamano_dots: 80 }
+        ]
+      }
+    },
+    {
+      nombre: 'ABRIR_WAREHOUSEMOS',
+      descripcion: 'QR para abrir warehouseMos (almacen) desde el celular',
+      json: {
+        version: 1,
+        tamano: { ancho_mm: 50, alto_mm: 25, tipo: 'adhesivo' },
+        capas: [
+          { id: 'qr-wh-bd', tipo: 'rectangulo', x_mm: 0, y_mm: 0, ancho_mm: 50, alto_mm: 25, grosor: 2, relleno: false },
+          { id: 'qr-wh-ic', tipo: 'icono', x_mm: 2, y_mm: 3, idIcono: 'caja', tamano_dots: 48 },
+          { id: 'qr-wh-t1', tipo: 'texto', x_mm: 10, y_mm: 2, texto: 'WH', font: 5, alineacion: 'left' },
+          { id: 'qr-wh-ln', tipo: 'linea', x_mm: 2, y_mm: 13, ancho_mm: 22, alto_mm: 0.4 },
+          { id: 'qr-wh-t2', tipo: 'texto', x_mm: 2, y_mm: 14, texto: 'ALMACEN', font: 3, alineacion: 'left' },
+          { id: 'qr-wh-t3', tipo: 'texto', x_mm: 2, y_mm: 20, texto: 'Escanea', font: 2, alineacion: 'left' },
+          { id: 'qr-wh-qr', tipo: 'qr', x_mm: 28, y_mm: 4, codigo: 'https://levo19.github.io/warehouseMos-/', tamano_dots: 80 }
+        ]
+      }
+    },
+    {
+      nombre: 'ABRIR_MOSEXPRESS',
+      descripcion: 'QR para abrir MosExpress (POS caja) desde el celular',
+      json: {
+        version: 1,
+        tamano: { ancho_mm: 50, alto_mm: 25, tipo: 'adhesivo' },
+        capas: [
+          { id: 'qr-me-bd', tipo: 'rectangulo', x_mm: 0, y_mm: 0, ancho_mm: 50, alto_mm: 25, grosor: 2, relleno: false },
+          { id: 'qr-me-ic', tipo: 'icono', x_mm: 2, y_mm: 3, idIcono: 'rayo', tamano_dots: 48 },
+          { id: 'qr-me-t1', tipo: 'texto', x_mm: 10, y_mm: 2, texto: 'ME', font: 5, alineacion: 'left' },
+          { id: 'qr-me-ln', tipo: 'linea', x_mm: 2, y_mm: 13, ancho_mm: 22, alto_mm: 0.4 },
+          { id: 'qr-me-t2', tipo: 'texto', x_mm: 2, y_mm: 14, texto: 'EXPRESS', font: 3, alineacion: 'left' },
+          { id: 'qr-me-t3', tipo: 'texto', x_mm: 2, y_mm: 20, texto: 'POS Caja', font: 2, alineacion: 'left' },
+          { id: 'qr-me-qr', tipo: 'qr', x_mm: 28, y_mm: 4, codigo: 'https://levo19.github.io/MosExpress/', tamano_dots: 80 }
+        ]
+      }
     }
   ];
+}
+
+// [v1.0.2] Inserción idempotente: agrega semillas que no existan por nombre.
+// Preserva ediciones del admin sobre semillas anteriores.
+function _adhInsertarSemillasIdempotente(hP) {
+  var semillas = _adhCatalogoSemillas();
+  // Leer plantillas existentes (índice por nombre lowercase)
+  var existentesPorNombre = {};
+  if (hP.getLastRow() > 1) {
+    var data = hP.getDataRange().getValues();
+    for (var r = 1; r < data.length; r++) {
+      existentesPorNombre[String(data[r][1] || '').toLowerCase()] = true;
+    }
+  }
   var now = new Date();
   var creador = 'SYSTEM';
+  var nuevas = [];
   semillas.forEach(function(s, i) {
-    var id = 'ADH-SEED-' + (i + 1);
-    hP.appendRow([id, s.nombre, s.descripcion, '50x25', JSON.stringify(s.json), creador, now, now, true]);
+    if (existentesPorNombre[s.nombre.toLowerCase()]) return;  // skip si ya existe
+    // ID estable: usa timestamp + slug del nombre para evitar colisión
+    var idSlug = s.nombre.replace(/[^A-Z0-9]/gi, '').toUpperCase().substring(0, 12);
+    var id = 'ADH-SEED-' + idSlug;
+    nuevas.push([id, s.nombre, s.descripcion, '50x25', JSON.stringify(s.json), creador, now, now, true]);
   });
+  if (nuevas.length > 0) {
+    var startRow = hP.getLastRow() + 1;
+    hP.getRange(startRow, 1, nuevas.length, 9).setValues(nuevas);
+  }
+  return nuevas.length;
+}
+
+// Wrapper legacy (compat con código existente)
+function _adhInsertarSemillas(hP) {
+  return _adhInsertarSemillasIdempotente(hP);
 }
 
 // ════════════════════════════════════════════════════════════════════

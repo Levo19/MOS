@@ -529,13 +529,107 @@
     _snapshot();
     _render();
   }
+  // [v1.0.2] Wizard QR — antes inserte un QR vacío y obligaba al admin a
+  // editar propiedades manualmente. Ahora abre modal con presets del
+  // ecosistema + textarea + tamaño. UX guiado para casos comunes.
   function _agregarQR() {
+    _abrirWizardQR();
+  }
+
+  function _abrirWizardQR() {
+    if (document.getElementById('edaModalQR')) return;
+    var presets = [
+      { label: '🎯 MOS Admin',     url: 'https://levo19.github.io/MOS/' },
+      { label: '📦 Warehouse',     url: 'https://levo19.github.io/warehouseMos-/' },
+      { label: '⚡ MosExpress',    url: 'https://levo19.github.io/MosExpress/' },
+      { label: '📧 Email',         url: 'mailto:luisvo.19@gmail.com' },
+      { label: '📞 WhatsApp',      url: 'https://wa.me/51999999999' },
+      { label: '🌐 URL libre',     url: 'https://' }
+    ];
+    var presetBtns = presets.map(function(p, i) {
+      return '<button class="eda-btn" style="font-size:11px;padding:6px 10px"'
+           + ' onclick="EditorAdhesivos._qrPreset(\'' + _esc(p.url) + '\')">'
+           +   _esc(p.label)
+           + '</button>';
+    }).join('');
+    var html = ''
+      + '<div class="eda-modal-overlay" id="edaModalQR" onclick="if(event.target===this)EditorAdhesivos._cerrarModal()">'
+      +   '<div class="eda-modal" style="max-width:560px">'
+      +     '<h2>▢ Generar código QR</h2>'
+      +     '<p style="color:#94a3b8;font-size:13px;margin-bottom:12px">'
+      +       'El QR puede codificar una URL, texto, número de teléfono, email, o cualquier dato.'
+      +     '</p>'
+      +     '<div class="eda-prop-row">'
+      +       '<label>Contenido del QR</label>'
+      +       '<textarea id="edaQRTexto" placeholder="https://... o cualquier texto" rows="3" style="font-family:Consolas,monospace">https://</textarea>'
+      +     '</div>'
+      +     '<div style="margin:10px 0">'
+      +       '<label style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:1px">Atajos del ecosistema</label>'
+      +       '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">' + presetBtns + '</div>'
+      +     '</div>'
+      +     '<div class="eda-prop-row">'
+      +       '<label>Tamaño del QR</label>'
+      +       '<select id="edaQRTamano">'
+      +         '<option value="40">40 dots · 5 mm — chico (test rápido)</option>'
+      +         '<option value="56">56 dots · 7 mm — mediano</option>'
+      +         '<option value="80" selected>80 dots · 10 mm — grande (recomendado)</option>'
+      +         '<option value="96">96 dots · 12 mm — extra grande</option>'
+      +       '</select>'
+      +     '</div>'
+      +     '<div style="background:rgba(99,102,241,.1);border-left:3px solid #6366f1;padding:8px 12px;border-radius:4px;margin-top:10px;font-size:12px;color:#a5b4fc">'
+      +       '<strong>Tip:</strong> los QR más grandes son más fáciles de escanear desde lejos. '
+      +       'Para distancias mayores a 30 cm, usá 80 dots o más.'
+      +     '</div>'
+      +     '<div class="eda-modal-actions">'
+      +       '<button class="eda-btn" onclick="EditorAdhesivos._cerrarModal()">Cancelar</button>'
+      +       '<button class="eda-btn eda-btn-primary" onclick="EditorAdhesivos._confirmarWizardQR()">▢ Insertar QR</button>'
+      +     '</div>'
+      +   '</div>'
+      + '</div>';
+    document.body.insertAdjacentHTML('beforeend', html);
+    // Focus textarea y seleccionar contenido al abrir
+    setTimeout(function() {
+      var ta = document.getElementById('edaQRTexto');
+      if (ta) { ta.focus(); ta.select(); }
+    }, 50);
+  }
+
+  function _qrPreset(url) {
+    var ta = document.getElementById('edaQRTexto');
+    if (!ta) return;
+    ta.value = url;
+    ta.focus();
+    // Seleccionar todo para que el admin pueda editar rápido si quiere
+    setTimeout(function() { ta.select(); }, 0);
+  }
+
+  function _confirmarWizardQR() {
+    var ta = document.getElementById('edaQRTexto');
+    var sel = document.getElementById('edaQRTamano');
+    if (!ta || !sel) return;
+    var contenido = String(ta.value || '').trim();
+    var tamano = parseInt(sel.value) || 80;
+    if (!contenido) {
+      _toast('Pone algún contenido en el QR', 'error');
+      ta.focus();
+      return;
+    }
+    // QR Code 128 chars suele ser el límite práctico para legibilidad
+    if (contenido.length > 200) {
+      if (!confirm('El QR tiene ' + contenido.length + ' caracteres — puede ser difícil de escanear. ¿Insertar igual?')) return;
+    }
     _plantilla.capas.push({
-      id: _uuid(), tipo: 'qr', x_mm: 30, y_mm: 5, codigo: 'https://', tamano_dots: 56
+      id: _uuid(), tipo: 'qr',
+      x_mm: 10, y_mm: 5,
+      codigo: contenido,
+      tamano_dots: tamano
     });
     _seleccionadaId = _plantilla.capas[_plantilla.capas.length - 1].id;
     _snapshot();
+    _cerrarModal();
     _render();
+    var resumen = contenido.length > 30 ? contenido.substring(0, 27) + '...' : contenido;
+    _toast('QR insertado · ' + resumen, 'success');
   }
 
   function _setCategoria(cat) {
@@ -659,7 +753,8 @@
   }
 
   function _cerrarModal() {
-    ['edaModalGuardar', 'edaModalImprimir'].forEach(function(id) {
+    // [v1.0.2] Incluye edaModalQR (wizard QR nuevo)
+    ['edaModalGuardar', 'edaModalImprimir', 'edaModalQR'].forEach(function(id) {
       var m = document.getElementById(id);
       if (m) m.remove();
     });
@@ -860,6 +955,10 @@
     _agregarRect: _agregarRect,
     _agregarBarcode: _agregarBarcode,
     _agregarQR: _agregarQR,
+    // [v1.0.2] Wizard QR
+    _abrirWizardQR: _abrirWizardQR,
+    _qrPreset: _qrPreset,
+    _confirmarWizardQR: _confirmarWizardQR,
     _setCategoria: _setCategoria,
     _setZoom: _setZoom,
     _seleccionar: _seleccionar,
