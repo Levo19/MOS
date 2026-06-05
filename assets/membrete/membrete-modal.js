@@ -589,6 +589,12 @@
       _state.total  = d.total || _state.total;  // backend expande WH multi-codigo
       _state.polling = false;
       _render();
+      // [v2026-06-05 SPEED] Disparar impresión INMEDIATA en lugar de esperar
+      // al trigger backend (que corre cada 1 min). Antes había una latencia de
+      // hasta 60s entre crear el lote y empezar a imprimir. Ahora arranca al
+      // instante. El trigger sigue siendo failsafe si algo falla.
+      // Fire-and-forget: si falla, el trigger lo recoge igual.
+      _api('imprimirSubLoteMembrete', { idLote: d.idLote }).catch(function(){});
       _arrancarPolling();
       return d;
     }).catch(function(e) {
