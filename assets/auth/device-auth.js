@@ -172,6 +172,28 @@
     document.head.appendChild(s);
   }
 
+  // [v1.0.1 BUG FIX] El script se carga en <head> → document.body puede no
+  // existir cuando _renderOverlay corre. Helper que espera a que body esté
+  // listo antes de hacer appendChild. Si ya existe, append inmediato.
+  function _appendCuandoListo(node, contenedor) {
+    var target = contenedor || _config.uiContainer || document.body;
+    if (target) {
+      target.appendChild(node);
+      return;
+    }
+    // Body aún no existe — esperar DOMContentLoaded
+    var attach = function() {
+      var t2 = _config.uiContainer || document.body;
+      if (t2) t2.appendChild(node);
+      else setTimeout(attach, 50);  // último recurso
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', attach, { once: true });
+    } else {
+      setTimeout(attach, 0);
+    }
+  }
+
   function _renderOverlay(opts) {
     _injectCss();
     var existing = document.getElementById(OVERLAY_ID);
@@ -192,8 +214,8 @@
       + (opts.subDetail ? '<p class="da-p" style="font-size:12px;color:#64748b">' + opts.subDetail + '</p>' : '')
       + '<div class="da-dev" title="ID del dispositivo">' + devShort + '</div>'
       + (actions ? '<div class="da-actions">' + actions + '</div>' : '');
-    (_config.uiContainer || document.body).appendChild(ov);
-    // Handlers
+    _appendCuandoListo(ov);
+    // Handlers (se enganchan al nodo, no requieren que esté en DOM aún)
     if (opts.actions) {
       opts.actions.forEach(function(a) {
         var btn = ov.querySelector('[data-act="' + a.id + '"]');
@@ -212,7 +234,7 @@
     var t = document.createElement('div');
     t.id = 'daApproveToast';
     t.textContent = mensaje || '✅ Dispositivo aprobado · iniciando...';
-    document.body.appendChild(t);
+    _appendCuandoListo(t);  // [v1.0.1] body puede no existir aún
     setTimeout(function() { if (t.parentNode) t.parentNode.removeChild(t); }, 3000);
   }
 
@@ -302,7 +324,7 @@
       +     '<button class="da-btn da-btn-primary" id="daIsOk">' + (esReactivar ? 'Reactivar' : 'Activar') + '</button>'
       +   '</div>'
       + '</div>';
-    document.body.appendChild(ov);
+    _appendCuandoListo(ov);  // [v1.0.1] body puede no existir aún
     setTimeout(function() {
       var clave = document.getElementById('daIsClave');
       if (clave) clave.focus();
