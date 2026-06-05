@@ -53,6 +53,12 @@
   function _lsGet(key) { try { return localStorage.getItem(key); } catch(_) { return null; } }
   function _lsSet(key, val) { try { localStorage.setItem(key, val); } catch(_) {} }
   function _lsRm(key)  { try { localStorage.removeItem(key); } catch(_) {} }
+  // [v1.0.6] Escape HTML — usado en mensajes con nombre del aprobador
+  function _escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+      return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+    });
+  }
 
   function _generarOLeerDeviceId() {
     var key = _config.storageKeys.deviceId;
@@ -212,6 +218,14 @@
     _injectCss();
     // [v1.0.2] Bloquear app cuando mostramos overlay
     _bloquearApp();
+    // [v1.0.6 BUG R1 FIX] DEFENSA: si el estado NO es ACTIVO, restaurar
+    // html.da-pre-block. Esto cubre el caso en que el cache optimista
+    // quitó el pre-block y luego el background refresh detectó PENDIENTE/
+    // INACTIVO/SUSPENDIDO. Sin esta defensa, body quedaba visible y el
+    // operador podía interactuar con la app de fondo.
+    if (_state.estado !== 'ACTIVO' && document.documentElement) {
+      document.documentElement.classList.add('da-pre-block');
+    }
     var existing = document.getElementById(OVERLAY_ID);
     if (existing) existing.remove();
     var ov = document.createElement('div');
@@ -244,11 +258,10 @@
     if (ov) ov.remove();
     // [v1.0.2] Quitar bloqueo de la app — pointer-events y blur vuelven al estado normal
     _desbloquearApp();
-    // [v1.0.4 BUG SEC FIX] Quitar pre-block del <html> (autorización confirmada).
-    // El pre-block es el bloqueo principal — se aplica ANTES de que body se
-    // renderice. Sin esto, había ventana de 1-2s donde Vue montaba sin overlay
-    // visible → operador veía/clickeaba badge sin estar autorizado.
-    if (document.documentElement) {
+    // [v1.0.6 BUG R1 FIX] Quitar pre-block del <html> SOLO si estado es ACTIVO.
+    // Antes lo quitaba siempre, lo que generaba bypass cuando se llamaba
+    // desde el cache optimista pero el server después devolvía PENDIENTE.
+    if (_state.estado === 'ACTIVO' && document.documentElement) {
       document.documentElement.classList.remove('da-pre-block');
     }
   }
@@ -444,26 +457,27 @@
           btnOk.textContent = esReactivar ? 'Reactivar' : 'Activar';
           return;
         }
-        // [v1.0.5 BUG FIX] Tras in-situ exitoso: NO ocultar overlay (body sigue
-        // invisible por da-pre-block). Cambiar texto a "Aprobado, recargando".
-        // Recargar después del feedback. Esto evita que Vue arranque con UI
-        // intermedia mientras el ref dispositivoAutorizado sigue en null.
-        modal.remove();
+        // [v1.0.6 UX FIX] Feedback claro dentro del modal antes de cerrarlo.
+        // Antes el modal se cerraba silenciosamente y el operador no sabía si
+        // la clave fue correcta. Ahora muestra "✓ ¡Aprobado!" verde explícito.
         _state.estado = 'ACTIVO';
         _detenerPolling();
         _guardarCacheExitoso(_fechaHoyLima(), _state.verifyVersion);
         _sonidoAprobado();
         _vibrar([100, 50, 100, 50, 100]);
-        // Re-renderizar overlay con mensaje de "aprobado" — da-pre-block sigue
-        // activo así que body queda invisible hasta el reload.
-        _renderOverlay({
-          emoji: '✅',
-          title: '¡Aprobado!',
-          detail: 'Aprobado por ' + (d.aprobadoPor || 'admin') + ' · recargando aplicación...',
-          actions: []
-        });
-        // Reload tras 1.2s para que el sonido y vibración terminen
-        setTimeout(function() { location.reload(); }, 1200);
+        // Cambiar el modal in-situ a "success state" visible
+        var modalContent = modal.querySelector('.da-insitu-modal');
+        if (modalContent) {
+          modalContent.innerHTML = ''
+            + '<div style="text-align:center;padding:20px 0">'
+            +   '<div style="font-size:64px;margin-bottom:14px;animation:da-pop .5s ease-out">✅</div>'
+            +   '<h3 style="margin:0 0 8px;color:#10b981;font-size:20px">¡Clave correcta!</h3>'
+            +   '<p style="margin:0 0 6px;color:#cbd5e1;font-size:14px">Aprobado por <strong>' + _escapeHtml(d.aprobadoPor || 'admin') + '</strong></p>'
+            +   '<p style="margin:0;color:#94a3b8;font-size:12px">Recargando aplicación...</p>'
+            + '</div>';
+        }
+        // Reload tras 1.4s para que el operador vea claramente el "✓ Aprobado"
+        setTimeout(function() { location.reload(); }, 1400);
       })
       .catch(function(e) {
         if (errEl) errEl.textContent = 'Sin conexión: ' + (e && e.message || 'reintenta');
@@ -508,9 +522,17 @@
       _ocultarOverlay();
       if (_config.onAuth) try { _config.onAuth(); } catch(_){}
       _arrancarHeartbeat();
-      // Refresh background con timeout corto, fail-soft (no rompe)
+      // [v1.0.6] Refresh background INMEDIATO. Si server devuelve ≠ ACTIVO,
+      // invalidar cache y reload forzado para que próxima carga vea el bloqueo.
       setTimeout(function() {
-        _consultarBackend(true).catch(function(){});
+        _consultarBackend(true).then(function(estado) {
+          if (estado && estado !== 'ACTIVO') {
+            // Servidor dice que ya no estamos autorizados → reload forzado
+            console.warn('[DeviceAuth] cache obsoleto, server dice ' + estado + ' → reload');
+            _invalidarCache();
+            setTimeout(function(){ location.reload(); }, 100);
+          }
+        }).catch(function(){});
       }, 1500);
       return Promise.resolve('ACTIVO');
     }
