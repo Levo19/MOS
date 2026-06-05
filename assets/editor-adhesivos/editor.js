@@ -1,5 +1,18 @@
 // ════════════════════════════════════════════════════════════════════
 // EditorAdhesivos — UI motor del editor de avisos
+// v1.0.3 — 2026-06-05 — Pulido senior 9 items:
+//   1) Auto-guardar antes de test si hay cambios sin guardar
+//   2) Modal imprimir con preview SVG + advertencia + cantidad editable
+//   3) Tooltips en todas las herramientas
+//   4) Buscador de iconos (filtra por id o label, ignora tabs)
+//   5) Indicador * + dot rojo en Guardar cuando hay cambios
+//   6) Detectar cambios sin guardar al cargar otra plantilla / cerrar
+//   7) Ctrl+S = abrir modal Guardar
+//   8) Botón Duplicar plantilla (clona con sufijo "(copia)")
+//   9) Botón Eliminar plantilla en lista (soft-delete)
+//   + Helpers _hayCambiosSinGuardar() y _marcarGuardado() para tracking
+//     limpio del estado dirty.
+// v1.0.2 — 2026-06-05 — Wizard QR con 6 presets + tip educativo
 // v1.0.1 — 2026-06-05 — Senior audit fixes (38 findings · 8 críticos):
 //   #16 CRÍTICO  _apiPost enviaba `accion` pero backend lee `action`
 //                → ABSOLUTAMENTE NADA llegaba al backend (bloqueante total)
@@ -37,6 +50,8 @@
 
   var STORAGE_BORRADOR = 'eda_borrador_v1';
   var POST_URL_FALLBACK = null;  // se setea desde abrir()
+  var _ultimoGuardado = null;    // [v1.0.3] JSON.stringify del estado guardado
+  var _busquedaIconos = '';      // [v1.0.3] filtro buscador de iconos
 
   // ── Helpers utilitarios ──────────────────────────────────────────
   function _esc(s) {
@@ -76,6 +91,28 @@
       metadata: { nombre: 'Nueva plantilla', fechaCreado: new Date().toISOString().slice(0, 10) },
       capas: []
     };
+  }
+
+  // [v1.0.3] Detector de cambios sin guardar. Si _ultimoGuardado == null
+  // (plantilla nueva nunca guardada) → hay cambios solo si tiene capas.
+  // Si != null → compara JSON. Ignora la metadata.nombre/desc para que
+  // editar solo el título no marque como "modificado".
+  function _hayCambiosSinGuardar() {
+    if (_ultimoGuardado === null) {
+      return _plantilla.capas.length > 0;
+    }
+    var snapActual = JSON.stringify({
+      tamano: _plantilla.tamano,
+      capas: _plantilla.capas
+    });
+    return snapActual !== _ultimoGuardado;
+  }
+
+  function _marcarGuardado() {
+    _ultimoGuardado = JSON.stringify({
+      tamano: _plantilla.tamano,
+      capas: _plantilla.capas
+    });
   }
 
   // ── Snapshot/historial ──────────────────────────────────────────
@@ -148,17 +185,28 @@
     }, 30);
   }
 
+  // [v1.0.3] Toolbar con:
+  //  - Asterisco visible si hay cambios sin guardar
+  //  - Punto rojo palpitante en botón Guardar cuando hay cambios
+  //  - Subtítulo dinámico (borrador / modificada / guardada)
   function _htmlToolbar() {
     var nombre = (_plantilla && _plantilla.metadata && _plantilla.metadata.nombre) || 'Sin nombre';
-    var dirty = _idPlantillaActual ? '' : ' <small>• borrador</small>';
+    var modif = _hayCambiosSinGuardar();
+    var estado = !_idPlantillaActual ? ' <small style="color:#fbbf24">• borrador nuevo</small>'
+              : modif                  ? ' <small style="color:#f87171">* con cambios sin guardar</small>'
+              :                          ' <small style="color:#10b981">✓ guardada</small>';
+    var asterisco = modif ? '<span style="color:#f87171;font-weight:900">*</span> ' : '';
+    var dotGuardar = modif
+      ? '<span style="display:inline-block;width:8px;height:8px;background:#f87171;border-radius:50%;margin-right:6px;animation:edaFadeIn 1s ease-in-out infinite alternate"></span>'
+      : '';
     return ''
       + '<div class="eda-toolbar">'
       +   '<button class="eda-btn" onclick="EditorAdhesivos._cerrar()">◀ Volver</button>'
-      +   '<div class="eda-toolbar-title">🎨 Plantilla: ' + _esc(nombre) + dirty + '</div>'
+      +   '<div class="eda-toolbar-title">🎨 ' + asterisco + 'Plantilla: ' + _esc(nombre) + estado + '</div>'
       +   '<button class="eda-btn" onclick="EditorAdhesivos._undo()" title="Ctrl+Z">↶ Undo</button>'
       +   '<button class="eda-btn" onclick="EditorAdhesivos._redo()" title="Ctrl+Y">↷ Redo</button>'
-      +   '<button class="eda-btn eda-btn-warn" onclick="EditorAdhesivos._testImpresion()">👁 Test impresión</button>'
-      +   '<button class="eda-btn eda-btn-primary" onclick="EditorAdhesivos._abrirModalGuardar()">💾 Guardar</button>'
+      +   '<button class="eda-btn eda-btn-warn" onclick="EditorAdhesivos._testImpresion()" title="Imprime 1 etiqueta de prueba">👁 Test impresión</button>'
+      +   '<button class="eda-btn eda-btn-primary" onclick="EditorAdhesivos._abrirModalGuardar()" title="Ctrl+S">' + dotGuardar + '💾 Guardar</button>'
       +   '<button class="eda-btn eda-btn-info" onclick="EditorAdhesivos._abrirModalImprimir()">🖨 Imprimir</button>'
       + '</div>';
   }
@@ -172,35 +220,54 @@
       + '</div>';
   }
 
+  // [v1.0.3] Sidebar izq con:
+  //  - Buscador de iconos (filtra por label o id)
+  //  - Categoria tabs (si búsqueda activa, ignora tab — busca en TODOS)
   function _htmlSidebarIzq() {
     var iconos = (window.IconosAdhesivo ? IconosAdhesivo.listar() : []);
-    var iconosCat = iconos.filter(function(i) { return i.categoria === _catActiva; });
-    var iconosHtml = iconosCat.map(function(i) {
+    var qLc = _busquedaIconos.toLowerCase().trim();
+    var iconosFiltrados;
+    if (qLc) {
+      // Búsqueda activa: filtrar en TODAS las categorías
+      iconosFiltrados = iconos.filter(function(i) {
+        return i.id.toLowerCase().indexOf(qLc) >= 0
+            || i.label.toLowerCase().indexOf(qLc) >= 0;
+      });
+    } else {
+      iconosFiltrados = iconos.filter(function(i) { return i.categoria === _catActiva; });
+    }
+    var iconosHtml = iconosFiltrados.map(function(i) {
       var dataUri = IconosAdhesivo.dataUri(i.id);
       return '<div class="eda-icono-thumb" title="' + _esc(i.label) + '" onclick="EditorAdhesivos._agregarIcono(\'' + i.id + '\')">'
            +   '<img src="' + dataUri + '" alt="' + _esc(i.label) + '">'
            + '</div>';
     }).join('');
+    if (iconosHtml === '' && qLc) {
+      iconosHtml = '<div class="eda-prop-empty" style="grid-column:1/-1">Sin iconos para "' + _esc(_busquedaIconos) + '"</div>';
+    }
 
     return ''
       + '<div class="eda-sidebar left">'
       +   '<h3>Herramientas</h3>'
       +   '<div class="eda-tools-grid">'
-      +     '<button class="eda-tool" onclick="EditorAdhesivos._agregarTexto()"><span class="eda-tool-icon">✏</span>Texto</button>'
-      +     '<button class="eda-tool" onclick="EditorAdhesivos._agregarLinea()"><span class="eda-tool-icon">─</span>Línea</button>'
-      +     '<button class="eda-tool" onclick="EditorAdhesivos._agregarRect()"><span class="eda-tool-icon">▢</span>Borde</button>'
-      +     '<button class="eda-tool" onclick="EditorAdhesivos._agregarBarcode()"><span class="eda-tool-icon">▌</span>Barcode</button>'
-      +     '<button class="eda-tool" onclick="EditorAdhesivos._agregarQR()"><span class="eda-tool-icon">▢</span>QR</button>'
-      +     '<button class="eda-tool" onclick="EditorAdhesivos._nuevaPlantilla()"><span class="eda-tool-icon">＋</span>Nueva</button>'
+      +     '<button class="eda-tool" onclick="EditorAdhesivos._agregarTexto()" title="Capa de texto"><span class="eda-tool-icon">✏</span>Texto</button>'
+      +     '<button class="eda-tool" onclick="EditorAdhesivos._agregarLinea()" title="Línea horizontal o divisor"><span class="eda-tool-icon">─</span>Línea</button>'
+      +     '<button class="eda-tool" onclick="EditorAdhesivos._agregarRect()" title="Rectángulo con borde o relleno"><span class="eda-tool-icon">▢</span>Borde</button>'
+      +     '<button class="eda-tool" onclick="EditorAdhesivos._agregarBarcode()" title="Código de barras Code128"><span class="eda-tool-icon">▌</span>Barcode</button>'
+      +     '<button class="eda-tool" onclick="EditorAdhesivos._agregarQR()" title="Wizard QR con presets"><span class="eda-tool-icon">▢</span>QR</button>'
+      +     '<button class="eda-tool" onclick="EditorAdhesivos._nuevaPlantilla()" title="Empezar plantilla en blanco"><span class="eda-tool-icon">＋</span>Nueva</button>'
       +   '</div>'
       +   '<h3>Iconos</h3>'
+      +   '<input type="text" class="eda-input" placeholder="🔍 Buscar icono..." value="' + _esc(_busquedaIconos) + '"'
+      +     ' oninput="EditorAdhesivos._setBusquedaIconos(this.value)" style="width:100%;box-sizing:border-box;margin-bottom:8px">'
+      +   (qLc ? '' : (''
       +   '<div class="eda-cat-tabs">'
       +     ['comercial', 'alerta', 'operativo', 'destaque'].map(function(c) {
-              return '<div class="eda-cat-tab' + (c === _catActiva ? ' active' : '') + '" onclick="EditorAdhesivos._setCategoria(\'' + c + '\')">'
+              return '<div class="eda-cat-tab' + (c === _catActiva ? ' active' : '') + '" onclick="EditorAdhesivos._setCategoria(\'' + c + '\')" title="' + c + '">'
                    + (c === 'comercial' ? '💰' : c === 'alerta' ? '⚠' : c === 'operativo' ? '🏪' : '🎯')
                    + '</div>';
             }).join('')
-      +   '</div>'
+      +   '</div>'))
       +   '<div class="eda-iconos-grid">' + iconosHtml + '</div>'
       +   '<h3>Plantillas</h3>'
       +   '<div class="eda-plantillas" id="edaPlantillas"></div>'
@@ -370,7 +437,10 @@
     }).join('');
   }
 
-  // ── Render lista de plantillas guardadas ────────────────────────
+  // [v1.0.3] Lista de plantillas con botones de acción:
+  //  - Duplicar: clona la plantilla con nombre "X (copia)" para editar sin
+  //    afectar la original. Útil para variaciones rápidas.
+  //  - Eliminar: soft-delete con confirmación.
   function _renderListaPlantillas() {
     var cont = document.getElementById('edaPlantillas');
     if (!cont) return;
@@ -380,9 +450,14 @@
     }
     cont.innerHTML = _plantillasGuardadas.map(function(p) {
       var sel = (_idPlantillaActual === p.idPlantilla) ? ' active' : '';
-      return '<div class="eda-plantilla-item' + sel + '" onclick="EditorAdhesivos._cargarPlantilla(\'' + p.idPlantilla + '\')">'
+      var idEsc = p.idPlantilla.replace(/'/g, "\\'");
+      return '<div class="eda-plantilla-item' + sel + '" onclick="EditorAdhesivos._cargarPlantilla(\'' + idEsc + '\')">'
            +   '<span class="eda-plantilla-icon">📋</span>'
-           +   '<span class="eda-plantilla-name">' + _esc(p.nombre) + '</span>'
+           +   '<span class="eda-plantilla-name" title="' + _esc(p.descripcion || p.nombre) + '">' + _esc(p.nombre) + '</span>'
+           +   '<div class="eda-capa-actions">'
+           +     '<button onclick="event.stopPropagation();EditorAdhesivos._duplicarPlantilla(\'' + idEsc + '\')" title="Duplicar como nueva">⎘</button>'
+           +     '<button onclick="event.stopPropagation();EditorAdhesivos._eliminarPlantilla(\'' + idEsc + '\')" title="Eliminar (soft-delete)">🗑</button>'
+           +   '</div>'
            + '</div>';
     }).join('');
   }
@@ -693,11 +768,13 @@
   }
 
   function _nuevaPlantilla() {
-    if (_plantilla.capas.length > 0) {
-      if (!confirm('Hay capas sin guardar. ¿Crear plantilla nueva descartando?')) return;
+    // [v1.0.3] _hayCambiosSinGuardar también detecta plantillas guardadas modificadas
+    if (_hayCambiosSinGuardar()) {
+      if (!confirm('Hay cambios sin guardar. ¿Crear plantilla nueva descartando?')) return;
     }
     _plantilla = _plantillaVacia();
     _idPlantillaActual = null;
+    _ultimoGuardado = null;
     _seleccionadaId = null;
     _historial = [];
     _historialIdx = -1;
@@ -732,24 +809,66 @@
     document.body.insertAdjacentHTML('beforeend', html);
   }
 
+  // [v1.0.3] Modal de imprimir con PREVIEW visual del adhesivo + advertencia
+  // si hay cambios sin guardar. Antes era solo un confirm seco.
   function _abrirModalImprimir() {
     if (!_idPlantillaActual) {
       _toast('Guardá la plantilla antes de imprimir N copias', 'error');
       return;
     }
     var cant = (document.getElementById('edaCantidad') && parseInt(document.getElementById('edaCantidad').value)) || 10;
+    var hayCambios = _hayCambiosSinGuardar();
+
+    // Preview SVG escalado al 60% para mostrar en modal compacto
+    var svgPreview = '';
+    if (window.EditorAdhesivosConverter) {
+      var svg = EditorAdhesivosConverter.json2svg(_plantilla, { grid: false });
+      svgPreview = '<div style="transform:scale(.6);transform-origin:top center;width:600px;height:300px;margin:0 auto -120px">' + svg + '</div>';
+    }
+
+    var warnHtml = hayCambios
+      ? '<div style="background:rgba(239,68,68,.15);border-left:3px solid #f87171;padding:10px 14px;border-radius:4px;margin:10px 0;font-size:13px;color:#fca5a5">'
+      +   '⚠ <strong>Atención:</strong> hay cambios sin guardar. La impresión usa la versión GUARDADA en el backend, no lo que ves arriba. '
+      +   '<button class="eda-btn" style="margin-left:6px;font-size:11px;padding:4px 8px" onclick="EditorAdhesivos._cerrarModal();EditorAdhesivos._abrirModalGuardar()">💾 Guardar primero</button>'
+      + '</div>'
+      : '';
+
     var html = ''
       + '<div class="eda-modal-overlay" id="edaModalImprimir" onclick="if(event.target===this)EditorAdhesivos._cerrarModal()">'
-      +   '<div class="eda-modal">'
+      +   '<div class="eda-modal" style="max-width:680px">'
       +     '<h2>🖨 Imprimir plantilla</h2>'
-      +     '<p style="color:#94a3b8;font-size:13px">Se imprimirán <strong>' + cant + '</strong> etiquetas con drift incremental.</p>'
+      +     '<p style="color:#94a3b8;font-size:13px;margin-bottom:14px"><strong>' + _esc(_plantilla.metadata.nombre || 'Sin nombre') + '</strong></p>'
+      +     svgPreview
+      +     warnHtml
+      +     '<div class="eda-prop-row">'
+      +       '<label>Cantidad de etiquetas</label>'
+      +       '<input type="number" id="edaImprCant" min="1" max="100" value="' + cant + '" style="font-size:24px;font-weight:900;text-align:center">'
+      +     '</div>'
+      +     '<div style="font-size:12px;color:#94a3b8;margin-top:6px">Drift incremental compensado en BATCH. PrintNode procesa todo en 1 job.</div>'
       +     '<div class="eda-modal-actions">'
       +       '<button class="eda-btn" onclick="EditorAdhesivos._cerrarModal()">Cancelar</button>'
-      +       '<button class="eda-btn eda-btn-info" onclick="EditorAdhesivos._confirmarImprimir(' + cant + ')">🖨 Imprimir ' + cant + '</button>'
+      +       '<button class="eda-btn eda-btn-info" onclick="EditorAdhesivos._confirmarImprimirDesdeModal()">🖨 Imprimir</button>'
       +     '</div>'
       +   '</div>'
       + '</div>';
     document.body.insertAdjacentHTML('beforeend', html);
+    // Dibujar barcodes del SVG preview
+    setTimeout(function() {
+      var modal = document.getElementById('edaModalImprimir');
+      if (modal && window.EditorAdhesivosConverter) {
+        EditorAdhesivosConverter.dibujarBarcodes(modal);
+      }
+    }, 30);
+  }
+
+  function _confirmarImprimirDesdeModal() {
+    var inp = document.getElementById('edaImprCant');
+    var cant = parseInt(inp && inp.value) || 1;
+    if (cant < 1 || cant > 100) {
+      _toast('Cantidad fuera de rango (1-100)', 'error');
+      return;
+    }
+    _confirmarImprimir(cant);
   }
 
   function _cerrarModal() {
@@ -796,10 +915,19 @@
     .catch(function(e) { safeCb(e); });
   }
 
-  function _guardar() {
-    var nombre = document.getElementById('edaGNombre').value.trim();
-    var desc   = document.getElementById('edaGDesc').value.trim();
-    if (!nombre) { _toast('Ponele un nombre', 'error'); return; }
+  // [v1.0.3] _guardar acepta callback opcional (para chainear con
+  // testImpresion → guardar y luego testear). También marca el estado
+  // como "guardado" (limpia el flag de cambios sin guardar).
+  function _guardar(cb) {
+    var nombreInp = document.getElementById('edaGNombre');
+    var nombre = nombreInp ? nombreInp.value.trim() : (_plantilla.metadata && _plantilla.metadata.nombre) || '';
+    var descInp = document.getElementById('edaGDesc');
+    var desc = descInp ? descInp.value.trim() : (_plantilla.metadata && _plantilla.metadata.descripcion) || '';
+    if (!nombre) {
+      _toast('Ponele un nombre', 'error');
+      if (cb) cb(false);
+      return;
+    }
 
     if (!_plantilla.metadata) _plantilla.metadata = {};
     _plantilla.metadata.nombre = nombre;
@@ -812,6 +940,7 @@
     if (errores.length > 0) {
       _toast('Plantilla inválida: ' + errores[0], 'error');
       console.warn('[EditorAdhesivos] errores:', errores);
+      if (cb) cb(false);
       return;
     }
 
@@ -823,21 +952,121 @@
     }, function(err, r) {
       if (err || !r || !r.ok) {
         _toast('Error guardando: ' + (err && err.message || (r && r.error) || 'desconocido'), 'error');
+        if (cb) cb(false);
         return;
       }
       _idPlantillaActual = r.idPlantilla;
+      _marcarGuardado();  // [v1.0.3] limpia flag de cambios sin guardar
       _toast(r.creado ? 'Plantilla creada' : 'Plantilla actualizada', 'success');
       _cerrarModal();
+      _refrescarPlantillas();
+      _render();
+      if (cb) cb(true);
+    });
+  }
+
+  // [v1.0.3] Duplicar plantilla — clona el JSON, agrega "(copia)" al
+  // nombre, limpia _idPlantillaActual para que sea nueva, abre el modal
+  // de guardar para que el admin confirme el nuevo nombre.
+  function _duplicarPlantilla(id) {
+    var p = _plantillasGuardadas.find(function(x) { return x.idPlantilla === id; });
+    if (!p) { _toast('Plantilla no encontrada', 'error'); return; }
+    if (_hayCambiosSinGuardar()) {
+      if (!confirm('Hay cambios sin guardar en la plantilla actual. ¿Descartar y duplicar "' + p.nombre + '"?')) return;
+    }
+    var clon;
+    try {
+      clon = typeof p.json === 'string' ? JSON.parse(p.json) : JSON.parse(JSON.stringify(p.json));
+    } catch(e) {
+      _toast('Plantilla origen corrupta', 'error');
+      return;
+    }
+    if (!clon.metadata) clon.metadata = {};
+    clon.metadata.nombre = (p.nombre + ' (copia)').substring(0, 50);
+    clon.metadata.descripcion = p.descripcion || '';
+    _plantilla = clon;
+    _idPlantillaActual = null;       // marca como NUEVA (no actualizar la original)
+    _ultimoGuardado = null;          // sin guardar todavía
+    _seleccionadaId = null;
+    _historial = [];
+    _historialIdx = -1;
+    _snapshot();
+    _render();
+    _toast('Duplicada como "' + clon.metadata.nombre + '" — guardá para confirmar', 'success');
+    setTimeout(_abrirModalGuardar, 200);
+  }
+
+  // [v1.0.3] Eliminar plantilla (soft-delete en backend).
+  function _eliminarPlantilla(id) {
+    var p = _plantillasGuardadas.find(function(x) { return x.idPlantilla === id; });
+    if (!p) return;
+    if (!confirm('¿Eliminar la plantilla "' + p.nombre + '"?\n\nEs soft-delete (recuperable desde Sheets cambiando activo=TRUE).')) return;
+    _apiPost('eliminarAdhesivoPlantilla', { idPlantilla: id }, function(err, r) {
+      if (err || !r || !r.ok) {
+        _toast('Error: ' + (err && err.message || (r && r.error) || '?'), 'error');
+        return;
+      }
+      _toast('Plantilla eliminada', 'success');
+      // Si era la actualmente cargada, limpiar editor
+      if (_idPlantillaActual === id) {
+        _plantilla = _plantillaVacia();
+        _idPlantillaActual = null;
+        _ultimoGuardado = null;
+        _historial = [];
+        _historialIdx = -1;
+        _snapshot();
+      }
       _refrescarPlantillas();
       _render();
     });
   }
 
+  // [v1.0.3] Setear búsqueda de iconos sin perder el foco del input.
+  // _render() recrea todo el DOM, perdiendo cursor del search. Por eso
+  // re-renderizamos solo el sidebar izq y restauramos el foco.
+  function _setBusquedaIconos(val) {
+    _busquedaIconos = String(val || '');
+    var sidebar = document.querySelector('.eda-sidebar.left');
+    if (sidebar) {
+      sidebar.outerHTML = _htmlSidebarIzq();
+      // Reasignar foco al input de búsqueda y poner cursor al final
+      setTimeout(function() {
+        var nuevoInp = document.querySelector('.eda-sidebar.left input.eda-input');
+        if (nuevoInp) {
+          nuevoInp.focus();
+          nuevoInp.setSelectionRange(_busquedaIconos.length, _busquedaIconos.length);
+        }
+      }, 0);
+      _renderListaPlantillas();
+    }
+  }
+
+  // [v1.0.3 SENIOR FIX] Auto-guardar antes de test si hay cambios.
+  // ANTES: test imprimía la plantilla del BACKEND (lo guardado), pero el
+  // admin veía lo del EDITOR (lo modificado) → frustración "imprimió mal,
+  // no lo que veo". AHORA: detecta cambios y ofrece auto-guardar.
   function _testImpresion() {
     if (!_idPlantillaActual) {
-      _toast('Guardá primero para hacer test', 'error');
+      if (!confirm('Plantilla nueva sin guardar. ¿Querés guardarla primero para hacer el test?')) return;
+      _abrirModalGuardar();
       return;
     }
+    if (_hayCambiosSinGuardar()) {
+      if (!confirm('Hay cambios sin guardar.\n\nEl test imprimirá la versión GUARDADA en el backend, no lo que ves en pantalla.\n\n¿Guardar primero?')) {
+        // Si dice "No" → testea la versión guardada igual
+        _ejecutarTestImpresion();
+        return;
+      }
+      // Auto-guardar y luego testear
+      _guardar(function(ok) {
+        if (ok) _ejecutarTestImpresion();
+      });
+      return;
+    }
+    _ejecutarTestImpresion();
+  }
+
+  function _ejecutarTestImpresion() {
     _apiPost('testImpresionAdhesivoPlantilla', { idPlantilla: _idPlantillaActual }, function(err, r) {
       if (err || !r || !r.ok) {
         _toast('Error: ' + (err && err.message || (r && r.error) || '?'), 'error');
@@ -869,11 +1098,13 @@
   function _cargarPlantilla(id) {
     var p = _plantillasGuardadas.find(function(x) { return x.idPlantilla === id; });
     if (!p) return;
-    if (_plantilla.capas.length > 0 && _idPlantillaActual !== id) {
-      if (!confirm('Descartar cambios y cargar "' + p.nombre + '"?')) return;
+    // [v1.0.3] Detectar cambios sin guardar tanto en plantilla nueva como
+    // en plantilla cargada y modificada. Antes solo chequeaba si era nueva.
+    if (_hayCambiosSinGuardar() && _idPlantillaActual !== id) {
+      if (!confirm('Hay cambios sin guardar en la plantilla actual. ¿Descartar y cargar "' + p.nombre + '"?')) return;
     }
     try {
-      _plantilla = typeof p.json === 'string' ? JSON.parse(p.json) : p.json;
+      _plantilla = typeof p.json === 'string' ? JSON.parse(p.json) : JSON.parse(JSON.stringify(p.json));
     } catch(e) {
       _toast('Plantilla corrupta', 'error');
       return;
@@ -886,13 +1117,21 @@
     _historial = [];
     _historialIdx = -1;
     _snapshot();
+    _marcarGuardado();  // [v1.0.3] recién cargada = sin cambios pendientes
     _render();
     _toast('Plantilla cargada: ' + p.nombre, 'success');
   }
 
+  // [v1.0.3] Cerrar editor con detección de cambios robusta.
+  // ANTES: solo verificaba plantillas NUEVAS sin guardar (ignoraba
+  // modificaciones sobre plantillas ya guardadas). AHORA: usa
+  // _hayCambiosSinGuardar() que cubre ambos casos.
   function _cerrar() {
-    if (_plantilla.capas.length > 0 && !_idPlantillaActual) {
-      if (!confirm('Tenés capas sin guardar. ¿Salir igual?')) return;
+    if (_hayCambiosSinGuardar()) {
+      var msg = _idPlantillaActual
+        ? 'La plantilla tiene cambios sin guardar. ¿Salir descartando?'
+        : 'Tenés una plantilla nueva sin guardar. ¿Salir descartando?';
+      if (!confirm(msg)) return;
     }
     var ov = document.getElementById('edaOverlay');
     if (ov) ov.remove();
@@ -900,6 +1139,17 @@
   }
 
   function _keyHandler(e) {
+    // No interceptar atajos cuando el foco está en un input/textarea
+    // (sino Ctrl+Z dentro del textarea no funciona).
+    var tag = e.target && e.target.tagName;
+    var enInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      // [v1.0.3] Ctrl+S → guardar
+      e.preventDefault();
+      _abrirModalGuardar();
+      return;
+    }
+    if (enInput) return;
     if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); _undo(); }
     else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); _redo(); }
     else if (e.key === 'Escape' && _seleccionadaId) { _seleccionar(null); }
@@ -930,6 +1180,8 @@
     _seleccionadaId = null;
     _historial = [];
     _historialIdx = -1;
+    _ultimoGuardado = null;  // [v1.0.3] al abrir, no hay nada "guardado" aún
+    _busquedaIconos = '';
     _snapshot();
 
     // Crear overlay
@@ -973,6 +1225,11 @@
     _guardar: _guardar,
     _testImpresion: _testImpresion,
     _confirmarImprimir: _confirmarImprimir,
-    _cargarPlantilla: _cargarPlantilla
+    _confirmarImprimirDesdeModal: _confirmarImprimirDesdeModal,
+    _cargarPlantilla: _cargarPlantilla,
+    // [v1.0.3] Pulido senior — 9 mejoras UX
+    _duplicarPlantilla: _duplicarPlantilla,
+    _eliminarPlantilla: _eliminarPlantilla,
+    _setBusquedaIconos: _setBusquedaIconos
   };
 })();
