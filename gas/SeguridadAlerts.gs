@@ -186,8 +186,9 @@ function instalarTriggerPurgarDispositivos() {
   ScriptApp.getProjectTriggers().forEach(function(t) {
     if (t.getHandlerFunction() === TRG) ScriptApp.deleteTrigger(t);
   });
-  ScriptApp.newTrigger(TRG).timeBased().atHour(2).everyDays(1).create();
-  Logger.log('[Trigger] ' + TRG + ' instalado · diario 2:00');
+  // [v2.43.173] Movido de 02:00 → 23:15 (ventana de mantenimiento)
+  ScriptApp.newTrigger(TRG).timeBased().atHour(23).nearMinute(15).everyDays(1).create();
+  Logger.log('[Trigger] ' + TRG + ' instalado · diario 23:15');
   return { ok: true };
 }
 

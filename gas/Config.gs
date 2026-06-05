@@ -1775,15 +1775,18 @@ function alertarDispositivosInactivos2a7d() {
   return { ok: true, data: { alertados: alertados, detalles: detalles } };
 }
 
-// [v2.43.167] Setup-only: instala el trigger del cron 02:30. Llamar 1 vez
+// [v2.43.173] Setup-only: instala el trigger del cron 23:30. Llamar 1 vez
 // desde el editor GAS o desde setupTodoSeguridad. Idempotente.
+// Cambio v2.43.173: movido de 02:30 → 23:30. Razón: durante 23-24h es la
+// ventana de mantenimiento (cron forzar_logout cierra sesiones, nadie usa
+// las apps). Operaciones de seguridad concentradas en esa franja.
 function instalarTriggerAlertaInactivos2a7d() {
   var TRG = 'alertarDispositivosInactivos2a7d';
   var existing = ScriptApp.getProjectTriggers().filter(function(t) {
     return t.getHandlerFunction() === TRG;
   });
   if (existing.length > 0) return { ok: true, ya: true, count: existing.length };
-  ScriptApp.newTrigger(TRG).timeBased().atHour(2).nearMinute(30).everyDays(1).create();
+  ScriptApp.newTrigger(TRG).timeBased().atHour(23).nearMinute(30).everyDays(1).create();
   return { ok: true, instalado: true };
 }
 
@@ -1853,15 +1856,71 @@ function cancelarPendientesAntiguos20h() {
   return cancelarPendientesAntiguos();
 }
 
-// Setup-only: instala trigger cada 1h. Idempotente.
+// [v2.43.173] Setup-only: instala trigger 23:45. Idempotente.
+// Cambio v2.43.173: antes corría cada 1h. Ahora 1 vez al día a las 23:45
+// (ventana de mantenimiento). Razón: los admins tienen toda la jornada para
+// aprobar; si pasan 20h sin acción, esa noche se limpian de una vez.
 function instalarTriggerCancelarPendientes() {
   var TRG = 'cancelarPendientesAntiguos20h';
   var existing = ScriptApp.getProjectTriggers().filter(function(t) {
     return t.getHandlerFunction() === TRG;
   });
   if (existing.length > 0) return { ok: true, ya: true, count: existing.length };
-  ScriptApp.newTrigger(TRG).timeBased().everyHours(1).create();
+  ScriptApp.newTrigger(TRG).timeBased().atHour(23).nearMinute(45).everyDays(1).create();
   return { ok: true, instalado: true };
+}
+
+// [v2.43.173] Función ÚNICA que limpia los triggers de seguridad antiguos
+// (que pueden tener horarios viejos) y los reinstala con horario nocturno
+// 23:15 / 23:30 / 23:45. Idempotente — se puede ejecutar varias veces.
+//
+// Ejecutar desde el editor GAS cuando se quiera refrescar la configuración
+// de triggers. Útil tras cambios de horario como v2.43.173.
+function reinstalarTriggersSeguridadNocturno() {
+  var TRGS_SEG = {
+    'purgarDispositivosInactivos7d':    { hora: 23, min: 15 },  // antes 02:00
+    'alertarDispositivosInactivos2a7d': { hora: 23, min: 30 },  // antes 02:30
+    'cancelarPendientesAntiguos20h':    { hora: 23, min: 45 }   // antes cada 1h
+  };
+  var triggers = ScriptApp.getProjectTriggers();
+  var borrados = [];
+  var creados  = [];
+  // 1. Borrar triggers existentes para esas funciones (con cualquier horario)
+  triggers.forEach(function(t) {
+    var fn = t.getHandlerFunction();
+    if (TRGS_SEG.hasOwnProperty(fn)) {
+      ScriptApp.deleteTrigger(t);
+      borrados.push(fn);
+    }
+  });
+  // 2. Crear de nuevo con horarios nocturnos
+  Object.keys(TRGS_SEG).forEach(function(fn) {
+    var cfg = TRGS_SEG[fn];
+    ScriptApp.newTrigger(fn).timeBased().atHour(cfg.hora).nearMinute(cfg.min).everyDays(1).create();
+    creados.push(fn + ' @ ' + cfg.hora + ':' + (cfg.min < 10 ? '0' : '') + cfg.min);
+  });
+  return { ok: true, data: { borrados: borrados, creados: creados } };
+}
+
+// [v2.43.173] Mismo wrapper pero con log claro para el editor (que no
+// muestra el return automáticamente).
+function reinstalarTriggersSeguridadNocturnoConLog() {
+  Logger.log('═════════════════════════════════════════════════');
+  Logger.log('REINSTALANDO TRIGGERS DE SEGURIDAD (horario 23h-24h)');
+  Logger.log('═════════════════════════════════════════════════');
+  var r = reinstalarTriggersSeguridadNocturno();
+  if (!r.ok) { Logger.log('❌ ERROR: ' + r.error); return r; }
+  Logger.log('🗑  Triggers borrados:');
+  (r.data.borrados || []).forEach(function(f) { Logger.log('   - ' + f); });
+  if (!(r.data.borrados || []).length) Logger.log('   (ninguno — primera instalación)');
+  Logger.log('');
+  Logger.log('✅ Triggers creados:');
+  (r.data.creados || []).forEach(function(f) { Logger.log('   + ' + f); });
+  Logger.log('═════════════════════════════════════════════════');
+  Logger.log('TODOS los crons de seguridad corren ahora entre 23:15 y 23:45,');
+  Logger.log('durante la ventana de mantenimiento. Las apps están cerradas');
+  Logger.log('en ese horario (cron forzar_logout a las 23h).');
+  return r;
 }
 
 // Notifica a master+admin que un vendedor/operador inició sesión en ME o WH.
