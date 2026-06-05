@@ -1,5 +1,7 @@
 // ════════════════════════════════════════════════════════════════════
 // AdhesivoPreview — módulo compartido de preview visual del adhesivo
+// v1.1.0 — 2026-06-05 — Preview MEMBRETE_ME + MEMBRETE_WH (góndola/almacén)
+//          pixel-perfect con TSPL backend. MOS catálogo muestra ambos.
 // v1.0.2 — 2026-06-05 — UX: animación draw-in del barcode SVG.
 // v1.0.1 — 2026-06-05 — Senior review fixes:
 //          - CSS heights del barcode sync con backend (66→72 px = 48 dots)
@@ -285,15 +287,220 @@
     }
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  // [v1.1.0] PREVIEW MEMBRETES (MEMBRETE_ME góndola + MEMBRETE_WH andamio)
+  //
+  // Pixel-perfect espejo del TSPL backend (gas/Membretes.gs).
+  // Regla: 1 dot TSPL = 1.5 px CSS. Adhesivo 50×25 mm = 400×200 dots = 600×300 px.
+  // Posicionamiento absoluto con coords X/Y exactas del TSPL.
+  //
+  // ⚠ MANTENER SINCRONIZADO: si cambias el layout en _buildTSPLMembreteMe o
+  // _buildTSPLMembreteWh (Membretes.gs), actualizá las constantes acá.
+  // El usuario admin confía en este preview — debe ser idéntico al impreso.
+  // ════════════════════════════════════════════════════════════════════
+
+  // Conversor TSPL dots → px CSS (1 dot = 1.5 px porque 50 mm × 8 dots/mm = 400 dots,
+  // pero visualmente queremos 600px → factor 1.5).
+  function _dotsToPx(dots) { return Math.round(dots * 1.5); }
+
+  // ── CSS para los dos previews de membrete ────────────────────────────
+  var CSS_MEMBRETE_ID = 'adhesivo-membrete-preview-css';
+  function _inyectarCssMembretes() {
+    if (document.getElementById(CSS_MEMBRETE_ID)) return;
+    var s = document.createElement('style');
+    s.id = CSS_MEMBRETE_ID;
+    s.textContent = [
+      // Contenedor adhesivo membrete — mismo tamaño que adhesivo envasado (50×25 mm).
+      '.mb-prev{position:relative;width:600px;height:300px;background:#fff;border-radius:8px;box-shadow:0 10px 32px -8px rgba(99,102,241,.45),0 0 0 2px rgba(99,102,241,.55),inset 0 0 0 1px rgba(0,0,0,.05);overflow:hidden;font-family:"Arial Black",sans-serif;color:#000;animation:mbPrevGlow 3s ease-in-out infinite alternate}',
+      '@keyframes mbPrevGlow{from{box-shadow:0 10px 32px -8px rgba(99,102,241,.45),0 0 0 2px rgba(99,102,241,.55),inset 0 0 0 1px rgba(0,0,0,.05)}to{box-shadow:0 14px 44px -10px rgba(99,102,241,.65),0 0 0 2px rgba(99,102,241,.85),inset 0 0 0 1px rgba(0,0,0,.05)}}',
+      '.mb-prev-me{box-shadow:0 10px 32px -8px rgba(16,185,129,.45),0 0 0 2px rgba(16,185,129,.55),inset 0 0 0 1px rgba(0,0,0,.05);animation:mbPrevGlowMe 3s ease-in-out infinite alternate}',
+      '@keyframes mbPrevGlowMe{from{box-shadow:0 10px 32px -8px rgba(16,185,129,.45),0 0 0 2px rgba(16,185,129,.55),inset 0 0 0 1px rgba(0,0,0,.05)}to{box-shadow:0 14px 44px -10px rgba(16,185,129,.65),0 0 0 2px rgba(16,185,129,.85),inset 0 0 0 1px rgba(0,0,0,.05)}}',
+      // Elementos absolutos genéricos
+      '.mb-abs{position:absolute;font-family:"Arial Black",sans-serif;color:#000;letter-spacing:.5px;line-height:1;white-space:nowrap}',
+      // Font 1 TSPL = 8×12 dots ≈ 12×18 px. Usamos 11px monospace para texto código.
+      '.mb-f1{font-size:11px;font-family:"Consolas","Courier New",monospace;font-weight:700;letter-spacing:1.5px}',
+      // Font 2 TSPL = 12×20 dots ≈ 18×30 px.
+      '.mb-f2{font-size:15px;font-weight:700}',
+      // Font 3 TSPL = 16×24 dots ≈ 24×36 px. Usamos 22px para descripción.
+      '.mb-f3{font-size:22px;font-weight:800}',
+      // Font 4 TSPL = 24×32 dots ≈ 36×48 px. Usamos 30px para highlights desc WH.
+      '.mb-f4{font-size:28px;font-weight:900}',
+      // Font 5 TSPL = 32×48 dots ≈ 48×72 px. Precio MEGA MEMBRETE_ME.
+      '.mb-f5{font-size:48px;font-weight:900;letter-spacing:1px;font-family:"Arial Black",sans-serif}',
+      // Línea decorativa
+      '.mb-line{position:absolute;background:#000}',
+      // Frame con corner marks (igual estilo que adhesivo envasado)
+      '.mb-frame{position:absolute;pointer-events:none}',
+      '.mb-cm{position:absolute;width:18px;height:18px;border-color:#000;border-style:solid;border-width:0}',
+      '.mb-cm-tl{border-top-width:2px;border-left-width:2px}',
+      '.mb-cm-tr{border-top-width:2px;border-right-width:2px}',
+      '.mb-cm-bl{border-bottom-width:2px;border-left-width:2px}',
+      '.mb-cm-br{border-bottom-width:2px;border-right-width:2px}',
+      // Barcode contenedor + SVG animado draw-in
+      '.mb-bc-wrap{position:absolute;display:flex;align-items:center;justify-content:center}',
+      '.mb-bc-wrap svg{height:100%;max-width:100%;animation:adhesivoBcDrawIn .55s cubic-bezier(.34,1.56,.64,1)}',
+      // Tag CAB / N/M esquina sup-derecha MEMBRETE_WH
+      '.mb-tag-multi{position:absolute;background:rgba(99,102,241,.12);color:#4338ca;padding:2px 8px;border-radius:9999px;font-size:11px;font-weight:900;border:1px solid rgba(99,102,241,.35);font-family:monospace}',
+      // Logo WH almacén (placeholder texto si no hay bitmap real)
+      '.mb-logo-wh{position:absolute;font-family:"Arial Black",sans-serif;font-weight:900;font-size:14px;color:#1e293b;letter-spacing:2px;display:flex;align-items:center;gap:6px}',
+      '.mb-logo-wh-icon{font-size:18px}',
+      // Header chip dentro del preview (ME / WH)
+      '.mb-prev-chip{position:absolute;top:-12px;left:14px;padding:3px 10px;border-radius:9999px;font-size:11px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;box-shadow:0 4px 12px -2px rgba(0,0,0,.25)}',
+      '.mb-prev-chip-me{background:#10b981;color:#fff}',
+      '.mb-prev-chip-wh{background:#6366f1;color:#fff}'
+    ].join('\n');
+    document.head.appendChild(s);
+  }
+
+  // ── Render MEMBRETE_ME (góndola tienda — PRECIO PROTAGONISTA) ──────
+  // SYNC con _buildTSPLMembreteMe (Membretes.gs líneas 101-200 aprox):
+  //   Y=2-26    desc Font 3, 1 línea forzada centrada, truncada con ".."
+  //   Y=30-78   PRECIO Font 5 MEGA centrado
+  //   Y=82-85   línea decorativa gruesa 3 dots bajo precio
+  //   Y=88-148  frame + barcode altura 48 + corner marks
+  //   Y=152-164 código texto Font 1
+  function _renderMembreteMeHtml(datos, opts) {
+    if (!datos) return '';
+    opts = opts || {};
+    var svgId = opts.svgId || ('mbMeBcSVG_' + Date.now() + '_' + (++_svgSeq));
+    var precio = parseFloat(datos.precio) || 0;
+    var precioStr = 'S/ ' + precio.toFixed(2);
+    var codigo = String(datos.codigoBarra || datos.skuBase || datos.idProducto || '');
+    if (!codigo) codigo = 'SIN-CODIGO';
+    var descripcion = String(datos.descripcion || '');
+    // Truncar desc 1 línea ~30 chars (matchea wrap del backend para Y=2-26)
+    var descShort = descripcion.length > 32 ? descripcion.substring(0, 30) + '..' : descripcion;
+
+    // Posiciones TSPL → px
+    var descY  = _dotsToPx(2);    // 3 px
+    var precioY = _dotsToPx(30);  // 45 px — bien lejos del tope
+    var lineaY  = _dotsToPx(82);  // 123 px — línea bajo precio
+    var lineaH  = _dotsToPx(3);   // 5 px gruesa
+    var frameY1 = _dotsToPx(88);  // 132 px
+    var frameY2 = _dotsToPx(148); // 222 px → altura 90 px
+    var frameH  = frameY2 - frameY1;
+    var bcY     = _dotsToPx(94);  // 141 px — dentro del frame
+    var bcH     = _dotsToPx(48);  // 72 px (igual envasado)
+    var codigoY = _dotsToPx(152); // 228 px
+
+    return ''
+      + '<div class="mb-prev mb-prev-me">'
+      +   '<div class="mb-prev-chip mb-prev-chip-me">🏪 ME · Góndola</div>'
+      // 1) Descripción Font 3, 1 línea centrada Y=2-26
+      +   '<div class="mb-abs mb-f3" style="top:' + descY + 'px;left:0;width:100%;text-align:center">'
+      +     _esc(descShort)
+      +   '</div>'
+      // 2) PRECIO Font 5 MEGA centrado Y=30-78
+      +   '<div class="mb-abs mb-f5" style="top:' + precioY + 'px;left:0;width:100%;text-align:center">'
+      +     _esc(precioStr)
+      +   '</div>'
+      // 3) Línea decorativa bajo precio Y=82-85 (3 dots gruesa)
+      +   '<div class="mb-line" style="top:' + lineaY + 'px;left:60px;width:480px;height:' + lineaH + 'px"></div>'
+      // 4) Frame con corner marks + barcode Y=88-148
+      +   '<div class="mb-frame" style="top:' + frameY1 + 'px;left:15px;width:570px;height:' + frameH + 'px">'
+      +     '<span class="mb-cm mb-cm-tl" style="top:0;left:0"></span>'
+      +     '<span class="mb-cm mb-cm-tr" style="top:0;right:0"></span>'
+      +     '<span class="mb-cm mb-cm-bl" style="bottom:0;left:0"></span>'
+      +     '<span class="mb-cm mb-cm-br" style="bottom:0;right:0"></span>'
+      +   '</div>'
+      +   '<div class="mb-bc-wrap" style="top:' + bcY + 'px;left:30px;right:30px;height:' + bcH + 'px">'
+      +     '<svg id="' + svgId + '"></svg>'
+      +   '</div>'
+      // 5) Código texto Font 1 Y=152
+      +   '<div class="mb-abs mb-f1" style="top:' + codigoY + 'px;left:0;width:100%;text-align:center">'
+      +     _esc(codigo)
+      +   '</div>'
+      + '</div>';
+  }
+
+  // ── Render MEMBRETE_WH (andamio almacén — DESCRIPCIÓN PROTAGONISTA) ──
+  // SYNC con _buildTSPLMembreteWh (Membretes.gs líneas 262-368):
+  //   Y=2-38    LOGO ALMACEN (placeholder visual)
+  //   Y=4       tag CAB / N/M esquina sup-der si total>1 (Font 2)
+  //   Y=46-118  descripción Font 3/4 centrada (highlights)
+  //   Y=118-196 frame + barcode altura 48 + corner marks
+  //   Y=172     texto código Font 1
+  function _renderMembreteWhHtml(datos, opts) {
+    if (!datos) return '';
+    opts = opts || {};
+    var svgId = opts.svgId || ('mbWhBcSVG_' + Date.now() + '_' + (++_svgSeq));
+    var codigo = String(datos.codigoBarra || datos.codigo || datos.skuBase || '');
+    if (!codigo) codigo = 'SIN-CODIGO';
+    var descripcion = String(datos.descripcion || '');
+    // Procesar tokens + highlights + wrap (mismo algoritmo que adhesivo envasado)
+    var descNorm = _normalize(descripcion).toUpperCase();
+    var tokens = descNorm.split(/\s+/).filter(Boolean);
+    var siblings = datos.siblings || [];
+    var highlights = _detectHighlights(tokens, siblings);
+    var lines = _wrap(tokens, highlights);
+    var esCabecera = !!datos.esCabecera;
+    var indice = parseInt(datos.indice) || 0;
+    var total = parseInt(datos.total) || 1;
+
+    var logoY  = _dotsToPx(2);    // 3 px
+    var tagY   = _dotsToPx(4);    // 6 px
+    var descY  = _dotsToPx(46);   // 69 px
+    var frameY1 = _dotsToPx(118); // 177 px
+    var frameY2 = _dotsToPx(196); // 294 px
+    var frameH  = frameY2 - frameY1;
+    var bcY     = _dotsToPx(124); // 186 px
+    var bcH     = _dotsToPx(48);  // 72 px
+    var codigoY = _dotsToPx(172); // 258 px
+
+    // Descripción Font 3/4 con highlights
+    var linesHtml = lines.slice(0, 2).map(function(line) {
+      var parts = line.map(function(p) {
+        var cls = p.hl ? 'mb-f4' : 'mb-f3';
+        return '<span class="' + cls + '" style="margin:0 6px">' + _esc(p.tok) + '</span>';
+      }).join('');
+      return '<div style="display:flex;justify-content:center;align-items:baseline;line-height:1.05;margin:4px 0">' + parts + '</div>';
+    }).join('');
+
+    var tagTexto = '';
+    if (total > 1) tagTexto = esCabecera ? 'CAB' : (indice + '/' + total);
+
+    return ''
+      + '<div class="mb-prev">'
+      +   '<div class="mb-prev-chip mb-prev-chip-wh">📦 WH · Andamio</div>'
+      // 1) Logo ALMACEN Y=2-38 (placeholder visual — el TSPL imprime bitmap WH real)
+      +   '<div class="mb-logo-wh" style="top:' + logoY + 'px;left:8px">'
+      +     '<span class="mb-logo-wh-icon">📦</span> ALMACÉN MOS'
+      +   '</div>'
+      // 2) Tag CAB / N/M esquina sup-der si total > 1
+      +   (tagTexto ? '<div class="mb-tag-multi" style="top:' + (tagY + 2) + 'px;right:10px">' + _esc(tagTexto) + '</div>' : '')
+      // 3) Descripción Font 3/4 highlights centrada Y=46-118
+      +   '<div class="mb-abs" style="top:' + descY + 'px;left:0;width:100%;text-align:center">'
+      +     linesHtml
+      +   '</div>'
+      // 4) Frame con corner marks + barcode Y=118-196
+      +   '<div class="mb-frame" style="top:' + frameY1 + 'px;left:15px;width:570px;height:' + frameH + 'px">'
+      +     '<span class="mb-cm mb-cm-tl" style="top:0;left:0"></span>'
+      +     '<span class="mb-cm mb-cm-tr" style="top:0;right:0"></span>'
+      +     '<span class="mb-cm mb-cm-bl" style="bottom:0;left:0"></span>'
+      +     '<span class="mb-cm mb-cm-br" style="bottom:0;right:0"></span>'
+      +   '</div>'
+      +   '<div class="mb-bc-wrap" style="top:' + bcY + 'px;left:30px;right:30px;height:' + bcH + 'px">'
+      +     '<svg id="' + svgId + '"></svg>'
+      +   '</div>'
+      // 5) Código texto Font 1 Y=172
+      +   '<div class="mb-abs mb-f1" style="top:' + codigoY + 'px;left:0;width:100%;text-align:center">'
+      +     _esc(codigo)
+      +   '</div>'
+      + '</div>';
+  }
+
   // ── API pública ──────────────────────────────────────────────────────
   window.AdhesivoPreview = {
-    LOGO_DATAURI:   LOGO_DATAURI,
-    inyectarCss:    _inyectarCss,
-    calcVto:        _calcVto,
-    normalize:      _normalize,
-    procesar:       _procesar,
-    renderHtml:     _renderHtml,
-    dibujarBarcode: _dibujarBarcode,
-    esc:            _esc
+    LOGO_DATAURI:         LOGO_DATAURI,
+    inyectarCss:          _inyectarCss,
+    inyectarCssMembretes: _inyectarCssMembretes,
+    calcVto:              _calcVto,
+    normalize:            _normalize,
+    procesar:             _procesar,
+    renderHtml:           _renderHtml,
+    renderMembreteMeHtml: _renderMembreteMeHtml,
+    renderMembreteWhHtml: _renderMembreteWhHtml,
+    dibujarBarcode:       _dibujarBarcode,
+    esc:                  _esc
   };
 })();

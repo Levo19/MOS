@@ -1156,31 +1156,105 @@
     // Solo MOS muestra el menú con ambas opciones
     if (document.getElementById('msMenuOverlay')) return;
     var precio = parseFloat(producto.precio || producto.precioVenta) || 0;
+
+    // [v2026-06-05 PREVIEW] Construir item completo para mostrar previews ME/WH
+    // ANTES de imprimir. Admin ve VISUALMENTE qué saldrá del rollo. Usa el mismo
+    // helper que _menuImprimir → garantía que preview == lo que se imprimirá.
+    var item = _construirItemCompleto(producto);
+    // Para MEMBRETE_WH multi-código: mostramos la CABECERA (skuBase) como primer
+    // adhesivo de la serie. Total = códigos.length + 1 (cabecera + N).
+    var totalWh = (item.codigos && item.codigos.length > 1) ? (item.codigos.length + 1) : 1;
+
+    // Inyectar CSS de previews membrete (idempotente)
+    var previewDisponible = !!(window.AdhesivoPreview && AdhesivoPreview.renderMembreteMeHtml);
+    if (previewDisponible) {
+      try { AdhesivoPreview.inyectarCssMembretes(); } catch(_) {}
+    }
+
+    var meSvgId = 'msPrevMeBc_' + Date.now();
+    var whSvgId = 'msPrevWhBc_' + Date.now() + '_w';
+
+    // Render HTML de cada preview (escalado al 55% para caber en modal ~720px)
+    var previewMeHtml = '';
+    var previewWhHtml = '';
+    if (previewDisponible) {
+      previewMeHtml = AdhesivoPreview.renderMembreteMeHtml({
+        codigoBarra: item.esSkuBase ? item.skuBase : item.codigoBarra,
+        descripcion: item.descripcion,
+        precio:      item.precio,
+        skuBase:     item.skuBase
+      }, { svgId: meSvgId });
+      previewWhHtml = AdhesivoPreview.renderMembreteWhHtml({
+        codigoBarra: item.esSkuBase ? item.skuBase : item.codigoBarra,
+        descripcion: item.descripcion,
+        skuBase:     item.skuBase,
+        esCabecera:  item.esSkuBase,
+        indice:      1,
+        total:       totalWh
+      }, { svgId: whSvgId });
+    } else {
+      previewMeHtml = '<div style="padding:24px;text-align:center;color:#94a3b8;font-size:12px">Preview no disponible<br><small>Falta cargar AdhesivoPreview</small></div>';
+      previewWhHtml = previewMeHtml;
+    }
+
+    // Estilo del card de preview (wrapper + escala)
+    var cardCss = 'position:relative;background:#0f172a;border-radius:14px;padding:24px 14px 14px;border:1px solid #1e293b;overflow:hidden;display:flex;flex-direction:column;align-items:center;gap:14px';
+    var scaleWrapCss = 'transform:scale(.55);transform-origin:top center;width:600px;height:300px;margin-bottom:-135px';  // -135 compensa scale(.55)
+    var btnsCss = 'display:grid;grid-template-columns:1fr 1fr;gap:14px';
+
     document.body.insertAdjacentHTML('beforeend', ''
       + '<div class="ms-overlay" id="msMenuOverlay" onclick="if(event.target===this)MembreteSystem._menuCerrar()">'
-      +   '<div class="ms-modal" style="max-width:420px">'
+      +   '<div class="ms-modal" style="max-width:760px">'
       +     '<div class="ms-head">'
       +       '<div class="ms-emoji">🏷</div>'
       +       '<div style="flex:1;min-width:0">'
-      +         '<div class="ms-h1">IMPRIMIR MEMBRETE</div>'
+      +         '<div class="ms-h1">¿QUÉ MEMBRETE IMPRIMIR?</div>'
       +         '<div class="ms-sub">' + _escapeHtml(producto.descripcion || producto.codigoBarra) + '</div>'
       +       '</div>'
       +     '</div>'
       +     _rolloBannerHtml()
       +     '<div class="ms-body">'
-      +       '<button class="ms-btn ms-btn-primary" onclick="MembreteSystem._menuImprimir(\'MEMBRETE_ME\')">'
-      +         '🏪 ME · Góndola tienda'
-      +         (precio > 0 ? '<div style="font-size:11px;font-weight:600;margin-top:2px;opacity:.85">Precio: S/ ' + precio.toFixed(2) + '</div>' : '')
-      +       '</button>'
-      +       '<button class="ms-btn ms-btn-info" onclick="MembreteSystem._menuImprimir(\'MEMBRETE_WH\')">'
-      +         '📦 WH · Andamio almacén'
-      +         '<div style="font-size:11px;font-weight:600;margin-top:2px;opacity:.85">Multi-código si tiene equivalentes</div>'
-      +       '</button>'
-      +       '<button class="ms-btn ms-btn-warn" onclick="MembreteSystem._menuCerrar()">Cancelar</button>'
+      +       '<div style="' + btnsCss + '">'
+      // ─── Card ME ───
+      +         '<div style="' + cardCss + '">'
+      +           '<div style="' + scaleWrapCss + '">' + previewMeHtml + '</div>'
+      +           '<button class="ms-btn ms-btn-primary" style="margin:0;width:100%" onclick="MembreteSystem._menuImprimir(\'MEMBRETE_ME\')">'
+      +             '🏪 IMPRIMIR ME · Góndola'
+      +             (precio > 0 ? '<div style="font-size:11px;font-weight:600;margin-top:2px;opacity:.85">Precio S/ ' + precio.toFixed(2) + '</div>' : '')
+      +           '</button>'
+      +         '</div>'
+      // ─── Card WH ───
+      +         '<div style="' + cardCss + '">'
+      +           '<div style="' + scaleWrapCss + '">' + previewWhHtml + '</div>'
+      +           '<button class="ms-btn ms-btn-info" style="margin:0;width:100%" onclick="MembreteSystem._menuImprimir(\'MEMBRETE_WH\')">'
+      +             '📦 IMPRIMIR WH · Andamio'
+      +             '<div style="font-size:11px;font-weight:600;margin-top:2px;opacity:.85">'
+      +               (totalWh > 1 ? ('Imprime ' + totalWh + ' adhesivos (cabecera + ' + (totalWh - 1) + ' códigos)') : 'Imprime 1 adhesivo')
+      +             + '</div>'
+      +           '</button>'
+      +         '</div>'
+      +       '</div>'
+      +       '<button class="ms-btn ms-btn-warn" style="margin-top:14px" onclick="MembreteSystem._menuCerrar()">Cancelar</button>'
       +     '</div>'
       +   '</div>'
       + '</div>');
     window._msMenuProd = producto;
+
+    // Dibujar barcodes después de que el DOM esté pintado (next tick)
+    if (previewDisponible) {
+      setTimeout(function() {
+        try {
+          var svgMe = document.getElementById(meSvgId);
+          var svgWh = document.getElementById(whSvgId);
+          var codigoMe = item.esSkuBase ? item.skuBase : item.codigoBarra;
+          var codigoWh = item.esSkuBase ? item.skuBase : item.codigoBarra;
+          if (svgMe) AdhesivoPreview.dibujarBarcode(svgMe, codigoMe);
+          if (svgWh) AdhesivoPreview.dibujarBarcode(svgWh, codigoWh);
+        } catch(e) {
+          console.warn('[membrete-modal] error dibujando preview barcode:', e.message);
+        }
+      }, 50);
+    }
   }
   function _menuImprimir(tipo, productoDirecto) {
     // [v1.3 FIX] Aceptar producto directo (auto-mode) o usar global (modal MOS)
