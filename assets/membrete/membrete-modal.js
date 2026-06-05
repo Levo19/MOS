@@ -349,7 +349,25 @@
     var fill = document.getElementById('msFill');
     if (fill) fill.style.width = pct.toFixed(1) + '%';
     var counter = document.getElementById('msCounter');
-    if (counter) counter.textContent = _state.completadas + ' / ' + _state.total;
+    // [v2.43.169 UX] Mostrar porcentaje al lado del contador X/N para
+    // feedback inmediato del progreso, especialmente útil en lotes grandes.
+    if (counter) counter.textContent = _state.completadas + ' / ' + _state.total + ' · ' + pct.toFixed(0) + '%';
+    // [v2.43.169 UX] Sonido + vibración cuando el lote se completa.
+    // _prevStatus guarda el estado anterior para detectar la transición
+    // CREADO/ENCOLADO/IMPRIMIENDO → COMPLETADO (one-shot, no repite).
+    var prevStatus = _state._prevStatus;
+    _state._prevStatus = _state.status;
+    if (_state.status === 'COMPLETADO' && prevStatus !== 'COMPLETADO') {
+      try { sonidos.completado && sonidos.completado(); } catch(_){}
+      try { navigator.vibrate && navigator.vibrate([100, 50, 100, 50, 200]); } catch(_){}
+    }
+    // [v2.43.169 UX] También sonido distinto cuando entra en estado de error
+    // (papel agotado, error de impresora). Reemplaza el feedback silencioso.
+    if ((_state.status === 'PAUSADO_OUT_PAPER' || _state.status === 'PAUSADO_ERROR') &&
+        prevStatus !== 'PAUSADO_OUT_PAPER' && prevStatus !== 'PAUSADO_ERROR') {
+      try { sonidos.error && sonidos.error(); } catch(_){}
+      try { navigator.vibrate && navigator.vibrate([200, 100, 200, 100, 200]); } catch(_){}
+    }
     var chip = document.getElementById('msChip');
     if (chip) {
       var map = {

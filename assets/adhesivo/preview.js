@@ -1,5 +1,6 @@
 // ════════════════════════════════════════════════════════════════════
 // AdhesivoPreview — módulo compartido de preview visual del adhesivo
+// v1.0.2 — 2026-06-05 — UX: animación draw-in del barcode SVG.
 // v1.0.1 — 2026-06-05 — Senior review fixes:
 //          - CSS heights del barcode sync con backend (66→72 px = 48 dots)
 //          - svgId con contador incremental (sin colisión cuando >1 modal)
@@ -174,7 +175,11 @@
       // [v1.0.1 BUG #1 FIX] Altura sync con backend (barcodeHeight=48 dots).
       // 48 dots TSPL × 1.5 px/dot = 72 px. Antes 66 px = 44 dots (versión vieja).
       '.adhesivo-barcode-wrap{display:flex;flex-direction:row;align-items:center;justify-content:center;height:72px;width:100%}',
-      '.adhesivo-barcode-wrap svg{height:72px;max-width:100%}',
+      '.adhesivo-barcode-wrap svg{height:72px;max-width:100%;animation:adhesivoBcDrawIn .55s cubic-bezier(.34,1.56,.64,1)}',
+      // [v1.0.2 UX] Animación "draw-in" del barcode SVG cuando aparece.
+      // Scale 0.6 → 1 con rebote sutil + opacity 0 → 1. Da sensación
+      // de que el código de barras "se imprime" en vivo dentro del preview.
+      '@keyframes adhesivoBcDrawIn{from{opacity:0;transform:scaleX(.6)}to{opacity:1;transform:scaleX(1)}}',
       '.adhesivo-codigo{font-family:"Consolas","Courier New",monospace;font-size:13px;color:#333;letter-spacing:1.5px;text-align:center;margin-top:6px;width:100%}',
       '.adhesivo-cantidad-tag{position:absolute;top:10px;right:92px;background:rgba(251,191,36,.18);color:#b45309;padding:3px 10px;border-radius:9999px;font-size:12px;font-weight:900;border:1px dashed rgba(180,83,9,.4);font-family:monospace}'
     ].join('\n');
