@@ -1014,14 +1014,63 @@
     }).join('');
     sugs.style.display = 'block';
   }
+  // [v2026-06-05 SENIOR AUDIT FIX] Helper compartido para construir un item
+  // completo con codigos[] + esSkuBase. Misma lógica que _menuImprimir usa.
+  // Resuelve equivalencias del catálogo para que el backend sepa si imprimir
+  // 1 (ME góndola) o N+1 (WH andamio multi-código).
+  function _construirItemCompleto(p) {
+    var skuB = String(p.skuBase || p.idProducto || '');
+    var codigosDelGrupo = (Array.isArray(p.codigos) && p.codigos.length > 0)
+      ? p.codigos.slice()
+      : null;
+    if (!codigosDelGrupo) {
+      var cat = _resolverCatalogo();
+      if (cat && cat.equivalencias && skuB) {
+        var equivActivos = cat.equivalencias.filter(function(e) {
+          return String(e.skuBase || '') === skuB && (e.activo === true || e.activo === undefined || e.activo === '');
+        }).map(function(e) { return String(e.codigoBarra || ''); }).filter(Boolean);
+        codigosDelGrupo = [String(p.codigoBarra || p.idProducto || skuB)].concat(equivActivos);
+      } else {
+        codigosDelGrupo = [String(p.codigoBarra || p.idProducto || skuB)].filter(Boolean);
+      }
+    }
+    codigosDelGrupo = (codigosDelGrupo || []).map(String).filter(Boolean);
+    var totalCodigos = codigosDelGrupo.length || 1;
+    return {
+      codigoBarra: String(p.codigoBarra || p.idProducto || ''),
+      descripcion: String(p.descripcion || p.nombre || ''),
+      precio:      parseFloat(p.precio || p.precioVenta) || 0,
+      skuBase:     skuB,
+      esSkuBase:   totalCodigos > 1,
+      codigos:     codigosDelGrupo
+    };
+  }
+
+  // _colaAgregar legacy: recibe campos sueltos. NO calcula equivalencias —
+  // solo usado por código antiguo que pasa los 4 args. Para flow nuevo usar
+  // _colaAgregarProducto(p) que sí construye item completo.
   function _colaAgregar(cb, desc, precio, sku) {
+    _colaAgregarProducto({
+      codigoBarra: cb,
+      descripcion: desc,
+      precio: precio,
+      skuBase: sku || cb,
+      idProducto: sku || cb
+    });
+  }
+
+  // [v2026-06-05 SENIOR AUDIT FIX] Agrega un producto completo a la cola
+  // resolviendo equivalencias y construyendo item con codigos[]+esSkuBase.
+  // Backend usa esos campos para decidir si imprimir 1 (ME) o N+1 (WH).
+  function _colaAgregarProducto(p) {
     var tipo = _colaTipo();
     var items = _colaCargar(tipo);
-    if (items.find(function(it) { return it.codigoBarra === cb; })) {
+    var item = _construirItemCompleto(p);
+    if (items.find(function(it) { return it.codigoBarra === item.codigoBarra && it.skuBase === item.skuBase; })) {
       _toast('⚠ Ya está en la cola', { error: true });
       return;
     }
-    items.push({ codigoBarra: cb, descripcion: desc, precio: precio, skuBase: sku });
+    items.push(item);
     _colaGuardar(tipo, items);
     sonidos.subjobDone();
     var inp = document.getElementById('msColaBusq');
@@ -1032,11 +1081,16 @@
   }
 
   // [AUDIT FIX #A] handler robusto via índice — no requiere escapar inline
+  // [v2026-06-05 SENIOR AUDIT FIX] Usa _colaAgregarProducto para construir
+  // item completo con codigos[]+esSkuBase (resuelve equivalentes del catálogo).
+  // Antes: pasaba solo 4 campos sueltos sin resolver equivalencias → ME
+  // imprimía con codigoBarra de UNA presentación en vez del SKU_Base maestro
+  // cuando el producto tenía varios equivalentes (regla MEMBRETE_ME violada).
   function _colaAgregarIdx(idx) {
     var items = window._msColaSugItems || [];
     var it = items[idx];
     if (!it) return;
-    _colaAgregar(it.codigoBarra, it.descripcion, it.precio, it.skuBase);
+    _colaAgregarProducto(it);
   }
   function _colaQuitar(idx) {
     var tipo = _colaTipo();
@@ -1050,7 +1104,18 @@
     var items = _colaCargar(tipo);
     if (items.length === 0) return;
     _colaCerrar();
-    imprimirMembrete({ tipo: tipo, items: items }).then(function() {
+    // [v2026-06-05 SENIOR AUDIT FIX] Reconstruir items para garantizar que
+    // tengan codigos[]+esSkuBase. Defensa contra items legacy guardados en
+    // localStorage antes del fix (cuando _colaAgregar solo guardaba 4 campos).
+    var itemsCompletos = items.map(function(it) {
+      // Si ya tiene codigos+esSkuBase, usar como está (item nuevo)
+      if (Array.isArray(it.codigos) && it.codigos.length > 0 && typeof it.esSkuBase === 'boolean') {
+        return it;
+      }
+      // Sino reconstruir resolviendo equivalencias del catálogo actual
+      return _construirItemCompleto(it);
+    });
+    imprimirMembrete({ tipo: tipo, items: itemsCompletos }).then(function() {
       _colaGuardar(tipo, []);  // limpiar cola tras éxito
     });
   }
@@ -1104,48 +1169,15 @@
     var p = productoDirecto || window._msMenuProd;
     if (!p) return;
     _menuCerrar();
-    // [v1.9] Detectar cuántos códigos tiene el producto. Si tiene >1 código
-    // (canónico + N equivalentes activos), imprimir con esSkuBase=true para
-    // que el backend use el layout SKU_Base con ícono diferenciador
-    // (indica al vendedor que ese producto tiene códigos alternativos).
-    var skuB = String(p.skuBase || p.idProducto || '');
-    // [v2.43.162 FIX] Antes: Array.isArray([]) pasaba TRUE pero quedaba vacío
-    // → backend recibía codigos:[] y no expandía nada → lote sin items.
-    // Ahora exige length>0 para considerar el array válido; si no, fallback.
-    var codigosDelGrupo = (Array.isArray(p.codigos) && p.codigos.length > 0)
-      ? p.codigos.slice()
-      : null;
-    if (!codigosDelGrupo) {
-      // Buscar equivalentes del producto en el catálogo
-      var cat = _resolverCatalogo();
-      if (cat && cat.equivalencias && skuB) {
-        var equivActivos = cat.equivalencias.filter(function(e) {
-          return String(e.skuBase || '') === skuB && (e.activo === true || e.activo === undefined || e.activo === '');
-        }).map(function(e) { return String(e.codigoBarra || ''); }).filter(Boolean);
-        codigosDelGrupo = [String(p.codigoBarra || p.idProducto || skuB)].concat(equivActivos);
-      } else {
-        // [v2.43.162] Sin catálogo accesible (caso WH/ME) → al menos el codigoBarra
-        codigosDelGrupo = [String(p.codigoBarra || p.idProducto || skuB)].filter(Boolean);
-      }
-    }
-    // Filtrado final defensivo: solo strings no vacíos
-    codigosDelGrupo = (codigosDelGrupo || []).map(String).filter(Boolean);
-    if (codigosDelGrupo.length === 0) {
+    // [v2026-06-05 REFACTOR] Construcción del item delegada al helper
+    // _construirItemCompleto (DRY con _colaAgregarProducto). Mismo flow:
+    // resolver equivalentes del catálogo, construir codigos[]+esSkuBase.
+    var item = _construirItemCompleto(p);
+    if (!item.codigos || item.codigos.length === 0) {
       _toast('⚠ El producto no tiene código de barras para imprimir', { error: true });
       sonidos.error();
       return;
     }
-    var totalCodigos = (codigosDelGrupo && codigosDelGrupo.length) || 1;
-    var item = {
-      codigoBarra: String(p.codigoBarra || p.idProducto || ''),
-      descripcion: String(p.descripcion || p.nombre || ''),
-      precio:      parseFloat(p.precio || p.precioVenta) || 0,
-      skuBase:     skuB,
-      // [v1.9] esSkuBase=true cuando tiene >1 código → backend usa layout SKU_Base
-      // con ícono indicador. Layout normal cuando es único código.
-      esSkuBase:   totalCodigos > 1,
-      codigos:     codigosDelGrupo
-    };
     imprimirMembrete({ tipo: tipo, items: [item] });
   }
   function _menuCerrar() {
