@@ -755,6 +755,7 @@ function _payloadDeviceAuthExtras(rowData, hdrs) {
     var iFRV = hdrs.indexOf('Forzar_ReVerify');
     var iFPu = hdrs.indexOf('Forzar_Push');
     var iFWiz= hdrs.indexOf('Forzar_Wizard');
+    var iDTH = hdrs.indexOf('Desbloqueo_Temporal_Hasta');
     var fl  = iFL  >= 0 ? String(rowData[iFL]  || '') : '';
     var frv = iFRV >= 0 ? String(rowData[iFRV] || '') : '';
     var fpu = iFPu >= 0 ? String(rowData[iFPu] || '') : '';
@@ -764,8 +765,107 @@ function _payloadDeviceAuthExtras(rowData, hdrs) {
     extras.forzar_reverify = frv === '1' || frv.toLowerCase() === 'true';
     extras.forzar_push     = fpu === '1' || fpu.toLowerCase() === 'true';
     extras.forzar_wizard   = fwz === '1' || fwz.toLowerCase() === 'true';
+    // [v2.43.183] Extensión de horario por dispositivo — frontend respeta este TS.
+    // Si <= ahora o vacío → no hay extensión vigente. Si > ahora → operador puede
+    // seguir operando pasado el horario hasta ese TS exacto.
+    if (iDTH >= 0) {
+      var dthRaw = rowData[iDTH];
+      var dthStr = '';
+      if (dthRaw) {
+        if (dthRaw instanceof Date && !isNaN(dthRaw.getTime())) {
+          dthStr = dthRaw.toISOString();
+        } else {
+          dthStr = String(dthRaw);
+          if (dthStr && !/[zZ]$/.test(dthStr) && !/[+-]\d{2}:?\d{2}$/.test(dthStr)) {
+            var p = new Date(dthStr);
+            if (!isNaN(p.getTime())) dthStr = p.toISOString();
+          }
+        }
+      }
+      extras.desbloqueo_temporal_hasta = dthStr;
+    }
   }
   return extras;
+}
+
+// [v2.43.183] Extensión de horario in-situ por dispositivo (UUID).
+// Admin/master ingresa clave 8 dig + escoge tiempo → se guarda en
+// Desbloqueo_Temporal_Hasta del row del UUID. Frontend lo respeta.
+// Auditoría automática vía verificarClaveAdmin (catálogo tier 2).
+function extenderHorarioDispositivo(params) {
+  if (!params.deviceId)   return { ok: false, error: 'Requiere deviceId' };
+  if (!params.claveAdmin) return { ok: false, error: 'Requiere claveAdmin' };
+  var minutos = parseInt(params.minutos) || 0;
+  if (minutos <= 0 || minutos > 240) {
+    return { ok: false, error: 'Minutos inválidos (1-240 max)' };
+  }
+
+  // [Bug potencial #1 FIX] Validar device EXISTE antes de auditar clave.
+  // Si no existe, evita auditoría de fallo+confusión "extender X aprobado
+  // pero device no encontrado" y dar feedback claro al operador.
+  _garantizarColumnasDispositivos();
+  var sheet = getSheet('DISPOSITIVOS');
+  var data  = sheet.getDataRange().getValues();
+  var hdrs  = data[0];
+  var iId   = hdrs.indexOf('ID_Dispositivo');
+  var iDTH  = hdrs.indexOf('Desbloqueo_Temporal_Hasta');
+  if (iDTH < 0) {
+    var col = hdrs.length + 1;
+    sheet.getRange(1, col).setValue('Desbloqueo_Temporal_Hasta');
+    iDTH = col - 1;
+  }
+  var rowFound = -1;
+  for (var k = 1; k < data.length; k++) {
+    if (String(data[k][iId]) === String(params.deviceId)) { rowFound = k; break; }
+  }
+  if (rowFound < 0) {
+    return { ok: false, error: 'Dispositivo no encontrado — solicita primero alta del UUID' };
+  }
+
+  // Validar clave + audita
+  var auth = verificarClaveAdmin({
+    clave:        params.claveAdmin,
+    accion:       'EXTENDER_HORARIO_DISPOSITIVO',
+    refDocumento: params.deviceId,
+    appOrigen:    params.app || '',
+    detalle:      'Extensión in-situ de ' + minutos + ' min para el dispositivo',
+    deviceId:     params.deviceId
+  });
+  if (!auth.ok) return auth;
+  if (!auth.data || !auth.data.autorizado) {
+    return { ok: true, data: { autorizado: false, error: (auth.data && auth.data.error) || 'Clave incorrecta' } };
+  }
+
+  // Aplicar extensión al row encontrado arriba (rowFound)
+  var hastaTs = new Date(Date.now() + minutos * 60 * 1000);
+  var hastaIso = hastaTs.toISOString();
+  sheet.getRange(rowFound + 1, iDTH + 1).setValue(hastaIso);
+
+  // Alerta para visibilidad en panel SEGURIDAD_ALERTAS
+  try {
+    if (typeof _crearAlertaSeg === 'function') {
+      var nombreEq = data[rowFound][hdrs.indexOf('Nombre_Equipo')] || '';
+      var appEq    = data[rowFound][hdrs.indexOf('App')] || '';
+      _crearAlertaSeg('EXTENSION_HORARIO_DISPOSITIVO', {
+        idDispositivo: params.deviceId,
+        descripcion:   (appEq || '') + ' · ' + (nombreEq || 'Sin nombre') + ' · +' + minutos + ' min',
+        prioridad:     'MEDIA',
+        datosExtra: {
+          minutos: minutos,
+          hastaTs: hastaIso,
+          aprobadoPor: auth.data.validadoPor,
+          app: appEq, nombre: nombreEq
+        }
+      });
+    }
+  } catch(_) {}
+
+  return { ok: true, data: {
+    autorizado: true,
+    aprobadoPor: auth.data.validadoPor,
+    hastaTs: hastaIso,
+    minutos: minutos
+  }};
 }
 
 // Registrar última conexión + zona/estación/vendedor de la sesión actual.

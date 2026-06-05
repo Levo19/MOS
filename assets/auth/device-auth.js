@@ -1,5 +1,10 @@
 // ════════════════════════════════════════════════════════════════════
 // DeviceAuth — módulo compartido de verificación de dispositivos
+// v1.0.11 — 2026-06-05 — Sync con ExtensorHorario: cuando el backend retorna
+//           desbloqueo_temporal_hasta en _payloadDeviceAuthExtras, este módulo
+//           lo persiste localmente via ExtensorHorario.guardarLocal (o limpia
+//           si vence/revoca). Eso garantiza que la extensión esté sincronizada
+//           entre dispositivos y heartbeats.
 // v1.0.10 — 2026-06-05 — Bug E (in-situ ahora lee verifyVersion del backend
 //           response, eliminando el fetch extra en el próximo boot).
 // v1.0.9 — 2026-06-04 — Bug T (seguridad: PENDIENTE no invalidaba cache),
@@ -595,6 +600,29 @@
         }
 
         _state.verifyVersion = serverVer;
+
+        // [v1.0.10] Sincronizar extensión de horario in-situ con el módulo
+        // ExtensorHorario (si está cargado en esta app). El backend manda
+        // 'desbloqueo_temporal_hasta' = ISO string en _payloadDeviceAuthExtras.
+        // - Si viene un TS futuro → guardarlo localmente para que el flow
+        //   fuera-de-horario lo respete sin volver a consultar backend.
+        // - Si viene vacío o pasado → limpiar localmente (extensión vencida o
+        //   revocada por admin desde panel).
+        try {
+          if (window.ExtensorHorario && typeof d.desbloqueo_temporal_hasta !== 'undefined') {
+            var dthIso = String(d.desbloqueo_temporal_hasta || '').trim();
+            if (dthIso) {
+              var dthMs = Date.parse(dthIso);
+              if (!isNaN(dthMs) && dthMs > Date.now()) {
+                ExtensorHorario.guardarLocal(dthIso);
+              } else {
+                ExtensorHorario.limpiar();
+              }
+            } else {
+              ExtensorHorario.limpiar();
+            }
+          }
+        } catch(_) {}
 
         if (d.estado === 'ACTIVO' || d.autorizado === true) {
           // [BUG A FIX] Si pasamos de PENDIENTE a ACTIVO → SIEMPRE celebrar,

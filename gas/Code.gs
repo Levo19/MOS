@@ -219,6 +219,7 @@ function _route(method, e) {
       case 'aprobarExtensionHorario':        return aprobarExtensionHorario(params);
       case 'notificarmeCuandoAbra':          return notificarmeCuandoAbra(params);
       case 'extenderHorarioHoy':             return extenderHorarioHoy(params);
+      case 'extenderHorarioDispositivo':     return extenderHorarioDispositivo(params);
       case 'wh_invalidarCacheHorario':       return postToWarehouse('invalidarCacheHorario', params);
       case 'wh_verificarHorario':            return postToWarehouse('verificarHorario', params);
       case 'getVentasMosExpress':  return getVentasMosExpress(params);

@@ -144,6 +144,10 @@ var _AUTH_CATALOGO = {
   'EDITAR_CLIENTE_VENTA':         { tier: 2, label: 'Editar cliente venta' },
   'ACTIVAR_POS_60':               { tier: 2, label: 'Activar POS 60 min' },
   'DESBLOQUEO_TEMPORAL':          { tier: 2, label: 'Desbloqueo temporal' },
+  // [v2.43.183] Extensión de horario in-situ por dispositivo (UUID).
+  // Admin/master ingresa clave 8 dig + escoge tiempo (20m/1h/2h) → se guarda
+  // en Desbloqueo_Temporal_Hasta del row del UUID en DISPOSITIVOS.
+  'EXTENDER_HORARIO_DISPOSITIVO': { tier: 2, label: 'Extender horario in-situ por UUID' },
   // === Warehouse ===
   'REABRIR_GUIA':                 { tier: 1, label: 'Reabrir guía cerrada' },
   'ANULAR_ENVASADO':              { tier: 2, label: 'Anular envasado' },

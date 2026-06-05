@@ -832,8 +832,9 @@
       +       '<div style="text-align:center;font-size:11px;color:#64748b;padding:8px 0">'
       +         'Tu horario: <b style="color:#fbbf24">' + (apertura || '—') + ' a ' + (cierre || '—') + '</b>'
       +       '</div>'
-      +       '<button class="seg-btn seg-btn-primary" style="width:100%" onclick="SeguridadSystem._fueraSolicitarExtension()">⏰ Solicitar extensión al admin</button>'
-      +       '<button class="seg-btn seg-btn-info" style="width:100%" onclick="SeguridadSystem._fueraNotificarme(\'' + _esc(apertura || '') + '\')">🔔 Notificarme cuando abra</button>'
+      +       '<button class="seg-btn seg-btn-primary" style="width:100%" onclick="SeguridadSystem._fueraExtenderInSitu()">🔓 Extender ahora (admin in-situ)</button>'
+      +       '<button class="seg-btn seg-btn-secondary" style="width:100%;margin-top:8px" onclick="SeguridadSystem._fueraSolicitarExtension()">⏰ Solicitar extensión al admin (remoto)</button>'
+      +       '<button class="seg-btn seg-btn-info" style="width:100%;margin-top:8px" onclick="SeguridadSystem._fueraNotificarme(\'' + _esc(apertura || '') + '\')">🔔 Notificarme cuando abra</button>'
       +     '</div>'
       +     '<div style="padding:14px 22px;border-top:1px solid #1e293b">'
       +       '<button class="seg-btn seg-btn-warn" style="width:100%" onclick="SeguridadSystem._fueraCerrar()">Cerrar y volver</button>'
@@ -841,6 +842,55 @@
       +   '</div>'
       + '</div>');
   }
+  // [v1.0.0 EXT-HORARIO] Nueva opción in-situ: admin/master presente con clave.
+  // Usa el módulo compartido ExtensorHorario que abre modal moderno con opciones
+  // 20m/1h/2h. Aplica directo al UUID del dispositivo, sin intervención remota.
+  // Auditoría tier 2 en AUDITORIA_ADMIN automática.
+  function _fueraExtenderInSitu() {
+    sonidos.click();
+    if (!window.ExtensorHorario) {
+      _toast('⚠ Módulo de extensión no cargado — recarga la app', { error: true });
+      return;
+    }
+    var deviceId = '';
+    try {
+      deviceId = (window.DeviceAuth && DeviceAuth.deviceId())
+              || localStorage.getItem('mosexpress_deviceId')
+              || localStorage.getItem('wh_device_id')
+              || localStorage.getItem('mos_device_id')
+              || '';
+    } catch(_) {}
+    // [v1.0.0 EXT-HORARIO] Inferir app y gasUrl del entorno.
+    // _config.app es STRING ('MOS'/'mosExpress'/'warehouseMos'/'MOS'); apiPost
+    // es la función que la app pasó en iniciar(). La URL del GAS la sacamos de
+    // globales conocidas porque _config no la expone explícitamente.
+    var app = (_config && _config.app) || (window.WH_CONFIG ? 'warehouseMos' : 'mosExpress');
+    // Normalizar — backend valida con String(...).toLowerCase()
+    if (app === 'MOS' && window.WH_CONFIG) app = 'warehouseMos';
+    var gasUrl = (window.WH_CONFIG && window.WH_CONFIG.mosGasUrl)
+              || window.MOS_GAS_URL
+              || (window.config && window.config.value && window.config.value.mosUrl)
+              || '';
+    if (!gasUrl || !deviceId) {
+      _toast('⚠ Configuración incompleta', { error: true });
+      return;
+    }
+    // No cerramos el modal fuera-horario primero: ExtensorHorario tiene z-index
+    // mayor (99996 vs 99994) y queda apilado encima. Si el operador cancela
+    // la extensión, vuelve al modal fuera-horario en lugar de a la app bloqueada.
+    ExtensorHorario.abrir({
+      mosGasUrl: gasUrl,
+      app:       app,
+      deviceId:  deviceId,
+      onSuccess: function(d) {
+        _fueraCerrar();  // Solo cerrar fuera-horario tras éxito
+        _toast('🔓 Extensión activa · +' + d.minutos + ' min', { success: true });
+        // Recargar tras 1.5s para que la app refresque su estado fuera-horario
+        setTimeout(function() { try { location.reload(); } catch(_){} }, 1500);
+      }
+    });
+  }
+
   function _fueraSolicitarExtension() {
     _modalPrompt({
       title: 'Solicitar extensión',
@@ -1160,6 +1210,7 @@
     _solRemoto:            _solRemoto,
     _espCerrar:            _espCerrar,
     _horCerrar:            _horCerrar,
+    _fueraExtenderInSitu:  _fueraExtenderInSitu,
     _fueraSolicitarExtension: _fueraSolicitarExtension,
     _fueraNotificarme:     _fueraNotificarme,
     _fueraCerrar:          _fueraCerrar,
