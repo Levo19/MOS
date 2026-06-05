@@ -409,9 +409,13 @@
     document.getElementById('daIsOk').onclick = function() {
       _confirmarInSitu(esReactivar, ov);
     };
-    // ENTER en clave → confirmar
+    // [v1.0.7 BUG A FIX] ENTER en clave → confirmar PERO respetar btnOk.disabled.
+    // Antes ENTER ignoraba el disabled, lo que permitía doble-fire del fetch.
     document.getElementById('daIsClave').addEventListener('keydown', function(e) {
-      if (e.key === 'Enter') _confirmarInSitu(esReactivar, ov);
+      if (e.key !== 'Enter') return;
+      var btn = document.getElementById('daIsOk');
+      if (btn && btn.disabled) return;  // ← bloquear si ya está procesando
+      _confirmarInSitu(esReactivar, ov);
     });
   }
 
@@ -516,25 +520,26 @@
       return Promise.reject(new Error('MOS_GAS_URL no configurado'));
     }
 
-    // R4: cache válido por día calendario Lima — entra OPTIMISTA + refresh bg
+    // [v1.0.7 BUG B FIX] R4 + R1 coexisten: cache local existe pero NO autoriza
+    // optimistamente. Siempre verificamos server PRIMERO antes de quitar
+    // pre-block. Si server confirma rápido (200ms), operador no nota latencia.
+    // Si server falla (sin red), CAEMOS al cache para honrar R4 (fail-soft offline).
+    //
+    // Antes (v1.0.6): cache válido → quita pre-block → body visible 1.5s →
+    // bg refresh → reload si ≠ ACTIVO. Pero durante esos 1.5s el operador podía
+    // VER y CLICKEAR la app (R1 violado).
     if (_cacheValidoHoy()) {
-      _state.estado = 'ACTIVO';
-      _ocultarOverlay();
-      if (_config.onAuth) try { _config.onAuth(); } catch(_){}
-      _arrancarHeartbeat();
-      // [v1.0.6] Refresh background INMEDIATO. Si server devuelve ≠ ACTIVO,
-      // invalidar cache y reload forzado para que próxima carga vea el bloqueo.
-      setTimeout(function() {
-        _consultarBackend(true).then(function(estado) {
-          if (estado && estado !== 'ACTIVO') {
-            // Servidor dice que ya no estamos autorizados → reload forzado
-            console.warn('[DeviceAuth] cache obsoleto, server dice ' + estado + ' → reload');
-            _invalidarCache();
-            setTimeout(function(){ location.reload(); }, 100);
-          }
-        }).catch(function(){});
-      }, 1500);
-      return Promise.resolve('ACTIVO');
+      // Cache existe pero verificamos server primero. Mientras tanto, overlay
+      // verde "Verificando..." está visible. Pre-block sigue activo.
+      return _consultarBackend(false).catch(function(e) {
+        // Si server falla con cache válido → R4 fail-soft: aceptar cache.
+        console.warn('[DeviceAuth] server falló con cache válido → fail-soft con cache:', e.message);
+        _state.estado = 'ACTIVO';
+        _ocultarOverlay();
+        if (_config.onAuth) try { _config.onAuth(); } catch(_){}
+        _arrancarHeartbeat();
+        return 'ACTIVO';
+      });
     }
 
     // Sin cache → consulta backend BLOQUEANTE
