@@ -1251,6 +1251,23 @@ function consultarEstadoDispositivo(params) {
     // [v2.43.167] forzar_reverify para el heartbeat del DeviceAuth module.
     var iFRV = hdrs.indexOf('Forzar_ReVerify');
     var frv = iFRV >= 0 ? String(data[i][iFRV] || '') : '';
+    // [v2.43.183] Sincronizar extensión de horario via heartbeat. Sin esto el
+    // sync con ExtensorHorario solo funcionaba en boot (registrarSesionDispositivo),
+    // no en los heartbeats de 10 min. Misma normalización de formato que logout_auto_ts.
+    var iDTH = hdrs.indexOf('Desbloqueo_Temporal_Hasta');
+    var dthRaw = iDTH >= 0 ? data[i][iDTH] : '';
+    var dthStr = '';
+    if (dthRaw) {
+      if (dthRaw instanceof Date && !isNaN(dthRaw.getTime())) {
+        dthStr = dthRaw.toISOString();
+      } else {
+        dthStr = String(dthRaw);
+        if (dthStr && !/[zZ]$/.test(dthStr) && !/[+-]\d{2}:?\d{2}$/.test(dthStr)) {
+          var p = new Date(dthStr);
+          if (!isNaN(p.getTime())) dthStr = p.toISOString();
+        }
+      }
+    }
     return { ok: true, data: {
       registrado:    true,
       estado:        String(data[i][iEst] || ''),
@@ -1262,6 +1279,7 @@ function consultarEstadoDispositivo(params) {
       forzar_push:   fp === '1' || fp.toLowerCase() === 'true', // [v2.43.69]
       // [v2.43.167] Master setea esto para forzar re-verificación inmediata
       forzar_reverify: frv === '1' || frv.toLowerCase() === 'true',
+      desbloqueo_temporal_hasta: dthStr,  // [v2.43.183] sync con ExtensorHorario
       verifyVersion:   _getDeviceVerifyVersion(),
       fechaHoyLima:    _fechaHoyLima()
     }};

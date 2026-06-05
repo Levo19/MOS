@@ -1,10 +1,10 @@
 // ════════════════════════════════════════════════════════════════════
 // DeviceAuth — módulo compartido de verificación de dispositivos
-// v1.0.11 — 2026-06-05 — Sync con ExtensorHorario: cuando el backend retorna
-//           desbloqueo_temporal_hasta en _payloadDeviceAuthExtras, este módulo
-//           lo persiste localmente via ExtensorHorario.guardarLocal (o limpia
-//           si vence/revoca). Eso garantiza que la extensión esté sincronizada
-//           entre dispositivos y heartbeats.
+// v1.0.12 — 2026-06-05 — Sync de extensión de horario AGREGADO al heartbeat
+//           también (antes solo en _consultarBackend del boot/polling).
+//           Sin esto la revocación de extensión desde panel no llegaba al
+//           cliente hasta el siguiente boot.
+// v1.0.11 — 2026-06-05 — Sync inicial con ExtensorHorario (solo en boot/polling).
 // v1.0.10 — 2026-06-05 — Bug E (in-situ ahora lee verifyVersion del backend
 //           response, eliminando el fetch extra en el próximo boot).
 // v1.0.9 — 2026-06-04 — Bug T (seguridad: PENDIENTE no invalidaba cache),
@@ -766,6 +766,25 @@
           _detenerHeartbeat();
           _verificar();
         }
+        // [v1.0.11] Sincronizar extensión de horario in-situ (mismo flow que
+        // _consultarBackend pero aplicado al heartbeat). Sin esto, una revocación
+        // de extensión desde el panel admin no se propagaría al cliente hasta
+        // que el operador reload o cambie día Lima.
+        try {
+          if (window.ExtensorHorario && typeof d.desbloqueo_temporal_hasta !== 'undefined') {
+            var dthIso = String(d.desbloqueo_temporal_hasta || '').trim();
+            if (dthIso) {
+              var dthMs = Date.parse(dthIso);
+              if (!isNaN(dthMs) && dthMs > Date.now()) {
+                ExtensorHorario.guardarLocal(dthIso);
+              } else {
+                ExtensorHorario.limpiar();
+              }
+            } else {
+              ExtensorHorario.limpiar();
+            }
+          }
+        } catch(_) {}
       }).catch(function(){});
     }, 10 * 60 * 1000);  // 10 min (antes 1h)
   }
