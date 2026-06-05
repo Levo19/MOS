@@ -13220,8 +13220,11 @@
                   title="Calibrar impresora de adhesivos (drift compensation)">
             🔧 Calibrar impresora
           </button>
-          <!-- [v2.43.193] Editor de Avisos — plantillas custom de adhesivos -->
-          <button onclick="MOS.abrirEditorAdhesivos()" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105 active:scale-95"
+          <!-- [v2.43.196] Editor de Avisos — usa fallback window.abrirEditorAdhesivos
+               si MOS.abrirEditorAdhesivos no está aún (defensa contra timing
+               de carga del bootstrap script — antes el botón rompía con
+               'MOS.abrirEditorAdhesivos is not a function'). -->
+          <button onclick="(typeof MOS!=='undefined' && MOS.abrirEditorAdhesivos) ? MOS.abrirEditorAdhesivos() : (window.abrirEditorAdhesivos ? window.abrirEditorAdhesivos() : alert('Editor cargando — esperá unos segundos y reintentá'))" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105 active:scale-95"
                   style="background:linear-gradient(135deg,#312e81,#1e1b4b);border:1px solid rgba(99,102,241,.55);color:#a5b4fc;font-weight:700"
                   title="Editor visual de adhesivos personalizados (avisos, alertas, promos)">
             🎨 Editor de avisos
@@ -18125,39 +18128,67 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.2"></script>
 <script src="js/app.js?v=2.43.193"></script>
-<!-- [v2.43.193] Bootstrap del Editor de Avisos: adjunta handler al MOS global
-     después que app.js definió MOS. Lazy-setup de iconos en backend la 1ª vez. -->
+<!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
+     BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
+     `const MOS = (() => {...})()` que es global script-level pero NO se
+     vuelve property de window — el chequeo siempre fallaba silenciosamente
+     y MOS.abrirEditorAdhesivos NUNCA se asignaba. Síntoma reportado:
+     `Uncaught TypeError: MOS.abrirEditorAdhesivos is not a function`.
+
+     FIX: usar `typeof MOS !== 'undefined'` (resolución de scope global)
+     y exponer también window.abrirEditorAdhesivos como fallback resiliente. -->
 <script>
 (function() {
-  if (!window.MOS) return;
-  MOS.abrirEditorAdhesivos = async function() {
+  function _abrirEditor() {
     if (!window.EditorAdhesivos || !window.IconosAdhesivo || !window.EditorAdhesivosConverter) {
-      alert('Editor no cargó completo — refrescá la página');
+      alert('Editor no cargó completo — refrescá con Ctrl+Shift+R');
       return;
     }
-    // Setup lazy: subir hex de iconos al backend la 1ª vez. Idempotente (el
-    // backend solo actualiza si difieren). No bloquea la apertura del editor.
+    // Setup lazy: subir hex de iconos al backend la 1ª vez. Idempotente.
     try {
       var iconos = {};
       IconosAdhesivo.listar().forEach(function(i) {
         iconos[i.id] = IconosAdhesivo.hexTSPL(i.id);
       });
-      fetch(GAS_URL, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'setupAdhesivosBase',
-          iconos: iconos,
-          tamano_dots: IconosAdhesivo.TAMANO_DOTS
-        })
-      }).then(function(r) { return r.json(); }).then(function(r) {
-        if (!r || !r.ok) console.warn('[EditorAdhesivos] setup falló:', r);
-        else console.log('[EditorAdhesivos] backend sync ✓', r);
-      }).catch(function(e) { console.warn('[EditorAdhesivos] setup fetch err:', e.message); });
+      var urlBE = (typeof GAS_URL !== 'undefined') ? GAS_URL : (window.GAS_URL || '');
+      if (urlBE) {
+        fetch(urlBE, {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'setupAdhesivosBase',
+            iconos: iconos,
+            tamano_dots: IconosAdhesivo.TAMANO_DOTS
+          })
+        }).then(function(r) { return r.json(); }).then(function(r) {
+          if (!r || !r.ok) console.warn('[EditorAdhesivos] setup falló:', r);
+          else console.log('[EditorAdhesivos] backend sync ✓', r);
+        }).catch(function(e) { console.warn('[EditorAdhesivos] setup fetch err:', e.message); });
+      } else {
+        console.warn('[EditorAdhesivos] GAS_URL no disponible — setup omitido');
+      }
     } catch(e) { console.warn('[EditorAdhesivos] setup err:', e.message); }
-    // Abrir el editor (no espera al setup; funciona si ya estaba subido)
-    window.EDITOR_BACKEND_URL = GAS_URL;
-    EditorAdhesivos.abrir({ backendUrl: GAS_URL });
-  };
+    var urlAbrir = (typeof GAS_URL !== 'undefined') ? GAS_URL : (window.GAS_URL || '');
+    window.EDITOR_BACKEND_URL = urlAbrir;
+    EditorAdhesivos.abrir({ backendUrl: urlAbrir });
+  }
+
+  // Exponer fallback global SIEMPRE (resiliente, no depende de MOS)
+  window.abrirEditorAdhesivos = _abrirEditor;
+
+  // Intentar adjuntar a MOS — typeof porque const MOS NO está en window
+  function attachToMOS(reintentos) {
+    if (typeof MOS !== 'undefined' && MOS && typeof MOS === 'object') {
+      MOS.abrirEditorAdhesivos = _abrirEditor;
+      console.log('[EditorAdhesivos] ✓ MOS.abrirEditorAdhesivos atado · v2.43.196');
+      return;
+    }
+    if ((reintentos || 0) >= 30) {
+      console.warn('[EditorAdhesivos] MOS no apareció tras 30 reintentos — usar window.abrirEditorAdhesivos()');
+      return;
+    }
+    setTimeout(function() { attachToMOS((reintentos || 0) + 1); }, 100);
+  }
+  attachToMOS(0);
 })();
 </script>
 
