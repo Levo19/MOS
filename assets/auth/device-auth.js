@@ -444,9 +444,26 @@
           btnOk.textContent = esReactivar ? 'Reactivar' : 'Activar';
           return;
         }
+        // [v1.0.5 BUG FIX] Tras in-situ exitoso: NO ocultar overlay (body sigue
+        // invisible por da-pre-block). Cambiar texto a "Aprobado, recargando".
+        // Recargar después del feedback. Esto evita que Vue arranque con UI
+        // intermedia mientras el ref dispositivoAutorizado sigue en null.
         modal.remove();
-        _ocultarOverlay();
-        _onAprobacionDetectada(d.aprobadoPor || 'admin');
+        _state.estado = 'ACTIVO';
+        _detenerPolling();
+        _guardarCacheExitoso(_fechaHoyLima(), _state.verifyVersion);
+        _sonidoAprobado();
+        _vibrar([100, 50, 100, 50, 100]);
+        // Re-renderizar overlay con mensaje de "aprobado" — da-pre-block sigue
+        // activo así que body queda invisible hasta el reload.
+        _renderOverlay({
+          emoji: '✅',
+          title: '¡Aprobado!',
+          detail: 'Aprobado por ' + (d.aprobadoPor || 'admin') + ' · recargando aplicación...',
+          actions: []
+        });
+        // Reload tras 1.2s para que el sonido y vibración terminen
+        setTimeout(function() { location.reload(); }, 1200);
       })
       .catch(function(e) {
         if (errEl) errEl.textContent = 'Sin conexión: ' + (e && e.message || 'reintenta');
