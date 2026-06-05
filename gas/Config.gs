@@ -819,20 +819,21 @@ function registrarSesionDispositivo(params) {
         // R1 violado de la peor forma — confirmado por reporte del usuario 2026-06-04.
         // Fix: replicar la misma lógica que el path no-MOS (líneas 943-951).
         if (estadoM === 'PENDIENTE_APROBACION') {
-          // Refrescar Ultima_Conexion para que master sepa que el operador sigue intentando
-          if (iUCMos >= 0) sheetMos.getRange(rm + 1, iUCMos + 1).setValue(nowM);
+          // Ultima_Conexion ya fue actualizada en línea 795 (no duplicar setValue).
+          // Extras genéricos (null,null) — consistente con path no-MOS (línea 946).
+          // Los flags forzar_* del row solo aplican a ACTIVO; aquí no los enviamos.
           return { ok: true, data: Object.assign({
             autorizado: false, estado: 'PENDIENTE_APROBACION',
             error: 'Dispositivo MOS pendiente de aprobación del master'
-          }, _payloadDeviceAuthExtras(dataMos[rm], hdrsMos)) };
+          }, _payloadDeviceAuthExtras(null, null)) };
         }
         if (estadoM === 'CANCELADO_AUTO') {
           // [R6] El cron canceló esta solicitud por >20h. Reabrir como PENDIENTE
           // y notificar al master de nuevo (igual que path no-MOS líneas 897-929).
+          // Ultima_Conexion ya actualizada en línea 795.
           sheetMos.getRange(rm + 1, iEstM + 1).setValue('PENDIENTE_APROBACION');
           var iCATMos = hdrsMos.indexOf('Cancelado_Auto_Ts');
           if (iCATMos >= 0) sheetMos.getRange(rm + 1, iCATMos + 1).setValue('');
-          if (iUCMos >= 0) sheetMos.getRange(rm + 1, iUCMos + 1).setValue(nowM);
           try {
             var nombreMosCA = dataMos[rm][hdrsMos.indexOf('Nombre_Equipo')] || '';
             _enviarPushTodos('🔒 MOS solicita acceso de nuevo (master)',
@@ -855,7 +856,18 @@ function registrarSesionDispositivo(params) {
             error: 'Re-solicitud MOS enviada — esperando aprobación del master'
           }, _payloadDeviceAuthExtras(null, null)) };
         }
-        // Solo ACTIVO llega aquí
+        // [v2.43.181 DEFENSIVO] fail-CLOSED para estados desconocidos.
+        // Si la sheet tiene un estado fuera del catálogo (ej. typo, valor manual
+        // del admin, nuevo estado no manejado), NO autorizamos por defecto.
+        // Antes: cualquier estado distinto de INACTIVO/SUSPENDIDO/PENDIENTE/CANCELADO
+        // caía al return ACTIVO por fallthrough. Ahora exigimos 'ACTIVO' explícito.
+        if (estadoM !== 'ACTIVO' && estadoM !== '') {
+          return { ok: true, data: Object.assign({
+            autorizado: false, estado: 'PENDIENTE_APROBACION',
+            error: 'Estado de dispositivo desconocido: ' + estadoM + ' — re-solicita aprobación'
+          }, _payloadDeviceAuthExtras(null, null)) };
+        }
+        // Solo ACTIVO (o vacío con default ACTIVO de línea 799) llega aquí
         var extMos = _payloadDeviceAuthExtras(dataMos[rm], hdrsMos);
         return { ok: true, data: Object.assign({
           autorizado: true, estado: 'ACTIVO', soloHeartbeat: true
