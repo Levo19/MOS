@@ -809,6 +809,53 @@ function registrarSesionDispositivo(params) {
             error: 'Acceso suspendido por inactividad. Pide reactivación al master.'
           }, _payloadDeviceAuthExtras(null, null)) };
         }
+        // [v2.43.180 BUG CRÍTICO FIX R1] El path MOS NO chequeaba PENDIENTE_APROBACION
+        // ni CANCELADO_AUTO antes de retornar ACTIVO. Si un operador limpiaba
+        // localStorage y volvía a entrar antes de que el master aprobara el row
+        // nuevo (que quedó en PENDIENTE_APROBACION en sheet), el backend retornaba
+        // ACTIVO en el segundo boot porque solo chequeaba INACTIVO/SUSPENDIDO y caía
+        // al return ACTIVO por fallthrough. Resultado: frontend creía autorizado y
+        // dejaba entrar a la app aunque la fila siguiera PENDIENTE en sheet.
+        // R1 violado de la peor forma — confirmado por reporte del usuario 2026-06-04.
+        // Fix: replicar la misma lógica que el path no-MOS (líneas 943-951).
+        if (estadoM === 'PENDIENTE_APROBACION') {
+          // Refrescar Ultima_Conexion para que master sepa que el operador sigue intentando
+          if (iUCMos >= 0) sheetMos.getRange(rm + 1, iUCMos + 1).setValue(nowM);
+          return { ok: true, data: Object.assign({
+            autorizado: false, estado: 'PENDIENTE_APROBACION',
+            error: 'Dispositivo MOS pendiente de aprobación del master'
+          }, _payloadDeviceAuthExtras(dataMos[rm], hdrsMos)) };
+        }
+        if (estadoM === 'CANCELADO_AUTO') {
+          // [R6] El cron canceló esta solicitud por >20h. Reabrir como PENDIENTE
+          // y notificar al master de nuevo (igual que path no-MOS líneas 897-929).
+          sheetMos.getRange(rm + 1, iEstM + 1).setValue('PENDIENTE_APROBACION');
+          var iCATMos = hdrsMos.indexOf('Cancelado_Auto_Ts');
+          if (iCATMos >= 0) sheetMos.getRange(rm + 1, iCATMos + 1).setValue('');
+          if (iUCMos >= 0) sheetMos.getRange(rm + 1, iUCMos + 1).setValue(nowM);
+          try {
+            var nombreMosCA = dataMos[rm][hdrsMos.indexOf('Nombre_Equipo')] || '';
+            _enviarPushTodos('🔒 MOS solicita acceso de nuevo (master)',
+              'MOS · ' + (nombreMosCA || 'Sin nombre') + ' · re-solicitud tras auto-cancel',
+              { soloRolesMaster: true, idNotif: 'MOS_DEVICE_RESOLICITUD_MOS' });
+          } catch(eRMos){}
+          try {
+            if (typeof _crearAlertaSeg === 'function') {
+              var nombreMosCA2 = dataMos[rm][hdrsMos.indexOf('Nombre_Equipo')] || '';
+              _crearAlertaSeg('DISPOSITIVO_PENDIENTE_MOS', {
+                idDispositivo: deviceId,
+                descripcion:   'MOS · ' + (nombreMosCA2 || 'Sin nombre') + ' (re-solicitud)',
+                prioridad:     'CRITICA',
+                datosExtra:    { app: 'MOS', nombre: nombreMosCA2, reSolicitud: true, soloVisibleMaster: true }
+              });
+            }
+          } catch(eAMos2){}
+          return { ok: true, data: Object.assign({
+            autorizado: false, estado: 'PENDIENTE_APROBACION',
+            error: 'Re-solicitud MOS enviada — esperando aprobación del master'
+          }, _payloadDeviceAuthExtras(null, null)) };
+        }
+        // Solo ACTIVO llega aquí
         var extMos = _payloadDeviceAuthExtras(dataMos[rm], hdrsMos);
         return { ok: true, data: Object.assign({
           autorizado: true, estado: 'ACTIVO', soloHeartbeat: true
