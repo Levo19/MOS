@@ -12143,104 +12143,19 @@ const MOS = (() => {
   // Estado del modal (1 a la vez)
   let _adhesivoState = null;
 
-  function _adhesivoNormalize(s) {
-    if (s === null || s === undefined) return '';
-    return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '');
-  }
+  // [v2.43.187 REFACTOR] _adhesivoNormalize, _adhesivoCalcVto, _envFmtMesAnio,
+  // _adhesivoDetectHighlights, _adhesivoWrap → DELEGADOS al módulo compartido
+  // AdhesivoPreview (asset cargado desde /assets/adhesivo/preview.js).
+  // Antes eran ~150 LOC duplicadas con WH. Ahora un solo source of truth.
 
-  // [v2.43.115] Formato MES/yyyy (ej "ENE/2027"). Tabla manual MESES_ES
-  // — réplica del backend WH _calcVencimientoEtq. Fuente canónica:
-  // /ProyectoMOS/assets/adhesivo/spec.json
-  const _MESES_ES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
-
-  function _adhesivoCalcVto(fechaEnvasado) {
-    const d = fechaEnvasado ? new Date(fechaEnvasado) : new Date();
-    d.setFullYear(d.getFullYear() + 1);
-    return _envFmtMesAnio(d);
-  }
-
-  function _envFmtMesAnio(d) {
-    return _MESES_ES[d.getMonth()] + '/' + d.getFullYear();
-  }
-  // Aliases legacy (por si quedó alguna referencia en el archivo)
-  const _envFmtMmYy = _envFmtMesAnio;
-  const _envFmtDdMmYy = _envFmtMesAnio;
-
-  // Detecta tokens diferenciadores (replica de _detectHighlightsEtq en WH).
-  // minPrefix=1 + último siempre highlight.
-  function _adhesivoDetectHighlights(targetTokens, allTokenized) {
-    const hl = {};
-    hl[targetTokens.length - 1] = true; // último (peso) siempre destacado
-    for (let i = 0; i < allTokenized.length; i++) {
-      const s = allTokenized[i];
-      if (s === targetTokens) continue;
-      if (s[0] !== targetTokens[0]) continue;
-      for (let pos = 1; pos < targetTokens.length; pos++) {
-        if (hl[pos]) continue;
-        let prior = true;
-        for (let k = 0; k < pos; k++) {
-          if (s[k] !== targetTokens[k]) { prior = false; break; }
-        }
-        if (prior && s[pos] !== undefined && s[pos] !== targetTokens[pos]) {
-          hl[pos] = true;
-          break;
-        }
-      }
-    }
-    const out = [];
-    for (const key in hl) if (hl[key]) out.push(parseInt(key));
-    out.sort((a, b) => a - b);
-    return out;
-  }
-
-  // Word-wrap a max 2 líneas (replica de _wrapTokensEtq).
-  function _adhesivoWrap(tokens, highlights) {
-    const MAX_W = 370, SPACE = 8;
-    const fontW = (isHl) => isHl ? 24 : 16;
-    const widths = tokens.map((t, i) => t.length * fontW(highlights.indexOf(i) >= 0));
-    const isHl = (i) => highlights.indexOf(i) >= 0;
-
-    let total = 0;
-    for (let i = 0; i < widths.length; i++) total += widths[i] + (i > 0 ? SPACE : 0);
-    if (total <= MAX_W) {
-      return [tokens.map((t, i) => ({ tok: t, hl: isHl(i), w: widths[i] }))];
-    }
-    const firstHl = highlights.length > 0 ? highlights[0] : tokens.length;
-    if (firstHl > 0 && firstHl < tokens.length) {
-      const l1 = [], l2 = []; let w1 = 0, w2 = 0;
-      for (let a = 0; a < firstHl; a++) {
-        w1 += widths[a] + (l1.length > 0 ? SPACE : 0);
-        l1.push({ tok: tokens[a], hl: false, w: widths[a] });
-      }
-      for (let b = firstHl; b < tokens.length; b++) {
-        w2 += widths[b] + (l2.length > 0 ? SPACE : 0);
-        l2.push({ tok: tokens[b], hl: isHl(b), w: widths[b] });
-      }
-      if (w1 <= MAX_W && w2 <= MAX_W) return [l1, l2];
-    }
-    // Fallback greedy
-    const lines = [[]]; let curW = 0;
-    for (let c = 0; c < tokens.length; c++) {
-      const sep = lines[lines.length - 1].length === 0 ? 0 : SPACE;
-      if (curW + sep + widths[c] <= MAX_W) {
-        lines[lines.length - 1].push({ tok: tokens[c], hl: isHl(c), w: widths[c] });
-        curW += sep + widths[c];
-      } else if (lines.length === 1) {
-        lines.push([{ tok: tokens[c], hl: isHl(c), w: widths[c] }]);
-        curW = widths[c];
-      } else {
-        lines[1].push({ tok: tokens[c], hl: isHl(c), w: widths[c] });
-        curW += sep + widths[c];
-      }
-    }
-    return lines;
-  }
-
-  // Obtiene los datos del envasado + producto envasable + lista global de envasables
-  // (para que detectHighlights pueda comparar contra los siblings).
+  // _adhesivoExtraerDatos: solo construye la lista de siblings y llama al módulo.
   function _adhesivoExtraerDatos(env) {
     const codigoBarra = env.codigoProductoEnvasado;
     if (!codigoBarra) return null;
+    if (!window.AdhesivoPreview) {
+      console.error('[MOS] AdhesivoPreview module no cargado');
+      return null;
+    }
     // Buscar el producto en el catálogo de stock (S.catalogoStock)
     const stockArr = S.catalogoStock || [];
     const prod = stockArr.find(p =>
@@ -12248,37 +12163,32 @@ const MOS = (() => {
     );
     const descripcion = prod ? (prod.descripcion || codigoBarra) : codigoBarra;
 
-    // Construir lista de envasables (todos los que empiezan con WH y son derivados)
-    const envasables = [];
+    // Construir lista de siblings: tokens de otros envasables (códigos que
+    // empiezan con WH) para que el módulo detecte highlights diferenciales.
+    const siblings = [];
+    const norm = AdhesivoPreview.normalize;
     stockArr.forEach(p => {
       const c = String(p.codigoBarra || p.idProducto || '').toUpperCase();
       if (c.indexOf('WH') !== 0) return;
       const desc = p.descripcion || '';
       if (!desc) return;
-      envasables.push({
-        codigoBarra: p.codigoBarra || p.idProducto,
-        descripcion: desc,
-        tokens: _adhesivoNormalize(desc).toUpperCase().split(/\s+/)
-      });
+      siblings.push(norm(desc).toUpperCase().split(/\s+/).filter(Boolean));
     });
 
-    const descNorm = _adhesivoNormalize(descripcion).toUpperCase();
-    const tokens = descNorm.split(/\s+/);
-    const allTok = envasables.map(p => p.tokens);
-    const highlights = _adhesivoDetectHighlights(tokens, allTok);
-    const lines = _adhesivoWrap(tokens, highlights);
-    const vto = _adhesivoCalcVto(env.fecha);
+    const proc = AdhesivoPreview.procesar({
+      codigoBarra:   codigoBarra,
+      descripcion:   descripcion,
+      fechaEnvasado: env.fecha,
+      siblings:      siblings
+    });
+    if (!proc) return null;
 
-    return {
-      codigoBarra,
-      descripcion,
-      tokens,
-      highlights,
-      lines,
-      vto,
+    // Mantener forma antigua del objeto (defaultCantidad, idEnvasado) para no
+    // romper código que consume el retorno.
+    return Object.assign(proc, {
       defaultCantidad: parseInt(env.unidadesProducidas) || 1,
-      idEnvasado: env.idEnvasado
-    };
+      idEnvasado:      env.idEnvasado
+    });
   }
 
   // ── ABRIR MODAL ────────────────────────────────────────────────
@@ -12296,6 +12206,9 @@ const MOS = (() => {
       toast('Producto sin descripción cargada en catálogo. Refrescá Almacén primero.', 'warn', 6000);
       return;
     }
+    // [v2.43.187] Inyectar CSS del módulo (idempotente — guard interno).
+    // Asegura las clases .adhesivo-* generadas por AdhesivoPreview.renderHtml.
+    if (window.AdhesivoPreview) AdhesivoPreview.inyectarCss();
     const sessionId = ++_adhesivoSeq;
     _adhesivoState = {
       sessionId,                                         // [BUG #1] identificador único
@@ -12385,95 +12298,22 @@ const MOS = (() => {
     document.addEventListener('keydown', _adhesivoKeydown);
   }
 
+  // [v2.43.187 REFACTOR] _adhesivoRenderEtiquetaHTML y _adhesivoDibujarBarcode
+  // delegados al módulo compartido AdhesivoPreview. ~130 LOC eliminadas.
+  // El logo bitmap (_ADHESIVO_LOGO_DATAURI) también vive en el módulo.
+  // El svgId queda fijo como 'adhesivoBarcodeSVG' por compat con código existente.
   function _adhesivoRenderEtiquetaHTML(datos, cantidad) {
-    // [v2.43.111] Preview con el BITMAP REAL del logo (mismo PNG que se
-    // imprime físicamente, embebido en base64). Antes usaba fuentes CSS web
-    // (Brush Script MT + Arial Black) que se veían bastante distinto del
-    // bitmap nativo de la impresora.
-    const linesHTML = datos.lines.map(line => {
-      const parts = line.map(p =>
-        `<span class="adhesivo-tok ${p.hl ? 'adhesivo-tok-hl' : ''}">${_escapeHtml(p.tok)}</span>`
-      ).join(' ');
-      return `<div class="adhesivo-linea">${parts}</div>`;
-    }).join('');
-    // [v2.43.115] Replica EXACTA del cálculo del backend (Envasados.gs).
-    // [v2026-06-05 FIX SYNC con backend Envasados.gs] Algoritmo adaptativo
-    // de narrow del módulo del barcode. Backend cambió de "narrow=2 con
-    // fallback a narrow=1 si bcLen>=12" → algoritmo adaptativo que NUNCA
-    // baja a narrow=1 (que era ilegible para scanner pistola).
-    // El preview debe reflejar EXACTAMENTE lo que se imprime físicamente.
-    //
-    // bcLen <= 7  → narrow=3 (0.375mm) quiet zone 30 dots — óptimo
-    // bcLen <= 13 → narrow=2 (0.250mm) quiet zone 20 dots — estándar
-    // bcLen = 14  → narrow=2 quiet zone 12 dots — apretado pero legible
-    // bcLen > 14  → narrow=2 quiet zone 8 dots — al límite físico
-    const bcLen = (datos.codigoBarra || '').length;
-    const modules = 11 * bcLen + 35;
-    let narrow, bWidth;
-    if (modules * 3 <= 340)      { narrow = 3; bWidth = modules * 3; }
-    else if (modules * 2 <= 360) { narrow = 2; bWidth = modules * 2; }
-    else                         { narrow = 2; bWidth = modules * 2; }  // forzado al máximo legible
-    // Ancho del barcode en porcentaje del adhesivo (para CSS) — el preview
-    // refleja exactamente cuánto ocupa en la impresión real (de 400 dots).
-    const bWidthPct = (bWidth / 400 * 100).toFixed(2);
-    return `
-      <div class="adhesivo-etiqueta">
-        <div class="adhesivo-etq-top">
-          <img class="adhesivo-logo-real" src="${_ADHESIVO_LOGO_DATAURI}" alt="Tony's">
-          <div class="adhesivo-vto">
-            <span class="adhesivo-vto-lbl">Vto</span>
-            <span class="adhesivo-vto-val">${datos.vto}</span>
-          </div>
-        </div>
-        <div class="adhesivo-divider"></div>
-        <div class="adhesivo-desc">${linesHTML}</div>
-        <div class="adhesivo-codigo-frame">
-          <span class="cm cm-tl"></span>
-          <span class="cm cm-tr"></span>
-          <span class="cm cm-bl"></span>
-          <span class="cm cm-br"></span>
-          <div class="adhesivo-barcode-wrap">
-            <svg id="adhesivoBarcodeSVG" style="width:${bWidthPct}%;"></svg>
-          </div>
-          <div class="adhesivo-codigo">${_escapeHtml(datos.codigoBarra)}</div>
-        </div>
-        <div class="adhesivo-cantidad-tag">×${cantidad}</div>
-      </div>`;
+    if (!window.AdhesivoPreview) return '<div style="color:#dc2626">Módulo AdhesivoPreview no cargado</div>';
+    return AdhesivoPreview.renderHtml(datos, {
+      cantidad: cantidad,
+      svgId:    'adhesivoBarcodeSVG'  // ID fijo para que _adhesivoDibujarBarcode lo encuentre
+    });
   }
 
-  // [v2.43.115] Logo bitmap REAL — REGENERADO con TONY'S block + casita
-  // (sin "Caserito"). Fuente: /ProyectoMOS/assets/adhesivo/logo-tonys-S.b64
-  // El bitmap es el MISMO PNG que se imprime físicamente vía LOGO_TSPL_HEX
-  // en Envasados.gs (ambos generados por gen.py, deterministicos).
-  // Para regenerar: cd ProyectoMOS/assets/adhesivo && python gen.py
-  const _ADHESIVO_LOGO_DATAURI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALgAAAAkAQAAAAAS7M1SAAABDUlEQVR42oWSMVLDMBAAV5pAVARwSeknUFI5egrfoEKZ4SF+iklFyQsYp0tBkWFcOIzRUciKbZDDNWftnKXT6pSQDM0sb2f4B7yofGd3j1dm83zMIn8HoHyjAnj9jHztAHEtwIZKei6hjg50B+AC99SA73OgoOk4TBquer6noVD1BaDQqFhf48Pu4b9T/xWDCsEOn/DkVbtUtblxS0FERER/A+XYQGhIN8A+kCCqTPk0uEOCW7BN2n/u0zzrvV0D96fijFX0ln5YTUExnArKpffXtvpnHsTFUyd8y/bMXC3m5k0gi97H/CtqtnbM9a/OhtUiXm7iQTmDAcjVtP7hLuTby5A94tbyJ854SMYP+etgtFLO5vAAAAAASUVORK5CYII=';
-
   function _adhesivoDibujarBarcode(codigoBarra) {
+    if (!window.AdhesivoPreview) return;
     const svg = document.getElementById('adhesivoBarcodeSVG');
-    if (!svg || typeof JsBarcode === 'undefined') return;
-    try {
-      // [v2026-06-05 FIX SYNC con backend Envasados.gs]
-      // PIXEL-PERFECT match con el TSPL backend. Replica el algoritmo adaptativo:
-      //   narrow=3 → width visual 2.1px (proporcional a 3 dots reales)
-      //   narrow=2 → width visual 1.4px (proporcional a 2 dots reales)
-      // Quiet zone (margin) también adaptativo según narrow:
-      //   narrow=3 → 30 dots (proporcional ~30 en JsBarcode)
-      //   narrow=2 → 20 dots (estándar)
-      // Antes: si bcLen>=12, usaba width=1 (= narrow=1 = ILEGIBLE en scanner pistola).
-      // Ahora: NUNCA baja a width=1, replicando la lógica del backend.
-      const bcLen = String(codigoBarra).length;
-      const modules = 11 * bcLen + 35;
-      let bcWidth, bcMargin;
-      if (modules * 3 <= 340)      { bcWidth = 2.1; bcMargin = 30; }
-      else if (modules * 2 <= 360) { bcWidth = 1.4; bcMargin = 20; }
-      else if (modules * 2 <= 376) { bcWidth = 1.4; bcMargin = 12; }
-      else                         { bcWidth = 1.4; bcMargin = 8;  }
-      JsBarcode(svg, String(codigoBarra), {
-        format: 'CODE128', width: bcWidth, height: 32,
-        displayValue: false, margin: bcMargin,
-        background: '#ffffff', lineColor: '#000000'
-      });
-    } catch(e) { console.warn('[adhesivo] barcode render fail:', e.message); }
+    AdhesivoPreview.dibujarBarcode(svg, codigoBarra);
   }
 
   function adhesivoCantidadDelta(d) {

@@ -1,5 +1,10 @@
 // ════════════════════════════════════════════════════════════════════
 // AdhesivoPreview — módulo compartido de preview visual del adhesivo
+// v1.0.1 — 2026-06-05 — Senior review fixes:
+//          - CSS heights del barcode sync con backend (66→72 px = 48 dots)
+//          - svgId con contador incremental (sin colisión cuando >1 modal)
+//          - _calcVto defensa contra fecha inválida (ENE/NaN)
+//          - _detectHighlights guard targetTokens vacío
 // v1.0.0 — 2026-06-05
 //
 // Lo cargan MOS y WH vía CDN MOS pages. Centraliza el render visual
@@ -38,6 +43,9 @@
   var LOGO_DATAURI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALgAAAAkAQAAAAAS7M1SAAABDUlEQVR42oWSMVLDMBAAV5pAVARwSeknUFI5egrfoEKZ4SF+iklFyQsYp0tBkWFcOIzRUciKbZDDNWftnKXT6pSQDM0sb2f4B7yofGd3j1dm83zMIn8HoHyjAnj9jHztAHEtwIZKei6hjg50B+AC99SA73OgoOk4TBquer6noVD1BaDQqFhf48Pu4b9T/xWDCsEOn/DkVbtUtblxS0FERER/A+XYQGhIN8A+kCCqTPk0uEOCW7BN2n/u0zzrvV0D96fijFX0ln5YTUExnArKpffXtvpnHsTFUyd8y/bMXC3m5k0gi97H/CtqtnbM9a/OhtUiXm7iQTmDAcjVtP7hLuTby5A94tbyJ854SMYP+etgtFLO5vAAAAAASUVORK5CYII=';
 
   var MESES_ES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+  // [v1.0.1] Contador global para svgId — evita colisiones cuando se llama
+  // _renderHtml() dos veces dentro del mismo milisegundo.
+  var _svgSeq = 0;
 
   // ── Helpers internos ────────────────────────────────────────────────
   function _esc(s) {
@@ -52,7 +60,11 @@
   }
 
   function _calcVto(fechaEnvasado) {
+    // [v1.0.1 BUG #3 FIX] Defensa: si fechaEnvasado es string corrupto,
+    // new Date() retorna NaN y getMonth()/getFullYear() retornan NaN.
+    // Resultado: "ENE/NaN" en el preview. Mejor fallback a hoy.
     var d = fechaEnvasado ? new Date(fechaEnvasado) : new Date();
+    if (isNaN(d.getTime())) d = new Date();
     d.setFullYear(d.getFullYear() + 1);
     return MESES_ES[d.getMonth()] + '/' + d.getFullYear();
   }
@@ -61,6 +73,9 @@
   // envasables). Replica de _detectHighlightsEtq en backend WH.
   // minPrefix=1 + último siempre highlight.
   function _detectHighlights(targetTokens, allTokenized) {
+    // [v1.0.1 BUG #4 FIX] Si targetTokens está vacío, no destacamos nada.
+    // Antes seteaba hl[-1]=true (key inválida, benigna pero confusa).
+    if (!targetTokens || !targetTokens.length) return [];
     var hl = {};
     hl[targetTokens.length - 1] = true;  // último (peso) siempre destacado
     for (var i = 0; i < allTokenized.length; i++) {
@@ -156,8 +171,10 @@
       '.adhesivo-cm-tr{top:0;right:0;border-top-width:2px;border-right-width:2px}',
       '.adhesivo-cm-bl{bottom:0;left:0;border-bottom-width:2px;border-left-width:2px}',
       '.adhesivo-cm-br{bottom:0;right:0;border-bottom-width:2px;border-right-width:2px}',
-      '.adhesivo-barcode-wrap{display:flex;flex-direction:row;align-items:center;justify-content:center;height:66px;width:100%}',
-      '.adhesivo-barcode-wrap svg{height:66px;max-width:100%}',
+      // [v1.0.1 BUG #1 FIX] Altura sync con backend (barcodeHeight=48 dots).
+      // 48 dots TSPL × 1.5 px/dot = 72 px. Antes 66 px = 44 dots (versión vieja).
+      '.adhesivo-barcode-wrap{display:flex;flex-direction:row;align-items:center;justify-content:center;height:72px;width:100%}',
+      '.adhesivo-barcode-wrap svg{height:72px;max-width:100%}',
       '.adhesivo-codigo{font-family:"Consolas","Courier New",monospace;font-size:13px;color:#333;letter-spacing:1.5px;text-align:center;margin-top:6px;width:100%}',
       '.adhesivo-cantidad-tag{position:absolute;top:10px;right:92px;background:rgba(251,191,36,.18);color:#b45309;padding:3px 10px;border-radius:9999px;font-size:12px;font-weight:900;border:1px dashed rgba(180,83,9,.4);font-family:monospace}'
     ].join('\n');
@@ -193,7 +210,9 @@
     if (!datos) return '';
     opts = opts || {};
     var cantidad = opts.cantidad || 1;
-    var svgId = opts.svgId || 'adhesivoBarcodeSVG_' + Date.now();
+    // [v1.0.1 BUG #2 FIX] svgId con contador incremental + ms — sin colisión
+    // si se llama renderHtml() dos veces en el mismo ms (modal + tooltip, etc).
+    var svgId = opts.svgId || ('adhesivoBcSVG_' + Date.now() + '_' + (++_svgSeq));
 
     var linesHtml = datos.lines.map(function(line) {
       var parts = line.map(function(p) {
