@@ -31,12 +31,39 @@ const MOS = (() => {
   function _clearSession()    { localStorage.removeItem(SESSION_KEY); }
 
   // ── AUDIT CONTEXT — quién/cuándo/dónde para auditoría ──────────
+  // [v2.43.179 BUG ROOT-CAUSE FIX] Unificar deviceId con DeviceAuth (single
+  // source of truth). Antes esta función usaba la clave 'mos_deviceId'
+  // (camelCase) mientras DeviceAuth usa 'mos_device_id' (snake_case con
+  // underscore). Resultado: el backend recibía DOS UUIDs distintos del mismo
+  // navegador — uno en auditoría (idDispositivo) y otro en la verificación.
+  // En la sheet DISPOSITIVOS aparecían filas duplicadas y el sistema de
+  // aprobación apuntaba a un UUID distinto del que MOS usaba para auditar.
+  //
+  // Solución: preferir SIEMPRE DeviceAuth.deviceId() (que ya está cargado
+  // antes de app.js porque el <script> del módulo va antes en el HTML).
+  // Fallback solo si DeviceAuth no cargó (CDN caído). Migración del valor
+  // viejo 'mos_deviceId' → 'mos_device_id' si solo existe el viejo.
   function _getOrCreateDeviceId() {
-    let id = localStorage.getItem('mos_deviceId');
+    // Source of truth: módulo DeviceAuth si está cargado
+    if (window.DeviceAuth && typeof window.DeviceAuth.deviceId === 'function') {
+      const daId = window.DeviceAuth.deviceId();
+      if (daId) return daId;
+    }
+    // Fallback: leer la clave correcta (snake_case, coincide con el módulo)
+    let id = localStorage.getItem('mos_device_id');
     if (!id) {
-      id = (crypto && crypto.randomUUID) ? crypto.randomUUID()
-         : 'DEV-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
-      localStorage.setItem('mos_deviceId', id);
+      // Migración: si existe la clave vieja camelCase, reutilizar su valor
+      const viejo = localStorage.getItem('mos_deviceId');
+      if (viejo) {
+        id = viejo;
+        localStorage.setItem('mos_device_id', id);
+        // No borramos 'mos_deviceId' todavía por si algún cliente legacy
+        // sigue leyéndolo entre cargas. Se limpiará en próxima iteración.
+      } else {
+        id = (crypto && crypto.randomUUID) ? crypto.randomUUID()
+           : 'DEV-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+        localStorage.setItem('mos_device_id', id);
+      }
     }
     return id;
   }
