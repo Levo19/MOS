@@ -1,6 +1,8 @@
 // ════════════════════════════════════════════════════════════════════
 // DeviceAuth — módulo compartido de verificación de dispositivos
-// v1.0.0 — 2026-06-04
+// v1.0.9 — 2026-06-04 — Bug E (cosmético cache-bust), Bug T (seguridad: PENDIENTE
+//          no invalidaba cache), Bug N (heartbeat sin PENDIENTE_APROBACION),
+//          Bug H (polling en background tab), Bug Q (deadcode cleanup).
 //
 // Lo cargan las 3 apps del ecosistema (MOS, MosExpress, warehouseMos)
 // vía CDN MOS pages. Centraliza el flow de verificación:
@@ -34,7 +36,7 @@
   var _state = {
     deviceId: null,
     estado: 'INIT',        // INIT | VERIFICANDO | ACTIVO | PENDIENTE_APROBACION | INACTIVO | SUSPENDIDO | NO_REGISTRADO | SIN_VERIFICAR
-    fechaUltimaVerifLima: null,
+    // [v1.0.9 BUG Q cleanup] Removido fechaUltimaVerifLima — nunca se asignaba.
     verifyVersion: 0,
     pollingTimer: null,
     heartbeatTimer: null,
@@ -570,7 +572,12 @@
         // R5: validar verifyVersion — si el server bumpó, invalidar cache local
         var storedVer = parseInt(_lsGet(_config.storageKeys.verifyVersion) || '0', 10);
         var serverVer = parseInt(d.verifyVersion || 0, 10);
-        if (serverVer > storedVer && serverVer > 0) {
+        // [v1.0.9 BUG E FIX] Solo invalidar cache si el cliente TENÍA una versión
+        // válida vieja. Si storedVer=0 (cliente nuevo o in-situ recién hecho),
+        // no había nada que invalidar — solo registramos la versión actual.
+        // Antes: cliente in-situ → cache con verifyVersion=0 → next boot detecta
+        // serverVer=1 > 0 → invalida cache → re-fetch → re-guarda. Bucle ineficiente.
+        if (serverVer > storedVer && serverVer > 0 && storedVer > 0) {
           _invalidarCache();
           // Si era refresh background, no re-disparar (evitar loop). Frontend
           // tomará efecto en el siguiente boot natural.
@@ -598,6 +605,13 @@
         }
         if (d.estado === 'PENDIENTE_APROBACION') {
           _state.estado = 'PENDIENTE_APROBACION';
+          // [v1.0.9 BUG T FIX] CRÍTICO SEGURIDAD: invalidar cache si server retorna
+          // PENDIENTE — antes el path solo mostraba UI pero no invalidaba cache.
+          // Escenario explotable: admin marca PENDIENTE en sheet SIN bumpar
+          // verifyVersion (edit manual). Próximo boot offline → cache válido →
+          // fail-soft → autoriza con cache obsoleto = bypass. Ahora invalidamos
+          // siempre que el server emita PENDIENTE, igual que en INACTIVO/SUSPENDIDO.
+          _invalidarCache();
           _mostrarUI('PENDIENTE_APROBACION');
           if (_config.onPending) try { _config.onPending(); } catch(_){}
           _arrancarPolling();
@@ -609,6 +623,7 @@
           _mostrarUI('INACTIVO', d.error);
           if (_config.onInactive) try { _config.onInactive(); } catch(_){}
           _detenerPolling();
+          _detenerHeartbeat();
           return 'INACTIVO';
         }
         if (d.estado === 'SUSPENDIDO') {
@@ -616,17 +631,29 @@
           _invalidarCache();
           _mostrarUI('SUSPENDIDO', d.error);
           if (_config.onSuspended) try { _config.onSuspended(); } catch(_){}
+          // [v1.0.9 BUG JJ FIX] Estado terminal — detener polling y heartbeat.
+          // Antes el polling seguía cada 15s para siempre si SUSPENDIDO fue detectado
+          // desde un PENDIENTE previo (polling ya estaba corriendo).
+          _detenerPolling();
+          _detenerHeartbeat();
           return 'SUSPENDIDO';
         }
         if (d.estado === 'NO_REGISTRADO') {
           _state.estado = 'NO_REGISTRADO';
           _mostrarUI('NO_REGISTRADO');
           if (_config.onNoRegistered) try { _config.onNoRegistered(); } catch(_){}
+          // [v1.0.9 BUG JJ FIX] Caso típico: cron cancelarPendientesAntiguos20h
+          // mata un PENDIENTE → frontend recibe NO_REGISTRADO en el próximo poll.
+          // Sin estos detener, el polling seguía indefinidamente.
+          _detenerPolling();
+          _detenerHeartbeat();
           return 'NO_REGISTRADO';
         }
         // Estado desconocido → fail-CLOSED
         _state.estado = 'SIN_VERIFICAR';
         _mostrarUI('SIN_VERIFICAR', 'Estado desconocido: ' + d.estado);
+        _detenerPolling();
+        _detenerHeartbeat();
         return 'SIN_VERIFICAR';
       })
       .catch(function(e) {
@@ -646,6 +673,12 @@
   function _arrancarPolling() {
     if (_state.pollingTimer) return;
     _state.pollingTimer = setInterval(function() {
+      // [v1.0.9 BUG H FIX] No quemar fetches mientras la pestaña está oculta.
+      // setInterval en background tab Chrome se ralentiza pero sigue corriendo;
+      // si el operador deja la app en background varias horas en PENDIENTE,
+      // hacíamos cientos de requests innecesarios. visibilitychange handler
+      // ya re-verifica al volver a foreground si cambió el día Lima.
+      if (document.visibilityState === 'hidden') return;
       _consultarBackend(true).catch(function(){});  // _consultarBackend ya cambia el estado y dispara onAprobacionDetectada si pasa a ACTIVO
     }, 15000);
   }
@@ -666,10 +699,13 @@
       fetch(url).then(function(r){ return r.json(); }).then(function(j) {
         var d = j && j.data;
         if (!d) return;
-        // [BUG B FIX] Detectar TODOS los casos que requieren bloquear:
+        // [BUG B FIX + v1.0.9 BUG N FIX] Detectar TODOS los casos que requieren bloquear:
         //   - forzar_reverify: master forzó manualmente
         //   - INACTIVO/SUSPENDIDO: revocación
         //   - NO_REGISTRADO: master eliminó el row de la sheet
+        //   - PENDIENTE_APROBACION: admin re-puso el dispositivo en pendiente (raro
+        //     pero posible si master quiere re-verificar in-vivo) — antes el
+        //     heartbeat ignoraba este estado y dejaba la app abierta hasta el día sig.
         //   - verifyVersion mayor: bump global
         var serverVer = parseInt(d.verifyVersion || 0, 10);
         var storedVer = parseInt(_lsGet(_config.storageKeys.verifyVersion) || '0', 10);
@@ -678,6 +714,7 @@
                         || d.estado === 'INACTIVO'
                         || d.estado === 'SUSPENDIDO'
                         || d.estado === 'NO_REGISTRADO'
+                        || d.estado === 'PENDIENTE_APROBACION'
                         || verBump;
         if (debeBloquear) {
           _invalidarCache();
@@ -724,6 +761,13 @@
   // ── visibilitychange: si vuelve de background y cambió el día Lima, re-verificar ──
   function _onVisibilityChange() {
     if (document.visibilityState !== 'visible') return;
+    // [v1.0.9 BUG H FIX] Si estamos en PENDIENTE_APROBACION y la pestaña vuelve
+    // a foreground, hacer un fetch inmediato sin esperar 15s al próximo tick
+    // del polling (que pudo haberse saltado mientras estaba en background).
+    if (_state.estado === 'PENDIENTE_APROBACION') {
+      _consultarBackend(true).catch(function(){});
+      return;
+    }
     if (_state.estado !== 'ACTIVO') return;
     // Si el día cambió, invalidar cache + re-verificar
     if (!_cacheValidoHoy()) {
@@ -763,6 +807,9 @@
       _invalidarCache();
       _detenerPolling();
       _detenerHeartbeat();
+      // [v1.0.9 BUG LL FIX] Limpiar promise zombi — antes próxima init() reusaba
+      // la promesa pendiente (que nunca resolvía si cerrarSesion la abortó).
+      _verifyPromise = null;
       if (_state.visibilityHandler) {
         document.removeEventListener('visibilitychange', _state.visibilityHandler);
         _state.visibilityHandler = null;
