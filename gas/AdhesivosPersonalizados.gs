@@ -429,7 +429,7 @@ function imprimirAdhesivoPlantilla(params) {
       bytesTotal = bytesTotal.concat(bytes);
     }
 
-    return _adhEnviarPrintNode(bytesTotal, cantidad);
+    return _adhEnviarPrintNode(bytesTotal, cantidad, p.nombre);
   } catch(e) {
     return { ok: false, error: 'imprimir falló: ' + e.message };
   } finally {
@@ -450,7 +450,7 @@ function testImpresionAdhesivoPlantilla(params) {
   }
   var iconosMap = _adhMapaIconos();
   var bytes = _adhJson2tspl(jsonObj, _adhCalcularOffsetParaIndice(0), iconosMap);
-  return _adhEnviarPrintNode(bytes, 1);
+  return _adhEnviarPrintNode(bytes, 1, '[TEST] ' + (p.nombre || p.idPlantilla));
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -468,13 +468,27 @@ function _adhListarPlantillas() {
     for (var c = 0; c < heads.length; c++) {
       obj[heads[c]] = data[r][c];
     }
-    if (obj.activo === true || String(obj.activo).toUpperCase() === 'TRUE') {
+    if (_adhEsActivo(obj.activo)) {
+      // [v1.0.4] Parsear JSON server-side. Antes lo devolvíamos como string
+      // y el frontend hacía JSON.parse en cada uso — error-prone si la
+      // plantilla está corrupta (frontend caía con SyntaxError raw, sin
+      // posibilidad de mostrar UX limpio). Ahora server-side parsing con
+      // try/catch + flag jsonCorrupto si falla.
+      var jsonParseado = null;
+      var jsonCorrupto = false;
+      try {
+        jsonParseado = typeof obj.json === 'string' ? JSON.parse(obj.json) : obj.json;
+      } catch(e) {
+        jsonCorrupto = true;
+        try { Logger.log('[_adhListarPlantillas] JSON corrupto en ' + obj.idPlantilla + ': ' + e.message); } catch(_){}
+      }
       rows.push({
         idPlantilla:  obj.idPlantilla,
         nombre:       obj.nombre,
         descripcion:  obj.descripcion,
         tamanoCanvas: obj.tamanoCanvas,
-        json:         obj.json,
+        json:         jsonParseado,
+        jsonCorrupto: jsonCorrupto,
         creadoPor:    obj.creadoPor,
         fechaCreado:  obj.fechaCreado,
         fechaUltMod:  obj.fechaUltMod,
@@ -649,14 +663,20 @@ function _adhJson2tspl(jsonObj, offsetY, iconosMap) {
         // antes backend siempre alineaba left aunque preview mostraba centro.
         // Inconsistencia crítica: lo que el admin diseñaba con alineación
         // centrada salía con alineación izquierda en impresión.
+        // [v1.0.4 defensa NaN] c.ancho_mm puede ser undefined/0/NaN. Si no es
+        // un número finito > 0, fallback al ancho restante del canvas.
         var xFinal = x;
+        var anchoDisponibleDots;
+        if (isFinite(c.ancho_mm) && c.ancho_mm > 0) {
+          anchoDisponibleDots = c.ancho_mm * ADH_DOTS_POR_MM;
+        } else {
+          anchoDisponibleDots = jsonObj.tamano.ancho_mm * ADH_DOTS_POR_MM - x;
+        }
         if (c.alineacion === 'center') {
-          var anchoMm = (c.ancho_mm) ? c.ancho_mm * ADH_DOTS_POR_MM : (jsonObj.tamano.ancho_mm * ADH_DOTS_POR_MM - x);
-          xFinal = x + Math.round((anchoMm - lineWidth) / 2);
+          xFinal = x + Math.round((anchoDisponibleDots - lineWidth) / 2);
           if (xFinal < 0) xFinal = 0;
         } else if (c.alineacion === 'right') {
-          var anchoMmR = (c.ancho_mm) ? c.ancho_mm * ADH_DOTS_POR_MM : (jsonObj.tamano.ancho_mm * ADH_DOTS_POR_MM - x);
-          xFinal = x + Math.round(anchoMmR - lineWidth);
+          xFinal = x + Math.round(anchoDisponibleDots - lineWidth);
           if (xFinal < 0) xFinal = 0;
         }
         var yLine = y + idx * Math.round(fpx * 1.05);
@@ -758,19 +778,75 @@ function _adhHexToBytes(hex) {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// PrintNode envío directo (sin pasar por WH bridge — autonomo)
+// PrintNode envío directo
+// [v1.0.4 SENIOR AUDIT] Fix arquitectural reportado por usuario:
+//   ANTES: leía printerId de Script Properties (ADH_PRINTER_ID o
+//          ENVASADO_PRINTER_ID) — fuente de verdad DUPLICADA con
+//          la tabla IMPRESORAS y propensa a inconsistencias.
+//   AHORA: lee desde hoja IMPRESORAS (tipo=ADHESIVO + idZona=ALMACEN
+//          + activo=true + printNodeId no vacío) — MISMA fuente que
+//          getPrinterNodeId() de WH/Envasados.gs/Membretes.gs.
+//          Centralizado, consistente, sin duplicación.
 // ════════════════════════════════════════════════════════════════════
-function _adhEnviarPrintNode(bytes, cantidad) {
-  var props = PropertiesService.getScriptProperties();
-  var apiKey = props.getProperty('PRINTNODE_API_KEY');
-  var printerId = props.getProperty('ADH_PRINTER_ID') || props.getProperty('ENVASADO_PRINTER_ID');
-  if (!apiKey) return { ok: false, error: 'Falta PRINTNODE_API_KEY en Script Properties' };
-  if (!printerId) return { ok: false, error: 'Falta ADH_PRINTER_ID o ENVASADO_PRINTER_ID en Script Properties' };
+function _adhGetPrinterNodeId() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('IMPRESORAS');
+  if (!sheet) throw new Error('Hoja IMPRESORAS no encontrada en MOS');
+  var rows = _sheetToObjects(sheet);
+  // 1ª preferencia: tipo=ADHESIVO + idZona=ALMACEN activa
+  var imp = rows.find(function(r) {
+    return r.tipo === 'ADHESIVO'
+        && r.idZona === 'ALMACEN'
+        && _adhEsActivo(r.activo)
+        && String(r.printNodeId || '').trim() !== '';
+  });
+  if (!imp) {
+    // 2ª preferencia: cualquier ADHESIVO activa (otra zona)
+    imp = rows.find(function(r) {
+      return r.tipo === 'ADHESIVO'
+          && _adhEsActivo(r.activo)
+          && String(r.printNodeId || '').trim() !== '';
+    });
+  }
+  if (!imp) {
+    throw new Error('No hay impresora tipo ADHESIVO activa con printNodeId en hoja IMPRESORAS');
+  }
+  return String(imp.printNodeId).trim();
+}
+
+function _adhEsActivo(v) {
+  if (v === true || v === 1) return true;
+  var s = String(v || '').toUpperCase().trim();
+  return s === 'TRUE' || s === '1' || s === 'SI' || s === 'YES';
+}
+
+function _adhEnviarPrintNode(bytes, cantidad, nombrePlantilla) {
+  // [v1.0.4] Defensa contra TSPL vacío (caso edge si validador deja pasar
+  // plantilla degenerada) — PrintNode rechazaría con error críptico.
+  if (!bytes || bytes.length === 0) {
+    return { ok: false, error: 'TSPL vacío — plantilla sin contenido imprimible' };
+  }
+  if (bytes.length > 1024 * 1024) {
+    return { ok: false, error: 'TSPL muy grande (' + bytes.length + ' bytes) — revisar plantilla' };
+  }
+  var apiKey = PropertiesService.getScriptProperties().getProperty('PRINTNODE_API_KEY');
+  if (!apiKey) return { ok: false, error: 'Falta PRINTNODE_API_KEY en Script Properties de MOS' };
+
+  var printerId;
+  try {
+    printerId = _adhGetPrinterNodeId();
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
+
+  // [v1.0.4] Title con nombre de plantilla → debugging desde PrintNode dashboard
+  var title = 'Aviso ' + (nombrePlantilla ? '"' + String(nombrePlantilla).substring(0, 40) + '" ' : '')
+            + 'x' + cantidad;
 
   var b64 = Utilities.base64Encode(bytes);
   var payload = {
     printerId: parseInt(printerId),
-    title: 'Adhesivo personalizado x' + cantidad,
+    title: title,
     contentType: 'raw_base64',
     content: b64,
     source: 'AdhesivosPersonalizados.gs'
@@ -787,7 +863,7 @@ function _adhEnviarPrintNode(bytes, cantidad) {
     var body = res.getContentText();
     if (code >= 200 && code < 300) {
       _adhIncrementarPrintsCount(cantidad);
-      return { ok: true, jobId: body, cantidad: cantidad };
+      return { ok: true, jobId: body, cantidad: cantidad, printerId: printerId };
     }
     return { ok: false, error: 'PrintNode ' + code + ': ' + body };
   } catch(e) {

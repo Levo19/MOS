@@ -1,5 +1,15 @@
 // ════════════════════════════════════════════════════════════════════
 // EditorAdhesivos — UI motor del editor de avisos
+// v1.0.4 — 2026-06-05 — Audit profundo + fix printerId desde tabla:
+//   • printerId leído desde IMPRESORAS tipo=ADHESIVO+ALMACEN (no Properties)
+//   • Backend devuelve json YA parseado + flag jsonCorrupto
+//   • UI marca plantillas corruptas con ⚠ rojo (no clickeable, solo borrar)
+//   • Debounce impresión: _imprimiendo flag impide double-click x2 batches
+//   • _undo/_redo cancela _dragState para evitar escritura a ref muerta
+//   • CSS_VERSION constante (bumpear cuando cambie styles.css)
+//   • Backend title PrintNode incluye nombre plantilla
+//   • Backend defensa ancho_mm NaN/undefined en alineación
+//   • Backend valida bytes.length > 0 antes de PrintNode
 // v1.0.3 — 2026-06-05 — Pulido senior 9 items:
 //   1) Auto-guardar antes de test si hay cambios sin guardar
 //   2) Modal imprimir con preview SVG + advertencia + cantidad editable
@@ -72,13 +82,16 @@
       setTimeout(function() { t.remove(); }, 220);
     }, 2400);
   }
+  // [v1.0.4] CSS_VERSION constante — bumpear cuando cambie styles.css.
+  // Antes era hardcoded inline '?v=1.0.0' → al actualizar estilos el cache
+  // viejo se quedaba pegado en navegadores.
+  var CSS_VERSION = '1.0.4';
   function _inyectarCss() {
     if (CSS_INYECTADO) return;
     var l = document.createElement('link');
     l.rel = 'stylesheet';
-    // Path relativo al HTML que carga el editor
     var base = (typeof window.EDITOR_ADHESIVOS_BASE === 'string') ? window.EDITOR_ADHESIVOS_BASE : './assets/editor-adhesivos/';
-    l.href = base + 'styles.css?v=1.0.0';
+    l.href = base + 'styles.css?v=' + CSS_VERSION;
     document.head.appendChild(l);
     CSS_INYECTADO = true;
   }
@@ -127,6 +140,10 @@
   }
   function _undo() {
     if (_historialIdx <= 0) { _toast('Nada para deshacer', 'error'); return; }
+    // [v1.0.4 fix] Si hay drag en curso, _dragState.capa apunta a un
+    // objeto que ya no estará en _plantilla.capas después del JSON.parse.
+    // Cancelar el drag para evitar escrituras a referencia muerta.
+    _dragState = null;
     _historialIdx--;
     _plantilla = JSON.parse(_historial[_historialIdx]);
     _seleccionadaId = null;
@@ -134,6 +151,7 @@
   }
   function _redo() {
     if (_historialIdx >= _historial.length - 1) { _toast('Nada para rehacer', 'error'); return; }
+    _dragState = null;  // [v1.0.4] mismo motivo que _undo
     _historialIdx++;
     _plantilla = JSON.parse(_historial[_historialIdx]);
     _seleccionadaId = null;
@@ -437,10 +455,10 @@
     }).join('');
   }
 
-  // [v1.0.3] Lista de plantillas con botones de acción:
-  //  - Duplicar: clona la plantilla con nombre "X (copia)" para editar sin
-  //    afectar la original. Útil para variaciones rápidas.
-  //  - Eliminar: soft-delete con confirmación.
+  // [v1.0.3+v1.0.4] Lista de plantillas con:
+  //  - Duplicar (⎘) y Eliminar (🗑) por plantilla
+  //  - Indicador ⚠ + click-disabled para plantillas con JSON corrupto
+  //    (detectado en backend `jsonCorrupto: true` en listarAdhesivosPlantillas)
   function _renderListaPlantillas() {
     var cont = document.getElementById('edaPlantillas');
     if (!cont) return;
@@ -450,7 +468,17 @@
     }
     cont.innerHTML = _plantillasGuardadas.map(function(p) {
       var sel = (_idPlantillaActual === p.idPlantilla) ? ' active' : '';
-      var idEsc = p.idPlantilla.replace(/'/g, "\\'");
+      var idEsc = String(p.idPlantilla || '').replace(/'/g, "\\'");
+      // [v1.0.4] Plantilla corrupta: no clickeable + indicador rojo
+      if (p.jsonCorrupto) {
+        return '<div class="eda-plantilla-item" style="opacity:.55;cursor:not-allowed" title="Plantilla con JSON corrupto — revisar en Sheets">'
+             +   '<span class="eda-plantilla-icon" style="color:#f87171">⚠</span>'
+             +   '<span class="eda-plantilla-name" style="color:#f87171">' + _esc(p.nombre) + ' (corrupta)</span>'
+             +   '<div class="eda-capa-actions">'
+             +     '<button onclick="event.stopPropagation();EditorAdhesivos._eliminarPlantilla(\'' + idEsc + '\')" title="Eliminar (soft-delete)">🗑</button>'
+             +   '</div>'
+             + '</div>';
+      }
       return '<div class="eda-plantilla-item' + sel + '" onclick="EditorAdhesivos._cargarPlantilla(\'' + idEsc + '\')">'
            +   '<span class="eda-plantilla-icon">📋</span>'
            +   '<span class="eda-plantilla-name" title="' + _esc(p.descripcion || p.nombre) + '">' + _esc(p.nombre) + '</span>'
@@ -1076,8 +1104,20 @@
     });
   }
 
+  // [v1.0.4] Debounce contra double-click: bloquea reentradas mientras
+  // hay impresión en curso. Antes 2 clicks rápidos = 2 batches (20 etiquetas
+  // en lugar de 10).
+  var _imprimiendo = false;
   function _confirmarImprimir(cant) {
+    if (_imprimiendo) { _toast('Espera, ya hay una impresión en curso', 'error'); return; }
+    _imprimiendo = true;
+    // Deshabilitar visualmente el botón en el modal
+    var modalImpr = document.getElementById('edaModalImprimir');
+    if (modalImpr) {
+      modalImpr.querySelectorAll('button').forEach(function(b) { b.disabled = true; b.style.opacity = '.5'; });
+    }
     _apiPost('imprimirAdhesivoPlantilla', { idPlantilla: _idPlantillaActual, cantidad: cant }, function(err, r) {
+      _imprimiendo = false;
       _cerrarModal();
       if (err || !r || !r.ok) {
         _toast('Error: ' + (err && err.message || (r && r.error) || '?'), 'error');
