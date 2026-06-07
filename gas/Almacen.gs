@@ -1633,7 +1633,7 @@ function _buildEscPosReporteJefa(guia, det, prodLookup, nombreProv, idGuia, ahor
     // se refinarán cuando la jefa los autorice via este flow.
 
     // Costo anterior si existe en catálogo
-    var costoAnterior = parseFloat(p.costoUltimo || p.ultimoCosto) || 0;
+    var costoAnterior = parseFloat(p.precioCosto) || 0;  // [v2.43.200 FIX] campo real (costoUltimo/ultimoCosto no existen)
     var costoSubio = costoAnterior > 0 && costo > costoAnterior * (1 + COSTO_SUBIDA_ALERTA);
 
     // Calcular venta sugerida si tiene margen objetivo
@@ -1909,7 +1909,11 @@ function imprimirCostosGuia(params) {
     var subtotal = costo * cant;
     totalFactura += subtotal;
     var precioVenta = parseFloat(p.precioVenta) || 0;
-    var margenPct = costo > 0 ? ((precioVenta - costo) / costo) * 100 : null;
+    // [v2.43.200 FIX] MARGEN sobre VENTA (fórmula unificada del ecosistema), no
+    // markup sobre costo. Antes ((venta-costo)/costo) inflaba el % → las alertas
+    // "MARGEN BAJO/ALTO" se disparaban con umbrales equivocados.
+    var margenFrac = _calcMargenSobreVenta(precioVenta, costo);   // null si venta<=0
+    var margenPct = margenFrac === null ? null : margenFrac * 100;
     // Umbrales globales v41.22
     var alertaTxt;
     if (margenPct === null || precioVenta <= 0) alertaTxt = '[ sin precio venta ]';
@@ -1918,9 +1922,10 @@ function imprimirCostosGuia(params) {
     else                      alertaTxt = '[ OK margen normal ]';
 
     // [v2.41.54] Precio venta SUGERIDO — solo si actual no existe o margen <20%
+    // [v2.43.200] Usa la fórmula unificada venta = costo/(1-margen), no costo*(1+margen).
     var precioSugerido = null;
     if (costo > 0 && (precioVenta <= 0 || (margenPct !== null && margenPct < 20))) {
-      precioSugerido = Math.round(costo * (1 + MARGEN_OBJETIVO) * 10) / 10; // redondeo a 0.10
+      precioSugerido = _calcVentaDesdeMargen(costo, MARGEN_OBJETIVO);
     }
 
     var nombre = _norm(p.descripcion || l.codigoProducto || '').substring(0, W);
@@ -3053,8 +3058,10 @@ function aplicarRespuestaJefa(params) {
       error: (verif.data && verif.data.error) || 'Clave incorrecta'
     }};
   }
-  var validadoPor = verif.data.validadoPor || {};
-  var usuario = String(validadoPor.nombre || 'admin-MOS');
+  // [v2.43.200 FIX] verif.data.validadoPor es un STRING ('admin:Nombre'), no un
+  // objeto → .nombre era undefined y la atribución del historial siempre quedaba
+  // como 'admin-MOS'. El nombre real viene en verif.data.nombre.
+  var usuario = String(verif.data.nombre || verif.data.validadoPor || 'admin-MOS');
 
   // 2. Procesar cada item
   var cambios = [];
@@ -3099,7 +3106,12 @@ function aplicarRespuestaJefa(params) {
     var prodCanonico = null;
     var presentaciones = [];
     try {
-      var todosProds = _sheetToObjects(getSheet('PRODUCTO_BASE'));
+      // [v2.43.200 FIX CRÍTICO] La hoja del catálogo en MOS es 'PRODUCTOS_MASTER'.
+      // Antes leía 'PRODUCTO_BASE' (inexistente) → getSheet devolvía null →
+      // _sheetToObjects lanzaba → CADA item caía en el catch de abajo con
+      // "Error leyendo PRODUCTO_BASE" → aplicarRespuestaJefa NUNCA aplicaba
+      // ningún precio (la jefa nunca podía actualizar el catálogo).
+      var todosProds = _sheetToObjects(getSheet('PRODUCTOS_MASTER'));
       todosProds.forEach(function(p) {
         if (String(p.skuBase || '') === skuBase) {
           if (String(p.idProducto || '') === skuBase) {
@@ -3114,7 +3126,7 @@ function aplicarRespuestaJefa(params) {
         prodCanonico = todosProds.find(function(p){ return String(p.idProducto || '') === skuBase; }) || null;
       }
     } catch(eP) {
-      errores.push({ idx: idx, skuBase: skuBase, error: 'Error leyendo PRODUCTO_BASE: ' + eP.message });
+      errores.push({ idx: idx, skuBase: skuBase, error: 'Error leyendo PRODUCTOS_MASTER: ' + eP.message });
       return;
     }
     if (!prodCanonico) {
@@ -3126,7 +3138,7 @@ function aplicarRespuestaJefa(params) {
     var snap = {
       skuBase: skuBase,
       descripcion: String(prodCanonico.descripcion || ''),
-      costoAnterior: parseFloat(prodCanonico.costoUltimo || prodCanonico.ultimoCosto) || 0,
+      costoAnterior: parseFloat(prodCanonico.precioCosto) || 0,  // [v2.43.200 FIX] campo real (antes costoUltimo/ultimoCosto inexistentes → siempre 0)
       ventaAnterior: parseFloat(prodCanonico.precioVenta) || 0,
       margenAnterior: parseFloat(prodCanonico.margenPct) || 0,
       costoNuevo: costoNuevo,
@@ -3163,7 +3175,9 @@ function aplicarRespuestaJefa(params) {
     // su propia lógica de propagación).
     presentaciones.forEach(function(pres) {
       try {
-        actualizarProductoMaster({
+        // [v2.43.200 FIX] No silenciar: una presentación que no se actualiza deja
+        // el catálogo inconsistente (canónico nuevo, presentación vieja) sin aviso.
+        var rp = actualizarProductoMaster({
           _source:      'MOS_RESPUESTA_JEFA_PROPAG',
           _audit:       params._audit,
           idProducto:   pres.idProducto,
@@ -3171,7 +3185,12 @@ function aplicarRespuestaJefa(params) {
           usuario:      usuario,
           motivoPrecio: 'Margen propagado desde canónico ' + skuBase
         });
-      } catch(_) {}
+        if (rp && rp.ok === false) {
+          errores.push({ idx: idx, skuBase: skuBase, error: 'propagación ' + pres.idProducto + ': ' + (rp.error || 'falló') });
+        }
+      } catch(eP2) {
+        errores.push({ idx: idx, skuBase: skuBase, error: 'propagación ' + pres.idProducto + ': ' + eP2.message });
+      }
     });
 
     // Registrar en HISTORIAL_PRECIOS

@@ -368,6 +368,22 @@ function rotarClaveAdminGlobal(params) {
       ]);
     } catch(e) {}
 
+    // [v2.43.200 FIX] Notificar la rotación para que admins/master NO queden
+    // bloqueados sin saber el nuevo PIN global (antes rotaba en silencio → toda
+    // clave de 8 dígitos fallaba "Clave incorrecta" hasta que alguien lo
+    // consultaba en el panel). NO incluimos el PIN en el push (sería visible en
+    // la pantalla de bloqueo): se consulta autenticado en MOS → panel admin.
+    try {
+      if (typeof _enviarPushTodos === 'function') {
+        _enviarPushTodos(
+          '🔐 Clave admin global actualizada',
+          (manual ? 'Rotada manualmente' : 'Rotación automática de seguridad') +
+          ' · consulta el nuevo PIN global en MOS → panel admin (tu clave = PIN global + tu PIN personal)',
+          { idNotif: 'MOS_ADMIN_AUTH' }
+        );
+      }
+    } catch(eP) { /* push best-effort */ }
+
     return {
       ok: true,
       data: {

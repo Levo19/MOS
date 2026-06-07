@@ -1454,7 +1454,10 @@ function meCerrarCajaForzado(params) {
       error: (verif.data && verif.data.error) || 'Clave incorrecta'
     }};
   }
-  var validadoPor = verif.data.validadoPor || {};
+  // [v2.43.200 FIX] verif.data.validadoPor es un STRING; los campos reales
+  // (nombre/rol/idPersonal) están en verif.data directamente. Antes la
+  // atribución del cierre forzado siempre quedaba 'admin-MOS'/'ADMIN'.
+  var validadoPor = verif.data || {};
 
   var res = _meBridgeEvento('CIERRE_CAJA_FORZADO', {
     idCaja: params.idCaja,
