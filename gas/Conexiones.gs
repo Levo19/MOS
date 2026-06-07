@@ -737,7 +737,15 @@ function postToWarehouse(action, params) {
       payload: payload,
       muteHttpExceptions: true
     });
-    return JSON.parse(res.getContentText());
+    var code = res.getResponseCode();
+    var text = res.getContentText();
+    try {
+      return JSON.parse(text);
+    } catch(eParse) {
+      // WH devolvió algo que no es JSON (HTML de error, 502, timeout…).
+      // Mensaje claro en vez del críptico "Unexpected token < in JSON".
+      return { ok: false, error: 'warehouseMos respondió HTTP ' + code + ' (respuesta no-JSON). Reintenta en unos segundos.' };
+    }
   } catch(e) {
     return { ok: false, error: e.message };
   }

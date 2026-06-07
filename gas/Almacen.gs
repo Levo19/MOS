@@ -3063,6 +3063,14 @@ function aplicarRespuestaJefa(params) {
   // como 'admin-MOS'. El nombre real viene en verif.data.nombre.
   var usuario = String(verif.data.nombre || verif.data.validadoPor || 'admin-MOS');
 
+  // [v2.43.201] Lock global: serializa la aplicación de precios para evitar
+  // lost-updates si dos admins aplican cambios al MISMO producto a la vez
+  // (leer-modificar-escribir en PRODUCTOS_MASTER no es atómico).
+  var _lock = LockService.getScriptLock();
+  try { _lock.waitLock(30000); }
+  catch (eL) { return { ok: true, data: { autorizado: false, error: 'Sistema ocupado aplicando precios — reintenta en unos segundos' } }; }
+  try {
+
   // 2. Procesar cada item
   var cambios = [];
   var errores = [];
@@ -3230,6 +3238,7 @@ function aplicarRespuestaJefa(params) {
     ticketImpreso:   ticketImpreso,
     autorizadoPor:   usuario
   }};
+  } finally { try { _lock.releaseLock(); } catch(_){} }
 }
 
 // ============================================================
