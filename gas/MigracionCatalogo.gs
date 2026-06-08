@@ -204,6 +204,42 @@ function migrarCatalogoCompartido(opts) {
 function dryRunCatalogo()   { return migrarCatalogoCompartido({ dryRun: true }); }
 function backfillCatalogo() { return migrarCatalogoCompartido(); }
 
+/**
+ * Re-sincroniza el catálogo a Supabase (idempotente). Para trigger horario.
+ * Mantiene mos.* al día SIN tocar los endpoints de producción (cero riesgo).
+ * Lag máx ~1h, suficiente porque ME/WH aún leen el catálogo por bridge (hasta Fase 1/2).
+ */
+function syncCatalogoSupabase() {
+  try {
+    var r = migrarCatalogoCompartido();
+    Logger.log('[syncCatalogoSupabase] ' + JSON.stringify(r));
+    return r;
+  } catch (e) {
+    Logger.log('[syncCatalogoSupabase] ERROR: ' + (e && e.message || e));
+    return { ok: false, error: String(e && e.message || e) };
+  }
+}
+
+/** Instala (idempotente) el trigger horario de sincronización. Ejecutar 1 vez desde el editor. */
+function instalarTriggerCatalogo() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'syncCatalogoSupabase') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('syncCatalogoSupabase').timeBased().everyHours(1).create();
+  Logger.log('Trigger horario instalado: syncCatalogoSupabase (cada 1h)');
+  return { ok: true, msg: 'Trigger horario instalado: syncCatalogoSupabase' };
+}
+
+/** Quita el trigger del catálogo (por si quieres detenerlo). */
+function desinstalarTriggerCatalogo() {
+  var n = 0;
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'syncCatalogoSupabase') { ScriptApp.deleteTrigger(t); n++; }
+  });
+  Logger.log('Triggers eliminados: ' + n);
+  return { ok: true, eliminados: n };
+}
+
 /** Compara conteos Sheet vs Supabase por tabla del catálogo. */
 function verificarCuadreCatalogo() {
   var out = {};
