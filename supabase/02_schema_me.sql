@@ -217,15 +217,17 @@ create table if not exists me.ventas_fantasma (
 create index if not exists ix_me_fantasma_ts on me.ventas_fantasma (ts);
 
 -- ---------- me.auditorias  ← AUDITORIAS (conteo físico de stock) ----------
+-- PK compuesta: un evento de auditoría tiene 1 id_auditoria y VARIAS filas (1 por cod_barras).
 create table if not exists me.auditorias (
-  id_auditoria text primary key,
+  id_auditoria text not null,
   fecha        timestamptz,
   vendedor     text,
   zona_id      text,
-  cod_barras   text,
+  cod_barras   text not null,
   cant_sistema numeric(20,3),
   cant_real    numeric(20,3),
-  diferencia   numeric(20,3)
+  diferencia   numeric(20,3),
+  primary key (id_auditoria, cod_barras)
 );
 
 -- ---------- me.caja_alertas_efectivo  ← CAJA_ALERTAS_EFECTIVO ----------
