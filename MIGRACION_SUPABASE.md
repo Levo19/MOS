@@ -86,7 +86,7 @@ SUPABASE (1 proyecto Pro)
 - [ ] **Montos:** `numeric(12,2)`.
 - [ ] **Booleanos:** `boolean` puro. **Mapear en el backfill** los valores legacy `'1'/'0'`, `1/0`, `'SI'/'NO'`, `'true'/'false'`, `''`/`undefined` → `true/false` (el código actual los acepta todos de forma defensiva).
 - [ ] **JSON embebido → `jsonb`:** `historialCambios` (ME), `items` (LISTAS_SOMBRA, PEDIDOS_PROVEEDOR), `payload_zona`/`payload_almacen`/`diferenciasJson` (DEVOLUCIONES_ZONA), `configJson`/`cajaActivaJson` (DEVICE_STATE), `horarioJson` (CONFIG_HORARIOS_APPS), `payload`/`resultado` (OPS_LOG), `ice_candidates`/SDP (RTC_SIGNALING/espía). Índices GIN solo si se consulta dentro del JSON.
-- [ ] **Enums** con `CREATE TYPE` (o `CHECK`): estados de guía (ABIERTA/CERRADA), forma de pago ME (EFECTIVO/VIRTUAL/MIXTO/CREDITO/POR_COBRAR/ANULADO), estado de venta, lista sombra (DISPONIBLE/EN_USO/COMPLETADA), devolución (EN_TRANSITO/RECEPCIONADO/RECONCILIADO/ANULADA), estado de item devuelto (BUEN_ESTADO/ROTO/VENCIDO/...), ops_log (APPLIED/FAILED), etc.
+- [ ] **Enums** con `CREATE TYPE` (o `CHECK`): estados de guía (ABIERTA/CERRADA), forma de pago ME (EFECTIVO/VIRTUAL/MIXTO/CREDITO/POR_COBRAR — ANULADO va en estado_envio, NO en forma_pago), estado de venta, lista sombra (DISPONIBLE/EN_USO/COMPLETADA), devolución (EN_TRANSITO/RECEPCIONADO/RECONCILIADO/ANULADA), estado de item devuelto (BUEN_ESTADO/ROTO/VENCIDO/...), ops_log (APPLIED/FAILED), etc.
 
 ### 4.2 Zona horaria Perú (CRÍTICO — espeja `architecture_wh_dia_tz_peru`)
 - [ ] Fechas como `timestamptz`. En el backfill, **inyectar zona explícita** a las fechas legacy (Perú = UTC-5) para no desfasar el día.

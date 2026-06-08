@@ -6,6 +6,8 @@
 -- no romper el backfill con valores legacy; valores válidos en comentarios.
 -- ============================================================
 
+create schema if not exists me;   -- robustez: por si se corre 02 sin 01
+
 -- ---------- me.ventas  ← VENTAS_CABECERA ----------
 -- forma_pago: EFECTIVO · POR_COBRAR · CREDITO · VIRTUAL · MIXTO_EFE:x_VIR:y
 -- tipo_doc:   NOTA_DE_VENTA · BOLETA · FACTURA
@@ -209,9 +211,10 @@ create table if not exists me.ventas_fantasma (
   accion_tomada     text,
   payload_json      jsonb
 );
-create unique index if not exists uq_me_fantasma_rk
-  on me.ventas_fantasma (ts, dispositivo_id, correlativo_local)
-  where ts is not null and correlativo_local is not null;  -- evita falsos duplicados con NULLs
+-- Sin índice único: PostgREST no puede usar on_conflict sobre índice parcial,
+-- y un unique no-parcial con NULLs no deduplica. ventas_fantasma es AUDITORÍA →
+-- el backfill la inserta SOLO una vez (guard por checkpoint), no upsert.
+create index if not exists ix_me_fantasma_ts on me.ventas_fantasma (ts);
 
 -- ---------- me.auditorias  ← AUDITORIAS (conteo físico de stock) ----------
 create table if not exists me.auditorias (
@@ -288,6 +291,49 @@ grant all on all functions in schema me to service_role;
 -- (los alter default privileges del 01 ya cubren objetos futuros)
 
 -- ============================================================
+-- ÍNDICES extra (patrones de lectura reales de ME)
+-- ============================================================
+create index if not exists ix_me_credito_caja       on me.creditos_cobro_asignado (caja_destino);
+create index if not exists ix_me_credito_caja_estado on me.creditos_cobro_asignado (caja_destino, estado);
+create index if not exists ix_me_ventas_fecha_zona   on me.ventas (fecha, zona_id);
+
+-- ============================================================
+-- updated_at automático (PG15: create or replace trigger = idempotente)
+-- ============================================================
+create or replace function me.set_updated_at() returns trigger as $$
+begin new.updated_at = now(); return new; end;
+$$ language plpgsql;
+
+create or replace trigger trg_me_ventas_upd      before update on me.ventas                 for each row execute function me.set_updated_at();
+create or replace trigger trg_me_cajas_upd       before update on me.cajas                  for each row execute function me.set_updated_at();
+create or replace trigger trg_me_movext_upd      before update on me.movimientos_extra      for each row execute function me.set_updated_at();
+create or replace trigger trg_me_credito_upd     before update on me.creditos_cobro_asignado for each row execute function me.set_updated_at();
+
+-- ============================================================
+-- RLS habilitado en todas las tablas (defensa en profundidad + listo Fase 2).
+-- service_role bypassa RLS → backfill/doble escritura funcionan igual.
+-- anon/authenticated: sin grants a tablas + RLS = doble bloqueo en Fase 1.
+-- (Habilitar RLS ya habilitado es no-op, idempotente.)
+-- ============================================================
+alter table me.ventas                  enable row level security;
+alter table me.ventas_detalle          enable row level security;
+alter table me.cajas                   enable row level security;
+alter table me.movimientos_extra       enable row level security;
+alter table me.clientes_frecuentes     enable row level security;
+alter table me.guias_cabecera          enable row level security;
+alter table me.guias_detalle           enable row level security;
+alter table me.correlativos            enable row level security;
+alter table me.reservas_correlativos   enable row level security;
+alter table me.creditos_cobro_asignado enable row level security;
+alter table me.ventas_fantasma         enable row level security;
+alter table me.auditorias              enable row level security;
+alter table me.caja_alertas_efectivo   enable row level security;
+alter table me.pickups_pendientes_envio enable row level security;
+alter table me.stock_zonas             enable row level security;
+alter table me.stock_movimientos       enable row level security;
+alter table me.radio_config            enable row level security;
+
+-- ============================================================
 -- POST-BACKFILL opcional (ejecutar tras cargar datos; ver runbook):
 --   alter table me.ventas_detalle add constraint fk_vdet_venta
 --     foreign key (id_venta) references me.ventas(id_venta) on delete cascade not valid;
@@ -309,4 +355,11 @@ grant all on all functions in schema me to service_role;
 --   que al reanudar no cambie la numeración y la PK (id, linea) sea idempotente.
 -- · Auditar pre-backfill: detalle huérfano (id_venta sin cabecera) antes de activar FKs.
 -- · RLS columns completas (created_by, etc.) se agregan en Fase 2 con un ALTER barato.
+-- · MAPEOS DE HEADER para el BACKFILL (ojo nombres exactos de la hoja):
+--     movimientos_extra: header 'Timestamp' → columna ts
+--     radio_config: la HOJA se llama 'RadioConfig' (camelCase), tabla pg = radio_config; upsert on_conflict=(tipo,key)
+--     caja_alertas_efectivo: 'bandera' en la hoja puede venir como NÚMERO (0..n) → se guarda como text
+--     clientes_frecuentes: header 'Nombre' o 'Nombre_RazonSocial' (aceptar ambos); historial_cambios es col dinámica
+--     ventas_fantasma: INSERT-only (no upsert); guard de re-run por checkpoint
+--     radio_config / stock_movimientos: bigserial PK → para idempotencia, on_conflict por su clave natural, no por el id
 -- ============================================================
