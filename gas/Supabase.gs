@@ -45,7 +45,7 @@ function _sbQuery_(opts) {
   if (opts.order)  parts.push('order=' + encodeURIComponent(opts.order));
   if (opts.limit != null)  parts.push('limit=' + encodeURIComponent(opts.limit));
   if (opts.offset != null) parts.push('offset=' + encodeURIComponent(opts.offset));
-  if (opts.onConflict) parts.push('on_conflict=' + encodeURIComponent(opts.onConflict));
+  if (opts.onConflict) parts.push('on_conflict=' + String(opts.onConflict).split(',').map(function(c){ return encodeURIComponent(c.trim()); }).join(','));  // coma literal entre columnas
   // filtros: { col: 'eq.valor', otra: 'gte.2026-01-01' }
   if (opts.filters) {
     Object.keys(opts.filters).forEach(function (k) {
