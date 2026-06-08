@@ -174,17 +174,21 @@
 | 2 | Caja_Destino | caja_destino | text | |
 | 3 | Vendedor_Dest | vendedor_dest | text | |
 | 4 | Metodo_Sug | metodo_sug | text | |
-| 5 | Estado | estado | text (enum) | ASIGNADO·COBRADO·RECHAZADO·CANCELADO·VENCIDO |
+| 5 | Estado | estado | text (enum) | ASIGNADO·COBRADO·RECHAZADO·CANCELADO·**EXPIRADO** (no VENCIDO) |
 | 6 | Admin_Asignador | admin_asignador | text | |
 | 7 | Fecha_Asig | fecha_asig | timestamptz | |
 | 8 | Fecha_Res | fecha_res | timestamptz | |
 | 9 | Razon | razon | text | |
-| 10 | Fecha_Vencimiento | fecha_vencimiento | timestamptz | |
-| 11 | Horas_TTL | horas_ttl | int | TTL del cobro (1/2/4/6h) |
-| 12 | Mensaje_Admin | mensaje_admin | text | |
-| 13 | Reasignaciones | reasignaciones | int | contador de reasignaciones |
+| 10 | ID_Caja_Origen | id_caja_origen | text | |
+| 11 | Monto | monto | numeric(12,2) | |
+| 12 | Cliente_Nombre | cliente_nombre | text | |
+| 13 | Correlativo | correlativo | text | |
+| 14 | Fecha_Vencimiento | fecha_vencimiento | timestamptz | |
+| 15 | Horas_TTL | horas_ttl | int | TTL del cobro (1/2/4/6h) |
+| 16 | Mensaje_Admin | mensaje_admin | text | |
+| 17 | Reasignaciones | reasignaciones | int | contador de reasignaciones |
 
-> ⚠ Corrección: el código real (Creditos.gs:22-29) tiene **18 columnas**; el diccionario listaba 12. Verificar el orden exacto de las 4 finales (Fecha_Vencimiento, Horas_TTL, Mensaje_Admin, Reasignaciones) contra el header real antes del DDL.
+> ✅ Verificado contra `_CREDITO_COBRO_HEADERS` (Creditos.gs:22-29): **18 columnas exactas** (orden arriba). Estado real = **EXPIRADO** (el código en escalarCobrosVencidos escribe EXPIRADO, no VENCIDO/TIMEOUT).
 
 ## me.ventas_fantasma  ← VENTAS_FANTASMA (auditoría de rechazos, retención ≥1 año)
 
