@@ -53,11 +53,11 @@ create table if not exists me.ventas_detalle (
   linea          int  not null,
   sku            text,
   nombre         text,
-  cantidad       numeric(12,3),
+  cantidad       numeric(20,3),
   precio         numeric(12,2),
   subtotal       numeric(12,2),
   cod_barras     text,
-  valor_unitario numeric(12,4),
+  valor_unitario numeric(20,4),
   tipo_igv       smallint,   -- catálogo SUNAT (1=gravado, 8=IVAP, 9=exonerado, 11=inafecto…); sin CHECK p/ no rechazar legacy
   unidad_medida  text,
   primary key (id_venta, linea)
@@ -134,7 +134,7 @@ create table if not exists me.guias_detalle (
   id_guia    text not null,
   linea      int  not null,
   cod_barras text,
-  cantidad   numeric(12,3),
+  cantidad   numeric(20,3),
   primary key (id_guia, linea)
 );
 
@@ -223,9 +223,9 @@ create table if not exists me.auditorias (
   vendedor     text,
   zona_id      text,
   cod_barras   text,
-  cant_sistema numeric(12,3),
-  cant_real    numeric(12,3),
-  diferencia   numeric(12,3)
+  cant_sistema numeric(20,3),
+  cant_real    numeric(20,3),
+  diferencia   numeric(20,3)
 );
 
 -- ---------- me.caja_alertas_efectivo  ← CAJA_ALERTAS_EFECTIVO ----------
@@ -252,7 +252,7 @@ create table if not exists me.pickups_pendientes_envio (
 create table if not exists me.stock_zonas (
   cod_barras             text not null,
   zona_id                text not null,
-  cantidad               numeric(12,3),
+  cantidad               numeric(20,3),
   usuario                text,
   fecha_ultimo_registro  timestamptz,
   primary key (cod_barras, zona_id)
@@ -265,7 +265,7 @@ create table if not exists me.stock_movimientos (
   cod_barras  text,
   zona_id     text,
   tipo        text,            -- VENTA · AJUSTE · INGRESO · etc.
-  delta       numeric(12,3),
+  delta       numeric(20,3),
   referencia  text,            -- id_venta / id_guia / etc.
   usuario     text,
   ts          timestamptz default now()
