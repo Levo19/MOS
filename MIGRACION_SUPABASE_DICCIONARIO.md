@@ -318,13 +318,15 @@ bandera_efectivo:   NORMAL · BAJO · CRITICO · EXCESO
 estado_pickup:      PENDIENTE · ENVIADO · ERROR_PERSISTENTE · CANCELADO
 ```
 
-### ✅ `forma_pago` — RESUELTO (verificado en código)
-Set EXACTO de valores (Code.gs:122-134 parser MIXTO; Caja.gs:349-395; Ventas.gs:213,359; EditarVenta.gs:70):
+### ✅ `forma_pago` — RESUELTO (verificado en DATOS REALES de me.ventas)
+Set EXACTO observado en Supabase tras el backfill:
 ```
-forma_pago:  EFECTIVO · POR_COBRAR · CREDITO · VIRTUAL · MIXTO_EFE:(n)_VIR:(n)
+forma_pago:  EFECTIVO · VIRTUAL · ANULADO · CREDITO · POR_COBRAR · MIXTO (VIR:n/EFE:n)
 ```
-- **5 formas canónicas.** `YAPE/PLIN/TARJETA/TRANSFERENCIA` NO son valores de `forma_pago` — son sub-tipos de **VIRTUAL** (diferenciador de UI, no de backend).
-- **MIXTO se codifica como STRING en una sola celda:** `MIXTO_EFE:150.00_VIR:50.00` (parser regex `/EFE:([\d.]+)/i`, `/VIR:([\d.]+)/i`). **No hay columnas aparte.** → en Postgres: guardar el string tal cual + opcional columnas derivadas `mixto_efe numeric`, `mixto_vir numeric` para reportería.
+- `EFECTIVO`(1305) `VIRTUAL`(481) `ANULADO`(91) `CREDITO`(87) `POR_COBRAR`(7) + ~38 MIXTO distintos.
+- **`ANULADO` SÍ es un valor de forma_pago** (la anulación se detecta por FormaPago — `architecture_mos_formapago`).
+- `YAPE/PLIN/TARJETA/TRANSFERENCIA` NO son valores — son sub-tipos de **VIRTUAL** (UI, no backend).
+- **MIXTO se codifica como STRING en una sola celda:** formato real `MIXTO (VIR:0.50/EFE:3.10)` (VIR primero, separador `/`, paréntesis). NO es `MIXTO_EFE:x_VIR:y`. Para reportería: parsear con regex `/VIR:([\d.]+)/` y `/EFE:([\d.]+)/`. (Hay 1 fila con paréntesis sin cerrar = artefacto de captura en la hoja, migrado tal cual.)
 - **Distinción crítica:** `POR_COBRAR` (pre-venta, **se ANULA al cierre**) ≠ `CREDITO` (deuda formal aprobada por admin, **se preserva al cierre**). Reconciliar respetando esta regla.
 - Modelar como `text` con `CHECK` (no enum rígido por el MIXTO string).
 
