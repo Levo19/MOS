@@ -109,7 +109,7 @@ create index if not exists ix_me_movext_caja on me.movimientos_extra (id_caja);
 create table if not exists me.clientes_frecuentes (
   documento         text primary key,
   nombre            text,
-  tipo_doc          smallint,
+  tipo_doc          text,           -- hoja: header 'Tipo' = BOLETA/NOTA_DE_VENTA (texto, no 1/6)
   fecha_registro    timestamptz,
   direccion         text,
   historial_cambios jsonb
