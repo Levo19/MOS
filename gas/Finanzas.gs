@@ -310,6 +310,11 @@ function eliminarGasto(params) {
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][0]) === String(params.idGasto)) {
       sheet.deleteRow(i + 1);
+      // [fix C3] propagar el borrado a la sombra. Sin esto el gasto queda HUÉRFANO en
+      // mos.gastos (el sync es solo-upsert) y getFinanzasRango (flip) sobre-cuenta gastos
+      // de forma permanente. Best-effort: Sheets es la verdad; si falla se loguea.
+      try { _sbDelete('mos.gastos', { id_gasto: String(params.idGasto) }); }
+      catch (e) { Logger.log('eliminarGasto: _sbDelete mos.gastos falló: ' + e); }
       return { ok: true };
     }
   }

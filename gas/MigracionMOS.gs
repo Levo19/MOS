@@ -349,7 +349,10 @@ function _refrescarCatalogoThrottled(){
   var p=PropertiesService.getScriptProperties();
   var last=parseInt(p.getProperty('MOS_CAT_LAST')||'0',10);
   var ahora=Date.now();
-  if(ahora-last < 55*60*1000) return {skipped:true, minSinUltimo:Math.round((ahora-last)/60000)};
+  // [fix ALTO-5/6] throttle 14min (antes 55) → catálogo fresco ~cada ciclo de syncMOSReciente (15min),
+  // alineado con el sync de datos. Evita stale ≤1h en stockMinimo/precio_costo/factor que alimentan
+  // getStock(WH) y COGS(MOS) flipeados.
+  if(ahora-last < 14*60*1000) return {skipped:true, minSinUltimo:Math.round((ahora-last)/60000)};
   var r=syncCatalogoSupabase();
   if(r && r.ok===false){ Logger.log('[catálogo] refresh falló; no avanzo throttle'); return {error:r.error}; }
   p.setProperty('MOS_CAT_LAST', String(ahora));
