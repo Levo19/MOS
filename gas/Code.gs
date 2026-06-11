@@ -296,7 +296,7 @@ function _route(method, e) {
 
       // ── Finanzas ────────────────────────────────────────────
       case 'getFinanzasDia':             return getFinanzasDia(params);
-      case 'getFinanzasRango':           return getFinanzasRango(params);
+      case 'getFinanzasRango':           return getFinanzasRangoFlip(params);   // Fase 2.A flip (default sheets)
       case 'getJornadas':                return getJornadas(params);
       case 'registrarJornada':           return registrarJornada(params);
       case 'eliminarJornada':            return eliminarJornada(params);

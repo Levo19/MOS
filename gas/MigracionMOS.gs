@@ -536,3 +536,53 @@ function desactivarSupabaseMOS(){ PropertiesService.getScriptProperties().setPro
 function estadoFuenteDatosMOS(){ var p=PropertiesService.getScriptProperties(); var o={master:String(p.getProperty('FUENTE_DATOS')||'sheets'), off:String(p.getProperty('FUENTE_DATOS_OFF')||'')}; Logger.log(JSON.stringify(o)); return o; }
 function desactivarUnoMOS(ep){ var p=PropertiesService.getScriptProperties(); var off=(p.getProperty('FUENTE_DATOS_OFF')||'').split(',').map(function(s){return s.trim();}).filter(Boolean); if(off.indexOf(ep)<0) off.push(ep); p.setProperty('FUENTE_DATOS_OFF',off.join(',')); Logger.log('🔻 '+ep+' forzado a Sheets. OFF=['+off.join(',')+']'); return {ok:true,off:off}; }
 function reactivarUnoMOS(ep){ var p=PropertiesService.getScriptProperties(); var off=(p.getProperty('FUENTE_DATOS_OFF')||'').split(',').map(function(s){return s.trim();}).filter(Boolean).filter(function(e){return e!==ep;}); p.setProperty('FUENTE_DATOS_OFF',off.join(',')); Logger.log('🔼 '+ep+' reactivado a Supabase. OFF=['+off.join(',')+']'); return {ok:true,off:off}; }
+
+// ---------- Fase 2.A: getFinanzasRango — flip + comparador ----------
+// El router llama getFinanzasRangoFlip. Con FUENTE_DATOS=sheets (default) = getFinanzasRango idéntico.
+// Requiere correr supabase/13_mos_finanzas_rango.sql antes de poder flipear.
+function getFinanzasRangoFlip(params){
+  params=params||{};
+  if(_fuenteDatos('getFinanzasRango')==='supabase'){
+    try{
+      var r=_sbRpc('mos','finanzas_rango',{p_desde:String(params.desde||''), p_hasta:String(params.hasta||'')});
+      if(r.ok && r.data && r.data.ok){ return r.data; }   // {ok:true, data:{serie,totales,desde,hasta}}
+    }catch(e){ /* cae a Sheets */ }
+  }
+  return getFinanzasRango(params);
+}
+// Comparador Sheets vs mos.finanzas_rango (default: últimos 30 días terminando ayer, Lima).
+function compararFinanzasRangoMOS(desde, hasta){
+  var tz=Session.getScriptTimeZone();
+  if(!desde || !hasta){
+    var hoy=new Date(), ms=24*3600*1000;
+    var ayer=new Date(hoy.getTime()-ms), d0=new Date(ayer.getTime()-29*ms);
+    hasta=Utilities.formatDate(ayer,tz,'yyyy-MM-dd');
+    desde=Utilities.formatDate(d0,tz,'yyyy-MM-dd');
+  }
+  var t0=Date.now(); var sh=getFinanzasRango({desde:desde,hasta:hasta}); var tS=Date.now()-t0;
+  var t1=Date.now(); var r=_sbRpc('mos','finanzas_rango',{p_desde:desde,p_hasta:hasta}); var tB=Date.now()-t1;
+  if(!r.ok){ var e={ok:false, error:'RPC falló: HTTP '+r.code+' — '+(r.error||''), nota:'¿corriste 13_mos_finanzas_rango.sql en Supabase?'}; Logger.log(JSON.stringify(e,null,2)); return e; }
+  var sd=(sh&&sh.data)||{}, bd=(r.data&&r.data.data)||{}, diffs=[], tol=0.01;
+  function near(a,b){ return Math.abs((parseFloat(a)||0)-(parseFloat(b)||0))<=tol; }
+  var ms2={}, mb={};
+  (sd.serie||[]).forEach(function(x){ ms2[x.fecha]=x; });
+  (bd.serie||[]).forEach(function(x){ mb[x.fecha]=x; });
+  var fechas={}; Object.keys(ms2).forEach(function(f){fechas[f]=1;}); Object.keys(mb).forEach(function(f){fechas[f]=1;});
+  var campos=['ventasNetas','costoVentas','utilidadBruta','totalGastos','utilidadNeta','margenBrutoPct'];
+  Object.keys(fechas).sort().forEach(function(f){
+    var a=ms2[f], b=mb[f];
+    if(!a){ diffs.push(f+': falta en SHEETS'); return; }
+    if(!b){ diffs.push(f+': falta en SUPABASE'); return; }
+    campos.forEach(function(c){ if(!near(a[c],b[c])) diffs.push(f+'.'+c+': sheets='+a[c]+' sb='+b[c]); });
+  });
+  var st=sd.totales||{}, bt=bd.totales||{};
+  ['ventasNetas','costoVentas','utilidadBruta','totalGastos','utilidadNeta','margenBrutoPct','margenNetoPct'].forEach(function(c){
+    if(!near(st[c],bt[c])) diffs.push('TOTALES.'+c+': sheets='+st[c]+' sb='+bt[c]);
+  });
+  var out={ ok:diffs.length===0, rango:{desde:desde,hasta:hasta},
+    veredicto: diffs.length===0?'✓ PARIDAD EXACTA — listo para flip':'⚠ revisar diferencias',
+    velocidad:{sheets_ms:tS, supabase_ms:tB, speedup:(tS&&tB)?(Math.round(tS/tB*10)/10+'x'):'n/a'},
+    dias:{sheets:(sd.serie||[]).length, sb:(bd.serie||[]).length},
+    diferencias:diffs.slice(0,40) };
+  Logger.log(JSON.stringify(out,null,2)); return out;
+}
