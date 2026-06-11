@@ -571,7 +571,7 @@ function compararFinanzasRangoMOS(desde, hasta){
     if(c==='costoVentas') cogsDrift=Math.max(cogsDrift,d);
     if(EXACTOS[c]) return d<=0.01;
     var rel=0.001*Math.max(Math.abs(parseFloat(a)||0), Math.abs(parseFloat(b)||0));
-    return d<=Math.max(0.05, rel);   // ≤5 céntimos o ≤0.1%
+    return d<=Math.max(0.15, rel);   // piso 0.15 (el error de COGS es absoluto ≤0.10/día, se propaga a util. neta chica) o ≤0.1%
   }
   var ms2={}, mb={};
   (sd.serie||[]).forEach(function(x){ ms2[x.fecha]=x; });
