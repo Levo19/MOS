@@ -329,8 +329,33 @@ function _syncMOSImpl(full){
   Logger.log(JSON.stringify(resumen,null,2));
   return resumen;
 }
-function syncMOSReciente(){ return _syncMOSImpl(false); }
-function syncMOSCompleto(){ return _syncMOSImpl(true); }
+function syncMOSReciente(){
+  var r=_syncMOSImpl(false);
+  try{ _refrescarCatalogoThrottled(); }catch(e){ Logger.log('refresh catálogo (reciente) falló: '+e); }   // mantiene mos.productos fresco (~1h) sin sumar trigger
+  return r;
+}
+function syncMOSCompleto(){
+  var r=_syncMOSImpl(true);
+  try{ var cr=syncCatalogoSupabase(); if(!(cr&&cr.ok===false)) PropertiesService.getScriptProperties().setProperty('MOS_CAT_LAST', String(Date.now())); }catch(e){ Logger.log('refresh catálogo (completo) falló: '+e); }
+  try{ reconciliarDiarioMOS(); }catch(e){ Logger.log('recon MOS falló: '+e); }   // recon pegada al sync nocturno (sin trigger extra)
+  return r;
+}
+
+/** Refresca el catálogo a Supabase a lo sumo ~1 vez/hora (throttle por Property MOS_CAT_LAST).
+ *  Evita que getStock-Supabase (WH) se desfase en stockMinimo/Maximo SIN sumar un trigger nuevo
+ *  (MOS está en el tope de 20 triggers → se folda en el sync de 15 min, igual que la recon).
+ *  syncCatalogoSupabase() es idempotente (upsert merge-duplicates por codigo_barra). */
+function _refrescarCatalogoThrottled(){
+  var p=PropertiesService.getScriptProperties();
+  var last=parseInt(p.getProperty('MOS_CAT_LAST')||'0',10);
+  var ahora=Date.now();
+  if(ahora-last < 55*60*1000) return {skipped:true, minSinUltimo:Math.round((ahora-last)/60000)};
+  var r=syncCatalogoSupabase();
+  if(r && r.ok===false){ Logger.log('[catálogo] refresh falló; no avanzo throttle'); return {error:r.error}; }
+  p.setProperty('MOS_CAT_LAST', String(ahora));
+  Logger.log('[catálogo] refrescado a Supabase (throttle 55min)');
+  return {refreshed:true};
+}
 
 /** Instala (idempotente) triggers: 15 min + 4am. Ejecutar 1 vez. */
 function instalarTriggersSyncMOS(){
@@ -358,4 +383,134 @@ function resetCheckpointsMOS(){
     ['MOSBF_'+t,'MOSBF_DONE_'+t].forEach(function(k){ if(props.getProperty(k)!=null){ props.deleteProperty(k); n++; } });
   });
   Logger.log('Checkpoints/flags borrados: '+n); return {ok:true, borrados:n};
+}
+
+// ============================================================
+// RECONCILIACIÓN v2 — drift dashboard (conteo + SUMA de columnas clave)
+// Detecta drift de VALORES (ediciones/anulaciones) que el solo conteo no ve. 100% lectura.
+// ============================================================
+var _MOS_SUMCOLS = {
+  proveedores:[], historial_precios:['precio_nuevo'], pedidos_proveedor:['monto_estimado'],
+  pagos_proveedor:['monto'], jornadas:['monto_jornal'], gastos:['monto'], liquidaciones_dia:['total_dia'],
+  liquidaciones_pagos:['total_dia'], evaluaciones:['limpieza_pct'], bloqueos_usuario:[], seguridad_alertas:[],
+  config_horarios_apps:[], alertas_log:[], conexiones:[], etiquetas_zona:['precio_nuevo'],
+  proveedores_productos:['precio_referencia'], notificaciones_config:[]
+};
+
+/** Suma columnas de una tabla de Supabase, paginando ordenado por PK (estable). */
+function _sbSumCols(schemaTable, cols, order){
+  var sums={}; cols.forEach(function(c){ sums[c]=0; });
+  var n=0, offset=0, PAGE=1000;
+  while(true){
+    var r=_sbSelect(schemaTable,{select:cols.join(',')||order.split(',')[0], order:order, limit:PAGE, offset:offset});
+    if(!r.ok) return {error:'HTTP '+r.code+' '+(r.error||'')};
+    var rows=r.data||[];
+    rows.forEach(function(row){ cols.forEach(function(c){ var num=parseFloat(row[c]); if(!isNaN(num)) sums[c]+=num; }); });   // numeric puede venir como string desde PostgREST
+    n+=rows.length;
+    if(rows.length<PAGE) break;
+    offset+=PAGE;
+  }
+  return {n:n, sums:sums};
+}
+
+function reconciliarMOS(){
+  var out={}, problemas=0;
+  _MOS_ORDEN.forEach(function(tabla){
+    var cfg=_MOS_SPECS[tabla], cols=_MOS_SUMCOLS[tabla]||[], info={};
+    try{
+      var rows=getSheet(cfg.sheet)?_mosBuildRows(tabla):[];
+      info.sheet_n=rows.length;
+      var ss={}; cols.forEach(function(c){ ss[c]=0; });
+      rows.forEach(function(r){ cols.forEach(function(c){ var v=r[c]; if(typeof v==='number'&&!isNaN(v)) ss[c]+=v; }); });
+      var sb=_sbSumCols('mos.'+tabla, cols, cfg.onConflict);
+      if(sb.error){ info.error=sb.error; out[tabla]=info; problemas++; return; }
+      info.sb_n=sb.n;
+      info.n_ok=(info.sheet_n===info.sb_n);
+      var sumOk=true; info.sums={};
+      cols.forEach(function(c){ var a=ss[c]||0, b=sb.sums[c]||0, ok=Math.abs(a-b)<0.01; if(!ok)sumOk=false;
+        info.sums[c]={sheet:Math.round(a*100)/100, sb:Math.round(b*100)/100, ok:ok}; });
+      info.ok=info.n_ok && sumOk;
+      if(!info.ok) problemas++;
+    }catch(e){ info.error=String(e&&e.message||e); problemas++; }
+    out[tabla]=info;
+  });
+  out._resumen={problemas:problemas, veredicto: problemas===0?'✓ SIN DRIFT':'⚠ revisar '+problemas+' tabla(s)'};
+  Logger.log(JSON.stringify(out,null,2));
+  return out;
+}
+
+/** Corre reconciliarMOS y registra una fila en la hoja RECON_LOG (lo dispara el trigger diario). */
+function reconciliarDiarioMOS(){
+  var res=reconciliarMOS(), r=res._resumen||{};
+  var probs={}; Object.keys(res).forEach(function(k){ if(k!=='_resumen' && res[k] && res[k].ok===false) probs[k]=res[k]; });
+  var sh=getSheet('RECON_LOG') || getSpreadsheet().insertSheet('RECON_LOG');
+  if(sh.getLastRow()===0) sh.appendRow(['fecha','app','problemas','veredicto','tablas_con_drift']);
+  sh.appendRow([Utilities.formatDate(new Date(),'America/Lima','yyyy-MM-dd HH:mm'),'MOS', r.problemas||0, r.veredicto||'', JSON.stringify(probs).slice(0,45000)]);
+  return res;
+}
+/** La recon ahora va PEGADA a syncMOSCompleto (sin trigger propio, por el límite de 20 triggers).
+ *  Esta función solo LIMPIA un trigger de recon separado si lo instalaste antes. */
+function desinstalarTriggerReconMOS(){
+  var n=0; ScriptApp.getProjectTriggers().forEach(function(t){ if(t.getHandlerFunction()==='reconciliarDiarioMOS'){ ScriptApp.deleteTrigger(t); n++; } });
+  Logger.log('Triggers recon separados eliminados: '+n+' (la recon corre dentro de syncMOSCompleto)'); return {ok:true, eliminados:n};
+}
+
+/** [Fase 1.D · C1] Verifica a qué DEPLOYMENT de ME apunta el bridge MOS→ME (props + hoja CONEXIONES).
+ *  Debe coincidir con el deployment que recibió el flip (AKfycbzG84A8...), o el flip no cubre los reads que MOS hace a ME. Solo lectura. */
+function verBridgeMEMOS(){
+  var p=PropertiesService.getScriptProperties();
+  var FLIP_ID='AKfycbzG84A8GcK2ArC4irCk_YVf-G4kt1INuqLDpnZEhEHGN6gH7Ht9f-bw-PMOSGG267KjlQ';
+  function depId(u){ var m=String(u||'').match(/macros\/s\/([^\/]+)\/exec/); return m?m[1]:'(no parseable)'; }
+  var out={ flip_deployment:FLIP_ID, fuentes:[] };
+  ['ME_GAS_URL','MOSEXPRESS_GAS_URL','ME_URL','MEXPRESS_GAS_URL','MOSEXPRESS_URL'].forEach(function(k){
+    var v=p.getProperty(k); if(v) out.fuentes.push({origen:'prop:'+k, deployment:depId(v), coincide:(depId(v)===FLIP_ID), url:v});
+  });
+  try{
+    var sh=getSheet('CONEXIONES');
+    if(sh){ var d=sh.getDataRange().getValues(), h=d[0], iApp=h.indexOf('idApp'), iUrl=h.indexOf('gasUrl');
+      for(var i=1;i<d.length;i++){ var app=String(d[i][iApp]||'').toLowerCase();
+        if(app.indexOf('express')>=0 || app.indexOf('mex')>=0 || app==='me'){ var u=d[i][iUrl];
+          out.fuentes.push({origen:'CONEXIONES:'+d[i][iApp], deployment:depId(u), coincide:(depId(u)===FLIP_ID), url:u}); } }
+    }
+  }catch(e){ out.conexiones_error=String(e&&e.message||e); }
+  out.veredicto = out.fuentes.every(function(f){ return f.coincide; }) && out.fuentes.length>0
+    ? '✓ todos los bridges apuntan al deployment del flip'
+    : '⚠ revisar: hay bridge(s) que NO apuntan al deployment del flip';
+  Logger.log(JSON.stringify(out,null,2)); return out;
+}
+
+// ============================================================
+// FASE 1.D (canary MOS) — comparador getHistorialPrecios vs mos.historial_precios_lista()
+// ============================================================
+function _numEq(a,b){ var na=parseFloat(a), nb=parseFloat(b); if(!isNaN(na)&&!isNaN(nb)) return Math.abs(na-nb)<0.01; return String(a)===String(b); }
+function _diffHP(label,a,b,diffs){
+  ['skuBase','codigoBarra','descripcion','usuario','motivo','appOrigen','fecha'].forEach(function(f){
+    if(String(a[f])!==String(b[f])) diffs.push(label+'.'+f+': sheets="'+a[f]+'" sb="'+b[f]+'"');
+  });
+  ['precioAnterior','precioNuevo'].forEach(function(f){ if(!_numEq(a[f],b[f])) diffs.push(label+'.'+f+': sheets='+a[f]+' sb='+b[f]); });
+}
+function compararHistorialPreciosMOS(){
+  var escenarios=[{n:'todos', p:{}}, {n:'limit 50', p:{limit:50}}];
+  var salida={ok:true, escenarios:[]};
+  escenarios.forEach(function(esc){
+    var t0=Date.now(); var sh=getHistorialPrecios(esc.p); var tS=Date.now()-t0;
+    var t1=Date.now(); var r=_sbRpc('mos','historial_precios_lista',{p_sku:esc.p.skuBase||null, p_codigo:esc.p.codigoBarra||null, p_limit:esc.p.limit||null}); var tB=Date.now()-t1;
+    var res={escenario:esc.n};
+    if(!r.ok){ res.error='RPC falló: HTTP '+r.code+' — '+(r.error||''); res.nota='¿corriste 12_fase1d_mos_historial.sql?'; salida.ok=false; salida.escenarios.push(res); return; }
+    var sd=(sh&&sh.data)||[], bd=(r.data&&r.data.data)||[], diffs=[];
+    function byId(arr){ var m={}; arr.forEach(function(x){ m[String(x.id)]=x; }); return m; }
+    var ms=byId(sd), mb=byId(bd), ids={};
+    Object.keys(ms).forEach(function(k){ids[k]=1;}); Object.keys(mb).forEach(function(k){ids[k]=1;});
+    Object.keys(ids).forEach(function(id){
+      if(!ms[id]){ diffs.push(id+': falta en SHEETS'); return; }
+      if(!mb[id]){ diffs.push(id+': falta en SUPABASE'); return; }
+      _diffHP(id, ms[id], mb[id], diffs);
+    });
+    res.ok=diffs.length===0; res.filas={sheets:sd.length, sb:bd.length};
+    res.velocidad={sheets_ms:tS, supabase_ms:tB, speedup:(tS&&tB)?(Math.round(tS/tB*10)/10+'x'):'n/a'};
+    res.diferencias=diffs.slice(0,30); if(!res.ok) salida.ok=false;
+    salida.escenarios.push(res);
+  });
+  salida.veredicto=salida.ok?'✓ PARIDAD EXACTA en ambos escenarios — listo para flip':'⚠ revisar diferencias';
+  Logger.log(JSON.stringify(salida,null,2)); return salida;
 }
