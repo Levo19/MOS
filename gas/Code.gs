@@ -232,7 +232,7 @@ function _route(method, e) {
       case 'forwardWHAction':      return forwardWHAction(params);
 
       // ── Config ─────────────────────────────────────────────
-      case 'getConfig':            return getConfigMos();
+      case 'getConfig':            return getConfigPublico();   // sanitizado: sin secretos (fix C5)
       case 'setConfig':            return setConfigMos(params);
 
       // ── Dispositivos ───────────────────────────────────────
@@ -525,6 +525,21 @@ function getConfigMos() {
   var cfg = {};
   rows.forEach(function(r){ cfg[r.clave] = r.valor; });
   return { ok: true, data: cfg };
+}
+
+/** Versión PÚBLICA/segura de getConfigMos para el router (action=getConfig es accesible SIN auth).
+ *  NUNCA devuelve secretos: filtra por patrón de nombre (pin/secret/key/token/pass/pwd/clave).
+ *  Hoy filtra ADMIN_GLOBAL_PIN, ADMIN_GLOBAL_PIN_FECHA, PIN_ADMIN_WH.
+ *  Los validadores internos NO usan esto — leen con _leerConfigMos(clave) o validan server-side. (fix C5) */
+function getConfigPublico() {
+  var full = getConfigMos();
+  if (!full || !full.ok || !full.data) return full;
+  var SENSIBLE = /(pin|secret|key|token|pass|pwd|clave)/i;
+  var safe = {};
+  Object.keys(full.data).forEach(function (k) {
+    if (!SENSIBLE.test(k)) safe[k] = full.data[k];
+  });
+  return { ok: true, data: safe };
 }
 
 function setConfigMos(params) {
