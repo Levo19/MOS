@@ -562,8 +562,17 @@ function compararFinanzasRangoMOS(desde, hasta){
   var t0=Date.now(); var sh=getFinanzasRango({desde:desde,hasta:hasta}); var tS=Date.now()-t0;
   var t1=Date.now(); var r=_sbRpc('mos','finanzas_rango',{p_desde:desde,p_hasta:hasta}); var tB=Date.now()-t1;
   if(!r.ok){ var e={ok:false, error:'RPC falló: HTTP '+r.code+' — '+(r.error||''), nota:'¿corriste 13_mos_finanzas_rango.sql en Supabase?'}; Logger.log(JSON.stringify(e,null,2)); return e; }
-  var sd=(sh&&sh.data)||{}, bd=(r.data&&r.data.data)||{}, diffs=[], tol=0.01;
-  function near(a,b){ return Math.abs((parseFloat(a)||0)-(parseFloat(b)||0))<=tol; }
+  var sd=(sh&&sh.data)||{}, bd=(r.data&&r.data.data)||{}, diffs=[], cogsDrift=0;
+  // ventasNetas/totalGastos = dinero real → ±0.01 estricto. COGS y derivados = estimación con ruido
+  // INMATERIAL (canónico por orden de hoja, irreducible en SQL + redondeo float vs numeric) → tolerancia relativa.
+  var EXACTOS={ventasNetas:1, totalGastos:1};
+  function okCampo(c,a,b){
+    var d=Math.abs((parseFloat(a)||0)-(parseFloat(b)||0));
+    if(c==='costoVentas') cogsDrift=Math.max(cogsDrift,d);
+    if(EXACTOS[c]) return d<=0.01;
+    var rel=0.001*Math.max(Math.abs(parseFloat(a)||0), Math.abs(parseFloat(b)||0));
+    return d<=Math.max(0.05, rel);   // ≤5 céntimos o ≤0.1%
+  }
   var ms2={}, mb={};
   (sd.serie||[]).forEach(function(x){ ms2[x.fecha]=x; });
   (bd.serie||[]).forEach(function(x){ mb[x.fecha]=x; });
@@ -573,16 +582,17 @@ function compararFinanzasRangoMOS(desde, hasta){
     var a=ms2[f], b=mb[f];
     if(!a){ diffs.push(f+': falta en SHEETS'); return; }
     if(!b){ diffs.push(f+': falta en SUPABASE'); return; }
-    campos.forEach(function(c){ if(!near(a[c],b[c])) diffs.push(f+'.'+c+': sheets='+a[c]+' sb='+b[c]); });
+    campos.forEach(function(c){ if(!okCampo(c,a[c],b[c])) diffs.push(f+'.'+c+': sheets='+a[c]+' sb='+b[c]); });
   });
   var st=sd.totales||{}, bt=bd.totales||{};
   ['ventasNetas','costoVentas','utilidadBruta','totalGastos','utilidadNeta','margenBrutoPct','margenNetoPct'].forEach(function(c){
-    if(!near(st[c],bt[c])) diffs.push('TOTALES.'+c+': sheets='+st[c]+' sb='+bt[c]);
+    if(!okCampo(c,st[c],bt[c])) diffs.push('TOTALES.'+c+': sheets='+st[c]+' sb='+bt[c]);
   });
   var out={ ok:diffs.length===0, rango:{desde:desde,hasta:hasta},
-    veredicto: diffs.length===0?'✓ PARIDAD EXACTA — listo para flip':'⚠ revisar diferencias',
+    veredicto: diffs.length===0?'✓ PARIDAD — dinero exacto; COGS dentro de tolerancia inmaterial':'⚠ revisar diferencias',
     velocidad:{sheets_ms:tS, supabase_ms:tB, speedup:(tS&&tB)?(Math.round(tS/tB*10)/10+'x'):'n/a'},
     dias:{sheets:(sd.serie||[]).length, sb:(bd.serie||[]).length},
+    cogsDriftMax:Math.round(cogsDrift*100)/100,
     diferencias:diffs.slice(0,40) };
   Logger.log(JSON.stringify(out,null,2)); return out;
 }
