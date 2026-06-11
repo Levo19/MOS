@@ -356,7 +356,7 @@ function _refrescarCatalogoThrottled(){
   var r=syncCatalogoSupabase();
   if(r && r.ok===false){ Logger.log('[catálogo] refresh falló; no avanzo throttle'); return {error:r.error}; }
   p.setProperty('MOS_CAT_LAST', String(ahora));
-  Logger.log('[catálogo] refrescado a Supabase (throttle 55min)');
+  Logger.log('[catálogo] refrescado a Supabase (throttle 14min)');
   return {refreshed:true};
 }
 

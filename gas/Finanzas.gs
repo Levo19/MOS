@@ -310,11 +310,13 @@ function eliminarGasto(params) {
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][0]) === String(params.idGasto)) {
       sheet.deleteRow(i + 1);
-      // [fix C3] propagar el borrado a la sombra. Sin esto el gasto queda HUÉRFANO en
-      // mos.gastos (el sync es solo-upsert) y getFinanzasRango (flip) sobre-cuenta gastos
-      // de forma permanente. Best-effort: Sheets es la verdad; si falla se loguea.
-      try { _sbDelete('mos.gastos', { id_gasto: String(params.idGasto) }); }
-      catch (e) { Logger.log('eliminarGasto: _sbDelete mos.gastos falló: ' + e); }
+      // [fix C3] propagar el borrado a la sombra. 'eq.' es el operador PostgREST OBLIGATORIO:
+      // sin él → HTTP 400 silencioso → el gasto NUNCA se borra → getFinanzasRango sobre-cuenta gastos.
+      // Chequear .ok para que un fallo no pase inadvertido (el sync es solo-upsert, no lo cura solo).
+      try {
+        var _dg = _sbDelete('mos.gastos', { id_gasto: 'eq.' + String(params.idGasto) });
+        if (!_dg.ok) Logger.log('eliminarGasto: _sbDelete mos.gastos HTTP ' + _dg.code + ' ' + (_dg.error || ''));
+      } catch (e) { Logger.log('eliminarGasto: _sbDelete mos.gastos excepción: ' + e); }
       return { ok: true };
     }
   }
