@@ -514,3 +514,25 @@ function compararHistorialPreciosMOS(){
   salida.veredicto=salida.ok?'✓ PARIDAD EXACTA en ambos escenarios — listo para flip':'⚠ revisar diferencias';
   Logger.log(JSON.stringify(salida,null,2)); return salida;
 }
+
+// ============================================================
+// FASE 2.A — FLIP con feature flag FUENTE_DATOS (Script Property de MOS; default 'sheets').
+// Infra genérica reusable (espeja MigracionWH.gs:580-612). Default = sheets = comportamiento idéntico.
+// Encender: activarSupabaseMOS() · Apagar: desactivarSupabaseMOS() · granular: desactivarUnoMOS('getFinanzasRango')
+// El wiring de cada endpoint (getFinanzasRangoFlip + router) y su SQL llegan en su propio incremento.
+// ============================================================
+var _FLIP_CACHE_SEG_MOS = 15;
+function _fuenteDatos(key){
+  try{
+    var p=PropertiesService.getScriptProperties();
+    if(String(p.getProperty('FUENTE_DATOS')||'sheets').toLowerCase()!=='supabase') return 'sheets';
+    var off=String(p.getProperty('FUENTE_DATOS_OFF')||'').toLowerCase();
+    if(key && off){ var arr=off.split(',').map(function(s){return s.trim();}); if(arr.indexOf(String(key).toLowerCase())>=0) return 'sheets'; }
+    return 'supabase';
+  }catch(e){ return 'sheets'; }
+}
+function activarSupabaseMOS(){ PropertiesService.getScriptProperties().setProperty('FUENTE_DATOS','supabase'); Logger.log('✅ FUENTE_DATOS(MOS) = supabase (fallback a Sheets ante cualquier fallo)'); return {ok:true, fuente:'supabase'}; }
+function desactivarSupabaseMOS(){ PropertiesService.getScriptProperties().setProperty('FUENTE_DATOS','sheets'); try{ CacheService.getScriptCache().removeAll(['SB_FINRANGO']); }catch(e){} Logger.log('↩️ FUENTE_DATOS(MOS) = sheets — rollback instantáneo'); return {ok:true, fuente:'sheets'}; }
+function estadoFuenteDatosMOS(){ var p=PropertiesService.getScriptProperties(); var o={master:String(p.getProperty('FUENTE_DATOS')||'sheets'), off:String(p.getProperty('FUENTE_DATOS_OFF')||'')}; Logger.log(JSON.stringify(o)); return o; }
+function desactivarUnoMOS(ep){ var p=PropertiesService.getScriptProperties(); var off=(p.getProperty('FUENTE_DATOS_OFF')||'').split(',').map(function(s){return s.trim();}).filter(Boolean); if(off.indexOf(ep)<0) off.push(ep); p.setProperty('FUENTE_DATOS_OFF',off.join(',')); Logger.log('🔻 '+ep+' forzado a Sheets. OFF=['+off.join(',')+']'); return {ok:true,off:off}; }
+function reactivarUnoMOS(ep){ var p=PropertiesService.getScriptProperties(); var off=(p.getProperty('FUENTE_DATOS_OFF')||'').split(',').map(function(s){return s.trim();}).filter(Boolean).filter(function(e){return e!==ep;}); p.setProperty('FUENTE_DATOS_OFF',off.join(',')); Logger.log('🔼 '+ep+' reactivado a Supabase. OFF=['+off.join(',')+']'); return {ok:true,off:off}; }
