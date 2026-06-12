@@ -55,6 +55,11 @@ Futuro: `navegador → Edge Function (key en secret) → PrintNode`. **Igual de 
      lo más money-critical), créditos, anulaciones. NOTA: `crear_venta_directa` aún NO valida caja abierta —
      cerrar ese gap al hacer cajas-directo.
 3. **PrintNode → Edge Function** (rápido + seguro; saca un salto a GAS de cada impresión).
+   - ✅ HECHO (`supabase/functions/imprimir`, desplegada; frontend flag `me_impresion_directa` OFF). Relay seguro:
+     key en secret, auth por firma JWT (plataforma) + claim `app=mosExpress`, CORS ok, fallback a GAS. Intercepta
+     el chokepoint `mandarImpresionPrintNode` (cubre TODA impresión). **PENDIENTE usuario**: setear el secret
+     `PRINTNODE_API_KEY` (`supabase secrets set PRINTNODE_API_KEY=<key> --project-ref rzbzdeipbtqkzjqdchqk`) ANTES
+     de activar el flag. Probado: no-auth→401, anon→401(claim), OPTIONS→200. Camino abierto para NubeFact→Edge.
 4. **NubeFact → Edge Function `emitir-cpe`** (CPE directo desde la PWA; imprimir apenas hay QR).
 5. **Triggers GAS → pg_cron / Edge Functions scheduled** (sync, cierres, escalaciones).
 6. **Push, bridges, device-auth** → Edge Functions / esquemas compartidos.
