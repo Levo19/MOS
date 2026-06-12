@@ -49,6 +49,20 @@ Eso devuelve TODA la escritura de ventas a GAS al instante (sin redeploy). Para 
   verificar serie → prender flag → probar 1 boleta. Insight clave: en **boletas**, NubeFact devuelve el QR
   **al instante** (no espera a SUNAT, que valida async) → el CPE puede ser casi tan rápido como la NV.
 
+## 3.4 ✅ REMEDIACIÓN LOTE 1 (2026-06-12) — estado
+- **Lote1-A HECHO** (ME GAS @203): lock global reentrante `_conLockCred` en TODO el flujo de
+  cobro de créditos (confirmar/cobrar/escalar/rechazar/cancelar + cobrarVentaExistente/creditar).
+  UrlFetch fuera del lock. + id_extra con sufijo uuid + PATCH inmediato de FormaPago a la sombra.
+- **Lote1-C HECHO** (ME frontend v2.8.5): mutaciones de dinero confiables (validación + cola
+  persistente + merge reconvergente con guard in-flight 20s) + lock procesarPago + e.repeat +
+  res.idVenta en cola + rollback por idCobro + timeouts path directo + 3 returns + playBeepError.
+- **Lote1-B PENDIENTE DE APLICAR**: `supabase/23_fase2_endurecer_venta_directa.sql` escrito y
+  commiteado (claim sub + total=Σ + caja ABIERTA + zona_id). **Falta password de la DB** para
+  aplicarlo (opción A: `echo PASS > ProyectoMOS/supabase/.pgpass` — ya gitignoreado; opción B:
+  pegarlo en el SQL Editor del dashboard).
+- Fixes urgentes previos del mismo día: WH reabrir-guía cache (v2.13.192) + MOS reactivar
+  dispositivo suspendido shape/UC/clave (GAS @398).
+
 ## 3.5 🔍 REVISIÓN EXHAUSTIVA DEL SISTEMA (2026-06-12) — LEER ANTES DE SEGUIR
 Se auditó TODO el ecosistema (5 áreas en paralelo + verificación manual). Resultado:
 **6 CRÍTICOS · 16 ALTOS** documentados con archivo:línea en `REVISION_SISTEMA_2026-06-12.md`,

@@ -4,3 +4,7 @@ package-lock.json
 # clasp credentials — NUNCA commitear OAuth tokens
 .clasprc.json
 **/.clasprc.json
+
+# Credenciales Supabase — NUNCA commitear
+supabase/.pgpass
+supabase/.temp/
