@@ -32,11 +32,13 @@ update mos.config set valor='0' where clave='ME_ESCRITURA_DIRECTA';
 - 🔢 **Números dinámicos** en `mos.config` (`TARJETA_WA_COMERCIAL`, `TARJETA_WA_COMPRAS`, `TARJETA_MARCA`).
   Placeholders `51000000000` → **falta poner los reales** (`update mos.config set valor='51...' where clave='...'`).
   Al cambiarlos, las tarjetas se actualizan solas (se leen al abrir el modal).
-- ⏸️ **PARKEADO para después** (el usuario dijo "por ahora solo ME"):
-  - Pantalla en **MOS → Configuración** para editar los 2 números sin SQL (toca la app MOS; GAS tiene
-    `setConfigMos` (CONFIG_MOS) + `_sbUpsert` para escribir mos.config en el acto → instantáneo).
-  - **Port a WH** (warehouseMos): es build aparte porque WH imprime vía GAS, no por Edge como ME. Piezas
-    ubicadas: `imprimirBienvenida` (Code.gs, envío PrintNode), `_imprimirQR` (Reporte.gs, QR ESC/POS), Supabase.gs.
+- ✅ **EDICIÓN EN MOS HECHA** (MOS v2.43.199 @397): MOS → Config → Infraestructura → "Tarjeta de presentación":
+  2 números + marca editables. `guardarTarjetaWA` escribe CONFIG_MOS **y** upserta mos.config en el acto →
+  las tarjetas toman el número nuevo al instante. `getTarjetaWA` (router) lee de mos.config.
+- ✅ **Número de teléfono debajo del QR** (ME v2.7.96): para quien no quiere escanear, muestra el número
+  legible (+51 987 654 321, doble alto) bajo el QR. Por tipo (cliente=comercial, proveedor=compras).
+- ⏸️ **PARKEADO**: **Port a WH** (warehouseMos) — build aparte porque WH imprime vía GAS, no por Edge como ME.
+  Piezas ubicadas: `imprimirBienvenida` (Code.gs, envío PrintNode), `_imprimirQR` (Reporte.gs, QR ESC/POS), Supabase.gs.
 
 ## 🔜 Lo que estábamos por construir (interrumpido por un paréntesis)
 - **Créditos/cobros directo** — siguiente write-entity sistemático (patrón movimientos: RPC + mirror +
