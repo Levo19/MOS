@@ -56,10 +56,10 @@ Eso devuelve TODA la escritura de ventas a GAS al instante (sin redeploy). Para 
 - **Lote1-C HECHO** (ME frontend v2.8.5): mutaciones de dinero confiables (validación + cola
   persistente + merge reconvergente con guard in-flight 20s) + lock procesarPago + e.repeat +
   res.idVenta en cola + rollback por idCobro + timeouts path directo + 3 returns + playBeepError.
-- **Lote1-B PENDIENTE DE APLICAR**: `supabase/23_fase2_endurecer_venta_directa.sql` escrito y
-  commiteado (claim sub + total=Σ + caja ABIERTA + zona_id). **Falta password de la DB** para
-  aplicarlo (opción A: `echo PASS > ProyectoMOS/supabase/.pgpass` — ya gitignoreado; opción B:
-  pegarlo en el SQL Editor del dashboard).
+- **Lote1-B HECHO** (aplicado a prod 2026-06-12): `supabase/23_fase2_endurecer_venta_directa.sql`
+  — claim sub + total=Σ (validado contra 155 ventas reales de 7 días: 0 violaciones) + caja
+  ABIERTA + zona_id. Smoke tests OK (APP_NO_AUTORIZADA / TOTAL_NO_CUADRA / CAJA_NO_ABIERTA).
+  La password de la DB quedó en `supabase/.pgpass` (gitignoreado) para futuros SQL.
 - Fixes urgentes previos del mismo día: WH reabrir-guía cache (v2.13.192) + MOS reactivar
   dispositivo suspendido shape/UC/clave (GAS @398).
 
