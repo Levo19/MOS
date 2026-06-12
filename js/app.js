@@ -18195,10 +18195,40 @@ const MOS = (() => {
     if (tab === 'personal')     _arrancarRefreshPersonal();
     else                        _detenerRefreshPersonal();
     switch (tab) {
-      case 'infra':        renderInfra();        break;
+      case 'infra':        renderInfra(); cargarTarjetaWA(); break;
       case 'personal':     renderPersonal();     break;
       case 'categorias':   renderCategorias();   break;
       case 'notifs':       renderNotifsPanel();  break;
+    }
+  }
+
+  // ── Tarjeta de presentación: cargar/guardar los números WhatsApp dinámicos (los lee el QR de la tarjeta) ──
+  async function cargarTarjetaWA() {
+    try {
+      const d = await API.get('getTarjetaWA', {});   // d = { TARJETA_WA_COMERCIAL, TARJETA_WA_COMPRAS, TARJETA_MARCA }
+      const c = $('tarjetaWaComercial'); if (c) c.value = (d && d.TARJETA_WA_COMERCIAL) || '';
+      const p = $('tarjetaWaCompras');   if (p) p.value = (d && d.TARJETA_WA_COMPRAS)   || '';
+      const m = $('tarjetaMarca');       if (m) m.value = (d && d.TARJETA_MARCA)        || '';
+    } catch (_) { /* silencioso: si falla, el operador igual puede escribir y guardar */ }
+  }
+  async function guardarTarjetaWA() {
+    const btn = $('btnGuardarTarjetaWA');
+    const comercial = (($('tarjetaWaComercial') || {}).value || '').trim();
+    const compras   = (($('tarjetaWaCompras')   || {}).value || '').trim();
+    const marca     = (($('tarjetaMarca')       || {}).value || '').trim();
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando…'; }
+    try {
+      const d = await API.post('guardarTarjetaWA', { comercial, compras, marca });   // lanza si !ok
+      toast('Números guardados — las tarjetas ya usan los nuevos ✅', 'ok');
+      if (d && d.supabaseOk === false) toast('Guardado en MOS, pero el push instantáneo a Supabase falló (se sincroniza luego)', 'info');
+      if (d) {   // reflejar lo normalizado (solo dígitos)
+        const c = $('tarjetaWaComercial'); if (c) c.value = d.comercial || '';
+        const p = $('tarjetaWaCompras');   if (p) p.value = d.compras   || '';
+      }
+    } catch (e) {
+      toast((e && e.message) || 'No se pudo guardar', 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar números'; }
     }
   }
 
@@ -38770,6 +38800,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirModalPago, guardarPago, abrirModalPedido,
     // Config
     setCfgTab,
+    guardarTarjetaWA,
     // Notificaciones (pestaña Configuraciones)
     renderNotifsPanel, refreshNotifs, notifSetFiltro, notifSetEstado,
     abrirNotifLog, refreshNotifLog,

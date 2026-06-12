@@ -13272,6 +13272,30 @@
         <div class="mt-3 p-3 rounded-lg text-xs text-slate-400" style="background:#0d1526;border:1px solid #1e293b;">
           ℹ️ Las API keys de PrintNode se mantienen en <strong class="text-slate-300">Script Properties</strong> de cada app por seguridad. Aquí solo se gestionan los PrintNode IDs.
         </div>
+
+        <!-- [Tarjeta de presentación] Números WhatsApp dinámicos (los lee el QR de la tarjeta térmica de ME/WH) -->
+        <div class="mt-4 p-4 rounded-xl" style="background:#0d1526;border:1px solid #1e293b;">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="text-lg">📇</span>
+            <h3 class="text-sm font-bold text-slate-200">Tarjeta de presentación</h3>
+          </div>
+          <p class="text-xs text-slate-500 mb-3">Números de WhatsApp que salen en el QR de la tarjeta. Al guardar se actualizan <strong class="text-slate-300">al instante</strong> en las tarjetas de ME/WH.</p>
+          <div class="space-y-2">
+            <label class="block text-xs text-slate-400 font-semibold">🛒 WhatsApp Clientes
+              <input id="tarjetaWaComercial" type="tel" inputmode="numeric" placeholder="51XXXXXXXXX" class="w-full mt-1 px-3 py-2 rounded-lg text-slate-100 text-sm" style="background:#1e293b;border:1px solid #334155;" />
+            </label>
+            <label class="block text-xs text-slate-400 font-semibold">🏭 WhatsApp Proveedores
+              <input id="tarjetaWaCompras" type="tel" inputmode="numeric" placeholder="51XXXXXXXXX" class="w-full mt-1 px-3 py-2 rounded-lg text-slate-100 text-sm" style="background:#1e293b;border:1px solid #334155;" />
+            </label>
+            <label class="block text-xs text-slate-400 font-semibold">Marca (cabecera de la tarjeta)
+              <input id="tarjetaMarca" type="text" placeholder="INVERSION MOS" class="w-full mt-1 px-3 py-2 rounded-lg text-slate-100 text-sm" style="background:#1e293b;border:1px solid #334155;" />
+            </label>
+          </div>
+          <button id="btnGuardarTarjetaWA" onclick="MOS.guardarTarjetaWA && MOS.guardarTarjetaWA()" class="w-full mt-3 py-2.5 rounded-lg font-bold text-sm text-white transition-all hover:scale-[1.02] active:scale-95" style="background:linear-gradient(135deg,#4f46e5,#7c3aed);">
+            💾 Guardar números
+          </button>
+          <p class="text-[11px] text-slate-500 mt-2">Formato internacional sin “+”, ej. <strong class="text-slate-300">51987654321</strong>.</p>
+        </div>
       </div>
 
       <!-- Personal — vista agrupada con metas inline + indicador de actividad -->

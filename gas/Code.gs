@@ -234,6 +234,8 @@ function _route(method, e) {
       // ── Config ─────────────────────────────────────────────
       case 'getConfig':            return getConfigPublico();   // sanitizado: sin secretos (fix C5)
       case 'setConfig':            return setConfigMos(params);
+      case 'getTarjetaWA':         return getTarjetaWA();
+      case 'guardarTarjetaWA':     return guardarTarjetaWA(params);
 
       // ── Dispositivos ───────────────────────────────────────
       case 'getDispositivos':              return getDispositivos(params);
@@ -553,4 +555,48 @@ function setConfigMos(params) {
   }
   sheet.appendRow([params.clave, params.valor, params.descripcion || '']);
   return { ok: true };
+}
+
+// ── Tarjeta de presentación: números WhatsApp dinámicos (los leen las tarjetas térmicas de ME/WH) ──
+// Lee de mos.config (lo que consumen las tarjetas). Fallback a CONFIG_MOS si Supabase no responde.
+function getTarjetaWA() {
+  try {
+    var r = _sbRpc('me', 'get_tarjeta_config', {});
+    if (r && r.ok && r.data && Object.keys(r.data).length) return { ok: true, data: r.data };
+  } catch (_) {}
+  var cfg = (getConfigMos().data) || {};
+  return { ok: true, data: {
+    TARJETA_WA_COMERCIAL: cfg.TARJETA_WA_COMERCIAL || '',
+    TARJETA_WA_COMPRAS:   cfg.TARJETA_WA_COMPRAS   || '',
+    TARJETA_MARCA:        cfg.TARJETA_MARCA        || ''
+  }};
+}
+
+// Guarda los números: escribe CONFIG_MOS (fuente de verdad MOS) Y upserta mos.config en el acto
+// → las tarjetas toman el número nuevo YA (sin esperar al sync programado).
+function guardarTarjetaWA(params) {
+  params = params || {};
+  var soloDig = function (s) { return String(s || '').replace(/\D/g, ''); };
+  var comercial = soloDig(params.comercial);
+  var compras   = soloDig(params.compras);
+  var marca     = String(params.marca || '').trim() || 'INVERSION MOS';
+  if (comercial && (comercial.length < 9 || comercial.length > 15)) return { ok: false, error: 'Número de clientes inválido (9-15 dígitos, formato 51XXXXXXXXX)' };
+  if (compras   && (compras.length   < 9 || compras.length   > 15)) return { ok: false, error: 'Número de proveedores inválido (9-15 dígitos, formato 51XXXXXXXXX)' };
+
+  // 1) CONFIG_MOS (fuente de verdad)
+  setConfigMos({ clave: 'TARJETA_WA_COMERCIAL', valor: comercial, descripcion: 'Tarjeta: WhatsApp clientes' });
+  setConfigMos({ clave: 'TARJETA_WA_COMPRAS',   valor: compras,   descripcion: 'Tarjeta: WhatsApp proveedores' });
+  setConfigMos({ clave: 'TARJETA_MARCA',        valor: marca,     descripcion: 'Tarjeta: marca' });
+
+  // 2) mos.config (Supabase) en el acto → propagación instantánea a las tarjetas
+  var up = { ok: true };
+  try {
+    up = _sbUpsert('mos.config', [
+      { clave: 'TARJETA_WA_COMERCIAL', valor: comercial, descripcion: 'Tarjeta: WhatsApp clientes' },
+      { clave: 'TARJETA_WA_COMPRAS',   valor: compras,   descripcion: 'Tarjeta: WhatsApp proveedores' },
+      { clave: 'TARJETA_MARCA',        valor: marca,     descripcion: 'Tarjeta: marca' }
+    ], 'clave');
+  } catch (eU) { up = { ok: false, error: (eU && eU.message) }; }
+
+  return { ok: true, data: { comercial: comercial, compras: compras, marca: marca, supabaseOk: !!up.ok } };
 }
