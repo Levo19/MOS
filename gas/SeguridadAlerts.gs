@@ -340,13 +340,18 @@ function reactivarDispositivoSuspendido(params) {
   try { _lock.waitLock(15000); } catch(e) { return { ok: false, error: 'Sistema ocupado' }; }
   try {
     if (!params.deviceId) return { ok: false, error: 'deviceId requerido' };
-    // [v2.43.132 FIX] verificarClaveAdmin si viene clave (admin remoto desde MOS)
-    if (params.claveAdmin) {
-      var authR = verificarClaveAdmin({ clave: params.claveAdmin, accion: 'REACTIVAR_DISPOSITIVO', refDocumento: params.deviceId });
-      if (!authR.ok) return authR;
-      if (!authR.data || !authR.data.autorizado) {
-        return { ok: true, data: { autorizado: false, error: (authR.data && authR.data.error) || 'Clave incorrecta' } };
-      }
+    // [v2.43.201 FIX SEC] claveAdmin ahora OBLIGATORIA — antes era opcional y
+    // cualquiera con la URL del GAS podía reactivar dispositivos sin clave
+    // (único caller real: device-auth.js, que SIEMPRE la manda).
+    if (!params.claveAdmin) return { ok: false, error: 'Requiere claveAdmin' };
+    var authR = verificarClaveAdmin({
+      clave: params.claveAdmin, accion: 'REACTIVAR_DISPOSITIVO',
+      refDocumento: params.deviceId, appOrigen: params.app || '',
+      dispositivo: params.userAgent || '', deviceId: params.deviceId
+    });
+    if (!authR.ok) return authR;
+    if (!authR.data || !authR.data.autorizado) {
+      return { ok: true, data: { autorizado: false, error: (authR.data && authR.data.error) || 'Clave incorrecta' } };
     }
     var sheet = SpreadsheetApp.openById(SS_ID).getSheetByName('DISPOSITIVOS');
     // [v2.43.137 FIX] Guard sheet null
@@ -356,11 +361,25 @@ function reactivarDispositivoSuspendido(params) {
     var iId = hdrs.indexOf('ID_Dispositivo');
     var iEst = hdrs.indexOf('Estado');
     var iSus = hdrs.indexOf('Suspendido_Desde');
+    var iUC  = hdrs.indexOf('Ultima_Conexion');
     for (var i = 1; i < data.length; i++) {
       if (String(data[i][iId]) !== String(params.deviceId)) continue;
       sheet.getRange(i + 1, iEst + 1).setValue('ACTIVO');
       if (iSus >= 0) sheet.getRange(i + 1, iSus + 1).setValue('');
-      return { ok: true };
+      // [v2.43.201 FIX] Refrescar Ultima_Conexion — sin esto el cron de purga
+      // de las 23:15 veía la fecha vieja y RE-SUSPENDÍA el dispositivo esa
+      // misma noche (el "se vuelve a bloquear a los pocos días").
+      if (iUC >= 0) sheet.getRange(i + 1, iUC + 1).setValue(
+        Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'")
+      );
+      // [v2.43.201 FIX CRÍTICO shape] Antes devolvía { ok:true } SIN data.autorizado.
+      // device-auth.js evalúa `if (!d || !d.autorizado) → "Clave incorrecta"` →
+      // el modal decía CLAVE INCORRECTA aunque la clave era correcta y el
+      // dispositivo YA estaba reactivado. Espejar el shape de aprobarDispositivoEnSitu.
+      return { ok: true, data: Object.assign(
+        { autorizado: true, aprobadoPor: authR.data.validadoPor, accion: 'reactivado' },
+        (typeof _payloadDeviceAuthExtras === 'function' ? _payloadDeviceAuthExtras(data[i], hdrs) : {})
+      ) };
     }
     return { ok: false, error: 'Dispositivo no encontrado' };
   } catch(e) { return { ok: false, error: e.message }; }
