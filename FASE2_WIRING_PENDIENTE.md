@@ -48,6 +48,19 @@ pone el turno/caja (los prefijos que pasa la estación, como el path GAS). `mos.
 4. (Opcional) LockService también en el append de `procesarVenta` (hoy sin lock; mitigado por lock del botón
    de venta en el frontend). Si se comparte lock con el mirror, cierra el TOCTOU del lado Sheets por completo.
 
+## ⚠️ INTERACCIÓN CRÍTICA descubierta (pre-reserva vs RPC mint) — manejar SÍ o SÍ
+El flujo actual **pre-reserva el correlativo al abrir el modal** (`_prereservaIniciar`, index.html ~14273;
+avanza el contador Postgres vía GAS). La rama directa NO puede ignorarlo:
+- Si la rama directa llama `crear_venta_directa` (que mintea de nuevo) → **DOBLE-MINT = hueco**.
+- Si se le pasa el número pre-reservado al RPC → riesgo de **reserva que revierte al expirar → correlativo DUPLICADO** (mismo nº en 2 ventas = SUNAT).
+**Solución recomendada (la limpia):** en modo escritura-directa, **GATEAR LA PRE-RESERVA OFF** (no reservar) →
+el RPC mintea limpio (sin reserva = sin revert). Puntos a gatear con el flag `me_escritura_directa`:
+(1) `_prereservaIniciar('NOTA_DE_VENTA')` al abrir modal (~14273); (2) la espera de pre-reserva en `procesarPago`
+(`esperarCorrelativoONV`/overlay "Asegurando numeración"); (3) `_onCambioTipoDoc` (~14339). Con eso NO hay
+reserva, el RPC es el único minter, y la rama directa imprime con el correlativo que devuelve el RPC.
+Confirmado: `procesarPago` es **async** (index.html:14536) → se puede usar `await` en la rama. Punto de inserción
+de la rama: justo después del bloque "Modo offline puro" (~14933), antes del bloque de timeout/GAS (~14935).
+
 ## Plan de wiring (sesión fresca)
 1. **Flag** `me_escritura_directa` (OFF default). Solo NV + online + flag → path directo.
 2. En el flujo de venta (donde hoy se encola/sincroniza vía `procesarVenta`, ver `index.html` `syncPendientes`
