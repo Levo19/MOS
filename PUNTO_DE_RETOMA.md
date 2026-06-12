@@ -26,6 +26,18 @@ update mos.config set valor='0' where clave='ME_ESCRITURA_DIRECTA';
 3. **Lectura directa** (`ME_LECTURA_DIRECTA=0`): aún NO segura (un GAS-venta que se caiga del shadow
    → cajero la pierde → re-emite → duplicada). Habilitar recién cuando el shadow sea 100% confiable.
 
+## 📇 Tarjeta de presentación (estado 2026-06-12)
+- ✅ **HECHA en ME** (v2.7.95): Herramientas → "📇 IMPRIMIR TARJETA" → modal Cliente/Proveedor → imprime
+  tarjeta térmica con QR a WhatsApp (mensaje pre-escrito + Ref) por la infra Edge. Plan B: muestra QR en pantalla.
+- 🔢 **Números dinámicos** en `mos.config` (`TARJETA_WA_COMERCIAL`, `TARJETA_WA_COMPRAS`, `TARJETA_MARCA`).
+  Placeholders `51000000000` → **falta poner los reales** (`update mos.config set valor='51...' where clave='...'`).
+  Al cambiarlos, las tarjetas se actualizan solas (se leen al abrir el modal).
+- ⏸️ **PARKEADO para después** (el usuario dijo "por ahora solo ME"):
+  - Pantalla en **MOS → Configuración** para editar los 2 números sin SQL (toca la app MOS; GAS tiene
+    `setConfigMos` (CONFIG_MOS) + `_sbUpsert` para escribir mos.config en el acto → instantáneo).
+  - **Port a WH** (warehouseMos): es build aparte porque WH imprime vía GAS, no por Edge como ME. Piezas
+    ubicadas: `imprimirBienvenida` (Code.gs, envío PrintNode), `_imprimirQR` (Reporte.gs, QR ESC/POS), Supabase.gs.
+
 ## 🔜 Lo que estábamos por construir (interrumpido por un paréntesis)
 - **Créditos/cobros directo** — siguiente write-entity sistemático (patrón movimientos: RPC + mirror +
   flag + frontend). Ya leído el flujo: `gas/Creditos.gs` (`asignarCobroACajero` L63, `_dualWriteCobroME`
