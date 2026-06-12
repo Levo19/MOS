@@ -31,7 +31,9 @@ returns jsonb language sql stable security definer set search_path = '' as $fn$
       and ( (p.desde is not null and v.fecha >= p.desde)
             or (p.desde is null and to_char(v.fecha at time zone 'America/Lima','YYYY-MM-DD')
                                   = to_char(now()   at time zone 'America/Lima','YYYY-MM-DD')) )
-      and (p.pref_like is null or coalesce(v.correlativo,'') like any (p.pref_like))
+      -- [scope-ALTO] fail-closed: prefijos vacíos/null ⇒ 0 filas (antes devolvía TODAS las estaciones).
+      -- El caller legítimo (estación) SIEMPRE pasa sus prefijos; sin ellos no hay scope → no se entrega nada.
+      and p.pref_like is not null and coalesce(v.correlativo,'') like any (p.pref_like)
   )
   select jsonb_build_object(
     'status','success',

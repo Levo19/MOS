@@ -36,7 +36,11 @@ begin
   -- correlativo atómico (idempotente por ref_local: en carrera, ambas ejecuciones obtienen el MISMO número)
   v_num  := me.siguiente_correlativo(v_serie, v_ref);
   v_corr := v_serie || '-' || lpad(v_num::text, 6, '0');
-  v_id   := 'V-' || (floor(extract(epoch from clock_timestamp()) * 1000))::bigint::text;
+  -- [PK-collision-ALTO] epoch_ms solo NO basta: 2 ventas concurrentes con ref_local distinto en el MISMO ms
+  -- generaban el MISMO id_venta (PRIMARY KEY) → el on conflict es sobre (ref_local), no captura la violación
+  -- de PK → la transacción aborta y la RPC falla. Sufijo aleatorio = colisión-resistente, manteniendo orden temporal.
+  v_id   := 'V-' || (floor(extract(epoch from clock_timestamp()) * 1000))::bigint::text
+                 || '-' || substr(md5(random()::text || clock_timestamp()::text || v_ref), 1, 8);
 
   insert into me.ventas (id_venta, fecha, vendedor, estacion, cliente_doc, cliente_nombre, total,
                          tipo_doc, forma_pago, correlativo, id_caja, dispositivo_id, estado_envio,
