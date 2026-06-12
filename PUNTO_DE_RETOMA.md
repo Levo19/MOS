@@ -35,8 +35,13 @@ update mos.config set valor='0' where clave='ME_ESCRITURA_DIRECTA';
 - ✅ **EDICIÓN EN MOS HECHA** (MOS v2.43.199 @397): MOS → Config → Infraestructura → "Tarjeta de presentación":
   2 números + marca editables. `guardarTarjetaWA` escribe CONFIG_MOS **y** upserta mos.config en el acto →
   las tarjetas toman el número nuevo al instante. `getTarjetaWA` (router) lee de mos.config.
-- ✅ **Número de teléfono debajo del QR** (ME v2.7.96): para quien no quiere escanear, muestra el número
-  legible (+51 987 654 321, doble alto) bajo el QR. Por tipo (cliente=comercial, proveedor=compras).
+- ✅ **Número de teléfono debajo del QR** (ME v2.7.96): número legible bajo el QR (sin +51, 987 654 321 grande).
+- ✅ **Tarjeta bitmap diferenciada** (ME v2.8.3): cliente=ícono carrito + banda negra; proveedor=ícono camión +
+  marco de líneas. Íconos vía canvas→raster ESC/POS (GS v 0, 576px). Pipeline binario nuevo (`_b64Bytes`/`Sraw`)
+  porque `b64ESC` normaliza y corrompería imagen + bytes binarios del QR. RIESGO: si el printer no soporta GS v 0,
+  el ícono sale basura → fallback a ASCII (avisar). Edición de números: MOS→Config→Infraestructura (modal +51 fijo).
+- ✅ **Modo Pro** (ME v2.8.2): barra inferior auto-oculta (colores marca + dots alerta, ~5s) + atajos de teclado
+  PC (ME v2.8.1: Espacio=cobrar/imprimir, Esc=cerrar/limpiar granel, /, Alt+1/2/3). Autodetect PC + toggle en Herramientas.
 - ⏸️ **PARKEADO**: **Port a WH** (warehouseMos) — build aparte porque WH imprime vía GAS, no por Edge como ME.
   Piezas ubicadas: `imprimirBienvenida` (Code.gs, envío PrintNode), `_imprimirQR` (Reporte.gs, QR ESC/POS), Supabase.gs.
 
