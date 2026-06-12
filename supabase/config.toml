@@ -1,0 +1,8 @@
+# Supabase config — proyecto MOS (ME/WH/MOS comparten DB). Solo lo necesario para Edge Functions.
+project_id = "rzbzdeipbtqkzjqdchqk"
+
+# Edge Function `imprimir`: relay PWA → PrintNode (key en secret PRINTNODE_API_KEY).
+# verify_jwt=true → la plataforma verifica la FIRMA del JWT contra el secret del proyecto (rechaza tokens no
+# firmados por nosotros); la función además exige claim app=mosExpress. El preflight OPTIONS queda exento.
+[functions.imprimir]
+verify_jwt = true
