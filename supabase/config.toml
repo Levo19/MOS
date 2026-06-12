@@ -6,3 +6,8 @@ project_id = "rzbzdeipbtqkzjqdchqk"
 # firmados por nosotros); la función además exige claim app=mosExpress. El preflight OPTIONS queda exento.
 [functions.imprimir]
 verify_jwt = true
+
+# Edge Function `emitir-cpe`: emite boleta/factura a SUNAT vía NubeFact (token en secrets NUBEFACT_TOKEN/RUC).
+# Mismo modelo de auth que imprimir (firma JWT + claim app=mosExpress). Port fiel de gas/NubeFact.gs.
+[functions.emitir-cpe]
+verify_jwt = true
