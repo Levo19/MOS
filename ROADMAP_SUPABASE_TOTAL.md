@@ -50,6 +50,10 @@ Futuro: `navegador → Edge Function (key en secret) → PrintNode`. **Igual de 
 ## Orden de migración recomendado (cada paso con su 20×)
 1. **Terminar escrituras NV directas** (wiring + reconciliación + cierre cuadra). ← EN ESTO.
 2. **Cajas / movimientos / créditos / anulaciones** → RPCs directas (patrón probado).
+   - ✅ **movimientos** HECHO (`supabase/19` `crear_movimiento_directo`, mirror `MIRROR_MOV`, reconcil; flag OFF;
+     idempotente por `id_extra` compartido directo↔GAS; valida caja ABIERTA). Falta cajas (apertura/cierre =
+     lo más money-critical), créditos, anulaciones. NOTA: `crear_venta_directa` aún NO valida caja abierta —
+     cerrar ese gap al hacer cajas-directo.
 3. **PrintNode → Edge Function** (rápido + seguro; saca un salto a GAS de cada impresión).
 4. **NubeFact → Edge Function `emitir-cpe`** (CPE directo desde la PWA; imprimir apenas hay QR).
 5. **Triggers GAS → pg_cron / Edge Functions scheduled** (sync, cierres, escalaciones).
