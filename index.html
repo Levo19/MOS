@@ -13273,29 +13273,17 @@
           ℹ️ Las API keys de PrintNode se mantienen en <strong class="text-slate-300">Script Properties</strong> de cada app por seguridad. Aquí solo se gestionan los PrintNode IDs.
         </div>
 
-        <!-- [Tarjeta de presentación] Números WhatsApp dinámicos (los lee el QR de la tarjeta térmica de ME/WH) -->
-        <div class="mt-4 p-4 rounded-xl" style="background:#0d1526;border:1px solid #1e293b;">
-          <div class="flex items-center gap-2 mb-1">
-            <span class="text-lg">📇</span>
-            <h3 class="text-sm font-bold text-slate-200">Tarjeta de presentación</h3>
-          </div>
-          <p class="text-xs text-slate-500 mb-3">Números de WhatsApp que salen en el QR de la tarjeta. Al guardar se actualizan <strong class="text-slate-300">al instante</strong> en las tarjetas de ME/WH.</p>
-          <div class="space-y-2">
-            <label class="block text-xs text-slate-400 font-semibold">🛒 WhatsApp Clientes
-              <input id="tarjetaWaComercial" type="tel" inputmode="numeric" placeholder="51XXXXXXXXX" class="w-full mt-1 px-3 py-2 rounded-lg text-slate-100 text-sm" style="background:#1e293b;border:1px solid #334155;" />
-            </label>
-            <label class="block text-xs text-slate-400 font-semibold">🏭 WhatsApp Proveedores
-              <input id="tarjetaWaCompras" type="tel" inputmode="numeric" placeholder="51XXXXXXXXX" class="w-full mt-1 px-3 py-2 rounded-lg text-slate-100 text-sm" style="background:#1e293b;border:1px solid #334155;" />
-            </label>
-            <label class="block text-xs text-slate-400 font-semibold">Marca (cabecera de la tarjeta)
-              <input id="tarjetaMarca" type="text" placeholder="INVERSION MOS" class="w-full mt-1 px-3 py-2 rounded-lg text-slate-100 text-sm" style="background:#1e293b;border:1px solid #334155;" />
-            </label>
-          </div>
-          <button id="btnGuardarTarjetaWA" onclick="MOS.guardarTarjetaWA && MOS.guardarTarjetaWA()" class="w-full mt-3 py-2.5 rounded-lg font-bold text-sm text-white transition-all hover:scale-[1.02] active:scale-95" style="background:linear-gradient(135deg,#4f46e5,#7c3aed);">
-            💾 Guardar números
-          </button>
-          <p class="text-[11px] text-slate-500 mt-2">Formato internacional sin “+”, ej. <strong class="text-slate-300">51987654321</strong>.</p>
-        </div>
+        <!-- [Tarjeta de presentación] Botón que abre el modal de edición de números WhatsApp -->
+        <button onclick="MOS.abrirTarjetaModal && MOS.abrirTarjetaModal()"
+                class="w-full mt-4 p-4 rounded-xl flex items-center gap-3 text-left transition-all hover:scale-[1.01] active:scale-95"
+                style="background:linear-gradient(135deg,#1e1b4b,#0d1526);border:1px solid rgba(99,102,241,.45);">
+          <span class="text-2xl">📇</span>
+          <span class="flex-1">
+            <span class="block text-sm font-bold text-slate-200">Tarjeta de presentación</span>
+            <span class="block text-xs text-slate-500">Editar los números de WhatsApp del QR (clientes / proveedores)</span>
+          </span>
+          <span class="text-indigo-400 text-lg">›</span>
+        </button>
       </div>
 
       <!-- Personal — vista agrupada con metas inline + indicador de actividad -->
@@ -13475,6 +13463,45 @@
     <!-- ═══════════════════════════════════════════════════════
          MODAL: AUDIO (escucha remota)
     ═══════════════════════════════════════════════════════ -->
+    <!-- ===== MODAL: Tarjeta de presentación (números WhatsApp) ===== -->
+    <div id="modalTarjetaWA" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose&&MOS._validBackdropClose(event,this))MOS.closeModal('modalTarjetaWA')">
+      <div class="modal-box" style="max-width:420px;background:#0f172a;border-radius:18px;overflow:hidden;width:100%">
+        <div class="flex items-center justify-between" style="background:linear-gradient(135deg,#312e81,#1e1b4b);padding:18px 20px;">
+          <div class="flex items-center gap-2">
+            <span class="text-2xl">📇</span>
+            <div>
+              <div class="text-base font-black text-white leading-tight">Tarjeta de presentación</div>
+              <div class="text-[11px] text-indigo-200">Números de WhatsApp del QR</div>
+            </div>
+          </div>
+          <button onclick="MOS.closeModal('modalTarjetaWA')" class="modal-close-x">×</button>
+        </div>
+        <div style="padding:20px;">
+          <label class="block mb-1 text-xs font-bold text-emerald-300">🛒 WhatsApp Clientes</label>
+          <div class="flex items-stretch rounded-xl overflow-hidden mb-4" style="border:1px solid #334155;">
+            <span class="flex items-center px-3 font-black text-slate-200" style="background:#1e293b;white-space:nowrap;">🇵🇪 +51</span>
+            <input id="twaComercial" type="tel" inputmode="numeric" maxlength="9" placeholder="987654321" oninput="this.value=this.value.replace(/\D/g,'')"
+                   class="flex-1 px-3 py-3 text-slate-100 text-lg font-black tracking-widest outline-none" style="background:#0f172a;min-width:0;" />
+          </div>
+          <label class="block mb-1 text-xs font-bold text-amber-300">🏭 WhatsApp Proveedores</label>
+          <div class="flex items-stretch rounded-xl overflow-hidden mb-4" style="border:1px solid #334155;">
+            <span class="flex items-center px-3 font-black text-slate-200" style="background:#1e293b;white-space:nowrap;">🇵🇪 +51</span>
+            <input id="twaCompras" type="tel" inputmode="numeric" maxlength="9" placeholder="987654321" oninput="this.value=this.value.replace(/\D/g,'')"
+                   class="flex-1 px-3 py-3 text-slate-100 text-lg font-black tracking-widest outline-none" style="background:#0f172a;min-width:0;" />
+          </div>
+          <label class="block mb-1 text-xs font-bold text-slate-400">Marca (cabecera de la tarjeta)</label>
+          <input id="twaMarca" type="text" placeholder="INVERSION MOS"
+                 class="w-full px-3 py-2.5 rounded-xl text-slate-100 text-sm mb-2" style="background:#0f172a;border:1px solid #334155;" />
+          <p class="text-[11px] text-slate-500 mb-4">Solo el número de 9 dígitos — el <strong class="text-slate-300">+51</strong> ya está puesto (estamos en Perú 🇵🇪).</p>
+          <button id="btnTwaSave" onclick="MOS.guardarTarjetaWA && MOS.guardarTarjetaWA()"
+                  class="w-full py-3.5 rounded-xl font-black text-white text-base transition-all hover:scale-[1.02] active:scale-95"
+                  style="background:linear-gradient(135deg,#4f46e5,#7c3aed);box-shadow:0 8px 24px rgba(79,70,229,.4);">
+            💾 Guardar
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div id="modalAudio" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalAudio')">
       <div class="modal-box flex flex-col" style="max-width:640px;max-height:92vh">
         <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(239,68,68,0.10),transparent);">

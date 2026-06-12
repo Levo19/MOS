@@ -18195,40 +18195,64 @@ const MOS = (() => {
     if (tab === 'personal')     _arrancarRefreshPersonal();
     else                        _detenerRefreshPersonal();
     switch (tab) {
-      case 'infra':        renderInfra(); cargarTarjetaWA(); break;
+      case 'infra':        renderInfra(); break;
       case 'personal':     renderPersonal();     break;
       case 'categorias':   renderCategorias();   break;
       case 'notifs':       renderNotifsPanel();  break;
     }
   }
 
-  // ── Tarjeta de presentación: cargar/guardar los números WhatsApp dinámicos (los lee el QR de la tarjeta) ──
+  // ── Tarjeta de presentación: modal de números WhatsApp (+51 fijo, solo 9 dígitos) ──
+  // Guardado: se prepende '51' (Perú) → se almacena 51XXXXXXXXX (formato wa.me). En pantalla solo los 9 dígitos.
+  function abrirTarjetaModal() { openModal('modalTarjetaWA'); cargarTarjetaWA(); }
+  function _twaLocal(v) {       // 51XXXXXXXXX -> XXXXXXXXX (oculta placeholder de ceros)
+    v = String(v || '').replace(/\D/g, '');
+    if (v.slice(0, 2) === '51' && v.length >= 11) v = v.slice(2);
+    return /^0*$/.test(v) ? '' : v;
+  }
   async function cargarTarjetaWA() {
     try {
       const d = await API.get('getTarjetaWA', {});   // d = { TARJETA_WA_COMERCIAL, TARJETA_WA_COMPRAS, TARJETA_MARCA }
-      const c = $('tarjetaWaComercial'); if (c) c.value = (d && d.TARJETA_WA_COMERCIAL) || '';
-      const p = $('tarjetaWaCompras');   if (p) p.value = (d && d.TARJETA_WA_COMPRAS)   || '';
-      const m = $('tarjetaMarca');       if (m) m.value = (d && d.TARJETA_MARCA)        || '';
-    } catch (_) { /* silencioso: si falla, el operador igual puede escribir y guardar */ }
+      const c = $('twaComercial'); if (c) c.value = _twaLocal(d && d.TARJETA_WA_COMERCIAL);
+      const p = $('twaCompras');   if (p) p.value = _twaLocal(d && d.TARJETA_WA_COMPRAS);
+      const m = $('twaMarca');     if (m) m.value = (d && d.TARJETA_MARCA) || '';
+    } catch (_) { /* silencioso: igual pueden escribir y guardar */ }
+  }
+  function _twaFeedbackOk(btn) {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination); o.type = 'sine';
+      o.frequency.setValueAtTime(660, ctx.currentTime);
+      o.frequency.exponentialRampToValueAtTime(990, ctx.currentTime + 0.12);
+      g.gain.setValueAtTime(0.25, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+      o.start(); o.stop(ctx.currentTime + 0.19);
+    } catch (_) {}
+    try { if (navigator.vibrate) navigator.vibrate([30, 40, 30]); } catch (_) {}
+    if (btn) {
+      btn.disabled = false; btn.innerHTML = '✓ ¡Guardado!';
+      btn.style.background = 'linear-gradient(135deg,#059669,#047857)';
+      setTimeout(() => { btn.innerHTML = '💾 Guardar'; btn.style.background = 'linear-gradient(135deg,#4f46e5,#7c3aed)'; }, 1600);
+    }
   }
   async function guardarTarjetaWA() {
-    const btn = $('btnGuardarTarjetaWA');
-    const comercial = (($('tarjetaWaComercial') || {}).value || '').trim();
-    const compras   = (($('tarjetaWaCompras')   || {}).value || '').trim();
-    const marca     = (($('tarjetaMarca')       || {}).value || '').trim();
-    if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando…'; }
+    const btn = $('btnTwaSave');
+    const dig = id => (($(id) || {}).value || '').replace(/\D/g, '');
+    const comLocal = dig('twaComercial'), provLocal = dig('twaCompras');
+    const marca = (($('twaMarca') || {}).value || '').trim();
+    if (comLocal && comLocal.length !== 9)  { toast('El número de clientes debe tener 9 dígitos', 'error'); return; }
+    if (provLocal && provLocal.length !== 9) { toast('El número de proveedores debe tener 9 dígitos', 'error'); return; }
+    const full = n => n ? ('51' + n) : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Guardando…'; }
     try {
-      const d = await API.post('guardarTarjetaWA', { comercial, compras, marca });   // lanza si !ok
-      toast('Números guardados — las tarjetas ya usan los nuevos ✅', 'ok');
-      if (d && d.supabaseOk === false) toast('Guardado en MOS, pero el push instantáneo a Supabase falló (se sincroniza luego)', 'info');
-      if (d) {   // reflejar lo normalizado (solo dígitos)
-        const c = $('tarjetaWaComercial'); if (c) c.value = d.comercial || '';
-        const p = $('tarjetaWaCompras');   if (p) p.value = d.compras   || '';
-      }
+      await API.post('guardarTarjetaWA', { comercial: full(comLocal), compras: full(provLocal), marca });
+      _twaFeedbackOk(btn);
+      toast('¡Listo! Las tarjetas ya usan los números nuevos ✅', 'ok');
+      setTimeout(() => closeModal('modalTarjetaWA'), 900);
     } catch (e) {
       toast((e && e.message) || 'No se pudo guardar', 'error');
-    } finally {
-      if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar números'; }
+      if (btn) { btn.disabled = false; btn.innerHTML = '💾 Guardar'; }
     }
   }
 
@@ -38800,7 +38824,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirModalPago, guardarPago, abrirModalPedido,
     // Config
     setCfgTab,
-    guardarTarjetaWA,
+    guardarTarjetaWA, abrirTarjetaModal,
     // Notificaciones (pestaña Configuraciones)
     renderNotifsPanel, refreshNotifs, notifSetFiltro, notifSetEstado,
     abrirNotifLog, refreshNotifLog,
