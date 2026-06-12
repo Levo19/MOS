@@ -61,6 +61,12 @@ Futuro: `navegador → Edge Function (key en secret) → PrintNode`. **Igual de 
      `PRINTNODE_API_KEY` (`supabase secrets set PRINTNODE_API_KEY=<key> --project-ref rzbzdeipbtqkzjqdchqk`) ANTES
      de activar el flag. Probado: no-auth→401, anon→401(claim), OPTIONS→200. Camino abierto para NubeFact→Edge.
 4. **NubeFact → Edge Function `emitir-cpe`** (CPE directo desde la PWA; imprimir apenas hay QR).
+   - 🟡 EDGE FUNCTION HECHA (`supabase/functions/emitir-cpe`, desplegada, inerte): port fiel de `emitirNubeFact`
+     (IGV por tipo, payload, emisión boleta/factura, idempotencia por duplicado→consulta). Token en secrets
+     `NUBEFACT_TOKEN`/`NUBEFACT_RUC`. Auth: firma JWT + claim app=mosExpress (probado anon→401). **FALTA:**
+     (a) setear secrets (IDEAL: token DEMO de NubeFact para testear sin emitir a SUNAT real); (b) wiring del
+     path CPE-directo en el front (correlativo B/F atómico + emitir + imprimir con QR + mirror) — detrás de
+     flag, incremental, compliance-crítico; (c) NO test-emitir contra RUC real sin OK explícito (= boleta real).
 5. **Triggers GAS → pg_cron / Edge Functions scheduled** (sync, cierres, escalaciones).
 6. **Push, bridges, device-auth** → Edge Functions / esquemas compartidos.
 7. **Retirar Sheets como fuente de verdad** (validación extensa + contingencia) — el CORTE FINAL.
