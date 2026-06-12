@@ -36,10 +36,14 @@ update mos.config set valor='0' where clave='ME_ESCRITURA_DIRECTA';
   2 números + marca editables. `guardarTarjetaWA` escribe CONFIG_MOS **y** upserta mos.config en el acto →
   las tarjetas toman el número nuevo al instante. `getTarjetaWA` (router) lee de mos.config.
 - ✅ **Número de teléfono debajo del QR** (ME v2.7.96): número legible bajo el QR (sin +51, 987 654 321 grande).
-- ✅ **Tarjeta bitmap diferenciada** (ME v2.8.3): cliente=ícono carrito + banda negra; proveedor=ícono camión +
-  marco de líneas. Íconos vía canvas→raster ESC/POS (GS v 0, 576px). Pipeline binario nuevo (`_b64Bytes`/`Sraw`)
-  porque `b64ESC` normaliza y corrompería imagen + bytes binarios del QR. RIESGO: si el printer no soporta GS v 0,
-  el ícono sale basura → fallback a ASCII (avisar). Edición de números: MOS→Config→Infraestructura (modal +51 fijo).
+- ✅ **Tarjeta bitmap diferenciada** (ME v2.8.4): cabecera = UN solo raster nítido (`_cabeceraTarjeta`): ícono
+  (carrito/camión) + banda negra sólida con palabra CLIENTE/PROVEEDOR en **blanco** (papel sin imprimir); proveedor
+  lleva marco blanco interior. Antes la banda era texto invertido doble-alto → borroso; ahora canvas→raster filoso.
+  Pipeline binario (`_b64Bytes`/`Sraw`) porque `b64ESC` normaliza y corrompería imagen + bytes binarios del QR.
+  RIESGO: si el printer no soporta GS v 0, la cabecera sale basura → fallback a ASCII (avisar). Edición de números:
+  MOS→Config→Infraestructura (modal +51 fijo).
+- ✅ **Tema de color por módulo** (ME v2.8.4): `colorModulo` computed (POS verde #10b981 / CAJA azul #3b82f6 /
+  TOOLS naranja #ea580c). Header + botones/barras del nav adoptan el color activo → cohesión con la barra Pro.
 - ✅ **Modo Pro** (ME v2.8.2): barra inferior auto-oculta (colores marca + dots alerta, ~5s) + atajos de teclado
   PC (ME v2.8.1: Espacio=cobrar/imprimir, Esc=cerrar/limpiar granel, /, Alt+1/2/3). Autodetect PC + toggle en Herramientas.
 - ⏸️ **PARKEADO**: **Port a WH** (warehouseMos) — build aparte porque WH imprime vía GAS, no por Edge como ME.
