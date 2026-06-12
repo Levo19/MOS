@@ -40,9 +40,9 @@ pone el turno/caja (los prefijos que pasa la estación, como el path GAS). `mos.
 ## CONTRATO que el WIRING DEBE cumplir (antes de habilitar en vivo)
 1. **Exclusividad de path por venta**: al crear directo OK, **sacar la venta de `pendingSales`** inmediatamente
    → la cola NUNCA la reenvía a `procesarVenta`. (Sin esto = C2 = doble fila = dinero doble.)
-2. **Mirror reintentable + idempotente**: hoy es fire-and-forget one-shot. Tratarlo como job con reintento
-   (cola `pendingMirrors` o similar) + **job de reconciliación** Supabase→Sheets que detecte ventas en
-   `me.ventas` (hoy, NV) cuyo `ref_local` NO esté en VENTAS_CABECERA y las espeje.
+2. **Mirror reintentable + idempotente**: ✅ **reconciliación HECHA** (`gas/Fase2Auth.gs` `reconciliarDirectasSheets`,
+   ME@196): busca ventas NV de hoy en `me.ventas` sin fila en VENTAS_CABECERA y las espeja (idempotente). Pendiente:
+   engancharla a un trigger (5-10min) o al inicio del cierre + (opcional) cola `pendingMirrors` para reintento inmediato.
 3. **CORRELATIVO_SOURCE=supabase invariante**: si quedara en 'sheets', `procesarVenta` mintearía número
    distinto = duplicado SUNAT real. Verificar al activar el path directo.
 4. (Opcional) LockService también en el append de `procesarVenta` (hoy sin lock; mitigado por lock del botón
