@@ -49,6 +49,15 @@ Eso devuelve TODA la escritura de ventas a GAS al instante (sin redeploy). Para 
   verificar serie → prender flag → probar 1 boleta. Insight clave: en **boletas**, NubeFact devuelve el QR
   **al instante** (no espera a SUNAT, que valida async) → el CPE puede ser casi tan rápido como la NV.
 
+## 3.5 🔍 REVISIÓN EXHAUSTIVA DEL SISTEMA (2026-06-12) — LEER ANTES DE SEGUIR
+Se auditó TODO el ecosistema (5 áreas en paralelo + verificación manual). Resultado:
+**6 CRÍTICOS · 16 ALTOS** documentados con archivo:línea en `REVISION_SISTEMA_2026-06-12.md`,
+con plan de remediación en 4 lotes. Los peores: flujo de cobro de créditos ME sin lock (doble
+cobro posible), cobros optimistas del frontend que nunca reconvergen, `crear_venta_directa` sin
+validar caja/claims (en prod), router GAS de MOS sin auth en escrituras, capa CPE viva del lado
+server con flag apagado. **La remediación de los lotes 1-2 tiene prioridad sobre seguir migrando**
+(créditos-directo absorbe el fix del lock como parte del diseño).
+
 ## 4. ⏳ CABOS ABIERTOS / PRÓXIMOS PASOS
 1. **Validar el PRIMER cierre real con ventas directas.** La red de reconciliación está desplegada pero aún no
    se ejecutó en un cierre real. → Cuando un cajero cierre caja, verificar que el monto cuadra.
