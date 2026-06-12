@@ -61,12 +61,16 @@ Futuro: `navegador → Edge Function (key en secret) → PrintNode`. **Igual de 
      `PRINTNODE_API_KEY` (`supabase secrets set PRINTNODE_API_KEY=<key> --project-ref rzbzdeipbtqkzjqdchqk`) ANTES
      de activar el flag. Probado: no-auth→401, anon→401(claim), OPTIONS→200. Camino abierto para NubeFact→Edge.
 4. **NubeFact → Edge Function `emitir-cpe`** (CPE directo desde la PWA; imprimir apenas hay QR).
-   - 🟡 EDGE FUNCTION HECHA (`supabase/functions/emitir-cpe`, desplegada, inerte): port fiel de `emitirNubeFact`
-     (IGV por tipo, payload, emisión boleta/factura, idempotencia por duplicado→consulta). Token en secrets
-     `NUBEFACT_TOKEN`/`NUBEFACT_RUC`. Auth: firma JWT + claim app=mosExpress (probado anon→401). **FALTA:**
-     (a) setear secrets (IDEAL: token DEMO de NubeFact para testear sin emitir a SUNAT real); (b) wiring del
-     path CPE-directo en el front (correlativo B/F atómico + emitir + imprimir con QR + mirror) — detrás de
-     flag, incremental, compliance-crítico; (c) NO test-emitir contra RUC real sin OK explícito (= boleta real).
+   - 🟢 WIRING COMPLETO (detrás de flag `ME_CPE_DIRECTO`=0, inerte). Listo para activar = solo secrets + flag + test:
+     - Edge `emitir-cpe` (port fiel de `emitirNubeFact`: IGV por tipo, payload, emisión, idempotencia duplicado→consulta).
+     - RPCs `me.crear_cpe_directo` (mintea B/F atómico + venta PENDIENTE + caja-abierta + idempotente) + `me.set_cpe_nf`
+       (patch NF tras emitir). Probados estructural en TX.
+     - Front: `_crearCPEDirecto` (crear→emitir→set_nf) + rama en procesarPago (gated, fallback GAS) + mirror con NF.
+     - GAS: `mirrorVentaASheets` escribe NF (cols 17-19); `reconciliarDirectasSheets` incluye BOLETA/FACTURA + NF.
+     **PARA ACTIVAR:** (1) `supabase secrets set NUBEFACT_TOKEN=<t> NUBEFACT_RUC=<r> --project-ref rzbzdeipbtqkzjqdchqk`
+     (IDEAL token DEMO primero); (2) verificar que la `serie` que manda el front (pos_config.serieActual) coincide con
+     la serie GAS de la estación; (3) `update mos.config set valor='1' where clave='ME_CPE_DIRECTO'`; (4) test UNA boleta
+     vigilada. ⚠️ NO test-emitir contra RUC real sin OK (= boleta real a SUNAT).
 5. **Triggers GAS → pg_cron / Edge Functions scheduled** (sync, cierres, escalaciones).
 6. **Push, bridges, device-auth** → Edge Functions / esquemas compartidos.
 7. **Retirar Sheets como fuente de verdad** (validación extensa + contingencia) — el CORTE FINAL.
