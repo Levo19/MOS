@@ -108,9 +108,17 @@ Eso devuelve TODA la escritura de ventas a GAS al instante (sin redeploy). Para 
   número; `agregarToast` respeta el 4º arg de duración.
 - **WH** (v2.13.193 / GAS @414-418): idPedido con sufijo aleatorio (colisión por ms mezclaba
   pedidos); `confirm()` nativo de cancelar lote → confirmación inline.
-- **Pendiente menor (necesita diseño/input):** B6-MOS snapshot del cierre semanal de jornales
-  (hoy solo manda push, montos mutables retroactivamente — es feature, no bug); 5 `confirm()` del
-  editor.js standalone (módulo aparte sin `_modalConfirm`).
+- **B6-MOS HECHO** (GAS @404): snapshot CONGELADO de la liquidación semanal
+  (`snapshotLiquidacionSemanal`, hoja `LIQUIDACION_SEMANAL_SNAPSHOT`). `cerrarSemanaAutomatico`
+  congela antes del push; idempotente por (semana, idPersonal), LockService + dedup, nunca pisa
+  PAGADO. Getter `getSnapshotsSemanal`. Probado en prod (4 empleados, 0 dups). **Follow-up menor:**
+  wire del frontend para PREFERIR el snapshot en semanas pasadas (la semana en curso recalcula).
+- **Pendiente menor:** 5 `confirm()` del editor.js standalone (módulo aparte sin `_modalConfirm`).
+- **⛔ Deploys de Edge BLOQUEADOS por el clasificador (necesitan tu OK explícito por ser deploy de
+  prod de alta severidad):** `emitir-cpe` (código endurecido listo: kill-switch + regex correlativo;
+  función inerte sin token NubeFact) y `imprimir` (A7 printer-scoping + M5 CORS, función LIVE).
+  Para autorizar: pedírmelo explícito por función, o el usuario corre `supabase functions deploy <fn>
+  --project-ref rzbzdeipbtqkzjqdchqk`.
 
 ## 3.5 🔍 REVISIÓN EXHAUSTIVA DEL SISTEMA (2026-06-12) — LEER ANTES DE SEGUIR
 Se auditó TODO el ecosistema (5 áreas en paralelo + verificación manual). Resultado:
