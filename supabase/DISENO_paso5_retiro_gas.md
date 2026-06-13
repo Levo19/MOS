@@ -15,9 +15,16 @@
 
 ## Bloques del PASO 5 (orden por dependencia, más fundacional primero)
 ### B1 — Auth propia de WH (fundación; espejo de ME)
-- `wh.jwt_app()` (SQL) + claim `app='warehouseMos'` en el JWT. `mintSupabaseToken` en GAS de WH (HS256, exp 5min),
-  validando deviceId contra DISPOSITIVOS (Estado ACTIVO, App warehouseMos) + ventana horaria.
-- El frontend WH pide el token a GAS (1 endpoint liviano) y lo usa para llamar Supabase directo.
+**DIAGNÓSTICO (2026-06-13):** `me.jwt_app()` YA EXISTE y es GENÉRICA (lee el claim `app` del JWT) → **reutilizable
+para WH**, solo comparar con `'warehouseMos'`. NO crear `wh.jwt_app()`. Los 7 flags `WH_*_DIRECTO` ya están en mos.config.
+**FALTA SOLO:**
+1. `mintSupabaseToken` en el GAS de WH (HS256, exp 5min, claim `app='warehouseMos'`, sub=deviceId), validando deviceId
+   contra DISPOSITIVOS (ACTIVO, App warehouseMos) + ventana horaria. **Replicar de `Fase2Auth.gs` de ME.**
+2. ⚠️ **PRE-REQUISITO DE CONFIG**: `SUPABASE_JWT_SECRET` en las Script Properties de WH (mismo proyecto
+   rzbzdeipbtqkzjqdchqk → mismo secret que ME). VERIFICAR/CONFIGURAR antes de implementar el mint. (No verificable
+   por SQL; lo confirma el usuario o se setea desde el editor de Apps Script de WH.)
+3. Endpoint liviano en WH GAS para que el frontend pida el token. Validar: mint → llamar una RPC `wh.*` con el token
+   → `me.jwt_app()` devuelve 'warehouseMos'.
 - Referencia: `16_fase2_rls_ventas_zona.sql` (ME) + `Fase2Auth.gs` (ME `mintSupabaseToken`).
 
 ### B2 — RLS en las 7 RPCs de escritura
