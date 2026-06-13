@@ -78,6 +78,19 @@ Eso devuelve TODA la escritura de ventas a GAS al instante (sin redeploy). Para 
   La Edge `emitir-cpe` tiene el código listo (flag + regex correlativo) pero **su deploy se
   bundlea con la activación del token NubeFact** (la feature está inerte hasta entonces).
 
+## 3.2 ✅ REMEDIACIÓN LOTE 3 (2026-06-12) — consistencia y robustez
+- **Lote3-A HECHO** (MOS frontend v2.43.201): 4 features muertos por "shape de API"
+  revividos (overlay bloqueados Finanzas, Centro Tributario "falló" en éxitos, badge
+  tributario al login, foto catálogo) + tarjeta WA robusta (lee `supabaseOk`, no borra
+  números a ciegas, confirma borrado).
+- **Lote3-B HECHO (SQL)** (SQL 25 aplicado a prod + smoke tested): A3 cap histórico de
+  `ventas_hoy_zona_auth` (piso hoy-2d; test 84 vs 1571), A6 validaciones de
+  `crear_movimiento_directo` (monto>0, tipo whitelist), M1 `get_flags`/`get_tarjeta`
+  whitelist EXACTA de claves. **Pendiente (Edge `imprimir` LIVE, requiere ventana con
+  verificación de impresión real):** A7 printer scoping + idempotencia, M5 CORS allowlist.
+- **Lote3-C HECHO** (ME GAS @204 / v2.8.6): M2 PATCH inmediato de FormaPago en reverts a
+  CREDITO (escalar/cancelar); M8 `lsSet` anti-cuota en procesarCobroPendiente + registrarExtra.
+
 ## 3.5 🔍 REVISIÓN EXHAUSTIVA DEL SISTEMA (2026-06-12) — LEER ANTES DE SEGUIR
 Se auditó TODO el ecosistema (5 áreas en paralelo + verificación manual). Resultado:
 **6 CRÍTICOS · 16 ALTOS** documentados con archivo:línea en `REVISION_SISTEMA_2026-06-12.md`,
