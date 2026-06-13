@@ -37,8 +37,10 @@ Helper `wh._claim_ok()` (service_role/sin-claim O claim `warehouseMos`) agregado
 RPCs + `grant ... authenticated`. Validado: claim `mosExpress`→APP_NO_AUTORIZADA; `warehouseMos`→pasa; service_role
 (GAS)→sigue; funcionalidad intacta. Todas siguen INERTES (flags en 0). DECISIÓN del usuario: **GAS cero** (objetivo).
 
-### B3 — Lecturas directas desde el navegador (PLAN DETALLADO para arrancar fresco)
-Backend YA listo (B1 auth + B2 RLS escritura). B3 toca el **frontend `index.html` de WH** (js/api.js). Pasos:
+### B3 — Lecturas directas desde el navegador
+✅ **B3-BACKEND HECHO (2026-06-13)**: wrappers `wh.stock_enriquecido_rls` / `wh.rotacion_semanal_rls` (45_wh_rls_lecturas.sql)
+con gate `_claim_ok` + grant authenticated, validados 5/5. **El backend completo del PASO 5 está listo** (B1+B2+B3-backend).
+⏳ **B3-FRONTEND (resta)**: toca el **`index.html`/`js/api.js` de WH**. Pasos:
 1. **Cliente Supabase en el front**: agregar supabase-js (o fetch directo a `/rest/v1/rpc/`). Helper `_sbDirect(fn,args)`
    que manda `apikey: <anon>` + `Authorization: Bearer <token B1>` + `Accept-Profile: wh`. El token se pide a GAS
    (endpoint `mintTokenWH`, ya existe) y se cachea ~4min con re-mint en heartbeat (igual que ME).
