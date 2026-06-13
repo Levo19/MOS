@@ -37,9 +37,15 @@ reconciliación quedan de red.
 - ✅ **GUÍAS — estado + creación** (GAS @436, 5 IDs): `_crearGuiaImpl` upsertea la guía nueva a `wh.guias`
   al crearse (gap cerrado: guía post-batch ya está en la sombra); `cerrarGuia` PATCH estado+monto;
   `reabrirGuia` PATCH estado. `aprobarPreingreso` reusa `crearGuia` → cubierto. 20x: sin bugs.
-- ⏳ **PENDIENTE de dual-write:** `guia_detalle` (ítems de la guía — `agregarDetalleGuia`/
-  `actualizarCantidadDetalle`/`anularDetalle`), `preingresos`, `lotes_vencimiento`, `envasados`, `mermas`.
-  Luego reconciliación periódica Supabase←Sheets (red, como `reconciliarDirectasSheets` de ME).
+- ✅ **PREINGRESOS** (GAS @437, 5 IDs): `_dualWritePreingresoWH(id)` (re-lee fila + upsert) en
+  crearPreingreso / actualizarPreingreso / aprobarPreingreso. 20x: sin bugs.
+- ⏳ **PENDIENTE de dual-write:** `guia_detalle` (DIFERIDO — PK posicional `(id_guia,linea)`, frágil;
+  forma correcta = re-sync de TODAS las líneas de la guía al cerrar, reusando el array de cerrarGuia),
+  `lotes_vencimiento`, `envasados`, `mermas`. Luego reconciliación periódica Supabase←Sheets (red).
+
+### 🚀 Patrón de deploy eficiente (para no re-topar las 200 versiones)
+`clasp push` → `clasp deploy -i <id1> -d "..."` (crea 1 versión N) → los otros 4 con `clasp deploy -i <idN> -V N`
+(apuntan a la MISMA versión, NO crean nuevas). 1 versión por cambio en vez de 5.
 
 ### 🔒 20x review (2026-06-12): hallazgo crítico corregido
 `_sbOnce_` (WH **y** ME) bloqueaba DELETE sin filtros pero **NO PATCH** → un PATCH sin filtros haría
