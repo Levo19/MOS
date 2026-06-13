@@ -4801,7 +4801,9 @@ const MOS = (() => {
       mimeType:   st.mimeType
     }).then(r => {
       if (r && r.ok !== false) {
-        const url = (r.data && r.data.fotoUrl) || (r.data && r.data.url) || '';
+        // [Lote3-A · fix M0b-MOS] API.post YA desempaqueta d.data → r = {skuBase, fotoUrl, ...}.
+        // Antes leía r.data.fotoUrl (undefined) → la UI nunca adoptaba la URL de Drive.
+        const url = r.fotoUrl || r.url || '';
         if (url) {
           (S.productos || []).forEach(p => {
             if (String(p.skuBase || p.idProducto) === skuBase) p.fotoUrl = url;
@@ -18210,13 +18212,29 @@ const MOS = (() => {
     if (v.slice(0, 2) === '51' && v.length >= 11) v = v.slice(2);
     return /^0*$/.test(v) ? '' : v;
   }
+  // [Lote3-A · A2-MOS] estado de la última carga: si falló, NO se puede guardar a
+  // ciegas (guardar con campos vacíos BORRARÍA los números en producción). _twaOrig
+  // guarda lo cargado para detectar si un número con valor se está vaciando.
+  let _twaCargaOk = false;
+  let _twaOrig = { com: '', prov: '', marca: '' };
   async function cargarTarjetaWA() {
+    _twaCargaOk = false;
+    const sb = $('btnTwaSave'); if (sb) { sb.disabled = false; sb.title = ''; }
     try {
       const d = await API.get('getTarjetaWA', {});   // d = { TARJETA_WA_COMERCIAL, TARJETA_WA_COMPRAS, TARJETA_MARCA }
-      const c = $('twaComercial'); if (c) c.value = _twaLocal(d && d.TARJETA_WA_COMERCIAL);
-      const p = $('twaCompras');   if (p) p.value = _twaLocal(d && d.TARJETA_WA_COMPRAS);
-      const m = $('twaMarca');     if (m) m.value = (d && d.TARJETA_MARCA) || '';
-    } catch (_) { /* silencioso: igual pueden escribir y guardar */ }
+      const com = _twaLocal(d && d.TARJETA_WA_COMERCIAL);
+      const prov = _twaLocal(d && d.TARJETA_WA_COMPRAS);
+      const mar = (d && d.TARJETA_MARCA) || '';
+      const c = $('twaComercial'); if (c) c.value = com;
+      const p = $('twaCompras');   if (p) p.value = prov;
+      const m = $('twaMarca');     if (m) m.value = mar;
+      _twaOrig = { com, prov, marca: mar };
+      _twaCargaOk = true;
+    } catch (_) {
+      // Carga falló → bloquear Guardar (reabrir el modal con red reintenta).
+      if (sb) { sb.disabled = true; sb.title = 'No se pudo cargar — reabre con conexión'; }
+      toast('No se pudo cargar la tarjeta. Reintenta con conexión antes de guardar.', 'warn');
+    }
   }
   function _twaFeedbackOk(btn) {
     try {
@@ -18238,15 +18256,36 @@ const MOS = (() => {
   }
   async function guardarTarjetaWA() {
     const btn = $('btnTwaSave');
+    // [Lote3-A · A2-MOS] no guardar si la carga falló: los inputs no reflejan el
+    // estado real → guardar los borraría. Forzar reabrir con red.
+    if (!_twaCargaOk) { toast('Reabre el modal con conexión antes de guardar (la carga falló)', 'error'); return; }
     const dig = id => (($(id) || {}).value || '').replace(/\D/g, '');
     const comLocal = dig('twaComercial'), provLocal = dig('twaCompras');
     const marca = (($('twaMarca') || {}).value || '').trim();
     if (comLocal && comLocal.length !== 9)  { toast('El número de clientes debe tener 9 dígitos', 'error'); return; }
     if (provLocal && provLocal.length !== 9) { toast('El número de proveedores debe tener 9 dígitos', 'error'); return; }
+    // [Lote3-A · A2-MOS] si un número que TENÍA valor quedó vacío, confirmar (borrado accidental)
+    const vaciaCom = _twaOrig.com && !comLocal;
+    const vaciaProv = _twaOrig.prov && !provLocal;
+    if (vaciaCom || vaciaProv) {
+      const cuales = [vaciaCom ? 'clientes' : '', vaciaProv ? 'proveedores' : ''].filter(Boolean).join(' y ');
+      const ok = await _modalConfirm('Vas a dejar SIN número de WhatsApp de ' + cuales + '.\n\nLas tarjetas impresas ya no tendrán a quién enviar. ¿Continuar?', { warning: true, titulo: 'Borrar número' });
+      if (!ok) return;
+    }
     const full = n => n ? ('51' + n) : '';
     if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Guardando…'; }
     try {
-      await API.post('guardarTarjetaWA', { comercial: full(comLocal), compras: full(provLocal), marca });
+      // [Lote3-A · A1-MOS] r = data desempaquetado = { comercial, compras, marca, supabaseOk }.
+      // supabaseOk=false → CONFIG_MOS se guardó pero mos.config (lo que leen las tarjetas
+      // del POS) NO → antes el toast decía "¡Listo!" igual y el POS imprimía el número viejo.
+      const r = await API.post('guardarTarjetaWA', { comercial: full(comLocal), compras: full(provLocal), marca });
+      if (r && r.supabaseOk === false) {
+        toast('⚠ Guardado en MOS pero NO llegó a las tarjetas del POS. Reintenta con red.', 'error');
+        if (btn) { btn.disabled = false; btn.innerHTML = '💾 Guardar'; }
+        return;   // NO cerrar el modal: el cambio no está completo
+      }
+      // refrescar el snapshot original (lo guardado es ahora la verdad)
+      _twaOrig = { com: comLocal, prov: provLocal, marca };
       _twaFeedbackOk(btn);
       toast('¡Listo! Las tarjetas ya usan los números nuevos ✅', 'ok');
       setTimeout(() => closeModal('modalTarjetaWA'), 900);
@@ -30906,15 +30945,18 @@ const MOS = (() => {
     if (!auth) return;
     toast('🔄 Reprocesando OCR de ' + idGuia + '...', 'info');
     try {
+      // [Lote3-A · fix A4-MOS] API.post lanza si ok:false → llegar acá ES éxito.
+      // Antes exigía res.ok && res.data (ambos undefined tras desempaquetar) →
+      // mostraba "OCR falló" en operaciones EXITOSAS. `res` ES el data ya desempaquetado.
       const res = await API.post('tribReprocesarOCR', { idGuia });
-      if (res?.ok && res.data) {
-        toast('✓ OCR ' + res.data.estado + (res.data.igvRecuperable > 0 ? ' · IGV ' + _tribFmtSoles(res.data.igvRecuperable) : ''), 'success');
-        _finBeep && _finBeep('success');
-      } else {
-        toast('OCR falló: ' + (res?.error || 'desconocido'), 'warn');
-      }
-      tribCargar(); // refresh
-    } catch(e) { toast('Error: ' + (e.message || e), 'error'); }
+      const d = (res && res.data) ? res.data : (res || {});
+      toast('✓ OCR ' + (d.estado || 'reprocesado') + (d.igvRecuperable > 0 ? ' · IGV ' + _tribFmtSoles(d.igvRecuperable) : ''), 'success');
+      _finBeep && _finBeep('success');
+    } catch(e) {
+      toast('OCR falló: ' + (e.message || e), 'warn');
+    } finally {
+      tribCargar(); // refresh siempre
+    }
   }
 
   async function tribReintentarCPE(idVenta) {
@@ -30922,15 +30964,18 @@ const MOS = (() => {
     if (!auth) return;
     toast('🔄 Reintentando CPE...', 'info');
     try {
+      // [Lote3-A · fix A4-MOS] éxito = no lanzó (API.post throwea si ok:false).
+      // El reintento de CPE re-consulta NubeFact/SUNAT; el falso "falló" llevaba al
+      // admin a reintentar operaciones YA exitosas (riesgo de ruido fiscal/duplicar).
       const res = await API.post('tribReintentarCPE', { idVenta });
-      if (res?.status === 'success' || res?.ok) {
-        toast('✓ CPE ' + (res.nuevoEstado || 'reconciliado') + (res.aceptada ? ' · aceptado SUNAT' : ''), 'success');
-        _finBeep && _finBeep('success');
-      } else {
-        toast('Reintento falló: ' + (res?.error || 'desconocido'), 'warn');
-      }
+      const d = (res && res.data) ? res.data : (res || {});
+      toast('✓ CPE ' + (d.nuevoEstado || d.estado || 'reconciliado') + (d.aceptada ? ' · aceptado SUNAT' : ''), 'success');
+      _finBeep && _finBeep('success');
+    } catch(e) {
+      toast('Reintento falló: ' + (e.message || e), 'warn');
+    } finally {
       tribCargar();
-    } catch(e) { toast('Error: ' + (e.message || e), 'error'); }
+    }
   }
 
   async function tribReconciliarCPEs() {
@@ -31191,16 +31236,20 @@ const MOS = (() => {
     try {
       iconBusy('tributario', true);
       const res = await API.post('tribResumenMes', {});
-      if (res && res.data) {
-        _tribState.data = res.data;
-        _tribState.mes  = res.data.mes;
-        _tribState.anio = res.data.anio;
+      // [Lote3-A · fix M0a-MOS] API.post YA desempaqueta d.data → res = {mes, anio, ...}.
+      // Antes `if (res && res.data)` saltaba TODO el bloque → el badge de alertas
+      // tributarias (CPE/OCR) nunca aparecía al login + se perdía la precarga.
+      const d = (res && res.data) ? res.data : res;   // tolera ambas formas
+      if (d && d.mes) {
+        _tribState.data = d;
+        _tribState.mes  = d.mes;
+        _tribState.anio = d.anio;
         // [v2.42.12] Precargar también la lista de IGV a favor del mes para que
         // el detalle abra instantáneo (sin esperar el roundtrip a WH al hacer
         // click en "Ver detalle"). Silent + fire-and-forget: no bloquea el login.
         _tribFetchIGVFavor(true);
         // Badge: si hay alertas (errores CPE u OCR), mostrar en nav
-        const alertas = (res.data.cpeErrores || 0) + (res.data.guiasIlegibles || 0);
+        const alertas = (d.cpeErrores || 0) + (d.guiasIlegibles || 0);
         const badge = $('tribNavBadge');
         if (badge) {
           if (alertas > 0) {
@@ -33681,11 +33730,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       try {
         const rB = await API.get('getDispositivosBloqueados', { agruparPorNombre: true });
         if (myGen !== _finGenId) return;
-        if (rB && rB.ok && rB.data) {
-          _finBloqueados = { porNombre: rB.data.porNombre || {}, fecha };
-        } else {
-          _finBloqueados = { porNombre: {}, fecha };
-        }
+        // [Lote3-A · fix A3-MOS] API.get YA desempaqueta d.data → rB = {lista, porNombre}.
+        // Antes se exigía rB.ok && rB.data (ambos undefined) → el overlay de rejas NUNCA
+        // se pintaba: el admin no veía qué dispositivos estaban bloqueados.
+        _finBloqueados = { porNombre: (rB && rB.porNombre) || {}, fecha };
       } catch(_) { _finBloqueados = { porNombre: {}, fecha }; }
 
       if (!esSilent) _finMostrarSkeleton(false);
