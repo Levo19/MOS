@@ -14,6 +14,24 @@ const CORS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
+
+// [Lote2-B · C1] Kill-switch server-side: ¿está ME_CPE_DIRECTO='1' en mos.config?
+// El flag del frontend NO basta — sin esto, cualquier token ME podía invocar la Edge.
+// Lee con la service-role key (server-side, en secret) vía PostgREST. Fail-CLOSED:
+// ante cualquier error o flag ausente → false (no emite).
+async function cpeDirectoOn(): Promise<boolean> {
+  try {
+    const url = Deno.env.get('SUPABASE_URL');
+    const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!url || !key) return false;
+    const r = await fetch(`${url}/rest/v1/config?select=valor&clave=eq.ME_CPE_DIRECTO`, {
+      headers: { 'apikey': key, 'Authorization': 'Bearer ' + key, 'Accept-Profile': 'mos' },
+    });
+    if (!r.ok) return false;
+    const rows = await r.json().catch(() => []);
+    return Array.isArray(rows) && rows[0] && String(rows[0].valor) === '1';
+  } catch { return false; }
+}
 function json(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 }
@@ -59,6 +77,9 @@ Deno.serve(async (req: Request) => {
     const claims = jwtClaims(auth.replace(/^Bearer\s+/i, '').trim());
     if (!claims || claims.app !== 'mosExpress') return json({ ok: false, error: 'no autorizado (claim app)' }, 401);
 
+    // [Lote2-B · C1] Kill-switch server-side ANTES de tocar NubeFact.
+    if (!(await cpeDirectoOn())) return json({ ok: false, error: 'CPE_DIRECTO_DESACTIVADO' }, 403);
+
     const token = Deno.env.get('NUBEFACT_TOKEN');
     const ruc = Deno.env.get('NUBEFACT_RUC');
     if (!token || !ruc) return json({ ok: false, error: 'NubeFact no configurado (secrets)' }, 500);
@@ -70,11 +91,17 @@ Deno.serve(async (req: Request) => {
     const items = data.items || [];
     const tipoDoc = header.tipoDoc;
     if (!correlativo) return json({ ok: false, error: 'correlativo requerido' }, 400);
+    // [Lote2-B · A4] Validar formato del correlativo. Antes `parseInt || 1` convertía
+    // un correlativo malformado en el número 1 de la serie → duplicado en NubeFact →
+    // el dedup devolvía el documento equivocado como "éxito" de la venta nueva.
+    if (!/^[A-Za-z0-9]+-\d+$/.test(correlativo)) return json({ ok: false, error: 'correlativo malformado: ' + correlativo }, 400);
+    if (tipoDoc !== 'BOLETA' && tipoDoc !== 'FACTURA') return json({ ok: false, error: 'tipoDoc inválido (BOLETA|FACTURA)' }, 400);
 
     // "B001-000000042" → serie=B001, numero=42
     const partes = correlativo.split('-');
     const serie = partes[0] || '';
-    const numero = parseInt(partes[partes.length - 1], 10) || 1;
+    const numero = parseInt(partes[partes.length - 1], 10);
+    if (!numero || numero < 1) return json({ ok: false, error: 'número de correlativo inválido' }, 400);
     const tipoComprobante = (tipoDoc === 'FACTURA') ? 1 : 2;
 
     // ── Cálculo de totales por tipo de IGV (Catálogo 07 SUNAT) — FIEL a emitirNubeFact ──
