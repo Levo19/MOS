@@ -215,6 +215,7 @@ Función para imprimir una tarjeta térmica con QR a WhatsApp (comunicación con
 - `ROADMAP_SUPABASE_TOTAL.md` — el plan completo "retirar GAS por completo" (cada responsabilidad → su reemplazo).
 - `PUNTO_DE_RETOMA.md` — checkpoint corto (versión anterior de este resumen).
 - `MIGRACION_FASE2_PLAN.md` / `MIGRACION_FASE2_ROADMAP_READS.md` / `FASE2_WIRING_PENDIENTE.md` — detalle de Fase 2.
+- `MIGRACION_WH_FASE2.md` — plan de migración de warehouseMos (Fase 2). Gate de paridad ya hecho.
 - `MIGRACION_RUNBOOK.md` — pasos operativos (cómo correr SQL, desplegar Edge Functions, etc.).
 - `MIGRACION_SUPABASE.md` / `MIGRACION_SUPABASE_DICCIONARIO.md` — diseño general y diccionario de datos.
 
