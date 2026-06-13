@@ -22,10 +22,16 @@
 - Escrituras críticas bajo `_conLock` (lock global reentrante) — el equivalente al LockService de ME.
 
 ## Plan Fase 2 (orden por riesgo, más seguro primero)
-### PASO 1 ✅ HECHO — Gate de paridad (read-only)
-`verificarParidadWH(dias, tabla)` (GAS, GET `?action=verificarParidadWH&dias=7&tabla=guias|stock`).
-Corrida inicial: **GUIAS 0 huecos** (sombra completa); STOCK inconcluso por truncamiento PostgREST
-(arreglar el verificador con paginación cuando se aborde stock).
+### PASO 1 ✅ HECHO — Gate de paridad (read-only) · RE-CORRIDO R5
+`verificarParidadWH(dias, tabla)` (GAS, GET `?action=verificarParidadWH&tabla=<t>&dias=7`).
+**R5 (GAS @443):** verificador UNIVERSAL por presencia de PK (cubre toda tabla de `_WH_SPECS` con PK de
+1 col = col0 de la hoja) + **stock paginado** (`_sbSelectAll`, evita el cap `db-max-rows=1000`) +
+heurística de columna-fecha (prioriza creación/registro, nunca vencimiento/aprobación).
+**Re-corrida 2026-06-12 — GATE VERDE TOTAL** (`solo_en_sheets_count:0` en todas):
+`stock` 1349=1349 (0 diffs de cantidad) · `guias` 0 huecos · `auditorias` (fechaAsignacion) ·
+`producto_nuevo` (fechaRegistro) · `mermas` (fechaIngreso) · `lotes_vencimiento` · `envasados` ·
+`ajustes` · `preingresos`. Nota: PK compuesta (guia_detalle, pedidos_cliente_*) NO soportada por el
+verificador universal (se valida al cerrar la guía vía `_dualWriteDetallesGuiaWH`).
 
 ### PASO 2 — Dual-write en tiempo real (la base) — EN PROGRESO
 Helpers: `_dualWriteWH(tabla,o)` (upsert best-effort, reusa `_WH_SPECS`+`_whRowMap`) y
@@ -42,8 +48,11 @@ reconciliación quedan de red.
 - ✅ **GUIA_DETALLE** (GAS @438): `_dualWriteDetallesGuiaWH(idGuia)` re-sincroniza TODAS las líneas al
   CERRAR la guía (reproduce la numeración del batch). Con esto **una guía cerrada queda 100% legible desde
   Supabase (cabecera + ítems)**. 20x: sin bugs (orphan-de-borrado-físico = misma limitación que el batch).
-- ⏳ **PENDIENTE de dual-write (secundarias, ya cubiertas por el batch 15min):** `lotes_vencimiento`,
-  `envasados`, `mermas`. Bajo riesgo, PK simple — incremento futuro.
+- ✅ **SECUNDARIAS COMPLETAS** (GAS @438→@443, Rondas 1-4): dual-write en tiempo real de
+  `lotes_vencimiento` (R1), `envasados` (R2), `mermas` + `ajustes` (R3), `auditorias` + `producto_nuevo` (R4).
+  Helpers re-lee-fila `_dualWriteLoteWH`/`_dualWriteMermaWH`/`_dualWriteAuditoriaWH`/`_dualWriteProductoNuevoWH`
+  + dual-write inline en `crearAjuste`/`_writeAjuste`/`auditarProducto` (cubre el stock-create directo que NO
+  pasa por `_actualizarStock`). `aprobarProductoNuevo` re-sincroniza `guia_detalle`. Todo best-effort. 20x c/u.
 - 🛡️ **RED DE SEGURIDAD YA EXISTE:** el sync batch `syncWHReciente` (cada 15min) ES la reconciliación
   Sheets→Supabase — si un dual-write se pierde, se cura en ≤15min. El dual-write solo lo hace MÁS fresco
   (tiempo real vs 15min). Por eso NO urge una reconciliación extra como en ME.
