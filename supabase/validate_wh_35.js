@@ -62,6 +62,19 @@ const chk = (n, cond, extra) => { if (cond) { pass++; console.log('  ✅', n); }
     chk('ENVASADO NO tocó stock (sigue 100)', (await stock('CODTE'))===100);
     chk('ENVASADO sin movimiento', (await q(`select count(*)::int n from wh.stock_movimientos where id_mov='MVE'`)).rows[0].n===0);
 
+    // ===== [A1] INGRESO con id_lote INEXISTENTE + sin fecha → debe CREAR el lote (antes lo perdía) =====
+    await q(`insert into wh.guias(id_guia,tipo,fecha,estado,monto_total) values('GTA1','INGRESO_PROVEEDOR',now(),'ABIERTA',0)`);
+    r = await call({ id_guia:'GTA1', usuario:'val', detalles:[{ codigo_producto:'CODA1', cantidad_recibida:7, id_lote:'LOTX_NOEXISTE', id_mov:'MVA1' }]});
+    chk('[A1] lote legacy inexistente → creado', Number((await lote('LOTX_NOEXISTE')).ca)===7);
+    chk('[A1] stock CODA1 = 7', (await stock('CODA1'))===7);
+
+    // ===== [A3] cantidad con coma decimal "12,5" → tolerante (no revienta la tx) =====
+    await q(`insert into wh.guias(id_guia,tipo,fecha,estado,monto_total) values('GTA3','INGRESO_PROVEEDOR',now(),'ABIERTA',0)`);
+    r = await call({ id_guia:'GTA3', usuario:'val', detalles:[{ codigo_producto:'CODA3', cantidad_recibida:'12,5', precio_unitario:'2,0', id_mov:'MVA3' }]});
+    chk('[A3] coma decimal tolerada (no revienta)', r.ok===true, r);
+    chk('[A3] stock = 12.5', (await stock('CODA3'))===12.5);
+    chk('[A3] monto = 12.5*2 = 25', Number(r.montoTotal)===25, r);
+
     // ===== guía inexistente =====
     r = await call({ id_guia:'NOEXISTE', detalles:[] });   chk('guia inexistente rechazada', r.ok===false && r.error==='GUIA_NO_ENCONTRADA', r);
 

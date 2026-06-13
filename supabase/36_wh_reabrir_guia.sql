@@ -8,6 +8,14 @@ insert into mos.config (clave, valor, descripcion) values
   ('WH_REABRIR_GUIA_DIRECTO','0','WH: reabrir guia directo a Supabase (RPC wh.reabrir_guia). Validar antes de prender.')
 on conflict (clave) do nothing;
 
+-- [40x A3] coerción numérica tolerante (idempotente; misma def que 30/35).
+create or replace function wh._num(t text) returns numeric language sql immutable as $$
+  select case
+    when t is null then 0
+    when btrim(replace(t, ',', '.')) ~ '^-?[0-9]+(\.[0-9]+)?$' then btrim(replace(t, ',', '.'))::numeric
+    else 0 end;
+$$;
+
 create or replace function wh.reabrir_guia(p jsonb)
 returns jsonb
 language plpgsql
@@ -49,18 +57,20 @@ begin
     v_revertido := true;
     for v_d in select jsonb_array_elements(p->'detalles') loop
       v_cod  := nullif(btrim(v_d->>'codigo_producto'),'');
-      v_cant := coalesce(nullif(btrim(v_d->>'cantidad_recibida'),'')::numeric,0);
+      v_cant := wh._num(v_d->>'cantidad_recibida');
       if v_cod is null or v_cant = 0 then continue; end if;
       if coalesce(v_d->>'observacion','') = 'ANULADO' then continue; end if;   -- igual que GAS
       v_idmov := nullif(btrim(v_d->>'id_mov'),'');
       v_delta := case when v_ingreso then -v_cant else v_cant end;   -- REVERSO del cierre
 
-      select cantidad_disponible into v_antes from wh.stock where cod_producto = v_cod limit 1;
-      if found then v_existe := true; v_antes := coalesce(v_antes,0); else v_existe := false; v_antes := 0; end if;
-      v_despues := v_antes + v_delta;
-      if v_existe then
-        update wh.stock set cantidad_disponible = v_despues, ultima_actualizacion = now() where cod_producto = v_cod;
+      -- stock ATÓMICO (set = cantidad + delta) → evita lost-update concurrente
+      update wh.stock set cantidad_disponible = cantidad_disponible + v_delta, ultima_actualizacion = now()
+       where cod_producto = v_cod
+       returning cantidad_disponible into v_despues;
+      if found then
+        v_antes := v_despues - v_delta;
       else
+        v_antes := 0; v_despues := v_delta;
         insert into wh.stock (id_stock, cod_producto, cantidad_disponible, ultima_actualizacion)
         values ('STK'||v_id||'_'||v_cod, v_cod, v_despues, now());
       end if;

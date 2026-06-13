@@ -10,6 +10,14 @@ insert into mos.config (clave, valor, descripcion) values
   ('WH_CERRAR_GUIA_DIRECTO','0','WH: cerrar guia directo a Supabase (RPC wh.cerrar_guia). VALIDAR EXHAUSTIVO antes de prender.')
 on conflict (clave) do nothing;
 
+-- [40x A3] coerción numérica tolerante (como parseFloat). Idempotente (igual que en 30_wh_crear_ajuste.sql).
+create or replace function wh._num(t text) returns numeric language sql immutable as $$
+  select case
+    when t is null then 0
+    when btrim(replace(t, ',', '.')) ~ '^-?[0-9]+(\.[0-9]+)?$' then btrim(replace(t, ',', '.'))::numeric
+    else 0 end;
+$$;
+
 create or replace function wh.cerrar_guia(p jsonb)
 returns jsonb
 language plpgsql
@@ -62,8 +70,7 @@ begin
   -- monto total = Σ(cant_recibida × precio_unitario)
   if jsonb_typeof(p->'detalles') = 'array' then
     for v_d in select jsonb_array_elements(p->'detalles') loop
-      v_monto := v_monto + coalesce(nullif(btrim(v_d->>'cantidad_recibida'),'')::numeric,0)
-                         * coalesce(nullif(btrim(v_d->>'precio_unitario'),'')::numeric,0);
+      v_monto := v_monto + wh._num(v_d->>'cantidad_recibida') * wh._num(v_d->>'precio_unitario');
     end loop;
   end if;
 
@@ -71,7 +78,7 @@ begin
   if not v_envasado and jsonb_typeof(p->'detalles') = 'array' then
     for v_d in select jsonb_array_elements(p->'detalles') loop
       v_cod  := nullif(btrim(v_d->>'codigo_producto'),'');
-      v_cant := coalesce(nullif(btrim(v_d->>'cantidad_recibida'),'')::numeric,0);
+      v_cant := wh._num(v_d->>'cantidad_recibida');
       if v_cod is null or v_cant = 0 then continue; end if;
       v_idlote    := coalesce(v_d->>'id_lote','');
       v_fvenc     := nullif(btrim(v_d->>'fecha_vencimiento'),'');
@@ -80,15 +87,17 @@ begin
       v_idlotenew := nullif(btrim(v_d->>'id_lote_nuevo'),'');
       v_delta     := case when v_ingreso then v_cant else -v_cant end;
 
-      -- ── stock (delta) ──
-      select cantidad_disponible into v_antes from wh.stock where cod_producto = v_cod limit 1;
-      if found then v_existe := true; v_antes := coalesce(v_antes,0); else v_existe := false; v_antes := 0; end if;
-      v_despues := v_antes + v_delta;
-      if v_existe then
-        update wh.stock set cantidad_disponible = v_despues, ultima_actualizacion = now() where cod_producto = v_cod;
+      -- ── stock (delta) ATÓMICO: set = cantidad + delta (evita lost-update concurrente; reemplaza el _conLock de GAS).
+      -- Re-lee la fila viva en CADA iteración → si el mismo producto está en 2 líneas, la 2da acumula sobre la 1ra.
+      update wh.stock set cantidad_disponible = cantidad_disponible + v_delta, ultima_actualizacion = now()
+       where cod_producto = v_cod
+       returning cantidad_disponible into v_despues;
+      if found then
+        v_antes := v_despues - v_delta;
       else
+        v_antes := 0; v_despues := v_delta;
         insert into wh.stock (id_stock, cod_producto, cantidad_disponible, ultima_actualizacion)
-        values (coalesce(v_idlotenew,'STK'||v_id||'_'||v_cod), v_cod, v_despues, now());
+        values ('STK'||v_id||'_'||v_cod, v_cod, v_despues, now());   -- [M1] id_stock determinista (no el id de lote)
       end if;
       -- movimiento (idempotente por id_mov)
       if v_idmov is not null then
@@ -121,8 +130,14 @@ begin
           end if;
         end if;
       elsif v_ingreso and v_idlote <> '' then
-        -- INGRESO sin fecha pero con lote → path legacy (UPDATE cant; o nada si no existe)
+        -- INGRESO con lote y SIN fecha → path legacy _actualizarLote: UPDATE cantidades; si el lote NO existe,
+        -- CREARLO ([A1] GAS hace appendRow, antes la RPC lo perdía). fecha null (no había fecha). NO anula
+        -- (el caso C de anular vive en _sincronizarLoteDesdeDetalle, que el cierre solo llama CON fecha).
         update wh.lotes_vencimiento set cantidad_inicial = v_cant, cantidad_actual = v_cant where id_lote = v_idlote;
+        if not found then
+          insert into wh.lotes_vencimiento (id_lote, cod_producto, fecha_vencimiento, cantidad_inicial, cantidad_actual, id_guia, estado, fecha_creacion)
+          values (v_idlote, v_cod, null, v_cant, v_cant, v_id, 'ACTIVO', now());
+        end if;
       elsif not v_ingreso then
         -- SALIDA → consumir FIFO (lote que vence primero; NO toca stock, ya bajó arriba)
         v_restante := v_cant;

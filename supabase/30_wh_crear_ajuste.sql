@@ -14,6 +14,14 @@ insert into mos.config (clave, valor, descripcion) values
   ('WH_CREAR_AJUSTE_DIRECTO','0','WH: crear ajuste de stock directo a Supabase (RPC wh.crear_ajuste). Validar antes de prender.')
 on conflict (clave) do nothing;
 
+-- [40x A3] coerción numérica TOLERANTE (como parseFloat de GAS): coma decimal, null, basura → no revienta la tx.
+create or replace function wh._num(t text) returns numeric language sql immutable as $$
+  select case
+    when t is null then 0
+    when btrim(replace(t, ',', '.')) ~ '^-?[0-9]+(\.[0-9]+)?$' then btrim(replace(t, ',', '.'))::numeric
+    else 0 end;
+$$;
+
 create or replace function wh.crear_ajuste(p jsonb)
 returns jsonb
 language plpgsql
@@ -24,7 +32,7 @@ declare
   v_id      text := nullif(btrim(coalesce(p->>'id_ajuste','')), '');
   v_cod     text := nullif(btrim(coalesce(p->>'codigo_producto','')), '');
   v_tipo    text := upper(coalesce(p->>'tipo',''));
-  v_cant    numeric := coalesce(nullif(btrim(coalesce(p->>'cantidad','')),'')::numeric, 0);
+  v_cant    numeric := wh._num(p->>'cantidad');
   v_motivo  text := coalesce(p->>'motivo','');
   v_usuario text := coalesce(p->>'usuario','');
   v_id_aud  text := coalesce(p->>'id_auditoria','');
@@ -52,15 +60,15 @@ begin
 
   v_delta := case when v_tipo='INC' then v_cant else -v_cant end;
 
-  -- 3. stock actual (0 si el producto no tiene fila aún — igual que _getStockProducto)
-  select cantidad_disponible into v_antes from wh.stock where cod_producto = v_cod limit 1;
-  if found then v_existe := true; v_antes := coalesce(v_antes,0); else v_antes := 0; end if;
-  v_despues := v_antes + v_delta;
-
-  -- 4. aplicar al stock (estado actual)
-  if v_existe then
-    update wh.stock set cantidad_disponible = v_despues, ultima_actualizacion = v_fecha where cod_producto = v_cod;
+  -- 3-4. aplicar al stock de forma ATÓMICA (set = cantidad + delta) → evita lost-update bajo concurrencia
+  -- (GAS serializaba con _conLock global; acá el UPDATE incremental + lock de fila implícito lo reemplaza).
+  update wh.stock set cantidad_disponible = cantidad_disponible + v_delta, ultima_actualizacion = v_fecha
+   where cod_producto = v_cod
+   returning cantidad_disponible into v_despues;
+  if found then
+    v_antes := v_despues - v_delta;
   else
+    v_antes := 0; v_despues := v_delta;
     insert into wh.stock (id_stock, cod_producto, cantidad_disponible, ultima_actualizacion)
     values (coalesce(v_id_stk, 'STK'||v_id), v_cod, v_despues, v_fecha);
   end if;
