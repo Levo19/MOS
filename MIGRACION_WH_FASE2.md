@@ -111,8 +111,12 @@ tx-rollback + comparación) ANTES de prender; el GAS sigue como orquestador y ca
 solo tiene sentido pleno junto al PASO 5. Las RPCs SQL se ESCRIBEN en `ProyectoMOS/supabase/30+_wh_*.sql`
 pero **aplicarlas a la DB de producción lo bloquea el classifier → lo autoriza/corre el usuario**.
 
+**Scripts** (en `ProyectoMOS/supabase/`, requieren `pg` instalado ahí): `apply_wh_XX.js` aplica la RPC (commit solo si queda inerte), `validate_wh_XX.js` valida en tx-rollback (no persiste). Se corren con `! node ...`.
+
 **Sesiones ordenadas por riesgo (menor→mayor):**
-1. `wh.crear_ajuste` — INC/DEC stock + fila AJUSTES. Aislada, sin FIFO. (la más simple)
+1. ✅ `wh.crear_ajuste` — INC/DEC stock + fila AJUSTES + movimiento. APLICADA (inerte) + **VALIDADA 12/12** (tx-rollback:
+   INC/DEC exactos, idempotencia, producto nuevo, validaciones, movimiento antes/después). Falta para ACTIVAR:
+   wiring GAS (que `crearAjuste` llame la RPC y NO duplique escritura local+dual-write) + flip flag. `30_wh_crear_ajuste.sql`.
 2. `wh.registrar_merma` / `wh.solucionar_merma` — fila MERMAS + estado.
 3. `wh.crear_preingreso` / `wh.actualizar_preingreso` / `wh.aprobar_preingreso`.
 4. `wh.crear_guia` / `wh.cerrar_guia` / `wh.reabrir_guia` — cabecera + detalle + monto.
