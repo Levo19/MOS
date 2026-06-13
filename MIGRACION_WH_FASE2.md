@@ -83,7 +83,7 @@ Gate genérico `compararLecturaWH(tabla)` (router) valida paridad EXACTA por id,
 (`_jsonEqLoose`, pg jsonb reordena claves) y a número (`_numEqLoose`). Flip por tabla: key `lectura_<tabla>`.
 
 **FLIPEADAS (paridad exacta, LIVE)**: stock, rotación, mermas, auditorias, ajustes, envasados,
-producto_nuevo, preingresos, lotes_vencimiento. (GAS @454, 5 IDs.)
+producto_nuevo, preingresos, lotes_vencimiento, **stock_movimientos** (flip server-side por código). (GAS @456, 5 IDs.)
 
 **PENDIENTES del PASO 3 (con hallazgos — son las "dudas" a resolver):**
 - `getGuias`/`getGuia`: sombra `wh.guias` diverge en campos OCR — `OCR_Fecha_Comprobante` quedó con
