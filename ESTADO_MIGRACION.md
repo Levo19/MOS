@@ -63,6 +63,21 @@ Eso devuelve TODA la escritura de ventas a GAS al instante (sin redeploy). Para 
 - Fixes urgentes previos del mismo día: WH reabrir-guía cache (v2.13.192) + MOS reactivar
   dispositivo suspendido shape/UC/clave (GAS @398).
 
+## 3.3 ✅ REMEDIACIÓN LOTE 2 (2026-06-12) — seguridad de superficie pública
+- **Lote2-C HECHO** (WH GAS @409-413, los 5 IDs): `crearAjuste`/`reconciliarStockProducto` bajo
+  `_conLock` (race de STOCK) + IDOR `clienteEstadoPedido` (guard de token del dueño).
+- **Lote2-A HECHO** (MOS GAS @399): `_gateDispositivoMOS` en `setConfig` + `guardarTarjetaWA` —
+  exige dispositivo MOS registrado y ACTIVO (deviceId vía `_audit`). Cierra el C1 (cualquiera con
+  la URL podía cambiar el PIN admin / el WhatsApp de las tarjetas). Smoke prod: rechaza sin auth.
+  ⚠️ Pendiente menor: las acciones de dispositivos (aprobar/rechazar/bloquear) NO se gatearon
+  por-device (el modal de seguridad centralizado las enruta desde WH/ME) → su fix correcto es
+  `verificarClaveAdmin` por-endpoint.
+- **Lote2-B HECHO (SQL) / Edge pendiente de deploy** (SQL 24 aplicado a prod + smoke tested):
+  kill-switch server-side de la capa CPE — `me._cpe_directo_on()` leído en `crear_cpe_directo`/
+  `set_cpe_nf`; máquina de estados nf_* (solo BOLETA/FACTURA, whitelist, no degrada EMITIDO).
+  La Edge `emitir-cpe` tiene el código listo (flag + regex correlativo) pero **su deploy se
+  bundlea con la activación del token NubeFact** (la feature está inerte hasta entonces).
+
 ## 3.5 🔍 REVISIÓN EXHAUSTIVA DEL SISTEMA (2026-06-12) — LEER ANTES DE SEGUIR
 Se auditó TODO el ecosistema (5 áreas en paralelo + verificación manual). Resultado:
 **6 CRÍTICOS · 16 ALTOS** documentados con archivo:línea en `REVISION_SISTEMA_2026-06-12.md`,
