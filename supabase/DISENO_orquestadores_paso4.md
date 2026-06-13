@@ -65,9 +65,13 @@ Antes de prender cualquier flag de escritura de stock:
 **+ 3 chicas** (marcar_preingreso_procesado, crear_auditoria, get_o_crear_guia_dia) — 90 casos de validación, 0 fallos.
 
 ### Lo que FALTA para cerrar el PASO 4 100%
-- **`agregar_detalle_guia`** 🔴 (la más compleja): valida catálogo (mos.productos + mos.equivalencias → base) +
-  AUTO-SUMA (si la línea existe, suma; sino INSERT con linea=max+1) + sync lote + ajuste stock si la guía está CERRADA.
-  Cross-schema (mos.*) + lógica condicional → su 40x necesita contexto fresco. La necesitan envasado y recepción.
+- **`agregar_detalle_guia`** 🔴🔴 BLOQUEADA POR SCHEMA: `wh.guia_detalle` solo tiene (id_guia, linea, cod_producto,
+  cant_esperada, cant_recibida, precio_unitario, id_lote, observacion, id_producto_nuevo) — **FALTAN `id_detalle` y
+  `fecha_vencimiento`**, que la lógica usa (el frontend referencia líneas por idDetalle; los lotes dependen de la fecha).
+  PRE-REQUISITO antes de escribir la RPC: **decisión de schema** → `alter table wh.guia_detalle add column id_detalle text,
+  add column fecha_vencimiento date` + ajustar `_WH_SPECS.guia_detalle` + re-backfill + verificar que el batch las suba.
+  Recién ahí la RPC (catálogo + AUTO-SUMA + INSERT linea=max+1 + sync lote + ajuste stock condicional) es viable.
+  La validación de catálogo (mos.productos/equivalencias) la puede hacer el cliente (tiene el catálogo en cache).
 - **`aprobar_producto_nuevo`** 🔴: crea producto en `mos.productos` (catálogo) + ajusta stock + lote. Cross-schema.
 - **Se COMPONEN en el cliente (NO necesitan RPC monolítica)** de las RPCs ya hechas:
   - `aprobar_preingreso` = `crear_guia` + `marcar_preingreso_procesado` ✅ (piezas listas)
