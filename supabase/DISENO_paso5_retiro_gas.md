@@ -32,9 +32,10 @@ para WH**, solo comparar con `'warehouseMos'`. NO crear `wh.jwt_app()`. Los 7 fl
    → `me.jwt_app()` devuelve 'warehouseMos'.
 - Referencia: `16_fase2_rls_ventas_zona.sql` (ME) + `Fase2Auth.gs` (ME `mintSupabaseToken`).
 
-### B2 — RLS en las 7 RPCs de escritura
-- Cambiar el gate de `service_role` a `me.jwt_app()='warehouseMos'` (o gate dual: service_role O claim WH).
-- Mantener el kill-switch por flag. Validar tx-rollback con el claim seteado (como SQL 27 de ME).
+### B2 — RLS en las RPCs de escritura ✅ HECHO Y VALIDADO (2026-06-13)
+Helper `wh._claim_ok()` (service_role/sin-claim O claim `warehouseMos`) agregado tras el flag check en las **12**
+RPCs + `grant ... authenticated`. Validado: claim `mosExpress`→APP_NO_AUTORIZADA; `warehouseMos`→pasa; service_role
+(GAS)→sigue; funcionalidad intacta. Todas siguen INERTES (flags en 0). DECISIÓN del usuario: **GAS cero** (objetivo).
 
 ### B3 — Lecturas directas desde el navegador
 - Hoy las lecturas van por GAS (`getStockFlip` etc.). El PASO 5: el frontend llama las RPCs/tablas `wh.*` directo
