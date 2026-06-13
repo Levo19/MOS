@@ -27,13 +27,19 @@
 Corrida inicial: **GUIAS 0 huecos** (sombra completa); STOCK inconcluso por truncamiento PostgREST
 (arreglar el verificador con paginación cuando se aborde stock).
 
-### PASO 2 — Dual-write en tiempo real (la base)
-Hoy la sombra es batch. Para lectura directa fresca, agregar dual-write best-effort a las escrituras
-calientes, dentro del `_conLock` existente (igual que ME espeja ventas/movimientos):
-- `cerrarGuia` / `actualizarCantidadDetalle` / `agregarDetalleGuia` → upsert `wh.guias`/`wh.guia_detalle`.
-- `_actualizarStock` → upsert `wh.stock` + insert `wh.stock_movimientos`.
-- `aprobarPreingreso` / preingresos → `wh.preingresos`.
-- Reconciliación periódica (red de seguridad) Supabase←Sheets, como `reconciliarDirectasSheets` de ME.
+### PASO 2 — Dual-write en tiempo real (la base) — EN PROGRESO
+Helpers: `_dualWriteWH(tabla,o)` (upsert best-effort, reusa `_WH_SPECS`+`_whRowMap`) y
+`_dualWritePatchWH(tabla,pkFilters,patch)` (PATCH puntual). Ambos NUNCA lanzan; el sync batch (15min) +
+reconciliación quedan de red.
+- ✅ **STOCK COMPLETO** (GAS @421-425): `_actualizarStock` → upsert `wh.stock` (captura idStock real) +
+  `_logStockMovimiento` → upsert `wh.stock_movimientos`. Como `_actualizarStock` es la mutación central,
+  cubre stock fresco desde TODOS los caminos (cierres, envasados, ajustes). Validado end-to-end.
+- 🟡 **GUÍAS PARCIAL** (GAS @426-430): `cerrarGuia` (PATCH estado+monto) y `reabrirGuia` (PATCH estado).
+  ⚠️ **Gap conocido:** el PATCH es no-op si la guía aún NO está en la sombra (creada después del último
+  batch). **Falta dual-write en la CREACIÓN de guía** (`crearGuia` / aprobar preingreso) para cobertura
+  total → próximo incremento.
+- ⏳ **PENDIENTE:** dual-write de `guia_detalle` (ítems), `preingresos`, creación de guía. Luego
+  reconciliación periódica Supabase←Sheets (red de seguridad, como `reconciliarDirectasSheets` de ME).
 
 ### PASO 3 — Lectura directa (con gate + paginación)
 Tras validar paridad fresca (paso 1 re-corrido con dual-write activo), flipear lecturas de WH a RPCs
