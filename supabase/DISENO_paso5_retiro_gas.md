@@ -14,7 +14,12 @@
 6. **Infra GAS-only**: cola offline de escrituras, impresión PrintNode (ZPL), subida de fotos a Drive, push a MOS.
 
 ## Bloques del PASO 5 (orden por dependencia, más fundacional primero)
-### B1 — Auth propia de WH (fundación; espejo de ME)
+### B1 — Auth propia de WH ✅ HECHO Y VALIDADO 40x (2026-06-13)
+`mintSupabaseTokenWH` (Fase2AuthWH.gs) + endpoint `mintTokenWH` + `wh.ping_auth` (38_wh_ping_auth.sql).
+Validado empíricamente: estructural (payload app=warehouseMos), FUNCIONAL (PostgREST acepta la firma →
+`wh.ping_auth` devuelve app=warehouseMos), y rechazo (deviceId inexistente). `SUPABASE_JWT_SECRET` configurado en WH.
+PENDIENTE menor: gate horario (defense-in-depth, ME lo tiene), deploy a los 5 IDs (hoy en 1, validación). NO usado aún.
+
 **DIAGNÓSTICO (2026-06-13):** `me.jwt_app()` YA EXISTE y es GENÉRICA (lee el claim `app` del JWT) → **reutilizable
 para WH**, solo comparar con `'warehouseMos'`. NO crear `wh.jwt_app()`. Los 7 flags `WH_*_DIRECTO` ya están en mos.config.
 **FALTA SOLO:**
