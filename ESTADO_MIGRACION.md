@@ -26,13 +26,21 @@ Patrón **strangler-fig** con interruptores (feature flags):
 
 ## 2. ✅ LO QUE YA ESTÁ LIVE EN PRODUCCIÓN (flota completa)
 - **Escritura directa de ventas NV** → `me.crear_venta_directa` (RPC). Flag `ME_ESCRITURA_DIRECTA=1`.
+- **LECTURA directa de ventas** → `me.ventas_hoy_zona_auth` (RPC). Flag **`ME_LECTURA_DIRECTA=1`** (activado
+  2026-06-12 tras gate de paridad: 0 huecos Sheets↔Supabase en 7 días). El frontend lee de Supabase con
+  **fallback automático a GAS→Sheets** si el read directo falla. Gate re-corrible:
+  `GET ?accion=verificar_paridad_lectura&dias=7` (verificarParidadLectura en Fase2Auth.gs).
 - **Impresión vía Edge Function** (PrintNode) → `supabase/functions/imprimir`. Flag `ME_IMPRESION_DIRECTA=1`.
   Validada en prod (impresiones reales, 0 duplicados).
 - **Movimientos de caja directos** → `me.crear_movimiento_directo`. Usan el flag de escritura.
 - **Red de seguridad del cierre** → reconciliación cada 10 min + al iniciar el cierre (rescata ventas que el
-  dual-write best-effort pudo perder).
+  dual-write best-effort pudo perder). **Primer cierre real con ventas directas VALIDADO (2026-06-12):**
+  la sombra cuadró 100% (incluido un cobro de crédito vía el flujo Lote1-A, idempotente, una sola vez).
 - **Numeración de correlativo** atómica e idempotente en Supabase (`me.siguiente_correlativo`).
 - **Lecturas operativas** (estado de cajas, ventas del día por zona, cobros, créditos) ya leen de Supabase.
+- ⚠️ **KILL-SWITCH lectura:** `update mos.config set valor='0' where clave='ME_LECTURA_DIRECTA';` (vuelve a
+  leer de Sheets vía GAS al instante). Con esto + escritura + impresión directas, **Sheets pasó a ser la
+  sombra/respaldo del camino operativo de ME** (rol invertido vs. el inicio).
 - **Frontend ME en producción: v2.8.4.**
 
 ### 🔴 KILL-SWITCH (si algo se ve raro en ventas)
