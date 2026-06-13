@@ -21,6 +21,7 @@ begin
   if coalesce((select valor from mos.config where clave='WH_CREAR_AUDITORIA_DIRECTO' limit 1),'0') <> '1' then
     return jsonb_build_object('ok',false,'error','WH_CREAR_AUDITORIA_DIRECTO_OFF');
   end if;
+  if not wh._claim_ok() then return jsonb_build_object('ok',false,'error','APP_NO_AUTORIZADA'); end if;  -- [B2]
   if v_id is null or v_cod is null then return jsonb_build_object('ok',false,'error','FALTAN_PARAMS'); end if;
 
   if exists (select 1 from wh.auditorias where id_auditoria = v_id) then
@@ -39,4 +40,4 @@ end;
 $fn$;
 
 revoke all on function wh.crear_auditoria(jsonb) from public;
-grant execute on function wh.crear_auditoria(jsonb) to service_role;
+grant execute on function wh.crear_auditoria(jsonb) to service_role, authenticated;

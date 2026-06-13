@@ -52,6 +52,7 @@ begin
   if coalesce((select valor from mos.config where clave='WH_CERRAR_GUIA_DIRECTO' limit 1),'0') <> '1' then
     return jsonb_build_object('ok',false,'error','WH_CERRAR_GUIA_DIRECTO_OFF');
   end if;
+  if not wh._claim_ok() then return jsonb_build_object('ok',false,'error','APP_NO_AUTORIZADA'); end if;  -- [B2]
   if v_id is null then return jsonb_build_object('ok',false,'error','FALTAN_PARAMS'); end if;
 
   select estado, tipo into v_estado, v_tipo from wh.guias where id_guia = v_id limit 1;
@@ -167,4 +168,4 @@ end;
 $fn$;
 
 revoke all on function wh.cerrar_guia(jsonb) from public;
-grant execute on function wh.cerrar_guia(jsonb) to service_role;
+grant execute on function wh.cerrar_guia(jsonb) to service_role, authenticated;

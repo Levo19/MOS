@@ -39,6 +39,7 @@ begin
   if coalesce((select valor from mos.config where clave='WH_CREAR_PREINGRESO_DIRECTO' limit 1),'0') <> '1' then
     return jsonb_build_object('ok',false,'error','WH_CREAR_PREINGRESO_DIRECTO_OFF');
   end if;
+  if not wh._claim_ok() then return jsonb_build_object('ok',false,'error','APP_NO_AUTORIZADA'); end if;  -- [B2]
   if v_id is null then return jsonb_build_object('ok',false,'error','FALTAN_PARAMS'); end if;
 
   -- idempotencia (retry/doble-tap no duplica el preingreso)
@@ -54,4 +55,4 @@ end;
 $fn$;
 
 revoke all on function wh.crear_preingreso(jsonb) from public;
-grant execute on function wh.crear_preingreso(jsonb) to service_role;
+grant execute on function wh.crear_preingreso(jsonb) to service_role, authenticated;

@@ -34,6 +34,7 @@ begin
   if coalesce((select valor from mos.config where clave='WH_AGREGAR_DETALLE_GUIA_DIRECTO' limit 1),'0') <> '1' then
     return jsonb_build_object('ok',false,'error','WH_AGREGAR_DETALLE_GUIA_DIRECTO_OFF');
   end if;
+  if not wh._claim_ok() then return jsonb_build_object('ok',false,'error','APP_NO_AUTORIZADA'); end if;  -- [B2]
   if v_guia is null or v_cod is null then return jsonb_build_object('ok',false,'error','FALTAN_PARAMS'); end if;
   if v_cesp < 0 or v_crec < 0 then return jsonb_build_object('ok',false,'error','CANTIDAD_NEGATIVA'); end if;
   if v_fvenc is not null then v_fvenc := left(v_fvenc,10); end if;
@@ -98,4 +99,4 @@ end;
 $fn$;
 
 revoke all on function wh.agregar_detalle_guia(jsonb) from public;
-grant execute on function wh.agregar_detalle_guia(jsonb) to service_role;
+grant execute on function wh.agregar_detalle_guia(jsonb) to service_role, authenticated;

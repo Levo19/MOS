@@ -20,6 +20,7 @@ begin
   if coalesce((select valor from mos.config where clave='WH_MARCAR_PRODUCTO_NUEVO_APROBADO_DIRECTO' limit 1),'0') <> '1' then
     return jsonb_build_object('ok',false,'error','WH_MARCAR_PRODUCTO_NUEVO_APROBADO_DIRECTO_OFF');
   end if;
+  if not wh._claim_ok() then return jsonb_build_object('ok',false,'error','APP_NO_AUTORIZADA'); end if;  -- [B2]
   if v_id is null then return jsonb_build_object('ok',false,'error','FALTAN_PARAMS'); end if;
   select estado into v_estado from wh.producto_nuevo where id_producto_nuevo = v_id limit 1 for update;
   if not found then return jsonb_build_object('ok',false,'error','PRODUCTO_NUEVO_NO_ENCONTRADO'); end if;
@@ -32,4 +33,4 @@ begin
 end;
 $fn$;
 revoke all on function wh.marcar_producto_nuevo_aprobado(jsonb) from public;
-grant execute on function wh.marcar_producto_nuevo_aprobado(jsonb) to service_role;
+grant execute on function wh.marcar_producto_nuevo_aprobado(jsonb) to service_role, authenticated;

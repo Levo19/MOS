@@ -21,6 +21,7 @@ begin
   if coalesce((select valor from mos.config where clave='WH_MARCAR_PREINGRESO_PROCESADO_DIRECTO' limit 1),'0') <> '1' then
     return jsonb_build_object('ok',false,'error','WH_MARCAR_PREINGRESO_PROCESADO_DIRECTO_OFF');
   end if;
+  if not wh._claim_ok() then return jsonb_build_object('ok',false,'error','APP_NO_AUTORIZADA'); end if;  -- [B2]
   if v_id is null or v_guia is null then return jsonb_build_object('ok',false,'error','FALTAN_PARAMS'); end if;
 
   select estado, id_guia into v_estado, v_guia_actual from wh.preingresos where id_preingreso = v_id limit 1 for update;
@@ -37,4 +38,4 @@ end;
 $fn$;
 
 revoke all on function wh.marcar_preingreso_procesado(jsonb) from public;
-grant execute on function wh.marcar_preingreso_procesado(jsonb) to service_role;
+grant execute on function wh.marcar_preingreso_procesado(jsonb) to service_role, authenticated;

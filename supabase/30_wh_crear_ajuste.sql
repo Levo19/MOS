@@ -21,6 +21,11 @@ create or replace function wh._num(t text) returns numeric language sql immutabl
     when btrim(replace(t, ',', '.')) ~ '^-?[0-9]+(\.[0-9]+)?$' then btrim(replace(t, ',', '.'))::numeric
     else 0 end;
 $$;
+-- [B2 · PASO 5] gate de acceso reutilizable: service_role/GAS (sin claim app) o frontend con JWT app='warehouseMos'.
+-- Cualquier otro claim (ej. mosExpress) → false. Reusado por las 12 RPCs de escritura.
+create or replace function wh._claim_ok() returns boolean language sql stable as $$
+  select coalesce(me.jwt_app(),'') in ('', 'warehouseMos');
+$$;
 
 create or replace function wh.crear_ajuste(p jsonb)
 returns jsonb
@@ -48,6 +53,7 @@ begin
   if coalesce((select valor from mos.config where clave='WH_CREAR_AJUSTE_DIRECTO' limit 1),'0') <> '1' then
     return jsonb_build_object('ok',false,'error','WH_CREAR_AJUSTE_DIRECTO_OFF');
   end if;
+  if not wh._claim_ok() then return jsonb_build_object('ok',false,'error','APP_NO_AUTORIZADA'); end if;  -- [B2]
   if v_id is null or v_cod is null then return jsonb_build_object('ok',false,'error','FALTAN_PARAMS'); end if;
   if v_tipo not in ('INC','DEC')    then return jsonb_build_object('ok',false,'error','TIPO_INVALIDO'); end if;
   if v_cant <= 0                    then return jsonb_build_object('ok',false,'error','CANTIDAD_INVALIDA'); end if;
@@ -92,4 +98,4 @@ end;
 $fn$;
 
 revoke all on function wh.crear_ajuste(jsonb) from public;
-grant execute on function wh.crear_ajuste(jsonb) to service_role;
+grant execute on function wh.crear_ajuste(jsonb) to service_role, authenticated;  -- [B2] frontend con JWT WH

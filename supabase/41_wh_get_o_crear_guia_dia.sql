@@ -22,6 +22,7 @@ begin
   if coalesce((select valor from mos.config where clave='WH_GET_O_CREAR_GUIA_DIA_DIRECTO' limit 1),'0') <> '1' then
     return jsonb_build_object('ok',false,'error','WH_GET_O_CREAR_GUIA_DIA_DIRECTO_OFF');
   end if;
+  if not wh._claim_ok() then return jsonb_build_object('ok',false,'error','APP_NO_AUTORIZADA'); end if;  -- [B2]
   if v_tipo not in ('INGRESO_PROVEEDOR','INGRESO_JEFATURA','INGRESO_ENVASADO','INGRESO_DEVOLUCION_ZONA',
                     'SALIDA_DEVOLUCION','SALIDA_ZONA','SALIDA_JEFATURA','SALIDA_ENVASADO','SALIDA_MERMA') then
     return jsonb_build_object('ok',false,'error','TIPO_INVALIDO','tipo',v_tipo);
@@ -42,4 +43,4 @@ end;
 $fn$;
 
 revoke all on function wh.get_o_crear_guia_dia(jsonb) from public;
-grant execute on function wh.get_o_crear_guia_dia(jsonb) to service_role;
+grant execute on function wh.get_o_crear_guia_dia(jsonb) to service_role, authenticated;

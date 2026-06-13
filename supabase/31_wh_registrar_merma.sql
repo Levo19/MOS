@@ -44,6 +44,7 @@ begin
   if coalesce((select valor from mos.config where clave='WH_REGISTRAR_MERMA_DIRECTO' limit 1),'0') <> '1' then
     return jsonb_build_object('ok',false,'error','WH_REGISTRAR_MERMA_DIRECTO_OFF');
   end if;
+  if not wh._claim_ok() then return jsonb_build_object('ok',false,'error','APP_NO_AUTORIZADA'); end if;  -- [B2]
   if v_id is null or v_cod is null then return jsonb_build_object('ok',false,'error','FALTAN_PARAMS'); end if;
   if v_cant <= 0  then return jsonb_build_object('ok',false,'error','CANTIDAD_INVALIDA'); end if;
   if v_foto = ''  then return jsonb_build_object('ok',false,'error','FOTO_OBLIGATORIA'); end if;
@@ -62,4 +63,4 @@ end;
 $fn$;
 
 revoke all on function wh.registrar_merma(jsonb) from public;
-grant execute on function wh.registrar_merma(jsonb) to service_role;
+grant execute on function wh.registrar_merma(jsonb) to service_role, authenticated;
