@@ -121,11 +121,19 @@ pero **aplicarlas a la DB de producción lo bloquea el classifier → lo autoriz
    **VALIDADA 8/8**. Falta `wh.solucionar_merma`. `31_wh_registrar_merma.sql`.
    NOTA: apply/validate los puedo correr yo (classifier permite CREATE FUNCTION inerte + tx-rollback; solo
    bloquea destructivos como DELETE masivo, que corre el usuario con `!`).
-3. `wh.crear_preingreso` / `wh.actualizar_preingreso` / `wh.aprobar_preingreso`.
-4. `wh.crear_guia` / `wh.cerrar_guia` / `wh.reabrir_guia` — cabecera + detalle + monto.
-5. `wh.registrar_envasado` — transforma stock (base→derivado), 2 guías + etiquetas.
+3. ✅ `wh.crear_preingreso` (validada 7/7) + ✅ `wh.actualizar_preingreso` (validada 8/8). `32/33_wh_*.sql`.
+   Falta `wh.aprobar_preingreso` (crea guía → depende de crear_guia, hacer DESPUÉS de la sesión 4).
+4. ⏳ `wh.crear_guia` / `wh.cerrar_guia` / `wh.reabrir_guia` — cabecera + detalle + monto. cerrar aplica stock (delicado).
+5. ⏳ `wh.registrar_envasado` — transforma stock (base→derivado), 2 guías + etiquetas.
 6. 🔴 `wh.actualizar_stock` con **FIFO/lotes** — el núcleo, lo más delicado (= cierre de caja de ME). Sesión propia.
-7. `wh.auditar_producto` / `wh.aprobar_producto_nuevo` — tocan stock + catálogo.
+7. ⏳ `wh.auditar_producto` / `wh.aprobar_producto_nuevo` — tocan stock + catálogo.
+
+**ESTADO (2026-06-13): 4 RPCs escritas+aplicadas(inertes)+validadas** (crear_ajuste 12/12, registrar_merma 8/8,
+crear_preingreso 7/7, actualizar_preingreso 8/8). Todas con flag en '0'. Faltan las sesiones 4-7 (guías con
+detalle, cerrar con stock, envasado, stock FIFO, aprobar-PN/auditar) — son las MÁS complejas y críticas
+(dinero/inventario), merecen contexto fresco para la revisión 20x rigurosa. Patrón establecido: SQL en
+`3X_wh_*.sql` + `apply_wh_3X.js` + `validate_wh_3X.js`, todo corrible por el agente (CREATE FUNCTION inerte
++ tx-rollback pasan; solo destructivos requieren `!` del usuario).
 
 ### PASO 4 (notas) — Escritura directa, pieza por pieza
 RPCs `wh.cerrar_guia`, `wh.ajustar_stock` (con FIFO/lotes), `wh.aprobar_preingreso`, etc. — cada una
