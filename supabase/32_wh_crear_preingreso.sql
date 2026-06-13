@@ -7,6 +7,19 @@ insert into mos.config (clave, valor, descripcion) values
   ('WH_CREAR_PREINGRESO_DIRECTO','0','WH: crear preingreso directo a Supabase (RPC wh.crear_preingreso). Validar antes de prender.')
 on conflict (clave) do nothing;
 
+create or replace function wh._num(t text) returns numeric language sql immutable as $$
+  select case when t is null then 0
+    when btrim(replace(t, ',', '.')) ~ '^-?[0-9]+(\.[0-9]+)?$' then btrim(replace(t, ',', '.'))::numeric
+    else 0 end;
+$$;
+create or replace function wh._ts(t text, dflt timestamptz) returns timestamptz language plpgsql immutable as $$
+begin
+  if t is null or btrim(t) = '' then return dflt; end if;
+  return t::timestamptz;
+exception when others then return dflt;
+end;
+$$;
+
 create or replace function wh.crear_preingreso(p jsonb)
 returns jsonb
 language plpgsql
@@ -18,10 +31,10 @@ declare
   v_prov   text := coalesce(p->>'id_proveedor','');
   v_carg   text := coalesce(p->>'cargadores','');
   v_usuario text := coalesce(p->>'usuario','');
-  v_monto  numeric := coalesce(nullif(btrim(coalesce(p->>'monto','')),'')::numeric, 0);
+  v_monto  numeric := wh._num(p->>'monto');
   v_fotos  text := coalesce(p->>'fotos','');
   v_coment text := coalesce(p->>'comentario','');
-  v_fecha  timestamptz := coalesce(nullif(btrim(coalesce(p->>'fecha','')),'')::timestamptz, now());
+  v_fecha  timestamptz := wh._ts(p->>'fecha', now());
 begin
   if coalesce((select valor from mos.config where clave='WH_CREAR_PREINGRESO_DIRECTO' limit 1),'0') <> '1' then
     return jsonb_build_object('ok',false,'error','WH_CREAR_PREINGRESO_DIRECTO_OFF');

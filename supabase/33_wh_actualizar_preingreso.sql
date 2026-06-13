@@ -7,6 +7,12 @@ insert into mos.config (clave, valor, descripcion) values
   ('WH_ACTUALIZAR_PREINGRESO_DIRECTO','0','WH: actualizar preingreso directo a Supabase (RPC wh.actualizar_preingreso). Validar antes de prender.')
 on conflict (clave) do nothing;
 
+create or replace function wh._num(t text) returns numeric language sql immutable as $$
+  select case when t is null then 0
+    when btrim(replace(t, ',', '.')) ~ '^-?[0-9]+(\.[0-9]+)?$' then btrim(replace(t, ',', '.'))::numeric
+    else 0 end;
+$$;
+
 create or replace function wh.actualizar_preingreso(p jsonb)
 returns jsonb
 language plpgsql
@@ -28,7 +34,7 @@ begin
   -- PATCH solo de los campos presentes (whitelist editable; NO estado/id_guia/fecha/usuario)
   update wh.preingresos set
     id_proveedor   = case when p ? 'id_proveedor'   then coalesce(p->>'id_proveedor','')   else id_proveedor   end,
-    monto          = case when p ? 'monto'          then coalesce(nullif(btrim(p->>'monto'),'')::numeric,0) else monto end,
+    monto          = case when p ? 'monto'          then wh._num(p->>'monto')                              else monto end,
     comentario     = case when p ? 'comentario'     then coalesce(p->>'comentario','')     else comentario     end,
     fotos          = case when p ? 'fotos'          then coalesce(p->>'fotos','')          else fotos          end,
     cargadores     = case when p ? 'cargadores'     then coalesce(p->>'cargadores','')     else cargadores     end,

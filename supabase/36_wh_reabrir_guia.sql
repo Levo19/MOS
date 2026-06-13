@@ -65,7 +65,7 @@ begin
 
       -- stock ATÓMICO (set = cantidad + delta) → evita lost-update concurrente
       update wh.stock set cantidad_disponible = cantidad_disponible + v_delta, ultima_actualizacion = now()
-       where cod_producto = v_cod
+       where id_stock = (select id_stock from wh.stock where cod_producto = v_cod order by id_stock limit 1)  -- [B-1] 1ra fila (como GAS)
        returning cantidad_disponible into v_despues;
       if found then
         v_antes := v_despues - v_delta;

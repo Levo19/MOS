@@ -7,6 +7,14 @@ insert into mos.config (clave, valor, descripcion) values
   ('WH_CREAR_GUIA_DIRECTO','0','WH: crear guia directo a Supabase (RPC wh.crear_guia). Validar antes de prender.')
 on conflict (clave) do nothing;
 
+create or replace function wh._ts(t text, dflt timestamptz) returns timestamptz language plpgsql immutable as $$
+begin
+  if t is null or btrim(t) = '' then return dflt; end if;
+  return t::timestamptz;
+exception when others then return dflt;
+end;
+$$;
+
 create or replace function wh.crear_guia(p jsonb)
 returns jsonb
 language plpgsql
@@ -16,7 +24,7 @@ as $fn$
 declare
   v_id     text := nullif(btrim(coalesce(p->>'id_guia','')), '');
   v_tipo   text := upper(coalesce(p->>'tipo',''));
-  v_fecha  timestamptz := coalesce(nullif(btrim(coalesce(p->>'fecha','')),'')::timestamptz, now());
+  v_fecha  timestamptz := wh._ts(p->>'fecha', now());
 begin
   if coalesce((select valor from mos.config where clave='WH_CREAR_GUIA_DIRECTO' limit 1),'0') <> '1' then
     return jsonb_build_object('ok',false,'error','WH_CREAR_GUIA_DIRECTO_OFF');

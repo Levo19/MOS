@@ -62,8 +62,10 @@ begin
 
   -- 3-4. aplicar al stock de forma ATÓMICA (set = cantidad + delta) → evita lost-update bajo concurrencia
   -- (GAS serializaba con _conLock global; acá el UPDATE incremental + lock de fila implícito lo reemplaza).
+  -- [B-1] actualiza UNA fila determinista (la 1ra por id_stock, como _getStockProducto de GAS) → un producto
+  -- con filas duplicadas no recibe el delta dos veces. Atómico sobre la PK.
   update wh.stock set cantidad_disponible = cantidad_disponible + v_delta, ultima_actualizacion = v_fecha
-   where cod_producto = v_cod
+   where id_stock = (select id_stock from wh.stock where cod_producto = v_cod order by id_stock limit 1)
    returning cantidad_disponible into v_despues;
   if found then
     v_antes := v_despues - v_delta;
