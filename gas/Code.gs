@@ -380,6 +380,9 @@ function _route(method, e) {
       case 'getResumenDia':             return getResumenDia(params);
       case 'getResumenTodosDia':        return getResumenTodosDia(params);
       case 'getLiquidacionSemana':      return getLiquidacionSemana(params);
+      // [Lote4 · B6-MOS] snapshot congelado de liquidación semanal
+      case 'snapshotLiquidacionSemanal': return snapshotLiquidacionSemanal(params);
+      case 'getSnapshotsSemanal':       return getSnapshotsSemanal(params);
 
       // ── Notificaciones (catálogo + log + test) ─────────────
       case 'getNotificacionesConfig':   return getNotificacionesConfig();

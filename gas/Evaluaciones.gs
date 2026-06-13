@@ -1113,6 +1113,133 @@ function getLiquidacionSemana(params) {
   };
 }
 
+// ════════════════════════════════════════════════════════════════════
+// [Lote4 · B6-MOS] SNAPSHOT CONGELADO de la liquidación semanal.
+// Problema: getLiquidacionSemana RECALCULA on-the-fly desde jornadas/auditorías.
+// Si entre el cierre (domingo 8pm) y el pago se editan jornadas/auditorías de esa
+// semana, los montos cambian RETROACTIVAMENTE → no hay registro inmutable de lo
+// que se debía al corte. Este snapshot CONGELA esos totales.
+// Idempotente por (semana_inicio, idPersonal): re-correr ACTUALIZA la fila, NUNCA
+// duplica, y NUNCA pisa una fila ya marcada 'PAGADO' (el pago es definitivo).
+// ════════════════════════════════════════════════════════════════════
+var _SNAP_HEADERS = ['ID_Snapshot','Semana_Inicio','Semana_Fin','idPersonal','Nombre','Rol','App',
+  'Total_Base','Total_Bonus','Total_Meta','Total_aCobrar','Dias_Presente','Detalle_JSON','Fecha_Corte','Estado'];
+
+function _getHojaSnapshotSemanal(){
+  var ss = getSpreadsheet();   // openById(SS_ID) — getActiveSpreadsheet() es null en el Web App standalone
+  var sh = ss.getSheetByName('LIQUIDACION_SEMANAL_SNAPSHOT');
+  if(!sh){ sh = ss.insertSheet('LIQUIDACION_SEMANAL_SNAPSHOT'); sh.appendRow(_SNAP_HEADERS); sh.setFrozenRows(1); }
+  return sh;
+}
+
+// Lunes (00:00) de la semana que contiene la fecha dada.
+function _lunesDeSemana(d){
+  var dia = d.getDay();                       // 0=Dom..6=Sab
+  var resta = (dia === 0) ? 6 : (dia - 1);    // domingo pertenece a la semana que arranca 6 días antes
+  var lun = new Date(d.getTime());
+  lun.setDate(lun.getDate() - resta);
+  lun.setHours(0,0,0,0);
+  return lun;
+}
+
+// Congela la liquidación de TODOS los evaluables activos para la semana indicada.
+// params.fechaInicio (lunes 'yyyy-MM-dd') opcional → por defecto la semana de HOY (el domingo del trigger).
+// [fix concurrencia] LockService: dos corridas simultáneas (trigger + manual, o reintentos) leían la hoja
+// vacía y AMBAS appendaban → filas duplicadas. El lock serializa → la 2da ve las filas de la 1ra y actualiza.
+function snapshotLiquidacionSemanal(params){
+  var _lock = LockService.getScriptLock();
+  try { _lock.waitLock(30000); } catch(e){ return { ok:false, error:'Sistema ocupado (otra liquidación en curso)' }; }
+  try { return _snapshotLiquidacionSemanalImpl(params); }
+  finally { try { _lock.releaseLock(); } catch(_){} }
+}
+function _snapshotLiquidacionSemanalImpl(params){
+  params = params || {};
+  var tz = Session.getScriptTimeZone();
+  var lun = params.fechaInicio ? new Date(params.fechaInicio + 'T00:00:00') : _lunesDeSemana(new Date());
+  var lunStr = Utilities.formatDate(lun, tz, 'yyyy-MM-dd');
+  var dom = new Date(lun.getTime()); dom.setDate(dom.getDate()+6);
+  var domStr = Utilities.formatDate(dom, tz, 'yyyy-MM-dd');
+  var corte = new Date();
+
+  var personal = _sheetToObjects(getSheet('PERSONAL_MASTER'))
+    .filter(function(r){ return String(r.estado) === '1'; })
+    .filter(_esPersonalEvaluable);
+
+  var sh = _getHojaSnapshotSemanal();
+  // [fix dedup] Limpiar duplicados pre-existentes por (semana|idPersonal): conservar la fila PAGADO si
+  // alguna lo está, sino la primera; borrar el resto (de abajo hacia arriba para no correr índices).
+  _dedupSnapshotSheet(sh);
+  var data = sh.getDataRange().getValues();
+  var hdrs = data[0];
+  var iSem = hdrs.indexOf('Semana_Inicio'), iIdP = hdrs.indexOf('idPersonal'), iEst = hdrs.indexOf('Estado');
+  var existente = {};   // (semana|idPersonal) → fila 1-based
+  for(var r=1;r<data.length;r++){ existente[String(data[r][iSem])+'|'+String(data[r][iIdP])] = r+1; }
+
+  var congelados = 0, yaPagados = 0, errores = [];
+  personal.forEach(function(p){
+    try {
+      var liq = getLiquidacionSemana({ idPersonal: p.idPersonal, fechaInicio: lunStr });
+      if(!liq.ok){ errores.push(String(p.idPersonal)+': '+liq.error); return; }
+      var d = liq.data;
+      var diasPresente = (d.dias||[]).filter(function(x){ return x.presente; }).length;
+      var key = lunStr+'|'+String(p.idPersonal);
+      var estadoFinal = 'PENDIENTE_PAGO';
+      if(existente[key]){
+        var estadoPrev = String(data[existente[key]-1][iEst] || '');
+        if(estadoPrev === 'PAGADO'){ yaPagados++; return; }   // NUNCA pisar un pago confirmado
+        if(estadoPrev) estadoFinal = estadoPrev;
+      }
+      var fila = [
+        'SNP-'+lunStr+'-'+String(p.idPersonal),
+        lunStr, domStr, String(p.idPersonal), d.nombre, d.rol||'', d.appOrigen||'',
+        d.totales.base, d.totales.bonus, d.totales.meta, d.totales.aCobrar,
+        diasPresente, JSON.stringify({ dias:d.dias, deficiencias:d.deficiencias }),
+        corte, estadoFinal
+      ];
+      if(existente[key]) sh.getRange(existente[key], 1, 1, fila.length).setValues([fila]);
+      else               sh.appendRow(fila);
+      congelados++;
+    } catch(e){ errores.push(String(p.idPersonal)+': '+(e&&e.message)); }
+  });
+  SpreadsheetApp.flush();
+  Logger.log('[snapshotLiquidacionSemanal] semana '+lunStr+' · '+congelados+' congelados · '+yaPagados+' ya pagados · '+errores.length+' errores');
+  return { ok:true, data:{ semana_inicio:lunStr, semana_fin:domStr, congelados:congelados, ya_pagados:yaPagados, errores:errores } };
+}
+
+// Quita filas duplicadas por (Semana_Inicio|idPersonal). Conserva la PAGADO si existe, sino la primera.
+function _dedupSnapshotSheet(sh){
+  var data = sh.getDataRange().getValues();
+  if(data.length < 3) return 0;   // header + ≤1 fila → nada que dedupear
+  var hdrs = data[0];
+  var iSem = hdrs.indexOf('Semana_Inicio'), iIdP = hdrs.indexOf('idPersonal'), iEst = hdrs.indexOf('Estado');
+  var keep = {};        // key → fila 1-based a conservar
+  var borrar = [];      // filas 1-based a borrar
+  for(var r=1;r<data.length;r++){
+    var key = String(data[r][iSem])+'|'+String(data[r][iIdP]);
+    var fila = r+1;
+    if(!keep[key]){ keep[key] = fila; continue; }
+    // ya hay una; decidir cuál conservar: PAGADO gana
+    var estaPagada = String(data[r][iEst]) === 'PAGADO';
+    var keepPagada = String(data[keep[key]-1][iEst]) === 'PAGADO';
+    if(estaPagada && !keepPagada){ borrar.push(keep[key]); keep[key] = fila; }
+    else { borrar.push(fila); }
+  }
+  borrar.sort(function(a,b){ return b-a; }).forEach(function(f){ sh.deleteRow(f); });
+  if(borrar.length) Logger.log('[_dedupSnapshotSheet] '+borrar.length+' duplicados eliminados');
+  return borrar.length;
+}
+
+// Lee los snapshots CONGELADOS de una semana (para que el admin pague el monto fijado, no el recalculado).
+// GET ?accion=getSnapshotsSemanal&semanaInicio=yyyy-MM-dd  (default: semana de hoy)
+function getSnapshotsSemanal(params){
+  params = params || {};
+  var tz = Session.getScriptTimeZone();
+  var lunStr = params.semanaInicio || Utilities.formatDate(_lunesDeSemana(new Date()), tz, 'yyyy-MM-dd');
+  var sh = _getHojaSnapshotSemanal();
+  var rows = _sheetToObjects(sh).filter(function(r){ return String(r.Semana_Inicio) === lunStr; });
+  return { ok:true, data:{ semana_inicio:lunStr, snapshots:rows } };
+}
+
 // ── Trigger automático: domingos 8pm ───────────────────────────
 function configurarTriggerCierreSemanal() {
   ScriptApp.getProjectTriggers().forEach(function(t) {
@@ -1128,10 +1255,17 @@ function configurarTriggerCierreSemanal() {
 
 function cerrarSemanaAutomatico() {
   try {
+    // [Lote4 · B6-MOS] CONGELAR la liquidación ANTES de avisar — así el admin paga el monto
+    // fijado al corte, no uno que pudo cambiar si se editan jornadas/auditorías después.
+    var snap = { data: { congelados: 0 } };
+    try { snap = snapshotLiquidacionSemanal({}); } catch(eS) { Logger.log('[cierreSemanal] snapshot falló: ' + eS.message); }
+    var n = (snap && snap.data && snap.data.congelados) || 0;
     if (typeof _enviarPushTodos === 'function') {
-      _enviarPushTodos('💰 Liquidación semanal lista', 'Revisa MOS para imprimir y pagar al personal.', { soloRolesAdmin: true, idNotif: 'MOS_LIQUIDACION_LISTA' });
+      _enviarPushTodos('💰 Liquidación semanal lista',
+        n + ' empleado(s) liquidado(s) · revisa MOS para imprimir y pagar.',
+        { soloRolesAdmin: true, idNotif: 'MOS_LIQUIDACION_LISTA' });
     }
-    Logger.log('Cierre semanal disparado: ' + new Date());
+    Logger.log('Cierre semanal disparado: ' + new Date() + ' · congelados: ' + n);
   } catch(e) {
     Logger.log('cerrarSemanaAutomatico error: ' + e.message);
   }
