@@ -45,8 +45,21 @@ update mos.config set valor='0' where clave='ME_ESCRITURA_DIRECTA';
   `mos.productos` CONGELADA (trigger `syncCatalogoSupabase` muerto — patrón conocido) → `stockMinimo/Maximo`
   viejos → **alertas de stock bajo silenciadas**. Fix: `backfillCatalogo()` (refrescó 2357 productos) +
   `instalarTriggerCatalogo()` (re-instaló el horario). Verificar periódicamente que el trigger siga vivo.
-- ⏳ **Siguiente WH:** flipear las otras lecturas (guías del día, preingresos, alertas, rotación) tras su
-  propio gate. Después: escrituras directas pieza por pieza (la de stock FIFO/lotes es la más delicada).
+- ✅ **PASO 3 COMPLETO (2026-06-13): 11 lecturas LIVE** (stock, rotación, mermas, auditorias, ajustes, envasados,
+  producto_nuevo, preingresos, lotes_vencimiento, stock_movimientos, guias). alertas_stock se quedó en Sheets
+  (se purga → huérfanos en sombra). Revisión 100x pasada (bug de fotos preingreso arreglado).
+- ✅ **PASO 4 — 7 RPCs atómicas LISTAS (INERTES, flags en 0)**: crear_ajuste, registrar_merma, crear_preingreso,
+  actualizar_preingreso, crear_guia, **cerrar_guia (FIFO/lotes)**, reabrir_guia. SQL `30..36_wh_*.sql`, validadas
+  (77 casos) + **2 auditorías 40x** (corregido: lost-update→UPDATE atómico, coerción `wh._num`/`wh._ts`, lote legacy).
+- ✅ **Integridad wh.stock**: 1 fila por producto + **índice único `ux_wh_stock_cod`** (consolidado el duplicado
+  7750243071406). `dedupStockSheet` en GAS (usa clearContent, la hoja bloquea deleteRow).
+- 🔑 **ACLARACIÓN CLAVE (no activar escritura aún):** mientras GAS/Sheets viva, toda escritura DEBE ir a Sheets
+  (el ecosistema lo lee) → activar las RPCs ahora = doble escritura sin valor. Las 7 RPCs son la FUNDACIÓN del
+  **PASO 5** (frontend escribe directo a Supabase sin GAS). El PASO 5 es un REDISEÑO mayor (catálogo+orquestación
+  fuera de GAS), no ejecución lineal — requiere decisión estratégica. Docs: `DISENO_orquestadores_paso4.md`,
+  `DISENO_cerrar_guia.md`, `architecture_wh_escritura_directa_paso4` (memoria).
+- ⏳ **Siguiente WH (menor):** flipear lecturas restantes con su gate (rotación ya lista). Orquestadores
+  (envasado/aprobar/auditar) quedan en GAS con dual-write. getGuia (detalle PK compuesta) — diseño aparte.
 - 🔧 **Pendiente DB:** aplicar `27_fase2_cerrar_caja.sql` endurecido al proyecto MOS (rzbzdeipbtqkzjqdchqk)
   el día que se valide/active `ME_CIERRE_DIRECTO` (hoy inerte; el classifier bloqueó aplicarlo en un bug-hunt).
 
