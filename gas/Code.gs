@@ -17,12 +17,72 @@ function _respond(data) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+// ════════════════════════════════════════════════════════════
+// [Lote2-A · fix C1-MOS revisión 2026-06-12] Gate de escrituras sensibles.
+// El Web App es público ("Anyone") y la URL está en GitHub Pages → cualquiera
+// podía llamar setConfig (¡incluido ADMIN_GLOBAL_PIN!) o guardarTarjetaWA
+// (phishing: redirigir el WhatsApp de las tarjetas). Este gate exige que el
+// POST venga de un dispositivo MOS REGISTRADO y ACTIVO en DISPOSITIVOS
+// (el deviceId viaja en _audit, inyectado por api.js en cada POST).
+// Fail-CLOSED: son operaciones admin poco frecuentes; ante error se reintenta.
+// Cache 60s por dispositivo para no leer la sheet en cada request.
+// NO aplicar a: acciones llamadas desde dispositivos AÚN no autorizados
+// (aprobarDispositivoEnSitu, reactivarDispositivoSuspendido — esas ya exigen
+// claveAdmin) ni a llamadas server-to-server de ME/WH (sin _audit).
+// ════════════════════════════════════════════════════════════
+function _gateDispositivoMOS(params) {
+  try {
+    var dev = String((params && params._audit && params._audit.idDispositivo) || (params && params.deviceId) || '').trim();
+    if (!dev) return { ok: false, error: 'NO_AUTORIZADO: acción restringida a la app MOS (falta contexto de dispositivo)' };
+    var cache = CacheService.getScriptCache();
+    var ck = 'GATE_DEV_MOS_' + dev;
+    var hit = cache.get(ck);
+    if (hit === '1') return { ok: true };
+    if (hit === '0') return { ok: false, error: 'NO_AUTORIZADO: dispositivo no autorizado para esta acción' };
+    var sheet = getSheet('DISPOSITIVOS');
+    var data = sheet.getDataRange().getValues();
+    var hdrs = data[0];
+    var iId  = hdrs.indexOf('ID_Dispositivo');
+    var iEst = hdrs.indexOf('Estado');
+    var iApp = hdrs.indexOf('App');
+    var okDev = false;
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][iId]) !== dev) continue;
+      var appRow = iApp >= 0 ? String(data[i][iApp] || '').toLowerCase() : '';
+      // App MOS explícita o vacía (rows legacy pre-columna App)
+      okDev = (String(data[i][iEst] || '').toUpperCase() === 'ACTIVO')
+              && (appRow === 'mos' || appRow === 'proyectomos' || appRow === '');
+      break;
+    }
+    cache.put(ck, okDev ? '1' : '0', 60);
+    return okDev ? { ok: true } : { ok: false, error: 'NO_AUTORIZADO: dispositivo no autorizado para esta acción' };
+  } catch(eG) {
+    return { ok: false, error: 'NO_AUTORIZADO: ' + (eG && eG.message) };
+  }
+}
+
 function _route(method, e) {
   try {
     var params = (method === 'GET')
       ? e.parameter
       : JSON.parse(e.postData ? e.postData.contents : '{}');
     var action = params.action || '';
+
+    // [Lote2-A] Acciones de ESCRITURA sensible → solo dispositivos MOS activos.
+    // ALCANCE DELIBERADO: solo setConfig + guardarTarjetaWA. Ambas:
+    //   · escriben CONFIG_MOS (setConfig puede tocar ADMIN_GLOBAL_PIN; guardarTarjetaWA
+    //     redirige el WhatsApp de las tarjetas = phishing) → son el C1 crítico;
+    //   · se llaman EXCLUSIVAMENTE desde la app MOS (WH/ME usan su propio
+    //     setConfigValue en su propio GAS — verificado).
+    // Las acciones de dispositivos (aprobar/rechazar/bloquear) NO se gatean aquí
+    // porque el modal de seguridad CENTRALIZADO las puede enrutar desde WH/ME y un
+    // gate por-device las rompería; su endurecimiento correcto es verificarClaveAdmin
+    // por-endpoint (pendiente, anotado en REVISION_SISTEMA).
+    var _ACCIONES_GATED = { setConfig: 1, guardarTarjetaWA: 1 };
+    if (_ACCIONES_GATED[action]) {
+      var _gate = _gateDispositivoMOS(params);
+      if (!_gate.ok) return _gate;
+    }
 
     return (function() { switch(action) {
 
