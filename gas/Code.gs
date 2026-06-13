@@ -86,6 +86,10 @@ function _route(method, e) {
 
     return (function() { switch(action) {
 
+      // [Diagnóstico sombra catálogo · read-only] conteos Sheet vs Supabase por tabla del catálogo.
+      // backfillCatalogo/instalarTriggerCatalogo se corren desde el editor (mutan) — no se exponen al router.
+      case 'verificarCuadreCatalogo':  return verificarCuadreCatalogo();
+
       // ── Catálogo maestro (Productos) ───────────────────────
       case 'getProductos':         return getProductosMaster(params);
       case 'getProducto':          return getProductoMaster(params.codigo);
