@@ -39,9 +39,19 @@ reconciliación quedan de red.
   `reabrirGuia` PATCH estado. `aprobarPreingreso` reusa `crearGuia` → cubierto. 20x: sin bugs.
 - ✅ **PREINGRESOS** (GAS @437, 5 IDs): `_dualWritePreingresoWH(id)` (re-lee fila + upsert) en
   crearPreingreso / actualizarPreingreso / aprobarPreingreso. 20x: sin bugs.
-- ⏳ **PENDIENTE de dual-write:** `guia_detalle` (DIFERIDO — PK posicional `(id_guia,linea)`, frágil;
-  forma correcta = re-sync de TODAS las líneas de la guía al cerrar, reusando el array de cerrarGuia),
-  `lotes_vencimiento`, `envasados`, `mermas`. Luego reconciliación periódica Supabase←Sheets (red).
+- ✅ **GUIA_DETALLE** (GAS @438): `_dualWriteDetallesGuiaWH(idGuia)` re-sincroniza TODAS las líneas al
+  CERRAR la guía (reproduce la numeración del batch). Con esto **una guía cerrada queda 100% legible desde
+  Supabase (cabecera + ítems)**. 20x: sin bugs (orphan-de-borrado-físico = misma limitación que el batch).
+- ⏳ **PENDIENTE de dual-write (secundarias, ya cubiertas por el batch 15min):** `lotes_vencimiento`,
+  `envasados`, `mermas`. Bajo riesgo, PK simple — incremento futuro.
+- 🛡️ **RED DE SEGURIDAD YA EXISTE:** el sync batch `syncWHReciente` (cada 15min) ES la reconciliación
+  Sheets→Supabase — si un dual-write se pierde, se cura en ≤15min. El dual-write solo lo hace MÁS fresco
+  (tiempo real vs 15min). Por eso NO urge una reconciliación extra como en ME.
+
+### ✅ Estado tras esta sesión: las tablas OPERATIVAS CORE de WH dual-writean en tiempo real
+stock + movimientos + guías(cabecera+ítems) + preingresos → frescos al instante. El resto (lotes/envasados/
+mermas) lo cubre el batch a 15min. **Próximo (con datos reales de mañana):** re-correr el gate de paridad
+para medir la mejora de frescura, y recién ahí habilitar **lectura directa de WH** (con paginación para stock).
 
 ### 🚀 Patrón de deploy eficiente (para no re-topar las 200 versiones)
 `clasp push` → `clasp deploy -i <id1> -d "..."` (crea 1 versión N) → los otros 4 con `clasp deploy -i <idN> -V N`
