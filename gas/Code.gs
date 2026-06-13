@@ -383,6 +383,7 @@ function _route(method, e) {
       // [Lote4 · B6-MOS] snapshot congelado de liquidación semanal
       case 'snapshotLiquidacionSemanal': return snapshotLiquidacionSemanal(params);
       case 'getSnapshotsSemanal':       return getSnapshotsSemanal(params);
+      case 'dedupSnapshotSemanal':      return { ok:true, data:{ eliminados: _dedupSnapshotSheet(_getHojaSnapshotSemanal()) } };
 
       // ── Notificaciones (catálogo + log + test) ─────────────
       case 'getNotificacionesConfig':   return getNotificacionesConfig();
