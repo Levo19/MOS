@@ -75,7 +75,30 @@ UPDATE de TODA la tabla. Agregado el guard a PATCH en ambos + `_dualWritePatchWH
 versión EXISTENTE con `clasp deploy -i <id> -V <N>` (no crea versión). **Pendiente:** purgar versiones
 viejas del project history de WH (Apps Script → project history) para liberar espacio.
 
-### PASO 3 — Lectura directa (con gate + paginación)
+### PASO 3 — Lectura directa · EN CURSO (2026-06-13)
+**Infra genérica** (`MigracionWH.gs`): `_sbValToSheet`/`_sbRowsToObjsWH`/`_leerTablaWH` invierten
+`_sheetToObjects` desde `wh.*` reusando `_WH_SPECS` (un helper para todas las tablas). Punto único
+`_filasLecturaWH(tabla,hoja)` con **fallback a Sheets** reemplaza la lectura cruda en las funciones de API.
+Gate genérico `compararLecturaWH(tabla)` (router) valida paridad EXACTA por id, tolerante a JSON
+(`_jsonEqLoose`, pg jsonb reordena claves) y a número (`_numEqLoose`). Flip por tabla: key `lectura_<tabla>`.
+
+**FLIPEADAS (paridad exacta, LIVE)**: stock, rotación, mermas, auditorias, ajustes, envasados,
+producto_nuevo, preingresos, lotes_vencimiento. (GAS @454, 5 IDs.)
+
+**PENDIENTES del PASO 3 (con hallazgos — son las "dudas" a resolver):**
+- `getGuias`/`getGuia`: sombra `wh.guias` diverge en campos OCR — `OCR_Fecha_Comprobante` quedó con
+  `Date.toString()` feo (bug del dual-write: `_whText` sobre una celda Date) y `OCR_Fecha_Proceso`
+  normalizada. Fix: tipar esos OCR como `date` en `_WH_SPECS` (o normalizar en dual-write) + **re-backfill
+  guias**, luego flipear. `getGuia` además trae detalle de PK compuesta sin `idDetalle` → diseño aparte.
+- `alertas_stock`: ⚠️ **sombra 3989 filas vs 421 en hoja** — HUÉRFANOS: la hoja se purga pero el batch
+  hace upsert sin DELETE → la sombra acumula borrados. Flipear mostraría alertas fantasma. + campo
+  `revisado` mal tipado (`bool` vs texto "SI/NO"). Fix: purgar sombra (DELETE de lo que no está en hoja)
+  + corregir spec, o no flipear. **Riesgo general del modelo de sombra para tablas purgables.**
+- `stock_movimientos`: paridad exacta pero **~5s** (6197 filas, creciente) — flipear con `_filasLecturaWH`
+  carga todo. Optimizar con filtro server-side (`_sbSelect` por `cod_producto` + limit) antes de flipear.
+- `cargadores`/`historial`: agregaciones (no lectura de tabla directa) → fuera del patrón genérico.
+
+### PASO 3 (notas originales) — Lectura directa (con gate + paginación)
 Tras validar paridad fresca (paso 1 re-corrido con dual-write activo), flipear lecturas de WH a RPCs
 Supabase: stock (PAGINADO), guías del día, preingresos, alertas. Flag `WH_LECTURA_DIRECTA` en `mos.config`
 (o `wh.config`) + fallback a GAS. Mismo patrón `serverFlag || localStorage` que ME.
