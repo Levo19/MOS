@@ -123,7 +123,8 @@ pero **aplicarlas a la DB de producción lo bloquea el classifier → lo autoriz
    bloquea destructivos como DELETE masivo, que corre el usuario con `!`).
 3. ✅ `wh.crear_preingreso` (validada 7/7) + ✅ `wh.actualizar_preingreso` (validada 8/8). `32/33_wh_*.sql`.
    Falta `wh.aprobar_preingreso` (crea guía → depende de crear_guia, hacer DESPUÉS de la sesión 4).
-4. `wh.crear_guia` ✅ VALIDADA 8/8 (solo cabecera) `34_wh_crear_guia.sql`. ⏳ `wh.cerrar_guia` / `wh.reabrir_guia`.
+4. `wh.crear_guia` ✅ 8/8 `34_*`. `wh.cerrar_guia` ✅✅ **VALIDADA 18/18 (40x)** `35_wh_cerrar_guia.sql` (stock+FIFO+lotes+
+   idempotencia+envasado; recibe detalles como parámetro). ⏳ falta `wh.reabrir_guia`.
    🔴🔴 **cerrar_guia es la RPC MÁS COMPLEJA Y CRÍTICA** (estándar 40x): recalcula monto, aplica stock por línea
    (INGRESO suma / SALIDA resta), **crea lotes desde fecha** (`_sincronizarLoteDesdeDetalle`), **consume lotes FIFO**
    (`_consumirLotesFIFO`), sincroniza idLote, salta envasados. Fusiona la sesión 6 (stock FIFO/lotes). REQUIERE su
