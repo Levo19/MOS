@@ -51,11 +51,23 @@ Eso devuelve TODA la escritura de ventas a GAS al instante (sin redeploy). Para 
 `update mos.config set valor='0' where clave='ME_IMPRESION_DIRECTA';`
 
 ## 3. 🟢 LISTO PERO APAGADO (esperando algo del usuario)
-- **CPE directo (boleta/factura electrónica)** → todo cableado en `supabase/21_fase2_cpe_directo.sql` +
-  Edge Function `supabase/functions/emitir-cpe` (llama a NubeFact). Flag `ME_CPE_DIRECTO=0`.
-  **Falta:** el **token de NubeFact** (el usuario aún no lo tiene). Cuando llegue: setear secret →
-  verificar serie → prender flag → probar 1 boleta. Insight clave: en **boletas**, NubeFact devuelve el QR
-  **al instante** (no espera a SUNAT, que valida async) → el CPE puede ser casi tan rápido como la NV.
+- **CPE directo (boleta/factura electrónica)** → todo cableado: RPC `crear_cpe_directo`/`set_cpe_nf`
+  (SQL 21 + **kill-switch SQL 24 ya aplicado y verificado live**) + Edge `emitir-cpe`. Flag `ME_CPE_DIRECTO=0`.
+  **Falta:** el **token de NubeFact**. ⚠️ **El código endurecido de la Edge `emitir-cpe` (kill-switch +
+  regex correlativo) está en el repo pero NO desplegado** — el deploy falló repetidamente (el CLI de
+  Supabase se cuelga al empaquetar, probable Docker no corriendo / entorno non-TTY). NO es problema de
+  seguridad: el kill-switch REAL vive en las RPC/DB (SQL 24) y la función no emite sin token.
+  **PROCEDIMIENTO COMPLETO el día de NubeFact (en terminal normal, con Docker Desktop arrancado):**
+  ```
+  cd C:\Users\ISO\ProyectoMOS
+  supabase functions deploy emitir-cpe --project-ref rzbzdeipbtqkzjqdchqk
+  supabase functions deploy imprimir   --project-ref rzbzdeipbtqkzjqdchqk   # (A7/M5, opcional, verificar impresión)
+  supabase secrets set NUBEFACT_TOKEN=xxx NUBEFACT_RUC=xxx --project-ref rzbzdeipbtqkzjqdchqk
+  -- update mos.config set valor='1' where clave='ME_CPE_DIRECTO';   (prender)
+  -- probar 1 boleta + verificar QR
+  ```
+  (Login CLI ya hecho con token personal — `supabase login --token` / dashboard/account/tokens.)
+  Insight: en **boletas** NubeFact devuelve el QR **al instante** → el CPE puede ser casi tan rápido como la NV.
 
 ## 3.4 ✅ REMEDIACIÓN LOTE 1 (2026-06-12) — estado
 - **Lote1-A HECHO** (ME GAS @203): lock global reentrante `_conLockCred` en TODO el flujo de
