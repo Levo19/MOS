@@ -31,4 +31,23 @@ de sus efectos (que YA existe del PASO 2) hasta el PASO 5.
 4. **Fase de ACTIVACIÓN coordinada**: wiring GAS (llamar RPC como primario, NO duplicar escritura local+dual-write)
    + flip de flags uno a uno con validación de cierre real. Recién ahí el PASO 5 (retirar GAS) es posible.
 
-## Estado: 7 RPCs atómicas core LISTAS (inertes). La escritura de stock crítica (cerrar/reabrir guía con FIFO) está cubierta.
+## 🔑 HALLAZGO DEFINITIVO (2026-06-13): límite natural de las RPCs de escritura directa
+Al analizar `agregar_detalle_guia` se confirmó: **casi todas las operaciones WH restantes son orquestadores que
+dependen del CATÁLOGO** (PRODUCTOS_MASTER/EQUIVALENCIAS para validar/resolver base) **+ lógica condicional**
+(AUTO-SUMA, sync de lote, ajuste de stock si la guía está cerrada, "guía del día"). Ejemplos: `agregar_detalle_guia`
+(valida catálogo + auto-suma + lote + stock condicional), `registrar_envasado`, `aprobar_producto_nuevo`.
+
+**Conclusión de ingeniería:** las 7 RPCs atómicas hechas son el conjunto SENSATO de escritura directa en SQL
+(ajustes, mermas, preingresos, crear/cerrar/reabrir guía — incluido el stock con FIFO). Replicar los orquestadores
+como RPCs SQL monolíticas sería frágil y de bajo valor (operaciones poco frecuentes, dependientes del catálogo que
+vive en mos.* y se sincroniza por trigger). **Decisión recomendada:**
+- Los orquestadores **se quedan en GAS** (orquestando) con su **dual-write ya existente** (PASO 2) manteniendo la
+  sombra fresca. NO se convierten a RPC.
+- El **PASO 5 (retirar GAS por completo)** NO es alcanzable sin un REDISEÑO mayor (mover catálogo + orquestación al
+  frontend/Edge con múltiples RPCs). Eso es un proyecto aparte, no una continuación lineal de este PASO 4.
+
+## ✅ VEREDICTO PASO 4: COMPLETO en su alcance sensato
+7 RPCs atómicas (incl. la crítica cerrar/reabrir con FIFO) escritas, aplicadas (inertes), validadas (72 casos, 0 fallos).
+Próximo razonable: **fase de ACTIVACIÓN** de estas 7 (wiring GAS anti-doble-escritura + flip de flags uno a uno con
+validación de operación real + tu OK), que YA da valor (escritura directa de las operaciones core). El resto (orquestadores
++ retiro total de GAS) requiere decisión de rediseño, no más RPCs.
