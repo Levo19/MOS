@@ -6239,7 +6239,8 @@ const MOS = (() => {
   async function saludReconciliarMasivo() {
     const total = (S._saludCache || []).length;
     if (total === 0) { toast('Sin desbalances para reconciliar', 'info'); return; }
-    const ok = confirm(`¿Aplicar AJUSTES auditados a ${total} producto${total === 1 ? '' : 's'}?\n\nCada corrección queda registrada en AJUSTES con motivo "Reconciliación masiva".`);
+    // [Lote4 · M3-MOS] confirm() nativo -> _modalConfirm (la casa prohíbe confirm/alert/prompt)
+    const ok = await _modalConfirm(`¿Aplicar AJUSTES auditados a ${total} producto${total === 1 ? '' : 's'}?\n\nCada corrección queda registrada en AJUSTES con motivo "Reconciliación masiva".`, { warning: true, titulo: 'Reconciliar stock' });
     if (!ok) return;
     try { _opsBeep && _opsBeep('shimmer'); } catch(_){}
     const auth = await pedirAuth({ accion: 'RECONCILIAR_STOCK_MASIVO',
@@ -10146,15 +10147,15 @@ const MOS = (() => {
     // Disparar / re-disparar OCR — opsOcrComprobantePrepoblar ya maneja el feedback visual
     opsOcrComprobantePrepoblar(idGuia);
   }
-  function costosUsarOrigenManual() {
+  async function costosUsarOrigenManual() {
     try { _opsBeep('tac'); } catch(_){}
     const st = S._costosGuiaState;
     if (!st) return;
     // Confirmar si hay costos ya tipeados — no perder data por accidente
     const algunoConDato = (st.lineas || []).some(l => l.inputValue !== '' && l.inputValue != null && parseFloat(l.inputValue) > 0);
     if (algunoConDato) {
-      // Usamos confirm nativo solo por simplicidad — si te molesta, lo cambio por modal custom
-      if (!confirm('Hay costos ya escritos. ¿Vaciar todo para empezar manual?')) return;
+      // [Lote4 · M3-MOS] _modalConfirm en vez de confirm() nativo
+      if (!await _modalConfirm('Hay costos ya escritos. ¿Vaciar todo para empezar manual?', { warning: true, titulo: 'Vaciar costos' })) return;
     }
     // Vaciar todos los inputValue y limpiar sugerencias
     (st.lineas || []).forEach(l => { l.inputValue = ''; l._sugerencia = null; });
@@ -12655,7 +12656,7 @@ const MOS = (() => {
 
   async function loteCancelar() {
     if (!_loteState) return;
-    if (!confirm('¿Cancelar el lote de impresión?\n\n' + _loteState.completadas + ' de ' + _loteState.total + ' ya impresas no se borran del rollo.')) return;
+    if (!await _modalConfirm('¿Cancelar el lote de impresión?\n\n' + _loteState.completadas + ' de ' + _loteState.total + ' ya impresas no se borran del rollo.', { warning: true, titulo: 'Cancelar lote' })) return;  // [Lote4 · M3-MOS]
     try {
       await API.post('wh_cancelarLoteAdhesivo', { idLote: _loteState.idLote });
     } catch(_){}
@@ -12679,7 +12680,7 @@ const MOS = (() => {
   async function adhesivoCalibrar() {
     const btn = document.getElementById('adhesivoBtnCalibrar');
     if (btn && btn.disabled) return;
-    if (!confirm('¿Calibrar la impresora ahora?\n\nLa impresora va a sacar ~3 etiquetas en blanco mientras mide el sensor de gap. Úsalo si las impresiones salen corridas del adhesivo o si recién cambiaste el rollo.')) return;
+    if (!await _modalConfirm('¿Calibrar la impresora ahora?\n\nLa impresora va a sacar ~3 etiquetas en blanco mientras mide el sensor de gap. Úsalo si las impresiones salen corridas del adhesivo o si recién cambiaste el rollo.', { titulo: 'Calibrar impresora' })) return;  // [Lote4 · M3-MOS]
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Calibrando…'; }
     try {
       const r = await API.post('wh_calibrarImpresoraAdhesivo', {});
@@ -20954,8 +20955,8 @@ const MOS = (() => {
       }
     });
   }
-  function eliminarHorarioCustom(idPersonal) {
-    if (!confirm('¿Quitar el horario personal? Vuelve al horario general de la app.')) return;
+  async function eliminarHorarioCustom(idPersonal) {
+    if (!await _modalConfirm('¿Quitar el horario personal? Vuelve al horario general de la app.', { warning: true, titulo: 'Quitar horario' })) return;  // [Lote4 · M3-MOS]
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
     const all = (cfgData.personal || []).concat(cfgData.personalMOS || []);
     const p = all.find(x => String(x.idPersonal) === String(idPersonal));
