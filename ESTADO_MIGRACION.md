@@ -144,13 +144,21 @@ server con flag apagado. **La remediación de los lotes 1-2 tiene prioridad sobr
 ## 3.0 🎯 CAMINO A "ACABAR ME" (retirar GAS) — estado 2026-06-12 noche
 Con escritura+lectura+impresión directas, **ME ya corre el camino caliente sobre Supabase**. Lo que
 todavía ata ME a GAS (y hay que migrar a RPC directa para retirarlo):
-- 🔴 **Cierre de caja** (arqueo diario) — LA pieza clave. **PASO 1 HECHO:** gate de validación
-  `me.simular_cierre_caja` (SQL 26, read-only). Comparado contra 8 cierres reales: **donde el cajero
-  no declaró override, el simulador reproduce el arqueo EXACTO al centavo (4/4)** → la matemática es
-  portable. **PASO 2 (próxima sesión enfocada):** RPC `me.cerrar_caja` que ESCRIBE (anula POR_COBRAR +
-  montoFinalAuto validado o declarado + descuadre + marca CERRADA), con los efectos secundarios (guía
-  SALIDA_VENTAS, cancelar cobros, push) quedando como post-hook GAS. Detrás de flag `ME_CIERRE_DIRECTO=0`
-  + fallback GAS; validar en un cierre real ANTES de flipear (como hicimos con lectura).
+- 🔴 **Cierre de caja** (arqueo diario) — LA pieza clave. Progreso:
+  - **PASO 1 HECHO:** gate `me.simular_cierre_caja` (SQL 26, read-only). 8 cierres reales: donde no hubo
+    override, el simulador reproduce el arqueo EXACTO al centavo (4/4) → matemática portable.
+  - **PASO 2 HECHO (INERTE):** RPC `me.cerrar_caja` (SQL 27) — núcleo de dinero atómico: anula POR_COBRAR,
+    efectivo+ingresos-egresos, montoFinal (auto/declarado)+descuadre, marca CERRADA, cancela cobros.
+    Gateada por `ME_CIERRE_DIRECTO=0` (inerte) + kill-switch server-side. **Validada en tx-rollback contra
+    cierre real: monto_final RPC == GAS exacto, idempotente, declarado+descuadre OK.**
+  - **PASO 3 PENDIENTE (próxima sesión, con cuidado — es la UI más crítica):**
+    (a) GAS post-hook `mirrorCierreASheets` que sincroniza Sheets (caja CERRADA + anulados + cobros) y hace
+        los efectos secundarios reusando el código GAS existente: guía SALIDA_VENTAS (la consume WH para
+        pickup — NO se puede saltar), audit, push. Idea simple/segura: tras el RPC, llamar al cierre GAS
+        existente en background (fire-and-forget) con el mismo montoFinal — es idempotente y hace todo.
+    (b) Frontend `_cerrarCajaDirecto` + helper `cierreDirecto()` + wire en `cerrarCaja` (~index.html:11422)
+        con fallback a GAS si el RPC falla. Confirmar al cajero desde el resultado del RPC (instantáneo).
+    (c) Validar en 1-2 cierres reales (comparar RPC vs GAS) ANTES de flipear `ME_CIERRE_DIRECTO=1`.
 - 🟡 Apertura/retoma de caja, anulación/cobrar/creditar (forma_pago), cobro de créditos → RPCs directas
   (patrón ya probado; bajo/medio riesgo; hoy van por GAS + dual-write, que funciona bien — no urgente).
 - ⛔ **CPE** — bloqueado por el token NubeFact (ver §3). Edge endurecida lista, sin desplegar.
