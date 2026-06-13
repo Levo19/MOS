@@ -60,4 +60,17 @@ Antes de prender cualquier flag de escritura de stock:
 2. **Índice único** wh.stock(cod_producto) + INSERT-else con `on conflict (cod_producto) do update` → cierra el
    residual B-2 (producto nuevo en 2 guías concurrentes → 2 filas). Requiere DDL + limpieza en prod (usuario con `!`).
 
-## Estado: 7 RPCs atómicas LISTAS (inertes) · DOS auditorías 40x pasadas (lost-update/coerción/lotes/origen corregidos · 77 casos validados).
+## Estado (2026-06-13): 10 RPCs LISTAS (inertes, validadas) · DOS auditorías 40x · integridad de stock blindada
+**7 atómicas** (crear_ajuste, registrar_merma, crear_preingreso, actualizar_preingreso, crear_guia, cerrar_guia, reabrir_guia)
+**+ 3 chicas** (marcar_preingreso_procesado, crear_auditoria, get_o_crear_guia_dia) — 90 casos de validación, 0 fallos.
+
+### Lo que FALTA para cerrar el PASO 4 100%
+- **`agregar_detalle_guia`** 🔴 (la más compleja): valida catálogo (mos.productos + mos.equivalencias → base) +
+  AUTO-SUMA (si la línea existe, suma; sino INSERT con linea=max+1) + sync lote + ajuste stock si la guía está CERRADA.
+  Cross-schema (mos.*) + lógica condicional → su 40x necesita contexto fresco. La necesitan envasado y recepción.
+- **`aprobar_producto_nuevo`** 🔴: crea producto en `mos.productos` (catálogo) + ajusta stock + lote. Cross-schema.
+- **Se COMPONEN en el cliente (NO necesitan RPC monolítica)** de las RPCs ya hechas:
+  - `aprobar_preingreso` = `crear_guia` + `marcar_preingreso_procesado` ✅ (piezas listas)
+  - `auditar_producto` = `crear_auditoria` + `crear_ajuste` (si difiere) ✅ (piezas listas)
+  - `registrar_envasado` = `get_o_crear_guia_dia` ×2 + `agregar_detalle_guia` ×2 + `crear_ajuste` ×2 (falta agregar_detalle_guia)
+- **Auth B1 (PASO 5)** ya hecho: `mintSupabaseTokenWH` validado → el frontend podrá llamar estas RPCs directo.
