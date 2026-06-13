@@ -141,6 +141,21 @@ validar caja/claims (en prod), router GAS de MOS sin auth en escrituras, capa CP
 server con flag apagado. **La remediación de los lotes 1-2 tiene prioridad sobre seguir migrando**
 (créditos-directo absorbe el fix del lock como parte del diseño).
 
+## 3.0 🎯 CAMINO A "ACABAR ME" (retirar GAS) — estado 2026-06-12 noche
+Con escritura+lectura+impresión directas, **ME ya corre el camino caliente sobre Supabase**. Lo que
+todavía ata ME a GAS (y hay que migrar a RPC directa para retirarlo):
+- 🔴 **Cierre de caja** (arqueo diario) — LA pieza clave. **PASO 1 HECHO:** gate de validación
+  `me.simular_cierre_caja` (SQL 26, read-only). Comparado contra 8 cierres reales: **donde el cajero
+  no declaró override, el simulador reproduce el arqueo EXACTO al centavo (4/4)** → la matemática es
+  portable. **PASO 2 (próxima sesión enfocada):** RPC `me.cerrar_caja` que ESCRIBE (anula POR_COBRAR +
+  montoFinalAuto validado o declarado + descuadre + marca CERRADA), con los efectos secundarios (guía
+  SALIDA_VENTAS, cancelar cobros, push) quedando como post-hook GAS. Detrás de flag `ME_CIERRE_DIRECTO=0`
+  + fallback GAS; validar en un cierre real ANTES de flipear (como hicimos con lectura).
+- 🟡 Apertura/retoma de caja, anulación/cobrar/creditar (forma_pago), cobro de créditos → RPCs directas
+  (patrón ya probado; bajo/medio riesgo; hoy van por GAS + dual-write, que funciona bien — no urgente).
+- ⛔ **CPE** — bloqueado por el token NubeFact (ver §3). Edge endurecida lista, sin desplegar.
+> **"Acabar ME" requiere: cierre-directo (paso 2) + CPE (token).** El resto es cleanup incremental.
+
 ## 4. ⏳ CABOS ABIERTOS / PRÓXIMOS PASOS
 1. **Validar el PRIMER cierre real con ventas directas.** La red de reconciliación está desplegada pero aún no
    se ejecutó en un cierre real. → Cuando un cajero cierre caja, verificar que el monto cuadra.
