@@ -34,12 +34,21 @@ reconciliación quedan de red.
 - ✅ **STOCK COMPLETO** (GAS @421-425): `_actualizarStock` → upsert `wh.stock` (captura idStock real) +
   `_logStockMovimiento` → upsert `wh.stock_movimientos`. Como `_actualizarStock` es la mutación central,
   cubre stock fresco desde TODOS los caminos (cierres, envasados, ajustes). Validado end-to-end.
-- 🟡 **GUÍAS PARCIAL** (GAS @426-430): `cerrarGuia` (PATCH estado+monto) y `reabrirGuia` (PATCH estado).
-  ⚠️ **Gap conocido:** el PATCH es no-op si la guía aún NO está en la sombra (creada después del último
-  batch). **Falta dual-write en la CREACIÓN de guía** (`crearGuia` / aprobar preingreso) para cobertura
-  total → próximo incremento.
-- ⏳ **PENDIENTE:** dual-write de `guia_detalle` (ítems), `preingresos`, creación de guía. Luego
-  reconciliación periódica Supabase←Sheets (red de seguridad, como `reconciliarDirectasSheets` de ME).
+- ✅ **GUÍAS — estado + creación** (GAS @436, 5 IDs): `_crearGuiaImpl` upsertea la guía nueva a `wh.guias`
+  al crearse (gap cerrado: guía post-batch ya está en la sombra); `cerrarGuia` PATCH estado+monto;
+  `reabrirGuia` PATCH estado. `aprobarPreingreso` reusa `crearGuia` → cubierto. 20x: sin bugs.
+- ⏳ **PENDIENTE de dual-write:** `guia_detalle` (ítems de la guía — `agregarDetalleGuia`/
+  `actualizarCantidadDetalle`/`anularDetalle`), `preingresos`, `lotes_vencimiento`, `envasados`, `mermas`.
+  Luego reconciliación periódica Supabase←Sheets (red, como `reconciliarDirectasSheets` de ME).
+
+### 🔒 20x review (2026-06-12): hallazgo crítico corregido
+`_sbOnce_` (WH **y** ME) bloqueaba DELETE sin filtros pero **NO PATCH** → un PATCH sin filtros haría
+UPDATE de TODA la tabla. Agregado el guard a PATCH en ambos + `_dualWritePatchWH` valida valores de filtro.
+
+### ⚠️ NOTA OPS — WH GAS al tope de 200 versiones
+`clasp deploy -i <id>` crea una versión nueva cada vez; WH llegó a 200. Workaround usado: deployar a una
+versión EXISTENTE con `clasp deploy -i <id> -V <N>` (no crea versión). **Pendiente:** purgar versiones
+viejas del project history de WH (Apps Script → project history) para liberar espacio.
 
 ### PASO 3 — Lectura directa (con gate + paginación)
 Tras validar paridad fresca (paso 1 re-corrido con dual-write activo), flipear lecturas de WH a RPCs
