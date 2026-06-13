@@ -310,7 +310,7 @@ function _route(method, e) {
       case 'verificarMiTokenRegistrado':   return verificarMiTokenRegistrado(params);
       case 'aprobarDispositivoPendiente':  return aprobarDispositivoPendiente(params);
       case 'aprobarDispositivoEnSitu':     return aprobarDispositivoEnSitu(params);
-      case 'reactivarDispositivoSuspendido': return reactivarDispositivoSuspendido(params);  // [v2.43.167]
+      // [Lote4 · B2-MOS] case 'reactivarDispositivoSuspendido' duplicado (ya está en línea ~277) — eliminado (era inalcanzable).
       case 'forzarReVerifyDispositivo':    return forzarReVerifyDispositivo(params);         // [v2.43.167]
       case 'alertarDispositivosInactivos2a7d': return alertarDispositivosInactivos2a7d();    // [v2.43.167]
       case 'cancelarPendientesAntiguos':     return cancelarPendientesAntiguos();             // [v2.43.172 R6]
@@ -426,7 +426,7 @@ function _route(method, e) {
       case 'migrarLiquidacionesV2':      return migrarLiquidacionesV2();
       // Liquidaciones DIA (materializado)
       case 'getLiquidacionesPendientesDia':     return getLiquidacionesPendientesDia(params);
-      case 'backfillLiquidacionesDia':          return backfillLiquidacionesDia(params);
+      // [Lote4 · B2-MOS] case 'backfillLiquidacionesDia' duplicado (ya está en línea ~409) — eliminado (era inalcanzable).
       case 'configurarTriggerLiquidacionDia':   return configurarTriggerLiquidacionDia();
 
       // ── Etiquetas (membretes por zona) ─────────────────────
@@ -548,7 +548,12 @@ function _route(method, e) {
         return { ok: false, error: 'Acción no reconocida: ' + action };
     }})();
   } catch(err) {
-    return { ok: false, error: err.message, stack: err.stack };
+    // [Lote4 · B3-MOS] El stack revela nombres de funciones/archivos internos a
+    // cualquier caller. Solo exponerlo si DEBUG_STACK está activo en Script Properties.
+    var _out = { ok: false, error: err.message };
+    try { if (PropertiesService.getScriptProperties().getProperty('DEBUG_STACK') === '1') _out.stack = err.stack; } catch(_) {}
+    try { Logger.log('[_route error] ' + action + ': ' + err.message + '\n' + err.stack); } catch(_) {}
+    return _out;
   }
 }
 

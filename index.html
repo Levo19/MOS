@@ -20032,7 +20032,7 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
     #modalLiquidaciones { padding: 0; align-items: flex-end; }
     #modalLiquidaciones .modal-box {
       max-width: 100%; width: 100%;
-      max-height: 92dvh;
+      max-height: 92vh;   /* [Lote4 · M2-MOS] dvh roto en Chromium <108 de tablets POS → modal sin tope → botón cierre off-screen */
       border-radius: 18px 18px 0 0;
       animation: liqSheetUp .32s cubic-bezier(.22,1,.36,1);
     }

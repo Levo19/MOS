@@ -328,7 +328,7 @@ function guardarAdhesivoPlantilla(params) {
     lockHeld = true;
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var hP = ss.getSheetByName(ADH_HOJA_PLANTILLAS);
-    if (!hP) return { ok: false, error: 'Hoja ' + ADH_HOJA_PLANTILLAS + ' no existe. Corré setupAdhesivosBase()' };
+    if (!hP) return { ok: false, error: 'Hoja ' + ADH_HOJA_PLANTILLAS + ' no existe. Corre setupAdhesivosBase()' };
     // Re-leer DENTRO del lock — no antes
     var data = hP.getDataRange().getValues();
 

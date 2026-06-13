@@ -20,7 +20,7 @@ const API = (() => {
       const ctrl = new AbortController();
       const tid = setTimeout(() => {
         ctrl.abort();
-        const err = new Error('Timeout: la conexión tardó más de ' + (timeoutMs/1000) + 's. Revisá tu red y volvé a intentar.');
+        const err = new Error('Timeout: la conexión tardó más de ' + (timeoutMs/1000) + 's. Revisa tu red y vuelve a intentar.');
         err.code = 'TIMEOUT';
         reject(err);
       }, timeoutMs);
@@ -46,7 +46,7 @@ const API = (() => {
     if (!url) throw new Error('GAS URL no configurada. Abre ⚙️ Configuración.');
     // Check rápido de offline ANTES de gastar el timeout
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      const oe = new Error('Sin conexión a internet. Esperá a recuperar señal y reintentá.');
+      const oe = new Error('Sin conexión a internet. Espera a recuperar señal y reintenta.');
       oe.code = 'OFFLINE';
       throw oe;
     }

@@ -841,7 +841,7 @@
   // si hay cambios sin guardar. Antes era solo un confirm seco.
   function _abrirModalImprimir() {
     if (!_idPlantillaActual) {
-      _toast('Guardá la plantilla antes de imprimir N copias', 'error');
+      _toast('Guarda la plantilla antes de imprimir N copias', 'error');
       return;
     }
     var cant = (document.getElementById('edaCantidad') && parseInt(document.getElementById('edaCantidad').value)) || 10;
@@ -952,7 +952,7 @@
     var descInp = document.getElementById('edaGDesc');
     var desc = descInp ? descInp.value.trim() : (_plantilla.metadata && _plantilla.metadata.descripcion) || '';
     if (!nombre) {
-      _toast('Ponele un nombre', 'error');
+      _toast('Ponle un nombre', 'error');
       if (cb) cb(false);
       return;
     }
@@ -1020,7 +1020,7 @@
     _historialIdx = -1;
     _snapshot();
     _render();
-    _toast('Duplicada como "' + clon.metadata.nombre + '" — guardá para confirmar', 'success');
+    _toast('Duplicada como "' + clon.metadata.nombre + '" — guarda para confirmar', 'success');
     setTimeout(_abrirModalGuardar, 200);
   }
 
@@ -1170,7 +1170,7 @@
     if (_hayCambiosSinGuardar()) {
       var msg = _idPlantillaActual
         ? 'La plantilla tiene cambios sin guardar. ¿Salir descartando?'
-        : 'Tenés una plantilla nueva sin guardar. ¿Salir descartando?';
+        : 'Tienes una plantilla nueva sin guardar. ¿Salir descartando?';
       if (!confirm(msg)) return;
     }
     var ov = document.getElementById('edaOverlay');

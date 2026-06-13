@@ -814,7 +814,7 @@
     _injectCss();
     if (document.getElementById('segFueraOverlay')) return;
     var msg = motivo === 'antes_apertura'
-      ? 'Podés acceder a partir de ' + (apertura || '—')
+      ? 'Puedes acceder a partir de ' + (apertura || '—')
       : motivo === 'despues_cierre'
       ? 'Tu jornada cerró a las ' + (cierre || '—')
       : motivo === 'dia_cerrado'
