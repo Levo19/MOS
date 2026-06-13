@@ -26,6 +26,30 @@ update mos.config set valor='0' where clave='ME_ESCRITURA_DIRECTA';
 3. **Lectura directa** (`ME_LECTURA_DIRECTA=0`): aún NO segura (un GAS-venta que se caiga del shadow
    → cajero la pierde → re-emite → duplicada). Habilitar recién cuando el shadow sea 100% confiable.
 
+## 🏭 WH (warehouseMos) — Fase 2 migración (actualizado 2026-06-12)
+- ✅ **Dual-write en tiempo real COMPLETO** en todas las tablas operativas (GAS @444, 5 IDs):
+  stock + stock_movimientos + guías(cabecera+ítems) + preingresos (sesiones previas) · **+ Rondas 1-5
+  de esta sesión:** lotes_vencimiento (R1) · envasados (R2) · mermas+ajustes (R3) · auditorias+producto_nuevo (R4).
+  Patrón: Sheets primero (bajo `_conLock`), luego upsert best-effort (nunca lanza). Red: sync batch 15min.
+- ✅ **Gate de paridad re-corrido VERDE** (R5, `verificarParidadWH` universal + stock paginado): 9 tablas con
+  `solo_en_sheets_count:0`; stock 1349=1349 sin diffs. Detalle en `MIGRACION_WH_FASE2.md`.
+- ✅ **Bug hunt 50x** (`REVISION_50X_BUGHUNT.md`): sin críticos reales (2 falsos positivos de dinero
+  verificados); 3 endurecimientos defensivos aplicados (guards `_sbUpdate`/`_dualWritePatchWH` + SQL 27 ABIERTA).
+- ✅ **LECTURA DIRECTA DE STOCK WH — ACTIVA** (2026-06-12, GAS @447, 5 IDs): `getStock` lee de Supabase
+  (`wh.stock_enriquecido`, 6x más rápida) con fallback automático a Sheets + cache 15s. Control por
+  Script Property `FUENTE_DATOS` (global). **Kill-switch:** `?action=desactivarSupabaseWH` (vuelve a Sheets).
+  Activar: `?action=activarSupabaseWH`. Estado: `?action=estadoFuenteDatosWH`. Gate: `?action=compararStockWH`
+  (paridad EXACTA: 1349=1349, 449 alertas). NOTA: `wh.stock_enriquecido` NO sufre db-max-rows (devuelve 1
+  JSONB escalar con jsonb_agg → no se trunca). `getRotacionSemanal` también flipeable (mismo patrón).
+- ⚠️ **BUG ENCONTRADO+ARREGLADO esta sesión:** el flip estaba activado prematuramente con la sombra
+  `mos.productos` CONGELADA (trigger `syncCatalogoSupabase` muerto — patrón conocido) → `stockMinimo/Maximo`
+  viejos → **alertas de stock bajo silenciadas**. Fix: `backfillCatalogo()` (refrescó 2357 productos) +
+  `instalarTriggerCatalogo()` (re-instaló el horario). Verificar periódicamente que el trigger siga vivo.
+- ⏳ **Siguiente WH:** flipear las otras lecturas (guías del día, preingresos, alertas, rotación) tras su
+  propio gate. Después: escrituras directas pieza por pieza (la de stock FIFO/lotes es la más delicada).
+- 🔧 **Pendiente DB:** aplicar `27_fase2_cerrar_caja.sql` endurecido al proyecto MOS (rzbzdeipbtqkzjqdchqk)
+  el día que se valide/active `ME_CIERRE_DIRECTO` (hoy inerte; el classifier bloqueó aplicarlo en un bug-hunt).
+
 ## 📇 Tarjeta de presentación (estado 2026-06-12)
 - ✅ **HECHA en ME** (v2.7.95): Herramientas → "📇 IMPRIMIR TARJETA" → modal Cliente/Proveedor → imprime
   tarjeta térmica con QR a WhatsApp (mensaje pre-escrito + Ref) por la infra Edge. Plan B: muestra QR en pantalla.
