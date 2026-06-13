@@ -151,14 +151,15 @@ todavía ata ME a GAS (y hay que migrar a RPC directa para retirarlo):
     efectivo+ingresos-egresos, montoFinal (auto/declarado)+descuadre, marca CERRADA, cancela cobros.
     Gateada por `ME_CIERRE_DIRECTO=0` (inerte) + kill-switch server-side. **Validada en tx-rollback contra
     cierre real: monto_final RPC == GAS exacto, idempotente, declarado+descuadre OK.**
-  - **PASO 3 PENDIENTE (próxima sesión, con cuidado — es la UI más crítica):**
-    (a) GAS post-hook `mirrorCierreASheets` que sincroniza Sheets (caja CERRADA + anulados + cobros) y hace
-        los efectos secundarios reusando el código GAS existente: guía SALIDA_VENTAS (la consume WH para
-        pickup — NO se puede saltar), audit, push. Idea simple/segura: tras el RPC, llamar al cierre GAS
-        existente en background (fire-and-forget) con el mismo montoFinal — es idempotente y hace todo.
-    (b) Frontend `_cerrarCajaDirecto` + helper `cierreDirecto()` + wire en `cerrarCaja` (~index.html:11422)
-        con fallback a GAS si el RPC falla. Confirmar al cajero desde el resultado del RPC (instantáneo).
-    (c) Validar en 1-2 cierres reales (comparar RPC vs GAS) ANTES de flipear `ME_CIERRE_DIRECTO=1`.
+  - **PASO 3 HECHO (INERTE, v2.8.8):** wire del frontend. `cierreDirecto()` helper + `_cerrarCajaDirecto()`
+    (llama el RPC) + `cerrarCaja` (~index.html:11544): si el flag está ON, intenta el RPC (arqueo instantáneo
+    en Supabase) y dispara el cierre GAS existente en BACKGROUND como mirror a Sheets + efectos secundarios
+    (guía SALIDA_VENTAS para WH, cobros, push — idempotente, no reimplementado). Fallback a GAS síncrono si
+    el RPC falla. Con `ME_CIERRE_DIRECTO=0` el bloque NO corre → comportamiento actual 100% intacto.
+  - **ÚNICO PENDIENTE — PASO 4 (validación + flip):** vigilar 1-2 cierres reales con el flag aún en 0, y para
+    cada uno comparar lo que el RPC daría vs lo que GAS guardó (en tx-rollback, como el gate del simulador).
+    Si coinciden → `update mos.config set valor='1' where clave='ME_CIERRE_DIRECTO';`. Kill-switch: poner '0'.
+    Todo el código (SQL 26+27, frontend v2.8.8) ya está committeado y desplegado, solo falta esa validación.
 - 🟡 Apertura/retoma de caja, anulación/cobrar/creditar (forma_pago), cobro de créditos → RPCs directas
   (patrón ya probado; bajo/medio riesgo; hoy van por GAS + dual-write, que funciona bien — no urgente).
 - ⛔ **CPE** — bloqueado por el token NubeFact (ver §3). Edge endurecida lista, sin desplegar.
