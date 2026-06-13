@@ -103,7 +103,24 @@ Tras validar paridad fresca (paso 1 re-corrido con dual-write activo), flipear l
 Supabase: stock (PAGINADO), guías del día, preingresos, alertas. Flag `WH_LECTURA_DIRECTA` en `mos.config`
 (o `wh.config`) + fallback a GAS. Mismo patrón `serverFlag || localStorage` que ME.
 
-### PASO 4 — Escritura directa, pieza por pieza
+### PASO 4 — Escritura directa · PLAN (2026-06-13) — RPCs a escribir, aplicar a DB requiere OK del usuario
+**Patrón por sesión** (igual que ME): cada RPC `wh.*` nace INERTE detrás de un flag en `mos.config`
+(`WH_<OP>_DIRECTO='0'`), con kill-switch server-side dentro de la RPC; se valida contra GAS (simulación
+tx-rollback + comparación) ANTES de prender; el GAS sigue como orquestador y cae a Sheets si la RPC falla.
+**⚠️ El dual-write actual YA escribe a Supabase best-effort**; el PASO 4 invierte a Supabase PRIMARIO →
+solo tiene sentido pleno junto al PASO 5. Las RPCs SQL se ESCRIBEN en `ProyectoMOS/supabase/30+_wh_*.sql`
+pero **aplicarlas a la DB de producción lo bloquea el classifier → lo autoriza/corre el usuario**.
+
+**Sesiones ordenadas por riesgo (menor→mayor):**
+1. `wh.crear_ajuste` — INC/DEC stock + fila AJUSTES. Aislada, sin FIFO. (la más simple)
+2. `wh.registrar_merma` / `wh.solucionar_merma` — fila MERMAS + estado.
+3. `wh.crear_preingreso` / `wh.actualizar_preingreso` / `wh.aprobar_preingreso`.
+4. `wh.crear_guia` / `wh.cerrar_guia` / `wh.reabrir_guia` — cabecera + detalle + monto.
+5. `wh.registrar_envasado` — transforma stock (base→derivado), 2 guías + etiquetas.
+6. 🔴 `wh.actualizar_stock` con **FIFO/lotes** — el núcleo, lo más delicado (= cierre de caja de ME). Sesión propia.
+7. `wh.auditar_producto` / `wh.aprobar_producto_nuevo` — tocan stock + catálogo.
+
+### PASO 4 (notas) — Escritura directa, pieza por pieza
 RPCs `wh.cerrar_guia`, `wh.ajustar_stock` (con FIFO/lotes), `wh.aprobar_preingreso`, etc. — cada una
 con su validación + flag + reconciliación, como las de ME. La del **stock con FIFO/lotes es la más
 delicada** (el equivalente al cierre de caja de ME) → su propia sesión + validación.
