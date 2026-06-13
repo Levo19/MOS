@@ -123,7 +123,12 @@ pero **aplicarlas a la DB de producción lo bloquea el classifier → lo autoriz
    bloquea destructivos como DELETE masivo, que corre el usuario con `!`).
 3. ✅ `wh.crear_preingreso` (validada 7/7) + ✅ `wh.actualizar_preingreso` (validada 8/8). `32/33_wh_*.sql`.
    Falta `wh.aprobar_preingreso` (crea guía → depende de crear_guia, hacer DESPUÉS de la sesión 4).
-4. ⏳ `wh.crear_guia` / `wh.cerrar_guia` / `wh.reabrir_guia` — cabecera + detalle + monto. cerrar aplica stock (delicado).
+4. `wh.crear_guia` ✅ VALIDADA 8/8 (solo cabecera) `34_wh_crear_guia.sql`. ⏳ `wh.cerrar_guia` / `wh.reabrir_guia`.
+   🔴🔴 **cerrar_guia es la RPC MÁS COMPLEJA Y CRÍTICA** (estándar 40x): recalcula monto, aplica stock por línea
+   (INGRESO suma / SALIDA resta), **crea lotes desde fecha** (`_sincronizarLoteDesdeDetalle`), **consume lotes FIFO**
+   (`_consumirLotesFIFO`), sincroniza idLote, salta envasados. Fusiona la sesión 6 (stock FIFO/lotes). REQUIERE su
+   propia sesión con contexto fresco: leer cerrarGuia (Guias.gs:1293+) COMPLETA + _sincronizarLoteDesdeDetalle +
+   _consumirLotesFIFO + _actualizarLote, y replicar en SQL con revisión 40x. Un error = descuadre de inventario real.
 5. ⏳ `wh.registrar_envasado` — transforma stock (base→derivado), 2 guías + etiquetas.
 6. 🔴 `wh.actualizar_stock` con **FIFO/lotes** — el núcleo, lo más delicado (= cierre de caja de ME). Sesión propia.
 7. ⏳ `wh.auditar_producto` / `wh.aprobar_producto_nuevo` — tocan stock + catálogo.
