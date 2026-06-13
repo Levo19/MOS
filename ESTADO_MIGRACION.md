@@ -91,6 +91,19 @@ Eso devuelve TODA la escritura de ventas a GAS al instante (sin redeploy). Para 
 - **Lote3-C HECHO** (ME GAS @204 / v2.8.6): M2 PATCH inmediato de FormaPago en reverts a
   CREDITO (escalar/cancelar); M8 `lsSet` anti-cuota en procesarCobroPendiente + registrarExtra.
 
+## 3.1 ✅ REMEDIACIÓN LOTE 4 (2026-06-12) — higiene
+- **MOS** (v2.43.203 / GAS @400): dvh→vh modal Liquidaciones; voseo→neutral (api.js, editor,
+  seguridad-modal, Adhesivos.gs); 2 cases duplicados muertos eliminados; `_route` ya no filtra
+  err.stack (solo si `DEBUG_STACK=1`); 4 `confirm()` nativos → `_modalConfirm`.
+- **ME** (v2.8.7): AudioContext **singleton** (`_audioCtx`) para los 16 play* (iOS dejaba de
+  sonar en ráfagas); voseo→neutral; claves `_` muertas quitadas del return; guard tarjeta sin
+  número; `agregarToast` respeta el 4º arg de duración.
+- **WH** (v2.13.193 / GAS @414-418): idPedido con sufijo aleatorio (colisión por ms mezclaba
+  pedidos); `confirm()` nativo de cancelar lote → confirmación inline.
+- **Pendiente menor (necesita diseño/input):** B6-MOS snapshot del cierre semanal de jornales
+  (hoy solo manda push, montos mutables retroactivamente — es feature, no bug); 5 `confirm()` del
+  editor.js standalone (módulo aparte sin `_modalConfirm`).
+
 ## 3.5 🔍 REVISIÓN EXHAUSTIVA DEL SISTEMA (2026-06-12) — LEER ANTES DE SEGUIR
 Se auditó TODO el ecosistema (5 áreas en paralelo + verificación manual). Resultado:
 **6 CRÍTICOS · 16 ALTOS** documentados con archivo:línea en `REVISION_SISTEMA_2026-06-12.md`,
