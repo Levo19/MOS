@@ -51,3 +51,13 @@ vive en mos.* y se sincroniza por trigger). **Decisión recomendada:**
 Próximo razonable: **fase de ACTIVACIÓN** de estas 7 (wiring GAS anti-doble-escritura + flip de flags uno a uno con
 validación de operación real + tu OK), que YA da valor (escritura directa de las operaciones core). El resto (orquestadores
 + retiro total de GAS) requiere decisión de rediseño, no más RPCs.
+
+## ⚠️ PRE-REQUISITO DE ACTIVACIÓN (auditoría 40x): integridad de wh.stock
+Antes de prender cualquier flag de escritura de stock:
+1. **Consolidar duplicado**: wh.stock tiene 1 producto con 2 filas (7750243071406). Las RPCs ya lo manejan
+   (UPDATE de la 1ra fila por id_stock, como GAS), pero lo correcto es consolidar (sumar en 1, borrar la otra)
+   en la HOJA STOCK (fuente) y en la sombra.
+2. **Índice único** wh.stock(cod_producto) + INSERT-else con `on conflict (cod_producto) do update` → cierra el
+   residual B-2 (producto nuevo en 2 guías concurrentes → 2 filas). Requiere DDL + limpieza en prod (usuario con `!`).
+
+## Estado: 7 RPCs atómicas LISTAS (inertes) · DOS auditorías 40x pasadas (lost-update/coerción/lotes/origen corregidos · 77 casos validados).
