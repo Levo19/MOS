@@ -37,10 +37,26 @@ Helper `wh._claim_ok()` (service_role/sin-claim O claim `warehouseMos`) agregado
 RPCs + `grant ... authenticated`. Validado: claim `mosExpress`→APP_NO_AUTORIZADA; `warehouseMos`→pasa; service_role
 (GAS)→sigue; funcionalidad intacta. Todas siguen INERTES (flags en 0). DECISIÓN del usuario: **GAS cero** (objetivo).
 
-### B3 — Lecturas directas desde el navegador
-- Hoy las lecturas van por GAS (`getStockFlip` etc.). El PASO 5: el frontend llama las RPCs/tablas `wh.*` directo
-  con su JWT + RLS de lectura. Stock PAGINADO obligatorio. Mantener fallback a GAS durante el cutover.
-- Las 11 lecturas ya están validadas en paridad → el riesgo es de auth/RLS, no de datos.
+### B3 — Lecturas directas desde el navegador (PLAN DETALLADO para arrancar fresco)
+Backend YA listo (B1 auth + B2 RLS escritura). B3 toca el **frontend `index.html` de WH** (js/api.js). Pasos:
+1. **Cliente Supabase en el front**: agregar supabase-js (o fetch directo a `/rest/v1/rpc/`). Helper `_sbDirect(fn,args)`
+   que manda `apikey: <anon>` + `Authorization: Bearer <token B1>` + `Accept-Profile: wh`. El token se pide a GAS
+   (endpoint `mintTokenWH`, ya existe) y se cachea ~4min con re-mint en heartbeat (igual que ME).
+2. **RLS de LECTURA**: hoy las RPCs de lectura (`wh.stock_enriquecido`, `wh.rotacion_semanal`) son `service_role`.
+   Para lectura directa del navegador → `grant ... to authenticated` + gate `wh._claim_ok()` (igual que B2). Para
+   lectura de TABLAS `wh.*` directo → habilitar RLS con policy `me.jwt_app()='warehouseMos'`. Stock PAGINADO.
+3. **Patrón en `api.js`**: `API.get(action)` → si flag `WH_LECTURA_NAVEGADOR` on y hay token → `_sbDirect`; si falla → fallback a GAS.
+   Las 11 lecturas ya tienen paridad verificada → el riesgo es auth/RLS, no datos.
+4. **Validación B3**: con el token real, llamar cada RPC/tabla desde un script que simule el navegador (apikey+Bearer)
+   y comparar contra GAS (gate). Flag por módulo + fallback. 40x: token expirado, sin token, claim ajeno, paginación stock.
+
+### B4/B5/B6 (resumen; requieren su sesión)
+- **B4**: el front compone los orquestadores (aprobar_preingreso, auditar, envasado) llamando las RPCs atómicas (B2).
+- **B5 (GAS cero)**: Edge Functions (Deno) para PrintNode (ZPL), IA, y proxy de fotos de Drive (Supabase como
+  intermediario, el usuario lo pidió). `supabase functions deploy` — OJO: el deploy de Edge falló antes en esta
+  máquina (login no-TTY); el usuario deployó ME con token. Mismo camino.
+- **B6**: cutover por módulo (lectura→escritura→orquestación) con flag + fallback + validación de operación REAL
+  (operario usando el almacén), luego apagar GAS. Conservar GAS solo si algo de B5 no migró.
 
 ### B4 — Orquestadores (los que quedaron en GAS)
 - Opción A (recomendada): el FRONTEND los compone llamando varias RPCs atómicas (crear_guia + agregar_detalle_guia
