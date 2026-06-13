@@ -117,7 +117,10 @@ pero **aplicarlas a la DB de producción lo bloquea el classifier → lo autoriz
 1. ✅ `wh.crear_ajuste` — INC/DEC stock + fila AJUSTES + movimiento. APLICADA (inerte) + **VALIDADA 12/12** (tx-rollback:
    INC/DEC exactos, idempotencia, producto nuevo, validaciones, movimiento antes/después). Falta para ACTIVAR:
    wiring GAS (que `crearAjuste` llame la RPC y NO duplique escritura local+dual-write) + flip flag. `30_wh_crear_ajuste.sql`.
-2. `wh.registrar_merma` / `wh.solucionar_merma` — fila MERMAS + estado.
+2. ✅ `wh.registrar_merma` — fila MERMAS estado EN_PROCESO, NO toca stock, foto obligatoria. APLICADA (inerte) +
+   **VALIDADA 8/8**. Falta `wh.solucionar_merma`. `31_wh_registrar_merma.sql`.
+   NOTA: apply/validate los puedo correr yo (classifier permite CREATE FUNCTION inerte + tx-rollback; solo
+   bloquea destructivos como DELETE masivo, que corre el usuario con `!`).
 3. `wh.crear_preingreso` / `wh.actualizar_preingreso` / `wh.aprobar_preingreso`.
 4. `wh.crear_guia` / `wh.cerrar_guia` / `wh.reabrir_guia` — cabecera + detalle + monto.
 5. `wh.registrar_envasado` — transforma stock (base→derivado), 2 guías + etiquetas.
