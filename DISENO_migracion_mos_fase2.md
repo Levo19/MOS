@@ -25,3 +25,27 @@ NUEVO: Edge `mint-mos` (mint-wh hardcodea warehouseMos), `mos._claim_ok()`, toda
 
 ## Riesgos
 App de DINERO en prod (ventas/cajas/finanzas/jornales). NO tocar sin extremo cuidado: liquidaciones/jornales/finanzas/pagos. Catálogo sin lock → UPDATE atómico obligatorio. Sombra congelada=alertas silenciadas → gate frescura. setConfig/device-auth = superficie de ataque (Web App público). Espía WebRTC = aislado, dejar para el final.
+
+---
+
+## PROGRESO (2026-06-15) — PUNTO DE RETOMA
+
+**✅ FASE 0 (cimientos) — COMPLETA, deployada, inerte.**
+- Edge `mint-mos` (app='MOS', reusa WH_JWT_SECRET, verify_jwt=false) deployada+verificada (curl: válido→token, inválido→401, RPC→200, corrupto→401).
+- `mos._claim_ok()` (SQL 74). `catalogo_wh_rls`/`verificar_clave_admin` re-gateadas (wh OR mos) sin romper WH.
+- `js/api.js` MOS: `API._sb = {lecturaDirecta, flag, mintToken, deviceId, rpc, leerTabla, conFallback}`. Flags `mos_lectura_navegador`/`MOS_CONFIG` default OFF. (commits abfe5d2)
+
+**🟡 FASE 1 (lecturas) — en curso:**
+- ✅ **Catálogo (PILOTO) COMPLETO** (commit 3ab8f7d): RPC `mos.productos_master_rls` (75) gate+grant+_fresh; gate de frescura por HEARTBEAT (`_estamparLatidoCatalogo` en MigracionCatalogo.gs estampa `CATALOGO_SYNC_HEARTBEAT`, TTL 180min, NO usa updated_at); `API.get('getProductos')` envuelto con `_conFallbackMOS`, flag `mos_catalogo_directo` (OFF), mapeo snake→shape-hoja `_MOS_PROD_SPEC`. Validado 17/17+curl+paridad 2368. **GAS pusheado (clasp)**. INERTE.
+- 🟡 **Finanzas + historial PARCIAL** (commit b55ada0): SQL `76_mos_finanzas_rango_rls` + `77_mos_historial_precios_rls` listos y SEGUROS (gate mos._claim_ok + gate frescura MOS_SYNC_HEARTBEAT/TTL). ⚠️ El agente se cortó por timeout: **FALTA (1) verificar que 76/77 estén aplicados a Supabase, (2) estampar MOS_SYNC_HEARTBEAT en `syncMOSReciente`/`syncMOSCompleto` (gas/MigracionMOS.gs) — NO hecho, (3) cablear `getFinanzasRango`/`getHistorialPrecios` en js/api.js con `_conFallbackMOS`+flag por-acción.** Hasta eso, finanzas/historial siguen 100% GAS.
+- ⏳ Resto de lecturas (proveedores, pedidos, jornales-lectura, etc.) — no empezadas.
+
+**⏳ FASE 2 (escrituras inertes) — NO empezada.** Es la mayor parte (capa write `mos.*` para ~314 acciones, orden: catálogo→proveedores→evaluaciones/etiquetas→finanzas/jornales/liquidaciones). Requiere portar OfflineManager + `_postDirecto` a js/api.js de MOS (hoy MOS no los tiene).
+
+**⏳ FASE 3 (cutover) / FASE 4 (apagar sync) — del usuario / posteriores.**
+
+### SIGUIENTE PASO CONCRETO (retoma)
+Completar Fase 1 finanzas/historial: verificar 76/77 aplicados → agregar heartbeat MOS en MigracionMOS.gs → cablear los 2 GET en api.js (patrón idéntico al catálogo). Luego seguir con más lecturas o arrancar FASE 2 (escrituras), empezando por el catálogo (crear/actualizar producto — desbloquea WH/ME, y arregla el lost-update de Productos.gs sin _conLock).
+
+### LO QUE DEBE HACER EL USUARIO (al final, para ACTIVAR — no antes)
+Correr `syncCatalogoSupabase()` 1 vez (crea CATALOGO_SYNC_HEARTBEAT) → activar `localStorage mos_catalogo_directo='1'` en un piloto → validar catálogo directo. Ídem finanzas cuando esté cableado. Todo con rollback = borrar el flag.
