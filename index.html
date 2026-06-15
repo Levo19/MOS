@@ -17530,9 +17530,19 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
      · provprodDirecto:true → habilita al FRONT a escribir PROVEEDOR-PRODUCTO
        (agregar/actualizar cotizaciones) directo. cfgKey _mosFlag('mos_provprod_directo',
        'provprodDirecto'). Escritura REAL solo si mos.config.MOS_PROVPROD_DIRECTO='1'.
-       Ambos son módulos LIMPIOS (datos maestros, no dinero). Rollback: poner false. -->
+       Ambos son módulos LIMPIOS (datos maestros, no dinero). Rollback: poner false.
+     · gastosDirecto:true → habilita al FRONT a escribir GASTOS (DINERO) directo a
+       Supabase (registrarGasto/eliminarGasto). cfgKey leído por _mosFlag('mos_gastos_directo',
+       'gastosDirecto'). Escritura REAL solo si mos.config.MOS_GASTOS_DIRECTO='1'. La RPC
+       mos.crear_gasto dedupea por local_id (un gasto NUNCA se duplica) y guarda monto
+       numeric exacto en centavos. Rollback: poner false / quitar la clave.
+     · pedidosDirecto:true → habilita al FRONT a escribir PEDIDOS a proveedor directo
+       (crearPedido/actualizarPedido). cfgKey _mosFlag('mos_pedidos_directo','pedidosDirecto').
+       Escritura REAL solo si mos.config.MOS_PEDIDOS_DIRECTO='1'. NOTA: actualizarPedido
+       no tiene equivalente en GAS (con flag OFF caía a "acción no reconocida", nadie la usa);
+       con el flag ON la RPC mos.actualizar_pedido_proveedor la atiende. Rollback: poner false. -->
 <script>
-  window.MOS_CONFIG = { catalogoDirecto: true, proveedoresDirecto: true, provprodDirecto: true };
+  window.MOS_CONFIG = { catalogoDirecto: true, proveedoresDirecto: true, provprodDirecto: true, gastosDirecto: true, pedidosDirecto: true };
 </script>
 <script>
 (function(){
