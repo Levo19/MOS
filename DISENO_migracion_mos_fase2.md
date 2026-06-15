@@ -40,10 +40,16 @@ App de DINERO en prod (ventas/cajas/finanzas/jornales). NO tocar sin extremo cui
 - ✅ **Finanzas + historial COMPLETO** (commit 4fe698e): SQL 76/77 APLICADOS (gate mos._claim_ok + grant authenticated + fix seguridad: historial tenía acceso PUBLIC, eliminado); heartbeat `_estamparLatidoMOS` en gas/MigracionMOS.gs (syncMOSReciente/Completo, **GAS pusheado**); frontend `getFinanzasRango`/`getHistorialPrecios` cableados con `_conFallbackMOS` + flags `mos_finanzas_directo`/`mos_historial_directo` (OFF). curl 200, paridad centavo. INERTE.
 - ⏳ Resto de lecturas (proveedores, pedidos, jornales-lectura, etc.) — no empezadas (opcionales; las 3 principales ya están).
 
-**🟡 FASE 2 (escrituras inertes) — EN CURSO:**
-- ✅ **Catálogo SQL** (commit 4fe698e): `mos.crear_producto`/`actualizar_producto`/`publicar_precio` (78) + `crear/actualizar_equivalencia` (79). ID atómico (secuencia `mos.seq_producto`, arregla lost-update de Productos.gs), idempotencia on-conflict, UPDATE atómico, gate `mos._claim_ok` + kill-switch `MOS_CATALOGO_DIRECTO`. Validado **51/51** tx-rollback. INERTE.
-- ✅ **Cimiento idempotencia proveedores** (commit 43f3f19): `80` columnas `local_id` + índices únicos en las 4 tablas de proveedores.
-- ⏳ **FALTA**: (a) cablear escritura del catálogo en frontend (portar `_postDirectoMOS` a js/api.js — el agente se cortó por timeout, api.js quedó SIN tocar/intacto); (b) RPCs de escritura proveedores/pedidos/**pagos** (sobre el cimiento 80); (c) RRHH/etiquetas/horarios; (d) **finanzas/gastos/jornales/liquidaciones AL FINAL** (dinero, máximo cuidado).
+**🟡 FASE 2 (escrituras inertes) — ~65%, todo lo hecho VALIDADO 40x e INERTE:**
+- ✅ **Catálogo** SQL (78/79) + **frontend cableado** (v2.43.207). `crear_producto`/`actualizar_producto`/`publicar_precio`/equivalencias. ID atómico (secuencia, arregla lost-update), validado 51/51 + auto-40x del frontend cazó 2 bugs. Flag `mos_catalogo_directo`.
+- ✅ **Proveedores/pedidos/pagos** SQL (80 cimiento local_id + 81 las 6 RPCs) + **frontend cableado** (v2.43.208). registrar_pago con idempotencia ESTRICTA. **Validado 65/65; el 40x cazó un BUG CRÍTICO de DINERO** (on-conflict contra índice parcial habría reventado el pago → corregido). Flags `mos_proveedores/pedidos/pagos/provprod_directo`.
+- ✅ **Evaluaciones/etiquetas/horarios** SQL (82). Validado 77/77. Flags `mos_eval/etiq/horario_directo`. **Frontend: ⏳ FALTA cablear.**
+- ✅ **Gastos** SQL (83): crear_gasto/eliminar_gasto. Validado 40/40. Flag `mos_gastos_directo`. **Frontend: ⏳ FALTA cablear.**
+- ⏳ **Jornales/liquidaciones** (~45 acciones, DINERO, cierre semanal/snapshots/pagos personal): **NO empezado. Es el lote más grande y delicado — requiere varias sub-tandas acotadas.**
+- ⏳ **Cableo frontend** de: evaluaciones/etiquetas/horarios + gastos (las RPCs ya existen+validadas; falta extender `_postDirectoMOS` como se hizo con catálogo/proveedores).
+- ⏳ **Revisión 40x INTEGRAL de Fase 2** (al terminar todos los lotes).
+
+**⚠️ ESTRATÉGIA APRENDIDA (2026-06-15): el sistema se satura con agentes CREADORES grandes** (5 timeouts de 35-52 min en agentes que crean muchas RPCs), pero los agentes **VALIDADORES acotados terminan bien** (100-200s). Por eso varios SQL se crearon-luego-validaron en 2 pasos (el creador a veces timeoutea tras dejar el archivo bueno; un validador acotado lo confirma + caza bugs — así se cazó el bug de dinero del 81). **Para jornales: dividir en micro-tandas de 3-5 RPCs.** Tras cada timeout, el SQL suele quedar creado en disco (revisar por Glob/Grep + commit + validar acotado).
 
 **⏳ FASE 3 (cutover) / FASE 4 (apagar sync) — del usuario / posteriores.**
 
