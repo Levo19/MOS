@@ -79,6 +79,7 @@ declare
   -- anti-doble-pago
   v_dia_estado text;
   v_dia_idpago text;
+  v_led_idpago text;
 begin
   -- KILL-SWITCH antes del gate (paridad lote).
   if coalesce((select valor from mos.config where clave='MOS_PAGOS_JORNAL_DIRECTO' limit 1),'0') <> '1' then
@@ -108,6 +109,13 @@ begin
 
   -- ── ANTI-DOBLE-PAGO POR FECHA: ninguna fecha del batch puede estar ya PAGADA con OTRO id_pago ──────
   --    (paridad GAS: rechaza el batch entero). Lock de las filas día implicado contra carrera.
+  --    DOS guardas (paridad GAS _liqMapaPagados, que escanea el LEDGER liquidaciones_pagos, NO la materializada):
+  --      (a) liquidaciones_dia (la materializada, con lock de fila contra carrera), y
+  --      (b) ⭐ el LEDGER liquidaciones_pagos (fuente de verdad de GAS): un renglón PAGADA de OTRO id_pago
+  --          en esa misma persona+fecha BLOQUEA. Cierra el hueco de doble-pago cuando NO existe fila día
+  --          (p.ej. virtual MEX: sin upsert previo, o replay sin materializar) — la guarda (a) sola no dispara.
+  --          Match de fecha por to_char(fecha,'YYYY-MM-DD') (robusto: GAS guarda Lima-medianoche=05:00Z y la RPC
+  --          UTC-medianoche=00:00Z; ambos dan el MISMO día-calendario para el string de entrada).
   for d in select * from jsonb_array_elements(v_dias) loop
     v_fecha_s := nullif(btrim(coalesce(d->>'fecha','')), '');
     if v_fecha_s is null then return jsonb_build_object('ok',false,'error','Día sin fecha'); end if;
@@ -117,6 +125,17 @@ begin
       from mos.liquidaciones_dia where id_dia = v_id_dia for update;
     if found and v_dia_estado = 'PAGADA' and v_dia_idpago <> v_id_pago then
       return jsonb_build_object('ok',false,'error','Día ya pagado: '||v_fecha_s,'fecha',v_fecha_s,'idPagoExistente',v_dia_idpago);
+    end if;
+    -- (b) LEDGER guard (paridad GAS): renglón PAGADA de OTRO id_pago para esta persona+fecha → rechaza.
+    select id_pago into v_led_idpago
+      from mos.liquidaciones_pagos
+     where id_personal = v_idp
+       and upper(coalesce(estado,'')) = 'PAGADA'
+       and to_char(fecha,'YYYY-MM-DD') = v_fecha_s
+       and id_pago <> v_id_pago
+     limit 1;
+    if found then
+      return jsonb_build_object('ok',false,'error','Día ya pagado: '||v_fecha_s,'fecha',v_fecha_s,'idPagoExistente',v_led_idpago);
     end if;
   end loop;
 
