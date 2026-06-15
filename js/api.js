@@ -352,6 +352,16 @@ const API = (() => {
   function _mosFinanzasDirecto()  { return !!(_mosLecturaDirecta() || _mosFlag('mos_finanzas_directo',  'finanzasDirecto')); }
   function _mosHistorialDirecto() { return !!(_mosLecturaDirecta() || _mosFlag('mos_historial_directo', 'historialDirecto')); }
 
+  // [FASE 2 · LOTE PROVEEDORES/PEDIDOS/PAGOS] gates por-operación (espejo de los kill-switches server-side
+  // MOS_PROVEEDORES_DIRECTO / MOS_PEDIDOS_DIRECTO / MOS_PAGOS_DIRECTO / MOS_PROVPROD_DIRECTO, todos default '0').
+  // CADA grupo tiene su flag de cliente independiente → se puede activar proveedores sin activar pagos, etc.
+  // Default OFF (cliente) + OFF (server) → INERTE doble. (El flag maestro mos_lectura_navegador NO los
+  // habilita: estas son ESCRITURAS de dinero/negocio, las queremos detrás de un flag explícito por grupo.)
+  function _mosProveedoresDirecto() { return !!_mosFlag('mos_proveedores_directo', 'proveedoresDirecto'); }
+  function _mosPedidosDirecto()     { return !!_mosFlag('mos_pedidos_directo',     'pedidosDirecto'); }
+  function _mosPagosDirecto()       { return !!_mosFlag('mos_pagos_directo',       'pagosDirecto'); }
+  function _mosProvProdDirecto()    { return !!_mosFlag('mos_provprod_directo',    'provprodDirecto'); }
+
   // Lectura directa de finanzas por rango. Devuelve {serie,totales,desde,hasta} (= d.data de GAS) o null (→ GAS).
   // null si: sin token, respuesta no-ok, o GATE DE FRESCURA en false (sombra mos.* stale → no servir P&L viejo).
   async function _getFinanzasRangoDirecto(params) {
@@ -464,6 +474,27 @@ const API = (() => {
     catch (_) { return ''; }
   }
 
+  // Resuelve un local_id ESTABLE por GESTO para las RPCs idempotentes (proveedor/pedido/pago/prov-prod).
+  // CRÍTICO en PAGO (dinero): la RPC lo EXIGE y dedupea por él; un reintento del mismo gesto NO debe duplicar.
+  //   1) si el front ya mandó localId → se respeta tal cual (gesto identificado por la PWA);
+  //   2) si no, se GENERA uno y se ESTAMPA de vuelta sobre el MISMO objeto params (p.localId). Así, si el caller
+  //      reintenta con el MISMO objeto (p.ej. un await que reentra), reusa el id → idempotente. Como `post()`
+  //      recibe el objeto por referencia desde app.js, el id sobrevive a un reintento del mismo gesto.
+  // Un doble-tap genera DOS objetos params distintos → dos local_id → la dedup dura recae en la RPC (que para
+  // pago dedupea por monto+gesto vía índice único de local_id); aquí garantizamos al menos el caso reintento.
+  // Formato: prefijo + uuid (o fallback time+random iOS-safe si crypto.randomUUID no existe en Safari viejo).
+  function _mosLocalId(p, prefijo) {
+    if (p && p.localId != null && String(p.localId) !== '') return String(p.localId);
+    var uuid;
+    try {
+      uuid = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : null;
+    } catch (_) { uuid = null; }
+    if (!uuid) uuid = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+    var lid = (prefijo || 'MOS') + '_' + uuid;
+    try { if (p && typeof p === 'object') p.localId = lid; } catch (_) {}
+    return lid;
+  }
+
   async function _postDirectoMOS(action, params) {
     const p = params || {};
 
@@ -567,17 +598,148 @@ const API = (() => {
       return _desempacarCatalogo(out);
     }
 
+    // ════════════════════════════════════════════════════════════════════
+    // [FASE 2 · LOTE PROVEEDORES/PEDIDOS/PAGOS] — 6 acciones de negocio.
+    // Cada una mapea payload-frontend (camelCase) → args jsonb de la RPC mos.* (la RPC re-mapea a snake_case),
+    // y normaliza la respuesta {ok,data,error,dedup?} con _desempacarCatalogo (que ya trata *_OFF/APP_NO_AUTORIZADA
+    // como null→GAS y el resto como rechazo de negocio→throw). ids como String (regla: nunca número en el cruce).
+    // ════════════════════════════════════════════════════════════════════
+
+    if (action === 'crearProveedor') {
+      // GAS crearProveedorMaster → data:{idProveedor}. RPC mos.crear_proveedor → data:{idProveedor} (+dedup, no leído).
+      // localId estable (idempotencia de gesto; aquí no es dinero, pero evita doble alta en reintento).
+      const out = await _sbRpcMOSWrite('crear_proveedor', { p: {
+        localId: _mosLocalId(p, 'PROV'),
+        idProveedor: p.idProveedor != null ? String(p.idProveedor) : undefined,
+        nombre: p.nombre, ruc: p.ruc, imagen: p.imagen, telefono: p.telefono,
+        banco: p.banco, numeroCuenta: p.numeroCuenta, cci: p.cci, email: p.email,
+        diaPedido: p.diaPedido, diaPago: p.diaPago, diaEntrega: p.diaEntrega,
+        formaPago: p.formaPago, plazoCredito: p.plazoCredito,
+        responsable: p.responsable, categoriaProducto: p.categoriaProducto
+      } });
+      if (out == null) return null;            // sin token → GAS
+      return _desempacarCatalogo(out);         // {idProveedor} — el front lee r.data.idProveedor del refresh, no de esto
+    }
+
+    if (action === 'actualizarProveedor') {
+      // GAS actualizarProveedorMaster → {ok:true} (sin data); _fetch desempaqueta a undefined; el front no lee nada.
+      // RPC mos.actualizar_proveedor → {ok:true}. Patch PARCIAL: reenviar SOLO las claves presentes (paridad GAS,
+      // que filtra por params[c]!==undefined; la RPC distingue presente/ausente con `p ? 'clave'`).
+      const a = { idProveedor: p.idProveedor != null ? String(p.idProveedor) : undefined };
+      ['nombre','ruc','telefono','banco','numeroCuenta','cci','email',
+       'diaPedido','diaPago','diaEntrega','formaPago','plazoCredito',
+       'responsable','categoriaProducto','estado'].forEach(k => {
+        if (k in p && p[k] !== undefined) a[k] = p[k];
+      });
+      const out = await _sbRpcMOSWrite('actualizar_proveedor', { p: a });
+      if (out == null) return null;
+      return _desempacarCatalogo(out);         // {} (sin data) — inocuo, el front solo await
+    }
+
+    if (action === 'crearPedido') {
+      // GAS crearPedidoProveedor → data:{idPedido}. RPC mos.crear_pedido_proveedor → data:{idPedido}. items=array jsonb.
+      // localId estable (idempotencia de gesto: el modal cierra optimista; un reintento no crea 2 pedidos BORRADOR).
+      const out = await _sbRpcMOSWrite('crear_pedido_proveedor', { p: {
+        localId: _mosLocalId(p, 'PED'),
+        idPedido: p.idPedido != null ? String(p.idPedido) : undefined,
+        idProveedor: p.idProveedor != null ? String(p.idProveedor) : undefined,
+        items: Array.isArray(p.items) ? p.items : [],
+        montoEstimado: p.montoEstimado,
+        fechaEstimada: p.fechaEstimada, usuario: p.usuario, notas: p.notas
+      } });
+      if (out == null) return null;
+      return _desempacarCatalogo(out);         // {idPedido} — el front no lee la respuesta (solo toast), pero queda paritario
+    }
+
+    if (action === 'actualizarPedido') {
+      // ⚠️ Sin equivalente en GAS hoy (no hay case 'actualizarPedido' en el router) → con el flag OFF esta acción
+      // SIEMPRE cae a GAS y el router responde "acción no reconocida" (= comportamiento de hoy, no la usa nadie).
+      // Cableada acá FORWARD-LOOKING para cuando la PWA mueva estado/items (la RPC ya existe). RPC → {ok:true}.
+      const a = { idPedido: p.idPedido != null ? String(p.idPedido) : undefined };
+      if ('estado' in p && p.estado !== undefined)               a.estado = p.estado;
+      if ('items' in p && Array.isArray(p.items))                a.items = p.items;
+      if ('montoEstimado' in p && p.montoEstimado !== undefined) a.montoEstimado = p.montoEstimado;
+      if ('notas' in p && p.notas !== undefined)                 a.notas = p.notas;
+      if ('fechaEstimada' in p && p.fechaEstimada !== undefined) a.fechaEstimada = p.fechaEstimada;
+      const out = await _sbRpcMOSWrite('actualizar_pedido_proveedor', { p: a });
+      if (out == null) return null;
+      return _desempacarCatalogo(out);
+    }
+
+    if (action === 'registrarPago') {
+      // ⚠️ DINERO ⚠️ GAS registrarPago → data:{idPago}. RPC mos.registrar_pago_proveedor → data:{idPago}.
+      // localId OBLIGATORIO (la RPC RECHAZA sin él) y ESTABLE: si el caller reintenta el MISMO objeto params,
+      // _mosLocalId reusa p.localId → la RPC dedupea por local_id → NUNCA un 2do pago. Anti-duplicado: un timeout
+      // tras posible commit se PROPAGA (el caller NO reintenta en GAS), así no se crea un pago en el otro backend.
+      const out = await _sbRpcMOSWrite('registrar_pago_proveedor', { p: {
+        localId: _mosLocalId(p, 'PAG'),
+        idPago: p.idPago != null ? String(p.idPago) : undefined,
+        idProveedor: p.idProveedor != null ? String(p.idProveedor) : undefined,
+        monto: p.monto, fecha: p.fecha, numeroFactura: p.numeroFactura,
+        estado: p.estado, observacion: p.observacion,
+        registradoPor: p.registradoPor != null ? p.registradoPor : _mosUsuario(p)
+      } });
+      if (out == null) return null;
+      return _desempacarCatalogo(out);         // {idPago} — el front no lee la respuesta (toast optimista + refresh getPagos)
+    }
+
+    if (action === 'agregarProductoProveedor' || action === 'actualizarProductoProveedor') {
+      // Ambas GAS (agregarProductoProveedor → data:{idPP}; actualizarProductoProveedor → {ok:true}) → UNA sola RPC
+      // mos.upsert_proveedor_producto (insert si no hay idPP/sku existente; update si sí). RPC → data:{idPP,accion}.
+      // El front lee idPP en el alta (app.js refresca por getProveedorProductos igual) y NO lee nada en la edición →
+      // los campos extra (accion) son inocuos. Patch parcial: reenviar SOLO claves presentes (paridad GAS).
+      // localId estable solo aporta en el alta (la RPC lo usa para dedup de inserción; en update con idPP es no-op).
+      const a = {
+        localId: _mosLocalId(p, 'PP'),
+        idPP: p.idPP != null ? String(p.idPP) : undefined,
+        idProveedor: p.idProveedor != null ? String(p.idProveedor) : undefined
+      };
+      if ('skuBase' in p && p.skuBase !== undefined)                 a.skuBase = String(p.skuBase);
+      if ('codigoBarra' in p && p.codigoBarra !== undefined)         a.codigoBarra = (p.codigoBarra != null ? String(p.codigoBarra) : '');
+      if ('descripcion' in p && p.descripcion !== undefined)         a.descripcion = p.descripcion;
+      if ('precioReferencia' in p && p.precioReferencia !== undefined) a.precioReferencia = p.precioReferencia;
+      if ('minimoCompra' in p && p.minimoCompra !== undefined)       a.minimoCompra = p.minimoCompra;
+      if ('diasEntrega' in p && p.diasEntrega !== undefined)         a.diasEntrega = p.diasEntrega;
+      if ('activa' in p && p.activa !== undefined)                   a.activa = p.activa;
+      if ('notas' in p && p.notas !== undefined)                     a.notas = p.notas;
+      if ('unidadesPorBulto' in p && p.unidadesPorBulto !== undefined) a.unidadesPorBulto = p.unidadesPorBulto;
+      const out = await _sbRpcMOSWrite('upsert_proveedor_producto', { p: a });
+      if (out == null) return null;
+      return _desempacarCatalogo(out);         // {idPP, accion} — el front lee idPP (alta) o nada (edición)
+    }
+
     return null;   // acción no cableada → GAS
   }
 
-  // Acciones de catálogo enrutables por escritura directa (gate _mosCatalogoDirecto, default OFF).
-  const _MOS_POST_DIRECTO = { crearProducto: 1, actualizarProducto: 1, publicarPrecio: 1, crearEquivalencia: 1, actualizarEquivalencia: 1 };
+  // Acciones enrutables por escritura directa, CADA UNA con su gate por-acción (default OFF).
+  // El valor es la función-gate que decide si esa acción intenta el directo. Con el gate OFF (default)
+  // _postMOS ni siquiera evalúa el directo para esa acción → va recto a GAS, idéntico a hoy.
+  //   · catálogo (5)           → _mosCatalogoDirecto   (flag mos_catalogo_directo / maestro)
+  //   · proveedores (crear/edit)→ _mosProveedoresDirecto (flag mos_proveedores_directo)
+  //   · pedidos (crear/edit)    → _mosPedidosDirecto      (flag mos_pedidos_directo)
+  //   · pagos (DINERO)          → _mosPagosDirecto        (flag mos_pagos_directo)
+  //   · proveedor-producto      → _mosProvProdDirecto     (flag mos_provprod_directo)
+  const _MOS_POST_DIRECTO = {
+    crearProducto:              _mosCatalogoDirecto,
+    actualizarProducto:         _mosCatalogoDirecto,
+    publicarPrecio:             _mosCatalogoDirecto,
+    crearEquivalencia:          _mosCatalogoDirecto,
+    actualizarEquivalencia:     _mosCatalogoDirecto,
+    crearProveedor:             _mosProveedoresDirecto,
+    actualizarProveedor:        _mosProveedoresDirecto,
+    crearPedido:                _mosPedidosDirecto,
+    actualizarPedido:           _mosPedidosDirecto,
+    registrarPago:              _mosPagosDirecto,
+    agregarProductoProveedor:   _mosProvProdDirecto,
+    actualizarProductoProveedor:_mosProvProdDirecto
+  };
 
-  // POST con escritura directa opcional. Con el flag OFF (default) es IDÉNTICO a hoy: ni siquiera
-  // evalúa el directo → va recto a _fetch('POST') → GAS. Con el flag ON + token + RPC viva, escribe
+  // POST con escritura directa opcional. Con el gate de la acción OFF (default) es IDÉNTICO a hoy: ni
+  // siquiera evalúa el directo → va recto a _fetch('POST') → GAS. Con el gate ON + token + RPC viva, escribe
   // directo; si el directo dice "no commiteó" (null) → GAS; si lanza (negocio/timeout) → PROPAGA (no GAS).
   async function _postMOS(action, p) {
-    if (_MOS_POST_DIRECTO[action] && _mosCatalogoDirecto()) {
+    const gate = _MOS_POST_DIRECTO[action];
+    if (gate && gate()) {
       // throws de _postDirectoMOS se PROPAGAN (negocio = mismo error que GAS; timeout = anti-duplicado).
       const d = await _postDirectoMOS(action, p);
       if (d != null) return d;   // éxito directo (data desempaquetada == shape GAS)
@@ -619,8 +781,9 @@ const API = (() => {
       }
       return _fetch('GET',  { action, ...p });
     },
-    // [FASE 2] post → escritura directa Supabase para las 5 acciones de catálogo (gate _mosCatalogoDirecto,
-    // default OFF). Flag OFF ⇒ IDÉNTICO a hoy (va recto a GAS). El resto de acciones SIEMPRE por GAS.
+    // [FASE 2] post → escritura directa Supabase, gate POR-ACCIÓN (todos default OFF): 5 de catálogo
+    // (mos_catalogo_directo) + proveedores/pedidos/pago/proveedor-producto (mos_*_directo). Con el gate de la
+    // acción OFF ⇒ IDÉNTICO a hoy (va recto a GAS). El resto de acciones SIEMPRE por GAS.
     post: (action, p = {}) => _postMOS(action, p),
     getProductosNuevosWH: (p = {}) => _fetch('GET',  { action: 'getProductosNuevosWH', ...p }),
     lanzarProductoNuevo:  (p = {}) => _fetch('POST', { action: 'lanzarProductoNuevo',  ...p }),
@@ -652,7 +815,13 @@ const API = (() => {
       // [FASE 2 · LOTE CATÁLOGO] escritura directa del catálogo (crear/actualizar producto, publicar precio,
       // crear/actualizar equivalencia). INERTE: solo entra con flag mos_catalogo_directo ON + token + RPC viva.
       rpcWrite:        _sbRpcMOSWrite,    // RPC mos.* de escritura con etiqueta .permanente (null = caé a GAS)
-      postDirecto:     _postDirectoMOS    // dispatcher write→RPC (data o null→GAS, lanza en negocio/timeout) — diagnóstico/test
+      postDirecto:     _postDirectoMOS,   // dispatcher write→RPC (data o null→GAS, lanza en negocio/timeout) — diagnóstico/test
+      // [FASE 2 · LOTE PROVEEDORES/PEDIDOS/PAGOS] gates por-operación (default OFF) + helper de local_id.
+      proveedoresDirecto: _mosProveedoresDirecto,  // ¿flag mos_proveedores_directo ON?
+      pedidosDirecto:     _mosPedidosDirecto,      // ¿flag mos_pedidos_directo ON?
+      pagosDirecto:       _mosPagosDirecto,        // ¿flag mos_pagos_directo ON? (DINERO)
+      provprodDirecto:    _mosProvProdDirecto,     // ¿flag mos_provprod_directo ON?
+      localId:            _mosLocalId              // genera/estampa local_id estable por gesto — test de idempotencia
     },
   };
 })();
