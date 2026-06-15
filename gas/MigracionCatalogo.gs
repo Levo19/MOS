@@ -213,10 +213,42 @@ function syncCatalogoSupabase() {
   try {
     var r = migrarCatalogoCompartido();
     Logger.log('[syncCatalogoSupabase] ' + JSON.stringify(r));
+    // [FASE 1 · gate de frescura] Estampar el LATIDO de la corrida en mos.config[CATALOGO_SYNC_HEARTBEAT].
+    // La RPC mos.productos_master_rls() lo compara contra now()+TTL para decidir si la sombra está fresca;
+    // si el trigger muere (Google desactiva los time-based), el latido se congela → la RPC marca _fresh=false
+    // → el frontend de MOS cae a GAS (no sirve catálogo viejo). updated_at NO sirve de latido (el upsert
+    // merge-duplicates no lo bumpea en filas sin cambios). Solo se estampa si productos sincronizó sin errores.
+    try { _estamparLatidoCatalogo(r); } catch (eHb) { Logger.log('[syncCatalogoSupabase] heartbeat WARN: ' + (eHb && eHb.message || eHb)); }
     return r;
   } catch (e) {
     Logger.log('[syncCatalogoSupabase] ERROR: ' + (e && e.message || e));
     return { ok: false, error: String(e && e.message || e) };
+  }
+}
+
+/**
+ * Escribe mos.config[CATALOGO_SYNC_HEARTBEAT] = ISO now() SOLO si la corrida de productos fue limpia
+ * (sin errores en el lote de productos). Best-effort: cualquier fallo se loguea y NO rompe el sync.
+ * Que el latido NO se estampe ante un sync de productos fallido es DELIBERADO: así la RPC ve el latido
+ * viejo → _fresh=false → MOS cae a GAS, en vez de servir una sombra a medio actualizar.
+ */
+function _estamparLatidoCatalogo(resumen) {
+  var prod = resumen && resumen.productos;
+  // Si no hubo info de productos, o hubo errores en sus lotes, NO estampar (sombra dudosa → mantener latido viejo).
+  if (!prod || (prod.errores && prod.errores.length)) {
+    Logger.log('[_estamparLatidoCatalogo] productos con errores o ausente → NO se estampa latido');
+    return;
+  }
+  var iso = new Date().toISOString();
+  var rUp = _sbUpsert('mos.config', [{
+    clave: 'CATALOGO_SYNC_HEARTBEAT',
+    valor: iso,
+    descripcion: 'FASE1 lectura directa MOS: ISO de la ULTIMA corrida OK de syncCatalogoSupabase (latido de frescura de la sombra mos.productos).'
+  }], 'clave');
+  if (!rUp || !rUp.ok) {
+    Logger.log('[_estamparLatidoCatalogo] upsert latido FALLO: ' + JSON.stringify(rUp));
+  } else {
+    Logger.log('[_estamparLatidoCatalogo] latido estampado: ' + iso);
   }
 }
 

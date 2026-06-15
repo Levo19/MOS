@@ -244,11 +244,117 @@ const API = (() => {
     return await gas();
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  // [FASE 1 · PILOTO] Lectura directa del CATÁLOGO MAESTRO (getProductos).
+  // Gate por-acción `mos_catalogo_directo` (ADEMÁS del maestro). Default OFF → INERTE.
+  // RPC: mos.productos_master_rls() (75_…) → { ok, productos:[crudo snake], _fresh, _count, ... }.
+  // El FRONT mapea snake→shape-hoja camelCase (inverso de _CAT_SPECS.productos) para que el shape sea
+  // BYTE-equivalente a getProductosMaster de GAS (un mismatch dejaría el catálogo vacío/roto al activar).
+  // ════════════════════════════════════════════════════════════════════
+
+  // Flag por-acción del catálogo: ON solo si (maestro OR por-acción). Permite activar SOLO el catálogo
+  // sin prender toda la lectura directa de MOS. Default OFF (ambos flags OFF → INERTE).
+  function _mosCatalogoDirecto() {
+    return !!(_mosLecturaDirecta() || _mosFlag('mos_catalogo_directo', 'catalogoDirecto'));
+  }
+
+  // Mapa snake(pg) → camelCase(shape-hoja) + tipo, INVERSO EXACTO de _CAT_SPECS.productos (gas/MigracionCatalogo.gs).
+  // [pgCol, headerHoja, tipo]. Mantener sincronizado con el backfill: la fuente de verdad del shape es ese spec.
+  const _MOS_PROD_SPEC = [
+    ['id_producto','idProducto','text'], ['sku_base','skuBase','text'],
+    ['codigo_barra','codigoBarra','text'], ['descripcion','descripcion','text'],
+    ['marca','marca','text'], ['id_categoria','idCategoria','text'], ['unidad','unidad','text'],
+    ['precio_venta','precioVenta','num'], ['precio_costo','precioCosto','num'],
+    ['cod_tributo','Cod_Tributo','text'], ['igv_porcentaje','IGV_Porcentaje','num'],
+    ['cod_sunat','Cod_SUNAT','text'], ['tipo_igv','Tipo_IGV','int'],
+    ['unidad_medida','Unidad_Medida','text'], ['estado','estado','bool10'],
+    ['es_envasable','esEnvasable','bool10'], ['codigo_producto_base','codigoProductoBase','text'],
+    ['factor_conversion','factorConversion','num'], ['factor_conversion_base','factorConversionBase','num'],
+    ['merma_esperada_pct','mermaEsperadaPct','num'], ['stock_minimo','stockMinimo','num'],
+    ['stock_maximo','stockMaximo','num'], ['zona','zona','text'],
+    ['fecha_creacion','fechaCreacion','date'], ['creado_por','creadoPor','text'],
+    ['modo_venta','modoVenta','text'], ['margen_pct','margenPct','num'],
+    ['precio_tope','precioTope','num'], ['foto_url','fotoUrl','text'],
+    ['historial_cambios','historialCambios','json'], ['segmentos_precio','segmentos_precio','json'],
+    // tipo_producto es derivado en el backfill (post()) pero existe como columna en la sombra → exponerlo igual.
+    ['tipo_producto','tipoProducto','text']
+  ];
+
+  // Convierte un valor crudo de PostgREST al tipo del shape-hoja.
+  //  - bool10: el front compara String(estado)!=='0' / String(esEnvasable)==='1' → entregar '1'/'0' (NUNCA true/false).
+  //  - num/int: Number (la sombra ya viene numérica; defensivo). null se preserva.
+  //  - text: String() defensivo (ids/codigoBarra SIEMPRE texto). null se preserva (≡ celda vacía de la hoja).
+  //  - date: ya viene ISO/text desde pg (timestamptz). El front lo usa como string igual que _sheetToObjects.
+  //  - json: ya viene parseado (jsonb) → se deja tal cual (el front usa historialCambios como array).
+  function _sbValProd(raw, tipo) {
+    if (raw === undefined) raw = null;
+    switch (tipo) {
+      case 'bool10': return (raw === true || raw === 1 || raw === '1' || raw === 'true') ? '1' : '0';
+      case 'num':    return raw == null ? null : Number(raw);
+      case 'int':    return raw == null ? null : Math.round(Number(raw));
+      case 'text':   return raw == null ? null : String(raw);
+      default:       return raw; // date(json) tal cual
+    }
+  }
+
+  // Mapea una fila cruda snake → objeto shape-hoja camelCase.
+  function _mapProdSnakeToHoja(row) {
+    const o = {};
+    for (let i = 0; i < _MOS_PROD_SPEC.length; i++) {
+      const pg = _MOS_PROD_SPEC[i][0], hdr = _MOS_PROD_SPEC[i][1], t = _MOS_PROD_SPEC[i][2];
+      o[hdr] = _sbValProd(row[pg], t);
+    }
+    return o;
+  }
+
+  // Replica EXACTA de los filtros server-side de getProductosMaster (gas/Productos.gs) sobre el shape-hoja,
+  // para que el resultado directo sea idéntico al de GAS ante los mismos params (estado/skuBase/categoria/q).
+  function _filtrarProdComoGAS(rows, params) {
+    let out = rows;
+    if (params && params.estado)    out = out.filter(r => String(r.estado) === String(params.estado));
+    if (params && params.skuBase)   out = out.filter(r => r.skuBase === params.skuBase);
+    if (params && params.categoria) out = out.filter(r => r.idCategoria === params.categoria);
+    if (params && params.q) {
+      const q = String(params.q).toLowerCase();
+      out = out.filter(r =>
+        (r.descripcion || '').toLowerCase().indexOf(q) >= 0 ||
+        (r.codigoBarra || '').indexOf(q) >= 0 ||
+        (r.skuBase     || '').toLowerCase().indexOf(q) >= 0);
+    }
+    return out;
+  }
+
+  // Lectura directa de productos. Devuelve el ARRAY (mismo shape que d.data de GAS) o null (→ caé a GAS).
+  // null si: sin token (Edge caída), respuesta no-ok, o GATE DE FRESCURA en false (sombra stale/vacía).
+  async function _getProductosDirecto(params) {
+    const r = await _sbRpcMOS('productos_master_rls', {});   // null si no hay token → caé a GAS
+    if (r == null) return null;
+    if (!r.ok || !Array.isArray(r.productos)) return null;   // backend dijo no → GAS
+    // GATE DE FRESCURA: si la sombra no está fresca (sync muerto / vacía) NO servimos datos viejos → GAS.
+    if (r._fresh !== true) {
+      try { console.warn('[MOS catálogo directo] sombra STALE (_fresh=false, _count=' + r._count + ', heartbeat=' + r._heartbeat + ') → fallback a GAS'); } catch (_) {}
+      return null;
+    }
+    const mapped = r.productos.map(_mapProdSnakeToHoja);
+    return _filtrarProdComoGAS(mapped, params);
+  }
+
   return {
     getUrl,
     setUrl,
     isConfigured,
-    get:  (action, p = {}) => _fetch('GET',  { action, ...p }),
+    get:  (action, p = {}) => {
+      // [FASE 1 · PILOTO] getProductos → lectura directa Supabase con gate por-acción + frescura + fallback GAS.
+      // Con el flag OFF (default) esto es IDÉNTICO a hoy: _conFallbackMOS NO entra al directo y va directo a GAS.
+      if (action === 'getProductos') {
+        return _conFallbackMOS(
+          () => _getProductosDirecto(p),                 // directo: RPC + map a shape-hoja + filtros (null→GAS)
+          () => _fetch('GET', { action, ...p }),         // gas: la llamada de SIEMPRE (devuelve d.data = array)
+          _mosCatalogoDirecto                            // gate por-acción (default OFF)
+        );
+      }
+      return _fetch('GET',  { action, ...p });
+    },
     post: (action, p = {}) => _fetch('POST', { action, ...p }),
     getProductosNuevosWH: (p = {}) => _fetch('GET',  { action: 'getProductosNuevosWH', ...p }),
     lanzarProductoNuevo:  (p = {}) => _fetch('POST', { action: 'lanzarProductoNuevo',  ...p }),
@@ -267,7 +373,11 @@ const API = (() => {
       deviceId:       _mosDeviceId,
       rpc:            _sbRpcMOS,            // RPC PostgREST esquema mos (null = caé a GAS)
       leerTabla:      _sbLeerTablaMOS,      // SELECT tabla mos.* (null = caé a GAS)
-      conFallback:    _conFallbackMOS       // patrón "directo si flag+token, si no GAS"
+      conFallback:    _conFallbackMOS,      // patrón "directo si flag+token, si no GAS"
+      // [FASE 1 · PILOTO] catálogo directo (getProductos):
+      catalogoDirecto:    _mosCatalogoDirecto,   // ¿flag por-acción del catálogo ON?
+      getProductosDirecto:_getProductosDirecto,  // RPC+map+frescura (array o null→GAS) — para diagnóstico
+      mapProd:            _mapProdSnakeToHoja     // map snake→shape-hoja (test de paridad)
     },
   };
 })();
