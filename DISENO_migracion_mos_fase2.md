@@ -51,6 +51,24 @@ App de DINERO en prod (ventas/cajas/finanzas/jornales). NO tocar sin extremo cui
 
 **⚠️ ESTRATÉGIA APRENDIDA (2026-06-15): el sistema se satura con agentes CREADORES grandes** (5 timeouts de 35-52 min en agentes que crean muchas RPCs), pero los agentes **VALIDADORES acotados terminan bien** (100-200s). Por eso varios SQL se crearon-luego-validaron en 2 pasos (el creador a veces timeoutea tras dejar el archivo bueno; un validador acotado lo confirma + caza bugs — así se cazó el bug de dinero del 81). **Para jornales: dividir en micro-tandas de 3-5 RPCs.** Tras cada timeout, el SQL suele quedar creado en disco (revisar por Glob/Grep + commit + validar acotado).
 
+---
+
+## PLAN JORNALES/LIQUIDACIONES (mapeado 2026-06-15 — el lote más grande y delicado, NO implementado)
+**17 acciones de escritura, 6 tablas, DINERO crítico con retroactividad.** Tablas: `mos.jornadas` (legacy/vetos), `mos.evaluaciones` (✅ ya en 82), `mos.liquidaciones_dia` (materializado diario, PK `LDIA-fecha-idPersonal` único persona×fecha, estado PENDIENTE/PAGADA/VETADA), `mos.liquidaciones_pagos` (audit trail, snapshot inmutable al pagar), `mos.liquidacion_semanal_snapshot` (congelado semanal, idempotente por semana×persona, nunca pisar PAGADO), `mos.gastos` (✅ ya en 83).
+
+**Invariantes de DINERO (críticas):** `totalDia = montoBase + pagoEnvasado + bonoMeta + bonificacion − sancion` (capped ≥0). El upsert de liquidaciones_dia PRESERVA bonificacion/sancion (manual) y solo recalcula auto (base/envasado/meta) — `_liqDiaSetBonSan` es el único que reemplaza manual. Pagos: snapshot inmutable (si se edita la evaluación tras pagar, el pago queda congelado — correcto). Snapshot semanal NUNCA pisa PAGADO.
+
+**Micro-tandas sugeridas (3-5 RPCs c/u, lineal):**
+1. **Jornadas**: `crear_jornada`/`eliminar_jornada`(veto tombstone)/`rehabilitar_jornada`/`importar_jornadas_cajas`. Bajo riesgo.
+2. **liquidaciones_dia**: `upsert_liquidacion_dia`(preserva manual)/`set_bonificacion_sancion`/`vetar_liquidacion_dia`/`desvetar`/`recomputar_liquidacion_dia`. ⚠️ el RECOMPUTE lee cross-app (envasados/ventas) — evaluar si la RPC puede recomputar o si el cálculo se queda en GAS y la RPC solo persiste.
+3. **Pagos (DINERO crítico)**: `marcar_pagos`(batch N días→1 idPago, inserta liquidaciones_pagos + 1 gasto JORNALES + marca PAGADA)/`anular_pago`(revierte las 3). Idempotencia estricta. PrintNode del ticket queda en GAS/Edge.
+4. **Snapshot semanal**: `snapshot_liquidacion_semanal`(idempotente semana×persona, dedup conserva PAGADO). Hoy es trigger domingos 8pm en GAS → puede quedar en GAS o pg_cron.
+5. **Cierre nocturno** (cierra sesiones WH + cajas ME, 23:00): cross-app, dejar en GAS/pg_cron.
+
+**⚠️ lo que probablemente QUEDA en GAS (no portar a RPC):** `_liqSyncJob` (trigger 1h), `cerrarSemanaAutomatico` (trigger dom 8pm), `cierreNocturnoTodos` (trigger 23:00) — son time-based async, no on-demand; migrarlos sería a pg_cron (Fase 4). Los recomputes que leen cross-app (getResumenDia) pueden quedar calculados en GAS con la RPC solo persistiendo.
+
+**Riesgos:** retroactividad (snapshot congela vs recompute cambia), invariante bonificacion/sancion en upsert, dedup snapshot nunca pisa PAGADO, idempotencia de pago batch. Por esto + ser DINERO, jornales debe hacerse con sistema FRESCO (los creadores timeoutean; un timeout a medias en pagos es peligroso) y validador acotado por micro-tanda.
+
 **⏳ FASE 3 (cutover) / FASE 4 (apagar sync) — del usuario / posteriores.**
 
 ### ⚠️ NOTA DE SESIÓN (2026-06-15): el sistema se SATURÓ
