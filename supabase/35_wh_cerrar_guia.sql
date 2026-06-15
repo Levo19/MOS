@@ -55,7 +55,11 @@ begin
   if not wh._claim_ok() then return jsonb_build_object('ok',false,'error','APP_NO_AUTORIZADA'); end if;  -- [B2]
   if v_id is null then return jsonb_build_object('ok',false,'error','FALTAN_PARAMS'); end if;
 
-  select estado, tipo into v_estado, v_tipo from wh.guias where id_guia = v_id limit 1;
+  -- [FIX #1 100x] FOR UPDATE: serializa cierres concurrentes de la MISMA guía (doble-tap, reintento de cola con red lenta).
+  -- Sin el lock, dos cierres pueden leer ambos 'ABIERTA', pasar el guard de idempotencia y aplicar el delta de stock DOS veces
+  -- (los id_mov con on conflict protegen la TRAZA, no el stock). Con el lock el 2do cierre se serializa, re-lee 'CERRADA'
+  -- y cae en el early-return idempotente de abajo. Esta es la única RPC que mueve stock por delta sin dedup por local_id.
+  select estado, tipo into v_estado, v_tipo from wh.guias where id_guia = v_id limit 1 for update;
   if not found then return jsonb_build_object('ok',false,'error','GUIA_NO_ENCONTRADA'); end if;
 
   -- idempotencia: ya cerrada → NO reaplicar stock

@@ -11,3 +11,28 @@ verify_jwt = true
 # Mismo modelo de auth que imprimir (firma JWT + claim app=mosExpress). Port fiel de gas/NubeFact.gs.
 [functions.emitir-cpe]
 verify_jwt = true
+
+# Edge Function `ia`: proxy a Claude (key en secret ANTHROPIC_API_KEY). Whitelist de modelos + cap de max_tokens
+# + claim app en código. verify_jwt explícito (antes dependía del default) — hardening declarativo (100x #seguridad).
+[functions.ia]
+verify_jwt = true
+
+# Edge Function `fotos`: relay de fotos. verify_jwt explícito + claim app en código (hardening declarativo).
+[functions.fotos]
+verify_jwt = true
+
+# Edge Function `mint-wh`: EMITE el JWT (HS256, claim app=warehouseMos) para la PWA de warehouseMos.
+# ÚNICA función con verify_jwt=false a propósito: es quien emite el PRIMER token, así que no puede exigir un JWT
+# nuestro para entregar un JWT nuestro (huevo-y-gallina). El control de acceso vive en el código: valida el
+# deviceId contra mos.dispositivos (estado=ACTIVO, app=warehouseMos) con la service-role key, fail-closed, y
+# hardcodea app/exp server-side. El secret de firma (SUPABASE_JWT_SECRET) nunca sale de la función.
+[functions.mint-wh]
+verify_jwt = false
+
+# Edge Function `mint-mos`: EMITE el JWT (HS256, claim app='MOS') para la PWA de MOS (master). Clon de mint-wh.
+# verify_jwt=false POR LA MISMA RAZÓN que mint-wh: es quien emite el PRIMER token, no puede exigir un JWT nuestro
+# para entregar un JWT nuestro (huevo-y-gallina). El control de acceso vive en el código: valida el deviceId
+# contra mos.dispositivos (estado=ACTIVO, app ∈ {null,'','MOS'}) con la service-role key, fail-closed, y hardcodea
+# app/exp server-side. Reusa el secret de proyecto WH_JWT_SECRET (el JWT secret del proyecto, no es exclusivo de WH).
+[functions.mint-mos]
+verify_jwt = false

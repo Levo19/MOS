@@ -65,14 +65,22 @@ Antes de prender cualquier flag de escritura de stock:
 **+ 3 chicas** (marcar_preingreso_procesado, crear_auditoria, get_o_crear_guia_dia) — 90 casos de validación, 0 fallos.
 
 ### Lo que FALTA para cerrar el PASO 4 100%
-- **`agregar_detalle_guia`** 🔴🔴 BLOQUEADA POR SCHEMA: `wh.guia_detalle` solo tiene (id_guia, linea, cod_producto,
+- **`agregar_detalle_guia`** ✅ HECHA Y VALIDADA 12/12 (40x) — `43_wh_agregar_detalle_guia.sql`. Opción A aplicada:
+  `wh.guia_detalle` ahora tiene `id_detalle` + `fecha_vencimiento` (42_wh_guia_detalle_cols.sql), spec actualizado.
+  (histórico del bloqueo, ya resuelto): BLOQUEADA POR SCHEMA: `wh.guia_detalle` solo tiene (id_guia, linea, cod_producto,
   cant_esperada, cant_recibida, precio_unitario, id_lote, observacion, id_producto_nuevo) — **FALTAN `id_detalle` y
   `fecha_vencimiento`**, que la lógica usa (el frontend referencia líneas por idDetalle; los lotes dependen de la fecha).
   PRE-REQUISITO antes de escribir la RPC: **decisión de schema** → `alter table wh.guia_detalle add column id_detalle text,
   add column fecha_vencimiento date` + ajustar `_WH_SPECS.guia_detalle` + re-backfill + verificar que el batch las suba.
   Recién ahí la RPC (catálogo + AUTO-SUMA + INSERT linea=max+1 + sync lote + ajuste stock condicional) es viable.
   La validación de catálogo (mos.productos/equivalencias) la puede hacer el cliente (tiene el catálogo en cache).
-- **`aprobar_producto_nuevo`** 🔴: crea producto en `mos.productos` (catálogo) + ajusta stock + lote. Cross-schema.
+- **`aprobar_producto_nuevo`** 🔴 CROSS-DOMAIN (no solo cross-schema): su parte central crea un producto en el
+  CATÁLOGO, que pertenece a MOS (la hoja PRODUCTOS_MASTER es la fuente; `mos.productos` es su sombra vía el sync de
+  MOS). Una RPC `wh.*` NO debe escribir `mos.productos` directo (chocaría con el sync hoja→sombra de MOS). DISEÑO
+  CORRECTO: descomponer — la **creación de producto se delega a MOS** (una RPC/Edge de MOS, o el flujo de catálogo
+  existente); la parte WH (marcar PN APROBADO + actualizar guia_detalle + ajustar stock/lote) se compone de RPCs:
+  un `wh.marcar_producto_nuevo_aprobado` chico + `wh.agregar_detalle_guia` (✅) + `wh.crear_ajuste` (✅) + lote.
+  Es una decisión de INTEGRACIÓN WH↔MOS, no una RPC monolítica de WH. Queda para la fase de integración del catálogo.
 - **Se COMPONEN en el cliente (NO necesitan RPC monolítica)** de las RPCs ya hechas:
   - `aprobar_preingreso` = `crear_guia` + `marcar_preingreso_procesado` ✅ (piezas listas)
   - `auditar_producto` = `crear_auditoria` + `crear_ajuste` (si difiere) ✅ (piezas listas)

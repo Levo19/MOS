@@ -40,7 +40,28 @@ RPCs + `grant ... authenticated`. Validado: claim `mosExpress`→APP_NO_AUTORIZA
 ### B3 — Lecturas directas desde el navegador
 ✅ **B3-BACKEND HECHO (2026-06-13)**: wrappers `wh.stock_enriquecido_rls` / `wh.rotacion_semanal_rls` (45_wh_rls_lecturas.sql)
 con gate `_claim_ok` + grant authenticated, validados 5/5. **El backend completo del PASO 5 está listo** (B1+B2+B3-backend).
-⏳ **B3-FRONTEND (resta)**: toca el **`index.html`/`js/api.js` de WH**. Pasos:
+🟡 **B3-FRONTEND — INFRAESTRUCTURA HECHA + 2 lecturas (2026-06-13, INERTE)**: en `js/api.js` se agregó el cliente
+directo a Supabase, **inerte** por defecto (gate `_whLecturaDirecta()` = `localStorage 'wh_lectura_navegador'==='1'`
+o `WH_CONFIG.lecturaNavegador`). Piezas (replican el patrón probado de ME): `_SB_URL`/`_SB_ANON` (públicos),
+`_sbTok` cache + `_mintTokenWH()` (POST a GAS `mintTokenWH`, dedup in-flight, re-mint 30s antes de exp, timeout 6s),
+`_sbRpcWH(fn,args)` (apikey+Bearer token+Content/Accept-Profile: wh, timeout 12s), `_callDirecto(params)`. `call()`
+intenta directo SOLO si flag on + online + acción mapeada; **fallback TOTAL a GAS ante cualquier fallo**. Cableadas:
+`getStock`→`wh.stock_enriquecido_rls` (shape `{ok,data:[...]}` idéntico) y `getRotacionSemanal`→`wh.rotacion_semanal_rls`.
+Validado: `node -c` OK; PostgREST expone `wh` (ping_auth HTTP 200); `stock_enriquecido_rls` con anon→`permission denied`
+(CORRECTO: grant es a `authenticated`; el frontend usa el token role=authenticated, no el anon). SW 2.13.194.
+🟢 **B3-FRONTEND — 2da tanda (2026-06-13): RPC genérica + transformador en front.** Backend: `46_wh_leer_tabla_rls.sql`
+= `wh.leer_tabla_rls(p_tabla)` con whitelist (10 tablas) + `jsonb_agg ... order by PK` (1 request, SIN límite db-max-rows,
+orden = `_leerTablaWH`/pk.asc) + gate `_claim_ok` (validado 16/16: 10 tablas ok, whitelist+inyección rechazadas,
+claim ajeno→APP_NO_AUTORIZADA, claim vacío/GAS pasa). Front (`js/api.js`): portado FIEL de `_sbRowsToObjsWH`/`_sbValToSheet`
+(`_WH_SPECS_LEC` subset + `_sbValFront` + `_fmtFechaLima` en-CA TZ Lima + `_sbLeerTablaWH`). Cableadas en `_callDirecto`
+las 5 lecturas SIMPLES con filtros idénticos a GAS: getMermas, getAuditorias, getAjustes, getProductosNuevos, getPreingresos.
+Validado 10/10 contra datos reales (1209 auditorías/473 ajustes/…): cero typo de porte, fechas yyyy-MM-dd, nums numéricos.
+**Total directo hoy: 7 lecturas** (stock+rotación por RPC propia + estas 5). Todo INERTE (flag `wh_lectura_navegador`).
+⏳ **B3-FRONTEND — RESTA**: (a) cablear las lecturas con LÓGICA DERIVADA (replicar su post-proceso JS sobre `_sbLeerTablaWH`):
+getProductosNuevosRecientes (tipoAprobacion+corte fecha), getLotesVencimiento (diasRestantes+filtros), getMermasEnProceso
+(diasEnProceso/vencida+sort), getMermasVencidas (shape {count,mermas}), getGuias (agrupación día TZ Perú), getStockMovimientos
+(filtro cod_producto); (b) **validación e2e con token real** (mint→RPC→datos) = parte de B6; (c) deploy + activar flag.
+Plan original de pasos (referencia):
 1. **Cliente Supabase en el front**: agregar supabase-js (o fetch directo a `/rest/v1/rpc/`). Helper `_sbDirect(fn,args)`
    que manda `apikey: <anon>` + `Authorization: Bearer <token B1>` + `Accept-Profile: wh`. El token se pide a GAS
    (endpoint `mintTokenWH`, ya existe) y se cachea ~4min con re-mint en heartbeat (igual que ME).
@@ -57,6 +78,14 @@ con gate `_claim_ok` + grant authenticated, validados 5/5. **El backend completo
 - **B5 (GAS cero)**: Edge Functions (Deno) para PrintNode (ZPL), IA, y proxy de fotos de Drive (Supabase como
   intermediario, el usuario lo pidió). `supabase functions deploy` — OJO: el deploy de Edge falló antes en esta
   máquina (login no-TTY); el usuario deployó ME con token. Mismo camino.
+  - ✅ **B5-PrintNode (2026-06-13): RESUELTO POR REUSO**. La Edge `imprimir` (ProyectoMOS/supabase/functions/imprimir)
+    ya existía (proxy genérico PWA→PrintNode con PRINTNODE_API_KEY secret). Se hizo MULTI-APP (`APPS_OK={mosExpress,warehouseMos}`)
+    → WH la reusa. Formato: POST {printerId, title, content(raw_base64), } → PrintNode 201. FALTA: **el usuario re-deploya**
+    (`supabase functions deploy imprimir --project-ref rzbzdeipbtqkzjqdchqk`) + wiring front WH (api.js: imprimirBienvenida/
+    cajas/etiquetas → llamar la Edge con token en vez de GAS). El ESC/POS/ZPL lo arma el front (ya lo hace GAS, portar).
+  - ⏳ **B5-fotoDrive**: Edge nueva que suba/sirva fotos. GAS usa `_subirFotoMerma`/Drive. Necesita service account de Google
+    (secret) + el código. O migrar a Supabase Storage (el usuario dijo mantener Drive + proxy).
+  - ⏳ **B5-IA**: Edge para OCR boleta / parser listas. GAS llama la IA (ver Claude/key). Necesita key (secret) + código.
 - **B6**: cutover por módulo (lectura→escritura→orquestación) con flag + fallback + validación de operación REAL
   (operario usando el almacén), luego apagar GAS. Conservar GAS solo si algo de B5 no migró.
 

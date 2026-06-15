@@ -30,11 +30,16 @@ declare
   v_estado  text; v_tipo text; v_cerrada boolean; v_ingreso boolean;
   v_linea   int; v_qty_ant numeric; v_accion text;
   v_delta numeric; v_antes numeric; v_despues numeric; v_reuse text;
+  v_lid     text := nullif(btrim(coalesce(p->>'local_id','')), '');
 begin
   if coalesce((select valor from mos.config where clave='WH_AGREGAR_DETALLE_GUIA_DIRECTO' limit 1),'0') <> '1' then
     return jsonb_build_object('ok',false,'error','WH_AGREGAR_DETALLE_GUIA_DIRECTO_OFF');
   end if;
   if not wh._claim_ok() then return jsonb_build_object('ok',false,'error','APP_NO_AUTORIZADA'); end if;  -- [B2]
+  -- [B4 · dedup idempotencia] AUTO-SUMA no es idempotente → si este local_id ya se procesó, early-return (no re-suma).
+  if v_lid is not null and not wh._dedup_nuevo(v_lid, 'agregar_detalle_guia') then
+    return jsonb_build_object('ok',true,'dedup',true);
+  end if;
   if v_guia is null or v_cod is null then return jsonb_build_object('ok',false,'error','FALTAN_PARAMS'); end if;
   if v_cesp < 0 or v_crec < 0 then return jsonb_build_object('ok',false,'error','CANTIDAD_NEGATIVA'); end if;
   if v_fvenc is not null then v_fvenc := left(v_fvenc,10); end if;

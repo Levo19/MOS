@@ -39,11 +39,13 @@ Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return json({ status: 'error', mensaje: 'método no permitido' }, 405);
 
   try {
-    // app=mosExpress (la firma ya está verificada por la plataforma; rechazamos anon/otras apps)
+    // Apps del ecosistema autorizadas (la firma ya está verificada por la plataforma; rechazamos anon/otras apps).
+    // multi-app: mosExpress + warehouseMos (PASO 5 — WH reusa esta Edge en vez de saltar a GAS para imprimir).
+    const APPS_OK = new Set(['mosExpress', 'warehouseMos']);
     const auth = req.headers.get('Authorization') || '';
     const token = auth.replace(/^Bearer\s+/i, '').trim();
     const claims = jwtClaims(token);
-    if (!claims || claims.app !== 'mosExpress') {
+    if (!claims || !APPS_OK.has(String(claims.app))) {
       return json({ status: 'error', mensaje: 'no autorizado (claim app)' }, 401);
     }
 
@@ -68,7 +70,7 @@ Deno.serve(async (req: Request) => {
         title,
         contentType: 'raw_base64',
         content,
-        source: 'MOSexpress-Edge',
+        source: String(claims.app || 'mos') + '-Edge',
       }),
     });
     const text = await pn.text();

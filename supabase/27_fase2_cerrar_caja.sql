@@ -56,6 +56,10 @@ begin
       'estado',v_caja.estado,'monto_final',v_caja.monto_final,'vendedor',v_caja.vendedor,
       'zona',v_caja.zona_id,'printnode_id',v_caja.printnode_id);
   end if;
+  -- [Hardening 50x] solo una caja ABIERTA puede transicionar a CERRADA (defensa ante estados inesperados).
+  if v_caja.estado <> 'ABIERTA' then
+    return jsonb_build_object('status','error','error','CAJA_ESTADO_INVALIDO','estado',v_caja.estado);
+  end if;
 
   -- ── 2. Anular POR_COBRAR de la caja (o la lista explícita) ──
   -- Si vino ids_anular, anula esos (que estén POR_COBRAR); si no, auto-detecta los POR_COBRAR de la caja.
