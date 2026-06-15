@@ -56,6 +56,17 @@ begin
     return jsonb_build_object('ok', false, 'error', 'APP_NO_AUTORIZADA');
   end if;
 
+  -- ── Validación de rango (paridad GAS getFinanzasRango:78). Sin desde/hasta válidos → error, NO {ok:true} con
+  --    totales en NULL (que el front pintaría como "S/ null"). Strict por ser app de dinero.
+  if p_desde is null or btrim(p_desde) = '' or p_hasta is null or btrim(p_hasta) = '' then
+    return jsonb_build_object('ok', false, 'error', 'Requiere desde y hasta (YYYY-MM-DD)');
+  end if;
+  begin
+    perform p_desde::date, p_hasta::date;   -- valida formato fecha (lanza→capturamos→error limpio)
+  exception when others then
+    return jsonb_build_object('ok', false, 'error', 'Fechas inválidas (YYYY-MM-DD)');
+  end;
+
   select valor::numeric into v_margen
   from mos.config
   where clave = 'finMargenDefault' and valor ~ '^[0-9]+(\.[0-9]+)?$';

@@ -48,6 +48,11 @@ create or replace function mos._numn(t text) returns numeric language sql immuta
     when btrim(replace(t, ',', '.')) ~ '^-?[0-9]+(\.[0-9]+)?$' then btrim(replace(t, ',', '.'))::numeric
     else null end;
 $fn$;
+-- Higiene: language sql sin revoke deja EXECUTE a PUBLIC (anon incluido). _numn es un parser numérico puro
+-- (sin acceso a datos ni side-effects) → impacto nulo, pero cerramos el grant para mantener el estándar
+-- "cero PUBLIC" del proyecto (ver fix análogo en 77_ historial). Interno: solo lo usan las RPCs definer.
+revoke all on function mos._numn(text) from public;
+grant execute on function mos._numn(text) to service_role;
 
 -- Secuencia atómica de ids de producto (reemplaza _siguienteSecuenciaProducto SIN lost-update).
 -- Se siembra una vez al MAX(IDPRO####### , LEV#######) ya presente en la tabla; nextval es atómico.
