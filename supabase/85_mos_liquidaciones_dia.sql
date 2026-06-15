@@ -59,6 +59,15 @@ returns numeric language sql immutable set search_path = '' as $fn$
   , 2));
 $fn$;
 
+-- Higiene "cero PUBLIC": `language sql` sin revoke deja EXECUTE a PUBLIC (anon incluido). Estos dos helpers son
+-- funciones puras (key determinística / aritmética DINERO) sin acceso a datos ni side-effects → impacto de datos
+-- nulo, pero cerramos el grant para mantener el estándar del proyecto (ver fix análogo en 77_/78_).
+-- Internos: solo los llaman las RPCs definer de este lote (que corren como definer) y GAS (service_role).
+revoke all on function mos._liqdia_key(text, text)                                  from public;
+revoke all on function mos._liqdia_total(numeric, numeric, numeric, numeric, numeric) from public;
+grant execute on function mos._liqdia_key(text, text)                                  to service_role;
+grant execute on function mos._liqdia_total(numeric, numeric, numeric, numeric, numeric) to service_role;
+
 -- ═════════════════════════════════════════════════════════════════════════════════════════════════════
 -- 1) mos.upsert_liquidacion_dia(p jsonb) — espeja _liqDiaUpsertRow.  ⚠️ DINERO + PRESERVACIÓN ⚠️
 --    INSERT (fila nueva) o UPDATE atómico por PK id_dia. Si la fila YA existe:

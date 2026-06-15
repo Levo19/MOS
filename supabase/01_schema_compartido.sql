@@ -16,7 +16,14 @@ create schema if not exists wh;
 
 -- ---------- Helper de zona horaria Perú ----------
 create or replace function mos.hoy_lima() returns date
-  language sql stable as $$ select (now() at time zone 'America/Lima')::date $$;
+  language sql stable
+  set search_path = ''            -- endurecimiento: no depende del search_path del caller
+  as $$ select (now() at time zone 'America/Lima')::date $$;
+-- Higiene "cero PUBLIC" del proyecto: `language sql` sin revoke deja EXECUTE a PUBLIC (anon incluido).
+-- hoy_lima es un helper puro (sin acceso a datos ni side-effects) → impacto de datos nulo, pero cerramos el
+-- grant para mantener el estándar del ecosistema (ver fix análogo en 77_/78_). Lo usan RPCs definer y GAS.
+revoke all on function mos.hoy_lima() from public;
+grant execute on function mos.hoy_lima() to service_role;
 
 -- ---------- Enums ----------
 do $$ begin
