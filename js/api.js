@@ -374,6 +374,24 @@ const API = (() => {
   function _mosEvalDirecto()    { return !!_mosFlag('mos_eval_directo',    'evalDirecto'); }
   function _mosHorarioDirecto() { return !!_mosFlag('mos_horario_directo', 'horarioDirecto'); }
 
+  // [FASE 2 · LOTE JORNALES/LIQUIDACIONES] gates por-operación (espejo de los kill-switches server-side
+  // MOS_JORNADAS_DIRECTO (84) / MOS_LIQDIA_DIRECTO (85), ambos default '0'). DINERO (jornal/liquidación).
+  // CADA grupo tiene su flag de cliente independiente → se activa jornadas sin tocar liquidaciones, etc.
+  // Default OFF (cliente) + OFF (server) → INERTE doble. El flag maestro mos_lectura_navegador NO los
+  // habilita (son ESCRITURAS de dinero → flag explícito por grupo, igual que prov/pago/gasto).
+  // ⚠️ PAGOS DE JORNALES (MOS_PAGOS_JORNAL_DIRECTO, 86: marcarPagos/anularPago) NO se cabla acá. El
+  //    frontend MOS llama esas acciones con un SHAPE incompatible con la RPC y/o saltaría una validación:
+  //      · marcarPagos: el front manda `fechas[]` (strings), NO `dias[]` con snapshot por día. La RPC
+  //        mos.marcar_pagos EXIGE `dias:[{fecha,montoBase,pagoEnvasado,bonoMeta,sancion,totalDia}]` y NO
+  //        recalcula cross-app (envasados/ventas) → con el payload actual el total quedaría en 0 (pago vacío).
+  //        El snapshot lo arma GAS vía getResumenDia (cross-app) → el cómputo se queda en GAS por diseño.
+  //      · anularPago: el front manda `claveAdmin` y depende de que el BACKEND valide la clave admin
+  //        (verificarClaveAdmin → {autorizado:false}). La RPC mos.anular_pago NO verifica la clave (su nota:
+  //        "queda en el cliente/GAS") → cablearla saltaría el gate de clave admin. La verificación vive en GAS.
+  //    Ver REPORTE. Con todo OFF (default) marcarPagos/anularPago van 100% por GAS, idéntico a hoy.
+  function _mosJornadasDirecto() { return !!_mosFlag('mos_jornadas_directo', 'jornadasDirecto'); }
+  function _mosLiqdiaDirecto()   { return !!_mosFlag('mos_liqdia_directo',   'liqdiaDirecto'); }
+
   // Lectura directa de finanzas por rango. Devuelve {serie,totales,desde,hasta} (= d.data de GAS) o null (→ GAS).
   // null si: sin token, respuesta no-ok, o GATE DE FRESCURA en false (sombra mos.* stale → no servir P&L viejo).
   async function _getFinanzasRangoDirecto(params) {
@@ -457,16 +475,21 @@ const API = (() => {
     return res.json();
   }
 
-  // Normaliza la respuesta de una RPC de catálogo {ok, data, error, dedup?} al CONTRATO de _postDirectoMOS:
+  // Normaliza la respuesta de una RPC de escritura {ok, data, error, dedup?} al CONTRATO de _postDirectoMOS:
   //   ok:false con error *_OFF / APP_NO_AUTORIZADA      → null (kill-switch/sin claim ⇒ caé a GAS, no commiteó)
   //   ok:false con cualquier otro error (negocio/valid) → LANZA Error(error) (= _fetch lanza d.error; no commiteó)
   //   ok:true                                            → devuelve out.data (desempaquetado, shape == GAS) o {} si falta
   // `out == null` (sin token) ya lo maneja el caller ANTES de llamar acá.
+  // ⚠️ El *_OFF se matchea por SUFIJO (cualquier MOS_<X>_DIRECTO_OFF), no por la clave literal del catálogo:
+  //   cada lote tiene su propio kill-switch server-side (MOS_CATALOGO_DIRECTO_OFF, MOS_PROVEEDORES_DIRECTO_OFF,
+  //   MOS_GASTOS_DIRECTO_OFF, MOS_JORNADAS_DIRECTO_OFF, MOS_LIQDIA_DIRECTO_OFF, MOS_PAGOS_JORNAL_DIRECTO_OFF, …).
+  //   Con el flag de CLIENTE ON pero el server-side en '0', la RPC responde su *_OFF → debe caer a GAS (no lanzar),
+  //   honrando el contrato "kill-switch server OFF → front cae a GAS" para TODOS los lotes por igual.
   function _desempacarCatalogo(out) {
     if (!out || out.ok === false) {
-      const err = (out && out.error) || 'rpc catálogo sin respuesta';
-      // *_OFF (kill-switch server-side) o claim no autorizado → la RPC NO escribió → caé a GAS.
-      if (err === 'MOS_CATALOGO_DIRECTO_OFF' || err === 'APP_NO_AUTORIZADA') return null;
+      const err = (out && out.error) || 'rpc directo sin respuesta';
+      // *_OFF (kill-switch server-side, cualquier lote) o claim no autorizado → la RPC NO escribió → caé a GAS.
+      if (/_OFF$/.test(err) || err === 'APP_NO_AUTORIZADA') return null;
       throw new Error(err);   // rechazo de negocio (misma validación que GAS) → propagar al UI
     }
     return (out.data != null && typeof out.data === 'object') ? out.data : {};
@@ -807,6 +830,98 @@ const API = (() => {
       return _desempacarCatalogo(out);         // {app, horario, admins_libres} — el front no lee la respuesta
     }
 
+    // ════════════════════════════════════════════════════════════════════
+    // [FASE 2 · LOTE JORNALES/LIQUIDACIONES] — acciones que el frontend MOS llama hoy:
+    //   · registrarJornada            → mos.registrar_jornada        (flag mos_jornadas_directo, DINERO jornal)
+    //   · vetarLiquidacionDia         → mos.vetar_liquidacion_dia    (flag mos_liqdia_directo, DINERO)
+    //   · desvetarLiquidacionDia      → mos.desvetar_liquidacion_dia (flag mos_liqdia_directo, DINERO)
+    // + 2 FORWARD-LOOKING (el front NO las llama hoy — finVetarPago/finRehabilitarPago usan vetar/desvetar —
+    //   pero la RPC y el case del router GAS existen; cableadas inertes por completitud, gate mos_jornadas_directo):
+    //   · eliminarJornada             → mos.eliminar_jornada         (VETO tombstone)
+    //   · rehabilitarJornada          → mos.rehabilitar_jornada
+    // ⚠️ recomputarLiquidacionDia / marcarPagos / anularPago NO se cablean (shape/seguridad incompatibles) — ver
+    //    el bloque de gates arriba y el REPORTE. Con su gate ausente del mapa van 100% por GAS, idéntico a hoy.
+    // Respuesta {ok,data,error,dedup?} → _desempacarCatalogo (trata *_OFF/APP_NO_AUTORIZADA como null→GAS, y
+    // cualquier otro error como rechazo de negocio→throw, igual que _fetch lanza d.error). ids como String.
+    // ════════════════════════════════════════════════════════════════════
+
+    if (action === 'registrarJornada') {
+      // ⚠️ DINERO (jornal) ⚠️ GAS registrarJornada → data:{idJornada} (appendRow CRUDO, SIN dedup → doble-tap
+      // duplica jornada). RPC mos.registrar_jornada → data:{idJornada} con idempotencia por local_id (gesto) + PK.
+      // localId ESTABLE: si el caller reintenta el MISMO objeto params, _mosLocalId reusa p.localId → la RPC
+      // dedupea por local_id → NUNCA una 2da jornada. Un timeout tras posible commit se PROPAGA (el caller NO va
+      // a GAS) → no se crea una jornada en el otro backend. montoJornal va como viene (la RPC lo parsea con _numn
+      // → numeric EXACTO, no float). El front NO lee la respuesta (await + toast + finCargar) → {idJornada} basta.
+      // Validación paridad GAS: la RPC exige nombre + montoJornal>0 (mismo rechazo que GAS) → throw → UI, no GAS.
+      const out = await _sbRpcMOSWrite('registrar_jornada', { p: {
+        localId: _mosLocalId(p, 'JOR'),
+        idJornada: p.idJornada != null ? String(p.idJornada) : undefined,
+        nombre: p.nombre, montoJornal: p.montoJornal, fecha: p.fecha,
+        idPersonal: p.idPersonal != null ? String(p.idPersonal) : undefined,
+        rol: p.rol, zona: p.zona, observacion: p.observacion,
+        appOrigen: p.appOrigen,
+        registradoPor: p.registradoPor != null ? p.registradoPor : _mosUsuario(p)
+      } });
+      if (out == null) return null;            // sin token → GAS
+      return _desempacarCatalogo(out);         // {idJornada} — el front no lee la respuesta
+    }
+
+    if (action === 'eliminarJornada') {
+      // ⚠️ FORWARD-LOOKING (el front NO llama esta acción hoy; finVetarPago usa vetarLiquidacionDia). Con el gate
+      // OFF (default) va a GAS igual. GAS eliminarJornada → data:{vetoTs, idJornada} (VETO tombstone, NO borra).
+      // RPC mos.eliminar_jornada → data:{vetoTs, idJornada}. UPDATE atómico idempotente (re-vetar re-sella ts).
+      const out = await _sbRpcMOSWrite('eliminar_jornada', { p: {
+        idJornada: p.idJornada != null ? String(p.idJornada) : undefined,
+        actor: p.actor,
+        registradoPor: p.registradoPor != null ? p.registradoPor : _mosUsuario(p)
+      } });
+      if (out == null) return null;
+      return _desempacarCatalogo(out);         // {vetoTs, idJornada}
+    }
+
+    if (action === 'rehabilitarJornada') {
+      // ⚠️ FORWARD-LOOKING (el front NO llama esta acción hoy; finRehabilitarPago usa desvetarLiquidacionDia).
+      // GAS rehabilitarJornada → data:{rehabTs, idJornada, monto}. RPC mos.rehabilitar_jornada → data:{rehabTs,
+      // idJornada, monto}. Solo si fuente='ELIMINADA' (mismo rechazo 'La jornada no está vetada' → throw → UI).
+      const out = await _sbRpcMOSWrite('rehabilitar_jornada', { p: {
+        idJornada: p.idJornada != null ? String(p.idJornada) : undefined,
+        actor: p.actor,
+        registradoPor: p.registradoPor != null ? p.registradoPor : _mosUsuario(p),
+        monto: p.monto, montoDefault: p.montoDefault
+      } });
+      if (out == null) return null;
+      return _desempacarCatalogo(out);         // {rehabTs, idJornada, monto}
+    }
+
+    if (action === 'vetarLiquidacionDia') {
+      // ⚠️ DINERO ⚠️ GAS vetarLiquidacionDia → {ok:true} (sin data); _fetch desempaqueta a undefined; el front
+      // NO lee la respuesta (await resuelve = éxito; .catch lee e.message = YA_PAGADA/NO_ENCONTRADA). RPC
+      // mos.vetar_liquidacion_dia → {ok:true,data:{idDia,estado}} en éxito; en rechazo de negocio devuelve
+      // {ok:false,error:'YA_PAGADA'|'NO_ENCONTRADA'|'idPersonal y fecha requeridos'} → _desempacarCatalogo
+      // LANZA Error(error) → e.message == el MISMO key que GAS → el front muestra el toast correcto. UPDATE
+      // atómico condicional (no toca PAGADA) → idempotente, sin lost-update. El front manda `localId` (la RPC
+      // lo IGNORA: el veto es idempotente por estado, no por gesto) → inocuo. No es alta → no _mosLocalId.
+      const out = await _sbRpcMOSWrite('vetar_liquidacion_dia', { p: {
+        idPersonal: p.idPersonal != null ? String(p.idPersonal) : undefined,
+        fecha: p.fecha
+      } });
+      if (out == null) return null;            // sin token → GAS
+      return _desempacarCatalogo(out);         // {idDia,estado} — el front no lee la data (solo éxito/throw)
+    }
+
+    if (action === 'desvetarLiquidacionDia') {
+      // ⚠️ DINERO ⚠️ GAS desvetarLiquidacionDia → {ok:true} (sin data); el front NO lee la respuesta (await=éxito;
+      // .catch lee e.message). RPC mos.desvetar_liquidacion_dia → {ok:true,data:{idDia,estado}} o rechazo
+      // {ok:false,error:'NO_VETADA'|'NO_ENCONTRADA'|...} → _desempacarCatalogo LANZA con el MISMO error key.
+      // VETADA→PENDIENTE atómico condicional (solo si VETADA) → idempotente. `localId` del front es inocuo.
+      const out = await _sbRpcMOSWrite('desvetar_liquidacion_dia', { p: {
+        idPersonal: p.idPersonal != null ? String(p.idPersonal) : undefined,
+        fecha: p.fecha
+      } });
+      if (out == null) return null;
+      return _desempacarCatalogo(out);         // {idDia,estado} — el front no lee la data
+    }
+
     return null;   // acción no cableada → GAS
   }
 
@@ -837,7 +952,14 @@ const API = (() => {
     registrarGasto:             _mosGastosDirecto,
     eliminarGasto:              _mosGastosDirecto,
     crearEvaluacion:            _mosEvalDirecto,
-    setHorarioApp:              _mosHorarioDirecto
+    setHorarioApp:              _mosHorarioDirecto,
+    // [FASE 2 · LOTE JORNALES/LIQUIDACIONES] DINERO. Gates por-grupo (default OFF). marcarPagos/anularPago/
+    // recomputarLiquidacionDia NO van en este mapa a propósito (shape/seguridad incompatibles) → siempre GAS.
+    registrarJornada:           _mosJornadasDirecto,
+    eliminarJornada:            _mosJornadasDirecto,   // forward-looking (el front no la llama hoy)
+    rehabilitarJornada:         _mosJornadasDirecto,   // forward-looking (el front no la llama hoy)
+    vetarLiquidacionDia:        _mosLiqdiaDirecto,
+    desvetarLiquidacionDia:     _mosLiqdiaDirecto
   };
 
   // POST con escritura directa opcional. Con el gate de la acción OFF (default) es IDÉNTICO a hoy: ni
@@ -932,6 +1054,10 @@ const API = (() => {
       gastosDirecto:      _mosGastosDirecto,       // ¿flag mos_gastos_directo ON? (DINERO)
       evalDirecto:        _mosEvalDirecto,         // ¿flag mos_eval_directo ON?
       horarioDirecto:     _mosHorarioDirecto,      // ¿flag mos_horario_directo ON?
+      // [FASE 2 · LOTE JORNALES/LIQUIDACIONES] gates por-grupo (default OFF, DINERO). marcarPagos/anularPago/
+      // recomputarLiquidacionDia NO cableados (shape/seguridad incompatibles con la RPC) — ver REPORTE.
+      jornadasDirecto:    _mosJornadasDirecto,     // ¿flag mos_jornadas_directo ON? (DINERO jornal)
+      liqdiaDirecto:      _mosLiqdiaDirecto,       // ¿flag mos_liqdia_directo ON? (DINERO liquidación)
       localId:            _mosLocalId              // genera/estampa local_id estable por gesto — test de idempotencia
     },
   };
