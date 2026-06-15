@@ -362,6 +362,18 @@ const API = (() => {
   function _mosPagosDirecto()       { return !!_mosFlag('mos_pagos_directo',       'pagosDirecto'); }
   function _mosProvProdDirecto()    { return !!_mosFlag('mos_provprod_directo',    'provprodDirecto'); }
 
+  // [FASE 2 · LOTE BAJO-RIESGO + GASTOS] gates por-operación (espejo de los kill-switches server-side
+  // MOS_GASTOS_DIRECTO (83) / MOS_EVAL_DIRECTO / MOS_HORARIO_DIRECTO (82), todos default '0').
+  // CADA módulo tiene su flag de cliente independiente → se activa uno sin tocar los otros. Default OFF
+  // (cliente) + OFF (server) → INERTE doble. El flag maestro mos_lectura_navegador NO los habilita
+  // (gastos = DINERO; eval/horario = escrituras de negocio → flag explícito por módulo, igual que prov/pago).
+  // ⚠️ ETIQUETAS (MOS_ETIQ_DIRECTO) NO se cablea acá: el frontend MOS no llama marcarVisto/marcarPegada ni
+  //    ningún "crear etiqueta" (las filas nacen del hook de precio en GAS). Cablearlo sería inventar un
+  //    consumidor que no existe. Ver REPORTE.
+  function _mosGastosDirecto()  { return !!_mosFlag('mos_gastos_directo',  'gastosDirecto'); }
+  function _mosEvalDirecto()    { return !!_mosFlag('mos_eval_directo',    'evalDirecto'); }
+  function _mosHorarioDirecto() { return !!_mosFlag('mos_horario_directo', 'horarioDirecto'); }
+
   // Lectura directa de finanzas por rango. Devuelve {serie,totales,desde,hasta} (= d.data de GAS) o null (→ GAS).
   // null si: sin token, respuesta no-ok, o GATE DE FRESCURA en false (sombra mos.* stale → no servir P&L viejo).
   async function _getFinanzasRangoDirecto(params) {
@@ -708,6 +720,93 @@ const API = (() => {
       return _desempacarCatalogo(out);         // {idPP, accion} — el front lee idPP (alta) o nada (edición)
     }
 
+    // ════════════════════════════════════════════════════════════════════
+    // [FASE 2 · LOTE GASTOS (DINERO) + BAJO-RIESGO] — 4 acciones que el frontend MOS llama hoy.
+    //   · registrarGasto / eliminarGasto → mos.crear_gasto / mos.eliminar_gasto   (flag mos_gastos_directo, DINERO)
+    //   · crearEvaluacion                → mos.crear_evaluacion                    (flag mos_eval_directo)
+    //   · setHorarioApp                  → mos.actualizar_horario_app              (flag mos_horario_directo)
+    // Respuesta {ok,data,error,dedup?} → _desempacarCatalogo (trata *_OFF/APP_NO_AUTORIZADA como null→GAS,
+    // y cualquier otro error como rechazo de negocio→throw). ids como String (regla: nunca número en el cruce).
+    // local_id ESTABLE en los CREAR (gasto/evaluación) → la RPC dedupea por él (anti-doble-registro en reintento).
+    // ════════════════════════════════════════════════════════════════════
+
+    if (action === 'registrarGasto') {
+      // ⚠️ DINERO ⚠️ GAS registrarGasto → data:{idGasto} (appendRow CRUDO, SIN dedup → doble-tap duplica gasto).
+      // RPC mos.crear_gasto → data:{idGasto} con idempotencia por local_id (gesto) + PK. localId ESTABLE: si el
+      // caller reintenta el MISMO objeto params, _mosLocalId reusa p.localId → NUNCA un 2do gasto. Un timeout
+      // tras posible commit se PROPAGA (el caller NO va a GAS) → no se crea un gasto en el otro backend.
+      // monto va como viene (la RPC lo parsea con _numn → numeric EXACTO en centavos, no float). El front no lee
+      // la respuesta (solo await + toast + finCargar) → {idGasto} es paritario y suficiente.
+      const out = await _sbRpcMOSWrite('crear_gasto', { p: {
+        localId: _mosLocalId(p, 'GAS'),
+        idGasto: p.idGasto != null ? String(p.idGasto) : undefined,
+        fecha: p.fecha, categoria: p.categoria, tipo: p.tipo,
+        descripcion: p.descripcion, monto: p.monto,
+        comprobante: p.comprobante,
+        registradoPor: p.registradoPor != null ? p.registradoPor : _mosUsuario(p)
+      } });
+      if (out == null) return null;            // sin token → GAS
+      return _desempacarCatalogo(out);         // {idGasto} — el front no lee la respuesta (toast + refresh)
+    }
+
+    if (action === 'eliminarGasto') {
+      // ⚠️ DINERO ⚠️ GAS eliminarGasto → {ok:true} (sin data); _fetch desempaqueta a undefined; el front no lee nada.
+      // RPC mos.eliminar_gasto → {ok:true,eliminado} (DELETE atómico por PK, idempotente: borrar 2 veces no falla).
+      // _desempacarCatalogo devuelve {} (data ausente) → equivalente inocuo a undefined (el front solo await + refresh).
+      const out = await _sbRpcMOSWrite('eliminar_gasto', { p: {
+        idGasto: p.idGasto != null ? String(p.idGasto) : undefined
+      } });
+      if (out == null) return null;
+      return _desempacarCatalogo(out);         // {} — el front no lee la respuesta
+    }
+
+    if (action === 'crearEvaluacion') {
+      // GAS crearEvaluacion → data:{idEval, bonificacion, sancion, ajusteTocado}. RPC mos.crear_evaluacion →
+      // data:{idEval} (SOLO el appendRow crudo; idempotente por local_id + PK). El front (app.js) llama esto
+      // FIRE-AND-FORGET y NO lee la respuesta (.then ignora el payload, refresca por getPersonalDiaFast) → el
+      // mismatch de campos extra (bonificacion/sancion/ajusteTocado) es INOCUO para el consumidor actual.
+      // ⚠️ DIVERGENCIA CONOCIDA Y ACEPTADA (documentada en el SQL 82): GAS además corre los hooks de
+      //    materialización _liqDiaRecomputar/_liqDiaSetBonSan que tocan LIQUIDACIONES_DIA (DINERO). La RPC NO
+      //    los corre (los orquestadores quedan en GAS por diseño). ⇒ NO activar mos_eval_directo cuando la
+      //    evaluación lleva bonificación/sanción/ajuste hasta migrar también esos hooks. Con el flag OFF
+      //    (default) esto es 100% GAS (hooks incluidos), idéntico a hoy.
+      // localId ESTABLE → anti-doble-fila en reintento del mismo gesto (GAS no dedupea: doble-tap = 2 filas).
+      const out = await _sbRpcMOSWrite('crear_evaluacion', { p: {
+        localId: _mosLocalId(p, 'EV'),
+        idEval: p.idEval != null ? String(p.idEval) : undefined,
+        idPersonal: p.idPersonal != null ? String(p.idPersonal) : undefined,
+        rol: p.rol, fecha: p.fecha, hora: p.hora,
+        limpiezaPct: p.limpiezaPct, limpiezaProfPct: p.limpiezaProfPct,
+        controlChecks: p.controlChecks, comentario: p.comentario,
+        evaluadoPor: p.evaluadoPor != null ? p.evaluadoPor : _mosUsuario(p),
+        aplicaComision: p.aplicaComision, aplicaBonoMeta: p.aplicaBonoMeta,
+        sancion: p.sancion, sancionMotivo: p.sancionMotivo,
+        bonificacion: p.bonificacion, bonificacionMotivo: p.bonificacionMotivo
+      } });
+      if (out == null) return null;
+      return _desempacarCatalogo(out);         // {idEval} — el front no lee la respuesta (fire-and-forget)
+    }
+
+    if (action === 'setHorarioApp') {
+      // GAS setHorarioApp → data:{app, horario, admins_libres}. RPC mos.actualizar_horario_app →
+      // data:{app, horario, admins_libres} (UPSERT por PK natural `app`; sin local_id — la clave de negocio
+      // ES la app). El front manda `horario` (shape legacy {lun..dom}) + `admins_libres` (snake) + actualizadoPor;
+      // la RPC acepta ese shape (cae a `horario` si no hay `dias`). El front NO lee la respuesta (then→beep ok,
+      // refresca por cache local optimista) → shape paritario.
+      // ⚠️ SIDE-EFFECTS GAS-ONLY (documentado en SQL 82): GAS dispara push a admins + invalida la cache de
+      //    horario en WH. La RPC NO los hace (orquestación queda en GAS). ⇒ Con mos_horario_directo ON el cambio
+      //    de horario NO notificaría ni refrescaría WH en caliente. Con el flag OFF (default) es 100% GAS, idéntico.
+      // NOTA: el front no manda claveAdmin → la rama de auth remoto de GAS no aplica a esta llamada (paridad).
+      const a = { app: p.app != null ? String(p.app) : undefined };
+      if ('dias' in p && p.dias !== undefined)             a.dias = p.dias;
+      if ('horario' in p && p.horario !== undefined)       a.horario = p.horario;
+      if ('admins_libres' in p && p.admins_libres !== undefined) a.admins_libres = p.admins_libres;
+      a.actualizadoPor = (p.actualizadoPor != null && String(p.actualizadoPor) !== '') ? p.actualizadoPor : _mosUsuario(p);
+      const out = await _sbRpcMOSWrite('actualizar_horario_app', { p: a });
+      if (out == null) return null;
+      return _desempacarCatalogo(out);         // {app, horario, admins_libres} — el front no lee la respuesta
+    }
+
     return null;   // acción no cableada → GAS
   }
 
@@ -719,6 +818,9 @@ const API = (() => {
   //   · pedidos (crear/edit)    → _mosPedidosDirecto      (flag mos_pedidos_directo)
   //   · pagos (DINERO)          → _mosPagosDirecto        (flag mos_pagos_directo)
   //   · proveedor-producto      → _mosProvProdDirecto     (flag mos_provprod_directo)
+  //   · gastos (crear/eliminar) → _mosGastosDirecto       (flag mos_gastos_directo, DINERO)
+  //   · evaluaciones (crear)    → _mosEvalDirecto         (flag mos_eval_directo)
+  //   · horarios (setHorarioApp)→ _mosHorarioDirecto      (flag mos_horario_directo)
   const _MOS_POST_DIRECTO = {
     crearProducto:              _mosCatalogoDirecto,
     actualizarProducto:         _mosCatalogoDirecto,
@@ -731,7 +833,11 @@ const API = (() => {
     actualizarPedido:           _mosPedidosDirecto,
     registrarPago:              _mosPagosDirecto,
     agregarProductoProveedor:   _mosProvProdDirecto,
-    actualizarProductoProveedor:_mosProvProdDirecto
+    actualizarProductoProveedor:_mosProvProdDirecto,
+    registrarGasto:             _mosGastosDirecto,
+    eliminarGasto:              _mosGastosDirecto,
+    crearEvaluacion:            _mosEvalDirecto,
+    setHorarioApp:              _mosHorarioDirecto
   };
 
   // POST con escritura directa opcional. Con el gate de la acción OFF (default) es IDÉNTICO a hoy: ni
@@ -821,6 +927,11 @@ const API = (() => {
       pedidosDirecto:     _mosPedidosDirecto,      // ¿flag mos_pedidos_directo ON?
       pagosDirecto:       _mosPagosDirecto,        // ¿flag mos_pagos_directo ON? (DINERO)
       provprodDirecto:    _mosProvProdDirecto,     // ¿flag mos_provprod_directo ON?
+      // [FASE 2 · LOTE GASTOS/EVAL/HORARIO] gates por-módulo (default OFF). Etiquetas NO se cablea (el front
+      // MOS no llama marcarVisto/marcarPegada ni crear-etiqueta). Ver REPORTE.
+      gastosDirecto:      _mosGastosDirecto,       // ¿flag mos_gastos_directo ON? (DINERO)
+      evalDirecto:        _mosEvalDirecto,         // ¿flag mos_eval_directo ON?
+      horarioDirecto:     _mosHorarioDirecto,      // ¿flag mos_horario_directo ON?
       localId:            _mosLocalId              // genera/estampa local_id estable por gesto — test de idempotencia
     },
   };
