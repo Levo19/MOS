@@ -69,6 +69,25 @@ App de DINERO en prod (ventas/cajas/finanzas/jornales). NO tocar sin extremo cui
 
 **Riesgos:** retroactividad (snapshot congela vs recompute cambia), invariante bonificacion/sancion en upsert, dedup snapshot nunca pisa PAGADO, idempotencia de pago batch. Por esto + ser DINERO, jornales debe hacerse con sistema FRESCO (los creadores timeoutean; un timeout a medias en pagos es peligroso) y validador acotado por micro-tanda.
 
+---
+
+## ✅ CIERRE 2026-06-15: FASE 2 COMPLETA + 100x INTEGRAL PASADO
+
+**FASE 2 (escrituras) COMPLETA**, todos los lotes con SQL + frontend + 40x por lote, todo INERTE (flags `MOS_*_DIRECTO`/`mos_*_directo` en '0' → MOS opera 100% por GAS):
+- Catálogo (78/79, 51/51) · Proveedores/pedidos/pagos (80/81, 65/65, bug dinero cazado) · Evaluaciones/etiquetas/horarios (82, 77/77) · Gastos (83, 40/40) · **Jornadas (84, 46/46)** · **Liquidaciones_día (85, 62/62)** · **Pagos jornales (86, 65+8)**. Frontend cableado en `js/api.js` (`_postDirectoMOS`) para todos salvo marcar/anular-pago jornales + recompute (omitidos a propósito: el front no arma el snapshot/clave → cablearlos pagaría S/0 o saltaría el gate de clave; las RPCs quedan listas).
+
+**100x INTEGRAL (3 revisores adversariales) PASADO:**
+- **Seguridad/auth**: SÓLIDO. Cerró 3 helpers con EXECUTE public (hoy_lima/_liqdia_key/_liqdia_total). Gate en todas, search_path en las 33 definer, sin inyección, datos sensibles excluidos (cuenta/cci/pin), Edge mint-mos fail-closed, RLS 31 tablas deny-all.
+- **Dinero/idempotencia/atomicidad**: SÓLIDO. Cazó+corrigió 1 ALTO: `marcar_pagos` validaba solo `liquidaciones_dia` (más débil que GAS) → fecha sin fila-día podía doble-pagarse; ahora escanea el ledger `liquidaciones_pagos`. Atomicidad 3 tablas, invariante total_dia capped, preservación manual/PAGADA, montos exactos.
+- **Frontend/coherencia**: APROBADO sin defectos. Inertness hermético (nada setea los flags), shapes exactos (bool10 load-bearing), anti-duplicado cross-backend, local_id estable, coherencia Edge↔claim↔RPC↔api.js.
+
+**LO QUE QUEDA (del usuario / refinamientos / Fase 3-4):**
+1. **Refinamiento**: cablear marcar/anular-pago jornales requiere que `app.js` arme el snapshot `dias[]` + maneje la clave admin (hoy por GAS, seguro). Opcional para cerrar ese 5%.
+2. **FASE 3 (cutover) = del USUARIO**: activar flags módulo por módulo en prod + validar en vivo (app de dinero). Empezar por catálogo lectura (desbloquea WH/ME). ⚠️ Caveats documentados: evaluación con bono/sanción y horario con push/cache aún dependen de hooks GAS → no activar esos dos a ciegas. Requiere: `syncCatalogoSupabase()`+heartbeat, luego activar `mos_*_directo` por dispositivo.
+3. **FASE 4**: snapshot semanal + cierre nocturno → pg_cron; apagar triggers de sync por módulo migrado.
+
+**Estado: toda la capa MOS (Fase 0+1+2) está construida, validada 40x por lote, revisada 100x integral, INERTE y sin riesgo activo. Lista para que el usuario haga el cutover (Fase 3) cuando quiera.**
+
 **⏳ FASE 3 (cutover) / FASE 4 (apagar sync) — del usuario / posteriores.**
 
 ### ⚠️ NOTA DE SESIÓN (2026-06-15): el sistema se SATURÓ
