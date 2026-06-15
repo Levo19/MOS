@@ -339,6 +339,51 @@ const API = (() => {
     return _filtrarProdComoGAS(mapped, params);
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  // [FASE 1] Lectura directa de FINANZAS por rango (getFinanzasRango) e HISTORIAL de precios
+  // (getHistorialPrecios). Gates por-acción `mos_finanzas_directo` / `mos_historial_directo`
+  // (ADEMÁS del maestro). Default OFF → INERTE (con flag OFF jamás entran al directo).
+  //   · finanzas:  RPC mos.finanzas_rango(p_desde,p_hasta)        (76_) → {ok, data:{serie,totales,desde,hasta}, _fresh}
+  //   · historial: RPC mos.historial_precios_lista(p_sku,p_codigo,p_limit) (77_) → {ok, data:[...], _fresh}
+  // Ambas RPCs devuelven números financieros YA redondeados a 2 dec en pg (mismo _r2 que GAS); el front NO
+  // re-castea importes (los pasa tal cual = paridad exacta de centavos). El shape de `data` es BYTE-equivalente
+  // al `d.data` que hoy entrega GAS (getFinanzasRango/getHistorialPrecios) → el resto de la app no cambia.
+  // ════════════════════════════════════════════════════════════════════
+  function _mosFinanzasDirecto()  { return !!(_mosLecturaDirecta() || _mosFlag('mos_finanzas_directo',  'finanzasDirecto')); }
+  function _mosHistorialDirecto() { return !!(_mosLecturaDirecta() || _mosFlag('mos_historial_directo', 'historialDirecto')); }
+
+  // Lectura directa de finanzas por rango. Devuelve {serie,totales,desde,hasta} (= d.data de GAS) o null (→ GAS).
+  // null si: sin token, respuesta no-ok, o GATE DE FRESCURA en false (sombra mos.* stale → no servir P&L viejo).
+  async function _getFinanzasRangoDirecto(params) {
+    const r = await _sbRpcMOS('finanzas_rango', {
+      p_desde: (params && params.desde) || null,
+      p_hasta: (params && params.hasta) || null
+    });
+    if (r == null) return null;                                   // sin token → GAS
+    if (!r.ok || !r.data || !Array.isArray(r.data.serie)) return null;  // backend dijo no / shape inesperado → GAS
+    if (r._fresh !== true) {                                      // sombra costos/personal/gastos stale → GAS (P&L mezclado)
+      try { console.warn('[MOS finanzas directo] sombra STALE (_fresh=false, heartbeat=' + r._heartbeat + ') → fallback a GAS'); } catch (_) {}
+      return null;
+    }
+    return r.data;   // {serie,totales,desde,hasta} — números ya redondeados en pg, sin re-castear (centavos exactos)
+  }
+
+  // Lectura directa del historial de precios. Devuelve el ARRAY de filas (= d.data de GAS) o null (→ GAS).
+  async function _getHistorialPreciosDirecto(params) {
+    const r = await _sbRpcMOS('historial_precios_lista', {
+      p_sku:    (params && params.skuBase)     || null,
+      p_codigo: (params && params.codigoBarra) || null,
+      p_limit:  (params && params.limit != null && params.limit !== '') ? parseInt(params.limit, 10) : null
+    });
+    if (r == null) return null;
+    if (!r.ok || !Array.isArray(r.data)) return null;
+    if (r._fresh !== true) {
+      try { console.warn('[MOS historial directo] sombra STALE (_fresh=false, heartbeat=' + r._heartbeat + ') → fallback a GAS'); } catch (_) {}
+      return null;
+    }
+    return r.data;   // filas camelCase {id,skuBase,codigoBarra,...} — espejo del header de la hoja
+  }
+
   return {
     getUrl,
     setUrl,
@@ -351,6 +396,23 @@ const API = (() => {
           () => _getProductosDirecto(p),                 // directo: RPC + map a shape-hoja + filtros (null→GAS)
           () => _fetch('GET', { action, ...p }),         // gas: la llamada de SIEMPRE (devuelve d.data = array)
           _mosCatalogoDirecto                            // gate por-acción (default OFF)
+        );
+      }
+      // [FASE 1] getFinanzasRango → lectura directa (RPC finanzas_rango) con gate por-acción + frescura + fallback GAS.
+      // Flag OFF (default) ⇒ IDÉNTICO a hoy (va directo a GAS). Devuelve {serie,totales,desde,hasta} igual que GAS.
+      if (action === 'getFinanzasRango') {
+        return _conFallbackMOS(
+          () => _getFinanzasRangoDirecto(p),
+          () => _fetch('GET', { action, ...p }),
+          _mosFinanzasDirecto
+        );
+      }
+      // [FASE 1] getHistorialPrecios → lectura directa (RPC historial_precios_lista). Flag OFF (default) ⇒ GAS.
+      if (action === 'getHistorialPrecios') {
+        return _conFallbackMOS(
+          () => _getHistorialPreciosDirecto(p),
+          () => _fetch('GET', { action, ...p }),
+          _mosHistorialDirecto
         );
       }
       return _fetch('GET',  { action, ...p });
@@ -377,7 +439,12 @@ const API = (() => {
       // [FASE 1 · PILOTO] catálogo directo (getProductos):
       catalogoDirecto:    _mosCatalogoDirecto,   // ¿flag por-acción del catálogo ON?
       getProductosDirecto:_getProductosDirecto,  // RPC+map+frescura (array o null→GAS) — para diagnóstico
-      mapProd:            _mapProdSnakeToHoja     // map snake→shape-hoja (test de paridad)
+      mapProd:            _mapProdSnakeToHoja,    // map snake→shape-hoja (test de paridad)
+      // [FASE 1] finanzas + historial directos (getFinanzasRango / getHistorialPrecios):
+      finanzasDirecto:        _mosFinanzasDirecto,        // ¿flag por-acción de finanzas ON?
+      historialDirecto:       _mosHistorialDirecto,       // ¿flag por-acción de historial ON?
+      getFinanzasRangoDirecto:   _getFinanzasRangoDirecto,   // RPC+frescura ({serie,totales,...} o null→GAS) — diagnóstico
+      getHistorialPreciosDirecto:_getHistorialPreciosDirecto // RPC+frescura (array o null→GAS) — diagnóstico
     },
   };
 })();

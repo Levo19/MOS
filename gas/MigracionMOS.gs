@@ -332,13 +332,53 @@ function _syncMOSImpl(full){
 function syncMOSReciente(){
   var r=_syncMOSImpl(false);
   try{ _refrescarCatalogoThrottled(); }catch(e){ Logger.log('refresh catálogo (reciente) falló: '+e); }   // mantiene mos.productos fresco (~1h) sin sumar trigger
+  // [FASE 1 · gate de frescura] Latido de la SOMBRA mos.* (finanzas/historial leen directo del navegador y
+  // necesitan saber si la sombra está fresca). Solo se estampa si TODAS las tablas sincronizaron sin errores;
+  // si el trigger muere (Google desactiva los time-based) el latido se congela → mos.finanzas_rango/
+  // historial_precios_lista marcan _fresh=false → el front cae a GAS (no sirve P&L/historial viejo).
+  try{ _estamparLatidoMOS(r); }catch(eHb){ Logger.log('[syncMOSReciente] heartbeat WARN: '+(eHb&&eHb.message||eHb)); }
   return r;
 }
 function syncMOSCompleto(){
   var r=_syncMOSImpl(true);
   try{ var cr=syncCatalogoSupabase(); if(!(cr&&cr.ok===false)) PropertiesService.getScriptProperties().setProperty('MOS_CAT_LAST', String(Date.now())); }catch(e){ Logger.log('refresh catálogo (completo) falló: '+e); }
   try{ reconciliarDiarioMOS(); }catch(e){ Logger.log('recon MOS falló: '+e); }   // recon pegada al sync nocturno (sin trigger extra)
+  // [FASE 1 · gate de frescura] mismo latido que syncMOSReciente (ver nota allí). Solo si la corrida fue limpia.
+  try{ _estamparLatidoMOS(r); }catch(eHb){ Logger.log('[syncMOSCompleto] heartbeat WARN: '+(eHb&&eHb.message||eHb)); }
   return r;
+}
+
+/**
+ * Escribe mos.config[MOS_SYNC_HEARTBEAT] = ISO now() SOLO si la corrida de _syncMOSImpl fue LIMPIA
+ * (ninguna tabla con `error` ni con `errores[]` no vacío). Best-effort: cualquier fallo se loguea y NO rompe el sync.
+ * Espeja _estamparLatidoCatalogo (gas/MigracionCatalogo.gs). Que NO se estampe ante un sync sucio es DELIBERADO:
+ * así la RPC ve el latido viejo → _fresh=false → finanzas/historial caen a GAS, en vez de servir sombra a medias.
+ * El `resumen` viene de _syncMOSImpl: { tabla: {sync,de,errores:[]} | {error:'...'} }; las tablas cuya hoja no
+ * existe simplemente no aparecen (skip silencioso, no son error).
+ */
+function _estamparLatidoMOS(resumen){
+  if(!resumen || typeof resumen!=='object'){
+    Logger.log('[_estamparLatidoMOS] resumen ausente → NO se estampa latido'); return;
+  }
+  var sucio=false, motivo='';
+  Object.keys(resumen).forEach(function(tabla){
+    var t=resumen[tabla];
+    if(!t) return;
+    if(t.error){ sucio=true; motivo='tabla '+tabla+' error: '+t.error; }
+    else if(t.errores && t.errores.length){ sucio=true; motivo='tabla '+tabla+' '+t.errores.length+' lote(s) con error'; }
+  });
+  if(sucio){
+    Logger.log('[_estamparLatidoMOS] corrida con errores ('+motivo+') → NO se estampa latido (sombra dudosa → front cae a GAS)');
+    return;
+  }
+  var iso=new Date().toISOString();
+  var rUp=_sbUpsert('mos.config', [{
+    clave: 'MOS_SYNC_HEARTBEAT',
+    valor: iso,
+    descripcion: 'FASE1 lectura directa MOS: ISO de la ULTIMA corrida OK de syncMOSReciente/syncMOSCompleto (latido de frescura de las SOMBRAS mos.* que alimentan finanzas_rango/historial_precios_lista).'
+  }], 'clave');
+  if(!rUp || !rUp.ok){ Logger.log('[_estamparLatidoMOS] upsert latido FALLO: '+JSON.stringify(rUp)); }
+  else { Logger.log('[_estamparLatidoMOS] latido estampado: '+iso); }
 }
 
 /** Refresca el catálogo a Supabase a lo sumo ~1 vez/hora (throttle por Property MOS_CAT_LAST).
