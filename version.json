@@ -1,1 +1,1 @@
-{ "version": "2.43.203", "build": "20260612-lote4-confirm-modalconfirm" }
+{ "version": "2.43.204", "build": "20260614-MOS-fase0B-infra-lectura-directa-INERTE(api.js:+_SB_URL/_SB_ANON,+_mintTokenMOS via Edge mint-mos[deviceId=DeviceAuth,fallback null->GAS,refresh proactivo,dedup],+_sbRpcMOS/_sbLeerTablaMOS[Content/Accept-Profile mos],+flags _mosFlag/_mosLecturaDirecta[localStorage mos_lectura_navegador o MOS_CONFIG,default OFF],+helper _conFallbackMOS,+namespace API._sb).Con flags OFF comportamiento IDENTICO a hoy(todo por GAS).Cimientos para cablear lecturas en Fase 1" }

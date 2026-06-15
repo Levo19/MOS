@@ -72,6 +72,178 @@ const API = (() => {
     }
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  // [FASE 0B · migración MOS→Supabase] Infraestructura de LECTURA DIRECTA
+  // (navegador→PostgREST). Réplica del patrón de warehouseMos (js/api.js).
+  //
+  // ⚠️ INERTE POR DEFECTO: con los flags OFF (default) NADA de esto se invoca
+  // todavía. MOS sigue 100% por GAS. El cableado de lecturas concretas es FASE 1.
+  //
+  // url + anon key son PÚBLICOS (van en el cliente; la RLS los protege en el
+  // server vía el claim app='MOS' del JWT que mintea la Edge `mint-mos` — FASE 0A).
+  // Mismo proyecto Supabase que WH (rzbzdeipbtqkzjqdchqk) → constantes idénticas.
+  // ════════════════════════════════════════════════════════════════════
+  const _SB_URL  = 'https://rzbzdeipbtqkzjqdchqk.supabase.co';
+  const _SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6YnpkZWlwYnRxa3pqcWRjaHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NzYwMDQsImV4cCI6MjA5NjQ1MjAwNH0.MAlSdz_ugGUZoaU5st6dA_gb_x_IiUL0TXxH176kY9k';
+  const _sbTok = { token: null, exp: 0 };
+
+  // ── Flags de activación (default OFF → INERTE) ──
+  // MOS no tiene un objeto de config server-wide tipo WH_CONFIG en index.html.
+  // Replicamos el MECANISMO dual de WH (localStorage + objeto global opcional):
+  //   1) localStorage 'mos_lectura_navegador' === '1'   (palanca por dispositivo)
+  //   2) window.MOS_CONFIG?.lecturaNavegador === true     (palanca server-wide futura)
+  // Preparado para flags por-acción 'mos_<x>_directo' en FASE 1 (helper _mosFlag).
+  function _mosFlag(lsKey, cfgKey) {
+    try {
+      if (localStorage.getItem(lsKey) === '1') return true;
+      return (typeof window !== 'undefined' && window.MOS_CONFIG && window.MOS_CONFIG[cfgKey] === true);
+    } catch (_) {
+      return (typeof window !== 'undefined' && window.MOS_CONFIG && window.MOS_CONFIG[cfgKey] === true);
+    }
+  }
+  // Flag MAESTRO de lectura directa. Default OFF. FASE 1 lo consultará por-acción.
+  function _mosLecturaDirecta() { return _mosFlag('mos_lectura_navegador', 'lecturaNavegador'); }
+
+  function _sbFetchTimeout(url, opts, ms) {
+    const ctrl = new AbortController();
+    const tid  = setTimeout(() => ctrl.abort(), ms || 12000);
+    return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(tid));
+  }
+
+  // deviceId de MOS: fuente canónica = DeviceAuth.deviceId() (módulo compartido,
+  // assets/auth/device-auth.js). Fallback directo a localStorage 'mos_device_id'
+  // (la misma clave que DeviceAuth usa como storageKeys.deviceId) por si DeviceAuth
+  // aún no inicializó. (window._getDeviceIdMos vive en un bloque `if(false)`
+  // deprecado → NO confiable, no se usa.)
+  function _mosDeviceId() {
+    try {
+      if (typeof window !== 'undefined' && window.DeviceAuth && window.DeviceAuth.deviceId) {
+        const id = window.DeviceAuth.deviceId();
+        if (id) return id;
+      }
+    } catch (_) {}
+    try { return localStorage.getItem('mos_device_id') || ''; } catch (_) { return ''; }
+  }
+
+  // Mintea el JWT (app='MOS') y lo cachea. PRIMARIO y ÚNICO: Edge Function `mint-mos`
+  // (HS256, exp ~30min). A DIFERENCIA de WH, MOS NO tiene endpoint GAS `mintTokenMOS`
+  // de fallback → si la Edge falla/timeout/{ok:false}, retorna null y NO hay token.
+  // La operación que lo use (FASE 1) caerá a GAS por su propio fallback (_sbRpcMOS/
+  // _sbLeerTablaMOS devuelven null → señal de "caé a GAS"). Refresh proactivo ~120s
+  // antes de exp; _mintInFlight dedup para no disparar ráfaga de POSTs en el arranque.
+  let _mintInFlight = null;
+
+  // Edge `mint-mos`: verify_jwt=false → va con `apikey` (anon, público), SIN Authorization
+  // (es quien EMITE el token). Devuelve {ok,token,exp}. Lanza si no hay token válido.
+  async function _mintViaEdgeMOS(deviceId) {
+    const res = await _sbFetchTimeout(`${_SB_URL}/functions/v1/mint-mos`, {
+      method: 'POST',
+      headers: { 'apikey': _SB_ANON, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId })
+    }, 6000);
+    const d = await res.json().catch(() => null);
+    if (!d || !d.ok || !d.token) throw new Error('mint-mos edge: ' + ((d && d.error) || res.status));
+    return d;
+  }
+
+  // Devuelve el token cacheado (válido), o lo mintea via Edge. Si la Edge falla →
+  // retorna null (NO hay fallback GAS en MOS). NUNCA lanza: el caller trata null
+  // como "no hay token → caé a GAS".
+  async function _mintTokenMOS() {
+    const now = Math.floor(Date.now() / 1000);
+    if (_sbTok.token && (_sbTok.exp - now) > 30) { _agendarRefreshMOS(); return _sbTok.token; }
+    if (_mintInFlight) return _mintInFlight;
+    _mintInFlight = (async () => {
+      try {
+        const d = await _mintViaEdgeMOS(_mosDeviceId());
+        const n = Math.floor(Date.now() / 1000);
+        _sbTok.token = d.token; _sbTok.exp = d.exp || (n + 1800);
+        _agendarRefreshMOS();
+        return d.token;
+      } catch (_) {
+        return null;   // Edge caída → sin token → el caller cae a GAS
+      }
+    })();
+    try { return await _mintInFlight; }
+    finally { _mintInFlight = null; }
+  }
+
+  // Refresh PROACTIVO en background: re-mintea ~120s ANTES de expirar, fuera del
+  // camino crítico, para que una navegación NUNCA dispare el mint sincrónico.
+  // Fire-and-forget: si falla, el camino sincrónico bajo demanda es la red de seguridad.
+  let _refreshTid = null;
+  function _agendarRefreshMOS() {
+    if (_refreshTid) return;
+    const now = Math.floor(Date.now() / 1000);
+    const margen = 120;
+    let enMs = (_sbTok.exp - now - margen) * 1000;
+    if (!isFinite(enMs) || enMs < 1000) enMs = 1000;
+    if (enMs > 1800000) enMs = 1800000;
+    _refreshTid = setTimeout(async () => {
+      _refreshTid = null;
+      try {
+        const d = await _mintViaEdgeMOS(_mosDeviceId());
+        const n = Math.floor(Date.now() / 1000);
+        _sbTok.token = d.token; _sbTok.exp = d.exp || (n + 1800);
+        _agendarRefreshMOS();
+      } catch (_) { /* el camino sincrónico re-minteará bajo demanda */ }
+    }, enMs);
+    try { if (_refreshTid && _refreshTid.unref) _refreshTid.unref(); } catch (_) {}
+  }
+
+  // Llama una RPC de LECTURA directo a PostgREST (apikey + Bearer + Profile 'mos').
+  // Si no hay token (Edge caída) → retorna null (señal de "caé a GAS"). Lanza solo
+  // ante HTTP de error (el caller decide: la mayoría de lecturas FASE 1 caerán a GAS
+  // ante throw vía su propio try/catch). profile default 'mos' (esquema de MOS).
+  async function _sbRpcMOS(fn, args, profile) {
+    const token = await _mintTokenMOS();
+    if (!token) return null;
+    const prof = profile || 'mos';
+    const res = await _sbFetchTimeout(`${_SB_URL}/rest/v1/rpc/${fn}`, {
+      method: 'POST',
+      headers: {
+        'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token,
+        'Accept-Profile': prof, 'Content-Profile': prof, 'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(args || {})
+    }, 12000);
+    if (!res.ok) throw new Error('rpc directo HTTP ' + res.status);
+    return res.json();
+  }
+
+  // Lee una tabla del esquema mos.* directo (GET /rest/v1/{tabla}, Accept-Profile 'mos').
+  // `query` = querystring PostgREST opcional (ej. 'select=*&estado=eq.1'). Si no hay token
+  // → null ("caé a GAS"). Lanza ante HTTP de error. (FASE 1 elegirá RPC vs tabla por caso.)
+  async function _sbLeerTablaMOS(tabla, query, profile) {
+    const token = await _mintTokenMOS();
+    if (!token) return null;
+    const prof = profile || 'mos';
+    const qs = query ? ('?' + String(query).replace(/^\?/, '')) : '';
+    const res = await _sbFetchTimeout(`${_SB_URL}/rest/v1/${tabla}${qs}`, {
+      method: 'GET',
+      headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Accept-Profile': prof }
+    }, 12000);
+    if (!res.ok) throw new Error('leer tabla HTTP ' + res.status);
+    return res.json();
+  }
+
+  // Helper de FALLBACK (lo usará FASE 1 para no duplicar el patrón en cada lectura):
+  //   directo = async () => respuesta-Supabase  (usa _sbRpcMOS/_sbLeerTablaMOS)
+  //   gas     = async () => respuesta-GAS         (la llamada GAS de hoy)
+  // Regla: si flag MAESTRO ON → intenta `directo`; si devuelve null (sin token o
+  // acción sin backend RLS) o LANZA → cae a `gas`. Con flag OFF → siempre `gas`
+  // (INERTE). `flagFn` opcional permite gate por-acción (default = _mosLecturaDirecta).
+  async function _conFallbackMOS(directo, gas, flagFn) {
+    const on = (typeof flagFn === 'function') ? flagFn() : _mosLecturaDirecta();
+    if (on) {
+      try {
+        const r = await directo();
+        if (r != null) return r;   // null = "sin backend directo / sin token" → GAS
+      } catch (_) { /* error directo → GAS (red de seguridad) */ }
+    }
+    return await gas();
+  }
+
   return {
     getUrl,
     setUrl,
@@ -84,5 +256,18 @@ const API = (() => {
     // escribe en GUIA_DETALLE (no afecta stock ni guías). Solo encola en
     // PRODUCTO_NUEVO con estado PENDIENTE para revisión normal.
     crearPNManual:        (p = {}) => _fetch('POST', { action: 'forwardWHAction', whAction: 'registrarProductoNuevo', idGuia: '', ...p }),
+
+    // ── [FASE 0B] Infraestructura de lectura directa Supabase — INERTE (flags OFF por
+    //    defecto). Expuesta para que FASE 1 cablee lecturas concretas sin tocar el wrapper.
+    //    Mientras los flags estén OFF, NINGUNA de estas se invoca en el flujo normal. ──
+    _sb: {
+      lecturaDirecta: _mosLecturaDirecta,   // ¿flag maestro ON?
+      flag:           _mosFlag,             // gate genérico (FASE 1: flags por-acción)
+      mintToken:      _mintTokenMOS,        // JWT app='MOS' (null si Edge caída → GAS)
+      deviceId:       _mosDeviceId,
+      rpc:            _sbRpcMOS,            // RPC PostgREST esquema mos (null = caé a GAS)
+      leerTabla:      _sbLeerTablaMOS,      // SELECT tabla mos.* (null = caé a GAS)
+      conFallback:    _conFallbackMOS       // patrón "directo si flag+token, si no GAS"
+    },
   };
 })();
