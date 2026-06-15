@@ -11,6 +11,4 @@ supabase/.temp/
 inversionesmos-*.json
 
 # Scripts de trabajo de migración (no son producto; usan .pgpass externo)
-supabase/apply_*.js
-supabase/_tmp_*.js
-supabase/analisis_*.js
+supabase/*.js
