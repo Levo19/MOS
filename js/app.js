@@ -1062,7 +1062,7 @@ const MOS = (() => {
       API.get('getRotacion', {}),
       API.get('getAlertasWarehouse', {}),
       API.get('getMermasWarehouse', { estado: 'PENDIENTE' }),
-      API.get('getProductos', { estado: '1' })
+      API.get('getProductos', {})
     ]);
 
     // Eco status en paralelo pero sin bloquear el resto
@@ -1089,9 +1089,15 @@ const MOS = (() => {
     const mermas = mermasRes.status === 'fulfilled' ? (mermasRes.value || []) : [];
     const kpiMV = $('kpiMermasVal'); if (kpiMV) kpiMV.textContent = mermas.length;
 
-    // KPI — productos
+    // KPI — productos (ACTIVOS). El prefetch trae el catálogo COMPLETO (sin filtro de
+    // estado) para que `S.productos` sea IDÉNTICO al que carga el refresh del catálogo
+    // (getProductos {}). Antes pedía {estado:'1'} y sembraba S.productos con SOLO los
+    // activos → el refresh silencioso (sin filtro) detectaba los inactivos como
+    // `added:N` en CADA ciclo (mismatch de filtro entre dos paths, no de backend).
+    // El KPI de activos se calcula client-side con _isProdActivo (paridad con el filtro
+    // server `String(estado)==='1'`), sin perder el conteo correcto.
     const prods = prodRes.status === 'fulfilled' ? (prodRes.value || []) : [];
-    const kpiPV = $('kpiProductosVal'); if (kpiPV) kpiPV.textContent = prods.length;
+    const kpiPV = $('kpiProductosVal'); if (kpiPV) kpiPV.textContent = prods.filter(p => _isProdActivo(p)).length;
     S.productos = prods;
 
     // Charts
@@ -17672,7 +17678,7 @@ const MOS = (() => {
     const p = S.productos.find(x => x.idProducto === id);
     const prevPrecio = p?.precioVenta;
     // Optimistic update
-    if (p) { p.precioVenta = nuevo; _catSaveCache(S.productos); renderCatalogo(); }
+    if (p) { p.precioVenta = nuevo; _catSaveCache({ productos: S.productos, equivMap: S.equivMap }); renderCatalogo(); }
     closeModal('modalPrecio');
     try {
       await API.post('publicarPrecio', {
