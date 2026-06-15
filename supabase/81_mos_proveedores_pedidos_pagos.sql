@@ -391,7 +391,7 @@ begin
     nullif(btrim(coalesce(p->>'registradoPor','')),''),
     v_local
   )
-  on conflict (local_id) do nothing;   -- DINERO: dedup duro por gesto
+  on conflict (local_id) where local_id is not null do nothing;   -- DINERO: dedup duro por gesto (índice único PARCIAL → predicado obligatorio para inferirlo)
   get diagnostics v_inserted = row_count;
 
   -- carrera: el conflicto pudo ser por local_id (otra tx ganó) o por id_pago. Devolver SIEMPRE el pago real.
