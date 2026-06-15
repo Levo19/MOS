@@ -384,6 +384,208 @@ const API = (() => {
     return r.data;   // filas camelCase {id,skuBase,codigoBarra,...} — espejo del header de la hoja
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  // [FASE 2 · LOTE CATÁLOGO] ESCRITURA DIRECTA del catálogo maestro (navegador→PostgREST).
+  // Réplica del dispatcher de WH (warehouseMos/js/api.js `_postDirecto`) adaptada a MOS.
+  //
+  // ⚠️ INERTE POR DEFECTO (triple candado, igual que el SQL 78/79):
+  //   1) flag de cliente `mos_catalogo_directo` OFF (gate _mosCatalogoDirecto, ya existe);
+  //   2) sin token (Edge `mint-mos` caída) → _sbRpcMOSWrite devuelve null → fallback GAS;
+  //   3) kill-switch server-side mos.config.MOS_CATALOGO_DIRECTO='0' → la RPC responde
+  //      {ok:false,error:'MOS_CATALOGO_DIRECTO_OFF'} → tratamos como *_OFF → fallback GAS.
+  //   Con CUALQUIERA de los tres en OFF, MOS escribe EXACTAMENTE como hoy (100% por GAS).
+  //
+  // CONTRATO de _postDirectoMOS(action, params):
+  //   · devuelve OBJETO (la `data` YA DESEMPAQUETADA) → ÉXITO directo. El caller lo
+  //     retorna tal cual, idéntico a lo que devuelve `_fetch('POST')` (que también
+  //     desempaqueta d.data; ver memoria architecture_mos_api_shape).
+  //   · devuelve null → "caé a GAS" (flag OFF / sin token / acción no cableada /
+  //     RPC respondió *_OFF o APP_NO_AUTORIZADA → NO commiteó → GAS es SEGURO).
+  //   · LANZA Error → o bien un RECHAZO de negocio (la RPC validó y NO commiteó: misma
+  //     validación que haría GAS → propagamos el error al UI, igual que _fetch lanza
+  //     d.error) o bien un TIMEOUT/red tras posible commit. En AMBOS casos el caller
+  //     PROPAGA el error y NUNCA reintenta en GAS (MOS no tiene cola de writes) → así un
+  //     timeout-tras-commit JAMÁS duplica (la RPC pudo escribir; reintentar en GAS, que
+  //     no comparte el estado de Supabase, crearía un 2do producto/precio). Anti-duplicado
+  //     cross-backend cubierto: solo el camino "no commiteó" (null) cae a GAS.
+  // ════════════════════════════════════════════════════════════════════
+
+  // RPC de ESCRITURA directa a PostgREST (esquema mos). A diferencia de _sbRpcMOS (lectura),
+  // ETIQUETA el error HTTP: un 4xx definitivo (≠408/429) es PERMANENTE (la función PL/pgSQL
+  // corre en 1 tx que hace ROLLBACK ante error → NO commiteó → seguro descartar/caer a GAS);
+  // un 5xx/408/429/timeout es TRANSITORIO y PUDO commitear → no se marca permanente.
+  // Sin token (Edge caída) → null ("caé a GAS"), nunca lanza por falta de token.
+  async function _sbRpcMOSWrite(fn, args) {
+    const token = await _mintTokenMOS();
+    if (!token) return null;
+    const res = await _sbFetchTimeout(`${_SB_URL}/rest/v1/rpc/${fn}`, {
+      method: 'POST',
+      headers: {
+        'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token,
+        'Accept-Profile': 'mos', 'Content-Profile': 'mos', 'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(args || {})
+    }, 15000);
+    if (!res.ok) {
+      const e = new Error('rpc directo HTTP ' + res.status);
+      e.status = res.status;
+      e.permanente = (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429);
+      throw e;
+    }
+    return res.json();
+  }
+
+  // Normaliza la respuesta de una RPC de catálogo {ok, data, error, dedup?} al CONTRATO de _postDirectoMOS:
+  //   ok:false con error *_OFF / APP_NO_AUTORIZADA      → null (kill-switch/sin claim ⇒ caé a GAS, no commiteó)
+  //   ok:false con cualquier otro error (negocio/valid) → LANZA Error(error) (= _fetch lanza d.error; no commiteó)
+  //   ok:true                                            → devuelve out.data (desempaquetado, shape == GAS) o {} si falta
+  // `out == null` (sin token) ya lo maneja el caller ANTES de llamar acá.
+  function _desempacarCatalogo(out) {
+    if (!out || out.ok === false) {
+      const err = (out && out.error) || 'rpc catálogo sin respuesta';
+      // *_OFF (kill-switch server-side) o claim no autorizado → la RPC NO escribió → caé a GAS.
+      if (err === 'MOS_CATALOGO_DIRECTO_OFF' || err === 'APP_NO_AUTORIZADA') return null;
+      throw new Error(err);   // rechazo de negocio (misma validación que GAS) → propagar al UI
+    }
+    return (out.data != null && typeof out.data === 'object') ? out.data : {};
+  }
+
+  // Dispatcher de ESCRITURA: mapea una acción de catálogo → su RPC mos.*; envuelve la respuesta
+  // al SHAPE (data desempaquetada) que devuelve la acción GAS correspondiente. Devuelve la data
+  // (éxito), null (caé a GAS), o lanza (rechazo de negocio / timeout — el caller NO va a GAS).
+  // Cada `p:{...}` mapea payload-frontend (camelCase) → args jsonb de la RPC (la RPC ya re-mapea
+  // a snake_case internamente). ids/codigoBarra van como String() (regla: nunca número en el cruce).
+  // Resuelve el usuario igual que GAS: explícito > window.__MOS_AUDIT.usuario (auto-inyectado por _fetch) > ''.
+  // El directo NO pasa por _fetch (que inyecta _audit), así que resolvemos el usuario acá para que historial_precios
+  // quede con el MISMO autor que por GAS (paridad de auditoría). Nunca undefined (la RPC lo trata con coalesce '').
+  function _mosUsuario(p) {
+    if (p && p.usuario != null && String(p.usuario) !== '') return String(p.usuario);
+    try { return (window.__MOS_AUDIT && window.__MOS_AUDIT.usuario) ? String(window.__MOS_AUDIT.usuario) : ''; }
+    catch (_) { return ''; }
+  }
+
+  async function _postDirectoMOS(action, params) {
+    const p = params || {};
+
+    if (action === 'crearProducto') {
+      // mos.crear_producto(p): valida desc/precio, ids atómicos (secuencia), dedup por PK/codigoBarra.
+      // Idempotencia: si el front manda idProducto/skuBase (de una 1ra respuesta) un reintento dedupea por PK.
+      // Si NO los manda (alta nueva normal), la RPC los genera; el modal cierra optimista ANTES del await →
+      // no hay re-submit por UI. (La cola offline-directo de writes queda para una tanda futura.)
+      const out = await _sbRpcMOSWrite('crear_producto', { p: {
+        descripcion: p.descripcion, precioVenta: p.precioVenta, precioCosto: p.precioCosto,
+        idProducto: p.idProducto != null ? String(p.idProducto) : undefined,
+        skuBase: p.skuBase != null ? String(p.skuBase) : undefined,
+        codigoBarra: p.codigoBarra != null ? String(p.codigoBarra) : undefined,
+        marca: p.marca, idCategoria: p.idCategoria, unidad: p.unidad, Unidad_Medida: p.Unidad_Medida,
+        Cod_Tributo: p.Cod_Tributo, IGV_Porcentaje: p.IGV_Porcentaje, Cod_SUNAT: p.Cod_SUNAT, Tipo_IGV: p.Tipo_IGV,
+        esEnvasable: p.esEnvasable,
+        codigoProductoBase: p.codigoProductoBase != null ? String(p.codigoProductoBase) : undefined,
+        factorConversion: p.factorConversion, factorConversionBase: p.factorConversionBase,
+        mermaEsperadaPct: p.mermaEsperadaPct, stockMinimo: p.stockMinimo, stockMaximo: p.stockMaximo,
+        zona: p.zona, modoVenta: p.modoVenta, margenPct: p.margenPct, precioTope: p.precioTope,
+        usuario: _mosUsuario(p)
+      } });
+      if (out == null) return null;                 // sin token → GAS
+      // GAS devuelve data:{idProducto, skuBase, secuencia}. La RPC devuelve {idProducto, skuBase, tipo?}.
+      // El front solo lee r.idProducto (app.js:17625) → con idProducto/skuBase basta. `secuencia` no se consume.
+      return _desempacarCatalogo(out);
+    }
+
+    if (action === 'actualizarProducto') {
+      // mos.actualizar_producto(p): patch parcial, guard de no-vaciables, UPDATE atómico + propagación de precio.
+      // Idempotente natural (UPDATE al mismo valor = no-op). El front manda solo los campos a tocar → reenviamos
+      // SOLO las claves presentes (mandar undefined NO crea la clave; la RPC usa `p ? 'campo'` para distinguir
+      // "presente" de "ausente", igual que GAS distingue params[campo]!==undefined). _noPropagar/_permitirVaciar
+      // se reenvían si el front los manda. ids/codigoBarra a String.
+      // Solo se reenvían las claves PRESENTES Y no-undefined (paridad EXACTA con GAS, que filtra
+      // por params[campo]!==undefined). Así un `idProducto: undefined` (que el modal NO manda en edición,
+      // pero el create sí) jamás se inyecta como clave en el patch. ids/codigoBarra como String.
+      const a = {};
+      ['idProducto','codigoBarra','skuBase','codigoProductoBase'].forEach(k => {
+        if (k in p && p[k] !== undefined) a[k] = (p[k] != null ? String(p[k]) : '');
+      });
+      ['descripcion','marca','idCategoria','unidad','Unidad_Medida','precioVenta','precioCosto',
+       'Cod_Tributo','IGV_Porcentaje','Cod_SUNAT','Tipo_IGV','estado','esEnvasable',
+       'factorConversion','factorConversionBase','mermaEsperadaPct','stockMinimo','stockMaximo',
+       'zona','modoVenta','margenPct','precioTope','motivoPrecio'].forEach(k => {
+        if (k in p && p[k] !== undefined) a[k] = p[k];
+      });
+      if ('_noPropagar' in p && p._noPropagar !== undefined) a._noPropagar = p._noPropagar;
+      // usuario: explícito o desde __MOS_AUDIT (paridad de autor en historial_precios cuando cambia el precio).
+      a.usuario = _mosUsuario(p);
+      const out = await _sbRpcMOSWrite('actualizar_producto', { p: a });
+      if (out == null) return null;
+      // GAS y RPC devuelven IDÉNTICO: data:{presentacionesActualizadas}.
+      return _desempacarCatalogo(out);
+    }
+
+    if (action === 'publicarPrecio') {
+      // mos.publicar_precio(p): persiste precio (delega en actualizar_producto → propaga + historial).
+      // Idempotente natural (mismo precio = no-op). SHAPE: GAS devuelve data:{precioNuevo, alertaGenerada,
+      // etiquetas}; la RPC devuelve data:{precioNuevo, presentacionesActualizadas} (la impresión de
+      // etiquetas/membretes es side-effect de GAS/Edge, no de la RPC). El front (app.js:17678) NO lee la
+      // respuesta de publicarPrecio (solo await + toast) → el mismatch alertaGenerada/etiquetas es INOCUO.
+      // Igual normalizamos alertaGenerada (paridad defensiva) por si un consumidor futuro lo lee.
+      const out = await _sbRpcMOSWrite('publicar_precio', { p: {
+        precioNuevo: p.precioNuevo,
+        idProducto: p.idProducto != null ? String(p.idProducto) : undefined,
+        codigoBarra: p.codigoBarra != null ? String(p.codigoBarra) : undefined,
+        skuBase: p.skuBase != null ? String(p.skuBase) : undefined,
+        motivo: p.motivo, usuario: _mosUsuario(p)
+      } });
+      if (out == null) return null;
+      const data = _desempacarCatalogo(out);
+      if (data && data.alertaGenerada === undefined) {
+        data.alertaGenerada = (p.imprimirMembretes === 'true' || p.imprimirMembretes === true);
+      }
+      return data;   // {precioNuevo, presentacionesActualizadas, alertaGenerada} — el front no lo consume
+    }
+
+    if (action === 'crearEquivalencia') {
+      // mos.crear_equivalencia(p): requiere skuBase+codigoBarra; nace activa; dedup por id_equiv y por (sku,cod) activa.
+      const out = await _sbRpcMOSWrite('crear_equivalencia', { p: {
+        idEquiv: p.idEquiv != null ? String(p.idEquiv) : undefined,
+        skuBase: p.skuBase != null ? String(p.skuBase) : undefined,
+        codigoBarra: p.codigoBarra != null ? String(p.codigoBarra) : undefined,
+        descripcion: p.descripcion
+      } });
+      if (out == null) return null;
+      return _desempacarCatalogo(out);   // data:{idEquiv} — idéntico a GAS
+    }
+
+    if (action === 'actualizarEquivalencia') {
+      // mos.actualizar_equivalencia(p): patch codigoBarra/descripcion/activo por PK idEquiv. UPDATE atómico idempotente.
+      const a = { idEquiv: p.idEquiv != null ? String(p.idEquiv) : undefined };
+      if ('codigoBarra' in p && p.codigoBarra !== undefined) a.codigoBarra = (p.codigoBarra != null ? String(p.codigoBarra) : '');
+      if ('descripcion' in p && p.descripcion !== undefined) a.descripcion = p.descripcion;
+      if ('activo' in p && p.activo !== undefined)           a.activo = p.activo;
+      const out = await _sbRpcMOSWrite('actualizar_equivalencia', { p: a });
+      if (out == null) return null;
+      // GAS devuelve {ok:true} (sin data). _fetch('POST') desempaqueta a d.data = undefined → el front no lee nada.
+      // _desempacarCatalogo devuelve {} (data ausente) → equivalente inocuo (el front solo await; app.js:17514).
+      return _desempacarCatalogo(out);
+    }
+
+    return null;   // acción no cableada → GAS
+  }
+
+  // Acciones de catálogo enrutables por escritura directa (gate _mosCatalogoDirecto, default OFF).
+  const _MOS_POST_DIRECTO = { crearProducto: 1, actualizarProducto: 1, publicarPrecio: 1, crearEquivalencia: 1, actualizarEquivalencia: 1 };
+
+  // POST con escritura directa opcional. Con el flag OFF (default) es IDÉNTICO a hoy: ni siquiera
+  // evalúa el directo → va recto a _fetch('POST') → GAS. Con el flag ON + token + RPC viva, escribe
+  // directo; si el directo dice "no commiteó" (null) → GAS; si lanza (negocio/timeout) → PROPAGA (no GAS).
+  async function _postMOS(action, p) {
+    if (_MOS_POST_DIRECTO[action] && _mosCatalogoDirecto()) {
+      // throws de _postDirectoMOS se PROPAGAN (negocio = mismo error que GAS; timeout = anti-duplicado).
+      const d = await _postDirectoMOS(action, p);
+      if (d != null) return d;   // éxito directo (data desempaquetada == shape GAS)
+      // null → no commiteó (flag server OFF / sin token / no cableada) → GAS, seguro.
+    }
+    return _fetch('POST', { action, ...p });
+  }
+
   return {
     getUrl,
     setUrl,
@@ -417,7 +619,9 @@ const API = (() => {
       }
       return _fetch('GET',  { action, ...p });
     },
-    post: (action, p = {}) => _fetch('POST', { action, ...p }),
+    // [FASE 2] post → escritura directa Supabase para las 5 acciones de catálogo (gate _mosCatalogoDirecto,
+    // default OFF). Flag OFF ⇒ IDÉNTICO a hoy (va recto a GAS). El resto de acciones SIEMPRE por GAS.
+    post: (action, p = {}) => _postMOS(action, p),
     getProductosNuevosWH: (p = {}) => _fetch('GET',  { action: 'getProductosNuevosWH', ...p }),
     lanzarProductoNuevo:  (p = {}) => _fetch('POST', { action: 'lanzarProductoNuevo',  ...p }),
     // Crea un PN manualmente desde MOS (admin/master). idGuia vacío → WH no
@@ -444,7 +648,11 @@ const API = (() => {
       finanzasDirecto:        _mosFinanzasDirecto,        // ¿flag por-acción de finanzas ON?
       historialDirecto:       _mosHistorialDirecto,       // ¿flag por-acción de historial ON?
       getFinanzasRangoDirecto:   _getFinanzasRangoDirecto,   // RPC+frescura ({serie,totales,...} o null→GAS) — diagnóstico
-      getHistorialPreciosDirecto:_getHistorialPreciosDirecto // RPC+frescura (array o null→GAS) — diagnóstico
+      getHistorialPreciosDirecto:_getHistorialPreciosDirecto, // RPC+frescura (array o null→GAS) — diagnóstico
+      // [FASE 2 · LOTE CATÁLOGO] escritura directa del catálogo (crear/actualizar producto, publicar precio,
+      // crear/actualizar equivalencia). INERTE: solo entra con flag mos_catalogo_directo ON + token + RPC viva.
+      rpcWrite:        _sbRpcMOSWrite,    // RPC mos.* de escritura con etiqueta .permanente (null = caé a GAS)
+      postDirecto:     _postDirectoMOS    // dispatcher write→RPC (data o null→GAS, lanza en negocio/timeout) — diagnóstico/test
     },
   };
 })();
