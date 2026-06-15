@@ -17514,6 +17514,19 @@ html.da-pre-block .da-insitu-overlay,
 html.da-pre-block #daApproveToast,
 html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 </style>
+<!-- ── Config server-wide (palanca de migración Supabase) ──────────────────
+     window.MOS_CONFIG es leído por js/api.js (_mosFlag) en runtime. Espeja el
+     patrón WH_CONFIG de warehouseMos. Se define ANTES de api.js (que carga al
+     final del body) para que cualquier lectura/escritura directa lo vea.
+     · catalogoDirecto:true → TODOS los dispositivos leen el catálogo directo
+       de Supabase (con fallback automático a GAS si la sombra está stale / sin
+       token). Ese MISMO flag habilita al FRONT para escritura del catálogo,
+       pero la escritura REAL solo ocurre si el kill-switch server-side
+       mos.config.MOS_CATALOGO_DIRECTO='1' (si está en '0' la RPC responde
+       *_OFF y el front cae a GAS). Rollback: poner false / quitar la clave. -->
+<script>
+  window.MOS_CONFIG = { catalogoDirecto: true };
+</script>
 <script>
 (function(){
   document.documentElement.classList.add('da-pre-block');
