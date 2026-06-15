@@ -17523,9 +17523,16 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
        token). Ese MISMO flag habilita al FRONT para escritura del catálogo,
        pero la escritura REAL solo ocurre si el kill-switch server-side
        mos.config.MOS_CATALOGO_DIRECTO='1' (si está en '0' la RPC responde
-       *_OFF y el front cae a GAS). Rollback: poner false / quitar la clave. -->
+       *_OFF y el front cae a GAS). Rollback: poner false / quitar la clave.
+     · proveedoresDirecto:true → habilita al FRONT a escribir PROVEEDORES maestros
+       (crear/actualizar) directo a Supabase. cfgKey leído por _mosFlag('mos_proveedores_directo',
+       'proveedoresDirecto'). Escritura REAL solo si mos.config.MOS_PROVEEDORES_DIRECTO='1'.
+     · provprodDirecto:true → habilita al FRONT a escribir PROVEEDOR-PRODUCTO
+       (agregar/actualizar cotizaciones) directo. cfgKey _mosFlag('mos_provprod_directo',
+       'provprodDirecto'). Escritura REAL solo si mos.config.MOS_PROVPROD_DIRECTO='1'.
+       Ambos son módulos LIMPIOS (datos maestros, no dinero). Rollback: poner false. -->
 <script>
-  window.MOS_CONFIG = { catalogoDirecto: true };
+  window.MOS_CONFIG = { catalogoDirecto: true, proveedoresDirecto: true, provprodDirecto: true };
 </script>
 <script>
 (function(){
