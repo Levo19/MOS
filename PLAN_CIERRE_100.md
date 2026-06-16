@@ -62,6 +62,17 @@ Edge `emitir-cpe` cableada, inerte.
 - Cada activación tiene **kill-switch** (revertir en 1 comando / flag).
 - Device colgado → **Reintentar / re-aprobar, NUNCA borrar cache**.
 
+## ⏭️ PUNTO DE RETOMA v2 (2026-06-16, sesión nueva con contexto fresco)
+**Optimización lecturas MOS — quedan los read-paths COMPLEJOS (~69, cross-app/agregados).** Ya directos: ~19 (finanzas/catálogo/historial/proveedores/pedidos/pagos/provprod/jornadas/eval/horario/personal-dia/equivalencias/categorías/personal-master/zonas/estaciones/impresoras/series). Pendientes (cada uno = RPC con LÓGICA, NO copia de tabla → 40x individual obligatorio):
+- `getFinanzasDia` (Finanzas.gs:11 — materializa + calcula; ojo side-effect _liqDiaSync)
+- `getDashboard` (KPIs agregados del día)
+- `getHistoricoProveedor` (Proveedores.gs:204 — CROSS-APP: lee GUIAS de WH)
+- `getProductosProveedorConStock` (Proveedores.gs:563 — CROSS-APP: provprod + stock WH)
+- `getHistorialPersonal` (Auditoria.gs:282 — auditoría de cambios)
+- getCierresCaja (CROSS-APP: viven en ME) · vistas warehouse desde MOS
+**Patrón:** RPC SQL con la lógica + cablear en api.js (dispatcher get, gate _mosLecturaDirecta + fallback) + bump SW + deploy. ⚠️ 40x: verificar SIEMPRE el shape/orden/filtros + datos sensibles del getter GAS (la revisión cazó `adminPin` expuesto). Aplicador: `node supabase/_apply_sql.js`. Maestro ya ON.
+Otras fases del cierre 100%: WH impresión (sub-proyecto, impresora física) + ME CPE (token NubeFact) + corte Sheets + rotar credenciales.
+
 ## ⏭️ PUNTO DE RETOMA (próximo paso, cuando vuelva la infra Anthropic)
 **FASE 4 · Etapa E + F (cutover auth real).** Decisión del usuario 2026-06-16: hacerlo CON infra sana (prueba incremental + validación física). Pasos al retomar:
 1. **E — migrar lectores** (con flag `MOS_DISP_LECTURA` + fallback a hoja, por categoría): empezar por consumidores transversales (push/audio/espía/horario → `fcm_token_dispositivo`/`verificar_horario_dispositivo`), luego paneles (`listar_dispositivos`/`dispositivos_pendientes`), luego heartbeat (`consultar_estado_dispositivo`). Editar GAS → `clasp push` → probar cada categoría → validar visual.
