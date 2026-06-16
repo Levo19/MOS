@@ -1,0 +1,64 @@
+# Estado migración a Supabase — Listado FIJO para llegar al 100%
+
+> Documento maestro. Marca lo que falta para retirar Sheets+GAS de las 3 apps (MOS · warehouseMos · MosExpress).
+> Convención: ☐ pendiente · ✅ hecho · 🔴 TU PARTE (Luis) · 🔵 MI PARTE (Claude). Actualizado 2026-06-15.
+
+---
+
+## MOS (master) — foco actual
+
+### Infra (✅ completa)
+- ✅ Edge `mint-mos`, JWT, gate `mos._claim_ok`, RPCs de todos los módulos + 100x integral.
+- ✅ Lectura directa de catálogo (viva en prod).
+- ✅ `mos.resumen_dia` (recálculo cross-app de jornales) — paridad exacta validada.
+- ✅ `mos.get_flags()` (interruptor central de flags de servidor).
+- ✅ Sync WH saneado (sesiones ya no se congelan) + SW arreglado v2.43.219 (rollout confiable).
+- ✅ **Dual-write en TODOS los módulos** (las sombras `mos.*` se actualizan al instante además del sync).
+
+### Lo que falta MOS
+- 🔴 **Destrabar tu dispositivo** una vez para adoptar v2.43.219 (instructivo abajo).
+- 🔴🔵 **Activar LECTURA directa módulo por módulo** (necesita tu validación de frescura). Orden:
+  - ☐ proveedores  ☐ prov-producto  ☐ pedidos  ☐ pagos-proveedor  ☐ historial-precios
+  - ☐ gastos  ☐ jornadas  ☐ etiquetas  ☐ evaluaciones  ☐ horarios
+  - (por cada uno: dejar dual-write llenando la sombra unos días → comparar sombra vs hoja → flag lectura='1')
+- 🔵 **Fase D — liquidaciones** (cierre semanal, DINERO): materializar `liquidaciones_dia`/`liquidaciones_pagos`
+  directo usando `mos.resumen_dia` + gate de frescura sobre `wh.sesiones` + comparador de paridad. EN CURSO.
+- 🔵 Limpiar el wiring de escritura directa del frontend (`js/api.js _postDirectoMOS`) sin uso en el enfoque dual-write.
+- 🔴🔵 **Fase E — retirar Sheets de MOS** (corte final): cuando todas las lecturas estén directas y validadas,
+  pasar el sync a pg_cron / apagar el sync GAS, y dejar Supabase como única fuente. Gran decisión, con vos.
+
+---
+
+## warehouseMos (WH)
+
+- ✅ Lectura directa de stock (viva, con gate de frescura + fallback).
+- ✅ Escritura directa PASO 4: 7 RPCs atómicas validadas (INERTES).
+- ✅ Sync robusto (presupuesto + rotación) + resync sesiones.
+- 🔴 Correr `instalarTriggersSyncWH()` periódicamente / confirmar que el trigger sigue vivo.
+- 🔵 **Activar escritura directa WH** (las RPCs PASO 4 están inertes) — replicar el enfoque dual-write/validación.
+- 🔴🔵 **Retirar Sheets de WH** (corte final).
+
+## MosExpress (ME)
+
+- ✅ Escritura directa: ventas (cab+detalle), cajas, movimientos, anulaciones, créditos — en prod con dual-write.
+- ✅ Lecturas flipeadas: ventas_zona, estado_cajas, cobros, créditos.
+- ✅ Impresión por Edge Function (PrintNode) en vivo.
+- 🟡 CPE directo (boleta/factura) por Edge `emitir-cpe`: cableado, INERTE — falta token NubeFact.
+- 🔴 Activar CPE: setear secrets `NUBEFACT_TOKEN`/`NUBEFACT_RUC` + verificar serie + flag `ME_CPE_DIRECTO='1'` + 1 boleta de prueba.
+- 🔴🔵 **Retirar Sheets de ME** (corte final, la gran decisión META 2).
+
+---
+
+## Transversal (las 3 apps)
+
+- 🔴 **Rotar credenciales expuestas** (diferido): PAT Supabase `sbp_*` + key Anthropic `sk-ant-*`. **NO** rotar `WH_JWT_SECRET`.
+- 🔵 Roadmap "100% Supabase, retirar GAS" (`ROADMAP_SUPABASE_TOTAL.md`): PrintNode/NubeFact a Edge ✅(ME),
+  triggers → pg_cron (snapshot/cierre nocturno), retirar Sheets, apagar GAS.
+- 🔵 pg_cron: snapshot nocturno + cierre (cuando los cutover estén completos).
+
+---
+
+## Resumen en una línea
+**MOS:** dual-write completo → falta activar lecturas (validación) + Fase D liquidaciones (en curso) + corte final.
+**ME:** casi 100% directo → falta CPE (token) + corte final. **WH:** lectura viva, escritura inerte → falta activarla + corte final.
+**El "100%" final de cada app = retirar Sheets** (decisión grande, contigo).
