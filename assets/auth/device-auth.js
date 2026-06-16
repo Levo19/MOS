@@ -1,5 +1,19 @@
 // ════════════════════════════════════════════════════════════════════
 // DeviceAuth — módulo compartido de verificación de dispositivos
+// v1.0.13 — 2026-06-16 — FIX RAÍZ del 401-post-aprobación (caso real MOS):
+//   1) deviceId RESILIENTE: persiste en localStorage + IndexedDB + Cache
+//      Storage. Lee de cualquiera y re-siembra los que falten. Sobrevive
+//      limpiezas PARCIALES (que borran un store y no otro) → el id NO cambia.
+//      LIMITACIÓN HONESTA: un "Clear site data" TOTAL borra los 3 stores; ahí
+//      el id se pierde inevitablemente y el navegador genera uno nuevo — para
+//      ESE caso el remedio es la aprobación in-situ robusta (punto 2).
+//   2) Aprobación in-situ ROBUSTA: aprueba el deviceId que el navegador usa
+//      AHORA (leído en vivo), MUESTRA el UUID completo que va a activar, y tras
+//      aprobar CONFIRMA que mint-mos ya emite token para ESE id (read-back real)
+//      antes de recargar. El backend propaga al instante a la sombra
+//      mos.dispositivos + ecoa el deviceId activado (imposible desfase).
+//   3) Overlay con UUID completo + copiar, para que el master vea/comparta el
+//      id exacto y no quede el caso "entrando por GAS mientras mint-mos 401a".
 // v1.0.12 — 2026-06-05 — Sync de extensión de horario AGREGADO al heartbeat
 //           también (antes solo en _consultarBackend del boot/polling).
 //           Sin esto la revocación de extensión desde panel no llegaba al
@@ -70,15 +84,132 @@
     });
   }
 
-  function _generarOLeerDeviceId() {
+  // ── deviceId RESILIENTE (multi-store) ────────────────────────
+  // El deviceId vivía SOLO en localStorage. Un "Clear site data" (o un borrado
+  // parcial de un solo store) lo perdía → el navegador generaba un UUID NUEVO →
+  // el master aprobaba un id que ya no era el que el device usaba para mint-mos
+  // → 401 persistente. Ahora lo persistimos en 3 stores INDEPENDIENTES:
+  //   · localStorage  (rápido, síncrono)
+  //   · IndexedDB     (sobrevive a algunos "clear" que solo tocan localStorage)
+  //   · Cache Storage (otra superficie de almacenamiento, distinta política)
+  // Leemos de CUALQUIERA (precedencia LS→IDB→Cache) y re-sembramos los faltantes.
+  // Así una limpieza PARCIAL (que vacía 1 store) NO cambia el id: se recupera de
+  // otro y se re-siembra el borrado. Solo un Clear TOTAL (los 3 a la vez) lo pierde.
+  var _IDB_DB = 'da_device';        // nombre BD IndexedDB
+  var _IDB_STORE = 'kv';
+  var _CACHE_NAME = 'da-device-cache';
+
+  function _idbGet(key) {
+    return new Promise(function(resolve) {
+      try {
+        if (!window.indexedDB) return resolve(null);
+        var req = indexedDB.open(_IDB_DB, 1);
+        req.onupgradeneeded = function() {
+          try { req.result.createObjectStore(_IDB_STORE); } catch(_) {}
+        };
+        req.onerror = function() { resolve(null); };
+        req.onsuccess = function() {
+          try {
+            var db = req.result;
+            if (!db.objectStoreNames.contains(_IDB_STORE)) { db.close(); return resolve(null); }
+            var tx = db.transaction(_IDB_STORE, 'readonly');
+            var g = tx.objectStore(_IDB_STORE).get(key);
+            g.onsuccess = function() { resolve(g.result || null); db.close(); };
+            g.onerror = function() { resolve(null); db.close(); };
+          } catch(_) { resolve(null); }
+        };
+      } catch(_) { resolve(null); }
+    });
+  }
+  function _idbSet(key, val) {
+    return new Promise(function(resolve) {
+      try {
+        if (!window.indexedDB) return resolve(false);
+        var req = indexedDB.open(_IDB_DB, 1);
+        req.onupgradeneeded = function() {
+          try { req.result.createObjectStore(_IDB_STORE); } catch(_) {}
+        };
+        req.onerror = function() { resolve(false); };
+        req.onsuccess = function() {
+          try {
+            var db = req.result;
+            if (!db.objectStoreNames.contains(_IDB_STORE)) { db.close(); return resolve(false); }
+            var tx = db.transaction(_IDB_STORE, 'readwrite');
+            tx.objectStore(_IDB_STORE).put(val, key);
+            tx.oncomplete = function() { resolve(true); db.close(); };
+            tx.onerror = function() { resolve(false); db.close(); };
+          } catch(_) { resolve(false); }
+        };
+      } catch(_) { resolve(false); }
+    });
+  }
+  // Cache Storage: guardamos el id como cuerpo de una "respuesta" en una URL sintética.
+  function _cacheGet(key) {
+    try {
+      if (!window.caches) return Promise.resolve(null);
+      return caches.open(_CACHE_NAME).then(function(c) {
+        return c.match('/__da__/' + encodeURIComponent(key)).then(function(resp) {
+          if (!resp) return null;
+          return resp.text().then(function(t) { return t || null; });
+        });
+      }).catch(function(){ return null; });
+    } catch(_) { return Promise.resolve(null); }
+  }
+  function _cacheSet(key, val) {
+    try {
+      if (!window.caches) return Promise.resolve(false);
+      return caches.open(_CACHE_NAME).then(function(c) {
+        return c.put('/__da__/' + encodeURIComponent(key), new Response(String(val))).then(function(){ return true; });
+      }).catch(function(){ return false; });
+    } catch(_) { return Promise.resolve(false); }
+  }
+
+  function _idValido(v) {
+    return typeof v === 'string' && v.length >= 8 && v.length <= 80;
+  }
+
+  // Resuelve el deviceId leyendo los 3 stores, eligiendo el primero válido y
+  // re-sembrando los que falten. Devuelve Promise<string>.
+  function _resolverDeviceId() {
     var key = _config.storageKeys.deviceId;
-    var existing = _lsGet(key);
-    if (existing) return existing;
-    var nuevo = (window.crypto && crypto.randomUUID)
-      ? crypto.randomUUID()
-      : ('D-' + Date.now() + '-' + Math.random().toString(36).substring(2, 10));
-    _lsSet(key, nuevo);
-    return nuevo;
+    var lsVal = _lsGet(key);
+    // [v2.43.224 FIX] Race contra timeout 3s: si IndexedDB/Cache cuelgan (UA raro,
+    // modo privado, open() sin success/error), NO bloquear el arranque — caer a
+    // [null,null] => se usa lsVal o se genera. El gate de boot (da-pre-block) sigue
+    // protegiendo (fail-closed): peor caso = 3s de overlay VERIFICANDO, nunca colgado.
+    var _stores = Promise.race([
+      Promise.all([_idbGet(key), _cacheGet(key)]),
+      new Promise(function(resolve){ setTimeout(function(){ resolve([null, null]); }, 3000); })
+    ]);
+    return _stores.then(function(res) {
+      var idbVal = res[0], cacheVal = res[1];
+      // Precedencia: el primero VÁLIDO (LS→IDB→Cache). Si LS ya tiene uno válido,
+      // ese gana (es el que el navegador venía usando) — máxima estabilidad.
+      var id = null;
+      if (_idValido(lsVal)) id = lsVal;
+      else if (_idValido(idbVal)) id = idbVal;
+      else if (_idValido(cacheVal)) id = cacheVal;
+      if (!id) {
+        // Ningún store tenía un id válido → generar uno nuevo (caso primer arranque
+        // o Clear TOTAL). Honesto: aquí el id ANTERIOR se perdió irrecuperablemente.
+        id = (window.crypto && crypto.randomUUID)
+          ? crypto.randomUUID()
+          : ('D-' + Date.now() + '-' + Math.random().toString(36).substring(2, 10));
+      }
+      // Re-sembrar TODOS los stores que no coincidan (fire-and-forget; LS síncrono).
+      try { if (lsVal !== id) _lsSet(key, id); } catch(_) {}
+      if (idbVal !== id) _idbSet(key, id);
+      if (cacheVal !== id) _cacheSet(key, id);
+      return id;
+    }).catch(function() {
+      // Falla total de IDB/Cache → caer a LS o generar. Nunca bloquear el arranque.
+      if (_idValido(lsVal)) return lsVal;
+      var nuevo = (window.crypto && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : ('D-' + Date.now() + '-' + Math.random().toString(36).substring(2, 10));
+      _lsSet(key, nuevo);
+      return nuevo;
+    });
   }
 
   // R4: cache válido si fechaUltimaVerifLima === hoy Lima
@@ -240,7 +371,10 @@
     if (existing) existing.remove();
     var ov = document.createElement('div');
     ov.id = OVERLAY_ID;
-    var devShort = (_state.deviceId || '').substring(0, 12) + '...';
+    // [v1.0.13] Mostrar el deviceId COMPLETO (antes solo 12 chars + "...").
+    // El master necesita ver/compartir el id EXACTO que va a aprobar, y así
+    // confirmar que coincide con el que el device usa para mint-mos. Escapado.
+    var devFull = _escapeHtml(_state.deviceId || '(sin id)');
     var actions = '';
     if (opts.actions) {
       opts.actions.forEach(function(a) {
@@ -252,9 +386,20 @@
       + '<h1 class="da-h1">' + opts.title + '</h1>'
       + '<p class="da-p">' + opts.detail + '</p>'
       + (opts.subDetail ? '<p class="da-p" style="font-size:12px;color:#64748b">' + opts.subDetail + '</p>' : '')
-      + '<div class="da-dev" title="ID del dispositivo">' + devShort + '</div>'
+      + '<div class="da-dev" id="daDevId" title="Toca para copiar el ID del dispositivo">' + devFull + '</div>'
       + (actions ? '<div class="da-actions">' + actions + '</div>' : '');
     _appendCuandoListo(ov);
+    // Copiar el deviceId al tocarlo (útil para soporte / aprobación remota).
+    var devEl = ov.querySelector('#daDevId');
+    if (devEl) devEl.addEventListener('click', function() {
+      try {
+        if (navigator.clipboard) navigator.clipboard.writeText(_state.deviceId || '');
+        var prev = devEl.textContent;
+        devEl.textContent = '✓ ID copiado';
+        setTimeout(function(){ devEl.textContent = prev; }, 1200);
+        _vibrar(20);
+      } catch(_) {}
+    });
     // Handlers (se enganchan al nodo, no requieren que esté en DOM aún)
     if (opts.actions) {
       opts.actions.forEach(function(a) {
@@ -397,9 +542,14 @@
     var hint = _config.isMaster
       ? 'Solo MASTER puede activar MOS · clave 8 dígitos (4 globales + 4 PIN master)'
       : 'Admin o master presente · clave 8 dígitos (4 globales + 4 PIN personal)';
+    // [v1.0.13] Mostrar el UUID EXACTO que se va a activar — el master ve qué
+    // aprueba (es el mismo id que el device usa para mint-mos: imposible desfase).
+    var devFullModal = _escapeHtml(_state.deviceId || '(sin id)');
     ov.innerHTML = ''
       + '<div class="da-insitu-modal">'
       +   '<h3>' + titulo + '</h3>'
+      +   '<div style="font-size:11px;color:#94a3b8;margin-bottom:6px">Se activará este dispositivo:</div>'
+      +   '<div class="da-dev" style="margin:0 0 8px;display:block" title="ID que quedará ACTIVO">' + devFullModal + '</div>'
       +   (esReactivar ? '' : '<label>Nombre del equipo</label><input id="daIsNombre" type="text" placeholder="ej. Caja Principal · Almacén · Tablet 2" maxlength="60">')
       +   '<label>Clave admin (8 dígitos)</label>'
       +   '<input id="daIsClave" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off" placeholder="••••••••">'
@@ -429,6 +579,41 @@
     });
   }
 
+  // [v1.0.13] Verifica en VIVO que la Edge mint-mos YA emite token para este
+  // deviceId (= la sombra mos.dispositivos quedó ACTIVA y es legible). Reintenta
+  // brevemente porque, aunque el backend hizo upsert+read-back síncrono, puede
+  // haber un instante de propagación. Devuelve Promise<boolean>. Best-effort:
+  // NUNCA lanza ni bloquea indefinidamente (máx ~4 intentos / ~6s).
+  function _confirmarMintListo(deviceId, shadowOkBackend) {
+    if (!_config.mintUrl || !_config.sbAnon) return Promise.resolve(true);
+    var intentos = 0;
+    var MAX = 4;
+    function _unIntento() {
+      intentos++;
+      var ctrl = new AbortController();
+      var to = setTimeout(function(){ ctrl.abort(); }, 5000);
+      return fetch(_config.mintUrl, {
+        method: 'POST',
+        headers: { 'apikey': _config.sbAnon, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId: deviceId }),
+        signal: ctrl.signal
+      }).then(function(r) {
+        clearTimeout(to);
+        return r.json().catch(function(){ return null; });
+      }).then(function(j) {
+        if (j && j.ok && j.token) return true;
+        // 401/ok:false → sombra todavía no lista. Reintentar con backoff corto.
+        if (intentos >= MAX) return false;
+        return new Promise(function(res){ setTimeout(res, 700 * intentos); }).then(_unIntento);
+      }).catch(function() {
+        clearTimeout(to);
+        if (intentos >= MAX) return false;
+        return new Promise(function(res){ setTimeout(res, 700 * intentos); }).then(_unIntento);
+      });
+    }
+    return _unIntento();
+  }
+
   function _confirmarInSitu(esReactivar, modal) {
     var errEl = document.getElementById('daIsErr');
     var btnOk = document.getElementById('daIsOk');
@@ -448,14 +633,19 @@
 
     var ua = (navigator.userAgent || '').substring(0, 200);
     var endpoint = esReactivar ? 'reactivarDispositivoSuspendido' : 'aprobarDispositivoEnSitu';
+    // [v1.0.13] Aprobar el deviceId que el navegador usa AHORA. _state.deviceId
+    // ya fue resuelto (multi-store) en init() y es exactamente el que api.js usa
+    // para mint-mos (misma fuente: DeviceAuth.deviceId() / localStorage). No hay
+    // un id "cacheado viejo" distinto: el modal in-situ solo se abre tras init().
+    var idActivar = _state.deviceId;
     var payload = {
       action:       endpoint,
-      deviceId:     _state.deviceId,
+      deviceId:     idActivar,
       claveAdmin:   clave,
       app:          _config.app,
       userAgent:    ua
     };
-    if (!esReactivar) payload.nombreEquipo = nombre || ('Mobile ' + _state.deviceId.substring(0, 6));
+    if (!esReactivar) payload.nombreEquipo = nombre || ('Mobile ' + idActivar.substring(0, 6));
 
     fetch(_config.mosGasUrl, {
       method: 'POST', body: JSON.stringify(payload)
@@ -471,35 +661,68 @@
           btnOk.textContent = esReactivar ? 'Reactivar' : 'Activar';
           return;
         }
+        // [v1.0.13] DEFENSA imposible-desfase: el backend ECOA el deviceId que
+        // dejó ACTIVO. Debe coincidir EXACTO con el que estamos usando. Si por
+        // cualquier razón difiere, NO seguimos: avisamos para evitar el caso
+        // "aprobé un id distinto al que el device usa" → 401 fantasma.
+        var idEco = String(d.deviceId || idActivar);
+        if (d.deviceId && idEco !== String(idActivar)) {
+          if (errEl) errEl.textContent = 'Desfase de ID detectado. Recarga e intenta de nuevo.';
+          _sonidoError(); _vibrar([40, 30, 40]);
+          btnOk.disabled = false;
+          btnOk.textContent = esReactivar ? 'Reactivar' : 'Activar';
+          return;
+        }
         // [v1.0.6 UX FIX] Feedback claro dentro del modal antes de cerrarlo.
-        // Antes el modal se cerraba silenciosamente y el operador no sabía si
-        // la clave fue correcta. Ahora muestra "✓ ¡Aprobado!" verde explícito.
         _state.estado = 'ACTIVO';
         _detenerPolling();
-        // [v1.0.10 BUG E FIX] Backend ahora retorna verifyVersion en el response
-        // de in-situ. Antes _state.verifyVersion era 0 (nunca consultamos server),
-        // entonces el cache se guardaba con versión 0 y el próximo boot detectaba
-        // serverVer > 0 → invalidaba cache → re-fetch → re-guardado. Fetch extra
-        // innecesario. Ahora leemos el verifyVersion del response del backend.
+        // [v1.0.10 BUG E FIX] verifyVersion del backend para cachear sin re-fetch.
         var verBackend = parseInt(d.verifyVersion || 0, 10);
         if (verBackend > 0) _state.verifyVersion = verBackend;
         var fechaBackend = d.fechaHoyLima || _fechaHoyLima();
         _guardarCacheExitoso(fechaBackend, _state.verifyVersion);
         _sonidoAprobado();
         _vibrar([100, 50, 100, 50, 100]);
-        // Cambiar el modal in-situ a "success state" visible
+
+        // [v1.0.13 FIX RAÍZ] CONFIRMAR que la sombra mos.dispositivos quedó lista
+        // ANTES de recargar. Sin esto, el device recargaba, intentaba mint-mos,
+        // 401aba (sombra aún no propagada) y caía a GAS en silencio = el bug.
+        //   · d.shadowOk === true  → el backend ya confirmó el upsert+read-back.
+        //   · si además hay mintUrl configurada (MOS), verificamos en VIVO que
+        //     mint-mos YA emite token para este id (verdad de extremo a extremo).
         var modalContent = modal.querySelector('.da-insitu-modal');
-        if (modalContent) {
+        function _pintarSuccess(msg, sub) {
+          if (!modalContent) return;
           modalContent.innerHTML = ''
             + '<div style="text-align:center;padding:20px 0">'
             +   '<div style="font-size:64px;margin-bottom:14px;animation:da-pop .5s ease-out">✅</div>'
-            +   '<h3 style="margin:0 0 8px;color:#10b981;font-size:20px">¡Clave correcta!</h3>'
+            +   '<h3 style="margin:0 0 8px;color:#10b981;font-size:20px">' + _escapeHtml(msg) + '</h3>'
             +   '<p style="margin:0 0 6px;color:#cbd5e1;font-size:14px">Aprobado por <strong>' + _escapeHtml(d.aprobadoPor || 'admin') + '</strong></p>'
-            +   '<p style="margin:0;color:#94a3b8;font-size:12px">Recargando aplicación...</p>'
+            +   '<p style="margin:0;color:#94a3b8;font-size:12px">' + _escapeHtml(sub || 'Recargando aplicación...') + '</p>'
             + '</div>';
         }
-        // Reload tras 1.4s para que el operador vea claramente el "✓ Aprobado"
-        setTimeout(function() { location.reload(); }, 1400);
+        function _finalizarYRecargar() {
+          _pintarSuccess('¡Dispositivo activado!', 'Recargando aplicación...');
+          setTimeout(function() { location.reload(); }, 1200);
+        }
+        _pintarSuccess('¡Clave correcta!', 'Confirmando activación...');
+        // Verificación de extremo a extremo contra mint-mos (solo si está cableado).
+        if (_config.mintUrl && _config.sbAnon) {
+          _confirmarMintListo(idActivar, !!d.shadowOk).then(function(ok) {
+            if (!ok) {
+              // No pudimos confirmar mint-mos. NO bloqueamos para siempre: el sync
+              // horario es la red de respaldo y la lectura directa cae a GAS sin
+              // romper. Avisamos honestamente y recargamos igual.
+              _pintarSuccess('¡Activado!', 'Sincronizando acceso directo (puede tardar unos minutos)...');
+              setTimeout(function() { location.reload(); }, 1800);
+              return;
+            }
+            _finalizarYRecargar();
+          });
+        } else {
+          // WH/ME u otra app sin mint-mos cableado → comportamiento previo.
+          _finalizarYRecargar();
+        }
       })
       .catch(function(e) {
         if (errEl) errEl.textContent = 'Sin conexión: ' + (e && e.message || 'reintenta');
@@ -847,13 +1070,41 @@
       return Promise.reject(new Error('init config inválido'));
     }
     _config = config;
-    _state.deviceId = _generarOLeerDeviceId();
     // Suscribirse a visibilitychange
     if (!_state.visibilityHandler) {
       _state.visibilityHandler = _onVisibilityChange;
       document.addEventListener('visibilitychange', _state.visibilityHandler);
     }
-    return _verificar();
+    // [v1.0.13] Resolver el deviceId RESILIENTE (multi-store) ANTES de verificar.
+    // Es async (IndexedDB/Cache), por eso init ahora encadena la verificación.
+    // Mientras resuelve, mostramos el overlay "verificando" (fail-closed visual).
+    _state.estado = 'VERIFICANDO';
+    _mostrarUI('VERIFICANDO');
+    return _resolverDeviceId().then(function(id) {
+      _state.deviceId = id;
+      return _verificar().then(function(estado) {
+        // [v1.0.13] Red de seguridad PASIVA contra el "401-silencioso": si el
+        // device quedó ACTIVO (por GAS) pero mint-mos NO emite token (sombra
+        // mos.dispositivos desincronizada — p.ej. aprobado por panel-remoto pero
+        // el sync horario murió), lo detectamos y AVISAMOS. NO bloqueamos (la
+        // lectura directa cae a GAS sin romper), pero el master ve que el acceso
+        // directo no está listo en vez de un fallo mudo. Solo aplica a MOS
+        // (mintUrl cableada). Fire-and-forget, fuera del camino crítico.
+        if (estado === 'ACTIVO' && _config.mintUrl && _config.sbAnon) {
+          _confirmarMintListo(_state.deviceId, false).then(function(ok) {
+            if (!ok) {
+              console.warn('[DeviceAuth] ACTIVO pero mint-mos no emite token: sombra mos.dispositivos desincronizada. Acceso directo caerá a GAS hasta el próximo sync. Reaprueba in-situ si el problema persiste.');
+              try {
+                window.dispatchEvent(new CustomEvent('deviceauth:mint-degradado', {
+                  detail: { deviceId: _state.deviceId }
+                }));
+              } catch(_) {}
+            }
+          });
+        }
+        return estado;
+      });
+    });
   }
 
   window.DeviceAuth = {

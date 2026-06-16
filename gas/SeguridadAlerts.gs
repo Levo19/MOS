@@ -376,8 +376,17 @@ function reactivarDispositivoSuspendido(params) {
       // device-auth.js evalúa `if (!d || !d.autorizado) → "Clave incorrecta"` →
       // el modal decía CLAVE INCORRECTA aunque la clave era correcta y el
       // dispositivo YA estaba reactivado. Espejar el shape de aprobarDispositivoEnSitu.
+      // [v2.43.224 FIX RAÍZ] Propagar al instante a la sombra mos.dispositivos (lo que lee mint-mos).
+      // Sin esto, la reactivación deja hoja=ACTIVO pero sombra desfasada => 401 hasta el sync horario.
+      // Esta es la def ACTIVA de reactivarDispositivoSuspendido (gana por orden alfabético de clasp sobre
+      // la de Config.gs); por eso la propagación va acá. La de Config.gs quedó neutralizada (_LEGACY).
+      var _appEqR = data[i][hdrs.indexOf('App')] || '';
+      var _nomEqR = data[i][hdrs.indexOf('Nombre_Equipo')] || '';
+      var _shadowOkR = (typeof _propagarDispositivoSombra === 'function')
+        ? _propagarDispositivoSombra(params.deviceId, _appEqR, _nomEqR, params.userAgent) : null;
       return { ok: true, data: Object.assign(
-        { autorizado: true, aprobadoPor: authR.data.validadoPor, accion: 'reactivado' },
+        { autorizado: true, aprobadoPor: authR.data.validadoPor, accion: 'reactivado',
+          deviceId: String(params.deviceId), shadowOk: _shadowOkR },
         (typeof _payloadDeviceAuthExtras === 'function' ? _payloadDeviceAuthExtras(data[i], hdrs) : {})
       ) };
     }

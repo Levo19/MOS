@@ -1690,6 +1690,65 @@ function _marcarAlertaSegRevisadaPorDispositivo(idDispositivo, revisadaPor) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
+// [v2.43.223 FIX RAÍZ] Propagación INMEDIATA del dispositivo a la sombra
+// `mos.dispositivos` (la tabla que lee la Edge `mint-mos` para emitir el JWT
+// directo). SIN esto, la aprobación in-situ solo escribía la HOJA y la sombra
+// recién se actualizaba en el próximo `syncCatalogoSupabase` (trigger horario
+// que ADEMÁS puede morir en silencio) → el device quedaba aprobado en la hoja
+// pero `mint-mos` seguía devolviendo 401 hasta 1h (o indefinido si el trigger
+// murió). Esto cierra esa ventana: el upsert va al instante con la service-role
+// key del backend (la misma que ya usa el sync). Idempotente (onConflict por
+// id_dispositivo, merge). NO lanza: si Supabase no está configurado o falla, se
+// loguea y se devuelve false — el sync horario sigue siendo la red de respaldo.
+//
+// Devuelve true si la sombra quedó ACTIVA (confirmado por read-back), false si no.
+// ════════════════════════════════════════════════════════════════════════
+function _propagarDispositivoSombra(deviceId, app, nombreEquipo, userAgent) {
+  try {
+    if (!deviceId) return false;
+    // ¿Supabase configurado? Si no, salir limpio (entorno sin sombra).
+    try { _sbCfg_(); } catch (eCfg) {
+      Logger.log('[_propagarDispositivoSombra] Supabase no configurado, omito: ' + (eCfg && eCfg.message || eCfg));
+      return false;
+    }
+    var row = {
+      id_dispositivo:  String(deviceId),
+      estado:          'ACTIVO',
+      ultima_conexion: Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'")
+    };
+    if (app)          row.app           = String(app);
+    if (nombreEquipo) row.nombre_equipo = String(nombreEquipo);
+    if (userAgent)    row.user_agent    = String(userAgent).substring(0, 500);
+
+    var up = _sbUpsert('mos.dispositivos', [row], 'id_dispositivo');
+    if (!up.ok) {
+      Logger.log('[_propagarDispositivoSombra] upsert falló HTTP ' + up.code + ' ' + (up.error || ''));
+      return false;
+    }
+    // Read-back de confirmación: la fila debe quedar ACTIVA con app que mint-mos acepta.
+    var rb = _sbSelect('mos.dispositivos', {
+      select: 'id_dispositivo,estado,app',
+      filters: { id_dispositivo: 'eq.' + String(deviceId) },
+      limit: 1
+    });
+    if (rb.ok && Array.isArray(rb.data) && rb.data.length) {
+      var r0 = rb.data[0];
+      var estadoOk = String(r0.estado || '').toUpperCase() === 'ACTIVO';
+      var appVal   = String(r0.app == null ? '' : r0.app);
+      // mint-mos acepta app ∈ {null,'','MOS'}. Si la sombra quedó con otra app
+      // (ej. 'mosExpress'), mint-mos para MOS NO la aceptaría → no es ACTIVA-para-MOS.
+      var appOkMos = (appVal === '' || appVal === 'MOS');
+      return estadoOk && appOkMos;
+    }
+    Logger.log('[_propagarDispositivoSombra] read-back sin fila para ' + deviceId);
+    return false;
+  } catch (e) {
+    Logger.log('[_propagarDispositivoSombra] EXCEPCIÓN: ' + (e && e.message || e));
+    return false;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
 // APROBAR DISPOSITIVO EN SITU — admin presente con clave 8 dígitos
 //
 // El admin escribe su clave de 8 dig (4 globales + 4 PIN personal) en el
@@ -1698,7 +1757,11 @@ function _marcarAlertaSegRevisadaPorDispositivo(idDispositivo, revisadaPor) {
 // anulaciones/conversiones que ya usa verificarClaveAdmin.
 //
 // Params: { deviceId, nombreEquipo, app, userAgent, claveAdmin (8 dig) }
-// Retorna: { ok, data: { aprobadoPor: 'admin:Juan Perez' } } o autorizado:false
+// Retorna: { ok, data: { aprobadoPor, deviceId, shadowOk } } o autorizado:false
+//   - deviceId: el id EXACTO que quedó ACTIVO (eco para que el front confirme
+//     que aprobó el mismo que usa para mint-mos — imposible desfase).
+//   - shadowOk: true si la sombra `mos.dispositivos` quedó ACTIVA al instante
+//     (mint-mos ya emitirá token). false → el front debe esperar/avisar.
 // ════════════════════════════════════════════════════════════════════════
 function aprobarDispositivoEnSitu(params) {
   if (!params.deviceId)     return { ok: false, error: 'Requiere deviceId' };
@@ -1767,11 +1830,16 @@ function aprobarDispositivoEnSitu(params) {
       );
       _notificarAprobacionDispositivo(params.deviceId, params.app, params.nombreEquipo || data[i][iNom],
                                       auth.data.validadoPor, 'reactivado');
+      // [v2.43.223 FIX RAÍZ] Propagar al instante a la sombra mos.dispositivos
+      // (lo que lee mint-mos) — antes esto solo llegaba en el sync horario.
+      var shadowOkExist = _propagarDispositivoSombra(
+        params.deviceId, params.app, params.nombreEquipo || data[i][iNom], params.userAgent);
       // [v2.43.182 BUG E FIX] Retornar verifyVersion y fechaHoyLima para que el
       // frontend pueda cachear correctamente sin esperar al próximo boot
       // (que antes invalidaba+re-guardaba con un fetch extra).
       return { ok: true, data: Object.assign(
-        { autorizado: true, aprobadoPor: auth.data.validadoPor, accion: 'reactivado' },
+        { autorizado: true, aprobadoPor: auth.data.validadoPor, accion: 'reactivado',
+          deviceId: String(params.deviceId), shadowOk: shadowOkExist },
         _payloadDeviceAuthExtras(data[i], hdrs)
       ) };
     }
@@ -1789,11 +1857,15 @@ function aprobarDispositivoEnSitu(params) {
   _notificarAprobacionDispositivo(params.deviceId, params.app,
                                   params.nombreEquipo || params.userAgent,
                                   auth.data.validadoPor, 'creado');
+  // [v2.43.223 FIX RAÍZ] Propagar al instante a la sombra mos.dispositivos.
+  var shadowOkNew = _propagarDispositivoSombra(
+    params.deviceId, params.app, params.nombreEquipo || params.userAgent, params.userAgent);
   // [v2.43.182 BUG E FIX] Retornar verifyVersion para que frontend cachee correctamente.
   // Como acabamos de appendRow, no podemos pasar el row a _payloadDeviceAuthExtras
   // (sería extra fetch). Pasamos (null,null) → solo verifyVersion + fechaHoyLima genéricos.
   return { ok: true, data: Object.assign(
-    { autorizado: true, aprobadoPor: auth.data.validadoPor, accion: 'creado' },
+    { autorizado: true, aprobadoPor: auth.data.validadoPor, accion: 'creado',
+      deviceId: String(params.deviceId), shadowOk: shadowOkNew },
     _payloadDeviceAuthExtras(null, null)
   ) };
 }
@@ -1835,7 +1907,11 @@ function rechazarDispositivoPendiente(params) {
 // Requiere clave admin (8 dig). Audita auto vía verificarClaveAdmin con
 // accion REACTIVAR_DISPOSITIVO_SUSPENDIDO (tier 2).
 // ════════════════════════════════════════════════════════════════════════
-function reactivarDispositivoSuspendido(params) {
+// [v2.43.224] NEUTRALIZADA — esta función estaba DUPLICADA con SeguridadAlerts.gs:reactivarDispositivoSuspendido,
+// que GANA por orden alfabético de clasp (era la activa). Se renombró a _LEGACY para eliminar el shadowing
+// y que la propagación a la sombra (que se agregó acá pero nunca corría) viva en la def activa (SeguridadAlerts.gs).
+// NO borrar todavía: se conserva como referencia (tiene guard de estado SUSPENDIDO + Inactivo_Alerta_Ts).
+function reactivarDispositivoSuspendido_LEGACY_NO_USAR(params) {
   if (!params.deviceId)   return { ok: false, error: 'Requiere deviceId' };
   if (!params.claveAdmin) return { ok: false, error: 'Requiere claveAdmin' };
   var auth = verificarClaveAdmin({
@@ -1878,7 +1954,10 @@ function reactivarDispositivoSuspendido(params) {
       var nombreEq = data[i][hdrs.indexOf('Nombre_Equipo')] || '';
       var appEq    = data[i][hdrs.indexOf('App')] || '';
       _notificarAprobacionDispositivo(params.deviceId, appEq, nombreEq, auth.data.validadoPor, 'reactivado');
-      return { ok: true, data: { autorizado: true, aprobadoPor: auth.data.validadoPor, accion: 'reactivado' } };
+      // [v2.43.223 FIX RAÍZ] Propagar al instante a la sombra mos.dispositivos.
+      var shadowOkReact = _propagarDispositivoSombra(params.deviceId, appEq, nombreEq, params.userAgent);
+      return { ok: true, data: { autorizado: true, aprobadoPor: auth.data.validadoPor,
+        accion: 'reactivado', deviceId: String(params.deviceId), shadowOk: shadowOkReact } };
     }
     return { ok: false, error: 'Dispositivo no encontrado' };
   } finally { try { _lock.releaseLock(); } catch(_){} }

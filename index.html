@@ -17574,7 +17574,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   }, 10000);
 })();
 </script>
-<script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=1.0.12"></script>
+<script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=1.0.14"></script>
 <script>
 (function(){
   const GAS_URL = 'https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec';
@@ -17593,6 +17593,12 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     mosGasUrl: GAS_URL,
     app: 'MOS',
     isMaster: true,  // ← MOS solo se activa in-situ con MASTER
+    // [v1.0.13] mintUrl + sbAnon: permiten a DeviceAuth confirmar de extremo a
+    // extremo que la Edge mint-mos YA emite token para este deviceId tras la
+    // aprobación in-situ (la sombra mos.dispositivos quedó ACTIVA) ANTES de
+    // recargar — cierra el 401-post-aprobación. Mismos valores que js/api.js.
+    mintUrl: 'https://rzbzdeipbtqkzjqdchqk.supabase.co/functions/v1/mint-mos',
+    sbAnon:  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6YnpkZWlwYnRxa3pqcWRjaHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NzYwMDQsImV4cCI6MjA5NjQ1MjAwNH0.MAlSdz_ugGUZoaU5st6dA_gb_x_IiUL0TXxH176kY9k',
     storageKeys: {
       deviceId:           'mos_device_id',
       lastVerifyDate:     'mos_device_auth_date_lima',
@@ -18208,7 +18214,7 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js?v=2.43.222"></script>
+<script src="js/api.js?v=2.43.224"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -18223,7 +18229,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.222"></script>
+<script src="js/app.js?v=2.43.224"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
