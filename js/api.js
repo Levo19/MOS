@@ -496,6 +496,9 @@ const API = (() => {
   async function _getProveedorProductosDirecto(params) { return _getListaDirectaMOS('proveedor_producto_lista', params, 'provprod'); }
   // getJornadas → mos.jornadas_lista (filtro fecha YYYY-MM-DD, paridad getJornadas).
   async function _getJornadasDirecto(params)           { return _getListaDirectaMOS('jornadas_lista',           params, 'jornadas'); }
+  // [Optimización] getPersonalDiaFast → mos.personal_dia_lista (105): lee la sombra liquidaciones_dia
+  // (materializada por Fase D + cron), shape camelCase PARITARIO con getPersonalDiaFast (Liquidaciones.gs:1204).
+  async function _getPersonalDiaFastDirecto(params)    { return _getListaDirectaMOS('personal_dia_lista',       params, 'personalDia'); }
 
   // ════════════════════════════════════════════════════════════════════
   // [FASE 2 · LOTE EVAL/HORARIO/ETIQ] read-paths directos (RPCs 98). Mismo patrón que 94 pero con dos shapes:
@@ -1165,6 +1168,16 @@ const API = (() => {
           () => _getEvaluacionesDiaDirecto(p),
           () => _fetch('GET', { action, ...p }),
           _mosEvalLectura
+        );
+      }
+      // [Optimización] getPersonalDiaFast → lectura directa (RPC personal_dia_lista, 105). Lee la sombra
+      // liquidaciones_dia (materializada), shape paritario con getPersonalDiaFast. Gated por el MAESTRO
+      // _mosLecturaDirecta (mismo que las demás). Gate OFF ⇒ recto a GAS = IDÉNTICO a hoy. Fallback total a GAS.
+      if (action === 'getPersonalDiaFast') {
+        return _conFallbackMOS(
+          () => _getPersonalDiaFastDirecto(p),
+          () => _fetch('GET', { action, ...p }),
+          _mosLecturaDirecta
         );
       }
       return _fetch('GET',  { action, ...p });
