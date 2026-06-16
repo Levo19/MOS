@@ -307,10 +307,57 @@ function verificarCuadreMOS(){
   return out;
 }
 
+// ---------- patrón cutover: apagar-sync-por-tabla ----------
+/**
+ * [FASE 2 · cutover escritura] Lee mos.config['MOS_SYNC_OFF_TABLAS'] (CSV de claves de _MOS_SPECS, ej. 'gastos')
+ * y devuelve un set de las tablas a EXCLUIR del upsert-desde-hoja de _syncMOSImpl. Esto evita que el sync
+ * monolítico PISE lo que una RPC de escritura directa ya escribió en la sombra mos.<tabla>.
+ * Default VACÍO → no excluye nada → _syncMOSImpl sincroniza las 17 tablas IGUAL que hoy (INERTE).
+ * Best-effort: si la lectura de config falla, devuelve {} (no apaga nada) y el sync sigue como siempre.
+ */
+function _mosSyncOffTablas(){
+  try{
+    var r=_sbSelect('mos.config',{ select:'valor', filters:{ clave:'eq.MOS_SYNC_OFF_TABLAS' }, limit:1 });
+    if(!r || !r.ok || !r.data || !r.data.length) return {};
+    var csv=String(r.data[0].valor||'').trim();
+    if(!csv) return {};
+    var set={};
+    csv.split(',').forEach(function(t){ var k=String(t).trim().toLowerCase(); if(k) set[k]=true; });
+    return set;
+  }catch(e){ Logger.log('[_mosSyncOffTablas] WARN: '+(e&&e.message||e)+' → no se apaga ninguna tabla'); return {}; }
+}
+
+/** Helper: agrega una tabla al CSV MOS_SYNC_OFF_TABLAS (idempotente). El sync DEJA de pisar esa sombra. */
+function apagarSyncTablaMOS(tabla){
+  tabla=String(tabla||'').trim().toLowerCase();
+  if(!tabla) return {ok:false, error:'tabla vacía'};
+  if(!_MOS_SPECS[tabla]) return {ok:false, error:'tabla desconocida (no está en _MOS_SPECS): '+tabla};
+  var cur=_mosSyncOffTablas(); cur[tabla]=true;
+  var csv=Object.keys(cur).join(',');
+  var r=_sbUpsert('mos.config', [{ clave:'MOS_SYNC_OFF_TABLAS', valor:csv,
+    descripcion:'MOS Fase 2: CSV de tablas mos.* EXCLUIDAS del upsert-desde-hoja de _syncMOSImpl (escritura directa).' }], 'clave');
+  Logger.log('[apagarSyncTablaMOS] OFF='+csv+' → '+JSON.stringify(r&&{ok:r.ok,code:r.code}));
+  return { ok: !!(r&&r.ok), off: csv };
+}
+/** Helper: quita una tabla del CSV (idempotente). El sync VUELVE a cubrir esa sombra (rollback del cutover). */
+function prenderSyncTablaMOS(tabla){
+  tabla=String(tabla||'').trim().toLowerCase();
+  if(!tabla) return {ok:false, error:'tabla vacía'};
+  var cur=_mosSyncOffTablas(); delete cur[tabla];
+  var csv=Object.keys(cur).join(',');
+  var r=_sbUpsert('mos.config', [{ clave:'MOS_SYNC_OFF_TABLAS', valor:csv,
+    descripcion:'MOS Fase 2: CSV de tablas mos.* EXCLUIDAS del upsert-desde-hoja de _syncMOSImpl (escritura directa).' }], 'clave');
+  Logger.log('[prenderSyncTablaMOS] OFF='+(csv||'(vacío)')+' → '+JSON.stringify(r&&{ok:r.ok,code:r.code}));
+  return { ok: !!(r&&r.ok), off: csv };
+}
+
 // ---------- sync background (Fase 1.C) ----------
 function _syncMOSImpl(full){
   var resumen={};
+  // [FASE 2 · cutover] tablas que ya escriben directo → NO re-upsertar desde la hoja (no pisar la RPC).
+  var off=_mosSyncOffTablas();
   _MOS_ORDEN.forEach(function(tabla){
+    if(off[tabla]){ resumen[tabla]={saltado:'sync-off (escritura directa)'}; return; }
     var cfg=_MOS_SPECS[tabla];
     try{
       if(!getSheet(cfg.sheet)){ return; }
@@ -416,6 +463,85 @@ function desinstalarTriggersSyncMOS(){
   });
   return {ok:true, eliminados:n};
 }
+
+// ---------- patrón cutover: re-sembrar hoja desde la sombra (rollback seguro) ----------
+/**
+ * [FASE 2 · cutover escritura] RE-SIEMBRA la HOJA desde la sombra mos.<tabla>.
+ * Por qué: cuando una tabla pasa a escritura DIRECTA a Supabase (apagarSyncTablaMOS), la HOJA deja de recibir
+ * esas filas. Si luego se REVIERTE el piloto a GAS (lectura/escritura por Sheet), la hoja debe RECUPERAR lo
+ * que se escribió directo, o se "pierde" información para el flujo viejo. Esta fn lee la sombra y AÑADE a la
+ * hoja (APPEND-ONLY) las filas cuya PK falte. No edita ni borra filas existentes (no destructivo).
+ *
+ * SOLO soporta tablas con PK simple (gastos: id_gasto/idGasto). El mapeo pg→header sale de _MOS_SPECS (la
+ * misma fuente de verdad del backfill), así no hay layout hardcodeado. La fila se construye por NOMBRE de
+ * header de la hoja (robusto ante reordenamiento de columnas).
+ *
+ * opts:{dryRun:true}  → NO escribe; solo cuenta cuántas filas FALTAN en la hoja (verificación en seco).
+ * Diseñada para 'gastos' (append-only, sin estado/edición). Devuelve {ok, tabla, enSombra, enHoja, faltan, [agregadas]}.
+ */
+function resembrarHojaDesdeSombra(tabla, opts){
+  opts=opts||{};
+  tabla=String(tabla||'').trim().toLowerCase();
+  var cfg=_MOS_SPECS[tabla];
+  if(!cfg) return {ok:false, error:'tabla desconocida (no está en _MOS_SPECS): '+tabla};
+  var pkCols=String(cfg.onConflict).split(',').map(function(c){ return c.trim(); });
+  if(pkCols.length!==1) return {ok:false, error:'resembrar solo soporta PK simple; '+tabla+' tiene PK compuesta: '+cfg.onConflict};
+  var pkPg=pkCols[0];
+  // header de la HOJA para la PK (el 2do campo del spec = nombre de header en la hoja)
+  var pkSpec=null; for(var s=0;s<cfg.spec.length;s++){ if(cfg.spec[s][0]===pkPg){ pkSpec=cfg.spec[s]; break; } }
+  if(!pkSpec) return {ok:false, error:'PK '+pkPg+' no está en el spec de '+tabla};
+  var pkHeader=pkSpec[1];
+
+  var sh=getSheet(cfg.sheet);
+  if(!sh) return {ok:false, error:'hoja no existe: '+cfg.sheet};
+
+  // 1) PKs YA presentes en la hoja (set por header de PK)
+  var data=sh.getDataRange().getValues();
+  var headers=(data[0]||[]).map(function(h){ return String(h).trim(); });
+  var iPk=headers.indexOf(pkHeader);
+  if(iPk<0) return {ok:false, error:'header de PK "'+pkHeader+'" no está en la hoja '+cfg.sheet};
+  var enHoja={}, nHoja=0;
+  for(var r=1;r<data.length;r++){ var v=data[r][iPk]; if(v!==''&&v!=null){ enHoja[String(v)]=true; nHoja++; } }
+
+  // 2) leer la SOMBRA mos.<tabla> paginada, ordenada por PK (estable)
+  var sombra=[], offset=0, PAGE=1000;
+  while(true){
+    var rr=_sbSelect('mos.'+tabla, { order:pkPg, limit:PAGE, offset:offset });
+    if(!rr || !rr.ok) return {ok:false, error:'lectura sombra falló: HTTP '+(rr&&rr.code)+' '+(rr&&rr.error||'')};
+    var page=rr.data||[]; sombra=sombra.concat(page);
+    if(page.length<PAGE) break; offset+=PAGE;
+  }
+
+  // 3) filas de la sombra cuya PK FALTA en la hoja
+  var faltan=sombra.filter(function(row){ var k=row[pkPg]; return k!=null && String(k)!=='' && !enHoja[String(k)]; });
+
+  if(opts.dryRun){
+    return { ok:true, dryRun:true, tabla:tabla, enSombra:sombra.length, enHoja:nHoja, faltan:faltan.length,
+      muestra: faltan.slice(0,3).map(function(x){ return x[pkPg]; }) };
+  }
+
+  // 4) construir filas por NOMBRE de header de la hoja (pg→header vía spec). Append en bloque.
+  // pgPorHeader: para cada header de la hoja, qué columna pg la alimenta (si el spec la mapea).
+  var pgPorHeader={}; cfg.spec.forEach(function(t){ pgPorHeader[t[1]]=t[0]; });
+  var nuevas=faltan.map(function(row){
+    return headers.map(function(h){
+      if(h==='') return '';
+      var pgc=pgPorHeader[h];
+      if(pgc==null) return '';                 // header de la hoja sin mapeo pg → vacío
+      var val=row[pgc];
+      return (val==null) ? '' : val;           // numeric viene como string desde PostgREST; se escribe tal cual
+    });
+  });
+  var agregadas=0;
+  if(nuevas.length){
+    sh.getRange(sh.getLastRow()+1, 1, nuevas.length, headers.length).setValues(nuevas);
+    agregadas=nuevas.length;
+  }
+  Logger.log('[resembrarHojaDesdeSombra] '+tabla+': sombra='+sombra.length+' hoja='+nHoja+' faltaban='+faltan.length+' agregadas='+agregadas);
+  return { ok:true, tabla:tabla, enSombra:sombra.length, enHoja:nHoja, faltan:faltan.length, agregadas:agregadas };
+}
+/** Wrapper dry-run para el editor de GAS. */
+function resembrarGastosDryRun(){ return resembrarHojaDesdeSombra('gastos', {dryRun:true}); }
 
 // ---------- wrappers editor ----------
 function dryRunMOS(){ return migrarMOS({dryRun:true}); }

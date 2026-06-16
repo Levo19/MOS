@@ -51,6 +51,45 @@ insert into mos.config (clave, valor, descripcion) values
   ('MOS_GASTOS_DIRECTO','0','MOS Fase 2: escritura directa de GASTOS (DINERO) a Supabase. OFF → front cae a GAS.')
 on conflict (clave) do nothing;
 
+-- ───────────────────────────────────────────────────────────────────────────────────────────────────────
+-- 1b) PATRÓN CUTOVER — APAGAR-SYNC-POR-TABLA. CSV de tablas mos.* que GAS NO debe re-upsertar desde la HOJA
+--     en _syncMOSImpl (gas/MigracionMOS.gs). Default VACÍO → el sync sigue cubriendo las 17 tablas (INERTE).
+--     Cuando GASTOS pase a escritura directa, el USUARIO agrega 'gastos' acá (helper apagarSyncTablaMOS) para
+--     que el sync NO pise lo que la RPC escribió directo. Sembrado idempotente, NO toca un valor ya puesto.
+-- ───────────────────────────────────────────────────────────────────────────────────────────────────────
+insert into mos.config (clave, valor, descripcion) values
+  ('MOS_SYNC_OFF_TABLAS','','MOS Fase 2: CSV de tablas mos.* EXCLUIDAS del upsert-desde-hoja de _syncMOSImpl (las que ya escriben directo). VACIO=sync cubre las 17. La escritura directa mantiene el latido vivo (MOS_SYNC_HEARTBEAT) por su cuenta.')
+on conflict (clave) do nothing;
+
+-- ───────────────────────────────────────────────────────────────────────────────────────────────────────
+-- 1c) HEARTBEAT-POR-ESCRITURA (helper). Cuando se apague el sync de la tabla `gastos`, su latido de frescura
+--     (mos.config['MOS_SYNC_HEARTBEAT']) dejaría de estamparse por _syncMOSImpl. Para que el gate _fresh de
+--     finanzas NO se congele, CADA escritura directa exitosa de gasto estampa el latido. Best-effort por
+--     diseño: si el upsert del latido fallara NO debe abortar la tx de DINERO (el gasto ya está commiteado
+--     conceptualmente). Idempotente: solo refresca el ISO de una clave que ya existe (o la crea).
+--     ⚠️ NO cambia el GATE de _fresh — solo mantiene el latido vivo (opción de mínimo cambio).
+-- ───────────────────────────────────────────────────────────────────────────────────────────────────────
+create or replace function mos._tocar_latido_sync()
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $hb$
+begin
+  insert into mos.config (clave, valor, descripcion) values (
+    'MOS_SYNC_HEARTBEAT',
+    to_char(clock_timestamp() at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+    'FASE1 lectura directa MOS: ISO de la ULTIMA escritura OK (sync por trigger O escritura directa). Latido de frescura de las SOMBRAS mos.* que alimentan finanzas_rango/historial_precios_lista.'
+  )
+  on conflict (clave) do update set valor = excluded.valor;
+exception when others then
+  -- best-effort: jamas abortar la escritura de DINERO por un fallo del latido
+  null;
+end;
+$hb$;
+revoke all on function mos._tocar_latido_sync() from public;
+grant execute on function mos._tocar_latido_sync() to service_role, authenticated;
+
 -- ═════════════════════════════════════════════════════════════════════════════════════════════════════════
 -- mos.crear_gasto(p jsonb) — espeja registrarGasto.  ⚠️ DINERO ⚠️
 --   Idempotencia por local_id (gesto de cliente) y por PK id_gasto (si el front reenvía el id).
@@ -125,6 +164,9 @@ begin
     return jsonb_build_object('ok',true,'dedup',true,'data', jsonb_build_object('idGasto', v_id));
   end if;
 
+  -- ESCRITURA NUEVA confirmada (v_inserted=1) → tocar el latido de frescura para que finanzas no se congele
+  -- cuando el sync por trigger de `gastos` esté apagado (cutover directo). best-effort dentro de la fn.
+  perform mos._tocar_latido_sync();
   return jsonb_build_object('ok',true,'dedup',false,'data', jsonb_build_object('idGasto', v_id));
 exception
   -- red de seguridad ANTI-DOBLE-GASTO: dos tx con el MISMO local_id en paralelo → la perdedora choca el
@@ -170,6 +212,8 @@ begin
   -- (ok:true, eliminado:false) para que un reintento del MISMO borrado no falle ni alarme la cola offline;
   -- el efecto neto (el gasto ya no está) es idéntico. Si se prefiere paridad literal, cambiar a ok:false.
   if v_n = 0 then return jsonb_build_object('ok',true,'eliminado',false); end if;
+  -- borrado real → tocar latido (la escritura directa, incluido el DELETE, mantiene viva la frescura)
+  perform mos._tocar_latido_sync();
   return jsonb_build_object('ok',true,'eliminado',true);
 end;
 $fn$;
