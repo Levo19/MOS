@@ -116,7 +116,7 @@
   // [v1.0.14] Versión honesta del módulo. Las 3 apps lo cargan vía CDN con un
   // pin ?v= en su <script>; si ese pin miente, ESTA constante revela la versión
   // REAL servida. Se loguea al boot (init) como "[DeviceAuth] vX en <app>".
-  var _VERSION = '1.0.16';
+  var _VERSION = '1.0.17';
 
   var _config = null;
   var _state = {
@@ -1415,7 +1415,12 @@
         var verBumpReal = serverVer > storedVer && serverVer > 0 && storedVer > 0;
         var esRevocacionReal = d.estado === 'INACTIVO' || d.estado === 'SUSPENDIDO'
                             || d.forzar_reverify === true || verBumpReal;
-        if (_optimistaVigente() && !esRevocacionReal
+        // [FIX SEGURIDAD 40x] La marca SUPRIME el retroceso de un estado YA autorizado en ESTA sesión
+        // (_state.estado==='ACTIVO'), NO autoriza la entrada en un boot fresco. Sin esta guarda, setear
+        // localStorage['da_optimista_ts'] a mano hacía entrar a un device NO aprobado 90s (bypass del gate
+        // frontend). En boot fresco _state.estado arranca INIT/VERIFICANDO → no aplica → cierra el bypass.
+        // El caso legítimo (aprobar in-situ sin reload → _state.estado='ACTIVO' → re-verify lagueado) se preserva.
+        if (_state.estado === 'ACTIVO' && _optimistaVigente() && !esRevocacionReal
             && (d.estado === 'NO_REGISTRADO' || d.estado === 'PENDIENTE_APROBACION')) {
           // Propagación pendiente tras aprobar → mantener ACTIVO, sin parpadeo.
           if (!silencioso) console.warn('[DeviceAuth] re-verify lagueado (' + d.estado + ') ignorado: aprobación reciente vigente (anti-retroceso).');
