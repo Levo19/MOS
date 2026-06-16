@@ -1,5 +1,34 @@
 // ════════════════════════════════════════════════════════════════════
 // DeviceAuth — módulo compartido de verificación de dispositivos
+// v1.0.21 — 2026-06-16 — GATE ANTI-CARRERA (generaliza al MÓDULO el parche que
+//   WH había hecho por su cuenta → ahora cubre MOS, ME y WH).
+//   ┌─ EL BUG (cazado en WH; "Conectando con MOS" eterno) ─────────────────────
+//   │ El módulo resuelve ACTIVO y _ocultarOverlay() quita html.da-pre-block (la
+//   │ clase que tapa toda la app con visibility:hidden). Si ese unblock se PIERDE
+//   │ por una CARRERA (re-render tardío / _appendCuandoListo / boot de la app que
+//   │ re-agrega da-pre-block DESPUÉS), el módulo se cree ACTIVO → su watchdog
+//   │ interno (que SOLO dispara mientras estado==='VERIFICANDO') NO actúa → la app
+//   │ queda TAPADA para siempre. WH lo parcheó con watchdog propio; MOS/ME
+//   │ delegaban 100% al módulo → mismo riesgo latente.
+//   ├─ EL FIX (en el módulo: _garantizarGateLevantado) ─────────────────────────
+//   │ Tras quitar el gate en TODO path ACTIVO (_ocultarOverlay del boot/refresh/
+//   │ anti-retroceso + _transicionarAApp del in-situ), agenda 2 re-checks cortos
+//   │ (500ms y 1500ms). Si en alguno _state.estado SIGUE 'ACTIVO' PERO da-pre-block
+//   │ reapareció → lo vuelve a quitar (+ _desbloquearApp). Complementa al watchdog
+//   │ de VERIFICANDO (no lo toca/duplica): aquel cubre el spinner colgado, este el
+//   │ gate-stuck con estado ya ACTIVO.
+//   ├─ FAIL-CLOSED: SOLO re-levanta si _state.estado==='ACTIVO' (leído EN VIVO en
+//   │ cada tick). VERIFICANDO/PENDIENTE/INACTIVO/SUSPENDIDO/NO_REGISTRADO/
+//   │ SIN_VERIFICAR jamás se desbloquean por aquí. No autoriza, no entra, no toca
+//   │ cache — solo destapa un gate que ya debía estar destapado para un ACTIVO.
+//   ├─ IDEMPOTENTE: remove de clase ausente = no-op; re-agendar reinicia timers
+//   │ (un solo juego vivo). Cero efecto en el caso normal (sin carrera).
+//   └─ NO pisa el parche WH: _whGateWatchdog/_whLevantarGate son independientes y
+//      también idempotentes; ambos solo QUITAN da-pre-block bajo ACTIVO → conviven
+//      sin doble trabajo dañino (el que llegue 2º ve el gate ya arriba = no-op).
+//   DESPLIEGUE: MOS/WH/ME DEBEN bumpar su pin <script src=".../device-auth.js?v=">
+//   a 1.0.21 para recibir el fix. WH puede mantener su watchdog propio (redundante
+//   pero inofensivo); MOS y ME quedan cubiertos SIN necesitar parche propio.
 // v1.0.20 — 2026-06-16 — DOBLE-CHECK SEGURO del auth DIRECTO (flota / cutover).
 //   ┌─ PROBLEMA (riesgo de bloquear un device legítimo) ───────────────────────
 //   │ WH verifica el auth por el path DIRECTO (mos.verificar_dispositivo, sombra).
@@ -178,7 +207,7 @@
   // [v1.0.14] Versión honesta del módulo. Las 3 apps lo cargan vía CDN con un
   // pin ?v= en su <script>; si ese pin miente, ESTA constante revela la versión
   // REAL servida. Se loguea al boot (init) como "[DeviceAuth] vX en <app>".
-  var _VERSION = '1.0.20';
+  var _VERSION = '1.0.21';
 
   var _config = null;
   var _state = {
@@ -801,7 +830,62 @@
     // desde el cache optimista pero el server después devolvía PENDIENTE.
     if (_state.estado === 'ACTIVO' && document.documentElement) {
       document.documentElement.classList.remove('da-pre-block');
+      // [v1.0.21] Garantía anti-carrera del gate (ver _garantizarGateLevantado).
+      _garantizarGateLevantado();
     }
+  }
+
+  // [v1.0.21] GARANTÍA "GATE LEVANTADO" para el estado ACTIVO — generaliza al
+  // MÓDULO el watchdog que WH se había parcheado por su cuenta (cubre MOS/ME/WH).
+  // ┌─ EL BUG (cazado en WH, "Conectando con MOS" eterno) ─────────────────────
+  // │ El módulo resuelve ACTIVO y _ocultarOverlay() quita html.da-pre-block (la
+  // │ clase que tapa toda la app con visibility:hidden). Pero ese unblock puede
+  // │ PERDERSE por una CARRERA: un re-render tardío / _appendCuandoListo / código
+  // │ de boot de la app vuelve a agregar da-pre-block DESPUÉS de que lo quitamos.
+  // │ El watchdog interno (el de VERIFICANDO) SOLO actúa mientras
+  // │ _state.estado==='VERIFICANDO' → con el módulo ya en ACTIVO NO dispara → la
+  // │ app queda TAPADA para siempre. WH lo vivió y se parcheó con un watchdog
+  // │ propio; MOS/ME delegaban 100% al módulo → mismo riesgo latente.
+  // ├─ EL FIX (defensa extra, complementaria al watchdog de VERIFICANDO) ───────
+  // │ Tras quitar el gate en el path ACTIVO, agendamos re-checks diferidos. Si en
+  // │ alguno _state.estado SIGUE === 'ACTIVO' PERO html.da-pre-block volvió a
+  // │ aparecer (la carrera), lo quitamos de nuevo (+ _desbloquearApp por simetría).
+  // ├─ FAIL-CLOSED (no abre ningún hueco) ──────────────────────────────────────
+  // │ SOLO re-levanta si _state.estado==='ACTIVO'. Un device VERIFICANDO/PENDIENTE/
+  // │ INACTIVO/SUSPENDIDO/NO_REGISTRADO/SIN_VERIFICAR NUNCA se desbloquea por aquí:
+  // │ el re-check lee el estado EN VIVO en cada tick, así que si el estado cambió a
+  // │ un bloqueo entre el agendado y el tick, el re-check es no-op. No autoriza, no
+  // │ entra a la app, no toca cache — solo destapa un gate que ya debía estar
+  // │ destapado para un ACTIVO confirmado.
+  // ├─ IDEMPOTENTE / no rompe el caso normal ───────────────────────────────────
+  // │ Si el gate ya está levantado (caso normal), classList.remove de una clase
+  // │ ausente es no-op. Re-agendar reinicia los timers (un solo set vivo). Cero
+  // │ efecto observable cuando no hay carrera.
+  // └─ No pisa el parche WH: el _whGateWatchdog de WH (15s) y _whLevantarGate son
+  //    independientes y también idempotentes; ambos solo QUITAN da-pre-block bajo
+  //    estado ACTIVO. Si este re-check ya destapó, el de WH ve el gate arriba y
+  //    no hace nada (return temprano). Conviven sin doble trabajo dañino.
+  var _gateReChecks = [];
+  function _garantizarGateLevantado() {
+    // Limpiar agendas previas (un solo juego de timers vivo → idempotente).
+    _gateReChecks.forEach(function(t) { try { clearTimeout(t); } catch(_) {} });
+    _gateReChecks = [];
+    var _reCheck = function() {
+      // FAIL-CLOSED: leemos el estado EN VIVO. Si ya no es ACTIVO, NO tocamos el
+      // gate (un bloqueo posterior debe seguir tapando).
+      if (_state.estado !== 'ACTIVO') return;
+      if (document.documentElement &&
+          document.documentElement.classList.contains('da-pre-block')) {
+        // Carrera detectada: el gate volvió a taparse aunque seguimos ACTIVO.
+        try { console.warn('[DeviceAuth] gate re-tapado bajo estado ACTIVO (carrera) → re-levantando (anti-stuck).'); } catch(_) {}
+        document.documentElement.classList.remove('da-pre-block');
+        _desbloquearApp();
+      }
+    };
+    // Dos re-checks cortos cubren el re-render tardío típico sin alargar el boot
+    // del caso normal (ambos no-op si el gate ya está abierto).
+    _gateReChecks.push(setTimeout(_reCheck, 500));
+    _gateReChecks.push(setTimeout(_reCheck, 1500));
   }
 
   // [v1.0.2 BUG SEC FIX] Bloqueo de toda la UI mientras overlay está activo.
@@ -1284,6 +1368,9 @@
     function _quitarBloqueo() {
       if (document.documentElement) document.documentElement.classList.remove('da-pre-block');
       _desbloquearApp();
+      // [v1.0.21] Mismo blindaje anti-carrera que el path de boot/refresh: si un
+      // re-render tardío vuelve a tapar el gate con el device ACTIVO, lo destapa.
+      _garantizarGateLevantado();
     }
     if (ov && !_reducedMotion()) {
       ov.classList.add('da-fade-out');
