@@ -27,14 +27,18 @@ Hoy WH+ME verifican directo CON doble-check a GAS (rescate). "100% puro" = sombr
 - ✅ **A** columnas sombra (SQL 101 aplicado): fcm_token, alerta_seguridad(+revisada), forzar_horario_hasta, razon_bloqueo, bloqueado_desde.
 - ✅ **D** RPCs lectura (SQL 102 aplicado): consultar_estado_dispositivo, fcm_token_dispositivo, verificar_horario_dispositivo, listar_dispositivos, dispositivos_pendientes. (dispositivos_bloqueados pendiente: cruza hoja BLOQUEOS).
 - ✅ **B/C** `gas/Fase4Dispositivos.gs`: `_dualWriteDispositivo`/`resembrarDispositivosDesdeHoja` (dedup)/`compararDispositivosMOS`. **Reconciliación foldeada en `syncMOSReciente` cada 15 min** (MOS en tope de 20 triggers → folding, NO trigger nuevo). Paridad confirmada (139=139). Sombra fresca automática.
-- ⏳ **E (migrar lectores)** + **F (quitar doble-check)** = el CUTOVER que cambia el auth real → requiere infra sana (deploy+prueba incremental) + validación física (que TODOS entran). NO hacer a ciegas (40x).
-- 🔵 **4.2 (escritura pura)**: escrituras a RPCs directas → apagar GAS→hoja → pg_cron seguridad.
+- ✅ **F (auth puro) COMPLETA Y EN VIVO (2026-06-16)**: flag `MOS_AUTH_SIN_DOBLECHECK='1'` + device-auth v1.0.23 (lee `sin_doblecheck` de verificar_dispositivo, SQL 103). Las 3 apps verifican leyendo SOLO la sombra, sin GAS. Validado: MOS+WH+ME cargan v1.0.23 y entran. Gradual (v1.0.22 ignora el flag = seguro). Kill-switch: `node supabase/_flag_doblecheck.js off`. Espejo instantáneo cableado en revocar/bloquear/liberar (Config.gs/Bloqueos.gs).
+- ⏳ **E (migrar lectores GAS de paneles a RPCs)**: opcional/secundario (los paneles admin pueden seguir por GAS; el auth de ENTRAR ya es puro). Pendiente.
+- 🛑 **4.2 (escritura pura) — RECLASIFICADA (hallazgo 40x 2026-06-16):** NO hacer como paso intermedio. La escritura directa de auth (aprobar/revocar en la sombra) NO coexiste con el resembrado hoja→sombra de 15min (lo pisa = bug del rollback) NI con los 50 lectores GAS que aún leen la hoja. **El estado actual (escritura GAS→hoja + espejo sombra + lectura sombra) es el ÓPTIMO ESTABLE.** Apagar la hoja = parte del CORTE DE SHEETS de dispositivos (FASE 7), seguro solo tras migrar los 50 lectores (Etapa E). El auth ya es "puro" en lo que importa (ENTRAR sin GAS ✅).
 - 📌 Dato sucio detectado: 2 deviceIds duplicados en la hoja (df61a710..., 5d31a553...) — limpiar fila repetida.
 
-## FASE 5 — WH escritura directa
-Las 7 RPCs PASO 4 están inertes.
-- 🔵 **P5.1** Cablear WH a escritura directa (dual-write / RPCs atómicas) con su 40x.
-- 🔴 **P5.2** Validación física en almacén (guías, envasado, stock — dinero/inventario).
+## FASE 5 — WH escritura directa — 🔵 PRE-REQUISITOS LISTOS (2026-06-16)
+- ✅ 10 RPCs PASO 4 construidas+validadas inertes (90 casos, 0 fallos): crear_ajuste/registrar_merma/crear_preingreso/actualizar_preingreso/crear_guia/cerrar_guia(FIFO)/reabrir_guia + marcar_preingreso_procesado/crear_auditoria/get_o_crear_guia_dia/agregar_detalle_guia.
+- ✅ **Integridad de stock blindada**: 0 duplicados por cod_producto (el 7750243071406 ya consolidado) + índice único `ux_wh_stock_cod_producto` (SQL 104 aplicado) → habilita el `on conflict` de las RPCs.
+- 🎯 **DECISIÓN DEL USUARIO 2026-06-16: WH GAS-CERO.** ⚠️ **HALLAZGO 40x 2026-06-16: WH YA ESTÁ CASI EN GAS-CERO** (los docs DISENO_paso5/orquestadores estaban DESACTUALIZADOS). Estado REAL verificado (`_diag_flags_wh.js`):
+  - ✅ **B1 auth · B2 RLS · B3 lecturas directas** (`lecturaNavegador:true` server-wide, validado e2e hoy: mint-wh+stock_enriquecido_rls+leer_tabla_rls 200).
+  - ✅ **ESCRITURA DIRECTA DE DATOS EN PRODUCCIÓN** desde 2026-06-14 (`escrituraNavegador:true` + **27/28 flags WH_*_DIRECTO ON**): guías/stock/mermas/envasado/ajustes/preingresos/auditorías/cargadores/OCR/alertas. Solo 1 OFF: `WH_MARCAR_PRODUCTO_NUEVO_APROBADO` (cross-domain WH↔MOS, crea producto en MOS — queda en GAS por diseño).
+  - ⏳ **Falta para GAS-CERO TOTAL (WH ~95% hecho)**: (1) **impresión** — los 6 builders YA portados en `js/impresion-directa.js` (bienvenida/etiquetas/aviso/membretes, byte-a-byte del GAS); falta cargar el módulo + cablear (inerte) + **VALIDAR IMPRIMIENDO físicamente** + el **aviso-cajeros fan-out cruza a ME.CAJAS** (necesita Edge cross-dominio, el navegador WH no ve cajas de ME) + drift térmico (hoy offset base=0). (2) **OCR boleta** (IA+imagen SUNAT). (3) **`aprobar_producto_nuevo`** (cross-domain MOS, único flag OFF). (4) **B6**: apagar el GAS residual. Todo necesita validación física en impresora / Edge fan-out / cross-domain — NO "a ciegas".
 
 ## FASE 6 — ME CPE (boleta/factura directa)
 Edge `emitir-cpe` cableada, inerte.
