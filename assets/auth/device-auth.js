@@ -1,5 +1,36 @@
 // ════════════════════════════════════════════════════════════════════
 // DeviceAuth — módulo compartido de verificación de dispositivos
+// v1.0.20 — 2026-06-16 — DOBLE-CHECK SEGURO del auth DIRECTO (flota / cutover).
+//   ┌─ PROBLEMA (riesgo de bloquear un device legítimo) ───────────────────────
+//   │ WH verifica el auth por el path DIRECTO (mos.verificar_dispositivo, sombra).
+//   │ La sombra mos.dispositivos puede estar DESFASADA de la hoja DISPOSITIVOS
+//   │ (fuente de verdad hasta el cutover completo): hay devices SUSPENDIDOS en la
+//   │ sombra que pueden estar ACTIVOS en la hoja (reactivados, sync lagueado). El
+//   │ módulo (v1.0.19) caía a GAS SOLO si la RPC FALLABA (red/error); un VEREDICTO
+//   │ de bloqueo del directo (NO_REGISTRADO/SUSPENDIDO/...) NO caía a GAS →
+//   │ BLOQUEABA directo a un device legítimo cuya sombra estaba atrasada.
+//   ├─ FIX (en _consultarBackend, rama flag ON, tras _mapVerifyResp) ───────────
+//   │ · Directo ACTIVO/autorizado → procesar NORMAL, instantáneo, SIN consultar
+//   │   GAS. Caso ~99% (device sano): velocidad intacta, cero round-trip extra.
+//   │ · Directo = estado de BLOQUEO (cualquier no-ACTIVO: NO_REGISTRADO /
+//   │   PENDIENTE_APROBACION / INACTIVO / SUSPENDIDO / CANCELADO_AUTO / etc.) → NO
+//   │   bloquear con el directo: CONFIRMAR con _consultarBackendGAS (la hoja,
+//   │   fuente real) y usar EL VEREDICTO DE GAS. GAS ACTIVO → entra (sombra
+//   │   rescatada). GAS bloqueo → bloquea (confirmado por la fuente real).
+//   ├─ FAIL-CLOSED preservado (sin huecos) ────────────────────────────────────
+//   │ Para ENTRAR tras un directo-bloqueo, GAS DEBE decir ACTIVO; ninguna otra
+//   │ ruta autoriza. Si GAS falla tras el directo-bloqueo, _consultarBackendGAS
+//   │ cierra a SIN_VERIFICAR + "Reintentar" (boot) o re-lanza sin tocar el estado
+//   │ (refresh silencioso) → NUNCA autoriza. NO se reintrodujo ningún bypass
+//   │ (cache-first ni red anti-retroceso forjable, ambos cerrados en v1.0.19). Un
+//   │ device sin NINGUNA fuente en ACTIVO NO entra.
+//   ├─ EFICIENCIA ─────────────────────────────────────────────────────────────
+//   │ El round-trip GAS extra SOLO ocurre en el caso de bloqueo (raro = desfase).
+//   │ El caso ACTIVO normal entra por el directo sin tocar GAS → sin penalización.
+//   └─ DESPLIEGUE: las 3 apps cargan por CDN con pin ?v=. MOS/WH/ME DEBEN bumpar
+//      su <script src=".../device-auth.js?v=..."> a 1.0.20 para recibir el fix.
+//      Con flag OFF (MOS/ME) el comportamiento es BIT-IDÉNTICO (todo por GAS); el
+//      doble-check vive en la rama flag ON (WH).
 // v1.0.19 — 2026-06-16 — FIX "CARGANDO INFINITO" del overlay "Verificando
 //   dispositivo / Conectando con MOS" (bug reportado en vivo en WH; aplica a las
 //   3 apps que verifican por GAS). Tres correcciones complementarias:
@@ -147,7 +178,7 @@
   // [v1.0.14] Versión honesta del módulo. Las 3 apps lo cargan vía CDN con un
   // pin ?v= en su <script>; si ese pin miente, ESTA constante revela la versión
   // REAL servida. Se loguea al boot (init) como "[DeviceAuth] vX en <app>".
-  var _VERSION = '1.0.19';
+  var _VERSION = '1.0.20';
 
   var _config = null;
   var _state = {
@@ -1391,7 +1422,32 @@
     }).then(function (j) {
       var d = _mapVerifyResp(j);
       if (!d) throw new Error('verificar_dispositivo: respuesta sin estado');
-      return _procesarRespuestaVerify(d, silencioso);
+      // ── [v1.0.20 DOBLE-CHECK SEGURIDAD — la HOJA es la fuente de verdad ──────
+      // Durante el cutover de auth la sombra mos.dispositivos puede estar
+      // DESFASADA de la hoja DISPOSITIVOS (que GAS lee). Caso real: un device
+      // ACTIVO en la hoja (reactivado) pero la sombra aún dice SUSPENDIDO/
+      // NO_REGISTRADO (sync lagueado). Si bloqueáramos con el veredicto DIRECTO de
+      // bloqueo, dejaríamos afuera a un device legítimo.
+      // POLÍTICA:
+      //   · Directo ACTIVO/autorizado → procesar NORMAL, instantáneo, SIN GAS
+      //     (caso 99%: NO se ralentiza el arranque de un device sano).
+      //   · Directo = estado de BLOQUEO (NO_REGISTRADO / PENDIENTE_APROBACION /
+      //     INACTIVO / SUSPENDIDO / CANCELADO_AUTO / cualquier no-ACTIVO) → NO
+      //     bloquear con el directo: CONFIRMAR contra GAS (la hoja) y usar EL
+      //     VEREDICTO DE GAS. Si GAS dice ACTIVO → entra (sombra rescatada). Si GAS
+      //     también dice bloqueo → bloquea (confirmado por la fuente real).
+      // FAIL-CLOSED: _consultarBackendGAS ya cierra a SIN_VERIFICAR / re-mostrar
+      //   "Reintentar" si GAS falla — NUNCA autoriza sin que GAS diga ACTIVO. El
+      //   doble-check NO abre ningún hueco: para ENTRAR tras un directo-bloqueo,
+      //   GAS (la hoja) DEBE decir ACTIVO; ninguna otra ruta autoriza.
+      var directoActivo = (d.estado === 'ACTIVO' || d.autorizado === true);
+      if (directoActivo) {
+        // Rápido: el directo ACTIVO entra sin tocar GAS.
+        return _procesarRespuestaVerify(d, silencioso);
+      }
+      // Directo dice BLOQUEO → confirmar con la hoja (GAS) antes de bloquear.
+      console.warn('[DeviceAuth] directo=' + d.estado + ' (bloqueo) → confirmando con GAS (hoja, fuente de verdad) antes de bloquear.');
+      return _consultarBackendGAS(silencioso);
     }).catch(function (e) {
       console.warn('[DeviceAuth] auth directo falló → fallback GAS:', e && e.message);
       return _consultarBackendGAS(silencioso);
