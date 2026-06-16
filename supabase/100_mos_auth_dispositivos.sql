@@ -98,7 +98,12 @@ begin
   if v_fallos > c_fallos_libres then
     v_exp     := v_fallos - c_fallos_libres;                       -- 1,2,3,... fallos por encima del umbral
     -- min(base * 2^(exp-1), techo). exp=1 → base; cada fallo extra duplica, con techo.
-    v_bloqueo := least(c_base * (2 ^ (v_exp - 1)), c_techo);
+    -- [fix 40x] recortar el exponente ANTES de multiplicar: 2^(v_exp-1) con v_exp>~45
+    -- desborda 'interval out of range' ANTES de que least() recorte (Postgres evalua la
+    -- multiplicacion primero) => un atacante con ~45 fallos sobre un device_id volvia
+    -- aprobar/revocar de ESE id un error permanente (DoS dirigido, fail-closed). Cap a 2^16
+    -- (30s*65536 ~ 22 dias) que igual queda recortado por c_techo (30min) => mismo comportamiento.
+    v_bloqueo := least(c_base * (2 ^ least(v_exp - 1, 16)), c_techo);
     v_hasta   := v_ult_fallo + v_bloqueo;
     v_locked  := now() < v_hasta;
   end if;
