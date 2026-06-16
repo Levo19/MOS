@@ -842,3 +842,45 @@ function compararResumenDiaMOS_multi(fechas){
   var out = { ok: ok, veredicto: ok ? '✓ PARIDAD EXACTA en todas las fechas' : '⚠ hay diferencias', fechas: res };
   Logger.log(JSON.stringify(out,null,2)); return out;
 }
+
+// =====================================================================================
+// SETUP PRE-FLIP (ejecutar UNA vez, sin parámetros, desde el editor de Apps Script).
+// Deja la sombra estabilizada + valida el recompute de jornales contra GAS. NO activa nada
+// (no enciende flags ni apaga sync) → MOS sigue 100% por GAS. Es solo el chequeo previo
+// al cutover de escritura. Mirá el Logger al terminar: si veredicto del comparador = ✓ PARIDAD,
+// el recompute de jornales (mos.resumen_dia) está listo. Si ⚠, NO flipear jornales aún.
+// =====================================================================================
+function setupCutoverMOS_paso1(){
+  var pasos = {};
+  // 1) Re-instalar los triggers que mantienen FRESCA la sombra (venían muriendo en silencio).
+  try { pasos.triggersSync = instalarTriggersSyncMOS(); }
+  catch(e){ pasos.triggersSync = {ok:false, error:String(e)}; }
+  // 2) Trigger del sync de liquidaciones (cierre semanal jornales).
+  try { pasos.triggerLiq = (typeof setupLiqSyncTrigger==='function') ? setupLiqSyncTrigger() : {ok:false, error:'setupLiqSyncTrigger no existe'}; }
+  catch(e){ pasos.triggerLiq = {ok:false, error:String(e)}; }
+  // 3) Estampar el latido ahora mismo para que el gate _fresh no quede stale al arrancar.
+  try { if (typeof _estamparLatidoMOS==='function') _estamparLatidoMOS(); pasos.latido = {ok:true}; }
+  catch(e){ pasos.latido = {ok:false, error:String(e)}; }
+  // 4) Validar paridad del recompute de jornales (DINERO) sobre los últimos 3 días.
+  var tz = Session.getScriptTimeZone();
+  var fechas = [1,2,3].map(function(d){
+    return Utilities.formatDate(new Date(Date.now() - d*24*3600*1000), tz, 'yyyy-MM-dd');
+  });
+  try { pasos.paridadJornales = compararResumenDiaMOS_multi(fechas); }
+  catch(e){ pasos.paridadJornales = {ok:false, error:String(e)}; }
+
+  var paridadOk = !!(pasos.paridadJornales && pasos.paridadJornales.ok);
+  var out = {
+    ok: true,
+    resumen: 'Setup pre-flip ejecutado. NADA fue activado (MOS sigue por GAS).',
+    triggersSyncOk: !!(pasos.triggersSync && pasos.triggersSync.ok),
+    triggerLiqOk: !!(pasos.triggerLiq && pasos.triggerLiq.ok),
+    paridadJornalesOk: paridadOk,
+    siguiente: paridadOk
+      ? '✓ Recompute de jornales LISTO. Podés flipear módulos cuando quieras (avisá a Claude para acompañarte).'
+      : '⚠ El comparador de jornales mostró diferencias o falló — revisá pasos.paridadJornales ANTES de flipear jornales. (Los módulos no-dinero NO dependen de esto.)',
+    detalle: pasos
+  };
+  Logger.log(JSON.stringify(out,null,2));
+  return out;
+}
