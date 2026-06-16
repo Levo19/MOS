@@ -377,24 +377,38 @@ const API = (() => {
   function _mosFinanzasDirecto()  { return !!(_mosLecturaDirecta() || _mosFlag('mos_finanzas_directo',  'finanzasDirecto')); }
   function _mosHistorialDirecto() { return !!(_mosLecturaDirecta() || _mosFlag('mos_historial_directo', 'historialDirecto')); }
 
-  // [FASE 2 · LOTE PROVEEDORES/PEDIDOS/PAGOS] gates por-operación (espejo de los kill-switches server-side
+  // [FASE 2 · LOTE PROVEEDORES/PEDIDOS/PAGOS] gates *_DIRECTO por-operación (espejo de los kill-switches server-side
   // MOS_PROVEEDORES_DIRECTO / MOS_PEDIDOS_DIRECTO / MOS_PAGOS_DIRECTO / MOS_PROVPROD_DIRECTO, todos default '0').
-  // CADA grupo tiene su flag de cliente independiente → se puede activar proveedores sin activar pagos, etc.
-  // Default OFF (cliente) + OFF (server) → INERTE doble. (El flag maestro mos_lectura_navegador NO los
-  // habilita: estas son ESCRITURAS de dinero/negocio, las queremos detrás de un flag explícito por grupo.)
+  // ⚠️ MODELO DUAL-WRITE: estos gates *_DIRECTO ya NO gobiernan NINGÚN read-path ni write-path cableado. Se
+  //    conservan SOLO por compatibilidad/diagnóstico (espejan el kill-switch server que ahora gobernaría una
+  //    escritura-directa-pura que el dual-write NO usa). La LECTURA usa los nuevos gates *_LECTURA (abajo); la
+  //    ESCRITURA va SIEMPRE por GAS (que hace _dualWriteMOS → espeja a la sombra). Default OFF → INERTE.
   function _mosProveedoresDirecto() { return !!_mosFlag('mos_proveedores_directo', 'proveedoresDirecto'); }
   function _mosPedidosDirecto()     { return !!_mosFlag('mos_pedidos_directo',     'pedidosDirecto'); }
   function _mosPagosDirecto()       { return !!_mosFlag('mos_pagos_directo',       'pagosDirecto'); }
   function _mosProvProdDirecto()    { return !!_mosFlag('mos_provprod_directo',    'provprodDirecto'); }
 
-  // [FASE 2 · LOTE BAJO-RIESGO + GASTOS] gates por-operación (espejo de los kill-switches server-side
+  // ════════════════════════════════════════════════════════════════════
+  // [DUAL-WRITE · GATES DE LECTURA POR MÓDULO] Separan la LECTURA directa de la ESCRITURA. En el modelo
+  // dual-write, la escritura va SIEMPRE por GAS (espeja la sombra); SOLO la lectura se activa por flag. Cada
+  // gate de lectura = MAESTRO (_mosLecturaDirecta, prende TODAS de golpe) OR su flag específico de módulo
+  // `mos_<modulo>_lectura` (cfgKey `<modulo>Lectura`). Patrón IDÉNTICO a catálogo/finanzas/historial.
+  // Default OFF (maestro OFF + específico OFF) → INERTE: el read-path va recto a GAS, bit-idéntico a hoy.
+  // server clave en mos.config: MOS_<MODULO>_LECTURA (ver SQL get_flags). NO confundir con MOS_*_DIRECTO.
+  // ════════════════════════════════════════════════════════════════════
+  function _mosProveedoresLectura() { return !!(_mosLecturaDirecta() || _mosFlag('mos_proveedores_lectura', 'proveedoresLectura')); }
+  function _mosPedidosLectura()     { return !!(_mosLecturaDirecta() || _mosFlag('mos_pedidos_lectura',     'pedidosLectura')); }
+  function _mosPagosLectura()       { return !!(_mosLecturaDirecta() || _mosFlag('mos_pagos_lectura',       'pagosLectura')); }
+  function _mosProvProdLectura()    { return !!(_mosLecturaDirecta() || _mosFlag('mos_provprod_lectura',    'provprodLectura')); }
+  function _mosJornadasLectura()    { return !!(_mosLecturaDirecta() || _mosFlag('mos_jornadas_lectura',    'jornadasLectura')); }
+  function _mosEvalLectura()        { return !!(_mosLecturaDirecta() || _mosFlag('mos_eval_lectura',        'evalLectura')); }
+  function _mosHorarioLectura()     { return !!(_mosLecturaDirecta() || _mosFlag('mos_horario_lectura',     'horarioLectura')); }
+
+  // [FASE 2 · LOTE BAJO-RIESGO + GASTOS] gates *_DIRECTO por-operación (espejo de los kill-switches server-side
   // MOS_GASTOS_DIRECTO (83) / MOS_EVAL_DIRECTO / MOS_HORARIO_DIRECTO (82), todos default '0').
-  // CADA módulo tiene su flag de cliente independiente → se activa uno sin tocar los otros. Default OFF
-  // (cliente) + OFF (server) → INERTE doble. El flag maestro mos_lectura_navegador NO los habilita
-  // (gastos = DINERO; eval/horario = escrituras de negocio → flag explícito por módulo, igual que prov/pago).
-  // ⚠️ ETIQUETAS (MOS_ETIQ_DIRECTO) NO se cablea acá: el frontend MOS no llama marcarVisto/marcarPegada ni
-  //    ningún "crear etiqueta" (las filas nacen del hook de precio en GAS). Cablearlo sería inventar un
-  //    consumidor que no existe. Ver REPORTE.
+  // ⚠️ MODELO DUAL-WRITE: estos *_DIRECTO ya NO gobiernan ningún write-path cableado (la escritura va SIEMPRE
+  //    por GAS). gastos NO tiene read-path directo cableado (sin RPC de lista cableada) → su gate queda solo
+  //    diagnóstico. eval/horario usan ahora los gates *_LECTURA (arriba) en sus read-paths. Default OFF → INERTE.
   function _mosGastosDirecto()  { return !!_mosFlag('mos_gastos_directo',  'gastosDirecto'); }
   function _mosEvalDirecto()    { return !!_mosFlag('mos_eval_directo',    'evalDirecto'); }
   function _mosHorarioDirecto() { return !!_mosFlag('mos_horario_directo', 'horarioDirecto'); }
@@ -403,11 +417,11 @@ const API = (() => {
   // gate existe por uniformidad/diagnóstico pero NO gobierna ningún read-path cableado. Ver REPORTE.
   function _mosEtiqDirecto()    { return !!_mosFlag('mos_etiq_directo',    'etiqDirecto'); }
 
-  // [FASE 2 · LOTE JORNALES/LIQUIDACIONES] gates por-operación (espejo de los kill-switches server-side
+  // [FASE 2 · LOTE JORNALES/LIQUIDACIONES] gates *_DIRECTO por-operación (espejo de los kill-switches server-side
   // MOS_JORNADAS_DIRECTO (84) / MOS_LIQDIA_DIRECTO (85), ambos default '0'). DINERO (jornal/liquidación).
-  // CADA grupo tiene su flag de cliente independiente → se activa jornadas sin tocar liquidaciones, etc.
-  // Default OFF (cliente) + OFF (server) → INERTE doble. El flag maestro mos_lectura_navegador NO los
-  // habilita (son ESCRITURAS de dinero → flag explícito por grupo, igual que prov/pago/gasto).
+  // ⚠️ MODELO DUAL-WRITE: ya NO gobiernan write-path (la escritura de jornadas/liquidaciones va SIEMPRE por GAS).
+  //    La LECTURA de jornadas usa el gate _mosJornadasLectura (arriba). liqdia no tiene read-path directo cableado
+  //    → su gate queda solo diagnóstico. Default OFF → INERTE.
   // ⚠️ PAGOS DE JORNALES (MOS_PAGOS_JORNAL_DIRECTO, 86: marcarPagos/anularPago) NO se cabla acá. El
   //    frontend MOS llama esas acciones con un SHAPE incompatible con la RPC y/o saltaría una validación:
   //      · marcarPagos: el front manda `fechas[]` (strings), NO `dias[]` con snapshot por día. La RPC
@@ -1015,38 +1029,23 @@ const API = (() => {
   // Acciones enrutables por escritura directa, CADA UNA con su gate por-acción (default OFF).
   // El valor es la función-gate que decide si esa acción intenta el directo. Con el gate OFF (default)
   // _postMOS ni siquiera evalúa el directo para esa acción → va recto a GAS, idéntico a hoy.
-  //   · catálogo (5)           → _mosCatalogoDirecto   (flag mos_catalogo_directo / maestro)
-  //   · proveedores (crear/edit)→ _mosProveedoresDirecto (flag mos_proveedores_directo)
-  //   · pedidos (crear/edit)    → _mosPedidosDirecto      (flag mos_pedidos_directo)
-  //   · pagos (DINERO)          → _mosPagosDirecto        (flag mos_pagos_directo)
-  //   · proveedor-producto      → _mosProvProdDirecto     (flag mos_provprod_directo)
-  //   · gastos (crear/eliminar) → _mosGastosDirecto       (flag mos_gastos_directo, DINERO)
-  //   · evaluaciones (crear)    → _mosEvalDirecto         (flag mos_eval_directo)
-  //   · horarios (setHorarioApp)→ _mosHorarioDirecto      (flag mos_horario_directo)
+  //
+  // ⚠️ MODELO DUAL-WRITE: SOLO el catálogo (pilot) conserva escritura directa (su gate _mosCatalogoDirecto =
+  //    maestro OR mos_catalogo_directo). El RESTO de módulos (proveedores/pedidos/pagos/provprod/gastos/eval/
+  //    horario/jornadas/liquidaciones) NO va por escritura directa: su escritura va SIEMPRE por GAS, que hace
+  //    _dualWriteMOS → espeja la sombra Supabase. Por eso esas acciones se RETIRARON de este mapa: al prender
+  //    su flag de LECTURA (mos_<modulo>_lectura) la LECTURA va directa pero la ESCRITURA sigue por GAS.
+  //    El despachador _postDirectoMOS conserva los `if(action===...)` de esas acciones (código muerto inocuo,
+  //    nunca alcanzado porque no están en este mapa) → reactivar escritura-directa-pura sería re-agregarlas acá.
   const _MOS_POST_DIRECTO = {
     crearProducto:              _mosCatalogoDirecto,
     actualizarProducto:         _mosCatalogoDirecto,
     publicarPrecio:             _mosCatalogoDirecto,
     crearEquivalencia:          _mosCatalogoDirecto,
-    actualizarEquivalencia:     _mosCatalogoDirecto,
-    crearProveedor:             _mosProveedoresDirecto,
-    actualizarProveedor:        _mosProveedoresDirecto,
-    crearPedido:                _mosPedidosDirecto,
-    actualizarPedido:           _mosPedidosDirecto,
-    registrarPago:              _mosPagosDirecto,
-    agregarProductoProveedor:   _mosProvProdDirecto,
-    actualizarProductoProveedor:_mosProvProdDirecto,
-    registrarGasto:             _mosGastosDirecto,
-    eliminarGasto:              _mosGastosDirecto,
-    crearEvaluacion:            _mosEvalDirecto,
-    setHorarioApp:              _mosHorarioDirecto,
-    // [FASE 2 · LOTE JORNALES/LIQUIDACIONES] DINERO. Gates por-grupo (default OFF). marcarPagos/anularPago/
-    // recomputarLiquidacionDia NO van en este mapa a propósito (shape/seguridad incompatibles) → siempre GAS.
-    registrarJornada:           _mosJornadasDirecto,
-    eliminarJornada:            _mosJornadasDirecto,   // forward-looking (el front no la llama hoy)
-    rehabilitarJornada:         _mosJornadasDirecto,   // forward-looking (el front no la llama hoy)
-    vetarLiquidacionDia:        _mosLiqdiaDirecto,
-    desvetarLiquidacionDia:     _mosLiqdiaDirecto
+    actualizarEquivalencia:     _mosCatalogoDirecto
+    // [DUAL-WRITE] proveedores/pedidos/pagos/provprod/gastos/eval/horario/jornadas/liqdia: SIN entrada acá a
+    // propósito → su escritura va SIEMPRE por GAS (dual-write espeja la sombra). marcarPagos/anularPago/
+    // recomputarLiquidacionDia tampoco van (ya antes, shape/seguridad incompatibles). Ver REPORTE.
   };
 
   // POST con escritura directa opcional. Con el gate de la acción OFF (default) es IDÉNTICO a hoy: ni
@@ -1058,7 +1057,10 @@ const API = (() => {
       // throws de _postDirectoMOS se PROPAGAN (negocio = mismo error que GAS; timeout = anti-duplicado).
       const d = await _postDirectoMOS(action, p);
       if (d != null) {
-        // [CAVEAT-CLOSE HORARIOS] El directo escribe SOLO la sombra Supabase (mos.config_horarios_apps),
+        // [CAVEAT-CLOSE HORARIOS] ⚠️ INALCANZABLE en el modelo dual-write: setHorarioApp ya NO está en
+        // _MOS_POST_DIRECTO (su escritura va SIEMPRE por GAS), así que `gate` es undefined y nunca se entra
+        // acá. Se conserva por si se re-introdujera escritura-directa-pura de horario. Detalle histórico:
+        // El directo escribe SOLO la sombra Supabase (mos.config_horarios_apps),
         // pero la ENFORCEMENT de horario en WH/ME (resolverHorarioPersonal/verificarHorario) lee la HOJA
         // GAS, NO Supabase. Además GAS dispara push a admins + invalida la cache de horario de WH. Para no
         // dejar la hoja desfasada (WH/ME aplicarían el horario VIEJO) ni perder el push/invalidación,
@@ -1116,70 +1118,72 @@ const API = (() => {
           _mosHistorialDirecto
         );
       }
-      // [FASE 2 · LOTE PROVEEDORES/PEDIDOS/PAGOS/PROVPROD/JORNADAS] read-paths directos (RPCs 94). Cada uno
-      // gated por SU flag de módulo (mismo flag que ya gobierna la escritura directa del módulo) → al prender
-      // el flip, lectura + escritura del módulo van directas A LA VEZ (cutover coherente, ver cabecera SQL 94).
-      // Flag OFF (default, estado real) ⇒ _conFallbackMOS NO entra al directo y va recto a GAS = IDÉNTICO a hoy.
+      // [DUAL-WRITE · LOTE PROVEEDORES/PEDIDOS/PAGOS/PROVPROD/JORNADAS] read-paths directos (RPCs 94). Cada uno
+      // gated por SU gate de LECTURA _mos<Modulo>Lectura (maestro OR mos_<modulo>_lectura). La ESCRITURA de estos
+      // módulos ya NO va directa: va SIEMPRE por GAS (dual-write → GAS espeja la sombra). Así, prender la lectura
+      // de un módulo NO toca su escritura. Gate de lectura OFF (default) ⇒ recto a GAS = IDÉNTICO a hoy.
       if (action === 'getProveedores') {
         return _conFallbackMOS(
           () => _getProveedoresDirecto(p),
           () => _fetch('GET', { action, ...p }),
-          _mosProveedoresDirecto
+          _mosProveedoresLectura
         );
       }
       if (action === 'getPedidos') {
         return _conFallbackMOS(
           () => _getPedidosDirecto(p),
           () => _fetch('GET', { action, ...p }),
-          _mosPedidosDirecto
+          _mosPedidosLectura
         );
       }
       if (action === 'getPagos') {
         return _conFallbackMOS(
           () => _getPagosDirecto(p),
           () => _fetch('GET', { action, ...p }),
-          _mosPagosDirecto
+          _mosPagosLectura
         );
       }
       if (action === 'getProveedorProductos') {
         return _conFallbackMOS(
           () => _getProveedorProductosDirecto(p),
           () => _fetch('GET', { action, ...p }),
-          _mosProvProdDirecto
+          _mosProvProdLectura
         );
       }
       if (action === 'getJornadas') {
         return _conFallbackMOS(
           () => _getJornadasDirecto(p),
           () => _fetch('GET', { action, ...p }),
-          _mosJornadasDirecto
+          _mosJornadasLectura
         );
       }
-      // [FASE 2 · EVAL] getEvaluacionesDia → lectura directa (RPC evaluaciones_dia, 98). Gated por mos_eval_directo
-      // (mismo flag que la escritura crearEvaluacion) → al prender el flip, lectura+escritura van directas a la vez.
-      // Flag OFF (default) ⇒ recto a GAS = IDÉNTICO a hoy. Devuelve el array camelCase igual que getEvaluacionesDia.
+      // [DUAL-WRITE · EVAL] getEvaluacionesDia → lectura directa (RPC evaluaciones_dia, 98). Gated por el gate de
+      // LECTURA _mosEvalLectura (maestro OR mos_eval_lectura) → la escritura crearEvaluacion ya NO va directa (GAS
+      // siempre, dual-write). Flag de lectura OFF (default) ⇒ recto a GAS = IDÉNTICO a hoy. Array camelCase paritario.
       if (action === 'getEvaluacionesDia') {
         return _conFallbackMOS(
           () => _getEvaluacionesDiaDirecto(p),
           () => _fetch('GET', { action, ...p }),
-          _mosEvalDirecto
+          _mosEvalLectura
         );
       }
       return _fetch('GET',  { action, ...p });
     },
-    // [FASE 2] post → escritura directa Supabase, gate POR-ACCIÓN (todos default OFF): 5 de catálogo
-    // (mos_catalogo_directo) + proveedores/pedidos/pago/proveedor-producto (mos_*_directo). Con el gate de la
-    // acción OFF ⇒ IDÉNTICO a hoy (va recto a GAS). El resto de acciones SIEMPRE por GAS.
+    // [DUAL-WRITE] post → escritura directa Supabase SOLO para el catálogo (pilot, gate mos_catalogo_directo /
+    // maestro). TODO el resto de escrituras (proveedores/pedidos/pago/provprod/gastos/eval/horario/jornadas/
+    // liquidaciones) va SIEMPRE por GAS (dual-write → GAS espeja la sombra), aunque su flag de LECTURA esté ON.
+    // Con el gate de catálogo OFF (default) ⇒ IDÉNTICO a hoy (va recto a GAS).
     post: (action, p = {}) => {
-      // [FASE 2 · HORARIO] getHorariosApps es una LECTURA enviada por POST (el front la llama con API.post).
-      // Read-path directo (RPC horarios_apps, 98) gated por mos_horario_directo (mismo flag que setHorarioApp) →
-      // cutover coherente lectura+escritura. Flag OFF (default) ⇒ recto a GAS = IDÉNTICO a hoy. Devuelve el
-      // OBJETO {<app>:{...}} igual que getHorariosApps; el consumidor lee `(r && r.data) || r` → ambos sirven.
+      // [DUAL-WRITE · HORARIO] getHorariosApps es una LECTURA enviada por POST (el front la llama con API.post).
+      // Read-path directo (RPC horarios_apps, 98) gated por el gate de LECTURA _mosHorarioLectura (maestro OR
+      // mos_horario_lectura). La escritura setHorarioApp ya NO va directa (GAS siempre, dual-write). Gate de
+      // lectura OFF (default) ⇒ recto a GAS = IDÉNTICO a hoy. Devuelve el OBJETO {<app>:{...}} igual que GAS;
+      // el consumidor lee `(r && r.data) || r` → ambos sirven.
       if (action === 'getHorariosApps') {
         return _conFallbackMOS(
           () => _getHorariosAppsDirecto(p),
           () => _fetch('POST', { action, ...p }),
-          _mosHorarioDirecto
+          _mosHorarioLectura
         );
       }
       return _postMOS(action, p);
@@ -1218,11 +1222,21 @@ const API = (() => {
       // crear/actualizar equivalencia). INERTE: solo entra con flag mos_catalogo_directo ON + token + RPC viva.
       rpcWrite:        _sbRpcMOSWrite,    // RPC mos.* de escritura con etiqueta .permanente (null = caé a GAS)
       postDirecto:     _postDirectoMOS,   // dispatcher write→RPC (data o null→GAS, lanza en negocio/timeout) — diagnóstico/test
-      // [FASE 2 · LOTE PROVEEDORES/PEDIDOS/PAGOS] gates por-operación (default OFF) + helper de local_id.
-      proveedoresDirecto: _mosProveedoresDirecto,  // ¿flag mos_proveedores_directo ON?
-      pedidosDirecto:     _mosPedidosDirecto,      // ¿flag mos_pedidos_directo ON?
-      pagosDirecto:       _mosPagosDirecto,        // ¿flag mos_pagos_directo ON? (DINERO)
-      provprodDirecto:    _mosProvProdDirecto,     // ¿flag mos_provprod_directo ON?
+      // [DUAL-WRITE] gates *_DIRECTO por-operación (default OFF). ⚠️ Ya NO gobiernan read ni write cableado
+      // (la escritura va por GAS; la lectura usa los gates *Lectura de abajo). Se exponen solo para diagnóstico.
+      proveedoresDirecto: _mosProveedoresDirecto,  // (diagnóstico) ¿flag mos_proveedores_directo ON?
+      pedidosDirecto:     _mosPedidosDirecto,      // (diagnóstico) ¿flag mos_pedidos_directo ON?
+      pagosDirecto:       _mosPagosDirecto,        // (diagnóstico) ¿flag mos_pagos_directo ON?
+      provprodDirecto:    _mosProvProdDirecto,     // (diagnóstico) ¿flag mos_provprod_directo ON?
+      // [DUAL-WRITE] gates de LECTURA por módulo (maestro OR mos_<modulo>_lectura). Estos SÍ gobiernan los
+      // read-paths directos. Default OFF → INERTE. (gastos/liqdia/etiq no tienen read-path directo cableado.)
+      proveedoresLectura: _mosProveedoresLectura,  // ¿lectura directa de proveedores ON?
+      pedidosLectura:     _mosPedidosLectura,      // ¿lectura directa de pedidos ON?
+      pagosLectura:       _mosPagosLectura,        // ¿lectura directa de pagos ON?
+      provprodLectura:    _mosProvProdLectura,     // ¿lectura directa de proveedor-producto ON?
+      jornadasLectura:    _mosJornadasLectura,     // ¿lectura directa de jornadas ON?
+      evalLectura:        _mosEvalLectura,         // ¿lectura directa de evaluaciones ON?
+      horarioLectura:     _mosHorarioLectura,      // ¿lectura directa de horarios ON?
       // [FASE 2] read-paths directos de estos módulos (RPCs 94, array o null→GAS) — diagnóstico/test de paridad.
       getProveedoresDirecto:        _getProveedoresDirecto,
       getPedidosDirecto:            _getPedidosDirecto,
@@ -1230,19 +1244,19 @@ const API = (() => {
       getProveedorProductosDirecto: _getProveedorProductosDirecto,
       // [FASE 2 · LOTE GASTOS/EVAL/HORARIO] gates por-módulo (default OFF). Etiquetas NO se cablea (el front
       // MOS no llama marcarVisto/marcarPegada ni crear-etiqueta). Ver REPORTE.
-      gastosDirecto:      _mosGastosDirecto,       // ¿flag mos_gastos_directo ON? (DINERO)
-      evalDirecto:        _mosEvalDirecto,         // ¿flag mos_eval_directo ON?
-      horarioDirecto:     _mosHorarioDirecto,      // ¿flag mos_horario_directo ON?
-      etiqDirecto:        _mosEtiqDirecto,         // ¿flag mos_etiq_directo ON? (sin consumidor front MOS)
+      gastosDirecto:      _mosGastosDirecto,       // (diagnóstico) ¿flag mos_gastos_directo ON?
+      evalDirecto:        _mosEvalDirecto,         // (diagnóstico) ¿flag mos_eval_directo ON?
+      horarioDirecto:     _mosHorarioDirecto,      // (diagnóstico) ¿flag mos_horario_directo ON?
+      etiqDirecto:        _mosEtiqDirecto,         // (diagnóstico) ¿flag mos_etiq_directo ON? (sin consumidor front MOS)
       // [FASE 2 · 98] read-paths directos eval/horario/etiq (array u objeto o null→GAS) — diagnóstico/paridad.
       getEvaluacionesDiaDirecto:    _getEvaluacionesDiaDirecto,    // RPC evaluaciones_dia (array o null→GAS)
       getHorariosAppsDirecto:       _getHorariosAppsDirecto,       // RPC horarios_apps (objeto keyed por app o null→GAS)
       getEtiquetasPendientesDirecto:_getEtiquetasPendientesDirecto, // RPC etiquetas_pendientes (array o null→GAS) — sin consumidor
       // [FASE 2 · LOTE JORNALES/LIQUIDACIONES] gates por-grupo (default OFF, DINERO). marcarPagos/anularPago/
       // recomputarLiquidacionDia NO cableados (shape/seguridad incompatibles con la RPC) — ver REPORTE.
-      jornadasDirecto:    _mosJornadasDirecto,     // ¿flag mos_jornadas_directo ON? (DINERO jornal)
+      jornadasDirecto:    _mosJornadasDirecto,     // (diagnóstico) ¿flag mos_jornadas_directo ON?
       getJornadasDirecto: _getJornadasDirecto,     // read-path directo jornadas (array o null→GAS) — diagnóstico
-      liqdiaDirecto:      _mosLiqdiaDirecto,       // ¿flag mos_liqdia_directo ON? (DINERO liquidación)
+      liqdiaDirecto:      _mosLiqdiaDirecto,       // (diagnóstico) ¿flag mos_liqdia_directo ON?
       localId:            _mosLocalId              // genera/estampa local_id estable por gesto — test de idempotencia
     },
   };
