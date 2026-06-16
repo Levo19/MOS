@@ -207,7 +207,7 @@
   // [v1.0.14] Versión honesta del módulo. Las 3 apps lo cargan vía CDN con un
   // pin ?v= en su <script>; si ese pin miente, ESTA constante revela la versión
   // REAL servida. Se loguea al boot (init) como "[DeviceAuth] vX en <app>".
-  var _VERSION = '1.0.21';
+  var _VERSION = '1.0.22';
 
   var _config = null;
   var _state = {
@@ -832,6 +832,13 @@
       document.documentElement.classList.remove('da-pre-block');
       // [v1.0.21] Garantía anti-carrera del gate (ver _garantizarGateLevantado).
       _garantizarGateLevantado();
+      // [v1.0.22] Disparar deviceauth:authorized también en el boot ACTIVO (antes SOLO
+      // se disparaba en _transicionarAApp/in-situ). ME escucha este evento para sincronizar
+      // su ref Vue `dispositivoAutorizado`; sin esto, si onAuth corrió antes de que Vue
+      // montara el setter Y el polling de respaldo (60s) expiró con el GAS lento, ME quedaba
+      // en "cargando" ETERNO aunque el módulo YA estaba ACTIVO. Idempotente (re-ACTIVO no daña;
+      // MOS/WH no lo escuchan = no-op para ellos). Fail-closed: solo dentro de estado ACTIVO.
+      try { window.dispatchEvent(new CustomEvent('deviceauth:authorized', { detail: { estado: 'ACTIVO' } })); } catch(_) {}
     }
   }
 
@@ -871,14 +878,23 @@
     _gateReChecks.forEach(function(t) { try { clearTimeout(t); } catch(_) {} });
     _gateReChecks = [];
     var _reCheck = function() {
-      // FAIL-CLOSED: leemos el estado EN VIVO. Si ya no es ACTIVO, NO tocamos el
-      // gate (un bloqueo posterior debe seguir tapando).
+      // FAIL-CLOSED: leemos el estado EN VIVO. Si ya no es ACTIVO, NO tocamos nada
+      // (un bloqueo posterior debe seguir tapando).
       if (_state.estado !== 'ACTIVO') return;
+      // [v1.0.22] Quitar TANTO da-pre-block COMO el overlay del módulo. En ME se observó
+      // (device ACTIVO, DeviceAuth.estado()='ACTIVO') que el OVERLAY (#OVERLAY_ID) quedaba
+      // HUÉRFANO tapando la app —probablemente renderizado tras _ocultarOverlay por una carrera—
+      // y el re-check anterior solo miraba da-pre-block. Quitar ambos cierra el caso (el workaround
+      // manual que destrabó al usuario hacía exactamente esto). Idempotente.
+      var huboGate = false;
       if (document.documentElement &&
           document.documentElement.classList.contains('da-pre-block')) {
-        // Carrera detectada: el gate volvió a taparse aunque seguimos ACTIVO.
-        try { console.warn('[DeviceAuth] gate re-tapado bajo estado ACTIVO (carrera) → re-levantando (anti-stuck).'); } catch(_) {}
         document.documentElement.classList.remove('da-pre-block');
+        huboGate = true;
+      }
+      try { var ov = document.getElementById(OVERLAY_ID); if (ov && ov.parentNode) { ov.parentNode.removeChild(ov); huboGate = true; } } catch(_) {}
+      if (huboGate) {
+        try { console.warn('[DeviceAuth] gate/overlay re-tapado bajo estado ACTIVO (carrera) → re-levantado (anti-stuck).'); } catch(_) {}
         _desbloquearApp();
       }
     };
