@@ -1,5 +1,30 @@
 // ════════════════════════════════════════════════════════════════════
 // DeviceAuth — módulo compartido de verificación de dispositivos
+// v1.0.15 — 2026-06-16 — FASE 3a: REGISTRO/VERIFICACIÓN/APROBACIÓN cableados
+//   a las RPCs Supabase de Fase 1 (SQL 100), CON FALLBACK a GAS, detrás del
+//   flag DEVICE_AUTH_DIRECTO. ⚠️ 100% INERTE: con el flag en OFF (default y
+//   estado actual) el comportamiento es BIT-IDÉNTICO a v1.0.14 — todo va por
+//   GAS, ninguna RPC nueva se llama. Esto es la garantía de seguridad.
+//   · Flag: _devAuthDirecto() → localStorage 'mos_device_auth_directo'==='1'
+//     || window.MOS_CONFIG.deviceAuthDirecto===true. Default OFF.
+//     (get_flags() AÚN no expone 'deviceAuthDirecto'; cuando lo haga se
+//      añadirá aquí sin tocar más nada — ver _devAuthDirecto.)
+//   · ON → verificación: mos.verificar_dispositivo (REST anon, id_dispositivo
+//     snake). ON → registro: mos.registrar_dispositivo. ON → aprobación in-situ:
+//     mos.aprobar_dispositivo (con clave admin + es_reactivar). En CUALQUIER
+//     fallo de RPC (red/{ok:false}/excepción) → FALLBACK transparente a GAS
+//     (mismo path que hoy). FAIL-CLOSED en auth: un error nunca abre la app.
+//   · DUAL-WRITE A LA HOJA: cuando se APRUEBA in-situ DIRECTO a Supabase, se
+//     dispara TAMBIÉN el endpoint GAS actual (best-effort, fire-and-forget)
+//     para que la HOJA DISPOSITIVOS siga fresca para los ~40 lectores GAS no
+//     migrados. Así no hace falta el sync inverso (Fase 2) todavía. NO bloquea
+//     ni revierte el resultado directo si el GAS falla.
+//   · DENYLIST: el heartbeat consulta get_flags().dispositivos_revocados; si
+//     el id_dispositivo propio aparece → bloquea (revocación ≤2min, sin esperar
+//     el día). Solo activo con flag ON.
+//   · Mapeo snake→camel: la RPC devuelve estado/autorizado/verify_version/
+//     fecha_hoy_lima/forzar_*/desbloqueo_temporal_hasta; se adapta al shape
+//     camelCase que el resto del módulo ya consume (d.verifyVersion, etc.).
 // v1.0.14 — 2026-06-16 — FASE 0 higiene: DeviceAuth.VERSION expuesto + log
 //   "[DeviceAuth] vX en <app>" al boot (init) para cazar desyncs de ?v= entre
 //   las 3 apps en consola. Sin cambio de comportamiento (solo versionado honesto).
@@ -60,7 +85,7 @@
   // [v1.0.14] Versión honesta del módulo. Las 3 apps lo cargan vía CDN con un
   // pin ?v= en su <script>; si ese pin miente, ESTA constante revela la versión
   // REAL servida. Se loguea al boot (init) como "[DeviceAuth] vX en <app>".
-  var _VERSION = '1.0.14';
+  var _VERSION = '1.0.15';
 
   var _config = null;
   var _state = {
@@ -90,6 +115,114 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
       return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
     });
+  }
+
+  // ── [v1.0.15 FASE 3a] Auth DIRECTO a Supabase — flag + REST anon + mapeo ──
+  // TODO ESTE BLOQUE ES INERTE con el flag OFF (default): ningún caller lo
+  // ejecuta salvo que _devAuthDirecto() devuelva true.
+  //
+  // Flag DEVICE_AUTH_DIRECTO. Default OFF → comportamiento GAS bit-idéntico.
+  // Fuentes (cualquiera en true → ON): localStorage 'mos_device_auth_directo'
+  // === '1' (override por-dispositivo, piloto) || window.MOS_CONFIG
+  // .deviceAuthDirecto === true (server-wide vía index.html). Cuando get_flags()
+  // exponga 'deviceAuthDirecto', añadir aquí la rama _flagsAnon.deviceAuthDirecto
+  // === '1' (mismo patrón que api.js _mosFlag) sin tocar nada más.
+  function _devAuthDirecto() {
+    try {
+      if (typeof window !== 'undefined' && window.MOS_CONFIG && window.MOS_CONFIG.deviceAuthDirecto === true) return true;
+      if (_lsGet('mos_device_auth_directo') === '1') return true;
+    } catch (_) {}
+    return false;
+  }
+
+  // Base REST de Supabase. Preferimos un config.sbUrl explícito; si no, lo
+  // derivamos de mintUrl (".../functions/v1/mint-mos" → "https://<ref>.supabase.co").
+  // Sin base utilizable → null (el caller cae a GAS).
+  function _sbBase() {
+    try {
+      if (_config && _config.sbUrl) return String(_config.sbUrl).replace(/\/+$/, '');
+      if (_config && _config.mintUrl) {
+        var m = String(_config.mintUrl).match(/^(https?:\/\/[^/]+)/);
+        if (m) return m[1];
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  // Llama una RPC mos.<fn> por REST anon (mismo mecanismo que api.js _sb y
+  // get_flags: POST a /rest/v1/rpc/<fn> con apikey/Authorization=anon +
+  // Accept-Profile/Content-Profile: mos). Las RPCs de auth esperan los args
+  // bajo la clave `p`. Devuelve Promise<objeto JSON> o RECHAZA (timeout/red/
+  // status no-2xx/JSON inválido) — el caller decide el fallback a GAS.
+  function _rpcAnon(fn, args) {
+    var base = _sbBase();
+    if (!base || !_config.sbAnon) return Promise.reject(new Error('SB no configurado'));
+    var ctrl = new AbortController();
+    var to = setTimeout(function () { ctrl.abort(); }, 8000);
+    return fetch(base + '/rest/v1/rpc/' + fn, {
+      method: 'POST',
+      headers: {
+        'apikey': _config.sbAnon,
+        'Authorization': 'Bearer ' + _config.sbAnon,
+        'Accept-Profile': 'mos', 'Content-Profile': 'mos',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ p: args }),
+      signal: ctrl.signal
+    }).then(function (r) {
+      clearTimeout(to);
+      if (!r.ok) throw new Error('RPC ' + fn + ' HTTP ' + r.status);
+      return r.json();
+    }).then(function (j) {
+      if (!j || typeof j !== 'object') throw new Error('RPC ' + fn + ' respuesta inválida');
+      return j;
+    }).catch(function (e) { clearTimeout(to); throw e; });
+  }
+
+  // get_flags() por REST anon (sin args bajo `p`: get_flags() no toma jsonb).
+  // Usado SOLO por la denylist del heartbeat (flag ON). Cache corto en memoria
+  // para no martillar el endpoint. RECHAZA en error (la denylist se salta, no rompe).
+  function _getFlagsAnon() {
+    var base = _sbBase();
+    if (!base || !_config.sbAnon) return Promise.reject(new Error('SB no configurado'));
+    var ctrl = new AbortController();
+    var to = setTimeout(function () { ctrl.abort(); }, 8000);
+    return fetch(base + '/rest/v1/rpc/get_flags', {
+      method: 'POST',
+      headers: {
+        'apikey': _config.sbAnon,
+        'Authorization': 'Bearer ' + _config.sbAnon,
+        'Accept-Profile': 'mos', 'Content-Profile': 'mos',
+        'Content-Type': 'application/json'
+      },
+      body: '{}',
+      signal: ctrl.signal
+    }).then(function (r) {
+      clearTimeout(to);
+      if (!r.ok) throw new Error('get_flags HTTP ' + r.status);
+      return r.json();
+    }).catch(function (e) { clearTimeout(to); throw e; });
+  }
+
+  // Adapta la respuesta snake_case de verificar_dispositivo/registrar_dispositivo
+  // al shape camelCase `d` que _consultarBackend ya consume (mismas claves que el
+  // GAS devolvía: estado, autorizado, verifyVersion, fechaHoyLima, nombre,
+  // forzar_reverify, desbloqueo_temporal_hasta, error). Defensivo ante claves
+  // ausentes. NO inventa estado: si la RPC no trae 'estado', devuelve null para
+  // que el caller trate como fallo y caiga a GAS (fail-closed).
+  function _mapVerifyResp(j) {
+    if (!j || j.ok === false || !j.estado) return null;
+    return {
+      estado:        j.estado,
+      autorizado:    j.autorizado === true || j.estado === 'ACTIVO',
+      verifyVersion: j.verify_version || j.device_verify_version || 0,
+      fechaHoyLima:  j.fecha_hoy_lima || '',
+      nombre:        j.nombre_equipo || j.aprobado_por || 'admin',
+      error:         j.error || '',
+      // Campos de control que el heartbeat/extensión ya leen tal cual (snake):
+      forzar_reverify:           j.forzar_reverify === true,
+      desbloqueo_temporal_hasta: j.desbloqueo_temporal_hasta
+    };
   }
 
   // ── deviceId RESILIENTE (multi-store) ────────────────────────
@@ -646,6 +779,7 @@
     // para mint-mos (misma fuente: DeviceAuth.deviceId() / localStorage). No hay
     // un id "cacheado viejo" distinto: el modal in-situ solo se abre tras init().
     var idActivar = _state.deviceId;
+    var nombreEquipoFinal = !esReactivar ? (nombre || ('Mobile ' + idActivar.substring(0, 6))) : '';
     var payload = {
       action:       endpoint,
       deviceId:     idActivar,
@@ -653,14 +787,59 @@
       app:          _config.app,
       userAgent:    ua
     };
-    if (!esReactivar) payload.nombreEquipo = nombre || ('Mobile ' + idActivar.substring(0, 6));
+    if (!esReactivar) payload.nombreEquipo = nombreEquipoFinal;
 
-    fetch(_config.mosGasUrl, {
-      method: 'POST', body: JSON.stringify(payload)
-    })
-      .then(function(r) { return r.json(); })
-      .then(function(j) {
-        var d = j && j.data;
+    // [v1.0.15 FASE 3a] El POST a GAS (camino histórico) → Promise<d camelCase>.
+    function _aprobarViaGAS() {
+      return fetch(_config.mosGasUrl, { method: 'POST', body: JSON.stringify(payload) })
+        .then(function(r) { return r.json(); })
+        .then(function(j) { return (j && j.data) || null; });
+    }
+
+    // [v1.0.15 FASE 3a] Aprobación DIRECTA a Supabase (flag ON) → mapea la
+    // respuesta snake de aprobar_dispositivo al `d` camelCase que el consumidor
+    // ya espera (autorizado, deviceId-eco, aprobadoPor, error, verifyVersion).
+    // DUAL-WRITE: si la aprobación directa AUTORIZA, dispara TAMBIÉN el POST GAS
+    // (best-effort, fire-and-forget) para refrescar la HOJA DISPOSITIVOS y que
+    // los ~40 lectores GAS no-migrados sigan viendo el device ACTIVO sin esperar
+    // un sync inverso (Fase 2). El fallo del GAS NO revierte ni bloquea el directo.
+    function _aprobarViaDirecto() {
+      return _rpcAnon('aprobar_dispositivo', {
+        id_dispositivo: idActivar,
+        app:            _config.app,
+        clave_admin:    clave,
+        nombre_equipo:  nombreEquipoFinal || null,
+        es_reactivar:   !!esReactivar
+      }).then(function(j) {
+        var autorizado = !!(j && j.autorizado === true);
+        if (autorizado) {
+          // DUAL-WRITE a la hoja (fire-and-forget). No await, no .catch ruidoso.
+          try { _aprobarViaGAS().catch(function(){}); } catch(_) {}
+        }
+        return {
+          autorizado:    autorizado,
+          deviceId:      (j && j.device_id) || idActivar,   // eco anti-desfase
+          aprobadoPor:   (j && j.aprobado_por) || 'admin',
+          verifyVersion: (j && j.verify_version) || 0,
+          fechaHoyLima:  '',
+          error:         (j && j.error) || '',
+          shadowOk:      autorizado   // el directo ESCRIBIÓ la sombra → lista
+        };
+      });
+    }
+
+    // Dispatcher: flag ON → directo (con fallback a GAS si la RPC FALLA por red/
+    // excepción — un "Clave incorrecta" NO es fallo de RPC, es veredicto válido y
+    // NO debe reintentar por GAS). Flag OFF → GAS directo (bit-idéntico v1.0.14).
+    var _dispatch = !_devAuthDirecto()
+      ? _aprobarViaGAS()
+      : _aprobarViaDirecto().catch(function(e) {
+          console.warn('[DeviceAuth] aprobación directa falló → fallback GAS:', e && e.message);
+          return _aprobarViaGAS();
+        });
+
+    _dispatch
+      .then(function(d) {
         if (!d || !d.autorizado) {
           if (errEl) errEl.textContent = (d && d.error) || 'Clave incorrecta';
           _vibrar([40, 30, 40]);
@@ -797,7 +976,46 @@
     return _consultarBackend(false);
   }
 
+  // [v1.0.15 FASE 3a] Dispatcher: flag ON → Supabase (registrar+verificar) con
+  // FALLBACK a GAS en cualquier fallo de RPC; flag OFF → GAS directo (bit-idéntico
+  // a v1.0.14). El procesamiento del estado (state-machine UI/cache/polling) es
+  // COMÚN a ambos caminos vía _procesarRespuestaVerify → cero divergencia de auth.
   function _consultarBackend(silencioso) {
+    if (!_devAuthDirecto()) {
+      // ── Flag OFF: camino histórico INTACTO ──
+      return _consultarBackendGAS(silencioso);
+    }
+    // ── Flag ON: Supabase directo. registrar_dispositivo refresca el heartbeat
+    //    y (para WH/ME nuevos) crea PENDIENTE idempotente; verificar_dispositivo
+    //    da el estado canónico. Para MOS, registrar devuelve NO_REGISTRADO sin
+    //    insertar (master se aprueba in-situ) — coherente con GAS. Si CUALQUIER
+    //    RPC falla → fallback transparente a GAS (auth nunca se queda sin red). ──
+    var ua = (navigator.userAgent || '').substring(0, 200);
+    return _rpcAnon('registrar_dispositivo', {
+      id_dispositivo: _state.deviceId, app: _config.app,
+      user_agent: ua, nombre_equipo: null
+    }).then(function () {
+      // El veredicto de estado lo da verificar_dispositivo (registrar solo
+      // siembra/heartbea). Si registrar falla NO bloqueamos: igual verificamos.
+      return _rpcAnon('verificar_dispositivo', {
+        id_dispositivo: _state.deviceId, app: _config.app
+      });
+    }, function () {
+      // registrar falló → intentar verificar igual (puede existir ya).
+      return _rpcAnon('verificar_dispositivo', {
+        id_dispositivo: _state.deviceId, app: _config.app
+      });
+    }).then(function (j) {
+      var d = _mapVerifyResp(j);
+      if (!d) throw new Error('verificar_dispositivo: respuesta sin estado');
+      return _procesarRespuestaVerify(d, silencioso);
+    }).catch(function (e) {
+      console.warn('[DeviceAuth] auth directo falló → fallback GAS:', e && e.message);
+      return _consultarBackendGAS(silencioso);
+    });
+  }
+
+  function _consultarBackendGAS(silencioso) {
     var ua = (navigator.userAgent || '').substring(0, 200);
     var url = _config.mosGasUrl
       + '?action=registrarSesionDispositivo'
@@ -814,8 +1032,27 @@
         if (!j || j.ok === false) {
           throw new Error(j && j.error || 'Respuesta inválida del backend');
         }
-        var d = j.data || {};
+        return _procesarRespuestaVerify(j.data || {}, silencioso);
+      })
+      .catch(function(e) {
+        clearTimeout(timeout);
+        if (silencioso) {
+          console.warn('[DeviceAuth] refresh silencioso falló:', e.message);
+          throw e;
+        }
+        _state.estado = 'SIN_VERIFICAR';
+        _mostrarUI('SIN_VERIFICAR', e.message || 'Error de red');
+        if (_config.onError) try { _config.onError(e); } catch(_){}
+        throw e;
+      });
+  }
 
+  // [v1.0.15] State-machine COMÚN (extraída de _consultarBackend v1.0.14, sin
+  // cambios de lógica). Recibe el `d` ya desempaquetado (GAS: j.data; directo:
+  // _mapVerifyResp(rpc)). Decide estado, cache, polling/heartbeat y UI.
+  function _procesarRespuestaVerify(d, silencioso) {
+    return Promise.resolve().then(function() {
+        d = d || {};
         // R5: validar verifyVersion — si el server bumpó, invalidar cache local
         var storedVer = parseInt(_lsGet(_config.storageKeys.verifyVersion) || '0', 10);
         var serverVer = parseInt(d.verifyVersion || 0, 10);
@@ -925,15 +1162,16 @@
         _detenerPolling();
         _detenerHeartbeat();
         return 'SIN_VERIFICAR';
-      })
-      .catch(function(e) {
-        clearTimeout(timeout);
+    }).catch(function(e) {
+        // [v1.0.15] Fail-CLOSED si el procesamiento mismo lanza. (Los fallos de
+        // RED del GAS se manejan en _consultarBackendGAS; los del directo en el
+        // dispatcher con fallback a GAS — aquí solo cae un throw de la máquina.)
         if (silencioso) {
-          console.warn('[DeviceAuth] refresh silencioso falló:', e.message);
+          console.warn('[DeviceAuth] procesar verify falló (silencioso):', e.message);
           throw e;
         }
         _state.estado = 'SIN_VERIFICAR';
-        _mostrarUI('SIN_VERIFICAR', e.message || 'Error de red');
+        _mostrarUI('SIN_VERIFICAR', e.message || 'Error de verificación');
         if (_config.onError) try { _config.onError(e); } catch(_){}
         throw e;
       });
@@ -969,55 +1207,87 @@
     _state.heartbeatTimer = setInterval(function() {
       // [v1.0.10 BUG H consistent] Saltar heartbeat si pestaña oculta
       if (document.visibilityState === 'hidden') return;
-      var url = _config.mosGasUrl
-        + '?action=consultarEstadoDispositivo'
-        + '&deviceId=' + encodeURIComponent(_state.deviceId);
-      fetch(url).then(function(r){ return r.json(); }).then(function(j) {
-        var d = j && j.data;
-        if (!d) return;
-        // [BUG B FIX + v1.0.9 BUG N FIX] Detectar TODOS los casos que requieren bloquear:
-        //   - forzar_reverify: master forzó manualmente
-        //   - INACTIVO/SUSPENDIDO: revocación
-        //   - NO_REGISTRADO: master eliminó el row de la sheet
-        //   - PENDIENTE_APROBACION: admin re-puso el dispositivo en pendiente (raro
-        //     pero posible si master quiere re-verificar in-vivo) — antes el
-        //     heartbeat ignoraba este estado y dejaba la app abierta hasta el día sig.
-        //   - verifyVersion mayor: bump global
-        var serverVer = parseInt(d.verifyVersion || 0, 10);
-        var storedVer = parseInt(_lsGet(_config.storageKeys.verifyVersion) || '0', 10);
-        var verBump = serverVer > 0 && serverVer > storedVer;
-        var debeBloquear = d.forzar_reverify === true
-                        || d.estado === 'INACTIVO'
-                        || d.estado === 'SUSPENDIDO'
-                        || d.estado === 'NO_REGISTRADO'
-                        || d.estado === 'PENDIENTE_APROBACION'
-                        || verBump;
-        if (debeBloquear) {
-          _invalidarCache();
-          _detenerHeartbeat();
-          _verificar();
-        }
-        // [v1.0.11] Sincronizar extensión de horario in-situ (mismo flow que
-        // _consultarBackend pero aplicado al heartbeat). Sin esto, una revocación
-        // de extensión desde el panel admin no se propagaría al cliente hasta
-        // que el operador reload o cambie día Lima.
-        try {
-          if (window.ExtensorHorario && typeof d.desbloqueo_temporal_hasta !== 'undefined') {
-            var dthIso = String(d.desbloqueo_temporal_hasta || '').trim();
-            if (dthIso) {
-              var dthMs = Date.parse(dthIso);
-              if (!isNaN(dthMs) && dthMs > Date.now()) {
-                ExtensorHorario.guardarLocal(dthIso);
-              } else {
-                ExtensorHorario.limpiar();
-              }
-            } else {
-              ExtensorHorario.limpiar();
-            }
-          }
-        } catch(_) {}
-      }).catch(function(){});
+      // [v1.0.15 FASE 3a] Flag ON → heartbeat directo (verificar + denylist);
+      // flag OFF → GAS (bit-idéntico v1.0.14).
+      if (_devAuthDirecto()) { _heartbeatDirecto(); }
+      else { _heartbeatGAS(); }
     }, 10 * 60 * 1000);  // 10 min (antes 1h)
+  }
+
+  // [v1.0.15] Aplica la decisión de bloqueo COMÚN a ambos caminos (GAS/directo).
+  // `d` es el shape camelCase del estado. Cualquier estado/flag de revocación →
+  // invalida cache, detiene heartbeat y re-verifica (que mostrará el overlay).
+  function _aplicarDecisionHeartbeat(d) {
+    if (!d) return;
+    // [BUG B FIX + v1.0.9 BUG N FIX] Detectar TODOS los casos que requieren bloquear:
+    //   - forzar_reverify · INACTIVO/SUSPENDIDO · NO_REGISTRADO · PENDIENTE · verBump
+    var serverVer = parseInt(d.verifyVersion || 0, 10);
+    var storedVer = parseInt(_lsGet(_config.storageKeys.verifyVersion) || '0', 10);
+    var verBump = serverVer > 0 && serverVer > storedVer;
+    var debeBloquear = d.forzar_reverify === true
+                    || d.estado === 'INACTIVO'
+                    || d.estado === 'SUSPENDIDO'
+                    || d.estado === 'NO_REGISTRADO'
+                    || d.estado === 'PENDIENTE_APROBACION'
+                    || verBump;
+    if (debeBloquear) {
+      _invalidarCache();
+      _detenerHeartbeat();
+      _verificar();
+    }
+    // [v1.0.11] Sincronizar extensión de horario in-situ (revocación de extensión
+    // desde panel admin se propaga sin esperar reload / cambio de día Lima).
+    try {
+      if (window.ExtensorHorario && typeof d.desbloqueo_temporal_hasta !== 'undefined') {
+        var dthIso = String(d.desbloqueo_temporal_hasta || '').trim();
+        if (dthIso) {
+          var dthMs = Date.parse(dthIso);
+          if (!isNaN(dthMs) && dthMs > Date.now()) { ExtensorHorario.guardarLocal(dthIso); }
+          else { ExtensorHorario.limpiar(); }
+        } else { ExtensorHorario.limpiar(); }
+      }
+    } catch(_) {}
+  }
+
+  function _heartbeatGAS() {
+    var url = _config.mosGasUrl
+      + '?action=consultarEstadoDispositivo'
+      + '&deviceId=' + encodeURIComponent(_state.deviceId);
+    fetch(url).then(function(r){ return r.json(); }).then(function(j) {
+      _aplicarDecisionHeartbeat(j && j.data);
+    }).catch(function(){});
+  }
+
+  // [v1.0.15 FASE 3a] Heartbeat DIRECTO: (1) verificar_dispositivo da estado +
+  // verify_version + extensión; (2) DENYLIST — get_flags().dispositivos_revocados:
+  // si el id propio aparece, bloquear de inmediato (revocación ≤2min, sin esperar
+  // que el estado per-device propague). Ambas fuentes son best-effort: un fallo de
+  // red NO desbloquea (fail-closed mantiene el estado ACTIVO actual del cache del
+  // día; el próximo tick reintenta). NO cae a GAS aquí: con flag ON la sombra es
+  // el maestro; el bloqueo solo se ENDURECE, nunca se relaja por error de red.
+  function _heartbeatDirecto() {
+    // (2) Denylist primero (corta más rápido y es barata).
+    _getFlagsAnon().then(function(flags) {
+      var rev = flags && flags.dispositivos_revocados;
+      if (Array.isArray(rev) && _state.deviceId && rev.indexOf(_state.deviceId) !== -1) {
+        // Revocado en la flota → bloquear ya (equivale a INACTIVO/SUSPENDIDO).
+        _aplicarDecisionHeartbeat({ estado: 'INACTIVO' });
+        return null;  // no hace falta verificar estado puntual; ya bloqueamos
+      }
+      // No revocado → consultar estado puntual + extensión.
+      return _rpcAnon('verificar_dispositivo', {
+        id_dispositivo: _state.deviceId, app: _config.app
+      }).then(function(j) {
+        _aplicarDecisionHeartbeat(_mapVerifyResp(j));
+      });
+    }).catch(function(e) {
+      // get_flags falló → intentar al menos el estado puntual (no relaja nada).
+      _rpcAnon('verificar_dispositivo', {
+        id_dispositivo: _state.deviceId, app: _config.app
+      }).then(function(j) {
+        _aplicarDecisionHeartbeat(_mapVerifyResp(j));
+      }).catch(function(){});
+    });
   }
   function _detenerHeartbeat() {
     if (_state.heartbeatTimer) {
