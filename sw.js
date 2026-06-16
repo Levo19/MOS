@@ -4,30 +4,40 @@
 // ============================================================
 
 // ── Firebase Cloud Messaging (background push) ───────────────
-importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js');
+// 🛡️ Envuelto en try/catch: si gstatic falla al cargar (blip de red durante
+//    install), el SW NO debe quedar sin instalar. Sin esto, un importScripts
+//    fallido aborta TODO el SW → el dispositivo se queda pegado en la versión
+//    vieja (el activate/skipWaiting nuevo nunca corre). Si FCM falla, perdemos
+//    push en background pero la app SÍ actualiza y opera offline.
+try {
+  importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js');
+  importScripts('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js');
 
-firebase.initializeApp({
-  apiKey:            'AIzaSyA_gfynRxAmlbGgHWoioaj5aeaxnnywP88',
-  projectId:         'proyectomos-push',
-  messagingSenderId: '328735199478',
-  appId:             '1:328735199478:web:947f338ae9716a7c049cd7'
-});
-
-const _fcmMsg = firebase.messaging();
-_fcmMsg.onBackgroundMessage(payload => {
-  const title = payload.notification?.title || 'MOS';
-  const body  = payload.notification?.body  || '';
-  self.registration.showNotification(title, {
-    body,
-    icon:    'https://levo19.github.io/MOS/icons/icon-192.png',
-    badge:   'https://levo19.github.io/MOS/icons/icon-192.png',
-    tag:     'mos-push',
-    vibrate: [200, 100, 200]
+  firebase.initializeApp({
+    apiKey:            'AIzaSyA_gfynRxAmlbGgHWoioaj5aeaxnnywP88',
+    projectId:         'proyectomos-push',
+    messagingSenderId: '328735199478',
+    appId:             '1:328735199478:web:947f338ae9716a7c049cd7'
   });
-});
 
-const VERSION = '2.43.218';
+  const _fcmMsg = firebase.messaging();
+  _fcmMsg.onBackgroundMessage(payload => {
+    const title = payload.notification?.title || 'MOS';
+    const body  = payload.notification?.body  || '';
+    self.registration.showNotification(title, {
+      body,
+      icon:    'https://levo19.github.io/MOS/icons/icon-192.png',
+      badge:   'https://levo19.github.io/MOS/icons/icon-192.png',
+      tag:     'mos-push',
+      vibrate: [200, 100, 200]
+    });
+  });
+} catch (err) {
+  // FCM no disponible — la app sigue actualizándose y operando.
+  console.warn('[SW MOS] FCM no se pudo inicializar (push background off):', err);
+}
+
+const VERSION = '2.43.219';
 const CACHE   = 'mos-v' + VERSION;
 const ASSETS  = [
   './',
@@ -92,9 +102,46 @@ self.addEventListener('activate', e => {
 //   - Cache-first: el resto (imágenes, fonts, manifest, etc.).
 // Esto resuelve el "veo versión vieja aunque haya deployado nueva":
 // la próxima vez que abras la app, los archivos críticos vienen frescos.
+//
+// 🛡️ CONTRATO: TODA rama de respondWith resuelve a un Response válido.
+//   El error "Failed to convert value to 'Response'" se produce cuando
+//   respondWith recibe una promesa que cumple con undefined/no-Response.
+//   El bug anterior usaba `Promise.race([fetch, timeoutQueRECHAZA])`:
+//   si fetch fallaba/rechazaba antes y no había caché, el `return fetch()`
+//   del catch volvía a rechazar → respondWith con promesa rechazada
+//   (error de red), y bajo ciertos timings podía colar valores no-Response.
+//   Ahora: timeout que RESUELVE a null (no rechaza), guards explícitos,
+//   y un Response de fallback 504 si todo falla → nunca undefined, nunca
+//   rechazo sin manejar.
+
+// Response de último recurso — garantiza que respondWith jamás vea undefined.
+function _respFallback(msg) {
+  return new Response(msg || 'Sin conexión y sin caché disponible.', {
+    status: 504,
+    statusText: 'Gateway Timeout',
+    headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+  });
+}
+
+// Cachea en background sin bloquear la respuesta. Solo respuestas 200 'basic'.
+function _putEnCache(req, res) {
+  try {
+    if (res && res.status === 200 && res.type === 'basic') {
+      const clone = res.clone();
+      caches.open(CACHE).then(c => c.put(req, clone)).catch(() => {});
+    }
+  } catch (_) {}
+}
+
 self.addEventListener('fetch', e => {
+  // No-GET (POST a supabase rpc/get_flags, etc.) → passthrough nativo del
+  // navegador: NO llamamos respondWith, el browser maneja la request.
   if (e.request.method !== 'GET') return;
-  const url = new URL(e.request.url);
+
+  let url;
+  try { url = new URL(e.request.url); } catch (_) { return; }
+
+  // Cross-origin (firebase CDN, supabase, gstatic, etc.) → passthrough nativo.
   if (url.origin !== self.location.origin) return;
 
   const path = url.pathname;
@@ -107,39 +154,52 @@ self.addEventListener('fetch', e => {
     path.endsWith('version.json');
 
   if (esCritico) {
-    // Network-first con timeout 2.5s → cache fallback
+    // ── Network-first con timeout 2.5s → cache fallback ──
+    // El timeout RESUELVE a null (no rechaza) para no convertir un
+    // "lento" en un "error". Cada paso devuelve un Response real.
     e.respondWith((async () => {
-      try {
-        const netPromise = fetch(e.request);
-        const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 2500));
-        const res = await Promise.race([netPromise, timeout]);
-        if (res && res.status === 200 && res.type !== 'opaque') {
-          const clone = res.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone)).catch(()=>{});
-        }
+      // 1) Intentar red con tope de 2.5s. fetch puede rechazar (offline);
+      //    lo envolvemos para que devuelva null en vez de propagar.
+      const netPromise = fetch(e.request).catch(() => null);
+      const timeout = new Promise(resolve => setTimeout(() => resolve(null), 2500));
+      const res = await Promise.race([netPromise, timeout]);
+
+      if (res) {
+        _putEnCache(e.request, res);
         return res;
-      } catch(_) {
-        const cached = await caches.match(e.request);
-        if (cached) return cached;
-        // Último recurso: intentar red sin timeout
-        return fetch(e.request);
       }
+
+      // 2) Red lenta/caída → caché.
+      const cached = await caches.match(e.request);
+      if (cached) return cached;
+
+      // 3) Sin caché → esperar a la red completa (sin timeout) por si
+      //    solo fue lentitud. Envuelto: si falla, no rechazamos.
+      const netFull = await netPromise.catch(() => null)
+        || await fetch(e.request).catch(() => null);
+      if (netFull) {
+        _putEnCache(e.request, netFull);
+        return netFull;
+      }
+
+      // 4) Todo falló (offline real sin caché) → Response de fallback.
+      //    Garantiza que respondWith NUNCA reciba undefined ni rechazo.
+      return _respFallback('Recurso no disponible offline: ' + path);
     })());
     return;
   }
 
-  // Cache-first para assets estáticos
-  e.respondWith(
-    caches.match(e.request).then(cached => {
-      if (cached) return cached;
-      return fetch(e.request).then(res => {
-        if (!res || res.status !== 200 || res.type === 'opaque') return res;
-        const clone = res.clone();
-        caches.open(CACHE).then(c => c.put(e.request, clone));
-        return res;
-      });
-    })
-  );
+  // ── Cache-first para assets estáticos (imágenes, fonts, manifest…) ──
+  e.respondWith((async () => {
+    const cached = await caches.match(e.request);
+    if (cached) return cached;
+    const res = await fetch(e.request).catch(() => null);
+    if (res) {
+      _putEnCache(e.request, res);
+      return res;
+    }
+    return _respFallback('Asset no disponible offline: ' + path);
+  })());
 });
 
 // ── Mensaje SKIP_WAITING desde la app ───────────────────────
