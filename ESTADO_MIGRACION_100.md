@@ -17,10 +17,16 @@
 
 ### Lo que falta MOS
 - 🔴 **Destrabar tu dispositivo** una vez para adoptar v2.43.219 (instructivo abajo).
-- 🔴🔵 **Activar LECTURA directa módulo por módulo** (necesita tu validación de frescura). Orden:
-  - ☐ proveedores  ☐ prov-producto  ☐ pedidos  ☐ pagos-proveedor  ☐ historial-precios
-  - ☐ gastos  ☐ jornadas  ☐ etiquetas  ☐ evaluaciones  ☐ horarios
-  - (por cada uno: dejar dual-write llenando la sombra unos días → comparar sombra vs hoja → flag lectura='1')
+- ✅ **Read-paths directos COMPLETOS y cableados** (SQL 94+98, INERTE): catálogo, finanzas, historial,
+  proveedores, pedidos, pagos-prov, prov-producto, jornadas, evaluaciones, horarios. (etiquetas: RPC creada,
+  sin consumidor en panel MOS. Quedan por GAS por diseño: getProductosProveedorConStock cross-app,
+  getResumenDia/liquidaciones-cómputo, pagos-jornales.)
+- ✅ Comparador `semaforoLecturasMOS()` (deploy @414) + `compararLiquidacionMOS_semana()` (Fase D ✓ paridad exacta).
+- 🔴🔵 **Activar LECTURA directa módulo por módulo** (BLOQUEADO 2026-06-15 por cuota UrlFetch GAS agotada →
+  sombra stale → activar no rendía; se resetea ~24h). **MAÑANA**: 🔴 re-correr `semaforoLecturasMOS()` (sin
+  error de cuota) → 🔵 activar los módulos en ✓ con tu OK. Estado parcial visto: proveedores tabla ✓,
+  jornadas 285 filas, gastos/etiquetas/evaluaciones/horarios ✓; historial ⚠ (8 huérfanas del cutover viejo,
+  pruebas tuyas LEV217 neto-cero — resolver: resembrar a hoja o limpiar).
 - ✅ **Fase D — liquidaciones** (SQL 96, INERTE): `mos.materializar_liquidacion_dia/_semana` (UPSERT
   preservante) + gate frescura `wh.sesiones` + comparador `compararLiquidacionMOS`. **Bug de dinero cazado
   por 40x y arreglado** (fecha UTC→Lima, descuadraba el P&L un día). Falta: activar `MOS_LIQDIA_DIRECTO='1'`
