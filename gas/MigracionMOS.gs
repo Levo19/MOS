@@ -765,3 +765,80 @@ function compararFinanzasRangoMOS(desde, hasta){
     diferencias:diffs.slice(0,40) };
   Logger.log(JSON.stringify(out,null,2)); return out;
 }
+
+// ============================================================
+// FASE 2 (DINERO) — Comparador getResumenDia (GAS) vs mos.resumen_dia (RPC).
+// INERTE: la RPC existe (93_mos_resumen_dia.sql) pero NADIE la cablea aún. Este comparador
+// SOLO valida paridad al centavo de los KPIs auto de DINERO que materializan LIQUIDACIONES_DIA:
+//   montoBase · pagoEnvasado · bonoMeta  (+ KPIs ventasReales/envasados/metaVenta/presente/auditado).
+// Patrón espejo de compararFinanzasRangoMOS. Corre la RPC para listar las personas evaluables
+// reales de la fecha, y por cada una llama el getResumenDia VIVO de GAS, comparando campo a campo.
+// Requiere correr supabase/93_mos_resumen_dia.sql antes.
+function compararResumenDiaMOS(fecha){
+  var tz = Session.getScriptTimeZone();
+  if (!fecha) {
+    var ayer = new Date(Date.now() - 24*3600*1000);
+    fecha = Utilities.formatDate(ayer, tz, 'yyyy-MM-dd');
+  }
+  var t1 = Date.now();
+  var r = _sbRpc('mos','resumen_dia',{ p_fecha: fecha, p_id_personal: null });
+  var tB = Date.now() - t1;
+  if (!r.ok || !r.data || r.data.ok !== true) {
+    var e = { ok:false, fecha:fecha, error:'RPC falló: HTTP '+r.code+' — '+((r.data&&r.data.error)||r.error||''),
+              nota:'¿corriste 93_mos_resumen_dia.sql en Supabase?' };
+    Logger.log(JSON.stringify(e,null,2)); return e;
+  }
+  var rpcRows = (r.data && r.data.data) || [];
+  // Campos DINERO → paridad EXACTA al centavo (±0.005 por ruido float/numeric, redondeado a 2).
+  var EXACTOS = ['montoBase','pagoEnvasado','bonoMeta'];
+  // KPIs no-dinero → también exactos (son conteos/sumas) salvo metaVenta (config).
+  var KPIS = ['ventasReales','envasados','metaVenta'];
+  var BOOLS = ['presente','auditado'];
+  var diffs = [], personas = 0, tGasTotal = 0;
+  function n2(x){ return Math.round((parseFloat(x)||0)*100)/100; }
+
+  rpcRows.forEach(function(rp){
+    personas++;
+    var t0 = Date.now();
+    var g = getResumenDia({ idPersonal: rp.idPersonal, fecha: fecha });
+    tGasTotal += (Date.now() - t0);
+    if (!g || !g.ok || !g.data) { diffs.push(rp.idPersonal+': getResumenDia GAS falló'); return; }
+    var d = g.data, k = d.kpis || {};
+    // DINERO (al centavo)
+    EXACTOS.forEach(function(c){
+      var a = n2(d[c]), b = n2(rp[c]);
+      if (Math.abs(a-b) > 0.005) diffs.push(rp.idPersonal+' ('+rp.rol+').'+c+': gas='+a+' rpc='+b);
+    });
+    // KPIs (ventasReales/envasados de kpis; metaVenta de kpis.metaVenta)
+    KPIS.forEach(function(c){
+      var a = n2(k[c]), b = n2(rp[c]);
+      if (Math.abs(a-b) > 0.005) diffs.push(rp.idPersonal+' ('+rp.rol+').'+c+': gas='+a+' rpc='+b);
+    });
+    // BOOLS
+    BOOLS.forEach(function(c){
+      var a = (d[c] === true), b = (rp[c] === true);
+      if (a !== b) diffs.push(rp.idPersonal+' ('+rp.rol+').'+c+': gas='+a+' rpc='+b);
+    });
+  });
+
+  var out = {
+    ok: diffs.length === 0,
+    fecha: fecha,
+    personas: personas,
+    veredicto: diffs.length === 0
+      ? '✓ PARIDAD EXACTA — montoBase/pagoEnvasado/bonoMeta + KPIs al centavo'
+      : '⚠ revisar diferencias (DINERO — no aproximar)',
+    velocidad: { gas_total_ms: tGasTotal, rpc_ms: tB },
+    diferencias: diffs.slice(0,60)
+  };
+  Logger.log(JSON.stringify(out,null,2)); return out;
+}
+
+// Corre el comparador sobre varias fechas reales de un tirón.
+function compararResumenDiaMOS_multi(fechas){
+  fechas = fechas || ['2026-06-12','2026-06-13','2026-06-14'];
+  var res = fechas.map(function(f){ return compararResumenDiaMOS(f); });
+  var ok = res.every(function(x){ return x.ok; });
+  var out = { ok: ok, veredicto: ok ? '✓ PARIDAD EXACTA en todas las fechas' : '⚠ hay diferencias', fechas: res };
+  Logger.log(JSON.stringify(out,null,2)); return out;
+}
