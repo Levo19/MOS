@@ -17557,7 +17557,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
        en GAS). El kill-switch server mos.config.MOS_ETIQ_DIRECTO='1' queda ON para completar el cutover,
        pero es INERTE-DE-FACTO (sin consumidor front). -->
 <script>
-  window.MOS_CONFIG = { catalogoDirecto: true, proveedoresDirecto: true, provprodDirecto: true, gastosDirecto: true, pedidosDirecto: true, horarioDirecto: true, finanzasDirecto: true, historialDirecto: true };
+  window.MOS_CONFIG = { catalogoDirecto: true }; /* [ROLLBACK 2026-06-15] Solo CATALOGO queda directo: su LECTURA (getProductos) Y escritura van directo a Supabase -> coherente + validado por el usuario. El resto (proveedores/provprod/gastos/pedidos/horario/finanzas/historial) VUELTO A GAS porque su READ-PATH sigue leyendo la HOJA via GAS y la sync es solo Hoja->Supabase: escribir directo haria que el dato NO aparezca en el read-back -> el usuario lo reingresa -> DUPLICACION (riesgo cazado por el 40x del dinero critico). Reactivar cada modulo SOLO cuando su lectura tambien sea directa (RPC de lectura sobre la sombra). */
 </script>
 <script>
 (function(){
