@@ -49,3 +49,6 @@ El cache EXISTE pero NO autoriza optimista: *"siempre verificamos server PRIMERO
 
 ## Archivos clave
 device-auth.js (boot 764-789, heartbeat 959-1013, cache 218-236, in-situ 535-720, 3-store 173-213) · Config.gs (aprobarDispositivoEnSitu 1766, _propagarDispositivoSombra 1706, consultarEstadoDispositivo 1230, legacy 1914) · SeguridadAlerts.gs (reactivar 338 activo) · mint-mos/index.ts (deviceOk 63-80) · WH index.html 5126-5181 + app.js 1877-2051 · ME index.html 1343/8742-8755/6688-6724/1405-1527 · js/api.js get_flags 104.
+
+## PENDIENTE (lista) — blindaje _devAuthDirecto (pedido del usuario: hacer después)
+_devAuthDirecto() debe exigir config Supabase (sbBase + _config.sbAnon) ANTES de intentar el directo, para que WH/ME (sin sbUrl/sbAnon en init) NO intenten el path directo y vayan a GAS sin rebote. Cambio de 1 guarda en assets/auth/device-auth.js:240. Bump device-auth + 3 pins.
