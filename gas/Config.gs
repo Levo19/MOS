@@ -1899,69 +1899,11 @@ function rechazarDispositivoPendiente(params) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// [v2.43.167] reactivarDispositivoSuspendido — devuelve un device SUSPENDIDO
-// (por cron 7d sin uso) al estado ACTIVO. Se llama desde:
-//   - Panel MOS: master/admin click "Reactivar" en la card del dispositivo
-//   - In-situ: el dispositivo muestra modal "Solicita reactivación" con clave
-//
-// Requiere clave admin (8 dig). Audita auto vía verificarClaveAdmin con
-// accion REACTIVAR_DISPOSITIVO_SUSPENDIDO (tier 2).
+// [FASE 0 v2.43.225] reactivarDispositivoSuspendido_LEGACY_NO_USAR ELIMINADA.
+// Era una def duplicada/muerta de reactivarDispositivoSuspendido (la ACTIVA vive
+// en SeguridadAlerts.gs:338, gana por orden alfabético de clasp). No tenía
+// callers — verificado por grep. La propagación a sombra ya vive en la activa.
 // ════════════════════════════════════════════════════════════════════════
-// [v2.43.224] NEUTRALIZADA — esta función estaba DUPLICADA con SeguridadAlerts.gs:reactivarDispositivoSuspendido,
-// que GANA por orden alfabético de clasp (era la activa). Se renombró a _LEGACY para eliminar el shadowing
-// y que la propagación a la sombra (que se agregó acá pero nunca corría) viva en la def activa (SeguridadAlerts.gs).
-// NO borrar todavía: se conserva como referencia (tiene guard de estado SUSPENDIDO + Inactivo_Alerta_Ts).
-function reactivarDispositivoSuspendido_LEGACY_NO_USAR(params) {
-  if (!params.deviceId)   return { ok: false, error: 'Requiere deviceId' };
-  if (!params.claveAdmin) return { ok: false, error: 'Requiere claveAdmin' };
-  var auth = verificarClaveAdmin({
-    clave:        params.claveAdmin,
-    accion:       'REACTIVAR_DISPOSITIVO_SUSPENDIDO',
-    refDocumento: params.deviceId,
-    appOrigen:    params.app || 'MOS',
-    detalle:      'Reactivación de dispositivo suspendido por inactividad',
-    deviceId:     params.deviceId
-  });
-  if (!auth.ok) return auth;
-  if (!auth.data || !auth.data.autorizado) {
-    return { ok: true, data: { autorizado: false, error: auth.data && auth.data.error || 'Clave incorrecta' } };
-  }
-  var _lock = LockService.getScriptLock();
-  try { _lock.waitLock(15000); } catch(e) { return { ok: false, error: 'Sistema ocupado' }; }
-  try {
-    _garantizarColumnasDispositivos(true);
-    var sheet = getSheet('DISPOSITIVOS');
-    var data  = sheet.getDataRange().getValues();
-    var hdrs  = data[0];
-    var iId   = hdrs.indexOf('ID_Dispositivo');
-    var iEst  = hdrs.indexOf('Estado');
-    var iSus  = hdrs.indexOf('Suspendido_Desde');
-    var iIAT  = hdrs.indexOf('Inactivo_Alerta_Ts');
-    var iUC   = hdrs.indexOf('Ultima_Conexion');
-    for (var i = 1; i < data.length; i++) {
-      if (String(data[i][iId]) !== String(params.deviceId)) continue;
-      var estActual = String(data[i][iEst] || '').toUpperCase();
-      if (estActual === 'ACTIVO') {
-        return { ok: true, data: { autorizado: true, skipped: true, motivo: 'ya_activo' } };
-      }
-      if (estActual !== 'SUSPENDIDO') {
-        return { ok: true, data: { autorizado: false, error: 'Estado ' + estActual + ' no es SUSPENDIDO. Use aprobar normal.' } };
-      }
-      sheet.getRange(i + 1, iEst + 1).setValue('ACTIVO');
-      if (iSus >= 0) sheet.getRange(i + 1, iSus + 1).setValue('');
-      if (iIAT >= 0) sheet.getRange(i + 1, iIAT + 1).setValue('');
-      if (iUC  >= 0) sheet.getRange(i + 1, iUC  + 1).setValue(Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'"));
-      var nombreEq = data[i][hdrs.indexOf('Nombre_Equipo')] || '';
-      var appEq    = data[i][hdrs.indexOf('App')] || '';
-      _notificarAprobacionDispositivo(params.deviceId, appEq, nombreEq, auth.data.validadoPor, 'reactivado');
-      // [v2.43.223 FIX RAÍZ] Propagar al instante a la sombra mos.dispositivos.
-      var shadowOkReact = _propagarDispositivoSombra(params.deviceId, appEq, nombreEq, params.userAgent);
-      return { ok: true, data: { autorizado: true, aprobadoPor: auth.data.validadoPor,
-        accion: 'reactivado', deviceId: String(params.deviceId), shadowOk: shadowOkReact } };
-    }
-    return { ok: false, error: 'Dispositivo no encontrado' };
-  } finally { try { _lock.releaseLock(); } catch(_){} }
-}
 
 // ════════════════════════════════════════════════════════════════════════
 // [v2.43.167] forzarReVerifyDispositivo — master setea Forzar_ReVerify=1 en

@@ -1,5 +1,8 @@
 // ════════════════════════════════════════════════════════════════════
 // DeviceAuth — módulo compartido de verificación de dispositivos
+// v1.0.14 — 2026-06-16 — FASE 0 higiene: DeviceAuth.VERSION expuesto + log
+//   "[DeviceAuth] vX en <app>" al boot (init) para cazar desyncs de ?v= entre
+//   las 3 apps en consola. Sin cambio de comportamiento (solo versionado honesto).
 // v1.0.13 — 2026-06-16 — FIX RAÍZ del 401-post-aprobación (caso real MOS):
 //   1) deviceId RESILIENTE: persiste en localStorage + IndexedDB + Cache
 //      Storage. Lee de cualquiera y re-siembra los que falten. Sobrevive
@@ -53,6 +56,11 @@
 (function() {
   'use strict';
   if (window.DeviceAuth) return;  // dedupe carga doble
+
+  // [v1.0.14] Versión honesta del módulo. Las 3 apps lo cargan vía CDN con un
+  // pin ?v= en su <script>; si ese pin miente, ESTA constante revela la versión
+  // REAL servida. Se loguea al boot (init) como "[DeviceAuth] vX en <app>".
+  var _VERSION = '1.0.14';
 
   var _config = null;
   var _state = {
@@ -1070,6 +1078,9 @@
       return Promise.reject(new Error('init config inválido'));
     }
     _config = config;
+    // [v1.0.14] Log de versión honesta al boot. Un desync de ?v= entre apps se
+    // ve acá (la versión REAL del módulo servido, no el pin del <script>).
+    try { console.log('[DeviceAuth] v' + _VERSION + ' en ' + config.app); } catch(_) {}
     // Suscribirse a visibilitychange
     if (!_state.visibilityHandler) {
       _state.visibilityHandler = _onVisibilityChange;
@@ -1108,6 +1119,7 @@
   }
 
   window.DeviceAuth = {
+    VERSION: _VERSION,
     init: init,
     estado: function() { return JSON.parse(JSON.stringify(_state)); },
     deviceId: function() { return _state.deviceId; },
