@@ -914,3 +914,140 @@ function setupCutoverMOS_paso1(){
   Logger.log(JSON.stringify(out,null,2));
   return out;
 }
+
+// ============================================================
+// FASE D (DINERO MÁXIMO) — Comparador de MATERIALIZACIÓN de LIQUIDACIONES_DIA:
+//   GAS actual (lo que _liqDiaUpsertRow persistiría en la hoja LIQUIDACIONES_DIA, derivado del
+//   getResumenDia VIVO + lo manual preservado de la hoja) vs la materialización DIRECTA en Supabase
+//   (mos.resumen_dia para los AUTO + lo manual preservado de mos.liquidaciones_dia).
+//
+// Espeja el patrón de compararResumenDiaMOS, pero a nivel de FILA-DÍA materializada: compara
+// montoBase/pagoEnvasado/bonoMeta (AUTO, deben coincidir al centavo con la RPC validada) Y el
+// totalDia FINAL = max(0, base+env+meta+bonificacion−sancion) que cada lado persistiría, usando
+// para bonificacion/sancion el valor MANUAL preservado de cada store. DINERO al centavo.
+//
+// ⚠️ INERTE: NO escribe nada (ni hoja ni Supabase). La RPC orquestadora (96) tiene el flag OFF, así
+//    que ni siquiera se la invoca aquí: comparamos el INSUMO de la materialización (resumen_dia, ya
+//    validado) más la regla de total/preservación, contra lo que GAS materializaría VIVO.
+//
+// Alcance: SOLO personal REAL (los virtuales MEX: están fuera de Fase D — mos.resumen_dia no los
+// emite; la materialización directa no los toca. La hoja sí los tiene por GAS; se EXCLUYEN del cuadre).
+//
+// Requiere: 93_mos_resumen_dia.sql + 96_mos_materializar_liquidacion.sql aplicados.
+function compararLiquidacionMOS(fecha){
+  var tz = Session.getScriptTimeZone();
+  if (!fecha) {
+    var ayer = new Date(Date.now() - 24*3600*1000);
+    fecha = Utilities.formatDate(ayer, tz, 'yyyy-MM-dd');
+  }
+  function n2(x){ return Math.round((parseFloat(x)||0)*100)/100; }
+  // total final con la MISMA invariante de GAS/SQL: max(0, round(base+env+meta+bon-san, 2)).
+  function totalFinal(base, env, meta, bon, san){
+    return Math.max(0, n2((parseFloat(base)||0)+(parseFloat(env)||0)+(parseFloat(meta)||0)+(parseFloat(bon)||0)-(parseFloat(san)||0)));
+  }
+
+  // 1) RPC trae las personas reales presentes del día con sus AUTO (montos cross-app).
+  var t1 = Date.now();
+  var r = _sbRpc('mos','resumen_dia',{ p_fecha: fecha, p_id_personal: null });
+  var tB = Date.now() - t1;
+  if (!r.ok || !r.data || r.data.ok !== true) {
+    var e = { ok:false, fecha:fecha, error:'RPC resumen_dia falló: HTTP '+r.code+' — '+((r.data&&r.data.error)||r.error||''),
+              nota:'¿corriste 93/96 en Supabase?' };
+    Logger.log(JSON.stringify(e,null,2)); return e;
+  }
+  var rpcRows = (r.data && r.data.data) || [];
+
+  // 2) Manual preservado del lado DIRECTO: bonificacion/sancion ACTUALES de mos.liquidaciones_dia.
+  //    (la materialización directa los preserva — ver upsert_liquidacion_dia / materializar_liquidacion_dia).
+  var sbDiaMap = {}; // idPersonal -> { bon, san, estado, idPago }
+  try {
+    var fechaKey = String(fecha).replace(/-/g,'');
+    var sel = _sbSelect('mos.liquidaciones_dia', {
+      select: 'id_personal,bonificacion,sancion,estado,id_pago',
+      filters: { 'id_dia': 'like.LDIA-' + fechaKey + '-*' }, limit: 500  // PostgREST like usa * como comodín
+    });
+    if (sel.ok && Array.isArray(sel.data)) {
+      sel.data.forEach(function(row){
+        sbDiaMap[String(row.id_personal)] = {
+          bon: parseFloat(row.bonificacion)||0, san: parseFloat(row.sancion)||0,
+          estado: String(row.estado||'PENDIENTE').toUpperCase(), idPago: String(row.id_pago||'')
+        };
+      });
+    }
+  } catch(_){}
+
+  // 3) Manual preservado del lado GAS: bonificacion/sancion de la HOJA LIQUIDACIONES_DIA.
+  var gasDiaMap = {}; // idPersonal -> { bon, san, estado, idPago }
+  try {
+    var shDia = _liqDiaGetSheet();
+    _sheetToObjects(shDia).forEach(function(row){
+      var f = (typeof _liqNormFecha === 'function') ? _liqNormFecha(row.fecha, tz)
+            : (row.fecha instanceof Date ? Utilities.formatDate(row.fecha, tz, 'yyyy-MM-dd') : String(row.fecha||'').substring(0,10));
+      if (f !== fecha) return;
+      gasDiaMap[String(row.idPersonal)] = {
+        bon: parseFloat(row.bonificacion)||0, san: parseFloat(row.sancion)||0,
+        estado: String(row.estado||'PENDIENTE').toUpperCase(), idPago: String(row.idPago||'')
+      };
+    });
+  } catch(_){}
+
+  // 4) Por cada persona REAL de la RPC: getResumenDia VIVO (GAS) + total con manual de cada lado.
+  var EXACTOS = ['montoBase','pagoEnvasado','bonoMeta'];
+  var diffs = [], personas = 0, tGasTotal = 0;
+  rpcRows.forEach(function(rp){
+    var idp = String(rp.idPersonal||'');
+    if (idp.indexOf('MEX:') === 0) return; // virtuales fuera de alcance
+    if (rp.presente !== true) return;       // solo presentes se materializan
+    personas++;
+    var t0 = Date.now();
+    var g = getResumenDia({ idPersonal: idp, fecha: fecha });
+    tGasTotal += (Date.now() - t0);
+    if (!g || !g.ok || !g.data) { diffs.push(idp+': getResumenDia GAS falló'); return; }
+    var d = g.data;
+
+    // AUTO (deben coincidir GAS vivo vs RPC) al centavo
+    EXACTOS.forEach(function(c){
+      var a = n2(d[c]), b = n2(rp[c]);
+      if (Math.abs(a-b) > 0.005) diffs.push(idp+' ('+rp.rol+').'+c+': gas='+a+' rpc='+b);
+    });
+
+    // TOTAL FINAL que cada lado materializaría (con su manual preservado).
+    // Lado GAS: manual de la hoja si existe; si no, lo que getResumenDia devuelve (fila nueva).
+    var gMan = gasDiaMap[idp] || { bon: n2(d.bonificacion), san: n2(d.sancion) };
+    var totalGas = totalFinal(d.montoBase, d.pagoEnvasado, d.bonoMeta, gMan.bon, gMan.san);
+    // Lado DIRECTO: AUTO de la RPC + manual de mos.liquidaciones_dia si existe; si no, 0 (fila nueva,
+    // bon/san=0 porque resumen_dia no los emite — paridad con materializar_liquidacion_dia fila nueva).
+    var sbMan = sbDiaMap[idp] || { bon: 0, san: 0 };
+    var totalSb = totalFinal(rp.montoBase, rp.pagoEnvasado, rp.bonoMeta, sbMan.bon, sbMan.san);
+    if (Math.abs(totalGas - totalSb) > 0.005) {
+      diffs.push(idp+' ('+rp.rol+').totalDia: gas='+totalGas+' (bon='+gMan.bon+' san='+gMan.san+') sb='+totalSb+' (bon='+sbMan.bon+' san='+sbMan.san+')');
+    }
+  });
+
+  var out = {
+    ok: diffs.length === 0,
+    fecha: fecha,
+    personas: personas,
+    veredicto: diffs.length === 0
+      ? '✓ PARIDAD EXACTA — montoBase/pagoEnvasado/bonoMeta + totalDia materializado al centavo (personal real)'
+      : '⚠ revisar diferencias (DINERO — no aproximar)',
+    nota: 'INERTE: no se escribió nada. Virtuales MEX: excluidos (fuera de Fase D). El bon/san manual se compara entre stores; si difieren es porque GAS/Supabase tienen auditorías distintas (revisar sync de mos.evaluaciones).',
+    velocidad: { gas_total_ms: tGasTotal, rpc_ms: tB },
+    diferencias: diffs.slice(0,60)
+  };
+  Logger.log(JSON.stringify(out,null,2)); return out;
+}
+
+// Corre el comparador de materialización sobre una SEMANA (7 días) de un tirón. DINERO.
+function compararLiquidacionMOS_semana(desde, hasta){
+  var tz = Session.getScriptTimeZone();
+  if (!hasta) hasta = Utilities.formatDate(new Date(Date.now()-24*3600*1000), tz, 'yyyy-MM-dd');
+  if (!desde) desde = (typeof _fechaOffset==='function') ? _fechaOffset(hasta, -6) : hasta;
+  var fechas = (typeof _rangoFechas==='function') ? _rangoFechas(desde, hasta) : [hasta];
+  var res = fechas.map(function(f){ return compararLiquidacionMOS(f); });
+  var ok = res.every(function(x){ return x.ok; });
+  var out = { ok: ok, rango:{ desde:desde, hasta:hasta },
+    veredicto: ok ? '✓ PARIDAD EXACTA en toda la semana' : '⚠ hay diferencias (DINERO)',
+    fechas: res };
+  Logger.log(JSON.stringify(out,null,2)); return out;
+}
