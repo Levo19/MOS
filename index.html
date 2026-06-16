@@ -17540,9 +17540,24 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
        (crearPedido/actualizarPedido). cfgKey _mosFlag('mos_pedidos_directo','pedidosDirecto').
        Escritura REAL solo si mos.config.MOS_PEDIDOS_DIRECTO='1'. NOTA: actualizarPedido
        no tiene equivalente en GAS (con flag OFF caía a "acción no reconocida", nadie la usa);
-       con el flag ON la RPC mos.actualizar_pedido_proveedor la atiende. Rollback: poner false. -->
+       con el flag ON la RPC mos.actualizar_pedido_proveedor la atiende. Rollback: poner false.
+     · horarioDirecto:true → habilita al FRONT a escribir HORARIOS de apps directo (setHorarioApp).
+       cfgKey _mosFlag('mos_horario_directo','horarioDirecto'). Escritura REAL solo si
+       mos.config.MOS_HORARIO_DIRECTO='1'. ⚠️ La ENFORCEMENT de horario en WH/ME lee la HOJA GAS (no
+       Supabase) y GAS dispara push a admins + invalida la cache de WH → por eso _postMOS, tras el
+       directo OK, dispara GAS setHorarioApp FIRE-AND-FORGET (hoja+push+cache al día; el sync
+       hoja→Supabase reconcilia por upsert app, sin duplicar). Rollback: poner false.
+     · finanzasDirecto / historialDirecto:true → habilitan LECTURA directa (getFinanzasRango /
+       getHistorialPrecios). cfgKey _mosFlag('mos_finanzas_directo','finanzasDirecto') y
+       _mosFlag('mos_historial_directo','historialDirecto'). SIN kill-switch server: el gate REAL es
+       la frescura `_fresh` (heartbeat MOS_SYNC_HEARTBEAT + TTL 30min). Con el heartbeat STALE (sync
+       muriendo) la RPC devuelve _fresh=false → el FRONT cae a GAS (jamás sirve P&L/precios viejos);
+       cuando los triggers refrescan el heartbeat, pasa a directo solo. Seguro activar ya. Rollback: poner false.
+     NOTA ETIQUETAS: NO hay flag de cliente (el front MOS no escribe etiquetas; nacen del hook de precio
+       en GAS). El kill-switch server mos.config.MOS_ETIQ_DIRECTO='1' queda ON para completar el cutover,
+       pero es INERTE-DE-FACTO (sin consumidor front). -->
 <script>
-  window.MOS_CONFIG = { catalogoDirecto: true, proveedoresDirecto: true, provprodDirecto: true, gastosDirecto: true, pedidosDirecto: true };
+  window.MOS_CONFIG = { catalogoDirecto: true, proveedoresDirecto: true, provprodDirecto: true, gastosDirecto: true, pedidosDirecto: true, horarioDirecto: true, finanzasDirecto: true, historialDirecto: true };
 </script>
 <script>
 (function(){

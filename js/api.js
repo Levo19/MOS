@@ -816,9 +816,12 @@ const API = (() => {
       // ES la app). El front manda `horario` (shape legacy {lun..dom}) + `admins_libres` (snake) + actualizadoPor;
       // la RPC acepta ese shape (cae a `horario` si no hay `dias`). El front NO lee la respuesta (then→beep ok,
       // refresca por cache local optimista) → shape paritario.
-      // ⚠️ SIDE-EFFECTS GAS-ONLY (documentado en SQL 82): GAS dispara push a admins + invalida la cache de
-      //    horario en WH. La RPC NO los hace (orquestación queda en GAS). ⇒ Con mos_horario_directo ON el cambio
-      //    de horario NO notificaría ni refrescaría WH en caliente. Con el flag OFF (default) es 100% GAS, idéntico.
+      // ⚠️ SIDE-EFFECTS GAS-ONLY (documentado en SQL 82): GAS (a) reescribe la HOJA que WH/ME usan para la
+      //    ENFORCEMENT de horario (resolverHorarioPersonal lee la hoja, NO Supabase), (b) dispara push a admins,
+      //    (c) invalida la cache de horario de WH. La RPC NO los hace (orquestación queda en GAS). ⇒ CAVEAT
+      //    CERRADO en _postMOS: tras el directo OK se dispara GAS setHorarioApp fire-and-forget → hoja+push+cache
+      //    quedan al día (sync hoja→Supabase reconcilia, upsert onConflict=app, sin duplicar). Con el flag OFF
+      //    (default) es 100% GAS, idéntico.
       // NOTA: el front no manda claveAdmin → la rama de auth remoto de GAS no aplica a esta llamada (paridad).
       const a = { app: p.app != null ? String(p.app) : undefined };
       if ('dias' in p && p.dias !== undefined)             a.dias = p.dias;
@@ -970,7 +973,19 @@ const API = (() => {
     if (gate && gate()) {
       // throws de _postDirectoMOS se PROPAGAN (negocio = mismo error que GAS; timeout = anti-duplicado).
       const d = await _postDirectoMOS(action, p);
-      if (d != null) return d;   // éxito directo (data desempaquetada == shape GAS)
+      if (d != null) {
+        // [CAVEAT-CLOSE HORARIOS] El directo escribe SOLO la sombra Supabase (mos.config_horarios_apps),
+        // pero la ENFORCEMENT de horario en WH/ME (resolverHorarioPersonal/verificarHorario) lee la HOJA
+        // GAS, NO Supabase. Además GAS dispara push a admins + invalida la cache de horario de WH. Para no
+        // dejar la hoja desfasada (WH/ME aplicarían el horario VIEJO) ni perder el push/invalidación,
+        // disparamos GAS setHorarioApp FIRE-AND-FORGET tras el directo OK. GAS reescribe la hoja (idempotente)
+        // + push + invalida cache; el sync hoja→Supabase reconcilia (upsert onConflict=app, sin duplicar).
+        // El UI ya resolvió con el directo (optimista); este ping es best-effort y NO bloquea ni revierte.
+        if (action === 'setHorarioApp') {
+          try { _fetch('POST', { action, ...p }).catch(function(){}); } catch (_) {}
+        }
+        return d;   // éxito directo (data desempaquetada == shape GAS)
+      }
       // null → no commiteó (flag server OFF / sin token / no cableada) → GAS, seguro.
     }
     return _fetch('POST', { action, ...p });
