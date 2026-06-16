@@ -3,13 +3,27 @@
 Última sesión: 2026-06-15. Tras el ROLLBACK (el sync Hoja→Supabase pisaba las escrituras directas + read-back
 stale = duplicación), se rediseñó el cutover con el patrón correcto y se **construyó TODO lo construible, INERTE**.
 
-## EL PATRÓN (validado, piloto = Gastos)
-Para flipear un módulo a directo, las 3 cosas van JUNTAS:
-1. **Lectura directa** (RPC `*_lista` sobre la sombra) — cierra el read-back stale.
-2. **Escritura directa** (flag `MOS_*_DIRECTO='1'`) + **heartbeat-por-escritura** (`mos._tocar_latido_sync()`).
-3. **Apagar el sync de esa tabla** (`MOS_SYNC_OFF_TABLAS` += tabla) — sino la hoja la pisa.
-Gate de frescura: `_fresh` (heartbeat MOS_SYNC_HEARTBEAT, TTL 30min). Sombra stale → cae a GAS (seguro).
-Rollback: `resembrarHojaDesdeSombra(tabla)` (append-only por PK).
+## ⚠️ ENFOQUE CAMBIADO A DUAL-WRITE (2026-06-15, decisión del usuario)
+El enfoque "apagar-sync + escritura-directa" resultó FRÁGIL: un device en versión vieja escribe por
+GAS→hoja ignorando el flag de servidor; con el sync apagado ese dato se pierde de la sombra. El 1er flip
+en vivo (proveedores) se activó y revirtió en minutos al detectar el device del usuario en v2.43.193.
+**Nuevo enfoque = DUAL-WRITE estilo ME (robusto ante flota mezclada):**
+- **Escritura** sigue por GAS→hoja (verdad) para TODOS los devices; el handler GAS además ESPEJA a la
+  sombra al instante (`_dualWriteMOS(tabla,obj)` best-effort vía `_sbOnce_`, byte-coherente con el sync).
+  El sync NO se apaga (respaldo). El flag ya NO gobierna escritura.
+- **Lectura** directa de sombra, gated por flag (solo lectura). Se activa por módulo CUANDO su dual-write
+  esté probado fresco (comparar sombra vs hoja unos días). NO depende de que la flota actualice.
+- ✅ Piloto proveedores: `_dualWriteMOS` + invocado en crearProveedorMaster/actualizarProveedorMaster
+  (deploy @411, commit 8fc62e9). INERTE para el usuario (solo acelera la sombra). Falta: activar su
+  lectura (flag) tras verificar frescura.
+- **Replicar `_dualWriteMOS` a cada módulo restante** (pedidos/pagos-prov/provprod/gastos/jornadas/...)
+  en su handler GAS de escritura, cada uno 40x. Luego activar su lectura.
+- SW arreglado v2.43.219 (rollout network-first confiable; device pre-network-first requiere 1 unregister).
+
+## PATRÓN ANTERIOR (apagar-sync) — DESCARTADO para escritura, pero la infra sirve
+La lectura directa (RPCs `*_lista`) + heartbeat + resembrar siguen siendo útiles. Lo que se descarta es
+"apagar el sync + escritura directa por flag". Mantener sync activo + dual-write.
+Rollback dual-write: no aplica (la hoja siempre tiene el dato; el sync reconcilia).
 
 ## CONSTRUIDO (INERTE — flags en '0', MOS sigue 100% GAS)
 - `83_mos_gastos.sql` — piloto gastos: sync-off mecanismo + heartbeat-por-escritura + resembrar. (commit 01add7e)
