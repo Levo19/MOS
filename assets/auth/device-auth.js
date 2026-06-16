@@ -1,5 +1,36 @@
 // ════════════════════════════════════════════════════════════════════
 // DeviceAuth — módulo compartido de verificación de dispositivos
+// v1.0.19 — 2026-06-16 — FIX "CARGANDO INFINITO" del overlay "Verificando
+//   dispositivo / Conectando con MOS" (bug reportado en vivo en WH; aplica a las
+//   3 apps que verifican por GAS). Tres correcciones complementarias:
+//   ┌─ CAUSA RAÍZ — fetch GAS con timeout SOLO en headers ─────────────────────
+//   │ _consultarBackendGAS hacía `clearTimeout(timeout)` en cuanto LLEGABAN los
+//   │ headers (`.then(r => { clearTimeout; return r.json() })`). GAS responde con
+//   │ una cadena de redirects 302→googleusercontent.com: los headers llegan
+//   │ rápido (timeout limpiado) pero el BODY puede quedar streameando/stalleado
+//   │ indefinidamente — cold-start a mitad de stream, cuota urlfetch de MOS GAS
+//   │ agotada devolviendo HTML parcial que nunca cierra, o redirect colgado.
+//   │ Con el timeout ya limpiado, `r.json()` NO tenía tope → colgaba ETERNO y el
+//   │ overlay se quedaba en "Verificando". FIX: el AbortController cubre el fetch
+//   │ COMPLETO (headers + body); solo limpiamos el timeout cuando r.json()
+//   │ TERMINÓ. Así el body también respeta los 10s.
+//   ├─ WATCHDOG GLOBAL (DISENO §Estado 1 "watchdog 10s — no cuelga") ──────────
+//   │ NUNCA estuvo implementado. Cinturón-y-tirantes universal: si a los ~14s
+//   │ seguimos en VERIFICANDO (cualquier eslabón colgado: GAS, RPC directa, rama
+//   │ cache→backend, _procesarRespuestaVerify), salimos del spinner a
+//   │ SIN_VERIFICAR con "Reintentar". FAIL-CLOSED: NO autoriza, NO entra a la app
+//   │ — solo da salida del cuelgue. 14s > 10s del fetch → sin falso positivo en
+//   │ el caso normal. Se desarma al resolver (finally) y en cerrarSesion.
+//   ├─ CACHE-FIRST (mejora de lentitud, sin abrir hueco) ──────────────────────
+//   │ Un device YA verificado HOY (mismo id + mismo día Lima) entra de INMEDIATO
+//   │ por cache; el refresh contra GAS pasa a BACKGROUND silencioso. Elimina el
+//   │ spinner de hasta 10s en cada boot con GAS lento. NO es bypass: un device
+//   │ nunca-verificado no tiene cache → cae a la verificación bloqueante. La
+//   │ revocación detectada en el refresh background sigue cerrando (fail-closed).
+//   └──────────────────────────────────────────────────────────────────────────
+//   NOTA DE DESPLIEGUE: las 3 apps cargan este módulo por CDN con un pin ?v=.
+//   MOS ya bumpó a ?v=1.0.19 en index.html. WH y ME DEBEN bumpar su pin de
+//   <script src=".../device-auth.js?v=..."> a 1.0.19 para recibir este fix.
 // v1.0.16 — 2026-06-16 — FASE 3b: UX MODERNO/OPTIMISTA/FLUIDO + 2 bugs reales.
 //   ┌─ BUG 1 "(sin id)" (reportado en WH al "activar in-situ") ────────────────
 //   │ El overlay/modal renderizaban `_state.deviceId || '(sin id)'` de forma
@@ -116,7 +147,7 @@
   // [v1.0.14] Versión honesta del módulo. Las 3 apps lo cargan vía CDN con un
   // pin ?v= en su <script>; si ese pin miente, ESTA constante revela la versión
   // REAL servida. Se loguea al boot (init) como "[DeviceAuth] vX en <app>".
-  var _VERSION = '1.0.18';
+  var _VERSION = '1.0.19';
 
   var _config = null;
   var _state = {
@@ -126,6 +157,8 @@
     verifyVersion: 0,
     pollingTimer: null,
     heartbeatTimer: null,
+    // [v1.0.19] Timer del watchdog global de "VERIFICANDO" (anti-cuelgue-eterno).
+    watchdogTimer: null,
     visibilityHandler: null,
     // [v1.0.16 BUG 1] Nodos del DOM que muestran el UUID (overlay + modal). Se
     // actualizan EN VIVO cuando _resolverDeviceId resuelve, para que el UUID
@@ -1246,12 +1279,54 @@
     }).catch(function(){});
   }
 
+  // [v1.0.19] WATCHDOG GLOBAL del estado "VERIFICANDO" (DISENO §Estado 1:
+  // "watchdog 10s — no cuelga"). Antes NO existía: si CUALQUIER eslabón del flow
+  // de boot se colgaba (r.json() de GAS sin tope —ya corregido—, la rama
+  // cache→backend silencioso, una RPC directa, o _procesarRespuestaVerify), el
+  // overlay "Verificando dispositivo / Conectando con MOS" quedaba ETERNO sin
+  // salida. Este watchdog es el cinturón-y-tirantes universal: si a los ~14s
+  // seguimos en VERIFICANDO (la verificación no resolvió a NINGÚN estado
+  // terminal), sacamos al usuario del spinner hacia SIN_VERIFICAR con botón
+  // "Reintentar". FAIL-CLOSED: NO autoriza, NO entra a la app — solo da salida
+  // del spinner colgado. Un device no verificado JAMÁS entra por el watchdog.
+  // 14s > 10s del timeout del fetch GAS, así el caso normal (GAS responde en
+  // 1-10s) resuelve y desarma el watchdog antes de que dispare (no hay falso
+  // positivo). Se desarma en _verificar().finally y en cualquier _mostrarUI/
+  // _ocultarOverlay de estado terminal vía _desarmarWatchdog.
+  var _WATCHDOG_MS = 14000;
+  function _desarmarWatchdog() {
+    if (_state.watchdogTimer) { clearTimeout(_state.watchdogTimer); _state.watchdogTimer = null; }
+  }
+  function _armarWatchdog() {
+    _desarmarWatchdog();
+    _state.watchdogTimer = setTimeout(function() {
+      _state.watchdogTimer = null;
+      // Solo actúa si SEGUIMOS colgados en VERIFICANDO. Si ya resolvimos a
+      // ACTIVO/PENDIENTE/INACTIVO/SUSPENDIDO/NO_REGISTRADO/SIN_VERIFICAR el flow
+      // ya mostró su UI → no tocar nada (no pisar un estado legítimo).
+      if (_state.estado !== 'VERIFICANDO') return;
+      console.warn('[DeviceAuth] watchdog ' + _WATCHDOG_MS + 'ms: verificación colgada → salida fail-closed (SIN_VERIFICAR, Reintentar).');
+      // FAIL-CLOSED: NO autorizamos. Soltamos la promise zombi para que el
+      // próximo _verificar (Reintentar / visibilitychange) no la reuse colgada.
+      _verifyPromise = null;
+      _state.estado = 'SIN_VERIFICAR';
+      _mostrarUI('SIN_VERIFICAR', 'MOS no respondió a tiempo. Revisa tu conexión e intenta de nuevo.');
+      if (_config.onError) try { _config.onError(new Error('watchdog timeout verificando dispositivo')); } catch(_) {}
+    }, _WATCHDOG_MS);
+  }
+
   // ── Verificación con singleton dedupe ────────────────────────
   function _verificar() {
     if (_verifyPromise) return _verifyPromise;
     _state.estado = 'VERIFICANDO';
     _mostrarUI('VERIFICANDO');
-    _verifyPromise = _verificarReal().finally(function() { _verifyPromise = null; });
+    // [v1.0.19] Armar el watchdog: si nada resuelve en 14s, salir del spinner
+    // hacia SIN_VERIFICAR (fail-closed). Se desarma al resolver (finally).
+    _armarWatchdog();
+    _verifyPromise = _verificarReal().finally(function() {
+      _verifyPromise = null;
+      _desarmarWatchdog();  // resolvió (a cualquier estado) → ya no hay cuelgue que cazar
+    });
     return _verifyPromise;
   }
 
@@ -1273,21 +1348,14 @@
     // overlay SIN_VERIFICAR rojo momentáneo antes del fail-soft. Antes (v1.0.7)
     // el operador veía un flash "📡 Sin conexión" que después desaparecía,
     // confundiendo la UX.
-    if (_cacheValidoHoy()) {
-      return _consultarBackend(true).catch(function(e) {
-        // Server falla con cache válido → R4 fail-soft silencioso: aceptar cache.
-        // El overlay verde "Verificando dispositivo" se mantuvo todo el tiempo,
-        // ahora pasamos a body visible sin flash de error intermedio.
-        console.warn('[DeviceAuth] server falló con cache válido → fail-soft offline:', e.message);
-        _state.estado = 'ACTIVO';
-        _ocultarOverlay();
-        if (_config.onAuth) try { _config.onAuth(); } catch(_){}
-        _arrancarHeartbeat();
-        return 'ACTIVO';
-      });
-    }
-
-    // Sin cache → consulta backend BLOQUEANTE
+    // [v1.0.19 SEGURIDAD — revisión 40x] Se QUITÓ el cache-first optimista (que entraba por cache
+    // ANTES de verificar el server): el cache (lastVerifyDeviceId+lastVerifyDate en localStorage) es
+    // FORJABLE sin binding al server → combinado con da_optimista_ts forjado permitía un BYPASS
+    // PERMANENTE (un device NUNCA aprobado entrando en boot fresco, renovable indefinidamente). El boot
+    // vuelve a ser BLOQUEANTE (verifica el server ANTES de quitar el gate), ahora protegido por el
+    // watchdog 14s (no cuelga eterno) + el timeout del fetch que cubre el body. El fail-soft offline
+    // (cache cuando el server NO responde) sigue DENTRO de _consultarBackend. Un cache-first seguro
+    // requeriría binding server (token firmado, no forjable) — pendiente, no esencial.
     return _consultarBackend(false);
   }
 
@@ -1338,12 +1406,25 @@
       + '&app=' + encodeURIComponent(_config.app)
       + '&userAgent=' + encodeURIComponent(ua);
 
+    // [v1.0.19 FIX CUELGUE ETERNO] El timeout DEBE cubrir el fetch COMPLETO,
+    // incluido r.json() (lectura del body). Antes hacíamos clearTimeout en
+    // cuanto LLEGABAN los headers (.then(r => { clearTimeout; return r.json() }))
+    // → el AbortController ya no protegía el body. GAS responde con una cadena de
+    // redirects 302→googleusercontent.com: los headers llegan rápido (timeout
+    // limpiado) pero el BODY puede quedar streameando/stalleado para siempre
+    // (cold-start mid-stream, cuota urlfetch agotada que devuelve HTML parcial,
+    // redirect colgado). Resultado: r.json() nunca resuelve y el overlay
+    // "Verificando dispositivo" se queda ETERNO. Fix: el ctrl.abort() del
+    // setTimeout aborta TAMBIÉN durante la lectura del body (la promesa de
+    // r.json() rechaza con AbortError), y solo limpiamos el timeout cuando el
+    // body ya se leyó por completo.
     var ctrl = new AbortController();
     var timeout = setTimeout(function() { ctrl.abort(); }, 10000);
 
     return fetch(url, { signal: ctrl.signal })
-      .then(function(r) { clearTimeout(timeout); return r.json(); })
+      .then(function(r) { return r.json(); })  // NO limpiar timeout aún: el body también debe respetar el límite
       .then(function(j) {
+        clearTimeout(timeout);  // body leído OK → recién ahora liberar el watchdog del fetch
         if (!j || j.ok === false) {
           throw new Error(j && j.error || 'Respuesta inválida del backend');
         }
@@ -1761,6 +1842,7 @@
       _invalidarCache();
       _detenerPolling();
       _detenerHeartbeat();
+      _desarmarWatchdog();  // [v1.0.19] no dejar el watchdog vivo tras teardown
       // [v1.0.9 BUG LL FIX] Limpiar promise zombi — antes próxima init() reusaba
       // la promesa pendiente (que nunca resolvía si cerrarSesion la abortó).
       _verifyPromise = null;
