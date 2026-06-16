@@ -1015,13 +1015,27 @@ function _registrarHistorialPrecio(idProd, skuBase, codBarra, desc, anterior, nu
   // Columnas 2 (skuBase) y 3 (codigoBarra) deben quedar como TEXTO para preservar
   // ceros a la izquierda y evitar que Sheets las convierta a número.
   sheet.getRange(nextRow, 2, 1, 2).setNumberFormat('@');
+  var idHP  = _generateId('HP');
+  var fecha = new Date();
   var values = [
-    _generateId('HP'),
+    idHP,
     String(skuBase  || ''),
     String(codBarra || ''),
-    desc, anterior, nuevo, usuario, motivo, app, new Date()
+    desc, anterior, nuevo, usuario, motivo, app, fecha
   ];
   sheet.getRange(nextRow, 1, 1, values.length).setValues([values]);
+  // [dual-write] Espejo inmediato a mos.historial_precios (best-effort; Sheets = verdad).
+  // Chokepoint único: cubre los 3 callers (actualizarProductoMaster + Almacen). Objeto keyed
+  // por headers de la hoja (id/skuBase/codigoBarra/descripcion/...) = mismo mapeo del batch.
+  try {
+    if (typeof _dualWriteMOS === 'function') {
+      _dualWriteMOS('historial_precios', {
+        id: idHP, skuBase: String(skuBase || ''), codigoBarra: String(codBarra || ''),
+        descripcion: desc, precioAnterior: anterior, precioNuevo: nuevo,
+        usuario: usuario, motivo: motivo, appOrigen: app, fecha: fecha
+      });
+    }
+  } catch (eDW) { Logger.log('[dualWrite historialPrecio] ' + (eDW && eDW.message)); }
 }
 
 function _registrarAlerta(tipo, urgencia, mensaje, appOrigen, datos) {

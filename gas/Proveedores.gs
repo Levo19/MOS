@@ -93,6 +93,15 @@ function registrarPago(params) {
     params.estado || 'PAGADO',
     params.observacion || '', params.registradoPor || ''
   ]);
+  // [dual-write] Espejo inmediato a mos.pagos_proveedor (best-effort; Sheets = verdad).
+  try {
+    _dualWriteMOS('pagos_proveedor', {
+      idPago: id, idProveedor: params.idProveedor, monto: parseFloat(params.monto),
+      fecha: fecha, numeroFactura: params.numeroFactura || '',
+      estado: params.estado || 'PAGADO',
+      observacion: params.observacion || '', registradoPor: params.registradoPor || ''
+    });
+  } catch (eDW) { Logger.log('[dualWrite registrarPago] ' + (eDW && eDW.message)); }
   return { ok: true, data: { idPago: id } };
 }
 
@@ -108,15 +117,27 @@ function crearPedidoProveedor(params) {
   if (!params.idProveedor) return { ok: false, error: 'Requiere idProveedor' };
   var sheet = getSheet('PEDIDOS_PROVEEDOR');
   var id = _generateId('PED');
+  var fechaCreacion = new Date();
   sheet.appendRow([
     id, params.idProveedor,
     JSON.stringify(params.items || []),
     parseFloat(params.montoEstimado) || 0,
-    'BORRADOR', new Date(),
+    'BORRADOR', fechaCreacion,
     params.fechaEstimada || '',
     params.usuario || '',
     params.notas   || ''
   ]);
+  // [dual-write] Espejo inmediato a mos.pedidos_proveedor (best-effort; Sheets = verdad).
+  try {
+    _dualWriteMOS('pedidos_proveedor', {
+      idPedido: id, idProveedor: params.idProveedor,
+      items: JSON.stringify(params.items || []),
+      montoEstimado: parseFloat(params.montoEstimado) || 0,
+      estado: 'BORRADOR', fechaCreacion: fechaCreacion,
+      fechaEstimada: params.fechaEstimada || '',
+      usuario: params.usuario || '', notas: params.notas || ''
+    });
+  } catch (eDW) { Logger.log('[dualWrite crearPedido] ' + (eDW && eDW.message)); }
   return { ok: true, data: { idPedido: id } };
 }
 
@@ -390,6 +411,26 @@ function _getProvProdSheet() {
   return sheet;
 }
 
+// [dual-write] Espejo de UNA fila de PROVEEDORES_PRODUCTOS → mos.proveedores_productos.
+// Re-lee la fila COMPLETA por header (igual que el batch _mosBuildRows) tras una
+// escritura/edición/upsert, así la sombra queda byte-idéntica. Best-effort: si falla,
+// la hoja (verdad) queda intacta y el sync reconcilia. idPP = PK natural (onConflict).
+function _dwProvProd(idPP) {
+  try {
+    if (!idPP) return;
+    var sheet = _getProvProdSheet();
+    var data  = sheet.getDataRange().getValues();
+    var hdrs  = data[0].map(function(h){ return String(h).trim(); });
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0]) === String(idPP)) {
+        var obj = {}; for (var h = 0; h < hdrs.length; h++) { obj[hdrs[h]] = data[i][h]; }
+        _dualWriteMOS('proveedores_productos', obj);
+        return;
+      }
+    }
+  } catch (eDW) { Logger.log('[dualWrite provProd] ' + (eDW && eDW.message)); }
+}
+
 function getProveedorProductos(params) {
   if (!params.idProveedor) return { ok: false, error: 'idProveedor requerido' };
   var rows = _sheetToObjects(_getProvProdSheet()).filter(function(r){
@@ -423,6 +464,7 @@ function agregarProductoProveedor(params) {
   };
   var values = hdrs.map(function(h){ return camposPorNombre[h] !== undefined ? camposPorNombre[h] : ''; });
   sheet.appendRow(values);
+  _dwProvProd(id);   // [dual-write] espejo a mos.proveedores_productos
   return { ok: true, data: { idPP: id } };
 }
 
@@ -453,6 +495,7 @@ function actualizarProductoProveedor(params) {
       if (params.notas              !== undefined) set('notas',            params.notas);
       if (params.unidadesPorBulto   !== undefined) set('unidadesPorBulto', parseInt(params.unidadesPorBulto) || 1);
       set('ultimaActualizacion', new Date());
+      _dwProvProd(params.idPP);   // [dual-write] re-lee fila completa → espejo
       return { ok: true };
     }
   }
@@ -496,6 +539,7 @@ function upsertProductoProveedor(params) {
       sheet.getRange(fila, idxs.descripcion + 1).setValue(descripcion);
       sheet.getRange(fila, idxs.codigoBarra + 1).setNumberFormat('@').setValue(String(codigoBarra));
       sheet.getRange(fila, idxs.ultimaActualizacion + 1).setValue(new Date());
+      _dwProvProd(data[i][idxs.idPP]);   // [dual-write] espejo
       return { ok: true, data: { idPP: data[i][idxs.idPP], accion: 'actualizado' } };
     }
   }
@@ -508,6 +552,7 @@ function upsertProductoProveedor(params) {
     new Date(), true,
     params.notas || 'Auto desde guía'
   ]);
+  _dwProvProd(id);   // [dual-write] espejo a mos.proveedores_productos
   return { ok: true, data: { idPP: id, accion: 'creado' } };
 }
 
@@ -870,6 +915,12 @@ function eliminarProductoProveedor(params) {
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][0]) === String(params.idPP)) {
       sheet.deleteRow(i + 1);
+      // [dual-write] propagar el borrado a la sombra (el sync es solo-upsert, no borra).
+      // 'eq.' es el operador PostgREST obligatorio. Best-effort; .ok logueado si falla.
+      try {
+        var _dp = _sbDelete('mos.proveedores_productos', { id_pp: 'eq.' + String(params.idPP) });
+        if (!_dp.ok) Logger.log('[dualWrite eliminarProductoProveedor] _sbDelete HTTP ' + _dp.code + ' ' + (_dp.error || ''));
+      } catch (eDW) { Logger.log('[dualWrite eliminarProductoProveedor] ' + (eDW && eDW.message)); }
       return { ok: true };
     }
   }

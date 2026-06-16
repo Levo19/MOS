@@ -96,6 +96,23 @@ function crearEvaluacion(params) {
     Math.max(0, parseFloat(params.bonificacion) || 0),    // [v2.41.51] extra
     String(params.bonificacionMotivo || '')
   ]);
+  // [dual-write] Espejo inmediato a mos.evaluaciones (best-effort; Sheets = verdad).
+  // Re-leo la fila recién creada por header (la hoja tiene columnas migradas dinámicas)
+  // → byte-idéntica al batch. id_eval = PK natural. NO altera los hooks _liqDia* de abajo
+  // (esos materializan LIQUIDACIONES_DIA; esto solo espeja la fila de EVALUACIONES).
+  try {
+    if (typeof _dualWriteMOS === 'function') {
+      var _evData = sheet.getDataRange().getValues();
+      var _evHdrs = _evData[0].map(function(h){ return String(h).trim(); });
+      for (var _er = 1; _er < _evData.length; _er++) {
+        if (String(_evData[_er][0]) === String(id)) {
+          var _evObj = {}; for (var _eh = 0; _eh < _evHdrs.length; _eh++) { _evObj[_evHdrs[_eh]] = _evData[_er][_eh]; }
+          _dualWriteMOS('evaluaciones', _evObj);
+          break;
+        }
+      }
+    }
+  } catch (eDW) { Logger.log('[dualWrite crearEvaluacion] ' + (eDW && eDW.message)); }
   // [v2.41.63] Hook materialización en 2 pasos:
   // 1. _liqDiaRecomputar: asegura que la fila existe + actualiza montoBase/
   //    pagoEnvasado/bonoMeta auto (recomputed de actividad real).

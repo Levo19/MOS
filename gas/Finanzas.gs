@@ -133,7 +133,29 @@ function registrarJornada(params) {
     params.registradoPor || '',
     'MANUAL'
   ]);
+  _dwJornada(id);   // [dual-write] espejo a mos.jornadas
   return { ok: true, data: { idJornada: id } };
+}
+
+// [dual-write] Espejo de UNA fila de JORNADAS → mos.jornadas. Re-lee la fila completa
+// por header (igual que el batch _mosBuildRows) tras crear/editar/vetar/rehabilitar →
+// sombra byte-idéntica. Best-effort: si falla, la hoja (verdad) queda intacta y el sync
+// reconcilia. id_jornada = PK natural. El veto/rehab edita la fila in-place → el upsert
+// refleja el tombstone (monto=0, fuente=ELIMINADA) sin borrar la fila (semántica del sync).
+function _dwJornada(idJornada) {
+  try {
+    if (!idJornada) return;
+    var sheet = getSheet('JORNADAS');
+    var data  = sheet.getDataRange().getValues();
+    var hdrs  = data[0].map(function(h){ return String(h).trim(); });
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0]) === String(idJornada)) {
+        var obj = {}; for (var h = 0; h < hdrs.length; h++) { obj[hdrs[h]] = data[i][h]; }
+        _dualWriteMOS('jornadas', obj);
+        return;
+      }
+    }
+  } catch (eDW) { Logger.log('[dualWrite jornada] ' + (eDW && eDW.message)); }
 }
 
 // Veto de pago: marca la jornada como tombstone (fuente='ELIMINADA') con
@@ -153,6 +175,7 @@ function eliminarJornada(params) {
       sheet.getRange(rowNum, 8).setValue(0);
       sheet.getRange(rowNum, 9).setValue('VETO_TS:' + nowIso + ' · por ' + actor);
       sheet.getRange(rowNum, 11).setValue('ELIMINADA');
+      _dwJornada(params.idJornada);   // [dual-write] espejo del tombstone (monto=0, fuente=ELIMINADA)
       return { ok: true, data: { vetoTs: nowIso, idJornada: params.idJornada } };
     }
   }
@@ -205,6 +228,7 @@ function rehabilitarJornada(params) {
       sheet.getRange(rowNum, 9).setValue('REHAB_TS:' + nowIso + ' · por ' + actor);
       // Restaurar fuente — preferir 'MANUAL' (admin la rehabilitó)
       sheet.getRange(rowNum, 11).setValue('MANUAL');
+      _dwJornada(params.idJornada);   // [dual-write] espejo de la rehabilitación
       return { ok: true, data: { rehabTs: nowIso, idJornada: params.idJornada, monto: monto } };
     }
   }
@@ -250,13 +274,15 @@ function importarJornadasDesdeCajas(params) {
       var monto  = personal_match ? parseFloat(personal_match.montoBase || montoDefault) : montoDefault;
       var zona   = String(c.Zona || c.zona || c.Estacion || '');
 
+      var _idJ = _generateId('JOR');
       jSheet.appendRow([
-        _generateId('JOR'), fecha,
+        _idJ, fecha,
         personal_match ? personal_match.idPersonal : '',
         nombre,
         personal_match ? personal_match.rol : 'VENDEDOR',
         'mosExpress', zona, monto, '', 'AUTO', 'AUTO_CAJAS'
       ]);
+      _dwJornada(_idJ);   // [dual-write] espejo a mos.jornadas
       jornadasExist.push(nombre.toLowerCase());
       importados++;
     });
@@ -290,9 +316,10 @@ function registrarGasto(params) {
   }
   var sheet = getSheet('GASTOS');
   var id    = _generateId('GAS');
+  var fechaG = params.fecha || _hoy();
   sheet.appendRow([
     id,
-    params.fecha        || _hoy(),
+    fechaG,
     params.categoria,
     params.tipo         || 'VARIABLE',
     params.descripcion,
@@ -300,6 +327,16 @@ function registrarGasto(params) {
     params.comprobante  || '',
     params.registradoPor || ''
   ]);
+  // [dual-write] Espejo inmediato a mos.gastos (best-effort; Sheets = verdad). DINERO:
+  // solo espeja, no altera el flujo de la hoja. eliminarGasto ya propaga el DELETE.
+  try {
+    _dualWriteMOS('gastos', {
+      idGasto: id, fecha: fechaG, categoria: params.categoria,
+      tipo: params.tipo || 'VARIABLE', descripcion: params.descripcion,
+      monto: parseFloat(params.monto), comprobante: params.comprobante || '',
+      registradoPor: params.registradoPor || ''
+    });
+  } catch (eDW) { Logger.log('[dualWrite registrarGasto] ' + (eDW && eDW.message)); }
   return { ok: true, data: { idGasto: id } };
 }
 
@@ -1021,12 +1058,14 @@ function _registrarJornadaIdempotente(nombre, rol, montoJornal, appOrigen, fecha
       : String(data[i][1] || '').substring(0, 10);
     if (String(data[i][3]).toLowerCase() === nombre.toLowerCase() && fechaFila === fecha) return;
   }
+  var _idJ = _generateId('JOR');
   sheet.appendRow([
-    _generateId('JOR'), fecha, '', nombre,
+    _idJ, fecha, '', nombre,
     rol || 'VENDEDOR', appOrigen || 'AUTO', '',
     parseFloat(montoJornal) || 0, '', 'AUTO',
     appOrigen === 'warehouseMos' ? 'AUTO_LOGIN' : 'AUTO_VENTA'
   ]);
+  _dwJornada(_idJ);   // [dual-write] espejo a mos.jornadas
 }
 
 // _sheetToObjectsLocal está definida en Conexiones.gs (compartida en el mismo proyecto GAS)
@@ -1080,8 +1119,9 @@ function _sincronizarJornadasAutoDelDia(fecha) {
       var idPersonal = String(r.idPersonal || '');
       var idPersonalFinal = idPersonal.indexOf('MEX:') === 0 ? '' : idPersonal;
       var obs = 'Sincronizado automático: presencia detectada';
+      var _idJ = _generateId('JOR');
       sheet.appendRow([
-        _generateId('JOR'),
+        _idJ,
         fecha,
         idPersonalFinal,
         nombre,
@@ -1093,6 +1133,7 @@ function _sincronizarJornadasAutoDelDia(fecha) {
         'AUTO',
         fuente
       ]);
+      _dwJornada(_idJ);   // [dual-write] espejo a mos.jornadas
       creadas++;
     } catch(eP) { errores.push({ nombre: nombre, error: eP.message }); }
   });

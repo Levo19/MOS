@@ -55,6 +55,28 @@ function _etiqHoy() {
   return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
 }
 
+// [dual-write] Espejo de UNA fila de ETIQUETAS_ZONA → mos.etiquetas_zona. Re-lee la fila
+// completa por header (igual que el batch _mosBuildRows) tras cualquier mutación (crear/
+// actualizar/visto/impresa/pegada/obsoleta) → sombra byte-idéntica. Best-effort: si falla,
+// la hoja (verdad) queda intacta y el sync reconcilia. id_etiq = PK natural (onConflict).
+function _dwEtiq(idEtiq) {
+  try {
+    if (!idEtiq || typeof _dualWriteMOS !== 'function') return;
+    var sh = _etiqGetSheet();
+    var data = sh.getDataRange().getValues();
+    var hdrs = data[0].map(function(h){ return String(h).trim(); });
+    var iId = hdrs.indexOf('idEtiq');
+    if (iId < 0) return;
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][iId]) === String(idEtiq)) {
+        var obj = {}; for (var h = 0; h < hdrs.length; h++) { obj[hdrs[h]] = data[i][h]; }
+        _dualWriteMOS('etiquetas_zona', obj);
+        return;
+      }
+    }
+  } catch (eDW) { Logger.log('[dualWrite etiq] ' + (eDW && eDW.message)); }
+}
+
 function _etiqNowIso() {
   return Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
 }
@@ -139,6 +161,7 @@ function _etiqGenerarParaZonas(params) {
       sh.getRange(existIdx + 1, iCambPor     + 1).setValue(String(params.usuario || ''));
       sh.getRange(existIdx + 1, iEstado      + 1).setValue('PENDIENTE');
       sh.getRange(existIdx + 1, iVisto       + 1).setValue(''); // reset vistos
+      _dwEtiq(data[existIdx][hdrs.indexOf('idEtiq')]);   // [dual-write] espejo (fila actualizada)
       actualizadas++;
     } else {
       // Crear nueva fila
@@ -167,6 +190,7 @@ function _etiqGenerarParaZonas(params) {
         return nuevaFila[h] !== undefined ? nuevaFila[h] : '';
       });
       sh.appendRow(rowArr);
+      _dwEtiq(idEtiq);   // [dual-write] espejo (fila nueva)
       creadas++;
     }
   });
@@ -243,6 +267,7 @@ function marcarVistoEtiqueta(params) {
     if (list.indexOf(usuarioN) < 0) {
       list.push(usuarioN);
       sh.getRange(i + 1, iVisto + 1).setValue(list.join(','));
+      _dwEtiq(params.idEtiq);   // [dual-write] espejo (visto_csv)
     }
     return { ok: true, data: { idEtiq: params.idEtiq, vistoPor: list } };
   }
@@ -264,6 +289,7 @@ function marcarPegadaEtiqueta(params) {
     sh.getRange(i + 1, iEstado + 1).setValue('PEGADA');
     sh.getRange(i + 1, iTsPeg  + 1).setValue(_etiqNowIso());
     sh.getRange(i + 1, iPegPor + 1).setValue(String(params.usuario || ''));
+    _dwEtiq(params.idEtiq);   // [dual-write] espejo (PEGADA)
     return { ok: true, data: { idEtiq: params.idEtiq, pegada: true } };
   }
   return { ok: false, error: 'idEtiq no encontrado' };
@@ -439,6 +465,7 @@ function _etiqMarcarImpresa(idEtiq, usuario, jobId) {
     sh.getRange(i + 1, iTsImp  + 1).setValue(_etiqNowIso());
     sh.getRange(i + 1, iImpPor + 1).setValue(String(usuario || ''));
     sh.getRange(i + 1, iJobId  + 1).setValue(String(jobId || ''));
+    _dwEtiq(idEtiq);   // [dual-write] espejo (IMPRESA)
     return true;
   }
   return false;
@@ -527,6 +554,7 @@ function _etiqCronEscalacion() {
     var hdrs = data[0];
     var iEstado = hdrs.indexOf('estado');
     var iComent = hdrs.indexOf('comentario');
+    var iIdEtiqCron = hdrs.indexOf('idEtiq');
     var ahora = new Date().getTime();
     var TRES_DIAS_MS = 3 * 24 * 60 * 60 * 1000;
     var nowIso = _etiqNowIso();
@@ -545,6 +573,7 @@ function _etiqCronEscalacion() {
         sh.getRange(i + 1, iEstado + 1).setValue('OBSOLETA');
         var prevC = String(data[i][iComent] || '');
         sh.getRange(i + 1, iComent + 1).setValue(prevC + (prevC ? ' · ' : '') + 'Auto-obsoleta >3d (' + nowIso + ')');
+        if (iIdEtiqCron >= 0) _dwEtiq(data[i][iIdEtiqCron]);   // [dual-write] espejo (OBSOLETA)
         marcadasObsoletas++;
       }
     }

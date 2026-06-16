@@ -160,6 +160,18 @@ function setHorarioApp(params) {
     sh.appendRow([app, JSON.stringify(horValidado), admins_libres, actualizadoPor, ts]);
   }
 
+  // [dual-write] Espejo inmediato a mos.config_horarios_apps (best-effort; Sheets = verdad).
+  // app = PK natural (onConflict). horario_json es json → _mosJson acepta el objeto directo
+  // (idéntico a parsear el string que escribe el batch). admins_libres es text → "true"/"false".
+  try {
+    if (typeof _dualWriteMOS === 'function') {
+      _dualWriteMOS('config_horarios_apps', {
+        app: app, horarioJson: horValidado, admins_libres: admins_libres,
+        actualizadoPor: actualizadoPor, fechaActualizacion: ts
+      });
+    }
+  } catch (eDW) { Logger.log('[dualWrite setHorarioApp] ' + (eDW && eDW.message)); }
+
   // [v2.43.32] Push refinado: solo a MASTER+ADMIN (no a TODOS los operadores)
   try {
     var resumen = _resumenHorarioParaPush(horValidado);
