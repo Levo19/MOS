@@ -87,17 +87,42 @@ const API = (() => {
   const _SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6YnpkZWlwYnRxa3pqcWRjaHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NzYwMDQsImV4cCI6MjA5NjQ1MjAwNH0.MAlSdz_ugGUZoaU5st6dA_gb_x_IiUL0TXxH176kY9k';
   const _sbTok = { token: null, exp: 0 };
 
-  // ── Flags de activación (default OFF → INERTE) ──
-  // MOS no tiene un objeto de config server-wide tipo WH_CONFIG en index.html.
-  // Replicamos el MECANISMO dual de WH (localStorage + objeto global opcional):
-  //   1) localStorage 'mos_lectura_navegador' === '1'   (palanca por dispositivo)
-  //   2) window.MOS_CONFIG?.lecturaNavegador === true     (palanca server-wide futura)
-  // Preparado para flags por-acción 'mos_<x>_directo' en FASE 1 (helper _mosFlag).
+  // ── [INTERRUPTOR CENTRAL] Flags de toda la flota MOS, leídos de mos.config vía la RPC mos.get_flags()
+  //    (anon, SIN token: se llama al arrancar antes del mint). Réplica fiel de me.get_flags() (MosExpress).
+  //    El frontend los refresca al arrancar y cada ~2min. Cada helper hace `serverFlag || localStorage ||
+  //    MOS_CONFIG`: el server prende/apaga a TODOS desde pg (flip/kill-switch instantáneo, sin depender del
+  //    rollout del SW), y localStorage/MOS_CONFIG siguen como override por-dispositivo (piloto).
+  //    Fail-safe: si get_flags falla (500/red caída), conservamos los últimos flags buenos (o {} en el
+  //    arranque) → manda localStorage/MOS_CONFIG → default OFF = seguro (cae a GAS). NUNCA rompe.
+  //    Esto es PREREQUISITO del cutover de escritura: permite flipear escritura-directa + sync-off (atómico,
+  //    server-side) sin la ventana de incoherencia en la que un dispositivo con SW viejo seguía escribiendo
+  //    por GAS→hoja mientras el sync ya estaba apagado (dato perdido de la sombra). INERTE: con todos los
+  //    flags server en '0' (estado actual), _serverFlags trae todo '0' → _mosFlag decide igual que hoy.
+  let _serverFlags = {};
+  async function _cargarFlagsMOS() {
+    try {
+      const res = await _sbFetchTimeout(`${_SB_URL}/rest/v1/rpc/get_flags`, {
+        method: 'POST',
+        headers: {
+          'apikey': _SB_ANON, 'Authorization': 'Bearer ' + _SB_ANON,
+          'Accept-Profile': 'mos', 'Content-Profile': 'mos', 'Content-Type': 'application/json'
+        },
+        body: '{}'
+      }, 8000);
+      if (res.ok) { const d = await res.json(); if (d && typeof d === 'object') _serverFlags = d; }
+    } catch (_) { /* fail-safe: conservar los últimos flags buenos (o {} = manda localStorage/MOS_CONFIG/OFF) */ }
+  }
+
+  // Flags de activación. Orden de evaluación: server (mos.get_flags, flota) || localStorage (por-dispositivo) ||
+  // window.MOS_CONFIG[cfgKey] (server-wide en index.html, hoy {catalogoDirecto:true}). Default OFF → INERTE.
+  // El término server es `_serverFlags[cfgKey] === '1'` (valor crudo de mos.config, igual que ME).
   function _mosFlag(lsKey, cfgKey) {
     try {
+      if (_serverFlags && _serverFlags[cfgKey] === '1') return true;
       if (localStorage.getItem(lsKey) === '1') return true;
       return (typeof window !== 'undefined' && window.MOS_CONFIG && window.MOS_CONFIG[cfgKey] === true);
     } catch (_) {
+      if (_serverFlags && _serverFlags[cfgKey] === '1') return true;
       return (typeof window !== 'undefined' && window.MOS_CONFIG && window.MOS_CONFIG[cfgKey] === true);
     }
   }
@@ -1021,6 +1046,16 @@ const API = (() => {
     return _fetch('POST', { action, ...p });
   }
 
+  // ── [INTERRUPTOR CENTRAL] Arranque: leer los flags de la flota una vez al cargar el módulo y refrescar cada
+  //    ~2min (propagación del flip/kill server-side, sin recargar la PWA). Fire-and-forget: si falla, _mosFlag
+  //    cae a localStorage/MOS_CONFIG (INERTE/seguro). El primer fetch corre en background; las lecturas/escrituras
+  //    directas de FASE 1/2 ya consultan _serverFlags vía _mosFlag → en cuanto resuelve, la flota está al día.
+  try {
+    _cargarFlagsMOS();
+    const _flagsTid = setInterval(_cargarFlagsMOS, 120000);
+    try { if (_flagsTid && _flagsTid.unref) _flagsTid.unref(); } catch (_) {}
+  } catch (_) { /* nunca romper el arranque del módulo por los flags */ }
+
   return {
     getUrl,
     setUrl,
@@ -1109,7 +1144,10 @@ const API = (() => {
     //    Mientras los flags estén OFF, NINGUNA de estas se invoca en el flujo normal. ──
     _sb: {
       lecturaDirecta: _mosLecturaDirecta,   // ¿flag maestro ON?
-      flag:           _mosFlag,             // gate genérico (FASE 1: flags por-acción)
+      flag:           _mosFlag,             // gate genérico (FASE 1: flags por-acción) — server||local||MOS_CONFIG
+      // [INTERRUPTOR CENTRAL] flags de la flota leídos de mos.get_flags(). Para diagnóstico/forzar refresco.
+      recargarFlags:  _cargarFlagsMOS,      // re-lee mos.get_flags() ahora (devuelve promesa) — diagnóstico/test
+      serverFlags:    () => Object.assign({}, _serverFlags),  // snapshot de los flags server vigentes — diagnóstico
       mintToken:      _mintTokenMOS,        // JWT app='MOS' (null si Edge caída → GAS)
       deviceId:       _mosDeviceId,
       rpc:            _sbRpcMOS,            // RPC PostgREST esquema mos (null = caé a GAS)
