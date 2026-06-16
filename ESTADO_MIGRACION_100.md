@@ -21,11 +21,16 @@
   - ☐ proveedores  ☐ prov-producto  ☐ pedidos  ☐ pagos-proveedor  ☐ historial-precios
   - ☐ gastos  ☐ jornadas  ☐ etiquetas  ☐ evaluaciones  ☐ horarios
   - (por cada uno: dejar dual-write llenando la sombra unos días → comparar sombra vs hoja → flag lectura='1')
-- 🔵 **Fase D — liquidaciones** (cierre semanal, DINERO): materializar `liquidaciones_dia`/`liquidaciones_pagos`
-  directo usando `mos.resumen_dia` + gate de frescura sobre `wh.sesiones` + comparador de paridad. EN CURSO.
-- 🔵 Limpiar el wiring de escritura directa del frontend (`js/api.js _postDirectoMOS`) sin uso en el enfoque dual-write.
-- 🔴🔵 **Fase E — retirar Sheets de MOS** (corte final): cuando todas las lecturas estén directas y validadas,
-  pasar el sync a pg_cron / apagar el sync GAS, y dejar Supabase como única fuente. Gran decisión, con vos.
+- ✅ **Fase D — liquidaciones** (SQL 96, INERTE): `mos.materializar_liquidacion_dia/_semana` (UPSERT
+  preservante) + gate frescura `wh.sesiones` + comparador `compararLiquidacionMOS`. **Bug de dinero cazado
+  por 40x y arreglado** (fecha UTC→Lima, descuadraba el P&L un día). Falta: activar `MOS_LIQDIA_DIRECTO='1'`
+  (validación física) + apagar sync hoja→sombra de esas 2 tablas + cablear cron/front.
+- ✅ **Fase E — pg_cron** (SQL 97, INERTE doble candado): jobs `mos-snapshot-liq-semana` (23:30 Lima,
+  persiste el snapshot que hoy falta) + `mos-health-frescura` (04:00 Lima), ambos `active=false`. Plan de
+  corte de Sheets documentado en DISENO_migracion_mos_fase2.md. Falta: activar (flag + `alter_job active:=true`
+  + apagar `_liqDiaCronDiario`/`_liqSyncJob` GAS tras observar 1-2 noches).
+- 🔵 Limpiar el wiring de escritura directa del frontend (`js/api.js _postDirectoMOS`) sin uso en dual-write (menor).
+- 🔴🔵 **Corte final de Sheets de MOS**: cuando todas las lecturas estén directas y validadas. Gran decisión, con vos.
 
 ---
 

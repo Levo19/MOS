@@ -100,3 +100,49 @@ App de DINERO en prod (ventas/cajas/finanzas/jornales). NO tocar sin extremo cui
 
 ### LO QUE DEBE HACER EL USUARIO (al final, para ACTIVAR — no antes)
 Correr `syncCatalogoSupabase()` 1 vez (crea CATALOGO_SYNC_HEARTBEAT) → activar `localStorage mos_catalogo_directo='1'` en un piloto → validar catálogo directo. Ídem finanzas cuando esté cableado. Todo con rollback = borrar el flag.
+
+---
+
+## ✅ FASE E (2026-06-15): AUTOMATIZACIÓN SNAPSHOT/CIERRE NOCTURNO vía pg_cron — INERTE × 2
+
+SQL aplicado: **`supabase/97_mos_cron_nocturno.sql`** (pg, verificado). Apply: `apply_mos_97.js`; verificación 40x: `verify_mos_97_40x.js`.
+
+**Estado del entorno (verificado, no asumido):** pg_cron **1.6.4 INSTALADO** (schema `pg_catalog`). pg_net disponible pero **NO instalado** — y **no se necesita** (los jobs llaman RPCs SQL internas directo, sin HTTP/Edge). Ya había 2 jobs WH activos (`wh-autocierre` 02UTC, `wh-auditar-cuadre` 03UTC) — **intactos**.
+
+**Lo que se construyó (todo bajo schema `mos`, SECURITY DEFINER, `search_path=''`, grant solo `service_role`):**
+- `mos.cron_log` — bitácora de corridas (RLS on, 0 policies, sin grant anon/authenticated → no es dato de negocio, no expuesta por PostgREST). Auto-purga > 90 días.
+- `mos.cron_snapshot_liquidacion_semana()` — wrapper sin args: calcula lunes..hoy de la semana **Lima** en curso (`date_trunc('week')` = lunes ISO, igual que `_lunesDeSemana` de GAS) y llama `mos.materializar_liquidacion_semana(forzar:false)` (Fase D, SQL 96). Envuelto en `exception` → nunca propaga error a pg_cron. **PERSISTE el snapshot que hoy falta** (resuelve el problema histórico: el cierre semanal GAS solo manda push).
+- `mos.cron_health_frescura()` — **solo lectura + log**: mide frescura de `wh.sesiones` y `me.ventas` del día de negocio Lima de ayer + corre `mos._liq_gate_frescura`; registra veredicto OK/STALE en `cron_log` para alertar antes de activar. No toca ningún dato de negocio.
+- Jobs pg_cron, **creados DESHABILITADOS** (`active=false`):
+  - `mos-snapshot-liq-semana` → `'30 4 * * *'` UTC = **23:30 Lima** (= GAS `_liqDiaCronDiario`, reemplazo 1:1).
+  - `mos-health-frescura`     → `'0 9 * * *'` UTC = **04:00 Lima**.
+  - (Perú = UTC-5 fijo, sin DST.)
+
+**INERTE × 2 (doble candado), probado en pg:**
+1. **Flag** (fuente de verdad): la RPC de Fase D respeta `MOS_LIQDIA_DIRECTO` (hoy `'0'`) → con flag '0' devuelve `MOS_LIQDIA_DIRECTO_OFF` y **0 escrituras**. DRY RUN en tx-rollback: `liquidaciones_dia` 205→205→205.
+2. **Job** (pg_cron): `active=false` → pg_cron 1.6 **no ejecuta** el job.
+- **Idempotencia probada** (flag ON dentro de tx-rollback, 2 corridas seguidas): filas 205→205→205 y `sum(total_dia)` 11754.00 = 11754.00 → no duplica ni infla. Día stale se salta (no aborta la semana).
+
+### PLAN DE CORTE DE SHEETS — Fase E final (DOC, decisión del usuario; no ejecutado)
+
+**Triggers GAS que esta Fase E reemplaza** (sync/snapshot de liquidaciones):
+- `_liqDiaCronDiario` (Liquidaciones.gs:1647, diario 23:30) — sweep del día → reemplazado por `mos-snapshot-liq-semana`.
+- `_liqSyncJob` (Liquidaciones.gs:1709, horario) — sync hoy+ventana rotativa → cubierto por el snapshot nocturno semanal (lunes..hoy cada noche).
+- (Sync sombra) `syncMOSReciente` / `syncMOSCompleto` (MigracionMOS.gs:485-486) — son el sync **Hoja→Supabase**; se apagan por tabla vía `MOS_SYNC_OFF_TABLAS` cuando la escritura directa de esa tabla esté activa (ver SQL 95), **no** por pg_cron.
+
+**Triggers GAS que NO reemplaza (siguen en GAS):**
+- `cierreNocturnoTodos` (Liquidaciones.gs:1752, 23:00) — cierra **sesiones WH + cajas ME + fuerza logout de dispositivos**, escribe a las **Hojas** (que siguen siendo verdad para WH/ME mientras esas apps no migren su escritura). NO es persistencia de liquidación MOS → fuera del alcance de Fase E.
+- `cerrarSemanaAutomatico` (Evaluaciones.gs:1265, domingo 20:00) — solo manda push; puede quedarse como notificador, ahora respaldado por el snapshot persistido.
+
+**ORDEN DE APAGADO (cuando el usuario active Fase E):**
+1. Activar Fase D: `update mos.config set valor='1' where clave='MOS_LIQDIA_DIRECTO'` (+ cablear el invocador si MOS escribe liquidaciones por front; hoy lo escribe el snapshot).
+2. Habilitar el job: `select cron.alter_job((select jobid from cron.job where jobname='mos-snapshot-liq-semana'), active := true);` (ídem `mos-health-frescura`).
+3. Observar 1-2 noches en `mos.cron_log` (snapshot ok + health OK).
+4. **Recién entonces** apagar el equivalente GAS para no duplicar: `configurarTriggerLiquidacionDia`/`setupLiqSyncTrigger` → borrar los triggers `_liqDiaCronDiario` y `_liqSyncJob` desde el editor de Apps Script.
+   ⚠️ Mientras ambos corran con flag '1' habría **doble materialización** (misma tabla); con flag '0' el pg_cron no escribe → no hay riesgo durante la fase inerte. La regla: apagar el GAS DESPUÉS de validar el pg_cron, nunca a ciegas.
+
+### QUÉ QUEDA PARA ACTIVAR FASE E (decisión del usuario)
+- Activar flag `MOS_LIQDIA_DIRECTO='1'` (depende de validar Fase D en vivo primero).
+- `cron.alter_job(..., active := true)` para los 2 jobs.
+- Ejecutar el plan de corte de Sheets (apagar `_liqDiaCronDiario`/`_liqSyncJob` tras validar).
+- **Limitación honesta:** la frescura de `wh.sesiones`/`me.ventas` depende de que el sync GAS→Supabase de WH/ME siga vivo (esos triggers no son MOS). El health job alerta si se atrasan, pero no los repara. El snapshot nocturno de un día stale se SALTA (no paga de menos) → ese día queda pendiente hasta que la sombra se ponga al día y el job re-corra (idempotente).
