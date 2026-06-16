@@ -60,6 +60,17 @@
 
 ---
 
+## 🔐 Rediseño Auth Dispositivos → 100% Supabase + UX moderno (EN CURSO, decisión del usuario 2026-06-16)
+Doc detallado: `DISENO_auth_dispositivos.md`. El usuario quiere la tabla de dispositivos 100% Supabase + UX moderno con efectos. NO OLVIDAR NINGÚN PUNTO:
+- ✅ **Fase 0 higiene** (3 apps, commits d7afbdb/68856e0/833ed59): borrado código muerto + versionado honesto + device-auth v1.0.14.
+- 🔵 **Core auth 100% Supabase** (en diseño): RPCs directas registrar/verificar/aprobar/revocar → `mos.dispositivos` (anon-callable seguro como mint-mos; aprobar reusa `verificar_clave_admin` bcrypt ya existente). Retira la hoja DISPOSITIVOS del camino de auth. mint-mos ya lee la sombra.
+- 🔵 **Boot cache-first optimista** (mata la lentitud: hoy espera round-trip GAS aunque el cache esté fresco) + marca en 3 stores + TTL día-Lima+techo.
+- 🔵 **Revocación denylist** vía get_flags (≤2min, decidido opción A) + verify_version kill-switch.
+- 🔵 **Centralización**: 1 módulo device-auth + 1 backend, las 3 apps heredan.
+- 🔵 **UX MODERNO (Fase 3, MOSTRAR al usuario antes de cerrar)**: overlay cache-fresco invisible + chip; OTP 8 casillas; check SVG animado; **triple feedback háptico+sonoro(WebAudio iOS-safe)+visual(pulse/shake)**; transiciones; estados pendiente/revocado/éxito. iOS-safe, no dvh, prefers-reduced-motion, sin nativos.
+- ⚠️ **Caveats hooks GAS (no olvidar, el diseño los detalla)**: notificación push de aprobación, alertas SEGURIDAD_ALERTAS, purga 7d inactivos (→pg_cron?), permisos_json, desbloqueo temporal, paneles GAS que leen la hoja. Qué se migra (pg_cron/Edge/tabla) vs qué queda. NO perder un aviso de seguridad sin querer.
+- Estado base limpio: Fase 0 (d7afbdb) + get_flags en 99. Lo de Fase 1+2 a-medias fue revertido para rediseñar bien.
+
 ## Transversal (las 3 apps)
 
 - 🔴 **Rotar credenciales expuestas** (diferido): PAT Supabase `sbp_*` + key Anthropic `sk-ant-*`. **NO** rotar `WH_JWT_SECRET`.
