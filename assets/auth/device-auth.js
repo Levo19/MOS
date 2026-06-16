@@ -1,5 +1,36 @@
 // ════════════════════════════════════════════════════════════════════
 // DeviceAuth — módulo compartido de verificación de dispositivos
+// v1.0.16 — 2026-06-16 — FASE 3b: UX MODERNO/OPTIMISTA/FLUIDO + 2 bugs reales.
+//   ┌─ BUG 1 "(sin id)" (reportado en WH al "activar in-situ") ────────────────
+//   │ El overlay/modal renderizaban `_state.deviceId || '(sin id)'` de forma
+//   │ SÍNCRONA. Pero el deviceId se resuelve ASYNC en init() vía _resolverDeviceId
+//   │ (race de 3 stores hasta 3s). El overlay "Verificando" se pinta ANTES de que
+//   │ resuelva → _state.deviceId === null → "(sin id)". FIX: el nodo del UUID se
+//   │ registra en _state.devIdNodes y _setDeviceId() lo actualiza EN VIVO cuando
+//   │ resuelve. Mientras tanto muestra "generando ID…" (no "(sin id)"). Copiable
+//   │ siempre que ya haya id.
+//   ├─ BUG 2 flujo NO optimista / parpadeo "sin autorización" ─────────────────
+//   │ Tras aprobar in-situ, el módulo recargaba y RE-VERIFICABA contra el backend;
+//   │ si la sombra/hoja todavía no propagó, el re-verify devolvía NO_REGISTRADO/
+//   │ PENDIENTE → la app PARPADEABA "equipo sin autorización" antes de entrar.
+//   │ FIX OPTIMISTA: (a) al aprobar OK → check SVG trazado + transición DIRECTA a
+//   │ la app por evento `deviceauth:authorized` + onAuth(), SIN reload duro si la
+//   │ app ya está montada (fade-out overlay / fade-in app). (b) RED ANTI-RETROCESO:
+//   │ tras una aprobación exitosa marcamos _state.recienAprobado=true (+ marca de
+//   │ tiempo en localStorage 'da_optimista_ts'); mientras esté vigente (ventana
+//   │ 90s), un re-verify SILENCIOSO que devuelva NO_REGISTRADO/PENDIENTE NO baja la
+//   │ app a estado de bloqueo (fail-soft) — sólo INACTIVO/SUSPENDIDO/forzar_reverify
+//   │ (revocación REAL) puede cerrar. Así nunca se retrocede a "sin autorización"
+//   │ inmediatamente después de aprobar. El reload (cuando ocurre) hereda la marca.
+//   └──────────────────────────────────────────────────────────────────────────
+//   UX MODERNO (mockups DISENO §3): spinner suave sin parpadeo · UUID visible/
+//   copiable con ✓+vibrate · clave 8 casillas OTP (auto-avanza, auto-submit al 8º,
+//   inputmode numeric) · submit optimista ("Activando…") · clave mala → shake rojo
+//   + buzz + vibrate, limpia sin perder contexto · ÉXITO = check SVG que se traza +
+//   vibrate(40) + acorde corto · transición suave a la app · revocado = shake +
+//   tono grave. Triple feedback (sonoro+visual+háptico). prefers-reduced-motion →
+//   estados sin animación. iOS-safe (webkitAudioContext en gesto, no dvh). NO toca
+//   la lógica Fase 3a (RPCs/fallback/flag) — sólo el UX y la SECUENCIA de estados.
 // v1.0.15 — 2026-06-16 — FASE 3a: REGISTRO/VERIFICACIÓN/APROBACIÓN cableados
 //   a las RPCs Supabase de Fase 1 (SQL 100), CON FALLBACK a GAS, detrás del
 //   flag DEVICE_AUTH_DIRECTO. ⚠️ 100% INERTE: con el flag en OFF (default y
@@ -85,7 +116,7 @@
   // [v1.0.14] Versión honesta del módulo. Las 3 apps lo cargan vía CDN con un
   // pin ?v= en su <script>; si ese pin miente, ESTA constante revela la versión
   // REAL servida. Se loguea al boot (init) como "[DeviceAuth] vX en <app>".
-  var _VERSION = '1.0.15';
+  var _VERSION = '1.0.16';
 
   var _config = null;
   var _state = {
@@ -95,8 +126,22 @@
     verifyVersion: 0,
     pollingTimer: null,
     heartbeatTimer: null,
-    visibilityHandler: null
+    visibilityHandler: null,
+    // [v1.0.16 BUG 1] Nodos del DOM que muestran el UUID (overlay + modal). Se
+    // actualizan EN VIVO cuando _resolverDeviceId resuelve, para que el UUID
+    // nunca quede en "(sin id)". WeakRef no — array simple, los limpiamos al re-render.
+    devIdNodes: [],
+    // [v1.0.16 BUG 2] Marca optimista: tras aprobar in-situ, true durante la
+    // ventana anti-retroceso. Evita que un re-verify silencioso lagueado baje la
+    // app a "sin autorización" justo después de aprobar.
+    recienAprobado: false
   };
+  // [v1.0.16 BUG 2] Clave + ventana (ms) de la marca optimista anti-retroceso.
+  // Persistida para que SOBREVIVA al reload (cuando la app sí recarga). Sólo
+  // protege contra estados NO-revocación (NO_REGISTRADO/PENDIENTE); INACTIVO/
+  // SUSPENDIDO/forzar_reverify siempre pueden cerrar (revocación real fail-closed).
+  var _OPTIMISTA_KEY = 'da_optimista_ts';
+  var _OPTIMISTA_VENTANA_MS = 90 * 1000;  // 90s: holgura para propagación de sombra/hoja
   // Singleton de promise para dedupe de verificaciones concurrentes (multi-tab)
   var _verifyPromise = null;
 
@@ -114,6 +159,70 @@
   function _escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
       return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+    });
+  }
+  // [v1.0.16] prefers-reduced-motion → desactivar animaciones (mockups §3).
+  function _reducedMotion() {
+    try { return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+    catch(_) { return false; }
+  }
+
+  // [v1.0.16 BUG 2] Marca optimista anti-retroceso (sobrevive reload).
+  function _marcarRecienAprobado() {
+    _state.recienAprobado = true;
+    _lsSet(_OPTIMISTA_KEY, String(Date.now()));
+  }
+  function _limpiarRecienAprobado() {
+    _state.recienAprobado = false;
+    _lsRm(_OPTIMISTA_KEY);
+  }
+  // Vigente si la marca (memoria o localStorage tras reload) está dentro de la ventana.
+  function _optimistaVigente() {
+    if (_state.recienAprobado) return true;
+    var ts = parseInt(_lsGet(_OPTIMISTA_KEY) || '0', 10);
+    if (!ts) return false;
+    if (Date.now() - ts <= _OPTIMISTA_VENTANA_MS) return true;
+    _lsRm(_OPTIMISTA_KEY);  // venció → limpiar
+    return false;
+  }
+
+  // [v1.0.16 BUG 1] Registrar un nodo del DOM (overlay/modal) que muestra el
+  // UUID, y actualizar EN VIVO cuando el id resuelva. Texto provisional sin id.
+  function _registrarDevIdNode(el) {
+    if (!el) return;
+    _state.devIdNodes.push(el);
+    _pintarDevIdNode(el);
+  }
+  function _pintarDevIdNode(el) {
+    if (!el) return;
+    if (_state.deviceId) {
+      el.textContent = _state.deviceId;
+      el.classList.remove('da-dev-pend');
+      el.setAttribute('title', 'Toca para copiar el ID del dispositivo');
+    } else {
+      el.textContent = 'generando ID…';   // BUG 1: nunca "(sin id)"
+      el.classList.add('da-dev-pend');
+      el.setAttribute('title', 'Resolviendo el ID del dispositivo…');
+    }
+  }
+  // Llamado por init() cuando _resolverDeviceId resuelve: refresca todos los nodos.
+  function _setDeviceId(id) {
+    _state.deviceId = id;
+    _state.devIdNodes.forEach(_pintarDevIdNode);
+  }
+  // Handler de copia compartido (overlay + modal). No copia si aún no hay id.
+  function _engancharCopiaDevId(el) {
+    if (!el) return;
+    el.addEventListener('click', function() {
+      if (!_state.deviceId) { _vibrar(15); return; }  // aún generando → buzz corto
+      try {
+        if (navigator.clipboard) navigator.clipboard.writeText(_state.deviceId);
+        var prev = el.textContent;
+        el.textContent = '✓ ID copiado';
+        el.classList.add('da-dev-copied');
+        setTimeout(function(){ el.textContent = prev; el.classList.remove('da-dev-copied'); }, 1200);
+        _vibrar(20);
+      } catch(_) {}
     });
   }
 
@@ -419,6 +528,28 @@
       });
     } catch(_){}
   }
+  // [v1.0.16] Tono GRAVE para revocado/bloqueo (mockups §3 Estado 4).
+  function _sonidoGrave() {
+    try {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      var ctx = new Ctx();
+      [196, 147].forEach(function(freq, i) {
+        var osc = ctx.createOscillator();
+        var gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.value = freq;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        var t = ctx.currentTime + i * 0.22;
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.exponentialRampToValueAtTime(0.3, t + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+        osc.start(t);
+        osc.stop(t + 0.42);
+      });
+    } catch(_){}
+  }
   function _vibrar(pattern) {
     try { if (navigator.vibrate) navigator.vibrate(pattern); } catch(_) {}
   }
@@ -430,17 +561,32 @@
     var s = document.createElement('style');
     s.id = 'device-auth-css';
     s.textContent = [
-      '#' + OVERLAY_ID + '{position:fixed;inset:0;z-index:99997;background:linear-gradient(135deg,#0c1426 0%,#1e293b 50%,#0c1426 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;text-align:center}',
-      '#' + OVERLAY_ID + ' .da-emoji{font-size:64px;margin-bottom:18px;animation:da-pulse 1.6s ease-in-out infinite}',
+      '#' + OVERLAY_ID + '{position:fixed;inset:0;z-index:99997;background:linear-gradient(135deg,#0c1426 0%,#1e293b 50%,#0c1426 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;text-align:center;transition:opacity .45s ease}',
+      '#' + OVERLAY_ID + '.da-fade-out{opacity:0;pointer-events:none}',
+      '#' + OVERLAY_ID + ' .da-emoji{font-size:64px;margin-bottom:18px;animation:da-pulse 1.6s ease-in-out infinite;line-height:1}',
+      // [v1.0.16] Spinner suave (anillo) — reemplaza el emoji giratorio en VERIFICANDO.
+      '#' + OVERLAY_ID + ' .da-spinner{width:58px;height:58px;margin:0 auto 20px;border-radius:50%;border:4px solid rgba(16,185,129,.18);border-top-color:#10b981;animation:da-spin .9s linear infinite}',
+      '#' + OVERLAY_ID + ' .da-dots{display:inline-flex;gap:5px;margin-top:4px}',
+      '#' + OVERLAY_ID + ' .da-dots i{width:7px;height:7px;border-radius:50%;background:#10b981;opacity:.4;animation:da-dot 1.2s ease-in-out infinite}',
+      '#' + OVERLAY_ID + ' .da-dots i:nth-child(2){animation-delay:.2s}',
+      '#' + OVERLAY_ID + ' .da-dots i:nth-child(3){animation-delay:.4s}',
       '#' + OVERLAY_ID + ' .da-h1{font-size:22px;font-weight:800;margin:0 0 8px;color:#f1f5f9}',
       '#' + OVERLAY_ID + ' .da-p{font-size:14px;color:#94a3b8;max-width:440px;line-height:1.5;margin:0 0 6px}',
-      '#' + OVERLAY_ID + ' .da-dev{font-family:monospace;font-size:11px;color:#fbbf24;background:rgba(251,191,36,.1);padding:6px 12px;border-radius:6px;margin-top:12px;letter-spacing:.5px;word-break:break-all;max-width:90%}',
+      '#' + OVERLAY_ID + ' .da-dev{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#fbbf24;background:rgba(251,191,36,.1);padding:8px 14px;border-radius:8px;margin-top:14px;letter-spacing:.5px;word-break:break-all;max-width:90%;cursor:pointer;transition:background .15s,transform .1s;border:1px solid rgba(251,191,36,.18)}',
+      '#' + OVERLAY_ID + ' .da-dev:active{transform:scale(.97)}',
+      '#' + OVERLAY_ID + ' .da-dev:hover{background:rgba(251,191,36,.18)}',
+      '#' + OVERLAY_ID + ' .da-dev.da-dev-pend{color:#94a3b8;background:rgba(148,163,184,.1);border-color:rgba(148,163,184,.18);cursor:default;font-style:italic}',
+      '#' + OVERLAY_ID + ' .da-dev.da-dev-copied{color:#34d399;background:rgba(16,185,129,.18);border-color:rgba(16,185,129,.4)}',
+      '#' + OVERLAY_ID + ' .da-dev-cap{font-size:10px;color:#64748b;margin-top:6px;text-transform:uppercase;letter-spacing:.6px}',
       '#' + OVERLAY_ID + ' .da-actions{display:flex;gap:10px;margin-top:24px;flex-wrap:wrap;justify-content:center}',
+      // .da-emoji.da-shake → ícono que tiembla (revocado/bloqueo)
+      '.da-shake{animation:da-shake .5s ease-in-out!important}',
       // [v1.0.3 FIX] Estilos .da-btn GLOBALES — antes scopados a #deviceAuthOverlay,
       // por eso los botones del modal in-situ aparecían SIN colores (solo el
       // padding genérico de .da-insitu-actions button). Ahora aplican en ambos.
       '.da-btn{padding:12px 22px;border-radius:10px;font-weight:800;font-size:14px;border:1px solid transparent;cursor:pointer;transition:transform .15s,background .15s,box-shadow .15s;display:inline-flex;align-items:center;justify-content:center;gap:6px}',
       '.da-btn:active{transform:scale(.96)}',
+      '.da-btn:disabled{opacity:.7;cursor:default}',
       '.da-btn-primary{background:linear-gradient(135deg,#10b981,#059669);color:#fff;box-shadow:0 4px 14px -2px rgba(16,185,129,.45)}',
       '.da-btn-primary:hover{box-shadow:0 6px 20px -2px rgba(16,185,129,.6)}',
       '.da-btn-secondary{background:#1e293b;color:#e2e8f0;border-color:#334155}',
@@ -449,19 +595,45 @@
       '.da-btn-warn:hover{background:rgba(239,68,68,.25)}',
       '@keyframes da-pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.94);opacity:.85}}',
       '@keyframes da-pop{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}',
+      '@keyframes da-spin{to{transform:rotate(360deg)}}',
+      '@keyframes da-dot{0%,100%{opacity:.35;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}',
+      '@keyframes da-shake{0%,100%{transform:translateX(0)}15%,55%{transform:translateX(-9px)}35%,75%{transform:translateX(9px)}}',
+      // Check SVG trazado (éxito)
+      '@keyframes da-draw{to{stroke-dashoffset:0}}',
+      '@keyframes da-ring{from{transform:scale(.4);opacity:0}to{transform:scale(1);opacity:1}}',
+      '.da-check-wrap{display:flex;align-items:center;justify-content:center;margin-bottom:14px}',
+      '.da-check-svg{width:84px;height:84px}',
+      '.da-check-svg .da-ck-ring{stroke:#10b981;stroke-width:5;fill:none;stroke-dasharray:289;stroke-dashoffset:289;animation:da-draw .55s ease-out forwards;transform-origin:center}',
+      '.da-check-svg .da-ck-tick{stroke:#10b981;stroke-width:6;fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:60;stroke-dashoffset:60;animation:da-draw .4s .45s ease-out forwards}',
       // Modal in-situ
-      '.da-insitu-overlay{position:fixed;inset:0;background:rgba(2,6,23,.85);backdrop-filter:blur(8px);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px}',
-      '.da-insitu-modal{width:100%;max-width:420px;background:#0a1424;border:1px solid rgba(16,185,129,.4);border-radius:18px;padding:24px;animation:da-pop .3s ease-out}',
+      '.da-insitu-overlay{position:fixed;inset:0;background:rgba(2,6,23,.85);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px}',
+      '.da-insitu-modal{width:100%;max-width:420px;max-height:92vh;overflow:auto;background:#0a1424;border:1px solid rgba(16,185,129,.4);border-radius:18px;padding:24px;animation:da-pop .3s ease-out;box-sizing:border-box}',
+      '.da-insitu-modal.da-modal-shake{animation:da-shake .5s ease-in-out}',
       '.da-insitu-modal h3{margin:0 0 16px;color:#10b981;font-size:18px;font-weight:800}',
       '.da-insitu-modal label{display:block;margin:12px 0 6px;color:#cbd5e1;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}',
-      '.da-insitu-modal input{width:100%;padding:10px 12px;border-radius:8px;background:#070d18;border:1px solid #334155;color:#f1f5f9;font-size:14px;box-sizing:border-box}',
-      '.da-insitu-modal input:focus{outline:none;border-color:#10b981}',
-      '.da-insitu-err{color:#fca5a5;font-size:12px;margin-top:8px;min-height:18px}',
+      '.da-insitu-modal input[type=text]{width:100%;padding:10px 12px;border-radius:8px;background:#070d18;border:1px solid #334155;color:#f1f5f9;font-size:14px;box-sizing:border-box;transition:border-color .15s}',
+      '.da-insitu-modal input[type=text]:focus{outline:none;border-color:#10b981}',
+      // OTP de 8 casillas
+      '.da-otp{display:flex;gap:7px;justify-content:center;margin:4px 0 2px;direction:ltr}',
+      '.da-otp input{width:34px;height:46px;text-align:center;font-size:22px;font-weight:800;border-radius:9px;background:#070d18;border:1.5px solid #334155;color:#f1f5f9;box-sizing:border-box;transition:border-color .15s,box-shadow .15s,background .15s;-moz-appearance:textfield;padding:0}',
+      '.da-otp input::-webkit-outer-spin-button,.da-otp input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}',
+      '.da-otp input:focus{outline:none;border-color:#10b981;box-shadow:0 0 0 3px rgba(16,185,129,.18);background:#0a1626}',
+      '.da-otp input.da-otp-filled{border-color:#10b981}',
+      '.da-otp.da-otp-bad input{border-color:#ef4444;color:#fca5a5}',
+      '.da-otp.da-otp-bad{animation:da-shake .45s ease-in-out}',
+      '.da-insitu-err{color:#fca5a5;font-size:12px;margin-top:8px;min-height:18px;font-weight:600}',
       '.da-insitu-actions{display:flex;gap:8px;margin-top:18px}',
       '.da-insitu-actions button{flex:1;padding:11px;border-radius:8px;font-weight:800;font-size:14px;border:0;cursor:pointer}',
       '.da-insitu-hint{font-size:11px;color:#64748b;margin-top:8px;line-height:1.4}',
       // Toast aprobado
-      '#daApproveToast{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:linear-gradient(135deg,#10b981,#059669);color:#fff;padding:24px 36px;border-radius:16px;font-size:18px;font-weight:800;z-index:99998;box-shadow:0 20px 60px rgba(16,185,129,.4);animation:da-pop .4s ease-out}',
+      '#daApproveToast{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:linear-gradient(135deg,#10b981,#059669);color:#fff;padding:24px 36px;border-radius:16px;font-size:18px;font-weight:800;z-index:99998;box-shadow:0 20px 60px rgba(16,185,129,.4);animation:da-pop .4s ease-out;text-align:center}',
+      // prefers-reduced-motion → sin animaciones (mockups §3): estados estáticos.
+      '@media (prefers-reduced-motion: reduce){',
+      '  #' + OVERLAY_ID + '{transition:none}',
+      '  #' + OVERLAY_ID + ' .da-emoji,#' + OVERLAY_ID + ' .da-spinner,#' + OVERLAY_ID + ' .da-dots i,.da-shake,.da-insitu-modal,.da-insitu-modal.da-modal-shake,#daApproveToast,.da-otp.da-otp-bad,.da-check-svg .da-ck-ring,.da-check-svg .da-ck-tick{animation:none!important}',
+      '  .da-check-svg .da-ck-ring,.da-check-svg .da-ck-tick{stroke-dashoffset:0!important}',
+      '  #' + OVERLAY_ID + ' .da-spinner{border-top-color:#10b981;border-color:rgba(16,185,129,.35);border-top-color:#10b981}',
+      '}',
       // [v1.0.2 BUG SEC] Bloqueo total de la app cuando overlay está activo.
       // Sin esto la app sigue cargando UI Vue+badges flotantes que el operador
       // puede clickear → bypass de autorización. Critico para MOS porque permite
@@ -510,37 +682,39 @@
     }
     var existing = document.getElementById(OVERLAY_ID);
     if (existing) existing.remove();
+    // [v1.0.16 BUG 1] Re-render limpia los nodos viejos del UUID (el DOM anterior
+    // se descarta); registramos los nuevos para que _setDeviceId los refresque.
+    _state.devIdNodes = [];
     var ov = document.createElement('div');
     ov.id = OVERLAY_ID;
-    // [v1.0.13] Mostrar el deviceId COMPLETO (antes solo 12 chars + "...").
-    // El master necesita ver/compartir el id EXACTO que va a aprobar, y así
-    // confirmar que coincide con el que el device usa para mint-mos. Escapado.
-    var devFull = _escapeHtml(_state.deviceId || '(sin id)');
     var actions = '';
     if (opts.actions) {
       opts.actions.forEach(function(a) {
         actions += '<button class="da-btn da-btn-' + (a.style || 'secondary') + '" data-act="' + a.id + '">' + a.label + '</button>';
       });
     }
+    // [v1.0.16] Cabecera: spinner suave (VERIFICANDO) o emoji (con shake opcional
+    // para revocado/bloqueo). El UUID se pinta vacío y _registrarDevIdNode lo
+    // rellena en vivo cuando _resolverDeviceId resuelve (BUG 1: nunca "(sin id)").
+    var head = opts.spinner
+      ? '<div class="da-spinner" aria-hidden="true"></div>'
+      : '<div class="da-emoji' + (opts.shake && !_reducedMotion() ? ' da-shake' : '') + '">' + (opts.emoji || '🔄') + '</div>';
     ov.innerHTML = ''
-      + '<div class="da-emoji">' + (opts.emoji || '🔄') + '</div>'
+      + head
       + '<h1 class="da-h1">' + opts.title + '</h1>'
-      + '<p class="da-p">' + opts.detail + '</p>'
+      + '<p class="da-p">' + opts.detail + (opts.spinner ? ' <span class="da-dots"><i></i><i></i><i></i></span>' : '') + '</p>'
       + (opts.subDetail ? '<p class="da-p" style="font-size:12px;color:#64748b">' + opts.subDetail + '</p>' : '')
-      + '<div class="da-dev" id="daDevId" title="Toca para copiar el ID del dispositivo">' + devFull + '</div>'
+      + (opts.showDevId === false ? '' :
+            '<div class="da-dev" id="daDevId"></div>'
+          + (opts.devIdCaption ? '<div class="da-dev-cap">' + _escapeHtml(opts.devIdCaption) + '</div>' : ''))
       + (actions ? '<div class="da-actions">' + actions + '</div>' : '');
     _appendCuandoListo(ov);
-    // Copiar el deviceId al tocarlo (útil para soporte / aprobación remota).
-    var devEl = ov.querySelector('#daDevId');
-    if (devEl) devEl.addEventListener('click', function() {
-      try {
-        if (navigator.clipboard) navigator.clipboard.writeText(_state.deviceId || '');
-        var prev = devEl.textContent;
-        devEl.textContent = '✓ ID copiado';
-        setTimeout(function(){ devEl.textContent = prev; }, 1200);
-        _vibrar(20);
-      } catch(_) {}
-    });
+    // [v1.0.16 BUG 1] Registrar + enganchar copia del nodo del UUID (live-bound).
+    if (opts.showDevId !== false) {
+      var devEl = ov.querySelector('#daDevId');
+      _registrarDevIdNode(devEl);    // pinta el id actual o "generando ID…"
+      _engancharCopiaDevId(devEl);
+    }
     // Handlers (se enganchan al nodo, no requieren que esté en DOM aún)
     if (opts.actions) {
       opts.actions.forEach(function(a) {
@@ -594,9 +768,12 @@
   // ── UI por estado ────────────────────────────────────────────
   function _mostrarUI(estado, extra) {
     if (estado === 'VERIFICANDO') {
+      // [v1.0.16] Spinner suave (anillo) + dots — sin emoji giratorio, sin parpadeo.
+      // El UUID no aporta aquí y aún puede estar resolviéndose → showDevId:false.
       _renderOverlay({
-        emoji: '🔄', title: 'Verificando dispositivo',
-        detail: 'Conectando con MOS...',
+        spinner: true, title: 'Verificando dispositivo',
+        detail: 'Conectando con MOS',
+        showDevId: false,
         actions: []
       });
     } else if (estado === 'PENDIENTE_APROBACION') {
@@ -611,6 +788,7 @@
         emoji: '⌛', title: 'Esperando aprobación',
         detail: detailP,
         subDetail: 'Re-verificación automática cada 15 segundos.',
+        devIdCaption: 'ID de este dispositivo · toca para copiar',
         actions: [
           // [v1.0.2] Botón re-solicitar siempre presente — operador puede re-empujar
           // la notificación si el admin no la vio o si ya pasó mucho tiempo.
@@ -621,22 +799,30 @@
         ]
       });
     } else if (estado === 'INACTIVO') {
+      // [v1.0.16] Estado revocado/bloqueo (mockups §3 Estado 4): ícono shake +
+      // vibrate + tono grave. Triple feedback. Reduced-motion → sin shake (CSS).
       _renderOverlay({
-        emoji: '🚫', title: 'Dispositivo desactivado',
+        emoji: '🚫', shake: true, title: 'Dispositivo desactivado',
         detail: extra || 'Este dispositivo fue desactivado por el administrador.',
         subDetail: 'Contacta al admin si necesitas reactivarlo.',
+        devIdCaption: 'ID de este dispositivo · toca para copiar',
         actions: []
       });
+      _sonidoGrave();
+      _vibrar([50, 30, 50]);
     } else if (estado === 'SUSPENDIDO') {
       _renderOverlay({
-        emoji: '⏸', title: 'Dispositivo suspendido',
+        emoji: '⏸', shake: true, title: 'Dispositivo suspendido',
         detail: extra || 'Tu dispositivo fue suspendido por inactividad (>7 días sin uso).',
         subDetail: 'Pide reactivación al admin (panel) o usa "Reactivar in-situ" con clave.',
+        devIdCaption: 'ID de este dispositivo · toca para copiar',
         actions: [
           { id: 'reactivar', label: '🔑 Reactivar in-situ (admin presente)', style: 'primary',
             onClick: function() { _abrirModalInSitu(true); } }
         ]
       });
+      _sonidoGrave();
+      _vibrar([50, 30, 50]);
     } else if (estado === 'NO_REGISTRADO') {
       // [v1.0.2] Labels distinguidos por rol esperado
       var labelSolicitarN = _config.isMaster
@@ -652,6 +838,7 @@
         emoji: '🔒', title: 'Dispositivo no autorizado',
         detail: 'Este dispositivo aún no fue aprobado para esta app.',
         subDetail: subDetailN,
+        devIdCaption: 'ID de este dispositivo · toca para copiar',
         actions: [
           { id: 'solicitar', label: labelSolicitarN, style: 'primary',
             onClick: function() { _solicitarAcceso(); } },
@@ -683,17 +870,25 @@
     var hint = _config.isMaster
       ? 'Solo MASTER puede activar MOS · clave 8 dígitos (4 globales + 4 PIN master)'
       : 'Admin o master presente · clave 8 dígitos (4 globales + 4 PIN personal)';
-    // [v1.0.13] Mostrar el UUID EXACTO que se va a activar — el master ve qué
-    // aprueba (es el mismo id que el device usa para mint-mos: imposible desfase).
-    var devFullModal = _escapeHtml(_state.deviceId || '(sin id)');
+    // [v1.0.16 BUG 1] El UUID se inyecta en VIVO (_registrarDevIdNode); arranca en
+    // "generando ID…" si _resolverDeviceId aún no resolvió y se actualiza solo.
+    // [v1.0.16] Clave = 8 casillas tipo OTP (auto-avanza, inputmode numeric,
+    // auto-submit al 8º). Un input HIDDEN #daIsClave concentra el valor para que
+    // _confirmarInSitu (y el ENTER) lo lean igual que antes (compat).
+    var otpBoxes = '';
+    for (var i = 0; i < 8; i++) {
+      otpBoxes += '<input type="tel" inputmode="numeric" autocomplete="off" '
+        + 'maxlength="1" data-otp="' + i + '" aria-label="Dígito ' + (i + 1) + '">';
+    }
     ov.innerHTML = ''
       + '<div class="da-insitu-modal">'
       +   '<h3>' + titulo + '</h3>'
       +   '<div style="font-size:11px;color:#94a3b8;margin-bottom:6px">Se activará este dispositivo:</div>'
-      +   '<div class="da-dev" style="margin:0 0 8px;display:block" title="ID que quedará ACTIVO">' + devFullModal + '</div>'
+      +   '<div class="da-dev" id="daIsDevId" style="margin:0 0 4px;display:block"></div>'
       +   (esReactivar ? '' : '<label>Nombre del equipo</label><input id="daIsNombre" type="text" placeholder="ej. Caja Principal · Almacén · Tablet 2" maxlength="60">')
       +   '<label>Clave admin (8 dígitos)</label>'
-      +   '<input id="daIsClave" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off" placeholder="••••••••">'
+      +   '<div class="da-otp" id="daIsOtp">' + otpBoxes + '</div>'
+      +   '<input id="daIsClave" type="hidden">'
       +   '<div class="da-insitu-hint">' + hint + '</div>'
       +   '<div class="da-insitu-err" id="daIsErr"></div>'
       +   '<div class="da-insitu-actions">'
@@ -702,22 +897,67 @@
       +   '</div>'
       + '</div>';
     _appendCuandoListo(ov);  // [v1.0.1] body puede no existir aún
-    setTimeout(function() {
-      var clave = document.getElementById('daIsClave');
-      if (clave) clave.focus();
-    }, 80);
-    document.getElementById('daIsCancel').onclick = function() { ov.remove(); };
-    document.getElementById('daIsOk').onclick = function() {
-      _confirmarInSitu(esReactivar, ov);
-    };
-    // [v1.0.7 BUG A FIX] ENTER en clave → confirmar PERO respetar btnOk.disabled.
-    // Antes ENTER ignoraba el disabled, lo que permitía doble-fire del fetch.
-    document.getElementById('daIsClave').addEventListener('keydown', function(e) {
-      if (e.key !== 'Enter') return;
-      var btn = document.getElementById('daIsOk');
-      if (btn && btn.disabled) return;  // ← bloquear si ya está procesando
-      _confirmarInSitu(esReactivar, ov);
+    // [v1.0.16 BUG 1] UUID live-bound dentro del modal (copiable).
+    var devEl = ov.querySelector('#daIsDevId');
+    _registrarDevIdNode(devEl);
+    _engancharCopiaDevId(devEl);
+
+    var hidden = ov.querySelector('#daIsClave');
+    var boxes = [].slice.call(ov.querySelectorAll('.da-otp input'));
+    var otpWrap = ov.querySelector('#daIsOtp');
+    var btnOk = ov.querySelector('#daIsOk');
+
+    function _syncHidden() {
+      var v = boxes.map(function(b){ return b.value; }).join('');
+      hidden.value = v;
+      boxes.forEach(function(b){ b.classList.toggle('da-otp-filled', !!b.value); });
+      return v;
+    }
+    function _intentarSubmit() {
+      if (btnOk && btnOk.disabled) return;          // ya procesando
+      if (_syncHidden().length === 8) _confirmarInSitu(esReactivar, ov);
+    }
+    boxes.forEach(function(box, idx) {
+      box.addEventListener('input', function() {
+        // Solo dígitos. Si pegan varios (paste), distribuir.
+        var raw = (box.value || '').replace(/\D/g, '');
+        if (raw.length > 1) {
+          for (var k = 0; k < raw.length && (idx + k) < boxes.length; k++) {
+            boxes[idx + k].value = raw[k];
+          }
+          var next = Math.min(idx + raw.length, boxes.length - 1);
+          boxes[next].focus();
+        } else {
+          box.value = raw;
+          if (raw && idx < boxes.length - 1) boxes[idx + 1].focus();
+        }
+        _intentarSubmit();   // auto-submit al completar el 8º
+      });
+      box.addEventListener('keydown', function(e) {
+        if (e.key === 'Backspace' && !box.value && idx > 0) {
+          boxes[idx - 1].focus();
+          boxes[idx - 1].value = '';
+          _syncHidden();
+          e.preventDefault();
+        } else if (e.key === 'ArrowLeft' && idx > 0) {
+          boxes[idx - 1].focus(); e.preventDefault();
+        } else if (e.key === 'ArrowRight' && idx < boxes.length - 1) {
+          boxes[idx + 1].focus(); e.preventDefault();
+        } else if (e.key === 'Enter') {
+          // [v1.0.7 BUG A] Respetar disabled (no doble-fire).
+          if (btnOk && btnOk.disabled) return;
+          _intentarSubmit();
+        }
+      });
+      box.addEventListener('focus', function(){ box.select(); });
     });
+    // Exponer helpers de OTP en el nodo para que _confirmarInSitu pueda limpiar
+    // tras clave mala (shake + reset + refoco), sin perder el contexto del modal.
+    ov._daOtp = { boxes: boxes, wrap: otpWrap, sync: _syncHidden };
+
+    setTimeout(function() { if (boxes[0]) boxes[0].focus(); }, 80);
+    ov.querySelector('#daIsCancel').onclick = function() { ov.remove(); };
+    btnOk.onclick = function() { _intentarSubmit(); };
   }
 
   // [v1.0.13] Verifica en VIVO que la Edge mint-mos YA emite token para este
@@ -762,15 +1002,42 @@
       ? (document.getElementById('daIsNombre')?.value || '').trim()
       : '';
     var clave = (document.getElementById('daIsClave')?.value || '').trim();
+    var labelDefault = esReactivar ? 'Reactivar' : 'Activar';
     if (errEl) errEl.textContent = '';
-    if (!/^\d{8}$/.test(clave)) {
-      if (errEl) errEl.textContent = 'La clave debe ser de 8 dígitos numéricos';
-      _vibrar([40, 30, 40]);
+    // [v1.0.16] Clave mala → shake rojo del OTP + buzz + vibrate + limpiar + refoco,
+    // SIN perder el contexto del modal (mockups §3 Estado 3).
+    function _claveMala(msg) {
+      if (errEl) errEl.textContent = msg;
+      _vibrar([30, 40, 30]);
       _sonidoError();
+      var otp = modal._daOtp;
+      if (otp && otp.wrap && !_reducedMotion()) {
+        otp.wrap.classList.remove('da-otp-bad');
+        void otp.wrap.offsetWidth;       // reflow → re-disparar animación
+        otp.wrap.classList.add('da-otp-bad');
+        setTimeout(function(){ if (otp.wrap) otp.wrap.classList.remove('da-otp-bad'); }, 500);
+      }
+      if (otp && otp.boxes) {
+        otp.boxes.forEach(function(b){ b.value = ''; b.classList.remove('da-otp-filled'); });
+        otp.sync();
+        if (otp.boxes[0]) otp.boxes[0].focus();
+      }
+      if (btnOk) { btnOk.disabled = false; btnOk.textContent = labelDefault; }
+    }
+    if (!/^\d{8}$/.test(clave)) {
+      _claveMala('La clave debe ser de 8 dígitos numéricos');
       return;
     }
+    // [v1.0.16 BUG 1] Defensa: el id aún no resolvió (clic muy rápido). NO crashear
+    // (idActivar.substring) — avisar y dejar reintentar; el UUID se pinta solo.
+    if (!_state.deviceId) {
+      if (errEl) errEl.textContent = 'Generando ID del dispositivo… reintenta en un segundo';
+      _vibrar(15);
+      return;
+    }
+    // [v1.0.16] Submit OPTIMISTA: "Activando…" de inmediato (mockups §3).
     btnOk.disabled = true;
-    btnOk.textContent = 'Validando...';
+    btnOk.textContent = esReactivar ? 'Reactivando…' : 'Activando…';
 
     var ua = (navigator.userAgent || '').substring(0, 200);
     var endpoint = esReactivar ? 'reactivarDispositivoSuspendido' : 'aprobarDispositivoEnSitu';
@@ -841,11 +1108,7 @@
     _dispatch
       .then(function(d) {
         if (!d || !d.autorizado) {
-          if (errEl) errEl.textContent = (d && d.error) || 'Clave incorrecta';
-          _vibrar([40, 30, 40]);
-          _sonidoError();
-          btnOk.disabled = false;
-          btnOk.textContent = esReactivar ? 'Reactivar' : 'Activar';
+          _claveMala((d && d.error) || 'Clave incorrecta');
           return;
         }
         // [v1.0.13] DEFENSA imposible-desfase: el backend ECOA el deviceId que
@@ -857,67 +1120,115 @@
           if (errEl) errEl.textContent = 'Desfase de ID detectado. Recarga e intenta de nuevo.';
           _sonidoError(); _vibrar([40, 30, 40]);
           btnOk.disabled = false;
-          btnOk.textContent = esReactivar ? 'Reactivar' : 'Activar';
+          btnOk.textContent = labelDefault;
           return;
         }
-        // [v1.0.6 UX FIX] Feedback claro dentro del modal antes de cerrarlo.
+        // ── ÉXITO ──────────────────────────────────────────────────────────
+        // [v1.0.16 BUG 2] OPTIMISTA + ANTI-RETROCESO: marcamos ACTIVO + cache +
+        // marca recienAprobado (sobrevive reload). A partir de aquí NUNCA volvemos
+        // a un estado de bloqueo por un re-verify lagueado (la marca lo protege en
+        // _procesarRespuestaVerify). Nunca re-mostramos "verificando"/"sin auth".
         _state.estado = 'ACTIVO';
         _detenerPolling();
+        _marcarRecienAprobado();
         // [v1.0.10 BUG E FIX] verifyVersion del backend para cachear sin re-fetch.
         var verBackend = parseInt(d.verifyVersion || 0, 10);
         if (verBackend > 0) _state.verifyVersion = verBackend;
         var fechaBackend = d.fechaHoyLima || _fechaHoyLima();
         _guardarCacheExitoso(fechaBackend, _state.verifyVersion);
         _sonidoAprobado();
-        _vibrar([100, 50, 100, 50, 100]);
+        _vibrar(40);   // mockups §3 Estado 5
 
-        // [v1.0.13 FIX RAÍZ] CONFIRMAR que la sombra mos.dispositivos quedó lista
-        // ANTES de recargar. Sin esto, el device recargaba, intentaba mint-mos,
-        // 401aba (sombra aún no propagada) y caía a GAS en silencio = el bug.
-        //   · d.shadowOk === true  → el backend ya confirmó el upsert+read-back.
-        //   · si además hay mintUrl configurada (MOS), verificamos en VIVO que
-        //     mint-mos YA emite token para este id (verdad de extremo a extremo).
+        // [v1.0.16] ÉXITO visual: check SVG que se traza (reduced-motion → estático).
         var modalContent = modal.querySelector('.da-insitu-modal');
         function _pintarSuccess(msg, sub) {
           if (!modalContent) return;
+          modalContent.classList.remove('da-modal-shake');
           modalContent.innerHTML = ''
-            + '<div style="text-align:center;padding:20px 0">'
-            +   '<div style="font-size:64px;margin-bottom:14px;animation:da-pop .5s ease-out">✅</div>'
+            + '<div style="text-align:center;padding:18px 0">'
+            +   '<div class="da-check-wrap"><svg class="da-check-svg" viewBox="0 0 100 100" aria-hidden="true">'
+            +     '<circle class="da-ck-ring" cx="50" cy="50" r="46"/>'
+            +     '<path class="da-ck-tick" d="M28 52 L44 68 L74 34"/>'
+            +   '</svg></div>'
             +   '<h3 style="margin:0 0 8px;color:#10b981;font-size:20px">' + _escapeHtml(msg) + '</h3>'
             +   '<p style="margin:0 0 6px;color:#cbd5e1;font-size:14px">Aprobado por <strong>' + _escapeHtml(d.aprobadoPor || 'admin') + '</strong></p>'
-            +   '<p style="margin:0;color:#94a3b8;font-size:12px">' + _escapeHtml(sub || 'Recargando aplicación...') + '</p>'
+            +   '<p style="margin:0;color:#94a3b8;font-size:12px">' + _escapeHtml(sub || 'Entrando…') + '</p>'
             + '</div>';
         }
-        function _finalizarYRecargar() {
-          _pintarSuccess('¡Dispositivo activado!', 'Recargando aplicación...');
-          setTimeout(function() { location.reload(); }, 1200);
+        // [v1.0.16 BUG 2] Transición DIRECTA a la app. Si la app ya está montada
+        // (onAuth cableado) → fade-out overlay + onAuth() + evento authorized, SIN
+        // reload duro (mockups §3 Estado 5: "sin reload duro si fue in-situ"). El
+        // reload queda como respaldo (onAprobado de cada app puede recargar). Esto
+        // ELIMINA el ciclo reload→re-verify→parpadeo "sin autorización".
+        function _entrar(sub) {
+          _pintarSuccess('¡Dispositivo activado!', sub || 'Entrando…');
+          setTimeout(function() {
+            try { if (modal && modal.parentNode) modal.parentNode.removeChild(modal); } catch(_) {}
+            _transicionarAApp('insitu', d.aprobadoPor || 'admin');
+          }, 900);
         }
-        _pintarSuccess('¡Clave correcta!', 'Confirmando activación...');
+        _pintarSuccess('¡Clave correcta!', 'Confirmando activación…');
         // Verificación de extremo a extremo contra mint-mos (solo si está cableado).
         if (_config.mintUrl && _config.sbAnon) {
           _confirmarMintListo(idActivar, !!d.shadowOk).then(function(ok) {
             if (!ok) {
-              // No pudimos confirmar mint-mos. NO bloqueamos para siempre: el sync
-              // horario es la red de respaldo y la lectura directa cae a GAS sin
-              // romper. Avisamos honestamente y recargamos igual.
-              _pintarSuccess('¡Activado!', 'Sincronizando acceso directo (puede tardar unos minutos)...');
-              setTimeout(function() { location.reload(); }, 1800);
+              // No pudimos confirmar mint-mos. NO bloqueamos: el sync horario es la
+              // red de respaldo y la lectura directa cae a GAS sin romper. Entramos
+              // igual (optimista) avisando honestamente.
+              _entrar('Sincronizando acceso directo (puede tardar unos minutos)…');
               return;
             }
-            _finalizarYRecargar();
+            _entrar('Entrando…');
           });
         } else {
-          // WH/ME u otra app sin mint-mos cableado → comportamiento previo.
-          _finalizarYRecargar();
+          // WH/ME u otra app sin mint-mos cableado → entrar directo.
+          _entrar('Entrando…');
         }
       })
       .catch(function(e) {
+        // Fallo de RED (no veredicto de clave) → mantener contexto, permitir reintento.
         if (errEl) errEl.textContent = 'Sin conexión: ' + (e && e.message || 'reintenta');
         _vibrar([40, 30, 40]);
         _sonidoError();
         btnOk.disabled = false;
-        btnOk.textContent = esReactivar ? 'Reactivar' : 'Activar';
+        btnOk.textContent = labelDefault;
       });
+  }
+
+  // [v1.0.16 BUG 2] Transición OPTIMISTA a la app tras aprobación in-situ.
+  // Evita el parpadeo "sin autorización": NO re-verifica antes de entrar. Si la
+  // app está montada (onAuth cableado) hace fade-out del overlay + onAuth() +
+  // evento authorized + onAprobado (wizard) en caliente. El reload se evita por
+  // defecto; las apps cuyo onAprobado recarga heredarán la marca recienAprobado
+  // (persistida) para que el boot post-reload NO parpadee tampoco.
+  function _transicionarAApp(origen, porQuien) {
+    _state.estado = 'ACTIVO';
+    _arrancarHeartbeat();
+    // Disparar el evento que Vue de la app escucha para flip de su ref inmediato.
+    try {
+      window.dispatchEvent(new CustomEvent('deviceauth:authorized', {
+        detail: { porQuien: porQuien, origen: origen || 'insitu' }
+      }));
+    } catch(_) {}
+    if (_config.onAuth) try { _config.onAuth(); } catch(_) {}
+    // Fade-out del overlay (si estaba visible) + quitar pre-block + desbloquear.
+    var ov = document.getElementById(OVERLAY_ID);
+    function _quitarBloqueo() {
+      if (document.documentElement) document.documentElement.classList.remove('da-pre-block');
+      _desbloquearApp();
+    }
+    if (ov && !_reducedMotion()) {
+      ov.classList.add('da-fade-out');
+      setTimeout(function() { if (ov.parentNode) ov.parentNode.removeChild(ov); _quitarBloqueo(); }, 460);
+    } else {
+      if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+      _quitarBloqueo();
+    }
+    // Wizard / setup post-aprobación (cada app decide; algunas recargan aquí).
+    // La marca recienAprobado ya persiste → si la app recarga, el boot no parpadea.
+    if (_config.onAprobado) setTimeout(function() {
+      try { _config.onAprobado(); } catch(_) {}
+    }, 700);
   }
 
   function _solicitarAcceso() {
@@ -1091,6 +1402,35 @@
             }
           }
         } catch(_) {}
+
+        // [v1.0.16 BUG 2] RED ANTI-RETROCESO post-aprobación. Si acabamos de
+        // aprobar in-situ (marca recienAprobado vigente, ≤90s, sobrevive reload) y
+        // el server devuelve un estado de NO-revocación lagueado (NO_REGISTRADO o
+        // PENDIENTE: la sombra/hoja aún no propagó la aprobación), NO retrocedemos a
+        // un estado de bloqueo — eso causaba el parpadeo "equipo sin autorización"
+        // tras aprobar. Lo tratamos como ACTIVO (fail-soft optimista). Sólo aplica a
+        // estos dos estados NO-críticos. La REVOCACIÓN REAL (INACTIVO/SUSPENDIDO/
+        // forzar_reverify/verBump) NUNCA es bloqueada por esta marca → fail-closed
+        // se mantiene: un device revocado a los segundos de aprobado igual se cierra.
+        var verBumpReal = serverVer > storedVer && serverVer > 0 && storedVer > 0;
+        var esRevocacionReal = d.estado === 'INACTIVO' || d.estado === 'SUSPENDIDO'
+                            || d.forzar_reverify === true || verBumpReal;
+        if (_optimistaVigente() && !esRevocacionReal
+            && (d.estado === 'NO_REGISTRADO' || d.estado === 'PENDIENTE_APROBACION')) {
+          // Propagación pendiente tras aprobar → mantener ACTIVO, sin parpadeo.
+          if (!silencioso) console.warn('[DeviceAuth] re-verify lagueado (' + d.estado + ') ignorado: aprobación reciente vigente (anti-retroceso).');
+          _state.estado = 'ACTIVO';
+          _guardarCacheExitoso(d.fechaHoyLima, _state.verifyVersion);
+          _ocultarOverlay();
+          if (_config.onAuth) try { _config.onAuth(); } catch(_) {}
+          _arrancarHeartbeat();
+          _detenerPolling();
+          return 'ACTIVO';
+        }
+        // Si el server YA confirma ACTIVO, la propagación terminó → limpiar marca.
+        if ((d.estado === 'ACTIVO' || d.autorizado === true)) _limpiarRecienAprobado();
+        // Revocación real tras aprobar → la marca no debe sobrevivir al bloqueo.
+        if (esRevocacionReal) _limpiarRecienAprobado();
 
         if (d.estado === 'ACTIVO' || d.autorizado === true) {
           // [BUG A FIX] Si pasamos de PENDIENTE a ACTIVO → SIEMPRE celebrar,
@@ -1296,31 +1636,33 @@
     }
   }
 
-  // ── Trigger de aprobación detectada (polling o in-situ) ──────
+  // ── Trigger de aprobación detectada (polling REMOTO) ──────────
+  // [v1.0.16] El operador esperaba en PENDIENTE y el admin aprobó desde el panel.
+  // Celebramos (check + acorde + vibrate) y transicionamos OPTIMISTA a la app.
+  // Marcamos recienAprobado para que el boot post-reload (apps que recargan en
+  // onAprobado) NO parpadee "sin autorización" mientras la sombra/hoja propaga.
   function _onAprobacionDetectada(porQuien) {
     _state.estado = 'ACTIVO';
     _detenerPolling();
-    _ocultarOverlay();
-    // Toast + sonido + vibración (PROACTIVO según user)
-    _toastAprobado('✅ Aprobado por ' + porQuien + ' · iniciando...');
-    _sonidoAprobado();
-    _vibrar([100, 50, 100, 50, 100]);
+    _marcarRecienAprobado();
     _guardarCacheExitoso(_fechaHoyLima(), _state.verifyVersion);
-    // [v1.0.3 FIX] Disparar evento custom para que Vue de la app pueda
-    // actualizar su ref `dispositivoAutorizado` INMEDIATAMENTE sin esperar
-    // al reload. Sin esto, Vue mostraba "verificando dispositivo" durante
-    // 1.2s entre la aprobación y el reload (porque dispositivoAutorizado
-    // seguía en null).
-    try {
-      var evt = new CustomEvent('deviceauth:authorized', { detail: { porQuien: porQuien } });
-      window.dispatchEvent(evt);
-    } catch(_) {}
-    if (_config.onAuth) try { _config.onAuth(); } catch(_){}
-    // Wizard de permisos / setup post-aprobación
-    setTimeout(function() {
-      if (_config.onAprobado) try { _config.onAprobado(); } catch(_){}
-    }, 700);
-    _arrancarHeartbeat();
+    _sonidoAprobado();
+    _vibrar(40);
+    // Pintar un check de éxito sobre el overlay actual (si sigue visible), luego
+    // transición suave. Si el overlay ya no está, el toast cubre el feedback.
+    var ov = document.getElementById(OVERLAY_ID);
+    if (ov) {
+      ov.innerHTML = ''
+        + '<div class="da-check-wrap"><svg class="da-check-svg" viewBox="0 0 100 100" aria-hidden="true">'
+        +   '<circle class="da-ck-ring" cx="50" cy="50" r="46"/>'
+        +   '<path class="da-ck-tick" d="M28 52 L44 68 L74 34"/>'
+        + '</svg></div>'
+        + '<h1 class="da-h1">¡Dispositivo aprobado!</h1>'
+        + '<p class="da-p">Aprobado por <strong>' + _escapeHtml(porQuien) + '</strong> · entrando…</p>';
+    } else {
+      _toastAprobado('✅ Aprobado por ' + porQuien + ' · iniciando…');
+    }
+    setTimeout(function() { _transicionarAApp('remoto', porQuien); }, 900);
   }
 
   // ── visibilitychange: si vuelve de background y cambió el día Lima, re-verificar ──
@@ -1359,10 +1701,16 @@
     // [v1.0.13] Resolver el deviceId RESILIENTE (multi-store) ANTES de verificar.
     // Es async (IndexedDB/Cache), por eso init ahora encadena la verificación.
     // Mientras resuelve, mostramos el overlay "verificando" (fail-closed visual).
+    // [v1.0.16 BUG 2] Heredar la marca optimista si venimos de un reload post-
+    // aprobación (persistida en localStorage). Así el primer re-verify no parpadea.
+    _state.recienAprobado = _optimistaVigente();
     _state.estado = 'VERIFICANDO';
     _mostrarUI('VERIFICANDO');
     return _resolverDeviceId().then(function(id) {
-      _state.deviceId = id;
+      // [v1.0.16 BUG 1] _setDeviceId actualiza EN VIVO los nodos del UUID ya
+      // pintados (overlay/modal) → "(sin id)"/"generando ID…" se reemplaza por el
+      // id real apenas resuelve. Nunca queda vacío.
+      _setDeviceId(id);
       return _verificar().then(function(estado) {
         // [v1.0.13] Red de seguridad PASIVA contra el "401-silencioso": si el
         // device quedó ACTIVO (por GAS) pero mint-mos NO emite token (sombra
