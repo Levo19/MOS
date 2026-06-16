@@ -1051,3 +1051,298 @@ function compararLiquidacionMOS_semana(desde, hasta){
     fechas: res };
   Logger.log(JSON.stringify(out,null,2)); return out;
 }
+
+// =====================================================================================
+// PARIDAD SOMBRA (Supabase mos.<tabla>) vs HOJA (Sheets) — comparador genérico por MÓDULO.
+// Prueba OBJETIVA, fila-por-fila por PK, de que la sombra == la hoja ANTES de activar la
+// LECTURA DIRECTA de cada módulo (cutover). 100% LECTURA: no escribe, no activa flags.
+//
+// ── POR QUÉ A NIVEL DE TABLA (snake_case) Y NO POR EL GETTER camelCase ───────────────
+//   La fila de la SOMBRA la produjo el dual-write / el sync usando EXACTAMENTE _mosRowMap(o, spec)
+//   sobre la hoja. Por eso comparamos:
+//     HOJA  = _mosBuildRows(tabla)  → la hoja pasada por el MISMO mapper (_MOS_SPECS) que escribió la sombra.
+//     SOMBRA= _sbSelect('mos.'+tabla) → la fila snake_case tal cual en Postgres.
+//   Comparar en snake_case con tipos del spec elimina los falsos positivos del camelCase getter
+//   (Date nativo vs ISO, '1'/true bool, items string vs jsonb, etc.). Esta ES la paridad que importa
+//   para el cutover: lo que el front leerá directo (RPC *_lista o tabla) sale de estas mismas filas.
+//   Para los 5 módulos con RPC de lista (proveedores/pedidos/pagos/proveedor_producto/jornadas) se
+//   agrega ADEMÁS un chequeo del READ-PATH real: la RPC *_lista debe devolver el MISMO set de PKs y
+//   el MISMO conteo que la tabla (valida el wiring de la RPC, no solo la tabla).
+//
+// ── NORMALIZACIONES (para NO marcar descuadres que son solo de formato) ──────────────
+//   · num/int (DINERO incluido): se comparan como NÚMERO. DINERO al centavo: |a-b| <= 0.005
+//     (medio centavo = ruido float vs numeric, NO se aproxima más). Resto de números igual criterio.
+//   · date/timestamptz: PostgREST emite ISO con zona; _mosDate (hoja) emite ISO anclado a Lima. Se
+//     comparan por su INSTANTE (getTime, tolerancia ±1000 ms por redondeo de fracción de segundo) y,
+//     si alguno no parsea, por la FECHA-DÍA en Lima (primeros 10 chars). Evita el clásico UTC vs Lima.
+//   · bool: ambos lados por _mosBool ('1'/'true'/'x'/'si' → true). null/'' no fuerzan diff de bool.
+//   · json (items/control_checks/horario_json/datos_extra): _mosJson + JSON canónico (claves ordenadas)
+//     a cada lado → compara CONTENIDO, no el string. (la hoja guarda string, la sombra jsonb: mismo dato).
+//   · text: null y '' se tratan IGUALES; ambos por String(). codigoBarra/ids quedan como texto (no número).
+//   · numeric desde PostgREST viene como STRING ("12.50") → parseFloat lo normaliza antes de comparar.
+//
+// ── LÍMITES (honesto) ────────────────────────────────────────────────────────────────
+//   · Las tablas MOS son chicas (max ~325 filas hoy). La sombra se pagina de a 1000 (PAGE) sin tope:
+//     cubre el universo real con folgura. Si una tabla creciera a >50k filas, subir/paginar más.
+//   · Compara la PK natural de _MOS_SPECS[tabla].onConflict (simple o compuesta) — misma que el upsert.
+//   · NO valida orden de filas (compara por mapa de PK): el orden no es semántico para paridad.
+//   · evaluaciones/etiquetas_zona/gastos/historial/horarios NO tienen RPC *_lista → solo chequeo tabla
+//     (que es justamente lo que el dual-write espeja). Se reporta cuáles no tienen read-path directo aún.
+//   · Campos NO migrados (sin columna en el spec, ej. enriquecimientos _minutosDesdeCambio del getter de
+//     etiquetas) quedan FUERA del compare por diseño: la sombra no los tiene ni los necesita.
+// =====================================================================================
+
+// Módulos con dual-write + su RPC de LISTA (read-path directo). null = aún sin RPC *_lista (solo tabla).
+var _MOS_PARIDAD_MODULOS = {
+  proveedores:           { rpc:'proveedores_lista',         rpcArgs:{} },
+  pedidos_proveedor:     { rpc:'pedidos_proveedor_lista',   rpcArgs:{} },
+  pagos_proveedor:       { rpc:'pagos_proveedor_lista',     rpcArgs:{} },
+  proveedores_productos: { rpc:null, nota:'mos.proveedor_producto_lista EXIGE idProveedor (no lista todo) → se valida a nivel tabla; el read-path por proveedor se prueba aparte si hace falta' },
+  jornadas:              { rpc:'jornadas_lista',            rpcArgs:{} },
+  gastos:                { rpc:null, nota:'sin RPC *_lista (read-path directo aún no definido) — se valida tabla mos.gastos == hoja GASTOS' },
+  historial_precios:     { rpc:null, nota:'tiene RPC historial_precios_lista con comparador propio (compararHistorialPreciosMOS); aquí se valida la tabla completa' },
+  etiquetas_zona:        { rpc:null, nota:'getEtiquetasPendientes filtra ventana 3d+estado+enriquece → NO es paridad de tabla; se valida la TABLA cruda mos.etiquetas_zona == ETIQUETAS_ZONA' },
+  evaluaciones:          { rpc:null, nota:'getEvaluacionesDia filtra por día+activo → se valida la TABLA cruda mos.evaluaciones == EVALUACIONES' },
+  config_horarios_apps:  { rpc:null, nota:'getHorariosApps agrupa por app y parsea horario_json → se valida la TABLA cruda mos.config_horarios_apps == CONFIG_HORARIOS_APPS' }
+};
+
+// Campos CLAVE por módulo a reportar SIEMPRE en un diff (dinero/estado/nombre). Vacío = compara TODO el spec.
+// (igualmente el comparador recorre TODO el spec; esto solo prioriza el resumen de "camposClave con drift").
+var _MOS_PARIDAD_CLAVE = {
+  proveedores:           ['nombre','ruc','estado','forma_pago','numero_cuenta','cci'],
+  pedidos_proveedor:     ['id_proveedor','monto_estimado','estado'],
+  pagos_proveedor:       ['id_proveedor','monto','estado','fecha'],
+  proveedores_productos: ['id_proveedor','sku_base','precio_referencia','activa'],
+  jornadas:              ['id_personal','nombre','monto_jornal','fuente','fecha'],
+  gastos:                ['categoria','monto','descripcion','fecha'],
+  historial_precios:     ['sku_base','precio_anterior','precio_nuevo','fecha'],
+  etiquetas_zona:        ['id_producto','precio_nuevo','estado'],
+  evaluaciones:          ['id_personal','sancion','bonificacion','activo','fecha'],
+  config_horarios_apps:  ['horario_json','admins_libres']
+};
+
+/** Compara dos valores según el TIPO del spec. Devuelve true si son equivalentes (post-normalización). */
+function _parEq(tipo, a, b){
+  // null/'' equivalentes en cualquier tipo
+  var aVacio = (a==null || a===''), bVacio = (b==null || b==='');
+  if (aVacio && bVacio) return true;
+  if (tipo==='num' || tipo==='int'){
+    var na = parseFloat(a), nb = parseFloat(b);
+    if (isNaN(na) && isNaN(nb)) return true;
+    if (isNaN(na) || isNaN(nb)) return false;
+    return Math.abs(na-nb) <= 0.005;   // DINERO al centavo (medio centavo de ruido float/numeric)
+  }
+  if (tipo==='bool'){
+    var ba = _mosBool(a), bb = _mosBool(b);
+    if (ba==null && bb==null) return true;
+    return ba === bb;
+  }
+  if (tipo==='json'){
+    return _parJsonCanon(a) === _parJsonCanon(b);
+  }
+  if (tipo==='date'){
+    if (aVacio || bVacio) return false;   // uno tiene fecha, el otro no
+    var ta = Date.parse(a), tb = Date.parse(b);
+    if (!isNaN(ta) && !isNaN(tb)) {
+      if (Math.abs(ta-tb) <= 1000) return true;            // mismo instante (±1s)
+      // fallback: misma FECHA-DÍA en Lima (cubre date-only vs timestamptz sin hora)
+      return _parDiaLima(a) === _parDiaLima(b);
+    }
+    return _parDiaLima(a) === _parDiaLima(b);
+  }
+  // text/hora y default
+  return String(a) === String(b);
+}
+/** Fecha-día en TZ Lima a partir de un ISO/Date string (primeros 10 chars de la fecha local Lima). */
+function _parDiaLima(v){
+  try {
+    var d = (v instanceof Date) ? v : new Date(v);
+    if (isNaN(d.getTime())) return String(v).substring(0,10);
+    return Utilities.formatDate(d, 'America/Lima', 'yyyy-MM-dd');
+  } catch(e){ return String(v).substring(0,10); }
+}
+/** JSON canónico (claves ordenadas) para comparar contenido, no el string. */
+function _parJsonCanon(v){
+  var o = _mosJson(v);
+  if (o==null) return (v==null||v==='') ? '' : String(v);   // no-objeto → compara como texto
+  function sort(x){
+    if (Array.isArray(x)) return x.map(sort);
+    if (x && typeof x==='object'){
+      var out={}; Object.keys(x).sort().forEach(function(k){ out[k]=sort(x[k]); }); return out;
+    }
+    return x;
+  }
+  try { return JSON.stringify(sort(o)); } catch(e){ return String(v); }
+}
+
+/** Lee TODA la sombra mos.<tabla> paginada (snake_case), ordenada por la PK (estable). */
+function _parLeerSombra(tabla){
+  var cfg = _MOS_SPECS[tabla];
+  var order = String(cfg.onConflict).split(',').map(function(c){ return c.trim(); }).join(',');
+  var out = [], offset = 0, PAGE = 1000;
+  while (true){
+    var r = _sbSelect('mos.'+tabla, { order:order, limit:PAGE, offset:offset });
+    if (!r || !r.ok) return { error:'lectura sombra falló: HTTP '+(r&&r.code)+' '+(r&&r.error||'') };
+    var page = r.data || [];
+    out = out.concat(page);
+    if (page.length < PAGE) break;
+    offset += PAGE;
+  }
+  return { rows: out };
+}
+
+/**
+ * compararSombraHojaMOS(tabla[, opts]) — paridad TABLA mos.<tabla> vs HOJA (vía spec) para UN módulo.
+ * opts.maxDiffs (default 40) recorta la lista de diferencias en el reporte (el conteo es completo).
+ * 100% lectura. Devuelve {ok, tabla, filas:{hoja,sombra}, faltanEnSombra, faltanEnHoja, conDiff,
+ *   camposClaveConDrift, readPath, diferencias[], veredicto}.
+ */
+function compararSombraHojaMOS(tabla, opts){
+  opts = opts || {};
+  tabla = String(tabla||'').trim().toLowerCase();
+  var cfg = _MOS_SPECS[tabla];
+  if (!cfg) return { ok:false, tabla:tabla, error:'tabla desconocida (no está en _MOS_SPECS)' };
+  if (!_MOS_PARIDAD_MODULOS[tabla]) return { ok:false, tabla:tabla, error:'módulo no listado en _MOS_PARIDAD_MODULOS' };
+  var maxDiffs = opts.maxDiffs || 40;
+
+  // 1) HOJA por el MISMO mapper que escribió la sombra (snake_case pg rows).
+  var hojaRows;
+  try {
+    if (!getSheet(cfg.sheet)) return { ok:false, tabla:tabla, error:'hoja no existe: '+cfg.sheet };
+    hojaRows = _mosBuildRows(tabla);   // ya aplica spec + filtro PK + dedupe gana-el-último
+  } catch(e){ return { ok:false, tabla:tabla, error:'lectura hoja falló: '+(e&&e.message||e) }; }
+
+  // 2) SOMBRA (snake_case directo).
+  var sb = _parLeerSombra(tabla);
+  if (sb.error) return { ok:false, tabla:tabla, error:sb.error };
+  var sombraRows = sb.rows;
+
+  // 3) indexar por PK (simple o compuesta).
+  var pkCols = String(cfg.onConflict).split(',').map(function(c){ return c.trim(); });
+  function keyOf(r){ return pkCols.map(function(c){ return String(r[c]==null?'':r[c]); }).join('||'); }
+  var mH = {}, mS = {};
+  hojaRows.forEach(function(r){ mH[keyOf(r)] = r; });
+  sombraRows.forEach(function(r){ mS[keyOf(r)] = r; });
+
+  var faltanEnSombra = [], faltanEnHoja = [], diffs = [], conDiff = 0;
+  var claveSet = {}; (_MOS_PARIDAD_CLAVE[tabla]||[]).forEach(function(c){ claveSet[c]=1; });
+  var claveDrift = {};
+
+  // 4) PKs de la hoja: faltantes en sombra + diffs de campo.
+  Object.keys(mH).forEach(function(k){
+    var h = mH[k], s = mS[k];
+    if (!s){ faltanEnSombra.push(k); return; }
+    var rowTuvoDiff = false;
+    cfg.spec.forEach(function(t){
+      var col = t[0], tipo = t[2];
+      if (!_parEq(tipo, h[col], s[col])){
+        rowTuvoDiff = true;
+        if (claveSet[col]) claveDrift[col] = (claveDrift[col]||0)+1;
+        if (diffs.length < maxDiffs)
+          diffs.push(k+'.'+col+' ['+tipo+']: hoja='+JSON.stringify(h[col])+' sombra='+JSON.stringify(s[col]));
+      }
+    });
+    if (rowTuvoDiff) conDiff++;
+  });
+  // 5) PKs en la sombra que NO están en la hoja.
+  Object.keys(mS).forEach(function(k){ if (!mH[k]) faltanEnHoja.push(k); });
+
+  var readPath = { rpc: _MOS_PARIDAD_MODULOS[tabla].rpc || '(sin RPC *_lista)', ok:null, nota:_MOS_PARIDAD_MODULOS[tabla].nota || null };
+  // 6) Para módulos con RPC de lista: validar que el READ-PATH real devuelve el MISMO set de PKs.
+  var rpcName = _MOS_PARIDAD_MODULOS[tabla].rpc;
+  if (rpcName){
+    try {
+      var rr = _sbRpc('mos', rpcName, _MOS_PARIDAD_MODULOS[tabla].rpcArgs || {});
+      if (rr.ok && rr.data && rr.data.ok){
+        var dataRpc = rr.data.data || [];
+        // mapear camelCase de vuelta a la PK pg: el primer header del spec = camel de la PK pg.
+        var pkCamelByPg = {}; cfg.spec.forEach(function(t){ pkCamelByPg[t[0]] = t[1]; });
+        function keyOfRpc(r){ return pkCols.map(function(c){ return String(r[pkCamelByPg[c]]==null?'':r[pkCamelByPg[c]]); }).join('||'); }
+        var mR = {}; dataRpc.forEach(function(r){ mR[keyOfRpc(r)] = 1; });
+        var rpcCount = dataRpc.length, sombraCount = sombraRows.length;
+        var faltanRpc = Object.keys(mS).filter(function(k){ return !mR[k]; }).length;
+        var sobranRpc = Object.keys(mR).filter(function(k){ return !mS[k]; }).length;
+        readPath.ok = (faltanRpc===0 && sobranRpc===0 && rpcCount===sombraCount);
+        readPath.filas = { rpc: rpcCount, tabla: sombraCount };
+        readPath.fresh = (rr.data._fresh === true);
+        if (!readPath.ok) readPath.detalle = { faltanEnRpcVsTabla:faltanRpc, sobranEnRpcVsTabla:sobranRpc };
+      } else {
+        readPath.ok = false;
+        readPath.error = 'RPC falló: HTTP '+rr.code+' — '+((rr.data&&rr.data.error)||rr.error||'');
+      }
+    } catch(e){ readPath.ok = false; readPath.error = String(e&&e.message||e); }
+  }
+
+  var paridadTabla = (faltanEnSombra.length===0 && faltanEnHoja.length===0 && conDiff===0);
+  var readPathOk = (rpcName==null) ? true : (readPath.ok===true);
+  var ok = paridadTabla && readPathOk;
+
+  var out = {
+    ok: ok,
+    tabla: tabla,
+    filas: { hoja: hojaRows.length, sombra: sombraRows.length },
+    faltanEnSombra: faltanEnSombra.length,
+    faltanEnHoja: faltanEnHoja.length,
+    filasConDiff: conDiff,
+    camposClaveConDrift: claveDrift,
+    readPath: readPath,
+    veredicto: ok
+      ? '✓ PARIDAD' + (rpcName ? ' (tabla + read-path RPC)' : ' (tabla)') + ' — listo para activar lectura'
+      : '⚠ ' + (faltanEnSombra.length+faltanEnHoja.length+conDiff) + ' descuadre(s)' + (readPathOk?'':' + read-path RPC ≠ tabla') + ' — NO activar aún',
+    ejemplos: {
+      faltanEnSombra: faltanEnSombra.slice(0,8),
+      faltanEnHoja: faltanEnHoja.slice(0,8)
+    },
+    diferencias: diffs
+  };
+  Logger.log(JSON.stringify(out,null,2));
+  return out;
+}
+
+/**
+ * semaforoLecturasMOS() — SIN ARGS. Corre compararSombraHojaMOS para TODOS los módulos con dual-write
+ * y devuelve un SEMÁFORO de un vistazo: por módulo ✓ (paridad, listo para activar lectura) o ⚠ (N
+ * diferencias, NO activar). 100% LECTURA. Mirá `semaforo` para decidir qué activar.
+ */
+function semaforoLecturasMOS(opts){
+  opts = opts || {};
+  var modulos = Object.keys(_MOS_PARIDAD_MODULOS);
+  var semaforo = {}, detalle = {}, listos = [], pendientes = [];
+  modulos.forEach(function(tabla){
+    var r;
+    try { r = compararSombraHojaMOS(tabla, { maxDiffs: opts.maxDiffs || 20 }); }
+    catch(e){ r = { ok:false, tabla:tabla, error:String(e&&e.message||e) }; }
+    detalle[tabla] = r;
+    if (r.error && r.ok!==true){
+      semaforo[tabla] = '⚠ ERROR: ' + r.error;
+      pendientes.push(tabla);
+      return;
+    }
+    if (r.ok){
+      semaforo[tabla] = '✓ paridad — listo para activar lectura'
+        + (r.readPath && r.readPath.rpc && r.readPath.rpc.indexOf('sin RPC')<0 ? ' (read-path RPC ✓)' : ' (sin RPC *_lista — solo tabla)');
+      listos.push(tabla);
+    } else {
+      var n = (r.faltanEnSombra||0) + (r.faltanEnHoja||0) + (r.filasConDiff||0);
+      semaforo[tabla] = '⚠ ' + n + ' diferencia(s)'
+        + (r.faltanEnSombra ? ' · '+r.faltanEnSombra+' faltan en sombra' : '')
+        + (r.faltanEnHoja ? ' · '+r.faltanEnHoja+' faltan en hoja' : '')
+        + (r.filasConDiff ? ' · '+r.filasConDiff+' filas con campos distintos' : '')
+        + (r.readPath && r.readPath.ok===false ? ' · read-path RPC ≠ tabla' : '')
+        + ' — NO activar aún';
+      pendientes.push(tabla);
+    }
+  });
+  var out = {
+    veredicto: pendientes.length===0
+      ? '✓ TODOS los módulos en paridad — lectura directa activable en todos'
+      : '⚠ '+listos.length+'/'+modulos.length+' listos · '+pendientes.length+' con diferencias',
+    listosParaActivar: listos,
+    conDiferencias: pendientes,
+    semaforo: semaforo,
+    detalle: detalle
+  };
+  Logger.log(JSON.stringify(out.semaforo,null,2));
+  Logger.log('VEREDICTO: '+out.veredicto);
+  return out;
+}
