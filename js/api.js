@@ -425,6 +425,36 @@ const API = (() => {
   }
 
   // ════════════════════════════════════════════════════════════════════
+  // [FASE 2 · LOTE PROVEEDORES/PEDIDOS/PAGOS/PROVPROD/JORNADAS] LECTURA-LISTA directa (read-paths).
+  // RPCs SQL 94 (mos.*_lista, p jsonb). Cada una devuelve { ok, data:[camelCase], _count, _fresh, ... }
+  // donde `data` es BYTE-equivalente al `d.data` que hoy entrega GAS (espejo de _MOS_SPECS, ver cabecera 94).
+  // PATRÓN IDÉNTICO a finanzas/historial: directo→{array} o null (sin token / !ok / shape inesperado /
+  // _fresh!==true). null ⇒ caé a GAS. El gate por-módulo (default OFF) decide si se entra siquiera al directo.
+  // ⚠️ getProductosProveedorConStock NO se cabla acá: es OTRA acción (stock-enriquecida cross-app), no la lista
+  //    plana de proveedor_producto_lista → seguiría 100% por GAS aunque se prenda mos_provprod_directo.
+  // Helper común: ejecuta la RPC `fn` con {p:params}, valida ok+array+frescura, devuelve r.data o null→GAS.
+  async function _getListaDirectaMOS(fn, params, etiqueta) {
+    const r = await _sbRpcMOS(fn, { p: params || {} });   // RPCs 94 reciben un único `p jsonb`
+    if (r == null) return null;                            // sin token → GAS
+    if (!r.ok || !Array.isArray(r.data)) return null;      // backend dijo no / shape inesperado → GAS
+    if (r._fresh !== true) {                               // sombra stale → no servir datos viejos → GAS
+      try { console.warn('[MOS ' + etiqueta + ' directo] sombra STALE (_fresh=false, heartbeat=' + r._heartbeat + ') → fallback a GAS'); } catch (_) {}
+      return null;
+    }
+    return r.data;   // array camelCase == d.data de GAS
+  }
+  // getProveedores → mos.proveedores_lista (filtros estado/q, paridad getProveedoresMaster).
+  async function _getProveedoresDirecto(params)        { return _getListaDirectaMOS('proveedores_lista',        params, 'proveedores'); }
+  // getPedidos → mos.pedidos_proveedor_lista (filtros idProveedor/estado, paridad getPedidosProveedor).
+  async function _getPedidosDirecto(params)            { return _getListaDirectaMOS('pedidos_proveedor_lista',  params, 'pedidos'); }
+  // getPagos → mos.pagos_proveedor_lista (filtros idProveedor/estado, paridad getPagosProveedor).
+  async function _getPagosDirecto(params)              { return _getListaDirectaMOS('pagos_proveedor_lista',    params, 'pagos'); }
+  // getProveedorProductos → mos.proveedor_producto_lista (EXIGE idProveedor + solo activas, paridad GAS).
+  async function _getProveedorProductosDirecto(params) { return _getListaDirectaMOS('proveedor_producto_lista', params, 'provprod'); }
+  // getJornadas → mos.jornadas_lista (filtro fecha YYYY-MM-DD, paridad getJornadas).
+  async function _getJornadasDirecto(params)           { return _getListaDirectaMOS('jornadas_lista',           params, 'jornadas'); }
+
+  // ════════════════════════════════════════════════════════════════════
   // [FASE 2 · LOTE CATÁLOGO] ESCRITURA DIRECTA del catálogo maestro (navegador→PostgREST).
   // Réplica del dispatcher de WH (warehouseMos/js/api.js `_postDirecto`) adaptada a MOS.
   //
@@ -1022,6 +1052,45 @@ const API = (() => {
           _mosHistorialDirecto
         );
       }
+      // [FASE 2 · LOTE PROVEEDORES/PEDIDOS/PAGOS/PROVPROD/JORNADAS] read-paths directos (RPCs 94). Cada uno
+      // gated por SU flag de módulo (mismo flag que ya gobierna la escritura directa del módulo) → al prender
+      // el flip, lectura + escritura del módulo van directas A LA VEZ (cutover coherente, ver cabecera SQL 94).
+      // Flag OFF (default, estado real) ⇒ _conFallbackMOS NO entra al directo y va recto a GAS = IDÉNTICO a hoy.
+      if (action === 'getProveedores') {
+        return _conFallbackMOS(
+          () => _getProveedoresDirecto(p),
+          () => _fetch('GET', { action, ...p }),
+          _mosProveedoresDirecto
+        );
+      }
+      if (action === 'getPedidos') {
+        return _conFallbackMOS(
+          () => _getPedidosDirecto(p),
+          () => _fetch('GET', { action, ...p }),
+          _mosPedidosDirecto
+        );
+      }
+      if (action === 'getPagos') {
+        return _conFallbackMOS(
+          () => _getPagosDirecto(p),
+          () => _fetch('GET', { action, ...p }),
+          _mosPagosDirecto
+        );
+      }
+      if (action === 'getProveedorProductos') {
+        return _conFallbackMOS(
+          () => _getProveedorProductosDirecto(p),
+          () => _fetch('GET', { action, ...p }),
+          _mosProvProdDirecto
+        );
+      }
+      if (action === 'getJornadas') {
+        return _conFallbackMOS(
+          () => _getJornadasDirecto(p),
+          () => _fetch('GET', { action, ...p }),
+          _mosJornadasDirecto
+        );
+      }
       return _fetch('GET',  { action, ...p });
     },
     // [FASE 2] post → escritura directa Supabase, gate POR-ACCIÓN (todos default OFF): 5 de catálogo
@@ -1064,6 +1133,11 @@ const API = (() => {
       pedidosDirecto:     _mosPedidosDirecto,      // ¿flag mos_pedidos_directo ON?
       pagosDirecto:       _mosPagosDirecto,        // ¿flag mos_pagos_directo ON? (DINERO)
       provprodDirecto:    _mosProvProdDirecto,     // ¿flag mos_provprod_directo ON?
+      // [FASE 2] read-paths directos de estos módulos (RPCs 94, array o null→GAS) — diagnóstico/test de paridad.
+      getProveedoresDirecto:        _getProveedoresDirecto,
+      getPedidosDirecto:            _getPedidosDirecto,
+      getPagosDirecto:              _getPagosDirecto,
+      getProveedorProductosDirecto: _getProveedorProductosDirecto,
       // [FASE 2 · LOTE GASTOS/EVAL/HORARIO] gates por-módulo (default OFF). Etiquetas NO se cablea (el front
       // MOS no llama marcarVisto/marcarPegada ni crear-etiqueta). Ver REPORTE.
       gastosDirecto:      _mosGastosDirecto,       // ¿flag mos_gastos_directo ON? (DINERO)
@@ -1072,6 +1146,7 @@ const API = (() => {
       // [FASE 2 · LOTE JORNALES/LIQUIDACIONES] gates por-grupo (default OFF, DINERO). marcarPagos/anularPago/
       // recomputarLiquidacionDia NO cableados (shape/seguridad incompatibles con la RPC) — ver REPORTE.
       jornadasDirecto:    _mosJornadasDirecto,     // ¿flag mos_jornadas_directo ON? (DINERO jornal)
+      getJornadasDirecto: _getJornadasDirecto,     // read-path directo jornadas (array o null→GAS) — diagnóstico
       liqdiaDirecto:      _mosLiqdiaDirecto,       // ¿flag mos_liqdia_directo ON? (DINERO liquidación)
       localId:            _mosLocalId              // genera/estampa local_id estable por gesto — test de idempotencia
     },
