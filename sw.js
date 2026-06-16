@@ -37,15 +37,19 @@ try {
   console.warn('[SW MOS] FCM no se pudo inicializar (push background off):', err);
 }
 
-const VERSION = '2.43.221';
+const VERSION = '2.43.222';
 const CACHE   = 'mos-v' + VERSION;
+// ⚠️ Los assets propios versionados (app.js/api.js) DEBEN cachearse con EL MISMO
+// `?v=` que index.html usa en su <script src>, o el match offline falla por
+// query-string distinto (cache-first/fallback compara la URL completa, query
+// incluida). Mantener este `?v=` == VERSION y == el de index.html en cada bump.
 const ASSETS  = [
   './',
   './index.html',
   './turno.html',
   './liquidacion.html',
-  './js/app.js',
-  './js/api.js',
+  './js/app.js?v=' + VERSION,
+  './js/api.js?v=' + VERSION,
   './manifest.json',
   './version.json',
   // [v2.43.149] Cachear módulos centralizados también — con cache-buster

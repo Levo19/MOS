@@ -18208,7 +18208,7 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js"></script>
+<script src="js/api.js?v=2.43.222"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -18223,7 +18223,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.193"></script>
+<script src="js/app.js?v=2.43.222"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
@@ -18650,6 +18650,55 @@ if (false) (function(){
     // Polling cada 60s para detectar actualizaciones en segundo plano.
     // Antes era 5 min — ahora más agresivo: el deploy se ve <1 min después.
     setInterval(() => _reg?.update().catch(() => {}), 60 * 1000);
+
+    // ══════ WATCHDOG version.json (red, anti-stale) ══════
+    // Belt-and-suspenders: el camino normal de update es reg.update() → byte-diff
+    // de sw.js → install → banner. PERO si por algún timing el byte-diff de sw.js
+    // no surfacea un worker en espera (HTTP cache sirvió un sw.js viejo a update(),
+    // etc.), comparamos version.json (network-first, cache-busted) contra la versión
+    // que cargó esta sesión. Si el server publicó una MÁS NUEVA, forzamos reg.update()
+    // y, si en ~6s no hay worker waiting, mostramos el banner igual (applyPending hará
+    // el reload trayendo el index nuevo cuyo ?v= apunta al app.js/api.js frescos).
+    let _baselineVer = null;
+    function _cmpVer(a, b) { // -1 si a<b, 0 si =, 1 si a>b
+      const pa = String(a || '0').split('.').map(n => parseInt(n, 10) || 0);
+      const pb = String(b || '0').split('.').map(n => parseInt(n, 10) || 0);
+      for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+        const x = pa[i] || 0, y = pb[i] || 0;
+        if (x < y) return -1; if (x > y) return 1;
+      }
+      return 0;
+    }
+    async function _watchVersionJson() {
+      let remoteVer = null;
+      try {
+        const r = await fetch('./version.json?t=' + Date.now(), { cache: 'no-store' });
+        const j = await r.json();
+        remoteVer = j && j.version;
+      } catch (_) { return; }
+      if (!remoteVer) return;
+      if (_baselineVer === null) { _baselineVer = remoteVer; return; } // 1ra lectura = línea base
+      if (_cmpVer(remoteVer, _baselineVer) > 0) {
+        // Hay versión más nueva publicada → forzar SW y, si no aparece waiting, banner.
+        try { await _reg.update(); } catch (_) {}
+        setTimeout(() => {
+          if (_reg && _reg.waiting) {
+            _showUpdateBanner(_reg.waiting);
+          } else if (!_isUpdateSnoozed()) {
+            // SW byte-diff stalled pero el server SÍ tiene versión nueva: avisar igual.
+            // Banner sin worker: marcamos ready (habilita botón + countdown) porque
+            // _applyMosUpdate hace reload por fallback (3s) aunque no haya worker —
+            // la red traerá sw.js/index nuevos con el ?v= fresco.
+            _showUpdateBanner(null);
+            _mosSwProgress.ready = true;
+            _mosUpdateProgressBar();
+          }
+        }, 6000);
+        _baselineVer = remoteVer; // evitar re-disparo en cada tick
+      }
+    }
+    _watchVersionJson();                       // captura línea base al arrancar
+    setInterval(_watchVersionJson, 90 * 1000); // chequea cada 90s
 
     // 🧹 Limpiar snooze al cargar: PWA siempre debe actualizarse al iniciar
     // sesión, no permitir que un snooze viejo bloquee el banner para
