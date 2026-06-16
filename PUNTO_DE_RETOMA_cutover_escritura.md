@@ -13,12 +13,24 @@ en vivo (proveedores) se activó y revirtió en minutos al detectar el device de
   El sync NO se apaga (respaldo). El flag ya NO gobierna escritura.
 - **Lectura** directa de sombra, gated por flag (solo lectura). Se activa por módulo CUANDO su dual-write
   esté probado fresco (comparar sombra vs hoja unos días). NO depende de que la flota actualice.
-- ✅ Piloto proveedores: `_dualWriteMOS` + invocado en crearProveedorMaster/actualizarProveedorMaster
-  (deploy @411, commit 8fc62e9). INERTE para el usuario (solo acelera la sombra). Falta: activar su
-  lectura (flag) tras verificar frescura.
-- **Replicar `_dualWriteMOS` a cada módulo restante** (pedidos/pagos-prov/provprod/gastos/jornadas/...)
-  en su handler GAS de escritura, cada uno 40x. Luego activar su lectura.
+- ✅ **`_dualWriteMOS` REPLICADO A TODOS LOS MÓDULOS** (deploy @412, commits 8fc62e9+7e20e93): proveedores,
+  historial_precios, pedidos_proveedor, pagos_proveedor, jornadas (registrar/veto/rehab/auto), gastos
+  (crear+eliminar), proveedores_productos (crear/editar/eliminar), etiquetas_zona, evaluaciones,
+  config_horarios_apps. Best-effort, byte-coherente con el batch, try/catch, idempotente. TODAS las sombras
+  mos.* se actualizan al instante además del sync. INERTE (lecturas gated en '0'; nada cambia para el usuario).
+  Gaps honestos: pedidos/pagos solo tienen handler crear en GAS; jornadas delete = tombstone; liquidaciones_dia/
+  pagos NO cubiertas (materializadas por RPC/heartbeat propio — Fase D aparte).
 - SW arreglado v2.43.219 (rollout network-first confiable; device pre-network-first requiere 1 unregister).
+
+## QUÉ FALTA (mi parte construible del dual-write = COMPLETA)
+1. **Activar LECTURA directa por módulo** (requiere validación del usuario): comparar sombra vs hoja unos
+   días por módulo, y cuando coincida, poner su flag de lectura='1'. Empezar por proveedores. NO depende
+   de la flota (escritura sigue por GAS para todos).
+2. **Fase D liquidaciones** (sub-proyecto, DINERO): materializar `liquidaciones_dia`/`liquidaciones_pagos`
+   directo usando `mos.resumen_dia` (ya portado+validado). El dual-write NO la cubre (es flujo de cierre
+   semanal, no escritura de usuario). Gate de frescura propio sobre wh.sesiones (ver memoria).
+3. Limpiar el wiring de escritura directa del frontend (js/api.js `_postDirectoMOS`) que quedó sin uso en
+   el enfoque dual-write (no urge; está inactivo con flags en '0').
 
 ## PATRÓN ANTERIOR (apagar-sync) — DESCARTADO para escritura, pero la infra sirve
 La lectura directa (RPCs `*_lista`) + heartbeat + resembrar siguen siendo útiles. Lo que se descarta es
