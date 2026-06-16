@@ -28,6 +28,18 @@ function crearProveedorMaster(params) {
     params.formaPago || 'CONTADO', params.plazoCredito || 0,
     params.responsable || '', params.categoriaProducto || '', '1'
   ]);
+  // [dual-write] Espejo inmediato a mos.proveedores (best-effort; Sheets sigue siendo la verdad,
+  // el sync batch reconcilia si falla). Objeto keyed por headers de la hoja = mismo mapeo del batch.
+  try {
+    _dualWriteMOS('proveedores', {
+      idProveedor: id, nombre: params.nombre, ruc: params.ruc || '', imagen: params.imagen || '',
+      telefono: params.telefono || '', banco: params.banco || '', numeroCuenta: params.numeroCuenta || '',
+      cci: params.cci || '', email: params.email || '',
+      diaPedido: params.diaPedido || '', diaPago: params.diaPago || '', diaEntrega: params.diaEntrega || '',
+      formaPago: params.formaPago || 'CONTADO', plazoCredito: params.plazoCredito || 0,
+      responsable: params.responsable || '', categoriaProducto: params.categoriaProducto || '', estado: '1'
+    });
+  } catch (eDW) { Logger.log('[dualWrite crearProveedor] ' + (eDW && eDW.message)); }
   return { ok: true, data: { idProveedor: id } };
 }
 
@@ -46,6 +58,14 @@ function actualizarProveedorMaster(params) {
           if (col >= 0) sheet.getRange(i+1, col+1).setValue(params[c]);
         }
       });
+      // [dual-write] Espejo inmediato a mos.proveedores (best-effort). Releo la fila COMPLETA recién
+      // editada keyed por headers (params es un patch parcial) → fila byte-idéntica a la del sync batch.
+      // Si falla, la hoja queda intacta (Sheets=verdad) y el batch reconcilia.
+      try {
+        var fila = sheet.getRange(i+1, 1, 1, hdrs.length).getValues()[0];
+        var obj = {}; for (var h = 0; h < hdrs.length; h++) { obj[String(hdrs[h]).trim()] = fila[h]; }
+        _dualWriteMOS('proveedores', obj);
+      } catch (eDW) { Logger.log('[dualWrite actualizarProveedor] ' + (eDW && eDW.message)); }
       return { ok: true };
     }
   }

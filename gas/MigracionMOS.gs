@@ -251,6 +251,36 @@ function _mosBuildRows(tabla){
   return Object.keys(seen).map(function(k){ return seen[k]; });
 }
 
+// ============================================================
+// [dual-write] Espejo en tiempo real hoja → sombra Supabase (patrón ME)
+// ============================================================
+// Tras escribir una fila a su HOJA (que sigue siendo la verdad), espeja ESA fila a
+// mos.<tabla> AL INSTANTE, reusando el MISMO mapeo del sync batch (_mosRowMap + _MOS_SPECS[tabla].spec
+// + cfg.post) → fila BYTE-IDÉNTICA a la que produciría _syncMOSImpl. Upsert por cfg.onConflict
+// (clave natural) = IDEMPOTENTE: re-guardar el mismo registro actualiza la misma fila, nunca duplica;
+// si el sync corre después, no genera una fila distinta ni conflicto (409 = éxito en _sbOnce_).
+//
+// `obj` = objeto keyed por las CABECERAS de la hoja (las mismas keys que _mosSheetRows produce, ej.
+// idProveedor/nombre/ruc/...), con los valores YA escritos a la hoja.
+//
+// Best-effort y SEGURO: usa _sbOnce_ (1 SOLO intento, sin backoff/sleep) para no colgar al admin si
+// Supabase está degradado; el sync batch (≤15min) reconcilia si falla. El CALLER lo envuelve en
+// try/catch → si esto lanza, la escritura a la hoja NO se rompe (Sheets = verdad). NO requiere flag:
+// solo espeja a la sombra lo que ya fue a la hoja (invisible al usuario; acelera la frescura del sync).
+function _dualWriteMOS(tabla, obj){
+  var cfg=_MOS_SPECS[tabla];
+  if(!cfg){ Logger.log('[dualWrite MOS] tabla desconocida (no está en _MOS_SPECS): '+tabla); return {ok:false, error:'tabla desconocida: '+tabla}; }
+  // Mapeo idéntico al batch: _mosRowMap(o, spec) + cfg.post (si existe) — misma fuente de verdad.
+  var row=_mosRowMap(obj, cfg.spec); if(cfg.post) row=cfg.post(row, obj);
+  // Validar PK (simple o compuesta): sin PK no se puede upsert por clave natural → omitir (el batch lo subirá).
+  var pkCols=String(cfg.onConflict).split(',').map(function(c){ return c.trim(); });
+  var sinPk=pkCols.filter(function(c){ return row[c]==null || row[c]===''; });
+  if(sinPk.length){ Logger.log('[dualWrite MOS '+tabla+'] sin PK ('+sinPk.join(',')+') — omitido'); return {ok:false, error:'sin PK: '+sinPk.join(',')}; }
+  var r=_sbOnce_('POST','mos.'+tabla,{ data:[row], upsert:true, onConflict:cfg.onConflict });
+  if(!r.ok) Logger.log('[dualWrite MOS '+tabla+'] upsert falló: HTTP '+(r.code)+' '+(r.error||''));
+  return r;
+}
+
 /** Backfill. opts:{dryRun, soloTabla} */
 function migrarMOS(opts){
   opts=opts||{};
