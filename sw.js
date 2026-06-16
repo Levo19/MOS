@@ -37,7 +37,7 @@ try {
   console.warn('[SW MOS] FCM no se pudo inicializar (push background off):', err);
 }
 
-const VERSION = '2.43.219';
+const VERSION = '2.43.220';
 const CACHE   = 'mos-v' + VERSION;
 const ASSETS  = [
   './',

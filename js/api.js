@@ -398,6 +398,10 @@ const API = (() => {
   function _mosGastosDirecto()  { return !!_mosFlag('mos_gastos_directo',  'gastosDirecto'); }
   function _mosEvalDirecto()    { return !!_mosFlag('mos_eval_directo',    'evalDirecto'); }
   function _mosHorarioDirecto() { return !!_mosFlag('mos_horario_directo', 'horarioDirecto'); }
+  // [FASE 2 · ETIQUETAS] gate por-módulo (espejo del kill-switch server MOS_ETIQ_DIRECTO, default '0'). El
+  // frontend MOS NO consume getEtiquetasPendientes (las etiquetas las leen WH/ME, no el panel admin MOS) → este
+  // gate existe por uniformidad/diagnóstico pero NO gobierna ningún read-path cableado. Ver REPORTE.
+  function _mosEtiqDirecto()    { return !!_mosFlag('mos_etiq_directo',    'etiqDirecto'); }
 
   // [FASE 2 · LOTE JORNALES/LIQUIDACIONES] gates por-operación (espejo de los kill-switches server-side
   // MOS_JORNADAS_DIRECTO (84) / MOS_LIQDIA_DIRECTO (85), ambos default '0'). DINERO (jornal/liquidación).
@@ -478,6 +482,31 @@ const API = (() => {
   async function _getProveedorProductosDirecto(params) { return _getListaDirectaMOS('proveedor_producto_lista', params, 'provprod'); }
   // getJornadas → mos.jornadas_lista (filtro fecha YYYY-MM-DD, paridad getJornadas).
   async function _getJornadasDirecto(params)           { return _getListaDirectaMOS('jornadas_lista',           params, 'jornadas'); }
+
+  // ════════════════════════════════════════════════════════════════════
+  // [FASE 2 · LOTE EVAL/HORARIO/ETIQ] read-paths directos (RPCs 98). Mismo patrón que 94 pero con dos shapes:
+  //   · evaluaciones_dia / etiquetas_pendientes → data ARRAY camelCase (== d.data de GAS) → usan el helper común.
+  //   · horarios_apps → data OBJETO keyed por app (== d.data de getHorariosApps) → helper dedicado (NO es array).
+  // Cada uno gated por SU flag de módulo (el mismo que ya gobierna la escritura directa) → cutover coherente.
+  // Flag OFF (default, estado real) ⇒ no se entra al directo y va recto a GAS = IDÉNTICO a hoy.
+  // ════════════════════════════════════════════════════════════════════
+  // getEvaluacionesDia → mos.evaluaciones_dia (filtro fecha-día TZ Lima + activo + idPersonal, paridad GAS).
+  async function _getEvaluacionesDiaDirecto(params)    { return _getListaDirectaMOS('evaluaciones_dia',         params, 'evaluaciones'); }
+  // getEtiquetasPendientes → mos.etiquetas_pendientes (ventana 3d + estado + enriquecimientos). ⚠️ Sin consumidor
+  // frontend en MOS (no se cabla en el dispatcher); se expone solo para diagnóstico/paridad. Ver REPORTE.
+  async function _getEtiquetasPendientesDirecto(params){ return _getListaDirectaMOS('etiquetas_pendientes',     params, 'etiquetas'); }
+  // getHorariosApps → mos.horarios_apps. Devuelve el OBJETO {<app>:{...}} (= d.data de GAS) o null (→ GAS).
+  // null si: sin token, !ok, shape inesperado (no-objeto / array), o _fresh!==true (sombra stale).
+  async function _getHorariosAppsDirecto(params) {
+    const r = await _sbRpcMOS('horarios_apps', { p: params || {} });
+    if (r == null) return null;                                            // sin token → GAS
+    if (!r.ok || !r.data || typeof r.data !== 'object' || Array.isArray(r.data)) return null;  // shape inesperado → GAS
+    if (r._fresh !== true) {                                               // sombra horarios stale → GAS
+      try { console.warn('[MOS horarios directo] sombra STALE (_fresh=false, heartbeat=' + r._heartbeat + ') → fallback a GAS'); } catch (_) {}
+      return null;
+    }
+    return r.data;   // {<app>:{app,horario,dias,admins_libres,actualizadoPor,fechaActualizacion}} == d.data de GAS
+  }
 
   // ════════════════════════════════════════════════════════════════════
   // [FASE 2 · LOTE CATÁLOGO] ESCRITURA DIRECTA del catálogo maestro (navegador→PostgREST).
@@ -1126,12 +1155,35 @@ const API = (() => {
           _mosJornadasDirecto
         );
       }
+      // [FASE 2 · EVAL] getEvaluacionesDia → lectura directa (RPC evaluaciones_dia, 98). Gated por mos_eval_directo
+      // (mismo flag que la escritura crearEvaluacion) → al prender el flip, lectura+escritura van directas a la vez.
+      // Flag OFF (default) ⇒ recto a GAS = IDÉNTICO a hoy. Devuelve el array camelCase igual que getEvaluacionesDia.
+      if (action === 'getEvaluacionesDia') {
+        return _conFallbackMOS(
+          () => _getEvaluacionesDiaDirecto(p),
+          () => _fetch('GET', { action, ...p }),
+          _mosEvalDirecto
+        );
+      }
       return _fetch('GET',  { action, ...p });
     },
     // [FASE 2] post → escritura directa Supabase, gate POR-ACCIÓN (todos default OFF): 5 de catálogo
     // (mos_catalogo_directo) + proveedores/pedidos/pago/proveedor-producto (mos_*_directo). Con el gate de la
     // acción OFF ⇒ IDÉNTICO a hoy (va recto a GAS). El resto de acciones SIEMPRE por GAS.
-    post: (action, p = {}) => _postMOS(action, p),
+    post: (action, p = {}) => {
+      // [FASE 2 · HORARIO] getHorariosApps es una LECTURA enviada por POST (el front la llama con API.post).
+      // Read-path directo (RPC horarios_apps, 98) gated por mos_horario_directo (mismo flag que setHorarioApp) →
+      // cutover coherente lectura+escritura. Flag OFF (default) ⇒ recto a GAS = IDÉNTICO a hoy. Devuelve el
+      // OBJETO {<app>:{...}} igual que getHorariosApps; el consumidor lee `(r && r.data) || r` → ambos sirven.
+      if (action === 'getHorariosApps') {
+        return _conFallbackMOS(
+          () => _getHorariosAppsDirecto(p),
+          () => _fetch('POST', { action, ...p }),
+          _mosHorarioDirecto
+        );
+      }
+      return _postMOS(action, p);
+    },
     getProductosNuevosWH: (p = {}) => _fetch('GET',  { action: 'getProductosNuevosWH', ...p }),
     lanzarProductoNuevo:  (p = {}) => _fetch('POST', { action: 'lanzarProductoNuevo',  ...p }),
     // Crea un PN manualmente desde MOS (admin/master). idGuia vacío → WH no
@@ -1181,6 +1233,11 @@ const API = (() => {
       gastosDirecto:      _mosGastosDirecto,       // ¿flag mos_gastos_directo ON? (DINERO)
       evalDirecto:        _mosEvalDirecto,         // ¿flag mos_eval_directo ON?
       horarioDirecto:     _mosHorarioDirecto,      // ¿flag mos_horario_directo ON?
+      etiqDirecto:        _mosEtiqDirecto,         // ¿flag mos_etiq_directo ON? (sin consumidor front MOS)
+      // [FASE 2 · 98] read-paths directos eval/horario/etiq (array u objeto o null→GAS) — diagnóstico/paridad.
+      getEvaluacionesDiaDirecto:    _getEvaluacionesDiaDirecto,    // RPC evaluaciones_dia (array o null→GAS)
+      getHorariosAppsDirecto:       _getHorariosAppsDirecto,       // RPC horarios_apps (objeto keyed por app o null→GAS)
+      getEtiquetasPendientesDirecto:_getEtiquetasPendientesDirecto, // RPC etiquetas_pendientes (array o null→GAS) — sin consumidor
       // [FASE 2 · LOTE JORNALES/LIQUIDACIONES] gates por-grupo (default OFF, DINERO). marcarPagos/anularPago/
       // recomputarLiquidacionDia NO cableados (shape/seguridad incompatibles con la RPC) — ver REPORTE.
       jornadasDirecto:    _mosJornadasDirecto,     // ¿flag mos_jornadas_directo ON? (DINERO jornal)
