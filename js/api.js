@@ -499,6 +499,9 @@ const API = (() => {
   // [Optimización] getPersonalDiaFast → mos.personal_dia_lista (105): lee la sombra liquidaciones_dia
   // (materializada por Fase D + cron), shape camelCase PARITARIO con getPersonalDiaFast (Liquidaciones.gs:1204).
   async function _getPersonalDiaFastDirecto(params)    { return _getListaDirectaMOS('personal_dia_lista',       params, 'personalDia'); }
+  // [Optimización] catálogos base → RPCs 106 (bools '1'/'0' paritarios con getEquivalencias/getCategorias).
+  async function _getEquivalenciasDirecto(params)      { return _getListaDirectaMOS('equivalencias_lista',      params, 'equivalencias'); }
+  async function _getCategoriasDirecto(params)         { return _getListaDirectaMOS('categorias_lista',         params, 'categorias'); }
 
   // ════════════════════════════════════════════════════════════════════
   // [FASE 2 · LOTE EVAL/HORARIO/ETIQ] read-paths directos (RPCs 98). Mismo patrón que 94 pero con dos shapes:
@@ -1179,6 +1182,13 @@ const API = (() => {
           () => _fetch('GET', { action, ...p }),
           _mosLecturaDirecta
         );
+      }
+      // [Optimización] catálogos base → lectura directa (RPCs 106). Maestro _mosLecturaDirecta + fallback GAS.
+      if (action === 'getEquivalencias') {
+        return _conFallbackMOS(() => _getEquivalenciasDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta);
+      }
+      if (action === 'getCategorias') {
+        return _conFallbackMOS(() => _getCategoriasDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta);
       }
       return _fetch('GET',  { action, ...p });
     },
