@@ -473,6 +473,8 @@ function bloquearDispositivosDeUsuario(params) {
     // de "revocado permanente" via fila en BLOQUEOS_USUARIO con motivo
     // 'DEVICE: ...' (sólo esos se pueden liberar via liberarDispositivoBloqueado).
     sheet.getRange(r + 1, iEst + 1).setValue('INACTIVO');
+    // [FASE 4.1] espejo instantáneo a la sombra (bloqueo por usuario → INACTIVO). best-effort.
+    if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(deviceId, { Estado: 'INACTIVO', Razon_Bloqueo: 'DEVICE: ' + motivo, Bloqueado_Desde: ahora });
     bloqueados.push({
       deviceId: deviceId,
       nombreEquipo: iNomE >= 0 ? String(data[r][iNomE] || '') : '',
@@ -571,6 +573,8 @@ function liberarDispositivoBloqueado(params) {
       return { ok: true, data: { autorizado: true, ok: false, error: 'Este dispositivo fue revocado por otra vía. Usá el panel de dispositivos para reactivarlo.' } };
     }
     sheet.getRange(i + 1, iEst + 1).setValue('ACTIVO');
+    // [FASE 4.1] espejo instantáneo a la sombra (liberación → ACTIVO). best-effort.
+    if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(params.deviceId, { Estado: 'ACTIVO', Razon_Bloqueo: '', Bloqueado_Desde: '' });
 
     // Marcar fila(s) en BLOQUEOS_USUARIO como liberadas
     try {

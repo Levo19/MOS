@@ -207,7 +207,7 @@
   // [v1.0.14] Versión honesta del módulo. Las 3 apps lo cargan vía CDN con un
   // pin ?v= en su <script>; si ese pin miente, ESTA constante revela la versión
   // REAL servida. Se loguea al boot (init) como "[DeviceAuth] vX en <app>".
-  var _VERSION = '1.0.22';
+  var _VERSION = '1.0.23';
 
   var _config = null;
   var _state = {
@@ -425,6 +425,8 @@
       fechaHoyLima:  j.fecha_hoy_lima || '',
       nombre:        j.nombre_equipo || j.aprobado_por || 'admin',
       error:         j.error || '',
+      // [FASE 4.1 · F] flag server: si true, ante un estado de bloqueo NO se confirma con GAS (auth puro).
+      sinDobleCheck: j.sin_doblecheck === true,
       // Campos de control que el heartbeat/extensión ya leen tal cual (snake):
       forzar_reverify:           j.forzar_reverify === true,
       desbloqueo_temporal_hasta: j.desbloqueo_temporal_hasta
@@ -1546,6 +1548,13 @@
       var directoActivo = (d.estado === 'ACTIVO' || d.autorizado === true);
       if (directoActivo) {
         // Rápido: el directo ACTIVO entra sin tocar GAS.
+        return _procesarRespuestaVerify(d, silencioso);
+      }
+      // [FASE 4.1 · F] Si el server activó sin_doblecheck (sombra confiable: reconciliación 15min + espejo
+      // instantáneo en revocar/bloquear/liberar/aprobar/reactivar), confiar en el directo TAMBIÉN para el
+      // bloqueo → auth puro, sin GAS. Default OFF (flag '0') → doble-check histórico INTACTO. Reversible por flag.
+      if (d.sinDobleCheck) {
+        console.warn('[DeviceAuth] directo=' + d.estado + ' (bloqueo) + sin_doblecheck ON → bloqueo confiando en la sombra (sin GAS).');
         return _procesarRespuestaVerify(d, silencioso);
       }
       // Directo dice BLOQUEO → confirmar con la hoja (GAS) antes de bloquear.

@@ -5,32 +5,31 @@
 
 ---
 
-## FASE 1 — Activar LECTURAS directas de MOS (bajo riesgo, ya construido)
+## FASE 1 — Activar LECTURAS directas de MOS (bajo riesgo, ya construido) — ✅ CASI COMPLETA
 Las RPCs de lectura + el wiring + el dual-write ya están. Solo falta encender por módulo.
-- 🔴 **P1.1** Correr `semaforoLecturasMOS()` en el editor GAS de MOS → confirmar qué módulos están en ✓ (la última vez: 9/10).
-- 🔵 **P1.2** Resolver las 8 huérfanas de `historial_precios` (tus pruebas LEV217 del cutover viejo): limpiarlas o resembrarlas → deja historial en ✓.
-- 🔵 **P1.3** Activar la lectura directa módulo por módulo (flag server), empezando por los no-dinero (proveedores → pedidos → prov-producto → jornadas → evaluaciones → horarios).
-- 🔴 **P1.4** Tras cada módulo, validar visualmente en MOS que se ve igual (es lectura, reversible al instante con kill-switch).
+- ✅ **P1.1** `semaforoLecturasMOS()` corrido 2026-06-16 → 9/10 ✓ (solo historial ⚠).
+- ⏳ **P1.2** Resolver las 8 huérfanas de `historial_precios` (tus pruebas LEV217 del cutover viejo): limpiarlas o resembrarlas → deja historial en ✓. **PENDIENTE: decisión del usuario** (borrar de sombra vs resembrar a hoja).
+- ✅ **P1.3** ACTIVADAS las 7 lecturas (2026-06-16): proveedores (ya estaba) + pedidos + pagos + provprod + jornadas + eval + horario. Read-paths verificados ok+_fresh+paridad antes de encender. Kill-switch: `update mos.config set valor='0' where clave='MOS_<MOD>_LECTURA'`.
+- 🔴 **P1.4** Validar visualmente en MOS que cada módulo se ve igual (recargá MOS o esperá ~2min al refresh de flags). Es lectura, reversible al instante.
 
-## FASE 2 — Activar Fase D: LIQUIDACIONES [DINERO]
-Construida y validada (paridad exacta). Falta encender.
-- 🔴 **P2.1** Correr `compararLiquidacionMOS_semana()` → confirmar ✓ PARIDAD sobre datos reales.
-- 🔵 **P2.2** Activar `MOS_LIQDIA_DIRECTO`='1' + apagar el sync Hoja→sombra de `liquidaciones_dia`/`liquidaciones_pagos` (sino lo pisa) + cablear.
-- 🔴 **P2.3** Validación física: hacer una liquidación/pago de prueba y verificar que cuadra (es dinero).
+## FASE 2 — Activar Fase D: LIQUIDACIONES [DINERO] — ✅ COMPLETA Y VERIFICADA (2026-06-16)
+- ✅ **P2.1** `compararLiquidacionMOS_semana()` → ✓ PARIDAD EXACTA toda la semana (09-15, 0 diff, al centavo).
+- ✅ **P2.2** `MOS_LIQDIA_DIRECTO`='1'. Verificado end-to-end: materializar semana en curso dio **cre=0 act=N diasStale=0** → la RPC actualiza las filas del sync GAS preservando manuales, SIN duplicar (coexistencia probada en vivo). El sync GAS QUEDA de respaldo (apagarlo = P3.3).
+- 🔴 **P2.3** Validación física (al final): una liquidación/pago de prueba cuadra.
 
-## FASE 3 — Activar Fase E: pg_cron (snapshot/cierre nocturno)
-Jobs construidos, inertes (doble candado).
-- 🔵 **P3.1** Tras validar Fase D: `alter_job(... active:=true)` en los 2 jobs (snapshot-liq + health-frescura).
-- 🔴 **P3.2** Observar 1-2 noches en `mos.cron_log` que persiste el snapshot.
-- 🔵 **P3.3** Recién entonces apagar los triggers GAS equivalentes (`_liqDiaCronDiario`/`_liqSyncJob`).
+## FASE 3 — Activar Fase E: pg_cron (snapshot/cierre nocturno) — ✅ COMPLETA (2026-06-16)
+- ✅ **P3.1** Ambos jobs `active=true`: `mos-snapshot-liq-semana` (23:30 Lima) + `mos-health-frescura` (04:00). Health corrido manual → ok=true, alerta=OK.
+- 🔴 **P3.2** Observar 1-2 noches: `! node -e "..."` o `select * from mos.cron_log order by ts desc` → debe aparecer `snapshot_liq_semana ok=true` tras las 23:30.
+- 🔵 **P3.3** Recién tras observar, apagar los triggers GAS equivalentes (`_liqDiaCronDiario`/`_liqSyncJob`).
 
-## FASE 4 — Cutover AUTH 100% puro (ecosistema — la tabla es compartida)
-Hoy WH+ME verifican directo CON doble-check a GAS (rescate). "100% puro" = sombra única, sin GAS.
-- 🔵 **P4.1** Sync INVERSO: `mos.dispositivos → HOJA` + apagar el viejo Hoja→sombra (no coexisten).
-- 🔵 **P4.2** Migrar los ~40 lectores de la hoja DISPOSITIVOS (mint cross-app, paneles, bloqueo, espía) a leer la sombra.
-- 🔵 **P4.3** Quitar el doble-check (sombra = fuente única) en las 3 apps.
-- 🔴 **P4.4** Validar que TODOS los devices reales entran (vos + cajero + aliados). Watchdog/Reintentar como red.
-- 🔵 **P4.5** Limpiar devices: dejar ACTIVOS solo los en uso, bloquear el resto (ya efectivo, sin sync que pise).
+## FASE 4 — Cutover AUTH 100% puro (ecosistema) — 🔵 BASE 4.1 CONSTRUIDA (2026-06-16)
+Hoy WH+ME verifican directo CON doble-check a GAS (rescate). "100% puro" = sombra única, sin GAS. **50 call-sites mapeados.** Enfoque = DUAL-WRITE/reconciliación (NO invertir sync). Diseño: `DISENO_FASE4_auth_puro.md`.
+- ✅ **A** columnas sombra (SQL 101 aplicado): fcm_token, alerta_seguridad(+revisada), forzar_horario_hasta, razon_bloqueo, bloqueado_desde.
+- ✅ **D** RPCs lectura (SQL 102 aplicado): consultar_estado_dispositivo, fcm_token_dispositivo, verificar_horario_dispositivo, listar_dispositivos, dispositivos_pendientes. (dispositivos_bloqueados pendiente: cruza hoja BLOQUEOS).
+- ✅ **B/C** `gas/Fase4Dispositivos.gs`: `_dualWriteDispositivo`/`resembrarDispositivosDesdeHoja` (dedup)/`compararDispositivosMOS`. **Reconciliación foldeada en `syncMOSReciente` cada 15 min** (MOS en tope de 20 triggers → folding, NO trigger nuevo). Paridad confirmada (139=139). Sombra fresca automática.
+- ⏳ **E (migrar lectores)** + **F (quitar doble-check)** = el CUTOVER que cambia el auth real → requiere infra sana (deploy+prueba incremental) + validación física (que TODOS entran). NO hacer a ciegas (40x).
+- 🔵 **4.2 (escritura pura)**: escrituras a RPCs directas → apagar GAS→hoja → pg_cron seguridad.
+- 📌 Dato sucio detectado: 2 deviceIds duplicados en la hoja (df61a710..., 5d31a553...) — limpiar fila repetida.
 
 ## FASE 5 — WH escritura directa
 Las 7 RPCs PASO 4 están inertes.
@@ -58,6 +57,15 @@ Edge `emitir-cpe` cableada, inerte.
 - **Nada se activa sin tu validación física** en los módulos de dinero (lección del rollback).
 - Cada activación tiene **kill-switch** (revertir en 1 comando / flag).
 - Device colgado → **Reintentar / re-aprobar, NUNCA borrar cache**.
+
+## ⏭️ PUNTO DE RETOMA (próximo paso, cuando vuelva la infra Anthropic)
+**FASE 4 · Etapa E + F (cutover auth real).** Decisión del usuario 2026-06-16: hacerlo CON infra sana (prueba incremental + validación física). Pasos al retomar:
+1. **E — migrar lectores** (con flag `MOS_DISP_LECTURA` + fallback a hoja, por categoría): empezar por consumidores transversales (push/audio/espía/horario → `fcm_token_dispositivo`/`verificar_horario_dispositivo`), luego paneles (`listar_dispositivos`/`dispositivos_pendientes`), luego heartbeat (`consultar_estado_dispositivo`). Editar GAS → `clasp push` → probar cada categoría → validar visual.
+2. **F — quitar doble-check** en `assets/auth/device-auth.js` (las 3 apps) SOLO tras paridad sostenida + validar que vos+cajero+aliados entran. Bump SW + deploy 3 apps.
+3. Construir `dispositivos_bloqueados` (requiere portar hoja BLOQUEOS a sombra).
+4. Limpiar 2 deviceIds duplicados en hoja (df61a710.../5d31a553...).
+5. **Pendiente git:** commitear SQL 101/102 + Fase4Dispositivos.gs + edit MigracionMOS.gs + docs (clasificador bloqueó `git push`).
+Después: **FASE 4.2** (escritura pura + apagar GAS→hoja + pg_cron seguridad). Luego FASE 5 (WH escritura), 6 (ME CPE), 7 (corte Sheets), 8 (rotar credenciales).
 
 ## Estado HOY (de dónde partimos)
 ✅ Catálogo lectura directa (vivo) · dual-write todos los módulos MOS · Fase D+E construidas/validadas (inertes) · auth WH+ME directo a Supabase EN VIVO (doble-check+fallback) · semáforo lecturas 9/10 ✓.

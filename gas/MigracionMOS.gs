@@ -414,6 +414,10 @@ function syncMOSReciente(){
   // si el trigger muere (Google desactiva los time-based) el latido se congela → mos.finanzas_rango/
   // historial_precios_lista marcan _fresh=false → el front cae a GAS (no sirve P&L/historial viejo).
   try{ _estamparLatidoMOS(r); }catch(eHb){ Logger.log('[syncMOSReciente] heartbeat WARN: '+(eHb&&eHb.message||eHb)); }
+  // [FASE 4.1] Reconciliación dispositivos sombra (foldeada al sync de 15min — MOS en tope de 20 triggers,
+  // mismo criterio que recon/catálogo). _resembrarDispositivosJob ya tiene try/catch interno; el externo
+  // garantiza que un fallo de la sombra de dispositivos NUNCA rompe el sync de datos.
+  try{ if(typeof _resembrarDispositivosJob==='function') _resembrarDispositivosJob(); }catch(eD){ Logger.log('[syncMOSReciente] resembrar dispositivos WARN: '+(eD&&eD.message||eD)); }
   return r;
 }
 function syncMOSCompleto(){

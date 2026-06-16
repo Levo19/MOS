@@ -1494,6 +1494,8 @@ function revocarDispositivo(params) {
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][iId]) !== params.deviceId) continue;
     if (iEst >= 0) sheet.getRange(i + 1, iEst + 1).setValue('INACTIVO');
+    // [FASE 4.1] espejo instantáneo a la sombra (revocación → INACTIVO). best-effort, no rompe el flujo.
+    if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(params.deviceId, { Estado: 'INACTIVO' });
     return { ok: true, data: { autorizado: true, revocadoPor: auth.data.validadoPor } };
   }
   return { ok: false, error: 'Dispositivo no encontrado' };
