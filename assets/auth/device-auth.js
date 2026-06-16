@@ -116,7 +116,7 @@
   // [v1.0.14] Versión honesta del módulo. Las 3 apps lo cargan vía CDN con un
   // pin ?v= en su <script>; si ese pin miente, ESTA constante revela la versión
   // REAL servida. Se loguea al boot (init) como "[DeviceAuth] vX en <app>".
-  var _VERSION = '1.0.17';
+  var _VERSION = '1.0.18';
 
   var _config = null;
   var _state = {
@@ -238,6 +238,10 @@
   // === '1' (mismo patrón que api.js _mosFlag) sin tocar nada más.
   function _devAuthDirecto() {
     try {
+      // [FIX robustez 40x] Sin config Supabase (base + anon) NO intentar el directo: evita el rebote
+      // colgado a GAS que vivió WH (que no pasa sbUrl/sbAnon en su init). Sin config => directo a GAS,
+      // sin intentar el path Supabase ni el fallback ruidoso. Solo MOS (con mintUrl+sbAnon) puede ir directo.
+      if (!_sbBase() || !(_config && _config.sbAnon)) return false;
       if (typeof window !== 'undefined' && window.MOS_CONFIG && window.MOS_CONFIG.deviceAuthDirecto === true) return true;
       if (_lsGet('mos_device_auth_directo') === '1') return true;
     } catch (_) {}
