@@ -277,9 +277,22 @@ begin
   -- 'MOS' || '' se tratan como MOS (igual que Config.gs:2283); el master MOS no se auto-crea PENDIENTE.
   v_es_mos := upper(v_app) in ('MOS','');
 
-  -- (2) ¿ya existe? Solo refresca heartbeat; NUNCA re-pendientea un device ACTIVO/INACTIVO por reconectar.
+  -- (2) ¿ya existe? Solo refresca heartbeat; NUNCA re-pendientea un device ACTIVO/INACTIVO/SUSPENDIDO por
+  -- reconectar (esos son decisión del master). EXCEPCIÓN: CANCELADO_AUTO = un PENDIENTE que el cron caducó
+  -- por >20h sin aprobar; al reconectar el device se REABRE a PENDIENTE_APROBACION (paridad con GAS
+  -- Config.gs:957/1083). Sin esto, un device que pidió acceso el viernes y se aprueba el lunes quedaría
+  -- atascado al activar el cutover (bug de disponibilidad cazado por la revisión 40x de Fase 3a).
   select estado into v_existe from mos.dispositivos where id_dispositivo = v_id;
   if v_existe is not null then
+    if v_existe = 'CANCELADO_AUTO' then
+      update mos.dispositivos
+         set estado = 'PENDIENTE_APROBACION', ultima_conexion = now(),
+             user_agent = coalesce(nullif(v_ua,''), user_agent),
+             app        = coalesce(nullif(v_app,''), app)
+       where id_dispositivo = v_id;
+      return jsonb_build_object('ok', true, 'estado', 'PENDIENTE_APROBACION',
+        'autorizado', false, 'nuevo', false, 'reabierto', true);
+    end if;
     update mos.dispositivos
        set ultima_conexion = now(),
            user_agent      = coalesce(nullif(v_ua,''), user_agent),
