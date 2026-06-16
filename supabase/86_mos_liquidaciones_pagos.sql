@@ -142,7 +142,7 @@ begin
   -- ── ESCRITURA ATÓMICA (3 tablas). Calcula Σ total_dia mientras inserta los renglones. ────────────────
   for d in select * from jsonb_array_elements(v_dias) loop
     v_fecha_s := nullif(btrim(coalesce(d->>'fecha','')), '');
-    begin v_fecha := v_fecha_s::timestamptz; exception when others then v_fecha := v_now; end;
+    begin v_fecha := (v_fecha_s || 'T00:00:00-05:00')::timestamptz; exception when others then v_fecha := v_now; end;  -- medianoche Lima (= _mosDate GAS)
     v_mb := coalesce(mos._numn(d->>'montoBase'),0);
     v_pe := coalesce(mos._numn(d->>'pagoEnvasado'),0);
     v_bm := coalesce(mos._numn(d->>'bonoMeta'),0);

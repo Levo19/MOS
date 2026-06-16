@@ -160,7 +160,9 @@ begin
     if v_idp is null then v_skip := v_skip + 1; continue; end if;
 
     v_id_dia := mos._liqdia_key(v_idp, v_fecha_s);
-    begin v_fecha_ts := v_fecha_s::timestamptz; exception when others then v_fecha_ts := v_now; end;
+    -- ancla a medianoche Lima (= _mosDate de GAS; Perú siempre UTC-5). Con ::timestamptz directo se grababa
+    -- UTC-midnight y el bucket Lima-date de finanzas_rango imputaba el costo del día X al X-1 (bug 40x).
+    begin v_fecha_ts := (v_fecha_s || 'T00:00:00-05:00')::timestamptz; exception when others then v_fecha_ts := v_now; end;
     v_virtual := case when v_idp like 'MEX:%' then 'true' else 'false' end;
 
     v_base := coalesce(mos._numn(v_row->>'montoBase'),0);

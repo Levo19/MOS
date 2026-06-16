@@ -130,7 +130,7 @@ begin
   end if;
 
   v_id_dia := mos._liqdia_key(v_idp, v_fecha_s);
-  begin v_fecha := v_fecha_s::timestamptz; exception when others then v_fecha := v_now; end;
+  begin v_fecha := (v_fecha_s || 'T00:00:00-05:00')::timestamptz; exception when others then v_fecha := v_now; end;  -- medianoche Lima (= _mosDate GAS)
   v_nowiso := to_char(v_now at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"');
   v_virtual := case when v_idp like 'MEX:%' then 'true' else 'false' end;
 
@@ -270,7 +270,7 @@ begin
   end if;
 
   v_id_dia := mos._liqdia_key(v_idp, v_fecha_s);
-  begin v_fecha := v_fecha_s::timestamptz; exception when others then v_fecha := v_now; end;
+  begin v_fecha := (v_fecha_s || 'T00:00:00-05:00')::timestamptz; exception when others then v_fecha := v_now; end;  -- medianoche Lima (= _mosDate GAS)
   v_nowiso := to_char(v_now at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"');
 
   select true, coalesce(monto_base,0), coalesce(pago_envasado,0), coalesce(bono_meta,0),
