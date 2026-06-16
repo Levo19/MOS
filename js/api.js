@@ -502,6 +502,12 @@ const API = (() => {
   // [Optimización] catálogos base → RPCs 106 (bools '1'/'0' paritarios con getEquivalencias/getCategorias).
   async function _getEquivalenciasDirecto(params)      { return _getListaDirectaMOS('equivalencias_lista',      params, 'equivalencias'); }
   async function _getCategoriasDirecto(params)         { return _getListaDirectaMOS('categorias_lista',         params, 'categorias'); }
+  // [Optimización] catálogos/config → RPCs 107 (personal sin pin_hash; bools '1'/'0'; pin/adminPin via RLS).
+  async function _getPersonalMasterDirecto(params)     { return _getListaDirectaMOS('personal_master_lista',    params, 'personalMaster'); }
+  async function _getZonasDirecto(params)              { return _getListaDirectaMOS('zonas_lista',              params, 'zonas'); }
+  async function _getEstacionesDirecto(params)         { return _getListaDirectaMOS('estaciones_lista',         params, 'estaciones'); }
+  async function _getImpresorasDirecto(params)         { return _getListaDirectaMOS('impresoras_lista',         params, 'impresoras'); }
+  async function _getSeriesDirecto(params)             { return _getListaDirectaMOS('series_lista',             params, 'series'); }
 
   // ════════════════════════════════════════════════════════════════════
   // [FASE 2 · LOTE EVAL/HORARIO/ETIQ] read-paths directos (RPCs 98). Mismo patrón que 94 pero con dos shapes:
@@ -1190,6 +1196,13 @@ const API = (() => {
       if (action === 'getCategorias') {
         return _conFallbackMOS(() => _getCategoriasDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta);
       }
+      // [Optimización] catálogos/config (107) → lectura directa. Maestro + fallback GAS. Nombre de acción no
+      // matcheado ⇒ recto a GAS (no rompe; solo no acelera ese caso).
+      if (action === 'getPersonalMaster') { return _conFallbackMOS(() => _getPersonalMasterDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getZonas')          { return _conFallbackMOS(() => _getZonasDirecto(p),          () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getEstaciones')     { return _conFallbackMOS(() => _getEstacionesDirecto(p),     () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getImpresoras')     { return _conFallbackMOS(() => _getImpresorasDirecto(p),     () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getSeries')         { return _conFallbackMOS(() => _getSeriesDirecto(p),         () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       return _fetch('GET',  { action, ...p });
     },
     // [DUAL-WRITE] post → escritura directa Supabase SOLO para el catálogo (pilot, gate mos_catalogo_directo /
