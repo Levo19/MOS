@@ -525,6 +525,22 @@ const API = (() => {
     if (r._fresh !== true) { try { console.warn('[MOS historico_proveedor] sombra STALE → GAS'); } catch(_){} return null; }
     return r.data;
   }
+  // Helper para RPCs cuyo data es OBJETO (no array) — devuelve r.data o null→GAS, con gate _fresh.
+  async function _getObjDirectoMOS(fn, params, etq) {
+    const r = await _sbRpcMOS(fn, { p: params || {} });
+    if (r == null) return null;
+    if (!r.ok || r.data == null) return null;
+    if (r._fresh !== true) { try { console.warn('[MOS ' + etq + '] sombra STALE → GAS'); } catch(_){} return null; }
+    return r.data;
+  }
+  // [Optimización · vistas cross-app] cajas (ME) + warehouse (WH) leídas desde MOS (RPCs 111/112/113).
+  async function _getCierresCajaDirecto(params)         { return _getObjDirectoMOS('cierres_caja',           params, 'cierresCaja'); }
+  async function _getMermasWarehouseDirecto(params)     { return _getListaDirectaMOS('mermas_warehouse',     params, 'mermasWH'); }
+  async function _getEnvasadosWarehouseDirecto(params)  { return _getListaDirectaMOS('envasados_warehouse',  params, 'envasadosWH'); }
+  async function _getAlertasWarehouseDirecto(params)    { return _getObjDirectoMOS('alertas_warehouse',      params, 'alertasWH'); }
+  async function _getRotacionProductosDirecto(params)   { return _getListaDirectaMOS('rotacion_productos',   params, 'rotacion'); }
+  async function _getCatalogoStockResumenDirecto(params){ return _getObjDirectoMOS('catalogo_stock_resumen', params, 'catStockResumen'); }
+  async function _getDashboardAlmacenDirecto(params)    { return _getObjDirectoMOS('dashboard_almacen',      params, 'dashAlmacen'); }
 
   // ════════════════════════════════════════════════════════════════════
   // [FASE 2 · LOTE EVAL/HORARIO/ETIQ] read-paths directos (RPCs 98). Mismo patrón que 94 pero con dos shapes:
@@ -1231,6 +1247,14 @@ const API = (() => {
       if (action === 'getHistoricoProveedor') {
         return _conFallbackMOS(() => _getHistoricoProveedorDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta);
       }
+      // [Optimización · vistas cross-app cajas/warehouse] — maestro + fallback GAS + gate _fresh.
+      if (action === 'getCierresCaja')         { return _conFallbackMOS(() => _getCierresCajaDirecto(p),         () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getMermasWarehouse')     { return _conFallbackMOS(() => _getMermasWarehouseDirecto(p),     () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getEnvasadosWarehouse')  { return _conFallbackMOS(() => _getEnvasadosWarehouseDirecto(p),  () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getAlertasWarehouse')    { return _conFallbackMOS(() => _getAlertasWarehouseDirecto(p),    () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getRotacionProductos')   { return _conFallbackMOS(() => _getRotacionProductosDirecto(p),   () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getCatalogoStockResumen'){ return _conFallbackMOS(() => _getCatalogoStockResumenDirecto(p),() => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getDashboardAlmacen')    { return _conFallbackMOS(() => _getDashboardAlmacenDirecto(p),    () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       return _fetch('GET',  { action, ...p });
     },
     // [DUAL-WRITE] post → escritura directa Supabase SOLO para el catálogo (pilot, gate mos_catalogo_directo /
