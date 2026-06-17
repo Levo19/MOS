@@ -38847,6 +38847,28 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (tend === 'desc' || tend === 'descendente') return volAlto ? 'vaca' : 'perro';
     return volAlto ? 'vaca' : 'interro';   // estable
   }
+  // Normaliza un item crudo del backend (me.zona_panel) al shape que consume el render.
+  // El backend emite tendencia/bcg en MAYÚSCULAS (CRECIENTE/DECRECIENTE/ESTABLE/NULA ·
+  // ESTRELLA/VACA/INTERROGANTE/PERRO) y el vencimiento como objeto {fecha,dias}. El render usa
+  // tendencia normalizada (asc/desc/est/nula), clave BCG corta (interro, no interrogante) y
+  // diasVencimiento plano. Mapeamos aquí (una sola fuente) en lugar de salpicar el render con ??.
+  const _ZONA_TEND_MAP = { CRECIENTE:'asc', DECRECIENTE:'desc', ESTABLE:'est', NULA:'nula',
+                           ASCENDENTE:'asc', DESCENDENTE:'desc', CERO:'nula' };
+  const _ZONA_BCG_MAP  = { ESTRELLA:'estrella', VACA:'vaca', INTERROGANTE:'interro', PERRO:'perro' };
+  function _zonaNormItem(it) {
+    if (!it || typeof it !== 'object') return it;
+    const p = Object.assign({}, it);
+    const tUp = String(p.tendencia || '').toUpperCase();
+    p.tendencia = _ZONA_TEND_MAP[tUp] || (p.tendencia != null ? String(p.tendencia).toLowerCase() : 'est');
+    const bUp = String(p.bcg || '').toUpperCase();
+    p.bcg = _ZONA_BCG_MAP[bUp] || (p.bcg != null ? String(p.bcg).toLowerCase() : '');
+    // vencimientoProximo:{fecha,dias} → diasVencimiento plano (lo que lee _zonaVencBadge).
+    if (p.vencimientoProximo && p.vencimientoProximo.dias != null) p.diasVencimiento = p.vencimientoProximo.dias;
+    // El panel no trae volumen; rotacion (sort/BCG bubbles) = volumen si vino, si no 0. Marcamos _volAlto solo si hay dato.
+    p.rotacion = (p.volumen != null) ? _zonaNum(p.volumen) : (p.rotacion != null ? _zonaNum(p.rotacion) : 0);
+    return p;
+  }
+
   // Badge de vencimiento por días restantes (criterio de alertas_operativas).
   function _zonaVencBadge(dias) {
     if (dias == null || !isFinite(Number(dias))) return null;
@@ -38899,11 +38921,14 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       lista.innerHTML = '<div class="skel h-32 rounded-xl mb-2"></div><div class="skel h-32 rounded-xl mb-2"></div><div class="skel h-32 rounded-xl"></div>';
     }
     try {
-      const r = await API.zona.panel({ zonaId: S.zonaActual });
+      const r = await API.zona.panel({ zona: S.zonaActual });
       if (!r || r.ok === false) throw new Error((r && r.error) || 'Panel sin datos');
       const data = r.data || r;
-      S.zonaProductos = Array.isArray(data.productos) ? data.productos : (Array.isArray(data) ? data : []);
-      S.zonaKpis = data.kpis || null;
+      // El backend (mos.zona_panel → me.zona_panel) devuelve { items:[...] } (NO `productos`) y NO trae kpis.
+      // Normalizamos cada item al shape que consume el render y derivamos los KPIs de los items (única fuente).
+      const items = Array.isArray(data.items) ? data.items : (Array.isArray(data.productos) ? data.productos : (Array.isArray(data) ? data : []));
+      S.zonaProductos = items.map(_zonaNormItem);
+      S.zonaKpis = null;   // sin kpis del backend → _zonaPintarKpis los deriva de los items
       S.zonaFresh = (r._fresh !== false);
       _zonaPintarFresh();
       _zonaPintarKpis();
@@ -39114,7 +39139,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     toast('Stock ajustado a ' + nuevo, 'ok');
     // BACKGROUND: dual-write (Supabase-only + log; ver api.js cabecera RIZ)
     try {
-      const r = await API.zona.ajustarStock({ zonaId: S.zonaActual, skuBase: sku, nuevo, stockAntes: antes });
+      const r = await API.zona.ajustarStock({ zona: S.zonaActual, skuBase: sku, nuevo, stockAntes: antes });
       if (r == null || r.ok === false) throw new Error((r && r.error) || 'sin commit');
       _zonaPintarKpis();
     } catch (e) {
@@ -39149,7 +39174,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _zonaSfx('ok'); _zonaVibrar([80,60,80]);
     // BACKGROUND
     try {
-      const r = await API.zona.pedirAlmacen({ zonaId: S.zonaActual, skuBase: sku, cantidad });
+      const r = await API.zona.pedirAlmacen({ zona: S.zonaActual, skuBase: sku, cantidad });
       if (r == null || r.ok === false) throw new Error((r && r.error) || 'sin commit');
       toast('Pedido enviado a almacén', 'ok');
     } catch (e) {
@@ -39177,16 +39202,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (body) body.innerHTML = '<div class="skel h-16 rounded-lg mb-2"></div><div class="skel h-16 rounded-lg"></div>';
     openModal('modalZonaLotes');
     try {
-      const r = await API.zona.lotesHistorial({ zonaId: S.zonaActual, skuBase: sku });
+      const r = await API.zona.lotesHistorial({ zona: S.zonaActual, skuBase: sku });
       const data = (r && r.data) || r || [];
-      const lotes = Array.isArray(data.lotes) ? data.lotes : (Array.isArray(data) ? data : []);
+      // Backend me.zona_lotes_historial devuelve data.items (NO data.lotes). Cada lote trae diasRestantes (NO diasVencimiento).
+      const lotes = Array.isArray(data.items) ? data.items : (Array.isArray(data.lotes) ? data.lotes : (Array.isArray(data) ? data : []));
       if (!body) return;
       if (!lotes.length) { body.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm">Sin lotes registrados</div>'; return; }
       let total = 0;
       body.innerHTML = lotes.map((l, i) => {
         const rest = _zonaNum(l.cantRestante != null ? l.cantRestante : l.restan);
         total += rest;
-        const venc = _zonaVencBadge(l.diasVencimiento);
+        const venc = _zonaVencBadge(l.diasRestantes != null ? l.diasRestantes : l.diasVencimiento);
         const ing = _esc(l.fechaIngreso || l.ingreso || '—');
         const ve  = _esc(l.fechaVencimiento || l.vence || '—');
         return `<div class="zona-card ${i === 0 ? 'bcg-estrella' : ''}" style="animation-delay:${i*60}ms;margin-bottom:.5rem">

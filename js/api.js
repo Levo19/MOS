@@ -625,7 +625,10 @@ const API = (() => {
   // es idéntica a hoy (el item de nav está oculto y loadZona nunca se invoca). Estos helpers existen
   // pero no se llaman hasta que la vista se abra.
   //
-  // PERFIL: esquema `me` (NO `mos`) → se pasa profile='me' a _sbRpcMOS / _sbRpcZonaWrite.
+  // PERFIL: las RPCs se DEFINEN en el esquema `me`, pero el frontend MOS solo tiene expuesto el perfil
+  // PostgREST 'mos'. Por eso se invocan los WRAPPERS `mos.zona_*` (supabase/132) — homónimos que hacen
+  // pass-through a `me.zona_*` (mismo patrón que mos.me_creditos_pendientes). Se pasa profile='mos'.
+  // PARÁMETRO: el backend lee `{zona:'ZONA-XX'}` (NO `zonaId`). _zonaParams() normaliza zonaId→zona.
   //
   // ESCRITURA (ajuste de stock + pedir a almacén): por dual-write-frontend el diseño pide GAS-primero
   // si existe el endpoint GAS. A la fecha NO existe un endpoint GAS equivalente para RIZ (es un módulo
@@ -636,8 +639,8 @@ const API = (() => {
   // ════════════════════════════════════════════════════════════════════
   function _mosZonaModulo() { return !!_mosFlag('mos_zona_modulo', 'zonaModulo'); }
 
-  // RPC de ESCRITURA RIZ directa a PostgREST en el esquema `me`. Espejo de _sbRpcMOSWrite pero con
-  // profile 'me'. Sin token → null ("no commiteó"); 4xx definitivo → permanente; 5xx/timeout → transitorio.
+  // RPC de ESCRITURA RIZ directa a PostgREST vía los WRAPPERS `mos.zona_*` (supabase/132). Espejo de
+  // _sbRpcMOSWrite con profile 'mos'. Sin token → null ("no commiteó"); 4xx definitivo → permanente; 5xx/timeout → transitorio.
   async function _sbRpcZonaWrite(fn, args) {
     const token = await _mintTokenMOS();
     if (!token) return null;
@@ -645,7 +648,7 @@ const API = (() => {
       method: 'POST',
       headers: {
         'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token,
-        'Accept-Profile': 'me', 'Content-Profile': 'me', 'Content-Type': 'application/json'
+        'Accept-Profile': 'mos', 'Content-Profile': 'mos', 'Content-Type': 'application/json'
       },
       body: JSON.stringify(args || {})
     }, 15000);
@@ -658,34 +661,50 @@ const API = (() => {
     return res.json();
   }
 
-  // ── LECTURAS RIZ (profile 'me'). Devuelven r.data (o el objeto/array crudo) o null si no hay token.
+  // Normaliza los params RIZ al contrato del backend: zonaId → zona (el resto pasa tal cual).
+  // El backend SIEMPRE lee `zona`; el frontend histórico mandaba `zonaId`. Aceptamos ambos.
+  function _zonaParams(params) {
+    const p = Object.assign({}, params || {});
+    if (p.zona == null && p.zonaId != null) p.zona = p.zonaId;
+    delete p.zonaId;
+    return p;
+  }
+
+  // ── LECTURAS RIZ (wrappers profile 'mos'). Devuelven r.data (o el objeto/array crudo) o null si no hay token.
   //    NO aplican gate _fresh estricto: el panel muestra el chip de frescura usando r._fresh que viene
   //    en la respuesta (la decisión de "datos con retraso" es del UI, no se cae a GAS — RIZ no tiene GAS).
-  async function _zonaPanelDirecto(params)        { const r = await _sbRpcMOS('zona_panel',           { p: params || {} }, 'me'); return r; }
-  async function _zonaTendenciaDirecto(params)    { const r = await _sbRpcMOS('tendencia_zona',       { p: params || {} }, 'me'); return r; }
-  async function _zonaTicketDiaDirecto(params)    { const r = await _sbRpcMOS('zona_ticket_dia',      { p: params || {} }, 'me'); return r; }
-  async function _zonaLotesHistorialDirecto(params){ const r = await _sbRpcMOS('zona_lotes_historial',{ p: params || {} }, 'me'); return r; }
+  async function _zonaPanelDirecto(params)        { const r = await _sbRpcMOS('zona_panel',           { p: _zonaParams(params) }, 'mos'); return r; }
+  async function _zonaTendenciaDirecto(params)    { const r = await _sbRpcMOS('tendencia_zona',       { p: _zonaParams(params) }, 'mos'); return r; }
+  async function _zonaTicketDiaDirecto(params)    { const r = await _sbRpcMOS('zona_ticket_dia',      { p: _zonaParams(params) }, 'mos'); return r; }
+  async function _zonaLotesHistorialDirecto(params){ const r = await _sbRpcMOS('zona_lotes_historial',{ p: _zonaParams(params) }, 'mos'); return r; }
 
   // ── ACCIONES RIZ (Supabase-only + log, ver cabecera). Lanzan ante error de negocio/HTTP; el caller
   //    (app.js) hace optimista + revierte. Devuelven la respuesta cruda {ok,data,...} de la RPC, o null
   //    si no hay token (el caller trata null como fallo → revierte).
   async function _zonaAjustarStock(params) {
-    try { console.log('[RIZ] zona_ajustar_stock', { zona: params && params.zonaId, sku: params && params.skuBase, nuevo: params && params.nuevo }); } catch (_) {}
+    const zona = params && (params.zona != null ? params.zona : params.zonaId);
+    try { console.log('[RIZ] zona_ajustar_stock', { zona, sku: params && params.skuBase, nuevo: params && params.nuevo }); } catch (_) {}
+    // Backend me.zona_ajustar_stock lee: zona, skuBase, nuevo, usuario, localId?, codBarras? (NO stockAntes).
     return _sbRpcZonaWrite('zona_ajustar_stock', { p: {
-      zonaId:  params && params.zonaId != null ? String(params.zonaId) : undefined,
+      zona:    zona != null ? String(zona) : undefined,
       skuBase: params && params.skuBase != null ? String(params.skuBase) : undefined,
       nuevo:   params && params.nuevo,
-      stockAntes: params && params.stockAntes,
+      localId: params && params.localId != null ? String(params.localId) : undefined,
+      codBarras: params && params.codBarras != null ? String(params.codBarras) : undefined,
       usuario: _mosUsuario(params)
     } });
   }
   async function _zonaPedirAlmacen(params) {
-    try { console.log('[RIZ] zona_pedir_almacen', { zona: params && params.zonaId, sku: params && params.skuBase, cant: params && params.cantidad }); } catch (_) {}
+    const zona = params && (params.zona != null ? params.zona : params.zonaId);
+    try { console.log('[RIZ] zona_pedir_almacen', { zona, sku: params && params.skuBase, cant: params && params.cantidad }); } catch (_) {}
+    // Backend me.zona_pedir_almacen lee: zona, items:[{skuBase,cantidad}], usuario, localId?.
+    // Si el caller manda skuBase+cantidad planos (1 producto), los empaquetamos en items[]; si manda items[], se respetan.
+    const items = Array.isArray(params && params.items) ? params.items
+      : (params && params.skuBase != null ? [{ skuBase: String(params.skuBase), cantidad: params.cantidad }] : []);
     return _sbRpcZonaWrite('zona_pedir_almacen', { p: {
-      zonaId:  params && params.zonaId != null ? String(params.zonaId) : undefined,
-      skuBase: params && params.skuBase != null ? String(params.skuBase) : undefined,
-      cantidad: params && params.cantidad,
-      fuente: 'RIZ',
+      zona:    zona != null ? String(zona) : undefined,
+      items,
+      localId: params && params.localId != null ? String(params.localId) : undefined,
       usuario: _mosUsuario(params)
     } });
   }
@@ -1609,7 +1628,7 @@ const API = (() => {
       getJornadasDirecto: _getJornadasDirecto,     // read-path directo jornadas (array o null→GAS) — diagnóstico
       liqdiaDirecto:      _mosLiqdiaDirecto,       // (diagnóstico) ¿flag mos_liqdia_directo ON?
       localId:            _mosLocalId,             // genera/estampa local_id estable por gesto — test de idempotencia
-      // [RIZ · CAPA 4] gate del módulo Zona + helpers directos (esquema me). Default OFF → INERTE.
+      // [RIZ · CAPA 4] gate del módulo Zona + helpers directos (wrappers mos.zona_* → me.zona_*). Default OFF → INERTE.
       zonaModulo:         _mosZonaModulo,          // ¿flag mos_zona_modulo ON? (gobierna la visibilidad del nav + loadZona)
       zonaPanelDirecto:        _zonaPanelDirecto,
       zonaTendenciaDirecto:    _zonaTendenciaDirecto,
@@ -1618,17 +1637,17 @@ const API = (() => {
       zonaAjustarStock:        _zonaAjustarStock,
       zonaPedirAlmacen:        _zonaPedirAlmacen
     },
-    // [RIZ · CAPA 4] API pública del módulo Zona. 100% Supabase (esquema me), sin GAS. Estos métodos
+    // [RIZ · CAPA 4] API pública del módulo Zona. 100% Supabase (wrappers mos.zona_* → me.zona_*), sin GAS.
     // SOLO se invocan desde la vista 'zona' de app.js, que a su vez solo se abre con el flag mos_zona_modulo
-    // ON. Con el flag OFF nada de esto se ejecuta → la app es idéntica a hoy.
+    // ON. Con el flag OFF nada de esto se ejecuta → la app es idéntica a hoy. Todos aceptan {zona} (o {zonaId}).
     zona: {
       moduloOn:        _mosZonaModulo,          // bool: ¿el módulo está habilitado?
-      panel:           _zonaPanelDirecto,       // me.zona_panel(p)            → {ok,data:{...cards,kpis},_fresh}
-      tendencia:       _zonaTendenciaDirecto,   // me.tendencia_zona(p)        → {ok,data:[picos],clase,_fresh}
-      ticketDia:       _zonaTicketDiaDirecto,   // me.zona_ticket_dia(p)       → {ok,data:[items A..E],_fresh}
-      lotesHistorial:  _zonaLotesHistorialDirecto, // me.zona_lotes_historial(p) → {ok,data:[lotes FIFO],_fresh}
-      ajustarStock:    _zonaAjustarStock,       // me.zona_ajustar_stock(p)    → {ok,data} (Supabase-only + log)
-      pedirAlmacen:    _zonaPedirAlmacen        // me.zona_pedir_almacen(p)    → {ok,data} (Supabase-only + log)
+      panel:           _zonaPanelDirecto,       // mos.zona_panel(p)            → {ok,data:{zona,filtro,items:[...]},_fresh}
+      tendencia:       _zonaTendenciaDirecto,   // mos.tendencia_zona(p)        → {ok,data:{zona,semanas,umbral,items:[...]},_fresh}
+      ticketDia:       _zonaTicketDiaDirecto,   // mos.zona_ticket_dia(p)       → {ok,data:{zona,fecha,origen,lotes:[...]},_fresh}
+      lotesHistorial:  _zonaLotesHistorialDirecto, // mos.zona_lotes_historial(p) → {ok,data:{...,items:[lotes FIFO]},_fresh}
+      ajustarStock:    _zonaAjustarStock,       // mos.zona_ajustar_stock(p)    → {ok,data} (Supabase-only + log)
+      pedirAlmacen:    _zonaPedirAlmacen        // mos.zona_pedir_almacen(p)    → {ok,data} (Supabase-only + log)
     },
   };
 })();
