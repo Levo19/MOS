@@ -494,7 +494,7 @@ const MOS = (() => {
   // agregamos .zona-nav-shown (CSS lo fuerza visible). Si OFF, se la quitamos → vuelve a none.
   function _zonaRevelarNav() {
     let on = false;
-    try { on = !!(window.API && API.zona && API.zona.moduloOn && API.zona.moduloOn()); } catch (_) { on = false; }
+    try { on = !!(typeof API !== 'undefined' && API.zona && API.zona.moduloOn && API.zona.moduloOn()); } catch (_) { on = false; }
     try {
       document.querySelectorAll('.zona-nav-gated').forEach(el => {
         el.classList.toggle('zona-nav-shown', on);
