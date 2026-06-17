@@ -683,14 +683,19 @@ const API = (() => {
   //    si no hay token (el caller trata null como fallo → revierte).
   async function _zonaAjustarStock(params) {
     const zona = params && (params.zona != null ? params.zona : params.zonaId);
-    try { console.log('[RIZ] zona_ajustar_stock', { zona, sku: params && params.skuBase, nuevo: params && params.nuevo }); } catch (_) {}
-    // Backend me.zona_ajustar_stock lee: zona, skuBase, nuevo, usuario, localId?, codBarras? (NO stockAntes).
+    // [RIZ MEJORA 5] ajuste POR CÓDIGO: el backend ahora lee `codBarra` (singular). Aceptamos
+    // codBarra | codBarras | codigoBarra del caller y lo normalizamos al contrato del backend.
+    const codBarra = params && (params.codBarra != null ? params.codBarra
+                               : (params.codBarras != null ? params.codBarras
+                               : (params.codigoBarra != null ? params.codigoBarra : null)));
+    try { console.log('[RIZ] zona_ajustar_stock', { zona, sku: params && params.skuBase, codBarra, nuevo: params && params.nuevo }); } catch (_) {}
+    // Backend me.zona_ajustar_stock lee: zona, codBarra (o skuBase), nuevo, usuario, localId? (NO stockAntes).
     return _sbRpcZonaWrite('zona_ajustar_stock', { p: {
       zona:    zona != null ? String(zona) : undefined,
       skuBase: params && params.skuBase != null ? String(params.skuBase) : undefined,
       nuevo:   params && params.nuevo,
       localId: params && params.localId != null ? String(params.localId) : undefined,
-      codBarras: params && params.codBarras != null ? String(params.codBarras) : undefined,
+      codBarra: codBarra != null ? String(codBarra) : undefined,
       usuario: _mosUsuario(params)
     } });
   }

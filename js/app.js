@@ -38820,6 +38820,44 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
   // Helpers de presentación
   function _zonaNum(v) { const n = Number(v); return isFinite(n) ? n : 0; }
+
+  // [MEJORA 2] Formato de cantidad según unidad/granel del item.
+  //  · esGranel → admite decimales y usa la unidad legible (ej. "12.5 kg").
+  //  · NO granel → entero + "un" (ej. "12 un").
+  // El segundo arg es el item (o {esGranel,unidad}); el tercero opcional oculta el sufijo (solo número).
+  const _ZONA_UNI_LBL = { KGM:'kg', GRM:'g', LTR:'L', MLT:'ml', NIU:'un', UND:'un', UN:'un', '':'un' };
+  function _zonaUniLbl(item) {
+    if (!item) return 'un';
+    const u = String(item.unidad || '').toUpperCase().trim();
+    if (_ZONA_UNI_LBL[u] != null) return _ZONA_UNI_LBL[u];
+    return u ? u.toLowerCase() : 'un';
+  }
+  // Redondea/formatea un número crudo: granel → hasta 2 decimales sin ceros sobrantes; entero → redondeo.
+  function _zonaFmtNumRaw(valor, esGranel) {
+    const n = _zonaNum(valor);
+    if (esGranel) {
+      const r = Math.round(n * 100) / 100;
+      return (Math.abs(r % 1) < 1e-9) ? String(Math.round(r)) : String(r);
+    }
+    return String(Math.round(n));
+  }
+  // Devuelve "valor unidad" (ej. "12.5 kg" / "12 un"). soloNum=true → solo el número formateado.
+  function _zonaFmtCant(valor, item, soloNum) {
+    const esGranel = !!(item && item.esGranel);
+    const num = _zonaFmtNumRaw(valor, esGranel);
+    if (soloNum) return num;
+    return num + ' ' + _zonaUniLbl(item);
+  }
+  // step de input/stepper según granel (0.1 para granel, 1 para unidades enteras).
+  function _zonaStepAttr(item) { return (item && item.esGranel) ? '0.1' : '1'; }
+  // Parser tolerante del input manual (acepta coma decimal); entero si no es granel; nunca negativo.
+  function _zonaParseCant(raw, esGranel) {
+    let n = parseFloat(String(raw == null ? '' : raw).replace(',', '.'));
+    if (!isFinite(n)) n = 0;
+    if (!esGranel) n = Math.round(n);
+    else n = Math.round(n * 100) / 100;
+    return Math.max(0, n);
+  }
   // Clasificación BCG → estilos. clase: 'estrella'|'vaca'|'interro'|'perro'.
   const _ZONA_BCG = {
     estrella: { ico:'⭐', cls:'bcg-estrella', tendLbl:'▲ subiendo', tendCls:'zt-asc' },
@@ -39003,9 +39041,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const sku   = String(p.skuBase || p.idProducto || '');
     const safe  = _esc(sku);
     const nm    = _esc(p.descripcion || p.nombre || sku);
-    const stock = _zonaNum(p.stockZona != null ? p.stockZona : p.stock);
+    const stockRaw = _zonaNum(p.stockZona != null ? p.stockZona : p.stock);
     const esp   = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
-    const brecha = (p.brecha != null) ? _zonaNum(p.brecha) : Math.max(0, esp - stock);
+    // [MEJORA 3] El backend YA corrige la brecha para negativos (=esperada). La usamos tal cual.
+    const negativo = !!p.stockNegativo;
+    const brecha = (p.brecha != null) ? _zonaNum(p.brecha) : Math.max(0, esp - stockRaw);
     const alm   = _zonaNum(p.stockAlmacen != null ? p.stockAlmacen : p.almacen);
     const bcg   = _zonaBCGClase(p);
     const bcgInfo = _ZONA_BCG[bcg] || _ZONA_BCG.vaca;
@@ -39013,11 +39053,19 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const picos = Array.isArray(p.picos) ? p.picos.slice(-4) : [];
     const pedirAlm = Math.min(brecha, alm);
     const externo  = Math.max(0, brecha - alm);
+    const uni      = _zonaUniLbl(p);
+    // [MEJORA 2] cantidades formateadas según granel/unidad.
+    const fStock  = _zonaFmtCant(stockRaw, p, true);
+    const fEsp    = _zonaFmtCant(esp, p, true);
+    const fAlm    = _zonaFmtCant(alm, p, true);
+    const fBrecha = _zonaFmtCant(brecha, p, true);
+    // [MEJORA 5] multi-código de barra.
+    const codigos = Array.isArray(p.codigos) ? p.codigos : [];
 
-    // Sparkline (picos)
+    // [MEJORA 1] Sparkline CLICKABLE → modal "¿por qué esperado=X?"
     const maxP = Math.max(1, ...picos.map(_zonaNum));
     const spark = picos.length
-      ? `<div class="zona-spark">${picos.map(v => `<div class="zona-spark-bar" style="height:${Math.max(3, Math.round(_zonaNum(v)/maxP*24))}px" title="${_zonaNum(v)}"></div>`).join('')}<span class="zona-spark-lbl">${picos.map(_zonaNum).join(' ')}</span></div>`
+      ? `<div class="zona-spark zona-spark-click" onclick="MOS.zonaVerEsperado('${safe}')" title="¿Por qué esperado = ${_esc(fEsp)}? (toca para ver)">${picos.map((v,i) => `<div class="zona-spark-bar${i === picos.length-1 ? ' last' : ''}" style="height:${Math.max(3, Math.round(_zonaNum(v)/maxP*24))}px" title="${_zonaFmtCant(v, p)}"></div>`).join('')}<span class="zona-spark-lbl">${picos.map(v => _zonaFmtNumRaw(v, p.esGranel)).join(' ')} →</span></div>`
       : '';
 
     // Vencimiento
@@ -39026,12 +39074,20 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       ? `<div class="zona-venc"><span class="zona-venc-dot ${venc.dot}"></span>${_esc(venc.txt)}<span class="zona-venc-link" onclick="MOS.zonaVerLotes('${safe}')">ver historial lotes</span></div>`
       : '';
 
+    // [MEJORA 3] Badge rojo de alerta si el stock es negativo.
+    const alertaNeg = negativo
+      ? `<div class="zona-alerta-neg">⚠ Stock negativo — corregir/contar</div>`
+      : '';
+
     // Sugerencia IA (placeholder Capa 5 — texto local determinista)
+    // [MEJORA 3] Con negativo NO decir "te faltan N" (eso es un error de conteo, no una compra).
     let ia = '';
-    if (brecha > 0) {
-      ia = `Te faltan ${brecha} para estar listo.`;
-      if (pedirAlm > 0) ia += ` Almacén cubre ${pedirAlm} → pídelos.`;
-      if (externo > 0)  ia += ` Los ${externo} restantes van a tu lista del lunes.`;
+    if (negativo) {
+      ia = `⚠ Stock negativo (revisar dónde se originó). Para estar listo necesitas ${fEsp}.`;
+    } else if (brecha > 0) {
+      ia = `Te faltan ${fBrecha} para estar listo.`;
+      if (pedirAlm > 0) ia += ` Almacén cubre ${_zonaFmtCant(pedirAlm, p)} → pídelos.`;
+      if (externo > 0)  ia += ` Los ${_zonaFmtCant(externo, p)} restantes van a tu lista del lunes.`;
     } else if (bcg === 'perro') {
       ia = 'Sin rotación: considera promocionar, mover a góndola o rematar.';
     } else {
@@ -39040,16 +39096,23 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
     // Acciones según cuadrante
     let acciones;
-    if (bcg === 'perro' && brecha <= 0) {
+    if (bcg === 'perro' && brecha <= 0 && !negativo) {
       acciones = `<button class="zona-btn-sec" onclick="MOS.zonaPlaceholder('Promocionar')">Promocionar</button>
                   <button class="zona-btn-sec" onclick="MOS.zonaPlaceholder('Mover a góndola')">Mover a góndola</button>
                   <button class="zona-btn-sec" onclick="MOS.zonaPlaceholder('Rematar')">Rematar</button>`;
     } else {
-      acciones = `<button class="zona-btn-pedir" id="zPedir-${safe}" ${pedirAlm > 0 ? '' : 'disabled'} onclick="MOS.zonaPedirAlmacen('${safe}', ${pedirAlm})">${pedirAlm > 0 ? 'Pedir ' + pedirAlm + ' a almacén' : 'Almacén sin stock'}</button>
-                  <button class="zona-btn-sec" ${externo > 0 ? '' : 'disabled'} onclick="MOS.zonaAgregarLista('${safe}', ${externo})">+ Lista compras${externo > 0 ? ' (' + externo + ')' : ''}</button>`;
+      const pedirLbl = pedirAlm > 0 ? 'Pedir ' + _zonaFmtCant(pedirAlm, p) + ' a almacén' : 'Almacén sin stock';
+      acciones = `<button class="zona-btn-pedir" id="zPedir-${safe}" ${pedirAlm > 0 ? '' : 'disabled'} onclick="MOS.zonaPedirAlmacen('${safe}', ${pedirAlm})">${pedirLbl}</button>
+                  <button class="zona-btn-sec" ${externo > 0 ? '' : 'disabled'} onclick="MOS.zonaAgregarLista('${safe}', ${externo})">+ Lista compras${externo > 0 ? ' (' + _esc(_zonaFmtCant(externo, p)) + ')' : ''}</button>`;
     }
 
-    return `<div class="zona-card ${bcgInfo.cls}" id="zcard-${safe}" data-sku="${safe}">
+    // [MEJORA 5] disclosure "ver códigos (N)" → expande item.codigos[].
+    const codDisc = codigos.length
+      ? `<div class="zona-cod-disc" id="zCodDisc-${safe}" onclick="MOS.zonaToggleCodigos('${safe}')"><span class="zona-cod-caret" id="zCodCaret-${safe}">▸</span> ver códigos (${codigos.length})</div>
+         <div class="zona-cod-body" id="zCodBody-${safe}" style="display:none"></div>`
+      : '';
+
+    return `<div class="zona-card ${bcgInfo.cls}${negativo ? ' zona-neg' : ''}" id="zcard-${safe}" data-sku="${safe}">
       <div class="zona-card-top">
         <div class="zona-card-name">${nm}</div>
         <div class="flex items-center gap-2">
@@ -39057,18 +39120,46 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           <span class="zona-bcg-badge" title="BCG: ${bcg}">${bcgInfo.ico}</span>
         </div>
       </div>
+      ${alertaNeg}
       <div class="zona-metrics">
-        <div><div class="zona-metric-lbl">Stock zona</div><div class="zona-metric-val" id="zStock-${safe}">${stock}<span class="zona-edit-ico" onclick="MOS.zonaAjusteInline('${safe}')">✎</span></div></div>
-        <div><div class="zona-metric-lbl">Esperado</div><div class="zona-metric-val">${esp}</div></div>
-        <div><div class="zona-metric-lbl">Brecha</div><div class="zona-metric-val ${brecha > 0 ? 'brecha-pos' : 'brecha-zero'}" id="zBrecha-${safe}">${brecha > 0 ? '▲ ' + brecha : '✓ 0'}</div></div>
-        <div><div class="zona-metric-lbl">Almacén</div><div class="zona-metric-val">${alm}</div></div>
+        <div><div class="zona-metric-lbl">Stock zona</div><div class="zona-metric-val${negativo ? ' brecha-pos' : ''}" id="zStock-${safe}">${_esc(fStock)}<span class="zona-edit-ico" onclick="MOS.zonaAjusteInline('${safe}')">✎</span></div></div>
+        <div><div class="zona-metric-lbl">Esperado <span class="zona-metric-uni">(global)</span></div><div class="zona-metric-val">${_esc(fEsp)}</div></div>
+        <div><div class="zona-metric-lbl">Brecha</div><div class="zona-metric-val ${brecha > 0 ? 'brecha-pos' : 'brecha-zero'}" id="zBrecha-${safe}">${brecha > 0 ? '▲ ' + _esc(fBrecha) : '✓ 0'}</div></div>
+        <div><div class="zona-metric-lbl">Almacén</div><div class="zona-metric-val">${_esc(fAlm)}</div></div>
       </div>
+      ${codDisc}
       ${spark}
       ${vencHtml}
       <div class="zona-ia">💡 ${_esc(ia)}</div>
       <div class="zona-actions">${acciones}</div>
     </div>`;
   }
+
+  // [MEJORA 5] Renderiza la fila de un código dentro del disclosure (lista + editar por código).
+  function _zonaCodRowHtml(sku, c, item) {
+    const safe = _esc(sku);
+    const cb   = String(c.codBarra != null ? c.codBarra : (c.codigoBarra != null ? c.codigoBarra : ''));
+    const cbSafe = _zonaEsc(cb);
+    const cbAttr = _esc(cb);
+    const desc = _esc(c.descripcion || cb);
+    const st   = _zonaFmtCant(c.stock, item, true);
+    const equiv = c.esEquivalente ? '<span class="zona-cod-equiv" title="Código equivalente">equiv</span>' : '';
+    const step = _zonaStepAttr(item);
+    const cid = 'zCodIn-' + safe + '-' + _zonaCodKey(cb);
+    return `<div class="zona-cod-row">
+      <div class="zona-cod-info">
+        <div class="zona-cod-desc">${desc} ${equiv}</div>
+        <div class="zona-cod-cb">${cbAttr} · stock <b>${_esc(st)}</b></div>
+      </div>
+      <div class="zona-cod-edit">
+        <input type="number" inputmode="decimal" step="${step}" min="0" class="zona-cod-input" id="${cid}" value="${_esc(_zonaFmtCant(c.stock, item, true))}">
+        <button class="zona-mini-btn zona-mini-cero" onclick="MOS.zonaCodCero('${safe}','${cbSafe}')" title="Poner en cero">Cero</button>
+        <button class="zona-mini-btn zona-mini-ok" onclick="MOS.zonaCodGuardar('${safe}','${cbSafe}')" title="Guardar">✓</button>
+      </div>
+    </div>`;
+  }
+  // Clave DOM-safe para un código de barra (puede traer caracteres raros).
+  function _zonaCodKey(cb) { return String(cb).replace(/[^A-Za-z0-9]/g, '_'); }
 
   // ── Selector / filtros / orden ─────────────────────────────────────────
   function zonaCambiarZona(idZona) { S.zonaActual = idZona; S.zonaProductos = []; _zonaCargarPanel(true); }
@@ -39095,48 +39186,69 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     renderZona();
   }
 
-  // ── Ajuste inline de stock (✎) — optimista + dual-write + revertir+shake ──
+  // ── Ajuste inline de stock (✎) — [MEJORA 4] input manual + "Cero" + stepper ──
+  //   optimista + dual-write + revertir+shake. Decimales si esGranel.
   function zonaAjusteInline(sku) {
     const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
     if (!p) return;
     const cell = $('zStock-' + _zonaSkuId(sku));
     if (!cell) return;
     const cur = _zonaNum(p.stockZona != null ? p.stockZona : p.stock);
+    const step = _zonaStepAttr(p);
+    const val  = _zonaFmtCant(cur, p, true);
+    const e    = _zonaEsc(sku);
+    // Stepper + input numérico manual + botón "Cero" + confirmar. El input es la fuente de verdad.
     cell.innerHTML = `<span class="zona-stepper">
-        <button class="zona-step-btn" onclick="MOS.zonaStep('${_zonaEsc(sku)}',-1)">−</button>
-        <span class="zona-step-val" id="zStep-${_zonaEsc(sku)}">${cur}</span>
-        <button class="zona-step-btn" onclick="MOS.zonaStep('${_zonaEsc(sku)}',1)">+</button>
-        <button class="zona-step-btn" style="background:#16a34a;border-color:#16a34a" onclick="MOS.zonaConfirmarAjuste('${_zonaEsc(sku)}')">✓</button>
+        <button class="zona-step-btn" onclick="MOS.zonaStep('${e}',-1)">−</button>
+        <input type="number" inputmode="decimal" step="${step}" min="0" class="zona-step-input" id="zStep-${e}" value="${_esc(val)}" onkeydown="if(event.key==='Enter')MOS.zonaConfirmarAjuste('${e}')">
+        <button class="zona-step-btn" onclick="MOS.zonaStep('${e}',1)">+</button>
+        <button class="zona-step-btn zona-step-cero" onclick="MOS.zonaCero('${e}')" title="Poner en cero">0</button>
+        <button class="zona-step-btn" style="background:#16a34a;border-color:#16a34a" onclick="MOS.zonaConfirmarAjuste('${e}')">✓</button>
       </span>`;
+    const inp = $('zStep-' + sku);
+    if (inp) { try { inp.focus(); inp.select(); } catch(_){} }
     _zonaSfx('tick');
   }
   function _zonaSkuId(sku) { return String(sku); }
   function _zonaEsc(s) { return String(s).replace(/'/g, "\\'"); }
+  function _zonaLeerStep(sku, p) {
+    const v = $('zStep-' + sku);
+    return v ? _zonaParseCant(v.value, !!(p && p.esGranel)) : 0;
+  }
   function zonaStep(sku, delta) {
+    const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
     const v = $('zStep-' + sku);
     if (!v) return;
-    let n = parseInt(v.textContent, 10) || 0;
-    n = Math.max(0, n + delta);
-    v.textContent = n;
+    const esGranel = !!(p && p.esGranel);
+    let n = _zonaParseCant(v.value, esGranel);
+    const paso = esGranel ? 0.5 : 1;
+    n = Math.max(0, esGranel ? Math.round((n + delta * paso) * 100) / 100 : n + delta);
+    v.value = _zonaFmtNumRaw(n, esGranel);
     _zonaSfx('tick');
     _zonaVibrar(20);
+  }
+  // [MEJORA 4] botón "Cero": setea 0 al instante en el input del stepper.
+  function zonaCero(sku) {
+    const v = $('zStep-' + sku);
+    if (v) { v.value = '0'; try { v.focus(); } catch(_){} }
+    _zonaSfx('tick'); _zonaVibrar(20);
   }
   async function zonaConfirmarAjuste(sku) {
     const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
     if (!p) return;
-    const v = $('zStep-' + sku);
-    const nuevo = v ? (parseInt(v.textContent, 10) || 0) : 0;
+    const nuevo = _zonaLeerStep(sku, p);
     const antes = _zonaNum(p.stockZona != null ? p.stockZona : p.stock);
     const card  = $('zcard-' + sku);
     // OPTIMISTA: actualizar memoria + re-render del card al instante
     if (p.stockZona != null) p.stockZona = nuevo; else p.stock = nuevo;
+    p.stockNegativo = (nuevo < 0);   // editar a >=0 limpia la alerta (ya no es negativo)
     if (p.esperada != null || p.esperado != null) {
       const esp = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
       p.brecha = Math.max(0, esp - nuevo);
     }
     renderZona();
     _zonaSfx('ok'); _zonaVibrar(30);
-    toast('Stock ajustado a ' + nuevo, 'ok');
+    toast('Stock ajustado a ' + _zonaFmtCant(nuevo, p), 'ok');
     // BACKGROUND: dual-write (Supabase-only + log; ver api.js cabecera RIZ)
     try {
       const r = await API.zona.ajustarStock({ zona: S.zonaActual, skuBase: sku, nuevo, stockAntes: antes });
@@ -39145,6 +39257,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     } catch (e) {
       // ROLLBACK + shake
       if (p.stockZona != null) p.stockZona = antes; else p.stock = antes;
+      p.stockNegativo = (antes < 0);
       if (p.esperada != null || p.esperado != null) {
         const esp = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
         p.brecha = Math.max(0, esp - antes);
@@ -39156,6 +39269,128 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       toast('No se pudo ajustar: ' + (e.message || e), 'error');
     }
   }
+
+  // ── [MEJORA 5] Multi-código: disclosure + editar stock por codBarra ───────
+  function zonaToggleCodigos(sku) {
+    const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
+    if (!p) return;
+    const body  = $('zCodBody-' + _zonaSkuId(sku));
+    const caret = $('zCodCaret-' + _zonaSkuId(sku));
+    if (!body) return;
+    const abierto = body.style.display !== 'none' && body.innerHTML.trim() !== '';
+    if (abierto) {
+      body.style.display = 'none';
+      if (caret) caret.textContent = '▸';
+      _zonaSfx('tick');
+      return;
+    }
+    const codigos = Array.isArray(p.codigos) ? p.codigos : [];
+    body.innerHTML = codigos.length
+      ? `<div class="zona-cod-hint">El <b>Esperado ${_esc(_zonaFmtCant(_zonaNum(p.esperada != null ? p.esperada : p.esperado), p, true))}</b> es global del producto (no por código).</div>`
+        + codigos.map(c => _zonaCodRowHtml(sku, c, p)).join('')
+      : '<div class="zona-cod-hint">Sin códigos individuales.</div>';
+    body.style.display = '';
+    if (caret) caret.textContent = '▾';
+    _zonaSfx('pop'); _zonaVibrar(20);
+  }
+  function _zonaCodFind(p, cb) {
+    const codigos = Array.isArray(p.codigos) ? p.codigos : [];
+    return codigos.find(c => String(c.codBarra != null ? c.codBarra : c.codigoBarra) === String(cb));
+  }
+  function zonaCodCero(sku, cb) {
+    const inp = $('zCodIn-' + _zonaSkuId(sku) + '-' + _zonaCodKey(cb));
+    if (inp) { inp.value = '0'; try { inp.focus(); } catch(_){} }
+    _zonaSfx('tick'); _zonaVibrar(20);
+  }
+  async function zonaCodGuardar(sku, cb) {
+    const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
+    if (!p) return;
+    const c = _zonaCodFind(p, cb);
+    if (!c) return;
+    const inp = $('zCodIn-' + _zonaSkuId(sku) + '-' + _zonaCodKey(cb));
+    const nuevo = inp ? _zonaParseCant(inp.value, !!p.esGranel) : 0;
+    const antes = _zonaNum(c.stock);
+    const card  = $('zcard-' + sku);
+    // OPTIMISTA: actualizar el código + recomputar el global (suma de códigos) + re-render.
+    c.stock = nuevo;
+    _zonaRecalcGlobal(p);
+    renderZona();
+    // re-abrir el disclosure (renderZona lo cierra) para que se vea el efecto.
+    zonaToggleCodigos(sku);
+    _zonaSfx('ok'); _zonaVibrar(30);
+    toast('Código ajustado a ' + _zonaFmtCant(nuevo, p), 'ok');
+    try {
+      const r = await API.zona.ajustarStock({ zona: S.zonaActual, codBarra: String(cb), nuevo, stockAntes: antes });
+      if (r == null || r.ok === false) throw new Error((r && r.error) || 'sin commit');
+      _zonaPintarKpis();
+    } catch (e) {
+      // ROLLBACK + shake
+      c.stock = antes;
+      _zonaRecalcGlobal(p);
+      renderZona();
+      const c2 = $('zcard-' + sku);
+      if (c2) { c2.classList.remove('shake'); void c2.offsetWidth; c2.classList.add('shake'); }
+      _zonaSfx('error'); _zonaVibrar([120,40,120]);
+      toast('No se pudo ajustar el código: ' + (e.message || e), 'error');
+    }
+  }
+  // Recalcula el stock global del producto (suma de sus códigos) + brecha/negativo derivados.
+  function _zonaRecalcGlobal(p) {
+    const codigos = Array.isArray(p.codigos) ? p.codigos : [];
+    if (codigos.length) {
+      const suma = codigos.reduce((a, c) => a + _zonaNum(c.stock), 0);
+      const round = p.esGranel ? Math.round(suma * 100) / 100 : Math.round(suma);
+      if (p.stockZona != null) p.stockZona = round; else p.stock = round;
+    }
+    const stock = _zonaNum(p.stockZona != null ? p.stockZona : p.stock);
+    p.stockNegativo = (stock < 0);
+    if (p.esperada != null || p.esperado != null) {
+      const esp = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
+      p.brecha = Math.max(0, esp - stock);
+    }
+  }
+
+  // ── [MEJORA 1] Modal "¿Por qué esperado = X?" (explica picos × 1.2) ───────
+  function zonaVerEsperado(sku) {
+    const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
+    if (!p) return;
+    const tit = $('zonaEspTitulo');
+    if (tit) tit.textContent = (p.descripcion || p.nombre || sku);
+    const picos = Array.isArray(p.picos) ? p.picos.slice(-4) : [];
+    const esp = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
+    const picoUltima = picos.length ? _zonaNum(picos[picos.length - 1]) : 0;
+    const body = $('zonaEspBody');
+    if (body) {
+      const maxP = Math.max(1, ...picos.map(_zonaNum));
+      const labelsSem = (n) => ['hace 3 sem', 'hace 2 sem', 'sem pasada', 'última sem'].slice(Math.max(0, 4 - n));
+      const lbls = labelsSem(picos.length);
+      const barras = picos.length
+        ? picos.map((v, i) => {
+            const val = _zonaNum(v);
+            const h = Math.max(6, Math.round(val / maxP * 130));
+            const last = (i === picos.length - 1);
+            return `<div class="zona-esp-col${last ? ' last' : ''}">
+              <div class="zona-esp-bval">${_esc(_zonaFmtCant(val, p, true))}</div>
+              <div class="zona-esp-bar" style="height:${h}px;animation-delay:${i*90}ms"></div>
+              <div class="zona-esp-blbl">${_esc(lbls[i] || ('sem ' + (i+1)))}</div>
+            </div>`;
+          }).join('')
+        : '<div class="text-slate-500 text-sm py-6 text-center">Sin historial de picos para este producto.</div>';
+      const calc = picos.length
+        ? `<div class="zona-esp-calc">
+             <div class="zona-esp-formula">Esperado = redondear( pico de la última semana × 1.2 )</div>
+             <div class="zona-esp-nums">= redondear( <b>${_esc(_zonaFmtCant(picoUltima, p, true))}</b> × 1.2 )
+               = redondear( <b>${_esc(_zonaFmtNumRaw(picoUltima * 1.2, p.esGranel))}</b> )
+               = <b class="zona-esp-res">${_esc(_zonaFmtCant(esp, p, true))}</b></div>
+             <div class="zona-esp-why">El pico es el día de mayor venta de cada semana. Reponemos un 20% extra de colchón sobre el mejor día reciente.</div>
+           </div>`
+        : `<div class="zona-esp-calc"><div class="zona-esp-nums">Esperado actual: <b class="zona-esp-res">${_esc(_zonaFmtCant(esp, p, true))}</b></div></div>`;
+      body.innerHTML = `<div class="zona-esp-bars">${barras}</div>${calc}`;
+    }
+    openModal('modalZonaEsp');
+    _zonaSfx('pop'); _zonaVibrar(20);
+  }
+  function zonaCerrarEsperado() { closeModal('modalZonaEsp'); }
 
   // ── Pedir a almacén — optimista + triple feedback + revertir ─────────────
   async function zonaPedirAlmacen(sku, cantidad) {
@@ -39265,7 +39500,14 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const ztit = $('zonaSugZona');
     if (ztit) { const zo = S.zonaList.find(x => (x.idZona || x.id || x.nombre) === S.zonaActual); ztit.textContent = (zo && zo.nombre) || S.zonaActual || 'Zona'; }
     openModal('modalZonaSug');
-    if (body) body.innerHTML = '<div class="text-center py-8 text-slate-400 text-sm">💡 Analizando tu zona con IA…</div><div class="skel h-16 rounded-lg mb-2"></div><div class="skel h-16 rounded-lg"></div>';
+    // [MEJORA 6] Estado "pensando" claro (la IA del Edge tarda 2-4s, es normal).
+    if (body) body.innerHTML = `<div class="zona-thinking">
+        <span class="zona-think-ico">💡</span>
+        <span class="zona-think-txt">Pensando</span>
+        <span class="zona-think-dots"><i></i><i></i><i></i></span>
+      </div>
+      <div class="text-center text-xs text-slate-600 mb-3">La IA analiza tu zona (puede tardar unos segundos)…</div>
+      <div class="skel h-16 rounded-lg mb-2"></div><div class="skel h-16 rounded-lg"></div>`;
     const { datos } = _zonaPromptSugerencias();
     // Fallback local determinista (si IA falla o no hay productos).
     const renderLocal = () => {
@@ -39398,7 +39640,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [RIZ Capa 4] Módulo Zona — solo activo si el flag mos_zona_modulo está ON
     loadZona, renderZona, zonaCambiarZona, zonaRefrescar, zonaSetOrden, zonaFiltrar,
     zonaToggleKpi, zonaToggleTend, zonaToggleFiltro,
-    zonaAjusteInline, zonaStep, zonaConfirmarAjuste,
+    zonaAjusteInline, zonaStep, zonaCero, zonaConfirmarAjuste,
+    zonaToggleCodigos, zonaCodCero, zonaCodGuardar,
+    zonaVerEsperado, zonaCerrarEsperado,
     zonaPedirAlmacen, zonaAgregarLista,
     zonaVerLotes, zonaCerrarLotes,
     zonaAbrirBCG, zonaCerrarBCG, zonaBCGTapProducto, zonaBCGFiltrarCuadrante, zonaPlaceholder,
