@@ -568,6 +568,15 @@ const API = (() => {
   async function _getMeCajasAbiertasDirecto(params)     { return _getListaDirectaMOS('me_cajas_abiertas',     params, 'meCajas'); }
   // [FIX bug SQL alias x.ord→ord] me_cobros_en_vuelo devuelve OBJETO {enVuelo,recientes} → _getObjDirectoMOS.
   async function _getMeCobrosEnVueloDirecto(params)     { return _getObjDirectoMOS('me_cobros_en_vuelo',     params, 'meCobrosVuelo'); }
+  // [Optimización · portables 124] tarjeta WA + créditos pendientes ME + consultar cliente ME (RPC en 118).
+  // getTarjetaWA → mos.tarjeta_wa_obj: OBJETO {TARJETA_WA_COMERCIAL,TARJETA_WA_COMPRAS,TARJETA_MARCA} (app.js:18231 lee r.data plano).
+  async function _getTarjetaWADirecto(params)           { return _getObjDirectoMOS('tarjeta_wa_obj',         params, 'tarjetaWA'); }
+  // meGetCreditosPendientes → mos.me_creditos_pendientes: OBJETO {grupos,totalAcumulado,totalTickets} (app.js:24917 lee d.grupos).
+  async function _getMeCreditosPendientesDirecto(params){ return _getObjDirectoMOS('me_creditos_pendientes', params, 'meCreditos'); }
+  // meConsultarCliente → mos.me_consultar_cliente (118): OBJETO PLANO {nombre,razonSocial,direccion,...} bajo data
+  // (app.js:26156 lee r.nombre/r.razon_social/r.direccion del RAÍZ; MOS API.get desempaqueta d.data → llega plano).
+  // ⚠ CAVEAT: no resuelve SUNAT/RENIEC en vivo; si encontrado:false el front debe seguir su lookup manual/GAS.
+  async function _getMeConsultarClienteDirecto(params)  { return _getObjDirectoMOS('me_consultar_cliente',   params, 'meCliente'); }
   // [resumen_todos_dia FULL] getResumenTodosDia → array de resumen_dia paritario (real via resumen_dia + virtuales
   // MEX inline paritarios). El consumidor (app.js:32513) hace Array.isArray(res) → devolvemos r.data (array).
   async function _getResumenTodosDiaDirecto(params)     { return _getListaDirectaMOS('resumen_todos_dia',    params, 'resumenTodos'); }
@@ -1317,6 +1326,12 @@ const API = (() => {
       if (action === 'getAnaliticaProducto')   { return _conFallbackMOS(() => _getAnaliticaProductoDirecto(p),  () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'meCajasAbiertas')        { return _conFallbackMOS(() => _getMeCajasAbiertasDirecto(p),    () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'meCobrosEnVuelo')        { return _conFallbackMOS(() => _getMeCobrosEnVueloDirecto(p),    () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      // [Optimización · portables 124]
+      if (action === 'getTarjetaWA')           { return _conFallbackMOS(() => _getTarjetaWADirecto(p),          () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      // meConsultarCliente: si la sombra NO tiene el doc (encontrado:false), NO servir directo → caer a GAS
+      // (preserva el lookup SUNAT/RENIEC en vivo que solo GAS hace). El helper igual devuelve el objeto; el guard
+      // de "encontrado" lo aplica aquí envolviendo el directo para que el null caiga al fallback.
+      if (action === 'meConsultarCliente')     { return _conFallbackMOS(async () => { const r = await _getMeConsultarClienteDirecto(p); return (r && r.encontrado) ? r : null; }, () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getResumenTodosDia')     { return _conFallbackMOS(() => _getResumenTodosDiaDirecto(p),    () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getEcoStatus')           { return _conFallbackMOS(() => _getEcoStatusDirecto(p),         () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       return _fetch('GET',  { action, ...p });
@@ -1336,6 +1351,17 @@ const API = (() => {
           () => _getHorariosAppsDirecto(p),
           () => _fetch('POST', { action, ...p }),
           _mosHorarioLectura
+        );
+      }
+      // [Optimización · portables 124] meGetCreditosPendientes es una LECTURA enviada por POST (API.post,
+      // app.js:24917). Read-path directo (RPC me_creditos_pendientes, 124) gated por _mosLecturaDirecta.
+      // Devuelve el OBJETO {grupos,totalAcumulado,totalTickets} (r.data); el consumidor lee d.grupos.
+      // Gate OFF (default) ⇒ recto a GAS = idéntico a hoy.
+      if (action === 'meGetCreditosPendientes') {
+        return _conFallbackMOS(
+          () => _getMeCreditosPendientesDirecto(p),
+          () => _postMOS(action, p),
+          _mosLecturaDirecta
         );
       }
       return _postMOS(action, p);

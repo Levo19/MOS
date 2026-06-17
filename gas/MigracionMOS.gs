@@ -381,18 +381,52 @@ function prenderSyncTablaMOS(tabla){
   return { ok: !!(r&&r.ok), off: csv };
 }
 
+// ============================================================
+// [QUOTA urlfetch] Sync INCREMENTAL por CLASE de tabla (Opción B — sin incremental por fila)
+// ============================================================
+// CONTEXTO: la cuenta Google compartida (MOS+WH+ME) agota su cuota diaria de urlfetch (20.000/día). El sync
+// MOS de 15min (96 corridas/día) re-subía SIEMPRE las 17 tablas transaccionales + las 10 del catálogo
+// COMPLETAS (tail=99999), aunque casi nada cambiaba → ~31 urlfetch/corrida × 96 ≈ 2.976/día solo de MOS.
+//
+// POR QUÉ NO INCREMENTAL POR FILA (Opción A descartada): las hojas de DINERO (JORNADAS, GASTOS,
+// PAGOS_PROVEEDOR, EVALUACIONES, LIQUIDACIONES_PAGOS) sólo tienen `fecha` = fecha de NEGOCIO, NO una fecha
+// de MODIFICACIÓN por fila. Una anulación/edición de una fila VIEJA (p.ej. anular un gasto de la semana
+// pasada) NO mueve su `fecha` → un filtro "fecha >= ahora-ventana" la DEJARÍA FUERA = fila de dinero perdida
+// en la sombra. Inaceptable (app de dinero). Sólo liquidaciones_dia tiene ts_actualizado fiable; no alcanza
+// para el resto. => El ahorro DEBE venir de tablas ESTÁTICAS (no de filtrar filas transaccionales).
+//
+// CLASIFICACIÓN (Opción B):
+//  · TRANSACCIONALES (cambian intradía / DINERO) → se sincronizan COMPLETAS en CADA corrida de 15min, igual
+//    que hoy. Cero pérdida de frescura. Incluye proveedores/historial/pedidos/pagos/jornadas/gastos/
+//    liquidaciones_dia/liquidaciones_pagos/evaluaciones/etiquetas_zona/proveedores_productos +
+//    seguridad (bloqueos_usuario/seguridad_alertas/alertas_log: latencia importa para el panel).
+//  · ESTÁTICAS (maestros/config que NO cambian intradía) → se sincronizan sólo (a) en syncMOSCompleto
+//    (nocturno) y (b) en syncMOSReciente con throttle de ~45min (1 de cada ~3 corridas) como red de
+//    frescura. Son: config_horarios_apps, conexiones, notificaciones_config.
+// Ahorro de _syncMOSImpl: ~3 tablas × (96-32) corridas/día ≈ ~190 urlfetch/día menos (el grueso del ahorro
+// viene del catálogo, ver _refrescarCatalogoThrottled abajo).
+var _MOS_TABLAS_ESTATICAS = { config_horarios_apps:true, conexiones:true, notificaciones_config:true };
+var _MOS_ESTATICAS_THROTTLE_MS = 45*60*1000;   // refresco intradía de estáticas ~cada 45min (margen sobre el ciclo de 15)
+
 // ---------- sync background (Fase 1.C) ----------
+// `full`=true (nocturno) → sincroniza TODAS las tablas (estáticas incluidas), red de seguridad / re-sync total.
+// `full`=false (15min) → sincroniza siempre las TRANSACCIONALES; las ESTÁTICAS sólo si pasó el throttle (~45min).
 function _syncMOSImpl(full){
   var resumen={};
   // [FASE 2 · cutover] tablas que ya escriben directo → NO re-upsertar desde la hoja (no pisar la RPC).
   var off=_mosSyncOffTablas();
+  // [QUOTA] ¿toca refrescar las estáticas en este ciclo de 15min? (en `full` siempre se incluyen).
+  var incluirEstaticas = full || _mosTocaEstaticas_();
   _MOS_ORDEN.forEach(function(tabla){
     if(off[tabla]){ resumen[tabla]={saltado:'sync-off (escritura directa)'}; return; }
+    // [QUOTA] tablas estáticas (maestros/config): se saltan en el ciclo de 15min salvo que toque el throttle
+    // o sea la corrida nocturna `full`. NO cambian intradía → no se pierde frescura de dinero.
+    if(!incluirEstaticas && _MOS_TABLAS_ESTATICAS[tabla]){ resumen[tabla]={saltado:'estatica-throttle (~45min/nocturno)'}; return; }
     var cfg=_MOS_SPECS[tabla];
     try{
       if(!getSheet(cfg.sheet)){ return; }
       var rows=_mosBuildRows(tabla);
-      var tail=99999;   // tablas MOS son chicas (max ~325) → re-sync completo siempre
+      var tail=99999;   // tablas MOS son chicas (max ~325) → re-sync completo siempre (sin incremental por fila: ver nota arriba)
       var slice = (full || rows.length<=tail) ? rows : rows.slice(rows.length-tail);
       var err=[], up=0;
       for(var i=0;i<slice.length;i+=100){
@@ -406,6 +440,20 @@ function _syncMOSImpl(full){
   Logger.log(JSON.stringify(resumen,null,2));
   return resumen;
 }
+
+/** [QUOTA] ¿pasó el throttle de las tablas estáticas? Avanza el reloj sólo cuando devuelve true (se van a
+ *  sincronizar en esta corrida). Best-effort: ante cualquier error de Properties, devuelve true (sincroniza,
+ *  nunca se arriesga a NO subir un maestro por un fallo de lectura del throttle). */
+function _mosTocaEstaticas_(){
+  try{
+    var p=PropertiesService.getScriptProperties();
+    var last=parseInt(p.getProperty('MOS_ESTATICAS_LAST')||'0',10);
+    var ahora=Date.now();
+    if(ahora-last < _MOS_ESTATICAS_THROTTLE_MS) return false;
+    p.setProperty('MOS_ESTATICAS_LAST', String(ahora));
+    return true;
+  }catch(e){ Logger.log('[_mosTocaEstaticas_] WARN: '+(e&&e.message||e)+' → incluyo estáticas (seguro)'); return true; }
+}
 function syncMOSReciente(){
   var r=_syncMOSImpl(false);
   try{ _refrescarCatalogoThrottled(); }catch(e){ Logger.log('refresh catálogo (reciente) falló: '+e); }   // mantiene mos.productos fresco (~1h) sin sumar trigger
@@ -417,6 +465,11 @@ function syncMOSReciente(){
   // [FASE 4.1] Reconciliación dispositivos sombra (foldeada al sync de 15min — MOS en tope de 20 triggers,
   // mismo criterio que recon/catálogo). _resembrarDispositivosJob ya tiene try/catch interno; el externo
   // garantiza que un fallo de la sombra de dispositivos NUNCA rompe el sync de datos.
+  // [QUOTA urlfetch] OJO: existe ADEMÁS un trigger de 5min (instalarTriggerResembrarDispositivos) que corre
+  // este MISMO job → 288 urlfetch/día REDUNDANTES con esta llamada foldeada (96/día ya cubren la sombra de
+  // dispositivos con sobra; aprobar device nuevo espeja al instante vía _propagarDispositivoSombra). Para
+  // ahorrar ~288 urlfetch/día, ejecutar UNA vez quitarTriggerResembrarDispositivos() en el editor (la sombra
+  // sigue cubierta por esta llamada de 15min). Es operación de trigger (config), no se cablea aquí.
   try{ if(typeof _resembrarDispositivosJob==='function') _resembrarDispositivosJob(); }catch(eD){ Logger.log('[syncMOSReciente] resembrar dispositivos WARN: '+(eD&&eD.message||eD)); }
   return r;
 }
@@ -470,14 +523,18 @@ function _refrescarCatalogoThrottled(){
   var p=PropertiesService.getScriptProperties();
   var last=parseInt(p.getProperty('MOS_CAT_LAST')||'0',10);
   var ahora=Date.now();
-  // [fix ALTO-5/6] throttle 14min (antes 55) → catálogo fresco ~cada ciclo de syncMOSReciente (15min),
-  // alineado con el sync de datos. Evita stale ≤1h en stockMinimo/precio_costo/factor que alimentan
-  // getStock(WH) y COGS(MOS) flipeados.
-  if(ahora-last < 14*60*1000) return {skipped:true, minSinUltimo:Math.round((ahora-last)/60000)};
+  // [QUOTA urlfetch] throttle 50min (antes 14) → el catálogo es el MAYOR consumidor de urlfetch del ciclo de
+  // 15min (10-11 tablas × ~1 upsert + latido ≈ 12 urlfetch, disparado CASI cada corrida con el throttle de
+  // 14min). El catálogo (precios, stockMin/Max, factor, COGS) cambia POCO intradía → un lag ≤50min es
+  // aceptable: getStock(WH) y COGS(MOS) toleran ese desfase, y syncMOSCompleto (nocturno, `full`) hace el
+  // re-sync TOTAL del catálogo como red de seguridad. Pasa de ~96 corridas/día a ~28 → ahorro ≈ 12 × (96-28)
+  // ≈ 816 urlfetch/día. Si un cambio de precio/stock urgente no puede esperar, el dual-write directo de la
+  // hoja (cuando exista) o un syncCatalogoSupabase() manual lo refresca al instante.
+  if(ahora-last < 50*60*1000) return {skipped:true, minSinUltimo:Math.round((ahora-last)/60000)};
   var r=syncCatalogoSupabase();
   if(r && r.ok===false){ Logger.log('[catálogo] refresh falló; no avanzo throttle'); return {error:r.error}; }
   p.setProperty('MOS_CAT_LAST', String(ahora));
-  Logger.log('[catálogo] refrescado a Supabase (throttle 14min)');
+  Logger.log('[catálogo] refrescado a Supabase (throttle 50min)');
   return {refreshed:true};
 }
 
