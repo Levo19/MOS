@@ -541,6 +541,21 @@ const API = (() => {
   async function _getRotacionProductosDirecto(params)   { return _getListaDirectaMOS('rotacion_productos',   params, 'rotacion'); }
   async function _getCatalogoStockResumenDirecto(params){ return _getObjDirectoMOS('catalogo_stock_resumen', params, 'catStockResumen'); }
   async function _getDashboardAlmacenDirecto(params)    { return _getObjDirectoMOS('dashboard_almacen',      params, 'dashAlmacen'); }
+  // [Optimización · portables 114/115/116] config + dispositivos + liquidaciones + bloqueos + auditoría + proveedores.
+  async function _getConfigDirecto(params)              { return _getObjDirectoMOS('config_publico',          params, 'config'); }
+  async function _getDispositivosDirecto(params)        { return _getListaDirectaMOS('listar_dispositivos',   params, 'dispositivos'); }
+  async function _getLiqPendientesDirecto(params)       { return _getListaDirectaMOS('liquidaciones_pendientes', params, 'liqPend'); }
+  async function _getLiqPagadasDirecto(params)          { return _getListaDirectaMOS('liquidaciones_pagadas', params, 'liqPag'); }
+  async function _getLiqVetadasDirecto(params)          { return _getListaDirectaMOS('liquidaciones_vetadas', params, 'liqVet'); }
+  async function _getPagoDetalleDirecto(params)         { return _getObjDirectoMOS('pago_detalle',            params, 'pagoDet'); }
+  async function _getLiqDiaBonSanDirecto(params)        { return _getObjDirectoMOS('liq_dia_bon_san',         params, 'liqBonSan'); }
+  async function _getProveedoresQueVendenDirecto(params){ return _getListaDirectaMOS('proveedores_que_venden', params, 'provVenden'); }
+  async function _getVendedoresMEBloqueadosDirecto(params){ return _getListaDirectaMOS('vendedores_me_bloqueados', params, 'vendBloq'); }
+  async function _getDispositivosBloqueadosDirecto(params){ return _getObjDirectoMOS('dispositivos_bloqueados', params, 'dispBloq'); }
+  async function _getNotificacionesConfigDirecto(params){ return _getListaDirectaMOS('notificaciones_config', params, 'notifCfg'); }
+  async function _getAuditoriaAdminDirecto(params)      { return _getListaDirectaMOS('auditoria_admin_lista',  params, 'audAdmin'); }
+  async function _getAuditoriaIntegridadDirecto(params) { return _getObjDirectoMOS('auditoria_integridad_lista', params, 'audInteg'); }
+  async function _getProductosEditadosRecientesDirecto(params){ return _getListaDirectaMOS('productos_editados_recientes', params, 'prodEdit'); }
 
   // ════════════════════════════════════════════════════════════════════
   // [FASE 2 · LOTE EVAL/HORARIO/ETIQ] read-paths directos (RPCs 98). Mismo patrón que 94 pero con dos shapes:
@@ -1255,6 +1270,21 @@ const API = (() => {
       if (action === 'getRotacionProductos')   { return _conFallbackMOS(() => _getRotacionProductosDirecto(p),   () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getCatalogoStockResumen'){ return _conFallbackMOS(() => _getCatalogoStockResumenDirecto(p),() => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getDashboardAlmacen')    { return _conFallbackMOS(() => _getDashboardAlmacenDirecto(p),    () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      // [Optimización · portables 114/115/116]
+      if (action === 'getConfig')              { return _conFallbackMOS(() => _getConfigDirecto(p),             () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getDispositivos')        { return _conFallbackMOS(() => _getDispositivosDirecto(p),       () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getLiquidacionesPendientes') { return _conFallbackMOS(() => _getLiqPendientesDirecto(p),  () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getLiquidacionesPagadas' || action === 'getLiquidacionesEmitidas') { return _conFallbackMOS(() => _getLiqPagadasDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getLiquidacionesVetadas') { return _conFallbackMOS(() => _getLiqVetadasDirecto(p),        () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getPagoDetalle')         { return _conFallbackMOS(() => _getPagoDetalleDirecto(p),        () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getLiqDiaBonSan')        { return _conFallbackMOS(() => _getLiqDiaBonSanDirecto(p),       () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getProveedoresQueVenden'){ return _conFallbackMOS(() => _getProveedoresQueVendenDirecto(p),() => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getVendedoresMEBloqueados'){ return _conFallbackMOS(() => _getVendedoresMEBloqueadosDirecto(p),() => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getDispositivosBloqueados'){ return _conFallbackMOS(() => _getDispositivosBloqueadosDirecto(p),() => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getNotificacionesConfig'){ return _conFallbackMOS(() => _getNotificacionesConfigDirecto(p),() => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getAuditoriaAdmin')      { return _conFallbackMOS(() => _getAuditoriaAdminDirecto(p),     () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getAuditoriaIntegridad' && !p.run) { return _conFallbackMOS(() => _getAuditoriaIntegridadDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getProductosEditadosRecientes') { return _conFallbackMOS(() => _getProductosEditadosRecientesDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       return _fetch('GET',  { action, ...p });
     },
     // [DUAL-WRITE] post → escritura directa Supabase SOLO para el catálogo (pilot, gate mos_catalogo_directo /
