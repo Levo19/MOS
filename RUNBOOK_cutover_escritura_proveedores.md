@@ -96,6 +96,43 @@ o flota: `update mos.config set valor='0' where clave='mos_proveedores_dualwrite
 Con el flag OFF, vuelve a ser 100% GAS (idéntico a hoy). **No hay que reconciliar la Hoja** porque GAS
 nunca dejó de escribirla.
 
+### DUAL-WRITE extendido a otros módulos (mismo patrón, gate dedicado por módulo)
+
+El patrón dual-write de proveedores se replicó (INERTE, gate OFF) a los módulos de escritura que ya tienen
+RPC directa cableada en `_postDirectoMOS`. **Cada módulo tiene su flag dedicado** (default OFF → 100% GAS,
+bit-idéntico a hoy). Activar/revertir = idéntico a proveedores (prender/apagar el flag; NO apagar el sync).
+La clave server `mos.config` (`get_flags` la expone como el cfgKey) y la clave localStorage del device:
+
+| Módulo | Flag server (`mos.config`) | cfgKey / `localStorage` | Diagnóstico `API._sb.*` | Actions (dual-write) |
+|---|---|---|---|---|
+| proveedores | `mos_proveedores_dualwrite` | `proveedoresDualWrite` | `proveedoresDualWrite()` | `crearProveedor`, `actualizarProveedor` |
+| pedidos | `mos_pedidos_dualwrite` | `pedidosDualWrite` | `pedidosDualWrite()` | `crearPedido` |
+| proveedor-producto | `mos_provprod_dualwrite` | `provprodDualWrite` | `provprodDualWrite()` | `agregarProductoProveedor`, `actualizarProductoProveedor` |
+| gastos ⚠️DINERO | `mos_gastos_dualwrite` | `gastosDualWrite` | `gastosDualWrite()` | `registrarGasto`, `eliminarGasto` |
+| jornadas ⚠️DINERO | `mos_jornadas_dualwrite` | `jornadasDualWrite` | `jornadasDualWrite()` | `registrarJornada`, `eliminarJornada`*, `rehabilitarJornada`* |
+| evaluaciones | `mos_eval_dualwrite` | `evalDualWrite` | `evalDualWrite()` | `crearEvaluacion` |
+
+\* `eliminarJornada`/`rehabilitarJornada` son FORWARD-LOOKING: el front no las llama hoy (usa
+`vetar`/`desvetarLiquidacionDia`), pero el case GAS + el branch del dispatcher existen → quedan inertes hasta
+que se usen.
+
+**Notas de seguridad del lote:**
+- `crearEvaluacion`: seguro en dual-write — GAS sigue corriendo `_liqDiaRecomputar`/`_liqDiaSetBonSan` (hooks
+  de liquidación/DINERO). El espejo es puramente aditivo a la sombra. (El directo-PURO se los saltaría; por eso
+  ese modo NO se habilita para evaluaciones.)
+- `gastos`/`jornadas` (DINERO): GAS escribe la Hoja exactamente como hoy; el upsert-espejo es idempotente por
+  `local_id` + PK (anti-doble-registro en reintento) y best-effort.
+
+**OMITIDOS (no se cablearon, faltan piezas — NO inventar):**
+- `actualizarPedido` — **no existe `case 'actualizarPedido'` en el router GAS** (`Code.gs`). En dual-write GAS
+  corre primero; respondería "acción no reconocida" → `_fetch` lanzaría → cambiaría el comportamiento. (La RPC
+  `mos.actualizar_pedido_proveedor` y el branch del dispatcher existen forward-looking, pero NO en el mapa.)
+- `eliminarProductoProveedor` — **no existe RPC `mos.eliminar_proveedor_producto`** ni branch en
+  `_postDirectoMOS` (la sombra no se actualizaría; el espejo sería siempre no-op).
+- `importarJornadasDesdeCajas` — **no existe RPC `mos.importar_jornadas`** ni branch en `_postDirectoMOS`.
+
+Con cualquiera de estos tres flags OFF (default) las acciones omitidas van 100% por GAS, idéntico a hoy.
+
 ---
 
 ## 1) Qué se construyó (ya desplegado, INERTE)

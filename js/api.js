@@ -405,6 +405,16 @@ const API = (() => {
   // se hace el write directo (comportamiento = hoy). El upsert directo es fire-and-forget: su fallo NO afecta
   // el retorno ni lanza (el sync/GAS reconcilia). Activación = solo prender este flag (ver RUNBOOK §DUAL-WRITE).
   function _mosProveedoresDualWrite() { return !!_mosFlag('mos_proveedores_dualwrite', 'proveedoresDualWrite'); }
+  // [DUAL-WRITE · LOTE EXTENDIDO] Gates dedicados por-módulo, MISMO patrón y semántica que _mosProveedoresDualWrite:
+  // GAS escribe PRIMERO (Hoja = verdad + sus hooks: recompute liquidación/push/enforcement horario) y SOLO si GAS
+  // devolvió ok se hace un upsert best-effort a la MISMA RPC (sombra fresca, aditivo). El sync NO se apaga; un device
+  // viejo no rompe nada. Orden CRÍTICO: GAS primero, Supabase después → la sombra NUNCA queda ADELANTE de la Hoja.
+  // Default OFF (flag ausente) → INERTE: _postMOS ni evalúa esta rama → la acción va recto a GAS, bit-idéntico a hoy.
+  function _mosPedidosDualWrite()  { return !!_mosFlag('mos_pedidos_dualwrite',  'pedidosDualWrite'); }
+  function _mosProvProdDualWrite() { return !!_mosFlag('mos_provprod_dualwrite', 'provprodDualWrite'); }
+  function _mosGastosDualWrite()   { return !!_mosFlag('mos_gastos_dualwrite',   'gastosDualWrite'); }
+  function _mosJornadasDualWrite() { return !!_mosFlag('mos_jornadas_dualwrite', 'jornadasDualWrite'); }
+  function _mosEvalDualWrite()     { return !!_mosFlag('mos_eval_dualwrite',     'evalDualWrite'); }
   function _mosPedidosDirecto()     { return !!_mosFlag('mos_pedidos_directo',     'pedidosDirecto'); }
   function _mosPagosDirecto()       { return !!_mosFlag('mos_pagos_directo',       'pagosDirecto'); }
   function _mosProvProdDirecto()    { return !!_mosFlag('mos_provprod_directo',    'provprodDirecto'); }
@@ -1172,7 +1182,28 @@ const API = (() => {
   // (son modos mutuamente excluyentes para la misma acción). Reactivar más módulos = agregar entradas acá.
   const _MOS_POST_DUALWRITE = {
     crearProveedor:      _mosProveedoresDualWrite,
-    actualizarProveedor: _mosProveedoresDualWrite
+    actualizarProveedor: _mosProveedoresDualWrite,
+    // [DUAL-WRITE · LOTE EXTENDIDO] Mismas reglas: GAS primero (verdad + hooks), espejo best-effort después.
+    // Cada action tiene case en el router GAS (Code.gs) Y branch cableado en _postDirectoMOS. Gate dedicado, OFF.
+    // pedidos (81): SOLO crearPedido. actualizarPedido NO va: no existe case en el router GAS (Code.gs) →
+    //   con el gate ON GAS respondería "acción no reconocida" → _fetch lanzaría → CAMBIARÍA el comportamiento.
+    crearPedido:                 _mosPedidosDualWrite,
+    // proveedor-producto (81): agregar/actualizar comparten la RPC mos.upsert_proveedor_producto en el dispatcher.
+    //   eliminarProductoProveedor NO va: no existe RPC mos.eliminar_proveedor_producto ni branch en _postDirectoMOS.
+    agregarProductoProveedor:    _mosProvProdDualWrite,
+    actualizarProductoProveedor: _mosProvProdDualWrite,
+    // gastos (83) ⚠️DINERO: GAS escribe igual que hoy; el espejo es aditivo a la sombra (idempotente por local_id+PK).
+    registrarGasto:              _mosGastosDualWrite,
+    eliminarGasto:               _mosGastosDualWrite,
+    // jornadas (84) ⚠️DINERO jornal: registrarJornada la llama el front hoy; eliminar/rehabilitar son FORWARD-LOOKING
+    //   (el front no las llama hoy, pero el case GAS y el branch dispatcher existen → inertes hasta que se usen).
+    //   importarJornadasDesdeCajas NO va: no existe RPC mos.importar_jornadas ni branch en _postDirectoMOS.
+    registrarJornada:            _mosJornadasDualWrite,
+    eliminarJornada:             _mosJornadasDualWrite,
+    rehabilitarJornada:          _mosJornadasDualWrite,
+    // evaluaciones (82): GAS sigue corriendo _liqDiaRecomputar/_liqDiaSetBonSan (hooks DINERO); el espejo es aditivo.
+    //   SEGURO en dual-write (a diferencia del directo-puro, que se los saltaría).
+    crearEvaluacion:             _mosEvalDualWrite
   };
 
   // POST con escritura directa opcional. Con el gate de la acción OFF (default) es IDÉNTICO a hoy: ni
@@ -1464,6 +1495,12 @@ const API = (() => {
       // EXCEPCIÓN: proveedoresDirecto SÍ gobierna la escritura directa (piloto re-cableado en _MOS_POST_DIRECTO).
       proveedoresDirecto: _mosProveedoresDirecto,  // ¿escritura DIRECTO-PURO de proveedores ON? (gate de crear/actualizarProveedor; exige sync-off)
       proveedoresDualWrite: _mosProveedoresDualWrite, // ¿escritura DUAL-WRITE de proveedores ON? (GAS verdad + espejo best-effort; NO apaga sync) — diagnóstico/test
+      // [DUAL-WRITE · LOTE EXTENDIDO] gates dedicados (default OFF). GAS verdad + espejo best-effort, NO apaga sync.
+      pedidosDualWrite:   _mosPedidosDualWrite,    // ¿escritura DUAL-WRITE de pedidos ON? (crearPedido) — diagnóstico/test
+      provprodDualWrite:  _mosProvProdDualWrite,   // ¿escritura DUAL-WRITE de proveedor-producto ON? (agregar/actualizar) — diagnóstico/test
+      gastosDualWrite:    _mosGastosDualWrite,     // ¿escritura DUAL-WRITE de gastos ON? (registrar/eliminar; DINERO) — diagnóstico/test
+      jornadasDualWrite:  _mosJornadasDualWrite,   // ¿escritura DUAL-WRITE de jornadas ON? (registrar/eliminar/rehabilitar; DINERO) — diagnóstico/test
+      evalDualWrite:      _mosEvalDualWrite,       // ¿escritura DUAL-WRITE de evaluaciones ON? (crearEvaluacion) — diagnóstico/test
       pedidosDirecto:     _mosPedidosDirecto,      // (diagnóstico) ¿flag mos_pedidos_directo ON?
       pagosDirecto:       _mosPagosDirecto,        // (diagnóstico) ¿flag mos_pagos_directo ON?
       provprodDirecto:    _mosProvProdDirecto,     // (diagnóstico) ¿flag mos_provprod_directo ON?
