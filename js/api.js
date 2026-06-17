@@ -508,6 +508,23 @@ const API = (() => {
   async function _getEstacionesDirecto(params)         { return _getListaDirectaMOS('estaciones_lista',         params, 'estaciones'); }
   async function _getImpresorasDirecto(params)         { return _getListaDirectaMOS('impresoras_lista',         params, 'impresoras'); }
   async function _getSeriesDirecto(params)             { return _getListaDirectaMOS('series_lista',             params, 'series'); }
+  // [Optimización] complejos (108/109/110). finanzas_dia/historico devuelven OBJETO (no array) → helper propio
+  // con gate _fresh (igual que _getFinanzasRangoDirecto). provprod_stock devuelve array → _getListaDirectaMOS.
+  async function _getFinanzasDiaDirecto(params) {
+    const r = await _sbRpcMOS('finanzas_dia', { p_fecha: (params && params.fecha) || null });
+    if (r == null) return null;
+    if (!r.ok || !r.data) return null;
+    if (r._fresh !== true) { try { console.warn('[MOS finanzas_dia] sombra STALE → GAS'); } catch(_){} return null; }
+    return r.data;
+  }
+  async function _getProductosProveedorStockDirecto(params) { return _getListaDirectaMOS('productos_proveedor_stock', params, 'provprodStock'); }
+  async function _getHistoricoProveedorDirecto(params) {
+    const r = await _sbRpcMOS('historico_proveedor', { p: params || {} });
+    if (r == null) return null;
+    if (!r.ok || !r.data) return null;
+    if (r._fresh !== true) { try { console.warn('[MOS historico_proveedor] sombra STALE → GAS'); } catch(_){} return null; }
+    return r.data;
+  }
 
   // ════════════════════════════════════════════════════════════════════
   // [FASE 2 · LOTE EVAL/HORARIO/ETIQ] read-paths directos (RPCs 98). Mismo patrón que 94 pero con dos shapes:
@@ -1203,6 +1220,17 @@ const API = (() => {
       if (action === 'getEstaciones')     { return _conFallbackMOS(() => _getEstacionesDirecto(p),     () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getImpresoras')     { return _conFallbackMOS(() => _getImpresorasDirecto(p),     () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getSeries')         { return _conFallbackMOS(() => _getSeriesDirecto(p),         () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      // [Optimización] read-paths COMPLEJOS (108/109/110): finanzas del día (P&L), productos-proveedor-con-stock,
+      // histórico proveedor. Maestro _mosLecturaDirecta + fallback total a GAS + gate _fresh interno.
+      if (action === 'getFinanzasDia') {
+        return _conFallbackMOS(() => _getFinanzasDiaDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta);
+      }
+      if (action === 'getProductosProveedorConStock') {
+        return _conFallbackMOS(() => _getProductosProveedorStockDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta);
+      }
+      if (action === 'getHistoricoProveedor') {
+        return _conFallbackMOS(() => _getHistoricoProveedorDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta);
+      }
       return _fetch('GET',  { action, ...p });
     },
     // [DUAL-WRITE] post → escritura directa Supabase SOLO para el catálogo (pilot, gate mos_catalogo_directo /
