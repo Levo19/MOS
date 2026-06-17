@@ -556,6 +556,16 @@ const API = (() => {
   async function _getAuditoriaAdminDirecto(params)      { return _getListaDirectaMOS('auditoria_admin_lista',  params, 'audAdmin'); }
   async function _getAuditoriaIntegridadDirecto(params) { return _getObjDirectoMOS('auditoria_integridad_lista', params, 'audInteg'); }
   async function _getProductosEditadosRecientesDirecto(params){ return _getListaDirectaMOS('productos_editados_recientes', params, 'prodEdit'); }
+  // [Optimización · cross-app vistas 117/118/119] solo las verificadas con paridad (las con bugs/gaps siguen GAS).
+  async function _getRankingZonasDirecto(params)        { return _getObjDirectoMOS('ranking_zonas',           params, 'rankZonas'); }
+  async function _getProductosSinVentaDirecto(params)   { return _getObjDirectoMOS('productos_sin_venta',     params, 'prodSinVenta'); }
+  async function _getAlertasOperativasDirecto(params)   { return _getObjDirectoMOS('alertas_operativas',      params, 'alertasOp'); }
+  async function _getGuiasYPreingresosDirecto(params)   { return _getObjDirectoMOS('guias_y_preingresos',     params, 'guiasPre'); }
+  async function _getOperacionesUnificadasDirecto(params){ return _getObjDirectoMOS('operaciones_unificadas', params, 'opsUnif'); }
+  async function _getStockUnificadoDirecto(params)      { return _getObjDirectoMOS('stock_unificado',         params, 'stockUnif'); }
+  async function _getInsightsStockDirecto(params)       { return _getObjDirectoMOS('insights_stock',          params, 'insStock'); }
+  async function _getAnaliticaProductoDirecto(params)   { return _getObjDirectoMOS('analitica_producto',      params, 'analProd'); }
+  async function _getMeCajasAbiertasDirecto(params)     { return _getListaDirectaMOS('me_cajas_abiertas',     params, 'meCajas'); }
 
   // ════════════════════════════════════════════════════════════════════
   // [FASE 2 · LOTE EVAL/HORARIO/ETIQ] read-paths directos (RPCs 98). Mismo patrón que 94 pero con dos shapes:
@@ -1285,6 +1295,16 @@ const API = (() => {
       if (action === 'getAuditoriaAdmin')      { return _conFallbackMOS(() => _getAuditoriaAdminDirecto(p),     () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getAuditoriaIntegridad' && !p.run) { return _conFallbackMOS(() => _getAuditoriaIntegridadDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getProductosEditadosRecientes') { return _conFallbackMOS(() => _getProductosEditadosRecientesDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      // [Optimización · cross-app 117/118/119]
+      if (action === 'getRankingZonas')        { return _conFallbackMOS(() => _getRankingZonasDirecto(p),       () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getProductosSinVenta')   { return _conFallbackMOS(() => _getProductosSinVentaDirecto(p),  () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getAlertasOperativas')   { return _conFallbackMOS(() => _getAlertasOperativasDirecto(p),  () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getGuiasYPreingresos')   { return _conFallbackMOS(() => _getGuiasYPreingresosDirecto(p),  () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getOperacionesUnificadas'){ return _conFallbackMOS(() => _getOperacionesUnificadasDirecto(p),() => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getStockUnificado')      { return _conFallbackMOS(() => _getStockUnificadoDirecto(p),     () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getInsightsStock')       { return _conFallbackMOS(() => _getInsightsStockDirecto(p),      () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getAnaliticaProducto')   { return _conFallbackMOS(() => _getAnaliticaProductoDirecto(p),  () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'meCajasAbiertas')        { return _conFallbackMOS(() => _getMeCajasAbiertasDirecto(p),    () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       return _fetch('GET',  { action, ...p });
     },
     // [DUAL-WRITE] post → escritura directa Supabase SOLO para el catálogo (pilot, gate mos_catalogo_directo /
