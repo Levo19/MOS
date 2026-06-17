@@ -39054,8 +39054,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       else el.textContent = (v == null ? '—' : v);
     };
     set('zKpiFaltan',  k.faltan  != null ? k.faltan  : _zonaContar(p => _zonaNum(p.brecha) > 0));
-    set('zKpiAlmacen', k.almacen != null ? k.almacen : _zonaSumar(p => Math.min(_zonaNum(p.brecha), _zonaNum(p.stockAlmacen))));
-    set('zKpiExterno', k.externo != null ? k.externo : _zonaContar(p => _zonaNum(p.brecha) - _zonaNum(p.stockAlmacen) > 0));
+    set('zKpiAlmacen', k.almacen != null ? k.almacen : _zonaSumar(p => Math.min(_zonaNum(p.brecha), Math.max(0, _zonaNum(p.stockAlmacen)))));
+    set('zKpiExterno', k.externo != null ? k.externo : _zonaContar(p => _zonaNum(p.brecha) - Math.max(0, _zonaNum(p.stockAlmacen)) > 0));
     set('zKpiCero',    k.cero    != null ? k.cero    : _zonaContar(_zonaEsRotCero));
   }
   // [RIZ UX] HTML de N cards skeleton con shimmer (silueta de una zona-card real).
@@ -39099,7 +39099,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
     if (f.kpi === 'faltan')  arr = arr.filter(p => _zonaNum(p.brecha) > 0);
     if (f.kpi === 'almacen') arr = arr.filter(p => _zonaNum(p.brecha) > 0 && _zonaNum(p.stockAlmacen) > 0);
-    if (f.kpi === 'externo') arr = arr.filter(p => (_zonaNum(p.brecha) - _zonaNum(p.stockAlmacen)) > 0);
+    if (f.kpi === 'externo') arr = arr.filter(p => (_zonaNum(p.brecha) - Math.max(0, _zonaNum(p.stockAlmacen))) > 0);
     if (f.kpi === 'cero')    arr = arr.filter(_zonaEsRotCero);
 
     // Orden
@@ -39151,14 +39151,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const esp   = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
     // [MEJORA 3] El backend YA corrige la brecha para negativos (=esperada). La usamos tal cual.
     const negativo = !!p.stockNegativo;
-    const brecha = (p.brecha != null) ? _zonaNum(p.brecha) : Math.max(0, esp - stockRaw);
+    const brecha = (p.brecha != null) ? _zonaNum(p.brecha) : Math.max(0, esp - Math.max(0, stockRaw));
     const alm   = _zonaNum(p.stockAlmacen != null ? p.stockAlmacen : p.almacen);
     const bcg   = _zonaBCGClase(p);
     const bcgInfo = _ZONA_BCG[bcg] || _ZONA_BCG.vaca;
     const tend  = _zonaTendBadge(p.tendencia);
     const picos = Array.isArray(p.picos) ? p.picos.slice(-4) : [];
-    const pedirAlm = Math.min(brecha, alm);
-    const externo  = Math.max(0, brecha - alm);
+    // [FIX] stock negativo (almacén o zona) = ERROR → cuenta como 0 para pedido/compra.
+    // El display de `alm` sigue mostrando el valor real (negativo incluido), pero NO infla la compra.
+    const almPos   = Math.max(0, alm);
+    const pedirAlm = Math.min(brecha, almPos);
+    const externo  = Math.max(0, brecha - almPos);
     const uni      = _zonaUniLbl(p);
     // [MEJORA 2] cantidades formateadas según granel/unidad.
     const fStock  = _zonaFmtCant(stockRaw, p, true);
@@ -39647,14 +39650,14 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const sku = String(p.skuBase || p.idProducto || '');
       const stock = _zonaNum(p.stockZona != null ? p.stockZona : p.stock);
       const esp = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
-      const brecha = (p.brecha != null) ? _zonaNum(p.brecha) : Math.max(0, esp - stock);
+      const brecha = (p.brecha != null) ? _zonaNum(p.brecha) : Math.max(0, esp - Math.max(0, stock));
       const alm = _zonaNum(p.stockAlmacen != null ? p.stockAlmacen : p.almacen);
       return {
         producto: String(p.descripcion || p.nombre || sku),
         stockZona: stock, esperada: esp, brecha,
         stockAlmacen: alm,
-        pedirAlmacen: Math.min(brecha, alm),
-        externo: Math.max(0, brecha - alm),
+        pedirAlmacen: Math.min(brecha, Math.max(0, alm)),
+        externo: Math.max(0, brecha - Math.max(0, alm)),
         tendencia: String(p.tendencia || 'est'),
         bcg: _zonaBCGClase(p)
       };
