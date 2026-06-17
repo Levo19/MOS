@@ -136,9 +136,12 @@ function buildTicketDiario(data: any): string {
   return t;
 }
 
-// ── Builder: LISTA DE COMPRAS DEL LUNES (3.7 del diseño) ──
-// data esperado (de mos.zona_lista_compras): { zona, nombreZona?, semana, fecha?, items:[{
-//   descripcion|nombre, cantidad }] }
+// ── Builder: LISTA DE COMPRAS DEL LUNES (3.7 del diseño) — FORMATO PRO 48col ──
+// data esperado (de mos.zona_lista_compras, 139): { zona, nombreZona?, semana, fecha?, items:[{
+//   skuBase, descripcion, comprar, esperado, stockAlmacen, tendencia, unidad }] }  ← ya viene ordenado CRECIENTE→…
+// Por producto (2 lineas):
+//   Linea 1: `N) NOMBRE  [SUBE]`   (negrita; etiqueta de tendencia segun rota/sube/baja).
+//   Linea 2: `   Comprar: <comprar> <un>            (almacen: <stockAlmacen>)`  (lo importante = "Comprar: N").
 function buildListaCompras(data: any): string {
   const zonaNom = norm(data.nombreZona || data.zona || 'ZONA');
   const semana = norm(data.semana != null ? String(data.semana) : '');
@@ -146,23 +149,46 @@ function buildListaCompras(data: any): string {
   const items: any[] = Array.isArray(data.items) ? data.items
     : (Array.isArray(data.productos) ? data.productos : (Array.isArray(data) ? data : []));
 
+  // etiqueta corta de tendencia (mismo criterio que el ticket diario).
+  const tendLabel = (raw: unknown): string => {
+    const tend = norm(String(raw || '')).toUpperCase();
+    return tend.startsWith('CREC') || tend.startsWith('ASC') ? 'SUBE'
+      : tend.startsWith('DECREC') || tend.startsWith('DESC') ? 'BAJA'
+      : tend.startsWith('ESTAB') ? 'ESTABLE'
+      : tend.startsWith('NUL') || tend.startsWith('CERO') ? 'SIN ROTAR' : 'ESTABLE';
+  };
+
   let t = INIT;
   t += ALIGN_C + BOLD_ON + DBL + 'MOS' + NORMAL + BOLD_OFF + '\n';
   t += ALIGN_C + BOLD_ON + norm(zonaNom) + BOLD_OFF + '\n';
   t += ALIGN_C + 'LISTA DE COMPRA EXTERNA' + '\n';
   t += ALIGN_C + norm(['Semana ' + semana, fecha].filter(Boolean).join('  *  ')) + '\n';
-  t += ALIGN_C + '(almacen NO cubrio + SI rota)' + '\n';
+  t += ALIGN_C + '(rotacion * ordenado por demanda)' + '\n';
   t += ALIGN_L + rule('=') + '\n';
 
   let totItems = 0, totUnid = 0;
   if (!items.length) {
     t += center('(nada que comprar esta semana)') + '\n';
   } else {
-    items.forEach((it) => {
+    items.forEach((it, i) => {
       const nm = norm(it.descripcion || it.nombre || it.skuBase || '');
-      const cant = Number(it.cantidad != null ? it.cantidad : (it.unidades != null ? it.unidades : it.faltan)) || 0;
-      totItems++; totUnid += cant;
-      t += dotLeader(nm, cant + ' un') + '\n';
+      const comprar = Number(it.comprar != null ? it.comprar : (it.cantidad != null ? it.cantidad : it.unidades)) || 0;
+      const alm = Number(it.stockAlmacen != null ? it.stockAlmacen : it.almacen) || 0;
+      const unidad = norm(it.unidad || 'un') || 'un';
+      const lbl = tendLabel(it.tendencia);
+      totItems++; totUnid += comprar;
+
+      // Linea 1: N) NOMBRE  [SUBE]   (negrita). La etiqueta va pegada a la derecha; el nombre se trunca si no cabe.
+      const tag = '[' + lbl + ']';
+      const head = (i + 1) + ') ' + nm;
+      const maxName = W - tag.length - 1;          // 1 espacio de separacion minimo
+      const headTrim = head.length > maxName ? head.slice(0, maxName - 1) + ' ' : head;
+      t += BOLD_ON + padR(headTrim, W - tag.length) + tag + BOLD_OFF + '\n';
+
+      // Linea 2: "   Comprar: N un" (izq, lo importante) + "(almacen: M)" como nota a la derecha.
+      const left = 'Comprar: ' + comprar + ' ' + unidad;
+      const note = '(almacen: ' + alm + ')';
+      t += '   ' + padR(left, W - 3 - note.length) + note + '\n';
     });
   }
   t += rule('-') + '\n';
