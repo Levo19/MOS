@@ -566,6 +566,8 @@ const API = (() => {
   async function _getInsightsStockDirecto(params)       { return _getObjDirectoMOS('insights_stock',          params, 'insStock'); }
   async function _getAnaliticaProductoDirecto(params)   { return _getObjDirectoMOS('analitica_producto',      params, 'analProd'); }
   async function _getMeCajasAbiertasDirecto(params)     { return _getListaDirectaMOS('me_cajas_abiertas',     params, 'meCajas'); }
+  // [FIX bug SQL alias x.ord→ord] me_cobros_en_vuelo devuelve OBJETO {enVuelo,recientes} → _getObjDirectoMOS.
+  async function _getMeCobrosEnVueloDirecto(params)     { return _getObjDirectoMOS('me_cobros_en_vuelo',     params, 'meCobrosVuelo'); }
 
   // ════════════════════════════════════════════════════════════════════
   // [FASE 2 · LOTE EVAL/HORARIO/ETIQ] read-paths directos (RPCs 98). Mismo patrón que 94 pero con dos shapes:
@@ -1305,6 +1307,7 @@ const API = (() => {
       if (action === 'getInsightsStock')       { return _conFallbackMOS(() => _getInsightsStockDirecto(p),      () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getAnaliticaProducto')   { return _conFallbackMOS(() => _getAnaliticaProductoDirecto(p),  () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'meCajasAbiertas')        { return _conFallbackMOS(() => _getMeCajasAbiertasDirecto(p),    () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'meCobrosEnVuelo')        { return _conFallbackMOS(() => _getMeCobrosEnVueloDirecto(p),    () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       return _fetch('GET',  { action, ...p });
     },
     // [DUAL-WRITE] post → escritura directa Supabase SOLO para el catálogo (pilot, gate mos_catalogo_directo /

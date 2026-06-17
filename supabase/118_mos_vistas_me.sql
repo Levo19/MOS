@@ -360,7 +360,7 @@ begin
    where upper(coalesce(cc.estado,'')) = 'ASIGNADO';
 
   -- RECIENTES: resueltos en últimas 24h. Orden por fecha_res descendente. Cap 50.
-  select coalesce(jsonb_agg(x order by x.ord desc), '[]'::jsonb)
+  select coalesce(jsonb_agg(x order by ord desc), '[]'::jsonb)
     into v_recientes
     from (
       select jsonb_build_object(
