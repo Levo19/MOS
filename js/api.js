@@ -391,6 +391,20 @@ const API = (() => {
   // Default OFF (mos_proveedores_directo / proveedoresDirecto ausente) → INERTE: crearProveedor/actualizarProveedor
   // van por GAS, bit-idéntico a hoy. Activación = ver RUNBOOK_cutover_escritura_proveedores.md (flag + sync-off).
   function _mosProveedoresDirecto() { return !!_mosFlag('mos_proveedores_directo', 'proveedoresDirecto'); }
+  // ════════════════════════════════════════════════════════════════════
+  // [DUAL-WRITE · PROVEEDORES] Gate SEPARADO y PREFERIDO sobre el directo-puro de arriba. Default OFF → INERTE.
+  // DIFERENCIA CRÍTICA entre los dos modos de escritura de proveedores:
+  //   · _mosProveedoresDirecto (DIRECTO-PURO): escribe SOLO Supabase (NO GAS). Exige apagar el sync de
+  //     proveedores (MOS_SYNC_OFF_TABLAS) o el sync Hoja→sombra pisa lo escrito directo. Un device viejo que
+  //     escriba por GAS→Hoja con el sync apagado PIERDE el dato (incidente del 2026-06-15). PELIGROSO.
+  //   · _mosProveedoresDualWrite (DUAL-WRITE, ESTE): escribe PRIMERO por GAS (Hoja = verdad + _dualWriteMOS de
+  //     GAS espeja la sombra), y SOLO si GAS devolvió ok hace ADEMÁS un upsert best-effort directo a la misma
+  //     RPC para asegurar que la sombra quede fresca aunque el urlfetch de GAS haya fallado por cuota. El sync
+  //     NO se apaga; un device viejo NO rompe nada (la Hoja sigue siendo verdad). SEGURO.
+  // Orden CRÍTICO: GAS primero, Supabase después → la sombra NUNCA queda ADELANTE de la Hoja. Si GAS falla, NO
+  // se hace el write directo (comportamiento = hoy). El upsert directo es fire-and-forget: su fallo NO afecta
+  // el retorno ni lanza (el sync/GAS reconcilia). Activación = solo prender este flag (ver RUNBOOK §DUAL-WRITE).
+  function _mosProveedoresDualWrite() { return !!_mosFlag('mos_proveedores_dualwrite', 'proveedoresDualWrite'); }
   function _mosPedidosDirecto()     { return !!_mosFlag('mos_pedidos_directo',     'pedidosDirecto'); }
   function _mosPagosDirecto()       { return !!_mosFlag('mos_pagos_directo',       'pagosDirecto'); }
   function _mosProvProdDirecto()    { return !!_mosFlag('mos_provprod_directo',    'provprodDirecto'); }
@@ -1151,10 +1165,39 @@ const API = (() => {
     // tampoco van (shape/seguridad incompatibles). Ver REPORTE.
   };
 
+  // Acciones que soportan DUAL-WRITE (GAS primero = verdad, luego espejo best-effort a Supabase), CADA UNA con
+  // su gate dedicado (default OFF). DISTINTO del directo-puro de _MOS_POST_DIRECTO: aquí GAS SIEMPRE escribe.
+  // Con el gate OFF (default) _postMOS ni siquiera evalúa esta rama → va por el camino de hoy (solo GAS).
+  // PRECEDENCIA: el dual-write se evalúa ANTES que el directo-puro y, si está ON, NO se entra al directo-puro
+  // (son modos mutuamente excluyentes para la misma acción). Reactivar más módulos = agregar entradas acá.
+  const _MOS_POST_DUALWRITE = {
+    crearProveedor:      _mosProveedoresDualWrite,
+    actualizarProveedor: _mosProveedoresDualWrite
+  };
+
   // POST con escritura directa opcional. Con el gate de la acción OFF (default) es IDÉNTICO a hoy: ni
   // siquiera evalúa el directo → va recto a _fetch('POST') → GAS. Con el gate ON + token + RPC viva, escribe
   // directo; si el directo dice "no commiteó" (null) → GAS; si lanza (negocio/timeout) → PROPAGA (no GAS).
   async function _postMOS(action, p) {
+    // ── [DUAL-WRITE] Modo PREFERIDO y SEGURO (gate dedicado, default OFF). Se evalúa ANTES que el directo-puro.
+    //   1) GAS primero (AWAIT): escribe la Hoja = VERDAD y devuelve su shape (idéntico a hoy) + corre su propio
+    //      _dualWriteMOS → espeja la sombra. Ese resultado es el que se DEVUELVE al front.
+    //   2) SOLO si GAS resolvió ok: best-effort fire-and-forget _postDirectoMOS → upsert directo a la MISMA RPC
+    //      mos.crear_proveedor/actualizar_proveedor, para asegurar la sombra fresca aunque el urlfetch de GAS
+    //      haya fallado por cuota. Su fallo (.catch) NO propaga, NO afecta el retorno (el sync/GAS reconcilia).
+    //   3) Si GAS LANZA (red/negocio/timeout): se PROPAGA tal cual (comportamiento de hoy) y NO se escribe
+    //      directo → la sombra NUNCA queda ADELANTE de la Hoja. _postDirectoMOS reusa p.localId (estampado por
+    //      GAS o estable) → si llega a commitear, dedupea contra lo que el _dualWriteMOS de GAS ya espejó.
+    const dwGate = _MOS_POST_DUALWRITE[action];
+    if (dwGate && dwGate()) {
+      const res = await _fetch('POST', { action, ...p });   // GAS = verdad; lanza ⇒ propaga (no se escribe directo)
+      try {
+        const pr = _postDirectoMOS(action, p);              // best-effort: upsert a la sombra (puede ser null→no-op)
+        if (pr && typeof pr.then === 'function') pr.then(function(){}, function(){});  // swallow async (null/throw)
+      } catch (_) { /* swallow sync throw: el espejo a la sombra es best-effort, jamás afecta el retorno */ }
+      return res;                                            // shape GAS, bit-idéntico a la rama de hoy
+    }
+
     const gate = _MOS_POST_DIRECTO[action];
     if (gate && gate()) {
       // throws de _postDirectoMOS se PROPAGAN (negocio = mismo error que GAS; timeout = anti-duplicado).
@@ -1419,7 +1462,8 @@ const API = (() => {
       // [DUAL-WRITE] gates *_DIRECTO por-operación (default OFF). ⚠️ Ya NO gobiernan read ni write cableado
       // (la escritura va por GAS; la lectura usa los gates *Lectura de abajo). Se exponen solo para diagnóstico.
       // EXCEPCIÓN: proveedoresDirecto SÍ gobierna la escritura directa (piloto re-cableado en _MOS_POST_DIRECTO).
-      proveedoresDirecto: _mosProveedoresDirecto,  // ¿escritura directa de proveedores ON? (gate de crear/actualizarProveedor)
+      proveedoresDirecto: _mosProveedoresDirecto,  // ¿escritura DIRECTO-PURO de proveedores ON? (gate de crear/actualizarProveedor; exige sync-off)
+      proveedoresDualWrite: _mosProveedoresDualWrite, // ¿escritura DUAL-WRITE de proveedores ON? (GAS verdad + espejo best-effort; NO apaga sync) — diagnóstico/test
       pedidosDirecto:     _mosPedidosDirecto,      // (diagnóstico) ¿flag mos_pedidos_directo ON?
       pagosDirecto:       _mosPagosDirecto,        // (diagnóstico) ¿flag mos_pagos_directo ON?
       provprodDirecto:    _mosProvProdDirecto,     // (diagnóstico) ¿flag mos_provprod_directo ON?

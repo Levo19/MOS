@@ -26,6 +26,78 @@ los pasos. El riesgo está acotado porque proveedores **no es dinero**.
 
 ---
 
+## DUAL-WRITE (modo SEGURO y RECOMENDADO) — sin apagar el sync
+
+> **Este es el camino preferido.** No apaga ningún sync, no exige que la flota actualice, un device viejo
+> NO rompe nada. Construido INERTE: gate `mos_proveedores_dualwrite` / `proveedoresDualWrite` OFF por
+> defecto. Con el flag OFF, `crearProveedor`/`actualizarProveedor` van **bit-idéntico a hoy** (solo GAS).
+
+### Qué hace (vs el directo-puro de las §1–§4)
+
+| | Directo-puro (`mos_proveedores_directo`) | **Dual-write (`mos_proveedores_dualwrite`)** |
+|---|---|---|
+| Escribe la Hoja (verdad) | ❌ NO (solo Supabase) | ✅ SÍ, por GAS, **primero** |
+| Escribe la sombra Supabase | sí (única fuente) | GAS la espeja (`_dualWriteMOS`) **+** upsert directo best-effort |
+| Requiere apagar el sync | ✅ SÍ (o se pisa) | ❌ **NO** |
+| Device viejo (GAS→Hoja) | rompe (pierde el dato) | inocuo (la Hoja sigue siendo verdad) |
+| Retorno al front | shape de la RPC | **shape de GAS** (idéntico a hoy) |
+
+**Flujo exacto (gate ON):**
+1. `_postMOS` llama a **GAS primero** (`_fetch('POST',…)`), `await`, y **devuelve ese resultado** al front
+   (shape/behaviour idéntico a hoy; GAS escribe la Hoja = verdad y corre su `_dualWriteMOS` a la sombra).
+2. **Solo si GAS devolvió ok:** best-effort fire-and-forget `_postDirectoMOS('crear/actualizarProveedor', p)`
+   → upsert directo a la **misma** RPC `mos.crear_proveedor` / `mos.actualizar_proveedor`, para que la sombra
+   quede fresca aunque el `urlfetch` de GAS hubiera fallado por cuota. Si este paso falla, **se traga el error**
+   (`.catch`), **no** afecta el retorno ni lanza (el sync/GAS reconcilia).
+3. **Orden crítico:** GAS primero, Supabase después → la sombra **nunca queda adelante** de la Hoja. Si GAS
+   **falla**, se propaga el error (igual que hoy) y **NO se escribe directo**.
+
+**Triple seguridad (igual que el directo-puro):** flag de cliente OFF (default) · sin token Edge → upsert
+no-op · kill-switch server `MOS_PROVEEDORES_DIRECTO='0'` → la RPC del espejo responde `*_OFF` → no-op. En
+los tres casos GAS ya hizo el trabajo; el espejo es puramente resiliencia.
+
+### ACTIVAR dual-write
+
+**Solo prender el flag** — NO apagues el sync, NO toques `MOS_PROVEEDORES_DIRECTO` (directo-puro).
+
+- **Piloto un device:**
+  ```js
+  localStorage.setItem('mos_proveedores_dualwrite','1'); location.reload();
+  ```
+- **Flota entera (server `mos.config`, lo lee `get_flags` y expone como `proveedoresDualWrite`):**
+  ```sql
+  insert into mos.config (clave,valor) values ('mos_proveedores_dualwrite','1')
+    on conflict (clave) do update set valor='1';
+  ```
+  (confirmá que `mos.get_flags` mapea esta clave a `proveedoresDualWrite`).
+
+> NOTA sobre el kill-switch server: el upsert-espejo pasa por la **misma** RPC que el directo-puro, así que
+> si `MOS_PROVEEDORES_DIRECTO='0'`, el espejo será un **no-op** (la RPC responde `*_OFF`). Eso NO rompe nada
+> (GAS ya espejó vía `_dualWriteMOS`); solo desactiva la capa extra de resiliencia. Si querés el espejo
+> activo, poné `MOS_PROVEEDORES_DIRECTO='1'` — es SEGURO en dual-write porque GAS sigue escribiendo la Hoja.
+
+### VERIFICAR dual-write
+
+1. En la consola: `API._sb.proveedoresDualWrite();` → `true`.
+2. Creá/editá un proveedor. En Network: **debe ir el POST a GAS** (`script.google.com`) Y, después, un POST
+   a `…supabase.co/rest/v1/rpc/crear_proveedor` (el espejo). El front se comporta igual que hoy.
+3. La Hoja `PROVEEDORES_MASTER` **se actualiza** (a diferencia del directo-puro): GAS la escribe. La sombra
+   `mos.proveedores` también queda fresca.
+4. Cortá el espejo a propósito (kill-switch server en `'0'` o token caído) → la operación **sigue OK** (GAS).
+
+### REVERTIR dual-write
+
+Trivial y sin reconciliación (la Hoja nunca se desfasó): **apagar el flag**.
+```js
+localStorage.removeItem('mos_proveedores_dualwrite'); location.reload();   // device
+```
+o flota: `update mos.config set valor='0' where clave='mos_proveedores_dualwrite';`
+
+Con el flag OFF, vuelve a ser 100% GAS (idéntico a hoy). **No hay que reconciliar la Hoja** porque GAS
+nunca dejó de escribirla.
+
+---
+
 ## 1) Qué se construyó (ya desplegado, INERTE)
 
 - **`js/api.js`**:
@@ -165,7 +237,8 @@ prenderSyncTablaMOS('proveedores');   // quita 'proveedores' del CSV → el sync
 ## 5) Recomendación
 
 Dado el incidente del 2026-06-15 y que la limitación de `resembrar` (append-only) deja las **ediciones**
-sin red de reconciliación automática, para PROVEEDORES en producción el camino robusto sigue siendo el
-**DUAL-WRITE** (escritura por GAS + espejo a la sombra + lectura directa por flag), que NO requiere apagar
-el sync ni depende de que la flota actualice. Este runbook de escritura-directa-pura queda disponible y
+sin red de reconciliación automática, para PROVEEDORES en producción el camino robusto es el **DUAL-WRITE**
+(ver la sección **DUAL-WRITE** arriba): escritura por GAS (Hoja = verdad) + espejo best-effort a la sombra +
+lectura directa por flag. NO requiere apagar el sync ni depende de que la flota actualice, y revertir es
+solo apagar el flag. **Usá ese modo.** Este runbook de escritura-directa-pura (§1–§4) queda disponible y
 listo (INERTE) para un piloto controlado o para cuando la flota esté 100% en la versión nueva.
