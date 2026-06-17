@@ -12322,9 +12322,11 @@
     /* KPI chips-filtro */
     .zona-kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.5rem; margin-bottom:.75rem; }
     @media (max-width:560px){ .zona-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-    .zona-kpi { background:#0f172a; border:1px solid #1e293b; border-radius:.75rem; padding:.6rem .7rem; cursor:pointer; transition:border-color .15s, transform .12s, background .15s; text-align:left; }
+    .zona-kpi { background:#0f172a; border:1px solid #1e293b; border-radius:.75rem; padding:.6rem .7rem; min-height:44px; cursor:pointer; transition:border-color .15s, transform .12s, background .15s, box-shadow .15s; text-align:left; }
     .zona-kpi:hover { border-color:#334155; transform:translateY(-1px); }
-    .zona-kpi.active { border-color:#6366f1; background:rgba(99,102,241,.12); }
+    .zona-kpi:active { transform:scale(.97); }
+    .zona-kpi.active { border-color:#6366f1; background:rgba(99,102,241,.12); box-shadow:0 0 0 1px rgba(99,102,241,.25), 0 4px 14px -6px rgba(99,102,241,.4); }
+    .zona-kpi-val { font-variant-numeric:tabular-nums; }
     .zona-kpi-lbl { font-size:.62rem; text-transform:uppercase; letter-spacing:.04em; color:#94a3b8; }
     .zona-kpi-val { font-size:1.25rem; font-weight:800; color:#e2e8f0; line-height:1.1; margin-top:.1rem; }
     .zona-kpi.k-pedir .zona-kpi-val { color:#fca5a5; }
@@ -12336,15 +12338,38 @@
     .zona-chip-f { font-size:.72rem; padding:.32rem .6rem; border-radius:999px; border:1px solid #334155; background:#0f172a; color:#cbd5e1; cursor:pointer; transition:all .15s; }
     .zona-chip-f.active { border-color:#8b5cf6; background:rgba(139,92,246,.16); color:#ddd6fe; }
     /* Card de producto */
-    .zona-card { background:#0f172a; border:1px solid #1e293b; border-left:3px solid #334155; border-radius:.85rem; padding:.85rem .9rem; margin-bottom:.65rem; animation: cardSlideIn .28s ease both; }
+    /* [RIZ UX] Entrada con stagger (fade + slide-up + scale). transform/opacity → 60fps.
+       content-visibility recorta el costo de render con listas grandes (800 items). */
+    .zona-card { background:#0f172a; border:1px solid #1e293b; border-left:3px solid #334155; border-radius:.85rem; padding:.85rem .9rem; margin-bottom:.65rem; position:relative; overflow:hidden;
+      animation: zonaCardIn .34s cubic-bezier(.34,1.56,.64,1) both;
+      transition: transform .12s ease, box-shadow .18s ease, border-color .18s ease;
+      content-visibility:auto; contain-intrinsic-size:0 150px; }
+    @keyframes zonaCardIn { from { opacity:0; transform:translateY(10px) scale(.985); } to { opacity:1; transform:translateY(0) scale(1); } }
+    /* Solo las primeras 20 cards reciben delay incremental (~32ms); el resto entra directo
+       para no encolar cientos de keyframes con zonas grandes. */
+    .zona-card:nth-child(-n+20) { animation-delay: calc(var(--i, 0) * 32ms); }
+    .zona-card:nth-child(n+21)  { animation: none; opacity:1; transform:none; }
+    /* Press táctil: scale-down + el borde se aviva (intuitivo, no mareante). */
+    .zona-card:active { transform:scale(.985); }
     .zona-card.bcg-estrella  { border-left-color:#ffd700; box-shadow:0 0 0 1px rgba(255,215,0,.18), 0 0 14px rgba(255,215,0,.10); }
     .zona-card.bcg-vaca      { border-left-color:#86efac; }
-    .zona-card.bcg-interro   { border-left-color:#8b5cf6; animation: cardSlideIn .28s ease both, zonaInterroPulse 2.4s ease-in-out infinite .3s; }
+    .zona-card.bcg-interro   { border-left-color:#8b5cf6; animation: zonaCardIn .34s cubic-bezier(.34,1.56,.64,1) both, zonaInterroPulse 2.4s ease-in-out infinite .3s; }
     .zona-card.bcg-perro     { border-left-color:#fca5a5; filter:saturate(.55); opacity:.86; }
     @keyframes zonaInterroPulse { 0%,100%{ box-shadow:0 0 0 1px rgba(139,92,246,.10) } 50%{ box-shadow:0 0 0 1px rgba(139,92,246,.32), 0 0 12px rgba(139,92,246,.16) } }
+    /* [RIZ UX] Ripple táctil sutil (violeta de marca) inyectado por _zonaRipple. */
+    .zona-ripple { position:absolute; border-radius:50%; transform:scale(0); background:radial-gradient(circle, rgba(139,92,246,.30), rgba(99,102,241,.14) 60%, transparent 70%); pointer-events:none; z-index:3; animation: zonaRipple .6s ease-out forwards; }
+    @keyframes zonaRipple { to { transform:scale(3.2); opacity:0; } }
     .zona-card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:.6rem; }
     .zona-card-name { font-weight:700; color:#f1f5f9; font-size:.92rem; }
-    .zona-bcg-badge { font-size:1.15rem; line-height:1; flex-shrink:0; }
+    .zona-bcg-badge { font-size:1.15rem; line-height:1; flex-shrink:0; display:inline-block; transform-origin:center; }
+    /* [RIZ UX] Micro-animación de entrada + carácter por cuadrante BCG. */
+    .zona-bcg-badge { animation: zonaBadgePop .4s cubic-bezier(.34,1.56,.64,1) both; }
+    @keyframes zonaBadgePop { from { opacity:0; transform:scale(.4); } to { opacity:1; transform:scale(1); } }
+    .bcg-estrella .zona-bcg-badge { animation: zonaBadgePop .4s cubic-bezier(.34,1.56,.64,1) both, zonaStarShimmer 3s ease-in-out infinite .4s; filter:drop-shadow(0 0 5px rgba(255,215,0,.55)); }
+    @keyframes zonaStarShimmer { 0%,100%{ transform:scale(1) rotate(0); filter:drop-shadow(0 0 4px rgba(255,215,0,.4)); } 45%{ transform:scale(1.12) rotate(-7deg); filter:drop-shadow(0 0 9px rgba(255,215,0,.85)); } }
+    .bcg-perro .zona-bcg-badge { filter:grayscale(.75) opacity(.7); }
+    .bcg-interro .zona-bcg-badge { animation: zonaBadgePop .4s cubic-bezier(.34,1.56,.64,1) both, zonaQPulse 2.6s ease-in-out infinite .4s; }
+    @keyframes zonaQPulse { 0%,100%{ opacity:.75; transform:scale(1); } 50%{ opacity:1; transform:scale(1.1); } }
     .zona-tend-badge { font-size:.66rem; font-weight:700; padding:.18rem .45rem; border-radius:.4rem; white-space:nowrap; }
     .zt-asc { background:rgba(99,102,241,.18); color:#a5b4fc; }
     .zt-desc{ background:rgba(245,158,11,.18); color:#fcd34d; }
@@ -12363,7 +12388,10 @@
     .zona-edit-ico { cursor:pointer; color:#8b5cf6; font-size:.8rem; margin-left:.25rem; }
     /* Sparkline */
     .zona-spark { display:flex; align-items:flex-end; gap:3px; height:26px; margin:.4rem 0; }
-    .zona-spark-bar { width:9px; background:linear-gradient(180deg,#8b5cf6,#6366f1); border-radius:2px 2px 0 0; min-height:3px; transition:height .3s; }
+    /* [RIZ UX] Crecimiento de barras al entrar (scaleY desde la base → no layout-thrash). */
+    .zona-spark-bar { width:9px; background:linear-gradient(180deg,#8b5cf6,#6366f1); border-radius:2px 2px 0 0; min-height:3px; transform-origin:bottom; transition:height .3s; animation: zonaSparkGrow .5s cubic-bezier(.34,1.56,.64,1) both; }
+    .zona-spark-bar:nth-child(1){ animation-delay:.02s } .zona-spark-bar:nth-child(2){ animation-delay:.08s } .zona-spark-bar:nth-child(3){ animation-delay:.14s } .zona-spark-bar:nth-child(4){ animation-delay:.2s }
+    @keyframes zonaSparkGrow { from { transform:scaleY(0); opacity:.3 } to { transform:scaleY(1); opacity:1 } }
     .zona-spark-lbl { font-size:.6rem; color:#64748b; margin-left:.4rem; align-self:center; }
     /* Badge vencimiento */
     .zona-venc { font-size:.7rem; display:flex; align-items:center; gap:.4rem; margin:.4rem 0; color:#94a3b8; }
@@ -12376,9 +12404,14 @@
     .zona-ia { font-size:.74rem; color:#cbd5e1; background:rgba(99,102,241,.08); border:1px dashed #334155; border-radius:.5rem; padding:.45rem .55rem; margin:.45rem 0; }
     /* Botones acciones */
     .zona-actions { display:flex; flex-wrap:wrap; gap:.45rem; margin-top:.55rem; }
-    .zona-btn-pedir { flex:1; min-width:140px; background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff; border:none; border-radius:.55rem; padding:.5rem .7rem; font-weight:700; font-size:.8rem; cursor:pointer; min-height:38px; }
+    .zona-btn-pedir { flex:1; min-width:140px; background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff; border:none; border-radius:.55rem; padding:.5rem .7rem; font-weight:700; font-size:.8rem; cursor:pointer; min-height:44px; position:relative; overflow:hidden; transition:transform .1s ease, box-shadow .18s ease, filter .15s; }
+    .zona-btn-pedir:hover:not(:disabled) { box-shadow:0 6px 18px -6px rgba(139,92,246,.6); filter:brightness(1.06); }
+    .zona-btn-pedir:active:not(:disabled) { transform:scale(.97); box-shadow:0 0 0 2px rgba(139,92,246,.4) inset; }
     .zona-btn-pedir:disabled { opacity:.6; cursor:default; }
-    .zona-btn-sec { background:#1e293b; color:#cbd5e1; border:1px solid #334155; border-radius:.55rem; padding:.5rem .7rem; font-weight:600; font-size:.78rem; cursor:pointer; min-height:38px; }
+    .zona-btn-sec { background:#1e293b; color:#cbd5e1; border:1px solid #334155; border-radius:.55rem; padding:.5rem .7rem; font-weight:600; font-size:.78rem; cursor:pointer; min-height:44px; position:relative; overflow:hidden; transition:transform .1s ease, border-color .15s, background .15s; }
+    .zona-btn-sec:hover:not(:disabled) { border-color:#475569; background:#243449; }
+    .zona-btn-sec:active:not(:disabled) { transform:scale(.97); }
+    .zona-btn-sec:disabled { opacity:.55; cursor:default; }
     .zona-chip-ok { display:inline-flex; align-items:center; gap:.3rem; font-size:.74rem; font-weight:700; color:#86efac; background:rgba(134,239,172,.12); border:1px solid rgba(134,239,172,.3); border-radius:999px; padding:.3rem .6rem; }
     /* Pulse / shake feedback reusable en zona */
     @keyframes zonaPulseOk { 0%{ box-shadow:0 0 0 0 rgba(134,239,172,.5) } 100%{ box-shadow:0 0 0 12px rgba(134,239,172,0) } }
@@ -12464,6 +12497,29 @@
     .zona-think-dots i:nth-child(3) { animation-delay:.36s; }
     @keyframes zonaThinkBob { 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-4px) } }
     @keyframes zonaThinkDot { 0%,60%,100%{ transform:translateY(0); opacity:.4 } 30%{ transform:translateY(-5px); opacity:1 } }
+    /* [RIZ UX] Skeleton de carga (shimmer) con la silueta real de una zona-card. */
+    .zona-skel-card { background:#0f172a; border:1px solid #1e293b; border-left:3px solid #1e293b; border-radius:.85rem; padding:.85rem .9rem; margin-bottom:.65rem; animation: zonaCardIn .3s ease both; animation-delay: calc(var(--i,0) * 70ms); }
+    .zona-skel-row { display:flex; align-items:center; justify-content:space-between; gap:.6rem; }
+    .zona-skel-title { height:14px; width:48%; border-radius:5px; }
+    .zona-skel-badge { height:18px; width:64px; border-radius:.4rem; }
+    .zona-skel-metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:.4rem; margin:.7rem 0; }
+    .zona-skel-metrics span { height:30px; border-radius:6px; }
+    .zona-skel-line { height:30px; border-radius:.5rem; margin:.45rem 0; }
+    .zona-skel-btn  { height:38px; flex:1; border-radius:.55rem; }
+    .zona-skel-btn2 { height:38px; width:38%; border-radius:.55rem; }
+    /* [RIZ UX] Respetar prefers-reduced-motion: sin movimiento, todo visible y estático.
+       (la háptica/SFX ya se silencian desde JS vía _zonaReduce). Solo afecta la vista zona. */
+    @media (prefers-reduced-motion: reduce) {
+      .zona-card, .zona-card.bcg-interro, .zona-skel-card,
+      .zona-bcg-badge, .bcg-estrella .zona-bcg-badge, .bcg-interro .zona-bcg-badge,
+      .zona-spark-bar, .zona-esp-bar, .zona-bubble, .zona-alerta-neg,
+      .zona-card.pulse-ok, .zona-card.shake, .zona-fresh-dot.stale, .zona-venc-dot.crit,
+      .zona-think-ico, .zona-think-dots i {
+        animation: none !important; opacity:1 !important; transform:none !important;
+      }
+      .zona-card:active, .zona-kpi:active, .zona-btn-pedir:active, .zona-btn-sec:active { transform:none !important; }
+      .zona-ripple { display:none !important; }
+    }
   </style>
 </head>
 <body class="h-full">
@@ -17845,7 +17901,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
        en GAS). El kill-switch server mos.config.MOS_ETIQ_DIRECTO='1' queda ON para completar el cutover,
        pero es INERTE-DE-FACTO (sin consumidor front). -->
 <script>
-  window.MOS_CONFIG = { catalogoDirecto: true, zonaModulo: true }; /* zonaModulo: ENCIENDE el módulo nuevo "Zona" (RIZ) — solo agrega un item de nav + una vista nueva (lectura sobre RPCs Supabase + acciones gated); NO toca nada existente. Apagar = quitar zonaModulo. [ROLLBACK 2026-06-15] Solo CATALOGO queda directo: su LECTURA (getProductos) Y escritura van directo a Supabase -> coherente + validado por el usuario. El resto (proveedores/provprod/gastos/pedidos/horario/finanzas/historial) VUELTO A GAS porque su READ-PATH sigue leyendo la HOJA via GAS y la sync es solo Hoja->Supabase: escribir directo haria que el dato NO aparezca en el read-back -> el usuario lo reingresa -> DUPLICACION (riesgo cazado por el 40x del dinero critico). Reactivar cada modulo SOLO cuando su lectura tambien sea directa (RPC de lectura sobre la sombra). */
+  window.MOS_CONFIG = { catalogoDirecto: true, zonaModulo: true, impresorasPNEdge: true }; /* impresorasPNEdge: lista/verifica impresoras por Edge `printers` (sin GAS, rápido); fallback a GAS ante error; apagar = quitar para volver a GAS. · zonaModulo: ENCIENDE el módulo nuevo "Zona" (RIZ) — solo agrega un item de nav + una vista nueva (lectura sobre RPCs Supabase + acciones gated); NO toca nada existente. Apagar = quitar zonaModulo. [ROLLBACK 2026-06-15] Solo CATALOGO queda directo: su LECTURA (getProductos) Y escritura van directo a Supabase -> coherente + validado por el usuario. El resto (proveedores/provprod/gastos/pedidos/horario/finanzas/historial) VUELTO A GAS porque su READ-PATH sigue leyendo la HOJA via GAS y la sync es solo Hoja->Supabase: escribir directo haria que el dato NO aparezca en el read-back -> el usuario lo reingresa -> DUPLICACION (riesgo cazado por el 40x del dinero critico). Reactivar cada modulo SOLO cuando su lectura tambien sea directa (RPC de lectura sobre la sombra). */
 </script>
 <script>
 (function(){
@@ -18502,7 +18558,7 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js?v=2.43.254"></script>
+<script src="js/api.js?v=2.43.255"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -18517,7 +18573,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.254"></script>
+<script src="js/app.js?v=2.43.255"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

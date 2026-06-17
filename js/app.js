@@ -38816,7 +38816,47 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       }
     } catch(_){}
   }
-  function _zonaVibrar(patron) { if (navigator.vibrate) { try { navigator.vibrate(patron); } catch(_){} } }
+  function _zonaVibrar(patron) { if (_zonaReduce()) return; if (navigator.vibrate) { try { navigator.vibrate(patron); } catch(_){} } }
+  // [RIZ UX] ¿el usuario pidió menos movimiento? → no animar ni vibrar.
+  function _zonaReduce() {
+    try { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (_) { return false; }
+  }
+  // [RIZ UX] Ripple táctil sutil en una card/botón de zona (transform/opacity → 60fps).
+  function _zonaRipple(ev, host) {
+    if (_zonaReduce()) return;
+    try {
+      const h = host || (ev && ev.currentTarget);
+      if (!h) return;
+      const rect = h.getBoundingClientRect();
+      const size = Math.max(rect.width, rect.height) * 0.65;
+      const x = (ev && ev.clientX != null) ? ev.clientX : (rect.left + rect.width / 2);
+      const y = (ev && ev.clientY != null) ? ev.clientY : (rect.top + rect.height / 2);
+      const r = document.createElement('span');
+      r.className = 'zona-ripple';
+      r.style.width = r.style.height = size + 'px';
+      r.style.left = (x - rect.left - size / 2) + 'px';
+      r.style.top  = (y - rect.top  - size / 2) + 'px';
+      if (getComputedStyle(h).position === 'static') h.style.position = 'relative';
+      h.appendChild(r);
+      setTimeout(() => { try { r.remove(); } catch (_) {} }, 620);
+    } catch (_) {}
+  }
+  // [RIZ UX] Count-up de un KPI (de 0 → valor) usando rAF. Respeta reduced-motion (pinta directo).
+  function _zonaCountUp(el, target) {
+    if (!el) return;
+    const end = Number(target);
+    if (!isFinite(end)) { el.textContent = (target == null ? '—' : target); return; }
+    if (_zonaReduce() || end === 0) { el.textContent = String(end); return; }
+    const dur = 620, t0 = (performance && performance.now) ? performance.now() : Date.now();
+    const ease = (x) => 1 - Math.pow(1 - x, 3);   // easeOutCubic
+    function frame(now) {
+      const p = Math.min(1, ((now || Date.now()) - t0) / dur);
+      el.textContent = String(Math.round(end * ease(p)));
+      if (p < 1) requestAnimationFrame(frame);
+      else el.textContent = String(end);
+    }
+    requestAnimationFrame(frame);
+  }
 
   // Helpers de presentación
   function _zonaNum(v) { const n = Number(v); return isFinite(n) ? n : 0; }
@@ -38935,7 +38975,22 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     } catch (_) { S.zonaList = S.zonaList || []; }
     _zonaPoblarSelector();
     if (!S.zonaActual && S.zonaList.length) S.zonaActual = S.zonaList[0].idZona || S.zonaList[0].id || S.zonaList[0].nombre;
+    _zonaInstalarRipple();
     await _zonaCargarPanel(force);
+  }
+  // [RIZ UX] Delegado único: ripple táctil al presionar cards/botones de la lista (no rompe onclicks).
+  let _zonaRippleInstalado = false;
+  function _zonaInstalarRipple() {
+    if (_zonaRippleInstalado) return;
+    const cont = $('zonaLista');
+    if (!cont) return;
+    _zonaRippleInstalado = true;
+    cont.addEventListener('pointerdown', (ev) => {
+      try {
+        const t = ev.target && ev.target.closest('.zona-btn-pedir,.zona-btn-sec,.zona-card');
+        if (t && !t.disabled) _zonaRipple(ev, t);
+      } catch (_) {}
+    }, { passive: true });
   }
 
   function _zonaPoblarSelector() {
@@ -38956,7 +39011,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   async function _zonaCargarPanel(force) {
     const lista = $('zonaLista');
     if (lista && (force || !S.zonaProductos.length)) {
-      lista.innerHTML = '<div class="skel h-32 rounded-xl mb-2"></div><div class="skel h-32 rounded-xl mb-2"></div><div class="skel h-32 rounded-xl"></div>';
+      // [RIZ UX] Skeleton de cards con shimmer (en vez de spinner pelado): silueta real de una zona-card.
+      lista.innerHTML = _zonaSkelCards(4);
     }
     try {
       const r = await API.zona.panel({ zona: S.zonaActual });
@@ -38969,7 +39025,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       S.zonaKpis = null;   // sin kpis del backend → _zonaPintarKpis los deriva de los items
       S.zonaFresh = (r._fresh !== false);
       _zonaPintarFresh();
-      _zonaPintarKpis();
+      _zonaPintarKpis(true);   // count-up animado al cargar
       renderZona();
     } catch (e) {
       if (lista) lista.innerHTML = `<div class="text-center py-12 text-red-400 text-sm">No se pudo cargar el panel de zona.<br><span class="text-slate-500">${_esc(e.message || String(e))}</span></div>`;
@@ -38983,13 +39039,32 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (lbl) lbl.textContent = S.zonaFresh ? 'datos al día' : 'datos con retraso';
   }
 
-  function _zonaPintarKpis() {
+  // [RIZ UX] Pinta los KPIs con count-up (0→valor). animar=false (re-pintado tras ajuste) → directo.
+  function _zonaPintarKpis(animar) {
     const k = S.zonaKpis || {};
-    const set = (id, v) => { const el = $(id); if (el) el.textContent = (v == null ? '—' : v); };
+    const set = (id, v) => {
+      const el = $(id);
+      if (!el) return;
+      if (animar) _zonaCountUp(el, v);
+      else el.textContent = (v == null ? '—' : v);
+    };
     set('zKpiFaltan',  k.faltan  != null ? k.faltan  : _zonaContar(p => _zonaNum(p.brecha) > 0));
     set('zKpiAlmacen', k.almacen != null ? k.almacen : _zonaSumar(p => Math.min(_zonaNum(p.brecha), _zonaNum(p.stockAlmacen))));
     set('zKpiExterno', k.externo != null ? k.externo : _zonaContar(p => _zonaNum(p.brecha) - _zonaNum(p.stockAlmacen) > 0));
     set('zKpiCero',    k.cero    != null ? k.cero    : _zonaContar(p => { const t = String(p.tendencia||'').toLowerCase(); return t === 'nula' || t === 'cero'; }));
+  }
+  // [RIZ UX] HTML de N cards skeleton con shimmer (silueta de una zona-card real).
+  function _zonaSkelCards(n) {
+    let out = '';
+    for (let i = 0; i < n; i++) {
+      out += `<div class="zona-skel-card" style="--i:${i}">
+        <div class="zona-skel-row"><span class="skel zona-skel-title"></span><span class="skel zona-skel-badge"></span></div>
+        <div class="zona-skel-metrics"><span class="skel"></span><span class="skel"></span><span class="skel"></span><span class="skel"></span></div>
+        <div class="skel zona-skel-line"></div>
+        <div class="zona-skel-row"><span class="skel zona-skel-btn"></span><span class="skel zona-skel-btn2"></span></div>
+      </div>`;
+    }
+    return out;
   }
   function _zonaContar(fn) { try { return S.zonaProductos.filter(fn).length; } catch(_) { return 0; } }
   function _zonaSumar(fn)  { try { return S.zonaProductos.reduce((a,p)=>a+Math.max(0,fn(p)),0); } catch(_) { return 0; } }
@@ -39034,6 +39109,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       return;
     }
     cont.innerHTML = arr.map(_zonaCardHtml).join('');
+    // [RIZ UX] Stagger de entrada: solo las primeras ~20 cards reciben delay incremental
+    // (cap para no demorar con 800 items; el resto aparece directo vía CSS nth-child).
+    if (!_zonaReduce()) {
+      const cards = cont.children, cap = Math.min(20, cards.length);
+      for (let i = 0; i < cap; i++) { try { cards[i].style.setProperty('--i', i); } catch (_) {} }
+    }
   }
   function _zonaTendRank(t) { t = String(t||'').toLowerCase(); if (t==='asc'||t==='ascendente') return 3; if (t==='est'||t==='estable') return 2; if (t==='desc'||t==='descendente') return 1; return 0; }
 
@@ -39170,19 +39251,21 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const f = S._zonaFiltros;
     f.kpi = (f.kpi === kpi) ? null : kpi;
     document.querySelectorAll('#zonaKpis .zona-kpi').forEach(el => el.classList.toggle('active', el.dataset.kpi === f.kpi));
-    _zonaSfx('tick');
+    _zonaSfx('tick'); _zonaVibrar(15);
     renderZona();
   }
   function zonaToggleTend(t) {
     const f = S._zonaFiltros;
     f.tend[t] = !f.tend[t];
     document.querySelectorAll('.zona-chip-f[data-tend]').forEach(el => el.classList.toggle('active', !!f.tend[el.dataset.tend]));
+    _zonaSfx('tick'); _zonaVibrar(15);
     renderZona();
   }
   function zonaToggleFiltro(name) {
     const f = S._zonaFiltros;
     if (name === 'brecha') f.brecha = !f.brecha;
     document.querySelectorAll('.zona-chip-f[data-filtro]').forEach(el => { if (el.dataset.filtro === name) el.classList.toggle('active', f[name]); });
+    _zonaSfx('tick'); _zonaVibrar(15);
     renderZona();
   }
 
@@ -39207,7 +39290,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       </span>`;
     const inp = $('zStep-' + sku);
     if (inp) { try { inp.focus(); inp.select(); } catch(_){} }
-    _zonaSfx('tick');
+    _zonaSfx('tick'); _zonaVibrar(15);
   }
   function _zonaSkuId(sku) { return String(sku); }
   function _zonaEsc(s) { return String(s).replace(/'/g, "\\'"); }
@@ -39500,6 +39583,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const ztit = $('zonaSugZona');
     if (ztit) { const zo = S.zonaList.find(x => (x.idZona || x.id || x.nombre) === S.zonaActual); ztit.textContent = (zo && zo.nombre) || S.zonaActual || 'Zona'; }
     openModal('modalZonaSug');
+    _zonaSfx('pop'); _zonaVibrar(20);
     // [MEJORA 6] Estado "pensando" claro (la IA del Edge tarda 2-4s, es normal).
     if (body) body.innerHTML = `<div class="zona-thinking">
         <span class="zona-think-ico">💡</span>
@@ -39555,6 +39639,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const body = $('zonaLotesBody');
     if (body) body.innerHTML = '<div class="skel h-16 rounded-lg mb-2"></div><div class="skel h-16 rounded-lg"></div>';
     openModal('modalZonaLotes');
+    _zonaSfx('pop'); _zonaVibrar(20);
     try {
       const r = await API.zona.lotesHistorial({ zona: S.zonaActual, skuBase: sku });
       const data = (r && r.data) || r || [];
@@ -39610,7 +39695,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     pintar('bcgInterro', 'interro',  buckets.interro);
     pintar('bcgPerro',   'perro',    buckets.perro);
     openModal('modalZonaBCG');
-    _zonaSfx('pop');
+    _zonaSfx('pop'); _zonaVibrar(20);
   }
   function zonaCerrarBCG() { closeModal('modalZonaBCG'); }
   // Acciones "rematar/góndola/promocionar" → informativas en Capa 4 (catálogo no se toca aquí). Capa 5.

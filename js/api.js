@@ -771,6 +771,57 @@ const API = (() => {
     return d;   // {content:[{text}], ...} crudo de Claude
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  // [IMPRESORAS · LISTAR/VERIFICAR vía Edge `printers`] Reemplaza el salto a GAS de
+  // listarImpresorasPN / verificarImpresoraAhora (que tardaban ~9s por la latencia de UrlFetchApp).
+  // La Edge MERGEA el catálogo MOS (mos.impresoras_lista/zonas_lista/estaciones_lista, service_role) con el
+  // estado EN VIVO de PrintNode (/printers + /computers) → devuelve el MISMO shape que el GAS, campo por campo.
+  // CAMINO COMPARTIDO (liquidaciones / costos guía / picker universal) → el shape DEBE ser BYTE-equivalente.
+  //
+  // Gate dedicado `_mosImpresorasPNEdge` (maestro OR mos_impresoras_pn_edge). Default OFF → INERTE: con el
+  // flag OFF jamás se entra a la Edge y va recto a GAS = IDÉNTICO a hoy. Con el flag ON: intenta la Edge y,
+  // ante CUALQUIER fallo (sin token / HTTP / {ok:false} / shape inesperado), devuelve null → _conFallbackMOS
+  // cae a GAS (red de seguridad). NUNCA rompe la impresión.
+  //
+  // ⚠️ El consumidor (app.js) hace `API.get(...)` que DESEMPAQUETA d.data (devuelve la respuesta cruda de la
+  //    Edge sin envoltura {ok,data}). Por eso estos helpers devuelven el ARRAY (list) / OBJETO (verify) PELADO
+  //    —tal como GAS, donde _fetch('GET') ya devuelve d.data—, NO el wrapper {ok,data}.
+  function _mosImpresorasPNEdge() { return !!_mosFlag('mos_impresoras_pn_edge', 'impresorasPNEdge'); }
+
+  // op:'list' → array de impresoras (shape de listarImpresorasPN) o null (→ GAS).
+  async function _listarImpresorasEdge() {
+    const token = await _mintTokenMOS();
+    if (!token) return null;                       // Edge mint-mos caída → GAS
+    try {
+      const res = await _sbFetchTimeout(`${_SB_URL}/functions/v1/printers`, {
+        method: 'POST',
+        headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ op: 'list' })
+      }, 20000);
+      const d = await res.json().catch(() => null);
+      if (!res.ok || !d || d.ok !== true || !Array.isArray(d.data)) return null;  // cualquier anomalía → GAS
+      return d.data;   // ARRAY pelado == d.data de GAS (API.get no re-desempaqueta esto)
+    } catch (_) { return null; }                   // red/HTTP → GAS
+  }
+
+  // op:'verify' → objeto estado de UNA impresora (shape de verificarImpresoraAhora) o null (→ GAS).
+  async function _verificarImpresoraEdge(params) {
+    const pid = params && (params.printerId != null ? params.printerId : params.id);
+    if (pid == null || String(pid).trim() === '') return null;   // sin id → GAS (idéntico a GAS: error → fallback)
+    const token = await _mintTokenMOS();
+    if (!token) return null;
+    try {
+      const res = await _sbFetchTimeout(`${_SB_URL}/functions/v1/printers`, {
+        method: 'POST',
+        headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ op: 'verify', printerId: String(pid) })
+      }, 15000);
+      const d = await res.json().catch(() => null);
+      if (!res.ok || !d || d.ok !== true || !d.data || typeof d.data !== 'object') return null;
+      return d.data;   // OBJETO pelado {state,reason,icon,color,online,...} == d.data de GAS
+    } catch (_) { return null; }
+  }
+
   // ── [RIZ · CAPA 5] Lista de compras como LECTURA (cablear botón "+Lista compras") ──
   // mos.zona_lista_compras(p) vía el wrapper profile 'mos' (igual que zona_panel). Devuelve r.data | null.
   async function _zonaListaComprasDirecto(params) { const r = await _sbRpcMOS('zona_lista_compras', { p: _zonaParams(params) }, 'mos'); return r; }
@@ -1584,6 +1635,15 @@ const API = (() => {
       if (action === 'meConsultarCliente')     { return _conFallbackMOS(async () => { const r = await _getMeConsultarClienteDirecto(p); return (r && r.encontrado) ? r : null; }, () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getResumenTodosDia')     { return _conFallbackMOS(() => _getResumenTodosDiaDirecto(p),    () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getEcoStatus')           { return _conFallbackMOS(() => _getEcoStatusDirecto(p),         () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      // [IMPRESORAS Edge] listar/verificar impresoras 100% Supabase (Edge `printers`, shape paritario con GAS) +
+      // fallback total a GAS. Gate dedicado _mosImpresorasPNEdge (maestro OR mos_impresoras_pn_edge), default OFF
+      // ⇒ recto a GAS = IDÉNTICO a hoy. CAMINO COMPARTIDO (liq/costos/picker) → shape BYTE-equivalente.
+      if (action === 'listarImpresorasPN' || action === 'getPrintNodePrinters') {
+        return _conFallbackMOS(() => _listarImpresorasEdge(),       () => _fetch('GET', { action, ...p }), _mosImpresorasPNEdge);
+      }
+      if (action === 'verificarImpresoraAhora') {
+        return _conFallbackMOS(() => _verificarImpresoraEdge(p),    () => _fetch('GET', { action, ...p }), _mosImpresorasPNEdge);
+      }
       return _fetch('GET',  { action, ...p });
     },
     // [DUAL-WRITE] post → escritura directa Supabase SOLO para el catálogo (pilot, gate mos_catalogo_directo /
@@ -1701,7 +1761,11 @@ const API = (() => {
       zonaTicketDiaDirecto:    _zonaTicketDiaDirecto,
       zonaLotesHistorialDirecto: _zonaLotesHistorialDirecto,
       zonaAjustarStock:        _zonaAjustarStock,
-      zonaPedirAlmacen:        _zonaPedirAlmacen
+      zonaPedirAlmacen:        _zonaPedirAlmacen,
+      // [IMPRESORAS Edge] gate + helpers de listar/verificar vía Edge `printers` (default OFF → GAS). Diagnóstico/test.
+      impresorasPNEdge:        _mosImpresorasPNEdge,    // ¿flag mos_impresoras_pn_edge (o maestro) ON?
+      listarImpresorasEdge:    _listarImpresorasEdge,   // op:'list' (array shape-GAS o null→GAS)
+      verificarImpresoraEdge:  _verificarImpresoraEdge  // op:'verify' (objeto shape-GAS o null→GAS)
     },
     // [RIZ · CAPA 4] API pública del módulo Zona. 100% Supabase (wrappers mos.zona_* → me.zona_*), sin GAS.
     // SOLO se invocan desde la vista 'zona' de app.js, que a su vez solo se abre con el flag mos_zona_modulo
