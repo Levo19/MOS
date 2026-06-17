@@ -709,6 +709,67 @@ const API = (() => {
     } });
   }
 
+  // ── [RIZ · CAPA 5] IMPRESIÓN 80mm vía Edge `riz-print` ─────────────────
+  // La Edge construye el ESC/POS server-side (lee mos.zona_ticket_dia / mos.zona_lista_compras con
+  // service_role) y lo manda a PrintNode. Acá solo armamos el body + token (igual que cualquier Edge).
+  // Devuelve {ok,printJobId} | {ok:false,error}. Lanza solo ante red/HTTP; nunca duplica (es 1 print job).
+  // tipo: 'ticket_diario' | 'lista_compras'. printerId obligatorio (lo elige el usuario en el front).
+  async function _zonaImprimir(params) {
+    const token = await _mintTokenMOS();
+    if (!token) return { ok: false, error: 'sin token (Edge mint-mos caída)' };
+    const p = params || {};
+    const zona = p.zona != null ? p.zona : p.zonaId;
+    const body = {
+      tipo: String(p.tipo || ''),
+      zona: zona != null ? String(zona) : undefined,
+      printerId: p.printerId,
+      ...(p.fecha != null ? { fecha: String(p.fecha) } : {}),
+      ...(p.semana != null ? { semana: p.semana } : {})
+    };
+    try { console.log('[RIZ] riz-print', { tipo: body.tipo, zona: body.zona, printerId: body.printerId }); } catch (_) {}
+    const res = await _sbFetchTimeout(`${_SB_URL}/functions/v1/riz-print`, {
+      method: 'POST',
+      headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }, 20000);
+    const d = await res.json().catch(() => null);
+    if (!res.ok || !d || d.ok === false) {
+      const e = new Error((d && d.error) || ('riz-print HTTP ' + res.status));
+      e.status = res.status;
+      throw e;
+    }
+    return d;
+  }
+
+  // ── [RIZ · CAPA 5] IA real vía Edge `/functions/ia` (Claude, JWT-gated) ─
+  // El frontend arma los `messages` (con los NÚMEROS determinísticos de las RPCs) y la Edge reenvía a
+  // Claude con la API key del secret. La IA SOLO redacta texto natural; los números NO los inventa.
+  // Devuelve el JSON crudo de Claude (el caller lee .content[0].text, igual que WH/ME). Lanza si falla
+  // → el caller usa el texto local determinista de fallback.
+  async function _zonaIA(payload) {
+    const token = await _mintTokenMOS();
+    if (!token) throw new Error('sin token (Edge mint-mos caída)');
+    const p = payload || {};
+    const body = {
+      messages: p.messages,
+      ...(p.system ? { system: String(p.system) } : {}),
+      ...(p.model ? { model: String(p.model) } : {}),
+      ...(p.max_tokens ? { max_tokens: p.max_tokens } : {})
+    };
+    const res = await _sbFetchTimeout(`${_SB_URL}/functions/v1/ia`, {
+      method: 'POST',
+      headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }, 30000);
+    const d = await res.json().catch(() => null);
+    if (!res.ok || !d || d.ok === false) throw new Error((d && d.error) || ('ia HTTP ' + res.status));
+    return d;   // {content:[{text}], ...} crudo de Claude
+  }
+
+  // ── [RIZ · CAPA 5] Lista de compras como LECTURA (cablear botón "+Lista compras") ──
+  // mos.zona_lista_compras(p) vía el wrapper profile 'mos' (igual que zona_panel). Devuelve r.data | null.
+  async function _zonaListaComprasDirecto(params) { const r = await _sbRpcMOS('zona_lista_compras', { p: _zonaParams(params) }, 'mos'); return r; }
+
   // ════════════════════════════════════════════════════════════════════
   // [FASE 2 · LOTE EVAL/HORARIO/ETIQ] read-paths directos (RPCs 98). Mismo patrón que 94 pero con dos shapes:
   //   · evaluaciones_dia / etiquetas_pendientes → data ARRAY camelCase (== d.data de GAS) → usan el helper común.
@@ -1647,7 +1708,11 @@ const API = (() => {
       ticketDia:       _zonaTicketDiaDirecto,   // mos.zona_ticket_dia(p)       → {ok,data:{zona,fecha,origen,lotes:[...]},_fresh}
       lotesHistorial:  _zonaLotesHistorialDirecto, // mos.zona_lotes_historial(p) → {ok,data:{...,items:[lotes FIFO]},_fresh}
       ajustarStock:    _zonaAjustarStock,       // mos.zona_ajustar_stock(p)    → {ok,data} (Supabase-only + log)
-      pedirAlmacen:    _zonaPedirAlmacen        // mos.zona_pedir_almacen(p)    → {ok,data} (Supabase-only + log)
+      pedirAlmacen:    _zonaPedirAlmacen,       // mos.zona_pedir_almacen(p)    → {ok,data} (Supabase-only + log)
+      // [RIZ · CAPA 5] nuevos: lista de compras (lectura), impresión 80mm (Edge riz-print), IA real (Edge /functions/ia)
+      listaCompras:    _zonaListaComprasDirecto,// mos.zona_lista_compras(p)    → {ok,data:{zona,semana,items:[...]},_fresh}
+      imprimir:        _zonaImprimir,           // Edge riz-print {tipo,zona,fecha|semana,printerId} → {ok,printJobId}
+      ia:              _zonaIA                  // Edge /functions/ia {messages,system?,model?} → JSON Claude (.content[0].text)
     },
   };
 })();

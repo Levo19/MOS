@@ -39187,11 +39187,123 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
   }
 
-  // + Lista compras: en Capa 4 informa (la persistencia [C] me.zona_compra_externa + impresión = Capa 5).
-  function zonaAgregarLista(sku, cantidad) {
+  // + Lista compras: [Capa 5] cableado a mos.zona_lista_compras (lectura). La RPC arma/lee la lista
+  // de compra externa de la semana; mostramos confirmación con el conteo real. Optimista + rollback de toast.
+  async function zonaAgregarLista(sku, cantidad) {
     _zonaSfx('pop'); _zonaVibrar(20);
     toast('Agregado a lista de compras (' + _zonaNum(cantidad) + ')', 'ok');
+    // BACKGROUND: confirmar contra la lista real de la semana (lectura). Si falla, solo logueamos (el optimista ya cerró).
+    try {
+      const r = await API.zona.listaCompras({ zona: S.zonaActual });
+      const data = (r && r.data) || r || {};
+      const items = Array.isArray(data.items) ? data.items : (Array.isArray(data.productos) ? data.productos : (Array.isArray(data) ? data : []));
+      if (items.length) toast('Lista del lunes: ' + items.length + ' producto(s) por comprar', 'info');
+    } catch (e) {
+      try { console.warn('[RIZ] zonaAgregarLista listaCompras:', e && (e.message || e)); } catch (_) {}
+    }
   }
+
+  // ══ [RIZ · CAPA 5] IMPRESIÓN 80mm (Edge riz-print → PrintNode) ══════════
+  // Reusa el PrinterPicker universal para elegir impresora (memoria por flowKey), luego dispara la
+  // Edge. Optimista: toast "enviado a impresora" + sonido print. Si falla, toast rojo + shake del botón.
+  async function _zonaImprimirFlow(tipo, label) {
+    let printerId = null;
+    try {
+      printerId = await abrirPrinterPicker({
+        titulo: '🖨 ' + label,
+        subtitulo: 'Zona ' + (S.zonaActual || ''),
+        filtroTipo: 'TICKET',
+        filtroZona: S.zonaActual,
+        flowKey: 'riz_' + tipo
+      });
+    } catch (_) { printerId = null; }
+    if (!printerId) return;   // usuario canceló
+    // OPTIMISTA
+    _zonaSfx('ok'); _zonaVibrar(30);
+    toast('🖨️ ' + label + ' enviado a impresora', 'ok');
+    try {
+      const r = await API.zona.imprimir({ tipo, zona: S.zonaActual, printerId });
+      if (!r || r.ok === false) throw new Error((r && r.error) || 'sin respuesta');
+    } catch (e) {
+      _zonaSfx('error'); _zonaVibrar([120,40,120]);
+      toast('No se pudo imprimir: ' + (e && (e.message || e)), 'error');
+    }
+  }
+  function zonaImprimirTicket() { return _zonaImprimirFlow('ticket_diario', 'Ticket del día'); }
+  function zonaImprimirLista()  { return _zonaImprimirFlow('lista_compras', 'Lista compras'); }
+
+  // ══ [RIZ · CAPA 5] PANEL DE SUGERENCIAS CON IA REAL (Edge /functions/ia) ══
+  // Arma un PROMPT con los NÚMEROS DETERMINÍSTICOS de cada producto (la IA NO inventa cantidades:
+  // solo redacta en lenguaje natural). Si la IA falla, deja el texto local determinista de fallback.
+  // Estructura el prompt para que devuelva JSON {urgente:[],ajustar:[],cero:[]} de strings cortos.
+  function _zonaPromptSugerencias() {
+    // Tomamos hasta 30 productos relevantes (brecha>0 o rotación cero) para no inflar tokens.
+    const arr = S.zonaProductos.filter(p => {
+      const t = String(p.tendencia || '').toLowerCase();
+      return _zonaNum(p.brecha) > 0 || t === 'nula' || t === 'cero';
+    }).slice(0, 30);
+    const datos = arr.map(p => {
+      const sku = String(p.skuBase || p.idProducto || '');
+      const stock = _zonaNum(p.stockZona != null ? p.stockZona : p.stock);
+      const esp = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
+      const brecha = (p.brecha != null) ? _zonaNum(p.brecha) : Math.max(0, esp - stock);
+      const alm = _zonaNum(p.stockAlmacen != null ? p.stockAlmacen : p.almacen);
+      return {
+        producto: String(p.descripcion || p.nombre || sku),
+        stockZona: stock, esperada: esp, brecha,
+        stockAlmacen: alm,
+        pedirAlmacen: Math.min(brecha, alm),
+        externo: Math.max(0, brecha - alm),
+        tendencia: String(p.tendencia || 'est'),
+        bcg: _zonaBCGClase(p)
+      };
+    });
+    return { arr, datos };
+  }
+  async function zonaAbrirSugerencias() {
+    const body = $('zonaSugBody');
+    const ztit = $('zonaSugZona');
+    if (ztit) { const zo = S.zonaList.find(x => (x.idZona || x.id || x.nombre) === S.zonaActual); ztit.textContent = (zo && zo.nombre) || S.zonaActual || 'Zona'; }
+    openModal('modalZonaSug');
+    if (body) body.innerHTML = '<div class="text-center py-8 text-slate-400 text-sm">💡 Analizando tu zona con IA…</div><div class="skel h-16 rounded-lg mb-2"></div><div class="skel h-16 rounded-lg"></div>';
+    const { datos } = _zonaPromptSugerencias();
+    // Fallback local determinista (si IA falla o no hay productos).
+    const renderLocal = () => {
+      if (!body) return;
+      if (!datos.length) { body.innerHTML = '<div class="text-center py-8 text-emerald-400 text-sm">✓ Todo al día. Sin sugerencias.</div>'; return; }
+      const urg = datos.filter(d => d.brecha > 0).map(d => `• ${_esc(d.producto)}: faltan ${d.brecha}${d.pedirAlmacen > 0 ? ` — pide ${d.pedirAlmacen} a almacén` : ''}${d.externo > 0 ? `, ${d.externo} a lista del lunes` : ''}.`);
+      const cero = datos.filter(d => d.bcg === 'perro').map(d => `• ${_esc(d.producto)}: sin rotación — promociona / góndola / remate.`);
+      body.innerHTML =
+        (urg.length ? `<div class="zona-sug-grp"><div class="zona-sug-h">🔴 URGENTE (${urg.length})</div>${urg.join('<br>')}</div>` : '') +
+        (cero.length ? `<div class="zona-sug-grp"><div class="zona-sug-h">⚫ ROTACIÓN CERO (${cero.length})</div>${cero.join('<br>')}</div>` : '');
+    };
+    if (!datos.length) { renderLocal(); return; }
+    // IA real: la IA SOLO redacta; los números van crudos en el prompt.
+    const system = 'Eres un asistente de reposición de tienda. Recibes datos NUMÉRICOS exactos por producto (stock en zona, stock objetivo "esperada", brecha, stock de almacén, cuánto pedir a almacén, cuánto comprar externo, tendencia, clasificación BCG). NUNCA inventes ni cambies cantidades: usa EXACTAMENTE los números dados. Redacta en español neutral (tuteo), conciso y accionable. Responde SOLO un JSON válido con la forma {"urgente":["..."],"ajustar":["..."],"cero":["..."]} donde cada string es una línea corta para el admin. urgente=productos con brecha>0; ajustar=tendencia decreciente que conviene reducir; cero=rotación nula (BCG perro). No agregues texto fuera del JSON.';
+    const userMsg = 'Datos de la zona (JSON):\n' + JSON.stringify(datos) + '\n\nGenera las sugerencias.';
+    try {
+      const d = await API.zona.ia({
+        system,
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 2048,
+        messages: [{ role: 'user', content: userMsg }]
+      });
+      const txt = (d && d.content && d.content[0] && d.content[0].text) || '';
+      let parsed = null;
+      try { parsed = JSON.parse(txt.replace(/^```json\s*/i, '').replace(/```\s*$/,'').trim()); } catch (_) { parsed = null; }
+      if (!parsed || typeof parsed !== 'object') throw new Error('respuesta IA no parseable');
+      if (!body) return;
+      const grp = (titulo, cls, arr2) => (Array.isArray(arr2) && arr2.length)
+        ? `<div class="zona-sug-grp"><div class="zona-sug-h">${titulo}</div>${arr2.map(s => '• ' + _esc(String(s))).join('<br>')}</div>` : '';
+      const html = grp('🔴 URGENTE', '', parsed.urgente) + grp('🟡 AJUSTAR', '', parsed.ajustar) + grp('⚫ ROTACIÓN CERO', '', parsed.cero);
+      body.innerHTML = html || '<div class="text-center py-8 text-emerald-400 text-sm">✓ Sin sugerencias.</div>';
+      _zonaSfx('pop');
+    } catch (e) {
+      try { console.warn('[RIZ] IA sugerencias falló, uso fallback local:', e && (e.message || e)); } catch (_) {}
+      renderLocal();
+    }
+  }
+  function zonaCerrarSugerencias() { closeModal('modalZonaSug'); }
 
   // ── Historial de lotes (FIFO) ────────────────────────────────────────────
   async function zonaVerLotes(sku) {
@@ -39290,6 +39402,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaPedirAlmacen, zonaAgregarLista,
     zonaVerLotes, zonaCerrarLotes,
     zonaAbrirBCG, zonaCerrarBCG, zonaBCGTapProducto, zonaBCGFiltrarCuadrante, zonaPlaceholder,
+    // [RIZ Capa 5] impresión 80mm + panel IA + lista compras
+    zonaImprimirTicket, zonaImprimirLista, zonaAbrirSugerencias, zonaCerrarSugerencias,
     // [v2.41.76] Cron diagnóstico
     abrirCronStatus, cronReinstalarTrigger, cronEjecutarAhora,
     // [v2.41.84] Auditoría admin viewer

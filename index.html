@@ -12385,6 +12385,10 @@
     .zona-card.pulse-ok { animation: zonaPulseOk .55s ease-out; }
     @keyframes zonaShake { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-6px)} 40%,80%{transform:translateX(6px)} }
     .zona-card.shake { animation: zonaShake .42s; }
+    /* Sugerencias IA (Capa 5) */
+    .zona-sug-body { font-size:.86rem; line-height:1.5; color:#cbd5e1; }
+    .zona-sug-grp { margin-bottom:1rem; }
+    .zona-sug-h { font-weight:700; font-size:.78rem; letter-spacing:.04em; text-transform:uppercase; color:#94a3b8; margin-bottom:.35rem; }
     /* Matriz BCG modal */
     .zona-bcg-grid { display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:.5rem; }
     .zona-bcg-quad { position:relative; border:1px solid #1e293b; border-radius:.7rem; min-height:150px; padding:.6rem; overflow:hidden; cursor:pointer; transition:border-color .15s, background .15s; }
@@ -14777,6 +14781,9 @@
         <select id="zonaSelector" class="zona-sel" onchange="MOS.zonaCambiarZona(this.value)"></select>
         <button class="zona-btn-sec" onclick="MOS.zonaRefrescar()" title="Recargar panel">⟳</button>
         <button class="zona-btn-sec" onclick="MOS.zonaAbrirBCG()" title="Matriz BCG">📊 Matriz BCG</button>
+        <button class="zona-btn-sec" onclick="MOS.zonaAbrirSugerencias()" title="Sugerencias con IA">💡 Sugerencias</button>
+        <button class="zona-btn-sec" onclick="MOS.zonaImprimirTicket()" title="Imprimir ticket del día (80mm)">🖨️ Ticket del día</button>
+        <button class="zona-btn-sec" onclick="MOS.zonaImprimirLista()" title="Imprimir lista de compras (80mm)">🖨️ Lista compras</button>
         <span style="flex:1"></span>
         <span class="text-xs text-slate-500 flex items-center gap-1">
           <span id="zonaFreshDot" class="zona-fresh-dot"></span>
@@ -14845,6 +14852,20 @@
           <button onclick="MOS.zonaCerrarLotes()" class="modal-close-x">×</button>
         </div>
         <div class="overflow-y-auto px-5 py-4" style="flex:1" id="zonaLotesBody">
+          <div class="skel h-16 rounded-lg mb-2"></div>
+          <div class="skel h-16 rounded-lg"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Modal: Sugerencias con IA (RIZ, Capa 5) ─────────────────── -->
+    <div id="modalZonaSug" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.zonaCerrarSugerencias()">
+      <div class="modal-box p-0" style="max-width:520px;display:flex;flex-direction:column;max-height:92vh">
+        <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
+          <h3 class="font-semibold text-amber-300 text-base">💡 Sugerencias · <span id="zonaSugZona">Zona</span></h3>
+          <button onclick="MOS.zonaCerrarSugerencias()" class="modal-close-x">×</button>
+        </div>
+        <div class="overflow-y-auto px-5 py-4 zona-sug-body" style="flex:1" id="zonaSugBody">
           <div class="skel h-16 rounded-lg mb-2"></div>
           <div class="skel h-16 rounded-lg"></div>
         </div>
@@ -17754,7 +17775,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
        en GAS). El kill-switch server mos.config.MOS_ETIQ_DIRECTO='1' queda ON para completar el cutover,
        pero es INERTE-DE-FACTO (sin consumidor front). -->
 <script>
-  window.MOS_CONFIG = { catalogoDirecto: true }; /* [ROLLBACK 2026-06-15] Solo CATALOGO queda directo: su LECTURA (getProductos) Y escritura van directo a Supabase -> coherente + validado por el usuario. El resto (proveedores/provprod/gastos/pedidos/horario/finanzas/historial) VUELTO A GAS porque su READ-PATH sigue leyendo la HOJA via GAS y la sync es solo Hoja->Supabase: escribir directo haria que el dato NO aparezca en el read-back -> el usuario lo reingresa -> DUPLICACION (riesgo cazado por el 40x del dinero critico). Reactivar cada modulo SOLO cuando su lectura tambien sea directa (RPC de lectura sobre la sombra). */
+  window.MOS_CONFIG = { catalogoDirecto: true, zonaModulo: true }; /* zonaModulo: ENCIENDE el módulo nuevo "Zona" (RIZ) — solo agrega un item de nav + una vista nueva (lectura sobre RPCs Supabase + acciones gated); NO toca nada existente. Apagar = quitar zonaModulo. [ROLLBACK 2026-06-15] Solo CATALOGO queda directo: su LECTURA (getProductos) Y escritura van directo a Supabase -> coherente + validado por el usuario. El resto (proveedores/provprod/gastos/pedidos/horario/finanzas/historial) VUELTO A GAS porque su READ-PATH sigue leyendo la HOJA via GAS y la sync es solo Hoja->Supabase: escribir directo haria que el dato NO aparezca en el read-back -> el usuario lo reingresa -> DUPLICACION (riesgo cazado por el 40x del dinero critico). Reactivar cada modulo SOLO cuando su lectura tambien sea directa (RPC de lectura sobre la sombra). */
 </script>
 <script>
 (function(){
@@ -18411,7 +18432,7 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js?v=2.43.251"></script>
+<script src="js/api.js?v=2.43.252"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -18426,7 +18447,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.251"></script>
+<script src="js/app.js?v=2.43.252"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

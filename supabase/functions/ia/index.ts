@@ -12,7 +12,7 @@ const CORS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
-const APPS_OK = new Set(['warehouseMos', 'mosExpress']);
+const APPS_OK = new Set(['warehouseMos', 'mosExpress', 'MOS']);   // [RIZ Capa 5] MOS reusa la Edge IA para el panel de sugerencias por zona
 const MODELO_DEFAULT = 'claude-haiku-4-5-20251001';
 // whitelist de modelos permitidos (evita que pidan opus u otros caros vía el proxy) — solo haiku/sonnet
 const MODELOS_OK = new Set(['claude-haiku-4-5-20251001', 'claude-3-5-haiku-20241022', 'claude-sonnet-4-6', 'claude-sonnet-4-5-20250929']);
