@@ -23,7 +23,14 @@ const MOS = (() => {
     _editingPrecioId: null,
     _ecoData: null,
     pnPendientes: [],
-    categorias: []
+    categorias: [],
+    // [RIZ Capa 4] Estado del módulo Zona (inerte si el flag mosZonaModulo está OFF)
+    zonaActual: null,        // idZona seleccionada
+    zonaList: [],            // catálogo de zonas para el selector
+    zonaProductos: [],       // cards crudos del panel (me.zona_panel)
+    zonaFresh: true,         // frescura de la sombra (chip)
+    zonaKpis: null,          // {faltan, almacen, externo, cero}
+    _zonaFiltros: { kpi: null, tend: {}, brecha: false, orden: 'brecha', q: '' }
   };
 
   function _getSession()      { try { return JSON.parse(localStorage.getItem(SESSION_KEY)); } catch { return null; } }
@@ -203,7 +210,7 @@ const MOS = (() => {
     document.querySelectorAll('#bottomnav .bnav-btn').forEach(b =>
       b.classList.toggle('active', b.dataset.view === viewName));
 
-    const titles = { dashboard:'Dashboard', catalogo:'Catálogo', almacen:'Almacén', proveedores:'Proveedores', cajas:'Cajas', finanzas:'Finanzas', config:'Configuración' };
+    const titles = { dashboard:'Dashboard', catalogo:'Catálogo', almacen:'Almacén', proveedores:'Proveedores', cajas:'Cajas', finanzas:'Finanzas', config:'Configuración', zona:'Zona' };
     const t = titles[viewName] || viewName;
     const pt = $('pageTitle'); if (pt) pt.textContent = t;
     const ptd = $('pageTitleDesktop'); if (ptd) ptd.textContent = t;
@@ -472,6 +479,27 @@ const MOS = (() => {
 
     // ── Indicador de conexión: listeners + render inicial ──
     _initNetStatusChip();
+
+    // [RIZ Capa 4] Revelar el nav de Zona SOLO si el flag mos_zona_modulo está ON.
+    // Default OFF → el item queda con .zona-nav-gated (display:none) y la app es idéntica
+    // a hoy. Los flags de la flota llegan async (mos.get_flags); reintentamos a 0/3/8s para
+    // captar el valor server-side cuando resuelva, sin bloquear el arranque.
+    _zonaRevelarNav();
+    setTimeout(_zonaRevelarNav, 3000);
+    setTimeout(_zonaRevelarNav, 8000);
+  }
+
+  // [RIZ Capa 4] Muestra/oculta los items de nav de Zona según el flag. Idempotente.
+  // El item nace con la clase .zona-nav-gated (CSS display:none). Si el flag está ON, le
+  // agregamos .zona-nav-shown (CSS lo fuerza visible). Si OFF, se la quitamos → vuelve a none.
+  function _zonaRevelarNav() {
+    let on = false;
+    try { on = !!(window.API && API.zona && API.zona.moduloOn && API.zona.moduloOn()); } catch (_) { on = false; }
+    try {
+      document.querySelectorAll('.zona-nav-gated').forEach(el => {
+        el.classList.toggle('zona-nav-shown', on);
+      });
+    } catch (_) {}
   }
 
   // ── LOGIN / LOCK ─────────────────────────────────────────────
@@ -968,6 +996,7 @@ const MOS = (() => {
         case 'finanzas':     await _loadFinanzas();    break;
         case 'tributario':   await _loadTributario();  break;
         case 'promociones':  await loadPromociones();  break;
+        case 'zona':         await loadZona();         break;  // [RIZ Capa 4]
       }
     } catch (e) {
       // Reload allowed next time
@@ -38750,9 +38779,491 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // [RIZ · CAPA 4] MÓDULO ZONA (Reposición Inteligente por Zona) — FRONTEND
+  // 100% Supabase (RPCs me.zona_* vía API.zona.*). Gated por flag mos_zona_modulo:
+  // loadZona() solo se invoca al navegar a 'zona', y el nav que la abre está oculto
+  // si el flag está OFF (default) → con el flag OFF la app es IDÉNTICA a hoy.
+  //
+  // PLACEHOLDERS Capa 5: la sugerencia IA del card es texto local determinista
+  // (la IA real del Edge /functions/ia llega en Capa 5); la impresión 80mm del
+  // ticket diario / lista de compras también es Capa 5.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // WebAudio iOS-safe — reusa el patrón _catSfx pero dedicado a Zona (resume en gesto).
+  let _zonaAudioCtx = null;
+  function _zonaSfx(tipo) {
+    try {
+      if (!_zonaAudioCtx) _zonaAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = _zonaAudioCtx;
+      if (ctx.state === 'suspended') { try { ctx.resume(); } catch(_){} }   // iOS: requiere gesto
+      const t = ctx.currentTime;
+      function tone(freq, dur, gainVal, opts) {
+        const o = ctx.createOscillator(); const g = ctx.createGain();
+        o.type = (opts && opts.type) || 'sine';
+        o.frequency.setValueAtTime(freq, t + (opts && opts.delay || 0));
+        if (opts && opts.glide) o.frequency.exponentialRampToValueAtTime(opts.glide, t + (opts.delay || 0) + dur);
+        g.gain.setValueAtTime(gainVal, t + (opts && opts.delay || 0));
+        g.gain.exponentialRampToValueAtTime(0.0001, t + (opts && opts.delay || 0) + dur);
+        o.connect(g); g.connect(ctx.destination);
+        o.start(t + (opts && opts.delay || 0)); o.stop(t + (opts && opts.delay || 0) + dur + 0.01);
+      }
+      switch (tipo) {
+        case 'tick':    tone(1300, .035, .035, { type:'triangle' }); break;
+        case 'ok':      tone(660, .08, .06); tone(990, .09, .06, { delay:.08 }); break;
+        case 'error':   tone(220, .22, .07, { type:'square', glide:140 }); break;
+        case 'pop':     tone(880, .05, .04, { type:'triangle' }); break;
+      }
+    } catch(_){}
+  }
+  function _zonaVibrar(patron) { if (navigator.vibrate) { try { navigator.vibrate(patron); } catch(_){} } }
+
+  // Helpers de presentación
+  function _zonaNum(v) { const n = Number(v); return isFinite(n) ? n : 0; }
+  // Clasificación BCG → estilos. clase: 'estrella'|'vaca'|'interro'|'perro'.
+  const _ZONA_BCG = {
+    estrella: { ico:'⭐', cls:'bcg-estrella', tendLbl:'▲ subiendo', tendCls:'zt-asc' },
+    vaca:     { ico:'🐄', cls:'bcg-vaca',     tendLbl:'≈ estable',  tendCls:'zt-est' },
+    interro:  { ico:'❓', cls:'bcg-interro',  tendLbl:'▲ subiendo', tendCls:'zt-asc' },
+    perro:    { ico:'🐕', cls:'bcg-perro',    tendLbl:'▼ bajando',  tendCls:'zt-desc' }
+  };
+  // Mapea tendencia cruda ('asc'|'desc'|'est'|'nula') a etiqueta/clase de badge.
+  function _zonaTendBadge(tend) {
+    switch (String(tend || '').toLowerCase()) {
+      case 'asc':  case 'ascendente':  return { lbl:'↑ ASCENDENTE', cls:'zt-asc' };
+      case 'desc': case 'descendente': return { lbl:'↓ DESCENDENTE', cls:'zt-desc' };
+      case 'nula': case 'cero':        return { lbl:'∅ SIN ROTAR',   cls:'zt-nula' };
+      default:                          return { lbl:'≈ ESTABLE',     cls:'zt-est' };
+    }
+  }
+  // Deriva el cuadrante BCG si el backend no lo manda (informativo): crecimiento × volumen.
+  function _zonaBCGClase(p) {
+    if (p.bcg) return String(p.bcg).toLowerCase();
+    const tend = String(p.tendencia || '').toLowerCase();
+    const volAlto = !!p._volAlto;   // el panel marca _volAlto vs mediana de la zona
+    if (tend === 'nula' || tend === 'cero') return 'perro';
+    const sube = (tend === 'asc' || tend === 'ascendente');
+    if (sube) return volAlto ? 'estrella' : 'interro';
+    if (tend === 'desc' || tend === 'descendente') return volAlto ? 'vaca' : 'perro';
+    return volAlto ? 'vaca' : 'interro';   // estable
+  }
+  // Badge de vencimiento por días restantes (criterio de alertas_operativas).
+  function _zonaVencBadge(dias) {
+    if (dias == null || !isFinite(Number(dias))) return null;
+    const d = Number(dias);
+    if (d > 30) return { dot:'ok',   txt:'Vence en ' + d + ' días' };
+    if (d >= 8) return { dot:'warn', txt:'Vence en ' + d + ' días' };
+    return { dot:'crit', txt:'Vence en ' + d + ' días ⚠' };
+  }
+
+  // ── Carga del módulo ──────────────────────────────────────────────────
+  async function loadZona(force) {
+    // Guard duro: si el flag está OFF, NO cargar nada (defensa extra al gate del nav).
+    let on = false;
+    try { on = !!(API.zona && API.zona.moduloOn && API.zona.moduloOn()); } catch (_) { on = false; }
+    if (!on) {
+      const lista = $('zonaLista');
+      if (lista) lista.innerHTML = '<div class="text-center py-16 text-slate-500">Módulo no habilitado</div>';
+      return;
+    }
+    // 1) Cargar el selector de zonas (reusa getZonas → array {idZona,nombre,activo})
+    try {
+      if (!S.zonaList.length) {
+        const zs = await API.get('getZonas', {}).catch(() => []);
+        S.zonaList = Array.isArray(zs) ? zs.filter(z => z && (z.activo === '1' || z.activo === true || z.activo == null)) : [];
+      }
+    } catch (_) { S.zonaList = S.zonaList || []; }
+    _zonaPoblarSelector();
+    if (!S.zonaActual && S.zonaList.length) S.zonaActual = S.zonaList[0].idZona || S.zonaList[0].id || S.zonaList[0].nombre;
+    await _zonaCargarPanel(force);
+  }
+
+  function _zonaPoblarSelector() {
+    const sel = $('zonaSelector');
+    if (!sel) return;
+    if (!S.zonaList.length) { sel.innerHTML = '<option value="">(sin zonas)</option>'; return; }
+    sel.innerHTML = S.zonaList.map(z => {
+      const id = z.idZona || z.id || z.nombre;
+      const nm = z.nombre || id;
+      return `<option value="${_esc(String(id))}">${_esc(String(nm))}</option>`;
+    }).join('');
+    if (S.zonaActual) sel.value = S.zonaActual;
+  }
+
+  // Escape simple para atributos/texto en templates (reusa CSS.escape donde haga falta).
+  function _esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  async function _zonaCargarPanel(force) {
+    const lista = $('zonaLista');
+    if (lista && (force || !S.zonaProductos.length)) {
+      lista.innerHTML = '<div class="skel h-32 rounded-xl mb-2"></div><div class="skel h-32 rounded-xl mb-2"></div><div class="skel h-32 rounded-xl"></div>';
+    }
+    try {
+      const r = await API.zona.panel({ zonaId: S.zonaActual });
+      if (!r || r.ok === false) throw new Error((r && r.error) || 'Panel sin datos');
+      const data = r.data || r;
+      S.zonaProductos = Array.isArray(data.productos) ? data.productos : (Array.isArray(data) ? data : []);
+      S.zonaKpis = data.kpis || null;
+      S.zonaFresh = (r._fresh !== false);
+      _zonaPintarFresh();
+      _zonaPintarKpis();
+      renderZona();
+    } catch (e) {
+      if (lista) lista.innerHTML = `<div class="text-center py-12 text-red-400 text-sm">No se pudo cargar el panel de zona.<br><span class="text-slate-500">${_esc(e.message || String(e))}</span></div>`;
+      // No relanzar: loadView ya marca loaded=false vía su catch si throw; acá preferimos no romper.
+    }
+  }
+
+  function _zonaPintarFresh() {
+    const dot = $('zonaFreshDot'), lbl = $('zonaFreshLbl');
+    if (dot) dot.className = 'zona-fresh-dot' + (S.zonaFresh ? '' : ' stale');
+    if (lbl) lbl.textContent = S.zonaFresh ? 'datos al día' : 'datos con retraso';
+  }
+
+  function _zonaPintarKpis() {
+    const k = S.zonaKpis || {};
+    const set = (id, v) => { const el = $(id); if (el) el.textContent = (v == null ? '—' : v); };
+    set('zKpiFaltan',  k.faltan  != null ? k.faltan  : _zonaContar(p => _zonaNum(p.brecha) > 0));
+    set('zKpiAlmacen', k.almacen != null ? k.almacen : _zonaSumar(p => Math.min(_zonaNum(p.brecha), _zonaNum(p.stockAlmacen))));
+    set('zKpiExterno', k.externo != null ? k.externo : _zonaContar(p => _zonaNum(p.brecha) - _zonaNum(p.stockAlmacen) > 0));
+    set('zKpiCero',    k.cero    != null ? k.cero    : _zonaContar(p => { const t = String(p.tendencia||'').toLowerCase(); return t === 'nula' || t === 'cero'; }));
+  }
+  function _zonaContar(fn) { try { return S.zonaProductos.filter(fn).length; } catch(_) { return 0; } }
+  function _zonaSumar(fn)  { try { return S.zonaProductos.reduce((a,p)=>a+Math.max(0,fn(p)),0); } catch(_) { return 0; } }
+
+  // ── Render de cards ────────────────────────────────────────────────────
+  function renderZona() {
+    const cont = $('zonaLista');
+    if (!cont) return;
+    const f = S._zonaFiltros;
+    let arr = S.zonaProductos.slice();
+
+    // Filtros
+    if (f.q) {
+      const q = f.q.toLowerCase();
+      arr = arr.filter(p => (String(p.descripcion||p.nombre||'').toLowerCase().indexOf(q) >= 0) || (String(p.skuBase||'').toLowerCase().indexOf(q) >= 0));
+    }
+    if (f.brecha) arr = arr.filter(p => _zonaNum(p.brecha) > 0);
+    const tendActivas = Object.keys(f.tend).filter(k => f.tend[k]);
+    if (tendActivas.length) {
+      arr = arr.filter(p => {
+        const t = String(p.tendencia||'').toLowerCase();
+        const norm = (t === 'ascendente') ? 'asc' : (t === 'descendente') ? 'desc' : (t === 'estable') ? 'est' : (t === 'cero') ? 'nula' : t;
+        return tendActivas.indexOf(norm) >= 0;
+      });
+    }
+    if (f.kpi === 'faltan')  arr = arr.filter(p => _zonaNum(p.brecha) > 0);
+    if (f.kpi === 'almacen') arr = arr.filter(p => _zonaNum(p.brecha) > 0 && _zonaNum(p.stockAlmacen) > 0);
+    if (f.kpi === 'externo') arr = arr.filter(p => (_zonaNum(p.brecha) - _zonaNum(p.stockAlmacen)) > 0);
+    if (f.kpi === 'cero')    arr = arr.filter(p => { const t = String(p.tendencia||'').toLowerCase(); return t === 'nula' || t === 'cero'; });
+
+    // Orden
+    if (f.orden === 'brecha')    arr.sort((a,b) => _zonaNum(b.brecha) - _zonaNum(a.brecha));
+    else if (f.orden === 'rotacion') arr.sort((a,b) => _zonaNum(b.rotacion) - _zonaNum(a.rotacion));
+    else if (f.orden === 'az')    arr.sort((a,b) => String(a.descripcion||a.nombre||'').localeCompare(String(b.descripcion||b.nombre||'')));
+    else if (f.orden === 'tendencia') arr.sort((a,b) => _zonaTendRank(b.tendencia) - _zonaTendRank(a.tendencia));
+
+    const stats = $('zonaStats');
+    if (stats) stats.textContent = `${arr.length} de ${S.zonaProductos.length} productos`;
+
+    if (!arr.length) {
+      cont.innerHTML = `<div class="text-center py-16 text-slate-500"><div class="text-4xl mb-3">🏪</div><div class="font-medium">Sin productos para mostrar</div><div class="text-xs mt-1">Ajusta los filtros</div></div>`;
+      return;
+    }
+    cont.innerHTML = arr.map(_zonaCardHtml).join('');
+  }
+  function _zonaTendRank(t) { t = String(t||'').toLowerCase(); if (t==='asc'||t==='ascendente') return 3; if (t==='est'||t==='estable') return 2; if (t==='desc'||t==='descendente') return 1; return 0; }
+
+  function _zonaCardHtml(p) {
+    const sku   = String(p.skuBase || p.idProducto || '');
+    const safe  = _esc(sku);
+    const nm    = _esc(p.descripcion || p.nombre || sku);
+    const stock = _zonaNum(p.stockZona != null ? p.stockZona : p.stock);
+    const esp   = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
+    const brecha = (p.brecha != null) ? _zonaNum(p.brecha) : Math.max(0, esp - stock);
+    const alm   = _zonaNum(p.stockAlmacen != null ? p.stockAlmacen : p.almacen);
+    const bcg   = _zonaBCGClase(p);
+    const bcgInfo = _ZONA_BCG[bcg] || _ZONA_BCG.vaca;
+    const tend  = _zonaTendBadge(p.tendencia);
+    const picos = Array.isArray(p.picos) ? p.picos.slice(-4) : [];
+    const pedirAlm = Math.min(brecha, alm);
+    const externo  = Math.max(0, brecha - alm);
+
+    // Sparkline (picos)
+    const maxP = Math.max(1, ...picos.map(_zonaNum));
+    const spark = picos.length
+      ? `<div class="zona-spark">${picos.map(v => `<div class="zona-spark-bar" style="height:${Math.max(3, Math.round(_zonaNum(v)/maxP*24))}px" title="${_zonaNum(v)}"></div>`).join('')}<span class="zona-spark-lbl">${picos.map(_zonaNum).join(' ')}</span></div>`
+      : '';
+
+    // Vencimiento
+    const venc = _zonaVencBadge(p.diasVencimiento != null ? p.diasVencimiento : p.dias_venc);
+    const vencHtml = venc
+      ? `<div class="zona-venc"><span class="zona-venc-dot ${venc.dot}"></span>${_esc(venc.txt)}<span class="zona-venc-link" onclick="MOS.zonaVerLotes('${safe}')">ver historial lotes</span></div>`
+      : '';
+
+    // Sugerencia IA (placeholder Capa 5 — texto local determinista)
+    let ia = '';
+    if (brecha > 0) {
+      ia = `Te faltan ${brecha} para estar listo.`;
+      if (pedirAlm > 0) ia += ` Almacén cubre ${pedirAlm} → pídelos.`;
+      if (externo > 0)  ia += ` Los ${externo} restantes van a tu lista del lunes.`;
+    } else if (bcg === 'perro') {
+      ia = 'Sin rotación: considera promocionar, mover a góndola o rematar.';
+    } else {
+      ia = 'Stock al día. Sin acción necesaria.';
+    }
+
+    // Acciones según cuadrante
+    let acciones;
+    if (bcg === 'perro' && brecha <= 0) {
+      acciones = `<button class="zona-btn-sec" onclick="MOS.zonaPlaceholder('Promocionar')">Promocionar</button>
+                  <button class="zona-btn-sec" onclick="MOS.zonaPlaceholder('Mover a góndola')">Mover a góndola</button>
+                  <button class="zona-btn-sec" onclick="MOS.zonaPlaceholder('Rematar')">Rematar</button>`;
+    } else {
+      acciones = `<button class="zona-btn-pedir" id="zPedir-${safe}" ${pedirAlm > 0 ? '' : 'disabled'} onclick="MOS.zonaPedirAlmacen('${safe}', ${pedirAlm})">${pedirAlm > 0 ? 'Pedir ' + pedirAlm + ' a almacén' : 'Almacén sin stock'}</button>
+                  <button class="zona-btn-sec" ${externo > 0 ? '' : 'disabled'} onclick="MOS.zonaAgregarLista('${safe}', ${externo})">+ Lista compras${externo > 0 ? ' (' + externo + ')' : ''}</button>`;
+    }
+
+    return `<div class="zona-card ${bcgInfo.cls}" id="zcard-${safe}" data-sku="${safe}">
+      <div class="zona-card-top">
+        <div class="zona-card-name">${nm}</div>
+        <div class="flex items-center gap-2">
+          <span class="zona-tend-badge ${tend.cls}">${tend.lbl}</span>
+          <span class="zona-bcg-badge" title="BCG: ${bcg}">${bcgInfo.ico}</span>
+        </div>
+      </div>
+      <div class="zona-metrics">
+        <div><div class="zona-metric-lbl">Stock zona</div><div class="zona-metric-val" id="zStock-${safe}">${stock}<span class="zona-edit-ico" onclick="MOS.zonaAjusteInline('${safe}')">✎</span></div></div>
+        <div><div class="zona-metric-lbl">Esperado</div><div class="zona-metric-val">${esp}</div></div>
+        <div><div class="zona-metric-lbl">Brecha</div><div class="zona-metric-val ${brecha > 0 ? 'brecha-pos' : 'brecha-zero'}" id="zBrecha-${safe}">${brecha > 0 ? '▲ ' + brecha : '✓ 0'}</div></div>
+        <div><div class="zona-metric-lbl">Almacén</div><div class="zona-metric-val">${alm}</div></div>
+      </div>
+      ${spark}
+      ${vencHtml}
+      <div class="zona-ia">💡 ${_esc(ia)}</div>
+      <div class="zona-actions">${acciones}</div>
+    </div>`;
+  }
+
+  // ── Selector / filtros / orden ─────────────────────────────────────────
+  function zonaCambiarZona(idZona) { S.zonaActual = idZona; S.zonaProductos = []; _zonaCargarPanel(true); }
+  function zonaRefrescar() { _zonaCargarPanel(true); }
+  function zonaSetOrden(v) { S._zonaFiltros.orden = v; renderZona(); }
+  function zonaFiltrar()   { S._zonaFiltros.q = ($('zonaSearch') && $('zonaSearch').value || '').trim(); renderZona(); }
+  function zonaToggleKpi(kpi) {
+    const f = S._zonaFiltros;
+    f.kpi = (f.kpi === kpi) ? null : kpi;
+    document.querySelectorAll('#zonaKpis .zona-kpi').forEach(el => el.classList.toggle('active', el.dataset.kpi === f.kpi));
+    _zonaSfx('tick');
+    renderZona();
+  }
+  function zonaToggleTend(t) {
+    const f = S._zonaFiltros;
+    f.tend[t] = !f.tend[t];
+    document.querySelectorAll('.zona-chip-f[data-tend]').forEach(el => el.classList.toggle('active', !!f.tend[el.dataset.tend]));
+    renderZona();
+  }
+  function zonaToggleFiltro(name) {
+    const f = S._zonaFiltros;
+    if (name === 'brecha') f.brecha = !f.brecha;
+    document.querySelectorAll('.zona-chip-f[data-filtro]').forEach(el => { if (el.dataset.filtro === name) el.classList.toggle('active', f[name]); });
+    renderZona();
+  }
+
+  // ── Ajuste inline de stock (✎) — optimista + dual-write + revertir+shake ──
+  function zonaAjusteInline(sku) {
+    const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
+    if (!p) return;
+    const cell = $('zStock-' + _zonaSkuId(sku));
+    if (!cell) return;
+    const cur = _zonaNum(p.stockZona != null ? p.stockZona : p.stock);
+    cell.innerHTML = `<span class="zona-stepper">
+        <button class="zona-step-btn" onclick="MOS.zonaStep('${_zonaEsc(sku)}',-1)">−</button>
+        <span class="zona-step-val" id="zStep-${_zonaEsc(sku)}">${cur}</span>
+        <button class="zona-step-btn" onclick="MOS.zonaStep('${_zonaEsc(sku)}',1)">+</button>
+        <button class="zona-step-btn" style="background:#16a34a;border-color:#16a34a" onclick="MOS.zonaConfirmarAjuste('${_zonaEsc(sku)}')">✓</button>
+      </span>`;
+    _zonaSfx('tick');
+  }
+  function _zonaSkuId(sku) { return String(sku); }
+  function _zonaEsc(s) { return String(s).replace(/'/g, "\\'"); }
+  function zonaStep(sku, delta) {
+    const v = $('zStep-' + sku);
+    if (!v) return;
+    let n = parseInt(v.textContent, 10) || 0;
+    n = Math.max(0, n + delta);
+    v.textContent = n;
+    _zonaSfx('tick');
+    _zonaVibrar(20);
+  }
+  async function zonaConfirmarAjuste(sku) {
+    const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
+    if (!p) return;
+    const v = $('zStep-' + sku);
+    const nuevo = v ? (parseInt(v.textContent, 10) || 0) : 0;
+    const antes = _zonaNum(p.stockZona != null ? p.stockZona : p.stock);
+    const card  = $('zcard-' + sku);
+    // OPTIMISTA: actualizar memoria + re-render del card al instante
+    if (p.stockZona != null) p.stockZona = nuevo; else p.stock = nuevo;
+    if (p.esperada != null || p.esperado != null) {
+      const esp = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
+      p.brecha = Math.max(0, esp - nuevo);
+    }
+    renderZona();
+    _zonaSfx('ok'); _zonaVibrar(30);
+    toast('Stock ajustado a ' + nuevo, 'ok');
+    // BACKGROUND: dual-write (Supabase-only + log; ver api.js cabecera RIZ)
+    try {
+      const r = await API.zona.ajustarStock({ zonaId: S.zonaActual, skuBase: sku, nuevo, stockAntes: antes });
+      if (r == null || r.ok === false) throw new Error((r && r.error) || 'sin commit');
+      _zonaPintarKpis();
+    } catch (e) {
+      // ROLLBACK + shake
+      if (p.stockZona != null) p.stockZona = antes; else p.stock = antes;
+      if (p.esperada != null || p.esperado != null) {
+        const esp = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
+        p.brecha = Math.max(0, esp - antes);
+      }
+      renderZona();
+      const c2 = $('zcard-' + sku);
+      if (c2) { c2.classList.remove('shake'); void c2.offsetWidth; c2.classList.add('shake'); }
+      _zonaSfx('error'); _zonaVibrar([120,40,120]);
+      toast('No se pudo ajustar: ' + (e.message || e), 'error');
+    }
+  }
+
+  // ── Pedir a almacén — optimista + triple feedback + revertir ─────────────
+  async function zonaPedirAlmacen(sku, cantidad) {
+    cantidad = _zonaNum(cantidad);
+    if (cantidad <= 0) return;
+    const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
+    if (!p) return;
+    const btn = $('zPedir-' + sku);
+    const card = $('zcard-' + sku);
+    // OPTIMISTA: chip "pedido ✓" + pulse + triple feedback
+    if (btn) {
+      btn.disabled = true;
+      btn.outerHTML = `<span class="zona-chip-ok" id="zPedir-${_zonaEsc(sku)}">✓ Pedido ${cantidad} (pendiente almacén)</span>`;
+    }
+    if (card) { card.classList.remove('pulse-ok'); void card.offsetWidth; card.classList.add('pulse-ok'); }
+    _zonaSfx('ok'); _zonaVibrar([80,60,80]);
+    // BACKGROUND
+    try {
+      const r = await API.zona.pedirAlmacen({ zonaId: S.zonaActual, skuBase: sku, cantidad });
+      if (r == null || r.ok === false) throw new Error((r && r.error) || 'sin commit');
+      toast('Pedido enviado a almacén', 'ok');
+    } catch (e) {
+      // ROLLBACK: restaurar botón + shake
+      const chip = $('zPedir-' + sku);
+      if (chip) chip.outerHTML = `<button class="zona-btn-pedir" id="zPedir-${_zonaEsc(sku)}" onclick="MOS.zonaPedirAlmacen('${_zonaEsc(sku)}', ${cantidad})">Pedir ${cantidad} a almacén</button>`;
+      if (card) { card.classList.remove('shake'); void card.offsetWidth; card.classList.add('shake'); }
+      _zonaSfx('error'); _zonaVibrar([120,40,120]);
+      toast('No se pudo pedir, reintenta', 'error');
+    }
+  }
+
+  // + Lista compras: en Capa 4 informa (la persistencia [C] me.zona_compra_externa + impresión = Capa 5).
+  function zonaAgregarLista(sku, cantidad) {
+    _zonaSfx('pop'); _zonaVibrar(20);
+    toast('Agregado a lista de compras (' + _zonaNum(cantidad) + ')', 'ok');
+  }
+
+  // ── Historial de lotes (FIFO) ────────────────────────────────────────────
+  async function zonaVerLotes(sku) {
+    const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
+    const tit = $('zonaLotesTitulo');
+    if (tit) tit.textContent = (p && (p.descripcion || p.nombre)) || sku;
+    const body = $('zonaLotesBody');
+    if (body) body.innerHTML = '<div class="skel h-16 rounded-lg mb-2"></div><div class="skel h-16 rounded-lg"></div>';
+    openModal('modalZonaLotes');
+    try {
+      const r = await API.zona.lotesHistorial({ zonaId: S.zonaActual, skuBase: sku });
+      const data = (r && r.data) || r || [];
+      const lotes = Array.isArray(data.lotes) ? data.lotes : (Array.isArray(data) ? data : []);
+      if (!body) return;
+      if (!lotes.length) { body.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm">Sin lotes registrados</div>'; return; }
+      let total = 0;
+      body.innerHTML = lotes.map((l, i) => {
+        const rest = _zonaNum(l.cantRestante != null ? l.cantRestante : l.restan);
+        total += rest;
+        const venc = _zonaVencBadge(l.diasVencimiento);
+        const ing = _esc(l.fechaIngreso || l.ingreso || '—');
+        const ve  = _esc(l.fechaVencimiento || l.vence || '—');
+        return `<div class="zona-card ${i === 0 ? 'bcg-estrella' : ''}" style="animation-delay:${i*60}ms;margin-bottom:.5rem">
+          <div class="flex items-center justify-between">
+            <div class="font-semibold text-slate-100 text-sm">Lote ${_esc(l.idLote || l.lote || (i+1))}${i === 0 ? ' <span class="text-xs text-amber-300">(se vende primero)</span>' : ''}</div>
+            ${venc ? `<span class="zona-venc-dot ${venc.dot}"></span>` : ''}
+          </div>
+          <div class="text-xs text-slate-400 mt-1">ingresó ${ing} · vence ${ve} · restan ${rest}un</div>
+        </div>`;
+      }).join('') + `<div class="text-xs text-slate-400 mt-2 pt-2" style="border-top:1px solid #1e293b">Total en zona: ${total}un</div>`;
+    } catch (e) {
+      if (body) body.innerHTML = `<div class="text-center py-8 text-red-400 text-sm">${_esc(e.message || String(e))}</div>`;
+    }
+  }
+  function zonaCerrarLotes() { closeModal('modalZonaLotes'); }
+
+  // ── Matriz BCG (modal 2×2 con burbujas) ──────────────────────────────────
+  function zonaAbrirBCG() {
+    const z = $('zonaBCGZona');
+    if (z) { const zo = S.zonaList.find(x => (x.idZona || x.id || x.nombre) === S.zonaActual); z.textContent = (zo && zo.nombre) || S.zonaActual || 'Zona'; }
+    const buckets = { estrella: [], vaca: [], interro: [], perro: [] };
+    const maxVol = Math.max(1, ...S.zonaProductos.map(p => _zonaNum(p.rotacion)));
+    S.zonaProductos.forEach(p => {
+      const cls = _zonaBCGClase(p);
+      if (buckets[cls]) buckets[cls].push(p);
+    });
+    const pintar = (id, cls, list) => {
+      const el = $(id);
+      if (!el) return;
+      if (!list.length) { el.innerHTML = '<span class="text-xs text-slate-600">—</span>'; return; }
+      el.innerHTML = list.map((p, i) => {
+        const sku = String(p.skuBase || p.idProducto || '');
+        const vol = _zonaNum(p.rotacion);
+        const size = Math.max(22, Math.round(22 + (vol / maxVol) * 24));   // 22..46px
+        const nm = (p.descripcion || p.nombre || sku);
+        return `<span class="zona-bubble bub-${cls}" style="min-width:${size}px;height:${size}px;animation-delay:${i*70}ms" title="${_esc(nm)} · rot ${vol}" onclick="MOS.zonaBCGTapProducto('${_zonaEsc(sku)}')">${_esc(String(nm).slice(0,8))}</span>`;
+      }).join('');
+    };
+    pintar('bcgEstrella','estrella', buckets.estrella);
+    pintar('bcgVaca',    'vaca',     buckets.vaca);
+    pintar('bcgInterro', 'interro',  buckets.interro);
+    pintar('bcgPerro',   'perro',    buckets.perro);
+    openModal('modalZonaBCG');
+    _zonaSfx('pop');
+  }
+  function zonaCerrarBCG() { closeModal('modalZonaBCG'); }
+  // Acciones "rematar/góndola/promocionar" → informativas en Capa 4 (catálogo no se toca aquí). Capa 5.
+  function zonaPlaceholder(nombre) { _zonaSfx('pop'); toast(nombre + ': disponible en Capa 5', 'info'); }
+  function zonaBCGTapProducto(sku) {
+    _zonaSfx('tick');
+    zonaCerrarBCG();
+    const card = $('zcard-' + sku);
+    if (card) { card.scrollIntoView({ behavior:'smooth', block:'center' }); card.classList.remove('pulse-ok'); void card.offsetWidth; card.classList.add('pulse-ok'); }
+  }
+  // Tap en un cuadrante → filtra el módulo a esa tendencia aproximada.
+  function zonaBCGFiltrarCuadrante(cuad) {
+    const f = S._zonaFiltros;
+    f.tend = {};
+    if (cuad === 'estrella' || cuad === 'interro') f.tend.asc = true;
+    else if (cuad === 'perro') f.tend.nula = true;
+    else if (cuad === 'vaca')  f.tend.est = true;
+    document.querySelectorAll('.zona-chip-f[data-tend]').forEach(el => el.classList.toggle('active', !!f.tend[el.dataset.tend]));
+    zonaCerrarBCG();
+    renderZona();
+    _zonaSfx('tick');
+  }
+
   // ── PUBLIC API ───────────────────────────────────────────────
   return {
     init, nav, refresh, fabAction, iconBusy,
+    // [RIZ Capa 4] Módulo Zona — solo activo si el flag mos_zona_modulo está ON
+    loadZona, renderZona, zonaCambiarZona, zonaRefrescar, zonaSetOrden, zonaFiltrar,
+    zonaToggleKpi, zonaToggleTend, zonaToggleFiltro,
+    zonaAjusteInline, zonaStep, zonaConfirmarAjuste,
+    zonaPedirAlmacen, zonaAgregarLista,
+    zonaVerLotes, zonaCerrarLotes,
+    zonaAbrirBCG, zonaCerrarBCG, zonaBCGTapProducto, zonaBCGFiltrarCuadrante, zonaPlaceholder,
     // [v2.41.76] Cron diagnóstico
     abrirCronStatus, cronReinstalarTrigger, cronEjecutarAhora,
     // [v2.41.84] Auditoría admin viewer

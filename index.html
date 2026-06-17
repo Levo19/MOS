@@ -12305,6 +12305,104 @@
       50%      { filter: drop-shadow(0 0 18px rgba(245,158,11,.8)); transform: scale(1.07); }
     }
     .lock-icon-svg { animation: lockPulse 2.8s ease-in-out infinite; }
+
+    /* ═══════════════════════════════════════════════════════════════════
+       RIZ · MÓDULO ZONA (Reposición Inteligente por Zona) — CAPA 4 frontend.
+       Gated por flag mosZonaModulo (default OFF) → estos estilos NO afectan
+       nada hasta que la vista exista en pantalla. Paleta MOS: slate-950 /
+       indigo / violet / oro. Sin dvh. iOS/Safari safe.
+       ═══════════════════════════════════════════════════════════════════ */
+    /* Nav item Zona oculto por default — init() agrega .zona-nav-shown solo si el flag ON.
+       Mientras NO esté shown, se fuerza display:none (cubre sidebar flex y bottom-nav). */
+    .zona-nav-gated:not(.zona-nav-shown) { display: none !important; }
+    .zona-header-bar { display:flex; flex-wrap:wrap; align-items:center; gap:.6rem; margin-bottom:.75rem; }
+    .zona-fresh-dot { width:9px; height:9px; border-radius:50%; display:inline-block; background:#86efac; box-shadow:0 0 6px rgba(134,239,172,.7); }
+    .zona-fresh-dot.stale { background:#f59e0b; box-shadow:0 0 6px rgba(245,158,11,.7); animation: zonaPulseAmber 1.6s ease-in-out infinite; }
+    @keyframes zonaPulseAmber { 0%,100%{opacity:1} 50%{opacity:.45} }
+    /* KPI chips-filtro */
+    .zona-kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.5rem; margin-bottom:.75rem; }
+    @media (max-width:560px){ .zona-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+    .zona-kpi { background:#0f172a; border:1px solid #1e293b; border-radius:.75rem; padding:.6rem .7rem; cursor:pointer; transition:border-color .15s, transform .12s, background .15s; text-align:left; }
+    .zona-kpi:hover { border-color:#334155; transform:translateY(-1px); }
+    .zona-kpi.active { border-color:#6366f1; background:rgba(99,102,241,.12); }
+    .zona-kpi-lbl { font-size:.62rem; text-transform:uppercase; letter-spacing:.04em; color:#94a3b8; }
+    .zona-kpi-val { font-size:1.25rem; font-weight:800; color:#e2e8f0; line-height:1.1; margin-top:.1rem; }
+    .zona-kpi.k-pedir .zona-kpi-val { color:#fca5a5; }
+    .zona-kpi.k-almacen .zona-kpi-val { color:#a5b4fc; }
+    .zona-kpi.k-externo .zona-kpi-val { color:#f59e0b; }
+    .zona-kpi.k-cero .zona-kpi-val { color:#94a3b8; }
+    /* Filtros + orden */
+    .zona-filtros { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; margin-bottom:.75rem; }
+    .zona-chip-f { font-size:.72rem; padding:.32rem .6rem; border-radius:999px; border:1px solid #334155; background:#0f172a; color:#cbd5e1; cursor:pointer; transition:all .15s; }
+    .zona-chip-f.active { border-color:#8b5cf6; background:rgba(139,92,246,.16); color:#ddd6fe; }
+    /* Card de producto */
+    .zona-card { background:#0f172a; border:1px solid #1e293b; border-left:3px solid #334155; border-radius:.85rem; padding:.85rem .9rem; margin-bottom:.65rem; animation: cardSlideIn .28s ease both; }
+    .zona-card.bcg-estrella  { border-left-color:#ffd700; box-shadow:0 0 0 1px rgba(255,215,0,.18), 0 0 14px rgba(255,215,0,.10); }
+    .zona-card.bcg-vaca      { border-left-color:#86efac; }
+    .zona-card.bcg-interro   { border-left-color:#8b5cf6; animation: cardSlideIn .28s ease both, zonaInterroPulse 2.4s ease-in-out infinite .3s; }
+    .zona-card.bcg-perro     { border-left-color:#fca5a5; filter:saturate(.55); opacity:.86; }
+    @keyframes zonaInterroPulse { 0%,100%{ box-shadow:0 0 0 1px rgba(139,92,246,.10) } 50%{ box-shadow:0 0 0 1px rgba(139,92,246,.32), 0 0 12px rgba(139,92,246,.16) } }
+    .zona-card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:.6rem; }
+    .zona-card-name { font-weight:700; color:#f1f5f9; font-size:.92rem; }
+    .zona-bcg-badge { font-size:1.15rem; line-height:1; flex-shrink:0; }
+    .zona-tend-badge { font-size:.66rem; font-weight:700; padding:.18rem .45rem; border-radius:.4rem; white-space:nowrap; }
+    .zt-asc { background:rgba(99,102,241,.18); color:#a5b4fc; }
+    .zt-desc{ background:rgba(245,158,11,.18); color:#fcd34d; }
+    .zt-est { background:rgba(148,163,184,.16); color:#cbd5e1; }
+    .zt-nula{ background:rgba(252,165,165,.16); color:#fca5a5; }
+    .zona-metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:.4rem; margin:.6rem 0; text-align:center; }
+    .zona-metric-lbl { font-size:.55rem; text-transform:uppercase; letter-spacing:.03em; color:#64748b; }
+    .zona-metric-val { font-size:1.1rem; font-weight:800; color:#e2e8f0; }
+    .zona-metric-val.brecha-pos { color:#fca5a5; }
+    .zona-metric-val.brecha-zero{ color:#86efac; }
+    /* Stepper ajuste inline */
+    .zona-stepper { display:inline-flex; align-items:center; gap:.35rem; margin-top:.2rem; }
+    .zona-step-btn { width:30px; height:30px; border-radius:.5rem; border:1px solid #334155; background:#1e293b; color:#e2e8f0; font-size:1.1rem; font-weight:800; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+    .zona-step-btn:active { transform:scale(.92); }
+    .zona-step-val { min-width:34px; text-align:center; font-weight:800; color:#f1f5f9; }
+    .zona-edit-ico { cursor:pointer; color:#8b5cf6; font-size:.8rem; margin-left:.25rem; }
+    /* Sparkline */
+    .zona-spark { display:flex; align-items:flex-end; gap:3px; height:26px; margin:.4rem 0; }
+    .zona-spark-bar { width:9px; background:linear-gradient(180deg,#8b5cf6,#6366f1); border-radius:2px 2px 0 0; min-height:3px; transition:height .3s; }
+    .zona-spark-lbl { font-size:.6rem; color:#64748b; margin-left:.4rem; align-self:center; }
+    /* Badge vencimiento */
+    .zona-venc { font-size:.7rem; display:flex; align-items:center; gap:.4rem; margin:.4rem 0; color:#94a3b8; }
+    .zona-venc-dot { width:8px; height:8px; border-radius:50%; }
+    .zona-venc-dot.ok   { background:#86efac; }
+    .zona-venc-dot.warn { background:#f59e0b; }
+    .zona-venc-dot.crit { background:#fca5a5; animation: zonaPulseAmber 1.1s ease-in-out infinite; }
+    .zona-venc-link { color:#a5b4fc; cursor:pointer; text-decoration:underline; }
+    /* Sugerencia IA placeholder (Capa 5) */
+    .zona-ia { font-size:.74rem; color:#cbd5e1; background:rgba(99,102,241,.08); border:1px dashed #334155; border-radius:.5rem; padding:.45rem .55rem; margin:.45rem 0; }
+    /* Botones acciones */
+    .zona-actions { display:flex; flex-wrap:wrap; gap:.45rem; margin-top:.55rem; }
+    .zona-btn-pedir { flex:1; min-width:140px; background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff; border:none; border-radius:.55rem; padding:.5rem .7rem; font-weight:700; font-size:.8rem; cursor:pointer; min-height:38px; }
+    .zona-btn-pedir:disabled { opacity:.6; cursor:default; }
+    .zona-btn-sec { background:#1e293b; color:#cbd5e1; border:1px solid #334155; border-radius:.55rem; padding:.5rem .7rem; font-weight:600; font-size:.78rem; cursor:pointer; min-height:38px; }
+    .zona-chip-ok { display:inline-flex; align-items:center; gap:.3rem; font-size:.74rem; font-weight:700; color:#86efac; background:rgba(134,239,172,.12); border:1px solid rgba(134,239,172,.3); border-radius:999px; padding:.3rem .6rem; }
+    /* Pulse / shake feedback reusable en zona */
+    @keyframes zonaPulseOk { 0%{ box-shadow:0 0 0 0 rgba(134,239,172,.5) } 100%{ box-shadow:0 0 0 12px rgba(134,239,172,0) } }
+    .zona-card.pulse-ok { animation: zonaPulseOk .55s ease-out; }
+    @keyframes zonaShake { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-6px)} 40%,80%{transform:translateX(6px)} }
+    .zona-card.shake { animation: zonaShake .42s; }
+    /* Matriz BCG modal */
+    .zona-bcg-grid { display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:.5rem; }
+    .zona-bcg-quad { position:relative; border:1px solid #1e293b; border-radius:.7rem; min-height:150px; padding:.6rem; overflow:hidden; cursor:pointer; transition:border-color .15s, background .15s; }
+    .zona-bcg-quad:hover { border-color:#475569; }
+    .zona-bcg-quad.q-estrella { background:rgba(255,215,0,.05); }
+    .zona-bcg-quad.q-vaca     { background:rgba(134,239,172,.04); }
+    .zona-bcg-quad.q-interro  { background:rgba(139,92,246,.05); }
+    .zona-bcg-quad.q-perro    { background:rgba(252,165,165,.04); }
+    .zona-bcg-qtitle { font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:#cbd5e1; margin-bottom:.3rem; }
+    .zona-bubble { display:inline-flex; align-items:center; justify-content:center; border-radius:999px; color:#0b1220; font-weight:800; font-size:.62rem; margin:2px; padding:0 .35rem; cursor:pointer; opacity:0; transform:translateY(-18px); animation: zonaBubbleDrop .5s cubic-bezier(.34,1.56,.64,1) forwards; transition:transform .15s, box-shadow .15s; }
+    .zona-bubble:hover { transform:translateY(-3px) scale(1.06); box-shadow:0 4px 14px rgba(0,0,0,.4); }
+    @keyframes zonaBubbleDrop { to { opacity:1; transform:translateY(0); } }
+    .bub-estrella { background:linear-gradient(135deg,#ffe066,#ffd700); }
+    .bub-vaca     { background:linear-gradient(135deg,#bbf7d0,#86efac); }
+    .bub-interro  { background:linear-gradient(135deg,#c4b5fd,#8b5cf6); color:#fff; }
+    .bub-perro    { background:linear-gradient(135deg,#cbd5e1,#94a3b8); }
+    /* Selector de zona */
+    .zona-sel { background:#0f172a; border:1px solid #334155; color:#e2e8f0; border-radius:.55rem; padding:.4rem .6rem; font-size:.85rem; font-weight:600; min-height:38px; }
   </style>
 </head>
 <body class="h-full">
@@ -12345,6 +12443,12 @@
       <div class="nav-dot"></div>
       <svg class="nav-icon shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-6 9 6v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg>
       <span class="nav-label whitespace-nowrap">Almacén</span>
+    </button>
+    <!-- [RIZ Capa 4] Item Zona — gated por flag mosZonaModulo (oculto por default; init lo revela si el flag ON) -->
+    <button data-view="zona" class="nav-item zona-nav-gated w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('zona')">
+      <div class="nav-dot"></div>
+      <svg class="nav-icon shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h18"/><path d="M3 14h18"/><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16"/></svg>
+      <span class="nav-label whitespace-nowrap">Zona</span>
     </button>
     <button data-view="proveedores" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('proveedores')">
       <div class="nav-dot"></div>
@@ -14661,6 +14765,92 @@
       </div>
     </section><!-- /view-promociones -->
 
+    <!-- ═══ VIEW: ZONA (RIZ — Reposición Inteligente por Zona) ══════════════
+         CAPA 4 · 100% Supabase (RPCs me.zona_*). Gated por flag mosZonaModulo
+         (default OFF): la sección existe pero el nav que la abre está oculto,
+         y loadZona() solo se invoca al navegar. Con el flag OFF la app es
+         idéntica a hoy. -->
+    <section id="view-zona" class="view hidden">
+      <!-- Encabezado: selector de zona + refrescar + frescura -->
+      <div class="zona-header-bar">
+        <span class="text-lg font-bold text-slate-100">🏪 Zona</span>
+        <select id="zonaSelector" class="zona-sel" onchange="MOS.zonaCambiarZona(this.value)"></select>
+        <button class="zona-btn-sec" onclick="MOS.zonaRefrescar()" title="Recargar panel">⟳</button>
+        <button class="zona-btn-sec" onclick="MOS.zonaAbrirBCG()" title="Matriz BCG">📊 Matriz BCG</button>
+        <span style="flex:1"></span>
+        <span class="text-xs text-slate-500 flex items-center gap-1">
+          <span id="zonaFreshDot" class="zona-fresh-dot"></span>
+          <span id="zonaFreshLbl">—</span>
+        </span>
+      </div>
+
+      <!-- KPIs chips-filtro -->
+      <div class="zona-kpis" id="zonaKpis">
+        <button class="zona-kpi k-pedir"   data-kpi="faltan"  onclick="MOS.zonaToggleKpi('faltan')"><div class="zona-kpi-lbl">Faltan pedir</div><div class="zona-kpi-val" id="zKpiFaltan">—</div></button>
+        <button class="zona-kpi k-almacen" data-kpi="almacen" onclick="MOS.zonaToggleKpi('almacen')"><div class="zona-kpi-lbl">Pedir a almacén</div><div class="zona-kpi-val" id="zKpiAlmacen">—</div></button>
+        <button class="zona-kpi k-externo" data-kpi="externo" onclick="MOS.zonaToggleKpi('externo')"><div class="zona-kpi-lbl">Comprar externo</div><div class="zona-kpi-val" id="zKpiExterno">—</div></button>
+        <button class="zona-kpi k-cero"    data-kpi="cero"    onclick="MOS.zonaToggleKpi('cero')"><div class="zona-kpi-lbl">Rotación cero</div><div class="zona-kpi-val" id="zKpiCero">—</div></button>
+      </div>
+
+      <!-- Filtros + orden + búsqueda -->
+      <div class="zona-filtros">
+        <span class="zona-chip-f" data-tend="asc"  onclick="MOS.zonaToggleTend('asc')">↑ Sube</span>
+        <span class="zona-chip-f" data-tend="desc" onclick="MOS.zonaToggleTend('desc')">↓ Baja</span>
+        <span class="zona-chip-f" data-tend="est"  onclick="MOS.zonaToggleTend('est')">≈ Estable</span>
+        <span class="zona-chip-f" data-tend="nula" onclick="MOS.zonaToggleTend('nula')">∅ Sin rotar</span>
+        <span class="zona-chip-f" data-filtro="brecha" onclick="MOS.zonaToggleFiltro('brecha')">Brecha &gt; 0</span>
+        <select id="zonaOrden" class="zona-sel" onchange="MOS.zonaSetOrden(this.value)">
+          <option value="brecha">Orden: Brecha ▾</option>
+          <option value="tendencia">Orden: Tendencia</option>
+          <option value="rotacion">Orden: Rotación</option>
+          <option value="az">Orden: A-Z</option>
+        </select>
+        <input id="zonaSearch" type="search" class="zona-sel" style="min-width:160px" placeholder="🔎 Buscar producto…" oninput="MOS.zonaFiltrar()" autocomplete="off">
+      </div>
+
+      <div id="zonaStats" class="text-xs text-slate-500 mb-2"></div>
+
+      <!-- Cards de producto -->
+      <div id="zonaLista" class="space-y-2">
+        <div class="skel h-32 rounded-xl"></div>
+        <div class="skel h-32 rounded-xl"></div>
+        <div class="skel h-32 rounded-xl"></div>
+      </div>
+    </section><!-- /view-zona -->
+
+    <!-- ── Modal: Matriz BCG (RIZ) ─────────────────────────────────── -->
+    <div id="modalZonaBCG" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.zonaCerrarBCG()">
+      <div class="modal-box p-0" style="max-width:640px;display:flex;flex-direction:column;max-height:92vh">
+        <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
+          <h3 class="font-semibold text-violet-300 text-base">📊 Matriz BCG · <span id="zonaBCGZona">Zona</span></h3>
+          <button onclick="MOS.zonaCerrarBCG()" class="modal-close-x">×</button>
+        </div>
+        <div class="overflow-y-auto px-5 py-4" style="flex:1">
+          <div class="text-xs text-slate-500 mb-3">Crecimiento (tendencia) ▲ · Volumen (rotación de tu zona) ▶ · tamaño de burbuja = volumen · toca un cuadrante para filtrar</div>
+          <div class="zona-bcg-grid">
+            <div class="zona-bcg-quad q-estrella" onclick="MOS.zonaBCGFiltrarCuadrante('estrella')"><div class="zona-bcg-qtitle">⭐ Estrellas</div><div id="bcgEstrella"></div></div>
+            <div class="zona-bcg-quad q-interro"  onclick="MOS.zonaBCGFiltrarCuadrante('interro')"><div class="zona-bcg-qtitle">❓ Interrogantes</div><div id="bcgInterro"></div></div>
+            <div class="zona-bcg-quad q-vaca"     onclick="MOS.zonaBCGFiltrarCuadrante('vaca')"><div class="zona-bcg-qtitle">🐄 Vacas</div><div id="bcgVaca"></div></div>
+            <div class="zona-bcg-quad q-perro"    onclick="MOS.zonaBCGFiltrarCuadrante('perro')"><div class="zona-bcg-qtitle">🐕 Perros</div><div id="bcgPerro"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Modal: Historial de lotes / vencimientos (RIZ, FIFO) ────── -->
+    <div id="modalZonaLotes" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.zonaCerrarLotes()">
+      <div class="modal-box p-0" style="max-width:480px;display:flex;flex-direction:column;max-height:92vh">
+        <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
+          <h3 class="font-semibold text-indigo-300 text-base">🗓️ Lotes · <span id="zonaLotesTitulo">Producto</span></h3>
+          <button onclick="MOS.zonaCerrarLotes()" class="modal-close-x">×</button>
+        </div>
+        <div class="overflow-y-auto px-5 py-4" style="flex:1" id="zonaLotesBody">
+          <div class="skel h-16 rounded-lg mb-2"></div>
+          <div class="skel h-16 rounded-lg"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- ── Modal flotante: editar/crear promoción ─────────────────── -->
     <div id="modalPromoEdit" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.promoVolverLista()">
       <div class="modal-box p-0" style="max-width:560px;display:flex;flex-direction:column;max-height:92vh">
@@ -15306,6 +15496,13 @@
       <div class="bnav-pill">
         <span class="bnav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></span>
         <span class="bnav-lbl">Cajas</span>
+      </div>
+    </button>
+    <!-- [RIZ Capa 4] Bottom-nav Zona — gated por flag mosZonaModulo -->
+    <button data-view="zona" class="bnav-btn zona-nav-gated" onclick="MOS.nav('zona')">
+      <div class="bnav-pill">
+        <span class="bnav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M3 14h18"/><path d="M8 4v16"/></svg></span>
+        <span class="bnav-lbl">Zona</span>
       </div>
     </button>
     <button data-view="finanzas" class="bnav-btn" onclick="MOS.nav('finanzas')">
@@ -18214,7 +18411,7 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js?v=2.43.249"></script>
+<script src="js/api.js?v=2.43.250"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -18229,7 +18426,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.249"></script>
+<script src="js/app.js?v=2.43.250"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
