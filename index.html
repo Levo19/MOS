@@ -12472,6 +12472,27 @@
     .zona-mini-btn:active { transform:scale(.93); }
     .zona-mini-cero { background:#7c2d12; border-color:#9a3412; color:#fed7aa; }
     .zona-mini-ok   { background:#16a34a; border-color:#16a34a; color:#fff; }
+    /* [MEJORA 3] disclosure + filas SOLO LECTURA del almacén (sin inputs) */
+    .zona-cod-disc-alm { color:#86efac; }
+    .zona-cod-row-ro { align-items:center; }
+    .zona-cod-alm-st { display:flex; flex-direction:column; align-items:flex-end; flex-shrink:0; font-size:.86rem; color:#bbf7d0; }
+    .zona-cod-alm-st b { font-weight:800; font-variant-numeric:tabular-nums; }
+    .zona-cod-alm-lbl { font-size:.52rem; text-transform:uppercase; letter-spacing:.04em; color:#64748b; }
+    /* [SPLIT] Separador entre CON ROTACIÓN y ROTACIÓN CERO */
+    .zona-sep { display:flex; align-items:center; gap:.6rem; margin:1.1rem .15rem .7rem; }
+    .zona-sep-line { flex:1; height:1px; background:linear-gradient(90deg,transparent,#334155,transparent); }
+    .zona-sep-lbl { font-size:.66rem; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:#94a3b8; white-space:nowrap; flex-shrink:0; }
+    /* [MEJORA 2] Card ROTACIÓN CERO: apagada/secundaria (gris-ámbar tenue, leve desaturado).
+       No "rota": legible, solo claramente menos protagónica que las de rotación viva.
+       (Stock negativo manda: .zona-neg sigue ganando con su tinte rojo + filter:none.) */
+    .zona-card.zona-rotcero { background:#0e1422; border-color:#26211a; border-left-color:#a16207; filter:saturate(.72); opacity:.92; box-shadow:none; }
+    .zona-card.zona-rotcero .zona-card-name { color:#cbd5e1; }
+    .zona-card.zona-rotcero .zona-bcg-badge { filter:grayscale(.5) opacity(.8); animation:none; }
+    .zona-rotcero-chip { font-size:.62rem; font-weight:800; padding:.16rem .42rem; border-radius:.4rem; white-space:nowrap; color:#fcd34d; background:rgba(161,98,7,.18); border:1px solid rgba(202,138,4,.4); }
+    .zona-rotcero-hint { font-size:.7rem; color:#d6c89a; background:rgba(161,98,7,.08); border:1px dashed rgba(202,138,4,.35); border-radius:.5rem; padding:.4rem .55rem; margin:.4rem 0; }
+    .zona-rotcero-hint b { color:#fcd34d; }
+    /* La card rotación-cero ya viene desaturada; al editar stock NO debe quedar "muerta". */
+    .zona-card.zona-rotcero.zona-neg { filter:none; opacity:1; }
     /* [MEJORA 1] modal Esperado — barras de picos */
     .zona-esp-bars { display:flex; align-items:flex-end; justify-content:center; gap:.9rem; height:185px; padding:.5rem 0 0; }
     .zona-esp-col { display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:.3rem; }
@@ -18558,7 +18579,7 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js?v=2.43.255"></script>
+<script src="js/api.js?v=2.43.256"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -18573,7 +18594,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.255"></script>
+<script src="js/app.js?v=2.43.256"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

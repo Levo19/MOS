@@ -38944,6 +38944,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (p.vencimientoProximo && p.vencimientoProximo.dias != null) p.diasVencimiento = p.vencimientoProximo.dias;
     // El panel no trae volumen; rotacion (sort/BCG bubbles) = volumen si vino, si no 0. Marcamos _volAlto solo si hay dato.
     p.rotacion = (p.volumen != null) ? _zonaNum(p.volumen) : (p.rotacion != null ? _zonaNum(p.rotacion) : 0);
+    // [MEJORA 4] rotacionCero del backend → boolean limpio (acepta bool/'1'/'true'/1).
+    if (p.rotacionCero != null) {
+      const rc = p.rotacionCero;
+      p.rotacionCero = (rc === true || rc === 1 || rc === '1' || String(rc).toLowerCase() === 'true');
+    }
     return p;
   }
 
@@ -39051,7 +39056,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     set('zKpiFaltan',  k.faltan  != null ? k.faltan  : _zonaContar(p => _zonaNum(p.brecha) > 0));
     set('zKpiAlmacen', k.almacen != null ? k.almacen : _zonaSumar(p => Math.min(_zonaNum(p.brecha), _zonaNum(p.stockAlmacen))));
     set('zKpiExterno', k.externo != null ? k.externo : _zonaContar(p => _zonaNum(p.brecha) - _zonaNum(p.stockAlmacen) > 0));
-    set('zKpiCero',    k.cero    != null ? k.cero    : _zonaContar(p => { const t = String(p.tendencia||'').toLowerCase(); return t === 'nula' || t === 'cero'; }));
+    set('zKpiCero',    k.cero    != null ? k.cero    : _zonaContar(_zonaEsRotCero));
   }
   // [RIZ UX] HTML de N cards skeleton con shimmer (silueta de una zona-card real).
   function _zonaSkelCards(n) {
@@ -39085,6 +39090,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const tendActivas = Object.keys(f.tend).filter(k => f.tend[k]);
     if (tendActivas.length) {
       arr = arr.filter(p => {
+        // [MEJORA 4] La chip "∅ Sin rotar" (nula) filtra por item.rotacionCero (no por tendencia).
+        if (_zonaEsRotCero(p)) return tendActivas.indexOf('nula') >= 0;
         const t = String(p.tendencia||'').toLowerCase();
         const norm = (t === 'ascendente') ? 'asc' : (t === 'descendente') ? 'desc' : (t === 'estable') ? 'est' : (t === 'cero') ? 'nula' : t;
         return tendActivas.indexOf(norm) >= 0;
@@ -39093,7 +39100,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (f.kpi === 'faltan')  arr = arr.filter(p => _zonaNum(p.brecha) > 0);
     if (f.kpi === 'almacen') arr = arr.filter(p => _zonaNum(p.brecha) > 0 && _zonaNum(p.stockAlmacen) > 0);
     if (f.kpi === 'externo') arr = arr.filter(p => (_zonaNum(p.brecha) - _zonaNum(p.stockAlmacen)) > 0);
-    if (f.kpi === 'cero')    arr = arr.filter(p => { const t = String(p.tendencia||'').toLowerCase(); return t === 'nula' || t === 'cero'; });
+    if (f.kpi === 'cero')    arr = arr.filter(_zonaEsRotCero);
 
     // Orden
     if (f.orden === 'brecha')    arr.sort((a,b) => _zonaNum(b.brecha) - _zonaNum(a.brecha));
@@ -39108,13 +39115,31 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       cont.innerHTML = `<div class="text-center py-16 text-slate-500"><div class="text-4xl mb-3">🏪</div><div class="font-medium">Sin productos para mostrar</div><div class="text-xs mt-1">Ajusta los filtros</div></div>`;
       return;
     }
-    cont.innerHTML = arr.map(_zonaCardHtml).join('');
+
+    // [SPLIT] Dos secciones, manteniendo el orden/filtros ya aplicados:
+    //  (A) CON ROTACIÓN arriba (lo importante)  ·  (B) ROTACIÓN CERO abajo bajo un encabezado.
+    const conRot = arr.filter(p => !_zonaEsRotCero(p));
+    const sinRot = arr.filter(p =>  _zonaEsRotCero(p));
+    let html = '';
+    html += conRot.map(_zonaCardHtml).join('');
+    if (sinRot.length) {
+      html += `<div class="zona-sep" role="separator"><span class="zona-sep-line"></span><span class="zona-sep-lbl">∅ Sin rotación · candidatos a anular (${sinRot.length})</span><span class="zona-sep-line"></span></div>`;
+      html += sinRot.map(_zonaCardHtml).join('');
+    }
+    cont.innerHTML = html;
     // [RIZ UX] Stagger de entrada: solo las primeras ~20 cards reciben delay incremental
     // (cap para no demorar con 800 items; el resto aparece directo vía CSS nth-child).
+    // Recorremos solo .zona-card (el separador no anima) para que el índice de delay sea correcto.
     if (!_zonaReduce()) {
-      const cards = cont.children, cap = Math.min(20, cards.length);
+      const cards = cont.querySelectorAll('.zona-card'), cap = Math.min(20, cards.length);
       for (let i = 0; i < cap; i++) { try { cards[i].style.setProperty('--i', i); } catch (_) {} }
     }
+  }
+  // ¿El item es "rotación cero"? Fuente de verdad = backend item.rotacionCero (bool).
+  // Fallback tolerante (datos viejos sin el campo): rotacion===0.
+  function _zonaEsRotCero(p) {
+    if (p && p.rotacionCero != null) return !!p.rotacionCero;
+    return _zonaNum(p && p.rotacion) === 0;
   }
   function _zonaTendRank(t) { t = String(t||'').toLowerCase(); if (t==='asc'||t==='ascendente') return 3; if (t==='est'||t==='estable') return 2; if (t==='desc'||t==='descendente') return 1; return 0; }
 
@@ -39142,6 +39167,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const fBrecha = _zonaFmtCant(brecha, p, true);
     // [MEJORA 5] multi-código de barra.
     const codigos = Array.isArray(p.codigos) ? p.codigos : [];
+    // [SPLIT/ROTCERO] códigos del almacén (solo lectura) + flag rotación-cero.
+    const codigosAlm = Array.isArray(p.codigosAlmacen) ? p.codigosAlmacen : [];
+    const rotCero = _zonaEsRotCero(p);
 
     // [MEJORA 1] Sparkline CLICKABLE → modal "¿por qué esperado=X?"
     const maxP = Math.max(1, ...picos.map(_zonaNum));
@@ -39187,16 +39215,31 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
                   <button class="zona-btn-sec" ${externo > 0 ? '' : 'disabled'} onclick="MOS.zonaAgregarLista('${safe}', ${externo})">+ Lista compras${externo > 0 ? ' (' + _esc(_zonaFmtCant(externo, p)) + ')' : ''}</button>`;
     }
 
-    // [MEJORA 5] disclosure "ver códigos (N)" → expande item.codigos[].
+    // [MEJORA 5] disclosure "ver códigos (N)" → expande item.codigos[] (zona, editable).
     const codDisc = codigos.length
       ? `<div class="zona-cod-disc" id="zCodDisc-${safe}" onclick="MOS.zonaToggleCodigos('${safe}')"><span class="zona-cod-caret" id="zCodCaret-${safe}">▸</span> ver códigos (${codigos.length})</div>
          <div class="zona-cod-body" id="zCodBody-${safe}" style="display:none"></div>`
       : '';
 
-    return `<div class="zona-card ${bcgInfo.cls}${negativo ? ' zona-neg' : ''}" id="zcard-${safe}" data-sku="${safe}">
+    // [MEJORA 3] disclosure "ver códigos almacén (N)" → expande item.codigosAlmacen[] (solo lectura).
+    const codAlmDisc = codigosAlm.length
+      ? `<div class="zona-cod-disc zona-cod-disc-alm" id="zAlmDisc-${safe}" onclick="MOS.zonaToggleCodigosAlmacen('${safe}')"><span class="zona-cod-caret" id="zAlmCaret-${safe}">▸</span> ver códigos almacén (${codigosAlm.length})</div>
+         <div class="zona-cod-body" id="zAlmBody-${safe}" style="display:none"></div>`
+      : '';
+
+    // [ROTCERO] Chip + hint para cards sin rotación (secundarias, no "rotas").
+    const rotCeroChip = rotCero
+      ? `<span class="zona-rotcero-chip" title="Sin rotación en la ventana">∅ sin rotación</span>`
+      : '';
+    const rotCeroHint = (rotCero && !negativo)
+      ? `<div class="zona-rotcero-hint">Considera <b>anular</b> o <b>promocionar</b> este producto.</div>`
+      : '';
+
+    return `<div class="zona-card ${bcgInfo.cls}${negativo ? ' zona-neg' : ''}${rotCero ? ' zona-rotcero' : ''}" id="zcard-${safe}" data-sku="${safe}">
       <div class="zona-card-top">
         <div class="zona-card-name">${nm}</div>
         <div class="flex items-center gap-2">
+          ${rotCeroChip}
           <span class="zona-tend-badge ${tend.cls}">${tend.lbl}</span>
           <span class="zona-bcg-badge" title="BCG: ${bcg}">${bcgInfo.ico}</span>
         </div>
@@ -39209,8 +39252,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         <div><div class="zona-metric-lbl">Almacén</div><div class="zona-metric-val">${_esc(fAlm)}</div></div>
       </div>
       ${codDisc}
+      ${codAlmDisc}
       ${spark}
       ${vencHtml}
+      ${rotCeroHint}
       <div class="zona-ia">💡 ${_esc(ia)}</div>
       <div class="zona-actions">${acciones}</div>
     </div>`;
@@ -39375,6 +39420,44 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     body.style.display = '';
     if (caret) caret.textContent = '▾';
     _zonaSfx('pop'); _zonaVibrar(20);
+  }
+  // [MEJORA 3] disclosure de códigos del ALMACÉN (solo lectura — el stock de almacén es de WH).
+  function zonaToggleCodigosAlmacen(sku) {
+    const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
+    if (!p) return;
+    const body  = $('zAlmBody-' + _zonaSkuId(sku));
+    const caret = $('zAlmCaret-' + _zonaSkuId(sku));
+    if (!body) return;
+    const abierto = body.style.display !== 'none' && body.innerHTML.trim() !== '';
+    if (abierto) {
+      body.style.display = 'none';
+      if (caret) caret.textContent = '▸';
+      _zonaSfx('tick');
+      return;
+    }
+    const cods = Array.isArray(p.codigosAlmacen) ? p.codigosAlmacen : [];
+    body.innerHTML = cods.length
+      ? `<div class="zona-cod-hint">Stock en <b>almacén central</b> (solo lectura — se gestiona desde WH).</div>`
+        + cods.map(c => _zonaAlmRowHtml(c, p)).join('')
+      : '<div class="zona-cod-hint">Sin códigos en almacén.</div>';
+    body.style.display = '';
+    if (caret) caret.textContent = '▾';
+    _zonaSfx('pop'); _zonaVibrar(20);
+  }
+  // [MEJORA 3] Fila de un código de almacén (solo lectura, sin inputs de edición).
+  function _zonaAlmRowHtml(c, item) {
+    const cb   = String(c.codBarra != null ? c.codBarra : (c.codigoBarra != null ? c.codigoBarra : ''));
+    const cbAttr = _esc(cb);
+    const desc = _esc(c.descripcion || cb);
+    const st   = _zonaFmtCant(c.stock, item, true);
+    const equiv = c.esEquivalente ? '<span class="zona-cod-equiv" title="Código equivalente">equiv</span>' : '';
+    return `<div class="zona-cod-row zona-cod-row-ro">
+      <div class="zona-cod-info">
+        <div class="zona-cod-desc">${desc} ${equiv}</div>
+        <div class="zona-cod-cb">${cbAttr}</div>
+      </div>
+      <div class="zona-cod-alm-st"><span class="zona-cod-alm-lbl">almacén</span><b>${_esc(st)}</b></div>
+    </div>`;
   }
   function _zonaCodFind(p, cb) {
     const codigos = Array.isArray(p.codigos) ? p.codigos : [];
@@ -39726,7 +39809,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     loadZona, renderZona, zonaCambiarZona, zonaRefrescar, zonaSetOrden, zonaFiltrar,
     zonaToggleKpi, zonaToggleTend, zonaToggleFiltro,
     zonaAjusteInline, zonaStep, zonaCero, zonaConfirmarAjuste,
-    zonaToggleCodigos, zonaCodCero, zonaCodGuardar,
+    zonaToggleCodigos, zonaToggleCodigosAlmacen, zonaCodCero, zonaCodGuardar,
     zonaVerEsperado, zonaCerrarEsperado,
     zonaPedirAlmacen, zonaAgregarLista,
     zonaVerLotes, zonaCerrarLotes,
