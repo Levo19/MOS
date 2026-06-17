@@ -383,6 +383,13 @@ const API = (() => {
   //    conservan SOLO por compatibilidad/diagnóstico (espejan el kill-switch server que ahora gobernaría una
   //    escritura-directa-pura que el dual-write NO usa). La LECTURA usa los nuevos gates *_LECTURA (abajo); la
   //    ESCRITURA va SIEMPRE por GAS (que hace _dualWriteMOS → espeja a la sombra). Default OFF → INERTE.
+  // [PILOTO ESCRITURA DIRECTA · PROVEEDORES] Gate por-módulo de ESCRITURA directa de proveedores.
+  // ⚠️ A DIFERENCIA del catálogo, NO incluye el maestro de LECTURAS (_mosLecturaDirecta): ese flag está ON en prod
+  //    (gobierna las 56 lecturas directas) y atarlo aquí ACTIVARÍA la escritura directa al instante con el sync aún
+  //    encendido → pisado/duplicación (el incidente del 2026-06-15). La ESCRITURA es un cutover aparte que exige su
+  //    propio flag + apagar el sync (MOS_SYNC_OFF_TABLAS) JUNTOS. Por eso depende SOLO de su flag dedicado.
+  // Default OFF (mos_proveedores_directo / proveedoresDirecto ausente) → INERTE: crearProveedor/actualizarProveedor
+  // van por GAS, bit-idéntico a hoy. Activación = ver RUNBOOK_cutover_escritura_proveedores.md (flag + sync-off).
   function _mosProveedoresDirecto() { return !!_mosFlag('mos_proveedores_directo', 'proveedoresDirecto'); }
   function _mosPedidosDirecto()     { return !!_mosFlag('mos_pedidos_directo',     'pedidosDirecto'); }
   function _mosPagosDirecto()       { return !!_mosFlag('mos_pagos_directo',       'pagosDirecto'); }
@@ -1129,10 +1136,19 @@ const API = (() => {
     actualizarProducto:         _mosCatalogoDirecto,
     publicarPrecio:             _mosCatalogoDirecto,
     crearEquivalencia:          _mosCatalogoDirecto,
-    actualizarEquivalencia:     _mosCatalogoDirecto
-    // [DUAL-WRITE] proveedores/pedidos/pagos/provprod/gastos/eval/horario/jornadas/liqdia: SIN entrada acá a
-    // propósito → su escritura va SIEMPRE por GAS (dual-write espeja la sombra). marcarPagos/anularPago/
-    // recomputarLiquidacionDia tampoco van (ya antes, shape/seguridad incompatibles). Ver REPORTE.
+    actualizarEquivalencia:     _mosCatalogoDirecto,
+    // [PILOTO ESCRITURA DIRECTA · PROVEEDORES] Re-cableado de la escritura directa de proveedores como PILOTO
+    // (no es dinero → menor riesgo). Gated por _mosProveedoresDirecto (maestro OR mos_proveedores_directo, default
+    // OFF). El despachador _postDirectoMOS YA tiene los `if(action==='crearProveedor'/'actualizarProveedor')`
+    // (mapean payload→RPC mos.crear_proveedor / mos.actualizar_proveedor, idempotencia por local_id, paridad de
+    // retorno verificada con rollback). Con el gate OFF (default) NUNCA se evalúa el directo → va recto a GAS,
+    // IDÉNTICO a hoy. ⚠️ El cutover de ESCRITURA exige además apagar el sync de proveedores (MOS_SYNC_OFF_TABLAS):
+    // ver RUNBOOK. Prenderlo SIN apagar el sync → el sync Hoja→sombra pisa lo escrito directo (incoherencia).
+    crearProveedor:             _mosProveedoresDirecto,
+    actualizarProveedor:        _mosProveedoresDirecto
+    // [DUAL-WRITE] pedidos/pagos/provprod/gastos/eval/horario/jornadas/liqdia: SIN entrada acá a propósito → su
+    // escritura va SIEMPRE por GAS (dual-write espeja la sombra). marcarPagos/anularPago/recomputarLiquidacionDia
+    // tampoco van (shape/seguridad incompatibles). Ver REPORTE.
   };
 
   // POST con escritura directa opcional. Con el gate de la acción OFF (default) es IDÉNTICO a hoy: ni
@@ -1402,7 +1418,8 @@ const API = (() => {
       postDirecto:     _postDirectoMOS,   // dispatcher write→RPC (data o null→GAS, lanza en negocio/timeout) — diagnóstico/test
       // [DUAL-WRITE] gates *_DIRECTO por-operación (default OFF). ⚠️ Ya NO gobiernan read ni write cableado
       // (la escritura va por GAS; la lectura usa los gates *Lectura de abajo). Se exponen solo para diagnóstico.
-      proveedoresDirecto: _mosProveedoresDirecto,  // (diagnóstico) ¿flag mos_proveedores_directo ON?
+      // EXCEPCIÓN: proveedoresDirecto SÍ gobierna la escritura directa (piloto re-cableado en _MOS_POST_DIRECTO).
+      proveedoresDirecto: _mosProveedoresDirecto,  // ¿escritura directa de proveedores ON? (gate de crear/actualizarProveedor)
       pedidosDirecto:     _mosPedidosDirecto,      // (diagnóstico) ¿flag mos_pedidos_directo ON?
       pagosDirecto:       _mosPagosDirecto,        // (diagnóstico) ¿flag mos_pagos_directo ON?
       provprodDirecto:    _mosProvProdDirecto,     // (diagnóstico) ¿flag mos_provprod_directo ON?
