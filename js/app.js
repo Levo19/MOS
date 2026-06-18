@@ -30,7 +30,13 @@ const MOS = (() => {
     zonaProductos: [],       // cards crudos del panel (me.zona_panel)
     zonaFresh: true,         // frescura de la sombra (chip)
     zonaKpis: null,          // {faltan, almacen, externo, cero}
-    _zonaFiltros: { kpi: null, tend: {}, brecha: false, orden: 'brecha', q: '' }
+    _zonaFiltros: { kpi: null, tend: {}, brecha: false, orden: 'brecha', q: '' },
+    // [RIZ · TRASLADO VERIFICADO] estado del flujo "ingreso por almacén" por escaneo (inerte si módulo OFF)
+    _trasGuia: null,         // guía abierta: {idGuia, zona, lineas:[{codBarra,descripcion,enviado}], verificada}
+    _trasEsc: {},            // escaneado real por código: { codBarra: cantidad }
+    _trasPend: [],           // cache de pendientes (para el cronómetro/refresco)
+    _trasTimer: null,        // intervalo del cronómetro de pendientes
+    _trasScan: { stream: null, raf: null, zxing: null, track: null, torch: false }
   };
 
   function _getSession()      { try { return JSON.parse(localStorage.getItem(SESSION_KEY)); } catch { return null; } }
@@ -38980,6 +38986,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     } catch (_) { S.zonaList = S.zonaList || []; }
     _zonaPoblarSelector();
     if (!S.zonaActual && S.zonaList.length) S.zonaActual = S.zonaList[0].idZona || S.zonaList[0].id || S.zonaList[0].nombre;
+    // [ASEGURAR DATA] "Log de errores" SOLO visible para master (read-only, diagnóstico de stock).
+    try {
+      const esMaster = (S.session && (S.session.rol || '').toLowerCase() === 'master');
+      const btn = $('zonaBtnLogErrores');
+      if (btn) btn.classList.toggle('hidden', !esMaster);
+    } catch (_) {}
     _zonaInstalarRipple();
     await _zonaCargarPanel(force);
   }
@@ -39032,6 +39044,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       _zonaPintarFresh();
       _zonaPintarKpis(true);   // count-up animado al cargar
       renderZona();
+      // [RIZ · TRASLADO VERIFICADO] refrescar la alerta de "traslados por verificar" + el resumen del módulo.
+      _trasCargarPendientes();
+      _trasCargarResumen();
     } catch (e) {
       if (lista) lista.innerHTML = `<div class="text-center py-12 text-red-400 text-sm">No se pudo cargar el panel de zona.<br><span class="text-slate-500">${_esc(e.message || String(e))}</span></div>`;
       // No relanzar: loadView ya marca loaded=false vía su catch si throw; acá preferimos no romper.
@@ -39249,10 +39264,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       </div>
       ${alertaNeg}
       <div class="zona-metrics">
-        <div><div class="zona-metric-lbl">Stock zona</div><div class="zona-metric-val${negativo ? ' brecha-pos' : ''}" id="zStock-${safe}">${_esc(fStock)}<span class="zona-edit-ico" onclick="MOS.zonaAjusteInline('${safe}')">✎</span></div></div>
+        <div><div class="zona-metric-lbl">Stock zona</div><div class="zona-metric-val${negativo ? ' brecha-pos' : ''}" id="zStock-${safe}">${_esc(fStock)}<span class="zona-edit-ico" onclick="MOS.zonaAjusteInline('${safe}')">✎</span><span class="zona-edit-ico" title="Historial de movimientos" onclick="MOS.zonaVerKardex('${safe}')">🕘</span></div></div>
         <div><div class="zona-metric-lbl">Esperado <span class="zona-metric-uni">(global)</span></div><div class="zona-metric-val">${_esc(fEsp)}</div></div>
         <div><div class="zona-metric-lbl">Brecha</div><div class="zona-metric-val ${brecha > 0 ? 'brecha-pos' : 'brecha-zero'}" id="zBrecha-${safe}">${brecha > 0 ? '▲ ' + _esc(fBrecha) : '✓ 0'}</div></div>
-        <div><div class="zona-metric-lbl">Almacén</div><div class="zona-metric-val">${_esc(fAlm)}</div></div>
+        <div><div class="zona-metric-lbl">Almacén</div><div class="zona-metric-val${alm < 0 ? ' brecha-pos' : ''}">${_esc(fAlm)}<span class="zona-edit-ico" title="Historial almacén" onclick="MOS.zonaVerKardexAlmacen('${safe}')">🕘</span></div></div>
       </div>
       ${codDisc}
       ${codAlmDisc}
@@ -39754,6 +39769,134 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
   function zonaCerrarLotes() { closeModal('modalZonaLotes'); }
 
+  // ══ [ASEGURAR DATA] Log de errores de stock (SOLO master) — read-only ════════════════════════════════
+  //   Lee mos.stock_diferencias_listar (real vs teórico), agrupa por ámbito, ordena por |dif| desc.
+  //   Cada fila → abre el historial del producto (zona usa zona_kardex; almacén usa almacen_kardex).
+  async function zonaAbrirLogErrores() {
+    const body = $('zonaLogBody');
+    if (body) body.innerHTML = '<div class="skel h-16 rounded-lg mb-2"></div><div class="skel h-16 rounded-lg"></div>';
+    openModal('modalZonaLog');
+    _zonaSfx('pop'); _zonaVibrar([30,20,30]);
+    try {
+      const r = await API.zona.diferencias({});
+      if (!r || r.ok === false) throw new Error((r && r.error) || 'Sin datos');
+      const data = (r && r.data) || r || {};
+      const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
+      if (!body) return;
+      if (!items.length) { body.innerHTML = '<div class="text-center py-10 text-emerald-300 text-sm">✓ Sin diferencias de stock detectadas</div>'; return; }
+      // Agrupar por ámbito; dentro de cada grupo el backend ya ordena por |dif| desc.
+      const grupos = { ALMACEN: [], ZONA: [] };
+      items.forEach(it => { (grupos[String(it.ambito || '').toUpperCase()] || (grupos.ZONA)).push(it); });
+      let html = '', idx = 0;
+      const seccion = (amb, titulo) => {
+        const arr = grupos[amb] || [];
+        if (!arr.length) return '';
+        let s = `<div class="zona-log-group-title">${_esc(titulo)} · ${arr.length}</div>`;
+        s += arr.map(it => {
+          const dif = _zonaNum(it.diferencia);
+          const ambCls = amb === 'ALMACEN' ? 'almacen' : 'zona';
+          const ambLbl = amb === 'ALMACEN' ? 'ALMACÉN' : (it.zonaId || 'ZONA');
+          const sign = dif > 0 ? '+' : '';
+          const cb = _zonaEsc(String(it.codBarra || ''));
+          const delay = (idx++) * 35;
+          return `<div class="zona-log-row" style="animation-delay:${delay}ms" onclick="MOS.zonaLogVerHistorial('${amb}','${cb}')">
+            <span class="zona-log-amb ${ambCls}">${_esc(ambLbl)}</span>
+            <div class="zona-log-info">
+              <div class="zona-log-name">${_esc(it.descripcion || it.codBarra)}</div>
+              <div class="zona-log-nums">real <b>${_esc(String(it.real))}</b> · teórico <b>${_esc(String(it.teorico))}</b></div>
+              <div class="zona-log-hip">${_esc(it.motivoHipotesis || '')}</div>
+            </div>
+            <div class="zona-log-dif ${dif >= 0 ? 'pos' : 'neg'}">${sign}${_esc(String(dif))}</div>
+          </div>`;
+        }).join('');
+        return s;
+      };
+      html = seccion('ALMACEN', '📦 Almacén') + seccion('ZONA', '🏪 Zona');
+      body.innerHTML = html || '<div class="text-center py-10 text-slate-500 text-sm">Sin diferencias</div>';
+    } catch (e) {
+      if (body) body.innerHTML = `<div class="text-center py-8 text-red-400 text-sm">${_esc(e.message || String(e))}</div>`;
+    }
+  }
+  function zonaCerrarLogErrores() { closeModal('modalZonaLog'); }
+  // Desde una fila del log → historial del producto (por código). ZONA usa la zona actual; ALMACEN va al kardex WH.
+  function zonaLogVerHistorial(ambito, codBarra) {
+    _zonaSfx('tick'); _zonaVibrar(15);
+    if (String(ambito).toUpperCase() === 'ALMACEN') _zonaVerKardexCore('ALMACEN', { codBarra });
+    else _zonaVerKardexCore('ZONA', { codBarra, zona: S.zonaActual });
+  }
+
+  // ══ [ASEGURAR DATA] Historial de movimientos (kardex) — read-only ════════════════════════════════════
+  //   zonaVerKardex(sku)        → mos.zona_kardex_historial({zona, skuBase})
+  //   zonaVerKardexAlmacen(sku) → mos.almacen_kardex_historial({skuBase})
+  //   Ambos pintan el MISMO modal (modalZonaKardex), estilo WH: icono por tipo, color, saldo a la derecha.
+  function zonaVerKardex(sku) {
+    const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
+    const nm = (p && (p.descripcion || p.nombre)) || sku;
+    _zonaVerKardexCore('ZONA', { skuBase: sku, zona: S.zonaActual, _nombre: nm });
+  }
+  function zonaVerKardexAlmacen(sku) {
+    const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
+    const nm = (p && (p.descripcion || p.nombre)) || sku;
+    _zonaVerKardexCore('ALMACEN', { skuBase: sku, _nombre: nm });
+  }
+  async function _zonaVerKardexCore(ambito, params) {
+    const esAlm = String(ambito).toUpperCase() === 'ALMACEN';
+    const tit = $('zonaKardexTitulo'); if (tit) tit.textContent = params._nombre || params.skuBase || params.codBarra || 'Producto';
+    const ico = $('zonaKardexIco');    if (ico) ico.textContent = esAlm ? '📦' : '🏪';
+    const sub = $('zonaKardexSub');    if (sub) sub.textContent = esAlm ? 'Kardex de almacén (movimientos reales)' : ('Kardex de zona ' + (params.zona || ''));
+    const body = $('zonaKardexBody');
+    if (body) body.innerHTML = '<div class="skel h-12 rounded-lg mb-2"></div><div class="skel h-12 rounded-lg mb-2"></div><div class="skel h-12 rounded-lg"></div>';
+    openModal('modalZonaKardex');
+    _zonaSfx('pop'); _zonaVibrar(20);
+    try {
+      const q = {};
+      if (params.codBarra != null) q.codBarra = String(params.codBarra);
+      if (params.skuBase != null && params.codBarra == null) q.skuBase = String(params.skuBase);
+      if (!esAlm) q.zona = params.zona;
+      const r = esAlm ? await API.zona.almacenKardex(q) : await API.zona.kardexHistorial(q);
+      if (!r || r.ok === false) throw new Error((r && r.error) || 'Sin historial');
+      const data = (r && r.data) || r || {};
+      const movs = Array.isArray(data.movimientos) ? data.movimientos : (Array.isArray(data) ? data : []);
+      if (!body) return;
+      if (!movs.length) { body.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm">Sin movimientos registrados</div>'; return; }
+      body.innerHTML = movs.map((m, i) => _zonaKardexRowHtml(m, i, esAlm)).join('');
+    } catch (e) {
+      if (body) body.innerHTML = `<div class="text-center py-8 text-red-400 text-sm">${_esc(e.message || String(e))}</div>`;
+    }
+  }
+  function _zonaKardexRowHtml(m, i, esAlm) {
+    const esIng = !!m.esIngreso;
+    const op    = String(m.tipoOperacion || '').toUpperCase();
+    const fuente = String(m.fuente || '').toLowerCase();
+    let icoCls = esIng ? 'ing' : 'sal', icoTxt = esIng ? '▲' : '▼';
+    if (op.indexOf('AUDITORIA') >= 0) { icoCls = 'aud'; icoTxt = '🔍'; }
+    else if (fuente === 'ajuste' || op.indexOf('AJUSTE') >= 0) { icoCls = 'aju'; icoTxt = '✎'; }
+    const delta = _zonaNum(m.cantidad);
+    const saldo = (m.saldo == null ? null : _zonaNum(m.saldo));
+    const saldoNeg = (esAlm && saldo != null && saldo < 0);   // almacén en rojo si negativo
+    const fecha = _esc(_zonaKardexFecha(m.fecha));
+    const usr   = _esc(m.usuario || '—');
+    const guia  = m.idGuia ? (' · ' + _esc(String(m.idGuia))) : '';
+    const aplic = (m.aplicado === false) ? ' <span style="color:#64748b">(informativo)</span>' : '';
+    return `<div class="zona-kardex-row" style="animation-delay:${i*30}ms">
+      <span class="zona-kardex-ico ${icoCls}">${icoTxt}</span>
+      <div class="zona-kardex-mid">
+        <div class="zona-kardex-tipo">${_esc(m.tipo || (esIng ? 'INGRESO' : 'SALIDA'))}${aplic}</div>
+        <div class="zona-kardex-meta">${fecha} · ${usr}${guia}</div>
+      </div>
+      <div class="zona-kardex-right">
+        <div class="zona-kardex-delta ${esIng ? 'ing' : 'sal'}">${esIng ? '+' : '−'}${_esc(String(delta))}</div>
+        ${saldo != null ? `<div class="zona-kardex-saldo${saldoNeg ? ' neg' : ''}">saldo ${_esc(String(saldo))}</div>` : ''}
+      </div>
+    </div>`;
+  }
+  function _zonaKardexFecha(f) {
+    if (!f) return '—';
+    try { const d = new Date(f); if (!isNaN(d)) return d.toLocaleDateString('es-PE', { day:'2-digit', month:'2-digit', year:'2-digit' }) + ' ' + d.toLocaleTimeString('es-PE', { hour:'2-digit', minute:'2-digit' }); } catch (_) {}
+    return String(f).slice(0, 16).replace('T', ' ');
+  }
+  function zonaCerrarKardex() { closeModal('modalZonaKardex'); }
+
   // ── Matriz BCG (modal 2×2 con burbujas) ──────────────────────────────────
   function zonaAbrirBCG() {
     const z = $('zonaBCGZona');
@@ -39805,10 +39948,430 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _zonaSfx('tick');
   }
 
+  // ══════════════════════════════════════════════════════════════════════
+  // [RIZ · TRASLADO VERIFICADO] INGRESO POR ALMACÉN CON ESCANEO — FRONTEND
+  // El almacén emite una guía de ENTRADA hacia la zona (QR = idGuia). El operador escanea el QR de la guía,
+  // luego escanea PRODUCTO POR PRODUCTO lo que llegó (sin ver la cantidad esperada). Al "Cerrar ingreso" la
+  // PC compara enviado (guía) vs escaneado (real) → ✓completo / ⚠incompleto + detalle por producto.
+  // Lo escaneado se registra en el KARDEX (TRASLADO_IN). La aplicación al SALDO real (me.stock_zonas) está
+  // GATED/INERTE en el backend (supabase/141 · zona_traslado_cerrar.v_aplicar_stock=false). 100% Supabase.
+  // ══════════════════════════════════════════════════════════════════════
+
+  // ── Alerta "Traslados por verificar (N)" + cronómetro ──────────────────
+  async function _trasCargarPendientes() {
+    const host = $('zonaTrasPend');
+    if (!host) return;
+    try {
+      const r = await API.zona.trasladosPendientes({ zona: S.zonaActual });
+      const data = (r && r.data) || r || {};
+      const items = Array.isArray(data.items) ? data.items : [];
+      S._trasPend = items;
+      _trasRenderPendientes();
+    } catch (e) {
+      try { console.warn('[RIZ] trasladosPendientes:', e && (e.message || e)); } catch (_) {}
+    }
+  }
+  // Render del badge + lista de pendientes; arranca/renueva el cronómetro (1s) que sólo repinta las edades.
+  function _trasRenderPendientes() {
+    const host = $('zonaTrasPend');
+    if (!host) return;
+    const items = Array.isArray(S._trasPend) ? S._trasPend : [];
+    if (!items.length) {
+      host.innerHTML = `<div class="tras-pend-empty">✓ Sin traslados por verificar</div>`;
+      _trasDetenerTimer();
+      return;
+    }
+    const filas = items.map(it => {
+      const id = _esc(String(it.idGuia || ''));
+      const idJs = _zonaEsc(String(it.idGuia || ''));
+      const lin = _zonaNum(it.lineas);
+      const seg = _zonaNum(it.edadSeg);
+      // urgencia por antigüedad: >4h ámbar, >24h rojo
+      const urg = seg >= 86400 ? ' tras-urg-2' : (seg >= 14400 ? ' tras-urg-1' : '');
+      return `<div class="tras-pend-row${urg}" onclick="MOS.trasAbrirEscaneo('${idJs}')">
+        <div class="tras-pend-main">
+          <div class="tras-pend-id">📦 ${id}</div>
+          <div class="tras-pend-sub">${lin} producto(s) · ${_esc(String(it.vendedor||'—'))}</div>
+        </div>
+        <div class="tras-pend-meta">
+          <div class="tras-cron" data-seg="${seg}">${_esc(String(it.edadLbl||'—'))}</div>
+          <div class="tras-pend-cta">Verificar ›</div>
+        </div>
+      </div>`;
+    }).join('');
+    host.innerHTML = `<div class="tras-pend-head">
+        <span class="tras-pend-badge">⚠ Traslados por verificar (${items.length})</span>
+        <button class="zona-btn-sec" onclick="MOS.trasRefrescarPendientes()" title="Refrescar">⟳</button>
+      </div>
+      <div class="tras-pend-list">${filas}</div>`;
+    _trasArrancarTimer();
+  }
+  // Cronómetro: cada 1s recalcula la etiqueta de antigüedad SIN volver a pegarle al backend (suma 1s al data-seg).
+  function _trasArrancarTimer() {
+    _trasDetenerTimer();
+    S._trasTimer = setInterval(() => {
+      const els = document.querySelectorAll('#zonaTrasPend .tras-cron');
+      if (!els.length) { _trasDetenerTimer(); return; }
+      els.forEach(el => {
+        let seg = _zonaNum(el.getAttribute('data-seg')) + 1;
+        el.setAttribute('data-seg', seg);
+        el.textContent = _trasEdadLbl(seg);
+        const row = el.closest('.tras-pend-row');
+        if (row) { row.classList.toggle('tras-urg-1', seg >= 14400 && seg < 86400); row.classList.toggle('tras-urg-2', seg >= 86400); }
+      });
+    }, 1000);
+  }
+  function _trasDetenerTimer() { if (S._trasTimer) { clearInterval(S._trasTimer); S._trasTimer = null; } }
+  // Etiqueta legible de antigüedad (espeja me._edad_lbl del backend).
+  function _trasEdadLbl(seg) {
+    seg = _zonaNum(seg);
+    if (seg < 60)    return 'recién';
+    if (seg < 3600)  return 'hace ' + Math.floor(seg/60) + ' min';
+    if (seg < 86400) return 'hace ' + Math.floor(seg/3600) + ' h';
+    return 'hace ' + Math.floor(seg/86400) + ' d';
+  }
+  function trasRefrescarPendientes() { _zonaSfx('tick'); _zonaVibrar(15); _trasCargarPendientes(); }
+
+  // ── Resumen "✓completo / ⚠incompleto / ⏳pendiente" + layout de detalle ──
+  async function _trasCargarResumen() {
+    const host = $('zonaTrasResumen');
+    if (!host) return;
+    try {
+      const r = await API.zona.trasladosResumen({ zona: S.zonaActual });
+      const data = (r && r.data) || r || {};
+      S._trasResumen = data;
+      const comp = _zonaNum(data.completo), inc = _zonaNum(data.incompleto), pend = _zonaNum(data.pendiente);
+      host.innerHTML = `<button class="tras-res-chip ok"   onclick="MOS.trasAbrirResumen('completo')"><b>${comp}</b> ✓ completo</button>
+        <button class="tras-res-chip warn" onclick="MOS.trasAbrirResumen('incompleto')"><b>${inc}</b> ⚠ incompleto</button>
+        <button class="tras-res-chip pend" onclick="MOS.trasAbrirResumen('pendiente')"><b>${pend}</b> ⏳ pendiente</button>`;
+    } catch (e) {
+      try { console.warn('[RIZ] trasladosResumen:', e && (e.message || e)); } catch (_) {}
+    }
+  }
+  // Modal de detalle del resumen (enviado vs escaneado por guía), filtrable por estado.
+  function trasAbrirResumen(filtro) {
+    const data = S._trasResumen || {};
+    const body = $('zonaTrasResBody');
+    const tit  = $('zonaTrasResZona');
+    if (tit) { const zo = S.zonaList.find(x => (x.idZona || x.id || x.nombre) === S.zonaActual); tit.textContent = (zo && zo.nombre) || S.zonaActual || 'Zona'; }
+    openModal('modalZonaTrasRes');
+    _zonaSfx('pop'); _zonaVibrar(20);
+    const verifs = Array.isArray(data.verificaciones) ? data.verificaciones : [];
+    if (!body) return;
+    let lista = verifs;
+    if (filtro === 'completo')   lista = verifs.filter(v => v.estado === 'COMPLETO');
+    if (filtro === 'incompleto') lista = verifs.filter(v => v.estado === 'INCOMPLETO');
+    // 'pendiente' = guías sin verificar → mostramos la lista de pendientes (S._trasPend) en su lugar.
+    if (filtro === 'pendiente') {
+      const items = Array.isArray(S._trasPend) ? S._trasPend : [];
+      body.innerHTML = items.length ? items.map(it => `<div class="tras-res-card pend">
+          <div class="tras-res-card-top"><b>📦 ${_esc(String(it.idGuia))}</b><span class="tras-res-estado pend">⏳ pendiente · ${_esc(String(it.edadLbl||''))}</span></div>
+          <div class="text-xs text-slate-400">${_zonaNum(it.lineas)} producto(s) · enviado ${_zonaNum(it.totalEnviado)} · sin verificar</div>
+          <button class="zona-btn-pedir mt-2" onclick="MOS.trasCerrarResumen();MOS.trasAbrirEscaneo('${_zonaEsc(String(it.idGuia))}')">Verificar ahora</button>
+        </div>`).join('') : '<div class="text-center py-8 text-emerald-400 text-sm">✓ Sin traslados pendientes</div>';
+      return;
+    }
+    if (!lista.length) { body.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm">Sin traslados en este estado</div>'; return; }
+    body.innerHTML = lista.map(v => {
+      const det = Array.isArray(v.detalle) ? v.detalle : [];
+      const filasDet = det.map(d => {
+        const dif = _zonaNum(d.dif);
+        const cls = d.estado === 'OK' ? 'ok' : (d.estado === 'FALTA' ? 'falta' : 'sobra');
+        const difTxt = dif === 0 ? '✓' : (dif > 0 ? '−' + dif : '+' + Math.abs(dif));
+        return `<div class="tras-det-row ${cls}">
+          <span class="tras-det-desc">${_esc(String(d.descripcion || d.codBarra))}</span>
+          <span class="tras-det-nums">env ${_zonaNum(d.enviado)} · esc ${_zonaNum(d.escaneado)} <b class="tras-det-dif">${difTxt}</b></span>
+        </div>`;
+      }).join('');
+      const estadoCls = v.estado === 'COMPLETO' ? 'ok' : 'warn';
+      const estadoLbl = v.estado === 'COMPLETO' ? '✓ completo' : '⚠ incompleto';
+      const gateNota = v.stockAplicado ? '' : `<div class="tras-gate-nota">⏸ Stock no aplicado (verificación registrada · gate activo)</div>`;
+      return `<div class="tras-res-card ${estadoCls}">
+        <div class="tras-res-card-top"><b>📦 ${_esc(String(v.idGuia))}</b><span class="tras-res-estado ${estadoCls}">${estadoLbl}</span></div>
+        <div class="text-xs text-slate-400 mb-1">enviado ${_zonaNum(v.totalEnviado)} · escaneado ${_zonaNum(v.totalEscaneado)} · dif ${_zonaNum(v.totalDif)} · ${_esc(String(v.usuario||'—'))} · ${_esc(String(v.edadLbl||''))}</div>
+        ${filasDet}
+        ${gateNota}
+      </div>`;
+    }).join('');
+  }
+  function trasCerrarResumen() { closeModal('modalZonaTrasRes'); }
+
+  // ── Modal de ESCANEO (auto-jala la guía + el operador escanea producto por producto) ───
+  // Botón "📥 Ingreso por almacén" sin guía → abre el modal en modo "escanea el QR de la guía".
+  function trasIngresoPorAlmacen() { _zonaSfx('pop'); _zonaVibrar(20); trasAbrirEscaneo(null); }
+
+  // Abre el modal. Si idGuia viene (desde la lista de pendientes) → auto-jala directo; si null → pide el QR de la guía.
+  async function trasAbrirEscaneo(idGuia) {
+    S._trasGuia = null;
+    S._trasEsc = {};
+    const wrapR = $('trasPasoResultado'); if (wrapR) wrapR.style.display = 'none';
+    openModal('modalZonaTras');
+    _zonaSfx('pop'); _zonaVibrar(20);
+    _trasPintarPasoGuia();
+    if (idGuia) { const inp = $('trasGuiaInput'); if (inp) inp.value = String(idGuia); await trasCargarGuia(); }
+    else { const inp = $('trasGuiaInput'); if (inp) { inp.value = ''; try { inp.focus(); } catch(_){} } }
+  }
+  // Paso 1: pedir/escanear el QR de la guía.
+  function _trasPintarPasoGuia() {
+    const wrapG = $('trasPasoGuia'), wrapS = $('trasPasoScan'), wrapR = $('trasPasoResultado');
+    if (wrapG) wrapG.style.display = '';
+    if (wrapS) wrapS.style.display = 'none';
+    if (wrapR) wrapR.style.display = 'none';
+  }
+  // Lee el id de guía del input (texto o resultado de cámara) y auto-jala las líneas.
+  async function trasCargarGuia() {
+    const inp = $('trasGuiaInput');
+    const idGuia = inp ? String(inp.value || '').trim() : '';
+    if (!idGuia) { _zonaSfx('error'); _zonaVibrar([120,40,120]); toast('Escanea o escribe el ID de la guía', 'error'); return; }
+    const btn = $('trasCargarBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Cargando…'; }
+    try {
+      const r = await API.zona.trasladoGuia({ idGuia });
+      const data = (r && r.data) || r || {};
+      if (!r || r.ok === false || !data.idGuia) throw new Error((r && r.error) || 'Guía no encontrada');
+      // La guía debe ser de la zona actual (coherencia: el operador recibe en SU zona).
+      if (S.zonaActual && data.zona && String(data.zona) !== String(S.zonaActual)) {
+        throw new Error('Esta guía es de ' + data.zona + ', no de ' + S.zonaActual);
+      }
+      S._trasGuia = { idGuia: data.idGuia, zona: data.zona, lineas: Array.isArray(data.lineas) ? data.lineas : [], verificada: !!data.verificada, verificacion: data.verificacion || null };
+      S._trasEsc = {};
+      if (S._trasGuia.verificada) {
+        // ya verificada → mostrar el resultado en vez de re-escanear (idempotente).
+        _zonaSfx('ok');
+        toast('Esta guía ya fue verificada', 'info');
+        _trasMostrarResultado(S._trasGuia.verificacion, true);
+        return;
+      }
+      _zonaSfx('ok'); _zonaVibrar(30);
+      _trasPintarPasoScan();
+    } catch (e) {
+      _zonaSfx('error'); _zonaVibrar([120,40,120]);
+      toast('No se pudo cargar la guía: ' + (e && (e.message || e)), 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '📥 Cargar guía'; }
+    }
+  }
+  // Paso 2: escaneo de productos. NO mostramos la cantidad esperada (sólo el contador escaneado real).
+  function _trasPintarPasoScan() {
+    const wrapG = $('trasPasoGuia'), wrapS = $('trasPasoScan'), wrapR = $('trasPasoResultado');
+    if (wrapG) wrapG.style.display = 'none';
+    if (wrapS) wrapS.style.display = '';
+    if (wrapR) wrapR.style.display = 'none';
+    const idEl = $('trasScanGuiaId'); if (idEl) idEl.textContent = (S._trasGuia && S._trasGuia.idGuia) || '';
+    const inp = $('trasScanInput'); if (inp) { inp.value = ''; try { inp.focus(); } catch(_){} }
+    _trasRenderEscaneados();
+  }
+  // Suma un escaneo (1 por defecto). Acepta código por teclado/lector HID (Enter) o por cámara.
+  function trasScanSubmit() {
+    const inp = $('trasScanInput');
+    const cb = inp ? String(inp.value || '').trim() : '';
+    if (!cb) return;
+    _trasSumarEscaneo(cb, 1);
+    if (inp) { inp.value = ''; try { inp.focus(); } catch(_){} }
+  }
+  function _trasSumarEscaneo(cb, cant) {
+    cb = String(cb || '').trim();
+    if (!cb) return;
+    cant = _zonaNum(cant) || 1;
+    S._trasEsc[cb] = (_zonaNum(S._trasEsc[cb]) || 0) + cant;
+    _zonaSfx('tick'); _zonaVibrar(15);
+    _trasRenderEscaneados(cb);
+  }
+  // Render del contador en vivo (lista de códigos escaneados + cantidad). NO muestra lo esperado.
+  function _trasRenderEscaneados(resaltar) {
+    const body = $('trasScanList');
+    const cont = $('trasScanCount');
+    const keys = Object.keys(S._trasEsc);
+    const totUnid = keys.reduce((a, k) => a + _zonaNum(S._trasEsc[k]), 0);
+    if (cont) cont.textContent = keys.length + ' código(s) · ' + totUnid + ' unidad(es)';
+    if (!body) return;
+    if (!keys.length) { body.innerHTML = '<div class="tras-scan-empty">Escanea los productos que llegaron…</div>'; return; }
+    // mapa código→descripción desde las líneas de la guía (si el código estaba en la guía).
+    const desc = {};
+    (S._trasGuia && S._trasGuia.lineas || []).forEach(l => { desc[String(l.codBarra)] = l.descripcion; });
+    body.innerHTML = keys.map(k => {
+      const hit = (k === resaltar) ? ' tras-scan-hit' : '';
+      const d = desc[k] || k;
+      const nuevo = !desc[k] ? '<span class="tras-scan-extra" title="No estaba en la guía">no en guía</span>' : '';
+      return `<div class="tras-scan-row${hit}">
+        <div class="tras-scan-info"><div class="tras-scan-desc">${_esc(String(d))} ${nuevo}</div><div class="tras-scan-cb">${_esc(k)}</div></div>
+        <div class="tras-scan-qty">
+          <button class="tras-qty-btn" onclick="MOS.trasScanAjustar('${_zonaEsc(k)}',-1)">−</button>
+          <span class="tras-qty-val">${_zonaNum(S._trasEsc[k])}</span>
+          <button class="tras-qty-btn" onclick="MOS.trasScanAjustar('${_zonaEsc(k)}',1)">+</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  function trasScanAjustar(cb, delta) {
+    cb = String(cb);
+    const n = (_zonaNum(S._trasEsc[cb]) || 0) + _zonaNum(delta);
+    if (n <= 0) delete S._trasEsc[cb]; else S._trasEsc[cb] = n;
+    _zonaSfx('tick'); _zonaVibrar(15);
+    _trasRenderEscaneados();
+  }
+
+  // ── Cerrar ingreso: la PC evalúa enviado vs escaneado y muestra el resumen ──
+  async function trasCerrarIngreso() {
+    if (!S._trasGuia || !S._trasGuia.idGuia) return;
+    const keys = Object.keys(S._trasEsc);
+    if (!keys.length) { _zonaSfx('error'); _zonaVibrar([120,40,120]); toast('No escaneaste ningún producto', 'error'); return; }
+    const escaneados = keys.map(k => ({ codBarra: k, cantidad: _zonaNum(S._trasEsc[k]) }));
+    const btn = $('trasCerrarBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Evaluando…'; }
+    _detenerScanTras();   // apagar cámara antes de cerrar
+    try {
+      const r = await API.zona.trasladoCerrar({ idGuia: S._trasGuia.idGuia, escaneados });
+      if (!r || r.ok === false) throw new Error((r && r.error) || 'No se pudo cerrar');
+      const data = r.data || {};
+      _zonaSfx('ok'); _zonaVibrar([80,60,80]);
+      _trasMostrarResultado(data, !!r.dedup);
+      // refrescar pendientes + resumen del módulo (la guía ya salió de pendientes).
+      _trasCargarPendientes();
+      _trasCargarResumen();
+    } catch (e) {
+      _zonaSfx('error'); _zonaVibrar([120,40,120]);
+      toast('No se pudo cerrar el ingreso: ' + (e && (e.message || e)), 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '✓ Cerrar ingreso'; }
+    }
+  }
+  // Pinta el resumen completo/incompleto con el detalle por producto (en el mismo modal, paso 3).
+  function _trasMostrarResultado(data, dedup) {
+    const wrapG = $('trasPasoGuia'), wrapS = $('trasPasoScan'), wrapR = $('trasPasoResultado');
+    if (wrapG) wrapG.style.display = 'none';
+    if (wrapS) wrapS.style.display = 'none';
+    if (wrapR) wrapR.style.display = '';
+    data = data || {};
+    // El backend devuelve snake_case en data (fila de me.zona_traslado_verificacion).
+    const estado = data.estado || (data.lineas_dif === 0 ? 'COMPLETO' : 'INCOMPLETO');
+    const env = _zonaNum(data.total_enviado != null ? data.total_enviado : data.totalEnviado);
+    const esc = _zonaNum(data.total_escaneado != null ? data.total_escaneado : data.totalEscaneado);
+    const dif = _zonaNum(data.total_dif != null ? data.total_dif : data.totalDif);
+    const det = Array.isArray(data.detalle) ? data.detalle : [];
+    const okEstado = estado === 'COMPLETO';
+    const head = $('trasResHead');
+    if (head) {
+      head.className = 'tras-result-head ' + (okEstado ? 'ok' : 'warn');
+      head.innerHTML = `<div class="tras-result-ico">${okEstado ? '✓' : '⚠'}</div>
+        <div><div class="tras-result-estado">${okEstado ? 'Ingreso COMPLETO' : 'Ingreso INCOMPLETO'}</div>
+        <div class="tras-result-sub">enviado ${env} · escaneado ${esc}${dif !== 0 ? ' · diferencia ' + dif : ''}</div></div>`;
+    }
+    const body = $('trasResultBody');
+    if (body) {
+      const filas = det.map(d => {
+        const dd = _zonaNum(d.dif);
+        const cls = d.estado === 'OK' ? 'ok' : (d.estado === 'FALTA' ? 'falta' : 'sobra');
+        const difTxt = dd === 0 ? '✓ ok' : (dd > 0 ? 'falta ' + dd : 'sobra ' + Math.abs(dd));
+        return `<div class="tras-det-row ${cls}">
+          <span class="tras-det-desc">${_esc(String(d.descripcion || d.codBarra))}</span>
+          <span class="tras-det-nums">env ${_zonaNum(d.enviado)} · esc ${_zonaNum(d.escaneado)} <b class="tras-det-dif">${difTxt}</b></span>
+        </div>`;
+      }).join('');
+      const gate = `<div class="tras-gate-nota">⏸ La verificación quedó registrada. El stock de la zona NO se modificó todavía (aplicación al saldo pendiente de activación). La diferencia es una alerta para el admin.</div>`;
+      body.innerHTML = (det.length ? filas : '<div class="text-center py-4 text-slate-500 text-sm">Sin detalle</div>') + gate;
+    }
+    if (dedup) toast('Esta guía ya estaba verificada (sin cambios)', 'info');
+  }
+  function trasCerrarModal() {
+    _detenerScanTras();
+    closeModal('modalZonaTras');
+    S._trasGuia = null; S._trasEsc = {};
+  }
+
+  // ── Cámara de escaneo dentro del modal de traslado (BarcodeDetector → ZXing fallback) ──
+  async function trasAbrirCamara() {
+    const ov = $('trasCamOverlay');
+    if (!ov) return;
+    ov.classList.add('is-open');
+    const est = $('trasCamEstado'); if (est) est.textContent = 'Pidiendo cámara…';
+    try {
+      S._trasScan.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+    } catch (e) {
+      if (est) est.textContent = 'Sin acceso a la cámara — usa el lector o escribe el código';
+      return;
+    }
+    const video = $('trasCamVideo');
+    if (!video) return;
+    video.srcObject = S._trasScan.stream;
+    try { await video.play(); } catch(_){}
+    S._trasScan.track = S._trasScan.stream.getVideoTracks()[0] || null;
+    try {
+      const caps = S._trasScan.track && S._trasScan.track.getCapabilities ? S._trasScan.track.getCapabilities() : {};
+      const bt = $('trasTorchBtn'); if (bt) bt.style.display = caps.torch ? 'flex' : 'none';
+    } catch(_){}
+    if ('BarcodeDetector' in window) {
+      if (est) est.textContent = 'Apunta al código';
+      let detector;
+      try { const f = await window.BarcodeDetector.getSupportedFormats(); detector = new window.BarcodeDetector({ formats: f }); }
+      catch (_) { detector = new window.BarcodeDetector(); }
+      _trasCamLoop(detector, video);
+      return;
+    }
+    if (est) est.textContent = 'Cargando lector…';
+    await _cpnCargarZxing();
+    if (!window.ZXingBrowser) { if (est) est.textContent = 'Lector no disponible — escribe el código'; return; }
+    if (est) est.textContent = 'Apunta al código';
+    try {
+      S._trasScan.zxing = new window.ZXingBrowser.BrowserMultiFormatReader();
+      S._trasScan.zxing.decodeFromVideoElementContinuously(video, (result) => { if (result) _trasCamHit(result.getText()); });
+    } catch (_) {}
+  }
+  function _trasCamLoop(detector, video) {
+    let busy = false;
+    const tick = async () => {
+      const ov = $('trasCamOverlay');
+      if (!S._trasScan.stream || !ov || !ov.classList.contains('is-open')) return;
+      if (!busy && video.readyState >= 2) {
+        busy = true;
+        try { const codes = await detector.detect(video); if (codes && codes.length) { _trasCamHit(codes[0].rawValue); busy = false; } }
+        catch (_) {}
+        busy = false;
+      }
+      S._trasScan.raf = requestAnimationFrame(tick);
+    };
+    tick();
+  }
+  // Un hit de cámara. En paso "guía" → llena el input de guía y carga; en paso "scan" → suma 1 al código.
+  let _trasCamLast = { code: '', ts: 0 };
+  function _trasCamHit(code) {
+    code = String(code || '').trim();
+    if (!code) return;
+    const now = Date.now();
+    // anti-rebote: ignora el mismo código en <1.2s (la cámara dispara muchos frames).
+    if (code === _trasCamLast.code && (now - _trasCamLast.ts) < 1200) return;
+    _trasCamLast = { code, ts: now };
+    const enScan = $('trasPasoScan') && $('trasPasoScan').style.display !== 'none';
+    if (enScan) {
+      _trasSumarEscaneo(code, 1);
+      const fr = $('trasCamFrame'); if (fr) { fr.classList.remove('is-hit'); void fr.offsetWidth; fr.classList.add('is-hit'); }
+    } else {
+      const inp = $('trasGuiaInput'); if (inp) inp.value = code;
+      trasCerrarCamara();
+      trasCargarGuia();
+    }
+  }
+  function trasCerrarCamara() { _detenerScanTras(); const ov = $('trasCamOverlay'); if (ov) ov.classList.remove('is-open'); }
+  function _detenerScanTras() {
+    const s = S._trasScan;
+    if (s.raf) { try { cancelAnimationFrame(s.raf); } catch(_){} s.raf = null; }
+    if (s.zxing) { try { s.zxing.reset(); } catch(_){} s.zxing = null; }
+    if (s.stream) { try { s.stream.getTracks().forEach(t => t.stop()); } catch(_){} s.stream = null; }
+    s.track = null; s.torch = false;
+    const v = $('trasCamVideo'); if (v) v.srcObject = null;
+  }
+  async function trasToggleTorch() {
+    const s = S._trasScan;
+    if (!s.track) return;
+    try { s.torch = !s.torch; await s.track.applyConstraints({ advanced: [{ torch: s.torch }] }); const b = $('trasTorchBtn'); if (b) b.classList.toggle('is-on', s.torch); }
+    catch (_) {}
+  }
+
   // ── PUBLIC API ───────────────────────────────────────────────
   return {
     init, nav, refresh, fabAction, iconBusy,
     // [RIZ Capa 4] Módulo Zona — solo activo si el flag mos_zona_modulo está ON
+    loadZona, renderZona, zonaCambiarZona, zonaRefrescar, zonaSetOrden, zonaFiltrar,
     loadZona, renderZona, zonaCambiarZona, zonaRefrescar, zonaSetOrden, zonaFiltrar,
     zonaToggleKpi, zonaToggleTend, zonaToggleFiltro,
     zonaAjusteInline, zonaStep, zonaCero, zonaConfirmarAjuste,
@@ -39816,9 +40379,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaVerEsperado, zonaCerrarEsperado,
     zonaPedirAlmacen, zonaAgregarLista,
     zonaVerLotes, zonaCerrarLotes,
+    // [ASEGURAR DATA] Log de errores (master) + historial kardex zona/almacén — read-only
+    zonaAbrirLogErrores, zonaCerrarLogErrores, zonaLogVerHistorial,
+    zonaVerKardex, zonaVerKardexAlmacen, zonaCerrarKardex,
     zonaAbrirBCG, zonaCerrarBCG, zonaBCGTapProducto, zonaBCGFiltrarCuadrante, zonaPlaceholder,
     // [RIZ Capa 5] impresión 80mm + panel IA + lista compras
     zonaImprimirTicket, zonaImprimirLista, zonaAbrirSugerencias, zonaCerrarSugerencias,
+    // [RIZ · TRASLADO VERIFICADO] ingreso por almacén con escaneo (stock real GATED en backend)
+    trasIngresoPorAlmacen, trasAbrirEscaneo, trasCargarGuia, trasScanSubmit, trasScanAjustar,
+    trasCerrarIngreso, trasCerrarModal, trasRefrescarPendientes,
+    trasAbrirResumen, trasCerrarResumen,
+    trasAbrirCamara, trasCerrarCamara, trasToggleTorch,
     // [v2.41.76] Cron diagnóstico
     abrirCronStatus, cronReinstalarTrigger, cronEjecutarAhora,
     // [v2.41.84] Auditoría admin viewer

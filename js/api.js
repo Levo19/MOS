@@ -714,6 +714,38 @@ const API = (() => {
     } });
   }
 
+  // ── [RIZ · TRASLADO VERIFICADO] Ingreso por almacén con ESCANEO (supabase/141). ──────────────────────────
+  // El almacén emite una guía de ENTRADA hacia la zona (en me.guias_cabecera, tipo ENTRADA_*). El operador
+  // escanea el QR de la guía (=idGuia), luego escanea producto por producto lo que llegó, y al "Cerrar ingreso"
+  // la PC compara enviado (guía) vs escaneado (real) → completo/incompleto. Lo escaneado se registra en el
+  // KARDEX (TRASLADO_IN); la aplicación al SALDO real (me.stock_zonas) está GATED/INERTE en el backend (141).
+  // LECTURAS → _sbRpcMOS (devuelve r o null si no hay token). CIERRE → _sbRpcZonaWrite (lanza ante HTTP, el
+  // caller hace optimista + revierte). Todos aceptan {zona}/{zonaId}; _zonaParams normaliza.
+  async function _zonaTrasladosPendientes(params) { const r = await _sbRpcMOS('zona_traslados_pendientes', { p: _zonaParams(params) }, 'mos'); return r; }
+  async function _zonaTrasladosResumen(params)    { const r = await _sbRpcMOS('zona_traslados_resumen',    { p: _zonaParams(params) }, 'mos'); return r; }
+  async function _zonaTrasladoGuia(params) {
+    const idGuia = params && (params.idGuia != null ? params.idGuia : params.id);
+    const r = await _sbRpcMOS('zona_traslado_guia', { p: { idGuia: idGuia != null ? String(idGuia) : undefined } }, 'mos');
+    return r;
+  }
+  // Cierre del ingreso: registra escaneados en kardex + persiste verificación. Idempotente por idGuia.
+  // escaneados: [{codBarra, cantidad}]. Devuelve {ok,[dedup],stockAplicado,data:{estado,total_*,detalle,...}} o null.
+  async function _zonaTrasladoCerrar(params) {
+    const p = params || {};
+    const idGuia = p.idGuia != null ? p.idGuia : p.id;
+    const escaneados = Array.isArray(p.escaneados) ? p.escaneados.map(e => ({
+      codBarra: String(e.codBarra != null ? e.codBarra : (e.cod_barra != null ? e.cod_barra : '')),
+      cantidad: Number(e.cantidad != null ? e.cantidad : 0)
+    })) : [];
+    try { console.log('[RIZ] zona_traslado_cerrar', { idGuia, items: escaneados.length }); } catch (_) {}
+    return _sbRpcZonaWrite('zona_traslado_cerrar', { p: {
+      idGuia: idGuia != null ? String(idGuia) : undefined,
+      escaneados,
+      usuario: _mosUsuario(params),
+      origen: 'MOS-PWA'
+    } });
+  }
+
   // ── [RIZ · CAPA 5] IMPRESIÓN 80mm vía Edge `riz-print` ─────────────────
   // La Edge construye el ESC/POS server-side (lee mos.zona_ticket_dia / mos.zona_lista_compras con
   // service_role) y lo manda a PrintNode. Acá solo armamos el body + token (igual que cualquier Edge).
@@ -825,6 +857,15 @@ const API = (() => {
   // ── [RIZ · CAPA 5] Lista de compras como LECTURA (cablear botón "+Lista compras") ──
   // mos.zona_lista_compras(p) vía el wrapper profile 'mos' (igual que zona_panel). Devuelve r.data | null.
   async function _zonaListaComprasDirecto(params) { const r = await _sbRpcMOS('zona_lista_compras', { p: _zonaParams(params) }, 'mos'); return r; }
+
+  // ── [ASEGURAR DATA] LECTURAS de diagnóstico de stock (SOLO LECTURA, no muta nada). Wrappers profile 'mos'.
+  //    · diferencias()       → mos.stock_diferencias_listar(p) → {ok,data:{total,items:[...]},_fresh} (botón master).
+  //    · kardexHistorial()   → mos.zona_kardex_historial(p {zona, codBarra|skuBase}) → historial reconstruido de ZONA.
+  //    · almacenKardex()     → mos.almacen_kardex_historial(p {codBarra|skuBase}) → historial del kardex de ALMACÉN.
+  //   Devuelven la respuesta cruda {ok,data,...} (o null si no hay token). El caller (app.js) lee r.data.
+  async function _zonaDiferencias(params)       { const r = await _sbRpcMOS('stock_diferencias_listar', { p: _zonaParams(params || {}) }, 'mos'); return r; }
+  async function _zonaKardexHistorial(params)   { const r = await _sbRpcMOS('zona_kardex_historial',     { p: _zonaParams(params || {}) }, 'mos'); return r; }
+  async function _almacenKardexHistorial(params){ const r = await _sbRpcMOS('almacen_kardex_historial',  { p: params || {} }, 'mos'); return r; }
 
   // ════════════════════════════════════════════════════════════════════
   // [FASE 2 · LOTE EVAL/HORARIO/ETIQ] read-paths directos (RPCs 98). Mismo patrón que 94 pero con dos shapes:
@@ -1781,7 +1822,17 @@ const API = (() => {
       // [RIZ · CAPA 5] nuevos: lista de compras (lectura), impresión 80mm (Edge riz-print), IA real (Edge /functions/ia)
       listaCompras:    _zonaListaComprasDirecto,// mos.zona_lista_compras(p)    → {ok,data:{zona,semana,items:[...]},_fresh}
       imprimir:        _zonaImprimir,           // Edge riz-print {tipo,zona,fecha|semana,printerId} → {ok,printJobId}
-      ia:              _zonaIA                  // Edge /functions/ia {messages,system?,model?} → JSON Claude (.content[0].text)
+      ia:              _zonaIA,                 // Edge /functions/ia {messages,system?,model?} → JSON Claude (.content[0].text)
+      // [ASEGURAR DATA] diagnóstico de stock — SOLO LECTURA (no muta stock). Botón master + historial en el card.
+      diferencias:     _zonaDiferencias,        // mos.stock_diferencias_listar(p {ambito?,zona?}) → {ok,data:{total,items:[...]},_fresh}
+      kardexHistorial: _zonaKardexHistorial,    // mos.zona_kardex_historial(p {zona,codBarra|skuBase}) → {ok,data:{movimientos:[...]},_fresh}
+      almacenKardex:   _almacenKardexHistorial, // mos.almacen_kardex_historial(p {codBarra|skuBase}) → {ok,data:{movimientos:[...]},_fresh}
+      // [RIZ · TRASLADO VERIFICADO] ingreso por almacén con ESCANEO (supabase/141). El stock real (me.stock_zonas)
+      // queda GATED/INERTE en el backend (zona_traslado_cerrar.v_aplicar_stock=false); sólo registra kardex + verificación.
+      trasladosPendientes: _zonaTrasladosPendientes, // mos.zona_traslados_pendientes(p {zona}) → {ok,data:{total,items:[{idGuia,fecha,lineas,totalEnviado,edadSeg,edadLbl,...}]},_fresh}
+      trasladosResumen:    _zonaTrasladosResumen,    // mos.zona_traslados_resumen(p {zona})    → {ok,data:{completo,incompleto,pendiente,verificaciones:[...]},_fresh}
+      trasladoGuia:        _zonaTrasladoGuia,        // mos.zona_traslado_guia(p {idGuia})      → {ok,data:{idGuia,zona,verificada,lineas:[{codBarra,descripcion,enviado}]},_fresh}
+      trasladoCerrar:      _zonaTrasladoCerrar       // mos.zona_traslado_cerrar(p {idGuia,escaneados:[{codBarra,cantidad}]}) → {ok,[dedup],stockAplicado,data:{estado,total_*,detalle}}
     },
   };
 })();

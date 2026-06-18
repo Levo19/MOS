@@ -12528,6 +12528,36 @@
     .zona-skel-line { height:30px; border-radius:.5rem; margin:.45rem 0; }
     .zona-skel-btn  { height:38px; flex:1; border-radius:.55rem; }
     .zona-skel-btn2 { height:38px; width:38%; border-radius:.55rem; }
+    /* [ASEGURAR DATA] Modales Log de errores + Historial kardex (entrada fade+scale, filas con stagger). */
+    @keyframes zonaModalIn { from { opacity:0; transform:scale(.96) translateY(8px); } to { opacity:1; transform:none; } }
+    .zona-modal-in { animation: zonaModalIn .22s cubic-bezier(.2,.8,.25,1); }
+    @keyframes zonaRowIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+    .zona-log-row, .zona-kardex-row { opacity:0; animation: zonaRowIn .28s ease forwards; }
+    .zona-log-row { display:flex; align-items:center; gap:.6rem; padding:.6rem .7rem; border:1px solid #1e293b; border-radius:.6rem; margin-bottom:.5rem; background:#0d1526; cursor:pointer; transition:border-color .15s, background .15s; }
+    .zona-log-row:hover { border-color:#475569; background:#0f1a2e; }
+    .zona-log-row:active { transform:scale(.985); }
+    .zona-log-amb { font-size:.62rem; font-weight:700; padding:.12rem .45rem; border-radius:.35rem; letter-spacing:.04em; white-space:nowrap; }
+    .zona-log-amb.zona { background:#1e3a5f; color:#7dd3fc; }
+    .zona-log-amb.almacen { background:#3b2f1e; color:#fcd34d; }
+    .zona-log-info { flex:1; min-width:0; }
+    .zona-log-name { font-weight:600; color:#e2e8f0; font-size:.82rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .zona-log-nums { font-size:.7rem; color:#94a3b8; margin-top:.1rem; }
+    .zona-log-hip  { font-size:.68rem; color:#64748b; margin-top:.15rem; line-height:1.25; }
+    .zona-log-dif  { font-weight:800; font-size:.92rem; white-space:nowrap; }
+    .zona-log-dif.pos { color:#86efac; } .zona-log-dif.neg { color:#fca5a5; }
+    .zona-log-group-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:#64748b; margin:.4rem 0 .55rem; }
+    /* filas del kardex (historial de movimientos) — estilo WH: icono por tipo + saldo a la derecha */
+    .zona-kardex-row { display:flex; align-items:center; gap:.65rem; padding:.55rem .7rem; border:1px solid #1e293b; border-radius:.6rem; margin-bottom:.45rem; background:#0d1526; }
+    .zona-kardex-ico { width:30px; height:30px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:.95rem; flex-shrink:0; }
+    .zona-kardex-ico.ing { background:#0f2e1f; color:#86efac; } .zona-kardex-ico.sal { background:#2e1414; color:#fca5a5; }
+    .zona-kardex-ico.aju { background:#2e2410; color:#fcd34d; } .zona-kardex-ico.aud { background:#1e2a4a; color:#93c5fd; }
+    .zona-kardex-mid { flex:1; min-width:0; }
+    .zona-kardex-tipo { font-weight:600; color:#e2e8f0; font-size:.8rem; }
+    .zona-kardex-meta { font-size:.66rem; color:#64748b; margin-top:.1rem; }
+    .zona-kardex-right { text-align:right; white-space:nowrap; }
+    .zona-kardex-delta { font-weight:700; font-size:.82rem; } .zona-kardex-delta.ing { color:#86efac; } .zona-kardex-delta.sal { color:#fca5a5; }
+    .zona-kardex-saldo { font-size:.66rem; color:#94a3b8; margin-top:.1rem; }
+    .zona-kardex-saldo.neg { color:#f87171; font-weight:700; }
     /* [RIZ UX] Respetar prefers-reduced-motion: sin movimiento, todo visible y estático.
        (la háptica/SFX ya se silencian desde JS vía _zonaReduce). Solo afecta la vista zona. */
     @media (prefers-reduced-motion: reduce) {
@@ -12535,12 +12565,84 @@
       .zona-bcg-badge, .bcg-estrella .zona-bcg-badge, .bcg-interro .zona-bcg-badge,
       .zona-spark-bar, .zona-esp-bar, .zona-bubble, .zona-alerta-neg,
       .zona-card.pulse-ok, .zona-card.shake, .zona-fresh-dot.stale, .zona-venc-dot.crit,
-      .zona-think-ico, .zona-think-dots i {
+      .zona-think-ico, .zona-think-dots i,
+      .zona-modal-in, .zona-log-row, .zona-kardex-row, .tras-scan-row.tras-scan-hit {
         animation: none !important; opacity:1 !important; transform:none !important;
       }
       .zona-card:active, .zona-kpi:active, .zona-btn-pedir:active, .zona-btn-sec:active { transform:none !important; }
       .zona-ripple { display:none !important; }
     }
+
+    /* ═══ [RIZ · TRASLADO VERIFICADO] Ingreso por almacén con escaneo ═══════════════════════ */
+    /* Resumen ✓completo/⚠incompleto/⏳pendiente */
+    .tras-res-bar { display:flex; gap:.5rem; margin-bottom:.6rem; flex-wrap:wrap; }
+    .tras-res-bar:empty { display:none; }
+    .tras-res-chip { display:flex; align-items:center; gap:.35rem; padding:.45rem .7rem; border-radius:.6rem; border:1px solid #1e293b; background:#0f172a; color:#cbd5e1; font-size:.78rem; cursor:pointer; transition:border-color .15s, transform .1s, background .15s; }
+    .tras-res-chip:hover { border-color:#334155; transform:translateY(-1px); }
+    .tras-res-chip:active { transform:scale(.97); }
+    .tras-res-chip b { font-size:1rem; font-weight:800; font-variant-numeric:tabular-nums; }
+    .tras-res-chip.ok b { color:#86efac; } .tras-res-chip.warn b { color:#fcd34d; } .tras-res-chip.pend b { color:#93c5fd; }
+    /* Alerta de pendientes + cronómetro */
+    .tras-pend-box { margin-bottom:.6rem; }
+    .tras-pend-box:empty { display:none; }
+    .tras-pend-empty { font-size:.74rem; color:#475569; padding:.3rem 0; }
+    .tras-pend-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:.4rem; }
+    .tras-pend-badge { font-size:.78rem; font-weight:700; color:#fcd34d; background:rgba(251,191,36,.1); border:1px solid rgba(251,191,36,.3); border-radius:.5rem; padding:.3rem .6rem; }
+    .tras-pend-list { display:flex; flex-direction:column; gap:.4rem; }
+    .tras-pend-row { display:flex; align-items:center; justify-content:space-between; gap:.6rem; padding:.55rem .7rem; border:1px solid #1e293b; border-left:3px solid #334155; border-radius:.6rem; background:#0d1526; cursor:pointer; transition:border-color .15s, background .15s, transform .1s; }
+    .tras-pend-row:hover { border-color:#475569; background:#0f1a2e; }
+    .tras-pend-row:active { transform:scale(.99); }
+    .tras-pend-row.tras-urg-1 { border-left-color:#f59e0b; }
+    .tras-pend-row.tras-urg-2 { border-left-color:#ef4444; }
+    .tras-pend-id { font-weight:700; color:#e2e8f0; font-size:.82rem; }
+    .tras-pend-sub { font-size:.68rem; color:#94a3b8; margin-top:.1rem; }
+    .tras-pend-meta { text-align:right; white-space:nowrap; }
+    .tras-cron { font-size:.72rem; font-weight:700; color:#fcd34d; font-variant-numeric:tabular-nums; }
+    .tras-urg-2 .tras-cron { color:#fca5a5; }
+    .tras-pend-cta { font-size:.66rem; color:#64748b; margin-top:.1rem; }
+    /* Paso 2: escaneo */
+    .tras-scan-head { display:flex; align-items:center; justify-content:space-between; font-size:.8rem; color:#cbd5e1; }
+    .tras-scan-count { font-size:.74rem; font-weight:700; color:#86efac; font-variant-numeric:tabular-nums; }
+    .tras-scan-list { display:flex; flex-direction:column; gap:.4rem; max-height:38vh; overflow-y:auto; }
+    .tras-scan-empty { font-size:.78rem; color:#475569; text-align:center; padding:1.2rem 0; }
+    .tras-scan-row { display:flex; align-items:center; justify-content:space-between; gap:.6rem; padding:.5rem .65rem; border:1px solid #1e293b; border-radius:.55rem; background:#0d1526; }
+    .tras-scan-row.tras-scan-hit { animation:trasHit .4s ease; }
+    @keyframes trasHit { 0%{ background:#143226; } 100%{ background:#0d1526; } }
+    .tras-scan-info { flex:1; min-width:0; }
+    .tras-scan-desc { font-size:.8rem; color:#e2e8f0; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .tras-scan-cb { font-size:.66rem; color:#64748b; margin-top:.1rem; }
+    .tras-scan-extra { font-size:.6rem; color:#fcd34d; background:rgba(251,191,36,.12); border-radius:.3rem; padding:.05rem .3rem; margin-left:.3rem; }
+    .tras-scan-qty { display:flex; align-items:center; gap:.4rem; }
+    .tras-qty-btn { width:30px; height:30px; border-radius:8px; border:1px solid #334155; background:#1e293b; color:#e2e8f0; font-size:1rem; font-weight:700; cursor:pointer; }
+    .tras-qty-btn:active { transform:scale(.92); }
+    .tras-qty-val { min-width:28px; text-align:center; font-weight:800; color:#e2e8f0; font-variant-numeric:tabular-nums; }
+    /* Paso 3: resultado + detalle */
+    .tras-result-head { display:flex; align-items:center; gap:.7rem; padding:.7rem .85rem; border-radius:.7rem; }
+    .tras-result-head.ok { background:rgba(34,197,94,.12); border:1px solid rgba(34,197,94,.35); }
+    .tras-result-head.warn { background:rgba(251,191,36,.12); border:1px solid rgba(251,191,36,.4); }
+    .tras-result-ico { font-size:1.6rem; }
+    .tras-result-estado { font-weight:800; color:#e2e8f0; }
+    .tras-result-sub { font-size:.72rem; color:#94a3b8; margin-top:.1rem; }
+    .tras-det-row { display:flex; align-items:center; justify-content:space-between; gap:.5rem; padding:.45rem .6rem; border-radius:.5rem; margin-bottom:.35rem; background:#0d1526; border:1px solid #1e293b; }
+    .tras-det-row.ok    { border-left:3px solid #22c55e; }
+    .tras-det-row.falta { border-left:3px solid #ef4444; }
+    .tras-det-row.sobra { border-left:3px solid #f59e0b; }
+    .tras-det-desc { font-size:.78rem; color:#e2e8f0; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .tras-det-nums { font-size:.7rem; color:#94a3b8; white-space:nowrap; }
+    .tras-det-dif { margin-left:.3rem; } .tras-det-row.ok .tras-det-dif { color:#86efac; } .tras-det-row.falta .tras-det-dif { color:#fca5a5; } .tras-det-row.sobra .tras-det-dif { color:#fcd34d; }
+    .tras-gate-nota { font-size:.68rem; color:#94a3b8; background:#0f1a2e; border:1px dashed #334155; border-radius:.5rem; padding:.5rem .65rem; margin-top:.5rem; line-height:1.35; }
+    .tras-res-card { border:1px solid #1e293b; border-radius:.6rem; padding:.65rem .75rem; margin-bottom:.6rem; background:#0d1526; }
+    .tras-res-card.ok { border-left:3px solid #22c55e; } .tras-res-card.warn { border-left:3px solid #f59e0b; } .tras-res-card.pend { border-left:3px solid #3b82f6; }
+    .tras-res-card-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:.3rem; color:#e2e8f0; }
+    .tras-res-estado { font-size:.7rem; font-weight:700; } .tras-res-estado.ok { color:#86efac; } .tras-res-estado.warn { color:#fcd34d; } .tras-res-estado.pend { color:#93c5fd; }
+    /* Overlay de cámara */
+    .tras-cam-overlay { position:fixed; inset:0; z-index:120; background:#000; display:none; flex-direction:column; }
+    .tras-cam-overlay.is-open { display:flex; }
+    .tras-cam-stage { flex:1; position:relative; overflow:hidden; }
+    #trasCamVideo { width:100%; height:100%; object-fit:cover; }
+    .tras-cam-frame { position:absolute; top:50%; left:50%; width:72%; max-width:340px; aspect-ratio:1.4/1; transform:translate(-50%,-50%); border:3px solid rgba(255,255,255,.7); border-radius:14px; box-shadow:0 0 0 9999px rgba(0,0,0,.45); }
+    .tras-cam-frame.is-hit { border-color:#22c55e; }
+    .tras-cam-bar { display:flex; align-items:center; gap:.6rem; padding:.7rem 1rem; background:#0f172a; }
   </style>
 </head>
 <body class="h-full">
@@ -14918,6 +15020,10 @@
         <button class="zona-btn-sec" onclick="MOS.zonaAbrirSugerencias()" title="Sugerencias con IA">💡 Sugerencias</button>
         <button class="zona-btn-sec" onclick="MOS.zonaImprimirTicket()" title="Imprimir ticket del día (80mm)">🖨️ Ticket del día</button>
         <button class="zona-btn-sec" onclick="MOS.zonaImprimirLista()" title="Imprimir lista de compras (80mm)">🖨️ Lista compras</button>
+        <!-- [RIZ · TRASLADO VERIFICADO] Ingreso por almacén con escaneo (verifica enviado vs escaneado). -->
+        <button class="zona-btn-pedir" style="padding:.5rem .8rem" onclick="MOS.trasIngresoPorAlmacen()" title="Recibir un traslado de almacén escaneando producto por producto">📥 Ingreso por almacén</button>
+        <!-- [ASEGURAR DATA] Log de errores de stock — SOLO master (loadZona lo muestra si rol==='master'). Read-only. -->
+        <button id="zonaBtnLogErrores" class="zona-btn-sec hidden" style="border-color:#7f1d1d;color:#fca5a5" onclick="MOS.zonaAbrirLogErrores()" title="Diferencias de stock detectadas (real vs teórico)">⚠ Log de errores</button>
         <span style="flex:1"></span>
         <span class="text-xs text-slate-500 flex items-center gap-1">
           <span id="zonaFreshDot" class="zona-fresh-dot"></span>
@@ -14932,6 +15038,12 @@
         <button class="zona-kpi k-externo" data-kpi="externo" onclick="MOS.zonaToggleKpi('externo')"><div class="zona-kpi-lbl">Comprar externo</div><div class="zona-kpi-val" id="zKpiExterno">—</div></button>
         <button class="zona-kpi k-cero"    data-kpi="cero"    onclick="MOS.zonaToggleKpi('cero')"><div class="zona-kpi-lbl">Rotación cero</div><div class="zona-kpi-val" id="zKpiCero">—</div></button>
       </div>
+
+      <!-- [RIZ · TRASLADO VERIFICADO] Resumen ✓completo/⚠incompleto/⏳pendiente (al click → detalle por guía). -->
+      <div class="tras-res-bar" id="zonaTrasResumen"></div>
+
+      <!-- [RIZ · TRASLADO VERIFICADO] Alerta de traslados por verificar (con cronómetro). -->
+      <div class="tras-pend-box" id="zonaTrasPend"></div>
 
       <!-- Filtros + orden + búsqueda -->
       <div class="zona-filtros">
@@ -15015,6 +15127,113 @@
         </div>
         <div class="overflow-y-auto px-5 py-4" style="flex:1" id="zonaEspBody">
           <div class="skel h-32 rounded-lg"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ [RIZ · TRASLADO VERIFICADO] Modal: Ingreso por almacén con ESCANEO ══════════════════
+         Paso 1: escanear/escribir el QR de la guía → auto-jala líneas (NO se muestran al operador).
+         Paso 2: escanear producto por producto (contador en vivo, sin cantidad esperada).
+         Paso 3: "Cerrar ingreso" → la PC evalúa enviado vs escaneado → ✓completo/⚠incompleto + detalle.
+         El stock real (me.stock_zonas) NO se toca (GATED en backend). -->
+    <div id="modalZonaTras" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.trasCerrarModal()">
+      <div class="modal-box p-0 zona-modal-in" style="max-width:540px;display:flex;flex-direction:column;max-height:92vh">
+        <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
+          <h3 class="font-semibold text-emerald-300 text-base">📥 Ingreso por almacén</h3>
+          <button onclick="MOS.trasCerrarModal()" class="modal-close-x">×</button>
+        </div>
+        <div class="overflow-y-auto px-5 py-4" style="flex:1">
+
+          <!-- Paso 1: leer el QR de la guía -->
+          <div id="trasPasoGuia">
+            <div class="text-sm text-slate-300 mb-2">Escanea el <b>QR de la guía</b> que envió el almacén (o escribe su ID).</div>
+            <div class="flex items-center gap-2 mb-2">
+              <input id="trasGuiaInput" type="text" class="zona-sel" style="flex:1" placeholder="ID de la guía (ej. G-1781…)" autocomplete="off" inputmode="text"
+                     onkeydown="if(event.key==='Enter'){event.preventDefault();MOS.trasCargarGuia();}">
+              <button class="zona-btn-sec" onclick="MOS.trasAbrirCamara()" title="Escanear con la cámara">📷</button>
+            </div>
+            <button id="trasCargarBtn" class="zona-btn-pedir w-full" onclick="MOS.trasCargarGuia()">📥 Cargar guía</button>
+            <div class="text-xs text-slate-500 mt-2">No verás las cantidades enviadas: solo escanea lo que llegó. Al cerrar, la PC compara.</div>
+          </div>
+
+          <!-- Paso 2: escanear los productos -->
+          <div id="trasPasoScan" style="display:none">
+            <div class="tras-scan-head">
+              <div>Guía <b id="trasScanGuiaId">—</b></div>
+              <div class="tras-scan-count" id="trasScanCount">0 código(s) · 0 unidad(es)</div>
+            </div>
+            <div class="flex items-center gap-2 my-2">
+              <input id="trasScanInput" type="text" class="zona-sel" style="flex:1" placeholder="Escanea/teclea un código…" autocomplete="off" inputmode="text"
+                     onkeydown="if(event.key==='Enter'){event.preventDefault();MOS.trasScanSubmit();}">
+              <button class="zona-btn-sec" onclick="MOS.trasScanSubmit()" title="Agregar">+1</button>
+              <button class="zona-btn-sec" onclick="MOS.trasAbrirCamara()" title="Escanear con la cámara">📷</button>
+            </div>
+            <div id="trasScanList" class="tras-scan-list"></div>
+            <button id="trasCerrarBtn" class="zona-btn-pedir w-full mt-3" onclick="MOS.trasCerrarIngreso()">✓ Cerrar ingreso</button>
+          </div>
+
+          <!-- Paso 3: resultado completo/incompleto -->
+          <div id="trasPasoResultado" style="display:none">
+            <div id="trasResHead" class="tras-result-head"></div>
+            <div id="trasResultBody" class="mt-3"></div>
+            <button class="zona-btn-sec w-full mt-3" onclick="MOS.trasCerrarModal()">Cerrar</button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- [RIZ · TRASLADO VERIFICADO] Overlay de cámara para el escaneo (reusa BarcodeDetector/ZXing). -->
+    <div id="trasCamOverlay" class="tras-cam-overlay">
+      <div class="tras-cam-stage">
+        <video id="trasCamVideo" playsinline muted autoplay></video>
+        <div id="trasCamFrame" class="tras-cam-frame"></div>
+      </div>
+      <div class="tras-cam-bar">
+        <button class="zona-btn-sec" onclick="MOS.trasCerrarCamara()">✕ Cerrar</button>
+        <span id="trasCamEstado" class="text-xs text-slate-300" style="flex:1;text-align:center"></span>
+        <button id="trasTorchBtn" class="zona-btn-sec" style="display:none" onclick="MOS.trasToggleTorch()">🔦</button>
+      </div>
+    </div>
+
+    <!-- [RIZ · TRASLADO VERIFICADO] Modal: resumen de traslados (enviado vs escaneado por guía). -->
+    <div id="modalZonaTrasRes" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.trasCerrarResumen()">
+      <div class="modal-box p-0 zona-modal-in" style="max-width:580px;display:flex;flex-direction:column;max-height:92vh">
+        <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
+          <h3 class="font-semibold text-emerald-300 text-base">📋 Traslados · <span id="zonaTrasResZona">Zona</span></h3>
+          <button onclick="MOS.trasCerrarResumen()" class="modal-close-x">×</button>
+        </div>
+        <div class="overflow-y-auto px-5 py-4" style="flex:1" id="zonaTrasResBody"></div>
+      </div>
+    </div>
+
+    <!-- ── Modal: Log de errores de stock (SOLO master) ─ real vs teórico, read-only ─ -->
+    <div id="modalZonaLog" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.zonaCerrarLogErrores()">
+      <div class="modal-box p-0 zona-modal-in" style="max-width:640px;display:flex;flex-direction:column;max-height:92vh">
+        <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
+          <h3 class="font-semibold text-red-300 text-base">⚠ Log de errores de stock</h3>
+          <button onclick="MOS.zonaCerrarLogErrores()" class="modal-close-x">×</button>
+        </div>
+        <div class="px-5 pt-2 text-xs text-slate-500 flex-shrink-0">Diferencias real vs teórico. Solo diagnóstico — no corrige stock. Toca una fila para ver el historial del producto.</div>
+        <div class="overflow-y-auto px-5 py-4" style="flex:1" id="zonaLogBody">
+          <div class="skel h-16 rounded-lg mb-2"></div>
+          <div class="skel h-16 rounded-lg"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Modal: Historial de movimientos (kardex zona/almacén) ─ read-only ─ -->
+    <div id="modalZonaKardex" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.zonaCerrarKardex()">
+      <div class="modal-box p-0 zona-modal-in" style="max-width:520px;display:flex;flex-direction:column;max-height:92vh">
+        <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
+          <h3 class="font-semibold text-base"><span id="zonaKardexIco">🕘</span> Historial · <span id="zonaKardexTitulo" class="text-slate-100">Producto</span></h3>
+          <button onclick="MOS.zonaCerrarKardex()" class="modal-close-x">×</button>
+        </div>
+        <div class="px-5 pt-2 text-xs text-slate-500 flex-shrink-0" id="zonaKardexSub"></div>
+        <div class="overflow-y-auto px-5 py-4" style="flex:1" id="zonaKardexBody">
+          <div class="skel h-12 rounded-lg mb-2"></div>
+          <div class="skel h-12 rounded-lg mb-2"></div>
+          <div class="skel h-12 rounded-lg"></div>
         </div>
       </div>
     </div>
@@ -18579,7 +18798,7 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js?v=2.43.257"></script>
+<script src="js/api.js?v=2.43.258"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -18594,7 +18813,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.257"></script>
+<script src="js/app.js?v=2.43.258"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
