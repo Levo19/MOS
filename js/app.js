@@ -39395,10 +39395,24 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       // almacén puede no cubrir y se pide igual — el ticket de almacén marca el "debe").
       const sugerir = brecha > 0 ? brecha : 0;
       const enCarrito = _zonaCarritoCant(sku);
-      const btnLbl = enCarrito > 0
-        ? '🛒 En carrito (' + _esc(_zonaFmtCant(enCarrito, p)) + ') · +'
-        : (sugerir > 0 ? 'Pedir ' + _esc(_zonaFmtCant(sugerir, p)) + ' a almacén' : 'Agregar al pedido');
-      acciones = `<button class="zona-btn-pedir${enCarrito > 0 ? ' zona-en-carrito' : ''}" id="zPedir-${safe}" onclick="MOS.zonaPedirAlmacen('${safe}', ${sugerir})">${btnLbl}</button>
+      // [RIZ CARRITO · FIX D] El botón refleja 3 estados VISUALMENTE distintos:
+      //   1) en carrito (aún no enviado)  → "🛒 En carrito (N) · +"  (clase zona-en-carrito)
+      //   2) ya pedido hoy/ayer (persistido en me.zona_pedido_log, llega en p.pedidoEstado) → "✓ Pedido hoy · re-pedir"
+      //      (clase zona-pedido-ok) — DISTINTO de no-pedido, pero un tap RE-AGREGA al carrito (re-pedir permitido).
+      //   3) sin pedir → "Pedir N a almacén" / "Agregar al pedido".
+      const pedLbl = (p.pedidoEstado && p.pedidoEstado.etiqueta) ? String(p.pedidoEstado.etiqueta) : '';
+      let btnLbl, btnCls;
+      if (enCarrito > 0) {
+        btnLbl = '🛒 En carrito (' + _esc(_zonaFmtCant(enCarrito, p)) + ') · +';
+        btnCls = ' zona-en-carrito';
+      } else if (pedLbl) {
+        btnLbl = '✓ ' + _esc(pedLbl) + ' · re-pedir';
+        btnCls = ' zona-pedido-ok';
+      } else {
+        btnLbl = sugerir > 0 ? 'Pedir ' + _esc(_zonaFmtCant(sugerir, p)) + ' a almacén' : 'Agregar al pedido';
+        btnCls = '';
+      }
+      acciones = `<button class="zona-btn-pedir${btnCls}" id="zPedir-${safe}" onclick="MOS.zonaPedirAlmacen('${safe}', ${sugerir})">${btnLbl}</button>
                   <button class="zona-btn-sec" ${externo > 0 ? '' : 'disabled'} onclick="MOS.zonaAgregarLista('${safe}', ${externo})">+ Lista compras${externo > 0 ? ' (' + _esc(_zonaFmtCant(externo, p)) + ')' : ''}</button>`;
     }
 
@@ -39784,6 +39798,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const btn = $('zPedir-' + sku);
     const card = $('zcard-' + sku);
     if (btn) {
+      btn.classList.remove('zona-pedido-ok');
       btn.classList.add('zona-en-carrito');
       btn.innerHTML = '🛒 En carrito (' + _esc(_zonaFmtCant(nueva, p)) + ') · +';
       btn.setAttribute('onclick', `MOS.zonaPedirAlmacen('${_zonaEsc(sku)}', ${(p.brecha != null ? _zonaNum(p.brecha) : 0)})`);
@@ -39904,11 +39919,16 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
     const enCarrito = _zonaCarritoCant(sku);
     const brecha = p ? (p.brecha != null ? _zonaNum(p.brecha) : 0) : 0;
+    const pedLbl = (p && p.pedidoEstado && p.pedidoEstado.etiqueta) ? String(p.pedidoEstado.etiqueta) : '';
+    btn.classList.remove('zona-en-carrito', 'zona-pedido-ok');
     if (enCarrito > 0) {
       btn.classList.add('zona-en-carrito');
       btn.innerHTML = '🛒 En carrito (' + _esc(p ? _zonaFmtCant(enCarrito, p) : enCarrito) + ') · +';
+    } else if (pedLbl) {
+      // ya pedido (persistido) y sin nada en el carrito → estado "Pedido hoy/ayer", re-pedir con un tap.
+      btn.classList.add('zona-pedido-ok');
+      btn.innerHTML = '✓ ' + _esc(pedLbl) + ' · re-pedir';
     } else {
-      btn.classList.remove('zona-en-carrito');
       btn.innerHTML = brecha > 0 ? 'Pedir ' + _esc(p ? _zonaFmtCant(brecha, p) : brecha) + ' a almacén' : 'Agregar al pedido';
     }
     btn.setAttribute('onclick', `MOS.zonaPedirAlmacen('${_zonaEsc(sku)}', ${brecha})`);
@@ -40202,11 +40222,31 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const data = (r && r.data) || r || {};
       const movs = Array.isArray(data.movimientos) ? data.movimientos : (Array.isArray(data) ? data : []);
       if (!body) return;
+      // [RIZ KARDEX] STOCK ACTUAL en el encabezado, para verificar de un vistazo que el saldo corrido cuadra.
+      //   · Zona: el backend devuelve data.stockZonas (verdad operativa) + data.cuadra (saldoFinal==stockZonas).
+      //   · Almacén: no hay campo dedicado → el saldo del movimiento MÁS RECIENTE es el stock vigente.
+      _zonaKardexPintarStock(esAlm, data, movs);
       if (!movs.length) { body.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm">Sin movimientos registrados</div>'; return; }
       body.innerHTML = movs.map((m, i) => _zonaKardexRowHtml(m, i, esAlm)).join('');
     } catch (e) {
       if (body) body.innerHTML = `<div class="text-center py-8 text-red-400 text-sm">${_esc(e.message || String(e))}</div>`;
     }
+  }
+  // [RIZ KARDEX] Encabezado con STOCK ACTUAL (chip) — permite verificar visualmente que el saldo corrido cuadra.
+  function _zonaKardexPintarStock(esAlm, data, movs) {
+    const sub = $('zonaKardexSub');
+    if (!sub) return;
+    let stock = null;
+    if (!esAlm && data && data.stockZonas != null) stock = _zonaNum(data.stockZonas);
+    else if (Array.isArray(movs) && movs.length && movs[0] && movs[0].saldo != null) stock = _zonaNum(movs[0].saldo); // movs[0] = más reciente (DESC)
+    const base = esAlm ? 'Kardex de almacén (movimientos reales)' : ('Kardex de zona ' + ((data && data.zona) || S.zonaActual || ''));
+    if (stock == null) { sub.innerHTML = _esc(base); return; }
+    const neg = stock < 0;
+    const cuadra = (!esAlm && data && data.cuadra === false) ? false : true;   // almacén siempre "ok" (saldo=último mov)
+    const stockTxt = _esc(String(_zonaFmtNumRaw(stock, false)));
+    const chipCls = 'zona-kardex-stockchip' + (neg ? ' neg' : '') + (cuadra ? '' : ' nocuadra');
+    const cuadraTxt = cuadra ? '✓ cuadra' : '⚠ revisar';
+    sub.innerHTML = `${_esc(base)} · <span class="${chipCls}">📦 stock actual: <b>${stockTxt}</b> <span class="zona-kardex-stockok">${cuadraTxt}</span></span>`;
   }
   function _zonaKardexRowHtml(m, i, esAlm) {
     const esIng = !!m.esIngreso;

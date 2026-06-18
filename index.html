@@ -12428,6 +12428,9 @@
     /* [RIZ CARRITO] "en carrito" feedback en el botón del card */
     .zona-btn-pedir.zona-en-carrito { background:linear-gradient(135deg,#0ea5e9,#6366f1); }
     .zona-btn-pedir.zona-en-carrito::after { content:''; }
+    /* [RIZ CARRITO · FIX D] Ya pedido (persistido): verde tenue + borde, claramente DISTINTO de no-pedido; sigue tappable para re-pedir. */
+    .zona-btn-pedir.zona-pedido-ok { background:linear-gradient(135deg,#15803d,#16a34a); box-shadow:0 0 0 1px rgba(34,197,94,.4) inset; }
+    .zona-btn-pedir.zona-pedido-ok:hover:not(:disabled) { box-shadow:0 6px 18px -6px rgba(34,197,94,.55); filter:brightness(1.08); }
     /* [RIZ CARRITO] FAB flotante + badge */
     .zona-cart-fab { position:fixed; right:16px; bottom:84px; z-index:60; width:58px; height:58px; border-radius:50%; border:none; cursor:pointer;
       background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff; box-shadow:0 10px 28px -8px rgba(99,102,241,.75); display:flex; align-items:center; justify-content:center;
@@ -12437,7 +12440,11 @@
     @keyframes zonaCartBump { 0%,100%{transform:scale(1)} 35%{transform:scale(1.16)} }
     .zona-cart-fab-ico { font-size:1.5rem; line-height:1; }
     .zona-cart-badge { position:absolute; top:-4px; right:-4px; min-width:22px; height:22px; padding:0 5px; border-radius:999px; background:#ef4444; color:#fff; font-size:.74rem; font-weight:800; display:flex; align-items:center; justify-content:center; border:2px solid #0f172a; }
-    .zona-cart-card { max-width:440px; width:94%; max-height:80vh; display:flex; flex-direction:column; }
+    /* [RIZ FIX] El carrito usaba .modal-card (clase inexistente) → se veía TRANSPARENTE. Damos panel sólido propio. */
+    .zona-cart-card { max-width:440px; width:94%; max-height:80vh; display:flex; flex-direction:column;
+      background:linear-gradient(180deg,#0f172a,#0a1424); border:1px solid rgba(99,102,241,.4); border-radius:16px;
+      padding:1.1rem 1.15rem; box-shadow:0 25px 60px -10px rgba(0,0,0,.75), 0 0 0 1px rgba(99,102,241,.15) inset;
+      animation:modalBoxIn .35s cubic-bezier(.34,1.56,.64,1); }
     .zona-cart-head { display:flex; align-items:flex-start; justify-content:space-between; padding-bottom:.6rem; border-bottom:1px solid #1e293b; margin-bottom:.5rem; }
     .zona-cart-title { font-weight:800; font-size:1.02rem; color:#e2e8f0; }
     .zona-cart-sub { font-size:.76rem; color:#94a3b8; margin-top:.1rem; }
@@ -12605,6 +12612,12 @@
     .zona-kardex-delta { font-weight:700; font-size:.82rem; } .zona-kardex-delta.ing { color:#86efac; } .zona-kardex-delta.sal { color:#fca5a5; } .zona-kardex-delta.pend { color:#fbbf24; }
     .zona-kardex-saldo { font-size:.66rem; color:#94a3b8; margin-top:.1rem; }
     .zona-kardex-saldo.neg { color:#f87171; font-weight:700; }
+    /* [RIZ KARDEX] chip de STOCK ACTUAL en el encabezado del modal (verificación de cuadre de un vistazo). */
+    .zona-kardex-stockchip { display:inline-flex; align-items:center; gap:.3rem; padding:.1rem .45rem; border-radius:.45rem; background:#0d2818; border:1px solid rgba(34,197,94,.4); color:#bbf7d0; font-size:.72rem; font-weight:600; }
+    .zona-kardex-stockchip b { color:#fff; font-weight:800; }
+    .zona-kardex-stockchip.neg { background:#2a0e0e; border-color:rgba(248,113,113,.45); color:#fecaca; }
+    .zona-kardex-stockchip.nocuadra { background:#332108; border-color:rgba(251,191,36,.45); color:#fde68a; }
+    .zona-kardex-stockok { font-size:.66rem; opacity:.9; }
     /* [RIZ UX] Respetar prefers-reduced-motion: sin movimiento, todo visible y estático.
        (la háptica/SFX ya se silencian desde JS vía _zonaReduce). Solo afecta la vista zona. */
     @media (prefers-reduced-motion: reduce) {
@@ -18856,7 +18869,7 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js?v=2.43.267"></script>
+<script src="js/api.js?v=2.43.268"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -18871,7 +18884,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.267"></script>
+<script src="js/app.js?v=2.43.268"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
