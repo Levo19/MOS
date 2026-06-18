@@ -1792,13 +1792,106 @@ const MOS = (() => {
     }
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  // [AUTO-REFRESCO CATÁLOGO POR VERSIÓN] Poller del maestro de productos.
+  // Problema: el catálogo lo edita CUALQUIER dispositivo del ecosistema (otro admin en MOS,
+  // un cambio de precio desde WH, etc.). El timer de 60s re-pulla TODO el catálogo a ciegas
+  // (caro). Este poller consulta la RPC BARATA mos.catalogo_version (un contador monótono que
+  // SOLO sube cuando cambia mos.productos/mos.equivalencias) y SOLO re-pulla cuando el número
+  // cambió respecto a la baseline → reacción casi instantánea a cambios reales, tráfico mínimo
+  // en reposo. El timer de 60s queda como RED DE SEGURIDAD (cubre el caso "Edge mint caída →
+  // sin token → version=null"): así nunca dejamos de refrescar aunque el poller no pueda mirar.
+  //
+  // EFICIENTE: solo con la app visible (pausa en background); cancela al cerrar sesión; no
+  // re-pulla si la versión no cambió. SAFE: si hay un modal de edición de catálogo abierto,
+  // DIFIERE el re-pull (no pisa lo que el admin está escribiendo) hasta que la versión vuelva a
+  // chequearse con el modal cerrado. visibilitychange→visible y focus disparan un chequeo extra.
+  const CAT_VER_KEY = 'MOS_CAT_VERSION';   // baseline persistida entre sesiones
+  const CAT_VER_POLL_MS = 45000;           // ~45s (entre el 25s de zona y el 60s del catálogo)
+  let _catVerTimer = null;
+  let _catVerBaseline = null;              // última versión conocida (número) o null = aún sin baseline
+  let _catVerHandlersOn = false;
+  let _catVerEnVuelo = false;
+
+  function _catVerLoadBaseline() {
+    try { const v = Number(localStorage.getItem(CAT_VER_KEY)); return isFinite(v) && v > 0 ? v : null; }
+    catch (_) { return null; }
+  }
+  function _catVerSaveBaseline(v) {
+    _catVerBaseline = v;
+    try { if (v != null) localStorage.setItem(CAT_VER_KEY, String(v)); } catch (_) {}
+  }
+
+  // ¿Hay un modal/inline de EDICIÓN del catálogo abierto? → diferir el re-pull (no pisar edición).
+  // El re-pull silencioso hace update in-place de cards y puede re-renderizar; si el admin tiene
+  // el modal de producto/precio/segmentos abierto, mejor esperar a que lo cierre.
+  function _catEdicionAbierta() {
+    try {
+      const ids = ['modalProducto','modalAjustePrecios','modalSegmento','modalApagarBase',
+                   'modalCostosGuia','modalImpactoCostos'];
+      for (const id of ids) { const el = $(id); if (el && el.classList.contains('open')) return true; }
+    } catch (_) {}
+    return false;
+  }
+
+  // Consulta la versión del maestro. Si cambió vs baseline (y la app está visible y no hay edición
+  // abierta) → re-pulla el catálogo + actualiza baseline + toast sutil. NUNCA lanza.
+  async function _catVerPoll() {
+    if (!S.session) return;
+    if (document.visibilityState !== 'visible') return;   // pausa en background
+    if (_catVerEnVuelo) return;
+    _catVerEnVuelo = true;
+    try {
+      const v = (API && typeof API.catalogoVersion === 'function') ? await API.catalogoVersion() : null;
+      if (v == null) return;                 // sin token / fallo → no toco baseline (red de seguridad: timer 60s)
+      if (_catVerBaseline == null) {         // primera lectura buena → solo fija baseline (no re-pulla)
+        _catVerSaveBaseline(v);
+        return;
+      }
+      if (v === _catVerBaseline) return;     // sin cambios → no re-pulla (estado estable, barato)
+      if (_catEdicionAbierta()) return;      // cambió, pero el admin edita → diferir (no muevo baseline → reintenta luego)
+      // Cambió y es seguro: re-pulla el catálogo (la misma función del timer) y mueve la baseline.
+      _catVerSaveBaseline(v);
+      try { await _catalogoRefreshSilencioso(); } catch (_) {}
+      // Toast sutil SOLO si estamos viendo el catálogo (en otras vistas el diff ya loguea en consola
+      // y el toast sería ruido). _catalogoRefreshSilencioso ya emite toasts detallados con nombres
+      // cuando hay altas/bajas/precios; este es el aviso genérico para cambios que no disparan los suyos.
+      try {
+        if (S.view === 'catalogo' && typeof toast === 'function') toast('Catálogo actualizado', 'info', 2200);
+      } catch (_) {}
+    } finally {
+      _catVerEnVuelo = false;
+    }
+  }
+
+  function _startCatVerPoll() {
+    if (_catVerBaseline == null) _catVerBaseline = _catVerLoadBaseline();
+    if (_catVerTimer) clearInterval(_catVerTimer);
+    _catVerTimer = setInterval(_catVerPoll, CAT_VER_POLL_MS);
+    if (!_catVerHandlersOn) {
+      _catVerHandlersOn = true;
+      // Al volver el foco / hacerse visible: chequeo inmediato (el admin que vuelve a la pestaña
+      // ve el catálogo fresco al instante en vez de esperar al próximo tick).
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') _catVerPoll();
+      });
+      window.addEventListener('focus', () => { _catVerPoll(); });
+    }
+  }
+  function _stopCatVerPoll() {
+    if (_catVerTimer) { clearInterval(_catVerTimer); _catVerTimer = null; }
+    // los handlers visibilitychange/focus son baratos (chequean S.session/visible) → quedan registrados.
+  }
+
   function _startCatRefresh() {
     _stopCatRefresh();
     _catalogoRefreshSilencioso(); // precarga inmediata
     _catRefreshTimer = setInterval(_catalogoRefreshSilencioso, 60000);
+    _startCatVerPoll();           // poller por-versión (re-pull dirigido a cambios reales)
   }
   function _stopCatRefresh() {
     if (_catRefreshTimer) { clearInterval(_catRefreshTimer); _catRefreshTimer = null; }
+    _stopCatVerPoll();
   }
 
   function _catLoadCache() {

@@ -365,6 +365,31 @@ const API = (() => {
   }
 
   // ════════════════════════════════════════════════════════════════════
+  // [AUTO-REFRESCO CATÁLOGO] Versión del catálogo maestro (mos.catalogo_version).
+  // RPC barata SIN gate (grant authenticated): devuelve {ok:true, version:<bigint>, updated_at}.
+  // version es un contador monótono que SOLO se incrementa cuando cambia mos.productos /
+  // mos.equivalencias (trigger server-side). El front la poll-ea (~45s + foco/visible) y, si
+  // version != baseline, re-pulla el catálogo (getProductos/getCategorias/getEquivalencias).
+  //
+  // BARATÍSIMA: la RPC lee un contador (no escanea catálogo). El poller la llama, NO re-pulla
+  // a menos que el número haya cambiado → tráfico mínimo en estado estable.
+  //
+  // Devuelve un NÚMERO (la versión) o null si:
+  //   · sin token (Edge mint-mos caída) → _sbRpcMOS devuelve null;
+  //   · respuesta no-ok / shape inesperado / red / HTTP de error.
+  // El caller trata null como "no pude consultar versión" → NO toca la baseline, reintenta luego
+  // (y el timer de respaldo de 60s del catálogo igual sigue cubriendo el caso). NUNCA lanza.
+  async function _catalogoVersion() {
+    try {
+      const r = await _sbRpcMOS('catalogo_version', { p: {} });   // null si no hay token
+      if (r == null) return null;
+      if (r.ok !== true || r.version == null) return null;
+      const v = Number(r.version);
+      return isFinite(v) ? v : null;
+    } catch (_) { return null; }   // red/HTTP/lo que sea → null (el caller no toca baseline)
+  }
+
+  // ════════════════════════════════════════════════════════════════════
   // [FASE 1] Lectura directa de FINANZAS por rango (getFinanzasRango) e HISTORIAL de precios
   // (getHistorialPrecios). Gates por-acción `mos_finanzas_directo` / `mos_historial_directo`
   // (ADEMÁS del maestro). Default OFF → INERTE (con flag OFF jamás entran al directo).
@@ -1854,6 +1879,10 @@ const API = (() => {
       }
       return _postMOS(action, p);
     },
+    // [AUTO-REFRESCO CATÁLOGO] versión monótona del catálogo maestro (mos.catalogo_version).
+    // Número (versión) o null (sin token / fallo). El poller de app.js la usa para detectar cambios
+    // del maestro y re-pullar el catálogo solo cuando hace falta. NUNCA lanza.
+    catalogoVersion: _catalogoVersion,
     getProductosNuevosWH: (p = {}) => _fetch('GET',  { action: 'getProductosNuevosWH', ...p }),
     lanzarProductoNuevo:  (p = {}) => _fetch('POST', { action: 'lanzarProductoNuevo',  ...p }),
     // Crea un PN manualmente desde MOS (admin/master). idGuia vacío → WH no
@@ -1877,6 +1906,7 @@ const API = (() => {
       conFallback:    _conFallbackMOS,      // patrón "directo si flag+token, si no GAS"
       // [FASE 1 · PILOTO] catálogo directo (getProductos):
       catalogoDirecto:    _mosCatalogoDirecto,   // ¿flag por-acción del catálogo ON?
+      catalogoVersion:    _catalogoVersion,      // [AUTO-REFRESCO] versión monótona del maestro (número o null) — poller
       getProductosDirecto:_getProductosDirecto,  // RPC+map+frescura (array o null→GAS) — para diagnóstico
       mapProd:            _mapProdSnakeToHoja,    // map snake→shape-hoja (test de paridad)
       // [FASE 1] finanzas + historial directos (getFinanzasRango / getHistorialPrecios):
