@@ -28,7 +28,8 @@ const MOS = (() => {
     zonaActual: null,        // idZona seleccionada
     zonaList: [],            // catálogo de zonas para el selector
     zonaProductos: [],       // cards crudos del panel (me.zona_panel)
-    zonaFresh: true,         // frescura de la sombra (chip)
+    zonaFresh: true,         // (legacy) frescura de la sombra GAS — YA NO gobierna el chip
+    zonaUltimoFetch: 0,      // [RIZ live] epoch ms del último fetch EXITOSO del panel (lee tablas VIVAS)
     zonaKpis: null,          // {faltan, almacen, externo, cero}
     _zonaFiltros: { kpi: null, tend: {}, brecha: false, orden: 'brecha', q: '' },
     // [RIZ · TRASLADO VERIFICADO] estado del módulo "Guías" (solo lectura/mostrar; el escaneo vive en ME)
@@ -194,6 +195,9 @@ const MOS = (() => {
     // Auto-refresh de almacén: arrancar/detener según vista
     if (viewName === 'almacen') _almIniciarAutoRefresh();
     else _almDetenerAutoRefresh();
+    // [RIZ live] Auto-refresh del panel Zona: arrancar solo en 'zona', detener al salir.
+    if (viewName === 'zona') _zonaIniciarAutoRefresh();
+    else _zonaDetenerAutoRefresh();
     if (viewName === 'config') _cfgIniciarAutoRefresh();
     else _cfgDetenerAutoRefresh();
     // [v2.41.58] Polling 30s Personal del Día: solo en finanzas
@@ -39040,7 +39044,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const items = Array.isArray(data.items) ? data.items : (Array.isArray(data.productos) ? data.productos : (Array.isArray(data) ? data : []));
       S.zonaProductos = items.map(_zonaNormItem);
       S.zonaKpis = null;   // sin kpis del backend → _zonaPintarKpis los deriva de los items
-      S.zonaFresh = (r._fresh !== false);
+      // [RIZ live] El panel lee TABLAS VIVAS (me.stock_zonas / wh.stock) en cada fetch. La frescura HONESTA
+      // es el momento de ESTE fetch exitoso — NO el heartbeat del sync GAS de respaldo (r._fresh), que mide
+      // la sombra y puede estar ~1.5h viejo aunque el dato mostrado sea de hace 1s. Ignoramos r._fresh para el chip.
+      S.zonaFresh = (r._fresh !== false);   // (legacy, solo informativo; no gobierna el chip)
+      S.zonaUltimoFetch = Date.now();
       _zonaPintarFresh();
       _zonaPintarKpis(true);   // count-up animado al cargar
       renderZona();
@@ -39053,10 +39061,139 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
   }
 
+  // ── [RIZ live] AUTO-REFRESH del panel (comunicación casi instantánea) ────────
+  // DECISIÓN: POLLING (no Supabase Realtime). Es el patrón ya probado en MOS (almacén/config/finanzas),
+  // robusto, sin canales/RLS-realtime/reconexión que mantener, y suficiente para "casi al instante".
+  // Realtime sobre me.stock_zonas/wh.stock daría latencia menor pero a cambio de complejidad y otra
+  // superficie de fallo — no lo justifica el caso (admin mirando un panel). Documentado aquí a propósito.
+  //
+  // El loop:
+  //   · corre SOLO en la vista 'zona' (loadView lo arranca/detiene) y SOLO con la pestaña visible;
+  //   · cada ZONA_AUTO_MS re-fetcha API.zona.panel y hace un DIFF SUAVE (solo re-renderiza si cambió algo),
+  //     preservando scroll y SIN parpadeo (no toca el skeleton; no resetea filtros/búsqueda);
+  //   · se PAUSA si hay un modal de zona abierto o un ajuste inline en curso (no pisar lo que el admin escribe);
+  //   · al volver el foco (visibilitychange→visible) dispara un refresco inmediato.
+  const ZONA_AUTO_MS = 25 * 1000;
+  let _zonaAutoTimer = null;
+  let _zonaVisHandler = null;
+  let _zonaRefrescando = false;
+  function _zonaIniciarAutoRefresh() {
+    _zonaTickFreshStart();
+    if (_zonaAutoTimer) clearInterval(_zonaAutoTimer);
+    _zonaAutoTimer = setInterval(() => { _zonaAutoRefrescar(); }, ZONA_AUTO_MS);
+    if (!_zonaVisHandler) {
+      _zonaVisHandler = () => {
+        if (document.visibilityState === 'visible' && S.view === 'zona') _zonaAutoRefrescar();
+      };
+      document.addEventListener('visibilitychange', _zonaVisHandler);
+    }
+  }
+  function _zonaDetenerAutoRefresh() {
+    if (_zonaAutoTimer) { clearInterval(_zonaAutoTimer); _zonaAutoTimer = null; }
+    _zonaTickFreshStop();
+    // El visibilitychange handler es barato y chequea S.view==='zona' → lo dejamos registrado una vez.
+  }
+  // ¿Hay un modal de zona abierto o un ajuste inline activo? → no auto-refrescar (no pisar edición).
+  function _zonaHayEdicionAbierta() {
+    try {
+      const ids = ['modalZonaBCG','modalZonaLotes','modalZonaSug','modalZonaEsp','modalZonaGuias','modalZonaLog','modalZonaKardex','modalZona'];
+      for (const id of ids) { const el = $(id); if (el && el.classList.contains('open')) return true; }
+      // Ajuste inline (stepper): el input solo existe en el DOM mientras la celda está en edición.
+      if (document.querySelector('.zona-step-input')) return true;
+      // Edición por código de barra: el disclosure colapsado deja el body con display:none pero NO borra
+      // su innerHTML → no basta con la presencia del input. Pedimos un .zona-cod-body VISIBLE (offsetParent).
+      const bodies = document.querySelectorAll('.zona-cod-body');
+      for (let i = 0; i < bodies.length; i++) {
+        const b = bodies[i];
+        if (b.offsetParent !== null && b.querySelector('.zona-cod-input')) return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+  // Refresco silencioso: re-fetcha el panel y aplica diff suave. NO muestra skeleton, NO resetea filtros.
+  async function _zonaAutoRefrescar() {
+    if (!S.session) return;
+    if (S.view !== 'zona') return;
+    if (document.visibilityState !== 'visible') return;
+    if (_zonaRefrescando) return;
+    if (_zonaHayEdicionAbierta()) return;   // pausa mientras el admin edita
+    let on = false;
+    try { on = !!(API.zona && API.zona.moduloOn && API.zona.moduloOn()); } catch (_) { on = false; }
+    if (!on) return;
+    _zonaRefrescando = true;
+    try {
+      const r = await API.zona.panel({ zona: S.zonaActual });
+      if (!r || r.ok === false) return;   // silencioso: no romper la vista por un fallo de polling
+      // El admin pudo haber cambiado de zona / abierto un modal mientras esperábamos → descartar.
+      if (S.view !== 'zona' || _zonaHayEdicionAbierta()) return;
+      const data = r.data || r;
+      const items = Array.isArray(data.items) ? data.items : (Array.isArray(data.productos) ? data.productos : (Array.isArray(data) ? data : []));
+      const nuevos = items.map(_zonaNormItem);
+      // Frescura SIEMPRE se actualiza ante un fetch exitoso (el dato es de AHORA, haya cambiado o no).
+      S.zonaUltimoFetch = Date.now();
+      S.zonaFresh = (r._fresh !== false);
+      const cambio = JSON.stringify(nuevos) !== JSON.stringify(S.zonaProductos);
+      if (cambio) {
+        S.zonaProductos = nuevos;
+        S.zonaKpis = null;
+        renderZona();               // diff barato: innerHTML completo pero solo si HUBO cambio → sin parpadeo en el caso común
+        _zonaPintarKpis(false);     // sin count-up en el refresco (evita "saltos" de número)
+        _zonaPulsoRefresco();       // pulso sutil de "se actualizó"
+        _trasCargarBadge();         // el badge de guías también puede haber cambiado
+        _trasCargarResumen();
+      }
+      _zonaPintarFresh();           // siempre repintar el chip "actualizado hace Xs"
+    } catch (_) {
+      // silencioso — el próximo tick reintenta; el chip seguirá mostrando la última hora buena
+    } finally {
+      _zonaRefrescando = false;
+    }
+  }
+  // Pulso sutil al refrescar (anillo en el chip de frescura). Respeta reduced-motion.
+  function _zonaPulsoRefresco() {
+    if (_zonaReduce()) return;
+    const dot = $('zonaFreshDot');
+    if (!dot) return;
+    try { dot.classList.remove('zona-fresh-pulse'); void dot.offsetWidth; dot.classList.add('zona-fresh-pulse'); } catch (_) {}
+  }
+
+  // [RIZ live] Chip de frescura HONESTO: mide la antigüedad del último fetch EXITOSO del panel
+  // (que lee tablas vivas), NO el heartbeat del sync GAS de respaldo. Verde si el dato es de hace
+  // <2 min (live), ámbar si está envejeciendo (>2 min, p.ej. tab en background largo). Texto humano
+  // "actualizado hace Xs/Xm". Se repinta cada 5s mediante _zonaTickFreshStart (sin re-fetchar).
   function _zonaPintarFresh() {
     const dot = $('zonaFreshDot'), lbl = $('zonaFreshLbl');
-    if (dot) dot.className = 'zona-fresh-dot' + (S.zonaFresh ? '' : ' stale');
-    if (lbl) lbl.textContent = S.zonaFresh ? 'datos al día' : 'datos con retraso';
+    const ts = S.zonaUltimoFetch || 0;
+    if (!ts) {
+      if (dot) dot.className = 'zona-fresh-dot';
+      if (lbl) lbl.textContent = '—';
+      return;
+    }
+    const seg = Math.max(0, Math.round((Date.now() - ts) / 1000));
+    const stale = seg > 120;   // >2 min sin refresco exitoso → ámbar (no "retraso", solo "envejeciendo")
+    if (dot) dot.className = 'zona-fresh-dot' + (stale ? ' stale' : '');
+    if (lbl) lbl.textContent = 'actualizado ' + _zonaHaceLbl(seg);
+  }
+  // "hace Xs / hace Xm / hace Xh" humano y corto.
+  function _zonaHaceLbl(seg) {
+    if (seg < 5)   return 'recién';
+    if (seg < 60)  return 'hace ' + seg + 's';
+    const m = Math.round(seg / 60);
+    if (m < 60)    return 'hace ' + m + ' min';
+    const h = Math.round(m / 60);
+    return 'hace ' + h + ' h';
+  }
+  // Tick visual del chip (solo texto/color, sin red). Arranca con el auto-refresh y muere al salir de zona.
+  let _zonaTickFreshTimer = null;
+  function _zonaTickFreshStart() {
+    if (_zonaTickFreshTimer) clearInterval(_zonaTickFreshTimer);
+    _zonaTickFreshTimer = setInterval(() => {
+      if (S.view !== 'zona') return;   // defensa: no tocar el DOM fuera de la vista
+      _zonaPintarFresh();
+    }, 5000);
+  }
+  function _zonaTickFreshStop() {
+    if (_zonaTickFreshTimer) { clearInterval(_zonaTickFreshTimer); _zonaTickFreshTimer = null; }
   }
 
   // [RIZ UX] Pinta los KPIs con count-up (0→valor). animar=false (re-pintado tras ajuste) → directo.
@@ -39596,6 +39733,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const r = await API.zona.pedirAlmacen({ zona: S.zonaActual, skuBase: sku, cantidad });
       if (r == null || r.ok === false) throw new Error((r && r.error) || 'sin commit');
       toast('Pedido enviado a almacén', 'ok');
+      // [RIZ live] Reconciliar con el estado REAL del server (brecha/almacén pueden haber cambiado):
+      // re-fetch silencioso del panel. Si nada cambió, el chip optimista persiste sin parpadeo.
+      // Diferido un instante para no competir con la animación pulse-ok del card.
+      setTimeout(() => { _zonaAutoRefrescar(); }, 800);
     } catch (e) {
       // ROLLBACK: restaurar botón + shake
       const chip = $('zPedir-' + sku);

@@ -12319,6 +12319,12 @@
     .zona-fresh-dot { width:9px; height:9px; border-radius:50%; display:inline-block; background:#86efac; box-shadow:0 0 6px rgba(134,239,172,.7); }
     .zona-fresh-dot.stale { background:#f59e0b; box-shadow:0 0 6px rgba(245,158,11,.7); animation: zonaPulseAmber 1.6s ease-in-out infinite; }
     @keyframes zonaPulseAmber { 0%,100%{opacity:1} 50%{opacity:.45} }
+    /* [RIZ live] Pulso sutil al auto-refrescar (anillo verde que se expande y desvanece). */
+    .zona-fresh-dot.zona-fresh-pulse { animation: zonaFreshPulse .7s ease-out; }
+    @keyframes zonaFreshPulse {
+      0%   { box-shadow:0 0 0 0 rgba(134,239,172,.85); }
+      100% { box-shadow:0 0 0 8px rgba(134,239,172,0); }
+    }
     /* KPI chips-filtro */
     .zona-kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.5rem; margin-bottom:.75rem; }
     @media (max-width:560px){ .zona-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); } }
@@ -12566,7 +12572,7 @@
       .zona-card, .zona-card.bcg-interro, .zona-skel-card,
       .zona-bcg-badge, .bcg-estrella .zona-bcg-badge, .bcg-interro .zona-bcg-badge,
       .zona-spark-bar, .zona-esp-bar, .zona-bubble, .zona-alerta-neg,
-      .zona-card.pulse-ok, .zona-card.shake, .zona-fresh-dot.stale, .zona-venc-dot.crit,
+      .zona-card.pulse-ok, .zona-card.shake, .zona-fresh-dot.stale, .zona-fresh-dot.zona-fresh-pulse, .zona-venc-dot.crit,
       .zona-think-ico, .zona-think-dots i,
       .zona-modal-in, .zona-log-row, .zona-kardex-row, .tras-scan-row.tras-scan-hit {
         animation: none !important; opacity:1 !important; transform:none !important;
@@ -18783,7 +18789,7 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js?v=2.43.260"></script>
+<script src="js/api.js?v=2.43.261"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -18798,7 +18804,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.260"></script>
+<script src="js/app.js?v=2.43.261"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
