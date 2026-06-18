@@ -1,0 +1,63 @@
+-- 142_wh_guias_cierre_idempotente.sql
+-- ============================================================
+-- [CIERRE DE GUÍAS · cambios del cierre] Columnas aditivas para:
+--   (1) CIERRE IDEMPOTENTE por delta-reconciliación  → wh.guia_detalle.cantidad_aplicada
+--   (2) ULTIMA_ACTIVIDAD + AUTO-CIERRE por inactividad → wh.guias.ultima_actividad
+--
+-- CONTEXTO: el cierre vive en GAS (warehouseMos/gas/Guias.gs). GAS dual-escribe
+-- (best-effort) la cabecera y el detalle de cada guía a la sombra wh.* vía
+-- _dualWriteWH / _dualWritePatchWH / _dualWriteDetallesGuiaWH. El spec de esas
+-- escrituras (MigracionWH.gs · _WH_SPECS) ahora incluye `cantidad_aplicada`
+-- (guia_detalle) y `ultima_actividad` (guias). PostgREST RECHAZA un upsert con
+-- columnas inexistentes (HTTP 400 PGRST204) → SIN este ALTER, TODO dual-write de
+-- guias/guia_detalle empezaría a fallar. Por eso este script DEBE correr ANTES
+-- (o junto con) el deploy del GAS nuevo.
+--
+-- SEGURIDAD: 100% aditivo. `add column if not exists` con default → no reescribe
+-- datos existentes de forma destructiva, no toca stock, no cambia ninguna función.
+-- Idempotente (re-correr es no-op).
+--
+-- SEMÁNTICA:
+--   · cantidad_aplicada = lo último que YA impactó el stock por esa línea.
+--     El cierre GAS aplica SOLO (cant_recibida − cantidad_aplicada) y luego setea
+--     cantidad_aplicada = cant_recibida. Reabrir NO revierte stock; recerrar sin
+--     cambios → delta 0 (no duplica · era el bug LOPESA −72 dos veces). Default 0:
+--     las líneas históricas ya CERRADAS arrancan en 0 → si esa guía se reabre y
+--     recierra SIN tocar líneas, el cierre re-aplicaría la cantidad una vez. Para
+--     evitarlo en histórico ya cerrado, el GAS hace BACKFILL automático al crear
+--     la columna en la hoja (_ensureColCantidadAplicada): línea de guía
+--     CERRADA/AUTOCERRADA no-anulada → cantidad_aplicada = cant_recibida; resto → 0.
+--     Por eso el UPDATE de la sombra de abajo SÍ es seguro de correr (alinea la
+--     sombra al mismo criterio que ya aplicó el GAS en la hoja).
+--   · ultima_actividad = now() al crear la guía y cada vez que se registra/edita
+--     una línea (GUIA_DETALLE no tiene fecha por línea → esta la suple). El
+--     auto-cierre por inactividad (>30 min) la usa como reloj.
+-- ============================================================
+
+alter table wh.guia_detalle add column if not exists cantidad_aplicada numeric default 0;
+alter table wh.guias        add column if not exists ultima_actividad  timestamptz;
+
+-- Índice para el (eventual) auto-cierre server-side por inactividad sobre la sombra.
+-- Hoy el auto-cierre corre en GAS sobre la hoja; el índice es barato y deja la puerta
+-- abierta a moverlo a pg_cron sin reescaneo full.
+create index if not exists ix_wh_guias_ultima_actividad on wh.guias (ultima_actividad);
+
+-- ── NOTA DE MIGRACIÓN DE DATOS (opcional, decisión del dueño) ──
+-- Para las guías HISTÓRICAS ya CERRADAS, cantidad_aplicada = 0 por el default.
+-- Eso es correcto MIENTRAS no se reabran: una guía cerrada no se vuelve a cerrar.
+-- Si se reabriera una guía histórica y se recerrara SIN editar, el cierre GAS
+-- aplicaría su cantidad una vez (delta = cant_recibida − 0). Para alinear el
+-- histórico cerrado a "ya aplicado", se puede correr UNA vez (revisar antes):
+--
+--   update wh.guia_detalle d
+--      set cantidad_aplicada = d.cant_recibida
+--     from wh.guias g
+--    where g.id_guia = d.id_guia
+--      and upper(coalesce(g.estado,'')) in ('CERRADA','AUTOCERRADA')
+--      and coalesce(d.observacion,'') <> 'ANULADO'
+--      and coalesce(d.cantidad_aplicada,0) = 0;
+--
+-- El backfill equivalente en la hoja lo hace el GAS automáticamente la PRIMERA vez
+-- que toca la columna (_ensureColCantidadAplicada), con el MISMO criterio. Correr
+-- este UPDATE deja sombra y hoja alineadas. (Igual el dual-write regular las
+-- reconcilia con el tiempo; este UPDATE solo acelera la convergencia.)
