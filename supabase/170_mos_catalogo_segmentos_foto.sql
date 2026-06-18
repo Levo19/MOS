@@ -60,7 +60,7 @@ create policy producto_fotos_select on storage.objects for select to authenticat
 create or replace function mos._validar_segmentos_precio(segs jsonb)
 returns jsonb
 language plpgsql
-immutable
+volatile   -- usa clock_timestamp() para los defaults id/creadoEn → NO es immutable (evita constant-folding indebido)
 set search_path = ''
 as $fn$
 declare
