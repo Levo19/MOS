@@ -12636,15 +12636,42 @@
     .tras-res-card { border:1px solid #1e293b; border-radius:.6rem; padding:.65rem .75rem; margin-bottom:.6rem; background:#0d1526; }
     .tras-res-card.ok { border-left:3px solid #22c55e; } .tras-res-card.warn { border-left:3px solid #f59e0b; } .tras-res-card.pend { border-left:3px solid #3b82f6; }
     .tras-res-card-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:.3rem; color:#e2e8f0; }
-    .tras-res-estado { font-size:.7rem; font-weight:700; } .tras-res-estado.ok { color:#86efac; } .tras-res-estado.warn { color:#fcd34d; } .tras-res-estado.pend { color:#93c5fd; }
-    /* Overlay de cámara */
-    .tras-cam-overlay { position:fixed; inset:0; z-index:120; background:#000; display:none; flex-direction:column; }
-    .tras-cam-overlay.is-open { display:flex; }
-    .tras-cam-stage { flex:1; position:relative; overflow:hidden; }
-    #trasCamVideo { width:100%; height:100%; object-fit:cover; }
-    .tras-cam-frame { position:absolute; top:50%; left:50%; width:72%; max-width:340px; aspect-ratio:1.4/1; transform:translate(-50%,-50%); border:3px solid rgba(255,255,255,.7); border-radius:14px; box-shadow:0 0 0 9999px rgba(0,0,0,.45); }
-    .tras-cam-frame.is-hit { border-color:#22c55e; }
-    .tras-cam-bar { display:flex; align-items:center; gap:.6rem; padding:.7rem 1rem; background:#0f172a; }
+    .tras-res-estado { font-size:.7rem; font-weight:700; } .tras-res-estado.ok { color:#86efac; } .tras-res-estado.warn { color:#fcd34d; } .tras-res-estado.pend { color:#93c5fd; } .tras-res-estado.base { color:#94a3b8; }
+    /* ── [RIZ · GUÍAS] Botón Guías + badge de alerta ───────────────────────── */
+    .zona-guias-btn { position:relative; }
+    .zona-guias-badge { position:absolute; top:-6px; right:-6px; min-width:18px; height:18px; padding:0 4px; border-radius:9px; background:#dc2626; color:#fff; font-size:10px; font-weight:800; line-height:18px; text-align:center; box-shadow:0 0 0 2px #0b1220; animation:zonaBadgePulse 1.8s ease-in-out infinite; }
+    @keyframes zonaBadgePulse { 0%,100% { transform:scale(1); } 50% { transform:scale(1.12); } }
+    /* ── [RIZ · GUÍAS] Filtros del modal ───────────────────────────────────── */
+    .zona-guias-filtros { padding:.6rem 1.25rem .75rem; border-bottom:1px solid #1e293b; }
+    .zona-guias-chips { display:flex; flex-wrap:wrap; gap:.4rem; }
+    .zona-guias-chip { padding:.35rem .65rem; border-radius:.55rem; border:1px solid #1e293b; background:#0f172a; color:#94a3b8; font-size:.74rem; font-weight:600; cursor:pointer; transition:border-color .15s, color .15s, background .15s, transform .1s; }
+    .zona-guias-chip:hover { border-color:#334155; color:#cbd5e1; }
+    .zona-guias-chip:active { transform:scale(.96); }
+    .zona-guias-chip.active { border-color:#10b981; color:#6ee7b7; background:rgba(16,185,129,.1); }
+    /* ── [RIZ · GUÍAS] Cabecera de día + card de guía ──────────────────────── */
+    .zona-guias-daygrp { margin-bottom:1rem; }
+    .zona-guias-dayhdr { display:flex; align-items:center; gap:.5rem; margin:.2rem 0 .55rem; }
+    .zona-guias-daylbl { font-size:.72rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:#7dd3fc; }
+    .zona-guias-dayline { flex:1; height:1px; background:#1e293b; }
+    .zona-guias-daycount { font-size:.66rem; color:#64748b; font-weight:600; }
+    .zona-guia-card { border:1px solid #1e293b; border-radius:.7rem; padding:.65rem .8rem; margin-bottom:.5rem; background:#0d1526; cursor:pointer; transition:border-color .15s, transform .1s, background .15s; }
+    .zona-guia-card:hover { border-color:#334155; background:#0f1830; }
+    .zona-guia-card:active { transform:scale(.985); }
+    .zona-guia-card.pend { border-left:3px solid #3b82f6; }
+    .zona-guia-card.ok   { border-left:3px solid #22c55e; }
+    .zona-guia-card.warn { border-left:3px solid #f59e0b; }
+    .zona-guia-card.base { border-left:3px solid #475569; }
+    .zona-guia-card-top { display:flex; align-items:center; justify-content:space-between; gap:.5rem; margin-bottom:.25rem; }
+    .zona-guia-id { font-size:.84rem; font-weight:800; color:#e2e8f0; }
+    .zona-guia-estado { font-size:.68rem; font-weight:700; white-space:nowrap; }
+    .zona-guia-estado.pend { color:#93c5fd; } .zona-guia-estado.ok { color:#86efac; } .zona-guia-estado.warn { color:#fcd34d; } .zona-guia-estado.base { color:#94a3b8; }
+    .zona-guia-sub { font-size:.72rem; color:#94a3b8; }
+    .zona-guia-meta { font-size:.66rem; color:#64748b; margin-top:.15rem; }
+    /* ── [RIZ · GUÍAS] Detalle: cabecera + bloque de discrepancias ─────────── */
+    .zona-guia-back { display:inline-flex; align-items:center; gap:.35rem; font-size:.78rem; color:#7dd3fc; cursor:pointer; margin-bottom:.7rem; background:none; border:none; padding:0; }
+    .zona-guia-det-hdr { border:1px solid #1e293b; border-radius:.7rem; padding:.7rem .8rem; margin-bottom:.8rem; background:#0d1526; }
+    .zona-guia-discr-lbl { font-size:.72rem; font-weight:800; letter-spacing:.03em; text-transform:uppercase; margin:.2rem 0 .45rem; }
+    .zona-guia-discr-lbl.alert { color:#fca5a5; } .zona-guia-discr-lbl.ok { color:#86efac; }
   </style>
 </head>
 <body class="h-full">
@@ -15022,8 +15049,9 @@
         <button class="zona-btn-sec" onclick="MOS.zonaAbrirSugerencias()" title="Sugerencias con IA">💡 Sugerencias</button>
         <button class="zona-btn-sec" onclick="MOS.zonaImprimirTicket()" title="Imprimir ticket del día (80mm)">🖨️ Ticket del día</button>
         <button class="zona-btn-sec" onclick="MOS.zonaImprimirLista()" title="Imprimir lista de compras (80mm)">🖨️ Lista compras</button>
-        <!-- [RIZ · TRASLADO VERIFICADO] Ingreso por almacén con escaneo (verifica enviado vs escaneado). -->
-        <button class="zona-btn-pedir" style="padding:.5rem .8rem" onclick="MOS.trasIngresoPorAlmacen()" title="Recibir un traslado de almacén escaneando producto por producto">📥 Ingreso por almacén</button>
+        <!-- [RIZ · TRASLADO VERIFICADO] Guías: layout guía-por-guía agrupado por día (pendientes/verificadas/operario).
+             El badge rojo aparece solo si hay guías con pendientes por verificar. -->
+        <button id="zonaBtnGuias" class="zona-btn-sec zona-guias-btn" onclick="MOS.trasAbrirGuias()" title="Guías de traslado por verificar / verificadas">🚚 Guías<span id="zonaGuiasBadge" class="zona-guias-badge" style="display:none">0</span></button>
         <!-- [ASEGURAR DATA] Log de errores de stock — SOLO master (loadZona lo muestra si rol==='master'). Read-only. -->
         <button id="zonaBtnLogErrores" class="zona-btn-sec hidden" style="border-color:#7f1d1d;color:#fca5a5" onclick="MOS.zonaAbrirLogErrores()" title="Diferencias de stock detectadas (real vs teórico)">⚠ Log de errores</button>
         <span style="flex:1"></span>
@@ -15041,11 +15069,8 @@
         <button class="zona-kpi k-cero"    data-kpi="cero"    onclick="MOS.zonaToggleKpi('cero')"><div class="zona-kpi-lbl">Rotación cero</div><div class="zona-kpi-val" id="zKpiCero">—</div></button>
       </div>
 
-      <!-- [RIZ · TRASLADO VERIFICADO] Resumen ✓completo/⚠incompleto/⏳pendiente (al click → detalle por guía). -->
-      <div class="tras-res-bar" id="zonaTrasResumen"></div>
-
-      <!-- [RIZ · TRASLADO VERIFICADO] Alerta de traslados por verificar (con cronómetro). -->
-      <div class="tras-pend-box" id="zonaTrasPend"></div>
+      <!-- [RIZ · TRASLADO VERIFICADO] La lista de traslados por verificar salió de la vista principal:
+           ahora vive en el botón "🚚 Guías" del encabezado (layout guía-por-guía agrupado por día). -->
 
       <!-- Filtros + orden + búsqueda -->
       <div class="zona-filtros">
@@ -15133,79 +15158,37 @@
       </div>
     </div>
 
-    <!-- ══ [RIZ · TRASLADO VERIFICADO] Modal: Ingreso por almacén con ESCANEO ══════════════════
-         Paso 1: escanear/escribir el QR de la guía → auto-jala líneas (NO se muestran al operador).
-         Paso 2: escanear producto por producto (contador en vivo, sin cantidad esperada).
-         Paso 3: "Cerrar ingreso" → la PC evalúa enviado vs escaneado → ✓completo/⚠incompleto + detalle.
-         El stock real (me.stock_zonas) NO se toca (GATED en backend). -->
-    <div id="modalZonaTras" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.trasCerrarModal()">
-      <div class="modal-box p-0 zona-modal-in" style="max-width:540px;display:flex;flex-direction:column;max-height:92vh">
+    <!-- ══ [RIZ · TRASLADO VERIFICADO] Modal: GUÍAS de traslado — guía-por-guía agrupado por DÍA ════════════════
+         MOS solo MUESTRA. El escaneo de recepción vive en ME (MosExpress), no acá.
+         · Lista: guías agrupadas por día (fecha de la guía), filtrables (todas/pendientes/verificadas/operario).
+         · Card: id, # productos, operario, antigüedad, estado (✓verificada / ⚠incompleta / ⏳pendiente / baseline).
+         · Detalle (al tocar la card): DISCREPANCIAS primero (enviado vs escaneado, falta/sobra), luego el resto.
+         · "✓ Verificado": el admin marca la guía como revisada/resuelta (pendiente → verificada COMPLETO). -->
+    <div id="modalZonaGuias" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.trasCerrarGuias()">
+      <div class="modal-box p-0 zona-modal-in" style="max-width:600px;display:flex;flex-direction:column;max-height:92vh">
         <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
-          <h3 class="font-semibold text-emerald-300 text-base">📥 Ingreso por almacén</h3>
-          <button onclick="MOS.trasCerrarModal()" class="modal-close-x">×</button>
+          <h3 class="font-semibold text-emerald-300 text-base">🚚 Guías · <span id="zonaGuiasZona">Zona</span></h3>
+          <button onclick="MOS.trasCerrarGuias()" class="modal-close-x">×</button>
         </div>
-        <div class="overflow-y-auto px-5 py-4" style="flex:1">
 
-          <!-- Paso 1: leer el QR de la guía -->
-          <div id="trasPasoGuia">
-            <div class="text-sm text-slate-300 mb-2">Escanea el <b>QR de la guía</b> que envió el almacén (o escribe su ID).</div>
-            <div class="flex items-center gap-2 mb-2">
-              <input id="trasGuiaInput" type="text" class="zona-sel" style="flex:1" placeholder="ID de la guía (ej. G-1781…)" autocomplete="off" inputmode="text"
-                     onkeydown="if(event.key==='Enter'){event.preventDefault();MOS.trasCargarGuia();}">
-              <button class="zona-btn-sec" onclick="MOS.trasAbrirCamara()" title="Escanear con la cámara">📷</button>
-            </div>
-            <button id="trasCargarBtn" class="zona-btn-pedir w-full" onclick="MOS.trasCargarGuia()">📥 Cargar guía</button>
-            <div class="text-xs text-slate-500 mt-2">No verás las cantidades enviadas: solo escanea lo que llegó. Al cerrar, la PC compara.</div>
+        <!-- Filtros (estado + operario) — visibles solo en la vista lista -->
+        <div id="zonaGuiasFiltros" class="zona-guias-filtros flex-shrink-0">
+          <div class="zona-guias-chips">
+            <button class="zona-guias-chip active" data-gf="todas"       onclick="MOS.trasGuiasFiltrar('todas')">Todas</button>
+            <button class="zona-guias-chip"        data-gf="pendientes"  onclick="MOS.trasGuiasFiltrar('pendientes')">⏳ Pendientes</button>
+            <button class="zona-guias-chip"        data-gf="verificadas" onclick="MOS.trasGuiasFiltrar('verificadas')">✓ Verificadas</button>
+            <button class="zona-guias-chip"        data-gf="incompletas" onclick="MOS.trasGuiasFiltrar('incompletas')">⚠ Con diferencia</button>
           </div>
-
-          <!-- Paso 2: escanear los productos -->
-          <div id="trasPasoScan" style="display:none">
-            <div class="tras-scan-head">
-              <div>Guía <b id="trasScanGuiaId">—</b></div>
-              <div class="tras-scan-count" id="trasScanCount">0 código(s) · 0 unidad(es)</div>
-            </div>
-            <div class="flex items-center gap-2 my-2">
-              <input id="trasScanInput" type="text" class="zona-sel" style="flex:1" placeholder="Escanea/teclea un código…" autocomplete="off" inputmode="text"
-                     onkeydown="if(event.key==='Enter'){event.preventDefault();MOS.trasScanSubmit();}">
-              <button class="zona-btn-sec" onclick="MOS.trasScanSubmit()" title="Agregar">+1</button>
-              <button class="zona-btn-sec" onclick="MOS.trasAbrirCamara()" title="Escanear con la cámara">📷</button>
-            </div>
-            <div id="trasScanList" class="tras-scan-list"></div>
-            <button id="trasCerrarBtn" class="zona-btn-pedir w-full mt-3" onclick="MOS.trasCerrarIngreso()">✓ Cerrar ingreso</button>
-          </div>
-
-          <!-- Paso 3: resultado completo/incompleto -->
-          <div id="trasPasoResultado" style="display:none">
-            <div id="trasResHead" class="tras-result-head"></div>
-            <div id="trasResultBody" class="mt-3"></div>
-            <button class="zona-btn-sec w-full mt-3" onclick="MOS.trasCerrarModal()">Cerrar</button>
-          </div>
-
+          <select id="zonaGuiasOperario" class="zona-sel" style="margin-top:.5rem" onchange="MOS.trasGuiasSetOperario(this.value)">
+            <option value="">Operario: todos</option>
+          </select>
         </div>
-      </div>
-    </div>
 
-    <!-- [RIZ · TRASLADO VERIFICADO] Overlay de cámara para el escaneo (reusa BarcodeDetector/ZXing). -->
-    <div id="trasCamOverlay" class="tras-cam-overlay">
-      <div class="tras-cam-stage">
-        <video id="trasCamVideo" playsinline muted autoplay></video>
-        <div id="trasCamFrame" class="tras-cam-frame"></div>
-      </div>
-      <div class="tras-cam-bar">
-        <button class="zona-btn-sec" onclick="MOS.trasCerrarCamara()">✕ Cerrar</button>
-        <span id="trasCamEstado" class="text-xs text-slate-300" style="flex:1;text-align:center"></span>
-        <button id="trasTorchBtn" class="zona-btn-sec" style="display:none" onclick="MOS.trasToggleTorch()">🔦</button>
-      </div>
-    </div>
+        <!-- Vista lista: guías agrupadas por día -->
+        <div id="zonaGuiasLista" class="overflow-y-auto px-5 py-4" style="flex:1"></div>
 
-    <!-- [RIZ · TRASLADO VERIFICADO] Modal: resumen de traslados (enviado vs escaneado por guía). -->
-    <div id="modalZonaTrasRes" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.trasCerrarResumen()">
-      <div class="modal-box p-0 zona-modal-in" style="max-width:580px;display:flex;flex-direction:column;max-height:92vh">
-        <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
-          <h3 class="font-semibold text-emerald-300 text-base">📋 Traslados · <span id="zonaTrasResZona">Zona</span></h3>
-          <button onclick="MOS.trasCerrarResumen()" class="modal-close-x">×</button>
-        </div>
-        <div class="overflow-y-auto px-5 py-4" style="flex:1" id="zonaTrasResBody"></div>
+        <!-- Vista detalle: discrepancias primero, luego el resto -->
+        <div id="zonaGuiasDetalle" class="overflow-y-auto px-5 py-4" style="flex:1;display:none"></div>
       </div>
     </div>
 
@@ -18800,7 +18783,7 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js?v=2.43.259"></script>
+<script src="js/api.js?v=2.43.260"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -18815,7 +18798,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.259"></script>
+<script src="js/app.js?v=2.43.260"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

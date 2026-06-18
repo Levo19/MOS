@@ -392,6 +392,7 @@ begin
       'stockAplicado',  v.stock_aplicado,
       'usuario',        coalesce(v.usuario,'—'),
       'verificadoTs',   v.verificado_ts,
+      'fechaGuia',      v.fecha_guia,
       'edadLbl',        me._edad_lbl(now() - v.verificado_ts),
       'detalle',        v.detalle
     ) order by v.verificado_ts desc), '[]'::jsonb) into v_verif

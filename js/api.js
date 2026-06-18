@@ -745,6 +745,16 @@ const API = (() => {
       origen: 'MOS-PWA'
     } });
   }
+  // Baseline: marca las guías ENTRADA_* existentes SIN verificación como BASELINE (verificadas de arranque), para
+  // empezar con la lista de pendientes vacía. Idempotente (ON CONFLICT DO NOTHING). {zona} opcional acota a una zona.
+  async function _zonaBaselineTraslados(params) {
+    const p = params || {};
+    const zona = p.zona != null ? p.zona : p.zonaId;
+    return _sbRpcZonaWrite('zona_baseline_traslados', { p: {
+      ...(zona != null ? { zona: String(zona) } : {}),
+      usuario: _mosUsuario(params) || 'BASELINE'
+    } });
+  }
 
   // ── [RIZ · CAPA 5] IMPRESIÓN 80mm vía Edge `riz-print` ─────────────────
   // La Edge construye el ESC/POS server-side (lee mos.zona_ticket_dia / mos.zona_lista_compras con
@@ -1832,7 +1842,8 @@ const API = (() => {
       trasladosPendientes: _zonaTrasladosPendientes, // mos.zona_traslados_pendientes(p {zona}) → {ok,data:{total,items:[{idGuia,fecha,lineas,totalEnviado,edadSeg,edadLbl,...}]},_fresh}
       trasladosResumen:    _zonaTrasladosResumen,    // mos.zona_traslados_resumen(p {zona})    → {ok,data:{completo,incompleto,pendiente,verificaciones:[...]},_fresh}
       trasladoGuia:        _zonaTrasladoGuia,        // mos.zona_traslado_guia(p {idGuia})      → {ok,data:{idGuia,zona,verificada,lineas:[{codBarra,descripcion,enviado}]},_fresh}
-      trasladoCerrar:      _zonaTrasladoCerrar       // mos.zona_traslado_cerrar(p {idGuia,escaneados:[{codBarra,cantidad}]}) → {ok,[dedup],stockAplicado,data:{estado,total_*,detalle}}
+      trasladoCerrar:      _zonaTrasladoCerrar,      // mos.zona_traslado_cerrar(p {idGuia,escaneados:[{codBarra,cantidad}]}) → {ok,[dedup],stockAplicado,data:{estado,total_*,detalle}}
+      baselineTraslados:   _zonaBaselineTraslados    // mos.zona_baseline_traslados(p {zona?}) → {ok,marcadas,total_pendientes_antes} — marca guías existentes como BASELINE (1 sola vez)
     },
   };
 })();
