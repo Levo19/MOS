@@ -39778,7 +39778,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     openModal('modalZonaLog');
     _zonaSfx('pop'); _zonaVibrar([30,20,30]);
     try {
-      const r = await API.zona.diferencias({});
+      // [RIZ UX] Solo diferencias ABIERTAS (las REVISADAS/RESUELTAS quedan archivadas y no son ruido).
+      //   La RPC mos.stock_diferencias_listar acepta p.estado (supabase/141 §3) → filtramos en origen.
+      const r = await API.zona.diferencias({ estado: 'ABIERTA' });
       if (!r || r.ok === false) throw new Error((r && r.error) || 'Sin datos');
       const data = (r && r.data) || r || {};
       const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
@@ -39868,9 +39870,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const esIng = !!m.esIngreso;
     const op    = String(m.tipoOperacion || '').toUpperCase();
     const fuente = String(m.fuente || '').toLowerCase();
-    let icoCls = esIng ? 'ing' : 'sal', icoTxt = esIng ? '▲' : '▼';
-    if (op.indexOf('AUDITORIA') >= 0) { icoCls = 'aud'; icoTxt = '🔍'; }
-    else if (fuente === 'ajuste' || op.indexOf('AJUSTE') >= 0) { icoCls = 'aju'; icoTxt = '✎'; }
+    // [RIZ UX · REGLA DE COLORES] verde=ingreso/INC, rojo=salida/DEC, NARANJA=guía aún ABIERTA (pendiente de cerrar).
+    //   El glifo distingue el tipo (🔍 auditoría, ✎ ajuste, ▲/▼ guía), pero el COLOR sigue el signo del delta.
+    //   Apenas la guía cierra (estado≠'ABIERTA') el naranja pasa a rojo/verde. Hoy las RPC emiten 'CERRADA';
+    //   el naranja queda cableado para cuando el dato distinga guías abiertas (ver mos.zona_kardex_historial).
+    const abierta = String(m.estado || '').toUpperCase() === 'ABIERTA';
+    const sgnCls  = esIng ? 'ing' : 'sal';                 // color por signo (verde/rojo)
+    const colorCls = abierta ? 'pend' : sgnCls;            // naranja si la guía sigue abierta
+    let icoTxt = esIng ? '▲' : '▼';
+    if (op.indexOf('AUDITORIA') >= 0) { icoTxt = '🔍'; }
+    else if (fuente === 'ajuste' || op.indexOf('AJUSTE') >= 0) { icoTxt = '✎'; }
+    if (abierta) icoTxt = '⏳';                            // guía pendiente de cerrar
     const delta = _zonaNum(m.cantidad);
     const saldo = (m.saldo == null ? null : _zonaNum(m.saldo));
     const saldoNeg = (esAlm && saldo != null && saldo < 0);   // almacén en rojo si negativo
@@ -39878,14 +39888,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const usr   = _esc(m.usuario || '—');
     const guia  = m.idGuia ? (' · ' + _esc(String(m.idGuia))) : '';
     const aplic = (m.aplicado === false) ? ' <span style="color:#64748b">(informativo)</span>' : '';
+    const pendTag = abierta ? ' <span class="zona-kardex-pend-tag">⏳ por cerrar</span>' : '';
     return `<div class="zona-kardex-row" style="animation-delay:${i*30}ms">
-      <span class="zona-kardex-ico ${icoCls}">${icoTxt}</span>
+      <span class="zona-kardex-ico ${colorCls}">${icoTxt}</span>
       <div class="zona-kardex-mid">
-        <div class="zona-kardex-tipo">${_esc(m.tipo || (esIng ? 'INGRESO' : 'SALIDA'))}${aplic}</div>
+        <div class="zona-kardex-tipo">${_esc(m.tipo || (esIng ? 'INGRESO' : 'SALIDA'))}${aplic}${pendTag}</div>
         <div class="zona-kardex-meta">${fecha} · ${usr}${guia}</div>
       </div>
       <div class="zona-kardex-right">
-        <div class="zona-kardex-delta ${esIng ? 'ing' : 'sal'}">${esIng ? '+' : '−'}${_esc(String(delta))}</div>
+        <div class="zona-kardex-delta ${colorCls}">${esIng ? '+' : '−'}${_esc(String(delta))}</div>
         ${saldo != null ? `<div class="zona-kardex-saldo${saldoNeg ? ' neg' : ''}">saldo ${_esc(String(saldo))}</div>` : ''}
       </div>
     </div>`;

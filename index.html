@@ -12549,13 +12549,15 @@
     /* filas del kardex (historial de movimientos) — estilo WH: icono por tipo + saldo a la derecha */
     .zona-kardex-row { display:flex; align-items:center; gap:.65rem; padding:.55rem .7rem; border:1px solid #1e293b; border-radius:.6rem; margin-bottom:.45rem; background:#0d1526; }
     .zona-kardex-ico { width:30px; height:30px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:.95rem; flex-shrink:0; }
+    /* [RIZ UX · REGLA DE COLORES] verde=ingreso/INC · rojo=salida/DEC · NARANJA=guía abierta (pendiente de cerrar). */
     .zona-kardex-ico.ing { background:#0f2e1f; color:#86efac; } .zona-kardex-ico.sal { background:#2e1414; color:#fca5a5; }
-    .zona-kardex-ico.aju { background:#2e2410; color:#fcd34d; } .zona-kardex-ico.aud { background:#1e2a4a; color:#93c5fd; }
+    .zona-kardex-ico.pend { background:#332108; color:#fbbf24; }
     .zona-kardex-mid { flex:1; min-width:0; }
     .zona-kardex-tipo { font-weight:600; color:#e2e8f0; font-size:.8rem; }
+    .zona-kardex-pend-tag { font-size:.6rem; font-weight:700; color:#fbbf24; background:#332108; border:1px solid rgba(251,191,36,.35); padding:.05rem .35rem; border-radius:.3rem; margin-left:.35rem; white-space:nowrap; }
     .zona-kardex-meta { font-size:.66rem; color:#64748b; margin-top:.1rem; }
     .zona-kardex-right { text-align:right; white-space:nowrap; }
-    .zona-kardex-delta { font-weight:700; font-size:.82rem; } .zona-kardex-delta.ing { color:#86efac; } .zona-kardex-delta.sal { color:#fca5a5; }
+    .zona-kardex-delta { font-weight:700; font-size:.82rem; } .zona-kardex-delta.ing { color:#86efac; } .zona-kardex-delta.sal { color:#fca5a5; } .zona-kardex-delta.pend { color:#fbbf24; }
     .zona-kardex-saldo { font-size:.66rem; color:#94a3b8; margin-top:.1rem; }
     .zona-kardex-saldo.neg { color:#f87171; font-weight:700; }
     /* [RIZ UX] Respetar prefers-reduced-motion: sin movimiento, todo visible y estático.
@@ -18798,7 +18800,7 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js?v=2.43.258"></script>
+<script src="js/api.js?v=2.43.259"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -18813,7 +18815,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.258"></script>
+<script src="js/app.js?v=2.43.259"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
