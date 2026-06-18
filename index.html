@@ -12418,6 +12418,9 @@
     .zona-btn-sec:hover:not(:disabled) { border-color:#475569; background:#243449; }
     .zona-btn-sec:active:not(:disabled) { transform:scale(.97); }
     .zona-btn-sec:disabled { opacity:.55; cursor:default; }
+    /* [RIZ Capa 5] decisión BCG-perro vigente (Promocionar/Góndola/Rematar) resaltada */
+    .zona-btn-sec.zona-accion-on { background:#3730a3; color:#e0e7ff; border-color:#6366f1; box-shadow:0 0 0 1px #6366f1 inset; }
+    .zona-btn-sec.zona-accion-on::after { content:'✓'; margin-left:.3rem; font-weight:800; }
     .zona-chip-ok { display:inline-flex; align-items:center; gap:.3rem; font-size:.74rem; font-weight:700; color:#86efac; background:rgba(134,239,172,.12); border:1px solid rgba(134,239,172,.3); border-radius:999px; padding:.3rem .6rem; }
     /* Pulse / shake feedback reusable en zona */
     @keyframes zonaPulseOk { 0%{ box-shadow:0 0 0 0 rgba(134,239,172,.5) } 100%{ box-shadow:0 0 0 12px rgba(134,239,172,0) } }
@@ -18789,7 +18792,7 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js?v=2.43.261"></script>
+<script src="js/api.js?v=2.43.262"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -18804,7 +18807,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.261"></script>
+<script src="js/app.js?v=2.43.262"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

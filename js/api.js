@@ -713,6 +713,20 @@ const API = (() => {
       usuario: _mosUsuario(params)
     } });
   }
+  // [RIZ · CAPA 5] Acción BCG-perro (Promocionar/Góndola/Rematar). NO muta stock/dinero: registra la decisión
+  // del admin (mos.zona_marcar_accion → me.zona_accion_perro, SQL 157). Idempotente por localId. Supabase-only.
+  async function _zonaMarcarAccion(params) {
+    const zona = params && (params.zona != null ? params.zona : params.zonaId);
+    const accion = String((params && params.accion) || '').toUpperCase();
+    try { console.log('[RIZ] zona_marcar_accion', { zona, sku: params && params.skuBase, accion }); } catch (_) {}
+    return _sbRpcZonaWrite('zona_marcar_accion', { p: {
+      zona:    zona != null ? String(zona) : undefined,
+      skuBase: params && params.skuBase != null ? String(params.skuBase) : undefined,
+      accion:  accion || undefined,
+      localId: params && params.localId != null ? String(params.localId) : undefined,
+      usuario: _mosUsuario(params)
+    } });
+  }
 
   // ── [RIZ · TRASLADO VERIFICADO] Ingreso por almacén con ESCANEO (supabase/141). ──────────────────────────
   // El almacén emite una guía de ENTRADA hacia la zona (en me.guias_cabecera, tipo ENTRADA_*). El operador
@@ -1829,6 +1843,7 @@ const API = (() => {
       lotesHistorial:  _zonaLotesHistorialDirecto, // mos.zona_lotes_historial(p) → {ok,data:{...,items:[lotes FIFO]},_fresh}
       ajustarStock:    _zonaAjustarStock,       // mos.zona_ajustar_stock(p)    → {ok,data} (Supabase-only + log)
       pedirAlmacen:    _zonaPedirAlmacen,       // mos.zona_pedir_almacen(p)    → {ok,data} (Supabase-only + log)
+      marcarAccion:    _zonaMarcarAccion,       // mos.zona_marcar_accion(p {skuBase,accion}) → {ok,[dedup],data} (perro: NO muta stock)
       // [RIZ · CAPA 5] nuevos: lista de compras (lectura), impresión 80mm (Edge riz-print), IA real (Edge /functions/ia)
       listaCompras:    _zonaListaComprasDirecto,// mos.zona_lista_compras(p)    → {ok,data:{zona,semana,items:[...]},_fresh}
       imprimir:        _zonaImprimir,           // Edge riz-print {tipo,zona,fecha|semana,printerId} → {ok,printJobId}

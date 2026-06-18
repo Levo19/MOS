@@ -476,12 +476,15 @@ function _getDashboardAlmacenImpl() {
     var mermas = _safeReadWhMermas();
     var mermasMes = 0, mermasMesUnidades = 0, mermasPendientes = 0;
     mermas.forEach(function(m) {
-      var fecha = m.fecha ? new Date(m.fecha) : null;
+      // [FIX KPI] el header real de MERMAS es fechaIngreso (no fecha) y cantidadOriginal (no cantidad)
+      // → mermasMes/mermasMesUnidades daban 0. cantidadOriginal = la cantidad que entró como merma.
+      var fecha = m.fechaIngreso ? new Date(m.fechaIngreso) : null;
       if (!fecha || fecha < mesIni) return;
-      mermasMesUnidades += parseFloat(m.cantidad) || 0;
+      var cantMerma = parseFloat(m.cantidadOriginal) || 0;
+      mermasMesUnidades += cantMerma;
       var prod = _resolverProd(m.codigoProducto);
       var costo = prod ? (parseFloat(prod.precioCosto) || 0) : 0;
-      mermasMes += (parseFloat(m.cantidad) || 0) * costo;
+      mermasMes += cantMerma * costo;
       if (String(m.estado || '').toUpperCase() === 'PENDIENTE') mermasPendientes++;
     });
 
@@ -492,7 +495,8 @@ function _getDashboardAlmacenImpl() {
       var fecha = e.fecha ? new Date(e.fecha) : null;
       if (!fecha || fecha < mesIni) return;
       envMes++;
-      var ef = parseFloat(e.eficiencia);
+      // [FIX KPI] el header real de ENVASADOS es eficienciaPct (no eficiencia) → el promedio daba 0/null.
+      var ef = parseFloat(e.eficienciaPct);
       if (!isNaN(ef)) { eficienciaSum += ef; eficienciaCount++; }
     });
     var eficienciaProm = eficienciaCount > 0 ? (eficienciaSum / eficienciaCount) : null;
@@ -881,7 +885,7 @@ function _getOperacionesUnificadasImpl(dias) {
       });
     } catch(_){}
     try {
-      _sheetToObjects(_abrirWhSheet('PROVEEDORES')).forEach(function(pr) {
+      _safeReadWhProveedores().forEach(function(pr) {
         if (pr.idProveedor && !provMap[String(pr.idProveedor)]) {
           provMap[String(pr.idProveedor)] = pr.nombre || pr.idProveedor;
         }
@@ -1261,7 +1265,7 @@ function _construirFifoCtx() {
     equiv:        null
   };
   try { ctx.guias = _safeReadWhGuias(); } catch(_){}
-  try { ctx.detalles = _readSheetPreservandoFecha(_abrirWhSheet('GUIA_DETALLE')); } catch(_){}
+  try { ctx.detalles = _safeReadWhGuiaDetalle(); } catch(_){}   // [LECTURA WH DIRECTA] flag + fallback
   try { ctx.stockWh = _safeReadWhStock(); } catch(_){}
   try { ctx.stockMeZonas = _safeReadMeStockZonas(); } catch(_){}
   try { ctx.equiv = _readEquivalencias(); } catch(_){}
@@ -1336,7 +1340,7 @@ function _calcularLotizacionFIFO(producto, costoNuevoConIgv, idGuiaActual, fifoC
 
     var detalles = (fifoCtx && fifoCtx.detalles)
       ? fifoCtx.detalles
-      : _readSheetPreservandoFecha(_abrirWhSheet('GUIA_DETALLE'));
+      : _safeReadWhGuiaDetalle();   // [LECTURA WH DIRECTA] flag + fallback; este path no parsea fechaVencimiento (ver NOTA D / SQL 154)
     detalles.forEach(function(d) {
       if (String(d.observacion || '').toUpperCase() === 'ANULADO') return;
       var cb = String(d.codigoProducto || '').toUpperCase();
@@ -1422,7 +1426,9 @@ function _stockTotalProducto(producto, fifoCtx) {
     var stockWh = (fifoCtx && fifoCtx.stockWh) ? fifoCtx.stockWh : _safeReadWhStock();
     stockWh.forEach(function(s){
       var cb = String(s.codigoProducto || s.codigoBarra || '').toUpperCase();
-      if (codigos[cb]) total += parseFloat(s.cantidad) || 0;
+      // [FIX KPI/FIFO] el header real de STOCK es cantidadDisponible (no cantidad) → el total de stock del
+      // producto (usado en FIFO / stock total zona+almacén) daba 0 para el lado WH.
+      if (codigos[cb]) total += parseFloat(s.cantidadDisponible) || 0;
     });
   } catch(_){}
   try {
@@ -1827,9 +1833,7 @@ function imprimirCostosGuia(params) {
   // ── 2. Cargar líneas de detalle ──
   var det;
   try {
-    var detSh = _abrirWhSheet('GUIA_DETALLE');
-    if (!detSh) return { ok: false, error: 'GUIA_DETALLE no encontrada' };
-    var allDet = _sheetToObjects(detSh);
+    var allDet = _safeReadWhGuiaDetalle();   // [LECTURA WH DIRECTA] flag + fallback
     det = allDet.filter(function(l){ return String(l.idGuia) === idGuia; });
   } catch(e) { return { ok: false, error: 'Error leyendo detalle: ' + e.message }; }
   if (!det.length) return { ok: false, error: 'Guía sin líneas' };
@@ -2027,9 +2031,8 @@ function getOperacionesConDetalle(params) {
       // ── 1. WH GUIA_DETALLE — solo idGuias del rango ──
       var lineasWH = {};
       try {
-        var whSheet = _abrirWhSheet('GUIA_DETALLE');
-        if (whSheet) {
-          var allDet = _sheetToObjects(whSheet);
+        var allDet = _safeReadWhGuiaDetalle();   // [LECTURA WH DIRECTA] flag + fallback
+        if (allDet && allDet.length) {
           allDet.forEach(function(l) {
             var id = String(l.idGuia || '');
             if (!id || !validWH[id]) return;
@@ -2121,9 +2124,7 @@ function getOperacionDetalle(params) {
   try {
     var prodLookup = _buildProdLookup();
     if (params.fuente === 'WH') {
-      var whSheet = _abrirWhSheet('GUIA_DETALLE');
-      if (!whSheet) return { ok: false, error: 'GUIA_DETALLE no encontrada en WH' };
-      var allDet = _sheetToObjects(whSheet);
+      var allDet = _safeReadWhGuiaDetalle();   // [LECTURA WH DIRECTA] flag + fallback
       var lineas = allDet.filter(function(d){ return String(d.idGuia) === String(params.idGuia); });
       lineas = lineas.map(function(l) {
         var p = prodLookup[l.codigoProducto] || {};
@@ -2175,24 +2176,64 @@ function getOperacionDetalle(params) {
 }
 
 // ── HELPERS PRIVADOS ────────────────────────────────────────────
+// [LECTURA WH DIRECTA · Supabase] WH ahora escribe DIRECTO a Supabase (sync hoja→supabase apagado para varias
+// tablas) → la HOJA de WH puede estar STALE. Estos readers de almacén leen la SOMBRA wh.* en VIVO vía RPCs
+// mos.wh_*_crudo() (SQL 154), que devuelven EXACTAMENTE el mismo shape (keys camelCase + serialización de fecha)
+// que producía leer la hoja con _sheetToObjects / _readSheetPreservandoFecha.
+//   FLAG (Script Property): MOS_WH_LECTURA_DIRECTO = '1' → Supabase ; cualquier otro / ausente → Hoja (default OFF).
+//   FALLBACK: si la RPC falla (no ok / error / excepción), cae a la HOJA → el dashboard NO se rompe.
+// Solo cambia la FUENTE del dato; la lógica de negocio (impls que consumen estas filas) NO se toca.
+function _whLecturaDirectaOn() {
+  try { return PropertiesService.getScriptProperties().getProperty('MOS_WH_LECTURA_DIRECTO') === '1'; }
+  catch(_) { return false; }
+}
+/** Llama mos.<fn>() y devuelve el array data si ok; null si falla (para que el caller caiga a la hoja). */
+function _whRpcRows(fn) {
+  try {
+    var r = _sbRpc('mos', fn, {});
+    if (r && r.ok && r.data && r.data.ok === true && Array.isArray(r.data.data)) return r.data.data;
+    return null;
+  } catch(_) { return null; }
+}
+
 function _safeReadWhStock() {
+  if (_whLecturaDirectaOn()) { var d = _whRpcRows('wh_stock_crudo'); if (d) return d; }
   try { return _sheetToObjects(_abrirWhSheet('STOCK')); } catch(e) { return []; }
 }
 function _safeReadWhLotes() {
+  if (_whLecturaDirectaOn()) { var d = _whRpcRows('wh_lotes_crudo'); if (d) return d; }
   try { return _sheetToObjects(_abrirWhSheet('LOTES_VENCIMIENTO')); } catch(e) { return []; }
 }
 function _safeReadWhMermas() {
+  if (_whLecturaDirectaOn()) { var d = _whRpcRows('wh_mermas_crudo'); if (d) return d; }
   try { return _sheetToObjects(_abrirWhSheet('MERMAS')); } catch(e) { return []; }
 }
 function _safeReadWhEnvasados() {
+  if (_whLecturaDirectaOn()) { var d = _whRpcRows('wh_envasados_crudo'); if (d) return d; }
   try { return _sheetToObjects(_abrirWhSheet('ENVASADOS')); } catch(e) { return []; }
 }
 function _safeReadWhGuias() {
   // Usa lectura raw para preservar la hora completa (no truncar a yyyy-MM-dd)
+  if (_whLecturaDirectaOn()) { var d = _whRpcRows('wh_guias_crudo'); if (d) return d; }
   try { return _readSheetPreservandoFecha(_abrirWhSheet('GUIAS')); } catch(e) { return []; }
 }
 function _safeReadWhPreingresos() {
+  if (_whLecturaDirectaOn()) { var d = _whRpcRows('wh_preingresos_crudo'); if (d) return d; }
   try { return _readSheetPreservandoFecha(_abrirWhSheet('PREINGRESOS')); } catch(e) { return []; }
+}
+/** GUIA_DETALLE crudo (mismas keys camelCase que _sheetToObjects sobre la hoja). Flag + fallback a la hoja.
+ *  El parámetro `serializaFecha` (raw|iso) preservaba la distinción _sheetToObjects vs _readSheetPreservandoFecha;
+ *  GUIA_DETALLE solo expone fechaVencimiento (DATE sin hora) y ningún call-site la parsea a Date → una sola RPC. */
+function _safeReadWhGuiaDetalle() {
+  if (_whLecturaDirectaOn()) { var d = _whRpcRows('wh_guia_detalle_crudo'); if (d) return d; }
+  try { return _sheetToObjects(_abrirWhSheet('GUIA_DETALLE')); } catch(e) { return []; }
+}
+/** PROVEEDORES (WH) crudo. Mismo flag + fallback. La RPC mos.wh_proveedores_crudo() (SQL 156) lee la fuente
+ *  canónica mos.proveedores (cubre el 100% de los idProveedor referenciados por preingresos/guías WH). El
+ *  consumidor (Operaciones) solo usa pr.idProveedor + pr.nombre. Fallback a la hoja WH si la RPC falla. */
+function _safeReadWhProveedores() {
+  if (_whLecturaDirectaOn()) { var d = _whRpcRows('wh_proveedores_crudo'); if (d) return d; }
+  try { return _sheetToObjects(_abrirWhSheet('PROVEEDORES')); } catch(e) { return []; }
 }
 
 // Variante de _sheetToObjects que conserva los Date como ISO completo
@@ -3289,9 +3330,7 @@ function getContextoTicketJefa(params) {
   var guia = whGuias.find(function(g){ return String(g.idGuia) === idGuia; });
   if (!guia) return { ok: false, error: 'Guía no encontrada' };
 
-  var detSh = _abrirWhSheet('GUIA_DETALLE');
-  if (!detSh) return { ok: false, error: 'GUIA_DETALLE no encontrada' };
-  var det = _sheetToObjects(detSh).filter(function(l){ return String(l.idGuia) === idGuia; });
+  var det = _safeReadWhGuiaDetalle().filter(function(l){ return String(l.idGuia) === idGuia; });   // [LECTURA WH DIRECTA] flag + fallback
   var prodLookup = _buildProdLookup();
 
   var ctx = det.map(function(l) {

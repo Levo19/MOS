@@ -39361,9 +39361,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // Acciones según cuadrante
     let acciones;
     if (bcg === 'perro' && brecha <= 0 && !negativo) {
-      acciones = `<button class="zona-btn-sec" onclick="MOS.zonaPlaceholder('Promocionar')">Promocionar</button>
-                  <button class="zona-btn-sec" onclick="MOS.zonaPlaceholder('Mover a góndola')">Mover a góndola</button>
-                  <button class="zona-btn-sec" onclick="MOS.zonaPlaceholder('Rematar')">Rematar</button>`;
+      // [RIZ · CAPA 5] Acciones reales (decisión auditable, NO mutan stock/dinero). El botón de la decisión
+      // vigente queda resaltado (data del panel: p.accionPerro). Optimista + idempotente backend.
+      const acc = String(p.accionPerro || '').toUpperCase();
+      const on = (k) => acc === k ? ' zona-accion-on' : '';
+      acciones = `<button class="zona-btn-sec${on('PROMOCIONAR')}" onclick="MOS.zonaAccionPerro('${safe}','PROMOCIONAR')">Promocionar</button>
+                  <button class="zona-btn-sec${on('GONDOLA')}" onclick="MOS.zonaAccionPerro('${safe}','GONDOLA')">Mover a góndola</button>
+                  <button class="zona-btn-sec${on('REMATAR')}" onclick="MOS.zonaAccionPerro('${safe}','REMATAR')">Rematar</button>`;
     } else {
       const pedirLbl = pedirAlm > 0 ? 'Pedir ' + _zonaFmtCant(pedirAlm, p) + ' a almacén' : 'Almacén sin stock';
       acciones = `<button class="zona-btn-pedir" id="zPedir-${safe}" ${pedirAlm > 0 ? '' : 'disabled'} onclick="MOS.zonaPedirAlmacen('${safe}', ${pedirAlm})">${pedirLbl}</button>
@@ -40079,8 +40083,59 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _zonaSfx('pop'); _zonaVibrar(20);
   }
   function zonaCerrarBCG() { closeModal('modalZonaBCG'); }
-  // Acciones "rematar/góndola/promocionar" → informativas en Capa 4 (catálogo no se toca aquí). Capa 5.
-  function zonaPlaceholder(nombre) { _zonaSfx('pop'); toast(nombre + ': disponible en Capa 5', 'info'); }
+  // [RIZ · CAPA 5] Acción BCG-perro REAL (Promocionar / Mover a góndola / Rematar). Es una DECISIÓN del admin
+  // sobre stock muerto: NO toca inventario ni caja (el diseño RIZ informa, no muta). Persiste en
+  // me.zona_accion_perro (auditable, idempotente por localId). Optimista: resalta el botón al instante +
+  // sonido/vibración; si el backend falla, revierte el resalte + toast rojo. La decisión vuelve en el panel
+  // (p.accionPerro) en el próximo refresh.
+  const _ZONA_ACCION_LBL = { PROMOCIONAR:'Promocionar', GONDOLA:'Mover a góndola', REMATAR:'Rematar' };
+  async function zonaAccionPerro(sku, accion) {
+    accion = String(accion || '').toUpperCase();
+    const lbl = _ZONA_ACCION_LBL[accion] || accion;
+    if (!_ZONA_ACCION_LBL[accion]) { toast('Acción no válida', 'error'); return; }
+    const card = $('zcard-' + sku);
+    // Capturar la decisión PREVIA del modelo (para rollback exacto si el backend falla).
+    let prevAccion = null;
+    try { const pp = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku); prevAccion = (pp && pp.accionPerro) ? String(pp.accionPerro).toUpperCase() : null; } catch (_) {}
+    // OPTIMISTA: resaltar el botón elegido (y apagar los hermanos) dentro de la card.
+    let prevOn = null;
+    try {
+      if (card) {
+        const btns = card.querySelectorAll('.zona-actions .zona-btn-sec');
+        btns.forEach(b => { if (b.classList.contains('zona-accion-on')) prevOn = b; b.classList.remove('zona-accion-on'); });
+        const map = { PROMOCIONAR:0, GONDOLA:1, REMATAR:2 };
+        const idx = map[accion];
+        if (btns[idx]) btns[idx].classList.add('zona-accion-on');
+        card.classList.remove('pulse-ok'); void card.offsetWidth; card.classList.add('pulse-ok');
+      }
+    } catch (_) {}
+    _zonaSfx('ok'); _zonaVibrar([60,40,60]);
+    toast(lbl + ' marcado', 'ok');
+    // Reflejar en el modelo local para que un re-render intermedio no lo pierda.
+    try { const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku); if (p) p.accionPerro = accion; } catch (_) {}
+    // BACKGROUND: persistir. localId estable por (zona,sku,accion) → reintento del mismo gesto dedupea.
+    try {
+      const localId = 'ACC-' + (S.zonaActual || '') + '-' + sku + '-' + accion;
+      const r = await API.zona.marcarAccion({ zona: S.zonaActual, skuBase: sku, accion, localId });
+      if (!r || r.ok === false) throw new Error((r && r.error) || 'sin respuesta');
+    } catch (e) {
+      // ROLLBACK: revertir resalte + restaurar el previo.
+      try {
+        if (card) {
+          card.querySelectorAll('.zona-actions .zona-btn-sec').forEach(b => b.classList.remove('zona-accion-on'));
+          if (prevOn) prevOn.classList.add('zona-accion-on');
+          card.classList.remove('pulse-ok'); void card.offsetWidth; card.classList.add('shake');
+          setTimeout(() => { try { card.classList.remove('shake'); } catch (_) {} }, 500);
+        }
+        const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
+        if (p) p.accionPerro = prevAccion;
+      } catch (_) {}
+      _zonaSfx('error'); _zonaVibrar([120,40,120]);
+      toast('No se pudo marcar ' + lbl + ', reintenta', 'error');
+    }
+  }
+  // Compat: por si quedó algún onclick viejo a zonaPlaceholder (ya no se genera) → no-op informativo.
+  function zonaPlaceholder(nombre) { _zonaSfx('pop'); toast(String(nombre || 'Acción'), 'info'); }
   function zonaBCGTapProducto(sku) {
     _zonaSfx('tick');
     zonaCerrarBCG();
@@ -40409,7 +40464,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [ASEGURAR DATA] Log de errores (master) + historial kardex zona/almacén — read-only
     zonaAbrirLogErrores, zonaCerrarLogErrores, zonaLogVerHistorial,
     zonaVerKardex, zonaVerKardexAlmacen, zonaCerrarKardex,
-    zonaAbrirBCG, zonaCerrarBCG, zonaBCGTapProducto, zonaBCGFiltrarCuadrante, zonaPlaceholder,
+    zonaAbrirBCG, zonaCerrarBCG, zonaBCGTapProducto, zonaBCGFiltrarCuadrante, zonaPlaceholder, zonaAccionPerro,
     // [RIZ Capa 5] impresión 80mm + panel IA + lista compras
     zonaImprimirTicket, zonaImprimirLista, zonaAbrirSugerencias, zonaCerrarSugerencias,
     // [RIZ · TRASLADO VERIFICADO] Guías — solo mostrar (escaneo de recepción vive en ME)

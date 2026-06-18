@@ -1407,3 +1407,92 @@ function semaforoLecturasMOS(opts){
   Logger.log('VEREDICTO: '+out.veredicto);
   return out;
 }
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// [CUTOVER 100% SUPABASE] desactivarTriggersPisanSupabaseMOS(opts)
+//   Ahora que MOS/ME/WH leen DIRECTO de Supabase (y ME/WH ESCRIBEN directo), los triggers GAS que empujan
+//   Hoja→Supabase (sync de respaldo / recon / cierres-snapshot) ya no aportan frescura y, peor, pueden
+//   RE-ESCRIBIR (pisar) filas que ahora son la verdad en Supabase. Esta función LISTA y BORRA *sólo* esos
+//   handlers, dejando intactos los triggers operativos (seguridad, horarios, push, dispositivos, etiquetas,
+//   membretes, heartbeat de impresoras, alertas operativas, cierres de liquidación de DINERO, etc.).
+//
+//   ROBUSTA + IDEMPOTENTE: se puede correr N veces; si ya no hay triggers PISA, no hace nada.
+//   SEGURA POR LISTA BLANCA NEGATIVA: borra SÓLO los handlers en _TRG_PISA_SUPABASE. Cualquier handler que NO
+//   esté en esa lista NUNCA se toca (incluida toda la familia de seguridad/horario/push, aunque cambie de nombre).
+//   Además un guard explícito _TRG_PROTEGIDOS aborta el borrado si por error un handler protegido apareciera en
+//   la lista PISA (doble candado).
+//
+//   opts.dryRun=true  → NO borra; sólo REPORTA qué borraría (recomendado correr primero en seco).
+//   opts.incluirSombra=false (default) → CONSERVA los sync que mantienen FRESCA la sombra mos.* (syncMOSReciente/
+//     syncMOSCompleto/syncCatalogoSupabase). Motivo: MOS todavía ESCRIBE su catálogo/maestros vía Sheets (el
+//     cutover de ESCRITURA de MOS fue revertido) y varias lecturas (incl. alertas de stock de WH) dependen de que
+//     mos.productos/maestros estén frescos. Borrarlos dejaría la sombra stale. Estos sync ya respetan
+//     _mosSyncOffTablas() (no re-upsertan tablas marcadas como escritura-directa) → NO pisan lo directo.
+//   opts.incluirSombra=true → TAMBIÉN borra esos 3 sync de sombra (sólo si MOS ya escribe 100% directo; hoy NO).
+//
+//   Devuelve { ok, dryRun, eliminados:[{handler,tipo}], conservados_pisa_sombra:[...], protegidos_detectados:n,
+//             total_triggers_antes, total_triggers_despues }.
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+// Handlers que EMPUJAN Hoja→Supabase / snapshot / recon → candidatos a desactivar (pisan/duplican la verdad directa).
+//   tipo 'sombra' = mantiene fresca la sombra mos.* (se conserva salvo incluirSombra:true).
+//   tipo 'pisa'   = recon/cierre-snapshot que reescribe Supabase desde la hoja → siempre se borra.
+var _TRG_PISA_SUPABASE = {
+  // sync de respaldo Hoja→Supabase de tablas mos.* (mantiene la sombra fresca; respeta sync-off).
+  syncMOSReciente:       'sombra',
+  syncMOSCompleto:       'sombra',
+  syncCatalogoSupabase:  'sombra',
+  // recon/snapshot que reescriben Supabase desde la hoja (redundantes con la verdad directa).
+  reconciliarDiarioMOS:  'pisa',
+  _liqSyncJob:           'pisa'   // sync horario de liquidaciones Hoja→Supabase (el CIERRE de dinero NO está acá; ver protegidos).
+};
+
+// Handlers que NUNCA se borran aunque alguien los liste por error (doble candado). NO son sync de subida:
+//   son operativos / de dinero / de seguridad. (No exhaustivo: la lógica de borrado YA es lista-blanca-negativa;
+//   esto es sólo un guard defensivo extra.)
+var _TRG_PROTEGIDOS = {
+  // dinero / liquidaciones (CIERRE real, no sync de subida)
+  _liqDiaCronDiario:true, cierreNocturnoTodos:true, cerrarSemanaAutomatico:true, cronSaludStockWH:true,
+  // seguridad / horarios / push / dispositivos / operativos
+  _resembrarDispositivosJob:true, _heartbeatImpresoras:true, _etiqCronEscalacion:true,
+  alertasOperativasDiarias:true
+};
+
+function desactivarTriggersPisanSupabaseMOS(opts){
+  opts = opts || {};
+  var dryRun = opts.dryRun === true;
+  var incluirSombra = opts.incluirSombra === true;
+  var triggers = ScriptApp.getProjectTriggers();
+  var antes = triggers.length;
+  var eliminados = [], conservadosSombra = [], protegidosDetectados = 0;
+
+  triggers.forEach(function(t){
+    var h;
+    try { h = t.getHandlerFunction(); } catch(_) { return; }   // (triggers no time-based pueden no tener handler)
+    if (!h) return;
+    var tipo = _TRG_PISA_SUPABASE[h];
+    if (!tipo) return;                       // NO está en la lista PISA → jamás se toca.
+    if (_TRG_PROTEGIDOS[h]) { protegidosDetectados++; return; }   // doble candado: protegido → no borrar.
+    if (tipo === 'sombra' && !incluirSombra) { conservadosSombra.push(h); return; }   // conservar frescura de sombra.
+    // BORRAR (o reportar en dry-run).
+    if (!dryRun) { try { ScriptApp.deleteTrigger(t); } catch(e) { Logger.log('[desactivarTriggers] no pude borrar '+h+': '+(e&&e.message||e)); return; } }
+    eliminados.push({ handler:h, tipo:tipo });
+  });
+
+  var despues = dryRun ? antes : ScriptApp.getProjectTriggers().length;
+  var out = {
+    ok: true,
+    dryRun: dryRun,
+    incluirSombra: incluirSombra,
+    eliminados: eliminados,
+    conservados_pisa_sombra: conservadosSombra,
+    protegidos_detectados: protegidosDetectados,
+    total_triggers_antes: antes,
+    total_triggers_despues: despues,
+    nota: incluirSombra
+      ? 'incluirSombra:true → también se quitaron los sync de sombra (asume MOS 100% escritura directa).'
+      : 'Sync de SOMBRA conservados (MOS aún escribe maestros vía Sheets; correr con {incluirSombra:true} sólo cuando MOS escriba 100% directo).'
+  };
+  Logger.log(JSON.stringify(out, null, 2));
+  return out;
+}
