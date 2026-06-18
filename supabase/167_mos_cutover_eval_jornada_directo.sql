@@ -443,9 +443,15 @@ revoke all on function mos.resumen_dia_uno(jsonb) from public;
 grant execute on function mos.resumen_dia_uno(jsonb) to service_role, authenticated;
 
 -- ═════════════════════════════════════════════════════════════════════════════════════════════════════════
--- E) mos.cron_heartbeat_nativo() — estampa AMBOS latidos (MOS_SYNC_HEARTBEAT + CATALOGO_SYNC_HEARTBEAT)
---    independiente del Sheet. En DIRECTO-PURO la sombra ES la verdad → mantener _fresh=true es CORRECTO
---    (no enmascara staleness real: ya no hay un origen externo que pueda atrasarse). El agendado va en 168.
+-- E) mos.cron_heartbeat_nativo() — estampa el latido de las SOMBRAS YA DIRECTO-PURAS (MOS_SYNC_HEARTBEAT:
+--    finanzas/eval/jornadas/proveedores/pagos/etc.). En DIRECTO-PURO la sombra ES la verdad → mantener
+--    _fresh=true es CORRECTO (no enmascara staleness real: ya no hay un origen externo que pueda atrasarse).
+--
+--    ⚠️ NO estampa CATALOGO_SYNC_HEARTBEAT: el catálogo (productos/etiquetas) SIGUE en DUAL-WRITE (su sombra
+--    se llena del Sheet vía sync GAS). Si el cron estampara su latido, ENMASCARARÍA una muerte real del sync de
+--    catálogo (el front serviría un catálogo stale como si fuera fresco → PELIGRO: precios viejos). El latido de
+--    catálogo DEBE seguir reflejando la corrida REAL del sync de catálogo. Cuando catálogo cute a directo-puro,
+--    se añade aquí su clave. (Decisión money-safe: solo latir lo que YA es directo-puro.)
 -- ═════════════════════════════════════════════════════════════════════════════════════════════════════════
 create or replace function mos.cron_heartbeat_nativo()
 returns jsonb
@@ -457,8 +463,7 @@ declare
   v_iso text := to_char(clock_timestamp() at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"');
 begin
   insert into mos.config (clave, valor, descripcion) values
-    ('MOS_SYNC_HEARTBEAT',      v_iso, 'Latido NATIVO (pg_cron mos-heartbeat-nativo): en directo-puro la sombra ES la verdad; mantiene _fresh=true sin depender del sync-que-lee-Sheet.'),
-    ('CATALOGO_SYNC_HEARTBEAT', v_iso, 'Latido NATIVO (pg_cron mos-heartbeat-nativo) del catálogo: idem, independiente del sync de catálogo que leía la Hoja.')
+    ('MOS_SYNC_HEARTBEAT', v_iso, 'Latido NATIVO (pg_cron mos-heartbeat-nativo): sombras DIRECTO-PURAS (finanzas/eval/jornadas/proveedores/pagos/etc.) — la sombra ES la verdad; mantiene _fresh=true sin depender del sync-que-lee-Sheet. NO cubre catálogo (sigue dual-write).')
   on conflict (clave) do update set valor = excluded.valor;
   return jsonb_build_object('ok', true, 'heartbeat', v_iso);
 exception when others then
