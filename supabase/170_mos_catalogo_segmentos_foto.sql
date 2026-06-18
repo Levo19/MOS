@@ -31,6 +31,7 @@ on conflict (id) do update set public = excluded.public, file_size_limit = exclu
 drop policy if exists producto_fotos_insert on storage.objects;
 drop policy if exists producto_fotos_update on storage.objects;
 drop policy if exists producto_fotos_delete on storage.objects;
+drop policy if exists producto_fotos_select on storage.objects;
 
 create policy producto_fotos_insert on storage.objects for insert to authenticated
   with check (bucket_id = 'producto-fotos' and (auth.jwt()->>'app') = 'MOS');
@@ -38,6 +39,12 @@ create policy producto_fotos_update on storage.objects for update to authenticat
   using (bucket_id = 'producto-fotos' and (auth.jwt()->>'app') = 'MOS')
   with check (bucket_id = 'producto-fotos' and (auth.jwt()->>'app') = 'MOS');
 create policy producto_fotos_delete on storage.objects for delete to authenticated
+  using (bucket_id = 'producto-fotos' and (auth.jwt()->>'app') = 'MOS');
+-- SELECT policy NECESARIA para x-upsert (REPLACE de la foto del skuBase): el ON CONFLICT DO UPDATE de Storage
+-- evalúa la policy de UPDATE, que LEE la fila en conflicto → sin SELECT la RLS rechaza el row y Storage lo
+-- envuelve como HTTP 400 (lección de wh-fotos: 61 sin SELECT → 87 lo agregó). También habilita DELETE/list.
+-- El bucket YA es público (lectura anónima por URL) → esta policy NO expone nada nuevo (solo el token MOS lee/lista).
+create policy producto_fotos_select on storage.objects for select to authenticated
   using (bucket_id = 'producto-fotos' and (auth.jwt()->>'app') = 'MOS');
 
 -- ───────────────────────────────────────────────────────────────────────────────────────────────────────
