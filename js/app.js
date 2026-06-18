@@ -32918,7 +32918,7 @@ const MOS = (() => {
   //   filtroZona: idZona  (si undefined, usa zona del admin si está set)
   //   verify:    bool (true por default — verifica antes de resolver)
 var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
-  function abrirPrinterPicker(opts) {
+  async function abrirPrinterPicker(opts) {
     opts = opts || {};
     // [v2.43.3] Memoria de última impresora por tipo de flow.
     // Si opts.flowKey está dado y hay impresora cacheada online → usar directo.
@@ -32928,17 +32928,30 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       try {
         const cachedId = localStorage.getItem(_LSKEY);
         if (cachedId) {
-          // Verificar online en background (sin esperar para no demorar al cajero)
-          API.get('verificarImpresoraAhora', { printerId: cachedId }).then(r => {
-            if (!(r && r.data && r.data.estado === 'ONLINE')) {
-              // Si está offline, limpiar caché para forzar elección manual la próxima
-              try { localStorage.removeItem(_LSKEY); } catch(_){}
-            }
-          }).catch(() => {});
-          // Toast optimista + retornar inmediato (la verificación queda en bg)
-          try { _toast?.('info', '🖨 Usando última impresora · tap para cambiar'); } catch(_){}
-          try { _opsBeep?.('tac'); } catch(_){}
-          return Promise.resolve(cachedId);
+          // [2026-06-18 fix] BLOQUEANTE: verificar que la impresora cacheada siga ONLINE
+          // ANTES de reusarla. Antes esto era fire-and-forget (en bg) y además leía el
+          // campo equivocado (r.data.estado, que no existe → la condición nunca cumplía),
+          // así que una impresora cacheada rota/desactivada (ej. el duplicado "POS-80C (copy 1)"
+          // de ZONA-02) recibía el job igual y quedaba en error. Ahora: si no está ONLINE
+          // (offline, error, ID_INVALIDO porque se desactivó del catálogo, etc.) limpiamos
+          // la caché y caemos al picker — que solo muestra impresoras activas.
+          // API.get desempaqueta d.data → r ES el estado {state,online,reason,...} de la Edge `printers`.
+          let okOnline = false, razon = '';
+          try {
+            const r = await API.get('verificarImpresoraAhora', { printerId: cachedId });
+            const d = r || {};
+            okOnline = (d.online === true) || (String(d.state || '').toUpperCase() === 'ONLINE');
+            razon = d.reason || '';
+          } catch (_) { okOnline = false; razon = 'no se pudo verificar'; }
+          if (okOnline) {
+            // Toast optimista + retornar (ya verificada ONLINE).
+            try { _toast?.('info', '🖨 Usando última impresora · tap para cambiar'); } catch(_){}
+            try { _opsBeep?.('tac'); } catch(_){}
+            return cachedId;
+          }
+          // Cacheada NO disponible → olvidarla y forzar elección manual.
+          try { localStorage.removeItem(_LSKEY); } catch(_){}
+          try { _toast?.('info', '🖨 La última impresora no está lista — elige otra' + (razon ? ' (' + razon + ')' : '')); } catch(_){}
         }
       } catch(_){}
     }
