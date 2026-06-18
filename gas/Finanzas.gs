@@ -111,6 +111,10 @@ function getFinanzasRango(params) {
 // ════════════════════════════════════════════════════════════
 
 function getJornadas(params) {
+  params = params || {};
+  // [DELETE-SAFE] lectura directa de la sombra (gate MOS_JORNADAS_LECTURA + frescura). null ⇒ HOJA.
+  var dir = _sbLeerListaMOS('jornadas_lista', { fecha: params.fecha }, 'MOS_JORNADAS_LECTURA');
+  if (dir !== null) return { ok: true, data: dir };
   var rows = _sheetToObjects(getSheet('JORNADAS'));
   if (params.fecha) rows = rows.filter(function(r){ return String(r.fecha).substring(0,10) === params.fecha; });
   return { ok: true, data: rows };
@@ -156,6 +160,52 @@ function _dwJornada(idJornada) {
       }
     }
   } catch (eDW) { Logger.log('[dualWrite jornada] ' + (eDW && eDW.message)); }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// [CUTOVER DELETE-SAFE · JORNADAS AUTO] — escritura DIRECTO-PURA de las jornadas
+// AUTO (importarJornadasDesdeCajas / _registrarJornadaIdempotente /
+// _sincronizarJornadasAutoDelDia). Cuando MOS_JORNADAS_DIRECTO=1 estos escritores
+// dejan de tocar la HOJA y crean la jornada con mos.registrar_jornada_auto (167):
+// dedupe SERVER-SIDE por nombre+fecha-Lima (incl. tombstone) + monto 0 permitido +
+// idempotente por nombre+fecha y por localId → "importar 2x" NO duplica.
+// NUNCA lanza: flag OFF / error → devuelve false → el caller hace su appendRow+dual-write
+// de SIEMPRE (la hoja sigue siendo la red de seguridad mientras exista).
+// Devuelve true SOLO si la RPC commiteó (creó o dedupeó) → el caller NO toca la hoja.
+// ════════════════════════════════════════════════════════════════════════════
+function _jornadaAutoDirecto_(obj) {
+  try {
+    if (typeof _sbEscribirDirectoMOS !== 'function') return false;
+    // localId estable por (nombre+fecha+fuente): un mismo gesto AUTO reintentado no duplica.
+    var nombre = String(obj.nombre || '').trim();
+    if (!nombre) return false;
+    var fecha  = String(obj.fecha || '').substring(0,10);
+    var lid = 'JAUTO-' + fecha + '-' + nombre.toLowerCase().replace(/[^a-z0-9]+/g,'_');
+    var d = _sbEscribirDirectoMOS('registrar_jornada_auto', {
+      localId:      lid,
+      nombre:       nombre,
+      fecha:        fecha,
+      idPersonal:   obj.idPersonal || '',
+      rol:          obj.rol || '',
+      appOrigen:    obj.appOrigen || 'AUTO',
+      zona:         obj.zona || '',
+      montoJornal:  parseFloat(obj.montoJornal) || 0,
+      observacion:  obj.observacion || '',
+      registradoPor:obj.registradoPor || 'AUTO',
+      fuente:       obj.fuente || 'AUTO'
+    }, 'MOS_JORNADAS_DIRECTO');
+    return !!d;   // d.ok===true (incl. dedup:true) → manejado directo
+  } catch (e) { Logger.log('[_jornadaAutoDirecto_] ' + (e && e.message)); return false; }
+}
+
+// Lee los nombres LOWER con jornada en una fecha desde la SOMBRA (RPC jornadas_nombres_dia, 167),
+// gateado por MOS_JORNADAS_LECTURA (maestro OR módulo) + frescura. null ⇒ el caller lee la HOJA.
+// Para que la dedupe AUTO consulte la sombra cuando la lectura directa está activa (delete-safe).
+function _jornadaNombresDiaDirecto_(fecha) {
+  try {
+    var arr = _sbLeerListaMOS('jornadas_nombres_dia', { fecha: String(fecha || '').substring(0,10) }, 'MOS_JORNADAS_LECTURA');
+    return Array.isArray(arr) ? arr : null;
+  } catch (e) { return null; }
 }
 
 // Veto de pago: marca la jornada como tombstone (fuente='ELIMINADA') con
@@ -247,14 +297,18 @@ function importarJornadasDesdeCajas(params) {
     var personal = _sheetToObjects(getSheet('PERSONAL_MASTER'));
     var jSheet   = getSheet('JORNADAS');
     var tz3 = Session.getScriptTimeZone();
-    var jornadasExist = _sheetToObjects(jSheet)
-      .filter(function(j) {
-        var f = j.fecha instanceof Date
-          ? Utilities.formatDate(j.fecha, tz3, 'yyyy-MM-dd')
-          : String(j.fecha || '').substring(0, 10);
-        return f === fecha;
-      })
-      .map(function(j){ return String(j.nombre).toLowerCase(); });
+    // [DELETE-SAFE] dedupe por nombre+fecha: si la lectura directa está activa, lee la SOMBRA; si no, la HOJA.
+    var jornadasExist = _jornadaNombresDiaDirecto_(fecha);
+    if (jornadasExist === null) {
+      jornadasExist = _sheetToObjects(jSheet)
+        .filter(function(j) {
+          var f = j.fecha instanceof Date
+            ? Utilities.formatDate(j.fecha, tz3, 'yyyy-MM-dd')
+            : String(j.fecha || '').substring(0, 10);
+          return f === fecha;
+        })
+        .map(function(j){ return String(j.nombre).toLowerCase(); });
+    }
 
     var cajasHoy = cajas.filter(function(c) {
       var fa = c.Fecha_Apertura || c.fechaApertura || '';
@@ -274,15 +328,24 @@ function importarJornadasDesdeCajas(params) {
       var monto  = personal_match ? parseFloat(personal_match.montoBase || montoDefault) : montoDefault;
       var zona   = String(c.Zona || c.zona || c.Estacion || '');
 
-      var _idJ = _generateId('JOR');
-      jSheet.appendRow([
-        _idJ, fecha,
-        personal_match ? personal_match.idPersonal : '',
-        nombre,
-        personal_match ? personal_match.rol : 'VENDEDOR',
-        'mosExpress', zona, monto, '', 'AUTO', 'AUTO_CAJAS'
-      ]);
-      _dwJornada(_idJ);   // [dual-write] espejo a mos.jornadas
+      // [DELETE-SAFE] directo-puro a mos.registrar_jornada_auto si MOS_JORNADAS_DIRECTO=1; si no, HOJA + dual-write.
+      var _manejadoDir = _jornadaAutoDirecto_({
+        nombre: nombre, fecha: fecha,
+        idPersonal: personal_match ? personal_match.idPersonal : '',
+        rol: personal_match ? personal_match.rol : 'VENDEDOR',
+        appOrigen: 'mosExpress', zona: zona, montoJornal: monto, fuente: 'AUTO_CAJAS'
+      });
+      if (!_manejadoDir) {
+        var _idJ = _generateId('JOR');
+        jSheet.appendRow([
+          _idJ, fecha,
+          personal_match ? personal_match.idPersonal : '',
+          nombre,
+          personal_match ? personal_match.rol : 'VENDEDOR',
+          'mosExpress', zona, monto, '', 'AUTO', 'AUTO_CAJAS'
+        ]);
+        _dwJornada(_idJ);   // [dual-write] espejo a mos.jornadas
+      }
       jornadasExist.push(nombre.toLowerCase());
       importados++;
     });
@@ -298,6 +361,10 @@ function importarJornadasDesdeCajas(params) {
 // ════════════════════════════════════════════════════════════
 
 function getGastos(params) {
+  params = params || {};
+  // [DELETE-SAFE] lectura directa de la sombra (gate MOS_GASTOS_LECTURA + frescura). null ⇒ HOJA.
+  var dir = _sbLeerListaMOS('gastos_lista', { fecha: params.fecha, categoria: params.categoria, desde: params.desde, hasta: params.hasta }, 'MOS_GASTOS_LECTURA');
+  if (dir !== null) return { ok: true, data: dir };
   var rows = _sheetToObjects(getSheet('GASTOS'));
   if (params.fecha)     rows = rows.filter(function(r){ return String(r.fecha).substring(0,10) === params.fecha; });
   if (params.categoria) rows = rows.filter(function(r){ return r.categoria === params.categoria; });
@@ -314,9 +381,22 @@ function registrarGasto(params) {
   if (!params.descripcion || !params.monto || !params.categoria) {
     return { ok: false, error: 'Requiere descripcion, monto y categoria' };
   }
-  var sheet = getSheet('GASTOS');
   var id    = _generateId('GAS');
   var fechaG = params.fecha || _hoy();
+  // [DELETE-SAFE · directo-puro] Si MOS_GASTOS_DIRECTO=1 → escribe SOLO a mos.gastos vía RPC
+  // (idempotente por idGasto+localId; la RPC toca el latido de frescura) y NO toca la HOJA.
+  // null ⇒ flag OFF o RPC falló → cae al dual-write de siempre (HOJA + espejo). DINERO: la RPC
+  // valida monto>0 y guarda numeric exacto (centavos). Shape de retorno idéntico al de la hoja.
+  if (typeof _sbEscribirDirectoMOS === 'function') {
+    var _gd = _sbEscribirDirectoMOS('crear_gasto', {
+      idGasto: id, localId: id, fecha: fechaG, categoria: params.categoria,
+      tipo: params.tipo || 'VARIABLE', descripcion: params.descripcion,
+      monto: parseFloat(params.monto), comprobante: params.comprobante || '',
+      registradoPor: params.registradoPor || ''
+    }, 'MOS_GASTOS_DIRECTO');
+    if (_gd) return { ok: true, data: { idGasto: (_gd.data && _gd.data.idGasto) || id } };
+  }
+  var sheet = getSheet('GASTOS');
   sheet.appendRow([
     id,
     fechaG,
@@ -342,6 +422,12 @@ function registrarGasto(params) {
 
 function eliminarGasto(params) {
   if (!params.idGasto) return { ok: false, error: 'Requiere idGasto' };
+  // [DELETE-SAFE · directo-puro] Si MOS_GASTOS_DIRECTO=1 → DELETE atómico por PK en mos.gastos
+  // vía RPC (idempotente) y NO toca la HOJA. null ⇒ flag OFF / RPC falló → cae al borrado de hoja + _sbDelete.
+  if (typeof _sbEscribirDirectoMOS === 'function') {
+    var _ed = _sbEscribirDirectoMOS('eliminar_gasto', { idGasto: String(params.idGasto) }, 'MOS_GASTOS_DIRECTO');
+    if (_ed) return { ok: true };
+  }
   var sheet = getSheet('GASTOS');
   var data  = sheet.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
@@ -706,7 +792,9 @@ function _calcularPersonal(fecha) {
   //    Si tiene apellido → indexar SOLO por nombre+apellido. Esto evita el
   //    falso positivo donde "javier" vendedor real era excluido porque
   //    "Javier Vasquez" admin matcheaba por primer nombre.
-  var personalMaster = _sheetToObjects(getSheet('PERSONAL_MASTER'));
+  // [DELETE-SAFE] lee la sombra mos.personal (gate maestro + frescura; espeja getPersonalMaster). null ⇒ HOJA.
+  var personalMaster = _sbLeerListaMOS('personal_master_lista', {}, null);
+  if (personalMaster === null) personalMaster = _sheetToObjects(getSheet('PERSONAL_MASTER'));
   var personalByNombre = {};
   personalMaster.forEach(function(p) {
     var nombreLow = String(p.nombre || '').trim().toLowerCase();
@@ -740,11 +828,20 @@ function _calcularPersonal(fecha) {
   var tombstonesByNombre = {};
   var activasByNombre = {};
   try {
-    _sheetToObjects(getSheet('JORNADAS')).forEach(function(j) {
-      var f = j.fecha instanceof Date
-        ? Utilities.formatDate(j.fecha, tz, 'yyyy-MM-dd')
-        : String(j.fecha || '').substring(0, 10);
-      if (f !== fecha) return;
+    // [DELETE-SAFE] lee la sombra del día (gate MOS_JORNADAS_LECTURA + frescura; la RPC ya filtra fecha por DÍA
+    // en TZ Lima). null ⇒ HOJA. ⚠️ Cuando los datos vienen de la RPC YA están filtrados por día-Lima; NO re-
+    // aplicar el filtro substring(0,10) (que toma el día UTC) o se DESCARTARÍAN filas de la tarde-Lima cuyo UTC
+    // cae al día siguiente. _jorPreFiltrado=true ⇒ no re-filtrar.
+    var _jorRows = _sbLeerListaMOS('jornadas_lista', { fecha: fecha }, 'MOS_JORNADAS_LECTURA');
+    var _jorPreFiltrado = (_jorRows !== null);
+    if (_jorRows === null) _jorRows = _sheetToObjects(getSheet('JORNADAS'));
+    _jorRows.forEach(function(j) {
+      if (!_jorPreFiltrado) {
+        var f = j.fecha instanceof Date
+          ? Utilities.formatDate(j.fecha, tz, 'yyyy-MM-dd')
+          : String(j.fecha || '').substring(0, 10);
+        if (f !== fecha) return;
+      }
       var k = String(j.nombre || '').trim().toLowerCase();
       if (!k) return;
       var fuente = String(j.fuente || '').toUpperCase();
@@ -763,15 +860,22 @@ function _calcularPersonal(fecha) {
   // 3) Leer LIQUIDACIONES_DIA filtrado por fecha (fuente de verdad)
   var ldiaRows = [];
   try {
-    var ldiaSh = _liqDiaGetSheet();
-    ldiaRows = _sheetToObjects(ldiaSh).filter(function(r) {
-      var f = r.fecha instanceof Date
-        ? Utilities.formatDate(r.fecha, tz, 'yyyy-MM-dd')
-        : String(r.fecha || '').substring(0, 10);
-      if (f !== fecha) return false;
-      var presente = (r.presente === true) || (String(r.presente).toLowerCase() === 'true');
-      return presente;
-    });
+    // [DELETE-SAFE · DINERO] lee la sombra del día (gate MOS_JORNADAS_LECTURA + frescura; la RPC filtra día-Lima
+    // + presente=true server-side). null ⇒ HOJA. Si vino de la RPC NO re-filtrar (ya viene día-Lima + presente).
+    var _ldiaDir = _sbLeerListaMOS('liquidaciones_dia_lista', { fecha: fecha, soloPresente: true }, 'MOS_JORNADAS_LECTURA');
+    if (_ldiaDir !== null) {
+      ldiaRows = _ldiaDir;
+    } else {
+      var ldiaSh = _liqDiaGetSheet();
+      ldiaRows = _sheetToObjects(ldiaSh).filter(function(r) {
+        var f = r.fecha instanceof Date
+          ? Utilities.formatDate(r.fecha, tz, 'yyyy-MM-dd')
+          : String(r.fecha || '').substring(0, 10);
+        if (f !== fecha) return false;
+        var presente = (r.presente === true) || (String(r.presente).toLowerCase() === 'true');
+        return presente;
+      });
+    }
   } catch(eL) { Logger.log('Lectura LIQUIDACIONES_DIA: ' + eL.message); }
 
   // 4) Helpers de resolución
@@ -878,8 +982,13 @@ function _calcularPersonal(fecha) {
 }
 
 function _calcularGastos(fecha) {
-  var rows = _sheetToObjects(getSheet('GASTOS'))
-    .filter(function(r){ return String(r.fecha).substring(0,10) === fecha; });
+  // [DELETE-SAFE · DINERO] lee la sombra del día (gate MOS_GASTOS_LECTURA + frescura), null ⇒ HOJA.
+  // La RPC filtra por fecha en TZ Lima (igual que jornadas_lista) → mismas filas que el filtro de hoja.
+  var rows = _sbLeerListaMOS('gastos_lista', { fecha: fecha }, 'MOS_GASTOS_LECTURA');
+  if (rows === null) {
+    rows = _sheetToObjects(getSheet('GASTOS'))
+      .filter(function(r){ return String(r.fecha).substring(0,10) === fecha; });
+  }
 
   var total  = rows.reduce(function(s, r){ return s + (parseFloat(r.monto) || 0); }, 0);
   var fijos  = rows.filter(function(r){ return r.tipo === 'FIJO'; })
@@ -1049,6 +1158,14 @@ function _registrarJornadaIdempotente(nombre, rol, montoJornal, appOrigen, fecha
   if (!nombre) return;
   fecha  = fecha || _hoy();
 
+  // [DELETE-SAFE] directo-puro: la RPC dedupea por nombre+fecha-Lima (incl. tombstone) y permite monto 0.
+  // Si maneja la escritura → no tocamos la HOJA (delete-safe). flag OFF/error → cae al flujo de hoja de siempre.
+  if (_jornadaAutoDirecto_({
+        nombre: nombre, fecha: fecha, rol: rol || 'VENDEDOR',
+        appOrigen: appOrigen || 'AUTO', montoJornal: parseFloat(montoJornal) || 0,
+        fuente: appOrigen === 'warehouseMos' ? 'AUTO_LOGIN' : 'AUTO_VENTA'
+      })) return;
+
   var sheet = getSheet('JORNADAS');
   var tz2   = Session.getScriptTimeZone();
   var data  = sheet.getDataRange().getValues();
@@ -1094,17 +1211,23 @@ function _sincronizarJornadasAutoDelDia(fecha) {
   // vuelva a operar después del veto, NO se le crea nueva jornada. El veto vale
   // todo el día. Si master quiere "rehabilitar", debe hacerlo manualmente.
   var sheet = getSheet('JORNADAS');
-  var data  = sheet.getDataRange().getValues();
   var tz    = Session.getScriptTimeZone();
   var bloqueadasPorNombre = {}; // activas + tombstones (no recrear nunca)
-  for (var i = 1; i < data.length; i++) {
-    var f = data[i][1] instanceof Date
-      ? Utilities.formatDate(data[i][1], tz, 'yyyy-MM-dd')
-      : String(data[i][1] || '').substring(0, 10);
-    if (f !== fecha) continue;
-    var n = String(data[i][3] || '').toLowerCase().trim();
-    if (!n) continue;
-    bloqueadasPorNombre[n] = true;
+  // [DELETE-SAFE] dedupe por nombre+fecha: SOMBRA si la lectura directa está activa, si no la HOJA.
+  var _nombresDir = _jornadaNombresDiaDirecto_(fecha);
+  if (_nombresDir !== null) {
+    _nombresDir.forEach(function(n){ if (n) bloqueadasPorNombre[String(n).toLowerCase().trim()] = true; });
+  } else {
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      var f = data[i][1] instanceof Date
+        ? Utilities.formatDate(data[i][1], tz, 'yyyy-MM-dd')
+        : String(data[i][1] || '').substring(0, 10);
+      if (f !== fecha) continue;
+      var n = String(data[i][3] || '').toLowerCase().trim();
+      if (!n) continue;
+      bloqueadasPorNombre[n] = true;
+    }
   }
 
   var creadas = 0, errores = [];
@@ -1119,21 +1242,30 @@ function _sincronizarJornadasAutoDelDia(fecha) {
       var idPersonal = String(r.idPersonal || '');
       var idPersonalFinal = idPersonal.indexOf('MEX:') === 0 ? '' : idPersonal;
       var obs = 'Sincronizado automático: presencia detectada';
-      var _idJ = _generateId('JOR');
-      sheet.appendRow([
-        _idJ,
-        fecha,
-        idPersonalFinal,
-        nombre,
-        r.rol || '',
-        r.appOrigen || '',
-        '',
-        montoBase,
-        obs,
-        'AUTO',
-        fuente
-      ]);
-      _dwJornada(_idJ);   // [dual-write] espejo a mos.jornadas
+      // [DELETE-SAFE] directo-puro si MOS_JORNADAS_DIRECTO=1; si no, HOJA + dual-write.
+      var _manejadoDir = _jornadaAutoDirecto_({
+        nombre: nombre, fecha: fecha, idPersonal: idPersonalFinal,
+        rol: r.rol || '', appOrigen: r.appOrigen || '', montoJornal: montoBase,
+        observacion: obs, fuente: fuente
+      });
+      if (!_manejadoDir) {
+        var _idJ = _generateId('JOR');
+        sheet.appendRow([
+          _idJ,
+          fecha,
+          idPersonalFinal,
+          nombre,
+          r.rol || '',
+          r.appOrigen || '',
+          '',
+          montoBase,
+          obs,
+          'AUTO',
+          fuente
+        ]);
+        _dwJornada(_idJ);   // [dual-write] espejo a mos.jornadas
+      }
+      bloqueadasPorNombre[nLow] = true;   // evita doble-creación dentro del mismo barrido
       creadas++;
     } catch(eP) { errores.push({ nombre: nombre, error: eP.message }); }
   });

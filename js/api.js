@@ -1280,11 +1280,11 @@ const API = (() => {
       // data:{idEval} (SOLO el appendRow crudo; idempotente por local_id + PK). El front (app.js) llama esto
       // FIRE-AND-FORGET y NO lee la respuesta (.then ignora el payload, refresca por getPersonalDiaFast) → el
       // mismatch de campos extra (bonificacion/sancion/ajusteTocado) es INOCUO para el consumidor actual.
-      // ⚠️ DIVERGENCIA CONOCIDA Y ACEPTADA (documentada en el SQL 82): GAS además corre los hooks de
-      //    materialización _liqDiaRecomputar/_liqDiaSetBonSan que tocan LIQUIDACIONES_DIA (DINERO). La RPC NO
-      //    los corre (los orquestadores quedan en GAS por diseño). ⇒ NO activar mos_eval_directo cuando la
-      //    evaluación lleva bonificación/sanción/ajuste hasta migrar también esos hooks. Con el flag OFF
-      //    (default) esto es 100% GAS (hooks incluidos), idéntico a hoy.
+      // ✅ [CUTOVER DELETE-SAFE · 167] RESUELTO: mos.crear_evaluacion AHORA corre los hooks DINERO server-side
+      //    (materializar_liquidacion_dia AUTO + set_bonificacion_sancion con soloTipo + fusión de motivos),
+      //    réplica EXACTA de _liqDiaRecomputar/_liqDiaSetBonSan (validado al centavo en validate_167). Por eso YA
+      //    es seguro activar mos_eval_directo aun con bonificación/sanción/ajuste (sin Sheet, GAS no podría correr
+      //    esos hooks → el server los asume). Con el flag OFF (default) sigue siendo 100% GAS, idéntico a hoy.
       // localId ESTABLE → anti-doble-fila en reintento del mismo gesto (GAS no dedupea: doble-tap = 2 filas).
       const out = await _sbRpcMOSWrite('crear_evaluacion', { p: {
         localId: _mosLocalId(p, 'EV'),
@@ -1296,7 +1296,10 @@ const API = (() => {
         evaluadoPor: p.evaluadoPor != null ? p.evaluadoPor : _mosUsuario(p),
         aplicaComision: p.aplicaComision, aplicaBonoMeta: p.aplicaBonoMeta,
         sancion: p.sancion, sancionMotivo: p.sancionMotivo,
-        bonificacion: p.bonificacion, bonificacionMotivo: p.bonificacionMotivo
+        bonificacion: p.bonificacion, bonificacionMotivo: p.bonificacionMotivo,
+        // [CUTOVER DELETE-SAFE] _ajusteTocado/ajusteTipo: la RPC mos.crear_evaluacion (167) los usa para
+        // materializar bon/san en LIQUIDACIONES_DIA con soloTipo + fusión de motivos (réplica _liqDiaSetBonSan).
+        _ajusteTocado: p._ajusteTocado, ajusteTipo: p.ajusteTipo
       } });
       if (out == null) return null;
       return _desempacarCatalogo(out);         // {idEval} — el front no lee la respuesta (fire-and-forget)
@@ -1445,10 +1448,21 @@ const API = (() => {
     // IDÉNTICO a hoy. ⚠️ El cutover de ESCRITURA exige además apagar el sync de proveedores (MOS_SYNC_OFF_TABLAS):
     // ver RUNBOOK. Prenderlo SIN apagar el sync → el sync Hoja→sombra pisa lo escrito directo (incoherencia).
     crearProveedor:             _mosProveedoresDirecto,
-    actualizarProveedor:        _mosProveedoresDirecto
-    // [DUAL-WRITE] pedidos/pagos/provprod/gastos/eval/horario/jornadas/liqdia: SIN entrada acá a propósito → su
-    // escritura va SIEMPRE por GAS (dual-write espeja la sombra). marcarPagos/anularPago/recomputarLiquidacionDia
-    // tampoco van (shape/seguridad incompatibles). Ver REPORTE.
+    actualizarProveedor:        _mosProveedoresDirecto,
+    // [CUTOVER DELETE-SAFE · DINERO] eval + jornadas en DIRECTO-PURO. Habilitado SOLO si el gate DIRECTO está ON
+    // (default OFF) Y el dual-write de ese módulo está OFF (el dual-write se evalúa antes y, si está ON, gana).
+    // Estado de cutover esperado: mos_*_dualwrite=0 + mos_*_directo=1. Ahora es SEGURO porque la RPC server-side
+    // corre los hooks DINERO:
+    //   · crearEvaluacion → mos.crear_evaluacion (167) materializa LIQUIDACIONES_DIA (AUTO + bon/san + fusión de
+    //     motivos + soloTipo), réplica EXACTA de _liqDiaRecomputar/_liqDiaSetBonSan (validado al centavo).
+    //   · registrarJornada → mos.registrar_jornada (84) idempotente por localId+PK (DINERO jornal).
+    // Sin Sheet, GAS no podría correr los hooks → por eso el cutover MUEVE la escritura al server (delete-safe).
+    crearEvaluacion:            _mosEvalDirecto,
+    registrarJornada:           _mosJornadasDirecto,
+    eliminarJornada:            _mosJornadasDirecto,
+    rehabilitarJornada:         _mosJornadasDirecto
+    // [DUAL-WRITE] pedidos/pagos/provprod/gastos/horario/liqdia: SIN entrada acá → su escritura va SIEMPRE por
+    // GAS (dual-write espeja la sombra). marcarPagos/anularPago/recomputarLiquidacionDia tampoco (incompatibles).
   };
 
   // Acciones que soportan DUAL-WRITE (GAS primero = verdad, luego espejo best-effort a Supabase), CADA UNA con

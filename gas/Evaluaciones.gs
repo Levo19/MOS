@@ -191,6 +191,9 @@ function crearEvaluacion(params) {
 
 // ── Lista de evaluaciones del día (todas o de una persona) ─────
 function getEvaluacionesDia(params) {
+  params = params || {};
+  var dir = _sbLeerListaMOS('evaluaciones_dia', { fecha: params.fecha, idPersonal: params.idPersonal }, 'MOS_EVAL_LECTURA');
+  if (dir !== null) return { ok: true, data: dir };
   var fecha = params.fecha || _hoy();
   var rows  = _sheetToObjects(_getEvalSheet()).filter(function(r){
     if (r.activo === false || String(r.activo) === '0' || String(r.activo) === 'false') return false;
@@ -402,6 +405,18 @@ function getResumenDia(params) {
 
   var p = _resolverPersona(idPersonal, fecha);
   if (!p) return { ok: false, error: 'Personal no encontrado' };
+
+  // [DELETE-SAFE · DINERO] Recompute desde la SOMBRA (RPC resumen_dia, gate MAESTRO o MOS_EVAL_LECTURA +
+  // frescura). Paritario AL CENTAVO con esta función (validado: montoBase/bonoMeta/pagoEnvasado/sancion/
+  // bonificacion/totalDia/scoreFinal + kpis). null ⇒ recompute desde la HOJA (abajo). Solo personal REAL
+  // (resumen_dia excluye virtuales MEX:); para esos cae a la hoja, igual que hoy. Esto hace delete-safe el
+  // hook _liqDiaRecomputar (que materializa LIQUIDACIONES_DIA) y el modal de auditoría (KPIs en vivo).
+  try {
+    if (String(idPersonal).indexOf('MEX:') !== 0) {
+      var _rd1 = _sbLeerRpcFreshMOS('resumen_dia_uno', { fecha: fecha, idPersonal: idPersonal }, 'MOS_EVAL_LECTURA');
+      if (_rd1 && _rd1.data && _rd1.data.idPersonal) return { ok: true, data: _rd1.data };
+    }
+  } catch(_){}
 
   var evals = _sheetToObjects(_getEvalSheet()).filter(function(r){
     if (r.activo === false || String(r.activo) === '0' || String(r.activo) === 'false') return false;
@@ -847,6 +862,22 @@ function getResumenTodosDia(params) {
       }
     } catch(_){}
   }
+
+  // [DELETE-SAFE · DINERO] Recompute del día desde la SOMBRA (RPC resumen_todos_dia, 120): personal real +
+  // virtuales MEX + liqEstado/vetada, paritario al centavo con esta función (validado). Gate: MAESTRO o
+  // MOS_EVAL_LECTURA + frescura; null ⇒ recompute desde la HOJA (abajo). Cachea igual (120s). Así, sin Sheet,
+  // el dashboard y _sincronizarJornadasAutoDelDia siguen viendo a los presentes con su totalDia/montoBase.
+  try {
+    var _rd = _sbLeerRpcFreshMOS('resumen_todos_dia', { fecha: fecha }, 'MOS_EVAL_LECTURA');
+    if (_rd && Array.isArray(_rd.data)) {
+      var _respTD = { ok: true, fecha: fecha, data: _rd.data };
+      if (ssCache && cacheKey) {
+        try { var serTD = JSON.stringify(_respTD); if (serTD.length < 95000) ssCache.put(cacheKey, serTD, 120); } catch(_){}
+      }
+      return _respTD;
+    }
+  } catch(_){}
+
   var todosPersonal = _sheetToObjects(getSheet('PERSONAL_MASTER')).filter(function(r){
     return String(r.estado) === '1';
   });
