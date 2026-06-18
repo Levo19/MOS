@@ -967,6 +967,46 @@ const API = (() => {
     return res.json();
   }
 
+  // [CATÁLOGO DELETE-SAFE] Sube la foto de un producto a Supabase Storage (bucket 'producto-fotos', máxima
+  // calidad). Réplica EXACTA del patrón probado de WH (_subirFotoStorage). path: productos/<skuBase>/<archivo>.
+  // Nombre DETERMINÍSTICO por skuBase → un reintento sobreescribe el MISMO path (no acumula basura) y reusa la
+  // misma URL pública. Devuelve {ok, path, url, preview} o LANZA (red/RLS). Sin token (Edge caída) → lanza
+  // (el caller cae a GAS). El binario va con el JWT MOS (claim app='MOS' → policy producto_fotos_insert).
+  async function _subirFotoStorageMOS(skuBase, base64, mime, nombreSeed) {
+    const token = await _mintTokenMOS();
+    if (!token) { const e = new Error('sin token storage'); e.sinToken = true; throw e; }
+    const ext = (mime || '').includes('png') ? 'png' : (mime || '').includes('webp') ? 'webp' : 'jpg';
+    // limpiar prefijo data-URI (FileReader.readAsDataURL lo agrega) — sin esto atob() lanza.
+    const b64 = String(base64 || '').replace(/^data:[^;]+;base64,/, '');
+    // nombre estable: el skuBase comparte foto entre canónico/presentaciones → un mismo skuBase sobreescribe.
+    const seed = (nombreSeed != null && String(nombreSeed) !== '') ? String(nombreSeed) : String(skuBase || 'foto');
+    const nombre = seed.replace(/[^a-zA-Z0-9_\-\.]/g, '_') + '.' + ext;
+    const path = `productos/${encodeURIComponent(String(skuBase || 'sin-sku'))}/${nombre}`;
+    const bin = Uint8Array.from(atob(b64), ch => ch.charCodeAt(0));
+    // upsert vía x-upsert (la foto del skuBase se REEMPLAZA al cambiarla). El bucket tiene policy UPDATE para
+    // app='MOS', así que el ON CONFLICT DO UPDATE de Storage pasa la RLS (a diferencia de wh-fotos, que no tiene).
+    const res = await _sbFetchTimeout(`${_SB_URL}/storage/v1/object/producto-fotos/${path}`, {
+      method: 'POST',
+      headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Type': mime || 'image/jpeg', 'x-upsert': 'true' },
+      body: bin
+    }, 30000);
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      const bodyCode = parseInt((body && body.statusCode), 10) || res.status;
+      if (bodyCode === 409 || (body && /duplicate/i.test(String(body.error || '')))) {
+        return { ok: true, path, url: `${_SB_URL}/storage/v1/object/public/producto-fotos/${path}`, preview: `${_SB_URL}/storage/v1/render/image/public/producto-fotos/${path}?width=800&quality=80` };
+      }
+      const err = new Error('storage upload ' + bodyCode + (body && body.message ? ': ' + body.message : ''));
+      if (bodyCode >= 400 && bodyCode < 500 && bodyCode !== 429) err.permanente = true;
+      throw err;
+    }
+    return {
+      ok: true, path,
+      url:     `${_SB_URL}/storage/v1/object/public/producto-fotos/${path}`,
+      preview: `${_SB_URL}/storage/v1/render/image/public/producto-fotos/${path}?width=800&quality=80`
+    };
+  }
+
   // Normaliza la respuesta de una RPC de escritura {ok, data, error, dedup?} al CONTRATO de _postDirectoMOS:
   //   ok:false con error *_OFF / APP_NO_AUTORIZADA      → null (kill-switch/sin claim ⇒ caé a GAS, no commiteó)
   //   ok:false con cualquier otro error (negocio/valid) → LANZA Error(error) (= _fetch lanza d.error; no commiteó)
@@ -1123,6 +1163,60 @@ const API = (() => {
       // GAS devuelve {ok:true} (sin data). _fetch('POST') desempaqueta a d.data = undefined → el front no lee nada.
       // _desempacarCatalogo devuelve {} (data ausente) → equivalente inocuo (el front solo await; app.js:17514).
       return _desempacarCatalogo(out);
+    }
+
+    if (action === 'actualizarSegmentosPrecio') {
+      // [CATÁLOGO DELETE-SAFE] mos.actualizar_segmentos_precio(p): valida (KGM + canónico + sin solapamientos,
+      // réplica _validarSegmentosPrecio) y persiste mos.productos.segmentos_precio (jsonb). Idempotente (UPDATE
+      // atómico al mismo valor = no-op). El front (app.js:16384 segPersistirSiCambio) lee res.ok y res.error;
+      // GAS devuelve {ok,segmentos,total} en el NIVEL RAÍZ (no en data) → para que res.ok/res.error existan tras
+      // el desempaque de _fetch, NO podemos usar _desempacarCatalogo (devuelve solo data). Resolvemos a mano:
+      //   ok:false con *_OFF/APP_NO_AUTORIZADA → null (caé a GAS); otro error → lanza (rechazo de negocio = mismo
+      //   error que GAS); ok:true → devolvemos el objeto RAÍZ {ok,segmentos,total} (paridad con la respuesta GAS).
+      const out = await _sbRpcMOSWrite('actualizar_segmentos_precio', { p: {
+        idProducto: p.idProducto != null ? String(p.idProducto) : undefined,
+        segmentos: Array.isArray(p.segmentos) ? p.segmentos : [],
+        usuario: _mosUsuario(p)
+      } });
+      if (out == null) return null;                 // sin token → GAS
+      if (out.ok === false) {
+        const err = out.error || 'rpc directo sin respuesta';
+        if (/_OFF$/.test(err) || err === 'APP_NO_AUTORIZADA') return null;   // kill-switch/sin claim → GAS
+        throw new Error(err);                                                // rechazo de negocio (paridad GAS)
+      }
+      // ok:true → {ok:true, segmentos:[...], total:N} (mismo shape RAÍZ que GAS actualizarSegmentosPrecio).
+      return { ok: true, segmentos: out.segmentos || [], total: out.total || 0 };
+    }
+
+    if (action === 'subirFotoProducto') {
+      // [CATÁLOGO DELETE-SAFE] Sube la foto a Supabase Storage (browser→bucket producto-fotos, máxima calidad) y
+      // persiste foto_url en TODAS las filas del skuBase vía mos.set_foto_producto (paridad subirFotoProducto GAS).
+      // El front (app.js:4843) lee r.ok!==false y r.fotoUrl → devolvemos {ok:true, skuBase, fotoUrl, fileId, actualizados}.
+      const sku = p.skuBase != null ? String(p.skuBase) : '';
+      const b64 = String(p.fotoBase64 || '').trim();
+      const mime = String(p.mimeType || 'image/jpeg');
+      if (!sku || !b64) return null;                // sin datos → que GAS valide (skuBase/fotoBase64 requeridos)
+      let up;
+      try { up = await _subirFotoStorageMOS(sku, b64, mime); }
+      catch (e) {
+        // sin token (Edge caída) → caé a GAS (sube a Drive, como hoy). Cualquier otro error de Storage (RLS/red)
+        // tras flag ON: el front MOS no tiene cola de writes → caer a GAS subiría a Drive y duplicaría la foto en
+        // dos backends. Pero como la persistencia (set_foto_producto) aún no ocurrió, NO hay doble-escritura de
+        // foto_url. Para no romper el UX optimista, propagamos null SOLO sin token; el resto se propaga al UI.
+        if (e && e.sinToken) return null;
+        throw (e instanceof Error ? e : new Error('storage upload falló'));
+      }
+      // persistir la URL pública en mos.productos (todas las filas del skuBase)
+      const out = await _sbRpcMOSWrite('set_foto_producto', { p: { skuBase: sku, fotoUrl: up.url } });
+      if (out == null) return null;                 // sin token en la 2da llamada → GAS (raro; el upload ya pasó)
+      if (out.ok === false) {
+        const err = out.error || 'rpc directo sin respuesta';
+        if (/_OFF$/.test(err) || err === 'APP_NO_AUTORIZADA') return null;   // flag server OFF → GAS
+        throw new Error(err);
+      }
+      const d = (out.data && typeof out.data === 'object') ? out.data : {};
+      // shape paritario con GAS: {skuBase, fotoUrl, fileId, actualizados}. fileId = path en Storage (para borrar).
+      return { ok: true, skuBase: sku, fotoUrl: up.url, fileId: up.path, actualizados: d.actualizados || 0 };
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -1440,6 +1534,11 @@ const API = (() => {
     publicarPrecio:             _mosCatalogoDirecto,
     crearEquivalencia:          _mosCatalogoDirecto,
     actualizarEquivalencia:     _mosCatalogoDirecto,
+    // [CATÁLOGO DELETE-SAFE] segmentos de precio (graneles) + foto a Storage — las 2 piezas que faltaban para
+    // que el catálogo NO dependa de la Hoja en NINGUNA escritura. Gate _mosCatalogoDirecto (igual que el resto
+    // del catálogo). OFF (default) ⇒ recto a GAS (segmentos a la Hoja; foto a Drive) = IDÉNTICO a hoy.
+    actualizarSegmentosPrecio:  _mosCatalogoDirecto,
+    subirFotoProducto:          _mosCatalogoDirecto,
     // [PILOTO ESCRITURA DIRECTA · PROVEEDORES] Re-cableado de la escritura directa de proveedores como PILOTO
     // (no es dinero → menor riesgo). Gated por _mosProveedoresDirecto (maestro OR mos_proveedores_directo, default
     // OFF). El despachador _postDirectoMOS YA tiene los `if(action==='crearProveedor'/'actualizarProveedor')`

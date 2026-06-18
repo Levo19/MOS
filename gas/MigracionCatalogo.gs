@@ -147,6 +147,36 @@ var _CAT_SPECS = {
   ]}
 };
 
+// ============================================================
+// [dual-write CATÁLOGO] Espejo en tiempo real hoja → sombra Supabase
+// ============================================================
+// Gemelo de _dualWriteMOS (MigracionMOS.gs) pero para las tablas del CATÁLOGO compartido
+// (mos.productos / mos.equivalencias / ...), que viven en _CAT_SPECS y se mapean con _bfRow
+// (NO _MOS_SPECS / _mosRowMap). Tras escribir una fila a su HOJA (la verdad), espeja ESA fila a
+// mos.<tabla> AL INSTANTE reusando el MISMO mapeo del sync batch (_bfRow + cfg.spec + cfg.post)
+// → fila BYTE-IDÉNTICA a la que produciría migrarCatalogoCompartido/syncCatalogoSupabase.
+// Upsert por cfg.pk (clave natural) = IDEMPOTENTE: re-guardar el mismo registro actualiza la misma
+// fila, nunca duplica; si el sync corre después no genera una fila distinta (409 = éxito en _sbOnce_).
+//
+// `obj` = objeto keyed por las CABECERAS de la hoja (mismas keys que _sheetToObjects produce, ej.
+// idProducto/skuBase/codigoBarra/...), con los valores YA escritos a la hoja.
+//
+// Best-effort y SEGURO: usa _sbOnce_ (1 SOLO intento, sin backoff/sleep) para no colgar al admin si
+// Supabase está degradado; el sync horario reconcilia si falla. El CALLER lo envuelve en try/catch →
+// si esto lanza, la escritura a la hoja NO se rompe (Sheets = verdad). NO requiere flag: solo espeja
+// a la sombra lo que ya fue a la hoja (invisible al usuario; acelera la frescura del catálogo).
+function _dualWriteCAT(tabla, obj) {
+  var cfg = _CAT_SPECS[tabla];
+  if (!cfg) { Logger.log('[dualWrite CAT] tabla desconocida (no está en _CAT_SPECS): ' + tabla); return { ok: false, error: 'tabla desconocida: ' + tabla }; }
+  // Mapeo idéntico al batch: _bfRow(o, spec) + cfg.post (si existe) — misma fuente de verdad.
+  var row = _bfRow(obj, cfg.spec); if (cfg.post) row = cfg.post(row, obj);
+  // Validar PK: sin PK no se puede upsert por clave natural → omitir (el sync horario lo subirá).
+  if (row[cfg.pk] == null || row[cfg.pk] === '') { Logger.log('[dualWrite CAT ' + tabla + '] sin PK (' + cfg.pk + ') — omitido'); return { ok: false, error: 'sin PK: ' + cfg.pk }; }
+  var r = _sbOnce_('POST', 'mos.' + tabla, { data: [row], upsert: true, onConflict: cfg.pk });
+  if (!r.ok) Logger.log('[dualWrite CAT ' + tabla + '] upsert falló: HTTP ' + (r.code) + ' ' + (r.error || ''));
+  return r;
+}
+
 /**
  * Backfill del catálogo. Devuelve un resumen por tabla.
  * @param {{dryRun?:boolean, soloTabla?:string}} opts
@@ -156,9 +186,23 @@ function migrarCatalogoCompartido(opts) {
   var resumen = {};
   var tablas = opts.soloTabla ? [opts.soloTabla] : Object.keys(_CAT_SPECS);
 
+  // [CATÁLOGO DELETE-SAFE] Honrar MOS_SYNC_OFF_TABLAS también en el sync del CATÁLOGO (este sync usa _CAT_SPECS,
+  // distinto del _MOS_SPECS de _syncMOSImpl, pero el mismo CSV de config gobierna AMBOS). Tras el cutover de
+  // escritura directa del catálogo (flag MOS_CATALOGO_DIRECTO=1 + 'productos,equivalencias' en el CSV), la PWA
+  // escribe productos/equivalencias DIRECTO a la sombra; si este sync las re-subiera desde la HOJA cada hora,
+  // PISARÍA esos writes directos (la Hoja queda atrás porque ya nadie la escribe). Excluirlas aquí cierra ese hueco.
+  // Default: CSV vacío para catálogo → no excluye nada → sync IDÉNTICO a hoy. opts.forzarTabla ignora la exclusión
+  // (para un backfill manual puntual). Best-effort: si la lectura de config falla, _mosSyncOffTablas devuelve {}.
+  var _off = {};
+  try { if (typeof _mosSyncOffTablas === 'function' && !opts.ignorarSyncOff) _off = _mosSyncOffTablas(); } catch (_) {}
+
   tablas.forEach(function (tabla) {
     var cfg = _CAT_SPECS[tabla];
     if (!cfg) { resumen[tabla] = { error: 'spec desconocida' }; return; }
+    if (_off[String(tabla).toLowerCase()] && tabla !== opts.forzarTabla) {
+      resumen[tabla] = { omitido: 'MOS_SYNC_OFF_TABLAS (escritura directa) — la HOJA ya no es la verdad de esta tabla' };
+      return;
+    }
     try {
       var sheet = getSheet(cfg.sheet);
       var objs = _sheetToObjects(sheet);
