@@ -12422,6 +12422,42 @@
     .zona-btn-sec.zona-accion-on { background:#3730a3; color:#e0e7ff; border-color:#6366f1; box-shadow:0 0 0 1px #6366f1 inset; }
     .zona-btn-sec.zona-accion-on::after { content:'✓'; margin-left:.3rem; font-weight:800; }
     .zona-chip-ok { display:inline-flex; align-items:center; gap:.3rem; font-size:.74rem; font-weight:700; color:#86efac; background:rgba(134,239,172,.12); border:1px solid rgba(134,239,172,.3); border-radius:999px; padding:.3rem .6rem; }
+    /* [RIZ CARRITO] estado "Pedido hoy/ayer" persistido en el card (relativo, ventana 7 días) */
+    .zona-ped-estado { display:inline-flex; align-items:center; gap:.3rem; font-size:.72rem; font-weight:700; color:#a5b4fc; background:rgba(99,102,241,.13); border:1px solid rgba(99,102,241,.32); border-radius:999px; padding:.22rem .55rem; margin-bottom:.4rem; }
+    .zona-ped-estado .zona-ped-ico { font-size:.82rem; }
+    /* [RIZ CARRITO] "en carrito" feedback en el botón del card */
+    .zona-btn-pedir.zona-en-carrito { background:linear-gradient(135deg,#0ea5e9,#6366f1); }
+    .zona-btn-pedir.zona-en-carrito::after { content:''; }
+    /* [RIZ CARRITO] FAB flotante + badge */
+    .zona-cart-fab { position:fixed; right:16px; bottom:84px; z-index:60; width:58px; height:58px; border-radius:50%; border:none; cursor:pointer;
+      background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff; box-shadow:0 10px 28px -8px rgba(99,102,241,.75); display:flex; align-items:center; justify-content:center;
+      transition:transform .14s ease, box-shadow .18s ease; }
+    .zona-cart-fab:active { transform:scale(.92); }
+    .zona-cart-fab.zona-cart-bump { animation: zonaCartBump .45s ease; }
+    @keyframes zonaCartBump { 0%,100%{transform:scale(1)} 35%{transform:scale(1.16)} }
+    .zona-cart-fab-ico { font-size:1.5rem; line-height:1; }
+    .zona-cart-badge { position:absolute; top:-4px; right:-4px; min-width:22px; height:22px; padding:0 5px; border-radius:999px; background:#ef4444; color:#fff; font-size:.74rem; font-weight:800; display:flex; align-items:center; justify-content:center; border:2px solid #0f172a; }
+    .zona-cart-card { max-width:440px; width:94%; max-height:80vh; display:flex; flex-direction:column; }
+    .zona-cart-head { display:flex; align-items:flex-start; justify-content:space-between; padding-bottom:.6rem; border-bottom:1px solid #1e293b; margin-bottom:.5rem; }
+    .zona-cart-title { font-weight:800; font-size:1.02rem; color:#e2e8f0; }
+    .zona-cart-sub { font-size:.76rem; color:#94a3b8; margin-top:.1rem; }
+    .zona-cart-x { background:none; border:none; color:#94a3b8; font-size:1.05rem; cursor:pointer; padding:.2rem .4rem; }
+    .zona-cart-body { overflow-y:auto; flex:1; min-height:60px; }
+    .zona-cart-empty { text-align:center; padding:2.2rem 1rem; color:#64748b; font-size:.86rem; }
+    .zona-cart-row { display:flex; align-items:center; gap:.55rem; padding:.55rem 0; border-bottom:1px solid #16202e; }
+    .zona-cart-row:last-child { border-bottom:none; }
+    .zona-cart-info { flex:1; min-width:0; }
+    .zona-cart-nm { font-size:.82rem; font-weight:700; color:#e2e8f0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .zona-cart-hint { font-size:.68rem; color:#64748b; margin-top:.1rem; }
+    .zona-cart-stepper { display:flex; align-items:center; gap:.25rem; }
+    .zona-cart-step { width:32px; height:32px; border-radius:.5rem; border:1px solid #334155; background:#1e293b; color:#e2e8f0; font-size:1.05rem; font-weight:800; cursor:pointer; line-height:1; }
+    .zona-cart-step:active { transform:scale(.9); }
+    .zona-cart-qty { width:54px; text-align:center; background:#0f172a; border:1px solid #334155; border-radius:.5rem; color:#fff; font-size:.84rem; font-weight:700; padding:.35rem .2rem; min-height:32px; }
+    .zona-cart-del { background:none; border:none; color:#f87171; font-size:1rem; cursor:pointer; padding:.2rem .35rem; }
+    .zona-cart-foot { display:flex; gap:.5rem; padding-top:.6rem; border-top:1px solid #1e293b; margin-top:.4rem; }
+    .zona-cart-vaciar { background:#1e293b; color:#cbd5e1; border:1px solid #334155; border-radius:.55rem; padding:.6rem .8rem; font-weight:600; font-size:.8rem; cursor:pointer; }
+    .zona-cart-enviar { flex:1; background:linear-gradient(135deg,#16a34a,#22c55e); color:#fff; border:none; border-radius:.55rem; padding:.6rem .8rem; font-weight:800; font-size:.86rem; cursor:pointer; min-height:46px; }
+    .zona-cart-enviar:disabled { opacity:.55; cursor:default; }
     /* Pulse / shake feedback reusable en zona */
     @keyframes zonaPulseOk { 0%{ box-shadow:0 0 0 0 rgba(134,239,172,.5) } 100%{ box-shadow:0 0 0 12px rgba(134,239,172,0) } }
     .zona-card.pulse-ok { animation: zonaPulseOk .55s ease-out; }
@@ -15106,6 +15142,34 @@
         <div class="skel h-32 rounded-xl"></div>
       </div>
     </section><!-- /view-zona -->
+
+    <!-- ── Carrito flotante de pedido a almacén (RIZ) ──────────────────
+         Badge flotante (FAB) que muestra cuántos ítems hay en el carrito de la zona.
+         Al tocarlo se abre el panel del carrito (lista editable +/− + quitar + enviar).
+         Solo visible cuando hay >=1 ítem en el carrito y la vista activa es 'zona'. -->
+    <button id="zonaCartFab" class="zona-cart-fab hidden" type="button"
+            onclick="MOS.zonaCarritoAbrir()" aria-label="Ver carrito de pedido">
+      <span class="zona-cart-fab-ico">🛒</span>
+      <span id="zonaCartBadge" class="zona-cart-badge">0</span>
+    </button>
+
+    <div id="modalZonaCart" class="modal-backdrop hidden"
+         onclick="if(MOS._validBackdropClose(event,this))MOS.zonaCarritoCerrar()">
+      <div class="modal-card zona-cart-card" onclick="event.stopPropagation()">
+        <div class="zona-cart-head">
+          <div>
+            <div class="zona-cart-title">🛒 Pedido a almacén</div>
+            <div class="zona-cart-sub" id="zonaCartZona">Zona</div>
+          </div>
+          <button class="zona-cart-x" onclick="MOS.zonaCarritoCerrar()" aria-label="Cerrar">✕</button>
+        </div>
+        <div id="zonaCartBody" class="zona-cart-body"></div>
+        <div class="zona-cart-foot">
+          <button class="zona-cart-vaciar" id="zonaCartVaciar" onclick="MOS.zonaCarritoVaciar()">Vaciar</button>
+          <button class="zona-cart-enviar" id="zonaCartEnviar" onclick="MOS.zonaCarritoEnviar()">Enviar pedido</button>
+        </div>
+      </div>
+    </div>
 
     <!-- ── Modal: Matriz BCG (RIZ) ─────────────────────────────────── -->
     <div id="modalZonaBCG" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.zonaCerrarBCG()">
@@ -18792,7 +18856,7 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js?v=2.43.266"></script>
+<script src="js/api.js?v=2.43.267"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -18807,7 +18871,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.266"></script>
+<script src="js/app.js?v=2.43.267"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

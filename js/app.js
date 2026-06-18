@@ -32,6 +32,9 @@ const MOS = (() => {
     zonaUltimoFetch: 0,      // [RIZ live] epoch ms del último fetch EXITOSO del panel (lee tablas VIVAS)
     zonaKpis: null,          // {faltan, almacen, externo, cero}
     _zonaFiltros: { kpi: null, tend: {}, brecha: false, orden: 'brecha', q: '' },
+    // [RIZ CARRITO] carrito de pedido a almacén POR ZONA. { 'ZONA-02': { 'LEV1172': {sku, nombre, cantidad, esGranel} } }
+    _zonaCarrito: {},
+    _zonaCarritoEnviando: false,   // lock anti doble-envío
     // [RIZ · TRASLADO VERIFICADO] estado del módulo "Guías" (solo lectura/mostrar; el escaneo vive en ME)
     _trasPend: [],           // cache de guías pendientes (sin verificar) → alimenta el badge + filtro
     _trasResumen: null,      // cache del resumen (verificadas: completo/incompleto/baseline + detalle)
@@ -198,6 +201,8 @@ const MOS = (() => {
     // [RIZ live] Auto-refresh del panel Zona: arrancar solo en 'zona', detener al salir.
     if (viewName === 'zona') _zonaIniciarAutoRefresh();
     else _zonaDetenerAutoRefresh();
+    // [RIZ CARRITO] el FAB flotante solo vive en la vista 'zona' (oculto en cualquier otra vista).
+    if (viewName !== 'zona') { try { const _f = $('zonaCartFab'); if (_f) _f.classList.add('hidden'); } catch (_) {} }
     if (viewName === 'config') _cfgIniciarAutoRefresh();
     else _cfgDetenerAutoRefresh();
     // [v2.41.58] Polling 30s Personal del Día: solo en finanzas
@@ -39109,7 +39114,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // ¿Hay un modal de zona abierto o un ajuste inline activo? → no auto-refrescar (no pisar edición).
   function _zonaHayEdicionAbierta() {
     try {
-      const ids = ['modalZonaBCG','modalZonaLotes','modalZonaSug','modalZonaEsp','modalZonaGuias','modalZonaLog','modalZonaKardex','modalZona'];
+      const ids = ['modalZonaBCG','modalZonaLotes','modalZonaSug','modalZonaEsp','modalZonaGuias','modalZonaLog','modalZonaKardex','modalZona','modalZonaCart'];
       for (const id of ids) { const el = $(id); if (el && el.classList.contains('open')) return true; }
       // Ajuste inline (stepper): el input solo existe en el DOM mientras la celda está en edición.
       if (document.querySelector('.zona-step-input')) return true;
@@ -39299,6 +39304,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const cards = cont.querySelectorAll('.zona-card'), cap = Math.min(20, cards.length);
       for (let i = 0; i < cap; i++) { try { cards[i].style.setProperty('--i', i); } catch (_) {} }
     }
+    // [RIZ CARRITO] el FAB/badge reflejan el carrito de la zona tras cada render (cards reconstruidos).
+    try { _zonaCarritoSync(); } catch (_) {}
   }
   // ¿El item es "rotación cero"? Fuente de verdad = backend item.rotacionCero (bool).
   // Fallback tolerante (datos viejos sin el campo): rotacion===0.
@@ -39382,10 +39389,24 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
                   <button class="zona-btn-sec${on('GONDOLA')}" onclick="MOS.zonaAccionPerro('${safe}','GONDOLA')">Mover a góndola</button>
                   <button class="zona-btn-sec${on('REMATAR')}" onclick="MOS.zonaAccionPerro('${safe}','REMATAR')">Rematar</button>`;
     } else {
-      const pedirLbl = pedirAlm > 0 ? 'Pedir ' + _zonaFmtCant(pedirAlm, p) + ' a almacén' : 'Almacén sin stock';
-      acciones = `<button class="zona-btn-pedir" id="zPedir-${safe}" ${pedirAlm > 0 ? '' : 'disabled'} onclick="MOS.zonaPedirAlmacen('${safe}', ${pedirAlm})">${pedirLbl}</button>
+      // [RIZ CARRITO] "Pedir" YA NO envía de inmediato: AGREGA al carrito flotante de la zona. La cantidad
+      // sugerida inicial = brecha (lo que falta); el admin la ajusta con +/− en el carrito. Re-agregar un
+      // ya-pedido está permitido (requisito D). Cantidad sugerida = brecha (no limitada por almacén; el
+      // almacén puede no cubrir y se pide igual — el ticket de almacén marca el "debe").
+      const sugerir = brecha > 0 ? brecha : 0;
+      const enCarrito = _zonaCarritoCant(sku);
+      const btnLbl = enCarrito > 0
+        ? '🛒 En carrito (' + _esc(_zonaFmtCant(enCarrito, p)) + ') · +'
+        : (sugerir > 0 ? 'Pedir ' + _esc(_zonaFmtCant(sugerir, p)) + ' a almacén' : 'Agregar al pedido');
+      acciones = `<button class="zona-btn-pedir${enCarrito > 0 ? ' zona-en-carrito' : ''}" id="zPedir-${safe}" onclick="MOS.zonaPedirAlmacen('${safe}', ${sugerir})">${btnLbl}</button>
                   <button class="zona-btn-sec" ${externo > 0 ? '' : 'disabled'} onclick="MOS.zonaAgregarLista('${safe}', ${externo})">+ Lista compras${externo > 0 ? ' (' + _esc(_zonaFmtCant(externo, p)) + ')' : ''}</button>`;
     }
+
+    // [RIZ CARRITO] estado "Pedido hoy/ayer" persistido (me.zona_pedido_log, ventana 7 días). El panel lo
+    // devuelve en p.pedidoEstado:{etiqueta,...}; lo mostramos como chip en el card (sobrevive a refrescos).
+    const pedEstado = (p.pedidoEstado && p.pedidoEstado.etiqueta)
+      ? `<div class="zona-ped-estado"><span class="zona-ped-ico">📦</span>${_esc(p.pedidoEstado.etiqueta)}</div>`
+      : '';
 
     // [MEJORA 5] disclosure "ver códigos (N)" → expande item.codigos[] (zona, editable).
     const codDisc = codigos.length
@@ -39428,6 +39449,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       ${spark}
       ${vencHtml}
       ${rotCeroHint}
+      ${pedEstado}
       <div class="zona-ia">💡 ${_esc(ia)}</div>
       <div class="zona-actions">${acciones}</div>
     </div>`;
@@ -39730,37 +39752,199 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
   function zonaCerrarEsperado() { closeModal('modalZonaEsp'); }
 
-  // ── Pedir a almacén — optimista + triple feedback + revertir ─────────────
-  async function zonaPedirAlmacen(sku, cantidad) {
-    cantidad = _zonaNum(cantidad);
-    if (cantidad <= 0) return;
+  // ══ [RIZ CARRITO] Pedido a almacén por CARRITO (un paquete = un pickup con N líneas) ════════════════════
+  //   "Pedir" en el card YA NO envía: AGREGA al carrito flotante de la zona. El carrito (modal) permite
+  //   editar cantidad (+/−), quitar, vaciar y "Enviar pedido" (manda TODO en un solo paquete idempotente).
+  //   El estado "Pedido hoy/ayer" persiste en Supabase (me.zona_pedido_log) y el panel lo devuelve.
+
+  // mapa carrito de la zona activa (se crea perezosamente). Clave = skuBase.
+  function _zonaCart() {
+    const z = S.zonaActual || '_';
+    if (!S._zonaCarrito[z]) S._zonaCarrito[z] = {};
+    return S._zonaCarrito[z];
+  }
+  function _zonaCarritoCant(sku) { const c = _zonaCart()[String(sku)]; return c ? _zonaNum(c.cantidad) : 0; }
+  function _zonaCarritoNItems() { return Object.keys(_zonaCart()).length; }
+
+  // AGREGAR (o sumar la sugerencia a) un producto al carrito. cantidad = brecha sugerida (puede ser 0 → mete 1
+  // como mínimo accionable para que el admin lo vea en el carrito y ajuste). Re-agregar suma la sugerencia.
+  function zonaPedirAlmacen(sku, cantidad) {
+    sku = String(sku);
     const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
     if (!p) return;
+    const esGranel = !!p.esGranel;
+    let add = _zonaNum(cantidad);
+    if (!(add > 0)) add = esGranel ? 0.5 : 1;   // si no hay brecha, agrega 1 unidad accionable
+    const cart = _zonaCart();
+    const ya = cart[sku] ? _zonaNum(cart[sku].cantidad) : 0;
+    const nueva = esGranel ? Math.round((ya + add) * 100) / 100 : (ya + add);
+    cart[sku] = { sku, nombre: String(p.descripcion || p.nombre || sku), cantidad: nueva, esGranel };
+    // feedback inmediato + actualizar SOLO el botón de este card (sin re-render completo, preserva scroll).
+    _zonaSfx('pop'); _zonaVibrar([40,30,40]);
     const btn = $('zPedir-' + sku);
     const card = $('zcard-' + sku);
-    // OPTIMISTA: chip "pedido ✓" + pulse + triple feedback
     if (btn) {
-      btn.disabled = true;
-      btn.outerHTML = `<span class="zona-chip-ok" id="zPedir-${_zonaEsc(sku)}">✓ Pedido ${cantidad} (pendiente almacén)</span>`;
+      btn.classList.add('zona-en-carrito');
+      btn.innerHTML = '🛒 En carrito (' + _esc(_zonaFmtCant(nueva, p)) + ') · +';
+      btn.setAttribute('onclick', `MOS.zonaPedirAlmacen('${_zonaEsc(sku)}', ${(p.brecha != null ? _zonaNum(p.brecha) : 0)})`);
     }
     if (card) { card.classList.remove('pulse-ok'); void card.offsetWidth; card.classList.add('pulse-ok'); }
+    toast('Agregado al pedido', 'ok');
+    _zonaCarritoSync();   // refrescar FAB/badge + (si está abierto) el cuerpo del carrito
+  }
+
+  // Refresca el FAB flotante (visible solo con >=1 ítem) + badge + cuerpo del modal si está abierto.
+  function _zonaCarritoSync() {
+    const n = _zonaCarritoNItems();
+    const fab = $('zonaCartFab'), badge = $('zonaCartBadge');
+    if (fab) {
+      fab.classList.toggle('hidden', !(n > 0 && S.view === 'zona'));
+      if (n > 0) { fab.classList.remove('zona-cart-bump'); void fab.offsetWidth; fab.classList.add('zona-cart-bump'); }
+    }
+    if (badge) badge.textContent = String(n);
+    const modal = $('modalZonaCart');
+    if (modal && modal.classList.contains('open')) _zonaCarritoRender();
+  }
+
+  function zonaCarritoAbrir() {
+    if (!_zonaCarritoNItems()) { toast('Carrito vacío', 'info'); return; }
+    const zt = $('zonaCartZona');
+    if (zt) { const zo = (S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === S.zonaActual); zt.textContent = 'Zona ' + ((zo && zo.nombre) || S.zonaActual || ''); }
+    _zonaCarritoRender();
+    openModal('modalZonaCart');
+    _zonaSfx('pop'); _zonaVibrar(20);
+  }
+  function zonaCarritoCerrar() { closeModal('modalZonaCart'); }
+
+  function _zonaCarritoRender() {
+    const body = $('zonaCartBody');
+    if (!body) return;
+    const cart = _zonaCart();
+    const skus = Object.keys(cart);
+    const enviar = $('zonaCartEnviar'), vaciar = $('zonaCartVaciar');
+    if (!skus.length) {
+      body.innerHTML = '<div class="zona-cart-empty">🛒 Tu pedido está vacío.<br>Agrega productos desde los cards.</div>';
+      if (enviar) enviar.disabled = true;
+      if (vaciar) vaciar.disabled = true;
+      return;
+    }
+    if (enviar) enviar.disabled = false;
+    if (vaciar) vaciar.disabled = false;
+    body.innerHTML = skus.map(sku => {
+      const it = cart[sku];
+      const e = _zonaEsc(sku);
+      const step = it.esGranel ? '0.5' : '1';
+      const val = _zonaFmtNumRaw(_zonaNum(it.cantidad), it.esGranel);
+      return `<div class="zona-cart-row" id="zCartRow-${_esc(sku)}">
+        <button class="zona-cart-del" onclick="MOS.zonaCarritoQuitar('${e}')" title="Quitar">🗑</button>
+        <div class="zona-cart-info">
+          <div class="zona-cart-nm">${_esc(it.nombre)}</div>
+          <div class="zona-cart-hint">${_esc(sku)}</div>
+        </div>
+        <div class="zona-cart-stepper">
+          <button class="zona-cart-step" onclick="MOS.zonaCarritoStep('${e}',-1)">−</button>
+          <input type="number" inputmode="decimal" step="${step}" min="0" class="zona-cart-qty" id="zCartQty-${_esc(sku)}" value="${_esc(val)}" onchange="MOS.zonaCarritoSet('${e}', this.value)">
+          <button class="zona-cart-step" onclick="MOS.zonaCarritoStep('${e}',1)">+</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function zonaCarritoStep(sku, delta) {
+    sku = String(sku);
+    const cart = _zonaCart();
+    const it = cart[sku];
+    if (!it) return;
+    const paso = it.esGranel ? 0.5 : 1;
+    let n = _zonaNum(it.cantidad) + delta * paso;
+    n = Math.max(0, it.esGranel ? Math.round(n * 100) / 100 : n);
+    if (n <= 0) { zonaCarritoQuitar(sku); return; }   // bajar a 0 = quitar
+    it.cantidad = n;
+    const inp = $('zCartQty-' + sku);
+    if (inp) inp.value = _zonaFmtNumRaw(n, it.esGranel);
+    _zonaSfx('tick'); _zonaVibrar(15);
+    _zonaActualizarBotonCard(sku);
+  }
+  function zonaCarritoSet(sku, valor) {
+    sku = String(sku);
+    const cart = _zonaCart();
+    const it = cart[sku];
+    if (!it) return;
+    let n = _zonaParseCant(valor, !!it.esGranel);
+    n = Math.max(0, n);
+    if (n <= 0) { zonaCarritoQuitar(sku); return; }
+    it.cantidad = n;
+    _zonaSfx('tick'); _zonaVibrar(15);
+    _zonaActualizarBotonCard(sku);
+  }
+  function zonaCarritoQuitar(sku) {
+    sku = String(sku);
+    const cart = _zonaCart();
+    delete cart[sku];
+    _zonaSfx('tick'); _zonaVibrar([20,20]);
+    const row = $('zCartRow-' + sku);
+    if (row) row.remove();
+    _zonaActualizarBotonCard(sku);
+    _zonaCarritoSync();
+  }
+  function zonaCarritoVaciar() {
+    const cart = _zonaCart();
+    const skus = Object.keys(cart);
+    skus.forEach(s => delete cart[s]);
+    _zonaSfx('tick'); _zonaVibrar([30,30]);
+    skus.forEach(_zonaActualizarBotonCard);
+    _zonaCarritoSync();
+    toast('Pedido vaciado', 'info');
+  }
+  // Repinta el botón del card de un sku según su estado actual en el carrito (sin re-render completo).
+  function _zonaActualizarBotonCard(sku) {
+    sku = String(sku);
+    const btn = $('zPedir-' + sku);
+    if (!btn) return;
+    const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
+    const enCarrito = _zonaCarritoCant(sku);
+    const brecha = p ? (p.brecha != null ? _zonaNum(p.brecha) : 0) : 0;
+    if (enCarrito > 0) {
+      btn.classList.add('zona-en-carrito');
+      btn.innerHTML = '🛒 En carrito (' + _esc(p ? _zonaFmtCant(enCarrito, p) : enCarrito) + ') · +';
+    } else {
+      btn.classList.remove('zona-en-carrito');
+      btn.innerHTML = brecha > 0 ? 'Pedir ' + _esc(p ? _zonaFmtCant(brecha, p) : brecha) + ' a almacén' : 'Agregar al pedido';
+    }
+    btn.setAttribute('onclick', `MOS.zonaPedirAlmacen('${_zonaEsc(sku)}', ${brecha})`);
+  }
+
+  // ENVIAR el carrito = UN paquete (un pickup con N líneas). Idempotente por localId del paquete (el reenvío
+  // del MISMO carrito no duplica en wh.pickups). Optimista: cierra el modal + toast; si falla, reabre.
+  async function zonaCarritoEnviar() {
+    if (S._zonaCarritoEnviando) return;       // lock anti doble-tap
+    const cart = _zonaCart();
+    const skus = Object.keys(cart);
+    if (!skus.length) { toast('Carrito vacío', 'info'); return; }
+    const items = skus.map(s => ({ skuBase: s, cantidad: _zonaNum(cart[s].cantidad) })).filter(x => x.cantidad > 0);
+    if (!items.length) { toast('Sin cantidades válidas', 'error'); return; }
+    // localId estable del PAQUETE → idempotencia (reenvío = mismo pickup, no duplica).
+    const localId = 'RIZCART_' + (S.zonaActual || 'Z') + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+    S._zonaCarritoEnviando = true;
+    const enviar = $('zonaCartEnviar');
+    if (enviar) { enviar.disabled = true; enviar.textContent = 'Enviando…'; }
     _zonaSfx('ok'); _zonaVibrar([80,60,80]);
-    // BACKGROUND
     try {
-      const r = await API.zona.pedirAlmacen({ zona: S.zonaActual, skuBase: sku, cantidad });
+      const r = await API.zona.pedirAlmacen({ zona: S.zonaActual, items, localId });
       if (r == null || r.ok === false) throw new Error((r && r.error) || 'sin commit');
-      toast('Pedido enviado a almacén', 'ok');
-      // [RIZ live] Reconciliar con el estado REAL del server (brecha/almacén pueden haber cambiado):
-      // re-fetch silencioso del panel. Si nada cambió, el chip optimista persiste sin parpadeo.
-      // Diferido un instante para no competir con la animación pulse-ok del card.
-      setTimeout(() => { _zonaAutoRefrescar(); }, 800);
+      // ÉXITO: vaciar carrito de la zona + cerrar modal + refrescar panel (trae pedidoEstado persistido).
+      skus.forEach(s => delete cart[s]);
+      closeModal('modalZonaCart');
+      toast('Pedido enviado a almacén (' + items.length + ' producto' + (items.length > 1 ? 's' : '') + ')', 'ok');
+      _zonaCarritoSync();
+      skus.forEach(_zonaActualizarBotonCard);
+      setTimeout(() => { _zonaAutoRefrescar(); }, 700);
     } catch (e) {
-      // ROLLBACK: restaurar botón + shake
-      const chip = $('zPedir-' + sku);
-      if (chip) chip.outerHTML = `<button class="zona-btn-pedir" id="zPedir-${_zonaEsc(sku)}" onclick="MOS.zonaPedirAlmacen('${_zonaEsc(sku)}', ${cantidad})">Pedir ${cantidad} a almacén</button>`;
-      if (card) { card.classList.remove('shake'); void card.offsetWidth; card.classList.add('shake'); }
       _zonaSfx('error'); _zonaVibrar([120,40,120]);
-      toast('No se pudo pedir, reintenta', 'error');
+      toast('No se pudo enviar, reintenta', 'error');
+    } finally {
+      S._zonaCarritoEnviando = false;
+      if (enviar) { enviar.disabled = false; enviar.textContent = 'Enviar pedido'; }
     }
   }
 
@@ -40473,6 +40657,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaToggleCodigos, zonaToggleCodigosAlmacen, zonaCodCero, zonaCodGuardar,
     zonaVerEsperado, zonaCerrarEsperado,
     zonaPedirAlmacen, zonaAgregarLista,
+    // [RIZ CARRITO] carrito flotante de pedido a almacén (un paquete = un pickup con N líneas)
+    zonaCarritoAbrir, zonaCarritoCerrar, zonaCarritoStep, zonaCarritoSet, zonaCarritoQuitar, zonaCarritoVaciar, zonaCarritoEnviar,
     zonaVerLotes, zonaCerrarLotes,
     // [ASEGURAR DATA] Log de errores (master) + historial kardex zona/almacén — read-only
     zonaAbrirLogErrores, zonaCerrarLogErrores, zonaLogVerHistorial,
