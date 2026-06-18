@@ -39970,12 +39970,29 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
   // + Lista compras: [Capa 5] cableado a mos.zona_lista_compras (lectura). La RPC arma/lee la lista
   // de compra externa de la semana; mostramos confirmación con el conteo real. Optimista + rollback de toast.
+  // Semana ISO-8601 en formato `IYYY-"W"IW` (idéntico al to_char de Postgres que espera me.zona_lista_compras).
+  // Week 1 = la que contiene el primer jueves del año; lunes es el primer día. Devuelve p.ej. "2026-W25".
+  function _zonaSemanaISO(d) {
+    const dt = new Date(d || Date.now());
+    // normalizar a medianoche UTC del día (evita corrimientos por TZ/horario)
+    const t = new Date(Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate()));
+    // jueves de esta semana (ISO: lunes=1..domingo=7); el año del jueves es el año ISO
+    const day = t.getUTCDay() || 7;            // domingo(0) → 7
+    t.setUTCDate(t.getUTCDate() + 4 - day);     // mover al jueves de la semana
+    const isoYear = t.getUTCFullYear();
+    const yearStart = new Date(Date.UTC(isoYear, 0, 1));
+    const week = Math.ceil((((t - yearStart) / 86400000) + 1) / 7);
+    return isoYear + '-W' + String(week).padStart(2, '0');
+  }
+
   async function zonaAgregarLista(sku, cantidad) {
     _zonaSfx('pop'); _zonaVibrar(20);
     toast('Agregado a lista de compras (' + _zonaNum(cantidad) + ')', 'ok');
     // BACKGROUND: confirmar contra la lista real de la semana (lectura). Si falla, solo logueamos (el optimista ya cerró).
     try {
-      const r = await API.zona.listaCompras({ zona: S.zonaActual });
+      // ⚠ me.zona_lista_compras EXIGE `semana` en formato ISO `IYYY-"W"IW` (== to_char de Postgres);
+      //   sin él devolvía ok:false y la lista nunca se armaba/persistía. Lo calculamos aquí.
+      const r = await API.zona.listaCompras({ zona: S.zonaActual, semana: _zonaSemanaISO() });
       const data = (r && r.data) || r || {};
       const items = Array.isArray(data.items) ? data.items : (Array.isArray(data.productos) ? data.productos : (Array.isArray(data) ? data : []));
       if (items.length) toast('Lista del lunes: ' + items.length + ' producto(s) por comprar', 'info');
