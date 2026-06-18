@@ -40028,17 +40028,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const esIng = !!m.esIngreso;
     const op    = String(m.tipoOperacion || '').toUpperCase();
     const fuente = String(m.fuente || '').toLowerCase();
-    // [RIZ UX · REGLA DE COLORES] verde=ingreso/INC, rojo=salida/DEC, NARANJA=guía aún ABIERTA (pendiente de cerrar).
-    //   El glifo distingue el tipo (🔍 auditoría, ✎ ajuste, ▲/▼ guía), pero el COLOR sigue el signo del delta.
-    //   Apenas la guía cierra (estado≠'ABIERTA') el naranja pasa a rojo/verde. Hoy las RPC emiten 'CERRADA';
-    //   el naranja queda cableado para cuando el dato distinga guías abiertas (ver mos.zona_kardex_historial).
-    const abierta = String(m.estado || '').toUpperCase() === 'ABIERTA';
+    // [RIZ UX · REGLA DE COLORES] verde=ingreso/INC, rojo=salida/DEC, NARANJA=venta del día AÚN NO reconciliada
+    //   con la guía de cierre (estado='ABIERTA' o pendiente=true → el día no se ha cerrado todavía).
+    //   El glifo distingue el tipo (🔍 auditoría, ✎ ajuste, ⏳ venta pendiente, ▲/▼ entrada/salida); el COLOR
+    //   sigue el signo del delta salvo el naranja de los pendientes (ver mos.zona_kardex_historial).
+    const abierta = String(m.estado || '').toUpperCase() === 'ABIERTA' || m.pendiente === true;
     const sgnCls  = esIng ? 'ing' : 'sal';                 // color por signo (verde/rojo)
-    const colorCls = abierta ? 'pend' : sgnCls;            // naranja si la guía sigue abierta
+    const colorCls = abierta ? 'pend' : sgnCls;            // naranja si la venta no está reconciliada
     let icoTxt = esIng ? '▲' : '▼';
     if (op.indexOf('AUDITORIA') >= 0) { icoTxt = '🔍'; }
     else if (fuente === 'ajuste' || op.indexOf('AJUSTE') >= 0) { icoTxt = '✎'; }
-    if (abierta) icoTxt = '⏳';                            // guía pendiente de cerrar
+    if (abierta) icoTxt = '⏳';                            // venta pendiente de reconciliar (día abierto)
     const delta = _zonaNum(m.cantidad);
     const saldo = (m.saldo == null ? null : _zonaNum(m.saldo));
     const saldoNeg = (esAlm && saldo != null && saldo < 0);   // almacén en rojo si negativo
@@ -40046,7 +40046,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const usr   = _esc(m.usuario || '—');
     const guia  = m.idGuia ? (' · ' + _esc(String(m.idGuia))) : '';
     const aplic = (m.aplicado === false) ? ' <span style="color:#64748b">(informativo)</span>' : '';
-    const pendTag = abierta ? ' <span class="zona-kardex-pend-tag">⏳ por cerrar</span>' : '';
+    const pendTag = abierta ? ' <span class="zona-kardex-pend-tag">⏳ sin reconciliar</span>' : '';
     return `<div class="zona-kardex-row" style="animation-delay:${i*30}ms">
       <span class="zona-kardex-ico ${colorCls}">${icoTxt}</span>
       <div class="zona-kardex-mid">
