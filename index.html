@@ -12683,13 +12683,23 @@
     .tras-result-ico { font-size:1.6rem; }
     .tras-result-estado { font-weight:800; color:#e2e8f0; }
     .tras-result-sub { font-size:.72rem; color:#94a3b8; margin-top:.1rem; }
-    .tras-det-row { display:flex; align-items:center; justify-content:space-between; gap:.5rem; padding:.45rem .6rem; border-radius:.5rem; margin-bottom:.35rem; background:#0d1526; border:1px solid #1e293b; }
+    .tras-det-row { display:flex; align-items:flex-start; justify-content:space-between; gap:.5rem; padding:.45rem .6rem; border-radius:.5rem; margin-bottom:.35rem; background:#0d1526; border:1px solid #1e293b; }
     .tras-det-row.ok    { border-left:3px solid #22c55e; }
-    .tras-det-row.falta { border-left:3px solid #ef4444; }
-    .tras-det-row.sobra { border-left:3px solid #f59e0b; }
-    .tras-det-desc { font-size:.78rem; color:#e2e8f0; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .tras-det-nums { font-size:.7rem; color:#94a3b8; white-space:nowrap; }
+    .tras-det-row.falta { border-left:3px solid #ef4444; background:rgba(239,68,68,.06); }
+    .tras-det-row.sobra { border-left:3px solid #f59e0b; background:rgba(245,158,11,.06); }
+    .tras-det-main { flex:1; min-width:0; }
+    .tras-det-desc { font-size:.78rem; color:#e2e8f0; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; }
+    .tras-det-meta { display:flex; flex-wrap:wrap; gap:.25rem .6rem; margin-top:.18rem; }
+    .tras-det-cod  { font-size:.64rem; color:#64748b; font-family:ui-monospace,Menlo,monospace; letter-spacing:.01em; }
+    .tras-det-lote { font-size:.64rem; color:#7dd3fc; font-weight:600; }
+    .tras-det-nums { font-size:.7rem; color:#94a3b8; white-space:nowrap; padding-top:.05rem; }
     .tras-det-dif { margin-left:.3rem; } .tras-det-row.ok .tras-det-dif { color:#86efac; } .tras-det-row.falta .tras-det-dif { color:#fca5a5; } .tras-det-row.sobra .tras-det-dif { color:#fcd34d; }
+    /* contadores por sección en la cabecera del detalle */
+    .tras-det-chips { display:flex; flex-wrap:wrap; gap:.4rem; margin-top:.5rem; }
+    .tras-det-chip { font-size:.66rem; font-weight:800; padding:.18rem .5rem; border-radius:.45rem; border:1px solid; }
+    .tras-det-chip.ok    { color:#86efac; border-color:rgba(34,197,94,.4);  background:rgba(34,197,94,.1); }
+    .tras-det-chip.falta { color:#fca5a5; border-color:rgba(239,68,68,.45); background:rgba(239,68,68,.1); }
+    .tras-det-chip.sobra { color:#fcd34d; border-color:rgba(245,158,11,.45);background:rgba(245,158,11,.1); }
     .tras-gate-nota { font-size:.68rem; color:#94a3b8; background:#0f1a2e; border:1px dashed #334155; border-radius:.5rem; padding:.5rem .65rem; margin-top:.5rem; line-height:1.35; }
     .tras-res-card { border:1px solid #1e293b; border-radius:.6rem; padding:.65rem .75rem; margin-bottom:.6rem; background:#0d1526; }
     .tras-res-card.ok { border-left:3px solid #22c55e; } .tras-res-card.warn { border-left:3px solid #f59e0b; } .tras-res-card.pend { border-left:3px solid #3b82f6; }
@@ -12729,7 +12739,7 @@
     .zona-guia-back { display:inline-flex; align-items:center; gap:.35rem; font-size:.78rem; color:#7dd3fc; cursor:pointer; margin-bottom:.7rem; background:none; border:none; padding:0; }
     .zona-guia-det-hdr { border:1px solid #1e293b; border-radius:.7rem; padding:.7rem .8rem; margin-bottom:.8rem; background:#0d1526; }
     .zona-guia-discr-lbl { font-size:.72rem; font-weight:800; letter-spacing:.03em; text-transform:uppercase; margin:.2rem 0 .45rem; }
-    .zona-guia-discr-lbl.alert { color:#fca5a5; } .zona-guia-discr-lbl.ok { color:#86efac; }
+    .zona-guia-discr-lbl.alert { color:#fca5a5; } .zona-guia-discr-lbl.ok { color:#86efac; } .zona-guia-discr-lbl.sobra { color:#fcd34d; }
   </style>
 </head>
 <body class="h-full">
@@ -18869,7 +18879,7 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js?v=2.43.268"></script>
+<script src="js/api.js?v=2.43.269"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -18884,7 +18894,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.268"></script>
+<script src="js/app.js?v=2.43.269"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

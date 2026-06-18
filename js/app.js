@@ -40598,34 +40598,75 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         const data = (r && r.data) || r || {};
         const lineas = Array.isArray(data.lineas) ? data.lineas : [];
         // sin escaneo (MOS no escanea): mostramos lo ENVIADO; escaneado/dif = 0, estado OK informativo.
-        detalle = lineas.map(l => ({ codBarra: l.codBarra, descripcion: l.descripcion, enviado: _zonaNum(l.enviado), escaneado: 0, dif: _zonaNum(l.enviado), estado: 'PENDIENTE' }));
+        detalle = lineas.map(l => ({ codBarra: l.codBarra, descripcion: l.descripcion, enviado: _zonaNum(l.enviado), escaneado: 0, dif: _zonaNum(l.enviado), estado: 'PENDIENTE', lote: l.lote || null, venc: l.venc || null }));
       } catch (e) { detalle = []; }
     }
     _trasRenderDetalle(S._guiaSel, detalle);
   }
   function trasGuiasVolver() { _zonaSfx('tick'); _zonaVibrar(12); _trasMostrarLista(); }
 
+  // Formato corto y legible del vencimiento (date-only, sin desfase UTC). '' si no hay.
+  function _trasVencLbl(v) {
+    if (!v) return '';
+    const s = String(v).slice(0, 10);                 // 'YYYY-MM-DD' (date-only del backend)
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    if (!m) return '';
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));   // local, sin UTC shift
+    if (isNaN(d.getTime())) return '';
+    try { return d.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: '2-digit' }); }
+    catch (_) { return s; }
+  }
+
   function _trasRenderDetalle(g, detalle) {
     const host = $('zonaGuiasDetalle');
     if (!host) return;
     g = g || {};
     detalle = Array.isArray(detalle) ? detalle : [];
-    // discrepancias = todo lo que NO está OK (falta/sobra); el resto va después.
-    const esDiscr = d => String(d.estado) === 'FALTA' || String(d.estado) === 'SOBRA' || (g.verificada && _zonaNum(d.dif) !== 0);
-    const discr = detalle.filter(esDiscr);
-    const resto = detalle.filter(d => !esDiscr(d));
+    // ── Clasificación en 3 secciones (NO cambia la comparación: solo agrupa por estado/dif) ──────────────────
+    //   OK     → enviado == escaneado (dif 0). Verde.
+    //   FALTA  → enviado > escaneado (llegó de menos). Rojo.
+    //   SOBRA  → escaneado > enviado o no estaba en la guía (llegó de más / inesperado). Ámbar.
+    const claseDe = (d) => {
+      const dif = _zonaNum(d.dif);
+      if (String(d.estado) === 'FALTA') return 'falta';
+      if (String(d.estado) === 'SOBRA') return 'sobra';
+      if (String(d.estado) === 'OK')    return 'ok';
+      // verificada sin estado explícito → derivar de dif; sin verificar (PENDIENTE) cae a 'ok' (informativo).
+      if (g.verificada) return dif > 0 ? 'falta' : (dif < 0 ? 'sobra' : 'ok');
+      return 'ok';
+    };
+    const grpFalta = detalle.filter(d => claseDe(d) === 'falta');
+    const grpSobra = detalle.filter(d => claseDe(d) === 'sobra');
+    const grpOk    = detalle.filter(d => claseDe(d) === 'ok');
+
+    // Fila de un producto: codBarra siempre visible + lote/venc (donde exista) + números env/esc/dif.
     const filaHtml = (d) => {
       const dif = _zonaNum(d.dif);
-      const cls = (d.estado === 'OK' || dif === 0) ? 'ok' : (dif > 0 ? 'falta' : 'sobra');
-      const difTxt = !g.verificada ? ('env ' + _zonaNum(d.enviado)) : (dif === 0 ? '✓ ok' : (dif > 0 ? 'falta ' + dif : 'sobra ' + Math.abs(dif)));
+      const cls = claseDe(d);
+      const cod = String(d.codBarra || '');
+      const desc = String(d.descripcion || cod || '—');
+      // si la descripción ES el código (sin catálogo), no repetir el código abajo.
+      const codLinea = (cod && cod !== desc)
+        ? `<span class="tras-det-cod">🏷 ${_esc(cod)}</span>` : '';
+      const lote = (d.lote != null && String(d.lote).trim() !== '') ? String(d.lote).trim() : '';
+      const vencTxt = _trasVencLbl(d.venc);
+      const loteVenc = (lote || vencTxt)
+        ? `<span class="tras-det-lote">${lote ? '📦 Lote ' + _esc(lote) : ''}${(lote && vencTxt) ? ' · ' : ''}${vencTxt ? '⏱ Vto ' + _esc(vencTxt) : ''}</span>` : '';
+      const meta = (codLinea || loteVenc) ? `<div class="tras-det-meta">${codLinea}${loteVenc}</div>` : '';
+      const difTxt = !g.verificada ? ('env ' + _zonaNum(d.enviado))
+        : (dif === 0 ? '✓ ok' : (cls === 'falta' ? 'falta ' + dif : 'sobra ' + Math.abs(dif)));
       const nums = g.verificada
         ? `env ${_zonaNum(d.enviado)} · esc ${_zonaNum(d.escaneado)} <b class="tras-det-dif">${difTxt}</b>`
         : `<b class="tras-det-dif">${difTxt}</b>`;
       return `<div class="tras-det-row ${cls}">
-        <span class="tras-det-desc">${_esc(String(d.descripcion || d.codBarra))}</span>
+        <div class="tras-det-main">
+          <span class="tras-det-desc">${_esc(desc)}</span>
+          ${meta}
+        </div>
         <span class="tras-det-nums">${nums}</span>
       </div>`;
     };
+
     // cabecera + estado
     let estCls, estLbl;
     if (g.estado === 'PENDIENTE')       { estCls = 'pend'; estLbl = '⏳ Pendiente de verificar'; }
@@ -40635,17 +40676,31 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const head = `<div class="zona-guia-det-hdr">
       <div class="zona-guia-card-top"><span class="zona-guia-id">📦 ${_esc(g.idGuia)}</span><span class="zona-guia-estado ${estCls}">${estLbl}</span></div>
       <div class="zona-guia-sub">👤 ${_esc(g.operario || '—')} · ${_esc(g.edadLbl || '')}</div>
-      <div class="zona-guia-meta">enviado ${_zonaNum(g.totalEnviado)}${g.verificada ? ' · escaneado ' + _zonaNum(g.totalEscaneado) + ' · dif ' + _zonaNum(g.totalDif) : ''}</div>
-    </div>`;
-    // bloques: discrepancias primero
+      <div class="zona-guia-meta">enviado ${_zonaNum(g.totalEnviado)}${g.verificada ? ' · escaneado ' + _zonaNum(g.totalEscaneado) + ' · dif ' + _zonaNum(g.totalDif) : ''}</div>`
+      + (g.verificada
+        ? `<div class="tras-det-chips">
+             <span class="tras-det-chip ok">✓ OK ${grpOk.length}</span>
+             <span class="tras-det-chip falta">⚠ Faltan ${grpFalta.length}</span>
+             <span class="tras-det-chip sobra">➕ Sobran ${grpSobra.length}</span>
+           </div>` : '')
+      + `</div>`;
+
+    // ── Cuerpo: 3 secciones claras (faltan primero = lo urgente, luego sobran, luego ok). ────────────────────
     let cuerpo = '';
-    if (discr.length) {
-      cuerpo += `<div class="zona-guia-discr-lbl alert">⚠ Discrepancias (${discr.length})</div>` + discr.map(filaHtml).join('');
-    } else if (g.verificada) {
-      cuerpo += `<div class="zona-guia-discr-lbl ok">✓ Sin discrepancias</div>`;
-    }
-    if (resto.length) {
-      cuerpo += `<div class="zona-guia-discr-lbl" style="color:#94a3b8">${discr.length ? 'Resto de productos' : 'Productos de la guía'} (${resto.length})</div>` + resto.map(filaHtml).join('');
+    const seccion = (cls, ico, titulo, arr) => arr.length
+      ? `<div class="zona-guia-discr-lbl ${cls}">${ico} ${titulo} (${arr.length})</div>` + arr.map(filaHtml).join('')
+      : '';
+    if (g.verificada) {
+      cuerpo += seccion('alert', '⚠', 'Faltan', grpFalta);
+      cuerpo += seccion('sobra', '➕', 'Sobran / no esperados', grpSobra);
+      cuerpo += seccion('ok', '✓', 'OK', grpOk);
+      if (!grpFalta.length && !grpSobra.length) {
+        // todo cuadró: aviso claro arriba de la sección OK.
+        cuerpo = `<div class="zona-guia-discr-lbl ok">✓ Sin discrepancias · todo coincide</div>` + cuerpo;
+      }
+    } else {
+      // PENDIENTE / no verificada: una sola lista informativa de lo enviado.
+      cuerpo += `<div class="zona-guia-discr-lbl" style="color:#94a3b8">Productos de la guía (${detalle.length})</div>` + detalle.map(filaHtml).join('');
     }
     if (!detalle.length) cuerpo = '<div class="text-center py-6 text-slate-500 text-sm">Sin líneas en esta guía</div>';
     // botón "✓ Verificado" — solo si la guía está pendiente.
