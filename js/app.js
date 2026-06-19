@@ -39297,7 +39297,18 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // Tick visual del chip (solo texto/color, sin red). Arranca con el auto-refresh y muere al salir de zona.
   // [LOG ERRORES] Estado del módulo: items cargados + filtro de TIPO activo (chips clickeables).
   //   _zonaLogState.tipo: null = todos · '0' = Otro (sin clasificar) · '1'..'5' = taxonomía.
-  let _zonaLogState = { items: [], tipo: null };
+  let _zonaLogState = { items: [], tipo: null, tab: null };
+  // [LOG ERRORES · PESTAÑAS] Dos vistas que reparten los TIPOS según quién resuelve el descuadre:
+  //   · SIS (🔧 Sistémico)  = bugs que persigue el master en el código → TIPO 1, 2, 3, 5.
+  //   · OPE (📋 Operativo)  = se arregla contando/auditando (trabajo del operador) → TIPO 4 + Otro (0).
+  const ZONA_LOG_TABS = {
+    SIS: { lbl: '🔧 Sistémico', cls: 'sis', tipos: [1, 2, 3, 5] },
+    OPE: { lbl: '📋 Operativo', cls: 'ope', tipos: [4, 0] }
+  };
+  const _ZONA_LOG_TAB_LS = 'mosZonaLogTab';
+  // Pestaña a la que pertenece un TIPO (0=Otro). Default OPE para tipos desconocidos.
+  function _zonaLogTabDeTipo(t) { return (ZONA_LOG_TABS.SIS.tipos.indexOf(Number(t)) >= 0) ? 'SIS' : 'OPE'; }
+  function _zonaLogTabDeItem(it) { return _zonaLogTabDeTipo(_zonaLogTipoKey(it)); }
   // Taxonomía de TIPOS — única fuente de verdad para color/nombre/glifo en el frontend (espeja mos._recon_tipo_etiqueta).
   //   cat: categoría de quién lo resuelve → 'SIS' (sistémico/código, lo persigue el master) ·
   //        'OPE' (operativo, se arregla contando/auditando) · 'CFG' (config, se setea una vez).
@@ -40338,11 +40349,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   async function zonaAbrirLogErrores() {
     const body = $('zonaLogBody');
     const chips = $('zonaLogChips');
+    const tabs = $('zonaLogTabs');
     if (chips) chips.innerHTML = '';
+    if (tabs) tabs.innerHTML = '';
     if (body) body.innerHTML = '<div class="skel h-16 rounded-lg mb-2"></div><div class="skel h-16 rounded-lg"></div>';
     openModal('modalZonaLog');
     _zonaSfx('pop'); _zonaVibrar([30,20,30]);
-    _zonaLogState = { items: [], tipo: null };   // reset filtro al reabrir
+    // Pestaña activa recordada (localStorage). Default SIS (lo primero que el master quiere ver). Filtro de chip se resetea.
+    let tab0 = null;
+    try { tab0 = localStorage.getItem(_ZONA_LOG_TAB_LS); } catch (_) {}
+    if (tab0 !== 'SIS' && tab0 !== 'OPE') tab0 = 'SIS';
+    _zonaLogState = { items: [], tipo: null, tab: tab0 };   // reset filtro de chip al reabrir; conserva pestaña
     try {
       // [RIZ UX] Solo diferencias ABIERTAS (las REVISADAS/RESUELTAS quedan archivadas y no son ruido).
       //   La RPC mos.stock_diferencias_listar acepta p.estado (supabase/141 §3) → filtramos en origen.
@@ -40351,20 +40368,55 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const data = (r && r.data) || r || {};
       const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
       _zonaLogState.items = items;
+      _zonaLogPintarTabs();
       _zonaLogPintarChips();
       _zonaLogRender();
     } catch (e) {
       if (body) body.innerHTML = `<div class="text-center py-8 text-red-400 text-sm">${_esc(e.message || String(e))}</div>`;
     }
   }
-  // Contador por tipo arriba + chips clickeables (filtro). El admin ve de un vistazo "¿reincidió el TIPO 3 hoy?".
+  // Items que pertenecen a la pestaña activa (SIS/OPE). Es el universo sobre el que operan chips + render.
+  function _zonaLogItemsTab() {
+    const items = _zonaLogState.items || [];
+    const tab = _zonaLogState.tab || 'SIS';
+    return items.filter(it => _zonaLogTabDeItem(it) === tab);
+  }
+  // [PESTAÑAS] Dos botones (Sistémico/Operativo) con su propio contador. Recuerda la activa en localStorage.
+  function _zonaLogPintarTabs() {
+    const cont = $('zonaLogTabs');
+    if (!cont) return;
+    const items = _zonaLogState.items || [];
+    const por = { SIS: 0, OPE: 0 };
+    items.forEach(it => { por[_zonaLogTabDeItem(it)]++; });
+    const orden = ['SIS', 'OPE'];
+    cont.innerHTML = orden.map(k => {
+      const meta = ZONA_LOG_TABS[k];
+      const on = (_zonaLogState.tab || 'SIS') === k;
+      return `<button class="zona-log-tab ${meta.cls}${on ? ' on' : ''}" onclick="MOS.zonaLogCambiarTab('${k}')" aria-pressed="${on}">
+        <span class="zona-log-tab-lbl">${meta.lbl} <b>${por[k]}</b></span>
+        <span class="zona-log-tab-cnt">${k === 'SIS' ? 'bugs del sistema (master)' : 'se ajusta contando (operador)'}</span>
+      </button>`;
+    }).join('');
+  }
+  function zonaLogCambiarTab(tab) {
+    if (tab !== 'SIS' && tab !== 'OPE') return;
+    if (_zonaLogState.tab === tab) return;
+    _zonaSfx('pop'); _zonaVibrar([20,15,20]);
+    _zonaLogState.tab = tab;
+    _zonaLogState.tipo = null;                 // al cambiar de pestaña, el filtro de chip se resetea
+    try { localStorage.setItem(_ZONA_LOG_TAB_LS, tab); } catch (_) {}
+    _zonaLogPintarTabs();
+    _zonaLogPintarChips();
+    _zonaLogRender();
+  }
+  // Contador por tipo arriba + chips clickeables (filtro), DENTRO de la pestaña activa.
   function _zonaLogPintarChips() {
     const chips = $('zonaLogChips');
     if (!chips) return;
-    const items = _zonaLogState.items || [];
+    const items = _zonaLogItemsTab();                 // chips operan sobre la pestaña activa, no sobre todo
     const cont = {}; items.forEach(it => { const k = _zonaLogTipoKey(it); cont[k] = (cont[k] || 0) + 1; });
-    // Orden de chips: Todos · 1 · 2 · 3 · 4 · 5 · Otro. Solo se muestran los que tienen >=1 (Todos siempre).
-    const orden = [1, 2, 3, 4, 5, 0];
+    // Solo los tipos de la pestaña activa (Sistémico: 1·2·3·5 · Operativo: 4·Otro). "Todos" siempre.
+    const orden = (ZONA_LOG_TABS[_zonaLogState.tab || 'SIS'] || ZONA_LOG_TABS.SIS).tipos;
     let html = `<button class="zona-log-chip chip-all${_zonaLogState.tipo == null ? ' on' : ''}" onclick="MOS.zonaLogFiltrar(null)">Todos <b>${items.length}</b></button>`;
     orden.forEach(t => {
       const n = cont[t] || 0;
@@ -40390,8 +40442,14 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   function _zonaLogRender() {
     const body = $('zonaLogBody');
     if (!body) return;
-    const all = _zonaLogState.items || [];
-    if (!all.length) { body.innerHTML = '<div class="text-center py-10 text-emerald-300 text-sm">✓ Sin diferencias de stock detectadas</div>'; return; }
+    const total = (_zonaLogState.items || []).length;
+    if (!total) { body.innerHTML = '<div class="text-center py-10 text-emerald-300 text-sm">✓ Sin diferencias de stock detectadas</div>'; return; }
+    const all = _zonaLogItemsTab();                  // universo = pestaña activa (Sistémico/Operativo)
+    if (!all.length) {
+      const esSis = (_zonaLogState.tab || 'SIS') === 'SIS';
+      body.innerHTML = `<div class="text-center py-10 text-emerald-300 text-sm">✓ ${esSis ? 'Sin errores de sistema (bugs del master)' : 'Sin errores operativos (a contar)'} hoy</div>`;
+      return;
+    }
     const items = (_zonaLogState.tipo == null) ? all : all.filter(it => String(_zonaLogTipoKey(it)) === String(_zonaLogState.tipo));
     if (!items.length) { body.innerHTML = '<div class="text-center py-10 text-slate-500 text-sm">Sin diferencias de este tipo</div>'; return; }
     // Agrupar por ámbito; dentro de cada grupo el backend ya ordena por |dif| desc.
@@ -41055,7 +41113,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaCarritoAbrir, zonaCarritoCerrar, zonaCarritoStep, zonaCarritoSet, zonaCarritoQuitar, zonaCarritoVaciar, zonaCarritoEnviar,
     zonaVerLotes, zonaCerrarLotes,
     // [ASEGURAR DATA] Log de errores (master) + historial kardex zona/almacén — read-only
-    zonaAbrirLogErrores, zonaCerrarLogErrores, zonaLogVerHistorial, zonaLogFiltrar, zonaLogLeyenda, zonaCerrarLogLeyenda,
+    zonaAbrirLogErrores, zonaCerrarLogErrores, zonaLogVerHistorial, zonaLogFiltrar, zonaLogCambiarTab, zonaLogLeyenda, zonaCerrarLogLeyenda,
     zonaVerKardex, zonaVerKardexAlmacen, zonaCerrarKardex,
     zonaAbrirBCG, zonaCerrarBCG, zonaBCGTapProducto, zonaBCGFiltrarCuadrante, zonaPlaceholder, zonaAccionPerro,
     // [RIZ Capa 5] impresión 80mm + panel IA + lista compras

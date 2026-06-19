@@ -12619,6 +12619,14 @@
     .zona-log-dif.pos { color:#86efac; } .zona-log-dif.neg { color:#fca5a5; }
     .zona-log-dif.aviso { color:#fbbf24; font-size:1.05rem; }
     .zona-log-group-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:#64748b; margin:.4rem 0 .55rem; }
+    /* [LOG ERRORES · PESTAÑAS] Sistémico (bugs del master) vs Operativo (se ajusta contando). */
+    .zona-log-tabs { display:flex; gap:.5rem; }
+    .zona-log-tab { flex:1; display:flex; flex-direction:column; align-items:center; gap:.1rem; padding:.5rem .4rem; border-radius:.6rem; border:1px solid #334155; background:#0d1526; color:#94a3b8; cursor:pointer; -webkit-tap-highlight-color:transparent; transition:transform .12s, border-color .15s, background .15s, box-shadow .15s; }
+    .zona-log-tab:active { transform:scale(.97); }
+    .zona-log-tab-lbl { font-size:.78rem; font-weight:800; letter-spacing:.01em; white-space:nowrap; }
+    .zona-log-tab-cnt { font-size:.62rem; font-weight:700; opacity:.85; }
+    .zona-log-tab.sis.on { border-color:#f87171; color:#fecaca; background:#2a1414; box-shadow:0 0 0 2px rgba(248,113,113,.25) inset; }
+    .zona-log-tab.ope.on { border-color:#fbbf24; color:#fde68a; background:#2a2008; box-shadow:0 0 0 2px rgba(251,191,36,.25) inset; }
     /* [LOG ERRORES · TAXONOMÍA] chips de filtro por TIPO + badge en cada fila. Paleta por tipo (color-coded). */
     .zona-log-chips { display:flex; flex-wrap:wrap; gap:.4rem; border-bottom:1px solid #1e293b; }
     .zona-log-chip { font-size:.68rem; font-weight:700; padding:.28rem .6rem; border-radius:999px; border:1px solid #334155; background:#0d1526; color:#cbd5e1; cursor:pointer; white-space:nowrap; transition:transform .12s, border-color .15s, background .15s, box-shadow .15s; -webkit-tap-highlight-color:transparent; }
@@ -15368,7 +15376,8 @@
           </div>
         </div>
         <div class="px-5 pt-2 text-xs text-slate-500 flex-shrink-0">Diferencias real vs teórico, etiquetadas por TIPO de error. Solo diagnóstico — no corrige stock. Toca un chip para filtrar, el ⓘ para ver qué es ese error, o una fila para ver el historial.</div>
-        <div id="zonaLogChips" class="zona-log-chips px-5 pt-3 pb-1 flex-shrink-0"></div>
+        <div id="zonaLogTabs" class="zona-log-tabs px-5 pt-3 pb-1 flex-shrink-0"></div>
+        <div id="zonaLogChips" class="zona-log-chips px-5 pt-2 pb-1 flex-shrink-0"></div>
         <div class="overflow-y-auto px-5 py-4" style="flex:1" id="zonaLogBody">
           <div class="skel h-16 rounded-lg mb-2"></div>
           <div class="skel h-16 rounded-lg"></div>
@@ -18964,7 +18973,7 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js?v=2.43.275"></script>
+<script src="js/api.js?v=2.43.276"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -18979,7 +18988,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.275"></script>
+<script src="js/app.js?v=2.43.276"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
