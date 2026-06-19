@@ -40209,13 +40209,20 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // Edge. Optimista: toast "enviado a impresora" + sonido print. Si falla, toast rojo + shake del botón.
   async function _zonaImprimirFlow(tipo, label) {
     let printerId = null;
+    // [2026-06-19 fix impresora-por-ámbito] La memoria de "última impresora" DEBE ser por ZONA,
+    // no global por tipo de flow. Antes flowKey='riz_'+tipo era único para todo el ecosistema:
+    // si estabas en ALMACÉN imprimías a la impresora que quedó cacheada de ZONA-02 (y como estaba
+    // online, abrirPrinterPicker la reusaba sin preguntar). Ahora la clave incluye la zona activa
+    // → cada ámbito (ALMACÉN, ZONA-01, ZONA-02…) recuerda SU propia impresora; al cambiar de zona
+    // se vuelve a preguntar (o se preselecciona la de esa zona).
+    const zonaKey = String(S.zonaActual || 'sin-zona');
     try {
       printerId = await abrirPrinterPicker({
         titulo: '🖨 ' + label,
         subtitulo: 'Zona ' + (S.zonaActual || ''),
         filtroTipo: 'TICKET',
         filtroZona: S.zonaActual,
-        flowKey: 'riz_' + tipo
+        flowKey: 'riz_' + tipo + '_' + zonaKey
       });
     } catch (_) { printerId = null; }
     if (!printerId) return;   // usuario canceló
