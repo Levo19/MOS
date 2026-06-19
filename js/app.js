@@ -40471,12 +40471,18 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         const cb = _zonaEsc(String(it.codBarra || ''));
         const delay = (idx++) * 30;
         const badge = `<span class="zona-log-tipo ${meta.cls}" title="${_esc(meta.nombre)}">${meta.glifo} ${_esc(meta.nombre)}</span>`;
+        // [TRIPWIRE] VIVO: descuadre sistémico (1/2/3) con causa RECIENTE (≤3 días) = una vía de
+        //   escritura volvió a fugar → el master debe investigar HOY. Histórico = residuo viejo.
+        const esVivoSis = (it.esVivo === true) && (tk === 1 || tk === 2 || tk === 3);
+        const vivoBadge = esVivoSis
+          ? `<span class="zona-log-vivo" title="Causa reciente (≤3 días): regresión VIVA — investigar hoy">🚨 VIVO</span>`
+          : '';
         const nums = aviso ? '' : `<div class="zona-log-nums">real <b>${_esc(String(it.real))}</b> · teórico <b>${_esc(String(it.teorico))}</b></div>`;
         const difCol = aviso ? '<div class="zona-log-dif aviso">⚠</div>' : `<div class="zona-log-dif ${dif >= 0 ? 'pos' : 'neg'}">${sign}${_esc(String(dif))}</div>`;
         return `<div class="zona-log-row" style="animation-delay:${delay}ms" onclick="MOS.zonaLogVerHistorial('${amb}','${cb}')">
           <span class="zona-log-amb ${ambCls}">${_esc(ambLbl)}</span>
           <div class="zona-log-info">
-            <div class="zona-log-name">${_esc(it.descripcion || it.codBarra)} ${badge}</div>
+            <div class="zona-log-name">${_esc(it.descripcion || it.codBarra)} ${badge}${vivoBadge}</div>
             ${nums}
             <div class="zona-log-hip">${_esc(it.motivoHipotesis || '')}</div>
           </div>
@@ -40512,6 +40518,16 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           <div class="zona-ley-quien">👤 ${_esc(cat.quien || '')}</div>
         </div>`;
       }).join('');
+      // [TRIPWIRE] Nota del badge VIVO (solo aplica a sistémicos 1/2/3).
+      body.innerHTML += `<div class="zona-ley-card cat-sis" style="border-style:dashed;">
+        <div class="zona-ley-head">
+          <span class="zona-ley-glifo">🚨</span>
+          <span class="zona-ley-nombre">Badge <b>VIVO</b></span>
+          <span class="zona-ley-cat cat-sis">RECIENTE · investigar hoy</span>
+        </div>
+        <div class="zona-ley-def">Aparece en los sistémicos (tipos 1, 2 y 3) cuando su causa ocurrió hace ≤3 días: una vía de escritura volvió a fugar HOY. Sin el badge = histórico (residuo viejo ya sellado, se arregla auditando).</div>
+        <div class="zona-ley-quien">👤 VIVO = el master investiga el código el mismo día.</div>
+      </div>`;
     }
     openModal('modalZonaLogLeyenda');
     // Scroll suave al tipo enfocado (si vino desde un chip concreto).
