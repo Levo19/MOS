@@ -39408,16 +39408,27 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       return;
     }
 
-    // [SPLIT] Dos secciones, manteniendo el orden/filtros ya aplicados:
-    //  (A) CON ROTACIÓN arriba (lo importante)  ·  (B) ROTACIÓN CERO abajo bajo un encabezado.
-    const conRot = arr.filter(p => !_zonaEsRotCero(p));
-    const sinRot = arr.filter(p =>  _zonaEsRotCero(p));
+    // [GRUPOS COLAPSABLES] Dos grupos apilados, manteniendo el orden/filtros ya aplicados DENTRO de cada uno:
+    //  (1) ROTADO: lo que rotó en 4 sem (ALMACEN=despachado · ZONA=vendido) — lo importante, arriba.
+    //  (2) PARADO: en universo por tener stock pero SIN rotación en 4 sem (candidatos a anular/no reponer).
+    // Fuente de verdad = item.grupo del backend ('ROTADO'/'PARADO'); fallback tolerante a item.rotacionCero/rotacion.
+    const esAlmacen = _esZonaAlmacen({ idZona: S.zonaActual,
+      nombre: ((S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === S.zonaActual) || {}).nombre });
+    const rotados = arr.filter(p => !_zonaEsGrupoParado(p));
+    const parados = arr.filter(p =>  _zonaEsGrupoParado(p));
+    const grpRot = {
+      key: 'ROTADO', cls: 'is-rotado', ico: esAlmacen ? '🚚' : '🛒',
+      lbl: esAlmacen ? 'Despachados · últimas 4 sem' : 'Vendidos · últimas 4 sem',
+      arr: rotados
+    };
+    const grpPar = {
+      key: 'PARADO', cls: 'is-parado', ico: '🧊',
+      lbl: esAlmacen ? 'En stock sin despachar (4 sem)' : 'En stock sin vender (4 sem)',
+      arr: parados
+    };
     let html = '';
-    html += conRot.map(_zonaCardHtml).join('');
-    if (sinRot.length) {
-      html += `<div class="zona-sep" role="separator"><span class="zona-sep-line"></span><span class="zona-sep-lbl">∅ Sin rotación · candidatos a anular (${sinRot.length})</span><span class="zona-sep-line"></span></div>`;
-      html += sinRot.map(_zonaCardHtml).join('');
-    }
+    html += _zonaGrupoHtml(grpRot);
+    html += _zonaGrupoHtml(grpPar);
     cont.innerHTML = html;
     // [RIZ UX] Stagger de entrada: solo las primeras ~20 cards reciben delay incremental
     // (cap para no demorar con 800 items; el resto aparece directo vía CSS nth-child).
@@ -39432,8 +39443,59 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // ¿El item es "rotación cero"? Fuente de verdad = backend item.rotacionCero (bool).
   // Fallback tolerante (datos viejos sin el campo): rotacion===0.
   function _zonaEsRotCero(p) {
+    if (p && p.grupo != null) return String(p.grupo).toUpperCase() === 'PARADO';   // fuente nueva (176): grupo
     if (p && p.rotacionCero != null) return !!p.rotacionCero;
-    return _zonaNum(p && p.rotacion) === 0;
+    // sin grupo ni rotacionCero: usa volumen (176) o rotacion (legado) — 0 ⇒ no rotó.
+    const vol = (p && p.volumen != null) ? _zonaNum(p.volumen) : _zonaNum(p && p.rotacion);
+    return vol === 0;
+  }
+  // ── [GRUPOS COLAPSABLES] ──────────────────────────────────────────────────
+  // ¿El item va al grupo PARADO? Fuente de verdad = item.grupo del backend ('ROTADO'/'PARADO').
+  // Fallback tolerante a datos viejos: usa rotacionCero/rotacion (la antigua semántica "sin rotación").
+  function _zonaEsGrupoParado(p) {
+    if (p && p.grupo != null) return String(p.grupo).toUpperCase() === 'PARADO';
+    return _zonaEsRotCero(p);
+  }
+  // Clave de localStorage del estado colapsado por (zona, grupo) — recuerda la preferencia entre refrescos.
+  function _zonaGrpLsKey(grpKey) { return 'rizGrp_' + (S.zonaActual || '_') + '_' + grpKey; }
+  function _zonaGrupoColapsado(grpKey) {
+    try { return localStorage.getItem(_zonaGrpLsKey(grpKey)) === '1'; } catch (_) { return false; }
+  }
+  // HTML de un grupo (encabezado clickeable + cuerpo con sus cards). Si está vacío tras filtros → se colapsa
+  // y muestra "0" elegante. El chevron rota al colapsar (clase .collapsed en head y body).
+  function _zonaGrupoHtml(g) {
+    const n = g.arr.length;
+    // Un grupo vacío arranca colapsado siempre (no estorba); si tiene items respeta la preferencia guardada.
+    const colapsado = (n === 0) ? true : _zonaGrupoColapsado(g.key);
+    const colCls = colapsado ? ' collapsed' : '';
+    const chev = `<svg class="zona-grp-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+    const body = n
+      ? g.arr.map(_zonaCardHtml).join('')
+      : `<div class="zona-grp-empty">Sin productos en este grupo</div>`;
+    return `<div class="zona-grp" data-grp="${g.key}">`
+      + `<div class="zona-grp-head ${g.cls}${colCls}" role="button" tabindex="0" aria-expanded="${colapsado ? 'false' : 'true'}" `
+      +      `onclick="MOS.zonaToggleGrupo('${g.key}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();MOS.zonaToggleGrupo('${g.key}');}">`
+      +   chev
+      +   `<span class="zona-grp-ico" aria-hidden="true">${g.ico}</span>`
+      +   `<span class="zona-grp-lbl">${_esc(g.lbl)}</span>`
+      +   `<span class="zona-grp-count">${n}</span>`
+      + `</div>`
+      + `<div class="zona-grp-body${colCls}">${body}</div>`
+      + `</div>`;
+  }
+  // Colapsa/expande un grupo (acordeón). Persiste en localStorage. Triple feedback táctil (SFX + vibración).
+  function zonaToggleGrupo(grpKey) {
+    const wrap = document.querySelector('.zona-grp[data-grp="' + grpKey + '"]');
+    if (!wrap) return;
+    const head = wrap.querySelector('.zona-grp-head');
+    const bodyEl = wrap.querySelector('.zona-grp-body');
+    if (!head || !bodyEl) return;
+    const colapsar = !head.classList.contains('collapsed');
+    head.classList.toggle('collapsed', colapsar);
+    bodyEl.classList.toggle('collapsed', colapsar);
+    head.setAttribute('aria-expanded', colapsar ? 'false' : 'true');
+    try { localStorage.setItem(_zonaGrpLsKey(grpKey), colapsar ? '1' : '0'); } catch (_) {}
+    try { _zonaSfx('tick'); _zonaVibrar(12); } catch (_) {}
   }
   function _zonaTendRank(t) { t = String(t||'').toLowerCase(); if (t==='asc'||t==='ascendente') return 3; if (t==='est'||t==='estable') return 2; if (t==='desc'||t==='descendente') return 1; return 0; }
 
@@ -40983,7 +41045,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     init, nav, refresh, fabAction, iconBusy,
     // [RIZ Capa 4] Módulo Zona — solo activo si el flag mos_zona_modulo está ON
     loadZona, renderZona, zonaCambiarZona, zonaRefrescar, zonaSetOrden, zonaFiltrar,
-    loadZona, renderZona, zonaCambiarZona, zonaRefrescar, zonaSetOrden, zonaFiltrar,
+    zonaToggleGrupo,
     zonaToggleKpi, zonaToggleTend, zonaToggleFiltro,
     zonaAjusteInline, zonaStep, zonaCero, zonaConfirmarAjuste,
     zonaToggleCodigos, zonaToggleCodigosAlmacen, zonaCodCero, zonaCodGuardar,

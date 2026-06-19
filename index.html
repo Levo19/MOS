@@ -12534,6 +12534,26 @@
     .zona-sep { display:flex; align-items:center; gap:.6rem; margin:1.1rem .15rem .7rem; }
     .zona-sep-line { flex:1; height:1px; background:linear-gradient(90deg,transparent,#334155,transparent); }
     .zona-sep-lbl { font-size:.66rem; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:#94a3b8; white-space:nowrap; flex-shrink:0; }
+    /* [GRUPOS COLAPSABLES] Encabezado de grupo (ROTADO / PARADO) — acordeón táctil con contador + chevron.
+       Click = colapsa/expande para saltar al siguiente grupo. Estado recordado en localStorage. */
+    .zona-grp { margin:0 0 .25rem; }
+    .zona-grp-head { display:flex; align-items:center; gap:.55rem; width:100%; cursor:pointer; user-select:none;
+      background:rgba(15,23,42,.55); border:1px solid #1e293b; border-radius:.7rem; padding:.6rem .7rem;
+      margin:1rem .1rem .65rem; -webkit-tap-highlight-color:transparent; transition:background .16s ease, border-color .16s ease; position:sticky; top:0; z-index:5; backdrop-filter:blur(6px); }
+    .zona-grp-head:active { transform:scale(.992); }
+    .zona-grp-head:hover { background:rgba(30,41,59,.7); border-color:#334155; }
+    .zona-grp-head.is-parado { background:rgba(14,20,34,.6); border-color:#26211a; }
+    .zona-grp-chev { flex-shrink:0; width:1.05rem; height:1.05rem; color:#94a3b8; transition:transform .22s cubic-bezier(.34,1.56,.64,1); }
+    .zona-grp-head.collapsed .zona-grp-chev { transform:rotate(-90deg); }
+    .zona-grp-ico { font-size:.95rem; flex-shrink:0; }
+    .zona-grp-lbl { font-size:.74rem; font-weight:800; letter-spacing:.01em; color:#e2e8f0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .zona-grp-head.is-parado .zona-grp-lbl { color:#cbd5e1; }
+    .zona-grp-count { margin-left:auto; flex-shrink:0; font-size:.72rem; font-weight:800; color:#cbd5e1; background:rgba(51,65,85,.55); border:1px solid #334155; border-radius:999px; padding:.16rem .5rem; min-width:1.6rem; text-align:center; }
+    .zona-grp-head.is-parado .zona-grp-count { color:#fcd34d; background:rgba(161,98,7,.16); border-color:rgba(202,138,4,.35); }
+    .zona-grp-head.is-rotado .zona-grp-count { color:#86efac; background:rgba(34,197,94,.13); border-color:rgba(34,197,94,.32); }
+    .zona-grp-body { overflow:hidden; }
+    .zona-grp-body.collapsed { display:none; }
+    .zona-grp-empty { font-size:.7rem; color:#64748b; text-align:center; padding:.5rem 0 .8rem; }
     /* [MEJORA 2] Card ROTACIÓN CERO: apagada/secundaria (gris-ámbar tenue, leve desaturado).
        No "rota": legible, solo claramente menos protagónica que las de rotación viva.
        (Stock negativo manda: .zona-neg sigue ganando con su tinte rojo + filter:none.) */
@@ -18944,7 +18964,7 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js?v=2.43.274"></script>
+<script src="js/api.js?v=2.43.275"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -18959,7 +18979,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.274"></script>
+<script src="js/app.js?v=2.43.275"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
