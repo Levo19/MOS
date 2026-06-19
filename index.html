@@ -12627,6 +12627,11 @@
     .zona-kardex-tipo { font-weight:600; color:#e2e8f0; font-size:.8rem; }
     .zona-kardex-pend-tag { font-size:.6rem; font-weight:700; color:#fbbf24; background:#332108; border:1px solid rgba(251,191,36,.35); padding:.05rem .35rem; border-radius:.3rem; margin-left:.35rem; white-space:nowrap; }
     .zona-kardex-meta { font-size:.66rem; color:#64748b; margin-top:.1rem; }
+    /* [KARDEX ENRIQUECIDO] Destino de salida "→ ZONA-02 · por Jorgenis" + chip de lote (FIFO). */
+    .zona-kardex-destino { font-size:.66rem; color:#fca5a5; margin-top:.18rem; display:inline-flex; align-items:center; gap:.25rem; padding:.05rem .4rem; border-radius:.35rem; background:rgba(127,29,29,.18); border:1px solid rgba(248,113,113,.28); font-weight:600; }
+    .zona-kardex-destino b { color:#fecaca; font-weight:800; letter-spacing:.02em; }
+    .zona-kardex-lotewrap { margin-top:.22rem; }
+    .zona-kardex-lote { display:inline-flex; align-items:center; gap:.25rem; font-size:.64rem; font-weight:600; color:#bfdbfe; background:rgba(30,58,138,.22); border:1px solid rgba(96,165,250,.32); padding:.05rem .45rem; border-radius:.4rem; }
     .zona-kardex-right { text-align:right; white-space:nowrap; }
     .zona-kardex-delta { font-weight:700; font-size:.82rem; } .zona-kardex-delta.ing { color:#86efac; } .zona-kardex-delta.sal { color:#fca5a5; } .zona-kardex-delta.pend { color:#fbbf24; }
     .zona-kardex-saldo { font-size:.66rem; color:#94a3b8; margin-top:.1rem; }
@@ -18899,7 +18904,7 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js?v=2.43.272"></script>
+<script src="js/api.js?v=2.43.273"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -18914,7 +18919,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.272"></script>
+<script src="js/app.js?v=2.43.273"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

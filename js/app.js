@@ -40437,11 +40437,22 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const guia  = m.idGuia ? (' · ' + _esc(String(m.idGuia))) : '';
     const aplic = (m.aplicado === false) ? ' <span style="color:#64748b">(informativo)</span>' : '';
     const pendTag = abierta ? ' <span class="zona-kardex-pend-tag">⏳ sin reconciliar</span>' : '';
+    // [KARDEX ENRIQUECIDO] LOTE en INGRESOS (atable) + DESTINO (zona·quién) en SALIDAS.
+    //   · idLote viene de mos.almacen_kardex_historial (lote creado por el ingreso, FIFO). Si null → sin chip.
+    //   · zona/destino sólo en salidas (wh.guias.id_zona). En el kardex de ZONA la zona es la propia → no se repite.
+    const loteChip = (esIng && m.idLote)
+      ? `<span class="zona-kardex-lote">🏷 ${_esc(String(m.idLote))}${m.loteVencimiento ? ` · vence ${_esc(_zonaKardexFechaCorta(m.loteVencimiento))}` : ''}</span>`
+      : '';
+    const zonaDest = (!esIng && esAlm && m.zona)
+      ? `<div class="zona-kardex-destino">→ <b>${_esc(String(m.zona))}</b>${(m.usuario && m.usuario !== '—') ? ` · por ${_esc(m.usuario)}` : ''}</div>`
+      : '';
     return `<div class="zona-kardex-row" style="animation-delay:${i*30}ms">
       <span class="zona-kardex-ico ${colorCls}">${icoTxt}</span>
       <div class="zona-kardex-mid">
         <div class="zona-kardex-tipo">${_esc(m.tipo || (esIng ? 'INGRESO' : 'SALIDA'))}${aplic}${pendTag}</div>
         <div class="zona-kardex-meta">${fecha} · ${usr}${guia}</div>
+        ${zonaDest}
+        ${loteChip ? `<div class="zona-kardex-lotewrap">${loteChip}</div>` : ''}
       </div>
       <div class="zona-kardex-right">
         <div class="zona-kardex-delta ${colorCls}">${esIng ? '+' : '−'}${_esc(String(delta))}</div>
@@ -40449,10 +40460,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       </div>
     </div>`;
   }
+  // Fecha + hora en TZ Perú (el dueño pidió ver la hora). timeZone explícita → no depende de la config del equipo.
   function _zonaKardexFecha(f) {
     if (!f) return '—';
-    try { const d = new Date(f); if (!isNaN(d)) return d.toLocaleDateString('es-PE', { day:'2-digit', month:'2-digit', year:'2-digit' }) + ' ' + d.toLocaleTimeString('es-PE', { hour:'2-digit', minute:'2-digit' }); } catch (_) {}
+    try { const d = new Date(f); if (!isNaN(d)) return d.toLocaleDateString('es-PE', { day:'2-digit', month:'2-digit', year:'2-digit', timeZone:'America/Lima' }) + ' ' + d.toLocaleTimeString('es-PE', { hour:'2-digit', minute:'2-digit', hour12:false, timeZone:'America/Lima' }); } catch (_) {}
     return String(f).slice(0, 16).replace('T', ' ');
+  }
+  // Fecha corta (sólo día) para el vencimiento del lote.
+  function _zonaKardexFechaCorta(f) {
+    if (!f) return '—';
+    try { const d = new Date(f); if (!isNaN(d)) return d.toLocaleDateString('es-PE', { day:'2-digit', month:'2-digit', year:'2-digit', timeZone:'America/Lima' }); } catch (_) {}
+    return String(f).slice(0, 10);
   }
   function zonaCerrarKardex() { closeModal('modalZonaKardex'); }
 
