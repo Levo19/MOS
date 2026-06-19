@@ -12617,6 +12617,31 @@
     .zona-log-chip.t3.on { background:#2e1414; } .zona-log-chip.t4.on { background:#332108; }
     .zona-log-chip.t5.on { background:#1c1f3a; } .zona-log-chip.t0.on { background:#1e293b; }
     .zona-log-tipo { display:inline-block; font-size:.6rem; font-weight:700; padding:.05rem .35rem; border-radius:.3rem; border:1px solid; letter-spacing:.02em; vertical-align:middle; margin-left:.25rem; white-space:nowrap; }
+    /* [LEYENDA] chip = wrapper de (botón filtro + botón ⓘ pegados). El ⓘ abre la explicación del tipo. */
+    .zona-log-chipwrap { display:inline-flex; align-items:stretch; }
+    .zona-log-chipwrap .zona-log-chip { border-top-right-radius:0; border-bottom-right-radius:0; }
+    .zona-log-info-btn { font-size:.72rem; font-weight:800; padding:.28rem .42rem; border-radius:999px; border-top-left-radius:0; border-bottom-left-radius:0; border:1px solid #334155; border-left:none; background:#0d1526; color:#94a3b8; cursor:pointer; -webkit-tap-highlight-color:transparent; transition:transform .12s, background .15s, color .15s; }
+    .zona-log-info-btn:active { transform:scale(.9); }
+    .zona-log-info-btn:hover { background:#16233a; color:#e2e8f0; }
+    /* [LEYENDA] color de categoría = quién lo arregla. Sistémico=rojo · operativo=ámbar · config=índigo. */
+    .cat-sis.zona-log-info-btn { color:#fca5a5; } .cat-ope.zona-log-info-btn { color:#fcd34d; } .cat-cfg.zona-log-info-btn { color:#a5b4fc; }
+    .zona-log-ley-btn { font-size:.7rem; font-weight:700; padding:.25rem .6rem; border-radius:999px; border:1px solid #334155; background:#0d1526; color:#cbd5e1; cursor:pointer; white-space:nowrap; -webkit-tap-highlight-color:transparent; transition:transform .12s, background .15s; }
+    .zona-log-ley-btn:active { transform:scale(.93); } .zona-log-ley-btn:hover { background:#16233a; color:#f1f5f9; }
+    /* [LEYENDA] tarjetas del catálogo de tipos. Barra lateral por categoría + badge. */
+    .zona-ley-card { border:1px solid #1e293b; border-left:4px solid #334155; border-radius:.6rem; background:#0d1526; padding:.7rem .8rem; margin-bottom:.6rem; transition:box-shadow .2s, border-color .2s; }
+    .zona-ley-card.cat-sis { border-left-color:#f87171; } .zona-ley-card.cat-ope { border-left-color:#fbbf24; } .zona-ley-card.cat-cfg { border-left-color:#818cf8; }
+    .zona-ley-card.is-focus { box-shadow:0 0 0 2px rgba(148,163,184,.4); }
+    .zona-ley-head { display:flex; align-items:center; flex-wrap:wrap; gap:.4rem; margin-bottom:.35rem; }
+    .zona-ley-glifo { font-size:1.05rem; }
+    .zona-ley-nombre { font-weight:800; font-size:.82rem; color:#f1f5f9; flex:1; min-width:0; }
+    .zona-ley-cat { font-size:.58rem; font-weight:800; letter-spacing:.03em; padding:.1rem .4rem; border-radius:.35rem; border:1px solid; white-space:nowrap; }
+    .zona-ley-cat.cat-sis { color:#fca5a5; border-color:rgba(248,113,113,.5); background:rgba(127,29,29,.18); }
+    .zona-ley-cat.cat-ope { color:#fcd34d; border-color:rgba(251,191,36,.5); background:rgba(120,80,8,.18); }
+    .zona-ley-cat.cat-cfg { color:#a5b4fc; border-color:rgba(129,140,248,.5); background:rgba(49,46,129,.22); }
+    .zona-ley-def { font-size:.74rem; color:#cbd5e1; line-height:1.45; }
+    .zona-ley-quien { font-size:.66rem; color:#94a3b8; margin-top:.4rem; font-weight:600; }
+    .zona-ley-key { font-weight:800; padding:0 .25rem; border-radius:.25rem; }
+    .zona-ley-key.cat-sis { color:#fca5a5; } .zona-ley-key.cat-ope { color:#fcd34d; } .zona-ley-key.cat-cfg { color:#a5b4fc; }
     /* filas del kardex (historial de movimientos) — estilo WH: icono por tipo + saldo a la derecha */
     .zona-kardex-row { display:flex; align-items:center; gap:.65rem; padding:.55rem .7rem; border:1px solid #1e293b; border-radius:.6rem; margin-bottom:.45rem; background:#0d1526; }
     .zona-kardex-ico { width:30px; height:30px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:.95rem; flex-shrink:0; }
@@ -15317,14 +15342,29 @@
       <div class="modal-box p-0 zona-modal-in" style="max-width:640px;display:flex;flex-direction:column;max-height:92vh">
         <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
           <h3 class="font-semibold text-red-300 text-base">⚠ Log de errores de stock</h3>
-          <button onclick="MOS.zonaCerrarLogErrores()" class="modal-close-x">×</button>
+          <div class="flex items-center gap-2">
+            <button onclick="MOS.zonaLogLeyenda()" class="zona-log-ley-btn" title="¿Qué significa cada tipo de error?">? Leyenda</button>
+            <button onclick="MOS.zonaCerrarLogErrores()" class="modal-close-x">×</button>
+          </div>
         </div>
-        <div class="px-5 pt-2 text-xs text-slate-500 flex-shrink-0">Diferencias real vs teórico, etiquetadas por TIPO de error. Solo diagnóstico — no corrige stock. Toca un chip para filtrar, o una fila para ver el historial.</div>
+        <div class="px-5 pt-2 text-xs text-slate-500 flex-shrink-0">Diferencias real vs teórico, etiquetadas por TIPO de error. Solo diagnóstico — no corrige stock. Toca un chip para filtrar, el ⓘ para ver qué es ese error, o una fila para ver el historial.</div>
         <div id="zonaLogChips" class="zona-log-chips px-5 pt-3 pb-1 flex-shrink-0"></div>
         <div class="overflow-y-auto px-5 py-4" style="flex:1" id="zonaLogBody">
           <div class="skel h-16 rounded-lg mb-2"></div>
           <div class="skel h-16 rounded-lg"></div>
         </div>
+      </div>
+    </div>
+
+    <!-- ── Modal: Leyenda de TIPOS de error (qué es · causa · quién lo arregla) ─ solo lectura ─ -->
+    <div id="modalZonaLogLeyenda" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.zonaCerrarLogLeyenda()">
+      <div class="modal-box p-0 zona-modal-in" style="max-width:560px;display:flex;flex-direction:column;max-height:92vh">
+        <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
+          <h3 class="font-semibold text-slate-100 text-base">📖 Tipos de error · qué significan</h3>
+          <button onclick="MOS.zonaCerrarLogLeyenda()" class="modal-close-x">×</button>
+        </div>
+        <div class="px-5 pt-2 text-xs text-slate-500 flex-shrink-0">Catálogo de errores cazados. El color marca quién lo resuelve: <b class="zona-ley-key cat-sis">sistémico</b> (master/código), <b class="zona-ley-key cat-ope">operativo</b> (contar) y <b class="zona-ley-key cat-cfg">config</b> (una vez).</div>
+        <div class="overflow-y-auto px-5 py-4" style="flex:1" id="zonaLogLeyendaBody"></div>
       </div>
     </div>
 
@@ -18904,7 +18944,7 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js?v=2.43.273"></script>
+<script src="js/api.js?v=2.43.274"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -18919,7 +18959,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.273"></script>
+<script src="js/app.js?v=2.43.274"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

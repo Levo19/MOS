@@ -39299,13 +39299,28 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   //   _zonaLogState.tipo: null = todos · '0' = Otro (sin clasificar) · '1'..'5' = taxonomía.
   let _zonaLogState = { items: [], tipo: null };
   // Taxonomía de TIPOS — única fuente de verdad para color/nombre/glifo en el frontend (espeja mos._recon_tipo_etiqueta).
+  //   cat: categoría de quién lo resuelve → 'SIS' (sistémico/código, lo persigue el master) ·
+  //        'OPE' (operativo, se arregla contando/auditando) · 'CFG' (config, se setea una vez).
+  //   def: leyenda explicativa (definición · causa · quién lo arregla · qué hacer). Español neutral peruano.
   const ZONA_LOG_TIPOS = {
-    1: { nombre: 'Stock congelado',        glifo: '🧊', cls: 't1' },
-    2: { nombre: 'Kardex inconsistente',   glifo: '📕', cls: 't2' },
-    3: { nombre: 'Salida sin descuento',   glifo: '🚚', cls: 't3' },
-    4: { nombre: 'Sin ancla',              glifo: '⚓', cls: 't4' },
-    5: { nombre: 'Factor sin configurar',  glifo: '⚙️', cls: 't5' },
-    0: { nombre: 'Otro',                   glifo: '•',  cls: 't0' }
+    1: { nombre: 'Stock congelado',        glifo: '🧊', cls: 't1', cat: 'SIS',
+         def: 'El stock guardado se quedó pegado en un valor viejo: el kardex registró movimientos pero el saldo no los siguió. Causa: una escritura de stock que no se aplicó. Lo persigue el master; si reincide, hay que hallar qué escritura falló en el código.' },
+    2: { nombre: 'Kardex inconsistente',   glifo: '📕', cls: 't2', cat: 'SIS',
+         def: 'La suma de los movimientos del kardex no cuadra con el saldo guardado. Causa: un movimiento mal escrito o un saldo recalculado fuera de orden. Lo persigue el master; se corrige en el código (no recontando).' },
+    3: { nombre: 'Salida sin descuento',   glifo: '🚚', cls: 't3', cat: 'SIS',
+         def: 'Salió producto del origen (una guía/despacho) pero el stock del origen no se descontó. Causa: una salida que no disparó el descuento. Es crítico (suele reincidir); lo persigue el master y se corrige en el código.' },
+    4: { nombre: 'Sin ancla',              glifo: '⚓', cls: 't4', cat: 'OPE',
+         def: 'El producto nunca fue auditado (contado físicamente), así que no hay un punto de partida confiable para validar el stock. Lo arregla el operador: cuenta físico y ancla ese conteo. No es un error de código.' },
+    5: { nombre: 'Factor sin configurar',  glifo: '⚙️', cls: 't5', cat: 'CFG',
+         def: 'Falta configurar el factor de conversión del producto (ej. cuántas unidades trae una caja), por eso no se puede calcular el stock teórico. Se setea una sola vez en el catálogo y deja de aparecer.' },
+    0: { nombre: 'Otro',                   glifo: '•',  cls: 't0', cat: 'OPE',
+         def: 'Diferencia común o saldo negativo sin un patrón claro de las categorías anteriores. Suele ser operativo: revisar el conteo físico y el historial del producto. Si se repite con el mismo producto, avisar al master.' }
+  };
+  // Etiqueta legible de la categoría (para badges y leyenda).
+  const ZONA_LOG_CAT = {
+    SIS: { lbl: 'SISTÉMICO · código',  cls: 'cat-sis', quien: 'Lo persigue el master (no debe reincidir)' },
+    OPE: { lbl: 'OPERATIVO · contar',  cls: 'cat-ope', quien: 'Lo arregla el operador auditando' },
+    CFG: { lbl: 'CONFIG · una vez',    cls: 'cat-cfg', quien: 'Se setea una sola vez en el catálogo' }
   };
   function _zonaLogTipoKey(it) { const t = (it && it.tipoError != null) ? Number(it.tipoError) : 0; return (t >= 1 && t <= 5) ? t : 0; }
 
@@ -40293,8 +40308,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const n = cont[t] || 0;
       if (!n) return;
       const meta = ZONA_LOG_TIPOS[t];
+      const cat = ZONA_LOG_CAT[meta.cat] || {};
       const on = String(_zonaLogState.tipo) === String(t);
-      html += `<button class="zona-log-chip ${meta.cls}${on ? ' on' : ''}" onclick="MOS.zonaLogFiltrar('${t}')" title="${_esc(meta.nombre)}">${meta.glifo} ${_esc(meta.nombre)} <b>${n}</b></button>`;
+      // Chip = grupo (filtro + ⓘ). El glifo ⓘ abre la leyenda de ESE tipo; el resto del chip filtra.
+      html += `<span class="zona-log-chipwrap">
+        <button class="zona-log-chip ${meta.cls} ${cat.cls || ''}${on ? ' on' : ''}" onclick="MOS.zonaLogFiltrar('${t}')" title="${_esc(meta.nombre)} — ${_esc((cat.lbl || '').replace(/·.*/, '').trim())}">${meta.glifo} ${_esc(meta.nombre)} <b>${n}</b></button>
+        <button class="zona-log-info-btn ${cat.cls || ''}" onclick="event.stopPropagation();MOS.zonaLogLeyenda('${t}')" title="¿Qué es este error?" aria-label="¿Qué es ${_esc(meta.nombre)}?">ⓘ</button>
+      </span>`;
     });
     chips.innerHTML = html;
   }
@@ -40348,6 +40368,39 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     body.innerHTML = (seccion('ALMACEN', '📦 Almacén') + seccion('ZONA', '🏪 Zona')) || '<div class="text-center py-10 text-slate-500 text-sm">Sin diferencias</div>';
   }
   function zonaCerrarLogErrores() { closeModal('modalZonaLog'); }
+  // ── [LEYENDA] Catálogo de TIPOS de error: definición + causa + categoría + quién lo arregla ──
+  //   Abre el modal-leyenda con TODOS los tipos. Si se pasa un tipo, se resalta y se hace scroll a él.
+  //   Solo visualización (read-only): no toca cálculos ni escrituras.
+  function zonaLogLeyenda(tipo) {
+    _zonaSfx('pop'); _zonaVibrar([20,15,20]);
+    const body = $('zonaLogLeyendaBody');
+    if (body) {
+      const orden = [1, 2, 3, 4, 5, 0];
+      const focus = (tipo != null && tipo !== '') ? String(tipo) : null;
+      body.innerHTML = orden.map(t => {
+        const meta = ZONA_LOG_TIPOS[t];
+        if (!meta) return '';
+        const cat = ZONA_LOG_CAT[meta.cat] || {};
+        const sel = (focus != null && String(t) === focus) ? ' is-focus' : '';
+        return `<div id="zonaLeyTipo-${t}" class="zona-ley-card ${meta.cls} ${cat.cls || ''}${sel}">
+          <div class="zona-ley-head">
+            <span class="zona-ley-glifo">${meta.glifo}</span>
+            <span class="zona-ley-nombre">${_esc(t === 0 ? 'Otro / sin clasificar' : ('TIPO ' + t + ' · ' + meta.nombre))}</span>
+            <span class="zona-ley-cat ${cat.cls || ''}">${_esc(cat.lbl || '')}</span>
+          </div>
+          <div class="zona-ley-def">${_esc(meta.def || '')}</div>
+          <div class="zona-ley-quien">👤 ${_esc(cat.quien || '')}</div>
+        </div>`;
+      }).join('');
+    }
+    openModal('modalZonaLogLeyenda');
+    // Scroll suave al tipo enfocado (si vino desde un chip concreto).
+    if (tipo != null && tipo !== '') {
+      const el = $('zonaLeyTipo-' + tipo);
+      if (el && el.scrollIntoView) { try { el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (_) { el.scrollIntoView(); } }
+    }
+  }
+  function zonaCerrarLogLeyenda() { closeModal('modalZonaLogLeyenda'); }
   // Desde una fila del log → historial del producto (por código). ZONA usa la zona actual; ALMACEN va al kardex WH.
   function zonaLogVerHistorial(ambito, codBarra) {
     _zonaSfx('tick'); _zonaVibrar(15);
@@ -40940,7 +40993,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaCarritoAbrir, zonaCarritoCerrar, zonaCarritoStep, zonaCarritoSet, zonaCarritoQuitar, zonaCarritoVaciar, zonaCarritoEnviar,
     zonaVerLotes, zonaCerrarLotes,
     // [ASEGURAR DATA] Log de errores (master) + historial kardex zona/almacén — read-only
-    zonaAbrirLogErrores, zonaCerrarLogErrores, zonaLogVerHistorial, zonaLogFiltrar,
+    zonaAbrirLogErrores, zonaCerrarLogErrores, zonaLogVerHistorial, zonaLogFiltrar, zonaLogLeyenda, zonaCerrarLogLeyenda,
     zonaVerKardex, zonaVerKardexAlmacen, zonaCerrarKardex,
     zonaAbrirBCG, zonaCerrarBCG, zonaBCGTapProducto, zonaBCGFiltrarCuadrante, zonaPlaceholder, zonaAccionPerro,
     // [RIZ Capa 5] impresión 80mm + panel IA + lista compras
