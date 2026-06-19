@@ -40207,6 +40207,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // ══ [RIZ · CAPA 5] IMPRESIÓN 80mm (Edge riz-print → PrintNode) ══════════
   // Reusa el PrinterPicker universal para elegir impresora (memoria por flowKey), luego dispara la
   // Edge. Optimista: toast "enviado a impresora" + sonido print. Si falla, toast rojo + shake del botón.
+  // Fecha de HOY en TZ Perú como 'YYYY-MM-DD' (NO toISOString → eso es UTC y a las <19:00 local
+  // devolvería el día equivocado). en-CA + timeZone:'America/Lima' produce 'YYYY-MM-DD' nativo.
+  function _zonaFechaHoy() {
+    try { return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' }); }
+    catch (_) { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+  }
   async function _zonaImprimirFlow(tipo, label) {
     let printerId = null;
     // [2026-06-19 fix impresora-por-ámbito] La memoria de "última impresora" DEBE ser por ZONA,
@@ -40230,7 +40236,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _zonaSfx('ok'); _zonaVibrar(30);
     toast('🖨️ ' + label + ' enviado a impresora', 'ok');
     try {
-      const r = await API.zona.imprimir({ tipo, zona: S.zonaActual, printerId });
+      // [2026-06-19 fix ticket vacío] Reforzar pasando fecha/semana de HOY (TZ Perú). El RPC ya defaultea
+      // a hoy si falta (supabase/184), pero mandarlo explícito evita depender del default y es a prueba de
+      // futuros cambios de la Edge. ticket_diario → fecha; lista_compras → semana ISO actual.
+      const extra = tipo === 'ticket_diario'
+        ? { fecha: _zonaFechaHoy() }
+        : { semana: _zonaSemanaISO() };
+      const r = await API.zona.imprimir({ tipo, zona: S.zonaActual, printerId, ...extra });
       if (!r || r.ok === false) throw new Error((r && r.error) || 'sin respuesta');
     } catch (e) {
       _zonaSfx('error'); _zonaVibrar([120,40,120]);
