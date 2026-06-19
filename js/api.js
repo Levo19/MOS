@@ -724,6 +724,27 @@ const API = (() => {
       usuario: _mosUsuario(params)
     } });
   }
+  // [RIZ · AJUSTE ALMACÉN] Ajuste del STOCK REAL del almacén (wh.stock) por DELTA. Para el ámbito ALMACEN del
+  // módulo Zona: el conteo físico de UN código → wh.crear_ajuste vía el wrapper mos.almacen_crear_ajuste (SQL 185).
+  // El token MOS NO pasa wh._claim_ok() (app='MOS' ≠ 'warehouseMos') → por eso va por el wrapper con gate
+  // mos._claim_ok() que replica la lógica atómica de wh.crear_ajuste. Idempotente por idAjuste (PK wh.ajustes).
+  // params: { codBarra|codProducto (req), conteo|nuevo (req, conteo físico ABS de ESE código), idAjuste|localId, usuario?, zona? }.
+  async function _almacenCrearAjuste(params) {
+    const cod = params && (params.codProducto != null ? params.codProducto
+                          : (params.codBarra != null ? params.codBarra
+                          : (params.codBarras != null ? params.codBarras : null)));
+    const conteo = params && (params.conteo != null ? params.conteo : params.nuevo);
+    const idAjuste = params && (params.idAjuste != null ? params.idAjuste : (params.localId != null ? params.localId : null));
+    const zona = params && (params.zona != null ? params.zona : params.zonaId);
+    try { console.log('[RIZ] almacen_crear_ajuste', { cod, conteo, idAjuste }); } catch (_) {}
+    return _sbRpcZonaWrite('almacen_crear_ajuste', { p: {
+      codProducto: cod != null ? String(cod) : undefined,
+      conteo:      conteo,
+      idAjuste:    idAjuste != null ? String(idAjuste) : undefined,
+      zona:        zona != null ? String(zona) : undefined,
+      usuario:     _mosUsuario(params)
+    } });
+  }
   async function _zonaPedirAlmacen(params) {
     const zona = params && (params.zona != null ? params.zona : params.zonaId);
     try { console.log('[RIZ] zona_pedir_almacen', { zona, sku: params && params.skuBase, cant: params && params.cantidad }); } catch (_) {}
@@ -1984,7 +2005,8 @@ const API = (() => {
       tendencia:       _zonaTendenciaDirecto,   // mos.tendencia_zona(p)        → {ok,data:{zona,semanas,umbral,items:[...]},_fresh}
       ticketDia:       _zonaTicketDiaDirecto,   // mos.zona_ticket_dia(p)       → {ok,data:{zona,fecha,origen,lotes:[...]},_fresh}
       lotesHistorial:  _zonaLotesHistorialDirecto, // mos.zona_lotes_historial(p) → {ok,data:{...,items:[lotes FIFO]},_fresh}
-      ajustarStock:    _zonaAjustarStock,       // mos.zona_ajustar_stock(p)    → {ok,data} (Supabase-only + log)
+      ajustarStock:    _zonaAjustarStock,       // mos.zona_ajustar_stock(p)    → {ok,data} (ZONA: SET-ABSOLUTO me.stock_zonas + log + kardex)
+      almacenAjustar:  _almacenCrearAjuste,     // mos.almacen_crear_ajuste(p)  → {ok,...} (ALMACÉN: DELTA wh.stock + wh.ajustes + kardex WH; idempotente por idAjuste)
       pedirAlmacen:    _zonaPedirAlmacen,       // mos.zona_pedir_almacen(p)    → {ok,data} (Supabase-only + log)
       marcarAccion:    _zonaMarcarAccion,       // mos.zona_marcar_accion(p {skuBase,accion}) → {ok,[dedup],data} (perro: NO muta stock)
       // [RIZ · CAPA 5] nuevos: lista de compras (lectura), impresión 80mm (Edge riz-print), IA real (Edge /functions/ia)

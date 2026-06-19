@@ -39772,13 +39772,52 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (v) { v.value = '0'; try { v.focus(); } catch(_){} }
     _zonaSfx('tick'); _zonaVibrar(20);
   }
+  // ¿La zona activa es el ALMACÉN? (ajuste → wh.stock vía mos.almacen_crear_ajuste; ZONA → me.stock_zonas).
+  function _zonaEsAlmacen() {
+    return _esZonaAlmacen({ idZona: S.zonaActual,
+      nombre: ((S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === S.zonaActual) || {}).nombre });
+  }
+  // localId/idAjuste ESTABLE por gesto de ajuste de un código (idempotencia dura en backend).
+  function _zonaAjusteLocalId(cb) {
+    const amb = _zonaEsAlmacen() ? 'ALM' : (S.zonaActual || 'Z');
+    return 'RIZAJ_' + amb + '_' + String(cb).replace(/[^A-Za-z0-9]/g, '') + '_' +
+      Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+  }
+  // Aplica el ajuste de UN código según el ámbito (ZONA → SET-ABSOLUTO me.stock_zonas ; ALMACEN → DELTA wh.stock).
+  // Devuelve la respuesta cruda de la RPC (o null/throw si falló). El conteo `nuevo` es ABS en la unidad de ESE código.
+  async function _zonaAplicarAjusteCodigo(cb, nuevo, localId) {
+    if (_zonaEsAlmacen()) {
+      return API.zona.almacenAjustar({ zona: S.zonaActual, codProducto: String(cb), conteo: nuevo, idAjuste: localId });
+    }
+    return API.zona.ajustarStock({ zona: S.zonaActual, codBarra: String(cb), nuevo, localId });
+  }
   async function zonaConfirmarAjuste(sku) {
     const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
     if (!p) return;
+    // [MULTI-CÓDIGO] Si el producto tiene >1 código en esta zona/almacén, el stepper único corrompería la suma
+    // (escribiría sólo el canónico). Abrir el desglose por código para que el admin cuente cada uno en persona.
+    const codigos = Array.isArray(p.codigos) ? p.codigos : [];
+    if (codigos.length > 1) {
+      _zonaSfx('tick'); _zonaVibrar(20);
+      toast('Este producto tiene ' + codigos.length + ' códigos. Cuenta cada uno por separado.', 'info');
+      zonaToggleCodigos(sku);   // expande el desglose (abre si está cerrado); inputs por código + ✓ por código
+      // re-pintar el stepper a su valor original (no aplicar el set único que rompería la suma).
+      _zonaActualizarBotonCard(sku);
+      renderZona();
+      try { const body = $('zCodBody-' + _zonaSkuId(sku)); if (body) body.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) {}
+      return;
+    }
     const nuevo = _zonaLeerStep(sku, p);
     const antes = _zonaNum(p.stockZona != null ? p.stockZona : p.stock);
     const card  = $('zcard-' + sku);
+    // El código a tocar: si hay 1 código en el desglose, ese; si no, se deja que el backend resuelva el canónico
+    // (ZONA) — para ALMACÉN necesitamos el código concreto, así que usamos el único de codigos[] si existe.
+    const cbUnico = codigos.length === 1
+      ? String(codigos[0].codBarra != null ? codigos[0].codBarra : codigos[0].codigoBarra)
+      : null;
+    const localId = _zonaAjusteLocalId(cbUnico || sku);
     // OPTIMISTA: actualizar memoria + re-render del card al instante
+    if (codigos.length === 1) codigos[0].stock = nuevo;
     if (p.stockZona != null) p.stockZona = nuevo; else p.stock = nuevo;
     p.stockNegativo = (nuevo < 0);   // editar a >=0 limpia la alerta (ya no es negativo)
     if (p.esperada != null || p.esperado != null) {
@@ -39788,13 +39827,24 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     renderZona();
     _zonaSfx('ok'); _zonaVibrar(30);
     toast('Stock ajustado a ' + _zonaFmtCant(nuevo, p), 'ok');
-    // BACKGROUND: dual-write (Supabase-only + log; ver api.js cabecera RIZ)
+    // BACKGROUND: ZONA → SET-ABSOLUTO me.stock_zonas ; ALMACEN → DELTA wh.stock (ver api.js cabecera RIZ).
     try {
-      const r = await API.zona.ajustarStock({ zona: S.zonaActual, skuBase: sku, nuevo, stockAntes: antes });
+      let r;
+      if (cbUnico) {
+        // código concreto conocido (único del desglose) → ruta por código (ZONA o ALMACEN).
+        r = await _zonaAplicarAjusteCodigo(cbUnico, nuevo, localId);
+      } else if (_zonaEsAlmacen()) {
+        // ALMACÉN sin código en el desglose: no podemos resolver el canónico server-side de WH → no aplicar.
+        throw new Error('Sin código de almacén para ajustar');
+      } else {
+        // ZONA sin desglose: el backend resuelve el canónico del skuBase (comportamiento histórico).
+        r = await API.zona.ajustarStock({ zona: S.zonaActual, skuBase: sku, nuevo, localId });
+      }
       if (r == null || r.ok === false) throw new Error((r && r.error) || 'sin commit');
       _zonaPintarKpis();
     } catch (e) {
       // ROLLBACK + shake
+      if (codigos.length === 1) codigos[0].stock = antes;
       if (p.stockZona != null) p.stockZona = antes; else p.stock = antes;
       p.stockNegativo = (antes < 0);
       if (p.esperada != null || p.esperado != null) {
@@ -39896,9 +39946,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaToggleCodigos(sku);
     _zonaSfx('ok'); _zonaVibrar(30);
     toast('Código ajustado a ' + _zonaFmtCant(nuevo, p), 'ok');
+    // localId estampado en el código mientras dura el gesto → un reintento del MISMO gesto reusa el id (idempotente).
+    const localId = c._ajLocalId || (c._ajLocalId = _zonaAjusteLocalId(cb));
     try {
-      const r = await API.zona.ajustarStock({ zona: S.zonaActual, codBarra: String(cb), nuevo, stockAntes: antes });
+      // ZONA → SET-ABSOLUTO me.stock_zonas (por código) ; ALMACEN → DELTA wh.stock (por código). Idempotente.
+      const r = await _zonaAplicarAjusteCodigo(String(cb), nuevo, localId);
       if (r == null || r.ok === false) throw new Error((r && r.error) || 'sin commit');
+      delete c._ajLocalId;   // gesto confirmado → liberar el id (un nuevo conteo del mismo código usará otro)
       _zonaPintarKpis();
     } catch (e) {
       // ROLLBACK + shake
