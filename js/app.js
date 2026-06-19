@@ -39295,6 +39295,20 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     return 'hace ' + h + ' h';
   }
   // Tick visual del chip (solo texto/color, sin red). Arranca con el auto-refresh y muere al salir de zona.
+  // [LOG ERRORES] Estado del módulo: items cargados + filtro de TIPO activo (chips clickeables).
+  //   _zonaLogState.tipo: null = todos · '0' = Otro (sin clasificar) · '1'..'5' = taxonomía.
+  let _zonaLogState = { items: [], tipo: null };
+  // Taxonomía de TIPOS — única fuente de verdad para color/nombre/glifo en el frontend (espeja mos._recon_tipo_etiqueta).
+  const ZONA_LOG_TIPOS = {
+    1: { nombre: 'Stock congelado',        glifo: '🧊', cls: 't1' },
+    2: { nombre: 'Kardex inconsistente',   glifo: '📕', cls: 't2' },
+    3: { nombre: 'Salida sin descuento',   glifo: '🚚', cls: 't3' },
+    4: { nombre: 'Sin ancla',              glifo: '⚓', cls: 't4' },
+    5: { nombre: 'Factor sin configurar',  glifo: '⚙️', cls: 't5' },
+    0: { nombre: 'Otro',                   glifo: '•',  cls: 't0' }
+  };
+  function _zonaLogTipoKey(it) { const t = (it && it.tipoError != null) ? Number(it.tipoError) : 0; return (t >= 1 && t <= 5) ? t : 0; }
+
   let _zonaTickFreshTimer = null;
   function _zonaTickFreshStart() {
     if (_zonaTickFreshTimer) clearInterval(_zonaTickFreshTimer);
@@ -40246,9 +40260,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   //   Cada fila → abre el historial del producto (zona usa zona_kardex; almacén usa almacen_kardex).
   async function zonaAbrirLogErrores() {
     const body = $('zonaLogBody');
+    const chips = $('zonaLogChips');
+    if (chips) chips.innerHTML = '';
     if (body) body.innerHTML = '<div class="skel h-16 rounded-lg mb-2"></div><div class="skel h-16 rounded-lg"></div>';
     openModal('modalZonaLog');
     _zonaSfx('pop'); _zonaVibrar([30,20,30]);
+    _zonaLogState = { items: [], tipo: null };   // reset filtro al reabrir
     try {
       // [RIZ UX] Solo diferencias ABIERTAS (las REVISADAS/RESUELTAS quedan archivadas y no son ruido).
       //   La RPC mos.stock_diferencias_listar acepta p.estado (supabase/141 §3) → filtramos en origen.
@@ -40256,40 +40273,79 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       if (!r || r.ok === false) throw new Error((r && r.error) || 'Sin datos');
       const data = (r && r.data) || r || {};
       const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
-      if (!body) return;
-      if (!items.length) { body.innerHTML = '<div class="text-center py-10 text-emerald-300 text-sm">✓ Sin diferencias de stock detectadas</div>'; return; }
-      // Agrupar por ámbito; dentro de cada grupo el backend ya ordena por |dif| desc.
-      const grupos = { ALMACEN: [], ZONA: [] };
-      items.forEach(it => { (grupos[String(it.ambito || '').toUpperCase()] || (grupos.ZONA)).push(it); });
-      let html = '', idx = 0;
-      const seccion = (amb, titulo) => {
-        const arr = grupos[amb] || [];
-        if (!arr.length) return '';
-        let s = `<div class="zona-log-group-title">${_esc(titulo)} · ${arr.length}</div>`;
-        s += arr.map(it => {
-          const dif = _zonaNum(it.diferencia);
-          const ambCls = amb === 'ALMACEN' ? 'almacen' : 'zona';
-          const ambLbl = amb === 'ALMACEN' ? 'ALMACÉN' : (it.zonaId || 'ZONA');
-          const sign = dif > 0 ? '+' : '';
-          const cb = _zonaEsc(String(it.codBarra || ''));
-          const delay = (idx++) * 35;
-          return `<div class="zona-log-row" style="animation-delay:${delay}ms" onclick="MOS.zonaLogVerHistorial('${amb}','${cb}')">
-            <span class="zona-log-amb ${ambCls}">${_esc(ambLbl)}</span>
-            <div class="zona-log-info">
-              <div class="zona-log-name">${_esc(it.descripcion || it.codBarra)}</div>
-              <div class="zona-log-nums">real <b>${_esc(String(it.real))}</b> · teórico <b>${_esc(String(it.teorico))}</b></div>
-              <div class="zona-log-hip">${_esc(it.motivoHipotesis || '')}</div>
-            </div>
-            <div class="zona-log-dif ${dif >= 0 ? 'pos' : 'neg'}">${sign}${_esc(String(dif))}</div>
-          </div>`;
-        }).join('');
-        return s;
-      };
-      html = seccion('ALMACEN', '📦 Almacén') + seccion('ZONA', '🏪 Zona');
-      body.innerHTML = html || '<div class="text-center py-10 text-slate-500 text-sm">Sin diferencias</div>';
+      _zonaLogState.items = items;
+      _zonaLogPintarChips();
+      _zonaLogRender();
     } catch (e) {
       if (body) body.innerHTML = `<div class="text-center py-8 text-red-400 text-sm">${_esc(e.message || String(e))}</div>`;
     }
+  }
+  // Contador por tipo arriba + chips clickeables (filtro). El admin ve de un vistazo "¿reincidió el TIPO 3 hoy?".
+  function _zonaLogPintarChips() {
+    const chips = $('zonaLogChips');
+    if (!chips) return;
+    const items = _zonaLogState.items || [];
+    const cont = {}; items.forEach(it => { const k = _zonaLogTipoKey(it); cont[k] = (cont[k] || 0) + 1; });
+    // Orden de chips: Todos · 1 · 2 · 3 · 4 · 5 · Otro. Solo se muestran los que tienen >=1 (Todos siempre).
+    const orden = [1, 2, 3, 4, 5, 0];
+    let html = `<button class="zona-log-chip chip-all${_zonaLogState.tipo == null ? ' on' : ''}" onclick="MOS.zonaLogFiltrar(null)">Todos <b>${items.length}</b></button>`;
+    orden.forEach(t => {
+      const n = cont[t] || 0;
+      if (!n) return;
+      const meta = ZONA_LOG_TIPOS[t];
+      const on = String(_zonaLogState.tipo) === String(t);
+      html += `<button class="zona-log-chip ${meta.cls}${on ? ' on' : ''}" onclick="MOS.zonaLogFiltrar('${t}')" title="${_esc(meta.nombre)}">${meta.glifo} ${_esc(meta.nombre)} <b>${n}</b></button>`;
+    });
+    chips.innerHTML = html;
+  }
+  function zonaLogFiltrar(tipo) {
+    _zonaSfx('tick'); _zonaVibrar(15);
+    // toggle: si ya estaba activo el mismo tipo → vuelve a "todos".
+    _zonaLogState.tipo = (tipo == null || String(_zonaLogState.tipo) === String(tipo)) ? null : String(tipo);
+    _zonaLogPintarChips();
+    _zonaLogRender();
+  }
+  function _zonaLogRender() {
+    const body = $('zonaLogBody');
+    if (!body) return;
+    const all = _zonaLogState.items || [];
+    if (!all.length) { body.innerHTML = '<div class="text-center py-10 text-emerald-300 text-sm">✓ Sin diferencias de stock detectadas</div>'; return; }
+    const items = (_zonaLogState.tipo == null) ? all : all.filter(it => String(_zonaLogTipoKey(it)) === String(_zonaLogState.tipo));
+    if (!items.length) { body.innerHTML = '<div class="text-center py-10 text-slate-500 text-sm">Sin diferencias de este tipo</div>'; return; }
+    // Agrupar por ámbito; dentro de cada grupo el backend ya ordena por |dif| desc.
+    const grupos = { ALMACEN: [], ZONA: [] };
+    items.forEach(it => { (grupos[String(it.ambito || '').toUpperCase()] || (grupos.ZONA)).push(it); });
+    let idx = 0;
+    const seccion = (amb, titulo) => {
+      const arr = grupos[amb] || [];
+      if (!arr.length) return '';
+      let s = `<div class="zona-log-group-title">${_esc(titulo)} · ${arr.length}</div>`;
+      s += arr.map(it => {
+        const tk = _zonaLogTipoKey(it);
+        const meta = ZONA_LOG_TIPOS[tk];
+        const aviso = (tk === 3 || tk === 5);            // filas-aviso: real/teorico/dif = 0 → no mostrar números de stock
+        const dif = _zonaNum(it.diferencia);
+        const ambCls = amb === 'ALMACEN' ? 'almacen' : 'zona';
+        const ambLbl = amb === 'ALMACEN' ? 'ALMACÉN' : (it.zonaId || 'ZONA');
+        const sign = dif > 0 ? '+' : '';
+        const cb = _zonaEsc(String(it.codBarra || ''));
+        const delay = (idx++) * 30;
+        const badge = `<span class="zona-log-tipo ${meta.cls}" title="${_esc(meta.nombre)}">${meta.glifo} ${_esc(meta.nombre)}</span>`;
+        const nums = aviso ? '' : `<div class="zona-log-nums">real <b>${_esc(String(it.real))}</b> · teórico <b>${_esc(String(it.teorico))}</b></div>`;
+        const difCol = aviso ? '<div class="zona-log-dif aviso">⚠</div>' : `<div class="zona-log-dif ${dif >= 0 ? 'pos' : 'neg'}">${sign}${_esc(String(dif))}</div>`;
+        return `<div class="zona-log-row" style="animation-delay:${delay}ms" onclick="MOS.zonaLogVerHistorial('${amb}','${cb}')">
+          <span class="zona-log-amb ${ambCls}">${_esc(ambLbl)}</span>
+          <div class="zona-log-info">
+            <div class="zona-log-name">${_esc(it.descripcion || it.codBarra)} ${badge}</div>
+            ${nums}
+            <div class="zona-log-hip">${_esc(it.motivoHipotesis || '')}</div>
+          </div>
+          ${difCol}
+        </div>`;
+      }).join('');
+      return s;
+    };
+    body.innerHTML = (seccion('ALMACEN', '📦 Almacén') + seccion('ZONA', '🏪 Zona')) || '<div class="text-center py-10 text-slate-500 text-sm">Sin diferencias</div>';
   }
   function zonaCerrarLogErrores() { closeModal('modalZonaLog'); }
   // Desde una fila del log → historial del producto (por código). ZONA usa la zona actual; ALMACEN va al kardex WH.
@@ -40866,7 +40922,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaCarritoAbrir, zonaCarritoCerrar, zonaCarritoStep, zonaCarritoSet, zonaCarritoQuitar, zonaCarritoVaciar, zonaCarritoEnviar,
     zonaVerLotes, zonaCerrarLotes,
     // [ASEGURAR DATA] Log de errores (master) + historial kardex zona/almacén — read-only
-    zonaAbrirLogErrores, zonaCerrarLogErrores, zonaLogVerHistorial,
+    zonaAbrirLogErrores, zonaCerrarLogErrores, zonaLogVerHistorial, zonaLogFiltrar,
     zonaVerKardex, zonaVerKardexAlmacen, zonaCerrarKardex,
     zonaAbrirBCG, zonaCerrarBCG, zonaBCGTapProducto, zonaBCGFiltrarCuadrante, zonaPlaceholder, zonaAccionPerro,
     // [RIZ Capa 5] impresión 80mm + panel IA + lista compras

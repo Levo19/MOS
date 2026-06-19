@@ -12597,7 +12597,26 @@
     .zona-log-hip  { font-size:.68rem; color:#64748b; margin-top:.15rem; line-height:1.25; }
     .zona-log-dif  { font-weight:800; font-size:.92rem; white-space:nowrap; }
     .zona-log-dif.pos { color:#86efac; } .zona-log-dif.neg { color:#fca5a5; }
+    .zona-log-dif.aviso { color:#fbbf24; font-size:1.05rem; }
     .zona-log-group-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:#64748b; margin:.4rem 0 .55rem; }
+    /* [LOG ERRORES · TAXONOMÍA] chips de filtro por TIPO + badge en cada fila. Paleta por tipo (color-coded). */
+    .zona-log-chips { display:flex; flex-wrap:wrap; gap:.4rem; border-bottom:1px solid #1e293b; }
+    .zona-log-chip { font-size:.68rem; font-weight:700; padding:.28rem .6rem; border-radius:999px; border:1px solid #334155; background:#0d1526; color:#cbd5e1; cursor:pointer; white-space:nowrap; transition:transform .12s, border-color .15s, background .15s, box-shadow .15s; -webkit-tap-highlight-color:transparent; }
+    .zona-log-chip:active { transform:scale(.93); }
+    .zona-log-chip b { font-weight:800; margin-left:.15rem; opacity:.85; }
+    .zona-log-chip.on { box-shadow:0 0 0 2px rgba(148,163,184,.35) inset; background:#16233a; }
+    .zona-log-chip.chip-all.on { border-color:#94a3b8; color:#f1f5f9; }
+    /* color por tipo — espeja ZONA_LOG_TIPOS en app.js */
+    .zona-log-chip.t1, .zona-log-tipo.t1 { border-color:#7dd3fc; color:#7dd3fc; }   /* congelado — celeste hielo */
+    .zona-log-chip.t2, .zona-log-tipo.t2 { border-color:#f0abfc; color:#f0abfc; }   /* kardex — fucsia */
+    .zona-log-chip.t3, .zona-log-tipo.t3 { border-color:#fca5a5; color:#fca5a5; }   /* salida sin descuento — rojo (crítico/reincidencia) */
+    .zona-log-chip.t4, .zona-log-tipo.t4 { border-color:#fcd34d; color:#fcd34d; }   /* sin ancla — ámbar */
+    .zona-log-chip.t5, .zona-log-tipo.t5 { border-color:#a5b4fc; color:#a5b4fc; }   /* factor — índigo (config) */
+    .zona-log-chip.t0, .zona-log-tipo.t0 { border-color:#64748b; color:#94a3b8; }   /* otro — gris */
+    .zona-log-chip.t1.on { background:#0c2b3d; } .zona-log-chip.t2.on { background:#2e1530; }
+    .zona-log-chip.t3.on { background:#2e1414; } .zona-log-chip.t4.on { background:#332108; }
+    .zona-log-chip.t5.on { background:#1c1f3a; } .zona-log-chip.t0.on { background:#1e293b; }
+    .zona-log-tipo { display:inline-block; font-size:.6rem; font-weight:700; padding:.05rem .35rem; border-radius:.3rem; border:1px solid; letter-spacing:.02em; vertical-align:middle; margin-left:.25rem; white-space:nowrap; }
     /* filas del kardex (historial de movimientos) — estilo WH: icono por tipo + saldo a la derecha */
     .zona-kardex-row { display:flex; align-items:center; gap:.65rem; padding:.55rem .7rem; border:1px solid #1e293b; border-radius:.6rem; margin-bottom:.45rem; background:#0d1526; }
     .zona-kardex-ico { width:30px; height:30px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:.95rem; flex-shrink:0; }
@@ -15295,7 +15314,8 @@
           <h3 class="font-semibold text-red-300 text-base">⚠ Log de errores de stock</h3>
           <button onclick="MOS.zonaCerrarLogErrores()" class="modal-close-x">×</button>
         </div>
-        <div class="px-5 pt-2 text-xs text-slate-500 flex-shrink-0">Diferencias real vs teórico. Solo diagnóstico — no corrige stock. Toca una fila para ver el historial del producto.</div>
+        <div class="px-5 pt-2 text-xs text-slate-500 flex-shrink-0">Diferencias real vs teórico, etiquetadas por TIPO de error. Solo diagnóstico — no corrige stock. Toca un chip para filtrar, o una fila para ver el historial.</div>
+        <div id="zonaLogChips" class="zona-log-chips px-5 pt-3 pb-1 flex-shrink-0"></div>
         <div class="overflow-y-auto px-5 py-4" style="flex:1" id="zonaLogBody">
           <div class="skel h-16 rounded-lg mb-2"></div>
           <div class="skel h-16 rounded-lg"></div>
@@ -18879,7 +18899,7 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js?v=2.43.271"></script>
+<script src="js/api.js?v=2.43.272"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -18894,7 +18914,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.271"></script>
+<script src="js/app.js?v=2.43.272"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
