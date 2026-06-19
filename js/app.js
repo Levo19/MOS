@@ -32,6 +32,12 @@ const MOS = (() => {
     zonaUltimoFetch: 0,      // [RIZ live] epoch ms del último fetch EXITOSO del panel (lee tablas VIVAS)
     zonaKpis: null,          // {faltan, almacen, externo, cero}
     _zonaFiltros: { kpi: null, tend: {}, brecha: false, orden: 'brecha', q: '' },
+    // [RIZ #1 FILTRO DÍA] Filtro "del día" del grupo ROTADO (Vendidos/Despachados). Espeja la PARTICIÓN de
+    //   me.zona_ticket_dia: universo ordenado por rotación, repartido en 7 días anclados al lunes ISO.
+    //   modo 'todos' (default) = sin filtro; 'dia' = solo la tanda del día activo. offsetDia desplaza el día
+    //   activo respecto a HOY (◀ −1 día / ▶ +1 día). Solo aplica al grupo ROTADO.
+    _zonaDiaFiltro: { modo: 'todos', offset: 0 },
+    _zonaProvCache: {},      // [RIZ #4] cache de proveedores por sku (lazy-load por card en ALMACEN)
     // [RIZ CARRITO] carrito de pedido a almacén POR ZONA. { 'ZONA-02': { 'LEV1172': {sku, nombre, cantidad, esGranel} } }
     _zonaCarrito: {},
     _zonaCarritoEnviando: false,   // lock anti doble-envío
@@ -39433,12 +39439,21 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // Fuente de verdad = item.grupo del backend ('ROTADO'/'PARADO'); fallback tolerante a item.rotacionCero/rotacion.
     const esAlmacen = _esZonaAlmacen({ idZona: S.zonaActual,
       nombre: ((S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === S.zonaActual) || {}).nombre });
-    const rotados = arr.filter(p => !_zonaEsGrupoParado(p));
+    let rotados = arr.filter(p => !_zonaEsGrupoParado(p));
     const parados = arr.filter(p =>  _zonaEsGrupoParado(p));
+    // [RIZ #1] Filtro "del día" — SOLO al grupo ROTADO. En modo 'dia' restringimos a la tanda del día activo
+    //   (skuBases que trae me.zona_ticket_dia para esa fecha → coincide exactamente con el ticket impreso).
+    //   El set se carga async (toggle/flechas); aquí usamos el cache. Si aún no está, no filtra (muestra todo).
+    const diaModo = (S._zonaDiaFiltro && S._zonaDiaFiltro.modo === 'dia');
+    if (diaModo && S._zonaDiaSet) {
+      const set = S._zonaDiaSet;
+      rotados = rotados.filter(p => set.has(String(p.skuBase || p.idProducto || '')));
+    }
     const grpRot = {
       key: 'ROTADO', cls: 'is-rotado', ico: esAlmacen ? '🚚' : '🛒',
       lbl: esAlmacen ? 'Despachados · últimas 4 sem' : 'Vendidos · últimas 4 sem',
-      arr: rotados
+      arr: rotados,
+      esRotado: true, esAlmacen: esAlmacen
     };
     const grpPar = {
       key: 'PARADO', cls: 'is-parado', ico: '🧊',
@@ -39458,6 +39473,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
     // [RIZ CARRITO] el FAB/badge reflejan el carrito de la zona tras cada render (cards reconstruidos).
     try { _zonaCarritoSync(); } catch (_) {}
+    // [RIZ #4] En ALMACEN, completar las cards con sus proveedores reales (1 RPC batch, no bloqueante).
+    if (esAlmacen) { try { _zonaProvCargarVisibles(); } catch (_) {} }
   }
   // ¿El item es "rotación cero"? Fuente de verdad = backend item.rotacionCero (bool).
   // Fallback tolerante (datos viejos sin el campo): rotacion===0.
@@ -39491,6 +39508,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const body = n
       ? g.arr.map(_zonaCardHtml).join('')
       : `<div class="zona-grp-empty">Sin productos en este grupo</div>`;
+    // [RIZ #1+#2] El grupo ROTADO lleva el control "Todos | Día" + flechas + ícono imprimir, al lado del contador.
+    const ctrl = g.esRotado ? _zonaDiaControlHtml() : '';
     return `<div class="zona-grp" data-grp="${g.key}">`
       + `<div class="zona-grp-head ${g.cls}${colCls}" role="button" tabindex="0" aria-expanded="${colapsado ? 'false' : 'true'}" `
       +      `onclick="MOS.zonaToggleGrupo('${g.key}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();MOS.zonaToggleGrupo('${g.key}');}">`
@@ -39498,9 +39517,51 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       +   `<span class="zona-grp-ico" aria-hidden="true">${g.ico}</span>`
       +   `<span class="zona-grp-lbl">${_esc(g.lbl)}</span>`
       +   `<span class="zona-grp-count">${n}</span>`
+      +   ctrl
       + `</div>`
       + `<div class="zona-grp-body${colCls}">${body}</div>`
       + `</div>`;
+  }
+  // [RIZ #1+#2] Control del grupo ROTADO: segmento "Todos | Día" + flechas ◀ ▶ + día activo + ícono imprimir.
+  //   Todos los onclick hacen stopPropagation para NO disparar el colapso del grupo. Triple feedback en cada acción.
+  function _zonaDiaControlHtml() {
+    const modo = (S._zonaDiaFiltro && S._zonaDiaFiltro.modo) || 'todos';
+    const enDia = modo === 'dia';
+    const stop = 'event.stopPropagation();';
+    const seg = `<div class="zona-dia-seg" role="group" aria-label="Filtro del día">`
+      + `<button type="button" class="zona-dia-segbtn${enDia ? '' : ' on'}" aria-pressed="${enDia ? 'false' : 'true'}" `
+      +   `onclick="${stop}MOS.zonaDiaModo('todos')" title="Mostrar todo el grupo">Todos</button>`
+      + `<button type="button" class="zona-dia-segbtn${enDia ? ' on' : ''}" aria-pressed="${enDia ? 'true' : 'false'}" `
+      +   `onclick="${stop}MOS.zonaDiaModo('dia')" title="Solo la tanda de un día (igual que el ticket)">Día</button>`
+      + `</div>`;
+    const nav = enDia
+      ? `<div class="zona-dia-nav">`
+        + `<button type="button" class="zona-dia-arrow" aria-label="Día anterior" onclick="${stop}MOS.zonaDiaNav(-1)" title="Día anterior">◀</button>`
+        + `<span class="zona-dia-lbl" title="Día activo de la partición (anclado al lunes)">${_esc(_zonaDiaLabel())}</span>`
+        + `<button type="button" class="zona-dia-arrow" aria-label="Día siguiente" onclick="${stop}MOS.zonaDiaNav(1)" title="Día siguiente">▶</button>`
+        + `</div>`
+      : '';
+    const print = `<button type="button" class="zona-dia-print" aria-label="Imprimir ticket" `
+      + `onclick="${stop}MOS.zonaImprimirTicketGrupo()" title="${enDia ? 'Imprimir el ticket de este día (80mm)' : 'Imprimir el ticket de hoy (80mm)'}">🖨️</button>`;
+    return `<div class="zona-dia-ctrl" onclick="event.stopPropagation();">${seg}${nav}${print}</div>`;
+  }
+  // [RIZ #1] Cambiar modo Todos/Día. En 'dia' cargamos la tanda del backend (coincide con el ticket) y re-render.
+  async function zonaDiaModo(modo) {
+    if (!S._zonaDiaFiltro) S._zonaDiaFiltro = { modo: 'todos', offset: 0 };
+    if (S._zonaDiaFiltro.modo === modo) { _zonaSfx('tick'); _zonaVibrar(10); return; }
+    S._zonaDiaFiltro.modo = modo;
+    if (modo === 'todos') S._zonaDiaFiltro.offset = 0;   // resetear al salir
+    _zonaSfx('pop'); _zonaVibrar(15);
+    if (modo === 'dia') { await _zonaDiaCargarSet(); }
+    renderZona();
+  }
+  // [RIZ #1] Navegar días (◀ −1 / ▶ +1). Recarga la tanda de la nueva fecha y re-render.
+  async function zonaDiaNav(delta) {
+    if (!S._zonaDiaFiltro) S._zonaDiaFiltro = { modo: 'dia', offset: 0 };
+    S._zonaDiaFiltro.offset = (S._zonaDiaFiltro.offset || 0) + (delta < 0 ? -1 : 1);
+    _zonaSfx('tick'); _zonaVibrar(delta < 0 ? [12, 8] : 14);
+    await _zonaDiaCargarSet();
+    renderZona();
   }
   // Colapsa/expande un grupo (acordeón). Persiste en localStorage. Triple feedback táctil (SFX + vibración).
   function zonaToggleGrupo(grpKey) {
@@ -39543,6 +39604,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const fEsp    = _zonaFmtCant(esp, p, true);
     const fAlm    = _zonaFmtCant(alm, p, true);
     const fBrecha = _zonaFmtCant(brecha, p, true);
+    // [RIZ #4] En ámbito ALMACEN la 4ª métrica "Almacén" es REDUNDANTE (ya estás viendo el almacén): se
+    //   reemplaza por la lista de proveedores REALES del canónico (lazy-load por card vía mos.zona_proveedores).
+    const esAlmacenCard = _esZonaAlmacen({ idZona: S.zonaActual,
+      nombre: ((S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === S.zonaActual) || {}).nombre });
     // [MEJORA 5] multi-código de barra.
     const codigos = Array.isArray(p.codigos) ? p.codigos : [];
     // [SPLIT/ROTCERO] códigos del almacén (solo lectura) + flag rotación-cero.
@@ -39655,12 +39720,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         </div>
       </div>
       ${alertaNeg}
-      <div class="zona-metrics">
-        <div><div class="zona-metric-lbl">Stock zona</div><div class="zona-metric-val${negativo ? ' brecha-pos' : ''}" id="zStock-${safe}">${_esc(fStock)}<span class="zona-edit-ico" onclick="MOS.zonaAjusteInline('${safe}')">✎</span><span class="zona-edit-ico" title="Historial de movimientos" onclick="MOS.zonaVerKardex('${safe}')">🕘</span></div></div>
+      <div class="zona-metrics${esAlmacenCard ? ' zona-metrics-3' : ''}">
+        <div><div class="zona-metric-lbl">Stock${esAlmacenCard ? ' almacén' : ' zona'}</div><div class="zona-metric-val${negativo ? ' brecha-pos' : ''}" id="zStock-${safe}">${_esc(fStock)}<span class="zona-edit-ico" onclick="MOS.zonaAjusteInline('${safe}')">✎</span><span class="zona-edit-ico" title="Historial de movimientos" onclick="MOS.zonaVerKardex('${safe}')">🕘</span></div></div>
         <div><div class="zona-metric-lbl">Esperado <span class="zona-metric-uni">(global)</span></div><div class="zona-metric-val">${_esc(fEsp)}</div></div>
         <div><div class="zona-metric-lbl">Brecha</div><div class="zona-metric-val ${brecha > 0 ? 'brecha-pos' : 'brecha-zero'}" id="zBrecha-${safe}">${brecha > 0 ? '▲ ' + _esc(fBrecha) : '✓ 0'}</div></div>
-        <div><div class="zona-metric-lbl">Almacén</div><div class="zona-metric-val${alm < 0 ? ' brecha-pos' : ''}">${_esc(fAlm)}<span class="zona-edit-ico" title="Historial almacén" onclick="MOS.zonaVerKardexAlmacen('${safe}')">🕘</span></div></div>
+        ${esAlmacenCard ? '' : `<div><div class="zona-metric-lbl">Almacén</div><div class="zona-metric-val${alm < 0 ? ' brecha-pos' : ''}">${_esc(fAlm)}<span class="zona-edit-ico" title="Historial almacén" onclick="MOS.zonaVerKardexAlmacen('${safe}')">🕘</span></div></div>`}
       </div>
+      ${esAlmacenCard ? `<div class="zona-prov" id="zProv-${safe}" data-sku="${safe}">${_zonaProvBlockHtml(sku)}</div>` : ''}
       ${codDisc}
       ${codAlmDisc}
       ${spark}
@@ -39670,6 +39736,78 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       <div class="zona-ia">💡 ${_esc(ia)}</div>
       <div class="zona-actions">${acciones}</div>
     </div>`;
+  }
+
+  // ══ [RIZ #4 · PROVEEDORES POR CANÓNICO] (solo ALMACEN) ════════════════════════════════════════════════════
+  // Reemplaza la métrica redundante "Almacén" por la lista de proveedores REALES del canónico (sku_base),
+  // agrupando todos los códigos del grupo y ocultando "PROVEEDOR DESCONOCIDO". Lazy: el render pinta el estado
+  // del cache (cargando / lista / hint "sin proveedor"); _zonaProvCargarVisibles dispara UNA sola RPC batch
+  // por todos los skus visibles tras el render (no encarece el panel: 1 llamada para todas las cards).
+  function _zonaProvBlockHtml(sku) {
+    const entry = S._zonaProvCache && S._zonaProvCache[sku];
+    if (entry === undefined) {
+      // aún no cargado → placeholder discreto (se completa solo tras _zonaProvCargarVisibles).
+      return `<span class="zona-prov-lbl">🏷 Proveedores</span><span class="zona-prov-loading">cargando…</span>`;
+    }
+    return _zonaProvListHtml(entry);
+  }
+  function _zonaProvListHtml(lista) {
+    const arr = Array.isArray(lista) ? lista : [];
+    if (!arr.length) {
+      return `<span class="zona-prov-lbl">🏷 Proveedores</span><span class="zona-prov-none">sin proveedor registrado</span>`;
+    }
+    const chips = arr.map(pv => {
+      const nm = _esc(String(pv.nombre || '').trim());
+      const pr = _zonaNum(pv.precioRef);
+      const de = _zonaNum(pv.diasEntrega);
+      const extras = [];
+      if (pr > 0) extras.push('S/ ' + _zonaFmtNumRaw(pr, false));
+      if (de > 0) extras.push(de + 'd');
+      const tip = extras.length ? ` title="${_esc(extras.join(' · '))}"` : '';
+      const extraHtml = extras.length ? `<span class="zona-prov-extra">${_esc(extras.join(' · '))}</span>` : '';
+      return `<span class="zona-prov-chip"${tip}>${nm}${extraHtml}</span>`;
+    }).join('');
+    return `<span class="zona-prov-lbl">🏷 Proveedores</span><span class="zona-prov-chips">${chips}</span>`;
+  }
+  // Carga (batch, 1 RPC) los proveedores de todos los skus de ALMACEN visibles que aún no estén en cache,
+  // y refresca solo sus bloques en el DOM (sin re-render completo). Tolerante: si falla, deja los placeholders.
+  async function _zonaProvCargarVisibles() {
+    try {
+      const nodes = Array.prototype.slice.call(document.querySelectorAll('.zona-prov[data-sku]'));
+      if (!nodes.length) return;
+      if (!S._zonaProvCache) S._zonaProvCache = {};
+      const pend = [];
+      nodes.forEach(n => { const sk = n.getAttribute('data-sku'); if (sk && S._zonaProvCache[sk] === undefined && pend.indexOf(sk) < 0) pend.push(sk); });
+      if (!pend.length) return;   // todo cacheado → nada que pedir
+      const r = await API.zona.proveedores({ skus: pend });
+      const data = (r && r.data) || r || {};
+      const provs = (data && data.proveedores) || {};
+      // Marcar todos los pedidos como resueltos (los que no vinieron → [] = sin proveedor).
+      pend.forEach(sk => { S._zonaProvCache[sk] = Array.isArray(provs[sk]) ? provs[sk] : []; });
+      // Refrescar solo los bloques en el DOM (las cards pueden haber cambiado; consultamos por sku actual).
+      Array.prototype.slice.call(document.querySelectorAll('.zona-prov[data-sku]')).forEach(n => {
+        const sk = n.getAttribute('data-sku');
+        if (sk && S._zonaProvCache[sk] !== undefined) n.innerHTML = _zonaProvListHtml(S._zonaProvCache[sk]);
+      });
+    } catch (e) {
+      try { console.warn('[RIZ] _zonaProvCargarVisibles:', e && (e.message || e)); } catch (_) {}
+    }
+  }
+  // Compat / re-tap manual: recarga proveedores de un sku puntual (fuerza refetch) y repinta su bloque.
+  async function zonaToggleProveedores(sku) {
+    _zonaSfx('tick'); _zonaVibrar(10);
+    if (!S._zonaProvCache) S._zonaProvCache = {};
+    delete S._zonaProvCache[sku];
+    try {
+      const r = await API.zona.proveedores({ sku });
+      const data = (r && r.data) || r || {};
+      const provs = (data && data.proveedores) || {};
+      S._zonaProvCache[sku] = Array.isArray(provs[sku]) ? provs[sku] : [];
+      // Buscar por data-sku (no por id, para evitar mismatch de escape entre _esc/_zonaEsc en skus raros).
+      Array.prototype.slice.call(document.querySelectorAll('.zona-prov[data-sku]')).forEach(n => {
+        if (n.getAttribute('data-sku') === String(sku)) n.innerHTML = _zonaProvListHtml(S._zonaProvCache[sku]);
+      });
+    } catch (_) {}
   }
 
   // [MEJORA 5] Renderiza la fila de un código dentro del disclosure (lista + editar por código).
@@ -39699,7 +39837,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   function _zonaCodKey(cb) { return String(cb).replace(/[^A-Za-z0-9]/g, '_'); }
 
   // ── Selector / filtros / orden ─────────────────────────────────────────
-  function zonaCambiarZona(idZona) { S.zonaActual = idZona; S.zonaProductos = []; _zonaCargarPanel(true); }
+  function zonaCambiarZona(idZona) {
+    S.zonaActual = idZona; S.zonaProductos = [];
+    // [RIZ #1] Resetear el filtro "del día" al cambiar de ámbito (el set cacheado es por zona+fecha).
+    S._zonaDiaFiltro = { modo: 'todos', offset: 0 }; S._zonaDiaSet = null; S._zonaDiaSetKey = null;
+    _zonaCargarPanel(true);
+  }
   function zonaRefrescar() { _zonaCargarPanel(true); }
   function zonaSetOrden(v) { S._zonaFiltros.orden = v; renderZona(); }
   function zonaFiltrar()   { S._zonaFiltros.q = ($('zonaSearch') && $('zonaSearch').value || '').trim(); renderZona(); }
@@ -40271,7 +40414,65 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     try { return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' }); }
     catch (_) { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
   }
-  async function _zonaImprimirFlow(tipo, label) {
+
+  // ══ [RIZ #1 · FILTRO "DEL DÍA"] partición diaria del ticket (espeja me.zona_ticket_dia) ══════════════════
+  // La fecha activa = HOY (TZ Perú) + offset días. Trabajamos siempre con un Date "calendario" (medianoche
+  // local Perú) para evitar corrimientos UTC: tomamos los componentes Y/M/D de Perú y construimos un Date
+  // local con esos números (NO new Date(isoString), que interpretaría UTC).
+  function _zonaHoyPeru() {
+    // 'YYYY-MM-DD' en TZ Lima → Date local con esos componentes (medianoche local, sin corrimiento UTC).
+    const s = _zonaFechaHoy();                       // 'YYYY-MM-DD' (Perú)
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+    const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+  // Fecha activa del filtro = hoy Perú + offset días (Date calendario local).
+  function _zonaDiaActiva() {
+    const base = _zonaHoyPeru();
+    const off = (S._zonaDiaFiltro && S._zonaDiaFiltro.offset) || 0;
+    return new Date(base.getFullYear(), base.getMonth(), base.getDate() + off);
+  }
+  // 'YYYY-MM-DD' de un Date calendario (sin TZ — ya son componentes locales Perú).
+  function _zonaFechaStr(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  // Etiqueta amable del día activo, ej. "vie 19 jun". Si offset 0 → "hoy", −1 → "ayer", +1 → "mañana".
+  function _zonaDiaLabel() {
+    const d = _zonaDiaActiva();
+    const off = (S._zonaDiaFiltro && S._zonaDiaFiltro.offset) || 0;
+    const dias = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+    const mes  = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    const base = dias[d.getDay()] + ' ' + d.getDate() + ' ' + mes[d.getMonth()];
+    if (off === 0) return base + ' · hoy';
+    if (off === -1) return base + ' · ayer';
+    if (off === 1) return base + ' · mañana';
+    return base;
+  }
+  // Set de skuBase (Set<string>) de la TANDA del día activo, traída del backend (me.zona_ticket_dia) para que
+  // el filtro COINCIDA EXACTAMENTE con lo que imprime el ticket de ese día (misma partición anclada al lunes).
+  // Cache por (zona, fecha). Devuelve null si no se pudo cargar (el render entonces no filtra → muestra todo).
+  async function _zonaDiaCargarSet() {
+    const zona = S.zonaActual, fecha = _zonaFechaStr(_zonaDiaActiva());
+    const key = String(zona) + '|' + fecha;
+    if (S._zonaDiaSetKey === key && S._zonaDiaSet) return S._zonaDiaSet;
+    try {
+      const r = await API.zona.ticketDia({ zona, fecha });
+      const data = (r && r.data) || r || {};
+      const set = new Set();
+      const lotes = Array.isArray(data.lotes) ? data.lotes : [];
+      lotes.forEach(lo => (Array.isArray(lo.items) ? lo.items : []).forEach(it => {
+        const sk = String(it.skuBase || it.sku || '');
+        if (sk) set.add(sk);
+      }));
+      S._zonaDiaSetKey = key; S._zonaDiaSet = set;
+      return set;
+    } catch (e) {
+      try { console.warn('[RIZ] _zonaDiaCargarSet:', e && (e.message || e)); } catch (_) {}
+      return null;
+    }
+  }
+
+  async function _zonaImprimirFlow(tipo, label, fechaExplicita) {
     let printerId = null;
     // [2026-06-19 fix impresora-por-ámbito] La memoria de "última impresora" DEBE ser por ZONA,
     // no global por tipo de flow. Antes flowKey='riz_'+tipo era único para todo el ecosistema:
@@ -40297,8 +40498,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       // [2026-06-19 fix ticket vacío] Reforzar pasando fecha/semana de HOY (TZ Perú). El RPC ya defaultea
       // a hoy si falta (supabase/184), pero mandarlo explícito evita depender del default y es a prueba de
       // futuros cambios de la Edge. ticket_diario → fecha; lista_compras → semana ISO actual.
+      // [RIZ #2] ticket_diario: si el filtro está en "Día X" se imprime ESE día (fechaExplicita); en "Todos"
+      //   se imprime HOY por defecto (NO los 177 — evita desperdicio de papel). lista_compras → semana actual.
       const extra = tipo === 'ticket_diario'
-        ? { fecha: _zonaFechaHoy() }
+        ? { fecha: fechaExplicita || _zonaFechaHoy() }
         : { semana: _zonaSemanaISO() };
       const r = await API.zona.imprimir({ tipo, zona: S.zonaActual, printerId, ...extra });
       if (!r || r.ok === false) throw new Error((r && r.error) || 'sin respuesta');
@@ -40309,6 +40512,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
   function zonaImprimirTicket() { return _zonaImprimirFlow('ticket_diario', 'Ticket del día'); }
   function zonaImprimirLista()  { return _zonaImprimirFlow('lista_compras', 'Lista compras'); }
+  // [RIZ #2] Imprime el ticket desde el ÍCONO del grupo ROTADO. Respeta el filtro "del día":
+  //   · modo 'dia'   → imprime el ticket del día activo (fecha = día seleccionado).
+  //   · modo 'todos' → imprime HOY (default), no el universo entero.
+  function zonaImprimirTicketGrupo() {
+    const enDia = S._zonaDiaFiltro && S._zonaDiaFiltro.modo === 'dia';
+    const fecha = enDia ? _zonaFechaStr(_zonaDiaActiva()) : _zonaFechaHoy();
+    const label = enDia ? ('Ticket ' + _zonaDiaLabel().replace(/ · .*/, '')) : 'Ticket de hoy';
+    return _zonaImprimirFlow('ticket_diario', label, fecha);
+  }
 
   // ══ [RIZ · CAPA 5] PANEL DE SUGERENCIAS CON IA REAL (Edge /functions/ia) ══
   // Arma un PROMPT con los NÚMEROS DETERMINÍSTICOS de cada producto (la IA NO inventa cantidades:
@@ -40718,7 +40930,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const fecha = _esc(_zonaKardexFecha(m.fecha));
     const usr   = _esc(m.usuario || '—');
     const guia  = m.idGuia ? (' · ' + _esc(String(m.idGuia))) : '';
-    const aplic = (m.aplicado === false) ? ' <span style="color:#64748b">(informativo)</span>' : '';
+    // [RIZ #3] Las filas "no aplicadas" son el TICKET CRUDO de un día YA reconciliado por su guía de cierre
+    //   (la guía es la que suma al saldo). Etiqueta clara para que el admin no crea que se descuadra ni
+    //   que se cuenta dos veces — es el mismo movimiento mostrado para auditoría, NO resta del saldo.
+    const aplic = (m.aplicado === false)
+      ? ' <span class="zona-kardex-info" title="Ticket ya reconciliado por la guía de cierre del día — no resta del saldo (se muestra solo para auditoría).">ⓘ ya contado en la guía</span>'
+      : '';
     const pendTag = abierta ? ' <span class="zona-kardex-pend-tag">⏳ sin reconciliar</span>' : '';
     // [KARDEX ENRIQUECIDO] LOTE en INGRESOS (atable) + DESTINO (zona·quién) en SALIDAS.
     //   · idLote viene de mos.almacen_kardex_historial (lote creado por el ingreso, FIFO). Si null → sin chip.
@@ -41228,6 +41445,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaAbrirBCG, zonaCerrarBCG, zonaBCGTapProducto, zonaBCGFiltrarCuadrante, zonaPlaceholder, zonaAccionPerro,
     // [RIZ Capa 5] impresión 80mm + panel IA + lista compras
     zonaImprimirTicket, zonaImprimirLista, zonaAbrirSugerencias, zonaCerrarSugerencias,
+    // [RIZ #1+#2] filtro "del día" del grupo ROTADO + impresión por grupo (respeta el día)
+    zonaDiaModo, zonaDiaNav, zonaImprimirTicketGrupo,
+    // [RIZ #4] proveedores reales por canónico (lazy-load por card en ALMACEN)
+    zonaToggleProveedores,
     // [RIZ · TRASLADO VERIFICADO] Guías — solo mostrar (escaneo de recepción vive en ME)
     trasAbrirGuias, trasCerrarGuias, trasRefrescarGuias,
     trasGuiasFiltrar, trasGuiasSetOperario, trasGuiasVolver,

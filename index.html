@@ -12554,6 +12554,36 @@
     .zona-grp-body { overflow:hidden; }
     .zona-grp-body.collapsed { display:none; }
     .zona-grp-empty { font-size:.7rem; color:#64748b; text-align:center; padding:.5rem 0 .8rem; }
+    /* [RIZ #1+#2] Control del grupo ROTADO: segmento Todos|Día + flechas + día + imprimir. No dispara colapso. */
+    .zona-dia-ctrl { display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; cursor:default; }
+    .zona-dia-seg { display:inline-flex; background:rgba(15,23,42,.7); border:1px solid #334155; border-radius:.55rem; overflow:hidden; }
+    .zona-dia-segbtn { font-size:.66rem; font-weight:800; letter-spacing:.02em; color:#94a3b8; background:transparent; border:0;
+      padding:.22rem .5rem; cursor:pointer; -webkit-tap-highlight-color:transparent; transition:background .14s ease, color .14s ease; }
+    .zona-dia-segbtn + .zona-dia-segbtn { border-left:1px solid #334155; }
+    .zona-dia-segbtn.on { color:#0f172a; background:#86efac; }
+    .zona-dia-segbtn:active { transform:scale(.95); }
+    .zona-dia-nav { display:inline-flex; align-items:center; gap:.3rem; }
+    .zona-dia-arrow { font-size:.7rem; color:#cbd5e1; background:rgba(15,23,42,.7); border:1px solid #334155; border-radius:.45rem;
+      width:1.5rem; height:1.5rem; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; -webkit-tap-highlight-color:transparent; transition:background .14s ease; }
+    .zona-dia-arrow:hover { background:rgba(34,197,94,.16); border-color:rgba(34,197,94,.4); }
+    .zona-dia-arrow:active { transform:scale(.9); }
+    .zona-dia-lbl { font-size:.66rem; font-weight:800; color:#86efac; white-space:nowrap; min-width:5.2rem; text-align:center; }
+    .zona-dia-print { font-size:.8rem; line-height:1; background:rgba(15,23,42,.7); border:1px solid #334155; border-radius:.5rem;
+      width:1.7rem; height:1.7rem; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; -webkit-tap-highlight-color:transparent; transition:background .14s ease, transform .1s ease; }
+    .zona-dia-print:hover { background:rgba(34,197,94,.16); border-color:rgba(34,197,94,.4); }
+    .zona-dia-print:active { transform:scale(.88); }
+    /* [RIZ #4] En ALMACEN la grilla de métricas es de 3 columnas (sin "Almacén" redundante) + bloque proveedores. */
+    .zona-metrics-3 { grid-template-columns:repeat(3,1fr); }
+    .zona-prov { display:flex; align-items:center; flex-wrap:wrap; gap:.35rem; margin:-.15rem .1rem .55rem; font-size:.7rem; }
+    .zona-prov-lbl { font-weight:800; color:#94a3b8; letter-spacing:.01em; flex-shrink:0; }
+    .zona-prov-chips { display:flex; flex-wrap:wrap; gap:.3rem; }
+    .zona-prov-chip { display:inline-flex; align-items:center; gap:.25rem; font-weight:700; color:#bae6fd; background:rgba(8,47,73,.5);
+      border:1px solid rgba(56,189,248,.3); border-radius:999px; padding:.12rem .5rem; }
+    .zona-prov-extra { font-weight:600; color:#7dd3fc; opacity:.85; font-size:.62rem; }
+    .zona-prov-none { color:#64748b; font-style:italic; }
+    .zona-prov-loading { color:#64748b; }
+    /* [RIZ #3] Etiqueta clara en kardex: ticket ya reconciliado por la guía de cierre (no resta del saldo). */
+    .zona-kardex-info { color:#94a3b8; font-size:.66rem; font-weight:700; }
     /* [MEJORA 2] Card ROTACIÓN CERO: apagada/secundaria (gris-ámbar tenue, leve desaturado).
        No "rota": legible, solo claramente menos protagónica que las de rotación viva.
        (Stock negativo manda: .zona-neg sigue ganando con su tinte rojo + filter:none.) */
@@ -15195,7 +15225,8 @@
         <button class="zona-btn-sec" onclick="MOS.zonaRefrescar()" title="Recargar panel">⟳</button>
         <button class="zona-btn-sec" onclick="MOS.zonaAbrirBCG()" title="Matriz BCG">📊 Matriz BCG</button>
         <button class="zona-btn-sec" onclick="MOS.zonaAbrirSugerencias()" title="Sugerencias con IA">💡 Sugerencias</button>
-        <button class="zona-btn-sec" onclick="MOS.zonaImprimirTicket()" title="Imprimir ticket del día (80mm)">🖨️ Ticket del día</button>
+        <!-- [RIZ #2] "Ticket del día" REEMPLAZADO por el ícono de impresora en el encabezado del grupo ROTADO
+             (Vendidos/Despachados): imprime el día del filtro, o HOY en modo "Todos". Ver _zonaDiaControlHtml. -->
         <button class="zona-btn-sec" onclick="MOS.zonaImprimirLista()" title="Imprimir lista de compras (80mm)">🖨️ Lista compras</button>
         <!-- [RIZ · TRASLADO VERIFICADO] Guías: layout guía-por-guía agrupado por día (pendientes/verificadas/operario).
              El badge rojo aparece solo si hay guías con pendientes por verificar. -->
@@ -18976,7 +19007,7 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js?v=2.43.281"></script>
+<script src="js/api.js?v=2.43.283"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -18991,7 +19022,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.281"></script>
+<script src="js/app.js?v=2.43.283"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
