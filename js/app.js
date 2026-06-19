@@ -39298,17 +39298,25 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // [LOG ERRORES] Estado del módulo: items cargados + filtro de TIPO activo (chips clickeables).
   //   _zonaLogState.tipo: null = todos · '0' = Otro (sin clasificar) · '1'..'5' = taxonomía.
   let _zonaLogState = { items: [], tipo: null, tab: null };
-  // [LOG ERRORES · PESTAÑAS] Dos vistas que reparten los TIPOS según quién resuelve el descuadre:
-  //   · SIS (🔧 Sistémico)  = bugs que persigue el master en el código → TIPO 1, 2, 3, 5.
-  //   · OPE (📋 Operativo)  = se arregla contando/auditando (trabajo del operador) → TIPO 4 + Otro (0).
+  // [LOG ERRORES · PESTAÑAS] Dos vistas que reparten las filas según QUIÉN ACTÚA (no por tipo):
+  //   · SIS (🔧 Sistémico)  = requiere intervención de CÓDIGO/CONFIG del master →
+  //        fila VIVA (esVivo===true · regresión activa, fuga de HOY) OR TIPO 5 (factor, config que él setea).
+  //   · OPE (📋 Operativo)  = se resuelve CONTANDO/AUDITANDO (trabajo del operador) → todo lo demás:
+  //        cicatrices históricas T1/T2/T3 (esVivo=false, ya sellado en código), T4 (sin ancla), y Otro/null.
+  //   NOTA: el reparto por tipo (legacy) quedó OBSOLETO; ahora la pestaña la decide _zonaLogTabDeItem por fila.
   const ZONA_LOG_TABS = {
-    SIS: { lbl: '🔧 Sistémico', cls: 'sis', tipos: [1, 2, 3, 5] },
-    OPE: { lbl: '📋 Operativo', cls: 'ope', tipos: [4, 0] }
+    SIS: { lbl: '🔧 Sistémico', cls: 'sis' },
+    OPE: { lbl: '📋 Operativo', cls: 'ope' }
   };
   const _ZONA_LOG_TAB_LS = 'mosZonaLogTab';
-  // Pestaña a la que pertenece un TIPO (0=Otro). Default OPE para tipos desconocidos.
-  function _zonaLogTabDeTipo(t) { return (ZONA_LOG_TABS.SIS.tipos.indexOf(Number(t)) >= 0) ? 'SIS' : 'OPE'; }
-  function _zonaLogTabDeItem(it) { return _zonaLogTabDeTipo(_zonaLogTipoKey(it)); }
+  // [REGLA DE PESTAÑA · por fila] Sistémico = fuga VIVA (regresión activa) O config (factor, T5);
+  //   Operativo = todo lo demás (histórico ya sellado + ancla + sin clasificar). Espeja la decisión del dueño.
+  function _zonaLogTabDeItem(it) {
+    if (!it) return 'OPE';
+    if (it.esVivo === true) return 'SIS';
+    if (_zonaLogTipoKey(it) === 5) return 'SIS';
+    return 'OPE';
+  }
   // Taxonomía de TIPOS — única fuente de verdad para color/nombre/glifo en el frontend (espeja mos._recon_tipo_etiqueta).
   //   cat: categoría de quién lo resuelve → 'SIS' (sistémico/código, lo persigue el master) ·
   //        'OPE' (operativo, se arregla contando/auditando) · 'CFG' (config, se setea una vez).
@@ -40394,7 +40402,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const on = (_zonaLogState.tab || 'SIS') === k;
       return `<button class="zona-log-tab ${meta.cls}${on ? ' on' : ''}" onclick="MOS.zonaLogCambiarTab('${k}')" aria-pressed="${on}">
         <span class="zona-log-tab-lbl">${meta.lbl} <b>${por[k]}</b></span>
-        <span class="zona-log-tab-cnt">${k === 'SIS' ? 'bugs del sistema (master)' : 'se ajusta contando (operador)'}</span>
+        <span class="zona-log-tab-cnt">${k === 'SIS' ? 'fugas vivas + config · master' : 'a contar/auditar · operador'}</span>
       </button>`;
     }).join('');
   }
@@ -40415,8 +40423,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (!chips) return;
     const items = _zonaLogItemsTab();                 // chips operan sobre la pestaña activa, no sobre todo
     const cont = {}; items.forEach(it => { const k = _zonaLogTipoKey(it); cont[k] = (cont[k] || 0) + 1; });
-    // Solo los tipos de la pestaña activa (Sistémico: 1·2·3·5 · Operativo: 4·Otro). "Todos" siempre.
-    const orden = (ZONA_LOG_TABS[_zonaLogState.tab || 'SIS'] || ZONA_LOG_TABS.SIS).tipos;
+    // Chips = tipos REALMENTE presentes en la pestaña activa (el reparto ya no es por tipo fijo). "Todos" siempre.
+    //   Orden canónico 1·2·3·4·5·0; solo se pintan los que tengan ≥1 fila (filtro abajo). Así el dueño ve,
+    //   p.ej. dentro de Operativo, cuántas cicatrices 🧊/📕 quedan por contar.
+    const orden = [1, 2, 3, 4, 5, 0].filter(t => cont[t]);
     let html = `<button class="zona-log-chip chip-all${_zonaLogState.tipo == null ? ' on' : ''}" onclick="MOS.zonaLogFiltrar(null)">Todos <b>${items.length}</b></button>`;
     orden.forEach(t => {
       const n = cont[t] || 0;
@@ -40447,7 +40457,14 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const all = _zonaLogItemsTab();                  // universo = pestaña activa (Sistémico/Operativo)
     if (!all.length) {
       const esSis = (_zonaLogState.tab || 'SIS') === 'SIS';
-      body.innerHTML = `<div class="text-center py-10 text-emerald-300 text-sm">✓ ${esSis ? 'Sin errores de sistema (bugs del master)' : 'Sin errores operativos (a contar)'} hoy</div>`;
+      const ope = (_zonaLogState.items || []).filter(it => _zonaLogTabDeItem(it) === 'OPE').length;
+      // Empty-state POSITIVO para Sistémico: el caso sano de hoy (0 vivos + 0 config). Empuja a Operativo.
+      body.innerHTML = esSis
+        ? `<div class="text-center py-10 px-4">
+             <div class="text-emerald-300 text-base font-semibold mb-1">✓ Sin bugs vivos — el sistema está sano</div>
+             <div class="text-slate-400 text-sm">No hay fugas activas ni config pendiente.${ope ? ` Lo histórico se resuelve <b>contando</b> (pestaña <b>📋 Operativo</b>, ${ope}).` : ' Tampoco queda nada por contar.'}</div>
+           </div>`
+        : `<div class="text-center py-10 text-emerald-300 text-sm">✓ Sin pendientes operativos (a contar) hoy</div>`;
       return;
     }
     const items = (_zonaLogState.tipo == null) ? all : all.filter(it => String(_zonaLogTipoKey(it)) === String(_zonaLogState.tipo));
