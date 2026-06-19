@@ -39556,9 +39556,16 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     renderZona();
   }
   // [RIZ #1] Navegar días (◀ −1 / ▶ +1). Recarga la tanda de la nueva fecha y re-render.
+  //   Límites razonables: la ventana del panel es "últimas 4 semanas" (28d) → permitimos −28..0
+  //   (no hay tanda histórica más vieja que eso, ni futura: mañana+ no tiene ventas/despachos aún).
+  //   Si el offset ya está en el tope y se intenta pasar → tick + no-op (no recarga ni re-render inútil).
   async function zonaDiaNav(delta) {
     if (!S._zonaDiaFiltro) S._zonaDiaFiltro = { modo: 'dia', offset: 0 };
-    S._zonaDiaFiltro.offset = (S._zonaDiaFiltro.offset || 0) + (delta < 0 ? -1 : 1);
+    const MIN = -28, MAX = 0;
+    const cur = S._zonaDiaFiltro.offset || 0;
+    const next = Math.max(MIN, Math.min(MAX, cur + (delta < 0 ? -1 : 1)));
+    if (next === cur) { try { _zonaSfx('tick'); _zonaVibrar(8); } catch (_) {} return; }   // ya en el tope
+    S._zonaDiaFiltro.offset = next;
     _zonaSfx('tick'); _zonaVibrar(delta < 0 ? [12, 8] : 14);
     await _zonaDiaCargarSet();
     renderZona();
@@ -40473,6 +40480,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
 
   async function _zonaImprimirFlow(tipo, label, fechaExplicita) {
+    // [RIZ #2 · doble-tap] Guard de re-entrancia: el ícono 🖨️ del grupo (y los botones de lista) son
+    //   pequeños y táctiles → un doble-tap rápido podía disparar DOS jobs (sobre todo cuando la impresora
+    //   está cacheada online y abrirPrinterPicker resuelve sin abrir modal). Bloqueamos hasta que el flujo
+    //   actual termine. No es dinero, pero evita doble ticket / desperdicio de papel y confusión.
+    if (S._zonaPrintBusy) { try { _zonaSfx('tick'); } catch (_) {} return; }
+    S._zonaPrintBusy = true;
+    try {
     let printerId = null;
     // [2026-06-19 fix impresora-por-ámbito] La memoria de "última impresora" DEBE ser por ZONA,
     // no global por tipo de flow. Antes flowKey='riz_'+tipo era único para todo el ecosistema:
@@ -40509,6 +40523,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       _zonaSfx('error'); _zonaVibrar([120,40,120]);
       toast('No se pudo imprimir: ' + (e && (e.message || e)), 'error');
     }
+    } finally { S._zonaPrintBusy = false; }
   }
   function zonaImprimirTicket() { return _zonaImprimirFlow('ticket_diario', 'Ticket del día'); }
   function zonaImprimirLista()  { return _zonaImprimirFlow('lista_compras', 'Lista compras'); }
