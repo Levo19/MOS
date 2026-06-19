@@ -39818,23 +39818,25 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
 
   // [MEJORA 5] Renderiza la fila de un código dentro del disclosure (lista + editar por código).
+  // [192] Fila minimal por código: SOLO el código + su stock + input set-absoluto. SIN nombres/descripciones
+  // (la card ya tiene el nombre grande; muchos equivalentes no tienen nombre propio → ruido). Chip "equiv"
+  // discreto para distinguir el código equivalente del canónico.
   function _zonaCodRowHtml(sku, c, item) {
     const safe = _esc(sku);
     const cb   = String(c.codBarra != null ? c.codBarra : (c.codigoBarra != null ? c.codigoBarra : ''));
     const cbSafe = _zonaEsc(cb);
     const cbAttr = _esc(cb);
-    const desc = _esc(c.descripcion || cb);
     const st   = _zonaFmtCant(c.stock, item, true);
     const equiv = c.esEquivalente ? '<span class="zona-cod-equiv" title="Código equivalente">equiv</span>' : '';
     const step = _zonaStepAttr(item);
     const cid = 'zCodIn-' + safe + '-' + _zonaCodKey(cb);
     return `<div class="zona-cod-row">
       <div class="zona-cod-info">
-        <div class="zona-cod-desc">${desc} ${equiv}</div>
-        <div class="zona-cod-cb">${cbAttr} · stock <b>${_esc(st)}</b></div>
+        <div class="zona-cod-cb">${cbAttr} ${equiv}</div>
+        <div class="zona-cod-st">stock <b>${_esc(st)}</b></div>
       </div>
       <div class="zona-cod-edit">
-        <input type="number" inputmode="decimal" step="${step}" min="0" class="zona-cod-input" id="${cid}" value="${_esc(_zonaFmtCant(c.stock, item, true))}">
+        <input type="number" inputmode="decimal" step="${step}" class="zona-cod-input" id="${cid}" value="${_esc(_zonaFmtCant(c.stock, item, true))}">
         <button class="zona-mini-btn zona-mini-cero" onclick="MOS.zonaCodCero('${safe}','${cbSafe}')" title="Poner en cero">Cero</button>
         <button class="zona-mini-btn zona-mini-ok" onclick="MOS.zonaCodGuardar('${safe}','${cbSafe}')" title="Guardar">✓</button>
       </div>
@@ -39880,6 +39882,16 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   function zonaAjusteInline(sku) {
     const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
     if (!p) return;
+    // [192 · MULTI-CÓDIGO] Si el producto tiene >1 código en el grupo (canónico + equivalentes), editar un
+    // "total global" es ilógico (el set-absoluto único corrompería la suma → escribiría sólo un código). El ✎
+    // NO abre el stepper global: despliega DIRECTO el ajuste por código (set-absoluto por cada barra).
+    const codigosG = Array.isArray(p.codigos) ? p.codigos : [];
+    if (codigosG.length > 1) {
+      _zonaSfx('tick'); _zonaVibrar(15);
+      _zonaAbrirCodigos(sku);   // abre el desglose (no togglea: siempre lo deja abierto)
+      try { const body = $('zCodBody-' + _zonaSkuId(sku)); if (body) body.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) {}
+      return;
+    }
     const cell = $('zStock-' + _zonaSkuId(sku));
     if (!cell) return;
     const cur = _zonaNum(p.stockZona != null ? p.stockZona : p.stock);
@@ -40014,6 +40026,14 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
 
   // ── [MEJORA 5] Multi-código: disclosure + editar stock por codBarra ───────
+  // Abre el desglose por código SIEMPRE (no togglea). Usado por el ✎ en multi-código → muestra el ajuste por
+  // código directo (sin stepper global). Idempotente: si ya está abierto, lo deja abierto (re-pinta).
+  function _zonaAbrirCodigos(sku) {
+    const body = $('zCodBody-' + _zonaSkuId(sku));
+    if (!body) return;
+    const abierto = body.style.display !== 'none' && body.innerHTML.trim() !== '';
+    if (!abierto) zonaToggleCodigos(sku);
+  }
   function zonaToggleCodigos(sku) {
     const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
     if (!p) return;

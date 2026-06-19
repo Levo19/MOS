@@ -12515,7 +12515,10 @@
     .zona-cod-row:first-of-type { border-top:none; }
     .zona-cod-info { min-width:0; flex:1; }
     .zona-cod-desc { font-size:.74rem; font-weight:700; color:#e2e8f0; display:flex; align-items:center; gap:.35rem; }
-    .zona-cod-cb { font-size:.62rem; color:#64748b; margin-top:.1rem; }
+    /* [192] fila minimal: el código es la línea principal (sin descripción); stock debajo. */
+    .zona-cod-cb { font-size:.78rem; font-weight:700; color:#e2e8f0; font-variant-numeric:tabular-nums; display:flex; align-items:center; gap:.35rem; word-break:break-all; }
+    .zona-cod-st { font-size:.64rem; color:#94a3b8; margin-top:.1rem; }
+    .zona-cod-st b { color:#cbd5e1; font-variant-numeric:tabular-nums; }
     .zona-cod-equiv { font-size:.55rem; font-weight:800; color:#fcd34d; background:rgba(245,158,11,.16); border:1px solid rgba(245,158,11,.3); border-radius:.3rem; padding:.05rem .25rem; text-transform:uppercase; }
     .zona-cod-edit { display:inline-flex; align-items:center; gap:.3rem; flex-shrink:0; }
     .zona-cod-input { width:52px; height:28px; text-align:center; font-weight:800; font-size:.82rem; color:#f1f5f9; background:#0b1220; border:1px solid #334155; border-radius:.45rem; -moz-appearance:textfield; }
@@ -19007,7 +19010,7 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js?v=2.43.284"></script>
+<script src="js/api.js?v=2.43.285"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19022,7 +19025,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.284"></script>
+<script src="js/app.js?v=2.43.285"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
