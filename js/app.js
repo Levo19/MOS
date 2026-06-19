@@ -40899,11 +40899,16 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const nm = (p && (p.descripcion || p.nombre)) || sku;
     _zonaVerKardexCore('ALMACEN', { skuBase: sku, _nombre: nm });
   }
+  // [RIZ #3] Estado del modal kardex: data raíz (=Total) + pestañas por código (data.porCodigo). El front pinta
+  //   una pestaña por código del grupo + "Total" (el combinado de raíz, que cuadra con el stock del grupo).
+  //   Producto de 1 solo código → porCodigo viene null → SIN pestañas (vista directa, como antes).
+  const _zonaKardexEstado = { esAlm: false, data: null, tabs: [], activa: 'TOTAL' };
   async function _zonaVerKardexCore(ambito, params) {
     const esAlm = String(ambito).toUpperCase() === 'ALMACEN';
     const tit = $('zonaKardexTitulo'); if (tit) tit.textContent = params._nombre || params.skuBase || params.codBarra || 'Producto';
     const ico = $('zonaKardexIco');    if (ico) ico.textContent = esAlm ? '📦' : '🏪';
     const sub = $('zonaKardexSub');    if (sub) sub.textContent = esAlm ? 'Kardex de almacén (movimientos reales)' : ('Kardex de zona ' + (params.zona || ''));
+    const tabsEl = $('zonaKardexTabs'); if (tabsEl) tabsEl.innerHTML = '';
     const body = $('zonaKardexBody');
     if (body) body.innerHTML = '<div class="skel h-12 rounded-lg mb-2"></div><div class="skel h-12 rounded-lg mb-2"></div><div class="skel h-12 rounded-lg"></div>';
     openModal('modalZonaKardex');
@@ -40916,29 +40921,84 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const r = esAlm ? await API.zona.almacenKardex(q) : await API.zona.kardexHistorial(q);
       if (!r || r.ok === false) throw new Error((r && r.error) || 'Sin historial');
       const data = (r && r.data) || r || {};
-      const movs = Array.isArray(data.movimientos) ? data.movimientos : (Array.isArray(data) ? data : []);
+      _zonaKardexEstado.esAlm = esAlm;
+      _zonaKardexEstado.data = data;
+      // [RIZ #3] Construir pestañas: "Total" + una por código (porCodigo), canónico primero, equivalentes después.
+      _zonaKardexEstado.tabs = _zonaKardexConstruirTabs(data);
+      _zonaKardexEstado.activa = 'TOTAL';
       if (!body) return;
-      // [RIZ KARDEX] STOCK ACTUAL en el encabezado, para verificar de un vistazo que el saldo corrido cuadra.
-      //   · Zona: el backend devuelve data.stockZonas (verdad operativa) + data.cuadra (saldoFinal==stockZonas).
-      //   · Almacén: no hay campo dedicado → el saldo del movimiento MÁS RECIENTE es el stock vigente.
-      _zonaKardexPintarStock(esAlm, data, movs);
-      if (!movs.length) { body.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm">Sin movimientos registrados</div>'; return; }
-      body.innerHTML = movs.map((m, i) => _zonaKardexRowHtml(m, i, esAlm)).join('');
+      _zonaKardexRenderTabs();
+      _zonaKardexRenderTab('TOTAL', true);
     } catch (e) {
       if (body) body.innerHTML = `<div class="text-center py-8 text-red-400 text-sm">${_esc(e.message || String(e))}</div>`;
     }
   }
+  // [RIZ #3] Lista de pestañas a partir de la respuesta. Total siempre; por código sólo si porCodigo trae >1.
+  function _zonaKardexConstruirTabs(data) {
+    const tabs = [{ id: 'TOTAL', etiqueta: 'Total', esTotal: true, data: data }];
+    const pc = data && data.porCodigo;
+    if (pc && typeof pc === 'object') {
+      const ents = Object.keys(pc).map(k => ({ k, e: pc[k] }));
+      // canónico (esEquivalente=false) primero, luego equivalentes; estable por código.
+      ents.sort((a, b) => (a.e.esEquivalente === b.e.esEquivalente) ? String(a.k).localeCompare(String(b.k)) : (a.e.esEquivalente ? 1 : -1));
+      ents.forEach(({ k, e }) => {
+        tabs.push({ id: k, etiqueta: e.esEquivalente ? '≈ ' + k : k, esEquivalente: !!e.esEquivalente, esTotal: false, data: e });
+      });
+    }
+    return tabs;
+  }
+  function _zonaKardexRenderTabs() {
+    const tabsEl = $('zonaKardexTabs');
+    if (!tabsEl) return;
+    const tabs = _zonaKardexEstado.tabs || [];
+    // 1 sola pestaña (Total) = producto de 1 código → no se muestra barra de pestañas (vista directa).
+    if (tabs.length <= 1) { tabsEl.innerHTML = ''; tabsEl.style.display = 'none'; return; }
+    tabsEl.style.display = '';
+    tabsEl.innerHTML = tabs.map(t => {
+      const act = (t.id === _zonaKardexEstado.activa) ? ' is-active' : '';
+      const eqCls = t.esEquivalente ? ' is-equiv' : (t.esTotal ? ' is-total' : '');
+      const d = t.data || {};
+      const cuadra = (d.cuadra === false) ? false : true;
+      const dot = t.esTotal ? '' : `<span class="zona-kardex-tab-dot${cuadra ? '' : ' nocuadra'}"></span>`;
+      return `<button class="zona-kardex-tab${act}${eqCls}" onclick="MOS.zonaKardexTab('${_esc(String(t.id))}')">${dot}${_esc(t.etiqueta)}</button>`;
+    }).join('');
+  }
+  // [RIZ #3] Cambiar de pestaña (sin re-fetch: porCodigo ya trae movimientos completos por código).
+  function zonaKardexTab(id) {
+    if (!_zonaKardexEstado.tabs || _zonaKardexEstado.activa === id) return;
+    _zonaSfx('tick'); _zonaVibrar(12);
+    _zonaKardexEstado.activa = id;
+    _zonaKardexRenderTabs();
+    _zonaKardexRenderTab(id, false);
+  }
+  // Pinta el encabezado (stock chip) + las filas de la pestaña activa.
+  function _zonaKardexRenderTab(id, primera) {
+    const body = $('zonaKardexBody');
+    if (!body) return;
+    const esAlm = _zonaKardexEstado.esAlm;
+    const tab = (_zonaKardexEstado.tabs || []).find(t => t.id === id) || (_zonaKardexEstado.tabs || [])[0];
+    const d = (tab && tab.data) || {};
+    const movs = Array.isArray(d.movimientos) ? d.movimientos : [];
+    _zonaKardexPintarStock(esAlm, d, movs, tab);
+    if (!movs.length) { body.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm">Sin movimientos registrados</div>'; return; }
+    body.innerHTML = movs.map((m, i) => _zonaKardexRowHtml(m, i, esAlm)).join('');
+    if (!primera) body.scrollTop = 0;
+  }
   // [RIZ KARDEX] Encabezado con STOCK ACTUAL (chip) — permite verificar visualmente que el saldo corrido cuadra.
-  function _zonaKardexPintarStock(esAlm, data, movs) {
+  //   `d` es la unidad mostrada (Total = raíz; pestaña = porCodigo[cod]). El cuadre es por unidad.
+  function _zonaKardexPintarStock(esAlm, d, movs, tab) {
     const sub = $('zonaKardexSub');
     if (!sub) return;
     let stock = null;
-    if (!esAlm && data && data.stockZonas != null) stock = _zonaNum(data.stockZonas);
+    if (!esAlm && d && d.stockZonas != null) stock = _zonaNum(d.stockZonas);
     else if (Array.isArray(movs) && movs.length && movs[0] && movs[0].saldo != null) stock = _zonaNum(movs[0].saldo); // movs[0] = más reciente (DESC)
-    const base = esAlm ? 'Kardex de almacén (movimientos reales)' : ('Kardex de zona ' + ((data && data.zona) || S.zonaActual || ''));
+    let base = esAlm ? 'Kardex de almacén (movimientos reales)' : ('Kardex de zona ' + ((_zonaKardexEstado.data && _zonaKardexEstado.data.zona) || S.zonaActual || ''));
+    // Etiqueta de la unidad mostrada (Total vs código concreto) cuando hay pestañas.
+    if (tab && !tab.esTotal && tab.id) base += ' · código ' + (tab.esEquivalente ? '(equivalente) ' : '') + tab.id;
+    else if (tab && tab.esTotal && (_zonaKardexEstado.tabs || []).length > 1) base += ' · todos los códigos';
     if (stock == null) { sub.innerHTML = _esc(base); return; }
     const neg = stock < 0;
-    const cuadra = (!esAlm && data && data.cuadra === false) ? false : true;   // almacén siempre "ok" (saldo=último mov)
+    const cuadra = (!esAlm && d && d.cuadra === false) ? false : true;   // almacén siempre "ok" (saldo=último mov)
     const stockTxt = _esc(String(_zonaFmtNumRaw(stock, false)));
     const chipCls = 'zona-kardex-stockchip' + (neg ? ' neg' : '') + (cuadra ? '' : ' nocuadra');
     const cuadraTxt = cuadra ? '✓ cuadra' : '⚠ revisar';
@@ -40981,17 +41041,19 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const zonaDest = (!esIng && esAlm && m.zona)
       ? `<div class="zona-kardex-destino">→ <b>${_esc(String(m.zona))}</b>${(m.usuario && m.usuario !== '—') ? ` · por ${_esc(m.usuario)}` : ''}</div>`
       : '';
-    return `<div class="zona-kardex-row" style="animation-delay:${i*30}ms">
-      <span class="zona-kardex-ico ${colorCls}">${icoTxt}</span>
+    // [RIZ #5] Estilo WH: timeline con rail + nodo (glifo por tipo), monto grande arriba-derecha, fecha+hora,
+    //   chip de tipo, "por <usuario>", y el saldo como pill discreto a la derecha. Jerarquía visual clara.
+    return `<div class="zona-kardex-row is-${colorCls}" style="animation-delay:${i*30}ms">
+      <span class="zona-kardex-node ${colorCls}">${icoTxt}</span>
       <div class="zona-kardex-mid">
-        <div class="zona-kardex-tipo">${_esc(m.tipo || (esIng ? 'INGRESO' : 'SALIDA'))}${aplic}${pendTag}</div>
-        <div class="zona-kardex-meta">${fecha} · ${usr}${guia}</div>
+        <div class="zona-kardex-head">
+          <span class="zona-kardex-tipo ${colorCls}">${_esc(m.tipo || (esIng ? 'INGRESO' : 'SALIDA'))}</span>
+          <span class="zona-kardex-delta ${colorCls}">${esIng ? '+' : '−'}${_esc(String(delta))}</span>
+        </div>
+        <div class="zona-kardex-meta">${fecha}${(usr && usr !== '—') ? ' · por ' + usr : ''}${guia}${aplic}${pendTag}</div>
         ${zonaDest}
         ${loteChip ? `<div class="zona-kardex-lotewrap">${loteChip}</div>` : ''}
-      </div>
-      <div class="zona-kardex-right">
-        <div class="zona-kardex-delta ${colorCls}">${esIng ? '+' : '−'}${_esc(String(delta))}</div>
-        ${saldo != null ? `<div class="zona-kardex-saldo${saldoNeg ? ' neg' : ''}">saldo ${_esc(String(saldo))}</div>` : ''}
+        ${saldo != null ? `<div class="zona-kardex-saldo${saldoNeg ? ' neg' : ''}">Saldo <b>${_esc(String(saldo))}</b></div>` : ''}
       </div>
     </div>`;
   }
@@ -41476,7 +41538,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaVerLotes, zonaCerrarLotes,
     // [ASEGURAR DATA] Log de errores (master) + historial kardex zona/almacén — read-only
     zonaAbrirLogErrores, zonaCerrarLogErrores, zonaLogVerHistorial, zonaLogFiltrar, zonaLogCambiarTab, zonaLogLeyenda, zonaCerrarLogLeyenda,
-    zonaVerKardex, zonaVerKardexAlmacen, zonaCerrarKardex,
+    zonaVerKardex, zonaVerKardexAlmacen, zonaCerrarKardex, zonaKardexTab,
     zonaAbrirBCG, zonaCerrarBCG, zonaBCGTapProducto, zonaBCGFiltrarCuadrante, zonaPlaceholder, zonaAccionPerro,
     // [RIZ Capa 5] impresión 80mm + panel IA + lista compras
     zonaImprimirTicket, zonaImprimirLista, zonaAbrirSugerencias, zonaCerrarSugerencias,
