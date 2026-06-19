@@ -39815,7 +39815,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const cbUnico = codigos.length === 1
       ? String(codigos[0].codBarra != null ? codigos[0].codBarra : codigos[0].codigoBarra)
       : null;
-    const localId = _zonaAjusteLocalId(cbUnico || sku);
+    // localId ESTABLE por gesto en vuelo (idempotencia dura backend): un doble-tap / reintento del MISMO ajuste
+    // reusa el id → el backend dedupea (no duplica fila de ajuste/movimiento). Se libera al confirmar.
+    const localId = p._ajLocalId || (p._ajLocalId = _zonaAjusteLocalId(cbUnico || sku));
     // OPTIMISTA: actualizar memoria + re-render del card al instante
     if (codigos.length === 1) codigos[0].stock = nuevo;
     if (p.stockZona != null) p.stockZona = nuevo; else p.stock = nuevo;
@@ -39841,9 +39843,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         r = await API.zona.ajustarStock({ zona: S.zonaActual, skuBase: sku, nuevo, localId });
       }
       if (r == null || r.ok === false) throw new Error((r && r.error) || 'sin commit');
+      delete p._ajLocalId;   // gesto confirmado → liberar el id (un nuevo conteo usará otro)
       _zonaPintarKpis();
     } catch (e) {
       // ROLLBACK + shake
+      delete p._ajLocalId;   // fallo → liberar el id; un reintento manual cuenta como gesto nuevo
       if (codigos.length === 1) codigos[0].stock = antes;
       if (p.stockZona != null) p.stockZona = antes; else p.stock = antes;
       p.stockNegativo = (antes < 0);
