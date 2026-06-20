@@ -17902,28 +17902,42 @@ const MOS = (() => {
           diaPedido: params.diaPedido, diaEntrega: params.diaEntrega, diaPago: params.diaPago
         };
       }
-    } else {
-      // Insert provisional con id temporal
-      const tmpId = 'TMP_' + Date.now();
+    }
+    let tmpId = '';
+    if (!isEdit) {
+      // Insert provisional con id temporal (se reconcilia con el id real al volver el backend).
+      tmpId = 'TMP_' + Date.now();
       S.proveedores = [{ idProveedor: tmpId, estado: '1', _tmp: true, ...params }, ...(S.proveedores || [])];
     }
     closeModal('modalProveedor');
     renderProveedores();
     if (S.provSelId && S.provSelId === params.idProveedor) selectProveedor(S.provSelId);
+    // Efecto suave de adición (sin parpadeo): pulse en la card recién insertada.
+    if (!isEdit) {
+      try { if (navigator.vibrate) navigator.vibrate([20, 30, 40]); } catch (_) {}
+      requestAnimationFrame(() => {
+        const card = document.querySelector('[data-prov-card="' + tmpId + '"]');
+        if (card) { card.classList.add('prov-card-nuevo'); setTimeout(() => card.classList.remove('prov-card-nuevo'), 900); }
+      });
+    }
     toast(isEdit ? 'Proveedor actualizado' : 'Proveedor creado', 'ok');
-    // Sync en background
+    // Sync en background (fire-and-forget con reconciliación quirúrgica, sin re-render global que parpadee)
     try {
       const action = isEdit ? 'actualizarProveedor' : 'crearProveedor';
       const r = await API.post(action, params);
-      // Si fue creación, refrescar para obtener idProveedor real
+      // Si fue creación: reemplazar el id temporal por el id real EN SITIO (sin recargar toda la lista,
+      // así no se pierde el orden optimista ni se produce flash). API.post devuelve data directo.
       if (!isEdit) {
-        const fresh = await API.get('getProveedores', {});
-        S.proveedores = Array.isArray(fresh) ? fresh : (fresh && fresh.data) || [];
+        const realId = r && (r.idProveedor || (r.data && r.data.idProveedor));
+        const rec = (S.proveedores || []).find(p => p.idProveedor === tmpId);
+        if (rec) { if (realId) rec.idProveedor = realId; delete rec._tmp; }
+        if (S.provSelId === tmpId && realId) S.provSelId = realId;
         renderProveedores();
       }
     } catch (e) {
       // Revertir en error
       S.proveedores = backup;
+      if (S.provSelId === tmpId) S.provSelId = null;
       renderProveedores();
       toast('Error de sincronización: ' + e.message, 'error');
     }

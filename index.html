@@ -6602,6 +6602,18 @@
       background: linear-gradient(135deg, rgba(99,102,241,0.08), #060d1f);
       box-shadow: 0 4px 18px rgba(99,102,241,0.18);
     }
+    /* Efecto suave de adición optimista (sin parpadeo): glow indigo que se desvanece */
+    .prov-card-modern.prov-card-nuevo {
+      animation: provCardNuevo 0.9s ease-out both;
+    }
+    @keyframes provCardNuevo {
+      0%   { box-shadow: 0 0 0 0 rgba(99,102,241,0.45); border-color: #6366f1; border-left-color: #6366f1; }
+      60%  { box-shadow: 0 0 0 8px rgba(99,102,241,0.0); border-color: #6366f1; border-left-color: #6366f1; }
+      100% { box-shadow: 0 4px 18px rgba(99,102,241,0.10); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .prov-card-modern.prov-card-nuevo { animation: none; }
+    }
     /* Border-left + glow según urgencia */
     .prov-card-modern.prov-urg-hoy {
       border-left-color: #fbbf24;
@@ -19035,7 +19047,7 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js?v=2.43.289"></script>
+<script src="js/api.js?v=2.43.290"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19050,7 +19062,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.289"></script>
+<script src="js/app.js?v=2.43.290"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
