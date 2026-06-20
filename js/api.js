@@ -1702,6 +1702,130 @@ const API = (() => {
     try { if (_flagsTid && _flagsTid.unref) _flagsTid.unref(); } catch (_) {}
   } catch (_) { /* nunca romper el arranque del módulo por los flags */ }
 
+  // ════════════════════════════════════════════════════════════════════
+  // [Realtime catálogo] Suscripción a mos.catalogo_meta (UPDATE) por WebSocket.
+  // ADITIVO: NO reemplaza al poller por-versión (_catVerPoll, ~50s) ni al timer de
+  // respaldo de 60s de app.js. Su único trabajo es bajar la latencia de propagación
+  // del catálogo de ~50s a ~0s cuando el maestro MOS cambia productos/proveedores/zonas.
+  // Si el cliente realtime no carga o el WS cae, NO rompe nada: el poller sigue de fallback.
+  //
+  // Cliente: @supabase/realtime-js v2 (ESM por CDN) — maneja heartbeat/reconnect/auth.
+  //   • Singleton + guard anti-reentrada: NUNCA abre dos conexiones/canales.
+  //   • access_token = el MISMO JWT que mintea MOS (mint-mos, app='MOS', role authenticated,
+  //     el de las RPC con profile 'mos'). Al rotar (~30min) re-aplicamos con setAuth() y,
+  //     defensivo, re-suscribimos.
+  //   • On UPDATE: NO re-implementa la lógica money-safe — solo INVOCA el callback que app.js
+  //     registra (= _catVerPoll), que ya compara vs baseline + difiere si hay edición abierta
+  //     + re-pulla por la misma ruta del poller. El evento es un "despierta al poller AHORA".
+  //   • Re-chequeo on visible/focus/online por si el WS perdió un evento mientras dormía.
+  //   • Cierre limpio en logout (detenerRealtimeCatalogo).
+  // CARGA DEFENSIVA: todo el arranque va en try/catch async; cualquier excepción se traga
+  // (log y salir) → la app y el poller siguen intactos.
+  // ════════════════════════════════════════════════════════════════════
+  const _RT = {
+    client:    null,   // RealtimeClient
+    channel:   null,   // canal de postgres_changes
+    starting:  false,  // guard anti-reentrada del arranque
+    started:   false,  // hubo un intento exitoso de canal
+    libPromise:null,   // promesa de import del cliente (1 sola vez)
+    listeners: false,  // listeners visible/focus/online ya cableados
+    onVersion: null    // callback que app.js registra (= disparar _catVerPoll)
+  };
+
+  function _rtImportarLib() {
+    if (_RT.libPromise) return _RT.libPromise;
+    // ESM por CDN. +esm fuerza el bundle ESM de jsDelivr. Si falla → null (poller fallback).
+    _RT.libPromise = import('https://cdn.jsdelivr.net/npm/@supabase/realtime-js@2/+esm')
+      .then(mod => (mod && (mod.RealtimeClient || (mod.default && mod.default.RealtimeClient))) || null)
+      .catch(err => { try { console.warn('[Realtime] import falló (poller sigue):', err); } catch (_) {} return null; });
+    return _RT.libPromise;
+  }
+
+  // Notifica al callback de app.js (que dispara _catVerPoll: lee versión, compara baseline,
+  // difiere si hay edición abierta, re-pulla money-safe). El motivo es solo diagnóstico.
+  function _rtDespertarPoller(motivo) {
+    try { if (typeof _RT.onVersion === 'function') _RT.onVersion(motivo || 'realtime'); }
+    catch (_) {}
+  }
+
+  async function _iniciarRealtimeCatalogo() {
+    // Guards: una sola conexión, solo navegador con red.
+    if (typeof window === 'undefined') return;
+    if (_RT.starting || _RT.channel) return;            // singleton + anti-reentrada
+    if (!navigator.onLine) return;                      // sin red no hay WS; el poller cubrirá
+    _RT.starting = true;
+    try {
+      const RealtimeClient = await _rtImportarLib();
+      if (!RealtimeClient) return;                       // lib no cargó → poller fallback
+      // Re-chequeo: otra llamada pudo crear el canal mientras importábamos.
+      if (_RT.channel) return;
+
+      const token = await _mintTokenMOS().catch(() => null);  // JWT app='MOS' (mismo que las RPC)
+      if (!token) return;                                     // sin token no hay canal; el poller cubre
+
+      // URL WebSocket explícita (wss://<ref>.supabase.co/realtime/v1). apikey (anon, público) va
+      // en params; el access_token (JWT authenticated) lo aplica setAuth → viaja en el phx_join.
+      const wsUrl = _SB_URL.replace(/^http/i, 'ws') + '/realtime/v1';
+      const client = new RealtimeClient(wsUrl, {
+        params: { apikey: _SB_ANON }
+      });
+      try { client.setAuth(token); } catch (_) {}
+      _RT.client = client;
+
+      const channel = client.channel('mos-catalogo-meta');
+      channel.on('postgres_changes',
+        { event: 'UPDATE', schema: 'mos', table: 'catalogo_meta' },
+        () => { _rtDespertarPoller('realtime'); }
+      );
+      channel.subscribe((status) => {
+        try { console.log('[Realtime] canal catalogo_meta:', status); } catch (_) {}
+        // Al (re)suscribir, despertar el poller por si perdimos un UPDATE mientras el WS estaba
+        // caído/dormido. Money-safe: pasa por _catVerPoll (no re-pulla si la versión no subió).
+        if (status === 'SUBSCRIBED') { _rtDespertarPoller('realtime-resync'); }
+      });
+      _RT.channel = channel;
+      _RT.started = true;
+      _rtCablearListeners();
+    } catch (err) {
+      try { console.warn('[Realtime] arranque falló (poller sigue):', err); } catch (_) {}
+    } finally {
+      _RT.starting = false;
+    }
+  }
+
+  // Re-aplica el token (rotación ~30min) al cliente realtime. Fire-and-forget.
+  async function _rtRefrescarToken() {
+    if (!_RT.client) return;
+    try {
+      const token = await _mintTokenMOS().catch(() => null);
+      if (token && _RT.client && _RT.client.setAuth) _RT.client.setAuth(token);
+    } catch (_) {}
+  }
+
+  function _rtCablearListeners() {
+    if (_RT.listeners || typeof window === 'undefined') return;
+    _RT.listeners = true;
+    // Volver a primer plano / recuperar foco / reconectar: re-asegurar canal + token frescos.
+    const reasegurar = () => {
+      if (!navigator.onLine) return;
+      if (!_RT.channel) { _iniciarRealtimeCatalogo(); return; }   // canal cerrado/caído → re-abrir
+      _rtRefrescarToken();                                        // canal vivo → solo refrescar token
+    };
+    try {
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reasegurar(); });
+      window.addEventListener('focus',  reasegurar);
+      window.addEventListener('online', reasegurar);
+    } catch (_) {}
+  }
+
+  function _detenerRealtimeCatalogo() {
+    try { if (_RT.channel && _RT.client && _RT.client.removeChannel) _RT.client.removeChannel(_RT.channel); } catch (_) {}
+    try { if (_RT.client && _RT.client.disconnect) _RT.client.disconnect(); } catch (_) {}
+    _RT.channel = null;
+    _RT.client  = null;
+    _RT.started = false;
+  }
+
   return {
     getUrl,
     setUrl,
@@ -1907,6 +2031,13 @@ const API = (() => {
     // Número (versión) o null (sin token / fallo). El poller de app.js la usa para detectar cambios
     // del maestro y re-pullar el catálogo solo cuando hace falta. NUNCA lanza.
     catalogoVersion: _catalogoVersion,
+    // [Realtime catálogo] Suscripción WebSocket a mos.catalogo_meta (UPDATE) → propagación ~0s.
+    // ADITIVA: el poller por-versión sigue como fallback. Singleton + carga defensiva (no rompe si falla).
+    // app.js registra el callback money-safe (= _catVerPoll) vía onCatalogoVersionRealtime e inicia/detiene
+    // la suscripción en login/logout.
+    iniciarRealtimeCatalogo:    ()   => _iniciarRealtimeCatalogo(),
+    detenerRealtimeCatalogo:    ()   => _detenerRealtimeCatalogo(),
+    onCatalogoVersionRealtime:  (cb) => { _RT.onVersion = (typeof cb === 'function') ? cb : null; },
     getProductosNuevosWH: (p = {}) => _fetch('GET',  { action: 'getProductosNuevosWH', ...p }),
     lanzarProductoNuevo:  (p = {}) => _fetch('POST', { action: 'lanzarProductoNuevo',  ...p }),
     // Crea un PN manualmente desde MOS (admin/master). idGuia vacío → WH no

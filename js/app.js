@@ -1894,10 +1894,22 @@ const MOS = (() => {
     _catalogoRefreshSilencioso(); // precarga inmediata
     _catRefreshTimer = setInterval(_catalogoRefreshSilencioso, 60000);
     _startCatVerPoll();           // poller por-versión (re-pull dirigido a cambios reales)
+    // [Realtime catálogo] PUSH ~0s: el evento UPDATE de mos.catalogo_meta despierta el MISMO
+    // poller money-safe (_catVerPoll: lee versión, compara baseline, difiere si hay edición
+    // abierta, re-pulla por la ruta del poller). ADITIVO: el poller por-versión + el timer de
+    // 60s siguen como red de seguridad si el WS no carga o cae. Todo defensivo (no rompe nada).
+    try {
+      if (API && API.onCatalogoVersionRealtime) {
+        API.onCatalogoVersionRealtime(() => { try { _catVerPoll(); } catch (_) {} });
+      }
+      if (API && API.iniciarRealtimeCatalogo) API.iniciarRealtimeCatalogo();
+    } catch (_) {}
   }
   function _stopCatRefresh() {
     if (_catRefreshTimer) { clearInterval(_catRefreshTimer); _catRefreshTimer = null; }
     _stopCatVerPoll();
+    // [Realtime catálogo] cierre limpio del canal/WS (logout / re-arranque de sesión).
+    try { if (API && API.detenerRealtimeCatalogo) API.detenerRealtimeCatalogo(); } catch (_) {}
   }
 
   function _catLoadCache() {
