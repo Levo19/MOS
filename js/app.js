@@ -40958,7 +40958,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const act = (t.id === _zonaKardexEstado.activa) ? ' is-active' : '';
       const eqCls = t.esEquivalente ? ' is-equiv' : (t.esTotal ? ' is-total' : '');
       const d = t.data || {};
-      const cuadra = (d.cuadra === false) ? false : true;
+      // El punto rojo del tab marca descuadre: ZONA usa d.cuadra; ALMACÉN usa d.cuadraStock (SQL 196).
+      const cuadra = !(d.cuadra === false || d.cuadraStock === false);
       const dot = t.esTotal ? '' : `<span class="zona-kardex-tab-dot${cuadra ? '' : ' nocuadra'}"></span>`;
       return `<button class="zona-kardex-tab${act}${eqCls}" onclick="MOS.zonaKardexTab('${_esc(String(t.id))}')">${dot}${_esc(t.etiqueta)}</button>`;
     }).join('');
@@ -40989,8 +40990,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   function _zonaKardexPintarStock(esAlm, d, movs, tab) {
     const sub = $('zonaKardexSub');
     if (!sub) return;
+    // [RIZ #1/#3] STOCK ACTUAL autoritativo:
+    //   · ALMACÉN → d.stockReal = wh.stock.cantidad_disponible (SQL 196) — la MISMA verdad que muestra la app WH
+    //     (getHistorialStock usa wh.stock en vivo). NO usamos el saldo del último movimiento: puede divergir de
+    //     wh.stock (stock fijado sin movimiento; grupos multi-código donde el "Total" tomaba el saldo de un solo
+    //     código). Si no hay fila en wh.stock (stockReal null) caemos al saldo del último mov como referencia.
+    //   · ZONA → stockZonas (reconstruido) como antes.
     let stock = null;
     if (!esAlm && d && d.stockZonas != null) stock = _zonaNum(d.stockZonas);
+    else if (esAlm && d && d.stockReal != null) stock = _zonaNum(d.stockReal);
     else if (Array.isArray(movs) && movs.length && movs[0] && movs[0].saldo != null) stock = _zonaNum(movs[0].saldo); // movs[0] = más reciente (DESC)
     let base = esAlm ? 'Kardex de almacén (movimientos reales)' : ('Kardex de zona ' + ((_zonaKardexEstado.data && _zonaKardexEstado.data.zona) || S.zonaActual || ''));
     // Etiqueta de la unidad mostrada (Total vs código concreto) cuando hay pestañas.
@@ -40998,11 +41006,22 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     else if (tab && tab.esTotal && (_zonaKardexEstado.tabs || []).length > 1) base += ' · todos los códigos';
     if (stock == null) { sub.innerHTML = _esc(base); return; }
     const neg = stock < 0;
-    const cuadra = (!esAlm && d && d.cuadra === false) ? false : true;   // almacén siempre "ok" (saldo=último mov)
+    // [RIZ #1/#3] cuadra = ¿el saldo del último movimiento coincide con el stock real?
+    //   · ALMACÉN → d.cuadraStock (SQL 196): false marca que la reconstrucción NO empata con wh.stock (auditar).
+    //     null (sin movimientos, o sin fila en wh.stock) → no afirmamos cuadre (no mostramos el sello).
+    //   · ZONA → d.cuadra como antes.
+    let cuadra = true, mostrarCuadra = true;
+    if (esAlm) {
+      if (d && d.cuadraStock === false) cuadra = false;
+      else if (!d || d.cuadraStock == null) mostrarCuadra = false;   // sin base para afirmar/negar el cuadre
+    } else {
+      cuadra = !(d && d.cuadra === false);
+    }
     const stockTxt = _esc(String(_zonaFmtNumRaw(stock, false)));
     const chipCls = 'zona-kardex-stockchip' + (neg ? ' neg' : '') + (cuadra ? '' : ' nocuadra');
-    const cuadraTxt = cuadra ? '✓ cuadra' : '⚠ revisar';
-    sub.innerHTML = `${_esc(base)} · <span class="${chipCls}">📦 stock actual: <b>${stockTxt}</b> <span class="zona-kardex-stockok">${cuadraTxt}</span></span>`;
+    const cuadraTxt = !mostrarCuadra ? '' : (cuadra ? '✓ cuadra' : '⚠ revisar');
+    const cuadraHtml = cuadraTxt ? ` <span class="zona-kardex-stockok">${cuadraTxt}</span>` : '';
+    sub.innerHTML = `${_esc(base)} · <span class="${chipCls}">📦 stock actual: <b>${stockTxt}</b>${cuadraHtml}</span>`;
   }
   function _zonaKardexRowHtml(m, i, esAlm) {
     const esIng = !!m.esIngreso;
