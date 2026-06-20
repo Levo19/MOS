@@ -39728,7 +39728,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       </div>
       ${alertaNeg}
       <div class="zona-metrics${esAlmacenCard ? ' zona-metrics-3' : ''}">
-        <div><div class="zona-metric-lbl">Stock${esAlmacenCard ? ' almacén' : ' zona'}</div><div class="zona-metric-val${negativo ? ' brecha-pos' : ''}" id="zStock-${safe}">${_esc(fStock)}<span class="zona-edit-ico" onclick="MOS.zonaAjusteInline('${safe}')">✎</span><span class="zona-edit-ico" title="Historial de movimientos" onclick="MOS.zonaVerKardex('${safe}')">🕘</span></div></div>
+        <div><div class="zona-metric-lbl">Stock${esAlmacenCard ? ' almacén' : ' zona'}</div><div class="zona-metric-val${negativo ? ' brecha-pos' : ''}" id="zStock-${safe}">${_esc(fStock)}<span class="zona-edit-ico" onclick="MOS.zonaAjusteInline('${safe}')">✎</span><span class="zona-edit-ico" title="Historial de movimientos" onclick="MOS.${esAlmacenCard ? 'zonaVerKardexAlmacen' : 'zonaVerKardex'}('${safe}')">🕘</span></div></div>
         <div><div class="zona-metric-lbl">Esperado <span class="zona-metric-uni">(global)</span></div><div class="zona-metric-val">${_esc(fEsp)}</div></div>
         <div><div class="zona-metric-lbl">Brecha</div><div class="zona-metric-val ${brecha > 0 ? 'brecha-pos' : 'brecha-zero'}" id="zBrecha-${safe}">${brecha > 0 ? '▲ ' + _esc(fBrecha) : '✓ 0'}</div></div>
         ${esAlmacenCard ? '' : `<div><div class="zona-metric-lbl">Almacén</div><div class="zona-metric-val${alm < 0 ? ' brecha-pos' : ''}">${_esc(fAlm)}<span class="zona-edit-ico" title="Historial almacén" onclick="MOS.zonaVerKardexAlmacen('${safe}')">🕘</span></div></div>`}
