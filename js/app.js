@@ -1905,7 +1905,7 @@ const MOS = (() => {
   //     una vez (cubre eventos perdidos mientras el WS dormía). Idempotente (las silenciosas
   //     comparan baseline/hash y no parpadean si nada cambió).
   // ADITIVO: los pollers (Finanzas 30s / Cajas 20s / Almacén 60s / RIZ 25s) siguen como fallback.
-  const _OPS_DEBOUNCE_MS = { ventas: 4000, stock: 4000, stock_zonas: 4000, guias: 2000, preingresos: 2000, cajas: 1500, mermas: 1500, venc: 1500, envasados: 1500 };
+  const _OPS_DEBOUNCE_MS = { ventas: 4000, stock: 4000, stock_zonas: 4000, guias: 2000, preingresos: 2000, cajas: 1500, mermas: 1500, vencimientos: 1500, envasados: 1500 };
   const _opsTimers = new Map();   // dominio → timer (coalescer ráfagas por dominio)
 
   // Ejecuta el refresh silencioso adecuado SOLO si la pantalla del dominio está activa.
