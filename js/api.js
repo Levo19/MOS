@@ -1723,13 +1723,16 @@ const API = (() => {
   // (log y salir) → la app y el poller siguen intactos.
   // ════════════════════════════════════════════════════════════════════
   const _RT = {
-    client:    null,   // RealtimeClient
-    channel:   null,   // canal de postgres_changes
+    client:    null,   // RealtimeClient (UN solo WS para TODOS los canales)
+    channel:   null,   // canal de postgres_changes (mos.catalogo_meta)
+    chMeOps:   null,   // [OPS] canal me.ops_meta (UPDATE) — MISMO client/WS
+    chWhOps:   null,   // [OPS] canal wh.ops_meta (UPDATE) — MISMO client/WS
     starting:  false,  // guard anti-reentrada del arranque
     started:   false,  // hubo un intento exitoso de canal
     libPromise:null,   // promesa de import del cliente (1 sola vez)
     listeners: false,  // listeners visible/focus/online ya cableados
     onVersion: null,   // callback que app.js registra (= disparar _catVerPoll)
+    onOps:     null,   // [OPS] callback que app.js registra (= dispatch dominio→refresh activo)
     gen:       0       // [anti-orphan] generación: _detener la incrementa → un arranque en vuelo se aborta tras sus awaits
   };
 
@@ -1747,6 +1750,20 @@ const API = (() => {
   function _rtDespertarPoller(motivo) {
     try { if (typeof _RT.onVersion === 'function') _RT.onVersion(motivo || 'realtime'); }
     catch (_) {}
+  }
+
+  // [OPS] Notifica al callback de app.js con {app,dominio,version} para que despache el refresh
+  // SILENCIOSO de la pantalla activa (con debounce + money-safe). NUNCA lanza. `app` = 'me' | 'wh'.
+  function _rtDespertarOps(app, payload) {
+    try {
+      if (typeof _RT.onOps !== 'function') return;
+      const row = (payload && payload.new) || {};
+      _RT.onOps({
+        app:     app,
+        dominio: row.dominio || '',
+        version: (row.version != null) ? row.version : null
+      });
+    } catch (_) {}
   }
 
   async function _iniciarRealtimeCatalogo() {
@@ -1788,6 +1805,38 @@ const API = (() => {
       });
       _RT.channel = channel;
       _RT.started = true;
+
+      // [OPS] DOS canales más sobre el MISMO client/WS/token: me.ops_meta y wh.ops_meta (UPDATE).
+      // Cada UPDATE trae payload.new.dominio + payload.new.version. El callback (app.js) hace el
+      // dispatch dominio→refresh-silencioso de la pantalla ACTIVA, con debounce y money-safe.
+      // Al SUBSCRIBED de cada uno disparamos un resync (despierta al dispatcher por si perdimos un
+      // evento mientras el WS dormía); el dispatcher ya compara baseline y solo refresca si cambió.
+      try {
+        const chMe = client.channel('mos-me-ops-meta');
+        chMe.on('postgres_changes',
+          { event: 'UPDATE', schema: 'me', table: 'ops_meta' },
+          (payload) => { _rtDespertarOps('me', payload); }
+        );
+        chMe.subscribe((status) => {
+          try { console.log('[Realtime] canal me.ops_meta:', status); } catch (_) {}
+          if (status === 'SUBSCRIBED') { _rtDespertarOps('me', { new: { dominio: '*' } }); }
+        });
+        _RT.chMeOps = chMe;
+      } catch (e) { try { console.warn('[Realtime] me.ops_meta no abrió (poller sigue):', e); } catch (_) {} }
+
+      try {
+        const chWh = client.channel('mos-wh-ops-meta');
+        chWh.on('postgres_changes',
+          { event: 'UPDATE', schema: 'wh', table: 'ops_meta' },
+          (payload) => { _rtDespertarOps('wh', payload); }
+        );
+        chWh.subscribe((status) => {
+          try { console.log('[Realtime] canal wh.ops_meta:', status); } catch (_) {}
+          if (status === 'SUBSCRIBED') { _rtDespertarOps('wh', { new: { dominio: '*' } }); }
+        });
+        _RT.chWhOps = chWh;
+      } catch (e) { try { console.warn('[Realtime] wh.ops_meta no abrió (poller sigue):', e); } catch (_) {} }
+
       _rtCablearListeners();
     } catch (err) {
       try { console.warn('[Realtime] arranque falló (poller sigue):', err); } catch (_) {}
@@ -1824,8 +1873,12 @@ const API = (() => {
   function _detenerRealtimeCatalogo() {
     _RT.gen++;   // [anti-orphan] invalida cualquier arranque en vuelo (post-await abortará en vez de abrir un canal huérfano)
     try { if (_RT.channel && _RT.client && _RT.client.removeChannel) _RT.client.removeChannel(_RT.channel); } catch (_) {}
+    try { if (_RT.chMeOps && _RT.client && _RT.client.removeChannel) _RT.client.removeChannel(_RT.chMeOps); } catch (_) {}
+    try { if (_RT.chWhOps && _RT.client && _RT.client.removeChannel) _RT.client.removeChannel(_RT.chWhOps); } catch (_) {}
     try { if (_RT.client && _RT.client.disconnect) _RT.client.disconnect(); } catch (_) {}
     _RT.channel = null;
+    _RT.chMeOps = null;
+    _RT.chWhOps = null;
     _RT.client  = null;
     _RT.started = false;
   }
@@ -2042,6 +2095,10 @@ const API = (() => {
     iniciarRealtimeCatalogo:    ()   => _iniciarRealtimeCatalogo(),
     detenerRealtimeCatalogo:    ()   => _detenerRealtimeCatalogo(),
     onCatalogoVersionRealtime:  (cb) => { _RT.onVersion = (typeof cb === 'function') ? cb : null; },
+    // [OPS] Registra el callback que recibe {app:'me'|'wh', dominio, version} en cada UPDATE de
+    // me.ops_meta / wh.ops_meta. app.js lo usa para refrescar SOLO la pantalla activa (debounce +
+    // money-safe). ADITIVO: los pollers (Finanzas/Cajas/Almacén/RIZ) siguen de red de seguridad.
+    onOpsRealtime:              (cb) => { _RT.onOps = (typeof cb === 'function') ? cb : null; },
     getProductosNuevosWH: (p = {}) => _fetch('GET',  { action: 'getProductosNuevosWH', ...p }),
     lanzarProductoNuevo:  (p = {}) => _fetch('POST', { action: 'lanzarProductoNuevo',  ...p }),
     // Crea un PN manualmente desde MOS (admin/master). idGuia vacío → WH no

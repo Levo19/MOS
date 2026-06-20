@@ -1889,6 +1889,102 @@ const MOS = (() => {
     // los handlers visibilitychange/focus son baratos (chequean S.session/visible) → quedan registrados.
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  // [OPS Realtime] PUSH ~0s de operaciones cross-app (ventas/cajas/stock/guías/preingresos/
+  // mermas/envasados/vencimientos). El singleton _RT (api.js) abre DOS canales más sobre el MISMO
+  // WS: me.ops_meta y wh.ops_meta (UPDATE). Cada evento trae {app:'me'|'wh', dominio, version}.
+  //
+  // MONEY-SAFE — el dispatcher NO re-implementa lógica de dinero:
+  //   · Refresca SOLO la pantalla ACTIVA del dominio (si no estás viéndola, NO hace fetch:
+  //     el poller/al-abrir te cubre cuando entres). 0 trabajo de fondo extra.
+  //   · Delega SIEMPRE en las funciones SILENCIOSAS existentes, que ya difieren si hay modal/
+  //     edición abierta (diff suave, no resetean scroll/filtros) → nunca interrumpe al gerente.
+  //   · DEBOUNCE por dominio (coalescer ráfagas): un Map de timers; ventas/stock 4s,
+  //     guias/preingresos 2s, cajas/mermas/venc 1.5s.
+  //   · RESYNC al (re)suscribir: el SUBSCRIBED manda dominio='*' → se refresca la pantalla activa
+  //     una vez (cubre eventos perdidos mientras el WS dormía). Idempotente (las silenciosas
+  //     comparan baseline/hash y no parpadean si nada cambió).
+  // ADITIVO: los pollers (Finanzas 30s / Cajas 20s / Almacén 60s / RIZ 25s) siguen como fallback.
+  const _OPS_DEBOUNCE_MS = { ventas: 4000, stock: 4000, stock_zonas: 4000, guias: 2000, preingresos: 2000, cajas: 1500, mermas: 1500, venc: 1500, envasados: 1500 };
+  const _opsTimers = new Map();   // dominio → timer (coalescer ráfagas por dominio)
+
+  // Ejecuta el refresh silencioso adecuado SOLO si la pantalla del dominio está activa.
+  function _opsRefrescarDominio(app, dominio) {
+    if (!S.session) return;
+    try {
+      if (document.visibilityState !== 'visible') return;  // background → el poller/al-abrir cubre
+    } catch (_) {}
+    try {
+      // ── ME ────────────────────────────────────────────────────────────
+      if (app === 'me' && dominio === 'ventas') {
+        // P&L / caja del día → Finanzas (si activa).
+        if (S.view === 'finanzas' && typeof _finanzasRefreshSilencioso === 'function') _finanzasRefreshSilencioso();
+        // Insights/rotación de Almacén también dependen de ventas → refrescar la tab activa.
+        if (S.view === 'almacen' && typeof _almRefreshSilencioActivo === 'function') _almRefreshSilencioActivo();
+        return;
+      }
+      if (app === 'me' && dominio === 'cajas') {
+        if (S.view === 'cajas' && typeof _cajasRefreshSilencioso === 'function') _cajasRefreshSilencioso();
+        return;
+      }
+      // ── Stock (ME stock_zonas + WH stock) ─────────────────────────────
+      if ((app === 'me' && dominio === 'stock_zonas') || (app === 'wh' && dominio === 'stock')) {
+        if (S.view === 'almacen' && typeof _almRefreshSilencioActivo === 'function') _almRefreshSilencioActivo();
+        if (S.view === 'zona' && typeof _zonaAutoRefrescar === 'function') _zonaAutoRefrescar();
+        return;
+      }
+      // ── WH ops por tab de Almacén ─────────────────────────────────────
+      if (app === 'wh' && (dominio === 'guias' || dominio === 'preingresos')) {
+        // Ambos viven en la tab 'ops' de Almacén.
+        if (S.view === 'almacen' && (S.almTab === 'ops' || S.almTab === 'resumen') && typeof _almRefreshSilencioActivo === 'function') _almRefreshSilencioActivo();
+        return;
+      }
+      if (app === 'wh' && dominio === 'mermas') {
+        if (S.view === 'almacen' && S.almTab === 'merma' && typeof _almRefreshSilencioActivo === 'function') _almRefreshSilencioActivo();
+        return;
+      }
+      if (app === 'wh' && dominio === 'envasados') {
+        if (S.view === 'almacen' && S.almTab === 'env' && typeof _almRefreshSilencioActivo === 'function') _almRefreshSilencioActivo();
+        return;
+      }
+      if (app === 'wh' && dominio === 'vencimientos') {
+        if (S.view === 'almacen' && S.almTab === 'venc' && typeof _almRefreshSilencioActivo === 'function') _almRefreshSilencioActivo();
+        return;
+      }
+    } catch (_) { /* nunca romper por un evento realtime; el poller cubre */ }
+  }
+
+  // Resync al (re)suscribir: dominio='*' → refresca la pantalla activa SEA CUAL SEA, una vez (sin debounce).
+  function _opsResync(app) {
+    try {
+      if (!S.session || document.visibilityState !== 'visible') return;
+      if (S.view === 'finanzas' && typeof _finanzasRefreshSilencioso === 'function') _finanzasRefreshSilencioso();
+      else if (S.view === 'cajas' && typeof _cajasRefreshSilencioso === 'function') _cajasRefreshSilencioso();
+      else if (S.view === 'almacen' && typeof _almRefreshSilencioActivo === 'function') _almRefreshSilencioActivo();
+      else if (S.view === 'zona' && typeof _zonaAutoRefrescar === 'function') _zonaAutoRefrescar();
+    } catch (_) {}
+  }
+
+  // Punto de entrada del callback de api.js. Coalescer por dominio con debounce. Defensivo total.
+  function _opsRealtimeDispatch(evt) {
+    try {
+      if (!evt) return;
+      const app = evt.app, dominio = evt.dominio;
+      if (!app || !dominio) return;
+      if (dominio === '*') { _opsResync(app); return; }   // resync on (re)subscribe
+      const key = app + ':' + dominio;
+      const ms  = _OPS_DEBOUNCE_MS[dominio] || 3000;
+      const prev = _opsTimers.get(key);
+      if (prev) clearTimeout(prev);
+      const t = setTimeout(() => {
+        _opsTimers.delete(key);
+        _opsRefrescarDominio(app, dominio);
+      }, ms);
+      try { if (t && t.unref) t.unref(); } catch (_) {}
+      _opsTimers.set(key, t);
+    } catch (_) {}
+  }
+
   function _startCatRefresh() {
     _stopCatRefresh();
     _catalogoRefreshSilencioso(); // precarga inmediata
@@ -1902,12 +1998,19 @@ const MOS = (() => {
       if (API && API.onCatalogoVersionRealtime) {
         API.onCatalogoVersionRealtime(() => { try { _catVerPoll(); } catch (_) {} });
       }
+      // [OPS Realtime] callback dominio→refresh-activo (debounce + money-safe). Reusa el MISMO WS
+      // que el catálogo (api.js abre me.ops_meta + wh.ops_meta sobre el mismo client en iniciar()).
+      if (API && API.onOpsRealtime) {
+        API.onOpsRealtime((evt) => { try { _opsRealtimeDispatch(evt); } catch (_) {} });
+      }
       if (API && API.iniciarRealtimeCatalogo) API.iniciarRealtimeCatalogo();
     } catch (_) {}
   }
   function _stopCatRefresh() {
     if (_catRefreshTimer) { clearInterval(_catRefreshTimer); _catRefreshTimer = null; }
     _stopCatVerPoll();
+    // [OPS Realtime] cancelar timers de debounce pendientes (logout / re-arranque).
+    try { _opsTimers.forEach((t) => { try { clearTimeout(t); } catch (_) {} }); _opsTimers.clear(); } catch (_) {}
     // [Realtime catálogo] cierre limpio del canal/WS (logout / re-arranque de sesión).
     try { if (API && API.detenerRealtimeCatalogo) API.detenerRealtimeCatalogo(); } catch (_) {}
   }
