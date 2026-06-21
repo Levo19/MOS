@@ -12697,31 +12697,75 @@ const MOS = (() => {
 
     try {
       const idempotencyKey = 'adh_lote_' + idEnvSnapshot + '_' + totalSnapshot + '_' + sessionTsSnapshot;
-      // [v2.43.159] Fallback robusto del nombre — todos los lotes desde MOS
-      // quedaban con usuario='' porque S.session.nombre podía estar vacío.
+      // [v2.43.159] Fallback robusto del nombre — los lotes desde MOS quedaban con usuario='' .
       const _usrAdmin = (window.S?.session?.nombre || '').trim()
                      || (window.S?.session?.idPersonal || '').trim()
                      || 'admin-MOS';
-      const r = await API.post('wh_crearLoteAdhesivo', {
-        codigoBarra:     codigoSnapshot,
-        descripcion:     descSnapshot,
-        total:           totalSnapshot,
-        usuario:         _usrAdmin,
-        origen:          'MOS',
-        fechaEnvasado:   fechaSnapshot,
-        idempotencyKey:  idempotencyKey
-      });
-      if (r && r.ok === false) throw new Error(r.error || 'Backend rechazó');
-      if (!_loteState) return;  // usuario canceló mientras esperaba
-      // Completar metadata real del state
-      _loteState.idLote      = r.idLote;
-      _loteState.total       = r.total || totalSnapshot;
-      _loteState.subJobSize  = r.subJobSize || 10;
-      _loteState.descripcion = r.descripcion || _loteState.descripcion;
-      _loteState.vto         = r.vto || _loteState.vto;
-      _loteRenderProgreso();
-      // Arrancar la orquestación
-      _loteOrquestar(r.idLote);
+
+      // [v2.43.300 · 100% Supabase] PRIMARIO: Edge print-adhesivo (mode:'crear') → crea el lote ATÓMICO +
+      // imprime server-side. La cantidad EXACTA marcada = total = lo impreso (reserve-first + CHECK
+      // completadas<=total → over-print imposible, mismo motor que WH envasado). Si el flag server
+      // WH_LOTE_ADHESIVO_DIRECTO está OFF → la RPC devuelve *_OFF → FALLBACK al path GAS histórico.
+      _loteSetStatus('IMPRIMIENDO');
+      let viaSupabase = false;
+      try {
+        const ed = await API.adhesivoImprimirEdge({
+          codigoBarra: codigoSnapshot, descripcion: descSnapshot, total: totalSnapshot,
+          fechaEnvasado: fechaSnapshot, usuario: _usrAdmin, idempotencyKey
+        });
+        if (ed && ed.ok && ed.data) {
+          viaSupabase = true;
+          if (!_loteState) return;
+          const d = ed.data;
+          _loteState.idLote = d.idLote || _loteState.idLote;
+          _loteState.total  = d.total  || totalSnapshot;
+          const st = String(d.status || '');
+          if (st === 'COMPLETADO') {
+            _loteState.completadas = _loteState.total;
+            _loteState.status = 'COMPLETADO';
+            _loteRenderProgreso();
+            _loteCelebrarCompletado();
+          } else if (st.indexOf('PAUSADO') === 0) {
+            _loteState.completadas = d.completadas || _loteState.completadas;
+            _loteSetStatus(st, d.error || 'Pausado');
+            if (st === 'PAUSADO_OUT_PAPER') _loteMostrarRolloAgotado();
+          } else {
+            // PRESUPUESTO_AGOTADO (lote enorme): el cron retoma lo que falte.
+            _loteState.completadas = d.completadas || _loteState.completadas;
+            _loteState.status = 'IMPRIMIENDO';
+            _loteRenderProgreso();
+          }
+        } else if (ed && ed.ok === false && !/_OFF/.test(String(ed.error || ''))) {
+          // Error REAL de la Edge (no flag OFF) → NO caer a GAS (la Edge pudo reservar/imprimir parte).
+          // El usuario reintenta (idempotencyKey estable → dedup, sin doble).
+          if (!_loteState) return;
+          viaSupabase = true;
+          _loteSetStatus('PAUSADO_ERROR', 'Edge: ' + (ed.error || 'error'));
+        }
+        // ed.ok===false con *_OFF → viaSupabase queda false → cae a GAS abajo (kill-switch).
+      } catch (eEdge) {
+        // Red/timeout de la Edge: la Edge PUDO imprimir → NO caer a GAS. Pausar; reintento por idempotencyKey.
+        if (!_loteState) return;
+        viaSupabase = true;
+        _loteSetStatus('PAUSADO_ERROR', 'Sin confirmación de impresión: ' + (eEdge?.message || 'red') + ' — reintenta');
+      }
+
+      if (!viaSupabase) {
+        // FALLBACK GAS (flag server OFF) — path histórico con orquestación de sub-jobs.
+        const r = await API.post('wh_crearLoteAdhesivo', {
+          codigoBarra: codigoSnapshot, descripcion: descSnapshot, total: totalSnapshot,
+          usuario: _usrAdmin, origen: 'MOS', fechaEnvasado: fechaSnapshot, idempotencyKey
+        });
+        if (r && r.ok === false) throw new Error(r.error || 'Backend rechazó');
+        if (!_loteState) return;
+        _loteState.idLote      = r.idLote;
+        _loteState.total       = r.total || totalSnapshot;
+        _loteState.subJobSize  = r.subJobSize || 10;
+        _loteState.descripcion = r.descripcion || _loteState.descripcion;
+        _loteState.vto         = r.vto || _loteState.vto;
+        _loteRenderProgreso();
+        _loteOrquestar(r.idLote);
+      }
     } catch(e) {
       _loteSetStatus('PAUSADO_ERROR', 'No se pudo crear el lote: ' + (e?.message || 'desconocido'));
       if (_adhesivoState) _adhesivoState.imprimiendo = false;

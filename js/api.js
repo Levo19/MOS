@@ -848,6 +848,37 @@ const API = (() => {
     return d;
   }
 
+  // ── [Adhesivos · Supabase] Imprimir lote de adhesivos vía Edge `print-adhesivo` (mode:'crear') ──
+  // La Edge crea el lote (RPC ATÓMICA wh.lote_adhesivo_crear, dedup por idempotencyKey) + imprime
+  // server-side (reserve-first → la cantidad EXACTA marcada = total = lo impreso; over-print imposible).
+  // Resuelve la impresora ADHESIVO sola (mos.impresoras). Devuelve {ok, data:{idLote,total,status,...}} o
+  // {ok:false,error}. Si el flag server WH_LOTE_ADHESIVO_DIRECTO está OFF → error '..._OFF' → el caller cae a GAS.
+  async function _adhesivoImprimirEdge(params) {
+    const token = await _mintTokenMOS();
+    if (!token) return { ok: false, error: 'sin token (Edge mint-mos caída)' };
+    const p = params || {};
+    const body = {
+      mode:           'crear',
+      codigoBarra:    String(p.codigoBarra || ''),
+      descripcion:    String(p.descripcion || ''),
+      total:          parseInt(p.total, 10) || 0,
+      usuario:        String(p.usuario || ''),
+      origen:         'MOS',
+      idempotencyKey: String(p.idempotencyKey || ''),
+      ...(p.vto ? { vto: String(p.vto) } : {}),
+      ...(p.fechaEnvasado ? { fechaEnvasado: String(p.fechaEnvasado) } : {}),
+      ...(p.printerId ? { printerId: String(p.printerId) } : {})
+    };
+    const res = await _sbFetchTimeout(`${_SB_URL}/functions/v1/print-adhesivo`, {
+      method: 'POST',
+      headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }, 130000);   // la Edge imprime el lote entero server-side (presupuesto ~110s)
+    const d = await res.json().catch(() => null);
+    if (!res.ok || !d) return { ok: false, error: 'print-adhesivo HTTP ' + res.status };
+    return d;     // {ok:true,data:{...}} | {ok:false,error}
+  }
+
   // ── [RIZ · CAPA 5] IA real vía Edge `/functions/ia` (Claude, JWT-gated) ─
   // El frontend arma los `messages` (con los NÚMEROS determinísticos de las RPCs) y la Edge reenvía a
   // Claude con la API key del secret. La IA SOLO redacta texto natural; los números NO los inventa.
@@ -2088,6 +2119,8 @@ const API = (() => {
     // Número (versión) o null (sin token / fallo). El poller de app.js la usa para detectar cambios
     // del maestro y re-pullar el catálogo solo cuando hace falta. NUNCA lanza.
     catalogoVersion: _catalogoVersion,
+    // [Adhesivos Supabase] imprimir lote de adhesivos vía Edge print-adhesivo (mode:'crear', cantidad exacta).
+    adhesivoImprimirEdge: _adhesivoImprimirEdge,
     // [Realtime catálogo] Suscripción WebSocket a mos.catalogo_meta (UPDATE) → propagación ~0s.
     // ADITIVA: el poller por-versión sigue como fallback. Singleton + carga defensiva (no rompe si falla).
     // app.js registra el callback money-safe (= _catVerPoll) vía onCatalogoVersionRealtime e inicia/detiene
