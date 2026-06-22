@@ -18693,7 +18693,7 @@ if (false) (function(){
     <div class="mos-perms-footer">
       <span class="mos-perms-progress-text" id="mosPermsProgress">0/0 listos</span>
       <button class="mos-perms-btn-listo" id="mosPermsBtnListo"
-              onclick="MosPerms.cerrar()" disabled>Listo · usar MOS</button>
+              onclick="MosPerms.cerrar()">Listo · usar MOS</button>
     </div>
   </div>
 </div>
@@ -19047,13 +19047,13 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js?v=2.43.302"></script>
+<script src="js/api.js?v=2.43.303"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
      bumps de sw.js. Bug reportado: usuario seguía viendo error "Lote en curso"
      de v2.43.146 después de v2.43.148. -->
-<script src="./assets/membrete/membrete-modal.js?v=2.43.302"></script>
+<script src="./assets/membrete/membrete-modal.js?v=2.43.303"></script>
 <script src="./assets/seguridad/seguridad-modal.js?v=2.43.168"></script>
 <!-- [v2.43.187] AdhesivoPreview — render visual del adhesivo unificado con WH.
      Mismo módulo en /assets/adhesivo/preview.js — backend Envasados.gs pixel-perfect. -->
@@ -19062,7 +19062,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.302"></script>
+<script src="js/app.js?v=2.43.303"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
@@ -19623,7 +19623,7 @@ if (false) (function(){
   }
 
   async function _refrescarUI() {
-    let pendientes = 0, listos = 0;
+    let pendientes = 0, listos = 0, denegados = 0;
     for (const p of PERMS) {
       const raw = await _consultarPerm(p);
       const est = _normEstado(raw);
@@ -19637,8 +19637,11 @@ if (false) (function(){
         card.classList.add('is-granted');
         if (btn) { btn.className = 'mos-perm-status is-ok'; btn.textContent = '✓ OK'; btn.disabled = true; }
       } else if (est === 'denied') {
+        // [FIX tablet] denegado es OPCIONAL — el operador decidió no darlo. Se muestra
+        // pero NUNCA atrapa: MOS funciona sin él (es solo una mejora de experiencia).
+        denegados++;
         card.classList.add('is-denied');
-        if (btn) { btn.className = 'mos-perm-status is-denied'; btn.textContent = '✗ DENEGADO'; }
+        if (btn) { btn.className = 'mos-perm-status is-denied'; btn.textContent = '✗ omitido'; }
       } else if (est === 'unsupported') {
         listos++;
         if (btn) { btn.className = 'mos-perm-status is-ok'; btn.textContent = 'N/A'; btn.disabled = true; }
@@ -19659,8 +19662,18 @@ if (false) (function(){
     }
     const prog = document.getElementById('mosPermsProgress');
     const btn  = document.getElementById('mosPermsBtnListo');
-    if (prog) prog.textContent = `${listos}/${PERMS.length} resueltos · ${pendientes} pendiente${pendientes!==1?'s':''}`;
-    if (btn) btn.disabled = pendientes > 0;
+    const resueltos = listos + denegados;
+    if (prog) prog.textContent = `${resueltos}/${PERMS.length} resueltos` + (pendientes ? ` · ${pendientes} sin activar` : '');
+    // [FIX "atrapado en el wizard" — tablet] El botón NUNCA se deshabilita. Los 5
+    // permisos (notificaciones/mic/geo/audio/instalar) son OPCIONALES: mejoran la
+    // experiencia pero MOS funciona sin ellos. Antes `disabled = pendientes > 0`
+    // dejaba al operador ENCERRADO si un permiso quedaba en 'prompt' (p.ej. Android
+    // que no instala la PWA, o un prompt que no reaparece) → no podía entrar a MOS.
+    // Ahora siempre puede entrar; la etiqueta sigue invitando a activar lo que falte.
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = pendientes > 0 ? `Entrar a MOS  (${pendientes} sin activar)` : 'Listo · usar MOS';
+    }
     return { pendientes, listos };
   }
 
