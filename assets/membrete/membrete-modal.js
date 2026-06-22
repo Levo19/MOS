@@ -898,9 +898,14 @@
       +     '</div>'
       +     _rolloBannerHtml()
       +     '<div class="ms-body" style="max-height:65vh;overflow-y:auto">'
-      +       '<input id="msColaBusq" type="text" placeholder="🔍 Buscar producto por código o descripción..." '
+      +       '<div style="display:flex;gap:6px;margin-bottom:8px">'
+      +       '<input id="msColaBusq" type="text" placeholder="🔍 Buscar por código o nombre..." '
       +         'oninput="MembreteSystem._colaBusqInput(this.value)" '
-      +         'style="width:100%;padding:10px 12px;background:#0a1424;border:1px solid #1e293b;color:#f1f5f9;border-radius:10px;font-size:13px;margin-bottom:8px">'
+      +         'style="flex:1;min-width:0;padding:10px 12px;background:#0a1424;border:1px solid #1e293b;color:#f1f5f9;border-radius:10px;font-size:13px">'
+      +       ((_config && typeof _config.scanProvider === 'function')
+                  ? '<button onclick="MembreteSystem._colaEscanear()" title="Escanear con cámara" style="flex-shrink:0;width:48px;background:linear-gradient(135deg,#0ea5e9,#0369a1);color:#fff;border:none;border-radius:10px;font-size:20px;cursor:pointer;-webkit-tap-highlight-color:transparent">📷</button>'
+                  : '')
+      +       '</div>'
       +       '<div id="msColaSugs" style="max-height:120px;overflow-y:auto;display:none;background:#0a1424;border-radius:8px;padding:4px;margin-bottom:8px"></div>'
       +       '<div id="msColaLista"></div>'
       +     '</div>'
@@ -1151,6 +1156,31 @@
     var it = items[idx];
     if (!it) return;
     _colaAgregarProducto(it);
+  }
+
+  // [cámara · solo si la app inyecta _config.scanProvider — hoy solo ME] Escanea un
+  // código con la cámara, lo resuelve en el catálogo (codigoBarra / skuBase / equivalente)
+  // y lo agrega a la cola. Optimista (feedback inmediato) + sin duplicados
+  // (_colaAgregarProducto rechaza si ya está). NO toca presentaciones, solo canónico/equiv.
+  async function _colaEscanear() {
+    if (!_config || typeof _config.scanProvider !== 'function') return;
+    var code = null;
+    try { code = await _config.scanProvider(); } catch (_) { code = null; }
+    if (!code) return;   // canceló o no leyó
+    code = String(code).trim();
+    var cat = _resolverCatalogo();
+    if (!cat || !Array.isArray(cat.productos)) { _toast('Catálogo no disponible', { error: true }); return; }
+    var q = code.toLowerCase();
+    var prod = cat.productos.find(function (p) {
+      return String(p.codigoBarra || '').toLowerCase() === q ||
+             String(p.skuBase || p.idProducto || '').toLowerCase() === q;
+    });
+    if (!prod) {   // buscar por código equivalente → resolver al canónico (skuBase)
+      var eq = (cat.equivalencias || []).find(function (e) { return String(e.codigoBarra || '').toLowerCase() === q; });
+      if (eq) prod = cat.productos.find(function (p) { return String(p.skuBase) === String(eq.skuBase); });
+    }
+    if (!prod) { try { sonidos.error && sonidos.error(); } catch (_) {} _toast('Código no encontrado: ' + code, { error: true }); return; }
+    _colaAgregarProducto(prod);   // dedupea + sonido + refresca (optimista)
   }
   function _colaQuitar(idx) {
     var tipo = _colaTipo();
@@ -1830,6 +1860,7 @@
     _colaBusqInput:       _colaBusqInput,
     _colaAgregar:         _colaAgregar,
     _colaAgregarIdx:      _colaAgregarIdx,
+    _colaEscanear:        _colaEscanear,
     _colaQuitar:          _colaQuitar,
     _colaImprimir:        _colaImprimir,
     _colaCerrar:          _colaCerrar,
