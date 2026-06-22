@@ -12526,7 +12526,7 @@ const MOS = (() => {
               <label class="adhesivo-label">Cantidad a imprimir</label>
               <div class="adhesivo-cantidad">
                 <button onclick="MOS.adhesivoCantidadDelta(-1)" class="adhesivo-cant-btn">−</button>
-                <input type="number" id="adhesivoInput" value="${cantidad}" min="1" max="999"
+                <input type="number" id="adhesivoInput" value="${cantidad}" min="1" max="500"
                        oninput="MOS.adhesivoCantidadInput(this.value)"
                        class="adhesivo-cant-input">
                 <button onclick="MOS.adhesivoCantidadDelta(1)" class="adhesivo-cant-btn">+</button>
@@ -12585,13 +12585,13 @@ const MOS = (() => {
 
   function adhesivoCantidadDelta(d) {
     if (!_adhesivoState) return;
-    const nv = Math.max(1, Math.min(999, _adhesivoState.cantidad + d));
+    const nv = Math.max(1, Math.min(500, _adhesivoState.cantidad + d));   // tope 500 por impresion
     _adhesivoState.cantidad = nv;
     _adhesivoActualizarCantidadUI();
   }
   function adhesivoCantidadInput(v) {
     if (!_adhesivoState) return;
-    const n = Math.max(1, Math.min(999, parseInt(v) || 1));
+    const n = Math.max(1, Math.min(500, parseInt(v) || 1));   // tope 500 por impresion
     _adhesivoState.cantidad = n;
     const tag = document.querySelector('#adhesivoPreview .adhesivo-cantidad-tag');
     if (tag) tag.textContent = '×' + n;
