@@ -1,1 +1,1 @@
-{ "version": "2.43.309", "build": "Preview gondola sync (preview.js v1.3.0): sin ⧉ en el nombre + [cuadritos][ME] sin caja a la derecha del barcode (2=multi-codigo, 1=unico) + barcode izq capado. Igual al print del Edge (multi-codigo server-side desde mos.equivalencias, AJINOMOTO font cascade, margen al divisor)." }
+{ "version": "2.43.310", "build": "membrete-modal v2.43.310: dedup de codigos[] en _construirItemCompleto (el provider ME ahora emite alias+real por equivalencia → evitar repetidos)." }

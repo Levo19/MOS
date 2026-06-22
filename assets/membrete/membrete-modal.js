@@ -1098,7 +1098,9 @@
         codigosDelGrupo = [String(p.codigoBarra || p.idProducto || skuB)].filter(Boolean);
       }
     }
-    codigosDelGrupo = (codigosDelGrupo || []).map(String).filter(Boolean);
+    // dedup (el provider ME puede emitir alias+real por equivalencia → evitar repetidos)
+    codigosDelGrupo = (codigosDelGrupo || []).map(String).filter(Boolean)
+      .filter(function(c, i, a) { return a.indexOf(c) === i; });
     var totalCodigos = codigosDelGrupo.length || 1;
     return {
       codigoBarra: String(p.codigoBarra || p.idProducto || ''),
