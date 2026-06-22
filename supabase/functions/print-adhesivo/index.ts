@@ -26,8 +26,8 @@ const CORS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
-const APPS_OK = new Set(['warehouseMos', 'MOS']);   // WH (envasado/reimpresión) + MOS (modal cantidad+preview)
-const WALL_BUDGET_MS = 110000;  // tope de ejecución por invocación (cron re-invoca para continuar)
+const APPS_OK = new Set(['warehouseMos', 'MOS', 'mosExpress']);   // WH (envasado/reimpresión/andamio) + MOS (catálogo) + ME (góndola)
+const WALL_BUDGET_MS = 140000;  // tope de ejecución por invocación (~400-500 etiquetas/tanda; cron retoma el resto)
 const POLL_MS = 12000;          // poll corto a PrintNode por sub-job (solo para detectar out-of-paper)
 
 function json(payload: unknown, status = 200): Response {
@@ -246,6 +246,163 @@ function bytesToBase64(arr: number[]): string {
   return btoa(s);
 }
 
+// ════════════════ TSPL2 MEMBRETES — port fiel de gas/Membretes.gs ════════════════
+// Logo andamio WH (el membrete góndola ME NO lleva logo). Port exacto.
+const LOGO_ALMACEN_WH_HEX =
+'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF' +
+'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFC00' +
+'7E03F801C007C007FF01FF000703C07FFFE0020007FC007E03F801C007C007FC007F000701C0' +
+'7FFFA0020007F8007E03F801C0078007F8001F000701C07FFF20020007F8003E03F801C00780' +
+'03F0000F000701C07FFE20020007F8003E03F801C0078003E0000F000700C07FFC20020007F8' +
+'003E03F800C0078003E0180F000700C07FF820020007F8003E03F800C0078003E0380701FF00' +
+'C07FF0203E0007F8003E03F800C0078003C0380701FF00407FF0203E0007F8103E03F8008007' +
+'8103C0380701FF00407FF0203E0007F0103E03F80080070103C0380701FF00407FF0203E0007' +
+'F0101E03F80080070101C0380701FF00407FF0203E0007F0101E03F80080070101C03807000F' +
+'00007FF0203E0007F0101E03F80000070101C03807000F00007FF0203E0007F0101E03F81004' +
+'070101C03FFF000F00007FF0203E0007F0101E03F81004070101C03FFF000F00007FF0203E00' +
+'07F0101E03F81004070101C03FFF000F00007FF0203E0007F0180E03F81004070180C03FFF00' +
+'0F00007FFFFFFFFFFFE0380E03F81004060380C0380701FF00007FFFFFFFFFFFE0380E03F818' +
+'04060380C0380701FF02007FFFFFFFFFFFE0380E03F81804060380C0380701FF02007FFFFFFF' +
+'FFFFE0000E03F8180C060000C0380701FF02007FFFFFFFFFFFE0000E03F8180C060000C03807' +
+'01FF03007FF0203E0007E0000E03F8180C060000C0380701FF03007FF0203E0007E0000603F8' +
+'180C06000060380F01FF03007FF0203E0007E000060018180C06000060180F000703807FF020' +
+'3E0007C0380600181C0C04038060000F000703807FF0203E0007C0380600181C0C0403807000' +
+'1F000703807FF0203E0007C0380600181C1C04038070003F000703807FF0203E0007C0380600' +
+'181C1C0403807C007F000703C07FF0203E0007C0380600181C1C0403807F01FF000703C07FF0' +
+'203E0007FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF0203E0007FFFFFFFFFFFFFFFFFFFFFF' +
+'FFFFFFFFFFFFFFF0203E0007FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF';
+
+// offsetY de drift por etiqueta absoluta (idx = posición en el rollo). clamp [-1,16] (=2mm).
+function driftOffset(cfg: DriftCfg, idx: number): number {
+  let off = cfg.offsetBase + Math.round(cfg.driftDots * (cfg.printsBase + idx));
+  if (off < -1) off = -1;
+  if (off > 16) off = 16;
+  return off;
+}
+
+// MEMBRETE GÓNDOLA (ME): sin logo, precio MEGA Font 5 centrado, desc 1 línea arriba. Port de _buildTSPLMembreteMe.
+function buildTSPLMembreteMe(producto: any, allEnvTokens: string[][], cfg: DriftCfg, offsetY: number): number[] {
+  const descNorm = normalizeEtq(producto.descripcion || '');
+  const tokens = descNorm.split(/\s+/);
+  const highlights = detectHighlightsEtq(tokens, allEnvTokens);
+  const lines = wrapTokensEtq(tokens, highlights);
+  const header = ['SIZE 50 mm,25 mm','GAP ' + cfg.gapMm + ' mm,0 mm','DIRECTION 1','DENSITY ' + cfg.density,'SPEED ' + cfg.speed,'CLS'].join('\r\n') + '\r\n';
+  let bytes = strToBytes(header);
+  const SPACE = 8;
+  const primeraLinea = (lines[0] || []).map((t) => ({ tok: t.tok, w: t.w, hl: t.hl }));
+  if (lines.length > 1 && primeraLinea.length > 0) {
+    const u = primeraLinea[primeraLinea.length - 1];
+    u.tok = u.tok.replace(/[\.,]+$/, '') + '..'; u.w = u.tok.length * 16;
+  }
+  let lineW = 0; for (let ti = 0; ti < primeraLinea.length; ti++) lineW += primeraLinea[ti].w + (ti > 0 ? SPACE : 0);
+  while (lineW > 380 && primeraLinea.length > 1) {
+    const q = primeraLinea.pop()!; lineW -= q.w + SPACE;
+    const nu = primeraLinea[primeraLinea.length - 1];
+    if (nu.tok.slice(-2) !== '..') { lineW -= nu.w; nu.tok = nu.tok.replace(/[\.,]+$/, '') + '..'; nu.w = nu.tok.length * 16; lineW += nu.w; }
+  }
+  let descX = Math.max(5, Math.round((400 - lineW) / 2));
+  const descY = 2 + offsetY;
+  for (let tj = 0; tj < primeraLinea.length; tj++) {
+    const o = primeraLinea[tj]; const safe = String(o.tok).replace(/"/g, "'");
+    bytes = bytes.concat(strToBytes('TEXT ' + descX + ',' + descY + ',"3",0,1,1,"' + safe + '"\r\n')); descX += o.w + SPACE;
+  }
+  const precioStr = 'S/ ' + (parseFloat(producto.precio) || 0).toFixed(2);
+  const precioWidth = precioStr.length * 32;
+  const precioX = Math.max(5, Math.round((400 - precioWidth) / 2));
+  bytes = bytes.concat(strToBytes('TEXT ' + precioX + ',' + (30 + offsetY) + ',"5",0,1,1,"' + precioStr + '"\r\n'));
+  const lineaDecoX = Math.max(30, precioX - 8), lineaDecoW = Math.min(340, precioWidth + 16);
+  bytes = bytes.concat(strToBytes('BAR ' + lineaDecoX + ',' + (82 + offsetY) + ',' + lineaDecoW + ',3\r\n'));
+  let codigo = String((producto.esSkuBase ? producto.skuBase : producto.codigoBarra) || producto.codigoBarra || producto.skuBase || producto.codigo || producto.idProducto || '').replace(/"/g, '');
+  if (!codigo) codigo = 'SIN-CODIGO';
+  const _bc = calcBarcodeAdaptativo(codigo);
+  const frameX1 = 10, frameX2 = 389, cmL = 12;
+  const barcodeY = 94 + offsetY, frameY1 = 88 + offsetY, frameY2 = 148 + offsetY;
+  bytes = bytes.concat(strToBytes('BAR ' + frameX1 + ',' + frameY1 + ',' + cmL + ',1\r\n'));
+  bytes = bytes.concat(strToBytes('BAR ' + frameX1 + ',' + frameY1 + ',1,' + cmL + '\r\n'));
+  bytes = bytes.concat(strToBytes('BAR ' + (frameX2 - cmL + 1) + ',' + frameY1 + ',' + cmL + ',1\r\n'));
+  bytes = bytes.concat(strToBytes('BAR ' + frameX2 + ',' + frameY1 + ',1,' + cmL + '\r\n'));
+  bytes = bytes.concat(strToBytes('BAR ' + frameX1 + ',' + frameY2 + ',' + cmL + ',1\r\n'));
+  bytes = bytes.concat(strToBytes('BAR ' + frameX1 + ',' + (frameY2 - cmL + 1) + ',1,' + cmL + '\r\n'));
+  bytes = bytes.concat(strToBytes('BAR ' + (frameX2 - cmL + 1) + ',' + frameY2 + ',' + cmL + ',1\r\n'));
+  bytes = bytes.concat(strToBytes('BAR ' + frameX2 + ',' + (frameY2 - cmL + 1) + ',1,' + cmL + '\r\n'));
+  bytes = bytes.concat(strToBytes('BARCODE ' + _bc.barcodeX + ',' + barcodeY + ',"128",' + _bc.barcodeHeight + ',0,0,' + _bc.narrowBc + ',' + _bc.narrowBc + ',"' + codigo + '"\r\n'));
+  const codigoX = Math.max(frameX1 + 4, Math.floor((400 - codigo.length * 8) / 2));
+  bytes = bytes.concat(strToBytes('TEXT ' + codigoX + ',' + (152 + offsetY) + ',"1",0,1,1,"' + codigo + '"\r\n'));
+  bytes = bytes.concat(strToBytes('PRINT 1,1\r\n'));
+  return bytes;
+}
+
+// MEMBRETE ANDAMIO (WH): logo WH + tag CAB/i/total + desc + barcode (layout = adhesivo). Port de _buildTSPLMembreteWh.
+function buildTSPLMembreteWh(producto: any, esCabecera: boolean, indice: number, total: number, allEnvTokens: string[][], cfg: DriftCfg, offsetY: number): number[] {
+  const descNorm = normalizeEtq(producto.descripcion || '');
+  const tokens = descNorm.split(/\s+/);
+  const highlights = detectHighlightsEtq(tokens, allEnvTokens);
+  const lines = wrapTokensEtq(tokens, highlights);
+  const header = ['SIZE 50 mm,25 mm','GAP ' + cfg.gapMm + ' mm,0 mm','DIRECTION 1','DENSITY ' + cfg.density,'SPEED ' + cfg.speed,'CLS','BITMAP 5,' + (2 + offsetY) + ',' + LOGO_W_BYTES + ',' + LOGO_H + ',0,'].join('\r\n');
+  let bytes = strToBytes(header);
+  bytes = bytes.concat(hexToBytes(LOGO_ALMACEN_WH_HEX));
+  bytes = bytes.concat(strToBytes('\r\n'));
+  if (total > 1) {
+    const tagTexto = esCabecera ? 'CAB' : (indice + '/' + total);
+    const tagX = 400 - tagTexto.length * 8 - 8;
+    bytes = bytes.concat(strToBytes('TEXT ' + tagX + ',' + (4 + offsetY) + ',"2",0,1,1,"' + tagTexto + '"\r\n'));
+  }
+  const DESC_AREA_Y0 = 46, DESC_AREA_H = 72, LINE_H = 38, SPACE = 8;
+  let startY: number;
+  if (lines.length === 1) {
+    const lineHasHl = lines[0].some((t) => t.hl);
+    const lineHeight = lineHasHl ? 32 : 24, baselineOffset = lineHasHl ? 0 : 4;
+    startY = DESC_AREA_Y0 + Math.floor((DESC_AREA_H - lineHeight) / 2) - baselineOffset + offsetY;
+  } else { startY = DESC_AREA_Y0 + offsetY; }
+  for (let li = 0; li < Math.min(lines.length, 2); li++) {
+    const line = lines[li]; let totalW = 0;
+    for (let ti = 0; ti < line.length; ti++) totalW += line[ti].w + (ti > 0 ? SPACE : 0);
+    let x = Math.max(5, Math.round((400 - totalW) / 2)); const y = startY + li * LINE_H;
+    for (let tj = 0; tj < line.length; tj++) {
+      const o = line[tj]; const font = o.hl ? '4' : '3'; const yAdj = o.hl ? y : y + 4;
+      const safe = String(o.tok).replace(/"/g, "'");
+      bytes = bytes.concat(strToBytes('TEXT ' + x + ',' + yAdj + ',"' + font + '",0,1,1,"' + safe + '"\r\n')); x += o.w + SPACE;
+    }
+  }
+  let codigo = String(producto.codigo || producto.codigoBarra || producto.skuBase || producto.idProducto || '').replace(/"/g, '');
+  if (!codigo) codigo = 'SIN-CODIGO';
+  const _bc = calcBarcodeAdaptativo(codigo);
+  const frameX1 = 10, frameX2 = 389, cmL = 12;
+  const barcodeY = 124 + offsetY, frameY1 = 118 + offsetY, frameY2 = 196 + offsetY;
+  bytes = bytes.concat(strToBytes('BAR ' + frameX1 + ',' + frameY1 + ',' + cmL + ',1\r\n'));
+  bytes = bytes.concat(strToBytes('BAR ' + frameX1 + ',' + frameY1 + ',1,' + cmL + '\r\n'));
+  bytes = bytes.concat(strToBytes('BAR ' + (frameX2 - cmL + 1) + ',' + frameY1 + ',' + cmL + ',1\r\n'));
+  bytes = bytes.concat(strToBytes('BAR ' + frameX2 + ',' + frameY1 + ',1,' + cmL + '\r\n'));
+  bytes = bytes.concat(strToBytes('BAR ' + frameX1 + ',' + frameY2 + ',' + cmL + ',1\r\n'));
+  bytes = bytes.concat(strToBytes('BAR ' + frameX1 + ',' + (frameY2 - cmL + 1) + ',1,' + cmL + '\r\n'));
+  bytes = bytes.concat(strToBytes('BAR ' + (frameX2 - cmL + 1) + ',' + frameY2 + ',' + cmL + ',1\r\n'));
+  bytes = bytes.concat(strToBytes('BAR ' + frameX2 + ',' + (frameY2 - cmL + 1) + ',1,' + cmL + '\r\n'));
+  bytes = bytes.concat(strToBytes('BARCODE ' + _bc.barcodeX + ',' + barcodeY + ',"128",' + _bc.barcodeHeight + ',0,0,' + _bc.narrowBc + ',' + _bc.narrowBc + ',"' + codigo + '"\r\n'));
+  const codigoX = Math.max(frameX1 + 4, Math.floor((400 - codigo.length * 8) / 2));
+  bytes = bytes.concat(strToBytes('TEXT ' + codigoX + ',' + (barcodeY + _bc.barcodeHeight + 8) + ',"1",0,1,1,"' + codigo + '"\r\n'));
+  bytes = bytes.concat(strToBytes('PRINT 1,1\r\n'));
+  return bytes;
+}
+
+// Expande items crudos a la lista de etiquetas (port de crearLoteMembrete). ME: 1/producto. WH: cabecera + códigos.
+function expandirMembrete(tipo: string, items: any[]): any[] {
+  const out: any[] = [];
+  (items || []).forEach((item) => {
+    if (tipo === 'MEMBRETE_ME') {
+      out.push({ codigo: String(item.codigoBarra || ''), codigoBarra: String(item.codigoBarra || ''), descripcion: String(item.descripcion || ''),
+        precio: parseFloat(item.precio) || 0, skuBase: String(item.skuBase || ''), esSkuBase: !!item.esSkuBase, esCabecera: false });
+    } else {
+      const codigos = (Array.isArray(item.codigos) && item.codigos.length > 0) ? item.codigos : (item.codigoBarra ? [item.codigoBarra] : []);
+      if (codigos.length === 0) return;
+      if (codigos.length > 1 && item.skuBase) {
+        out.push({ codigo: String(item.skuBase), descripcion: String(item.descripcion || ''), skuBase: String(item.skuBase || ''), esCabecera: true });
+      }
+      codigos.forEach((c: any) => out.push({ codigo: String(c), descripcion: String(item.descripcion || ''), skuBase: String(item.skuBase || ''), esCabecera: false }));
+    }
+  });
+  return out;
+}
+
 // ════════════════ Supabase / PrintNode ════════════════
 const SB_URL = Deno.env.get('SUPABASE_URL');
 const SB_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -357,6 +514,10 @@ async function procesarLote(idLote: string, deadline: number, envTokens: string[
   if (!printerId) return { idLote, error: 'printerId inválido' };
   const fechaEnv = vtoStringAFechaEnvasado(String(lote.vto || ''));
   const producto = { codigoBarra: String(lote.codigoBarra || ''), descripcion: String(lote.descripcion || '') };
+  const tipo = String(lote.tipoEtiqueta || 'ADHESIVO_ENVASADO').toUpperCase();
+  // items del membrete (jsonb → ya viene como array en la respuesta; tolera string).
+  const items = Array.isArray(lote.itemsJson) ? lote.itemsJson
+    : (typeof lote.itemsJson === 'string' && lote.itemsJson ? (() => { try { return JSON.parse(lote.itemsJson); } catch { return []; } })() : []);
   let subJobs = 0, gap = requireGapDetectFirst;
 
   while (Date.now() < deadline) {
@@ -365,10 +526,24 @@ async function procesarLote(idLote: string, deadline: number, envTokens: string[
     const d = rr.data;
     if (!d.qty || d.qty <= 0) return { idLote, subJobs, status: 'COMPLETADO' };
 
-    const bytes = buildTSPLEtq(producto, fechaEnv, d.qty, envTokens, cfg, d.desde, gap);
+    // ADHESIVO_ENVASADO = qty copias del mismo. MEMBRETE_* = items[d.desde..d.hasta), cada uno distinto.
+    let bytes: number[];
+    if (tipo === 'ADHESIVO_ENVASADO') {
+      bytes = buildTSPLEtq(producto, fechaEnv, d.qty, envTokens, cfg, d.desde, gap);
+    } else {
+      bytes = gap ? strToBytes('GAPDETECT\r\n') : [];
+      for (let k = 0; k < d.qty; k++) {
+        const idx = d.desde + k; const it = items[idx];
+        if (!it) continue;
+        const off = driftOffset(cfg, idx);
+        bytes = (tipo === 'MEMBRETE_ME')
+          ? bytes.concat(buildTSPLMembreteMe(it, envTokens, cfg, off))
+          : bytes.concat(buildTSPLMembreteWh(it, !!it.esCabecera, idx + 1, items.length, envTokens, cfg, off));
+      }
+    }
     gap = false;
     const b64 = bytesToBase64(bytes);
-    const pn = await printNodePost(printerId, 'Adhesivo ' + producto.codigoBarra + ' (' + d.qty + ') lote=' + idLote, b64, idLote);
+    const pn = await printNodePost(printerId, tipo + ' (' + d.qty + ') lote=' + idLote, b64, idLote);
 
     if (!pn.ok) {
       // PrintNode rechazó (no 201) → revertir el rango reservado (no se imprimió).
@@ -431,6 +606,32 @@ Deno.serve(async (req: Request) => {
         vto: body.vto || '', tipoEtiqueta: body.tipoEtiqueta || 'ADHESIVO_ENVASADO',
         usuario: body.usuario || '', origen: body.origen || 'MOS',
         printerId, idempotencyKey: String(body.idempotencyKey || '')
+      });
+      if (!cr || cr.ok === false) return json({ ok: false, error: cr?.error || 'crear falló' }, 200);
+      const idLote = cr.data && cr.data.idLote;
+      if (!idLote) return json({ ok: false, error: 'sin idLote' }, 200);
+      const res = await procesarLote(String(idLote), deadline, envTokens, cfg);
+      return json({ ok: true, data: { idLote, total: cr.data.total, dedup: !!cr.dedup, ...res } });
+    }
+
+    // mode 'crear-membrete' — góndola ME / andamio WH. Expande items (1/producto ME; cabecera+códigos WH),
+    // crea el lote atómico (codigoBarra placeholder = tipo; items reales en items_json) e imprime server-side.
+    if (mode === 'crear-membrete') {
+      const tipo = String(body.tipo || '').toUpperCase();
+      if (tipo !== 'MEMBRETE_ME' && tipo !== 'MEMBRETE_WH') return json({ ok: false, error: 'tipo invalido (MEMBRETE_ME|MEMBRETE_WH)' }, 400);
+      const itemsRaw = Array.isArray(body.items) ? body.items : [];
+      if (!itemsRaw.length) return json({ ok: false, error: 'items vacio' }, 400);
+      const expandidos = expandirMembrete(tipo, itemsRaw);
+      if (!expandidos.length) return json({ ok: false, error: 'sin items validos (cada uno requiere codigoBarra o codigos)' }, 400);
+      let printerId = String(body.printerId || '');
+      if (!printerId) printerId = await resolverPrinterAdhesivo();
+      if (!printerId) return json({ ok: false, error: 'sin impresora ADHESIVO configurada' }, 400);
+      const cr = await rpcWh('lote_adhesivo_crear', {
+        codigoBarra: tipo,
+        descripcion: (tipo === 'MEMBRETE_ME' ? 'ME: ' : 'WH: ') + itemsRaw.length + ' productos',
+        total: expandidos.length, tipoEtiqueta: tipo, itemsJson: expandidos,
+        usuario: body.usuario || '', origen: body.origen || 'MOS', printerId,
+        idempotencyKey: String(body.idempotencyKey || '')
       });
       if (!cr || cr.ok === false) return json({ ok: false, error: cr?.error || 'crear falló' }, 200);
       const idLote = cr.data && cr.data.idLote;

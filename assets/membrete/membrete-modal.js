@@ -577,6 +577,51 @@
     _abrirModalProgreso({
       idLote: '', total: items.length, tipo: tipo, descripcion: desc
     });
+    // [v2.0 · 100% Supabase] Si la app inyectó edgeCall → imprimir vía Edge `print-adhesivo`
+    // (mode:'crear-membrete'): crea el lote ATÓMICO + imprime server-side (reserve-first → items
+    // exactos, sin doble-print, sin lock largo de GAS). Fallback a GAS si no hay edgeCall o si el
+    // flag server WH_LOTE_ADHESIVO_DIRECTO está OFF (la RPC devuelve *_OFF). En error real/red NO
+    // cae a GAS (evita doble impresión); reintento seguro por idempotencyKey.
+    if (typeof _config.edgeCall === 'function') {
+      _config.edgeCall({
+        mode: 'crear-membrete', tipo: tipo, items: items,
+        usuario: _config.usuario(), origen: _config.origen, idempotencyKey: idempotencyKey
+      }).then(function(ed) {
+        if (!_state) return;
+        if (ed && ed.ok && ed.data) {
+          var d = ed.data;
+          _state.idLote = d.idLote || _state.idLote;
+          _state.total  = d.total  || _state.total;
+          var st = String(d.status || '');
+          if (st === 'COMPLETADO') {
+            _state.completadas = _state.total; _state.status = 'COMPLETADO'; _state.polling = false; _render();
+            _toast('✅ ' + _state.total + ' adhesivos impresos · ' + (tipo === 'MEMBRETE_ME' ? 'góndola tienda' : 'andamio almacén'));
+            setTimeout(function() { if (_state && _state.status === 'COMPLETADO') cerrarModal(); }, 2500);
+          } else if (st.indexOf('PAUSADO') === 0) {
+            _state.status = st; _state.ultimoError = d.error || 'Pausado'; _state.polling = false; _render(); sonidos.error();
+          } else {
+            _state.status = 'IMPRIMIENDO'; _render();   // PRESUPUESTO_AGOTADO (lote enorme): el cron retoma
+          }
+          return;
+        }
+        if (ed && ed.ok === false && !/_OFF/.test(String(ed.error || ''))) {
+          _state.status = 'PAUSADO_ERROR'; _state.ultimoError = 'Edge: ' + (ed.error || 'error'); _state.polling = false; _render(); sonidos.error();
+          return;
+        }
+        // *_OFF → fallback GAS (kill-switch)
+        _imprimirMembreteGas(tipo, items, idempotencyKey);
+      }).catch(function(e) {
+        if (!_state) return;
+        _state.status = 'PAUSADO_ERROR'; _state.ultimoError = 'Sin confirmación de impresión: ' + ((e && e.message) || 'red') + ' — reintenta';
+        _state.polling = false; _render(); sonidos.error();
+      });
+      return;
+    }
+    return _imprimirMembreteGas(tipo, items, idempotencyKey);
+  }
+
+  // Flujo GAS histórico (fallback): crea lote en la hoja + dispara sub-lote + pollea estado.
+  function _imprimirMembreteGas(tipo, items, idempotencyKey) {
     return _api('crearLoteMembrete', {
       tipo:           tipo,
       items:          items,
@@ -589,11 +634,7 @@
       _state.total  = d.total || _state.total;  // backend expande WH multi-codigo
       _state.polling = false;
       _render();
-      // [v2026-06-05 SPEED] Disparar impresión INMEDIATA en lugar de esperar
-      // al trigger backend (que corre cada 1 min). Antes había una latencia de
-      // hasta 60s entre crear el lote y empezar a imprimir. Ahora arranca al
-      // instante. El trigger sigue siendo failsafe si algo falla.
-      // Fire-and-forget: si falla, el trigger lo recoge igual.
+      // Disparo inmediato (el trigger cada 1 min es failsafe). Fire-and-forget.
       _api('imprimirSubLoteMembrete', { idLote: d.idLote }).catch(function(){});
       _arrancarPolling();
       return d;

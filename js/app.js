@@ -283,7 +283,9 @@ const MOS = (() => {
           },
           origen:         'MOS',
           unwrapData:     true,
-          endpointPrefix: 'wh_'
+          endpointPrefix: 'wh_',
+          // [Membretes 100% Supabase] el modal imprime vía Edge print-adhesivo (mode:'crear-membrete').
+          edgeCall:       function(body) { return API.printAdhesivoEdge(body); }
         });
       }
     } catch(_) {}

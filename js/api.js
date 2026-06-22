@@ -879,6 +879,21 @@ const API = (() => {
     return d;     // {ok:true,data:{...}} | {ok:false,error}
   }
 
+  // [Membretes] Llamada GENÉRICA al Edge print-adhesivo (la usa el modal compartido vía edgeCall).
+  // Pasa el body tal cual (mode:'crear-membrete'|...). Devuelve el JSON del Edge.
+  async function _printAdhesivoEdgeRaw(body) {
+    const token = await _mintTokenMOS();
+    if (!token) return { ok: false, error: 'sin token (Edge mint-mos caída)' };
+    const res = await _sbFetchTimeout(`${_SB_URL}/functions/v1/print-adhesivo`, {
+      method: 'POST',
+      headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {})
+    }, 150000);
+    const d = await res.json().catch(() => null);
+    if (!res.ok || !d) return { ok: false, error: 'print-adhesivo HTTP ' + res.status };
+    return d;
+  }
+
   // ── [RIZ · CAPA 5] IA real vía Edge `/functions/ia` (Claude, JWT-gated) ─
   // El frontend arma los `messages` (con los NÚMEROS determinísticos de las RPCs) y la Edge reenvía a
   // Claude con la API key del secret. La IA SOLO redacta texto natural; los números NO los inventa.
@@ -2121,6 +2136,8 @@ const API = (() => {
     catalogoVersion: _catalogoVersion,
     // [Adhesivos Supabase] imprimir lote de adhesivos vía Edge print-adhesivo (mode:'crear', cantidad exacta).
     adhesivoImprimirEdge: _adhesivoImprimirEdge,
+    // [Membretes] Edge print-adhesivo genérico (modal compartido vía edgeCall).
+    printAdhesivoEdge:    _printAdhesivoEdgeRaw,
     // [Realtime catálogo] Suscripción WebSocket a mos.catalogo_meta (UPDATE) → propagación ~0s.
     // ADITIVA: el poller por-versión sigue como fallback. Singleton + carga defensiva (no rompe si falla).
     // app.js registra el callback money-safe (= _catVerPoll) vía onCatalogoVersionRealtime e inicia/detiene
