@@ -391,12 +391,14 @@
     var ent = Math.floor(precio).toString();
     var cen = Math.round((precio - Math.floor(precio)) * 100).toString();
     if (cen.length < 2) cen = ('0' + cen).slice(-2);
-    var iconCanon = esCanonico
-      ? '<div style="position:absolute;top:18px;left:318px;width:28px;height:28px">'
-        + '<div style="position:absolute;top:7px;left:0;width:16px;height:16px;border:2px solid #111;background:#fff"></div>'
-        + '<div style="position:absolute;top:0;left:9px;width:16px;height:16px;border:2px solid #111;background:#fff"></div>'
+    // Indicador de tipo de código (acompaña al "ME", a la derecha del barcode):
+    // 2 cuadritos = multi-código (canónico+equivalentes) · 1 cuadrito = código único.
+    var squaresHtml = esCanonico
+      ? '<div style="position:absolute;top:183px;left:452px;width:34px;height:30px">'
+        + '<div style="position:absolute;top:10px;left:0;width:20px;height:20px;border:2px solid #111;background:#fff"></div>'
+        + '<div style="position:absolute;top:0;left:12px;width:20px;height:20px;border:2px solid #111;background:#fff"></div>'
         + '</div>'
-      : '';
+      : '<div style="position:absolute;top:188px;left:458px;width:22px;height:22px;border:2px solid #111"></div>';
 
     return ''
       + '<div class="mb-prev mb-prev-me">'
@@ -407,7 +409,6 @@
       +   '</div>'
       // Divisor (X232 → 348px)
       +   '<div class="mb-line" style="top:27px;left:348px;width:3px;height:120px"></div>'
-      +   iconCanon
       // Precio focalizado DERECHA en recuadro, SIN medida (S/ chico + entero grande + céntimos chico)
       +   '<div style="position:absolute;top:33px;left:360px;width:216px;height:96px;border:2px solid #111;border-radius:6px;display:flex;align-items:center;justify-content:center">'
       +     '<div style="display:flex;align-items:flex-start;gap:3px">'
@@ -416,15 +417,14 @@
       +       '<span class="mb-f2" style="margin-top:3px">' + _esc(cen) + '</span>'
       +     '</div>'
       +   '</div>'
-      // Barcode IZQUIERDA (X12 → 18px) + código izq
-      +   '<div class="mb-bc-wrap" style="top:168px;left:18px;width:340px;height:84px;justify-content:flex-start">'
+      // Barcode IZQUIERDA (capado) + código izq
+      +   '<div class="mb-bc-wrap" style="top:168px;left:18px;width:415px;height:84px;justify-content:flex-start;overflow:hidden">'
       +     '<svg id="' + svgId + '"></svg>'
       +   '</div>'
       +   '<div class="mb-f1" style="position:absolute;top:258px;left:18px;text-align:left">' + _esc(codigo) + '</div>'
-      // Monograma "ME" DERECHA (recuadro, llena el hueco)
-      +   '<div style="position:absolute;top:165px;left:483px;width:99px;height:90px;border:2px solid #111;border-radius:8px;display:flex;align-items:center;justify-content:center">'
-      +     '<span style="font-size:42px;font-weight:900;font-family:\'Arial Black\',sans-serif">ME</span>'
-      +   '</div>'
+      // [cuadritos][ME] a la derecha del barcode (sin caja) — acompañan al logo
+      +   squaresHtml
+      +   '<div style="position:absolute;top:176px;left:505px;font-size:40px;font-weight:900;font-family:\'Arial Black\',sans-serif">ME</div>'
       + '</div>';
   }
 
