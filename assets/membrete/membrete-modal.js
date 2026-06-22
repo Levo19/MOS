@@ -1254,7 +1254,8 @@
         codigoBarra: item.esSkuBase ? item.skuBase : item.codigoBarra,
         descripcion: item.descripcion,
         precio:      item.precio,
-        skuBase:     item.skuBase
+        skuBase:     item.skuBase,
+        esSkuBase:   item.esSkuBase    // ⧉ canónico en el preview
       }, { svgId: meSvgId });
       previewWhHtml = AdhesivoPreview.renderMembreteWhHtml({
         codigoBarra: item.esSkuBase ? item.skuBase : item.codigoBarra,

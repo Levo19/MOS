@@ -383,32 +383,47 @@
     var bcH     = _dotsToPx(48);  // 72 px (igual envasado)
     var codigoY = _dotsToPx(152); // 228 px
 
+    // [v1.2.0 SYNC rediseño góndola] Layout NUEVO (= buildTSPLMembreteMe del Edge):
+    //   nombre IZQ (centrado V+H en su mitad) │ precio focalizado DER (S/ + entero
+    //   grande + céntimos chico, en recuadro, SIN medida) · barcode IZQ + monograma
+    //   "ME" DER · ⧉ canónico pegado al divisor si multi-código.
+    var esCanonico = !!(datos.esSkuBase || datos.esCanonico);
+    var ent = Math.floor(precio).toString();
+    var cen = Math.round((precio - Math.floor(precio)) * 100).toString();
+    if (cen.length < 2) cen = ('0' + cen).slice(-2);
+    var iconCanon = esCanonico
+      ? '<div style="position:absolute;top:18px;left:318px;width:28px;height:28px">'
+        + '<div style="position:absolute;top:7px;left:0;width:16px;height:16px;border:2px solid #111;background:#fff"></div>'
+        + '<div style="position:absolute;top:0;left:9px;width:16px;height:16px;border:2px solid #111;background:#fff"></div>'
+        + '</div>'
+      : '';
+
     return ''
       + '<div class="mb-prev mb-prev-me">'
       +   '<div class="mb-prev-chip mb-prev-chip-me">🏪 ME · Góndola</div>'
-      // 1) Descripción Font 3, 1 línea centrada Y=2-26
-      +   '<div class="mb-abs mb-f3" style="top:' + descY + 'px;left:0;width:100%;text-align:center">'
-      +     _esc(descShort)
+      // Nombre IZQUIERDA, centrado V+H en su mitad (X12..224 dots → 18..336px)
+      +   '<div class="mb-f3" style="position:absolute;top:21px;left:18px;width:318px;height:138px;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1.15">'
+      +     _esc(descripcion)
       +   '</div>'
-      // 2) PRECIO Font 5 MEGA centrado Y=30-78
-      +   '<div class="mb-abs mb-f5" style="top:' + precioY + 'px;left:0;width:100%;text-align:center">'
-      +     _esc(precioStr)
+      // Divisor (X232 → 348px)
+      +   '<div class="mb-line" style="top:27px;left:348px;width:3px;height:120px"></div>'
+      +   iconCanon
+      // Precio focalizado DERECHA en recuadro, SIN medida (S/ chico + entero grande + céntimos chico)
+      +   '<div style="position:absolute;top:33px;left:360px;width:216px;height:96px;border:2px solid #111;border-radius:6px;display:flex;align-items:center;justify-content:center">'
+      +     '<div style="display:flex;align-items:flex-start;gap:3px">'
+      +       '<span class="mb-f2" style="margin-top:8px">S/</span>'
+      +       '<span style="font-size:48px;font-weight:900;line-height:1;font-family:\'Arial Black\',sans-serif">' + _esc(ent) + '</span>'
+      +       '<span class="mb-f2" style="margin-top:3px">' + _esc(cen) + '</span>'
+      +     '</div>'
       +   '</div>'
-      // 3) Línea decorativa bajo precio Y=82-85 (3 dots gruesa)
-      +   '<div class="mb-line" style="top:' + lineaY + 'px;left:60px;width:480px;height:' + lineaH + 'px"></div>'
-      // 4) Frame con corner marks + barcode Y=88-148
-      +   '<div class="mb-frame" style="top:' + frameY1 + 'px;left:15px;width:570px;height:' + frameH + 'px">'
-      +     '<span class="mb-cm mb-cm-tl" style="top:0;left:0"></span>'
-      +     '<span class="mb-cm mb-cm-tr" style="top:0;right:0"></span>'
-      +     '<span class="mb-cm mb-cm-bl" style="bottom:0;left:0"></span>'
-      +     '<span class="mb-cm mb-cm-br" style="bottom:0;right:0"></span>'
-      +   '</div>'
-      +   '<div class="mb-bc-wrap" style="top:' + bcY + 'px;left:30px;right:30px;height:' + bcH + 'px">'
+      // Barcode IZQUIERDA (X12 → 18px) + código izq
+      +   '<div class="mb-bc-wrap" style="top:168px;left:18px;width:340px;height:84px;justify-content:flex-start">'
       +     '<svg id="' + svgId + '"></svg>'
       +   '</div>'
-      // 5) Código texto Font 1 Y=152
-      +   '<div class="mb-abs mb-f1" style="top:' + codigoY + 'px;left:0;width:100%;text-align:center">'
-      +     _esc(codigo)
+      +   '<div class="mb-f1" style="position:absolute;top:258px;left:18px;text-align:left">' + _esc(codigo) + '</div>'
+      // Monograma "ME" DERECHA (recuadro, llena el hueco)
+      +   '<div style="position:absolute;top:165px;left:483px;width:99px;height:90px;border:2px solid #111;border-radius:8px;display:flex;align-items:center;justify-content:center">'
+      +     '<span style="font-size:42px;font-weight:900;font-family:\'Arial Black\',sans-serif">ME</span>'
       +   '</div>'
       + '</div>';
   }
