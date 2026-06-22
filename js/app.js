@@ -3351,8 +3351,8 @@ const MOS = (() => {
           <button onclick="event.stopPropagation();MOS.refreshPNManual()" title="Refrescar lista (ignora cache)" style="background:transparent;border:1px solid rgba(217,119,6,.4);color:#fbbf24;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer">↺</button>
           <span style="color:#fbbf24;font-size:14px;transition:transform .2s;transform:rotate(${open ? 180 : 0}deg);display:inline-block">▾</span>
         </div>
-        <div style="overflow:hidden;transition:max-height .25s ease-out;max-height:${open ? 1000 : 0}px">
-          <div style="display:flex;flex-direction:column;gap:8px;padding-top:10px">
+        <div style="overflow:hidden;transition:max-height .25s ease-out;max-height:${open ? 2000 : 0}px">
+          <div style="display:flex;flex-direction:column;gap:8px;padding-top:10px;max-height:52vh;overflow-y:auto;-webkit-overflow-scrolling:touch">
           ${addBtnHtml}
           ${listaHtml}
           </div>
