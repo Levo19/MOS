@@ -1099,6 +1099,7 @@
       codigoBarra: String(p.codigoBarra || p.idProducto || ''),
       descripcion: String(p.descripcion || p.nombre || ''),
       precio:      parseFloat(p.precio || p.precioVenta) || 0,
+      unidad:      String(p.unidad || p.unidadMedida || p.Unidad_Medida || ''),  // góndola: medida c/u · /kg
       skuBase:     skuB,
       esSkuBase:   totalCodigos > 1,
       codigos:     codigosDelGrupo
