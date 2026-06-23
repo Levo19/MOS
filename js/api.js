@@ -490,6 +490,9 @@ const API = (() => {
   //    Ver REPORTE. Con todo OFF (default) marcarPagos/anularPago van 100% por GAS, idéntico a hoy.
   function _mosJornadasDirecto() { return !!_mosFlag('mos_jornadas_directo', 'jornadasDirecto'); }
   function _mosLiqdiaDirecto()   { return !!_mosFlag('mos_liqdia_directo',   'liqdiaDirecto'); }
+  // [227] pago de jornales directo: RPC mos.marcar_pagos (acepta fechas[]→snapshot de liquidaciones_dia) +
+  // mos.anular_pago (verifica clave admin server-side). Gate cfgKey 'pagosJornalDirecto' (get_flags).
+  function _mosPagosJornalDirecto() { return !!_mosFlag('mos_pagos_jornal_directo', 'pagosJornalDirecto'); }
 
   // Lectura directa de finanzas por rango. Devuelve {serie,totales,desde,hasta} (= d.data de GAS) o null (→ GAS).
   // null si: sin token, respuesta no-ok, o GATE DE FRESCURA en false (sombra mos.* stale → no servir P&L viejo).
@@ -1617,6 +1620,39 @@ const API = (() => {
       return _desempacarCatalogo(out);         // {rehabTs, idJornada, monto}
     }
 
+    if (action === 'marcarPagos') {
+      // ⚠️ DINERO (pago jornal) ⚠️ El front manda {idPersonal, fechas[], nombre, rol, appOrigen, pagadoPor,
+      // comentario}. RPC mos.marcar_pagos (227) reconstruye el snapshot LEYÉNDOLO de liquidaciones_dia (server-truth,
+      // rechaza si no materializado = nunca paga de menos), con idempotencia por localId + anti-doble-pago. localId
+      // ESTABLE vía _mosLocalId (reusa p.localId en reintentos del MISMO objeto → la RPC dedupea). Rechazo de negocio
+      // (día ya pagado / no materializado) → _desempacarCatalogo lanza → UI (NO va a GAS). El front lee res.total.
+      const out = await _sbRpcMOSWrite('marcar_pagos', { p: {
+        idPersonal: p.idPersonal != null ? String(p.idPersonal) : undefined,
+        localId: _mosLocalId(p, 'LIQ'),
+        fechas: p.fechas, nombre: p.nombre, rol: p.rol, appOrigen: p.appOrigen,
+        pagadoPor: p.pagadoPor != null ? p.pagadoPor : _mosUsuario(p), comentario: p.comentario
+      } });
+      if (out == null) return null;            // sin token → GAS
+      return _desempacarCatalogo(out);         // {idPago, idGasto, dias, total} — el front lee .total
+    }
+
+    if (action === 'anularPago') {
+      // ⚠️ DINERO ⚠️ El front manda {idPago, claveAdmin} y LEE res.autorizado===false para revertir/mostrar error
+      // (NO espera throw). RPC mos.anular_pago (227) verifica la clave admin server-side. Normalizamos: clave mala u
+      // otro rechazo de negocio → {autorizado:false, error} (shape GAS), NO throw. *_OFF/sin-claim → null → GAS.
+      const out = await _sbRpcMOSWrite('anular_pago', { p: {
+        idPago: p.idPago != null ? String(p.idPago) : undefined,
+        claveAdmin: p.claveAdmin, anuladoPor: p.anuladoPor != null ? p.anuladoPor : _mosUsuario(p)
+      } });
+      if (out == null) return null;            // sin token → GAS
+      if (out.ok === false) {
+        const err = String(out.error || '');
+        if (/_OFF$/.test(err) || err === 'APP_NO_AUTORIZADA') return null;   // kill-switch → GAS
+        return { autorizado: false, error: err || 'Clave incorrecta' };      // shape que el front entiende
+      }
+      return { autorizado: true, ...(out.data || {}) };
+    }
+
     if (action === 'vetarLiquidacionDia') {
       // ⚠️ DINERO ⚠️ GAS vetarLiquidacionDia → {ok:true} (sin data); _fetch desempaqueta a undefined; el front
       // NO lee la respuesta (await resuelve = éxito; .catch lee e.message = YA_PAGADA/NO_ENCONTRADA). RPC
@@ -1699,9 +1735,14 @@ const API = (() => {
     crearEvaluacion:            _mosEvalDirecto,
     registrarJornada:           _mosJornadasDirecto,
     eliminarJornada:            _mosJornadasDirecto,
-    rehabilitarJornada:         _mosJornadasDirecto
+    rehabilitarJornada:         _mosJornadasDirecto,
+    // [227] pago/anulación de jornales DIRECTO-PURO. RPC server-side: marcar_pagos lee snapshot de
+    // liquidaciones_dia (no se confía en montos del cliente; rechaza si no materializado = nunca paga de menos);
+    // anular_pago verifica clave admin. localId estable lo deriva _mosLocalId. Gate _mosPagosJornalDirecto.
+    marcarPagos:                _mosPagosJornalDirecto,
+    anularPago:                 _mosPagosJornalDirecto
     // [DUAL-WRITE] pedidos/pagos/provprod/gastos/horario/liqdia: SIN entrada acá → su escritura va SIEMPRE por
-    // GAS (dual-write espeja la sombra). marcarPagos/anularPago/recomputarLiquidacionDia tampoco (incompatibles).
+    // GAS (dual-write espeja la sombra). recomputarLiquidacionDia tampoco (incompatible).
   };
 
   // Acciones que soportan DUAL-WRITE (GAS primero = verdad, luego espejo best-effort a Supabase), CADA UNA con

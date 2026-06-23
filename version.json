@@ -1,1 +1,1 @@
-{ "version": "2.43.316", "build": "F6 push wiring: MOS registra su token FCM directo en Supabase (mos.registrar_push_token) ademas de GAS. Aditivo." }
+{ "version": "2.43.317", "build": "F2/F3 pago jornales DIRECTO: marcarPagos/anularPago via mos.marcar_pagos (fechas[]->snapshot liquidaciones_dia, rechaza si no materializado) + mos.anular_pago (verifica clave). Flag MOS_PAGOS_JORNAL_DIRECTO=1. SQL 227. Ticket impresion pendiente de cablear a Edge." }
