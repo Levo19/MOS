@@ -1690,9 +1690,17 @@ const API = (() => {
     crearEvaluacion:             _mosEvalDualWrite
   };
 
+  // [SHADOW-CRÍTICAS] Acciones cuya escritura DEBE vivir en Supabase (la sombra es la verdad que leen las otras
+  // apps en tiempo real) y cuyo sync Hoja→sombra es NO confiable (puede estar caído sin avisar). Para estas, si
+  // el directo no commitea (null = sin token), NO se cae a GAS en silencio: GAS escribiría la Hoja pero el cambio
+  // NUNCA llegaría a mos.* → WH/MOS no lo verían (el bug de "agregué proveedor y no se propagó"). Se LANZA para
+  // que el UI optimista revierta y el usuario reintente. Default (acciones no listadas): fallback a GAS de siempre.
+  const _MOS_DIRECT_REQUIRED = { crearProveedor: 1, actualizarProveedor: 1 };
+
   // POST con escritura directa opcional. Con el gate de la acción OFF (default) es IDÉNTICO a hoy: ni
   // siquiera evalúa el directo → va recto a _fetch('POST') → GAS. Con el gate ON + token + RPC viva, escribe
-  // directo; si el directo dice "no commiteó" (null) → GAS; si lanza (negocio/timeout) → PROPAGA (no GAS).
+  // directo; si el directo dice "no commiteó" (null) → GAS (salvo shadow-críticas, que lanzan); si lanza
+  // (negocio/timeout) → PROPAGA (no GAS).
   async function _postMOS(action, p) {
     // ── [DUAL-WRITE] Modo PREFERIDO y SEGURO (gate dedicado, default OFF). Se evalúa ANTES que el directo-puro.
     //   1) GAS primero (AWAIT): escribe la Hoja = VERDAD y devuelve su shape (idéntico a hoy) + corre su propio
@@ -1733,7 +1741,12 @@ const API = (() => {
         }
         return d;   // éxito directo (data desempaquetada == shape GAS)
       }
-      // null → no commiteó (flag server OFF / sin token / no cableada) → GAS, seguro.
+      // null → no commiteó (flag server OFF / sin token / no cableada).
+      // SHADOW-CRÍTICA: no caer a GAS en silencio (escribiría la Hoja pero NO la sombra → no se propaga).
+      if (_MOS_DIRECT_REQUIRED[action]) {
+        throw new Error('SIN_CONEXION_SUPABASE: el cambio no se guardó directo. Reintentá (no se usó GAS para evitar que no se propague a WH/MOS).');
+      }
+      // resto → GAS, seguro.
     }
     return _fetch('POST', { action, ...p });
   }
