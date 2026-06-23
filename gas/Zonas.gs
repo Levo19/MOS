@@ -81,6 +81,19 @@ function crearZona(params) {
     params.estado !== undefined ? String(params.estado) : '1',
     params.politicaJSON || ''
   ]);
+  // [DELETE-SAFE · espejo inmediato] Mirror best-effort a mos.zonas (upsert por PK), igual que el catálogo.
+  // La Hoja sigue siendo la VERDAD (no hay RPC directo-puro de zonas); el espejo mantiene la sombra fresca sin
+  // esperar el sync horario → la lectura Supabase-first (zonas_lista) ve el alta de inmediato. NUNCA lanza.
+  try {
+    if (typeof _dualWriteCAT === 'function') {
+      _dualWriteCAT('zonas', {
+        idZona: idZona, nombre: params.nombre, descripcion: params.descripcion || '',
+        direccion: params.direccion || '', responsable: params.responsable || '',
+        estado: params.estado !== undefined ? String(params.estado) : '1',
+        politicaJSON: params.politicaJSON || ''
+      });
+    }
+  } catch (eDW) { Logger.log('[dualWrite crearZona] ' + (eDW && eDW.message)); }
   return { ok: true, data: { idZona: idZona } };
 }
 
@@ -102,6 +115,16 @@ function actualizarZona(params) {
           sheet.getRange(i + 1, idx + 1).setValue(val);
         }
       });
+      // [DELETE-SAFE · espejo inmediato] Mirror best-effort de la fila ACTUALIZADA a mos.zonas (upsert por PK).
+      // La Hoja es la verdad; el espejo mantiene la sombra fresca para zonas_lista. NUNCA lanza.
+      try {
+        if (typeof _dualWriteCAT === 'function') {
+          var fila = sheet.getRange(i + 1, 1, 1, hdrs.length).getValues()[0];
+          var obj = {};
+          hdrs.forEach(function(h, k){ obj[h] = fila[k]; });
+          _dualWriteCAT('zonas', obj);
+        }
+      } catch (eDW) { Logger.log('[dualWrite actualizarZona] ' + (eDW && eDW.message)); }
       return { ok: true };
     }
   }

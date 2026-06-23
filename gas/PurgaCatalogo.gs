@@ -230,6 +230,26 @@ function _procesarEliminacionItems(items, ctx) {
   eqRowsToDelete.sort(function(a, b){ return b.row - a.row; })
                  .forEach(function(r){ hojaEQ.deleteRow(r.row); });
 
+  // [dual-write] Propagar el BORRADO a la sombra (best-effort; Sheets = verdad). El sync horario es
+  // solo-upsert → NO borra por sí solo, así que sin esto las filas purgadas quedarían FANTASMA en
+  // mos.productos / mos.equivalencias. 'eq.' es el operador PostgREST obligatorio (sin él → HTTP 400).
+  pmRowsToDelete.forEach(function(r) {
+    var idp = r.snapshot && r.snapshot.idProducto;
+    if (!idp) return;
+    try {
+      var _dp = _sbDelete('mos.productos', { id_producto: 'eq.' + String(idp) });
+      if (!_dp.ok) Logger.log('[purga dualWrite] _sbDelete mos.productos ' + idp + ' HTTP ' + _dp.code + ' ' + (_dp.error || ''));
+    } catch (e) { Logger.log('[purga dualWrite] _sbDelete mos.productos ' + idp + ' excepción: ' + e); }
+  });
+  eqRowsToDelete.forEach(function(r) {
+    var ide = r.snapshot && r.snapshot.idEquiv;
+    if (!ide) return;
+    try {
+      var _de = _sbDelete('mos.equivalencias', { id_equiv: 'eq.' + String(ide) });
+      if (!_de.ok) Logger.log('[purga dualWrite] _sbDelete mos.equivalencias ' + ide + ' HTTP ' + _de.code + ' ' + (_de.error || ''));
+    } catch (e) { Logger.log('[purga dualWrite] _sbDelete mos.equivalencias ' + ide + ' excepción: ' + e); }
+  });
+
   return {
     idLote:               idLote,
     eliminadosProductos:  pmRowsToDelete.length,

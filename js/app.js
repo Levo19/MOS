@@ -36396,6 +36396,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       console.log('[Push] token obtenido:', token ? token.substring(0,20)+'...' : 'null');
       if (!token) return;
 
+      // [F6 push · cero-GAS] Registro directo a Supabase (mos.push_tokens). Aditivo al GAS.
+      if (API.registrarPushTokenSB) {
+        API.registrarPushTokenSB({ token, usuario: nombre, appOrigen: 'MOS',
+          dispositivo: navigator.userAgent.substring(0, 150) }).catch(() => {});
+      }
       // Guardar token en GAS
       API.post('registrarPushToken', {
         token, usuario: nombre, appOrigen: 'MOS',

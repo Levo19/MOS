@@ -46,9 +46,44 @@ Edge `emitir-cpe` cableada, inerte.
 - 🔵 **P6.2** Verificar serie + activar `ME_CPE_DIRECTO`.
 - 🔴 **P6.3** Emitir UNA boleta de prueba vigilada (es fiscal, SUNAT).
 
+## FASE 6.5 — MOS read-backs GAS delete-safe (✅ HECHO 2026-06-18, GAS @422)
+**Objetivo: "si borro el Sheet de MOS, la LECTURA de MOS sigue funcionando" — COMPLETO para todos los read-backs operativos de GAS.**
+Antes: los endpoints GAS (getProveedoresMaster/getJornadas/getGastos/getEvaluacionesDia/getLiquidaciones*/...) leían la HOJA → eran el fallback del front y los usaban los orquestadores GAS (P&L). Ahora leen la SOMBRA `mos.*` con gate `_fresh` + fallback HOJA (espejan el patrón del front).
+- ✅ **Helper nuevo** en `gas/Supabase.gs`: `_sbLeerListaMOS(fn,args,flag)` (array), `_sbLeerObjetoMOS` (objeto), `_sbLeerRpcFreshMOS` (respuesta-completa). Gate = MAESTRO `MOS_LECTURA_NAVEGADOR` OR flag de módulo (memo por-ejecución). `_fresh!==true`/error/flag-off ⇒ `null` ⇒ fallback HOJA. NUNCA lanza.
+- ✅ **24 read-backs migrados** (todos con paridad de shape verificada contra la RPC + smoke-test `_fresh:true`):
+  - Proveedores.gs: getProveedoresMaster·getPagosProveedor·getPedidosProveedor·getProveedorProductos·getProveedoresQueVenden + el read de PAGOS dentro de getHistoricoProveedor.
+  - Finanzas.gs [DINERO]: getJornadas·getGastos·`_calcularGastos`·`_calcularPersonal` (PERSONAL_MASTER + JORNADAS-tombstones + LIQUIDACIONES_DIA presente).
+  - Liquidaciones.gs [DINERO]: getLiquidacionesPendientesDia·getPersonalDiaFast·getLiquidacionesPagadas·getPagoDetalle·getLiqDiaBonSan·getLiquidacionesVetadas.
+  - Catálogo/otros: getEquivalencias·getProductosEditadosRecientes·getCategorias·getEvaluacionesDia·getEtiquetasPendientes·getHorariosApps.
+- ✅ **2 RPCs nuevas** (aplicadas): `mos.gastos_lista` (163), `mos.liquidaciones_dia_lista` (161). + flags `MOS_GASTOS_LECTURA`/`MOS_ETIQ_LECTURA`='1' (162).
+- ✅ **Money-safety TZ:** los filtros por día usan `at time zone 'America/Lima'` server-side; cuando el dato viene de la RPC NO se re-aplica el filtro `substring(0,10)` (UTC) → no se descartan filas tarde-Lima. Validado: `liquidaciones_dia_lista`==`personal_dia_lista`==raw (n=3, sum=165, exacto).
+- 🟡 **SKIP deliberado (riesgo de shape / hot-path):** getProductosMaster·getProductoMaster·getProductoPorCodigo (el front re-mapea el crudo; GAS quedaría frágil), getResumenDia (RPC devuelve array, GAS objeto), getEtiquetasPorZona (sin RPC del shape agregado), `_liqMapaPagados` (idempotencia DENTRO de marcarPagos = write path; el Sheet es autoridad ahí hasta el cutover de escritura). Estos NO bloquean el delete-safe de lectura porque PRODUCTOS_MASTER lo lee el front directo; el resto son agregados con su propio fallback.
+
+## FASE 6.6 — MOS ESCRITURA directo-puro (🔴 OWNER-GATED · runbook listo, NADA flipeado)
+**Hallazgo clave 2026-06-18:** la escritura directo-puro SOLO está cableada en el FRONTEND para **catálogo** (`MOS_CATALOGO_DIRECTO`, gate `_mosCatalogoDirecto`) y **proveedores** (`MOS_PROVEEDORES_DIRECTO`, gate `_mosProveedoresDirecto`). Los demás módulos (pedidos/pagos/provprod/gastos/jornadas/eval/horario/liqdia) SOLO tienen cableado DUAL-WRITE (GAS=verdad + espejo) — prender su `MOS_*_DIRECTO` NO cambia nada en el front (seguiría escribiendo la HOJA). ⇒ Esos módulos NO pueden ser delete-safe-de-escritura solo con flags: requieren RE-CABLEAR el front (tanda futura). **Por eso NO se flipeó ningún `MOS_*_DIRECTO` de escritura** (siguen en '0' salvo `MOS_LIQDIA_DIRECTO`='1' ya vigente, que es materialización por RPC, no escritura-de-usuario).
+
+### Orden EXACTO para cutover de ESCRITURA de PROVEEDORES (el único limpio hoy; NO es dinero):
+La sombra de proveedores la sincroniza `_syncMOSImpl` (clave `_MOS_SPECS`='proveedores'), apagable por CSV `MOS_SYNC_OFF_TABLAS` en `mos.config`.
+1. 🔴 **(dueño)** Apagar el sync de la tabla ANTES de prender la escritura: en el editor GAS correr `apagarSyncTablaMOS('proveedores')` (escribe `MOS_SYNC_OFF_TABLAS='proveedores'`). Verificar `_mosSyncOffTablas()` → `{proveedores:true}`.
+2. 🔵 **(SQL, tras el paso 1)** `update mos.config set valor='1' where clave='MOS_PROVEEDORES_DIRECTO';` (prende RPC `crear/actualizar_proveedor` + gate del front).
+3. 🔴 **(dueño)** Validar en rollback: crear/editar un proveedor → aparece en `mos.proveedores` → recargar MOS lo muestra (lectura ya directa) → NO duplica. Heartbeat lo mantiene `_tocar_latido_sync`.
+4. 🔴 **Kill-switch:** `update mos.config set valor='0' where clave='MOS_PROVEEDORES_DIRECTO';` + `prenderSyncTablaMOS('proveedores')` (vuelve el sync) → rollback total.
+**Regla de oro money-safety:** el paso 1 (sync-off) SIEMPRE va ANTES del paso 2 (flag-on). Flag-on con sync vivo = el sync re-upsertea la HOJA stale sobre la sombra = pérdida (lección 15-jun).
+
+### Cutover de ESCRITURA de CATÁLOGO (productos/equivalencias): MÁS involucrado.
+El sync del catálogo es SEPARADO (`syncCatalogoSupabase`, trigger horario propio + foldeado en `syncMOSReciente._refrescarCatalogoThrottled`), NO usa `MOS_SYNC_OFF_TABLAS`. Apagarlo = (a) 🔴 `desinstalarTriggerCatalogo()` y (b) comentar/gate el `_refrescarCatalogoThrottled()` dentro de `_syncMOSImpl` (GAS edit + push). RECIÉN luego (c) 🔵 `update mos.config set valor='1' where clave='MOS_CATALOGO_DIRECTO';`. Por el paso (b) requiere edit+deploy de GAS → coordinar en sesión dedicada. Kill-switch inverso.
+
+### MOS_SYNC_OFF_TABLAS — lista exacta + funciones GAS por tabla (cuando el dueño quiera cutover de escritura):
+| Tabla (clave `_MOS_SPECS`) | ¿front cableado direct-pure? | apagar sync | flag |
+|---|---|---|---|
+| `proveedores` | ✅ SÍ | `apagarSyncTablaMOS('proveedores')` | `MOS_PROVEEDORES_DIRECTO` |
+| productos/equivalencias (catálogo) | ✅ SÍ | `desinstalarTriggerCatalogo()` + gate `_refrescarCatalogoThrottled` (GAS edit) | `MOS_CATALOGO_DIRECTO` |
+| `pedidos_proveedor`,`pagos_proveedor`,`gastos`,`jornadas`,`evaluaciones`,`etiquetas_zona`,`proveedores_productos`,`liquidaciones_dia`,`liquidaciones_pagos` | ❌ NO (solo dual-write) | `apagarSyncTablaMOS('<tabla>')` | requiere RE-CABLEAR front primero (tanda futura) — NO flipear aún |
+
 ## FASE 7 — Corte final de Sheets (la gran decisión, por app)
 - 🔵 **P7.1** Verificar que TODA lectura/escritura de cada app va por Supabase (cero dependencia de hoja).
 - 🔴 **P7.2** Decisión final: retirar Sheets como fuente. Con vos, app por app, validando.
+- 📌 **MOS LECTURA = delete-safe (✅ Fase 6.5)**. MOS ESCRITURA = aún depende de la HOJA salvo catálogo/proveedores tras su cutover (Fase 6.6). Veredicto delete-safe: ver REPORTE de la sesión 2026-06-18.
 
 ## FASE 8 — Cierre
 - 🔵 **P8.1** pg_cron nocturno completo (reconciliación/snapshot) + limpieza de wiring muerto.

@@ -90,6 +90,38 @@ function _etiqGenerarParaZonas(params) {
   // params: { idProducto, codigoBarra, skuBase, descripcion,
   //          precioAnterior, precioNuevo, usuario }
 
+  // ── [DELETE-SAFE · directo-puro] Si MOS_ETIQ_DIRECTO=1 → el fan-out por zona ocurre 100% en Supabase
+  // (mos.generar_etiquetas_zona lee mos.zonas + mos.productos, aplica el filtro canónico y hace el UPSERT
+  // por (idProducto,idZona) sobre mos.etiquetas_zona), SIN tocar la HOJA. El push a cajeros/vendedores se
+  // dispara igual (orquestación de notificaciones queda en GAS). null ⇒ flag OFF / RPC falló → cae al
+  // camino HOJA + dual-write de siempre (NO se rompe nada). Idéntico patrón a Proveedores/Horarios.
+  if (typeof _sbEscribirDirectoMOS === 'function') {
+    var _gd = _sbEscribirDirectoMOS('generar_etiquetas_zona', {
+      idProducto:     params.idProducto || '',
+      codigoBarra:    params.codigoBarra || '',
+      skuBase:        params.skuBase || '',
+      descripcion:    params.descripcion || '',
+      precioAnterior: parseFloat(params.precioAnterior) || 0,
+      precioNuevo:    parseFloat(params.precioNuevo) || 0,
+      usuario:        params.usuario || ''
+    }, 'MOS_ETIQ_DIRECTO');
+    if (_gd) {
+      // Push opcional a cajeros (auto-print remoto). Best-effort, igual que el camino HOJA.
+      try {
+        if (typeof _enviarPushTodos === 'function' && _gd.data &&
+            ((_gd.data.creadas || 0) + (_gd.data.actualizadas || 0)) > 0) {
+          _enviarPushTodos(
+            '🏷 Nueva etiqueta de precio',
+            (params.descripcion || 'Producto') + ' · S/' + (parseFloat(params.precioNuevo) || 0).toFixed(2),
+            { rolesPermitidos: ['CAJERO', 'VENDEDOR'], idNotif: 'MOS_ETIQUETA_NUEVA',
+              excluirUsuario: params.usuario || '' }
+          );
+        }
+      } catch(_){}
+      return { ok: true, data: _gd.data || { creadas: 0, actualizadas: 0 } };
+    }
+  }
+
   // ── FILTRO: solo canónicos ──
   // Un producto es canónico si su factorConversion === 1 (o si no tiene
   // factor, asumimos canónico). Leemos PRODUCTOS_MASTER para confirmar.
@@ -218,6 +250,8 @@ function _etiqGenerarParaZonas(params) {
 // Ventana de visibilidad: 3 días desde ts_cambio. Después se ocultan.
 function getEtiquetasPendientes(params) {
   params = params || {};
+  var dir = _sbLeerListaMOS('etiquetas_pendientes', { idZona: params.idZona, usuario: params.usuario }, 'MOS_ETIQ_LECTURA');
+  if (dir !== null) return { ok: true, data: dir };
   var sh = _etiqGetSheet();
   var rows = _sheetToObjects(sh);
   var usuarioN = String(params.usuario || '').toLowerCase().trim();
@@ -254,6 +288,23 @@ function getEtiquetasPendientes(params) {
 function marcarVistoEtiqueta(params) {
   if (!params || !params.idEtiq) return { ok: false, error: 'Requiere idEtiq' };
   if (!params.usuario)           return { ok: false, error: 'Requiere usuario' };
+
+  // ── [DELETE-SAFE · directo-puro] MOS_ETIQ_DIRECTO=1 → el merge del visto_csv ocurre 100% server-side
+  // (mos.actualizar_etiqueta_zona con agregarVisto: append-set atómico por PK), SIN tocar la HOJA. Idempotente
+  // (re-marcar = no-op) y sin lost-update (dos cajeros a la vez no se pisan). null ⇒ flag OFF / RPC falló →
+  // cae al camino HOJA + dual-write de siempre (no se rompe nada). La RPC devuelve el visto_csv resultante.
+  if (typeof _sbEscribirDirectoMOS === 'function') {
+    var _vd = _sbEscribirDirectoMOS('actualizar_etiqueta_zona', {
+      idEtiq:       String(params.idEtiq),
+      agregarVisto: String(params.usuario)
+    }, 'MOS_ETIQ_DIRECTO');
+    if (_vd) {
+      var csv = (_vd.data && _vd.data.vistoCsv != null) ? String(_vd.data.vistoCsv) : '';
+      var vistoPor = csv ? csv.split(',').map(function(s){ return s.trim(); }).filter(Boolean) : [];
+      return { ok: true, data: { idEtiq: params.idEtiq, vistoPor: vistoPor } };
+    }
+  }
+
   var sh = _etiqGetSheet();
   var data = sh.getDataRange().getValues();
   var hdrs = data[0];
@@ -277,6 +328,20 @@ function marcarVistoEtiqueta(params) {
 // ── API: marcar pegada (cierre) ────────────────────────────
 function marcarPegadaEtiqueta(params) {
   if (!params || !params.idEtiq) return { ok: false, error: 'Requiere idEtiq' };
+
+  // ── [DELETE-SAFE · directo-puro] MOS_ETIQ_DIRECTO=1 → UPDATE atómico por PK sobre mos.etiquetas_zona
+  // (estado=PEGADA + ts_pegada + pegada_por), SIN tocar la HOJA. Idempotente (re-marcar deja PEGADA).
+  // null ⇒ flag OFF / RPC falló (incl. idEtiq inexistente) → cae al camino HOJA + dual-write de siempre.
+  if (typeof _sbEscribirDirectoMOS === 'function') {
+    var _pd = _sbEscribirDirectoMOS('actualizar_etiqueta_zona', {
+      idEtiq:    String(params.idEtiq),
+      estado:    'PEGADA',
+      tsPegada:  _etiqNowIso(),
+      pegadaPor: String(params.usuario || '')
+    }, 'MOS_ETIQ_DIRECTO');
+    if (_pd) return { ok: true, data: { idEtiq: params.idEtiq, pegada: true } };
+  }
+
   var sh = _etiqGetSheet();
   var data = sh.getDataRange().getValues();
   var hdrs = data[0];
@@ -451,6 +516,20 @@ function imprimirBatchEtiquetasZona(params) {
 }
 
 function _etiqMarcarImpresa(idEtiq, usuario, jobId) {
+  // ── [DELETE-SAFE · directo-puro] MOS_ETIQ_DIRECTO=1 → UPDATE atómico por PK sobre mos.etiquetas_zona
+  // (estado=IMPRESA + ts_impresa + impresa_por + job_id), SIN tocar la HOJA. Idempotente (re-marcar deja
+  // IMPRESA). null ⇒ flag OFF / RPC falló (incl. idEtiq inexistente) → cae al camino HOJA + dual-write.
+  if (typeof _sbEscribirDirectoMOS === 'function') {
+    var _id = _sbEscribirDirectoMOS('actualizar_etiqueta_zona', {
+      idEtiq:     String(idEtiq),
+      estado:     'IMPRESA',
+      tsImpresa:  _etiqNowIso(),
+      impresaPor: String(usuario || ''),
+      jobId:      String(jobId || '')
+    }, 'MOS_ETIQ_DIRECTO');
+    if (_id) return true;
+  }
+
   var sh = _etiqGetSheet();
   var data = sh.getDataRange().getValues();
   var hdrs = data[0];
@@ -548,6 +627,57 @@ function getEtiquetasPorZona() {
 
 // ── Cron escalación (cada 1h) ──────────────────────────────
 function _etiqCronEscalacion() {
+  // ── [DELETE-SAFE · directo-puro] Si MOS_ETIQ_DIRECTO=1 → la AUTO-OBSOLETA (>3d) la hace pg_cron
+  // (mos.cron_escalar_etiquetas, hourly) o esta RPC directamente sobre mos.etiquetas_zona, SIN escanear
+  // la HOJA. Los PUSHES de escalación los seguimos disparando desde acá, pero leyendo la SOMBRA
+  // (getEtiquetasPendientes ya es shadow-backed con _fresh+fallback) → cero dependencia del Sheet.
+  // null/flag-OFF ⇒ cae al escaneo de HOJA de siempre (no se rompe nada).
+  if (typeof _mosFlagRawOn_ === 'function' && _mosFlagRawOn_('MOS_ETIQ_DIRECTO')) {
+    try {
+      var escRpc = (typeof _sbRpc === 'function') ? _sbRpc('mos', 'escalar_etiquetas_zona', {}) : null;
+      var obsoletas = (escRpc && escRpc.ok && escRpc.data && escRpc.data.ok) ? (escRpc.data.obsoletas || 0) : 0;
+      // Push: agrupar PENDIENTE >2h sin visto / IMPRESA >4h sin pegar leyendo la SOMBRA (no la HOJA).
+      var pend = getEtiquetasPendientes({});   // shadow-backed; estados PENDIENTE/IMPRESA, ya sin OBSOLETA/PEGADA
+      var ahoraD = new Date().getTime();
+      var grpNoVistasD = {}, grpSinPegarD = {};
+      (pend && pend.data ? pend.data : []).forEach(function(r) {
+        var est = String(r.estado || '').toUpperCase();
+        var ts; try { ts = new Date(r.ts_cambio).getTime(); } catch(_){ ts = 0; }
+        if (!ts) return;
+        var minutos = (ahoraD - ts) / 60000;
+        var idZ = String(r.idZona);
+        if (est === 'PENDIENTE' && minutos > 120 && !r.visto_csv) {
+          if (!grpNoVistasD[idZ]) grpNoVistasD[idZ] = { zonaNombre: r.zonaNombre, items: [] };
+          grpNoVistasD[idZ].items.push(r);
+        }
+        if (est === 'IMPRESA') {
+          var tsImp; try { tsImp = new Date(r.ts_impresa).getTime(); } catch(_){ tsImp = 0; }
+          var minImp = tsImp ? (ahoraD - tsImp) / 60000 : 0;
+          if (minImp > 240) {
+            if (!grpSinPegarD[idZ]) grpSinPegarD[idZ] = { zonaNombre: r.zonaNombre, items: [] };
+            grpSinPegarD[idZ].items.push(r);
+          }
+        }
+      });
+      Object.keys(grpNoVistasD).forEach(function(idZ) {
+        var g = grpNoVistasD[idZ];
+        try { _enviarPushTodos('🏷 ' + g.items.length + ' etiqueta(s) sin revisar',
+          'Zona ' + g.zonaNombre + ' · llevan más de 2h pendientes',
+          { rolesPermitidos: ['CAJERO', 'VENDEDOR'], idNotif: 'MOS_ETIQUETA_REVISAR' }); } catch(_){}
+      });
+      Object.keys(grpSinPegarD).forEach(function(idZ) {
+        var g = grpSinPegarD[idZ];
+        try { _enviarPushTodos('🏷 Zona ' + g.zonaNombre + ' no actualiza',
+          g.items.length + ' etiqueta(s) impresa(s) sin pegar hace >4h',
+          { soloRolesAdmin: true, idNotif: 'MOS_ETIQUETA_SIN_PEGAR_ADMIN' }); } catch(_){}
+      });
+      return { ok: true, data: { directoPuro: true, obsoletas: obsoletas,
+        noVistas: Object.keys(grpNoVistasD).length, sinPegar: Object.keys(grpSinPegarD).length } };
+    } catch(eDir) {
+      Logger.log('[Etiq] cron directo-puro error (cae a HOJA): ' + (eDir && eDir.message));
+      // cae al camino HOJA de abajo
+    }
+  }
   try {
     var sh = _etiqGetSheet();
     var data = sh.getDataRange().getValues();

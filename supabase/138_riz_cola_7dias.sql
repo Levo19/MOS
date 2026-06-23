@@ -172,9 +172,12 @@ begin
     ),
     -- total de skus con rotación y tamaño de lote = ceil(total/7) (mínimo 1). Día = idx/lote (0..6) → LUN..DOM.
     tot as ( select count(*)::int as n from filas ),
+    -- enumeración para la PARTICIÓN: orden DETERMINISTA e independiente del stock (rotacion desc, sku_base).
+    -- 'faltan' NO entra aquí (stock-volátil) → debe coincidir con el on_the_fly (174) para que un día materializado
+    -- y uno calculado al vuelo asignen el MISMO día a cada sku. 'faltan' solo prioriza la presentación dentro del día.
     enum as (
       select f.*,
-             (row_number() over (order by f.rotacion desc, f.faltan desc, f.sku_base) - 1) as idx
+             (row_number() over (order by f.rotacion desc, f.sku_base) - 1) as idx
       from filas f
     ),
     asignado as (

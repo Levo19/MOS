@@ -1,29 +1,36 @@
 -- ════════════════════════════════════════════════════════════════════════════════════════════════════════════
--- 174_riz_ticket_dia_rotacion_onthefly.sql — TICKET DEL DÍA RIZ: el día SIN materializar trae su TANDA de rotación
+-- 183_riz_ticket_almacen_objetivo_despacho.sql
+-- 🎫 FIX · "Ticket del día" RIZ de ALMACEN: esperada/faltan desde DESPACHO (igual que el panel 179), no de ventas.
 -- ────────────────────────────────────────────────────────────────────────────────────────────────────────────
--- 🔴 SÍNTOMA: el "Ticket del día" salía VACÍO / "sin productos para hoy, verificar stock real…".
---    En prod (2026-06-18, jueves): el cron `riz-recompute-semanal` ya materializó la cola de la semana ENTRANTE
---    (2026-06-22..28, ~31/día), pero HOY (06-18) NO está en esa ventana. me.zona_ticket_dia caía al fallback
---    on_the_fly, que devolvía SOLO el top-10 por brecha del esperado materializado → el admin veía ~10 (o, si la
---    UI exige tanda completa, lo leía como "vacío"). El dueño quiere ~40-50 productos REALES para el CONTEO FÍSICO.
+-- 🔴 SÍNTOMA: el "Ticket del día" de ALMACEN salía VACÍO ("sin productos para hoy / verificar stock real…").
+--    El ticket SÍ traía su tanda de rotación (universo despacho-based, correcto), pero TODOS los items salían con
+--    esperada:0 y faltan:0 → el front los oculta → "vacío".
 --
--- 🩺 CAUSA: dos definiciones distintas de "ticket del día":
---    · cron (138): cola = TODOS los skus CON ROTACIÓN (28d) de la zona, repartidos en 7 días LUN..DOM
---      (lote = ceil(total/7) ≈ 33/día para ZONA-02 con 231 skus). Es la tanda que toca CONTAR ese día.
---    · on_the_fly (RPC vieja): top-10 por brecha. Universo y tamaño totalmente distintos → vacío/escaso.
+-- 🩺 CAUSA: en 174 el ticket tomaba `esperada` (y por ende `faltan`) de me.zona_esperado para TODA zona, incluido
+--    ALMACEN. Para ALMACEN me.zona_esperado se arma de VENTAS de la estación "Estacion 01" (fuente equivocada) →
+--    objetivo 0 para casi todo el almacén. Además el `faltan` del ticket restaba contra me.stock_zonas (stock de
+--    zona, ~0 en almacén) en vez de wh.stock (stock físico de almacén, que es lo que usa el panel para ALMACEN).
+--    El panel 179 ya hace lo correcto para ALMACEN: objetivo por VOLUMEN DE DESPACHO (pico ISO-cerrado ×1.2) y
+--    stock contra wh.stock. Resultado: panel mostraba esperada/brecha >0 pero el ticket no.
 --
--- ✅ FIX (SOLO LECTURA — no toca escritura/stock/dinero/sync/flags): me.zona_ticket_dia se REESCRIBE para que el
---    fallback on_the_fly use la MISMA definición que el cron, pero calculada PARA EL DÍA SOLICITADO:
---      (1) Universo = skus con rotación>0 (28d) de la zona (ventas para zonas; despacho SALIDA_ZONA para ALMACEN),
---          idéntico a 138 (mismo cb_sku, misma fuente, misma exclusión de rotación-cero).
---      (2) Se ordena por rotación desc (más movido primero), lote_sz = ceil(total/7), día = idx/lote_sz (0..6).
---      (3) Se devuelve la TANDA cuyo día == weekday del p.fecha solicitado (LUN=0 … DOM=6).
---    Resultado: cualquier día (incluido hoy, sin esperar al cron) trae su bloque de ~33 productos a contar.
---    La rama "materializado" (cron) NO cambia: si hay lote materializado para esa fecha, manda ese (idempotente).
---    El esperado materializado solo ENRIQUECE (esperada/brecha/tendencia/picos via LEFT JOIN) — la ROTACIÓN manda,
---    así que aunque me.zona_esperado esté vacío el ticket igual lista los productos a contar.
+-- ✅ FIX (SOLO LECTURA — STABLE; no toca escritura/stock/dinero/sync/flags): en la rama ALMACEN del ticket,
+--    `esperada` y el stock contra el que se calcula `faltan` se obtienen con la MISMA matemática que el panel 179:
+--      · esperada(ALMACEN) = ceil(pico_ultima_sem × 1.2)  [serie de picos diarios por semana ISO CERRADA, 4 sem]
+--      · stock para faltan(ALMACEN) = wh.stock (cantidad_disponible), igual que stockZona del panel para ALMACEN
+--      · faltan(ALMACEN) = max(0, esperada − stockAlmacen)
+--    Las CTEs de objetivo (desp_base/desp_dia/desp_sem/desp_semanas/desp_serie/desp_agg/desp_vol/desp_obj) son
+--    RÉPLICA EXACTA de 179, salvo que su ventana ISO-cerrada se ancla al LUNES de la semana del p.fecha (v_lunes,
+--    la MISMA ancla estable que ya usa el ticket para la partición) en lugar de "now". Cuando el p.fecha cae en la
+--    semana en curso (caso normal del ticket de hoy), v_lunes == lunes-actual → la esperada COINCIDE con el panel
+--    sku por sku. La partición diaria (anclada al lunes, ceil(total/7) por día) NO cambia: solo se corrige de dónde
+--    sale esperada/faltan. El ORDEN de partición sigue siendo (rotacion desc, sku_base) — NO depende de stock/faltan.
 --
--- IDEMPOTENTE (create or replace). NO cambia firma. Wrapper mos.zona_ticket_dia(jsonb) intacto (delega aquí).
+--    ZONAS (ZONA-01/02/…): SIN CAMBIOS. Siguen usando me.zona_esperado (correcto para ellas) y me.stock_zonas.
+--      La rama de objetivo despacho solo se evalúa/aplica cuando v_es_almacen (CTEs gateadas por `where v_es_almacen`,
+--      y los CASE eligen la fuente por v_es_almacen). Para zonas, esperada/faltan quedan idénticas a 174.
+--
+-- IDEMPOTENTE (create or replace). Firma intacta. Wrapper mos.zona_ticket_dia(jsonb) (pass-through) NO se toca.
+--   El bloque "materializado" (cron Capa 3) NO cambia. Compatible con 179 (misma fórmula) y 174 (misma partición).
 -- ════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
 create or replace function me.zona_ticket_dia(p jsonb default '{}'::jsonb)
@@ -42,6 +49,10 @@ declare
   v_desde date;
   v_lunes date;    -- lunes ISO de la semana del p.fecha (ancla estable de la partición de 7 días)
   v_dow   int;     -- día de la semana del p.fecha en convención LUN=0 … DOM=6
+  v_desde_obj date;   -- inicio ventana objetivo despacho (4 sem ISO cerradas) — anclado a v_lunes (igual que panel 179)
+  v_hasta_obj date;   -- fin ventana objetivo despacho (domingo de la última sem cerrada)
+  v_umbral numeric := 0.10;  -- mismo umbral de tendencia que 179/_riz_picos
+  v_colchon numeric := 0.20; -- mismo colchón (×1.2) que 179/137/128
 begin
   if not mos._claim_ok() then return jsonb_build_object('ok',false,'error','APP_NO_AUTORIZADA'); end if;
   if v_zona = '' or v_fecha is null then
@@ -62,16 +73,17 @@ begin
 
   -- ── ON-THE-FLY = la TANDA DE ROTACIÓN del día solicitado (misma definición que el cron 138) ─────────────────
   -- ⚠️ PARTICIÓN ESTABLE (fix round-2): el universo/rotación y la ventana de 28d se anclan al LUNES de la semana
-  --    del p.fecha (no al p.fecha mismo). Si se anclaran al p.fecha, cada día usaría una ventana 28d distinta →
-  --    universo y ordenación distintos por día → la suma de los 7 días NO cubría el universo (huecos) y algunos
-  --    skus caían en 2 días (solapamiento). Anclando al lunes, los 7 días de UNA semana comparten UN solo universo
+  --    del p.fecha (no al p.fecha mismo). Anclando al lunes, los 7 días de UNA semana comparten UN solo universo
   --    y UNA sola enumeración → partición disjunta y COMPLETA (∪ días == universo, sin duplicados). Coincide con el
-  --    cron 138 (que ancla al lunes entrante). El stock/esperado se LEEN al instante (informativos), pero NO entran
-  --    al orden de partición (ver enum: order by rotacion desc, sku_base — sin 'faltan', que es stock-volátil).
+  --    cron 138. El stock/esperado se LEEN al instante (informativos), pero NO entran al orden de partición.
   v_es_almacen := (v_zona = 'ALMACEN');
   v_lunes      := (date_trunc('week', v_fecha::timestamp)::date);  -- lunes ISO de la semana del p.fecha (ancla estable)
   v_desde      := v_lunes - 28;                                    -- ventana de rotación: 4 semanas (anclada al lunes)
   v_dow        := (extract(isodow from v_fecha)::int - 1);         -- isodow: LUN=1..DOM=7 → 0..6
+  -- ventana del OBJETIVO de despacho (ALMACEN): 4 semanas ISO CERRADAS, anclada al MISMO v_lunes (estable + coincide
+  -- con el panel 179 cuando la semana solicitada es la actual). Idéntica técnica que me._riz_picos / 179.
+  v_desde_obj  := v_lunes - 28;   -- 4 sem antes del lunes de la semana del p.fecha
+  v_hasta_obj  := v_lunes - 1;    -- domingo de la última semana cerrada
 
   with
   -- mapa cod_barra → skuBase (base + equivalentes activos, SIN presentaciones — regla WH), igual que 138.
@@ -126,6 +138,74 @@ begin
     group by sku_base
     having sum(rotacion) > 0   -- solo con rotación (excluye rotación-cero, igual que el cron)
   ),
+  -- ── OBJETIVO DE DESPACHO para ALMACEN (RÉPLICA EXACTA de 179, anclada a v_lunes) ───────────────────────────
+  --    Solo se materializa cuando v_es_almacen. Para zonas estas CTEs quedan vacías y los CASE no las usan.
+  desp_base as (
+    select cs.sku as sku_base,
+           (g.fecha at time zone 'America/Lima')::date as dia,
+           coalesce(d.cant_recibida,0) as u
+    from wh.guia_detalle d
+    join wh.guias g on g.id_guia = d.id_guia
+    join cb_sku cs on cs.cb = upper(btrim(d.cod_producto))
+    where v_es_almacen
+      and g.tipo in ('SALIDA_ZONA','SALIDA_JEFATURA')
+      and upper(coalesce(g.estado,'')) in ('CERRADA','AUTOCERRADA')
+      and g.fecha is not null
+      and upper(coalesce(d.observacion,'')) <> 'ANULADO'
+      and coalesce(d.cant_recibida,0) > 0
+      and (g.fecha at time zone 'America/Lima')::date >= v_desde_obj
+      and (g.fecha at time zone 'America/Lima')::date <= v_hasta_obj
+  ),
+  desp_dia as (
+    select sku_base, dia, sum(u) as u_dia
+    from desp_base
+    where dia >= v_desde_obj and dia <= v_hasta_obj
+    group by sku_base, dia
+  ),
+  desp_sem as (
+    select sku_base, to_char(dia,'IYYY"-W"IW') as sem, max(u_dia) as pico_sem, sum(u_dia) as vol_sem
+    from desp_dia group by sku_base, to_char(dia,'IYYY"-W"IW')
+  ),
+  desp_semanas as (
+    select w, to_char((v_desde_obj + (w*7))::date,'IYYY"-W"IW') as lbl
+    from generate_series(0,3) as w
+  ),
+  desp_skus as (select distinct sku_base from desp_sem),
+  desp_serie as (
+    select s.sku_base, sl.w, coalesce(ds.pico_sem,0) as pico
+    from desp_skus s
+    cross join desp_semanas sl
+    left join desp_sem ds on ds.sku_base = s.sku_base and ds.sem = sl.lbl
+  ),
+  desp_agg as (
+    select se.sku_base,
+           array_agg(se.pico order by se.w) as picos,
+           (array_agg(se.pico order by se.w))[4] as pico_ultima,
+           avg(se.pico) as media_pico,
+           case when var_pop(se.w) > 0 then regr_slope(se.pico, se.w) else 0 end as pendiente
+    from desp_serie se group by se.sku_base
+  ),
+  desp_vol as (
+    select sku_base, sum(vol_sem) as volumen from desp_sem group by sku_base
+  ),
+  desp_med as (
+    select percentile_cont(0.5) within group (order by volumen) as mediana from desp_vol where volumen > 0
+  ),
+  desp_obj as (
+    select a.sku_base,
+           coalesce(a.picos, '{}') as picos,
+           coalesce(a.pico_ultima,0) as pico_ultima,
+           coalesce(v.volumen,0) as volumen,
+           ceil(coalesce(a.pico_ultima,0) * (1 + v_colchon))::numeric as esperado,
+           case
+             when coalesce(v.volumen,0) <= 0 then 'NULA'
+             when a.media_pico > 0 and (a.pendiente / a.media_pico) >=  v_umbral then 'CRECIENTE'
+             when a.media_pico > 0 and (a.pendiente / a.media_pico) <= -v_umbral then 'DECRECIENTE'
+             else 'ESTABLE'
+           end as tendencia
+    from desp_agg a
+    left join desp_vol v on v.sku_base = a.sku_base
+  ),
   esp as (
     select e.sku_base, e.esperado, e.tendencia, e.picos
     from me.zona_esperado e where upper(btrim(e.zona_id)) = v_zona
@@ -144,27 +224,29 @@ begin
            coalesce(sd.descripcion, r.sku_base) as nombre,
            r.rotacion,
            coalesce(sz.cant,0) as stock_zona,
-           coalesce(e.esperado,0) as esperada,
-           greatest(0, coalesce(e.esperado,0) - greatest(coalesce(sz.cant,0),0)) as faltan,
+           -- esperada: ALMACEN ⇒ objetivo de despacho (igual que panel 179) ; zonas ⇒ esperado materializado (ventas).
+           (case when v_es_almacen then coalesce(dob.esperado,0) else coalesce(e.esperado,0) end) as esperada,
+           -- faltan: ALMACEN ⇒ esperada − stockAlmacen(wh.stock) ; zonas ⇒ esperada − stockZona(me.stock_zonas).
+           greatest(0,
+             (case when v_es_almacen then coalesce(dob.esperado,0) else coalesce(e.esperado,0) end)
+             - greatest((case when v_es_almacen then coalesce(sa.cant,0) else coalesce(sz.cant,0) end), 0)) as faltan,
            coalesce(sa.cant,0) as stock_almacen,
-           coalesce(e.tendencia,'NULA') as tendencia,
-           coalesce(e.picos,'[]'::jsonb) as picos
+           (case when v_es_almacen then coalesce(dob.tendencia,'NULA') else coalesce(e.tendencia,'NULA') end) as tendencia,
+           (case when v_es_almacen then coalesce(to_jsonb(dob.picos),'[]'::jsonb) else coalesce(e.picos,'[]'::jsonb) end) as picos
     from rot r
     left join sku_desc   sd on sd.sku = r.sku_base
     left join esp        e  on e.sku_base = r.sku_base
+    left join desp_obj   dob on dob.sku_base = r.sku_base
     left join stock_zona sz on sz.sku_base = r.sku_base
     left join stock_alm  sa on sa.sku_base = r.sku_base
   ),
   tot as ( select count(*)::int as n from filas ),
   -- enumeración para la PARTICIÓN del día: orden DETERMINISTA e independiente del stock (rotacion desc, sku_base).
-  -- 'faltan' NO entra aquí: depende del stock vivo y haría saltar de día a un sku al moverse el inventario
-  -- (doble conteo / hueco). 'faltan' solo se usa para PRIORIZAR el orden de PRESENTACIÓN de los items del día.
   enum as (
     select f.*,
            (row_number() over (order by f.rotacion desc, f.sku_base) - 1) as idx
     from filas f
   ),
-  -- día asignado a cada sku = idx / lote_sz (capado a 6). Nos quedamos con los del weekday solicitado.
   asignado as (
     select e.*,
            least((e.idx / greatest(ceil((select n from tot)::numeric / 7)::int, 1))::int, 6) as dia

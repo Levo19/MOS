@@ -174,6 +174,175 @@ function _sbRpc(schema, fn, args) {
   return { ok: true, code: code, data: data };
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// [CUTOVER DELETE-SAFE · LECTURA GAS DESDE SUPABASE]  — agregado 2026-06-18
+// Para que MOS funcione "aunque borre el Sheet", los READ-BACKS operativos de GAS
+// (getProveedoresMaster, getJornadas, getEvaluacionesDia, ...) deben poder leer la
+// sombra mos.* en vez de la HOJA. Espejan EXACTAMENTE el patrón del frontend
+// (js/api.js): RPC *_lista → gate de FRESCURA (_fresh) → si stale/!ok ⇒ null ⇒ el
+// caller cae a la HOJA (fallback). Money-safe: nunca sirve sombra STALE (idéntico
+// criterio que finanzas_rango/76 y *_lista/94).
+//
+//  · Gate de lectura: se controla por flag mos.config 'MOS_<MODULO>_LECTURA' (mismo
+//    flag que prende la lectura directa del FRONTEND) — leído por _mosFlagOn_().
+//    Default OFF ⇒ _sbLeerListaMOS NO entra ⇒ GAS lee la HOJA = IDÉNTICO a hoy.
+//  · _claim_ok(): GAS usa service_role (jwt_app vacío) ⇒ pasa el gate de las RPCs.
+//  · NUNCA lanza: ante CUALQUIER error/flag-off/stale devuelve null → fallback HOJA.
+// ════════════════════════════════════════════════════════════════════════════
+
+// Memo por-ejecución de flags (las ejecuciones GAS son cortas; evita N round-trips a mos.config
+// cuando un orquestador llama varios getters en loop, p.ej. _calcularPersonal).
+var _MOS_FLAG_MEMO = {};
+/** Lee un flag booleano de mos.config (valor '1'/'true' ⇒ true). Best-effort: error ⇒ false (OFF = seguro). */
+function _mosFlagRawOn_(clave) {
+  if (Object.prototype.hasOwnProperty.call(_MOS_FLAG_MEMO, clave)) return _MOS_FLAG_MEMO[clave];
+  var res = false;
+  try {
+    var r = _sbSelect('mos.config', { select: 'valor', filters: { clave: 'eq.' + clave }, limit: 1 });
+    if (r && r.ok && r.data && r.data.length) {
+      var v = String(r.data[0].valor == null ? '' : r.data[0].valor).trim().toLowerCase();
+      res = (v === '1' || v === 'true' || v === 't');
+    }
+  } catch (e) { res = false; }
+  _MOS_FLAG_MEMO[clave] = res;
+  return res;
+}
+
+/**
+ * Gate de LECTURA de un módulo, espejando el frontend (js/api.js _mos<Modulo>Lectura):
+ *   MAESTRO 'MOS_LECTURA_NAVEGADOR' OR el flag específico del módulo.
+ * Así, prender el maestro (ya ON en prod) habilita TODAS las lecturas GAS de golpe, igual que el front.
+ * flagClave null ⇒ solo mira el maestro. Best-effort: error ⇒ false (OFF = seguro = HOJA).
+ */
+function _mosFlagOn_(clave) {
+  if (_mosFlagRawOn_('MOS_LECTURA_NAVEGADOR')) return true;   // maestro: prende todas (paridad con _mosLecturaDirecta)
+  if (!clave) return false;
+  return _mosFlagRawOn_(clave);
+}
+
+/**
+ * Lee una RPC mos.<fn>_lista (o cualquier RPC que devuelva {ok,data:[...],_fresh}) con gate de frescura.
+ *   fn        : nombre de la RPC (ej. 'proveedores_lista')
+ *   args      : objeto de argumentos (se envuelve como { p: args }, convención de las RPCs *_lista)
+ *   flagClave : flag mos.config que habilita esta lectura (ej. 'MOS_PROVEEDORES_LECTURA'). null ⇒ exige el MAESTRO.
+ * Devuelve el ARRAY `data` si {ok && _fresh===true}; null en cualquier otro caso (⇒ el caller cae a la HOJA).
+ * NUNCA lanza. (Gate: MAESTRO 'MOS_LECTURA_NAVEGADOR' OR flagClave → master OFF revierte TODO a HOJA.)
+ */
+function _sbLeerListaMOS(fn, args, flagClave) {
+  try {
+    if (!_mosFlagOn_(flagClave)) return null;                       // gate (maestro OR módulo) OFF → HOJA
+    var r = _sbRpc('mos', fn, { p: args || {} });
+    if (!r || !r.ok || !r.data) return null;
+    var d = r.data;
+    if (d.ok !== true) return null;                                  // negocio rechazó (APP_NO_AUTORIZADA, etc.) → HOJA
+    if (d._fresh !== true) {                                         // sombra STALE → NO servir datos viejos → HOJA
+      Logger.log('[_sbLeerListaMOS ' + fn + '] sombra STALE (_fresh=' + d._fresh + ', hb=' + d._heartbeat + ') → fallback HOJA');
+      return null;
+    }
+    return Array.isArray(d.data) ? d.data : null;
+  } catch (e) {
+    Logger.log('[_sbLeerListaMOS ' + fn + '] WARN ' + (e && e.message || e) + ' → fallback HOJA');
+    return null;
+  }
+}
+
+/**
+ * Variante para RPCs cuyo `data` es un OBJETO (no array): horarios_apps devuelve {<app>:{...}}.
+ * Devuelve el objeto `data` si {ok && _fresh===true}; null en otro caso. NUNCA lanza.
+ */
+function _sbLeerObjetoMOS(fn, args, flagClave) {
+  try {
+    if (!_mosFlagOn_(flagClave)) return null;                       // gate (maestro OR módulo) OFF → HOJA
+    var r = _sbRpc('mos', fn, { p: args || {} });
+    if (!r || !r.ok || !r.data) return null;
+    var d = r.data;
+    if (d.ok !== true) return null;
+    if (d._fresh !== true) {
+      Logger.log('[_sbLeerObjetoMOS ' + fn + '] sombra STALE → fallback HOJA');
+      return null;
+    }
+    return (d.data && typeof d.data === 'object') ? d.data : null;
+  } catch (e) {
+    Logger.log('[_sbLeerObjetoMOS ' + fn + '] WARN ' + (e && e.message || e) + ' → fallback HOJA');
+    return null;
+  }
+}
+
+/**
+ * Variante para RPCs que ya devuelven el OBJETO-RESPUESTA COMPLETO con el shape del endpoint GAS
+ * (ej. liquidaciones_pendientes → {ok,data:[...],rango,fast,_fresh}). Devuelve ese objeto TAL CUAL
+ * (con sus llaves _fresh/_heartbeat extra, inocuas) si {ok && _fresh===true}; null en otro caso.
+ * El caller hace: var resp=_sbLeerRpcFreshMOS(...); if(resp) return resp;  ⇒ shape idéntico al endpoint.
+ * NUNCA lanza.
+ */
+function _sbLeerRpcFreshMOS(fn, args, flagClave) {
+  try {
+    if (!_mosFlagOn_(flagClave)) return null;            // gate (maestro OR módulo) OFF → HOJA
+    var r = _sbRpc('mos', fn, { p: args || {} });
+    if (!r || !r.ok || !r.data) return null;
+    var d = r.data;
+    if (d.ok !== true) return null;
+    if (d._fresh !== true) {
+      Logger.log('[_sbLeerRpcFreshMOS ' + fn + '] sombra STALE → fallback HOJA');
+      return null;
+    }
+    return d;
+  } catch (e) {
+    Logger.log('[_sbLeerRpcFreshMOS ' + fn + '] WARN ' + (e && e.message || e) + ' → fallback HOJA');
+    return null;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// [CUTOVER DELETE-SAFE · ESCRITURA GAS DIRECTO-PURO]  — agregado 2026-06-18
+// Para que MOS funcione "aunque borre el Sheet", las funciones de ESCRITURA de
+// GAS (registrarGasto, registrarPago, crearProveedorMaster, setHorarioApp, ...)
+// deben poder persistir SOLO en Supabase vía la RPC mos.<fn> (idempotente),
+// SALTANDO la hoja, cuando el flag mos.config 'MOS_<TABLA>_DIRECTO' está en '1'.
+//
+// CONTRATO money-safe del helper:
+//  · Gate por flag MOS_<TABLA>_DIRECTO (NO mira el maestro de lectura): default
+//    OFF ⇒ devuelve null ⇒ el caller hace su dual-write a la HOJA = IDÉNTICO a hoy.
+//  · GAS usa service_role (jwt_app vacío) ⇒ pasa mos._claim_ok() de la RPC.
+//  · La RPC es idempotente (local_id / PK). El caller manda su id de negocio ya
+//    generado (_generateId) como idPP/idGasto/... Y como localId (clave de gesto
+//    estable: una invocación GAS = un id ⇒ reintento del MISMO id no duplica).
+//  · NUNCA lanza. Ante CUALQUIER error/flag-off/RPC-no-ok devuelve null → el caller
+//    cae a su dual-write de SIEMPRE (la hoja sigue siendo la red de seguridad).
+//    => activar el flag no puede PERDER una escritura: o la mete a Supabase, o
+//       (si falla) la mete a la hoja como hoy. JAMÁS la pierde silenciosamente.
+//  · Devuelve el OBJETO-RESPUESTA de la RPC ({ok,dedup,data,...}) si ok===true,
+//    así el caller arma su shape de retorno idéntico al de la hoja.
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Escritura directa-pura vía RPC mos.<fn>, gated por MOS_<flagClave>_DIRECTO.
+ *   fn       : nombre de la RPC de escritura (ej. 'crear_gasto', 'registrar_pago_proveedor')
+ *   args     : objeto {p} de la RPC (las RPCs de escritura reciben (p jsonb))
+ *   flagClave: flag mos.config que habilita el directo-puro (ej. 'MOS_GASTOS_DIRECTO')
+ * Devuelve el objeto-respuesta de la RPC si {ok:true}; null en cualquier otro caso
+ * (flag OFF, RPC !ok / *_OFF / APP_NO_AUTORIZADA, error de red, excepción) ⇒ el
+ * caller hace su dual-write a la HOJA. NUNCA lanza.
+ */
+function _sbEscribirDirectoMOS(fn, args, flagClave) {
+  try {
+    if (!flagClave || !_mosFlagRawOn_(flagClave)) return null;   // gate del módulo OFF → HOJA (dual-write de siempre)
+    var r = _sbRpc('mos', fn, { p: args || {} });
+    if (!r || !r.ok || !r.data) {
+      Logger.log('[_sbEscribirDirectoMOS ' + fn + '] RPC transporte falló (HTTP ' + (r && r.code) + ') → fallback HOJA');
+      return null;
+    }
+    var d = r.data;
+    if (d && d.ok === true) return d;                            // éxito directo-puro (incluye dedup:true)
+    // d.ok=false: *_OFF (flag se apagó entre el check y la llamada), APP_NO_AUTORIZADA, validación, etc.
+    Logger.log('[_sbEscribirDirectoMOS ' + fn + '] RPC ok=false (' + (d && d.error) + ') → fallback HOJA');
+    return null;
+  } catch (e) {
+    Logger.log('[_sbEscribirDirectoMOS ' + fn + '] WARN ' + (e && e.message || e) + ' → fallback HOJA');
+    return null;
+  }
+}
+
 /** Cuenta filas de una tabla (HEAD con Prefer count). */
 function _sbCount(schemaTable, filters) {
   var cfg = _sbCfg_(); var st = _sbParse_(schemaTable);

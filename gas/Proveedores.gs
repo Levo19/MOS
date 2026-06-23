@@ -5,6 +5,10 @@
 
 // ── PROVEEDORES MASTER ───────────────────────────────────────
 function getProveedoresMaster(params) {
+  params = params || {};
+  // [DELETE-SAFE] lectura directa de la sombra (gate MOS_PROVEEDORES_LECTURA + frescura). null ⇒ HOJA.
+  var dir = _sbLeerListaMOS('proveedores_lista', { estado: params.estado, q: params.q }, 'MOS_PROVEEDORES_LECTURA');
+  if (dir !== null) return { ok: true, data: dir };
   var rows = _sheetToObjects(getSheet('PROVEEDORES_MASTER'));
   if (params.estado) rows = rows.filter(function(r){ return String(r.estado) === String(params.estado); });
   if (params.q) {
@@ -18,8 +22,21 @@ function getProveedoresMaster(params) {
 }
 
 function crearProveedorMaster(params) {
-  var sheet = getSheet('PROVEEDORES_MASTER');
   var id = _generateId('PROV');
+  // [DELETE-SAFE · directo-puro] Si MOS_PROVEEDORES_DIRECTO=1 → escribe SOLO a mos.proveedores vía RPC
+  // (idempotente por idProveedor+localId) y NO toca la HOJA. null ⇒ flag OFF / RPC falló → dual-write de siempre.
+  if (typeof _sbEscribirDirectoMOS === 'function') {
+    var _pd = _sbEscribirDirectoMOS('crear_proveedor', {
+      idProveedor: id, localId: id, nombre: params.nombre, ruc: params.ruc || '', imagen: params.imagen || '',
+      telefono: params.telefono || '', banco: params.banco || '', numeroCuenta: params.numeroCuenta || '',
+      cci: params.cci || '', email: params.email || '',
+      diaPedido: params.diaPedido || '', diaPago: params.diaPago || '', diaEntrega: params.diaEntrega || '',
+      formaPago: params.formaPago || 'CONTADO', plazoCredito: params.plazoCredito || 0,
+      responsable: params.responsable || '', categoriaProducto: params.categoriaProducto || ''
+    }, 'MOS_PROVEEDORES_DIRECTO');
+    if (_pd) return { ok: true, data: { idProveedor: (_pd.data && _pd.data.idProveedor) || id } };
+  }
+  var sheet = getSheet('PROVEEDORES_MASTER');
   sheet.appendRow([
     id, params.nombre, params.ruc || '', params.imagen || '',
     params.telefono || '', params.banco || '', params.numeroCuenta || '',
@@ -44,6 +61,13 @@ function crearProveedorMaster(params) {
 }
 
 function actualizarProveedorMaster(params) {
+  if (!params.idProveedor) return { ok: false, error: 'Requiere idProveedor' };
+  // [DELETE-SAFE · directo-puro] Si MOS_PROVEEDORES_DIRECTO=1 → UPDATE atómico por PK en mos.proveedores
+  // (patch parcial: solo aplica las claves presentes, paridad GAS) y NO toca la HOJA. null ⇒ dual-write de siempre.
+  if (typeof _sbEscribirDirectoMOS === 'function') {
+    var _ud = _sbEscribirDirectoMOS('actualizar_proveedor', params, 'MOS_PROVEEDORES_DIRECTO');
+    if (_ud) return { ok: true };
+  }
   var sheet = getSheet('PROVEEDORES_MASTER');
   var data  = sheet.getDataRange().getValues();
   var hdrs  = data[0];
@@ -74,6 +98,10 @@ function actualizarProveedorMaster(params) {
 
 // ── PAGOS ────────────────────────────────────────────────────
 function getPagosProveedor(params) {
+  params = params || {};
+  // [DELETE-SAFE] lectura directa de la sombra (gate MOS_PAGOS_LECTURA + frescura). null ⇒ HOJA.
+  var dir = _sbLeerListaMOS('pagos_proveedor_lista', { idProveedor: params.idProveedor, estado: params.estado }, 'MOS_PAGOS_LECTURA');
+  if (dir !== null) return { ok: true, data: dir };
   var rows = _sheetToObjects(getSheet('PAGOS_PROVEEDOR'));
   if (params.idProveedor) rows = rows.filter(function(r){ return r.idProveedor === params.idProveedor; });
   if (params.estado)      rows = rows.filter(function(r){ return String(r.estado) === String(params.estado); });
@@ -84,9 +112,21 @@ function registrarPago(params) {
   if (!params.idProveedor || !params.monto) {
     return { ok: false, error: 'Requiere idProveedor y monto' };
   }
-  var sheet = getSheet('PAGOS_PROVEEDOR');
   var id = _generateId('PAG');
   var fecha = params.fecha || Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  // [DELETE-SAFE · directo-puro · DINERO] Si MOS_PAGOS_DIRECTO=1 → escribe SOLO a mos.pagos_proveedor vía RPC.
+  // La RPC EXIGE localId (red anti-doble-pago) → usamos el id de negocio generado como localId estable del gesto.
+  // NO toca la HOJA. null ⇒ flag OFF / RPC falló → dual-write de siempre (HOJA = red de seguridad). Shape idéntico.
+  if (typeof _sbEscribirDirectoMOS === 'function') {
+    var _pagd = _sbEscribirDirectoMOS('registrar_pago_proveedor', {
+      idPago: id, localId: id, idProveedor: params.idProveedor, monto: parseFloat(params.monto),
+      fecha: fecha, numeroFactura: params.numeroFactura || '',
+      estado: params.estado || 'PAGADO',
+      observacion: params.observacion || '', registradoPor: params.registradoPor || ''
+    }, 'MOS_PAGOS_DIRECTO');
+    if (_pagd) return { ok: true, data: { idPago: (_pagd.data && _pagd.data.idPago) || id } };
+  }
+  var sheet = getSheet('PAGOS_PROVEEDOR');
   sheet.appendRow([
     id, params.idProveedor, parseFloat(params.monto),
     fecha, params.numeroFactura || '',
@@ -107,6 +147,10 @@ function registrarPago(params) {
 
 // ── PEDIDOS DE COMPRA ────────────────────────────────────────
 function getPedidosProveedor(params) {
+  params = params || {};
+  // [DELETE-SAFE] lectura directa de la sombra (gate MOS_PEDIDOS_LECTURA + frescura). null ⇒ HOJA.
+  var dir = _sbLeerListaMOS('pedidos_proveedor_lista', { idProveedor: params.idProveedor, estado: params.estado }, 'MOS_PEDIDOS_LECTURA');
+  if (dir !== null) return { ok: true, data: dir };
   var rows = _sheetToObjects(getSheet('PEDIDOS_PROVEEDOR'));
   if (params.idProveedor) rows = rows.filter(function(r){ return r.idProveedor === params.idProveedor; });
   if (params.estado)      rows = rows.filter(function(r){ return String(r.estado) === String(params.estado); });
@@ -115,9 +159,21 @@ function getPedidosProveedor(params) {
 
 function crearPedidoProveedor(params) {
   if (!params.idProveedor) return { ok: false, error: 'Requiere idProveedor' };
-  var sheet = getSheet('PEDIDOS_PROVEEDOR');
   var id = _generateId('PED');
   var fechaCreacion = new Date();
+  // [DELETE-SAFE · directo-puro] Si MOS_PEDIDOS_DIRECTO=1 → escribe SOLO a mos.pedidos_proveedor vía RPC
+  // (idempotente por idPedido+localId; estado nace BORRADOR). NO toca la HOJA. null ⇒ dual-write de siempre.
+  if (typeof _sbEscribirDirectoMOS === 'function') {
+    var _ped = _sbEscribirDirectoMOS('crear_pedido_proveedor', {
+      idPedido: id, localId: id, idProveedor: params.idProveedor,
+      items: params.items || [],
+      montoEstimado: parseFloat(params.montoEstimado) || 0,
+      fechaEstimada: params.fechaEstimada || '',
+      usuario: params.usuario || '', notas: params.notas || ''
+    }, 'MOS_PEDIDOS_DIRECTO');
+    if (_ped) return { ok: true, data: { idPedido: (_ped.data && _ped.data.idPedido) || id } };
+  }
+  var sheet = getSheet('PEDIDOS_PROVEEDOR');
   sheet.appendRow([
     id, params.idProveedor,
     JSON.stringify(params.items || []),
@@ -146,6 +202,10 @@ function getProveedoresQueVenden(params) {
   if (!params || (!params.skuBase && !params.codigoBarra)) {
     return { ok: false, error: 'Requiere skuBase o codigoBarra' };
   }
+  // [DELETE-SAFE] lectura directa de la sombra (gate MAESTRO + frescura; espeja el front, que la gatea con
+  // _mosLecturaDirecta). La RPC hace el matching + enriquecido con nombre/ruc + orden por precio. null ⇒ HOJA.
+  var dirQV = _sbLeerListaMOS('proveedores_que_venden', { skuBase: params.skuBase, codigoBarra: params.codigoBarra }, null);
+  if (dirQV !== null) return { ok: true, data: dirQV };
   try {
     var ppSheet = _getProvProdSheet();
     var ppData  = ppSheet.getDataRange().getValues();
@@ -343,10 +403,13 @@ function getHistoricoProveedor(params) {
       };
     }).sort(function(a, b){ return b.fecha.localeCompare(a.fecha); }); // más reciente primero
 
-    // 5. Pagos y por pagar
-    var pagos = _sheetToObjects(getSheet('PAGOS_PROVEEDOR')).filter(function(p){
-      return String(p.idProveedor) === String(params.idProveedor);
-    });
+    // 5. Pagos y por pagar — [DELETE-SAFE] lee la sombra (gate MOS_PAGOS_LECTURA + frescura), null ⇒ HOJA.
+    var pagos = _sbLeerListaMOS('pagos_proveedor_lista', { idProveedor: params.idProveedor }, 'MOS_PAGOS_LECTURA');
+    if (pagos === null) {
+      pagos = _sheetToObjects(getSheet('PAGOS_PROVEEDOR')).filter(function(p){
+        return String(p.idProveedor) === String(params.idProveedor);
+      });
+    }
     var totalPagado = pagos.reduce(function(s, p){ return s + (parseFloat(p.monto) || 0); }, 0);
 
     return {
@@ -433,6 +496,10 @@ function _dwProvProd(idPP) {
 
 function getProveedorProductos(params) {
   if (!params.idProveedor) return { ok: false, error: 'idProveedor requerido' };
+  // [DELETE-SAFE] lectura directa de la sombra (gate MOS_PROVPROD_LECTURA + frescura). La RPC ya filtra activa=true
+  // (paridad) salvo includeInactivas. null ⇒ HOJA.
+  var dir = _sbLeerListaMOS('proveedor_producto_lista', { idProveedor: params.idProveedor }, 'MOS_PROVPROD_LECTURA');
+  if (dir !== null) return { ok: true, data: dir };
   var rows = _sheetToObjects(_getProvProdSheet()).filter(function(r){
     return String(r.idProveedor) === String(params.idProveedor)
         && (r.activa === true || String(r.activa) === '1' || String(r.activa).toLowerCase() === 'true');
@@ -443,6 +510,19 @@ function getProveedorProductos(params) {
 function agregarProductoProveedor(params) {
   if (!params.idProveedor) return { ok: false, error: 'idProveedor requerido' };
   if (!params.skuBase)     return { ok: false, error: 'skuBase requerido' };
+  // [DELETE-SAFE · directo-puro] Si MOS_PROVPROD_DIRECTO=1 → INSERT en mos.proveedores_productos vía RPC
+  // (idempotente por idPP+localId). NO toca la HOJA. null ⇒ dual-write de siempre.
+  if (typeof _sbEscribirDirectoMOS === 'function') {
+    var _idNuevo = _generateId('PP');
+    var _agd = _sbEscribirDirectoMOS('upsert_proveedor_producto', {
+      idPP: _idNuevo, localId: _idNuevo, idProveedor: String(params.idProveedor), skuBase: String(params.skuBase),
+      codigoBarra: String(params.codigoBarra || ''), descripcion: params.descripcion || '',
+      precioReferencia: parseFloat(params.precioReferencia) || 0, minimoCompra: parseFloat(params.minimoCompra) || 0,
+      diasEntrega: parseInt(params.diasEntrega) || 0, notas: params.notas || '',
+      unidadesPorBulto: parseInt(params.unidadesPorBulto) || 1
+    }, 'MOS_PROVPROD_DIRECTO');
+    if (_agd) return { ok: true, data: { idPP: (_agd.data && _agd.data.idPP) || _idNuevo } };
+  }
   var sheet = _getProvProdSheet();
   // Construir fila por nombre de columna (la columna unidadesPorBulto puede o
   // no existir según versión del sheet; _getProvProdSheet la garantiza)
@@ -470,6 +550,12 @@ function agregarProductoProveedor(params) {
 
 function actualizarProductoProveedor(params) {
   if (!params.idPP) return { ok: false, error: 'idPP requerido' };
+  // [DELETE-SAFE · directo-puro] Si MOS_PROVPROD_DIRECTO=1 → UPDATE atómico por idPP en mos.proveedores_productos
+  // vía RPC (patch parcial, paridad GAS). NO toca la HOJA. null ⇒ dual-write de siempre.
+  if (typeof _sbEscribirDirectoMOS === 'function') {
+    var _upd = _sbEscribirDirectoMOS('upsert_proveedor_producto', params, 'MOS_PROVPROD_DIRECTO');
+    if (_upd) return { ok: true };
+  }
   var sheet = _getProvProdSheet();
   var data  = sheet.getDataRange().getValues();
   var headers = data[0];
@@ -522,6 +608,20 @@ function upsertProductoProveedor(params) {
   }
   var skuBase = prod.skuBase || prod.idProducto;
   var descripcion = params.descripcion || prod.descripcion || '';
+
+  // [DELETE-SAFE · directo-puro] Si MOS_PROVPROD_DIRECTO=1 → upsert por (idProveedor+skuBase) en
+  // mos.proveedores_productos vía RPC (resuelve UPDATE-si-existe / INSERT-si-no). NO toca la HOJA.
+  // null ⇒ dual-write de siempre. (Nota: la resolución codigoBarra→skuBase aún lee el catálogo arriba;
+  // delete-safe pleno depende del cutover de catálogo.)
+  if (typeof _sbEscribirDirectoMOS === 'function') {
+    var _idUp = _generateId('PP');
+    var _ud2 = _sbEscribirDirectoMOS('upsert_proveedor_producto', {
+      idPP: _idUp, localId: _idUp, idProveedor: String(params.idProveedor), skuBase: String(skuBase),
+      codigoBarra: String(codigoBarra), descripcion: descripcion,
+      precioReferencia: precio > 0 ? precio : undefined, notas: params.notas || 'Auto desde guía'
+    }, 'MOS_PROVPROD_DIRECTO');
+    if (_ud2) return { ok: true, data: { idPP: (_ud2.data && _ud2.data.idPP) || _idUp, accion: (_ud2.data && _ud2.data.accion) || 'upsert' } };
+  }
 
   // 2. Buscar entry existente
   var sheet = _getProvProdSheet();
@@ -910,6 +1010,15 @@ function jalarProductosProveedor(params) {
 
 function eliminarProductoProveedor(params) {
   if (!params.idPP) return { ok: false, error: 'idPP requerido' };
+  // [DELETE-SAFE · directo-puro] Si MOS_PROVPROD_DIRECTO=1 → DELETE en mos.proveedores_productos por PK
+  // (no hay RPC; usamos _sbDelete con guard) y NO toca la HOJA. Idempotente. null/err ⇒ dual-write de siempre.
+  if (typeof _sbEscribirDirectoMOS === 'function' && _mosFlagRawOn_('MOS_PROVPROD_DIRECTO')) {
+    try {
+      var _dpp = _sbDelete('mos.proveedores_productos', { id_pp: 'eq.' + String(params.idPP) });
+      if (_dpp && _dpp.ok) return { ok: true };
+      Logger.log('[eliminarProductoProveedor directo] _sbDelete HTTP ' + (_dpp && _dpp.code) + ' → fallback HOJA');
+    } catch (eD) { Logger.log('[eliminarProductoProveedor directo] ' + (eD && eD.message) + ' → fallback HOJA'); }
+  }
   var sheet = _getProvProdSheet();
   var data  = sheet.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {

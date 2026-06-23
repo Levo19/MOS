@@ -72,6 +72,8 @@ function _asegurarHojaHorariosApps() {
 // [v2.43.30] Devuelve horarios de TODAS las apps. Frontend MOS lo usa para
 // el panel Personal.
 function getHorariosApps() {
+  var dir = _sbLeerObjetoMOS('horarios_apps', {}, 'MOS_HORARIO_LECTURA');
+  if (dir !== null) return { ok: true, data: dir };
   var sh = _asegurarHojaHorariosApps();
   var rows = _sheetToObjects(sh);
   var byApp = {};
@@ -135,42 +137,56 @@ function setHorarioApp(params) {
   });
   if (hayInvalido) return { ok: false, error: 'Hora inválida en día: ' + hayInvalido };
 
-  var sh = _asegurarHojaHorariosApps();
-  var data = sh.getDataRange().getValues();
-  var h = data[0];
-  var iApp = h.indexOf('app');
-  var iHor = h.indexOf('horarioJson');
-  var iAdm = h.indexOf('admins_libres');
-  var iAct = h.indexOf('actualizadoPor');
-  var iFec = h.indexOf('fechaActualizacion');
-
-  var filaFound = -1;
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][iApp]) === app) { filaFound = i + 1; break; }
-  }
   var admins_libres = params.admins_libres !== false;
   var actualizadoPor = String(params.actualizadoPor || 'admin-mos');
   var ts = new Date();
-  if (filaFound > 0) {
-    sh.getRange(filaFound, iHor + 1).setValue(JSON.stringify(horValidado));
-    sh.getRange(filaFound, iAdm + 1).setValue(admins_libres);
-    sh.getRange(filaFound, iAct + 1).setValue(actualizadoPor);
-    sh.getRange(filaFound, iFec + 1).setValue(ts);
-  } else {
-    sh.appendRow([app, JSON.stringify(horValidado), admins_libres, actualizadoPor, ts]);
-  }
 
-  // [dual-write] Espejo inmediato a mos.config_horarios_apps (best-effort; Sheets = verdad).
-  // app = PK natural (onConflict). horario_json es json → _mosJson acepta el objeto directo
-  // (idéntico a parsear el string que escribe el batch). admins_libres es text → "true"/"false".
-  try {
-    if (typeof _dualWriteMOS === 'function') {
-      _dualWriteMOS('config_horarios_apps', {
-        app: app, horarioJson: horValidado, admins_libres: admins_libres,
-        actualizadoPor: actualizadoPor, fechaActualizacion: ts
-      });
+  // [DELETE-SAFE · directo-puro] Si MOS_HORARIO_DIRECTO=1 → upsert por PK `app` en mos.config_horarios_apps
+  // vía RPC (la RPC re-valida 7 días + HH:MM y hace UPSERT atómico) y NO toca la HOJA. null ⇒ flag OFF /
+  // RPC falló → escritura a HOJA + dual-write de siempre. Los SIDE-EFFECTS (push MOS + invalidar cache WH)
+  // se ejecutan IGUAL más abajo en AMBOS caminos: la RPC NO los reproduce a propósito (orquestación = GAS).
+  var _horarioDirecto = false;
+  if (typeof _sbEscribirDirectoMOS === 'function') {
+    var _hd = _sbEscribirDirectoMOS('actualizar_horario_app', {
+      app: app, horario: horValidado, admins_libres: admins_libres, actualizadoPor: actualizadoPor
+    }, 'MOS_HORARIO_DIRECTO');
+    if (_hd) _horarioDirecto = true;
+  }
+  if (!_horarioDirecto) {
+    var sh = _asegurarHojaHorariosApps();
+    var data = sh.getDataRange().getValues();
+    var h = data[0];
+    var iApp = h.indexOf('app');
+    var iHor = h.indexOf('horarioJson');
+    var iAdm = h.indexOf('admins_libres');
+    var iAct = h.indexOf('actualizadoPor');
+    var iFec = h.indexOf('fechaActualizacion');
+
+    var filaFound = -1;
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][iApp]) === app) { filaFound = i + 1; break; }
     }
-  } catch (eDW) { Logger.log('[dualWrite setHorarioApp] ' + (eDW && eDW.message)); }
+    if (filaFound > 0) {
+      sh.getRange(filaFound, iHor + 1).setValue(JSON.stringify(horValidado));
+      sh.getRange(filaFound, iAdm + 1).setValue(admins_libres);
+      sh.getRange(filaFound, iAct + 1).setValue(actualizadoPor);
+      sh.getRange(filaFound, iFec + 1).setValue(ts);
+    } else {
+      sh.appendRow([app, JSON.stringify(horValidado), admins_libres, actualizadoPor, ts]);
+    }
+
+    // [dual-write] Espejo inmediato a mos.config_horarios_apps (best-effort; Sheets = verdad).
+    // app = PK natural (onConflict). horario_json es json → _mosJson acepta el objeto directo
+    // (idéntico a parsear el string que escribe el batch). admins_libres es text → "true"/"false".
+    try {
+      if (typeof _dualWriteMOS === 'function') {
+        _dualWriteMOS('config_horarios_apps', {
+          app: app, horarioJson: horValidado, admins_libres: admins_libres,
+          actualizadoPor: actualizadoPor, fechaActualizacion: ts
+        });
+      }
+    } catch (eDW) { Logger.log('[dualWrite setHorarioApp] ' + (eDW && eDW.message)); }
+  }
 
   // [v2.43.32] Push refinado: solo a MASTER+ADMIN (no a TODOS los operadores)
   try {

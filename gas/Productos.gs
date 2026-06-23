@@ -154,6 +154,8 @@ function subirFotoProducto(params) {
         if (String(data[i][idxSku]).trim() === skuBase) {
           sh.getRange(i + 1, idxFoto + 1).setValue(url);
           actualizados++;
+          // [dual-write] Espejo inmediato del fotoUrl recién escrito a mos.productos (best-effort).
+          _dwProductoFila(sh, hdrs, i + 1);
         }
       }
     }
@@ -395,6 +397,9 @@ function _appendHistorialProducto(sheet, rowNum, hdrs, entrada) {
 // timestamp de la última entrada del historial. Cada producto trae su historial
 // completo (hasta 50 entradas) para que el frontend pueda expandirlo.
 function getProductosEditadosRecientes(params) {
+  params = params || {};
+  var dir = _sbLeerListaMOS('productos_editados_recientes', { limit: params.limit }, null);
+  if (dir !== null) return { ok: true, data: dir };
   var limit = parseInt((params && params.limit) || 50, 10);
   if (!limit || limit < 1) limit = 50;
   if (limit > 500) limit = 500;
@@ -443,6 +448,21 @@ function getProductosEditadosRecientes(params) {
       esEnvasable:      r.esEnvasable
     };
   }) };
+}
+
+// [dual-write] Espejo inmediato de una fila de PRODUCTOS_MASTER a mos.productos.
+// Re-lee la fila COMPLETA (índice 1-based) keyed por headers reales del sheet y la espeja vía
+// _dualWriteCAT('productos', obj) → fila byte-idéntica a la del sync horario (mismo _bfRow + post,
+// incl. tipo_producto). Best-effort: si Supabase falla, la hoja queda intacta y el sync reconcilia.
+// Chokepoint único reutilizado por crear/actualizar/segmentos/foto.
+function _dwProductoFila(sheet, hdrs, row1Based) {
+  try {
+    if (typeof _dualWriteCAT !== 'function') return;
+    var fila = sheet.getRange(row1Based, 1, 1, hdrs.length).getValues()[0];
+    var obj = {};
+    for (var h = 0; h < hdrs.length; h++) { obj[String(hdrs[h]).trim()] = fila[h]; }
+    _dualWriteCAT('productos', obj);
+  } catch (eDW) { Logger.log('[dualWrite producto fila ' + row1Based + '] ' + (eDW && eDW.message)); }
 }
 
 function crearProductoMaster(params) {
@@ -587,6 +607,13 @@ function crearProductoMaster(params) {
       precioVenta: parseFloat(params.precioVenta) || 0
     });
   } catch(_){}
+
+  // [dual-write] Espejo inmediato a mos.productos (best-effort; Sheets = verdad). Releo la fila
+  // recién escrita con los headers finales (auditoría puede haber añadido columnas) → byte-idéntica al sync.
+  try {
+    var hdrsDW = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    _dwProductoFila(sheet, hdrsDW, nextRow);
+  } catch (eDW) { Logger.log('[dualWrite crearProducto] ' + (eDW && eDW.message)); }
 
   return { ok: true, data: { idProducto: id, skuBase: skuBase, secuencia: seq.secuencia } };
 }
@@ -771,6 +798,15 @@ function actualizarProductoMaster(params) {
       } catch(eP) { Logger.log('Propagación falló: ' + eP.message); }
     }
 
+    // [dual-write] Espejo inmediato a mos.productos (best-effort; Sheets = verdad). Releo la fila
+    // editada con los headers actuales → byte-idéntica al sync. Cubre toggle (MOS_TOGGLE), publicarPrecio
+    // (llama acá) y edición min/max. La propagación a presentaciones se espeja sola: cada llamada recursiva
+    // a actualizarProductoMaster pasa por este mismo punto para SU fila.
+    try {
+      var hdrsDW = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      _dwProductoFila(sheet, hdrsDW, i + 1);
+    } catch (eDW) { Logger.log('[dualWrite actualizarProducto] ' + (eDW && eDW.message)); }
+
     return { ok: true, data: { presentacionesActualizadas: presentacionesActualizadas } };
   }
   return { ok: false, error: 'Producto no encontrado' };
@@ -820,6 +856,9 @@ function _propagarPrecioVentaAPresentaciones(canonico, precioNuevoCanonico, usua
 
 // ── EQUIVALENCIAS ─────────────────────────────────────────────
 function getEquivalencias(params) {
+  params = params || {};
+  var dir = _sbLeerListaMOS('equivalencias_lista', { skuBase: params.skuBase, codigoBarra: params.codigoBarra, activo: params.activo }, null);
+  if (dir !== null) return { ok: true, data: dir };
   var rows = _sheetToObjects(getSheet('EQUIVALENCIAS'));
   if (params.skuBase)     rows = rows.filter(function(r){ return r.skuBase === params.skuBase; });
   if (params.codigoBarra) rows = rows.filter(function(r){ return r.codigoBarra === params.codigoBarra; });
@@ -850,6 +889,16 @@ function crearEquivalencia(params) {
       descripcionEquiv: String(params.descripcion || '')
     });
   } catch(_){}
+  // [dual-write] Espejo inmediato a mos.equivalencias (best-effort; Sheets = verdad). Objeto keyed por
+  // los headers de la hoja (idEquiv/skuBase/codigoBarra/descripcion/activo) = mismo mapeo del sync.
+  try {
+    if (typeof _dualWriteCAT === 'function') {
+      _dualWriteCAT('equivalencias', {
+        idEquiv: id, skuBase: String(params.skuBase || ''), codigoBarra: String(params.codigoBarra || ''),
+        descripcion: params.descripcion || '', activo: '1'
+      });
+    }
+  } catch (eDW) { Logger.log('[dualWrite crearEquivalencia] ' + (eDW && eDW.message)); }
   return { ok: true, data: { idEquiv: id } };
 }
 
@@ -894,6 +943,15 @@ function actualizarEquivalencia(params) {
         });
       } catch(_){}
     }
+    // [dual-write] Espejo inmediato a mos.equivalencias (best-effort; Sheets = verdad). Releo la fila
+    // COMPLETA recién editada keyed por headers → byte-idéntica al sync (params es patch parcial).
+    try {
+      if (typeof _dualWriteCAT === 'function') {
+        var fila = sheet.getRange(i + 1, 1, 1, hdrs.length).getValues()[0];
+        var obj = {}; for (var h = 0; h < hdrs.length; h++) { obj[String(hdrs[h]).trim()] = fila[h]; }
+        _dualWriteCAT('equivalencias', obj);
+      }
+    } catch (eDW) { Logger.log('[dualWrite actualizarEquivalencia] ' + (eDW && eDW.message)); }
     return { ok: true };
   }
   return { ok: false, error: 'Equivalencia no encontrada: ' + params.idEquiv };
@@ -1218,6 +1276,12 @@ function actualizarSegmentosPrecio(params) {
         sheet.getRange(i + 1, idxHist + 1).setValue(JSON.stringify(arr.slice(-50)));
       }
     } catch(_) {}
+    // [dual-write] Espejo inmediato a mos.productos (best-effort; Sheets = verdad). Releo la fila
+    // (segmentos_precio + historialCambios recién escritos) con headers actuales → byte-idéntica al sync.
+    try {
+      var hdrsDW = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      _dwProductoFila(sheet, hdrsDW, i + 1);
+    } catch (eDW) { Logger.log('[dualWrite segmentosPrecio] ' + (eDW && eDW.message)); }
     return { ok: true, segmentos: val.segmentos, total: val.segmentos.length };
   }
   return { ok: false, error: 'Producto no encontrado: ' + params.idProducto };

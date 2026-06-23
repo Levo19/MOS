@@ -1991,6 +1991,8 @@ const API = (() => {
     getUrl,
     setUrl,
     isConfigured,
+    // [F6 push] Registro de token FCM directo a Supabase (mos.registrar_push_token). Aditivo al GAS.
+    registrarPushTokenSB: (p = {}) => _sbRpcMOS('registrar_push_token', { p }, 'mos'),
     get:  (action, p = {}) => {
       // [FASE 1 · PILOTO] getProductos → lectura directa Supabase con gate por-acción + frescura + fallback GAS.
       // Con el flag OFF (default) esto es IDÉNTICO a hoy: _conFallbackMOS NO entra al directo y va directo a GAS.

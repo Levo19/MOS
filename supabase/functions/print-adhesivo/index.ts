@@ -149,6 +149,25 @@ function calcBarcodeAdaptativo(codigo: string) {
   return { bc, bcLen, narrowBc, barcodeWidth, barcodeHeight, quietZoneMin, barcodeX };
 }
 
+// Centrado de barcode PRECISO para Code128. Los códigos NUMÉRICOS usan Code C
+// (2 dígitos por símbolo) → la barra real es ~la mitad de ancho que estimar por
+// carácter. calcBarcodeAdaptativo sobre-estimaba el ancho → barcodeX salía corrido
+// a la IZQUIERDA en códigos largos (el número, centrado por nº de chars, sí salía
+// bien). Esto estima los símbolos reales (pares para numérico) → centra de verdad.
+function calcBarcodeCentrado(codigo: string) {
+  const bc = String(codigo || '').replace(/"/g, '');
+  const len = bc.length;
+  const esNum = /^\d+$/.test(bc);
+  const dataSym = esNum ? (Math.ceil(len / 2) + (len % 2)) : len;   // Code C: pares (+1 si impar)
+  const modules = 11 * dataSym + 35;                                // start+data+check+stop
+  let narrowBc: number, quiet: number;
+  if (modules * 3 <= 340) { narrowBc = 3; quiet = 24; }
+  else if (modules * 2 <= 376) { narrowBc = 2; quiet = 12; }
+  else { narrowBc = 2; quiet = 8; }
+  const width = modules * narrowBc;
+  const barcodeX = Math.max(quiet, Math.floor((400 - width) / 2));
+  return { bc, narrowBc, barcodeHeight: 56, barcodeX };
+}
 type DriftCfg = { gapMm: number; density: number; speed: number; offsetBase: number; driftDots: number; printsBase: number };
 // Construye los bytes TSPL2 para N etiquetas (port de _buildTSPLEtq). `iBase` = índice absoluto de
 // la primera etiqueta del sub-job en el rollo (para el drift acumulado), = `desde` de la reserva.
@@ -186,7 +205,9 @@ function buildTSPLEtq(producto: { codigoBarra: string; descripcion: string }, fe
     bytes = bytes.concat(strToBytes('CLS\r\n' + 'BITMAP 5,' + (2 + offsetY) + ',' + LOGO_W_BYTES + ',' + LOGO_H + ',0,'));
     bytes = bytes.concat(hexToBytes(LOGO_TSPL_HEX));
     bytes = bytes.concat(strToBytes('\r\n'));
-    bytes = bytes.concat(strToBytes('TEXT 232,' + (12 + offsetY) + ',"2",0,1,1,"Vto ' + vto + '"\r\n'));
+    // [margen derecho 1.5mm] Vto corrido 12 dots a la izquierda (232→220) para que el
+    // año no quede pegado al borde derecho del adhesivo (400 dots = 50mm). 12 dots = 1.5mm.
+    bytes = bytes.concat(strToBytes('TEXT 220,' + (12 + offsetY) + ',"2",0,1,1,"Vto ' + vto + '"\r\n'));
     bytes = bytes.concat(strToBytes('BAR 5,' + (42 + offsetY) + ',390,1\r\n'));
 
     const DESC_AREA_Y0 = 46, DESC_AREA_H = 72, LINE_H = 38, SPACE = 8;
@@ -280,54 +301,92 @@ function driftOffset(cfg: DriftCfg, idx: number): number {
   return off;
 }
 
-// MEMBRETE GÓNDOLA (ME): sin logo, precio MEGA Font 5 centrado, desc 1 línea arriba. Port de _buildTSPLMembreteMe.
-function buildTSPLMembreteMe(producto: any, allEnvTokens: string[][], cfg: DriftCfg, offsetY: number): number[] {
-  const descNorm = normalizeEtq(producto.descripcion || '');
-  const tokens = descNorm.split(/\s+/);
-  const highlights = detectHighlightsEtq(tokens, allEnvTokens);
-  const lines = wrapTokensEtq(tokens, highlights);
+// Word-wrap simple a un ancho de dots dado (charW = ancho por carácter de la fuente).
+function wrapEnAncho(text: string, maxW: number, charW: number): string[] {
+  const words = String(text || '').split(/\s+/).filter(Boolean);
+  const lines: string[] = []; let cur = '';
+  for (const w of words) {
+    const test = cur ? cur + ' ' + w : w;
+    if (!cur || test.length * charW <= maxW) cur = test;
+    else { lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur);
+  return lines.length ? lines : [''];
+}
+
+// MEMBRETE GÓNDOLA (ME) — rediseño: nombre IZQUIERDA (auto-fit 1-3 líneas, centrado V+H),
+// precio DERECHA focalizado (soles grande + céntimos chico elevado) en recuadro, medida
+// auto (c/u · /kg), barcode full-width + alto, márgenes sup/inf. Todo centrado en su zona.
+function buildTSPLMembreteMe(producto: any, _allEnvTokens: string[][], cfg: DriftCfg, offsetY: number): number[] {
   const header = ['SIZE 50 mm,25 mm','GAP ' + cfg.gapMm + ' mm,0 mm','DIRECTION 1','DENSITY ' + cfg.density,'SPEED ' + cfg.speed,'CLS'].join('\r\n') + '\r\n';
   let bytes = strToBytes(header);
-  const SPACE = 8;
-  const primeraLinea = (lines[0] || []).map((t) => ({ tok: t.tok, w: t.w, hl: t.hl }));
-  if (lines.length > 1 && primeraLinea.length > 0) {
-    const u = primeraLinea[primeraLinea.length - 1];
-    u.tok = u.tok.replace(/[\.,]+$/, '') + '..'; u.w = u.tok.length * 16;
+  const TOP = 14 + offsetY, TOPZONE_H = 92;     // zona superior (nombre | precio)
+
+  // ── NOMBRE (zona izquierda X12..208 · margen al divisor en X232) ──
+  // Fuente adaptativa con MÁS líneas para la fuente chica antes de achicar: así un
+  // nombre largo (ej. AJINOMOTO SAZONADOR GLUTAMATO 500GR BOLSA) usa Font 2 en ~4
+  // líneas (legible) en vez de caer a Font 1 diminuta. NAME_W=196 deja ~24px (3mm)
+  // antes del divisor → el nombre NUNCA toca la línea del medio.
+  const NAME_X0 = 12, NAME_W = 196;
+  const nombre = normalizeEtq(producto.descripcion || '');
+  const fonts = [{ f: '3', cw: 16, lh: 26, max: 3 }, { f: '2', cw: 12, lh: 22, max: 4 }, { f: '1', cw: 8, lh: 14, max: 5 }];
+  let chosen = fonts[2], nameLines: string[] = [];
+  for (const ft of fonts) { const ls = wrapEnAncho(nombre, NAME_W, ft.cw); chosen = ft; nameLines = ls; if (ls.length <= ft.max) break; }
+  if (nameLines.length > 5) nameLines = nameLines.slice(0, 5);
+  let nameY = TOP + Math.max(0, Math.floor((TOPZONE_H - nameLines.length * chosen.lh) / 2));   // centrado V
+  for (const ln of nameLines) {
+    const w = ln.length * chosen.cw;
+    const x = NAME_X0 + Math.max(0, Math.floor((NAME_W - w) / 2));                              // centrado H
+    bytes = bytes.concat(strToBytes('TEXT ' + x + ',' + nameY + ',"' + chosen.f + '",0,1,1,"' + ln.replace(/"/g, "'") + '"\r\n'));
+    nameY += chosen.lh;
   }
-  let lineW = 0; for (let ti = 0; ti < primeraLinea.length; ti++) lineW += primeraLinea[ti].w + (ti > 0 ? SPACE : 0);
-  while (lineW > 380 && primeraLinea.length > 1) {
-    const q = primeraLinea.pop()!; lineW -= q.w + SPACE;
-    const nu = primeraLinea[primeraLinea.length - 1];
-    if (nu.tok.slice(-2) !== '..') { lineW -= nu.w; nu.tok = nu.tok.replace(/[\.,]+$/, '') + '..'; nu.w = nu.tok.length * 16; lineW += nu.w; }
-  }
-  let descX = Math.max(5, Math.round((400 - lineW) / 2));
-  const descY = 2 + offsetY;
-  for (let tj = 0; tj < primeraLinea.length; tj++) {
-    const o = primeraLinea[tj]; const safe = String(o.tok).replace(/"/g, "'");
-    bytes = bytes.concat(strToBytes('TEXT ' + descX + ',' + descY + ',"3",0,1,1,"' + safe + '"\r\n')); descX += o.w + SPACE;
-  }
-  const precioStr = 'S/ ' + (parseFloat(producto.precio) || 0).toFixed(2);
-  const precioWidth = precioStr.length * 32;
-  const precioX = Math.max(5, Math.round((400 - precioWidth) / 2));
-  bytes = bytes.concat(strToBytes('TEXT ' + precioX + ',' + (30 + offsetY) + ',"5",0,1,1,"' + precioStr + '"\r\n'));
-  const lineaDecoX = Math.max(30, precioX - 8), lineaDecoW = Math.min(340, precioWidth + 16);
-  bytes = bytes.concat(strToBytes('BAR ' + lineaDecoX + ',' + (82 + offsetY) + ',' + lineaDecoW + ',3\r\n'));
+
+  // ── Divisor sutil ──
+  bytes = bytes.concat(strToBytes('BAR 232,' + (TOP + 4) + ',2,' + (TOPZONE_H - 12) + '\r\n'));
+
+  // ── PRECIO focalizado (zona derecha X240..388) centrado V+H, en recuadro · SIN medida ──
+  // Quitada la medida (c/u · /kg): se sobreentiende → todo el cajón es para el precio.
+  const precioNum = parseFloat(producto.precio) || 0;
+  const ent = Math.floor(precioNum).toString();
+  const cen = Math.round((precioNum - Math.floor(precioNum)) * 100).toString().padStart(2, '0');
+  const RZ_X0 = 240, RZ_W = 148;
+  const wSoles = 2 * 12, wEnt = ent.length * 24, wCen = 2 * 12;
+  const rowW = wSoles + 3 + wEnt + 2 + wCen;
+  const rowX = RZ_X0 + Math.max(4, Math.floor((RZ_W - rowW) / 2));
+  const intY = TOP + Math.floor((TOPZONE_H - 32) / 2);            // centrado V (bloque ~32, sin medida)
+  bytes = bytes.concat(strToBytes('TEXT ' + rowX + ',' + (intY + 10) + ',"2",0,1,1,"S/"\r\n'));
+  bytes = bytes.concat(strToBytes('TEXT ' + (rowX + wSoles + 3) + ',' + intY + ',"4",0,1,1,"' + ent + '"\r\n'));
+  bytes = bytes.concat(strToBytes('TEXT ' + (rowX + wSoles + 3 + wEnt + 2) + ',' + intY + ',"2",0,1,1,"' + cen + '"\r\n'));  // céntimos elevado
+  const bx1 = RZ_X0, bx2 = 389, by1 = intY - 14, by2 = intY + 46;
+  bytes = bytes.concat(strToBytes('BAR ' + bx1 + ',' + by1 + ',' + (bx2 - bx1) + ',2\r\n'));
+  bytes = bytes.concat(strToBytes('BAR ' + bx1 + ',' + by2 + ',' + (bx2 - bx1) + ',2\r\n'));
+  bytes = bytes.concat(strToBytes('BAR ' + bx1 + ',' + by1 + ',2,' + (by2 - by1) + '\r\n'));
+  bytes = bytes.concat(strToBytes('BAR ' + (bx2 - 2) + ',' + by1 + ',2,' + (by2 - by1) + '\r\n'));
+
+  // ── BARCODE IZQUIERDA (ancho capado) + código + [⧉/▫ tipo-código][ME] a la DERECHA ──
   let codigo = String((producto.esSkuBase ? producto.skuBase : producto.codigoBarra) || producto.codigoBarra || producto.skuBase || producto.codigo || producto.idProducto || '').replace(/"/g, '');
   if (!codigo) codigo = 'SIN-CODIGO';
-  const _bc = calcBarcodeAdaptativo(codigo);
-  const frameX1 = 10, frameX2 = 389, cmL = 12;
-  const barcodeY = 94 + offsetY, frameY1 = 88 + offsetY, frameY2 = 148 + offsetY;
-  bytes = bytes.concat(strToBytes('BAR ' + frameX1 + ',' + frameY1 + ',' + cmL + ',1\r\n'));
-  bytes = bytes.concat(strToBytes('BAR ' + frameX1 + ',' + frameY1 + ',1,' + cmL + '\r\n'));
-  bytes = bytes.concat(strToBytes('BAR ' + (frameX2 - cmL + 1) + ',' + frameY1 + ',' + cmL + ',1\r\n'));
-  bytes = bytes.concat(strToBytes('BAR ' + frameX2 + ',' + frameY1 + ',1,' + cmL + '\r\n'));
-  bytes = bytes.concat(strToBytes('BAR ' + frameX1 + ',' + frameY2 + ',' + cmL + ',1\r\n'));
-  bytes = bytes.concat(strToBytes('BAR ' + frameX1 + ',' + (frameY2 - cmL + 1) + ',1,' + cmL + '\r\n'));
-  bytes = bytes.concat(strToBytes('BAR ' + (frameX2 - cmL + 1) + ',' + frameY2 + ',' + cmL + ',1\r\n'));
-  bytes = bytes.concat(strToBytes('BAR ' + frameX2 + ',' + (frameY2 - cmL + 1) + ',1,' + cmL + '\r\n'));
-  bytes = bytes.concat(strToBytes('BARCODE ' + _bc.barcodeX + ',' + barcodeY + ',"128",' + _bc.barcodeHeight + ',0,0,' + _bc.narrowBc + ',' + _bc.narrowBc + ',"' + codigo + '"\r\n'));
-  const codigoX = Math.max(frameX1 + 4, Math.floor((400 - codigo.length * 8) / 2));
-  bytes = bytes.concat(strToBytes('TEXT ' + codigoX + ',' + (152 + offsetY) + ',"1",0,1,1,"' + codigo + '"\r\n'));
+  // Ancho del barcode CAPADO (Code C para numéricos) → deja lugar fijo a [cuadritos][ME] a la derecha.
+  const esNum = /^\d+$/.test(codigo);
+  const mods = ((esNum ? (Math.ceil(codigo.length / 2) + (codigo.length % 2)) : codigo.length) * 11) + 35;
+  const nb = (mods * 2 <= 288) ? 2 : 1;
+  const bcH = 56, bcX = 12;
+  const bcY = TOP + TOPZONE_H + 4;
+  bytes = bytes.concat(strToBytes('BARCODE ' + bcX + ',' + bcY + ',"128",' + bcH + ',0,0,' + nb + ',' + nb + ',"' + codigo + '"\r\n'));
+  bytes = bytes.concat(strToBytes('TEXT ' + bcX + ',' + (bcY + bcH + 4) + ',"1",0,1,1,"' + codigo + '"\r\n'));
+  // Indicador de TIPO de código que ACOMPAÑA al "ME": 2 cuadritos = multi-código
+  // (canónico+equivalentes, imprime el skuBase) · 1 cuadrito = código único. Posición fija → siempre entra.
+  const sq = (x: number, y: number, s: number) => {
+    bytes = bytes.concat(strToBytes('BAR ' + x + ',' + y + ',' + s + ',2\r\n'));
+    bytes = bytes.concat(strToBytes('BAR ' + x + ',' + (y + s - 2) + ',' + s + ',2\r\n'));
+    bytes = bytes.concat(strToBytes('BAR ' + x + ',' + y + ',2,' + s + '\r\n'));
+    bytes = bytes.concat(strToBytes('BAR ' + (x + s - 2) + ',' + y + ',2,' + s + '\r\n'));
+  };
+  const indX = 300, indY = bcY + 14;
+  if (producto.esSkuBase) { sq(indX, indY + 6, 14); sq(indX + 8, indY, 14); }   // ⧉ dos cuadritos (multi)
+  else { sq(indX + 4, indY + 3, 14); }                                          // un cuadrito (único)
+  // "ME" sin caja, a la derecha del indicador (Font 4)
+  bytes = bytes.concat(strToBytes('TEXT 338,' + (bcY + 14) + ',"4",0,1,1,"ME"\r\n'));
   bytes = bytes.concat(strToBytes('PRINT 1,1\r\n'));
   return bytes;
 }
@@ -338,14 +397,15 @@ function buildTSPLMembreteWh(producto: any, esCabecera: boolean, indice: number,
   const tokens = descNorm.split(/\s+/);
   const highlights = detectHighlightsEtq(tokens, allEnvTokens);
   const lines = wrapTokensEtq(tokens, highlights);
-  const header = ['SIZE 50 mm,25 mm','GAP ' + cfg.gapMm + ' mm,0 mm','DIRECTION 1','DENSITY ' + cfg.density,'SPEED ' + cfg.speed,'CLS','BITMAP 5,' + (2 + offsetY) + ',' + LOGO_W_BYTES + ',' + LOGO_H + ',0,'].join('\r\n');
+  const header = ['SIZE 50 mm,25 mm','GAP ' + cfg.gapMm + ' mm,0 mm','DIRECTION 1','DENSITY ' + cfg.density,'SPEED ' + cfg.speed,'CLS','BITMAP 5,' + (8 + offsetY) + ',' + LOGO_W_BYTES + ',' + LOGO_H + ',0,'].join('\r\n');
   let bytes = strToBytes(header);
   bytes = bytes.concat(hexToBytes(LOGO_ALMACEN_WH_HEX));
   bytes = bytes.concat(strToBytes('\r\n'));
   if (total > 1) {
     const tagTexto = esCabecera ? 'CAB' : (indice + '/' + total);
-    const tagX = 400 - tagTexto.length * 8 - 8;
-    bytes = bytes.concat(strToBytes('TEXT ' + tagX + ',' + (4 + offsetY) + ',"2",0,1,1,"' + tagTexto + '"\r\n'));
+    // [margen derecho 1.5mm] -20 dots (antes -8) → el CAB no queda pegado al borde.
+    const tagX = 400 - tagTexto.length * 8 - 20;
+    bytes = bytes.concat(strToBytes('TEXT ' + tagX + ',' + (10 + offsetY) + ',"2",0,1,1,"' + tagTexto + '"\r\n'));
   }
   const DESC_AREA_Y0 = 46, DESC_AREA_H = 72, LINE_H = 38, SPACE = 8;
   let startY: number;
@@ -366,9 +426,10 @@ function buildTSPLMembreteWh(producto: any, esCabecera: boolean, indice: number,
   }
   let codigo = String(producto.codigo || producto.codigoBarra || producto.skuBase || producto.idProducto || '').replace(/"/g, '');
   if (!codigo) codigo = 'SIN-CODIGO';
-  const _bc = calcBarcodeAdaptativo(codigo);
+  const _bc = calcBarcodeCentrado(codigo);
+  const bcH = 56;   // barcode más alto (~7mm) = escanea mejor
   const frameX1 = 10, frameX2 = 389, cmL = 12;
-  const barcodeY = 124 + offsetY, frameY1 = 118 + offsetY, frameY2 = 196 + offsetY;
+  const barcodeY = 114 + offsetY, frameY1 = 108 + offsetY, frameY2 = 188 + offsetY;
   bytes = bytes.concat(strToBytes('BAR ' + frameX1 + ',' + frameY1 + ',' + cmL + ',1\r\n'));
   bytes = bytes.concat(strToBytes('BAR ' + frameX1 + ',' + frameY1 + ',1,' + cmL + '\r\n'));
   bytes = bytes.concat(strToBytes('BAR ' + (frameX2 - cmL + 1) + ',' + frameY1 + ',' + cmL + ',1\r\n'));
@@ -377,9 +438,9 @@ function buildTSPLMembreteWh(producto: any, esCabecera: boolean, indice: number,
   bytes = bytes.concat(strToBytes('BAR ' + frameX1 + ',' + (frameY2 - cmL + 1) + ',1,' + cmL + '\r\n'));
   bytes = bytes.concat(strToBytes('BAR ' + (frameX2 - cmL + 1) + ',' + frameY2 + ',' + cmL + ',1\r\n'));
   bytes = bytes.concat(strToBytes('BAR ' + frameX2 + ',' + (frameY2 - cmL + 1) + ',1,' + cmL + '\r\n'));
-  bytes = bytes.concat(strToBytes('BARCODE ' + _bc.barcodeX + ',' + barcodeY + ',"128",' + _bc.barcodeHeight + ',0,0,' + _bc.narrowBc + ',' + _bc.narrowBc + ',"' + codigo + '"\r\n'));
+  bytes = bytes.concat(strToBytes('BARCODE ' + _bc.barcodeX + ',' + barcodeY + ',"128",' + bcH + ',0,0,' + _bc.narrowBc + ',' + _bc.narrowBc + ',"' + codigo + '"\r\n'));
   const codigoX = Math.max(frameX1 + 4, Math.floor((400 - codigo.length * 8) / 2));
-  bytes = bytes.concat(strToBytes('TEXT ' + codigoX + ',' + (barcodeY + _bc.barcodeHeight + 8) + ',"1",0,1,1,"' + codigo + '"\r\n'));
+  bytes = bytes.concat(strToBytes('TEXT ' + codigoX + ',' + (barcodeY + bcH + 4) + ',"1",0,1,1,"' + codigo + '"\r\n'));
   bytes = bytes.concat(strToBytes('PRINT 1,1\r\n'));
   return bytes;
 }
@@ -390,7 +451,8 @@ function expandirMembrete(tipo: string, items: any[]): any[] {
   (items || []).forEach((item) => {
     if (tipo === 'MEMBRETE_ME') {
       out.push({ codigo: String(item.codigoBarra || ''), codigoBarra: String(item.codigoBarra || ''), descripcion: String(item.descripcion || ''),
-        precio: parseFloat(item.precio) || 0, skuBase: String(item.skuBase || ''), esSkuBase: !!item.esSkuBase, esCabecera: false });
+        precio: parseFloat(item.precio) || 0, unidad: String(item.unidad || item.unidadMedida || ''),
+        skuBase: String(item.skuBase || ''), esSkuBase: !!item.esSkuBase, esCabecera: false });
     } else {
       const codigos = (Array.isArray(item.codigos) && item.codigos.length > 0) ? item.codigos : (item.codigoBarra ? [item.codigoBarra] : []);
       if (codigos.length === 0) return;
@@ -568,6 +630,91 @@ async function procesarLote(idLote: string, deadline: number, envTokens: string[
   return { idLote, subJobs, status: 'PRESUPUESTO_AGOTADO' };
 }
 
+// ════════════════ Ticket de picking 80mm — pickup acumulado por zona ════════════════
+function _ascii(s: string): string {
+  return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\x20-\x7e]/g, ' ');
+}
+async function leerTicketPrinterId(): Promise<string> {
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/config?select=valor&clave=eq.WH_TICKET_PRINTER_ID`, {
+      headers: { 'apikey': SB_KEY!, 'Authorization': 'Bearer ' + SB_KEY!, 'Accept-Profile': 'mos' } });
+    if (!r.ok) return '';
+    const rows = await r.json();
+    return (rows && rows.length) ? String(rows[0].valor || '') : '';
+  } catch { return ''; }
+}
+async function leerPickup(idp: string): Promise<any> {
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/pickups?select=id_pickup,id_zona,items,notas,estado,fuente&id_pickup=eq.${encodeURIComponent(idp)}&limit=1`, {
+      headers: { 'apikey': SB_KEY!, 'Authorization': 'Bearer ' + SB_KEY!, 'Accept-Profile': 'wh' } });
+    if (!r.ok) return null;
+    const rows = await r.json();
+    return (rows && rows.length) ? rows[0] : null;
+  } catch { return null; }
+}
+async function marcarPickupImpreso(idp: string, notas: string): Promise<void> {
+  try {
+    await fetch(`${SB_URL}/rest/v1/pickups?id_pickup=eq.${encodeURIComponent(idp)}`, {
+      method: 'PATCH',
+      headers: { 'apikey': SB_KEY!, 'Authorization': 'Bearer ' + SB_KEY!, 'Accept-Profile': 'wh', 'Content-Profile': 'wh', 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ notas }) });
+  } catch { /* best-effort */ }
+}
+function buildPickingTicketB64(pickup: any): { b64: string; lineas: number; unidades: number } {
+  const ESC = '\x1b', GS = '\x1d';
+  const zona = _ascii(pickup.id_zona || 'SIN ZONA');
+  let items: any[] = [];
+  try { items = Array.isArray(pickup.items) ? pickup.items : JSON.parse(pickup.items || '[]'); } catch { items = []; }
+  const pend = items.map((it: any) => ({
+    nombre: _ascii(it.nombre || it.skuBase || ''),
+    cant: Math.max(0, (parseFloat(it.solicitado) || 0) - (parseFloat(it.despachado) || 0)),
+  })).filter((x: any) => x.cant > 0);
+  let t = '';
+  t += ESC + '@';
+  t += ESC + '\x61\x01' + ESC + '\x21\x30' + 'ALMACEN\n' + ESC + '\x21\x00';
+  t += 'Picking acumulado semanal\n';
+  t += '================================\n';
+  t += ESC + '\x61\x00';
+  t += 'Zona: ' + zona + '\n';
+  t += 'Pendiente de despachar:\n';
+  t += '--------------------------------\n';
+  let uds = 0;
+  for (const p of pend) {
+    const c = String(p.cant);
+    const nm = p.nombre.substring(0, 26);
+    const dots = Math.max(1, 30 - nm.length - c.length);
+    t += nm + '.'.repeat(dots) + c + '\n';
+    uds += p.cant;
+  }
+  t += '--------------------------------\n';
+  t += 'Productos: ' + pend.length + '   Unidades: ' + uds + '\n';
+  t += '================================\n';
+  t += ESC + '\x61\x01' + 'Lo NO despachado de la semana\n' + '\n\n\n';
+  t += GS + '\x56\x00';
+  let bin = '';
+  for (let i = 0; i < t.length; i++) bin += String.fromCharCode(t.charCodeAt(i) & 0xff);
+  return { b64: btoa(bin), lineas: pend.length, unidades: uds };
+}
+
+// [góndola multi-código SERVER-AUTHORITATIVE] Marca esSkuBase=true en los items cuyo
+// skuBase tiene ≥1 equivalente ACTIVO en mos.equivalencias (fuente de verdad). Así el
+// canónico imprime el skuBase + ⧉ AUNQUE el catálogo de ME esté incompleto. Fail-soft:
+// si la consulta falla, deja esSkuBase como vino del cliente (no rompe la impresión).
+async function marcarCanonicosME(items: any[]): Promise<void> {
+  try {
+    if (!SB_URL || !SB_KEY) return;
+    const skus = Array.from(new Set(items.map((i) => String(i.skuBase || '').trim()).filter(Boolean)));
+    if (!skus.length) return;
+    const r = await fetch(`${SB_URL}/rest/v1/equivalencias?select=sku_base&activo=eq.true&sku_base=in.(${skus.map(encodeURIComponent).join(',')})`, {
+      headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Accept-Profile': 'mos' },
+    });
+    if (!r.ok) return;
+    const rows = await r.json();
+    const conEquiv = new Set((rows || []).map((x: any) => String(x.sku_base)));
+    for (const it of items) if (conEquiv.has(String(it.skuBase || ''))) it.esSkuBase = true;
+  } catch (_) { /* fail-soft */ }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ ok: false, error: 'metodo no permitido' }, 405);
@@ -623,6 +770,9 @@ Deno.serve(async (req: Request) => {
       if (!itemsRaw.length) return json({ ok: false, error: 'items vacio' }, 400);
       const expandidos = expandirMembrete(tipo, itemsRaw);
       if (!expandidos.length) return json({ ok: false, error: 'sin items validos (cada uno requiere codigoBarra o codigos)' }, 400);
+      // [góndola] Resolver multi-código contra mos.equivalencias (server-authoritative)
+      // → el canónico imprime skuBase + ⧉ aunque el catálogo de ME no traiga las equivalencias.
+      if (tipo === 'MEMBRETE_ME') await marcarCanonicosME(expandidos);
       let printerId = String(body.printerId || '');
       if (!printerId) printerId = await resolverPrinterAdhesivo();
       if (!printerId) return json({ ok: false, error: 'sin impresora ADHESIVO configurada' }, 400);
@@ -638,6 +788,41 @@ Deno.serve(async (req: Request) => {
       if (!idLote) return json({ ok: false, error: 'sin idLote' }, 200);
       const res = await procesarLote(String(idLote), deadline, envTokens, cfg);
       return json({ ok: true, data: { idLote, total: cr.data.total, dedup: !!cr.dedup, ...res } });
+    }
+
+    // mode 'pickup-ticket' — imprime el ticket 80mm del PICKUP ACUMULADO por zona (lo no
+    // despachado de la semana). Lo dispara el frontend WH el lunes (1 por zona) + botón 🖨
+    // manual (force). Dedup server-side: marca [impreso] en notas → no re-imprime salvo force.
+    if (mode === 'pickup-ticket') {
+      const idp = String(body.id_pickup || body.idPickup || '');
+      if (!idp) return json({ ok: false, error: 'falta id_pickup' }, 400);
+      const pk = await leerPickup(idp);
+      if (!pk) return json({ ok: false, error: 'pickup no encontrado' }, 200);
+      const notas = String(pk.notas || '');
+      const force = body.force === true;
+      if (!force && notas.includes('[impreso]')) return json({ ok: true, data: { dedup: true, idPickup: idp } });
+      const tk = buildPickingTicketB64(pk);
+      if (tk.lineas === 0) return json({ ok: true, data: { vacio: true, idPickup: idp } });
+      const printerId = (String(body.printerId || '') || await leerTicketPrinterId());
+      if (!printerId) return json({ ok: false, error: 'sin WH_TICKET_PRINTER_ID configurado' }, 400);
+      const pr = await printNodePost(parseInt(printerId, 10), 'Acumulado ' + _ascii(pk.id_zona || ''), tk.b64, idp);
+      if (!pr.ok) return json({ ok: false, error: 'PrintNode HTTP ' + pr.status + ': ' + pr.txt }, 200);
+      if (!notas.includes('[impreso]')) await marcarPickupImpreso(idp, notas + ' [impreso]');
+      return json({ ok: true, data: { idPickup: idp, jobId: pr.jobId, lineas: tk.lineas, unidades: tk.unidades } });
+    }
+
+    // mode 'calibrate-roll' — CALIBRAR NUEVO ROLLO (operador, sin admin/MOS). Manda un
+    // GAPDETECT independiente a la impresora de adhesivos: re-mide el gap del rollo nuevo
+    // (gasta ~2-3 etiquetas) y alinea la siguiente. Distinto de "calibrar drift" (ajuste fino).
+    // Usa el gap configurado (ADHESIVO_GAP_MM=3) como referencia.
+    if (mode === 'calibrate-roll') {
+      const printerId = (String(body.printerId || '') || await resolverPrinterAdhesivo());
+      if (!printerId) return json({ ok: false, error: 'sin impresora ADHESIVO configurada' }, 400);
+      const tspl = 'SIZE 50 mm,25 mm\r\nGAP ' + cfg.gapMm + ' mm,0 mm\r\nDIRECTION 1\r\nGAPDETECT\r\n';
+      let bin = ''; for (let i = 0; i < tspl.length; i++) bin += String.fromCharCode(tspl.charCodeAt(i) & 0xff);
+      const pr = await printNodePost(parseInt(printerId, 10), 'Calibrar rollo adhesivo', btoa(bin), 'calib');
+      if (!pr.ok) return json({ ok: false, error: 'PrintNode HTTP ' + pr.status + ': ' + pr.txt }, 200);
+      return json({ ok: true, data: { calibrado: true, gapMm: cfg.gapMm, jobId: pr.jobId } });
     }
 
     // mode 'pending' — cola (pg_cron). Procesa varios lotes dentro del presupuesto.

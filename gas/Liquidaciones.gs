@@ -444,6 +444,18 @@ function getLiquidacionesPagadas(params) {
     } catch(_){}
   }
 
+  // [DELETE-SAFE · DINERO] lee la sombra agregada (RPC liquidaciones_pagadas; gate maestro + frescura; shape
+  // {ok,data,rango}). null ⇒ HOJA. ⚠️ La RPC SIEMPRE oculta ANULADAS (no soporta incluirAnuladas) → si el
+  // caller pide incluirAnuladas, NO usar el directo (iría a HOJA, que sí las incluye). Cachea igual (60s).
+  var _incluirAnul = (params.incluirAnuladas === true || String(params.incluirAnuladas).toLowerCase() === 'true');
+  var _respLP = _incluirAnul ? null : _sbLeerRpcFreshMOS('liquidaciones_pagadas', { desde: desde, hasta: hasta }, null);
+  if (_respLP) {
+    if (ssCache && cacheKey) {
+      try { var serLP = JSON.stringify(_respLP); if (serLP.length < 95000) ssCache.put(cacheKey, serLP, 60); } catch(_){}
+    }
+    return _respLP;
+  }
+
   var tz = Session.getScriptTimeZone();
   var sh = _liqGetSheet();
   var rows = _sheetToObjects(sh);
@@ -503,6 +515,10 @@ function getLiquidacionesPagadas(params) {
 // Detalle de un batch (todos los días + montos)
 function getPagoDetalle(params) {
   if (!params || !params.idPago) return { ok: false, error: 'Requiere idPago' };
+  // [DELETE-SAFE · DINERO] lee la sombra (RPC pago_detalle; gate maestro + frescura; shape {ok,data:{...,dias}}).
+  // null ⇒ HOJA.
+  var _respPD2 = _sbLeerRpcFreshMOS('pago_detalle', { idPago: params.idPago }, null);
+  if (_respPD2) return _respPD2;
   var sh = _liqGetSheet();
   var rows = _sheetToObjects(sh).filter(function(r){ return String(r.idPago) === String(params.idPago); });
   if (!rows.length) return { ok: false, error: 'idPago no encontrado' };
@@ -1055,6 +1071,10 @@ function getLiqDiaBonSan(params) {
   var idPersonal = params && params.idPersonal;
   var fecha      = params && params.fecha;
   if (!idPersonal || !fecha) return { ok: false, error: 'idPersonal+fecha requeridos' };
+  // [DELETE-SAFE · DINERO] lee la sombra (RPC liq_dia_bon_san; gate maestro + frescura; shape {ok,data:{...}}).
+  // null ⇒ HOJA.
+  var _respBS = _sbLeerRpcFreshMOS('liq_dia_bon_san', { idPersonal: idPersonal, fecha: fecha }, null);
+  if (_respBS) return _respBS;
   try {
     var sh = _liqDiaGetSheet();
     var data = sh.getDataRange().getValues();
@@ -1110,6 +1130,11 @@ function getLiquidacionesPendientesDia(params) {
   params = params || {};
   var hasta = params.hasta || _liqHoy();
   var desde = params.desde || _fechaOffset(hasta, -29);
+
+  // [DELETE-SAFE · DINERO] lee la sombra agregada (RPC liquidaciones_pendientes; gate maestro + frescura). La
+  // RPC reproduce el MISMO agregado por idPersonal/rango (paridad verificada e2e con el front). null ⇒ HOJA.
+  var _resp = _sbLeerRpcFreshMOS('liquidaciones_pendientes', { desde: desde, hasta: hasta }, null);
+  if (_resp) return _resp;
 
   // [v2.41.34] NO sync inline dentro del endpoint — causa timeouts cuando
   // getResumenTodosDia tarda. El sync corre en trigger time-based horario
@@ -1214,6 +1239,16 @@ function getPersonalDiaFast(params) {
       var hit = ssCache.get(cacheKey);
       if (hit) { try { return JSON.parse(hit); } catch(_){} }
     } catch(_){}
+  }
+
+  // [DELETE-SAFE · DINERO] lee la sombra (RPC personal_dia_lista; gate maestro + frescura; shape paritario
+  // {ok,data,fast,fecha}). null ⇒ HOJA. Cachea igual (60s) para aliviar el polling.
+  var _respPD = _sbLeerRpcFreshMOS('personal_dia_lista', { fecha: fecha }, null);
+  if (_respPD) {
+    if (ssCache && cacheKey) {
+      try { var serPD = JSON.stringify(_respPD); if (serPD.length < 95000) ssCache.put(cacheKey, serPD, 60); } catch(_){}
+    }
+    return _respPD;
   }
 
   var sh = _liqDiaGetSheet();
@@ -1467,6 +1502,10 @@ function getLiquidacionesVetadas(params) {
   params = params || {};
   var hasta = params.hasta || _liqHoy();
   var desde = params.desde || _fechaOffset(hasta, -29);
+  // [DELETE-SAFE · DINERO] lee la sombra (RPC liquidaciones_vetadas; gate maestro + frescura; shape
+  // {ok,data,rango}). null ⇒ HOJA.
+  var _respLV = _sbLeerRpcFreshMOS('liquidaciones_vetadas', { desde: desde, hasta: hasta }, null);
+  if (_respLV) return _respLV;
   var sh = _liqDiaGetSheet();
   var rows = _sheetToObjects(sh);
   var tz = Session.getScriptTimeZone();

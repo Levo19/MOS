@@ -1,1 +1,1 @@
-{ "version": "2.43.315", "build": "AUTH F1: pedirAuth/verificarClaveAdmin Supabase-first (RPC central mos.verificar_clave_admin), normalizado a shape autorizado/camelCase, GAS kill-switch." }
+{ "version": "2.43.316", "build": "F6 push wiring: MOS registra su token FCM directo en Supabase (mos.registrar_push_token) ademas de GAS. Aditivo." }

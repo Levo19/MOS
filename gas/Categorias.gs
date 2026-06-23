@@ -93,6 +93,8 @@ function migrarPoliticaPrecios() {
 // ── CRUD ────────────────────────────────────────────────────
 
 function getCategorias(params) {
+  var dir = _sbLeerListaMOS('categorias_lista', {}, null);
+  if (dir !== null) return { ok: true, data: dir };
   _garantizarHojaCategorias();
   var rows = _sheetToObjects(getSheet('CATEGORIAS'));
   // Ordenar por nombre, activos primero
@@ -136,6 +138,7 @@ function crearCategoria(params) {
   if (rows.some(function(r){ return _normalizarIdCategoria(r.idCategoria) === id; })) {
     return { ok: false, error: 'Ya existe una categoría con ese ID: ' + id };
   }
+  var fechaCreacion = new Date();
   sheet.appendRow([
     id,
     String(params.nombre).trim(),
@@ -144,8 +147,21 @@ function crearCategoria(params) {
     v.data.tope,
     String(params.descripcion || '').trim(),
     1,
-    new Date()
+    fechaCreacion
   ]);
+  // [DELETE-SAFE · espejo inmediato] Mirror best-effort a mos.categorias (upsert por PK), igual que el catálogo de
+  // productos. La Hoja sigue siendo la VERDAD de esta tabla (no hay RPC directo-puro de categorías), pero el espejo
+  // mantiene la sombra FRESCA sin esperar el sync horario → las lecturas Supabase-first (getCategorias) ven el alta
+  // de inmediato. Su fallo NO afecta el retorno (el sync horario reconcilia). NUNCA lanza.
+  try {
+    if (typeof _dualWriteCAT === 'function') {
+      _dualWriteCAT('categorias', {
+        idCategoria: id, nombre: String(params.nombre).trim(), modoVenta: v.data.modo,
+        margenPct: v.data.margen, precioTope: v.data.tope,
+        descripcion: String(params.descripcion || '').trim(), estado: 1, fechaCreacion: fechaCreacion
+      });
+    }
+  } catch (eDW) { Logger.log('[dualWrite crearCategoria] ' + (eDW && eDW.message)); }
   return { ok: true, data: { idCategoria: id } };
 }
 
@@ -176,6 +192,16 @@ function actualizarCategoria(params) {
       if (nuevoValor === undefined) return;
       sheet.getRange(i + 1, col + 1).setValue(nuevoValor);
     });
+    // [DELETE-SAFE · espejo inmediato] Mirror best-effort de la fila ACTUALIZADA a mos.categorias (upsert por PK).
+    // La Hoja es la verdad; el espejo mantiene la sombra fresca para las lecturas Supabase-first. NUNCA lanza.
+    try {
+      if (typeof _dualWriteCAT === 'function') {
+        var fila = sheet.getRange(i + 1, 1, 1, hdrs.length).getValues()[0];
+        var obj = {};
+        hdrs.forEach(function(h, k){ obj[h] = fila[k]; });
+        _dualWriteCAT('categorias', obj);
+      }
+    } catch (eDW) { Logger.log('[dualWrite actualizarCategoria] ' + (eDW && eDW.message)); }
     return { ok: true };
   }
   return { ok: false, error: 'Categoría no encontrada: ' + idBuscado };

@@ -182,7 +182,11 @@ begin
   if v_zona = '' then return jsonb_build_object('ok',false,'error','Falta zona (ni en el request ni en la guía WH)'); end if;
 
   -- ── A) Agregar los escaneados por código (sumar). Negativos/0 se ignoran defensivamente. ──────────────────
-  create temp table _esc_agg (cod_barra text primary key, cant numeric) on commit drop;
+  -- [175] `if not exists` + `truncate` (espejo de 148): robusto a múltiples llamadas en la MISMA transacción.
+  --   (sin esto, re-aplicar 146 revertía el hardening de 175 → "relation _esc_agg already exists" si un
+  --   orquestador llamara la RPC 2x en una transacción). Se mantiene aquí como fuente de verdad.
+  create temp table if not exists _esc_agg (cod_barra text primary key, cant numeric) on commit drop;
+  truncate _esc_agg;
   for v_e in select * from jsonb_array_elements(v_esc) loop
     v_cb   := btrim(coalesce(v_e->>'codBarra', v_e->>'cod_barra', ''));
     v_cant := coalesce((v_e->>'cantidad')::numeric, 0);
