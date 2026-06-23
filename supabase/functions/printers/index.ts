@@ -15,8 +15,9 @@
 //   • 'verify' → { ok:true, data:{ printerId,nombrePN,computer,computerState,printerStateRaw,state,
 //                  reason,icon,color,online } }                  ← BYTE-equivalente a GAS verificarImpresoraAhora
 //
-// AUTORIZACIÓN: la plataforma verifica la FIRMA del JWT (verify_jwt=true). Exigimos claim `app ∈ {MOS}`
-// (mismo patrón que riz-print / ia). La anon key no pasa, ni un token de otra app.
+// AUTORIZACIÓN: la plataforma verifica la FIRMA del JWT (verify_jwt=true). Exigimos claim `app ∈
+// {MOS, mosExpress, warehouseMos}` — ME y WH también consultan estado de impresoras (chip 🟢/🔴 + wizard).
+// Antes era solo {MOS} → ME/WH recibían 401 → chip "verificando eterno". La anon key no pasa.
 //
 // SECRETS (los setea el dueño; NO entran al repo):
 //   supabase secrets set PRINTNODE_API_KEY=<key> --project-ref rzbzdeipbtqkzjqdchqk
@@ -31,7 +32,7 @@ const CORS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
-const APPS_OK = new Set(['MOS']);
+const APPS_OK = new Set(['MOS', 'mosExpress', 'warehouseMos']);
 
 function json(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
