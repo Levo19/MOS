@@ -1,1 +1,1 @@
-{ "version": "2.43.317", "build": "F2/F3 pago jornales DIRECTO: marcarPagos/anularPago via mos.marcar_pagos (fechas[]->snapshot liquidaciones_dia, rechaza si no materializado) + mos.anular_pago (verifica clave). Flag MOS_PAGOS_JORNAL_DIRECTO=1. SQL 227. Ticket impresion pendiente de cablear a Edge." }
+{ "version": "2.43.318", "build": "F6 espia master MOS cero-GAS: espiaCrearSesion via mos.espia_crear_sesion + wake push data-only por Edge; _espiaApiPost Supabase-first (espia_sync/push_batch/subir_oferta/agregar_ice/cerrar). Fallback GAS." }

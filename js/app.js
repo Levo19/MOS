@@ -28958,11 +28958,35 @@ const MOS = (() => {
     console.log('[espia master] arrancando · deviceId=' + idDispositivo + ' master=' + (S.session?.idPersonal || S.session?.nombre || 'master'));
     try {
       console.log('[espia master] llamando espiaCrearSesion al backend...');
-      const r = await API.post('espiaCrearSesion', {
-        masterId: S.session?.idPersonal || S.session?.nombre || 'master',
-        deviceId: idDispositivo,
-        claveAdmin: claveAdmin
-      });
+      const _masterId = S.session?.idPersonal || S.session?.nombre || 'master';
+      let r = null;
+      // [F6 espía · cero-GAS] Supabase-first: mos.espia_crear_sesion + wake push data-only por Edge. Fallback GAS.
+      if (window.ESPIA_DIRECTO !== false && API.espiaRpc) {
+        try {
+          const cr = await API.espiaRpc('espia_crear_sesion', { masterId: _masterId, deviceId: idDispositivo, claveAdmin });
+          if (cr && cr.ok && cr.data && cr.data.sesionId) {
+            let pushOk = false;
+            try {
+              const tk = await API.fcmTokenDispositivo(idDispositivo);
+              const fcm = (tk && tk.data && tk.data.fcmToken) || '';
+              if (fcm) {
+                const pr = await API.pushEdge({ op: 'send', tokens: [fcm], silencioso: true,
+                  data: { idNotif: 'MOS_ESPIA_INICIAR', action: 'MOS_ESPIA_INICIAR', sesionId: cr.data.sesionId, masterId: _masterId, ttl: String(cr.data.ttl || 600000) } });
+                pushOk = !!(pr && pr.ok && pr.data && pr.data.enviados > 0);
+              }
+            } catch (_) { /* push best-effort */ }
+            r = { sesionId: cr.data.sesionId, token: 'sb:' + cr.data.sesionId, ttl: cr.data.ttl, pushOk };
+          } else if (cr && cr.ok === false && !/APP_NO_AUTORIZADA/.test(String(cr.error || ''))) {
+            // rechazo de negocio (clave mala / EN_VIVO otro master) → mostrar y NO ir a GAS (daría lo mismo).
+            toast(cr.error || 'No se pudo iniciar el espía', 'error', 7000);
+            _espiaV2Cerrar('error_init');
+            return;
+          }
+        } catch (_) { /* → GAS */ }
+      }
+      if (!r) {
+        r = await API.post('espiaCrearSesion', { masterId: _masterId, deviceId: idDispositivo, claveAdmin });
+      }
       console.log('[espia master] respuesta backend:', r);
       if (!r || !r.sesionId) {
         toast('Backend no devolvió sesionId', 'error');
@@ -28996,8 +29020,18 @@ const MOS = (() => {
   // [v2.43.90] Helper que inyecta token HMAC automáticamente en cada call.
   // Equivalente al _espiaCliWHPost del cliente. Todas las llamadas del módulo
   // espía pasan por acá.
+  // [F6 espía · cero-GAS] acción→RPC Supabase (mos.espia_*). Supabase-first, fallback GAS. Mismo shape {ok,data}.
+  const _ESPIA_RPC_MASTER = {
+    espiaSync: 'espia_sync', espiaPushBatch: 'espia_push_batch', espiaSubirOferta: 'espia_subir_oferta',
+    espiaSubirRespuesta: 'espia_subir_respuesta', espiaSubirRenegRespuesta: 'espia_subir_reneg_respuesta',
+    espiaAgregarIce: 'espia_agregar_ice', espiaCerrarSesion: 'espia_cerrar_sesion'
+  };
   async function _espiaApiPost(action, params) {
     const body = Object.assign({}, params || {});
+    const rpc = _ESPIA_RPC_MASTER[action];
+    if (rpc && window.ESPIA_DIRECTO !== false && API.espiaRpc) {
+      try { const out = await API.espiaRpc(rpc, body); if (out) return out; } catch (_) { /* → GAS */ }
+    }
     const token = _espiaV2?.token;
     if (token && body.token === undefined) body.token = token;
     return await API.post(action, body);

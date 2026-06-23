@@ -2034,6 +2034,27 @@ const API = (() => {
     isConfigured,
     // [F6 push] Registro de token FCM directo a Supabase (mos.registrar_push_token). Aditivo al GAS.
     registrarPushTokenSB: (p = {}) => _sbRpcMOS('registrar_push_token', { p }, 'mos'),
+    // [F6 espía] Señalización WebRTC directo (mos.espia_*). APP_NO_AUTORIZADA/sin-token → null → caller cae a GAS.
+    espiaRpc: async (rpc, p = {}) => {
+      const out = await _sbRpcMOS(rpc, { p }, 'mos');
+      if (!out || (out.ok === false && String(out.error || '') === 'APP_NO_AUTORIZADA')) return null;
+      return out;
+    },
+    // [F6 espía] Token FCM de un dispositivo (para el wake push). {ok,data:{fcmToken,estado,app}}.
+    fcmTokenDispositivo: (deviceId) => _sbRpcMOS('fcm_token_dispositivo', { p: { deviceId } }, 'mos'),
+    // [F6 push/espía] Envío por Edge `push` (FCM v1). silencioso:true + data → comando data-only (wake espía).
+    pushEdge: async (body) => {
+      try {
+        const token = await _mintTokenMOS();
+        if (!token) return null;
+        const res = await _sbFetchTimeout(`${_SB_URL}/functions/v1/push`, {
+          method: 'POST', headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body || {})
+        }, 12000);
+        const d = await res.json().catch(() => null);
+        return (res.ok && d) ? d : null;
+      } catch (_) { return null; }
+    },
     get:  (action, p = {}) => {
       // [FASE 1 · PILOTO] getProductos → lectura directa Supabase con gate por-acción + frescura + fallback GAS.
       // Con el flag OFF (default) esto es IDÉNTICO a hoy: _conFallbackMOS NO entra al directo y va directo a GAS.
