@@ -231,7 +231,7 @@ const MOS = (() => {
     document.querySelectorAll('#bottomnav .bnav-btn').forEach(b =>
       b.classList.toggle('active', b.dataset.view === viewName));
 
-    const titles = { dashboard:'Dashboard', catalogo:'Catálogo', almacen:'Almacén', proveedores:'Proveedores', cajas:'Cajas', finanzas:'Finanzas', config:'Configuración', zona:'Zona' };
+    const titles = { dashboard:'Dashboard', catalogo:'Catálogo', almacen:'Almacén', proveedores:'Proveedores', cajas:'Cajas', finanzas:'Finanzas', config:'Configuración', zona:'Zona', facturacion:'Facturación' };
     const t = titles[viewName] || viewName;
     const pt = $('pageTitle'); if (pt) pt.textContent = t;
     const ptd = $('pageTitleDesktop'); if (ptd) ptd.textContent = t;
@@ -1018,6 +1018,7 @@ const MOS = (() => {
         case 'cajas':        await loadCajas(true);    break;
         case 'finanzas':     await _loadFinanzas();    break;
         case 'tributario':   await _loadTributario();  break;
+        case 'facturacion':  await _loadFacturacion(); break;
         case 'promociones':  await loadPromociones();  break;
         case 'zona':         await loadZona();         break;  // [RIZ Capa 4]
       }
@@ -41716,9 +41717,257 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
   }
 
+  // ══════════════════════════════════════════════════════════════
+  // FACTURACIÓN CPE — 100% Supabase (fac.* vía wrappers mos.fac_*)
+  // ══════════════════════════════════════════════════════════════
+  function _facRpc(fn, p) { return API._sb.rpc(fn, { p: p || {} }, 'mos'); } // wrappers en schema mos
+  function _facAdmin() { try { return _esAdminOMaster(); } catch (_) { return false; } }
+  function _facMsg(x) { return Array.isArray(x) ? x.join(' · ') : (x && typeof x === 'object' ? JSON.stringify(x) : (x == null ? '' : String(x))); }
+  function _facNewLocalId() { return 'MOSFAC-' + ((typeof crypto!=='undefined' && crypto.randomUUID) ? crypto.randomUUID() : (Date.now()+'-'+Math.random().toString(16).slice(2))); }
+
+  async function _loadFacturacion() {
+    if (!S.fac) S.fac = { tipo: 'BOLETA', items: [], cfg: null };
+    if (!_facAdmin()) {
+      ['facPanelEmitir','facPanelHistorial','facPanelConfig'].forEach(id => { const e=$(id); if(e) e.innerHTML='<div class="text-sm text-amber-400 p-4">Solo administradores pueden facturar.</div>'; });
+      const chip=$('facEstadoChip'); if(chip) chip.textContent='solo admin';
+      return;
+    }
+    const hoy = new Date().toISOString().slice(0,10);
+    const hd=$('facHistDesde'), hh=$('facHistHasta'); if(hd&&!hd.value) hd.value=hoy; if(hh&&!hh.value) hh.value=hoy;
+    if (!S.fac.items.length) S.fac.items=[{desc:'',cant:1,precio:0,tig:1}];
+    if (!S.fac.pendingLocalId) S.fac.pendingLocalId = _facNewLocalId();  // estable por comprobante (anti doble-emisión)
+    facSetTipo(S.fac.tipo); facRenderItems(); setFacTab('emitir'); _facCargarEstadoChip();
+  }
+
+  async function _facCargarEstadoChip() {
+    const chip=$('facEstadoChip'); if(!chip) return;
+    try {
+      const r = await _facRpc('fac_get_config', {}); S.fac.cfg=r;
+      const on = r && r.flag_on, real = r && r.activo && r.tiene_nubefact;
+      chip.textContent = real ? '🟢 Emite real' : (on ? '🟡 Modo prueba (STUB)' : '⚪ Inactivo');
+      chip.className = 'fac-chip ' + (real ? 'bg-emerald-900 text-emerald-300' : on ? 'bg-amber-900 text-amber-300' : 'bg-slate-800 text-slate-400');
+    } catch(e){ chip.textContent='⚪ sin conexión'; }
+  }
+
+  function setFacTab(tab) {
+    if (S.fac) S.fac.tab = tab;
+    ['emitir','historial','config'].forEach(t => {
+      const b=$('facTab'+t.charAt(0).toUpperCase()+t.slice(1)); if(b) b.classList.toggle('active', t===tab);
+      const p=$('facPanel'+t.charAt(0).toUpperCase()+t.slice(1)); if(p) p.classList.toggle('hidden', t!==tab);
+    });
+    if (tab==='historial') facCargarHistorial();
+    if (tab==='config' && _facAdmin()) facRenderConfig();
+  }
+
+  function facSetTipo(t) {
+    S.fac.tipo = t;
+    ['BOLETA','FACTURA'].forEach(x => { const b=$('facTipo'+x); if(b) b.classList.toggle('active', x===t); });
+    const dir=$('facCliDir'); if(dir) dir.placeholder = (t==='FACTURA') ? 'Dirección fiscal (requerida)' : 'Dirección (opcional)';
+  }
+  function facDocInput() { /* visual; el tipo real se deriva por longitud al emitir */ }
+
+  function facAddItem() { _facReadInputs(); S.fac.items.push({desc:'',cant:1,precio:0,tig:1}); facRenderItems(); }
+  function facDelItem(i) { _facReadInputs(); S.fac.items.splice(i,1); if(!S.fac.items.length) S.fac.items.push({desc:'',cant:1,precio:0,tig:1}); facRenderItems(); }
+  function _facReadInputs() {
+    S.fac.items.forEach((it,i) => {
+      const d=$('facItDesc'+i), c=$('facItCant'+i), p=$('facItPrec'+i), g=$('facItIgv'+i);
+      if(d) it.desc=d.value; if(c) it.cant=parseFloat(c.value)||0; if(p) it.precio=parseFloat(p.value)||0; if(g) it.tig=parseInt(g.value)||1;
+    });
+  }
+  function facItemInput() { _facReadInputs(); facCalcTotal(); }
+  function facRenderItems() {
+    const cont=$('facItems'); if(!cont) return;
+    cont.innerHTML = S.fac.items.map((it,i) => '' +
+      '<div class="fac-itemrow">' +
+        '<input id="facItDesc'+i+'" class="fac-inp" placeholder="Descripción" value="'+_escapeHtml(it.desc||'')+'" oninput="MOS.facItemInput()">' +
+        '<input id="facItCant'+i+'" class="fac-inp text-center" type="number" min="0" step="0.001" value="'+it.cant+'" oninput="MOS.facItemInput()">' +
+        '<input id="facItPrec'+i+'" class="fac-inp text-center" type="number" min="0" step="0.01" value="'+it.precio+'" oninput="MOS.facItemInput()">' +
+        '<select id="facItIgv'+i+'" class="fac-inp" onchange="MOS.facItemInput()">' +
+          '<option value="1"'+(it.tig==1?' selected':'')+'>Gravado</option>' +
+          '<option value="9"'+(it.tig==9?' selected':'')+'>Exonerado</option>' +
+          '<option value="11"'+(it.tig==11?' selected':'')+'>Inafecto</option>' +
+        '</select>' +
+        '<button onclick="MOS.facDelItem('+i+')" class="text-slate-500 hover:text-red-400" title="Quitar">✕</button>' +
+      '</div>').join('');
+    facCalcTotal();
+  }
+  function facCalcTotal() {
+    let total=0, igv=0;
+    S.fac.items.forEach(it => {
+      const sub = Math.round((it.cant||0)*(it.precio||0)*100)/100; total += sub;
+      if (it.tig==1) igv += sub - Math.round(sub/1.18*100)/100;
+    });
+    total = Math.round(total*100)/100; igv = Math.round(igv*100)/100;
+    const t=$('facTotal'); if(t) t.textContent='S/ '+total.toFixed(2);
+    const gi=$('facIgvInfo'); if(gi) gi.textContent = igv>0 ? '(IGV S/ '+igv.toFixed(2)+')' : '';
+    return total;
+  }
+
+  async function facLookup() {
+    const doc = (($('facCliDoc')||{}).value||'').replace(/\D/g,'');
+    if (doc.length!==8 && doc.length!==11) { toast('DNI (8) o RUC (11) para buscar', 'warn'); return; }
+    toast('🔎 Consultando...', 'info');
+    try {
+      const r = await _facRpc('fac_consultar_documento', { numero: doc });
+      if (r && r.ok) { $('facCliNombre').value = r.nombre||''; if (r.direccion) $('facCliDir').value = r.direccion; toast('✓ '+(r.nombre||''), 'success'); }
+      else toast('No encontrado'+(r&&r.motivo?(' ('+r.motivo+')'):'')+'. Completá a mano.', 'warn');
+    } catch(e){ toast('Lookup falló: '+(e.message||e), 'error'); }
+  }
+
+  async function facEmitir() {
+    if (!_facAdmin()) { toast('Solo administradores', 'error'); return; }
+    _facReadInputs();
+    const tipo = S.fac.tipo;
+    const doc = (($('facCliDoc')||{}).value||'').replace(/\D/g,'');
+    const nombre = (($('facCliNombre')||{}).value||'').trim();
+    const dir = (($('facCliDir')||{}).value||'').trim();
+    const email = (($('facCliEmail')||{}).value||'').trim();
+    const items = S.fac.items.filter(it => (it.desc||'').trim() && it.cant>0 && it.precio>0);
+    if (!items.length) { toast('Agregá al menos un ítem (descripción, cantidad y precio)', 'warn'); return; }
+    if (tipo==='FACTURA') {
+      if (doc.length!==11) { toast('Factura requiere RUC (11 dígitos)', 'warn'); return; }
+      if (!dir) { toast('Factura requiere dirección fiscal', 'warn'); return; }
+    }
+    const tdoc = doc.length===11 ? '6' : (doc.length===8 ? '1' : '0');
+    const itemsNF = items.map(it => {
+      const sub = Math.round(it.cant*it.precio*100)/100;
+      const vu = it.tig==1 ? Math.round(it.precio/1.18*100)/100 : it.precio;
+      return { sku:'', nombre: it.desc.trim(), cantidad: it.cant, precio: it.precio, subtotal: sub, valor_unitario: vu, tipo_igv: it.tig, unidad_medida:'NIU' };
+    });
+    const total = Math.round(itemsNF.reduce((a,b)=>a+b.subtotal,0)*100)/100;
+    // local_id ESTABLE por comprobante: un reintento (fallo de red) reusa el mismo → dedup, NO doble emisión.
+    if (!S.fac.pendingLocalId) S.fac.pendingLocalId = _facNewLocalId();
+    const localId = S.fac.pendingLocalId;
+    const payload = { tipo_doc: tipo, cliente:{ tipo:tdoc, doc, nombre: nombre||'CLIENTE ANONIMO', direccion:dir, email }, items: itemsNF, total, local_id: localId, origen:'MANUAL', creado_por: (S.session&&S.session.nombre)||'MOS' };
+
+    const btn=$('facEmitirBtn'); if(btn){ btn.disabled=true; btn.textContent='Emitiendo...'; }
+    try {
+      const r = await _facRpc('fac_emitir_cpe', payload);
+      if (!r || r.status!=='success') {
+        const err = _facMsg(r&&(r.error||r.errores)) || 'sin respuesta';
+        toast(err==='FAC_DESACTIVADO' ? 'Facturación desactivada (falta prender flag / pegar token)' : ('No se emitió: '+err), err==='FAC_DESACTIVADO'?'warn':'error');
+        facRenderResultado({ error: err });   // mismo local_id se conserva para reintento (dedup)
+      } else {
+        toast('✓ '+r.correlativo+' · '+r.estado+(r.dedup?' (ya existía)':''), 'success', 6000);
+        try{_finBeep&&_finBeep('success');}catch(_){}
+        facRenderResultado(r);
+        S.fac.items=[{desc:'',cant:1,precio:0,tig:1}]; facRenderItems();
+        ['facCliDoc','facCliNombre','facCliDir','facCliEmail'].forEach(id=>{const e=$(id); if(e) e.value='';});
+        S.fac.pendingLocalId = _facNewLocalId();   // nuevo id para el PRÓXIMO comprobante
+      }
+    } catch(e){ toast('Error: '+(e.message||e), 'error'); facRenderResultado({ error: String(e.message||e) }); }
+    finally { if(btn){ btn.disabled=false; btn.textContent='Emitir comprobante'; } }
+  }
+
+  function facRenderResultado(r) {
+    const box=$('facResultado'); if(!box) return; box.classList.remove('hidden');
+    if (r.error) { box.innerHTML='<div class="fac-card" style="border-color:#7f1d1d"><span class="text-red-400 text-sm">✕ '+_escapeHtml(_facMsg(r.error))+'</span></div>'; return; }
+    const real = r.estado==='EMITIDO';
+    const pdf = (r.pdf && String(r.pdf).indexOf('http')===0) ? '<a href="'+_escapeHtml(String(r.pdf))+'" target="_blank" rel="noopener" class="fac-btn-sec inline-block mt-2">📄 Ver PDF</a>' : '';
+    box.innerHTML = '<div class="fac-card" style="border-color:'+(real?'#065f46':'#92400e')+'">' +
+      '<div class="font-black text-lg text-slate-100">'+_escapeHtml(String(r.correlativo||''))+'</div>' +
+      '<div class="text-sm '+(real?'text-emerald-400':'text-amber-400')+'">'+(real?'🟢 Emitido a SUNAT':'🟡 '+_escapeHtml(String(r.estado||'')))+' · Total S/ '+Number(r.total||0).toFixed(2)+'</div>' +
+      (r.errores?'<div class="text-xs text-red-400 mt-1">'+_escapeHtml(_facMsg(r.errores))+'</div>':'') + pdf + '</div>';
+  }
+
+  async function facCargarHistorial() {
+    if (!_facAdmin()) return;
+    const cont=$('facHistLista'); if(!cont) return; cont.innerHTML='Cargando...';
+    try {
+      const r = await _facRpc('fac_listar', { desde: ($('facHistDesde')||{}).value, hasta: ($('facHistHasta')||{}).value });
+      const list = (r&&r.comprobantes)||[];
+      if (!list.length) { cont.innerHTML='<div class="text-slate-500 text-sm">Sin comprobantes en el rango.</div>'; return; }
+      cont.innerHTML = list.map(c => {
+        const real=c.estado==='EMITIDO', baja=c.estado==='BAJA';
+        const pdf = (c.pdf && String(c.pdf).indexOf('http')===0) ? '<a href="'+_escapeHtml(String(c.pdf))+'" target="_blank" rel="noopener" class="fac-btn-sec" style="padding:4px 9px;font-size:11px">PDF</a>' : '';
+        const anularBtn = (real && !baja) ? '<button onclick="MOS.facAnular(\''+encodeURIComponent(String(c.id))+'\')" class="fac-btn-sec" style="padding:4px 9px;font-size:11px;background:#7f1d1d">Anular</button>' : '';
+        const chipCls = real?'bg-emerald-900 text-emerald-300':baja?'bg-slate-700 text-slate-400':'bg-amber-900 text-amber-300';
+        return '<div class="fac-card mb-2 flex items-center justify-between gap-2 flex-wrap">' +
+          '<div><div class="font-bold text-slate-100">'+_escapeHtml(String(c.correlativo))+' <span class="fac-chip '+chipCls+'">'+_escapeHtml(String(c.estado))+'</span></div>' +
+          '<div class="text-xs text-slate-500">'+_escapeHtml(String(c.cliente_nombre||'—'))+' · S/ '+Number(c.total||0).toFixed(2)+' · '+_escapeHtml(String(c.app||''))+'</div></div>' +
+          '<div class="flex gap-1">'+pdf+anularBtn+'</div></div>';
+      }).join('');
+    } catch(e){ if(cont) cont.innerHTML='<div class="text-red-400 text-sm">Error: '+_escapeHtml(String(e.message||e))+'</div>'; }
+  }
+
+  async function facAnular(id) {
+    try { id = decodeURIComponent(id); } catch(_){}
+    if (!_facAdmin()) { toast('Solo administradores', 'error'); return; }
+    const motivo = await _modalPrompt('Motivo de la baja (SUNAT):', '', { titulo:'Anular comprobante', okText:'Anular', placeholder:'Ej: error en datos del cliente' });
+    if (motivo===null) return;
+    const auth = await pedirAuth({ accion:'FAC_ANULAR', refDocumento:id }); if(!auth) return;
+    toast('Anulando...', 'info');
+    try {
+      const r = await _facRpc('fac_anular', { id, motivo: motivo||'Anulación', clave_admin: auth.clave });
+      if (r && r.status==='success') { toast('✓ Comprobante dado de baja', 'success'); facCargarHistorial(); }
+      else toast('No se pudo anular: '+((r&&r.error)||'?'), 'error');
+    } catch(e){ toast('Error: '+(e.message||e), 'error'); }
+  }
+
+  async function facRenderConfig() {
+    const box=$('facConfigBody'); if(!box) return; box.innerHTML='Cargando…';
+    let cfg;
+    try { cfg = await _facRpc('fac_get_config', {}); S.fac.cfg=cfg; } catch(e){ box.innerHTML='<span class="text-red-400">Error: '+_escapeHtml(String(e.message||e))+'</span>'; return; }
+    const series=(cfg&&cfg.series)||{};
+    const seriesRows = Object.keys(series).map(s => '<div class="flex items-center gap-2 mb-1"><span class="font-mono text-slate-300" style="width:64px">'+s+'</span><span class="text-xs text-slate-500">próximo '+series[s].proximo+'</span>' +
+      '<input id="facAlin_'+s+'" class="fac-inp" style="width:90px" type="number" min="0" placeholder="'+series[s].correlativo+'">' +
+      '<button onclick="MOS.facAlinear(\''+s+'\')" class="fac-btn-sec" style="padding:4px 9px;font-size:11px">Fijar</button></div>').join('');
+    box.innerHTML =
+      '<div class="mb-3"><span class="text-xs '+(cfg.tiene_nubefact?'text-emerald-400':'text-amber-400')+'">'+(cfg.tiene_nubefact?'🟢 Token NubeFact cargado':'⚠ Falta token NubeFact')+'</span> · estado: <b>'+(cfg.activo?'emite real':'STUB')+'</b> · flag: <b>'+(cfg.flag_on?'ON':'OFF')+'</b></div>' +
+      '<label class="fac-lbl">RUTA NubeFact (URL)</label>' +
+      '<input id="facCfgRuta" class="fac-inp w-full mb-2" placeholder="'+(cfg.ruta_set?'•••• (configurada — vacío conserva)':'https://api.nubefact.com/api/v1/...')+'">' +
+      '<label class="fac-lbl">TOKEN NubeFact</label>' +
+      '<input id="facCfgToken" class="fac-inp w-full mb-2" placeholder="'+(cfg.tiene_nubefact?'•••• (vacío conserva)':'pegá el token')+'">' +
+      '<label class="fac-lbl">Header de auth (plantilla · {token} = el token)</label>' +
+      '<input id="facCfgAuth" class="fac-inp w-full mb-2" value="'+_escapeHtml(cfg.auth_header||'')+'">' +
+      '<div class="grid grid-cols-2 gap-2 mb-2"><div><label class="fac-lbl">URL lookup DNI</label><input id="facCfgLkDni" class="fac-inp w-full" placeholder="API DNI…"></div>' +
+      '<div><label class="fac-lbl">URL lookup RUC</label><input id="facCfgLkRuc" class="fac-inp w-full" placeholder="API RUC…"></div></div>' +
+      '<label class="fac-lbl">TOKEN lookup</label><input id="facCfgLkTok" class="fac-inp w-full mb-2" placeholder="'+(cfg.tiene_lookup?'•••• (conservar)':'token apis.net.pe…')+'">' +
+      '<label class="flex items-center gap-2 mb-3 text-sm text-slate-300"><input id="facCfgActivo" type="checkbox" '+(cfg.activo?'checked':'')+'> Emitir de verdad (desmarcado = STUB demo)</label>' +
+      '<button onclick="MOS.facGuardarConfig()" class="fac-btn-pri">Guardar conexión</button>' +
+      '<hr class="border-slate-800 my-4"><label class="fac-lbl">Series activas</label>' +
+      '<div class="flex gap-2 mb-2"><input id="facSerB" class="fac-inp" style="width:90px" value="'+_escapeHtml(cfg.serie_boleta||'')+'" placeholder="B001">' +
+      '<input id="facSerF" class="fac-inp" style="width:90px" value="'+_escapeHtml(cfg.serie_factura||'')+'" placeholder="F001">' +
+      '<button onclick="MOS.facGuardarSeries()" class="fac-btn-sec">Guardar series</button></div>' +
+      '<label class="fac-lbl" style="margin-top:12px">Numeración (alinear al último nº del sistema viejo)</label>' + (seriesRows||'<span class="text-slate-500 text-xs">sin series</span>');
+  }
+
+  async function facGuardarConfig() {
+    const auth = await pedirAuth({ accion:'FAC_CONFIG' }); if(!auth) return;
+    const p = {
+      nubefact_ruta: (($('facCfgRuta')||{}).value||'').trim(),
+      nubefact_token: (($('facCfgToken')||{}).value||'').trim(),
+      auth_header: (($('facCfgAuth')||{}).value||'').trim(),
+      lookup_url_dni: (($('facCfgLkDni')||{}).value||'').trim(),
+      lookup_url_ruc: (($('facCfgLkRuc')||{}).value||'').trim(),
+      lookup_token: (($('facCfgLkTok')||{}).value||'').trim(),
+      activo: !!($('facCfgActivo')||{}).checked,
+      clave_admin: auth.clave
+    };
+    try { const r=await _facRpc('fac_set_config', p); if(r&&r.status==='success'){ toast('✓ Conexión guardada','success'); facRenderConfig(); _facCargarEstadoChip(); } else toast('No se guardó: '+((r&&r.error)||'?'),'error'); }
+    catch(e){ toast('Error: '+(e.message||e),'error'); }
+  }
+  async function facGuardarSeries() {
+    const auth = await pedirAuth({ accion:'FAC_SERIES' }); if(!auth) return;
+    try { const r=await _facRpc('fac_set_series',{ boleta:(($('facSerB')||{}).value||'').trim().toUpperCase(), factura:(($('facSerF')||{}).value||'').trim().toUpperCase(), clave_admin: auth.clave });
+      if(r&&r.status==='success'){ toast('✓ Series guardadas','success'); facRenderConfig(); _facCargarEstadoChip(); } else toast('Inválido: '+((r&&r.error)||'?'),'error'); }
+    catch(e){ toast('Error: '+(e.message||e),'error'); }
+  }
+  async function facAlinear(serie) {
+    const inp=$('facAlin_'+serie); const num=parseInt(inp&&inp.value,10); if(isNaN(num)){ toast('Poné un número','warn'); return; }
+    if(!await _modalConfirm('¿Fijar '+serie+' en '+num+'? (el próximo será '+(num+1)+')',{warning:true,titulo:'Alinear numeración',okText:'Fijar'})) return;
+    const auth = await pedirAuth({ accion:'FAC_ALINEAR' }); if(!auth) return;
+    try { const r=await _facRpc('fac_alinear',{ serie, numero:num, clave_admin: auth.clave }); if(r&&r.status==='success'){ toast('✓ '+serie+' → próximo '+r.proximo,'success'); facRenderConfig(); } else toast('No se pudo: '+((r&&r.error)||'?'),'error'); }
+    catch(e){ toast('Error: '+(e.message||e),'error'); }
+  }
+
   // ── PUBLIC API ───────────────────────────────────────────────
   return {
     init, nav, refresh, fabAction, iconBusy,
+    // Facturación CPE (100% Supabase)
+    setFacTab, facSetTipo, facDocInput, facAddItem, facDelItem, facItemInput,
+    facLookup, facEmitir, facCargarHistorial, facAnular,
+    facGuardarConfig, facGuardarSeries, facAlinear,
     // [RIZ Capa 4] Módulo Zona — solo activo si el flag mos_zona_modulo está ON
     loadZona, renderZona, zonaCambiarZona, zonaRefrescar, zonaSetOrden, zonaFiltrar,
     zonaToggleGrupo,

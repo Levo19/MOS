@@ -1,1 +1,1 @@
-{ "version": "2.43.310", "build": "membrete-modal v2.43.310: dedup de codigos[] en _construirItemCompleto (el provider ME ahora emite alias+real por equivalencia → evitar repetidos)." }
+{ "version": "2.43.311", "build": "Facturacion CPE centralizada 100% Supabase (fac.*): pantalla MOS Emitir/Historial/Config (boletas y facturas SUNAT via NubeFact desde el panel), emision sincrona dentro de Postgres, correlativo seguro, anti doble-emision, clave admin server-side. Revision 100x aplicada." }

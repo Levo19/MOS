@@ -12959,6 +12959,12 @@
       <span class="nav-label whitespace-nowrap">Tributario</span>
       <span id="tribNavBadge" class="fin-nav-badge hidden"></span>
     </button>
+    <!-- Facturación CPE — boletas/facturas SUNAT vía NubeFact (100% Supabase, fac.*) -->
+    <button data-view="facturacion" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm relative" onclick="MOS.nav('facturacion')">
+      <div class="nav-dot"></div>
+      <svg class="nav-icon shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
+      <span class="nav-label whitespace-nowrap">Facturación</span>
+    </button>
     <div class="mt-2 pt-2 border-t border-slate-800">
       <button data-view="config" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('config')">
         <div class="nav-dot"></div>
@@ -13777,6 +13783,81 @@
           <summary class="trib-details-summary">🧾 CPE emitidos — estado de boletas y facturas</summary>
           <div id="tribIGVEmitidoList" class="trib-details-body">Cargando...</div>
         </details>
+      </div>
+    </section>
+
+    <!-- ═══ VIEW: FACTURACIÓN CPE (100% Supabase · fac.*) ══════════════════════════════ -->
+    <section id="view-facturacion" class="view hidden">
+      <style>
+        .fac-tab{padding:8px 14px;font-size:13px;font-weight:700;color:#94a3b8;border-bottom:2px solid transparent;background:none;cursor:pointer}
+        .fac-tab.active{color:#f1f5f9;border-bottom-color:#f59e0b}
+        .fac-seg{flex:1;padding:9px;font-size:13px;font-weight:800;border-radius:9px;background:#1e293b;color:#94a3b8;border:1px solid #334155;cursor:pointer}
+        .fac-seg.active{background:linear-gradient(135deg,#f59e0b,#d97706);color:#0f172a;border-color:transparent}
+        .fac-inp{background:#0f172a;border:1px solid #334155;color:#f1f5f9;font-size:13px;border-radius:9px;padding:9px 11px}
+        .fac-lbl{display:block;font-size:11px;color:#94a3b8;margin-bottom:3px;font-weight:700}
+        .fac-btn-sec{background:#334155;color:#f1f5f9;font-size:13px;font-weight:700;padding:9px 13px;border-radius:9px;border:none;cursor:pointer}
+        .fac-btn-pri{background:linear-gradient(135deg,#10b981,#059669);color:#fff;font-size:14px;font-weight:800;padding:10px 22px;border-radius:10px;border:none;cursor:pointer}
+        .fac-btn-pri:disabled{opacity:.5;cursor:not-allowed}
+        .fac-card{background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:16px}
+        .fac-itemrow{display:grid;grid-template-columns:1fr 64px 84px 110px 32px;gap:6px;margin-bottom:6px;align-items:center}
+        .fac-chip{font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px}
+      </style>
+      <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <h1 class="text-xl font-black text-slate-100 flex items-center gap-2"><span class="text-2xl">🧾</span> Facturación CPE</h1>
+          <p id="facSub" class="text-xs text-slate-500">Boletas y facturas electrónicas · SUNAT vía NubeFact</p>
+        </div>
+        <div id="facEstadoChip" class="fac-chip bg-slate-800 text-slate-400">…</div>
+      </div>
+      <div class="flex gap-1 mb-4 border-b border-slate-800">
+        <button id="facTabEmitir"    class="fac-tab active" onclick="MOS.setFacTab('emitir')">Emitir</button>
+        <button id="facTabHistorial" class="fac-tab"        onclick="MOS.setFacTab('historial')">Historial</button>
+        <button id="facTabConfig"    class="fac-tab"        onclick="MOS.setFacTab('config')">Config</button>
+      </div>
+
+      <!-- EMITIR -->
+      <div id="facPanelEmitir" class="fac-card" style="max-width:680px">
+        <div class="flex gap-2 mb-4">
+          <button id="facTipoBOLETA"  class="fac-seg active" onclick="MOS.facSetTipo('BOLETA')">Boleta</button>
+          <button id="facTipoFACTURA" class="fac-seg"        onclick="MOS.facSetTipo('FACTURA')">Factura</button>
+        </div>
+        <div class="flex gap-2 mb-2">
+          <input id="facCliDoc" placeholder="DNI / RUC" class="fac-inp flex-1" oninput="MOS.facDocInput()" inputmode="numeric">
+          <button onclick="MOS.facLookup()" class="fac-btn-sec">🔎 Buscar</button>
+        </div>
+        <input id="facCliNombre" placeholder="Nombre / Razón social" class="fac-inp w-full mb-2">
+        <input id="facCliDir"    placeholder="Dirección (requerida en factura)" class="fac-inp w-full mb-2">
+        <input id="facCliEmail"  placeholder="Email (opcional — envía el PDF al cliente)" class="fac-inp w-full mb-3" inputmode="email">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-xs text-slate-400 font-bold">Ítems</span>
+          <button onclick="MOS.facAddItem()" class="fac-btn-sec" style="padding:5px 11px;font-size:12px">+ Ítem</button>
+        </div>
+        <div class="fac-itemrow" style="margin-bottom:3px">
+          <span class="text-[10px] text-slate-500">Descripción</span><span class="text-[10px] text-slate-500 text-center">Cant</span>
+          <span class="text-[10px] text-slate-500 text-center">P.Unit</span><span class="text-[10px] text-slate-500 text-center">IGV</span><span></span>
+        </div>
+        <div id="facItems"></div>
+        <div class="flex items-center justify-between mt-4 pt-3 border-t border-slate-800">
+          <div class="text-sm text-slate-300">Total: <span id="facTotal" class="font-black text-amber-400">S/ 0.00</span>
+            <span id="facIgvInfo" class="text-[11px] text-slate-500 ml-1"></span></div>
+          <button id="facEmitirBtn" onclick="MOS.facEmitir()" class="fac-btn-pri">Emitir comprobante</button>
+        </div>
+        <div id="facResultado" class="hidden mt-3"></div>
+      </div>
+
+      <!-- HISTORIAL -->
+      <div id="facPanelHistorial" class="hidden">
+        <div class="flex gap-2 mb-3 items-end flex-wrap">
+          <div><label class="fac-lbl">Desde</label><input id="facHistDesde" type="date" class="fac-inp"></div>
+          <div><label class="fac-lbl">Hasta</label><input id="facHistHasta" type="date" class="fac-inp"></div>
+          <button onclick="MOS.facCargarHistorial()" class="fac-btn-sec">Buscar</button>
+        </div>
+        <div id="facHistLista" class="text-sm text-slate-400">Elegí un rango y tocá Buscar.</div>
+      </div>
+
+      <!-- CONFIG -->
+      <div id="facPanelConfig" class="hidden">
+        <div id="facConfigBody" class="fac-card text-sm text-slate-400" style="max-width:680px">Cargando…</div>
       </div>
     </section>
 
@@ -19054,7 +19135,7 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js?v=2.43.309"></script>
+<script src="js/api.js?v=2.43.311"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19069,7 +19150,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.309"></script>
+<script src="js/app.js?v=2.43.311"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
