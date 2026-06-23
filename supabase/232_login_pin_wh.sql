@@ -18,8 +18,12 @@ begin
   if coalesce(me.jwt_app(),'') = '' then return jsonb_build_object('ok',false,'error','APP_NO_AUTORIZADA'); end if;
   if v_pin is null then return jsonb_build_object('ok',false,'error','PIN requerido'); end if;
   -- PIN comparado SERVER-SIDE; jamás se devuelve ni se expone.
+  -- Match = TODO el personal activo por PIN (réplica EXACTA de _getPersonalWH() del GAS, que NO filtra por app:
+  -- MASTER/ADMIN (app=MOS) también entran a WH, igual que ENVASADOR/ALMACENERO). Filtrar por app rompía el login
+  -- de los admin/master.
   select * into v_op from mos.personal
-    where pin = v_pin and lower(coalesce(app_origen,'')) like '%warehouse%' and coalesce(estado,false) = true
+    where pin = v_pin and coalesce(estado,false) = true
+    order by (lower(coalesce(app_origen,'')) like '%warehouse%') desc   -- preferir el de WH si dos comparten pin
     limit 1;
   if not found then return jsonb_build_object('ok',false,'error','PIN incorrecto'); end if;
 
