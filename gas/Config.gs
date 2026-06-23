@@ -163,6 +163,16 @@ function crearEstacion(params) {
     '1',
     params.descripcion  || ''
   ]);
+  // [DELETE-SAFE · espejo inmediato] Mirror best-effort a mos.estaciones (las otras 6 tablas del catálogo
+  // ya lo hacen). Sin esto, una estación nueva SOLO llegaba a la sombra por el sync batch time-based — que
+  // Google desactiva sin avisar → no bumpea catalogo_version → WH/RPCs no la ven (mismo bug del proveedor).
+  try {
+    if (typeof _dualWriteCAT === 'function') _dualWriteCAT('estaciones', {
+      idEstacion: id, idZona: params.idZona || '', nombre: params.nombre,
+      tipo: params.tipo || 'CAJA', appOrigen: params.appOrigen || 'mosExpress',
+      adminPin: params.adminPin || '', activo: '1', descripcion: params.descripcion || ''
+    });
+  } catch (eDW) { Logger.log('[dualWrite crearEstacion] ' + (eDW && eDW.message)); }
   return { ok: true, data: { idEstacion: id } };
 }
 
@@ -180,6 +190,15 @@ function actualizarEstacion(params) {
         if (col >= 0) sheet.getRange(i+1, col+1).setValue(params[c]);
       }
     });
+    // [DELETE-SAFE · espejo inmediato] Mirror de la fila ACTUALIZADA a mos.estaciones (patrón actualizarZona).
+    try {
+      if (typeof _dualWriteCAT === 'function') {
+        var fila = sheet.getRange(i + 1, 1, 1, hdrs.length).getValues()[0];
+        var obj = {};
+        hdrs.forEach(function(h, k){ obj[h] = fila[k]; });
+        _dualWriteCAT('estaciones', obj);
+      }
+    } catch (eDW) { Logger.log('[dualWrite actualizarEstacion] ' + (eDW && eDW.message)); }
     return { ok: true };
   }
   return { ok: false, error: 'Estación no encontrada: ' + params.idEstacion };
