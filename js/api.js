@@ -1352,6 +1352,29 @@ const API = (() => {
       return _desempacarCatalogo(out);         // {} (sin data) — inocuo, el front solo await
     }
 
+    if (action === 'crearEstacion') {
+      // RPC mos.crear_estacion (215) → data:{idEstacion}. 100% Supabase, dedup por localId+PK, bumpea versión.
+      const out = await _sbRpcMOSWrite('crear_estacion', { p: {
+        localId: _mosLocalId(p, 'ES'),
+        idEstacion: p.idEstacion != null ? String(p.idEstacion) : undefined,
+        nombre: p.nombre, idZona: p.idZona, tipo: p.tipo, appOrigen: p.appOrigen,
+        adminPin: p.adminPin, descripcion: p.descripcion
+      } });
+      if (out == null) return null;
+      return _desempacarCatalogo(out);         // {idEstacion}
+    }
+
+    if (action === 'actualizarEstacion') {
+      // Patch PARCIAL: reenviar SOLO las claves presentes (la RPC distingue presente/ausente con `p ? 'clave'`).
+      const a = { idEstacion: p.idEstacion != null ? String(p.idEstacion) : undefined };
+      ['idZona','nombre','tipo','appOrigen','adminPin','activo','descripcion'].forEach(k => {
+        if (k in p && p[k] !== undefined) a[k] = p[k];
+      });
+      const out = await _sbRpcMOSWrite('actualizar_estacion', { p: a });
+      if (out == null) return null;
+      return _desempacarCatalogo(out);
+    }
+
     if (action === 'crearPedido') {
       // GAS crearPedidoProveedor → data:{idPedido}. RPC mos.crear_pedido_proveedor → data:{idPedido}. items=array jsonb.
       // localId estable (idempotencia de gesto: el modal cierra optimista; un reintento no crea 2 pedidos BORRADOR).
@@ -1634,6 +1657,11 @@ const API = (() => {
     // del catálogo). OFF (default) ⇒ recto a GAS (segmentos a la Hoja; foto a Drive) = IDÉNTICO a hoy.
     actualizarSegmentosPrecio:  _mosCatalogoDirecto,
     subirFotoProducto:          _mosCatalogoDirecto,
+    // [CATÁLOGO · estaciones] 100% Supabase (RPC mos.crear_estacion/actualizar_estacion, SQL 215) — sin GAS,
+    // sin clasp. Gate _mosCatalogoDirecto (ON en prod). El trigger de versión (200) bumpea al escribir → WH/ME
+    // refrescan. Cierra el último caso del patrón "el dato no aterriza" (antes iba GAS→Hoja + sync batch muerto).
+    crearEstacion:              _mosCatalogoDirecto,
+    actualizarEstacion:         _mosCatalogoDirecto,
     // [PILOTO ESCRITURA DIRECTA · PROVEEDORES] Re-cableado de la escritura directa de proveedores como PILOTO
     // (no es dinero → menor riesgo). Gated por _mosProveedoresDirecto (maestro OR mos_proveedores_directo, default
     // OFF). El despachador _postDirectoMOS YA tiene los `if(action==='crearProveedor'/'actualizarProveedor')`
@@ -1695,7 +1723,7 @@ const API = (() => {
   // el directo no commitea (null = sin token), NO se cae a GAS en silencio: GAS escribiría la Hoja pero el cambio
   // NUNCA llegaría a mos.* → WH/MOS no lo verían (el bug de "agregué proveedor y no se propagó"). Se LANZA para
   // que el UI optimista revierta y el usuario reintente. Default (acciones no listadas): fallback a GAS de siempre.
-  const _MOS_DIRECT_REQUIRED = { crearProveedor: 1, actualizarProveedor: 1 };
+  const _MOS_DIRECT_REQUIRED = { crearProveedor: 1, actualizarProveedor: 1, crearEstacion: 1, actualizarEstacion: 1 };
 
   // POST con escritura directa opcional. Con el gate de la acción OFF (default) es IDÉNTICO a hoy: ni
   // siquiera evalúa el directo → va recto a _fetch('POST') → GAS. Con el gate ON + token + RPC viva, escribe

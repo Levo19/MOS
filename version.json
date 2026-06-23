@@ -1,1 +1,1 @@
-{ "version": "2.43.312", "build": "FIX propagacion proveedores: escritura shadow-critica (crear/actualizar proveedor) ya NO cae a GAS en silencio si falta token (escribia Hoja pero no la sombra -> WH no lo veia). Ahora lanza para reintentar. Force-reload a directo-puro (mos.crear_proveedor) -> independiente del sync batch GAS muerto." }
+{ "version": "2.43.313", "build": "Estaciones 100% Supabase (sin GAS): RPCs mos.crear_estacion/actualizar_estacion (SQL 215) + frontend directo + shadow-required. Cierra el ultimo caso del patron del bug de propagacion. Sin clasp." }
