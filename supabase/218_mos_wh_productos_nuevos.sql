@@ -17,29 +17,34 @@ begin
   if coalesce((select valor from mos.config where clave='WH_REGISTRAR_PN_DIRECTO' limit 1),'0') <> '1' then
     return jsonb_build_object('ok',false,'error','PN_DIRECTO_OFF'); end if;
 
-  with pn as (
-    select pnx.*, row_number() over (partition by pnx.id_guia, upper(pnx.codigo_barra)
-                                     order by pnx.fecha_registro desc nulls last) rn
-    from wh.producto_nuevo pnx
+  -- ORDEN idéntico al GAS: (1) filtrar huérfanos PRIMERO, (2) dedupe DESPUÉS por más reciente.
+  -- (Si se dedupea antes, una fila reciente huérfana podría tapar una vieja con línea activa.)
+  with cand as (
+    select pnx.* from wh.producto_nuevo pnx
     where upper(coalesce(pnx.estado,'')) = v_estado
+      and ( v_estado <> 'PENDIENTE'
+            or coalesce(pnx.id_guia,'') = ''
+            or exists (select 1 from wh.guia_detalle d
+                       where d.id_guia = pnx.id_guia
+                         and upper(d.cod_producto) = upper(pnx.codigo_barra)
+                         and upper(coalesce(d.observacion,'')) = 'PN_PENDIENTE') )
   ),
-  activas as (
-    select distinct id_guia, upper(cod_producto) cb
-    from wh.guia_detalle where upper(coalesce(observacion,'')) = 'PN_PENDIENTE'
+  ranked as (
+    select c.*, row_number() over (partition by c.id_guia, upper(c.codigo_barra)
+                                   order by c.fecha_registro desc nulls last) rn
+    from cand c
   )
   select coalesce(jsonb_agg(jsonb_build_object(
     'idProductoNuevo', id_producto_nuevo, 'idGuia', id_guia, 'marca', marca, 'descripcion', descripcion,
     'codigoBarra', codigo_barra, 'idCategoria', id_categoria, 'unidad', unidad, 'cantidad', cantidad,
     'fechaVencimiento', fecha_vencimiento, 'foto', foto, 'estado', estado, 'usuario', usuario,
-    'fechaRegistro', fecha_registro, 'aprobadoPor', aprobado_por, 'fechaAprobacion', fecha_aprobacion,
-    'observacion', observacion
+    'fechaRegistro', fecha_registro, 'fechaCreacion', fecha_registro,
+    'aprobadoPor', aprobado_por, 'fechaAprobacion', fecha_aprobacion, 'observacion', observacion,
+    'guia', (select jsonb_build_object('idGuia', g.id_guia, 'tipo', g.tipo, 'estado', g.estado, 'fecha', g.fecha)
+             from wh.guias g where g.id_guia = ranked.id_guia)
   ) order by fecha_registro desc nulls last), '[]'::jsonb)
   into v_data
-  from pn
-  where rn = 1
-    and ( v_estado <> 'PENDIENTE'
-          or coalesce(id_guia,'') = ''
-          or exists (select 1 from activas a where a.id_guia = pn.id_guia and a.cb = upper(pn.codigo_barra)) );
+  from ranked where rn = 1;
 
   return jsonb_build_object('ok',true,'data', v_data);
 end;

@@ -19,8 +19,10 @@ returns jsonb language plpgsql security definer set search_path = '' as $fn$
 declare
   v_cb    text := nullif(btrim(coalesce(p->>'codigoBarra','')), '');
   v_guia  text := nullif(btrim(coalesce(p->>'idGuia','')), '');
-  v_cant  numeric := coalesce((p->>'cantidad')::numeric, 0);
-  v_venc  timestamptz := nullif(btrim(coalesce(p->>'fechaVencimiento','')), '')::timestamptz;
+  v_cant  numeric := wh._num(p->>'cantidad');   -- tolerante (coma decimal/vacío/basura → 0), paridad flota
+  -- fecha defensiva: solo castea si arranca con formato ISO (YYYY-MM-DD); sino null (no aborta la tx)
+  v_venc  timestamptz := case when nullif(btrim(coalesce(p->>'fechaVencimiento','')),'') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+                              then (p->>'fechaVencimiento')::timestamptz else null end;
   v_exist text; v_id text;
 begin
   if coalesce((select valor from mos.config where clave='WH_REGISTRAR_PN_DIRECTO' limit 1),'0') <> '1' then
