@@ -42,3 +42,8 @@ verify_jwt = false
 # (estado=ACTIVO, app ∈ {null,'','mosExpress'}) con service-role, fail-closed, hardcodea app/exp. Reusa WH_JWT_SECRET.
 [functions.mint-me]
 verify_jwt = false
+
+# Edge Function `push`: envío FCM v1 (cero GAS, port de gas/Push.gs). verify_jwt=true + claim app del ecosistema.
+# Secrets FCM_PROJECT_ID/FCM_CLIENT_EMAIL/FCM_PRIVATE_KEY (service-account proyectomos-push).
+[functions.push]
+verify_jwt = true
