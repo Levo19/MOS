@@ -1,1 +1,1 @@
-{ "version": "2.43.318", "build": "F6 espia master MOS cero-GAS: espiaCrearSesion via mos.espia_crear_sesion + wake push data-only por Edge; _espiaApiPost Supabase-first (espia_sync/push_batch/subir_oferta/agregar_ice/cerrar). Fallback GAS." }
+{ "version": "2.43.319", "build": "F6 push dispatch frontend cero-GAS: enviarPushNotif/enviarPushUsuario via API.enviarPushSB (seleccionar_tokens_push + Edge push), fallback GAS. (Triggers server-side de alertas siguen en GAS por diseno.)" }

@@ -22332,7 +22332,9 @@ const MOS = (() => {
     if (!dest) { toast('Destinatario no encontrado', 'error'); return; }
     closeModal('modalEnviarPush');
     try {
-      const r = await API.post('enviarPushUsuario', { usuario: dest, titulo, cuerpo });
+      // [F6 push dispatch · cero-GAS] select audiencia + Edge; null → GAS.
+      const r = (await API.enviarPushSB(titulo, cuerpo, { soloUsuarios: [dest] }))
+             || (await API.post('enviarPushUsuario', { usuario: dest, titulo, cuerpo }));
       if (r?.tokensAlcanzados) {
         toast(`✓ Mensaje enviado a ${dest} (${r.tokensAlcanzados} dispositivo${r.tokensAlcanzados === 1 ? '' : 's'})`, 'ok');
       } else {
@@ -36443,12 +36445,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
       // Notificar ingreso a MOS — SOLO los MASTER lo ven (admins no se enteran de otros admins)
       const hora = new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
-      API.post('enviarPushNotif', {
-        titulo: '👤 ' + nombre + ' ingresó a MOS',
-        cuerpo: (rol || '') + ' · ' + hora,
-        soloRolesMaster: true,
-        excluirUsuario: nombre
-      }).catch(() => {});
+      // [F6 push dispatch · cero-GAS] select(soloRolesMaster) + Edge; si falla (null) → GAS.
+      API.enviarPushSB('👤 ' + nombre + ' ingresó a MOS', (rol || '') + ' · ' + hora, { soloRolesMaster: true, excluirUsuario: nombre })
+        .then(r => { if (!r) return API.post('enviarPushNotif', { titulo: '👤 ' + nombre + ' ingresó a MOS', cuerpo: (rol || '') + ' · ' + hora, soloRolesMaster: true, excluirUsuario: nombre }); })
+        .catch(() => {});
 
       console.log('[Push] token registrado en GAS ✅');
     } catch(e) {

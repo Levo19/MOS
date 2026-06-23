@@ -2055,6 +2055,25 @@ const API = (() => {
         return (res.ok && d) ? d : null;
       } catch (_) { return null; }
     },
+    // [F6 push dispatch] Disparo de notif 100% Supabase: seleccionar audiencia (mos.seleccionar_tokens_push) +
+    // enviar por Edge `push`. Devuelve {ok,tokensAlcanzados,enviados} o null (→ caller cae a GAS).
+    enviarPushSB: async (titulo, cuerpo, opciones = {}) => {
+      try {
+        const sel = await _sbRpcMOS('seleccionar_tokens_push', { p: opciones }, 'mos');
+        if (!sel || sel.ok === false || !sel.data || !Array.isArray(sel.data.tokens)) return null;
+        const tokens = sel.data.tokens.map(t => t.token).filter(Boolean);
+        if (!tokens.length) return { ok: true, tokensAlcanzados: 0, enviados: 0 };   // nadie a quién notificar (éxito, no GAS)
+        const token = await _mintTokenMOS();
+        if (!token) return null;
+        const res = await _sbFetchTimeout(`${_SB_URL}/functions/v1/push`, {
+          method: 'POST', headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ op: 'send', tokens, title: String(titulo || 'MOS'), body: String(cuerpo || '') })
+        }, 12000);
+        const d = await res.json().catch(() => null);
+        if (!res.ok || !d || d.ok !== true) return null;
+        return { ok: true, tokensAlcanzados: tokens.length, enviados: (d.data && d.data.enviados) || 0 };
+      } catch (_) { return null; }
+    },
     get:  (action, p = {}) => {
       // [FASE 1 · PILOTO] getProductos → lectura directa Supabase con gate por-acción + frescura + fallback GAS.
       // Con el flag OFF (default) esto es IDÉNTICO a hoy: _conFallbackMOS NO entra al directo y va directo a GAS.
