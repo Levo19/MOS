@@ -1,1 +1,1 @@
-{ "version": "2.43.320", "build": "FASE 4 dispositivos: escrituras admin 100% Supabase (admin_crear/actualizar/aprobar_pendiente SQL 229 + revocar_dispositivo), gate dispositivosDirecto ON. Lecturas ya eran directas. Fallback GAS." }
+{ "version": "2.43.321", "build": "40x fix: espia master _espiaApiPost desempaqueta .data (loop lee plano; sin esto el master se colgaba via Supabase) + espiaReportarStreams mapeado. SQL 230: admin_crear_dispositivo carrera->JSON, espia_push_batch guard ts." }

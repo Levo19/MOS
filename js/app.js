@@ -29026,13 +29026,15 @@ const MOS = (() => {
   const _ESPIA_RPC_MASTER = {
     espiaSync: 'espia_sync', espiaPushBatch: 'espia_push_batch', espiaSubirOferta: 'espia_subir_oferta',
     espiaSubirRespuesta: 'espia_subir_respuesta', espiaSubirRenegRespuesta: 'espia_subir_reneg_respuesta',
-    espiaAgregarIce: 'espia_agregar_ice', espiaCerrarSesion: 'espia_cerrar_sesion'
+    espiaAgregarIce: 'espia_agregar_ice', espiaReportarStreams: 'espia_reportar_streams', espiaCerrarSesion: 'espia_cerrar_sesion'
   };
   async function _espiaApiPost(action, params) {
     const body = Object.assign({}, params || {});
     const rpc = _ESPIA_RPC_MASTER[action];
     if (rpc && window.ESPIA_DIRECTO !== false && API.espiaRpc) {
-      try { const out = await API.espiaRpc(rpc, body); if (out) return out; } catch (_) { /* → GAS */ }
+      // [40x fix] DESEMPAQUETAR .data: el loop master lee d.estado/sdpRespuesta/ice PLANO (GAS API.post ya
+      // desempaqueta). Sin esto, vía Supabase quedaban undefined → master colgado (no aplica answer/ICE/cierre).
+      try { const out = await API.espiaRpc(rpc, body); if (out) return (out.data !== undefined ? out.data : out); } catch (_) { /* → GAS */ }
     }
     const token = _espiaV2?.token;
     if (token && body.token === undefined) body.token = token;
