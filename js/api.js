@@ -2190,7 +2190,16 @@ const API = (() => {
     // me.ops_meta / wh.ops_meta. app.js lo usa para refrescar SOLO la pantalla activa (debounce +
     // money-safe). ADITIVO: los pollers (Finanzas/Cajas/Almacén/RIZ) siguen de red de seguridad.
     onOpsRealtime:              (cb) => { _RT.onOps = (typeof cb === 'function') ? cb : null; },
-    getProductosNuevosWH: (p = {}) => _fetch('GET',  { action: 'getProductosNuevosWH', ...p }),
+    // [PN 100% Supabase] intenta leer los PN de WH directo (mos.wh_productos_nuevos, cross-app). La RPC
+    // auto-gatea con WH_REGISTRAR_PN_DIRECTO: si está OFF devuelve PN_DIRECTO_OFF → caemos a GAS (la Hoja
+    // sigue siendo la verdad mientras WH no escriba directo). Mismo shape (array) que el GAS → el consumidor no cambia.
+    getProductosNuevosWH: async (p = {}) => {
+      try {
+        const r = await _sbRpcMOS('wh_productos_nuevos', { p }, 'mos');
+        if (r && r.ok) return r.data || [];
+      } catch (_) { /* → GAS */ }
+      return _fetch('GET', { action: 'getProductosNuevosWH', ...p });
+    },
     lanzarProductoNuevo:  (p = {}) => _fetch('POST', { action: 'lanzarProductoNuevo',  ...p }),
     // Crea un PN manualmente desde MOS (admin/master). idGuia vacío → WH no
     // escribe en GUIA_DETALLE (no afecta stock ni guías). Solo encola en

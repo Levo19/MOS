@@ -1,1 +1,1 @@
-{ "version": "2.43.313", "build": "Estaciones 100% Supabase (sin GAS): RPCs mos.crear_estacion/actualizar_estacion (SQL 215) + frontend directo + shadow-required. Cierra el ultimo caso del patron del bug de propagacion. Sin clasp." }
+{ "version": "2.43.314", "build": "PN 100% Supabase (lado MOS): getProductosNuevosWH lee de mos.wh_productos_nuevos (cross-app, auto-gateado por WH_REGISTRAR_PN_DIRECTO), fallback GAS." }
