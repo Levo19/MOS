@@ -1352,6 +1352,20 @@ const API = (() => {
       return _desempacarCatalogo(out);         // {} (sin data) — inocuo, el front solo await
     }
 
+    if (action === 'verificarClaveAdmin') {
+      // RPC central mos.verificar_clave_admin (bcrypt + cascada de rol + auditoría única). Args POSICIONALES.
+      // Normaliza a la shape que consume el front (autorizado + camelCase). null (sin token) → GAS kill-switch.
+      const out = await _sbRpcMOS('verificar_clave_admin', {
+        p_clave: String(p.clave || ''), p_accion: String(p.accion || 'GENERICA'), p_ref: String(p.refDocumento || ''),
+        p_app: String(p.appOrigen || 'MOS'), p_device: String(p.deviceId || ''), p_detalle: String(p.detalle || p.contexto || ''),
+        p_tier: (p.tier != null ? parseInt(p.tier, 10) : null), p_cliente_meta: null
+      }, 'mos');
+      if (out == null) return null;   // sin token → GAS
+      return { ok: out.ok, autorizado: !!out.autorizado, error: out.error || '',
+               validadoPor: out.validado_por || '', idPersonal: out.id_personal || '', nombre: out.nombre || '',
+               rol: out.rol || '', nivel: out.nivel, idAccion: out.id_accion || '' };
+    }
+
     if (action === 'crearEstacion') {
       // RPC mos.crear_estacion (215) → data:{idEstacion}. 100% Supabase, dedup por localId+PK, bumpea versión.
       const out = await _sbRpcMOSWrite('crear_estacion', { p: {
@@ -1662,6 +1676,9 @@ const API = (() => {
     // refrescan. Cierra el último caso del patrón "el dato no aterriza" (antes iba GAS→Hoja + sync batch muerto).
     crearEstacion:              _mosCatalogoDirecto,
     actualizarEstacion:         _mosCatalogoDirecto,
+    // [AUTH] verificación de clave admin: Supabase-first SIEMPRE (RPC central bcrypt+cascada+auditoría);
+    // si no hay token → null → GAS kill-switch. La validación no es "dinero directo", es auth central.
+    verificarClaveAdmin:        () => true,
     // [PILOTO ESCRITURA DIRECTA · PROVEEDORES] Re-cableado de la escritura directa de proveedores como PILOTO
     // (no es dinero → menor riesgo). Gated por _mosProveedoresDirecto (maestro OR mos_proveedores_directo, default
     // OFF). El despachador _postDirectoMOS YA tiene los `if(action==='crearProveedor'/'actualizarProveedor')`

@@ -1,1 +1,1 @@
-{ "version": "2.43.314", "build": "PN 100% Supabase (lado MOS): getProductosNuevosWH lee de mos.wh_productos_nuevos (cross-app, auto-gateado por WH_REGISTRAR_PN_DIRECTO), fallback GAS." }
+{ "version": "2.43.315", "build": "AUTH F1: pedirAuth/verificarClaveAdmin Supabase-first (RPC central mos.verificar_clave_admin), normalizado a shape autorizado/camelCase, GAS kill-switch." }
