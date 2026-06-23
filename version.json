@@ -1,1 +1,1 @@
-{ "version": "2.43.319", "build": "F6 push dispatch frontend cero-GAS: enviarPushNotif/enviarPushUsuario via API.enviarPushSB (seleccionar_tokens_push + Edge push), fallback GAS. (Triggers server-side de alertas siguen en GAS por diseno.)" }
+{ "version": "2.43.320", "build": "FASE 4 dispositivos: escrituras admin 100% Supabase (admin_crear/actualizar/aprobar_pendiente SQL 229 + revocar_dispositivo), gate dispositivosDirecto ON. Lecturas ya eran directas. Fallback GAS." }

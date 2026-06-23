@@ -18471,7 +18471,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
        en GAS). El kill-switch server mos.config.MOS_ETIQ_DIRECTO='1' queda ON para completar el cutover,
        pero es INERTE-DE-FACTO (sin consumidor front). -->
 <script>
-  window.MOS_CONFIG = { catalogoDirecto: true, zonaModulo: true, impresorasPNEdge: true }; /* impresorasPNEdge: lista/verifica impresoras por Edge `printers` (sin GAS, rápido); fallback a GAS ante error; apagar = quitar para volver a GAS. · zonaModulo: ENCIENDE el módulo nuevo "Zona" (RIZ) — solo agrega un item de nav + una vista nueva (lectura sobre RPCs Supabase + acciones gated); NO toca nada existente. Apagar = quitar zonaModulo. [ROLLBACK 2026-06-15] Solo CATALOGO queda directo: su LECTURA (getProductos) Y escritura van directo a Supabase -> coherente + validado por el usuario. El resto (proveedores/provprod/gastos/pedidos/horario/finanzas/historial) VUELTO A GAS porque su READ-PATH sigue leyendo la HOJA via GAS y la sync es solo Hoja->Supabase: escribir directo haria que el dato NO aparezca en el read-back -> el usuario lo reingresa -> DUPLICACION (riesgo cazado por el 40x del dinero critico). Reactivar cada modulo SOLO cuando su lectura tambien sea directa (RPC de lectura sobre la sombra). */
+  window.MOS_CONFIG = { catalogoDirecto: true, zonaModulo: true, impresorasPNEdge: true, dispositivosDirecto: true }; /* dispositivosDirecto [229·FASE4]: escrituras de dispositivos del panel admin directo (admin_crear/actualizar/aprobar + revocar). SEGURO: la LECTURA de dispositivos YA es directa (getDispositivos→listar_dispositivos) → read-back coherente, mismo criterio que catalogoDirecto. Fallback GAS. · impresorasPNEdge: lista/verifica impresoras por Edge `printers` (sin GAS, rápido); fallback a GAS ante error; apagar = quitar para volver a GAS. · zonaModulo: ENCIENDE el módulo nuevo "Zona" (RIZ) — solo agrega un item de nav + una vista nueva (lectura sobre RPCs Supabase + acciones gated); NO toca nada existente. Apagar = quitar zonaModulo. [ROLLBACK 2026-06-15] Solo CATALOGO queda directo: su LECTURA (getProductos) Y escritura van directo a Supabase -> coherente + validado por el usuario. El resto (proveedores/provprod/gastos/pedidos/horario/finanzas/historial) VUELTO A GAS porque su READ-PATH sigue leyendo la HOJA via GAS y la sync es solo Hoja->Supabase: escribir directo haria que el dato NO aparezca en el read-back -> el usuario lo reingresa -> DUPLICACION (riesgo cazado por el 40x del dinero critico). Reactivar cada modulo SOLO cuando su lectura tambien sea directa (RPC de lectura sobre la sombra). */
 </script>
 <script>
 (function(){
@@ -19135,7 +19135,7 @@ if (false) (function(){
 <!-- Firebase SDK (push notifications) — debe cargar ANTES de app.js -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
-<script src="js/api.js?v=2.43.319"></script>
+<script src="js/api.js?v=2.43.320"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19150,7 +19150,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.319"></script>
+<script src="js/app.js?v=2.43.320"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

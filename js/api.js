@@ -493,6 +493,9 @@ const API = (() => {
   // [227] pago de jornales directo: RPC mos.marcar_pagos (acepta fechas[]→snapshot de liquidaciones_dia) +
   // mos.anular_pago (verifica clave admin server-side). Gate cfgKey 'pagosJornalDirecto' (get_flags).
   function _mosPagosJornalDirecto() { return !!_mosFlag('mos_pagos_jornal_directo', 'pagosJornalDirecto'); }
+  // [229] FASE 4 escrituras de dispositivos (panel admin MOS): crear/actualizar/aprobar (RPCs admin_* gated app=MOS)
+  // + revocar (mos.revocar_dispositivo). Gate cfgKey 'dispositivosDirecto' (MOS_CONFIG). Lecturas ya directas.
+  function _mosDispositivosDirecto() { return !!_mosFlag('mos_dispositivos_directo', 'dispositivosDirecto'); }
 
   // Lectura directa de finanzas por rango. Devuelve {serie,totales,desde,hasta} (= d.data de GAS) o null (→ GAS).
   // null si: sin token, respuesta no-ok, o GATE DE FRESCURA en false (sombra mos.* stale → no servir P&L viejo).
@@ -1653,6 +1656,36 @@ const API = (() => {
       return { autorizado: true, ...(out.data || {}) };
     }
 
+    // [229] FASE 4 escrituras de dispositivos (panel admin MOS). Front manda PascalCase → RPC admin_* las lee igual.
+    if (action === 'crearDispositivo') {
+      const out = await _sbRpcMOSWrite('admin_crear_dispositivo', { p });
+      if (out == null) return null;
+      return _desempacarCatalogo(out);         // {ID_Dispositivo} o throw (dup) → UI
+    }
+    if (action === 'actualizarDispositivo') {
+      const out = await _sbRpcMOSWrite('admin_actualizar_dispositivo', { p });
+      if (out == null) return null;
+      return _desempacarCatalogo(out);
+    }
+    if (action === 'aprobarDispositivoPendiente') {
+      const out = await _sbRpcMOSWrite('admin_aprobar_pendiente', { p });
+      if (out == null) return null;
+      return _desempacarCatalogo(out);         // {ID_Dispositivo,estado} o {skipped:ya_activo}
+    }
+    if (action === 'revocarDispositivo') {
+      // RPC mos.revocar_dispositivo verifica clave admin. El front lee r.autorizado (no throw) → normalizamos.
+      const out = await _sbRpcMOSWrite('revocar_dispositivo', { p: {
+        id_dispositivo: String(p.deviceId || ''), clave_admin: p.claveAdmin, app: p.app, nuevo_estado: p.nuevoEstado || 'INACTIVO'
+      } });
+      if (out == null) return null;
+      if (out.ok === false) {
+        const err = String(out.error || '');
+        if (/_OFF$/.test(err) || err === 'APP_NO_AUTORIZADA') return null;
+        return { autorizado: false, error: err };
+      }
+      return { autorizado: out.autorizado !== false, ...(out.data || {}) };
+    }
+
     if (action === 'vetarLiquidacionDia') {
       // ⚠️ DINERO ⚠️ GAS vetarLiquidacionDia → {ok:true} (sin data); _fetch desempaqueta a undefined; el front
       // NO lee la respuesta (await resuelve = éxito; .catch lee e.message = YA_PAGADA/NO_ENCONTRADA). RPC
@@ -1740,7 +1773,12 @@ const API = (() => {
     // liquidaciones_dia (no se confía en montos del cliente; rechaza si no materializado = nunca paga de menos);
     // anular_pago verifica clave admin. localId estable lo deriva _mosLocalId. Gate _mosPagosJornalDirecto.
     marcarPagos:                _mosPagosJornalDirecto,
-    anularPago:                 _mosPagosJornalDirecto
+    anularPago:                 _mosPagosJornalDirecto,
+    // [229] FASE 4 escrituras dispositivos (panel admin). Lecturas ya directas (getDispositivos/Bloqueados).
+    crearDispositivo:            _mosDispositivosDirecto,
+    actualizarDispositivo:       _mosDispositivosDirecto,
+    aprobarDispositivoPendiente: _mosDispositivosDirecto,
+    revocarDispositivo:          _mosDispositivosDirecto
     // [DUAL-WRITE] pedidos/pagos/provprod/gastos/horario/liqdia: SIN entrada acá → su escritura va SIEMPRE por
     // GAS (dual-write espeja la sombra). recomputarLiquidacionDia tampoco (incompatible).
   };
