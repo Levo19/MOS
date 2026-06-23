@@ -36,3 +36,9 @@ verify_jwt = false
 # app/exp server-side. Reusa el secret de proyecto WH_JWT_SECRET (el JWT secret del proyecto, no es exclusivo de WH).
 [functions.mint-mos]
 verify_jwt = false
+
+# Edge Function `mint-me`: EMITE el JWT (HS256, claim app='mosExpress') para la PWA de MosExpress (ME). Clon de
+# mint-mos. verify_jwt=false POR LA MISMA RAZÓN (emite el PRIMER token). Valida deviceId contra mos.dispositivos
+# (estado=ACTIVO, app ∈ {null,'','mosExpress'}) con service-role, fail-closed, hardcodea app/exp. Reusa WH_JWT_SECRET.
+[functions.mint-me]
+verify_jwt = false
