@@ -194,6 +194,12 @@
       '.ms-h1{font-size:14px;font-weight:900;color:#fbbf24;letter-spacing:.8px}',
       '.ms-sub{font-size:11px;color:#94a3b8;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
       '.ms-body{padding:20px 22px;display:flex;flex-direction:column;gap:14px}',
+      '.ms-cola-body{gap:8px}',
+      '.ms-scroll{scrollbar-width:thin;scrollbar-color:rgba(251,191,36,.45) transparent}',
+      '.ms-scroll::-webkit-scrollbar{width:8px;height:8px}',
+      '.ms-scroll::-webkit-scrollbar-track{background:transparent}',
+      '.ms-scroll::-webkit-scrollbar-thumb{background:rgba(251,191,36,.35);border-radius:8px}',
+      '.ms-scroll::-webkit-scrollbar-thumb:hover{background:rgba(251,191,36,.65)}',
       '.ms-stat{display:flex;align-items:center;justify-content:space-between;gap:10px}',
       '.ms-chip{padding:5px 12px;border-radius:9999px;font-size:12px;font-weight:800;border:1px solid}',
       '.ms-chip-info{color:#94a3b8;border-color:rgba(148,163,184,.35);background:rgba(148,163,184,.08)}',
@@ -897,17 +903,22 @@
       +       '</div>'
       +     '</div>'
       +     _rolloBannerHtml()
-      +     '<div class="ms-body" style="max-height:65vh;overflow-y:auto">'
+      +     '<div class="ms-body ms-cola-body" style="display:flex;flex-direction:column;max-height:72vh;overflow:hidden">'
+      +       // ── Buscador + sugerencias: FIJO arriba (no se encoge al crecer la cola) ──
+      +       '<div style="flex-shrink:0">'
       +       '<div style="display:flex;gap:6px;margin-bottom:8px">'
-      +       '<input id="msColaBusq" type="text" placeholder="🔍 Buscar por código o nombre..." '
+      +       '<input id="msColaBusq" type="text" placeholder="🔍 Buscar por nombre o código (ej: hojuela avena)..." '
       +         'oninput="MembreteSystem._colaBusqInput(this.value)" '
       +         'style="flex:1;min-width:0;padding:10px 12px;background:#0a1424;border:1px solid #1e293b;color:#f1f5f9;border-radius:10px;font-size:13px">'
       +       ((_config && typeof _config.scanProvider === 'function')
                   ? '<button onclick="MembreteSystem._colaEscanear()" title="Escanear con cámara" style="flex-shrink:0;width:48px;background:linear-gradient(135deg,#0ea5e9,#0369a1);color:#fff;border:none;border-radius:10px;font-size:20px;cursor:pointer;-webkit-tap-highlight-color:transparent">📷</button>'
                   : '')
       +       '</div>'
-      +       '<div id="msColaSugs" style="max-height:120px;overflow-y:auto;display:none;background:#0a1424;border-radius:8px;padding:4px;margin-bottom:8px"></div>'
-      +       '<div id="msColaLista"></div>'
+      +       // sugerencias: alto fijo para ~5-6 productos + scroll moderno si hay más
+      +       '<div id="msColaSugs" class="ms-scroll" style="max-height:236px;overflow-y:auto;display:none;background:#0a1424;border-radius:8px;padding:4px;margin-bottom:8px"></div>'
+      +       '</div>'
+      +       // ── Cola: toma el espacio RESTANTE, scroll propio, SIN límite de cantidad ──
+      +       '<div id="msColaLista" class="ms-scroll" style="flex:1 1 auto;overflow-y:auto;min-height:110px;padding-right:2px"></div>'
       +     '</div>'
       +     '<div class="ms-actions" style="padding:0 22px 18px">'
       +       '<button class="ms-btn ms-btn-primary" id="msColaImprimir" onclick="MembreteSystem._colaImprimir()" disabled>'
@@ -1010,11 +1021,15 @@
     return null;
   }
 
+  // [busqueda] normaliza: minúsculas + SIN acentos (para encontrar "avena" en "avéna").
+  function _msNorm(s) {
+    return String(s == null ? '' : s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  }
   function _colaBusqInput(q) {
-    q = String(q || '').trim().toLowerCase();
+    var qn = _msNorm(q).trim();
     var sugs = document.getElementById('msColaSugs');
     if (!sugs) return;
-    if (q.length < 2) { sugs.style.display = 'none'; return; }
+    if (qn.length < 2) { sugs.style.display = 'none'; return; }
     // [v1.8] Resolver fuente según la app actual
     var cat = _resolverCatalogo();
     if (!cat || !cat.productos || cat.productos.length === 0) {
@@ -1022,23 +1037,24 @@
       sugs.style.display = 'block';
       return;
     }
-    // [v1.8] Buscar en descripción + codigoBarra/idProducto + skuBase + equivalencias
-    // Primero buscar en equivalencias para saber qué skuBase coinciden por código alternativo
+    // [busqueda inteligente] partir la query en PALABRAS → match si TODAS están en el nombre,
+    // sin importar el orden ni los conectores ("hojuela avena" encuentra "HOJUELA DE AVENA").
+    var tokens = qn.split(/\s+/).filter(Boolean);
     var skusPorEquiv = {};
     cat.equivalencias.forEach(function(e) {
-      var cbe = String(e.codigoBarra || '').toLowerCase();
-      if (cbe && cbe.indexOf(q) >= 0) skusPorEquiv[String(e.skuBase || '')] = true;
+      var cbe = _msNorm(e.codigoBarra);
+      if (cbe && cbe.indexOf(qn) >= 0) skusPorEquiv[String(e.skuBase || '')] = true;
     });
     var matches = cat.productos.filter(function(p) {
-      var desc = String(p.descripcion || p.nombre || '').toLowerCase();
-      var cb   = String(p.codigoBarra || p.idProducto || '').toLowerCase();
-      var sku  = String(p.skuBase || p.idProducto || '').toLowerCase();
-      // Match si: descripcion, codigoBarra principal, skuBase, O algún equivalente
-      return desc.indexOf(q) >= 0
-          || cb.indexOf(q) >= 0
-          || sku.indexOf(q) >= 0
+      var desc = _msNorm(p.descripcion || p.nombre);
+      var cb   = _msNorm(p.codigoBarra || p.idProducto);
+      var sku  = _msNorm(p.skuBase || p.idProducto);
+      var descMatch = tokens.length > 0 && tokens.every(function(t) { return desc.indexOf(t) >= 0; });
+      return descMatch
+          || cb.indexOf(qn) >= 0
+          || sku.indexOf(qn) >= 0
           || skusPorEquiv[String(p.skuBase || p.idProducto || '')];
-    }).slice(0, 8);
+    }).slice(0, 40);   // [b] más resultados; la lista de sugerencias scrollea
     if (matches.length === 0) {
       sugs.innerHTML = '<div style="padding:8px;font-size:12px;color:#94a3b8">Sin resultados para "' + _escapeHtml(q) + '"</div>';
       sugs.style.display = 'block';
@@ -1195,7 +1211,6 @@
     var tipo = _colaTipo();
     var items = _colaCargar(tipo);
     if (items.length === 0) return;
-    _colaCerrar();
     // [v2026-06-05 SENIOR AUDIT FIX] Reconstruir items para garantizar que
     // tengan codigos[]+esSkuBase. Defensa contra items legacy guardados en
     // localStorage antes del fix (cuando _colaAgregar solo guardaba 4 campos).
@@ -1207,9 +1222,11 @@
       // Sino reconstruir resolviendo equivalencias del catálogo actual
       return _construirItemCompleto(it);
     });
-    imprimirMembrete({ tipo: tipo, items: itemsCompletos }).then(function() {
-      _colaGuardar(tipo, []);  // limpiar cola tras éxito
-    });
+    // [fix c] Limpiar la cola YA (optimista): el lote se despacha al backend → si algo falla
+    // queda en el HISTORIAL de lotes (no se pierde), y el operador NUNCA ve duplicado lo ya enviado.
+    _colaGuardar(tipo, []);
+    _colaCerrar();
+    imprimirMembrete({ tipo: tipo, items: itemsCompletos });
   }
   function _colaCerrar() {
     var ov = document.getElementById('msColaOverlay');
