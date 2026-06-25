@@ -16254,6 +16254,7 @@ const MOS = (() => {
   // ═══════════════════════════════════════════════════════════════
   let _segState = {
     idProducto: null,
+    skuBase: null,          // [tramos por sku_base] los tramos viven por GRUPO (canónico+presentaciones+equivalentes)
     precioCanonico: 0,
     segmentos: [],
     editandoId: null,    // si null, modal es "nuevo"
@@ -16289,6 +16290,7 @@ const MOS = (() => {
   function segCargarParaProducto(producto) {
     if (!producto) return;
     _segState.idProducto = producto.idProducto;
+    _segState.skuBase = producto.skuBase || producto.sku_base || null;
     _segState.precioCanonico = parseFloat(producto.precioVenta) || 0;
     let segs = [];
     try {
@@ -16650,13 +16652,20 @@ const MOS = (() => {
       const res = await API.post('actualizarSegmentosPrecio', {
         _source: 'MOS_SEGMENTOS_PRECIO',
         _audit: audit,
-        idProducto: _segState.idProducto,
+        skuBase: _segState.skuBase,        // [tramos por sku_base] el grupo entero, no la fila
+        idProducto: _segState.idProducto,  // compat: la RPC resuelve el sku_base si no vino skuBase
         segmentos: _segState.segmentos
       });
       if (res?.ok) {
-        // Reflejar en cache local
-        const p = S.productos.find(x => x.idProducto === _segState.idProducto);
-        if (p) p.segmentos_precio = JSON.stringify(_segState.segmentos);
+        // Reflejar en TODO el grupo (canónico + presentaciones comparten sku_base) → se ve al instante,
+        // sin esperar el re-pull del catálogo.
+        const p0 = S.productos.find(x => x.idProducto === _segState.idProducto);
+        const sku = _segState.skuBase || p0?.skuBase || p0?.sku_base || null;
+        const json = JSON.stringify(_segState.segmentos);
+        S.productos.forEach(x => {
+          if (sku && (x.skuBase === sku || x.sku_base === sku)) x.segmentos_precio = json;
+          else if (!sku && x.idProducto === _segState.idProducto) x.segmentos_precio = json;
+        });
       } else {
         toast('⚠ Segmentos no guardados: ' + (res?.error || 'error'), 'warn');
       }
