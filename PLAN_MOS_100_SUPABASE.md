@@ -28,6 +28,17 @@ Directiva adicional: **revisión 40x senior por CADA implementación, siempre.**
 - [x] **H3. Cosmético consola MOS:** meta `mobile-web-app-capable` (el `apple-` estaba deprecado) + favicon/
   apple-touch-icon a `icons/icon-192.png` (corta el 404 de favicon.ico). Desplegado v2.43.337.
 
+## BLOQUE S — Seguridad (NUEVO · detectado en la retrospectiva 500x del 2026-06-25)
+- [ ] **S1. `mos.catalogo_pos_rls` (y el path de descarga de catálogo) con grant `anon` expone PII + secretos.**
+  La RPC es `SECURITY DEFINER` + grant a `anon`, y devuelve sin filtro de tenant: **`me.clientes_frecuentes`
+  (DNI/RUC + RazónSocial + Dirección = PII), el `Admin_PIN` de estaciones, series documentales y PrintNode IDs.**
+  Cualquiera con la URL + anon key (pública por diseño en estas apps) extrae el catálogo COMPLETO + PII de
+  clientes + PINs de admin. **Pre-existente** (no lo introdujeron las reparaciones de hoy), pero es real.
+  - Por qué NO se tocó headless: revocar `anon` puede romper la lectura del catálogo en ME si ME llama con la
+    anon key (no con token mint). Mover el `Admin_PIN`/PII a una RPC aparte gateada por sesión es lo correcto.
+  - Va atado al **cutover de auth (Bloque B #2)**: cuando ME pase a mint-token/authenticated, revocar `anon` y
+    separar el PII. Verificar primero CÓMO llama ME hoy a `catalogo_pos_rls` (anon vs mint).
+
 ## BLOQUE B — Migrar lo que sigue en GAS a Supabase
 - [~] **2. Auth de dispositivos = Fase 7 (corte de Sheets de dispositivos).** Investigado a fondo: RPCs anon ✅ funcionan (verificado 40x), path Supabase del front ✅ construido, `MOS_AUTH_SIN_DOBLECHECK=1` ✅. PERO el ciclo completo requiere reverse-sync (la escritura directa la pisa el resembrado hoja→sombra) + 13 lectores GAS + 5 crons.
   - [x] 2-keystone. `resembrarDispositivosDesdeSombra()` (reverse-sync sombra→hoja, con dryRun) ESCRITO + sintaxis OK (Fase4Dispositivos.gs). Reemplaza al resembrado hoja→sombra.
@@ -70,4 +81,12 @@ El resto de la lista NO es headless-seguro — verificado leyendo el código 202
 - **#7 (setHorarioApp):** cross-app, requiere que WH/ME lean el horario de Supabase primero.
 - **#9-11 (quitar fallbacks):** por diseño van AL FINAL, después de B. No tocar todavía.
 
-Estado: #1 ✅ + H1/H2/H3 ✅ (2026-06-25). El resto está bloqueado en device-test/tokens/cutover del dueño.
+- **S1 (seguridad PII/anon):** atado al cutover de auth (#2). No revocar `anon` sin antes confirmar que ME usa
+  mint-token y mover el PII/Admin_PIN a una RPC gateada — si no, se rompe la lectura del catálogo en ME.
+
+Estado: #1 ✅ + H1/H2/H3 ✅ (2026-06-25). NUEVO pendiente **S1 (seguridad, alta prioridad)**. El resto sigue
+bloqueado en device-test / tokens / cutover del dueño.
+
+> Nota: entre el #1 y el S1, hubo una SESIÓN DE REPARACIONES (UI/UX, cero GAS) — ver `PENDIENTES_REPARACIONES.md`
+> (tramos, adhesivo granel, wizard iOS, pickup, membretes, propagación catálogo/estado, etc.). Toda esa sesión
+> mantuvo la directriz 100% Supabase y NO tocó este plan de migración; el S1 salió de su retrospectiva 500x.
