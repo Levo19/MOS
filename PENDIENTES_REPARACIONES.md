@@ -4,26 +4,12 @@ Lista viva de las reparaciones que vamos haciendo. Lo grande (ventas/auth/madrug
 Regla: 100% Supabase, sin GAS. Revisión 40x. Graneles se identifican por **unidad_medida = KGM** (NO por precio).
 
 ## 🔧 PENDIENTES
-
-### 2. Adhesivo de granel al despachar (WH) — diseño CERRADO ← EN CURSO
-- Idea: al despachar un granel (KGM) desde WH, además de la guía, imprimir 1 adhesivo para pegar en el saco.
-- Datos: nombre (2 renglones, **word-wrap sin partir palabras** — solo corta en espacios) · peso inteligente (kg/g) · código con barcode Code128 escaneable · fecha+hora. **1 solo adhesivo** (no por bulto). **Sin** N° de guía (ahorra espacio).
-- **Símbolo WH**: badge **caja/bulto + WH** (elegido por el usuario), abajo-derecha encima de la fecha/hora. En TSPL2 = dibujado con BAR/BOX + TEXT "WH" (no SVG directo).
-- Formato: el que YA imprimen (50×25mm, `buildTSPLMembreteMe` en `print-adhesivo/index.ts`) — reemplazar precio S/ → PESO, y "ME" → fecha/hora + badge WH.
-- Implementación: clonar `buildTSPLMembreteMe` → `buildTSPLGranelDespacho`; disparar por cada ítem KGM en el despacho. Reusa la Edge `print-adhesivo`. Cero GAS.
-
-### 3. Wizard iOS/adaptable (**ME**, no MOS) — GPS sin feedback
-- Síntoma: en iPhone, al usar **ME (MosExpress)**, el wizard tiene un botón "activar GPS" → "le doy click y nada"; el usuario siente que no puede entrar.
-- ⚠️ CORRECCIÓN: es el wizard de **ME**, NO el de MOS. Falta revisar el flujo de activación/permisos de ME (MosExpress index.html / device-auth.js) — ahí está el botón GPS que bloquea.
-- Fix esperado (a confirmar tras revisar ME): (a) no bloquear la entrada por GPS (es opcional); (b) feedback claro al tocar GPS (éxito/denegado/apagado/timeout + cómo activarlo en Ajustes iOS). Objetivo: adaptable Android/Windows/iOS.
-
-### 4. WH pickup — el acumulado confunde al operador (UX, simplificar)
-- Síntoma: en la lista de pickup, un producto (ej. CHAN FU KEE) muestra la barra de progreso en "1" y un total "6". El operador cree que YA despachó 1, pero ese 1 era de un **rezagado** de la semana (acumulado). La barra es para ir escaneando y llenándose, pero el "1" inicial lo confunde → cree que despachó cuando no.
-- Lógica real: faltan despachar 5 (6 total − 1 ya despachado en el acumulado). Pero el operador no debe lidiar con el concepto de acumulado.
-- Fix pedido: para WH mostrar SOLO lo que falta despachar HOY. Si el acumulado va 1/6, visualmente mostrar **"faltan 5"** y la barra arranca en 0 → escanea de uno en uno y se llena hasta 5. No darle toda la info (acumulado), solo lo que necesita para su trabajo del día.
-- Relacionado: acumulador pickup v2 (bucket-domingo, balance corriente, rezagado). Revisar cómo la lista de pickup en WH calcula/pinta "escaneado/total" y restar lo ya despachado del acumulado para la vista del operador.
+- **Test de calibración del adhesivo de granel:** hacer 1 despacho con graneles y verificar el layout impreso (posiciones TSPL2 estimadas). Ajustar coordenadas si hace falta.
 
 ## ✅ HECHO en esta sesión (referencia)
+- **WH pickup UX "faltan N" (v2.13.347):** la barra/conteo del operador se mide contra lo que falta HOY (objetivo = solicitado − baseline rezagado), arranca en 0 → muestra "faltan 5" en vez del confuso 1/6. Baseline capturado en empezarPickup; renders inline + sheet + control +/-. Logica de guia/cart sin cambios.
+- **Wizard ME iOS/adaptable (v2.8.69):** el botón de entrada nunca se deshabilita (permisos opcionales) → el operador SIEMPRE puede entrar en iPhone; antes el GPS en 'prompt' lo atrapaba. + feedback claro al tocar GPS (éxito / cómo activarlo en iOS / es opcional).
+- **Adhesivo granel automático al despachar (WH v2.13.346 + Edge):** al emitir la guía, en paralelo imprime 1 adhesivo por ítem KGM (nombre+peso+barcode+fecha+badge WH). Edge `print-adhesivo` mode `granel-despacho` + `buildTSPLGranelDespacho`. `API.imprimirAdhesivoGranel`. Drift auto por etiqueta. PENDIENTE: test de calibración del layout en la impresora real.
 - **Códigos sin nombre en verificación despacho MOS (v2.43.342):** los productos catalogados que salían como código pelado ahora muestran su nombre, resuelto desde Supabase (`mos.nombres_por_codigos`) en `trasVerGuia`. Nuevo `API.zona.nombresPorCodigos`. El "[N] caja" del ticket WH (ALSABOR catalogado) ya lo cubre la Edge `ticket-guia`. No catalogados (sobrantes) siguen mostrando el código.
 - **Tramos MOS (v2.43.341):** RAÍZ = `_segCargarDesdeCard` chequeaba `window.S` (S es const de módulo, NO está en window) → SIEMPRE caía al doble modal. Confirmado con diagnóstico en vivo (`hallado=false, S.productos=?`). Fix: usar `S` directo → modal único + botón eliminar visible. + el mini de la card muestra el precio canónico (S/X/kg) en la banda base + leyenda.
 - **Auto-update redes lentas (v2.43.339):** el banner vacía el caché del SW y recarga al detectar versión nueva (antes el timeout de 2.5s servía el index viejo en redes lentas → el usuario quedaba pegado en versiones anteriores). Falta portar el mismo patrón a ME (con cuidado: ME es POS, no forzar reload mid-venta).
