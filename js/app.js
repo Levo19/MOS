@@ -3087,6 +3087,7 @@ const MOS = (() => {
     } catch(_) { segs = []; }
 
     const idProdEsc = String(producto.idProducto).replace(/'/g, '&#39;');
+    const pcKg = parseFloat(producto.precioVenta) || 0;   // precio canónico (por kg) = base donde NO hay tramo
 
     // Estado vacío: CTA llamativo
     if (!Array.isArray(segs) || !segs.length) {
@@ -3161,12 +3162,13 @@ const MOS = (() => {
       </div>
       <div class="cat-seg-band-container">
         <div class="cat-seg-band-bg">
-          <div class="cat-seg-banda cat-seg-base" title="Base (canónico) — aplica en lo que no cubre ningún tramo"></div>
+          <div class="cat-seg-banda cat-seg-base" title="Base (canónico) S/ ${pcKg.toFixed(2)}/kg — aplica donde no hay tramo definido"><span class="cat-seg-base-lbl">S/ ${pcKg.toFixed(2)} · base</span></div>
           ${bandas}
         </div>
         <div class="cat-seg-eje">${ejeMarcas}</div>
         ${nombres ? `<div class="cat-seg-nombres">${nombres}</div>` : ''}
       </div>
+      <div class="cat-seg-base-cap">⬚ Donde no hay tramo: <strong>S/ ${pcKg.toFixed(2)}/kg</strong> · 0% · se mantiene el canónico</div>
     </div>`;
   }
 
@@ -3174,12 +3176,14 @@ const MOS = (() => {
   // de producto completo → al click en un tramo se abre UN SOLO modal (el del tramo). Devuelve
   // true si pudo (producto con precio canónico). Marca _desdeCard para refrescar la card al guardar.
   function _segCargarDesdeCard(idProducto) {
-    const p = (window.S && Array.isArray(S.productos))
+    // [fix tramos · BUG REAL] Antes chequeaba `window.S`, pero S es un `const` a nivel de módulo
+    // (NO está en window, igual que `const MOS`) → `window.S` era SIEMPRE undefined → la búsqueda
+    // nunca corría → _segCargarDesdeCard SIEMPRE devolvía false → SIEMPRE caía al fallback (doble
+    // modal, sin botón eliminar, sin pintado del canónico). Diagnóstico en vivo: `hallado=false ·
+    // S.productos=?`. Fix: usar `S` directo (está en el closure del módulo). El granel se identifica
+    // por estar en el catálogo (KGM), NO por precio — sin traba de precioVenta.
+    const p = (typeof S !== 'undefined' && Array.isArray(S.productos))
       ? S.productos.find(x => String(x.idProducto) === String(idProducto)) : null;
-    // [fix tramos] El granel se identifica por KGM, NO por precio. La traba `precioVenta>0` hacía
-    // que TODO granel cuyo precio llegara en 0 (cache/fallback) cayera al modal viejo (doble modal,
-    // sin botón eliminar, sin pintado del canónico). Basta con encontrar el producto en cache.
-    try { console.log('%c[TRAMOS] _segCargarDesdeCard id=' + JSON.stringify(String(idProducto)) + ' · hallado=' + (!!p) + ' · S.productos=' + ((window.S && S.productos) ? S.productos.length : '?'), 'background:' + (p ? '#10b981' : '#ef4444') + ';color:#000;padding:2px 6px;font-weight:900'); } catch (_) {}
     if (!p) return false;
     segCargarParaProducto(p);
     _segState._desdeCard = String(idProducto);   // sin modal de producto → al guardar repintamos la card

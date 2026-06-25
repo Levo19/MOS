@@ -443,6 +443,18 @@
       background: repeating-linear-gradient(45deg, rgba(148,163,184,.12), rgba(148,163,184,.12) 6px, rgba(148,163,184,.04) 6px, rgba(148,163,184,.04) 12px) !important;
       border: 1px dashed rgba(148,163,184,.35); box-shadow: none !important;
     }
+    /* Etiqueta del precio canónico dentro de la banda base (visible en el hueco izquierdo) */
+    .cat-seg-base-lbl {
+      position: absolute; left: 6px; top: 50%; transform: translateY(-50%);
+      font-size: 9px; font-weight: 800; color: #94a3b8;
+      letter-spacing: .2px; white-space: nowrap; pointer-events: none; z-index: 0;
+    }
+    /* Leyenda bajo la barra: qué precio aplica donde no hay tramo (siempre visible) */
+    .cat-seg-base-cap {
+      margin-top: 5px; font-size: 10px; color: #94a3b8;
+      display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+    }
+    .cat-seg-base-cap strong { color: #34d399; }
     .cat-seg-banda:not(.cat-seg-base) { z-index: 1; }
     .cat-seg-band-container {
       position: relative; padding: 0 4px;
@@ -19250,7 +19262,7 @@ if (false) (function(){
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.340';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.341';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19284,7 +19296,7 @@ if (false) (function(){
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.340"></script>
+<script src="js/api.js?v=2.43.341"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19299,7 +19311,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.340"></script>
+<script src="js/app.js?v=2.43.341"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
