@@ -3176,7 +3176,10 @@ const MOS = (() => {
   function _segCargarDesdeCard(idProducto) {
     const p = (window.S && Array.isArray(S.productos))
       ? S.productos.find(x => String(x.idProducto) === String(idProducto)) : null;
-    if (!p || !(parseFloat(p.precioVenta) > 0)) return false;
+    // [fix tramos] El granel se identifica por KGM, NO por precio. La traba `precioVenta>0` hacía
+    // que TODO granel cuyo precio llegara en 0 (cache/fallback) cayera al modal viejo (doble modal,
+    // sin botón eliminar, sin pintado del canónico). Basta con encontrar el producto en cache.
+    if (!p) return false;
     segCargarParaProducto(p);
     _segState._desdeCard = String(idProducto);   // sin modal de producto → al guardar repintamos la card
     return true;
