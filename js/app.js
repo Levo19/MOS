@@ -3035,9 +3035,9 @@ const MOS = (() => {
                 <button class="cat-btn" style="font-size:.8rem"
                         onclick="event.stopPropagation();MOS.abrirAnalitica('${base.idProducto}')"
                         title="Ver analítica" style="border-color:rgba(99,102,241,.3)">📊</button>
-                <button class="cat-btn" style="font-size:.85rem;border-color:rgba(251,191,36,.35);color:#fbbf24"
+                <button class="cat-btn" style="font-size:.85rem;border-color:rgba(251,191,36,.35);color:#fbbf24;display:inline-flex;align-items:center;justify-content:center"
                         onclick="event.stopPropagation();MOS.abrirMembreteCard('${base.idProducto}')"
-                        title="Imprimir membrete (ME góndola o WH andamio)">🏷</button>
+                        title="Imprimir membrete (ME góndola o WH andamio)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1.3" fill="currentColor" stroke="none"/></svg></button>
                 ${_esMasterSession() ? `<button class="cat-btn cat-btn-kebab"
                         onclick="event.stopPropagation();MOS.abrirMenuPurgaGrupo('${base.idProducto}', event)"
                         title="Más acciones · Master"
@@ -16389,12 +16389,13 @@ const MOS = (() => {
     if (!cont) return;
     if (!_segState.segmentos.length) { cont.innerHTML = ''; return; }
     const pc = _segState.precioCanonico;
+    const cmap = _segColorMap(_segState.segmentos);
     cont.innerHTML = _segState.segmentos.map(s => {
       const cls = s.ajustePct > 0 ? 'positivo' : 'negativo';
       const sign = s.ajustePct > 0 ? '+' : '';
       const precioAjustado = pc * (1 + s.ajustePct / 100);
       return `<div class="seg-card">
-        <div class="seg-card-color ${cls}"></div>
+        <div class="seg-card-color" style="background:${cmap[s.id] || '#6366f1'}"></div>
         <div class="seg-card-info">
           <div class="seg-card-nombre">${_escapeHtml(s.nombre || 'Sin nombre')}</div>
           <div class="seg-card-rango">${_escapeHtml(_segFmtRango(s))}</div>
