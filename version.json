@@ -1,1 +1,1 @@
-{ "version": "2.43.323", "build": "P1d: nueva vista Pickup en zona (boton 🛒 Pickup) -> wh.zona_pickup_detalle (100% Supabase). Muestra la lista unica acumulada de la zona + por producto el HISTORIAL por dia (cuanto pidio cada cierre). Modal con efectos, busqueda, expandible. En vivo." }
+{ "version": "2.43.324", "build": "FIX vista Pickup: la llamada a wh.zona_pickup_detalle ahora envuelve los args en {p:{zona}} (convencion de las RPC zona_*). Antes mandaba {zona} -> PGRST202. Ya abre el modal con la lista+historial." }
