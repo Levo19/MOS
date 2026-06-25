@@ -16693,11 +16693,11 @@ const MOS = (() => {
     }
     segCerrarModal();
     segRenderEditor();
+    _segReflejarEnCatalogo();      // [optimista] card + cache local YA, sin esperar la API
     _finBeep && _finBeep('success');
-    // [optimista] persistir YA al backend (no hay que "guardar el producto" aparte)
-    const ok = await segPersistirSiCambio();
+    const ok = await segPersistirSiCambio();   // persiste en background
     if (ok) toast('💾 Tramo guardado', 'success');
-    else { _segState.segmentos = prev; segRenderEditor(); }   // rollback (el persist ya avisó el error)
+    else { _segState.segmentos = prev; segRenderEditor(); _segReflejarEnCatalogo(); }   // rollback
   }
 
   async function segEliminar(idSeg) {
@@ -16705,10 +16705,26 @@ const MOS = (() => {
     const prev = _segState.segmentos.slice();
     _segState.segmentos = _segState.segmentos.filter(s => s.id !== idSeg);
     segRenderEditor();
+    _segReflejarEnCatalogo();      // [optimista] YA
     _finBeep && _finBeep('tap');
-    const ok = await segPersistirSiCambio();   // [optimista] persistir el borrado YA
+    const ok = await segPersistirSiCambio();   // persiste en background
     if (ok) toast('🗑 Tramo eliminado', 'info');
-    else { _segState.segmentos = prev; segRenderEditor(); }   // rollback si falló
+    else { _segState.segmentos = prev; segRenderEditor(); _segReflejarEnCatalogo(); }   // rollback
+  }
+
+  // [optimista] Refleja los tramos actuales en el catálogo local (S.productos) + repinta la card
+  // si se editó desde ahí. Se llama ANTES de esperar la API → el cambio se ve al instante.
+  function _segReflejarEnCatalogo() {
+    try {
+      const p0 = S.productos.find(x => x.idProducto === _segState.idProducto);
+      const sku = _segState.skuBase || p0?.skuBase || p0?.sku_base || null;
+      const json = JSON.stringify(_segState.segmentos);
+      S.productos.forEach(x => {
+        if (sku && (x.skuBase === sku || x.sku_base === sku)) x.segmentos_precio = json;
+        else if (!sku && x.idProducto === _segState.idProducto) x.segmentos_precio = json;
+      });
+      if (_segState._desdeCard) renderCatalogo();
+    } catch(_) {}
   }
 
   // Helper: persistir segmentos al guardar producto. Llamado desde el flujo
@@ -16734,9 +16750,7 @@ const MOS = (() => {
           if (sku && (x.skuBase === sku || x.sku_base === sku)) x.segmentos_precio = json;
           else if (!sku && x.idProducto === _segState.idProducto) x.segmentos_precio = json;
         });
-        // Si se editó desde la card (sin modal de producto) → repintar el catálogo para que el
-        // mini-mapa de la card refleje el cambio al instante.
-        if (_segState._desdeCard) { try { renderCatalogo(); } catch(_) {} }
+        // (el repintado de la card ya se hizo optimista en _segReflejarEnCatalogo, antes de la API)
         return true;
       } else {
         toast('⚠ Segmentos no guardados: ' + (res?.error || 'error'), 'warn');
