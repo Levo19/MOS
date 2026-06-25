@@ -309,17 +309,22 @@ Deno.serve(async (req: Request) => {
         const canon = await sbSelect(
           'mos', 'productos',
           'sku_base=in.' + encodeURIComponent(inList(skuArr)) +
-          '&factor_conversion=eq.1&estado=is.true&select=sku_base,descripcion,id_producto',
+          '&factor_conversion=eq.1&estado=is.true&select=sku_base,descripcion,id_producto,codigo_barra',
         );
+        const canonCb: Record<string, string> = {};   // codigo_barra elegido por sku (desempate)
         canon.forEach((p: any) => {
           const sk = String(p.sku_base || '').trim().toUpperCase();
           if (!sk) return;
           // GAS: descripcion || idProducto || sk
           const desc = String(p.descripcion || p.id_producto || sk);
-          // [fix] DESEMPATE DETERMINISTA: varias filas factor=1+activas comparten sku_base. Quedarse con la
-          // descripción MÁS LARGA (nombre canónico completo, no un fragmento de presentación "10GR"/"taper").
-          // Antes ganaba la última fila iterada → no-determinista → nombres-fragmento.
-          if (!canonicoPorSku[sk] || desc.length > canonicoPorSku[sk].length) canonicoPorSku[sk] = desc;
+          const cb = String(p.codigo_barra || '');
+          const cur = canonicoPorSku[sk];
+          // [fix] DESEMPATE DETERMINISTA = SQL 171: varias filas factor=1+activas comparten sku_base → quedarse
+          // con la descripción MÁS LARGA (nombre canónico completo, no un fragmento "10GR"/"taper"); en empate
+          // de longitud, codigo_barra menor. Antes ganaba la última fila → no-determinista → nombres-fragmento.
+          if (cur === undefined || desc.length > cur.length || (desc.length === cur.length && cb < (canonCb[sk] || ''))) {
+            canonicoPorSku[sk] = desc; canonCb[sk] = cb;
+          }
         });
       }
 
