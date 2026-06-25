@@ -904,7 +904,7 @@
       +     '</div>'
       +     _rolloBannerHtml()
       +     '<div class="ms-body ms-cola-body" style="display:flex;flex-direction:column;max-height:72vh;overflow:hidden">'
-      +       // ── Buscador + sugerencias: FIJO arriba (no se encoge al crecer la cola) ──
+               // ── Buscador + sugerencias: FIJO arriba (no se encoge al crecer la cola) ──
       +       '<div style="flex-shrink:0">'
       +       '<div style="display:flex;gap:6px;margin-bottom:8px">'
       +       '<input id="msColaBusq" type="text" placeholder="🔍 Buscar por nombre o código (ej: hojuela avena)..." '
@@ -914,10 +914,10 @@
                   ? '<button onclick="MembreteSystem._colaEscanear()" title="Escanear con cámara" style="flex-shrink:0;width:48px;background:linear-gradient(135deg,#0ea5e9,#0369a1);color:#fff;border:none;border-radius:10px;font-size:20px;cursor:pointer;-webkit-tap-highlight-color:transparent">📷</button>'
                   : '')
       +       '</div>'
-      +       // sugerencias: alto fijo para ~5-6 productos + scroll moderno si hay más
+               // sugerencias: alto fijo para ~5-6 productos + scroll moderno si hay más
       +       '<div id="msColaSugs" class="ms-scroll" style="max-height:236px;overflow-y:auto;display:none;background:#0a1424;border-radius:8px;padding:4px;margin-bottom:8px"></div>'
       +       '</div>'
-      +       // ── Cola: toma el espacio RESTANTE, scroll propio, SIN límite de cantidad ──
+               // ── Cola: toma el espacio RESTANTE, scroll propio, SIN límite de cantidad ──
       +       '<div id="msColaLista" class="ms-scroll" style="flex:1 1 auto;overflow-y:auto;min-height:110px;padding-right:2px"></div>'
       +     '</div>'
       +     '<div class="ms-actions" style="padding:0 22px 18px">'
