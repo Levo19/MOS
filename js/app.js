@@ -41821,7 +41821,25 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         detalle = lineas.map(l => ({ codBarra: l.codBarra, descripcion: l.descripcion, enviado: _zonaNum(l.enviado), escaneado: 0, dif: _zonaNum(l.enviado), estado: 'PENDIENTE', lote: l.lote || null, venc: l.venc || null }));
       } catch (e) { detalle = []; }
     }
+    // [fix nombres verificación] rellenar descripciones vacías (códigos que la RPC no resolvió) desde
+    // Supabase (mos.nombres_por_codigos: catálogo + equivalencias) → la pantalla deja de mostrar el código pelado.
+    await _trasResolverNombres(detalle);
     _trasRenderDetalle(S._guiaSel, detalle);
+  }
+  // Resuelve los nombres canónicos de los códigos cuya descripción llegó vacía (o ES el propio código).
+  async function _trasResolverNombres(detalle) {
+    try {
+      if (!Array.isArray(detalle) || !detalle.length) return;
+      const faltan = detalle.filter(d => {
+        const cod = String(d.codBarra || '');
+        const desc = String(d.descripcion || '').trim();
+        return cod && (!desc || desc === cod);
+      }).map(d => String(d.codBarra));
+      if (!faltan.length) return;
+      const mapa = await API.zona.nombresPorCodigos([...new Set(faltan)]);
+      if (!mapa || typeof mapa !== 'object') return;
+      detalle.forEach(d => { const cod = String(d.codBarra || ''); if (mapa[cod]) d.descripcion = mapa[cod]; });
+    } catch (_) { /* nunca romper el render por un fallo de nombres */ }
   }
   function trasGuiasVolver() { _zonaSfx('tick'); _zonaVibrar(12); _trasMostrarLista(); }
 

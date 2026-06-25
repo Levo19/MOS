@@ -5,6 +5,12 @@ Regla: 100% Supabase, sin GAS. Revisión 40x. Graneles se identifican por **unid
 
 ## 🔧 PENDIENTES
 
+### 1. Códigos sin nombre en la verificación de despacho/aceptación (MOS) — ANALIZADO, listo para cablear
+- Síntoma: en la pantalla "control de lo que envía almacén vs lo recibido" (guías de aceptación), varios productos salen como **código pelado** sin nombre (ej. `WHCOXIODO250GR`, `6970970930031`, `8445291365872`), en las secciones OK / Sobran.
+- Causa (línea app.js ~41862): `desc = d.descripcion || cod` — la RPC `zona_traslado_guia` (y `_trasGuiasUnificadas`) devuelven la **descripción vacía** para esos códigos → muestra el código.
+- Fix: resolver los nombres vacíos con la RPC `mos.nombres_por_codigos` (la misma que ya hice para ME) dentro de `trasVerGuia`, antes de `_trasRenderDetalle`. Cubre ambas fuentes (detalle de sombra + trasladoGuia) en un solo lugar. Cero GAS.
+- **WH ticket "[N] caja"**: el usuario vio "12 [N] caja" para 7756984000026 (= ALSABOR SALSA, catalogado). Es el mismo patrón producto_nuevo que YA arreglé en la Edge `ticket-guia` (catálogo manda). Falta CONFIRMAR con un check que 7756984000026 resuelve a ALSABOR (no "[N] caja") con la Edge nueva.
+
 ### 2. Adhesivo de granel al despachar (WH) — diseño CERRADO
 - Idea: al despachar un granel (KGM) desde WH, además de la guía, imprimir 1 adhesivo para pegar en el saco.
 - Datos: nombre (2 renglones, **word-wrap sin partir palabras** — solo corta en espacios) · peso inteligente (kg/g) · código con barcode Code128 escaneable · fecha+hora. **1 solo adhesivo** (no por bulto). **Sin** N° de guía (ahorra espacio).
@@ -24,7 +30,8 @@ Regla: 100% Supabase, sin GAS. Revisión 40x. Graneles se identifican por **unid
 - Relacionado: acumulador pickup v2 (bucket-domingo, balance corriente, rezagado). Revisar cómo la lista de pickup en WH calcula/pinta "escaneado/total" y restar lo ya despachado del acumulado para la vista del operador.
 
 ## ✅ HECHO en esta sesión (referencia)
-- **Tramos MOS (v2.43.338):** quitada la traba `precioVenta>0` en `_segCargarDesdeCard` → granel se identifica por KGM, no por precio. Abre el modal único (botón eliminar + banda base con precio real). Causa: graneles con precio 0 en cache caían al modal viejo (doble).
+- **Tramos MOS (v2.43.341):** RAÍZ = `_segCargarDesdeCard` chequeaba `window.S` (S es const de módulo, NO está en window) → SIEMPRE caía al doble modal. Confirmado con diagnóstico en vivo (`hallado=false, S.productos=?`). Fix: usar `S` directo → modal único + botón eliminar visible. + el mini de la card muestra el precio canónico (S/X/kg) en la banda base + leyenda.
+- **Auto-update redes lentas (v2.43.339):** el banner vacía el caché del SW y recarga al detectar versión nueva (antes el timeout de 2.5s servía el index viejo en redes lentas → el usuario quedaba pegado en versiones anteriores). Falta portar el mismo patrón a ME (con cuidado: ME es POS, no forzar reload mid-venta).
 - Ticket venta ME: graneles "Peso: 100g/5kg" + nombres largos en 2 renglones (v2.8.67).
 - Ticket guía ME: nombres 100% Supabase (RPC `mos.nombres_por_codigos`) — fix devolución sin nombre (v2.8.68).
 - WH Edge `ticket-guia`: catálogo manda sobre producto_nuevo — fix "[n] arroz 565656" + 9 filas fantasma borradas.

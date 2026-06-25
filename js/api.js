@@ -2458,7 +2458,14 @@ const API = (() => {
       trasladosResumen:    _zonaTrasladosResumen,    // mos.zona_traslados_resumen(p {zona})    → {ok,data:{completo,incompleto,pendiente,verificaciones:[...]},_fresh}
       trasladoGuia:        _zonaTrasladoGuia,        // mos.zona_traslado_guia(p {idGuia})      → {ok,data:{idGuia,zona,verificada,lineas:[{codBarra,descripcion,enviado}]},_fresh}
       trasladoCerrar:      _zonaTrasladoCerrar,      // mos.zona_traslado_cerrar(p {idGuia,escaneados:[{codBarra,cantidad}]}) → {ok,[dedup],stockAplicado,data:{estado,total_*,detalle}}
-      baselineTraslados:   _zonaBaselineTraslados    // mos.zona_baseline_traslados(p {zona?}) → {ok,marcadas,total_pendientes_antes} — marca guías existentes como BASELINE (1 sola vez)
+      baselineTraslados:   _zonaBaselineTraslados,   // mos.zona_baseline_traslados(p {zona?}) → {ok,marcadas,total_pendientes_antes} — marca guías existentes como BASELINE (1 sola vez)
+      // [fix nombres verificación] resuelve {codigo: nombre canónico} desde mos.nombres_por_codigos
+      // (catálogo mos.productos + equivalencias). Rellena descripciones vacías que zona_traslado_guia
+      // no resuelve → la pantalla deja de mostrar el código pelado. {} ante fallo/offline.
+      nombresPorCodigos: async (codigos) => {
+        try { const r = await _sbRpcMOS('nombres_por_codigos', { p: { codigos: codigos || [] } }); return (r && r.ok && r.data) ? r.data : {}; }
+        catch (_) { return {}; }
+      }
     },
   };
 })();
