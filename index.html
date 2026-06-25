@@ -628,8 +628,20 @@
     .seg-pct-display {
       font-size: 1.2rem; font-weight: 900;
       color: #fbbf24; font-variant-numeric: tabular-nums;
-      text-transform: none;
+      text-transform: none; display: inline-flex; align-items: baseline; gap: 1px;
     }
+    .seg-pct-input {
+      width: 62px; text-align: right; background: transparent; border: none;
+      border-bottom: 2px dashed #475569; color: #fbbf24; font-size: 1.2rem; font-weight: 900;
+      font-variant-numeric: tabular-nums; padding: 0 2px; outline: none; -moz-appearance: textfield;
+    }
+    .seg-pct-input:focus { border-bottom-color: #fbbf24; }
+    .seg-pct-input::-webkit-outer-spin-button, .seg-pct-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .seg-pct-sufijo { color: #fbbf24; font-weight: 900; }
+    /* modalSegmento se abre DESDE el modal de producto (ambos modal-backdrop z-index 9400);
+       como va después en el DOM modalProducto quedaba encima → el de segmento aparecía detrás.
+       Le damos z-index mayor para que el modal anidado quede arriba. */
+    #modalSegmento { z-index: 9520; }
     .seg-inp {
       width: 100%; padding: 8px 10px;
       background: #0f172a; border: 1px solid #334155;
@@ -17192,9 +17204,13 @@
       <!-- Ajuste % -->
       <label class="seg-lbl seg-lbl-ajuste">
         Ajuste sobre el canónico
-        <span class="seg-pct-display" id="segPctDisplay">+10 %</span>
+        <span class="seg-pct-display" id="segPctDisplay">
+          <input id="segPctInput" type="number" step="any" min="-50" max="50" value="10"
+                 inputmode="decimal" onfocus="this.select()" oninput="MOS.segOnPctInput(this.value)"
+                 class="seg-pct-input" title="Escribe el % (acepta decimales, ej. 10.5)"/><span class="seg-pct-sufijo">%</span>
+        </span>
       </label>
-      <input id="segInputAjuste" type="range" min="-50" max="50" step="1" value="10"
+      <input id="segInputAjuste" type="range" min="-50" max="50" step="0.5" value="10"
              oninput="MOS.segOnSliderAjuste(this.value)" class="seg-slider"/>
       <div class="seg-slider-marks">
         <span>-50%</span><span>-25%</span><span>0%</span><span>+25%</span><span>+50%</span>

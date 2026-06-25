@@ -16495,14 +16495,25 @@ const MOS = (() => {
     segValidarLive();
   }
 
+  function _segPintarPct(n) {
+    const color = n > 0 ? '#fbbf24' : (n < 0 ? '#34d399' : '#94a3b8');
+    const inp = $('segPctInput'); if (inp) inp.style.color = color;
+    const suf = $('segPctDisplay')?.querySelector('.seg-pct-sufijo'); if (suf) suf.style.color = color;
+  }
+  // Slider movido → sincroniza el input editable (salvo que el user lo esté tipeando) y repinta.
   function segOnSliderAjuste(v) {
-    const n = parseInt(v, 10) || 0;
-    const sign = n > 0 ? '+' : '';
-    const el = $('segPctDisplay');
-    if (el) {
-      el.textContent = sign + n + ' %';
-      el.style.color = n > 0 ? '#fbbf24' : (n < 0 ? '#34d399' : '#94a3b8');
-    }
+    const n = parseFloat(v) || 0;
+    const inp = $('segPctInput');
+    if (inp && document.activeElement !== inp) inp.value = n;
+    _segPintarPct(n);
+    segValidarLive();
+  }
+  // Input editable → acepta decimales (10.5); sincroniza el slider (clamp a su rango) y repinta.
+  function segOnPctInput(v) {
+    let n = parseFloat(v); if (isNaN(n)) n = 0;
+    const sl = $('segInputAjuste');
+    if (sl) sl.value = Math.max(-50, Math.min(50, n));
+    _segPintarPct(n);
     segValidarLive();
   }
 
@@ -16512,8 +16523,9 @@ const MOS = (() => {
     const maxRaw = $('segInputMax').value.trim();
     const min = u === 'kg' ? minRaw * 1000 : minRaw;
     const max = maxRaw === '' ? null : (u === 'kg' ? parseFloat(maxRaw) * 1000 : parseFloat(maxRaw));
-    const ajuste = parseFloat($('segInputAjuste').value);
-    return { min, max, minIncl: _segState.modalMinIncl, maxIncl: _segState.modalMaxIncl, ajustePct: ajuste };
+    // [%] el valor preciso (con decimales) vive en el input editable; el slider es solo para arrastrar
+    const ajuste = parseFloat(($('segPctInput') || {}).value);
+    return { min, max, minIncl: _segState.modalMinIncl, maxIncl: _segState.modalMaxIncl, ajustePct: isNaN(ajuste) ? 0 : ajuste };
   }
 
   function segValidarLive() {
@@ -16609,7 +16621,7 @@ const MOS = (() => {
     return true;
   }
 
-  function segGuardar() {
+  async function segGuardar() {
     const v = _segValoresModalEnGramos();
     const nombre = $('segInputNombre').value.trim();
     const id = _segState.editandoId || ('seg-' + Date.now());
@@ -16620,9 +16632,10 @@ const MOS = (() => {
       max: v.max === null ? null : Math.round(v.max),
       minIncl: v.minIncl,
       maxIncl: v.maxIncl,
-      ajustePct: v.ajustePct,
+      ajustePct: v.ajustePct,           // [%] acepta decimales (10.5, etc.) — parseFloat
       creadoEn: new Date().toISOString()
     };
+    const prev = _segState.segmentos.slice();   // snapshot para rollback optimista
     if (_segState.editandoId) {
       const idx = _segState.segmentos.findIndex(s => s.id === id);
       if (idx >= 0) _segState.segmentos[idx] = nuevo;
@@ -16632,21 +16645,27 @@ const MOS = (() => {
     segCerrarModal();
     segRenderEditor();
     _finBeep && _finBeep('success');
-    toast('💾 Segmento guardado · recordá guardar el producto', 'success');
+    // [optimista] persistir YA al backend (no hay que "guardar el producto" aparte)
+    const ok = await segPersistirSiCambio();
+    if (ok) toast('💾 Tramo guardado', 'success');
+    else { _segState.segmentos = prev; segRenderEditor(); }   // rollback (el persist ya avisó el error)
   }
 
   async function segEliminar(idSeg) {
     if (!await _modalConfirm('¿Eliminar este segmento?', { danger: true, titulo: 'Eliminar segmento', okText: 'Eliminar' })) return;
+    const prev = _segState.segmentos.slice();
     _segState.segmentos = _segState.segmentos.filter(s => s.id !== idSeg);
     segRenderEditor();
     _finBeep && _finBeep('tap');
-    toast('🗑 Segmento eliminado', 'info');
+    const ok = await segPersistirSiCambio();   // [optimista] persistir el borrado YA
+    if (ok) toast('🗑 Tramo eliminado', 'info');
+    else { _segState.segmentos = prev; segRenderEditor(); }   // rollback si falló
   }
 
   // Helper: persistir segmentos al guardar producto. Llamado desde el flujo
   // de guardar producto del modal (después del save normal).
   async function segPersistirSiCambio() {
-    if (!_segState.idProducto) return;
+    if (!_segState.idProducto) return false;
     try {
       const audit = (typeof _auditCtx === 'function') ? _auditCtx() : {};
       const res = await API.post('actualizarSegmentosPrecio', {
@@ -16666,11 +16685,14 @@ const MOS = (() => {
           if (sku && (x.skuBase === sku || x.sku_base === sku)) x.segmentos_precio = json;
           else if (!sku && x.idProducto === _segState.idProducto) x.segmentos_precio = json;
         });
+        return true;
       } else {
         toast('⚠ Segmentos no guardados: ' + (res?.error || 'error'), 'warn');
+        return false;
       }
     } catch(e) {
       toast('Error guardando segmentos: ' + (e.message || e), 'error');
+      return false;
     }
   }
 
@@ -42352,7 +42374,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     tribExportarExcel,
     // [v2.41.97] Pricing por segmentos (graneles)
     prodToggleSegmentos, segActualizarVisibilidad, segNuevo, segEditar, segEliminar,
-    segCalcular, segToggleUnidad, segToggleBracket, segAtajo, segOnSliderAjuste,
+    segCalcular, segToggleUnidad, segToggleBracket, segAtajo, segOnSliderAjuste, segOnPctInput,
     segValidarLive, segGuardar, segCerrarModal,
     // [v2.41.98] Atajo desde card
     segEditarDesdeCard,

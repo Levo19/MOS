@@ -6,7 +6,11 @@ create or replace function mos.catalogo_pos_rls()
 returns jsonb language plpgsql security definer set search_path='' as $fn$
 declare
   v_pb jsonb := '[]'::jsonb; v_pr jsonb := '[]'::jsonb; v_eq jsonb; v_zc jsonb; v_cf jsonb; v_sz jsonb; g record;
+  v_tramos_map jsonb;
 begin
+  -- [PERF] pre-cargar TODOS los tramos en un mapa sku_base->tramos UNA vez (evita N subqueries en el loop)
+  select coalesce(jsonb_object_agg(sku_base, tramos), '{}'::jsonb) into v_tramos_map from mos.precio_tramos;
+
   for g in
     with act as (
       select coalesce(nullif(btrim(sku_base),''), id_producto) as sku,
@@ -39,8 +43,8 @@ begin
         v_nombre := btrim(coalesce(v_base->>'descripcion',''));
       end if;
 
-      -- [c] tramos del GRUPO (por sku_base) -> a cada presentacion; ME los aplica al canonico
-      select tramos into v_tramos from mos.precio_tramos where sku_base = g.sku;
+      -- [c] tramos del GRUPO (por sku_base, desde el mapa pre-cargado) -> a cada presentacion; ME los aplica al canonico
+      v_tramos := v_tramos_map -> g.sku;
 
       v_pb := v_pb || jsonb_build_array(jsonb_build_object(
         'SKU_Base', g.sku, 'Nombre', v_nombre,
@@ -50,13 +54,17 @@ begin
         'segmentos_precio', coalesce(v_tramos,'[]'::jsonb)));
 
       for m in select value from jsonb_array_elements(v_vend) loop
-        v_pr := v_pr || jsonb_build_array(jsonb_build_object(
-          'SKU_Base', g.sku, 'SKU', coalesce(m->>'id_producto',''),
-          'Cod_Barras', coalesce(nullif(btrim(m->>'codigo_barra'),''), m->>'id_producto'),
-          'Empaque', coalesce(m->>'descripcion',''),
-          'Precio_Venta', coalesce((m->>'precio_venta')::numeric, 0),
-          'Factor', coalesce((m->>'factor')::numeric, 1),
-          'segmentos_precio', coalesce(v_tramos,'[]'::jsonb)));   -- [c] tramos del grupo
+        v_pr := v_pr || jsonb_build_array(
+          jsonb_build_object(
+            'SKU_Base', g.sku, 'SKU', coalesce(m->>'id_producto',''),
+            'Cod_Barras', coalesce(nullif(btrim(m->>'codigo_barra'),''), m->>'id_producto'),
+            'Empaque', coalesce(m->>'descripcion',''),
+            'Precio_Venta', coalesce((m->>'precio_venta')::numeric, 0),
+            'Factor', coalesce((m->>'factor')::numeric, 1))
+          -- [c] segmentos_precio SOLO en la canónica (Factor=1, lo único que ME lee) y solo si hay tramos
+          --     → no infla las 2358 presentaciones (el append es O(n²) en la longitud del array).
+          || case when (m->>'factor')::numeric = 1 and v_tramos is not null
+                  then jsonb_build_object('segmentos_precio', v_tramos) else '{}'::jsonb end);
       end loop;
     end;
   end loop;
