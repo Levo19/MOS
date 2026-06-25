@@ -791,6 +791,13 @@
       font-size: 12px; font-weight: 800; cursor: pointer;
       border: none; transition: all .15s;
     }
+    .seg-btn-eliminar {
+      grid-column: 1 / -1;   /* fila propia, ancho completo, arriba de Cancelar/Guardar */
+      padding: 10px; border-radius: 8px; font-size: 12px; font-weight: 800; cursor: pointer;
+      background: rgba(127,29,29,.45); color: #fca5a5; border: 1px solid rgba(248,113,113,.45);
+      transition: all .15s;
+    }
+    .seg-btn-eliminar:hover { background: rgba(127,29,29,.75); color: #fecaca; }
     .seg-btn-cancelar {
       background: rgba(15,23,42,.7); color: #cbd5e1; border: 1px solid #334155;
     }
@@ -17241,7 +17248,7 @@
       <label class="seg-lbl seg-lbl-ajuste">
         Ajuste sobre el canónico
         <span class="seg-pct-display" id="segPctDisplay">
-          <input id="segPctInput" type="number" step="any" min="-50" max="50" value="10"
+          <input id="segPctInput" type="number" step="any" min="-99" value="10"
                  inputmode="decimal" onfocus="this.select()" oninput="MOS.segOnPctInput(this.value)"
                  class="seg-pct-input" title="Escribe el % (acepta decimales, ej. 10.5)"/><span class="seg-pct-sufijo">%</span>
         </span>
@@ -17271,6 +17278,7 @@
     </div>
 
     <div class="seg-modal-footer">
+      <button id="segBtnEliminar" onclick="MOS.segEliminarDesdeModal()" class="seg-btn-eliminar" style="display:none">🗑 Eliminar tramo</button>
       <button onclick="MOS.segCerrarModal()" class="seg-btn-cancelar">Cancelar</button>
       <button id="segBtnGuardar" onclick="MOS.segGuardar()" class="seg-btn-guardar">💾 Guardar</button>
     </div>
@@ -19239,7 +19247,7 @@ if (false) (function(){
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.335';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.336';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19257,7 +19265,7 @@ if (false) (function(){
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.335"></script>
+<script src="js/api.js?v=2.43.336"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19272,7 +19280,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.335"></script>
+<script src="js/app.js?v=2.43.336"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

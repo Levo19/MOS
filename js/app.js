@@ -16476,6 +16476,7 @@ const MOS = (() => {
     segOnSliderAjuste(10);
     segToggleUnidad('g');
     _segActualizarBracketsUI();
+    { const be = $('segBtnEliminar'); if (be) be.style.display = 'none'; }   // nuevo → sin eliminar
     openModal('modalSegmento');
     setTimeout(() => $('segInputMin')?.focus(), 100);
   }
@@ -16497,7 +16498,16 @@ const MOS = (() => {
     segOnSliderAjuste(s.ajustePct);
     segToggleUnidad(_segState.modalUnidad);
     _segActualizarBracketsUI();
+    { const be = $('segBtnEliminar'); if (be) be.style.display = ''; }   // editar → mostrar eliminar
     openModal('modalSegmento');
+  }
+
+  // Eliminar el tramo que se está editando, desde el botón dentro del modal.
+  function segEliminarDesdeModal() {
+    const id = _segState.editandoId;
+    if (!id) return;
+    segCerrarModal();        // cerrar el modal del tramo primero
+    segEliminar(id);         // confirma + elimina (optimista)
   }
 
   function segCerrarModal() { closeModal('modalSegmento'); }
@@ -42441,7 +42451,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.41.97] Pricing por segmentos (graneles)
     prodToggleSegmentos, segActualizarVisibilidad, segNuevo, segEditar, segEliminar,
     segCalcular, segToggleUnidad, segToggleBracket, segAtajo, segOnSliderAjuste, segOnPctInput,
-    segValidarLive, segGuardar, segCerrarModal,
+    segValidarLive, segGuardar, segCerrarModal, segEliminarDesdeModal,
     // [v2.41.98] Atajo desde card
     segEditarDesdeCard, segNuevoDesdeCard,
     // F2 — Acciones editables sobre tickets
