@@ -391,6 +391,100 @@ function buildTSPLMembreteMe(producto: any, _allEnvTokens: string[][], cfg: Drif
   return bytes;
 }
 
+// ── Peso inteligente: gramos enteros si <1kg, kilos sin ceros sobrantes si >=1kg ──
+function pesoBonitoG(kg: number): { num: string; unit: string } {
+  const g = Math.round((Number(kg) || 0) * 1000);
+  if (g < 1000) return { num: String(g), unit: 'g' };
+  return { num: (g / 1000).toFixed(3).replace(/\.?0+$/, ''), unit: 'kg' };
+}
+// ── Fecha+hora de Lima en ASCII: "25/06/2026  02:18pm" ──
+function fechaHoraLimaAscii(): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'America/Lima', day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: true,
+    }).formatToParts(new Date());
+    const g = (t: string) => (parts.find((x) => x.type === t)?.value || '');
+    const ap = (g('dayPeriod') || '').toLowerCase().replace(/[^a-z]/g, '');
+    return g('day') + '/' + g('month') + '/' + g('year') + '  ' + g('hour') + ':' + g('minute') + ap;
+  } catch { return ''; }
+}
+
+// ADHESIVO GRANEL DESPACHO (WH): para pegar en el saco al despachar un granel. 50×25mm.
+//   · NOMBRE izquierda (auto-fit Font 3→1, word-wrap por palabras, NO parte palabras)
+//   · PESO grande derecha (inteligente kg/g) en recuadro — reemplaza al precio del membrete
+//   · BARCODE Code128 + código abajo-izq (escaneable en recepción)
+//   · BADGE caja/bulto + "WH" abajo-derecha + FECHA/HORA de emisión
+// item = { nombre|descripcion, codigo|codigoBarra, peso|cantidad(kg) }
+function buildTSPLGranelDespacho(item: any, cfg: DriftCfg, offsetY: number): number[] {
+  const header = ['SIZE 50 mm,25 mm', 'GAP ' + cfg.gapMm + ' mm,0 mm', 'DIRECTION 1', 'DENSITY ' + cfg.density, 'SPEED ' + cfg.speed, 'CLS'].join('\r\n') + '\r\n';
+  let bytes = strToBytes(header);
+  const TOP = 14 + offsetY, TOPZONE_H = 92;
+
+  // ── NOMBRE (zona izquierda X12..208) auto-fit + word-wrap (wrapEnAncho corta por espacios, no parte palabras) ──
+  const NAME_X0 = 12, NAME_W = 196;
+  const nombre = normalizeEtq(item.nombre || item.descripcion || item.codigo || '');
+  const fonts = [{ f: '3', cw: 16, lh: 26, max: 3 }, { f: '2', cw: 12, lh: 22, max: 4 }, { f: '1', cw: 8, lh: 14, max: 5 }];
+  let chosen = fonts[2], nameLines: string[] = [];
+  for (const ft of fonts) { const ls = wrapEnAncho(nombre, NAME_W, ft.cw); chosen = ft; nameLines = ls; if (ls.length <= ft.max) break; }
+  if (nameLines.length > 5) nameLines = nameLines.slice(0, 5);
+  let nameY = TOP + Math.max(0, Math.floor((TOPZONE_H - nameLines.length * chosen.lh) / 2));
+  for (const ln of nameLines) {
+    const w = ln.length * chosen.cw;
+    const x = NAME_X0 + Math.max(0, Math.floor((NAME_W - w) / 2));
+    bytes = bytes.concat(strToBytes('TEXT ' + x + ',' + nameY + ',"' + chosen.f + '",0,1,1,"' + ln.replace(/"/g, "'") + '"\r\n'));
+    nameY += chosen.lh;
+  }
+
+  // ── Divisor vertical ──
+  bytes = bytes.concat(strToBytes('BAR 232,' + (TOP + 4) + ',2,' + (TOPZONE_H - 12) + '\r\n'));
+
+  // ── PESO (zona derecha X240..388) en recuadro: label "PESO" + número grande (Font 4) + unidad (Font 2) ──
+  const peso = pesoBonitoG(Number(item.peso ?? item.cantidad ?? 0));
+  const RZ_X0 = 240, RZ_W = 148;
+  const lblW = 4 * 12;
+  bytes = bytes.concat(strToBytes('TEXT ' + (RZ_X0 + Math.floor((RZ_W - lblW) / 2)) + ',' + (TOP + 8) + ',"2",0,1,1,"PESO"\r\n'));
+  const wNum = peso.num.length * 24, wUni = peso.unit.length * 12;
+  const rowW = wNum + 4 + wUni;
+  const rowX = RZ_X0 + Math.max(2, Math.floor((RZ_W - rowW) / 2));
+  const numY = TOP + 38;
+  bytes = bytes.concat(strToBytes('TEXT ' + rowX + ',' + numY + ',"4",0,1,1,"' + peso.num + '"\r\n'));
+  bytes = bytes.concat(strToBytes('TEXT ' + (rowX + wNum + 4) + ',' + (numY + 12) + ',"2",0,1,1,"' + peso.unit + '"\r\n'));
+  const bx1 = RZ_X0, bx2 = 389, by1 = TOP + 2, by2 = TOP + TOPZONE_H - 4;
+  bytes = bytes.concat(strToBytes('BAR ' + bx1 + ',' + by1 + ',' + (bx2 - bx1) + ',2\r\n'));
+  bytes = bytes.concat(strToBytes('BAR ' + bx1 + ',' + by2 + ',' + (bx2 - bx1) + ',2\r\n'));
+  bytes = bytes.concat(strToBytes('BAR ' + bx1 + ',' + by1 + ',2,' + (by2 - by1) + '\r\n'));
+  bytes = bytes.concat(strToBytes('BAR ' + (bx2 - 2) + ',' + by1 + ',2,' + (by2 - by1) + '\r\n'));
+
+  // ── BARCODE (abajo-izq) + código en texto ──
+  let codigo = String(item.codigo || item.codigoBarra || '').replace(/"/g, '');
+  if (!codigo) codigo = 'SIN-CODIGO';
+  const esNum = /^\d+$/.test(codigo);
+  const mods = ((esNum ? (Math.ceil(codigo.length / 2) + (codigo.length % 2)) : codigo.length) * 11) + 35;
+  const nb = (mods * 2 <= 240) ? 2 : 1;   // cap de ancho: deja lugar al badge WH a la derecha
+  const bcH = 50, bcX = 12;
+  const bcY = TOP + TOPZONE_H + 6;
+  bytes = bytes.concat(strToBytes('BARCODE ' + bcX + ',' + bcY + ',"128",' + bcH + ',0,0,' + nb + ',' + nb + ',"' + codigo + '"\r\n'));
+  bytes = bytes.concat(strToBytes('TEXT ' + bcX + ',' + (bcY + bcH + 4) + ',"1",0,1,1,"' + codigo + '"\r\n'));
+
+  // ── BADGE caja/bulto + "WH" (abajo-derecha) ──
+  const wx = 306, wy = bcY + 2, ww = 56, wbh = 30;
+  bytes = bytes.concat(strToBytes('BAR ' + wx + ',' + wy + ',' + ww + ',2\r\n'));                    // techo
+  bytes = bytes.concat(strToBytes('BAR ' + wx + ',' + (wy + wbh - 2) + ',' + ww + ',2\r\n'));        // piso
+  bytes = bytes.concat(strToBytes('BAR ' + wx + ',' + wy + ',2,' + wbh + '\r\n'));                   // izq
+  bytes = bytes.concat(strToBytes('BAR ' + (wx + ww - 2) + ',' + wy + ',2,' + wbh + '\r\n'));        // der
+  bytes = bytes.concat(strToBytes('BAR ' + wx + ',' + (wy + 9) + ',' + ww + ',2\r\n'));              // línea tapa
+  bytes = bytes.concat(strToBytes('BAR ' + (wx + Math.floor(ww / 2) - 1) + ',' + wy + ',2,9\r\n'));  // solapa central
+  bytes = bytes.concat(strToBytes('TEXT ' + (wx + 14) + ',' + (wy + 14) + ',"2",0,1,1,"WH"\r\n'));   // "WH"
+
+  // ── FECHA/HORA de emisión (abajo-derecha, bajo el badge) ──
+  const fh = fechaHoraLimaAscii();
+  if (fh) bytes = bytes.concat(strToBytes('TEXT ' + (wx - 6) + ',' + (wy + wbh + 6) + ',"1",0,1,1,"' + fh + '"\r\n'));
+
+  bytes = bytes.concat(strToBytes('PRINT 1,1\r\n'));
+  return bytes;
+}
+
 // MEMBRETE ANDAMIO (WH): logo WH + tag CAB/i/total + desc + barcode (layout = adhesivo). Port de _buildTSPLMembreteWh.
 function buildTSPLMembreteWh(producto: any, esCabecera: boolean, indice: number, total: number, allEnvTokens: string[][], cfg: DriftCfg, offsetY: number): number[] {
   const descNorm = normalizeEtq(producto.descripcion || '');
@@ -809,6 +903,29 @@ Deno.serve(async (req: Request) => {
       if (!pr.ok) return json({ ok: false, error: 'PrintNode HTTP ' + pr.status + ': ' + pr.txt }, 200);
       if (!notas.includes('[impreso]')) await marcarPickupImpreso(idp, notas + ' [impreso]');
       return json({ ok: true, data: { idPickup: idp, jobId: pr.jobId, lineas: tk.lineas, unidades: tk.unidades } });
+    }
+
+    // mode 'granel-despacho' — al despachar graneles desde WH, imprime 1 adhesivo por ítem (peso/nombre/código/
+    // fecha + badge WH) para pegar en el saco. Print DIRECTO a PrintNode (sin lote/reserva), igual que pickup-ticket.
+    // body { items:[{codigo|codigoBarra, nombre|descripcion, peso|cantidad(kg)}], printerId? }.
+    if (mode === 'granel-despacho') {
+      const itemsRaw = Array.isArray(body.items) ? body.items : [];
+      if (!itemsRaw.length) return json({ ok: false, error: 'items vacio' }, 400);
+      let printerId = String(body.printerId || '');
+      if (!printerId) printerId = await resolverPrinterAdhesivo();
+      if (!printerId) return json({ ok: false, error: 'sin impresora ADHESIVO configurada' }, 400);
+      const pid = parseInt(printerId, 10);
+      const impresos: any[] = [];
+      let idx = 0;
+      for (const it of itemsRaw) {
+        if (Date.now() >= deadline) break;
+        const codigo = String(it.codigo || it.codigoBarra || '');
+        if (!codigo) continue;
+        const tspl = buildTSPLGranelDespacho(it, cfg, driftOffset(cfg, idx++));
+        const pr = await printNodePost(pid, 'Granel ' + _ascii(String(it.nombre || it.descripcion || codigo)).slice(0, 24), bytesToBase64(tspl), 'granel-' + codigo);
+        impresos.push({ codigo, ok: !!pr.ok, jobId: pr.ok ? pr.jobId : null, error: pr.ok ? null : ('PrintNode ' + pr.status) });
+      }
+      return json({ ok: true, data: { impresos, total: impresos.length } });
     }
 
     // mode 'calibrate-roll' — CALIBRAR NUEVO ROLLO (operador, sin admin/MOS). Manda un
