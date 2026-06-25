@@ -611,6 +611,9 @@
           return;
         }
         if (ed && ed.ok === false && !/_OFF/.test(String(ed.error || ''))) {
+          // [fix data-loss] El backend RECHAZÓ y NO creó el lote → restaurar la cola (los membretes NO se
+          // imprimieron NI quedan en historial). Sin esto se perdían en silencio (cola vaciada optimista).
+          if (opts && typeof opts.onReject === 'function') { try { opts.onReject(); } catch(_){} }
           _state.status = 'PAUSADO_ERROR'; _state.ultimoError = 'Edge: ' + (ed.error || 'error'); _state.polling = false; _render(); sonidos.error();
           return;
         }
@@ -1222,11 +1225,19 @@
       // Sino reconstruir resolviendo equivalencias del catálogo actual
       return _construirItemCompleto(it);
     });
-    // [fix c] Limpiar la cola YA (optimista): el lote se despacha al backend → si algo falla
-    // queda en el HISTORIAL de lotes (no se pierde), y el operador NUNCA ve duplicado lo ya enviado.
+    // Limpiar la cola optimista (UX). Si el backend RECHAZA el lote (no se creó), `onReject` la RESTAURA →
+    // los membretes NO se pierden. En éxito el lote queda en historial; en red-incierta (.catch) el modal
+    // muestra PAUSADO_ERROR con reintento idempotente (mismo idempotencyKey → sin duplicar).
+    var _backupCola = itemsCompletos.slice();
     _colaGuardar(tipo, []);
     _colaCerrar();
-    imprimirMembrete({ tipo: tipo, items: itemsCompletos });
+    imprimirMembrete({
+      tipo: tipo, items: itemsCompletos,
+      onReject: function () {
+        try { _colaGuardar(tipo, _backupCola); } catch (_) {}
+        try { _toast('⚠ No se pudo crear el lote — los membretes siguen en la cola'); } catch (_) {}
+      }
+    });
   }
   function _colaCerrar() {
     var ov = document.getElementById('msColaOverlay');

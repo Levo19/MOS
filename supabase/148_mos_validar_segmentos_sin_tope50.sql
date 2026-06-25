@@ -59,8 +59,12 @@ begin
       return jsonb_build_object('ok', false, 'error', 'Segmento '||(v_i+1)||': el ajuste no puede bajar 100% o mas (el precio quedaria en 0 o negativo)');
     end if;
     -- minIncl default true; maxIncl default false (paridad: s.minIncl !== false ; s.maxIncl === true)
-    v_minc := not ((v_s->'minIncl') = 'false'::jsonb);
-    v_maxc := ((v_s->'maxIncl') = 'true'::jsonb);
+    -- [fix dinero] coalesce al DEFAULT si la llave falta: sin esto, `not NULL`=NULL se guardaba como minIncl:null
+    -- → ME trata null como falsy → el borde exacto del tramo se evalúa EXCLUYENTE cuando debía incluir → precio
+    -- cobrado equivocado en la frontera de gramos. El validador es la única compuerta del dinero; no debe
+    -- depender de que el cliente siempre mande las llaves.
+    v_minc := coalesce(not ((v_s->'minIncl') = 'false'::jsonb), true);
+    v_maxc := coalesce(((v_s->'maxIncl') = 'true'::jsonb), false);
     -- limpiar (round gramos a entero; nombre <=40; ajuste 2 dec)
     v_seg := jsonb_build_object(
       'id',        coalesce(nullif(btrim(coalesce(v_s->>'id','')),''), 'seg-'||(extract(epoch from clock_timestamp())*1000)::bigint::text||'-'||v_i),

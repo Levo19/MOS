@@ -35,7 +35,14 @@ begin
     ) order by d.linea), '[]'::jsonb), count(*)::int
   into v_lineas, v_nlin
   from wh.guia_detalle d
-  left join lateral (select coalesce((select pp.descripcion from mos.productos pp where pp.codigo_barra = d.cod_producto limit 1),(select pp.descripcion from mos.equivalencias e join mos.productos pp on pp.sku_base=e.sku_base and coalesce(nullif(pp.factor_conversion,0),1)=1 where e.codigo_barra = d.cod_producto and e.activo limit 1)) as descripcion) pr on true
+  left join lateral (select coalesce(
+      -- [fix perf] `codigo_barra <> ''` habilita el índice parcial (sin esto el planner hace seq scan de
+      -- mos.productos por CADA línea de la guía → O(n_lineas × 2369), frágil con guías grandes y timeout 8s).
+      (select pp.descripcion from mos.productos pp where pp.codigo_barra = d.cod_producto and pp.codigo_barra <> '' limit 1),
+      (select pp.descripcion from mos.equivalencias e join mos.productos pp on pp.sku_base=e.sku_base and coalesce(nullif(pp.factor_conversion,0),1)=1 where e.codigo_barra = d.cod_producto and e.activo limit 1),
+      -- [fix nombres] 3er fallback: WH a veces grabó el id_producto en cod_producto (10 códigos) → resolver por id.
+      (select pp.descripcion from mos.productos pp where pp.id_producto = d.cod_producto limit 1)
+    ) as descripcion) pr on true
   where d.id_guia = v_id
     and nullif(btrim(coalesce(d.cod_producto,'')),'') is not null
     and coalesce(d.cant_recibida,0) <> 0

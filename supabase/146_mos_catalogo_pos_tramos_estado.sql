@@ -32,8 +32,13 @@ begin
         into v_vend from jsonb_array_elements(v_members) where (value->>'vendible')::boolean;
       if jsonb_array_length(v_vend) = 0 then continue; end if;
 
-      select value into v_f1 from jsonb_array_elements(v_members) where (value->>'factor')::numeric = 1 limit 1;
-      select value into v_base from jsonb_array_elements(v_vend) where (value->>'factor')::numeric = 1 limit 1;
+      -- [fix dinero] DESEMPATE KGM: en grupos unidad-mixta (KGM+NIU, ambos factor=1) el `limit 1` arbitrario
+      -- podía elegir la fila NIU → PRODUCTO_BASE.Unidad_Medida='NIU' → en ME `_esGranelItem` (chequea KGM)
+      -- falla → los tramos del granel se IGNORAN en silencio → precio cobrado sin ajuste. Preferir KGM.
+      select value into v_f1 from jsonb_array_elements(v_members) where (value->>'factor')::numeric = 1
+        order by (upper(coalesce(value->>'unidad_medida', value->>'unidad','')) = 'KGM') desc limit 1;
+      select value into v_base from jsonb_array_elements(v_vend) where (value->>'factor')::numeric = 1
+        order by (upper(coalesce(value->>'unidad_medida', value->>'unidad','')) = 'KGM') desc limit 1;
       if v_base is null then v_base := v_vend->0; end if;
 
       if v_f1 is not null and not (v_f1->>'vendible')::boolean
