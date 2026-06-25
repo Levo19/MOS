@@ -315,7 +315,11 @@ Deno.serve(async (req: Request) => {
           const sk = String(p.sku_base || '').trim().toUpperCase();
           if (!sk) return;
           // GAS: descripcion || idProducto || sk
-          canonicoPorSku[sk] = String(p.descripcion || p.id_producto || sk);
+          const desc = String(p.descripcion || p.id_producto || sk);
+          // [fix] DESEMPATE DETERMINISTA: varias filas factor=1+activas comparten sku_base. Quedarse con la
+          // descripción MÁS LARGA (nombre canónico completo, no un fragmento de presentación "10GR"/"taper").
+          // Antes ganaba la última fila iterada → no-determinista → nombres-fragmento.
+          if (!canonicoPorSku[sk] || desc.length > canonicoPorSku[sk].length) canonicoPorSku[sk] = desc;
         });
       }
 

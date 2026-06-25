@@ -30,11 +30,14 @@ returns jsonb language sql stable security definer set search_path = '' as $fn$
     left join mos.equivalencias eq on eq.codigo_barra = c.cod and eq.activo
   ),
   canon as (
-    -- desc del canónico (factor=1) por sku_base; prioriza estado activo.
+    -- desc del canónico (factor=1) por sku_base. DESEMPATE DETERMINISTA (varias filas factor=1+activas
+    -- comparten sku_base): activo primero, luego la descripción MÁS LARGA (el nombre canónico completo,
+    -- no un fragmento de presentación tipo "10GR"/"taper"/"1"), luego codigo_barra para estabilidad total.
+    -- Antes el order by no desempataba → Postgres elegía una fila arbitraria → nombres-fragmento.
     select distinct on (sku_base) sku_base, descripcion
     from mos.productos
     where factor_conversion = 1
-    order by sku_base, (estado is true) desc
+    order by sku_base, (estado is true) desc, length(coalesce(descripcion, '')) desc, codigo_barra
   )
   select jsonb_build_object(
     'ok', true,

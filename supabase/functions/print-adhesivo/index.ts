@@ -395,13 +395,15 @@ function buildTSPLMembreteMe(producto: any, _allEnvTokens: string[][], cfg: Drif
 function pesoBonitoG(kg: number): { num: string; unit: string } {
   const g = Math.round((Number(kg) || 0) * 1000);
   if (g < 1000) return { num: String(g), unit: 'g' };
-  return { num: (g / 1000).toFixed(3).replace(/\.?0+$/, ''), unit: 'kg' };
+  // [fix overflow] kg con 1 decimal (en el adhesivo no hace falta más precisión) → el número nunca se sale
+  // del recuadro de peso. "12.345"→"12.3", "100.0"→"100", "5.5"→"5.5".
+  return { num: (g / 1000).toFixed(1).replace(/\.0$/, ''), unit: 'kg' };
 }
 // ── Fecha+hora de Lima en ASCII: "25/06/2026  02:18pm" ──
 function fechaHoraLimaAscii(): string {
   try {
     const parts = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'America/Lima', day: '2-digit', month: '2-digit', year: 'numeric',
+      timeZone: 'America/Lima', day: '2-digit', month: '2-digit', year: '2-digit',
       hour: '2-digit', minute: '2-digit', hour12: true,
     }).formatToParts(new Date());
     const g = (t: string) => (parts.find((x) => x.type === t)?.value || '');
@@ -477,9 +479,11 @@ function buildTSPLGranelDespacho(item: any, cfg: DriftCfg, offsetY: number): num
   bytes = bytes.concat(strToBytes('BAR ' + (wx + Math.floor(ww / 2) - 1) + ',' + wy + ',2,9\r\n'));  // solapa central
   bytes = bytes.concat(strToBytes('TEXT ' + (wx + 14) + ',' + (wy + 14) + ',"2",0,1,1,"WH"\r\n'));   // "WH"
 
-  // ── FECHA/HORA de emisión (abajo-derecha, bajo el badge) ──
+  // ── FECHA/HORA de emisión (abajo-IZQ, bajo el código) ──
+  // [fix overflow] antes iba abajo-derecha y "25/06/2026 02:18pm" (19 chars) se salía del borde (x≈452>400).
+  // Ahora va bajo el código (x=12) con año de 2 dígitos → entra cómodo.
   const fh = fechaHoraLimaAscii();
-  if (fh) bytes = bytes.concat(strToBytes('TEXT ' + (wx - 6) + ',' + (wy + wbh + 6) + ',"1",0,1,1,"' + fh + '"\r\n'));
+  if (fh) bytes = bytes.concat(strToBytes('TEXT ' + bcX + ',' + (bcY + bcH + 22) + ',"1",0,1,1,"' + fh + '"\r\n'));
 
   bytes = bytes.concat(strToBytes('PRINT 1,1\r\n'));
   return bytes;
