@@ -12888,6 +12888,51 @@
     .zona-guia-det-hdr { border:1px solid #1e293b; border-radius:.7rem; padding:.7rem .8rem; margin-bottom:.8rem; background:#0d1526; }
     .zona-guia-discr-lbl { font-size:.72rem; font-weight:800; letter-spacing:.03em; text-transform:uppercase; margin:.2rem 0 .45rem; }
     .zona-guia-discr-lbl.alert { color:#fca5a5; } .zona-guia-discr-lbl.ok { color:#86efac; } .zona-guia-discr-lbl.sobra { color:#fcd34d; }
+    /* ════════ [P1d] Modal Pickup acumulado + historial ════════ */
+    .zona-btn-pickup { border-color:#3b5bdb; color:#bfdbfe; background:#172554; }
+    .zona-btn-pickup:hover { border-color:#60a5fa; box-shadow:0 0 14px rgba(59,130,246,.35); }
+    .zpk-overlay { position:fixed; inset:0; z-index:9000; display:flex; align-items:flex-end; justify-content:center;
+      background:rgba(2,6,23,0); backdrop-filter:blur(0); transition:background .22s ease, backdrop-filter .22s ease; }
+    .zpk-overlay.zpk-in { background:rgba(2,6,23,.66); backdrop-filter:blur(3px); }
+    .zpk-card { width:100%; max-width:560px; max-height:88vh; display:flex; flex-direction:column;
+      background:linear-gradient(180deg,#0f172a,#0b1220); border:1px solid #1e293b; border-bottom:none;
+      border-radius:20px 20px 0 0; box-shadow:0 -18px 50px rgba(0,0,0,.55); transform:translateY(28px); opacity:0;
+      transition:transform .26s cubic-bezier(.16,1,.3,1), opacity .26s ease; }
+    .zpk-overlay.zpk-in .zpk-card { transform:translateY(0); opacity:1; }
+    @media(min-width:640px){ .zpk-overlay{ align-items:center; } .zpk-card{ border-radius:20px; border-bottom:1px solid #1e293b; } }
+    .zpk-top { display:flex; align-items:center; justify-content:space-between; padding:16px 18px 10px; }
+    .zpk-zona { font-size:1.05rem; font-weight:800; color:#e2e8f0; }
+    .zpk-subt { font-size:.72rem; color:#64748b; display:flex; align-items:center; gap:.4rem; margin-top:2px; }
+    .zpk-live { width:8px; height:8px; border-radius:50%; background:#34d399; box-shadow:0 0 0 0 rgba(52,211,153,.6); animation:zpkLive 1.8s infinite; }
+    @keyframes zpkLive { 0%{ box-shadow:0 0 0 0 rgba(52,211,153,.55);} 70%{ box-shadow:0 0 0 7px rgba(52,211,153,0);} 100%{ box-shadow:0 0 0 0 rgba(52,211,153,0);} }
+    .zpk-x { background:#1e293b; border:none; color:#94a3b8; width:34px; height:34px; border-radius:10px; cursor:pointer; font-size:1rem; transition:background .15s, transform .1s; }
+    .zpk-x:hover { background:#334155; color:#e2e8f0; } .zpk-x:active { transform:scale(.9); }
+    .zpk-kpis { display:flex; gap:.5rem; padding:0 18px 10px; }
+    .zpk-kpis>div { flex:1; background:#0d1526; border:1px solid #1e293b; border-radius:12px; padding:8px 10px; }
+    .zpk-kpis b { display:block; font-size:1.15rem; color:#e2e8f0; font-weight:800; } .zpk-kpis small { font-size:.62rem; color:#64748b; text-transform:uppercase; letter-spacing:.03em; }
+    .zpk-kpis .zpk-rez b { font-size:1rem; } .zpk-kpis .zpk-rez small { color:#a78bfa; }
+    .zpk-search { margin:0 18px 10px; padding:10px 12px; background:#0d1526; border:1px solid #1e293b; border-radius:12px; color:#e2e8f0; font-size:.85rem; outline:none; transition:border-color .15s; }
+    .zpk-search:focus { border-color:#3b5bdb; }
+    .zpk-list { overflow-y:auto; padding:0 14px 18px; -webkit-overflow-scrolling:touch; }
+    .zpk-item { border:1px solid #1a2438; border-radius:14px; margin-bottom:8px; background:#0d1526; overflow:hidden; transition:border-color .15s, background .15s; }
+    .zpk-item:hover { border-color:#27324a; }
+    .zpk-headrow { display:flex; align-items:center; gap:12px; padding:12px 14px; cursor:pointer; }
+    .zpk-info { flex:1; min-width:0; } .zpk-name { font-size:.86rem; font-weight:700; color:#e2e8f0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .zpk-bar { height:5px; border-radius:99px; background:#1e293b; margin-top:7px; overflow:hidden; }
+    .zpk-bar>span { display:block; height:100%; border-radius:99px; background:linear-gradient(90deg,#34d399,#10b981); transition:width .4s cubic-bezier(.16,1,.3,1); }
+    .zpk-qty { text-align:right; } .zpk-qty b { font-size:1.05rem; color:#fbbf24; font-weight:800; } .zpk-qty small { display:block; font-size:.58rem; color:#64748b; text-transform:uppercase; }
+    .zpk-chev { color:#475569; transition:transform .24s cubic-bezier(.16,1,.3,1); font-size:.9rem; }
+    .zpk-item.zpk-open .zpk-chev { transform:rotate(180deg); color:#7dd3fc; }
+    .zpk-hist { max-height:0; opacity:0; overflow:hidden; transition:max-height .28s ease, opacity .2s ease, padding .28s ease; padding:0 14px; }
+    .zpk-item.zpk-open .zpk-hist { max-height:340px; opacity:1; padding:0 14px 12px; }
+    .zpk-htitle { font-size:.72rem; color:#94a3b8; padding:6px 0 8px; border-top:1px dashed #1e293b; margin-top:2px; } .zpk-htitle b { color:#fcd34d; }
+    .zpk-hrow { display:flex; align-items:center; gap:10px; padding:5px 0; font-size:.76rem; }
+    .zpk-hdate { width:64px; color:#cbd5e1; font-weight:700; text-transform:capitalize; }
+    .zpk-hsrc { flex:1; color:#64748b; } .zpk-hped { color:#86efac; font-weight:800; }
+    .zpk-hempty { color:#475569; font-style:italic; }
+    .zpk-skel { height:60px; border-radius:14px; margin-bottom:8px; background:linear-gradient(90deg,#0d1526,#162036,#0d1526); background-size:200% 100%; animation:zpkSkel 1.2s infinite; }
+    @keyframes zpkSkel { to { background-position:-200% 0; } }
+    .zpk-empty { text-align:center; color:#64748b; padding:40px 16px; font-size:.9rem; }
   </style>
 </head>
 <body class="h-full">
@@ -15347,6 +15392,7 @@
         <!-- [RIZ #2] "Ticket del día" REEMPLAZADO por el ícono de impresora en el encabezado del grupo ROTADO
              (Vendidos/Despachados): imprime el día del filtro, o HOY en modo "Todos". Ver _zonaDiaControlHtml. -->
         <button class="zona-btn-sec" onclick="MOS.zonaImprimirLista()" title="Imprimir lista de compras (80mm)">🖨️ Lista compras</button>
+        <button class="zona-btn-sec zona-btn-pickup" onclick="MOS.zonaAbrirPickup()" title="Pickup acumulado de la zona + historial por día (en vivo)">🛒 Pickup</button>
         <!-- [RIZ · TRASLADO VERIFICADO] Guías: layout guía-por-guía agrupado por día (pendientes/verificadas/operario).
              El badge rojo aparece solo si hay guías con pendientes por verificar. -->
         <button id="zonaBtnGuias" class="zona-btn-sec zona-guias-btn" onclick="MOS.trasAbrirGuias()" title="Guías de traslado por verificar / verificadas">🚚 Guías<span id="zonaGuiasBadge" class="zona-guias-badge" style="display:none">0</span></button>

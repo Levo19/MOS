@@ -40764,6 +40764,88 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
   function zonaImprimirTicket() { return _zonaImprimirFlow('ticket_diario', 'Ticket del día'); }
   function zonaImprimirLista()  { return _zonaImprimirFlow('lista_compras', 'Lista compras'); }
+
+  // ════════════ [P1d] VISTA PICKUP ACUMULADO POR ZONA + HISTORIAL POR DÍA ════════════
+  // Lee wh.zona_pickup_detalle (100% Supabase) → la lista única de la zona con, por producto,
+  // lo pendiente + el desglose por día (cuánto pidió cada cierre). En vivo.
+  function _zpkNum(n){ n = parseFloat(n) || 0; return Number.isInteger(n) ? (''+n) : (''+(Math.round(n*1000)/1000)); }
+  function _zpkDiaLbl(f){ try { const d = new Date(String(f).slice(0,10)+'T12:00:00'); return d.toLocaleDateString('es-PE',{weekday:'short',day:'2-digit',timeZone:'America/Lima'}); } catch(_) { return String(f||''); } }
+  async function zonaAbrirPickup(){
+    const zona = S.zonaActual;
+    if (!zona) return;
+    _zpkRender(zona, null, true);
+    try {
+      const r = await API.zona.pickupDetalle({ zona });
+      if (!r || r.ok === false) throw new Error((r && r.error) || 'sin datos');
+      _zpkRender(zona, r, false);
+    } catch (e) { _zpkRender(zona, { _error: String(e && e.message || e) }, false); }
+  }
+  function zonaCerrarPickup(){
+    const ov = document.getElementById('zonaPickupOverlay');
+    if (ov) { ov.classList.remove('zpk-in'); setTimeout(() => { try { ov.remove(); } catch(_){} }, 220); }
+  }
+  function zonaPickupToggle(sku){
+    try {
+      const el = document.querySelector('#zonaPickupOverlay .zpk-item[data-sku="' + (window.CSS && CSS.escape ? CSS.escape(String(sku)) : String(sku)) + '"]');
+      if (el) el.classList.toggle('zpk-open');
+    } catch(_){}
+  }
+  function zonaPickupFiltrar(q){
+    q = String(q || '').toLowerCase().trim();
+    document.querySelectorAll('#zonaPickupOverlay .zpk-item').forEach(el => {
+      const n = ((el.querySelector('.zpk-name') || {}).textContent || '').toLowerCase();
+      el.style.display = (!q || n.indexOf(q) >= 0) ? '' : 'none';
+    });
+  }
+  function _zpkRender(zona, r, loading){
+    let ov = document.getElementById('zonaPickupOverlay');
+    if (!ov) {
+      ov = document.createElement('div');
+      ov.id = 'zonaPickupOverlay'; ov.className = 'zpk-overlay';
+      ov.onclick = (e) => { if (e.target === ov) zonaCerrarPickup(); };
+      document.body.appendChild(ov);
+      requestAnimationFrame(() => ov.classList.add('zpk-in'));
+    }
+    let body;
+    if (loading) body = '<div class="zpk-skel"></div><div class="zpk-skel"></div><div class="zpk-skel"></div><div class="zpk-skel"></div>';
+    else if (r && r._error) body = '<div class="zpk-empty">No se pudo cargar · ' + _esc(r._error) + '</div>';
+    else {
+      const items = (r && r.items) || [];
+      if (!items.length) body = '<div class="zpk-empty">Sin pendientes en esta zona 🎉</div>';
+      else body = items.map(it => {
+        const sol = parseFloat(it.solicitado) || 0, desp = parseFloat(it.despachado) || 0, pend = parseFloat(it.pendiente) || 0;
+        const pct = sol > 0 ? Math.min(100, Math.round(desp / sol * 100)) : 0;
+        const hist = ((it.historial || []).map(h =>
+          `<div class="zpk-hrow"><span class="zpk-hdate">${_zpkDiaLbl(h.fecha)}</span><span class="zpk-hsrc">${h.fuente === 'RIZ' ? 'pedido de zona' : 'cierre de caja'}</span><span class="zpk-hped">+${_zpkNum(h.pedido)}</span></div>`
+        ).join('')) || '<div class="zpk-hrow zpk-hempty">sin desglose por día</div>';
+        return `<div class="zpk-item" data-sku="${_esc(it.skuBase)}">
+            <div class="zpk-headrow" onclick="MOS.zonaPickupToggle('${_esc(it.skuBase)}')">
+              <div class="zpk-info">
+                <div class="zpk-name">${_esc(it.nombre)}</div>
+                <div class="zpk-bar"><span style="width:${pct}%"></span></div>
+              </div>
+              <div class="zpk-qty"><b>${_zpkNum(pend)}</b><small>pend</small></div>
+              <span class="zpk-chev">▾</span>
+            </div>
+            <div class="zpk-hist">
+              <div class="zpk-htitle">${_zpkNum(sol)} pedido · ${_zpkNum(desp)} despachado · <b>${_zpkNum(pend)} pendiente</b></div>
+              ${hist}
+            </div>
+          </div>`;
+      }).join('');
+    }
+    const total = (r && r.total_pendiente) || 0, nItems = (r && r.total_items) || 0;
+    const showKpis = !loading && !(r && r._error);
+    ov.innerHTML = `<div class="zpk-card" onclick="event.stopPropagation()">
+        <div class="zpk-top">
+          <div><div class="zpk-zona">🛒 ${_esc(zona)}</div><div class="zpk-subt"><span class="zpk-live"></span> Pickup acumulado · en vivo</div></div>
+          <button class="zpk-x" onclick="MOS.zonaCerrarPickup()" aria-label="Cerrar">✕</button>
+        </div>
+        ${showKpis ? `<div class="zpk-kpis"><div><b>${nItems}</b><small>productos</small></div><div><b>${_zpkNum(total)}</b><small>uds pendientes</small></div><div class="zpk-rez"><b>📋</b><small>lo no despachado se imprime el lunes</small></div></div>` : ''}
+        ${showKpis ? `<input class="zpk-search" placeholder="🔎 Buscar producto…" oninput="MOS.zonaPickupFiltrar(this.value)" autocomplete="off">` : ''}
+        <div class="zpk-list">${body}</div>
+      </div>`;
+  }
   // [RIZ #2] Imprime el ticket desde el ÍCONO del grupo ROTADO. Respeta el filtro "del día":
   //   · modo 'dia'   → imprime el ticket del día activo (fecha = día seleccionado).
   //   · modo 'todos' → imprime HOY (default), no el universo entero.
@@ -42026,6 +42108,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaAbrirBCG, zonaCerrarBCG, zonaBCGTapProducto, zonaBCGFiltrarCuadrante, zonaPlaceholder, zonaAccionPerro,
     // [RIZ Capa 5] impresión 80mm + panel IA + lista compras
     zonaImprimirTicket, zonaImprimirLista, zonaAbrirSugerencias, zonaCerrarSugerencias,
+    zonaAbrirPickup, zonaCerrarPickup, zonaPickupToggle, zonaPickupFiltrar,
     // [RIZ #1+#2] filtro "del día" del grupo ROTADO + impresión por grupo (respeta el día)
     zonaDiaModo, zonaDiaNav, zonaImprimirTicketGrupo,
     // [RIZ #4] proveedores reales por canónico (lazy-load por card en ALMACEN)
