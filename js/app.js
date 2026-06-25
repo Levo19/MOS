@@ -40815,9 +40815,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       else body = items.map(it => {
         const sol = parseFloat(it.solicitado) || 0, desp = parseFloat(it.despachado) || 0, pend = parseFloat(it.pendiente) || 0;
         const pct = sol > 0 ? Math.min(100, Math.round(desp / sol * 100)) : 0;
-        const hist = ((it.historial || []).map(h =>
-          `<div class="zpk-hrow"><span class="zpk-hdate">${_zpkDiaLbl(h.fecha)}</span><span class="zpk-hsrc">${h.fuente === 'RIZ' ? 'pedido de zona' : 'cierre de caja'}</span><span class="zpk-hped">+${_zpkNum(h.pedido)}</span></div>`
-        ).join('')) || '<div class="zpk-hrow zpk-hempty">sin desglose por día</div>';
+        const hist = ((it.historial || []).map(h => {
+          const esDesp = h.tipo === 'despacho';
+          const cant = (h.cant != null ? h.cant : h.pedido);   // compat con shape viejo
+          return `<div class="zpk-hrow ${esDesp ? 'is-desp' : 'is-ped'}">
+              <span class="zpk-hdate">${_zpkDiaLbl(h.fecha)}</span>
+              <span class="zpk-hsrc">${esDesp ? '🏭 despachó a zona' : '🛒 pidió (cierre)'}</span>
+              <span class="zpk-hped">${esDesp ? '−' : '+'}${_zpkNum(cant)}</span>
+            </div>`;
+        }).join('')) || '<div class="zpk-hrow zpk-hempty">sin desglose por día</div>';
         return `<div class="zpk-item" data-sku="${_esc(it.skuBase)}">
             <div class="zpk-headrow" onclick="MOS.zonaPickupToggle('${_esc(it.skuBase)}')">
               <div class="zpk-info">
