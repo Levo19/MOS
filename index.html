@@ -425,6 +425,22 @@
     .cat-seg-edit-btn:hover {
       background: rgba(59,130,246,.2); color: #93c5fd; border-color: #3b82f6;
     }
+    /* Botón "+ tramo": crear un tramo nuevo directo desde la card. */
+    .cat-seg-add-btn {
+      margin-left: auto; background: rgba(99,102,241,.92); border: none; color: #fff;
+      height: 22px; padding: 0 9px; border-radius: 6px; font-size: 10.5px; font-weight: 900;
+      cursor: pointer; transition: all .15s; white-space: nowrap; line-height: 22px;
+    }
+    .cat-seg-add-btn:hover { background: #6366f1; transform: translateY(-1px); box-shadow: 0 3px 10px rgba(99,102,241,.5); }
+    .cat-seg-edit-btn { margin-left: 4px; }   /* deja de ser el primero a la derecha (lo es el "+") */
+    /* Banda BASE del mini-mapa: el canónico (0→∞) detrás, donde no hay tramo. */
+    .cat-seg-base {
+      left: 0; right: 0; width: auto !important; z-index: 0;
+      opacity: 1 !important; animation: none !important; cursor: default !important;
+      background: repeating-linear-gradient(45deg, rgba(148,163,184,.12), rgba(148,163,184,.12) 6px, rgba(148,163,184,.04) 6px, rgba(148,163,184,.04) 12px) !important;
+      border: 1px dashed rgba(148,163,184,.35); box-shadow: none !important;
+    }
+    .cat-seg-banda:not(.cat-seg-base) { z-index: 1; }
     .cat-seg-band-container {
       position: relative; padding: 0 4px;
     }
@@ -515,6 +531,16 @@
     .seg-banda.negativo { background: linear-gradient(135deg, #10b981, #047857); }
     .seg-banda-pct { font-size: 13px; }
     .seg-banda-lbl { font-size: 9px; opacity: .85; }
+    /* Banda BASE: el canónico (0→∞), aplica donde no hay tramo. Rayada y detrás. */
+    .seg-banda-base {
+      left: 8px; right: 8px; z-index: 1; opacity: .9; cursor: default;
+      background: repeating-linear-gradient(45deg, #334155, #334155 7px, #2b3a52 7px, #2b3a52 14px);
+      border: 1px dashed #475569; align-items: flex-start; padding-left: 8px;
+    }
+    .seg-banda-base .seg-banda-lbl { font-size: 10px; opacity: 1; color: #cbd5e1; }
+    /* Tramos: encima de la base, su color va inline. Clickeables, con efecto. */
+    .seg-banda-tramo { z-index: 2; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+    .seg-banda-tramo:hover { opacity: 1; transform: translateY(-2px) scale(1.02); box-shadow: 0 5px 16px rgba(0,0,0,.55); }
     .seg-linea-eje {
       position: absolute; bottom: 2px; left: 8px; right: 8px;
       font-size: 9px; color: #64748b;
@@ -19203,7 +19229,7 @@ if (false) (function(){
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.329';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.330';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19221,7 +19247,7 @@ if (false) (function(){
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.329"></script>
+<script src="js/api.js?v=2.43.330"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19236,7 +19262,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.329"></script>
+<script src="js/app.js?v=2.43.330"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

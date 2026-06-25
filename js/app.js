@@ -3058,10 +3058,20 @@ const MOS = (() => {
   }
 
   // ─────────────────────────────────────────────────────────────────
+  // Paleta de colores para diferenciar cada tramo (asignada de izq→der por rango).
+  const _SEG_PALETA = ['#6366f1','#ec4899','#f59e0b','#10b981','#06b6d4','#8b5cf6','#ef4444','#84cc16'];
+  // Mapa estable id→color, ordenando por `min` (el de menor gramaje = primer color).
+  function _segColorMap(segs) {
+    const m = {};
+    (Array.isArray(segs) ? segs : []).slice()
+      .sort((a, b) => (Number(a.min) || 0) - (Number(b.min) || 0))
+      .forEach((s, i) => { m[s.id] = _SEG_PALETA[i % _SEG_PALETA.length]; });
+    return m;
+  }
+
   // [v2.41.98] Mini-mapa de segmentos en la card del catálogo (granel)
-  // Banda horizontal con bandas coloreadas (ámbar + / verde -) + eje con
-  // puntos de corte. Click en banda → modal de edición del segmento.
-  // Estado vacío con CTA "🎚 Agregar pricing por tramos".
+  // Banda horizontal con cada tramo en su color + eje. Click banda → editar ese tramo.
+  // Botón "+" → crear un tramo nuevo directo. Estado vacío con CTA.
   // ─────────────────────────────────────────────────────────────────
   function _renderSegmentosMini(producto) {
     // Solo aplica a granel canónico
@@ -3097,16 +3107,17 @@ const MOS = (() => {
     const escalaMax = maxF * 1.25;
     const fmtG = g => g >= 1000 ? (g/1000) + 'kg' : g + 'g';
 
-    // Bandas
+    // Bandas — cada tramo con su color (izq→der por rango).
+    const cmap = _segColorMap(segs);
     const bandas = segs.map(s => {
-      const cls = s.ajustePct > 0 ? 'positivo' : 'negativo';
       const left = Math.max(0, (s.min / escalaMax) * 100);
       const widthRaw = s.max === null ? (100 - left) : ((s.max - s.min) / escalaMax) * 100;
       const width = Math.max(2, Math.min(widthRaw, 100 - left));
       const sign = s.ajustePct > 0 ? '+' : '';
       const sidEsc = String(s.id).replace(/'/g, '&#39;');
-      return `<div class="cat-seg-banda ${cls}"
-                   style="left:${left}%; width:${width}%"
+      const color = cmap[s.id] || '#6366f1';
+      return `<div class="cat-seg-banda"
+                   style="left:${left}%; width:${width}%; background:${color}"
                    onclick="event.stopPropagation();MOS.segEditarDesdeCard('${idProdEsc}','${sidEsc}')"
                    title="${_escapeHtml(s.nombre || '')} · ${sign}${s.ajustePct}% · click para editar">
         <span class="cat-seg-banda-pct">${sign}${s.ajustePct}%</span>
@@ -3139,14 +3150,20 @@ const MOS = (() => {
 
     return `<div class="cat-seg-mini">
       <div class="cat-seg-titulo">
-        🎚 <strong>Segmentos</strong>
+        🎚 <strong>Tramos</strong>
         <span class="cat-seg-count">${segs.length} activo${segs.length !== 1 ? 's' : ''}</span>
+        <button type="button" class="cat-seg-add-btn"
+                onclick="event.stopPropagation();MOS.segNuevoDesdeCard('${idProdEsc}')"
+                title="Crear un tramo nuevo">+ tramo</button>
         <button type="button" class="cat-seg-edit-btn"
                 onclick="event.stopPropagation();MOS.abrirModalProducto('${idProdEsc}')"
-                title="Editar segmentos">✏</button>
+                title="Abrir editor (ver lista / borrar)">✏</button>
       </div>
       <div class="cat-seg-band-container">
-        <div class="cat-seg-band-bg">${bandas}</div>
+        <div class="cat-seg-band-bg">
+          <div class="cat-seg-banda cat-seg-base" title="Base (canónico) — aplica en lo que no cubre ningún tramo"></div>
+          ${bandas}
+        </div>
         <div class="cat-seg-eje">${ejeMarcas}</div>
         ${nombres ? `<div class="cat-seg-nombres">${nombres}</div>` : ''}
       </div>
@@ -3167,6 +3184,20 @@ const MOS = (() => {
         if (ch) ch.textContent = '▼';
       }
       try { segEditar(idSegmento); } catch(_) {}
+    }, 250);
+  }
+
+  // Crear un tramo NUEVO directo desde la card (botón "+ tramo"): abre el editor + el modal de nuevo.
+  function segNuevoDesdeCard(idProducto) {
+    abrirModalProducto(idProducto);
+    setTimeout(() => {
+      const sec = document.getElementById('segmentosContent');
+      const ch = document.getElementById('segChevron');
+      if (sec && sec.classList.contains('hidden')) {
+        sec.classList.remove('hidden');
+        if (ch) ch.textContent = '▼';
+      }
+      try { segNuevo(); } catch(_) {}
     }, 250);
   }
 
@@ -16320,27 +16351,37 @@ const MOS = (() => {
   function segRenderLineaVisual() {
     const cont = $('segLineaVisual');
     if (!cont) return;
-    if (!_segState.segmentos.length) {
-      cont.innerHTML = '<div class="text-center text-xs text-slate-500 py-4 italic">— Sin segmentos · solo se usa el precio canónico —</div>';
-      return;
-    }
-    // Escala: si todos tienen max definido, usar el max global como 100%; si hay infinito, dejar 75% para él
-    const segConMax = _segState.segmentos.filter(s => s.max !== null);
+    const pc = _segState.precioCanonico || 0;
+    const segs = _segState.segmentos;
+    const cmap = _segColorMap(segs);
+    // Escala: si todos tienen max definido, usar el max global como 100%; si hay infinito, +20% para él.
+    const segConMax = segs.filter(s => s.max !== null);
     const maxFinito = segConMax.length ? Math.max(...segConMax.map(s => s.max)) : 1000;
     const escalaMax = maxFinito * 1.2;
-    const html = _segState.segmentos.map(s => {
-      const cls = s.ajustePct > 0 ? 'positivo' : 'negativo';
-      const left = (s.min / escalaMax) * 100;
+
+    // ── Banda BASE: el canónico es el "segmento de 0 a ∞" que aplica donde NO hay tramo encima. ──
+    const base = `<div class="seg-banda seg-banda-base"
+         title="Precio base (canónico) — aplica en todo el rango que no esté cubierto por un tramo">
+        <span class="seg-banda-lbl">⬚ Base · S/ ${pc.toFixed(2)}/kg · todo lo no cubierto</span>
+      </div>`;
+
+    // ── Tramos encima de la base, cada uno con su color distinto. Click → editar. ──
+    const bandas = segs.map(s => {
+      const left  = (s.min / escalaMax) * 100;
       const widthRaw = s.max === null ? (100 - left) : ((s.max - s.min) / escalaMax) * 100;
-      const width = Math.min(widthRaw, 100 - left);
-      const sign = s.ajustePct > 0 ? '+' : '';
-      return `<div class="seg-banda ${cls}" style="left:${left}%; width:${width}%"
-                   title="${_escapeHtml(_segFmtRango(s))}">
+      const width = Math.max(3, Math.min(widthRaw, 100 - left));
+      const sign  = s.ajustePct > 0 ? '+' : '';
+      const color = cmap[s.id] || '#6366f1';
+      const sidEsc = String(s.id).replace(/'/g, '&#39;');
+      return `<div class="seg-banda seg-banda-tramo" style="left:${left}%; width:${width}%; background:${color}"
+                   title="${_escapeHtml(_segFmtRango(s))} · click para editar"
+                   onclick="MOS.segEditar('${sidEsc}')">
         <span class="seg-banda-pct">${sign}${s.ajustePct}%</span>
-        <span class="seg-banda-lbl">${_escapeHtml(s.nombre || 'segmento')}</span>
+        <span class="seg-banda-lbl">${_escapeHtml(s.nombre || 'tramo')}</span>
       </div>`;
     }).join('');
-    cont.innerHTML = html + `<div class="seg-linea-eje"><span>0g</span><span>${maxFinito/2}g</span><span>${maxFinito}g+</span></div>`;
+
+    cont.innerHTML = base + bandas + `<div class="seg-linea-eje"><span>0g</span><span>${maxFinito/2}g</span><span>${maxFinito}g+</span></div>`;
   }
 
   function segRenderLista() {
@@ -42377,7 +42418,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     segCalcular, segToggleUnidad, segToggleBracket, segAtajo, segOnSliderAjuste, segOnPctInput,
     segValidarLive, segGuardar, segCerrarModal,
     // [v2.41.98] Atajo desde card
-    segEditarDesdeCard,
+    segEditarDesdeCard, segNuevoDesdeCard,
     // F2 — Acciones editables sobre tickets
     cjAbrirAccionesTicket, _tkAccion,
     _tkCobrarSetMetodo, _tkCobrarSetCaja, _tkCobrarValidarMixto, _tkCobrarConfirmar,
