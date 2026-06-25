@@ -566,7 +566,17 @@
     }
     .seg-card-pct.positivo { color: #fbbf24; }
     .seg-card-pct.negativo { color: #34d399; }
+    .seg-card-pct.neutro   { color: #94a3b8; }
+    .seg-card-color.neutro { background: linear-gradient(180deg, #64748b, #475569); }
     .seg-card-resultado { font-size: 10px; color: #cbd5e1; opacity: .9; }
+    .seg-card-dir { font-weight: 800; }
+    .seg-card-dir.positivo { color: #fbbf24; }   /* ▲ más caro */
+    .seg-card-dir.negativo { color: #34d399; }   /* ▼ más barato */
+    .seg-card-dir.neutro   { color: #94a3b8; }   /* = se mantiene */
+    /* dirección en la barra del editor: leve tinte en el borde según sube/baja/igual */
+    .seg-banda-tramo.seg-dir-sube  { box-shadow: 0 2px 8px rgba(0,0,0,.35), inset 0 -3px 0 rgba(245,158,11,.85); }
+    .seg-banda-tramo.seg-dir-baja  { box-shadow: 0 2px 8px rgba(0,0,0,.35), inset 0 -3px 0 rgba(16,185,129,.85); }
+    .seg-banda-tramo.seg-dir-igual { box-shadow: 0 2px 8px rgba(0,0,0,.35), inset 0 -3px 0 rgba(148,163,184,.85); }
     .seg-card-acciones { display: flex; gap: 4px; flex-shrink: 0; }
     .seg-card-btn {
       background: rgba(15,23,42,.6); border: 1px solid #334155;
@@ -19229,7 +19239,7 @@ if (false) (function(){
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.332';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.333';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19247,7 +19257,7 @@ if (false) (function(){
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.332"></script>
+<script src="js/api.js?v=2.43.333"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19262,7 +19272,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.332"></script>
+<script src="js/app.js?v=2.43.333"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

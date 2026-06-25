@@ -3170,35 +3170,36 @@ const MOS = (() => {
     </div>`;
   }
 
-  // Abre el modal del producto y, una vez cargado, dispara directo el
-  // modal de edición del segmento específico (atajo desde la card).
-  function segEditarDesdeCard(idProducto, idSegmento) {
+  // [1 modal] Carga el editor de tramos desde el producto del catálogo (cache) SIN abrir el modal
+  // de producto completo → al click en un tramo se abre UN SOLO modal (el del tramo). Devuelve
+  // true si pudo (producto con precio canónico). Marca _desdeCard para refrescar la card al guardar.
+  function _segCargarDesdeCard(idProducto) {
+    const p = (window.S && Array.isArray(S.productos))
+      ? S.productos.find(x => String(x.idProducto) === String(idProducto)) : null;
+    if (!p || !(parseFloat(p.precioVenta) > 0)) return false;
+    segCargarParaProducto(p);
+    _segState._desdeCard = String(idProducto);   // sin modal de producto → al guardar repintamos la card
+    return true;
+  }
+  // Fallback (producto no está en cache): abre el modal de producto completo y espera (flujo viejo).
+  function _segDesdeCardFallback(idProducto, accion) {
     abrirModalProducto(idProducto);
-    // Esperar a que el modal se monte + segmentos se carguen
     setTimeout(() => {
-      // Expandir sección de segmentos si está colapsada
       const sec = document.getElementById('segmentosContent');
       const ch = document.getElementById('segChevron');
-      if (sec && sec.classList.contains('hidden')) {
-        sec.classList.remove('hidden');
-        if (ch) ch.textContent = '▼';
-      }
-      try { segEditar(idSegmento); } catch(_) {}
+      if (sec && sec.classList.contains('hidden')) { sec.classList.remove('hidden'); if (ch) ch.textContent = '▼'; }
+      try { accion(); } catch(_) {}
     }, 250);
   }
-
-  // Crear un tramo NUEVO directo desde la card (botón "+ tramo"): abre el editor + el modal de nuevo.
+  // Click en un tramo de la card → editar ESE tramo (un solo modal).
+  function segEditarDesdeCard(idProducto, idSegmento) {
+    if (_segCargarDesdeCard(idProducto)) segEditar(idSegmento);
+    else _segDesdeCardFallback(idProducto, () => segEditar(idSegmento));
+  }
+  // Botón "+ tramo" de la card → crear un tramo nuevo (un solo modal).
   function segNuevoDesdeCard(idProducto) {
-    abrirModalProducto(idProducto);
-    setTimeout(() => {
-      const sec = document.getElementById('segmentosContent');
-      const ch = document.getElementById('segChevron');
-      if (sec && sec.classList.contains('hidden')) {
-        sec.classList.remove('hidden');
-        if (ch) ch.textContent = '▼';
-      }
-      try { segNuevo(); } catch(_) {}
-    }, 250);
+    if (_segCargarDesdeCard(idProducto)) segNuevo();
+    else _segDesdeCardFallback(idProducto, () => segNuevo());
   }
 
   function toggleDerivs(id) { togglePresentaciones(id); } // backward compat
@@ -16359,25 +16360,29 @@ const MOS = (() => {
     const maxFinito = segConMax.length ? Math.max(...segConMax.map(s => s.max)) : 1000;
     const escalaMax = maxFinito * 1.2;
 
-    // ── Banda BASE: el canónico es el "segmento de 0 a ∞" que aplica donde NO hay tramo encima. ──
+    // ── Banda BASE: el canónico es el "segmento de 0 a ∞" que aplica donde NO hay tramo → se MANTIENE. ──
     const base = `<div class="seg-banda seg-banda-base"
-         title="Precio base (canónico) — aplica en todo el rango que no esté cubierto por un tramo">
-        <span class="seg-banda-lbl">⬚ Base · S/ ${pc.toFixed(2)}/kg · todo lo no cubierto</span>
+         title="Precio base (canónico) — aplica donde no hay tramo · el precio se mantiene">
+        <span class="seg-banda-lbl">⬚ Base · S/ ${pc.toFixed(2)}/kg · 0% (se mantiene)</span>
       </div>`;
 
-    // ── Tramos encima de la base, cada uno con su color distinto. Click → editar. ──
+    // ── Tramos encima de la base: color por identidad + FLECHA de dirección + precio resultante. ──
     const bandas = segs.map(s => {
       const left  = (s.min / escalaMax) * 100;
       const widthRaw = s.max === null ? (100 - left) : ((s.max - s.min) / escalaMax) * 100;
       const width = Math.max(3, Math.min(widthRaw, 100 - left));
-      const sign  = s.ajustePct > 0 ? '+' : '';
+      const aj    = parseFloat(s.ajustePct) || 0;
+      const sign  = aj > 0 ? '+' : '';
+      const flecha = aj > 0 ? '▲' : (aj < 0 ? '▼' : '=');     // ▲ más caro · ▼ más barato · = igual
+      const efecto = aj > 0 ? 'sube' : (aj < 0 ? 'baja' : 'igual');
       const color = cmap[s.id] || '#6366f1';
+      const precioAj = pc * (1 + aj / 100);
       const sidEsc = String(s.id).replace(/'/g, '&#39;');
-      return `<div class="seg-banda seg-banda-tramo" style="left:${left}%; width:${width}%; background:${color}"
-                   title="${_escapeHtml(_segFmtRango(s))} · click para editar"
+      return `<div class="seg-banda seg-banda-tramo seg-dir-${efecto}" style="left:${left}%; width:${width}%; background:${color}"
+                   title="${_escapeHtml(s.nombre || 'tramo')} · ${_escapeHtml(_segFmtRango(s))} · ${flecha} ${sign}${aj}% → S/ ${precioAj.toFixed(2)}/kg · click para editar"
                    onclick="MOS.segEditar('${sidEsc}')">
-        <span class="seg-banda-pct">${sign}${s.ajustePct}%</span>
-        <span class="seg-banda-lbl">${_escapeHtml(s.nombre || 'tramo')}</span>
+        <span class="seg-banda-pct">${flecha} ${sign}${aj}%</span>
+        <span class="seg-banda-lbl">S/ ${precioAj.toFixed(2)}/kg</span>
       </div>`;
     }).join('');
 
@@ -16391,17 +16396,19 @@ const MOS = (() => {
     const pc = _segState.precioCanonico;
     const cmap = _segColorMap(_segState.segmentos);
     cont.innerHTML = _segState.segmentos.map(s => {
-      const cls = s.ajustePct > 0 ? 'positivo' : 'negativo';
-      const sign = s.ajustePct > 0 ? '+' : '';
-      const precioAjustado = pc * (1 + s.ajustePct / 100);
+      const aj = parseFloat(s.ajustePct) || 0;
+      const cls = aj > 0 ? 'positivo' : (aj < 0 ? 'negativo' : 'neutro');
+      const sign = aj > 0 ? '+' : '';
+      const precioAjustado = pc * (1 + aj / 100);
+      const dir = aj > 0 ? '▲ más caro' : (aj < 0 ? '▼ más barato' : '= se mantiene');
       return `<div class="seg-card">
         <div class="seg-card-color" style="background:${cmap[s.id] || '#6366f1'}"></div>
         <div class="seg-card-info">
           <div class="seg-card-nombre">${_escapeHtml(s.nombre || 'Sin nombre')}</div>
           <div class="seg-card-rango">${_escapeHtml(_segFmtRango(s))}</div>
-          <div class="seg-card-resultado">S/ ${precioAjustado.toFixed(2)}/kg ajustado</div>
+          <div class="seg-card-resultado"><span class="seg-card-dir ${cls}">${dir}</span> · S/ ${precioAjustado.toFixed(2)}/kg</div>
         </div>
-        <div class="seg-card-pct ${cls}">${sign}${s.ajustePct}%</div>
+        <div class="seg-card-pct ${cls}">${sign}${aj}%</div>
         <div class="seg-card-acciones">
           <button onclick="MOS.segEditar('${s.id}')" class="seg-card-btn" title="Editar">✏</button>
           <button onclick="MOS.segEliminar('${s.id}')" class="seg-card-btn danger" title="Eliminar">🗑</button>
@@ -16727,6 +16734,9 @@ const MOS = (() => {
           if (sku && (x.skuBase === sku || x.sku_base === sku)) x.segmentos_precio = json;
           else if (!sku && x.idProducto === _segState.idProducto) x.segmentos_precio = json;
         });
+        // Si se editó desde la card (sin modal de producto) → repintar el catálogo para que el
+        // mini-mapa de la card refleje el cambio al instante.
+        if (_segState._desdeCard) { try { renderCatalogo(); } catch(_) {} }
         return true;
       } else {
         toast('⚠ Segmentos no guardados: ' + (res?.error || 'error'), 'warn');
