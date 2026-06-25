@@ -17,6 +17,12 @@ Regla: 100% Supabase, sin GAS. Revisión 40x. Graneles se identifican por **unid
 - ⚠️ CORRECCIÓN: es el wizard de **ME**, NO el de MOS. Falta revisar el flujo de activación/permisos de ME (MosExpress index.html / device-auth.js) — ahí está el botón GPS que bloquea.
 - Fix esperado (a confirmar tras revisar ME): (a) no bloquear la entrada por GPS (es opcional); (b) feedback claro al tocar GPS (éxito/denegado/apagado/timeout + cómo activarlo en Ajustes iOS). Objetivo: adaptable Android/Windows/iOS.
 
+### 4. WH pickup — el acumulado confunde al operador (UX, simplificar)
+- Síntoma: en la lista de pickup, un producto (ej. CHAN FU KEE) muestra la barra de progreso en "1" y un total "6". El operador cree que YA despachó 1, pero ese 1 era de un **rezagado** de la semana (acumulado). La barra es para ir escaneando y llenándose, pero el "1" inicial lo confunde → cree que despachó cuando no.
+- Lógica real: faltan despachar 5 (6 total − 1 ya despachado en el acumulado). Pero el operador no debe lidiar con el concepto de acumulado.
+- Fix pedido: para WH mostrar SOLO lo que falta despachar HOY. Si el acumulado va 1/6, visualmente mostrar **"faltan 5"** y la barra arranca en 0 → escanea de uno en uno y se llena hasta 5. No darle toda la info (acumulado), solo lo que necesita para su trabajo del día.
+- Relacionado: acumulador pickup v2 (bucket-domingo, balance corriente, rezagado). Revisar cómo la lista de pickup en WH calcula/pinta "escaneado/total" y restar lo ya despachado del acumulado para la vista del operador.
+
 ## ✅ HECHO en esta sesión (referencia)
 - **Tramos MOS (v2.43.338):** quitada la traba `precioVenta>0` en `_segCargarDesdeCard` → granel se identifica por KGM, no por precio. Abre el modal único (botón eliminar + banda base con precio real). Causa: graneles con precio 0 en cache caían al modal viejo (doble).
 - Ticket venta ME: graneles "Peso: 100g/5kg" + nombres largos en 2 renglones (v2.8.67).
