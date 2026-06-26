@@ -88,8 +88,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (bytes.length === 0) return json({ ok: false, error: 'TSPL vacío — plantilla sin contenido' }, 400);
   if (bytes.length > 1024 * 1024) return json({ ok: false, error: `TSPL muy grande (${bytes.length} bytes)` }, 400);
 
-  // base64 de los bytes raw
-  const b64 = btoa(String.fromCharCode(...bytes));
+  // base64 de los bytes raw — chunked (el spread `...bytes` revienta el stack en lotes grandes / 100 etiquetas)
+  let _bin = '';
+  for (let i = 0; i < bytes.length; i += 8192) _bin += String.fromCharCode.apply(null, bytes.slice(i, i + 8192));
+  const b64 = btoa(_bin);
 
   if (dryRun) {
     const preview = new TextDecoder('latin1').decode(new Uint8Array(bytes.slice(0, 220)));

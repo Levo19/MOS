@@ -19237,9 +19237,12 @@ const MOS = (() => {
         if (Array.isArray(data)) {
           // Detectar cambios para no re-renderizar inútilmente
           const prevJson = JSON.stringify(cfgData.dispositivos || []);
-          const newJson = JSON.stringify(data);
+          // [v2.43.348 fix] aplicar el shield optimista también en el poll de 15s — sin esto un poll
+          // dentro de la ventana de aprobación traía el estado viejo (PENDIENTE) y el card parpadeaba.
+          const _shielded = _dispAplicarShield(data);
+          const newJson = JSON.stringify(_shielded);
           if (prevJson !== newJson) {
-            cfgData.dispositivos = data;
+            cfgData.dispositivos = _shielded;
             renderInfra();
           }
         }
@@ -19309,9 +19312,10 @@ const MOS = (() => {
           }
         }
         if (dispRes.status === 'fulfilled') {
-          const newJson = JSON.stringify(dispRes.value || []);
+          const _shieldedP = _dispAplicarShield(dispRes.value || []);   // [v2.43.348 fix] shield en poll de Personal
+          const newJson = JSON.stringify(_shieldedP);
           if (JSON.stringify(cfgData.dispositivos || []) !== newJson) {
-            cfgData.dispositivos = dispRes.value || [];
+            cfgData.dispositivos = _shieldedP;
             cambios = true;
           }
         }
@@ -28549,7 +28553,7 @@ const MOS = (() => {
   async function _refrescarDispositivosFresh() {
     try {
       const data = await API.get('getDispositivos', {});
-      if (Array.isArray(data)) cfgData.dispositivos = data;
+      if (Array.isArray(data)) cfgData.dispositivos = _dispAplicarShield(data);   // [v2.43.348 fix] shield
     } catch(_) {}
   }
 
@@ -36527,7 +36531,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           try {
             const data = await API.get('getDispositivos', {});
             if (Array.isArray(data)) {
-              cfgData.dispositivos = data;
+              cfgData.dispositivos = _dispAplicarShield(data);   // [v2.43.348 fix] shield en refresh por push
               if (S.cfgTab === 'infra') renderInfra();
               if (S.cfgTab === 'personal') renderPersonal();
             }

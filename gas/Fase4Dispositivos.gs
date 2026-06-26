@@ -342,7 +342,18 @@ function resembrarDispositivosDesdeSombra(opts) {
       }
       if (cambio) {
         if (!dry) {
-          try { sheet.getRange(rowById[id] + 1, 1, 1, rowVals.length).setValues([rowVals]); }
+          try {
+            // [fix clobber] el write empuja la fila ENTERA, incl. las columnas de actividad del SNAPSHOT (viejas).
+            // Un heartbeat pudo actualizar Ultima_Conexion entre el snapshot y este write → lo pisaría con el
+            // valor viejo. Re-leer las 4 columnas de actividad frescas y superponerlas antes de escribir.
+            for (var snakeA in _DISP_ACTIVITY_COLS) {
+              if (!Object.prototype.hasOwnProperty.call(_DISP_ACTIVITY_COLS, snakeA)) continue;
+              var specA = inv[snakeA]; if (!specA) continue;
+              var ciA = colIdx[specA[0]]; if (ciA == null) continue;
+              rowVals[ciA] = sheet.getRange(rowById[id] + 1, ciA + 1).getValue();
+            }
+            sheet.getRange(rowById[id] + 1, 1, 1, rowVals.length).setValues([rowVals]);
+          }
           catch (eW) { errores.push('update ' + id + ': ' + (eW && eW.message || eW)); }
         }
         actualizados++;

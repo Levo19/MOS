@@ -300,6 +300,48 @@ function listarAdhesivosPlantillas() {
   return { ok: true, plantillas: _adhListarPlantillas() };
 }
 
+// [#5 Stage 3 · backfill] Copia las plantillas de la hoja ADHESIVOS_PLANTILLAS a la sombra
+// mos.adhesivo_plantillas (1 vez, ANTES de prender el flag mos_adhesivos_edge). Idempotente
+// (upsert por id_plantilla). El json (string en la hoja) se PARSEA a objeto → se guarda como jsonb.
+// Correr desde el editor de Apps Script. Devuelve {ok, plantillas, upserted}.
+function backfillAdhesivosASupabase() {
+  try { _sbCfg_(); } catch (e) { return { ok: false, error: 'Supabase no configurado: ' + (e && e.message || e) }; }
+  // [fix] getSheet() usa openById(SS_ID); getActiveSpreadsheet() es null al correr desde el editor (Web App standalone).
+  var hP = getSheet(ADH_HOJA_PLANTILLAS);
+  if (!hP || hP.getLastRow() < 2) return { ok: true, plantillas: 0, msg: 'sin plantillas en la hoja (ADHESIVOS_PLANTILLAS)' };
+  var data = hP.getDataRange().getValues();
+  var heads = data[0], col = {};
+  for (var h = 0; h < heads.length; h++) col[String(heads[h]).trim()] = h;
+  function _iso(v) {
+    if (v == null || v === '') return null;
+    if (Object.prototype.toString.call(v) === '[object Date]') return isNaN(v.getTime()) ? null : v.toISOString();
+    var d = new Date(v); return isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  var rows = [], saltadas = 0;
+  for (var r = 1; r < data.length; r++) {
+    var id = String(data[r][col['idPlantilla']] || '').trim();
+    if (!id) continue;
+    var jraw = data[r][col['json']], jobj;
+    try { jobj = (typeof jraw === 'string') ? JSON.parse(jraw) : jraw; } catch (e) { jobj = null; }
+    if (!jobj || typeof jobj !== 'object') { saltadas++; continue; }   // json corrupto → no migrar
+    rows.push({
+      id_plantilla:  id,
+      nombre:        String(data[r][col['nombre']] || ''),
+      descripcion:   String(data[r][col['descripcion']] || ''),
+      tamano_canvas: String(data[r][col['tamanoCanvas']] || ''),
+      json:          jobj,
+      creado_por:    String(data[r][col['creadoPor']] || 'ADMIN'),
+      fecha_creado:  _iso(data[r][col['fechaCreado']]),
+      fecha_ult_mod: _iso(data[r][col['fechaUltMod']]),
+      activo:        _adhEsActivo(data[r][col['activo']])
+    });
+  }
+  if (!rows.length) return { ok: true, plantillas: 0, jsonCorrupto: saltadas };
+  var up = _sbUpsert('mos.adhesivo_plantillas', rows, 'id_plantilla');
+  if (!up.ok) return { ok: false, error: 'upsert HTTP ' + up.code + ' ' + (up.error || '') };
+  return { ok: true, plantillas: rows.length, upserted: rows.length, jsonCorrupto: saltadas };
+}
+
 function guardarAdhesivoPlantilla(params) {
   if (!params) return { ok: false, error: 'falta payload' };
   var nombre = String(params.nombre || '').trim();

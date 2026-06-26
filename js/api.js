@@ -932,16 +932,24 @@ const API = (() => {
 
   async function _adhesivoEditorBackend(action, params) {
     params = params || {};
+    // [v2.43.348 fix doble-impresión] la IMPRESIÓN NO es idempotente: si el Edge falla/timeout pero la etiqueta
+    // ya salió (PrintNode aceptó el job y el response fue lento), caer a GAS la reimprimiría. Por eso, para
+    // imprimir/test con el gate ON, NUNCA caemos a GAS → devolvemos error explícito y el usuario reintenta.
+    // CRUD sí cae a GAS (listar/guardar/eliminar son idempotentes por id/uniqueness).
+    const esImpresion = (action === 'imprimirAdhesivoPlantilla' || action === 'testImpresionAdhesivoPlantilla');
     if (_mosAdhesivosEdge()) {
       try {
         let r = null;
         if (action === 'listarAdhesivosPlantillas')          r = await _sbRpcMOS('adhesivo_plantillas_listar', {});
         else if (action === 'guardarAdhesivoPlantilla')      r = await _sbRpcMOS('adhesivo_plantilla_guardar', { p: params });
         else if (action === 'eliminarAdhesivoPlantilla')     r = await _sbRpcMOS('adhesivo_plantilla_eliminar', { p: params });
-        else if (action === 'imprimirAdhesivoPlantilla' ||
-                 action === 'testImpresionAdhesivoPlantilla') r = await _adhPlantillaImprimirEdge(params);
+        else if (esImpresion)                                r = await _adhPlantillaImprimirEdge(params);
         if (r != null) return r;   // shape RAW directo (RPCs/Edge ya devuelven {ok,...})
-      } catch (_) { /* → GAS raw (red de seguridad) */ }
+        if (esImpresion) return { ok: false, error: 'No se pudo confirmar la impresión por Supabase. Reintentá (no se reimprimió por GAS para evitar duplicado).' };
+      } catch (e) {
+        if (esImpresion) return { ok: false, error: 'Error de impresión: ' + (e && e.message || e) + ' — reintentá (no se reimprimió por GAS).' };
+        /* CRUD → GAS raw (red de seguridad) */
+      }
     }
     return _adhGasRaw(action, params);
   }
