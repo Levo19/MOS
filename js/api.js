@@ -496,6 +496,9 @@ const API = (() => {
   // [229] FASE 4 escrituras de dispositivos (panel admin MOS): crear/actualizar/aprobar (RPCs admin_* gated app=MOS)
   // + revocar (mos.revocar_dispositivo). Gate cfgKey 'dispositivosDirecto' (MOS_CONFIG). Lecturas ya directas.
   function _mosDispositivosDirecto() { return !!_mosFlag('mos_dispositivos_directo', 'dispositivosDirecto'); }
+  // [Reparación #7] PURGA de catálogo DIRECTA (RPC mos.eliminar_items_catalogo). Mata el "⚠ Lock timeout"
+  // del GAS (LockService). Gate _mosPurgaDirecto (server MOS_PURGA_DIRECTO || local). Default OFF → GAS.
+  function _mosPurgaDirecto() { return !!_mosFlag('mos_purga_directo', 'purgaDirecto'); }
 
   // Lectura directa de finanzas por rango. Devuelve {serie,totales,desde,hasta} (= d.data de GAS) o null (→ GAS).
   // null si: sin token, respuesta no-ok, o GATE DE FRESCURA en false (sombra mos.* stale → no servir P&L viejo).
@@ -1250,6 +1253,24 @@ const API = (() => {
   async function _postDirectoMOS(action, params) {
     const p = params || {};
 
+    if (action === 'eliminarItemsCatalogo') {
+      // mos.eliminar_items_catalogo(p): purga atómica. Devuelve el MISMO shape que GAS PurgaCatalogo.gs:
+      //   éxito  → {ok:true,  data:{idLote,eliminadosProductos,eliminadosEquivs,idsNoEncontrados,timestamp}}
+      //   error  → {ok:false, error, codigo?:'INTEGRIDAD', huerfanos?:[...]}
+      // El front (_purgaEjecutar) lee r.ok / r.data / r.codigo / r.huerfanos en su rama SINCRÓNICA (no en el
+      // catch) → NO desempaquetamos (devolver out CRUDO, igual que _fetch devuelve d.data del envoltorio GAS).
+      // Sin token → null → GAS (el GAS sigue siendo el fallback; con el lock-timeout, pero solo si Supabase cae).
+      const out = await _sbRpcMOSWrite('eliminar_items_catalogo', { p: {
+        items:      p.items,
+        claveAdmin: p.claveAdmin,
+        appOrigen:  p.appOrigen || 'MOS',
+        detalle:    p.detalle || '',
+        deviceId:   p.deviceId || (window.__MOS_AUDIT && window.__MOS_AUDIT.deviceId) || ''
+      } });
+      if (out == null) return null;   // sin token → GAS
+      return out;                      // {ok,data,error,codigo,huerfanos} CRUDO == shape GAS
+    }
+
     if (action === 'crearProducto') {
       // mos.crear_producto(p): valida desc/precio, ids atómicos (secuencia), dedup por PK/codigoBarra.
       // Idempotencia: si el front manda idProducto/skuBase (de una 1ra respuesta) un reintento dedupea por PK.
@@ -1862,7 +1883,11 @@ const API = (() => {
     crearDispositivo:            _mosDispositivosDirecto,
     actualizarDispositivo:       _mosDispositivosDirecto,
     aprobarDispositivoPendiente: _mosDispositivosDirecto,
-    revocarDispositivo:          _mosDispositivosDirecto
+    revocarDispositivo:          _mosDispositivosDirecto,
+    // [Reparación #7 · PURGA] borrado de catálogo 100% Supabase (RPC mos.eliminar_items_catalogo): transacción
+    // atómica (auth MASTER + integridad + snapshot/LÁPIDA + delete + bump), sin LockService → sin "Lock timeout".
+    // El sync se parcheó (tombstone) para no resucitar lo purgado. Gate _mosPurgaDirecto, default OFF → GAS.
+    eliminarItemsCatalogo:       _mosPurgaDirecto
     // [DUAL-WRITE] pedidos/pagos/provprod/gastos/horario/liqdia: SIN entrada acá → su escritura va SIEMPRE por
     // GAS (dual-write espeja la sombra). recomputarLiquidacionDia tampoco (incompatible).
   };

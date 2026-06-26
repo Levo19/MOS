@@ -218,6 +218,28 @@ function migrarCatalogoCompartido(opts) {
       var _dups = rows.length - Object.keys(_seen).length;
       rows = Object.keys(_seen).map(function (k) { return _seen[k]; });
 
+      // [Reparación #7 · anti-resurrección] NO re-subir filas con LÁPIDA (purgadas vía la RPC
+      // mos.eliminar_items_catalogo). El sync es SOLO-UPSERT: sin esto, un producto borrado en
+      // Supabase pero aún presente en la Hoja revivía cada hora. Las lápidas viven en
+      // mos.purgas_historicas (mos.purga_tombstones devuelve sus ids). Idempotente y barato.
+      if (tabla === 'productos' || tabla === 'equivalencias') {
+        try {
+          var _tomb = {};
+          var _rt = _sbRpc('mos', 'purga_tombstones', { p_tabla: 'mos.' + tabla });
+          if (_rt && _rt.ok && Array.isArray(_rt.data)) {
+            _rt.data.forEach(function (x) {
+              var id = (typeof x === 'string') ? x : (x && (x.purga_tombstones || x.id_fila));
+              if (id != null && id !== '') _tomb[String(id)] = 1;
+            });
+          }
+          if (Object.keys(_tomb).length) {
+            var _antes = rows.length;
+            rows = rows.filter(function (r) { return !_tomb[String(r[cfg.pk])]; });
+            if (rows.length !== _antes) Logger.log('[migrarCatalogoCompartido] ' + tabla + ': ' + (_antes - rows.length) + ' fila(s) con lápida omitidas (no resucitar)');
+          }
+        } catch (eT) { Logger.log('[migrarCatalogoCompartido] tombstone ' + tabla + ' WARN: ' + (eT && eT.message)); }
+      }
+
       if (opts.dryRun) {
         resumen[tabla] = { dryRun: true, filasLeidas: objs.length, filasValidas: rows.length, duplicadosPk: _dups, muestra: rows[0] || null };
         return;
