@@ -41,7 +41,9 @@ Deno.serve(async (req: Request) => {
   try {
     // Apps del ecosistema autorizadas (la firma ya está verificada por la plataforma; rechazamos anon/otras apps).
     // multi-app: mosExpress + warehouseMos (PASO 5 — WH reusa esta Edge en vez de saltar a GAS para imprimir).
-    const APPS_OK = new Set(['mosExpress', 'warehouseMos']);
+    // [Reparación #4] + MOS: el panel admin imprime el ticket de venta (reimpresión) directo por esta Edge,
+    // armando el ESC/POS client-side (cero GAS). MOS es app del ecosistema (firma JWT ya validada).
+    const APPS_OK = new Set(['mosExpress', 'warehouseMos', 'MOS']);
     const auth = req.headers.get('Authorization') || '';
     const token = auth.replace(/^Bearer\s+/i, '').trim();
     const claims = jwtClaims(token);

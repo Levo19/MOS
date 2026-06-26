@@ -631,6 +631,9 @@ const API = (() => {
   async function _getInsightsStockDirecto(params)       { return _getObjDirectoMOS('insights_stock',          params, 'insStock'); }
   async function _getAnaliticaProductoDirecto(params)   { return _getObjDirectoMOS('analitica_producto',      params, 'analProd'); }
   async function _getMeCajasAbiertasDirecto(params)     { return _getListaDirectaMOS('me_cajas_abiertas',     params, 'meCajas'); }
+  // [Reparación #4 · Etapa 1] detalle de un ticket (cabecera + líneas) desde la sombra me.ventas/ventas_detalle.
+  // mos.me_detalle_venta(p {idVenta}) → OBJETO {idVenta,correlativo,...,items:[...]} (o null si no en sombra → GAS).
+  async function _getMeDetalleVentaDirecto(params)      { return _getObjDirectoMOS('me_detalle_venta',        params, 'meDetalle'); }
   // [FIX bug SQL alias x.ord→ord] me_cobros_en_vuelo devuelve OBJETO {enVuelo,recientes} → _getObjDirectoMOS.
   async function _getMeCobrosEnVueloDirecto(params)     { return _getObjDirectoMOS('me_cobros_en_vuelo',     params, 'meCobrosVuelo'); }
   // [Optimización · portables 124] tarjeta WA + créditos pendientes ME + consultar cliente ME (RPC en 118).
@@ -903,6 +906,22 @@ const API = (() => {
     }, 150000);
     const d = await res.json().catch(() => null);
     if (!res.ok || !d) return { ok: false, error: 'print-adhesivo HTTP ' + res.status };
+    return d;
+  }
+
+  // [Reparación #4 · Etapa 1] Imprime un ticket ESC/POS (armado client-side) DIRECTO por la Edge `imprimir`
+  // (relay a PrintNode, cero GAS). El Edge exige claim app∈{mosExpress,warehouseMos,MOS}. `content` = string
+  // ESC/POS crudo (el Edge lo pasa a PrintNode como raw_base64). Devuelve {status:'success',...} o LANZA.
+  async function _imprimirTicketEdge(printerId, title, contentRaw) {
+    const token = await _mintTokenMOS();
+    if (!token) throw new Error('sin token de impresión (Edge mint-mos caída)');
+    const res = await _sbFetchTimeout(`${_SB_URL}/functions/v1/imprimir`, {
+      method: 'POST',
+      headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ printerId: parseInt(printerId, 10), title: title || 'Ticket', content: contentRaw })
+    }, 12000);
+    const d = await res.json().catch(() => null);
+    if (!res.ok || !d || d.status !== 'success') throw new Error('Edge imprimir: ' + ((d && d.mensaje) || ('HTTP ' + res.status)));
     return d;
   }
 
@@ -2371,6 +2390,8 @@ const API = (() => {
       if (action === 'getInsightsStock')       { return _conFallbackMOS(() => _getInsightsStockDirecto(p),      () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getAnaliticaProducto')   { return _conFallbackMOS(() => _getAnaliticaProductoDirecto(p),  () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'meCajasAbiertas')        { return _conFallbackMOS(() => _getMeCajasAbiertasDirecto(p),    () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      // [Reparación #4] detalle del ticket: Supabase-first (sombra) con GAS de respaldo (meDetalleVenta bridge).
+      if (action === 'meDetalleVenta')         { return _conFallbackMOS(() => _getMeDetalleVentaDirecto(p),     () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'meCobrosEnVuelo')        { return _conFallbackMOS(() => _getMeCobrosEnVueloDirecto(p),    () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       // [Optimización · portables 124]
       if (action === 'getTarjetaWA')           { return _conFallbackMOS(() => _getTarjetaWADirecto(p),          () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
@@ -2434,6 +2455,8 @@ const API = (() => {
     adhesivoImprimirEdge: _adhesivoImprimirEdge,
     // [Membretes] Edge print-adhesivo genérico (modal compartido vía edgeCall).
     printAdhesivoEdge:    _printAdhesivoEdgeRaw,
+    // [Reparación #4] Imprime ticket ESC/POS (client-side) por la Edge `imprimir` (cero GAS).
+    imprimirTicketEdge:   _imprimirTicketEdge,
     // [#5 Editor Adhesivos] backend del editor (se cablea como window.MOS_API.post). Shape RAW, gateado.
     adhesivoEditorBackend: _adhesivoEditorBackend,
     // [Realtime catálogo] Suscripción WebSocket a mos.catalogo_meta (UPDATE) → propagación ~0s.

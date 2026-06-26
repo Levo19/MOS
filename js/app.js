@@ -26246,6 +26246,7 @@ const MOS = (() => {
     }
     _tkAccBuildMenu(t);
     openModal('modalTkAcciones');
+    _tkCargarDetalle(t.idVenta);   // [Rep#4] llena la sección de detalle (async, Supabase-first)
   }
 
   // Construye el menú según el estado del ticket
@@ -26274,8 +26275,9 @@ const MOS = (() => {
     };
 
     if (esAnulado) {
+      btn('', '🖨', 'Imprimir ticket', 'Reimprime el comprobante en la impresora que elijas', 'imprimir');
       btn('', '📜', 'Ver historial', 'Ver todos los cambios del ticket', 'historial');
-      body.innerHTML = `<p class="text-[11px] text-slate-500 italic px-2 py-2">Ticket anulado · solo lectura.</p>${btns.join('')}`;
+      body.innerHTML = `<p class="text-[11px] text-slate-500 italic px-2 py-2">Ticket anulado · solo lectura.</p>${btns.join('')}${_tkDetalleContainerHtml()}`;
       return;
     }
 
@@ -26319,6 +26321,10 @@ const MOS = (() => {
     btn('tk-acc-btn-danger', '❌', 'Anular venta',
         'Marca el ticket como anulado internamente', 'anular');
 
+    // 🖨 Imprimir ticket — siempre (reimpresión por la impresora que elija el admin)
+    btn('tk-acc-btn-ok', '🖨', 'Imprimir ticket',
+        'Reimprime el comprobante en la impresora que elijas', 'imprimir');
+
     // 📜 Historial — siempre
     btn('', '📜', 'Ver historial',
         'Ver todos los cambios de este ticket', 'historial');
@@ -26329,7 +26335,14 @@ const MOS = (() => {
           (t.cliente || t.clienteDoc) + ' · cambios sobre este cliente', 'historialCli');
     }
 
-    body.innerHTML = btns.join('') || '<p class="text-xs text-slate-500 italic">Sin acciones disponibles.</p>';
+    body.innerHTML = (btns.join('') || '<p class="text-xs text-slate-500 italic">Sin acciones disponibles.</p>') + _tkDetalleContainerHtml();
+  }
+  // [Reparación #4 · Etapa 1] Contenedor de la sección "detalle del ticket" (scrollable, se llena async).
+  function _tkDetalleContainerHtml() {
+    return `<div id="tkAccDetalle" class="tk-acc-detalle">
+      <div class="tk-acc-det-hdr">🧾 Detalle del ticket</div>
+      <div class="tk-acc-det-body"><div class="text-[11px] text-slate-400 px-1 py-2">Cargando…</div></div>
+    </div>`;
   }
 
   // Routing del menú contextual
@@ -26346,6 +26359,110 @@ const MOS = (() => {
     if (accion === 'anular')          return _tkAnularSimple(t);
     if (accion === 'historial')       return _tkHistorialOpen(t);
     if (accion === 'historialCli')    return _tkHistorialClienteOpen(t);
+    if (accion === 'imprimir')        return _tkImprimir(t);
+  }
+
+  function _tkNum(x) { const n = Number(x); return Number.isFinite(n) ? n : 0; }
+  // [Reparación #4 · Etapa 1] Carga + render del DETALLE del ticket en la sección del modal.
+  // Supabase-first (mos.me_detalle_venta) con fallback GAS. Cachea en _tkAcc.detalle para la impresión.
+  async function _tkCargarDetalle(idVenta) {
+    const host = document.getElementById('tkAccDetalle');
+    if (!host) return;
+    const body = host.querySelector('.tk-acc-det-body');
+    try {
+      const r = await API.get('meDetalleVenta', { idVenta });
+      const data = (r && r.data) || r || {};
+      const items = Array.isArray(data.items) ? data.items : [];
+      _tkAcc.detalle = data;   // ← reusado por la impresión (mismo origen)
+      if (!body) return;
+      if (!items.length) { body.innerHTML = `<div class="text-[11px] text-slate-400 px-1 py-2">Sin líneas para este ticket.</div>`; return; }
+      const filas = items.map(it => {
+        const cant = _tkNum(it.cantidad), sub = _tkNum(it.subtotal);
+        const nom = _esc(String(it.nombre || it.sku || '—').replace(/\s*\(.*\)\s*$/, ''));   // recorta "(canónico)" duplicado
+        return `<div class="tk-acc-det-row">
+          <span class="tk-acc-det-q">${cant}×</span>
+          <span class="tk-acc-det-n">${nom}</span>
+          <span class="tk-acc-det-s">S/ ${sub.toFixed(2)}</span>
+        </div>`;
+      }).join('');
+      const tot = _tkNum(data.total);
+      body.innerHTML = `<div class="tk-acc-det-list">${filas}</div>
+        <div class="tk-acc-det-tot"><span>Total (${items.length} ít.)</span><b>S/ ${tot.toFixed(2)}</b></div>`;
+    } catch (e) {
+      if (body) body.innerHTML = `<div class="text-[11px] text-rose-400 px-1 py-2">No se pudo cargar el detalle.</div>`;
+    }
+  }
+
+  // [Reparación #4 · Etapa 1] Imprime (reimprime) el ticket: elige impresora + arma ESC/POS client-side +
+  // lo manda por la Edge `imprimir` (PrintNode, cero GAS). Optimista con feedback.
+  async function _tkImprimir(t) {
+    try {
+      const printerId = await abrirPrinterPicker({
+        titulo: 'Imprimir ticket', subtitulo: (t.correlativo || t.idVenta),
+        filtroTipo: 'TICKET', flowKey: 'venta_ticket'
+      });
+      if (!printerId) return;   // canceló
+      // detalle: usar el cacheado (si ya se cargó en el modal) o jalar fresco.
+      let data = (_tkAcc.detalle && String(_tkAcc.detalle.idVenta) === String(t.idVenta)) ? _tkAcc.detalle : null;
+      if (!data) { const r = await API.get('meDetalleVenta', { idVenta: t.idVenta }); data = (r && r.data) || r || null; }
+      if (!data || !Array.isArray(data.items) || !data.items.length) { toast('Sin detalle para imprimir', 'warning'); return; }
+      const esc = _tkBuildEscPos(t, data);
+      toast('Enviando a impresora…', 'info', 1500);
+      await API.imprimirTicketEdge(printerId, (t.correlativo || 'Ticket'), esc);
+      try { _opsBeep && _opsBeep('ok'); } catch (_) {}
+      toast('🖨 Ticket enviado a impresión', 'success');
+    } catch (e) {
+      try { _opsBeep && _opsBeep('error'); } catch (_) {}
+      toast('No se pudo imprimir: ' + (e && (e.message || e)), 'error');
+    }
+  }
+
+  // [Reparación #4 · Etapa 1] Arma el ESC/POS (raw) de un ticket de venta. 48 cols, sin codepage → _norm a ASCII.
+  function _tkBuildEscPos(t, data) {
+    const W = 48;
+    const ESC = '\x1b', GS = '\x1d';
+    const norm = (s) => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\x20-\x7e]/g, '?');
+    const rep = (ch, n) => ch.repeat(Math.max(0, n));
+    const line = () => rep('-', W) + '\n';
+    const padEnds = (a, b) => { a = norm(a); b = norm(b); const sp = Math.max(1, W - a.length - b.length); return a + rep(' ', sp) + b + '\n'; };
+    const center = (s) => { s = norm(s); const pad = Math.max(0, Math.floor((W - s.length) / 2)); return rep(' ', pad) + s + '\n'; };
+    const wrap = (s, w) => { s = norm(s); const out = []; while (s.length > w) { out.push(s.slice(0, w)); s = s.slice(w); } if (s) out.push(s); return out; };
+    let o = '';
+    o += ESC + '@';                          // init
+    o += ESC + 'a' + '\x01';                 // center
+    o += ESC + '!' + '\x30';                 // double size
+    o += norm('INVERSIONES MOS') + '\n';
+    o += ESC + '!' + '\x00';                 // normal
+    o += center(t.tipoDoc === 'NOTA_DE_VENTA' ? 'NOTA DE VENTA' : (t.tipoDoc || 'TICKET'));
+    o += center(t.correlativo || t.idVenta || '');
+    o += ESC + 'a' + '\x00';                 // left
+    o += line();
+    o += padEnds('Fecha: ' + (t.fecha || ''), (t.hora || ''));
+    if (t.vendedor) o += norm('Cajero: ' + t.vendedor) + '\n';
+    const cli = data.clienteNombre || t.cliente || '';
+    const doc = data.clienteDoc || t.clienteDoc || '';
+    if (cli || doc) o += norm('Cliente: ' + (cli || '') + (doc ? ' (' + doc + ')' : '')) + '\n';
+    o += line();
+    (data.items || []).forEach(it => {
+      const cant = _tkNum(it.cantidad), precio = _tkNum(it.precio), sub = _tkNum(it.subtotal);
+      const nom = String(it.nombre || it.sku || '—').replace(/\s*\(.*\)\s*$/, '');
+      const ls = wrap(nom, W);
+      o += ls[0] + '\n';
+      for (let i = 1; i < ls.length; i++) o += ls[i] + '\n';
+      o += padEnds('  ' + cant + ' x ' + precio.toFixed(2), sub.toFixed(2));
+    });
+    o += line();
+    o += ESC + '!' + '\x10';                 // double height
+    o += padEnds('TOTAL', 'S/ ' + _tkNum(data.total).toFixed(2));
+    o += ESC + '!' + '\x00';
+    o += norm('Forma de pago: ' + (t.formaPago || data.formaPago || '')) + '\n';
+    o += line();
+    o += ESC + 'a' + '\x01';                 // center
+    o += norm('Gracias por su compra') + '\n';
+    o += norm('* Reimpresion *') + '\n';
+    o += '\n\n\n';
+    o += GS + 'V' + '\x42' + '\x00';         // partial cut
+    return o;
   }
 
   // ──────────────────────────────────────────────────────────

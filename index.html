@@ -1621,6 +1621,19 @@
     .tk-acc-btn-danger:hover { border-color: #dc2626; background: rgba(220,38,38,0.08); }
     .tk-acc-btn-warn:hover   { border-color: #fb923c; background: rgba(251,146,60,0.08); }
     .tk-acc-btn-ok:hover     { border-color: #10b981; background: rgba(16,185,129,0.08); }
+    /* [Reparación #4] Sección de detalle del ticket dentro del modal de acciones */
+    .tk-acc-detalle { margin-top: 12px; border-top: 1px dashed #1e293b; padding-top: 10px; }
+    .tk-acc-det-hdr { font-size: 11px; font-weight: 800; letter-spacing:.04em; color: #94a3b8; text-transform: uppercase; padding: 0 2px 6px; }
+    .tk-acc-det-body { animation: tkDetFade .25s ease; }
+    @keyframes tkDetFade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    .tk-acc-det-list { max-height: 200px; overflow-y: auto; background: #0a1424; border: 1px solid #1e293b; border-radius: 10px; padding: 6px 8px; }
+    .tk-acc-det-row { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; font-size: 12px; border-bottom: 1px solid rgba(30,41,59,.5); }
+    .tk-acc-det-row:last-child { border-bottom: 0; }
+    .tk-acc-det-q { color: #6366f1; font-weight: 700; flex-shrink: 0; min-width: 26px; }
+    .tk-acc-det-n { flex: 1; min-width: 0; color: #cbd5e1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tk-acc-det-s { color: #e2e8f0; font-weight: 700; flex-shrink: 0; }
+    .tk-acc-det-tot { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; padding: 6px 10px; background: rgba(16,185,129,.08); border: 1px solid rgba(16,185,129,.25); border-radius: 8px; font-size: 13px; color: #d1fae5; }
+    .tk-acc-det-tot b { font-size: 15px; color: #6ee7b7; }
 
     /* ── Caja receptora seleccionable ─────────────────────── */
     .tk-caja-radio {
@@ -19262,7 +19275,7 @@ if (false) (function(){
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.350';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.351';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19307,7 +19320,7 @@ if (false) (function(){
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.350"></script>
+<script src="js/api.js?v=2.43.351"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19322,7 +19335,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.350"></script>
+<script src="js/app.js?v=2.43.351"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
