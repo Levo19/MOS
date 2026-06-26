@@ -264,12 +264,11 @@ Deno.serve(async (req: Request) => {
       bLn('de pago electronico)');
     }
     if (body.reimpresion === true) bLn('* REIMPRESION *');
-    // ── Crédito del desarrollador: emblema LEVO (bitmap por código) + línea de software ──
+    // ── Crédito del desarrollador: emblema LEVO chico + "by levo.dev" (minimal) ──
     bLn('');
-    bLn('software a medida por');
     for (const byte of _wordmarkBytes([{ text: 'LEVO' }], 2)) b1(byte);  // emblema LEVO CHICO (raster GS v 0)
     b1(0x0a);
-    bLn('levo.dev');
+    bLn('by levo.dev');
     LEFT();
     b1(0x1b); b1(0x4a); b1(0x96);              // feed (150 dots)
     b1(0x1d); b1(0x56); b1(0x00);             // corte
