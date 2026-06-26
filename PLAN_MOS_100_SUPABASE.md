@@ -62,8 +62,9 @@ Directiva adicional: **revisión 40x senior por CADA implementación, siempre.**
 - [ ] **5. Editor de adhesivos** (`EditorAdhesivos.abrir backendUrl`, index.html:19242) → backend Supabase/Edge.
 - [~] **6. `meConsultarCliente`** SUNAT/RENIEC → Edge function (HTTP externo, sin GAS).
   - [x] 6a. Edge `consultar-documento` ESCRITA (port exacto de Catalogo.gs APISPeru, mismo shape, secret APISPERU_TOKEN). functions/consultar-documento/index.ts.
-  - [ ] 6b. Deploy: `supabase secrets set APISPERU_TOKEN=<token>` + `supabase functions deploy consultar-documento`. **(usuario)**
-  - [ ] 6c. Cablear api.js meConsultarCliente: fallback → Edge (no GAS) + SW bump + deploy front.
+  - [x] 6b-deploy. **Edge `consultar-documento` DESPLEGADO (2026-06-25, yo).** Falta solo el secret: `supabase secrets set APISPERU_TOKEN=<token> --project-ref rzbzdeipbtqkzjqdchqk` **(usuario)** — hasta entonces el Edge devuelve TOKEN_NO_CONFIGURADO (inocuo, nada lo llama con el flag OFF).
+  - [x] 6c. **api.js CABLEADO + desplegado (MOS 2.43.346, INERTE).** `meConsultarCliente`: tras miss de sombra, el live-lookup va al Edge si `_mosSunatEdge()` (gate `mos_sunat_edge`/`sunatEdge`, default OFF) está ON, con GAS como red de seguridad; con OFF va recto a GAS = IDÉNTICO a hoy. Helpers `_meConsultarClienteEdge` (mint app=MOS + POST {doc}; devuelve success/not_found, null en error de infra→GAS) + `_mosSunatEdge` (mirror exacto del precedente `_mosImpresorasPNEdge`). Shape verificado contra app.js:26593/26706 (`r.nombre||r.razon_social` + `r.direccion`; el Edge trae nombre+direccion). node -c OK.
+  - [ ] 6-golive. **(usuario, 2 toques):** (1) `supabase secrets set APISPERU_TOKEN=<token>`; (2) prender el flag (`localStorage.setItem('mos_sunat_edge','1')` en el equipo que factura, o agregarlo a get_flags para flip global). Validar un DNI/RUC → debe resolver sin tocar GAS. **#6 = wired+deployed, falta solo el token+flag.**
 - [ ] **7. `setHorarioApp`** — quitar el disparo GAS; requiere que WH/ME lean el horario de Supabase (cross-app, nota).
 - [ ] **8. `liquidacion.html` / `turno.html`** — auditar su capa GAS y migrar.
 

@@ -976,6 +976,36 @@ const API = (() => {
     } catch (_) { return null; }
   }
 
+  // ── [SUNAT/RENIEC Edge · #6] lookup EN VIVO de doc → Edge `consultar-documento` (reemplaza el salto a GAS
+  // de meConsultarCliente cuando la sombra no tiene el doc). Gate dedicado `_mosSunatEdge` (maestro OR
+  // mos_sunat_edge), default OFF → con el flag OFF jamás se entra al Edge y el live-lookup va recto a GAS =
+  // IDÉNTICO a hoy. Con ON: intenta el Edge y ante CUALQUIER fallo de infra (sin secret APISPERU_TOKEN / 5xx /
+  // red / app no autorizada) devuelve null → _conFallbackMOS cae a GAS (red de seguridad). Un not_found
+  // LEGÍTIMO (HTTP 404, doc no existe en SUNAT/RENIEC) SÍ se devuelve (no es error) → el front muestra
+  // "no encontrado" sin pegar a GAS. El front lee r.nombre/r.direccion (el Edge los trae; nombre cubre la
+  // razón social del RUC), mismo shape que devolvía el GAS.
+  function _mosSunatEdge() { return !!_mosFlag('mos_sunat_edge', 'sunatEdge'); }
+
+  async function _meConsultarClienteEdge(params) {
+    const doc = String((params && (params.doc || params.documento)) || '').replace(/\D/g, '').trim();
+    if (doc.length !== 8 && doc.length !== 11) return null;   // doc inválido → GAS (igual que GAS validando)
+    const token = await _mintTokenMOS();
+    if (!token) return null;                                  // mint-mos caído → GAS
+    try {
+      const res = await _sbFetchTimeout(`${_SB_URL}/functions/v1/consultar-documento`, {
+        method: 'POST',
+        headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ doc })
+      }, 15000);
+      const d = await res.json().catch(() => null);
+      if (!d || typeof d !== 'object') return null;           // sin payload → GAS
+      // Éxito (con nombre) o not_found legítimo → devolver el payload (el front maneja !nombre). Errores de
+      // infra (TOKEN_NO_CONFIGURADO=500, 5xx, APP_NO_AUTORIZADA=401) → null → red de seguridad GAS.
+      if (d.status === 'success' || d.status === 'not_found') return d;
+      return null;
+    } catch (_) { return null; }                             // red/timeout → GAS
+  }
+
   // ── [RIZ · CAPA 5] Lista de compras como LECTURA (cablear botón "+Lista compras") ──
   // mos.zona_lista_compras(p) vía el wrapper profile 'mos' (igual que zona_panel). Devuelve r.data | null.
   async function _zonaListaComprasDirecto(params) { const r = await _sbRpcMOS('zona_lista_compras', { p: _zonaParams(params) }, 'mos'); return r; }
@@ -2265,7 +2295,12 @@ const API = (() => {
       // meConsultarCliente: si la sombra NO tiene el doc (encontrado:false), NO servir directo → caer a GAS
       // (preserva el lookup SUNAT/RENIEC en vivo que solo GAS hace). El helper igual devuelve el objeto; el guard
       // de "encontrado" lo aplica aquí envolviendo el directo para que el null caiga al fallback.
-      if (action === 'meConsultarCliente')     { return _conFallbackMOS(async () => { const r = await _getMeConsultarClienteDirecto(p); return (r && r.encontrado) ? r : null; }, () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'meConsultarCliente')     {
+        // Tras miss de sombra, el live-lookup va al Edge `consultar-documento` si el gate SUNAT está ON
+        // (con GAS como red de seguridad si el Edge falla); con el gate OFF (default) va recto a GAS = IDÉNTICO a hoy.
+        const _liveLookupCliente = () => _conFallbackMOS(() => _meConsultarClienteEdge(p), () => _fetch('GET', { action, ...p }), _mosSunatEdge);
+        return _conFallbackMOS(async () => { const r = await _getMeConsultarClienteDirecto(p); return (r && r.encontrado) ? r : null; }, _liveLookupCliente, _mosLecturaDirecta);
+      }
       if (action === 'getResumenTodosDia')     { return _conFallbackMOS(() => _getResumenTodosDiaDirecto(p),    () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getEcoStatus')           { return _conFallbackMOS(() => _getEcoStatusDirecto(p),         () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       // [IMPRESORAS Edge] listar/verificar impresoras 100% Supabase (Edge `printers`, shape paritario con GAS) +
