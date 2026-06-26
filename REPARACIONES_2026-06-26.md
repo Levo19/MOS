@@ -33,3 +33,8 @@ Estados: 🆕 nuevo · 🔍 analizando · 🛠️ en progreso · ✅ desplegado 
 **Confirmaciones al usuario:** (a) ✅ agrupa por canónico, NO por presentación (113=113). (b) ✅ escanear el código EQUIVALENTE cuenta para el despacho — "REGLA DE ORO WH" (`app.js:14160`/`_matchPickupItem` 14133): acepta skuBase · cb canónico · cb equivalente activo; cada fila del pickup lleva en `codigosOriginales` el canónico Y el equivalente (verificado con data).
 **Nota (catálogo):** LEV724/LEV342 tienen varias filas `factor=1` (presentaciones "1"/"500 GR"/"1K X 5 PQT" mal marcadas como canónico) → el orden robusto eligió el real; arreglo de fondo = limpiar esas filas del catálogo (posible punto futuro).
 **Estado:** ✅ desplegado (commit `c5a76b0`); data live verificada (0 nombres malos); realtime pickups bumpeado 61→62 para forzar re-fetch en WH. Pend. verificación del usuario.
+
+---
+## #9 — Centralizar + formatear el modelo de TICKET (un formato para todo)
+**Requerimiento:** la reimpresión del ticket de venta no es igual al original (le falta QR con id-ticket; si es CPE le falta QR/hash SUNAT). Centralizar UN modelo de ticket usado en TODOS los lugares donde se emite (nota de venta, boleta, factura, nota crédito/débito) — todo lo de dinero venta empresa→cliente con NubeFact debe tener el MISMO formato. Analizar qué pide NubeFact + cómo se hace en otros lados, proponer y DIBUJAR opciones.
+**Estado:** 🔍 análisis + propuesta (sin implementar aún). Banners de versión = punto aparte, después.

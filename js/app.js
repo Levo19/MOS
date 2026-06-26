@@ -41046,6 +41046,27 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       el.style.display = (!q || n.indexOf(q) >= 0) ? '' : 'none';
     });
   }
+  // [Reparación #8] Nombre del CANÓNICO por skuBase desde el catálogo de MOS (S.productos, factor=1 activo) —
+  // robusto ante un `nombre` viejo guardado en el pickup (mostraba "TRIPACK"/"25"). Prefiere el canónico real
+  // (sin codigoProductoBase) y, ante varios factor=1 mal marcados, el nombre más largo. Memoizado por tamaño.
+  let _zpkCanonMap = null, _zpkCanonLen = -1;
+  function _zpkCanonName(sku, fb) {
+    const ps = Array.isArray(S.productos) ? S.productos : [];
+    if (_zpkCanonMap === null || _zpkCanonLen !== ps.length) {
+      _zpkCanonMap = {}; const score = {};
+      ps.forEach(p => {
+        const activo = !(p.estado === false || String(p.estado) === '0');
+        const esBase = (parseFloat(p.factorConversion || 1) === 1) && activo && p.skuBase;
+        if (!esBase) return;
+        const nm = p.descripcion || p.nombre || ''; if (!nm) return;
+        const k = String(p.skuBase).trim().toUpperCase();
+        const sc = (p.codigoProductoBase ? 0 : 100000) + nm.length;
+        if (score[k] === undefined || sc > score[k]) { score[k] = sc; _zpkCanonMap[k] = nm; }
+      });
+      _zpkCanonLen = ps.length;
+    }
+    return _zpkCanonMap[String(sku || '').trim().toUpperCase()] || fb || sku;
+  }
   function _zpkRender(zona, r, loading){
     let ov = document.getElementById('zonaPickupOverlay');
     if (!ov) {
@@ -41076,7 +41097,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         return `<div class="zpk-item" data-sku="${_esc(it.skuBase)}">
             <div class="zpk-headrow" onclick="MOS.zonaPickupToggle('${_esc(it.skuBase)}')">
               <div class="zpk-info">
-                <div class="zpk-name">${_esc(it.nombre)}</div>
+                <div class="zpk-name">${_esc(_zpkCanonName(it.skuBase, it.nombre))}</div>
                 <div class="zpk-bar"><span style="width:${pct}%"></span></div>
               </div>
               <div class="zpk-qty"><b>${_zpkNum(pend)}</b><small>pend</small></div>
