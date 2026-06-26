@@ -634,6 +634,14 @@ const API = (() => {
   // [Reparación #4 · Etapa 1] detalle de un ticket (cabecera + líneas) desde la sombra me.ventas/ventas_detalle.
   // mos.me_detalle_venta(p {idVenta}) → OBJETO {idVenta,correlativo,...,items:[...]} (o null si no en sombra → GAS).
   async function _getMeDetalleVentaDirecto(params)      { return _getObjDirectoMOS('me_detalle_venta',        params, 'meDetalle'); }
+  // [Reparación #4 · Etapa 2] historial de venta (timeline) desde me.ventas.historial_cambios (normalizado ts→timestamp).
+  // Devuelve {historial:[...]} (lo que _abrirHistorialGenerico espera) o null (no en sombra / stale → GAS).
+  async function _getMeHistorialVentaDirecto(params) {
+    const r = await _sbRpcMOS('me_historial_venta', { p: params || {} });
+    if (r == null || !r.ok) return null;
+    if (r._fresh !== true) { try { console.warn('[MOS meHistVenta] sombra STALE → GAS'); } catch(_){} return null; }
+    return { historial: Array.isArray(r.historial) ? r.historial : [] };
+  }
   // [FIX bug SQL alias x.ord→ord] me_cobros_en_vuelo devuelve OBJETO {enVuelo,recientes} → _getObjDirectoMOS.
   async function _getMeCobrosEnVueloDirecto(params)     { return _getObjDirectoMOS('me_cobros_en_vuelo',     params, 'meCobrosVuelo'); }
   // [Optimización · portables 124] tarjeta WA + créditos pendientes ME + consultar cliente ME (RPC en 118).
@@ -2392,6 +2400,8 @@ const API = (() => {
       if (action === 'meCajasAbiertas')        { return _conFallbackMOS(() => _getMeCajasAbiertasDirecto(p),    () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       // [Reparación #4] detalle del ticket: Supabase-first (sombra) con GAS de respaldo (meDetalleVenta bridge).
       if (action === 'meDetalleVenta')         { return _conFallbackMOS(() => _getMeDetalleVentaDirecto(p),     () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      // [Reparación #4 · Etapa 2] historial de venta Supabase-first (cliente sigue por GAS: shape ME no verificado / GAP).
+      if (action === 'meHistorialVenta')       { return _conFallbackMOS(() => _getMeHistorialVentaDirecto(p),   () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'meCobrosEnVuelo')        { return _conFallbackMOS(() => _getMeCobrosEnVueloDirecto(p),    () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       // [Optimización · portables 124]
       if (action === 'getTarjetaWA')           { return _conFallbackMOS(() => _getTarjetaWADirecto(p),          () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
