@@ -33488,7 +33488,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // Si opts.flowKey está dado y hay impresora cacheada online → usar directo.
     // Si opts.flowKey === '__skipCache' → ignorar memoria (admin quiere elegir).
     const _LSKEY = opts.flowKey ? 'mos_lastPrinter_' + opts.flowKey : null;
-    if (_LSKEY && opts.flowKey !== '__skipCache') {
+    // [Reparación picker] MOS es el panel admin y puede estar REMOTO (lejos de la impresora, ej. en casa) →
+    // SIEMPRE mostrar el picker para que el admin elija. Solo se reusa la última impresora si un flow lo pide
+    // explícitamente con opts.autoUsarUltima (hoy ninguno lo hace → todos los flujos muestran el picker).
+    if (_LSKEY && opts.autoUsarUltima === true && opts.flowKey !== '__skipCache') {
       try {
         const cachedId = localStorage.getItem(_LSKEY);
         if (cachedId) {
