@@ -900,6 +900,52 @@ const API = (() => {
     return d;
   }
 
+  // ── [#5 Editor de Adhesivos · Supabase] Adaptador para EditorAdhesivos (se cablea como window.MOS_API.post).
+  // ⚠️ El editor consume el shape RAW del GAS ({ok,plantillas}/{ok,idPlantilla}/{ok,jobId}); por eso NO se rutea
+  // por API.post (que hace `return d.data` + throw si !ok → rompería el editor). Este adaptador devuelve SIEMPRE
+  // el shape RAW. Gate `_mosAdhesivosEdge` (mos_adhesivos_edge/adhesivosEdge, default OFF): con OFF cae a GAS RAW
+  // = IDÉNTICO a hoy. Con ON: CRUD → RPCs mos.adhesivo_* ; imprimir/test → Edge print-adhesivo-plantilla. Cualquier
+  // fallo (null sin token / throw / HTTP) → GAS RAW (red de seguridad). setup/otras acciones → GAS siempre.
+  function _mosAdhesivosEdge() { return !!_mosFlag('mos_adhesivos_edge', 'adhesivosEdge'); }
+
+  async function _adhGasRaw(action, params) {
+    const url = getUrl();
+    if (!url) throw new Error('GAS URL no configurada');
+    const res = await _fetchConTimeout(url, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(Object.assign({}, params || {}, { action: action }))
+    }, DEFAULT_TIMEOUT_MS);
+    return res.json();   // RAW — NO desempaqueta d.data (igual que el fetch propio del editor)
+  }
+
+  async function _adhPlantillaImprimirEdge(params) {
+    const token = await _mintTokenMOS();
+    if (!token) return null;   // → GAS raw
+    const res = await _sbFetchTimeout(`${_SB_URL}/functions/v1/print-adhesivo-plantilla`, {
+      method: 'POST',
+      headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idPlantilla: params.idPlantilla, cantidad: parseInt(params.cantidad) || 1 })
+    }, 30000);
+    const d = await res.json().catch(() => null);
+    return (d && typeof d === 'object') ? d : null;   // raw {ok,jobId,...} | null→GAS
+  }
+
+  async function _adhesivoEditorBackend(action, params) {
+    params = params || {};
+    if (_mosAdhesivosEdge()) {
+      try {
+        let r = null;
+        if (action === 'listarAdhesivosPlantillas')          r = await _sbRpcMOS('adhesivo_plantillas_listar', {});
+        else if (action === 'guardarAdhesivoPlantilla')      r = await _sbRpcMOS('adhesivo_plantilla_guardar', { p: params });
+        else if (action === 'eliminarAdhesivoPlantilla')     r = await _sbRpcMOS('adhesivo_plantilla_eliminar', { p: params });
+        else if (action === 'imprimirAdhesivoPlantilla' ||
+                 action === 'testImpresionAdhesivoPlantilla') r = await _adhPlantillaImprimirEdge(params);
+        if (r != null) return r;   // shape RAW directo (RPCs/Edge ya devuelven {ok,...})
+      } catch (_) { /* → GAS raw (red de seguridad) */ }
+    }
+    return _adhGasRaw(action, params);
+  }
+
   // ── [RIZ · CAPA 5] IA real vía Edge `/functions/ia` (Claude, JWT-gated) ─
   // El frontend arma los `messages` (con los NÚMEROS determinísticos de las RPCs) y la Edge reenvía a
   // Claude con la API key del secret. La IA SOLO redacta texto natural; los números NO los inventa.
@@ -2352,6 +2398,8 @@ const API = (() => {
     adhesivoImprimirEdge: _adhesivoImprimirEdge,
     // [Membretes] Edge print-adhesivo genérico (modal compartido vía edgeCall).
     printAdhesivoEdge:    _printAdhesivoEdgeRaw,
+    // [#5 Editor Adhesivos] backend del editor (se cablea como window.MOS_API.post). Shape RAW, gateado.
+    adhesivoEditorBackend: _adhesivoEditorBackend,
     // [Realtime catálogo] Suscripción WebSocket a mos.catalogo_meta (UPDATE) → propagación ~0s.
     // ADITIVA: el poller por-versión sigue como fallback. Singleton + carga defensiva (no rompe si falla).
     // app.js registra el callback money-safe (= _catVerPoll) vía onCatalogoVersionRealtime e inicia/detiene
