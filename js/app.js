@@ -26373,7 +26373,7 @@ const MOS = (() => {
       const r = await API.get('meDetalleVenta', { idVenta });
       const data = (r && r.data) || r || {};
       const items = Array.isArray(data.items) ? data.items : [];
-      _tkAcc.detalle = data;   // ← reusado por la impresión (mismo origen)
+      _tkAcc.detalle = data;   // cache del detalle mostrado (la impresión va por el Edge ticket-comprobante)
       if (!body) return;
       if (!items.length) { body.innerHTML = `<div class="text-[11px] text-slate-400 px-1 py-2">Sin líneas para este ticket.</div>`; return; }
       const filas = items.map(it => {
@@ -26385,7 +26385,7 @@ const MOS = (() => {
           <span class="tk-acc-det-s">S/ ${sub.toFixed(2)}</span>
         </div>`;
       }).join('');
-      const tot = _tkNum(data.total);
+      const tot = _tkNum(data.total) || items.reduce((s, it) => s + _tkNum(it.subtotal), 0);  // [R1] fallback Σsubtotal (path GAS no trae total)
       body.innerHTML = `<div class="tk-acc-det-list">${filas}</div>
         <div class="tk-acc-det-tot"><span>Total (${items.length} ít.)</span><b>S/ ${tot.toFixed(2)}</b></div>`;
     } catch (e) {
@@ -26414,53 +26414,8 @@ const MOS = (() => {
     }
   }
 
-  // [Reparación #4 · Etapa 1] Arma el ESC/POS (raw) de un ticket de venta. 48 cols, sin codepage → _norm a ASCII.
-  function _tkBuildEscPos(t, data) {
-    const W = 48;
-    const ESC = '\x1b', GS = '\x1d';
-    const norm = (s) => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\x20-\x7e]/g, '?');
-    const rep = (ch, n) => ch.repeat(Math.max(0, n));
-    const line = () => rep('-', W) + '\n';
-    const padEnds = (a, b) => { a = norm(a); b = norm(b); const sp = Math.max(1, W - a.length - b.length); return a + rep(' ', sp) + b + '\n'; };
-    const center = (s) => { s = norm(s); const pad = Math.max(0, Math.floor((W - s.length) / 2)); return rep(' ', pad) + s + '\n'; };
-    const wrap = (s, w) => { s = norm(s); const out = []; while (s.length > w) { out.push(s.slice(0, w)); s = s.slice(w); } if (s) out.push(s); return out; };
-    let o = '';
-    o += ESC + '@';                          // init
-    o += ESC + 'a' + '\x01';                 // center
-    o += ESC + '!' + '\x30';                 // double size
-    o += norm('INVERSIONES MOS') + '\n';
-    o += ESC + '!' + '\x00';                 // normal
-    o += center(t.tipoDoc === 'NOTA_DE_VENTA' ? 'NOTA DE VENTA' : (t.tipoDoc || 'TICKET'));
-    o += center(t.correlativo || t.idVenta || '');
-    o += ESC + 'a' + '\x00';                 // left
-    o += line();
-    o += padEnds('Fecha: ' + (t.fecha || ''), (t.hora || ''));
-    if (t.vendedor) o += norm('Cajero: ' + t.vendedor) + '\n';
-    const cli = data.clienteNombre || t.cliente || '';
-    const doc = data.clienteDoc || t.clienteDoc || '';
-    if (cli || doc) o += norm('Cliente: ' + (cli || '') + (doc ? ' (' + doc + ')' : '')) + '\n';
-    o += line();
-    (data.items || []).forEach(it => {
-      const cant = _tkNum(it.cantidad), precio = _tkNum(it.precio), sub = _tkNum(it.subtotal);
-      const nom = String(it.nombre || it.sku || '—').replace(/\s*\(.*\)\s*$/, '');
-      const ls = wrap(nom, W);
-      o += ls[0] + '\n';
-      for (let i = 1; i < ls.length; i++) o += ls[i] + '\n';
-      o += padEnds('  ' + cant + ' x ' + precio.toFixed(2), sub.toFixed(2));
-    });
-    o += line();
-    o += ESC + '!' + '\x10';                 // double height
-    o += padEnds('TOTAL', 'S/ ' + _tkNum(data.total).toFixed(2));
-    o += ESC + '!' + '\x00';
-    o += norm('Forma de pago: ' + (t.formaPago || data.formaPago || '')) + '\n';
-    o += line();
-    o += ESC + 'a' + '\x01';                 // center
-    o += norm('Gracias por su compra') + '\n';
-    o += norm('* Reimpresion *') + '\n';
-    o += '\n\n\n';
-    o += GS + 'V' + '\x42' + '\x00';         // partial cut
-    return o;
-  }
+  // [Review R1] _tkBuildEscPos ELIMINADO — código muerto. La impresión del ticket va por API.imprimirComprobante
+  // (Edge ticket-comprobante, formato centralizado con empresa/IGV/QR/leyenda). No re-cablear un builder inferior.
 
   // ──────────────────────────────────────────────────────────
   // COBRAR PENDIENTE / DEUDA
