@@ -923,10 +923,17 @@ const API = (() => {
   async function _imprimirTicketEdge(printerId, title, contentRaw) {
     const token = await _mintTokenMOS();
     if (!token) throw new Error('sin token de impresión (Edge mint-mos caída)');
+    // El Edge manda a PrintNode con contentType:'raw_base64' (pasa `content` TAL CUAL) → debemos enviar
+    // el ESC/POS YA en base64. El ticket es binario (lleva \x00 en el corte) → btoa byte-a-byte (Latin1),
+    // enmascarando a 0xff por si quedara algún char >255. Mandar crudo daba PrintNode 400 (NULL 0x00).
+    let _bin = '';
+    const _s = String(contentRaw || '');
+    for (let i = 0; i < _s.length; i++) _bin += String.fromCharCode(_s.charCodeAt(i) & 0xff);
+    const _b64 = (typeof btoa === 'function') ? btoa(_bin) : '';
     const res = await _sbFetchTimeout(`${_SB_URL}/functions/v1/imprimir`, {
       method: 'POST',
       headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ printerId: parseInt(printerId, 10), title: title || 'Ticket', content: contentRaw })
+      body: JSON.stringify({ printerId: parseInt(printerId, 10), title: title || 'Ticket', content: _b64 })
     }, 12000);
     const d = await res.json().catch(() => null);
     if (!res.ok || !d || d.status !== 'success') throw new Error('Edge imprimir: ' + ((d && d.mensaje) || ('HTTP ' + res.status)));

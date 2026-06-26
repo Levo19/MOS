@@ -26275,7 +26275,7 @@ const MOS = (() => {
     };
 
     if (esAnulado) {
-      btn('', '🖨', 'Imprimir ticket', 'Reimprime el comprobante en la impresora que elijas', 'imprimir');
+      btn('', '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/><circle cx="18" cy="11.5" r="1" fill="currentColor"/></svg>', 'Imprimir ticket', 'Reimprime el comprobante en la impresora que elijas', 'imprimir');
       btn('', '📜', 'Ver historial', 'Ver todos los cambios del ticket', 'historial');
       body.innerHTML = `<p class="text-[11px] text-slate-500 italic px-2 py-2">Ticket anulado · solo lectura.</p>${btns.join('')}${_tkDetalleContainerHtml()}`;
       return;
@@ -26322,7 +26322,7 @@ const MOS = (() => {
         'Marca el ticket como anulado internamente', 'anular');
 
     // 🖨 Imprimir ticket — siempre (reimpresión por la impresora que elija el admin)
-    btn('tk-acc-btn-ok', '🖨', 'Imprimir ticket',
+    btn('tk-acc-btn-ok', '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/><circle cx="18" cy="11.5" r="1" fill="currentColor"/></svg>', 'Imprimir ticket',
         'Reimprime el comprobante en la impresora que elijas', 'imprimir');
 
     // 📜 Historial — siempre
