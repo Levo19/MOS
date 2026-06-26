@@ -99,6 +99,50 @@ function _cliDocLabel(tipoDoc: unknown): string {
     case 1: return 'DNI'; case 4: return 'C.E.'; case 6: return 'RUC'; case 7: return 'PASAP'; default: return 'DOC';
   }
 }
+// [Reparación #9] MINI-EMBLEMA "LEVO" generado por CÓDIGO (wordmark, fuente de píxeles 5x7 que definimos →
+// bitmap monocromo ESC/POS GS v 0). Imprime al instante (es chico) y es 100% original. Pie de página: crédito
+// del desarrollador. Escala 2x, centrado a 48 col. Devuelve los bytes ESC/POS del raster.
+function _levoEmblema(): number[] {
+  const G: Record<string, string[]> = {
+    L: ['10000', '10000', '10000', '10000', '10000', '10000', '11111'],
+    E: ['11111', '10000', '10000', '11110', '10000', '10000', '11111'],
+    V: ['10001', '10001', '10001', '10001', '01010', '01010', '00100'],
+    O: ['01110', '10001', '10001', '10001', '10001', '10001', '01110'],
+  };
+  const word = 'LEVO', scale = 3, gap = 1;
+  // grilla 1x: 7 filas, glifos 5px + gap
+  const rows1: string[] = [];
+  for (let r = 0; r < 7; r++) {
+    let line = '';
+    for (const ch of word) line += (G[ch] ? G[ch][r] : '00000') + '0'.repeat(gap);
+    rows1.push(line);
+  }
+  const w1 = rows1[0].length;
+  // escalar
+  const grid: number[][] = [];
+  for (let r = 0; r < 7; r++) {
+    for (let sy = 0; sy < scale; sy++) {
+      const row: number[] = [];
+      for (let c = 0; c < w1; c++) { const bit = rows1[r][c] === '1' ? 1 : 0; for (let sx = 0; sx < scale; sx++) row.push(bit); }
+      grid.push(row);
+    }
+  }
+  const hPx = grid.length, wPx = grid[0].length;
+  // centrar en 384px (48 col x 8) → margen izquierdo en bytes
+  const totalBytes = 48;
+  const wBytes = Math.ceil(wPx / 8);
+  const padBytes = Math.max(0, Math.floor((totalBytes - wBytes) / 2));
+  const data: number[] = [];
+  for (let r = 0; r < hPx; r++) {
+    for (let b = 0; b < totalBytes; b++) {
+      let byte = 0;
+      const gc0 = (b - padBytes) * 8;
+      if (gc0 >= 0) for (let bit = 0; bit < 8; bit++) { const c = gc0 + bit; if (c < wPx && grid[r][c]) byte |= (0x80 >> bit); }
+      data.push(byte);
+    }
+  }
+  return [0x1d, 0x76, 0x30, 0, totalBytes & 0xff, (totalBytes >> 8) & 0xff, hPx & 0xff, (hPx >> 8) & 0xff, ...data];
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
@@ -135,11 +179,13 @@ Deno.serve(async (req: Request) => {
     const SIZE = (mode: number) => { b1(0x1b); b1(0x21); b1(mode); }; // 0x00 normal, 0x10 doble alto, 0x30 doble
 
     b1(0x1b); b1(0x40);                       // init
-    // ── Encabezado empresa ──
-    CTR(); SIZE(0x10); BOLD(true);
-    bLn(_norm(emp.razonSocial || 'INVERSIONES MOS'));
+    // ── Encabezado empresa (marca tipográfica: razón social grande si entra a doble ancho) ──
+    CTR();
+    const _rs = _norm(emp.razonSocial || 'INVERSIONES MOS');
+    SIZE(_rs.length <= 24 ? 0x30 : 0x10); BOLD(true);   // 0x30 = doble alto+ancho; cae a 0x10 si es largo
+    bLn(_rs);
     BOLD(false); SIZE(0x00);
-    if (emp.ruc) bLn('RUC ' + _norm(emp.ruc));
+    if (emp.ruc) bLn('R.U.C. ' + _norm(emp.ruc));
     _wrap(String(emp.direccion || ''), W).forEach((l) => l && bLn(l));
     if (emp.telefono || emp.email) bLn(_norm([emp.telefono ? 'Tel ' + emp.telefono : '', emp.email || ''].filter(Boolean).join('  ')));
     bLn('='.repeat(W));
@@ -212,6 +258,12 @@ Deno.serve(async (req: Request) => {
       bLn('de pago electronico)');
     }
     if (body.reimpresion === true) bLn('* REIMPRESION *');
+    // ── Crédito del desarrollador: emblema LEVO (bitmap por código) + línea de software ──
+    bLn('');
+    bLn('software a medida por');
+    for (const byte of _levoEmblema()) b1(byte);  // emblema LEVO centrado (raster GS v 0)
+    b1(0x0a);
+    bLn('levo.dev');
     LEFT();
     b1(0x1b); b1(0x4a); b1(0x96);              // feed (150 dots)
     b1(0x1d); b1(0x56); b1(0x00);             // corte
