@@ -160,4 +160,7 @@ end;
 $fn$;
 
 revoke all on function mos.catalogo_pos_rls() from public;
-grant execute on function mos.catalogo_pos_rls() to anon, authenticated, service_role;
+-- [S1 · seguridad 2026-06-25] SIN anon: el catálogo expone PII (DNI/RUC/dirección de clientes) + Admin_PIN +
+-- PrintNode IDs. ME lo lee con mint-token (role authenticated, verificado). Dar `anon` lo abriría a cualquiera
+-- con la key pública. NO re-agregar anon (ver supabase/240). El grant 146 (live) tampoco lo da.
+grant execute on function mos.catalogo_pos_rls() to authenticated, service_role;

@@ -29,7 +29,8 @@ Directiva adicional: **revisión 40x senior por CADA implementación, siempre.**
   apple-touch-icon a `icons/icon-192.png` (corta el 404 de favicon.ico). Desplegado v2.43.337.
 
 ## BLOQUE S — Seguridad (NUEVO · detectado en la retrospectiva 500x del 2026-06-25)
-- [ ] **S1. `mos.catalogo_pos_rls` (y el path de descarga de catálogo) con grant `anon` expone PII + secretos.**
+- [x] **S1 CERRADO (2026-06-25, SQL 240).** Verificado que el ÚNICO consumidor de `catalogo_pos_rls` es ME, y que lo llama con **mint-token** (Edge mint-me) que PostgREST resuelve como `current_user='authenticated'` (diagnóstico `_dbg_role` confirmó role+claims). **Revocado el grant `anon`** → ME (authenticated) sigue OK; atacante con solo la anon key → `42501 permission denied`. Verificado en vivo (A: mint devuelve catálogo; B: anon-only bloqueado). 218 actualizado para no re-abrir anon. **Residual menor** (hardening futuro): un device autenticado aún ve todo el PII+Admin_PINs → separar a RPC restringida (no urgente, devices semi-confiables).
+- [~] **S1-orig. `mos.catalogo_pos_rls` (y el path de descarga de catálogo) con grant `anon` expone PII + secretos.**
   La RPC es `SECURITY DEFINER` + grant a `anon`, y devuelve sin filtro de tenant: **`me.clientes_frecuentes`
   (DNI/RUC + RazónSocial + Dirección = PII), el `Admin_PIN` de estaciones, series documentales y PrintNode IDs.**
   Cualquiera con la URL + anon key (pública por diseño en estas apps) extrae el catálogo COMPLETO + PII de
