@@ -26402,13 +26402,10 @@ const MOS = (() => {
         filtroTipo: 'TICKET', flowKey: 'venta_ticket'
       });
       if (!printerId) return;   // canceló
-      // detalle: usar el cacheado (si ya se cargó en el modal) o jalar fresco.
-      let data = (_tkAcc.detalle && String(_tkAcc.detalle.idVenta) === String(t.idVenta)) ? _tkAcc.detalle : null;
-      if (!data) { const r = await API.get('meDetalleVenta', { idVenta: t.idVenta }); data = (r && r.data) || r || null; }
-      if (!data || !Array.isArray(data.items) || !data.items.length) { toast('Sin detalle para imprimir', 'warning'); return; }
-      const esc = _tkBuildEscPos(t, data);
       toast('Enviando a impresora…', 'info', 1500);
-      await API.imprimirTicketEdge(printerId, (t.correlativo || 'Ticket'), esc);
+      // [Reparación #9] Comprobante CENTRALIZADO por Edge ticket-comprobante (empresa + IGV + QR + leyenda),
+      // mismo formato que el ticket original. Reemplaza el builder client-side pobre (_tkBuildEscPos).
+      await API.imprimirComprobante(t.idVenta, printerId, { reimpresion: true });
       try { _opsBeep && _opsBeep('ok'); } catch (_) {}
       toast('🖨 Ticket enviado a impresión', 'success');
     } catch (e) {

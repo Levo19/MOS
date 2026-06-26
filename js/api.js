@@ -940,6 +940,22 @@ const API = (() => {
     return d;
   }
 
+  // [Reparación #9] Imprime el COMPROBANTE centralizado (NV/Boleta/Factura) por la Edge `ticket-comprobante`:
+  // empresa + doc + items + IGV + QR nativo (SUNAT para CPE, correlativo para NV) + leyenda. Cero GAS.
+  // Mismo formato lo usan ME (al vender) y MOS (reimpresión). Lanza si falla.
+  async function _imprimirComprobanteEdge(idVenta, printerId, opts) {
+    const token = await _mintTokenMOS();
+    if (!token) throw new Error('sin token de impresión (Edge mint-mos caída)');
+    const res = await _sbFetchTimeout(`${_SB_URL}/functions/v1/ticket-comprobante`, {
+      method: 'POST',
+      headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idVenta: String(idVenta), printerId: parseInt(printerId, 10), reimpresion: !!(opts && opts.reimpresion) })
+    }, 12000);
+    const d = await res.json().catch(() => null);
+    if (!res.ok || !d || d.ok !== true) throw new Error('ticket-comprobante: ' + ((d && d.error) || ('HTTP ' + res.status)));
+    return d;
+  }
+
   // ── [#5 Editor de Adhesivos · Supabase] Adaptador para EditorAdhesivos (se cablea como window.MOS_API.post).
   // ⚠️ El editor consume el shape RAW del GAS ({ok,plantillas}/{ok,idPlantilla}/{ok,jobId}); por eso NO se rutea
   // por API.post (que hace `return d.data` + throw si !ok → rompería el editor). Este adaptador devuelve SIEMPRE
@@ -2474,6 +2490,8 @@ const API = (() => {
     printAdhesivoEdge:    _printAdhesivoEdgeRaw,
     // [Reparación #4] Imprime ticket ESC/POS (client-side) por la Edge `imprimir` (cero GAS).
     imprimirTicketEdge:   _imprimirTicketEdge,
+    // [Reparación #9] Imprime el comprobante CENTRALIZADO (NV/Boleta/Factura) por la Edge ticket-comprobante.
+    imprimirComprobante:  _imprimirComprobanteEdge,
     // [#5 Editor Adhesivos] backend del editor (se cablea como window.MOS_API.post). Shape RAW, gateado.
     adhesivoEditorBackend: _adhesivoEditorBackend,
     // [Realtime catálogo] Suscripción WebSocket a mos.catalogo_meta (UPDATE) → propagación ~0s.
