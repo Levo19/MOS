@@ -1,5 +1,17 @@
 # PLAN — MOS 100% Supabase (cero GAS, cero fallback, cero rastro)
 
+> ## 🔖 PUNTO DE RETOMA (pausado 2026-06-26)
+> **Pausado para una sesión de REPARACIONES.** Retomar esta lista cuando el usuario lo pida.
+> **VIVO y verificado esta sesión:** #2 Auth dispositivos · #6 SUNAT (MOS+ME, confirmado en device) ·
+> #5 Editor adhesivos (prendido, falta 1 impresión física) · S1+clase de fugas anon CERRADA (240/242/244/245) ·
+> #8-turno RPC (money-exact, falta cablear) · **revisión 500x (2 rondas) hecha → 7 fixes funcionales + 18 revokes
+> de seguridad, todo desplegado** (MOS 2.43.348 / ME 2.8.73).
+> **PRÓXIMO al retomar:** (a) #8-turno wiring (turno.html→RPC + Edge Z-cierre, toca el cierre de caja=money) ·
+> (b) #7 horario (security-entangled) · (c) #8-liquidacion (motor de evaluación) · (d) hardening residual
+> (_claim_ok no-empty + Admin_PIN fuera del catálogo + clave-admin en actualizar_segmentos_precio).
+> **Pendiente físico del usuario:** impresión de prueba #5 + device-tests de 2c/#3/#4.
+
+
 Directriz: **100% Supabase. Sin GAS. Sin fallback. Sin rastro.** Orden seguro: migrar cada path a Supabase directo sólido PRIMERO; quitar los fallbacks AL FINAL (para no dejar huecos sin red en una app de dinero). Revisión 40x por paso, integral al cerrar cada bloque.
 
 Directiva adicional: **revisión 40x senior por CADA implementación, siempre.**
