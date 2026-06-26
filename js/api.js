@@ -503,6 +503,10 @@ const API = (() => {
   // Default OFF → GAS bridge (idéntico a hoy). ⚠️ NO prender sin meter `ventas` a ME_SYNC_OFF_TABLAS
   // (el sync Hoja→sombra de ME revierte una edición directa en ≤15min). Ver RUNBOOK del flip.
   function _mosEditDirecto() { return !!_mosFlag('me_edit_directo', 'meEditDirecto'); }
+  // [CUTOVER VENTAS-ME · Etapa 4] NV→CPE 100% Supabase (RPC me.convertir_nv_cpe → fac.emitir_cpe).
+  // Default OFF → GAS. Aunque esté ON, la RPC exige fac._on() (FAC_CPE_DIRECTO): con la emisión fiscal
+  // apagada devuelve FAC_DESACTIVADO → _desempacarME → null → cae a GAS. Activación = go-live fiscal fac.*.
+  function _mosConvertDirecto() { return !!_mosFlag('me_convert_directo', 'meConvertDirecto'); }
 
   // Lectura directa de finanzas por rango. Devuelve {serie,totales,desde,hasta} (= d.data de GAS) o null (→ GAS).
   // null si: sin token, respuesta no-ok, o GATE DE FRESCURA en false (sombra mos.* stale → no servir P&L viejo).
@@ -1245,7 +1249,8 @@ const API = (() => {
     if (out == null) return null;
     if (out.ok === false) {
       const err = String(out.error || 'rpc me sin respuesta');
-      if (/_OFF$/.test(err) || err === 'APP_NO_AUTORIZADA') return null;
+      // *_OFF / APP_NO_AUTORIZADA / FAC_DESACTIVADO (emisión fiscal directa apagada) → NO commiteó → caé a GAS.
+      if (/_OFF$/.test(err) || err === 'APP_NO_AUTORIZADA' || err === 'FAC_DESACTIVADO') return null;
       throw new Error(err);
     }
     return out;
@@ -1375,6 +1380,19 @@ const API = (() => {
     if (action === 'anularTicketME') {
       const out = await _sbRpcMEWrite('anular_venta', { p: {
         idVenta: String(p.idVenta || ''), motivo: p.motivo || '',
+        usuario: _mosUsuario(p), rol: p.rol || '', autorizadoPor: p.autorizadoPor || null
+      } });
+      return _desempacarME(out);
+    }
+    // [Etapa 4] NV→CPE. ⚠️ El front manda idVenta/serie/clienteNom; la RPC espera idVentaNV/serieNueva/clienteNombre.
+    if (action === 'meConvertirNVaCPE') {
+      const out = await _sbRpcMEWrite('convertir_nv_cpe', { p: {
+        idVentaNV: String(p.idVenta || p.idVentaNV || ''),
+        tipoDocNuevo: p.tipoDocNuevo,
+        serieNueva: p.serieNueva != null ? p.serieNueva : (p.serie || ''),
+        clienteDoc: p.clienteDoc != null ? String(p.clienteDoc) : '',
+        clienteNombre: p.clienteNombre != null ? p.clienteNombre : (p.clienteNom != null ? p.clienteNom : ''),
+        clienteDireccion: p.clienteDireccion != null ? p.clienteDireccion : (p.direccion || ''),
         usuario: _mosUsuario(p), rol: p.rol || '', autorizadoPor: p.autorizadoPor || null
       } });
       return _desempacarME(out);
@@ -2021,7 +2039,10 @@ const API = (() => {
     // ⚠️ FLIP gateado por RUNBOOK: requiere `ventas` en ME_SYNC_OFF_TABLAS o el sync revierte la edición.
     meEditarFormaPago:           _mosEditDirecto,
     meEditarCliente:             _mosEditDirecto,
-    anularTicketME:              _mosEditDirecto
+    anularTicketME:              _mosEditDirecto,
+    // [Etapa 4] NV→CPE → me.convertir_nv_cpe (fac.emitir_cpe). Gate dedicado (default OFF). Aunque ON,
+    // requiere fac._on() o devuelve FAC_DESACTIVADO → GAS. Activación = go-live fiscal fac.* (token+correlativo).
+    meConvertirNVaCPE:           _mosConvertDirecto
     // [DUAL-WRITE] pedidos/pagos/provprod/gastos/horario/liqdia: SIN entrada acá → su escritura va SIEMPRE por
     // GAS (dual-write espeja la sombra). recomputarLiquidacionDia tampoco (incompatible).
   };
