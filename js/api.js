@@ -499,6 +499,10 @@ const API = (() => {
   // [Reparación #7] PURGA de catálogo DIRECTA (RPC mos.eliminar_items_catalogo). Mata el "⚠ Lock timeout"
   // del GAS (LockService). Gate _mosPurgaDirecto (server MOS_PURGA_DIRECTO || local). Default OFF → GAS.
   function _mosPurgaDirecto() { return !!_mosFlag('mos_purga_directo', 'purgaDirecto'); }
+  // [CUTOVER VENTAS-ME · Etapa 3] edición de ticket (forma pago / cliente / anular) 100% Supabase.
+  // Default OFF → GAS bridge (idéntico a hoy). ⚠️ NO prender sin meter `ventas` a ME_SYNC_OFF_TABLAS
+  // (el sync Hoja→sombra de ME revierte una edición directa en ≤15min). Ver RUNBOOK del flip.
+  function _mosEditDirecto() { return !!_mosFlag('me_edit_directo', 'meEditDirecto'); }
 
   // Lectura directa de finanzas por rango. Devuelve {serie,totales,desde,hasta} (= d.data de GAS) o null (→ GAS).
   // null si: sin token, respuesta no-ok, o GATE DE FRESCURA en false (sombra mos.* stale → no servir P&L viejo).
@@ -1208,6 +1212,45 @@ const API = (() => {
     return res.json();
   }
 
+  // [CUTOVER VENTAS-ME] Igual que _sbRpcMOSWrite pero contra el esquema `me` (RPCs me.editar_forma_pago /
+  // me.editar_cliente / me.anular_venta). Reusa el MISMO token mint-mos (app='MOS'); las RPCs me.* gatean
+  // `me.jwt_app() in ('','MOS','mosExpress')` → MOS pasa. Sin token → null (caé a GAS). 4xx definitivo → throw.
+  async function _sbRpcMEWrite(fn, args) {
+    const token = await _mintTokenMOS();
+    if (!token) return null;
+    const res = await _sbFetchTimeout(`${_SB_URL}/rest/v1/rpc/${fn}`, {
+      method: 'POST',
+      headers: {
+        'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token,
+        'Accept-Profile': 'me', 'Content-Profile': 'me', 'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(args || {})
+    }, 15000);
+    if (!res.ok) {
+      const e = new Error('rpc me directo HTTP ' + res.status);
+      e.status = res.status;
+      e.permanente = (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429);
+      throw e;
+    }
+    return res.json();
+  }
+
+  // Normaliza la respuesta de una RPC me.* {ok, error?, ...} al CONTRATO de _postDirectoMOS:
+  //   null (sin token)                          → null (caé a GAS)
+  //   ok:false con *_OFF / APP_NO_AUTORIZADA    → null (kill-switch/sin claim ⇒ NO commiteó ⇒ GAS)
+  //   ok:false con noop:true (idempotente)      → devuelve el objeto (NO es error: la venta ya estaba en ese estado)
+  //   ok:false otro (negocio/validación)        → LANZA Error(error) (no commiteó; mismo error que GAS)
+  //   ok:true                                    → devuelve el objeto crudo (callers leen .cambios/.mensaje si quieren)
+  function _desempacarME(out) {
+    if (out == null) return null;
+    if (out.ok === false) {
+      const err = String(out.error || 'rpc me sin respuesta');
+      if (/_OFF$/.test(err) || err === 'APP_NO_AUTORIZADA') return null;
+      throw new Error(err);
+    }
+    return out;
+  }
+
   // [CATÁLOGO DELETE-SAFE] Sube la foto de un producto a Supabase Storage (bucket 'producto-fotos', máxima
   // calidad). Réplica EXACTA del patrón probado de WH (_subirFotoStorage). path: productos/<skuBase>/<archivo>.
   // Nombre DETERMINÍSTICO por skuBase → un reintento sobreescribe el MISMO path (no acumula basura) y reusa la
@@ -1305,6 +1348,37 @@ const API = (() => {
 
   async function _postDirectoMOS(action, params) {
     const p = params || {};
+
+    // [CUTOVER VENTAS-ME · Etapa 3] Edición de ticket 100% Supabase (RPCs me.*, SQL 260).
+    // Paridad de payload con el bridge GAS: el front manda los MISMOS campos que mandaba a Cajas.gs.
+    // El usuario se resuelve igual que el resto del directo (_mosUsuario). autorizadoPor se reenvía si vino.
+    // ⚠️ Las RPCs me.* reciben UN solo param `p jsonb` → el body PostgREST DEBE ir
+    //    envuelto en { p: {...} } o da PGRST202 (convención architecture_rpc_p_jsonb_convencion).
+    if (action === 'meEditarFormaPago') {
+      const out = await _sbRpcMEWrite('editar_forma_pago', { p: {
+        idVenta: String(p.idVenta || ''), formaPagoNueva: p.formaPagoNueva, motivo: p.motivo,
+        usuario: _mosUsuario(p), rol: p.rol || '', autorizadoPor: p.autorizadoPor || null
+      } });
+      return _desempacarME(out);
+    }
+    if (action === 'meEditarCliente') {
+      // ⚠️ El front manda `clienteNom` (no `clienteNombre`); aceptamos ambos por compat.
+      const out = await _sbRpcMEWrite('editar_cliente', { p: {
+        idVenta: String(p.idVenta || ''),
+        clienteDoc: p.clienteDoc != null ? String(p.clienteDoc) : '',
+        clienteNombre: p.clienteNombre != null ? p.clienteNombre : (p.clienteNom != null ? p.clienteNom : ''),
+        clienteDireccion: p.clienteDireccion != null ? p.clienteDireccion : (p.direccion || ''),
+        motivo: p.motivo || '', usuario: _mosUsuario(p), rol: p.rol || '', autorizadoPor: p.autorizadoPor || null
+      } });
+      return _desempacarME(out);
+    }
+    if (action === 'anularTicketME') {
+      const out = await _sbRpcMEWrite('anular_venta', { p: {
+        idVenta: String(p.idVenta || ''), motivo: p.motivo || '',
+        usuario: _mosUsuario(p), rol: p.rol || '', autorizadoPor: p.autorizadoPor || null
+      } });
+      return _desempacarME(out);
+    }
 
     if (action === 'eliminarItemsCatalogo') {
       // mos.eliminar_items_catalogo(p): purga atómica. Devuelve el MISMO shape que GAS PurgaCatalogo.gs:
@@ -1940,7 +2014,14 @@ const API = (() => {
     // [Reparación #7 · PURGA] borrado de catálogo 100% Supabase (RPC mos.eliminar_items_catalogo): transacción
     // atómica (auth MASTER + integridad + snapshot/LÁPIDA + delete + bump), sin LockService → sin "Lock timeout".
     // El sync se parcheó (tombstone) para no resucitar lo purgado. Gate _mosPurgaDirecto, default OFF → GAS.
-    eliminarItemsCatalogo:       _mosPurgaDirecto
+    eliminarItemsCatalogo:       _mosPurgaDirecto,
+    // [CUTOVER VENTAS-ME · Etapa 3] edición de ticket → RPCs me.* (SQL 260). Gate _mosEditDirecto (default OFF
+    // → GAS bridge, idéntico a hoy). me.anular_venta corre TODOS los efectos (ANULADO + historial + reposición
+    // de stock idempotente + descuento de pickup WH vía wh.pickup_descontar_venta) en Postgres, sin GAS.
+    // ⚠️ FLIP gateado por RUNBOOK: requiere `ventas` en ME_SYNC_OFF_TABLAS o el sync revierte la edición.
+    meEditarFormaPago:           _mosEditDirecto,
+    meEditarCliente:             _mosEditDirecto,
+    anularTicketME:              _mosEditDirecto
     // [DUAL-WRITE] pedidos/pagos/provprod/gastos/horario/liqdia: SIN entrada acá → su escritura va SIEMPRE por
     // GAS (dual-write espeja la sombra). recomputarLiquidacionDia tampoco (incompatible).
   };
