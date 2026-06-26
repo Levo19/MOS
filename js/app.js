@@ -41673,27 +41673,36 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     return 'hace ' + Math.floor(seg/86400) + ' d';
   }
 
-  // ── Normalización: unir pendientes + verificadas en una sola lista de guías "uniforme" ──────────────────
-  // estado: 'PENDIENTE' (sin verificar) | 'COMPLETO' | 'INCOMPLETO' | 'BASELINE'
+  // ── [Reparación #3] Normalización: 3 universos en una lista uniforme, con `origen`. ─────────────────────
+  //   • WAREHOUSE pendiente  = despacho de almacén (wh.guias SALIDA_ZONA) aún sin recibir → estado PENDIENTE.
+  //   • WAREHOUSE verificada = fila 'WH:' en zona_traslado_verificacion (recibida en ME) → COMPLETO/INCOMPLETO + DIFF.
+  //   • INTERNAL = guía interna de la zona (me.guias_cabecera, ids G-…) → INFORMATIVA, sin estado/diff.
+  // La regla de pendiente/sobró/faltó SOLO aplica a origen='WAREHOUSE' (lo que entra despachado de almacén).
   function _trasGuiasUnificadas() {
     const out = [];
+    // 1) Despachos de almacén pendientes de recibir (diff-eligible, aún sin escanear en ME).
     const pend = Array.isArray(S._trasPend) ? S._trasPend : [];
     pend.forEach(it => out.push({
       idGuia: String(it.idGuia || ''),
+      origen: 'WAREHOUSE',
+      tipoGuia: String(it.tipoGuia || 'SALIDA_ZONA'),
       estado: 'PENDIENTE',
-      fecha: it.fecha || null,            // fecha de emisión de la guía
+      fecha: it.fecha || null,
       lineas: _zonaNum(it.lineas),
       totalEnviado: _zonaNum(it.totalEnviado),
       totalEscaneado: 0,
       totalDif: 0,
       operario: String(it.vendedor || '—'),
       edadLbl: String(it.edadLbl || ''),
-      detalle: null,
+      detalle: Array.isArray(it.detalle) ? it.detalle : null,
       verificada: false
     }));
+    // 2) Verificadas de ALMACÉN = solo filas 'WH:' (las internas/BASELINE NO van acá, se listan informativas abajo).
     const verifs = (S._trasResumen && Array.isArray(S._trasResumen.verificaciones)) ? S._trasResumen.verificaciones : [];
-    verifs.forEach(v => out.push({
+    verifs.filter(v => String(v.idGuia || '').indexOf('WH:') === 0).forEach(v => out.push({
       idGuia: String(v.idGuia || ''),
+      origen: 'WAREHOUSE',
+      tipoGuia: String(v.tipoGuia || 'SALIDA_ZONA'),
       estado: String(v.estado || 'COMPLETO'),
       fecha: v.fechaGuia || v.verificadoTs || null,
       lineas: _zonaNum(v.lineasOk) + _zonaNum(v.lineasDif),
@@ -41705,7 +41714,53 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       detalle: Array.isArray(v.detalle) ? v.detalle : null,
       verificada: true
     }));
+    // 3) Guías internas de la zona (informativas, sin estado/diff).
+    const internas = Array.isArray(S._trasInternas) ? S._trasInternas : [];
+    internas.forEach(it => out.push({
+      idGuia: String(it.idGuia || ''),
+      origen: 'INTERNAL',
+      tipoGuia: String(it.tipoGuia || ''),
+      estado: 'INFO',
+      fecha: it.fecha || null,
+      lineas: _zonaNum(it.lineas),
+      totalEnviado: _zonaNum(it.totalEnviado),
+      totalEscaneado: 0,
+      totalDif: 0,
+      operario: String(it.vendedor || '—'),
+      edadLbl: String(it.edadLbl || ''),
+      detalle: Array.isArray(it.detalle) ? it.detalle : null,
+      verificada: false
+    }));
     return out;
+  }
+  // [Reparación #3] Etiqueta amigable por tipo+origen (en vez del id crudo, que confunde).
+  function _trasGuiaLabel(g) {
+    const t = String((g && g.tipoGuia) || '').toUpperCase();
+    const id = String((g && g.idGuia) || '').replace(/^WH:/, '');
+    if (g && g.origen === 'WAREHOUSE') {
+      return /^GPCK/i.test(id) ? '📥 Despacho de almacén (pickup)' : '📥 Despacho de almacén';
+    }
+    const map = {
+      'ENTRADA_ALMACEN':      '📥 Ingreso de almacén (manual)',
+      'ENTRADA_TRASLADO':     '↪ Traslado recibido',
+      'ENTRADA_LIBRE':        '✚ Ingreso manual',
+      'SALIDA_VENTAS':        '🛒 Salida por ventas',
+      'SALIDA_VENTA':         '🛒 Salida por ventas',
+      'SALIDA_MOVIMIENTO':    '↦ Traslado enviado',
+      'SALIDA_JEFA':          '🔑 Salida autorizada',
+      'SALIDA_DEVOLUCION_WH': '↩ Devolución a almacén'
+    };
+    return map[t] || ('📦 ' + ((g && g.tipoGuia) || 'Guía interna'));
+  }
+  // [Reparación #3] Carga las guías internas de la zona (informativas).
+  async function _trasCargarInternas() {
+    try {
+      const r = await API.zona.guiasInternas({ zona: S.zonaActual });
+      const data = (r && r.data) || r || {};
+      S._trasInternas = Array.isArray(data.items) ? data.items : [];
+    } catch (e) {
+      try { console.warn('[RIZ] guiasInternas:', e && (e.message || e)); } catch (_) {}
+    }
   }
   // Clave de día (YYYY-MM-DD en TZ local) y etiqueta legible para el encabezado de grupo.
   function _trasDiaKey(fecha) {
@@ -41735,7 +41790,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     openModal('modalZonaGuias');
     _trasMostrarLista();
     // refrescar datos al abrir (por si cambió algo desde el último panel).
-    Promise.all([_trasCargarBadge(), _trasCargarResumen()]).then(() => { _trasPintarBadge(); _trasRenderGuias(); _trasPoblarOperarios(); });
+    Promise.all([_trasCargarBadge(), _trasCargarResumen(), _trasCargarInternas()]).then(() => { _trasPintarBadge(); _trasRenderGuias(); _trasPoblarOperarios(); });
   }
   function trasCerrarGuias() { closeModal('modalZonaGuias'); S._guiaSel = null; }
   function trasRefrescarGuias() { _zonaSfx('tick'); _zonaVibrar(15); trasAbrirGuias(); }
@@ -41795,21 +41850,25 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       </div>`;
     }).join('');
   }
-  // Card de una guía (resumen). estado → clase de borde + etiqueta.
+  // Card de una guía. [Rep#3] título = etiqueta amigable (no el id). estados/diff SOLO para almacén.
   function _trasGuiaCardHtml(g) {
     const idJs = _zonaEsc(g.idGuia);
+    const label = _trasGuiaLabel(g);
     let cls, lbl;
-    if (g.estado === 'PENDIENTE')      { cls = 'pend'; lbl = '⏳ pendiente'; }
-    else if (g.estado === 'INCOMPLETO'){ cls = 'warn'; lbl = '⚠ con diferencia'; }
-    else if (g.estado === 'BASELINE')  { cls = 'base'; lbl = '• base'; }
-    else                               { cls = 'ok';   lbl = '✓ verificada'; }
-    const difTxt = (g.verificada && _zonaNum(g.totalDif) !== 0) ? ` · dif ${_zonaNum(g.totalDif)}` : '';
+    if (g.origen === 'INTERNAL')         { cls = 'base'; lbl = 'ℹ informativa'; }
+    else if (g.estado === 'PENDIENTE')   { cls = 'pend'; lbl = '⏳ pendiente de recibir'; }
+    else if (g.estado === 'INCOMPLETO')  { cls = 'warn'; lbl = '⚠ con diferencia'; }
+    else if (g.estado === 'BASELINE')    { cls = 'base'; lbl = '• base'; }
+    else                                 { cls = 'ok';   lbl = '✓ verificada'; }
+    // dif sobró/faltó SOLO en despachos de almacén YA verificados (recibidos en ME).
+    const difTxt = (g.origen === 'WAREHOUSE' && g.verificada && _zonaNum(g.totalDif) !== 0) ? ` · dif ${_zonaNum(g.totalDif)}` : '';
+    const cant = g.origen === 'WAREHOUSE' ? 'enviado' : 'cant';
     return `<div class="zona-guia-card ${cls}" onclick="MOS.trasVerGuia('${idJs}')">
       <div class="zona-guia-card-top">
-        <span class="zona-guia-id">📦 ${_esc(g.idGuia)}</span>
+        <span class="zona-guia-id">${_esc(label)}</span>
         <span class="zona-guia-estado ${cls}">${lbl}</span>
       </div>
-      <div class="zona-guia-sub">${_zonaNum(g.lineas)} producto(s) · enviado ${_zonaNum(g.totalEnviado)}${difTxt}</div>
+      <div class="zona-guia-sub">${_zonaNum(g.lineas)} producto(s) · ${cant} ${_zonaNum(g.totalEnviado)}${difTxt}</div>
       <div class="zona-guia-meta">👤 ${_esc(g.operario)} · ${_esc(g.edadLbl || '')}</div>
     </div>`;
   }
@@ -41874,17 +41933,20 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (!host) return;
     g = g || {};
     detalle = Array.isArray(detalle) ? detalle : [];
+    // [Reparación #3] La comparación sobró/faltó SOLO aplica a despachos de almacén YA verificados
+    // (recibidos por escaneo en ME). Pendientes de almacén e internas = lista informativa (env/cant).
+    const esDiff = (g.origen === 'WAREHOUSE' && g.verificada);
     // ── Clasificación en 3 secciones (NO cambia la comparación: solo agrupa por estado/dif) ──────────────────
     //   OK     → enviado == escaneado (dif 0). Verde.
     //   FALTA  → enviado > escaneado (llegó de menos). Rojo.
     //   SOBRA  → escaneado > enviado o no estaba en la guía (llegó de más / inesperado). Ámbar.
     const claseDe = (d) => {
       const dif = _zonaNum(d.dif);
-      if (String(d.estado) === 'FALTA') return 'falta';
-      if (String(d.estado) === 'SOBRA') return 'sobra';
-      if (String(d.estado) === 'OK')    return 'ok';
-      // verificada sin estado explícito → derivar de dif; sin verificar (PENDIENTE) cae a 'ok' (informativo).
-      if (g.verificada) return dif > 0 ? 'falta' : (dif < 0 ? 'sobra' : 'ok');
+      if (esDiff && String(d.estado) === 'FALTA') return 'falta';
+      if (esDiff && String(d.estado) === 'SOBRA') return 'sobra';
+      if (esDiff && String(d.estado) === 'OK')    return 'ok';
+      // solo almacén-verificado deriva falta/sobra; pendiente/interna = informativo (ok).
+      if (esDiff) return dif > 0 ? 'falta' : (dif < 0 ? 'sobra' : 'ok');
       return 'ok';
     };
     const grpFalta = detalle.filter(d => claseDe(d) === 'falta');
@@ -41905,9 +41967,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const loteVenc = (lote || vencTxt)
         ? `<span class="tras-det-lote">${lote ? '📦 Lote ' + _esc(lote) : ''}${(lote && vencTxt) ? ' · ' : ''}${vencTxt ? '⏱ Vto ' + _esc(vencTxt) : ''}</span>` : '';
       const meta = (codLinea || loteVenc) ? `<div class="tras-det-meta">${codLinea}${loteVenc}</div>` : '';
-      const difTxt = !g.verificada ? ('env ' + _zonaNum(d.enviado))
+      const difTxt = !esDiff ? ((g.origen === 'WAREHOUSE' ? 'env ' : 'cant ') + _zonaNum(d.enviado))
         : (dif === 0 ? '✓ ok' : (cls === 'falta' ? 'falta ' + dif : 'sobra ' + Math.abs(dif)));
-      const nums = g.verificada
+      const nums = esDiff
         ? `env ${_zonaNum(d.enviado)} · esc ${_zonaNum(d.escaneado)} <b class="tras-det-dif">${difTxt}</b>`
         : `<b class="tras-det-dif">${difTxt}</b>`;
       return `<div class="tras-det-row ${cls}">
@@ -41919,17 +41981,20 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       </div>`;
     };
 
-    // cabecera + estado
+    // cabecera + estado [Rep#3] etiqueta amigable; "verificada" solo aplica a almacén.
+    const label = _trasGuiaLabel(g);
     let estCls, estLbl;
-    if (g.estado === 'PENDIENTE')       { estCls = 'pend'; estLbl = '⏳ Pendiente de verificar'; }
-    else if (g.estado === 'INCOMPLETO') { estCls = 'warn'; estLbl = '⚠ Verificada · con diferencia'; }
-    else if (g.estado === 'BASELINE')   { estCls = 'base'; estLbl = '• Baseline (arranque)'; }
-    else                                { estCls = 'ok';   estLbl = '✓ Verificada · completa'; }
+    if (g.origen === 'INTERNAL')             { estCls = 'base'; estLbl = 'ℹ Informativa (guía interna)'; }
+    else if (g.estado === 'PENDIENTE')       { estCls = 'pend'; estLbl = '⏳ Pendiente de recibir de almacén'; }
+    else if (g.estado === 'INCOMPLETO')      { estCls = 'warn'; estLbl = '⚠ Verificada · con diferencia'; }
+    else if (g.estado === 'BASELINE')        { estCls = 'base'; estLbl = '• Baseline (arranque)'; }
+    else                                     { estCls = 'ok';   estLbl = '✓ Verificada · completa'; }
     const head = `<div class="zona-guia-det-hdr">
-      <div class="zona-guia-card-top"><span class="zona-guia-id">📦 ${_esc(g.idGuia)}</span><span class="zona-guia-estado ${estCls}">${estLbl}</span></div>
+      <div class="zona-guia-card-top"><span class="zona-guia-id">${_esc(label)}</span><span class="zona-guia-estado ${estCls}">${estLbl}</span></div>
       <div class="zona-guia-sub">👤 ${_esc(g.operario || '—')} · ${_esc(g.edadLbl || '')}</div>
-      <div class="zona-guia-meta">enviado ${_zonaNum(g.totalEnviado)}${g.verificada ? ' · escaneado ' + _zonaNum(g.totalEscaneado) + ' · dif ' + _zonaNum(g.totalDif) : ''}</div>`
-      + (g.verificada
+      <div class="zona-guia-meta" style="font-size:9px;opacity:.6">🔖 ${_esc(g.idGuia)}</div>
+      <div class="zona-guia-meta">${esDiff ? 'enviado' : (g.origen === 'WAREHOUSE' ? 'enviado' : 'cant')} ${_zonaNum(g.totalEnviado)}${esDiff ? ' · escaneado ' + _zonaNum(g.totalEscaneado) + ' · dif ' + _zonaNum(g.totalDif) : ''}</div>`
+      + (esDiff
         ? `<div class="tras-det-chips">
              <span class="tras-det-chip ok">✓ OK ${grpOk.length}</span>
              <span class="tras-det-chip falta">⚠ Faltan ${grpFalta.length}</span>
@@ -41937,12 +42002,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
            </div>` : '')
       + `</div>`;
 
-    // ── Cuerpo: 3 secciones claras (faltan primero = lo urgente, luego sobran, luego ok). ────────────────────
+    // ── Cuerpo: 3 secciones (almacén verificado) o lista informativa (pendiente/interna). ────────────────────
     let cuerpo = '';
     const seccion = (cls, ico, titulo, arr) => arr.length
       ? `<div class="zona-guia-discr-lbl ${cls}">${ico} ${titulo} (${arr.length})</div>` + arr.map(filaHtml).join('')
       : '';
-    if (g.verificada) {
+    if (esDiff) {
       cuerpo += seccion('alert', '⚠', 'Faltan', grpFalta);
       cuerpo += seccion('sobra', '➕', 'Sobran / no esperados', grpSobra);
       cuerpo += seccion('ok', '✓', 'OK', grpOk);
@@ -41951,14 +42016,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         cuerpo = `<div class="zona-guia-discr-lbl ok">✓ Sin discrepancias · todo coincide</div>` + cuerpo;
       }
     } else {
-      // PENDIENTE / no verificada: una sola lista informativa de lo enviado.
-      cuerpo += `<div class="zona-guia-discr-lbl" style="color:#94a3b8">Productos de la guía (${detalle.length})</div>` + detalle.map(filaHtml).join('');
+      // Pendiente de almacén / guía interna: una sola lista informativa.
+      const tituloLista = (g.origen === 'WAREHOUSE') ? 'Productos despachados (' : 'Productos de la guía (';
+      cuerpo += `<div class="zona-guia-discr-lbl" style="color:#94a3b8">${tituloLista}${detalle.length})</div>` + detalle.map(filaHtml).join('');
     }
     if (!detalle.length) cuerpo = '<div class="text-center py-6 text-slate-500 text-sm">Sin líneas en esta guía</div>';
-    // botón "✓ Verificado" — solo si la guía está pendiente.
-    const accion = (g.estado === 'PENDIENTE')
-      ? `<button id="trasVerifBtn" class="zona-btn-pedir w-full mt-3" onclick="MOS.trasMarcarVerificado('${_zonaEsc(g.idGuia)}')">✓ Marcar verificado</button>
-         <div class="text-xs text-slate-500 mt-2 text-center">El admin confirma que revisó esta guía. La recepción por escaneo se hace en ME.</div>`
+    // [Rep#3] Sin botón "marcar verificado": la recepción (con su diff) se hace por ESCANEO en ME.
+    // Para despachos de almacén pendientes mostramos una nota; las internas no necesitan acción.
+    const accion = (g.origen === 'WAREHOUSE' && g.estado === 'PENDIENTE')
+      ? `<div class="text-xs text-slate-500 mt-3 text-center">📲 Este despacho se recibe por <b>escaneo en ME</b>. Al recibirlo aparecerá acá con su comparación (sobró/faltó).</div>`
       : '';
     host.innerHTML = `<button class="zona-guia-back" onclick="MOS.trasGuiasVolver()">‹ Volver a la lista</button>${head}${cuerpo}${accion}`;
   }

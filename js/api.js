@@ -792,6 +792,9 @@ const API = (() => {
   // caller hace optimista + revierte). Todos aceptan {zona}/{zonaId}; _zonaParams normaliza.
   async function _zonaTrasladosPendientes(params) { const r = await _sbRpcMOS('zona_traslados_pendientes', { p: _zonaParams(params) }, 'mos'); return r; }
   async function _zonaTrasladosResumen(params)    { const r = await _sbRpcMOS('zona_traslados_resumen',    { p: _zonaParams(params) }, 'mos'); return r; }
+  // [Reparación #3] Guías INTERNAS de la zona (me.guias_cabecera, TODOS los tipos) — informativas, sin diff.
+  // Las PENDIENTES ahora son SOLO despachos de almacén (wh.guias SALIDA_ZONA); estas son el resto (G-...).
+  async function _zonaGuiasInternas(params)       { const r = await _sbRpcMOS('zona_guias_internas',       { p: _zonaParams(params) }, 'mos'); return r; }
   async function _zonaTrasladoGuia(params) {
     const idGuia = params && (params.idGuia != null ? params.idGuia : params.id);
     const r = await _sbRpcMOS('zona_traslado_guia', { p: { idGuia: idGuia != null ? String(idGuia) : undefined } }, 'mos');
@@ -2572,6 +2575,7 @@ const API = (() => {
       // queda GATED/INERTE en el backend (zona_traslado_cerrar.v_aplicar_stock=false); sólo registra kardex + verificación.
       trasladosPendientes: _zonaTrasladosPendientes, // mos.zona_traslados_pendientes(p {zona}) → {ok,data:{total,items:[{idGuia,fecha,lineas,totalEnviado,edadSeg,edadLbl,...}]},_fresh}
       trasladosResumen:    _zonaTrasladosResumen,    // mos.zona_traslados_resumen(p {zona})    → {ok,data:{completo,incompleto,pendiente,verificaciones:[...]},_fresh}
+      guiasInternas:       _zonaGuiasInternas,       // [Rep#3] mos.zona_guias_internas(p {zona}) → {ok,data:{total,items:[{idGuia,origen:'INTERNAL',tipoGuia,detalle,...}]}}
       trasladoGuia:        _zonaTrasladoGuia,        // mos.zona_traslado_guia(p {idGuia})      → {ok,data:{idGuia,zona,verificada,lineas:[{codBarra,descripcion,enviado}]},_fresh}
       trasladoCerrar:      _zonaTrasladoCerrar,      // mos.zona_traslado_cerrar(p {idGuia,escaneados:[{codBarra,cantidad}]}) → {ok,[dedup],stockAplicado,data:{estado,total_*,detalle}}
       baselineTraslados:   _zonaBaselineTraslados,   // mos.zona_baseline_traslados(p {zona?}) → {ok,marcadas,total_pendientes_antes} — marca guías existentes como BASELINE (1 sola vez)
