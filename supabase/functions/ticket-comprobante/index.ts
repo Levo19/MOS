@@ -72,6 +72,20 @@ function bytesToB64(B: number[]): string {
   return btoa(s);
 }
 function _money(n: unknown): string { const v = Number(n); return (Number.isFinite(v) ? v : 0).toFixed(2); }
+// ¿producto vendido por PESO? (granel). La unidad de medida lo determina (KGM estándar SUNAT + variantes).
+function _esPeso(unidad: unknown): boolean {
+  const u = String(unidad || '').toUpperCase().trim();
+  return u === 'KGM' || u === 'KG' || u === 'KGS' || u === 'G' || u === 'GMS' || u === 'GR';
+}
+// Cantidad INTELIGENTE: granel < 1 kg → gramos ("400 g"); >= 1 kg → kilos ("2.5 kg"); unidad → entero ("4").
+function _fmtCant(cant: number, unidad: unknown): string {
+  if (_esPeso(unidad)) {
+    if (cant > 0 && cant < 1) return Math.round(cant * 1000) + ' g';
+    const s = (cant % 1 === 0) ? cant.toFixed(0) : cant.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+    return s + ' kg';
+  }
+  return (cant % 1 === 0) ? String(cant) : cant.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+}
 
 function _docLabel(tipo: string): string {
   const t = String(tipo || '').toUpperCase();
@@ -145,16 +159,22 @@ Deno.serve(async (req: Request) => {
       if (cliDoc) bLn(_cliDocLabel(d.tipoDocCliente) + '    : ' + _norm(cliDoc));
     }
     bLn(SEP);
-    // ── Items ── nombre en su(s) línea(s) completo + "cant x precio ........ subtotal" (sin truncar).
-    bLn(_pad('DESCRIPCION', 'IMPORTE'));
+    // ── Items ── profesional: nombre (máx 2 renglones, ancho completo) + "cant inteligente x precio … subtotal".
+    // Granel (peso) → cantidad en g/kg y precio /kg. Unidad → entero y precio unitario.
+    BOLD(true); bLn(_pad('DESCRIPCION', 'IMPORTE')); BOLD(false);
     (d.items || []).forEach((it: Record<string, unknown>) => {
       const cant = Number(it.cantidad) || 0;
       const precio = Number(it.precio) || 0;
+      const um = it.unidadMedida;
       const nom = String(it.nombre || '').replace(/\s*\(.*\)\s*$/, '');
       const sub = _money(it.subtotal);
-      _wrap(nom, W).forEach((l) => bLn(l));
-      const cantStr = (cant % 1 === 0 ? String(cant) : cant.toFixed(3));
-      bLn(_pad('  ' + cantStr + ' x ' + _money(precio), 'S/ ' + sub));
+      // nombre: hasta 2 renglones a ancho completo; si excede, recortar el 2do con "…".
+      let ls = _wrap(nom, W);
+      if (ls.length > 2) { ls = ls.slice(0, 2); ls[1] = ls[1].slice(0, W - 3) + '...'; }
+      ls.forEach((l) => bLn(l));
+      const cantTxt = _fmtCant(cant, um);
+      const unitTxt = _esPeso(um) ? ('S/ ' + _money(precio) + '/kg') : ('S/ ' + _money(precio));
+      bLn(_pad('  ' + cantTxt + '  x  ' + unitTxt, 'S/ ' + sub));
     });
     bLn(SEP);
     // ── Totales ── (label izq · S/ monto der, consistente)
