@@ -28248,8 +28248,11 @@ const MOS = (() => {
         ID_Dispositivo: id,
         Nombre_Equipo: nombre
       });
-      // Extender shield 3s más para asegurar que el siguiente polling traiga ACTIVO real
-      S._dispShield[id].hasta = Date.now() + 3000;
+      // [v2.43.345] Red de seguridad generosa (15s): el shield se libera ANTES por confirmación del backend
+      // (ver _dispAplicarShield) — este timeout solo cubre el caso de que el backend nunca refleje el cambio.
+      // Antes eran 3s fijos: con el dual-write a la sombra la llamada tarda un poco más y el poll podía llegar
+      // tras el vencimiento con el valor viejo en vuelo → el card parpadeaba (reaparecía y se iba).
+      if (S._dispShield[id]) S._dispShield[id].hasta = Date.now() + 15000;
     } catch(e) {
       // Rollback: quitar shield y restaurar estado previo
       delete S._dispShield[id];
@@ -28268,12 +28271,19 @@ const MOS = (() => {
     const expirados = [];
     Object.keys(S._dispShield).forEach(id => {
       const sh = S._dispShield[id];
-      if (!sh || sh.hasta < ahora) { expirados.push(id); return; }
+      if (!sh) { expirados.push(id); return; }
       const idx = arr.findIndex(x => String(x.ID_Dispositivo) === String(id));
-      if (idx >= 0) {
-        // Preservar estado + nombre optimistas
-        arr[idx] = { ...arr[idx], Estado: sh.estado, Nombre_Equipo: sh.nombre };
+      // [v2.43.345] LIBERAR-AL-CONFIRMAR: si el backend YA trae el estado optimista, el cambio está
+      // confirmado → soltar el shield (no seguir forzando). Esto evita el parpadeo: el card no reaparece
+      // por una respuesta vieja en vuelo (esa NO confirma, así que el shield la sigue tapando) y se suelta
+      // recién cuando llega la confirmación real. El timeout es solo red de seguridad.
+      if (idx >= 0 && String(arr[idx].Estado).toUpperCase() === String(sh.estado).toUpperCase()) {
+        expirados.push(id); return;
       }
+      // Red de seguridad: si el backend nunca reflejó el cambio en la ventana, soltar por tiempo.
+      if (sh.hasta < ahora) { expirados.push(id); return; }
+      // Aún sin confirmar y dentro de ventana → preservar el estado + nombre optimistas.
+      if (idx >= 0) arr[idx] = { ...arr[idx], Estado: sh.estado, Nombre_Equipo: sh.nombre };
     });
     expirados.forEach(id => delete S._dispShield[id]);
     return arr;

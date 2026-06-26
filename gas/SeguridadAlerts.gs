@@ -261,6 +261,9 @@ function desbloquearTemporalDispositivo(params) {
       if (String(data[i][iId]) !== params.deviceId) continue;
       sheet.getRange(i + 1, iEst + 1).setValue('ACTIVO');
       if (iDT >= 0) sheet.getRange(i + 1, iDT + 1).setValue(hasta.toISOString());
+      // [CUTOVER auth] desbloqueo temporal (control) → espejar a la sombra.
+      if (typeof _dualWriteDispositivo === 'function')
+        _dualWriteDispositivo(params.deviceId, { Estado: 'ACTIVO', Desbloqueo_Temporal_Hasta: hasta.toISOString() });
       _crearAlertaSeg('DESBLOQUEO_TEMPORAL', {
         idDispositivo: params.deviceId,
         descripcion: 'Desbloqueo temp ' + duracionHoras + 'h · razón: ' + String(params.razon).substring(0, 150),
@@ -300,6 +303,7 @@ function revertirDesbloqueosVencidos() {
     var iEst = hdrs.indexOf('Estado');
     var iDT  = hdrs.indexOf('Desbloqueo_Temporal_Hasta');
     var iSus = hdrs.indexOf('Suspendido_Desde');
+    var iIdR = hdrs.indexOf('ID_Dispositivo');   // [CUTOVER auth] para espejar la re-suspensión a la sombra
     if (iDT < 0) return { ok: true, revertidos: 0 };
     var nowMs = Date.now();
     var nowIso = new Date(nowMs).toISOString();
@@ -315,6 +319,9 @@ function revertirDesbloqueosVencidos() {
       sheet.getRange(i + 1, iEst + 1).setValue('SUSPENDIDO');
       sheet.getRange(i + 1, iDT + 1).setValue('');
       if (iSus >= 0) sheet.getRange(i + 1, iSus + 1).setValue(nowIso);
+      // [CUTOVER auth] re-suspensión por desbloqueo vencido (control) → espejar a la sombra.
+      if (iIdR >= 0 && typeof _dualWriteDispositivo === 'function')
+        _dualWriteDispositivo(String(data[i][iIdR] || ''), { Estado: 'SUSPENDIDO', Desbloqueo_Temporal_Hasta: '', Suspendido_Desde: nowIso });
       rev++;
     }
     return { ok: true, revertidos: rev };
@@ -384,6 +391,9 @@ function reactivarDispositivoSuspendido(params) {
       var _nomEqR = data[i][hdrs.indexOf('Nombre_Equipo')] || '';
       var _shadowOkR = (typeof _propagarDispositivoSombra === 'function')
         ? _propagarDispositivoSombra(params.deviceId, _appEqR, _nomEqR, params.userAgent) : null;
+      // [CUTOVER auth] _propagarDispositivoSombra NO limpia Suspendido_Desde en la sombra → cerrar ese hueco
+      // (control). Sin esto, el reverse-sync repondría Suspendido_Desde y el cron de purga re-suspendería.
+      if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(params.deviceId, { Suspendido_Desde: '' });
       return { ok: true, data: Object.assign(
         { autorizado: true, aprobadoPor: authR.data.validadoPor, accion: 'reactivado',
           deviceId: String(params.deviceId), shadowOk: _shadowOkR },

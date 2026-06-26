@@ -1937,6 +1937,7 @@ function cierreNocturnoTodos() {
       var iEst = hdrs.indexOf('Estado');
       var iFL  = hdrs.indexOf('Forzar_Logout');
       var iFLts= hdrs.indexOf('Logout_Auto_Ts');
+      var iIdD = hdrs.indexOf('ID_Dispositivo');   // [CUTOVER auth] para espejar el logout forzado a la sombra
       // Set de nombres admin/master para EXCLUIRLOS del logout forzado
       var adminsNorm = {};
       try {
@@ -1988,6 +1989,9 @@ function cierreNocturnoTodos() {
           if (iFLts >= 0) {
             dispoSh.getRange(rd + 1, iFLts + 1).setNumberFormat('@').setValue(nowStrUTC);
           }
+          // [CUTOVER auth] logout forzado nocturno (control) → espejar a la sombra (si no, el reverse-sync lo borra).
+          if (iIdD >= 0 && typeof _dualWriteDispositivo === 'function')
+            _dualWriteDispositivo(String(dd[rd][iIdD] || ''), { Forzar_Logout: '1', Logout_Auto_Ts: nowStrUTC });
           resultado.devices.marcados++;
         } catch(eD) {
           resultado.devices.errores++;
@@ -2143,6 +2147,8 @@ function marcarLogoutHonrado(params) {
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][iId]) !== deviceId) continue;
     if (iFL >= 0) sheet.getRange(i + 1, iFL + 1).setValue('');
+    // [CUTOVER auth] limpiar Forzar_Logout (control) → espejar (si no, el reverse-sync repone '1' y re-cierra sesión).
+    if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(deviceId, { Forzar_Logout: '' });
     return { ok: true };
   }
   return { ok: false, error: 'Dispositivo no encontrado' };

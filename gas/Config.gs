@@ -702,6 +702,9 @@ function crearDispositivo(params) {
   if (hdrs.indexOf('Ultima_Estacion') >= 0) fila[hdrs.indexOf('Ultima_Estacion')] = params.Ultima_Estacion || '';
   if (hdrs.indexOf('Ultima_Sesion') >= 0)   fila[hdrs.indexOf('Ultima_Sesion')]   = params.Ultima_Sesion   || '';
   sheet.appendRow(fila);
+  // [CUTOVER auth] Espejo a la sombra del alta (control+identidad; la actividad la siembra el 1er heartbeat).
+  if (typeof _dualWriteDispositivo === 'function')
+    _dualWriteDispositivo(params.ID_Dispositivo, { Nombre_Equipo: params.Nombre_Equipo, App: params.App || 'mosExpress', Estado: params.Estado || 'ACTIVO' });
   return { ok: true, data: { ID_Dispositivo: params.ID_Dispositivo } };
 }
 
@@ -741,6 +744,12 @@ function actualizarDispositivo(params) {
         sheet.getRange(i + 1, iUS + 1).setValue('manual_admin');
       }
     }
+    // [CUTOVER auth] Espejo a la sombra SOLO de control/identidad (Estado/Nombre/App); la zona/estación/sesión
+    // son actividad y las mantiene la hoja (el reverse-sync no las pisa).
+    var _p = {};
+    ['Nombre_Equipo', 'App', 'Estado'].forEach(function(c) { if (params[c] !== undefined) _p[c] = params[c]; });
+    if (Object.keys(_p).length && typeof _dualWriteDispositivo === 'function')
+      _dualWriteDispositivo(params.ID_Dispositivo, _p);
     return { ok: true };
   }
   return { ok: false, error: 'Dispositivo no encontrado: ' + params.ID_Dispositivo };
@@ -881,6 +890,8 @@ function extenderHorarioDispositivo(params) {
     var preservoExistente = (actualMs > nuevoMs);
 
     sheet.getRange(rowFound + 1, iDTH + 1).setValue(hastaIso);
+    // [CUTOVER auth] Desbloqueo_Temporal_Hasta es control → espejar a la sombra (si no, el reverse-sync lo revierte).
+    if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(params.deviceId, { Desbloqueo_Temporal_Hasta: hastaIso });
 
     // Alerta para visibilidad en panel SEGURIDAD_ALERTAS
     try {
@@ -980,6 +991,8 @@ function registrarSesionDispositivo(params) {
           sheetMos.getRange(rm + 1, iEstM + 1).setValue('PENDIENTE_APROBACION');
           var iCATMos = hdrsMos.indexOf('Cancelado_Auto_Ts');
           if (iCATMos >= 0) sheetMos.getRange(rm + 1, iCATMos + 1).setValue('');
+          // [CUTOVER auth] transición de control → espejar a la sombra (reverse-sync no debe revertir a CANCELADO).
+          if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(deviceId, { Estado: 'PENDIENTE_APROBACION', Cancelado_Auto_Ts: '' });
           try {
             var nombreMosCA = dataMos[rm][hdrsMos.indexOf('Nombre_Equipo')] || '';
             _enviarPushTodos('🔒 MOS solicita acceso de nuevo (master)',
@@ -1041,6 +1054,8 @@ function registrarSesionDispositivo(params) {
     if (iEstMos >= 0) filaMos[iEstMos] = 'PENDIENTE_APROBACION';
     if (iUCMos >= 0)  filaMos[iUCMos]  = nowM;
     sheetMos.appendRow(filaMos);
+    // [CUTOVER auth] alta PENDIENTE nueva → espejar a la sombra (post-cutover ya no hay barrido Hoja→Sombra que la suba).
+    if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(deviceId, { Nombre_Equipo: nombreNuevoMos, App: 'MOS', Estado: 'PENDIENTE_APROBACION' });
 
     try {
       var detalleMos = (labelUAMos || 'MOS') + ' · UUID ' + deviceId.substring(0, 8) + '...';
@@ -1104,6 +1119,8 @@ function registrarSesionDispositivo(params) {
       var iCAT2 = hdrs.indexOf('Cancelado_Auto_Ts');
       if (iCAT2 >= 0) sheet.getRange(i + 1, iCAT2 + 1).setValue('');
       if (iUC >= 0) sheet.getRange(i + 1, iUC + 1).setValue(nowStr);
+      // [CUTOVER auth] transición de control → espejar (Ultima_Conexion es actividad, no se espeja).
+      if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(deviceId, { Estado: 'PENDIENTE_APROBACION', Cancelado_Auto_Ts: '' });
       // Push fresh al admin/master + alerta SEGURIDAD_ALERTAS nueva
       try {
         var nombreRow = data[i][hdrs.indexOf('Nombre_Equipo')] || '';
@@ -1164,6 +1181,8 @@ function registrarSesionDispositivo(params) {
     var iIAT = hdrs.indexOf('Inactivo_Alerta_Ts');
     if (iIAT >= 0 && data[i][iIAT]) {
       sheet.getRange(i + 1, iIAT + 1).setValue('');
+      // [CUTOVER auth] limpiar la marca de alerta es control → espejar (si no, el reverse-sync la repone y el cron re-alerta).
+      if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(deviceId, { Inactivo_Alerta_Ts: '' });
     }
     // [v2.43.167] Response con extras consistentes (verifyVersion, fechaHoyLima,
     // forzar_logout, forzar_reverify, forzar_push, forzar_wizard).
@@ -1193,6 +1212,8 @@ function registrarSesionDispositivo(params) {
   if (iUEs >= 0) fila[iUEs] = params.idEstacion || '';
   if (iUSe >= 0) fila[iUSe] = params.vendedor || '';
   sheet.appendRow(fila);
+  // [CUTOVER auth] alta PENDIENTE nueva → espejar a la sombra (control+identidad).
+  if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(deviceId, { Nombre_Equipo: nombreNuevo, App: appNueva, Estado: 'PENDIENTE_APROBACION' });
 
   // Push notif a master avisando del nuevo dispositivo, con nombre legible.
   try {
@@ -1270,7 +1291,11 @@ function consultarEstadoDispositivo(params) {
     // Heartbeat: actualizar Ultima_Conexion aunque el dispositivo no haya logueado
     if (iUC >= 0) sheet.getRange(i + 1, iUC + 1).setValue(nowStr);
     // Si estaba suspendido por inactividad y reapareció, limpiar el flag
-    if (iSus >= 0 && data[i][iSus]) sheet.getRange(i + 1, iSus + 1).setValue('');
+    if (iSus >= 0 && data[i][iSus]) {
+      sheet.getRange(i + 1, iSus + 1).setValue('');
+      // [CUTOVER auth] limpiar Suspendido_Desde es control → espejar (el heartbeat Ultima_Conexion NO se espeja).
+      if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(deviceId, { Suspendido_Desde: '' });
+    }
     var fw = iFW >= 0 ? String(data[i][iFW] || '') : '';
     var fl = iFL >= 0 ? String(data[i][iFL] || '') : '';
     // [v2.43.60] FIX TIMEZONE: si Sheets auto-parseó el ISO al guardar
@@ -1365,6 +1390,8 @@ function forzarPushDispositivo(params) {
     if (String(data[i][iId]) !== params.deviceId) continue;
     if (iFP >= 0) sheet.getRange(i + 1, iFP + 1).setNumberFormat('@').setValue('1');
     try { SpreadsheetApp.flush(); } catch(_){}
+    // [CUTOVER auth] Forzar_Push es control → espejar a la sombra.
+    if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(params.deviceId, { Forzar_Push: '1' });
     return { ok: true, data: { autorizado: true, forzadoPor: auth.data.validadoPor } };
   }
   return { ok: false, error: 'Dispositivo no encontrado' };
@@ -1388,6 +1415,9 @@ function limpiarFlagDevice(params) {
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][iId]) !== deviceId) continue;
     sheet.getRange(i + 1, iCol + 1).setValue('');
+    // [CUTOVER auth] limpiar Forzar_Push/Forzar_Wizard es control → espejar.
+    var _pf = {}; _pf[flag] = '';
+    if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(deviceId, _pf);
     return { ok: true, data: { limpiado: flag } };
   }
   return { ok: false, error: 'Dispositivo no encontrado' };
@@ -1441,6 +1471,8 @@ function registrarPermisosDispositivo(params) {
     if (String(data[i][iId]) !== deviceId) continue;
     if (iPJ  >= 0) sheet.getRange(i + 1, iPJ  + 1).setValue(JSON.stringify(params.permisos));
     if (iPLU >= 0) sheet.getRange(i + 1, iPLU + 1).setValue(nowStr);
+    // [CUTOVER auth] permisos los posee el reverse-sync → espejar para que no los revierta.
+    if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(deviceId, { Permisos_JSON: JSON.stringify(params.permisos), Permisos_LastUpdate: nowStr });
     return { ok: true };
   }
   return { ok: false, error: 'Dispositivo no encontrado: ' + deviceId };
@@ -1459,6 +1491,8 @@ function marcarWizardMostrado(params) {
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][iId]) !== deviceId) continue;
     if (iFW >= 0) sheet.getRange(i + 1, iFW + 1).setValue('');
+    // [CUTOVER auth] Forzar_Wizard es control → espejar el limpiado.
+    if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(deviceId, { Forzar_Wizard: '' });
     return { ok: true };
   }
   return { ok: false, error: 'Dispositivo no encontrado' };
@@ -1486,6 +1520,8 @@ function forzarWizardDispositivo(params) {
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][iId]) !== params.deviceId) continue;
     if (iFW >= 0) sheet.getRange(i + 1, iFW + 1).setValue('1');
+    // [CUTOVER auth] Forzar_Wizard es control → espejar.
+    if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(params.deviceId, { Forzar_Wizard: '1' });
     return { ok: true, data: { autorizado: true, forzadoPor: auth.data.validadoPor } };
   }
   return { ok: false, error: 'Dispositivo no encontrado' };
@@ -1554,6 +1590,8 @@ function purgarDispositivosInactivos(params) {
     if ((nowMs - ucMs) > limMs) {
       sheet.getRange(i + 1, iEst + 1).setValue('SUSPENDIDO');
       if (iSus >= 0) sheet.getRange(i + 1, iSus + 1).setValue(nowStr);
+      // [CUTOVER auth] auto-suspensión (control) → espejar a la sombra.
+      if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(String(data[i][iId] || ''), { Estado: 'SUSPENDIDO', Suspendido_Desde: nowStr });
       suspendidos++;
       // [v2.43.167] Capturar detalles para crear alerta de seguridad y push
       var diasInactivo = Math.floor((nowMs - ucMs) / (24 * 60 * 60 * 1000));
@@ -1627,6 +1665,14 @@ function aprobarDispositivoPendiente(params) {
       if (iSus >= 0 && estadoActual === 'SUSPENDIDO') sheet.getRange(i + 1, iSus + 1).setValue('');
       if (params.Nombre_Equipo) sheet.getRange(i + 1, hdrs.indexOf('Nombre_Equipo') + 1).setValue(params.Nombre_Equipo);
       if (params.App)           sheet.getRange(i + 1, hdrs.indexOf('App') + 1).setValue(params.App);
+
+      // [CUTOVER auth] Aprobación = el caso más crítico → espejar a la sombra (control+identidad). Sin esto, el
+      // reverse-sync revertiría el dispositivo recién aprobado a PENDIENTE/SUSPENDIDO en ≤15min.
+      var _pa = { Estado: 'ACTIVO', Forzar_ReVerify: '', Inactivo_Alerta_Ts: '' };
+      if (estadoActual === 'SUSPENDIDO') _pa.Suspendido_Desde = '';
+      if (params.Nombre_Equipo) _pa.Nombre_Equipo = params.Nombre_Equipo;
+      if (params.App) _pa.App = params.App;
+      if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(params.ID_Dispositivo, _pa);
 
       var nombreFinal = params.Nombre_Equipo || data[i][hdrs.indexOf('Nombre_Equipo')] || '';
       var appFinal    = params.App || data[i][hdrs.indexOf('App')] || '';
@@ -1913,6 +1959,8 @@ function rechazarDispositivoPendiente(params) {
         return { ok: true, skipped: true, motivo: 'ya_activo_no_se_rechaza' };
       }
       sheet.getRange(i + 1, iEst + 1).setValue('INACTIVO');
+      // [CUTOVER auth] rechazo/bloqueo (control) → espejar a la sombra.
+      if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(params.ID_Dispositivo, { Estado: 'INACTIVO' });
       return { ok: true };
     }
     return { ok: false, error: 'Dispositivo no encontrado' };
@@ -1959,6 +2007,8 @@ function forzarReVerifyDispositivo(params) {
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][iId]) !== String(params.deviceId)) continue;
     sheet.getRange(i + 1, iFRV + 1).setValue('1');
+    // [CUTOVER auth] Forzar_ReVerify es control → espejar.
+    if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(params.deviceId, { Forzar_ReVerify: '1' });
     return { ok: true, data: { autorizado: true, deviceId: params.deviceId } };
   }
   return { ok: false, error: 'Dispositivo no encontrado' };
@@ -2019,6 +2069,8 @@ function alertarDispositivosInactivos2a7d() {
       }
     } catch(eA) { Logger.log('[alertarInactivos] crearAlerta fallo: ' + eA.message); }
     if (iIAT >= 0) sheet.getRange(i + 1, iIAT + 1).setValue(nowStr);
+    // [CUTOVER auth] marca de aviso de inactividad (control) → espejar.
+    if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(idDisp, { Inactivo_Alerta_Ts: nowStr });
     alertados++;
     detalles.push({ idDispositivo: idDisp, nombre: nombre, app: appEq, diasInactivo: diasInactivo });
   }
@@ -2094,6 +2146,8 @@ function cancelarPendientesAntiguos() {
       if (iCAT >= 0) sheet.getRange(i + 1, iCAT + 1).setValue(nowStr);
       canceladas++;
       var idDisp = String(data[i][iId] || '');
+      // [CUTOVER auth] auto-cancelación (control) → espejar.
+      if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(idDisp, { Estado: 'CANCELADO_AUTO', Cancelado_Auto_Ts: nowStr });
       detalles.push({
         idDispositivo: idDisp,
         nombre:        String(data[i][iNom] || ''),
@@ -2317,13 +2371,17 @@ function limpiarPendientesMOS() {
   var hdrs  = data[0];
   var iEst  = hdrs.indexOf('Estado');
   var iApp  = hdrs.indexOf('App');
+  var iId   = hdrs.indexOf('ID_Dispositivo');
   var borradas = 0;
   // Iterar de atrás hacia adelante para no perder índices al borrar
   for (var i = data.length - 1; i >= 1; i--) {
     var est = String(data[i][iEst] || '').toUpperCase();
     var app = String(data[i][iApp] || '').toUpperCase();
     if (est === 'PENDIENTE_APROBACION' && (app === 'MOS' || app === '')) {
+      var idBorrar = iId >= 0 ? String(data[i][iId] || '') : '';
       sheet.deleteRow(i + 1);
+      // [CUTOVER auth] borrado de fila → borrar también en la sombra (si no, el reverse-sync la re-agrega).
+      if (idBorrar && typeof _dualDeleteDispositivo === 'function') _dualDeleteDispositivo(idBorrar);
       borradas++;
     }
   }
@@ -2361,5 +2419,21 @@ function vincularBrowserDispositivo(params) {
   if (pendienteRow > 0 && pendienteRow !== targetRow) {
     sheet.deleteRow(pendienteRow);
   }
+
+  // [CUTOVER auth] Reconciliar la sombra: el target cambió de PK (idTarget→browserId) y se borró el row huérfano
+  // browserId. Orden: borrar idTarget + cualquier browserId previo, LUEGO reespejar el estado del target bajo
+  // browserId (el upsert recrea la fila buena). Sin esto, el reverse-sync repondría idTarget y/o el huérfano.
+  if (typeof _dualDeleteDispositivo === 'function') { _dualDeleteDispositivo(idTarget); _dualDeleteDispositivo(browserId); }
+  var _vrow = data[targetRow - 1];   // estado del target en memoria (PK vieja, control/identidad/actividad correctos)
+  var _vpatch = {};
+  ['Estado', 'Nombre_Equipo', 'App', 'Suspendido_Desde', 'Forzar_Logout', 'Logout_Auto_Ts', 'Forzar_Wizard',
+   'Forzar_Push', 'Forzar_ReVerify', 'Desbloqueo_Temporal_Hasta', 'Razon_Bloqueo', 'Bloqueado_Desde',
+   'Cancelado_Auto_Ts', 'Inactivo_Alerta_Ts', 'Permisos_JSON', 'Permisos_LastUpdate',
+   'Ultima_Conexion', 'Ultima_Zona', 'Ultima_Estacion', 'Ultima_Sesion'].forEach(function(c) {
+    var ci = hdrs.indexOf(c);
+    if (ci >= 0 && _vrow[ci] !== '' && _vrow[ci] != null) _vpatch[c] = _vrow[ci];
+  });
+  if (Object.keys(_vpatch).length && typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(browserId, _vpatch);
+
   return { ok: true, data: { vinculado: true, targetRow: targetRow, deviceId: browserId } };
 }
