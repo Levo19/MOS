@@ -23,6 +23,29 @@ function json(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 }
 
+// [CACHE LOOKUP cero-GAS] Apenas APISPeru devuelve datos, guardamos el cliente en me.clientes_frecuentes
+// (server-side, service-role). Así queda cacheado AUNQUE no se emita la venta → la próxima vez lo halla al
+// instante y no se vuelve a pegar a APISPeru (ahorra cuota). insert-if-missing: NO pisa un nombre/dirección
+// ya corregidos a mano (ignore-duplicates). Idempotente por `documento` (único). Fire-and-forget tolerante.
+async function guardarClienteFrecuente(doc: string, nombre: string, direccion: string, tipo: string): Promise<void> {
+  try {
+    const url = Deno.env.get('SUPABASE_URL');
+    const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!url || !key || !doc || !nombre) return;
+    if (doc === '66666') return;   // VARIOS no se cachea
+    const tipo_doc = tipo === 'RUC' ? '6' : '1';
+    await fetch(`${url}/rest/v1/clientes_frecuentes`, {
+      method: 'POST',
+      headers: {
+        'apikey': key, 'Authorization': 'Bearer ' + key,
+        'Content-Profile': 'me', 'Content-Type': 'application/json',
+        'Prefer': 'resolution=ignore-duplicates',   // no pisa si ya existe
+      },
+      body: JSON.stringify({ documento: doc, nombre, tipo_doc, direccion: direccion || null }),
+    });
+  } catch { /* el cacheo nunca debe romper el lookup */ }
+}
+
 function jwtClaims(token: string): Record<string, unknown> | null {
   try {
     const part = token.split('.')[1];
@@ -115,7 +138,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
     r = await intentar(url, doc, tipo, true);
   }
   const { _ok, _ko, _retry, ...payload } = r;
-  void _ok; void _ko; void _retry;
+  void _ko; void _retry;
+  // [CACHE LOOKUP cero-GAS] consulta exitosa → cachear en clientes_frecuentes (no bloquea si falla).
+  if (_ok && payload.status === 'success') {
+    await guardarClienteFrecuente(doc, String(payload.nombre || ''), String(payload.direccion || ''), String(payload.tipo || ''));
+  }
   const httpStatus = payload.status === 'success' ? 200 : (payload.status === 'not_found' ? 404 : 502);
   return json(payload, httpStatus);
 });
