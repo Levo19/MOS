@@ -47,3 +47,16 @@ verify_jwt = false
 # Secrets FCM_PROJECT_ID/FCM_CLIENT_EMAIL/FCM_PRIVATE_KEY (service-account proyectomos-push).
 [functions.push]
 verify_jwt = true
+
+# Edge Function `consultar-documento`: lookup SUNAT/RENIEC (APISPeru). verify_jwt=true explícito (antes dependía
+# del default): consume el token APISPeru y ESCRIBE en me.clientes_frecuentes con service-role en el lookup, así
+# que NO debe ser invocable anónimamente. Claim app ∈ {MOS,mosExpress,warehouseMos} en código. [500x-2b #seguridad]
+[functions.consultar-documento]
+verify_jwt = true
+
+# Edge Function `reconciliar-cpe`: reconciliación BATCH del estado SUNAT. verify_jwt=FALSE A PROPÓSITO: el
+# disparador es pg_cron vía net.http_post SIN Authorization (no hay JWT que mandar); se auto-protege con el header
+# x-cpe-cron == secret CPE_CRON_SECRET (en Vault). Con verify_jwt=true la plataforma rechazaría el cron con 401
+# antes del handler → la reconciliación nunca correría. [500x-2b · BLOQUEANTE del cutover]
+[functions.reconciliar-cpe]
+verify_jwt = false

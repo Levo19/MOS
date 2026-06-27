@@ -73,7 +73,8 @@ Deno.serve(async (req: Request) => {
     if (!(await cpeDirectoOn(url, key))) return json({ ok: false, error: 'CPE_DIRECTO_DESACTIVADO' }, 403);
 
     const inp = await req.json().catch(() => ({}));
-    const dias = Math.min(Math.max(parseInt(String(inp.dias ?? 7), 10) || 7, 1), 60);
+    // [500x-2b] ventana >= 45d (cubre el sweep GAS de 35d + margen); SUNAT puede aceptar dias despues.
+    const dias = Math.min(Math.max(parseInt(String(inp.dias ?? 45), 10) || 45, 1), 90);
     const limite = Math.min(Math.max(parseInt(String(inp.limite ?? 50), 10) || 50, 1), 200);
     const desde = new Date(Date.now() - dias * 86400 * 1000).toISOString().slice(0, 10);
 

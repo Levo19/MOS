@@ -55,12 +55,17 @@ async function consultar(serie: string, numero: number, tipoComprobante: number,
     });
     const body = await resp.json().catch(() => ({}));
     if (resp.status === 200 || resp.status === 201) {
+      const aceptada = body.aceptada_por_sunat === true;
+      const sunatDesc = String(body.sunat_description || '').trim();
+      const respCode = body.sunat_responsecode;
+      // [500x-2b] distinguir RECHAZADO (aceptada=false CON error SUNAT) de PENDIENTE (aceptada=false sin error)
+      const tieneErr = !!sunatDesc || (respCode != null && String(respCode).trim() !== '' && String(respCode).trim() !== '0');
       return {
-        ok: true, aceptada: body.aceptada_por_sunat === true,
+        ok: true, aceptada, rechazado: (!aceptada && tieneErr),
         hash: String(body.codigo_hash || ''), enlace: String(body.enlace_del_pdf || ''),
         qrString: String(body.cadena_para_codigo_qr || ''), enlace_xml: String(body.enlace_del_xml || ''),
         enlace_cdr: String(body.enlace_del_cdr || ''), numero_orden_sunat: String(body.numero_de_orden_sunat || ''),
-        sunatDescription: String(body.sunat_description || ''),
+        sunatDescription: sunatDesc, sunat_code: (respCode != null ? String(respCode) : ''),
       };
     }
     const errMsg = String(body.errors || body.message || '');
@@ -105,7 +110,8 @@ Deno.serve(async (req: Request) => {
       const tc = (tipoDoc === 'FACTURA') ? 1 : 2;
       const cons = await consultar(ps[0], sNum, tc, ruta, token);
       if (!cons.ok) return json({ ok: false, ...cons }, cons.noExiste ? 404 : 502);
-      return json({ ok: true, consultado: true, estado: cons.aceptada ? 'EMITIDO' : 'PENDIENTE', ...cons });
+      const estC = cons.aceptada ? 'EMITIDO' : (cons.rechazado ? 'RECHAZADO' : 'PENDIENTE');
+      return json({ ok: true, consultado: true, estado: estC, ...cons });
     }
 
     // ── generar (emitir) — solo POS ──
@@ -197,6 +203,7 @@ Deno.serve(async (req: Request) => {
       const comun = {
         hash: String(body.codigo_hash || ''), enlace: String(body.enlace_del_pdf || ''),
         qrString: String(body.cadena_para_codigo_qr || ''), sunatDescription: sunatDesc,
+        sunat_code: (respCode != null ? String(respCode) : ''),   // [500x-2b] capturar codigo SUNAT del rechazo
         enlace_xml: String(body.enlace_del_xml || ''), enlace_cdr: String(body.enlace_del_cdr || ''),
         numero_orden_sunat: String(body.numero_de_orden_sunat || ''),
       };
@@ -211,7 +218,11 @@ Deno.serve(async (req: Request) => {
     const errMsg = String(body.errors || body.message || '');
     if (/ya\s+fue\s+informado|duplicad|comprobante\s+ya\s+existe|already\s+exists/i.test(errMsg)) {
       const cons = await consultar(serie, numero, tipoComprobante, ruta, token);
-      if (cons.ok) return json({ ...cons, dedupNubeFact: true });
+      if (cons.ok) {
+        // [500x-2b] si el duplicado fue RECHAZADO por SUNAT, propagar el rechazo (no degradar a PENDIENTE)
+        if (cons.rechazado) return json({ ok: false, rechazadoPorSunat: true, dedupNubeFact: true, error: 'SUNAT rechazó: ' + (cons.sunatDescription || ('código ' + cons.sunat_code)), ...cons });
+        return json({ ...cons, estado: cons.aceptada ? 'EMITIDO' : 'PENDIENTE', dedupNubeFact: true });
+      }
     }
     return json({ ok: false, error: 'HTTP ' + resp.status + ': ' + errMsg.slice(0, 250) }, 502);
   } catch (e) {

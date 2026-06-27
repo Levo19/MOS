@@ -31663,11 +31663,34 @@ const MOS = (() => {
     if (!auth) return;
     toast('🔄 Reconciliando todos los CPE pendientes con NubeFact/SUNAT...', 'info');
     try {
-      const res = await API.post('tribReconciliarCPEs', {});
-      const stats = res?.data || res || {};
-      toast('✓ ' + (stats.emitidos || 0) + ' reconciliados · ' + (stats.rechazados || 0) + ' rechazados · ' + (stats.sin_cambio || 0) + ' sin cambio', 'success');
+      // [500x-2b · cero-GAS] PRIMERO Supabase: jala los pendientes (cpe_trazabilidad) e itera el Edge
+      // consultar por cada uno (API.cpeReconciliar → set_cpe_nf), sin GAS. Fallback a GAS si no hay token.
+      const _mm = String(_tribState.mes).padStart(2, '0');
+      const _desde = `${_tribState.anio}-${_mm}-01`;
+      const _ult = new Date(_tribState.anio, _tribState.mes, 0).getDate();
+      const _hasta = `${_tribState.anio}-${_mm}-${String(_ult).padStart(2, '0')}`;
+      let viaSupa = false, emitidos = 0, rechazados = 0, sinCambio = 0;
+      const sup = await API.cpeTrazabilidad(_desde, _hasta);
+      if (sup && sup.ok && Array.isArray(sup.cpe)) {
+        const pend = sup.cpe.filter(c => !c.aceptadoSunat && String(c.nfEstado || '').toUpperCase().indexOf('BAJA') !== 0 && c.nfEstado !== 'RECHAZADO' && c.refLocal && c.correlativo);
+        for (const c of pend) {
+          const r = await API.cpeReconciliar({ correlativo: c.correlativo, tipoDoc: c.tipo, refLocal: c.refLocal });
+          if (r === null) { viaSupa = false; break; }          // sin token/red → caer a GAS
+          viaSupa = true;
+          if (r.ok && r.estado === 'EMITIDO') emitidos++;
+          else if (r.ok && r.estado === 'RECHAZADO') rechazados++;
+          else sinCambio++;
+        }
+        if (viaSupa || pend.length === 0) { viaSupa = true; }
+      }
+      if (!viaSupa) {
+        const res = await API.post('tribReconciliarCPEs', {});
+        const stats = res?.data || res || {};
+        emitidos = stats.emitidos || 0; rechazados = stats.rechazados || 0; sinCambio = stats.sin_cambio || 0;
+      }
+      toast('✓ ' + emitidos + ' emitidos · ' + rechazados + ' rechazados · ' + sinCambio + ' sin cambio' + (viaSupa ? ' ⚡' : ''), 'success');
       _finBeep && _finBeep('success');
-      tribCargar();
+      tribAbrirIGVEmitido();
     } catch(e) { toast('Error: ' + (e.message || e), 'error'); }
   }
 
