@@ -1,1 +1,1 @@
-{"version":"2.43.362","build":"fix: membrete prefetchTodo silencia errores de fondo (.catch) -> no mas Uncaught-in-promise rojo cuando GAS esta sobre cuota. Es prefetch best-effort; datos cargan on-demand. + bump membrete asset ?v=."}
+{"version":"2.43.363","build":"UX: editar-cliente en 1 solo formulario (antes 3 prompts) + z-index 9600 (ya no sale detras) + soporte Carne de Extranjeria (tipo_doc 4, SQL 268). Forma-pago: motivo obligatorio in-form (asterisco + boton deshabilitado hasta valido), no mas toast post-submit."}

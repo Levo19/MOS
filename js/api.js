@@ -1374,6 +1374,7 @@ const API = (() => {
         clienteDoc: p.clienteDoc != null ? String(p.clienteDoc) : '',
         clienteNombre: p.clienteNombre != null ? p.clienteNombre : (p.clienteNom != null ? p.clienteNom : ''),
         clienteDireccion: p.clienteDireccion != null ? p.clienteDireccion : (p.direccion || ''),
+        tipoDocCliente: p.tipoDocCliente != null ? String(p.tipoDocCliente) : '',   // C.E.=4 / Pasaporte=7 (explícito)
         motivo: p.motivo || '', usuario: _mosUsuario(p), rol: p.rol || '', autorizadoPor: p.autorizadoPor || null
       } });
       return _desempacarME(out);

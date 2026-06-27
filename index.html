@@ -3650,7 +3650,8 @@
        confirm/prompt nativos del browser). Mismo estilo de la app.
        ════════════════════════════════════════════════════════════ */
     .mos-modal-generic-backdrop {
-      position: fixed; inset: 0; z-index: 1500;
+      /* 9600: por encima de los modales de tickets/cajas (~9520) — antes 1500 salía DETRÁS del layout */
+      position: fixed; inset: 0; z-index: 9600;
       background: rgba(2, 6, 23, .72);
       backdrop-filter: blur(10px);
       display: flex; align-items: center; justify-content: center;
@@ -14981,10 +14982,10 @@
               <div class="grid grid-cols-2 gap-2" id="tkCambiarFPOpciones"></div>
             </div>
             <div>
-              <label class="text-[10px] text-slate-400 uppercase block mb-1">Motivo (obligatorio)</label>
-              <input type="text" id="tkCambiarFPMotivo" class="inp text-sm" placeholder="ej: cliente pagó realmente con Yape">
+              <label class="text-[10px] text-slate-400 uppercase block mb-1">Motivo <span class="text-rose-400">* (mín. 3)</span></label>
+              <input type="text" id="tkCambiarFPMotivo" class="inp text-sm" oninput="MOS._tkCambiarFPValidar()" placeholder="ej: cliente pagó realmente con Yape">
             </div>
-            <button onclick="MOS._tkCambiarFPConfirmar()" class="w-full btn-primary text-sm py-3">✓ Aplicar cambio</button>
+            <button id="tkCambiarFPBtn" disabled onclick="MOS._tkCambiarFPConfirmar()" class="w-full btn-primary text-sm py-3 opacity-40 cursor-not-allowed">✓ Aplicar cambio</button>
           </div>
         </div>
       </div>
@@ -19275,7 +19276,7 @@ if (false) (function(){
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.362';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.363';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19320,13 +19321,13 @@ if (false) (function(){
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.362"></script>
+<script src="js/api.js?v=2.43.363"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
      bumps de sw.js. Bug reportado: usuario seguía viendo error "Lote en curso"
      de v2.43.146 después de v2.43.148. -->
-<script src="./assets/membrete/membrete-modal.js?v=2.43.362"></script>
+<script src="./assets/membrete/membrete-modal.js?v=2.43.363"></script>
 <script src="./assets/seguridad/seguridad-modal.js?v=2.43.168"></script>
 <!-- [v2.43.187] AdhesivoPreview — render visual del adhesivo unificado con WH.
      Mismo módulo en /assets/adhesivo/preview.js — backend Envasados.gs pixel-perfect. -->
@@ -19335,7 +19336,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.362"></script>
+<script src="js/app.js?v=2.43.363"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

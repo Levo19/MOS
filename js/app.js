@@ -26566,6 +26566,7 @@ const MOS = (() => {
       `<button class="tk-cob-mbtn" onclick="MOS._tkCambiarFPSel('${o.v}')" id="tkCambiarFPOp_${o.v}">${o.txt}</button>`
     ).join('');
     openModal('modalTkCambiarFP');
+    _tkCambiarFPValidar();   // arranca deshabilitado (sin forma ni motivo)
   }
 
   function _tkCambiarFPSel(v) {
@@ -26573,6 +26574,21 @@ const MOS = (() => {
     document.querySelectorAll('#tkCambiarFPOpciones .tk-cob-mbtn').forEach(b => b.classList.remove('tk-cob-mbtn-active'));
     const b = $('tkCambiarFPOp_' + v);
     if (b) b.classList.add('tk-cob-mbtn-active');
+    _tkCambiarFPValidar();
+  }
+
+  // [UX 500x] Gate in-form: el botón solo se habilita con forma seleccionada + motivo>=3.
+  // Evita el toast rojo post-submit "Motivo obligatorio" (no intuitivo).
+  function _tkCambiarFPValidar() {
+    const motivo = ($('tkCambiarFPMotivo')?.value || '').trim();
+    const ok = !!_tkAcc.cambiarFP.nueva && motivo.length >= 3;
+    const btn = $('tkCambiarFPBtn');
+    if (btn) {
+      btn.disabled = !ok;
+      btn.classList.toggle('opacity-40', !ok);
+      btn.classList.toggle('cursor-not-allowed', !ok);
+    }
+    return ok;
   }
 
   async function _tkCambiarFPConfirmar() {
@@ -26763,40 +26779,109 @@ const MOS = (() => {
   // ──────────────────────────────────────────────────────────
   // EDITAR CLIENTE (modo prompt rápido — solo NV o pre-CPE)
   // ──────────────────────────────────────────────────────────
+  // [UX 500x] Modal ÚNICO de editar cliente (antes eran 3 _modalPrompt secuenciales + salía detrás
+  // del layout por z-index). Un solo formulario: doc (auto-detecta DNI/RUC/C.E.) + lookup APISPeru
+  // (vía Edge, solo DNI/RUC) + nombre + dirección + motivo. Devuelve {doc,nombre,direccion,motivo,tipoDoc} o null.
+  function _modalEditarCliente(t) {
+    return new Promise((resolve) => {
+      const _esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const _tipoDe = (d) => {
+        d = String(d || '').trim();
+        if (!d) return { cod: 0, lbl: 'Sin doc' };
+        if (/^\d{8}$/.test(d))  return { cod: 1, lbl: 'DNI' };
+        if (/^\d{11}$/.test(d)) return { cod: 6, lbl: 'RUC' };
+        return { cod: 4, lbl: 'C.E./Otro' };   // Carné de Extranjería / Pasaporte / otros
+      };
+      const bd = document.createElement('div');
+      bd.className = 'mos-modal-generic-backdrop';
+      bd.innerHTML = `
+        <div class="mos-modal-generic mos-modal-generic-primary" role="dialog" aria-modal="true">
+          <div class="mos-modal-generic-head">
+            <span class="mos-modal-generic-ico">👤</span><strong>Editar cliente</strong>
+            <button class="mos-modal-generic-close" data-cancel>✕</button>
+          </div>
+          <div class="mos-modal-generic-body" style="display:flex;flex-direction:column;gap:12px;">
+            <div>
+              <label class="mos-modal-generic-label">Documento — DNI (8) / RUC (11) / C.E. <span id="ec-tipo" style="float:right;font-weight:800;color:#818cf8;"></span></label>
+              <div style="display:flex;gap:8px;">
+                <input id="ec-doc" class="mos-modal-generic-input" inputmode="text" maxlength="15" value="${_esc(t.clienteDoc || '')}" placeholder="documento" style="flex:1;" />
+                <button id="ec-buscar" class="mos-modal-generic-btn mos-modal-generic-btn-ghost" title="Buscar nombre" style="white-space:nowrap;">🔎</button>
+              </div>
+            </div>
+            <div>
+              <label class="mos-modal-generic-label">Nombre / Razón social</label>
+              <input id="ec-nom" class="mos-modal-generic-input" maxlength="120" value="${_esc(t.cliente || '')}" placeholder="nombre" />
+            </div>
+            <div>
+              <label class="mos-modal-generic-label">Dirección <span style="opacity:.55;">(opcional)</span></label>
+              <input id="ec-dir" class="mos-modal-generic-input" maxlength="160" value="" placeholder="dirección fiscal" />
+            </div>
+            <div>
+              <label class="mos-modal-generic-label">Motivo del cambio <span style="color:#fb7185;font-weight:700;">* (mín. 3)</span></label>
+              <input id="ec-mot" class="mos-modal-generic-input" maxlength="180" value="" placeholder="motivo de la corrección" />
+            </div>
+          </div>
+          <div class="mos-modal-generic-foot">
+            <button class="mos-modal-generic-btn mos-modal-generic-btn-ghost" data-cancel>Cancelar</button>
+            <button id="ec-ok" class="mos-modal-generic-btn mos-modal-generic-btn-ok mos-modal-generic-btn-primary" disabled style="opacity:.4;cursor:not-allowed;" data-ok>Guardar</button>
+          </div>
+        </div>`;
+      const $$ = (id) => bd.querySelector('#' + id);
+      const cerrar = (val) => { bd.classList.remove('is-open'); setTimeout(() => { try { bd.remove(); } catch(_){} }, 200); resolve(val); };
+      const refTipo = () => { const ti = _tipoDe($$('ec-doc').value); $$('ec-tipo').textContent = ti.lbl; return ti; };
+      const validar = () => {
+        const mot = ($$('ec-mot').value || '').trim();
+        const doc = ($$('ec-doc').value || '').trim();
+        const nom = ($$('ec-nom').value || '').trim();
+        const ok = mot.length >= 3 && (!!doc || !!nom);
+        const b = $$('ec-ok'); b.disabled = !ok; b.style.opacity = ok ? '1' : '.4'; b.style.cursor = ok ? 'pointer' : 'not-allowed';
+      };
+      const lookup = async () => {
+        const ti = refTipo(); const doc = ($$('ec-doc').value || '').trim();
+        if (ti.cod !== 1 && ti.cod !== 6) return;   // lookup solo DNI/RUC (APISPeru); C.E. se escribe a mano
+        const bb = $$('ec-buscar'); const prev = bb.textContent; bb.textContent = '…'; bb.disabled = true;
+        try {
+          const r = await API.get('meConsultarCliente', { doc });
+          const nom = r?.nombre || r?.razon_social || '';
+          if (nom) $$('ec-nom').value = nom;
+          if (r?.direccion) $$('ec-dir').value = r.direccion;
+        } catch(_) {}
+        bb.textContent = prev; bb.disabled = false; validar();
+      };
+      bd.addEventListener('click', (ev) => {
+        const tt = ev.target;
+        if (tt === bd || (tt.closest && tt.closest('[data-cancel]'))) { cerrar(null); return; }
+        if (tt.closest && tt.closest('#ec-buscar')) { ev.preventDefault(); lookup(); return; }
+        if (tt.closest && tt.closest('[data-ok]')) {
+          const ti = refTipo();
+          const doc = ($$('ec-doc').value || '').trim(), nom = ($$('ec-nom').value || '').trim();
+          const dir = ($$('ec-dir').value || '').trim(), mot = ($$('ec-mot').value || '').trim();
+          if (mot.length < 3 || (!doc && !nom)) return;
+          try { _finBeep?.('success'); } catch(_){}
+          cerrar({ doc, nombre: nom, direccion: dir, motivo: mot, tipoDoc: ti.cod });
+        }
+      });
+      bd.addEventListener('input', (ev) => { if (ev.target.id === 'ec-doc') refTipo(); validar(); });
+      bd.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') cerrar(null); });
+      bd.addEventListener('blur', (ev) => { if (ev.target.id === 'ec-doc') { const ti = _tipoDe(ev.target.value); if (ti.cod === 1 || ti.cod === 6) lookup(); } }, true);
+      document.body.appendChild(bd);
+      requestAnimationFrame(() => bd.classList.add('is-open'));
+      try { _finBeep?.('tap'); } catch(_){}
+      setTimeout(() => { refTipo(); validar(); try { $$('ec-doc').focus(); } catch(_){} }, 220);
+    });
+  }
+
   async function _tkEditarClienteOpen(t) {
-    const docNuevo = await _modalPrompt('DNI (8) / RUC (11) — vacío para sin doc:', t.clienteDoc || '', { titulo: 'Editar cliente · paso 1/3', inputMode: 'numeric', maxlength: 11 });
-    if (docNuevo === null) return;
-    const docTrim = (docNuevo || '').trim();
-    if (docTrim && docTrim.length !== 8 && docTrim.length !== 11) {
-      toast('Doc debe tener 8 o 11 dígitos', 'error'); return;
-    }
-
-    let nombre = t.cliente || '';
-    let direccion = '';
-    if (docTrim) {
-      try {
-        const r = await API.get('meConsultarCliente', { doc: docTrim });
-        nombre = r?.nombre || r?.razon_social || '';
-        direccion = r?.direccion || '';
-      } catch(_) {}
-    }
-
-    nombre = await _modalPrompt('Nombre / Razón social:', nombre || '', { titulo: 'Editar cliente · paso 2/3', maxlength: 120 });
-    if (nombre === null) return;
-    if (!docTrim && !nombre.trim()) {
-      toast('Ingresa al menos un dato (doc o nombre)', 'error'); return;
-    }
-
-    const motivo = await _modalPrompt('Motivo del cambio (mín. 3 caracteres):', '', { titulo: 'Editar cliente · paso 3/3', textarea: true, maxlength: 180 }) || '';
-    if (motivo.trim().length < 3) { toast('Motivo obligatorio', 'error'); return; }
-
+    const r = await _modalEditarCliente(t);
+    if (!r) return;
     try {
       await API.post('meEditarCliente', {
         idVenta: t.idVenta,
-        clienteDoc: docTrim,
-        clienteNom: nombre.trim(),
-        direccion,
-        motivo: motivo.trim()
+        clienteDoc: r.doc,
+        clienteNom: r.nombre,
+        direccion: r.direccion,
+        motivo: r.motivo,
+        tipoDocCliente: r.tipoDoc   // explícito → soporta C.E. (4) / Pasaporte (7)
       });
       toast('✓ Cliente actualizado', 'success');
       await _cajasRefreshSilencioso?.();
@@ -42656,7 +42741,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // F2 — Acciones editables sobre tickets
     cjAbrirAccionesTicket, _tkAccion,
     _tkCobrarSetMetodo, _tkCobrarSetCaja, _tkCobrarValidarMixto, _tkCobrarConfirmar,
-    _tkCambiarFPSel, _tkCambiarFPConfirmar,
+    _tkCambiarFPSel, _tkCambiarFPConfirmar, _tkCambiarFPValidar,
     _tkAprobarCredConfirmar,
     _tkConvSetTipo, _tkConvDocChange, _tkConvBuscarCliente, _tkConvertirConfirmar,
     _tkBajaSetMotivo, _tkBajaActualizarBoton, _tkBajaConfirmar,
