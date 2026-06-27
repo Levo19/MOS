@@ -38,3 +38,30 @@ Estados: 🆕 nuevo · 🔍 analizando · 🛠️ en progreso · ✅ desplegado 
 ## #9 — Centralizar + formatear el modelo de TICKET (un formato para todo)
 **Requerimiento:** la reimpresión del ticket de venta no es igual al original (le falta QR con id-ticket; si es CPE le falta QR/hash SUNAT). Centralizar UN modelo de ticket usado en TODOS los lugares donde se emite (nota de venta, boleta, factura, nota crédito/débito) — todo lo de dinero venta empresa→cliente con NubeFact debe tener el MISMO formato. Analizar qué pide NubeFact + cómo se hace en otros lados, proponer y DIBUJAR opciones.
 **Estado:** 🔍 análisis + propuesta (sin implementar aún). Banners de versión = punto aparte, después.
+
+---
+## 📊 ESTADO CONSOLIDADO al 2026-06-27 (cierre de jornada 2)
+
+### ✅ HECHO + desplegado (jornada 2 — ventas/fiscal/CPE)
+- **Cutover ventas-ME Etapa 3** (forma pago / editar cliente / anular → RPCs `me.*` directas): construido + 100x + **verificado en POS** (NVa2-002019/2016, NV01-001622). ✔️
+- **Emisión NV cero-GAS** (ME 2.8.79): infra→cola directa, negocio→bloquea; sin caer a GAS. ✅
+- **CPE por Edge** (3-hop me.crear_cpe_directo→Edge emitir-cpe→set_cpe_nf, token en secret) + serie 100% Supabase (SQL 270). DEMO activo (BBB1/FFF1). ✅
+- **Revisión 500x #1** (27 hallazgos) + **#2** (23 hallazgos, 12 accionables) → todos corregidos+desplegados (ME 2.8.81, SQL 264-271, MOS GAS). ✅
+- **Trazabilidad fiscal CPE 100% Supabase** (SQL 272 + Edge `consultar` + panel Tributario MOS lee Supabase, distingue aceptado-NubeFact vs aceptado-SUNAT). ✅
+- **Reconciliador BATCH** (Edge `reconciliar-cpe` + pg_cron + Vault, SQL 273) — INERTE (flag `CPE_RECON_ON=0` hasta el cutover). ✅
+- **LOW18 + backfill huérfano** (SQL 273 / convertir_nv_cpe). ✅
+- **Tarjeta de presentación** (grant anon a get_tarjeta_config — daba toast falso). ✅
+- **Auto-VARIOS en boleta <S/700** (SUNAT) + Edge manda numero '0' para sin-documento. ✅ (ME 2.8.83)
+- **Listado del vendedor desde Supabase** (SQL 274 + cargarVentasVendedor, cero-GAS, merge). ✅ (ME 2.8.84)
+- **Cache de cliente en lookup** (consultar-documento upserta clientes_frecuentes apenas APISPeru responde). ✅
+
+### ⏳ PENDIENTE REAL (lo que falta)
+1. **#9 Centralizar el modelo de TICKET** — un solo formato para NV/boleta/factura/NC/ND con QR id-ticket + QR/hash SUNAT en la reimpresión. 🔍 Analizado, **NO implementado**. (El más grande que queda.)
+2. **CPE a PRODUCCIÓN** (miércoles): token NubeFact real + series reales por zona + alinear correlativos + flags (`ME_CPE_DIRECTO` real, `FAC_CPE_DIRECTO`, `CPE_RECON_ON=1`).
+3. **#4 Etapa 2** del modal de ticket: los 2 historiales (venta + cliente) → Supabase nativo (hoy por GAS bridge). Etapa 3 y 4 ya hechas.
+4. **#3 modal Guías·Zona** — la solución está descrita (status ✔️) pero la celda Deploy quedó vacía → **verificar si se desplegó** el render origen WAREHOUSE/INTERNAL.
+5. **Test de calibración del adhesivo de granel** — requiere impresora física (layout TSPL2 estimado).
+6. **Auto-update banner para ME** (portar el patrón de MOS 2.43.339, con cuidado: no forzar reload mid-venta).
+7. **Banners de versión** — punto aparte (mencionado en #9).
+8. **DNI fallback 2º proveedor** — el dueño está buscando proveedor/token.
+9. **#2 opcional** — reimprimir adhesivo al corregir el PESO de un granel (guard idDetalle+peso).
