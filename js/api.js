@@ -1249,8 +1249,9 @@ const API = (() => {
     if (out == null) return null;
     if (out.ok === false) {
       const err = String(out.error || 'rpc me sin respuesta');
-      // *_OFF / APP_NO_AUTORIZADA / FAC_DESACTIVADO (emisión fiscal directa apagada) → NO commiteó → caé a GAS.
-      if (/_OFF$/.test(err) || err === 'APP_NO_AUTORIZADA' || err === 'FAC_DESACTIVADO') return null;
+      // *_OFF / APP_NO_AUTORIZADA / FAC_DESACTIVADO (emisión fiscal apagada) / CAJA_NO_ABIERTA
+      // (conversión NV→CPE post-cierre: la RPC directa solo maneja caja abierta) → NO commiteó → caé a GAS.
+      if (/_OFF$/.test(err) || err === 'APP_NO_AUTORIZADA' || err === 'FAC_DESACTIVADO' || err === 'CAJA_NO_ABIERTA') return null;
       throw new Error(err);
     }
     return out;

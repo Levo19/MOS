@@ -454,7 +454,7 @@ function eliminarGasto(params) {
 // Para POR_COBRAR / CREDITO / ANULADO devuelve { efe:0, vir:0 } (no es cash).
 function _parseFormaPagoFin(metodo, total) {
   var m = String(metodo || '').toUpperCase().trim();
-  if (!m || m === 'POR_COBRAR' || m === 'CREDITO' || m === 'ANULADO') return { efe: 0, vir: 0 };
+  if (!m || m === 'POR_COBRAR' || m === 'CREDITO' || m.indexOf('ANULADO') === 0) return { efe: 0, vir: 0 };  // ANULADO% (incl. ANULADO_CONVERSION)
   if (m === 'EFECTIVO') return { efe: total, vir: 0 };
   if (m === 'VIRTUAL')  return { efe: 0, vir: total };
   if (m.indexOf('MIXTO') === 0) {
@@ -481,8 +481,8 @@ function _calcularIngresos(fecha) {
   //   CREDITO                = admin aprobó cobro futuro formal (deuda)
   //   ANULADO                = ticket descartado, no cuenta
   var fp = function(v){ return String(v.FormaPago || '').toUpperCase(); };
-  var anuladas    = del_dia.filter(function(v){ return fp(v) === 'ANULADO'; });
-  var noAnuladas  = del_dia.filter(function(v){ return fp(v) !== 'ANULADO'; });
+  var anuladas    = del_dia.filter(function(v){ return fp(v).indexOf('ANULADO') === 0; });   // ANULADO + ANULADO_CONVERSION
+  var noAnuladas  = del_dia.filter(function(v){ return fp(v).indexOf('ANULADO') !== 0; });
   var cobrados    = noAnuladas.filter(function(v) {
     var m = fp(v);
     return m !== 'POR_COBRAR' && m !== 'CREDITO';
@@ -541,7 +541,7 @@ function _calcularIngresos(fecha) {
   var detalleTickets = del_dia.map(function(v) {
     var f = String(v.Fecha || '');
     var m = fp(v);
-    var estadoDerivado = m === 'ANULADO'    ? 'ANULADO'
+    var estadoDerivado = m.indexOf('ANULADO') === 0 ? 'ANULADO'
                        : m === 'POR_COBRAR' ? 'POR_COBRAR'
                        : m === 'CREDITO'    ? 'CREDITO'
                        : 'COBRADO';
