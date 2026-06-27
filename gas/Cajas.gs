@@ -65,8 +65,10 @@ function getCierresCaja(params) {
       // La fuente de verdad de estado en ME es FormaPago (col 8):
       // 'ANULADO' = anulado, 'POR_COBRAR' = pendiente, 'CREDITO' = crédito, resto = cobrado
       var formaPago = String(vd[v][8] || 'EFECTIVO');
-      // Estado derivado de FormaPago (igual que ME nativo)
-      var estado    = (formaPago === 'ANULADO' || formaPago === 'CREDITO') ? formaPago
+      // Estado derivado de FormaPago (igual que ME nativo). [H2 500x-2] Anulado por PREFIJO 'ANULADO%'
+      // (cubre 'ANULADO_CONVERSION' de NV→CPE; con igualdad exacta caía a COMPLETADO y doble-contaba la NV).
+      var estado    = (formaPago.toUpperCase().indexOf('ANULADO') === 0) ? 'ANULADO'
+                    : (formaPago === 'CREDITO') ? 'CREDITO'
                     : (formaPago === 'POR_COBRAR' ? 'POR_COBRAR' : 'COMPLETADO');
       // Método para byMetodo solo cuando está cobrado (evita meter 'ANULADO' como método)
       var metodo    = formaPago;
@@ -270,7 +272,7 @@ function anularTicketME(params) {
   var data = sheet.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][0]).trim() === buscarId) {
-      if (String(data[i][8]).trim() === 'ANULADO') return { ok: false, error: 'El ticket ya está anulado' };
+      if (String(data[i][8]).trim().toUpperCase().indexOf('ANULADO') === 0) return { ok: false, error: 'El ticket ya está anulado' };  // [H2 500x-2] prefijo (cubre ANULADO_CONVERSION → evita doble reposición)
       sheet.getRange(i + 1, 9).setValue('ANULADO'); // col 9 (1-idx) = FormaPago, igual que ME nativo
       return { ok: true };
     }
@@ -293,7 +295,7 @@ function cambiarMetodoME(params) {
   var data = sheet.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][0]).trim() === buscarId) {
-      if (String(data[i][8]).trim() === 'ANULADO') return { ok: false, error: 'No se puede modificar un ticket anulado' };
+      if (String(data[i][8]).trim().toUpperCase().indexOf('ANULADO') === 0) return { ok: false, error: 'No se puede modificar un ticket anulado' };  // [H2 500x-2] prefijo
       sheet.getRange(i + 1, 9).setValue(params.metodo); // FormaPago col 9 (1-idx), igual que cobrarVentaExistente en ME
       return { ok: true };
     }
@@ -405,7 +407,7 @@ function datosTurno(params) {
   // ── 4. Calcular totales ──────────────────────────────────────
   var _parseMetodo = function(metodo, total) {
     var m = String(metodo || '').toUpperCase().trim();
-    if (!m || m === 'POR_COBRAR' || m === 'CREDITO' || m === 'ANULADO') return { efe: 0, vir: 0 };
+    if (!m || m === 'POR_COBRAR' || m === 'CREDITO' || m.indexOf('ANULADO') === 0) return { efe: 0, vir: 0 };  // [H2 500x-2] prefijo
     if (m === 'EFECTIVO') return { efe: total, vir: 0 };
     if (m === 'VIRTUAL')  return { efe: 0, vir: total };
     if (m.indexOf('MIXTO') === 0) {
@@ -418,11 +420,13 @@ function datosTurno(params) {
     return { efe: 0, vir: total };
   };
 
-  var anulados   = tickets.filter(function(t){ return t.metodo === 'ANULADO'; });
+  // [H2 500x-2] anulado por PREFIJO (cubre 'ANULADO_CONVERSION')
+  var _esAnul    = function(m){ return String(m||'').toUpperCase().indexOf('ANULADO') === 0; };
+  var anulados   = tickets.filter(function(t){ return _esAnul(t.metodo); });
   var sinCobrar  = tickets.filter(function(t){ return t.metodo === 'POR_COBRAR'; });
   var creditos   = tickets.filter(function(t){ return t.metodo === 'CREDITO'; });
-  var cobrados   = tickets.filter(function(t){ return t.metodo !== 'ANULADO' && t.metodo !== 'POR_COBRAR'; });
-  var noAnul     = tickets.filter(function(t){ return t.metodo !== 'ANULADO'; });
+  var cobrados   = tickets.filter(function(t){ return !_esAnul(t.metodo) && t.metodo !== 'POR_COBRAR'; });
+  var noAnul     = tickets.filter(function(t){ return !_esAnul(t.metodo); });
 
   var tEfectivo = 0, tVirtual = 0;
   cobrados.filter(function(t){ return t.metodo !== 'CREDITO'; }).forEach(function(t) {
@@ -770,10 +774,12 @@ function imprimirTicketZCierre(params) {
   }
 
   // ── 4. Calcular ──────────────────────────────────────────────
-  var anulados  = tickets.filter(function(t){ return t.metodo === 'ANULADO'; });
-  var cobrados  = tickets.filter(function(t){ return t.metodo !== 'ANULADO' && t.metodo !== 'POR_COBRAR'; });
+  // [H2 500x-2] anulado por PREFIJO (cubre 'ANULADO_CONVERSION') — el Z-cierre impreso SIEMPRE va por GAS.
+  var _esAnul   = function(m){ return String(m||'').toUpperCase().indexOf('ANULADO') === 0; };
+  var anulados  = tickets.filter(function(t){ return _esAnul(t.metodo); });
+  var cobrados  = tickets.filter(function(t){ return !_esAnul(t.metodo) && t.metodo !== 'POR_COBRAR'; });
   var creditos  = tickets.filter(function(t){ return t.metodo === 'CREDITO'; });
-  var noAnul    = tickets.filter(function(t){ return t.metodo !== 'ANULADO'; });
+  var noAnul    = tickets.filter(function(t){ return !_esAnul(t.metodo); });
 
   var _parseMetodo = function(metodo, total) {
     var m = String(metodo || '').toUpperCase().trim();
