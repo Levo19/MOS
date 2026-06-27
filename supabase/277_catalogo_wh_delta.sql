@@ -12,7 +12,7 @@
 -- de seguridad (sin pin/pin_hash/numero_cuenta/cci) y proyección (sin created_at/updated_at en productos).
 -- ════════════════════════════════════════════════════════════════════════════════════════════════════
 
--- (1) updated_at confiable en mos.productos
+-- (1) updated_at confiable en mos.productos (INSERT y UPDATE → un alta también entra al delta).
 create or replace function mos._touch_updated_at() returns trigger language plpgsql as $fn$
 begin
   new.updated_at := now();
@@ -20,13 +20,14 @@ begin
 end;
 $fn$;
 drop trigger if exists tg_touch_updated_at on mos.productos;
-create trigger tg_touch_updated_at before update on mos.productos
+create trigger tg_touch_updated_at before insert or update on mos.productos
   for each row execute function mos._touch_updated_at();
 
 -- (3) server_ts en el FULL (para que el front fije el punto de corte del delta)
 create or replace function mos.catalogo_wh_rls()
 returns jsonb language plpgsql stable security definer set search_path to '' as $function$
 declare v_prod jsonb; v_equiv jsonb; v_prov jsonb; v_pers jsonb; v_impr jsonb; v_zonas jsonb;
+        v_ts timestamptz := now();   -- [race-safe] corte ANTES de leer: lo que cambie durante el query lo re-trae el próximo delta
 begin
   if not (wh._claim_ok() or mos._claim_ok()) then
     return jsonb_build_object('ok', false, 'error', 'APP_NO_AUTORIZADA');
@@ -37,7 +38,7 @@ begin
   select coalesce(jsonb_agg((to_jsonb(p) - 'pin' - 'pin_hash') order by p.id_personal), '[]'::jsonb) into v_pers from mos.personal p where p.estado = true;
   select coalesce(jsonb_agg(to_jsonb(i) order by i.id_impresora), '[]'::jsonb) into v_impr from mos.impresoras i where lower(coalesce(i.app_origen,'')) = 'warehousemos' and i.activo = true;
   select coalesce(jsonb_agg(to_jsonb(z) order by z.id_zona), '[]'::jsonb) into v_zonas from mos.zonas z where z.estado = true;
-  return jsonb_build_object('ok', true, 'server_ts', to_char(now() at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+  return jsonb_build_object('ok', true, 'server_ts', to_char(v_ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
     'productos', v_prod, 'equivalencias', v_equiv, 'proveedores', v_prov,
     'personal', v_pers, 'impresoras', v_impr, 'zonas', v_zonas);
 end;
@@ -49,6 +50,7 @@ returns jsonb language plpgsql stable security definer set search_path to '' as 
 declare
   v_desde timestamptz := nullif(btrim(coalesce(p->>'desde','')),'')::timestamptz;
   v_prod jsonb; v_equiv jsonb; v_prov jsonb; v_pers jsonb; v_impr jsonb; v_zonas jsonb; v_nprod int;
+  v_ts timestamptz := now();   -- [race-safe] corte ANTES de leer
 begin
   if not (wh._claim_ok() or mos._claim_ok()) then
     return jsonb_build_object('ok', false, 'error', 'APP_NO_AUTORIZADA');
@@ -67,7 +69,7 @@ begin
   select coalesce(jsonb_agg(to_jsonb(i) order by i.id_impresora), '[]'::jsonb) into v_impr from mos.impresoras i where lower(coalesce(i.app_origen,'')) = 'warehousemos' and i.activo = true;
   select coalesce(jsonb_agg(to_jsonb(z) order by z.id_zona), '[]'::jsonb) into v_zonas from mos.zonas z where z.estado = true;
   return jsonb_build_object('ok', true, 'delta', true,
-    'server_ts', to_char(now() at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+    'server_ts', to_char(v_ts at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
     'productos_cambiados', v_nprod,
     'productos', v_prod, 'equivalencias', v_equiv, 'proveedores', v_prov,
     'personal', v_pers, 'impresoras', v_impr, 'zonas', v_zonas);
