@@ -65,3 +65,15 @@ Estados: 🆕 nuevo · 🔍 analizando · 🛠️ en progreso · ✅ desplegado 
 7. **Banners de versión** — punto aparte (mencionado en #9).
 8. **DNI fallback 2º proveedor** — el dueño está buscando proveedor/token.
 9. **#2 opcional** — reimprimir adhesivo al corregir el PESO de un granel (guard idDetalle+peso).
+
+---
+## 🔍 500x ADVERSARIAL jornada 2 (2026-06-27) — 23 hallazgos (0 CRIT / 7 HIGH / 10 MED / 6 LOW)
+Corrida con 8 dimensiones + 3 escépticos por hallazgo + crítico de completitud (63 agentes). **TODOS los 7 HIGH + 10 MED + 4/6 LOW corregidos+desplegados** (ME 2.8.86 / MOS 2.43.366 / SQL 275 / 3 Edges / GAS @236). Lo más valioso:
+- **TRIGGER fiscal `me.ventas`** (`tg_nf_estado_guard`): normaliza vocabulario (BAJA*/STUB/RECHAZADO*), hace EMITIDO y BAJA **terminales**, y no borra hash/enlace/qr con vacío. **Cubre de un solo lugar 4 HIGH/MED**: el PATCH crudo de GAS que eludía `set_cpe_nf`, la reversión de una BAJA, el vocab divergente y el STUB. Verificado: raw `BAJA_ACEPTADA`→`BAJA`, `BAJA`→`EMITIDO` bloqueado, hash conservado.
+- **set_cpe_nf**: `nullif` en nf_hash/nf_enlace (ya no se borra el comprobante bueno con `''`).
+- **crear_venta_directa/crear_cpe_directo**: exigen items (no quemar correlativo en comprobante vacío — verificado SIN_ITEMS) + serie SOLO de la zona de la caja (la estación user-supplied ya no cruza zonas).
+- **HIGH que introduje hoy**: el merge del listado vendedor no emparejaba (faltaba `ref_local` en la entrada local) → perdía items/QR y recaía a GAS. Corregido + dedup.
+- **Edge emitir-cpe (consultar)**: devuelve RECHAZADO en vez de enmascarar como PENDIENTE + captura sunat_code.
+- **HIGH bloqueante del cutover**: `reconciliar-cpe` necesitaba `verify_jwt=false` en config.toml (el cron lo invoca sin Bearer → habría dado 401). Declarado. + `consultar-documento` verify_jwt=true (tocaba token APISPeru + service-role).
+- **cero-GAS**: botón "Reconciliar TODOS los CPE" ahora itera el Edge (no GAS); ventana del reconciliador 7→45d (no abandona pendientes 8-35d); reconciliarCPEsPendientes GAS no revierte BAJA.
+- **2 LOW diferidos** (no funcionales): XSS-onclick en panel Tributario (valores generados por el sistema, patrón preexistente) + comentario stale de dedup POR_COBRAR.
