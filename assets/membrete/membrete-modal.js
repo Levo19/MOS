@@ -74,14 +74,18 @@
   // [v1.10] Prefetch al login — carga los 3 endpoints en paralelo en background.
   // Se llama desde iniciar() automático tras inyectar config.
   function prefetchTodo() {
+    // Best-effort de FONDO: cada prefetch DEBE fallar en silencio (.catch). Sin el .catch, una RPC
+    // que rechace (p.ej. GAS sobre cuota de urlfetch) escapa como "Uncaught (in promise)" en rojo.
+    // Los datos se cargan igual on-demand al abrir el modal; este prefetch solo calienta el cache.
+    var _silenciar = function(){};
     try {
       // Calibración (no aplica para ME — solo MOS/WH manejan rollo)
       if (_config.origen !== 'ME') {
-        _conCache('calibracion', function() { return _api('estadoCalibracionRollo', {}); });
+        _conCache('calibracion', function() { return _api('estadoCalibracionRollo', {}); }).catch(_silenciar);
       }
       // Alertas precio (solo MOS y ME — WH no maneja precios)
       if (_config.origen !== 'WH') {
-        _conCache('alertasPrecio', function() { return _api('getMembretesMePendientes', { limit: 50 }); });
+        _conCache('alertasPrecio', function() { return _api('getMembretesMePendientes', { limit: 50 }); }).catch(_silenciar);
       }
       // Lotes historial — sin filtro (todos los tipos)
       _conCache('lotesHistorial', function() {
@@ -89,7 +93,7 @@
           _api('getLotesAdhesivoHistorial', { tipoEtiqueta: '', limit: 30 }),
           _api('diagnosticoTriggerLotes', {}).catch(function() { return null; })
         ]).then(function(arr) { return { historial: arr[0], diag: arr[1] }; });
-      });
+      }).catch(_silenciar);
     } catch(_) {}
   }
 

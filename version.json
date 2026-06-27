@@ -1,1 +1,1 @@
-{"version":"2.43.361","build":"fix: var V interno en index.html nunca se bumpeaba -> loop de actualizacion infinito + finanzas_rango ahora va directo (SQL 267) -> deja de agotar urlfetch de GAS. Etapa 3 LIVE, Etapa 4 inerte."}
+{"version":"2.43.362","build":"fix: membrete prefetchTodo silencia errores de fondo (.catch) -> no mas Uncaught-in-promise rojo cuando GAS esta sobre cuota. Es prefetch best-effort; datos cargan on-demand. + bump membrete asset ?v=."}
