@@ -229,16 +229,20 @@ Deno.serve(async (req: Request) => {
       bLn(_pad('  ' + cantTxt + '  x  ' + unitTxt, 'S/ ' + sub));
     });
     bLn(SEP);
-    // ── Totales ── (label izq · S/ monto der, consistente)
+    // ── Totales ── (label izq · S/ monto der). IGV solo sobre lo gravado; exonerado/inafecto aparte.
     if (esCPE && d.totalGravada != null) {
-      bLn(_pad('OP. GRAVADA', 'S/ ' + _money(d.totalGravada)));
-      bLn(_pad('IGV (18%)',   'S/ ' + _money(d.totalIgv)));
+      if (Number(d.totalGravada) > 0) {
+        bLn(_pad('OP. GRAVADA', 'S/ ' + _money(d.totalGravada)));
+        bLn(_pad('IGV (18%)',   'S/ ' + _money(d.totalIgv)));
+      }
+      if (Number(d.totalExonerada) > 0) bLn(_pad('OP. EXON./INAF.', 'S/ ' + _money(d.totalExonerada)));
     }
     SIZE(0x10); BOLD(true); bLn(_pad('TOTAL', 'S/ ' + _money(d.total))); BOLD(false); SIZE(0x00);
     if (d.formaPago) bLn('Forma de pago: ' + _norm(d.formaPago));
     bLn(SEP);
-    // ── QR ──  (CPE = cadena SUNAT de NubeFact; NV = correlativo)
-    const qrData = String(d.nfQr || d.correlativo || d.idVenta || '');
+    // ── QR ── CPE: SOLO el QR SUNAT real (nunca el correlativo, que no es un QR fiscal válido).
+    //          NV: el correlativo como QR es aceptable. (el RPC ya devuelve nfQr='' para CPE sin QR fiscal)
+    const qrData = esCPE ? String(d.nfQr || '') : String(d.nfQr || d.correlativo || d.idVenta || '');
     if (qrData) {
       CTR();
       const qrLen = qrData.length + 3;
@@ -257,6 +261,7 @@ Deno.serve(async (req: Request) => {
       _wrap('Representacion impresa de la ' + _docLabel(tipo) + '.', W).forEach((l) => bLn(l));
       bLn('Autorizado mediante R.I. SUNAT');
       if (d.nfHash) bLn('Hash: ' + _norm(d.nfHash));
+      if (!qrData) bLn('(QR SUNAT no disponible en reimpresion)');
       if (emp.email) bLn('Consulte: ' + _norm(emp.email));
     } else {
       bLn('Gracias por su compra');

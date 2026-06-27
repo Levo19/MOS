@@ -31554,32 +31554,52 @@ const MOS = (() => {
     cont.innerHTML = '<div class="text-slate-500 text-xs">Cargando CPE...</div>';
     const det = cont.closest('details'); if (det) det.open = true;
     try {
-      const res = await API.post('tribIGVEmitidoMes', { mes: _tribState.mes, anio: _tribState.anio });
-      // [v2.42.12] res ya viene desempaquetado (API.post hace return d.data).
-      // Fallback defensivo a res.data.cpe por si algún día cambia el shape.
-      const lista = (res?.cpe) || (res?.data?.cpe) || [];
+      // [TRAZABILIDAD cero-GAS] PRIMERO Supabase (me.cpe_trazabilidad): estado fiscal completo, sin GAS.
+      // Rango del mes seleccionado. Si no hay token/red → fallback al endpoint GAS (tribIGVEmitidoMes).
+      const _mm = String(_tribState.mes).padStart(2, '0');
+      const _desde = `${_tribState.anio}-${_mm}-01`;
+      const _ult = new Date(_tribState.anio, _tribState.mes, 0).getDate();
+      const _hasta = `${_tribState.anio}-${_mm}-${String(_ult).padStart(2, '0')}`;
+      let lista = null, _viaSupa = false;
+      try {
+        const sup = await API.cpeTrazabilidad(_desde, _hasta);
+        if (sup && sup.ok && Array.isArray(sup.cpe)) { lista = sup.cpe; _viaSupa = true; }
+      } catch (_) {}
+      if (lista === null) {
+        const res = await API.post('tribIGVEmitidoMes', { mes: _tribState.mes, anio: _tribState.anio });
+        lista = (res?.cpe) || (res?.data?.cpe) || [];
+      }
       if (!lista.length) {
         cont.innerHTML = '<div class="text-slate-500 text-xs italic">Sin CPE emitidos este mes</div>';
         return;
       }
-      cont.innerHTML = lista.map(c => {
-        const estCls = c.nfEstado === 'EMITIDO' ? 'trib-row-est-ok'
-                     : c.nfEstado === 'RECHAZADO_SUNAT' || c.nfEstado === 'ERROR' ? 'trib-row-est-error'
-                     : 'trib-row-est-warn';
-        const estTxt = c.nfEstado === 'EMITIDO' ? '🟢 emitido'
-                     : c.nfEstado === 'RECHAZADO_SUNAT' ? '🔴 rechazado SUNAT'
-                     : c.nfEstado === 'ERROR' ? '🔴 error'
-                     : c.nfEstado === 'PENDIENTE' ? '🟡 pendiente'
-                     : '⚪ ' + (c.nfEstado || 'sin estado');
+      cont.innerHTML = (_viaSupa ? '<div class="text-[10px] text-emerald-400/70 mb-1 px-1">⚡ trazado directo de Supabase</div>' : '') + lista.map(c => {
+        const _est = String(c.nfEstado || '');
+        const _rech = _est === 'RECHAZADO' || _est === 'RECHAZADO_SUNAT' || _est === 'ERROR';
+        const estCls = _est === 'EMITIDO' ? 'trib-row-est-ok' : _rech ? 'trib-row-est-error' : 'trib-row-est-warn';
+        // [TRAZABILIDAD] distinguir aceptado-NubeFact (firmado/generado) de aceptado-SUNAT (CDR). Las filas de
+        // Supabase traen las banderas; las de GAS caen al estado plano.
+        let estTxt;
+        if (_viaSupa) {
+          if (c.aceptadoSunat) estTxt = '🟢 aceptado SUNAT';
+          else if (_rech) estTxt = '🔴 rechazado SUNAT' + (c.sunatDesc ? ' · ' + _escapeHtml(String(c.sunatDesc).slice(0, 40)) : '');
+          else if (c.aceptadoNubefact) estTxt = '🟡 en NubeFact · pendiente SUNAT';
+          else estTxt = '⚪ sin emitir';
+        } else {
+          estTxt = _est === 'EMITIDO' ? '🟢 emitido' : _est === 'RECHAZADO_SUNAT' ? '🔴 rechazado SUNAT'
+                 : _est === 'ERROR' ? '🔴 error' : _est === 'PENDIENTE' ? '🟡 pendiente' : '⚪ ' + (_est || 'sin estado');
+        }
+        const _refLocal = c.refLocal || '';
+        const _noEmitido = _est !== 'EMITIDO';
         return `<div class="trib-row">
           <span class="trib-row-icon">${c.tipo === 'FACTURA' ? '📋' : '🧾'}</span>
           <div class="trib-row-data">
             <strong>${_escapeHtml(c.correlativo)}</strong> · ${_escapeHtml(c.cliente || 'sin cliente')}
-            <br><small>${(new Date(c.fecha)).toLocaleString('es-PE')} · ${_escapeHtml(c.tipo)}</small>
+            <br><small>${(new Date(c.fecha)).toLocaleString('es-PE')} · ${_escapeHtml(c.tipo)}${c.enlaceCdr ? ' · <a href="'+_escapeHtml(c.enlaceCdr)+'" target="_blank" style="color:#34d399">CDR</a>' : ''}${c.enlacePdf ? ' · <a href="'+_escapeHtml(c.enlacePdf)+'" target="_blank" style="color:#60a5fa">PDF</a>' : ''}</small>
           </div>
           <span class="trib-row-monto">${_tribFmtSoles(c.total)}</span>
           <span class="${estCls}" style="font-size:10.5px">${estTxt}</span>
-          ${c.nfEstado !== 'EMITIDO' ? `<button class="trib-btn-mini" onclick="MOS.tribReintentarCPE('${_escapeHtml(c.idVenta)}')">🔄</button>` : ''}
+          ${_noEmitido ? `<button class="trib-btn-mini" onclick="MOS.tribReintentarCPE('${_escapeHtml(c.idVenta)}', '${_escapeHtml(c.correlativo)}', '${_escapeHtml(c.tipo)}', '${_escapeHtml(_refLocal)}')">🔄</button>` : ''}
         </div>`;
       }).join('');
     } catch(e) {
@@ -31606,22 +31626,35 @@ const MOS = (() => {
     }
   }
 
-  async function tribReintentarCPE(idVenta) {
+  async function tribReintentarCPE(idVenta, correlativo, tipoDoc, refLocal) {
     const auth = await pedirAuth({ accion: 'TRIBUTARIO_REINTENTAR_CPE', refDocumento: idVenta });
     if (!auth) return;
-    toast('🔄 Reintentando CPE...', 'info');
+    toast('🔄 Consultando estado en SUNAT...', 'info');
     try {
-      // [Lote3-A · fix A4-MOS] éxito = no lanzó (API.post throwea si ok:false).
-      // El reintento de CPE re-consulta NubeFact/SUNAT; el falso "falló" llevaba al
-      // admin a reintentar operaciones YA exitosas (riesgo de ruido fiscal/duplicar).
-      const res = await API.post('tribReintentarCPE', { idVenta });
-      const d = (res && res.data) ? res.data : (res || {});
-      toast('✓ CPE ' + (d.nuevoEstado || d.estado || 'reconciliado') + (d.aceptada ? ' · aceptado SUNAT' : ''), 'success');
-      _finBeep && _finBeep('success');
+      // [RECONCILIACIÓN cero-GAS] PRIMERO el Edge (operacion=consultar → me.set_cpe_nf): re-consulta el
+      // estado SUNAT real y lo persiste, SIN GAS. Requiere correlativo+tipo+refLocal (los pasa la fila de
+      // trazabilidad de Supabase). Si no vienen (fila vieja de GAS) o el Edge no responde → fallback GAS.
+      let hecho = false;
+      if (correlativo && tipoDoc && refLocal) {
+        const r = await API.cpeReconciliar({ correlativo, tipoDoc, refLocal });
+        if (r && r.ok) {
+          toast('✓ CPE ' + (r.estado || 'consultado') + (r.aceptada ? ' · aceptado SUNAT' : (r.sunatDesc ? ' · ' + r.sunatDesc : '')), 'success');
+          _finBeep && _finBeep('success'); hecho = true;
+        } else if (r && r.ok === false && r.error) {
+          toast('SUNAT/NubeFact: ' + r.error, 'warn'); hecho = true;
+        }
+        // r === null → infra (sin token/red) → cae a GAS abajo
+      }
+      if (!hecho) {
+        const res = await API.post('tribReintentarCPE', { idVenta });
+        const d = (res && res.data) ? res.data : (res || {});
+        toast('✓ CPE ' + (d.nuevoEstado || d.estado || 'reconciliado') + (d.aceptada ? ' · aceptado SUNAT' : ''), 'success');
+        _finBeep && _finBeep('success');
+      }
     } catch(e) {
       toast('Reintento falló: ' + (e.message || e), 'warn');
     } finally {
-      tribCargar();
+      tribAbrirIGVEmitido();
     }
   }
 

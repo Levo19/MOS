@@ -2373,6 +2373,44 @@ const API = (() => {
     },
     // [F6 espía] Token FCM de un dispositivo (para el wake push). {ok,data:{fcmToken,estado,app}}.
     fcmTokenDispositivo: (deviceId) => _sbRpcMOS('fcm_token_dispositivo', { p: { deviceId } }, 'mos'),
+
+    // [TRAZABILIDAD CPE · cero-GAS] Lista CPE con estado fiscal COMPLETO (aceptado-NubeFact vs aceptado-SUNAT,
+    // código/descripción SUNAT, CDR/XML, frescura) desde Supabase (me.cpe_trazabilidad). Reemplaza el read por
+    // GAS del panel Tributario. null → el caller cae a GAS (red de seguridad).
+    cpeTrazabilidad: async (desde, hasta, estado) => {
+      try {
+        const out = await _sbRpcMEWrite('cpe_trazabilidad', { p: { desde, hasta, estado: estado || '' } });
+        return (out && out.ok) ? out : null;
+      } catch (_) { return null; }
+    },
+    // [RECONCILIACIÓN CPE · cero-GAS] Re-consulta el estado SUNAT de UN CPE en NubeFact (Edge emitir-cpe
+    // operacion=consultar, token en secret server-side) y persiste el resultado vía me.set_cpe_nf (no degrada
+    // EMITIDO). Sin GAS. Devuelve {ok, estado, aceptada, sunatDesc} | {ok:false,error} | null (→ GAS).
+    cpeReconciliar: async ({ correlativo, tipoDoc, refLocal }) => {
+      try {
+        const token = await _mintTokenMOS();
+        if (!token) return null;                                  // mint-mos caído → GAS
+        const res = await _sbFetchTimeout(`${_SB_URL}/functions/v1/emitir-cpe`, {
+          method: 'POST',
+          headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ operacion: 'consultar', correlativo, tipoDoc })
+        }, 15000);
+        const d = await res.json().catch(() => null);
+        if (!d) return null;                                      // sin payload → GAS
+        if (d.ok !== true) return d.error ? { ok: false, error: d.error } : null;  // negocio → mostrar; infra → GAS
+        // persistir el estado fresco en me.ventas (set_cpe_nf). Idempotente, no degrada EMITIDO.
+        if (refLocal) {
+          const nf = {
+            nf_estado: d.estado || '', nf_hash: d.hash || '', nf_enlace: d.enlace || '', nf_qr: d.qrString || '',
+            aceptada: d.aceptada === true, sunat_desc: d.sunatDescription || '',
+            enlace_xml: d.enlace_xml || '', enlace_cdr: d.enlace_cdr || '', numero_orden_sunat: d.numero_orden_sunat || '',
+            consultado: true
+          };
+          try { await _sbRpcMEWrite('set_cpe_nf', { p_ref_local: refLocal, p_nf: nf }); } catch (_) {}
+        }
+        return { ok: true, estado: d.estado, aceptada: d.aceptada === true, sunatDesc: d.sunatDescription || '' };
+      } catch (_) { return null; }
+    },
     // [F6 push/espía] Envío por Edge `push` (FCM v1). silencioso:true + data → comando data-only (wake espía).
     pushEdge: async (body) => {
       try {

@@ -75,7 +75,9 @@ Deno.serve(async (req: Request) => {
   try {
     const auth = req.headers.get('Authorization') || '';
     const claims = jwtClaims(auth.replace(/^Bearer\s+/i, '').trim());
-    if (!claims || claims.app !== 'mosExpress') return json({ ok: false, error: 'no autorizado (claim app)' }, 401);
+    // generar (emitir) = solo mosExpress (POS). consultar (trazar/reconciliar) = mosExpress o MOS (panel admin).
+    const appClaim = claims && claims.app;
+    if (!claims || (appClaim !== 'mosExpress' && appClaim !== 'MOS')) return json({ ok: false, error: 'no autorizado (claim app)' }, 401);
 
     // [Lote2-B · C1] Kill-switch server-side ANTES de tocar NubeFact.
     if (!(await cpeDirectoOn())) return json({ ok: false, error: 'CPE_DIRECTO_DESACTIVADO' }, 403);
@@ -89,7 +91,25 @@ Deno.serve(async (req: Request) => {
     const correlativo = String(inp.correlativo || '');
     const header = data.header || {};
     const items = data.items || [];
-    const tipoDoc = header.tipoDoc;
+    const tipoDoc = header.tipoDoc || inp.tipoDoc;
+
+    // ── [TRAZABILIDAD cero-GAS] operacion='consultar': re-consulta el estado SUNAT de un CPE ya emitido ──
+    // No genera nada; solo lee de NubeFact el estado actual (aceptada_por_sunat + CDR/XML + motivo).
+    // Lo usa la reconciliación de MOS (panel Tributario / cron) sin pasar por GAS. Read-only y idempotente.
+    if (String(inp.operacion || '') === 'consultar') {
+      if (!correlativo || !/^[A-Za-z0-9]+-\d+$/.test(correlativo)) return json({ ok: false, error: 'correlativo requerido/malformado: ' + correlativo }, 400);
+      if (tipoDoc !== 'BOLETA' && tipoDoc !== 'FACTURA') return json({ ok: false, error: 'tipoDoc inválido (BOLETA|FACTURA)' }, 400);
+      const ps = correlativo.split('-');
+      const sNum = parseInt(ps[ps.length - 1], 10);
+      if (!sNum || sNum < 1) return json({ ok: false, error: 'número de correlativo inválido' }, 400);
+      const tc = (tipoDoc === 'FACTURA') ? 1 : 2;
+      const cons = await consultar(ps[0], sNum, tc, ruta, token);
+      if (!cons.ok) return json({ ok: false, ...cons }, cons.noExiste ? 404 : 502);
+      return json({ ok: true, consultado: true, estado: cons.aceptada ? 'EMITIDO' : 'PENDIENTE', ...cons });
+    }
+
+    // ── generar (emitir) — solo POS ──
+    if (appClaim !== 'mosExpress') return json({ ok: false, error: 'emitir CPE = solo mosExpress' }, 403);
     if (!correlativo) return json({ ok: false, error: 'correlativo requerido' }, 400);
     // [Lote2-B · A4] Validar formato del correlativo. Antes `parseInt || 1` convertía
     // un correlativo malformado en el número 1 de la serie → duplicado en NubeFact →
