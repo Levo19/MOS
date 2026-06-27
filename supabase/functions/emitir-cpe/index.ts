@@ -163,22 +163,27 @@ Deno.serve(async (req: Request) => {
     const body = await resp.json().catch(() => ({}));
 
     if (resp.status === 200 || resp.status === 201) {
-      if (body.aceptada_por_sunat === false) {
-        return json({
-          ok: false, rechazadoPorSunat: true,
-          error: 'SUNAT rechazó: ' + (body.sunat_description || body.errors || 'sin detalle'),
-          hash: String(body.codigo_hash || ''), enlace: String(body.enlace_del_pdf || ''),
-          qrString: String(body.cadena_para_codigo_qr || ''), sunatDescription: String(body.sunat_description || ''),
-          enlace_xml: String(body.enlace_del_xml || ''), enlace_cdr: String(body.enlace_del_cdr || ''),
-          numero_orden_sunat: String(body.numero_de_orden_sunat || ''),
-        });
-      }
-      return json({
-        ok: true, hash: String(body.codigo_hash || ''), enlace: String(body.enlace_del_pdf || ''),
-        qrString: String(body.cadena_para_codigo_qr || ''), aceptada: body.aceptada_por_sunat === true,
+      // El comprobante SE GENERÓ (NubeFact firmó + dio QR/hash/PDF). La aceptación SUNAT es ASÍNCRONA:
+      //   · aceptada_por_sunat=true                          → EMITIDO (CDR recibido)
+      //   · false CON sunat_description/responsecode de error → RECHAZADO real
+      //   · false SIN error (description/code null/vacío)     → PENDIENTE (SUNAT aún procesa; en demo puede
+      //     quedar así). NO es rechazo: el QR/hash son válidos para el ticket; la reconciliación lo flipea.
+      const aceptada = body.aceptada_por_sunat === true;
+      const sunatDesc = String(body.sunat_description || '').trim();
+      const respCode = body.sunat_responsecode;
+      const tieneErrSunat = !!sunatDesc || (respCode !== null && respCode !== undefined &&
+        String(respCode).trim() !== '' && String(respCode).trim() !== '0');
+      const comun = {
+        hash: String(body.codigo_hash || ''), enlace: String(body.enlace_del_pdf || ''),
+        qrString: String(body.cadena_para_codigo_qr || ''), sunatDescription: sunatDesc,
         enlace_xml: String(body.enlace_del_xml || ''), enlace_cdr: String(body.enlace_del_cdr || ''),
-        numero_orden_sunat: String(body.numero_de_orden_sunat || ''), sunatDescription: String(body.sunat_description || ''),
-      });
+        numero_orden_sunat: String(body.numero_de_orden_sunat || ''),
+      };
+      if (!aceptada && tieneErrSunat) {
+        return json({ ok: false, rechazadoPorSunat: true, error: 'SUNAT rechazó: ' + (sunatDesc || ('código ' + respCode)), ...comun });
+      }
+      // EMITIDO (aceptada) o PENDIENTE (async) — ambos con comprobante válido.
+      return json({ ok: true, aceptada, estado: aceptada ? 'EMITIDO' : 'PENDIENTE', ...comun });
     }
 
     // Duplicado (HTTP 400 "ya fue informado") → consultar el existente y devolver como éxito (idempotencia)
