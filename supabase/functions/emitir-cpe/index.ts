@@ -161,7 +161,8 @@ Deno.serve(async (req: Request) => {
       operacion: 'generar_comprobante', tipo_de_comprobante: tipoComprobante, serie, numero,
       sunat_transaction: 1,
       cliente_tipo_de_documento: parseInt(String(cliente.tipo ?? 0), 10),
-      cliente_numero_de_documento: String(cliente.doc || '0'),
+      // [SUNAT] tipo 0 = consumidor sin documento (boleta VARIOS < S/700) → número '0', no el 66666 interno.
+      cliente_numero_de_documento: (parseInt(String(cliente.tipo ?? 0), 10) === 0) ? '0' : String(cliente.doc || '0'),
       cliente_denominacion: String(cliente.nombre || 'CLIENTE ANONIMO'),
       cliente_direccion: String(cliente.direccion || ''), cliente_email: '',
       fecha_de_emision: fechaHoy, fecha_de_vencimiento: '', moneda: 1, tipo_de_cambio: '',
