@@ -1647,6 +1647,29 @@ const API = (() => {
       return _desempacarCatalogo(out);
     }
 
+    if (action === 'crearSerie') {
+      // RPC mos.crear_serie (269) → data:{idSerie}. 100% Supabase, dedup por localId+PK, bumpea versión.
+      const out = await _sbRpcMOSWrite('crear_serie', { p: {
+        localId: _mosLocalId(p, 'SER'),
+        idSerie: p.idSerie != null ? String(p.idSerie) : undefined,
+        idEstacion: p.idEstacion != null ? String(p.idEstacion) : undefined,
+        idZona: p.idZona, tipoDocumento: p.tipoDocumento, serie: p.serie, correlativo: p.correlativo
+      } });
+      if (out == null) return null;
+      return _desempacarCatalogo(out);         // {idSerie}
+    }
+
+    if (action === 'actualizarSerie') {
+      // Patch PARCIAL: solo claves presentes (la RPC distingue con `p ? 'clave'`).
+      const a = { idSerie: p.idSerie != null ? String(p.idSerie) : undefined };
+      ['idEstacion','idZona','tipoDocumento','serie','correlativo','activo'].forEach(k => {
+        if (k in p && p[k] !== undefined) a[k] = p[k];
+      });
+      const out = await _sbRpcMOSWrite('actualizar_serie', { p: a });
+      if (out == null) return null;
+      return _desempacarCatalogo(out);
+    }
+
     if (action === 'crearPedido') {
       // GAS crearPedidoProveedor → data:{idPedido}. RPC mos.crear_pedido_proveedor → data:{idPedido}. items=array jsonb.
       // localId estable (idempotencia de gesto: el modal cierra optimista; un reintento no crea 2 pedidos BORRADOR).
@@ -1997,6 +2020,10 @@ const API = (() => {
     // refrescan. Cierra el último caso del patrón "el dato no aterriza" (antes iba GAS→Hoja + sync batch muerto).
     crearEstacion:              _mosCatalogoDirecto,
     actualizarEstacion:         _mosCatalogoDirecto,
+    // [CATÁLOGO · series documentales] 100% Supabase (RPC mos.crear_serie/actualizar_serie, SQL 269).
+    // La SERIE la usa la emisión CPE → debe vivir fresca en Supabase, no en una Hoja que se atrasa.
+    crearSerie:                 _mosCatalogoDirecto,
+    actualizarSerie:            _mosCatalogoDirecto,
     // [AUTH] verificación de clave admin: Supabase-first SIEMPRE (RPC central bcrypt+cascada+auditoría);
     // si no hay token → null → GAS kill-switch. La validación no es "dinero directo", es auth central.
     verificarClaveAdmin:        () => true,
@@ -2085,7 +2112,7 @@ const API = (() => {
   // el directo no commitea (null = sin token), NO se cae a GAS en silencio: GAS escribiría la Hoja pero el cambio
   // NUNCA llegaría a mos.* → WH/MOS no lo verían (el bug de "agregué proveedor y no se propagó"). Se LANZA para
   // que el UI optimista revierta y el usuario reintente. Default (acciones no listadas): fallback a GAS de siempre.
-  const _MOS_DIRECT_REQUIRED = { crearProveedor: 1, actualizarProveedor: 1, crearEstacion: 1, actualizarEstacion: 1 };
+  const _MOS_DIRECT_REQUIRED = { crearProveedor: 1, actualizarProveedor: 1, crearEstacion: 1, actualizarEstacion: 1, crearSerie: 1, actualizarSerie: 1 };
 
   // POST con escritura directa opcional. Con el gate de la acción OFF (default) es IDÉNTICO a hoy: ni
   // siquiera evalúa el directo → va recto a _fetch('POST') → GAS. Con el gate ON + token + RPC viva, escribe
