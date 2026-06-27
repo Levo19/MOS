@@ -2374,6 +2374,20 @@ const API = (() => {
     // [F6 espía] Token FCM de un dispositivo (para el wake push). {ok,data:{fcmToken,estado,app}}.
     fcmTokenDispositivo: (deviceId) => _sbRpcMOS('fcm_token_dispositivo', { p: { deviceId } }, 'mos'),
 
+    // [#4 Etapa 2 · cero-GAS] Historiales del modal de ticket desde Supabase (me.historial_venta/cliente).
+    // Devuelven el array de eventos o null (→ el caller cae a GAS meHistorialVenta/Cliente).
+    meHistorialVentaDirecto: async (idVenta) => {
+      try {
+        const out = await _sbRpcMEWrite('historial_venta', { p: { idVenta } });
+        return (out && out.ok && Array.isArray(out.historial)) ? out.historial : null;
+      } catch (_) { return null; }
+    },
+    meHistorialClienteDirecto: async (doc) => {
+      try {
+        const out = await _sbRpcMEWrite('historial_cliente', { p: { doc } });
+        return (out && out.ok && Array.isArray(out.historial)) ? out.historial : null;
+      } catch (_) { return null; }
+    },
     // [TRAZABILIDAD CPE · cero-GAS] Lista CPE con estado fiscal COMPLETO (aceptado-NubeFact vs aceptado-SUNAT,
     // código/descripción SUNAT, CDR/XML, frescura) desde Supabase (me.cpe_trazabilidad). Reemplaza el read por
     // GAS del panel Tributario. null → el caller cae a GAS (red de seguridad).

@@ -26930,7 +26930,8 @@ const MOS = (() => {
     return _abrirHistorialGenerico({
       titulo:    'Historial del ticket',
       subtitulo: t.correlativo || t.idVenta,
-      fetcher:   () => API.get('meHistorialVenta', { idVenta: t.idVenta })
+      // [#4 Etapa 2 · cero-GAS] Supabase primero (me.historial_venta); GAS solo si no hay token/red.
+      fetcher:   async () => (await API.meHistorialVentaDirecto(t.idVenta)) || API.get('meHistorialVenta', { idVenta: t.idVenta })
     });
   }
 
@@ -26939,7 +26940,7 @@ const MOS = (() => {
     return _abrirHistorialGenerico({
       titulo:    'Historial · Cliente',
       subtitulo: `${t.cliente || '—'} · ${t.clienteDoc}`,
-      fetcher:   () => API.get('meHistorialCliente', { doc: t.clienteDoc })
+      fetcher:   async () => (await API.meHistorialClienteDirecto(t.clienteDoc)) || API.get('meHistorialCliente', { doc: t.clienteDoc })
     });
   }
 
