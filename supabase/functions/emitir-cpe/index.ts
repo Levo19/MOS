@@ -45,8 +45,8 @@ function jwtClaims(token: string): Record<string, unknown> | null {
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 // NubeFact: consultar_comprobante (mismo endpoint, distingue por `operacion`). Para idempotencia por duplicado.
-async function consultar(serie: string, numero: number, tipoComprobante: number, ruc: string, token: string) {
-  const endpoint = `https://api.nubefact.com/api/v1/${ruc}/${tipoComprobante === 1 ? 'factura' : 'boleta'}`;
+async function consultar(serie: string, numero: number, tipoComprobante: number, ruta: string, token: string) {
+  const endpoint = ruta;   // ruta dedicada NubeFact (api/v1/<UUID>) — MISMA URL para boleta/factura/consulta
   try {
     const resp = await fetch(endpoint, {
       method: 'POST',
@@ -81,8 +81,8 @@ Deno.serve(async (req: Request) => {
     if (!(await cpeDirectoOn())) return json({ ok: false, error: 'CPE_DIRECTO_DESACTIVADO' }, 403);
 
     const token = Deno.env.get('NUBEFACT_TOKEN');
-    const ruc = Deno.env.get('NUBEFACT_RUC');
-    if (!token || !ruc) return json({ ok: false, error: 'NubeFact no configurado (secrets)' }, 500);
+    const ruta = Deno.env.get('NUBEFACT_RUTA');   // URL dedicada NubeFact (api/v1/<UUID>), en SECRET
+    if (!token || !ruta) return json({ ok: false, error: 'NubeFact no configurado (secrets NUBEFACT_TOKEN/NUBEFACT_RUTA)' }, 500);
 
     const inp = await req.json().catch(() => ({}));
     const data = inp.data || {};
@@ -154,7 +154,7 @@ Deno.serve(async (req: Request) => {
       formato_de_pdf: 'TICKET', items: nfItems,
     };
 
-    const endpoint = `https://api.nubefact.com/api/v1/${ruc}/${tipoDoc === 'FACTURA' ? 'factura' : 'boleta'}`;
+    const endpoint = ruta;   // ruta dedicada NubeFact — el body lleva tipo_de_comprobante (1=factura,2=boleta)
     const resp = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Authorization': 'Token ' + token, 'Content-Type': 'application/json' },
@@ -184,7 +184,7 @@ Deno.serve(async (req: Request) => {
     // Duplicado (HTTP 400 "ya fue informado") → consultar el existente y devolver como éxito (idempotencia)
     const errMsg = String(body.errors || body.message || '');
     if (/ya\s+fue\s+informado|duplicad|comprobante\s+ya\s+existe|already\s+exists/i.test(errMsg)) {
-      const cons = await consultar(serie, numero, tipoComprobante, ruc, token);
+      const cons = await consultar(serie, numero, tipoComprobante, ruta, token);
       if (cons.ok) return json({ ...cons, dedupNubeFact: true });
     }
     return json({ ok: false, error: 'HTTP ' + resp.status + ': ' + errMsg.slice(0, 250) }, 502);
