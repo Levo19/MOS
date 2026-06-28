@@ -77,3 +77,17 @@ Corrida con 8 dimensiones + 3 escépticos por hallazgo + crítico de completitud
 - **HIGH bloqueante del cutover**: `reconciliar-cpe` necesitaba `verify_jwt=false` en config.toml (el cron lo invoca sin Bearer → habría dado 401). Declarado. + `consultar-documento` verify_jwt=true (tocaba token APISPeru + service-role).
 - **cero-GAS**: botón "Reconciliar TODOS los CPE" ahora itera el Edge (no GAS); ventana del reconciliador 7→45d (no abandona pendientes 8-35d); reconciliarCPEsPendientes GAS no revierte BAJA.
 - **2 LOW diferidos** (no funcionales): XSS-onclick en panel Tributario (valores generados por el sistema, patrón preexistente) + comentario stale de dedup POR_COBRAR.
+
+---
+## #10 — Validaciones/límites de emisión en ME + editar cliente en MOS (2026-06-28)
+**Reclamo:** (a) al poner un RUC no dejaba emitir boleta — ¿se puede boleta con RUC? (b) al editar cliente de una boleta sale toast rojo del backend; si un CPE no cambia titular, deshabilitar la opción. (c) el modal de editar cliente en MOS no tiene el buscador inteligente de ME (toggle Extranjero, sugerencias) — replicarlo/centralizar.
+**Análisis:**
+- (a) **SUNAT SÍ permite boleta con RUC (tipo 6).** Bug: `errorDocumento` (ME index ~8031) exigía exactamente 8 díg (DNI) para boleta → un RUC (11) daba "DNI debe tener 8 dígitos". El mapeo SUNAT (11→6) y el guard de procesarVenta ya lo soportaban; solo esa validación estaba de más. **Otros: boleta<700 con RUC también bloqueada (mismo fix).** Validaciones por capa documentadas (diagrama entregado al usuario).
+- (b) Regla viva `me.editar_cliente` (SQL 271 H7): **editar cliente solo en NOTA_DE_VENTA**; cualquier CPE → bloqueado (titular fiscal no cambia tras mintear correlativo). El botón en MOS salía con `!cpeEmitido` → aparecía en boletas PENDIENTES y el backend lo rechazaba.
+- (c) MOS leía clientes solo por documento (lookup); ME busca por nombre en su cache local. No había RPC de búsqueda por nombre.
+**Solución (desplegado):**
+- (a) ME 2.8.98: `errorDocumento` acepta DNI(8) **o** RUC(11) en boleta (CE por bypass; VARIOS<700). 
+- (b) MOS 2.43.369: botón "Editar cliente" solo en NV; en CPE muestra 🔒 que **explica** (anula y reemite) en vez del toast rojo. Regla front↔backend alineada.
+- (c) MOS 2.43.370: modal de editar cliente **replica el buscador de ME** — toggle Perú/Extranjero + búsqueda por NOMBRE con sugerencias de frecuentes (RPC `me.buscar_clientes_frecuentes`, SQL 284, Supabase directo) + lupa DNI/RUC + X. Misma fuente `me.clientes_frecuentes`.
+**Revisión:** 500x adversarial sobre el modal+RPC (13/13 ids, contrato OK, XSS escapado, inyección-segura, cero-GAS). Sin hallazgos críticos.
+**Estado:** ✅ desplegado (ME 2.8.98 · MOS 2.43.369/370 · SQL 284). Pend. verificación del usuario.
