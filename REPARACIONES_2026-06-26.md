@@ -56,7 +56,7 @@ Estados: 🆕 nuevo · 🔍 analizando · 🛠️ en progreso · ✅ desplegado 
 - **Cache de cliente en lookup** (consultar-documento upserta clientes_frecuentes apenas APISPeru responde). ✅
 
 ### ⏳ PENDIENTE REAL (lo que falta)
-1. **#9 Centralizar el modelo de TICKET** — un solo formato para NV/boleta/factura/NC/ND con QR id-ticket + QR/hash SUNAT en la reimpresión. 🔍 Analizado, **NO implementado**. (El más grande que queda.)
+1. **#9 modelo unico de ticket** — Opcion D FASE 1 ✅ desplegado (ME 2.8.99): emision original imprime por la Edge ticket-comprobante (original==reimpresion, QR/hash SUNAT) + fallback local offline + Edge fiscal-correcta (PENDIENTE no dice "Autorizado SUNAT"). FALTA FASE 2: alinear el layout del builder LOCAL (caso offline) a la Edge. Doc: DISENO_ticket_unico_9.md
 2. **CPE a PRODUCCIÓN** (miércoles): token NubeFact real + series reales por zona + alinear correlativos + flags (`ME_CPE_DIRECTO` real, `FAC_CPE_DIRECTO`, `CPE_RECON_ON=1`).
 3. **#4 Etapa 2** del modal de ticket: los 2 historiales (venta + cliente) → Supabase nativo (hoy por GAS bridge). Etapa 3 y 4 ya hechas.
 4. **#3 modal Guías·Zona** — la solución está descrita (status ✔️) pero la celda Deploy quedó vacía → **verificar si se desplegó** el render origen WAREHOUSE/INTERNAL.
