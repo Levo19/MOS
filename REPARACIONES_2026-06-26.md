@@ -56,7 +56,7 @@ Estados: 🆕 nuevo · 🔍 analizando · 🛠️ en progreso · ✅ desplegado 
 - **Cache de cliente en lookup** (consultar-documento upserta clientes_frecuentes apenas APISPeru responde). ✅
 
 ### ⏳ PENDIENTE REAL (lo que falta)
-1. **#9 modelo unico de ticket** — Opcion D FASE 1 ✅ desplegado (ME 2.8.99): emision original imprime por la Edge ticket-comprobante (original==reimpresion, QR/hash SUNAT) + fallback local offline + Edge fiscal-correcta (PENDIENTE no dice "Autorizado SUNAT"). FALTA FASE 2: alinear el layout del builder LOCAL (caso offline) a la Edge. Doc: DISENO_ticket_unico_9.md
+1. **#9 modelo unico de ticket** — ✅ COMPLETO (Opcion D fase 1+2). Reimpresion=Edge ticket-comprobante (QR/hash SUNAT, PENDIENTE no dice "Autorizado"). Original (online+offline)=builder local CLONADO del layout Edge (header fiscal + items granel + IGV desglosado + QR + leyenda) + VUELTO (solo efectivo/mixto, la Edge no lo tiene). Datos fiscales via me.empresa_fiscal (SQL 285) cacheados. ME 2.8.100. Original==reimpresion en formato; original agrega el vuelto. Falta solo NC/ND (a futuro cuando se emitan).
 2. **CPE a PRODUCCIÓN** (miércoles): token NubeFact real + series reales por zona + alinear correlativos + flags (`ME_CPE_DIRECTO` real, `FAC_CPE_DIRECTO`, `CPE_RECON_ON=1`).
 3. **#4 Etapa 2** del modal de ticket: los 2 historiales (venta + cliente) → Supabase nativo (hoy por GAS bridge). Etapa 3 y 4 ya hechas.
 4. **#3 modal Guías·Zona** — la solución está descrita (status ✔️) pero la celda Deploy quedó vacía → **verificar si se desplegó** el render origen WAREHOUSE/INTERNAL.
