@@ -114,6 +114,21 @@ function verificarSinSenal() {
     }
   });
 
+  // [cero-GAS G2] Mergear con la última GPS de Supabase (mos.gps_ultima_map): tras activar GPS_DIRECTO los
+  // reportes van a Supabase y NO a la Hoja. Tomamos el MÁS reciente de ambas fuentes → un equipo solo cuenta
+  // como "sin señal" si AMBAS están viejas. Sin esto, post-cutover marcaría todos los equipos sin señal (spam).
+  // Tolerante: si Supabase falla, sigue con el mapa de la Hoja (gracia de 24h por las filas viejas).
+  try {
+    var _sbMap = _sbRpc('mos', 'gps_ultima_map', { p: { dias: 8 } });
+    var _m = _sbMap && _sbMap.ok && _sbMap.data && _sbMap.data.data;
+    if (_m) {
+      Object.keys(_m).forEach(function(dev) {
+        var ts = new Date(_m[dev]).getTime() || 0;
+        if (ts && (!ultimaPorDevice[dev] || ultimaPorDevice[dev] < ts)) ultimaPorDevice[dev] = ts;
+      });
+    }
+  } catch(e) { Logger.log('merge GPS Supabase: ' + e.message); }
+
   var corte = Date.now() - (GPS_SIN_SENAL_HORAS * 60 * 60 * 1000);
   var sinSenal = [];
   dispositivos.forEach(function(d) {

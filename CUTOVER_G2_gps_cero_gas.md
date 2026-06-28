@@ -1,6 +1,13 @@
 # G2 — GPS tracking de dispositivos → 100% Supabase (cero-GAS)
 
-**Fecha:** 2026-06-27 · **Estado:** CONSTRUIDO + DESPLEGADO · **INERTE** (flag `GPS_DIRECTO` OFF). **NO auto-activado** (a diferencia de G1) por el prerequisito del sin-señal (abajo).
+**Fecha:** 2026-06-27 · **Estado:** ✅ **ACTIVO** (`GPS_DIRECTO='1'`). Prerequisito del sin-señal **RESUELTO** (ver abajo) — NO requiere acción del dueño.
+
+## ✅ Sin-señal resuelto (sin tocar Apps Script)
+En vez de desactivar el trigger GAS `verificarSinSenal`, se **reescribió** (Gps.gs, clasp push 2026-06-27) para
+**mergear** la última GPS de la Hoja con la de Supabase (`mos.gps_ultima_map`, SQL 281): un equipo cuenta como
+"sin señal" solo si AMBAS fuentes están viejas. Tolerante (si Supabase falla, sigue con la Hoja). → Sin falsas
+alarmas ni en la transición ni después. El anti-robo sigue intacto. **El push sigue en GAS** (es una notificación
+FCM; migrar el push es otra tanda) pero su DATO ya viene de Supabase.
 
 ## Qué se migró
 El subsistema GPS anti-robo (Gps.gs / hoja `UBICACIONES_HISTORIAL`): WH (`_gpsRegistrarWH`, cada 5 min) y ME
