@@ -26299,10 +26299,14 @@ const MOS = (() => {
           'Corrige errores de tipeo · NO mueve dinero entre cajas', 'cambiarFP');
     }
 
-    // 👤 Editar cliente (solo NV o CPE no emitido)
-    if (!cpeEmitido) {
-      btn('', '👤', 'Editar cliente',
-          esNV ? 'Cambiar DNI/RUC y nombre del NV' : 'Editar antes de emitir CPE', 'editarCliente');
+    // 👤 Editar cliente — SOLO Nota de Venta. Un CPE (boleta/factura) NO cambia de titular fiscal tras
+    // mintear el correlativo (regla SUNAT, me.editar_cliente SQL 271 H7) → para corregir: anular y reemitir.
+    // Antes el botón salía con `!cpeEmitido` → aparecía en boletas PENDIENTES y el backend lo rechazaba (toast rojo).
+    if (esNV) {
+      btn('', '👤', 'Editar cliente', 'Cambiar DNI/RUC y nombre del NV', 'editarCliente');
+    } else if (esCPE && !esAnulado) {
+      btn('tk-acc-btn-warn', '🔒', 'Editar cliente — solo Nota de Venta',
+          'Boleta/Factura no cambian de titular · para corregir: anula y reemite', 'editarClienteCPEInfo');
     }
 
     // 📑 Convertir NV → CPE (solo NV)
@@ -26356,6 +26360,13 @@ const MOS = (() => {
     if (accion === 'convertirCPE')    return _tkConvertirOpen(t);
     if (accion === 'bajaCPE')         return _tkBajaOpen(t);
     if (accion === 'editarCliente')   return _tkEditarClienteOpen(t);
+    if (accion === 'editarClienteCPEInfo') {
+      _modalConfirm(
+        'Una boleta o factura ya tiene su correlativo SUNAT minteado, por eso el titular fiscal (DNI/RUC + nombre) NO se puede cambiar.\n\nPara corregir el cliente: ANULA este comprobante (dar de baja en SUNAT) y emite uno nuevo con los datos correctos.\n\nLas Notas de Venta sí se editan libremente.',
+        { warning: true, titulo: '🔒 Cliente de CPE no editable', okText: 'Entendido' }
+      );
+      return;
+    }
     if (accion === 'anular')          return _tkAnularSimple(t);
     if (accion === 'historial')       return _tkHistorialOpen(t);
     if (accion === 'historialCli')    return _tkHistorialClienteOpen(t);
