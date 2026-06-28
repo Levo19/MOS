@@ -59,9 +59,9 @@ Estados: 🆕 nuevo · 🔍 analizando · 🛠️ en progreso · ✅ desplegado 
 1. **#9 modelo unico de ticket** — ✅ COMPLETO (Opcion D fase 1+2). Reimpresion=Edge ticket-comprobante (QR/hash SUNAT, PENDIENTE no dice "Autorizado"). Original (online+offline)=builder local CLONADO del layout Edge (header fiscal + items granel + IGV desglosado + QR + leyenda) + VUELTO (solo efectivo/mixto, la Edge no lo tiene). Datos fiscales via me.empresa_fiscal (SQL 285) cacheados. ME 2.8.100. Original==reimpresion en formato; original agrega el vuelto. Falta solo NC/ND (a futuro cuando se emitan).
 2. **CPE a PRODUCCIÓN** (miércoles): token NubeFact real + series reales por zona + alinear correlativos + flags (`ME_CPE_DIRECTO` real, `FAC_CPE_DIRECTO`, `CPE_RECON_ON=1`).
 3. **#4 Etapa 2** del modal de ticket: los 2 historiales (venta + cliente) → Supabase nativo (hoy por GAS bridge). Etapa 3 y 4 ya hechas.
-4. **#3 modal Guías·Zona** — la solución está descrita (status ✔️) pero la celda Deploy quedó vacía → **verificar si se desplegó** el render origen WAREHOUSE/INTERNAL.
+4. **#3 modal Guías·Zona** — ✅ VERIFICADO DESPLEGADO (SQL 250 vivo: pendientes=wh.guias SALIDA_ZONA origen WAREHOUSE + me.zona_guias_internas INTERNAL; frontend con los 3 universos + diff solo WAREHOUSE). La celda Deploy estaba vacia pero si se hizo.
 5. **Test de calibración del adhesivo de granel** — requiere impresora física (layout TSPL2 estimado).
-6. **Auto-update banner para ME** (portar el patrón de MOS 2.43.339, con cuidado: no forzar reload mid-venta).
+6. **Auto-update banner para ME** — ✅ HECHO (ME 2.8.101): forced-update ya NO recarga mid-venta; si hay venta en curso muestra banner suave y difiere el reload al terminar (window.__ME_BUSY__).
 7. **Banners de versión** — punto aparte (mencionado en #9).
 8. **DNI fallback 2º proveedor** — el dueño está buscando proveedor/token.
 9. **#2 opcional** — reimprimir adhesivo al corregir el PESO de un granel (guard idDetalle+peso).
