@@ -259,9 +259,16 @@ Deno.serve(async (req: Request) => {
     CTR();
     if (esCPE) {
       _wrap('Representacion impresa de la ' + _docLabel(tipo) + '.', W).forEach((l) => bLn(l));
-      bLn('Autorizado mediante R.I. SUNAT');
-      if (d.nfHash) bLn('Hash: ' + _norm(d.nfHash));
-      if (!qrData) bLn('(QR SUNAT no disponible en reimpresion)');
+      // [#9/#6 review] Solo declarar "Autorizado R.I. SUNAT" si el CPE realmente fue EMITIDO (tiene hash o QR
+      // SUNAT). Un CPE PENDIENTE (aun no aceptado por NubeFact/SUNAT) NO esta autorizado → decir lo contrario
+      // es enganoso/fiscalmente incorrecto. Pendiente → leyenda honesta.
+      const _emitido = !!(d.nfHash || qrData);
+      if (_emitido) {
+        bLn('Autorizado mediante R.I. SUNAT');
+        if (d.nfHash) bLn('Hash: ' + _norm(d.nfHash));
+      } else {
+        bLn('Comprobante en proceso de envio a SUNAT');
+      }
       if (emp.email) bLn('Consulte: ' + _norm(emp.email));
     } else {
       bLn('Gracias por su compra');
