@@ -26803,6 +26803,8 @@ const MOS = (() => {
         if (/^\d{11}$/.test(d)) return { cod: 6, lbl: 'RUC' };
         return { cod: 4, lbl: 'C.E./Otro' };   // Carné de Extranjería / Pasaporte / otros
       };
+      let ext = false;   // [replica ME] Perú (false) / Extranjero (true)
+      let _tmr = null;
       const bd = document.createElement('div');
       bd.className = 'mos-modal-generic-backdrop';
       bd.innerHTML = `
@@ -26812,16 +26814,31 @@ const MOS = (() => {
             <button class="mos-modal-generic-close" data-cancel>✕</button>
           </div>
           <div class="mos-modal-generic-body" style="display:flex;flex-direction:column;gap:12px;">
-            <div>
-              <label class="mos-modal-generic-label">Documento — DNI (8) / RUC (11) / C.E. <span id="ec-tipo" style="float:right;font-weight:800;color:#818cf8;"></span></label>
-              <div style="display:flex;gap:8px;">
-                <input id="ec-doc" class="mos-modal-generic-input" inputmode="text" maxlength="15" value="${_esc(t.clienteDoc || '')}" placeholder="documento" style="flex:1;" />
-                <button id="ec-buscar" class="mos-modal-generic-btn mos-modal-generic-btn-ghost" title="Buscar nombre" style="white-space:nowrap;">🔎</button>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+              <label class="mos-modal-generic-label" style="margin:0;">Cliente <span id="ec-tipo" style="font-weight:800;color:#818cf8;"></span></label>
+              <div style="display:inline-flex;background:#1e293b;border-radius:999px;padding:3px;font-size:11px;font-weight:800;">
+                <button id="ec-pe" type="button" style="padding:4px 10px;border-radius:999px;border:0;cursor:pointer;background:#fff;color:#0f172a;">🇵🇪 Perú</button>
+                <button id="ec-ex" type="button" style="padding:4px 10px;border-radius:999px;border:0;cursor:pointer;background:transparent;color:#94a3b8;">🌎 Extranjero</button>
               </div>
+            </div>
+            <div style="position:relative;">
+              <label class="mos-modal-generic-label" id="ec-busq-lbl">Buscar: nombre, DNI (8) o RUC (11)</label>
+              <div style="display:flex;gap:8px;">
+                <div style="position:relative;flex:1;">
+                  <input id="ec-busq" class="mos-modal-generic-input" inputmode="text" maxlength="120" value="" placeholder="nombre o documento" style="width:100%;padding-right:34px;" />
+                  <button id="ec-x" type="button" title="Limpiar" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);width:22px;height:22px;border:0;border-radius:999px;background:#334155;color:#cbd5e1;cursor:pointer;display:none;line-height:1;">×</button>
+                </div>
+                <button id="ec-buscar" type="button" class="mos-modal-generic-btn mos-modal-generic-btn-ghost" title="Buscar en RENIEC/SUNAT" style="white-space:nowrap;">🔎</button>
+              </div>
+              <div id="ec-sugs" style="display:none;position:absolute;left:0;right:0;top:100%;margin-top:4px;background:#0b1220;border:1px solid #1e293b;border-radius:10px;max-height:200px;overflow:auto;z-index:5;"></div>
+            </div>
+            <div>
+              <label class="mos-modal-generic-label">Documento <span style="opacity:.55;">(DNI/RUC/C.E.)</span></label>
+              <input id="ec-doc" class="mos-modal-generic-input" inputmode="text" maxlength="15" value="${_esc(t.clienteDoc || '')}" placeholder="documento" />
             </div>
             <div>
               <label class="mos-modal-generic-label">Nombre / Razón social</label>
-              <input id="ec-nom" class="mos-modal-generic-input" maxlength="120" value="${_esc(t.cliente || '')}" placeholder="nombre" />
+              <input id="ec-nom" class="mos-modal-generic-input" maxlength="120" value="${_esc(t.cliente || '')}" placeholder="nombre del cliente" />
             </div>
             <div>
               <label class="mos-modal-generic-label">Dirección <span style="opacity:.55;">(opcional)</span></label>
@@ -26839,7 +26856,7 @@ const MOS = (() => {
         </div>`;
       const $$ = (id) => bd.querySelector('#' + id);
       const cerrar = (val) => { bd.classList.remove('is-open'); setTimeout(() => { try { bd.remove(); } catch(_){} }, 200); resolve(val); };
-      const refTipo = () => { const ti = _tipoDe($$('ec-doc').value); $$('ec-tipo').textContent = ti.lbl; return ti; };
+      const refTipo = () => { const ti = ext ? { cod:4, lbl:'C.E./Pasaporte' } : _tipoDe($$('ec-doc').value); $$('ec-tipo').textContent = ti.lbl ? '· ' + ti.lbl : ''; return ti; };
       const validar = () => {
         const mot = ($$('ec-mot').value || '').trim();
         const doc = ($$('ec-doc').value || '').trim();
@@ -26847,22 +26864,66 @@ const MOS = (() => {
         const ok = mot.length >= 3 && (!!doc || !!nom);
         const b = $$('ec-ok'); b.disabled = !ok; b.style.opacity = ok ? '1' : '.4'; b.style.cursor = ok ? 'pointer' : 'not-allowed';
       };
+      const cerrarSugs = () => { const s = $$('ec-sugs'); s.style.display = 'none'; s.innerHTML = ''; };
+      const pintarSugs = (arr) => {
+        const s = $$('ec-sugs');
+        if (!arr || !arr.length) { cerrarSugs(); return; }
+        s.innerHTML = arr.map(c => `<div class="ec-sug" data-doc="${_esc(c.documento)}" data-nom="${_esc(c.nombre)}" data-dir="${_esc(c.direccion||'')}" style="padding:8px 10px;cursor:pointer;border-bottom:1px solid #1e293b;display:flex;justify-content:space-between;gap:8px;align-items:center;">
+            <span style="font-weight:700;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_esc(c.nombre||'(sin nombre)')}</span>
+            <span style="font-family:monospace;font-size:11px;color:#64748b;flex-shrink:0;background:#1e293b;padding:1px 6px;border-radius:999px;">${_esc(c.documento)}</span>
+          </div>`).join('');
+        s.style.display = 'block';
+      };
+      const onBusq = () => {
+        const v = ($$('ec-busq').value || '').trim();
+        $$('ec-x').style.display = v ? 'block' : 'none';
+        if (ext) { $$('ec-doc').value = v; refTipo(); cerrarSugs(); validar(); return; }   // extranjero: lo tipeado ES el doc
+        if (/^\d{8}$/.test(v) || /^\d{11}$/.test(v)) { $$('ec-doc').value = v; refTipo(); cerrarSugs(); validar(); return; }
+        if (v.length < 2) { cerrarSugs(); validar(); return; }
+        if (_tmr) clearTimeout(_tmr);
+        _tmr = setTimeout(async () => { try { pintarSugs(await API.buscarClientesFrecuentes(v)); } catch(_){ cerrarSugs(); } }, 280);
+        validar();
+      };
+      const elegir = (doc, nom, dir) => {
+        $$('ec-doc').value = String(doc||'').trim();
+        $$('ec-nom').value = String(nom||'').trim();
+        if (dir) $$('ec-dir').value = String(dir);
+        $$('ec-busq').value = nom || doc; $$('ec-x').style.display = 'block';
+        cerrarSugs(); refTipo(); validar();
+      };
       const lookup = async () => {
-        const ti = refTipo(); const doc = ($$('ec-doc').value || '').trim();
-        if (ti.cod !== 1 && ti.cod !== 6) return;   // lookup solo DNI/RUC (APISPeru); C.E. se escribe a mano
+        const doc = ($$('ec-doc').value || '').trim() || ($$('ec-busq').value || '').trim();
+        const ti = _tipoDe(doc);
+        if (ext || (ti.cod !== 1 && ti.cod !== 6)) return;   // lookup solo DNI/RUC (APISPeru)
+        $$('ec-doc').value = doc;
         const bb = $$('ec-buscar'); const prev = bb.textContent; bb.textContent = '…'; bb.disabled = true;
         try {
           const r = await API.get('meConsultarCliente', { doc });
           const nom = r?.nombre || r?.razon_social || '';
-          if (nom) $$('ec-nom').value = nom;
+          if (nom) { $$('ec-nom').value = nom; $$('ec-busq').value = nom; $$('ec-x').style.display = 'block'; }
           if (r?.direccion) $$('ec-dir').value = r.direccion;
         } catch(_) {}
-        bb.textContent = prev; bb.disabled = false; validar();
+        bb.textContent = prev; bb.disabled = false; cerrarSugs(); refTipo(); validar();
+      };
+      const setExt = (on) => {
+        ext = on;
+        $$('ec-pe').style.background = on ? 'transparent' : '#fff';  $$('ec-pe').style.color = on ? '#94a3b8' : '#0f172a';
+        $$('ec-ex').style.background = on ? '#6366f1' : 'transparent'; $$('ec-ex').style.color = on ? '#fff' : '#94a3b8';
+        $$('ec-busq-lbl').textContent = on ? 'C.E. / Pasaporte (alfanumérico)' : 'Buscar: nombre, DNI (8) o RUC (11)';
+        $$('ec-busq').placeholder = on ? 'N° de C.E. o Pasaporte' : 'nombre o documento';
+        $$('ec-buscar').style.display = on ? 'none' : '';
+        $$('ec-busq').value = ''; $$('ec-doc').value = ''; $$('ec-nom').value = ''; $$('ec-dir').value = '';
+        $$('ec-x').style.display = 'none'; cerrarSugs(); refTipo(); validar();
       };
       bd.addEventListener('click', (ev) => {
         const tt = ev.target;
         if (tt === bd || (tt.closest && tt.closest('[data-cancel]'))) { cerrar(null); return; }
+        if (tt.closest && tt.closest('#ec-pe')) { setExt(false); return; }
+        if (tt.closest && tt.closest('#ec-ex')) { setExt(true); return; }
+        if (tt.closest && tt.closest('#ec-x')) { $$('ec-busq').value=''; $$('ec-doc').value=''; $$('ec-x').style.display='none'; cerrarSugs(); refTipo(); validar(); try{$$('ec-busq').focus();}catch(_){} return; }
         if (tt.closest && tt.closest('#ec-buscar')) { ev.preventDefault(); lookup(); return; }
+        const sg = tt.closest && tt.closest('.ec-sug');
+        if (sg) { elegir(sg.getAttribute('data-doc'), sg.getAttribute('data-nom'), sg.getAttribute('data-dir')); return; }
         if (tt.closest && tt.closest('[data-ok]')) {
           const ti = refTipo();
           const doc = ($$('ec-doc').value || '').trim(), nom = ($$('ec-nom').value || '').trim();
@@ -26872,13 +26933,16 @@ const MOS = (() => {
           cerrar({ doc, nombre: nom, direccion: dir, motivo: mot, tipoDoc: ti.cod });
         }
       });
-      bd.addEventListener('input', (ev) => { if (ev.target.id === 'ec-doc') refTipo(); validar(); });
+      bd.addEventListener('input', (ev) => {
+        if (ev.target.id === 'ec-busq') onBusq();
+        else { if (ev.target.id === 'ec-doc') refTipo(); validar(); }
+      });
       bd.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') cerrar(null); });
-      bd.addEventListener('blur', (ev) => { if (ev.target.id === 'ec-doc') { const ti = _tipoDe(ev.target.value); if (ti.cod === 1 || ti.cod === 6) lookup(); } }, true);
+      bd.addEventListener('blur', (ev) => { if (!ext && ev.target.id === 'ec-doc') { const ti = _tipoDe(ev.target.value); if (ti.cod === 1 || ti.cod === 6) lookup(); } }, true);
       document.body.appendChild(bd);
       requestAnimationFrame(() => bd.classList.add('is-open'));
       try { _finBeep?.('tap'); } catch(_){}
-      setTimeout(() => { refTipo(); validar(); try { $$('ec-doc').focus(); } catch(_){} }, 220);
+      setTimeout(() => { refTipo(); validar(); try { $$('ec-busq').focus(); } catch(_){} }, 220);
     });
   }
 

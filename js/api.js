@@ -2690,6 +2690,15 @@ const API = (() => {
     // Número (versión) o null (sin token / fallo). El poller de app.js la usa para detectar cambios
     // del maestro y re-pullar el catálogo solo cuando hace falta. NUNCA lanza.
     catalogoVersion: _catalogoVersion,
+    // [Modal editar cliente · replica ME] Buscar clientes frecuentes por nombre/doc (me.buscar_clientes_frecuentes,
+    // SQL 284). Devuelve [{documento,nombre,tipoDoc,direccion}] o [] (sin token / vacío / error). NUNCA lanza.
+    buscarClientesFrecuentes: async (q) => {
+      try {
+        const r = await _sbRpcMOS('buscar_clientes_frecuentes', { p: { q: String(q || '') } }, 'me');
+        if (r && r.ok && Array.isArray(r.data)) return r.data;
+      } catch (_) {}
+      return [];
+    },
     // [Adhesivos Supabase] imprimir lote de adhesivos vía Edge print-adhesivo (mode:'crear', cantidad exacta).
     adhesivoImprimirEdge: _adhesivoImprimirEdge,
     // [Membretes] Edge print-adhesivo genérico (modal compartido vía edgeCall).
