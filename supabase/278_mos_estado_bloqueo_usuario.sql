@@ -84,12 +84,18 @@ declare
   v_motivo    text;
   v_unlock_vig boolean;
   v_bloqueado boolean;
+  v_flag_clave text;
 begin
-  -- ── KILL-SWITCH server-side (cutover sin redeploy): si WH_BLOQUEO_DIRECTO != '1' → OFF → WH cae a GAS.
-  -- INERTE por default (flag ausente/'0'). El dueño activa poniendo el flag a '1' en mos.config. Va PRIMERO:
-  -- cuando está OFF no hace heartbeat (lo hace la ruta GAS) ni lee nada.
-  if coalesce((select valor from mos.config where clave = 'WH_BLOQUEO_DIRECTO' limit 1), '0') <> '1' then
-    return jsonb_build_object('ok', false, 'error', 'WH_BLOQUEO_DIRECTO_OFF');
+  -- ── KILL-SWITCH server-side APP-AWARE (cutover por app, sin redeploy): cada app tiene su flag en mos.config.
+  -- WH→WH_BLOQUEO_DIRECTO ; ME→ME_BLOQUEO_DIRECTO ; otra app→siempre OFF (no migrada). Si el flag != '1' → OFF →
+  -- esa app cae a GAS. INERTE por default (flag ausente/'0'). Va PRIMERO: en OFF no hace heartbeat ni lee nada.
+  v_flag_clave := case
+    when v_app = 'warehousemos' then 'WH_BLOQUEO_DIRECTO'
+    when v_app = 'mosexpress'   then 'ME_BLOQUEO_DIRECTO'
+    else 'BLOQUEO_DIRECTO_APP_NO_MIGRADA'
+  end;
+  if coalesce((select valor from mos.config where clave = v_flag_clave limit 1), '0') <> '1' then
+    return jsonb_build_object('ok', false, 'error', v_flag_clave || '_OFF');
   end if;
 
   -- Validación de entrada (paridad: requiere nombre o idPersonal).
