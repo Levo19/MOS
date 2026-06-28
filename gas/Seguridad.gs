@@ -402,28 +402,12 @@ function rotarClaveAdminGlobal(params) {
 // CACHE OFFLINE — ME/WH descargan globalPin + lista admins
 // ────────────────────────────────────────────────────────────
 function getAdminPinsCache(params) {
-  _garantizarClaveGlobal();
-  var pin = String(_leerConfigMos('ADMIN_GLOBAL_PIN') || '').padStart(4, '0');
-  var personas = _sheetToObjects(getSheet('PERSONAL_MASTER'));
-  var admins = personas
-    .filter(function(p) {
-      return _esRolAdmin(p.rol) && String(p.estado) === '1' && p.pin;
-    })
-    .map(function(p) {
-      return {
-        idPersonal: p.idPersonal,
-        nombre: (p.nombre + ' ' + (p.apellido || '')).trim(),
-        pin: String(p.pin || '').padStart(4, '0')
-      };
-    });
-  return {
-    ok: true,
-    data: {
-      globalPin: pin,
-      adminPins: admins,
-      generadoEn: new Date().toISOString()
-    }
-  };
+  // [G4 online-only · 2026-06-27] DEPRECADO. Este endpoint exponía PINs admin en TEXTO PLANO al navegador
+  // (cache offline). Decisión: la verificación de clave admin es SIEMPRE online (verificarClaveAdmin →
+  // bcrypt + lockout + auditoría server-side). WH 2.13.365 y ME 2.8.96 ya NO lo llaman (validan online o
+  // bloquean sin conexión). Se neutraliza para cerrar la exposición del endpoint abierto. NO reintroducir
+  // sin hashear/rediseñar (un PIN de 4 díg no se puede proteger offline).
+  return { ok: false, error: 'DEPRECADO_ONLINE_ONLY', data: null };
 }
 
 // ────────────────────────────────────────────────────────────
