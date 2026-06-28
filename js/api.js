@@ -629,6 +629,22 @@ const API = (() => {
   async function _getAuditoriaAdminDirecto(params)      { return _getListaDirectaMOS('auditoria_admin_lista',  params, 'audAdmin'); }
   async function _getAuditoriaIntegridadDirecto(params) { return _getObjDirectoMOS('auditoria_integridad_lista', params, 'audInteg'); }
   async function _getProductosEditadosRecientesDirecto(params){ return _getListaDirectaMOS('productos_editados_recientes', params, 'prodEdit'); }
+  // [cero-GAS G2] GPS — directos dedicados (NO usan _fresh: el tracking en vivo no depende del heartbeat de
+  // sync MOS; la tabla mos.dispositivos_ubicaciones ES la fuente cuando GPS_DIRECTO ON). r.ok=false
+  // (GPS_DIRECTO_OFF) → null → _conFallbackMOS cae a GAS. Devuelven r.data: row|null (última) / array (historial),
+  // shape camelCase paritario con Gps.gs.
+  async function _getUltimaUbicacionDispositivoDirecto(params) {
+    const r = await _sbRpcMOS('ultima_ubicacion_dispositivo', { p: params || {} });
+    if (r == null) return null;                 // sin token → GAS
+    if (!r.ok) return null;                      // GPS_DIRECTO_OFF / error → GAS
+    return r.data;                               // row | null (null → cae a GAS: mismo "sin ubicación")
+  }
+  async function _getUbicacionesDispositivoDirecto(params) {
+    const r = await _sbRpcMOS('ubicaciones_dispositivo', { p: params || {} });
+    if (r == null) return null;
+    if (!r.ok || !Array.isArray(r.data)) return null;
+    return r.data;                               // array camelCase
+  }
   // [Optimización · cross-app vistas 117/118/119] solo las verificadas con paridad (las con bugs/gaps siguen GAS).
   async function _getRankingZonasDirecto(params)        { return _getObjDirectoMOS('ranking_zonas',           params, 'rankZonas'); }
   async function _getProductosSinVentaDirecto(params)   { return _getObjDirectoMOS('productos_sin_venta',     params, 'prodSinVenta'); }
@@ -2579,6 +2595,9 @@ const API = (() => {
       // [Optimización · portables 114/115/116]
       if (action === 'getConfig')              { return _conFallbackMOS(() => _getConfigDirecto(p),             () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getDispositivos')        { return _conFallbackMOS(() => _getDispositivosDirecto(p),       () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      // [cero-GAS G2] GPS tracking — gate _mosLecturaDirecta (ON prod) + el RPC checa GPS_DIRECTO (OFF→null→GAS).
+      if (action === 'getUltimaUbicacionDispositivo') { return _conFallbackMOS(() => _getUltimaUbicacionDispositivoDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getUbicacionesDispositivo')     { return _conFallbackMOS(() => _getUbicacionesDispositivoDirecto(p),     () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getLiquidacionesPendientes') { return _conFallbackMOS(() => _getLiqPendientesDirecto(p),  () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getLiquidacionesPagadas' || action === 'getLiquidacionesEmitidas') { return _conFallbackMOS(() => _getLiqPagadasDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getLiquidacionesVetadas') { return _conFallbackMOS(() => _getLiqVetadasDirecto(p),        () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
@@ -2660,6 +2679,10 @@ const API = (() => {
           () => _postMOS(action, p),
           _mosLecturaDirecta
         );
+      }
+      // [cero-GAS G2] GPS última ubicación también se invoca por POST (app.js verUltimaUbicacionDispositivo).
+      if (action === 'getUltimaUbicacionDispositivo') {
+        return _conFallbackMOS(() => _getUltimaUbicacionDispositivoDirecto(p), () => _postMOS(action, p), _mosLecturaDirecta);
       }
       return _postMOS(action, p);
     },
