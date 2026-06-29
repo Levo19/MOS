@@ -60,6 +60,7 @@ begin
         -- modal de Auditar muestra ventas/meta/comisión/envasados consistentes (cero GAS).
         'kpis',   jsonb_build_object(
                     'ventasReales',     coalesce(d.venta_cobrada, 0),
+                    'ventaZona',        coalesce(d.venta_zona, 0),
                     'ventasPct',        coalesce(d.progreso_venta_pct, 0),
                     'metaVenta',        coalesce(d.meta_zona, 0),
                     'zonaPrincipal',    coalesce(nullif(d.zona, ''), ''),

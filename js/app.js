@@ -37277,15 +37277,18 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     let rows = [];
 
     if (rol === 'CAJERO' || rol === 'VENDEDOR') {
-      // POS — punto 1: meta diaria compartida de la zona
-      const metaZona = parseFloat(k.metaVenta) || 0;
-      const venta    = parseFloat(k.ventasReales) || 0;
-      const zonaNom  = k.zonaPrincipal ? ` · zona ${k.zonaPrincipal}` : '';
+      // POS — punto 1: meta diaria COMPARTIDA de la zona. La meta es del EQUIPO, así
+      // que se muestra la venta total de la ZONA vs la meta (no la individual), para
+      // que cuadre con la comisión (que se calcula sobre el excedente de la zona).
+      const metaZona  = parseFloat(k.metaVenta) || 0;
+      const ventaZona = parseFloat(k.ventaZona) || 0;
+      const ventaYo   = parseFloat(k.ventasReales) || 0;
+      const zonaNom   = k.zonaPrincipal ? ` · zona ${k.zonaPrincipal}` : '';
       if (metaZona > 0) {
-        const pct = Math.min(100, (venta / metaZona) * 100);
+        const pct = Math.min(100, (ventaZona / metaZona) * 100);
         rows.push(_kpiRow(
           `🎯 Meta diaria${zonaNom}`,
-          `S/${venta.toFixed(2)} / S/${metaZona.toFixed(0)}`,
+          `S/${ventaZona.toFixed(2)} / S/${metaZona.toFixed(0)}`,
           pct
         ));
       } else {
@@ -37293,11 +37296,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       }
       // POS — punto 2: auditorías de productos
       rows.push(_kpiRow('📋 Auditorías de productos', `${k.auditoriasHechas || 0}/${auditMeta}`, k.auditPct || 0));
-      // POS — punto 3: comisión por ventas (5% del excedente de zona, proporcional) —
-      // solo si la hubo. Sale de la mega tabla (bono_meta), NO de GAS.
+      // POS — punto 3: comisión por ventas (5% del excedente de ZONA, repartido
+      // proporcional a lo que vendió cada uno). Se muestra su aporte para que el
+      // reparto sea transparente. Sale de la mega tabla (bono_meta), NO de GAS.
       const comi = parseFloat(k.comision) || 0;
       if (comi > 0) {
-        rows.push(_kpiRow('💰 Comisión por ventas', `S/${comi.toFixed(2)}`, Math.min(100, k.ventasPct || 0)));
+        rows.push(_kpiRow('💰 Comisión por ventas', `S/${comi.toFixed(2)} · tu venta S/${ventaYo.toFixed(0)}`, Math.min(100, k.ventasPct || 0)));
       }
     } else if (rol === 'ALMACENERO' || rol === 'ENVASADOR') {
       // Almacén — punto 1: auditorías
