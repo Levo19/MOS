@@ -26060,8 +26060,10 @@ const MOS = (() => {
     const inp = $('cjTkBuscar'); if (inp) inp.value = '';
     _setText('cjModalTicketsTitulo', 'Tickets de Caja · ' + (c?.vendedor || '—'));
     _setText('cjModalTicketsSubtitulo', (c?.zona || c?.estacion || '') + ' · ' + (c?.idCaja || ''));
+    _cjState.tkVendedor = '';   // [v2.43.387] reset del filtro de vendedor al abrir otra caja
     openModal('cjModalTickets');
     _cjTkRenderFiltrosBtns();
+    _cjTkRenderVendedoresBtns();
     _cjTkRender();
   }
 
@@ -26090,6 +26092,45 @@ const MOS = (() => {
     _cjState.tkFiltro = key;
     _finBeep('click');
     _cjTkRenderFiltrosBtns();
+    _cjTkRender();
+  }
+
+  // [v2.43.387] Chips por VENDEDOR — saber quién emitió cada ticket dentro de la caja
+  // (una caja puede tener varios: p.ej. Sergio + Fernando). Se combina con el filtro de
+  // método y la búsqueda; la suma viva (cjTkConteo) refleja la intersección. Si la caja
+  // tiene un solo vendedor, la fila se oculta (no aporta).
+  function _cjTkVendNombre(t) { return (String(t.vendedor || '').trim() || '—'); }
+  function _cjTkRenderVendedoresBtns() {
+    const wrap = $('cjTkVendedores');
+    if (!wrap) return;
+    const fecha = _cjFecha();
+    let base = (S._todosTickets || []).filter(t => (t.fecha || '').substring(0, 10) === fecha);
+    if (_cjState.tkCajaFiltro) base = base.filter(t => String(t.idCaja || '') === _cjState.tkCajaFiltro);
+    const esAnul = t => String(t.metodo || t.formaPago || '').toUpperCase() === 'ANULADO' || t.estado === 'ANULADO';
+    const map = new Map();
+    base.forEach(t => {
+      const v = _cjTkVendNombre(t);
+      if (!map.has(v)) map.set(v, { n: 0, tot: 0 });
+      const e = map.get(v); e.n++; if (!esAnul(t)) e.tot += parseFloat(t.total) || 0;
+    });
+    if (map.size <= 1) { wrap.classList.add('hidden'); _cjState.tkVendedor = ''; wrap.innerHTML = ''; return; }
+    wrap.classList.remove('hidden');
+    const vends = Array.from(map.entries()).sort((a, b) => b[1].tot - a[1].tot);
+    const ini = n => (n && n !== '—' ? n.trim()[0].toUpperCase() : '?');
+    const col = n => { let h = 0; for (let i = 0; i < n.length; i++) h = (h * 31 + n.charCodeAt(i)) & 0xffff; return `hsl(${h % 360},55%,45%)`; };
+    const chip = (key, label, color, sub, active, icon) =>
+      `<button onclick="MOS._cjTkSetVendedor('${String(key).replace(/'/g, "\\'")}')" class="log-icon-btn ${active ? 'active' : ''}" style="padding:4px 9px 4px 4px;font-size:11px;width:auto;height:auto;display:inline-flex;align-items:center;gap:6px">
+         <span style="width:20px;height:20px;border-radius:50%;background:${color};color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0">${icon}</span>
+         <span>${_escapeHtml(label)}${sub ? ` <span style="opacity:.55">${sub}</span>` : ''}</span>
+       </button>`;
+    let html = chip('', 'Todos', '#475569', '', !_cjState.tkVendedor, '👥');
+    html += vends.map(([v, e]) => chip(v, v, col(v), `S/${e.tot.toFixed(0)}`, _cjState.tkVendedor === v, ini(v))).join('');
+    wrap.innerHTML = html;
+  }
+  function _cjTkSetVendedor(v) {
+    _cjState.tkVendedor = (_cjState.tkVendedor === v) ? '' : v;   // toggle → re-click deselecciona
+    _finBeep('click');
+    _cjTkRenderVendedoresBtns();
     _cjTkRender();
   }
 
@@ -26123,6 +26164,10 @@ const MOS = (() => {
     // Filtro por caja
     if (_cjState.tkCajaFiltro) {
       todos = todos.filter(t => String(t.idCaja || '') === _cjState.tkCajaFiltro);
+    }
+    // [v2.43.387] Filtro por vendedor (chips de persona) — se combina con método + búsqueda
+    if (_cjState.tkVendedor) {
+      todos = todos.filter(t => _cjTkVendNombre(t) === _cjState.tkVendedor);
     }
     // Buscar
     const q = ($('cjTkBuscar')?.value || _cjState.tkBuscar || '').trim().toLowerCase();
@@ -43016,7 +43061,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     cjToggleCajaDetail, cjVerTodosTickets, cjVerTicketsCaja, cjAbrirTurno,
     cjCerrarCajaForzado,
     cjScrollToCaja, cjModoTV,
-    _cjTkRender, _cjTkSetFiltro,
+    _cjTkRender, _cjTkSetFiltro, _cjTkSetVendedor,
     // [v40.4] Cobro asignado de créditos — mano de cartas
     cjRepartirMano, cjCerrarMesa,
     cjAbrirDetalleCarta, cjCerrarDetalleCarta, cjAbrirAsignarDesdeDetalle,
