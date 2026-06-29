@@ -33423,6 +33423,7 @@ const MOS = (() => {
 
     // Si va a imprimir → primero PREVIEW del ticket, luego pedir impresora
     let printerId = null;
+    let _ticketEscpos = null;   // [v2.43.377] se captura ANTES del removal optimista (montos intactos)
     if (imprimir) {
       closeModal('modalLiqConfirmar');
       // [v2.41.74] Preview ASCII antes de elegir impresora
@@ -33434,6 +33435,12 @@ const MOS = (() => {
         printerId = await _liqElegirImpresora();
         if (!printerId) {
           toast('Pago se registró sin imprimir', 'info');
+        } else {
+          // El ascii del print = el MISMO del preview (pendientes aún intactos aquí).
+          try {
+            const ascii = _liqGenerarTicketAscii(personas, comentario, pagadoPor);
+            _ticketEscpos = '\x1b\x40\x1b\x74\x10' + ascii + '\n\n\n\n\x1d\x56\x00';
+          } catch (_) {}
         }
       }
     }
@@ -33478,8 +33485,10 @@ const MOS = (() => {
         appOrigen: persona.appOrigen,
         pagadoPor,
         comentario,
-        imprimir: !!printerId,
-        printerId: printerId || ''
+        // [v2.43.377] El front imprime por la Edge `imprimir` (cero-GAS, preview==print).
+        // marcarPagos ya NO imprime (evita ticket GAS distinto + fallos silenciosos).
+        imprimir: false,
+        printerId: ''
       }).then(res => ({ ok: true, persona, res }))
         .catch(e => ({ ok: false, persona, error: e.message || String(e) }))
     ));
@@ -33490,6 +33499,16 @@ const MOS = (() => {
 
     if (okList.length) {
       toast(`✓ ${okList.length} pago(s) registrado(s) · ${_liqMoney(totalPagado)}`, 'ok', 5000);
+      // [v2.43.377] Imprimir el comprobante por la Edge `imprimir` (cero-GAS). El contenido
+      // es EXACTAMENTE el del preview (capturado antes del removal) → lo que ves es lo que sale.
+      if (printerId && _ticketEscpos) {
+        try {
+          await API.imprimirTicketEdge(parseInt(printerId, 10), 'Comprobante de pago', _ticketEscpos);
+          toast('🖨 Comprobante enviado a la impresora', 'ok', 3000);
+        } catch (ePr) {
+          toast('⚠ Pago OK, pero no se pudo imprimir: ' + ((ePr && ePr.message) || ePr), 'warn', 6000);
+        }
+      }
     }
     if (errList.length) {
       // Restaurar al state los que fallaron
