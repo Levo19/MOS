@@ -35910,9 +35910,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // Si después falla el back, sonará 'error'.
     _finBeep('veto');
 
-    // Localizar el card por el idJornada del botón vetar
+    // [v2.43.382] Localizar la card por idMega (confiable y único). idJornada está vacío en
+    // estas filas → [onclick*=""] matcheaba cualquier card (cruce de overlay).
+    const _claveCardV = idMega || idJornada || '__nope__';
     const card = Array.from(document.querySelectorAll('.eval-card')).find(el => {
-      return !!el.querySelector(`button[onclick*="finVetarPago"][onclick*="${idJornada}"]`);
+      return !!el.querySelector(`button[onclick*="finVetarPago"][onclick*="${_claveCardV}"]`);
     });
 
     let pagoEliminado = 0;
@@ -36092,9 +36094,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // SONIDO OPTIMISTA: dispara INMEDIATO al confirmar.
     _finBeep('rehab');
 
-    // Localizar card
+    // [v2.43.382] Localizar la card por idMega (id de la mega tabla, confiable y único por
+    // persona). Antes usaba idJornada que en estas filas está VACÍO → [onclick*=""] matcheaba
+    // CUALQUIER card → quitaba el enmallado de la equivocada (Jorgenis seguía enmallado).
+    const _claveCard = idMega || idJornada || '__nope__';
     const card = Array.from(document.querySelectorAll('.eval-card')).find(el => {
-      return !!el.querySelector(`button[onclick*="finRehabilitarPago"][onclick*="${idJornada}"]`);
+      return !!el.querySelector(`button[onclick*="finRehabilitarPago"][onclick*="${_claveCard}"]`);
     });
 
     // Calcular monto a restaurar (mejor desde PERSONAL_MASTER cache, fallback p.monto)
