@@ -35613,6 +35613,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // Vetado: NO recibe pago, NO se audita, NO entra a la liquidación
     const totalDia = esVetada ? 0 : ((ev && ev.totalDia) ? ev.totalDia : (parseFloat(p.monto) || 0));
     const idForEval = esVetada ? '' : ((ev && ev.idPersonal) || p.idPersonal || '');
+    // [v2.43.376 · una sola fuente] id_personal de la MEGA TABLA (mos.liquidaciones_dia, vía
+    // getPersonalDiaFast) para vetar/desvetar — el MISMO que usa la pestaña Liquidación.
+    const idMega = (ev && ev.idPersonal) || p.idPersonal || '';
     const fuenteTag = p.fuente === 'AUTO_VENTA' ? '<span class="fin-tag fin-tag-green ml-1" title="Detectado por venta">auto</span>'
                     : p.fuente === 'AUTO_LOGIN' ? '<span class="fin-tag fin-tag-green ml-1" title="Detectado por sesión">auto</span>'
                     : p.fuente === 'AUTO_CAJAS' ? '<span class="fin-tag fin-tag-green ml-1" title="Importado de cajas">auto</span>'
@@ -35726,11 +35729,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
                     style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.5);color:#fbbf24;font-size:12px;position:relative;z-index:10;"
                     title="🔒 Bloquear dispositivo (pantalla de candado en su tablet/celular)">🔒</button>`}
               ${esVetada
-                ? `<button onclick="event.stopPropagation();MOS.finRehabilitarPago('${p.idJornada || ''}','${fecha}','${String(p.nombre || '').replace(/'/g,'&#39;')}')"
+                ? `<button onclick="event.stopPropagation();MOS.finRehabilitarPago('${p.idJornada || ''}','${fecha}','${String(p.nombre || '').replace(/'/g,'&#39;')}','${idMega}')"
                     class="w-7 h-7 rounded-md flex items-center justify-center hover:scale-110 transition-all"
                     style="background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.55);color:#86efac;font-size:12px;position:relative;z-index:10;"
                     title="💵 Rehabilitar pago (revierte el veto y restaura el monto)">💵</button>`
-                : `<button onclick="event.stopPropagation();MOS.finVetarPago('${p.idJornada || ''}','${fecha}','${String(p.nombre || '').replace(/'/g,'&#39;')}')"
+                : `<button onclick="event.stopPropagation();MOS.finVetarPago('${p.idJornada || ''}','${fecha}','${String(p.nombre || '').replace(/'/g,'&#39;')}','${idMega}')"
                     class="w-7 h-7 rounded-md flex items-center justify-center hover:scale-110 transition-all"
                     style="background:rgba(168,85,247,0.12);border:1px solid rgba(168,85,247,0.5);color:#c084fc;font-size:12px;position:relative;z-index:10;"
                     title="💸 Vetar del pago de hoy (sigue operando, pero no se contará en gastos)">💸</button>`}
@@ -35871,7 +35874,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // Antes había 2 flujos confusos (eliminarJornada + vetarLiquidacionDia).
   // Ahora ambos botones (🚫 Liquidaciones y 💸 Personal Día) hacen exactamente
   // lo mismo: marcar VETADA en la hoja. Una fuente de verdad. Cero confusión.
-  async function finVetarPago(idJornada, fecha, nombre) {
+  async function finVetarPago(idJornada, fecha, nombre, idMega) {
     const fechaTxt = _formatFechaCorta(fecha);
     if (!await _modalConfirm(`💸 VETAR el pago de ${nombre || 'esta persona'} del ${fechaTxt}?\n\nNo se le pagará por este día.\nLa persona puede seguir operando (no la bloquea).\nTras vetar, el botón cambiará a 💵 para rehabilitar.`, { danger: true, titulo: 'Vetar pago', okText: 'Vetar' })) return;
 
@@ -35939,7 +35942,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // El render del Personal del Día lee el estado VETADA desde la hoja
     // (cruce backend en getResumenTodosDia) → overlay aparece consistente.
     const persona = (_finPL?.personalDetalle || []).find(p => String(p.idJornada) === String(idJornada));
-    const idPersonal = persona?.idPersonal;
+    // [v2.43.376 · una sola fuente] idPersonal de la MEGA TABLA (lo pasa la card desde
+    // ev.idPersonal = getPersonalDiaFast/liquidaciones_dia) — el MISMO id que usa Liquidación.
+    const idPersonal = idMega || persona?.idPersonal;
     if (!idPersonal) {
       toast('No se puede vetar: persona sin idPersonal', 'warn');
       _finBeep('error');
@@ -36052,7 +36057,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
   // Rehabilita el veto: animación de "rejas suben" del overlay vetada,
   // restaura monto, recalcula KPIs locales, y persiste en GAS.
-  async function finRehabilitarPago(idJornada, fecha, nombre) {
+  async function finRehabilitarPago(idJornada, fecha, nombre, idMega) {
     const fechaTxt = _formatFechaCorta(fecha);
     if (!await _modalConfirm(`💵 REHABILITAR el pago de ${nombre || 'esta persona'} del ${fechaTxt}?\n\nVolverá a contarse en gastos y liquidación.\nTras rehabilitar, el botón vuelve a ser 💸.`, { titulo: 'Rehabilitar pago', okText: 'Rehabilitar' })) return;
 
@@ -36146,8 +36151,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
 
     // [v2.41.45] ÚNICA acción: desvetar en LIQUIDACIONES_DIA.
+    // [v2.43.376 · una sola fuente] idPersonal de la MEGA TABLA (lo pasa la card).
     const persona = (_finPL?.personalDetalle || []).find(p => String(p.idJornada) === String(idJornada));
-    const idPersonal = persona?.idPersonal;
+    const idPersonal = idMega || persona?.idPersonal;
     if (!idPersonal) {
       toast('No se puede rehabilitar: persona sin idPersonal', 'warn');
       _finBeep('error');
