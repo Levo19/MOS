@@ -1054,6 +1054,12 @@ function imprimirTicketZCierre(params) {
         var pctStr = (Math.round(pctV * 1000) / 10) + '%';
         txt += '  ' + _pEnd(_norm(n), 18) + _pSt(pctStr, 6) + '  ' + _amtP(comV, 10).trim() + '\n';
       });
+      // [v2.43.372] Aclaración: esta comisión es del TURNO (provisional). El pago
+      // OFICIAL sale del jornal del DÍA (suma de todos los turnos de la zona vs meta).
+      txt += SEPd;
+      txt += '  * PROVISIONAL: estimado de este turno.\n';
+      txt += '    El pago final sale del JORNAL DEL DIA\n';
+      txt += '    (todos los turnos de la zona).\n';
     } else {
       txt += '  (sin comision configurada para esta zona)\n';
     }
