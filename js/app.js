@@ -37980,25 +37980,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const bonificacion       = ajusteTipo === 'bonificacion' ? ajusteMonto : 0;
     const bonificacionMotivo = ajusteTipo === 'bonificacion' ? ajusteMotivo : '';
 
-    // [v2.41.61] Enriquecer motivo con DELTA respecto al valor previo.
-    // _evalState.auditPrevBon/auditPrevSan fueron capturados al abrir el modal
-    // (de getLiqDiaBonSan). Permite rastrear "quién aumentó cuánto" en EVALUACIONES.
-    const prevBon = parseFloat(_evalState.auditPrevBon) || 0;
-    const prevSan = parseFloat(_evalState.auditPrevSan) || 0;
-    let bonificacionMotivoFinal = bonificacionMotivo;
-    let sancionMotivoFinal = sancionMotivo;
-    if (bonificacion > 0 && bonificacion !== prevBon) {
-      const delta = bonificacion - prevBon;
-      const signo = delta >= 0 ? '+' : '';
-      const tag = `📊 S/${prevBon.toFixed(2)} → S/${bonificacion.toFixed(2)} (${signo}${delta.toFixed(2)})`;
-      bonificacionMotivoFinal = bonificacionMotivo ? bonificacionMotivo + ' · ' + tag : tag;
-    }
-    if (sancion > 0 && sancion !== prevSan) {
-      const delta = sancion - prevSan;
-      const signo = delta >= 0 ? '+' : '';
-      const tag = `📊 S/${prevSan.toFixed(2)} → S/${sancion.toFixed(2)} (${signo}${delta.toFixed(2)})`;
-      sancionMotivoFinal = sancionMotivo ? sancionMotivo + ' · ' + tag : tag;
-    }
+    // [v2.43.372] El motivo es SOLO el comentario limpio del admin. Se eliminó el
+    // tag de delta "📊 S/x → S/y" que se concatenaba al motivo (ensuciaba el texto y,
+    // junto con la fusión de motivos, duplicaba "por X · 📊... · por X"). Una cosa es
+    // la bonificación/sanción + su comentario; el histórico de cambios NO va en el motivo.
+    const bonificacionMotivoFinal = bonificacionMotivo;
+    const sancionMotivoFinal = sancionMotivo;
 
     const comentarioBase = $('auditComentario').value || '';
     let comentarioFinal = comentarioBase;
