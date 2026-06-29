@@ -66,7 +66,13 @@ begin
   if coalesce((select valor from mos.config where clave='MOS_ACCESOS_DIRECTO' limit 1),'0') = '1' then
     begin
       perform mos.registrar_ingreso_personal(jsonb_build_object(
-        'idPersonal',  v_id,
+        -- [v2.43.383 · identidad unificada] el temporal ME usa MEX:<nombre> (la MISMA
+        -- convención que el flujo de ventas, Evaluaciones.gs:1029) → UNA sola fila por
+        -- persona/día, sin duplicar (NOID: vs MEX:). Si trae id real, se respeta.
+        'idPersonal',  case
+                         when v_id like 'NOID:%' and btrim(v_nombre) <> '' then 'MEX:'||btrim(v_nombre)
+                         when v_id like 'NOID:%' then 'MEX:'||substring(v_id from 6)
+                         else v_id end,
         'nombre',      v_nombre,
         'rol',         v_rol,
         'appOrigen',   'mosExpress',
