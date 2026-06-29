@@ -65,7 +65,10 @@ begin
       coalesce(d.total_dia, 0)                                         as total_dia,
       coalesce(d.score_final, 0)                                       as score_final,
       coalesce(d.evaluaciones_count, 0)::int                           as evaluaciones_count,
-      coalesce(d.tarifa_envasado, 0)                                   as tarifa_envasado
+      coalesce(d.tarifa_envasado, 0)                                   as tarifa_envasado,
+      coalesce(d.bonificacion_motivo,'')                               as bonificacion_motivo,
+      coalesce(d.sancion_motivo,'')                                    as sancion_motivo,
+      coalesce(d.productos_envasados, 0)                               as productos_envasados
     from mos.liquidaciones_dia d
     where upper(coalesce(d.estado,'')) = 'PENDIENTE'
       and to_char((d.fecha at time zone 'America/Lima')::date, 'YYYY-MM-DD') between v_desde and v_hasta
@@ -90,7 +93,10 @@ begin
           'totalDia',          total_dia,
           'scoreFinal',        score_final,
           'evaluacionesCount', evaluaciones_count,
-          'tarifaEnvasado',    tarifa_envasado
+          'tarifaEnvasado',    tarifa_envasado,
+          'bonificacionMotivo', bonificacion_motivo,
+          'sancionMotivo',      sancion_motivo,
+          'productosEnvasados', productos_envasados
         ) order by f
       )                                                  as dias,
       round(sum(total_dia)::numeric, 2)                  as total,

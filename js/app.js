@@ -33600,28 +33600,31 @@ const MOS = (() => {
       out += dosCol('Emitido:', new Date().toLocaleString('es-PE', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' })) + '\n';
       out += linea('-') + '\n';
       out += 'DETALLE POR DIA:\n';
+      // cada concepto en SU línea (solo si existe); comentario debajo, multilínea.
+      const num0 = (n) => { n = parseFloat(n) || 0; return Number.isInteger(n) ? ('' + n) : num(n); };
+      const compLine = (label, monto, signo) => dosCol('  ' + label, (signo || '') + 'S/' + num(monto)) + '\n';
+      const motivoLines = (motivo) => {
+        const t = String(motivo || '').trim(); if (!t) return '';
+        const palabras = t.split(/\s+/); let buf = '', out2 = '';
+        palabras.forEach(w => { if (buf && (buf + ' ' + w).length > (W - 4)) { out2 += '    ' + buf + '\n'; buf = w; } else buf += (buf ? ' ' : '') + w; });
+        if (buf) out2 += '    ' + buf + '\n';
+        return out2;
+      };
       const pState = _liqState.pendientes.find(x => x.idPersonal === per.idPersonal);
       let subtotal = 0;
       (per.fechas || []).forEach(f => {
         const d = pState ? pState.dias.find(x => x.fecha === f) : null;
         const m = d ? (parseFloat(d.totalDia) || 0) : 0;
         subtotal += m;
-        out += dosCol(fmtFecha(f), fmtMon(m)) + '\n';
+        out += '\n' + dosCol(fmtFecha(f), fmtMon(m)) + '\n';
         if (d) {
-          const comp = [];
-          if ((parseFloat(d.montoBase) || 0) > 0)    comp.push('base ' + num(d.montoBase));
-          if ((parseFloat(d.pagoEnvasado) || 0) > 0) comp.push('envasado ' + num(d.pagoEnvasado));
-          if ((parseFloat(d.bonoMeta) || 0) > 0)     comp.push('comision ' + num(d.bonoMeta));
-          if ((parseFloat(d.bonificacion) || 0) > 0) comp.push('+bono ' + num(d.bonificacion));
-          if ((parseFloat(d.sancion) || 0) > 0)      comp.push('-desc ' + num(d.sancion));
-          // desglose en 1-2 renglones indentados (todo el ancho)
-          let buf = '  ';
-          comp.forEach((cp, i) => {
-            const add = (i ? ' · ' : '') + cp;
-            if ((buf + add).length > W) { out += buf + '\n'; buf = '  ' + cp; }
-            else buf += add;
-          });
-          if (buf.trim()) out += buf + '\n';
+          const base = parseFloat(d.montoBase) || 0, env = parseFloat(d.pagoEnvasado) || 0, com = parseFloat(d.bonoMeta) || 0;
+          const bon = parseFloat(d.bonificacion) || 0, san = parseFloat(d.sancion) || 0, uds = parseFloat(d.productosEnvasados) || 0;
+          if (base > 0) out += compLine('Base diaria', base);
+          if (env > 0)  out += compLine('Pago envasado' + (uds > 0 ? ' (' + num0(uds) + ' uds)' : ''), env);
+          if (com > 0)  out += compLine('Comision por ventas', com);
+          if (bon > 0)  { out += compLine('Bonificacion', bon, '+'); out += motivoLines(d.bonificacionMotivo); }
+          if (san > 0)  { out += compLine('Descuento', san, '-');     out += motivoLines(d.sancionMotivo); }
         }
       });
       out += linea('-') + '\n';
