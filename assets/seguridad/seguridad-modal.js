@@ -244,6 +244,59 @@
   function _badgeCountVistoSet(n) {
     try { localStorage.setItem('seg_badge_count_visto', String(n)); } catch(_) {}
   }
+  // [v1.0.4] Badge de alertas ARRASTRABLE (burbuja movible que recuerda su lugar).
+  // Antes estaba fijo arriba-derecha y tapaba los toasts. Ahora el admin lo mueve a
+  // donde quiera; la posición se persiste en localStorage. El clic sigue abriendo el
+  // modal salvo que haya sido un arrastre.
+  function _badgeRestaurarPos(el) {
+    try {
+      var p = JSON.parse(localStorage.getItem('seg_badge_pos') || 'null');
+      if (p && typeof p.left === 'number' && typeof p.top === 'number') {
+        var w = el.offsetWidth || 180, h = el.offsetHeight || 40;
+        var left = Math.max(4, Math.min(window.innerWidth  - w - 4, p.left));
+        var top  = Math.max(4, Math.min(window.innerHeight - h - 4, p.top));
+        el.style.left = left + 'px'; el.style.top = top + 'px';
+        el.style.right = 'auto'; el.style.bottom = 'auto';
+      }
+    } catch (_) {}
+  }
+  function _badgeHacerArrastrable(el) {
+    el.style.touchAction = 'none';
+    el.style.cursor = 'grab';
+    var sx = 0, sy = 0, ox = 0, oy = 0, moved = false, dragging = false;
+    el.addEventListener('pointerdown', function(e) {
+      dragging = true; moved = false;
+      var r = el.getBoundingClientRect();
+      ox = r.left; oy = r.top; sx = e.clientX; sy = e.clientY;
+      try { el.setPointerCapture(e.pointerId); } catch (_) {}
+      el.style.cursor = 'grabbing';
+    });
+    el.addEventListener('pointermove', function(e) {
+      if (!dragging) return;
+      var dx = e.clientX - sx, dy = e.clientY - sy;
+      if (!moved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) moved = true;
+      if (!moved) return;
+      var w = el.offsetWidth, h = el.offsetHeight;
+      var nx = Math.max(4, Math.min(window.innerWidth  - w - 4, ox + dx));
+      var ny = Math.max(4, Math.min(window.innerHeight - h - 4, oy + dy));
+      el.style.left = nx + 'px'; el.style.top = ny + 'px';
+      el.style.right = 'auto'; el.style.bottom = 'auto';
+    });
+    var fin = function(e) {
+      if (!dragging) return;
+      dragging = false; el.style.cursor = 'grab';
+      try { el.releasePointerCapture(e.pointerId); } catch (_) {}
+      if (moved) {
+        el._segDragged = true;   // que el click siguiente NO abra el modal
+        try {
+          var r = el.getBoundingClientRect();
+          localStorage.setItem('seg_badge_pos', JSON.stringify({ left: Math.round(r.left), top: Math.round(r.top) }));
+        } catch (_) {}
+      }
+    };
+    el.addEventListener('pointerup', fin);
+    el.addEventListener('pointercancel', fin);
+  }
   function arrancarBadgeAlertas() {
     // [v1.0.3 FIX] Si ya hay timer, limpiarlo antes de crear uno nuevo.
     // Antes el early return aceptaba un timer huérfano si el flujo era irregular.
@@ -263,8 +316,12 @@
           var div = document.createElement('div');
           div.id = 'segBadge';
           div.className = 'seg-badge';
-          div.onclick = abrirModalAlertas;
+          div.title = 'Arrástrame para moverme · clic para ver alertas';
+          // clic abre el modal, salvo que venga de un arrastre (burbuja movible).
+          div.onclick = function() { if (div._segDragged) { div._segDragged = false; return; } abrirModalAlertas(); };
           document.body.appendChild(div);
+          _badgeRestaurarPos(div);
+          _badgeHacerArrastrable(div);
           existing = div;
         }
         // Sonar SOLO si: (a) refresh posterior y count subió, o
