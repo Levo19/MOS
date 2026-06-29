@@ -203,11 +203,34 @@ update mos.config set valor='1' where clave='MOS_ACCESOS_DIRECTO';
 A partir de ahí, cada login de ME/WH registra al empleado en "personal del día" al
 instante, con asistencia y cierre 11pm. Rollback: poner el flag en '0'.
 
-## Pendiente (Fase 2, sesión aparte — ruta de dinero, 500x)
-- Pago EN VIVO: `pago_envasado` sube al registrar envasado; `bono_meta` = comisión por
-  zona (5% excedente proporcional) auto-calculada server-side (hoy la computa GAS cross-app).
-- Vendedor ME nace con fijo 0 (no hay plantilla VENDEDOR en `mos.personal`) → definir su
-  fijo (plantilla o config).
-- Poblar en vivo `auditorias_hechas`/`venta_cobrada`/`progreso_venta_pct` desde
-  wh.auditorias / ventas (hoy 0 hasta el recompute).
-- Verificar que `getConfig` lea las metas directo de `mos.config` (no GAS).
+## FASE 2 — MOTOR DE PAGO EN VIVO: CONSTRUIDO + PROBADO + INERTE (2026-06-29)
+**Modelo confirmado por el dueño:** vendedor/cajero = FIJO (config `evalFijoVendedor`/
+`evalFijoCajero`=50) + COMISIÓN 5% AUTOMÁTICA (sin requerir auditoría) que REEMPLAZA el
+bono fijo 8/15. Comisión = `pct% × max(0, venta_zona − metaDiaria)` repartido proporcional
+a lo cobrado (EFECTIVO+VIRTUAL+MIXTO, sin crédito). `pct`+`metaDiaria` de `mos.zonas.politica_json`.
+Envasador = unidades×0.10. Almacenero = fijo 80 + envasado. Admin suma/resta en la auditoría
+(bonificacion/sancion) → SE PRESERVAN.
+
+- **SQL 289** (aplicado): `mos.recomputar_dia` / `recomputar_zona_dia` + helpers
+  (`_norm_nom`, `_fijo_personal` con config, `_meta_zona`, `_comision_pct`,
+  `_venta_cobrada_*`). Money-safe (preserva manual + recalcula total). INERTE.
+- **SQL 291** (aplicado): triggers en `wh.envasados` y `me.ventas` → recompute EN VIVO,
+  gateados + a prueba de fallos (no rompen el registro de envasado/venta).
+- **Verificado (rollback):** envasador 335×0.10=**33.50** ✓; almacenero fijo **80**+17 aud ✓;
+  comisión zona (venta 4000, meta 3000, exced 1000, pool 5%=50): V1 2500→**31.25**+50=**81.25**,
+  V2 1500→**18.75**+50=**68.75**, crédito excluido ✓; trigger: envasar 200u → pago sube a 20 al
+  instante; flag OFF = inerte y no rompe inserts.
+
+## ACTIVACIÓN COMPLETA (Fase 1 + 2) — pasos del dueño
+1. **Anti-flapping:** GAS `_liqDiaSync` recomputa `bono_meta` con el modelo VIEJO (8/15) cada
+   hora → al activar, hay que evitar que pise el nuevo. Opción: agregar `liquidaciones_dia` a
+   `MOS_SYNC_OFF_TABLAS` (que GAS deje de upsertear esa tabla) — el server pasa a ser dueño.
+2. Prender el flag: `update mos.config set valor='1' where clave='MOS_ACCESOS_DIRECTO';`
+3. (Opcional) Backfill del día: `select mos.recomputar_zona_dia(...)` por zona / recompute por persona.
+   Rollback: flag a '0' (+ quitar liquidaciones_dia de SYNC_OFF).
+
+## Pendiente menor
+- **Revisar ticket de cierre de caja (HTML + impreso)**: confirmar que auditorías/progreso/
+  comisión salgan automáticas y consistentes con el jornal (la comisión 5% ya se computa ahí
+  en Cajas.gs; alinear el wording/valores con el nuevo modelo del jornal).
+- Verificar que `getConfig` lea las metas/fijo directo de `mos.config` (no GAS).
