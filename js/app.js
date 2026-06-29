@@ -37458,6 +37458,99 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     toast(`🖨 No puedo imprimir: ${razon}`, 'error', 5000);
   }
 
+  // [v2.43.375] Ticket de liquidación armado en el FRONT (cero-GAS) → Edge `imprimir`.
+  // Orden CRONOLÓGICO (datos → asistencia → logros → ajustes → total). Comentarios
+  // COMPLETOS en varias líneas (nunca cortados). Español profesional con acentos
+  // (codepage WPC1252 + Latin-1). Sin emojis (el térmico no los muestra).
+  function _buildTicketLiquidacionESCPOS(r, fecha) {
+    const W = 48;
+    const rep = (ch, n) => ch.repeat(Math.max(0, n));
+    // Conserva acentos/ñ (Latin-1, 0x80–0xFF); solo descarta lo que el térmico no puede (emojis, etc.).
+    const norm = (s) => String(s == null ? '' : s).normalize('NFC').replace(/[^\x20-\xFF]/g, '');
+    const pe = (s, w) => { s = norm(s).slice(0, w); return s + rep(' ', w - s.length); };
+    const ps = (s, w) => { s = norm(s); return rep(' ', Math.max(0, w - s.length)) + s; };
+    const money = (n) => 'S/' + (parseFloat(n) || 0).toFixed(2);
+    const amtP = (n, w) => ps(money(n), w);
+    const amtN = (n, w) => { const v = parseFloat(n) || 0; return ps((v < 0 ? '-' : '') + 'S/' + Math.abs(v).toFixed(2), w); };
+    const SEP = rep('=', W) + '\n', SEPd = rep('-', W) + '\n';
+    const hdr = (s) => { const x = ' ' + s + ' '; const l = Math.floor((W - x.length) / 2); return rep('=', Math.max(0, l)) + x + rep('=', Math.max(0, W - x.length - l)) + '\n'; };
+    // Comentario COMPLETO, indentado, partido por PALABRAS en varias líneas (nunca corta una palabra).
+    const wrapInd = (s, ind) => {
+      const t = norm(s).trim(); if (!t) return '';
+      const max = W - ind.length; const palabras = t.split(/\s+/); let linea = '', out = '';
+      for (const w of palabras) {
+        if (linea && (linea.length + 1 + w.length) > max) { out += ind + linea + '\n'; linea = w; }
+        else { linea = linea ? (linea + ' ' + w) : w; }
+        while (linea.length > max) { out += ind + linea.slice(0, max) + '\n'; linea = linea.slice(max); } // palabra larguísima
+      }
+      if (linea) out += ind + linea + '\n';
+      return out;
+    };
+    const rolU = String(r.rol || '').toUpperCase();
+    const esPos = (rolU === 'CAJERO' || rolU === 'VENDEDOR');
+    const esAlm = (rolU === 'ALMACENERO' || rolU === 'ENVASADOR');
+    const k = r.kpis || {};
+    const bonMeta = parseFloat(r.bonoMeta) || 0;
+    const bonif   = parseFloat(r.bonificacion) || 0;
+    const sanc    = parseFloat(r.sancion) || 0;
+    const bonMot  = r.bonificacionMotivo || '';
+    const sanMot  = r.sancionMotivo || '';
+    const horaIng = r.horaIngreso || r.hora_ingreso || (k && k.horaIngreso) || '';
+    const ultCon  = r.ultimaConexion || r.ultima_conexion || '';
+
+    let t = '';
+    // init + codepage WPC1252 (table 16) → acentos/ñ correctos en el térmico.
+    t += '\x1b\x40\x1b\x74\x10';
+    t += '\x1b\x61\x01\x1b\x21\x30' + norm('LIQUIDACIÓN DEL DÍA') + '\n\x1b\x21\x00';
+    t += norm('Inversiones MOS · Personal') + '\n\x1b\x61\x00' + SEP;
+    // 1) DATOS
+    t += pe('Fecha', 12) + ': ' + norm(fecha) + '\n';
+    t += pe('Personal', 12) + ': ' + norm(r.nombre) + '\n';
+    t += pe('Rol', 12) + ': ' + norm(r.rol || '') + '\n';
+    if (k.zonaPrincipal || r.zona) t += pe('Zona', 12) + ': ' + norm(k.zonaPrincipal || r.zona) + '\n';
+    t += pe('Auditado', 12) + ': ' + (r.auditado ? ((r.evaluacionesCount || 0) + ' vez(ces)') : 'No') + '\n';
+    // 2) ASISTENCIA (cronológico: ingreso → última conexión)
+    if (horaIng || ultCon) {
+      t += SEPd;
+      if (horaIng) t += pe('Ingreso', 12) + ': ' + norm(horaIng) + '\n';
+      if (ultCon)  t += pe('Últ. conex.', 12) + ': ' + norm(ultCon) + '\n';
+    }
+    t += SEP;
+    // 3) LIQUIDACIÓN (desglose, cada concepto con su comentario completo)
+    t += '\x1b\x21\x10' + hdr('LIQUIDACIÓN') + '\x1b\x21\x00';
+    t += pe('Base diaria', W - 12) + amtP(r.montoBase, 12) + '\n';
+    if (esPos) {
+      t += pe('Comisión por ventas', W - 12) + amtP(bonMeta, 12) + '\n';
+      const vc = parseFloat(r.ventaCobrada ?? k.ventasReales) || 0;
+      const mz = parseFloat(r.metaZona ?? k.metaVenta) || 0;
+      if (vc > 0 || mz > 0) t += wrapInd('Vendió ' + money(vc) + ' · meta de zona ' + money(mz), '  ');
+    } else if (esAlm) {
+      const uds = parseFloat(r.productosEnvasados ?? k.envasados) || 0;
+      const tar = parseFloat(r.tarifaEnvasado) || 0.10;
+      t += pe('Pago por envasado', W - 12) + amtP(r.pagoEnvasado, 12) + '\n';
+      if (uds > 0) t += wrapInd(uds + ' unidades × ' + money(tar), '  ');
+    }
+    if (bonif > 0) {
+      t += '\x1b\x45\x01' + pe('Bonificación (+)', W - 12) + amtP(bonif, 12) + '\x1b\x45\x00\n';
+      t += wrapInd('Motivo: ' + (bonMot || 'sin especificar'), '   ');
+    }
+    if (sanc > 0) {
+      t += '\x1b\x45\x01' + pe('Sanción / descuento (-)', W - 12) + amtN(-sanc, 12) + '\x1b\x45\x00\n';
+      t += wrapInd('Motivo: ' + (sanMot || 'sin especificar'), '   ');
+    }
+    t += SEPd + '\x1b\x21\x30' + pe('TOTAL A PAGAR', W / 2) + amtP(r.totalDia, W / 2 - 4) + '\n\x1b\x21\x00' + SEPd;
+    // 4) AUDITORÍAS (cuota del día)
+    const aud = parseFloat(r.auditoriasHechas ?? k.auditoriasHechas) || 0;
+    const mAud = parseFloat(r.metaAuditorias ?? k.metaAuditorias) || 30;
+    t += pe('Auditorías del día', W - 12) + ps(aud + ' / ' + mAud, 12) + '\n';
+    t += SEPd;
+    t += '\n' + pe('Firma del personal', 20) + ' ' + rep('_', W - 22) + '\n\n';
+    t += pe('V°B° administración', 20) + ' ' + rep('_', W - 22) + '\n\n';
+    t += '\x1b\x61\x01\x1b\x45\x01--- FIN ---\x1b\x45\x00\n' + norm('Impreso desde MOS') + '\n';
+    t += '\n\n\n\n\x1d\x56\x00';
+    return t;
+  }
+
   async function _liqEnviarPrint(printerId, btnEl, ev) {
     const r = _evalState.auditR;
     if (!r) { _evalSfx('error'); toast('Falta resumen', 'error'); return; }
@@ -37468,27 +37561,19 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const printBtn = $('auditPrintBtn');
     if (printBtn) printBtn.classList.add('printing');
     try {
-      // [v2.41.49] BUG FIX: usar r.fecha (fecha del resumen real abierto),
-      // no _evalState.fecha (global que muta al navegar entre días). Antes
-      // si abrías auditoría del 11 y luego cambiabas a hoy, al imprimir
-      // salía la fecha de hoy en vez de la del 11.
+      // [v2.43.375] cero-GAS: armamos el ESC/POS en el front (multilínea) y lo mandamos
+      // a la Edge `imprimir` (relay a PrintNode). Antes iba por GAS imprimirLiquidacionDia.
       const fechaImp = r.fecha || _evalState.fecha;
-      const res = await API.post('imprimirLiquidacionDia', {
-        idPersonal: r.idPersonal,
-        fecha:      fechaImp,
-        printerId:  parseInt(printerId, 10)
-      });
+      const _ticket = _buildTicketLiquidacionESCPOS(r, fechaImp);
+      const res = await API.imprimirTicketEdge(parseInt(printerId, 10),
+        'Liquidacion ' + (r.nombre || '') + ' ' + fechaImp, _ticket);
       _evalSfx('success');
       // Confetti dorado desde el botón clickeado
       try {
         const rect = (btnEl || $('liqPrinterList')).getBoundingClientRect();
         _evalConfetti(rect.left + rect.width/2, rect.top + rect.height/2, '#fbbf24');
       } catch(_){}
-      if (res && res.printJobId) {
-        toast(`✓ Liquidación enviada · job ${res.printJobId}`, 'ok');
-      } else {
-        toast(`✓ Liquidación enviada · S/${(res?.totalDia || 0).toFixed(2)}`, 'ok');
-      }
+      toast(`✓ Liquidación enviada · S/${(parseFloat(r.totalDia) || 0).toFixed(2)}`, 'ok');
       closeModal('modalSelPrinterLiq');
     } catch(e) {
       _evalSfx('error');
