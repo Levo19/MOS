@@ -37293,6 +37293,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       }
       // POS — punto 2: auditorías de productos
       rows.push(_kpiRow('📋 Auditorías de productos', `${k.auditoriasHechas || 0}/${auditMeta}`, k.auditPct || 0));
+      // POS — punto 3: comisión por ventas (5% del excedente de zona, proporcional) —
+      // solo si la hubo. Sale de la mega tabla (bono_meta), NO de GAS.
+      const comi = parseFloat(k.comision) || 0;
+      if (comi > 0) {
+        rows.push(_kpiRow('💰 Comisión por ventas', `S/${comi.toFixed(2)}`, Math.min(100, k.ventasPct || 0)));
+      }
     } else if (rol === 'ALMACENERO' || rol === 'ENVASADOR') {
       // Almacén — punto 1: auditorías
       rows.push(_kpiRow('📋 Auditorías diarias', `${k.auditoriasHechas || 0}/${auditMeta}`, k.auditPct || 0));

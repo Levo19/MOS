@@ -50,11 +50,27 @@ begin
         'sancionMotivo',      coalesce(d.sancion_motivo, ''),
         'totalDia',           coalesce(d.total_dia, 0),
         'tarifaEnvasado',     coalesce(nullif(d.tarifa_envasado, 0), 0.1),
-        'unidadesEnvasadas',  coalesce(d.pago_envasado, 0) / coalesce(nullif(d.tarifa_envasado, 0), 0.1),
+        'unidadesEnvasadas',  coalesce(nullif(d.productos_envasados, 0),
+                                       round(coalesce(d.pago_envasado, 0) / coalesce(nullif(d.tarifa_envasado, 0), 0.1))),
         'liqEstado',          upper(coalesce(d.estado, 'PENDIENTE')),
         'vetada',             (upper(coalesce(d.estado, '')) = 'VETADA'),
         'idPago',             coalesce(d.id_pago, ''),
-        'kpis',   jsonb_build_object('ventasReales',0,'ventasPct',0,'auditoriasHechas',0,'envasados',0,'guias',0),
+        -- [v2.43.384 · mega tabla = única fuente] KPIs reales desde las columnas de
+        -- liquidaciones_dia (poblados por mos.recomputar_dia), NO stubs en 0. Así el
+        -- modal de Auditar muestra ventas/meta/comisión/envasados consistentes (cero GAS).
+        'kpis',   jsonb_build_object(
+                    'ventasReales',     coalesce(d.venta_cobrada, 0),
+                    'ventasPct',        coalesce(d.progreso_venta_pct, 0),
+                    'metaVenta',        coalesce(d.meta_zona, 0),
+                    'zonaPrincipal',    coalesce(nullif(d.zona, ''), ''),
+                    'auditoriasHechas', coalesce(d.auditorias_hechas, 0)::int,
+                    'auditMeta',        coalesce(nullif(d.meta_auditorias, 0), 0)::int,
+                    'auditPct',         case when coalesce(d.meta_auditorias, 0) > 0
+                                             then round(coalesce(d.auditorias_hechas, 0)::numeric / d.meta_auditorias * 100, 1)
+                                             else 0 end,
+                    'envasados',        coalesce(d.productos_envasados, 0),
+                    'comision',         coalesce(d.bono_meta, 0),
+                    'guias', 0),
         'manual', jsonb_build_object('limpiezaPct',0,'limpiezaProfPct',0,'checksAcum',jsonb_build_object(),
                                      'checkCount',0,'checkTotal',0,'controlPct',0,'comentarios','')
       ) as obj

@@ -179,6 +179,17 @@ begin
        and mos._norm_nom(usuario) = mos._norm_nom(v_nomfull);
 
   elsif v_rol in ('CAJERO','VENDEDOR') then
+    -- [v2.43.384 · fuente única] La zona del jornal = donde REALMENTE vendió (zona
+    -- dominante por monto en me.ventas del día), NO el pulso de presencia (que puede
+    -- venir vacío → comisión perdida, caso Sergio: ventas ZONA-02 vs fila zona='').
+    select v.zona_id into v_zona
+      from me.ventas v
+     where (v.fecha at time zone 'America/Lima')::date = v_dia
+       and mos._norm_nom(v.vendedor) = mos._norm_nom(v_nomfull)
+       and v.forma_pago ~* '^(efectivo|virtual|mixto)'
+       and coalesce(v.zona_id,'') <> ''
+     group by v.zona_id order by sum(v.total) desc limit 1;
+    v_zona := coalesce(nullif(btrim(coalesce(v_zona,'')), ''), nullif(btrim(coalesce(r.zona,'')), ''), '');
     -- comisión 5% del excedente de zona, proporcional a lo cobrado por la persona
     v_vcob  := mos._venta_cobrada_persona(v_nomfull, v_zona, v_dia);
     v_vzona := mos._venta_cobrada_zona(v_zona, v_dia);
@@ -212,6 +223,8 @@ begin
       auditorias_hechas   = coalesce(v_aud,0),
       meta_auditorias     = case when v_metaaud > 0 then v_metaaud else meta_auditorias end,
       cumplio_auditorias  = (coalesce(v_aud,0) >= case when v_metaaud>0 then v_metaaud else coalesce(meta_auditorias,0) end),
+      -- persiste la zona derivada (cajero/vendedor); no blanquea una zona existente
+      zona                = coalesce(nullif(btrim(coalesce(v_zona,'')), ''), zona),
       total_dia           = v_total,
       ts_actualizado      = now()
     where id_dia = v_id_dia;
