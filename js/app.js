@@ -826,12 +826,16 @@ const MOS = (() => {
       const ses = S.session;
       if (!ses || !ses.idPersonal) return;
       if (!navigator.onLine) return;
-      const url = API.getUrl()
-        + '?action=getEstadoBloqueoUsuario'
-        + '&idPersonal=' + encodeURIComponent(ses.idPersonal)
-        + '&nombre='     + encodeURIComponent(ses.nombre || '')
-        + '&appOrigen=mos';
-      await fetch(url);
+      // [v2.43.380] cero-GAS: el heartbeat va DIRECTO a la RPC mos.estado_bloqueo_usuario
+      // (actualiza ultima_conexion + chequea bloqueo) en vez del exec de GAS (~3s).
+      let out = null;
+      try { out = await API.estadoBloqueoMOS({ idPersonal: ses.idPersonal, nombre: ses.nombre || '', appOrigen: 'mos' }); } catch(_) {}
+      if (out === null) {
+        // sin token/RPC → fallback a GAS (compat)
+        const url = API.getUrl() + '?action=getEstadoBloqueoUsuario&idPersonal=' + encodeURIComponent(ses.idPersonal)
+          + '&nombre=' + encodeURIComponent(ses.nombre || '') + '&appOrigen=mos';
+        await fetch(url);
+      }
     } catch(_) {}
   }
   function _startMosHeartbeat() {
@@ -33568,63 +33572,65 @@ const MOS = (() => {
       r(!!seguir);
     }
   }
-  // Genera ASCII ticket — un bloque por persona, con desglose por día
+  // [v2.43.380] Comprobante de pago 80mm (W=48) con DESGLOSE REAL por día:
+  // base · comisión por ventas · envasado · +bono · −descuento → total. Lo que ves en el
+  // preview es EXACTO lo que se imprime (la Edge `imprimir` recibe este mismo texto).
   function _liqGenerarTicketAscii(personas, comentario, pagadoPor) {
-    const W = 32; // ancho típico ticket térmico 58mm
-    const linea = (c) => Array(W + 1).join(c || '-');
-    const centrar = (s) => {
-      s = String(s || '');
-      if (s.length >= W) return s.slice(0, W);
-      const pad = Math.floor((W - s.length) / 2);
-      return ' '.repeat(pad) + s;
-    };
+    const W = 48; // 80mm
+    const linea = (c) => (c || '-').repeat(W);
+    const centrar = (s) => { s = String(s || ''); if (s.length >= W) return s.slice(0, W); return ' '.repeat(Math.floor((W - s.length) / 2)) + s; };
     const dosCol = (izq, der) => {
       izq = String(izq || ''); der = String(der || '');
       const max = W - der.length - 1;
       if (izq.length > max) izq = izq.slice(0, max);
-      const pad = W - izq.length - der.length;
-      return izq + ' '.repeat(Math.max(1, pad)) + der;
+      return izq + ' '.repeat(Math.max(1, W - izq.length - der.length)) + der;
     };
     const fmtMon = (n) => 'S/' + (Math.round((n || 0) * 100) / 100).toFixed(2);
-    const fmtFecha = (f) => {
-      try { const d = new Date(f + 'T12:00:00'); return d.toLocaleDateString('es-PE', { day:'2-digit', month:'2-digit' }); }
-      catch { return f; }
-    };
+    const num = (n) => (Math.round((parseFloat(n) || 0) * 100) / 100).toFixed(2);
+    const fmtFecha = (f) => { try { const d = new Date(f + 'T12:00:00'); return d.toLocaleDateString('es-PE', { weekday:'short', day:'2-digit', month:'2-digit' }); } catch { return f; } };
     let out = '';
     personas.forEach((per, idx) => {
       if (idx > 0) out += '\n' + linea('=') + '\n\n';
-      out += centrar('INVERSIONMOS') + '\n';
+      out += centrar('INVERSIONES MOS') + '\n';
       out += centrar('Comprobante de pago') + '\n';
-      out += linea('-') + '\n';
-      out += dosCol('Persona:', '') + '\n';
-      out += '  ' + per.nombre + '\n';
-      out += dosCol('Rol:', per.rol) + '\n';
-      out += dosCol('Fecha:', new Date().toLocaleString('es-PE', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' })) + '\n';
+      out += linea('=') + '\n';
+      out += dosCol('Persona:', per.nombre || '') + '\n';
+      out += dosCol('Rol:', per.rol || '') + '\n';
       out += dosCol('Pagado por:', pagadoPor || '-') + '\n';
+      out += dosCol('Emitido:', new Date().toLocaleString('es-PE', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' })) + '\n';
       out += linea('-') + '\n';
-      out += 'Detalle:\n';
-      // Buscar montos desde el state
+      out += 'DETALLE POR DIA:\n';
       const pState = _liqState.pendientes.find(x => x.idPersonal === per.idPersonal);
       let subtotal = 0;
       (per.fechas || []).forEach(f => {
         const d = pState ? pState.dias.find(x => x.fecha === f) : null;
-        const m = d ? d.totalDia : 0;
+        const m = d ? (parseFloat(d.totalDia) || 0) : 0;
         subtotal += m;
-        out += dosCol('  ' + fmtFecha(f), fmtMon(m)) + '\n';
+        out += dosCol(fmtFecha(f), fmtMon(m)) + '\n';
+        if (d) {
+          const comp = [];
+          if ((parseFloat(d.montoBase) || 0) > 0)    comp.push('base ' + num(d.montoBase));
+          if ((parseFloat(d.pagoEnvasado) || 0) > 0) comp.push('envasado ' + num(d.pagoEnvasado));
+          if ((parseFloat(d.bonoMeta) || 0) > 0)     comp.push('comision ' + num(d.bonoMeta));
+          if ((parseFloat(d.bonificacion) || 0) > 0) comp.push('+bono ' + num(d.bonificacion));
+          if ((parseFloat(d.sancion) || 0) > 0)      comp.push('-desc ' + num(d.sancion));
+          // desglose en 1-2 renglones indentados (todo el ancho)
+          let buf = '  ';
+          comp.forEach((cp, i) => {
+            const add = (i ? ' · ' : '') + cp;
+            if ((buf + add).length > W) { out += buf + '\n'; buf = '  ' + cp; }
+            else buf += add;
+          });
+          if (buf.trim()) out += buf + '\n';
+        }
       });
       out += linea('-') + '\n';
-      out += dosCol('TOTAL', fmtMon(subtotal)) + '\n';
+      out += dosCol('TOTAL A PAGAR', fmtMon(subtotal)) + '\n';
       if (comentario) {
-        out += linea('-') + '\n';
-        out += 'Comentario:\n';
-        // wrap a W chars
-        const words = String(comentario).split(/\s+/);
-        let lineBuf = '  ';
-        words.forEach(w => {
-          if ((lineBuf + w).length > W) { out += lineBuf + '\n'; lineBuf = '  '; }
-          lineBuf += w + ' ';
-        });
-        if (lineBuf.trim()) out += lineBuf + '\n';
+        out += linea('-') + '\n' + 'Comentario:\n';
+        const words = String(comentario).split(/\s+/); let buf = '  ';
+        words.forEach(w => { if ((buf + ' ' + w).length > W) { out += buf + '\n'; buf = '  ' + w; } else buf += (buf.trim() ? ' ' : '') + w; });
+        if (buf.trim()) out += buf + '\n';
       }
       out += linea('=') + '\n';
       out += centrar('Gracias') + '\n';

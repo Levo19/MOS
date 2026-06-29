@@ -2705,6 +2705,9 @@ const API = (() => {
     printAdhesivoEdge:    _printAdhesivoEdgeRaw,
     // [Reparación #4] Imprime ticket ESC/POS (client-side) por la Edge `imprimir` (cero GAS).
     imprimirTicketEdge:   _imprimirTicketEdge,
+    // [v2.43.380] Heartbeat MASTER/ADMIN + chequeo de bloqueo, DIRECTO a Supabase (cero-GAS).
+    // mos.estado_bloqueo_usuario actualiza ultima_conexion + devuelve estado. null → cae a GAS.
+    estadoBloqueoMOS: async (p) => _sbRpcMOS('estado_bloqueo_usuario', { p: p || {} }, 'mos'),
     // [Reparación #9] Imprime el comprobante CENTRALIZADO (NV/Boleta/Factura) por la Edge ticket-comprobante.
     imprimirComprobante:  _imprimirComprobanteEdge,
     // [#5 Editor Adhesivos] backend del editor (se cablea como window.MOS_API.post). Shape RAW, gateado.
