@@ -37127,9 +37127,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     $('auditTitle').textContent = `${tituloIco} Auditar ${r.rol || ''} · ${r.nombre}`;
     const evalCount = r.evaluacionesCount || 0;
     const contexto = evalCount > 0
-      ? `${evalCount} auditoría${evalCount !== 1 ? 's' : ''} hoy · continuando...`
+      ? `${evalCount} auditoría${evalCount !== 1 ? 's' : ''} · continuando...`
       : 'primera auditoría del día';
-    $('auditSubtitle').textContent = areaApp ? `${areaApp} · ${contexto}` : contexto;
+    // [v2.43.374] Día PROMINENTE: el ajuste (bono/sanción) se aplica a ESTE día. Evita
+    // el bug "lo puse el lunes pero era del domingo" (la auditoría usa r.fecha del card).
+    const _diaTxt = (() => {
+      try { return new Date((r.fecha || _evalState.fecha) + 'T00:00:00')
+              .toLocaleDateString('es-PE', { weekday: 'long', day: '2-digit', month: 'long' }); }
+      catch (_) { return r.fecha || ''; }
+    })();
+    $('auditSubtitle').innerHTML = `📅 <strong style="color:#fbbf24">${_diaTxt}</strong>`
+      + (areaApp ? ` · ${areaApp}` : '') + ` · ${contexto}`;
     $('auditIdPersonal').value = r.idPersonal;
     $('auditRol').value = r.rol || '';
     $('auditComentario').value = '';
