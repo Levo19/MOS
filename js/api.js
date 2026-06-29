@@ -2087,8 +2087,14 @@ const API = (() => {
     anularTicketME:              _mosEditDirecto,
     // [Etapa 4] NV→CPE → me.convertir_nv_cpe (fac.emitir_cpe). Gate dedicado (default OFF). Aunque ON,
     // requiere fac._on() o devuelve FAC_DESACTIVADO → GAS. Activación = go-live fiscal fac.* (token+correlativo).
-    meConvertirNVaCPE:           _mosConvertDirecto
-    // [DUAL-WRITE] pedidos/pagos/provprod/gastos/horario/liqdia: SIN entrada acá → su escritura va SIEMPRE por
+    meConvertirNVaCPE:           _mosConvertDirecto,
+    // [v2.43.386 · CERO-GAS VETAR] vetar/desvetar liquidación → RPC directo (mos.vetar_liquidacion_dia /
+    // mos.desvetar_liquidacion_dia). SEGURO ahora que `liquidaciones_dia` tiene el sync apagado (mega tabla
+    // de accesos): el RPC escribe la MISMA tabla que lee personal_dia_lista → coherente, sin el GAS de ~2.6s.
+    // Gate _mosLiqdiaDirecto (MOS_LIQDIA_DIRECTO). UPDATE atómico condicional (no toca PAGADA) → idempotente.
+    vetarLiquidacionDia:         _mosLiqdiaDirecto,
+    desvetarLiquidacionDia:      _mosLiqdiaDirecto
+    // [DUAL-WRITE] pedidos/pagos/provprod/gastos/horario: SIN entrada acá → su escritura va SIEMPRE por
     // GAS (dual-write espeja la sombra). recomputarLiquidacionDia tampoco (incompatible).
   };
 

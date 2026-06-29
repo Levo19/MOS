@@ -33027,47 +33027,13 @@ const MOS = (() => {
   // OPTIMISTA: abrimos el modal Auditar al instante usando los datos que ya
   // tenemos del state (pendiente). Después fetch real en background y
   // re-renderizamos las secciones del modal con la data fresca.
-  // [v2.41.74] Confirmación antes de vetar — evita clicks accidentales.
-  // Mini modal in-page, NO modifica el state hasta confirmar.
+  // [v2.43.386] UNIFICADO con Personal del día: el ÚNICO gate de vetar es la clave
+  // admin (pedirAuth dentro de _liqVetarDia, sin cache). Se quitó el mini-modal de
+  // confirmación previo para que AMBOS lados muestren exactamente lo mismo: un solo
+  // modal de clave. (Antes: box "¿Vetar?" + clave = doble paso, inconsistente con
+  // Finanzas que solo confirmaba sin clave.)
   function _liqConfirmarVetar(idPersonal, fecha) {
-    _liqSfx('open');
-    const p = (_liqState.pendientes || []).find(x => x.idPersonal === idPersonal);
-    const d = p ? p.dias.find(x => x.fecha === fecha) : null;
-    if (!p || !d) return _liqVetarDia(idPersonal, fecha);
-    // Quita anterior si existía
-    document.querySelectorAll('.liq-confirm-vetar-backdrop').forEach(el => el.remove());
-    const ov = document.createElement('div');
-    ov.className = 'liq-confirm-vetar-backdrop';
-    ov.innerHTML = `
-      <div class="liq-confirm-vetar-box" onclick="event.stopPropagation()">
-        <div class="liq-confirm-vetar-icon">💸</div>
-        <div class="text-center mb-3">
-          <div class="text-base font-bold text-rose-300 mb-1">¿Vetar este día?</div>
-          <div class="text-xs text-slate-400">Quita el día de pendientes — no se paga ni se computa.<br>Puedes desvetar después desde el panel 🚫.</div>
-        </div>
-        <div class="rounded-lg p-3 mb-4" style="background:rgba(15,23,42,.6);border:1px solid #1e293b">
-          <div class="flex items-center justify-between">
-            <div class="min-w-0 flex-1">
-              <div class="text-sm font-semibold text-slate-200 truncate">${_escapeHtml(p.nombre)}</div>
-              <div class="text-[10px] text-slate-500">${_liqFmtFechaLarga(fecha)}</div>
-            </div>
-            <div class="text-base font-bold text-amber-400">${_liqMoney(d.totalDia || 0)}</div>
-          </div>
-        </div>
-        <div class="flex gap-2">
-          <button class="btn-ghost flex-1" data-act="cancel">Cancelar</button>
-          <button class="btn-primary flex-1" data-act="ok" style="background:linear-gradient(135deg,#ef4444,#dc2626);border-color:#dc2626">💸 Vetar</button>
-        </div>
-      </div>`;
-    document.body.appendChild(ov);
-    const close = () => { try { ov.remove(); } catch(_){} document.removeEventListener('keydown', escH, true); };
-    const escH = (e) => {
-      if (e.key === 'Escape') { e.stopImmediatePropagation(); close(); _liqSfx('tap'); }
-    };
-    document.addEventListener('keydown', escH, true);
-    ov.addEventListener('click', () => { close(); _liqSfx('tap'); });
-    ov.querySelector('[data-act="cancel"]').onclick = (e) => { e.stopPropagation(); close(); _liqSfx('tap'); };
-    ov.querySelector('[data-act="ok"]').onclick = (e) => { e.stopPropagation(); close(); _liqVetarDia(idPersonal, fecha); };
+    return _liqVetarDia(idPersonal, fecha);
   }
 
   // [v2.41.31] Vetar/Desvetar inline desde lista pendientes ─────────
@@ -33080,6 +33046,7 @@ const MOS = (() => {
     const nomP = persona ? persona.nombre : idPersonal;
     const auth = await pedirAuth({
       accion: 'VETAR_LIQUIDACION',
+      allowCache: false,   // [v2.43.386] clave SIEMPRE (sin el cache 5min que la saltaba)
       refDocumento: idPersonal + '|' + fecha,
       contexto: `Vetar día de ${nomP} · ${fecha}`
     });
@@ -33148,6 +33115,7 @@ const MOS = (() => {
     const vetada = (_liqState.vetadas || []).find(v => v.idPersonal === idPersonal && v.fecha === fecha);
     const auth = await pedirAuth({
       accion: 'DESVETAR_LIQUIDACION',
+      allowCache: false,   // [v2.43.386] clave SIEMPRE (consistente con vetar)
       refDocumento: idPersonal + '|' + fecha,
       contexto: `Desvetar ${vetada ? vetada.nombre : idPersonal} · ${fecha}`
     });
@@ -35904,7 +35872,14 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // lo mismo: marcar VETADA en la hoja. Una fuente de verdad. Cero confusión.
   async function finVetarPago(idJornada, fecha, nombre, idMega) {
     const fechaTxt = _formatFechaCorta(fecha);
-    if (!await _modalConfirm(`💸 VETAR el pago de ${nombre || 'esta persona'} del ${fechaTxt}?\n\nNo se le pagará por este día.\nLa persona puede seguir operando (no la bloquea).\nTras vetar, el botón cambiará a 💵 para rehabilitar.`, { danger: true, titulo: 'Vetar pago', okText: 'Vetar' })) return;
+    // [v2.43.386] Vetar = retiene pago (DINERO) → exige clave admin SIEMPRE (sin cache),
+    // EL MISMO gate que el lado de Liquidaciones. Antes era _modalConfirm sin clave →
+    // inconsistente ("uno pide clave y otro no").
+    if (!await pedirAuth({
+      accion: 'VETAR_LIQUIDACION', allowCache: false,
+      refDocumento: (idMega || idJornada || '') + '|' + fecha,
+      contexto: `Vetar pago de ${nombre || 'esta persona'} · ${fechaTxt}`
+    })) return;
 
     // SONIDO OPTIMISTA: dispara INMEDIATO al confirmar (sincronizado con el click).
     // Si después falla el back, sonará 'error'.
@@ -36089,7 +36064,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // restaura monto, recalcula KPIs locales, y persiste en GAS.
   async function finRehabilitarPago(idJornada, fecha, nombre, idMega) {
     const fechaTxt = _formatFechaCorta(fecha);
-    if (!await _modalConfirm(`💵 REHABILITAR el pago de ${nombre || 'esta persona'} del ${fechaTxt}?\n\nVolverá a contarse en gastos y liquidación.\nTras rehabilitar, el botón vuelve a ser 💸.`, { titulo: 'Rehabilitar pago', okText: 'Rehabilitar' })) return;
+    // [v2.43.386] Rehabilitar = restituye pago (DINERO) → clave admin SIEMPRE, EL MISMO
+    // gate que Liquidaciones (antes _modalConfirm sin clave).
+    if (!await pedirAuth({
+      accion: 'DESVETAR_LIQUIDACION', allowCache: false,
+      refDocumento: (idMega || idJornada || '') + '|' + fecha,
+      contexto: `Rehabilitar pago de ${nombre || 'esta persona'} · ${fechaTxt}`
+    })) return;
 
     // SONIDO OPTIMISTA: dispara INMEDIATO al confirmar.
     _finBeep('rehab');
