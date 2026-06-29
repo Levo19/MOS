@@ -37155,18 +37155,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // ajuste" (preservar bon/san en LIQUIDACIONES_DIA) vs "admin lo editó
     // explícitamente a 0/vacío" (resetear). Sin esto, borrar el 44 no funcionaba.
     _evalState.auditAjusteTocado = false;
-    const am  = $('auditAjusteMonto');
-    if (am) {
-      am.value = '';
-      am.oninput = () => { _evalState.auditAjusteTocado = true; _renderAuditLiquidacion(); };
-    }
-    const amo = $('auditAjusteMotivo');
-    if (amo) {
-      amo.value = '';
-      amo.oninput = () => { _evalState.auditAjusteTocado = true; };
-    }
-    _evalState.auditAjusteTipo = 'sancion';
-    _auditSetAjuste('sancion');
+    // [v2.43.373] limpiar los dos campos independientes (se prellenan abajo con los
+    // valores actuales de LIQUIDACIONES_DIA vía getLiqDiaBonSan).
+    ['auditBonifMonto','auditBonifMotivoInp','auditSancionMonto','auditSancionMotivoInp'].forEach(id => {
+      const el = $(id); if (el) el.value = '';
+    });
     _evalState.auditR = r;
     _renderAuditKpis(r);
     _renderAuditChecklist(r.rol);
@@ -37205,31 +37198,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         _evalState.auditPrevSan = sanAct;
         _evalState.auditPrevBonMot = bonMotAct;
         _evalState.auditPrevSanMot = sanMotAct;
-        // [v2.41.69] Prellenar también el MOTIVO (no solo el monto). El motivo
-        // proviene de LIQUIDACIONES_DIA que ahora es la concatenación de todos
-        // los motivos de EVALUACIONES del día/persona.
-        const amotEl = $('auditAjusteMotivo');
-        if (sanAct > 0) {
-          _evalState.auditAjusteTipo = 'sancion';
-          _auditSetAjuste('sancion');
-          if (am) am.value = sanAct.toFixed(2);
-          if (amotEl) amotEl.value = sanMotAct;
-        } else if (bonAct > 0) {
-          _evalState.auditAjusteTipo = 'bonificacion';
-          _auditSetAjuste('bonificacion');
-          if (am) am.value = bonAct.toFixed(2);
-          if (amotEl) amotEl.value = bonMotAct;
-        }
-        const hint = $('auditAjusteHint');
-        if (hint) {
-          if (bonAct > 0 || sanAct > 0) {
-            const tipoLbl = sanAct > 0 ? 'sanción' : 'bonificación';
-            const monto = (sanAct > 0 ? sanAct : bonAct).toFixed(2);
-            hint.innerHTML = `📌 actual: <strong style="color:#fbbf24">S/${monto}</strong> de ${tipoLbl} · podés cambiarlo`;
-          } else {
-            hint.textContent = 'descuenta o suma al total';
-          }
-        }
+        // [v2.43.373] Prellenar los DOS campos independientes con los valores
+        // actuales (monto + motivo limpio de cada uno). Pueden estar ambos.
+        const _setVal = (id, v) => { const el = $(id); if (el) el.value = v; };
+        _setVal('auditBonifMonto',     bonAct > 0 ? bonAct.toFixed(2) : '');
+        _setVal('auditBonifMotivoInp', bonAct > 0 ? bonMotAct : '');
+        _setVal('auditSancionMonto',     sanAct > 0 ? sanAct.toFixed(2) : '');
+        _setVal('auditSancionMotivoInp', sanAct > 0 ? sanMotAct : '');
         _renderAuditLiquidacion();
       } catch(_){}
     })();
@@ -37522,6 +37497,14 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // desglose profesional. Se reactiva ante:
   // [v2.41.51] Toggle entre sanción (-) y bonificación (+). Aplica a todos
   // los roles. Cambia el color del input y el signo.
+  // [v2.43.373] Handler de los dos campos de ajuste (bonif/sanción): marca tocado y
+  // refresca la liquidación en vivo del modal.
+  function _auditAjusteInput() {
+    _evalState.auditAjusteTocado = true;
+    _renderAuditLiquidacion();
+  }
+  // _auditSetAjuste: legacy (el toggle único ya no existe). Se conserva como no-op
+  // defensivo por si quedó alguna referencia; no manipula DOM eliminado.
   function _auditSetAjuste(tipo, userInitiated) {
     if (tipo !== 'sancion' && tipo !== 'bonificacion') tipo = 'sancion';
     _evalState.auditAjusteTipo = tipo;
@@ -37584,13 +37567,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const base       = parseFloat(r.montoBase)    || 0;
     const bonoMeta   = parseFloat(r.bonoMeta)     || 0;
     const pagoEnv    = parseFloat(r.pagoEnvasado) || 0;
-    // [v2.41.51] Ajuste único: sancion (descuenta) o bonificacion (suma)
-    // [v2.41.65] Aceptar coma O punto como separador decimal
-    const ajusteTipo = _evalState.auditAjusteTipo || 'sancion';
-    const _rawMon = String($('auditAjusteMonto')?.value || '').replace(',', '.');
-    const ajusteMonto = Math.max(0, parseFloat(_rawMon) || 0);
-    const sancion      = ajusteTipo === 'sancion' ? ajusteMonto : 0;
-    const bonificacion = ajusteTipo === 'bonificacion' ? ajusteMonto : 0;
+    // [v2.43.373] Dos campos independientes: bonificación (+) y sanción (−), coexisten.
+    const _num = (id) => Math.max(0, parseFloat(String($(id)?.value || '').replace(',', '.')) || 0);
+    const bonificacion = _num('auditBonifMonto');
+    const sancion      = _num('auditSancionMonto');
 
     const togMeta = $('auditTogMeta');
     const aplicaMeta = togMeta ? togMeta.classList.contains('on') : true;
@@ -37971,21 +37951,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.41.51] Ajuste: SANCIÓN (descuenta) o BONIFICACIÓN (suma)
     // [v2.41.65] Aceptar tanto "." como "," como separador decimal (es-PE).
     // parseFloat("8,9") = 8 (mal). Normalizamos coma → punto antes.
-    const ajusteTipo  = _evalState.auditAjusteTipo || 'sancion';
-    const _rawMonto   = String($('auditAjusteMonto')?.value || '').replace(',', '.');
-    const ajusteMonto = Math.max(0, parseFloat(_rawMonto) || 0);
-    const ajusteMotivo = String($('auditAjusteMotivo')?.value || '').trim();
-    const sancion       = ajusteTipo === 'sancion'      ? ajusteMonto : 0;
-    const sancionMotivo = ajusteTipo === 'sancion'      ? ajusteMotivo : '';
-    const bonificacion       = ajusteTipo === 'bonificacion' ? ajusteMonto : 0;
-    const bonificacionMotivo = ajusteTipo === 'bonificacion' ? ajusteMotivo : '';
-
-    // [v2.43.372] El motivo es SOLO el comentario limpio del admin. Se eliminó el
-    // tag de delta "📊 S/x → S/y" que se concatenaba al motivo (ensuciaba el texto y,
-    // junto con la fusión de motivos, duplicaba "por X · 📊... · por X"). Una cosa es
-    // la bonificación/sanción + su comentario; el histórico de cambios NO va en el motivo.
+    // [v2.43.373] Bonificación (+) y Sanción (−) INDEPENDIENTES: se leen de sus dos
+    // campos y COEXISTEN. Motivo = solo el comentario limpio (sin tag gráfico ni fusión).
+    const _ajNum = (id) => Math.max(0, parseFloat(String($(id)?.value || '').replace(',', '.')) || 0);
+    const bonificacion       = _ajNum('auditBonifMonto');
+    const bonificacionMotivo = String($('auditBonifMotivoInp')?.value || '').trim();
+    const sancion            = _ajNum('auditSancionMonto');
+    const sancionMotivo      = String($('auditSancionMotivoInp')?.value || '').trim();
     const bonificacionMotivoFinal = bonificacionMotivo;
     const sancionMotivoFinal = sancionMotivo;
+    // ajusteTipo=null → el backend (set_bonificacion_sancion soloTipo=null) setea AMBOS.
+    const ajusteTipo = null;
 
     const comentarioBase = $('auditComentario').value || '';
     let comentarioFinal = comentarioBase;
@@ -38016,9 +37992,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       evaluadoPor: S.session?.nombre || '',
       aplicaComision: $('auditTogComision').classList.contains('on'),
       aplicaBonoMeta: $('auditTogMeta').classList.contains('on'),
-      _ajusteTocado: !!_evalState.auditAjusteTocado,
-      // [v2.41.67] ajusteTipo activo: backend usa esto para preservar el OTRO
-      // tipo. Ej: admin solo cambia sanción → bonificación previa se mantiene.
+      // [v2.43.373] siempre se envían AMBOS (bonif + sanción) como fuente de verdad;
+      // ajusteTipo=null → el backend setea los dos (no preserva nada del previo).
+      _ajusteTocado: true,
       ajusteTipo: ajusteTipo
     };
 
@@ -38037,28 +38013,19 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       r.manual.checksAcum = Object.assign({}, r.manual.checksAcum || {});
       Object.keys(checksFull).forEach(k => { if (checksFull[k]) r.manual.checksAcum[k] = true; });
 
-      // ── [v2.41.67] Optimistic update — solo el tipo ACTIVO se reemplaza ──
-      // Si admin solo cambió sanción, NO toca bonificación previa (y viceversa).
-      // Antes ambos campos se sobreescribían a 0 si el otro no estaba activo,
-      // y el card mostraba un total incorrecto.
-      const tocado = !!_evalState.auditAjusteTocado;
-      if (tocado) {
-        if (ajusteTipo === 'sancion') {
-          r.sancion = Math.round(sancion * 100) / 100;
-          r.sancionMotivo = sancionMotivoFinal;
-          r.sancionesDetalle = sancion > 0 ? [{
-            hora: new Date().toTimeString().slice(0,5), monto: sancion, motivo: sancionMotivo
-          }] : [];
-          // bonificación PRESERVA su valor previo
-        } else if (ajusteTipo === 'bonificacion') {
-          r.bonificacion = Math.round(bonificacion * 100) / 100;
-          r.bonificacionMotivo = bonificacionMotivoFinal;
-          r.bonificacionesDetalle = bonificacion > 0 ? [{
-            hora: new Date().toTimeString().slice(0,5), monto: bonificacion, motivo: bonificacionMotivo
-          }] : [];
-          // sanción PRESERVA su valor previo
-        }
-      }
+      // ── [v2.43.373] Optimistic update — AMBOS campos (bonif + sanción) se
+      // reemplazan con lo que el modal tiene (los dos son independientes y se
+      // envían siempre). El backend recibe ambos y setea los dos.
+      r.sancion = Math.round(sancion * 100) / 100;
+      r.sancionMotivo = sancionMotivoFinal;
+      r.sancionesDetalle = sancion > 0 ? [{
+        hora: new Date().toTimeString().slice(0,5), monto: sancion, motivo: sancionMotivo
+      }] : [];
+      r.bonificacion = Math.round(bonificacion * 100) / 100;
+      r.bonificacionMotivo = bonificacionMotivoFinal;
+      r.bonificacionesDetalle = bonificacion > 0 ? [{
+        hora: new Date().toTimeString().slice(0,5), monto: bonificacion, motivo: bonificacionMotivo
+      }] : [];
       // Bono meta efectivo: si admin desactivó el toggle, queda en 0
       const baseV = parseFloat(r.montoBase) || 0;
       const envV  = parseFloat(r.pagoEnvasado) || 0;
@@ -42679,7 +42646,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     loadEvaluacion, refreshEvaluacion, evalSetApp,
     abrirAuditar, cerrarAuditar, guardarAuditoria,
     auditToggleCheck, auditCheckAll, auditToggle, imprimirLiquidacionDia,
-    _auditSetAjuste,
+    _auditSetAjuste, _auditAjusteInput,
     _liqLoadPrinters, _liqEnviarPrint, _liqAvisarImpresoraNoLista,
     // [v2.41.82] PrinterPicker universal
     abrirPrinterPicker, _pPickToggleFiltroZona, _pPickToggleFiltroTipo, _pPickActualizarBotones,

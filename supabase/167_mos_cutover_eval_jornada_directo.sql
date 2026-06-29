@@ -177,11 +177,10 @@ begin
   -- 2) set bon/san con soloTipo + fusión de motivos, si _ajusteTocado || bon>0 || san>0.
   if coalesce((select valor from mos.config where clave='MOS_LIQDIA_DIRECTO' limit 1),'0') = '1' then
     -- soloTipo: explícito ('sancion'|'bonificacion') o derivado (bon>0&san=0→bonif; san>0&bon=0→sanción).
-    v_solo := case
-                when v_ajuste_tipo in ('sancion','bonificacion') then v_ajuste_tipo
-                when v_bon_new > 0 and v_san_new = 0 then 'bonificacion'
-                when v_san_new > 0 and v_bon_new = 0 then 'sancion'
-                else null end;
+    -- [v2.43.373] soloTipo SOLO si el frontend lo manda explícito (compat con el toggle
+    -- viejo). El frontend nuevo manda ajusteTipo=null → soloTipo=null → REEMPLAZA AMBOS
+    -- con lo enviado (los dos campos son la fuente de verdad; limpiar uno lo pone en 0).
+    v_solo := case when v_ajuste_tipo in ('sancion','bonificacion') then v_ajuste_tipo else null end;
     v_ajuste_tocado := (p->>'_ajusteTocado' in ('true','t','1'))
                     or (p->>'_resetBonSan'  in ('true','t','1'))
                     or v_bon_new > 0 or v_san_new > 0;
@@ -192,44 +191,14 @@ begin
     exception when others then null;
     end;
 
-    -- (2) set bon/san (reemplazo, soloTipo preserva el otro) con FUSIÓN de motivos del día.
+    -- (2) set bon/san (reemplazo). [v2.43.373] SIN fusión de motivos: el motivo es el
+    -- comentario LIMPIO que mandó el admin (v_bonmot_fin/v_sanmot_fin ya = p->>'...Motivo').
+    -- Antes se concatenaban todos los motivos del día (' · ') → texto largo y duplicado.
+    -- Si el monto del concepto es 0, su motivo se limpia.
     if v_ajuste_tocado then
       begin
-        -- Fusión motivos: concatenar (' · ') los motivos de TODAS las evaluaciones activas del día/persona,
-        -- por tipo, SOLO si el tipo activo tiene valor > 0 (réplica EXACTA gas:159-176).
-        if v_bon_new > 0 and (v_solo = 'bonificacion' or v_solo is null) then
-          select string_agg(m, ' · ' order by ord)
-            into v_tmp
-            from (
-              select btrim(coalesce(e.bonificacion_motivo,'')) m, e.hora ord
-                from mos.evaluaciones e
-               where coalesce(e.activo,true)=true
-                 and e.id_personal = v_pers
-                 and (e.fecha at time zone 'America/Lima')::date = v_fecha_s::date
-                 and coalesce(e.bonificacion,0) > 0
-                 and btrim(coalesce(e.bonificacion_motivo,'')) <> ''
-            ) s;
-          if v_tmp is not null and v_tmp <> '' then v_bonmot_fin := v_tmp; end if;
-        elsif v_bon_new = 0 and v_solo = 'bonificacion' then
-          v_bonmot_fin := '';
-        end if;
-
-        if v_san_new > 0 and (v_solo = 'sancion' or v_solo is null) then
-          select string_agg(m, ' · ' order by ord)
-            into v_tmp
-            from (
-              select btrim(coalesce(e.sancion_motivo,'')) m, e.hora ord
-                from mos.evaluaciones e
-               where coalesce(e.activo,true)=true
-                 and e.id_personal = v_pers
-                 and (e.fecha at time zone 'America/Lima')::date = v_fecha_s::date
-                 and coalesce(e.sancion,0) > 0
-                 and btrim(coalesce(e.sancion_motivo,'')) <> ''
-            ) s;
-          if v_tmp is not null and v_tmp <> '' then v_sanmot_fin := v_tmp; end if;
-        elsif v_san_new = 0 and v_solo = 'sancion' then
-          v_sanmot_fin := '';
-        end if;
+        if v_bon_new = 0 then v_bonmot_fin := ''; end if;
+        if v_san_new = 0 then v_sanmot_fin := ''; end if;
 
         perform mos.set_bonificacion_sancion(jsonb_build_object(
           'idPersonal', v_pers,

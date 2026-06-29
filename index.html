@@ -15912,35 +15912,40 @@
             <div id="auditControlList" class="space-y-1"></div>
           </div>
 
-          <!-- [v2.41.51] Ajuste opcional: SANCIÓN (descuenta) o BONIFICACIÓN (suma) -->
+          <!-- [v2.43.373] Ajuste del día: BONIFICACIÓN (+) y SANCIÓN (−) INDEPENDIENTES.
+               Pueden coexistir en una misma auditoría (ej: +bono por limpiar toldo y
+               −descuento por tardanza), cada una con su PROPIO comentario. Distintas de
+               la comisión por ventas (auto). -->
           <div class="pt-3" style="border-top:1px dashed rgba(148,163,184,.25)">
             <label class="lbl flex items-center justify-between">
               <span>💱 Ajuste del día (opcional)</span>
-              <span id="auditAjusteHint" class="text-[10px] text-slate-500 font-normal">descuenta o suma al total</span>
+              <span class="text-[10px] text-slate-500 font-normal">puedes poner ambas a la vez</span>
             </label>
-            <div id="auditAjusteToggle" class="flex gap-1 mb-2">
-              <button type="button" data-tipo="sancion" onclick="MOS._auditSetAjuste('sancion', true)"
-                class="flex-1 py-1.5 rounded-md text-xs font-bold transition-all"
-                style="background:rgba(248,113,113,.15);color:#f87171;border:1px solid rgba(248,113,113,.4)">
-                ⚠ Sanción (−)
-              </button>
-              <button type="button" data-tipo="bonificacion" onclick="MOS._auditSetAjuste('bonificacion', true)"
-                class="flex-1 py-1.5 rounded-md text-xs font-bold transition-all"
-                style="background:rgba(15,23,42,.5);color:#94a3b8;border:1px solid rgba(148,163,184,.2)">
-                🎁 Bonificación (+)
-              </button>
+            <!-- BONIFICACIÓN (+) -->
+            <div class="rounded-lg p-2 mb-2" style="background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.28)">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-bold whitespace-nowrap" style="color:#34d399;width:74px">🎁 Bono +S/</span>
+                <input id="auditBonifMonto" type="text" inputmode="decimal" pattern="[0-9.,]*" placeholder="0.00"
+                  class="inp flex-1" style="border-color:rgba(52,211,153,.3)" oninput="MOS._auditAjusteInput()">
+              </div>
+              <input id="auditBonifMotivoInp" type="text" placeholder="Motivo del bono (ej: limpiar toldo el domingo)"
+                class="inp mt-1 text-xs" style="border-color:rgba(52,211,153,.2)" oninput="MOS._auditAjusteInput()">
             </div>
-            <div class="flex items-center gap-2">
-              <span id="auditAjusteSigno" class="text-sm text-slate-500 font-bold w-6 text-right">−S/</span>
-              <input id="auditAjusteMonto" type="text" inputmode="decimal" pattern="[0-9.,]*"
-                placeholder="0.00 o 0,00"
-                class="inp flex-1" style="border-color:rgba(248,113,113,.3)">
+            <!-- SANCIÓN / DESCUENTO (−) -->
+            <div class="rounded-lg p-2" style="background:rgba(248,113,113,.06);border:1px solid rgba(248,113,113,.28)">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-bold whitespace-nowrap" style="color:#f87171;width:74px">⚠ Desc. −S/</span>
+                <input id="auditSancionMonto" type="text" inputmode="decimal" pattern="[0-9.,]*" placeholder="0.00"
+                  class="inp flex-1" style="border-color:rgba(248,113,113,.3)" oninput="MOS._auditAjusteInput()">
+              </div>
+              <input id="auditSancionMotivoInp" type="text" placeholder="Motivo del descuento (ej: falta de aseo)"
+                class="inp mt-1 text-xs" style="border-color:rgba(248,113,113,.2)" oninput="MOS._auditAjusteInput()">
             </div>
-            <input id="auditAjusteMotivo" type="text" placeholder="Motivo (ej: falta de aseo / esfuerzo extra)"
-              class="inp mt-1 text-xs" style="border-color:rgba(148,163,184,.2)">
             <!-- Inputs ocultos legacy para compat con código antiguo -->
             <input id="auditSancion" type="hidden">
             <input id="auditSancionMotivo" type="hidden">
+            <input id="auditAjusteMonto" type="hidden">
+            <input id="auditAjusteMotivo" type="hidden">
           </div>
 
           <!-- ── Liquidación del día (en vivo) ───────────────── -->
@@ -19321,14 +19326,14 @@ if (false) (function(){
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.372"></script>
+<script src="js/api.js?v=2.43.373"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
      bumps de sw.js. Bug reportado: usuario seguía viendo error "Lote en curso"
      de v2.43.146 después de v2.43.148. -->
 <script src="./assets/membrete/membrete-modal.js?v=2.43.364"></script>
-<script src="./assets/seguridad/seguridad-modal.js?v=2.43.372"></script>
+<script src="./assets/seguridad/seguridad-modal.js?v=2.43.373"></script>
 <!-- [v2.43.187] AdhesivoPreview — render visual del adhesivo unificado con WH.
      Mismo módulo en /assets/adhesivo/preview.js — backend Envasados.gs pixel-perfect. -->
 <script src="./assets/adhesivo/preview.js?v=1.3.0"></script>
@@ -19336,7 +19341,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.372"></script>
+<script src="js/app.js?v=2.43.373"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
