@@ -41260,15 +41260,30 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // lo pendiente + el desglose por día (cuánto pidió cada cierre). En vivo.
   function _zpkNum(n){ n = parseFloat(n) || 0; return Number.isInteger(n) ? (''+n) : (''+(Math.round(n*1000)/1000)); }
   function _zpkDiaLbl(f){ try { const d = new Date(String(f).slice(0,10)+'T12:00:00'); return d.toLocaleDateString('es-PE',{weekday:'short',day:'2-digit',timeZone:'America/Lima'}); } catch(_) { return String(f||''); } }
+  let _zpkLast = { zona: '', modo: 'pickup', data: null };   // [v2.43.379] para imprimir el rezagado
   async function zonaAbrirPickup(){
     const zona = S.zonaActual;
     if (!zona) return;
-    _zpkRender(zona, null, true);
+    _zpkRender(zona, null, true, 'pickup');
     try {
       const r = await API.zona.pickupDetalle({ zona });
       if (!r || r.ok === false) throw new Error((r && r.error) || 'sin datos');
-      _zpkRender(zona, r, false);
-    } catch (e) { _zpkRender(zona, { _error: String(e && e.message || e) }, false); }
+      _zpkLast = { zona, modo: 'pickup', data: r };
+      _zpkRender(zona, r, false, 'pickup');
+    } catch (e) { _zpkRender(zona, { _error: String(e && e.message || e) }, false, 'pickup'); }
+  }
+  // [v2.43.379] Rezagado de la semana pasada (lo NO despachado) — misma vista detallada
+  // con historial, para reclamos + botón de imprimir (80mm).
+  async function zonaAbrirRezagado(zonaArg){
+    const zona = zonaArg || S.zonaActual || (_zpkLast && _zpkLast.zona);
+    if (!zona) return;
+    _zpkRender(zona, null, true, 'rezagado');
+    try {
+      const r = await API.zona.rezagadoDetalle({ zona });
+      if (!r || r.ok === false) throw new Error((r && r.error) || 'sin datos');
+      _zpkLast = { zona, modo: 'rezagado', data: r };
+      _zpkRender(zona, r, false, 'rezagado');
+    } catch (e) { _zpkRender(zona, { _error: String(e && e.message || e) }, false, 'rezagado'); }
   }
   function zonaCerrarPickup(){
     const ov = document.getElementById('zonaPickupOverlay');
@@ -41308,7 +41323,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
     return _zpkCanonMap[String(sku || '').trim().toUpperCase()] || fb || sku;
   }
-  function _zpkRender(zona, r, loading){
+  function _zpkRender(zona, r, loading, modo){
+    modo = modo || 'pickup';
+    const esRez = modo === 'rezagado';
     let ov = document.getElementById('zonaPickupOverlay');
     if (!ov) {
       ov = document.createElement('div');
@@ -41351,17 +41368,92 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           </div>`;
       }).join('');
     }
+    if (esRez && !loading && !(r && r._error) && r && r.sin_rezagado) {
+      body = '<div class="zpk-empty">Sin rezagado de la semana pasada 🎉<br><small>todo se despachó</small></div>';
+    }
     const total = (r && r.total_pendiente) || 0, nItems = (r && r.total_items) || 0;
     const showKpis = !loading && !(r && r._error);
-    ov.innerHTML = `<div class="zpk-card" onclick="event.stopPropagation()">
+    const bucketLbl = (r && r.bucket) ? _zpkDiaLbl(r.bucket) : '';
+    // [v2.43.379] header + acciones según modo (pickup en vivo ↔ rezagado semana pasada)
+    const titulo = esRez ? `📦 ${_esc(zona)}` : `🛒 ${_esc(zona)}`;
+    const subt = esRez
+      ? `<span class="zpk-rez-dot"></span> Rezagado semana pasada${bucketLbl ? ' · ' + bucketLbl : ''}`
+      : `<span class="zpk-live"></span> Pickup acumulado · en vivo`;
+    const accion = esRez
+      ? `<button class="zpk-act zpk-act-print" onclick="MOS.zonaImprimirRezagado()">🖨 Imprimir</button>
+         <button class="zpk-act" onclick="MOS.zonaAbrirPickup()">↩ Esta semana</button>`
+      : `<button class="zpk-act zpk-act-rez" onclick="MOS.zonaAbrirRezagado('${_esc(zona)}')">📦 Rezagado semana pasada</button>`;
+    ov.innerHTML = `<div class="zpk-card${esRez ? ' zpk-rez-mode' : ''}" onclick="event.stopPropagation()">
         <div class="zpk-top">
-          <div><div class="zpk-zona">🛒 ${_esc(zona)}</div><div class="zpk-subt"><span class="zpk-live"></span> Pickup acumulado · en vivo</div></div>
+          <div><div class="zpk-zona">${titulo}</div><div class="zpk-subt">${subt}</div></div>
           <button class="zpk-x" onclick="MOS.zonaCerrarPickup()" aria-label="Cerrar">✕</button>
         </div>
-        ${showKpis ? `<div class="zpk-kpis"><div><b>${nItems}</b><small>productos</small></div><div><b>${_zpkNum(total)}</b><small>uds pendientes</small></div><div class="zpk-rez"><b>📋</b><small>lo no despachado se imprime el lunes</small></div></div>` : ''}
-        ${showKpis ? `<input class="zpk-search" placeholder="🔎 Buscar producto…" oninput="MOS.zonaPickupFiltrar(this.value)" autocomplete="off">` : ''}
+        ${showKpis ? `<div class="zpk-kpis"><div><b>${nItems}</b><small>productos</small></div><div><b>${_zpkNum(total)}</b><small>uds ${esRez ? 'no despachadas' : 'pendientes'}</small></div></div>` : ''}
+        ${showKpis ? `<div class="zpk-actions">${accion}</div>` : ''}
+        ${showKpis && !(r && r.sin_rezagado) ? `<input class="zpk-search" placeholder="🔎 Buscar producto…" oninput="MOS.zonaPickupFiltrar(this.value)" autocomplete="off">` : ''}
         <div class="zpk-list">${body}</div>
       </div>`;
+  }
+  // [v2.43.379] Imprime el rezagado (80mm, todo el ancho) por la Edge `imprimir` (cero-GAS).
+  async function zonaImprimirRezagado(){
+    const d = _zpkLast && _zpkLast.data;
+    if (!d || !(d.items || []).length) { toast('Nada que imprimir', 'warn'); return; }
+    let printerId = null;
+    try { printerId = await _liqElegirImpresora(); } catch(_) {}
+    if (!printerId) return;
+    try {
+      const escpos = _buildRezagadoTicket80mm(_zpkLast.zona, d);
+      await API.imprimirTicketEdge(parseInt(printerId, 10), 'Rezagado ' + _zpkLast.zona, escpos);
+      try { _liqConfetti(window.innerWidth/2, window.innerHeight/3, '#fbbf24'); } catch(_){}
+      toast('🖨 Rezagado enviado a la impresora', 'ok', 3000);
+    } catch (e) {
+      toast('⚠ No se pudo imprimir: ' + ((e && e.message) || e), 'error', 6000);
+    }
+  }
+  // Ticket 80mm PROFESIONAL: usa todo el ancho (W=48). Formato "20.5x  Nombre del producto",
+  // y si el nombre es largo, continúa en 1-2 renglones indentados. Español con acentos (WPC1252).
+  function _buildRezagadoTicket80mm(zona, d){
+    const W = 48;
+    const rep = (ch, n) => ch.repeat(Math.max(0, n));
+    const norm = (s) => String(s == null ? '' : s).normalize('NFC').replace(/[^\x20-\xFF]/g, '');
+    const ctr = (s) => { s = norm(s); const l = Math.floor((W - s.length) / 2); return rep(' ', Math.max(0, l)) + s + '\n'; };
+    const SEP = rep('=', W) + '\n', SEPd = rep('-', W) + '\n';
+    const qty = (n) => { n = parseFloat(n) || 0; return (Number.isInteger(n) ? ('' + n) : ('' + (Math.round(n * 100) / 100))) + 'x'; };
+    // wrap del nombre a partir de la 2da línea, indentado bajo el nombre (col del qty + 2)
+    const wrapNombre = (qtyStr, nombre) => {
+      const ind = rep(' ', qtyStr.length + 2);
+      const max1 = W - (qtyStr.length + 2);          // ancho disponible en la 1ra línea
+      const palabras = norm(nombre).split(/\s+/).filter(Boolean);
+      let linea = '', out = '', primera = true;
+      const flush = () => { out += (primera ? (qtyStr + '  ') : ind) + linea + '\n'; primera = false; linea = ''; };
+      for (const w of palabras) {
+        const cap = primera ? max1 : (W - ind.length);
+        if (linea && (linea.length + 1 + w.length) > cap) flush();
+        linea = linea ? (linea + ' ' + w) : w;
+        while (linea.length > (primera ? max1 : (W - ind.length))) { // palabra larguísima
+          const cap2 = primera ? max1 : (W - ind.length);
+          out += (primera ? (qtyStr + '  ') : ind) + linea.slice(0, cap2) + '\n'; primera = false; linea = linea.slice(cap2);
+        }
+      }
+      if (linea) flush();
+      return out;
+    };
+    const items = (d.items || []);
+    let t = '\x1b\x40\x1b\x74\x10';                  // init + codepage WPC1252
+    t += '\x1b\x61\x01\x1b\x21\x30' + norm('LISTA DE COMPRA') + '\n\x1b\x21\x00';
+    t += norm('Rezagado · ' + zona) + '\n';
+    if (d.bucket) t += norm('Semana del ' + d.bucket) + '\n';
+    t += '\x1b\x61\x00' + SEP;
+    t += norm('Lo que NO se despachó la semana pasada:') + '\n' + SEPd;
+    items.forEach(it => {
+      const nom = _zpkCanonName(it.skuBase, it.nombre);
+      t += wrapNombre(qty(it.pendiente), nom);
+    });
+    t += SEPd;
+    t += '\x1b\x45\x01' + norm('TOTAL: ' + (items.length) + ' productos · ' + qty(d.total_pendiente) + ' uds') + '\x1b\x45\x00\n';
+    t += '\x1b\x61\x01' + norm('Impreso desde MOS') + '\n';
+    t += '\n\n\n\n\x1d\x56\x00';
+    return t;
   }
   // [RIZ #2] Imprime el ticket desde el ÍCONO del grupo ROTADO. Respeta el filtro "del día":
   //   · modo 'dia'   → imprime el ticket del día activo (fecha = día seleccionado).
@@ -42710,6 +42802,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [RIZ Capa 5] impresión 80mm + panel IA + lista compras
     zonaImprimirTicket, zonaImprimirLista, zonaAbrirSugerencias, zonaCerrarSugerencias,
     zonaAbrirPickup, zonaCerrarPickup, zonaPickupToggle, zonaPickupFiltrar,
+    zonaAbrirRezagado, zonaImprimirRezagado,
     // [RIZ #1+#2] filtro "del día" del grupo ROTADO + impresión por grupo (respeta el día)
     zonaDiaModo, zonaDiaNav, zonaImprimirTicketGrupo,
     // [RIZ #4] proveedores reales por canónico (lazy-load por card en ALMACEN)
