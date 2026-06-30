@@ -170,6 +170,10 @@ begin
       coalesce(v.total,0)::numeric                          as total,
       v.fecha                                               as fecha_ts,
       v.id_venta, v.correlativo, v.cliente_doc, v.cliente_nombre, v.obs,
+      -- [v2.43.388] vendedor REAL del ticket (antes el ticket heredaba el vendedor de la
+      -- CAJA → los tickets de un 2.º vendedor en la misma caja salían como el dueño, p.ej.
+      -- las 5 ventas de Fernando en la caja de Sergio aparecían como "Sergio").
+      coalesce(nullif(btrim(v.vendedor),''),'')             as vendedor,
       v.created_at
     from me.ventas v
     -- ventana 30d: descarta SOLO si fecha presente y < limite (NULL pasa, = paridad GAS "instanceof Date").
@@ -269,7 +273,9 @@ begin
         'estado',      vc.estado,
         'obs',         coalesce(vc.obs,''),
         'idCaja',      vc.id_caja,
-        'vendedor',    coalesce(vc.cm_vendedor,''),
+        -- [v2.43.388] vendedor del ticket = el REAL (me.ventas.vendedor); si el ticket no
+        -- trae vendedor, cae al de la caja (cm_vendedor) para no quedar vacío.
+        'vendedor',    coalesce(nullif(btrim(vc.vendedor),''), vc.cm_vendedor, ''),
         'zona',        vc.cm_zona
       ) as obj
     from ventas_calc vc

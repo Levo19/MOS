@@ -2134,7 +2134,10 @@ const API = (() => {
   // el directo no commitea (null = sin token), NO se cae a GAS en silencio: GAS escribiría la Hoja pero el cambio
   // NUNCA llegaría a mos.* → WH/MOS no lo verían (el bug de "agregué proveedor y no se propagó"). Se LANZA para
   // que el UI optimista revierta y el usuario reintente. Default (acciones no listadas): fallback a GAS de siempre.
-  const _MOS_DIRECT_REQUIRED = { crearProveedor: 1, actualizarProveedor: 1, crearEstacion: 1, actualizarEstacion: 1, crearSerie: 1, actualizarSerie: 1 };
+  // [100x · A5] vetar/desvetar SHADOW-CRÍTICAS: con liquidaciones_dia en SYNC_OFF, si el directo no
+  // commitea y cae a GAS, GAS escribe la Hoja pero NO llega a la tabla que lee la mega tabla → el veto
+  // se vuelve invisible. Mejor fallar fuerte (reintentar) que desincronizar en silencio.
+  const _MOS_DIRECT_REQUIRED = { crearProveedor: 1, actualizarProveedor: 1, crearEstacion: 1, actualizarEstacion: 1, crearSerie: 1, actualizarSerie: 1, vetarLiquidacionDia: 1, desvetarLiquidacionDia: 1 };
 
   // POST con escritura directa opcional. Con el gate de la acción OFF (default) es IDÉNTICO a hoy: ni
   // siquiera evalúa el directo → va recto a _fetch('POST') → GAS. Con el gate ON + token + RPC viva, escribe

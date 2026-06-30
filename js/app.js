@@ -7911,6 +7911,15 @@ const MOS = (() => {
   function _escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
+  // [100x · XSS] Texto que va como STRING JS dentro de un atributo HTML (onclick="...f('AQUI')...").
+  // Hay que (a) escapar para JS \ y ' (que el string no se rompa) y (b) escapar &<>" para HTML (que
+  // no se salga del atributo). NO se usa _escapeHtml directo porque convertiría ' en &#39; y el
+  // navegador lo decodifica ANTES de que el parser JS lo vea → rompería el string.
+  function _escAttrJs(s) {
+    return String(s == null ? '' : s)
+      .replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+      .replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  }
 
   // [v41.22] Parser de comentario WH (Comprobante: Sí|No · Completo: Sí|No · texto libre)
   function _parseTagsPI(comentario) {
@@ -26119,7 +26128,7 @@ const MOS = (() => {
     const ini = n => (n && n !== '—' ? n.trim()[0].toUpperCase() : '?');
     const col = n => { let h = 0; for (let i = 0; i < n.length; i++) h = (h * 31 + n.charCodeAt(i)) & 0xffff; return `hsl(${h % 360},55%,45%)`; };
     const chip = (key, label, color, sub, active, icon) =>
-      `<button onclick="MOS._cjTkSetVendedor('${String(key).replace(/'/g, "\\'")}')" class="log-icon-btn ${active ? 'active' : ''}" style="padding:4px 9px 4px 4px;font-size:11px;width:auto;height:auto;display:inline-flex;align-items:center;gap:6px">
+      `<button onclick="MOS._cjTkSetVendedor(this.dataset.v)" data-v="${_escapeHtml(String(key))}" class="log-icon-btn ${active ? 'active' : ''}" style="padding:4px 9px 4px 4px;font-size:11px;width:auto;height:auto;display:inline-flex;align-items:center;gap:6px">
          <span style="width:20px;height:20px;border-radius:50%;background:${color};color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0">${icon}</span>
          <span>${_escapeHtml(label)}${sub ? ` <span style="opacity:.55">${sub}</span>` : ''}</span>
        </button>`;
@@ -26207,15 +26216,15 @@ const MOS = (() => {
       const cliD = (t.clienteDoc || '').trim();
       const tieneCliente = !!(cliN || cliD);
       const cabecera = tieneCliente
-        ? `<div class="tk-cli-nombre">👤 ${cliN || 'Sin nombre'}</div>${cliD ? `<div class="tk-cli-doc">${cliD}</div>` : ''}`
+        ? `<div class="tk-cli-nombre">👤 ${_escapeHtml(cliN || 'Sin nombre')}</div>${cliD ? `<div class="tk-cli-doc">${_escapeHtml(cliD)}</div>` : ''}`
         : `<div class="tk-cli-nombre tk-cli-nombre-anon">— Cliente sin registrar —</div>`;
       const tipo = docLabel[t.tipo || t.tipoDoc] || (t.tipo || t.tipoDoc || '');
-      const idVentaSafe = String(t.idVenta || '').replace(/'/g, "\\'");
+      const idVentaSafe = _escAttrJs(t.idVenta || '');
       return `<div class="tk-row tk-row-clickable ${an?'tk-row-anul':''} ${met.cls}" onclick="MOS.cjAbrirAccionesTicket('${idVentaSafe}')">
         <div class="tk-cli">${cabecera}</div>
         <div class="tk-meta">
-          <span class="tk-meta-corr">${tipo} ${corr}</span>
-          ${t.vendedor ? `<span class="tk-meta-vend">· ${t.vendedor}</span>` : ''}
+          <span class="tk-meta-corr">${_escapeHtml(tipo)} ${_escapeHtml(corr)}</span>
+          ${t.vendedor ? `<span class="tk-meta-vend">· ${_escapeHtml(t.vendedor)}</span>` : ''}
           ${t.hora ? `<span class="tk-meta-hora">· ${t.hora}</span>` : ''}
         </div>
         <div class="tk-monto-col">
@@ -35753,7 +35762,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           </div>
           <div class="flex flex-col gap-1 shrink-0 items-end">
             <div class="flex gap-1 mb-0.5">
-              <button onclick="event.stopPropagation();MOS.abrirEspiaPorUsuario('${String(p.nombre || '').replace(/'/g,'&#39;')}')"
+              <button onclick="event.stopPropagation();MOS.abrirEspiaPorUsuario('${_escAttrJs(p.nombre || '')}')"
                 class="w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-all"
                 style="background:rgba(99,102,241,0.18);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;font-size:11px;"
                 title="Espiar a ${p.nombre} (audio + GPS)">🕵️</button>
@@ -35761,20 +35770,20 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
             ${idForEval ? `<button onclick="MOS.abrirAuditar('${idForEval}')" class="btn-primary text-xs whitespace-nowrap px-3 py-1.5">Auditar</button>` : ''}
             <div class="flex gap-1 mt-1">
               ${esBloqueado
-                ? `<button onclick="event.stopPropagation();MOS.finLiberarDispositivosUsuario('${String(p.nombre || '').replace(/'/g,'&#39;')}')"
+                ? `<button onclick="event.stopPropagation();MOS.finLiberarDispositivosUsuario('${_escAttrJs(p.nombre || '')}')"
                     class="w-7 h-7 rounded-md flex items-center justify-center hover:scale-110 transition-all"
                     style="background:rgba(34,197,94,0.18);border:1px solid rgba(34,197,94,0.55);color:#86efac;font-size:12px;position:relative;z-index:10;"
                     title="🔓 Liberar dispositivo(s) bloqueado(s) — requiere clave admin">🔓</button>`
-                : `<button onclick="event.stopPropagation();MOS.finBloquearUsuario('${String(p.nombre || '').replace(/'/g,'&#39;')}','${(ev && ev.appOrigen) || p.appOrigen || ''}','${(ev && ev.idPersonal) || p.idPersonal || ''}')"
+                : `<button onclick="event.stopPropagation();MOS.finBloquearUsuario('${_escAttrJs(p.nombre || '')}','${(ev && ev.appOrigen) || p.appOrigen || ''}','${(ev && ev.idPersonal) || p.idPersonal || ''}')"
                     class="w-7 h-7 rounded-md flex items-center justify-center hover:scale-110 transition-all"
                     style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.5);color:#fbbf24;font-size:12px;position:relative;z-index:10;"
                     title="🔒 Bloquear dispositivo (pantalla de candado en su tablet/celular)">🔒</button>`}
               ${esVetada
-                ? `<button onclick="event.stopPropagation();MOS.finRehabilitarPago('${p.idJornada || ''}','${fecha}','${String(p.nombre || '').replace(/'/g,'&#39;')}','${idMega}')"
+                ? `<button onclick="event.stopPropagation();MOS.finRehabilitarPago('${p.idJornada || ''}','${fecha}','${_escAttrJs(p.nombre || '')}','${idMega}')"
                     class="w-7 h-7 rounded-md flex items-center justify-center hover:scale-110 transition-all"
                     style="background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.55);color:#86efac;font-size:12px;position:relative;z-index:10;"
                     title="💵 Rehabilitar pago (revierte el veto y restaura el monto)">💵</button>`
-                : `<button onclick="event.stopPropagation();MOS.finVetarPago('${p.idJornada || ''}','${fecha}','${String(p.nombre || '').replace(/'/g,'&#39;')}','${idMega}')"
+                : `<button onclick="event.stopPropagation();MOS.finVetarPago('${p.idJornada || ''}','${fecha}','${_escAttrJs(p.nombre || '')}','${idMega}')"
                     class="w-7 h-7 rounded-md flex items-center justify-center hover:scale-110 transition-all"
                     style="background:rgba(168,85,247,0.12);border:1px solid rgba(168,85,247,0.5);color:#c084fc;font-size:12px;position:relative;z-index:10;"
                     title="💸 Vetar del pago de hoy (sigue operando, pero no se contará en gastos)">💸</button>`}

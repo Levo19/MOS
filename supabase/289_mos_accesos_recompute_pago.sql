@@ -64,14 +64,17 @@ grant execute on function mos._fijo_personal(text,text) to service_role;
 create or replace function mos._meta_zona(p_zona text)
 returns numeric language sql stable set search_path = '' as $fn$
   select coalesce(
-    mos._numn((select politica_json->>'metaDiaria' from mos.zonas where id_zona = p_zona limit 1)),
+    -- [100x · C1] match normalizado (case/espacios) como el resto del código (RIZ 128). Con match
+    -- exacto, una zona guardada como 'zona-02'/'ZONA-02 ' no casaba → meta=0 → comisión sobre TODA
+    -- la venta de zona sin umbral = sobre-pago invisible. Hoy casan exacto, esto lo blinda.
+    mos._numn((select politica_json->>'metaDiaria' from mos.zonas where upper(btrim(id_zona)) = upper(btrim(p_zona)) limit 1)),
     mos._numn((select valor from mos.config where clave='evalMetaCajero' limit 1)),
     0::numeric);
 $fn$;
 create or replace function mos._comision_pct(p_zona text)
 returns numeric language sql stable set search_path = '' as $fn$
   select coalesce(
-    mos._numn((select politica_json->>'comisionExcedentePct' from mos.zonas where id_zona = p_zona limit 1)),
+    mos._numn((select politica_json->>'comisionExcedentePct' from mos.zonas where upper(btrim(id_zona)) = upper(btrim(p_zona)) limit 1)),
     mos._numn((select valor from mos.config where clave='evalComisionExcedentePct' limit 1)),
     0::numeric);
 $fn$;
@@ -188,7 +191,9 @@ begin
        and mos._norm_nom(v.vendedor) = mos._norm_nom(v_nomfull)
        and v.forma_pago ~* '^(efectivo|virtual|mixto)'
        and coalesce(v.zona_id,'') <> ''
-     group by v.zona_id order by sum(v.total) desc limit 1;
+     -- [100x · H1] tiebreaker determinista: sin él, dos zonas con igual venta hacían que la zona
+     -- elegida oscilara entre disparos del trigger → comisión flapping. zona_id asc lo fija.
+     group by v.zona_id order by sum(v.total) desc, v.zona_id asc limit 1;
     v_zona := coalesce(nullif(btrim(coalesce(v_zona,'')), ''), nullif(btrim(coalesce(r.zona,'')), ''), '');
     -- comisión 5% del excedente de zona, proporcional a lo cobrado por la persona
     v_vcob  := mos._venta_cobrada_persona(v_nomfull, v_zona, v_dia);

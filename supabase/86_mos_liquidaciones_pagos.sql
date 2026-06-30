@@ -126,6 +126,13 @@ begin
     if found and v_dia_estado = 'PAGADA' and v_dia_idpago <> v_id_pago then
       return jsonb_build_object('ok',false,'error','Día ya pagado: '||v_fecha_s,'fecha',v_fecha_s,'idPagoExistente',v_dia_idpago);
     end if;
+    -- [100x · guarda VETADA] un día VETADO no se paga (el veto = retención de pago). El UPDATE
+    -- de abajo pone estado='PAGADA' sin mirar el estado previo → sin esto, pasar una fila VETADA
+    -- al pago saltaba el veto. El listado a pagar (114) ya excluye VETADA; esto cierra el RPC.
+    -- Para pagarle, el admin debe DESVETAR primero (→ PENDIENTE).
+    if found and v_dia_estado = 'VETADA' then
+      return jsonb_build_object('ok',false,'error','Día VETADO: '||v_fecha_s||' — desvétalo antes de pagar','fecha',v_fecha_s);
+    end if;
     -- (b) LEDGER guard (paridad GAS): renglón PAGADA de OTRO id_pago para esta persona+fecha → rechaza.
     select id_pago into v_led_idpago
       from mos.liquidaciones_pagos
