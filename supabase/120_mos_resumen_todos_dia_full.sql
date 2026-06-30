@@ -458,7 +458,10 @@ begin
   -- ── (3) cruce liquidaciones_dia → liqEstado/vetada ────────────────────────────────────────────────
   liq as (
     select btrim(l.id_personal) as id_personal,
-           upper(coalesce(l.estado,'')) as estado
+           upper(coalesce(l.estado,'')) as estado,
+           coalesce(l.venta_zona, 0)          as venta_zona,
+           coalesce(l.bono_meta, 0)           as bono_meta,
+           coalesce(l.productos_envasados, 0) as productos_envasados
     from mos.liquidaciones_dia l
     where (l.fecha at time zone 'America/Lima')::date = v_fecha
       and btrim(coalesce(l.id_personal,'')) <> ''
@@ -469,6 +472,20 @@ begin
              || jsonb_build_object('liqEstado', coalesce(nullif(lq.estado,''), 'PENDIENTE'))
              || (case when coalesce(nullif(lq.estado,''),'') = 'VETADA'
                       then jsonb_build_object('vetada', true)
+                      else '{}'::jsonb end)
+             -- [v2.43.388] Exponer en kpis los valores CANÓNICOS de la mega tabla que este
+             -- RPC (modelo viejo de bono) NO trae: venta de zona, comisión 5% del excedente
+             -- y envasados reales. Así el modal Auditar es IDÉNTICO se abra desde Personal
+             -- del día (RPC 105) o desde Liquidaciones (este RPC). Solo cuando la fila existe;
+             -- si no, se conserva lo computado (no pisa con ceros). NO toca bonoMeta/totalDia
+             -- de nivel superior (esos siguen el modelo viejo, fuera de alcance).
+             || (case when lq.id_personal is not null
+                      then jsonb_build_object('kpis',
+                             coalesce(t.obj->'kpis','{}'::jsonb)
+                               || jsonb_build_object(
+                                    'ventaZona', lq.venta_zona,
+                                    'comision',  lq.bono_meta,
+                                    'envasados', lq.productos_envasados))
                       else '{}'::jsonb end) as obj
     from todos t
     left join liq lq on lq.id_personal = t.id_key
