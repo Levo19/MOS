@@ -2717,6 +2717,14 @@ const API = (() => {
     // [v2.43.380] Heartbeat MASTER/ADMIN + chequeo de bloqueo, DIRECTO a Supabase (cero-GAS).
     // mos.estado_bloqueo_usuario actualiza ultima_conexion + devuelve estado. null → cae a GAS.
     estadoBloqueoMOS: async (p) => _sbRpcMOS('estado_bloqueo_usuario', { p: p || {} }, 'mos'),
+    // [ext dispositivo · RPCs 297/298] companion/extensión + chip de duplicados + printer del principal.
+    extension: {
+      pedir:    async (p) => _sbRpcMOS('pedir_extension',    { p: p || {} }, 'mos'),
+      aprobar:  async (p) => _sbRpcMOS('aprobar_extension',  { p: p || {} }, 'mos'),
+      rechazar: async (p) => _sbRpcMOS('rechazar_extension', { p: p || {} }, 'mos'),
+    },
+    accesosDuplicados: async (p) => _sbRpcMOS('accesos_duplicados_dia', { p: p || {} }, 'mos'),
+    printerPrincipal:  async (p) => _sbRpcMOS('printer_principal',      { p: p || {} }, 'mos'),
     // [Reparación #9] Imprime el comprobante CENTRALIZADO (NV/Boleta/Factura) por la Edge ticket-comprobante.
     imprimirComprobante:  _imprimirComprobanteEdge,
     // [#5 Editor Adhesivos] backend del editor (se cablea como window.MOS_API.post). Shape RAW, gateado.

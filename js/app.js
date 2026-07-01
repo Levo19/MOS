@@ -35560,6 +35560,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       if (cont.dataset.fecha !== fecha) return; // ya no estamos en esta fecha
       const arr = Array.isArray(resumenes) ? resumenes : ((resumenes && resumenes.data) || []);
       try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: arr })); } catch {}
+      // [ext] cargar duplicados (mismo nombre en >1 zona hoy) para el chip 🔗; re-pinta una vez si hay.
+      try {
+        API.accesosDuplicados && API.accesosDuplicados({ fecha }).then(d => {
+          const nd = (d && typeof d === 'object' && !Array.isArray(d)) ? d : {};
+          const changed = JSON.stringify(nd) !== JSON.stringify(_finDuplicados);
+          _finDuplicados = nd;
+          if (changed && Object.keys(nd).length && cont.dataset.fecha === fecha) {
+            try { _pintarConResumenes(_evalState.resumenes || arr); } catch(_){}
+          }
+        }).catch(() => {});
+      } catch(_){}
       const _hashRes = (xs) => {
         if (!Array.isArray(xs)) return '';
         return xs.map(r => [r.idPersonal || r.nombre, r.totalDia, r.bonificacion, r.sancion, r.liqEstado, r.evaluacionesCount].join(',')).join('|');
@@ -35648,6 +35659,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     return mejorIso;
   }
 
+  // [ext] duplicados del día (mismo nombre normalizado en >1 fila/zona) → data del chip 🔗
+  let _finDuplicados = {};
   function _finRenderPersonalCard(p, ev, fecha, area) {
     // [v2.41.46] Única fuente de verdad: LIQUIDACIONES_DIA.estado (propagado
     // a p.vetada en _pintarConResumenes). Si por fallback no hay liqEstado
@@ -35659,6 +35672,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const bloqInfo = (_finBloqueados && _finBloqueados.porNombre)
       ? _finBloqueados.porNombre[nLowCard] : null;
     const esBloqueado = !!(bloqInfo && bloqInfo.dispositivos && bloqInfo.dispositivos.length);
+    // [ext] chip 🔗: el mismo nombre aparece en >1 fila/zona hoy → el admin decide
+    // (fantasma / mismo movido → sanción-base / dos personas → pagar ambas).
+    const _dupInfo = _finDuplicados && _finDuplicados[nLowCard];
+    const dupChip = (_dupInfo && _dupInfo.length > 1)
+      ? `<span class="badge-rol" style="background:rgba(245,158,11,.14);color:#fbbf24;border:1px solid rgba(245,158,11,.4);animation:finPillPulse 2s ease-in-out infinite" title="⚠ &quot;${_escapeHtml(p.nombre)}&quot; está en ${_dupInfo.length} filas hoy (${_dupInfo.map(d => _escapeHtml(d.zona || '—') + ' S/' + (parseFloat(d.venta) || 0).toFixed(0)).join(' · ')}). Decide: ¿fantasma? ¿mismo movido (sanción-base)? ¿dos personas (pagar ambas)?">🔗 ${_dupInfo.length} zonas ⚠</span>`
+      : '';
     const esPOS = (area || _finClasificarRol(p.rol)) === 'POS';
     const score = ev ? (ev.scoreFinal || 0) : null;
     const scoreClass = score !== null ? _evalScoreClass(score) : '';
@@ -35734,6 +35753,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
               <span class="badge-rol ${rolClass}">${p.rol || (ev && ev.rol) || '—'}</span>
               ${ev && ev.virtual ? '<span class="badge-rol badge-rol-default" title="Detectado del sistema">⚡ del sistema</span>' : ''}
               ${fuenteTag}
+              ${dupChip}
             </div>
             ${kpiTxt ? `<div class="text-xs text-slate-500 mb-1">${kpiTxt}</div>` : ''}
             <div class="flex items-center gap-2 flex-wrap">
