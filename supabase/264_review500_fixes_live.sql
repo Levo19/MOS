@@ -108,6 +108,14 @@ begin
   if v_caja = '' then return jsonb_build_object('ok',false,'error','Requiere idCaja'); end if;
   if v_zona = '' then return jsonb_build_object('ok',false,'error','Requiere zona'); end if;
 
+  -- [500x defensa-en-profundidad, restaura el guard caja-nivel de 143] si esta caja YA tiene kardex
+  -- de venta (por CUALQUIER cod, incluidos refs legacy con base distinta a la canónica), no re-descontar.
+  -- El dedup por-línea (canónico) no atraparía un ref viejo por-presentación → doble descuento. Corte total.
+  if exists (select 1 from me.stock_movimientos where ref_id like 'VENTA-CAJA:'||v_caja||':%') then
+    return jsonb_build_object('ok', true, 'idCaja', v_caja, 'zona', v_zona, 'dedupCaja', true,
+      'aplicados', 0, 'dedup', 0, 'mensaje', 'Caja ya descontada (guard caja-nivel)');
+  end if;
+
   create temp table _venta_agg (cod_barra text primary key, cant numeric) on commit drop;
   insert into _venta_agg(cod_barra, cant)
   select cv.canon_cod, sum(cv.cant)

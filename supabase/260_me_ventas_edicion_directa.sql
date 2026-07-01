@@ -396,6 +396,9 @@ begin
   end if;
   if v_id is null then return jsonb_build_object('ok', false, 'error', 'idVenta requerido'); end if;
 
+  -- [500x] lock por venta ANTES del FOR UPDATE (mismo orden lock→row que confirmar/directo/editar,
+  -- sin ABBA): serializa la anulación con un cobro en vuelo de la misma venta.
+  perform pg_advisory_xact_lock(hashtext('cobro:'||v_id));
   select forma_pago, historial_cambios into v_ant, v_hist
   from me.ventas where id_venta = v_id for update;
   if not found then
@@ -417,6 +420,12 @@ begin
           'autorizadoPor', v_auth, 'motivo', v_mot)),
         updated_at = now()
     where id_venta = v_id;
+
+  -- [500x] anular cualquier cobro ASIGNADO vivo de esta venta (no dejar un cobro huérfano sobre un
+  -- ticket ANULADO; el cajero no debe intentar cobrarlo).
+  update me.creditos_cobro_asignado
+     set estado='CANCELADO_ANULACION', fecha_res=now(), razon='Venta anulada', updated_at=now()
+   where id_venta = v_id and upper(coalesce(estado,''))='ASIGNADO';
 
   -- Datos para reposición + pickup (lectura; mismas cantidades que descontó el cierre).
   v_rep  := me.venta_reposicion_datos(v_id);

@@ -37,7 +37,8 @@ begin
   )
   update me.creditos_cobro_asignado c
      set estado='COBRADO', fecha_res=now(), razon='Cobrado fuera del flujo · auto-reconciliado'
-    from venc where c.id_cobro = venc.id_cobro;
+    from venc where c.id_cobro = venc.id_cobro
+      and upper(coalesce(c.estado,''))='ASIGNADO';   -- [500x] re-check bajo lock de fila: no pisa un COBRADO/CANCELADO concurrente
   get diagnostics v_recon = row_count;
 
   -- 2) EXPIRAR: cobro ASIGNADO vencido cuya venta sigue en crédito → EXPIRADO +
@@ -53,6 +54,7 @@ begin
     update me.creditos_cobro_asignado c
        set estado='EXPIRADO', fecha_res=now(), razon='Vencido sin cobrarse · cliente no llegó'
       from venc where c.id_cobro = venc.id_cobro
+        and upper(coalesce(c.estado,''))='ASIGNADO'   -- [500x] no expira un cobro que un confirmar concurrente ya marcó COBRADO
       returning venc.id_venta
   )
   update me.ventas v set forma_pago='CREDITO'
