@@ -25449,11 +25449,17 @@ const MOS = (() => {
     try { _finBeep?.('remove') || _finBeep?.('tap'); } catch(_){}
     toast('⊘ Cobro cancelado · ticket vuelve a CRÉDITO', 'ok', 4000);
     try {
-      await API.post('meCancelarCobroAsignado', {
+      const rCancel = await API.post('meCancelarCobroAsignado', {
         idCobro: idCobro,
         razon:   res.razon || '',
         adminAuth: { nombre: auth.nombre, rol: auth.rol, via: 'PIN_8DIG' }
       });
+      // [cero-GAS] el directo NO manda el push server-side (a diferencia de GAS): lo dispara el front.
+      try {
+        if (rCancel && rCancel.via === 'directo' && rCancel.pushTitulo && rCancel.pushVendedor) {
+          API.enviarPushSB(rCancel.pushTitulo, rCancel.pushCuerpo, { soloUsuarios: [rCancel.pushVendedor], incluirCompanions: true });
+        }
+      } catch(_){}
       // Refresh definitivo
       _cjCargarEnVuelo();
       _cjCargarCreditosPendientes();
@@ -25494,11 +25500,17 @@ const MOS = (() => {
     try { _finBeep?.('success'); } catch(_){}
     toast('↺ Reasignado a ' + nuevaCaja.vendedor, 'ok', 4000);
     try {
-      await API.post('meReasignarCobroAsignado', {
+      const rReasig = await API.post('meReasignarCobroAsignado', {
         idCobro:     idCobro,
         cajaDestino: nuevaCaja.idCaja,
         adminAuth:   { nombre: auth.nombre, rol: auth.rol, via: 'PIN_8DIG' }
       });
+      // [cero-GAS] avisar al NUEVO cajero (el directo no manda push server-side como GAS).
+      try {
+        if (rReasig && rReasig.via === 'directo' && rReasig.pushTitulo && rReasig.cajeroDestino) {
+          API.enviarPushSB(rReasig.pushTitulo, rReasig.pushCuerpo, { soloUsuarios: [rReasig.cajeroDestino], incluirCompanions: true });
+        }
+      } catch(_){}
       _cjCargarEnVuelo();
     } catch(e) {
       // Rollback al snapshot

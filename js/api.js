@@ -1416,6 +1416,26 @@ const API = (() => {
       } });
       return _desempacarME(out);
     }
+    // [CUTOVER COBRO-ME] cancelar cobro asignado 100% Supabase (me.cancelar_cobro_asignado, SQL 313).
+    //   cobro ASIGNADO → CANCELADO_ADMIN + venta.forma_pago → CREDITO. COBRO_OFF/APP_NO_AUTORIZADA → null → GAS.
+    if (action === 'meCancelarCobroAsignado') {
+      const out = await _sbRpcMEWrite('cancelar_cobro_asignado', { p: {
+        idCobro: String(p.idCobro || ''),
+        razon:   p.razon || p.motivo || '',
+        adminNombre: String((p.adminAuth && p.adminAuth.nombre) || _mosUsuario(p) || 'MOS-Admin')
+      } });
+      return _desempacarME(out);
+    }
+    // [CUTOVER COBRO-ME] reasignar cobro asignado 100% Supabase (me.reasignar_cobro_asignado, SQL 313).
+    //   viejo → REASIGNADO + crea uno nuevo (valida caja destino ABIERTA). COBRO_OFF → null → GAS.
+    if (action === 'meReasignarCobroAsignado') {
+      const out = await _sbRpcMEWrite('reasignar_cobro_asignado', { p: {
+        idCobro:     String(p.idCobro || ''),
+        cajaDestino: String(p.cajaDestino || ''),
+        adminNombre: String((p.adminAuth && p.adminAuth.nombre) || _mosUsuario(p) || 'MOS-Admin')
+      } });
+      return _desempacarME(out);
+    }
     // [Etapa 4] NV→CPE. ⚠️ El front manda idVenta/serie/clienteNom; la RPC espera idVentaNV/serieNueva/clienteNombre.
     if (action === 'meConvertirNVaCPE') {
       const out = await _sbRpcMEWrite('convertir_nv_cpe', { p: {
@@ -2110,6 +2130,8 @@ const API = (() => {
     // de stock idempotente + descuento de pickup WH vía wh.pickup_descontar_venta) en Postgres, sin GAS.
     // ⚠️ FLIP gateado por RUNBOOK: requiere `ventas` en ME_SYNC_OFF_TABLAS o el sync revierte la edición.
     meAsignarCobroCajero:        _meCobroDirecto,
+    meCancelarCobroAsignado:     _meCobroDirecto,   // [SQL 313] cobro ASIGNADO → CANCELADO_ADMIN + venta a CREDITO
+    meReasignarCobroAsignado:    _meCobroDirecto,   // [SQL 313] viejo → REASIGNADO + crea nuevo cobro
     meEditarFormaPago:           _mosEditDirecto,
     meEditarCliente:             _mosEditDirecto,
     anularTicketME:              _mosEditDirecto,
