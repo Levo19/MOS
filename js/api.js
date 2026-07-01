@@ -2006,6 +2006,19 @@ const API = (() => {
       return _desempacarCatalogo(out);         // {idDia,estado} — el front no lee la data
     }
 
+    if (action === 'recomputarLiquidacionDia') {
+      // [500x GAP-A · CERO-GAS] antes iba SIEMPRE a GAS (escribía la Hoja muerta, invisible a
+      // la mega tabla con SYNC_OFF). Ahora directo a mos.recomputar_dia ({idPersonal,fecha}) →
+      // recalcula los AUTOS en liquidaciones_dia. Idempotente. shadow-crítico (ver _MOS_DIRECT_REQUIRED).
+      const out = await _sbRpcMOSWrite('recomputar_dia', { p: {
+        idPersonal: p.idPersonal != null ? String(p.idPersonal) : undefined,
+        fecha: p.fecha
+      } });
+      if (out == null) return null;
+      // recompute puede devolver {ok:false,error:'NO_EXISTE',skipped:true} → el front lo llama en try, inocuo
+      try { return _desempacarCatalogo(out); } catch (e) { return { ok: true, skipped: true }; }
+    }
+
     return null;   // acción no cableada → GAS
   }
 
@@ -2093,7 +2106,8 @@ const API = (() => {
     // de accesos): el RPC escribe la MISMA tabla que lee personal_dia_lista → coherente, sin el GAS de ~2.6s.
     // Gate _mosLiqdiaDirecto (MOS_LIQDIA_DIRECTO). UPDATE atómico condicional (no toca PAGADA) → idempotente.
     vetarLiquidacionDia:         _mosLiqdiaDirecto,
-    desvetarLiquidacionDia:      _mosLiqdiaDirecto
+    desvetarLiquidacionDia:      _mosLiqdiaDirecto,
+    recomputarLiquidacionDia:    _mosLiqdiaDirecto
     // [DUAL-WRITE] pedidos/pagos/provprod/gastos/horario: SIN entrada acá → su escritura va SIEMPRE por
     // GAS (dual-write espeja la sombra). recomputarLiquidacionDia tampoco (incompatible).
   };
@@ -2141,7 +2155,7 @@ const API = (() => {
   // no commitea (sin token), FALLAN (reintentar) en vez de caer a GAS — porque liquidaciones_dia
   // está en SYNC_OFF, así que un write GAS NO propaga a la tabla que lee la mega tabla → desync
   // silencioso (peor que fallar). Con la identidad MEX:NOMBRE|ZONA, además, el GAS mis-llavearía.
-  const _MOS_DIRECT_REQUIRED = { crearProveedor: 1, actualizarProveedor: 1, crearEstacion: 1, actualizarEstacion: 1, crearSerie: 1, actualizarSerie: 1, vetarLiquidacionDia: 1, desvetarLiquidacionDia: 1, marcarPagos: 1, anularPago: 1, crearEvaluacion: 1, registrarJornada: 1, eliminarJornada: 1, rehabilitarJornada: 1 };
+  const _MOS_DIRECT_REQUIRED = { crearProveedor: 1, actualizarProveedor: 1, crearEstacion: 1, actualizarEstacion: 1, crearSerie: 1, actualizarSerie: 1, vetarLiquidacionDia: 1, desvetarLiquidacionDia: 1, marcarPagos: 1, anularPago: 1, crearEvaluacion: 1, registrarJornada: 1, eliminarJornada: 1, rehabilitarJornada: 1, recomputarLiquidacionDia: 1 };
 
   // POST con escritura directa opcional. Con el gate de la acción OFF (default) es IDÉNTICO a hoy: ni
   // siquiera evalúa el directo → va recto a _fetch('POST') → GAS. Con el gate ON + token + RPC viva, escribe

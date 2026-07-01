@@ -153,6 +153,13 @@ begin
   select * into r from mos.liquidaciones_dia where id_dia = v_id_dia for update;
   if not found then return jsonb_build_object('ok',false,'error','NO_EXISTE','skipped',true); end if;
 
+  -- [500x C1] NO recomputar el dinero de una fila PAGADA o VETADA: el monto está SELLADO
+  -- (pagado o retenido). Sin esto, una venta tardía disparaba el trigger → reescribía
+  -- total_dia/bono_meta de una fila ya pagada/vetada (el número se movía bajo el sello).
+  if upper(coalesce(r.estado,'PENDIENTE')) in ('PAGADA','VETADA') then
+    return jsonb_build_object('ok',true,'skipped','ESTADO_'||upper(coalesce(r.estado,'')));
+  end if;
+
   v_rol := upper(coalesce(r.rol,''));
   if v_rol in ('MASTER','ADMIN','ADMINISTRADOR') then
     return jsonb_build_object('ok',true,'skipped','ROL_BLOQUEADO');
