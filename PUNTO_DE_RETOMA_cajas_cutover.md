@@ -36,7 +36,34 @@
   flujo MOS (meCobrarCredito) NO reimprime; si se quiere el sello cero-GAS en ME es tarea aparte
   (Edge ticket-comprobante + wiring en MosExpress).
 
-## Pendiente (opcional, NO bloqueante)
-- Cierre del **cajero ME** (me.cerrar_caja, flag ME_CIERRE_DIRECTO) — cutover del lado MosExpress.
-- Sello PAGADO cero-GAS en ME (Edge).
-- Smoke test en vivo del cobro-directo asignar (308) ahora que está fleet-wide.
+## ⏳ PENDIENTES (formalizados — NO bloqueantes)
+
+### P1 · Sello PAGADO cero-GAS en ME (lado cajero)
+- **Qué:** al confirmar un cobro asignado en MosExpress (confirmarCobroAsignado), reimprimir el
+  ticket con sello "PAGADO · COBRO DIFERIDO" arriba. Hoy lo hace GAS (imprimirTicketInternamente
+  con esPagoDiferido). El flujo MOS (meCobrarCredito) NO reimprime — esto es SOLO del lado ME.
+- **Cómo:** (1) leer `imprimirTicketInternamente` en `C:\Users\ISO\Documents\MosExpress\gas\` para
+  el ESC/POS exacto del sello; (2) agregar flag `conSelloPagado`/`pagoDiferido{cajaCobro,cajeroCobro,
+  adminAsig,fechaCobro}` al Edge `supabase/functions/ticket-comprobante/index.ts` (inyectar tras la
+  línea forma_pago ~241, o en el header); `supabase functions deploy ticket-comprobante`;
+  (3) cablear el reimprimir en el frontend ME tras `me.confirmar_cobro` (helper `_imprimirComprobanteEdge`
+  en MOS; en ME el equivalente). Datos que ya devuelve me.confirmar_cobro: cajaDest,idVenta,metodo,monto,adminAsig,cliente.
+- **App:** MosExpress (no MOS). Requiere tocar el front de ME (index.html monolito — validar inline).
+
+### P2 · Cierre del cajero ME cero-GAS (me.cerrar_caja, flag ME_CIERRE_DIRECTO)
+- **Qué:** el cierre NORMAL de caja que hace el cajero en MosExpress (distinto del forzado de MOS,
+  ya hecho). RPC `me.cerrar_caja` (SQL 27) + efectos (me.cerrar_caja_efectos) YA existen y testeados.
+- **Cómo:** cablear el frontend ME → me.cerrar_caja + me.cerrar_caja_efectos; verificar paridad de
+  dinero con me.simular_cierre_caja sobre cierres reales; flipear `ME_CIERRE_DIRECTO=1`. Ojo: ese flag
+  también afecta lecturas; revisar que el cajero ME lea/escriba coherente. Ídem manejo POR_COBRAR→ANULADO.
+- **App:** MosExpress. La lógica de dinero/stock ya está probada (misma que el forzado).
+
+### P3 · Smoke test en vivo del cobro-directo asignar (308)
+- **Qué:** `me.asignar_cobro_cajero` (308) ahora está fleet-wide (get_flags 316 + ME_COBRO_DIRECTO=1);
+  antes el cliente caía a GAS (localStorage canary). Confirmar en vivo que asignar un cobro desde MOS
+  usa el directo sin problema (revisar Network → asignar_cobro_cajero, no GAS).
+- **Riesgo:** bajo (idempotente, revisado 100x, kill-switch). Solo verificación.
+
+### P4 · Corte definitivo de GAS del cobro/cierre (cuando P1/P2 estén)
+- Una vez ME 100% Supabase en cobro+cierre, retirar/decomisar los handlers GAS correspondientes
+  (cobrarCreditoConExtra, cerrarCajaForzado bridge, confirmarCobroAsignado) — cero-GAS pleno.
