@@ -35462,10 +35462,21 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
             <span class="fin-pers-group-sub">S/ ${subtotal.toFixed(2)}</span>
           </div>
           <div class="fin-pers-group-list">
-            ${arr.map(p => {
-              const ev = byIdPersonal[p.idPersonal] || byNombre[String(p.nombre || '').toLowerCase().trim()] || null;
-              return _finRenderPersonalCard(p, ev, fecha, area);
-            }).join('')}
+            ${(() => {
+              // [zona] dentro del área, ordenar por zona y separar con un divisor
+              // cuando hay >1 zona (si es una sola, no mete ruido).
+              const _zonaDe = (p) => { const ev = byIdPersonal[p.idPersonal] || byNombre[String(p.nombre || '').toLowerCase().trim()] || null; return String(p.zona || (ev && ev.zona) || '').trim(); };
+              const zonas = new Set(arr.map(_zonaDe).filter(Boolean));
+              const multi = zonas.size > 1;
+              const ordenado = multi ? arr.slice().sort((a, b) => _zonaDe(a).localeCompare(_zonaDe(b))) : arr;
+              let lastZ = null;
+              return ordenado.map(p => {
+                const ev = byIdPersonal[p.idPersonal] || byNombre[String(p.nombre || '').toLowerCase().trim()] || null;
+                let div = '';
+                if (multi) { const z = _zonaDe(p) || '—'; if (z !== lastZ) { lastZ = z; div = `<div style="grid-column:1/-1;font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.3px;margin:6px 2px 0">📍 ${_escapeHtml(z)}</div>`; } }
+                return div + _finRenderPersonalCard(p, ev, fecha, area);
+              }).join('');
+            })()}
           </div>
         </div>`;
     }
