@@ -162,6 +162,10 @@ Deno.serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
     const idVenta = String(body.idVenta || '');
     if (!idVenta) return json({ ok: false, error: 'idVenta requerido' }, 400);
+    // [P1 sello PAGADO] reimpresión post-cobro diferido: si viene pagoDiferido, se estampa el sello
+    // "PAGADO · COBRO DIFERIDO" (paridad byte con gas/Impresion.gs). Aditivo: sin pagoDiferido no cambia nada.
+    // deno-lint-ignore no-explicit-any
+    const pd: any = (body.pagoDiferido && typeof body.pagoDiferido === 'object') ? body.pagoDiferido : null;
 
     // PostgREST NO expone el schema `fac` (solo public/me/mos/wh) → usamos el wrapper mos.ticket_comprobante.
     const rpc = await sbRpc('mos', 'ticket_comprobante', { p: { idVenta } });
@@ -186,6 +190,8 @@ Deno.serve(async (req: Request) => {
     b1(0x1b); b1(0x40);                       // init
     // ── Encabezado: TÍTULO "MOSexpress" (wordmark bitmap, MOS en negrita + express normal, alto y moderno) ──
     CTR();
+    // [P1] sello arriba del ticket (SIZE 0x10 = doble alto, igual que GAS Impresion.gs Block A)
+    if (pd) { SIZE(0x10); bLn('*** PAGADO ***'); bLn('COBRO DIFERIDO'); SIZE(0x00); bLn(SEP); }
     for (const byte of _wordmarkBytes([{ text: 'MOS', bold: true }, { text: 'express' }], 4)) b1(byte);
     b1(0x0a); b1(0x0a);
     // Razón social LEGAL en CHICO (como el RUC), no grande.
@@ -239,6 +245,16 @@ Deno.serve(async (req: Request) => {
     }
     SIZE(0x10); BOLD(true); bLn(_pad('TOTAL', 'S/ ' + _money(d.total))); BOLD(false); SIZE(0x00);
     if (d.formaPago) bLn('Forma de pago: ' + _norm(d.formaPago));
+    // [P1] detalle del cobro diferido tras los totales (paridad GAS Impresion.gs Block B)
+    if (pd) {
+      bLn(SEP); CTR();
+      SIZE(0x10); bLn('COBRO RECIBIDO'); SIZE(0x00);
+      bLn(('Caja: ' + _norm(pd.cajaCobro || '')).slice(0, W));
+      bLn(('Cajero: ' + _norm(pd.cajeroCobro || '')).slice(0, W));
+      if (pd.adminAsig) bLn(('Asignado por: ' + _norm(pd.adminAsig)).slice(0, W));
+      bLn(('Fecha cobro: ' + _norm(pd.fechaCobro || '')).slice(0, W));
+      LEFT();
+    }
     bLn(SEP);
     // ── QR ── CPE: SOLO el QR SUNAT real (nunca el correlativo, que no es un QR fiscal válido).
     //          NV: el correlativo como QR es aceptable. (el RPC ya devuelve nfQr='' para CPE sin QR fiscal)
