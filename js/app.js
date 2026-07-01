@@ -27979,8 +27979,20 @@ const MOS = (() => {
     }
   }
 
+  // [fix cascada] coalescing: al asignar/confirmar/vender se disparaban varios refrescos pesados a la vez
+  // (optimista + en-vuelo + créditos + realtime ventas) → el _cjRender() reconstruía todo repetido =
+  // "rallado" (animación reiniciada) + parpadeo de adeudados + postit destruido bajo el cursor. Ahora
+  // como máximo 1 refresco en vuelo + 1 en cola, y throttle 2.5s. El poll de 20s y el realtime se coalescen.
+  let _cjRefBusy = false, _cjRefPend = false, _cjRefTs = 0;
   async function _cajasRefreshSilencioso() {
     if (!API.isConfigured()) return;
+    if (_cjRefBusy) { _cjRefPend = true; return; }          // ya hay uno corriendo → encolar UNO
+    const since = Date.now() - _cjRefTs;
+    if (since < 2500) {                                       // muy seguido → programar trailing coalescido
+      if (!_cjRefPend) { _cjRefPend = true; setTimeout(() => { _cjRefPend = false; _cajasRefreshSilencioso(); }, 2500 - since); }
+      return;
+    }
+    _cjRefBusy = true;
     iconBusy('cajas', true);
     try {
       const res = await API.get('getCierresCaja', {});
@@ -28010,7 +28022,10 @@ const MOS = (() => {
         _cjCargarCreditosPendientes();
       }
     } catch(e) { console.warn('[CajasRefresh]', e.message); }
-    finally { iconBusy('cajas', false); }
+    finally {
+      _cjRefBusy = false; _cjRefTs = Date.now(); iconBusy('cajas', false);
+      if (_cjRefPend) { _cjRefPend = false; setTimeout(_cajasRefreshSilencioso, 120); }  // corre el coalescido
+    }
   }
 
   function _startCajasRefresh() {
