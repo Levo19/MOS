@@ -2488,6 +2488,17 @@ const API = (() => {
         const sel = await _sbRpcMOS('seleccionar_tokens_push', { p: opciones }, 'mos');
         if (!sel || sel.ok === false || !sel.data || !Array.isArray(sel.data.tokens)) return null;
         const tokens = sel.data.tokens.map(t => t.token).filter(Boolean);
+        // [306 fan-out companion] si el push es a UNA persona con equipo(s) atado(s) hoy,
+        // sumar los tokens de TODOS sus equipos vivos (principal + companions) → ambos avisan.
+        // Aditivo y sin spam (solo equipos ACTIVOS de la sesión de hoy). Best-effort.
+        if (opciones && opciones.incluirCompanions && Array.isArray(opciones.soloUsuarios) && opciones.soloUsuarios.length === 1) {
+          try {
+            const fs = await _sbRpcMOS('tokens_sesion_usuario', { p: { nombre: String(opciones.soloUsuarios[0] || '') } }, 'mos');
+            if (fs && fs.ok !== false && Array.isArray(fs.tokens)) {
+              fs.tokens.forEach(tk => { if (tk && tokens.indexOf(tk) === -1) tokens.push(tk); });
+            }
+          } catch (_) { /* best-effort: si falla, se envía al set normal */ }
+        }
         if (!tokens.length) return { ok: true, tokensAlcanzados: 0, enviados: 0 };   // nadie a quién notificar (éxito, no GAS)
         const token = await _mintTokenMOS();
         if (!token) return null;

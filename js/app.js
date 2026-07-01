@@ -22465,7 +22465,7 @@ const MOS = (() => {
     closeModal('modalEnviarPush');
     try {
       // [F6 push dispatch · cero-GAS] select audiencia + Edge; null → GAS.
-      const r = (await API.enviarPushSB(titulo, cuerpo, { soloUsuarios: [dest] }))
+      const r = (await API.enviarPushSB(titulo, cuerpo, { soloUsuarios: [dest], incluirCompanions: true }))
              || (await API.post('enviarPushUsuario', { usuario: dest, titulo, cuerpo }));
       if (r?.tokensAlcanzados) {
         toast(`✓ Mensaje enviado a ${dest} (${r.tokensAlcanzados} dispositivo${r.tokensAlcanzados === 1 ? '' : 's'})`, 'ok');
