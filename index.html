@@ -10065,6 +10065,16 @@
     .cj-cal-legend span { display: inline-flex; align-items: center; gap: 4px; }
     .cj-cal-lg-tick { width: 8px; height: 8px; border-radius: 3px; box-shadow: inset 0 0 0 1.5px rgba(56,189,248,.7); display: inline-block; }
     .cj-cal-lg-cred { width: 7px; height: 7px; border-radius: 50%; background: #f59e0b; box-shadow: 0 0 5px rgba(245,158,11,.7); display: inline-block; }
+    /* [rango] días del rango seleccionado en el mini-calendario */
+    .cj-rangocal-hint { text-align: center; font-size: 10px; color: #38bdf8; font-weight: 700; margin-top: 8px; }
+    .log-cal-day.cj-rango-in { background: rgba(56,189,248,0.14); color: #e2e8f0; border-radius: 0; }
+    .log-cal-day.cj-rango-ini, .log-cal-day.cj-rango-fin {
+      background: linear-gradient(135deg, #0369a1, #38bdf8) !important; color: #fff !important; font-weight: 800;
+      box-shadow: 0 2px 10px rgba(56,189,248,.45) !important;
+    }
+    .log-cal-day.cj-rango-ini { border-radius: 8px 0 0 8px; }
+    .log-cal-day.cj-rango-fin { border-radius: 0 8px 8px 0; }
+    .log-cal-day.cj-rango-ini.cj-rango-fin { border-radius: 8px; }
     /* ── VISTA POR DÍA: timeline cronológico ── */
     .log-dia-hour {
       display: flex; gap: 12px; margin-bottom: 12px;
@@ -14987,16 +14997,33 @@
             <button onclick="MOS.closeModal('cjModalTickets')" class="modal-close-x">×</button>
           </div>
           <!-- [rango] buscar tickets por rango de fechas (default = día activo) sin ir día por día -->
-          <div class="px-3 py-2 flex-shrink-0 flex items-center gap-2 flex-wrap" style="background:#0a1424;border-bottom:1px solid #1e293b;">
-            <span class="text-[10px] text-slate-400 font-semibold">📅</span>
+          <div class="px-3 py-2 flex-shrink-0 flex items-center gap-2 flex-wrap" style="background:#0a1424;border-bottom:1px solid #1e293b;position:relative;">
+            <button onclick="MOS._cjRangoCalAbrir(this)" class="log-icon-btn" style="padding:5px 11px;font-size:11px;width:auto;height:auto;display:inline-flex;align-items:center;gap:6px" title="Elegir rango en el calendario (marca los días con tickets)">🗓 <span id="cjTkRangoLabel">Hoy</span> ▾</button>
             <input id="cjTkDesde" type="date" onchange="MOS._cjTkAplicarRango()" class="inp text-xs" style="padding:4px 8px;width:auto;color-scheme:dark;">
             <span class="text-slate-500 text-xs">→</span>
             <input id="cjTkHasta" type="date" onchange="MOS._cjTkAplicarRango()" class="inp text-xs" style="padding:4px 8px;width:auto;color-scheme:dark;">
             <button onclick="MOS._cjTkHoyRango()" class="log-icon-btn" style="padding:4px 9px;font-size:11px;width:auto;height:auto" title="Volver al día activo">↺ día</button>
             <span id="cjTkRangoInfo" class="text-[10px] text-cyan-400 font-semibold"></span>
+            <!-- [rango] mini-calendario con marcas (días con tickets) + selección de rango -->
+            <div id="cjTkRangoCal" class="hidden cj-datepicker-modern cj-rangocal" style="position:absolute;z-index:10050;top:44px;left:12px;width:256px;">
+              <div class="flex items-center justify-between mb-2">
+                <button onclick="MOS._cjRangoCalNavMes(-1)" class="cj-cal-nav">‹</button>
+                <span id="cjRangoCalMesAnio" class="text-[13px] font-extrabold text-slate-100 tracking-wide">—</span>
+                <button onclick="MOS._cjRangoCalNavMes(1)" class="cj-cal-nav">›</button>
+              </div>
+              <div class="grid grid-cols-7 gap-1 text-[10px] font-bold text-slate-500 text-center mb-1">
+                <span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span>
+              </div>
+              <div id="cjRangoCalGrid" class="grid grid-cols-7 gap-1"></div>
+              <div id="cjRangoCalHint" class="cj-rangocal-hint">Tocá el día de inicio…</div>
+              <div class="cj-cal-legend">
+                <span><i class="cj-cal-lg-tick"></i> con tickets</span>
+                <span><i class="cj-cal-lg-cred"></i> con crédito</span>
+              </div>
+            </div>
           </div>
           <div class="px-3 py-2 flex-shrink-0 flex items-center gap-1 flex-wrap" style="background:#070f1a;border-bottom:1px solid #1e293b;" id="cjTkFiltros"></div>
-          <!-- [v2.43.405] Chips por VENDEDOR (quién emitió cada ticket). Se combina con el filtro de método
+          <!-- [v2.43.406] Chips por VENDEDOR (quién emitió cada ticket). Se combina con el filtro de método
                y la búsqueda; la suma viva de cjTkConteo refleja la intersección. Vacío/oculto si la caja
                tiene un solo vendedor. -->
           <div class="px-3 py-2 flex-shrink-0 flex items-center gap-1 flex-wrap hidden" style="background:#060d16;border-bottom:1px solid #1e293b;" id="cjTkVendedores"></div>
@@ -19407,7 +19434,7 @@ if (false) (function(){
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.405';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.406';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19452,14 +19479,14 @@ if (false) (function(){
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.405"></script>
+<script src="js/api.js?v=2.43.406"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
      bumps de sw.js. Bug reportado: usuario seguía viendo error "Lote en curso"
      de v2.43.146 después de v2.43.148. -->
 <script src="./assets/membrete/membrete-modal.js?v=2.43.364"></script>
-<script src="./assets/seguridad/seguridad-modal.js?v=2.43.405"></script>
+<script src="./assets/seguridad/seguridad-modal.js?v=2.43.406"></script>
 <!-- [v2.43.187] AdhesivoPreview — render visual del adhesivo unificado con WH.
      Mismo módulo en /assets/adhesivo/preview.js — backend Envasados.gs pixel-perfect. -->
 <script src="./assets/adhesivo/preview.js?v=1.3.0"></script>
@@ -19467,7 +19494,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.405"></script>
+<script src="js/app.js?v=2.43.406"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

@@ -26224,6 +26224,7 @@ const MOS = (() => {
     _cjState.tkDesde = f; _cjState.tkHasta = f; _cjState.tkRangoActivo = false; _cjState.tkDoc = ''; _cjState.tkZona = '';
     const dd = $('cjTkDesde'), dh = $('cjTkHasta'), inf = $('cjTkRangoInfo');
     if (dd) dd.value = f; if (dh) dh.value = f; if (inf) inf.textContent = '';
+    _cjTkRangoLabelUpd();
   }
   function _cjTkHoyRango() { _finBeep('click'); _cjTkResetRango(_cjFecha()); _cjTkRenderFiltrosBtns(); _cjTkRenderVendedoresBtns(); _cjTkRender(); }
   // [rango] aplica el rango de fechas: si desde≠hasta (o fuera del día activo) jala tickets_rango
@@ -26233,6 +26234,7 @@ const MOS = (() => {
     let hasta = (dh && dh.value) || _cjFecha();
     if (hasta < desde) { const t = desde; desde = hasta; hasta = t; if (dd) dd.value = desde; if (dh) dh.value = hasta; }
     _cjState.tkDesde = desde; _cjState.tkHasta = hasta;
+    _cjTkRangoLabelUpd();
     if (desde === hasta) {
       // un solo día → usa el cache (lo aseguramos) sin traer rango
       _cjState.tkRangoActivo = false;
@@ -26253,6 +26255,84 @@ const MOS = (() => {
     if (inf) inf.textContent = `${tks.length} en el rango`;
     _cjTkRenderFiltrosBtns(); _cjTkRenderVendedoresBtns(); _cjTkRender();
   }
+  // [rango] mini-calendario de rango con MARCAS (días con tickets) — sabés qué rango elegir.
+  const _cjRangoCal = { y: 0, m: 0, desde: '', hasta: '' };
+  function _cjTkRangoLabelUpd() {
+    const el = $('cjTkRangoLabel'); if (!el) return;
+    const d = _cjState.tkDesde, h = _cjState.tkHasta;
+    if (!d) { el.textContent = 'Hoy'; return; }
+    if (d === h) { el.textContent = (d === today()) ? 'Hoy' : new Date(d + 'T00:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: 'short' }); return; }
+    const f = s => new Date(s + 'T00:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: 'short' });
+    el.textContent = `${f(d)} → ${f(h)}`;
+  }
+  function _cjRangoCalAbrir(btn) {
+    const cal = $('cjTkRangoCal'); if (!cal) return;
+    if (!cal.classList.contains('hidden')) { cal.classList.add('hidden'); return; }
+    _cjRangoCal.desde = _cjState.tkDesde || _cjFecha();
+    _cjRangoCal.hasta = _cjState.tkHasta || _cjRangoCal.desde;
+    const base = new Date((_cjRangoCal.hasta || today()) + 'T00:00:00');
+    _cjRangoCal.y = base.getFullYear(); _cjRangoCal.m = base.getMonth();
+    _cjRangoCalRender();
+    _cjRangoCalCargarMes(_cjRangoCal.y, _cjRangoCal.m);
+    cal.classList.remove('hidden');
+    _finBeep('click');
+    setTimeout(() => {
+      const closer = e => { if (!cal.contains(e.target) && e.target !== btn && !(btn && btn.contains(e.target))) { cal.classList.add('hidden'); document.removeEventListener('click', closer); } };
+      document.addEventListener('click', closer);
+    }, 60);
+  }
+  function _cjRangoCalNavMes(delta) {
+    let { y, m } = _cjRangoCal; m += delta;
+    if (m < 0) { m = 11; y--; } if (m > 11) { m = 0; y++; }
+    _cjRangoCal.y = y; _cjRangoCal.m = m;
+    _cjRangoCalRender(); _cjRangoCalCargarMes(y, m);
+  }
+  async function _cjRangoCalCargarMes(y, m) {
+    const mes = y + '-' + String(m + 1).padStart(2, '0');
+    if (!S._cjCalDias) S._cjCalDias = {};
+    if (S._cjCalDias[mes]) { _cjRangoCalRender(); return; }
+    try { const r = await API.get('getDiasConTickets', { mes }); S._cjCalDias[mes] = (r && r.dias) || (r && r.data && r.data.dias) || {}; _cjRangoCalRender(); } catch (_) {}
+  }
+  function _cjRangoCalRender() {
+    const grid = $('cjRangoCalGrid'); const lbl = $('cjRangoCalMesAnio'); const hint = $('cjRangoCalHint');
+    if (!grid) return;
+    const { y, m, desde, hasta } = _cjRangoCal;
+    const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    if (lbl) lbl.textContent = `${meses[m]} ${y}`;
+    const mesKey = `${y}-${String(m + 1).padStart(2, '0')}`;
+    const diasT = (S._cjCalDias && S._cjCalDias[mesKey]) || {};
+    const primero = new Date(y, m, 1); let dow = primero.getDay(); dow = dow === 0 ? 6 : dow - 1;
+    const ultimo = new Date(y, m + 1, 0).getDate();
+    const hoy = today();
+    let html = '';
+    for (let i = 0; i < dow; i++) html += '<button class="log-cal-day empty"></button>';
+    for (let dia = 1; dia <= ultimo; dia++) {
+      const f = `${y}-${String(m + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+      const cls = ['log-cal-day'];
+      if (f === hoy) cls.push('today');
+      if (desde && hasta && f > desde && f < hasta) cls.push('cj-rango-in');
+      if (f === desde) cls.push('cj-rango-ini');
+      if (hasta && f === hasta) cls.push('cj-rango-fin');
+      const info = diasT[f]; let dot = '';
+      if (info && info.n > 0) { cls.push('cj-cal-tick'); if (info.credito) { cls.push('cj-cal-cred'); dot = '<span class="cj-cal-dot"></span>'; } }
+      const ttl = info && info.n ? ` title="${info.n} tk${info.credito ? ' · crédito' : ''}"` : '';
+      html += `<button class="${cls.join(' ')}"${ttl} onclick="MOS._cjRangoCalPick('${f}')">${dia}${dot}</button>`;
+    }
+    grid.innerHTML = html;
+    if (hint) hint.textContent = (desde && !hasta) ? '📍 ahora el día final…' : (desde && hasta ? `${desde} → ${hasta}` : 'Tocá el día de inicio…');
+  }
+  function _cjRangoCalPick(f) {
+    _finBeep('nav');
+    if (!_cjRangoCal.desde || _cjRangoCal.hasta) { _cjRangoCal.desde = f; _cjRangoCal.hasta = ''; _cjRangoCalRender(); return; }
+    if (f < _cjRangoCal.desde) { _cjRangoCal.desde = f; _cjRangoCalRender(); return; }
+    _cjRangoCal.hasta = f;
+    _cjRangoCalRender();
+    const dd = $('cjTkDesde'), dh = $('cjTkHasta');
+    if (dd) dd.value = _cjRangoCal.desde; if (dh) dh.value = _cjRangoCal.hasta;
+    setTimeout(() => { $('cjTkRangoCal')?.classList.add('hidden'); }, 220);
+    _cjTkAplicarRango();
+  }
+
   function cjVerTicketsCaja(idCaja) {
     _finBeep('click');
     const c = (S._todasCajas || []).find(x => String(x.idCaja) === String(idCaja));
@@ -43402,7 +43482,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // Cajas modernizado
     cjDia, cjIrHoy, cjAbrirCalendario, cjCalNavMes, cjElegirFecha,
     cjToggleCajaDetail, cjVerTodosTickets, cjVerTicketsCaja, cjVerTicketsSinCaja,
-    _cjTkAplicarRango, _cjTkHoyRango, _cjTkSetDoc, _cjTkSetZona, cjAbrirTurno,
+    _cjTkAplicarRango, _cjTkHoyRango, _cjTkSetDoc, _cjTkSetZona,
+    _cjRangoCalAbrir, _cjRangoCalNavMes, _cjRangoCalPick, cjAbrirTurno,
     cjCerrarCajaForzado,
     cjScrollToCaja, cjModoTV,
     _cjTkRender, _cjTkSetFiltro, _cjTkSetVendedor,
