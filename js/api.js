@@ -505,6 +505,7 @@ const API = (() => {
   function _mosEditDirecto() { return !!_mosFlag('me_edit_directo', 'meEditDirecto'); }
   // [CUTOVER COBRO-ME] asignar cobro a cajero 100% Supabase (RPC me.asignar_cobro_cajero, SQL 308).
   function _meCobroDirecto() { return !!_mosFlag('me_cobro_directo', 'meCobroDirecto'); }
+  function _meCierreForzadoDirecto() { return !!_mosFlag('me_cierre_forzado_directo', 'meCierreForzadoDirecto'); }
   // [CUTOVER VENTAS-ME · Etapa 4] NV→CPE 100% Supabase (RPC me.convertir_nv_cpe → fac.emitir_cpe).
   // Default OFF → GAS. Aunque esté ON, la RPC exige fac._on() (FAC_CPE_DIRECTO): con la emisión fiscal
   // apagada devuelve FAC_DESACTIVADO → _desempacarME → null → cae a GAS. Activación = go-live fiscal fac.*.
@@ -1416,6 +1417,32 @@ const API = (() => {
       } });
       return _desempacarME(out);
     }
+    // [CUTOVER CIERRE-ME] cierre FORZADO de caja (admin) 100% Supabase (me.cerrar_caja_forzado, SQL 315).
+    //   Valida PIN admin + anula POR_COBRAR + montoFinal auto + cierra + cancela cobros + efectos
+    //   (stock me.stock_zonas / guía / pickup). CIERRE_OFF → null → GAS. Clave incorrecta → {autorizado:false}.
+    if (action === 'meCerrarCajaForzado') {
+      const out = await _sbRpcMEWrite('cerrar_caja_forzado', { p: {
+        idCaja:     String(p.idCaja || ''),
+        claveAdmin: String(p.claveAdmin || p.clave || ''),
+        motivo:     p.motivo || 'Cierre forzado desde MOS/Cajas'
+      } });
+      return _desempacarME(out);
+    }
+    // [CUTOVER COBRO-ME] cobro DIRECTO de crédito (admin elige caja) 100% Supabase
+    //   (me.cobrar_credito_directo, SQL 314 = cobrarCreditoConExtra). COBRO_OFF → null → GAS.
+    //   Errores de negocio (VENTA_NO_PENDIENTE/CAJA_RECEPTORA_NO_ABIERTA/MIXTO_NO_CUADRA) → propagan.
+    if (action === 'meCobrarCredito') {
+      const out = await _sbRpcMEWrite('cobrar_credito_directo', { p: {
+        idVenta:       String(p.idVenta || ''),
+        cajaReceptora: String(p.cajaReceptora || ''),
+        metodo:        String(p.metodo || ''),
+        montoEfectivo: p.montoEfectivo != null ? Number(p.montoEfectivo) : 0,
+        montoVirtual:  p.montoVirtual  != null ? Number(p.montoVirtual)  : 0,
+        obs:           p.obs || '',
+        vendedor:      _mosUsuario(p)
+      } });
+      return _desempacarME(out);
+    }
     // [CUTOVER COBRO-ME] cancelar cobro asignado 100% Supabase (me.cancelar_cobro_asignado, SQL 313).
     //   cobro ASIGNADO → CANCELADO_ADMIN + venta.forma_pago → CREDITO. COBRO_OFF/APP_NO_AUTORIZADA → null → GAS.
     if (action === 'meCancelarCobroAsignado') {
@@ -2130,8 +2157,10 @@ const API = (() => {
     // de stock idempotente + descuento de pickup WH vía wh.pickup_descontar_venta) en Postgres, sin GAS.
     // ⚠️ FLIP gateado por RUNBOOK: requiere `ventas` en ME_SYNC_OFF_TABLAS o el sync revierte la edición.
     meAsignarCobroCajero:        _meCobroDirecto,
+    meCobrarCredito:             _meCobroDirecto,   // [SQL 314] cobro directo admin → movimientos + venta a metodo
     meCancelarCobroAsignado:     _meCobroDirecto,   // [SQL 313] cobro ASIGNADO → CANCELADO_ADMIN + venta a CREDITO
     meReasignarCobroAsignado:    _meCobroDirecto,   // [SQL 313] viejo → REASIGNADO + crea nuevo cobro
+    meCerrarCajaForzado:         _meCierreForzadoDirecto, // [SQL 315] cierre forzado: auth+cierre+efectos stock
     meEditarFormaPago:           _mosEditDirecto,
     meEditarCliente:             _mosEditDirecto,
     anularTicketME:              _mosEditDirecto,
