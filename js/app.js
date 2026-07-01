@@ -32759,6 +32759,12 @@ const MOS = (() => {
     const list = (filtroSel && filtroSel.size > 0)
       ? all.filter(p => filtroSel.has(p.idPersonal))
       : all;
+    // [500x] contar nombres repetidos en TODO el set (no solo el filtrado) para el chip 🔗
+    _liqDupNames = {};
+    (all || []).forEach(p => {
+      const n = String(p.nombre || '').toLowerCase().trim().normalize('NFD').replace(/[̀-ͯ]/g, '');
+      if (n) _liqDupNames[n] = (_liqDupNames[n] || 0) + 1;
+    });
     if (!list.length) {
       body.innerHTML = `<div class="liq-empty">
         <div class="liq-empty-emoji">🔍</div>
@@ -32925,6 +32931,7 @@ const MOS = (() => {
     _liqRenderPendientes();
   }
 
+  let _liqDupNames = {};   // [500x] nombre normalizado → # de filas, para el chip 🔗 en Liquidaciones
   function _liqCardPersona(p, idx) {
     const expandido = _liqState.expandidos[p.idPersonal] !== false; // default abierto
     const sel = _liqState.seleccion[p.idPersonal] || new Set();
@@ -32933,14 +32940,22 @@ const MOS = (() => {
     const subtotalSel = p.dias.filter(d => sel.has(d.fecha)).reduce((s,d) => s + d.totalDia, 0);
     const ico = _liqRolIco(p.rol);
     const cardCls = selDias > 0 ? ' has-selection' : '';
+    // [500x · chip 🔗 en Liquidaciones] el mismo nombre en >1 fila (mismo movido de zona / dos
+    // personas) → el admin decide antes de pagar. Nombre escapado (XSS).
+    const _lqNorm = String(p.nombre || '').toLowerCase().trim().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const _lqN = _liqDupNames[_lqNorm] || 0;
+    const dupChip = _lqN > 1
+      ? `<span class="badge-rol" style="background:rgba(245,158,11,.14);color:#fbbf24;border:1px solid rgba(245,158,11,.4)" title="⚠ &quot;${_escapeHtml(p.nombre)}&quot; aparece en ${_lqN} filas (¿mismo movido de zona? ¿dos personas?). Decide antes de pagar: sanción-base o pagar ambas.">🔗 ${_lqN}× ⚠</span>`
+      : '';
     return `
       <div class="liq-pers-card${cardCls}" data-pers="${p.idPersonal}" style="--i:${Math.min(idx, 18)}">
         <div class="flex items-center gap-3 cursor-pointer" onclick="MOS._liqTogglePersona('${p.idPersonal}', event)">
           <span style="font-size:22px">${ico}</span>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 flex-wrap">
-              <div class="font-semibold text-slate-100 text-sm truncate">${p.nombre}</div>
-              <span class="text-[10px] uppercase tracking-wider text-slate-500">${p.rol}</span>
+              <div class="font-semibold text-slate-100 text-sm truncate">${_escapeHtml(p.nombre)}</div>
+              <span class="text-[10px] uppercase tracking-wider text-slate-500">${_escapeHtml(p.rol)}</span>
+              ${dupChip}
             </div>
             <div class="text-xs text-slate-500 mt-0.5">
               <strong class="text-amber-400">${p.cantidadDias}</strong> día(s) sin pagar
