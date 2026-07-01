@@ -35,10 +35,14 @@ begin
   if v_idcobro = '' then return jsonb_build_object('ok',false,'error','idCobro requerido'); end if;
   if v_metodo  = '' then return jsonb_build_object('ok',false,'error','metodoFinal requerido'); end if;
 
-  -- serializar por cobro (anti doble-cobro TOCTOU, paridad con _conLockCred del GAS)
-  perform pg_advisory_xact_lock(hashtext('cobroconf:'||v_idcobro));
+  -- serializar por VENTA (no por cobro): así el confirmar-asignado y el cobrar-directo
+  -- (me.cobrar_credito_directo, 314) compiten por el MISMO lock 'cobro:'||idVenta y no pueden
+  -- registrar el dinero dos veces. Leo el cobro para obtener la venta, tomo el lock, y re-leo
+  -- el estado fresco bajo el lock (anti-TOCTOU). Mismo namespace que asignar (308).
   select * into c from me.creditos_cobro_asignado where id_cobro = v_idcobro;
   if not found then return jsonb_build_object('ok',false,'error','COBRO_NO_ENCONTRADO'); end if;
+  perform pg_advisory_xact_lock(hashtext('cobro:'||c.id_venta));
+  select * into c from me.creditos_cobro_asignado where id_cobro = v_idcobro;
   -- idempotencia: ya cobrado → devolver éxito sin re-registrar dinero
   if upper(coalesce(c.estado,'')) = 'COBRADO' then
     return jsonb_build_object('ok',true,'idCobro',v_idcobro,'idVenta',c.id_venta,'idempotente',true,'via','directo',

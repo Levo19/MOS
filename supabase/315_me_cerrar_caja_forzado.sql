@@ -88,6 +88,8 @@ begin
   end if;
   if v_idcaja = '' then return jsonb_build_object('ok',false,'error','ID_CAJA_REQUERIDO'); end if;
   if v_clave  = '' then return jsonb_build_object('ok',true,'autorizado',false,'error','Clave requerida'); end if;
+  -- serializar cierres concurrentes de la MISMA caja (defensa además de los row-locks + kardex único)
+  perform pg_advisory_xact_lock(hashtext('cerrarcaja:'||v_idcaja));
 
   -- 0) validar PIN admin (global+personal, bcrypt, lockout, auditoría)
   v_auth := mos.verificar_clave_admin(v_clave, 'CIERRE_CAJA_FORZADO', v_idcaja, 'MOS', '',

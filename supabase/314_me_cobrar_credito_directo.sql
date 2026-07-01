@@ -37,7 +37,9 @@ begin
   if v_caja    = '' then return jsonb_build_object('ok',false,'error','cajaReceptora requerida'); end if;
   if v_metodo  = '' then return jsonb_build_object('ok',false,'error','metodo requerido'); end if;
 
-  perform pg_advisory_xact_lock(hashtext('cobrodir:'||v_idventa));
+  -- lock por VENTA (mismo namespace que asignar 308 y confirmar 310) → serializa TODAS las
+  -- vías de cobro de una venta: imposible registrar el dinero dos veces (directo vs confirmar).
+  perform pg_advisory_xact_lock(hashtext('cobro:'||v_idventa));
 
   select upper(coalesce(forma_pago,'')), coalesce(cliente_nombre,''), coalesce(total,0)
     into v_fp, v_cli, v_total
