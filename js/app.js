@@ -35674,7 +35674,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const esBloqueado = !!(bloqInfo && bloqInfo.dispositivos && bloqInfo.dispositivos.length);
     // [ext] chip 🔗: el mismo nombre aparece en >1 fila/zona hoy → el admin decide
     // (fantasma / mismo movido → sanción-base / dos personas → pagar ambas).
-    const _dupInfo = _finDuplicados && _finDuplicados[nLowCard];
+    // [100x] clave SIN tildes para casar con mos._norm_nom del backend (lower+trim+unaccent);
+    // si no, "Andrés" (JS) ≠ "andres" (SQL) → el chip no aparecía.
+    const _dupKey  = nLowCard.normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const _dupInfo = _finDuplicados && (_finDuplicados[_dupKey] || _finDuplicados[nLowCard]);
     const dupChip = (_dupInfo && _dupInfo.length > 1)
       ? `<span class="badge-rol" style="background:rgba(245,158,11,.14);color:#fbbf24;border:1px solid rgba(245,158,11,.4);animation:finPillPulse 2s ease-in-out infinite" title="⚠ &quot;${_escapeHtml(p.nombre)}&quot; está en ${_dupInfo.length} filas hoy (${_dupInfo.map(d => _escapeHtml(d.zona || '—') + ' S/' + (parseFloat(d.venta) || 0).toFixed(0)).join(' · ')}). Decide: ¿fantasma? ¿mismo movido (sanción-base)? ¿dos personas (pagar ambas)?">🔗 ${_dupInfo.length} zonas ⚠</span>`
       : '';

@@ -2137,7 +2137,11 @@ const API = (() => {
   // [100x · A5] vetar/desvetar SHADOW-CRÍTICAS: con liquidaciones_dia en SYNC_OFF, si el directo no
   // commitea y cae a GAS, GAS escribe la Hoja pero NO llega a la tabla que lee la mega tabla → el veto
   // se vuelve invisible. Mejor fallar fuerte (reintentar) que desincronizar en silencio.
-  const _MOS_DIRECT_REQUIRED = { crearProveedor: 1, actualizarProveedor: 1, crearEstacion: 1, actualizarEstacion: 1, crearSerie: 1, actualizarSerie: 1, vetarLiquidacionDia: 1, desvetarLiquidacionDia: 1 };
+  // [100x cero-GAS] TODAS las escrituras de dinero de jornal son shadow-críticas: si el directo
+  // no commitea (sin token), FALLAN (reintentar) en vez de caer a GAS — porque liquidaciones_dia
+  // está en SYNC_OFF, así que un write GAS NO propaga a la tabla que lee la mega tabla → desync
+  // silencioso (peor que fallar). Con la identidad MEX:NOMBRE|ZONA, además, el GAS mis-llavearía.
+  const _MOS_DIRECT_REQUIRED = { crearProveedor: 1, actualizarProveedor: 1, crearEstacion: 1, actualizarEstacion: 1, crearSerie: 1, actualizarSerie: 1, vetarLiquidacionDia: 1, desvetarLiquidacionDia: 1, marcarPagos: 1, anularPago: 1, crearEvaluacion: 1, registrarJornada: 1, eliminarJornada: 1, rehabilitarJornada: 1 };
 
   // POST con escritura directa opcional. Con el gate de la acción OFF (default) es IDÉNTICO a hoy: ni
   // siquiera evalúa el directo → va recto a _fetch('POST') → GAS. Con el gate ON + token + RPC viva, escribe
