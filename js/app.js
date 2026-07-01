@@ -33138,7 +33138,7 @@ const MOS = (() => {
     window._liqLastMutationTs = Date.now();
     try {
       await API.post('vetarLiquidacionDia', {
-        idPersonal, fecha,
+        idPersonal, fecha, claveAdmin: (auth && auth.clave) || '',
         localId: 'L' + Date.now() + Math.random().toString(36).slice(2, 8)
       });
       toast(`💸 Vetada · ${_liqFmtFechaCortaSafe(fecha)}`, 'info', 2500);
@@ -33176,7 +33176,7 @@ const MOS = (() => {
     if (!auth) return;
     try {
       await API.post('desvetarLiquidacionDia', {
-        idPersonal, fecha,
+        idPersonal, fecha, claveAdmin: (auth && auth.clave) || '',
         localId: 'L' + Date.now() + Math.random().toString(36).slice(2, 8)
       });
       toast(`💵 Desvetada · ${fecha}`, 'ok', 2500);
@@ -35957,11 +35957,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.43.386] Vetar = retiene pago (DINERO) → exige clave admin SIEMPRE (sin cache),
     // EL MISMO gate que el lado de Liquidaciones. Antes era _modalConfirm sin clave →
     // inconsistente ("uno pide clave y otro no").
-    if (!await pedirAuth({
+    const _vAuth = await pedirAuth({
       accion: 'VETAR_LIQUIDACION', allowCache: false,
       refDocumento: (idMega || idJornada || '') + '|' + fecha,
       contexto: `Vetar pago de ${nombre || 'esta persona'} · ${fechaTxt}`
-    })) return;
+    });
+    if (!_vAuth) return;
 
     // SONIDO OPTIMISTA: dispara INMEDIATO al confirmar (sincronizado con el click).
     // Si después falla el back, sonará 'error'.
@@ -36045,7 +36046,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     try {
       await API.post('vetarLiquidacionDia', {
         idPersonal: idPersonal,
-        fecha: fecha,
+        fecha: fecha, claveAdmin: (_vAuth && _vAuth.clave) || '',
         localId: 'L' + Date.now() + Math.random().toString(36).slice(2, 8)
       });
       // Mantener el overlay aplicado y P&L local
@@ -36148,11 +36149,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const fechaTxt = _formatFechaCorta(fecha);
     // [v2.43.386] Rehabilitar = restituye pago (DINERO) → clave admin SIEMPRE, EL MISMO
     // gate que Liquidaciones (antes _modalConfirm sin clave).
-    if (!await pedirAuth({
+    const _dAuth = await pedirAuth({
       accion: 'DESVETAR_LIQUIDACION', allowCache: false,
       refDocumento: (idMega || idJornada || '') + '|' + fecha,
       contexto: `Rehabilitar pago de ${nombre || 'esta persona'} · ${fechaTxt}`
-    })) return;
+    });
+    if (!_dAuth) return;
 
     // SONIDO OPTIMISTA: dispara INMEDIATO al confirmar.
     _finBeep('rehab');
@@ -36259,7 +36261,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     try {
       await API.post('desvetarLiquidacionDia', {
         idPersonal: idPersonal,
-        fecha: fecha,
+        fecha: fecha, claveAdmin: (_dAuth && _dAuth.clave) || '',
         localId: 'L' + Date.now() + Math.random().toString(36).slice(2, 8)
       });
       if (persona) persona.vetada = false;

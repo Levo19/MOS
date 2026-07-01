@@ -1987,7 +1987,7 @@ const API = (() => {
       // lo IGNORA: el veto es idempotente por estado, no por gesto) → inocuo. No es alta → no _mosLocalId.
       const out = await _sbRpcMOSWrite('vetar_liquidacion_dia', { p: {
         idPersonal: p.idPersonal != null ? String(p.idPersonal) : undefined,
-        fecha: p.fecha
+        fecha: p.fecha, claveAdmin: p.claveAdmin || ''   // [500x M1] clave server-side
       } });
       if (out == null) return null;            // sin token → GAS
       return _desempacarCatalogo(out);         // {idDia,estado} — el front no lee la data (solo éxito/throw)
@@ -2000,7 +2000,7 @@ const API = (() => {
       // VETADA→PENDIENTE atómico condicional (solo si VETADA) → idempotente. `localId` del front es inocuo.
       const out = await _sbRpcMOSWrite('desvetar_liquidacion_dia', { p: {
         idPersonal: p.idPersonal != null ? String(p.idPersonal) : undefined,
-        fecha: p.fecha
+        fecha: p.fecha, claveAdmin: p.claveAdmin || ''   // [500x M1] clave server-side
       } });
       if (out == null) return null;
       return _desempacarCatalogo(out);         // {idDia,estado} — el front no lee la data

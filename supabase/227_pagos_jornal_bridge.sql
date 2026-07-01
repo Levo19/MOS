@@ -97,12 +97,14 @@ begin
   for d in select * from jsonb_array_elements(v_dias) loop
     v_fecha_s := nullif(btrim(coalesce(d->>'fecha','')), '');
     begin v_fecha := (v_fecha_s || 'T00:00:00-05:00')::timestamptz; exception when others then v_fecha := v_now; end;
-    v_mb := coalesce(mos._numn(d->>'montoBase'),0);
-    v_pe := coalesce(mos._numn(d->>'pagoEnvasado'),0);
-    v_bm := coalesce(mos._numn(d->>'bonoMeta'),0);
-    v_sa := coalesce(mos._numn(d->>'sancion'),0);
-    v_td := mos._numn(d->>'totalDia');
-    if v_td is null then v_td := mos._liqdia_total(v_mb, v_pe, v_bm, 0, v_sa); end if;
+    -- [500x M2 · SERVER-TRUTH] los montos SIEMPRE se leen de mos.liquidaciones_dia, NUNCA del
+    -- cliente. Sin esto, un caller malicioso mandando dias[] con montos inflados pagaba de más
+    -- (el front manda fechas[], pero el branch dias[] era explotable). total_dia es el autoritativo.
+    select coalesce(monto_base,0), coalesce(pago_envasado,0), coalesce(bono_meta,0),
+           coalesce(sancion,0), coalesce(total_dia,0)
+      into v_mb, v_pe, v_bm, v_sa, v_td
+      from mos.liquidaciones_dia where id_dia = mos._liqdia_key(v_idp, v_fecha_s);
+    if v_td is null then v_td := 0; end if;   -- fila inexistente → nada que pagar (guard previo ya filtró)
     v_total := v_total + v_td;
     insert into mos.liquidaciones_pagos (
       id_pago, id_personal, fecha, nombre, rol, app_origen,
