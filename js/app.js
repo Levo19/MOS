@@ -23963,6 +23963,7 @@ const MOS = (() => {
     _finBeep('nav');
     _cjActualizarFechaUI();
     _cjRender();
+    _cjAsegurarDia(nueva).then(c => { if (c) _cjRender(); });   // [historial] fuera de 30d → jala
   }
   function cjIrHoy() {
     _cjState.fecha = today();
@@ -23979,6 +23980,7 @@ const MOS = (() => {
     const d = new Date(cur + 'T00:00:00');
     _cjState.calMes = { y: d.getFullYear(), m: d.getMonth() };
     _cjCalRender();
+    _cjCalCargarMes(d.getFullYear(), d.getMonth());   // [calendario] marca días con tickets
     const r = btn.getBoundingClientRect();
     dp.style.left = Math.max(8, Math.min(window.innerWidth - 250, r.left)) + 'px';
     dp.style.top  = (r.bottom + 6) + 'px';
@@ -24002,6 +24004,7 @@ const MOS = (() => {
     if (m > 11) { m = 0;  y++; }
     _cjState.calMes = { y, m };
     _cjCalRender();
+    _cjCalCargarMes(y, m);   // [calendario] marca días con tickets del nuevo mes
   }
   function _cjCalRender() {
     const grid = $('cjCalGrid');
@@ -24016,6 +24019,8 @@ const MOS = (() => {
     const ultimo = new Date(y, m + 1, 0).getDate();
     const hoy = today();
     const sel = _cjFecha();
+    const mesKey = `${y}-${String(m + 1).padStart(2, '0')}`;
+    const diasT = (S._cjCalDias && S._cjCalDias[mesKey]) || {};
     let html = '';
     for (let i = 0; i < primerDow; i++) html += '<button class="log-cal-day empty"></button>';
     for (let dia = 1; dia <= ultimo; dia++) {
@@ -24023,7 +24028,16 @@ const MOS = (() => {
       const cls = ['log-cal-day'];
       if (f === hoy) cls.push('today');
       if (f === sel) cls.push('selected');
-      html += `<button class="${cls.join(' ')}" onclick="MOS.cjElegirFecha('${f}')">${dia}</button>`;
+      // [calendario] marca visual: borde si hay tickets ese día + punto ámbar si hay crédito
+      const info = diasT[f];
+      let extra = '', dot = '';
+      if (info && info.n > 0) {
+        cls.push('cj-cal-tick');
+        if (info.credito) { cls.push('cj-cal-cred'); dot = '<span class="cj-cal-dot"></span>'; }
+        const tot = (typeof info.total === 'number') ? info.total.toFixed(0) : info.total;
+        extra = ` title="${info.n} ticket${info.n > 1 ? 's' : ''}${info.credito ? ' · con crédito' : ''} · S/ ${tot}"`;
+      }
+      html += `<button class="${cls.join(' ')}"${extra} onclick="MOS.cjElegirFecha('${f}')">${dia}${dot}</button>`;
     }
     grid.innerHTML = html;
   }
@@ -24034,6 +24048,45 @@ const MOS = (() => {
     _finBeep('click');
     _cjActualizarFechaUI();
     _cjRender();
+    _cjAsegurarDia(f).then(c => { if (c) _cjRender(); });   // [historial] día fuera de 30d → jala y re-pinta
+  }
+
+  // [historial] resta N días a un 'YYYY-MM-DD'
+  function _cjFechaMenosDias(fechaStr, n) {
+    const [y, m, d] = String(fechaStr).split('-').map(Number);
+    const dt = new Date(y, m - 1, d); dt.setDate(dt.getDate() - n);
+    return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+  }
+  // [historial] al viajar a un día FUERA de la ventana de 30d, jala sus tickets (mos.tickets_dia)
+  // y los mergea en el cache. Devuelve true si trajo datos nuevos (para re-pintar).
+  async function _cjAsegurarDia(fecha) {
+    if (!fecha) return false;
+    const limite = _cjFechaMenosDias(today(), 30);
+    if (fecha >= limite) return false;                       // dentro de 30d → ya en cache
+    if (!S._cjDiasExtra) S._cjDiasExtra = new Set();
+    if (S._cjDiasExtra.has(fecha)) return false;             // ya jalado antes
+    try {
+      const r = await API.get('getTicketsDia', { fecha });
+      const tks = (r && r.todosTickets) || (r && r.data && r.data.todosTickets) || [];
+      const cache = S._todosTickets || [];
+      const ids = new Set(cache.map(t => String(t.idVenta)));
+      let add = 0;
+      tks.forEach(t => { if (!ids.has(String(t.idVenta))) { cache.push(t); add++; } });
+      S._todosTickets = cache;
+      S._cjDiasExtra.add(fecha);
+      return add > 0;
+    } catch (e) { console.warn('[cj] tickets_dia:', e?.message || e); return false; }
+  }
+  // [calendario] jala qué días del mes tienen tickets (mos.dias_con_tickets) y re-pinta con marcas
+  async function _cjCalCargarMes(y, m) {
+    const mes = y + '-' + String(m + 1).padStart(2, '0');
+    if (!S._cjCalDias) S._cjCalDias = {};
+    if (S._cjCalDias[mes]) return;                           // mes ya cacheado
+    try {
+      const r = await API.get('getDiasConTickets', { mes });
+      S._cjCalDias[mes] = (r && r.dias) || (r && r.data && r.data.dias) || {};
+      _cjCalRender();
+    } catch (e) { console.warn('[cj] dias_con_tickets:', e?.message || e); }
   }
 
   // ── Render principal ───────────────────────────────────
@@ -25367,7 +25420,7 @@ const MOS = (() => {
       _cjPintarSkeleton();
     }
     try {
-      const r = await API.post('meGetCreditosPendientes', { diasAtras: 30 });
+      const r = await API.post('meGetCreditosPendientes', { diasAtras: 365 });   // [créditos] no perder créditos viejos (mayo etc.)
       const d = (r && r.data) ? r.data : (r || {});
       _cjCreditosState.todosLosGrupos = d.grupos || [];
       _cjRenderManoDelDia();

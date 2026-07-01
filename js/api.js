@@ -2639,6 +2639,9 @@ const API = (() => {
       }
       // [Optimización · vistas cross-app cajas/warehouse] — maestro + fallback GAS + gate _fresh.
       if (action === 'getCierresCaja')         { return _conFallbackMOS(() => _getCierresCajaDirecto(p),         () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      // [historial + calendario] Supabase-only (RPCs 311). Sin GAS: si no hay token, devuelve null.
+      if (action === 'getTicketsDia')          { return _sbRpcMOS('tickets_dia',      { p }, 'mos').catch(() => null); }
+      if (action === 'getDiasConTickets')      { return _sbRpcMOS('dias_con_tickets', { p }, 'mos').catch(() => null); }
       if (action === 'getMermasWarehouse')     { return _conFallbackMOS(() => _getMermasWarehouseDirecto(p),     () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getEnvasadosWarehouse')  { return _conFallbackMOS(() => _getEnvasadosWarehouseDirecto(p),  () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getAlertasWarehouse')    { return _conFallbackMOS(() => _getAlertasWarehouseDirecto(p),    () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
