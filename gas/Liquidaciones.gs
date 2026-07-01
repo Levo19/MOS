@@ -885,10 +885,7 @@ function _liqDiaGetSheet() {
 
 function _liqDiaKey(idPersonal, fecha) {
   var fechaCompacta = String(fecha).replace(/-/g, '');
-  // [100x] preservar '|' (separador de identidad MEX:NOMBRE|ZONA) — DEBE ser IDÉNTICO a
-  // mos._liqdia_key (SQL 299). Sin esto, GAS colapsaba '|'→'_' y no encontraba la fila
-  // (bonif/sanción/pago apuntaban a una clave inexistente).
-  var idClean = String(idPersonal).replace(/[^a-zA-Z0-9:|]/g, '_');
+  var idClean = String(idPersonal).replace(/[^a-zA-Z0-9:]/g, '_');
   return 'LDIA-' + fechaCompacta + '-' + idClean;
 }
 
