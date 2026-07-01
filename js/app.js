@@ -35007,9 +35007,14 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // Reemplaza el HTML de un card específico tras una acción (vetar/rehabilitar)
   // sin tocar el resto. Evita parpadeo y mantiene el botón actualizado a su
   // nuevo estado (💸 ↔ 💵).
-  function _finReemplazarCardJornada(idJornada, fecha) {
+  function _finReemplazarCardJornada(idJornada, fecha, idMega) {
     if (!_finPL || !Array.isArray(_finPL.personalDetalle)) return;
-    const p = _finPL.personalDetalle.find(x => String(x.idJornada) === String(idJornada));
+    // [100x · A4b] localizar por idMega (único). idJornada está VACÍO en las filas de la
+    // mega tabla → find/selector por idJornada matcheaba la PRIMERA card → reemplazaba la
+    // equivocada. El mismo criterio que finVetarPago (v2.43.382).
+    const clave = idMega || idJornada || '__nope__';
+    const p = _finPL.personalDetalle.find(x =>
+      (idMega && String(x.idPersonal) === String(idMega)) || (idJornada && String(x.idJornada) === String(idJornada)));
     if (!p) return;
     let ev = null;
     try {
@@ -35026,9 +35031,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     } catch {}
     const cards = document.querySelectorAll('.eval-card');
     for (const c of cards) {
-      // Match por botón vetar O rehabilitar que contenga el idJornada
-      if (c.querySelector(`button[onclick*="finVetarPago"][onclick*="'${idJornada}'"]`) ||
-          c.querySelector(`button[onclick*="finRehabilitarPago"][onclick*="'${idJornada}'"]`)) {
+      // Match por botón vetar O rehabilitar que contenga la clave (idMega)
+      if (c.querySelector(`button[onclick*="finVetarPago"][onclick*="${clave}"]`) ||
+          c.querySelector(`button[onclick*="finRehabilitarPago"][onclick*="${clave}"]`)) {
         const wrap = document.createElement('div');
         wrap.innerHTML = _finRenderPersonalCard(p, ev || null, fecha).trim();
         const nuevo = wrap.firstElementChild;
@@ -35948,7 +35953,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
     let pagoEliminado = 0;
     if (_finPL && Array.isArray(_finPL.personalDetalle)) {
-      const idx = _finPL.personalDetalle.findIndex(p => String(p.idJornada) === String(idJornada));
+      const idx = _finPL.personalDetalle.findIndex(p => (idMega && String(p.idPersonal) === String(idMega)) || (idJornada && String(p.idJornada) === String(idJornada)));
       if (idx >= 0) {
         const p = _finPL.personalDetalle[idx];
         const resKey = 'mos_fin_resum_' + fecha;
@@ -36000,7 +36005,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.41.45] ÚNICA acción: vetar en LIQUIDACIONES_DIA. Sin eliminarJornada.
     // El render del Personal del Día lee el estado VETADA desde la hoja
     // (cruce backend en getResumenTodosDia) → overlay aparece consistente.
-    const persona = (_finPL?.personalDetalle || []).find(p => String(p.idJornada) === String(idJornada));
+    const persona = (_finPL?.personalDetalle || []).find(p => (idMega && String(p.idPersonal) === String(idMega)) || (idJornada && String(p.idJornada) === String(idJornada)));
     // [v2.43.376 · una sola fuente] idPersonal de la MEGA TABLA (lo pasa la card desde
     // ev.idPersonal = getPersonalDiaFast/liquidaciones_dia) — el MISMO id que usa Liquidación.
     const idPersonal = idMega || persona?.idPersonal;
@@ -36053,7 +36058,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       } catch(_){}
       toast(`💸 Vetado · ${nombre || ''} · -S/ ${pagoEliminado.toFixed(2)} · ahora aparece 💵 para rehabilitar`, 'ok', 4500);
       // Reemplazar card tras animación
-      setTimeout(() => _finReemplazarCardJornada(idJornada, fecha), 720);
+      setTimeout(() => _finReemplazarCardJornada(idJornada, fecha, idMega), 720);
     } catch(e) {
       _finBeep('error');
       if (card) {
@@ -36141,7 +36146,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     let montoRestaurar = 0;
     let pTarget = null;
     if (_finPL && Array.isArray(_finPL.personalDetalle)) {
-      pTarget = _finPL.personalDetalle.find(p => String(p.idJornada) === String(idJornada));
+      pTarget = _finPL.personalDetalle.find(p => (idMega && String(p.idPersonal) === String(idMega)) || (idJornada && String(p.idJornada) === String(idJornada)));
       if (pTarget) {
         // Si el cache tiene resumen con totalDia, usarlo
         const resKey = 'mos_fin_resum_' + fecha;
@@ -36220,7 +36225,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
     // [v2.41.45] ÚNICA acción: desvetar en LIQUIDACIONES_DIA.
     // [v2.43.376 · una sola fuente] idPersonal de la MEGA TABLA (lo pasa la card).
-    const persona = (_finPL?.personalDetalle || []).find(p => String(p.idJornada) === String(idJornada));
+    const persona = (_finPL?.personalDetalle || []).find(p => (idMega && String(p.idPersonal) === String(idMega)) || (idJornada && String(p.idJornada) === String(idJornada)));
     const idPersonal = idMega || persona?.idPersonal;
     if (!idPersonal) {
       toast('No se puede rehabilitar: persona sin idPersonal', 'warn');
@@ -36251,7 +36256,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       } catch(_){}
       try { _liqCacheClear && _liqCacheClear(); } catch(_){}
       toast(`💵 Rehabilitado · ${nombre || ''} · +S/ ${parseFloat(montoRestaurar || 0).toFixed(2)} · ahora aparece 💸 para vetar`, 'ok', 4500);
-      setTimeout(() => _finReemplazarCardJornada(idJornada, fecha), 480);
+      setTimeout(() => _finReemplazarCardJornada(idJornada, fecha, idMega), 480);
     } catch(e) {
       _finBeep('error');
       toast('Error: ' + e.message + ' — recargando...', 'error');
