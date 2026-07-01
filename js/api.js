@@ -503,6 +503,8 @@ const API = (() => {
   // Default OFF → GAS bridge (idéntico a hoy). ⚠️ NO prender sin meter `ventas` a ME_SYNC_OFF_TABLAS
   // (el sync Hoja→sombra de ME revierte una edición directa en ≤15min). Ver RUNBOOK del flip.
   function _mosEditDirecto() { return !!_mosFlag('me_edit_directo', 'meEditDirecto'); }
+  // [CUTOVER COBRO-ME] asignar cobro a cajero 100% Supabase (RPC me.asignar_cobro_cajero, SQL 308).
+  function _meCobroDirecto() { return !!_mosFlag('me_cobro_directo', 'meCobroDirecto'); }
   // [CUTOVER VENTAS-ME · Etapa 4] NV→CPE 100% Supabase (RPC me.convertir_nv_cpe → fac.emitir_cpe).
   // Default OFF → GAS. Aunque esté ON, la RPC exige fac._on() (FAC_CPE_DIRECTO): con la emisión fiscal
   // apagada devuelve FAC_DESACTIVADO → _desempacarME → null → cae a GAS. Activación = go-live fiscal fac.*.
@@ -1402,6 +1404,18 @@ const API = (() => {
       } });
       return _desempacarME(out);
     }
+    // [CUTOVER COBRO-ME] asignar cobro a cajero (escritura de dinero) 100% Supabase.
+    //   COBRO_OFF/APP_NO_AUTORIZADA → _desempacarME null → GAS. Errores de negocio
+    //   (VENTA_NO_PENDIENTE/CAJA_DEST_NO_ABIERTA/YA_ASIGNADO) → propagan (= GAS).
+    if (action === 'meAsignarCobroCajero') {
+      const out = await _sbRpcMEWrite('asignar_cobro_cajero', { p: {
+        idVenta: String(p.idVenta || ''), cajaDestino: String(p.cajaDestino || ''),
+        metodoSugerido: p.metodoSugerido || '', horasTTL: parseInt(p.horasTTL, 10) || 1,
+        mensajeAdmin: p.mensajeAdmin || '', localId: String(p.localId || ''),
+        adminNombre: _mosUsuario(p)
+      } });
+      return _desempacarME(out);
+    }
     // [Etapa 4] NV→CPE. ⚠️ El front manda idVenta/serie/clienteNom; la RPC espera idVentaNV/serieNueva/clienteNombre.
     if (action === 'meConvertirNVaCPE') {
       const out = await _sbRpcMEWrite('convertir_nv_cpe', { p: {
@@ -2095,6 +2109,7 @@ const API = (() => {
     // → GAS bridge, idéntico a hoy). me.anular_venta corre TODOS los efectos (ANULADO + historial + reposición
     // de stock idempotente + descuento de pickup WH vía wh.pickup_descontar_venta) en Postgres, sin GAS.
     // ⚠️ FLIP gateado por RUNBOOK: requiere `ventas` en ME_SYNC_OFF_TABLAS o el sync revierte la edición.
+    meAsignarCobroCajero:        _meCobroDirecto,
     meEditarFormaPago:           _mosEditDirecto,
     meEditarCliente:             _mosEditDirecto,
     anularTicketME:              _mosEditDirecto,

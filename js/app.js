@@ -26024,9 +26024,15 @@ const MOS = (() => {
         cajaDestino:    cajaDest,
         metodoSugerido: '',
         horasTTL:       horasTTL,
-        mensajeAdmin:   mensajeAdmin
+        mensajeAdmin:   mensajeAdmin,
+        localId:        optimisticId   // idempotencia anti-retry (path directo Supabase)
       });
       const d = (r && r.data) ? r.data : (r || {});
+      // [cutover cobro-ME] en el path directo el push lo dispara el front (fan-out a los
+      // equipos del cajero, principal+companion). En GAS el push ya lo hace el backend.
+      if (d && d.via === 'directo' && d.cajeroDestino && !d.idempotente) {
+        try { API.enviarPushSB(d.pushTitulo, d.pushCuerpo, { soloUsuarios: [d.cajeroDestino], incluirCompanions: true }); } catch(_) {}
+      }
       // Reemplazar el postit optimista por el real (matchear por idVenta)
       _cjCreditosState.enVuelo = (_cjCreditosState.enVuelo || []).filter(c => c.idCobro !== optimisticId);
       // Refrescar para traer el cobro real con su idCobro definitivo
