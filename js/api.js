@@ -2642,6 +2642,10 @@ const API = (() => {
       // [historial + calendario] Supabase-only (RPCs 311). Sin GAS: si no hay token, devuelve null.
       if (action === 'getTicketsDia')          { return _sbRpcMOS('tickets_dia',      { p }, 'mos').catch(() => null); }
       if (action === 'getDiasConTickets')      { return _sbRpcMOS('dias_con_tickets', { p }, 'mos').catch(() => null); }
+      if (action === 'getTicketsRango')        { return _sbRpcMOS('tickets_rango',    { p }, 'mos').catch(() => null); }
+      // [historial] día completo (cajas+tickets+KPIs) de una fecha arbitraria vía cierres_caja(fecha).
+      // Directo sin gate _fresh/GAS: el histórico es estable y GAS no soporta fecha. Devuelve .data o null.
+      if (action === 'getCierresDia')          { return _sbRpcMOS('cierres_caja',     { p }, 'mos').then(r => (r && r.data) ? r.data : null).catch(() => null); }
       if (action === 'getMermasWarehouse')     { return _conFallbackMOS(() => _getMermasWarehouseDirecto(p),     () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getEnvasadosWarehouse')  { return _conFallbackMOS(() => _getEnvasadosWarehouseDirecto(p),  () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getAlertasWarehouse')    { return _conFallbackMOS(() => _getAlertasWarehouseDirecto(p),    () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }

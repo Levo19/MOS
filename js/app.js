@@ -24066,16 +24066,26 @@ const MOS = (() => {
     if (!S._cjDiasExtra) S._cjDiasExtra = new Set();
     if (S._cjDiasExtra.has(fecha)) return false;             // ya jalado antes
     try {
-      const r = await API.get('getTicketsDia', { fecha });
-      const tks = (r && r.todosTickets) || (r && r.data && r.data.todosTickets) || [];
-      const cache = S._todosTickets || [];
-      const ids = new Set(cache.map(t => String(t.idVenta)));
+      // [historial] día COMPLETO: cajas + tickets + KPIs (cierres_caja con fecha) → la vista entera carga
+      const d = await API.get('getCierresDia', { fecha });
+      if (!d) { S._cjDiasExtra.add(fecha); return false; }
       let add = 0;
-      tks.forEach(t => { if (!ids.has(String(t.idVenta))) { cache.push(t); add++; } });
-      S._todosTickets = cache;
+      // merge tickets (dedup por idVenta)
+      const tks = d.todosTickets || [];
+      const cacheT = S._todosTickets || [];
+      const idsT = new Set(cacheT.map(t => String(t.idVenta)));
+      tks.forEach(t => { if (!idsT.has(String(t.idVenta))) { cacheT.push(t); add++; } });
+      S._todosTickets = cacheT;
+      // merge cajas (dedup por idCaja) → aparecen las cards de caja del día viejo
+      const cacheC = S._todasCajas || [];
+      const idsC = new Set(cacheC.map(c => String(c.idCaja)));
+      [...(d.abiertas || []), ...(d.cerradas || [])].forEach(c => {
+        if (!idsC.has(String(c.idCaja))) { cacheC.push(c); add++; }
+      });
+      S._todasCajas = cacheC;
       S._cjDiasExtra.add(fecha);
       return add > 0;
-    } catch (e) { console.warn('[cj] tickets_dia:', e?.message || e); return false; }
+    } catch (e) { console.warn('[cj] getCierresDia:', e?.message || e); return false; }
   }
   // [calendario] jala qué días del mes tienen tickets (mos.dias_con_tickets) y re-pinta con marcas
   async function _cjCalCargarMes(y, m) {

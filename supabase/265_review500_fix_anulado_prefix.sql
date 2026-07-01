@@ -61,6 +61,7 @@ declare
   v_tz        text := 'America/Lima';
   v_hoy       date := (now() at time zone v_tz)::date;
   v_limite    timestamptz := now() - interval '30 days';
+  v_fecha     date;   -- [historial] día específico opcional → trae ESE día completo (cajas+tickets+KPIs), sin límite de 30d
   v_me_url    text;
   v_out       jsonb;
   v_kt        jsonb;
@@ -72,6 +73,8 @@ begin
   if not mos._claim_ok() then
     return jsonb_build_object('ok', false, 'error', 'APP_NO_AUTORIZADA');
   end if;
+  begin v_fecha := nullif(btrim(coalesce(p->>'fecha','')),'')::date;
+  exception when others then v_fecha := null; end;
 
   begin
     select valor into v_me_url from mos.config where clave = 'ME_GAS_URL' limit 1;
@@ -96,7 +99,8 @@ begin
       v.id_venta, v.correlativo, v.cliente_doc, v.cliente_nombre, v.obs,
       v.created_at
     from me.ventas v
-    where v.fecha is null or v.fecha >= v_limite
+    where (v_fecha is null and (v.fecha is null or v.fecha >= v_limite))
+       or (v_fecha is not null and (v.fecha at time zone v_tz)::date = v_fecha)
   ),
   ventas as (
     select vr.*,
@@ -258,7 +262,8 @@ begin
     left join epc        on epc.id_caja = c.id_caja
     left join tlist      tl on tl.id_caja = c.id_caja
     left join elist      el on el.id_caja = c.id_caja
-    where not (coalesce(c.estado,'')='CERRADA' and (c.fecha_cierre is null or c.fecha_cierre < v_limite))
+    where (v_fecha is null and not (coalesce(c.estado,'')='CERRADA' and (c.fecha_cierre is null or c.fecha_cierre < v_limite)))
+       or (v_fecha is not null and ((c.fecha_apertura at time zone v_tz)::date = v_fecha or (c.fecha_cierre at time zone v_tz)::date = v_fecha))
   ),
   cajas_full as (
     select
@@ -342,7 +347,8 @@ begin
         when 'BOLETA' then 'B' when 'FACTURA' then 'F' else 'NV' end as tipo,
       case when v.fecha is not null then to_char(v.fecha at time zone v_tz,'YYYY-MM-DD') else '' end as fecha
     from me.ventas v
-    where v.fecha is null or v.fecha >= v_limite
+    where (v_fecha is null and (v.fecha is null or v.fecha >= v_limite))
+       or (v_fecha is not null and (v.fecha at time zone v_tz)::date = v_fecha)
   ) ktv;
 
   with caja_elem as (
