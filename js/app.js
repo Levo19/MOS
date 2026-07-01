@@ -24297,12 +24297,18 @@ const MOS = (() => {
     _setText('cjPillActivas',  '🟢 ' + abiertas.length + ' abiertas');
     _setText('cjPillCerradas', '⚫ ' + cerradas.length + ' cerradas');
 
-    if (!abiertas.length && !cerradas.length) {
+    // [sin caja] tickets del día SIN caja asignada (artefactos de transición / errores) →
+    // se agrupan en una "baraja cerrada" (pila apilada) al frente, para detectarlos de un vistazo.
+    const sinCaja = (S._todosTickets || []).filter(t =>
+      (t.fecha || '').substring(0, 10) === fecha && !String(t.idCaja || '').trim() && String(t.estado || '') !== 'ANULADO');
+    const deckHtml = sinCaja.length ? _cjBuildDeckSinCaja(sinCaja) : '';
+
+    if (!abiertas.length && !cerradas.length && !sinCaja.length) {
       grid.innerHTML = '<p class="text-slate-500 text-xs text-center py-6 col-span-full">Sin cajas en esta fecha</p>';
       return;
     }
-    // Activas primero, luego cerradas. La corona 👑 va a la caja líder (mayor totalVentas).
-    grid.innerHTML = [
+    // Baraja "sin caja" al frente (si hay), luego activas, luego cerradas. Corona 👑 a la líder.
+    grid.innerHTML = deckHtml + [
       ...abiertas.map(c => _cjBuildCajaCard(c, true,  fecha, String(c.idCaja) === idCajaLider)),
       ...cerradas.map(c => _cjBuildCajaCard(c, false, fecha, String(c.idCaja) === idCajaLider))
     ].join('');
@@ -24315,6 +24321,41 @@ const MOS = (() => {
     // .cj-caja-card en el DOM. _cjPintarPostitsManojos itera _cjCreditosState.enVuelo
     // y monta/desmonta el manojo según la caja destino.
     try { _cjPintarPostitsManojos(); } catch(_){}
+  }
+
+  // [sin caja] "baraja cerrada": pila de cartas apiladas (vista isométrica desde una
+  // esquina). Cuantos más tickets sin caja, más capas se apilan. Tocá → visor filtrado.
+  function _cjBuildDeckSinCaja(tickets) {
+    const n = tickets.length;
+    const total = tickets.reduce((s, t) => s + (parseFloat(t.total) || 0), 0);
+    const capas = Math.min(Math.max(n - 1, 0), 6);   // hasta 6 capas de fondo
+    let capasHtml = '';
+    for (let i = capas; i >= 1; i--) capasHtml += `<div class="cj-deck-capa" style="--i:${i}"></div>`;
+    return `
+      <div class="cj-deck cj-deck-sincaja" onclick="MOS.cjVerTicketsSinCaja()"
+           title="${n} ticket${n > 1 ? 's' : ''} sin caja asignada — tocá para revisar">
+        ${capasHtml}
+        <div class="cj-deck-front">
+          <div class="cj-deck-badge">⚠</div>
+          <div class="cj-deck-ico">🃏</div>
+          <div class="cj-deck-title">Sin caja asignada</div>
+          <div class="cj-deck-count">${n} ticket${n > 1 ? 's' : ''}</div>
+          <div class="cj-deck-total">S/ ${total.toFixed(2)}</div>
+          <div class="cj-deck-hint">tocá para revisar</div>
+        </div>
+      </div>`;
+  }
+  function cjVerTicketsSinCaja() {
+    _finBeep('click');
+    _cjState.tkCajaFiltro = '__SINCAJA__';
+    _cjState.tkFiltro = 'todos';
+    _cjState.tkBuscar = '';
+    const inp = $('cjTkBuscar'); if (inp) inp.value = '';
+    _setText('cjModalTicketsTitulo', 'Tickets sin caja asignada');
+    _setText('cjModalTicketsSubtitulo', _cjFecha() + ' · ⚠ sin caja (revisar)');
+    openModal('cjModalTickets');
+    _cjTkRenderFiltrosBtns();
+    _cjTkRender();
   }
 
   // [v2.41.91] Bloque "Balance en vivo" — solo en cajas ABIERTAS.
@@ -26113,8 +26154,12 @@ const MOS = (() => {
     _cjState.tkFiltro = (filtroInicial === 'ventas') ? 'ventas' : 'todos';
     _cjState.tkBuscar = '';
     const inp = $('cjTkBuscar'); if (inp) inp.value = '';
-    _setText('cjModalTicketsTitulo', 'Tickets del día');
-    _setText('cjModalTicketsSubtitulo', _cjFecha() + ' · todas las cajas');
+    // [rename] el título refleja la fecha real (no siempre "del día")
+    const f = _cjFecha();
+    const dLabel = (f === today()) ? 'de hoy'
+      : ('del ' + new Date(f + 'T00:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: 'long' }));
+    _setText('cjModalTicketsTitulo', 'Tickets ' + dLabel);
+    _setText('cjModalTicketsSubtitulo', f + ' · todas las cajas · viajá con el calendario para otros días');
     openModal('cjModalTickets');
     _cjTkRenderFiltrosBtns();
     _cjTkRender();
@@ -26173,7 +26218,8 @@ const MOS = (() => {
     if (!wrap) return;
     const fecha = _cjFecha();
     let base = (S._todosTickets || []).filter(t => (t.fecha || '').substring(0, 10) === fecha);
-    if (_cjState.tkCajaFiltro) base = base.filter(t => String(t.idCaja || '') === _cjState.tkCajaFiltro);
+    if (_cjState.tkCajaFiltro === '__SINCAJA__') base = base.filter(t => !String(t.idCaja || '').trim());
+    else if (_cjState.tkCajaFiltro) base = base.filter(t => String(t.idCaja || '') === _cjState.tkCajaFiltro);
     const esAnul = t => String(t.metodo || t.formaPago || '').toUpperCase() === 'ANULADO' || t.estado === 'ANULADO';
     const map = new Map();
     base.forEach(t => {
@@ -26229,8 +26275,10 @@ const MOS = (() => {
     if (!list) return;
     const fecha = _cjFecha();
     let todos = (S._todosTickets || []).filter(t => (t.fecha || '').substring(0, 10) === fecha);
-    // Filtro por caja
-    if (_cjState.tkCajaFiltro) {
+    // Filtro por caja (o centinela __SINCAJA__ = tickets sin caja asignada)
+    if (_cjState.tkCajaFiltro === '__SINCAJA__') {
+      todos = todos.filter(t => !String(t.idCaja || '').trim());
+    } else if (_cjState.tkCajaFiltro) {
       todos = todos.filter(t => String(t.idCaja || '') === _cjState.tkCajaFiltro);
     }
     // [v2.43.387] Filtro por vendedor (chips de persona) — se combina con método + búsqueda
@@ -43182,7 +43230,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _selMetodo, _onMixtoInput, _renderModalMetodo,
     // Cajas modernizado
     cjDia, cjIrHoy, cjAbrirCalendario, cjCalNavMes, cjElegirFecha,
-    cjToggleCajaDetail, cjVerTodosTickets, cjVerTicketsCaja, cjAbrirTurno,
+    cjToggleCajaDetail, cjVerTodosTickets, cjVerTicketsCaja, cjVerTicketsSinCaja, cjAbrirTurno,
     cjCerrarCajaForzado,
     cjScrollToCaja, cjModoTV,
     _cjTkRender, _cjTkSetFiltro, _cjTkSetVendedor,
