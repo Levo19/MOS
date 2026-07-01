@@ -36,7 +36,28 @@
   flujo MOS (meCobrarCredito) NO reimprime; si se quiere el sello cero-GAS en ME es tarea aparte
   (Edge ticket-comprobante + wiring en MosExpress).
 
+## Revisión 500x iterante (2 vueltas) — 2026-07-01
+- **v2.43.413 (R1):** HIGH — cobro cancelar/reasignar (313) lockeaban `cobrocancel:idCobro` → race de
+  doble-cobro con confirmar/directo. FIX: unificado a `cobro:idVenta`. + 111:444 kpisTickets prefix
+  ANULADO%; 315 array_length→0; seguridad ?v=; _cjTkAplicarRango try/catch.
+- **v2.43.414 (R2):** HIGH — cierre (`cerrarcaja:idCaja`) y cobros (`cobro:idVenta`) NO compartían lock →
+  dinero podía entrar a una caja cerrándose / monto_final sub-contar. FIX: 310/314 toman TAMBIÉN
+  `cerrarcaja:caja` antes de validar ABIERTA; 27 (cierre cajero) también. + MED editar_forma_pago (264)
+  anula cobro ASIGNADO vivo (evita doble-cobro); MIXTO monto≥0; 313 re-guard not-found; membrete ?v=.
+- Todos con test ROLLBACK + aplicados a prod. Lock unificado: `cobro:idVenta` (asignar/confirmar/
+  directo/cancelar/reasignar/editar) + `cerrarcaja:idCaja` (cierre forzado/cajero + cobros que entran).
+
 ## ⏳ PENDIENTES (formalizados — NO bloqueantes)
+
+### P0 · Hardening de concurrencia restante (defensa-en-profundidad, no bugs vivos)
+- **309 (cron `escalar_cobros_vencidos`):** escribe cobro+venta sin `cobro:idVenta`. Hoy seguro por
+  re-chequeo de predicado READ-COMMITTED + guards idempotentes; agregar el lock por fila para robustez.
+- **260 (`me.anular_venta`):** al anular no cancela el cobro ASIGNADO vivo (queda un cobro huérfano en
+  venta ANULADA). No es doble-cobro (confirmar tiene guard ANULADO), solo consistencia. Agregar el void.
+- **264 (`me.zona_descontar_venta`):** la versión viva perdió el guard caja-nivel de 143 (idempotencia
+  hoy por índice único de kardex por línea). El cierre forzado ya está cubierto por el guard `yaCerrada`.
+  Re-agregar el guard caja-nivel como defensa (con cuidado: es core de TODOS los cierres).
+
 
 ### P1 · Sello PAGADO cero-GAS en ME (lado cajero)
 - **Qué:** al confirmar un cobro asignado en MosExpress (confirmarCobroAsignado), reimprimir el
