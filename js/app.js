@@ -23921,6 +23921,9 @@ const MOS = (() => {
     tkFiltro: 'todos',
     tkCajaFiltro: '',
     tkBuscar: '',
+    tkDoc: '',             // [rango] filtro tipo doc: '' | 'NV' | 'B' | 'F'
+    tkDesde: '', tkHasta: '',  // [rango] rango de fechas del buscador de tickets
+    tkRangoActivo: false,  // [rango] true = usa S._cjTkRangoData; false = día activo
     chunksAnteriores: new Map(),  // idCaja → cantidadTickets para detectar cambios
   };
 
@@ -24363,8 +24366,11 @@ const MOS = (() => {
     const inp = $('cjTkBuscar'); if (inp) inp.value = '';
     _setText('cjModalTicketsTitulo', 'Tickets sin caja asignada');
     _setText('cjModalTicketsSubtitulo', _cjFecha() + ' · ⚠ sin caja (revisar)');
+    _cjState.tkVendedor = '';
+    _cjTkResetRango(_cjFecha());
     openModal('cjModalTickets');
     _cjTkRenderFiltrosBtns();
+    _cjTkRenderVendedoresBtns();
     _cjTkRender();
   }
 
@@ -26169,10 +26175,48 @@ const MOS = (() => {
     const dLabel = (f === today()) ? 'de hoy'
       : ('del ' + new Date(f + 'T00:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: 'long' }));
     _setText('cjModalTicketsTitulo', 'Tickets ' + dLabel);
-    _setText('cjModalTicketsSubtitulo', f + ' · todas las cajas · viajá con el calendario para otros días');
+    _setText('cjModalTicketsSubtitulo', f + ' · buscá por rango de fechas, tipo o vendedor');
+    // [rango] arranca en el día activo (desde=hasta=f); el usuario puede abrir un rango
+    _cjTkResetRango(f);
     openModal('cjModalTickets');
     _cjTkRenderFiltrosBtns();
+    _cjTkRenderVendedoresBtns();
     _cjTkRender();
+    _cjAsegurarDia(f).then(c => { if (c) { _cjTkRenderVendedoresBtns(); _cjTkRender(); } });   // por si el día no estaba cargado
+  }
+  // [rango] resetea el buscador al día 'f' (desde=hasta=f, sin rango activo)
+  function _cjTkResetRango(f) {
+    _cjState.tkDesde = f; _cjState.tkHasta = f; _cjState.tkRangoActivo = false; _cjState.tkDoc = '';
+    const dd = $('cjTkDesde'), dh = $('cjTkHasta'), inf = $('cjTkRangoInfo');
+    if (dd) dd.value = f; if (dh) dh.value = f; if (inf) inf.textContent = '';
+  }
+  function _cjTkHoyRango() { _finBeep('click'); _cjTkResetRango(_cjFecha()); _cjTkRenderFiltrosBtns(); _cjTkRenderVendedoresBtns(); _cjTkRender(); }
+  // [rango] aplica el rango de fechas: si desde≠hasta (o fuera del día activo) jala tickets_rango
+  async function _cjTkAplicarRango() {
+    const dd = $('cjTkDesde'), dh = $('cjTkHasta'), inf = $('cjTkRangoInfo');
+    let desde = (dd && dd.value) || _cjFecha();
+    let hasta = (dh && dh.value) || _cjFecha();
+    if (hasta < desde) { const t = desde; desde = hasta; hasta = t; if (dd) dd.value = desde; if (dh) dh.value = hasta; }
+    _cjState.tkDesde = desde; _cjState.tkHasta = hasta;
+    if (desde === hasta) {
+      // un solo día → usa el cache (lo aseguramos) sin traer rango
+      _cjState.tkRangoActivo = false;
+      if (inf) inf.textContent = '';
+      _cjState.fecha = desde; _cjActualizarFechaUI();
+      const c = await _cjAsegurarDia(desde);
+      _cjTkRenderVendedoresBtns(); _cjTkRender();
+      if (c) { _cjTkRenderVendedoresBtns(); _cjTkRender(); }
+      return;
+    }
+    // rango real → tickets_rango
+    if (inf) inf.textContent = '⏳ buscando…';
+    _finBeep('nav');
+    const r = await API.get('getTicketsRango', { desde, hasta });
+    const tks = (r && r.todosTickets) || (r && r.data && r.data.todosTickets) || [];
+    S._cjTkRangoData = tks;
+    _cjState.tkRangoActivo = true;
+    if (inf) inf.textContent = `${tks.length} en el rango`;
+    _cjTkRenderFiltrosBtns(); _cjTkRenderVendedoresBtns(); _cjTkRender();
   }
   function cjVerTicketsCaja(idCaja) {
     _finBeep('click');
@@ -26184,6 +26228,7 @@ const MOS = (() => {
     _setText('cjModalTicketsTitulo', 'Tickets de Caja · ' + (c?.vendedor || '—'));
     _setText('cjModalTicketsSubtitulo', (c?.zona || c?.estacion || '') + ' · ' + (c?.idCaja || ''));
     _cjState.tkVendedor = '';   // [v2.43.387] reset del filtro de vendedor al abrir otra caja
+    _cjTkResetRango(_cjFecha());
     openModal('cjModalTickets');
     _cjTkRenderFiltrosBtns();
     _cjTkRenderVendedoresBtns();
@@ -26203,13 +26248,19 @@ const MOS = (() => {
       { key: 'credito',    label: '📋 Crédito' },
       { key: 'anulado',    label: '❌ Anulado' },
     ];
-    wrap.innerHTML = filtros.map(f => {
+    let html = filtros.map(f => {
       const active = f.key === _cjState.tkFiltro;
-      const cls = active
-        ? 'log-icon-btn active'
-        : 'log-icon-btn';
+      const cls = active ? 'log-icon-btn active' : 'log-icon-btn';
       return `<button onclick="MOS._cjTkSetFiltro('${f.key}')" class="${cls}" style="padding:5px 10px;font-size:11px;width:auto;height:auto">${f.label}</button>`;
     }).join('');
+    // [tipo doc] chips NV / Boleta / Factura (eje independiente del método → se combinan)
+    const docs = [{ k: 'NV', l: '📄 NV' }, { k: 'B', l: '🧾 Boleta' }, { k: 'F', l: '📑 Factura' }];
+    html += '<span style="width:1px;height:18px;background:#1e293b;margin:0 4px;display:inline-block"></span>';
+    html += docs.map(d => {
+      const active = _cjState.tkDoc === d.k;
+      return `<button onclick="MOS._cjTkSetDoc('${d.k}')" class="log-icon-btn ${active ? 'active' : ''}" style="padding:5px 10px;font-size:11px;width:auto;height:auto">${d.l}</button>`;
+    }).join('');
+    wrap.innerHTML = html;
   }
   function _cjTkSetFiltro(key) {
     _cjState.tkFiltro = key;
@@ -26226,10 +26277,7 @@ const MOS = (() => {
   function _cjTkRenderVendedoresBtns() {
     const wrap = $('cjTkVendedores');
     if (!wrap) return;
-    const fecha = _cjFecha();
-    let base = (S._todosTickets || []).filter(t => (t.fecha || '').substring(0, 10) === fecha);
-    if (_cjState.tkCajaFiltro === '__SINCAJA__') base = base.filter(t => !String(t.idCaja || '').trim());
-    else if (_cjState.tkCajaFiltro) base = base.filter(t => String(t.idCaja || '') === _cjState.tkCajaFiltro);
+    let base = _cjTkFuente();   // [rango] respeta rango/día activo + caja + tipo doc
     const esAnul = t => String(t.metodo || t.formaPago || '').toUpperCase() === 'ANULADO' || t.estado === 'ANULADO';
     const map = new Map();
     base.forEach(t => {
@@ -26258,6 +26306,27 @@ const MOS = (() => {
     _cjTkRender();
   }
 
+  // [rango] fuente base del buscador: rango de fechas (S._cjTkRangoData) o el día activo,
+  // ya filtrada por caja (o __SINCAJA__) y por tipo de documento (NV/B/F). SIN vendedor/método/búsqueda.
+  function _cjTkFuente() {
+    let base;
+    if (_cjState.tkRangoActivo && Array.isArray(S._cjTkRangoData)) {
+      base = S._cjTkRangoData.slice();
+    } else {
+      const fecha = _cjFecha();
+      base = (S._todosTickets || []).filter(t => (t.fecha || '').substring(0, 10) === fecha);
+    }
+    if (_cjState.tkCajaFiltro === '__SINCAJA__') base = base.filter(t => !String(t.idCaja || '').trim());
+    else if (_cjState.tkCajaFiltro) base = base.filter(t => String(t.idCaja || '') === _cjState.tkCajaFiltro);
+    if (_cjState.tkDoc) base = base.filter(t => String(t.tipo || '').toUpperCase() === _cjState.tkDoc);
+    return base;
+  }
+  function _cjTkSetDoc(d) {
+    _cjState.tkDoc = (_cjState.tkDoc === d) ? '' : d;   // toggle
+    _finBeep('click');
+    _cjTkRenderFiltrosBtns(); _cjTkRenderVendedoresBtns(); _cjTkRender();
+  }
+
   function _cjTkApplyFiltro(tickets) {
     const f = _cjState.tkFiltro;
     const fp = t => String(t.metodo || t.formaPago || '').toUpperCase();
@@ -26283,14 +26352,7 @@ const MOS = (() => {
     const list = $('cjTkList');
     const conteo = $('cjTkConteo');
     if (!list) return;
-    const fecha = _cjFecha();
-    let todos = (S._todosTickets || []).filter(t => (t.fecha || '').substring(0, 10) === fecha);
-    // Filtro por caja (o centinela __SINCAJA__ = tickets sin caja asignada)
-    if (_cjState.tkCajaFiltro === '__SINCAJA__') {
-      todos = todos.filter(t => !String(t.idCaja || '').trim());
-    } else if (_cjState.tkCajaFiltro) {
-      todos = todos.filter(t => String(t.idCaja || '') === _cjState.tkCajaFiltro);
-    }
+    let todos = _cjTkFuente();   // [rango] día activo o rango de fechas + filtro caja + tipo doc
     // [v2.43.387] Filtro por vendedor (chips de persona) — se combina con método + búsqueda
     if (_cjState.tkVendedor) {
       todos = todos.filter(t => _cjTkVendNombre(t) === _cjState.tkVendedor);
@@ -26341,6 +26403,7 @@ const MOS = (() => {
         <div class="tk-cli">${cabecera}</div>
         <div class="tk-meta">
           <span class="tk-meta-corr">${_escapeHtml(tipo)} ${_escapeHtml(corr)}</span>
+          ${_cjState.tkRangoActivo && t.fecha ? `<span class="tk-meta-hora" style="color:#38bdf8;font-weight:700">· 📅 ${(t.fecha || '').substring(5)}</span>` : ''}
           ${t.vendedor ? `<span class="tk-meta-vend">· ${_escapeHtml(t.vendedor)}</span>` : ''}
           ${t.hora ? `<span class="tk-meta-hora">· ${t.hora}</span>` : ''}
         </div>
@@ -43240,7 +43303,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _selMetodo, _onMixtoInput, _renderModalMetodo,
     // Cajas modernizado
     cjDia, cjIrHoy, cjAbrirCalendario, cjCalNavMes, cjElegirFecha,
-    cjToggleCajaDetail, cjVerTodosTickets, cjVerTicketsCaja, cjVerTicketsSinCaja, cjAbrirTurno,
+    cjToggleCajaDetail, cjVerTodosTickets, cjVerTicketsCaja, cjVerTicketsSinCaja,
+    _cjTkAplicarRango, _cjTkHoyRango, _cjTkSetDoc, cjAbrirTurno,
     cjCerrarCajaForzado,
     cjScrollToCaja, cjModoTV,
     _cjTkRender, _cjTkSetFiltro, _cjTkSetVendedor,
