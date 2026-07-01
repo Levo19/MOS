@@ -441,7 +441,10 @@ begin
     -- recomputar ventana 30d + estado/tipo/fecha (mismas reglas que arriba), independiente de id_caja.
     select
       case
-        when upper(coalesce(v.forma_pago,'EFECTIVO')) in ('ANULADO','CREDITO') then upper(v.forma_pago)
+        -- [500x] prefix-match ANULADO% igual que el cuerpo principal (línea ~188) y 311/312, para que
+        -- kpisTickets no discrepe (un ANULADO_CONVERSION caería en COMPLETADO y se contaría en el total).
+        when upper(coalesce(v.forma_pago,'EFECTIVO')) like 'ANULADO%'          then 'ANULADO'
+        when upper(coalesce(v.forma_pago,'EFECTIVO')) = 'CREDITO'             then 'CREDITO'
         when upper(coalesce(v.forma_pago,'EFECTIVO')) = 'POR_COBRAR'           then 'POR_COBRAR'
         else 'COMPLETADO'
       end as estado,

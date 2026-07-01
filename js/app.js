@@ -26292,12 +26292,18 @@ const MOS = (() => {
     // rango real → tickets_rango
     if (inf) inf.textContent = '⏳ buscando…';
     _finBeep('nav');
-    const r = await API.get('getTicketsRango', { desde, hasta });
-    const tks = (r && r.todosTickets) || (r && r.data && r.data.todosTickets) || [];
-    S._cjTkRangoData = tks;
-    _cjState.tkRangoActivo = true;
-    if (inf) inf.textContent = `${tks.length} en el rango`;
-    _cjTkRenderFiltrosBtns(); _cjTkRenderVendedoresBtns(); _cjTkRender();
+    try {
+      const r = await API.get('getTicketsRango', { desde, hasta });
+      const tks = (r && r.todosTickets) || (r && r.data && r.data.todosTickets) || [];
+      S._cjTkRangoData = tks;
+      _cjState.tkRangoActivo = true;
+      if (inf) inf.textContent = `${tks.length} en el rango`;
+      _cjTkRenderFiltrosBtns(); _cjTkRenderVendedoresBtns(); _cjTkRender();
+    } catch (e) {
+      // [500x] sin try/catch el label quedaba atascado en "buscando…" para siempre ante error de red
+      if (inf) inf.textContent = '⚠ error al buscar · reintentá';
+      try { _finBeep('error'); } catch(_){}
+    }
   }
   // [rango] mini-calendario de rango con MARCAS (días con tickets) — sabés qué rango elegir.
   const _cjRangoCal = { y: 0, m: 0, desde: '', hasta: '' };

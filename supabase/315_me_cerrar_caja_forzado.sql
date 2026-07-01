@@ -149,8 +149,8 @@ begin
     'estado','CERRADA','vendedor',v_caja.vendedor,'estacion',v_caja.estacion,'zona',v_caja.zona_id,
     'printNodeId',v_caja.printnode_id,'montoInicial',v_caja.monto_inicial,
     'efectivoVentas',v_efe,'ingresos',v_ing,'egresos',v_egr,'montoFinal',v_auto,'montoFinalAuto',v_auto,
-    'devueltosACredito',array_length(v_anulados,1),'idsDevueltosACredito',to_jsonb(v_anulados),
-    'anulados',array_length(v_anulados,1),'cobrosLiberados',v_cobros,
+    'devueltosACredito',coalesce(array_length(v_anulados,1),0),'idsDevueltosACredito',to_jsonb(v_anulados),
+    'anulados',coalesce(array_length(v_anulados,1),0),'cobrosLiberados',v_cobros,
     'cerradoPor',v_cerrpor,'guiaRegenerada',v_guia,'efectos',v_efectos->'data',
     'mensaje','Caja cerrada por '||v_cerrpor||' · S/ '||to_char(v_auto,'FM999999990.00'));
 end;

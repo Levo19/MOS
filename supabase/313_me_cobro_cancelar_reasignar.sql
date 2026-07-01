@@ -22,9 +22,13 @@ begin
   end if;
   if v_idcobro = '' then return jsonb_build_object('ok',false,'error','idCobro requerido'); end if;
 
-  perform pg_advisory_xact_lock(hashtext('cobrocancel:'||v_idcobro));
+  -- [500x HIGH] serializar por VENTA (mismo namespace 'cobro:'||idVenta que asignar 308 / confirmar 310 /
+  -- directo 314) para que cancelar NO pueda correr en paralelo con un cobro en vuelo de la misma venta
+  -- (evita doble-cobro / lost-update). Leo el cobro para la venta, tomo el lock, re-leo bajo el lock.
   select * into v_row from me.creditos_cobro_asignado where id_cobro = v_idcobro limit 1;
   if not found then return jsonb_build_object('ok',false,'error','COBRO_NO_ENCONTRADO'); end if;
+  perform pg_advisory_xact_lock(hashtext('cobro:'||v_row.id_venta));
+  select * into v_row from me.creditos_cobro_asignado where id_cobro = v_idcobro limit 1;
   -- idempotencia: si ya está cancelado por admin, éxito silencioso
   if upper(coalesce(v_row.estado,'')) = 'CANCELADO_ADMIN' then
     return jsonb_build_object('ok',true,'idempotente',true,'idCobro',v_idcobro,'mensaje','Cobro ya estaba cancelado');
@@ -73,9 +77,13 @@ begin
   if v_idcobro = '' then return jsonb_build_object('ok',false,'error','idCobro requerido'); end if;
   if v_caja = ''    then return jsonb_build_object('ok',false,'error','cajaDestino requerida'); end if;
 
-  perform pg_advisory_xact_lock(hashtext('cobrocancel:'||v_idcobro));
+  -- [500x HIGH] lock por VENTA (mismo namespace que asignar/confirmar/directo). asignar_cobro_cajero,
+  -- llamado abajo, re-toma el MISMO lock 'cobro:'||idVenta (re-entrante: si ya lo tenemos, retorna al
+  -- instante) → un solo namespace en todo el ciclo de la venta, sin ABBA deadlock.
   select * into v_row from me.creditos_cobro_asignado where id_cobro = v_idcobro limit 1;
   if not found then return jsonb_build_object('ok',false,'error','COBRO_NO_ENCONTRADO'); end if;
+  perform pg_advisory_xact_lock(hashtext('cobro:'||v_row.id_venta));
+  select * into v_row from me.creditos_cobro_asignado where id_cobro = v_idcobro limit 1;
   if upper(coalesce(v_row.estado,'')) <> 'ASIGNADO' then
     return jsonb_build_object('ok',false,'error','COBRO_NO_ASIGNADO','estado',v_row.estado);
   end if;
