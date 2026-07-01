@@ -21784,7 +21784,7 @@ const MOS = (() => {
       ? `<button onclick="event.stopPropagation();MOS.abrirEspiaPorUsuario('${safeNombre}')"
                  class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center hover:scale-110 transition-all"
                  style="background:rgba(99,102,241,0.18);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;font-size:13px;"
-                 title="Espiar a ${p.nombre} (audio + GPS)">🕵️</button>`
+                 title="Espiar a ${_escapeHtml(p.nombre)} (audio + GPS)">🕵️</button>`
       : '';
     const gpsBtn = '';
 
@@ -35740,7 +35740,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
              <div class="fin-rejas-bar"></div>
            </div>
            <div class="fin-rejas-badge">🔒 BLOQUEADO · ${bloqInfo.dispositivos.length} disp.</div>
-           <div class="fin-rejas-sub">${p.nombre}</div>
+           <div class="fin-rejas-sub">${_escapeHtml(p.nombre)}</div>
          </div>`
       : '';
     return `
@@ -35752,8 +35752,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           ${scoreCircle}
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 mb-1 flex-wrap">
-              <div class="font-semibold text-slate-100 text-sm truncate">${p.nombre}</div>
-              <span class="badge-rol ${rolClass}">${p.rol || (ev && ev.rol) || '—'}</span>
+              <div class="font-semibold text-slate-100 text-sm truncate">${_escapeHtml(p.nombre)}</div>
+              <span class="badge-rol ${rolClass}">${_escapeHtml(p.rol || (ev && ev.rol) || '—')}</span>
               ${ev && ev.virtual ? '<span class="badge-rol badge-rol-default" title="Detectado del sistema">⚡ del sistema</span>' : ''}
               ${fuenteTag}
               ${dupChip}
@@ -35793,7 +35793,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
               <button onclick="event.stopPropagation();MOS.abrirEspiaPorUsuario('${_escAttrJs(p.nombre || '')}')"
                 class="w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-all"
                 style="background:rgba(99,102,241,0.18);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;font-size:11px;"
-                title="Espiar a ${p.nombre} (audio + GPS)">🕵️</button>
+                title="Espiar a ${_escapeHtml(p.nombre)} (audio + GPS)">🕵️</button>
             </div>
             ${idForEval ? `<button onclick="MOS.abrirAuditar('${idForEval}')" class="btn-primary text-xs whitespace-nowrap px-3 py-1.5">Auditar</button>` : ''}
             <div class="flex gap-1 mt-1">
