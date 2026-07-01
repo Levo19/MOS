@@ -24071,24 +24071,33 @@ const MOS = (() => {
     try {
       // [historial] día COMPLETO: cajas + tickets + KPIs (cierres_caja con fecha) → la vista entera carga
       const d = await API.get('getCierresDia', { fecha });
-      if (!d) { S._cjDiasExtra.add(fecha); return false; }
-      let add = 0;
-      // merge tickets (dedup por idVenta)
-      const tks = d.todosTickets || [];
-      const cacheT = S._todosTickets || [];
-      const idsT = new Set(cacheT.map(t => String(t.idVenta)));
-      tks.forEach(t => { if (!idsT.has(String(t.idVenta))) { cacheT.push(t); add++; } });
-      S._todosTickets = cacheT;
-      // merge cajas (dedup por idCaja) → aparecen las cards de caja del día viejo
-      const cacheC = S._todasCajas || [];
-      const idsC = new Set(cacheC.map(c => String(c.idCaja)));
-      [...(d.abiertas || []), ...(d.cerradas || [])].forEach(c => {
-        if (!idsC.has(String(c.idCaja))) { cacheC.push(c); add++; }
-      });
-      S._todasCajas = cacheC;
       S._cjDiasExtra.add(fecha);
-      return add > 0;
+      if (!d) return false;
+      // [fix bug] guardar en el STORE PERSISTENTE (sobrevive a las recargas de 30d que pisan
+      // S._todosTickets/S._todasCajas → antes el día viejo se vaciaba al re-renderizar).
+      if (!S._cjHistTickets) S._cjHistTickets = [];
+      if (!S._cjHistCajas)   S._cjHistCajas   = [];
+      (d.todosTickets || []).forEach(t => S._cjHistTickets.push(t));
+      [...(d.abiertas || []), ...(d.cerradas || [])].forEach(c => S._cjHistCajas.push(c));
+      _cjMergeHist();
+      return true;
     } catch (e) { console.warn('[cj] getCierresDia:', e?.message || e); return false; }
+  }
+  // [fix bug] re-inyecta el histórico (días fuera de 30d) en los caches vivos, sin duplicar.
+  // Se llama tras _cjAsegurarDia y DESPUÉS de cada recarga de cierres_caja (que reescribe los caches).
+  function _cjMergeHist() {
+    if (S._cjHistTickets && S._cjHistTickets.length) {
+      const cache = S._todosTickets || [];
+      const ids = new Set(cache.map(t => String(t.idVenta)));
+      S._cjHistTickets.forEach(t => { const k = String(t.idVenta); if (!ids.has(k)) { cache.push(t); ids.add(k); } });
+      S._todosTickets = cache;
+    }
+    if (S._cjHistCajas && S._cjHistCajas.length) {
+      const cajas = S._todasCajas || [];
+      const ids = new Set(cajas.map(c => String(c.idCaja)));
+      S._cjHistCajas.forEach(c => { const k = String(c.idCaja); if (!ids.has(k)) { cajas.push(c); ids.add(k); } });
+      S._todasCajas = cajas;
+    }
   }
   // [calendario] jala qué días del mes tienen tickets (mos.dias_con_tickets) y re-pinta con marcas
   async function _cjCalCargarMes(y, m) {
@@ -27521,6 +27530,7 @@ const MOS = (() => {
       ];
       S._todasCajas = [...abiertas, ...cerradas];
       S._todosTickets = tkAll;
+      _cjMergeHist();   // [fix bug] preservar días históricos jalados (no vaciar al recargar)
       S._cajasGenTs = generadoEn || '';
       S._cajasLoaded = true;
 
@@ -27768,6 +27778,7 @@ const MOS = (() => {
       S._cajasHoy = [...abiertas, ...(cerradas || []).filter(c =>
         (c.fechaApertura || '').startsWith(todayStr) || (c.fechaCierre || '').startsWith(todayStr))];
       S._todasCajas  = [...abiertas, ...cerradas];
+      _cjMergeHist();   // [fix bug] re-inyectar histórico tras la recarga
       S._cajasLoaded = true;
       S._cajasGenTs  = generadoEn || '';
       // [v2.41.91] Detectar cruces de hitos antes de re-renderizar
@@ -28392,6 +28403,7 @@ const MOS = (() => {
       S._todosTickets = tkAll;
       const todayStr  = today();
       S._todasCajas   = [...abiertas, ...cerradas];
+      _cjMergeHist();   // [fix bug] re-inyectar histórico tras la recarga silenciosa
       S._cajasHoy     = [...abiertas, ...(cerradas || []).filter(c =>
         (c.fechaApertura || '').startsWith(todayStr) || (c.fechaCierre || '').startsWith(todayStr))];
 
