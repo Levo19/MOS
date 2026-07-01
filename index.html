@@ -1851,17 +1851,24 @@
       background: linear-gradient(135deg, #0369a1, #38bdf8); color: #fff;
       font-size: 13px; font-weight: 800;
       box-shadow: 0 5px 16px rgba(56,189,248,.6), 0 0 0 2px rgba(2,6,23,.65);
-      animation: cjAvionFly 2.4s ease-in-out infinite; pointer-events: none;
+      animation: cjAvionOrbit 9s ease-in-out infinite; pointer-events: none;
+      transform-origin: center; will-change: transform;
     }
     .cj-mano-avion span { font-size: 11px; }
     /* [rediseño] botones reasignar/cancelar inline en la carta "enviado" de la mesa */
     .cj-mesa-carta-actions { display: flex; gap: 6px; margin-top: 9px; }
     .cj-mesa-carta-actions .cj-vuelo-btn { flex: 1; }
-    @keyframes cjAvionFly {
-      0%,100% { transform: translate(0,0) rotate(0deg); }
-      25% { transform: translate(2px,-3px) rotate(-9deg); }
-      50% { transform: translate(0,-5px) rotate(0deg); }
-      75% { transform: translate(-2px,-3px) rotate(9deg); }
+    /* [v409] El ✈ flota suave y CADA RATO despega y da una vuelta orbital a la baraja. */
+    @keyframes cjAvionOrbit {
+      0%   { transform: translate(0,0) rotate(0deg) scale(1); }
+      18%  { transform: translate(0,-3px) rotate(-7deg) scale(1); }
+      38%  { transform: translate(0,-1px) rotate(5deg) scale(1); }
+      54%  { transform: translate(0,0) rotate(0deg) scale(1); }
+      59%  { transform: translate(5px,-11px) rotate(-20deg) scale(1.18); }   /* despegue */
+      68%  { transform: translate(-192px,-7px) rotate(-158deg) scale(1.06); }/* esquina sup-izq */
+      78%  { transform: translate(-192px,118px) rotate(-206deg) scale(1.06); }/* esquina inf-izq */
+      89%  { transform: translate(-4px,118px) rotate(-338deg) scale(1.06); } /* esquina inf-der */
+      100% { transform: translate(0,0) rotate(-360deg) scale(1); }           /* aterrizaje */
     }
     .cj-mano-naked {
       position: absolute;
@@ -2795,17 +2802,19 @@
       transition: all .15s;
     }
     .cj-vuelo-btn-reasignar {
-      background: rgba(168,85,247,.15);
-      border: 1px solid rgba(168,85,247,.4);
-      color: #d8b4fe;
+      background: rgba(147,51,234,.42);
+      border: 1px solid rgba(216,180,254,.85);
+      color: #faf5ff;
+      text-shadow: 0 1px 2px rgba(0,0,0,.6);
     }
-    .cj-vuelo-btn-reasignar:hover { background: rgba(168,85,247,.3); }
+    .cj-vuelo-btn-reasignar:hover { background: rgba(147,51,234,.62); }
     .cj-vuelo-btn-cancelar {
-      background: rgba(239,68,68,.12);
-      border: 1px solid rgba(239,68,68,.4);
-      color: #fca5a5;
+      background: rgba(220,38,38,.4);
+      border: 1px solid rgba(252,165,165,.85);
+      color: #fff5f5;
+      text-shadow: 0 1px 2px rgba(0,0,0,.6);
     }
-    .cj-vuelo-btn-cancelar:hover { background: rgba(239,68,68,.25); }
+    .cj-vuelo-btn-cancelar:hover { background: rgba(220,38,38,.6); }
     /* Recientes — compactos */
     .cj-vuelo-recientes-wrap summary { list-style: none; outline: none; }
     .cj-vuelo-recientes-wrap summary::-webkit-details-marker { display: none; }
@@ -3390,6 +3399,12 @@
     .cj-sincaja-deck { position: relative; width: 210px; height: 128px; margin: 10px auto 2px; perspective: 900px; cursor: pointer; }
     .cj-sincaja-stack { position: absolute; inset: 0; transform-style: preserve-3d; }
     .cj-sincaja-lbl { position: absolute; bottom: -20px; left: 0; right: 0; text-align: center; font-size: 11px; font-weight: 800; color: #fbbf24; }
+    /* [v409] Sirena de alerta: ⚠ palpitante rojo↔amarillo denota "tickets sin caja". */
+    .cj-sincaja-siren { position: absolute; top: -15px; left: 50%; z-index: 75; font-size: 21px; pointer-events: none; animation: cjSiren .85s ease-in-out infinite; }
+    @keyframes cjSiren {
+      0%,100% { color: #ef4444; text-shadow: 0 0 7px rgba(239,68,68,.95), 0 0 15px rgba(239,68,68,.55); transform: translateX(-50%) scale(1) rotate(-5deg); }
+      50%     { color: #fde047; text-shadow: 0 0 11px rgba(253,224,71,1), 0 0 23px rgba(253,224,71,.7); transform: translateX(-50%) scale(1.22) rotate(5deg); }
+    }
     .cj-sincaja-carta {
       position: absolute; left: 6px; right: 6px; top: 8px; height: 104px; border-radius: 13px; padding: 11px 13px;
       background: linear-gradient(140deg, #2a1a06, #16110a); border: 1px solid rgba(245,158,11,.55);
@@ -14913,6 +14928,7 @@
                los créditos. Rota como créditos. Click → visor filtrado. -->
           <div id="cjSinCajaDeck" class="cj-sincaja-deck hidden" onclick="MOS.cjVerTicketsSinCaja()"
                title="Tickets sin caja asignada — tocá para revisar">
+            <div class="cj-sincaja-siren" aria-hidden="true">⚠</div>
             <div id="cjSinCajaStack" class="cj-sincaja-stack"><!-- cartas inyectadas por JS --></div>
             <div class="cj-sincaja-lbl">🃏 Sin caja · <span id="cjSinCajaN">0</span></div>
           </div>
@@ -19453,7 +19469,7 @@ if (false) (function(){
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.408';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.409';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19498,7 +19514,7 @@ if (false) (function(){
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.408"></script>
+<script src="js/api.js?v=2.43.409"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19513,7 +19529,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.408"></script>
+<script src="js/app.js?v=2.43.409"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
