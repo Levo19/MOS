@@ -57,9 +57,14 @@ begin
     into v_fp, v_cli, v_total
     from me.ventas where id_venta = c.id_venta;
   if not found then return jsonb_build_object('ok',false,'error','VENTA_NO_ENCONTRADA'); end if;
-  if v_fp = 'ANULADO' then return jsonb_build_object('ok',false,'error','VENTA_ANULADA'); end if;
+  if v_fp like 'ANULADO%' then return jsonb_build_object('ok',false,'error','VENTA_ANULADA'); end if;
   if v_fp not in ('CREDITO','POR_COBRAR') then return jsonb_build_object('ok',false,'error','VENTA_NO_PENDIENTE'); end if;
 
+  -- [500x HIGH] serializar con el CIERRE de la caja receptora: tomar 'cerrarcaja:'||caja ANTES de
+  -- validar ABIERTA. Si un cierre (315/27) corre en paralelo, o (a) el cierre corrió primero → acá
+  -- vemos la caja CERRADA y abortamos sin insertar dinero; o (b) nosotros primero → el cierre espera
+  -- este lock y cuenta nuestro INGRESO en monto_final. Sin esto, dinero entraba a una caja cerrada.
+  perform pg_advisory_xact_lock(hashtext('cerrarcaja:'||c.caja_destino));
   -- caja receptora (la del cobro) debe estar ABIERTA
   select upper(coalesce(estado,'')) into v_cajaest from me.cajas where id_caja = c.caja_destino;
   if coalesce(v_cajaest,'') <> 'ABIERTA' then return jsonb_build_object('ok',false,'error','CAJA_RECEPTORA_NO_ABIERTA'); end if;
@@ -70,6 +75,7 @@ begin
   -- 1) movimiento(s) — mismas filas que cobrarCreditoConExtra. idExtra determinista
   --    desde idCobro → reintento/doble-tap NO duplica (on conflict do nothing).
   if v_metup like 'MIXTO%' then
+    if v_efe < 0 or v_vir < 0 then return jsonb_build_object('ok',false,'error','MONTO_INVALIDO'); end if;  -- [500x] no INGRESO negativo
     if abs((v_efe + v_vir) - v_total) > 0.01 then
       return jsonb_build_object('ok',false,'error','MIXTO_NO_CUADRA');
     end if;

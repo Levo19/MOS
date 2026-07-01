@@ -29,6 +29,7 @@ begin
   if not found then return jsonb_build_object('ok',false,'error','COBRO_NO_ENCONTRADO'); end if;
   perform pg_advisory_xact_lock(hashtext('cobro:'||v_row.id_venta));
   select * into v_row from me.creditos_cobro_asignado where id_cobro = v_idcobro limit 1;
+  if not found then return jsonb_build_object('ok',false,'error','COBRO_NO_ENCONTRADO'); end if;
   -- idempotencia: si ya está cancelado por admin, éxito silencioso
   if upper(coalesce(v_row.estado,'')) = 'CANCELADO_ADMIN' then
     return jsonb_build_object('ok',true,'idempotente',true,'idCobro',v_idcobro,'mensaje','Cobro ya estaba cancelado');
@@ -84,6 +85,7 @@ begin
   if not found then return jsonb_build_object('ok',false,'error','COBRO_NO_ENCONTRADO'); end if;
   perform pg_advisory_xact_lock(hashtext('cobro:'||v_row.id_venta));
   select * into v_row from me.creditos_cobro_asignado where id_cobro = v_idcobro limit 1;
+  if not found then return jsonb_build_object('ok',false,'error','COBRO_NO_ENCONTRADO'); end if;
   if upper(coalesce(v_row.estado,'')) <> 'ASIGNADO' then
     return jsonb_build_object('ok',false,'error','COBRO_NO_ASIGNADO','estado',v_row.estado);
   end if;

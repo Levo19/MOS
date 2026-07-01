@@ -268,6 +268,10 @@ begin
   if v_new is null then return jsonb_build_object('ok', false, 'error', 'formaPagoNueva requerida'); end if;
   if v_mot is null then return jsonb_build_object('ok', false, 'error', 'motivo es obligatorio para auditoría'); end if;
 
+  -- [500x MED] tomar el lock de la venta ANTES del FOR UPDATE (mismo namespace 'cobro:'||idVenta que
+  -- confirmar/directo, y en el MISMO orden lock→row para no crear ABBA): serializa la edición manual
+  -- de forma_pago con un cobro en vuelo de la misma venta.
+  perform pg_advisory_xact_lock(hashtext('cobro:'||v_id));
   select forma_pago, historial_cambios into v_ant, v_hist
   from me.ventas where id_venta = v_id for update;   -- 264: FOR UPDATE serializa read-then-append
   if not found then
@@ -275,6 +279,15 @@ begin
   end if;
   if upper(coalesce(v_ant,'')) like 'ANULADO%' then
     return jsonb_build_object('ok', false, 'error', 'No se puede modificar un ticket anulado');
+  end if;
+
+  -- [500x MED] si el ticket deja de ser un crédito pendiente, anular cualquier cobro ASIGNADO vivo
+  -- (si no, el cajero podría cobrarlo otra vez = doble cobro de la misma deuda).
+  if upper(v_new) not in ('CREDITO','POR_COBRAR') then
+    update me.creditos_cobro_asignado
+       set estado='CANCELADO_ADMIN', fecha_res=now(),
+           razon='Anulado por edición de forma de pago', updated_at=now()
+     where id_venta = v_id and upper(coalesce(estado,''))='ASIGNADO';
   end if;
 
   update me.ventas

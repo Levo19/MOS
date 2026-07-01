@@ -45,7 +45,7 @@ begin
     into v_fp, v_cli, v_total
     from me.ventas where id_venta = v_idventa;
   if not found then return jsonb_build_object('ok',false,'error','VENTA_NO_ENCONTRADA'); end if;
-  if v_fp = 'ANULADO' then return jsonb_build_object('ok',false,'error','VENTA_ANULADA'); end if;
+  if v_fp like 'ANULADO%' then return jsonb_build_object('ok',false,'error','VENTA_ANULADA'); end if;
   if v_fp not in ('CREDITO','POR_COBRAR') then
     -- ¿ya fue cobrada por ESTE mismo flujo (retry de red)? → éxito idempotente
     select exists(select 1 from me.movimientos_extra where id_extra in ('EX-DIR-'||v_idventa, 'EX-DIR-'||v_idventa||'-E', 'EX-DIR-'||v_idventa||'-V'))
@@ -57,6 +57,9 @@ begin
     return jsonb_build_object('ok',false,'error','VENTA_NO_PENDIENTE','estado',v_fp);
   end if;
 
+  -- [500x HIGH] serializar con el CIERRE de la caja receptora (mismo lock que 315/27) ANTES de validar
+  -- ABIERTA → un cobro directo no entra a una caja que se está cerrando en paralelo.
+  perform pg_advisory_xact_lock(hashtext('cerrarcaja:'||v_caja));
   select upper(coalesce(estado,'')) into v_cajaest from me.cajas where id_caja = v_caja;
   if coalesce(v_cajaest,'') <> 'ABIERTA' then return jsonb_build_object('ok',false,'error','CAJA_RECEPTORA_NO_ABIERTA'); end if;
 
@@ -65,6 +68,7 @@ begin
 
   -- 1) movimiento(s) — mismas filas que cobrarCreditoConExtra; idExtra determinista EX-DIR-<idVenta>.
   if v_metup like 'MIXTO%' then
+    if v_efe < 0 or v_vir < 0 then return jsonb_build_object('ok',false,'error','MONTO_INVALIDO'); end if;  -- [500x] no INGRESO negativo
     if abs((v_efe + v_vir) - v_total) > 0.01 then
       return jsonb_build_object('ok',false,'error','MIXTO_NO_CUADRA');
     end if;

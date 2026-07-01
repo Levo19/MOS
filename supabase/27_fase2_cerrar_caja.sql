@@ -47,6 +47,9 @@ begin
   end if;
   if v_id is null then return jsonb_build_object('status','error','error','ID_CAJA_REQUERIDO'); end if;
 
+  -- [500x] serializar con los cobros a esta caja (310/314 toman 'cerrarcaja:'||caja) y con el cierre
+  -- forzado (315). Sin esto, un cobro podía entrar mientras se cierra, o dos cierres pisarse.
+  perform pg_advisory_xact_lock(hashtext('cerrarcaja:'||v_id));
   select * into v_caja from me.cajas where id_caja = v_id limit 1;
   if not found then return jsonb_build_object('status','error','error','CAJA_NO_ENCONTRADA'); end if;
 
