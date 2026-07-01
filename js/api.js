@@ -2648,7 +2648,11 @@ const API = (() => {
       if (action === 'getCierresDia')          { return _sbRpcMOS('cierres_caja',     { p }, 'mos').then(r => (r && r.data) ? r.data : null).catch(() => null); }
       if (action === 'getMermasWarehouse')     { return _conFallbackMOS(() => _getMermasWarehouseDirecto(p),     () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getEnvasadosWarehouse')  { return _conFallbackMOS(() => _getEnvasadosWarehouseDirecto(p),  () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getAlertasWarehouse')    { return _conFallbackMOS(() => _getAlertasWarehouseDirecto(p),    () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      // [v2.43.410 cero-GAS] getAlertasWarehouse SIN fallback GAS: la RPC mos.alertas_warehouse
+      // devuelve _fresh:true con la sombra WH viva (verificado: 413 lotes frescos). El fallback a GAS
+      // solo disparaba CORS en el arranque (el prefetch corre antes de que el token MOS esté listo).
+      // Directo o null; nunca GAS. La KPI de vencimientos se llena al tener token (o al abrir Almacén).
+      if (action === 'getAlertasWarehouse')    { return _getAlertasWarehouseDirecto(p).catch(() => null); }
       if (action === 'getRotacionProductos')   { return _conFallbackMOS(() => _getRotacionProductosDirecto(p),   () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getCatalogoStockResumen'){ return _conFallbackMOS(() => _getCatalogoStockResumenDirecto(p),() => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getDashboardAlmacen')    { return _conFallbackMOS(() => _getDashboardAlmacenDirecto(p),    () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }

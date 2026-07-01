@@ -1887,11 +1887,15 @@
     }
     @media (max-width: 720px) {
       .cj-mano-naked {
-        position: static;
+        /* [100x 1.1] relative (no static): mantiene el flujo normal PERO sigue siendo el bloque
+           contenedor del ✈ absolute, para que no se despegue a la esquina de la sección ni orbite
+           sobre la grilla de cajas. */
+        position: relative;
         width: auto; min-height: 200px;
         margin-top: 14px;
         animation: none;
       }
+      .cj-mano-avion { top: 4px; right: 6px; animation: none; }
     }
     /* Contenedor de la mano: cartas absolute en abanico */
     .cj-mano-contenedor {
@@ -3389,7 +3393,10 @@
     }
     .cj-deck:hover .cj-deck-front { transform: translateY(-5px) rotate(-1deg); box-shadow: 0 16px 34px rgba(0,0,0,.6), 0 0 18px rgba(245,158,11,.25); }
     .cj-deck:hover .cj-deck-capa { transform: translate(calc(var(--i) * 7px), calc(var(--i) * 7px)) rotate(calc(var(--i) * 1deg)); }
-    .cj-deck-badge { position: absolute; top: 8px; right: 11px; font-size: 15px; animation: cjCalDotPulse 1.5s ease-in-out infinite; }
+    /* [100x 1.2] keyframe propio sin translateX: estos badges se posicionan por top/right,
+       reusar cjCalDotPulse (pensado para un dot centrado con left:50%) los corría a la izquierda. */
+    @keyframes cjBadgePulse { 0%,100%{opacity:.6;transform:scale(1)} 50%{opacity:1;transform:scale(1.28)} }
+    .cj-deck-badge { position: absolute; top: 8px; right: 11px; font-size: 15px; animation: cjBadgePulse 1.5s ease-in-out infinite; }
     .cj-deck-ico { font-size: 30px; filter: drop-shadow(0 2px 4px rgba(0,0,0,.55)); }
     .cj-deck-title { font-size: 12px; font-weight: 800; color: #fbbf24; letter-spacing:.2px; }
     .cj-deck-count { font-size: 11px; color: #e2e8f0; font-weight: 700; }
@@ -3425,7 +3432,7 @@
     .cj-scc-sep { height: 1px; background: rgba(245,158,11,.22); margin: 7px 0; }
     .cj-scc-corr { font-size: 11px; color: #e2e8f0; font-weight: 700; }
     .cj-scc-meta { font-size: 10px; color: #a16207; margin-top: 3px; display: flex; justify-content: space-between; }
-    .cj-scc-badge { position: absolute; top: 7px; right: 10px; font-size: 13px; animation: cjCalDotPulse 1.5s ease-in-out infinite; }
+    .cj-scc-badge { position: absolute; top: 7px; right: 10px; font-size: 13px; animation: cjBadgePulse 1.5s ease-in-out infinite; }
     .cj-caja-card {
       background: linear-gradient(135deg, #0a1424, #060d1f);
       border: 1px solid #1e293b;
@@ -19469,7 +19476,7 @@ if (false) (function(){
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.409';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.410';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19514,7 +19521,7 @@ if (false) (function(){
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.409"></script>
+<script src="js/api.js?v=2.43.410"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19529,7 +19536,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.409"></script>
+<script src="js/app.js?v=2.43.410"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

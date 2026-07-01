@@ -183,7 +183,10 @@ begin
     select vr.*,
       -- estado derivado de forma_pago (regla en piedra)
       case
-        when upper(vr.forma_pago) in ('ANULADO','CREDITO') then upper(vr.forma_pago)
+        -- [100x] prefix-match ANULADO% para capturar ANULADO_CONVERSION (NV→CPE) igual que GAS y que
+        -- 311/312. Con exact-match un ANULADO_CONVERSION caía en COMPLETADO y se SUMABA al total (doble-conteo).
+        when upper(vr.forma_pago) like 'ANULADO%'          then 'ANULADO'
+        when upper(vr.forma_pago) = 'CREDITO'              then 'CREDITO'
         when upper(vr.forma_pago) = 'POR_COBRAR'           then 'POR_COBRAR'
         else 'COMPLETADO'
       end                                                   as estado,
