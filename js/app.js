@@ -25280,8 +25280,14 @@ const MOS = (() => {
   }
 
   function _cjRenderEnVuelo() {
+    // [rediseño] el panel "Cobros en vuelo" se reemplazó por el ✈ animado en la baraja de
+    // créditos (indicador) + las cartas "enviado" dentro de la mesa. El panel queda oculto.
     const cont = document.getElementById('cjEnVueloPanel');
-    if (!cont) return;
+    if (cont) { cont.classList.add('hidden'); cont.innerHTML = ''; }
+    _cjActualizarAvionMano();
+    try { _cjRenderManoDelDia(); } catch (_) {}
+    return;
+    // ── código viejo del panel (inalcanzable, conservado por historial) ──
     const enVuelo = _cjCreditosState.enVuelo || [];
     const recientes = _cjCreditosState.recientes || [];
     if (!enVuelo.length && !recientes.length) {
@@ -25573,10 +25579,15 @@ const MOS = (() => {
     if (!mano) return;
 
     if (!grupo || !grupo.tickets || !grupo.tickets.length) {
-      mano.classList.add('hidden');
       _cjCreditosState.ticketsActivos = [];
       _cjCreditosState.fechaActiva = null;
       _cjStopShuffle();
+      // [rediseño] sin créditos pendientes pero CON cobros en vuelo → baraja visible solo
+      // para el ✈ (sin cartas). Sin nada de ambos → ocultar.
+      const hayVuelo = (_cjCreditosState.enVuelo || []).length > 0;
+      const cont0 = $('cjManoContenedor'); if (cont0) cont0.innerHTML = '';
+      mano.classList.toggle('hidden', !hayVuelo);
+      _cjActualizarAvionMano();
       return;
     }
     mano.classList.remove('hidden');
@@ -25592,12 +25603,20 @@ const MOS = (() => {
     }
 
     _cjPintarCartasMano();
+    _cjActualizarAvionMano();   // [rediseño] ✈ badge de cobros en vuelo
 
     // Arrancar shuffle automático cada 4s (solo si hay >= 2 cartas)
     _cjStopShuffle();
     if (grupo.tickets.length >= 2) {
       _cjCreditosState.shuffleTimer = setInterval(_cjShuffleStep, 4000);
     }
+  }
+  // [rediseño] actualiza el ✈ animado sobre la baraja de créditos (cobros en vuelo)
+  function _cjActualizarAvionMano() {
+    const av = $('cjManoAvion'); if (!av) return;
+    const n = (_cjCreditosState.enVuelo || []).length;
+    if (n > 0) { av.classList.remove('hidden'); const e = $('cjManoAvionN'); if (e) e.textContent = String(n); }
+    else av.classList.add('hidden');
   }
 
   // Limpia el nombre de producto: quita la parte parentética redundante "(nombre repetido)"
@@ -25741,7 +25760,16 @@ const MOS = (() => {
         const asig = t.asignado;
         const asigClass = asig ? 'is-asignada' : '';
         const asigBadge = asig
-          ? `<span class="cj-carta-asignado-badge" style="position:relative; top:0; right:0; margin-bottom:8px; display:inline-block;">✈ ${_esc(asig.vendedorDest)}</span>`
+          ? `<span class="cj-carta-asignado-badge" style="position:relative; top:0; right:0; margin-bottom:8px; display:inline-block;">✈ Enviado a ${_esc(asig.vendedorDest)}</span>`
+          : '';
+        // [rediseño] ticket "enviado" (en vuelo) → botones reasignar/cancelar INLINE en la mesa
+        // (reemplaza el panel). idCobro se toma del cobro en vuelo que matchea por idVenta.
+        const cobroEV = asig ? (_cjCreditosState.enVuelo || []).find(cv => String(cv.idVenta) === String(t.idVenta)) : null;
+        const asigActions = cobroEV
+          ? `<div class="cj-mesa-carta-actions" onclick="event.stopPropagation()">
+               <button onclick="MOS.cjReasignarCobro('${_esc(cobroEV.idCobro)}')" class="cj-vuelo-btn cj-vuelo-btn-reasignar">↺ Reasignar</button>
+               <button onclick="MOS.cjCancelarCobro('${_esc(cobroEV.idCobro)}')" class="cj-vuelo-btn cj-vuelo-btn-cancelar">✕ Cancelar</button>
+             </div>`
           : '';
         const cliente = _esc((t.cliente || 'VARIOS').toUpperCase());
         const delay = (cartaGlobalIdx++) * 60;
@@ -25771,6 +25799,7 @@ const MOS = (() => {
           <div class="cj-carta-sep"></div>
           ${_cjResumenItemsVoucher(t.items, 6, 22)}
           <div class="cj-carta-meta">${_esc(t.correlativo)} · ${_esc(t.vendedor)}${metaCobrado}</div>
+          ${asigActions}
         </div>`;
       }).join('');
 
