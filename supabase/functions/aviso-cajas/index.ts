@@ -245,7 +245,11 @@ Deno.serve(async (req: Request) => {
     }
     if (data.yaImpreso) return json({ ok: true, yaImpreso: true, enviados: 0, cajas: 0, impresiones: [] });
     const cajas: any[] = Array.isArray(data.cajas) ? data.cajas : [];
-    if (!cajas.length) return json({ ok: true, enviados: 0, cajas: 0, impresiones: [], mensaje: 'sin cajas abiertas' });
+    // [money-safe] 0 cajas en Supabase NO es "éxito" (podría ser me.cajas sin apertura-directo
+    // = shadow vacío) → ok:false para que WH caiga a GAS (autoridad real de cajas). Así el aviso
+    // nunca se pierde en silencio. Si me.cajas está fresco y de verdad no hay cajas, GAS también
+    // lo verá y no imprimirá — mismo resultado, sin miss.
+    if (!cajas.length) return json({ ok: false, error: 'SIN_CAJAS_SUPABASE', enviados: 0, cajas: 0, impresiones: [] });
 
     // 2) armar ESC/POS una vez y mandar 1 job por printnode ÚNICO (dedup acá)
     const bytes = construirAvisoBytes(data.preingreso || {}, String((data.preingreso || {}).proveedor || ''), reporteUrl);
