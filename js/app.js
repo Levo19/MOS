@@ -23922,6 +23922,7 @@ const MOS = (() => {
     tkCajaFiltro: '',
     tkBuscar: '',
     tkDoc: '',             // [rango] filtro tipo doc: '' | 'NV' | 'B' | 'F'
+    tkZona: '',            // [zona] filtro por zona emisora
     tkDesde: '', tkHasta: '',  // [rango] rango de fechas del buscador de tickets
     tkRangoActivo: false,  // [rango] true = usa S._cjTkRangoData; false = día activo
     chunksAnteriores: new Map(),  // idCaja → cantidadTickets para detectar cambios
@@ -26220,7 +26221,7 @@ const MOS = (() => {
   }
   // [rango] resetea el buscador al día 'f' (desde=hasta=f, sin rango activo)
   function _cjTkResetRango(f) {
-    _cjState.tkDesde = f; _cjState.tkHasta = f; _cjState.tkRangoActivo = false; _cjState.tkDoc = '';
+    _cjState.tkDesde = f; _cjState.tkHasta = f; _cjState.tkRangoActivo = false; _cjState.tkDoc = ''; _cjState.tkZona = '';
     const dd = $('cjTkDesde'), dh = $('cjTkHasta'), inf = $('cjTkRangoInfo');
     if (dd) dd.value = f; if (dh) dh.value = f; if (inf) inf.textContent = '';
   }
@@ -26319,7 +26320,7 @@ const MOS = (() => {
       if (!map.has(v)) map.set(v, { n: 0, tot: 0 });
       const e = map.get(v); e.n++; if (!esAnul(t)) e.tot += parseFloat(t.total) || 0;
     });
-    if (map.size <= 1) { wrap.classList.add('hidden'); _cjState.tkVendedor = ''; wrap.innerHTML = ''; return; }
+    if (map.size <= 1) { wrap.classList.add('hidden'); _cjState.tkVendedor = ''; wrap.innerHTML = ''; _cjTkRenderZonasBtns(); return; }
     wrap.classList.remove('hidden');
     const vends = Array.from(map.entries()).sort((a, b) => b[1].tot - a[1].tot);
     const ini = n => (n && n !== '—' ? n.trim()[0].toUpperCase() : '?');
@@ -26332,11 +26333,44 @@ const MOS = (() => {
     let html = chip('', 'Todos', '#475569', '', !_cjState.tkVendedor, '👥');
     html += vends.map(([v, e]) => chip(v, v, col(v), `S/${e.tot.toFixed(0)}`, _cjState.tkVendedor === v, ini(v))).join('');
     wrap.innerHTML = html;
+    _cjTkRenderZonasBtns();   // [zona] siempre refrescar los chips de zona junto con vendedores
   }
   function _cjTkSetVendedor(v) {
     _cjState.tkVendedor = (_cjState.tkVendedor === v) ? '' : v;   // toggle → re-click deselecciona
     _finBeep('click');
     _cjTkRenderVendedoresBtns();
+    _cjTkRender();
+  }
+
+  // [zona] chips por ZONA emisora — combinable con método/vendedor/tipo/búsqueda
+  function _cjTkZonaNombre(t) { return (String(t.zona || '').trim() || '—'); }
+  function _cjTkRenderZonasBtns() {
+    const wrap = $('cjTkZonas');
+    if (!wrap) return;
+    let base = _cjTkFuente();   // respeta rango/día + caja + tipo doc
+    const esAnul = t => String(t.metodo || t.formaPago || '').toUpperCase() === 'ANULADO' || t.estado === 'ANULADO';
+    const map = new Map();
+    base.forEach(t => {
+      const z = _cjTkZonaNombre(t);
+      if (!map.has(z)) map.set(z, { n: 0, tot: 0 });
+      const e = map.get(z); e.n++; if (!esAnul(t)) e.tot += parseFloat(t.total) || 0;
+    });
+    // solo mostrar si hay ≥2 zonas reales (—, es decir sin zona, cuenta como una)
+    if (map.size <= 1) { wrap.classList.add('hidden'); _cjState.tkZona = ''; wrap.innerHTML = ''; return; }
+    wrap.classList.remove('hidden');
+    const zonas = Array.from(map.entries()).sort((a, b) => b[1].tot - a[1].tot);
+    const chip = (key, label, sub, active) =>
+      `<button onclick="MOS._cjTkSetZona(this.dataset.z)" data-z="${_escapeHtml(String(key))}" class="log-icon-btn ${active ? 'active' : ''}" style="padding:4px 9px;font-size:11px;width:auto;height:auto;display:inline-flex;align-items:center;gap:5px">
+         <span>📍 ${_escapeHtml(label)}${sub ? ` <span style="opacity:.55">${sub}</span>` : ''}</span>
+       </button>`;
+    let html = chip('', 'Todas', '', !_cjState.tkZona);
+    html += zonas.map(([z, e]) => chip(z, z, `S/${e.tot.toFixed(0)}`, _cjState.tkZona === z)).join('');
+    wrap.innerHTML = html;
+  }
+  function _cjTkSetZona(z) {
+    _cjState.tkZona = (_cjState.tkZona === z) ? '' : z;
+    _finBeep('click');
+    _cjTkRenderZonasBtns();
     _cjTkRender();
   }
 
@@ -26391,6 +26425,10 @@ const MOS = (() => {
     if (_cjState.tkVendedor) {
       todos = todos.filter(t => _cjTkVendNombre(t) === _cjState.tkVendedor);
     }
+    // [zona] filtro por zona emisora (chips de zona)
+    if (_cjState.tkZona) {
+      todos = todos.filter(t => _cjTkZonaNombre(t) === _cjState.tkZona);
+    }
     // Buscar
     const q = ($('cjTkBuscar')?.value || _cjState.tkBuscar || '').trim().toLowerCase();
     if (q) {
@@ -26410,44 +26448,66 @@ const MOS = (() => {
       list.innerHTML = '<div class="px-4 py-10 text-center text-slate-500 text-sm italic">Sin tickets con este filtro</div>';
       return;
     }
-    const docLabel = { 'BOLETA': 'BOL', 'NOTA_DE_VENTA': 'NV', 'FACTURA': 'FAC', 'NV': 'NV', 'B': 'BOL', 'F': 'FAC' };
-    const metodoChip = t => {
-      const fp = String(t.metodo || t.formaPago || '').toUpperCase();
-      if (fp === 'ANULADO')        return { txt: 'ANULADO',     cls: 'tk-chip-anul' };
-      if (fp === 'EFECTIVO')       return { txt: '💵 Efectivo', cls: 'tk-chip-ef'   };
-      if (fp === 'VIRTUAL')        return { txt: '📱 Virtual',  cls: 'tk-chip-vi'   };
-      if (fp === 'POR_COBRAR')     return { txt: '⏳ Por cobrar', cls: 'tk-chip-pc' };
-      if (fp === 'CREDITO')        return { txt: '📋 Crédito',  cls: 'tk-chip-cr'   };
-      if (fp.startsWith('MIXTO'))  return { txt: '🔀 Mixto',    cls: 'tk-chip-mx'   };
-      return { txt: fp || '—', cls: 'tk-chip-other' };
-    };
-    list.innerHTML = lista.map(t => {
-      const an = esAnul2(t);
-      const met = metodoChip(t);
-      const corr = t.correlativo || (t.idVenta || '').split('-').pop() || '—';
-      const cliN = (t.clienteNom || t.cliente || '').trim();
-      const cliD = (t.clienteDoc || '').trim();
-      const tieneCliente = !!(cliN || cliD);
-      const cabecera = tieneCliente
-        ? `<div class="tk-cli-nombre">👤 ${_escapeHtml(cliN || 'Sin nombre')}</div>${cliD ? `<div class="tk-cli-doc">${_escapeHtml(cliD)}</div>` : ''}`
-        : `<div class="tk-cli-nombre tk-cli-nombre-anon">— Cliente sin registrar —</div>`;
-      const tipo = docLabel[t.tipo || t.tipoDoc] || (t.tipo || t.tipoDoc || '');
-      const idVentaSafe = _escAttrJs(t.idVenta || '');
-      return `<div class="tk-row tk-row-clickable ${an?'tk-row-anul':''} ${met.cls}" onclick="MOS.cjAbrirAccionesTicket('${idVentaSafe}')">
-        <div class="tk-cli">${cabecera}</div>
-        <div class="tk-meta">
-          <span class="tk-meta-corr">${_escapeHtml(tipo)} ${_escapeHtml(corr)}</span>
-          ${_cjState.tkRangoActivo && t.fecha ? `<span class="tk-meta-hora" style="color:#38bdf8;font-weight:700">· 📅 ${(t.fecha || '').substring(5)}</span>` : ''}
-          ${t.vendedor ? `<span class="tk-meta-vend">· ${_escapeHtml(t.vendedor)}</span>` : ''}
-          ${t.hora ? `<span class="tk-meta-hora">· ${t.hora}</span>` : ''}
-        </div>
-        <div class="tk-monto-col">
-          <div class="tk-monto ${an?'tk-monto-anul':''}">S/ ${parseFloat(t.total||0).toFixed(2)}</div>
-          <span class="tk-chip ${met.cls}">${met.txt}</span>
-        </div>
-        <div class="tk-row-cog" title="Acciones">⚙️</div>
-      </div>`;
-    }).join('');
+    // [diseño senior] AGRUPAR por fecha de emisión → un header por día (sin leer letra chica)
+    // con su total. Días en orden descendente. Dentro, tickets por hora desc (ya vienen así).
+    const grupos = new Map();
+    lista.forEach(t => { const f = (t.fecha || '').substring(0, 10) || '—'; if (!grupos.has(f)) grupos.set(f, []); grupos.get(f).push(t); });
+    const fechas = [...grupos.keys()].sort((a, b) => b.localeCompare(a));
+    let html = '';
+    fechas.forEach(f => {
+      const tks = grupos.get(f);
+      const totD = tks.reduce((s, t) => s + (esAnul2(t) ? 0 : (parseFloat(t.total) || 0)), 0);
+      html += `<div class="cj-tk-daysep"><span class="cj-tk-daysep-fecha">${_cjTkFechaHdr(f)}</span><span class="cj-tk-daysep-meta">${tks.length} tk · S/ ${totD.toFixed(2)}</span></div>`;
+      html += tks.map(_cjTkRowHtml).join('');
+    });
+    list.innerHTML = html;
+  }
+  // [diseño] cabecera de día: "🟢 Hoy" / "Ayer · …" / "Mié 21 May"
+  function _cjTkFechaHdr(f) {
+    if (!f || f === '—') return 'Sin fecha';
+    const hoy = today();
+    if (f === hoy) return '🟢 Hoy';
+    const d = new Date(f + 'T00:00:00');
+    const diff = Math.round((d - new Date(hoy + 'T00:00:00')) / 86400000);
+    let base = d.toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: 'short' });
+    base = base.charAt(0).toUpperCase() + base.slice(1);
+    return diff === -1 ? ('Ayer · ' + base) : base;
+  }
+  // [diseño] fila de ticket (sin la fecha chica: ahora la da el header del grupo)
+  function _cjTkRowHtml(t) {
+    const an = String(t.metodo || t.formaPago || '').toUpperCase() === 'ANULADO' || t.estado === 'ANULADO';
+    const fp = String(t.metodo || t.formaPago || '').toUpperCase();
+    const met =
+      fp === 'ANULADO'      ? { txt: 'ANULADO',      cls: 'tk-chip-anul' } :
+      fp === 'EFECTIVO'     ? { txt: '💵 Efectivo',  cls: 'tk-chip-ef'   } :
+      fp === 'VIRTUAL'      ? { txt: '📱 Virtual',   cls: 'tk-chip-vi'   } :
+      fp === 'POR_COBRAR'   ? { txt: '⏳ Por cobrar', cls: 'tk-chip-pc'  } :
+      fp === 'CREDITO'      ? { txt: '📋 Crédito',   cls: 'tk-chip-cr'   } :
+      fp.startsWith('MIXTO')? { txt: '🔀 Mixto',     cls: 'tk-chip-mx'   } :
+                              { txt: fp || '—',      cls: 'tk-chip-other' };
+    const corr = t.correlativo || (t.idVenta || '').split('-').pop() || '—';
+    const cliN = (t.clienteNom || t.cliente || '').trim();
+    const cliD = (t.clienteDoc || '').trim();
+    const cabecera = (cliN || cliD)
+      ? `<div class="tk-cli-nombre">👤 ${_escapeHtml(cliN || 'Sin nombre')}</div>${cliD ? `<div class="tk-cli-doc">${_escapeHtml(cliD)}</div>` : ''}`
+      : `<div class="tk-cli-nombre tk-cli-nombre-anon">— Cliente sin registrar —</div>`;
+    const tipo = ({ 'BOLETA': 'BOL', 'NOTA_DE_VENTA': 'NV', 'FACTURA': 'FAC', 'NV': 'NV', 'B': 'BOL', 'F': 'FAC' })[t.tipo || t.tipoDoc] || (t.tipo || t.tipoDoc || '');
+    const idVentaSafe = _escAttrJs(t.idVenta || '');
+    const zona = String(t.zona || '').trim();
+    return `<div class="tk-row tk-row-clickable ${an ? 'tk-row-anul' : ''} ${met.cls}" onclick="MOS.cjAbrirAccionesTicket('${idVentaSafe}')">
+      <div class="tk-cli">${cabecera}</div>
+      <div class="tk-meta">
+        <span class="tk-meta-corr">${_escapeHtml(tipo)} ${_escapeHtml(corr)}</span>
+        ${t.vendedor ? `<span class="tk-meta-vend">· ${_escapeHtml(t.vendedor)}</span>` : ''}
+        ${zona ? `<span class="tk-meta-vend" style="color:#5eead4">· 📍 ${_escapeHtml(zona)}</span>` : ''}
+        ${t.hora ? `<span class="tk-meta-hora">· ${t.hora}</span>` : ''}
+      </div>
+      <div class="tk-monto-col">
+        <div class="tk-monto ${an ? 'tk-monto-anul' : ''}">S/ ${parseFloat(t.total || 0).toFixed(2)}</div>
+        <span class="tk-chip ${met.cls}">${met.txt}</span>
+      </div>
+      <div class="tk-row-cog" title="Acciones">⚙️</div>
+    </div>`;
   }
 
   // ════════════════════════════════════════════════════════════
@@ -27830,6 +27890,7 @@ const MOS = (() => {
   }
   function _stopCajasRefresh() {
     if (_cajasRefreshTimer) { clearInterval(_cajasRefreshTimer); _cajasRefreshTimer = null; }
+    try { _cjSinCajaStop(); } catch (_) {}   // [500x F1] frenar el giro del deck sin-caja al salir de Cajas
   }
 
   // ── Charts de cajas ─────────────────────────────────────────
@@ -43341,7 +43402,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // Cajas modernizado
     cjDia, cjIrHoy, cjAbrirCalendario, cjCalNavMes, cjElegirFecha,
     cjToggleCajaDetail, cjVerTodosTickets, cjVerTicketsCaja, cjVerTicketsSinCaja,
-    _cjTkAplicarRango, _cjTkHoyRango, _cjTkSetDoc, cjAbrirTurno,
+    _cjTkAplicarRango, _cjTkHoyRango, _cjTkSetDoc, _cjTkSetZona, cjAbrirTurno,
     cjCerrarCajaForzado,
     cjScrollToCaja, cjModoTV,
     _cjTkRender, _cjTkSetFiltro, _cjTkSetVendedor,

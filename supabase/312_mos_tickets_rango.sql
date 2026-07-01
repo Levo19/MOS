@@ -21,7 +21,8 @@ begin
   with vr as (
     select coalesce(v.id_caja,'') id_caja, coalesce(v.forma_pago,'EFECTIVO') forma_pago,
            coalesce(v.tipo_doc,'NOTA_DE_VENTA') tipo_doc, coalesce(v.total,0)::numeric total,
-           v.fecha fecha_ts, v.id_venta, v.correlativo, v.cliente_doc, v.cliente_nombre, v.obs
+           v.fecha fecha_ts, coalesce(nullif(btrim(v.vendedor),''),'') vendedor,
+           v.id_venta, v.correlativo, v.cliente_doc, v.cliente_nombre, v.obs
       from me.ventas v
      where (v.fecha at time zone v_tz)::date between v_desde and v_hasta
   ),
@@ -46,7 +47,7 @@ begin
            'correlativo', coalesce(correlativo,''), 'clienteDoc', coalesce(cliente_doc,''),
            'clienteNom', coalesce(cliente_nombre,''), 'total', total, 'tipoDoc', tipo_doc,
            'tipo', tipo, 'metodo', forma_pago, 'estado', estado, 'obs', coalesce(obs,''),
-           'idCaja', id_caja, 'vendedor', cm_vendedor, 'zona', cm_zona)
+           'idCaja', id_caja, 'vendedor', coalesce(nullif(btrim(vendedor),''), cm_vendedor, ''), 'zona', cm_zona)
            order by (fecha||hora) desc, id_venta desc), '[]'::jsonb)
     into v_out from enr;
   return jsonb_build_object('ok', true, 'desde', to_char(v_desde,'YYYY-MM-DD'), 'hasta', to_char(v_hasta,'YYYY-MM-DD'), 'todosTickets', coalesce(v_out,'[]'::jsonb));

@@ -96,6 +96,7 @@ begin
       coalesce(v.tipo_doc,'NOTA_DE_VENTA')                  as tipo_doc,
       coalesce(v.total,0)::numeric                          as total,
       v.fecha                                               as fecha_ts,
+      coalesce(nullif(btrim(v.vendedor),''),'')             as vendedor,   -- [v2.43.388] vendedor REAL del ticket
       v.id_venta, v.correlativo, v.cliente_doc, v.cliente_nombre, v.obs,
       v.created_at
     from me.ventas v
@@ -190,7 +191,7 @@ begin
         'estado',      vc.estado,
         'obs',         coalesce(vc.obs,''),
         'idCaja',      vc.id_caja,
-        'vendedor',    coalesce(vc.cm_vendedor,''),
+        'vendedor',    coalesce(nullif(btrim(vc.vendedor),''), vc.cm_vendedor, ''),
         'zona',        vc.cm_zona
       ) as obj
     from ventas_calc vc

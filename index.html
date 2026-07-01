@@ -1555,6 +1555,19 @@
     .fin-gastos-cat:not(.hidden) { padding-top: 10px; border-top: 1px solid #1e293b; }
 
     /* ── Modal Tickets — layout enfocado en cliente ─────────── */
+    /* [diseño] separador de día (agrupación por fecha de emisión) — sticky y moderno */
+    .cj-tk-daysep {
+      position: sticky; top: 0; z-index: 5;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 7px 16px; margin: 0;
+      background: linear-gradient(90deg, rgba(56,189,248,0.14), rgba(10,20,36,0.96) 65%);
+      backdrop-filter: blur(6px);
+      border-top: 1px solid rgba(56,189,248,0.25);
+      border-bottom: 1px solid rgba(30,41,59,0.9);
+    }
+    .cj-tk-daysep:first-child { border-top: none; }
+    .cj-tk-daysep-fecha { font-size: 12px; font-weight: 800; color: #e2e8f0; letter-spacing: .2px; text-transform: capitalize; }
+    .cj-tk-daysep-meta { font-size: 11px; font-weight: 700; color: #38bdf8; white-space: nowrap; }
     .tk-row {
       display: grid;
       grid-template-columns: 1fr auto;
@@ -10035,6 +10048,23 @@
     .log-cal-day .cj-cal-dot { position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%); width: 5px; height: 5px; border-radius: 50%; background: #f59e0b; box-shadow: 0 0 5px rgba(245,158,11,.85); animation: cjCalDotPulse 1.8s ease-in-out infinite; }
     @keyframes cjCalDotPulse { 0%,100%{opacity:.55;transform:translateX(-50%) scale(1)} 50%{opacity:1;transform:translateX(-50%) scale(1.35)} }
     .log-cal-day.selected.cj-cal-tick, .log-cal-day.selected.cj-cal-cred { box-shadow: none; }
+    /* [moderno] datepicker glassmorphism */
+    .cj-datepicker-modern {
+      background: linear-gradient(160deg, rgba(15,23,42,0.92), rgba(2,6,23,0.94));
+      backdrop-filter: blur(16px) saturate(1.3); -webkit-backdrop-filter: blur(16px) saturate(1.3);
+      border: 1px solid rgba(56,189,248,0.18); border-radius: 18px; padding: 12px;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.04);
+    }
+    .cj-cal-nav {
+      width: 26px; height: 26px; border-radius: 9px; border: 1px solid rgba(148,163,184,0.18);
+      background: rgba(30,41,59,0.5); color: #94a3b8; font-size: 15px; line-height: 1; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; transition: all .15s;
+    }
+    .cj-cal-nav:hover { color: #fff; background: rgba(56,189,248,0.18); border-color: rgba(56,189,248,0.4); transform: translateY(-1px); }
+    .cj-cal-legend { display: flex; gap: 12px; justify-content: center; margin-top: 9px; padding-top: 8px; border-top: 1px solid rgba(30,41,59,0.8); font-size: 9px; color: #64748b; }
+    .cj-cal-legend span { display: inline-flex; align-items: center; gap: 4px; }
+    .cj-cal-lg-tick { width: 8px; height: 8px; border-radius: 3px; box-shadow: inset 0 0 0 1.5px rgba(56,189,248,.7); display: inline-block; }
+    .cj-cal-lg-cred { width: 7px; height: 7px; border-radius: 50%; background: #f59e0b; box-shadow: 0 0 5px rgba(245,158,11,.7); display: inline-block; }
     /* ── VISTA POR DÍA: timeline cronológico ── */
     .log-dia-hour {
       display: flex; gap: 12px; margin-bottom: 12px;
@@ -14671,16 +14701,20 @@
       </div>
 
       <!-- Datepicker flotante -->
-      <div id="cjDatepicker" class="hidden" style="position:fixed;z-index:10000;background:#0a1424;border:1px solid #475569;border-radius:12px;padding:10px;box-shadow:0 10px 30px rgba(0,0,0,0.6);width:240px;">
+      <div id="cjDatepicker" class="hidden cj-datepicker-modern" style="position:fixed;z-index:10000;width:248px;">
         <div class="flex items-center justify-between mb-2">
-          <button onclick="MOS.cjCalNavMes(-1)" class="text-slate-400 hover:text-white text-sm px-2">‹</button>
-          <span id="cjCalMesAnio" class="text-xs font-bold text-slate-200">—</span>
-          <button onclick="MOS.cjCalNavMes(+1)" class="text-slate-400 hover:text-white text-sm px-2">›</button>
+          <button onclick="MOS.cjCalNavMes(-1)" class="cj-cal-nav">‹</button>
+          <span id="cjCalMesAnio" class="text-[13px] font-extrabold text-slate-100 tracking-wide">—</span>
+          <button onclick="MOS.cjCalNavMes(+1)" class="cj-cal-nav">›</button>
         </div>
-        <div class="grid grid-cols-7 gap-1 text-[10px] text-slate-500 text-center mb-1">
+        <div class="grid grid-cols-7 gap-1 text-[10px] font-bold text-slate-500 text-center mb-1">
           <span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span>
         </div>
         <div id="cjCalGrid" class="grid grid-cols-7 gap-1"></div>
+        <div class="cj-cal-legend">
+          <span><i class="cj-cal-lg-tick"></i> con tickets</span>
+          <span><i class="cj-cal-lg-cred"></i> con crédito</span>
+        </div>
       </div>
 
       <!-- Banner ARCHIVO (cuando no es hoy) -->
@@ -14962,10 +14996,12 @@
             <span id="cjTkRangoInfo" class="text-[10px] text-cyan-400 font-semibold"></span>
           </div>
           <div class="px-3 py-2 flex-shrink-0 flex items-center gap-1 flex-wrap" style="background:#070f1a;border-bottom:1px solid #1e293b;" id="cjTkFiltros"></div>
-          <!-- [v2.43.404] Chips por VENDEDOR (quién emitió cada ticket). Se combina con el filtro de método
+          <!-- [v2.43.405] Chips por VENDEDOR (quién emitió cada ticket). Se combina con el filtro de método
                y la búsqueda; la suma viva de cjTkConteo refleja la intersección. Vacío/oculto si la caja
                tiene un solo vendedor. -->
           <div class="px-3 py-2 flex-shrink-0 flex items-center gap-1 flex-wrap hidden" style="background:#060d16;border-bottom:1px solid #1e293b;" id="cjTkVendedores"></div>
+          <!-- [zona] chips por zona emisora (oculto si hay una sola zona) -->
+          <div class="px-3 py-2 flex-shrink-0 flex items-center gap-1 flex-wrap hidden" style="background:#050b12;border-bottom:1px solid #1e293b;" id="cjTkZonas"></div>
           <div class="px-5 py-2 flex items-center gap-2 flex-shrink-0" style="background:#0a1424;border-bottom:1px solid #1e293b;">
             <input id="cjTkBuscar" type="search" placeholder="🔎 buscar cliente, doc, correlativo..."
                    oninput="MOS._cjTkRender()" class="inp text-xs flex-1" style="padding:6px 10px;">
@@ -19371,7 +19407,7 @@ if (false) (function(){
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.404';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.405';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19416,14 +19452,14 @@ if (false) (function(){
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.404"></script>
+<script src="js/api.js?v=2.43.405"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
      bumps de sw.js. Bug reportado: usuario seguía viendo error "Lote en curso"
      de v2.43.146 después de v2.43.148. -->
 <script src="./assets/membrete/membrete-modal.js?v=2.43.364"></script>
-<script src="./assets/seguridad/seguridad-modal.js?v=2.43.404"></script>
+<script src="./assets/seguridad/seguridad-modal.js?v=2.43.405"></script>
 <!-- [v2.43.187] AdhesivoPreview — render visual del adhesivo unificado con WH.
      Mismo módulo en /assets/adhesivo/preview.js — backend Envasados.gs pixel-perfect. -->
 <script src="./assets/adhesivo/preview.js?v=1.3.0"></script>
@@ -19431,7 +19467,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.404"></script>
+<script src="js/app.js?v=2.43.405"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
