@@ -24321,16 +24321,17 @@ const MOS = (() => {
 
     // [sin caja] tickets del día SIN caja asignada (artefactos de transición / errores) →
     // se agrupan en una "baraja cerrada" (pila apilada) al frente, para detectarlos de un vistazo.
+    // [sin caja] tickets del día SIN caja asignada → baraja 3D rotatoria (al lado de créditos)
     const sinCaja = (S._todosTickets || []).filter(t =>
       (t.fecha || '').substring(0, 10) === fecha && !String(t.idCaja || '').trim() && String(t.estado || '') !== 'ANULADO');
-    const deckHtml = sinCaja.length ? _cjBuildDeckSinCaja(sinCaja) : '';
+    _cjRenderSinCajaDeck(sinCaja);
 
-    if (!abiertas.length && !cerradas.length && !sinCaja.length) {
+    if (!abiertas.length && !cerradas.length) {
       grid.innerHTML = '<p class="text-slate-500 text-xs text-center py-6 col-span-full">Sin cajas en esta fecha</p>';
       return;
     }
-    // Baraja "sin caja" al frente (si hay), luego activas, luego cerradas. Corona 👑 a la líder.
-    grid.innerHTML = deckHtml + [
+    // Activas primero, luego cerradas. Corona 👑 a la caja líder.
+    grid.innerHTML = [
       ...abiertas.map(c => _cjBuildCajaCard(c, true,  fecha, String(c.idCaja) === idCajaLider)),
       ...cerradas.map(c => _cjBuildCajaCard(c, false, fecha, String(c.idCaja) === idCajaLider))
     ].join('');
@@ -24345,27 +24346,51 @@ const MOS = (() => {
     try { _cjPintarPostitsManojos(); } catch(_){}
   }
 
-  // [sin caja] "baraja cerrada": pila de cartas apiladas (vista isométrica desde una
-  // esquina). Cuantos más tickets sin caja, más capas se apilan. Tocá → visor filtrado.
-  function _cjBuildDeckSinCaja(tickets) {
-    const n = tickets.length;
-    const total = tickets.reduce((s, t) => s + (parseFloat(t.total) || 0), 0);
-    const capas = Math.min(Math.max(n - 1, 0), 6);   // hasta 6 capas de fondo
-    let capasHtml = '';
-    for (let i = capas; i >= 1; i--) capasHtml += `<div class="cj-deck-capa" style="--i:${i}"></div>`;
-    return `
-      <div class="cj-deck cj-deck-sincaja" onclick="MOS.cjVerTicketsSinCaja()"
-           title="${n} ticket${n > 1 ? 's' : ''} sin caja asignada — tocá para revisar">
-        ${capasHtml}
-        <div class="cj-deck-front">
-          <div class="cj-deck-badge">⚠</div>
-          <div class="cj-deck-ico">🃏</div>
-          <div class="cj-deck-title">Sin caja asignada</div>
-          <div class="cj-deck-count">${n} ticket${n > 1 ? 's' : ''}</div>
-          <div class="cj-deck-total">S/ ${total.toFixed(2)}</div>
-          <div class="cj-deck-hint">tocá para revisar</div>
-        </div>
+  // [sin caja] baraja 3D isométrica ROTATORIA (vista de esquina): pila de cartas; la del
+  // frente muestra nombre+detalle y va rotando (la de encima baja, la siguiente aparece).
+  const _cjSinCajaState = { tickets: [], idx: 0, timer: null };
+  function _cjRenderSinCajaDeck(tickets) {
+    const deck = $('cjSinCajaDeck');
+    if (!deck) return;
+    if (!tickets || !tickets.length) { deck.classList.add('hidden'); _cjSinCajaStop(); _cjSinCajaState.tickets = []; return; }
+    deck.classList.remove('hidden');
+    _cjSinCajaState.tickets = tickets;
+    if (_cjSinCajaState.idx >= tickets.length) _cjSinCajaState.idx = 0;
+    _setText('cjSinCajaN', String(tickets.length));
+    _cjSinCajaPintar();
+    _cjSinCajaStop();
+    if (tickets.length > 1) _cjSinCajaState.timer = setInterval(_cjSinCajaShuffleStep, 3500);
+  }
+  function _cjSinCajaPintar() {
+    const cont = $('cjSinCajaStack');
+    if (!cont) return;
+    const tks = _cjSinCajaState.tickets; const idx = _cjSinCajaState.idx; const N = tks.length;
+    cont.innerHTML = tks.map((t, i) => {
+      const pos = (i - idx + N) % N;
+      const posAttr = pos >= 5 ? '5+' : String(pos);
+      const cli = _esc((t.clienteNom || t.cliente || 'VARIOS').toUpperCase());
+      const doc = (t.clienteDoc && t.clienteDoc !== '66666') ? `<div class="cj-scc-doc">${_esc(t.clienteDoc)}</div>` : '';
+      const tipo = ({ NV: 'NV', B: 'BOLETA', F: 'FACTURA' })[t.tipo] || (t.tipoDoc || 'NV');
+      const corr = t.correlativo || (t.idVenta || '').split('-').pop() || '—';
+      return `<div class="cj-sincaja-carta" data-pos="${posAttr}">
+        <span class="cj-scc-badge">⚠</span>
+        <div class="cj-scc-head"><span class="cj-scc-cli">👤 ${cli}</span><span class="cj-scc-monto">S/${parseFloat(t.total || 0).toFixed(2)}</span></div>
+        ${doc}
+        <div class="cj-scc-sep"></div>
+        <div class="cj-scc-corr">${_esc(tipo)} ${_esc(corr)}</div>
+        <div class="cj-scc-meta"><span>${_esc(t.hora || '')}</span><span>sin caja</span></div>
       </div>`;
+    }).join('');
+  }
+  function _cjSinCajaShuffleStep() {
+    const tks = _cjSinCajaState.tickets;
+    if (!tks || tks.length < 2) return;
+    const m = $('cjModalTickets'); if (m && !m.classList.contains('hidden')) return;   // pausa si el visor está abierto
+    _cjSinCajaState.idx = (_cjSinCajaState.idx + 1) % tks.length;
+    _cjSinCajaPintar();
+  }
+  function _cjSinCajaStop() {
+    if (_cjSinCajaState.timer) { clearInterval(_cjSinCajaState.timer); _cjSinCajaState.timer = null; }
   }
   function cjVerTicketsSinCaja() {
     _finBeep('click');
