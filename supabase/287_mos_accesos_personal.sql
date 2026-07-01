@@ -157,6 +157,14 @@ begin
         reconexiones    = reconexiones + case when v_estado_ses in ('CERRADA','FORZADA_11PM','AUTOCIERRE') then 1 else 0 end,
         ts_actualizado  = v_now
       where id_dia = v_id_dia;
+    -- [ext] registrar/refrescar el device de la sesión (principal si es el 1º ACTIVO)
+    if v_dev <> '' then
+      insert into mos.accesos_dispositivos (id_dia, device_id, rol, es_principal, estado)
+      values (v_id_dia, v_dev, v_rol,
+              not exists(select 1 from mos.accesos_dispositivos where id_dia=v_id_dia and es_principal and upper(coalesce(estado,''))='ACTIVA'),
+              'ACTIVA')
+      on conflict (id_dia, device_id) do update set estado='ACTIVA', ultima_conexion=v_now, rol=excluded.rol;
+    end if;
     return jsonb_build_object('ok',true,'created',false,'idDia',v_id_dia,'horaIngreso',coalesce(v_ingreso,v_now));
   end if;
 
@@ -186,6 +194,12 @@ begin
   if not found then
     -- carrera: otra tx la insertó → reintentar como UPDATE de asistencia.
     return mos.registrar_ingreso_personal(p);
+  end if;
+  -- [ext] la fila nació → su device es el PRINCIPAL de la sesión.
+  if v_dev <> '' then
+    insert into mos.accesos_dispositivos (id_dia, device_id, rol, es_principal, estado)
+    values (v_id_dia, v_dev, v_rol, true, 'ACTIVA')
+    on conflict (id_dia, device_id) do update set estado='ACTIVA', es_principal=true, ultima_conexion=v_now;
   end if;
   return jsonb_build_object('ok',true,'created',true,'idDia',v_id_dia,'horaIngreso',v_now,'montoBase',coalesce(v_fijo,0));
 end;

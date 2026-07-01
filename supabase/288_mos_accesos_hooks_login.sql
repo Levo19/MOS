@@ -69,9 +69,13 @@ begin
         -- [v2.43.383 · identidad unificada] el temporal ME usa MEX:<nombre> (la MISMA
         -- convención que el flujo de ventas, Evaluaciones.gs:1029) → UNA sola fila por
         -- persona/día, sin duplicar (NOID: vs MEX:). Si trae id real, se respeta.
+        -- [ext · identidad NOMBRE|ZONA] el temporal ME = MEX:<NOMBRE>|<ZONA> (una fila por
+        -- persona+zona; uniformizada MAYÚSCULA+trim por mos._identidad_persona). Así Sergio en
+        -- ZONA-01 y Sergio en ZONA-02 son filas distintas (cada una cobra su zona), y el
+        -- multi-device de la MISMA persona/zona cae en la MISMA fila. Id real → se respeta.
         'idPersonal',  case
-                         when v_id like 'NOID:%' and btrim(v_nombre) <> '' then 'MEX:'||btrim(v_nombre)
-                         when v_id like 'NOID:%' then 'MEX:'||substring(v_id from 6)
+                         when v_id like 'NOID:%' or v_id like 'MEX:%'
+                           then mos._identidad_persona(null, coalesce(nullif(btrim(v_nombre),''), substring(v_id from 6)), v_zona, true)
                          else v_id end,
         'nombre',      v_nombre,
         'rol',         v_rol,

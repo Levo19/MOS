@@ -182,19 +182,20 @@ begin
        and mos._norm_nom(usuario) = mos._norm_nom(v_nomfull);
 
   elsif v_rol in ('CAJERO','VENDEDOR') then
-    -- [v2.43.384 · fuente única] La zona del jornal = donde REALMENTE vendió (zona
-    -- dominante por monto en me.ventas del día), NO el pulso de presencia (que puede
-    -- venir vacío → comisión perdida, caso Sergio: ventas ZONA-02 vs fila zona='').
-    select v.zona_id into v_zona
-      from me.ventas v
-     where (v.fecha at time zone 'America/Lima')::date = v_dia
-       and mos._norm_nom(v.vendedor) = mos._norm_nom(v_nomfull)
-       and v.forma_pago ~* '^(efectivo|virtual|mixto)'
-       and coalesce(v.zona_id,'') <> ''
-     -- [100x · H1] tiebreaker determinista: sin él, dos zonas con igual venta hacían que la zona
-     -- elegida oscilara entre disparos del trigger → comisión flapping. zona_id asc lo fija.
-     group by v.zona_id order by sum(v.total) desc, v.zona_id asc limit 1;
-    v_zona := coalesce(nullif(btrim(coalesce(v_zona,'')), ''), nullif(btrim(coalesce(r.zona,'')), ''), '');
+    -- [ext · identidad NOMBRE|ZONA] La fila YA ES por zona (Sergio|ZONA-01 vs Sergio|ZONA-02)
+    -- → se usa r.zona directo, cada fila cobra su zona. FALLBACK (filas viejas MEX:nombre sin
+    -- zona o pulso vacío): derivar la zona dominante de me.ventas (con tiebreaker H1).
+    v_zona := nullif(btrim(coalesce(r.zona,'')), '');
+    if v_zona is null then
+      select v.zona_id into v_zona
+        from me.ventas v
+       where (v.fecha at time zone 'America/Lima')::date = v_dia
+         and mos._norm_nom(v.vendedor) = mos._norm_nom(v_nomfull)
+         and v.forma_pago ~* '^(efectivo|virtual|mixto)'
+         and coalesce(v.zona_id,'') <> ''
+       group by v.zona_id order by sum(v.total) desc, v.zona_id asc limit 1;
+    end if;
+    v_zona := coalesce(v_zona, '');
     -- comisión 5% del excedente de zona, proporcional a lo cobrado por la persona
     v_vcob  := mos._venta_cobrada_persona(v_nomfull, v_zona, v_dia);
     v_vzona := mos._venta_cobrada_zona(v_zona, v_dia);
