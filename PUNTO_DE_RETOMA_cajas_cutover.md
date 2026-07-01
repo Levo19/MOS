@@ -47,16 +47,31 @@
 - Todos con test ROLLBACK + aplicados a prod. Lock unificado: `cobro:idVenta` (asignar/confirmar/
   directo/cancelar/reasignar/editar) + `cerrarcaja:idCaja` (cierre forzado/cajero + cobros que entran).
 
-## ⏳ PENDIENTES (formalizados — NO bloqueantes)
+## PENDIENTES — estado 2026-07-01 (continuación)
 
-### P0 · Hardening de concurrencia restante (defensa-en-profundidad, no bugs vivos)
-- **309 (cron `escalar_cobros_vencidos`):** escribe cobro+venta sin `cobro:idVenta`. Hoy seguro por
-  re-chequeo de predicado READ-COMMITTED + guards idempotentes; agregar el lock por fila para robustez.
-- **260 (`me.anular_venta`):** al anular no cancela el cobro ASIGNADO vivo (queda un cobro huérfano en
-  venta ANULADA). No es doble-cobro (confirmar tiene guard ANULADO), solo consistencia. Agregar el void.
-- **264 (`me.zona_descontar_venta`):** la versión viva perdió el guard caja-nivel de 143 (idempotencia
-  hoy por índice único de kardex por línea). El cierre forzado ya está cubierto por el guard `yaCerrada`.
-  Re-agregar el guard caja-nivel como defensa (con cuidado: es core de TODOS los cierres).
+### P0 · Hardening concurrencia — ✅ HECHO + aplicado a prod
+- 309: los UPDATE re-chequean `estado='ASIGNADO'` (no pisan COBRADO/CANCELADO concurrente).
+- 260 anular_venta: lock `cobro:idVenta` + anula (CANCELADO_ANULACION) el cobro ASIGNADO vivo.
+- 264 zona_descontar_venta: restaurado el guard caja-nivel de 143 (corte total si ya hay kardex).
+- Testeados ROLLBACK (177 líneas/dedupCaja) + aplicados.
+
+### P2 · Cierre cajero ME — ✅ ACTIVADO
+- `ME_CIERRE_DIRECTO=1`. Frontend MosExpress ya cableado a `me.cerrar_caja` (con lock nuevo, paridad
+  probada). Efectos vía mirror GAS idempotente. Kill-switch: `node supabase/activar_cierre_cajero.js off`.
+
+### P1 · Sello PAGADO cero-GAS — ✅ HECHO + desplegado
+- Edge `ticket-comprobante` +param `pagoDiferido` (byte-paridad GAS Impresion.gs; aditivo). Desplegado +
+  smoke OK (base64 contiene PAGADO/COBRO RECIBIDO/Fecha cobro).
+- MosExpress v2.8.109: helper `_reimprimirCobroSello` disparado en el branch directo del confirm
+  (best-effort, no bloquea el cobro). LIVE.
+
+### ⏳ P3 · Smoke asignar directo (308) — verificación tuya en la app
+- Programáticamente OK: `get_flags.meCobroDirecto=1` (cliente usa directo) + RPC viva. Falta que
+  asignes un cobro real y confirmes en Network que llama `asignar_cobro_cajero` (no GAS).
+
+### ⏳ P4 · Corte definitivo de GAS (cobro/cierre) — BLOQUEADO hasta validación de campo
+- Requiere P1/P2 validados con operaciones reales (cierres de cajero + cobros con sello). Es una acción
+  grande + difícil de revertir → NO hacer hasta que el campo confirme. Money-safe.
 
 
 ### P1 · Sello PAGADO cero-GAS en ME (lado cajero)
