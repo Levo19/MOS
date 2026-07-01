@@ -1912,7 +1912,7 @@ const MOS = (() => {
   //     una vez (cubre eventos perdidos mientras el WS dormía). Idempotente (las silenciosas
   //     comparan baseline/hash y no parpadean si nada cambió).
   // ADITIVO: los pollers (Finanzas 30s / Cajas 20s / Almacén 60s / RIZ 25s) siguen como fallback.
-  const _OPS_DEBOUNCE_MS = { ventas: 4000, stock: 4000, stock_zonas: 4000, guias: 2000, preingresos: 2000, cajas: 1500, mermas: 1500, vencimientos: 1500, envasados: 1500 };
+  const _OPS_DEBOUNCE_MS = { ventas: 2000, stock: 4000, stock_zonas: 4000, guias: 2000, preingresos: 2000, cajas: 1500, mermas: 1500, vencimientos: 1500, envasados: 1500 };
   const _opsTimers = new Map();   // dominio → timer (coalescer ráfagas por dominio)
 
   // Ejecuta el refresh silencioso adecuado SOLO si la pantalla del dominio está activa.
@@ -1928,6 +1928,9 @@ const MOS = (() => {
         if (S.view === 'finanzas' && typeof _finanzasRefreshSilencioso === 'function') _finanzasRefreshSilencioso();
         // Insights/rotación de Almacén también dependen de ventas → refrescar la tab activa.
         if (S.view === 'almacen' && typeof _almRefreshSilencioActivo === 'function') _almRefreshSilencioActivo();
+        // [efecto money-increase] una venta NUEVA cambia el total de la caja → refrescar Cajas
+        // por realtime (~0s) en vez de esperar el poll de 20s. cero-GAS (lee Supabase directo).
+        if (S.view === 'cajas' && typeof _cajasRefreshSilencioso === 'function') _cajasRefreshSilencioso();
         return;
       }
       if (app === 'me' && dominio === 'cajas') {
