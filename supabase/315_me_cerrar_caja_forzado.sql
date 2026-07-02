@@ -134,7 +134,7 @@ begin
     into v_efe from me.ventas v
    where v.id_caja = v_idcaja
      and not exists (select 1 from me.movimientos_extra m
-                      where m.concepto = 'Abono deuda' and position(v.id_venta in coalesce(m.obs,'')) > 0);
+                      where m.concepto = 'Abono deuda' and position('ticket '||v.id_venta||' ' in coalesce(m.obs,'')) > 0);
   select coalesce(sum(case when tipo='INGRESO' then monto else 0 end),0),
          coalesce(sum(case when tipo='EGRESO'  then monto else 0 end),0)
     into v_ing, v_egr from me.movimientos_extra where id_caja = v_idcaja;

@@ -92,7 +92,7 @@ begin
   from me.ventas v
   where v.id_caja = v_id
     and not exists (select 1 from me.movimientos_extra m
-                     where m.concepto = 'Abono deuda' and position(v.id_venta in coalesce(m.obs,'')) > 0);
+                     where m.concepto = 'Abono deuda' and position('ticket '||v.id_venta||' ' in coalesce(m.obs,'')) > 0);
 
   -- ── 4. Ingresos / egresos ──
   select coalesce(sum(case when tipo='INGRESO' then monto else 0 end),0),
