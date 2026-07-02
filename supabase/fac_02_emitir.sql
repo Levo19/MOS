@@ -44,6 +44,7 @@ declare
   v_tipo  text := upper(coalesce(p->>'tipo_doc',''));
   v_tipoc int;
   v_serie text;
+  v_zona  text := nullif(btrim(coalesce(p->>'zona','')), '');   -- zona de emisión → serie por zona
   v_local text := nullif(btrim(coalesce(p->>'local_id','')), '');
   v_items jsonb := coalesce(p->'items','[]'::jsonb);
   v_total numeric := coalesce((p->>'total')::numeric, 0);
@@ -69,9 +70,40 @@ begin
 
   select * into v_cfg from fac.config where id = 1;
   v_tipoc := case when v_tipo = 'FACTURA' then 1 else 2 end;
-  v_serie := coalesce(nullif(btrim(coalesce(p->>'serie','')),''),
-                      case when v_tipo='FACTURA' then v_cfg.serie_factura else v_cfg.serie_boleta end);
+  -- [serie por zona de emisión] prioridad: serie explícita > serie de la ZONA (mos.series_documentales,
+  -- la fuente de verdad que se edita en MOS; cada zona —incl. el propio MOS/VIP— tiene su seriado) >
+  -- default de fac.config. Así una boleta emitida/convertida en zona1 lleva el serie de zona1, no uno
+  -- tecleado a mano (evita el establecimiento equivocado / desync de correlativo).
+  v_serie := coalesce(
+    nullif(btrim(coalesce(p->>'serie','')),''),
+    case when v_zona is not null then (
+      select max(btrim(serie)) from mos.series_documentales
+       where btrim(coalesce(id_zona,'')) = v_zona
+         and coalesce(activo,true) = true
+         and btrim(coalesce(serie,'')) <> ''
+         and upper(regexp_replace(coalesce(tipo_documento,''),'[\s_]','','g')) =
+             case when v_tipo='FACTURA' then 'FACTURA' else 'BOLETA' end
+    ) else null end,
+    case when v_tipo='FACTURA' then v_cfg.serie_factura else v_cfg.serie_boleta end);
   if v_serie is null or v_serie = '' then return jsonb_build_object('status','error','error','SERIE_REQUERIDA'); end if;
+
+  -- [B1 · 200x] guard anti base-imponible manipulada (además del total==Σsubtotal). Por LÍNEA: la base
+  -- (valor_unitario×cantidad) no puede exceder el subtotal de línea, y el IGV implícito no puede ser
+  -- negativo; en exonerado/inafecto la base debe igualar el subtotal (sin IGV). Sin esto, un
+  -- valor_unitario incoherente generaba gravada>total / IGV NEGATIVO enviado a SUNAT (rechazo o base mal).
+  if exists (
+    select 1 from jsonb_array_elements(v_items) e
+    cross join lateral (select
+        round(coalesce((e->>'valor_unitario')::numeric,0) * coalesce((e->>'cantidad')::numeric,1), 2) as subvu,
+        coalesce((e->>'subtotal')::numeric,0) as sub,
+        coalesce(nullif(regexp_replace(coalesce(e->>'tipo_igv','1'),'\D','','g'),'')::int, 1) as tig) x
+    where x.subvu > x.sub + 0.01                                 -- base de línea > total de línea (siempre inválido)
+       or (x.tig in (1,8)  and (x.sub - x.subvu) < -0.01)        -- IGV negativo en gravado/IVAP
+       or (x.tig >= 9      and abs(x.sub - x.subvu) > 0.02)      -- exonerado/inafecto: base debe == total (sin IGV)
+  ) then
+    return jsonb_build_object('status','error','error','BASE_IMPONIBLE_INVALIDA',
+      'detalle','una línea tiene valor_unitario incoherente con su subtotal (IGV negativo o base>total)');
+  end if;
 
   -- base imponible no manipulable: total == Σ(items.subtotal) (tol 0.01)
   select coalesce(sum((e->>'subtotal')::numeric),0), count(*) into v_suma, v_nit

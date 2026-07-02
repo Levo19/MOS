@@ -59,7 +59,8 @@ begin
   end if;
   if v_idnv  is null then return jsonb_build_object('ok', false, 'error', 'idVentaNV requerido'); end if;
   if v_tipo not in ('BOLETA','FACTURA') then return jsonb_build_object('ok', false, 'error', 'tipoDocNuevo debe ser BOLETA o FACTURA'); end if;
-  if v_serie is null then return jsonb_build_object('ok', false, 'error', 'serieNueva requerida'); end if;
+  -- serieNueva es OPCIONAL: si no viene, fac.emitir_cpe la deriva de la ZONA de emisión de la NV
+  -- (v_nv.zona_id → mos.series_documentales). Respeta el seriado por zona sin tecleo manual.
   -- Validación de documento según tipo (paridad con GAS).
   if v_tipo = 'BOLETA'  and v_doc !~ '^\d{8}$'  then return jsonb_build_object('ok', false, 'error', 'BOLETA requiere DNI de 8 dígitos'); end if;
   if v_tipo = 'FACTURA' and v_doc !~ '^\d{11}$' then return jsonb_build_object('ok', false, 'error', 'FACTURA requiere RUC de 11 dígitos'); end if;
@@ -102,7 +103,7 @@ begin
 
   -- EMITIR vía la capa central fac (mintea correlativo + NubeFact, idempotente por local_id). Misma tx → atómico.
   v_fac := fac.emitir_cpe(jsonb_build_object(
-    'tipo_doc', v_tipo, 'serie', v_serie,
+    'tipo_doc', v_tipo, 'serie', v_serie, 'zona', coalesce(v_nv.zona_id,''),   -- serie por zona de emisión de la NV
     'cliente', jsonb_build_object('tipo', v_tipoc, 'doc', v_doc, 'nombre', v_nom, 'direccion', v_dir),
     'items', v_items, 'total', v_total,
     'local_id', v_local, 'origen', 'CONVERT', 'ref_externa', v_idnv, 'creado_por', coalesce(v_user,'')));
