@@ -26234,20 +26234,25 @@ const MOS = (() => {
     };
     _cjCreditosState.enVuelo = [optimisticCobro, ...(_cjCreditosState.enVuelo || [])];
     try { _cjPintarPostitsManojos({ optimisticId, cartaOrigen: cartaEl }); } catch(_){}
-    // [fix optimista mesa] Marcar el ticket como ASIGNADO en los grupos + re-render la MESA (cjMesaGrid)
-    // para que pase a celeste "✈ Enviado a X" AL INSTANTE (antes desaparecía hasta el fetch de 400ms y
-    // había que cerrar/reabrir la mesa). El fetch posterior lo confirma con el idCobro real.
+    // [fix optimista SIN flicker] Antes se re-renderizaba TODA la mesa (todos los tickets del año) →
+    // parpadeo + lentitud. Ahora: marcar t.asignado (para el próximo render natural) + update DIRIGIDO
+    // de SOLO la carta enviada (celeste "✈ Enviado a X" en su lugar, sin tocar el resto de la mesa).
     try {
       (_cjCreditosState.todosLosGrupos || []).forEach(g => (g.tickets || []).forEach(t => {
         if (String(t.idVenta) === String(ctx.idVenta)) t.asignado = { vendedorDest: cajeroNom, cajaDestino: cajaDest };
       }));
-      if ($('cjMesaGrid')) cjRepartirMano();   // re-render de la mesa abierta → celeste en el lugar
-      _cjRenderManoDelDia();                     // + la baraja flotante
+      if (cartaEl) {
+        cartaEl.classList.add('is-asignada');
+        if (!cartaEl.querySelector('.cj-carta-asignado-badge')) {
+          const _b = document.createElement('span');
+          _b.className = 'cj-carta-asignado-badge';
+          _b.style.cssText = 'position:relative;top:0;right:0;margin-bottom:8px;display:inline-block;';
+          _b.textContent = '✈ Enviado a ' + cajeroNom;
+          cartaEl.insertBefore(_b, cartaEl.firstChild);
+        }
+      }
+      _cjActualizarAvionMano();   // ✈ badge de la baraja flotante (cobros en vuelo)
     } catch(_){}
-    if (cartaEl) {
-      cartaEl.classList.add('cj-credito-fly');
-      setTimeout(() => { try { cartaEl.remove(); } catch(_){} }, 800);
-    }
     // 3. Fire-and-forget al backend
     try {
       const r = await API.post('meAsignarCobroCajero', {

@@ -2499,45 +2499,39 @@
 
     /* [v2.41.56] Panel inline asignar caja — vive dentro del modal detalle.
        Reemplaza al modalAsignarCobro (que quedaba atrás visualmente). */
+    /* [rediseño] El panel de asignar ya NO es una caja azul incrustada: es el "talón" del mismo ticket
+       ámbar. Se separa con una perforación (línea punteada) y comparte el color del ticket → fusión total. */
     .cj-asignar-inline {
-      margin-top: 14px;
-      background: linear-gradient(135deg, #0a1428, #060d1f);
-      border: 1.5px solid #1e3a8a;
-      border-radius: 14px;
-      padding: 14px;
-      box-shadow: 0 0 0 1px rgba(59,130,246,.15), 0 10px 32px -8px rgba(0,0,0,.6);
+      margin: 20px -24px -80px;              /* extiende hasta los bordes de la carta (anula el padding) */
+      background: linear-gradient(180deg, rgba(253,230,138,.55), rgba(252,211,77,.75));
+      border: none;
+      border-top: 2px dashed rgba(120,53,15,.45);   /* perforación del ticket */
+      border-radius: 0 0 18px 18px;
+      padding: 20px 24px 26px;
+      box-shadow: inset 0 10px 20px -14px rgba(120,53,15,.4);
       max-height: 0; overflow: hidden;
-      opacity: 0; transform: translateY(-8px) scale(.96);
-      transition: max-height .35s cubic-bezier(.4,0,.2,1),
-                  opacity .25s ease-out,
-                  transform .35s cubic-bezier(.34,1.56,.64,1),
-                  margin-top .3s ease-out;
+      opacity: 0;
+      transition: max-height .38s cubic-bezier(.4,0,.2,1), opacity .25s ease-out, padding .3s ease-out;
+      position: relative;
     }
     .cj-asignar-inline.is-open {
-      max-height: 720px;
+      max-height: 760px;
       opacity: 1;
-      transform: translateY(0) scale(1);
-      animation: cjAsignarGlow 2.4s ease-in-out infinite;
     }
     .cj-asignar-inline.is-closing {
-      opacity: 0; transform: translateY(-8px) scale(.96); max-height: 0;
-      margin-top: 0; padding-top: 0; padding-bottom: 0;
-    }
-    @keyframes cjAsignarGlow {
-      0%, 100% { box-shadow: 0 0 0 1px rgba(59,130,246,.15), 0 10px 32px -8px rgba(0,0,0,.6); }
-      50%      { box-shadow: 0 0 0 1px rgba(59,130,246,.35), 0 10px 32px -4px rgba(59,130,246,.25); }
+      opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0;
     }
     .cj-asignar-inline-head {
       display: flex; align-items: center; gap: 10px;
-      padding-bottom: 12px; margin-bottom: 12px;
-      border-bottom: 1px solid rgba(59,130,246,.2);
+      padding-bottom: 12px; margin-bottom: 14px;
+      border-bottom: 1.5px dashed rgba(120,53,15,.3);
     }
     .cj-asignar-inline-titulo {
-      font-size: 14px; font-weight: 900; color: #f1f5f9;
+      font-size: 14px; font-weight: 900; color: #78350f;
       letter-spacing: .02em; text-transform: uppercase;
     }
     .cj-asignar-inline-sub {
-      font-size: 11px; color: #94a3b8; margin-top: 1px;
+      font-size: 11px; color: #92610c; margin-top: 1px; font-weight: 700;
     }
     .cj-asignar-inline-close {
       margin-left: auto; width: 30px; height: 30px; border-radius: 50%;
@@ -2551,23 +2545,23 @@
     .cj-asignar-inline-section { margin-bottom: 14px; }
     .cj-asignar-inline-label {
       display: flex; align-items: center; gap: 8px;
-      font-size: 11px; font-weight: 800; color: #cbd5e1;
+      font-size: 11px; font-weight: 900; color: #78350f;
       text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px;
     }
     .cj-asignar-inline-step {
       width: 22px; height: 22px; border-radius: 50%;
-      background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+      background: linear-gradient(135deg, #f59e0b, #b45309);
       color: #fff; font-weight: 900; font-size: 11px;
       display: flex; align-items: center; justify-content: center;
-      box-shadow: 0 0 0 2px rgba(59,130,246,.25);
+      box-shadow: 0 0 0 2px rgba(180,83,9,.25);
     }
     .cj-asignar-inline-cajas {
       display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
       gap: 8px;
     }
     .cj-asignar-inline-cajas .cj-asignar-caja-btn {
-      padding: 12px; background: linear-gradient(135deg, #0f172a, #060d1f);
-      border: 1.5px solid #334155; border-radius: 12px; cursor: pointer;
+      padding: 12px; background: linear-gradient(135deg, #fffdf7, #fef6e0);
+      border: 1.5px solid rgba(180,83,9,.35); border-radius: 12px; cursor: pointer;
       transition: all .2s cubic-bezier(.34,1.56,.64,1);
       display: flex; align-items: center; gap: 10px;
       animation: cjCajaBtnIn .4s cubic-bezier(.34,1.56,.64,1) backwards;
@@ -2575,17 +2569,17 @@
     }
     .cj-asignar-inline-cajas .cj-asignar-caja-btn::before {
       content: ''; position: absolute; inset: 0;
-      background: linear-gradient(135deg, transparent, rgba(59,130,246,.06));
+      background: linear-gradient(135deg, transparent, rgba(180,83,9,.06));
       opacity: 0; transition: opacity .2s;
     }
     .cj-asignar-inline-cajas .cj-asignar-caja-btn:hover {
-      border-color: #3b82f6; transform: translateY(-2px);
-      box-shadow: 0 6px 16px -4px rgba(59,130,246,.3);
+      border-color: #d97706; transform: translateY(-2px);
+      box-shadow: 0 6px 16px -4px rgba(217,119,6,.35);
     }
     .cj-asignar-inline-cajas .cj-asignar-caja-btn:hover::before { opacity: 1; }
     .cj-asignar-inline-cajas .cj-asignar-caja-btn.is-active {
-      border-color: #10b981; background: linear-gradient(135deg, rgba(16,185,129,.15), rgba(16,185,129,.05));
-      box-shadow: 0 0 0 2px rgba(16,185,129,.4), 0 6px 20px -4px rgba(16,185,129,.4);
+      border-color: #059669; background: linear-gradient(135deg, rgba(16,185,129,.18), rgba(16,185,129,.06));
+      box-shadow: 0 0 0 2px rgba(16,185,129,.45), 0 6px 20px -4px rgba(16,185,129,.4);
       transform: translateY(-1px);
     }
     .cj-asignar-inline-cajas .cj-asignar-caja-btn.is-active .cj-asignar-caja-check {
@@ -2607,22 +2601,22 @@
     .cj-asignar-caja-btn.is-cerrada .cj-asignar-caja-avatar { border-color: #475569; background: rgba(71,85,105,.2); }
     .cj-asignar-caja-avatar {
       width: 36px; height: 36px; border-radius: 50%;
-      background: linear-gradient(135deg, #1e293b, #0f172a);
-      border: 2px solid #334155;
+      background: linear-gradient(135deg, #fde68a, #fbbf24);
+      border: 2px solid rgba(180,83,9,.4);
       display: flex; align-items: center; justify-content: center;
       font-size: 16px; flex-shrink: 0; transition: all .2s;
     }
     .cj-asignar-inline-cajas .cj-asignar-caja-btn.is-active .cj-asignar-caja-avatar {
-      border-color: #10b981;
-      background: linear-gradient(135deg, rgba(16,185,129,.2), rgba(16,185,129,.05));
+      border-color: #059669;
+      background: linear-gradient(135deg, rgba(16,185,129,.25), rgba(16,185,129,.08));
     }
     .cj-asignar-caja-info { flex: 1; min-width: 0; text-align: left; }
     .cj-asignar-inline-cajas .cj-asignar-caja-vendedor {
-      font-weight: 800; font-size: 12.5px; color: #f1f5f9;
+      font-weight: 900; font-size: 12.5px; color: #78350f;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .cj-asignar-inline-cajas .cj-asignar-caja-meta {
-      font-size: 10px; color: #94a3b8; margin-top: 1px;
+      font-size: 10px; color: #a16207; margin-top: 1px; font-weight: 700;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .cj-asignar-caja-check {
@@ -2671,42 +2665,40 @@
       display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
     }
     .cj-asignar-ttl-btn {
-      padding: 10px 4px; background: linear-gradient(135deg, #0f172a, #060d1f);
-      border: 1.5px solid #334155; border-radius: 10px; cursor: pointer;
-      color: #cbd5e1; font-weight: 800;
+      padding: 10px 4px; background: linear-gradient(135deg, #fffdf7, #fef6e0);
+      border: 1.5px solid rgba(180,83,9,.3); border-radius: 10px; cursor: pointer;
+      color: #92400e; font-weight: 800;
       transition: all .2s cubic-bezier(.34,1.56,.64,1);
       display: flex; flex-direction: column; align-items: center; gap: 2px;
     }
     .cj-asignar-ttl-num { font-size: 16px; }
-    .cj-asignar-ttl-lbl { font-size: 8.5px; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
+    .cj-asignar-ttl-lbl { font-size: 8.5px; color: #a16207; text-transform: uppercase; letter-spacing: .04em; }
     .cj-asignar-ttl-btn:hover {
       border-color: #f59e0b; transform: translateY(-2px);
     }
     .cj-asignar-ttl-btn.is-active {
-      border-color: #f59e0b;
-      background: linear-gradient(135deg, rgba(245,158,11,.18), rgba(245,158,11,.04));
-      color: #fcd34d;
-      box-shadow: 0 0 0 2px rgba(245,158,11,.35), 0 6px 16px -4px rgba(245,158,11,.4);
+      border-color: #d97706;
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      color: #fff;
+      box-shadow: 0 0 0 2px rgba(217,119,6,.35), 0 6px 16px -4px rgba(217,119,6,.5);
     }
-    .cj-asignar-ttl-btn.is-active .cj-asignar-ttl-num {
-      color: #fbbf24;
-      text-shadow: 0 0 8px rgba(251,191,36,.5);
-    }
+    .cj-asignar-ttl-btn.is-active .cj-asignar-ttl-num { color: #fff; }
+    .cj-asignar-ttl-btn.is-active .cj-asignar-ttl-lbl { color: rgba(255,255,255,.85); }
     /* [v2.41.87] Input mensaje opcional al cajero */
     .cj-asignar-inline-msg {
       width: 100%; padding: 10px 12px;
-      background: rgba(15,23,42,.7);
-      border: 1.5px solid #334155;
+      background: rgba(255,255,255,.6);
+      border: 1.5px solid rgba(180,83,9,.3);
       border-radius: 10px;
-      color: #e2e8f0; font-size: 12px;
+      color: #78350f; font-size: 12px; font-weight: 600;
       transition: border-color .15s;
     }
     .cj-asignar-inline-msg:focus {
       outline: none;
-      border-color: #06b6d4;
-      box-shadow: 0 0 0 2px rgba(6,182,212,.25);
+      border-color: #d97706;
+      box-shadow: 0 0 0 2px rgba(217,119,6,.25);
     }
-    .cj-asignar-inline-msg::placeholder { color: #475569; font-style: italic; }
+    .cj-asignar-inline-msg::placeholder { color: #b45309; opacity: .6; font-style: italic; }
 
     /* [v2.41.87] Panel "Cobros en vuelo" — arriba de la baraja */
     .cj-vuelo-panel {
@@ -3244,44 +3236,53 @@
     }
 
     .cj-asignar-inline-hint {
-      font-size: 10.5px; color: #64748b; padding: 8px 10px;
-      background: rgba(15,23,42,.5); border-radius: 8px;
-      border-left: 3px solid #fbbf24;
+      font-size: 10.5px; color: #78350f; padding: 8px 10px;
+      background: rgba(255,255,255,.45); border-radius: 8px;
+      border-left: 3px solid #d97706; font-weight: 600;
     }
+    /* [rediseño] footer STICKY: los botones (Cancelar / Enviar) SIEMPRE visibles al fondo de la carta,
+       ya no quedan tapados por más productos que tenga el ticket. */
     .cj-asignar-inline-footer {
-      display: flex; gap: 10px; margin-top: 14px;
-      padding-top: 12px; border-top: 1px solid rgba(59,130,246,.15);
+      display: flex; gap: 10px; margin: 16px -24px -26px;
+      padding: 14px 24px 20px; border-top: 1.5px dashed rgba(120,53,15,.3);
+      position: sticky; bottom: 0;
+      background: linear-gradient(180deg, rgba(252,211,77,.85), #fbbf24);
+      box-shadow: 0 -8px 16px -8px rgba(120,53,15,.35);
     }
     .cj-asignar-inline-footer .cj-btn {
-      flex: 1; padding: 12px; font-weight: 900; border-radius: 10px;
+      flex: 1; padding: 13px; font-weight: 900; border-radius: 12px;
       border: none; cursor: pointer; text-transform: uppercase;
       font-size: 12px; letter-spacing: .04em; transition: all .2s ease;
     }
+    .cj-asignar-inline-footer .cj-btn-secondary {
+      background: rgba(120,53,15,.12); color: #78350f; border: 1.5px solid rgba(120,53,15,.25);
+    }
+    .cj-asignar-inline-footer .cj-btn-secondary:hover { background: rgba(120,53,15,.2); }
     .cj-asignar-inline-footer .cj-btn-primary {
-      background: linear-gradient(135deg, #10b981, #059669); color: white;
-      box-shadow: 0 4px 14px -2px rgba(16,185,129,.4);
+      background: linear-gradient(135deg, #059669, #047857); color: white;
+      box-shadow: 0 4px 14px -2px rgba(5,150,105,.5);
     }
     .cj-asignar-inline-footer .cj-btn-primary:hover:not(:disabled) {
       transform: translateY(-2px) scale(1.02);
-      box-shadow: 0 8px 24px -4px rgba(16,185,129,.6);
+      box-shadow: 0 8px 24px -4px rgba(5,150,105,.65);
     }
     .cj-asignar-inline-footer .cj-btn-primary:disabled {
-      opacity: .35; cursor: not-allowed;
-      background: linear-gradient(135deg, #334155, #1e293b);
+      opacity: .4; cursor: not-allowed;
+      background: rgba(120,53,15,.25); color: rgba(120,53,15,.6);
       box-shadow: none;
     }
     .cj-asignar-inline-loading {
       display: flex; align-items: center; gap: 10px;
-      padding: 18px; color: #94a3b8; font-size: 12px;
+      padding: 18px; color: #92610c; font-size: 12px; font-weight: 700;
       justify-content: center;
     }
     .cj-asignar-inline-spin {
       width: 18px; height: 18px; border-radius: 50%;
-      border: 2.5px solid #1e293b; border-top-color: #3b82f6;
+      border: 2.5px solid rgba(180,83,9,.25); border-top-color: #d97706;
       animation: spin .7s linear infinite;
     }
     .cj-asignar-inline-empty {
-      padding: 16px; text-align: center; color: #fbbf24;
+      padding: 16px; text-align: center; color: #b45309;
       font-size: 12px; font-weight: 700;
       background: rgba(245,158,11,.08); border-radius: 10px;
       border: 1px dashed rgba(245,158,11,.3);
@@ -19490,7 +19491,7 @@ if (false) (function(){
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.418';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.419';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19535,14 +19536,14 @@ if (false) (function(){
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.418"></script>
+<script src="js/api.js?v=2.43.419"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
      bumps de sw.js. Bug reportado: usuario seguía viendo error "Lote en curso"
      de v2.43.146 después de v2.43.148. -->
 <script src="./assets/membrete/membrete-modal.js?v=2.43.414"></script>
-<script src="./assets/seguridad/seguridad-modal.js?v=2.43.418"></script>
+<script src="./assets/seguridad/seguridad-modal.js?v=2.43.419"></script>
 <!-- [v2.43.187] AdhesivoPreview — render visual del adhesivo unificado con WH.
      Mismo módulo en /assets/adhesivo/preview.js — backend Envasados.gs pixel-perfect. -->
 <script src="./assets/adhesivo/preview.js?v=1.3.0"></script>
@@ -19550,7 +19551,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.418"></script>
+<script src="js/app.js?v=2.43.419"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
