@@ -40,13 +40,18 @@ Asigna un cobro desde MOS y confirma en la pestaña Network del navegador que ll
 > Los dejé sin cortar a propósito: necesitan RPC directa nueva + verificar auth, y no quise
 > improvisar sobre el monolito de dinero sin su propia validación. Orden sugerido por valor/riesgo:
 
-### B1. `adminConfirmarCobrar` → `me.cobrar_credito_directo` (314) — **LISTO PARA CABLEAR**
+### B1. `adminConfirmarCobrar` → `me.cobrar_credito_directo` (314) — **DESBLOQUEADO, listo para cablear**
 - La RPC directa **ya existe y está probada** (SQL 314). Solo falta cablearla en ME.
-- ⚠️ **Antes de cablear:** verificar que 314 replica el chequeo de **PIN admin** que hace el GAS
-  (`COBRAR_CREDITO_CON_EXTRA` pasa `adminAuth`). Si el GAS valida PIN y 314 no → cablear sería
-  saltarse la auth (regresión de seguridad). Hay que leer el handler GAS y decidir: agregar la
-  validación de PIN a 314, o confirmar que no aplica.
-- Esfuerzo: bajo-medio. Es el de mayor valor del tail.
+- ✅ **Paridad de auth VERIFICADA (2026-07-02):** el handler GAS `_cobrarCreditoConExtraImpl`
+  (`EditarVenta.gs:50`) **NO valida PIN admin server-side** — `adminAuth` solo se usa para la
+  auditoría (`_audExtraerActor`), no para autorizar. El PIN se pide solo en el frontend. La 314 hace
+  las MISMAS validaciones (venta pendiente + caja abierta + MIXTO cuadra) + MÁS seguridad (advisory
+  locks + cierra el cobro ASIGNADO vivo). Cablear NO es regresión. Obs idéntica (`ticket <id> ·`).
+- **Plan de cableo:** en `adminConfirmarCobrar` (index.html ~15416), intentar primero
+  `POST ${SUPABASE_URL}/rest/v1/rpc/cobrar_credito_directo` con `{p:{idVenta,cajaReceptora,metodo,
+  montoEfectivo,montoVirtual,vendedor,obs}}` (Content-Profile `me`), y GAS `COBRAR_CREDITO_CON_EXTRA`
+  como FALLBACK (mismo patrón que `confirmarCobrarAsignado`). Bump versión + deploy + 100x.
+- Esfuerzo: bajo. Es el de mayor valor del tail y ya no tiene bloqueos.
 
 ### B2. `confirmarRechazarAsignado` (RECHAZAR_COBRO_ASIGNADO) — nueva RPC
 - Construir `me.rechazar_cobro_asignado` (flip cobro→RECHAZADO + la venta se queda CREDITO + notif).
