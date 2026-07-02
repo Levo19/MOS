@@ -125,11 +125,16 @@ begin
   select coalesce(array_agg(id_venta), array[]::text[]) into v_anulados from anuladas;
 
   -- 2) efectivo de ventas NO anuladas (EFECTIVO + parte EFE de MIXTO)
+  --    [fix doble-conteo] excluye ventas cobradas vía cobro (asignado/directo): su plata es el INGRESO
+  --    'Abono deuda', no el efectivo de la venta (si no, 2x). Ver 27_fase2_cerrar_caja.
   select coalesce(sum(case
-           when upper(forma_pago)='EFECTIVO' then total
-           when upper(forma_pago) like 'MIXTO%' then coalesce((regexp_match(forma_pago,'EFE:([0-9.]+)'))[1]::numeric,0)
+           when upper(v.forma_pago)='EFECTIVO' then v.total
+           when upper(v.forma_pago) like 'MIXTO%' then coalesce((regexp_match(v.forma_pago,'EFE:([0-9.]+)'))[1]::numeric,0)
            else 0 end),0)
-    into v_efe from me.ventas where id_caja = v_idcaja;
+    into v_efe from me.ventas v
+   where v.id_caja = v_idcaja
+     and not exists (select 1 from me.movimientos_extra m
+                      where m.concepto = 'Abono deuda' and position(v.id_venta in coalesce(m.obs,'')) > 0);
   select coalesce(sum(case when tipo='INGRESO' then monto else 0 end),0),
          coalesce(sum(case when tipo='EGRESO'  then monto else 0 end),0)
     into v_ing, v_egr from me.movimientos_extra where id_caja = v_idcaja;

@@ -78,14 +78,21 @@ begin
   v_anulados := coalesce(v_anulados, array[]::text[]);
 
   -- ── 3. Efectivo de ventas NO anuladas de la caja (EFECTIVO + parte EFE de MIXTO) ──
+  --    [fix doble-conteo] EXCLUYE las ventas cuya deuda se cobró vía cobro (asignado o directo): su
+  --    plata YA está capturada como el movimiento INGRESO 'Abono deuda' (en la caja receptora). El cobro
+  --    voltea forma_pago a EFECTIVO, pero la venta NO debe re-sumar acá o se cuenta 2x (venta + INGRESO).
+  --    Marcador robusto que cubre AMBAS vías: existe un movimiento 'Abono deuda' que referencia el idVenta.
   select coalesce(sum(
     case
-      when upper(forma_pago) = 'EFECTIVO' then total
-      when upper(forma_pago) like 'MIXTO%' then coalesce((regexp_match(forma_pago,'EFE:([0-9.]+)'))[1]::numeric, 0)
+      when upper(v.forma_pago) = 'EFECTIVO' then v.total
+      when upper(v.forma_pago) like 'MIXTO%' then coalesce((regexp_match(v.forma_pago,'EFE:([0-9.]+)'))[1]::numeric, 0)
       else 0
     end), 0)
   into v_efe
-  from me.ventas where id_caja = v_id;
+  from me.ventas v
+  where v.id_caja = v_id
+    and not exists (select 1 from me.movimientos_extra m
+                     where m.concepto = 'Abono deuda' and position(v.id_venta in coalesce(m.obs,'')) > 0);
 
   -- ── 4. Ingresos / egresos ──
   select coalesce(sum(case when tipo='INGRESO' then monto else 0 end),0),
@@ -111,6 +118,16 @@ begin
      set estado = 'CANCELADO_CIERRE_CAJA', fecha_res = now()
    where caja_destino = v_id and estado = 'ASIGNADO';
   get diagnostics v_cobros = row_count;
+
+  -- ── 8. [cero-GAS] Efectos idempotentes: descuento me.stock_zonas + guía SALIDA_VENTAS + pickup WH.
+  --    Antes esto lo hacía el mirror GAS (CIERRE_CAJA en background). Ahora corre acá → cierre del cajero
+  --    cero-GAS. Idempotente por caja (kardex único + guard) → si el mirror GAS aún corre, ve el kardex y
+  --    NO re-descuenta. BEST-EFFORT: un fallo de stock NO bloquea el cierre del DINERO (que es lo crítico);
+  --    los efectos quedan para reintento idempotente (o el mirror GAS de respaldo).
+  begin
+    perform me.cerrar_caja_efectos(jsonb_build_object('id_caja', v_id));
+  exception when others then null;
+  end;
 
   return jsonb_build_object(
     'status','success','dedup',false,'id_caja',v_id,'estado',v_estado_f,

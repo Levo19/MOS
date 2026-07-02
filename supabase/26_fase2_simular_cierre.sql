@@ -15,12 +15,15 @@ returns jsonb language sql stable security definer set search_path = '' as $fn$
   efe as (
     select coalesce(sum(
       case
-        when upper(forma_pago) = 'EFECTIVO' then total
-        when upper(forma_pago) like 'MIXTO%' then coalesce((regexp_match(forma_pago, 'EFE:([0-9.]+)'))[1]::numeric, 0)
+        when upper(v.forma_pago) = 'EFECTIVO' then v.total
+        when upper(v.forma_pago) like 'MIXTO%' then coalesce((regexp_match(v.forma_pago, 'EFE:([0-9.]+)'))[1]::numeric, 0)
         else 0
       end
     ), 0) as efectivo_ventas
-    from me.ventas where id_caja = p_id_caja
+    from me.ventas v where v.id_caja = p_id_caja
+      -- [fix doble-conteo] excluye ventas cobradas vía cobro (su plata es el INGRESO 'Abono deuda')
+      and not exists (select 1 from me.movimientos_extra m
+                       where m.concepto = 'Abono deuda' and position(v.id_venta in coalesce(m.obs,'')) > 0)
   ),
   mov as (
     select

@@ -202,14 +202,24 @@ begin
            then to_char(vr.fecha_ts at time zone v_tz, 'HH24:MI')    else '' end as hora
     from ventas_raw vr
   ),
+  -- [fix doble-conteo] idVentas cuya deuda se cobró vía cobro (asignado/directo): dejan un movimiento
+  -- 'Abono deuda' con el idVenta en la obs. Su plata es el INGRESO (contado en entradas), NO el efectivo
+  -- de la venta → se pone efe=0 (si no, efectivoEsperado los cuenta 2x: venta EFECTIVO + INGRESO).
+  cobradas as (
+    select distinct nullif(btrim(substring(m.obs from 'ticket ([^ ]+)')),'') as id_venta
+    from me.movimientos_extra m
+    where m.concepto = 'Abono deuda' and coalesce(m.obs,'') <> ''
+  ),
   -- desglose efectivo/otros por venta cobrada (MIXTO parsea EFE:/VIR:)
   ventas_calc as (
     select vt.*,
       cm.vendedor as cm_vendedor,
       coalesce(cm.zona,'') as cm_zona,
-      -- efe/vir solo importan para estado COMPLETADO
+      -- efe/vir solo importan para estado COMPLETADO. [fix doble-conteo] las ventas cobradas vía cobro
+      -- aportan 0 acá (su plata es el INGRESO/INGRESO_VIRTUAL, contado en entradas).
       case
         when vt.estado <> 'COMPLETADO' then 0
+        when vt.id_venta in (select id_venta from cobradas) then 0
         when upper(vt.forma_pago) = 'EFECTIVO' then vt.total
         when upper(vt.forma_pago) like 'MIXTO%' then
           coalesce((substring(vt.forma_pago from 'EFE:([0-9.]+)'))::numeric, 0)
@@ -217,6 +227,7 @@ begin
       end                                                   as efe,
       case
         when vt.estado <> 'COMPLETADO' then 0
+        when vt.id_venta in (select id_venta from cobradas) then 0
         when upper(vt.forma_pago) = 'EFECTIVO' then 0
         when upper(vt.forma_pago) like 'MIXTO%' then
           coalesce(
