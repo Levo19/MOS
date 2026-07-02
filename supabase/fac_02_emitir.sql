@@ -50,6 +50,11 @@ declare
   v_total numeric := coalesce((p->>'total')::numeric, 0);
   v_suma  numeric; v_nit int;
   v_cli   jsonb := coalesce(p->'cliente','{}'::jsonb);
+  v_cdoc  text := btrim(coalesce(p->'cliente'->>'doc',''));
+  v_cnom  text := btrim(coalesce(p->'cliente'->>'nombre',''));
+  v_cdir  text := btrim(coalesce(p->'cliente'->>'direccion',''));
+  v_ctipo int  := coalesce(nullif(regexp_replace(coalesce(p->'cliente'->>'tipo',''),'\D','','g'),'')::int, 0);
+  v_medio text := btrim(coalesce(p->>'medio_de_pago', p->>'metodo', ''));
   v_ex    fac.comprobantes%rowtype;
   v_cfg   fac.config%rowtype;
   v_real  boolean;
@@ -67,6 +72,28 @@ begin
     return jsonb_build_object('status','error','error','ITEMS_VACIOS'); end if;
   -- local_id OBLIGATORIO: es la clave anti-doble-emisión fiscal (sin él, un reintento duplicaría)
   if v_local is null then return jsonb_build_object('status','error','error','REQUIERE_LOCAL_ID'); end if;
+
+  -- ── [VALIDACIONES SUNAT · server-side = MISMAS reglas para ME, MOS y ambos converts (todos pasan
+  --    por aquí)] ── Confirmar umbrales con el contador; son las reglas estándar.
+  -- FACTURA: RUC 11 dígitos + razón social + dirección fiscal (siempre, cualquier monto).
+  if v_tipo = 'FACTURA' then
+    if v_cdoc !~ '^\d{11}$' then return jsonb_build_object('status','error','error','FACTURA_REQUIERE_RUC','detalle','La factura exige RUC de 11 dígitos'); end if;
+    if v_cnom = '' then return jsonb_build_object('status','error','error','FACTURA_REQUIERE_NOMBRE','detalle','La factura exige razón social'); end if;
+    if v_cdir = '' then return jsonb_build_object('status','error','error','FACTURA_REQUIERE_DIRECCION','detalle','La factura exige dirección fiscal'); end if;
+  end if;
+  -- BOLETA > S/700: identificar al cliente (DNI 8 / RUC 11 / CE-pasaporte tipo 4,7) + nombre.
+  if v_tipo = 'BOLETA' and v_total > 700 then
+    if not (v_cdoc ~ '^\d{8}$' or v_cdoc ~ '^\d{11}$' or (v_ctipo in (4,7) and v_cdoc <> '')) then
+      return jsonb_build_object('status','error','error','BOLETA_MAYOR_700_REQUIERE_ID',
+        'detalle','Boleta > S/700 exige identificar al cliente (DNI, RUC, CE o pasaporte)');
+    end if;
+    if v_cnom = '' then return jsonb_build_object('status','error','error','BOLETA_MAYOR_700_REQUIERE_NOMBRE','detalle','Boleta > S/700 exige el nombre del cliente'); end if;
+  end if;
+  -- Bancarización (Ley 28194): total ≥ S/2000 exige indicar el medio de pago.
+  if v_total >= 2000 and v_medio = '' then
+    return jsonb_build_object('status','error','error','REQUIERE_MEDIO_DE_PAGO',
+      'detalle','Operaciones ≥ S/2000 exigen indicar el medio de pago (bancarización, Ley 28194)');
+  end if;
 
   select * into v_cfg from fac.config where id = 1;
   v_tipoc := case when v_tipo = 'FACTURA' then 1 else 2 end;
@@ -192,6 +219,7 @@ begin
       'total_precio_de_venta', v_total, 'total_descuentos','', 'total_otros_cargos','', 'total', v_total,
       'detraccion', false, 'enviar_automaticamente_a_la_sunat', true,
       'enviar_automaticamente_al_cliente', (coalesce(v_cli->>'email','')<>''),
+      'observaciones', case when v_medio <> '' then 'Medio de pago: ' || v_medio else '' end,   -- bancarización
       'formato_de_pdf','TICKET', 'items', v_nfitems);
 
     -- Timeout/red → RAISE → rollback total. NO se consume numeración.
