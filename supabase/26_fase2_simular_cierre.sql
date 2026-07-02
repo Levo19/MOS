@@ -12,6 +12,11 @@ returns jsonb language sql stable security definer set search_path = '' as $fn$
     select monto_inicial, monto_final, estado, vendedor, zona_id
     from me.cajas where id_caja = p_id_caja limit 1
   ),
+  cobradas as (   -- [fix doble-conteo · perf 100x] set materializado + anti-join exacto (ver 27/111)
+    select distinct nullif(btrim(substring(m.obs from 'ticket ([^ ]+)')),'') as id_venta
+    from me.movimientos_extra m
+    where m.concepto = 'Abono deuda' and coalesce(m.obs,'') <> ''
+  ),
   efe as (
     select coalesce(sum(
       case
@@ -22,8 +27,7 @@ returns jsonb language sql stable security definer set search_path = '' as $fn$
     ), 0) as efectivo_ventas
     from me.ventas v where v.id_caja = p_id_caja
       -- [fix doble-conteo] excluye ventas cobradas vía cobro (su plata es el INGRESO 'Abono deuda')
-      and not exists (select 1 from me.movimientos_extra m
-                       where m.concepto = 'Abono deuda' and position('ticket '||v.id_venta||' ' in coalesce(m.obs,'')) > 0)
+      and v.id_venta not in (select id_venta from cobradas where id_venta is not null)
   ),
   mov as (
     select

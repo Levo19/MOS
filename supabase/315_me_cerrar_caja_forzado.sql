@@ -127,14 +127,18 @@ begin
   -- 2) efectivo de ventas NO anuladas (EFECTIVO + parte EFE de MIXTO)
   --    [fix doble-conteo] excluye ventas cobradas vía cobro (asignado/directo): su plata es el INGRESO
   --    'Abono deuda', no el efectivo de la venta (si no, 2x). Ver 27_fase2_cerrar_caja.
+  with cobradas as (   -- [perf 100x] set materializado + anti-join exacto (ver 27/111)
+    select distinct nullif(btrim(substring(m.obs from 'ticket ([^ ]+)')),'') as id_venta
+    from me.movimientos_extra m
+    where m.concepto = 'Abono deuda' and coalesce(m.obs,'') <> ''
+  )
   select coalesce(sum(case
            when upper(v.forma_pago)='EFECTIVO' then v.total
            when upper(v.forma_pago) like 'MIXTO%' then coalesce((regexp_match(v.forma_pago,'EFE:([0-9.]+)'))[1]::numeric,0)
            else 0 end),0)
     into v_efe from me.ventas v
    where v.id_caja = v_idcaja
-     and not exists (select 1 from me.movimientos_extra m
-                      where m.concepto = 'Abono deuda' and position('ticket '||v.id_venta||' ' in coalesce(m.obs,'')) > 0);
+     and v.id_venta not in (select id_venta from cobradas where id_venta is not null);
   select coalesce(sum(case when tipo='INGRESO' then monto else 0 end),0),
          coalesce(sum(case when tipo='EGRESO'  then monto else 0 end),0)
     into v_ing, v_egr from me.movimientos_extra where id_caja = v_idcaja;

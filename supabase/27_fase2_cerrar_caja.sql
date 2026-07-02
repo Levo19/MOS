@@ -82,6 +82,13 @@ begin
   --    plata YA está capturada como el movimiento INGRESO 'Abono deuda' (en la caja receptora). El cobro
   --    voltea forma_pago a EFECTIVO, pero la venta NO debe re-sumar acá o se cuenta 2x (venta + INGRESO).
   --    Marcador robusto que cubre AMBAS vías: existe un movimiento 'Abono deuda' que referencia el idVenta.
+  --    [perf 100x] set de idVentas cobradas materializado UNA vez (extracción exacta del token tras
+  --    'ticket ', igual que 111) → anti-join sargable, no un position() correlacionado por venta.
+  with cobradas as (
+    select distinct nullif(btrim(substring(m.obs from 'ticket ([^ ]+)')),'') as id_venta
+    from me.movimientos_extra m
+    where m.concepto = 'Abono deuda' and coalesce(m.obs,'') <> ''
+  )
   select coalesce(sum(
     case
       when upper(v.forma_pago) = 'EFECTIVO' then v.total
@@ -91,8 +98,7 @@ begin
   into v_efe
   from me.ventas v
   where v.id_caja = v_id
-    and not exists (select 1 from me.movimientos_extra m
-                     where m.concepto = 'Abono deuda' and position('ticket '||v.id_venta||' ' in coalesce(m.obs,'')) > 0);
+    and v.id_venta not in (select id_venta from cobradas where id_venta is not null);
 
   -- ── 4. Ingresos / egresos ──
   select coalesce(sum(case when tipo='INGRESO' then monto else 0 end),0),
