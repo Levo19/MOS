@@ -26079,10 +26079,12 @@ const MOS = (() => {
                   data-caja="${_esc(c.idCaja)}">
             <div class="cj-asignar-caja-avatar">👤</div>
             <div class="cj-asignar-caja-info">
-              <div class="cj-asignar-caja-vendedor">${_esc(c.vendedor)}</div>
-              <div class="cj-asignar-caja-meta">${_esc(c.estacion || '')}${c.zona ? ' · ' + _esc(c.zona) : ''}</div>
+              <div class="cj-asignar-caja-vendedor" title="${_esc(c.vendedor)}">${_esc(c.vendedor)}</div>
+              <div class="cj-asignar-caja-meta">
+                <span class="cj-asignar-caja-estado est-abierta">🟢 Abierta</span>
+                <span class="cj-asignar-caja-loc">${_esc(c.estacion || '')}${c.zona ? ' · ' + _esc(c.zona) : ''}</span>
+              </div>
             </div>
-            <span class="cj-asignar-caja-estado est-abierta">🟢 Abierta</span>
             <div class="cj-asignar-caja-check">✓</div>
           </button>`;
       });
@@ -26094,10 +26096,12 @@ const MOS = (() => {
                title="Caja cerrada — no se puede enviar cobro">
             <div class="cj-asignar-caja-avatar">🔒</div>
             <div class="cj-asignar-caja-info">
-              <div class="cj-asignar-caja-vendedor">${_esc(c.vendedor)}</div>
-              <div class="cj-asignar-caja-meta">${_esc(c.estacion || c.zona || '')}</div>
+              <div class="cj-asignar-caja-vendedor" title="${_esc(c.vendedor)}">${_esc(c.vendedor)}</div>
+              <div class="cj-asignar-caja-meta">
+                <span class="cj-asignar-caja-estado est-cerrada">⚫ Cerrada</span>
+                <span class="cj-asignar-caja-loc">${_esc(c.estacion || c.zona || '')}</span>
+              </div>
             </div>
-            <span class="cj-asignar-caja-estado est-cerrada">⚫ Cerrada</span>
           </div>`;
       });
       cajasDiv.innerHTML = html;
