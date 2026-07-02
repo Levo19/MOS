@@ -24968,8 +24968,11 @@ const MOS = (() => {
       return _cjCreditosState.cajasAbiertasCache;
     }
     try {
-      const r = await API.post('meCajasAbiertas', {});
-      const lista = (r && r.data) ? r.data : (r || []);
+      // [fix] GET (no POST): la RPC directa mos.me_cajas_abiertas (fresca, solo ABIERTA de la tabla VIVA
+      // me.cajas) SOLO está cableada en el dispatcher GET. Con POST caía SIEMPRE a GAS → lista stale que
+      // ofrecía cajas ya CERRADAS (bug: enviar cobro a caja cerrada). Con GET usa la directa correcta.
+      const r = await API.get('meCajasAbiertas', {});
+      const lista = (r && r.data) ? r.data : (Array.isArray(r) ? r : []);
       _cjCreditosState.cajasAbiertasCache    = Array.isArray(lista) ? lista : [];
       _cjCreditosState.cajasAbiertasCacheTs  = ahora;
       return _cjCreditosState.cajasAbiertasCache;
@@ -26052,23 +26055,52 @@ const MOS = (() => {
     const cajasDiv = $('cjAsignarCajas');
     const _pintarCajas = (lista) => {
       if (!cajasDiv) return;
-      if (!lista.length) {
-        cajasDiv.innerHTML = '<div class="cj-asignar-inline-empty">⚠ No hay cajas abiertas.<br><span class="text-xs opacity-70">Pedile a un cajero que abra caja primero.</span></div>';
-      } else {
-        cajasDiv.innerHTML = lista.map((c, i) => `
-          <button class="cj-asignar-caja-btn"
+      const abiertas = Array.isArray(lista) ? lista : [];
+      const abIds = new Set(abiertas.map(c => String(c.idCaja)));
+      // [diseño] cajas del día CERRADAS → mostrarlas grises con badge (NO enviables). Fuente: S._cajasHoy
+      // (fresco, con estado). Solo se PUEDE enviar a las abiertas — el resto es informativo (evita "mandar al aire").
+      const cerradas = (S._cajasHoy || S._todasCajas || [])
+        .filter(c => c && String(c.estado || '').toUpperCase() !== 'ABIERTA' && !abIds.has(String(c.idCaja)))
+        .filter((c, i, arr) => arr.findIndex(x => String(x.idCaja) === String(c.idCaja)) === i);
+
+      if (!abiertas.length && !cerradas.length) {
+        cajasDiv.innerHTML = '<div class="cj-asignar-inline-empty">⚠ No hay cajas hoy.<br><span class="text-xs opacity-70">Pedile a un cajero que abra caja primero.</span></div>';
+        return;
+      }
+      let html = '';
+      if (!abiertas.length) {
+        html += '<div class="cj-asignar-inline-empty" style="margin-bottom:10px">⚠ No hay cajas <b>abiertas</b> ahora. Solo se puede enviar a una caja abierta.</div>';
+      }
+      abiertas.forEach((c, i) => {
+        html += `
+          <button class="cj-asignar-caja-btn is-abierta"
                   style="animation-delay:${i*60}ms"
                   onclick="MOS.cjSetCajaAsignar('${_esc(c.idCaja)}')"
                   data-caja="${_esc(c.idCaja)}">
             <div class="cj-asignar-caja-avatar">👤</div>
             <div class="cj-asignar-caja-info">
               <div class="cj-asignar-caja-vendedor">${_esc(c.vendedor)}</div>
-              <div class="cj-asignar-caja-meta">${_esc(c.estacion)}${c.zona ? ' · ' + _esc(c.zona) : ''}</div>
+              <div class="cj-asignar-caja-meta">${_esc(c.estacion || '')}${c.zona ? ' · ' + _esc(c.zona) : ''}</div>
             </div>
+            <span class="cj-asignar-caja-estado est-abierta">🟢 Abierta</span>
             <div class="cj-asignar-caja-check">✓</div>
-          </button>
-        `).join('');
-      }
+          </button>`;
+      });
+      cerradas.forEach((c, i) => {
+        html += `
+          <div class="cj-asignar-caja-btn is-cerrada"
+               style="animation-delay:${(abiertas.length + i) * 60}ms"
+               data-caja="${_esc(c.idCaja)}"
+               title="Caja cerrada — no se puede enviar cobro">
+            <div class="cj-asignar-caja-avatar">🔒</div>
+            <div class="cj-asignar-caja-info">
+              <div class="cj-asignar-caja-vendedor">${_esc(c.vendedor)}</div>
+              <div class="cj-asignar-caja-meta">${_esc(c.estacion || c.zona || '')}</div>
+            </div>
+            <span class="cj-asignar-caja-estado est-cerrada">⚫ Cerrada</span>
+          </div>`;
+      });
+      cajasDiv.innerHTML = html;
     };
     if (cajasDiv) {
       const cache = _cjCreditosState.cajasAbiertasCache || [];

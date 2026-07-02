@@ -79,7 +79,12 @@ begin
     from me.cajas c
    where upper(coalesce(c.estado,'')) = 'ABIERTA';
 
-  return jsonb_build_object('ok', true, 'data', v_data) || mos._frescura_sombra();
+  -- [fix] me.cajas es TABLA VIVA (apertura ME_APERTURA_DIRECTO=1 + cierre ME_CIERRE_DIRECTO/FORZADO
+  -- directos), NO una sombra del sync GAS. Aplicar _frescura_sombra() aquí medía un heartbeat muerto y
+  -- reportaba _fresh:false intermitentemente → el front caía a GAS STALE y mostraba cajas ya CERRADAS como
+  -- asignables (bug: cobro enviado a caja cerrada → rechazado + rollback). Al leer la tabla autoritativa,
+  -- _fresh:true SIEMPRE: la lista directa (solo ABIERTA) manda, sin fallback a GAS obsoleto.
+  return jsonb_build_object('ok', true, 'data', v_data, '_fresh', true);
 end;
 $fn$;
 revoke all on function mos.me_cajas_abiertas(jsonb) from public;
