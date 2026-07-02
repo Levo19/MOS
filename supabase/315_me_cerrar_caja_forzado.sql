@@ -27,6 +27,7 @@ declare
   v_caja  me.cajas%rowtype;
   v_items jsonb; v_idguia text;
   v_rdesc jsonb; v_rmeta jsonb; v_rpick jsonb;
+  v_claim_prev text;
 begin
   if coalesce(me.jwt_app(),'') not in ('mosExpress','MOS') then return jsonb_build_object('ok',false,'error','APP_NO_AUTORIZADA'); end if;
   if v_id is null then return jsonb_build_object('ok',false,'error','id_caja requerido'); end if;
@@ -47,16 +48,30 @@ begin
   end if;
 
   v_idguia := 'G-VENTAS-' || v_id;
+  -- [FIX cero-GAS] zona_descontar_venta exige mos._claim_ok() = app ''/'MOS'; el cierre del cajero
+  -- corre como 'mosExpress' → el descuento fallaba SILENCIOSO (descuentoOk=false, tragado por el
+  -- best-effort del caller) y el stock lo descontaba SOLO el mirror GAS. Al quitar el mirror eso
+  -- rompería el stock. El cierre YA está autorizado (gate app + ME_CIERRE_*_DIRECTO en el caller);
+  -- esta es su continuación interna de confianza → elevamos el claim a 'MOS' SOLO alrededor del
+  -- descuento (idéntico al path GAS probado en prod) y lo restauramos. meta/pickup no lo requieren.
+  v_claim_prev := current_setting('request.jwt.claims', true);
+  perform set_config('request.jwt.claims', jsonb_build_object('app','MOS','role','authenticated')::text, true);
   v_rdesc := me.zona_descontar_venta(jsonb_build_object(
     'idCaja', v_id, 'zona', coalesce(v_caja.zona_id,''), 'usuario', coalesce(v_caja.vendedor,''),
     'origen', 'CIERRE', 'items', v_items));
+  perform set_config('request.jwt.claims', coalesce(v_claim_prev,''), true);
   v_rmeta := me.zona_guia_registrar_meta(jsonb_build_object(
     'idGuia', v_idguia, 'zona', coalesce(v_caja.zona_id,''), 'tipo', 'SALIDA_VENTAS',
     'vendedor', coalesce(v_caja.vendedor,''), 'observacion', 'Auto cierre de caja · '||v_id,
     'estado', 'CONFIRMADO', 'items', v_items));
-  v_rpick := wh.crear_pickup_desde_ventas(jsonb_build_object(
-    'idCaja', v_id, 'idZona', coalesce(v_caja.zona_id,''), 'cajero', coalesce(v_caja.vendedor,''),
-    'idGuiaME', v_idguia, 'items', v_items));
+  -- [318 cross-guard recíproco] si el mirror GAS ya creó su pickup PCK-CC-<caja>, NO duplicar.
+  if exists (select 1 from wh.pickups where id_pickup = 'PCK-CC-'||v_id) then
+    v_rpick := jsonb_build_object('ok',true,'data',jsonb_build_object('idPickup','PCK-CC-'||v_id,'dedup',true,'crossGuard',true));
+  else
+    v_rpick := wh.crear_pickup_desde_ventas(jsonb_build_object(
+      'idCaja', v_id, 'idZona', coalesce(v_caja.zona_id,''), 'cajero', coalesce(v_caja.vendedor,''),
+      'idGuiaME', v_idguia, 'items', v_items));
+  end if;
 
   return jsonb_build_object('ok', true, 'data', jsonb_build_object(
     'idCaja', v_id, 'idGuia', v_idguia, 'items', jsonb_array_length(v_items),

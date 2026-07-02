@@ -39,6 +39,7 @@ declare
   v_auto     numeric;
   v_final    numeric;
   v_cobros   int := 0;
+  v_efectos  jsonb := null;
 begin
   if v_app <> 'mosExpress' then return jsonb_build_object('status','error','error','APP_NO_AUTORIZADA'); end if;
   -- [kill-switch] inerte mientras el flag no esté en '1' (defensa server-side, además del gate del frontend)
@@ -130,9 +131,13 @@ begin
   --    cero-GAS. Idempotente por caja (kardex único + guard) → si el mirror GAS aún corre, ve el kardex y
   --    NO re-descuenta. BEST-EFFORT: un fallo de stock NO bloquea el cierre del DINERO (que es lo crítico);
   --    los efectos quedan para reintento idempotente (o el mirror GAS de respaldo).
+  --   [OBSERVABILIDAD] capturamos el resultado (no lo tragamos en silencio): el frontend/monitor
+  --   puede detectar descuentoOk=false y avisar. Antes era `perform ... exception then null` → un
+  --   fallo de stock quedaba invisible; ahora viaja en el return sin bloquear el dinero.
   begin
-    perform me.cerrar_caja_efectos(jsonb_build_object('id_caja', v_id));
-  exception when others then null;
+    v_efectos := me.cerrar_caja_efectos(jsonb_build_object('id_caja', v_id));
+  exception when others then
+    v_efectos := jsonb_build_object('ok', false, 'error', SQLERRM);
   end;
 
   return jsonb_build_object(
@@ -141,7 +146,7 @@ begin
     'monto_inicial',v_caja.monto_inicial,'efectivo_ventas',v_efe,'ingresos',v_ing,'egresos',v_egr,
     'monto_final',v_final,'monto_final_auto',v_auto,'descuadre',round(v_final - v_auto, 2),
     'ids_anulados',to_jsonb(v_anulados),'tickets_anulados',array_length(v_anulados,1),
-    'cobros_cancelados',v_cobros
+    'cobros_cancelados',v_cobros,'efectos',v_efectos
   );
 end;
 $fn$;
