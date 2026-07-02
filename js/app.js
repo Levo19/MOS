@@ -27077,6 +27077,8 @@ const MOS = (() => {
     _tkAcc.cambiarFP.nueva = '';
     $('tkCambiarFPSub').textContent  = (t.correlativo || t.idVenta);
     $('tkCambiarFPActual').textContent = t.formaPago;
+    const _cpeNota = $('tkCambiarFPCpeNota');   // aclaración: en un CPE el modo de pago es interno
+    if (_cpeNota) _cpeNota.classList.toggle('hidden', !(t.tipoDoc === 'BOLETA' || t.tipoDoc === 'FACTURA'));
     $('tkCambiarFPMotivo').value = '';
 
     // Opciones (excluye la actual)
