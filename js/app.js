@@ -26234,6 +26234,9 @@ const MOS = (() => {
     };
     _cjCreditosState.enVuelo = [optimisticCobro, ...(_cjCreditosState.enVuelo || [])];
     try { _cjPintarPostitsManojos({ optimisticId, cartaOrigen: cartaEl }); } catch(_){}
+    // [fix lag] re-render INMEDIATO del tablero de adeudados: el ticket pasa de amarillo → celeste
+    // "✈ Enviado" al instante (lee _cjCreditosState.enVuelo optimista), sin esperar el fetch de 400ms.
+    try { _cjRenderManoDelDia(); } catch(_){}
     if (cartaEl) {
       cartaEl.classList.add('cj-credito-fly');
       setTimeout(() => { try { cartaEl.remove(); } catch(_){} }, 800);
