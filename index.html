@@ -14124,12 +14124,12 @@
           <input id="facCliDoc" placeholder="DNI / RUC" class="fac-inp flex-1" oninput="MOS.facDocInput()" inputmode="numeric">
           <button onclick="MOS.facLookup()" class="fac-btn-sec">🔎 Buscar</button>
         </div>
-        <input id="facCliNombre" placeholder="Nombre / Razón social" class="fac-inp w-full mb-2">
-        <input id="facCliDir"    placeholder="Dirección (requerida en factura)" class="fac-inp w-full mb-2">
+        <input id="facCliNombre" placeholder="Nombre / Razón social" class="fac-inp w-full mb-2" oninput="MOS._facReglasRefresh()">
+        <input id="facCliDir"    placeholder="Dirección (requerida en factura)" class="fac-inp w-full mb-2" oninput="MOS._facReglasRefresh()">
         <input id="facCliEmail"  placeholder="Email (opcional — envía el PDF al cliente)" class="fac-inp w-full mb-2" inputmode="email">
-        <div class="flex items-center gap-2 mb-3">
+        <div class="flex items-center gap-2 mb-2">
           <span class="text-[11px] text-slate-400 font-bold whitespace-nowrap">Medio de pago</span>
-          <select id="facMedioPago" class="fac-inp flex-1">
+          <select id="facMedioPago" class="fac-inp flex-1" onchange="MOS._facReglasRefresh()">
             <option value="EFECTIVO">Efectivo</option>
             <option value="TRANSFERENCIA">Transferencia bancaria</option>
             <option value="TARJETA">Tarjeta (débito/crédito)</option>
@@ -14137,7 +14137,8 @@
             <option value="DEPOSITO">Depósito en cuenta</option>
           </select>
         </div>
-        <div class="flex items-center justify-between mb-1">
+        <div id="facReglas"></div>
+        <div class="flex items-center justify-between mb-1 mt-3">
           <span class="text-xs text-slate-400 font-bold">Ítems</span>
           <button onclick="MOS.facAddItem()" class="fac-btn-sec" style="padding:5px 11px;font-size:12px">+ Ítem</button>
         </div>
@@ -15275,16 +15276,17 @@
             </div>
             <div>
               <label class="text-[10px] text-slate-400 uppercase block mb-1">Nombre / Razón social</label>
-              <input type="text" id="tkConvNombre" class="inp text-sm" placeholder="Se llena tras buscar">
+              <input type="text" id="tkConvNombre" class="inp text-sm" placeholder="Se llena tras buscar" oninput="MOS._tkConvReglasRefresh()">
             </div>
             <div>
               <label class="text-[10px] text-slate-400 uppercase block mb-1">Dirección (opcional, requerida en factura)</label>
-              <input type="text" id="tkConvDireccion" class="inp text-sm" placeholder="Auto-llenada para RUC">
+              <input type="text" id="tkConvDireccion" class="inp text-sm" placeholder="Auto-llenada para RUC" oninput="MOS._tkConvReglasRefresh()">
             </div>
             <div>
               <label class="text-[10px] text-slate-400 uppercase block mb-1">Serie</label>
               <input type="text" id="tkConvSerie" class="inp text-sm" placeholder="ej: B001 / F001">
             </div>
+            <div id="tkConvReglas"></div>
             <button onclick="MOS._tkConvertirConfirmar()" id="tkConvBtnOK" class="w-full btn-primary text-sm py-3">📤 Emitir CPE en SUNAT</button>
           </div>
         </div>
@@ -19549,7 +19551,7 @@ if (false) (function(){
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.421"></script>
+<script src="js/api.js?v=2.43.422"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19564,7 +19566,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.421"></script>
+<script src="js/app.js?v=2.43.422"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

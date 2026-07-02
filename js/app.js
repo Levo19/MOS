@@ -27183,11 +27183,24 @@ const MOS = (() => {
     if (b) b.classList.add('tk-cob-mbtn-active');
     const seriePh = tipo === 'BOLETA' ? 'B001' : 'F001';
     $('tkConvSerie').placeholder = 'ej: ' + seriePh;
+    _tkConvReglasRefresh();
   }
 
   function _tkConvDocChange() {
     _tkAcc.convCPE.clienteOK = false;
     $('tkConvClienteInfo').classList.add('hidden');
+    _tkConvReglasRefresh();
+  }
+  // [reglas SUNAT en vivo · conversión NV→CPE en MOS] mismo checklist que ME + el panel VIP.
+  function _tkConvReglasRefresh() {
+    const box=$('tkConvReglas'); if(!box) return;
+    const t=(_tkAcc&&_tkAcc.ticket)||{};
+    const total=Number(t.total ?? t.monto ?? t.Total ?? 0);
+    const medio=t.forma_pago || t.metodo || 'EFECTIVO';
+    const doc=(($('tkConvDoc')||{}).value||'').replace(/\D/g,'');
+    const nombre=(($('tkConvNombre')||{}).value||'').trim();
+    const dir=(($('tkConvDireccion')||{}).value||'').trim();
+    box.innerHTML = _cpeReglasHtml(_cpeReglas((_tkAcc&&_tkAcc.convCPE&&_tkAcc.convCPE.tipo)||'BOLETA', total, doc, nombre, dir, medio));
   }
 
   async function _tkConvBuscarCliente() {
@@ -43175,8 +43188,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     S.fac.tipo = t;
     ['BOLETA','FACTURA'].forEach(x => { const b=$('facTipo'+x); if(b) b.classList.toggle('active', x===t); });
     const dir=$('facCliDir'); if(dir) dir.placeholder = (t==='FACTURA') ? 'Dirección fiscal (requerida)' : 'Dirección (opcional)';
+    _facReglasRefresh();
   }
-  function facDocInput() { /* visual; el tipo real se deriva por longitud al emitir */ }
+  function facDocInput() { _facReglasRefresh(); /* el tipo real se deriva por longitud al emitir */ }
 
   function facAddItem() { _facReadInputs(); S.fac.items.push({desc:'',cant:1,precio:0,tig:1}); facRenderItems(); }
   function facDelItem(i) { _facReadInputs(); S.fac.items.splice(i,1); if(!S.fac.items.length) S.fac.items.push({desc:'',cant:1,precio:0,tig:1}); facRenderItems(); }
@@ -43212,7 +43226,42 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     total = Math.round(total*100)/100; igv = Math.round(igv*100)/100;
     const t=$('facTotal'); if(t) t.textContent='S/ '+total.toFixed(2);
     const gi=$('facIgvInfo'); if(gi) gi.textContent = igv>0 ? '(IGV S/ '+igv.toFixed(2)+')' : '';
+    _facReglasRefresh(total);
     return total;
+  }
+
+  // ══ [Reglas SUNAT unificadas · checklist en vivo con efecto — misma regla que fac.emitir_cpe y ME] ══
+  function _cpeReglas(tipo, total, doc, nombre, dir, medio) {
+    doc=String(doc||'').trim(); nombre=String(nombre||'').trim(); dir=String(dir||'').trim(); total=Number(total)||0;
+    if (tipo==='NOTA_DE_VENTA') return { visible:false, items:[], banca:false, ok:true };
+    const idOk = /^\d{8}$/.test(doc) || /^\d{11}$/.test(doc);
+    const items=[];
+    if (tipo==='FACTURA') {
+      items.push({label:'RUC de 11 dígitos', ok:/^\d{11}$/.test(doc)});
+      items.push({label:'Razón social', ok:!!nombre});
+      items.push({label:'Dirección fiscal', ok:!!dir});
+    } else {
+      if (total>700) { items.push({label:'Identificar cliente (DNI/RUC) — boleta > S/700', ok:idOk}); items.push({label:'Nombre del cliente', ok:!!nombre}); }
+      else { items.push({label:'Cliente opcional (VARIOS) — boleta ≤ S/700', ok:true, info:true}); }
+    }
+    const banca = total>=2000, bancaEfectivo = banca && String(medio||'').toUpperCase()==='EFECTIVO';
+    const ok = items.every(i=>i.ok||i.info);
+    return { visible:true, items, banca, bancaEfectivo, ok };
+  }
+  function _cpeReglasHtml(r) {
+    if (!r.visible) return '';
+    const rows = r.items.map(i => '<div style="display:flex;gap:6px;align-items:center;font-size:11px;font-weight:700;color:'+(i.info?'#64748b':(i.ok?'#047857':'#b45309'))+'"><span style="width:14px;text-align:center">'+(i.info?'ℹ️':(i.ok?'✅':'⬜'))+'</span><span>'+i.label+'</span></div>').join('');
+    const banca = r.banca ? '<div style="margin-top:6px;display:flex;gap:6px;align-items:flex-start;border-radius:8px;padding:6px 8px;font-size:11px;font-weight:700;border:1px solid '+(r.bancaEfectivo?'#fca5a5':'#bfdbfe')+';background:'+(r.bancaEfectivo?'#fee2e2':'#eff6ff')+';color:'+(r.bancaEfectivo?'#b91c1c':'#1d4ed8')+'"><span>'+(r.bancaEfectivo?'⚠':'🏦')+'</span><span>≥ S/2000: debe ir <b>bancarizada</b> (transferencia/depósito/tarjeta). En efectivo puede anularse ante SUNAT (Ley 28194).</span></div>' : '';
+    return '<div style="margin-top:8px;border-radius:10px;border:2px solid '+(r.ok?'#a7f3d0':'#fcd34d')+';background:'+(r.ok?'#ecfdf5':'#fffbeb')+';padding:7px 10px;transition:all .3s"><div style="font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;color:'+(r.ok?'#059669':'#d97706')+'">'+(r.ok?'✓ Requisitos SUNAT completos':'📋 Requisitos SUNAT')+'</div>'+rows+banca+'</div>';
+  }
+  function _facReglasRefresh(total) {
+    const box=$('facReglas'); if(!box) return;
+    if (total==null) { total=0; S.fac.items.forEach(it=>{ total += Math.round((it.cant||0)*(it.precio||0)*100)/100; }); }
+    const doc=(($('facCliDoc')||{}).value||'').replace(/\D/g,'');
+    const nombre=(($('facCliNombre')||{}).value||'').trim();
+    const dir=(($('facCliDir')||{}).value||'').trim();
+    const medio=(($('facMedioPago')||{}).value||'');
+    box.innerHTML = _cpeReglasHtml(_cpeReglas(S.fac.tipo, total, doc, nombre, dir, medio));
   }
 
   async function facLookup() {
@@ -43390,7 +43439,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     init, nav, refresh, fabAction, iconBusy,
     // Facturación CPE (100% Supabase)
     setFacTab, facSetTipo, facDocInput, facAddItem, facDelItem, facItemInput,
-    facLookup, facEmitir, facCargarHistorial, facAnular,
+    facLookup, facEmitir, facCargarHistorial, facAnular, _facReglasRefresh,
     facGuardarConfig, facGuardarSeries, facAlinear,
     // [RIZ Capa 4] Módulo Zona — solo activo si el flag mos_zona_modulo está ON
     loadZona, renderZona, zonaCambiarZona, zonaRefrescar, zonaSetOrden, zonaFiltrar,
@@ -43650,7 +43699,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _tkCobrarSetMetodo, _tkCobrarSetCaja, _tkCobrarValidarMixto, _tkCobrarConfirmar,
     _tkCambiarFPSel, _tkCambiarFPConfirmar, _tkCambiarFPValidar,
     _tkAprobarCredConfirmar,
-    _tkConvSetTipo, _tkConvDocChange, _tkConvBuscarCliente, _tkConvertirConfirmar,
+    _tkConvSetTipo, _tkConvDocChange, _tkConvBuscarCliente, _tkConvertirConfirmar, _tkConvReglasRefresh,
     _tkBajaSetMotivo, _tkBajaActualizarBoton, _tkBajaConfirmar,
     // F4 — Historiales adicionales (cliente / extra / personal)
     cjHistorialExtra, cfgHistorialPersonal,
