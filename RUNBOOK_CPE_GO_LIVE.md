@@ -23,7 +23,18 @@
   en `fac.series` TODA boleta/factura activa de `mos.series_documentales` (correlativo 0, sin resetear
   existentes). `fac.serie_de_zona(zona,tipo)` helper. Devuelve las series `en_cero_falta_alinear`.
 
-## ⚠️ PENDIENTE — B2 (huérfano cross-system) — implementar con cuidado ANTES de activar
+## ✅ B2 (huérfano cross-system) — RESUELTO vía reconciliador (323)
+`fac.reconciliar_huerfanos(p)` (SQL 323) + cron `fac-huerfanos` (diario 08:17 UTC, no-op si inerte):
+por cada serie activa camina NubeFact desde `correlativo+1`; si NubeFact TIENE un número que local NO
+tiene → lo importa (fila `ORFANO_RECUP`, marca "revisar datos") + **avanza `fac.series.correlativo`**
+→ el número nunca se reusa (sin duplicado). Idempotente (`on conflict (serie,numero)`). Probado con mock
+de `fac._consultar`: detecta, importa, avanza a 69, re-run no duplica. Cierra el riesgo del huérfano
+(NubeFact aceptó pero la tx local rollbackeó): antes se reusaba el número; ahora el barrido lo recupera.
+Residual mínimo: la fila recuperada trae solo serie/nº/estado/nf_* (consultar_comprobante no da items/
+cliente) → queda marcada para revisión manual. NO se reordena el emit (una NubeFact-rechazada dejaría la
+NV anulada sin CPE; el reconciliador es la red correcta).
+
+## (histórico) diseño previo de B2 — reemplazado por 323
 **Problema:** en `me.convertir_nv_cpe` (y `me.emitir_cpe_fac`), NubeFact acepta el número (queda en SUNAT)
 y si un statement POSTERIOR de la misma tx falla → rollback borra el registro local Y retrocede el
 correlativo, pero SUNAT conservó el número → la próxima venta lo reusa = duplicado/hueco, invisible a la
