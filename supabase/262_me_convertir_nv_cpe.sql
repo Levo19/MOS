@@ -59,11 +59,10 @@ begin
   end if;
   if v_idnv  is null then return jsonb_build_object('ok', false, 'error', 'idVentaNV requerido'); end if;
   if v_tipo not in ('BOLETA','FACTURA') then return jsonb_build_object('ok', false, 'error', 'tipoDocNuevo debe ser BOLETA o FACTURA'); end if;
-  -- serieNueva es OPCIONAL: si no viene, fac.emitir_cpe la deriva de la ZONA de emisión de la NV
-  -- (v_nv.zona_id → mos.series_documentales). Respeta el seriado por zona sin tecleo manual.
-  -- Validación de documento según tipo (paridad con GAS).
-  if v_tipo = 'BOLETA'  and v_doc !~ '^\d{8}$'  then return jsonb_build_object('ok', false, 'error', 'BOLETA requiere DNI de 8 dígitos'); end if;
-  if v_tipo = 'FACTURA' and v_doc !~ '^\d{11}$' then return jsonb_build_object('ok', false, 'error', 'FACTURA requiere RUC de 11 dígitos'); end if;
+  -- serieNueva es OPCIONAL: si no viene, fac.emitir_cpe la deriva de la ZONA de emisión de la NV.
+  -- Las validaciones de CLIENTE (factura RUC+nombre+dir; boleta>700 exige ID; bancarización) las hace
+  -- fac.emitir_cpe server-side (una sola fuente de verdad, misma regla que ME/MOS) → NO duplicar aquí:
+  -- la boleta ≤ S/700 puede ir SIN documento (VARIOS), como en el POS.
 
   v_local := 'CONVERT-' || v_idnv;
 
@@ -99,11 +98,13 @@ begin
   if jsonb_array_length(v_items) = 0 then return jsonb_build_object('ok', false, 'error', 'La venta original no tiene items'); end if;
 
   v_total := coalesce(v_nv.total, 0);
-  v_tipoc := case when v_tipo = 'FACTURA' then 6 else 1 end;   -- tipo_doc_cliente
+  -- tipo_doc_cliente por el DOC real: RUC 11 → 6, DNI 8 → 1, si no → 0 (VARIOS). fac valida factura/>700.
+  v_tipoc := case when v_doc ~ '^\d{11}$' then 6 when v_doc ~ '^\d{8}$' then 1 else 0 end;
 
   -- EMITIR vía la capa central fac (mintea correlativo + NubeFact, idempotente por local_id). Misma tx → atómico.
   v_fac := fac.emitir_cpe(jsonb_build_object(
     'tipo_doc', v_tipo, 'serie', v_serie, 'zona', coalesce(v_nv.zona_id,''),   -- serie por zona de emisión de la NV
+    'medio_de_pago', coalesce(v_nv.forma_pago,''),                             -- bancarización (medio de la NV)
     'cliente', jsonb_build_object('tipo', v_tipoc, 'doc', v_doc, 'nombre', v_nom, 'direccion', v_dir),
     'items', v_items, 'total', v_total,
     'local_id', v_local, 'origen', 'CONVERT', 'ref_externa', v_idnv, 'creado_por', coalesce(v_user,'')));

@@ -42,6 +42,7 @@ begin
   -- EMITIR vía la capa central (mintea correlativo fac + NubeFact). Misma tx → atómico.
   v_fac := fac.emitir_cpe(jsonb_build_object(
     'tipo_doc', v_tipo, 'serie', p->>'serie', 'zona', coalesce(v_zona,''),   -- serie por zona de la caja
+    'medio_de_pago', coalesce(p->>'forma_pago', p->>'metodo', ''),           -- bancarización
     'cliente', coalesce(p->'cliente','{}'::jsonb),
     'items', coalesce(p->'items','[]'::jsonb), 'total', v_total,
     'local_id', v_ref, 'origen','POS', 'ref_externa', v_ref, 'creado_por', p->>'vendedor'));

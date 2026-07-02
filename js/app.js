@@ -27228,10 +27228,17 @@ const MOS = (() => {
     const dir  = ($('tkConvDireccion').value || '').trim();
     const ser  = ($('tkConvSerie').value || '').trim();
 
-    if (tipo === 'BOLETA' && doc.length !== 8) { toast('Boleta requiere DNI de 8 dígitos', 'error'); return; }
-    if (tipo === 'FACTURA' && doc.length !== 11) { toast('Factura requiere RUC de 11 dígitos', 'error'); return; }
-    if (!nom) { toast('Falta nombre/razón social', 'error'); return; }
-    if (tipo === 'FACTURA' && !dir) { toast('Factura requiere dirección', 'error'); return; }
+    const _tkTotal = Number(t.total ?? t.monto ?? t.Total ?? 0);
+    // [validaciones SUNAT · paridad ME/MOS — el backend fac.emitir_cpe las re-valida server-side]
+    if (tipo === 'FACTURA') {
+      if (doc.length !== 11) { toast('Factura requiere RUC de 11 dígitos', 'error'); return; }
+      if (!nom) { toast('Factura requiere razón social', 'error'); return; }
+      if (!dir) { toast('Factura requiere dirección', 'error'); return; }
+    }
+    if (tipo === 'BOLETA' && _tkTotal > 700) {
+      if (!(doc.length === 8 || doc.length === 11)) { toast('Boleta > S/700: identifica al cliente (DNI 8 o RUC 11)', 'error'); return; }
+      if (!nom) { toast('Boleta > S/700: ingresa el nombre', 'error'); return; }
+    }
     if (!ser) { toast('Ingresa la serie', 'error'); return; }
 
     if (!await _modalConfirm(`¿Emitir ${tipo} en SUNAT para ${nom}?\n\nLa NV original quedará anulada.`, { warning: true, titulo: 'Emitir CPE', okText: 'Emitir' })) return;
@@ -43227,11 +43234,23 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const nombre = (($('facCliNombre')||{}).value||'').trim();
     const dir = (($('facCliDir')||{}).value||'').trim();
     const email = (($('facCliEmail')||{}).value||'').trim();
+    const medio = (($('facMedioPago')||{}).value||'').trim();
     const items = S.fac.items.filter(it => (it.desc||'').trim() && it.cant>0 && it.precio>0);
     if (!items.length) { toast('Agregá al menos un ítem (descripción, cantidad y precio)', 'warn'); return; }
+    const totalPrev = Math.round(items.reduce((a,b)=>a+(Math.round(b.cant*b.precio*100)/100),0)*100)/100;
+    // [validaciones SUNAT · paridad con ME — el backend fac.emitir_cpe las re-valida server-side]
     if (tipo==='FACTURA') {
       if (doc.length!==11) { toast('Factura requiere RUC (11 dígitos)', 'warn'); return; }
+      if (!nombre) { toast('Factura requiere razón social', 'warn'); return; }
       if (!dir) { toast('Factura requiere dirección fiscal', 'warn'); return; }
+    }
+    if (tipo==='BOLETA' && totalPrev > 700) {
+      if (!(doc.length===8 || doc.length===11)) { toast('Boleta > S/700: identifica al cliente (DNI 8 o RUC 11)', 'warn'); return; }
+      if (!nombre) { toast('Boleta > S/700: ingresa el nombre del cliente', 'warn'); return; }
+    }
+    if (totalPrev >= 2000) {
+      if (!medio) { toast('Operación ≥ S/2000: indica el medio de pago (bancarización)', 'warn'); return; }
+      if (medio==='EFECTIVO' && !confirm('SUNAT (Ley 28194): operaciones ≥ S/2000 deben pagarse por medio bancario (transferencia, depósito, tarjeta). ¿Emitir igual como EFECTIVO?')) return;
     }
     const tdoc = doc.length===11 ? '6' : (doc.length===8 ? '1' : '0');
     const itemsNF = items.map(it => {
@@ -43243,7 +43262,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // local_id ESTABLE por comprobante: un reintento (fallo de red) reusa el mismo → dedup, NO doble emisión.
     if (!S.fac.pendingLocalId) S.fac.pendingLocalId = _facNewLocalId();
     const localId = S.fac.pendingLocalId;
-    const payload = { tipo_doc: tipo, cliente:{ tipo:tdoc, doc, nombre: nombre||'CLIENTE ANONIMO', direccion:dir, email }, items: itemsNF, total, local_id: localId, origen:'MANUAL', creado_por: (S.session&&S.session.nombre)||'MOS' };
+    const payload = { tipo_doc: tipo, zona: 'MOS-VIP', medio_de_pago: medio, cliente:{ tipo:tdoc, doc, nombre: nombre||'CLIENTE ANONIMO', direccion:dir, email }, items: itemsNF, total, local_id: localId, origen:'MANUAL', creado_por: (S.session&&S.session.nombre)||'MOS' };
 
     const btn=$('facEmitirBtn'); if(btn){ btn.disabled=true; btn.textContent='Emitiendo...'; }
     try {
