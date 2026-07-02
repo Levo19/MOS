@@ -392,9 +392,13 @@ begin
        limit 50
     ) sub;
 
+  -- [fix] me.creditos_cobro_asignado es tabla VIVA (asignar/confirmar/cancelar/reasignar/cierre escriben
+  -- DIRECTO, RPCs 308/313/314/315). NO es sombra GAS → _frescura_sombra() medía un heartbeat muerto y
+  -- reportaba _fresh:false intermitente → el front caía a GAS STALE (que ni tiene los cobros directos)
+  -- mostrando cobros en-vuelo desactualizados. _fresh:true SIEMPRE: la lectura directa manda.
   return jsonb_build_object('ok', true, 'data',
            jsonb_build_object('enVuelo', v_envuelo, 'recientes', v_recientes)
-         ) || mos._frescura_sombra();
+         ) || jsonb_build_object('_fresh', true);
 end;
 $fn$;
 revoke all on function mos.me_cobros_en_vuelo(jsonb) from public;

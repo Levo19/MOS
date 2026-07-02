@@ -113,7 +113,10 @@ begin
   v_res := me.creditos_pendientes(v_dias);   -- {grupos, totalAcumulado, totalTickets}
   if v_res is null then v_res := jsonb_build_object('grupos','[]'::jsonb,'totalAcumulado',0,'totalTickets',0); end if;
 
-  return jsonb_build_object('ok', true, 'data', v_res) || mos._frescura_sombra();
+  -- [fix] tablas ME VIVAS (me.creditos_cobro_asignado/me.ventas/me.ventas_detalle, todas con escritura
+  -- directa: ME_ESCRITURA_DIRECTA/COBRO_DIRECTO=1). _frescura_sombra() medía el heartbeat MUERTO del sync
+  -- GAS → _fresh:false intermitente → GAS stale. _fresh:true SIEMPRE (la directa es la fuente de verdad).
+  return jsonb_build_object('ok', true, 'data', v_res, '_fresh', true);
 end;
 $fn$;
 revoke all on function mos.me_creditos_pendientes(jsonb) from public;

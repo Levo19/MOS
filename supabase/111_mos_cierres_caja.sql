@@ -489,7 +489,11 @@ begin
       'todosTickets', v_todos,
       'generadoEn',   to_char(now() at time zone v_tz, 'YYYY-MM-DD HH24:MI:SS')
     )
-  ) || mos._frescura_sombra();   -- [GAP-4] frescura de la sombra MOS (no de ME); + _heartbeat/_now/_ttl_min/_fresh
+  -- [fix GAP-4] me.cajas/me.ventas/me.movimientos_extra son tablas VIVAS (ME_ESCRITURA_DIRECTA/APERTURA/
+  -- CIERRE/COBRO_DIRECTO=1, ME escribe todo directo). _frescura_sombra() medía el heartbeat MUERTO del sync
+  -- GAS → _fresh:false intermitente → toda la vista de Cajas caía a GAS stale (lags, "se cruza", cobros
+  -- directos invisibles). _fresh:true SIEMPRE: la lectura directa de las tablas vivas manda.
+  ) || jsonb_build_object('_fresh', true);
 
   return v_out;
 end;
