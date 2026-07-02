@@ -50,6 +50,21 @@ reconciliación (que solo mira filas locales existentes).
 **Nota honesta:** la atomicidad perfecta entre Postgres y un HTTP externo no existe; el objetivo es
 minimizar la ventana + hacerla DETECTABLE. Requiere su propia sesión + 200x.
 
+## 🎯 Contador único — RECOMENDACIÓN: unificar en `fac.*` (prep hecho, cutover deliberado)
+**Por qué `fac.*`:** tiene emisión-en-Postgres + reconciliación + reconciliador de huérfanos + anulación +
+alineación por serie + serie-por-zona; y el panel VIP-MOS ya emite por ahí. `me.correlativos` es un
+contador simple sin esa maquinaria.
+**Prep ya hecho (inerte):** `me.emitir_cpe_fac` (bridge POS→fac.*) ahora pasa la `zona` de la caja →
+al migrar el POS, la serie se deriva por zona automáticamente (igual que la conversión). El bridge ya es
+idempotente por ref_local, atómico, y cae al path previo si fac falla.
+**Cutover del POS (paso deliberado, con token real — NO hoy):**
+1. Alinear `fac.series` (seed 322 + `admin_alinear_correlativo` por serie al último nº real de NubeFact).
+2. En el frontend ME, enrutar la emisión de CPE del POS a `me.emitir_cpe_fac` (hoy usa `me.crear_cpe_directo`
+   → `me.correlativos`). Gate con flag para poder revertir. Verificar paridad de correlativo por serie.
+3. Retirar `me.crear_cpe_directo`/`me.correlativos` para CPE una vez estable. NUNCA correr los dos
+   contadores sobre la misma serie real en paralelo.
+Mientras tanto: el POS sigue en `me.correlativos` (BBB1≈70) y `fac.*` inerte — sin colisión.
+
 ## 🚦 CHECKLIST DE ACTIVACIÓN (en orden, con el token de producción en mano)
 1. **DECIDIR el contador único.** Recomendado: **unificar en `fac.*`** (tiene emisión-en-Postgres,
    reconciliación, anulación, alineación por serie, y el panel VIP-MOS ya lo usa). Implica migrar el POS
