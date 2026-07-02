@@ -50,6 +50,22 @@ reconciliación (que solo mira filas locales existentes).
 **Nota honesta:** la atomicidad perfecta entre Postgres y un HTTP externo no existe; el objetivo es
 minimizar la ventana + hacerla DETECTABLE. Requiere su propia sesión + 200x.
 
+## 🔎 Revisión aplicada (batch CPE) — 2 HIGH corregidos + 1 dato a confirmar
+- **HIGH-1 (reconciliador muerto):** `fac.reconciliar_huerfanos` tenía `_app_ok()` al inicio → el cron
+  (sin JWT) siempre daba APP_NO_AUTORIZADA → la red B2 **nunca corría**. CORREGIDO: quitado el gate
+  (como `fac.reconciliar`; contención = `v_real` + solo importa nº ya emitidos en SUNAT). Probado: corre sin JWT.
+- **HIGH-2 (rechazaba descuentos):** el guard B1 bloqueaba ventas con descuento por línea
+  (valor_unitario_lista×cant > subtotal) → una NV con descuento no se podía convertir. CORREGIDO: la
+  base imponible ahora se **deriva del subtotal** (gravado /1.18, IVAP /1.04) → IGV nunca negativo,
+  descuentos OK, y para líneas sin descuento da lo mismo que antes. Guard reducido a sanity (subtotal≥0,
+  cant>0). Probado: descuento 310 → gravada 262.71/IGV 47.29; normal 11.80 → 10.00/1.80; exonerado 0.
+- **⚠️ A CONFIRMAR (dato, no código):** `mos.series_documentales` tiene `id_estacion` y 2 filas por
+  (zona,tipo) — pueden ser 2 estaciones con la misma serie. La derivación de serie es por **ZONA**
+  (`max(serie)` por id_zona). Confirmar el intent: ¿una serie por ZONA (ok) o por ESTACIÓN (la
+  derivación necesitaría id_estacion)? Y si a futuro una zona tiene 2 series distintas activas, `max()`
+  elige una en silencio → considerar un índice único `(id_zona,tipo_documento) where activo`. HOY: 0
+  conflictos reales, el código maneja los dupes con `max()`. No se tocó la tabla (semántica del dueño).
+
 ## 🎯 Contador único — RECOMENDACIÓN: unificar en `fac.*` (prep hecho, cutover deliberado)
 **Por qué `fac.*`:** tiene emisión-en-Postgres + reconciliación + reconciliador de huérfanos + anulación +
 alineación por serie + serie-por-zona; y el panel VIP-MOS ya emite por ahí. `me.correlativos` es un

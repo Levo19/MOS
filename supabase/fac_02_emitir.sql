@@ -87,22 +87,15 @@ begin
     case when v_tipo='FACTURA' then v_cfg.serie_factura else v_cfg.serie_boleta end);
   if v_serie is null or v_serie = '' then return jsonb_build_object('status','error','error','SERIE_REQUERIDA'); end if;
 
-  -- [B1 · 200x] guard anti base-imponible manipulada (además del total==Σsubtotal). Por LÍNEA: la base
-  -- (valor_unitario×cantidad) no puede exceder el subtotal de línea, y el IGV implícito no puede ser
-  -- negativo; en exonerado/inafecto la base debe igualar el subtotal (sin IGV). Sin esto, un
-  -- valor_unitario incoherente generaba gravada>total / IGV NEGATIVO enviado a SUNAT (rechazo o base mal).
+  -- [B1 · 200x] sanity mínimo de líneas: subtotal no negativo + cantidad > 0. La base imponible se
+  -- DERIVA del subtotal más abajo (autoritativo, ya con descuento aplicado) → el IGV nunca sale
+  -- negativo. NO rechazamos por valor_unitario (una venta con descuento por línea tiene
+  -- valor_unitario_lista×cant > subtotal y es LEGÍTIMA; el guard viejo la bloqueaba).
   if exists (
     select 1 from jsonb_array_elements(v_items) e
-    cross join lateral (select
-        round(coalesce((e->>'valor_unitario')::numeric,0) * coalesce((e->>'cantidad')::numeric,1), 2) as subvu,
-        coalesce((e->>'subtotal')::numeric,0) as sub,
-        coalesce(nullif(regexp_replace(coalesce(e->>'tipo_igv','1'),'\D','','g'),'')::int, 1) as tig) x
-    where x.subvu > x.sub + 0.01                                 -- base de línea > total de línea (siempre inválido)
-       or (x.tig in (1,8)  and (x.sub - x.subvu) < -0.01)        -- IGV negativo en gravado/IVAP
-       or (x.tig >= 9      and abs(x.sub - x.subvu) > 0.02)      -- exonerado/inafecto: base debe == total (sin IGV)
+    where coalesce((e->>'subtotal')::numeric,0) < 0 or coalesce((e->>'cantidad')::numeric,1) <= 0
   ) then
-    return jsonb_build_object('status','error','error','BASE_IMPONIBLE_INVALIDA',
-      'detalle','una línea tiene valor_unitario incoherente con su subtotal (IGV negativo o base>total)');
+    return jsonb_build_object('status','error','error','LINEA_INVALIDA','detalle','subtotal negativo o cantidad ≤ 0');
   end if;
 
   -- base imponible no manipulable: total == Σ(items.subtotal) (tol 0.01)
@@ -145,21 +138,29 @@ begin
       'anticipo_regularizacion', false, 'anticipo_documento_serie','', 'anticipo_documento_numero',''))
   into v_grav, v_igv, v_ivap, v_impivap, v_exo, v_inaf, v_nfitems
   from (
-    select tig, cant, vu, sub, preu, um, sku, cods, nom, subvu,
-           case when tig in (1,8) then round(sub - subvu, 2) else 0 end as igvit
+    -- [200x fix descuentos] base DERIVADA del subtotal (autoritativo, ya con descuento): IGV = sub−base
+    -- nunca negativo; el valor_unitario del ítem NubeFact = base efectiva/cantidad. Para una línea SIN
+    -- descuento, sub/1.18 == valor_unitario_lista×cant → idéntico a antes; solo cambia con descuento.
+    select tig, cant, sub, preu, um, sku, cods, nom, subvu,
+           case when tig in (1,8) then round(sub - subvu, 2) else 0 end as igvit,
+           case when cant > 0 then round(subvu / cant, 2) else subvu end as vu
     from (
-      select coalesce(nullif(regexp_replace(coalesce(e->>'tipo_igv','1'),'\D','','g'),'')::int, 1) as tig,
-             coalesce((e->>'cantidad')::numeric,1) as cant,
-             coalesce((e->>'valor_unitario')::numeric,0) as vu,
-             coalesce((e->>'subtotal')::numeric,0) as sub,
-             coalesce((e->>'precio')::numeric,0) as preu,
-             coalesce(e->>'unidad_medida','NIU') as um,
-             coalesce(e->>'sku','') as sku,
-             coalesce(e->>'cod_sunat','') as cods,
-             coalesce(e->>'nombre','') as nom,
-             round(coalesce((e->>'valor_unitario')::numeric,0) * coalesce((e->>'cantidad')::numeric,1), 2) as subvu
-      from jsonb_array_elements(v_items) e
-    ) a
+      select tig, cant, sub, preu, um, sku, cods, nom,
+             case when tig = 1 then round(sub / 1.18, 2)
+                  when tig = 8 then round(sub / 1.04, 2)
+                  else sub end as subvu
+      from (
+        select coalesce(nullif(regexp_replace(coalesce(e->>'tipo_igv','1'),'\D','','g'),'')::int, 1) as tig,
+               coalesce((e->>'cantidad')::numeric,1) as cant,
+               coalesce((e->>'subtotal')::numeric,0) as sub,
+               coalesce((e->>'precio')::numeric,0) as preu,
+               coalesce(e->>'unidad_medida','NIU') as um,
+               coalesce(e->>'sku','') as sku,
+               coalesce(e->>'cod_sunat','') as cods,
+               coalesce(e->>'nombre','') as nom
+        from jsonb_array_elements(v_items) e
+      ) raw
+    ) b
   ) q;
   v_grav:=round(v_grav,2); v_igv:=round(v_igv,2); v_ivap:=round(v_ivap,2); v_impivap:=round(v_impivap,2); v_exo:=round(v_exo,2); v_inaf:=round(v_inaf,2);
 

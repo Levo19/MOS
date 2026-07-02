@@ -27,7 +27,9 @@ declare
   v_import int := 0; v_res jsonb := '[]'::jsonb;
   v_estado text; v_id text; v_local text;
 begin
-  if not fac._app_ok() then return jsonb_build_object('status','error','error','APP_NO_AUTORIZADA'); end if;
+  -- SIN gate de app: corre desde pg_cron (sin request.jwt.claims → fac._app_ok()=false lo mataría,
+  -- como fac.reconciliar). La contención es el gate v_real (config activa) + que solo lee NubeFact +
+  -- importa números que YA existen en SUNAT (no manipula datos del caller). grant a authenticated/service_role.
   select * into v_cfg from fac.config where id = 1;
   v_real := v_cfg.activo and coalesce(v_cfg.nubefact_ruta,'') <> '' and coalesce(v_cfg.nubefact_token,'') <> '';
   if not v_real then return jsonb_build_object('status','skip','motivo','config inactiva'); end if;
