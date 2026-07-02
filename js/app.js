@@ -26234,9 +26234,16 @@ const MOS = (() => {
     };
     _cjCreditosState.enVuelo = [optimisticCobro, ...(_cjCreditosState.enVuelo || [])];
     try { _cjPintarPostitsManojos({ optimisticId, cartaOrigen: cartaEl }); } catch(_){}
-    // [fix lag] re-render INMEDIATO del tablero de adeudados: el ticket pasa de amarillo → celeste
-    // "✈ Enviado" al instante (lee _cjCreditosState.enVuelo optimista), sin esperar el fetch de 400ms.
-    try { _cjRenderManoDelDia(); } catch(_){}
+    // [fix optimista mesa] Marcar el ticket como ASIGNADO en los grupos + re-render la MESA (cjMesaGrid)
+    // para que pase a celeste "✈ Enviado a X" AL INSTANTE (antes desaparecía hasta el fetch de 400ms y
+    // había que cerrar/reabrir la mesa). El fetch posterior lo confirma con el idCobro real.
+    try {
+      (_cjCreditosState.todosLosGrupos || []).forEach(g => (g.tickets || []).forEach(t => {
+        if (String(t.idVenta) === String(ctx.idVenta)) t.asignado = { vendedorDest: cajeroNom, cajaDestino: cajaDest };
+      }));
+      if ($('cjMesaGrid')) cjRepartirMano();   // re-render de la mesa abierta → celeste en el lugar
+      _cjRenderManoDelDia();                     // + la baraja flotante
+    } catch(_){}
     if (cartaEl) {
       cartaEl.classList.add('cj-credito-fly');
       setTimeout(() => { try { cartaEl.remove(); } catch(_){} }, 800);
