@@ -1,1 +1,1 @@
-{"version":"2.43.429","build":"2.43.429 (MOS lecturas CERO-FALLBACK): _conFallbackMOS ya NO cae a GAS con gate ON (prod). Reintenta el directo 3x (absorbe transitorios: sombra sincronizando/_fresh:false, token minteandose) y devuelve null si persiste. La sombra Supabase es la fuente de verdad post-corte. 70 lecturas cubiertas de un cambio. Gate OFF conserva GAS (inerte)."}
+{"version":"2.43.430","build":"2.43.430 (device-auth.js v1.0.24 pin): expone DeviceAuth.rpc()+sbConfig() para el extensor-horario cero-GAS. Aditivo, sin cambio de comportamiento en MOS."}

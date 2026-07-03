@@ -1,5 +1,8 @@
 // ════════════════════════════════════════════════════════════════════
 // ExtensorHorario — módulo compartido de extensión de horario in-situ
+// v1.0.2 — 2026-07-03 — CERO-GAS: _confirmar llama la RPC directa
+//          mos.extender_horario_dispositivo (vía DeviceAuth.rpc), no más POST a GAS
+//          extenderHorarioDispositivo. mosGasUrl ya no es requerido en abrir().
 // v1.0.1 — 2026-06-05 — Senior review fixes:
 //          - XSS fix: _esc() para aprobadoPor (admin nombre con HTML/JS).
 //          - Tiempo restante badge actualizado en tiempo real cada 15s.
@@ -197,8 +200,8 @@
   }
 
   function _abrir(opts) {
-    if (!opts || !opts.mosGasUrl || !opts.app || !opts.deviceId) {
-      console.error('[ExtensorHorario] abrir() requiere { mosGasUrl, app, deviceId }');
+    if (!opts || !opts.app || !opts.deviceId) {
+      console.error('[ExtensorHorario] abrir() requiere { app, deviceId }');
       return;
     }
     if (document.getElementById(MODAL_ID)) return;  // ya abierto
@@ -325,17 +328,23 @@
       btnOk.disabled = true;
       btnOk.textContent = 'Validando...';
 
-      fetch(opts.mosGasUrl, {
-        method: 'POST',
-        body: JSON.stringify({
-          action:     'extenderHorarioDispositivo',
-          deviceId:   opts.deviceId,
-          claveAdmin: clave.value,
-          app:        opts.app,
-          minutos:    minSel
-        })
+      // [v1.0.2 CERO-GAS] Antes POST a GAS extenderHorarioDispositivo; ahora RPC directa
+      // mos.extender_horario_dispositivo vía DeviceAuth.rpc (Content-Profile mos, anon-callable,
+      // gate real = bcrypt de la clave). Mismo shape de respuesta { data:{ autorizado, hastaTs,
+      // aprobadoPor, preservoExistente, error } }. Sin fallback a GAS.
+      var _rpc = (window.DeviceAuth && typeof DeviceAuth.rpc === 'function') ? DeviceAuth.rpc : null;
+      if (!_rpc) {
+        err.textContent = 'Módulo auth no disponible — recarga la app';
+        _sonidoError(); _vibrar([40, 30, 40]);
+        btnOk.disabled = false; btnOk.textContent = '🔓 Extender';
+        return;
+      }
+      _rpc('extender_horario_dispositivo', {
+        deviceId:   opts.deviceId,
+        claveAdmin: clave.value,
+        app:        opts.app,
+        minutos:    minSel
       })
-      .then(function(r){ return r.json(); })
       .then(function(j) {
         var d = j && j.data;
         if (!d || !d.autorizado) {

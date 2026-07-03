@@ -207,7 +207,7 @@
   // [v1.0.14] Versión honesta del módulo. Las 3 apps lo cargan vía CDN con un
   // pin ?v= en su <script>; si ese pin miente, ESTA constante revela la versión
   // REAL servida. Se loguea al boot (init) como "[DeviceAuth] vX en <app>".
-  var _VERSION = '1.0.23';
+  var _VERSION = '1.0.24';
 
   var _config = null;
   var _state = {
@@ -2019,6 +2019,16 @@
         _state.visibilityHandler = null;
       }
       _ocultarOverlay();
-    }
+    },
+    // [v1.0.24] Acceso público a la config Supabase (para módulos compartidos como
+    // ExtensorHorario que deben llamar RPCs mos.* directo, sin GAS). null si no configurado.
+    sbConfig: function() {
+      var base = _sbBase();
+      if (!base || !(_config && _config.sbAnon)) return null;
+      return { sbUrl: base, sbAnon: _config.sbAnon };
+    },
+    // [v1.0.24] Wrapper público de _rpcAnon: llama una RPC mos.<fn> por REST anon
+    // (Content-Profile mos, body {p:args}). Devuelve Promise<json> o RECHAZA. Cero-GAS.
+    rpc: function(fn, args) { return _rpcAnon(fn, args); }
   };
 })();
