@@ -34,7 +34,16 @@ de 15min. **Antes de que algún lector dependa 100% de Supabase:**
 **Bridge/infra (se retiran al final):** `Fase2Auth.gs`, `MigracionME.gs`, el sync mismo.
 
 ## Etapas
-### ✅ Etapa 1 — turno.html / datosTurno → `me.datos_turno` (EN CURSO)
+### ✅ Etapa 1 — turno.html / datosTurno → `me.datos_turno` (HECHO + LIVE 2026-07-02)
+DESPLEGADO (clasp deploy @437) + VERIFICADO: el endpoint GAS `datosTurno` devuelve `me.datos_turno`
+(Supabase EN VIVO). La Hoja ELIMINADA del camino del turno. GAS queda solo como proxy autenticado
+(service_role). **Para cero-GAS TOTAL** (turno.html directo a Supabase sin GAS) falta darle auth segura a
+turno.html — el atajo anon fue (bien) bloqueado por seguridad (expondría datos del turno al público).
+⚠️ **Pendiente para que las ediciones no se reviertan:** correr `activarMEVentasDirecto()` en el editor
+de Apps Script de ME (mete `ventas` a ME_SYNC_OFF_TABLAS) — si no, el sync Hoja→Supabase revierte la
+edición directa de forma de pago en ≤15min.
+
+### (histórico) Etapa 1 — descripción original
 `me.datos_turno(p_id_caja)` ya existe y devuelve la MISMA forma que consume turno.html, leyendo `me.ventas`
 en vivo → refleja ediciones al instante + rápido. Migrar el lector (datosTurno) a la RPC, con fallback Hoja
 detrás de un flag. turno.html no cambia (o pasa a directo si se le da token). **Arregla el desync + la lentitud.**
