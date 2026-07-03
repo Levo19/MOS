@@ -43,7 +43,15 @@ turno.html — el atajo anon fue (bien) bloqueado por seguridad (expondría dato
 de Apps Script de ME (mete `ventas` a ME_SYNC_OFF_TABLAS) — si no, el sync Hoja→Supabase revierte la
 edición directa de forma de pago en ≤15min.
 
-### 🔜 Etapa 1b — turno.html DIRECTO a Supabase (cero-GAS total + mata el 1.88s de latencia)
+### ✅ Etapa 1b — turno.html DIRECTO a Supabase (CERO-GAS TOTAL — HECHO 2026-07-02, MOS 2.43.426 / turno v1.3.56)
+**turno.html ya no tiene NI RASTRO de GAS** (ni datos ni impresión):
+- **Datos:** `loadData()` llama SOLO a `_cargarDirectoSupabase()` (mint-mos device-gated → `me.datos_turno` directo). Sin proxy GAS, sin 302, sin cold-start.
+- **Impresión Z (última traza GAS, eliminada):** `doPrint()` ya no salta a `imprimirTicketZCierre` (GAS). Ahora envuelve el texto YA renderizado por `buildPrintTicket` (`pre#pkt-pre` = lo mismo que ve el dueño en pantalla → **papel==pantalla**, sin re-derivar totales = cero riesgo de mismatch) en ESC/POS y lo manda a la Edge `imprimir` con un token app=MOS minteado. Preámbulo/feed/corte = espejo de `ticket-comprobante` (misma flota PrintNode): init `1b40` · texto crudo `charCodeAt&0xff` (mismo encoding que el ticket de venta) · feed `1b4a96` · corte `1d5600`. **Verificado byte-a-byte** (round-trip base64, acentos é=0xe9/Ñ=0xd1 OK).
+- **Seguridad:** el GAS `imprimirTicketZCierre` era **print-only (cero writes)** → quitarlo no dropea ningún efecto. Los efectos del cierre (stock/pickup) ya viven server-side en `me.cerrar_caja`. Cambio solo-impresión = **cero riesgo dinero/stock**.
+- `_mintMOS()` extraído como helper (lo comparten datos + impresión); guard `!API_URL` y la constante `API_URL` eliminados.
+- **Verificación de campo pendiente (dueño):** hacer 1 impresión Z real desde turno.html → debe salir el ticket idéntico al de pantalla y cortar. Si falla, revisar que la Edge `imprimir` esté desplegada + `PRINTNODE_API_KEY` seteado (es Edge ya usada por el reimprimir de MOS).
+
+#### (histórico) Etapa 1b — diseño original
 Con la Etapa 1 el dato ya es Supabase, pero el PROXY GAS sigue: `exec?action=datosTurno` hace un **302 +
 ~1.88s** (cold-start GAS + salto a googleusercontent). Para que cargue en ~200ms Y sea cero-GAS, turno.html
 debe llamar a `me.datos_turno` DIRECTO (sin GAS). BLOCKER = auth segura (el anon fue bloqueado — expondría
