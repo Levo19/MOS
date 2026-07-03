@@ -135,6 +135,23 @@ sin fallback silencioso). NO hay que inventar cola nueva; hay que hacer cutover 
 6. Dejar de escribir la Hoja (gate/eliminar appendRow/setValues; `mirrorVentaASheets` último espejo).
 Precondición innegociable: paso 3 en verde. Falla → venta perdida o boleta SUNAT duplicada (legal).
 
+## ⭐ CORTE EJECUTADO — 2026-07-03 (write-path Supabase-primario, PROBADO)
+En ventana de mantenimiento (nadie usando), con gates verificados:
+- **Gate paridad:** `verificarParidadLectura(3)` = `solo_en_sheets_count:0` ✅ (ninguna venta solo-en-Hoja).
+- **reconciliarME:** destapó ventas cabecera drift (Supabase 2643 vs Hoja 2447) → INVESTIGADO: la Hoja fue **recortada** (207 detalle sin cabecera) + **196 colisiones históricas de correlativo NV** (Mar–May, ventas reales distintas, NO fantasma; series SUNAT limpias). Sombra = registro MÁS completo → cortar es data-safe (Supabase ⊇ Hoja).
+- **Activaciones (corridas por el dueño en editor, wrappers cut5a/b/c):** `activarCorrelativoSupabase` (✅ 6 series sembradas+validadas, CORRELATIVO_SOURCE=supabase) + `instalarTriggerReconciliacionDirectas` (backstop 10min) + `activarMEVentasDirecto` (sync-off ventas).
+- **Venta de prueba REAL:** NV01-001625, id directo `V-...-uuid`, `me.correlativos` NV01 avanzó atómicamente 1625→1626, detalle OK → **write-path 100% Supabase, cero-GAS, idempotente, PROBADO.**
+- **Write ya cero-GAS de antes:** frontend llama `crear_venta_directa` directo; impresión=PrintNode directo; CPE=Edges. Sin retención local (sync-primero, borra tras confirmar, 4 flusheadores).
+- **300x post-corte:** 6 series sin riesgo colisión, venta prueba única (no dup), ventas directas entrando. ✅
+
+### Falta para cero-GAS/cero-fallback TOTAL (desmonte del GAS de respaldo — DELIBERADO, no blind-strip)
+El GAS restante es RED DE RESPALDO (no causa errores en operación normal): espejo a la Hoja (`mirrorVentaASheets`)+backstop, fallbacks de lectura (~65 en api.js + 4 Flips ME), y el cierre GAS-fallback que lee la Hoja. Orden money-safe (con checkpoints):
+1. Cierre → Supabase-only (quitar brazo GAS/Hoja del arqueo; primary ya es me.cerrar_caja). REQUISITO para matar el espejo.
+2. Retirar espejo+backstop (correr `desinstalar...` en editor). Cero-GAS write total.
+3. Fallbacks de lectura: convertir `null→GAS` en vacío/error (evitar pantalla blanca) — uno por uno, no en bloque.
+4. Heartbeat de sesión (registrarSesionDispositivo) → migrar a RPC (alimenta personal-del-día; no borrar sin migrar).
+⚠️ Blind-strip rompe arqueo + white-screen (auditado). Requiere: 2-3 GAS-runs del dueño + 1 venta/cierre de prueba.
+
 ## Estado (2026-07-02)
 - **Etapa 1/1b: HECHO+LIVE** (turno.html cero-GAS total, incl. Z-print).
 - **Etapa 2/3 displays: HECHO+LIVE** (radio `me.radio_ventas`; getCierreHtml muerto).
