@@ -720,14 +720,16 @@
       // [v1.0.3 FIX] Anti-overlap: si polling anterior aún en vuelo, saltar tick
       if (window._segEspPollingActive) return;
       window._segEspPollingActive = true;
-      // Polling: chequear estado del dispositivo (consultarEstadoDispositivo
-      // existe en WH y MOS; apiPost del cliente lo resuelve al GAS correcto)
-      var apiAction = 'consultarEstadoDispositivo';
+      // [CERO-GAS] Polling de estado → RPC mos.consultar_estado_dispositivo (via DeviceAuth.rpc,
+      // cargado en las 3 apps). Antes _config.apiPost('consultarEstadoDispositivo') resolvía al GAS.
       var deviceId = (window.WH_CONFIG && window.WH_CONFIG.deviceId)
                   || localStorage.getItem('mosexpress_deviceId')
                   || localStorage.getItem('wh_device_id') || '';
-      _config.apiPost(apiAction, { ID_Dispositivo: deviceId, deviceId: deviceId }).then(function(r) {
-        var d = (_config.unwrapData ? r : (r && r.data ? r.data : r));
+      var _poll = (window.DeviceAuth && typeof DeviceAuth.rpc === 'function')
+        ? DeviceAuth.rpc('consultar_estado_dispositivo', { deviceId: deviceId })
+        : Promise.reject(new Error('DeviceAuth no disponible'));
+      _poll.then(function(r) {
+        var d = (r && r.data ? r.data : r);
         if (d && String(d.estado).toUpperCase() === 'ACTIVO') {
           clearInterval(window._segEspTimer);
           window._segEspTimer = null;

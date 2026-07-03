@@ -1,1 +1,1 @@
-{"version":"2.43.430","build":"2.43.430 (device-auth.js v1.0.24 pin): expone DeviceAuth.rpc()+sbConfig() para el extensor-horario cero-GAS. Aditivo, sin cambio de comportamiento en MOS."}
+{"version":"2.43.431","build":"2.43.431 (CERO-GAS auth ola 1): seguridad-modal.js polling de estado -> RPC mos.consultar_estado_dispositivo (via DeviceAuth.rpc), sin apiPost GAS. Pin seguridad-modal 2.43.421."}
