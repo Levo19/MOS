@@ -220,13 +220,12 @@ body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:
 <script>
 const params    = new URLSearchParams(location.search);
 const idCaja    = params.get('idCaja') || params.get('id_caja') || '';
-const API_URL   = params.get('api') || '';
 const autoPrint = params.get('autoprint') === '1';
 const REFRESH   = 60;
 let countdown = REFRESH, timer = null;
 
 // ── Auto-update check: compara version.json con la versión embebida ──
-const _TURNO_VERSION = '1.3.55';
+const _TURNO_VERSION = '1.3.56';
 async function _checkVersion() {
   try {
     const r = await fetch('./version.json?t=' + Date.now(), { cache: 'no-store' });
@@ -266,7 +265,7 @@ const fmt = v => (parseFloat(v)||0).toLocaleString('es-PE',{minimumFractionDigit
 const S   = v => 'S/ ' + fmt(v);
 const pct = (a,b) => b > 0 ? Math.min(100,(a/b*100)) : 0;
 
-if (!idCaja || !API_URL) {
+if (!idCaja) {
   document.getElementById('root').innerHTML = `
     <div style="text-align:center;padding:80px 20px;color:var(--muted);">
       <div style="font-size:40px;margin-bottom:16px;">⚠️</div>
@@ -282,7 +281,9 @@ if (!idCaja || !API_URL) {
 // datos_turno sigue authenticated). Si algo falla → cae al proxy GAS (mismo dato, más lento).
 const _SB_URL  = 'https://rzbzdeipbtqkzjqdchqk.supabase.co';
 const _SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6YnpkZWlwYnRxa3pqcWRjaHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NzYwMDQsImV4cCI6MjA5NjQ1MjAwNH0.MAlSdz_ugGUZoaU5st6dA_gb_x_IiUL0TXxH176kY9k';
-async function _cargarDirectoSupabase() {
+// Mintea un token MOS (claim app=MOS) vía la Edge pública mint-mos. Lo comparten
+// la carga de datos (me.datos_turno) y la impresión cero-GAS (Edge `imprimir`).
+async function _mintMOS() {
   let devId = 'turno-viewer';
   try { devId = localStorage.getItem('mos_device_id') || localStorage.getItem('mosexpress_deviceId') || devId; } catch(_) {}
   const mr = await fetch(`${_SB_URL}/functions/v1/mint-mos`, {
@@ -291,9 +292,13 @@ async function _cargarDirectoSupabase() {
   });
   const md = await mr.json().catch(() => null);
   if (!md || !md.ok || !md.token) throw new Error('mint');
+  return md.token;
+}
+async function _cargarDirectoSupabase() {
+  const token = await _mintMOS();
   const r = await fetch(`${_SB_URL}/rest/v1/rpc/datos_turno`, {
     method: 'POST',
-    headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + md.token, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+    headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
     body: JSON.stringify({ p_id_caja: idCaja })
   });
   if (!r.ok) throw new Error('rpc ' + r.status);
@@ -1259,20 +1264,43 @@ function closePrintModal() {
   document.getElementById('prtOverlay').classList.remove('open');
 }
 
+// [CERO-GAS] Envuelve el texto ya renderizado (pre#pkt-pre, mismo que ve el
+// dueño en pantalla → papel==pantalla, sin re-derivar totales) en ESC/POS y lo
+// codifica a base64. Preámbulo/feed/corte espejo de la Edge `ticket-comprobante`
+// (misma flota PrintNode): init 1b 40 · texto crudo (charCodeAt&0xff, sin
+// codepage, igual que el ticket de venta) · feed 1b 4a 96 · corte 1d 56 00.
+function _zEscPosBase64(text) {
+  const pre  = [0x1b, 0x40];                        // ESC @ init
+  const post = [0x1b, 0x4a, 0x96, 0x1d, 0x56, 0x00]; // feed 150 dots + corte total
+  let bin = '';
+  for (const b of pre)  bin += String.fromCharCode(b);
+  for (let i = 0; i < text.length; i++) bin += String.fromCharCode(text.charCodeAt(i) & 0xff);
+  for (const b of post) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
+// [CERO-GAS] Imprime el Ticket Z sin GAS: mintea token app=MOS y manda el ESC/POS
+// (base64) a la Edge `imprimir`, que lo reenvía a PrintNode con la API key en secret.
 async function doPrint(printNodeId) {
   closePrintModal();
   showToast('⏳ Enviando a impresora…', 'info');
   try {
-    const url = new URL(API_URL);
-    url.searchParams.set('action', 'imprimirTicketZCierre');
-    url.searchParams.set('idCaja', idCaja);
-    url.searchParams.set('printerId', printNodeId);
-    const r = await fetch(url.toString(), { cache:'no-store' });
-    const json = await r.json();
-    if (json.ok) {
+    const pre  = document.getElementById('pkt-pre');
+    const text = pre ? pre.textContent : '';
+    if (!text) { showToast('❌ Ticket aún no disponible', 'err'); return; }
+
+    const token   = await _mintMOS();
+    const content = _zEscPosBase64(text);
+    const r = await fetch(`${_SB_URL}/functions/v1/imprimir`, {
+      method: 'POST',
+      headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ printerId: parseInt(String(printNodeId), 10), content, title: 'Ticket Z' })
+    });
+    const json = await r.json().catch(() => null);
+    if (r.ok && json && json.status === 'success') {
       showToast('✅ Ticket enviado a imprimir', 'ok');
     } else {
-      showToast('❌ ' + (json.error || 'Error al imprimir'), 'err');
+      showToast('❌ ' + ((json && json.mensaje) || ('Error ' + r.status)), 'err');
     }
   } catch(e) {
     showToast('❌ Error de red: ' + e.message, 'err');
