@@ -1,1 +1,1 @@
-{"version":"2.43.436","build":"2.43.436 (CERO-FALLBACK punto 2d): device-auth.js v1.0.25 pin — gate de arranque solo directo, fail-closed sin GAS. MOS mint ya era Edge-only."}
+{"version":"2.43.437","build":"2.43.437 (CERO-GAS membrete boot): membrete-modal getLotesAdhesivoHistorial/diagnosticoTriggerLotes -> RPCs mos.adhesivo_lotes_* (SQL 338)."}
