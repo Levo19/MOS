@@ -225,7 +225,7 @@ const REFRESH   = 60;
 let countdown = REFRESH, timer = null;
 
 // ── Auto-update check: compara version.json con la versión embebida ──
-const _TURNO_VERSION = '1.3.57';
+const _TURNO_VERSION = '1.3.58';
 async function _checkVersion() {
   try {
     const r = await fetch('./version.json?t=' + Date.now(), { cache: 'no-store' });
@@ -283,24 +283,33 @@ const _SB_URL  = 'https://rzbzdeipbtqkzjqdchqk.supabase.co';
 const _SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6YnpkZWlwYnRxa3pqcWRjaHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NzYwMDQsImV4cCI6MjA5NjQ1MjAwNH0.MAlSdz_ugGUZoaU5st6dA_gb_x_IiUL0TXxH176kY9k';
 // Mintea un token MOS (claim app=MOS) vía la Edge pública mint-mos. Lo comparten
 // la carga de datos (me.datos_turno) y la impresión cero-GAS (Edge `imprimir`).
+// [FIX pantalla-blanca al abrir desde cierre] fetch con timeout: al abrirse turno.html justo tras el cierre
+// de ME, el Edge mint-mos/datos_turno puede estar FRÍO (cold-start) o la red ocupada → un fetch SIN timeout
+// se cuelga y el reintento nunca dispara (espera al reject default del browser, 30s+). Con timeout falla
+// rápido → reintenta rápido → se recupera solo sin F5.
+function _fetchTO(url, opts, ms) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms || 7000);
+  return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(t));
+}
 async function _mintMOS() {
   let devId = 'turno-viewer';
   try { devId = localStorage.getItem('mos_device_id') || localStorage.getItem('mosexpress_deviceId') || devId; } catch(_) {}
-  const mr = await fetch(`${_SB_URL}/functions/v1/mint-mos`, {
+  const mr = await _fetchTO(`${_SB_URL}/functions/v1/mint-mos`, {
     method: 'POST', headers: { 'apikey': _SB_ANON, 'Content-Type': 'application/json' },
     body: JSON.stringify({ deviceId: devId })
-  });
+  }, 7000);
   const md = await mr.json().catch(() => null);
   if (!md || !md.ok || !md.token) throw new Error('mint');
   return md.token;
 }
 async function _cargarDirectoSupabase() {
   const token = await _mintMOS();
-  const r = await fetch(`${_SB_URL}/rest/v1/rpc/datos_turno`, {
+  const r = await _fetchTO(`${_SB_URL}/rest/v1/rpc/datos_turno`, {
     method: 'POST',
     headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
     body: JSON.stringify({ p_id_caja: idCaja })
-  });
+  }, 7000);
   if (!r.ok) throw new Error('rpc ' + r.status);
   const j = await r.json();
   if (!j || j.ok !== true) throw new Error('rpc not ok');
@@ -313,18 +322,27 @@ async function loadData(_intento) {
   // mint/datos_turno se pasa de tiempo → antes había que apretar F5. Ahora se recupera solo. El auto-refresh
   // de 60s sigue como red final.
   _intento = _intento || 0;
+  const MAX = 5;   // [FIX] 2→5 reintentos (a 2s) para cubrir el cold-start del Edge al abrir desde el cierre.
+  const _reintentar = () => {
+    // Mantener el estado "Conectando…" (no la pantalla de error) mientras aún hay reintentos.
+    try {
+      const rootEl = document.getElementById('root');
+      if (rootEl) rootEl.innerHTML = '<div class="loading"><div class="spin"></div><p style="color:var(--muted);font-size:13px;">Conectando con Supabase… (' + (_intento + 2) + '/' + (MAX + 1) + ')</p></div>';
+    } catch(_) {}
+    setTimeout(() => loadData(_intento + 1), 2000);
+  };
   try {
     const json = await _cargarDirectoSupabase();
     if (json && json.ok) {
       render(json.data);
       if (autoPrint) _triggerAutoPrint(json.data);
-    } else if (_intento < 2) {
-      setTimeout(() => loadData(_intento + 1), 2500);
+    } else if (_intento < MAX) {
+      _reintentar();
     } else {
       renderError((json && json.error) || 'No se pudo cargar el turno');
     }
   } catch(e) {
-    if (_intento < 2) setTimeout(() => loadData(_intento + 1), 2500);
+    if (_intento < MAX) _reintentar();
     else renderError('Sin conexión con Supabase — reintentando cada 60s…');
   }
 }
