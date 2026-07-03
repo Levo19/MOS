@@ -93,14 +93,48 @@ Los dos displays que el hallazgo marcó "necesitan RPC nueva":
 ### Etapa 3 — cross-app / analítica (MOS)
 Conexiones/Almacen/Evaluaciones/Proveedores → leer `me.ventas` sombra (o RPCs) en vez de la Hoja ME.
 
-### Etapa 4 — fiscal / correlativo / reportes (ME)
-Correlativo ya está migrado a `me.correlativos`/`fac.series`. Migrar reportes IGV/CPE + reconciliar +
-Creditos + EditarVenta a Supabase. (Se cruza con el go-live CPE.)
+### ✅ Etapa 3 (analítica MOS) — HECHO 2026-07-02 (mapeo 3 agentes + fix)
+Hallazgo: **~90% ya construido.** 10/12 lectores vivos (ranking_zonas, insights_stock, eco_status,
+analitica_producto, productos_sin_venta, catalogo_stock_resumen, productos_proveedor_stock,
+resumen_todos_dia, rotacion, catalogo) YA tienen RPC `mos.*` y están cableados Supabase-first en api.js.
+- **FIX aplicado (2.43.427):** el dashboard llamaba `getRotacion` pero api.js solo interceptaba
+  `getRotacionProductos` → caía a GAS. Alias agregado (verificado: `mos.rotacion_productos` 1397 items, `_fresh`).
+- **Único hueco read-write (DEFERIDO):** `recalcularStockMinMaxAuto` (lee me.ventas_detalle, ESCRIBE
+  mos.productos.stock_min/max). No hay RPC; la escritura a `mos.productos` tiene caveats de sync
+  ([[architecture_mos_cutover_escritura_requiere_apagar_sync]]). Background 12h, no user-facing → deferido.
+- **Fallbacks:** NO se quitan aún — leen la Hoja de ME, mueren atómicamente con la Hoja en Etapa 5.
 
-### Etapa 5 — apagar la Hoja
-Cuando 0 lectores dependan de la Hoja: apagar el sync Hoja↔Supabase para `ventas`, dejar de escribir la Hoja,
-Hoja = archivo histórico. ME/MOS 100% Supabase para ventas.
+### 🔧 Etapa 4 (fiscal/reportes ME) — CONSTRUIDO, activación money/SUNAT gateada
+Mapeo: la mayoría YA existe (inerte tras flags o ya activo):
+- **Reconciliador CPE cero-GAS VIVO** (verificado): crons `cpe-reconciliar`(:23)/`fac-reconciliar`(:07)/
+  `fac-huerfanos`(diario) `active:true` + `me.cpe_reconciliar_cron`/`fac.reconciliar`. → el reconciliador
+  GAS de la Hoja (NubeFact.gs) es REDUNDANTE → retirar en el corte de E5.
+- **Ya cubiertos por flag `FUENTE_DATOS`** (inertes, listos para flip): ventas_hoy_zona, creditos_pendientes,
+  estado_cajas, detalle_venta. **Ediciones money** (cobrar_credito, editar_forma_pago/cliente, convert, asignar,
+  expiry) YA construidas cero-GAS (SQL 260/264/268/308-321), algunas activas. Correlativo ya en me.correlativos/fac.series.
+- **Faltan RPCs read-only (sin gap de esquema, bajo riesgo):** `me.alerta_efectivo`, `me.tributario_ventas_mes`,
+  `me.tributario_cpe_mes` (reportes IGV/CPE del Centro Tributario MOS). `getCierreHtml`=muerto.
+- **Read-write CPE a wire:** `tributarioReintentarCPE`→single-row de reconciliar; `bajaCPEVenta`→`fac.anular`.
+- **Gate:** flip de flags + wire CPE = cutover money/SUNAT → acoplado a la verificación de paridad de E5.
 
-## Estado
-- Etapa 1: EN CURSO. Resto: pendiente, en orden.
-- Verificación de escritura (Etapa 0): el heal insert-missing ya cubre (no revierte ediciones).
+### ⛔ Etapa 5 (apagar la Hoja) — IRREVERSIBLE, gateada en paridad multi-día
+Descubrimiento: la durabilidad ya está resuelta por el modo `CORRELATIVO_SOURCE=supabase` +
+`me.crear_venta_directa` (RPC atómica, correlativo por UPDATE..RETURNING con lock, idempotente por localId,
+sin fallback silencioso). NO hay que inventar cola nueva; hay que hacer cutover a ese modo. Orden money-safe:
+1. `activarCorrelativoSupabase()` (valida `me.correlativos ≥ target` por serie; aborta si atrás → evita
+   duplicado SUNAT). Aditivo/reversible.
+2. `instalarTriggerReconciliacionDirectas()` (espejo Supabase→Hoja, backstop 10min). Aditivo.
+3. **PARIDAD (reloj físico):** `verificarParidadLectura(3)` = 0 sostenido varios días + `reconciliarME()` sin
+   drift en ventas/ventas_detalle. Se ejercita solo con operación real (cierres/cobros/CPE). **NO acortable por código.**
+4. `activarMEVentasDirecto()` → sync-off `ventas` (+detalle/cajas/movimientos_extra). El heal insert-missing cubre faltantes.
+5. Migrar los últimos lectores de la Hoja a `me.*` (quitar fallbacks) = "sin fallback" real.
+6. Dejar de escribir la Hoja (gate/eliminar appendRow/setValues; `mirrorVentaASheets` último espejo).
+Precondición innegociable: paso 3 en verde. Falla → venta perdida o boleta SUNAT duplicada (legal).
+
+## Estado (2026-07-02)
+- **Etapa 1/1b: HECHO+LIVE** (turno.html cero-GAS total, incl. Z-print).
+- **Etapa 2/3 displays: HECHO+LIVE** (radio `me.radio_ventas`; getCierreHtml muerto).
+- **Etapa 3 analítica: HECHO** (fix getRotacion 2.43.427; resto ya cableado; recalcular_min_max deferido).
+- **Etapa 4: construido; activación money/SUNAT gateada** (reconciliador cero-GAS ya vivo; faltan 3 RPCs read-only + wire CPE + flips).
+- **Etapa 5: infraestructura lista; corte gateado en paridad multi-día** (pasos 1-2 aditivos ejecutables cuando el dueño diga; 3 = reloj de días).
+- Escritura directa durable = modo `CORRELATIVO_SOURCE=supabase` (existe). El dual-write best-effort actual NO basta para apagar la Hoja.
