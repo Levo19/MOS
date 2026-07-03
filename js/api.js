@@ -260,13 +260,17 @@ const API = (() => {
   // (INERTE). `flagFn` opcional permite gate por-acción (default = _mosLecturaDirecta).
   async function _conFallbackMOS(directo, gas, flagFn) {
     const on = (typeof flagFn === 'function') ? flagFn() : _mosLecturaDirecta();
-    if (on) {
-      try {
-        const r = await directo();
-        if (r != null) return r;   // null = "sin backend directo / sin token" → GAS
-      } catch (_) { /* error directo → GAS (red de seguridad) */ }
+    // [CERO-GAS/CERO-FALLBACK 2026-07-03] Con el gate ON (prod) YA NO caemos a GAS: la sombra Supabase es la
+    // fuente de verdad post-corte. `directo` puede devolver null por TRANSITORIOS (sombra sincronizando
+    // -> _fresh:false, o token minteándose al arranque). En vez de saltar a GAS/Hoja, REINTENTAMOS el directo
+    // (3× con backoff corto); si persiste null, devolvemos null (el caller ya tolera el path directo). Sin GAS.
+    // Con gate OFF (modo inerte / no-prod) se conserva el GAS de siempre.
+    if (!on) return await gas();
+    for (let i = 0; i < 3; i++) {
+      try { const r = await directo(); if (r != null) return r; } catch (_) { /* reintenta */ }
+      if (i < 2) await new Promise(res => setTimeout(res, 400));
     }
-    return await gas();
+    return null;
   }
 
   // ════════════════════════════════════════════════════════════════════
