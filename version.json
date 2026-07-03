@@ -1,1 +1,1 @@
-{"version":"2.43.438","build":"2.43.438 (CERO-GAS membrete completo): tabla mos.membretes_me_pendientes + RPCs read/marcar/ignorar (SQL 339) + hook best-effort en publicar_precio. membrete-modal rutea las 3 acciones."}
+{"version":"2.43.439","build":"2.43.439 (CERO-GAS horarios): setHorarioCustomPersonal -> RPC mos.set_horario_custom_personal (SQL 340, escribe personal.horario_custom que resolver_horario_personal ya lee). getHorariosApps/setHorarioApp ya eran directos (flags ON). Horarios de MOS cero-GAS (falta solo el path seguridad-modal, off-hours para no recargar WH)."}

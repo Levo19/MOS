@@ -1918,6 +1918,18 @@ const API = (() => {
       return _desempacarCatalogo(out);         // {app, horario, admins_libres} — el front no lee la respuesta
     }
 
+    if (action === 'setHorarioCustomPersonal') {
+      // [CERO-GAS] mos.set_horario_custom_personal (SQL 340) escribe mos.personal.horario_custom, que
+      // resolver_horario_personal (SQL 330) YA lee para el enforcement → sin side-effect a hoja. El push
+      // segmentado del GAS ("tu horario cambió") queda pendiente de la migración de push (best-effort, no crítico).
+      const out = await _sbRpcMOSWrite('set_horario_custom_personal', { p: {
+        idPersonal: p.idPersonal != null ? String(p.idPersonal) : undefined,
+        horarioCustom: (p.horarioCustom !== undefined ? p.horarioCustom : null)
+      } });
+      if (out == null) return null;
+      return _desempacarCatalogo(out);         // {idPersonal, accion} — el front no lee la respuesta
+    }
+
     // ════════════════════════════════════════════════════════════════════
     // [FASE 2 · LOTE JORNALES/LIQUIDACIONES] — acciones que el frontend MOS llama hoy:
     //   · registrarJornada            → mos.registrar_jornada        (flag mos_jornadas_directo, DINERO jornal)
