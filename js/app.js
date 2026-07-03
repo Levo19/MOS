@@ -826,16 +826,9 @@ const MOS = (() => {
       const ses = S.session;
       if (!ses || !ses.idPersonal) return;
       if (!navigator.onLine) return;
-      // [v2.43.380] cero-GAS: el heartbeat va DIRECTO a la RPC mos.estado_bloqueo_usuario
-      // (actualiza ultima_conexion + chequea bloqueo) en vez del exec de GAS (~3s).
-      let out = null;
-      try { out = await API.estadoBloqueoMOS({ idPersonal: ses.idPersonal, nombre: ses.nombre || '', appOrigen: 'mos' }); } catch(_) {}
-      if (out === null) {
-        // sin token/RPC → fallback a GAS (compat)
-        const url = API.getUrl() + '?action=getEstadoBloqueoUsuario&idPersonal=' + encodeURIComponent(ses.idPersonal)
-          + '&nombre=' + encodeURIComponent(ses.nombre || '') + '&appOrigen=mos';
-        await fetch(url);
-      }
+      // [CERO-GAS / CERO-FALLBACK] Heartbeat SOLO directo: mos.estado_bloqueo_usuario (actualiza
+      // ultima_conexion + chequea bloqueo). En error se salta este tick (reintenta en 60s); ya no cae al GAS.
+      try { await API.estadoBloqueoMOS({ idPersonal: ses.idPersonal, nombre: ses.nombre || '', appOrigen: 'mos' }); } catch(_) {}
     } catch(_) {}
   }
   function _startMosHeartbeat() {

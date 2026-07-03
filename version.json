@@ -1,1 +1,1 @@
-{"version":"2.43.433","build":"2.43.433 (CERO-GAS punto 1 · MOS writes admin): intercept forzarWizardDispositivo/forzarPushDispositivo -> RPCs mos.forzar_wizard_dispositivo/forzar_push_dispositivo (SQL 335) via _sbRpcMOSWrite. Junto con aprobar/revocar (ya directas), las 4 escrituras admin de dispositivos son cero-GAS (fallback GAS solo si no mintea token)."}
+{"version":"2.43.434","build":"2.43.434 (CERO-FALLBACK punto 2b): heartbeat MOS solo directo (mos.estado_bloqueo_usuario), quitado el fallback GAS getEstadoBloqueoUsuario."}
