@@ -2042,6 +2042,23 @@ const API = (() => {
       return { autorizado: out.autorizado !== false, ...(out.data || {}) };
     }
 
+    // [CERO-GAS] forzar wizard/push remoto → RPCs mos.forzar_wizard_dispositivo / forzar_push_dispositivo
+    // (SQL 335, clave admin via _validar_clave_admin_core). Mismo patrón que revocar: sin token → null → GAS;
+    // el front (forzarWizardRemoto/forzarPushRemoto) lee r.autorizado + r.forzadoPor.
+    if (action === 'forzarWizardDispositivo' || action === 'forzarPushDispositivo') {
+      const fn = action === 'forzarWizardDispositivo' ? 'forzar_wizard_dispositivo' : 'forzar_push_dispositivo';
+      const out = await _sbRpcMOSWrite(fn, { p: {
+        deviceId: String(p.deviceId || ''), claveAdmin: p.claveAdmin, app: p.app
+      } });
+      if (out == null) return null;               // sin token → GAS
+      if (out.ok === false) {
+        const err = String(out.error || '');
+        if (/_OFF$/.test(err) || err === 'APP_NO_AUTORIZADA') return null;
+        return { autorizado: false, error: err };
+      }
+      return { autorizado: out.data?.autorizado !== false, ...(out.data || {}) };
+    }
+
     if (action === 'vetarLiquidacionDia') {
       // ⚠️ DINERO ⚠️ GAS vetarLiquidacionDia → {ok:true} (sin data); _fetch desempaqueta a undefined; el front
       // NO lee la respuesta (await resuelve = éxito; .catch lee e.message = YA_PAGADA/NO_ENCONTRADA). RPC
