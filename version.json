@@ -1,1 +1,1 @@
-{"version":"2.43.431","build":"2.43.431 (CERO-GAS auth ola 1): seguridad-modal.js polling de estado -> RPC mos.consultar_estado_dispositivo (via DeviceAuth.rpc), sin apiPost GAS. Pin seguridad-modal 2.43.421."}
+{"version":"2.43.432","build":"2.43.432 (CERO-GAS auth ola 3): seguridad-modal getSeguridadAlertas -> RPC mos.seguridad_alertas (SQL 336) + getDispositivos -> mos.listar_dispositivos via DeviceAuth.rpc. Badge de seguridad admin sin GAS. Pin seguridad-modal 2.43.422."}

@@ -304,7 +304,11 @@
     _injectCss();
     var primerRefresh = true;
     var refresh = function() {
-      _api('getSeguridadAlertas', { limit: 1 }).then(function(d) {
+      // [CERO-GAS] getSeguridadAlertas → RPC mos.seguridad_alertas (via DeviceAuth.rpc). Devuelve {ok,data:{count}}.
+      var _p = (window.DeviceAuth && typeof DeviceAuth.rpc === 'function')
+        ? DeviceAuth.rpc('seguridad_alertas', { limit: 1 }).then(function(r){ return r && r.data ? r.data : { count: 0 }; })
+        : Promise.reject(new Error('DeviceAuth no disponible'));
+      _p.then(function(d) {
         var count = (d && d.count) || 0;
         var existing = document.getElementById('segBadge');
         if (count === 0) {
@@ -387,9 +391,13 @@
     var body = document.getElementById('segAlertasBody');
     if (!body) return;
     body.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px"><span class="seg-spin">◐</span> cargando…</div>';
+    // [CERO-GAS] getSeguridadAlertas → mos.seguridad_alertas · getDispositivos → mos.listar_dispositivos
+    // (via DeviceAuth.rpc). Ambas devuelven {ok,data:...}; se desenvuelve .data.
+    var _rpcSeg = (window.DeviceAuth && typeof DeviceAuth.rpc === 'function')
+      ? DeviceAuth.rpc : function() { return Promise.reject(new Error('DeviceAuth no disponible')); };
     Promise.all([
-      _api('getSeguridadAlertas', { limit: 100 }).catch(function() { return { items: [], count: 0 }; }),
-      _api('getDispositivos', {}).catch(function() { return []; })
+      _rpcSeg('seguridad_alertas', { limit: 100 }).then(function(r){ return r && r.data ? r.data : { items: [], count: 0 }; }).catch(function() { return { items: [], count: 0 }; }),
+      _rpcSeg('listar_dispositivos', {}).then(function(r){ return r && r.data ? r.data : []; }).catch(function() { return []; })
     ]).then(function(arr) {
       var alertas = (arr[0] && arr[0].items) || [];
       var disps = Array.isArray(arr[1]) ? arr[1] : ((arr[1] && arr[1].data) || []);
