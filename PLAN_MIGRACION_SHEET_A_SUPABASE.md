@@ -112,8 +112,12 @@ Mapeo: la mayoría YA existe (inerte tras flags o ya activo):
 - **Ya cubiertos por flag `FUENTE_DATOS`** (inertes, listos para flip): ventas_hoy_zona, creditos_pendientes,
   estado_cajas, detalle_venta. **Ediciones money** (cobrar_credito, editar_forma_pago/cliente, convert, asignar,
   expiry) YA construidas cero-GAS (SQL 260/264/268/308-321), algunas activas. Correlativo ya en me.correlativos/fac.series.
-- **Faltan RPCs read-only (sin gap de esquema, bajo riesgo):** `me.alerta_efectivo`, `me.tributario_ventas_mes`,
-  `me.tributario_cpe_mes` (reportes IGV/CPE del Centro Tributario MOS). `getCierreHtml`=muerto.
+- **✅ 3 RPCs read-only HECHAS (SQL 326, ME @238):** `me.alerta_calcular_efectivo`, `me.tributario_ventas_mes`,
+  `me.tributario_cpe_mes` — GAS reescrito para leerlas vía `_sbRpc` SIN fallback a la Hoja. Verificado live
+  (ventas_mes 28k, cpe_mes 59, fecha ISO exacta, alerta S/). `getCierreHtml`=muerto (no migrar).
+  ⚠️ **EXACTITUD FISCAL gateada en paridad:** el total de junio fluctuó 28004.8↔28174.7 en minutos (heal 15min +
+  ediciones/anulaciones vivas) → los reportes reflejan la sombra AL INSTANTE; son fiables para SUNAT solo cuando
+  la sombra del mes está estable/convergida. Mismo gate que E5.
 - **Read-write CPE a wire:** `tributarioReintentarCPE`→single-row de reconciliar; `bajaCPEVenta`→`fac.anular`.
 - **Gate:** flip de flags + wire CPE = cutover money/SUNAT → acoplado a la verificación de paridad de E5.
 
