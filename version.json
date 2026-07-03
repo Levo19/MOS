@@ -1,1 +1,1 @@
-{"version":"2.43.440","build":"2.43.440 (CERO-GAS push): mensaje-directo (enviarPushUsuario) sin fallback GAS (solo Edge enviarPushSB). push_tokens_para dedup por device (SQL 341b, arregla spam 208->5 tokens)."}
+{"version":"2.43.441","build":"2.43.441 (CERO-GAS push etiqueta-nueva): al publicar precio (cambio real) -> push a CAJERO/VENDEDOR via Edge (audiencia deduped). RPC publicar_precio devuelve cambioPrecio/descripcion (SQL 339c, return aditivo). Helper _pushEdgeAudiencia. Sin GAS."}

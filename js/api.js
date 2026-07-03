@@ -193,6 +193,19 @@ const API = (() => {
     finally { _mintInFlight = null; }
   }
 
+  // [CERO-GAS push] Dispara un push a una AUDIENCIA vía Edge `push` (resuelve tokens deduped con
+  // mos.push_tokens_para). Fire-and-forget, sin fallback GAS. Hoisted → usable desde los intercepts.
+  async function _pushEdgeAudiencia(audiencia, titulo, cuerpo, data) {
+    try {
+      const token = await _mintTokenMOS();
+      if (!token) return;
+      await _sbFetchTimeout(`${_SB_URL}/functions/v1/push`, {
+        method: 'POST', headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ op: 'send', audiencia, title: titulo, body: cuerpo, data: data || null })
+      }, 8000);
+    } catch (_) { /* informativo, no bloquea */ }
+  }
+
   // Refresh PROACTIVO en background: re-mintea ~120s ANTES de expirar, fuera del
   // camino crítico, para que una navegación NUNCA dispare el mint sincrónico.
   // Fire-and-forget: si falla, el camino sincrónico bajo demanda es la red de seguridad.
@@ -1571,6 +1584,16 @@ const API = (() => {
       if (data && data.alertaGenerada === undefined) {
         data.alertaGenerada = (p.imprimirMembretes === 'true' || p.imprimirMembretes === true);
       }
+      // [CERO-GAS etiqueta-nueva] Si el precio REALMENTE cambió → push a CAJERO/VENDEDOR ("imprime etiqueta").
+      // Reemplaza el push GAS MOS_ETIQUETA_NUEVA. Fire-and-forget, solo en cambio real (data.cambioPrecio).
+      try {
+        if (data && data.cambioPrecio) {
+          _pushEdgeAudiencia({ roles: ['CAJERO', 'VENDEDOR'] },
+            '🏷 Precio actualizado',
+            (data.descripcion || p.descripcion || 'Producto') + ' · S/ ' + Number(data.precioNuevo || p.precioNuevo || 0).toFixed(2) + ' · imprime etiqueta nueva',
+            { tipo: 'etiqueta_nueva', skuBase: data.skuBase || p.skuBase || '' });
+        }
+      } catch(_) {}
       return data;   // {precioNuevo, presentacionesActualizadas, alertaGenerada} — el front no lo consume
     }
 
