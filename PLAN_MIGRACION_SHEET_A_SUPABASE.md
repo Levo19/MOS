@@ -80,6 +80,11 @@ apurar, tienen side-effects; (c) el cierre de caja money-crítico → **ya corre
 requiere RPCs nuevas o migrar money-writes con cuidado — hacerlo deliberado, no de golpe. Priorizar Tema 1
 (modal convertir) y el go-live CPE por encima de migrar displays de bajo valor.
 
+### ✅ Etapa 2/3 (displays) — lectores de VENTAS Hoja sin RPC (HECHO 2026-07-02)
+Los dos displays que el hallazgo marcó "necesitan RPC nueva":
+- **`topProductosHoy` (Radio TV) — MIGRADO + LIVE.** Era el ÚNICO lector VIVO de VENTAS_CABECERA/DETALLE en el camino del radio. Nueva RPC `me.radio_ventas()` (SQL 325) replica la lógica sobre la sombra (me.ventas + me.ventas_detalle): top 20 del día/7d + skus_de_la_tienda 30d/alguna_vez, TZ Lima, excluye ANULADO/HUERFANA_LIMPIADA. GAS `topProductosHoy` reescrito para leerla vía `_sbRpc`, **sin fallback a la Hoja** (cero-GAS). Verificado LIVE: `top_productos_hoy` y `radio_productos` devuelven data de Supabase (paridad exacta: AJO 5.945 = test directo RPC). Radio.gs ya solo toca la hoja `RadioConfig` (config, no ventas). Deploy ME @237 (deployment AKfycbzG84…, el que usa radio.html).
+- **`getCierreHtml` (`ver_cierre`) — CÓDIGO MUERTO.** El botón "🖨 Reporte" que lo abría se **eliminó en v2.43.7**; `grep` confirma 0 consumidores del campo `urlReporte`/`ver_cierre` en todo el frontend. NO es un lector vivo → no bloquea. No se toca `mos.cierres_caja` (RPC grande de dinero) por un campo cosmético muerto; se borra en Etapa 5 junto con la Hoja. (Si algún día vuelve un consumidor, apuntarlo a `turno.html?idCaja=…`, que ya renderiza el cierre cero-GAS.)
+
 ### Etapa 2 — money-crítico
 - Confirmar que el cierre corre 100% directo (ya verificado: PK-VENTAS) → el fallback GAS que lee la Hoja
   se puede retirar tras P4/P5. `estadoCajas`, `ReporteCierre`, `AlertaEfectivo`, MOS `getCierresCaja/Finanzas`
