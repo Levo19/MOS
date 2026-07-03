@@ -22460,9 +22460,8 @@ const MOS = (() => {
     if (!dest) { toast('Destinatario no encontrado', 'error'); return; }
     closeModal('modalEnviarPush');
     try {
-      // [F6 push dispatch · cero-GAS] select audiencia + Edge; null → GAS.
-      const r = (await API.enviarPushSB(titulo, cuerpo, { soloUsuarios: [dest], incluirCompanions: true }))
-             || (await API.post('enviarPushUsuario', { usuario: dest, titulo, cuerpo }));
+      // [CERO-GAS / CERO-FALLBACK] Solo Edge push (enviarPushSB resuelve audiencia + envía). Sin fallback GAS.
+      const r = await API.enviarPushSB(titulo, cuerpo, { soloUsuarios: [dest], incluirCompanions: true });
       if (r?.tokensAlcanzados) {
         toast(`✓ Mensaje enviado a ${dest} (${r.tokensAlcanzados} dispositivo${r.tokensAlcanzados === 1 ? '' : 's'})`, 'ok');
       } else {
