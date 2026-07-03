@@ -226,7 +226,7 @@ const REFRESH   = 60;
 let countdown = REFRESH, timer = null;
 
 // ── Auto-update check: compara version.json con la versión embebida ──
-const _TURNO_VERSION = '1.3.54';
+const _TURNO_VERSION = '1.3.55';
 async function _checkVersion() {
   try {
     const r = await fetch('./version.json?t=' + Date.now(), { cache: 'no-store' });
@@ -301,23 +301,17 @@ async function _cargarDirectoSupabase() {
   if (!j || j.ok !== true) throw new Error('rpc not ok');
   return j;
 }
-async function _cargarGAS() {
-  const url = new URL(API_URL);
-  url.searchParams.set('action', 'datosTurno');
-  url.searchParams.set('idCaja', idCaja);
-  const r = await fetch(url.toString(), { cache:'no-store' });
-  return await r.json();
-}
 async function loadData() {
+  // [CERO-GAS TOTAL] SOLO Supabase directo (me.datos_turno vía mint-mos). Sin proxy GAS: se elimina el
+  // 302 + cold-start y todo rastro de GAS (que solo causaba lentitud/errores). Si falla (device no
+  // registrado / sin red), muestra error y el auto-refresh de 60s reintenta.
   try {
-    let json = null;
-    try { json = await _cargarDirectoSupabase(); }   // cero-GAS, rápido (sin el 302 de GAS)
-    catch(_e) { try { json = await _cargarGAS(); } catch(_g) { json = null; } }   // fallback proxy GAS
+    const json = await _cargarDirectoSupabase();
     if (json && json.ok) {
       render(json.data);
       if (autoPrint) _triggerAutoPrint(json.data);
     } else renderError((json && json.error) || 'No se pudo cargar el turno');
-  } catch(e) { renderError('Sin conexión: ' + e.message); }
+  } catch(e) { renderError('Sin conexión con Supabase — reintenta en unos segundos'); }
 }
 
 function startCountdown() {
