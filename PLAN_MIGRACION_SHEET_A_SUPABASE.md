@@ -48,6 +48,18 @@ edición directa de forma de pago en ≤15min.
 en vivo → refleja ediciones al instante + rápido. Migrar el lector (datosTurno) a la RPC, con fallback Hoja
 detrás de un flag. turno.html no cambia (o pasa a directo si se le da token). **Arregla el desync + la lentitud.**
 
+### 🔎 Hallazgo (2026-07-02): la migración es MUCHO más chica de lo estimado
+El FRONTEND ya lee Supabase en la mayoría de los casos money/display:
+- `getCierresCaja`→`mos.cierres_caja` ✅ · `estadoCajas`→`me.estado_cajas` ✅ · `getFinanzasRango`→`mos.finanzas_rango` ✅
+Los cuerpos GAS aún leen la Hoja, pero solo importa cuando se llama a GAS (no el navegador). **No queda un
+batch "read-only + RPC lista + aún en Hoja" para flipear** — los que tienen RPC ya están cableados. Lo que
+resta: (a) displays de BAJO valor sin RPC (`getCierreHtml`, `topProductosHoy` Radio) → necesitan RPC nueva;
+(b) funciones que ESCRIBEN (alertas efectivo, `getFinanzasDia`→liquidaciones/jornadas, impresión Z) → NO
+apurar, tienen side-effects; (c) el cierre de caja money-crítico → **ya corre directo** (el GAS es fallback).
+**Recomendación:** el pain (turno/desync) YA está resuelto (Etapa 1 + sync-off). El resto es bajo valor /
+requiere RPCs nuevas o migrar money-writes con cuidado — hacerlo deliberado, no de golpe. Priorizar Tema 1
+(modal convertir) y el go-live CPE por encima de migrar displays de bajo valor.
+
 ### Etapa 2 — money-crítico
 - Confirmar que el cierre corre 100% directo (ya verificado: PK-VENTAS) → el fallback GAS que lee la Hoja
   se puede retirar tras P4/P5. `estadoCajas`, `ReporteCierre`, `AlertaEfectivo`, MOS `getCierresCaja/Finanzas`
