@@ -287,9 +287,15 @@
   // ── HELPERS API ──────────────────────────────────────────────
   // [CERO-GAS] Lecturas migradas a RPC directa mos.* (via DeviceAuth.rpc, cargado en las 3 apps). Devuelven
   // {ok,data} → se desenvuelve data igual que el resto del módulo. Sin DeviceAuth → cae al apiPost GAS.
-  var _RPC_READ = { getLotesAdhesivoHistorial: 'adhesivo_lotes_historial', diagnosticoTriggerLotes: 'adhesivo_lotes_diag' };
+  var _RPC_DIRECT = {
+    getLotesAdhesivoHistorial: 'adhesivo_lotes_historial',
+    diagnosticoTriggerLotes:   'adhesivo_lotes_diag',
+    getMembretesMePendientes:  'membretes_me_pendientes',
+    marcarMembreteMeImpreso:   'marcar_membrete_me_impreso',
+    ignorarMembreteMe:         'ignorar_membrete_me'
+  };
   function _api(action, params) {
-    var _rpcFn = _RPC_READ[action];
+    var _rpcFn = _RPC_DIRECT[action];
     if (_rpcFn && window.DeviceAuth && typeof DeviceAuth.rpc === 'function') {
       return DeviceAuth.rpc(_rpcFn, params || {}).then(function(r) {
         if (r && r.ok === false) throw new Error(r.error || 'Backend rechazó');

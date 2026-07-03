@@ -1,1 +1,1 @@
-{"version":"2.43.437","build":"2.43.437 (CERO-GAS membrete boot): membrete-modal getLotesAdhesivoHistorial/diagnosticoTriggerLotes -> RPCs mos.adhesivo_lotes_* (SQL 338)."}
+{"version":"2.43.438","build":"2.43.438 (CERO-GAS membrete completo): tabla mos.membretes_me_pendientes + RPCs read/marcar/ignorar (SQL 339) + hook best-effort en publicar_precio. membrete-modal rutea las 3 acciones."}
