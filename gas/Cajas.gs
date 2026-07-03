@@ -310,6 +310,15 @@ function cambiarMetodoME(params) {
 // ============================================================
 function datosTurno(params) {
   if (!params || !params.idCaja) return { ok: false, error: 'idCaja requerido' };
+  // [Etapa 1 · migración Sheet→Supabase] leer de me.datos_turno (Supabase EN VIVO → refleja las ediciones
+  // al instante + rápido, sin escanear la Hoja). Es el fix del desync/lentitud de turno.html. RPC read-only,
+  // shape idéntico. Kill-switch: Script Property MOS_TURNO_SUPABASE='0' → vuelve a leer la Hoja de abajo.
+  try {
+    if (PropertiesService.getScriptProperties().getProperty('MOS_TURNO_SUPABASE') !== '0') {
+      var _rpc = _sbRpc('me', 'datos_turno', { p_id_caja: String(params.idCaja) });
+      if (_rpc && _rpc.ok && _rpc.data && _rpc.data.ok === true && _rpc.data.data) return _rpc.data;
+    }
+  } catch(_eST) { /* cualquier fallo → cae a la lectura de la Hoja (comportamiento previo) */ }
   var ss;
   try { ss = _meSS(); } catch(e) { return { ok: false, error: e.message }; }
 
