@@ -207,7 +207,7 @@
   // [v1.0.14] Versión honesta del módulo. Las 3 apps lo cargan vía CDN con un
   // pin ?v= en su <script>; si ese pin miente, ESTA constante revela la versión
   // REAL servida. Se loguea al boot (init) como "[DeviceAuth] vX en <app>".
-  var _VERSION = '1.0.24';
+  var _VERSION = '1.0.25';
 
   var _config = null;
   var _state = {
@@ -1500,9 +1500,9 @@
   // a v1.0.14). El procesamiento del estado (state-machine UI/cache/polling) es
   // COMÚN a ambos caminos vía _procesarRespuestaVerify → cero divergencia de auth.
   function _consultarBackend(silencioso) {
-    if (!_devAuthDirecto()) {
-      // ── Flag OFF: camino histórico INTACTO ──
-      return _consultarBackendGAS(silencioso);
+    // [CERO-GAS] Auth 100% Supabase (sin rama GAS). Sin config utilizable → fail-closed (NO autoriza).
+    if (!_sbBase() || !(_config && _config.sbAnon)) {
+      return _failClosedVerify(silencioso, new Error('Supabase no configurado'));
     }
     // ── Flag ON: Supabase directo. registrar_dispositivo refresca el heartbeat
     //    y (para WH/ME nuevos) crea PENDIENTE idempotente; verificar_dispositivo
@@ -1557,58 +1557,29 @@
         console.warn('[DeviceAuth] directo=' + d.estado + ' (bloqueo) + sin_doblecheck ON → bloqueo confiando en la sombra (sin GAS).');
         return _procesarRespuestaVerify(d, silencioso);
       }
-      // Directo dice BLOQUEO → confirmar con la hoja (GAS) antes de bloquear.
-      console.warn('[DeviceAuth] directo=' + d.estado + ' (bloqueo) → confirmando con GAS (hoja, fuente de verdad) antes de bloquear.');
-      return _consultarBackendGAS(silencioso);
+      // [CERO-GAS] Directo dice BLOQUEO → se respeta el veredicto de la sombra (ya no se confirma con GAS).
+      // Fail-closed: procesar el bloqueo = bloquear el device (nunca autoriza por error). Igual que sinDobleCheck.
+      console.warn('[DeviceAuth] directo=' + d.estado + ' (bloqueo) → bloqueo confiando en la sombra (cero-GAS).');
+      return _procesarRespuestaVerify(d, silencioso);
     }).catch(function (e) {
-      console.warn('[DeviceAuth] auth directo falló → fallback GAS:', e && e.message);
-      return _consultarBackendGAS(silencioso);
+      // [CERO-GAS] RPC directo falló → FAIL-CLOSED (SIN_VERIFICAR / "Reintentar"), sin fallback GAS.
+      console.warn('[DeviceAuth] auth directo falló → fail-closed (sin GAS):', e && e.message);
+      return _failClosedVerify(silencioso, e);
     });
   }
 
-  function _consultarBackendGAS(silencioso) {
-    var ua = (navigator.userAgent || '').substring(0, 200);
-    var url = _config.mosGasUrl
-      + '?action=registrarSesionDispositivo'
-      + '&ID_Dispositivo=' + encodeURIComponent(_state.deviceId)
-      + '&app=' + encodeURIComponent(_config.app)
-      + '&userAgent=' + encodeURIComponent(ua);
-
-    // [v1.0.19 FIX CUELGUE ETERNO] El timeout DEBE cubrir el fetch COMPLETO,
-    // incluido r.json() (lectura del body). Antes hacíamos clearTimeout en
-    // cuanto LLEGABAN los headers (.then(r => { clearTimeout; return r.json() }))
-    // → el AbortController ya no protegía el body. GAS responde con una cadena de
-    // redirects 302→googleusercontent.com: los headers llegan rápido (timeout
-    // limpiado) pero el BODY puede quedar streameando/stalleado para siempre
-    // (cold-start mid-stream, cuota urlfetch agotada que devuelve HTML parcial,
-    // redirect colgado). Resultado: r.json() nunca resuelve y el overlay
-    // "Verificando dispositivo" se queda ETERNO. Fix: el ctrl.abort() del
-    // setTimeout aborta TAMBIÉN durante la lectura del body (la promesa de
-    // r.json() rechaza con AbortError), y solo limpiamos el timeout cuando el
-    // body ya se leyó por completo.
-    var ctrl = new AbortController();
-    var timeout = setTimeout(function() { ctrl.abort(); }, 10000);
-
-    return fetch(url, { signal: ctrl.signal })
-      .then(function(r) { return r.json(); })  // NO limpiar timeout aún: el body también debe respetar el límite
-      .then(function(j) {
-        clearTimeout(timeout);  // body leído OK → recién ahora liberar el watchdog del fetch
-        if (!j || j.ok === false) {
-          throw new Error(j && j.error || 'Respuesta inválida del backend');
-        }
-        return _procesarRespuestaVerify(j.data || {}, silencioso);
-      })
-      .catch(function(e) {
-        clearTimeout(timeout);
-        if (silencioso) {
-          console.warn('[DeviceAuth] refresh silencioso falló:', e.message);
-          throw e;
-        }
-        _state.estado = 'SIN_VERIFICAR';
-        _mostrarUI('SIN_VERIFICAR', e.message || 'Error de red');
-        if (_config.onError) try { _config.onError(e); } catch(_){}
-        throw e;
-      });
+  // [CERO-GAS] Cierre FAIL-CLOSED del verify directo (reemplaza al viejo fallback GAS _consultarBackendGAS).
+  // En fallo NUNCA autoriza: el refresh silencioso re-lanza sin tocar la UI; el verify visible cierra a
+  // SIN_VERIFICAR + "Reintentar" + onError. Para ENTRAR, el directo (mos.verificar_dispositivo) DEBE decir ACTIVO.
+  function _failClosedVerify(silencioso, e) {
+    if (silencioso) {
+      console.warn('[DeviceAuth] refresh silencioso falló (sin GAS):', e && e.message);
+      return Promise.reject(e);
+    }
+    _state.estado = 'SIN_VERIFICAR';
+    _mostrarUI('SIN_VERIFICAR', (e && e.message) || 'Error de red');
+    if (_config.onError) try { _config.onError(e); } catch(_){}
+    return Promise.reject(e);
   }
 
   // [v1.0.15] State-machine COMÚN (extraída de _consultarBackend v1.0.14, sin
@@ -1805,10 +1776,8 @@
     _state.heartbeatTimer = setInterval(function() {
       // [v1.0.10 BUG H consistent] Saltar heartbeat si pestaña oculta
       if (document.visibilityState === 'hidden') return;
-      // [v1.0.15 FASE 3a] Flag ON → heartbeat directo (verificar + denylist);
-      // flag OFF → GAS (bit-idéntico v1.0.14).
-      if (_devAuthDirecto()) { _heartbeatDirecto(); }
-      else { _heartbeatGAS(); }
+      // [CERO-GAS] Heartbeat SOLO directo (verificar_dispositivo + denylist get_flags). Sin rama GAS.
+      _heartbeatDirecto();
     }, 10 * 60 * 1000);  // 10 min (antes 1h)
   }
 
@@ -1847,16 +1816,7 @@
     } catch(_) {}
   }
 
-  function _heartbeatGAS() {
-    var url = _config.mosGasUrl
-      + '?action=consultarEstadoDispositivo'
-      + '&deviceId=' + encodeURIComponent(_state.deviceId);
-    fetch(url).then(function(r){ return r.json(); }).then(function(j) {
-      _aplicarDecisionHeartbeat(j && j.data);
-    }).catch(function(){});
-  }
-
-  // [v1.0.15 FASE 3a] Heartbeat DIRECTO: (1) verificar_dispositivo da estado +
+  // [CERO-GAS] Heartbeat DIRECTO: (1) verificar_dispositivo da estado +
   // verify_version + extensión; (2) DENYLIST — get_flags().dispositivos_revocados:
   // si el id propio aparece, bloquear de inmediato (revocación ≤2min, sin esperar
   // que el estado per-device propague). Ambas fuentes son best-effort: un fallo de

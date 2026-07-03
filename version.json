@@ -1,1 +1,1 @@
-{"version":"2.43.435","build":"2.43.435 (CERO-FALLBACK punto 2c): verificarClaveAdmin sin token -> fail-closed (autorizado:false) en vez de caer a GAS."}
+{"version":"2.43.436","build":"2.43.436 (CERO-FALLBACK punto 2d): device-auth.js v1.0.25 pin — gate de arranque solo directo, fail-closed sin GAS. MOS mint ya era Edge-only."}
