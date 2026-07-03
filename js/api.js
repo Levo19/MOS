@@ -2704,7 +2704,9 @@ const API = (() => {
       // solo disparaba CORS en el arranque (el prefetch corre antes de que el token MOS esté listo).
       // Directo o null; nunca GAS. La KPI de vencimientos se llena al tener token (o al abrir Almacén).
       if (action === 'getAlertasWarehouse')    { return _getAlertasWarehouseDirecto(p).catch(() => null); }
-      if (action === 'getRotacionProductos')   { return _conFallbackMOS(() => _getRotacionProductosDirecto(p),   () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      // [cero-GAS · Etapa 3] 'getRotacion' es el nombre real que usa el dashboard (app.js:1119);
+      // faltaba el intercept → esa llamada caía a GAS. Alias a la misma RPC directa mos.rotacion_productos.
+      if (action === 'getRotacionProductos' || action === 'getRotacion') { return _conFallbackMOS(() => _getRotacionProductosDirecto(p),   () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getCatalogoStockResumen'){ return _conFallbackMOS(() => _getCatalogoStockResumenDirecto(p),() => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getDashboardAlmacen')    { return _conFallbackMOS(() => _getDashboardAlmacenDirecto(p),    () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       // [Optimización · portables 114/115/116]
