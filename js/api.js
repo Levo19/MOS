@@ -1699,7 +1699,9 @@ const API = (() => {
         p_app: String(p.appOrigen || 'MOS'), p_device: String(p.deviceId || ''), p_detalle: String(p.detalle || p.contexto || ''),
         p_tier: (p.tier != null ? parseInt(p.tier, 10) : null), p_cliente_meta: null
       }, 'mos');
-      if (out == null) return null;   // sin token → GAS
+      // [CERO-GAS / CERO-FALLBACK] Sin token/RPC falla → fail-closed (autorizado:false), ya no cae a GAS.
+      // mos.verificar_clave_admin trae bcrypt + cascada de rol + auditoría server-side; nunca autoriza por error.
+      if (out == null) return { ok: false, autorizado: false, error: 'No se pudo verificar — reintenta' };
       return { ok: out.ok, autorizado: !!out.autorizado, error: out.error || '',
                validadoPor: out.validado_por || '', idPersonal: out.id_personal || '', nombre: out.nombre || '',
                rol: out.rol || '', nivel: out.nivel, idAccion: out.id_accion || '' };

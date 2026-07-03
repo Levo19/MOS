@@ -1,1 +1,1 @@
-{"version":"2.43.434","build":"2.43.434 (CERO-FALLBACK punto 2b): heartbeat MOS solo directo (mos.estado_bloqueo_usuario), quitado el fallback GAS getEstadoBloqueoUsuario."}
+{"version":"2.43.435","build":"2.43.435 (CERO-FALLBACK punto 2c): verificarClaveAdmin sin token -> fail-closed (autorizado:false) en vez de caer a GAS."}
