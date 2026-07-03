@@ -43,6 +43,18 @@ turno.html — el atajo anon fue (bien) bloqueado por seguridad (expondría dato
 de Apps Script de ME (mete `ventas` a ME_SYNC_OFF_TABLAS) — si no, el sync Hoja→Supabase revierte la
 edición directa de forma de pago en ≤15min.
 
+### 🔜 Etapa 1b — turno.html DIRECTO a Supabase (cero-GAS total + mata el 1.88s de latencia)
+Con la Etapa 1 el dato ya es Supabase, pero el PROXY GAS sigue: `exec?action=datosTurno` hace un **302 +
+~1.88s** (cold-start GAS + salto a googleusercontent). Para que cargue en ~200ms Y sea cero-GAS, turno.html
+debe llamar a `me.datos_turno` DIRECTO (sin GAS). BLOCKER = auth segura (el anon fue bloqueado — expondría
+datos del turno al público). Opciones a decidir:
+  (a) el opener (MOS/ME, autenticado) mintéa un token corto y lo pasa en la URL a turno.html; en expiración
+      (turno abierto horas) cae al proxy GAS o re-abre;
+  (b) turno.html mintéa vía mint-me con un contexto de device/claim (agregarle setup);
+  (c) RPC con token firmado por caja (HMAC) — más trabajo.
+Recomendado: (a) con fallback GAS al expirar. Diseñar + implementar como etapa propia (frontend, deployable
+por mí; sin exponer anon). Contemplado a pedido del dueño (trace 1.88s, 2026-07-02).
+
 ### (histórico) Etapa 1 — descripción original
 `me.datos_turno(p_id_caja)` ya existe y devuelve la MISMA forma que consume turno.html, leyendo `me.ventas`
 en vivo → refleja ediciones al instante + rápido. Migrar el lector (datosTurno) a la RPC, con fallback Hoja
