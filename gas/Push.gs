@@ -565,3 +565,16 @@ function setupPurgaPushTokensTrigger() {
   Logger.log('[purga push tokens] cron instalado día 1 mes a las 4AM');
   return { ok: true, data: { instalado: true, schedule: 'día 1 mensual 4AM' } };
 }
+
+// [AUDIT 2a · cero-GAS] Lista los triggers time-based instalados + marca cuáles disparan push
+// (para saber si doble-pushean con los pg_cron de Supabase). Devuelve {handler: count}.
+function _auditTriggersPush() {
+  var trs = ScriptApp.getProjectTriggers();
+  var out = {};
+  trs.forEach(function(t) {
+    var h = t.getHandlerFunction();
+    var src = String(t.getTriggerSource());
+    out[h] = (out[h] || 0) + 1;
+  });
+  return { ok: true, total: trs.length, handlers: out };
+}
