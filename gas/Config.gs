@@ -2074,14 +2074,8 @@ function alertarDispositivosInactivos2a7d() {
     alertados++;
     detalles.push({ idDispositivo: idDisp, nombre: nombre, app: appEq, diasInactivo: diasInactivo });
   }
-  // Push master consolidado
-  if (alertados > 0) {
-    try {
-      _enviarPushTodos('⚠ Dispositivos sin uso 2-7d', alertados + ' dispositivo(s) sin conectarse · revisar', {
-        soloRolesMaster: true, idNotif: 'MOS_DEVICE_INACTIVO_AVISO'
-      });
-    } catch(ePu) { Logger.log('[alertarInactivos] push fallo: ' + ePu.message); }
-  }
+  // [CERO-GAS · anti-doble-push] Dispositivos inactivos 2-7d lo envía el pg_cron mos-dispositivos-inactivos
+  // (mos.cron_dispositivos_inactivos). El GAS ya NO pushea (evita doble + deja de leer el Sheet de tokens).
   return { ok: true, data: { alertados: alertados, detalles: detalles } };
 }
 

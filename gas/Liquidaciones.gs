@@ -2046,13 +2046,9 @@ function cierreNocturnoTodos() {
       var errTotal = resultado.wh.errores + resultado.me.errores + resultado.devices.errores;
       if (errTotal > 0) partes.push('⚠ ' + errTotal + ' errores (ver Logger)');
       var cuerpo = partes.join(' · ');
-      // [v2.41.59] Usar _enviarPushTodos con idNotif del catálogo. Antes
-      // llamaba _notificarMOS (función que no existe) → push silencioso.
-      try {
-        if (typeof _enviarPushTodos === 'function') {
-          _enviarPushTodos(titulo, cuerpo, { idNotif: 'MOS_CIERRE_NOCTURNO' });
-        }
-      } catch(_){}
+      // [CERO-GAS · anti-doble-push] El aviso de cierre nocturno lo envía el pg_cron mos-cierre-forzado-11pm
+      // (mos.cerrar_sesiones_forzado_11pm). El GAS ya NO pushea (evita doble + deja de leer el Sheet de tokens).
+      // (cierreNocturnoTodos SIGUE haciendo el cierre real en la Hoja para lectores legacy — solo se quitó el push.)
     }
   } catch(eP) { Logger.log('[CierreNoct] push fallo: ' + eP.message); }
 
@@ -2213,14 +2209,8 @@ function cronSaludStockWH() {
       return { ok: true, data: { pendientes: 0 } };
     }
     // 3. Push agrupado a admins
-    try {
-      var totalAbs = pendientes.reduce(function(s, a) { return s + Math.abs(parseFloat(a.diferencia) || 0); }, 0);
-      var titulo   = '⚠ Salud stock WH · ' + pendientes.length + ' producto' + (pendientes.length === 1 ? '' : 's');
-      var cuerpo   = '|Δ| total: ' + totalAbs.toFixed(1) + 'u · revisa panel "Salud Stock"';
-      if (typeof _enviarPushTodos === 'function') {
-        _enviarPushTodos(titulo, cuerpo, { idNotif: 'MOS_SALUD_STOCK_WH' });
-      }
-    } catch(eP) { Logger.log('[saludStock] push fallo: ' + eP.message); }
+    // [CERO-GAS · anti-doble-push] Salud stock WH lo envía el pg_cron mos-salud-stock (mos.cron_salud_stock).
+    // El GAS ya NO pushea (evita doble + deja de leer el Sheet de tokens).
     return { ok: true, data: { pendientes: pendientes.length } };
   } catch(e) {
     Logger.log('[saludStock] excepción: ' + e.message);

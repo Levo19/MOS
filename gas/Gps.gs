@@ -150,9 +150,8 @@ function verificarSinSenal() {
     }).join('\n');
     if (sinSenal.length > 3) cuerpo += '\n+ ' + (sinSenal.length - 3) + ' más';
 
-    try {
-      _enviarPushTodos(titulo, cuerpo, { soloRolesMaster: true, idNotif: 'MOS_GPS_SIN_SENAL' });
-    } catch(e) { Logger.log('Push sin señal: ' + e.message); }
+    // [CERO-GAS · anti-doble-push] GPS sin señal lo envía el pg_cron mos-gps-sin-senal (mos.cron_gps_sin_senal).
+    // El GAS ya NO pushea (evita doble + deja de leer el Sheet de tokens).
   }
 
   return { ok: true, data: { dispositivosSinSenal: sinSenal.length } };

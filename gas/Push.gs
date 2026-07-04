@@ -456,7 +456,8 @@ function enviarResumenDiario() {
     lineas.push('📦 ' + cos.unidades + ' uds · ' + cos.skusDistintos + ' SKUs');
     lineas.push('👥 Personal: ' + per.personas + ' persona' + (per.personas !== 1 ? 's' : ''));
 
-    _enviarPushTodos(titulo, lineas.join('\n'));
+    // [CERO-GAS · anti-doble-push] El resumen diario lo envía el pg_cron mos-resumen-diario (mos.cron_resumen_diario).
+    // El GAS ya NO pushea (evita doble notificación + deja de leer el Sheet de tokens).
     return { ok: true };
   } catch(e) {
     Logger.log('enviarResumenDiario error: ' + e.message);
@@ -573,8 +574,12 @@ function _auditTriggersPush() {
   var out = {};
   trs.forEach(function(t) {
     var h = t.getHandlerFunction();
-    var src = String(t.getTriggerSource());
     out[h] = (out[h] || 0) + 1;
   });
-  return { ok: true, total: trs.length, handlers: out };
+  var res = { ok: true, total: trs.length, handlers: out };
+  // Logger para que el resultado se vea en el REGISTRO DE EJECUCIÓN (el return no aparece ahí).
+  Logger.log('TOTAL triggers instalados: ' + trs.length);
+  Object.keys(out).sort().forEach(function(h) { Logger.log('  ' + h + ' x' + out[h]); });
+  Logger.log('JSON: ' + JSON.stringify(res));
+  return res;
 }
