@@ -37495,25 +37495,21 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       console.log('[Push] token obtenido:', token ? token.substring(0,20)+'...' : 'null');
       if (!token) return;
 
-      // [F6 push · cero-GAS] Registro directo a Supabase (mos.push_tokens). Aditivo al GAS.
+      // [CERO-GAS] Registro de push token 100% Supabase (mos.push_tokens). Se eliminó el dual-write GAS
+      // `registrarPushToken` (se escribía en ambos en cada login). Best-effort.
       if (API.registrarPushTokenSB) {
         API.registrarPushTokenSB({ token, usuario: nombre, appOrigen: 'MOS',
           dispositivo: navigator.userAgent.substring(0, 150) }).catch(() => {});
       }
-      // Guardar token en GAS
-      API.post('registrarPushToken', {
-        token, usuario: nombre, appOrigen: 'MOS',
-        dispositivo: navigator.userAgent.substring(0, 150)
-      }).catch(() => {});
 
       // Notificar ingreso a MOS — SOLO los MASTER lo ven (admins no se enteran de otros admins)
       const hora = new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
-      // [F6 push dispatch · cero-GAS] select(soloRolesMaster) + Edge; si falla (null) → GAS.
+      // [CERO-GAS] Dispatch de push por Edge (enviarPushSB). Se eliminó el fallback GAS `enviarPushNotif`
+      // (si el Edge falla, la notificación de ingreso simplemente no se envía — best-effort).
       API.enviarPushSB('👤 ' + nombre + ' ingresó a MOS', (rol || '') + ' · ' + hora, { soloRolesMaster: true, excluirUsuario: nombre })
-        .then(r => { if (!r) return API.post('enviarPushNotif', { titulo: '👤 ' + nombre + ' ingresó a MOS', cuerpo: (rol || '') + ' · ' + hora, soloRolesMaster: true, excluirUsuario: nombre }); })
         .catch(() => {});
 
-      console.log('[Push] token registrado en GAS ✅');
+      console.log('[Push] token registrado en Supabase ✅');
     } catch(e) {
       console.error('[Push] ERROR:', e.message);
       // No mostrar toast de error en session restore (solo en acción del usuario)
