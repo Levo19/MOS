@@ -36296,6 +36296,24 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
               <span class="text-xs text-slate-400">Pago día: <strong class="text-amber-400">S/ ${parseFloat(totalDia).toFixed(2)}</strong></span>
             </div>
             ${(() => {
+              // [FIX seguimiento] Línea de asistencia REAL desde la megatabla (liquidaciones_dia via personal_dia_lista):
+              // hora de ingreso · tiempo activo · app · reconexiones · si se cerró forzado a las 11pm.
+              const ing   = p.horaIngreso   || (ev && ev.horaIngreso)   || '';
+              const app   = (ev && ev.appOrigen) || p.appOrigen || '';
+              const min   = parseInt(p.minutosActivos || (ev && ev.minutosActivos) || 0, 10);
+              const recon = parseInt(p.reconexiones   || (ev && ev.reconexiones)   || 0, 10);
+              const ses   = p.estadoSesion  || (ev && ev.estadoSesion)  || '';
+              if (!ing && !min && !app) return '';
+              const fmtH = t => { try { return new Date(_parseTsUtc(t)).toLocaleTimeString('es-PE', { timeZone: 'America/Lima', hour: '2-digit', minute: '2-digit' }); } catch(_) { return ''; } };
+              const partes = [];
+              if (ing)      partes.push('🕐 ' + fmtH(ing));
+              if (min > 0)  partes.push('⏱ ' + (min >= 60 ? Math.floor(min / 60) + 'h ' + (min % 60) + 'm' : min + 'm'));
+              if (app)      partes.push('📱 ' + (app === 'mosExpress' ? 'ME' : app === 'warehouseMos' ? 'WH' : app));
+              if (recon > 0) partes.push('🔄 ' + recon + ' reconex');
+              if (String(ses).indexOf('FORZADA') === 0) partes.push('🌙 cerrada 11pm');
+              return partes.length ? `<div class="text-[11px] text-slate-500 mt-0.5" title="Ingreso · tiempo activo · app · reconexiones">${partes.join(' · ')}</div>` : '';
+            })()}
+            ${(() => {
               // [v2.41.66] Mostrar motivos de bonificación/sanción debajo del pago
               const bon = ev && parseFloat(ev.bonificacion) || 0;
               const san = ev && parseFloat(ev.sancion) || 0;

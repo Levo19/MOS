@@ -1,1 +1,1 @@
-{"version":"2.43.444","build":"2.43.444 (FIX seguimiento personal-del-dia): personal_dia_lista expone campos de sesion de la megatabla liquidaciones_dia (ultimaConexion/horaIngreso/estadoSesion/minutosActivos/reconexiones) + el heuristico de actividad prefiere la ultima_conexion REAL del dia (antes salia stale por matcheo de nombres)."}
+{"version":"2.43.445","build":"2.43.445 (seguimiento visible): la card de Personal del Dia muestra linea de asistencia REAL desde la megatabla (hora ingreso, tiempo activo, app, reconexiones, cerrada-11pm)."}
