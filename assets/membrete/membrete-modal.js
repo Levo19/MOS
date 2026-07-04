@@ -292,7 +292,20 @@
     diagnosticoTriggerLotes:   'adhesivo_lotes_diag',
     getMembretesMePendientes:  'membretes_me_pendientes',
     marcarMembreteMeImpreso:   'marcar_membrete_me_impreso',
-    ignorarMembreteMe:         'ignorar_membrete_me'
+    ignorarMembreteMe:         'ignorar_membrete_me',
+    // [CERO-GAS adhesivo] config/drift del rollo → RPCs mos.* (SQL 350/351). Shapes idénticos al GAS.
+    estadoCalibracionRollo:    'adhesivo_calibracion_estado',
+    aplicarDriftDetectado:     'adhesivo_aplicar_drift',
+    resetearDriftEmergencia:   'adhesivo_reset_drift'
+  };
+  // [CERO-GAS adhesivo] acciones que tocan PrintNode → Edge `print-adhesivo` (via _config.edgeCall, inyectado
+  // en MOS+WH como API.printAdhesivoEdge). Cada entrada mapea action → body con `mode` para la Edge. Los LOTE
+  // actions (crear/estado/cancelar) NO van aquí: cada app los rutea en su api.js (_postDirectoLoteAdhesivo WH).
+  var _EDGE_DIRECT = {
+    imprimirCalibradoresAdhesivo: function(p) { return { mode: 'calibradores', cantidad: (p && p.cantidad) || 10 }; },
+    calibrarImpresoraAdhesivo:    function( ) { return { mode: 'calibrate-roll' }; },
+    diagnosticoPrintNodeAdhesivo: function( ) { return { mode: 'diagnostico-printnode' }; },
+    procesarAhoraTodos:           function( ) { return { mode: 'pending' }; }
   };
   function _api(action, params) {
     var _rpcFn = _RPC_DIRECT[action];
@@ -300,6 +313,15 @@
       return DeviceAuth.rpc(_rpcFn, params || {}).then(function(r) {
         if (r && r.ok === false) throw new Error(r.error || 'Backend rechazó');
         return r && r.data ? r.data : r;
+      });
+    }
+    // [CERO-GAS adhesivo] acción PrintNode + app con edgeCall → Edge directa (fail-closed: THROW en error,
+    // NO cae a GAS para no duplicar impresión). Sin edgeCall (ej. ME sin panel adhesivo) → cae al apiPost.
+    var _edgeBuild = _EDGE_DIRECT[action];
+    if (_edgeBuild && typeof _config.edgeCall === 'function') {
+      return Promise.resolve(_config.edgeCall(_edgeBuild(params || {}))).then(function(ed) {
+        if (ed && ed.ok === false) throw new Error(ed.error || 'Edge rechazó');
+        return ed && ed.data ? ed.data : ed;
       });
     }
     if (!_config.apiPost) {

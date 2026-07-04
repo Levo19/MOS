@@ -665,6 +665,38 @@ async function pollJobOutOfPaper(jobId: string, maxMs: number): Promise<{ estado
   return { estado: 'timeout', outOfPaper: false, mensaje: 'sin confirmación' };
 }
 
+// buildTSPLCalibrador — port fiel de gas/Envasados.gs `_buildTSPLCalibrador`. Regla vertical (mm) +
+// caja "CAL #N/T" para que el operador mida el desvío del rollo. SIN compensación de drift (es la
+// referencia). Devuelve el TSPL como string ASCII (luego → base64). numero/total = índice del calibrador.
+function buildTSPLCalibrador(numero: number, total: number, cfg: DriftCfg): string {
+  let t = ['SIZE 50 mm,25 mm', 'GAP ' + cfg.gapMm + ' mm,0 mm', 'DIRECTION 1', 'DENSITY ' + cfg.density, 'SPEED ' + cfg.speed, 'CLS'].join('\r\n') + '\r\n';
+  // Reglas verticales (IZQ X=0..8, DER X=392..400). 1mm = 8 dots, alto 25mm = 200 dots.
+  for (let mm = 0; mm <= 25; mm++) {
+    const y = 2 + mm * 8;
+    if (y > 198) break;
+    const ancho = (mm % 10 === 0) ? 12 : (mm % 5 === 0) ? 8 : 4;
+    t += 'BAR 0,' + y + ',' + ancho + ',1\r\n';
+    t += 'BAR ' + (400 - ancho) + ',' + y + ',' + ancho + ',1\r\n';
+    if (mm % 5 === 0 && mm > 0 && mm < 25) {
+      t += 'TEXT 14,' + (y - 4) + ',"1",0,1,1,"' + mm + '"\r\n';
+      t += 'TEXT 370,' + (y - 4) + ',"1",0,1,1,"' + mm + '"\r\n';
+    }
+  }
+  // Indicador "0mm" en tope y final (caja negra + hueco blanco).
+  t += 'BAR 30,2,20,12\r\n' + 'BAR 32,4,16,8\r\n' + 'TEXT 33,5,"1",0,1,1,"0mm"\r\n';
+  t += 'BAR 350,2,32,12\r\n' + 'BAR 352,4,28,8\r\n' + 'TEXT 353,5,"1",0,1,1,"0mm"\r\n';
+  // Caja central "CAL #N/T".
+  const label = 'CAL #' + numero + '/' + total;
+  const labelX = Math.floor((400 - label.length * 16) / 2);
+  t += 'TEXT ' + labelX + ',88,"3",0,1,1,"' + label + '"\r\n';
+  const sub = 'mide el desvio mm';
+  const subX = Math.floor((400 - sub.length * 8) / 2);
+  t += 'TEXT ' + subX + ',120,"1",0,1,1,"' + sub + '"\r\n';
+  t += 'TEXT 180,150,"3",0,1,1,"v"\r\n';
+  t += 'PRINT 1,1\r\n';
+  return t;
+}
+
 // Procesa UN lote hasta terminar / pausar / agotar presupuesto. Reserve-first atómico.
 async function procesarLote(idLote: string, deadline: number, envTokens: string[][], cfg: DriftCfg, requireGapDetectFirst = false): Promise<any> {
   const g = await rpcWh('lote_adhesivo_get', { idLote });
@@ -932,6 +964,58 @@ Deno.serve(async (req: Request) => {
       return json({ ok: true, data: { impresos, total: impresos.length } });
     }
 
+    // mode 'calibradores' — port de gas imprimirCalibradoresAdhesivo. Manda N reglas (1 job c/u) a la
+    // impresora ADHESIVO para que el operador mida el desvío del rollo. Calibradores NO cuentan para el
+    // contador de drift (están "fuera de cuenta"). cantidad 1..30 (default 10).
+    if (mode === 'calibradores') {
+      const cantidad = Math.max(1, Math.min(30, parseInt(String(body.cantidad || '10'), 10) || 10));
+      const printerId = (String(body.printerId || '') || await resolverPrinterAdhesivo());
+      if (!printerId) return json({ ok: false, error: 'sin impresora ADHESIVO configurada' }, 400);
+      if (!PN_KEY) return json({ ok: false, error: 'PRINTNODE_API_KEY no configurada' }, 500);
+      const detalle: Array<{ i: number; ok: boolean; jobId?: string; error?: string }> = [];
+      for (let i = 1; i <= cantidad; i++) {
+        const tspl = buildTSPLCalibrador(i, cantidad, cfg);
+        let bin = ''; for (let k = 0; k < tspl.length; k++) bin += String.fromCharCode(tspl.charCodeAt(k) & 0xff);
+        const pr = await printNodePost(parseInt(printerId, 10), 'Calibrador #' + i + '/' + cantidad, btoa(bin), 'calib');
+        detalle.push(pr.ok ? { i, ok: true, jobId: pr.jobId } : { i, ok: false, error: 'HTTP ' + pr.status });
+      }
+      const enviados = detalle.filter((r) => r.ok).length;
+      return json({ ok: true, data: { enviados, total: cantidad, detalle,
+        mensaje: 'Mirá el calibrador #' + cantidad + '. ¿Cuántos mm se subió la regla? Ingresalo en "Aplicar drift detectado".' } });
+    }
+
+    // mode 'diagnostico-printnode' — port de gas diagnosticoPrintNodeAdhesivo. Solo LECTURA: estado de la
+    // impresora ADHESIVO + últimos 10 jobs. Nunca imprime. Devuelve ok:true con `errores[]` poblado (no 4xx)
+    // para que el frontend muestre el diagnóstico aunque falte impresora/API key.
+    if (mode === 'diagnostico-printnode') {
+      const diag: { printerId: string; impresoraInfo: unknown; jobsRecientes: unknown[]; errores: string[] } =
+        { printerId: '', impresoraInfo: null, jobsRecientes: [], errores: [] };
+      const printerId = (String(body.printerId || '') || await resolverPrinterAdhesivo());
+      if (!printerId) { diag.errores.push('IMPRESORAS no tiene tipo=ADHESIVO zona=ALMACEN activa'); return json({ ok: true, data: diag }); }
+      diag.printerId = printerId;
+      if (!PN_KEY) { diag.errores.push('PRINTNODE_API_KEY no configurada'); return json({ ok: true, data: diag }); }
+      const auth = 'Basic ' + btoa(PN_KEY + ':');
+      try {
+        const rImp = await fetch('https://api.printnode.com/printers/' + printerId, { headers: { Authorization: auth } });
+        if (rImp.status === 200) {
+          const arr = await rImp.json();
+          const p = Array.isArray(arr) ? arr[0] : arr;
+          if (p) diag.impresoraInfo = { id: p.id, name: p.name || '', description: p.description || '',
+            state: (p.computer && p.computer.state) || p.state || 'unknown',
+            online: !!(p.computer && p.computer.state === 'connected'), computer: (p.computer && p.computer.name) || '' };
+        } else diag.errores.push('PrintNode rechazó getPrinter: HTTP ' + rImp.status);
+      } catch (eP) { diag.errores.push('Error consultando impresora: ' + String((eP as Error)?.message || eP)); }
+      try {
+        const rJobs = await fetch('https://api.printnode.com/printers/' + printerId + '/printjobs?limit=10', { headers: { Authorization: auth } });
+        if (rJobs.status === 200) {
+          const jobs = await rJobs.json();
+          diag.jobsRecientes = (jobs || []).map((j: any) => ({ id: j.id, title: String(j.title || '').substring(0, 60),
+            state: j.state || 'unknown', createTimestamp: j.createTimestamp || '', source: String(j.source || '').substring(0, 40) }));
+        } else diag.errores.push('PrintNode rechazó getJobs: HTTP ' + rJobs.status);
+      } catch (eJ) { diag.errores.push('Error consultando jobs: ' + String((eJ as Error)?.message || eJ)); }
+      return json({ ok: true, data: diag });
+    }
+
     // mode 'calibrate-roll' — CALIBRAR NUEVO ROLLO (operador, sin admin/MOS). Manda un
     // GAPDETECT independiente a la impresora de adhesivos: re-mide el gap del rollo nuevo
     // (gasta ~2-3 etiquetas) y alinea la siguiente. Distinto de "calibrar drift" (ajuste fino).
@@ -955,7 +1039,10 @@ Deno.serve(async (req: Request) => {
       if (Date.now() >= deadline) break;
       resultados.push(await procesarLote(String(l.idLote), deadline, envTokens, cfg));
     }
-    return json({ ok: true, data: { procesados: resultados.length, resultados } });
+    // Paridad con gas procesarAhoraTodos: intentados/ok/errores (aditivo; el cron ignora estos campos).
+    const okN = resultados.filter((r) => r && r.status === 'COMPLETADO').length;
+    const errN = resultados.filter((r) => r && (r.error || String(r.status || '').indexOf('PAUSADO') === 0)).length;
+    return json({ ok: true, data: { procesados: resultados.length, intentados: resultados.length, ok: okN, errores: errN, resultados } });
   } catch (e) {
     return json({ ok: false, error: String((e as Error)?.message || e) }, 500);
   }
