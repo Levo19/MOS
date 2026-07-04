@@ -24,6 +24,15 @@
 - **WH:** Mermas V2 (`agregarAMermas`/`solucionarMerma`/`procesarEliminacionMermas`), op-log (`aplicarOp`), fotos genéricas (`subirFotoEntidad`/`eliminarFotoEntidad`), `desbloquearUsuarioTemporal`, `autoCloseDayGuias`, reads solo-GAS (`verificarHorario`, `getWelcomeData`, `getRolUsuario`, `getDesempenoDia`, `getResumenPersonal`, `getProducto` single).
 - **Assets:** membrete `getEstadoLoteAdhesivo` (polling → GAS; **RPC `mos.adhesivo_lote_estado` YA EXISTE, solo falta cablear en `_RPC_DIRECT`**); seguridad-modal `verificarHorario` (polling widget), `solicitarExtensionHorario`, `extenderHorarioHoy`.
 
+## ✅ BATCH 🟡🟢 HECHO 2026-07-04 (limpieza cero-GAS de alto valor, desplegado)
+- **Push token dual-write eliminado en las 3 apps** (era GAS ACTIVO con loop verify/retry `verificarMiTokenRegistrado`): WH 2.13.400, MOS 2.43.447, ME 2.8.157. Registro 100% Supabase (`registrarPushTokenSB`/`registrar_push_token`), retry a Supabase, best-effort.
+- **WH** `_mintViaGAS` (ref muerta = ReferenceError en el refresh de token) removida → mint 100% Edge.
+- **MOS** 3 URLs GAS hardcoded del wizard-permisos removidas (`marcarWizardMostrado`/`registrarPermisosDispositivo`/`consultarEstadoDispositivo` — dead-code, corrían con deviceId='').
+- **MOS** dispatch de push `enviarPushNotif` (fallback GAS) removido → solo Edge `enviarPushSB`.
+- Verificado: `_mirrorVentaAsync` (ME) YA era no-op cero-GAS; `_syncImpresorasFromProyectoMOS`/`_mirrorVentaAsync` NO estaban muertos (RUNBOOK previo desactualizado, corregido).
+
+> REGLA aplicada: los **fallbacks pasivos** (dispatchers `call`/`post`, `_conFallbackMOS`, Cat.1) y **mirrors fire-and-forget** (apertura espejo, etc.) **se auto-neutralizan** al borrar GAS (el fetch falla en silencio → caché/error) → NO se tocan preventivamente (riesgo money/boot > beneficio). Solo se removió GAS **activo** (dual-writes con verify/retry) y dead-code. Lo que queda abajo son mirrors pasivos o migraciones per-endpoint que solapan el 🟠.
+
 ## 🟡 FALLBACKS VIVOS a limpiar (el código llama GAS aunque el flag esté ON)
 
 - **MOS `_conFallbackMOS`** (api.js:274): con `mos_lectura_navegador` OFF, las ~65 lecturas interceptadas vuelven a GAS → **quitar el arm `gas()`** (no depender del flag).
