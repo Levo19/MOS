@@ -270,15 +270,8 @@ function desbloquearTemporalDispositivo(params) {
         prioridad: 'ALTA',
         datosExtra: { hastaIso: hasta.toISOString(), autorizadoPor: auth.data.validadoPor, razon: params.razon }
       });
-      try {
-        if (typeof _enviarPushTodos === 'function') {
-          _enviarPushTodos(
-            '🚨 Desbloqueo TEMPORAL de dispositivo',
-            'Hasta ' + Utilities.formatDate(hasta, Session.getScriptTimeZone(), 'HH:mm') + ' · ' + (auth.data.validadoPor || ''),
-            { idNotif: 'MOS_DESBLOQUEO_TEMP', soloRolesMOS: true }
-          );
-        }
-      } catch(_) {}
+      // [CERO-GAS #26] Push de desbloqueo MOVIDO al frontend (seguridad-modal _desbConfirmar → _config.pushAudiencia
+      // → Edge push audiencia roles admin). El GAS ya NO pushea (evita doble). La acción desbloqueo sigue en GAS.
       return { ok: true, data: {
         autorizado: true,
         hasta: hasta.toISOString(),
@@ -596,12 +589,8 @@ function _extenderHorarioHoyApp(params) {
     datosExtra: { app: app, cierreOriginal: cierreOriginal, cierreNuevo: cierre, razon: razon }
   });
   try { _invalidarCacheHorarioApp(app); } catch(_) {}
-  try {
-    if (typeof _enviarPushTodos === 'function') {
-      _enviarPushTodos('🕐 Cierre extendido', app + ' cierra hoy ' + cierre + ' (' + razon + ')',
-        { idNotif: 'MOS_EXT_APP_' + app });
-    }
-  } catch(_) {}
+  // [CERO-GAS] Push "Cierre extendido" MOVIDO al frontend (seguridad-modal _cfgExtenderHoy → _config.pushAudiencia).
+  // El GAS ya NO pushea (evita doble).
 
   return { ok: true, data: { app: app, cierreNuevo: cierre, cierreOriginal: cierreOriginal, dia: diaKey } };
 }

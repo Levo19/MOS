@@ -205,7 +205,24 @@
   }
 
   // ── Helpers API ────────────────────────────────────────────
+  // [CERO-GAS] Acciones migradas a RPC directa mos.* (via DeviceAuth.rpc, cargado en las 3 apps). Devuelven
+  // {ok,data} → se desenvuelve .data. Sin DeviceAuth → cae al apiPost GAS. Solo reads + writes horario
+  // Supabase-native + request #25 (NO device auth-writes: aprobar/rechazar/reactivar/desbloquear = Fase 4.2).
+  var _RPC_DIRECT = {
+    getPersonalConHorarioCustom: 'personal_horario_custom',
+    getHorariosApps:             'horarios_apps',
+    setHorarioApp:               'actualizar_horario_app',
+    setHorarioCustomPersonal:    'set_horario_custom_personal',
+    notificarmeCuandoAbra:       'notificar_apertura_pedir'
+  };
   function _api(action, params) {
+    var _rpcFn = _RPC_DIRECT[action];
+    if (_rpcFn && window.DeviceAuth && typeof DeviceAuth.rpc === 'function') {
+      return DeviceAuth.rpc(_rpcFn, params || {}).then(function(r) {
+        if (r && r.ok === false) throw new Error(r.error || 'Backend rechazó');
+        return r && r.data ? r.data : r;
+      });
+    }
     if (!_config.apiPost) return Promise.reject(new Error('SeguridadSystem no inicializado'));
     var fullAction = _config.endpointPrefix + action;
     var p = _config.apiPost(fullAction, params || {});
@@ -616,6 +633,16 @@
       }
       sonidos.aprobado();
       _toast('✅ Desbloqueo temporal hasta ' + String(d.hasta).substring(11, 16), { success: true });
+      // [CERO-GAS #26] Push a admins-MOS desde el frontend (reemplaza _enviarPushTodos del GAS; la acción
+      // desbloquear sigue en GAS por ahora — solo el PUSH se hace cero-GAS). Fire-and-forget.
+      try {
+        if (typeof _config.pushAudiencia === 'function') {
+          _config.pushAudiencia({ roles: ['MASTER','ADMINISTRADOR','ADMIN'] },
+            '🚨 Desbloqueo TEMPORAL de dispositivo',
+            'Hasta ' + String(d.hasta).substring(11, 16) + ' · ' + (d.autorizadoPor || ''),
+            { tipo: 'desbloqueo_temp' });
+        }
+      } catch(_){}
       _desbCerrar();
       if (document.getElementById('segAlertasOverlay')) _alertasCargar();
     }).catch(function(e) { sonidos.rechazado(); _toast('❌ ' + _esc(e.message), { error: true }); });
@@ -986,7 +1013,8 @@
   }
   function _fueraNotificarme(apertura) {
     sonidos.click();
-    _api('notificarmeCuandoAbra', { idPersonal: _config.idPersonal(), apertura: apertura }).then(function() {
+    var _dev = ''; try { _dev = (window.DeviceAuth && DeviceAuth.deviceId && DeviceAuth.deviceId()) || ''; } catch(_){}
+    _api('notificarmeCuandoAbra', { idPersonal: _config.idPersonal(), apertura: apertura, deviceId: _dev }).then(function() {
       _toast('🔔 Te avisaremos cuando abra', { success: true });
     }).catch(function(e) { _toast('❌ ' + _esc(e.message), { error: true }); });
   }
@@ -1234,6 +1262,14 @@
     _api('extenderHorarioHoy', { app: app, cierre: cierre, razon: razon }).then(function() {
       sonidos.aprobado();
       _toast('✅ Cierre extendido hoy hasta ' + cierre, { success: true });
+      // [CERO-GAS] Push "Cierre extendido" desde el frontend (reemplaza _enviarPushTodos del GAS).
+      try {
+        if (typeof _config.pushAudiencia === 'function') {
+          _config.pushAudiencia({ roles: ['MASTER','ADMINISTRADOR','ADMIN'] },
+            '🕐 Cierre extendido', app + ' cierra hoy ' + cierre + ' (' + razon + ')',
+            { tipo: 'ext_horario_app' });
+        }
+      } catch(_){}
     }).catch(function(e) { _toast('❌ ' + _esc(e.message), { error: true }); });
   }
   function _cfgCerrar() {

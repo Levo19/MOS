@@ -305,7 +305,9 @@ const MOS = (() => {
           idPersonal:     function() { return (window.S && S.session && S.session.idPersonal) || ''; },
           app:            'MOS',
           unwrapData:     true,
-          endpointPrefix: ''
+          endpointPrefix: '',
+          // [CERO-GAS] Hook de push por audiencia para seguridad-modal (desbloqueo temp / cierre extendido).
+          pushAudiencia:  function(aud, titulo, cuerpo, data) { try { return API.pushEdge({ op: 'send', audiencia: aud, title: titulo, body: cuerpo, data: data || null }); } catch(_) {} }
         });
         // Badge alertas para admin/master (los demás ven el ícono pero count=0)
         setTimeout(function() {

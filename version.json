@@ -1,1 +1,1 @@
-{"version":"2.43.441","build":"2.43.441 (CERO-GAS push etiqueta-nueva): al publicar precio (cambio real) -> push a CAJERO/VENDEDOR via Edge (audiencia deduped). RPC publicar_precio devuelve cambioPrecio/descripcion (SQL 339c, return aditivo). Helper _pushEdgeAudiencia. Sin GAS."}
+{"version":"2.43.442","build":"2.43.442 (CERO-GAS seguridad-modal): reads/writes horario + #25 notificarme -> RPC directo; push desbloqueo/cierre-extendido -> frontend pushAudiencia (Edge audiencia). GAS ya no pushea."}
