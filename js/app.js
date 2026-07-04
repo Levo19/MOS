@@ -36133,6 +36133,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       if (!isNaN(t) && t > mejorMs) { mejorMs = t; mejorIso = iso; }
     };
 
+    // 0. [FIX seguimiento] La MEGATABLA (liquidaciones_dia via personal_dia_lista) trae la ultima_conexion
+    //    REAL del día (heartbeat del device). Es la fuente autoritativa y fresca — antes se ignoraba y el
+    //    "hace Xh" salía de matchear nombres contra PERSONAL_MASTER/DISPOSITIVOS (stale). Gana el más reciente.
+    _consider(p.ultimaConexion || p.ultima_conexion || (ev && (ev.ultimaConexion || ev.ultima_conexion)) || null);
+
     // A. PERSONAL_MASTER por idPersonal
     if (idP) {
       const m = personasMaster.find(x => String(x.idPersonal) === String(idP));
