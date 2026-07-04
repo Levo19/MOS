@@ -323,43 +323,13 @@ function _enviarPushTodos(titulo, cuerpo, opciones) {
 
 // ── Registrar / actualizar token desde el frontend ─────────────
 function registrarPushToken(params) {
+  // [CERO-GAS 2a] NEUTRALIZADO: el token ya se registra 100% a mos.push_tokens desde el frontend
+  // (registrarPushTokenSB en MOS/WH · registrar_push_token inline en ME, aditivo verificado). El Sheet
+  // PUSH_TOKENS quedó como espejo muerto: ningún sender GAS VIVO lo lee (los request-handlers están
+  // interceptados a RPCs; los 5 crons que doble-pusheaban fueron removidos). Se deja de escribir la Hoja
+  // aquí para dejarla de crecer. No-op que devuelve ok (el frontend no se rompe).
   if (!params.token) return { ok: false, error: 'token requerido' };
-  var sheet = _getPushTokensSheet();
-  var data  = sheet.getDataRange().getValues();
-  var hdrs  = data[0];
-  var iDev  = hdrs.indexOf('deviceId');
-
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][1]) === String(params.token)) {
-      sheet.getRange(i + 1, 3).setValue(params.usuario    || data[i][2]);
-      sheet.getRange(i + 1, 7).setValue(new Date());
-      // [v2.43.74 BUG FIX] REACTIVAR a true. Antes esta función NO tocaba
-      // 'activo' al actualizar, así que un token marcado false por una
-      // rejection anterior quedaba muerto para siempre, aunque el cliente
-      // lo re-registrara. Si el cliente reporta el token AHORA, está vivo —
-      // FCM la sigue manteniendo hasta nueva prueba.
-      sheet.getRange(i + 1, 8).setValue(true);
-      // Actualizar deviceId si nos pasan uno (token reusado en otro device es raro pero posible)
-      if (iDev >= 0 && params.deviceId) {
-        sheet.getRange(i + 1, iDev + 1).setValue(params.deviceId);
-      }
-      return { ok: true, data: { accion: 'actualizado_reactivado' } };
-    }
-  }
-
-  var fila = [
-    _generateId('PTK'),
-    params.token,
-    params.usuario    || '',
-    params.dispositivo || '',
-    params.appOrigen  || 'MOS',
-    _hoy(),
-    new Date(),
-    true
-  ];
-  if (iDev >= 0) fila[iDev] = params.deviceId || '';
-  sheet.appendRow(fila);
-  return { ok: true, data: { accion: 'registrado' } };
+  return { ok: true, data: { accion: 'noop_supabase', motivo: 'registro cero-GAS en mos.push_tokens' } };
 }
 
 // ── Enviar push desde apps hijas (MosExpress, warehouseMos) ────
