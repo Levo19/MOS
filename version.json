@@ -1,1 +1,1 @@
-{"version":"2.43.442","build":"2.43.442 (CERO-GAS seguridad-modal): reads/writes horario + #25 notificarme -> RPC directo; push desbloqueo/cierre-extendido -> frontend pushAudiencia (Edge audiencia). GAS ya no pushea."}
+{"version":"2.43.443","build":"2.43.443 (CERO-GAS seguridad-modal device auth-writes): aprobar/rechazar/reactivar/in-situ -> RPCs aprobar_dispositivo/revocar_dispositivo con prompt de clave (mas seguro: antes aprobaba sin clave); desbloqueo -> RPC desbloquear_temporal_dispositivo (SQL 354) + revert cron. Cero GAS en seguridad-modal."}

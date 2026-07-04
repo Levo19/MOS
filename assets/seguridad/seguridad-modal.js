@@ -501,28 +501,36 @@
     if (ov) { ov.style.animation = 'seg-out .22s ease-out forwards'; setTimeout(function(){ ov.remove(); }, 220); }
   }
 
-  // Acciones admin — optimistas (feedback inmediato + fire-and-forget + rollback en error)
+  // Acciones admin — [CERO-GAS] escritura DIRECTA a la sombra vía RPCs probados (mos.aprobar_dispositivo /
+  // revocar_dispositivo, sin gate de claim, barrera = bcrypt) con PROMPT DE CLAVE. Antes iban por GAS SIN clave
+  // (cualquiera en el panel aprobaba) → esto es cero-GAS + más seguro. Los RPCs escriben la sombra autoritativa
+  // (MOS_DISPOSITIVOS_DIRECTO=1) → el resembrado espeja a la Hoja para lectores legacy.
   var _accionEnVuelo = {};   // lock anti doble-click por deviceId+action
+  // Pide clave admin (8 díg) y ejecuta el RPC de device-write. Cero-fallback (sin DeviceAuth → error claro).
+  function _deviceAuthWrite(rpcFn, extraParams, id, okMsg, subtitulo) {
+    var lockKey = rpcFn + '_' + id;
+    if (_accionEnVuelo[lockKey]) return Promise.resolve();
+    return _modalPrompt({
+      title: 'Confirmar con clave', subtitle: subtitulo || 'Requiere clave de administrador',
+      label: 'Clave admin (8 dígitos):', type: 'password', maxlength: 8, placeholder: '••••••••', emoji: '🔒'
+    }).then(function(clave) {
+      if (clave === null) return;   // cancelado
+      if (!/^\d{8}$/.test(String(clave || ''))) { _toast('⚠ Clave debe ser 8 dígitos', { error: true }); return; }
+      if (!window.DeviceAuth || typeof DeviceAuth.rpc !== 'function') { _toast('❌ Auth no disponible', { error: true }); return; }
+      _accionEnVuelo[lockKey] = true;
+      sonidos.click();
+      var params = Object.assign({ id_dispositivo: String(id), clave_admin: String(clave), app: _config.app }, extraParams || {});
+      var _libera = function() { delete _accionEnVuelo[lockKey]; };
+      return DeviceAuth.rpc(rpcFn, params).then(function(r) {
+        if (r && r.ok === false) { _toast('❌ ' + _esc(r.error || 'Error'), { error: true }); return; }
+        if (r && r.autorizado === false) { sonidos.rechazado(); _toast('❌ ' + _esc(r.error || 'Clave incorrecta'), { error: true }); return; }
+        sonidos.aprobado(); _toast(okMsg, { success: true }); _alertasCargar();
+      }).catch(function(e) { sonidos.rechazado(); _toast('❌ ' + _esc(e.message), { error: true }); })
+        .then(_libera, _libera);
+    });
+  }
   function _aprobar(id) {
-    var lockKey = 'aprobar_' + id;
-    if (_accionEnVuelo[lockKey]) return;
-    _accionEnVuelo[lockKey] = true;
-    sonidos.click();
-    sonidos.aprobado();
-    _toast('✅ Dispositivo aprobado', { success: true });
-    // Optimista: remover de la lista local inmediatamente
-    _alertasState.dispositivos = (_alertasState.dispositivos || []).filter(function(d) { return String(d.ID_Dispositivo) !== String(id); });
-    _alertasRender();
-    // [v1.0.3 FIX] Usar Promise.prototype.finally para garantizar liberación
-    // del lock aunque el .catch lance error síncrono
-    // [v1.0.5 FIX] delete en vez de set false (evita acumulación de keys)
-    var _libera = function() { delete _accionEnVuelo[lockKey]; };
-    _api('aprobarDispositivoPendiente', { ID_Dispositivo: id, aprobadoPor: _config.usuario() })
-      .then(function() { _alertasCargar(); })
-      .catch(function(e) {
-        try { sonidos.rechazado(); _toast('❌ ' + _esc(e.message), { error: true }); _alertasCargar(); } catch(_){}
-      })
-      .then(_libera, _libera);  // ambos paths liberan
+    return _deviceAuthWrite('aprobar_dispositivo', {}, id, '✅ Dispositivo aprobado', 'Aprobar dispositivo pendiente');
   }
   function _renombrar(id) {
     _modalPrompt({
@@ -532,12 +540,8 @@
       emoji: '✏'
     }).then(function(nombre) {
       if (!nombre || !nombre.trim()) return;
-      sonidos.click();
-      _api('aprobarDispositivoPendiente', { ID_Dispositivo: id, Nombre_Equipo: nombre, aprobadoPor: _config.usuario() }).then(function() {
-        sonidos.aprobado();
-        _toast('✅ Dispositivo aprobado como "' + _esc(nombre) + '"', { success: true });
-        _alertasCargar();
-      }).catch(function(e) { _toast('❌ ' + _esc(e.message), { error: true }); });
+      _deviceAuthWrite('aprobar_dispositivo', { nombre_equipo: nombre }, id,
+        '✅ Dispositivo aprobado como "' + _esc(nombre) + '"', 'Aprobar y renombrar');
     });
   }
   function _rechazar(id) {
@@ -548,20 +552,11 @@
       emoji: '✗'
     }).then(function(ok) {
       if (!ok) return;
-      sonidos.click();
-      _api('rechazarDispositivoPendiente', { ID_Dispositivo: id }).then(function() {
-        _toast('🗑 Dispositivo rechazado');
-        _alertasCargar();
-      }).catch(function(e) { _toast('❌ ' + _esc(e.message), { error: true }); });
+      _deviceAuthWrite('revocar_dispositivo', { nuevo_estado: 'INACTIVO' }, id, '🗑 Dispositivo rechazado', 'Rechazar dispositivo');
     });
   }
   function _reactivar(id) {
-    sonidos.click();
-    _api('reactivarDispositivoSuspendido', { deviceId: id }).then(function() {
-      sonidos.aprobado();
-      _toast('✅ Dispositivo reactivado', { success: true });
-      _alertasCargar();
-    }).catch(function(e) { _toast('❌ ' + _esc(e.message), { error: true }); });
+    _deviceAuthWrite('aprobar_dispositivo', { es_reactivar: true }, id, '✅ Dispositivo reactivado', 'Reactivar dispositivo suspendido');
   }
 
   // ════════════════════════════════════════════════════════════
@@ -622,10 +617,15 @@
     if (!razon.trim()) { _toast('⚠ Ingresa una razón', { error: true }); return; }
     if (!/^\d{8}$/.test(clave)) { _toast('⚠ Clave debe ser 8 dígitos', { error: true }); return; }
     sonidos.click();
-    _api('desbloquearTemporalDispositivo', {
+    if (!window.DeviceAuth || typeof DeviceAuth.rpc !== 'function') { _toast('❌ Auth no disponible', { error: true }); return; }
+    // [CERO-GAS #26 acción] RPC directo mos.desbloquear_temporal_dispositivo (SQL 354, clave bcrypt server-side).
+    // La sombra queda ACTIVO + desbloqueo_temporal_hasta; el cron mos-revertir-desbloqueos re-suspende al vencer.
+    DeviceAuth.rpc('desbloquear_temporal_dispositivo', {
       deviceId: deviceId, claveAdmin: clave, razon: razon,
       duracionHoras: window._segDesbDuracion || 2
-    }).then(function(d) {
+    }).then(function(r) {
+      if (r && r.ok === false) { sonidos.rechazado(); _toast('❌ ' + _esc(r.error || 'Error'), { error: true }); return; }
+      var d = (r && r.data) ? r.data : r;
       if (d && d.autorizado === false) {
         sonidos.rechazado();
         _toast('❌ ' + _esc(d.error || 'Clave incorrecta'), { error: true });
@@ -633,8 +633,7 @@
       }
       sonidos.aprobado();
       _toast('✅ Desbloqueo temporal hasta ' + String(d.hasta).substring(11, 16), { success: true });
-      // [CERO-GAS #26] Push a admins-MOS desde el frontend (reemplaza _enviarPushTodos del GAS; la acción
-      // desbloquear sigue en GAS por ahora — solo el PUSH se hace cero-GAS). Fire-and-forget.
+      // [CERO-GAS #26] Push a admins-MOS desde el frontend (reemplaza _enviarPushTodos del GAS). Fire-and-forget.
       try {
         if (typeof _config.pushAudiencia === 'function') {
           _config.pushAudiencia({ roles: ['MASTER','ADMINISTRADOR','ADMIN'] },
@@ -691,27 +690,27 @@
     var clave = (document.getElementById('segSolClave') || {}).value || '';
     if (!/^\d{8}$/.test(clave)) { _toast('⚠ Clave debe ser 8 dígitos', { error: true }); return; }
     sonidos.click();
-    // [v1.0.1 FIX] aprobarDispositivoEnSitu vive en MOS GAS. apiPost del cliente
-    // debe apuntar a MOS (WH lo hace via bridge wh_; ME apunta directo a MOS).
-    var apiAction = 'aprobarDispositivoEnSitu';
     var deviceId = (window.WH_CONFIG && window.WH_CONFIG.deviceId)
                 || localStorage.getItem('mosexpress_deviceId')
                 || localStorage.getItem('wh_device_id') || '';
-    _config.apiPost(apiAction, {
-      deviceId: deviceId,
-      claveAdmin: clave,
+    if (!window.DeviceAuth || typeof DeviceAuth.rpc !== 'function') { _toast('❌ Auth no disponible', { error: true }); return; }
+    // [CERO-GAS] Aprobación in-situ → RPC probado mos.aprobar_dispositivo (clave bcrypt server-side, escribe la
+    // sombra autoritativa que lee mint/verificar). Reemplaza el GAS aprobarDispositivoEnSitu.
+    DeviceAuth.rpc('aprobar_dispositivo', {
+      id_dispositivo: deviceId,
+      clave_admin: clave,
       app: _config.app,
-      nombreEquipo: navigator.userAgent.substring(0, 60),
-      userAgent: navigator.userAgent
+      nombre_equipo: navigator.userAgent.substring(0, 60)
     }).then(function(r) {
-      var d = (_config.unwrapData ? r : (r && r.data ? r.data : r));
+      if (r && r.ok === false) { sonidos.rechazado(); _toast('❌ ' + _esc(r.error || 'Error'), { error: true }); return; }
+      var d = (r && r.data) ? r.data : r;
       if (d && d.autorizado === false) {
         sonidos.rechazado();
         _toast('❌ ' + _esc(d.error || 'Clave incorrecta'), { error: true });
         return;
       }
       sonidos.aprobado();
-      _toast('✅ Aprobado por ' + (d.aprobadoPor || 'admin') + '. Recargando...', { success: true });
+      _toast('✅ Aprobado por ' + (d.aprobadoPor || d.nombre || 'admin') + '. Recargando...', { success: true });
       setTimeout(function() { window.location.reload(); }, 1800);
     }).catch(function(e) { sonidos.rechazado(); _toast('❌ ' + _esc(e.message), { error: true }); });
   }
