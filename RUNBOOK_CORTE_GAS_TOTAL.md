@@ -6,14 +6,16 @@
 
 ## 🔴 BLOQUEANTES DUROS — rompen login/arranque al borrar GAS (máxima prioridad)
 
-| # | App | Qué | Dónde | Falta |
-|---|---|---|---|---|
-| B1 | **Assets** | `device-auth.js` `init()` + `_verificarReal` EXIGEN `mosGasUrl`; sin ese valor el auth **no arranca en las 3 apps** | device-auth.js:1470,1906 | hacer `mosGasUrl` OPCIONAL (basta app+storageKeys+sbAnon/mintUrl). Workaround inmediato: seguir pasando cualquier string en mosGasUrl |
-| B2 | **MOS** | `verificarPinPersonal` (login) sin RPC → nadie entra a MOS | app.js:693,709 | RPC `mos.verificar_pin_personal` + intercept en `post` |
-| B3 | **ME** | Anulación de venta `ANULACION` sin RPC (dinero) | index.html:19160 / _postMutacionDinero 17114 | RPC `me.anular_venta_directo` + mapeo |
-| B4 | **ME** | Registrar guía `REGISTRAR_GUIA` sin RPC (inventario) | index.html:20013,20064 | RPC directo |
-| B5 | **ME** | Aprobar dispositivo in-situ `aprobarDispositivoEnSitu` → no se dan de alta tablets | index.html:7215 | usar `mos.aprobar_dispositivo` (ya existe; seguridad-modal ya lo hace) |
-| B6 | **WH** | **Portales cliente 100% GAS** (pedido/clientes/reporte/clienteInbox) — mueren enteros | pedido.html:127, clientes.html:63, reporte.html:110, clienteInbox.js:19 | backend Supabase propio (RPCs cliente + Edge para el reporte/QR) — el bloque más grande |
+> ESTADO 2026-07-04: **B1–B5 HECHOS + DESPLEGADOS** (RPCs aplicadas en prod, frontends cableados cero-GAS/cero-fallback, versiones bumpeadas). Falta solo **B6** (portales cliente — greenfield grande).
+
+| # | App | Qué | Estado |
+|---|---|---|---|
+| B1 | **Assets** | `device-auth.js` exigía `mosGasUrl` → no arrancaba | ✅ HECHO: `mosGasUrl` opcional (gate = app+storageKeys+sbAnon+sbUrl\|mintUrl). Aprobación in-situ 100% Supabase (removido `_aprobarViaGAS`+dual-write+fallback). device-auth v1.0.26, `?v=` bumpeado en 3 apps. |
+| B2 | **MOS** | `verificarPinPersonal` (login) sin RPC | ✅ HECHO: RPC `mos.verificar_pin_personal` (SQL 359, espejo exacto GAS) + intercept `post` cero-GAS. MOS 2.43.446. |
+| B3 | **ME** | Anulación `ANULACION` sin RPC (dinero) | ✅ HECHO: `me.anular_venta_directo` (SQL 360, wrapper que reusa `me.anular_venta` con elevación de claim para el reposo). `_postMutacionDinero` cero-GAS. ME 2.8.156. |
+| B4 | **ME** | Registrar guía `REGISTRAR_GUIA` (inventario) | ✅ HECHO: `me.registrar_guia_directo` (SQL 361, ciclo ABIERTA meta-only / legacy inmediato). `_postGuiaBackground` cero-GAS. ME 2.8.156. |
+| B5 | **ME** | Aprobar dispositivo in-situ | ✅ HECHO: `confirmarActivarInSitu` → `mos.aprobar_dispositivo` anon. ME 2.8.156. |
+| B6 | **WH** | **Portales cliente 100% GAS** (pedido/clientes/reporte/clienteInbox) | ⛔ PENDIENTE (bloque grande). Requiere: 4 tablas mos (clientes, pedidos_cliente, _items, _adj) + 8 RPCs (cliente_obtener/registrar/listar, pedido recibir/confirmar/estado, inbox_polling, reporte_obtener) + 2 Edge (recibir-pedido con IA/Vision, analizar-imagen) + **migración de datos desde el Sheet de clientes vivo** (necesita export del Sheet). `wh.crear_lista_sombra` ya existe (reusar en confirmar). reporte.html es read-only sobre wh.guias/preingreso (migrable sin datos nuevos). |
 
 ## 🟠 MONEY / INVENTARIO sin ruta directa (rompen operación)
 
