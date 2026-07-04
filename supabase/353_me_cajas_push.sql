@@ -13,7 +13,8 @@ begin
         'titulo', '🛒 ' || coalesce(NEW.vendedor,'Cajero') || ' aperturó caja',
         'cuerpo', coalesce(nullif(NEW.zona_id,''),'') || ' · ' || to_char(now() at time zone 'America/Lima','HH24:MI'),
         'data', jsonb_build_object('tipo','me_caja_apertura','idCaja',NEW.id_caja)));
-    elsif tg_op = 'UPDATE' and coalesce(OLD.estado,'') = 'ABIERTA' and NEW.estado like 'CERRADA%' then
+    elsif tg_op = 'UPDATE' and coalesce(OLD.estado,'') = 'ABIERTA' and NEW.estado like 'CERRADA%' and NEW.estado <> 'CERRADA_AUTO' then
+      -- (cubre CERRADA / CERRADA_FORZADA; excluye CERRADA_AUTO = auto-cierre de zombies, que el GAS tampoco pusheaba)
       perform mos.emitir_push(jsonb_build_object(
         'audiencia', jsonb_build_object('roles', jsonb_build_array('MASTER','ADMINISTRADOR','ADMIN')),
         'titulo', '🔐 ' || coalesce(NEW.vendedor,'Cajero') || ' cerró caja',
