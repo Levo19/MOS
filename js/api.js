@@ -2859,6 +2859,17 @@ const API = (() => {
       if (action === 'getUltimaUbicacionDispositivo') {
         return _conFallbackMOS(() => _getUltimaUbicacionDispositivoDirecto(p), () => _postMOS(action, p), _mosLecturaDirecta);
       }
+      // [BLOQUEANTE B2 · CERO-GAS/CERO-FALLBACK] Login por PIN 100% Supabase (RPC mos.verificar_pin_personal, 359).
+      // SIN fallback GAS: sin backend no se puede loguear, así que un fallo se reporta como error (no cae a GAS).
+      // Devuelve el objeto data desempaquetado {autorizado, nombre, rol} = shape que confirmarPin ya consume.
+      if (action === 'verificarPinPersonal') {
+        return (async () => {
+          const r = await _sbRpcMOS('verificar_pin_personal', { p: { idPersonal: p.idPersonal, pin: p.pin } }, 'mos');
+          if (r == null) throw new Error('Sin conexión con el servidor (login)');
+          if (r.ok === false) throw new Error(r.error || 'Error verificando PIN');
+          return r.data || { autorizado: false };
+        })();
+      }
       return _postMOS(action, p);
     },
     // [AUTO-REFRESCO CATÁLOGO] versión monótona del catálogo maestro (mos.catalogo_version).

@@ -1,0 +1,7 @@
+{
+  "url": "https://levo19.github.io/PS-Panel/",
+  "viewport": { "width": 1280, "height": 800 },
+  "waitMs": 4000,
+  "evalAfter": "(async()=>{try{var app=document.getElementById('app');var vn=app.__vnode||app._vnode;var ss=vn&&vn.component&&vn.component.setupState;var out={ver:window.APP_VERSION};if(!ss)return{err:'no ss'};ss.session={id:'P-1',nombre:'Admin',rol:'Administrador',loginAt:Date.now()};try{ss.goModule('facturacion');}catch(e2){out.goErr=e2.message;}await new Promise(function(r){setTimeout(r,9000);});var mods=document.querySelectorAll('.fac-module');out.numModDiv=mods.length;out.detail=[];mods.forEach(function(m){var r=m.getBoundingClientRect();out.detail.push({vis:(r.width>0&&r.height>0),w:Math.round(r.width),h:Math.round(r.height),cards:!!m.querySelector('.fac-acc'),loading:m.innerHTML.indexOf('Cargando')>=0,empty:m.innerHTML.trim().length<20,htmlLen:m.innerHTML.length});});return out;}catch(e){return{crash:e.message,stack:(e.stack||'').slice(0,300)};}})()",
+  "screenshot": "ps-fac-desktop.png"
+}

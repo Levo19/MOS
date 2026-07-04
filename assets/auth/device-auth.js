@@ -207,7 +207,7 @@
   // [v1.0.14] Versión honesta del módulo. Las 3 apps lo cargan vía CDN con un
   // pin ?v= en su <script>; si ese pin miente, ESTA constante revela la versión
   // REAL servida. Se loguea al boot (init) como "[DeviceAuth] vX en <app>".
-  var _VERSION = '1.0.25';
+  var _VERSION = '1.0.26';
 
   var _config = null;
   var _state = {
@@ -1226,20 +1226,9 @@
     };
     if (!esReactivar) payload.nombreEquipo = nombreEquipoFinal;
 
-    // [v1.0.15 FASE 3a] El POST a GAS (camino histórico) → Promise<d camelCase>.
-    function _aprobarViaGAS() {
-      return fetch(_config.mosGasUrl, { method: 'POST', body: JSON.stringify(payload) })
-        .then(function(r) { return r.json(); })
-        .then(function(j) { return (j && j.data) || null; });
-    }
-
-    // [v1.0.15 FASE 3a] Aprobación DIRECTA a Supabase (flag ON) → mapea la
-    // respuesta snake de aprobar_dispositivo al `d` camelCase que el consumidor
-    // ya espera (autorizado, deviceId-eco, aprobadoPor, error, verifyVersion).
-    // DUAL-WRITE: si la aprobación directa AUTORIZA, dispara TAMBIÉN el POST GAS
-    // (best-effort, fire-and-forget) para refrescar la HOJA DISPOSITIVOS y que
-    // los ~40 lectores GAS no-migrados sigan viendo el device ACTIVO sin esperar
-    // un sync inverso (Fase 2). El fallo del GAS NO revierte ni bloquea el directo.
+    // Aprobación DIRECTA a Supabase → mapea la respuesta snake de aprobar_dispositivo
+    // al `d` camelCase que el consumidor ya espera (autorizado, deviceId-eco,
+    // aprobadoPor, error, verifyVersion). Única fuente: la sombra mos.dispositivos.
     function _aprobarViaDirecto() {
       return _rpcAnon('aprobar_dispositivo', {
         id_dispositivo: idActivar,
@@ -1249,10 +1238,8 @@
         es_reactivar:   !!esReactivar
       }).then(function(j) {
         var autorizado = !!(j && j.autorizado === true);
-        if (autorizado) {
-          // DUAL-WRITE a la hoja (fire-and-forget). No await, no .catch ruidoso.
-          try { _aprobarViaGAS().catch(function(){}); } catch(_) {}
-        }
+        // [CERO-GAS] La aprobación directa ESCRIBE la sombra mos.dispositivos (fuente de verdad). Sin dual-write
+        // a la Hoja: los lectores ya viven en Supabase; la Hoja se elimina.
         return {
           autorizado:    autorizado,
           deviceId:      (j && j.device_id) || idActivar,   // eco anti-desfase
@@ -1265,15 +1252,13 @@
       });
     }
 
-    // Dispatcher: flag ON → directo (con fallback a GAS si la RPC FALLA por red/
-    // excepción — un "Clave incorrecta" NO es fallo de RPC, es veredicto válido y
-    // NO debe reintentar por GAS). Flag OFF → GAS directo (bit-idéntico v1.0.14).
-    var _dispatch = !_devAuthDirecto()
-      ? _aprobarViaGAS()
-      : _aprobarViaDirecto().catch(function(e) {
-          console.warn('[DeviceAuth] aprobación directa falló → fallback GAS:', e && e.message);
-          return _aprobarViaGAS();
-        });
+    // [CERO-GAS/CERO-FALLBACK] Aprobación 100% Supabase. Un fallo de RPC (red/excepción) NO cae a GAS: se
+    // reporta como error de conexión (el operador reintenta). Un "Clave incorrecta" es veredicto válido (no
+    // reintenta). La rama GAS histórica se eliminó junto con la Hoja DISPOSITIVOS.
+    var _dispatch = _aprobarViaDirecto().catch(function(e) {
+      console.warn('[DeviceAuth] aprobación directa falló (sin fallback):', e && e.message);
+      return { autorizado: false, error: 'Sin conexión con el servidor. Reintenta.' };
+    });
 
     _dispatch
       .then(function(d) {
@@ -1467,13 +1452,8 @@
   }
 
   function _verificarReal() {
-    if (!_config.mosGasUrl) {
-      // R2: sin URL configurada → fail-CLOSED
-      _state.estado = 'SIN_VERIFICAR';
-      _mostrarUI('SIN_VERIFICAR', 'MOS no configurado');
-      return Promise.reject(new Error('MOS_GAS_URL no configurado'));
-    }
-
+    // [CERO-GAS] El gate por mosGasUrl se eliminó: el auth verifica 100% contra Supabase. Sin config SB
+    // utilizable, _consultarBackend fail-closes (no autoriza). Ver _consultarBackend.
     // [v1.0.7 BUG B FIX + v1.0.8 BUG D FIX] R4 + R1 coexisten:
     // - Cache local existe pero NO autoriza optimistamente
     // - Siempre verificamos server PRIMERO antes de quitar pre-block
@@ -1903,8 +1883,11 @@
 
   // ── API pública ──────────────────────────────────────────────
   function init(config) {
-    if (!config || !config.mosGasUrl || !config.app || !config.storageKeys) {
-      console.error('[DeviceAuth] init requiere { mosGasUrl, app, storageKeys }');
+    // [CERO-GAS] mosGasUrl ya NO es requerido (auth 100% Supabase). Se exige la config SB real: app +
+    // storageKeys + sbAnon + (sbUrl ó mintUrl para derivar la base REST). Sin eso → fail-closed.
+    var _sbOk = config && config.sbAnon && (config.sbUrl || config.mintUrl);
+    if (!config || !config.app || !config.storageKeys || !_sbOk) {
+      console.error('[DeviceAuth] init requiere { app, storageKeys, sbAnon, sbUrl|mintUrl }');
       return Promise.reject(new Error('init config inválido'));
     }
     _config = config;

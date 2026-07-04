@@ -1,0 +1,6 @@
+{
+  "url": "http://127.0.0.1:8137/",
+  "waitMs": 4000,
+  "evalAfter": "(async()=>{try{var app=document.getElementById('app');var vn=app.__vnode||app._vnode;var ss=vn&&vn.component&&vn.component.setupState;var out={ver:window.APP_VERSION,hasSS:!!ss};if(!ss)return out;localStorage.setItem('ps_session',JSON.stringify({id:'P-1',nombre:'Admin',rol:'Administrador',loginAt:Date.now()}));try{ss.session={id:'P-1',nombre:'Admin',rol:'Administrador',loginAt:Date.now()};out.sessSet=JSON.stringify(ss.session).slice(0,60);}catch(e1){out.sessErr=e1.message;}try{ss.goModule('facturacion');}catch(e2){out.goErr=e2.message;}await new Promise(function(r){setTimeout(r,9000);});out.curMod=ss.currentModule;out.curView=ss.currentView;var mod=document.querySelector('.fac-module');out.foundModDiv=!!mod;out.hasCards=!!document.querySelector('.fac-acc');out.hasBalanza=!!document.querySelector('.trib-scale');out.loadingTxt=mod?(mod.innerHTML.indexOf('Cargando')>=0):null;out.html=mod?mod.innerHTML.replace(/\\s+/g,' ').slice(0,450):'(.fac-module NO existe en DOM)';return out;}catch(e){return{crash:e.message,stack:(e.stack||'').slice(0,300)};}})()",
+  "screenshot": "ps-fac6.png"
+}

@@ -1,0 +1,7 @@
+{
+  "url": "https://levo19.github.io/PS-Panel/",
+  "viewport": { "width": 1280, "height": 800 },
+  "waitMs": 3500,
+  "evalAfter": "(async()=>{try{var ss=(document.getElementById('app').__vnode||document.getElementById('app')._vnode).component.setupState;localStorage.setItem('ps_session',JSON.stringify({id:'P-1',nombre:'Admin',rol:'Administrador',loginAt:Date.now()}));ss.session={id:'P-1',nombre:'Admin',rol:'Administrador',loginAt:Date.now()};ss.goModule('facturacion');await new Promise(r=>setTimeout(r,9000));var out={ver:window.APP_VERSION};out.hasShell=!!document.querySelector('.fac-mod-shell2,.fac-mod-shell');out.hasBalanzaFina=!!document.querySelector('#facb-bar,.facb-bar');out.hasTabbar=!!document.querySelector('#fac-tabbar,.fac-tabbar');var bp=document.querySelector('#fac-balanza-panel');if(bp)bp.__t=1;var slot=document.querySelector('#fac-slot');out.slotBefore=slot?slot.innerHTML.length:null;if(typeof window._facTab==='function')window._facTab('historial');await new Promise(r=>setTimeout(r,1500));var bp2=document.querySelector('#fac-balanza-panel');out.sameBalanzaNode=!!(bp2&&bp2.__t===1);var slot2=document.querySelector('#fac-slot');out.slotChanged=!!(slot2&&slot2.innerHTML.length!==out.slotBefore);return out;}catch(e){return{crash:e.message}}})()",
+  "screenshot": "verif120-desktop.png"
+}

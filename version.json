@@ -1,1 +1,1 @@
-{"version":"2.43.445","build":"2.43.445 (seguimiento visible): la card de Personal del Dia muestra linea de asistencia REAL desde la megatabla (hora ingreso, tiempo activo, app, reconexiones, cerrada-11pm)."}
+{"version":"2.43.446","build":"2.43.446 (corte GAS B1+B2): login por PIN 100% Supabase (RPC mos.verificar_pin_personal, cero-fallback) + device-auth cero-GAS (mosGasUrl opcional, aprobacion in-situ sin dual-write Hoja)."}
