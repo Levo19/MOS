@@ -2394,7 +2394,28 @@ const API = (() => {
     // Gate _mosLiqdiaDirecto (MOS_LIQDIA_DIRECTO). UPDATE atómico condicional (no toca PAGADA) → idempotente.
     vetarLiquidacionDia:         _mosLiqdiaDirecto,
     desvetarLiquidacionDia:      _mosLiqdiaDirecto,
-    recomputarLiquidacionDia:    _mosLiqdiaDirecto
+    recomputarLiquidacionDia:    _mosLiqdiaDirecto,
+    // ── [kill-GAS sesión 2026-07-05] Intercepts cero-GAS en _postDirectoMOS (SQL 378-385 + Edge). Gate ()=>true
+    //    = SIEMPRE directo (RPCs idempotentes ya en prod). SIN esto _postMOS ni evalúa el directo → caían a GAS.
+    backfillLiquidacionesDia:    () => true,   // ⚠️money jornal · mos.backfill_liquidaciones_dia (378)
+    importarJornadasDesdeCajas:  () => true,   // ⚠️money jornal · mos.importar_jornadas_desde_cajas (378)
+    recalcularStockMinMaxAuto:   () => true,   // mos.recalcular_stock_min_max_auto (379)
+    aplicarPreciosVentaSugeridos:() => true,   // loop publicarPrecio (379)
+    wh_estadoImpresoraAdhesivo:  () => true,   // Edge print-adhesivo mode=estado
+    wh_calibrarImpresoraAdhesivo:() => true,   // Edge print-adhesivo mode=calibrar
+    wh_cancelarLoteAdhesivo:     () => true,   // Edge print-adhesivo mode=cancelar
+    wh_getRotacionSemanal:       () => true,   // mos.wh_rotacion_semanal (380)
+    wh_auditarStockGlobal:       () => true,   // mos.wh_auditar_cuadre (381)
+    wh_getAlertasStock:          () => true,   // mos.wh_get_alertas_stock (381)
+    wh_reconciliarStockProducto: () => true,   // ⚠️stock · mos.wh_reconciliar_stock_producto (381)
+    wh_reconciliarStockMasivo:   () => true,   // ⚠️stock · mos.wh_reconciliar_stock_masivo (381)
+    tribResumenMes:              () => true,   // mos.trib_resumen_mes (382)
+    tribIGVFavorMes:             () => true,   // wh.igv_favor_mes (382)
+    tribIGVEmitidoMes:           () => true,   // me.cpe_trazabilidad (382)
+    tribLimpiarVentasHuerfanas:  () => true,   // mos.limpiar_ventas_huerfanas (382)
+    getContextoTicketJefa:       () => true,   // mos.contexto_ticket_jefa (383)
+    aplicarRespuestaJefa:        () => true,   // ⚠️money precio · mos.aplicar_respuesta_jefa (385)
+    llenarCostosGuia:            () => true    // wh.actualizar_precios_detalle (383)
     // [DUAL-WRITE] pedidos/pagos/provprod/gastos/horario: SIN entrada acá → su escritura va SIEMPRE por
     // GAS (dual-write espeja la sombra). recomputarLiquidacionDia tampoco (incompatible).
   };
