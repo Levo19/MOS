@@ -1,1 +1,1 @@
-{"version":"2.43.453","build":"2.43.453 (kill-GAS admin-ME dinero): cambiarMetodoME->me.cobrar_venta_directo, meAprobarComoCredito->me.creditar_venta_directo, meBajaCPE->Edge emitir-cpe op=baja. Cero-GAS reusando RPCs/Edge existentes."}
+{"version":"2.43.454","build":"2.43.454 (kill-GAS batch3-7): jornales money (backfill/importarCajas), recalc stock min/max + aplicar precios sugeridos, notif/dispositivos/equivalencia/prov-prod, adhesivo estado/calibrar/cancelar (Edge print-adhesivo), rotacion semanal WH. Cero-GAS."}

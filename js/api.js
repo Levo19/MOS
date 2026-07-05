@@ -2135,6 +2135,87 @@ const API = (() => {
       try { return _desempacarCatalogo(out); } catch (e) { return { ok: true, skipped: true }; }
     }
 
+    if (action === 'backfillLiquidacionesDia') {
+      // ⚠️ DINERO — recompute masivo (últimos N días) 100% Supabase → mos.backfill_liquidaciones_dia.
+      // Loop recompute sobre filas EXISTENTES en la ventana; SELLA PAGADA/VETADA (no reescribe pagado/vetado).
+      // Idempotente. Callers leen `res.ok` (liqRecalcularRango) y `res.msg` (_liqBackfillDia) → devuelvo ambos.
+      const out = await _sbRpcMOSWrite('backfill_liquidaciones_dia', { p: { dias: p.dias } });
+      if (out == null) return null;
+      if (out.ok === false) throw new Error(out.error || 'backfill falló');
+      const d = (out && out.data) || {};
+      return Object.assign({ ok: true, msg: '✓ Recalculadas ' + (d.recomputadas || 0) + ' liquidaciones' }, d);
+    }
+
+    if (action === 'importarJornadasDesdeCajas') {
+      // ⚠️ DINERO — importa jornadas AUTO_CAJAS desde me.cajas del día → mos.importar_jornadas_desde_cajas.
+      // Dedupe nombre+fecha vive en registrar_jornada_auto (idempotente). Caller lee `res.importados`.
+      const out = await _sbRpcMOSWrite('importar_jornadas_desde_cajas', { p: {
+        fecha: p.fecha, montoDefault: p.montoDefault, registradoPor: p.registradoPor
+      } });
+      if (out == null) return null;
+      if (out.ok === false) throw new Error(out.error || 'importar falló');
+      const d = (out && out.data) || {};
+      return { ok: true, importados: d.importados || 0, fecha: d.fecha };
+    }
+
+    if (action === 'recalcularStockMinMaxAuto') {
+      // [cero-GAS] auto min/max desde velocidad de venta (últimos N días) → mos.recalcular_stock_min_max_auto.
+      // Fire-and-forget throttled 12h. Idempotente. Caller lee r.data.actualizados / r.data.ventana.
+      const out = await _sbRpcMOSWrite('recalcular_stock_min_max_auto', { p: { dias: p.dias } });
+      if (out == null) return null;
+      if (out.ok === false) throw new Error(out.error || 'recalc falló');
+      return { ok: true, data: (out && out.data) || {} };
+    }
+
+    if (action === 'aplicarPreciosVentaSugeridos') {
+      // [cero-GAS ⚠️precio] batch de precios sugeridos: loop sobre publicarPrecio (mos.publicar_precio →
+      // propaga presentaciones + historial + push etiqueta). Réplica fiel del GAS (loop actualizarProductoMaster
+      // con precioVenta). Reusa el path YA revisado 100x de publicarPrecio → sin RPC nueva.
+      const items = Array.isArray(p.items) ? p.items : [];
+      if (!items.length) return { ok: false, error: 'items[] requerido' };
+      let aplicados = 0, presentacionesPropagadas = 0; const errores = [];
+      for (const it of items) {
+        const precio = parseFloat(it && it.precioNuevo);
+        if (!it || !it.idProducto || isNaN(precio) || precio <= 0) {
+          errores.push({ idProducto: it && it.idProducto, error: 'datos inválidos' }); continue;
+        }
+        try {
+          const d = await _postDirectoMOS('publicarPrecio', {
+            idProducto: it.idProducto, precioNuevo: precio,
+            usuario: p.usuario || '', motivo: it.motivo || 'Ajuste por costo de guía'
+          });
+          if (d == null) { errores.push({ idProducto: it.idProducto, error: 'sin conexión' }); continue; }
+          aplicados++;
+          if (d.presentacionesActualizadas) presentacionesPropagadas += parseInt(d.presentacionesActualizadas) || 0;
+        } catch (e) { errores.push({ idProducto: it.idProducto, error: e.message }); }
+      }
+      return { ok: true, data: { aplicados, presentacionesPropagadas, errores } };
+    }
+
+    // [cero-GAS · adhesivo control] estado/calibrar/cancelar de la impresora ADHESIVO → Edge print-adhesivo
+    // (modos estado/calibrar/cancelar). Antes forward MOS-GAS→WH-GAS. crear/imprimirSub ya van por Edge (primario).
+    if (action === 'wh_estadoImpresoraAdhesivo') {
+      const d = await _printAdhesivoEdgeRaw({ mode: 'estado' });
+      // el caller (app.js) lee r.esOnline al TOP level → devuelvo el data (o un objeto de error con esOnline:false).
+      if (d && d.ok && d.data) return d.data;
+      return { ok: false, error: (d && d.error) || 'estado falló', esOnline: false };
+    }
+    if (action === 'wh_calibrarImpresoraAdhesivo') {
+      const d = await _printAdhesivoEdgeRaw({ mode: 'calibrar' });
+      return d || { ok: false, error: 'sin respuesta del Edge' };   // caller lee r.ok===false
+    }
+    if (action === 'wh_cancelarLoteAdhesivo') {
+      const d = await _printAdhesivoEdgeRaw({ mode: 'cancelar', idLote: String(p.idLote || ''), usuario: _mosUsuario(p) });
+      return d || { ok: true };   // caller ignora la respuesta (solo await)
+    }
+    if (action === 'wh_getRotacionSemanal') {
+      // [cero-GAS · read cross-app] rotación semanal WH → mos.wh_rotacion_semanal (gatea mos._claim_ok, delega
+      // en wh.rotacion_semanal). Solo lectura. Caller lee r.data.productos. null → GAS (sin token).
+      const r = await _sbRpcMOS('wh_rotacion_semanal', { p: { semanas: p.semanas, codigos: p.codigos } }, 'mos');
+      if (r == null) return null;
+      return r;   // {ok:true, data:{etiquetas, productos}}
+    }
+
     return null;   // acción no cableada → GAS
   }
 
@@ -2255,7 +2336,7 @@ const API = (() => {
     eliminarGasto:               _mosGastosDualWrite,
     // jornadas (84) ⚠️DINERO jornal: registrarJornada la llama el front hoy; eliminar/rehabilitar son FORWARD-LOOKING
     //   (el front no las llama hoy, pero el case GAS y el branch dispatcher existen → inertes hasta que se usen).
-    //   importarJornadasDesdeCajas NO va: no existe RPC mos.importar_jornadas ni branch en _postDirectoMOS.
+    //   importarJornadasDesdeCajas YA va cero-GAS: intercept dedicado → mos.importar_jornadas_desde_cajas (378).
     registrarJornada:            _mosJornadasDualWrite,
     eliminarJornada:             _mosJornadasDualWrite,
     rehabilitarJornada:          _mosJornadasDualWrite,
@@ -2900,7 +2981,18 @@ const API = (() => {
         eliminarProductoProveedor:'eliminar_proveedor_producto',
         eliminarPromocion:       'eliminar_promocion',
         guardarTarjetaWA:        'guardar_tarjeta_wa',
-        setHorarioCustomPersonal:'set_horario_custom_personal'
+        setHorarioCustomPersonal:'set_horario_custom_personal',
+        actualizarNotifConfig:   'actualizar_notif_config',
+        restaurarNotifDefault:   'restaurar_notif_default',
+        resolverAlertaAuditoria: 'resolver_alerta_auditoria',
+        actualizarEquivalencia:  'actualizar_equivalencia',
+        crearProductoProveedor:  'crear_producto_proveedor',
+        actualizarProductoProveedor:'actualizar_producto_proveedor',
+        actualizarDispositivo:   'actualizar_dispositivo',
+        rechazarDispositivoPendiente:'rechazar_dispositivo_pendiente',
+        liberarDispositivoBloqueado:'liberar_dispositivo_bloqueado',
+        bloquearVendedorME:      'bloquear_vendedor_me',
+        bloquearDispositivosDeUsuario:'bloquear_dispositivos_usuario'
       };
       if (_MOS_ADMIN_RPC[action]) {
         return (async () => {

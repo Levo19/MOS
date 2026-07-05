@@ -628,6 +628,17 @@ async function resolverPrinterAdhesivo(): Promise<string> {
     return (rows && rows.length) ? String(rows[0].printnode_id || '') : '';
   } catch { return ''; }
 }
+// Upsert best-effort de claves en mos.config (usado por el reset de calibración). Las claves ADHESIVO_* ya existen.
+async function setConfigMos(kv: Record<string, string>): Promise<void> {
+  try {
+    for (const [clave, valor] of Object.entries(kv)) {
+      await fetch(`${SB_URL}/rest/v1/config?clave=eq.${encodeURIComponent(clave)}`, {
+        method: 'PATCH',
+        headers: { 'apikey': SB_KEY!, 'Authorization': 'Bearer ' + SB_KEY!, 'Accept-Profile': 'mos', 'Content-Profile': 'mos', 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ valor }) });
+    }
+  } catch { /* best-effort */ }
+}
 const PN_KEY = Deno.env.get('PRINTNODE_API_KEY');
 async function printNodePost(printerId: number, title: string, b64: string, idLote: string): Promise<{ ok: boolean; jobId?: string; status: number; txt: string }> {
   const r = await fetch('https://api.printnode.com/printjobs', {
@@ -874,6 +885,47 @@ Deno.serve(async (req: Request) => {
 
     const body = await req.json().catch(() => ({}));
     const mode = String(body.mode || (body.idLote ? 'lote' : 'pending'));
+
+    // ── Modos de control de impresora ADHESIVO (cero-GAS; port de wh estado/calibrar/cancelar) ──
+    // Van ANTES de leerDriftCfg/leerEnvasablesTokens (no los necesitan) para no pagar ese costo.
+    // mode 'estado' — chequea si la impresora ADHESIVO está online (PrintNode printers/{id}).
+    if (mode === 'estado') {
+      let printerId = String(body.printerId || '');
+      if (!printerId) printerId = await resolverPrinterAdhesivo();
+      if (!printerId) return json({ ok: false, error: 'sin impresora ADHESIVO configurada', data: { esOnline: false } }, 200);
+      const pr = await fetch('https://api.printnode.com/printers/' + printerId, {
+        headers: { 'Authorization': 'Basic ' + btoa(PN_KEY + ':') } });
+      if (!pr.ok) return json({ ok: false, error: 'PrintNode HTTP ' + pr.status, data: { printerId, esOnline: false } }, 200);
+      const pj = await pr.json().catch(() => null);
+      const pp = Array.isArray(pj) ? pj[0] : pj;
+      return json({ ok: true, data: {
+        printerId, nombre: pp?.name, estado: pp?.state,
+        esOnline: String(pp?.state).toLowerCase() === 'online',
+        computadora: pp?.computer && pp.computer.name, compEstado: pp?.computer && pp.computer.state } });
+    }
+    // mode 'calibrar' — GAPDETECT + FORMFEED (mide el gap del rollo nuevo) + reset drift/contador.
+    if (mode === 'calibrar') {
+      let printerId = String(body.printerId || '');
+      if (!printerId) printerId = await resolverPrinterAdhesivo();
+      if (!printerId) return json({ ok: false, error: 'sin impresora ADHESIVO configurada' }, 200);
+      const tspl = 'SIZE 50 mm,25 mm\r\nGAP 2 mm,0 mm\r\nDIRECTION 1\r\nCLS\r\nGAPDETECT\r\nFORMFEED\r\n';
+      let bin = ''; for (let i = 0; i < tspl.length; i++) bin += String.fromCharCode(tspl.charCodeAt(i) & 0xff);
+      const pn = await printNodePost(parseInt(printerId), 'Calibrar ADHESIVO', btoa(bin), 'calibrar');
+      if (!pn.ok) return json({ ok: false, error: 'PrintNode ' + pn.status + ': ' + pn.txt }, 200);
+      await setConfigMos({ ADHESIVO_ROLLO_CALIBRADO: 'true', ADHESIVO_PRINTS_DESDE_CAL: '0',
+        ADHESIVO_DRIFT_DOTS_POR_PRINT: '0', ADHESIVO_FECHA_CALIBRADO: new Date().toISOString() });
+      return json({ ok: true, data: { jobId: pn.jobId,
+        mensaje: 'Calibración enviada. Tras las ~3 etiquetas blancas, imprime alineado.' } });
+    }
+    // mode 'cancelar' — marca el lote CANCELADO (RPC atómica wh.lote_adhesivo_cancelar). Sin impresión.
+    if (mode === 'cancelar') {
+      const idLote = String(body.idLote || '');
+      if (!idLote) return json({ ok: false, error: 'falta idLote' }, 400);
+      const cn = await rpcWh('lote_adhesivo_cancelar', { idLote, usuario: body.usuario || '' });
+      if (!cn || cn.ok === false) return json({ ok: false, error: cn?.error || 'cancelar falló' }, 200);
+      return json({ ok: true, data: cn.data || cn });
+    }
+
     const deadline = Date.now() + WALL_BUDGET_MS;
     const cfg = await leerDriftCfg();
     const envTokens = await leerEnvasablesTokens();
