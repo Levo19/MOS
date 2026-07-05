@@ -1,0 +1,8 @@
+{
+  "url": "http://127.0.0.1:8137/index.html",
+  "waitMs": 2500,
+  "viewport": { "width": 430, "height": 932 },
+  "localStorage": { "ps_session": { "rol": "Administrador", "nombre": "Luis", "id": "x1" } },
+  "screenshot": "em-err.png",
+  "evalAfter": "(async()=>{try{ _facState=_facInitState({rol:'Administrador',nombre:'Luis',id:'x1'},[{id:'s1',nombre:'Servicio turistico',precio:1000}],false,{serie_boleta:'BBB1',serie_factura:'FFF1'}); _facOpenEmit(); await new Promise(r=>setTimeout(r,300)); var S=_facState; S.tipo=1; S.facModo='factura'; S.docTipo='6'; S.doc='20123456789'; S.nombre='Comercial El Sol S.A.C.'; S.cliQuery='Comercial El Sol S.A.C.'; S.cliSel=true; S.items=[{descripcion:'Servicio turistico',cantidad:1,precio:1000}]; S._emitFeed={type:'err',msg:'NubeFact: cliente invalido',_seen:true}; _facRenderEmit(); var ov=document.getElementById('fac-emit-modal'); if(ov){ov.style.display='flex';ov.classList.add('visible');ov.style.zIndex='2000000';} await new Promise(r=>setTimeout(r,700)); return {ver:window.APP_VERSION, banner:!!document.querySelector('.fac-fb.err'), bannerTxt:(document.querySelector('.fac-fb-t')||{}).textContent, subTxt:(document.querySelector('.fac-fb-s')||{}).textContent, formPresent:!!document.getElementById('fac-emitir'), itemsPreserved:S.items.length, nombrePreserved:S.nombre, modalOpen:!!(ov&&ov.style.display==='flex'), overflowX:document.documentElement.scrollWidth>document.documentElement.clientWidth+2}; }catch(e){return 'ERR:'+e.message+' | '+(e.stack||'').slice(0,200);}})()"
+}

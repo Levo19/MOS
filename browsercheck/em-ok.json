@@ -1,0 +1,8 @@
+{
+  "url": "http://127.0.0.1:8137/index.html",
+  "waitMs": 2500,
+  "viewport": { "width": 430, "height": 932 },
+  "localStorage": { "ps_session": { "rol": "Administrador", "nombre": "Luis", "id": "x1" } },
+  "screenshot": "em-ok.png",
+  "evalAfter": "(async()=>{try{ _facState=_facInitState({rol:'Administrador',nombre:'Luis',id:'x1'},[{id:'s1',nombre:'Tour Islas Ballestas',precio:50}],false,{serie_boleta:'BBB1',serie_factura:'FFF1'}); _facOpenEmit(); await new Promise(r=>setTimeout(r,300)); var S=_facState; var comp={id:'X',tipo:2,serie:'BBB1',numero:9,total:20,estado:'aceptada',enlace_pdf:'',_label:'Boleta',cliente_nombre:'Juan Perez',items:[{descripcion:'Paseo en lancha',cantidad:1,precio:20}]}; S._emitFeed={type:'ok',comp:comp,_seen:true}; S._emitidos=[{serie:'BBB1',numero:9,total:20,estado:'aceptada',comp:comp},{serie:'BBB1',numero:8,total:120,estado:'aceptada',comp:comp},{serie:'FFF1',numero:3,total:590,estado:'pendiente',comp:comp}]; _facRenderEmit(); var ov=document.getElementById('fac-emit-modal'); if(ov){ov.style.display='flex';ov.classList.add('visible');ov.style.zIndex='2000000';} await new Promise(r=>setTimeout(r,700)); return {ver:window.APP_VERSION, banner:!!document.querySelector('.fac-fb.ok'), pdfBtn:!!document.querySelector('.fac-fb-pdf'), chips:document.querySelectorAll('.fac-chip-emit').length, bannerTxt:(document.querySelector('.fac-fb-t')||{}).textContent, subTxt:(document.querySelector('.fac-fb-s')||{}).textContent, modalOpen:!!(ov&&ov.style.display==='flex'), formPresent:!!document.getElementById('fac-emitir'), overflowX:document.documentElement.scrollWidth>document.documentElement.clientWidth+2}; }catch(e){return 'ERR:'+e.message+' | '+(e.stack||'').slice(0,200);}})()"
+}

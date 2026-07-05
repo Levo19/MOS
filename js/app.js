@@ -1585,17 +1585,24 @@ const MOS = (() => {
         API.get('getCategorias', {}).catch(() => [])  // tolera GAS no redesplegado
       ]);
       S.categorias = Array.isArray(freshCats) ? freshCats : [];
-      const productos = freshProd || [];
-      const equivMap  = {};
-      (freshEquiv || []).forEach(e => {
-        const k = e.skuBase || e.idProducto;
-        if (k && e.codigoBarra) { if (!equivMap[k]) equivMap[k] = []; equivMap[k].push(e.codigoBarra); }
-      });
-      const changed = JSON.stringify(productos) !== JSON.stringify(S.productos);
-      S.productos = productos;
-      S.equivMap  = equivMap;
-      _catSaveCache({ productos, equivMap });
-      if (force || changed || !cached) { populateCatFiltro(); renderCatalogo(); }
+      // [FIX 500x BUG-1] freshProd null = hipo transitorio de Supabase (_conFallbackMOS ya NO cae a GAS y
+      // devuelve null tras 3 reintentos). NO clobbear el catálogo con [] ni persistir cache vacío: conservar
+      // lo cargado. Solo actualizar si vino un array real.
+      if (Array.isArray(freshProd)) {
+        const productos = freshProd;
+        const equivMap  = {};
+        (freshEquiv || []).forEach(e => {
+          const k = e.skuBase || e.idProducto;
+          if (k && e.codigoBarra) { if (!equivMap[k]) equivMap[k] = []; equivMap[k].push(e.codigoBarra); }
+        });
+        const changed = JSON.stringify(productos) !== JSON.stringify(S.productos);
+        S.productos = productos;
+        S.equivMap  = equivMap;
+        _catSaveCache({ productos, equivMap });
+        if (force || changed || !cached) { populateCatFiltro(); renderCatalogo(); }
+      } else if (force || !cached) {
+        populateCatFiltro(); renderCatalogo();   // re-pinta lo existente, sin borrar
+      }
     } catch(e) {
       if (!cached && !(S.productos && S.productos.length)) {
         const el = $('listCatalogo');
@@ -1629,7 +1636,10 @@ const MOS = (() => {
         API.get('getProductos', {}),
         API.get('getEquivalencias', { activo: '1' }).catch(() => [])
       ]);
-      const productos = freshProd || [];
+      // [FIX 500x BUG-1] refresh silencioso: si freshProd es null (hipo transitorio), NO recomputar el diff
+      // (marcaría TODO como removed y clobbearía el catálogo). Salir sin tocar nada.
+      if (!Array.isArray(freshProd)) return;
+      const productos = freshProd;
 
       const equivMap = {};
       (freshEquiv || []).forEach(e => {
@@ -19259,19 +19269,23 @@ const MOS = (() => {
         }
       } catch(_) { /* tolerar */ }
     }, 15 * 1000); // cada 15s para sentir tiempo real
+    // [FIX 500x OPT-1] capturar los 2 timers (antes anónimos → fugados en cada entrar/salir de Infra).
     // Estado de impresoras PrintNode cada 25s mientras Infra esté abierto
-    setInterval(() => {
+    _intervalInfraPrinters = setInterval(() => {
       if (S.cfgTab !== 'infra' || document.hidden) return;
       _refrescarEstadoImpresoras(true);
     }, 25 * 1000);
     // Re-render local cada 10s para que los "hace Xs" se actualicen sin esperar fetch
-    setInterval(() => {
+    _intervalInfraRender = setInterval(() => {
       if (S.cfgTab !== 'infra' || document.hidden) return;
       try { renderInfra(); } catch(_) {}
     }, 10 * 1000);
   }
+  let _intervalInfraPrinters = null, _intervalInfraRender = null;
   function _detenerRefreshInfra() {
     if (_intervalInfra) { clearInterval(_intervalInfra); _intervalInfra = null; }
+    if (_intervalInfraPrinters) { clearInterval(_intervalInfraPrinters); _intervalInfraPrinters = null; }
+    if (_intervalInfraRender) { clearInterval(_intervalInfraRender); _intervalInfraRender = null; }
   }
 
   // Auto-refresh Personal cada 30s (Ultima_Conexion + dispositivos para online ME)
@@ -33921,10 +33935,12 @@ const MOS = (() => {
 
   // [v2.41.72-B11] Lock anti-doble-click: si ya se está procesando un pago,
   // no permitir disparar otro.
-  let _liqPayLock = false;
+  let _liqPayLock = 0;
   async function liqConfirmarPago(ev) {
-    if (_liqPayLock) { try { toast('⏳ Ya se está procesando el pago…', 'info', 2000); } catch(_){} return; }
-    _liqPayLock = true;
+    // [FIX 500x BUG-4] lock con auto-expiración 30s: el release (34082) no está en finally; si algo lanza en
+    // medio, un lock booleano quedaba trabado para siempre. Timestamp → se auto-libera pasados 30s.
+    if (_liqPayLock && Date.now() - _liqPayLock < 30000) { try { toast('⏳ Ya se está procesando el pago…', 'info', 2000); } catch(_){} return; }
+    _liqPayLock = Date.now();
     if (ev) _liqRipple(ev);
     const btn = $('liqConfirmBtn');
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Procesando...'; }
@@ -34069,7 +34085,7 @@ const MOS = (() => {
     liqLoadCurrent();
 
     if (btn) { btn.disabled = false; btn.textContent = '💸 Confirmar y pagar'; }
-    _liqPayLock = false;
+    _liqPayLock = 0;
   }
 
   // [v2.41.74] Preview ASCII del ticket — abre modal con texto monoespaciado
@@ -35169,6 +35185,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
   // ── Comparación vs ayer (para el card de Ventas) ────────────
   function _finRenderComparaAyer(pl, fecha) {
+    if (!pl || typeof pl !== 'object') return;   // [FIX 500x BUG-2] tolerar null
     const el = $('finVentasComparaAyer');
     if (!el) return;
     try {
@@ -35563,6 +35580,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   });
 
   function _finRender(pl, fecha, opts) {
+    // [FIX 500x BUG-2] getFinanzasDia puede resolver null (hipo transitorio; _conFallbackMOS ya no cae a GAS).
+    // No renderizar con null (crashea en pl.ventasNetas fuera de try) → conservar el dashboard actual.
+    if (!pl || typeof pl !== 'object') return;
     opts = opts || {};
     const skipPersonal = !!opts.skipPersonal;
     const fmt  = v => 'S/ ' + parseFloat(v || 0).toFixed(2);
@@ -36440,10 +36460,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (!desc)                { _finBeep('error'); toast('Ingresa una descripción', 'error'); return; }
     // Sonido optimista al click confirmar
     _finBeep('agregar');
+    // [FIX 500x BUG-3] guard de reentrada + localId estable: registrarGasto no dedupea server-side por sí;
+    // sin esto un doble-tap = dos filas de dinero.
+    if (finGuardarGasto._lock) return;
+    finGuardarGasto._lock = true;
+    const _lidG = 'GST' + Date.now() + Math.random().toString(36).slice(2, 8);
     try {
       await API.post('registrarGasto', {
         fecha, categoria: categ, tipo, descripcion: desc,
-        monto, comprobante: comp, registradoPor: S.session?.nombre || ''
+        monto, comprobante: comp, registradoPor: S.session?.nombre || '', localId: _lidG
       });
       cerrarModalFin('modalFinGasto');
       toast(`💰 Gasto registrado · S/ ${parseFloat(monto).toFixed(2)} · ${desc}`, 'ok', 4000);
@@ -36451,7 +36476,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     } catch(e) {
       _finBeep('error');
       toast('Error: ' + e.message, 'error');
-    }
+    } finally { finGuardarGasto._lock = false; }
   }
 
   async function finGuardarJornada() {
@@ -36463,15 +36488,20 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const obs    = $('finJorObs')?.value?.trim();
     if (!nombre)             { toast('Ingresa el nombre del trabajador', 'error'); return; }
     if (!monto || monto <= 0){ toast('Ingresa un jornal válido', 'error'); return; }
+    // [FIX 500x BUG-3] guard reentrada + localId estable (registrarJornada sin dedup server-side → doble-tap = 2 jornales).
+    if (finGuardarJornada._lock) return;
+    finGuardarJornada._lock = true;
+    const _lidJ = 'JOR' + Date.now() + Math.random().toString(36).slice(2, 8);
     try {
       await API.post('registrarJornada', {
         fecha, nombre, rol, zona, montoJornal: monto, observacion: obs,
-        appOrigen: 'MOS', registradoPor: S.session?.nombre || ''
+        appOrigen: 'MOS', registradoPor: S.session?.nombre || '', localId: _lidJ
       });
       cerrarModalFin('modalFinJornada');
       toast('Jornada registrada', 'ok');
       finCargar();
     } catch(e) { toast('Error: ' + e.message, 'error'); }
+    finally { finGuardarJornada._lock = false; }
   }
 
   async function finEliminarGasto(idGasto, fecha) {
