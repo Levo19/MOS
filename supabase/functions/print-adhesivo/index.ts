@@ -718,44 +718,61 @@ async function procesarLote(idLote: string, deadline: number, envTokens: string[
     const d = rr.data;
     if (!d.qty || d.qty <= 0) return { idLote, subJobs, status: 'COMPLETADO' };
 
-    // ADHESIVO_ENVASADO = qty copias del mismo. MEMBRETE_* = items[d.desde..d.hasta), cada uno distinto.
-    let bytes: number[];
-    if (tipo === 'ADHESIVO_ENVASADO') {
-      bytes = buildTSPLEtq(producto, fechaEnv, d.qty, envTokens, cfg, d.desde, gap);
-    } else {
-      bytes = gap ? strToBytes('GAPDETECT\r\n') : [];
-      for (let k = 0; k < d.qty; k++) {
-        const idx = d.desde + k; const it = items[idx];
-        if (!it) continue;
-        const off = driftOffset(cfg, idx);
-        bytes = (tipo === 'MEMBRETE_ME')
-          ? bytes.concat(buildTSPLMembreteMe(it, envTokens, cfg, off))
-          : bytes.concat(buildTSPLMembreteWh(it, !!it.esCabecera, idx + 1, items.length, envTokens, cfg, off));
+    // [FIX 2026-07-04] TODO el sub-job (build + base64 + PrintNode + poll + marcar) va en try/catch. Si LANZA
+    // (build pesado que cuelga, red a PrintNode, timeout del Edge) ANTES de que PrintNode ACEPTE el job, se
+    // REEMBOLSA el rango que `reservar` ya había comprometido → `completadas` no cuenta etiquetas fantasma y el
+    // lote NUNCA se marca COMPLETADO en falso (el operador necesita TODAS). Reintentable (queda PAUSADO_ERROR).
+    let printedOk = false;
+    try {
+      // ADHESIVO_ENVASADO = qty copias del mismo. MEMBRETE_* = items[d.desde..d.hasta), cada uno distinto.
+      let bytes: number[];
+      if (tipo === 'ADHESIVO_ENVASADO') {
+        bytes = buildTSPLEtq(producto, fechaEnv, d.qty, envTokens, cfg, d.desde, gap);
+      } else {
+        bytes = gap ? strToBytes('GAPDETECT\r\n') : [];
+        for (let k = 0; k < d.qty; k++) {
+          const idx = d.desde + k; const it = items[idx];
+          if (!it) continue;
+          const off = driftOffset(cfg, idx);
+          bytes = (tipo === 'MEMBRETE_ME')
+            ? bytes.concat(buildTSPLMembreteMe(it, envTokens, cfg, off))
+            : bytes.concat(buildTSPLMembreteWh(it, !!it.esCabecera, idx + 1, items.length, envTokens, cfg, off));
+        }
       }
-    }
-    gap = false;
-    const b64 = bytesToBase64(bytes);
-    const pn = await printNodePost(printerId, tipo + ' (' + d.qty + ') lote=' + idLote, b64, idLote);
+      gap = false;
+      const b64 = bytesToBase64(bytes);
+      const pn = await printNodePost(printerId, tipo + ' (' + d.qty + ') lote=' + idLote, b64, idLote);
 
-    if (!pn.ok) {
-      // PrintNode rechazó (no 201) → revertir el rango reservado (no se imprimió).
-      await rpcWh('lote_adhesivo_marcar', { idLote, status: 'PAUSADO_ERROR', reembolsar: d.qty,
-        completadasEsperado: d.completadas, ultimoError: 'PrintNode HTTP ' + pn.status + ': ' + pn.txt.substring(0, 180) });
-      return { idLote, subJobs, status: 'PAUSADO_ERROR', error: 'PrintNode ' + pn.status };
-    }
-    subJobs++;
+      if (!pn.ok) {
+        // PrintNode rechazó (no 201) → revertir el rango reservado (no se imprimió).
+        await rpcWh('lote_adhesivo_marcar', { idLote, status: 'PAUSADO_ERROR', reembolsar: d.qty,
+          completadasEsperado: d.completadas, ultimoError: 'PrintNode HTTP ' + pn.status + ': ' + pn.txt.substring(0, 180) });
+        return { idLote, subJobs, status: 'PAUSADO_ERROR', error: 'PrintNode ' + pn.status };
+      }
+      printedOk = true;   // PrintNode ACEPTÓ el job → las etiquetas salen; a partir de aquí NO se reembolsa
+      subJobs++;
 
-    // Poll corto: solo para detectar OUT_OF_PAPER (el conteo ya quedó comprometido en reservar).
-    const poll = await pollJobOutOfPaper(pn.jobId!, POLL_MS);
-    if (poll.estado === 'error') {
-      await rpcWh('lote_adhesivo_marcar', { idLote, status: poll.outOfPaper ? 'PAUSADO_OUT_PAPER' : 'PAUSADO_ERROR',
-        reembolsar: d.qty, completadasEsperado: d.completadas, ultimoPrintNodeJobId: pn.jobId, ultimoError: poll.mensaje });
-      return { idLote, subJobs, status: poll.outOfPaper ? 'PAUSADO_OUT_PAPER' : 'PAUSADO_ERROR' };
+      // Poll corto: solo para detectar OUT_OF_PAPER (el conteo ya quedó comprometido en reservar).
+      const poll = await pollJobOutOfPaper(pn.jobId!, POLL_MS);
+      if (poll.estado === 'error') {
+        await rpcWh('lote_adhesivo_marcar', { idLote, status: poll.outOfPaper ? 'PAUSADO_OUT_PAPER' : 'PAUSADO_ERROR',
+          reembolsar: d.qty, completadasEsperado: d.completadas, ultimoPrintNodeJobId: pn.jobId, ultimoError: poll.mensaje });
+        return { idLote, subJobs, status: poll.outOfPaper ? 'PAUSADO_OUT_PAPER' : 'PAUSADO_ERROR' };
+      }
+      // done / timeout → confirmar (el rango ya está contado; solo fijamos status + jobId).
+      const mk = await rpcWh('lote_adhesivo_marcar', { idLote,
+        status: d.completadas >= d.total ? 'COMPLETADO' : 'IMPRIMIENDO', ultimoPrintNodeJobId: pn.jobId });
+      if (mk?.data?.status === 'COMPLETADO') return { idLote, subJobs, status: 'COMPLETADO' };
+    } catch (ex) {
+      const msg = String((ex as any)?.message || ex).substring(0, 160);
+      // Reembolsar SOLO si la excepción fue ANTES de que PrintNode aceptara (no se imprimió). Si fue después
+      // (poll/marcar lanzaron), el label YA salió → NO reembolsar (no descontar algo impreso); solo marcar estado.
+      await rpcWh('lote_adhesivo_marcar', printedOk
+        ? { idLote, status: 'PAUSADO_ERROR', ultimoError: 'post-print: ' + msg }
+        : { idLote, status: 'PAUSADO_ERROR', reembolsar: d.qty, completadasEsperado: d.completadas, ultimoError: 'sub-job: ' + msg }
+      ).catch(() => {});
+      return { idLote, subJobs, status: 'PAUSADO_ERROR', error: 'excepcion' };
     }
-    // done / timeout → confirmar (el rango ya está contado; solo fijamos status + jobId).
-    const mk = await rpcWh('lote_adhesivo_marcar', { idLote,
-      status: d.completadas >= d.total ? 'COMPLETADO' : 'IMPRIMIENDO', ultimoPrintNodeJobId: pn.jobId });
-    if (mk?.data?.status === 'COMPLETADO') return { idLote, subJobs, status: 'COMPLETADO' };
   }
   return { idLote, subJobs, status: 'PRESUPUESTO_AGOTADO' };
 }
