@@ -1,1 +1,1 @@
-{"version":"2.43.450","build":"2.43.450 (corte GAS NIVEL 3 quick-wins): getOperacionesConDetalle->operaciones_unificadas, getClaveAdminGlobal->mos.get_clave_admin_global(372), resolverHorarioPersonal->mos.resolver_horario_personal(330), setHorarioApp->mos.actualizar_horario_app(82). Cero-GAS."}
+{"version":"2.43.451","build":"2.43.451 (0% GAS / 0% fallback): _conFallbackMOS ya NO cae a GAS en ningun caso (ni con gate OFF ni al boot sin token) -> mata el getHorariosApps/getPersonalMaster GAS del arranque. Solo directo Supabase + retry + null (caller usa cache)."}

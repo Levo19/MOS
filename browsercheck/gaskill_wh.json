@@ -1,0 +1,2 @@
+{ "url": "https://levo19.github.io/warehouseMos-/", "waitMs": 32000, "screenshot": "gaskill_wh.png",
+  "evalAfter": "(async()=>{ return { title: document.title, online: navigator.onLine, ver: (await (await fetch('version.json')).json()).version }; })()" }
