@@ -2893,7 +2893,14 @@ const API = (() => {
         actualizarPromocion:     'actualizar_promocion',
         lanzarProductoNuevo:     'lanzar_producto_nuevo',
         resolverHorarioPersonal: 'resolver_horario_personal',
-        setHorarioApp:           'actualizar_horario_app'
+        setHorarioApp:           'actualizar_horario_app',
+        actualizarCategoria:     'actualizar_categoria',
+        eliminarPersonalMaster:  'eliminar_personal',
+        actualizarImpresora:     'actualizar_impresora',
+        eliminarProductoProveedor:'eliminar_proveedor_producto',
+        eliminarPromocion:       'eliminar_promocion',
+        guardarTarjetaWA:        'guardar_tarjeta_wa',
+        setHorarioCustomPersonal:'set_horario_custom_personal'
       };
       if (_MOS_ADMIN_RPC[action]) {
         return (async () => {

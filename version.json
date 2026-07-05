@@ -1,1 +1,1 @@
-{"version":"2.43.451","build":"2.43.451 (0% GAS / 0% fallback): _conFallbackMOS ya NO cae a GAS en ningun caso (ni con gate OFF ni al boot sin token) -> mata el getHorariosApps/getPersonalMaster GAS del arranque. Solo directo Supabase + retry + null (caller usa cache)."}
+{"version":"2.43.452","build":"2.43.452 (kill-GAS escrituras admin): actualizar/eliminar categoria/personal/impresora/proveedor-producto/promocion + guardarTarjetaWA + setHorarioCustomPersonal -> RPCs mos.* (375+340)."}
