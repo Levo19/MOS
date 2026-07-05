@@ -1,5 +1,15 @@
 # LISTA COMPLETA para 0% GAS REAL (no solo lo principal) — 2026-07-05
 
+## ESTADO (actualizado 2026-07-05, MOS 2.43.454 desplegado)
+- ✅ **HECHO+DESPLEGADO+VERIFICADO** (MOS): items **1** (notif config actualizar/restaurar — falta probar/reenviar=push), **2** ⚠️, **3** ⚠️ (jornales money: backfill + importarCajas, SQL 378, idempotentes), **4** (resolver alerta auditoría), **5** (equivalencia update), **6** (prov-prod crear/actualizar), **7** (dispositivo), **8** (bloqueos dispositivos/vendedor, SQL 377), **9** (recalc stock min/max SQL 379 + aplicar precios = loop publicarPrecio). SQL 376/379.
+- ✅ **HECHO** item **14-adhesivo**: `wh_estado/calibrar/cancelarLoteAdhesivo` → Edge print-adhesivo modos estado/calibrar/cancelar (estado+cancelar smoke-test prod OK). `wh_getRotacionSemanal` → mos.wh_rotacion_semanal (SQL 380). crear/imprimirSub ya eran Edge-primario (fallback muerto con flag ON).
+- ⏸️ **DIFERIDO money-crítico**: item **14-inventario** — `wh_reconciliarStock*` (dependen de auditarStockGlobal + modelo kardex; incidente previo de corrupción) · `wh_editarPNCantidad` (producto_nuevo + sync lote) · `wh_getAlertasStock`. Requieren port cuidadoso + verificación teórico-vs-real. NO rushear (regla money-safety).
+- ⬜ **PENDIENTE greenfield**: items **10** (Tributación×6), **11** (OCR/Jefa×6 → Edge ia/vision), **12/23/27** (espía chunks → Storage+Edge), **13** (impresión Z/pago/cargadores → Edge imprimir), **20-22** (ME etiquetas/impresora), **29** (ExtensorHorario), **32** (portales cliente — bloqueado export Sheet), **33** (turno.html).
+- 🧹 **Limpieza (no pega GAS en runtime con flags ON)**: items **16-18** (if(false)/GAS_URL/mirror), **19** (dual-writes), **25/26/28** (mirrors + fallbacks pasivos).
+
+---
+
+
 > Estado verificado por web-check (Playwright real): **las 3 apps bootean 0 GAS**. Todo lo de abajo son
 > acciones/paths GAS que NO se disparan en el arranque ni en los flujos principales, pero existen. Para el
 > 0% REAL hay que matar cada uno (RPC/Edge nuevo, o eliminar el brazo, o migrar la app aparte).

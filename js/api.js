@@ -2216,6 +2216,33 @@ const API = (() => {
       return r;   // {ok:true, data:{etiquetas, productos}}
     }
 
+    // [cero-GAS · WH-inventario] wrappers cross-app money-safe (reusan wh.auditar_cuadre_stock corte+delta +
+    // wh.aceptar_teorico_alerta atómica; elevación de claim a warehouseMos en la RPC). SQL 381.
+    if (action === 'wh_auditarStockGlobal') {
+      const r = await _sbRpcMOS('wh_auditar_cuadre', { p: {} }, 'mos');
+      if (r == null) return null;
+      return r;   // {ok:true, modelo:'corte+delta', alertas, ...}
+    }
+    if (action === 'wh_getAlertasStock') {
+      const r = await _sbRpcMOS('wh_get_alertas_stock', { p: { soloPendientes: p.soloPendientes } }, 'mos');
+      if (r == null) return null;
+      return r;   // {ok:true, data:[{idAlerta,codigoProducto,stockReal,stockTeorico,diferencia,revisado}]}
+    }
+    if (action === 'wh_reconciliarStockProducto') {
+      const r = await _sbRpcMOS('wh_reconciliar_stock_producto', { p: {
+        codigoBarra: p.codigoBarra || p.codigoProducto, autorizadoPor: p.autorizadoPor
+      } }, 'mos');
+      if (r == null) return null;
+      return r;   // {ok:true, data:{codigoBarra,real,teorico,diff,ajusteAplicado,accion}}
+    }
+    if (action === 'wh_reconciliarStockMasivo') {
+      const r = await _sbRpcMOS('wh_reconciliar_stock_masivo', { p: {
+        maxDiffAuto: p.maxDiffAuto, dryRun: p.dryRun, autorizadoPor: p.autorizadoPor, motivo: p.motivo
+      } }, 'mos');
+      if (r == null) return null;
+      return r;   // {ok:true, data:{corregidas,omitidas,errores,dryRun,detalles}}
+    }
+
     return null;   // acción no cableada → GAS
   }
 
