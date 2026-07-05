@@ -1,5 +1,19 @@
 # PLAN ORDENADO — Corte total de GAS (auditoría 500x · 2026-07-04)
 
+## ▶ AVANCE DE EJECUCIÓN (2026-07-04, en curso)
+- **NIVEL 0 ✅ HECHO+desplegado** (ME 2.8.158): cola offline drena directo (CPE/NV, sin GAS) + guard CPE-off + panel fantasmas. Revisión 100x aplicada (fixes #A/#B).
+- **NIVEL 1 · parcial (desplegado):**
+  - ✅ Desbloqueo temporal usuario (WH+ME) — RPC `mos.desbloquear_usuario_temporal` (SQL 363). WH 2.13.400+, ME 2.8.158.
+  - ✅ Retoma caja con PIN (ME) — `me.confirmar_retoma_caja` (364). ME 2.8.158.
+  - ✅ Auditoría stock (ME) — `me.registrar_auditoria` (365, elevación claim). ME 2.8.158.
+  - ✅ MOS admin (9 RPCs, SQL 366+367): setConfig, actualizarCostoPorSku, actualizarProductoMaster, crear/actualizarPersonalMaster, crear/actualizarZona, crearCategoria, rotarClaveAdminGlobal. Intercept `_MOS_ADMIN_RPC` en api.js. MOS 2.43.448. **Revisión 100x → fixes críticos aplicados (367):** rotar exige pinAdmin real, set_config bloquea claves del PIN global, personal setea pin_hash bcrypt, costo error si ambiguo, categoría no pisa.
+  - ⏳ PENDIENTE NIVEL 1: WH login-confirmación background · getOperacionDetalle (read) · crear/actualizarPromocion (falta tabla mos.promociones) · lanzarProductoNuevo/crearPNManual (cross-app WH).
+- **NIVEL 2–6: pendientes.**
+- Fix de producción intercalado: adhesivos envasado no imprimían (sub_job_size=500 → cap 50 + Edge reembolsa en excepción). Resuelto.
+
+---
+
+
 > Fuente: auditoría 500x de las 3 apps (MOS/ME/WH) + revisión 500x de lo implementado hoy.
 > Regla confirmada: los **fallbacks pasivos** (dispatchers, `_conFallbackMOS`, Cat.1 con flag ON) y **mirrors
 > fire-and-forget** se auto-neutralizan al borrar GAS (fetch falla → caché/error). NO bloquean el corte.
