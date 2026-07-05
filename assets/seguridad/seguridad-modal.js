@@ -213,10 +213,17 @@
     getHorariosApps:             'horarios_apps',
     setHorarioApp:               'actualizar_horario_app',
     setHorarioCustomPersonal:    'set_horario_custom_personal',
-    notificarmeCuandoAbra:       'notificar_apertura_pedir'
+    notificarmeCuandoAbra:       'notificar_apertura_pedir',
+    // [cero-GAS] validar horario → mos.resolver_horario_personal (330, grant anon 391). data
+    // {permitido,motivo,fuente,dia,apertura,cierre} casa con lo que consume el widget.
+    verificarHorario:            'resolver_horario_personal'
   };
   function _api(action, params) {
     var _rpcFn = _RPC_DIRECT[action];
+    // verificarHorario necesita la app para leer el horario correcto (mosExpress/warehouseMos/MOS).
+    if (action === 'verificarHorario' && params && !params.app) {
+      try { params = Object.assign({}, params, { app: _config.app || '' }); } catch (_) {}
+    }
     if (_rpcFn && window.DeviceAuth && typeof DeviceAuth.rpc === 'function') {
       return DeviceAuth.rpc(_rpcFn, params || {}).then(function(r) {
         if (r && r.ok === false) throw new Error(r.error || 'Backend rechazó');

@@ -296,7 +296,9 @@
     // [CERO-GAS adhesivo] config/drift del rollo → RPCs mos.* (SQL 350/351). Shapes idénticos al GAS.
     estadoCalibracionRollo:    'adhesivo_calibracion_estado',
     aplicarDriftDetectado:     'adhesivo_aplicar_drift',
-    resetearDriftEmergencia:   'adhesivo_reset_drift'
+    resetearDriftEmergencia:   'adhesivo_reset_drift',
+    // [cero-GAS] polling de estado del lote → mos.adhesivo_lote_estado (349, anon, gate incl warehouseMos).
+    getEstadoLoteAdhesivo:     'adhesivo_lote_estado'
   };
   // [CERO-GAS adhesivo] acciones que tocan PrintNode → Edge `print-adhesivo` (via _config.edgeCall, inyectado
   // en MOS+WH como API.printAdhesivoEdge). Cada entrada mapea action → body con `mode` para la Edge. Los LOTE
