@@ -2859,6 +2859,27 @@ const API = (() => {
       if (action === 'getUltimaUbicacionDispositivo') {
         return _conFallbackMOS(() => _getUltimaUbicacionDispositivoDirecto(p), () => _postMOS(action, p), _mosLecturaDirecta);
       }
+      // [NIVEL 1 corte-GAS · CERO-GAS] Escrituras admin sin ruta directa → RPCs mos.* (SQL 366). Replica el
+      // contrato de _fetch('POST'): lanza si {ok:false}, devuelve r.data. Sin fallback GAS.
+      const _MOS_ADMIN_RPC = {
+        setConfig:               'set_config',
+        actualizarCostoPorSku:   'actualizar_costo_sku',
+        actualizarProductoMaster:'actualizar_producto_master',
+        crearPersonalMaster:     'crear_personal',
+        actualizarPersonalMaster:'actualizar_personal',
+        crearZona:               'crear_zona',
+        actualizarZona:          'actualizar_zona',
+        crearCategoria:          'crear_categoria',
+        rotarClaveAdminGlobal:   'rotar_clave_admin'
+      };
+      if (_MOS_ADMIN_RPC[action]) {
+        return (async () => {
+          const r = await _sbRpcMOS(_MOS_ADMIN_RPC[action], { p: p || {} }, 'mos');
+          if (r == null) throw new Error('Sin conexión con el servidor');
+          if (r.ok === false) throw new Error(r.error || 'Error del servidor');
+          return r.data;
+        })();
+      }
       // [BLOQUEANTE B2 · CERO-GAS/CERO-FALLBACK] Login por PIN 100% Supabase (RPC mos.verificar_pin_personal, 359).
       // SIN fallback GAS: sin backend no se puede loguear, así que un fallo se reporta como error (no cae a GAS).
       // Devuelve el objeto data desempaquetado {autorizado, nombre, rol} = shape que confirmarPin ya consume.

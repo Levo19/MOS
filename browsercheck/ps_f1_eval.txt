@@ -1,0 +1,40 @@
+(async()=>{
+  var app=document.getElementById('app');
+  var ss=(app.__vnode||app._vnode).component.setupState;
+  var sess={id:'P-1',nombre:'Admin',rol:'Administrador',loginAt:Date.now()};
+  localStorage.setItem('ps_session',JSON.stringify(sess));
+  ss.session=sess;
+  ss.goModule('facturacion');
+  await new Promise(r=>setTimeout(r,9000));
+  var bar=document.querySelector('#fac-tabbar');
+  var tabs=bar?[...bar.querySelectorAll('.fac-tb')].map(function(b){return b.textContent.replace(/\s+/g,' ').trim();}):[];
+  var emitBtn=!!document.querySelector('.fac-emit-cta');
+  var carousels=document.querySelectorAll('.fac-car').length;
+  var arrows=document.querySelectorAll('.fac-car-arw').length;
+  var defTab=(typeof _facState!=='undefined'&&_facState)?_facState.tab:null;
+  var balNode=document.querySelector('#fac-balanza-panel');
+  _facTab('renta');
+  await new Promise(r=>setTimeout(r,700));
+  var balNode2=document.querySelector('#fac-balanza-panel');
+  var slot=document.querySelector('#fac-slot');
+  var slotTxt=slot?slot.textContent.slice(0,60):'';
+  _facTab('historial');
+  await new Promise(r=>setTimeout(r,700));
+  var histChipsNow=document.querySelectorAll('#fac-slot .fac-chip').length;
+  var overflowX=false; try{ var sh=document.querySelector('.fac-mod-shell2'); if(sh) overflowX=sh.scrollWidth>document.documentElement.clientWidth+2; }catch(e){}
+  return {
+    histChipsNow:histChipsNow,
+    tabs:tabs,
+    hasSubir:tabs.some(function(t){return /Subir/.test(t);}),
+    hasCompras:tabs.some(function(t){return /Compras/.test(t);}),
+    emitBtn:emitBtn,
+    carousels:carousels,
+    arrows:arrows,
+    defTab_before_renta:defTab,
+    sameBalanzaNode:balNode===balNode2,
+    slotChangedToRenta:/renta|proyec|cuenta/i.test(slotTxt),
+    semChips:document.querySelectorAll('.fac-chip.sem-ok,.fac-chip.sem-bad').length,
+    histChips:document.querySelectorAll('#fac-slot .fac-chip').length,
+    overflowX:overflowX
+  };
+})()

@@ -1,0 +1,7 @@
+{
+  "url": "http://127.0.0.1:8137/",
+  "viewport": { "width": 1280, "height": 800 },
+  "waitMs": 3500,
+  "evalAfter": "(async()=>{try{var ss=(document.getElementById('app').__vnode||document.getElementById('app')._vnode).component.setupState;localStorage.setItem('ps_session',JSON.stringify({id:'P-1',nombre:'Admin',rol:'Administrador',loginAt:Date.now()}));ss.session={id:'P-1',nombre:'Admin',rol:'Administrador',loginAt:Date.now()};ss.goModule('facturacion');await new Promise(r=>setTimeout(r,8000));var out={};var bp=document.querySelector('#fac-balanza-panel');if(bp)bp.__t=1;window._facOpenEmit&&window._facOpenEmit();await new Promise(r=>setTimeout(r,600));out.modalOpen=!!document.querySelector('#fac-emit-modal .fac-emit-box');out.localIdSet=!!(window._facState&&window._facState._emitLocalId);out.lid1=window._facState&&window._facState._emitLocalId;window._facCloseEmit&&window._facCloseEmit();await new Promise(r=>setTimeout(r,400));var bp2=document.querySelector('#fac-balanza-panel');out.sameBalanzaAfterModal=!!(bp2&&bp2.__t===1);return out;}catch(e){return{crash:e.message}}})()",
+  "screenshot": "f1fix.png"
+}
