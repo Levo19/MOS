@@ -2308,6 +2308,22 @@ const API = (() => {
       if (r.ok === false) throw new Error(r.error || 'Error del servidor');
       return r.data;   // {autorizado, forzadoPor, error?} — el caller lee r.autorizado
     }
+    if (action === 'jalarProductosProveedor') {
+      const r = await _sbRpcMOS('jalar_productos_proveedor', { p: { idProveedor: p.idProveedor } }, 'mos');
+      if (r == null) return null;
+      if (r.ok === false) throw new Error(r.error || 'Error del servidor');
+      return r.data;   // {creados, actualizados, omitidos, total, totalGuias}
+    }
+    if (action === 'probarNotificacion') {
+      const r = await _sbRpcMOS('probar_notificacion', { p: { idNotif: p.idNotif, soloAMi: p.soloAMi, miUsuario: p.miUsuario } }, 'mos');
+      if (r == null) return null;
+      return r;   // {ok, data:{idNotif,enviada}} — el front solo hace await
+    }
+    if (action === 'setupAdhesivosBase') {
+      const r = await _sbRpcMOS('adhesivo_iconos_upsert', { p: { tamano: p.tamano_dots || p.tamano, iconos: p.iconos } }, 'mos');
+      if (r == null) return null;
+      return r;   // fire-and-forget; el front no lee el shape
+    }
 
     return null;   // acción no cableada → GAS
   }
@@ -2425,7 +2441,10 @@ const API = (() => {
     aplicarRespuestaJefa:        () => true,   // ⚠️money precio · mos.aplicar_respuesta_jefa (385)
     llenarCostosGuia:            () => true,   // wh.actualizar_precios_detalle (383)
     forzarPushDispositivo:       () => true,   // mos.forzar_dispositivo (389)
-    forzarWizardDispositivo:     () => true    // mos.forzar_dispositivo (389)
+    forzarWizardDispositivo:     () => true,   // mos.forzar_dispositivo (389)
+    jalarProductosProveedor:     () => true,   // mos.jalar_productos_proveedor (390)
+    probarNotificacion:          () => true,   // mos.probar_notificacion (390)
+    setupAdhesivosBase:          () => true    // mos.adhesivo_iconos_upsert (390)
     // [DUAL-WRITE] pedidos/pagos/provprod/gastos/horario: SIN entrada acá → su escritura va SIEMPRE por
     // GAS (dual-write espeja la sombra). recomputarLiquidacionDia tampoco (incompatible).
   };
