@@ -1,0 +1,10 @@
+{
+  "url": "http://127.0.0.1:8137/",
+  "viewport": {
+    "width": 1280,
+    "height": 900
+  },
+  "waitMs": 4000,
+  "evalAfter": "(async () => {\n  try {\n    var app = document.getElementById('app');\n    var ss = (app.__vnode || app._vnode).component.setupState;\n    var s = { id: 'P-1', nombre: 'Admin', rol: 'Administrador', loginAt: Date.now() };\n    localStorage.setItem('ps_session', JSON.stringify(s));\n    ss.session = s;\n    ss.goModule('facturacion');\n    await new Promise(function (r) { setTimeout(r, 7000); });\n    var comp = {id:\"FAKE-A4\",tipo:1,serie:\"F002\",numero:123,cliente_nombre:\"TURISMO PARACAS S.A.C.\",cliente_doc:\"20123456789\",cliente_doc_tipo:\"6\",moneda:\"PEN\",total:118,total_gravada:100,total_igv:18,hash:\"A1B2C3D4E5F6A1B2C3D4E5F6A1B2\",creado:\"2026-07-05 10:30\",items:[{descripcion:\"Tour Islas Ballestas\",cantidad:2,precio:50},{descripcion:\"Reserva Nacional de Paracas\",cantidad:1,precio:18}]};\n    _facState.comprobantes = [comp];\n    window._facAbrirPDF(comp);\n    try { await _facEnsureQR(); } catch (e) {}\n    var st = document.querySelector('#fac-pdf-modal .fpdf-stage');\n    if (st) st.innerHTML = _facPdfPreviewHTML(comp, 'a4');\n    await new Promise(function (r) { setTimeout(r, 1500); });\n    var stage = document.querySelector('#fac-pdf-modal .fpdf-stage');\n    var h = stage ? stage.innerHTML : '';\n    return {\n      ver: window.APP_VERSION,\n      titulo: document.querySelector('#fac-pdf-modal .fac-emit-title').textContent,\n      hasQRimg: !!stage.querySelector('img[alt=\"QR\"]'),\n      hasSON: h.indexOf('SON:') >= 0,\n      hasDom: h.indexOf('San Mart') >= 0,\n      hasActividad: h.indexOf('7912') >= 0,\n      overflowX: document.documentElement.scrollWidth > window.innerWidth + 1,\n      sonTxt: (h.match(/SON:[^<]{0,60}/) || [''])[0]\n    };\n  } catch (e) { return { crash: e.message, stack: (e.stack || '').slice(0, 300) }; }\n})()\n",
+  "screenshot": "c-a4.png"
+}

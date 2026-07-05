@@ -2243,6 +2243,64 @@ const API = (() => {
       return r;   // {ok:true, data:{corregidas,omitidas,errores,dryRun,detalles}}
     }
 
+    // [cero-GAS · Tributación] SQL 382. Resumen/IGV-favor/limpiar-huérfanas + IGV-emitido reusa cpe_trazabilidad.
+    if (action === 'tribResumenMes') {
+      const r = await _sbRpcMOS('trib_resumen_mes', { p: { mes: p.mes, anio: p.anio } }, 'mos');
+      if (r == null) return null;
+      return r;   // {ok:true, data:{igvFavor,igvEmitido,balanceNetoIGV,totalVentas,rentaMensual,...cpe/guia buckets}}
+    }
+    if (action === 'tribIGVFavorMes') {
+      const r = await _sbRpcMOS('igv_favor_mes', { p: { mes: p.mes, anio: p.anio } }, 'wh');
+      if (r == null) return null;
+      return r;   // {ok:true, data:{guias:[...], totalIGVFavor, totalGuias*...}}
+    }
+    if (action === 'tribLimpiarVentasHuerfanas') {
+      const r = await _sbRpcMOS('limpiar_ventas_huerfanas', { p: {} }, 'mos');
+      if (r == null) return null;
+      return r;   // {ok:true, data:{limpiadas}}
+    }
+    if (action === 'tribIGVEmitidoMes') {
+      // IGV emitido = CPE del mes → reusa me.cpe_trazabilidad (rango del mes). Caller lee res.cpe || res.data.cpe.
+      const mes = parseInt(p.mes, 10), anio = parseInt(p.anio, 10);
+      if (!(mes >= 1 && mes <= 12) || !(anio > 2000)) return null;
+      const desde = `${anio}-${String(mes).padStart(2, '0')}-01`;
+      const ultimo = new Date(anio, mes, 0).getDate();
+      const hasta = `${anio}-${String(mes).padStart(2, '0')}-${String(ultimo).padStart(2, '0')}`;
+      const r = await _sbRpcMEWrite('cpe_trazabilidad', { p: { desde, hasta, estado: '' } });
+      if (r == null || r.ok === false) return null;
+      // cpe_trazabilidad devuelve {ok, cpe:[...]}; el caller de tributación lee res.cpe.
+      return r;
+    }
+
+    // [cero-GAS · OCR/Jefa backend] SQL 383/385. Contexto (join guía⋈catálogo) + aplicar decisiones de precio.
+    if (action === 'getContextoTicketJefa') {
+      const r = await _sbRpcMOS('contexto_ticket_jefa', { p: { idGuia: p.idGuia } }, 'mos');
+      if (r == null) return null;
+      return r;   // {ok:true, data:{items:[{skuBase,descripcion,costo,ventaActual,margenActualPct}]}}
+    }
+    if (action === 'aplicarRespuestaJefa') {
+      // ⚠️MONEY. Valida clave server-side + reusa publicar_precio por item. El ticket de confirmación se
+      // imprime aparte (Edge imprimir con data.cambios) — la RPC no imprime (ticketImpreso:false).
+      const r = await _sbRpcMOS('aplicar_respuesta_jefa', { p: {
+        idGuia: p.idGuia, claveAdmin: p.claveAdmin || '', items: p.items, usuario: _mosUsuario(p)
+      } }, 'mos');
+      if (r == null) return null;
+      return r;   // {ok:true, data:{autorizado,aplicados,errores,cambios,autorizadoPor,ticketImpreso}}
+    }
+    if (action === 'llenarCostosGuia') {
+      // Guarda los precios del detalle (wh.actualizar_precios_detalle). El auto-margen + sugerencias FIFO
+      // quedan como refinamiento (el guardado del costo del detalle es lo crítico para el flujo).
+      const r = await _sbRpcMOS('actualizar_precios_detalle', { p: {
+        idGuia: p.idGuia, items: p.items
+      } }, 'wh');
+      if (r == null) return null;
+      const d = (r && r.data) || {};
+      return { ok: true, data: {
+        lineasActualizadas: d.actualizados || 0, montoTotalNuevo: d.montoTotalNuevo || 0,
+        productosActualizados: 0, productosVentaAutoActualizada: 0, ventaAutoLog: [], sugerenciasPrecioVenta: []
+      } };
+    }
+
     return null;   // acción no cableada → GAS
   }
 

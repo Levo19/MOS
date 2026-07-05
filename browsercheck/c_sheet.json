@@ -1,0 +1,10 @@
+{
+  "url": "http://127.0.0.1:8137/",
+  "viewport": {
+    "width": 1280,
+    "height": 900
+  },
+  "waitMs": 4000,
+  "evalAfter": "(async () => {\n  try {\n    var app = document.getElementById('app');\n    var ss = (app.__vnode || app._vnode).component.setupState;\n    var s = { id: 'P-1', nombre: 'Admin', rol: 'Administrador', loginAt: Date.now() };\n    localStorage.setItem('ps_session', JSON.stringify(s));\n    ss.session = s;\n    ss.goModule('facturacion');\n    await new Promise(function (r) { setTimeout(r, 7000); });\n    _facState.solicitudes = [\n      { id: 'S1', serie: 'B002', numero: 45, cliente_nombre: 'Juan Perez Ramos', total: 118, solicitada: '2026-07-05 09:12', anulacion_por: 'Operador Muelle', anulacion_motivo: 'Cliente pidio factura en vez de boleta' },\n      { id: 'S2', serie: 'F002', numero: 88, cliente_nombre: 'Agencia Sol del Sur SAC', total: 354, solicitada: '2026-07-05 08:40', anulacion_por: 'Cajero PS', anulacion_motivo: 'Monto equivocado, cobro doble' }\n    ];\n    _facRenderAlerta();\n    if (true) { window._facOpenAnulSheet(); }\n    await new Promise(function (r) { setTimeout(r, 900); });\n    var fab = document.querySelector('.fac-anul-fab');\n    var sheet = document.getElementById('fac-anul-sheet');\n    var tabbar = document.getElementById('fac-tabbar');\n    var fr = fab ? fab.getBoundingClientRect() : null;\n    return {\n      ver: window.APP_VERSION,\n      fabPresent: !!fab,\n      badge: fab ? (fab.querySelector('.fac-anul-badge') || {}).textContent : null,\n      fabPos: fr ? { right: Math.round(window.innerWidth - fr.right), bottom: Math.round(window.innerHeight - fr.bottom), w: Math.round(fr.width) } : null,\n      tabbarHasAnular: tabbar ? tabbar.textContent.indexOf('Anular') >= 0 : null,\n      sheetOpen: !!(sheet && sheet.classList.contains('visible')),\n      anularBtns: document.querySelectorAll('.fac-anul-anular').length,\n      overflowX: document.documentElement.scrollWidth > window.innerWidth + 1\n    };\n  } catch (e) { return { crash: e.message, stack: (e.stack || '').slice(0, 300) }; }\n})()\n",
+  "screenshot": "c-sheet.png"
+}
