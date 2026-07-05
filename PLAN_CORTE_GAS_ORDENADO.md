@@ -1,6 +1,15 @@
 # PLAN ORDENADO — Corte total de GAS (auditoría 500x · 2026-07-04)
 
-## ▶ AVANCE DE EJECUCIÓN (2026-07-04, en curso)
+## ▶ AVANCE DE EJECUCIÓN (2026-07-04) — N0–N3 ✅ · N2 ✅ · N4 parcial
+- **NIVEL 0 ✅** cola offline directa.
+- **NIVEL 1 ✅ COMPLETO** (desbloqueo, retoma, auditoría, 9 admin MOS, login-WH, getOperacionDetalle, promociones, lanzarProductoNuevo). 100x + fixes 367/371.
+- **NIVEL 2 ✅** BAJA_CPE (Edge emitir-cpe op=baja) + EDITAR_CLIENTE (me.editar_cliente). ME 2.8.159.
+- **NIVEL 3 ✅** getOperacionesConDetalle, getClaveAdminGlobal (372), resolverHorarioPersonal (330), setHorarioApp (82). MOS 2.43.450.
+- **NIVEL 4 parcial** (ME 2.8.160): ✅ etiquetas marcar (373), CONFIG_MOS (config_me 374), devolución→WH (crear_devolucion_zona 374). ⏳ pendiente: reimprimirEtiqueta (print Edge), CAMBIO_IMPRESORA_CAJA (config estación), MOS backfillLiquidacionesDia/importarJornadasDesdeCajas (recompute admin), espía chunks (Storage), promos-al-POS (catalogo_pos_rls serve), verificarHorario WH (→ resolver_horario_personal). **Lecturas WH pasivas (getWelcomeData/getDesempenoDia/getResumenPersonal/getRolUsuario/getProducto/getResultadosDiagnostico/listarOpsPendientes) se auto-neutralizan vía `call()` (caché/error) → NO bloquean el corte.**
+- **NIVEL 5 ⛔ BLOQUEADO por dependencia externa:** portales cliente WH necesitan migrar los datos del **Sheet de clientes vivo** (no accesible desde aquí). Backend (4 tablas+8 RPCs+2 Edge IA) construible; la migración de datos requiere el export del Sheet.
+- **NIVEL 6** limpieza inerte (if(false), dead-code) — opcional, bajo valor, se deja.
+
+## (histórico previo) AVANCE DE EJECUCIÓN
 - **NIVEL 0 ✅ HECHO+desplegado** (ME 2.8.158): cola offline drena directo (CPE/NV, sin GAS) + guard CPE-off + panel fantasmas. Revisión 100x aplicada (fixes #A/#B).
 - **NIVEL 1 · parcial (desplegado):**
   - ✅ Desbloqueo temporal usuario (WH+ME) — RPC `mos.desbloquear_usuario_temporal` (SQL 363). WH 2.13.400+, ME 2.8.158.
