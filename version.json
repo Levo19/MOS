@@ -1,1 +1,1 @@
-{"version":"2.43.452","build":"2.43.452 (kill-GAS escrituras admin): actualizar/eliminar categoria/personal/impresora/proveedor-producto/promocion + guardarTarjetaWA + setHorarioCustomPersonal -> RPCs mos.* (375+340)."}
+{"version":"2.43.453","build":"2.43.453 (kill-GAS admin-ME dinero): cambiarMetodoME->me.cobrar_venta_directo, meAprobarComoCredito->me.creditar_venta_directo, meBajaCPE->Edge emitir-cpe op=baja. Cero-GAS reusando RPCs/Edge existentes."}

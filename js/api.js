@@ -2910,6 +2910,31 @@ const API = (() => {
           return r.data;
         })();
       }
+      // [kill-GAS · MOS admin sobre ventas ME] Reutilizan RPCs me.* (profile 'me') / Edge. Cero-GAS/cero-fallback.
+      if (action === 'cambiarMetodoME' || action === 'meAprobarComoCredito' || action === 'meBajaCPE') {
+        return (async () => {
+          if (action === 'meBajaCPE') {
+            const tok = await _mintTokenMOS();
+            if (!tok) throw new Error('Sin token');
+            const res = await _sbFetchTimeout(`${_SB_URL}/functions/v1/emitir-cpe`, {
+              method: 'POST',
+              headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ operacion: 'baja', idVenta: p.idVenta, motivo: p.motivo })
+            }, 20000);
+            const j = await res.json().catch(() => null);
+            if (!j || j.status !== 'success') throw new Error((j && (j.error || j.mensaje)) || 'Error baja CPE');
+            return j;
+          }
+          const rpc  = action === 'cambiarMetodoME' ? 'cobrar_venta_directo' : 'creditar_venta_directo';
+          const args = action === 'cambiarMetodoME'
+            ? { idVenta: p.idVenta, metodo: p.metodo, usuario: 'MOS-admin' }
+            : { idVenta: p.idVenta, obs: p.motivo || '', usuario: 'MOS-admin' };
+          const r = await _sbRpcMOS(rpc, { p: args }, 'me');
+          if (r == null) throw new Error('Sin conexión con el servidor');
+          if (r.ok === false) throw new Error(r.error || 'Error del servidor');
+          return r.data !== undefined ? r.data : r;
+        })();
+      }
       // [BLOQUEANTE B2 · CERO-GAS/CERO-FALLBACK] Login por PIN 100% Supabase (RPC mos.verificar_pin_personal, 359).
       // SIN fallback GAS: sin backend no se puede loguear, así que un fallo se reporta como error (no cae a GAS).
       // Devuelve el objeto data desempaquetado {autorizado, nombre, rol} = shape que confirmarPin ya consume.

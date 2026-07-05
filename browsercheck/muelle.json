@@ -1,0 +1,7 @@
+{
+  "url": "http://127.0.0.1:8137/",
+  "viewport": { "width": 1280, "height": 800 },
+  "waitMs": 3500,
+  "evalAfter": "(async()=>{try{var ss=(document.getElementById('app').__vnode||document.getElementById('app')._vnode).component.setupState;localStorage.setItem('ps_session',JSON.stringify({id:'P-1',nombre:'Admin',rol:'Administrador',loginAt:Date.now()}));ss.session={id:'P-1',nombre:'Admin',rol:'Administrador',loginAt:Date.now()};ss.goModule('facturacion');await new Promise(r=>setTimeout(r,8000));var bp=document.querySelector('#fac-balanza-panel');if(bp)bp.__t=1;var tb=document.querySelector('#fac-tabbar');var tabs=tb?tb.innerText:'';var sw=document.querySelector('#fac-muelle-row');var swTxt=sw?sw.innerText:'';window._facTab&&window._facTab('conciliacion');await new Promise(r=>setTimeout(r,800));var bp2=document.querySelector('#fac-balanza-panel');return {switch_presente:!!sw, switch_texto:swTxt.slice(0,60), tabbar_sin_ajustes:tabs.toLowerCase().indexOf('ajustes')<0, tabbar_txt:tabs.replace(/\\n/g,' ').slice(0,80), sameBalanza:!!(bp2&&bp2.__t===1)};}catch(e){return{crash:e.message}}})()",
+  "screenshot": "muelle.png"
+}
