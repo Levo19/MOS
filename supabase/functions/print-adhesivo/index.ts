@@ -631,12 +631,14 @@ async function resolverPrinterAdhesivo(): Promise<string> {
 // Upsert best-effort de claves en mos.config (usado por el reset de calibración). Las claves ADHESIVO_* ya existen.
 async function setConfigMos(kv: Record<string, string>): Promise<void> {
   try {
-    for (const [clave, valor] of Object.entries(kv)) {
-      await fetch(`${SB_URL}/rest/v1/config?clave=eq.${encodeURIComponent(clave)}`, {
-        method: 'PATCH',
-        headers: { 'apikey': SB_KEY!, 'Authorization': 'Bearer ' + SB_KEY!, 'Accept-Profile': 'mos', 'Content-Profile': 'mos', 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ valor }) });
-    }
+    // [FIX 393] UPSERT (no PATCH): claves como ADHESIVO_ROLLO_CALIBRADO/FECHA_CALIBRADO no están sembradas →
+    // un PATCH afectaría 0 filas y se perdería la escritura. merge-duplicates inserta o actualiza.
+    const rows = Object.entries(kv).map(([clave, valor]) => ({ clave, valor }));
+    if (!rows.length) return;
+    await fetch(`${SB_URL}/rest/v1/config`, {
+      method: 'POST',
+      headers: { 'apikey': SB_KEY!, 'Authorization': 'Bearer ' + SB_KEY!, 'Accept-Profile': 'mos', 'Content-Profile': 'mos', 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(rows) });
   } catch { /* best-effort */ }
 }
 const PN_KEY = Deno.env.get('PRINTNODE_API_KEY');

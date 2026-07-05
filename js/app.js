@@ -39964,7 +39964,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (!_audAdmCatalogo) {
       try {
         const cat = await API.get('getAuthCatalogo', {});
-        _audAdmCatalogo = (cat && cat.data) || {};
+        // [FIX 393] el intercept ya devuelve el MAPA de acciones desenvuelto (r.data), no el envoltorio.
+        _audAdmCatalogo = cat || {};
         const sel = document.getElementById('audAdmFiltroAccion');
         if (sel) {
           const cur = sel.value;

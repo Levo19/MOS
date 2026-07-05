@@ -1,0 +1,17 @@
+{
+  "url": "http://localhost:8137/index.html",
+  "waitMs": 3000,
+  "viewport": {
+    "width": 430,
+    "height": 932
+  },
+  "localStorage": {
+    "ps_session": {
+      "rol": "Administrador",
+      "nombre": "Luis",
+      "id": "x1"
+    }
+  },
+  "screenshot": "ps-cli-manual.png",
+  "evalAfter": "(async()=>{try{ _facState=_facInitState({rol:'Administrador',nombre:'Luis',id:'x1'},[],false,{serie_boleta:'B002',serie_factura:'F002'}); _facOpenEmit(); await new Promise(r=>setTimeout(r,400)); var S=_facState; S.cliQuery='X1234567'; S.cliManual=true; S.manualDoc='X1234567'; S.manualNombre='JOHN SMITH'; S.manualTipo='7'; _facRenderEmit(); var ov=document.getElementById(\"fac-emit-modal\"); if(ov){ov.style.display=\"flex\"; ov.classList.add(\"visible\"); ov.style.zIndex=\"2000000\";} await new Promise(r=>setTimeout(r,600)); return {manual:!!document.querySelector('.fac-cli-manual'), segs:document.querySelectorAll('.fac-cli-seg').length, segOn:(document.querySelector('.fac-cli-seg.on')||{}).textContent, save:!!document.querySelector('.fac-cli-manual-save'), mdoc:!!document.getElementById('fac-cli-mdoc'), mnom:!!document.getElementById('fac-cli-mnom'), overflowX: document.documentElement.scrollWidth>document.documentElement.clientWidth}; }catch(e){return 'ERR:'+e.message;}})()"
+}

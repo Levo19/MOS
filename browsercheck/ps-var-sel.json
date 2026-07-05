@@ -1,0 +1,8 @@
+{
+  "url": "http://localhost:8137/index.html",
+  "waitMs": 3000,
+  "viewport": { "width": 430, "height": 932 },
+  "localStorage": { "ps_session": { "rol": "Administrador", "nombre": "Luis", "id": "x1" } },
+  "screenshot": "ps-var-sel.png",
+  "evalAfter": "(async()=>{try{ _facState=_facInitState({rol:'Administrador',nombre:'Luis',id:'x1'},[],false,{serie_boleta:'B002',serie_factura:'F002'}); _facOpenEmit(); await new Promise(r=>setTimeout(r,400)); _facCliSetVarios(); _facState.items=[{descripcion:'Paseo en lancha Islas Ballestas',cantidad:2,precio:60}]; _facRenderEmit(); var ov=document.getElementById('fac-emit-modal'); if(ov){ov.style.display='flex'; ov.classList.add('visible'); ov.style.zIndex='2000000';} await new Promise(r=>setTimeout(r,600)); return {chip:!!document.querySelector('.fac-cli-chip.varios'), x:!!document.querySelector('.fac-cli-x'), dir:!!document.querySelector('.fac-cli-chip-dir'), docTipo:_facState.docTipo, tipo:_facState.tipo, emitDisabled:(document.getElementById('fac-emitir')||{}).disabled, overflowX: document.documentElement.scrollWidth>document.documentElement.clientWidth}; }catch(e){return 'ERR:'+e.message;}})()"
+}

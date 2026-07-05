@@ -2300,14 +2300,8 @@ const API = (() => {
         productosActualizados: 0, productosVentaAutoActualizada: 0, ventaAutoLog: [], sugerenciasPrecioVenta: []
       } };
     }
-    if (action === 'forzarPushDispositivo' || action === 'forzarWizardDispositivo') {
-      // [cero-GAS] valida clave + setea flag forzar_push/forzar_wizard → mos.forzar_dispositivo (389).
-      const campo = action === 'forzarWizardDispositivo' ? 'wizard' : 'push';
-      const r = await _sbRpcMOS('forzar_dispositivo', { p: { deviceId: p.deviceId, claveAdmin: p.claveAdmin, app: p.app, campo } }, 'mos');
-      if (r == null) return null;
-      if (r.ok === false) throw new Error(r.error || 'Error del servidor');
-      return r.data;   // {autorizado, forzadoPor, error?} — el caller lee r.autorizado
-    }
+    // [FIX 393] forzarPush/WizardDispositivo YA se manejan en el branch de arriba (RPCs 335, pre-existente y
+    //   ganador por orden). Este branch (389/forzar_dispositivo) era código muerto → eliminado.
     if (action === 'jalarProductosProveedor') {
       const r = await _sbRpcMOS('jalar_productos_proveedor', { p: { idProveedor: p.idProveedor } }, 'mos');
       if (r == null) return null;
@@ -2440,8 +2434,8 @@ const API = (() => {
     getContextoTicketJefa:       () => true,   // mos.contexto_ticket_jefa (383)
     aplicarRespuestaJefa:        () => true,   // ⚠️money precio · mos.aplicar_respuesta_jefa (385)
     llenarCostosGuia:            () => true,   // wh.actualizar_precios_detalle (383)
-    forzarPushDispositivo:       () => true,   // mos.forzar_dispositivo (389)
-    forzarWizardDispositivo:     () => true,   // mos.forzar_dispositivo (389)
+    forzarPushDispositivo:       () => true,   // RPC mos.forzar_push_dispositivo (335, branch superior)
+    forzarWizardDispositivo:     () => true,   // RPC mos.forzar_wizard_dispositivo (335, branch superior)
     jalarProductosProveedor:     () => true,   // mos.jalar_productos_proveedor (390)
     probarNotificacion:          () => true,   // mos.probar_notificacion (390)
     setupAdhesivosBase:          () => true    // mos.adhesivo_iconos_upsert (390)

@@ -1,0 +1,8 @@
+{
+  "url": "http://localhost:8137/index.html",
+  "waitMs": 3000,
+  "viewport": { "width": 430, "height": 932 },
+  "localStorage": { "ps_session": { "rol": "Administrador", "nombre": "Luis", "id": "x1" } },
+  "screenshot": "ps-var-bloqueo.png",
+  "evalAfter": "(async()=>{try{ _facState=_facInitState({rol:'Administrador',nombre:'Luis',id:'x1'},[],false,{serie_boleta:'B002',serie_factura:'F002'}); _facOpenEmit(); await new Promise(r=>setTimeout(r,400)); _facCliSetVarios(); _facState.items=[{descripcion:'Tour privado full day',cantidad:1,precio:950}]; _facRenderEmit(); var ov=document.getElementById('fac-emit-modal'); if(ov){ov.style.display='flex'; ov.classList.add('visible'); ov.style.zIndex='2000000';} await new Promise(r=>setTimeout(r,600)); var reglas=_facReglas(); var btn=document.getElementById('fac-emitir'); return {docTipo:_facState.docTipo, total:_facTotales().total, reglasOk:_facReglasOk(), reglasFail:reglas.filter(function(r){return r.hard&&!r.ok;}).map(function(r){return r.label;}), emitDisabled:btn?btn.disabled:null, emitText:btn?btn.textContent.slice(0,40):null, overflowX: document.documentElement.scrollWidth>document.documentElement.clientWidth}; }catch(e){return 'ERR:'+e.message;}})()"
+}

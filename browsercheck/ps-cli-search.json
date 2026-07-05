@@ -1,0 +1,17 @@
+{
+  "url": "http://localhost:8137/index.html",
+  "waitMs": 3000,
+  "viewport": {
+    "width": 430,
+    "height": 932
+  },
+  "localStorage": {
+    "ps_session": {
+      "rol": "Administrador",
+      "nombre": "Luis",
+      "id": "x1"
+    }
+  },
+  "screenshot": "ps-cli-search.png",
+  "evalAfter": "(async()=>{try{ _facState=_facInitState({rol:'Administrador',nombre:'Luis',id:'x1'},[],false,{serie_boleta:'B002',serie_factura:'F002'}); _facOpenEmit(); await new Promise(r=>setTimeout(r,400)); var S=_facState; S.cliQuery='jua'; S.cliResults=[{doc_tipo:'1',doc_numero:'44556677',nombre:'JUAN PEREZ QUISPE',direccion:'',email:'',telefono:'',es_extranjero:false},{doc_tipo:'6',doc_numero:'20512345678',nombre:'INVERSIONES PARACAS S.A.C.',direccion:'AV. LOS LIBERTADORES 123, PARACAS',email:'',telefono:'',es_extranjero:false},{doc_tipo:'1',doc_numero:'41239876',nombre:'JUANA FLORES RAMOS',direccion:'',email:'',telefono:'',es_extranjero:false}]; S.cliShowLupa=true; _facRenderEmit(); var inp=document.getElementById('fac-cli'); if(inp){inp.value='jua';inp.focus();} var ov=document.getElementById(\"fac-emit-modal\"); if(ov){ov.style.display=\"flex\"; ov.classList.add(\"visible\"); ov.style.zIndex=\"2000000\";} await new Promise(r=>setTimeout(r,600)); return {cli:!!inp, drop:!!document.getElementById('fac-cli-drop'), rows:document.querySelectorAll('.fac-cli-row').length, lupa:!!document.querySelector('.fac-cli-btn.lupa'), x:!!document.querySelector('.fac-cli-btn.x'), hasDoctipo:!!document.getElementById('fac-doctipo'), hasDirInput:!!document.querySelector('[placeholder^=\"Direcci\"]'), overflowX: document.documentElement.scrollWidth>document.documentElement.clientWidth}; }catch(e){return 'ERR:'+e.message;}})()"
+}

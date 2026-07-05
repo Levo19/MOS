@@ -1,0 +1,17 @@
+{
+  "url": "http://localhost:8137/index.html",
+  "waitMs": 3000,
+  "viewport": {
+    "width": 430,
+    "height": 932
+  },
+  "localStorage": {
+    "ps_session": {
+      "rol": "Administrador",
+      "nombre": "Luis",
+      "id": "x1"
+    }
+  },
+  "screenshot": "ps-cli-sel.png",
+  "evalAfter": "(async()=>{try{ _facState=_facInitState({rol:'Administrador',nombre:'Luis',id:'x1'},[],false,{serie_boleta:'B002',serie_factura:'F002'}); _facState.facModo='factura'; _facState.tipo=1; _facOpenEmit(); _facState.facModo='factura'; _facState.tipo=1; await new Promise(r=>setTimeout(r,400)); var S=_facState; S.doc='20512345678'; S.nombre='INVERSIONES PARACAS S.A.C.'; S.docTipo='6'; S.dir='AV. LOS LIBERTADORES 123, DISTRITO DE PARACAS, PISCO, ICA'; S.cliSel=true; S.cliShowLupa=false; _facRenderEmit(); var ov=document.getElementById(\"fac-emit-modal\"); if(ov){ov.style.display=\"flex\"; ov.classList.add(\"visible\"); ov.style.zIndex=\"2000000\";} await new Promise(r=>setTimeout(r,600)); return {chip:!!document.querySelector('.fac-cli-chip'), x:!!document.querySelector('.fac-cli-x'), dir:!!document.querySelector('.fac-cli-chip-dir'), hasDoctipo:!!document.getElementById('fac-doctipo'), hasDrop: (document.getElementById('fac-cli-drop')||{}).innerHTML||'none', overflowX: document.documentElement.scrollWidth>document.documentElement.clientWidth}; }catch(e){return 'ERR:'+e.message;}})()"
+}

@@ -1,0 +1,8 @@
+{
+  "url": "http://localhost:8137/index.html",
+  "waitMs": 3000,
+  "viewport": { "width": 430, "height": 932 },
+  "localStorage": { "ps_session": { "rol": "Administrador", "nombre": "Luis", "id": "x1" } },
+  "screenshot": "ps-var-default.png",
+  "evalAfter": "(async()=>{try{ _facState=_facInitState({rol:'Administrador',nombre:'Luis',id:'x1'},[],false,{serie_boleta:'B002',serie_factura:'F002'}); _facOpenEmit(); await new Promise(r=>setTimeout(r,400)); _facRenderEmit(); var ov=document.getElementById('fac-emit-modal'); if(ov){ov.style.display='flex'; ov.classList.add('visible'); ov.style.zIndex='2000000';} await new Promise(r=>setTimeout(r,600)); return {cli:!!document.getElementById('fac-cli'), varios:!!document.querySelector('.fac-cli-varios'), variosText:(document.querySelector('.fac-cli-varios-t')||{}).textContent, drop:(document.getElementById('fac-cli-drop')||{}).innerHTML||'none', overflowX: document.documentElement.scrollWidth>document.documentElement.clientWidth}; }catch(e){return 'ERR:'+e.message;}})()"
+}
