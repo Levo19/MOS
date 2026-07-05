@@ -2646,6 +2646,17 @@ const API = (() => {
           return r.data;
         })();
       }
+      // [NIVEL 3 corte-GAS] getOperacionesConDetalle → mos.operaciones_unificadas (117); getClaveAdminGlobal →
+      // mos.get_clave_admin_global (372). Contrato _fetch('GET'): lanza si {ok:false}, devuelve r.data.
+      if (action === 'getOperacionesConDetalle' || action === 'getClaveAdminGlobal') {
+        const _rpc = action === 'getOperacionesConDetalle' ? 'operaciones_unificadas' : 'get_clave_admin_global';
+        return (async () => {
+          const r = await _sbRpcMOS(_rpc, { p: p || {} }, 'mos');
+          if (r == null) throw new Error('Sin conexión con el servidor');
+          if (r.ok === false) throw new Error(r.error || 'Error del servidor');
+          return r.data;
+        })();
+      }
       // [FASE 1 · PILOTO] getProductos → lectura directa Supabase con gate por-acción + frescura + fallback GAS.
       // Con el flag OFF (default) esto es IDÉNTICO a hoy: _conFallbackMOS NO entra al directo y va directo a GAS.
       if (action === 'getProductos') {
@@ -2883,7 +2894,9 @@ const API = (() => {
         rotarClaveAdminGlobal:   'rotar_clave_admin',
         crearPromocion:          'crear_promocion',
         actualizarPromocion:     'actualizar_promocion',
-        lanzarProductoNuevo:     'lanzar_producto_nuevo'
+        lanzarProductoNuevo:     'lanzar_producto_nuevo',
+        resolverHorarioPersonal: 'resolver_horario_personal',
+        setHorarioApp:           'actualizar_horario_app'
       };
       if (_MOS_ADMIN_RPC[action]) {
         return (async () => {

@@ -114,6 +114,42 @@ Deno.serve(async (req: Request) => {
       return json({ ok: true, consultado: true, estado: estC, ...cons });
     }
 
+    // ── [BAJA CPE cero-GAS] operacion='baja': comunica la anulación del CPE a SUNAT vía NubeFact ──
+    // Espejo de EditarVenta.gs::bajaCPEVenta: lee la venta (service role, autoritativo) → valida BOLETA/FACTURA
+    // + nf_estado=EMITIDO → parte el correlativo → NubeFact generar_anulacion → patchea nf_estado. Idempotente.
+    if (String(inp.operacion || '') === 'baja') {
+      const idVenta = String(inp.idVenta || '').trim();
+      const motivo = String(inp.motivo || '').trim();
+      if (!idVenta) return json({ status: 'error', error: 'idVenta requerido' }, 400);
+      if (motivo.length < 3) return json({ status: 'error', error: 'motivo es obligatorio para SUNAT' }, 400);
+      const sbUrl = Deno.env.get('SUPABASE_URL'); const sbKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      const vr = await fetch(`${sbUrl}/rest/v1/ventas?select=tipo_doc,nf_estado,correlativo&id_venta=eq.${encodeURIComponent(idVenta)}&limit=1`, {
+        headers: { 'apikey': sbKey!, 'Authorization': 'Bearer ' + sbKey!, 'Accept-Profile': 'me' } });
+      const vrows = await vr.json().catch(() => []);
+      if (!Array.isArray(vrows) || !vrows.length) return json({ status: 'error', error: 'Venta ' + idVenta + ' no encontrada' }, 404);
+      const v = vrows[0];
+      const td = String(v.tipo_doc || ''); const nfe = String(v.nf_estado || ''); const corr = String(v.correlativo || '');
+      if (td !== 'BOLETA' && td !== 'FACTURA') return json({ status: 'error', error: 'Solo se da de baja BOLETA o FACTURA. Esta venta es ' + td }, 400);
+      // Idempotencia: si ya está en baja, no re-comunicar.
+      if (nfe.startsWith('BAJA_')) return json({ status: 'success', nuevoEstado: nfe, dedup: true });
+      if (nfe !== 'EMITIDO') return json({ status: 'error', error: 'CPE no está EMITIDO en SUNAT (estado: ' + nfe + ')' }, 400);
+      const pb = corr.split('-'); if (pb.length < 2) return json({ status: 'error', error: 'Correlativo inválido: ' + corr }, 400);
+      const bSerie = pb[0]; const bNum = parseInt(pb[pb.length - 1], 10);
+      if (!bNum || bNum < 1) return json({ status: 'error', error: 'número de correlativo inválido' }, 400);
+      const bResp = await fetch(ruta, { method: 'POST',
+        headers: { 'Authorization': 'Token ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ operacion: 'generar_anulacion', tipo_de_comprobante: (td === 'FACTURA') ? 1 : 2, serie: bSerie, numero: bNum, motivo: motivo.substring(0, 250) }) });
+      const bBody = await bResp.json().catch(() => ({}));
+      const bOk = (bResp.status === 200 || bResp.status === 201);
+      const bAcept = bBody.aceptada_por_sunat === true || bBody.anulado === true;
+      const nuevoEstado = bOk ? (bAcept ? 'BAJA_ACEPTADA' : 'BAJA_SOLICITADA') : 'BAJA_ERROR';
+      await fetch(`${sbUrl}/rest/v1/ventas?id_venta=eq.${encodeURIComponent(idVenta)}`, { method: 'PATCH',
+        headers: { 'apikey': sbKey!, 'Authorization': 'Bearer ' + sbKey!, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nf_estado: nuevoEstado }) }).catch(() => {});
+      if (!bOk) return json({ status: 'error', error: 'NubeFact baja HTTP ' + bResp.status, nuevoEstado, detalle: JSON.stringify(bBody).substring(0, 200) }, 502);
+      return json({ status: 'success', nuevoEstado, aceptada: bAcept });
+    }
+
     // ── generar (emitir) — solo POS ──
     if (appClaim !== 'mosExpress') return json({ ok: false, error: 'emitir CPE = solo mosExpress' }, 403);
     if (!correlativo) return json({ ok: false, error: 'correlativo requerido' }, 400);
