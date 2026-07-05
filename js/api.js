@@ -2300,6 +2300,14 @@ const API = (() => {
         productosActualizados: 0, productosVentaAutoActualizada: 0, ventaAutoLog: [], sugerenciasPrecioVenta: []
       } };
     }
+    if (action === 'forzarPushDispositivo' || action === 'forzarWizardDispositivo') {
+      // [cero-GAS] valida clave + setea flag forzar_push/forzar_wizard → mos.forzar_dispositivo (389).
+      const campo = action === 'forzarWizardDispositivo' ? 'wizard' : 'push';
+      const r = await _sbRpcMOS('forzar_dispositivo', { p: { deviceId: p.deviceId, claveAdmin: p.claveAdmin, app: p.app, campo } }, 'mos');
+      if (r == null) return null;
+      if (r.ok === false) throw new Error(r.error || 'Error del servidor');
+      return r.data;   // {autorizado, forzadoPor, error?} — el caller lee r.autorizado
+    }
 
     return null;   // acción no cableada → GAS
   }
@@ -2415,7 +2423,9 @@ const API = (() => {
     tribLimpiarVentasHuerfanas:  () => true,   // mos.limpiar_ventas_huerfanas (382)
     getContextoTicketJefa:       () => true,   // mos.contexto_ticket_jefa (383)
     aplicarRespuestaJefa:        () => true,   // ⚠️money precio · mos.aplicar_respuesta_jefa (385)
-    llenarCostosGuia:            () => true    // wh.actualizar_precios_detalle (383)
+    llenarCostosGuia:            () => true,   // wh.actualizar_precios_detalle (383)
+    forzarPushDispositivo:       () => true,   // mos.forzar_dispositivo (389)
+    forzarWizardDispositivo:     () => true    // mos.forzar_dispositivo (389)
     // [DUAL-WRITE] pedidos/pagos/provprod/gastos/horario: SIN entrada acá → su escritura va SIEMPRE por
     // GAS (dual-write espeja la sombra). recomputarLiquidacionDia tampoco (incompatible).
   };
@@ -2839,6 +2849,27 @@ const API = (() => {
           if (r == null) throw new Error('Sin conexión con el servidor');
           if (r.ok === false) throw new Error(r.error || 'Error del servidor');
           return r.data;
+        })();
+      }
+      // [cero-GAS] bustAlmacenCache era una invalidación de la caché GAS del almacén; en Supabase no hay tal caché
+      // (las lecturas son directas) → no-op inocuo, sin tocar GAS.
+      if (action === 'bustAlmacenCache') return Promise.resolve({ ok: true });
+      // [kill-GAS lecturas · bloque 1 · CERO-GAS] SQL 386 + RPCs existentes. Contrato _fetch('GET'): devuelve el
+      // payload (r.data / r.historial), lanza si {ok:false}. Sin fallback GAS.
+      if (action === 'getAuthCatalogo' || action === 'getPromociones' || action === 'getCronStatus' ||
+          action === 'getLiquidacionesPendientesSemana' || action === 'meHistorialCliente' || action === 'meHistorialExtra') {
+        return (async () => {
+          let rpc, prof = 'mos', pick = 'data';
+          if (action === 'getAuthCatalogo')                    { rpc = 'auth_catalogo'; }
+          else if (action === 'getPromociones')                { rpc = 'promociones_lista'; }
+          else if (action === 'getCronStatus')                 { rpc = 'cron_status'; }
+          else if (action === 'getLiquidacionesPendientesSemana') { rpc = 'liquidaciones_pendientes'; }
+          else if (action === 'meHistorialCliente')            { rpc = 'historial_cliente'; prof = 'me'; pick = 'historial'; }
+          else if (action === 'meHistorialExtra')              { rpc = 'me_historial_extra'; pick = 'historial'; }
+          const r = await _sbRpcMOS(rpc, { p: p || {} }, prof);
+          if (r == null) throw new Error('Sin conexión con el servidor');
+          if (r.ok === false) throw new Error(r.error || 'Error del servidor');
+          return r[pick];
         })();
       }
       // [FASE 1 · PILOTO] getProductos → lectura directa Supabase con gate por-acción + frescura + fallback GAS.

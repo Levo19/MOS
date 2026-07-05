@@ -1,0 +1,7 @@
+{
+  "url": "http://localhost:8137/index.html",
+  "viewport": { "width": 390, "height": 844 },
+  "waitMs": 2000,
+  "evalAfter": "(async()=>{const p=document.querySelector('#app').__vue_app__._container._vnode.component.proxy;const sess={rol:'Administrador',nombre:'Test Admin',id:'admin',loginAt:Date.now()};localStorage.setItem('ps_session',JSON.stringify(sess));p.session=sess;await new Promise(r=>setTimeout(r,300));p.goModule('facturacion');await new Promise(r=>setTimeout(r,9000));const cols=getComputedStyle(document.querySelector('.fac-mod-cols2')).gridTemplateColumns;const bal=document.querySelector('.fac-mod-l #fac-balanza-panel');const emit=document.querySelector('.fac-mod-l .fac-emit-cta');return {balInL:!!bal,emitInL:!!emit,cols:cols};})()",
+  "screenshot": "l-390.png"
+}

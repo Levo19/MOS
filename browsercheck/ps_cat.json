@@ -1,0 +1,7 @@
+{
+  "url": "http://localhost:8137/index.html",
+  "viewport": { "width": 1280, "height": 900 },
+  "waitMs": 2000,
+  "evalAfter": "(async()=>{const p=document.querySelector('#app').__vue_app__._container._vnode.component.proxy;const sess={rol:'Administrador',nombre:'Test Admin',id:'admin',loginAt:Date.now()};localStorage.setItem('ps_session',JSON.stringify(sess));p.session=sess;await new Promise(r=>setTimeout(r,300));p.goModule('catalogos');await new Promise(r=>setTimeout(r,2500));const norm=s=>String(s||'').replace(/ /g,'');const cards=[...document.querySelectorAll('#app div')].filter(el=>norm(el.getAttribute('style')).includes('cursor:pointer')&&/Servicios de facturaci/.test(el.textContent));cards.forEach(c=>c.click());await new Promise(r=>setTimeout(r,1500));const nuevos=[...document.querySelectorAll('button')].filter(b=>b.textContent.trim()==='+ Nuevo');nuevos.forEach(b=>b.click());await new Promise(r=>setTimeout(r,900));return {cards:cards.length,nuevos:nuevos.length,modals:document.querySelectorAll('.date-picker-overlay').length,svcHeaders:[...document.querySelectorAll('div')].filter(d=>d.textContent.trim()==='🏷 Servicios de facturación').length};})()",
+  "screenshot": "l-cat.png"
+}
