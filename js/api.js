@@ -2636,6 +2636,16 @@ const API = (() => {
       } catch (_) { return null; }
     },
     get:  (action, p = {}) => {
+      // [NIVEL 1 corte-GAS · CERO-GAS] getOperacionDetalle (drill-down voucher) → RPC mos.operacion_detalle (368).
+      // Replica el contrato de _fetch('GET'): lanza si {ok:false}, devuelve r.data. Sin fallback GAS.
+      if (action === 'getOperacionDetalle') {
+        return (async () => {
+          const r = await _sbRpcMOS('operacion_detalle', { p: p || {} }, 'mos');
+          if (r == null) throw new Error('Sin conexión con el servidor');
+          if (r.ok === false) throw new Error(r.error || 'Error del servidor');
+          return r.data;
+        })();
+      }
       // [FASE 1 · PILOTO] getProductos → lectura directa Supabase con gate por-acción + frescura + fallback GAS.
       // Con el flag OFF (default) esto es IDÉNTICO a hoy: _conFallbackMOS NO entra al directo y va directo a GAS.
       if (action === 'getProductos') {
@@ -2870,7 +2880,10 @@ const API = (() => {
         crearZona:               'crear_zona',
         actualizarZona:          'actualizar_zona',
         crearCategoria:          'crear_categoria',
-        rotarClaveAdminGlobal:   'rotar_clave_admin'
+        rotarClaveAdminGlobal:   'rotar_clave_admin',
+        crearPromocion:          'crear_promocion',
+        actualizarPromocion:     'actualizar_promocion',
+        lanzarProductoNuevo:     'lanzar_producto_nuevo'
       };
       if (_MOS_ADMIN_RPC[action]) {
         return (async () => {
@@ -2948,11 +2961,21 @@ const API = (() => {
       } catch (_) { /* → GAS */ }
       return _fetch('GET', { action: 'getProductosNuevosWH', ...p });
     },
-    lanzarProductoNuevo:  (p = {}) => _fetch('POST', { action: 'lanzarProductoNuevo',  ...p }),
-    // Crea un PN manualmente desde MOS (admin/master). idGuia vacío → WH no
-    // escribe en GUIA_DETALLE (no afecta stock ni guías). Solo encola en
-    // PRODUCTO_NUEVO con estado PENDIENTE para revisión normal.
-    crearPNManual:        (p = {}) => _fetch('POST', { action: 'forwardWHAction', whAction: 'registrarProductoNuevo', idGuia: '', ...p }),
+    // [NIVEL 1 corte-GAS] lanzar producto nuevo 100% Supabase (mos.lanzar_producto_nuevo, SQL 370, cross-app WH
+    // vía elevación de claim). Contrato _fetch: lanza si !ok, devuelve r.data.
+    lanzarProductoNuevo:  async (p = {}) => {
+      const r = await _sbRpcMOS('lanzar_producto_nuevo', { p: p || {} }, 'mos');
+      if (r == null) throw new Error('Sin conexión con el servidor');
+      if (r.ok === false) throw new Error(r.error || 'Error del servidor');
+      return r.data;
+    },
+    // Crea un PN manualmente desde MOS (admin/master) 100% Supabase (mos.crear_pn_manual → wh.registrar_producto_nuevo).
+    crearPNManual:        async (p = {}) => {
+      const r = await _sbRpcMOS('crear_pn_manual', { p: { idGuia: '', ...(p || {}) } }, 'mos');
+      if (r == null) throw new Error('Sin conexión con el servidor');
+      if (r.ok === false) throw new Error(r.error || 'Error del servidor');
+      return r.data !== undefined ? r.data : r;
+    },
 
     // ── [FASE 0B] Infraestructura de lectura directa Supabase — INERTE (flags OFF por
     //    defecto). Expuesta para que FASE 1 cablee lecturas concretas sin tocar el wrapper.

@@ -1,1 +1,1 @@
-{"version":"2.43.448","build":"2.43.448 (corte GAS NIVEL 1 admin): escrituras admin 100% Supabase — setConfig, actualizarCostoPorSku, actualizarProductoMaster, crear/actualizarPersonalMaster, crear/actualizarZona, crearCategoria, rotarClaveAdminGlobal (RPCs mos.* SQL 366). Cero-fallback."}
+{"version":"2.43.449","build":"2.43.449 (corte GAS NIVEL 1 completo): getOperacionDetalle (mos.operacion_detalle 368), crear/actualizarPromocion (mos.promociones 369), lanzarProductoNuevo/crearPNManual (mos.lanzar_producto_nuevo/crear_pn_manual 370, cross-app WH). NIVEL 1 100% Supabase."}

@@ -1,0 +1,11 @@
+const {Client}=require('pg');const fs=require('fs');const url=fs.readFileSync('C:/Users/ISO/.sb_db.url','utf8').trim();
+(async()=>{const c=new Client({connectionString:url,ssl:{rejectUnauthorized:false}});await c.connect();
+await c.query("begin");
+let r=await c.query("select mos.crear_promocion('{\"tipo\":\"GRUPO\",\"skuBase\":\"SKUX\",\"cantMin\":3,\"valorPromo\":30,\"valorModo\":\"TOTAL\"}'::jsonb) v");
+console.log('crear GRUPO total30/3:',JSON.stringify(r.rows[0].v));
+r=await c.query("select valor_promo from mos.promociones where sku_base='SKUX'"); console.log(' valor_unit (esperado 10):', r.rows[0].valor_promo);
+r=await c.query("select mos.crear_promocion('{\"tipo\":\"GRUPO\",\"skuBase\":\"SKUX\",\"cantMin\":2,\"valorPromo\":16,\"valorModo\":\"TOTAL\"}'::jsonb) v");
+console.log('re-crear mismo SKU (upsert):',JSON.stringify(r.rows[0].v));
+r=await c.query("select count(*) n from mos.promociones where sku_base='SKUX'"); console.log(' filas SKUX (esperado 1):', r.rows[0].n);
+r=await c.query("select mos.actualizar_promocion('{\"skuBase\":\"SKUX\",\"activa\":false}'::jsonb) v"); console.log('actualizar activa=false:',JSON.stringify(r.rows[0].v));
+await c.query("rollback");await c.end();})().catch(e=>console.error('ERR',e.message));
