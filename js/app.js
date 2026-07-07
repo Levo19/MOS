@@ -3095,16 +3095,15 @@ const MOS = (() => {
     const esInf = s => (s.max === null || s.max === undefined);
     const pts = new Set([0]);
     S.forEach(s => { pts.add(Number(s.min) || 0); if (!esInf(s)) pts.add(Number(s.max)); });
-    const infinito = S.some(esInf);
     const arr = [...pts].sort((a, b) => a - b);
     const regiones = [];
     for (let i = 0; i < arr.length; i++) {
       const a = arr[i];
-      const isLast = i + 1 >= arr.length;
-      if (isLast && !infinito) break;                 // último punto = fin de un tramo finito, no abre región
-      const b = isLast ? null : arr[i + 1];           // null = región infinita [a,∞)
+      // El último punto SIEMPRE abre la cola infinita [a,∞): el canónico rige de ahí hasta ∞ aunque
+      // ningún tramo sea "sin tope" (ej. un solo tramo 0–100g → debe verse la zona base 100g–∞).
+      const b = (i + 1 < arr.length) ? arr[i + 1] : null;   // null = región infinita [a,∞)
       if (b !== null && b <= a) continue;
-      // cubre [a,b): min<=a Y (región infinita → sólo tramo sin tope; finita → sin tope o max>=b)
+      // cubre [a,b): min<=a Y (cola infinita → sólo tramo sin tope; finita → sin tope o max>=b). Sin tramo = BASE.
       const seg = S.find(s => (Number(s.min) || 0) <= a && (b === null ? esInf(s) : (esInf(s) || Number(s.max) >= b)));
       regiones.push({ a, b, seg: seg || null });
     }
