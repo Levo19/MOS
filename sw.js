@@ -37,7 +37,7 @@ try {
   console.warn('[SW MOS] FCM no se pudo inicializar (push background off):', err);
 }
 
-const VERSION = '2.43.467';
+const VERSION = '2.43.468';
 const CACHE   = 'mos-v' + VERSION;
 // ⚠️ Los assets propios versionados (app.js/api.js) DEBEN cachearse con EL MISMO
 // `?v=` que index.html usa en su <script src>, o el match offline falla por
@@ -162,9 +162,12 @@ self.addEventListener('fetch', e => {
     // El timeout RESUELVE a null (no rechaza) para no convertir un
     // "lento" en un "error". Cada paso devuelve un Response real.
     e.respondWith((async () => {
+      // [FIX versión-pegada] Pedir los críticos con cache:'no-store' → NUNCA el caché HTTP del navegador
+      //   (que servía el index.html/app.js VIEJO aunque se borrara el caché del SW → app quedaba pegada en
+      //   una versión anterior). Con no-store la red trae SIEMPRE lo último de GitHub Pages.
       // 1) Intentar red con tope de 2.5s. fetch puede rechazar (offline);
       //    lo envolvemos para que devuelva null en vez de propagar.
-      const netPromise = fetch(e.request).catch(() => null);
+      const netPromise = fetch(e.request.url, { cache: 'no-store' }).catch(() => null);
       const timeout = new Promise(resolve => setTimeout(() => resolve(null), 2500));
       const res = await Promise.race([netPromise, timeout]);
 
@@ -180,7 +183,7 @@ self.addEventListener('fetch', e => {
       // 3) Sin caché → esperar a la red completa (sin timeout) por si
       //    solo fue lentitud. Envuelto: si falla, no rechazamos.
       const netFull = await netPromise.catch(() => null)
-        || await fetch(e.request).catch(() => null);
+        || await fetch(e.request.url, { cache: 'no-store' }).catch(() => null);
       if (netFull) {
         _putEnCache(e.request, netFull);
         return netFull;
