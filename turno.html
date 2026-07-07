@@ -33,11 +33,6 @@ body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:
 /* Botones */
 .btn-bar { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
 .btn { padding:9px 14px; border-radius:var(--radius-sm); font-size:13px; font-weight:700; cursor:pointer; border:1px solid var(--border); display:flex; align-items:center; gap:6px; white-space:nowrap; background:var(--bg2); color:var(--muted2); }
-/* Update bar */
-#turnoUpdateBar { display:none;position:fixed;top:0;left:0;right:0;z-index:500;background:linear-gradient(90deg,#312e81,#1e1b4b);border-bottom:1px solid rgba(99,102,241,0.5);padding:10px 16px;align-items:center;gap:10px;font-size:13px; }
-.tub-msg { flex:1;font-weight:700;color:#c7d2fe; }
-.tub-ver { color:#a5b4fc;font-weight:400; }
-.tub-btn { padding:7px 16px;border-radius:20px;background:#6366f1;color:#fff;font-weight:800;font-size:12px;border:none;cursor:pointer;white-space:nowrap; }
 
 .btn-wa  { background:rgba(37,211,102,0.12); color:#25d366; border-color:rgba(37,211,102,0.3); }
 .btn-prt { background:var(--indigo-dim); color:var(--indigo-light); border-color:rgba(99,102,241,0.35); }
@@ -224,40 +219,11 @@ const autoPrint = params.get('autoprint') === '1';
 const REFRESH   = 60;
 let countdown = REFRESH, timer = null;
 
-// ── Auto-update check: compara version.json con la versión embebida ──
-const _TURNO_VERSION = '1.3.58';
-async function _checkVersion() {
-  try {
-    const r = await fetch('./version.json?t=' + Date.now(), { cache: 'no-store' });
-    const v = await r.json();
-    if (v.version && v.version !== _TURNO_VERSION) {
-      const bar = document.getElementById('turnoUpdateBar');
-      if (bar) {
-        bar.querySelector('.tub-ver').textContent = 'v' + v.version;
-        bar.style.display = 'flex';
-      }
-    }
-  } catch(e) {}
-  setTimeout(_checkVersion, 2 * 60 * 1000);
-}
-// Primera check a los 45s — evita falso positivo si version.json
-// llega al CDN antes que turno.html (propagación asíncrona de GitHub Pages)
-setTimeout(_checkVersion, 45 * 1000);
-
-// ── Forzar activación del SW nuevo + recarga limpia ──────────────
-async function actualizarTurno() {
-  try {
-    if ('serviceWorker' in navigator) {
-      const reg = await navigator.serviceWorker.ready;
-      await reg.update();
-      if (reg.waiting) {
-        reg.waiting.postMessage('SKIP_WAITING');
-        await new Promise(res => navigator.serviceWorker.addEventListener('controllerchange', res, { once: true }));
-      }
-    }
-  } catch(e) {}
-  location.reload(true);
-}
+// ── Actualización de versión: la maneja el Service Worker de MOS (network-first + skipWaiting +
+// clients.claim) → al recargar, turno.html ya recibe el HTML fresco solo. Se ELIMINÓ el banner
+// "Nueva versión disponible": comparaba una versión embebida (1.3.58) contra el version.json GLOBAL
+// de MOS (que sube en cada deploy de MOS) → jamás coincidían → falso positivo permanente que el botón
+// "Actualizar" no podía apagar. Sin banner: menos ruido y la actualización sigue funcionando vía SW.
 
 const $ = id => document.getElementById(id);
 const fm  = v => 'S/ ' + (parseFloat(v)||0).toFixed(2);
@@ -292,24 +258,32 @@ function _fetchTO(url, opts, ms) {
   const t = setTimeout(() => ctrl.abort(), ms || 7000);
   return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(t));
 }
-async function _mintMOS() {
+async function _mintMOS(ms) {
+  // [FIX cold-start] ME (mismo origen: levo19.github.io) deja un token recién minteado en localStorage
+  // justo antes de abrir este reporte → lo usamos y SALTAMOS el mint. Elimina un round-trip completo en
+  // el primer render (que era el que pagaba el cold-start del Edge y disparaba el warning). Best-effort:
+  // si no hay token fresco, minteamos como siempre.
+  try {
+    const hint = JSON.parse(localStorage.getItem('mos_turno_token') || 'null');
+    if (hint && hint.token && (Date.now() - (hint.ts || 0) < 90 * 1000)) return hint.token;
+  } catch(_) {}
   let devId = 'turno-viewer';
   try { devId = localStorage.getItem('mos_device_id') || localStorage.getItem('mosexpress_deviceId') || devId; } catch(_) {}
   const mr = await _fetchTO(`${_SB_URL}/functions/v1/mint-mos`, {
     method: 'POST', headers: { 'apikey': _SB_ANON, 'Content-Type': 'application/json' },
     body: JSON.stringify({ deviceId: devId })
-  }, 7000);
+  }, ms || 7000);
   const md = await mr.json().catch(() => null);
   if (!md || !md.ok || !md.token) throw new Error('mint');
   return md.token;
 }
-async function _cargarDirectoSupabase() {
-  const token = await _mintMOS();
+async function _cargarDirectoSupabase(ms) {
+  const token = await _mintMOS(ms);
   const r = await _fetchTO(`${_SB_URL}/rest/v1/rpc/datos_turno`, {
     method: 'POST',
     headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
     body: JSON.stringify({ p_id_caja: idCaja })
-  }, 7000);
+  }, ms || 7000);
   if (!r.ok) throw new Error('rpc ' + r.status);
   const j = await r.json();
   if (!j || j.ok !== true) throw new Error('rpc not ok');
@@ -322,17 +296,20 @@ async function loadData(_intento) {
   // mint/datos_turno se pasa de tiempo → antes había que apretar F5. Ahora se recupera solo. El auto-refresh
   // de 60s sigue como red final.
   _intento = _intento || 0;
-  const MAX = 5;   // [FIX] 2→5 reintentos (a 2s) para cubrir el cold-start del Edge al abrir desde el cierre.
+  const MAX = 5;   // [FIX] 2→5 reintentos para cubrir el cold-start del Edge al abrir desde el cierre.
+  // [FIX cold-start] El PRIMER intento usa timeout amplio (14s) porque paga el arranque en frío del Edge;
+  // los siguientes 7s (ya caliente). Backoff creciente (1s,2s,3s…) en vez de 2s fijo.
+  const _to = _intento === 0 ? 14000 : 7000;
   const _reintentar = () => {
     // Mantener el estado "Conectando…" (no la pantalla de error) mientras aún hay reintentos.
     try {
       const rootEl = document.getElementById('root');
       if (rootEl) rootEl.innerHTML = '<div class="loading"><div class="spin"></div><p style="color:var(--muted);font-size:13px;">Conectando con Supabase… (' + (_intento + 2) + '/' + (MAX + 1) + ')</p></div>';
     } catch(_) {}
-    setTimeout(() => loadData(_intento + 1), 2000);
+    setTimeout(() => loadData(_intento + 1), Math.min(1000 * (_intento + 1), 5000));
   };
   try {
-    const json = await _cargarDirectoSupabase();
+    const json = await _cargarDirectoSupabase(_to);
     if (json && json.ok) {
       render(json.data);
       if (autoPrint) _triggerAutoPrint(json.data);
@@ -1389,12 +1366,6 @@ function renderError(msg) {
   </div>`;
 }
 </script>
-<!-- Update bar -->
-<div id="turnoUpdateBar">
-  <span class="tub-msg">🚀 Nueva versión disponible <span class="tub-ver"></span></span>
-  <button class="tub-btn" onclick="actualizarTurno()">Actualizar</button>
-</div>
-
 <!-- Printer modal -->
 <div id="prtOverlay" onclick="if(event.target===this)closePrintModal()">
   <div id="prtSheet">

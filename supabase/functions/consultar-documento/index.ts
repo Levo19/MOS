@@ -97,6 +97,10 @@ async function intentar(url: string, doc: string, tipo: string, esRetry: boolean
     } else {
       nombre    = String(j.razonSocial || j.razon_social || j.nombre || '').trim();
       direccion = String(j.direccion   || j.domicilio   || '').trim();
+      // Persona natural (RUC 10/15/17): SUNAT no publica su domicilio fiscal → la API suele devolver
+      // "-", "." o "SIN DIRECCION". Normalizamos esos placeholders a vacío para no colar una dirección
+      // basura en la factura (para persona natural la dirección es opcional; para empresa se pedirá real).
+      if (/^[-.\s]*$/.test(direccion) || /^SIN\s+DIRECCION$/i.test(direccion)) direccion = '';
     }
     if (!nombre) {
       return { _ko: true, status: 'not_found', codigo: 'NOMBRE_VACIO', message: `APISPeru no devolvió nombre para ${doc}.` };

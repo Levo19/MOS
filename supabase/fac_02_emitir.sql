@@ -75,11 +75,16 @@ begin
 
   -- ── [VALIDACIONES SUNAT · server-side = MISMAS reglas para ME, MOS y ambos converts (todos pasan
   --    por aquí)] ── Confirmar umbrales con el contador; son las reglas estándar.
-  -- FACTURA: RUC 11 dígitos + razón social + dirección fiscal (siempre, cualquier monto).
+  -- FACTURA: RUC 11 dígitos + razón social. Dirección fiscal SOLO obligatoria para persona JURÍDICA
+  -- (RUC '20…', cuyo domicilio fiscal SÍ es público). SUNAT no exige el domicilio del cliente para
+  -- aceptar la factura (cliente_direccion es opcional en el CPE); persona natural (RUC 10/15/17) no
+  -- tiene domicilio fiscal público → dirección opcional (397).
   if v_tipo = 'FACTURA' then
     if v_cdoc !~ '^\d{11}$' then return jsonb_build_object('status','error','error','FACTURA_REQUIERE_RUC','detalle','La factura exige RUC de 11 dígitos'); end if;
     if v_cnom = '' then return jsonb_build_object('status','error','error','FACTURA_REQUIERE_NOMBRE','detalle','La factura exige razón social'); end if;
-    if v_cdir = '' then return jsonb_build_object('status','error','error','FACTURA_REQUIERE_DIRECCION','detalle','La factura exige dirección fiscal'); end if;
+    if v_cdir = '' and left(v_cdoc,2) = '20' then
+      return jsonb_build_object('status','error','error','FACTURA_REQUIERE_DIRECCION','detalle','La factura a empresa (RUC 20) exige dirección fiscal');
+    end if;
   end if;
   -- BOLETA > S/700: identificar al cliente (DNI 8 / RUC 11 / CE-pasaporte tipo 4,7) + nombre.
   if v_tipo = 'BOLETA' and v_total > 700 then
