@@ -2438,7 +2438,17 @@ const API = (() => {
     forzarWizardDispositivo:     () => true,   // RPC mos.forzar_wizard_dispositivo (335, branch superior)
     jalarProductosProveedor:     () => true,   // mos.jalar_productos_proveedor (390)
     probarNotificacion:          () => true,   // mos.probar_notificacion (390)
-    setupAdhesivosBase:          () => true    // mos.adhesivo_iconos_upsert (390)
+    setupAdhesivosBase:          () => true,   // mos.adhesivo_iconos_upsert (390)
+    // ── [cero-GAS · editores admin de Config] personal (cajeros/vendedores), zonas (meta/comisión/auditorías)
+    //    y config. RPCs mos.crear_personal/actualizar_personal/crear_zona/actualizar_zona/set_config (SQL 366,
+    //    zona-política corregida en 399). Lecturas ya directas (getPersonalMaster/getZonas/getConfig, _mosLecturaDirecta
+    //    ON) → write+read coherentes. Sync Hoja apagado para zonas/config/personal (MOS_SYNC_OFF_TABLAS) → no lo pisa.
+    crearPersonalMaster:         () => true,   // mos.crear_personal
+    actualizarPersonalMaster:    () => true,   // mos.actualizar_personal (crear/editar/toggle activo)
+    eliminarPersonalMaster:      () => true,   // mos.eliminar_personal
+    crearZona:                   () => true,   // mos.crear_zona
+    actualizarZona:              () => true,   // mos.actualizar_zona (política meta/comisión/auditoría · fix 399 · + eliminarZona = estado 0)
+    setConfig:                   () => true    // mos.set_config
     // [DUAL-WRITE] pedidos/pagos/provprod/gastos/horario: SIN entrada acá → su escritura va SIEMPRE por
     // GAS (dual-write espeja la sombra). recomputarLiquidacionDia tampoco (incompatible).
   };
