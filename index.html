@@ -522,6 +522,45 @@
       text-shadow: 0 1px 2px rgba(0,0,0,.3);
     }
 
+    /* ═══ Escalera de tramos — celdas de igual ancho (visual, no a escala) ═══ */
+    /* Reemplaza la banda proporcional a gramos (colapsaba con tramos "≥Nkg"). Cada zona de
+       precio ocupa lo mismo → se ve cuántos hay y dónde están los cortes. Card + editor. */
+    .seg-lad-track { display: flex; gap: 6px; align-items: stretch; }
+    .seg-lad-cell {
+      flex: 1 1 0; min-width: 0; position: relative;
+      border-radius: 10px; padding: 10px 9px 9px; min-height: 78px;
+      display: flex; flex-direction: column; gap: 3px; justify-content: space-between;
+      overflow: hidden; border: 1px solid rgba(255,255,255,.09); cursor: pointer;
+      transition: transform .12s, box-shadow .12s;
+    }
+    .seg-lad-cell:hover { transform: translateY(-2px); box-shadow: 0 9px 22px -7px rgba(0,0,0,.6); filter: brightness(1.06); }
+    .seg-lad-cell.base {
+      background: repeating-linear-gradient(45deg, rgba(148,163,184,.10), rgba(148,163,184,.10) 7px, rgba(148,163,184,.03) 7px, rgba(148,163,184,.03) 14px) !important;
+      border: 1px dashed rgba(148,163,184,.4);
+    }
+    .seg-lad-rng { font-size: 10px; font-weight: 800; color: rgba(255,255,255,.92); letter-spacing: .2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .seg-lad-cell.base .seg-lad-rng { color: #94a3b8; }
+    .seg-lad-price { font-size: 16px; font-weight: 900; color: #fff; line-height: 1; font-variant-numeric: tabular-nums; }
+    .seg-lad-cell.base .seg-lad-price { color: #cbd5e1; }
+    .seg-lad-unit { font-size: 9px; font-weight: 700; opacity: .8; }
+    .seg-lad-badge {
+      align-self: flex-start; font-size: 9.5px; font-weight: 900;
+      padding: 2px 7px; border-radius: 99px; background: rgba(0,0,0,.28); color: #fff;
+      display: inline-flex; align-items: center; gap: 3px; text-shadow: 0 1px 2px rgba(0,0,0,.35);
+    }
+    .seg-lad-cell.base .seg-lad-badge { background: rgba(148,163,184,.18); color: #cbd5e1; }
+    .seg-lad-name { font-size: 9px; font-weight: 700; color: rgba(255,255,255,.85); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .seg-lad-axis { display: block; position: relative; height: 15px; margin-top: 8px; }
+    .seg-lad-tick { position: absolute; transform: translateX(-50%); font-size: 9px; font-weight: 800; color: #cbd5e1; white-space: nowrap; }
+    .seg-lad-tick .k { color: #818cf8; }
+    .seg-lad-tick.inf .k { color: #fbbf24; font-size: 11px; }
+    .seg-lad-vacio { font-size: 11px; color: #94a3b8; padding: 10px 4px; }
+    .seg-lad-vacio strong { color: #34d399; }
+    /* Variante compacta para la card del catálogo (menos alto) */
+    .seg-lad-compact .seg-lad-cell { min-height: 66px; padding: 8px 8px 7px; border-radius: 9px; }
+    .seg-lad-compact .seg-lad-price { font-size: 14px; }
+    .seg-lad-compact .seg-lad-rng { font-size: 9.5px; }
+
     /* [v2.41.97] ═══ PRICING POR SEGMENTOS (graneles) ═══ */
     .seg-explica {
       background: linear-gradient(135deg, rgba(52,211,153,.06), rgba(16,185,129,.03));
@@ -19554,7 +19593,7 @@ if (false) (function(){
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.462"></script>
+<script src="js/api.js?v=2.43.463"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19569,7 +19608,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.462"></script>
+<script src="js/app.js?v=2.43.463"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

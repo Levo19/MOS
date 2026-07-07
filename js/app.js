@@ -3081,6 +3081,76 @@ const MOS = (() => {
     return m;
   }
 
+  // ─────────────────────────────────────────────────────────────────
+  // [Escalera de tramos] Render VISUAL (no a escala): celdas de igual ancho, una por
+  // "zona de precio", ordenadas por peso. La escala proporcional a gramos colapsaba cuando
+  // un tramo era "≥Nkg" (sin tope) — aquí cada zona ocupa lo mismo, así se ve cuántos hay y
+  // dónde están los cortes sin importar el gramaje. Compartido por la card y el editor.
+  const _segFmtPeso = g => (g === null || g === undefined) ? '∞' : (g >= 1000 ? (g / 1000) + 'kg' : g + 'g');
+
+  // Descompone los tramos en regiones contiguas [a,b) (b=null → [a,∞)). Cada región la cubre
+  // el tramo cuyo rango la contiene, o la BASE (canónico) si ninguno la cubre.
+  function _segRegiones(segs) {
+    const S = (Array.isArray(segs) ? segs : []).slice().sort((a, b) => (Number(a.min) || 0) - (Number(b.min) || 0));
+    const esInf = s => (s.max === null || s.max === undefined);
+    const pts = new Set([0]);
+    S.forEach(s => { pts.add(Number(s.min) || 0); if (!esInf(s)) pts.add(Number(s.max)); });
+    const infinito = S.some(esInf);
+    const arr = [...pts].sort((a, b) => a - b);
+    const regiones = [];
+    for (let i = 0; i < arr.length; i++) {
+      const a = arr[i];
+      const isLast = i + 1 >= arr.length;
+      if (isLast && !infinito) break;                 // último punto = fin de un tramo finito, no abre región
+      const b = isLast ? null : arr[i + 1];           // null = región infinita [a,∞)
+      if (b !== null && b <= a) continue;
+      // cubre [a,b): min<=a Y (región infinita → sólo tramo sin tope; finita → sin tope o max>=b)
+      const seg = S.find(s => (Number(s.min) || 0) <= a && (b === null ? esInf(s) : (esInf(s) || Number(s.max) >= b)));
+      regiones.push({ a, b, seg: seg || null });
+    }
+    return regiones;
+  }
+
+  // Celdas de la escalera. onTramoJs(sidEsc)→string de onclick para un tramo; onBaseJs→onclick de una zona base.
+  function _segLadderCells(regiones, pcKg, cmap, onTramoJs, onBaseJs) {
+    return regiones.map(r => {
+      const rng = _segFmtPeso(r.a) + '–' + _segFmtPeso(r.b);
+      const s = r.seg;
+      if (!s) {
+        return `<div class="seg-lad-cell base" title="Precio base (canónico) — se cobra donde no hay tramo"${onBaseJs ? ` onclick="${onBaseJs}"` : ''}>
+          <div class="seg-lad-rng">${rng}</div>
+          <div class="seg-lad-price">S/ ${pcKg.toFixed(2)}<span class="seg-lad-unit">/kg</span></div>
+          <div class="seg-lad-badge">⬚ base · 0%</div>
+        </div>`;
+      }
+      const aj = parseFloat(s.ajustePct) || 0;
+      const sign = aj > 0 ? '+' : '';
+      const flecha = aj > 0 ? '▲' : (aj < 0 ? '▼' : '=');
+      const precio = pcKg * (1 + aj / 100);
+      const color = cmap[s.id] || '#6366f1';
+      const sidEsc = String(s.id).replace(/'/g, '&#39;');
+      const onc = onTramoJs ? onTramoJs(sidEsc) : '';
+      return `<div class="seg-lad-cell" style="background:linear-gradient(150deg,${color},${color}cc)"
+                   title="${_escapeHtml(s.nombre || 'tramo')} · ${flecha}${sign}${aj}% → S/ ${precio.toFixed(2)}/kg · click para editar"${onc ? ` onclick="${onc}"` : ''}>
+          <div class="seg-lad-rng">${rng}</div>
+          <div class="seg-lad-price">S/ ${precio.toFixed(2)}<span class="seg-lad-unit">/kg</span></div>
+          <div class="seg-lad-badge">${flecha} ${sign}${aj}%</div>
+          ${s.nombre ? `<div class="seg-lad-name">${_escapeHtml(s.nombre)}</div>` : ''}
+        </div>`;
+    }).join('');
+  }
+
+  // Eje de cortes bajo la escalera — posición por índice de celda (visual), no por gramos.
+  function _segLadderAxis(regiones) {
+    const n = regiones.length || 1;
+    const ticks = regiones.map((r, i) => {
+      const left = (i / n) * 100;
+      const lbl = _segFmtPeso(r.a);
+      return `<span class="seg-lad-tick" style="left:${left}%">${lbl === '0g' ? '0' : `<span class="k">${lbl}</span>`}</span>`;
+    }).join('');
+    return ticks + `<span class="seg-lad-tick inf" style="left:100%"><span class="k">∞</span></span>`;
+  }
+
   // [v2.41.98] Mini-mapa de segmentos en la card del catálogo (granel)
   // Banda horizontal con cada tramo en su color + eje. Click banda → editar ese tramo.
   // Botón "+" → crear un tramo nuevo directo. Estado vacío con CTA.
@@ -3114,57 +3184,20 @@ const MOS = (() => {
       </div>`;
     }
 
-    // Calcular escala: si todos tienen max, max global; si hay infinito, +20%
-    const maxFinitos = segs.filter(s => s.max !== null).map(s => s.max);
-    const maxF = maxFinitos.length ? Math.max(...maxFinitos) : 1000;
-    const escalaMax = maxF * 1.25;
-    const fmtG = g => g >= 1000 ? (g/1000) + 'kg' : g + 'g';
-
-    // Bandas — cada tramo con su color (izq→der por rango).
+    // [Escalera de tramos] celdas de igual ancho (visual, no a escala).
     const cmap = _segColorMap(segs);
-    const bandas = segs.map(s => {
-      const left = Math.max(0, (s.min / escalaMax) * 100);
-      const widthRaw = s.max === null ? (100 - left) : ((s.max - s.min) / escalaMax) * 100;
-      const width = Math.max(2, Math.min(widthRaw, 100 - left));
-      const sign = s.ajustePct > 0 ? '+' : '';
-      const sidEsc = String(s.id).replace(/'/g, '&#39;');
-      const color = cmap[s.id] || '#6366f1';
-      return `<div class="cat-seg-banda"
-                   style="left:${left}%; width:${width}%; background:${color}"
-                   onclick="event.stopPropagation();MOS.segEditarDesdeCard('${idProdEsc}','${sidEsc}')"
-                   title="${_escapeHtml(s.nombre || '')} · ${sign}${s.ajustePct}% · click para editar">
-        <span class="cat-seg-banda-pct">${sign}${s.ajustePct}%</span>
-      </div>`;
-    }).join('');
-
-    // Marcas del eje: 0g + cada breakpoint único + maxF
-    const cortes = new Set();
-    cortes.add(0);
-    segs.forEach(s => {
-      if (s.min > 0) cortes.add(s.min);
-      if (s.max !== null && s.max < escalaMax) cortes.add(s.max);
-    });
-    cortes.add(maxF);
-    const cortesArr = Array.from(cortes).sort((a, b) => a - b);
-    const ejeMarcas = cortesArr.map(g => {
-      const left = (g / escalaMax) * 100;
-      return `<span class="cat-seg-eje-marca" style="left:${left}%">${fmtG(g)}</span>`;
-    }).join('') + `<span class="cat-seg-eje-marca cat-seg-eje-inf" style="left:97%">∞</span>`;
-
-    // Nombres de segmentos debajo (si tienen nombre)
-    const nombres = segs.map(s => {
-      if (!s.nombre) return '';
-      const left = Math.max(0, (s.min / escalaMax) * 100);
-      const widthRaw = s.max === null ? (100 - left) : ((s.max - s.min) / escalaMax) * 100;
-      const width = Math.max(2, Math.min(widthRaw, 100 - left));
-      const center = left + (width / 2);
-      return `<span class="cat-seg-nombre" style="left:${center}%">${_escapeHtml(s.nombre)}</span>`;
-    }).join('');
+    const regiones = _segRegiones(segs);
+    const cells = _segLadderCells(
+      regiones, pcKg, cmap,
+      sidEsc => `event.stopPropagation();MOS.segEditarDesdeCard('${idProdEsc}','${sidEsc}')`,
+      `event.stopPropagation();MOS.segNuevoDesdeCard('${idProdEsc}')`
+    );
+    const axis = _segLadderAxis(regiones);
 
     return `<div class="cat-seg-mini">
       <div class="cat-seg-titulo">
-        🎚 <strong>Tramos</strong>
-        <span class="cat-seg-count">${segs.length} activo${segs.length !== 1 ? 's' : ''}</span>
+        🎚 <strong>Tramos de precio</strong>
+        <span class="cat-seg-count">${segs.length} tramo${segs.length !== 1 ? 's' : ''} · ${regiones.length} zona${regiones.length !== 1 ? 's' : ''}</span>
         <button type="button" class="cat-seg-add-btn"
                 onclick="event.stopPropagation();MOS.segNuevoDesdeCard('${idProdEsc}')"
                 title="Crear un tramo nuevo">+ tramo</button>
@@ -3172,15 +3205,9 @@ const MOS = (() => {
                 onclick="event.stopPropagation();MOS.abrirModalProducto('${idProdEsc}')"
                 title="Abrir editor (ver lista / borrar)">✏</button>
       </div>
-      <div class="cat-seg-band-container">
-        <div class="cat-seg-band-bg">
-          <div class="cat-seg-banda cat-seg-base" title="Base (canónico) S/ ${pcKg.toFixed(2)}/kg — aplica donde no hay tramo definido"><span class="cat-seg-base-lbl">S/ ${pcKg.toFixed(2)} · base</span></div>
-          ${bandas}
-        </div>
-        <div class="cat-seg-eje">${ejeMarcas}</div>
-        ${nombres ? `<div class="cat-seg-nombres">${nombres}</div>` : ''}
-      </div>
-      <div class="cat-seg-base-cap">⬚ Donde no hay tramo: <strong>S/ ${pcKg.toFixed(2)}/kg</strong> · 0% · se mantiene el canónico</div>
+      <div class="seg-lad-track seg-lad-compact">${cells}</div>
+      <div class="seg-lad-axis">${axis}</div>
+      <div class="cat-seg-base-cap">⬚ Fuera de todo tramo se cobra el canónico <strong>S/ ${pcKg.toFixed(2)}/kg</strong></div>
     </div>`;
   }
 
@@ -16382,40 +16409,21 @@ const MOS = (() => {
     const cont = $('segLineaVisual');
     if (!cont) return;
     const pc = _segState.precioCanonico || 0;
-    const segs = _segState.segmentos;
+    const segs = _segState.segmentos || [];
+    if (!segs.length) {
+      cont.innerHTML = `<div class="seg-lad-vacio">⬚ Sin tramos · se cobra el canónico <strong>S/ ${pc.toFixed(2)}/kg</strong> en todo peso</div>`;
+      return;
+    }
+    // [Escalera de tramos] misma visual que la card: celdas de igual ancho, click → editar ese tramo.
     const cmap = _segColorMap(segs);
-    // Escala: si todos tienen max definido, usar el max global como 100%; si hay infinito, +20% para él.
-    const segConMax = segs.filter(s => s.max !== null);
-    const maxFinito = segConMax.length ? Math.max(...segConMax.map(s => s.max)) : 1000;
-    const escalaMax = maxFinito * 1.2;
-
-    // ── Banda BASE: el canónico es el "segmento de 0 a ∞" que aplica donde NO hay tramo → se MANTIENE. ──
-    const base = `<div class="seg-banda seg-banda-base"
-         title="Precio base (canónico) — aplica donde no hay tramo · el precio se mantiene">
-        <span class="seg-banda-lbl">⬚ Base · S/ ${pc.toFixed(2)}/kg · 0% (se mantiene)</span>
-      </div>`;
-
-    // ── Tramos encima de la base: color por identidad + FLECHA de dirección + precio resultante. ──
-    const bandas = segs.map(s => {
-      const left  = (s.min / escalaMax) * 100;
-      const widthRaw = s.max === null ? (100 - left) : ((s.max - s.min) / escalaMax) * 100;
-      const width = Math.max(3, Math.min(widthRaw, 100 - left));
-      const aj    = parseFloat(s.ajustePct) || 0;
-      const sign  = aj > 0 ? '+' : '';
-      const flecha = aj > 0 ? '▲' : (aj < 0 ? '▼' : '=');     // ▲ más caro · ▼ más barato · = igual
-      const efecto = aj > 0 ? 'sube' : (aj < 0 ? 'baja' : 'igual');
-      const color = cmap[s.id] || '#6366f1';
-      const precioAj = pc * (1 + aj / 100);
-      const sidEsc = String(s.id).replace(/'/g, '&#39;');
-      return `<div class="seg-banda seg-banda-tramo seg-dir-${efecto}" style="left:${left}%; width:${width}%; background:${color}"
-                   title="${_escapeHtml(s.nombre || 'tramo')} · ${_escapeHtml(_segFmtRango(s))} · ${flecha} ${sign}${aj}% → S/ ${precioAj.toFixed(2)}/kg · click para editar"
-                   onclick="MOS.segEditar('${sidEsc}')">
-        <span class="seg-banda-pct">${flecha} ${sign}${aj}%</span>
-        <span class="seg-banda-lbl">S/ ${precioAj.toFixed(2)}/kg</span>
-      </div>`;
-    }).join('');
-
-    cont.innerHTML = base + bandas + `<div class="seg-linea-eje"><span>0g</span><span>${maxFinito/2}g</span><span>${maxFinito}g+</span></div>`;
+    const regiones = _segRegiones(segs);
+    const cells = _segLadderCells(
+      regiones, pc, cmap,
+      sidEsc => `MOS.segEditar('${sidEsc}')`,
+      `MOS.segNuevo()`
+    );
+    const axis = _segLadderAxis(regiones);
+    cont.innerHTML = `<div class="seg-lad-track">${cells}</div><div class="seg-lad-axis">${axis}</div>`;
   }
 
   function segRenderLista() {
