@@ -2480,7 +2480,6 @@ const MOS = (() => {
   setTimeout(_bindBotonFiltroDirecto, 1000);
   setTimeout(_bindBotonFiltroDirecto, 3000);
   // Mantener el viejo nombre por compat con HTML existente que pueda llamarlo
-  function _closeFiltroOnOutside() { /* deprecated en v2.43.39 */ }
 
   // [v2.43.50] Wrapper optimista para aplicar filtros sin lag perceptual.
   // 1) Cerrar el modal flotante INMEDIATO (feedback visual)
