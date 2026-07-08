@@ -1,5 +1,16 @@
 # LISTA COMPLETA para 0% GAS REAL (no solo lo principal) — 2026-07-05
 
+## PROGRESO CORTE FINAL 2026-07-08 (Fable 5)
+- ✅ **F1 HECHO+DESPLEGADO+VERIFICADO cero-GAS** (MOS 2.43.470 / ME 2.8.188 / WH 2.13.408):
+  - **Notificaciones** (item 1-resto): `getNotifLog`→mos.notif_log_listar · `reenviarNotificacion`→mos.notif_log_get + Edge push. La Edge `push` ahora ESCRIBE el log (mos.notificaciones_log, SQL 405) en cada envío visible. Reemplaza la hoja NOTIF_LOG.
+  - **Extensión de horario** (item 29-resto): `solicitarExtensionHorario`→mos.solicitar_extension_horario · `extenderHorarioHoy`→mos.extender_horario_hoy (SQL 406). `resolver_horario_personal` honra un marcador `extension_hoy` que **auto-expira por fecha** (sin cron; elimina el trigger 00:01 revertirExtensionesDiarias). Módulo compartido seguridad-modal.js cableado + ?v= bump en las 3 apps.
+  - **turno.html** (item 33): ya era cero-GAS (mint-mos + datos_turno + Edge imprimir) — verificado, nada que migrar.
+- 🟡 **F2 PARCIAL** (MOS 2.43.471):
+  - ✅ **Ticket Z de cierre** cero-GAS: reusa turno.html (que ya lee me.datos_turno + Edge `imprimir`) vía iframe oculto same-origin. Sin duplicar 600 líneas de render.
+  - ✅ **Ticket de PAGO/liquidación** (reimpresión) cero-GAS: `mos.pago_detalle` + builder ESC/POS client-side (port fiel de Liquidaciones.gs) + `_imprimirTicketEdge`. Verificado estructuralmente (ESC/POS válido, columnas alineadas). **Falta confirmación física en papel.**
+  - ⬜ Falta: `imprimirCostosGuia` (→F3, es del flujo Jefa/OCR) · WH `imprimirCargadoresDia`/`imprimirHistorialStock` (builders ESC/POS + Edge).
+
+
 ## ESTADO (actualizado 2026-07-05, MOS 2.43.454 desplegado)
 - ✅ **HECHO+DESPLEGADO+VERIFICADO** (MOS): items **1** (notif config actualizar/restaurar — falta probar/reenviar=push), **2** ⚠️, **3** ⚠️ (jornales money: backfill + importarCajas, SQL 378, idempotentes), **4** (resolver alerta auditoría), **5** (equivalencia update), **6** (prov-prod crear/actualizar), **7** (dispositivo), **8** (bloqueos dispositivos/vendedor, SQL 377), **9** (recalc stock min/max SQL 379 + aplicar precios = loop publicarPrecio). SQL 376/379.
 - ✅ **HECHO** item **14-adhesivo**: `wh_estado/calibrar/cancelarLoteAdhesivo` → Edge print-adhesivo modos estado/calibrar/cancelar (estado+cancelar smoke-test prod OK). `wh_getRotacionSemanal` → mos.wh_rotacion_semanal (SQL 380). crear/imprimirSub ya eran Edge-primario (fallback muerto con flag ON).
