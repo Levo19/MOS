@@ -9,6 +9,14 @@
   - ✅ **Ticket Z de cierre** cero-GAS: reusa turno.html (que ya lee me.datos_turno + Edge `imprimir`) vía iframe oculto same-origin. Sin duplicar 600 líneas de render.
   - ✅ **Ticket de PAGO/liquidación** (reimpresión) cero-GAS: `mos.pago_detalle` + builder ESC/POS client-side (port fiel de Liquidaciones.gs) + `_imprimirTicketEdge`. Verificado estructuralmente (ESC/POS válido, columnas alineadas). **Falta confirmación física en papel.**
   - ⬜ Falta: `imprimirCostosGuia` (→F3, es del flujo Jefa/OCR) · WH `imprimirCargadoresDia`/`imprimirHistorialStock` (builders ESC/POS + Edge).
+- ✅ **F8 PARCIAL — limpieza segura** (MOS 2.43.472): eliminado el bloque device-auth inline DEPRECATED (`if(false)`, 178 líneas con `GAS_URL` muerto) + `mosGasUrl` del `DeviceAuth.init` (v1.0.26 lo ignora). Runtime MOS ya SIN URL de script.google.com (queda solo el input de config admin, vestigial). **NOTA: el corte de `GAS_URL`/`_fetch`/`_postMOS` de api.js es el PASO FINAL — NO se puede hacer hasta migrar OCR/espía/portales/converter, o esas rutas se rompen.**
+
+## DATOS CONFIRMADOS para construir el resto (2026-07-08, para retomar rápido)
+- **WH prints cargadores/historial:** data YA en Supabase → `wh.resumen_cargadores_dia({fecha})` (cargadores) · historial: el frontend YA arma `params.texto` completo (app.js ~20693, solo hay que envolverlo en ESC/POS). WH tiene `_imprimirDirecto(printerId, base64, title)` + `_escposB64()`. Falta: resolver printerId por defecto (WH_TICKET_PRINTER_ID = 75247847, hoy server-side) client-side o pasar hint a la Edge `imprimir`, + portar el builder de cargadores (120 líneas GAS Reporte.gs:1944).
+- **F3 OCR:** backend YA hecho (mos.contexto_ticket_jefa 383 · mos.aplicar_respuesta_jefa MONEY con clave server-side · wh.actualizar_precios_detalle). Falta CLIENTE: `ocrTicketJefa`/`ocrComprobanteGuia` = foto→base64→Edge `ia` (existe) + `imprimirCostosGuia` (Almacen.gs:1820, 182 líneas ESC/POS). **Gate: cámara física.**
+- **F5 portales:** `wh.crear_lista_sombra` existe · reporte.html es read-only sobre wh.guias/preingreso (migrable sin datos nuevos). **Gate duro: export del Sheet de clientes vivo (dato del dueño).**
+- **F6:** `editarPNCantidad` necesita port de `_sincronizarLoteDesdeDetalle` (máquina lote-vencimiento, bug histórico "lote congelado") — TOCA STOCK, requiere verificación. `getSugerenciaPrecioIndividual` = FIFO+política categorías.
+- **F7 flips (TOCA DINERO LIVE):** `MOS_CONVERT_NV_DIRECTO`='0'→'1' (converter NV→CPE; falta smoke B2 huérfano) · apagar sync Hoja→Supabase (hoy 19 tablas en MOS_SYNC_OFF_TABLAS siguen espejando de respaldo).
 
 
 ## ESTADO (actualizado 2026-07-05, MOS 2.43.454 desplegado)
