@@ -3372,6 +3372,14 @@ const API = (() => {
       if (action === 'ocrTicketJefa') {
         return _ocrTicketJefaDirecto(p && p.fotoBase64, p && p.contextoItems);
       }
+      // [cero-GAS F4] espiaListarChunks → mos.espia_listar_chunks (413). El caller lee r.chunks directo (r=data).
+      if (action === 'espiaListarChunks') {
+        return (async () => {
+          const r = await _sbRpcMOS('espia_listar_chunks', { p: p || {} }, 'mos');
+          if (r == null || r.ok === false) return { chunks: [], total: 0 };
+          return r.data;   // {chunks, total, desde, hasta}
+        })();
+      }
       // [cero-GAS F6] wh_editarPNCantidad → wh.editar_pn_cantidad (412): update PN + sync lote + detalle, atómico.
       if (action === 'wh_editarPNCantidad') {
         return (async () => {
