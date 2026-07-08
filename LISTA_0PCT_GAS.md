@@ -42,8 +42,9 @@
   1. `node --check` de: MOS js/app.js · WH js/api.js · WH js/app.js (pedido.html no necesita) → luego bump versiones + push MOS y WH.
   2. `node _apply_sql.js 411_sugerencia_precio_individual.sql` · `node _apply_sql.js 407_portal_cliente_schema.sql` (en ProyectoMOS\supabase).
   3. ~~SQL 413~~ RESUELTO: era falso drift (git lo tenía; restaurado al disco; nada que aplicar).
-  4. Flip: `update mos.config set valor='1' where clave='MOS_CONVERT_NV_DIRECTO';` (seguro: doble candado fac._on()).
-  5. Verificar sync: `select clave,valor from mos.config where clave ilike '%SYNC%';` — apagar sync Hoja = decisión del dueño por tabla.
+  4. ✅ Flip HECHO (2026-07-08): `MOS_CONVERT_NV_DIRECTO` 0→1 verificado (fac._on()=false → converter inerte, front cae a GAS; get_flags.meConvertDirecto=1). El converter NV→CPE se activa SOLO en el go-live fiscal (FAC_CPE_DIRECTO=1 + token).
+  5. ✅ Sync verificado latiendo (heartbeat 2026-07-08 23:40; MOS_SYNC_OFF_TABLAS con lista parcial). **Apagar el sync restante = decisión del dueño por tabla** (quita la red de respaldo) — ÚNICO pendiente del plan junto con el token NubeFact de producción.
+- ✅ **DEPLOYS VERIFICADOS EN VIVO (browsercheck):** MOS 2.43.478 (auto-update detectado, sin pageerror, device-auth sin GAS) · WH 2.13.415 (red 100% SB-REST, cero script.google.com). SQL 411+407 aplicados.
 
 ## DATOS CONFIRMADOS para construir el resto (2026-07-08, para retomar rápido)
 - **WH prints cargadores/historial:** data YA en Supabase → `wh.resumen_cargadores_dia({fecha})` (cargadores) · historial: el frontend YA arma `params.texto` completo (app.js ~20693, solo hay que envolverlo en ESC/POS). WH tiene `_imprimirDirecto(printerId, base64, title)` + `_escposB64()`. Falta: resolver printerId por defecto (WH_TICKET_PRINTER_ID = 75247847, hoy server-side) client-side o pasar hint a la Edge `imprimir`, + portar el builder de cargadores (120 líneas GAS Reporte.gs:1944).
