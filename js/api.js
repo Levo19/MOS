@@ -3094,6 +3094,15 @@ const API = (() => {
       // [cero-GAS] bustAlmacenCache era una invalidación de la caché GAS del almacén; en Supabase no hay tal caché
       // (las lecturas son directas) → no-op inocuo, sin tocar GAS.
       if (action === 'bustAlmacenCache') return Promise.resolve({ ok: true });
+      // [cero-GAS F6] getSugerenciaPrecioIndividual → mos.sugerencia_precio_individual (411). El front tiene fallback
+      //   (×1.25) si esto falla, así que devolvemos el shape {precioVentaActual,precioVentaSugerido} directo (r.data).
+      if (action === 'getSugerenciaPrecioIndividual') {
+        return (async () => {
+          const r = await _sbRpcMOS('sugerencia_precio_individual', { p: p || {} }, 'mos');
+          if (r == null || r.ok === false) return { ok: false };   // → el front usa su fallback
+          return r.data;
+        })();
+      }
       // [cero-GAS · 405] getNotifLog → mos.notif_log_listar (el log ahora lo escribe la Edge push, no la Hoja).
       if (action === 'getNotifLog') {
         return (async () => {
@@ -3362,6 +3371,12 @@ const API = (() => {
       // [cero-GAS F3] OCR de correcciones de la jefa → Edge `ia` (antes bridge GAS→WH extraerCorreccionesJefa).
       if (action === 'ocrTicketJefa') {
         return _ocrTicketJefaDirecto(p && p.fotoBase64, p && p.contextoItems);
+      }
+      // [cero-GAS F6] wh_editarPNCantidad → wh.editar_pn_cantidad (412): update PN + sync lote + detalle, atómico.
+      if (action === 'wh_editarPNCantidad') {
+        const r = await _sbRpcMOS('editar_pn_cantidad', { p: { idProductoNuevo: p && p.idProductoNuevo, cantidad: p && p.cantidad, usuario: (p && p.usuario) || '' } }, 'wh');
+        if (r == null) throw new Error('Sin conexión con el servidor');
+        return r;   // {ok, data} o {ok:false, error} — el front lee d.ok/d.error
       }
       // [cero-GAS F3] Ticket de costos/reporte-jefa de una guía → ESC/POS client-side + Edge `imprimir` (antes GAS).
       if (action === 'imprimirCostosGuia') {
