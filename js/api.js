@@ -981,6 +981,101 @@ const API = (() => {
     return d;
   }
 
+  // [cero-GAS F2] Port fiel del ESC/POS del ticket de liquidación de pago (Liquidaciones.gs imprimirTicketPago).
+  // Recibe el detalle (mos.pago_detalle) y devuelve el string ESC/POS crudo (80mm, W=48). Sin GAS.
+  function _buildTicketPagoEscPos(d) {
+    const W = 48;
+    const _rep = (ch, n) => { let s = ''; for (let i = 0; i < n; i++) s += ch; return s; };
+    const _pEnd = (s, w) => { s = String(s || '').substring(0, w); while (s.length < w) s += ' '; return s; };
+    const _pSt  = (s, w) => { s = String(s || ''); while (s.length < w) s = ' ' + s; return s; };
+    const _amtP = (n, w) => _pSt('S/' + (parseFloat(n) || 0).toFixed(2), w);
+    const _norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\x20-\x7E]/g, '?');
+    const _sHdr = (t) => { const s = ' ' + t + ' '; const l = Math.floor((W - s.length) / 2); return _rep('=', Math.max(0, l)) + s + _rep('=', Math.max(0, W - s.length - l)) + '\n'; };
+    const _fmt = (ts, f) => {
+      try {
+        const dt = ts ? new Date(ts) : new Date();
+        const p2 = (x) => String(x).padStart(2, '0');
+        const dd = p2(dt.getDate()), mo = p2(dt.getMonth() + 1), yy = dt.getFullYear();
+        const hh = p2(dt.getHours()), mi = p2(dt.getMinutes()), ss = p2(dt.getSeconds());
+        if (f === 'date') return dd + '/' + mo + '/' + yy;
+        if (f === 'full') return dd + '/' + mo + '/' + yy + ' ' + hh + ':' + mi + ':' + ss;
+        return dd + '/' + mo + '/' + yy + ' ' + hh + ':' + mi;
+      } catch (_) { return ''; }
+    };
+    const _diaTxt = (fecha) => {
+      try {
+        const dt = new Date(fecha + 'T12:00:00');
+        const dias = ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab'];
+        const mes = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+        return dias[dt.getDay()] + ' ' + String(dt.getDate()).padStart(2, '0') + ' ' + mes[dt.getMonth()];
+      } catch (_) { return String(fecha || ''); }
+    };
+    const SEP = _rep('=', W) + '\n', SEPd = _rep('-', W) + '\n';
+    let txt = '';
+    txt += '\x1b\x40\x1b\x61\x01\x1b\x21\x30';
+    txt += _norm('LIQUIDACION DE PAGO') + '\n';
+    txt += '\x1b\x21\x00' + _norm('ProyectoMOS') + '\n';
+    txt += '\x1b\x61\x00' + SEP;
+    txt += _pEnd('ID PAGO', 12) + ': ' + (d.idPago || '') + '\n';
+    txt += _pEnd('FECHA', 12) + ': ' + _fmt(d.pagadoTs, 'min') + '\n';
+    txt += _pEnd('PAGO', 12) + ': ' + _norm(d.pagadoPor) + '\n';
+    txt += SEPd;
+    txt += _pEnd('PERSONAL', 12) + ': ' + _norm(d.nombre) + '\n';
+    txt += _pEnd('ROL', 12) + ': ' + _norm(d.rol) + '\n';
+    txt += SEP;
+    txt += _sHdr('DIAS LIQUIDADOS (' + d.dias.length + ')');
+    let diasAuditados = 0, diasConSancion = 0, totalEnvasados = 0, totalBonoMeta = 0, tarifaUsada = 0;
+    d.dias.forEach((dia) => {
+      txt += _pEnd(_norm(_diaTxt(dia.fecha)), W - 12) + _amtP(dia.totalDia, 12) + '\n';
+      const sub = [];
+      if (dia.montoBase > 0) sub.push('base ' + Number(dia.montoBase).toFixed(2));
+      if (dia.pagoEnvasado > 0) sub.push('env ' + Number(dia.pagoEnvasado).toFixed(2) + (dia.unidadesEnvasadas > 0 ? ' (' + dia.unidadesEnvasadas + ' uds)' : ''));
+      if (dia.bonoMeta > 0) sub.push('+meta ' + Number(dia.bonoMeta).toFixed(2));
+      if (dia.sancion > 0) sub.push('-san ' + Number(dia.sancion).toFixed(2));
+      if (sub.length) txt += '  ' + _norm(sub.join(' · ')) + '\n';
+      if (dia.auditado) { txt += '  [OK] auditado' + (dia.scoreFinal > 0 ? ' · score ' + Number(dia.scoreFinal).toFixed(1) + '/5' : '') + '\n'; diasAuditados++; }
+      else { txt += '  [!] SIN AUDITAR\n'; }
+      if (dia.sancion > 0) {
+        diasConSancion++;
+        const mot = String(dia.sancionMotivo || '').substring(0, W - 16);
+        txt += mot ? ('  [!] Sancion: ' + _norm(mot) + '\n') : ('  [!] Sancion -S/' + Number(dia.sancion).toFixed(2) + '\n');
+      }
+      txt += '\n';
+      totalEnvasados += dia.unidadesEnvasadas || 0;
+      totalBonoMeta += dia.bonoMeta || 0;
+      if (dia.tarifaEnvasado > 0) tarifaUsada = dia.tarifaEnvasado;
+    });
+    txt += SEPd;
+    txt += '\x1b\x21\x30';
+    txt += _pEnd('TOTAL', W / 2 - 6) + _amtP(d.total, W / 2 - 4) + '\n';
+    txt += '\x1b\x21\x00' + SEPd;
+    txt += _sHdr('RESUMEN DEL PERIODO');
+    txt += _pEnd('  Dias liquidados', W - 6) + _pSt(String(d.dias.length), 6) + '\n';
+    const pctAud = d.dias.length > 0 ? Math.round((diasAuditados / d.dias.length) * 100) : 0;
+    txt += _pEnd('  Dias auditados', W - 12) + _pSt(diasAuditados + '/' + d.dias.length + ' ' + pctAud + '%', 12) + '\n';
+    txt += _pEnd('  Dias con sancion', W - 6) + _pSt(String(diasConSancion), 6) + '\n';
+    if (totalEnvasados > 0) {
+      txt += _pEnd('  Total envasados', W - 10) + _pSt(totalEnvasados + ' uds', 10) + '\n';
+      if (tarifaUsada > 0) txt += '    (a S/' + Number(tarifaUsada).toFixed(2) + ' c/u)\n';
+    }
+    if (totalBonoMeta > 0) txt += _pEnd('  Bono meta logrado', W - 12) + _amtP(totalBonoMeta, 12) + '\n';
+    txt += SEPd;
+    if (d.comentario) {
+      txt += _sHdr('COMENTARIO');
+      let c = _norm(d.comentario);
+      while (c.length > W) { txt += c.substring(0, W) + '\n'; c = c.substring(W); }
+      if (c) txt += c + '\n';
+      txt += SEPd;
+    }
+    txt += '\n' + _pEnd('Firma personal', 20) + ' ' + _rep('_', W - 22) + '\n\n';
+    txt += _pEnd('V.B. admin/master', 20) + ' ' + _rep('_', W - 22) + '\n\n';
+    txt += '\x1b\x61\x01\x1b\x45\x01*** FIN ***\x1b\x45\x00\n';
+    txt += _norm('Impreso desde ProyectoMOS') + '\n';
+    txt += _fmt(null, 'full') + '\n';
+    txt += '\n\n\n\n\n\x1d\x56\x00';
+    return txt;
+  }
+
   // [Reparación #9] Imprime el COMPROBANTE centralizado (NV/Boleta/Factura) por la Edge `ticket-comprobante`:
   // empresa + doc + items + IGV + QR nativo (SUNAT para CPE, correlativo para NV) + leyenda. Cero GAS.
   // Mismo formato lo usan ME (al vender) y MOS (reimpresión). Lanza si falla.
@@ -3106,6 +3201,44 @@ const API = (() => {
     // liquidaciones) va SIEMPRE por GAS (dual-write → GAS espeja la sombra), aunque su flag de LECTURA esté ON.
     // Con el gate de catálogo OFF (default) ⇒ IDÉNTICO a hoy (va recto a GAS).
     post: (action, p = {}) => {
+      // [cero-GAS F2 · impresión Z-cierre] El ticket Z ya existe 100% cero-GAS en turno.html (lee me.datos_turno +
+      //   arma el ESC/POS + lo manda a la Edge `imprimir`, con ?autoprint=1 que auto-imprime a la impresora de la
+      //   caja). En vez de duplicar sus ~600 líneas de render acá, REUSAMOS esa página verificada cargándola en un
+      //   IFRAME OCULTO same-origin (levo19.github.io/MOS): imprime solo y se remueve. Sin GAS, sin popup visible.
+      if (action === 'imprimirTicketZCierre') {
+        return new Promise((resolve) => {
+          try {
+            const idCaja = String((p && p.idCaja) || '');
+            if (!idCaja) { resolve({ ok: false, error: 'idCaja requerido' }); return; }
+            const ifr = document.createElement('iframe');
+            ifr.style.cssText = 'position:fixed;width:1px;height:1px;left:-9999px;top:-9999px;border:0;opacity:0';
+            ifr.src = 'https://levo19.github.io/MOS/turno.html?idCaja=' + encodeURIComponent(idCaja) + '&autoprint=1';
+            document.body.appendChild(ifr);
+            // turno.html auto-imprime ~800ms tras cargar datos; damos margen y limpiamos el iframe.
+            setTimeout(() => { try { ifr.remove(); } catch (_) {} }, 12000);
+            resolve({ ok: true, data: { ok: true, via: 'turno-iframe' } });
+          } catch (e) { resolve({ ok: false, error: String(e && e.message || e) }); }
+        });
+      }
+      // [cero-GAS F2 · ticket de PAGO (liquidación)] Reimpresión del ticket de liquidación de pago. Antes GAS
+      //   imprimirTicketPago (leía la Hoja + armaba ESC/POS + PrintNode). Ahora: traemos el detalle directo
+      //   (mos.pago_detalle) y armamos el MISMO ESC/POS client-side (port fiel de Liquidaciones.gs) → Edge `imprimir`.
+      if (action === 'imprimirTicketPago') {
+        return (async () => {
+          const idPago = String((p && p.idPago) || '');
+          const printerId = parseInt(String((p && p.printerId) || ''), 10);
+          if (!idPago) throw new Error('Requiere idPago');
+          if (!printerId) throw new Error('Requiere printerId');
+          // Detalle directo por RPC (sin el gate _fresh de _getObjDirectoMOS: el pago es histórico, no una sombra
+          // caliente → nunca debe caer a GAS por "stale"). mos.pago_detalle devuelve {ok,data:{rol,dias,total,...}}.
+          const rr = await _sbRpcMOS('pago_detalle', { p: { idPago } });
+          const d = rr && rr.ok && rr.data;
+          if (!d || !Array.isArray(d.dias)) throw new Error('No se pudo cargar el detalle del pago');
+          const txt = _buildTicketPagoEscPos(d);
+          const r = await _imprimirTicketEdge(printerId, 'Liquidacion de pago', txt);
+          return { ok: true, printJobId: r && r.printJobId, data: { ok: true } };
+        })();
+      }
       // [DUAL-WRITE · HORARIO] getHorariosApps es una LECTURA enviada por POST (el front la llama con API.post).
       // Read-path directo (RPC horarios_apps, 98) gated por el gate de LECTURA _mosHorarioLectura (maestro OR
       // mos_horario_lectura). La escritura setHorarioApp ya NO va directa (GAS siempre, dual-write). Gate de
