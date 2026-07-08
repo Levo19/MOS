@@ -1076,6 +1076,41 @@ const API = (() => {
     return txt;
   }
 
+  // [cero-GAS F3] ESC/POS del ticket de costos/reporte-jefa de una guía (port funcional de Almacen.gs). 80mm W=32.
+  //   Header (get_reporte) + items (contexto_ticket_jefa: costo/venta/margen). Con formato 'jefa' agrega líneas para
+  //   llenar a mano (la jefa escribe nuevos precios → luego se leen con ocrTicketJefa). El QR/foto lo maneja el flujo.
+  function _buildTicketCostosEscPos(idGuia, hdr, items, esJefa) {
+    const W = 32, SEP = '='.repeat(W), SEPd = '-'.repeat(W);
+    const _norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\x20-\x7e]/g, '');
+    const _pad = (s, n) => { s = String(s || ''); while (s.length < n) s += ' '; return s; };
+    const _money = (n) => 'S/' + (parseFloat(n) || 0).toFixed(2);
+    let t = '\x1b\x40\x1b\x61\x01';
+    t += '\x1b\x21\x10' + _norm('INVERSION MOS SAC') + '\x1b\x21\x00\n';
+    t += _norm(esJefa ? 'REPORTE PARA LA JEFA' : 'REPORTE COSTOS INGRESO') + '\n' + SEP + '\n\x1b\x61\x00';
+    t += _pad('Guia:', 11) + _norm(idGuia) + '\n';
+    t += _pad('Fecha:', 11) + _norm(String(hdr.fecha || '').slice(0, 16)) + '\n';
+    t += _pad('Proveedor:', 11) + _norm(String(hdr.proveedor || hdr.idProveedor || '')).substring(0, W - 11) + '\n';
+    t += SEPd + '\n\x1b\x61\x01PRODUCTOS Y MARGENES\x1b\x61\x00\n' + SEPd + '\n';
+    let totalCosto = 0;
+    items.forEach((it) => {
+      const costo = parseFloat(it.costo) || 0, venta = parseFloat(it.ventaActual) || 0;
+      const margen = venta > 0 ? Math.round(((venta - costo) / venta) * 100) : null;
+      totalCosto += costo;
+      t += '\x1b\x45\x01' + _norm(String(it.descripcion || it.skuBase || '')).substring(0, W) + '\x1b\x45\x00\n';
+      t += _pad('  Costo:', 14) + _money(costo) + '\n';
+      t += _pad('  Venta act:', 14) + _money(venta) + (margen !== null ? '  (m' + margen + '%)' : '') + '\n';
+      if (esJefa) {
+        t += '  Venta NUEVA: ______\n';
+        t += '  Margen %:    ______\n';
+      }
+      t += SEPd + '\n';
+    });
+    t += '\x1b\x61\x01\x1b\x45\x01TOTAL COSTO ' + _money(totalCosto) + '\x1b\x45\x00\x1b\x61\x00\n';
+    if (esJefa) t += '\nFirma jefa: ____________________\n';
+    t += '\n\n\n\n\x1d\x56\x00';
+    return t;
+  }
+
   // [Reparación #9] Imprime el COMPROBANTE centralizado (NV/Boleta/Factura) por la Edge `ticket-comprobante`:
   // empresa + doc + items + IGV + QR nativo (SUNAT para CPE, correlativo para NV) + leyenda. Cero GAS.
   // Mismo formato lo usan ME (al vender) y MOS (reimpresión). Lanza si falla.
@@ -3327,6 +3362,22 @@ const API = (() => {
       // [cero-GAS F3] OCR de correcciones de la jefa → Edge `ia` (antes bridge GAS→WH extraerCorreccionesJefa).
       if (action === 'ocrTicketJefa') {
         return _ocrTicketJefaDirecto(p && p.fotoBase64, p && p.contextoItems);
+      }
+      // [cero-GAS F3] Ticket de costos/reporte-jefa de una guía → ESC/POS client-side + Edge `imprimir` (antes GAS).
+      if (action === 'imprimirCostosGuia') {
+        return (async () => {
+          const idGuia = String((p && p.idGuia) || '');
+          const printerId = parseInt(String((p && p.printerId) || ''), 10);
+          if (!idGuia) throw new Error('idGuia requerido');
+          if (!printerId) throw new Error('printerId requerido');
+          const rep = await _sbRpcMOS('get_reporte', { p: { tipo: 'guia', id: idGuia } }, 'wh');
+          const hdr = (rep && rep.ok && rep.data) || {};
+          const ctx = await _sbRpcMOS('contexto_ticket_jefa', { p: { idGuia } }, 'mos');
+          const items = (ctx && ctx.data && Array.isArray(ctx.data.items)) ? ctx.data.items : [];
+          const txt = _buildTicketCostosEscPos(idGuia, hdr, items, (p && (p.formato === 'jefa' || p.forJefa)));
+          const r = await _imprimirTicketEdge(printerId, 'Reporte costos ' + idGuia, txt);
+          return { ok: true, printJobId: r && r.printJobId, data: { ok: true } };
+        })();
       }
       // [DUAL-WRITE · HORARIO] getHorariosApps es una LECTURA enviada por POST (el front la llama con API.post).
       // Read-path directo (RPC horarios_apps, 98) gated por el gate de LECTURA _mosHorarioLectura (maestro OR
