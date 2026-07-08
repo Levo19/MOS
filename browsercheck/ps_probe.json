@@ -1,0 +1,18 @@
+{
+ "url": "http://127.0.0.1:8151/index.html",
+ "waitMs": 6500,
+ "viewport": {
+  "width": 430,
+  "height": 900
+ },
+ "localStorage": {
+  "ps_session": {
+   "id": "P-1",
+   "nombre": "Op Test",
+   "rol": "Operador",
+   "loginAt": 1783303947389
+  }
+ },
+ "evalAfter": "(async()=>{var app=document.getElementById(\"app\");var ss=(app.__vnode||app._vnode).component.setupState;var dbg=window.__psDebug;var sleep=function(ms){return new Promise(function(r){setTimeout(r,ms);});};\nss.goModule(\"finanzas\");await sleep(1200);\nvar t1=(document.querySelector(\".ps-head-title\")||{}).textContent;\nss.goModule(\"dashboard\");await sleep(700);\nss.goModule(\"finanzas\");await sleep(1200);\nvar t2=(document.querySelector(\".ps-head-title\")||{}).textContent;\nreturn {curMod:ss.currentModule, loading:dbg.moduleLoading, titleV1:t1, titleV2:t2, keys:dbg.keys()};})()",
+ "screenshot": "opt-switch.png"
+}

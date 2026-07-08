@@ -1,0 +1,7 @@
+{
+  "url": "http://localhost:8140/index.html",
+  "waitMs": 2500,
+  "viewport": { "width": 1440, "height": 900 },
+  "screenshot": "f0-desktop.png",
+  "evalAfter": "(async()=>{try{var app=document.getElementById('app');var root=(app.__vnode||app._vnode).component;var sess={id:'P-1',nombre:'Admin',rol:'Administrador',loginAt:Date.now()};localStorage.setItem('ps_session',JSON.stringify(sess));root.setupState.session=sess;await new Promise(function(r){setTimeout(r,1500);});root.setupState.goModule('catalogos');await new Promise(function(r){setTimeout(r,2500);});return{module:root.setupState.currentModule&&root.setupState.currentModule.value?root.setupState.currentModule.value:root.setupState.currentModule,catalogoText:document.body.innerText.indexOf('Embarcaciones')>=0||document.body.innerText.indexOf('Catálogo')>=0,overflowX:document.documentElement.scrollWidth>document.documentElement.clientWidth};}catch(e){return{crash:e.message};}})()"
+}

@@ -1,0 +1,18 @@
+{
+ "url": "http://127.0.0.1:8151/index.html",
+ "waitMs": 6500,
+ "viewport": {
+  "width": 430,
+  "height": 900
+ },
+ "localStorage": {
+  "ps_session": {
+   "id": "P-1",
+   "nombre": "Op Test",
+   "rol": "Operador",
+   "loginAt": 1783303784031
+  }
+ },
+ "evalAfter": "(async()=>{\n try{\n  var app=document.getElementById(\"app\");\n  var ss=(app.__vnode||app._vnode).component.setupState;\n  var dbg=window.__psDebug;\n  var out={ver:window.APP_VERSION,hasSS:!!ss,hasDbg:!!dbg};\n  if(!ss||!dbg)return out;\n  var sleep=function(ms){return new Promise(function(r){setTimeout(r,ms);});};\n  async function maxLoading(ms){var hit=false,t=Date.now();while(Date.now()-t<ms){if(dbg.moduleLoading)hit=true;await sleep(8);}return hit;}\n  out.preloadKeys=dbg.keys().slice().sort();\n  // (b) Lanchas fria vs instantanea\n  Object.keys(dbg.moduleCache).forEach(function(k){delete dbg.moduleCache[k];});\n  ss.goModule(\"dashboard\");await sleep(400);\n  ss.goModule(\"lanchas\");\n  out.lanchasV1_loadingSeen=await maxLoading(400);\n  await sleep(1200);\n  out.keysAfterLanchasV1=dbg.keys();\n  ss.goModule(\"dashboard\");await sleep(500);\n  ss.goModule(\"lanchas\");\n  out.lanchasV2_loadingSeen=await maxLoading(400);\n  out.lanchasV2_moduleLoadingNow=dbg.moduleLoading;\n  // (a) Finanzas (pesado, con await) fria vs instantanea -> termina en Finanzas V2 para el screenshot\n  Object.keys(dbg.moduleCache).forEach(function(k){delete dbg.moduleCache[k];});\n  ss.goModule(\"dashboard\");await sleep(400);\n  ss.goModule(\"finanzas\");\n  out.finanzasV1_loadingSeen=await maxLoading(600);\n  await sleep(1500);\n  out.keysAfterFinanzasV1=dbg.keys();\n  ss.goModule(\"dashboard\");await sleep(500);\n  ss.goModule(\"finanzas\");\n  out.finanzasV2_loadingSeen=await maxLoading(500);\n  out.finanzasV2_moduleLoadingNow=dbg.moduleLoading;\n  out.finalKeys=dbg.keys().slice().sort();\n  out.currentModule=ss.currentModule;\n  out.overflowX=document.documentElement.scrollWidth-window.innerWidth;\n  return out;\n }catch(e){return{crash:e.message,stack:(e.stack||\"\").slice(0,300)};}\n})()",
+ "screenshot": "opt-switch.png"
+}

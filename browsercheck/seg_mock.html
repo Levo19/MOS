@@ -1,0 +1,192 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tramos — actual vs rediseño</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#0b1120;color:#e2e8f0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:18px}
+  h1{font-size:15px;margin:0 0 4px;color:#f8fafc}
+  .sub{font-size:11px;color:#64748b;margin-bottom:16px}
+  .col{max-width:460px;margin:0 auto}
+  .lbl{font-size:11px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;margin:18px 0 6px;display:flex;align-items:center;gap:6px}
+  .lbl.bad{color:#f87171}.lbl.good{color:#34d399}
+  .card{background:#0f172a;border:1px solid #1e293b;border-radius:14px;overflow:hidden}
+  .card-h{padding:9px 14px;border-bottom:1px solid #1e293b;font-weight:800;font-size:13px;color:#f1f5f9;display:flex;align-items:center;gap:8px}
+  .card-h .pill{margin-left:auto;font-size:9.5px;font-weight:700;color:#94a3b8;background:#0b1120;border:1px solid #334155;border-radius:99px;padding:2px 8px}
+
+  /* ══ CSS REAL del render ACTUAL (copiado de index.html) ══ */
+  .cat-seg-mini{margin:4px 16px 12px;background:linear-gradient(135deg,rgba(15,23,42,.6),rgba(30,41,59,.4));border:1px solid #334155;border-radius:12px;padding:10px 12px}
+  .cat-seg-titulo{display:flex;align-items:center;gap:6px;font-size:11px;color:#cbd5e1;margin-bottom:6px}
+  .cat-seg-titulo strong{color:#f1f5f9;font-size:11.5px}
+  .cat-seg-count{background:rgba(15,23,42,.7);padding:1px 8px;border-radius:99px;font-size:9.5px;color:#94a3b8;border:1px solid #334155}
+  .cat-seg-base{left:0;right:0;width:auto!important;z-index:0;opacity:1!important;cursor:default!important;background:repeating-linear-gradient(45deg,rgba(148,163,184,.12),rgba(148,163,184,.12) 6px,rgba(148,163,184,.04) 6px,rgba(148,163,184,.04) 12px)!important;border:1px dashed rgba(148,163,184,.35)}
+  .cat-seg-base-lbl{position:absolute;left:6px;top:50%;transform:translateY(-50%);font-size:9px;font-weight:800;color:#94a3b8;white-space:nowrap;pointer-events:none;z-index:0}
+  .cat-seg-base-cap{margin-top:5px;font-size:10px;color:#94a3b8;display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+  .cat-seg-base-cap strong{color:#34d399}
+  .cat-seg-banda:not(.cat-seg-base){z-index:1}
+  .cat-seg-band-container{position:relative;padding:0 4px}
+  .cat-seg-band-bg{position:relative;height:28px;background:linear-gradient(90deg,rgba(148,163,184,.08),rgba(148,163,184,.15) 50%,rgba(148,163,184,.08));border-radius:6px;overflow:hidden}
+  .cat-seg-banda{position:absolute;top:0;bottom:0;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;cursor:pointer;opacity:.95}
+  .cat-seg-banda-pct{font-size:11px;line-height:1;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+  .cat-seg-eje{position:relative;height:14px;margin-top:2px}
+  .cat-seg-eje-marca{position:absolute;top:0;font-size:8.5px;color:#64748b;font-weight:700;transform:translateX(-50%);white-space:nowrap}
+  .cat-seg-eje-marca.cat-seg-eje-inf{color:#fbbf24;font-size:11px;top:-1px}
+  .cat-seg-nombres{position:relative;height:14px;margin-top:2px}
+  .cat-seg-nombre{position:absolute;top:0;font-size:9px;color:#cbd5e1;font-weight:700;transform:translateX(-50%);white-space:nowrap}
+
+  /* ══ REDISEÑO — "Escalera de tramos" (celdas de igual ancho) ══ */
+  .lad{padding:12px 12px 10px}
+  .lad-hd{display:flex;align-items:center;gap:7px;font-size:11px;color:#cbd5e1;margin-bottom:9px}
+  .lad-hd strong{color:#f1f5f9;font-size:12px}
+  .lad-hd .cnt{background:rgba(99,102,241,.14);color:#c7d2fe;border:1px solid rgba(99,102,241,.35);border-radius:99px;font-size:9.5px;font-weight:800;padding:2px 8px}
+  .lad-hd .add{margin-left:auto;background:rgba(99,102,241,.95);border:0;color:#fff;height:24px;padding:0 11px;border-radius:7px;font-size:10.5px;font-weight:900;cursor:pointer}
+  .lad-track{display:flex;gap:5px;align-items:stretch}
+  .lad-cell{flex:1 1 0;min-width:0;position:relative;border-radius:9px;padding:9px 8px 8px;min-height:70px;display:flex;flex-direction:column;gap:3px;justify-content:space-between;overflow:hidden;border:1px solid rgba(255,255,255,.08);cursor:pointer;transition:transform .12s,box-shadow .12s}
+  .lad-cell:hover{transform:translateY(-2px);box-shadow:0 8px 20px -6px rgba(0,0,0,.6)}
+  .lad-cell.base{background:repeating-linear-gradient(45deg,rgba(148,163,184,.10),rgba(148,163,184,.10) 7px,rgba(148,163,184,.03) 7px,rgba(148,163,184,.03) 14px);border:1px dashed rgba(148,163,184,.4)}
+  .lad-rng{font-size:9.5px;font-weight:800;color:rgba(255,255,255,.92);letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lad-cell.base .lad-rng{color:#94a3b8}
+  .lad-price{font-size:15px;font-weight:900;color:#fff;line-height:1;font-variant-numeric:tabular-nums}
+  .lad-cell.base .lad-price{color:#cbd5e1}
+  .lad-unit{font-size:9px;font-weight:700;opacity:.8}
+  .lad-badge{align-self:flex-start;font-size:9.5px;font-weight:900;padding:2px 7px;border-radius:99px;background:rgba(0,0,0,.28);color:#fff;display:inline-flex;align-items:center;gap:3px}
+  .lad-cell.base .lad-badge{background:rgba(148,163,184,.18);color:#cbd5e1}
+  .lad-name{font-size:9px;font-weight:700;color:rgba(255,255,255,.85);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lad-axis{display:flex;margin-top:7px;position:relative;height:15px}
+  .lad-tick{position:absolute;transform:translateX(-50%);font-size:9px;font-weight:800;color:#cbd5e1;white-space:nowrap;background:#0f172a;padding:0 3px}
+  .lad-tick .k{color:#818cf8}
+  .lad-tick.inf .k{color:#fbbf24}
+  .lad-foot{margin-top:9px;font-size:10px;color:#94a3b8;display:flex;align-items:center;gap:5px;flex-wrap:wrap;border-top:1px dashed #1e293b;padding-top:8px}
+  .lad-foot strong{color:#34d399}
+</style></head>
+<body>
+<div class="col">
+  <h1>🎚 Barra de tramos — avena (granel · S/5.00/kg)</h1>
+  <div class="sub">Izquierda: cómo se ve HOY con tu tramo "≥10kg". Derecha: rediseño propuesto (celdas de igual ancho, visual).</div>
+  <div id="out"></div>
+</div>
+
+<script>
+// ═══ Escenarios reales (precioCanonico S/5.00/kg) ═══
+const PC = 5.00;
+const ESCEN = [
+  { t:'Tu caso ahora: 1 tramo "≥10kg"', segs:[ {id:'a',nombre:'Mayorista',min:10000,max:null,ajustePct:0} ] },
+  { t:'3 tramos (¼kg oferta · 1kg · ≥5kg)', segs:[
+      {id:'a',nombre:'Menudeo',min:0,max:250,ajustePct:8},
+      {id:'b',nombre:'Medio',min:1000,max:5000,ajustePct:0},
+      {id:'c',nombre:'Mayorista',min:5000,max:null,ajustePct:-6} ] },
+];
+
+// ─────── RENDER ACTUAL (copia fiel de _renderSegmentosMini) ───────
+function renderActual(producto){
+  const segs = producto.segs;
+  const pcKg = PC;
+  if(!segs.length) return '<div class="cat-seg-mini">vacío</div>';
+  const maxFinitos = segs.filter(s=>s.max!==null).map(s=>s.max);
+  const maxF = maxFinitos.length ? Math.max(...maxFinitos) : 1000;
+  const escalaMax = maxF*1.25;
+  const fmtG = g=> g>=1000 ? (g/1000)+'kg' : g+'g';
+  const PAL=['#6366f1','#f59e0b','#10b981','#ec4899','#14b8a6'];
+  const cmap={}; segs.forEach((s,i)=>cmap[s.id]=PAL[i%PAL.length]);
+  const bandas = segs.map(s=>{
+    const left=Math.max(0,(s.min/escalaMax)*100);
+    const widthRaw = s.max===null ? (100-left) : ((s.max-s.min)/escalaMax)*100;
+    const width=Math.max(2,Math.min(widthRaw,100-left));
+    const sign=s.ajustePct>0?'+':'';
+    return `<div class="cat-seg-banda" style="left:${left}%;width:${width}%;background:${cmap[s.id]}"><span class="cat-seg-banda-pct">${sign}${s.ajustePct}%</span></div>`;
+  }).join('');
+  const cortes=new Set([0]);
+  segs.forEach(s=>{ if(s.min>0)cortes.add(s.min); if(s.max!==null&&s.max<escalaMax)cortes.add(s.max); });
+  cortes.add(maxF);
+  const eje=[...cortes].sort((a,b)=>a-b).map(g=>`<span class="cat-seg-eje-marca" style="left:${(g/escalaMax)*100}%">${fmtG(g)}</span>`).join('')
+    + `<span class="cat-seg-eje-marca cat-seg-eje-inf" style="left:97%">∞</span>`;
+  const nombres = segs.map(s=>{
+    if(!s.nombre)return '';
+    const left=Math.max(0,(s.min/escalaMax)*100);
+    const widthRaw = s.max===null ? (100-left) : ((s.max-s.min)/escalaMax)*100;
+    const width=Math.max(2,Math.min(widthRaw,100-left));
+    return `<span class="cat-seg-nombre" style="left:${left+width/2}%">${s.nombre}</span>`;
+  }).join('');
+  return `<div class="cat-seg-mini">
+    <div class="cat-seg-titulo">🎚 <strong>Tramos</strong> <span class="cat-seg-count">${segs.length} activo${segs.length!==1?'s':''}</span></div>
+    <div class="cat-seg-band-container">
+      <div class="cat-seg-band-bg">
+        <div class="cat-seg-banda cat-seg-base"><span class="cat-seg-base-lbl">S/ ${pcKg.toFixed(2)} · base</span></div>
+        ${bandas}
+      </div>
+      <div class="cat-seg-eje">${eje}</div>
+      <div class="cat-seg-nombres">${nombres}</div>
+    </div>
+    <div class="cat-seg-base-cap">⬚ Donde no hay tramo: <strong>S/ ${pcKg.toFixed(2)}/kg</strong> · 0%</div>
+  </div>`;
+}
+
+// ─────── REDISEÑO: escalera de tramos (celdas de igual ancho) ───────
+function fmtW(g){ if(g===null) return '∞'; return g>=1000 ? (g/1000)+'kg' : g+'g'; }
+function renderLadder(producto){
+  const segs=[...producto.segs].sort((a,b)=>a.min-b.min);
+  const PAL=['#6366f1','#f59e0b','#10b981','#ec4899','#14b8a6'];
+  const cmap={}; segs.forEach((s,i)=>cmap[s.id]=PAL[i%PAL.length]);
+  // Construir puntos de corte y regiones (intervalos)
+  const pts=new Set([0]);
+  segs.forEach(s=>{ pts.add(s.min); if(s.max!==null) pts.add(s.max); });
+  const infinito = segs.some(s=>s.max===null);
+  const arr=[...pts].sort((a,b)=>a-b);
+  const regiones=[];
+  for(let i=0;i<arr.length;i++){
+    const a=arr[i];
+    const isLast = i+1>=arr.length;
+    if(isLast && !infinito) break;            // último punto es fin de un tramo finito, no abre región
+    const b = isLast ? null : arr[i+1];       // null = región infinita [a,∞)
+    if(b!==null && b<=a) continue;
+    // ¿qué tramo cubre [a,b)? min<=a Y (para región infinita: max===null; si no: max===null || max>=b)
+    const seg = segs.find(s=> s.min<=a && (b===null ? s.max===null : (s.max===null || s.max>=b)));
+    regiones.push({a,b,seg:seg||null});
+  }
+  // celdas
+  const cells = regiones.map(r=>{
+    const s=r.seg;
+    const rng = fmtW(r.a)+'–'+fmtW(r.b);
+    if(!s){
+      return `<div class="lad-cell base" title="Precio base (canónico) donde no hay tramo">
+        <div class="lad-rng">${rng}</div>
+        <div><div class="lad-price">S/ ${PC.toFixed(2)}<span class="lad-unit">/kg</span></div></div>
+        <div class="lad-badge">⬚ base · 0%</div>
+      </div>`;
+    }
+    const aj=parseFloat(s.ajustePct)||0;
+    const sign=aj>0?'+':'';
+    const flecha = aj>0?'▲':(aj<0?'▼':'=');
+    const precio = PC*(1+aj/100);
+    return `<div class="lad-cell" style="background:linear-gradient(150deg,${cmap[s.id]},${cmap[s.id]}cc)" title="${s.nombre} · ${flecha}${sign}${aj}%">
+      <div class="lad-rng">${rng}</div>
+      <div><div class="lad-price">S/ ${precio.toFixed(2)}<span class="lad-unit">/kg</span></div></div>
+      <div class="lad-badge">${flecha} ${sign}${aj}%</div>
+      ${s.nombre?`<div class="lad-name">${s.nombre}</div>`:''}
+    </div>`;
+  }).join('');
+  // eje de cortes bajo las celdas (posición proporcional al nº de celdas, no a gramos)
+  const n=regiones.length;
+  const ticks = regiones.map((r,i)=>{
+    const leftPct = (i/n)*100;
+    return `<span class="lad-tick" style="left:${leftPct}%">${fmtW(r.a)==='0g'?'0':`<span class="k">${fmtW(r.a)}</span>`}</span>`;
+  }).join('') + `<span class="lad-tick inf" style="left:100%"><span class="k">∞</span></span>`;
+  return `<div class="lad">
+    <div class="lad-hd">🎚 <strong>Tramos de precio</strong>
+      <span class="cnt">${segs.length} tramo${segs.length!==1?'s':''} · ${n} zona${n!==1?'s':''}</span>
+      <button class="add">+ tramo</button></div>
+    <div class="lad-track">${cells}</div>
+    <div class="lad-axis">${ticks}</div>
+    <div class="lad-foot">⬚ Fuera de todo tramo se cobra el canónico <strong>S/ ${PC.toFixed(2)}/kg</strong></div>
+  </div>`;
+}
+
+const out=document.getElementById('out');
+out.innerHTML = ESCEN.map(e=>`
+  <div class="lbl">📦 ${e.t}</div>
+  <div class="lbl bad">✗ ACTUAL (escala proporcional a gramos → colapsa)</div>
+  <div class="card"><div class="card-h">Avena tradicional granel <span class="pill">card catálogo</span></div>${renderActual(e)}</div>
+  <div class="lbl good">✓ REDISEÑO (celdas iguales · visual · dinámico)</div>
+  <div class="card"><div class="card-h">Avena tradicional granel <span class="pill">card catálogo</span></div>${renderLadder(e)}</div>
+`).join('<div style="height:22px"></div>');
+</script>
+</body></html>

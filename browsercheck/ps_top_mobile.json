@@ -1,0 +1,8 @@
+{
+  "url": "http://localhost:8149/index.html",
+  "viewport": { "width": 375, "height": 812 },
+  "localStorage": { "ps_session": { "nombre": "Luis Vasquez", "rol": "Supervisor", "token": "demo" } },
+  "waitMs": 6000,
+  "evalAfter": "(()=>{ return { ver: window.APP_VERSION, hasMark: !!document.querySelector('.ps-logomark-txt'), hasAvatar: !!document.querySelector('.ps-avatar-circle'), hasDot: !!document.querySelector('.ps-avatar-dot'), overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth }; })()",
+  "screenshot": "top-mobile.png"
+}

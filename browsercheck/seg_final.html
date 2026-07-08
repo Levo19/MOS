@@ -1,0 +1,66 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Escalera de tramos — render FINAL implementado</title>
+<style>
+  body{margin:0;background:#0b1120;color:#e2e8f0;font-family:system-ui,Segoe UI,Roboto,sans-serif;padding:18px}
+  h1{font-size:15px;margin:0 0 14px;color:#f8fafc}
+  .col{max-width:520px;margin:0 auto}
+  .lbl{font-size:11px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;margin:18px 0 6px;color:#93c5fd}
+  .card{background:#0f172a;border:1px solid #1e293b;border-radius:14px;overflow:hidden}
+  .card-h{padding:9px 14px;border-bottom:1px solid #1e293b;font-weight:800;font-size:13px;color:#f1f5f9}
+  /* ── CSS REAL copiado de index.html ── */
+  .cat-seg-mini{margin:4px 16px 12px;background:linear-gradient(135deg,rgba(15,23,42,.6),rgba(30,41,59,.4));border:1px solid #334155;border-radius:12px;padding:10px 12px}
+  .cat-seg-titulo{display:flex;align-items:center;gap:6px;font-size:11px;color:#cbd5e1;margin-bottom:6px}
+  .cat-seg-titulo strong{color:#f1f5f9;font-size:11.5px}
+  .cat-seg-count{background:rgba(15,23,42,.7);padding:1px 8px;border-radius:99px;font-size:9.5px;color:#94a3b8;border:1px solid #334155}
+  .cat-seg-add-btn{margin-left:auto;background:rgba(99,102,241,.92);border:none;color:#fff;height:22px;padding:0 9px;border-radius:6px;font-size:10.5px;font-weight:900;cursor:pointer;line-height:22px}
+  .cat-seg-edit-btn{margin-left:4px;background:transparent;border:1px solid #475569;color:#94a3b8;width:22px;height:22px;border-radius:6px;font-size:11px;cursor:pointer}
+  .cat-seg-base-cap{margin-top:5px;font-size:10px;color:#94a3b8;display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+  .cat-seg-base-cap strong{color:#34d399}
+  .seg-lad-track{display:flex;gap:6px;align-items:stretch}
+  .seg-lad-cell{flex:1 1 0;min-width:0;position:relative;border-radius:10px;padding:10px 9px 9px;min-height:78px;display:flex;flex-direction:column;gap:3px;justify-content:space-between;overflow:hidden;border:1px solid rgba(255,255,255,.09);cursor:pointer}
+  .seg-lad-cell.base{background:repeating-linear-gradient(45deg,rgba(148,163,184,.10),rgba(148,163,184,.10) 7px,rgba(148,163,184,.03) 7px,rgba(148,163,184,.03) 14px)!important;border:1px dashed rgba(148,163,184,.4)}
+  .seg-lad-rng{font-size:10px;font-weight:800;color:rgba(255,255,255,.92);letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .seg-lad-cell.base .seg-lad-rng{color:#94a3b8}
+  .seg-lad-price{font-size:16px;font-weight:900;color:#fff;line-height:1;font-variant-numeric:tabular-nums}
+  .seg-lad-cell.base .seg-lad-price{color:#cbd5e1}
+  .seg-lad-unit{font-size:9px;font-weight:700;opacity:.8}
+  .seg-lad-badge{align-self:flex-start;font-size:9.5px;font-weight:900;padding:2px 7px;border-radius:99px;background:rgba(0,0,0,.28);color:#fff;display:inline-flex;align-items:center;gap:3px}
+  .seg-lad-cell.base .seg-lad-badge{background:rgba(148,163,184,.18);color:#cbd5e1}
+  .seg-lad-name{font-size:9px;font-weight:700;color:rgba(255,255,255,.85);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .seg-lad-axis{display:block;position:relative;height:15px;margin-top:8px}
+  .seg-lad-tick{position:absolute;transform:translateX(-50%);font-size:9px;font-weight:800;color:#cbd5e1;white-space:nowrap}
+  .seg-lad-tick .k{color:#818cf8}
+  .seg-lad-tick.inf .k{color:#fbbf24;font-size:11px}
+  .seg-lad-vacio{font-size:11px;color:#94a3b8;padding:10px 4px}.seg-lad-vacio strong{color:#34d399}
+  .seg-lad-compact .seg-lad-cell{min-height:66px;padding:8px 8px 7px;border-radius:9px}
+  .seg-lad-compact .seg-lad-price{font-size:14px}.seg-lad-compact .seg-lad-rng{font-size:9.5px}
+</style></head><body><div class="col"><h1>🎚 Render FINAL (funciones reales) — avena S/5.00/kg</h1><div id="out"></div></div>
+<script>
+// ── Funciones REALES copiadas de app.js ──
+const _escapeHtml = s => String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const _SEG_PALETA=['#6366f1','#ec4899','#f59e0b','#10b981','#06b6d4','#8b5cf6','#ef4444','#84cc16'];
+function _segColorMap(segs){const m={};(Array.isArray(segs)?segs:[]).slice().sort((a,b)=>(Number(a.min)||0)-(Number(b.min)||0)).forEach((s,i)=>{m[s.id]=_SEG_PALETA[i%_SEG_PALETA.length];});return m;}
+const _segFmtPeso=g=>(g===null||g===undefined)?'∞':(g>=1000?(g/1000)+'kg':g+'g');
+function _segRegiones(segs){const S=(Array.isArray(segs)?segs:[]).slice().sort((a,b)=>(Number(a.min)||0)-(Number(b.min)||0));const esInf=s=>(s.max===null||s.max===undefined);const pts=new Set([0]);S.forEach(s=>{pts.add(Number(s.min)||0);if(!esInf(s))pts.add(Number(s.max));});const arr=[...pts].sort((a,b)=>a-b);const regiones=[];for(let i=0;i<arr.length;i++){const a=arr[i];const b=(i+1<arr.length)?arr[i+1]:null;if(b!==null&&b<=a)continue;const seg=S.find(s=>(Number(s.min)||0)<=a&&(b===null?esInf(s):(esInf(s)||Number(s.max)>=b)));regiones.push({a,b,seg:seg||null});}return regiones;}
+function _segLadderCells(regiones,pcKg,cmap,onTramoJs,onBaseJs){return regiones.map(r=>{const rng=_segFmtPeso(r.a)+'–'+_segFmtPeso(r.b);const s=r.seg;if(!s){return `<div class="seg-lad-cell base"><div class="seg-lad-rng">${rng}</div><div class="seg-lad-price">S/ ${pcKg.toFixed(2)}<span class="seg-lad-unit">/kg</span></div><div class="seg-lad-badge">⬚ base · 0%</div></div>`;}const aj=parseFloat(s.ajustePct)||0;const sign=aj>0?'+':'';const flecha=aj>0?'▲':(aj<0?'▼':'=');const precio=pcKg*(1+aj/100);const color=cmap[s.id]||'#6366f1';return `<div class="seg-lad-cell" style="background:linear-gradient(150deg,${color},${color}cc)"><div class="seg-lad-rng">${rng}</div><div class="seg-lad-price">S/ ${precio.toFixed(2)}<span class="seg-lad-unit">/kg</span></div><div class="seg-lad-badge">${flecha} ${sign}${aj}%</div>${s.nombre?`<div class="seg-lad-name">${_escapeHtml(s.nombre)}</div>`:''}</div>`;}).join('');}
+function _segLadderAxis(regiones){const n=regiones.length||1;const ticks=regiones.map((r,i)=>{const left=(i/n)*100;const lbl=_segFmtPeso(r.a);return `<span class="seg-lad-tick" style="left:${left}%">${lbl==='0g'?'0':`<span class="k">${lbl}</span>`}</span>`;}).join('');return ticks+`<span class="seg-lad-tick inf" style="left:100%"><span class="k">∞</span></span>`;}
+
+// _segRegiones ANTES (con el bug: rompía en el último punto si ningún tramo era infinito → sin base final)
+function _segRegionesOLD(segs){const S=(Array.isArray(segs)?segs:[]).slice().sort((a,b)=>(Number(a.min)||0)-(Number(b.min)||0));const esInf=s=>(s.max===null||s.max===undefined);const pts=new Set([0]);S.forEach(s=>{pts.add(Number(s.min)||0);if(!esInf(s))pts.add(Number(s.max));});const infinito=S.some(esInf);const arr=[...pts].sort((a,b)=>a-b);const regiones=[];for(let i=0;i<arr.length;i++){const a=arr[i];const isLast=i+1>=arr.length;if(isLast&&!infinito)break;const b=isLast?null:arr[i+1];if(b!==null&&b<=a)continue;const seg=S.find(s=>(Number(s.min)||0)<=a&&(b===null?esInf(s):(esInf(s)||Number(s.max)>=b)));regiones.push({a,b,seg:seg||null});}return regiones;}
+
+function card(pc,segs,regFn){const cmap=_segColorMap(segs);const reg=regFn(segs);const cells=_segLadderCells(reg,pc,cmap);const axis=_segLadderAxis(reg);return `<div class="cat-seg-mini"><div class="cat-seg-titulo">🎚 <strong>Tramos de precio</strong> <span class="cat-seg-count">${segs.length} tramo${segs.length!==1?'s':''} · ${reg.length} zona${reg.length!==1?'s':''}</span><button class="cat-seg-add-btn">+ tramo</button><button class="cat-seg-edit-btn">✏</button></div><div class="seg-lad-track seg-lad-compact">${cells}</div><div class="seg-lad-axis">${axis}</div><div class="cat-seg-base-cap">⬚ Fuera de todo tramo se cobra el canónico <strong>S/ ${pc.toFixed(2)}/kg</strong></div></div>`;}
+
+// Escenarios REALES (de mos.precio_tramos)
+const SC=[
+ ['AJI PANCA — 1 tramo 0–100g (+9.5%) · granel S/38/kg', 38, [{id:'a',min:0,max:100,ajustePct:9.5,nombre:''}]],
+ ['AVENA — ≥10kg (−4%) · granel S/5/kg  (el que te gustó)', 5, [{id:'a',min:10000,max:null,ajustePct:-4,nombre:''}]],
+ ['TU HIPOTÉTICO — 0–100g (+9.5%) + ≥25kg (−22.5%) · S/8/kg', 8, [{id:'a',min:0,max:100,ajustePct:9.5,nombre:'Menudeo'},{id:'b',min:25000,max:null,ajustePct:-22.5,nombre:'Saco 25kg'}]],
+];
+document.getElementById('out').innerHTML=SC.map(([t,pc,s])=>`
+  <div class="lbl">${t}</div>
+  <div style="font-size:10px;color:#f87171;font-weight:800;margin:6px 0 3px">✗ ANTES (faltaba la zona base final)</div>
+  <div class="card"><div class="card-h">granel</div>${card(pc,s,_segRegionesOLD)}</div>
+  <div style="font-size:10px;color:#34d399;font-weight:800;margin:8px 0 3px">✓ DESPUÉS (corregido)</div>
+  <div class="card"><div class="card-h">granel</div>${card(pc,s,_segRegiones)}</div>
+`).join('<div style="height:20px"></div>');
+</script></body></html>

@@ -1,0 +1,8 @@
+{
+  "url": "http://localhost:8149/index.html",
+  "viewport": { "width": 1440, "height": 900 },
+  "localStorage": { "ps_session": { "nombre": "Luis Vasquez", "rol": "Supervisor", "token": "demo" } },
+  "waitMs": 6000,
+  "evalAfter": "(()=>{ return { ver: window.APP_VERSION, hasLogo: !!document.querySelector('.sidebar-logo .ps-logomark'), hasChip: !!document.querySelector('.user-chip .ps-avatar-circle'), overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth }; })()",
+  "screenshot": "top-desktop.png"
+}

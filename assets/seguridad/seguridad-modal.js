@@ -214,6 +214,9 @@
     setHorarioApp:               'actualizar_horario_app',
     setHorarioCustomPersonal:    'set_horario_custom_personal',
     notificarmeCuandoAbra:       'notificar_apertura_pedir',
+    // [cero-GAS 406] extensión de horario directo a Supabase (reemplaza SeguridadAlerts.gs).
+    solicitarExtensionHorario:   'solicitar_extension_horario',
+    extenderHorarioHoy:          'extender_horario_hoy',
     // [cero-GAS] validar horario → mos.resolver_horario_personal (330, grant anon 391). data
     // {permitido,motivo,fuente,dia,apertura,cierre} casa con lo que consume el widget.
     verificarHorario:            'resolver_horario_personal'

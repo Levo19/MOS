@@ -2313,6 +2313,18 @@ const API = (() => {
       if (r == null) return null;
       return r;   // {ok, data:{idNotif,enviada}} — el front solo hace await
     }
+    // [cero-GAS · 405] reenviarNotificacion: lee la fila del log (mos.notif_log_get) y re-dispara la MISMA
+    // notificación por la Edge push (misma audiencia/título/cuerpo/data). El nuevo envío se auto-loguea en la Edge.
+    if (action === 'reenviarNotificacion') {
+      const g = await _sbRpcMOS('notif_log_get', { p: { idLog: p.idLog } }, 'mos');
+      if (g == null) return null;
+      if (g.ok === false) throw new Error(g.error || 'Log no encontrado');
+      const row = g.data || {};
+      const aud = row.audiencia && typeof row.audiencia === 'object' && !row.audiencia.tokens ? row.audiencia : null;
+      if (!aud) throw new Error('Este envío fue por tokens directos (no tiene audiencia guardada) — no se puede reenviar');
+      await _pushEdgeAudiencia(aud, row.titulo || 'MOS', row.cuerpo || '', row.data || null);
+      return { ok: true };
+    }
     if (action === 'setupAdhesivosBase') {
       const r = await _sbRpcMOS('adhesivo_iconos_upsert', { p: { tamano: p.tamano_dots || p.tamano, iconos: p.iconos } }, 'mos');
       if (r == null) return null;
@@ -2438,6 +2450,7 @@ const API = (() => {
     forzarWizardDispositivo:     () => true,   // RPC mos.forzar_wizard_dispositivo (335, branch superior)
     jalarProductosProveedor:     () => true,   // mos.jalar_productos_proveedor (390)
     probarNotificacion:          () => true,   // mos.probar_notificacion (390)
+    reenviarNotificacion:        () => true,   // mos.notif_log_get + Edge push (405)
     setupAdhesivosBase:          () => true    // mos.adhesivo_iconos_upsert (390)
     // NOTA: los editores admin (crear/actualizar/eliminarPersonalMaster, crear/actualizarZona, setConfig) YA son
     //   cero-GAS vía `_MOS_ADMIN_RPC` en API.post (se resuelve ANTES de _postMOS) → NO necesitan entrada acá.
@@ -2870,6 +2883,15 @@ const API = (() => {
       // [cero-GAS] bustAlmacenCache era una invalidación de la caché GAS del almacén; en Supabase no hay tal caché
       // (las lecturas son directas) → no-op inocuo, sin tocar GAS.
       if (action === 'bustAlmacenCache') return Promise.resolve({ ok: true });
+      // [cero-GAS · 405] getNotifLog → mos.notif_log_listar (el log ahora lo escribe la Edge push, no la Hoja).
+      if (action === 'getNotifLog') {
+        return (async () => {
+          const r = await _sbRpcMOS('notif_log_listar', { p: p || {} }, 'mos');
+          if (r == null) throw new Error('Sin conexión con el servidor');
+          if (r.ok === false) throw new Error(r.error || 'Error del servidor');
+          return r.data;
+        })();
+      }
       // [kill-GAS lecturas · bloque 1 · CERO-GAS] SQL 386 + RPCs existentes. Contrato _fetch('GET'): devuelve el
       // payload (r.data / r.historial), lanza si {ok:false}. Sin fallback GAS.
       if (action === 'getAuthCatalogo' || action === 'getPromociones' || action === 'getCronStatus' ||

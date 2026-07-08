@@ -1,0 +1,10 @@
+{
+  "url": "http://localhost:8148/index.html",
+  "viewport": { "width": 1440, "height": 900 },
+  "localStorage": {
+    "ps_session": { "ok": true, "id": "U1", "nombre": "Luis Admin", "rol": "Supervisor", "loginAt": 1700000000000 }
+  },
+  "waitMs": 1500,
+  "evalAfter": "(async()=>{const s=ms=>new Promise(r=>setTimeout(r,ms));const a=document.getElementById('app').__vue_app__._container._vnode.component.proxy;a.goModule('catalogos');await s(2500);return {v:window.APP_VERSION,title:document.querySelector('.ps-head-title')&&document.querySelector('.ps-head-title').textContent,overflowX:document.scrollingElement.scrollWidth>document.scrollingElement.clientWidth};})()",
+  "screenshot": "f7-catalogos.png"
+}

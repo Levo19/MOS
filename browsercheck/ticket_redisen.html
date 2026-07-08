@@ -1,0 +1,104 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rediseño ticket cards</title>
+<style>
+  *{box-sizing:border-box;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  body{margin:0;background:#0b1120;color:#e5e7eb;padding:20px;display:flex;gap:24px;justify-content:center;align-items:flex-start;flex-wrap:wrap}
+  .col{width:360px}
+  h2{font-size:13px;color:#38bdf8;font-weight:800;margin:0 0 10px;text-transform:uppercase;letter-spacing:.4px}
+  .app{background:#f1f5f9;border-radius:22px;padding:14px}
+  /* card colapsada */
+  .tk{background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:13px;margin-bottom:9px;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+  .tk.paid{background:linear-gradient(135deg,#ecfdf5,#fff);border-color:#a7f3d0}
+  .tk.void{background:#fef2f2;border-color:#fecaca;opacity:.75}
+  .tk-top{display:flex;justify-content:space-between;align-items:center;cursor:pointer}
+  .corr{font-weight:900;color:#1f2937;font-size:16px}
+  .corr.vd{text-decoration:line-through;color:#9ca3af}
+  .pills{display:flex;gap:5px;margin-top:5px;flex-wrap:wrap}
+  .b{font-size:8px;font-weight:900;padding:2px 6px;border-radius:6px;text-transform:uppercase}
+  .b.bol{background:#dbeafe;color:#1d4ed8}.b.fac{background:#ede9fe;color:#7c3aed}
+  .b.efe{background:#d1fae5;color:#047857}.b.pc{background:#fef3c7;color:#b45309}.b.cr{background:#ffedd5;color:#c2410c}
+  .b.emi{background:#e0f2fe;color:#0284c7}.b.cola{background:#fef3c7;color:#a16207}.b.void2{background:#fee2e2;color:#dc2626}
+  .tot{font-weight:900;font-size:19px;color:#1f2937}
+  .chev{color:#cbd5e1;font-size:13px;margin-left:8px;transition:transform .25s}
+  /* expandida */
+  .body{border-top:1px dashed #e5e7eb;margin-top:11px;padding-top:11px}
+  .items{background:#f8fafc;border:1px solid #eef2f7;border-radius:12px;overflow:hidden;margin-bottom:11px}
+  .it{display:flex;justify-content:space-between;padding:7px 11px;font-size:11px;border-bottom:1px solid #eef2f7}
+  .it:last-child{border-bottom:none}.it .nm{font-weight:700;color:#475569}.it .st{font-weight:900;color:#334155}
+  /* acciones usuario */
+  .uacts{display:flex;gap:8px}
+  .ua{flex:1;border:none;border-radius:13px;padding:12px;font-weight:900;font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px}
+  .ua.cobrar{background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;box-shadow:0 6px 16px -6px rgba(99,102,241,.6)}
+  .ua.print{background:#fff;border:1.5px solid #cbd5e1;color:#334155}
+  .ua.cobrado{background:#d1fae5;color:#047857}
+  /* boton autorizar */
+  .auth{margin-top:9px;width:100%;border:none;border-radius:13px;padding:12px;font-weight:900;font-size:13px;background:linear-gradient(135deg,#334155,#1e293b);color:#fff;display:flex;align-items:center;justify-content:center;gap:8px;position:relative}
+  .auth .lk{font-size:15px}
+  .auth small{position:absolute;right:14px;font-size:9px;opacity:.6;font-weight:700}
+  /* sheet menu admin */
+  .sheet{background:#fff;border-radius:18px;padding:6px;border:1px solid #e2e8f0;box-shadow:0 -4px 20px rgba(0,0,0,.08);margin-top:9px}
+  .sheet .hd{padding:10px 12px 8px;font-size:11px;font-weight:900;color:#334155;display:flex;align-items:center;gap:7px;border-bottom:1px solid #f1f5f9}
+  .sheet .hd .sub{margin-left:auto;font-size:9px;font-weight:700;color:#94a3b8}
+  .opt{display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:11px;cursor:pointer}
+  .opt:hover{background:#f8fafc}
+  .opt .ic{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+  .opt.anu .ic{background:#fee2e2}.opt.mon .ic{background:#fef3c7}.opt.cre .ic{background:#ffedd5}.opt.nom .ic{background:#e0e7ff}.opt.cpe .ic{background:#e0f2fe}
+  .opt .tx{flex:1}.opt .tx .t{font-weight:800;color:#1f2937;font-size:13px}.opt .tx .d{font-size:10px;color:#94a3b8;font-weight:600}
+  .opt .key{font-size:9px;font-weight:900;color:#b45309;background:#fef3c7;padding:2px 7px;border-radius:99px;display:flex;align-items:center;gap:3px}
+  .note{font-size:11px;color:#94a3b8;line-height:1.55;margin-top:10px}
+  .note b{color:#e2e8f0}
+  .tag{display:inline-block;font-size:9px;font-weight:800;padding:2px 7px;border-radius:99px;background:rgba(52,211,153,.14);color:#34d399;margin-right:5px}
+</style></head>
+<body>
+
+<div class="col">
+  <h2>1 · Lista (colapsada)</h2>
+  <div class="app">
+    <div class="tk"><div class="tk-top"><div><div class="corr">B001-00123</div><div class="pills"><span class="b bol">Bol</span><span class="b efe">Efectivo</span><span class="b emi">Emitido</span></div></div><div style="display:flex;align-items:center"><span class="tot">S/ 45.00</span><span class="chev">▸</span></div></div></div>
+    <div class="tk paid"><div class="tk-top"><div><div class="corr">B001-00122</div><div class="pills"><span class="b bol">Bol</span><span class="b efe">Cobrado ✓</span></div></div><div style="display:flex;align-items:center"><span class="tot">S/ 12.50</span><span class="chev">▸</span></div></div></div>
+    <div class="tk void"><div class="tk-top"><div><div class="corr vd">NV-00121</div><div class="pills"><span class="b void2">Anulado</span></div></div><div style="display:flex;align-items:center"><span class="tot" style="color:#9ca3af;text-decoration:line-through">S/ 8.00</span><span class="chev">▸</span></div></div></div>
+  </div>
+</div>
+
+<div class="col">
+  <h2>2 · Expandida (acciones del usuario + un botón Autorizar)</h2>
+  <div class="app">
+    <div class="tk">
+      <div class="tk-top"><div><div class="corr">NV-00120</div><div class="pills"><span class="b">N.V.</span><span class="b pc">Por cobrar</span></div></div><div style="display:flex;align-items:center"><span class="tot">S/ 20.00</span><span class="chev" style="transform:rotate(90deg)">▸</span></div></div>
+      <div class="body">
+        <div class="items"><div class="it"><span class="nm">Arroz 5kg</span><span class="st">S/ 15.00</span></div><div class="it"><span class="nm">Azúcar 1kg</span><span class="st">S/ 5.00</span></div></div>
+        <!-- acciones del USUARIO (sin clave): cobrar + imprimir -->
+        <div class="uacts">
+          <button class="ua cobrar">💵 Cobrar</button>
+          <button class="ua print">🖨 Imprimir</button>
+        </div>
+        <!-- UN solo botón para todo lo admin -->
+        <button class="auth"><span class="lk">🔐</span> Autorizar (admin) <small>ver opciones ▾</small></button>
+      </div>
+    </div>
+    <div class="note" style="margin-top:8px"><span class="tag">✓</span> El usuario ve <b>Cobrar</b> e <b>Imprimir</b> directo. Todo lo que necesita al jefe está en <b>un solo botón "Autorizar"</b> — sin llenar la tarjeta de botones sueltos.</div>
+  </div>
+</div>
+
+<div class="col">
+  <h2>3 · "Autorizar" abierto (menú admin)</h2>
+  <div class="app">
+    <div class="tk">
+      <div class="tk-top"><div><div class="corr">NV-00120</div><div class="pills"><span class="b">N.V.</span><span class="b pc">Por cobrar</span></div></div><span class="tot">S/ 20.00</span></div>
+      <div class="body">
+        <div class="uacts"><button class="ua cobrar">💵 Cobrar</button><button class="ua print">🖨 Imprimir</button></div>
+        <div class="sheet">
+          <div class="hd">🔐 Acciones del administrador <span class="sub">cada una pide clave</span></div>
+          <div class="opt cre"><div class="ic">🔄</div><div class="tx"><div class="t">Convertir a crédito</div><div class="d">cambia el método a CRÉDITO</div></div><div class="key">🔑 clave</div></div>
+          <div class="opt mon"><div class="ic">💱</div><div class="tx"><div class="t">Cambiar forma de pago</div><div class="d">efectivo · virtual · mixto…</div></div><div class="key">🔑 clave</div></div>
+          <div class="opt nom"><div class="ic">🏷️</div><div class="tx"><div class="t">Cambiar cliente / nombre</div><div class="d">doc + razón social</div></div><div class="key">🔑 clave</div></div>
+          <div class="opt cpe"><div class="ic">🧾</div><div class="tx"><div class="t">Convertir a boleta / factura</div><div class="d">emite CPE SUNAT</div></div><div class="key">🔑 clave</div></div>
+          <div class="opt anu"><div class="ic">🚫</div><div class="tx"><div class="t">Anular / dar de baja</div><div class="d">anula (baja el CPE si lo es)</div></div><div class="key">🔑 clave</div></div>
+        </div>
+        <div class="note" style="margin-top:9px"><span class="tag">✓</span> El cajero <b>abre y ve</b> qué puede hacer su admin. Recién al <b>tocar una opción</b> se pide la clave (no antes). <b>Anular = dar de baja</b> si es CPE.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body></html>

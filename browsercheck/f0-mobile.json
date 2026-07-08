@@ -1,0 +1,7 @@
+{
+  "url": "http://localhost:8140/index.html",
+  "waitMs": 2500,
+  "viewport": { "width": 375, "height": 812 },
+  "screenshot": "f0-mobile.png",
+  "evalAfter": "(async()=>{try{var app=document.getElementById('app');var root=(app.__vnode||app._vnode).component;var sess={id:'P-1',nombre:'Admin',rol:'Administrador',loginAt:Date.now()};localStorage.setItem('ps_session',JSON.stringify(sess));root.setupState.session=sess;await new Promise(function(r){setTimeout(r,1800);});var nav=root.setupState.navModules;nav=nav&&nav.value?nav.value:nav;var labels=Array.isArray(nav)?nav.map(function(m){return m.label;}):[];return{modules:labels,hasCatalogo:labels.indexOf('Catálogo')>=0,psKit:document.querySelectorAll('[class*=ps-]').length,overflowX:document.documentElement.scrollWidth>document.documentElement.clientWidth};}catch(e){return{crash:e.message};}})()"
+}

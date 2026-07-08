@@ -1,0 +1,198 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Extensión de dispositivo — análisis + propuesta</title>
+<style>
+  *{box-sizing:border-box;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  body{margin:0;background:#0b1120;color:#e5e7eb;padding:20px}
+  h1{font-size:16px;margin:0 0 4px;color:#f8fafc}
+  .sub{font-size:11px;color:#64748b;margin-bottom:18px}
+  .wrap{max-width:1100px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .sec{background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:14px}
+  .sec.full{grid-column:1/3}
+  .tag{display:inline-block;font-size:10px;font-weight:900;letter-spacing:.4px;text-transform:uppercase;padding:3px 9px;border-radius:99px;margin-bottom:10px}
+  .tag.now{background:rgba(148,163,184,.15);color:#94a3b8}
+  .tag.bad{background:rgba(248,113,113,.15);color:#f87171}
+  .tag.new{background:rgba(52,211,153,.15);color:#34d399}
+  .tag.ext{background:rgba(56,189,248,.15);color:#38bdf8}
+  .note{font-size:11px;color:#94a3b8;line-height:1.5;margin-top:8px}
+  .note b{color:#e2e8f0}
+  .redx{color:#f87171;font-weight:800}
+  .grn{color:#34d399;font-weight:800}
+
+  /* ── Teléfono / wizard (fondo cálido tipo wiz-bg) ── */
+  .phone{background:linear-gradient(160deg,#fb923c,#f59e0b 55%,#ea580c);border-radius:22px;padding:14px 12px;box-shadow:inset 0 0 0 6px rgba(255,255,255,.08)}
+  .wiz-head{color:#fff;text-align:center;margin-bottom:10px}
+  .wiz-head .hi{font-size:11px;opacity:.85;font-weight:700}
+  .wiz-head .ti{font-size:16px;font-weight:900}
+  .prog{display:flex;gap:5px;justify-content:center;margin-top:7px}
+  .prog span{height:5px;width:34px;border-radius:99px;background:rgba(255,255,255,.35)}
+  .prog span.on{background:#fff;box-shadow:0 0 8px rgba(255,255,255,.7)}
+  .card{background:#fff;border-radius:20px;padding:14px;color:#1f2937;box-shadow:0 18px 40px -12px rgba(0,0,0,.5)}
+  .tienda{border:2px solid #f3f4f6;border-radius:16px;padding:12px}
+  .tienda-h{display:flex;align-items:center;gap:8px}
+  .tienda-h .em{font-size:22px}.tienda-h .nm{font-weight:900;font-size:15px;color:#1f2937;flex:1}
+  .chip{font-size:10px;font-weight:800;padding:2px 8px;border-radius:99px;background:#f3f4f6;color:#6b7280}
+  .sub2{font-size:10px;color:#9ca3af;margin:2px 0 0 30px}
+  .dentro{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px;margin:12px 0 2px 4px}
+  .av{display:flex;flex-direction:column;align-items:center;min-width:56px;position:relative}
+  .av .circ{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:15px;box-shadow:0 3px 8px rgba(0,0,0,.2)}
+  .av .nm{font-size:10px;font-weight:800;color:#4b5563;margin-top:5px;text-align:center}
+  .av .rl{font-size:8px;color:#9ca3af;line-height:1}
+  .av.cajero{background:linear-gradient(180deg,#fffbeb,#fef3c7);border-radius:14px;padding:12px 8px 6px}
+  .corona{position:absolute;top:-9px;font-size:15px}
+  .av.cajero .nm{color:#92400e}.av.cajero .rl{color:#b45309}
+  .dot{position:absolute;top:-2px;right:6px;width:12px;height:12px;border-radius:50%;border:2px solid #fff}
+  .dot.live{background:#22c55e;box-shadow:0 0 0 4px rgba(34,197,94,.25)}
+  .dot.ghost{background:#9ca3af}
+  .roles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+  .rbtn{padding:10px;border-radius:12px;font-weight:900;font-size:12px;color:#fff;text-align:center;border:none}
+  .rbtn.caj{background:linear-gradient(135deg,#f59e0b,#d97706)}
+  .rbtn.caj.lock{background:#d1d5db;color:#6b7280}
+  .rbtn.ven{background:linear-gradient(135deg,#3b82f6,#2563eb)}
+  .ext-cta{margin-top:12px;background:linear-gradient(135deg,#0ea5e9,#0284c7);color:#fff;border-radius:14px;padding:12px;text-align:center;font-weight:900;font-size:13px;box-shadow:0 8px 18px -6px rgba(14,165,233,.6);display:flex;align-items:center;justify-content:center;gap:8px}
+  .ext-hint{font-size:10px;color:#0369a1;text-align:center;margin-top:6px;font-weight:700}
+
+  /* ── overlay extensión (dark slate, acento cian) ── */
+  .ovl{background:#0f172a;border:1.5px solid #1e3a5f;border-radius:18px;padding:16px;color:#e2e8f0;position:relative;overflow:hidden}
+  .ovl .beam{position:absolute;top:0;left:-40%;width:40%;height:3px;background:linear-gradient(90deg,transparent,#38bdf8,transparent)}
+  .ovl .ti{font-size:14px;font-weight:900;color:#f1f5f9;text-align:center}
+  .ovl .who{color:#38bdf8}
+  .qr{width:150px;height:150px;background:#fff;border-radius:12px;margin:12px auto;display:flex;align-items:center;justify-content:center}
+  .qr svg{width:130px;height:130px}
+  .cam{width:150px;height:150px;border-radius:14px;margin:12px auto;background:#0b1120;border:2px dashed #334155;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#64748b;font-size:11px;position:relative}
+  .cam .frame{position:absolute;inset:16px;border:2px solid #38bdf8;border-radius:10px;opacity:.6}
+  .cd{font-size:11px;color:#94a3b8;text-align:center;margin-top:4px}
+  .cd b{color:#38bdf8}
+  .avpick{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:14px 0 6px}
+  .avpick .p{display:flex;flex-direction:column;align-items:center;gap:5px;position:relative;cursor:pointer}
+  .avpick .p .circ{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:17px;box-shadow:0 0 0 3px rgba(56,189,248,.35)}
+  .avpick .p .nm{font-size:10px;font-weight:800;color:#cbd5e1}
+  .cancel{margin-top:12px;text-align:center;font-size:12px;color:#64748b;font-weight:700}
+  .arrow{text-align:center;color:#38bdf8;font-size:20px;font-weight:900;margin:6px 0}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+</style></head>
+<body>
+<h1>🔗 Extensión de dispositivo — lo que hay hoy vs. lo que propongo</h1>
+<div class="sub">Reconstruido del código real de ME (index.html). Objetivo: que "atar un 2º equipo" sea un botón visible + avatares vivos, no un truco escondido.</div>
+<div class="wrap">
+
+  <!-- 1. HOY: wizard paso 2 -->
+  <div class="sec">
+    <span class="tag now">Hoy · Wizard Paso 2</span>
+    <div class="phone">
+      <div class="wiz-head"><div class="hi">Buenas tardes</div><div class="ti">¿En qué tienda entras?</div>
+        <div class="prog"><span class="on"></span><span class="on"></span><span></span></div></div>
+      <div class="card">
+        <div class="tienda">
+          <div class="tienda-h"><span class="em">🏪</span><span class="nm">ZONA-01</span><span class="chip">Abierta</span></div>
+          <div class="sub2">2 cajas</div>
+          <div class="dentro">
+            <div class="av cajero"><span class="corona">👑</span><div class="circ" style="background:#d97706">SG</div><div class="nm">Sergio</div><div class="rl">cajero</div></div>
+            <div class="av"><div class="circ" style="background:#3b82f6">MA</div><div class="nm">María</div></div>
+          </div>
+          <div class="roles"><div class="rbtn caj lock">🔒 + Cajero</div><div class="rbtn ven">🛍 + Vendedor</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="note"><b class="redx">Falta:</b> no hay ningún botón para "soy 2º equipo / escanear QR". Los avatares son solo informativos (no se pueden tocar). El flujo QR existe en el código pero <b>nunca se cableó a la pantalla</b>.</div>
+  </div>
+
+  <!-- 2. HOY: extensión escondida -->
+  <div class="sec">
+    <span class="tag bad">Hoy · El flujo QR está escondido</span>
+    <div class="note" style="margin-top:0">Hoy la extensión es <b>100% automática por backend</b>:</div>
+    <ol class="note" style="padding-left:18px;line-height:1.9">
+      <li>El 2º equipo <b>completa el login normal</b> (mismo nombre + misma zona).</li>
+      <li>Recién al terminar, el backend detecta "ya hay un principal" y <b>recién ahí</b> aparece un código de 6 dígitos.</li>
+      <li>El principal aprueba → se abre la cámara sola.</li>
+    </ol>
+    <div class="note"><b class="redx">Problema:</b> el usuario nunca ve un "escanear QR" por adelantado → parece que no existe. No hay avatar-tap, no hay botón. Todo depende de adivinar el mismo nombre/zona.</div>
+    <div class="ovl" style="margin-top:10px"><div class="beam"></div>
+      <div class="ti">🔗 Vincular este equipo</div>
+      <div style="text-align:center;font-size:30px;font-weight:900;letter-spacing:6px;color:#38bdf8;margin:12px 0">4 7 2 9 1 3</div>
+      <div class="cd">Esperando aprobación del principal…</div>
+    </div>
+  </div>
+
+  <!-- 3. PROBLEMA AVATARES -->
+  <div class="sec full">
+    <span class="tag bad">El problema de los avatares (fantasmas + lentos)</span>
+    <div class="two">
+      <div>
+        <div class="card">
+          <div class="tienda">
+            <div class="tienda-h"><span class="em">🏪</span><span class="nm">ZONA-01</span><span class="chip">Abierta</span></div>
+            <div class="dentro">
+              <div class="av cajero"><span class="corona">👑</span><div class="circ" style="background:#9ca3af">LU</div><span class="dot ghost"></span><div class="nm">Luis</div><div class="rl">cajero</div></div>
+              <div class="av"><div class="circ" style="background:#22c55e">MA</div><span class="dot live"></span><div class="nm">María</div></div>
+              <div class="av" style="opacity:.35"><div class="circ" style="background:#d1d5db">?</div><div class="nm">(Rosa)</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note" style="margin-top:0">
+        <p><b class="redx">👻 Fantasma (Luis):</b> el <b>cajero</b> con corona sale de <code>me.cajas estado='ABIERTA'</code> y <b>NO tiene caducidad</b>. Si la caja no se cerró bien, el avatar queda "horas después de que cerró". Es la causa exacta que describes.</p>
+        <p><b class="redx">🕒 Vendedores:</b> salen del heartbeat con TTL <b>2 min</b> → tardan hasta 2 min en desaparecer (se siente lento).</p>
+        <p><b class="redx">👤 No aparece (Rosa):</b> quien recién entró aparece hasta el próximo pulso; si su nombre coincide con el del cajero, se lo <b>excluye</b> por error.</p>
+        <p class="grn">Raíz: el cajero se fía de un estado que puede quedar viejo; falta un "visto hace &lt;90s" para todos.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. PROPUESTA entry point -->
+  <div class="sec">
+    <span class="tag new">Propuesta 1 · Entry point visible</span>
+    <div class="phone">
+      <div class="wiz-head"><div class="hi">Buenas tardes</div><div class="ti">¿Quién sos?</div>
+        <div class="prog"><span class="on"></span><span></span><span></span></div></div>
+      <div class="card">
+        <div style="font-size:12px;font-weight:800;color:#6b7280;margin-bottom:8px">Elegí tu nombre</div>
+        <div style="display:flex;gap:8px"><div class="av"><div class="circ" style="background:#3b82f6">MA</div><div class="nm">María</div></div><div class="av"><div class="circ" style="background:#8b5cf6">SG</div><div class="nm">Sergio</div></div><div class="av"><div class="circ" style="background:#10b981">RO</div><div class="nm">Rosa</div></div></div>
+        <div class="ext-cta">📲 Este es mi 2º equipo → escanear QR</div>
+        <div class="ext-hint">Atalo a la sesión de un compañero sin abrir otra caja</div>
+      </div>
+    </div>
+    <div class="note"><b class="grn">Idea:</b> un botón claro desde el Paso 1 (y avatares tocables en el Paso 2). El usuario ya SABE que puede atar su equipo, sin adivinar nombres.</div>
+  </div>
+
+  <!-- 5. PROPUESTA zona viva picker -->
+  <div class="sec">
+    <span class="tag ext">Propuesta 2 · "Zona viva" (elegí a quién atarte)</span>
+    <div class="ovl"><div class="beam"></div>
+      <div class="ti">📲 ¿A quién conecto este equipo?</div>
+      <div class="cd" style="margin-top:4px">Tocá el avatar de tu compañero en <b>ZONA-01</b></div>
+      <div class="avpick">
+        <div class="p"><div class="circ" style="background:#d97706">SG</div><div class="nm">👑 Sergio</div></div>
+        <div class="p"><div class="circ" style="background:#3b82f6">MA</div><div class="nm">María</div></div>
+      </div>
+      <div class="cd">Solo aparecen los <b class="grn">activos ahora</b> (visto hace &lt;90s) — sin fantasmas.</div>
+    </div>
+    <div class="note"><b class="grn">Fix avatares:</b> filtrar por "visto hace &lt;90s" (cajero incluido) → los fantasmas desaparecen. Pulso de presencia cada 20-30s + refresco realtime → el que entra aparece al instante.</div>
+  </div>
+
+  <!-- 6. PROPUESTA QR flow -->
+  <div class="sec full">
+    <span class="tag ext">Propuesta 3 · El flujo QR (ya existe, solo hay que hacerlo visible)</span>
+    <div class="two">
+      <div>
+        <div style="font-size:11px;font-weight:800;color:#38bdf8;margin-bottom:6px">Equipo PRINCIPAL (Sergio) muestra:</div>
+        <div class="ovl"><div class="beam"></div>
+          <div class="ti">🔗 Mostrale esto a <span class="who">tu 2º equipo</span></div>
+          <div class="qr"><svg viewBox="0 0 7 7" shape-rendering="crispEdges"><rect width="7" height="7" fill="#fff"/><g fill="#000"><rect x="0" y="0" width="3" height="1"/><rect x="0" y="0" width="1" height="3"/><rect x="2" y="0" width="1" height="3"/><rect x="0" y="2" width="3" height="1"/><rect x="4" y="0" width="3" height="1"/><rect x="6" y="0" width="1" height="3"/><rect x="4" y="2" width="3" height="1"/><rect x="0" y="4" width="1" height="3"/><rect x="2" y="4" width="1" height="3"/><rect x="0" y="6" width="3" height="1"/><rect x="4" y="4" width="1" height="1"/><rect x="6" y="4" width="1" height="1"/><rect x="5" y="5" width="1" height="1"/><rect x="4" y="6" width="1" height="1"/><rect x="6" y="6" width="1" height="1"/></g></svg></div>
+          <div class="cd">Se renueva en <b>72</b>s…</div>
+        </div>
+      </div>
+      <div class="arrow" style="display:flex;align-items:center;justify-content:center;font-size:40px">→</div>
+    </div>
+    <div style="margin-top:-70px;margin-left:auto;width:calc(50% - 6px)">
+      <div style="font-size:11px;font-weight:800;color:#38bdf8;margin-bottom:6px">Equipo 2 (nuevo) escanea:</div>
+      <div class="ovl"><div class="beam"></div>
+        <div class="ti">📷 Escaneá el código</div>
+        <div class="cam"><div class="frame"></div>📷 cámara</div>
+        <div class="cd" style="color:#34d399;font-weight:800">✓ ¡Sos extensión de Sergio!</div>
+      </div>
+    </div>
+    <div class="note"><b>Estas 2 pantallas YA están construidas</b> (overlays cian, cámara html5-qrcode, rotación de token 80s). Solo les falta el botón/avatar que las abra por adelantado.</div>
+  </div>
+
+</div>
+</body></html>

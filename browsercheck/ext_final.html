@@ -1,0 +1,62 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Extensión — resultado final</title>
+<style>
+  *{box-sizing:border-box;font-family:system-ui,Segoe UI,Roboto,sans-serif}
+  body{margin:0;background:#0b1120;color:#e5e7eb;padding:20px;display:flex;gap:24px;justify-content:center;align-items:flex-start;flex-wrap:wrap}
+  .col{display:flex;flex-direction:column;align-items:center;gap:8px}
+  .lbl{font-size:11px;font-weight:800;color:#38bdf8;text-transform:uppercase;letter-spacing:.4px}
+  /* wizard paso1 (fondo cálido + card blanca) */
+  .phone{width:330px;background:linear-gradient(160deg,#fb923c,#f59e0b 55%,#ea580c);border-radius:22px;padding:16px}
+  .card{background:#fff;border-radius:20px;padding:16px;color:#1f2937}
+  .lab{font-size:12px;font-weight:800;color:#6b7280;margin-bottom:6px}
+  .inp{width:100%;padding:12px;border:2px solid #f3f4f6;border-radius:12px;font-weight:800;color:#9ca3af}
+  .cont{width:100%;margin-top:14px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;border-radius:16px;padding:12px;font-weight:900;font-size:15px}
+  .divi{border-top:1px solid #f3f4f6;margin-top:14px;padding-top:12px}
+  ._extEntry{width:100%;background:linear-gradient(135deg,#0ea5e9,#0284c7);color:#fff;border:none;border-radius:14px;padding:12px;font-weight:900;font-size:13px;box-shadow:0 8px 18px -6px rgba(14,165,233,.6);display:flex;align-items:center;justify-content:center;gap:8px}
+  ._extEntryHint{font-size:10px;color:#0369a1;text-align:center;margin-top:6px;font-weight:700}
+  /* overlay picker (real _extCss) */
+  ._extCard{background:#0f172a;border:1px solid #1e293b;border-radius:18px;padding:22px;width:330px;position:relative;overflow:hidden}
+  ._extBeamLine{position:absolute;top:0;left:20%;height:2px;width:35%;background:linear-gradient(90deg,transparent,#38bdf8,transparent)}
+  ._extPickGrid{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin:14px 0 4px}
+  ._extPickAv{display:flex;flex-direction:column;align-items:center;gap:4px;width:74px}
+  ._extPickCirc{position:relative;width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:18px;box-shadow:0 0 0 3px rgba(56,189,248,.35),0 4px 10px rgba(0,0,0,.4)}
+  ._extPickCrown{position:absolute;top:-12px;font-size:15px}
+  ._extPickNom{font-size:11px;font-weight:800;color:#e2e8f0;max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  ._extPickZona{font-size:9px;color:#64748b}
+  ._extBtn{width:100%;padding:12px;border-radius:12px;border:none;font-weight:700;font-size:14px;background:#1e293b;color:#cbd5e1;margin-top:12px}
+</style></head><body>
+  <div class="col">
+    <div class="lbl">Paso 1 — el botón nuevo (abajo del casillero)</div>
+    <div class="phone"><div class="card">
+      <div class="lab">Elegí tu nombre</div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <div style="text-align:center"><div style="width:44px;height:44px;border-radius:50%;background:#3b82f6;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900">MA</div><div style="font-size:10px;font-weight:700;color:#4b5563;margin-top:4px">María</div></div>
+        <div style="text-align:center"><div style="width:44px;height:44px;border-radius:50%;background:#8b5cf6;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900">SG</div><div style="font-size:10px;font-weight:700;color:#4b5563;margin-top:4px">Sergio</div></div>
+      </div>
+      <div class="inp">✏ Tipea tu nombre completo</div>
+      <button class="cont">Continuar →</button>
+      <div class="divi">
+        <button class="_extEntry">📲 Este es mi 2º equipo → escanear QR</button>
+        <p class="_extEntryHint">Atalo a la sesión de un compañero, sin abrir otra caja</p>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="col">
+    <div class="lbl">El picker "Zona viva" (al tocar el botón)</div>
+    <div class="_extCard">
+      <div class="_extBeamLine"></div>
+      <div style="text-align:center">
+        <div style="font-size:30px">📲</div>
+        <div style="font-weight:800;color:#f1f5f9;font-size:16px;margin-top:4px">¿A quién conecto este equipo?</div>
+        <div style="color:#94a3b8;font-size:12px;margin-top:3px">Tocá a tu compañero — solo salen los <b style="color:#34d399">activos ahora</b>.</div>
+        <div class="_extPickGrid">
+          <div class="_extPickAv"><div class="_extPickCirc" style="background:#d97706"><span class="_extPickCrown">👑</span>SG</div><div class="_extPickNom">Sergio</div><div class="_extPickZona">ZONA-01</div></div>
+          <div class="_extPickAv"><div class="_extPickCirc" style="background:#3b82f6">MA</div><div class="_extPickNom">María</div><div class="_extPickZona">ZONA-01</div></div>
+          <div class="_extPickAv"><div class="_extPickCirc" style="background:#10b981">RO</div><div class="_extPickNom">Rosa</div><div class="_extPickZona">ZONA-02</div></div>
+        </div>
+        <button class="_extBtn">Cancelar</button>
+      </div>
+    </div>
+  </div>
+</body></html>

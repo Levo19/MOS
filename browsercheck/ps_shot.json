@@ -1,0 +1,18 @@
+{
+ "url": "http://127.0.0.1:8151/index.html",
+ "waitMs": 6500,
+ "viewport": {
+  "width": 430,
+  "height": 900
+ },
+ "localStorage": {
+  "ps_session": {
+   "id": "P-1",
+   "nombre": "Op Test",
+   "rol": "Operador",
+   "loginAt": 1783304037014
+  }
+ },
+ "evalAfter": "(async()=>{var app=document.getElementById(\"app\");var ss=(app.__vnode||app._vnode).component.setupState;var dbg=window.__psDebug;var sleep=function(ms){return new Promise(function(r){setTimeout(r,ms);});};\nasync function maxLoading(ms){var hit=false,t=Date.now();while(Date.now()-t<ms){if(dbg.moduleLoading)hit=true;await sleep(8);}return hit;}\nObject.keys(dbg.moduleCache).forEach(function(k){delete dbg.moduleCache[k];});\nss.goModule(\"dashboard\");await sleep(400);\nss.goModule(\"finanzas\");var v1=await maxLoading(600);await sleep(1500);\nss.goModule(\"dashboard\");await sleep(600);\nss.goModule(\"finanzas\");var v2=await maxLoading(500);\nawait sleep(1600);\nvar spin=!!document.querySelector(\".ps-view-enter-active .spin, .content-area .spin, .landscape-content .spin\");\nreturn {finanzasV1_loadingSeen:v1, finanzasV2_loadingSeen:v2, moduleLoadingNow:dbg.moduleLoading, spinnerInDOM:spin, title:(document.querySelector(\".ps-head-title\")||{}).textContent, curMod:ss.currentModule};})()",
+ "screenshot": "opt-switch.png"
+}

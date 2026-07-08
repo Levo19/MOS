@@ -1,0 +1,11 @@
+{
+  "url": "http://localhost:8146/index.html",
+  "viewport": { "width": 375, "height": 812 },
+  "waitMs": 3500,
+  "localStorage": {
+    "ps_session": { "nombre": "Super PS", "rol": "Supervisor", "pin_ok": true },
+    "ps_api_url": "http://127.0.0.1:8123/exec"
+  },
+  "screenshot": "f5-mobile.png",
+  "evalAfter": "(async()=>{ const inst=document.getElementById('app')._vnode.component.setupState; await inst.goModule('hotel'); inst.moduleData={ habitaciones:[{id:1,numero:'101',tipo:'Matrimonial',estado:'Ocupada'},{id:2,numero:'102',tipo:'Doble',estado:'Libre'},{id:3,numero:'103',tipo:'Simple',estado:'Limpieza'},{id:4,numero:'201',tipo:'Suite',estado:'Ocupada'},{id:5,numero:'202',tipo:'Doble',estado:'Libre'},{id:6,numero:'203',tipo:'Familiar',estado:'Libre'}], reservas:[{id:1,habitacion:'101',huesped:'María Gonzáles',noches:2,total:240,estado:'Activa'},{id:2,habitacion:'204',huesped:'Carlos Ramírez Fuentes',noches:1,total:120,estado:'Pendiente'},{id:3,habitacion:'105',huesped:'Ana Torres',noches:3,total:360,estado:'Cancelada'}], dashboard:{ hotel:{ ingresos_total:1580 } } }; inst.moduleLoading=false; await new Promise(r=>setTimeout(r,900)); return { psHead: document.querySelectorAll('.ps-head').length, overflowX: document.documentElement.scrollWidth > window.innerWidth, module: inst.currentModule, rooms: document.querySelectorAll('.room-card').length, rows: document.querySelectorAll('.ps-row').length, chips: document.querySelectorAll('.ps-chip').length }; })()"
+}

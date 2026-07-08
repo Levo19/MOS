@@ -1,0 +1,17 @@
+{
+ "url": "http://127.0.0.1:8151/index.html",
+ "waitMs": 6500,
+ "viewport": {
+  "width": 430,
+  "height": 900
+ },
+ "localStorage": {
+  "ps_session": {
+   "id": "P-1",
+   "nombre": "Op Test",
+   "rol": "Operador",
+   "loginAt": 1783303990976
+  }
+ },
+ "evalAfter": "(async()=>{var app=document.getElementById(\"app\");var ss=(app.__vnode||app._vnode).component.setupState;var sleep=function(ms){return new Promise(function(r){setTimeout(r,ms);});};\nss.goModule(\"finanzas\");await sleep(1500);\nvar titles=[].slice.call(document.querySelectorAll(\".ps-head-title\")).map(function(e){return e.textContent;});\nvar icos=[].slice.call(document.querySelectorAll(\".ps-head-ico\")).map(function(e){return e.textContent;});\nvar finHead=[].slice.call(document.querySelectorAll(\".ps-fin, .fin-module, [class*=fin]\")).length;\nreturn {curMod:ss.currentModule, curView:ss.currentView, titles:titles, icos:icos, finLike:finHead, bodyHas:document.body.innerText.indexOf(\"Finanzas\")>=0};})()"
+}
