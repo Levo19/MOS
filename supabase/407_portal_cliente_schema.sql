@@ -168,7 +168,7 @@ declare
   v_id text := nullif(btrim(coalesce(p->>'idPedido','')),'');
   v_tokreq text := coalesce(nullif(btrim(upper(coalesce(p->>'token',''))),''),'ANON');
   v_tok text; v_nombre text; v_items jsonb := coalesce(p->'items','[]'::jsonb); v_ls text := '';
-  v_lsres jsonb;
+  v_lsres jsonb; v_ls_err text := '';
 begin
   if v_id is null then return jsonb_build_object('ok',false,'error','ID_FALTANTE'); end if;
   select token into v_tok from wh.pedidos_cliente where id_pedido = v_id;
@@ -182,7 +182,11 @@ begin
   --   lista sombra (operación legítima del almacén) autorice, sin ampliar el gate de la función core. Mismo patrón
   --   que el corte-GAS (anular/registrar-guia ME). Se revierte al terminar la transacción.
   perform set_config('request.jwt.claims', '{"app":"warehouseMos"}', true);
-  -- Crear lista sombra (compartida) reusando la RPC existente. Tolerante: si falla, igual confirmamos.
+  -- Crear lista sombra (compartida) reusando la RPC existente. Tolerante: si falla, igual confirmamos —
+  -- el pedido NO se pierde: queda CONFIRMADO en wh.pedidos_cliente y cliente_inbox_polling lo muestra al
+  -- almacén sin depender de id_lista_sombra. [FIX 500x] Antes el fallo era SILENCIOSO (crear_lista_sombra
+  -- devuelve {ok:false} sin lanzar → no lo capturaba el exception handler). Ahora se hace observable en la
+  -- respuesta (listaSombraOk/listaSombraError) para que el admin sepa si hay que crear la lista a mano.
   begin
     v_lsres := wh.crear_lista_sombra(jsonb_build_object(
       'usuario', 'Cliente: ' || v_nombre,
@@ -191,10 +195,12 @@ begin
       'compartir', true,
       'nota', 'Pedido portal cliente — ' || v_nombre || ' (' || v_tok || ') · #' || v_id));
     v_ls := coalesce(v_lsres->'data'->>'idLista', v_lsres->>'idLista', '');
-  exception when others then v_ls := ''; end;
+    if v_ls = '' then v_ls_err := coalesce(v_lsres->>'error','lista sombra sin idLista'); end if;
+  exception when others then v_ls := ''; v_ls_err := 'excepcion crear_lista_sombra: '||SQLERRM; end;
   update wh.pedidos_cliente set estado='CONFIRMADO', id_lista_sombra=v_ls where id_pedido = v_id;
   update wh.clientes_portal set ultimo_pedido = now() where token = v_tok;
-  return jsonb_build_object('ok',true,'data',jsonb_build_object('idPedido',v_id,'idListaSombra',v_ls,'eta',25));
+  return jsonb_build_object('ok',true,'data',jsonb_build_object('idPedido',v_id,'idListaSombra',v_ls,'eta',25,
+    'listaSombraOk',(v_ls <> ''),'listaSombraError',v_ls_err));
 end; $fn$;
 
 grant execute on function wh._portal_admin_ok(jsonb)          to authenticated, service_role, anon;

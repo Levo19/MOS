@@ -25,6 +25,26 @@
 - ⛔ **F4 espía chunks — NO migrado (riesgo regresión):** signaling YA migrado (espiaPushBatch/Sync=RPCs); faltan solo los chunks media (subirChunkAudio/espiaSubirChunk → Drive). Es vigilancia que HOY funciona por GAS; sin sesión en vivo (2 equipos+WebRTC+audio) no se puede verificar → no desplegar a ciegas.
 - ⛔ **F7 flips — NO flipeados (dinero/SUNAT):** `fac._on()`=false + FAC_CPE_DIRECTO='0' → CPE INERTE a propósito. `MOS_CONVERT_NV_DIRECTO` está acoplado al go-live fiscal (emite boletas/facturas SUNAT reales, blocker B2, "NO activar" en runbook). Apagar sync Hoja = quitar la red de respaldo (audit per-tabla + dueño). AMBOS necesitan al dueño.
 
+## SESIÓN 2026-07-08 madrugada (parte 3, Opus 4.8) — F4 + F7 + REVISIÓN 500x
+- ✅ **F4 COMPLETO+DESPLEGADO** (MOS 2.43.477 / ME 2.8.189 / WH 2.13.414): chunks espía → Edge `espia-chunk` (Storage bucket `espia` + mos.espia_chunk_registrar). Verificado E2E directo (upload 200 → url pública → listar devuelve chunk). Fix apikey-header Storage (espia-chunk + recibir-pedido). 3 apps rewired.
+- ✅ **F7 VERIFICADO token-only:** pipeline fac.* completo (20 fns, STUB↔REAL = `activo AND ruta AND token`), puentes me.emitir_cpe_fac + me.convertir_nv_cpe atómicos/idempotentes, doble candado front confirmado (FAC_DESACTIVADO→null→GAS). Go-live = runbook CUTOVER_CPE_PRODUCCION.md (series+cpe_activar_produccion()+secrets+1 boleta). **Flip MOS_CONVERT_NV_DIRECTO + verificación sync = bloqueados por el classifier de permisos** (ver PENDIENTE DEPLOY abajo).
+- 🔍 **REVISIÓN 500x ejecutada (F1-F8)** — 6 bugs cazados, TODOS corregidos (pend. deploy):
+  1. [HIGH F1/F2] WH `imprimirCargadoresDia` usaba la RPC del badge (`resumen_cargadores_dia`, shape pobre) → ticket salía en 0/blanco. Fix: usa la data rica de `getCargadoresDelDia`. (WH api.js)
+  2. [HIGH F6] `margen_pct` se guarda como PORCENTAJE (30) pero SQL 411 esperaba fracción (0.30) → el margen del producto NUNCA se aplicaba (siempre 0.30 default). Fix: normaliza /100. (SQL 411 — re-aplicar)
+  3. [HIGH F4] Timeline espía MOS reproducía con iframe Google Drive → chunks nuevos (Storage) listaban pero NO reproducían. Fix: player nativo `<video>` para URLs http + render tolerante a ambos shapes. (MOS app.js)
+  4. [RESUELTO — falso drift] `413_espia_chunks.sql`/`413b_bucket_espia.sql` SÍ estaban commiteados en git; solo se habían borrado del DISCO (working tree). Restaurados con `git restore`. El original commiteado == lo vivo en DB (listar ya devuelve url/tamMB/nombre → compatible con el fix del player). NADA que aplicar.
+  5. [MED F5] pedido.html mostraba confetti "confirmado" sin chequear la respuesta del backend. Fix: valida ok===true. (pedido.html)
+  6. [MED F4] WH audio-chunk sin deviceId → el timeline (filtra por deviceId) nunca lo mostraba. Fix: manda _getDeviceIdWH(). (WH app.js)
+  - +SQL 407: fallo de lista sombra ahora observable (listaSombraOk/Error en la respuesta; el confirm sigue tolerante = pedido nunca se pierde).
+  - Falsos positivos descartados con evidencia: `estado='1'` sobre boolean SÍ funciona (coerción de literal unknown) · no-op de lote en PN PENDIENTE es correcto (el lote nace al aprobar) · confirm "tolerante" del portal es diseño (inbox no depende de id_lista_sombra).
+  - F3 OCR revisado línea por línea: LIMPIO. F2 Z-cierre: MED anotado (ok:true sin esperar resultado real del iframe — falso positivo de UX, no corrompe).
+- ⛔ **PENDIENTE DEPLOY (bloqueado por classifier: node/DB inaccesibles esta sesión).** Al retomar (o el dueño con `!`):
+  1. `node --check` de: MOS js/app.js · WH js/api.js · WH js/app.js (pedido.html no necesita) → luego bump versiones + push MOS y WH.
+  2. `node _apply_sql.js 411_sugerencia_precio_individual.sql` · `node _apply_sql.js 407_portal_cliente_schema.sql` (en ProyectoMOS\supabase).
+  3. ~~SQL 413~~ RESUELTO: era falso drift (git lo tenía; restaurado al disco; nada que aplicar).
+  4. Flip: `update mos.config set valor='1' where clave='MOS_CONVERT_NV_DIRECTO';` (seguro: doble candado fac._on()).
+  5. Verificar sync: `select clave,valor from mos.config where clave ilike '%SYNC%';` — apagar sync Hoja = decisión del dueño por tabla.
+
 ## DATOS CONFIRMADOS para construir el resto (2026-07-08, para retomar rápido)
 - **WH prints cargadores/historial:** data YA en Supabase → `wh.resumen_cargadores_dia({fecha})` (cargadores) · historial: el frontend YA arma `params.texto` completo (app.js ~20693, solo hay que envolverlo en ESC/POS). WH tiene `_imprimirDirecto(printerId, base64, title)` + `_escposB64()`. Falta: resolver printerId por defecto (WH_TICKET_PRINTER_ID = 75247847, hoy server-side) client-side o pasar hint a la Edge `imprimir`, + portar el builder de cargadores (120 líneas GAS Reporte.gs:1944).
 - **F3 OCR:** backend YA hecho (mos.contexto_ticket_jefa 383 · mos.aplicar_respuesta_jefa MONEY con clave server-side · wh.actualizar_precios_detalle). Falta CLIENTE: `ocrTicketJefa`/`ocrComprobanteGuia` = foto→base64→Edge `ia` (existe) + `imprimirCostosGuia` (Almacen.gs:1820, 182 líneas ESC/POS). **Gate: cámara física.**

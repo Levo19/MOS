@@ -1,1 +1,1 @@
-{"version":"2.8.189","build":"2.8.189 (corte-GAS F4): chunks de audio/video del espia -> Edge espia-chunk (Storage) en vez de GAS->Drive."}
+{"version":"2.43.478","build":"2.43.478 (revision 500x): fix timeline espia (player nativo Storage, antes iframe Drive roto) + fix version.json que decia 2.8.189 (version de ME, error del deploy F4)."}

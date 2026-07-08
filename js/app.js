@@ -30873,36 +30873,43 @@ const MOS = (() => {
       return;
     }
     lista.innerHTML = st.chunks.map(c => {
-      const fecha = new Date(c.ts);
+      // [FIX 500x F4] Chunks nuevos vienen de Supabase Storage ({url,mime,tamBytes,ts epoch-ms}) — los legacy
+      // de Drive traían {fileId,nombre,tamMB}. Tolerar AMBOS: ref = url Storage o fileId Drive; ts numérico.
+      const ref = String(c.url || c.fileId || '');
+      const nombre = c.nombre || ((c.tipo || 'audio') + '-' + (c.idx != null ? c.idx : '') + ' ' + (c.mime || ''));
+      const tamMB = (c.tamMB != null) ? c.tamMB : (c.tamBytes ? (c.tamBytes / 1048576).toFixed(2) : '?');
+      const fecha = new Date(Number(c.ts) || c.ts);
       const hh = String(fecha.getHours()).padStart(2,'0');
       const mm = String(fecha.getMinutes()).padStart(2,'0');
       const dd = String(fecha.getDate()).padStart(2,'0');
       const mo = String(fecha.getMonth()+1).padStart(2,'0');
       const icon = c.tipo === 'screen' ? '🖥️' : '🎤📷';
       const color = c.tipo === 'screen' ? '#a5b4fc' : '#22d3ee';
-      return `<button onclick="MOS._espiaTimelineReproducir('${c.fileId}','${_escapeHtml(c.nombre)}')"
+      return `<button onclick="MOS._espiaTimelineReproducir('${ref}','${_escapeHtml(nombre)}')"
         style="background:#1e293b;border:1px solid ${color}55;color:#cbd5e1;border-radius:8px;padding:8px 11px;font-size:10px;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;gap:3px;transition:all .15s;min-width:108px;text-align:left"
         onmouseover="this.style.background='${color}22';this.style.borderColor='${color}'"
         onmouseout="this.style.background='#1e293b';this.style.borderColor='${color}55'">
         <div style="font-size:13px">${icon}</div>
         <div style="font-weight:700;color:${color}">${dd}/${mo} ${hh}:${mm}</div>
-        <div style="opacity:.7;font-size:9px">${c.tamMB}MB</div>
+        <div style="opacity:.7;font-size:9px">${tamMB}MB</div>
       </button>`;
     }).join('');
   }
-  function _espiaTimelineReproducir(fileId, nombre) {
+  function _espiaTimelineReproducir(ref, nombre) {
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
-    const v = document.getElementById('espiaTimelineVideo');
-    const ph = document.getElementById('espiaTimelinePlaceholder');
-    if (!v) return;
-    // Drive iframe preview en lugar de src directo (auth + streaming).
-    // Reemplazamos el video por iframe del preview de Drive.
     const player = document.getElementById('espiaTimelinePlayer');
-    if (player) {
-      player.innerHTML = `<iframe src="https://drive.google.com/file/d/${fileId}/preview"
-        style="width:100%;height:100%;border:0" allow="autoplay"></iframe>
-        <div style="position:absolute;top:8px;left:12px;background:rgba(0,0,0,.65);color:#fff;padding:4px 10px;border-radius:6px;font-size:10px;backdrop-filter:blur(4px)">▶ ${_escapeHtml(nombre)}</div>`;
+    if (!player) return;
+    const overlay = `<div style="position:absolute;top:8px;left:12px;background:rgba(0,0,0,.65);color:#fff;padding:4px 10px;border-radius:6px;font-size:10px;backdrop-filter:blur(4px)">▶ ${_escapeHtml(nombre)}</div>`;
+    // [FIX 500x F4] Chunks migrados a Supabase Storage: ref es una URL http pública → player NATIVO
+    // (<video> reproduce también audio-webm). El iframe de Drive queda SOLO para fileIds legacy.
+    if (/^https?:\/\//i.test(String(ref))) {
+      player.innerHTML = `<video src="${ref}" controls autoplay playsinline
+        style="width:100%;height:100%;background:#000;border:0;object-fit:contain"></video>` + overlay;
+      return;
     }
+    // Drive iframe preview (legacy, chunks pre-migración).
+    player.innerHTML = `<iframe src="https://drive.google.com/file/d/${ref}/preview"
+      style="width:100%;height:100%;border:0" allow="autoplay"></iframe>` + overlay;
   }
 
   // Inicia espía (audio + gps) y abre el modal grande SIN bloquear.
