@@ -18899,7 +18899,8 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=1.0.26"></script>
 <script>
 (function(){
-  const GAS_URL = 'https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec';
+  // [cero-GAS 2026-07-08] Se eliminó `const GAS_URL` + `mosGasUrl` del init: device-auth v1.0.26 ignora
+  //   mosGasUrl (auth 100% Supabase). Ya no queda ninguna URL de script.google.com en el runtime de MOS.
   if (!window.DeviceAuth) {
     // Modulo no cargo (CDN MOS caido o bloqueado) → fail-CLOSED fatal
     var fatal = document.createElement('div');
@@ -18912,7 +18913,6 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     return;
   }
   DeviceAuth.init({
-    mosGasUrl: GAS_URL,
     app: 'MOS',
     isMaster: true,  // ← MOS solo se activa in-situ con MASTER
     // [v1.0.13] mintUrl + sbAnon: permiten a DeviceAuth confirmar de extremo a
@@ -18939,185 +18939,6 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 })();
 </script>
 
-<!-- ↓↓↓ DEPRECATED v2.43.168 — flow inline historico de MOS. NO se invoca (if(false)).
-     Queda como referencia por si surge una regresion antes de validar la migracion.
-     Sera removido completamente cuando se confirme que DeviceAuth no causa
-     problemas en produccion. -->
-<script>
-if (false) (function(){
-  const GAS_URL = 'https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec';
-  const DEV_KEY = 'mos_device_id';
-  const AUTH_CACHE_KEY = 'mos_device_auth_ts';
-  const AUTH_CACHE_MAX = 24 * 60 * 60 * 1000; // 24h
-
-  function _getDeviceId() {
-    let id = localStorage.getItem(DEV_KEY);
-    if (!id) {
-      id = (crypto.randomUUID && crypto.randomUUID()) ||
-           ('mos-' + Date.now().toString(36) + '-' + Math.random().toString(36).substr(2, 9));
-      localStorage.setItem(DEV_KEY, id);
-    }
-    return id;
-  }
-  window._getDeviceIdMos = _getDeviceId;
-
-  function _hideOverlay() {
-    const ov = document.getElementById('mosVerifDispOverlay');
-    if (ov) ov.style.display = 'none';
-  }
-  function _showOverlay(html) {
-    const ov   = document.getElementById('mosVerifDispOverlay');
-    const cont = document.getElementById('mosVerifDispContent');
-    if (cont) cont.innerHTML = html;
-    if (ov) ov.style.display = 'flex';
-  }
-  function _renderNoAutorizado() {
-    const uuid = _getDeviceId();
-    _showOverlay(`
-      <div style="font-size:64px;margin-bottom:16px">🔒</div>
-      <h2 style="font-size:22px;font-weight:800;margin-bottom:8px;color:#fef3c7">Dispositivo no autorizado</h2>
-      <p style="font-size:14px;color:#94a3b8;margin-bottom:20px">Este dispositivo no tiene permiso para usar MOS.</p>
-      <button id="mosBtnSolicitar" style="display:block;width:100%;background:linear-gradient(135deg,#f59e0b,#d97706);color:#0b1220;border:none;padding:14px 24px;border-radius:12px;font-size:14px;font-weight:800;cursor:pointer;box-shadow:0 8px 24px rgba(245,158,11,.4);margin-bottom:10px">📨 Solicitar acceso al admin (remoto)</button>
-      <div style="font-size:11px;color:#64748b;margin:14px 0 10px;letter-spacing:.05em">─ o si está un admin contigo ─</div>
-      <button id="mosBtnInSitu" style="display:block;width:100%;background:linear-gradient(135deg,#c9a227,#ffd700);color:#020817;border:none;padding:14px 24px;border-radius:12px;font-size:14px;font-weight:800;cursor:pointer;box-shadow:0 8px 24px rgba(201,162,39,.5)">🔑 Activar in-situ (admin presente)</button>
-      <p style="font-size:11px;color:#64748b;margin-top:24px;font-family:monospace">UUID: ${uuid.substring(0, 16)}...</p>
-    `);
-    document.getElementById('mosBtnSolicitar').onclick = _solicitarAcceso;
-    document.getElementById('mosBtnInSitu').onclick    = _abrirModalInSitu;
-  }
-  function _renderPendiente() {
-    _showOverlay(`
-      <div style="font-size:64px;margin-bottom:16px;animation:mpulse 1.6s infinite">⌛</div>
-      <h2 style="font-size:22px;font-weight:800;margin-bottom:8px;color:#fbbf24">Esperando aprobación</h2>
-      <p style="font-size:14px;color:#94a3b8;margin-bottom:8px">Tu dispositivo está pendiente de aprobación por un administrador.</p>
-      <p style="font-size:12px;color:#64748b;margin-bottom:16px">Reintenta automáticamente cada 15s.</p>
-      <button id="mosBtnInSituP" style="display:block;width:100%;background:linear-gradient(135deg,#c9a227,#ffd700);color:#020817;border:none;padding:12px 22px;border-radius:11px;font-size:13px;font-weight:800;cursor:pointer;margin-top:10px">🔑 Activar in-situ con clave admin</button>
-      <style>@keyframes mpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}</style>
-    `);
-    document.getElementById('mosBtnInSituP').onclick = _abrirModalInSitu;
-  }
-  function _renderInactivo() {
-    _showOverlay(`
-      <div style="font-size:64px;margin-bottom:16px">🚫</div>
-      <h2 style="font-size:22px;font-weight:800;margin-bottom:8px;color:#f87171">Dispositivo desactivado</h2>
-      <p style="font-size:14px;color:#94a3b8;margin-bottom:24px">El administrador desactivó este dispositivo. Contactá al administrador.</p>
-    `);
-  }
-
-  async function _solicitarAcceso() {
-    const btn = document.getElementById('mosBtnSolicitar');
-    if (btn) { btn.disabled = true; btn.textContent = '⌛ Enviando...'; }
-    try {
-      await fetch(GAS_URL, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'registrarSesionDispositivo',
-          ID_Dispositivo: _getDeviceId(),
-          app: 'MOS',
-          userAgent: (navigator.userAgent || '').substring(0, 200)
-        })
-      });
-      _renderPendiente();
-    } catch (e) { if (btn) { btn.disabled = false; btn.textContent = '📨 Solicitar acceso'; } }
-  }
-
-  function _abrirModalInSitu() {
-    const ua = (navigator.userAgent || '');
-    const esMobile = /iPhone|Android|Mobile|iPad/i.test(ua);
-    const prefix   = esMobile ? 'Mobile' : 'Desktop';
-    const ahora    = new Date();
-    const hh = String(ahora.getHours()).padStart(2, '0');
-    const mm = String(ahora.getMinutes()).padStart(2, '0');
-    document.getElementById('mosActInsNombre').value = prefix + ' MOS ' + hh + ':' + mm;
-    document.getElementById('mosActInsClave').value = '';
-    document.getElementById('mosActInsErr').textContent = '';
-    document.getElementById('mosActInsUuid').textContent = 'UUID: ' + _getDeviceId().substring(0, 16) + '...';
-    document.getElementById('mosActInSitu').style.display = 'flex';
-    setTimeout(() => document.getElementById('mosActInsClave').focus(), 100);
-  }
-  document.addEventListener('DOMContentLoaded', () => {
-    const cancelBtn = document.getElementById('mosActInsCancel');
-    if (cancelBtn) cancelBtn.onclick = () => {
-      document.getElementById('mosActInSitu').style.display = 'none';
-    };
-    const okBtn = document.getElementById('mosActInsOk');
-    if (okBtn) okBtn.onclick = async () => {
-      const clave  = document.getElementById('mosActInsClave').value.trim();
-      const nombre = document.getElementById('mosActInsNombre').value.trim();
-      const errEl  = document.getElementById('mosActInsErr');
-      errEl.textContent = '';
-      if (!/^\d{8}$/.test(clave)) { errEl.textContent = 'La clave debe ser 8 dígitos numéricos'; return; }
-      okBtn.disabled = true; okBtn.textContent = '⌛ Validando...';
-      try {
-        const res = await fetch(GAS_URL, {
-          method: 'POST',
-          body: JSON.stringify({
-            action: 'aprobarDispositivoEnSitu',
-            deviceId: _getDeviceId(),
-            nombreEquipo: nombre || ('MOS ' + new Date().toISOString()),
-            app: 'MOS',
-            userAgent: (navigator.userAgent || '').substring(0, 200),
-            claveAdmin: clave
-          })
-        });
-        const j = await res.json();
-        if (!j.ok) { errEl.textContent = j.error || 'Error de conexión'; okBtn.disabled = false; okBtn.textContent = '✓ ACTIVAR'; return; }
-        if (!j.data?.autorizado) {
-          errEl.textContent = j.data?.error || 'Clave incorrecta';
-          okBtn.disabled = false; okBtn.textContent = '✓ ACTIVAR';
-          try { window.MosSfx?.bellSoft?.(); } catch(_){}
-          if (navigator.vibrate) navigator.vibrate([60, 30, 60]);
-          return;
-        }
-        // ✓ Aprobado
-        try { localStorage.setItem(AUTH_CACHE_KEY, String(Date.now())); } catch(_){}
-        try { localStorage.setItem('mos_perms_check_pending', '1'); } catch(_){}
-        try { window.MosSfx?.updateReady?.(); } catch(_){}
-        try { window._pedirPersistentStorageMos && window._pedirPersistentStorageMos(); } catch(_){}
-        if (navigator.vibrate) navigator.vibrate([30, 30, 60]);
-        document.getElementById('mosActInSitu').style.display = 'none';
-        _hideOverlay();
-        // Disparar wizard de permisos automáticamente
-        setTimeout(() => { if (window.MosPerms?.auto) window.MosPerms.auto(); }, 400);
-      } catch (e) {
-        errEl.textContent = 'Sin conexión con MOS';
-        okBtn.disabled = false; okBtn.textContent = '✓ ACTIVAR';
-      }
-    };
-  });
-
-  async function _verificar() {
-    // Cache 24h: si pasó hace poco una verificación exitosa, no bloquear
-    try {
-      const ts = parseInt(localStorage.getItem(AUTH_CACHE_KEY) || '0');
-      if (ts && (Date.now() - ts) < AUTH_CACHE_MAX) return; // OK
-    } catch(_){}
-
-    const id = _getDeviceId();
-    try {
-      const r = await fetch(`${GAS_URL}?action=consultarEstadoDispositivo&deviceId=${encodeURIComponent(id)}`);
-      const j = await r.json();
-      if (j?.ok && j.data?.estado === 'ACTIVO') {
-        try { localStorage.setItem(AUTH_CACHE_KEY, String(Date.now())); } catch(_){}
-        return;
-      }
-      const est = j?.data?.estado || 'NO_REGISTRADO';
-      if (est === 'PENDIENTE_APROBACION' || est === 'PENDIENTE') _renderPendiente();
-      else if (est === 'INACTIVO')                                _renderInactivo();
-      else                                                        _renderNoAutorizado();
-      // Reintento cada 15s mientras esté pendiente
-      if (est === 'PENDIENTE_APROBACION' || est === 'PENDIENTE') {
-        setTimeout(_verificar, 15000);
-      }
-    } catch (e) {
-      // Sin conexión: no bloquear (offline tolerable)
-    }
-  }
-  // Disparar al cargar
-  if (document.readyState === 'complete') _verificar();
-  else window.addEventListener('load', () => setTimeout(_verificar, 500));
-})();
-</script>
 
 <!-- ════ Wizard de permisos · post-update ════ -->
 <div id="mosPermsOverlay" class="mos-perms-overlay">
@@ -19548,7 +19369,7 @@ if (false) (function(){
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.471';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.472';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19598,14 +19419,14 @@ if (false) (function(){
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.471"></script>
+<script src="js/api.js?v=2.43.472"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
      bumps de sw.js. Bug reportado: usuario seguía viendo error "Lote en curso"
      de v2.43.146 después de v2.43.148. -->
 <script src="./assets/membrete/membrete-modal.js?v=2.43.460"></script>
-<script src="./assets/seguridad/seguridad-modal.js?v=2.43.471"></script>
+<script src="./assets/seguridad/seguridad-modal.js?v=2.43.472"></script>
 <!-- [v2.43.187] AdhesivoPreview — render visual del adhesivo unificado con WH.
      Mismo módulo en /assets/adhesivo/preview.js — backend Envasados.gs pixel-perfect. -->
 <script src="./assets/adhesivo/preview.js?v=1.3.0"></script>
@@ -19613,7 +19434,7 @@ if (false) (function(){
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.471"></script>
+<script src="js/app.js?v=2.43.472"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
