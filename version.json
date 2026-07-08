@@ -1,1 +1,1 @@
-{"version":"2.43.477","build":"2.43.477 (corte-GAS F4 espia chunks): espiaListarChunks -> mos.espia_listar_chunks. Los chunks de audio/video del espia ahora van a la Edge espia-chunk (Storage bucket espia + registro) en vez de GAS->Drive. Verificado E2E (subir->url publica->listar). + fix apikey en Edge recibir-pedido y espia-chunk (Storage upload)."}
+{"version":"2.8.189","build":"2.8.189 (corte-GAS F4): chunks de audio/video del espia -> Edge espia-chunk (Storage) en vez de GAS->Drive."}
