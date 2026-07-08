@@ -11,6 +11,14 @@
   - ⬜ Falta: `imprimirCostosGuia` (→F3, es del flujo Jefa/OCR) · WH `imprimirCargadoresDia`/`imprimirHistorialStock` (builders ESC/POS + Edge).
 - ✅ **F8 PARCIAL — limpieza segura** (MOS 2.43.472): eliminado el bloque device-auth inline DEPRECATED (`if(false)`, 178 líneas con `GAS_URL` muerto) + `mosGasUrl` del `DeviceAuth.init` (v1.0.26 lo ignora). Runtime MOS ya SIN URL de script.google.com (queda solo el input de config admin, vestigial). **NOTA: el corte de `GAS_URL`/`_fetch`/`_postMOS` de api.js es el PASO FINAL — NO se puede hacer hasta migrar OCR/espía/portales/converter, o esas rutas se rompen.**
 
+## SESIÓN 2026-07-08 tarde/noche (Fable 5) — MÁS avance
+- ✅ **F5 COMPLETO** (WH 2.13.412): reporte.html → `wh.get_reporte` (SQL 410). **Portal cliente 100% Supabase** (pedido/clientes/inbox/reporte + backend SQL 407/408 + Edge recibir-pedido). Verificado E2E.
+- ✅ **F2 prints WH** (WH 2.13.413): `imprimirHistorialStock` + `imprimirCargadoresDia` → Edge `imprimir` (historial usa el texto ya armado por el front; cargadores lee `wh.resumen_cargadores_dia`). Cero-GAS.
+- ✅ **F3 OCR comprobante** (MOS 2.43.473): `ocrComprobanteGuia` → baja la foto (wh.get_reporte) + Claude Vision vía Edge `ia` (prompt portado fiel) + parse. **Falta verificación física con foto real.**
+- 🐞 **Fix producción despacho zona** (WH 2.13.410/411 + SQL 409): despachos grandes fallaban con "statement timeout" (rol 8s) y el cliente los etiquetaba como falso "sin conexión" (timeout cliente 12s < base). Subido: base 20s (SQL 409) + cliente 30s. + el front ya muestra el SQLERRM real.
+- 3 apps verificados CERO-GAS boot tras cada deploy.
+- **Falta (todo verificación/dueño-gated):** F3 ocrTicketJefa (cámara) + imprimirCostosGuia (builder 182 líneas, impresora) · F4 espía chunks (2 equipos+WebRTC) · F6 editarPNCantidad (toca stock) + getSugerenciaPrecioIndividual (FIFO) · F7 flips (dinero-live, dueño presente) · F8 final (borrar GAS_URL/_fetch, solo al final).
+
 ## DATOS CONFIRMADOS para construir el resto (2026-07-08, para retomar rápido)
 - **WH prints cargadores/historial:** data YA en Supabase → `wh.resumen_cargadores_dia({fecha})` (cargadores) · historial: el frontend YA arma `params.texto` completo (app.js ~20693, solo hay que envolverlo en ESC/POS). WH tiene `_imprimirDirecto(printerId, base64, title)` + `_escposB64()`. Falta: resolver printerId por defecto (WH_TICKET_PRINTER_ID = 75247847, hoy server-side) client-side o pasar hint a la Edge `imprimir`, + portar el builder de cargadores (120 líneas GAS Reporte.gs:1944).
 - **F3 OCR:** backend YA hecho (mos.contexto_ticket_jefa 383 · mos.aplicar_respuesta_jefa MONEY con clave server-side · wh.actualizar_precios_detalle). Falta CLIENTE: `ocrTicketJefa`/`ocrComprobanteGuia` = foto→base64→Edge `ia` (existe) + `imprimirCostosGuia` (Almacen.gs:1820, 182 líneas ESC/POS). **Gate: cámara física.**
